@@ -4,3 +4,13 @@ github.com/baalimago/go_away_boilerplate v1.2.0 h1:l3WM1K4fQ4pgKRBZMVeO4VL1lDzB5
 github.com/baalimago/go_away_boilerplate v1.2.0/go.mod h1:2O+zQ0Zm8vPD5SeccFFlgyf3AnYWQSHAut/ecPMmRdU=
 github.com/baalimago/go_away_boilerplate v1.2.1 h1:iy1YlQKNRzcPmNjgNUr5/gvBmj1qLVy1w+RS3coo74o=
 github.com/baalimago/go_away_boilerplate v1.2.1/go.mod h1:2O+zQ0Zm8vPD5SeccFFlgyf3AnYWQSHAut/ecPMmRdU=
+github.com/baalimago/go_away_boilerplate v1.3.0 h1:xMjNm+vAeYGdpPQgb2B+zvXVc4xkgFjObUb+XSjndkc=
+github.com/baalimago/go_away_boilerplate v1.3.0/go.mod h1:2O+zQ0Zm8vPD5SeccFFlgyf3AnYWQSHAut/ecPMmRdU=
+github.com/baalimago/go_away_boilerplate v1.3.1 h1:z+bl6ROUMbk66DJ/BHj/ZdndYkrlBaeV/7OIEG3XbWk=
+github.com/baalimago/go_away_boilerplate v1.3.1/go.mod h1:2O+zQ0Zm8vPD5SeccFFlgyf3AnYWQSHAut/ecPMmRdU=
+github.com/baalimago/go_away_boilerplate v1.3.3 h1:YtSEOPuXegQ+SWZc83wqOQXptUwhPsn+Ej9oF7sOzeM=
+github.com/baalimago/go_away_boilerplate v1.3.3/go.mod h1:2O+zQ0Zm8vPD5SeccFFlgyf3AnYWQSHAut/ecPMmRdU=
+github.com/baalimago/go_away_boilerplate v1.3.4 h1:Oqb6FyzbLnPBon1jHPs5lu0C5txGQlfsmJqHJ9BPCYo=
+github.com/baalimago/go_away_boilerplate v1.3.4/go.mod h1:2O+zQ0Zm8vPD5SeccFFlgyf3AnYWQSHAut/ecPMmRdU=
+github.com/baalimago/go_away_boilerplate v1.3.5 h1:eUwqM+FkVBonK1LbBDtki5q9kHuCKnQU98xY7RwNoUc=
+github.com/baalimago/go_away_boilerplate v1.3.5/go.mod h1:2O+zQ0Zm8vPD5SeccFFlgyf3AnYWQSHAut/ecPMmRdU=
