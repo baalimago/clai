@@ -37,14 +37,14 @@ type ImageResponses struct {
 }
 
 type photoQuerier struct {
-	model, API_KEY, pictureDir string
+	model, API_KEY, pictureDir, picturePrefix string
 }
 
 func (pq *photoQuerier) query(ctx context.Context, text []string) (ImageResponses, error) {
 	url := "https://api.openai.com/v1/images/generations"
 	body := imageQuery{
 		Model:          pq.model,
-		Prompt:         fmt.Sprintf("I NEED to test how the tool works with extremely simple prompts. DO NOT add any detail, just use it AS-IS: %v", strings.Join(text, " ")),
+		Prompt:         fmt.Sprintf("I NEED to test how the tool works with extremely simple prompts. DO NOT add any detail, just use it AS-IS: '%v'", strings.Join(text, " ")),
 		N:              1,
 		Size:           "1024x1024",
 		Quality:        "hd",
@@ -64,6 +64,7 @@ func (pq *photoQuerier) query(ctx context.Context, text []string) (ImageResponse
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", pq.API_KEY))
 	req.Header.Set("Content-Type", "application/json")
 
+	ancli.PrintOK(fmt.Sprintf("command setup: '%v', sending request\n", body.Prompt))
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -88,11 +89,12 @@ func (pq *photoQuerier) saveImage(ctx context.Context, imgResp ImageResponse) er
 	if err != nil {
 		return fmt.Errorf("failed to decode base64: %w", err)
 	}
-	outFile := fmt.Sprintf("%v/goai_%v.jpg", pq.pictureDir, randomPrefix())
+	pictureName := fmt.Sprintf("%v_%v.jpg", pq.picturePrefix, randomPrefix())
+	outFile := fmt.Sprintf("%v/%v", pq.pictureDir, pictureName)
 	err = os.WriteFile(outFile, data, 0644)
 	if err != nil {
 		ancli.PrintWarn(fmt.Sprintf("failed to write file: '%v', attempting tmp file...\n", err))
-		outFile = fmt.Sprintf("/tmp/goai_%v.jpg", randomPrefix())
+		outFile = fmt.Sprintf("/tmp/%v", pictureName)
 		err = os.WriteFile(outFile, data, 0644)
 		if err != nil {
 			return fmt.Errorf("failed to write file: %w", err)
