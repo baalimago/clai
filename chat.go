@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"os/exec"
 
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
@@ -114,7 +116,19 @@ func (cq *chatModelQuerier) queryChatModel(ctx context.Context, model, API_KEY s
 	}
 
 	for _, v := range chatCompletion.Choices {
-		fmt.Printf("%v: %v\n", ancli.ColoredMessage(ancli.BLUE, v.Message.Role), v.Message.Content)
+		cmd := exec.Command("glow", "--version")
+		if err := cmd.Run(); err != nil {
+			fmt.Printf("%v: %v\n", ancli.ColoredMessage(ancli.BLUE, v.Message.Role), v.Message.Content)
+			return nil
+		}
+
+		cmd = exec.Command("glow")
+		cmd.Stdin = bytes.NewBufferString(v.Message.Content)
+		cmd.Stdout = os.Stdout
+		fmt.Printf("%v:", ancli.ColoredMessage(ancli.BLUE, v.Message.Role))
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("failed to run glow: %w", err)
+		}
 	}
 
 	return nil
