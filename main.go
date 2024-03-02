@@ -95,7 +95,11 @@ func run(ctx context.Context, args []string, chatModel, photoModel, pictureDir, 
 	case "text":
 		fallthrough
 	case "t":
-		err := queryChatModel(ctx, chatModel, API_KEY, args[1:])
+		cmq := chatModelQuerier{
+			Model:           chatModel,
+			AssistentPrompt: "You are an assistent for a CLI interface. Answer concisely and informatively. Prefer markdown if possible.",
+		}
+		err := cmq.queryChatModel(ctx, chatModel, API_KEY, args[1:])
 		if err != nil {
 			return fmt.Errorf("failed to query chat model: %w", err)
 		}
@@ -178,7 +182,8 @@ func main() {
 		}
 		cancel()
 	}()
-
 	<-ctx.Done()
-	ancli.PrintOK("things seems to have worked out. Good bye! 🚀\n")
+	if os.Getenv("VERBOSE") == "true" {
+		ancli.PrintOK("things seems to have worked out. Good bye! 🚀\n")
+	}
 }
