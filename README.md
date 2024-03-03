@@ -3,7 +3,8 @@
 `goai` is a versatile Command-Line Interface (CLI) tool designed to simplify interactions with AI models, specifically for querying chat models and generating images using OpenAI's powerful API.
 This tool is developed in Go and aims to reduce the boilerplate associated with integrating OpenAI's API into CLI applications, providing users with an efficient way to harness the power of AI directly from their terminal.
 
-(this readme was generated with `goai -raw=true g './*.go' write a README for this project`)
+(this readme was generated with `goai -r g './*.go' write a README for this project > README.md` (plus minor modification))
+
 ## Features
 
 - **Query Chat Models:** Easily query OpenAI's chat models, like GPT-4, to receive text-based responses for your queries directly in your terminal.
