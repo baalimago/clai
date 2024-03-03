@@ -57,7 +57,7 @@ printf "flowers" | go run . -pp flower -pd /home/$USER/AiCatFlowers -i p A cat m
 
 Since -N alternatives are disabled for many newer OpenAI models, you can use [repeater](https://github.com/baalimago/repeater) to generate several responses from the same prompt:
 ```bash
-NO_COLOR=true repeater -n 10 -w 3 -increment -file out.txt -output FILE goai -pp flower -pd /home/$USER/AiCatFlowers p "A cat made of flowers"
+NO_COLOR=true repeater -n 10 -w 3 -increment -file out.txt -output BOTH goai -pp flower_INC p A cat made of flowers
 ```
 
 ## Contributing
