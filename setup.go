@@ -95,7 +95,7 @@ func setup() (string, chatModelQuerier, photoQuerier, []string) {
 	}
 	cmq := chatModelQuerier{
 		systemPrompt: "You are an assistent for a CLI interface. Answer concisely and informatively. Prefer markdown if possible.",
-		raw:          !printRaw,
+		raw:          printRaw,
 	}
 	pq := photoQuerier{
 		pictureDir:    pictureDir,
