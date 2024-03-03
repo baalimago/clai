@@ -50,8 +50,8 @@ Example usage:
 
 ```bash
 goai q "Tell me a joke."
-goai -r g '*.go' Generate a README for this project
-goai -pp flower -pd /home/$USER/AiCatFlowers p "A cat made of flowers"
+goai -r g '*.go' Generate a README for this project > README.md
+printf "flowers" | go run . -pp flower -pd /home/$USER/AiCatFlowers -i p A cat made of {}
 ```
 
 Since -N alternatives are disabled for many newer OpenAI models, you can use [repeater](https://github.com/baalimago/repeater) to generate several responses from the same prompt:

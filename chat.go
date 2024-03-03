@@ -17,7 +17,7 @@ import (
 type chatModelQuerier struct {
 	model        string
 	systemPrompt string
-	glowify      bool
+	raw          bool
 }
 
 type SystemMessage struct {
@@ -115,8 +115,12 @@ func (cq *chatModelQuerier) queryChatModel(ctx context.Context, API_KEY string, 
 	}
 
 	for _, v := range chatCompletion.Choices {
+		if cq.raw {
+			fmt.Print(v.Message.Content)
+			continue
+		}
 		cmd := exec.Command("glow", "--version")
-		if err := cmd.Run(); err != nil || !cq.glowify {
+		if err := cmd.Run(); err != nil {
 			fmt.Printf("%v: %v\n", ancli.ColoredMessage(ancli.BLUE, v.Message.Role), v.Message.Content)
 			return nil
 		}
