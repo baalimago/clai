@@ -63,9 +63,9 @@ func setup() (string, chatModelQuerier, photoQuerier, []string) {
 	pdShort := flag.String("pd", pictureDirDefault, "Set the directory to store the generated pictures. Default is $HOME/Pictures")
 	pdLong := flag.String("picture-dir", pictureDirDefault, "Set the directory to store the generated pictures. Default is $HOME/Pictures")
 
-	picturePrefix := "goai"
-	ppShort := flag.String("pp", picturePrefix, "Set the prefix for the generated pictures. Default is 'goai'")
-	ppLong := flag.String("picture-prefix", picturePrefix, "Set the prefix for the generated pictures. Default is 'goai'")
+	picturePrefix := "clai"
+	ppShort := flag.String("pp", picturePrefix, "Set the prefix for the generated pictures. Default is 'clai'")
+	ppLong := flag.String("picture-prefix", picturePrefix, "Set the prefix for the generated pictures. Default is 'clai'")
 
 	stdinReplace := ""
 	stdinReplaceShort := flag.String("I", stdinReplace, "Set the string to replace with stdin. Default is '{}'. (flag syntax borrowed from xargs)")

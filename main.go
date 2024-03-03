@@ -9,20 +9,20 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/shutdown"
 )
 
-const usage = `Goai - Go do AI stuff
+const usage = `clai - Go do AI stuff
 
 Prerequisits:
   - Set the OPENAI_API_KEY environment variable to your OpenAI API key
   - (Optional) Set the NO_COLOR environment variable to disable ansi color output
   - (Optional) Install glow - https://github.com/charmbracelet/glow for formated markdown output
 
-Usage: goai [flags] <command>
+Usage: clai [flags] <command>
 
 Flags:
   -cm, --chat-model string      Set the chat model to use. Default is 'gpt-4-turbo-preview'. Short and long flags are mutually exclusive.
   -pm, --photo-model string     Set the image model to use. Default is 'dall-e-3'. Short and long flags are mutually exclusive.
   -pd, --picture-dir string     Set the directory to store the generated pictures. Default is $HOME/Pictures. Short and long flags are mutually exclusive.
-  -pp, --picture-prefix string  Set the prefix for the generated pictures. Default is 'goai'. Short and long flags are mutually exclusive.
+  -pp, --picture-prefix string  Set the prefix for the generated pictures. Default is 'clai'. Short and long flags are mutually exclusive.
   -I, --replace string          Set the string to replace with stdin. Default is '{}'. (flag syntax borrowed from xargs)
   -i bool                       Set to true to replace '{}' with stdin. This is overwritten by -I and -replace. Default is false. (flag syntax borrowed from xargs)
 

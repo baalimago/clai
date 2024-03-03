@@ -14,21 +14,21 @@ func setUpDotfileDirectory() error {
 		return fmt.Errorf("failed to find home dir: %w", err)
 	}
 
-	goaiDir := filepath.Join(homeDir, ".goai")
-	conversationsDir := filepath.Join(goaiDir, "conversations")
+	claiDir := filepath.Join(homeDir, ".clai")
+	conversationsDir := filepath.Join(claiDir, "conversations")
 
-	// Create the .goai directory.
+	// Create the .clai directory.
 	if err := os.MkdirAll(conversationsDir, os.ModePerm); err != nil {
-		return fmt.Errorf("failed to create .goai + .goai/conversations directory: %w", err)
+		return fmt.Errorf("failed to create .clai + .clai/conversations directory: %w", err)
 	}
 
-	// Define the path for the default_prompts.yml file inside .goai.
-	promptsConfigPath := filepath.Join(goaiDir, "prompts.json")
+	// Define the path for the default_prompts.yml file inside .clai.
+	promptsConfigPath := filepath.Join(claiDir, "prompts.json")
 
 	// Create the default_prompts.yml file.
 	file, err := os.Create(promptsConfigPath)
 	if err != nil {
-		return fmt.Errorf("failed to create .goai/prompts.json: %w", err)
+		return fmt.Errorf("failed to create .clai/prompts.json: %w", err)
 	}
 	defer file.Close()
 
@@ -45,13 +45,13 @@ func setUpDotfileDirectory() error {
 }
 
 func setPromptsFromConfig(homeDir string, cmq *chatModelQuerier, pq *photoQuerier) error {
-	dirPath := fmt.Sprintf("%v/.goai", homeDir)
+	dirPath := fmt.Sprintf("%v/.clai", homeDir)
 	if _, err := os.Stat(dirPath); os.IsNotExist(err) {
 		err := setUpDotfileDirectory()
 		if err != nil {
 			ancli.PrintErr(fmt.Sprintf("failed to setup config dotfile: %v\n", err))
 		}
-		ancli.PrintOK("created .goai directory and default prompts.json file\n")
+		ancli.PrintOK("created .clai directory and default prompts.json file\n")
 	}
 
 	promptPath := dirPath + "/prompts.json"

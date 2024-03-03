@@ -1,4 +1,4 @@
-module github.com/baalimago/goai
+module github.com/baalimago/clai
 
 go 1.21.3
 
