@@ -62,7 +62,7 @@ func setPromptsFromConfig(homeDir string, cmq *chatModelQuerier, pq *photoQuerie
 		if err != nil {
 			ancli.PrintErr(fmt.Sprintf("failed to parse prompts: %v\n", err))
 		} else {
-			cmq.SystemPrompt = chatPrompt
+			cmq.systemPrompt = chatPrompt
 			pq.promptFormat = photoPrompt
 		}
 	}

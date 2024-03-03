@@ -73,12 +73,17 @@ func setup() (string, chatModelQuerier, photoQuerier, []string) {
 	stdinReplaceLong := flag.String("replace", stdinReplace, "Set the string to replace with stdin. Default is '{}. (flag syntax borrowed from xargs)'")
 	defaultStdinReplace := flag.Bool("i", false, "Set to true to replace '{}' with stdin. This is overwritten by -I and -replace. Default is false. (flag syntax borrowed from xargs)'")
 
+	printRawDefault := false
+	printRawShort := flag.Bool("r", printRawDefault, "Set to true to print raw output (don't attempt to use 'glow'). Default is false.")
+	printRawLong := flag.Bool("raw", printRawDefault, "Set to true to print raw output (don't attempt to use 'glow'). Default is false.")
+
 	flag.Parse()
 	chatModel := errorOnMutuallyExclusiveFlags(*cmShort, *cmLong, "cm", "chat-model", chatModelDefault)
 	photoModel := errorOnMutuallyExclusiveFlags(*pmShort, *pmLong, "pm", "photo-model", photoModelDefault)
 	pictureDir := errorOnMutuallyExclusiveFlags(*pdShort, *pdLong, "pd", "picture-dir", pictureDirDefault)
 	picturePrefix = errorOnMutuallyExclusiveFlags(*ppShort, *ppLong, "pp", "picture-prefix", picturePrefix)
 	stdinReplace = errorOnMutuallyExclusiveFlags(*stdinReplaceShort, *stdinReplaceLong, "I", "replace", stdinReplace)
+	printRaw := *printRawShort || *printRawLong
 
 	if *defaultStdinReplace && stdinReplace == "" {
 		stdinReplace = "{}"
@@ -90,18 +95,18 @@ func setup() (string, chatModelQuerier, photoQuerier, []string) {
 		os.Exit(1)
 	}
 	cmq := chatModelQuerier{
-		Model:        chatModel,
-		SystemPrompt: "You are an assistent for a CLI interface. Answer concisely and informatively. Prefer markdown if possible.",
+		systemPrompt: "You are an assistent for a CLI interface. Answer concisely and informatively. Prefer markdown if possible.",
+		glowify:      !printRaw,
 	}
 	pq := photoQuerier{
-		model:         photoModel,
 		pictureDir:    pictureDir,
 		picturePrefix: picturePrefix,
 		promptFormat:  "I NEED to test how the tool works with extremely simple prompts. DO NOT add any detail, just use it AS-IS: '%v'",
 	}
 
 	homedirConfig(&cmq, &pq)
-
+	cmq.model = chatModel
+	pq.model = photoModel
 	return API_KEY, cmq, pq, parseArgsStdin(stdinReplace)
 }
 

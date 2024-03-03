@@ -15,8 +15,9 @@ import (
 )
 
 type chatModelQuerier struct {
-	Model        string `json:"model"`
-	SystemPrompt string `json:"system_prompt"`
+	model        string
+	systemPrompt string
+	glowify      bool
 }
 
 type SystemMessage struct {
@@ -64,18 +65,18 @@ type Usage struct {
 
 func (cq *chatModelQuerier) constructMessages(args []string) []SystemMessage {
 	var messages []SystemMessage
-	messages = append(messages, SystemMessage{Role: "system", Content: cq.SystemPrompt})
+	messages = append(messages, SystemMessage{Role: "system", Content: cq.systemPrompt})
 	messages = append(messages, SystemMessage{Role: "user", Content: strings.Join(args, " ")})
 	return messages
 }
 
 // queryChatModel using the supplied arguments as instructions
-func (cq *chatModelQuerier) queryChatModel(ctx context.Context, API_KEY string, args []string) error {
+func (cq *chatModelQuerier) queryChatModel(ctx context.Context, API_KEY string, messages []SystemMessage) error {
 	url := "https://api.openai.com/v1/chat/completions"
 	reqData := Request{
-		Model:          cq.Model,
+		Model:          cq.model,
 		ResponseFormat: ResponseFormat{Type: "text"},
-		Messages:       cq.constructMessages(args),
+		Messages:       messages,
 	}
 	jsonData, err := json.Marshal(reqData)
 	if err != nil {
@@ -115,7 +116,7 @@ func (cq *chatModelQuerier) queryChatModel(ctx context.Context, API_KEY string, 
 
 	for _, v := range chatCompletion.Choices {
 		cmd := exec.Command("glow", "--version")
-		if err := cmd.Run(); err != nil {
+		if err := cmd.Run(); err != nil || !cq.glowify {
 			fmt.Printf("%v: %v\n", ancli.ColoredMessage(ancli.BLUE, v.Message.Role), v.Message.Content)
 			return nil
 		}

@@ -29,14 +29,15 @@ Flags:
 Commands:
   q <text> Query the chat model with the given text
   p <text> Ask the photo model a picture with the requested prompt
+  g <glob> <text> Query the chat model with the contents of the files found by the glob and the given text
 `
 
-func run(ctx context.Context, API_KEY string, cmq chatModelQuerier, pq photoQuerier, args []string) error {
+func run(ctx context.Context, API_KEY string, cq chatModelQuerier, pq photoQuerier, args []string) error {
 	switch args[0] {
 	case "query":
 		fallthrough
 	case "q":
-		err := cmq.queryChatModel(ctx, API_KEY, args[1:])
+		err := cq.queryChatModel(ctx, API_KEY, cq.constructMessages(args[1:]))
 		if err != nil {
 			return fmt.Errorf("failed to query chat model: %w", err)
 		}
@@ -47,8 +48,26 @@ func run(ctx context.Context, API_KEY string, cmq chatModelQuerier, pq photoQuer
 		if err != nil {
 			return fmt.Errorf("failed to query photo model: %w", err)
 		}
+	case "glob":
+		fallthrough
+	case "g":
+		msgs, err := cq.constructGlobMessages(args[1], args[2:])
+		if err != nil {
+			return fmt.Errorf("failed to construct glob messages: %w", err)
+		}
+		if os.Getenv("DEBUG") == "true" {
+			ancli.PrintOK(fmt.Sprintf("constructed messages: %v\n", msgs))
+		}
+		err = cq.queryChatModel(ctx, API_KEY, msgs)
+		if err != nil {
+			return fmt.Errorf("failed to query chat model with glob: %w", err)
+		}
+	case "h":
+		fallthrough
+	case "help":
+		fmt.Print(usage)
 	default:
-		return fmt.Errorf("unknown command: %s", args[0])
+		return fmt.Errorf("unknown command: '%s'\n%v", args[0], usage)
 	}
 
 	return nil
