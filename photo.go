@@ -37,14 +37,14 @@ type ImageResponses struct {
 }
 
 type photoQuerier struct {
-	model, API_KEY, pictureDir, picturePrefix string
+	model, pictureDir, picturePrefix, promptFormat string
 }
 
-func (pq *photoQuerier) query(ctx context.Context, text []string) (ImageResponses, error) {
+func (pq *photoQuerier) query(ctx context.Context, API_KEY string, text []string) (ImageResponses, error) {
 	url := "https://api.openai.com/v1/images/generations"
 	body := imageQuery{
 		Model:          pq.model,
-		Prompt:         fmt.Sprintf("I NEED to test how the tool works with extremely simple prompts. DO NOT add any detail, just use it AS-IS: '%v'", strings.Join(text, " ")),
+		Prompt:         fmt.Sprintf(pq.promptFormat, strings.Join(text, " ")),
 		N:              1,
 		Size:           "1024x1024",
 		Quality:        "hd",
@@ -61,7 +61,7 @@ func (pq *photoQuerier) query(ctx context.Context, text []string) (ImageResponse
 		return ImageResponses{}, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", pq.API_KEY))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", API_KEY))
 	req.Header.Set("Content-Type", "application/json")
 
 	ancli.PrintOK(fmt.Sprintf("command setup: '%v', sending request\n", body.Prompt))
@@ -105,8 +105,8 @@ func (pq *photoQuerier) saveImage(ctx context.Context, imgResp ImageResponse) er
 }
 
 // queryPhotoModel using the supplied arguments as instructions
-func (pq *photoQuerier) queryPhotoModel(ctx context.Context, text []string) error {
-	imgResps, err := pq.query(ctx, text)
+func (pq *photoQuerier) queryPhotoModel(ctx context.Context, API_KEY string, text []string) error {
+	imgResps, err := pq.query(ctx, API_KEY, text)
 	if err != nil {
 		return err
 	}

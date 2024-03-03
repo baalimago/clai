@@ -9,13 +9,14 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
 type chatModelQuerier struct {
-	Model           string `json:"model"`
-	AssistentPrompt string `json:"assistent_prompt"`
+	Model        string `json:"model"`
+	SystemPrompt string `json:"system_prompt"`
 }
 
 type SystemMessage struct {
@@ -63,22 +64,19 @@ type Usage struct {
 
 func (cq *chatModelQuerier) constructMessages(args []string) []SystemMessage {
 	var messages []SystemMessage
-	messages = append(messages, SystemMessage{Role: "system", Content: cq.AssistentPrompt})
-	for _, arg := range args {
-		messages = append(messages, SystemMessage{Role: "user", Content: arg})
-	}
+	messages = append(messages, SystemMessage{Role: "system", Content: cq.SystemPrompt})
+	messages = append(messages, SystemMessage{Role: "user", Content: strings.Join(args, " ")})
 	return messages
 }
 
 // queryChatModel using the supplied arguments as instructions
-func (cq *chatModelQuerier) queryChatModel(ctx context.Context, model, API_KEY string, args []string) error {
+func (cq *chatModelQuerier) queryChatModel(ctx context.Context, API_KEY string, args []string) error {
 	url := "https://api.openai.com/v1/chat/completions"
 	reqData := Request{
 		Model:          cq.Model,
 		ResponseFormat: ResponseFormat{Type: "text"},
 		Messages:       cq.constructMessages(args),
 	}
-
 	jsonData, err := json.Marshal(reqData)
 	if err != nil {
 		return fmt.Errorf("failed to encode JSON: %w", err)
