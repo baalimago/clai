@@ -72,12 +72,15 @@ func (pq *photoQuerier) query(ctx context.Context, API_KEY string, text []string
 	}
 	defer resp.Body.Close()
 
-	bytes, err := io.ReadAll(resp.Body)
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return ImageResponses{}, fmt.Errorf("failed to read response body: %w", err)
+	}
 	if resp.StatusCode != 200 {
-		return ImageResponses{}, fmt.Errorf("non-OK status: %v, body: %v", resp.Status, string(bytes))
+		return ImageResponses{}, fmt.Errorf("non-OK status: %v, body: %v", resp.Status, string(b))
 	}
 	var imgResps ImageResponses
-	err = json.Unmarshal(bytes, &imgResps)
+	err = json.Unmarshal(b, &imgResps)
 	if err != nil {
 		return ImageResponses{}, fmt.Errorf("failed to decode JSON: %w", err)
 	}
@@ -91,11 +94,11 @@ func (pq *photoQuerier) saveImage(ctx context.Context, imgResp ImageResponse) er
 	}
 	pictureName := fmt.Sprintf("%v_%v.jpg", pq.picturePrefix, randomPrefix())
 	outFile := fmt.Sprintf("%v/%v", pq.pictureDir, pictureName)
-	err = os.WriteFile(outFile, data, 0644)
+	err = os.WriteFile(outFile, data, 0o644)
 	if err != nil {
 		ancli.PrintWarn(fmt.Sprintf("failed to write file: '%v', attempting tmp file...\n", err))
 		outFile = fmt.Sprintf("/tmp/%v", pictureName)
-		err = os.WriteFile(outFile, data, 0644)
+		err = os.WriteFile(outFile, data, 0o644)
 		if err != nil {
 			return fmt.Errorf("failed to write file: %w", err)
 		}
