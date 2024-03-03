@@ -33,7 +33,11 @@ Commands:
 `
 
 func run(ctx context.Context, API_KEY string, cq chatModelQuerier, pq photoQuerier, args []string) error {
-	switch args[0] {
+	cmd := args[0]
+	if os.Getenv("DEBUG") == "true" {
+		ancli.PrintOK(fmt.Sprintf("command: %s\n", cmd))
+	}
+	switch cmd {
 	case "query":
 		fallthrough
 	case "q":
@@ -86,7 +90,7 @@ func main() {
 		cancel()
 	}()
 	<-ctx.Done()
-	if os.Getenv("VERBOSE") == "true" {
+	if os.Getenv("DEBUG") == "true" {
 		ancli.PrintOK("things seems to have worked out. Good bye! 🚀\n")
 	}
 }

@@ -114,25 +114,31 @@ func parseArgsStdin(stdinReplace string) []string {
 		ancli.PrintOK(fmt.Sprintf("stdinReplace: %v\n", stdinReplace))
 	}
 	args := flag.Args()
-	inputData, err := io.ReadAll(os.Stdin)
+	fi, err := os.Stdin.Stat()
 	if err != nil {
-		ancli.PrintErr(fmt.Sprintf("failed to read stdin: %v", err))
-		os.Exit(1)
+		panic(err)
 	}
-	amBytesStdin := len(inputData)
-	if len(args) == 1 && amBytesStdin == 0 {
+	var hasPipe bool
+	if fi.Mode()&os.ModeNamedPipe == 0 {
+		hasPipe = false
+	} else {
+		hasPipe = true
+	}
+	if len(args) == 1 && !hasPipe {
 		ancli.PrintErr("found no prompt, set args or pipe in some string\n")
 		fmt.Print(usage)
 		os.Exit(1)
 	}
 	// If no data is in stdin, simply return args
-	if amBytesStdin == 0 {
-		if os.Getenv("DEBUG") == "true" {
-			ancli.PrintOK("found no data in stdin\n")
-		}
+	if !hasPipe {
 		return args
 	}
 
+	inputData, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		ancli.PrintErr(fmt.Sprintf("failed to read stdin: %v", err))
+		os.Exit(1)
+	}
 	// There is data to read from stdin, so read it
 	if err != nil {
 		ancli.PrintErr("failed to read from stdin\n")
