@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -111,26 +110,30 @@ func setup() (string, chatModelQuerier, photoQuerier, []string) {
 }
 
 func parseArgsStdin(stdinReplace string) []string {
+	if os.Getenv("DEBUG") == "true" {
+		ancli.PrintOK(fmt.Sprintf("stdinReplace: %v\n", stdinReplace))
+	}
 	args := flag.Args()
-	file := os.Stdin
-	fi, err := file.Stat()
+	inputData, err := io.ReadAll(os.Stdin)
 	if err != nil {
-		ancli.PrintErr(fmt.Sprintf("failed to stat stdin: %v", err))
+		ancli.PrintErr(fmt.Sprintf("failed to read stdin: %v", err))
 		os.Exit(1)
 	}
-	size := fi.Size()
-	if len(args) == 1 && size == 0 {
+	amBytesStdin := len(inputData)
+	if len(args) == 1 && amBytesStdin == 0 {
 		ancli.PrintErr("found no prompt, set args or pipe in some string\n")
 		fmt.Print(usage)
 		os.Exit(1)
 	}
 	// If no data is in stdin, simply return args
-	if size == 0 {
+	if amBytesStdin == 0 {
+		if os.Getenv("DEBUG") == "true" {
+			ancli.PrintOK("found no data in stdin\n")
+		}
 		return args
 	}
 
 	// There is data to read from stdin, so read it
-	inputData, err := io.ReadAll(bufio.NewReader(os.Stdin))
 	if err != nil {
 		ancli.PrintErr("failed to read from stdin\n")
 		os.Exit(1)
@@ -153,5 +156,8 @@ func parseArgsStdin(stdinReplace string) []string {
 		}
 	}
 
+	if os.Getenv("DEBUG") == "true" {
+		ancli.PrintOK(fmt.Sprintf("args: %v\n", args))
+	}
 	return args
 }
