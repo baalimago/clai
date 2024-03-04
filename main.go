@@ -9,7 +9,7 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/shutdown"
 )
 
-const usage = `clai - Go do AI stuff
+const usage = `clai - (c)ommand (l)ine (a)rtificial (i)ntelligence
 
 Prerequisits:
   - Set the OPENAI_API_KEY environment variable to your OpenAI API key
