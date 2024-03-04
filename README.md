@@ -19,7 +19,7 @@ clai query "Tell me a joke."
 ```
 ```bash
 clai --raw `                    # Don't format output as markdown` \
-    -chat-model gpt-3.5-turbo ` # Use some other model` \
+    --chat-model gpt-3.5-turbo `# Use some other model` \
     glob '*.go' Generate a README for this project > README.md
 ```
 ```bash
