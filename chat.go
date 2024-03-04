@@ -15,9 +15,9 @@ import (
 )
 
 type chatModelQuerier struct {
-	model        string
-	systemPrompt string
-	raw          bool
+	Model        string `json:"model"`
+	SystemPrompt string `json:"system_prompt"`
+	Raw          bool   `json:"raw"`
 }
 
 type SystemMessage struct {
@@ -65,7 +65,7 @@ type Usage struct {
 
 func (cq *chatModelQuerier) constructMessages(args []string) []SystemMessage {
 	var messages []SystemMessage
-	messages = append(messages, SystemMessage{Role: "system", Content: cq.systemPrompt})
+	messages = append(messages, SystemMessage{Role: "system", Content: cq.SystemPrompt})
 	messages = append(messages, SystemMessage{Role: "user", Content: strings.Join(args, " ")})
 	return messages
 }
@@ -74,7 +74,7 @@ func (cq *chatModelQuerier) constructMessages(args []string) []SystemMessage {
 func (cq *chatModelQuerier) queryChatModel(ctx context.Context, API_KEY string, messages []SystemMessage) error {
 	url := "https://api.openai.com/v1/chat/completions"
 	reqData := Request{
-		Model:          cq.model,
+		Model:          cq.Model,
 		ResponseFormat: ResponseFormat{Type: "text"},
 		Messages:       messages,
 	}
@@ -115,7 +115,7 @@ func (cq *chatModelQuerier) queryChatModel(ctx context.Context, API_KEY string, 
 	}
 
 	for _, v := range chatCompletion.Choices {
-		if cq.raw {
+		if cq.Raw {
 			fmt.Print(v.Message.Content)
 			continue
 		}

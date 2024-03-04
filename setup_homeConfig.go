@@ -1,12 +1,43 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
+
+var defaultPhotoConfig = photoQuerier{
+	Model:         "dall-e-3",
+	PictureDir:    fmt.Sprintf("%v/Pictures", os.Getenv("HOME")),
+	PicturePrefix: "clai",
+	PromptFormat:  "I NEED to test how the tool works with extremely simple prompts. DO NOT add any detail, just use it AS-IS: '%v'",
+}
+
+var defaultChatConfig = chatModelQuerier{
+	Model:        "gpt-4-turbo-preview",
+	SystemPrompt: "You are an assistent for a CLI interface. Answer concisely and informatively. Prefer markdown if possible.",
+	Raw:          false,
+}
+
+func writeConfigFile[T chatModelQuerier | photoQuerier](configPath string, config *T) error {
+	file, err := os.Create(configPath)
+	if err != nil {
+		return fmt.Errorf("failed to create config file: %w", err)
+	}
+	defer file.Close()
+	b, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+	if _, err := file.Write(b); err != nil {
+		return fmt.Errorf("failed to write config: %w", err)
+	}
+	return nil
+}
 
 func setUpDotfileDirectory() error {
 	homeDir, err := os.UserHomeDir()
@@ -22,25 +53,35 @@ func setUpDotfileDirectory() error {
 		return fmt.Errorf("failed to create .clai + .clai/conversations directory: %w", err)
 	}
 
-	// Define the path for the default_prompts.yml file inside .clai.
-	promptsConfigPath := filepath.Join(claiDir, "prompts.json")
-
-	// Create the default_prompts.yml file.
-	file, err := os.Create(promptsConfigPath)
+	err = writeConfigFile(filepath.Join(claiDir, "photoConfig.json"), &defaultPhotoConfig)
 	if err != nil {
-		return fmt.Errorf("failed to create .clai/prompts.json: %w", err)
-	}
-	defer file.Close()
-
-	// Optionally, write the initial content to the default_prompts.yml file.
-	initialContent := `{
-  "photo": "I NEED to test how the tool works with extremely simple prompts. DO NOT add any detail, just use it AS-IS: '%v'",
-  "query": "You are an assistent for a CLI interface. Answer concisely and informatively. Prefer markdown if possible."
-}`
-	if _, err := file.WriteString(initialContent); err != nil {
 		return err
 	}
+	err = writeConfigFile(filepath.Join(claiDir, "chatConfig.json"), &defaultChatConfig)
+	if err != nil {
+		return err
+	}
+	return nil
+}
 
+func unmarshalConfg[T chatModelQuerier | photoQuerier](chatConfigPath string, config *T) error {
+	file, err := os.Open(chatConfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to open chat config file: %w", err)
+	}
+	defer file.Close()
+	fileBytes, err := io.ReadAll(file)
+	if err != nil {
+		return fmt.Errorf("failed to read chat config file: %w", err)
+	}
+	err = json.Unmarshal(fileBytes, config)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal chat config file: %w", err)
+	}
+	return nil
+}
+
+func parsePhotoConfig(photoConfigPath string, pq *photoQuerier) error {
 	return nil
 }
 
@@ -54,16 +95,22 @@ func setPromptsFromConfig(homeDir string, cmq *chatModelQuerier, pq *photoQuerie
 		ancli.PrintOK("created .clai directory and default prompts.json file\n")
 	}
 
-	promptPath := dirPath + "/prompts.json"
-	if _, err := os.Stat(promptPath); os.IsNotExist(err) {
-		ancli.PrintWarn(fmt.Sprintf("failed to find prompts file: %v\n", err))
+	photoConfig := dirPath + "/photoConfig.json"
+	if _, err := os.Stat(photoConfig); os.IsNotExist(err) {
+		ancli.PrintWarn(fmt.Sprintf("failed to find photo config file: %v\n", err))
 	} else {
-		chatPrompt, photoPrompt, err := parsePrompts(promptPath)
+		err = parsePhotoConfig(photoConfig, pq)
 		if err != nil {
-			ancli.PrintErr(fmt.Sprintf("failed to parse prompts: %v\n", err))
-		} else {
-			cmq.systemPrompt = chatPrompt
-			pq.promptFormat = photoPrompt
+			ancli.PrintErr(fmt.Sprintf("failed to parse config: %v\n", err))
+		}
+	}
+	chatConfig := dirPath + "/chatConfig.json"
+	if _, err := os.Stat(chatConfig); os.IsNotExist(err) {
+		ancli.PrintWarn(fmt.Sprintf("failed to find chat config file: %v\n", err))
+	} else {
+		err = unmarshalConfg(chatConfig, cmq)
+		if err != nil {
+			ancli.PrintErr(fmt.Sprintf("failed to parse config: %v\n", err))
 		}
 	}
 	return nil

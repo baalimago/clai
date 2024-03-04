@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -29,24 +28,6 @@ func errorOnMutuallyExclusiveFlags(flag1, flag2, shortFlag, longFlag, defualt st
 		return flag2
 	}
 	return defualt
-}
-
-func parsePrompts(promptPath string) (string, string, error) {
-	var prompts PromptConfig
-	file, err := os.Open(promptPath)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to open prompts file: %w", err)
-	}
-	defer file.Close()
-	fileBytes, err := io.ReadAll(file)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to read prompts file: %w", err)
-	}
-	err = json.Unmarshal(fileBytes, &prompts)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to unmarshal prompts file: %w", err)
-	}
-	return prompts.Query, prompts.Photo, nil
 }
 
 func setup() (string, chatModelQuerier, photoQuerier, []string) {
@@ -94,18 +75,18 @@ func setup() (string, chatModelQuerier, photoQuerier, []string) {
 		os.Exit(1)
 	}
 	cmq := chatModelQuerier{
-		systemPrompt: "You are an assistent for a CLI interface. Answer concisely and informatively. Prefer markdown if possible.",
-		raw:          printRaw,
+		SystemPrompt: "You are an assistent for a CLI interface. Answer concisely and informatively. Prefer markdown if possible.",
+		Raw:          printRaw,
 	}
 	pq := photoQuerier{
-		pictureDir:    pictureDir,
-		picturePrefix: picturePrefix,
-		promptFormat:  "I NEED to test how the tool works with extremely simple prompts. DO NOT add any detail, just use it AS-IS: '%v'",
+		PictureDir:    pictureDir,
+		PicturePrefix: picturePrefix,
+		PromptFormat:  "I NEED to test how the tool works with extremely simple prompts. DO NOT add any detail, just use it AS-IS: '%v'",
 	}
 
 	homedirConfig(&cmq, &pq)
-	cmq.model = chatModel
-	pq.model = photoModel
+	cmq.Model = chatModel
+	pq.Model = photoModel
 	return API_KEY, cmq, pq, parseArgsStdin(stdinReplace)
 }
 

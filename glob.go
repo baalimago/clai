@@ -20,7 +20,7 @@ func (cq *chatModelQuerier) constructGlobMessages(glob string, args []string) ([
 	ret := make([]SystemMessage, 0, len(globMessages)+4)
 	ret = append(ret, SystemMessage{
 		Role:    "system",
-		Content: cq.systemPrompt,
+		Content: cq.SystemPrompt,
 	})
 	ret = append(ret, SystemMessage{
 		Role:    "system",

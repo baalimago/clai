@@ -37,14 +37,17 @@ type ImageResponses struct {
 }
 
 type photoQuerier struct {
-	model, pictureDir, picturePrefix, promptFormat string
+	Model         string `json:"model"`
+	PictureDir    string `json:"picture-dir"`
+	PicturePrefix string `json:"picture-prefix"`
+	PromptFormat  string `json:"prompt-format"`
 }
 
 func (pq *photoQuerier) query(ctx context.Context, API_KEY string, text []string) (ImageResponses, error) {
 	url := "https://api.openai.com/v1/images/generations"
 	body := imageQuery{
-		Model:          pq.model,
-		Prompt:         fmt.Sprintf(pq.promptFormat, strings.Join(text, " ")),
+		Model:          pq.Model,
+		Prompt:         fmt.Sprintf(pq.PromptFormat, strings.Join(text, " ")),
 		N:              1,
 		Size:           "1024x1024",
 		Quality:        "hd",
@@ -92,8 +95,8 @@ func (pq *photoQuerier) saveImage(ctx context.Context, imgResp ImageResponse) er
 	if err != nil {
 		return fmt.Errorf("failed to decode base64: %w", err)
 	}
-	pictureName := fmt.Sprintf("%v_%v.jpg", pq.picturePrefix, randomPrefix())
-	outFile := fmt.Sprintf("%v/%v", pq.pictureDir, pictureName)
+	pictureName := fmt.Sprintf("%v_%v.jpg", pq.PicturePrefix, randomPrefix())
+	outFile := fmt.Sprintf("%v/%v", pq.PictureDir, pictureName)
 	err = os.WriteFile(outFile, data, 0o644)
 	if err != nil {
 		ancli.PrintWarn(fmt.Sprintf("failed to write file: '%v', attempting tmp file...\n", err))
