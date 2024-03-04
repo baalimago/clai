@@ -39,6 +39,27 @@ func writeConfigFile[T chatModelQuerier | photoQuerier](configPath string, confi
 	return nil
 }
 
+func unmarshalConfg[T chatModelQuerier | photoQuerier](chatConfigPath string, config *T) error {
+	if _, err := os.Stat(chatConfigPath); os.IsNotExist(err) {
+		return fmt.Errorf("failed to find photo config file: %w\n", err)
+	}
+	file, err := os.Open(chatConfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to open chat config file: %w", err)
+	}
+	defer file.Close()
+	fileBytes, err := io.ReadAll(file)
+	if err != nil {
+		return fmt.Errorf("failed to read chat config file: %w", err)
+	}
+	err = json.Unmarshal(fileBytes, config)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal chat config file: %w", err)
+	}
+
+	return nil
+}
+
 func setUpDotfileDirectory() error {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
@@ -64,27 +85,6 @@ func setUpDotfileDirectory() error {
 	return nil
 }
 
-func unmarshalConfg[T chatModelQuerier | photoQuerier](chatConfigPath string, config *T) error {
-	file, err := os.Open(chatConfigPath)
-	if err != nil {
-		return fmt.Errorf("failed to open chat config file: %w", err)
-	}
-	defer file.Close()
-	fileBytes, err := io.ReadAll(file)
-	if err != nil {
-		return fmt.Errorf("failed to read chat config file: %w", err)
-	}
-	err = json.Unmarshal(fileBytes, config)
-	if err != nil {
-		return fmt.Errorf("failed to unmarshal chat config file: %w", err)
-	}
-	return nil
-}
-
-func parsePhotoConfig(photoConfigPath string, pq *photoQuerier) error {
-	return nil
-}
-
 func setPromptsFromConfig(homeDir string, cmq *chatModelQuerier, pq *photoQuerier) error {
 	dirPath := fmt.Sprintf("%v/.clai", homeDir)
 	if _, err := os.Stat(dirPath); os.IsNotExist(err) {
@@ -96,22 +96,14 @@ func setPromptsFromConfig(homeDir string, cmq *chatModelQuerier, pq *photoQuerie
 	}
 
 	photoConfig := dirPath + "/photoConfig.json"
-	if _, err := os.Stat(photoConfig); os.IsNotExist(err) {
-		ancli.PrintWarn(fmt.Sprintf("failed to find photo config file: %v\n", err))
-	} else {
-		err = parsePhotoConfig(photoConfig, pq)
-		if err != nil {
-			ancli.PrintErr(fmt.Sprintf("failed to parse config: %v\n", err))
-		}
+	err := unmarshalConfg(photoConfig, pq)
+	if err != nil {
+		ancli.PrintWarn(fmt.Sprintf("failed to unmarshal photo config: %v\n", err))
 	}
 	chatConfig := dirPath + "/chatConfig.json"
-	if _, err := os.Stat(chatConfig); os.IsNotExist(err) {
-		ancli.PrintWarn(fmt.Sprintf("failed to find chat config file: %v\n", err))
-	} else {
-		err = unmarshalConfg(chatConfig, cmq)
-		if err != nil {
-			ancli.PrintErr(fmt.Sprintf("failed to parse config: %v\n", err))
-		}
+	err = unmarshalConfg(chatConfig, cmq)
+	if err != nil {
+		ancli.PrintWarn(fmt.Sprintf("failed to unmarshal photo config: %v\n", err))
 	}
 	return nil
 }
