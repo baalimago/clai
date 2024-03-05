@@ -27,9 +27,29 @@ Flags:
   -i bool                       Set to true to replace '{}' with stdin. This is overwritten by -I and -replace. Default is false. (flag syntax borrowed from xargs)
 
 Commands:
-  q <text> Query the chat model with the given text
-  p <text> Ask the photo model a picture with the requested prompt
-  g <glob> <text> Query the chat model with the contents of the files found by the glob and the given text
+  help                    Display this help message
+  query <text>            Query the chat model with the given text
+  photo <text>            Ask the photo model a picture with the requested prompt
+  glob  <glob> <text>     Query the chat model with the contents of the files found by the glob and the given text
+  chat  <subcommand>      Interact with the chat model through various subcommands:
+  c   new       <prompt>  Create a new chat with the given prompt.
+  c   continue  <chatID>  Continue an existing chat with the given chat ID.
+  c   delete    <chatID>  Delete the chat with the given chat ID.
+  c   list                List all existing chats.
+  c   help                Display detailed help for chat subcommands.
+
+Examples:
+  - clai h | clai -i q generate some examples for this usage string: '{}'
+  - clai query "What's the weather like in Tokyo?"
+  - clai -cm gpt-3.5-turbo chat "Latest advancements in AI?"
+  - clai photo "A futuristic cityscape"
+  - clai -pm dall-e-2 photo "A cat in space"
+  - clai -pd ~/Downloads -pp holiday photo "A beach at sunset"
+  - clai glob "*.txt" "Summarize these documents."
+  - docker logs example | clai -I LOG q "Find errors in these logs: LOG"
+  - clai c new "Starting a conversation about climate change."
+  - clai c list
+  - clai c help
 `
 
 func run(ctx context.Context, API_KEY string, cq chatModelQuerier, pq photoQuerier, args []string) error {
