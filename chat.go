@@ -1,138 +1,260 @@
 package main
 
 import (
-	"bytes"
+	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
-	"os/exec"
+	"os/user"
 	"strings"
 
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
+	"github.com/baalimago/go_away_boilerplate/pkg/num"
 )
 
-type chatModelQuerier struct {
-	Model        string `json:"model"`
-	SystemPrompt string `json:"system_prompt"`
-	Raw          bool   `json:"raw"`
+const chatUsage = `clai - (c)omand (l)ine (a)rtificial (i)intelligence 
+
+chat usage:
+
+Commands:                                                                                                         
+  chat n [prompt]                   Create a new chat with the given prompt.                                      
+  chat new [prompt]                 (Alias of the above)                                                          
+  chat c [chatID]                   Continue an existing chat with the given chat ID.                             
+  chat continue [chatID]            (Alias of the above)                                                          
+  chat l                            List all existing chats.                                                      
+  chat list                         (Alias of the above)                                                          
+  chat d [chatID]                   Delete the chat with the given chat ID.                                       
+  chat delete [chatID]              (Alias of the above)                                                          
+  chat q [prompt]                   (Not yet implemented) Query an existing chat with the given prompt.           
+
+The chatID is the 5 first words of the prompt joined by underscores. Easiest
+way to get the chatID is to list all chats with 'clai chat list'.
+
+You can also manually edit each message in the chats in ~/.clai/conversations.
+
+Examples:                                                                                                         
+  - Create a new chat:                                                                                            
+    clai chat new "How's the weather?"                                                                          
+  - Continue an existing chat by ID:                                                                              
+    clai chat continue my_chat_id                                                                               
+  - List all chats:                                                                                               
+    clai chat list                                                                                              
+  - Delete a chat by ID:                                                                                          
+    clai chat delete my_chat_id`
+
+type Chat struct {
+	ID       string    `json:"id"`
+	Messages []Message `json:"messages"`
 }
 
-type SystemMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-type ResponseFormat struct {
-	Type string `json:"type"`
-}
-
-type Request struct {
-	Model          string          `json:"model"`
-	ResponseFormat ResponseFormat  `json:"response_format"`
-	Messages       []SystemMessage `json:"messages"`
-}
-
-type ChatCompletion struct {
-	ID                string   `json:"id"`
-	Object            string   `json:"object"`
-	Created           int64    `json:"created"`
-	Model             string   `json:"model"`
-	Choices           []Choice `json:"choices"`
-	Usage             Usage    `json:"usage"`
-	SystemFingerprint string   `json:"system_fingerprint"`
-}
-
-type Choice struct {
-	Index        int         `json:"index"`
-	Message      Message     `json:"message"`
-	Logprobs     interface{} `json:"logprobs"` // null or complex object, hence interface{}
-	FinishReason string      `json:"finish_reason"`
-}
-
-type Message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-type Usage struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
-	TotalTokens      int `json:"total_tokens"`
-}
-
-func (cq *chatModelQuerier) constructMessages(args []string) []SystemMessage {
-	var messages []SystemMessage
-	messages = append(messages, SystemMessage{Role: "system", Content: cq.SystemPrompt})
-	messages = append(messages, SystemMessage{Role: "user", Content: strings.Join(args, " ")})
-	return messages
-}
-
-// queryChatModel using the supplied arguments as instructions
-func (cq *chatModelQuerier) queryChatModel(ctx context.Context, API_KEY string, messages []SystemMessage) error {
-	url := "https://api.openai.com/v1/chat/completions"
-	reqData := Request{
-		Model:          cq.Model,
-		ResponseFormat: ResponseFormat{Type: "text"},
-		Messages:       messages,
+func (cq *chatModelQuerier) chat(ctx context.Context, API_KEY string, subCmd string, prompt []string) error {
+	switch subCmd {
+	case "n":
+		fallthrough
+	case "new":
+		return cq.chatNew(ctx, API_KEY, prompt)
+	case "c":
+		fallthrough
+	case "continue":
+		return cq.chatContinue(ctx, API_KEY, prompt)
+	case "l":
+		fallthrough
+	case "list":
+		return chatList()
+	case "d":
+		fallthrough
+	case "delete":
+		return chatDelete(prompt)
+	case "q":
+		fallthrough
+	case "query":
+		// return cq.continueQueryAsChat(ctx, API_KEY, prompt)
+		return errors.New("not yet implemented")
+	case "h":
+		fallthrough
+	case "help":
+		fmt.Print(chatUsage)
+		return nil
+	default:
+		return fmt.Errorf("unknown subcommand: '%s'\n%v", subCmd, chatUsage)
 	}
-	jsonData, err := json.Marshal(reqData)
+}
+
+func (cq *chatModelQuerier) chatNew(ctx context.Context, API_KEY string, prompt []string) error {
+	if len(prompt) == 0 {
+		return errors.New("no prompt provided")
+	}
+	messages := cq.constructMessages(prompt)
+	initialCompletion, err := cq.queryChatModel(ctx, API_KEY, messages)
+	if err != nil {
+		return fmt.Errorf("failed to query chat model: %w", err)
+	}
+	err = cq.printChatCompletion(initialCompletion)
+	if err != nil {
+		return fmt.Errorf("failed to print chat completion: %w", err)
+	}
+
+	lenPrompt := len(prompt)
+	capped := num.Cap(lenPrompt, 1, 5)
+	shortenedPrompt := prompt[:capped]
+	messages = append(messages, initialCompletion.Choices[0].Message)
+	chat := Chat{
+		ID:       strings.Join(shortenedPrompt, "_"),
+		Messages: messages,
+	}
+
+	return cq.chatLoop(ctx, API_KEY, chat)
+}
+
+func (cq *chatModelQuerier) chatContinue(ctx context.Context, API_KEY string, prompt []string) error {
+	chatID := strings.Join(prompt, "_")
+	chat, err := getChat(chatID)
+	if err != nil {
+		return fmt.Errorf("failed to get chat: %w", err)
+	}
+	for _, message := range chat.Messages {
+		err = cq.printChatMessage(message)
+		if err != nil {
+			return fmt.Errorf("failed to print chat message: %w", err)
+		}
+	}
+
+	return cq.chatLoop(ctx, API_KEY, chat)
+}
+
+func chatList() error {
+	chats, err := listChats()
+	if err != nil {
+		return fmt.Errorf("failed to list chats: %w", err)
+	}
+	ancli.PrintOK(fmt.Sprintf("found '%v' conversations:\n", len(chats)))
+	for i, chat := range chats {
+		fmt.Printf("\t%v: %v\n", i, chat.ID)
+	}
+	return nil
+}
+
+func chatDelete(prompt []string) error {
+	chatID := strings.Join(prompt, " ")
+	err := deleteChat(chatID)
+	if err != nil {
+		return fmt.Errorf("failed to delete chat: %w", err)
+	}
+	ancli.PrintOK("chat deleted: " + chatID)
+	return nil
+}
+
+func listChats() ([]Chat, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get home dir: %w", err)
+	}
+	convDir := home + "/.clai/conversations"
+
+	files, err := os.ReadDir(convDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list conversations: %w", err)
+	}
+	var ret []Chat
+	if os.Getenv("DEBUG") == "true" {
+		ancli.PrintOK(fmt.Sprintf("found '%v' conversations:\n", len(files)))
+	}
+	for _, file := range files {
+		chat, err := getChatFromPath(convDir + "/" + file.Name())
+		if err != nil {
+			return nil, fmt.Errorf("failed to get chat: %w", err)
+		}
+		ret = append(ret, chat)
+	}
+
+	return ret, nil
+}
+
+func getChat(chatID string) (Chat, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return Chat{}, fmt.Errorf("failed to get home dir: %w", err)
+	}
+	return getChatFromPath(home + "/.clai/conversations/" + chatID + ".json")
+}
+
+func getChatFromPath(path string) (Chat, error) {
+	if os.Getenv("DEBUG") == "true" {
+		ancli.PrintOK(fmt.Sprintf("Reading chat from '%v'\n", path))
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return Chat{}, fmt.Errorf("failed to read file: %w", err)
+	}
+	var chat Chat
+	err = json.Unmarshal(b, &chat)
+	if err != nil {
+		return Chat{}, fmt.Errorf("failed to decode JSON: %w", err)
+	}
+
+	return chat, nil
+}
+
+func deleteChat(chatID string) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to get home dir: %w", err)
+	}
+	return os.Remove(home + "/.clai/conversations/" + strings.Replace(chatID, " ", "_", -1) + ".json")
+}
+
+func (cq *chatModelQuerier) chatLoop(ctx context.Context, API_KEY string, chat Chat) error {
+	defer func() {
+		err := saveChat(chat)
+		if err != nil {
+			panic(err)
+		}
+	}()
+	for {
+		currentUser, err := user.Current()
+		var username string
+		if err != nil {
+			username = "user"
+		} else {
+			username = currentUser.Username
+		}
+		fmt.Printf("%v: ", ancli.ColoredMessage(ancli.CYAN, username))
+		var userInput string
+		reader := bufio.NewReader(os.Stdin)
+		userInput, err = reader.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("failed to read user input: %w", err)
+		}
+		if userInput == "exit\n" || userInput == "quit\n" || ctx.Err() != nil {
+			return nil
+		}
+		chat.Messages = append(chat.Messages, Message{Role: "user", Content: strings.TrimRight(userInput, "\n")})
+		chatCompletion, err := cq.queryChatModel(ctx, API_KEY, chat.Messages)
+		if err != nil {
+			return fmt.Errorf("failed to query chat model: %w", err)
+		}
+		err = cq.printChatCompletion(chatCompletion)
+		if err != nil {
+			return fmt.Errorf("failed to print chat completion: %w", err)
+		}
+		chat.Messages = append(chat.Messages, chatCompletion.Choices[0].Message)
+		err = saveChat(chat)
+		if err != nil {
+			return fmt.Errorf("failed to save chat: %w", err)
+		}
+	}
+}
+
+func saveChat(chat Chat) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to get home dir: %w", err)
+	}
+	b, err := json.Marshal(chat)
 	if err != nil {
 		return fmt.Errorf("failed to encode JSON: %w", err)
 	}
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %v", API_KEY))
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to do request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	strBody := string(body)
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("response status: %v, response body: %v", resp.Status, strBody)
-	}
-
-	var chatCompletion ChatCompletion
-	err = json.Unmarshal(body, &chatCompletion)
-	if err != nil {
-		return fmt.Errorf("failed to decode JSON: %w", err)
-	}
-
-	for _, v := range chatCompletion.Choices {
-		if cq.Raw {
-			fmt.Print(v.Message.Content)
-			continue
-		}
-		cmd := exec.Command("glow", "--version")
-		if err := cmd.Run(); err != nil {
-			fmt.Printf("%v: %v\n", ancli.ColoredMessage(ancli.BLUE, v.Message.Role), v.Message.Content)
-			return nil
-		}
-
-		cmd = exec.Command("glow")
-		cmd.Stdin = bytes.NewBufferString(v.Message.Content)
-		cmd.Stdout = os.Stdout
-		fmt.Printf("%v:", ancli.ColoredMessage(ancli.BLUE, v.Message.Role))
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("failed to run glow: %w", err)
-		}
-	}
-
-	return nil
+	return os.WriteFile(home+"/.clai/conversations/"+chat.ID+".json", b, 0o644)
 }

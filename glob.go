@@ -9,38 +9,38 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
-func (cq *chatModelQuerier) constructGlobMessages(glob string, args []string) ([]SystemMessage, error) {
+func (cq *chatModelQuerier) constructGlobMessages(glob string, args []string) ([]Message, error) {
 	if !strings.Contains(glob, "*") {
-		return nil, fmt.Errorf("glob must contain a wildcard character, enclose glob in single quotes 'like_this' or double quotes \"like_this\" to prevent shell expansion")
+		ancli.PrintWarn(fmt.Sprintf("argument: '%v' does not seem to contain a wildcard '*', has it been properly enclosed?\n", glob))
 	}
 	globMessages, err := parseGlob(glob)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse glob: %w", err)
 	}
-	ret := make([]SystemMessage, 0, len(globMessages)+4)
-	ret = append(ret, SystemMessage{
+	ret := make([]Message, 0, len(globMessages)+4)
+	ret = append(ret, Message{
 		Role:    "system",
 		Content: cq.SystemPrompt,
 	})
-	ret = append(ret, SystemMessage{
+	ret = append(ret, Message{
 		Role:    "system",
 		Content: "You will be given a series of messages each containing contents from files, then a message containing this: '#####'. Using the file content as context, perform the request given in the message after the '#####'.",
 	})
 	ret = append(ret, globMessages...)
-	ret = append(ret, SystemMessage{
+	ret = append(ret, Message{
 		Role:    "user",
 		Content: "#####",
 	})
-	ret = append(ret, SystemMessage{
+	ret = append(ret, Message{
 		Role:    "user",
 		Content: strings.Join(args, " "),
 	})
 	return ret, nil
 }
 
-func parseGlob(glob string) ([]SystemMessage, error) {
+func parseGlob(glob string) ([]Message, error) {
 	files, err := filepath.Glob(glob)
-	ret := make([]SystemMessage, 0, len(files))
+	ret := make([]Message, 0, len(files))
 	if err != nil {
 		return nil, fmt.Errorf("failed to find files: %w", err)
 	}
@@ -54,7 +54,7 @@ func parseGlob(glob string) ([]SystemMessage, error) {
 			ancli.PrintWarn(fmt.Sprintf("failed to read file: %v\n", err))
 			continue
 		}
-		ret = append(ret, SystemMessage{
+		ret = append(ret, Message{
 			Role:    "user",
 			Content: string(data),
 		})

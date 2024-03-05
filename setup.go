@@ -106,6 +106,10 @@ func parseArgsStdin(stdinReplace string) []string {
 		hasPipe = true
 	}
 	if len(args) == 1 && !hasPipe {
+		if args[0] == "h" || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
+			fmt.Print(usage)
+			os.Exit(0)
+		}
 		ancli.PrintErr("found no prompt, set args or pipe in some string\n")
 		fmt.Print(usage)
 		os.Exit(1)
@@ -126,12 +130,6 @@ func parseArgsStdin(stdinReplace string) []string {
 		os.Exit(1)
 	}
 	pipeIn := string(inputData)
-	if len(args) == 1 && len(pipeIn) == 0 {
-		ancli.PrintErr("found no prompt, set args or pipe in some string\n")
-		fmt.Print(usage)
-		os.Exit(1)
-	}
-
 	if len(args) == 1 {
 		args = append(args, strings.Split(pipeIn, " ")...)
 	}

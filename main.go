@@ -35,16 +35,18 @@ Commands:
 func run(ctx context.Context, API_KEY string, cq chatModelQuerier, pq photoQuerier, args []string) error {
 	cmd := args[0]
 	if os.Getenv("DEBUG") == "true" {
-		ancli.PrintOK(fmt.Sprintf("command: %s\n", cmd))
+		ancli.PrintOK(fmt.Sprintf("args: %s\n", args))
 	}
 	switch cmd {
 	case "query":
 		fallthrough
 	case "q":
-		err := cq.queryChatModel(ctx, API_KEY, cq.constructMessages(args[1:]))
+		chatCompletion, err := cq.queryChatModel(ctx, API_KEY, cq.constructMessages(args[1:]))
 		if err != nil {
 			return fmt.Errorf("failed to query chat model: %w", err)
 		}
+		return cq.printChatCompletion(chatCompletion)
+
 	case "photo":
 		fallthrough
 	case "p":
@@ -62,9 +64,17 @@ func run(ctx context.Context, API_KEY string, cq chatModelQuerier, pq photoQueri
 		if os.Getenv("DEBUG") == "true" {
 			ancli.PrintOK(fmt.Sprintf("constructed messages: %v\n", msgs))
 		}
-		err = cq.queryChatModel(ctx, API_KEY, msgs)
+		chatCompletion, err := cq.queryChatModel(ctx, API_KEY, msgs)
 		if err != nil {
 			return fmt.Errorf("failed to query chat model with glob: %w", err)
+		}
+		return cq.printChatCompletion(chatCompletion)
+	case "chat":
+		fallthrough
+	case "c":
+		err := cq.chat(ctx, API_KEY, args[1], args[2:])
+		if err != nil {
+			return fmt.Errorf("failed to chat: %w", err)
 		}
 	case "h":
 		fallthrough
