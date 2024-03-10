@@ -31,7 +31,7 @@ type ChatCompletionChunk struct {
 
 var dataPrefix = []byte("data: ")
 
-func (cq *chatModelQuerier) streamCompletions(ctx context.Context, API_KEY string, messages []Message) error {
+func (cq *chatModelQuerier) streamCompletions(ctx context.Context, API_KEY string, messages []Message) (Message, error) {
 	reqData := Request{
 		Model:          cq.Model,
 		ResponseFormat: ResponseFormat{Type: "text"},
@@ -40,12 +40,12 @@ func (cq *chatModelQuerier) streamCompletions(ctx context.Context, API_KEY strin
 	}
 	jsonData, err := json.Marshal(reqData)
 	if err != nil {
-		return fmt.Errorf("failed to encode JSON: %w", err)
+		return Message{}, fmt.Errorf("failed to encode JSON: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", cq.Url, bytes.NewBuffer(jsonData))
 	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+		return Message{}, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -56,22 +56,22 @@ func (cq *chatModelQuerier) streamCompletions(ctx context.Context, API_KEY strin
 	client := &http.Client{}
 	res, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to execute request: %w", err)
+		return Message{}, fmt.Errorf("failed to execute request: %w", err)
 	}
 	defer res.Body.Close()
-	err = cq.handleStreamResponse(res)
+	msg, err := cq.handleStreamResponse(res)
 	if err != nil {
-		return fmt.Errorf("failed to handle stream response: %w", err)
+		return Message{}, fmt.Errorf("failed to handle stream response: %w", err)
 	}
 
-	return nil
+	return msg, nil
 }
 
 func willBeNewLine(line, msg string, termWidth int) bool {
 	return utf8.RuneCountInString(line+msg) > termWidth
 }
 
-func (cq *chatModelQuerier) handleStreamResponse(res *http.Response) error {
+func (cq *chatModelQuerier) handleStreamResponse(res *http.Response) (Message, error) {
 	fullMessage := Message{
 		Role: "system",
 	}
@@ -88,7 +88,7 @@ func (cq *chatModelQuerier) handleStreamResponse(res *http.Response) error {
 	for {
 		token, err := br.ReadBytes('\n')
 		if err != nil {
-			return fmt.Errorf("failed to read token: %w", err)
+			return Message{}, fmt.Errorf("failed to read token: %w", err)
 		}
 		token = bytes.TrimPrefix(token, dataPrefix)
 		token = bytes.TrimSpace(token)
@@ -135,8 +135,8 @@ func (cq *chatModelQuerier) handleStreamResponse(res *http.Response) error {
 	}
 	err = cq.printChatMessage(fullMessage)
 	if err != nil {
-		return fmt.Errorf("failed to print chat message: %w", err)
+		return Message{}, fmt.Errorf("failed to print chat message: %w", err)
 	}
 
-	return nil
+	return fullMessage, nil
 }

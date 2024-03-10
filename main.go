@@ -61,7 +61,7 @@ func run(ctx context.Context, API_KEY string, cq chatModelQuerier, pq photoQueri
 	case "query":
 		fallthrough
 	case "q":
-		err := cq.streamCompletions(ctx, API_KEY, cq.constructMessages(args[1:]))
+		_, err := cq.streamCompletions(ctx, API_KEY, cq.constructMessages(args[1:]))
 		if err != nil {
 			return fmt.Errorf("failed to query chat model: %w", err)
 		}

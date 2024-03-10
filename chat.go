@@ -247,15 +247,11 @@ func (cq *chatModelQuerier) chatLoop(ctx context.Context, API_KEY string, chat C
 			return nil
 		}
 		chat.Messages = append(chat.Messages, Message{Role: "user", Content: strings.TrimRight(userInput, "\n")})
-		chatCompletion, err := cq.queryChatModel(ctx, API_KEY, chat.Messages)
-		if err != nil {
-			return fmt.Errorf("failed to query chat model: %w", err)
-		}
-		err = cq.printChatCompletion(chatCompletion)
+		newChatMsg, err := cq.streamCompletions(ctx, API_KEY, chat.Messages)
 		if err != nil {
 			return fmt.Errorf("failed to print chat completion: %w", err)
 		}
-		chat.Messages = append(chat.Messages, chatCompletion.Choices[0].Message)
+		chat.Messages = append(chat.Messages, newChatMsg)
 		err = saveChat(chat)
 		if err != nil {
 			return fmt.Errorf("failed to save chat: %w", err)
