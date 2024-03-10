@@ -12,7 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
-	"golang.org/x/crypto/ssh/terminal"
+	"golang.org/x/term"
 )
 
 type ChatCompletionChunk struct {
@@ -68,10 +68,7 @@ func (cq *chatModelQuerier) streamCompletions(ctx context.Context, API_KEY strin
 }
 
 func willBeNewLine(line, msg string, termWidth int) bool {
-	if utf8.RuneCountInString(line+msg) > termWidth {
-		return true
-	}
-	return false
+	return utf8.RuneCountInString(line+msg) > termWidth
 }
 
 func (cq *chatModelQuerier) handleStreamResponse(res *http.Response) error {
@@ -83,7 +80,7 @@ func (cq *chatModelQuerier) handleStreamResponse(res *http.Response) error {
 	termInt := int(os.Stdin.Fd())
 	line := ""
 	failedToGetTerminalSize := false
-	termWidth, _, err := terminal.GetSize(termInt)
+	termWidth, _, err := term.GetSize(termInt)
 	if err != nil {
 		ancli.PrintWarn(fmt.Sprintf("failed to get terminal size: %v\n", err))
 		failedToGetTerminalSize = true

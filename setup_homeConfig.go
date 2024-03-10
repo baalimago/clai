@@ -41,7 +41,7 @@ func writeConfigFile[T chatModelQuerier | photoQuerier](configPath string, confi
 
 func unmarshalConfg[T chatModelQuerier | photoQuerier](chatConfigPath string, config *T) error {
 	if _, err := os.Stat(chatConfigPath); os.IsNotExist(err) {
-		return fmt.Errorf("failed to find photo config file: %w\n", err)
+		return fmt.Errorf("failed to find photo config file: %w", err)
 	}
 	file, err := os.Open(chatConfigPath)
 	if err != nil {
