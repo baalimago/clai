@@ -18,6 +18,7 @@ type chatModelQuerier struct {
 	Model        string `json:"model"`
 	SystemPrompt string `json:"system_prompt"`
 	Raw          bool   `json:"raw"`
+	Url          string `json:"url"`
 }
 
 type ResponseFormat struct {
@@ -28,6 +29,7 @@ type Request struct {
 	Model          string         `json:"model"`
 	ResponseFormat ResponseFormat `json:"response_format"`
 	Messages       []Message      `json:"messages"`
+	Stream         bool           `json:"stream"`
 }
 
 type ChatCompletion struct {
@@ -67,21 +69,17 @@ func (cq *chatModelQuerier) constructMessages(args []string) []Message {
 
 // queryChatModel using the supplied arguments as instructions
 func (cq *chatModelQuerier) queryChatModel(ctx context.Context, API_KEY string, messages []Message) (ChatCompletion, error) {
-	url := "https://api.openai.com/v1/chat/completions"
 	reqData := Request{
 		Model:          cq.Model,
 		ResponseFormat: ResponseFormat{Type: "text"},
 		Messages:       messages,
-	}
-	if os.Getenv("DEBUG") == "true" {
-		ancli.PrintOK(fmt.Sprintf("request: %v", reqData))
 	}
 	jsonData, err := json.Marshal(reqData)
 	if err != nil {
 		return ChatCompletion{}, fmt.Errorf("failed to encode JSON: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "POST", cq.Url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return ChatCompletion{}, fmt.Errorf("failed to create request: %w", err)
 	}

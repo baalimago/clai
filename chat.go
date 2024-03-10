@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
-	"github.com/baalimago/go_away_boilerplate/pkg/num"
 )
 
 const chatUsage = `clai - (c)omand (l)ine (a)rtificial (i)intelligence 
@@ -82,6 +81,25 @@ func (cq *chatModelQuerier) chat(ctx context.Context, API_KEY string, subCmd str
 	}
 }
 
+// getFirstTokens returns the first n tokens of the prompt, or the whole prompt if it has less than n tokens
+func getFirstTokens(prompt []string, n int) []string {
+	ret := make([]string, 0)
+	for _, word := range prompt {
+		split := strings.Split(word, " ")
+		for _, token := range split {
+			if token == "" {
+				continue
+			}
+			if len(ret) < n {
+				ret = append(ret, token)
+			} else {
+				return ret
+			}
+		}
+	}
+	return ret
+}
+
 func (cq *chatModelQuerier) chatNew(ctx context.Context, API_KEY string, prompt []string) error {
 	if len(prompt) == 0 {
 		return errors.New("no prompt provided")
@@ -96,12 +114,10 @@ func (cq *chatModelQuerier) chatNew(ctx context.Context, API_KEY string, prompt 
 		return fmt.Errorf("failed to print chat completion: %w", err)
 	}
 
-	lenPrompt := len(prompt)
-	capped := num.Cap(lenPrompt, 1, 5)
-	shortenedPrompt := prompt[:capped]
+	firstTokens := getFirstTokens(prompt, 5)
 	messages = append(messages, initialCompletion.Choices[0].Message)
 	chat := Chat{
-		ID:       strings.Join(shortenedPrompt, "_"),
+		ID:       strings.Join(firstTokens, "_"),
 		Messages: messages,
 	}
 

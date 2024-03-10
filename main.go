@@ -31,7 +31,7 @@ Commands:
   query <text>            Query the chat model with the given text
   photo <text>            Ask the photo model a picture with the requested prompt
   glob  <glob> <text>     Query the chat model with the contents of the files found by the glob and the given text
-  chat  <subcommand>      Interact with the chat model through various subcommands:
+
   c   new       <prompt>  Create a new chat with the given prompt.
   c   continue  <chatID>  Continue an existing chat with the given chat ID.
   c   delete    <chatID>  Delete the chat with the given chat ID.
@@ -61,11 +61,11 @@ func run(ctx context.Context, API_KEY string, cq chatModelQuerier, pq photoQueri
 	case "query":
 		fallthrough
 	case "q":
-		chatCompletion, err := cq.queryChatModel(ctx, API_KEY, cq.constructMessages(args[1:]))
+		err := cq.streamCompletions(ctx, API_KEY, cq.constructMessages(args[1:]))
 		if err != nil {
 			return fmt.Errorf("failed to query chat model: %w", err)
 		}
-		return cq.printChatCompletion(chatCompletion)
+		return nil
 
 	case "photo":
 		fallthrough

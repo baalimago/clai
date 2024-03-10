@@ -77,6 +77,7 @@ func setup() (string, chatModelQuerier, photoQuerier, []string) {
 	cmq := chatModelQuerier{
 		SystemPrompt: "You are an assistent for a CLI interface. Answer concisely and informatively. Prefer markdown if possible.",
 		Raw:          printRaw,
+		Url:          "https://api.openai.com/v1/chat/completions",
 	}
 	pq := photoQuerier{
 		PictureDir:    pictureDir,
@@ -87,6 +88,9 @@ func setup() (string, chatModelQuerier, photoQuerier, []string) {
 	homedirConfig(&cmq, &pq)
 	cmq.Model = chatModel
 	pq.Model = photoModel
+	if os.Getenv("DEBUG") == "true" {
+		ancli.PrintOK(fmt.Sprintf("chatModel: %v\n", cmq))
+	}
 	return API_KEY, cmq, pq, parseArgsStdin(stdinReplace)
 }
 

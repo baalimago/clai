@@ -4,6 +4,8 @@
 You can generate images, text and summarize content from the command line with ease (see examples below).
 Changing models and tweaking the prompt is as easy as changing a few flags, or persist it with a configuration file.
 
+![clai_in_action_example](./img/example.gif "Example of clai in action")
+
 ## Prerequisites
 - **OpenAI API Key:** Set the `OPENAI_API_KEY` environment variable to your OpenAI API key. See here: [OpenAI API Key](https://platform.openai.com/docs/quickstart/step-2-set-up-your-api-key).
 - **Glow (Optional):** Install [Glow](https://github.com/charmbracelet/glow) for formatted markdown output when querying text responses.
