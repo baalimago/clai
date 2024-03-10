@@ -119,6 +119,9 @@ func (cq *chatModelQuerier) handleStreamResponse(res *http.Response) (Message, e
 			fmt.Printf("%v", msg)
 		}
 	}
+	if cq.Raw {
+		return fullMessage, nil
+	}
 	if !failedToGetTerminalSize {
 		clearLine := strings.Repeat(" ", termWidth)
 		// Move cursor up line by line and clear the line

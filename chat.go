@@ -105,17 +105,12 @@ func (cq *chatModelQuerier) chatNew(ctx context.Context, API_KEY string, prompt 
 		return errors.New("no prompt provided")
 	}
 	messages := cq.constructMessages(prompt)
-	initialCompletion, err := cq.queryChatModel(ctx, API_KEY, messages)
+	newMsg, err := cq.streamCompletions(ctx, API_KEY, messages)
 	if err != nil {
 		return fmt.Errorf("failed to query chat model: %w", err)
 	}
-	err = cq.printChatCompletion(initialCompletion)
-	if err != nil {
-		return fmt.Errorf("failed to print chat completion: %w", err)
-	}
-
 	firstTokens := getFirstTokens(prompt, 5)
-	messages = append(messages, initialCompletion.Choices[0].Message)
+	messages = append(messages, newMsg)
 	chat := Chat{
 		ID:       strings.Join(firstTokens, "_"),
 		Messages: messages,

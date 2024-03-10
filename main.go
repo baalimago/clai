@@ -84,11 +84,8 @@ func run(ctx context.Context, API_KEY string, cq chatModelQuerier, pq photoQueri
 		if os.Getenv("DEBUG") == "true" {
 			ancli.PrintOK(fmt.Sprintf("constructed messages: %v\n", msgs))
 		}
-		chatCompletion, err := cq.queryChatModel(ctx, API_KEY, msgs)
-		if err != nil {
-			return fmt.Errorf("failed to query chat model with glob: %w", err)
-		}
-		return cq.printChatCompletion(chatCompletion)
+		_, err = cq.streamCompletions(ctx, API_KEY, msgs)
+		return err
 	case "chat":
 		fallthrough
 	case "c":

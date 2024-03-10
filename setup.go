@@ -44,9 +44,9 @@ func setup() (string, chatModelQuerier, photoQuerier, []string) {
 	pdShort := flag.String("pd", pictureDirDefault, "Set the directory to store the generated pictures. Default is $HOME/Pictures")
 	pdLong := flag.String("picture-dir", pictureDirDefault, "Set the directory to store the generated pictures. Default is $HOME/Pictures")
 
-	picturePrefix := "clai"
-	ppShort := flag.String("pp", picturePrefix, "Set the prefix for the generated pictures. Default is 'clai'")
-	ppLong := flag.String("picture-prefix", picturePrefix, "Set the prefix for the generated pictures. Default is 'clai'")
+	picturePrefixDefault := "clai"
+	ppShort := flag.String("pp", picturePrefixDefault, "Set the prefix for the generated pictures. Default is 'clai'")
+	ppLong := flag.String("picture-prefix", picturePrefixDefault, "Set the prefix for the generated pictures. Default is 'clai'")
 
 	stdinReplace := ""
 	stdinReplaceShort := flag.String("I", stdinReplace, "Set the string to replace with stdin. Default is '{}'. (flag syntax borrowed from xargs)")
@@ -61,7 +61,7 @@ func setup() (string, chatModelQuerier, photoQuerier, []string) {
 	chatModel := errorOnMutuallyExclusiveFlags(*cmShort, *cmLong, "cm", "chat-model", chatModelDefault)
 	photoModel := errorOnMutuallyExclusiveFlags(*pmShort, *pmLong, "pm", "photo-model", photoModelDefault)
 	pictureDir := errorOnMutuallyExclusiveFlags(*pdShort, *pdLong, "pd", "picture-dir", pictureDirDefault)
-	picturePrefix = errorOnMutuallyExclusiveFlags(*ppShort, *ppLong, "pp", "picture-prefix", picturePrefix)
+	picturePrefix := errorOnMutuallyExclusiveFlags(*ppShort, *ppLong, "pp", "picture-prefix", picturePrefixDefault)
 	stdinReplace = errorOnMutuallyExclusiveFlags(*stdinReplaceShort, *stdinReplaceLong, "I", "replace", stdinReplace)
 	printRaw := *printRawShort || *printRawLong
 
@@ -86,8 +86,22 @@ func setup() (string, chatModelQuerier, photoQuerier, []string) {
 	}
 
 	homedirConfig(&cmq, &pq)
-	cmq.Model = chatModel
-	pq.Model = photoModel
+	// Flag overrides homedirConfig
+	if chatModel != chatModelDefault {
+		cmq.Model = chatModel
+	}
+	if printRaw {
+		cmq.Raw = true
+	}
+	if photoModel != photoModelDefault {
+		pq.Model = photoModel
+	}
+	if picturePrefix != picturePrefixDefault {
+		pq.PicturePrefix = picturePrefix
+	}
+	if pictureDir != pictureDirDefault {
+		pq.PictureDir = pictureDir
+	}
 	if os.Getenv("DEBUG") == "true" {
 		ancli.PrintOK(fmt.Sprintf("chatModel: %v\n", cmq))
 	}
