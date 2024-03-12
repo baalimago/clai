@@ -20,7 +20,8 @@ go install github.com/baalimago/clai@latest
 clai query My favorite color is blue, tell me some facts about it
 ```
 ```bash
-clai -re `# Use the -re flag to use the previous query as context for some next query` q Write a poem about my favorite colour 
+clai -re `# Use the -re flag to use the previous query as context for some next query` \
+    q Write a poem about my favorite colour 
 ```
 
 ```bash
@@ -28,7 +29,8 @@ clai chat new Lets have a conversation about the Hegel
 ```
 
 ```bash
-clai c continue Lets_have_a_conversation_about `# Continue some previous chat, list all chats with 'clai chat list'`
+clai c continue `# Continue some previous chat, list all chats with 'clai chat list'` \
+    Lets_have_a_conversation_about 
 ```
 
 ```bash
