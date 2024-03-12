@@ -17,8 +17,20 @@ go install github.com/baalimago/clai@latest
 
 ### Examples
 ```bash
-clai query "Tell me a joke."
+clai query My favorite color is blue, tell me some facts about it
 ```
+```bash
+clai -re `# Use the -re flag to use the previous query as context for some next query` q Write a poem about my favorite colour 
+```
+
+```bash
+clai chat new Lets have a conversation about the Hegel
+```
+
+```bash
+clai c continue Lets_have_a_conversation_about `# Continue some previous chat, list all chats with 'clai chat list'`
+```
+
 ```bash
 clai --raw `                    # Don't format output as markdown` \
     --chat-model gpt-3.5-turbo `# Use some other model` \

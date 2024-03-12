@@ -31,6 +31,7 @@ type ChatCompletionChunk struct {
 
 var dataPrefix = []byte("data: ")
 
+// streamCompletions taking the messages as prompt conversation. Returns the messages from the chat model.
 func (cq *chatModelQuerier) streamCompletions(ctx context.Context, API_KEY string, messages []Message) (Message, error) {
 	reqData := Request{
 		Model:          cq.Model,

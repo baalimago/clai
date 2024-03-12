@@ -15,7 +15,7 @@ type PromptConfig struct {
 	Query string `yaml:"query"`
 }
 
-func errorOnMutuallyExclusiveFlags(flag1, flag2, shortFlag, longFlag, defualt string) string {
+func errorOnMutuallyExclusiveFlags[T comparable](flag1, flag2, defualt T, shortFlag, longFlag string) T {
 	if flag1 != defualt && flag2 != defualt {
 		ancli.PrintErr(fmt.Sprintf("%s and %s flags are mutually exclusive\n", shortFlag, longFlag))
 		flag.PrintDefaults()
@@ -57,12 +57,17 @@ func setup() (string, chatModelQuerier, photoQuerier, []string) {
 	printRawShort := flag.Bool("r", printRawDefault, "Set to true to print raw output (don't attempt to use 'glow'). Default is false.")
 	printRawLong := flag.Bool("raw", printRawDefault, "Set to true to print raw output (don't attempt to use 'glow'). Default is false.")
 
+	replyDefault := false
+	replyShort := flag.Bool("re", replyDefault, "Set to true to reply to the previous query, meaing that it will be used as context for your next query. Default is false.")
+	replyLong := flag.Bool("reply", replyDefault, "Set to true to reply to the previous query, meaing that it will be used as context for your next query. Default is false.")
+
 	flag.Parse()
-	chatModel := errorOnMutuallyExclusiveFlags(*cmShort, *cmLong, "cm", "chat-model", chatModelDefault)
-	photoModel := errorOnMutuallyExclusiveFlags(*pmShort, *pmLong, "pm", "photo-model", photoModelDefault)
-	pictureDir := errorOnMutuallyExclusiveFlags(*pdShort, *pdLong, "pd", "picture-dir", pictureDirDefault)
-	picturePrefix := errorOnMutuallyExclusiveFlags(*ppShort, *ppLong, "pp", "picture-prefix", picturePrefixDefault)
-	stdinReplace = errorOnMutuallyExclusiveFlags(*stdinReplaceShort, *stdinReplaceLong, "I", "replace", stdinReplace)
+	chatModel := errorOnMutuallyExclusiveFlags(*cmShort, *cmLong, chatModelDefault, "cm", "chat-model")
+	photoModel := errorOnMutuallyExclusiveFlags(*pmShort, *pmLong, photoModelDefault, "pm", "photo-model")
+	pictureDir := errorOnMutuallyExclusiveFlags(*pdShort, *pdLong, pictureDirDefault, "pd", "picture-dir")
+	picturePrefix := errorOnMutuallyExclusiveFlags(*ppShort, *ppLong, picturePrefixDefault, "pp", "picture-prefix")
+	stdinReplace = errorOnMutuallyExclusiveFlags(*stdinReplaceShort, *stdinReplaceLong, stdinReplace, "I", "replace")
+	replyMode := errorOnMutuallyExclusiveFlags(*replyShort, *replyLong, replyDefault, "re", "reply")
 	printRaw := *printRawShort || *printRawLong
 
 	if *defaultStdinReplace && stdinReplace == "" {
@@ -78,6 +83,7 @@ func setup() (string, chatModelQuerier, photoQuerier, []string) {
 		SystemPrompt: "You are an assistent for a CLI interface. Answer concisely and informatively. Prefer markdown if possible.",
 		Raw:          printRaw,
 		Url:          "https://api.openai.com/v1/chat/completions",
+		replyMode:    replyMode,
 	}
 	pq := photoQuerier{
 		PictureDir:    pictureDir,

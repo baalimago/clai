@@ -2,8 +2,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
+	"strings"
 
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/shutdown"
@@ -19,6 +22,8 @@ Prerequisits:
 Usage: clai [flags] <command>
 
 Flags:
+  -re, --reply bool             Set to true to reply to the previous query, meaing that it will be used as context for your next query. Default is false.
+  -r, --raw bool                Set to true to print raw output (don't attempt to use 'glow'). Default is false.
   -cm, --chat-model string      Set the chat model to use. Default is 'gpt-4-turbo-preview'. Short and long flags are mutually exclusive.
   -pm, --photo-model string     Set the image model to use. Default is 'dall-e-3'. Short and long flags are mutually exclusive.
   -pd, --picture-dir string     Set the directory to store the generated pictures. Default is $HOME/Pictures. Short and long flags are mutually exclusive.
@@ -61,10 +66,27 @@ func run(ctx context.Context, API_KEY string, cq chatModelQuerier, pq photoQueri
 	case "query":
 		fallthrough
 	case "q":
-		_, err := cq.streamCompletions(ctx, API_KEY, cq.constructMessages(args[1:]))
+		msgs := make([]Message, 0)
+		if cq.replyMode {
+			c, err := readPreviousQuery()
+			if err != nil {
+				if errors.Is(err, fs.ErrNotExist) {
+					ancli.PrintWarn("no previous query found\n")
+				} else {
+					return fmt.Errorf("failed to read previous query: %w", err)
+				}
+			}
+			msgs = append(msgs, c.Messages...)
+		} else {
+			msgs = append(msgs, Message{Role: "system", Content: cq.SystemPrompt})
+		}
+		msgs = append(msgs, Message{Role: "user", Content: strings.Join(args[1:], " ")})
+		msg, err := cq.streamCompletions(ctx, API_KEY, msgs)
 		if err != nil {
 			return fmt.Errorf("failed to query chat model: %w", err)
 		}
+		msgs = append(msgs, msg)
+		saveAsPreviousQuery(msgs)
 		return nil
 
 	case "photo":

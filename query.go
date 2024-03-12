@@ -15,6 +15,7 @@ type chatModelQuerier struct {
 	SystemPrompt string `json:"system_prompt"`
 	Raw          bool   `json:"raw"`
 	Url          string `json:"url"`
+	replyMode    bool
 }
 
 type ResponseFormat struct {
