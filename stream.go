@@ -78,7 +78,7 @@ func (cq *chatModelQuerier) handleStreamResponse(res *http.Response) (Message, e
 	}
 	br := bufio.NewReader(res.Body)
 	lineCount := 0
-	termInt := int(os.Stdin.Fd())
+	termInt := int(os.Stderr.Fd())
 	line := ""
 	failedToGetTerminalSize := false
 	termWidth, _, err := term.GetSize(termInt)
