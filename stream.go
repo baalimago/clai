@@ -86,9 +86,31 @@ func (cq *chatModelQuerier) handleStreamResponse(res *http.Response) (Message, e
 		ancli.PrintWarn(fmt.Sprintf("failed to get terminal size: %v\n", err))
 		failedToGetTerminalSize = true
 	}
+	defer func() {
+		if cq.Raw {
+			return
+		}
+		if !failedToGetTerminalSize {
+			clearLine := strings.Repeat(" ", termWidth)
+			// Move cursor up line by line and clear the line
+			for lineCount > 0 {
+				fmt.Printf("\r%v", clearLine)
+				fmt.Printf("\033[%dA", 1)
+				lineCount--
+			}
+			fmt.Printf("\r%v", clearLine)
+			// Place cursor at start of line
+			fmt.Printf("\r")
+		} else {
+			fmt.Println()
+		}
+		cq.printChatMessage(fullMessage)
+	}()
+
 	for {
 		token, err := br.ReadBytes('\n')
 		if err != nil {
+			lineCount++
 			return Message{}, fmt.Errorf("failed to read token: %w", err)
 		}
 		token = bytes.TrimPrefix(token, dataPrefix)
@@ -100,7 +122,7 @@ func (cq *chatModelQuerier) handleStreamResponse(res *http.Response) (Message, e
 		err = json.Unmarshal(token, &chunk)
 		if err != nil {
 			if os.Getenv("DEBUG") == "true" {
-				ancli.PrintWarn(fmt.Sprintf("failed to unmarshal token: %v", err))
+				ancli.PrintWarn(fmt.Sprintf("failed to unmarshal token: %v, err: %v\n", token, err))
 			}
 		} else {
 			msg := chunk.Choices[0].Delta.Content
@@ -119,27 +141,6 @@ func (cq *chatModelQuerier) handleStreamResponse(res *http.Response) (Message, e
 			}
 			fmt.Printf("%v", msg)
 		}
-	}
-	if cq.Raw {
-		return fullMessage, nil
-	}
-	if !failedToGetTerminalSize {
-		clearLine := strings.Repeat(" ", termWidth)
-		// Move cursor up line by line and clear the line
-		for lineCount > 0 {
-			fmt.Printf("\r%v", clearLine)
-			fmt.Printf("\033[%dA", 1)
-			lineCount--
-		}
-		fmt.Printf("\r%v", clearLine)
-		// Place cursor at start of line
-		fmt.Printf("\r")
-	} else {
-		fmt.Println()
-	}
-	err = cq.printChatMessage(fullMessage)
-	if err != nil {
-		return Message{}, fmt.Errorf("failed to print chat message: %w", err)
 	}
 
 	return fullMessage, nil

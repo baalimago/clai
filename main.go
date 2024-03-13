@@ -122,23 +122,19 @@ func run(ctx context.Context, API_KEY string, cq chatModelQuerier, pq photoQueri
 	default:
 		return fmt.Errorf("unknown command: '%s'\n%v", args[0], usage)
 	}
-
 	return nil
 }
 
 func main() {
 	API_KEY, cmq, pq, args := setup()
 	ctx, cancel := context.WithCancel(context.Background())
-	go shutdown.Monitor(cancel)
-	go func() {
-		err := run(ctx, API_KEY, cmq, pq, args)
-		if err != nil {
-			ancli.PrintErr(err.Error() + "\n")
-			os.Exit(1)
-		}
-		cancel()
-	}()
-	<-ctx.Done()
+	go func() { shutdown.Monitor(cancel) }()
+	err := run(ctx, API_KEY, cmq, pq, args)
+	if err != nil {
+		ancli.PrintErr(err.Error() + "\n")
+		os.Exit(1)
+	}
+	cancel()
 	if os.Getenv("DEBUG") == "true" {
 		ancli.PrintOK("things seems to have worked out. Good bye! 🚀\n")
 	}
