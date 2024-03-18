@@ -62,7 +62,7 @@ func (cq *chatModelQuerier) streamCompletions(ctx context.Context, API_KEY strin
 	defer res.Body.Close()
 	msg, err := cq.handleStreamResponse(res)
 	if err != nil {
-		return Message{}, fmt.Errorf("failed to handle stream response: %w", err)
+		return msg, fmt.Errorf("failed to handle stream response: %w", err)
 	}
 
 	return msg, nil
@@ -111,7 +111,7 @@ func (cq *chatModelQuerier) handleStreamResponse(res *http.Response) (Message, e
 		token, err := br.ReadBytes('\n')
 		if err != nil {
 			lineCount++
-			return Message{}, fmt.Errorf("failed to read token: %w", err)
+			return fullMessage, fmt.Errorf("failed to read token: %w", err)
 		}
 		token = bytes.TrimPrefix(token, dataPrefix)
 		token = bytes.TrimSpace(token)
@@ -122,7 +122,7 @@ func (cq *chatModelQuerier) handleStreamResponse(res *http.Response) (Message, e
 		err = json.Unmarshal(token, &chunk)
 		if err != nil {
 			if os.Getenv("DEBUG") == "true" {
-				ancli.PrintWarn(fmt.Sprintf("failed to unmarshal token: %v, err: %v\n", token, err))
+				// ancli.PrintWarn(fmt.Sprintf("failed to unmarshal token: %v, err: %v\n", token, err))
 			}
 		} else {
 			msg := chunk.Choices[0].Delta.Content

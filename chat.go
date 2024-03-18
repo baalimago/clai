@@ -263,5 +263,9 @@ func saveChat(chat Chat) error {
 	if err != nil {
 		return fmt.Errorf("failed to encode JSON: %w", err)
 	}
-	return os.WriteFile(home+"/.clai/conversations/"+chat.ID+".json", b, 0o644)
+	fileName := home + "/.clai/conversations/" + chat.ID + ".json"
+	if os.Getenv("DEBUG") == "true" {
+		ancli.PrintOK(fmt.Sprintf("saving chat to '%v'\n", fileName))
+	}
+	return os.WriteFile(fileName, b, 0o644)
 }
