@@ -20,6 +20,9 @@ var defaultPhotoConfig = photoQuerier{
 var defaultChatConfig = chatModelQuerier{
 	Model:        "gpt-4-turbo-preview",
 	SystemPrompt: "You are an assistent for a CLI interface. Answer concisely and informatively. Prefer markdown if possible.",
+	Url:          "https://api.openai.com/v1/chat/completions",
+	Temperature:  1.0,
+	TopP:         1.0,
 	Raw:          false,
 }
 

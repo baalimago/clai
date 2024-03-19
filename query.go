@@ -11,11 +11,16 @@ import (
 )
 
 type chatModelQuerier struct {
-	Model        string `json:"model"`
-	SystemPrompt string `json:"system_prompt"`
-	Raw          bool   `json:"raw"`
-	Url          string `json:"url"`
-	replyMode    bool
+	Model            string  `json:"model"`
+	SystemPrompt     string  `json:"system_prompt"`
+	Raw              bool    `json:"raw"`
+	Url              string  `json:"url"`
+	FrequencyPenalty float32 `json:"frequency_penalty"`
+	MaxTokens        *int    `json:"max_tokens"`
+	PresencePenalty  float32 `json:"presence_penalty"`
+	Temperature      float32 `json:"temperature"`
+	TopP             float32 `json:"top_p"`
+	replyMode        bool
 }
 
 type ResponseFormat struct {
@@ -23,10 +28,15 @@ type ResponseFormat struct {
 }
 
 type Request struct {
-	Model          string         `json:"model"`
-	ResponseFormat ResponseFormat `json:"response_format"`
-	Messages       []Message      `json:"messages"`
-	Stream         bool           `json:"stream"`
+	Model            string         `json:"model"`
+	ResponseFormat   ResponseFormat `json:"response_format"`
+	Messages         []Message      `json:"messages"`
+	Stream           bool           `json:"stream"`
+	FrequencyPenalty float32        `json:"frequency_penalty"`
+	MaxTokens        *int           `json:"max_tokens"`
+	PresencePenalty  float32        `json:"presence_penalty"`
+	Temperature      float32        `json:"temperature"`
+	TopP             float32        `json:"top_p"`
 }
 
 type ChatCompletion struct {

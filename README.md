@@ -16,6 +16,8 @@ go install github.com/baalimago/clai@latest
 ```
 
 ### Examples
+
+Simple queries:
 ```bash
 clai query My favorite color is blue, tell me some facts about it
 ```
@@ -24,20 +26,23 @@ clai -re `# Use the -re flag to use the previous query as context for some next 
     q Write a poem about my favorite colour 
 ```
 
+Chatting:
 ```bash
 clai chat new Lets have a conversation about the Hegel
 ```
-
 ```bash
 clai c continue `# Continue some previous chat, list all chats with 'clai chat list'` \
     Lets_have_a_conversation_about 
 ```
 
+Glob queries:
 ```bash
 clai --raw `                    # Don't format output as markdown` \
     --chat-model gpt-3.5-turbo `# Use some other model` \
     glob '*.go' Generate a README for this project > README.md
 ```
+
+Photos:
 ```bash
 printf "flowers" `                  # Pipe any data into clai, such as a specialized prompt` \
     | clai  --photo-prefix flower ` # Photos are stored locally with randomized string as suffix, this sets prefix` \
@@ -45,19 +50,25 @@ printf "flowers" `                  # Pipe any data into clai, such as a special
             -i `                    # Use xargs notation for replacing some substring with the piped in content` \
             photo A cat made of {}
 ```
-```bash
-clai help `# For more info about the available commands (and shorthands)`
-```
-
-
 Since -N alternatives are disabled for many newer OpenAI models, you can use [repeater](https://github.com/baalimago/repeater) to generate several responses from the same prompt:
 ```bash
 NO_COLOR=true repeater -n 10 -w 3 -increment -file out.txt -output BOTH \
     clai -pp flower_INC p A cat made of flowers
 ```
 
+
+
+```bash
+clai help `# For more info about the available commands (and shorthands)`
+```
+
+
 ## Configuration
-On initial run, `clai` will create a configuration file at `$HOME/.clai/prompts.json` where you can configure the initlal prompts for the chat model. Modify this file to tweak your personal ai.
+On initial run, `clai` will create configuration files at `$HOME/.clai/`, one for photo and one for chat.
+Here you can configure initial prompts, temperature and other settings.
+
+Within `$HOME/.clai/conversations` you'll find all the conversations.
+You can also modify the chats here as a way to prompt.
 
 ## Honorable mentions
 This project is heavily inspired by: [https://github.com/Licheam/zsh-ask](https://github.com/Licheam/zsh-ask), many thanks to Licheam for the inspiration.

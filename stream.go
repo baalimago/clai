@@ -34,10 +34,18 @@ var dataPrefix = []byte("data: ")
 // streamCompletions taking the messages as prompt conversation. Returns the messages from the chat model.
 func (cq *chatModelQuerier) streamCompletions(ctx context.Context, API_KEY string, messages []Message) (Message, error) {
 	reqData := Request{
-		Model:          cq.Model,
-		ResponseFormat: ResponseFormat{Type: "text"},
-		Messages:       messages,
-		Stream:         true,
+		Model:            cq.Model,
+		FrequencyPenalty: cq.FrequencyPenalty,
+		MaxTokens:        cq.MaxTokens,
+		PresencePenalty:  cq.PresencePenalty,
+		Temperature:      cq.Temperature,
+		TopP:             cq.TopP,
+		ResponseFormat:   ResponseFormat{Type: "text"},
+		Messages:         messages,
+		Stream:           true,
+	}
+	if os.Getenv("DEBUG") == "true" {
+		fmt.Printf("streamCompletions: %v\n", reqData)
 	}
 	jsonData, err := json.Marshal(reqData)
 	if err != nil {
@@ -125,6 +133,9 @@ func (cq *chatModelQuerier) handleStreamResponse(res *http.Response) (Message, e
 				// ancli.PrintWarn(fmt.Sprintf("failed to unmarshal token: %v, err: %v\n", token, err))
 			}
 		} else {
+			if len(chunk.Choices) == 0 {
+				continue
+			}
 			msg := chunk.Choices[0].Delta.Content
 			fullMessage.Content += msg
 			if !failedToGetTerminalSize {
