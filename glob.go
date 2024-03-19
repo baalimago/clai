@@ -56,7 +56,7 @@ func parseGlob(glob string) ([]Message, error) {
 		}
 		ret = append(ret, Message{
 			Role:    "user",
-			Content: string(data),
+			Content: fmt.Sprintf("{\"fileName\": \"%v\", \"data\": \"%v\"}", file, string(data)),
 		})
 	}
 	return ret, nil
