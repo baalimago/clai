@@ -1,9 +1,8 @@
 # clai: command line artificial intelligence
 [![Go Report Card](https://goreportcard.com/badge/github.com/baalimago/clai)](https://goreportcard.com/report/github.com/baalimago/clai)
 
-`clai` brings convenience to the OpenAI models.
-You can generate images, text and summarize content from the command line with ease (see examples below).
-Changing models and tweaking the prompt is as easy as changing a few flags, or persist it with a configuration file.
+`clai` integrates the OpenAI models with the terminal.
+You can generate images, text, summarize content and chat while using native terminal functionality, such as pipes and termination signals.
 
 ![clai_in_action_example](./img/example.gif "Example of clai in action")
 
@@ -29,7 +28,7 @@ clai -re `# Use the -re flag to use the previous query as context for some next 
 
 Chatting:
 ```bash
-clai chat new Lets have a conversation about the Hegel
+clai chat new Lets have a conversation about Hegel
 ```
 ```bash
 clai c continue `# Continue some previous chat, list all chats with 'clai chat list'` \
