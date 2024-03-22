@@ -31,8 +31,7 @@ Chatting:
 clai chat new Lets have a conversation about Hegel
 ```
 ```bash
-clai c continue `# Continue some previous chat, list all chats with 'clai chat list'` \
-    Lets_have_a_conversation_about 
+clai c continue 1 `# Continue some previous chat, list all chats with 'clai chat list'` 
 ```
 
 Glob queries:

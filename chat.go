@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/user"
+	"strconv"
 	"strings"
 
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
@@ -119,20 +120,49 @@ func (cq *chatModelQuerier) chatNew(ctx context.Context, API_KEY string, prompt 
 	return cq.chatLoop(ctx, API_KEY, chat)
 }
 
-func (cq *chatModelQuerier) chatContinue(ctx context.Context, API_KEY string, prompt []string) error {
-	chatID := strings.Join(prompt, "_")
-	chat, err := getChat(chatID)
+func findChatByID(potentialChatIdx string) (Chat, error) {
+	chatIdx, err := strconv.Atoi(potentialChatIdx)
 	if err != nil {
-		return fmt.Errorf("failed to get chat: %w", err)
+		return Chat{}, fmt.Errorf("failed to parse chat index: %w", err)
 	}
-	for _, message := range chat.Messages {
-		err = cq.printChatMessage(message)
+	chats, err := listChats()
+	if err != nil {
+		return Chat{}, fmt.Errorf("failed to list chats: %w", err)
+	}
+	if chatIdx < 0 || chatIdx >= len(chats) {
+		return Chat{}, fmt.Errorf("chat index out of range")
+	}
+	return chats[chatIdx], nil
+}
+
+func (cq *chatModelQuerier) chatContinue(ctx context.Context, API_KEY string, prompt []string) error {
+	var chatOuter Chat
+	if os.Getenv("DEBUG") == "true" {
+		ancli.PrintOK(fmt.Sprintf("prompt: %v", prompt))
+	}
+	if len(prompt) == 1 {
+		chat, err := findChatByID(prompt[0])
+		chatOuter = chat
+		if err != nil {
+			return fmt.Errorf("failed to find chat by ID: %w", err)
+		}
+	} else {
+		chatID := strings.Join(prompt, "_")
+		chat, err := getChat(chatID)
+		chatOuter = chat
+		if err != nil {
+			return fmt.Errorf("failed to get chat: %w", err)
+		}
+	}
+
+	for _, message := range chatOuter.Messages {
+		err := cq.printChatMessage(message)
 		if err != nil {
 			return fmt.Errorf("failed to print chat message: %w", err)
 		}
 	}
 
-	return cq.chatLoop(ctx, API_KEY, chat)
+	return cq.chatLoop(ctx, API_KEY, chatOuter)
 }
 
 func chatList() error {
