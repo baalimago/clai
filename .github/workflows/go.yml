@@ -1,0 +1,11 @@
+name: Simple Go Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  call-workflow:
+    uses: baalimago/simple-go-pipeline/.github/workflows/go.yml@main
