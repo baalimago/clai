@@ -158,7 +158,7 @@ func parseArgsStdin(stdinReplace string) []string {
 		args = append(args, strings.Split(pipeIn, " ")...)
 	}
 
-	// Replace all occurances of stdinReplaceSignal with pipeIn
+	// Replace all occurrence of stdinReplaceSignal with pipeIn
 	for i, arg := range args {
 		if strings.Contains(arg, stdinReplace) {
 			args[i] = strings.ReplaceAll(arg, stdinReplace, pipeIn)

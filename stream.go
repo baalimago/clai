@@ -130,7 +130,9 @@ func (cq *chatModelQuerier) handleStreamResponse(res *http.Response) (Message, e
 		err = json.Unmarshal(token, &chunk)
 		if err != nil {
 			if os.Getenv("DEBUG") == "true" {
+				// Expect some failing unmarshalls, which seems to be fine
 				// ancli.PrintWarn(fmt.Sprintf("failed to unmarshal token: %v, err: %v\n", token, err))
+				continue
 			}
 		} else {
 			if len(chunk.Choices) == 0 {
