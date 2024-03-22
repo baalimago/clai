@@ -11,8 +11,10 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
+	"golang.org/x/term"
 )
 
 type imageQuery struct {
@@ -69,7 +71,9 @@ func (pq *photoQuerier) query(ctx context.Context, API_KEY string, text []string
 
 	ancli.PrintOK(fmt.Sprintf("command setup: '%v', sending request\n", body.Prompt))
 	client := &http.Client{}
+	stop := startAnimation()
 	resp, err := client.Do(req)
+	stop()
 	if err != nil {
 		return ImageResponses{}, fmt.Errorf("failed tosending request: %w", err)
 	}
@@ -130,4 +134,63 @@ func randomPrefix() string {
 	}
 
 	return string(result)
+}
+
+func startAnimation() func() {
+	t0 := time.Now()
+	ticker := time.NewTicker(time.Second / 60)
+	stop := make(chan struct{})
+	termInt := int(os.Stderr.Fd())
+	termWidth, _, err := term.GetSize(termInt)
+	if err != nil {
+		ancli.PrintWarn(fmt.Sprintf("failed to get terminal size: %v\n", err))
+		termWidth = 100
+	}
+	go func() {
+		for {
+			select {
+			case <-ticker.C:
+				cTick := time.Since(t0)
+				clearLine := strings.Repeat(" ", termWidth)
+				fmt.Printf("\r%v", clearLine)
+				fmt.Printf("\rElapsed time: %v - %v", funimation(cTick), cTick)
+			case <-stop:
+				return
+			}
+		}
+	}()
+	return func() {
+		close(stop)
+		fmt.Print("\n\r")
+	}
+}
+
+func funimation(t time.Duration) string {
+	images := []string{
+		"🕛",
+		"🕧",
+		"🕐",
+		"🕜",
+		"🕑",
+		"🕝",
+		"🕒",
+		"🕞",
+		"🕓",
+		"🕟",
+		"🕔",
+		"🕠",
+		"🕕",
+		"🕡",
+		"🕖",
+		"🕢",
+		"🕗",
+		"🕣",
+		"🕘",
+		"🕤",
+		"🕙",
+		"🕥",
+		"🕚",
+		"🕦",
+	}
+	return images[int(t.Milliseconds()/43)%len(images)]
 }
