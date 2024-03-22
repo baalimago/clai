@@ -192,5 +192,7 @@ func funimation(t time.Duration) string {
 		"🕚",
 		"🕦",
 	}
-	return images[int(t.Milliseconds()/43)%len(images)]
+	// 1 nanosecond / 23 frames = 43478260 nanoseconds. Too low brainjuice to know
+	// why that works right now
+	return images[int(t.Nanoseconds()/43478260)%len(images)]
 }
