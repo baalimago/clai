@@ -1,4 +1,5 @@
 # clai: command line artificial intelligence
+[![Go Report Card](https://goreportcard.com/badge/github.com/baalimago/clai)](https://goreportcard.com/report/github.com/baalimago/clai)
 
 `clai` brings convenience to the OpenAI models.
 You can generate images, text and summarize content from the command line with ease (see examples below).

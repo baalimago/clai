@@ -15,19 +15,19 @@ type PromptConfig struct {
 	Query string `yaml:"query"`
 }
 
-func errorOnMutuallyExclusiveFlags[T comparable](flag1, flag2, defualt T, shortFlag, longFlag string) T {
-	if flag1 != defualt && flag2 != defualt {
+func errorOnMutuallyExclusiveFlags[T comparable](flag1, flag2, dfault T, shortFlag, longFlag string) T {
+	if flag1 != dfault && flag2 != dfault {
 		ancli.PrintErr(fmt.Sprintf("%s and %s flags are mutually exclusive\n", shortFlag, longFlag))
 		flag.PrintDefaults()
 		os.Exit(1)
 	}
-	if flag1 != defualt {
+	if flag1 != dfault {
 		return flag1
 	}
-	if flag2 != defualt {
+	if flag2 != dfault {
 		return flag2
 	}
-	return defualt
+	return dfault
 }
 
 func setup() (string, chatModelQuerier, photoQuerier, []string) {
