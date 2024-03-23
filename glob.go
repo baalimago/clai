@@ -9,14 +9,7 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
-func (cq *chatModelQuerier) constructGlobMessages(glob string, args []string) ([]Message, error) {
-	if !strings.Contains(glob, "*") {
-		ancli.PrintWarn(fmt.Sprintf("argument: '%v' does not seem to contain a wildcard '*', has it been properly enclosed?\n", glob))
-	}
-	globMessages, err := parseGlob(glob)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse glob: %w", err)
-	}
+func (cq *chatModelQuerier) constructGlobMessages(globMessages []Message, args []string) ([]Message, error) {
 	ret := make([]Message, 0, len(globMessages)+4)
 	ret = append(ret, Message{
 		Role:    "system",

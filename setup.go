@@ -64,7 +64,9 @@ func setup() (string, chatModelQuerier, photoQuerier, []string) {
 		PictureDir:    flagSet.pictureDir,
 		PicturePrefix: flagSet.picturePrefix,
 		PromptFormat:  "I NEED to test how the tool works with extremely simple prompts. DO NOT add any detail, just use it AS-IS: '%v'",
+		url:           "https://api.openai.com/v1/images/generations",
 		raw:           flagSet.printRaw,
+		client:        &client,
 	}
 
 	homedirConfig(&cmq, &pq)

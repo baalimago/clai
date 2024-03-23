@@ -43,11 +43,12 @@ type photoQuerier struct {
 	PictureDir    string `json:"picture-dir"`
 	PicturePrefix string `json:"picture-prefix"`
 	PromptFormat  string `json:"prompt-format"`
+	url           string
 	raw           bool
+	client        *http.Client
 }
 
 func (pq *photoQuerier) query(ctx context.Context, API_KEY string, text []string) (ImageResponses, error) {
-	url := "https://api.openai.com/v1/images/generations"
 	body := imageQuery{
 		Model:          pq.Model,
 		Prompt:         fmt.Sprintf(pq.PromptFormat, strings.Join(text, " ")),
@@ -62,7 +63,7 @@ func (pq *photoQuerier) query(ctx context.Context, API_KEY string, text []string
 		return ImageResponses{}, fmt.Errorf("failed to encode JSON: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(bodyBytes))
+	req, err := http.NewRequestWithContext(ctx, "POST", pq.url, bytes.NewBuffer(bodyBytes))
 	if err != nil {
 		return ImageResponses{}, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -71,12 +72,11 @@ func (pq *photoQuerier) query(ctx context.Context, API_KEY string, text []string
 	req.Header.Set("Content-Type", "application/json")
 
 	ancli.PrintOK(fmt.Sprintf("command setup: '%v', sending request\n", body.Prompt))
-	client := &http.Client{}
 	if !pq.raw {
 		stop := startAnimation()
 		defer stop()
 	}
-	resp, err := client.Do(req)
+	resp, err := pq.client.Do(req)
 	if err != nil {
 		return ImageResponses{}, fmt.Errorf("failed tosending request: %w", err)
 	}

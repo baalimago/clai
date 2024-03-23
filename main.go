@@ -99,7 +99,12 @@ func run(ctx context.Context, API_KEY string, cq chatModelQuerier, pq photoQueri
 	case "glob":
 		fallthrough
 	case "g":
-		msgs, err := cq.constructGlobMessages(args[1], args[2:])
+		glob := args[1]
+		if !strings.Contains(glob, "*") {
+			ancli.PrintWarn(fmt.Sprintf("argument: '%v' does not seem to contain a wildcard '*', has it been properly enclosed?\n", glob))
+		}
+		globMessages, err := parseGlob(glob)
+		msgs, err := cq.constructGlobMessages(globMessages, args[2:])
 		if err != nil {
 			return fmt.Errorf("failed to construct glob messages: %w", err)
 		}
