@@ -9,8 +9,8 @@ import (
 func TestParseGlob(t *testing.T) {
 	// Setup a mock filesystem using afero
 	tmpDir := t.TempDir()
-	os.WriteFile(fmt.Sprintf("%v/%v", tmpDir, "test1.txt"), []byte("content1"), 0644)
-	os.WriteFile(fmt.Sprintf("%v/%v", tmpDir, "test2.txt"), []byte("content2"), 0644)
+	os.WriteFile(fmt.Sprintf("%v/%v", tmpDir, "test1.txt"), []byte("content1"), 0o644)
+	os.WriteFile(fmt.Sprintf("%v/%v", tmpDir, "test2.txt"), []byte("content2"), 0o644)
 
 	// Test case
 	tests := []struct {

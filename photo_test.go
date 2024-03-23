@@ -11,15 +11,6 @@ import (
 	"testing"
 )
 
-// mockHTTPClient is used to mock the HTTP client's Do function
-type mockHTTPClient struct {
-	DoFunc func(req *http.Request) (*http.Response, error)
-}
-
-func (m *mockHTTPClient) Do(req *http.Request) (*http.Response, error) {
-	return m.DoFunc(req)
-}
-
 func TestQuery(t *testing.T) {
 	ctx := context.Background()
 	API_KEY := "test_api_key"
@@ -44,17 +35,16 @@ func TestQuery(t *testing.T) {
 	defer server.Close()
 
 	pq := photoQuerier{
-		Model:         "test-model",
-		PictureDir:    "test-dir",
-		PicturePrefix: "test-prefix",
-		PromptFormat:  "%s",
-		url:           server.URL,
-		raw:           true,
-		client:        server.Client(),
+		Model:        "test-model",
+		PhotoDir:     "test-dir",
+		PhotoPrefix:  "test-prefix",
+		PromptFormat: "%s",
+		url:          server.URL,
+		raw:          true,
+		client:       server.Client(),
 	}
 
 	response, err := pq.query(ctx, API_KEY, text)
-
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
 	}
@@ -76,8 +66,8 @@ func TestSaveImage(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	pq := photoQuerier{
-		PictureDir:    tempDir,
-		PicturePrefix: "test",
+		PhotoDir:    tempDir,
+		PhotoPrefix: "test",
 	}
 
 	imgData := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/w8AAwAB/aurfgcAAAAASUVORK5CYII="

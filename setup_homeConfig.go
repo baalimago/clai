@@ -11,10 +11,10 @@ import (
 )
 
 var defaultPhotoConfig = photoQuerier{
-	Model:         "dall-e-3",
-	PictureDir:    fmt.Sprintf("%v/Pictures", os.Getenv("HOME")),
-	PicturePrefix: "clai",
-	PromptFormat:  "I NEED to test how the tool works with extremely simple prompts. DO NOT add any detail, just use it AS-IS: '%v'",
+	Model:        "dall-e-3",
+	PhotoDir:     fmt.Sprintf("%v/Pictures", os.Getenv("HOME")),
+	PhotoPrefix:  "clai",
+	PromptFormat: "I NEED to test how the tool works with extremely simple prompts. DO NOT add any detail, just use it AS-IS: '%v'",
 }
 
 var defaultChatConfig = chatModelQuerier{

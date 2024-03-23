@@ -26,8 +26,8 @@ Flags:
   -r, --raw bool                Set to true to print raw output (no animation, no glow). Default is false.
   -cm, --chat-model string      Set the chat model to use. Default is 'gpt-4-turbo-preview'. Short and long flags are mutually exclusive.
   -pm, --photo-model string     Set the image model to use. Default is 'dall-e-3'. Short and long flags are mutually exclusive.
-  -pd, --picture-dir string     Set the directory to store the generated pictures. Default is $HOME/Pictures. Short and long flags are mutually exclusive.
-  -pp, --picture-prefix string  Set the prefix for the generated pictures. Default is 'clai'. Short and long flags are mutually exclusive.
+  -pd, --photo-dir string       Set the directory to store the generated pictures. Default is $HOME/Pictures. Short and long flags are mutually exclusive.
+  -pp, --photo-prefix string  Set the prefix for the generated pictures. Default is 'clai'. Short and long flags are mutually exclusive.
   -I, --replace string          Set the string to replace with stdin. Default is '{}'. (flag syntax borrowed from xargs)
   -i bool                       Set to true to replace '{}' with stdin. This is overwritten by -I and -replace. Default is false. (flag syntax borrowed from xargs)
 
@@ -104,6 +104,9 @@ func run(ctx context.Context, API_KEY string, cq chatModelQuerier, pq photoQueri
 			ancli.PrintWarn(fmt.Sprintf("argument: '%v' does not seem to contain a wildcard '*', has it been properly enclosed?\n", glob))
 		}
 		globMessages, err := parseGlob(glob)
+		if err != nil {
+			return fmt.Errorf("failed to parse glob: %w", err)
+		}
 		msgs, err := cq.constructGlobMessages(globMessages, args[2:])
 		if err != nil {
 			return fmt.Errorf("failed to construct glob messages: %w", err)

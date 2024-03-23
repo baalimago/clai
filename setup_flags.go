@@ -22,10 +22,10 @@ func setupFlags(defaults flagSet) flagSet {
 	pmLong := flag.String("photo-model", defaults.photoModel, "Set the image model to use.  is dall-e-3. Mutually exclusive with pm flag.")
 
 	pdShort := flag.String("pd", defaults.pictureDir, "Set the directory to store the generated pictures.  is $HOME/Pictures")
-	pdLong := flag.String("picture-dir", defaults.pictureDir, "Set the directory to store the generated pictures.  is $HOME/Pictures")
+	pdLong := flag.String("photo-dir", defaults.pictureDir, "Set the directory to store the generated pictures.  is $HOME/Pictures")
 
 	ppShort := flag.String("pp", defaults.picturePrefix, "Set the prefix for the generated pictures.  is 'clai'")
-	ppLong := flag.String("picture-prefix", defaults.picturePrefix, "Set the prefix for the generated pictures.  is 'clai'")
+	ppLong := flag.String("photo-prefix", defaults.picturePrefix, "Set the prefix for the generated pictures.  is 'clai'")
 
 	stdinReplaceShort := flag.String("I", defaults.stdinReplace, "Set the string to replace with stdin.  is '{}'. (flag syntax borrowed from xargs)")
 	stdinReplaceLong := flag.String("replace", defaults.stdinReplace, "Set the string to replace with stdin.  is '{}. (flag syntax borrowed from xargs)'")
@@ -43,9 +43,9 @@ func setupFlags(defaults flagSet) flagSet {
 	photoModel, err := returnNonDefault(*pmShort, *pmLong, defaults.photoModel)
 	exitWithFlagError(err, "pm", "photo-model")
 	pictureDir, err := returnNonDefault(*pdShort, *pdLong, defaults.pictureDir)
-	exitWithFlagError(err, "pd", "picture-dir")
+	exitWithFlagError(err, "pd", "photo-dir")
 	picturePrefix, err := returnNonDefault(*ppShort, *ppLong, defaults.picturePrefix)
-	exitWithFlagError(err, "pp", "picture-prefix")
+	exitWithFlagError(err, "pp", "photo-prefix")
 	stdinReplace, err := returnNonDefault(*stdinReplaceShort, *stdinReplaceLong, defaults.stdinReplace)
 	exitWithFlagError(err, "I", "replace")
 	replyMode, err := returnNonDefault(*replyShort, *replyLong, defaults.replyMode)

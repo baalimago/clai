@@ -39,13 +39,13 @@ type ImageResponses struct {
 }
 
 type photoQuerier struct {
-	Model         string `json:"model"`
-	PictureDir    string `json:"picture-dir"`
-	PicturePrefix string `json:"picture-prefix"`
-	PromptFormat  string `json:"prompt-format"`
-	url           string
-	raw           bool
-	client        *http.Client
+	Model        string `json:"model"`
+	PhotoDir     string `json:"photo-dir"`
+	PhotoPrefix  string `json:"photo-prefix"`
+	PromptFormat string `json:"prompt-format"`
+	url          string
+	raw          bool
+	client       *http.Client
 }
 
 func (pq *photoQuerier) query(ctx context.Context, API_KEY string, text []string) (ImageResponses, error) {
@@ -102,8 +102,8 @@ func (pq *photoQuerier) saveImage(ctx context.Context, imgResp ImageResponse) er
 	if err != nil {
 		return fmt.Errorf("failed to decode base64: %w", err)
 	}
-	pictureName := fmt.Sprintf("%v_%v.jpg", pq.PicturePrefix, randomPrefix())
-	outFile := fmt.Sprintf("%v/%v", pq.PictureDir, pictureName)
+	pictureName := fmt.Sprintf("%v_%v.jpg", pq.PhotoPrefix, randomPrefix())
+	outFile := fmt.Sprintf("%v/%v", pq.PhotoDir, pictureName)
 	err = os.WriteFile(outFile, data, 0o644)
 	if err != nil {
 		ancli.PrintWarn(fmt.Sprintf("failed to write file: '%v', attempting tmp file...\n", err))

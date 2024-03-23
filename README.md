@@ -31,7 +31,10 @@ Chatting:
 clai chat new Lets have a conversation about Hegel
 ```
 ```bash
-clai c continue 1 `# Continue some previous chat, list all chats with 'clai chat list'` 
+clai c list `# List all your chats` 
+```
+```bash
+clai c continue 1 `# Continue some previous chat` 
 ```
 
 Glob queries:
@@ -43,11 +46,7 @@ clai --raw `                    # Don't format output as markdown` \
 
 Photos:
 ```bash
-printf "flowers" `                  # Pipe any data into clai, such as a specialized prompt` \
-    | clai  --photo-prefix flower ` # Photos are stored locally with randomized string as suffix, this sets prefix` \
-            --photo-dir  /tmp/ `    # You can modify where to store the rendered image ` \ 
-            -i `                    # Use xargs notation for replacing some substring with the piped in content` \
-            photo A cat made of {}
+printf "flowers" | clai -i --photo-prefix flowercat --photo-dir /tmp p A cat made out of {}
 ```
 Since -N alternatives are disabled for many newer OpenAI models, you can use [repeater](https://github.com/baalimago/repeater) to generate several responses from the same prompt:
 ```bash
@@ -55,19 +54,16 @@ NO_COLOR=true repeater -n 10 -w 3 -increment -file out.txt -output BOTH \
     clai -pp flower_INC p A cat made of flowers
 ```
 
-
-
 ```bash
 clai help `# For more info about the available commands (and shorthands)`
 ```
 
-
 ## Configuration
-On initial run, `clai` will create configuration files at `$HOME/.clai/`, one for photo and one for chat.
+On initial run, `clai` will create configuration files at `$HOME/.clai/`, one for photo and one for chat/text.
 Here you can configure initial prompts, temperature and other settings.
 
 Within `$HOME/.clai/conversations` you'll find all the conversations.
-You can also modify the chats here as a way to prompt.
+You can also modify the chats here as a way to prompt, or create entirely new ones as you see fit.
 
 ## Honorable mentions
 This project is heavily inspired by: [https://github.com/Licheam/zsh-ask](https://github.com/Licheam/zsh-ask), many thanks to Licheam for the inspiration.

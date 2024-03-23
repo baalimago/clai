@@ -61,12 +61,12 @@ func setup() (string, chatModelQuerier, photoQuerier, []string) {
 		client:       &client,
 	}
 	pq := photoQuerier{
-		PictureDir:    flagSet.pictureDir,
-		PicturePrefix: flagSet.picturePrefix,
-		PromptFormat:  "I NEED to test how the tool works with extremely simple prompts. DO NOT add any detail, just use it AS-IS: '%v'",
-		url:           "https://api.openai.com/v1/images/generations",
-		raw:           flagSet.printRaw,
-		client:        &client,
+		PhotoDir:     flagSet.pictureDir,
+		PhotoPrefix:  flagSet.picturePrefix,
+		PromptFormat: "I NEED to test how the tool works with extremely simple prompts. DO NOT add any detail, just use it AS-IS: '%v'",
+		url:          "https://api.openai.com/v1/images/generations",
+		raw:          flagSet.printRaw,
+		client:       &client,
 	}
 
 	homedirConfig(&cmq, &pq)
@@ -81,10 +81,10 @@ func setup() (string, chatModelQuerier, photoQuerier, []string) {
 		pq.Model = flagSet.photoModel
 	}
 	if flagSet.picturePrefix != defaultFlags.picturePrefix {
-		pq.PicturePrefix = flagSet.picturePrefix
+		pq.PhotoPrefix = flagSet.picturePrefix
 	}
 	if flagSet.pictureDir != defaultFlags.pictureDir {
-		pq.PictureDir = flagSet.pictureDir
+		pq.PhotoDir = flagSet.pictureDir
 	}
 	if os.Getenv("DEBUG") == "true" {
 		ancli.PrintOK(fmt.Sprintf("chatModel: %v\n", cmq))
