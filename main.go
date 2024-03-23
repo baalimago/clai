@@ -23,7 +23,7 @@ Usage: clai [flags] <command>
 
 Flags:
   -re, --reply bool             Set to true to reply to the previous query, meaing that it will be used as context for your next query. Default is false.
-  -r, --raw bool                Set to true to print raw output (don't attempt to use 'glow'). Default is false.
+  -r, --raw bool                Set to true to print raw output (no animation, no glow). Default is false.
   -cm, --chat-model string      Set the chat model to use. Default is 'gpt-4-turbo-preview'. Short and long flags are mutually exclusive.
   -pm, --photo-model string     Set the image model to use. Default is 'dall-e-3'. Short and long flags are mutually exclusive.
   -pd, --picture-dir string     Set the directory to store the generated pictures. Default is $HOME/Pictures. Short and long flags are mutually exclusive.

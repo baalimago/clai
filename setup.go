@@ -15,65 +15,31 @@ type PromptConfig struct {
 	Query string `yaml:"query"`
 }
 
-func errorOnMutuallyExclusiveFlags[T comparable](flag1, flag2, dfault T, shortFlag, longFlag string) T {
-	if flag1 != dfault && flag2 != dfault {
-		ancli.PrintErr(fmt.Sprintf("%s and %s flags are mutually exclusive\n", shortFlag, longFlag))
-		flag.PrintDefaults()
-		os.Exit(1)
+func returnNonDefault[T comparable](a, b, defaultVal T) (T, error) {
+	if a != defaultVal && b != defaultVal {
+		return defaultVal, fmt.Errorf("values are mutually exclusive")
 	}
-	if flag1 != dfault {
-		return flag1
+	if a != defaultVal {
+		return a, nil
 	}
-	if flag2 != dfault {
-		return flag2
+	if b != defaultVal {
+		return b, nil
 	}
-	return dfault
+	return defaultVal, nil
+}
+
+var defaultFlags = flagSet{
+	chatModel:     "gpt-4-turbo-preview",
+	photoModel:    "dall-e-3",
+	picturePrefix: "clai",
+	pictureDir:    fmt.Sprintf("%v/Pictures", os.Getenv("HOME")),
+	stdinReplace:  "",
+	printRaw:      false,
+	replyMode:     false,
 }
 
 func setup() (string, chatModelQuerier, photoQuerier, []string) {
-	chatModelDefault := "gpt-4-turbo-preview"
-	cmShort := flag.String("cm", chatModelDefault, "Set the chat model to use. Default is gpt-4-turbo-preview. Mutually exclusive with chat-model flag.")
-	cmLong := flag.String("chat-model", chatModelDefault, "Set the chat model to use. Default is gpt-4-turbo-preview. Mutually exclusive with cm flag.")
-
-	photoModelDefault := "dall-e-3"
-	pmShort := flag.String("pm", photoModelDefault, "Set the image model to use. Default is dall-e-3. Mutually exclusive with photo-model flag.")
-	pmLong := flag.String("photo-model", photoModelDefault, "Set the image model to use. Default is dall-e-3. Mutually exclusive with pm flag.")
-
-	home := os.Getenv("HOME")
-	pictureDirDefault := fmt.Sprintf("%v/Pictures", home)
-	pdShort := flag.String("pd", pictureDirDefault, "Set the directory to store the generated pictures. Default is $HOME/Pictures")
-	pdLong := flag.String("picture-dir", pictureDirDefault, "Set the directory to store the generated pictures. Default is $HOME/Pictures")
-
-	picturePrefixDefault := "clai"
-	ppShort := flag.String("pp", picturePrefixDefault, "Set the prefix for the generated pictures. Default is 'clai'")
-	ppLong := flag.String("picture-prefix", picturePrefixDefault, "Set the prefix for the generated pictures. Default is 'clai'")
-
-	stdinReplace := ""
-	stdinReplaceShort := flag.String("I", stdinReplace, "Set the string to replace with stdin. Default is '{}'. (flag syntax borrowed from xargs)")
-	stdinReplaceLong := flag.String("replace", stdinReplace, "Set the string to replace with stdin. Default is '{}. (flag syntax borrowed from xargs)'")
-	defaultStdinReplace := flag.Bool("i", false, "Set to true to replace '{}' with stdin. This is overwritten by -I and -replace. Default is false. (flag syntax borrowed from xargs)'")
-
-	printRawDefault := false
-	printRawShort := flag.Bool("r", printRawDefault, "Set to true to print raw output (don't attempt to use 'glow'). Default is false.")
-	printRawLong := flag.Bool("raw", printRawDefault, "Set to true to print raw output (don't attempt to use 'glow'). Default is false.")
-
-	replyDefault := false
-	replyShort := flag.Bool("re", replyDefault, "Set to true to reply to the previous query, meaing that it will be used as context for your next query. Default is false.")
-	replyLong := flag.Bool("reply", replyDefault, "Set to true to reply to the previous query, meaing that it will be used as context for your next query. Default is false.")
-
-	flag.Parse()
-	chatModel := errorOnMutuallyExclusiveFlags(*cmShort, *cmLong, chatModelDefault, "cm", "chat-model")
-	photoModel := errorOnMutuallyExclusiveFlags(*pmShort, *pmLong, photoModelDefault, "pm", "photo-model")
-	pictureDir := errorOnMutuallyExclusiveFlags(*pdShort, *pdLong, pictureDirDefault, "pd", "picture-dir")
-	picturePrefix := errorOnMutuallyExclusiveFlags(*ppShort, *ppLong, picturePrefixDefault, "pp", "picture-prefix")
-	stdinReplace = errorOnMutuallyExclusiveFlags(*stdinReplaceShort, *stdinReplaceLong, stdinReplace, "I", "replace")
-	replyMode := errorOnMutuallyExclusiveFlags(*replyShort, *replyLong, replyDefault, "re", "reply")
-	printRaw := *printRawShort || *printRawLong
-
-	if *defaultStdinReplace && stdinReplace == "" {
-		stdinReplace = "{}"
-	}
-
+	flagSet := setupFlags(defaultFlags)
 	API_KEY := os.Getenv("OPENAI_API_KEY")
 	if API_KEY == "" {
 		ancli.PrintErr("OPENAI_API_KEY environment variable not set\n")
@@ -81,38 +47,50 @@ func setup() (string, chatModelQuerier, photoQuerier, []string) {
 	}
 	cmq := chatModelQuerier{
 		SystemPrompt: "You are an assistent for a CLI interface. Answer concisely and informatively. Prefer markdown if possible.",
-		Raw:          printRaw,
+		Raw:          flagSet.printRaw,
 		Url:          "https://api.openai.com/v1/chat/completions",
-		replyMode:    replyMode,
+		replyMode:    flagSet.replyMode,
 	}
 	pq := photoQuerier{
-		PictureDir:    pictureDir,
-		PicturePrefix: picturePrefix,
+		PictureDir:    flagSet.pictureDir,
+		PicturePrefix: flagSet.picturePrefix,
 		PromptFormat:  "I NEED to test how the tool works with extremely simple prompts. DO NOT add any detail, just use it AS-IS: '%v'",
-		raw:           printRaw,
+		raw:           flagSet.printRaw,
 	}
 
 	homedirConfig(&cmq, &pq)
 	// Flag overrides homedirConfig
-	if chatModel != chatModelDefault {
-		cmq.Model = chatModel
+	if flagSet.chatModel != defaultFlags.chatModel {
+		cmq.Model = flagSet.chatModel
 	}
-	if printRaw {
+	if flagSet.printRaw {
 		cmq.Raw = true
 	}
-	if photoModel != photoModelDefault {
-		pq.Model = photoModel
+	if flagSet.photoModel != defaultFlags.photoModel {
+		pq.Model = flagSet.photoModel
 	}
-	if picturePrefix != picturePrefixDefault {
-		pq.PicturePrefix = picturePrefix
+	if flagSet.picturePrefix != defaultFlags.picturePrefix {
+		pq.PicturePrefix = flagSet.picturePrefix
 	}
-	if pictureDir != pictureDirDefault {
-		pq.PictureDir = pictureDir
+	if flagSet.pictureDir != defaultFlags.pictureDir {
+		pq.PictureDir = flagSet.pictureDir
 	}
 	if os.Getenv("DEBUG") == "true" {
 		ancli.PrintOK(fmt.Sprintf("chatModel: %v\n", cmq))
 	}
-	return API_KEY, cmq, pq, parseArgsStdin(stdinReplace)
+	return API_KEY, cmq, pq, parseArgsStdin(flagSet.stdinReplace)
+}
+
+func exitWithFlagError(err error, shortFlag, longflag string) {
+	if err != nil {
+		// Im just too lazy to setup the err struct
+		if err.Error() == "values are mutually exclusive" {
+			ancli.PrintErr(fmt.Sprintf("flags: '%v' and '%v' are mutually exclusive, err: %v\n", shortFlag, longflag, err))
+		} else {
+			ancli.PrintErr(fmt.Sprintf("unexpected error: %v", err))
+		}
+		os.Exit(1)
+	}
 }
 
 func parseArgsStdin(stdinReplace string) []string {
