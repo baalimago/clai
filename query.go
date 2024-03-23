@@ -92,6 +92,7 @@ func (cq *chatModelQuerier) printChatMessage(chatMessage Message) error {
 	cmd := exec.Command("glow", "--version")
 	if err := cmd.Run(); err != nil {
 		fmt.Printf("%v: %v\n", ancli.ColoredMessage(color, chatMessage.Role), chatMessage.Content)
+		return nil
 	}
 
 	cmd = exec.Command("glow")
