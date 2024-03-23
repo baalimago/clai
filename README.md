@@ -26,12 +26,15 @@ clai -re `# Use the -re flag to use the previous query as context for some next 
     q Write a poem about my favorite colour 
 ```
 
+Personally I have `alias ask=clai q` and then `alias rask=clai -re q`.
+This way I can `ask` -> `rask` -> `rask` for a temporary conversation.
+
 Chatting:
 ```bash
 clai chat new Lets have a conversation about Hegel
 ```
 ```bash
-clai c list `# List all your chats` 
+clai c list `# List all your chats
 ```
 ```bash
 clai c continue 1 `# Continue some previous chat` 
