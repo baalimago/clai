@@ -89,6 +89,7 @@ func setup() (string, chatModelQuerier, photoQuerier, []string) {
 		PictureDir:    pictureDir,
 		PicturePrefix: picturePrefix,
 		PromptFormat:  "I NEED to test how the tool works with extremely simple prompts. DO NOT add any detail, just use it AS-IS: '%v'",
+		raw:           printRaw,
 	}
 
 	homedirConfig(&cmq, &pq)

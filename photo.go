@@ -43,6 +43,7 @@ type photoQuerier struct {
 	PictureDir    string `json:"picture-dir"`
 	PicturePrefix string `json:"picture-prefix"`
 	PromptFormat  string `json:"prompt-format"`
+	raw           bool
 }
 
 func (pq *photoQuerier) query(ctx context.Context, API_KEY string, text []string) (ImageResponses, error) {
@@ -71,9 +72,11 @@ func (pq *photoQuerier) query(ctx context.Context, API_KEY string, text []string
 
 	ancli.PrintOK(fmt.Sprintf("command setup: '%v', sending request\n", body.Prompt))
 	client := &http.Client{}
-	stop := startAnimation()
+	if !pq.raw {
+		stop := startAnimation()
+		defer stop()
+	}
 	resp, err := client.Do(req)
-	stop()
 	if err != nil {
 		return ImageResponses{}, fmt.Errorf("failed tosending request: %w", err)
 	}
