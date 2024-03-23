@@ -13,10 +13,10 @@ func readPreviousQuery() (Chat, error) {
 	return getChatFromPath(home + "/.clai/conversations/prevQuery.json")
 }
 
-func saveAsPreviousQuery(msgs []Message) error {
+func (cq *chatModelQuerier) saveAsPreviousQuery(msgs []Message) error {
 	chat := Chat{
 		ID:       "prevQuery",
 		Messages: msgs,
 	}
-	return saveChat(chat)
+	return cq.saveChat(chat)
 }

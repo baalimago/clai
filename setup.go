@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"strings"
 
@@ -45,11 +46,19 @@ func setup() (string, chatModelQuerier, photoQuerier, []string) {
 		ancli.PrintErr("OPENAI_API_KEY environment variable not set\n")
 		os.Exit(1)
 	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		ancli.PrintErr(fmt.Sprintf("failed to get home dir: %v\n", err))
+	}
+
+	client := http.Client{}
 	cmq := chatModelQuerier{
 		SystemPrompt: "You are an assistent for a CLI interface. Answer concisely and informatively. Prefer markdown if possible.",
 		Raw:          flagSet.printRaw,
 		Url:          "https://api.openai.com/v1/chat/completions",
 		replyMode:    flagSet.replyMode,
+		home:         home,
+		client:       &client,
 	}
 	pq := photoQuerier{
 		PictureDir:    flagSet.pictureDir,

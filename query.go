@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"strings"
@@ -21,6 +22,8 @@ type chatModelQuerier struct {
 	Temperature      float32 `json:"temperature"`
 	TopP             float32 `json:"top_p"`
 	replyMode        bool
+	home             string
+	client           *http.Client
 }
 
 type ResponseFormat struct {

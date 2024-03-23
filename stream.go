@@ -62,8 +62,7 @@ func (cq *chatModelQuerier) streamCompletions(ctx context.Context, API_KEY strin
 	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("Connection", "keep-alive")
 
-	client := &http.Client{}
-	res, err := client.Do(req)
+	res, err := cq.client.Do(req)
 	if err != nil {
 		return Message{}, fmt.Errorf("failed to execute request: %w", err)
 	}

@@ -62,7 +62,11 @@ func (cq *chatModelQuerier) chat(ctx context.Context, API_KEY string, subCmd str
 	case "l":
 		fallthrough
 	case "list":
-		return chatList()
+		chats, err := cq.listChats()
+		if err == nil {
+			printChats(chats)
+		}
+		return err
 	case "d":
 		fallthrough
 	case "delete":
@@ -120,12 +124,12 @@ func (cq *chatModelQuerier) chatNew(ctx context.Context, API_KEY string, prompt 
 	return cq.chatLoop(ctx, API_KEY, chat)
 }
 
-func findChatByID(potentialChatIdx string) (Chat, error) {
+func (cq *chatModelQuerier) findChatByID(potentialChatIdx string) (Chat, error) {
 	chatIdx, err := strconv.Atoi(potentialChatIdx)
 	if err != nil {
 		return Chat{}, fmt.Errorf("failed to parse chat index: %w", err)
 	}
-	chats, err := listChats()
+	chats, err := cq.listChats()
 	if err != nil {
 		return Chat{}, fmt.Errorf("failed to list chats: %w", err)
 	}
@@ -141,7 +145,7 @@ func (cq *chatModelQuerier) chatContinue(ctx context.Context, API_KEY string, pr
 		ancli.PrintOK(fmt.Sprintf("prompt: %v", prompt))
 	}
 	if len(prompt) == 1 {
-		chat, err := findChatByID(prompt[0])
+		chat, err := cq.findChatByID(prompt[0])
 		chatOuter = chat
 		if err != nil {
 			return fmt.Errorf("failed to find chat by ID: %w", err)
@@ -165,18 +169,6 @@ func (cq *chatModelQuerier) chatContinue(ctx context.Context, API_KEY string, pr
 	return cq.chatLoop(ctx, API_KEY, chatOuter)
 }
 
-func chatList() error {
-	chats, err := listChats()
-	if err != nil {
-		return fmt.Errorf("failed to list chats: %w", err)
-	}
-	ancli.PrintOK(fmt.Sprintf("found '%v' conversations:\n", len(chats)))
-	for i, chat := range chats {
-		fmt.Printf("\t%v: %v\n", i, chat.ID)
-	}
-	return nil
-}
-
 func chatDelete(prompt []string) error {
 	chatID := strings.Join(prompt, " ")
 	err := deleteChat(chatID)
@@ -187,18 +179,13 @@ func chatDelete(prompt []string) error {
 	return nil
 }
 
-func listChats() ([]Chat, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get home dir: %w", err)
-	}
-	convDir := home + "/.clai/conversations"
-
+func (cq *chatModelQuerier) listChats() ([]Chat, error) {
+	convDir := cq.home + "/.clai/conversations"
 	files, err := os.ReadDir(convDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list conversations: %w", err)
 	}
-	var ret []Chat
+	var chats []Chat
 	if os.Getenv("DEBUG") == "true" {
 		ancli.PrintOK(fmt.Sprintf("found '%v' conversations:\n", len(files)))
 	}
@@ -207,10 +194,21 @@ func listChats() ([]Chat, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to get chat: %w", err)
 		}
-		ret = append(ret, chat)
+		chats = append(chats, chat)
 	}
 
-	return ret, nil
+	if err != nil {
+		return nil, fmt.Errorf("failed to list chats: %w", err)
+	}
+
+	return chats, err
+}
+
+func printChats(chats []Chat) {
+	ancli.PrintOK(fmt.Sprintf("found '%v' conversations:\n", len(chats)))
+	for i, chat := range chats {
+		fmt.Printf("\t%v: %v\n", i, chat.ID)
+	}
 }
 
 func getChat(chatID string) (Chat, error) {
@@ -248,7 +246,7 @@ func deleteChat(chatID string) error {
 
 func (cq *chatModelQuerier) chatLoop(ctx context.Context, API_KEY string, chat Chat) error {
 	defer func() {
-		err := saveChat(chat)
+		err := cq.saveChat(chat)
 		if err != nil {
 			panic(err)
 		}
@@ -277,23 +275,19 @@ func (cq *chatModelQuerier) chatLoop(ctx context.Context, API_KEY string, chat C
 			return fmt.Errorf("failed to print chat completion: %w", err)
 		}
 		chat.Messages = append(chat.Messages, newChatMsg)
-		err = saveChat(chat)
+		err = cq.saveChat(chat)
 		if err != nil {
 			return fmt.Errorf("failed to save chat: %w", err)
 		}
 	}
 }
 
-func saveChat(chat Chat) error {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("failed to get home dir: %w", err)
-	}
+func (cq *chatModelQuerier) saveChat(chat Chat) error {
 	b, err := json.Marshal(chat)
 	if err != nil {
 		return fmt.Errorf("failed to encode JSON: %w", err)
 	}
-	fileName := home + "/.clai/conversations/" + chat.ID + ".json"
+	fileName := cq.home + "/.clai/conversations/" + chat.ID + ".json"
 	if os.Getenv("DEBUG") == "true" {
 		ancli.PrintOK(fmt.Sprintf("saving chat to '%v'\n", fileName))
 	}

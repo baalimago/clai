@@ -83,7 +83,7 @@ func run(ctx context.Context, API_KEY string, cq chatModelQuerier, pq photoQueri
 		msgs = append(msgs, Message{Role: "user", Content: strings.Join(args[1:], " ")})
 		msg, err := cq.streamCompletions(ctx, API_KEY, msgs)
 		msgs = append(msgs, msg)
-		saveAsPreviousQuery(msgs)
+		cq.saveAsPreviousQuery(msgs)
 		if err != nil && !errors.Is(err, context.Canceled) {
 			return fmt.Errorf("failed to query chat model: %w", err)
 		}
