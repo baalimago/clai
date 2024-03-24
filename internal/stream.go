@@ -1,4 +1,4 @@
-package main
+package internal
 
 import (
 	"bufio"
@@ -31,8 +31,8 @@ type ChatCompletionChunk struct {
 
 var dataPrefix = []byte("data: ")
 
-// streamCompletions taking the messages as prompt conversation. Returns the messages from the chat model.
-func (cq *chatModelQuerier) streamCompletions(ctx context.Context, API_KEY string, messages []Message) (Message, error) {
+// StreamCompletions taking the messages as prompt conversation. Returns the messages from the chat model.
+func (cq *ChatModelQuerier) StreamCompletions(ctx context.Context, API_KEY string, messages []Message) (Message, error) {
 	reqData := Request{
 		Model:            cq.Model,
 		FrequencyPenalty: cq.FrequencyPenalty,
@@ -79,7 +79,7 @@ func willBeNewLine(line, msg string, termWidth int) bool {
 	return utf8.RuneCountInString(line+msg) > termWidth
 }
 
-func (cq *chatModelQuerier) handleStreamResponse(res *http.Response) (Message, error) {
+func (cq *ChatModelQuerier) handleStreamResponse(res *http.Response) (Message, error) {
 	fullMessage := Message{
 		Role: "system",
 	}

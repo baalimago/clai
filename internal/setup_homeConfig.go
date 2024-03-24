@@ -1,4 +1,4 @@
-package main
+package internal
 
 import (
 	"encoding/json"
@@ -10,14 +10,14 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
-var defaultPhotoConfig = photoQuerier{
+var defaultPhotoConfig = PhotoQuerier{
 	Model:        "dall-e-3",
 	PhotoDir:     fmt.Sprintf("%v/Pictures", os.Getenv("HOME")),
 	PhotoPrefix:  "clai",
 	PromptFormat: "I NEED to test how the tool works with extremely simple prompts. DO NOT add any detail, just use it AS-IS: '%v'",
 }
 
-var defaultChatConfig = chatModelQuerier{
+var defaultChatConfig = ChatModelQuerier{
 	Model:        "gpt-4-turbo-preview",
 	SystemPrompt: "You are an assistent for a CLI interface. Answer concisely and informatively. Prefer markdown if possible.",
 	Url:          "https://api.openai.com/v1/chat/completions",
@@ -26,7 +26,7 @@ var defaultChatConfig = chatModelQuerier{
 	Raw:          false,
 }
 
-func writeConfigFile[T chatModelQuerier | photoQuerier](configPath string, config *T) error {
+func writeConfigFile[T ChatModelQuerier | PhotoQuerier](configPath string, config *T) error {
 	file, err := os.Create(configPath)
 	if err != nil {
 		return fmt.Errorf("failed to create config file: %w", err)
@@ -42,7 +42,7 @@ func writeConfigFile[T chatModelQuerier | photoQuerier](configPath string, confi
 	return nil
 }
 
-func unmarshalConfg[T chatModelQuerier | photoQuerier](chatConfigPath string, config *T) error {
+func unmarshalConfg[T ChatModelQuerier | PhotoQuerier](chatConfigPath string, config *T) error {
 	if _, err := os.Stat(chatConfigPath); os.IsNotExist(err) {
 		return fmt.Errorf("failed to find photo config file: %w", err)
 	}
@@ -88,7 +88,7 @@ func setUpDotfileDirectory() error {
 	return nil
 }
 
-func setPromptsFromConfig(homeDir string, cmq *chatModelQuerier, pq *photoQuerier) error {
+func setPromptsFromConfig(homeDir string, cmq *ChatModelQuerier, pq *PhotoQuerier) error {
 	dirPath := fmt.Sprintf("%v/.clai", homeDir)
 	if _, err := os.Stat(dirPath); os.IsNotExist(err) {
 		err := setUpDotfileDirectory()
@@ -111,7 +111,7 @@ func setPromptsFromConfig(homeDir string, cmq *chatModelQuerier, pq *photoQuerie
 	return nil
 }
 
-func homedirConfig(cmq *chatModelQuerier, pq *photoQuerier) {
+func homedirConfig(cmq *ChatModelQuerier, pq *PhotoQuerier) {
 	homeDir, err := os.UserHomeDir()
 	if err == nil {
 		err = setPromptsFromConfig(homeDir, cmq, pq)

@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/baalimago/clai/internal"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/shutdown"
 )
@@ -57,7 +58,7 @@ Examples:
   - clai c help
 `
 
-func run(ctx context.Context, API_KEY string, cq chatModelQuerier, pq photoQuerier, args []string) error {
+func run(ctx context.Context, API_KEY string, cq internal.ChatModelQuerier, pq internal.PhotoQuerier, args []string) error {
 	cmd := args[0]
 	if os.Getenv("DEBUG") == "true" {
 		ancli.PrintOK(fmt.Sprintf("args: %s\n", args))
@@ -66,9 +67,9 @@ func run(ctx context.Context, API_KEY string, cq chatModelQuerier, pq photoQueri
 	case "query":
 		fallthrough
 	case "q":
-		msgs := make([]Message, 0)
-		if cq.replyMode {
-			c, err := readPreviousQuery()
+		msgs := make([]internal.Message, 0)
+		if cq.ReplyMode {
+			c, err := internal.ReadPreviousQuery()
 			if err != nil {
 				if errors.Is(err, fs.ErrNotExist) {
 					ancli.PrintWarn("no previous query found\n")
@@ -78,12 +79,12 @@ func run(ctx context.Context, API_KEY string, cq chatModelQuerier, pq photoQueri
 			}
 			msgs = append(msgs, c.Messages...)
 		} else {
-			msgs = append(msgs, Message{Role: "system", Content: cq.SystemPrompt})
+			msgs = append(msgs, internal.Message{Role: "system", Content: cq.SystemPrompt})
 		}
-		msgs = append(msgs, Message{Role: "user", Content: strings.Join(args[1:], " ")})
-		msg, err := cq.streamCompletions(ctx, API_KEY, msgs)
+		msgs = append(msgs, internal.Message{Role: "user", Content: strings.Join(args[1:], " ")})
+		msg, err := cq.StreamCompletions(ctx, API_KEY, msgs)
 		msgs = append(msgs, msg)
-		cq.saveAsPreviousQuery(msgs)
+		cq.SaveAsPreviousQuery(msgs)
 		if err != nil && !errors.Is(err, context.Canceled) {
 			return fmt.Errorf("failed to query chat model: %w", err)
 		}
@@ -92,7 +93,7 @@ func run(ctx context.Context, API_KEY string, cq chatModelQuerier, pq photoQueri
 	case "photo":
 		fallthrough
 	case "p":
-		err := pq.queryPhotoModel(ctx, API_KEY, args[1:])
+		err := pq.QueryPhotoModel(ctx, API_KEY, args[1:])
 		if err != nil {
 			return fmt.Errorf("failed to query photo model: %w", err)
 		}
@@ -103,23 +104,23 @@ func run(ctx context.Context, API_KEY string, cq chatModelQuerier, pq photoQueri
 		if !strings.Contains(glob, "*") {
 			ancli.PrintWarn(fmt.Sprintf("argument: '%v' does not seem to contain a wildcard '*', has it been properly enclosed?\n", glob))
 		}
-		globMessages, err := parseGlob(glob)
+		globMessages, err := internal.ParseGlob(glob)
 		if err != nil {
 			return fmt.Errorf("failed to parse glob: %w", err)
 		}
-		msgs, err := cq.constructGlobMessages(globMessages, args[2:])
+		msgs, err := cq.ConstructGlobMessages(globMessages, args[2:])
 		if err != nil {
 			return fmt.Errorf("failed to construct glob messages: %w", err)
 		}
 		if os.Getenv("DEBUG") == "true" {
 			ancli.PrintOK(fmt.Sprintf("constructed messages: %v\n", msgs))
 		}
-		_, err = cq.streamCompletions(ctx, API_KEY, msgs)
+		_, err = cq.StreamCompletions(ctx, API_KEY, msgs)
 		return err
 	case "chat":
 		fallthrough
 	case "c":
-		err := cq.chat(ctx, API_KEY, args[1], args[2:])
+		err := cq.Chat(ctx, API_KEY, args[1], args[2:])
 		if err != nil {
 			return fmt.Errorf("failed to chat: %w", err)
 		}
@@ -134,7 +135,7 @@ func run(ctx context.Context, API_KEY string, cq chatModelQuerier, pq photoQueri
 }
 
 func main() {
-	API_KEY, cmq, pq, args := setup()
+	API_KEY, cmq, pq, args := internal.Setup(usage)
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() { shutdown.Monitor(cancel) }()
 	err := run(ctx, API_KEY, cmq, pq, args)

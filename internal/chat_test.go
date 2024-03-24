@@ -1,4 +1,4 @@
-package main
+package internal
 
 import (
 	"encoding/json"
@@ -105,7 +105,7 @@ func TestListChats(t *testing.T) {
 		t.Fatalf("Failed to setup test environment: %v", err)
 	}
 
-	cq := chatModelQuerier{home: tmpHome}
+	cq := ChatModelQuerier{home: tmpHome}
 	listedChats, err := cq.listChats()
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
@@ -127,7 +127,7 @@ func TestSaveChat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to setup test environment: %v", err)
 	}
-	cq := chatModelQuerier{home: tempDir}
+	cq := ChatModelQuerier{home: tempDir}
 	chat := Chat{
 		ID: "test_chat",
 		Messages: []Message{

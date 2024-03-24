@@ -1,4 +1,4 @@
-package main
+package internal
 
 import (
 	"flag"
@@ -39,7 +39,7 @@ var defaultFlags = flagSet{
 	replyMode:     false,
 }
 
-func setup() (string, chatModelQuerier, photoQuerier, []string) {
+func Setup(usage string) (string, ChatModelQuerier, PhotoQuerier, []string) {
 	flagSet := setupFlags(defaultFlags)
 	API_KEY := os.Getenv("OPENAI_API_KEY")
 	if API_KEY == "" {
@@ -52,15 +52,15 @@ func setup() (string, chatModelQuerier, photoQuerier, []string) {
 	}
 
 	client := http.Client{}
-	cmq := chatModelQuerier{
+	cmq := ChatModelQuerier{
 		SystemPrompt: "You are an assistent for a CLI interface. Answer concisely and informatively. Prefer markdown if possible.",
 		Raw:          flagSet.printRaw,
 		Url:          "https://api.openai.com/v1/chat/completions",
-		replyMode:    flagSet.replyMode,
+		ReplyMode:    flagSet.replyMode,
 		home:         home,
 		client:       &client,
 	}
-	pq := photoQuerier{
+	pq := PhotoQuerier{
 		PhotoDir:     flagSet.pictureDir,
 		PhotoPrefix:  flagSet.picturePrefix,
 		PromptFormat: "I NEED to test how the tool works with extremely simple prompts. DO NOT add any detail, just use it AS-IS: '%v'",
@@ -89,7 +89,7 @@ func setup() (string, chatModelQuerier, photoQuerier, []string) {
 	if os.Getenv("DEBUG") == "true" {
 		ancli.PrintOK(fmt.Sprintf("chatModel: %v\n", cmq))
 	}
-	return API_KEY, cmq, pq, parseArgsStdin(flagSet.stdinReplace)
+	return API_KEY, cmq, pq, parseArgsStdin(flagSet.stdinReplace, usage)
 }
 
 func exitWithFlagError(err error, shortFlag, longflag string) {
@@ -104,7 +104,7 @@ func exitWithFlagError(err error, shortFlag, longflag string) {
 	}
 }
 
-func parseArgsStdin(stdinReplace string) []string {
+func parseArgsStdin(stdinReplace, usage string) []string {
 	if os.Getenv("DEBUG") == "true" {
 		ancli.PrintOK(fmt.Sprintf("stdinReplace: %v\n", stdinReplace))
 	}

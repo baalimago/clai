@@ -1,4 +1,4 @@
-package main
+package internal
 
 import (
 	"bytes"
@@ -38,7 +38,7 @@ type ImageResponses struct {
 	Data    []ImageResponse `json:"data"`
 }
 
-type photoQuerier struct {
+type PhotoQuerier struct {
 	Model        string `json:"model"`
 	PhotoDir     string `json:"photo-dir"`
 	PhotoPrefix  string `json:"photo-prefix"`
@@ -48,7 +48,7 @@ type photoQuerier struct {
 	client       *http.Client
 }
 
-func (pq *photoQuerier) query(ctx context.Context, API_KEY string, text []string) (ImageResponses, error) {
+func (pq *PhotoQuerier) query(ctx context.Context, API_KEY string, text []string) (ImageResponses, error) {
 	body := imageQuery{
 		Model:          pq.Model,
 		Prompt:         fmt.Sprintf(pq.PromptFormat, strings.Join(text, " ")),
@@ -97,7 +97,7 @@ func (pq *photoQuerier) query(ctx context.Context, API_KEY string, text []string
 	return imgResps, nil
 }
 
-func (pq *photoQuerier) saveImage(ctx context.Context, imgResp ImageResponse) error {
+func (pq *PhotoQuerier) saveImage(ctx context.Context, imgResp ImageResponse) error {
 	data, err := base64.StdEncoding.DecodeString(imgResp.B64_JSON)
 	if err != nil {
 		return fmt.Errorf("failed to decode base64: %w", err)
@@ -117,8 +117,8 @@ func (pq *photoQuerier) saveImage(ctx context.Context, imgResp ImageResponse) er
 	return nil
 }
 
-// queryPhotoModel using the supplied arguments as instructions
-func (pq *photoQuerier) queryPhotoModel(ctx context.Context, API_KEY string, text []string) error {
+// QueryPhotoModel using the supplied arguments as instructions
+func (pq *PhotoQuerier) QueryPhotoModel(ctx context.Context, API_KEY string, text []string) error {
 	imgResps, err := pq.query(ctx, API_KEY, text)
 	if err != nil {
 		return err

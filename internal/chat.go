@@ -1,4 +1,4 @@
-package main
+package internal
 
 import (
 	"bufio"
@@ -49,7 +49,7 @@ type Chat struct {
 	Messages []Message `json:"messages"`
 }
 
-func (cq *chatModelQuerier) chat(ctx context.Context, API_KEY string, subCmd string, prompt []string) error {
+func (cq *ChatModelQuerier) Chat(ctx context.Context, API_KEY string, subCmd string, prompt []string) error {
 	switch subCmd {
 	case "n":
 		fallthrough
@@ -105,12 +105,12 @@ func getFirstTokens(prompt []string, n int) []string {
 	return ret
 }
 
-func (cq *chatModelQuerier) chatNew(ctx context.Context, API_KEY string, prompt []string) error {
+func (cq *ChatModelQuerier) chatNew(ctx context.Context, API_KEY string, prompt []string) error {
 	if len(prompt) == 0 {
 		return errors.New("no prompt provided")
 	}
 	messages := cq.constructMessages(prompt)
-	newMsg, err := cq.streamCompletions(ctx, API_KEY, messages)
+	newMsg, err := cq.StreamCompletions(ctx, API_KEY, messages)
 	if err != nil {
 		return fmt.Errorf("failed to query chat model: %w", err)
 	}
@@ -124,7 +124,7 @@ func (cq *chatModelQuerier) chatNew(ctx context.Context, API_KEY string, prompt 
 	return cq.chatLoop(ctx, API_KEY, chat)
 }
 
-func (cq *chatModelQuerier) findChatByID(potentialChatIdx string) (Chat, error) {
+func (cq *ChatModelQuerier) findChatByID(potentialChatIdx string) (Chat, error) {
 	chatIdx, err := strconv.Atoi(potentialChatIdx)
 	if err != nil {
 		return Chat{}, fmt.Errorf("failed to parse chat index: %w", err)
@@ -139,7 +139,7 @@ func (cq *chatModelQuerier) findChatByID(potentialChatIdx string) (Chat, error) 
 	return chats[chatIdx], nil
 }
 
-func (cq *chatModelQuerier) chatContinue(ctx context.Context, API_KEY string, prompt []string) error {
+func (cq *ChatModelQuerier) chatContinue(ctx context.Context, API_KEY string, prompt []string) error {
 	var chatOuter Chat
 	if os.Getenv("DEBUG") == "true" {
 		ancli.PrintOK(fmt.Sprintf("prompt: %v", prompt))
@@ -179,7 +179,7 @@ func chatDelete(prompt []string) error {
 	return nil
 }
 
-func (cq *chatModelQuerier) listChats() ([]Chat, error) {
+func (cq *ChatModelQuerier) listChats() ([]Chat, error) {
 	convDir := cq.home + "/.clai/conversations"
 	files, err := os.ReadDir(convDir)
 	if err != nil {
@@ -244,7 +244,7 @@ func deleteChat(chatID string) error {
 	return os.Remove(home + "/.clai/conversations/" + strings.Replace(chatID, " ", "_", -1) + ".json")
 }
 
-func (cq *chatModelQuerier) chatLoop(ctx context.Context, API_KEY string, chat Chat) error {
+func (cq *ChatModelQuerier) chatLoop(ctx context.Context, API_KEY string, chat Chat) error {
 	defer func() {
 		err := cq.saveChat(chat)
 		if err != nil {
@@ -270,7 +270,7 @@ func (cq *chatModelQuerier) chatLoop(ctx context.Context, API_KEY string, chat C
 			return nil
 		}
 		chat.Messages = append(chat.Messages, Message{Role: "user", Content: strings.TrimRight(userInput, "\n")})
-		newChatMsg, err := cq.streamCompletions(ctx, API_KEY, chat.Messages)
+		newChatMsg, err := cq.StreamCompletions(ctx, API_KEY, chat.Messages)
 		if err != nil {
 			return fmt.Errorf("failed to print chat completion: %w", err)
 		}
@@ -282,7 +282,7 @@ func (cq *chatModelQuerier) chatLoop(ctx context.Context, API_KEY string, chat C
 	}
 }
 
-func (cq *chatModelQuerier) saveChat(chat Chat) error {
+func (cq *ChatModelQuerier) saveChat(chat Chat) error {
 	b, err := json.Marshal(chat)
 	if err != nil {
 		return fmt.Errorf("failed to encode JSON: %w", err)

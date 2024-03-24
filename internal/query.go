@@ -1,4 +1,4 @@
-package main
+package internal
 
 import (
 	"bytes"
@@ -11,7 +11,7 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
-type chatModelQuerier struct {
+type ChatModelQuerier struct {
 	Model            string  `json:"model"`
 	SystemPrompt     string  `json:"system_prompt"`
 	Raw              bool    `json:"raw"`
@@ -21,7 +21,7 @@ type chatModelQuerier struct {
 	PresencePenalty  float32 `json:"presence_penalty"`
 	Temperature      float32 `json:"temperature"`
 	TopP             float32 `json:"top_p"`
-	replyMode        bool
+	ReplyMode        bool
 	home             string
 	client           *http.Client
 }
@@ -70,14 +70,14 @@ type Usage struct {
 	TotalTokens      int `json:"total_tokens"`
 }
 
-func (cq *chatModelQuerier) constructMessages(args []string) []Message {
+func (cq *ChatModelQuerier) constructMessages(args []string) []Message {
 	var messages []Message
 	messages = append(messages, Message{Role: "system", Content: cq.SystemPrompt})
 	messages = append(messages, Message{Role: "user", Content: strings.Join(args, " ")})
 	return messages
 }
 
-func (cq *chatModelQuerier) printChatMessage(chatMessage Message) error {
+func (cq *ChatModelQuerier) printChatMessage(chatMessage Message) error {
 	color := ancli.BLUE
 	switch chatMessage.Role {
 	case "user":

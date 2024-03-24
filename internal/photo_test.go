@@ -1,4 +1,4 @@
-package main
+package internal
 
 import (
 	"context"
@@ -34,7 +34,7 @@ func TestQuery(t *testing.T) {
 	}))
 	defer server.Close()
 
-	pq := photoQuerier{
+	pq := PhotoQuerier{
 		Model:        "test-model",
 		PhotoDir:     "test-dir",
 		PhotoPrefix:  "test-prefix",
@@ -65,7 +65,7 @@ func TestSaveImage(t *testing.T) {
 	tempDir := t.TempDir()
 	defer os.RemoveAll(tempDir)
 
-	pq := photoQuerier{
+	pq := PhotoQuerier{
 		PhotoDir:    tempDir,
 		PhotoPrefix: "test",
 	}

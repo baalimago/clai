@@ -1,4 +1,4 @@
-package main
+package internal
 
 import (
 	"fmt"
@@ -9,7 +9,7 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
-func (cq *chatModelQuerier) constructGlobMessages(globMessages []Message, args []string) ([]Message, error) {
+func (cq *ChatModelQuerier) ConstructGlobMessages(globMessages []Message, args []string) ([]Message, error) {
 	ret := make([]Message, 0, len(globMessages)+4)
 	ret = append(ret, Message{
 		Role:    "system",
@@ -31,7 +31,7 @@ func (cq *chatModelQuerier) constructGlobMessages(globMessages []Message, args [
 	return ret, nil
 }
 
-func parseGlob(glob string) ([]Message, error) {
+func ParseGlob(glob string) ([]Message, error) {
 	files, err := filepath.Glob(glob)
 	ret := make([]Message, 0, len(files))
 	if err != nil {

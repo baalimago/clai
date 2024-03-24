@@ -1,11 +1,11 @@
-package main
+package internal
 
 import (
 	"fmt"
 	"os"
 )
 
-func readPreviousQuery() (Chat, error) {
+func ReadPreviousQuery() (Chat, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return Chat{}, fmt.Errorf("failed to get home dir: %w", err)
@@ -13,7 +13,7 @@ func readPreviousQuery() (Chat, error) {
 	return getChatFromPath(home + "/.clai/conversations/prevQuery.json")
 }
 
-func (cq *chatModelQuerier) saveAsPreviousQuery(msgs []Message) error {
+func (cq *ChatModelQuerier) SaveAsPreviousQuery(msgs []Message) error {
 	chat := Chat{
 		ID:       "prevQuery",
 		Messages: msgs,
