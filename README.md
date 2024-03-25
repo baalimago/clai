@@ -34,7 +34,7 @@ Chatting:
 clai chat new Lets have a conversation about Hegel
 ```
 ```bash
-clai c list `# List all your chats
+clai chat list `# List all your chats`
 ```
 ```bash
 clai c continue 1 `# Continue some previous chat` 
@@ -49,7 +49,7 @@ clai --raw `                    # Don't format output as markdown` \
 
 Photos:
 ```bash
-printf "flowers" | clai -i --photo-prefix flowercat --photo-dir /tmp p A cat made out of {}
+printf "flowers" | clai -i --photo-prefix=flowercat --photo-dir=/tmp photo "A cat made out of {}"
 ```
 Since -N alternatives are disabled for many newer OpenAI models, you can use [repeater](https://github.com/baalimago/repeater) to generate several responses from the same prompt:
 ```bash
