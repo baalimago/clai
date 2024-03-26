@@ -23,13 +23,13 @@ Prerequisits:
 Usage: clai [flags] <command>
 
 Flags:
-  -re, --reply bool             Set to true to reply to the previous query, meaing that it will be used as context for your next query. Default is false.
-  -r, --raw bool                Set to true to print raw output (no animation, no glow). Default is false.
-  -cm, --chat-model string      Set the chat model to use. Default is 'gpt-4-turbo-preview'. Short and long flags are mutually exclusive.
-  -pm, --photo-model string     Set the image model to use. Default is 'dall-e-3'. Short and long flags are mutually exclusive.
-  -pd, --photo-dir string       Set the directory to store the generated pictures. Default is $HOME/Pictures. Short and long flags are mutually exclusive.
-  -pp, --photo-prefix string  Set the prefix for the generated pictures. Default is 'clai'. Short and long flags are mutually exclusive.
-  -I, --replace string          Set the string to replace with stdin. Default is '{}'. (flag syntax borrowed from xargs)
+  -re, -reply bool             Set to true to reply to the previous query, meaing that it will be used as context for your next query. Default is false.
+  -r, -raw bool                Set to true to print raw output (no animation, no glow). Default is false.
+  -cm, -chat-model string      Set the chat model to use. Default is 'gpt-4-turbo-preview'. 
+  -pm, -photo-model string     Set the image model to use. Default is 'dall-e-3'. 
+  -pd, -photo-dir string       Set the directory to store the generated pictures. Default is $HOME/Pictures. 
+  -pp, -photo-prefix string  Set the prefix for the generated pictures. Default is 'clai'. 
+  -I, -replace string          Set the string to replace with stdin. Default is '{}'. (flag syntax borrowed from xargs)
   -i bool                       Set to true to replace '{}' with stdin. This is overwritten by -I and -replace. Default is false. (flag syntax borrowed from xargs)
 
 Commands:

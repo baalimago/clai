@@ -31,11 +31,11 @@ func setupFlags(defaults flagSet) flagSet {
 	stdinReplaceLong := flag.String("replace", defaults.stdinReplace, "Set the string to replace with stdin.  is '{}. (flag syntax borrowed from xargs)'")
 	defaultStdinReplace := flag.Bool("i", false, "Set to true to replace '{}' with stdin. This is overwritten by -I and -replace.  is false. (flag syntax borrowed from xargs)'")
 
-	printRawShort := flag.Bool("r", defaults.printRaw, "Set to true to print raw output (don't attempt to use 'glow').  is false.")
-	printRawLong := flag.Bool("raw", defaults.printRaw, "Set to true to print raw output (don't attempt to use 'glow').  is false.")
+	printRawShort := flag.Bool("r", defaults.printRaw, "Set to true to print raw output (don't attempt to use 'glow'). Default is false.")
+	printRawLong := flag.Bool("raw", defaults.printRaw, "Set to true to print raw output (don't attempt to use 'glow'). Default is false.")
 
-	replyShort := flag.Bool("re", defaults.replyMode, "Set to true to reply to the previous query, meaing that it will be used as context for your next query.  is false.")
-	replyLong := flag.Bool("reply", defaults.replyMode, "Set to true to reply to the previous query, meaing that it will be used as context for your next query.  is false.")
+	replyShort := flag.Bool("re", defaults.replyMode, "Set to true to reply to the previous query, meaing that it will be used as context for your next query. Default is false.")
+	replyLong := flag.Bool("reply", defaults.replyMode, "Set to true to reply to the previous query, meaing that it will be used as context for your next query. Default is false.")
 
 	flag.Parse()
 	chatModel, err := returnNonDefault(*cmShort, *cmLong, defaults.chatModel)
