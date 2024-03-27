@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"runtime/debug"
 	"strings"
 
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
@@ -120,10 +121,21 @@ func parseArgsStdin(stdinReplace, usage string) []string {
 		hasPipe = true
 	}
 	if len(args) == 1 && !hasPipe {
-		if args[0] == "h" || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
+		if args[0] == "h" || args[0] == "help" || args[0] == "-help" || args[0] == "-h" {
 			fmt.Print(usage)
 			os.Exit(0)
 		}
+
+		if args[0] == "v" || args[0] == "version" || args[0] == "-v" || args[0] == "-version" {
+			bi, ok := debug.ReadBuildInfo()
+			if !ok {
+				ancli.PrintErr("failed to read build info")
+				os.Exit(1)
+			}
+			fmt.Printf("version: %v, go version: %v, checksum: %v\n", bi.Main.Version, bi.GoVersion, bi.Main.Sum)
+			os.Exit(0)
+		}
+
 		ancli.PrintErr("found no prompt, set args or pipe in some string\n")
 		fmt.Print(usage)
 		os.Exit(1)
