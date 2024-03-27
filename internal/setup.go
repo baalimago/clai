@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
+	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
 type PromptConfig struct {
@@ -87,7 +88,7 @@ func Setup(usage string) (string, ChatModelQuerier, PhotoQuerier, []string) {
 	if flagSet.pictureDir != defaultFlags.pictureDir {
 		pq.PhotoDir = flagSet.pictureDir
 	}
-	if os.Getenv("DEBUG") == "true" {
+	if misc.Truthy(os.Getenv("DEBUG")) {
 		ancli.PrintOK(fmt.Sprintf("chatModel: %v\n", cmq))
 	}
 	return API_KEY, cmq, pq, parseArgsStdin(flagSet.stdinReplace, usage)
@@ -106,7 +107,7 @@ func exitWithFlagError(err error, shortFlag, longflag string) {
 }
 
 func parseArgsStdin(stdinReplace, usage string) []string {
-	if os.Getenv("DEBUG") == "true" {
+	if misc.Truthy(os.Getenv("DEBUG")) {
 		ancli.PrintOK(fmt.Sprintf("stdinReplace: %v\n", stdinReplace))
 	}
 	args := flag.Args()
@@ -167,7 +168,7 @@ func parseArgsStdin(stdinReplace, usage string) []string {
 		}
 	}
 
-	if os.Getenv("DEBUG") == "true" {
+	if misc.Truthy(os.Getenv("DEBUG")) {
 		ancli.PrintOK(fmt.Sprintf("args: %v\n", args))
 	}
 	return args

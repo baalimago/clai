@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
+	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 	"golang.org/x/term"
 )
 
@@ -45,7 +46,7 @@ func (cq *ChatModelQuerier) StreamCompletions(ctx context.Context, API_KEY strin
 		Messages:         messages,
 		Stream:           true,
 	}
-	if os.Getenv("DEBUG") == "true" {
+	if misc.Truthy(os.Getenv("DEBUG")) {
 		fmt.Printf("streamCompletions: %v\n", reqData)
 	}
 	jsonData, err := json.Marshal(reqData)
@@ -133,7 +134,7 @@ func (cq *ChatModelQuerier) handleStreamResponse(res *http.Response) (Message, e
 		var chunk ChatCompletionChunk
 		err = json.Unmarshal(token, &chunk)
 		if err != nil {
-			if os.Getenv("DEBUG") == "true" {
+			if misc.Truthy(os.Getenv("DEBUG")) {
 				// Expect some failing unmarshalls, which seems to be fine
 				// ancli.PrintWarn(fmt.Sprintf("failed to unmarshal token: %v, err: %v\n", token, err))
 				continue

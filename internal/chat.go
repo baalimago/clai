@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
+	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
 const chatUsage = `clai - (c)omand (l)ine (a)rtificial (i)intelligence 
@@ -141,7 +142,7 @@ func (cq *ChatModelQuerier) findChatByID(potentialChatIdx string) (Chat, error) 
 
 func (cq *ChatModelQuerier) chatContinue(ctx context.Context, API_KEY string, prompt []string) error {
 	var chatOuter Chat
-	if os.Getenv("DEBUG") == "true" {
+	if misc.Truthy(os.Getenv("DEBUG")) {
 		ancli.PrintOK(fmt.Sprintf("prompt: %v", prompt))
 	}
 	if len(prompt) == 1 {
@@ -186,7 +187,7 @@ func (cq *ChatModelQuerier) listChats() ([]Chat, error) {
 		return nil, fmt.Errorf("failed to list conversations: %w", err)
 	}
 	var chats []Chat
-	if os.Getenv("DEBUG") == "true" {
+	if misc.Truthy(os.Getenv("DEBUG")) {
 		ancli.PrintOK(fmt.Sprintf("found '%v' conversations:\n", len(files)))
 	}
 	for _, file := range files {
@@ -220,8 +221,8 @@ func getChat(chatID string) (Chat, error) {
 }
 
 func getChatFromPath(path string) (Chat, error) {
-	if os.Getenv("DEBUG") == "true" {
-		ancli.PrintOK(fmt.Sprintf("Reading chat from '%v'\n", path))
+	if misc.Truthy(os.Getenv("DEBUG")) || misc.Truthy(os.Getenv("DEBUG_REPLY_MODE")) {
+		ancli.PrintOK(fmt.Sprintf("reading chat from '%v'\n", path))
 	}
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -288,8 +289,8 @@ func (cq *ChatModelQuerier) saveChat(chat Chat) error {
 		return fmt.Errorf("failed to encode JSON: %w", err)
 	}
 	fileName := cq.home + "/.clai/conversations/" + chat.ID + ".json"
-	if os.Getenv("DEBUG") == "true" {
-		ancli.PrintOK(fmt.Sprintf("saving chat to '%v'\n", fileName))
+	if misc.Truthy(os.Getenv("DEBUG")) || misc.Truthy(os.Getenv("DEBUG_REPLY_MODE")) {
+		ancli.PrintOK(fmt.Sprintf("saving chat to: '%v', content (on new line):\n'%v'\n", fileName, string(b)))
 	}
 	return os.WriteFile(fileName, b, 0o644)
 }

@@ -10,6 +10,7 @@ import (
 
 	"github.com/baalimago/clai/internal"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
+	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 	"github.com/baalimago/go_away_boilerplate/pkg/shutdown"
 )
 
@@ -60,7 +61,7 @@ Examples:
 
 func run(ctx context.Context, API_KEY string, cq internal.ChatModelQuerier, pq internal.PhotoQuerier, args []string) error {
 	cmd := args[0]
-	if os.Getenv("DEBUG") == "true" {
+	if misc.Truthy(os.Getenv("DEBUG")) {
 		ancli.PrintOK(fmt.Sprintf("args: %s\n", args))
 	}
 	switch cmd {
@@ -68,6 +69,10 @@ func run(ctx context.Context, API_KEY string, cq internal.ChatModelQuerier, pq i
 		fallthrough
 	case "q":
 		msgs := make([]internal.Message, 0)
+		replyDebugMode := misc.Truthy(os.Getenv("DEBUG_REPLY_MODE"))
+		if replyDebugMode {
+			ancli.PrintOK(fmt.Sprintf("reply mode active: %v\n", replyDebugMode))
+		}
 		if cq.ReplyMode {
 			c, err := internal.ReadPreviousQuery()
 			if err != nil {
@@ -82,6 +87,9 @@ func run(ctx context.Context, API_KEY string, cq internal.ChatModelQuerier, pq i
 			msgs = append(msgs, internal.Message{Role: "system", Content: cq.SystemPrompt})
 		}
 		msgs = append(msgs, internal.Message{Role: "user", Content: strings.Join(args[1:], " ")})
+		if replyDebugMode {
+			ancli.PrintOK(fmt.Sprintf("messages pre-stream: %+v\n", msgs))
+		}
 		msg, err := cq.StreamCompletions(ctx, API_KEY, msgs)
 		msgs = append(msgs, msg)
 		cq.SaveAsPreviousQuery(msgs)
@@ -112,7 +120,7 @@ func run(ctx context.Context, API_KEY string, cq internal.ChatModelQuerier, pq i
 		if err != nil {
 			return fmt.Errorf("failed to construct glob messages: %w", err)
 		}
-		if os.Getenv("DEBUG") == "true" {
+		if misc.Truthy(os.Getenv("DEBUG")) {
 			ancli.PrintOK(fmt.Sprintf("constructed messages: %v\n", msgs))
 		}
 		_, err = cq.StreamCompletions(ctx, API_KEY, msgs)
@@ -144,7 +152,7 @@ func main() {
 		os.Exit(1)
 	}
 	cancel()
-	if os.Getenv("DEBUG") == "true" {
+	if misc.Truthy(os.Getenv("DEBUG")) {
 		ancli.PrintOK("things seems to have worked out. Good bye! 🚀\n")
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
+	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
 func (cq *ChatModelQuerier) ConstructGlobMessages(globMessages []Message, args []string) ([]Message, error) {
@@ -37,7 +38,7 @@ func ParseGlob(glob string) ([]Message, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to find files: %w", err)
 	}
-	if os.Getenv("DEBUG") == "true" {
+	if misc.Truthy(os.Getenv("DEBUG")) {
 		ancli.PrintOK(fmt.Sprintf("found %d files: %v\n", len(files), files))
 	}
 
