@@ -71,7 +71,7 @@ func run(ctx context.Context, API_KEY string, cq internal.ChatModelQuerier, pq i
 		msgs := make([]internal.Message, 0)
 		replyDebugMode := misc.Truthy(os.Getenv("DEBUG_REPLY_MODE"))
 		if replyDebugMode {
-			ancli.PrintOK(fmt.Sprintf("reply mode active: %v\n", replyDebugMode))
+			ancli.PrintOK(fmt.Sprintf("reply mode active: %v\n", cq.ReplyMode))
 		}
 		if cq.ReplyMode {
 			c, err := internal.ReadPreviousQuery()
