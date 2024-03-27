@@ -131,7 +131,7 @@ func parseArgsStdin(stdinReplace, usage string) []string {
 			if !ok {
 				ancli.PrintErr("failed to read build info")
 			}
-			ancli.PrintOK(fmt.Sprintf("version: %v, go version: %v, checksum: %v, path: %v\n", bi.Main.Version, bi.GoVersion, bi.Main.Sum, bi.Main.Path))
+			fmt.Printf("version: %v, go version: %v, checksum: %v\n", bi.Main.Version, bi.GoVersion, bi.Main.Sum)
 			os.Exit(0)
 		}
 
