@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"runtime/debug"
 	"strings"
 
 	"github.com/baalimago/clai/internal"
@@ -59,7 +60,9 @@ Examples:
 `
 
 func run(ctx context.Context, API_KEY string, cq internal.ChatModelQuerier, pq internal.PhotoQuerier, args []string) error {
+
 	cmd := args[0]
+
 	if os.Getenv("DEBUG") == "true" {
 		ancli.PrintOK(fmt.Sprintf("args: %s\n", args))
 	}
@@ -135,6 +138,13 @@ func run(ctx context.Context, API_KEY string, cq internal.ChatModelQuerier, pq i
 }
 
 func main() {
+	bi, ok := debug.ReadBuildInfo()
+	if !ok {
+		fmt.Println("not ok")
+		return
+	}
+	fmt.Printf("Version: %v\n", bi.Main.Version)
+	return
 	API_KEY, cmq, pq, args := internal.Setup(usage)
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() { shutdown.Monitor(cancel) }()
