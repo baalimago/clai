@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -67,6 +68,10 @@ func (cq *ChatModelQuerier) StreamCompletions(ctx context.Context, API_KEY strin
 		return Message{}, fmt.Errorf("failed to execute request: %w", err)
 	}
 	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(res.Body)
+		return Message{}, fmt.Errorf("failed to execute request: %v, body: %v", res.Status, string(body))
+	}
 	msg, err := cq.handleStreamResponse(res)
 	if err != nil {
 		return msg, fmt.Errorf("failed to handle stream response: %w", err)
