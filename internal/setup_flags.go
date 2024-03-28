@@ -48,8 +48,7 @@ func setupFlags(defaults flagSet) flagSet {
 	exitWithFlagError(err, "pp", "photo-prefix")
 	stdinReplace, err := returnNonDefault(*stdinReplaceShort, *stdinReplaceLong, defaults.stdinReplace)
 	exitWithFlagError(err, "I", "replace")
-	replyMode, err := returnNonDefault(*replyShort, *replyLong, defaults.replyMode)
-	exitWithFlagError(err, "re", "reply")
+	replyMode := *replyShort || *replyLong
 	printRaw := *printRawShort || *printRawLong
 
 	if *defaultStdinReplace && defaults.stdinReplace == "" {

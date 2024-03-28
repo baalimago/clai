@@ -72,12 +72,23 @@ func Setup(usage string) (string, ChatModelQuerier, PhotoQuerier, []string) {
 	}
 
 	homedirConfig(&cmq, &pq)
-	// Flag overrides homedirConfig
+	applyFlagOverrides(&cmq, &pq, flagSet, defaultFlags)
+
+	if misc.Truthy(os.Getenv("DEBUG")) {
+		ancli.PrintOK(fmt.Sprintf("chatModel: %v\n", cmq))
+	}
+	return API_KEY, cmq, pq, parseArgsStdin(flagSet.stdinReplace, usage)
+}
+
+func applyFlagOverrides(cmq *ChatModelQuerier, pq *PhotoQuerier, flagSet, defaultFlags flagSet) {
 	if flagSet.chatModel != defaultFlags.chatModel {
 		cmq.Model = flagSet.chatModel
 	}
-	if flagSet.printRaw {
-		cmq.Raw = true
+	if flagSet.replyMode != defaultFlags.replyMode {
+		cmq.ReplyMode = flagSet.replyMode
+	}
+	if flagSet.printRaw != defaultFlags.printRaw {
+		cmq.Raw = flagSet.printRaw
 	}
 	if flagSet.photoModel != defaultFlags.photoModel {
 		pq.Model = flagSet.photoModel
@@ -88,10 +99,6 @@ func Setup(usage string) (string, ChatModelQuerier, PhotoQuerier, []string) {
 	if flagSet.pictureDir != defaultFlags.pictureDir {
 		pq.PhotoDir = flagSet.pictureDir
 	}
-	if misc.Truthy(os.Getenv("DEBUG")) {
-		ancli.PrintOK(fmt.Sprintf("chatModel: %v\n", cmq))
-	}
-	return API_KEY, cmq, pq, parseArgsStdin(flagSet.stdinReplace, usage)
 }
 
 func exitWithFlagError(err error, shortFlag, longflag string) {
