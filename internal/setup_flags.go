@@ -34,8 +34,8 @@ func setupFlags(defaults flagSet) flagSet {
 	printRawShort := flag.Bool("r", defaults.printRaw, "Set to true to print raw output (don't attempt to use 'glow'). Default is false.")
 	printRawLong := flag.Bool("raw", defaults.printRaw, "Set to true to print raw output (don't attempt to use 'glow'). Default is false.")
 
-	replyShort := flag.Bool("re", defaults.replyMode, "Set to true to reply to the previous query, meaing that it will be used as context for your next query. Default is false.")
-	replyLong := flag.Bool("reply", defaults.replyMode, "Set to true to reply to the previous query, meaing that it will be used as context for your next query. Default is false.")
+	replyShort := flag.Bool("re", defaults.replyMode, "Set to true to reply to the previous query, meaning that it will be used as context for your next query. Default is false.")
+	replyLong := flag.Bool("reply", defaults.replyMode, "Set to true to reply to the previous query, meaning that it will be used as context for your next query. Default is false.")
 
 	flag.Parse()
 	chatModel, err := returnNonDefault(*cmShort, *cmLong, defaults.chatModel)
@@ -48,8 +48,7 @@ func setupFlags(defaults flagSet) flagSet {
 	exitWithFlagError(err, "pp", "photo-prefix")
 	stdinReplace, err := returnNonDefault(*stdinReplaceShort, *stdinReplaceLong, defaults.stdinReplace)
 	exitWithFlagError(err, "I", "replace")
-	replyMode, err := returnNonDefault(*replyShort, *replyLong, defaults.replyMode)
-	exitWithFlagError(err, "re", "reply")
+	replyMode := *replyShort || *replyLong
 	printRaw := *printRawShort || *printRawLong
 
 	if *defaultStdinReplace && defaults.stdinReplace == "" {
