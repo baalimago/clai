@@ -5,19 +5,42 @@ import (
 	"os"
 	"strings"
 
+	"github.com/baalimago/clai/internal/chat"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/openai"
 	"github.com/baalimago/clai/internal/photo"
 	"github.com/baalimago/clai/internal/text"
+	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
+	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
 // CreateTextQuerier by checking the model for which vendor to use, then initiating
 // a TextQuerier
 func CreateTextQuerier(conf text.Configurations) (models.Querier, error) {
+	var q models.Querier
 	if strings.Contains(conf.Model, "gpt") {
-		return openai.NewTextQuerier(conf)
+		qTmp, err := openai.NewTextQuerier(conf)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create GPT querier: %w", err)
+		}
+		q = qTmp
 	}
-	return nil, fmt.Errorf("failed to find querier for model: %v", conf.Model)
+
+	if misc.Truthy(os.Getenv("DEBUG")) {
+		ancli.PrintOK(fmt.Sprintf("chat mode: %v\n", conf.ChatMode))
+	}
+	if conf.ChatMode {
+		tq, isTextQuerier := q.(models.ChatQuerier)
+		if !isTextQuerier {
+			return nil, fmt.Errorf("failed to cast Querier using model: '%v' to TextQuerier, cannot proceed to chat", conf.Model)
+		}
+		chatQ, err := chat.New(tq, conf.PostProccessedPrompt)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create chat querier: %w", err)
+		}
+		q = chatQ
+	}
+	return q, nil
 }
 
 func NewPhotoQuerier(conf photo.Configurations) (models.Querier, error) {

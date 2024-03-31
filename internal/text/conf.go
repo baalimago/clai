@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/baalimago/clai/internal/chat"
 	"github.com/baalimago/clai/internal/glob"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/reply"
@@ -20,9 +21,12 @@ type Configurations struct {
 	StdinReplace  string
 	Stream        bool
 	ReplyMode     bool
+	ChatMode      bool
 	Glob          string
 	Raw           bool
 	InitialPrompt models.Chat
+	// PostProccessedPrompt which has had it's strings replaced etc
+	PostProccessedPrompt string
 }
 
 var DEFAULT = Configurations{
@@ -65,12 +69,20 @@ func (c *Configurations) SetupPrompts() error {
 	if err != nil {
 		return fmt.Errorf("failed to setup prompt: %w", err)
 	}
-	c.InitialPrompt.Messages = append(c.InitialPrompt.Messages, models.Message{
-		Role:    "user",
-		Content: prompt,
-	})
+	// If chatmode, the initial message will be handled by the chat querier
+	if !c.ChatMode {
+		c.InitialPrompt.Messages = append(c.InitialPrompt.Messages, models.Message{
+			Role:    "user",
+			Content: prompt,
+		})
+	}
+
 	if misc.Truthy(os.Getenv("DEBUG")) {
 		ancli.PrintOK(fmt.Sprintf("InitialPrompt: %+v\n", c.InitialPrompt))
+	}
+	c.PostProccessedPrompt = prompt
+	if c.InitialPrompt.ID == "" {
+		c.InitialPrompt.ID = chat.IdFromPrompt(prompt)
 	}
 	return nil
 }

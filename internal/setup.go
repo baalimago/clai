@@ -77,6 +77,9 @@ func Setup(usage string) (models.Querier, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to load configs: %err", err)
 		}
+		if mode == CHAT {
+			tConf.ChatMode = true
+		}
 		applyFlagOverridesForText(&tConf, flagSet, defaultFlags)
 		if mode == GLOB {
 			globStr, err := glob.Setup()

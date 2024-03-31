@@ -34,6 +34,8 @@ func Prompt(stdinReplace string, args []string) (string, error) {
 	if len(args) == 1 && !hasPipe {
 		return "", errors.New("found no prompt, set args or pipe in some string")
 	}
+	// First argument is the command, so we skip it
+	args = args[1:]
 	// If no data is in stdin, simply return args
 	if !hasPipe {
 		return strings.Join(args, " "), nil

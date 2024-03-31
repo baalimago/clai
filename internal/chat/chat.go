@@ -4,8 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path"
+	"strings"
 
 	"github.com/baalimago/clai/internal/models"
+	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
@@ -32,9 +35,13 @@ func Save(saveAt string, chat models.Chat) error {
 	if err != nil {
 		return fmt.Errorf("failed to encode JSON: %w", err)
 	}
-	fileName := saveAt + "/.clai/conversations/" + chat.ID + ".json"
+	fileName := path.Join(saveAt, fmt.Sprintf("%v.json", chat.ID))
 	if misc.Truthy(os.Getenv("DEBUG")) || misc.Truthy(os.Getenv("DEBUG_REPLY_MODE")) {
 		ancli.PrintOK(fmt.Sprintf("saving chat to: '%v', content (on new line):\n'%v'\n", fileName, string(b)))
 	}
 	return os.WriteFile(fileName, b, 0o644)
+}
+
+func IdFromPrompt(prompt string) string {
+	return strings.Join(tools.GetFirstTokens(strings.Split(prompt, " "), 5), "_")
 }

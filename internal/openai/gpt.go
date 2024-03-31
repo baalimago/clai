@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path"
 
 	"context"
 
@@ -26,9 +27,12 @@ type ChatGPT struct {
 	raw              bool
 	chat             models.Chat
 	apiKey           string
+	username         string
 	debug            bool
 }
 
+// Query performs a streamCompletion and appends the returned message to it's internal chat.
+// Then it stores the internal chat as prevQuery.json, so that it may be used n upcoming queries
 func (q *ChatGPT) Query(ctx context.Context) error {
 	nextMsg, err := q.streamCompletions(ctx, q.apiKey, q.chat.Messages)
 	if err != nil {
@@ -36,11 +40,32 @@ func (q *ChatGPT) Query(ctx context.Context) error {
 	}
 	q.chat.Messages = append(q.chat.Messages, nextMsg)
 	home, _ := os.UserHomeDir()
-	err = tools.WriteFile(fmt.Sprintf("%v/.clai/conversations/prevQuery.json", home), &q.chat)
+	err = tools.WriteFile(path.Join(home, ".clai/conversations/prevQuery.json"), &q.chat)
 	if err != nil {
 		return fmt.Errorf("failed to write prevQuery: %w", err)
 	}
 	return nil
+}
+
+// TextQuery performs a streamCompletion and appends the returned message to it's internal chat.
+// It therefore does not store it to prevQuery.json, and assumes that the calee will deal with
+// storing the chat.
+func (q *ChatGPT) TextQuery(ctx context.Context, userInput string) error {
+	q.chat.Messages = append(q.chat.Messages, models.Message{Role: "user", Content: userInput})
+	nextMsg, err := q.streamCompletions(ctx, q.apiKey, q.chat.Messages)
+	if err != nil {
+		return fmt.Errorf("failed to stream completions: %w", err)
+	}
+	q.chat.Messages = append(q.chat.Messages, nextMsg)
+	return nil
+}
+
+func (q *ChatGPT) Chat() models.Chat {
+	return q.chat
+}
+
+func (q *ChatGPT) SetChat(chat models.Chat) {
+	q.chat = chat
 }
 
 func loadQuerier(model string) (*ChatGPT, error) {
@@ -51,6 +76,7 @@ func loadQuerier(model string) (*ChatGPT, error) {
 	}
 	defaultCpy := defaultGpt
 	defaultCpy.Model = model
+	defaultCpy.Url = ChatURL
 	// Load config based on model, allowing for different configs for each model
 	gptQuerier, err := tools.LoadConfigFromFile[ChatGPT](home, fmt.Sprintf("openai_gpt_%v.json", model), nil, &defaultCpy)
 	if misc.Truthy(os.Getenv("DEBUG")) {
@@ -67,7 +93,7 @@ func loadQuerier(model string) (*ChatGPT, error) {
 	return &gptQuerier, nil
 }
 
-func NewTextQuerier(conf text.Configurations) (models.Querier, error) {
+func NewTextQuerier(conf text.Configurations) (models.ChatQuerier, error) {
 	querier, err := loadQuerier(conf.Model)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load querier of model: %v, error: %w", conf.Model, err)

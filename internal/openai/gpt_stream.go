@@ -127,7 +127,7 @@ func (q *ChatGPT) handleStreamResponse(res *http.Response, printRaw bool) (model
 		if printRaw {
 			fmt.Print(fullMessage.Content)
 		} else {
-			tools.AttemptPrettyPrint(fullMessage)
+			tools.AttemptPrettyPrint(fullMessage, q.username)
 		}
 	}()
 

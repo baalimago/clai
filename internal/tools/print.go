@@ -56,24 +56,26 @@ func UpdateMessageTerminalMetadata(msg string, line *string, lineCount *int, ter
 
 // AttemptPrettyPrint by first checking if the glow command is available, and if so, pretty print the chat message
 // if not found, simply print the message as is
-func AttemptPrettyPrint(chatMessage models.Message) error {
+func AttemptPrettyPrint(chatMessage models.Message, username string) error {
+	role := chatMessage.Role
 	color := ancli.BLUE
 	switch chatMessage.Role {
 	case "user":
 		color = ancli.CYAN
+		role = username
 	case "system":
 		color = ancli.BLUE
 	}
 	cmd := exec.Command("glow", "--version")
 	if err := cmd.Run(); err != nil {
-		fmt.Printf("%v: %v\n", ancli.ColoredMessage(color, chatMessage.Role), chatMessage.Content)
+		fmt.Printf("%v: %v\n", ancli.ColoredMessage(color, role), chatMessage.Content)
 		return nil
 	}
 
 	cmd = exec.Command("glow")
 	cmd.Stdin = bytes.NewBufferString(chatMessage.Content)
 	cmd.Stdout = os.Stdout
-	fmt.Printf("%v:", ancli.ColoredMessage(color, chatMessage.Role))
+	fmt.Printf("%v:", ancli.ColoredMessage(color, role))
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to run glow: %w", err)
 	}
