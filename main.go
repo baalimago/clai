@@ -2,11 +2,8 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io/fs"
 	"os"
-	"strings"
 
 	"github.com/baalimago/clai/internal"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
@@ -59,96 +56,17 @@ Examples:
   - clai c help
 `
 
-func run(ctx context.Context, API_KEY string, cq internal.ChatModelQuerier, pq internal.PhotoQuerier, args []string) error {
-	cmd := args[0]
-	if misc.Truthy(os.Getenv("DEBUG")) {
-		ancli.PrintOK(fmt.Sprintf("args: %s\n", args))
-	}
-	switch cmd {
-	case "query":
-		fallthrough
-	case "q":
-		msgs := make([]internal.Message, 0)
-		replyDebugMode := misc.Truthy(os.Getenv("DEBUG_REPLY_MODE"))
-		if replyDebugMode {
-			ancli.PrintOK(fmt.Sprintf("reply mode active: %v\n", cq.ReplyMode))
-		}
-		if cq.ReplyMode {
-			c, err := internal.ReadPreviousQuery()
-			if err != nil {
-				if errors.Is(err, fs.ErrNotExist) {
-					ancli.PrintWarn("no previous query found\n")
-				} else {
-					return fmt.Errorf("failed to read previous query: %w", err)
-				}
-			}
-			msgs = append(msgs, c.Messages...)
-		} else {
-			msgs = append(msgs, internal.Message{Role: "system", Content: cq.SystemPrompt})
-		}
-		msgs = append(msgs, internal.Message{Role: "user", Content: strings.Join(args[1:], " ")})
-		if replyDebugMode {
-			ancli.PrintOK(fmt.Sprintf("messages pre-stream: %+v\n", msgs))
-		}
-		msg, err := cq.StreamCompletions(ctx, API_KEY, msgs)
-		msgs = append(msgs, msg)
-		cq.SaveAsPreviousQuery(msgs)
-		if err != nil && !errors.Is(err, context.Canceled) {
-			return fmt.Errorf("failed to query chat model: %w", err)
-		}
-		return nil
-
-	case "photo":
-		fallthrough
-	case "p":
-		err := pq.QueryPhotoModel(ctx, API_KEY, args[1:])
-		if err != nil {
-			return fmt.Errorf("failed to query photo model: %w", err)
-		}
-	case "glob":
-		fallthrough
-	case "g":
-		glob := args[1]
-		if !strings.Contains(glob, "*") {
-			ancli.PrintWarn(fmt.Sprintf("argument: '%v' does not seem to contain a wildcard '*', has it been properly enclosed?\n", glob))
-		}
-		globMessages, err := internal.ParseGlob(glob)
-		if err != nil {
-			return fmt.Errorf("failed to parse glob: %w", err)
-		}
-		msgs, err := cq.ConstructGlobMessages(globMessages, args[2:])
-		if err != nil {
-			return fmt.Errorf("failed to construct glob messages: %w", err)
-		}
-		if misc.Truthy(os.Getenv("DEBUG")) {
-			ancli.PrintOK(fmt.Sprintf("constructed messages: %v\n", msgs))
-		}
-		_, err = cq.StreamCompletions(ctx, API_KEY, msgs)
-		return err
-	case "chat":
-		fallthrough
-	case "c":
-		err := cq.Chat(ctx, API_KEY, args[1], args[2:])
-		if err != nil {
-			return fmt.Errorf("failed to chat: %w", err)
-		}
-	case "h":
-		fallthrough
-	case "help":
-		fmt.Print(usage)
-	default:
-		return fmt.Errorf("unknown command: '%s'\n%v", args[0], usage)
-	}
-	return nil
-}
-
 func main() {
-	API_KEY, cmq, pq, args := internal.Setup(usage)
+	querier, err := internal.Setup(usage)
+	if err != nil {
+		ancli.PrintErr(fmt.Sprintf("failed to setup: %v\n", err))
+		os.Exit(1)
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() { shutdown.Monitor(cancel) }()
-	err := run(ctx, API_KEY, cmq, pq, args)
+	err = querier.Query(ctx)
 	if err != nil {
-		ancli.PrintErr(err.Error() + "\n")
+		ancli.PrintErr(fmt.Sprintf("failed to run: %v\n", err))
 		os.Exit(1)
 	}
 	cancel()

@@ -1,7 +1,9 @@
-package internal
+package tools_test
 
 import (
 	"testing"
+
+	"github.com/baalimago/clai/internal/tools"
 )
 
 func TestReturnNonDefault(t *testing.T) {
@@ -57,13 +59,13 @@ func TestReturnNonDefault(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := returnNonDefault(tt.a, tt.b, tt.defaultVal)
+			got, err := tools.ReturnNonDefault(tt.a, tt.b, tt.defaultVal)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("returnNonDefault() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("ReturnNonDefault() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if !tt.wantErr && got != tt.want {
-				t.Errorf("returnNonDefault() = %v, want %v", got, tt.want)
+				t.Errorf("ReturnNonDefault() = %v, want %v", got, tt.want)
 			}
 		})
 	}

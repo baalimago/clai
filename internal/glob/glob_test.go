@@ -1,4 +1,4 @@
-package internal
+package glob
 
 import (
 	"fmt"
@@ -26,7 +26,7 @@ func TestParseGlob(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := ParseGlob(tt.glob)
+			got, err := parseGlob(tt.glob)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("parseGlob() error = %v, wantErr %v", err, tt.wantErr)
 				return

@@ -1,16 +1,17 @@
 package internal
 
 import (
+	"errors"
 	"flag"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"runtime/debug"
-	"strings"
 
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
-	"github.com/baalimago/go_away_boilerplate/pkg/misc"
+	"github.com/baalimago/clai/internal/glob"
+	"github.com/baalimago/clai/internal/models"
+	"github.com/baalimago/clai/internal/photo"
+	"github.com/baalimago/clai/internal/text"
+	"github.com/baalimago/clai/internal/tools"
 )
 
 type PromptConfig struct {
@@ -18,165 +19,108 @@ type PromptConfig struct {
 	Query string `yaml:"query"`
 }
 
-func returnNonDefault[T comparable](a, b, defaultVal T) (T, error) {
-	if a != defaultVal && b != defaultVal {
-		return defaultVal, fmt.Errorf("values are mutually exclusive")
-	}
-	if a != defaultVal {
-		return a, nil
-	}
-	if b != defaultVal {
-		return b, nil
-	}
-	return defaultVal, nil
+type Mode int
+
+const (
+	HELP Mode = iota
+	QUERY
+	CHAT
+	GLOB
+	PHOTO
+	VERSION
+)
+
+var defaultFlags = Configurations{
+	ChatModel:    "gpt-4-turbo-preview",
+	PhotoModel:   "dall-e-3",
+	PhotoPrefix:  "clai",
+	PhotoDir:     fmt.Sprintf("%v/Pictures", os.Getenv("HOME")),
+	StdinReplace: "",
+	PrintRaw:     false,
+	ReplyMode:    false,
 }
 
-var defaultFlags = flagSet{
-	chatModel:     "gpt-4-turbo-preview",
-	photoModel:    "dall-e-3",
-	picturePrefix: "clai",
-	pictureDir:    fmt.Sprintf("%v/Pictures", os.Getenv("HOME")),
-	stdinReplace:  "",
-	printRaw:      false,
-	replyMode:     false,
+func getModeFromArgs(cmd string) (Mode, error) {
+	switch cmd {
+	case "photo", "p":
+		return PHOTO, nil
+	case "chat", "c":
+		return CHAT, nil
+	case "query", "q":
+		return QUERY, nil
+	case "glob", "g":
+		return GLOB, nil
+	case "help", "h":
+		return HELP, nil
+	case "version", "v":
+		return VERSION, nil
+	default:
+		return HELP, fmt.Errorf("unknown command: '%s'\n", os.Args[1])
+	}
 }
 
-func Setup(usage string) (string, ChatModelQuerier, PhotoQuerier, []string) {
+func Setup(usage string) (models.Querier, error) {
 	flagSet := setupFlags(defaultFlags)
-	API_KEY := os.Getenv("OPENAI_API_KEY")
-	if API_KEY == "" {
-		ancli.PrintErr("OPENAI_API_KEY environment variable not set\n")
-		os.Exit(1)
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		ancli.PrintErr(fmt.Sprintf("failed to get home dir: %v\n", err))
-	}
-
-	client := http.Client{}
-	cmq := ChatModelQuerier{
-		SystemPrompt: "You are an assistent for a CLI interface. Answer concisely and informatively. Prefer markdown if possible.",
-		Raw:          flagSet.printRaw,
-		Url:          "https://api.openai.com/v1/chat/completions",
-		ReplyMode:    flagSet.replyMode,
-		home:         home,
-		client:       &client,
-	}
-	pq := PhotoQuerier{
-		PhotoDir:     flagSet.pictureDir,
-		PhotoPrefix:  flagSet.picturePrefix,
-		PromptFormat: "I NEED to test how the tool works with extremely simple prompts. DO NOT add any detail, just use it AS-IS: '%v'",
-		url:          "https://api.openai.com/v1/images/generations",
-		raw:          flagSet.printRaw,
-		client:       &client,
-	}
-
-	homedirConfig(&cmq, &pq)
-	applyFlagOverrides(&cmq, &pq, flagSet, defaultFlags)
-
-	if misc.Truthy(os.Getenv("DEBUG")) {
-		ancli.PrintOK(fmt.Sprintf("chatModel: %v\n", cmq))
-	}
-	return API_KEY, cmq, pq, parseArgsStdin(flagSet.stdinReplace, usage)
-}
-
-func applyFlagOverrides(cmq *ChatModelQuerier, pq *PhotoQuerier, flagSet, defaultFlags flagSet) {
-	if flagSet.chatModel != defaultFlags.chatModel {
-		cmq.Model = flagSet.chatModel
-	}
-	if flagSet.replyMode != defaultFlags.replyMode {
-		cmq.ReplyMode = flagSet.replyMode
-	}
-	if flagSet.printRaw != defaultFlags.printRaw {
-		cmq.Raw = flagSet.printRaw
-	}
-	if flagSet.photoModel != defaultFlags.photoModel {
-		pq.Model = flagSet.photoModel
-	}
-	if flagSet.picturePrefix != defaultFlags.picturePrefix {
-		pq.PhotoPrefix = flagSet.picturePrefix
-	}
-	if flagSet.pictureDir != defaultFlags.pictureDir {
-		pq.PhotoDir = flagSet.pictureDir
-	}
-}
-
-func exitWithFlagError(err error, shortFlag, longflag string) {
-	if err != nil {
-		// Im just too lazy to setup the err struct
-		if err.Error() == "values are mutually exclusive" {
-			ancli.PrintErr(fmt.Sprintf("flags: '%v' and '%v' are mutually exclusive, err: %v\n", shortFlag, longflag, err))
-		} else {
-			ancli.PrintErr(fmt.Sprintf("unexpected error: %v", err))
-		}
-		os.Exit(1)
-	}
-}
-
-func parseArgsStdin(stdinReplace, usage string) []string {
-	if misc.Truthy(os.Getenv("DEBUG")) {
-		ancli.PrintOK(fmt.Sprintf("stdinReplace: %v\n", stdinReplace))
-	}
 	args := flag.Args()
-	fi, err := os.Stdin.Stat()
+	mode, err := getModeFromArgs(args[0])
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-	var hasPipe bool
-	if fi.Mode()&os.ModeNamedPipe == 0 {
-		hasPipe = false
-	} else {
-		hasPipe = true
-	}
-	if len(args) == 1 && !hasPipe {
-		if args[0] == "h" || args[0] == "help" || args[0] == "-help" || args[0] == "-h" {
-			fmt.Print(usage)
-			os.Exit(0)
-		}
 
-		if args[0] == "v" || args[0] == "version" || args[0] == "-v" || args[0] == "-version" {
-			bi, ok := debug.ReadBuildInfo()
-			if !ok {
-				ancli.PrintErr("failed to read build info")
-				os.Exit(1)
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to find home dir: %v", err)
+	}
+	switch mode {
+	case CHAT, QUERY, GLOB:
+		tConf, err := tools.LoadConfigFromFile[text.Configurations](homeDir, "textConfig.json", migrateOldChatConfig, &text.DEFAULT)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load configs: %err", err)
+		}
+		applyFlagOverridesForText(&tConf, flagSet, defaultFlags)
+		if mode == GLOB {
+			globStr, err := glob.Setup()
+			if err != nil {
+				return nil, fmt.Errorf("failed to setup glob: %w", err)
 			}
-			fmt.Printf("version: %v, go version: %v, checksum: %v\n", bi.Main.Version, bi.GoVersion, bi.Main.Sum)
-			os.Exit(0)
+			tConf.Glob = globStr
 		}
-
-		ancli.PrintErr("found no prompt, set args or pipe in some string\n")
+		err = tConf.SetupPrompts()
+		if err != nil {
+			return nil, fmt.Errorf("failed to setup prompt: %v", err)
+		}
+		cq, err := CreateTextQuerier(tConf)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create text querier: %v\n", err)
+		}
+		return cq, nil
+	case PHOTO:
+		pConf, err := tools.LoadConfigFromFile(homeDir, "photoConfig.json", migrateOldPhotoConfig, &photo.DEFAULT)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load configs: %w", err)
+		}
+		applyFlagOverridesForPhoto(&pConf, flagSet, defaultFlags)
+		err = pConf.SetupPrompts()
+		if err != nil {
+			return nil, fmt.Errorf("failed to setup prompt: %v", err)
+		}
+		pq, err := NewPhotoQuerier(pConf)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create photo querier: %v\n", err)
+		}
+		return pq, nil
+	case HELP:
 		fmt.Print(usage)
-		os.Exit(1)
-	}
-	// If no data is in stdin, simply return args
-	if !hasPipe {
-		return args
-	}
-
-	inputData, err := io.ReadAll(os.Stdin)
-	if err != nil {
-		ancli.PrintErr(fmt.Sprintf("failed to read stdin: %v", err))
-		os.Exit(1)
-	}
-	// There is data to read from stdin, so read it
-	if err != nil {
-		ancli.PrintErr("failed to read from stdin\n")
-		os.Exit(1)
-	}
-	pipeIn := string(inputData)
-	if len(args) == 1 {
-		args = append(args, strings.Split(pipeIn, " ")...)
-	}
-
-	// Replace all occurrence of stdinReplaceSignal with pipeIn
-	for i, arg := range args {
-		if strings.Contains(arg, stdinReplace) {
-			args[i] = strings.ReplaceAll(arg, stdinReplace, pipeIn)
+		os.Exit(0)
+	case VERSION:
+		bi, ok := debug.ReadBuildInfo()
+		if !ok {
+			return nil, errors.New("failed to read build info")
 		}
+		fmt.Printf("version: %v, go version: %v, checksum: %v\n", bi.Main.Version, bi.GoVersion, bi.Main.Sum)
+		os.Exit(0)
+	default:
+		return nil, fmt.Errorf("unknown mode: %v\n", mode)
 	}
-
-	if misc.Truthy(os.Getenv("DEBUG")) {
-		ancli.PrintOK(fmt.Sprintf("args: %v\n", args))
-	}
-	return args
+	return nil, errors.New("unexpected conditional: how did you end up here?")
 }

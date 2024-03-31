@@ -15,41 +15,41 @@ func resetFlags() {
 func TestSetupFlagsDefaultValues(t *testing.T) {
 	resetFlags()
 	os.Args = []string{"cmd"}
-	defaults := flagSet{
-		chatModel:     "gpt-4-turbo-preview",
-		photoModel:    "dall-e-3",
-		picturePrefix: "clai",
-		pictureDir:    "picDir",
-		stdinReplace:  "stdInReplace",
-		printRaw:      false,
-		replyMode:     false,
+	defaults := Configurations{
+		ChatModel:    "gpt-4-turbo-preview",
+		PhotoModel:   "dall-e-3",
+		PhotoPrefix:  "clai",
+		PhotoDir:     "picDir",
+		StdinReplace: "stdInReplace",
+		PrintRaw:     false,
+		ReplyMode:    false,
 	}
 	result := setupFlags(defaults)
-	want, got := defaults.chatModel, result.chatModel
+	want, got := defaults.ChatModel, result.ChatModel
 	if got != want {
 		t.Fatalf("expected: %v, got: %v", want, got)
 	}
-	want, got = defaults.photoModel, result.photoModel
+	want, got = defaults.PhotoModel, result.PhotoModel
 	if got != want {
 		t.Fatalf("expected: %v, got: %v", want, got)
 	}
-	want, got = defaults.pictureDir, result.pictureDir
+	want, got = defaults.PhotoDir, result.PhotoDir
 	if got != want {
 		t.Fatalf("expected: %v, got: %v", want, got)
 	}
-	want, got = defaults.picturePrefix, result.picturePrefix
+	want, got = defaults.PhotoPrefix, result.PhotoPrefix
 	if got != want {
 		t.Fatalf("expected: %v, got: %v", want, got)
 	}
-	want, got = defaults.stdinReplace, result.stdinReplace
+	want, got = defaults.StdinReplace, result.StdinReplace
 	if got != want {
 		t.Fatalf("expected: %v, got: %v", want, got)
 	}
-	wantb, gotb := defaults.printRaw, result.printRaw
+	wantb, gotb := defaults.PrintRaw, result.PrintRaw
 	if gotb != wantb {
 		t.Fatalf("expected: %v, got: %v", want, got)
 	}
-	wantb, gotb = defaults.replyMode, result.replyMode
+	wantb, gotb = defaults.ReplyMode, result.ReplyMode
 	if gotb != wantb {
 		t.Fatalf("expected: %v, got: %v", want, got)
 	}
@@ -59,11 +59,11 @@ func TestSetupFlagsDefaultValues(t *testing.T) {
 func TestSetupFlagsShortFlags(t *testing.T) {
 	resetFlags()
 	os.Args = []string{"cmd", "-cm", "gpt-4", "-pm", "dall-e-2", "-pd", "/tmp", "-pp", "test-", "-I", "<stdin>", "-r", "-re"}
-	defaults := flagSet{}
+	defaults := Configurations{}
 	result := setupFlags(defaults)
 
-	if result.chatModel != "gpt-4" || result.photoModel != "dall-e-2" || result.pictureDir != "/tmp" ||
-		result.picturePrefix != "test-" || result.stdinReplace != "<stdin>" || result.printRaw != true || result.replyMode !=
+	if result.ChatModel != "gpt-4" || result.PhotoModel != "dall-e-2" || result.PhotoDir != "/tmp" ||
+		result.PhotoPrefix != "test-" || result.StdinReplace != "<stdin>" || result.PrintRaw != true || result.ReplyMode !=
 		true {
 		t.Errorf("Unexpected values for short flags, got %+v", result)
 	}
@@ -76,11 +76,11 @@ func TestSetupFlagsLongFlags(t *testing.T) {
 		"cmd", "--chat-model", "gpt-4", "--photo-model", "dall-e-2", "--photo-dir", "/tmp", "--photo-prefix",
 		"test-", "--replace", "<stdin>", "--raw", "--reply",
 	}
-	defaults := flagSet{}
+	defaults := Configurations{}
 	result := setupFlags(defaults)
 
-	if result.chatModel != "gpt-4" || result.photoModel != "dall-e-2" || result.pictureDir != "/tmp" ||
-		result.picturePrefix != "test-" || result.stdinReplace != "<stdin>" || result.printRaw != true || result.replyMode !=
+	if result.ChatModel != "gpt-4" || result.PhotoModel != "dall-e-2" || result.PhotoDir != "/tmp" ||
+		result.PhotoPrefix != "test-" || result.StdinReplace != "<stdin>" || result.PrintRaw != true || result.ReplyMode !=
 		true {
 		t.Errorf("Unexpected values for long flags, got %+v", result)
 	}
@@ -90,13 +90,13 @@ func TestSetupFlagsLongFlags(t *testing.T) {
 func TestSetupFlagsPrecedence(t *testing.T) {
 	resetFlags()
 	os.Args = []string{"cmd", "-cm", "gpt-4-short", "-pm", "dall-e-2-short"}
-	defaults := flagSet{
-		chatModel:  "shouldBeReplaced",
-		photoModel: "shouldBeReplaced",
+	defaults := Configurations{
+		ChatModel:  "shouldBeReplaced",
+		PhotoModel: "shouldBeReplaced",
 	}
 	result := setupFlags(defaults)
 
-	if result.chatModel == defaults.chatModel || result.photoModel == defaults.photoModel {
+	if result.ChatModel == defaults.ChatModel || result.PhotoModel == defaults.PhotoModel {
 		t.Errorf("Short flags should have precedence over long flags, got %+v", result)
 	}
 }
