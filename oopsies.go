@@ -28,7 +28,7 @@ func moveConfFromHomeToConfig() error {
 		if err != nil {
 			return fmt.Errorf("failed to rename: %w", err)
 		} else {
-			ancli.PrintOK(fmt.Sprintf("oopsie resolved: you'll now find your clai configurations in directory: '%v'\n ", newClaiDir))
+			ancli.PrintOK(fmt.Sprintf("oopsie resolved: you'll now find your clai configurations in directory: '%v'\n", newClaiDir))
 		}
 	}
 	return nil

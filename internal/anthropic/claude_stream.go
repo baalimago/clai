@@ -162,7 +162,7 @@ func (c *Claude) stringFromDeltaToken(deltaToken string) (string, error) {
 
 func (c *Claude) clearAndPrettyPrint(termWidth, lineCount int, fullMessage models.Message) {
 	// If raw, just leave all the tokens as is, since it's been streamed to terminal already
-	if c.raw {
+	if c.Raw {
 		return
 	}
 	if termWidth > 0 {

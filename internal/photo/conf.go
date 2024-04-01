@@ -27,9 +27,9 @@ type Configurations struct {
 	PromptFormat string `json:"prompt-format"`
 	Output       Output `json:"output"`
 	Raw          bool   `json:"raw"`
-	StdinReplace string
-	ReplyMode    bool
-	Prompt       string
+	StdinReplace string `json:"-"`
+	ReplyMode    bool   `json:"-"`
+	Prompt       string `json:"-"`
 }
 
 type Output struct {

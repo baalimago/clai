@@ -90,5 +90,6 @@ func NewTextQuerier(conf text.Configurations) (models.ChatQuerier, error) {
 		querier.debug = true
 	}
 	querier.chat = conf.InitialPrompt
+	querier.Raw = conf.Raw
 	return querier, nil
 }

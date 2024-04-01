@@ -16,17 +16,17 @@ import (
 
 // Configurations used to setup the requirements of text models
 type Configurations struct {
-	Model         string `json:"model"`
-	SystemPrompt  string `json:"system-prompt"`
-	StdinReplace  string
-	Stream        bool
-	ReplyMode     bool
-	ChatMode      bool
-	Glob          string
-	Raw           bool
-	InitialPrompt models.Chat
+	Model         string      `json:"model"`
+	SystemPrompt  string      `json:"system-prompt"`
+	Raw           bool        `json:"raw"`
+	StdinReplace  string      `json:"-"`
+	Stream        bool        `json:"-"`
+	ReplyMode     bool        `json:"-"`
+	ChatMode      bool        `json:"-"`
+	Glob          string      `json:"-"`
+	InitialPrompt models.Chat `json:"-"`
 	// PostProccessedPrompt which has had it's strings replaced etc
-	PostProccessedPrompt string
+	PostProccessedPrompt string `json:"-"`
 }
 
 var DEFAULT = Configurations{

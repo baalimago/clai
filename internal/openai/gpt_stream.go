@@ -95,7 +95,7 @@ func (q *ChatGPT) streamCompletions(ctx context.Context, API_KEY string, message
 		body, _ := io.ReadAll(res.Body)
 		return models.Message{}, fmt.Errorf("failed to execute request: %v, body: %v", res.Status, string(body))
 	}
-	msg, err := q.handleStreamResponse(res, q.raw)
+	msg, err := q.handleStreamResponse(res, q.Raw)
 	if err != nil {
 		return msg, fmt.Errorf("failed to handle stream response: %w", err)
 	}

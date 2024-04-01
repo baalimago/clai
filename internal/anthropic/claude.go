@@ -13,17 +13,17 @@ import (
 )
 
 type Claude struct {
-	Model            string `json:"model"`
-	MaxTokens        int    `json:"max_tokens"`
-	Url              string `json:"url"`
-	AnthropicVersion string `json:"anthropic-version"`
-	AnthropicBeta    string `json:"anthropic-beta"`
-	client           *http.Client
-	raw              bool
-	chat             models.Chat
-	apiKey           string
-	username         string
-	debug            bool
+	Model            string       `json:"model"`
+	MaxTokens        int          `json:"max_tokens"`
+	Url              string       `json:"url"`
+	AnthropicVersion string       `json:"anthropic-version"`
+	AnthropicBeta    string       `json:"anthropic-beta"`
+	Raw              bool         `json:"raw"`
+	client           *http.Client `json:"-"`
+	chat             models.Chat  `json:"-"`
+	apiKey           string       `json:"-"`
+	username         string       `json:"-"`
+	debug            bool         `json:"-"`
 }
 
 type ClaudeReq struct {

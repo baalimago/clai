@@ -15,19 +15,19 @@ import (
 )
 
 type ChatGPT struct {
-	Model            string  `json:"model"`
-	FrequencyPenalty float32 `json:"frequency_penalty"`
-	MaxTokens        *int    `json:"max_tokens"` // Use a pointer to allow null value
-	PresencePenalty  float32 `json:"presence_penalty"`
-	Temperature      float32 `json:"temperature"`
-	TopP             float32 `json:"top_p"`
-	Url              string  `json:"url"`
-	client           *http.Client
-	raw              bool
-	chat             models.Chat
-	apiKey           string
-	username         string
-	debug            bool
+	Model            string       `json:"model"`
+	FrequencyPenalty float32      `json:"frequency_penalty"`
+	MaxTokens        *int         `json:"max_tokens"` // Use a pointer to allow null value
+	PresencePenalty  float32      `json:"presence_penalty"`
+	Temperature      float32      `json:"temperature"`
+	TopP             float32      `json:"top_p"`
+	Url              string       `json:"url"`
+	Raw              bool         `json:"raw"`
+	client           *http.Client `json:"-"`
+	chat             models.Chat  `json:"-"`
+	apiKey           string       `json:"-"`
+	username         string       `json:"-"`
+	debug            bool         `json:"-"`
 }
 
 // Query performs a streamCompletion and appends the returned message to it's internal chat.
@@ -91,5 +91,6 @@ func NewTextQuerier(conf text.Configurations) (models.ChatQuerier, error) {
 		querier.debug = true
 	}
 	querier.chat = conf.InitialPrompt
+	querier.Raw = conf.Raw
 	return querier, nil
 }

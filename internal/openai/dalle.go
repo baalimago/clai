@@ -25,12 +25,12 @@ type DallE struct {
 	Style   string       `json:"style"`
 	Output  photo.Output `json:"output"`
 	// Don't save this as this is set via the Output struct
-	ResponseFormat string
-	Prompt         string
-	client         *http.Client
-	debug          bool
-	raw            bool
-	apiKey         string
+	ResponseFormat string       `json:"-"`
+	Prompt         string       `json:"-"`
+	client         *http.Client `json:"-"`
+	debug          bool         `json:"-"`
+	raw            bool         `json:"-"`
+	apiKey         string       `json:"-"`
 }
 
 type DallERequest struct {
