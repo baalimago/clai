@@ -47,7 +47,7 @@ func migrateOldChatConfig(configDirPath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to unmarshal old photo config: %w", err)
 	}
-	ancli.PrintOK(fmt.Sprintf("migrating old chat config to new format in textConfg.json\n"))
+	ancli.PrintOK("migrating old chat config to new format in textConfg.json\n")
 	migratedTextConfig := text.Configurations{
 		Model:        oldConf.Model,
 		SystemPrompt: oldConf.SystemPrompt,
