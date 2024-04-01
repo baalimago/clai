@@ -24,10 +24,10 @@ var defaultClaude = Claude{
 }
 
 func (c *Claude) constructRequest(ctx context.Context, chat models.Chat) (*http.Request, error) {
-	sysMsg, err := chat.SystemMessage()
-	if err != nil {
-		ancli.PrintWarn(fmt.Sprintf("failed to find system message: %v\n", err))
-
+	// ignored for now as error is not used
+	sysMsg, _ := chat.SystemMessage()
+	if c.debug {
+		ancli.PrintOK(fmt.Sprintf("pre-claudified messages: %+v\n", chat.Messages))
 	}
 	claudifiedMsgs := claudifyMessages(chat.Messages)
 	if c.debug {

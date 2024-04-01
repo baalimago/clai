@@ -42,9 +42,13 @@ func (c *Configurations) SetupPrompts() error {
 	primed := false
 	args := flag.Args()
 	if c.Glob != "" {
+		primed = true
 		globChat, err := glob.CreateChat(c.Glob, c.SystemPrompt)
 		if err != nil {
 			return fmt.Errorf("failed to get glob chat: %w", err)
+		}
+		if misc.Truthy(os.Getenv("DEBUG")) {
+			ancli.PrintOK(fmt.Sprintf("glob messages: %v", globChat.Messages))
 		}
 		c.InitialPrompt = globChat
 		args = args[1:]
@@ -57,7 +61,6 @@ func (c *Configurations) SetupPrompts() error {
 			return fmt.Errorf("failed to load previous query: %w", err)
 		}
 		c.InitialPrompt.Messages = append(c.InitialPrompt.Messages, iP.Messages...)
-		args = args[1:]
 	}
 	if !primed {
 		c.InitialPrompt.Messages = append(c.InitialPrompt.Messages, models.Message{
