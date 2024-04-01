@@ -15,6 +15,7 @@ const usage = `clai - (c)ommand (l)ine (a)rtificial (i)ntelligence
 
 Prerequisits:
   - Set the OPENAI_API_KEY environment variable to your OpenAI API key
+  - Set the ANTHROPIC_API_KEY environment variable to your Anthropic API key
   - (Optional) Set the NO_COLOR environment variable to disable ansi color output
   - (Optional) Install glow - https://github.com/charmbracelet/glow for formated markdown output
 
@@ -46,7 +47,7 @@ Examples:
   - clai h | clai -i q generate some examples for this usage string: '{}'
   - clai query "What's the weather like in Tokyo?"
   - clai glob "*.txt" "Summarize these documents."
-  - clai -cm gpt-3.5-turbo chat Latest advancements in AI?
+  - clai -cm claude-3-opus-20240229 chat new "What are the atest advancements in AI?"
   - clai photo "A futuristic cityscape"
   - clai -pm dall-e-2 photo A cat in space
   - clai -pd ~/Downloads -pp holiday A beach at sunset
