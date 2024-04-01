@@ -12,7 +12,7 @@ import (
 )
 
 func SaveAsPreviousQuery(msgs []models.Message) error {
-	home, err := os.UserHomeDir()
+	home, err := os.UserConfigDir()
 	if err != nil {
 		return fmt.Errorf("failed to get home dir: %w", err)
 	}
@@ -20,11 +20,11 @@ func SaveAsPreviousQuery(msgs []models.Message) error {
 		ID:       "prevQuery",
 		Messages: msgs,
 	}
-	return chat.Save(fmt.Sprintf("%v/.clai", home), c)
+	return chat.Save(fmt.Sprintf("%v/.clai/conversations", home), c)
 }
 
 func Load() (models.Chat, error) {
-	home, err := os.UserHomeDir()
+	home, err := os.UserConfigDir()
 	if err != nil {
 		return models.Chat{}, fmt.Errorf("failed to get home dir: %w", err)
 	}

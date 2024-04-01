@@ -73,8 +73,8 @@ func TestSetupFlagsShortFlags(t *testing.T) {
 func TestSetupFlagsLongFlags(t *testing.T) {
 	resetFlags()
 	os.Args = []string{
-		"cmd", "--chat-model", "gpt-4", "--photo-model", "dall-e-2", "--photo-dir", "/tmp", "--photo-prefix",
-		"test-", "--replace", "<stdin>", "--raw", "--reply",
+		"cmd", "-chat-model", "gpt-4", "-photo-model", "dall-e-2", "-photo-dir", "/tmp", "-photo-prefix",
+		"test-", "-replace", "<stdin>", "-raw", "-reply",
 	}
 	defaults := Configurations{}
 	result := setupFlags(defaults)

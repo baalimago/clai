@@ -8,9 +8,7 @@ type Querier interface {
 
 type ChatQuerier interface {
 	Querier
-	TextQuery(context.Context, string) error
-	Chat() Chat
-	SetChat(Chat)
+	TextQuery(context.Context, Chat) (Chat, error)
 }
 
 type Chat struct {

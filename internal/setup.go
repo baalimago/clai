@@ -59,6 +59,33 @@ func getModeFromArgs(cmd string) (Mode, error) {
 	}
 }
 
+func setupTextQuerier(mode Mode, confDir string, flagSet Configurations) (models.Querier, error) {
+	tConf, err := tools.LoadConfigFromFile[text.Configurations](confDir, "textConfig.json", migrateOldChatConfig, &text.DEFAULT)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load configs: %err", err)
+	}
+	if mode == CHAT {
+		tConf.ChatMode = true
+	}
+	applyFlagOverridesForText(&tConf, flagSet, defaultFlags)
+	if mode == GLOB {
+		globStr, err := glob.Setup()
+		if err != nil {
+			return nil, fmt.Errorf("failed to setup glob: %w", err)
+		}
+		tConf.Glob = globStr
+	}
+	err = tConf.SetupPrompts()
+	if err != nil {
+		return nil, fmt.Errorf("failed to setup prompt: %v", err)
+	}
+	cq, err := CreateTextQuerier(tConf)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create text querier: %v\n", err)
+	}
+	return cq, nil
+}
+
 func Setup(usage string) (models.Querier, error) {
 	flagSet := setupFlags(defaultFlags)
 	args := flag.Args()
@@ -67,38 +94,15 @@ func Setup(usage string) (models.Querier, error) {
 		return nil, err
 	}
 
-	homeDir, err := os.UserHomeDir()
+	confDir, err := os.UserConfigDir()
 	if err != nil {
 		return nil, fmt.Errorf("failed to find home dir: %v", err)
 	}
 	switch mode {
 	case CHAT, QUERY, GLOB:
-		tConf, err := tools.LoadConfigFromFile[text.Configurations](homeDir, "textConfig.json", migrateOldChatConfig, &text.DEFAULT)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load configs: %err", err)
-		}
-		if mode == CHAT {
-			tConf.ChatMode = true
-		}
-		applyFlagOverridesForText(&tConf, flagSet, defaultFlags)
-		if mode == GLOB {
-			globStr, err := glob.Setup()
-			if err != nil {
-				return nil, fmt.Errorf("failed to setup glob: %w", err)
-			}
-			tConf.Glob = globStr
-		}
-		err = tConf.SetupPrompts()
-		if err != nil {
-			return nil, fmt.Errorf("failed to setup prompt: %v", err)
-		}
-		cq, err := CreateTextQuerier(tConf)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create text querier: %v\n", err)
-		}
-		return cq, nil
+		return setupTextQuerier(mode, confDir, flagSet)
 	case PHOTO:
-		pConf, err := tools.LoadConfigFromFile(homeDir, "photoConfig.json", migrateOldPhotoConfig, &photo.DEFAULT)
+		pConf, err := tools.LoadConfigFromFile(confDir, "photoConfig.json", migrateOldPhotoConfig, &photo.DEFAULT)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load configs: %w", err)
 		}

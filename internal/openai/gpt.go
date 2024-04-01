@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"path"
 
 	"context"
 
 	"github.com/baalimago/clai/internal/models"
+	"github.com/baalimago/clai/internal/reply"
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
@@ -39,10 +39,9 @@ func (q *ChatGPT) Query(ctx context.Context) error {
 		return fmt.Errorf("failed to stream completions: %w", err)
 	}
 	q.chat.Messages = append(q.chat.Messages, nextMsg)
-	home, _ := os.UserHomeDir()
-	err = tools.WriteFile(path.Join(home, ".clai/conversations/prevQuery.json"), &q.chat)
+	err = reply.SaveAsPreviousQuery(q.chat.Messages)
 	if err != nil {
-		return fmt.Errorf("failed to write prevQuery: %w", err)
+		return fmt.Errorf("failed to save as previous query: %w", err)
 	}
 	return nil
 }
@@ -50,26 +49,16 @@ func (q *ChatGPT) Query(ctx context.Context) error {
 // TextQuery performs a streamCompletion and appends the returned message to it's internal chat.
 // It therefore does not store it to prevQuery.json, and assumes that the calee will deal with
 // storing the chat.
-func (q *ChatGPT) TextQuery(ctx context.Context, userInput string) error {
-	q.chat.Messages = append(q.chat.Messages, models.Message{Role: "user", Content: userInput})
-	nextMsg, err := q.streamCompletions(ctx, q.apiKey, q.chat.Messages)
+func (q *ChatGPT) TextQuery(ctx context.Context, chat models.Chat) (models.Chat, error) {
+	nextMsg, err := q.streamCompletions(ctx, q.apiKey, chat.Messages)
 	if err != nil {
-		return fmt.Errorf("failed to stream completions: %w", err)
+		return chat, fmt.Errorf("failed to stream completions: %w", err)
 	}
-	q.chat.Messages = append(q.chat.Messages, nextMsg)
-	return nil
+	chat.Messages = append(chat.Messages, nextMsg)
+	return chat, nil
 }
 
-func (q *ChatGPT) Chat() models.Chat {
-	return q.chat
-}
-
-func (q *ChatGPT) SetChat(chat models.Chat) {
-	q.chat = chat
-}
-
-func loadQuerier(model string) (*ChatGPT, error) {
-	home, _ := os.UserHomeDir()
+func loadQuerier(loadFrom, model string) (*ChatGPT, error) {
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {
 		return nil, fmt.Errorf("environment variable 'OPENAI_API_KEY' not set")
@@ -78,7 +67,7 @@ func loadQuerier(model string) (*ChatGPT, error) {
 	defaultCpy.Model = model
 	defaultCpy.Url = ChatURL
 	// Load config based on model, allowing for different configs for each model
-	gptQuerier, err := tools.LoadConfigFromFile[ChatGPT](home, fmt.Sprintf("openai_gpt_%v.json", model), nil, &defaultCpy)
+	gptQuerier, err := tools.LoadConfigFromFile[ChatGPT](loadFrom, fmt.Sprintf("openai_gpt_%v.json", model), nil, &defaultCpy)
 	if misc.Truthy(os.Getenv("DEBUG")) {
 		ancli.PrintOK(fmt.Sprintf("ChatGPT config: %+v\n", gptQuerier))
 	}
@@ -94,7 +83,8 @@ func loadQuerier(model string) (*ChatGPT, error) {
 }
 
 func NewTextQuerier(conf text.Configurations) (models.ChatQuerier, error) {
-	querier, err := loadQuerier(conf.Model)
+	home, _ := os.UserConfigDir()
+	querier, err := loadQuerier(home, conf.Model)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load querier of model: %v, error: %w", conf.Model, err)
 	}

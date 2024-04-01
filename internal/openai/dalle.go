@@ -64,7 +64,7 @@ var defaultDalle = DallE{
 }
 
 func NewPhotoQuerier(pConf photo.Configurations) (models.Querier, error) {
-	home, _ := os.UserHomeDir()
+	home, _ := os.UserConfigDir()
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {
 		return nil, fmt.Errorf("environment variable 'OPENAI_API_KEY' not set")

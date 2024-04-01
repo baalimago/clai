@@ -36,7 +36,7 @@ var DEFAULT = Configurations{
 
 func (c *Configurations) SetupPrompts() error {
 	if c.Glob != "" && c.ReplyMode {
-		ancli.PrintWarn("Using glob + reply modes together might yield strange results. The prevQuery will be appended after the glob messages.")
+		ancli.PrintWarn("Using glob + reply modes together might yield strange results. The prevQuery will be appended after the glob messages.\n")
 	}
 
 	primed := false
@@ -47,7 +47,7 @@ func (c *Configurations) SetupPrompts() error {
 			return fmt.Errorf("failed to get glob chat: %w", err)
 		}
 		c.InitialPrompt = globChat
-		args = args[2:]
+		args = args[1:]
 	}
 
 	if c.ReplyMode {

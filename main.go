@@ -57,6 +57,7 @@ Examples:
 `
 
 func main() {
+	err := handleOopsies()
 	querier, err := internal.Setup(usage)
 	if err != nil {
 		ancli.PrintErr(fmt.Sprintf("failed to setup: %v\n", err))

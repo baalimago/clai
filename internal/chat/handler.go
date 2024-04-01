@@ -47,22 +47,21 @@ Examples:
   - Delete a chat by ID:                                                                                          
     clai chat delete my_chat_id`
 
-type ChatQuerier struct {
+type ChatHandler struct {
 	q        models.ChatQuerier
 	debug    bool
 	username string
 	subCmd   string
-	chatID   string
+	chat     models.Chat
 	prompt   string
 	convDir  string
 }
 
-func (q *ChatQuerier) Query(ctx context.Context) error {
-	return q.chat(ctx)
+func (q *ChatHandler) Query(ctx context.Context) error {
+	return q.actOnSubCmd(ctx)
 }
 
-func New(q models.ChatQuerier, args string) (*ChatQuerier, error) {
-	home := os.Getenv("HOME")
+func New(q models.ChatQuerier, confDir, args string) (*ChatHandler, error) {
 	username := "user"
 	debug := false
 	if misc.Truthy(os.Getenv("DEBUG")) {
@@ -76,34 +75,33 @@ func New(q models.ChatQuerier, args string) (*ChatQuerier, error) {
 	}
 
 	subPrompt := strings.Join(argsArr[1:], " ")
-	return &ChatQuerier{
+	return &ChatHandler{
 		q:        q,
 		username: username,
 		debug:    debug,
 		subCmd:   subCmd,
-		chatID:   IdFromPrompt(subPrompt),
 		prompt:   subPrompt,
-		convDir:  path.Join(home, "/.clai/conversations/"),
+		convDir:  path.Join(confDir, "/.clai/conversations/"),
 	}, nil
 }
 
-func (cq *ChatQuerier) chat(ctx context.Context) error {
+func (cq *ChatHandler) actOnSubCmd(ctx context.Context) error {
 	if cq.debug {
 		ancli.PrintOK(fmt.Sprintf("chat: %+v\n", cq))
 	}
 	switch cq.subCmd {
 	case "new", "n":
-		return cq.chatNew(ctx)
+		return cq.new(ctx)
 	case "continue", "c":
-		return cq.chatContinue(ctx)
+		return cq.cont(ctx)
 	case "list", "l":
-		chats, err := cq.listChats()
+		chats, err := cq.list()
 		if err == nil {
 			printChats(chats)
 		}
 		return err
 	case "delete", "d":
-		return cq.chatDelete()
+		return cq.deleteFromPrompt()
 	case "query", "q":
 		// return cq.continueQueryAsChat(ctx, API_KEY, prompt)
 		return errors.New("not yet implemented")
@@ -115,20 +113,23 @@ func (cq *ChatQuerier) chat(ctx context.Context) error {
 	}
 }
 
-func (cq *ChatQuerier) chatNew(ctx context.Context) error {
-	err := cq.q.TextQuery(ctx, cq.prompt)
+func (cq *ChatHandler) new(ctx context.Context) error {
+	newChat := models.Chat{
+		ID: IdFromPrompt(cq.prompt),
+		Messages: []models.Message{
+			{Role: "user", Content: cq.prompt},
+		},
+	}
+	newChat, err := cq.q.TextQuery(ctx, newChat)
 	if err != nil {
 		return fmt.Errorf("failed to query chat model: %w", err)
 	}
-	// Update ID so that the subcommand isn't included. Slightly ugly, but it works.
-	cNew := cq.q.Chat()
-	cNew.ID = IdFromPrompt(cq.prompt)
-	cq.q.SetChat(cNew)
-	return cq.chatLoop(ctx)
+	cq.chat = newChat
+	return cq.loop(ctx)
 }
 
-func (cq *ChatQuerier) findChatByID(potentialChatIdx string) (models.Chat, error) {
-	chats, err := cq.listChats()
+func (cq *ChatHandler) findChatByID(potentialChatIdx string) (models.Chat, error) {
+	chats, err := cq.list()
 	if err != nil {
 		return models.Chat{}, fmt.Errorf("failed to list chats: %w", err)
 	}
@@ -139,15 +140,15 @@ func (cq *ChatQuerier) findChatByID(potentialChatIdx string) (models.Chat, error
 		}
 		return chats[chatIdx], nil
 	} else {
-		return cq.getChat(IdFromPrompt(potentialChatIdx))
+		return cq.getByID(IdFromPrompt(potentialChatIdx))
 	}
 }
 
-func (cq *ChatQuerier) chatContinue(ctx context.Context) error {
+func (cq *ChatHandler) cont(ctx context.Context) error {
 	if misc.Truthy(os.Getenv("DEBUG")) {
 		ancli.PrintOK(fmt.Sprintf("prompt: %v", cq.prompt))
 	}
-	chat, err := cq.findChatByID(cq.chatID)
+	chat, err := cq.findChatByID(cq.prompt)
 	if err != nil {
 		return fmt.Errorf("failed to get chat: %w", err)
 	}
@@ -158,15 +159,24 @@ func (cq *ChatQuerier) chatContinue(ctx context.Context) error {
 			return fmt.Errorf("failed to print chat message: %w", err)
 		}
 	}
-	cq.q.SetChat(chat)
-	return cq.chatLoop(ctx)
+	cq.chat = chat
+	return cq.loop(ctx)
 }
 
-func (cq *ChatQuerier) chatDelete() error {
-	return os.Remove(path.Join(cq.convDir, cq.chatID, ".json"))
+func (cq *ChatHandler) deleteFromPrompt() error {
+	c, err := cq.findChatByID(cq.prompt)
+	if err != nil {
+		return fmt.Errorf("failed to get chat to delete: %w", err)
+	}
+	err = os.Remove(path.Join(cq.convDir, fmt.Sprintf("%v.json", c.ID)))
+	if err != nil {
+		return fmt.Errorf("failed to delete chat: %w", err)
+	}
+	ancli.PrintOK(fmt.Sprintf("deleted chat '%v'\n", c.ID))
+	return nil
 }
 
-func (cq *ChatQuerier) listChats() ([]models.Chat, error) {
+func (cq *ChatHandler) list() ([]models.Chat, error) {
 	files, err := os.ReadDir(cq.convDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list conversations: %w", err)
@@ -197,13 +207,13 @@ func printChats(chats []models.Chat) {
 	}
 }
 
-func (cq *ChatQuerier) getChat(chatID string) (models.Chat, error) {
-	return FromPath(path.Join(cq.convDir, fmt.Sprintf("%v.json", chatID)))
+func (cq *ChatHandler) getByID(ID string) (models.Chat, error) {
+	return FromPath(path.Join(cq.convDir, fmt.Sprintf("%v.json", ID)))
 }
 
-func (cq *ChatQuerier) chatLoop(ctx context.Context) error {
+func (cq *ChatHandler) loop(ctx context.Context) error {
 	defer func() {
-		err := Save(cq.convDir, cq.q.Chat())
+		err := Save(cq.convDir, cq.chat)
 		if err != nil {
 			panic(err)
 		}
@@ -219,9 +229,11 @@ func (cq *ChatQuerier) chatLoop(ctx context.Context) error {
 		if userInput == "exit\n" || userInput == "quit\n" || ctx.Err() != nil {
 			return nil
 		}
-		err = cq.q.TextQuery(ctx, userInput)
+		cq.chat.Messages = append(cq.chat.Messages, models.Message{Role: "user", Content: userInput})
+		newChat, err := cq.q.TextQuery(ctx, cq.chat)
 		if err != nil {
 			return fmt.Errorf("failed to print chat completion: %w", err)
 		}
+		cq.chat = newChat
 	}
 }
