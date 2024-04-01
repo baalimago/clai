@@ -10,11 +10,12 @@ The multi-vendor aspect enables easy comparisons between different models, also 
 
 ## Prerequisites
 - **Go:** Install Go from [here](https://golang.org/doc/install).
-- **OpenAI API Key:** Set the `OPENAI_API_KEY` environment variable to your OpenAI API key. See [here](https://platform.openai.com/docs/quickstart/step-2-set-up-your-api-key).
-- **Anthropic API Key:** Set the `ANTHROPIC_API_KEY` environment variable to your Anthropic API key. See [here](https://console.anthropic.com/login?returnTo=%2F).
-- **Glow (Optional):** Install [Glow](https://github.com/charmbracelet/glow) for formatted markdown output when querying text responses.
+- **OpenAI API Key:** Set the `OPENAI_API_KEY` env var to your [OpenAI API key](https://platform.openai.com/docs/quickstart/step-2-set-up-your-api-key). [Text models](https://platform.openai.com/docs/models/gpt-4-and-gpt-4-turbo), [photo models](https://platform.openai.com/docs/models/dall-e).
+- **Anthropic API Key:** Set the `ANTHROPIC_API_KEY` env var to your [Anthropic API key](https://console.anthropic.com/login?returnTo=%2F). [Text models](https://docs.anthropic.com/claude/docs/models-overview#model-recommendations).
+- **Glow**(Optional): Install [Glow](https://github.com/charmbracelet/glow) for formatted markdown output when querying text responses.
 
 Note that only one of the vendors are required, but you can only access the models of the vendor you have an API key for.
+
 Most text and photo based models within the respective vendors are supported, see [model configurations](#models) for how to swap.
 
 ## Installation
