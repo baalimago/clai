@@ -8,8 +8,10 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
+// moveConfFromHomeToConfig since I didn't know that there was a os.UserConfigDir function
+// to call. Better to follow standards as much as possible, even if it might cause some migration
+// issues
 func moveConfFromHomeToConfig() error {
-	// check if directory '.clai' exists in homeDir
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Errorf("failed to get home dir: %w", err)
@@ -33,12 +35,12 @@ func moveConfFromHomeToConfig() error {
 }
 
 // handleOopsies by attemting to migrate and fix previous errors and issues caused by me, the writer of
-// the application
+// the application, due to lack of knowledge and/or foresight
 func handleOopsies() error {
 	err := moveConfFromHomeToConfig()
 	if err != nil {
 		ancli.PrintErr(fmt.Sprintf("failed to move conf from home to config: %v\n", err))
-		ancli.PrintErr("manual intervension is adviced, the configuration has moved from os.UserHomeDir() -> os.UserConfigDir(). Aborting to avoid causing conflicts.\n")
+		ancli.PrintErr("manual intervension is adviced, sorry for this inconvenience. The configuration has moved from os.UserHomeDir() -> os.UserConfigDir(). Aborting to avoid conflicts.\n")
 		os.Exit(1)
 	}
 	return nil

@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/baalimago/clai/internal/anthropic"
 	"github.com/baalimago/clai/internal/chat"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/openai"
@@ -22,6 +23,14 @@ func CreateTextQuerier(conf text.Configurations) (models.Querier, error) {
 		qTmp, err := openai.NewTextQuerier(conf)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create GPT querier: %w", err)
+		}
+		q = qTmp
+	}
+
+	if strings.Contains(conf.Model, "claude") {
+		qTmp, err := anthropic.NewTextQuerier(conf)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create claude querier: %w", err)
 		}
 		q = qTmp
 	}
