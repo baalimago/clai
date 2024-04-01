@@ -55,7 +55,7 @@ func getModeFromArgs(cmd string) (Mode, error) {
 	case "version", "v":
 		return VERSION, nil
 	default:
-		return HELP, fmt.Errorf("unknown command: '%s'\n", os.Args[1])
+		return HELP, fmt.Errorf("unknown command: '%s'", os.Args[1])
 	}
 }
 
@@ -81,7 +81,7 @@ func setupTextQuerier(mode Mode, confDir string, flagSet Configurations) (models
 	}
 	cq, err := CreateTextQuerier(tConf)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create text querier: %v\n", err)
+		return nil, fmt.Errorf("failed to create text querier: %v", err)
 	}
 	return cq, nil
 }
@@ -113,7 +113,7 @@ func Setup(usage string) (models.Querier, error) {
 		}
 		pq, err := NewPhotoQuerier(pConf)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create photo querier: %v\n", err)
+			return nil, fmt.Errorf("failed to create photo querier: %v", err)
 		}
 		return pq, nil
 	case HELP:
@@ -127,7 +127,7 @@ func Setup(usage string) (models.Querier, error) {
 		fmt.Printf("version: %v, go version: %v, checksum: %v\n", bi.Main.Version, bi.GoVersion, bi.Main.Sum)
 		os.Exit(0)
 	default:
-		return nil, fmt.Errorf("unknown mode: %v\n", mode)
+		return nil, fmt.Errorf("unknown mode: %v", mode)
 	}
 	return nil, errors.New("unexpected conditional: how did you end up here?")
 }

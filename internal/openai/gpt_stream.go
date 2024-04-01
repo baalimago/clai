@@ -70,7 +70,6 @@ func (q *ChatGPT) streamCompletions(ctx context.Context, API_KEY string, message
 	}
 	if misc.Truthy(os.Getenv("DEBUG")) {
 		ancli.PrintOK(fmt.Sprintf("streamCompletions: %+v\n", reqData))
-
 	}
 	jsonData, err := json.Marshal(reqData)
 	if err != nil {

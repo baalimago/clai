@@ -20,7 +20,7 @@ func TestParseGlob(t *testing.T) {
 		wantErr bool
 	}{
 		{"two files", fmt.Sprintf("%v/*.txt", tmpDir), 2, false},
-		{"no match", "*.log", 0, false},
+		{"no match", "*.log", 0, true},
 		{"invalid pattern", "[", 0, true},
 	}
 

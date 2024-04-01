@@ -1,19 +1,33 @@
 # clai: command line artificial intelligence
 [![Go Report Card](https://goreportcard.com/badge/github.com/baalimago/clai)](https://goreportcard.com/report/github.com/baalimago/clai)
 
-`clai` integrates the OpenAI models with the terminal.
+`clai` integrates AI models of multiple vendors via with the terminal.
 You can generate images, text, summarize content and chat while using native terminal functionality, such as pipes and termination signals.
+
+The multi-vendor aspect enables easy comparisons between different models, also removes the need for multiple subscriptions: most APIs are usage-based (some with expiration time).
 
 ![clai_in_action_example](./img/example.gif "Example of clai in action")
 
 ## Prerequisites
-- **OpenAI API Key:** Set the `OPENAI_API_KEY` environment variable to your OpenAI API key. See here: [OpenAI API Key](https://platform.openai.com/docs/quickstart/step-2-set-up-your-api-key).
+- **Go:** Install Go from [here](https://golang.org/doc/install).
+- **OpenAI API Key:** Set the `OPENAI_API_KEY` environment variable to your OpenAI API key. See [here](https://platform.openai.com/docs/quickstart/step-2-set-up-your-api-key).
+- **Anthropic API Key:** Set the `ANTHROPIC_API_KEY` environment variable to your Anthropic API key. See [here](https://console.anthropic.com/login?returnTo=%2F).
 - **Glow (Optional):** Install [Glow](https://github.com/charmbracelet/glow) for formatted markdown output when querying text responses.
 
+Note that only one of the vendors are required, but you can only access the models of the vendor you have an API key for.
+Most text and photo based models within the respective vendors are supported, see [model configurations](#models) for how to swap.
+
 ## Installation
+For stable version supporting only openai:
 ```bash
-go install github.com/baalimago/clai@latest
+go install github.com/baalimago/clai@v1.0
 ```
+
+For the latest version supporting multiple vendors (anthropic textmodels + openai). Note that this is less stable as of 2024-04-01:
+```bash
+go install github.com/baalimago/clai@v1.1
+```
+
 
 ### Examples
 
@@ -37,13 +51,17 @@ clai chat new Lets have a conversation about Hegel
 clai chat list `# List all your chats`
 ```
 ```bash
-clai c continue 1 `# Continue some previous chat` 
+clai -chat-model claude-3-opus-20240229 `  # Using some other model (clai@v1.1+)` \
+    c continue 1 `                          # Continue some previous chat` 
 ```
+
+Flag `-chat-model` works for any text-based model, regardless of vendor. 
+Ditto, `-photo-model` for any photo-based models.
 
 Glob queries:
 ```bash
-clai --raw `                    # Don't format output as markdown` \
-    --chat-model gpt-3.5-turbo `# Use some other model` \
+clai -raw `                    # Don't format output as markdown` \
+    -chat-model gpt-3.5-turbo `# Use some other model` \
     glob '*.go' Generate a README for this project > README.md
 ```
 
@@ -62,10 +80,26 @@ clai help `# For more info about the available commands (and shorthands)`
 ```
 
 ## Configuration
-On initial run, `clai` will create configuration files at `$HOME/.clai/`, one for photo and one for chat/text.
-Here you can configure initial prompts, temperature and other settings.
+`clai` will create configuration files at [os.GetConfigDir()](https://pkg.go.dev/os#UserConfigDir)`/.clai/`.
+Two default command-related ones `textConfig.json` and `photoConfig.json`, then one for each specific model.
+The configuration system is as follows:
+1. Default configurations from `textConfig.json` or `photoConfig.json`, here you can set your default model (which implies vendor)
+1. Override the configurations using flags
 
-Within `$HOME/.clai/conversations` you'll find all the conversations.
+The `text/photo-Config.json` files configures _what_ you want done, **not** how the models should perform it.
+This way it scales for any vendor + model.
+
+### Models
+There's two ways to configure the models:
+1. Set flag `-chat-model` or `-photo-model` 
+1. Set the `model` field in the `textConfig.json` or `photoConfig.json` file. This will make it default, if not overwritten by flags.
+
+Then, for each model, a new configuration file will be created.
+Since each vendor's model supports quite different configurations, the model configurations aren't exposed as flags.
+Example `.../.clai/openai_gpt_gpt-4-turbo-preview.json` which the contains configurations specific for this model, such as temperature.
+
+### Conversations
+Within [os.GetConfigDir()](https://pkg.go.dev/os#UserConfigDir)`/.clai/conversations` you'll find all the conversations.
 You can also modify the chats here as a way to prompt, or create entirely new ones as you see fit.
 
 ## Honorable mentions

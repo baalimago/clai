@@ -66,10 +66,8 @@ func claudifyMessages(msgs []models.Message) []models.Message {
 	// the 'system' role only is accepted as a separate parameter in json
 	// If the first message is a system one, assume it's the system prompt and pop it
 	// This system message has already been added into the initial query
-	newMsgs := make([]models.Message, 0)
 	if msgs[0].Role == "system" {
-		newMsgs = msgs[1:]
-		msgs = newMsgs
+		msgs = msgs[1:]
 	}
 
 	// Convert system messages from 'system' to 'assistant', since
@@ -99,7 +97,7 @@ func claudifyMessages(msgs []models.Message) []models.Message {
 	}
 
 	// claude also doesn't like it when two user messages are in a row
-	newMsgs = make([]models.Message, 0)
+	newMsgs := make([]models.Message, 0)
 	for i := 0; i < len(msgs); i++ {
 		hasMatched := false
 		jointString := ""

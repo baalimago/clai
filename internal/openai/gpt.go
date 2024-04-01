@@ -1,11 +1,10 @@
 package openai
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
-
-	"context"
 
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/reply"

@@ -45,6 +45,9 @@ func (c *Claude) constructRequest(ctx context.Context, chat models.Chat) (*http.
 		return nil, fmt.Errorf("failed to marshal ClaudeReq: %w", err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.Url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-api-key", c.apiKey)
 	req.Header.Set("anthropic-version", c.AnthropicVersion)

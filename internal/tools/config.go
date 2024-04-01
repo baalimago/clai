@@ -38,7 +38,7 @@ func LoadConfigFromFile[T any](
 	var conf T
 	err = ReadAndUnmarshal(photoConfigPath, &conf)
 	if err != nil {
-		return conf, fmt.Errorf("failed to unmarshal config '%v', error: %v\n", configFileName, err)
+		return conf, fmt.Errorf("failed to unmarshal config '%v', error: %v", configFileName, err)
 	}
 
 	if misc.Truthy(os.Getenv("DEBUG")) {
@@ -52,7 +52,7 @@ func createWithDefault[T any](configDirPath string, fileName string, dfault *T) 
 	if _, err := os.Stat(configDirPath); os.IsNotExist(err) {
 		err := setupClaiConfigDir(configDirPath)
 		if err != nil {
-			return fmt.Errorf("failed to setup config dotdir: %w\n", err)
+			return fmt.Errorf("failed to setup config dotdir: %w", err)
 		}
 	}
 
@@ -90,7 +90,7 @@ func WriteFile[T any](path string, toWrite *T) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal file: %w", err)
 	}
-	err = os.WriteFile(path, fileBytes, 0644)
+	err = os.WriteFile(path, fileBytes, 0o644)
 	if err != nil {
 		return fmt.Errorf("failed to write file: %w", err)
 	}

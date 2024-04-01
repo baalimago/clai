@@ -28,7 +28,6 @@ type DallE struct {
 	ResponseFormat string
 	Prompt         string
 	client         *http.Client
-	prompt         string
 	debug          bool
 	raw            bool
 	apiKey         string
