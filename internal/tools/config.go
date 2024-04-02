@@ -11,7 +11,7 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
-// LoadConfigFromFile if config exists. If non existant, create a new config
+// LoadConfigFromFile if config exists. If non existent, create a new config
 // using default. Run migrationCb after config has been created or fetched
 func LoadConfigFromFile[T any](
 	placeConfigPath,

@@ -80,7 +80,7 @@ func migrateOldChatConfig(configDirPath string) error {
 }
 
 // migrateOldPhotoConfig by attempting to read and unmarshal the photoConfig.json file
-// and transfering the fields which are applicable to the new photo.Configurations struct.
+// and transferring the fields which are applicable to the new photo.Configurations struct.
 // Then writes the new photoConfig.json file.
 func migrateOldPhotoConfig(configDirPath string) error {
 	oldPhotoConfigPath := fmt.Sprintf("%v/photoConfig.json", configDirPath)

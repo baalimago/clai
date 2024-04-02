@@ -34,13 +34,13 @@ func moveConfFromHomeToConfig() error {
 	return nil
 }
 
-// handleOopsies by attemting to migrate and fix previous errors and issues caused by me, the writer of
+// handleOopsies by attempting to migrate and fix previous errors and issues caused by me, the writer of
 // the application, due to lack of knowledge and/or foresight
 func handleOopsies() error {
 	err := moveConfFromHomeToConfig()
 	if err != nil {
 		ancli.PrintErr(fmt.Sprintf("failed to move conf from home to config: %v\n", err))
-		ancli.PrintErr("manual intervension is adviced, sorry for this inconvenience. The configuration has moved from os.UserHomeDir() -> os.UserConfigDir(). Aborting to avoid conflicts.\n")
+		ancli.PrintErr("manual intervention is advised, sorry for this inconvenience. The configuration has moved from os.UserHomeDir() -> os.UserConfigDir(). Aborting to avoid conflicts.\n")
 		os.Exit(1)
 	}
 	return nil
