@@ -1,9 +1,6 @@
 package anthropic
 
 import (
-	"bytes"
-	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -21,40 +18,6 @@ var defaultClaude = Claude{
 	AnthropicVersion: "2023-06-01",
 	AnthropicBeta:    "messages-2023-12-15",
 	MaxTokens:        1024,
-}
-
-func (c *Claude) constructRequest(ctx context.Context, chat models.Chat) (*http.Request, error) {
-	// ignored for now as error is not used
-	sysMsg, _ := chat.SystemMessage()
-	if c.debug {
-		ancli.PrintOK(fmt.Sprintf("pre-claudified messages: %+v\n", chat.Messages))
-	}
-	claudifiedMsgs := claudifyMessages(chat.Messages)
-	if c.debug {
-		ancli.PrintOK(fmt.Sprintf("claudified messages: %+v\n", claudifiedMsgs))
-	}
-	reqData := ClaudeReq{
-		Model:     c.Model,
-		Messages:  claudifiedMsgs,
-		MaxTokens: c.MaxTokens,
-		Stream:    true,
-		System:    sysMsg.Content,
-	}
-	jsonData, err := json.Marshal(reqData)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal ClaudeReq: %w", err)
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.Url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-api-key", c.apiKey)
-	req.Header.Set("anthropic-version", c.AnthropicVersion)
-	if c.debug {
-		ancli.PrintOK(fmt.Sprintf("Request: %+v\n", req))
-	}
-	return req, nil
 }
 
 func loadQuerier(loadFrom, model string) (*Claude, error) {
@@ -80,6 +43,8 @@ func loadQuerier(loadFrom, model string) (*Claude, error) {
 	return &claudeQuerier, nil
 }
 
+// NewTextQuerier returns a new Claude querier using the textconfigurations to load
+// the correct model. API key is fetched via environment variable
 func NewTextQuerier(conf text.Configurations) (models.ChatQuerier, error) {
 	home, _ := os.UserConfigDir()
 	querier, err := loadQuerier(home, conf.Model)

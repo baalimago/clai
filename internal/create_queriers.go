@@ -5,12 +5,12 @@ import (
 	"os"
 	"strings"
 
-	"github.com/baalimago/clai/internal/anthropic"
 	"github.com/baalimago/clai/internal/chat"
 	"github.com/baalimago/clai/internal/models"
-	"github.com/baalimago/clai/internal/openai"
 	"github.com/baalimago/clai/internal/photo"
 	"github.com/baalimago/clai/internal/text"
+	"github.com/baalimago/clai/internal/vendors/anthropic"
+	"github.com/baalimago/clai/internal/vendors/openai"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )

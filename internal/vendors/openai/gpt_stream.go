@@ -20,25 +20,6 @@ type responseFormat struct {
 	Type string `json:"type"`
 }
 
-type request struct {
-	Model            string           `json:"model"`
-	ResponseFormat   responseFormat   `json:"response_format"`
-	Messages         []models.Message `json:"messages"`
-	Stream           bool             `json:"stream"`
-	FrequencyPenalty float32          `json:"frequency_penalty"`
-	MaxTokens        *int             `json:"max_tokens"`
-	PresencePenalty  float32          `json:"presence_penalty"`
-	Temperature      float32          `json:"temperature"`
-	TopP             float32          `json:"top_p"`
-}
-
-var defaultGpt = ChatGPT{
-	Model:       "gpt-4-turbo-preview",
-	Temperature: 1.0,
-	TopP:        1.0,
-	Url:         ChatURL,
-}
-
 type chatCompletionChunk struct {
 	Id                string `json:"id"`
 	Object            string `json:"object"`
@@ -57,7 +38,7 @@ var dataPrefix = []byte("data: ")
 
 // streamCompletions taking the messages as prompt conversation. Returns the messages from the chat model.
 func (q *ChatGPT) streamCompletions(ctx context.Context, API_KEY string, messages []models.Message) (models.Message, error) {
-	reqData := request{
+	reqData := gptReq{
 		Model:            q.Model,
 		FrequencyPenalty: q.FrequencyPenalty,
 		MaxTokens:        q.MaxTokens,

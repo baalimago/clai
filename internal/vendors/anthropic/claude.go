@@ -26,7 +26,7 @@ type Claude struct {
 	debug            bool         `json:"-"`
 }
 
-type ClaudeReq struct {
+type claudeReq struct {
 	Model     string           `json:"model"`
 	Messages  []models.Message `json:"messages"`
 	MaxTokens int              `json:"max_tokens"`

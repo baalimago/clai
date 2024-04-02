@@ -5,10 +5,10 @@ import (
 	"os"
 	"path"
 
-	"github.com/baalimago/clai/internal/openai"
 	"github.com/baalimago/clai/internal/photo"
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/internal/tools"
+	"github.com/baalimago/clai/internal/vendors/openai"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )

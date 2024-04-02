@@ -2,6 +2,7 @@ package anthropic
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -176,4 +177,38 @@ func (c *Claude) clearAndPrettyPrint(termWidth, lineCount int, fullMessage model
 		ancli.PrintErr(fmt.Sprintf("failed to pretty print, normal printing. Error was: %v\n", err))
 		fmt.Print(fullMessage.Content)
 	}
+}
+
+func (c *Claude) constructRequest(ctx context.Context, chat models.Chat) (*http.Request, error) {
+	// ignored for now as error is not used
+	sysMsg, _ := chat.SystemMessage()
+	if c.debug {
+		ancli.PrintOK(fmt.Sprintf("pre-claudified messages: %+v\n", chat.Messages))
+	}
+	claudifiedMsgs := claudifyMessages(chat.Messages)
+	if c.debug {
+		ancli.PrintOK(fmt.Sprintf("claudified messages: %+v\n", claudifiedMsgs))
+	}
+	reqData := claudeReq{
+		Model:     c.Model,
+		Messages:  claudifiedMsgs,
+		MaxTokens: c.MaxTokens,
+		Stream:    true,
+		System:    sysMsg.Content,
+	}
+	jsonData, err := json.Marshal(reqData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal ClaudeReq: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.Url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", c.apiKey)
+	req.Header.Set("anthropic-version", c.AnthropicVersion)
+	if c.debug {
+		ancli.PrintOK(fmt.Sprintf("Request: %+v\n", req))
+	}
+	return req, nil
 }
