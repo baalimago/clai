@@ -31,8 +31,8 @@ const (
 )
 
 var defaultFlags = Configurations{
-	ChatModel:    "gpt-4-turbo-preview",
-	PhotoModel:   "dall-e-3",
+	ChatModel:    "",
+	PhotoModel:   "",
 	PhotoPrefix:  "clai",
 	PhotoDir:     fmt.Sprintf("%v/Pictures", os.Getenv("HOME")),
 	StdinReplace: "",

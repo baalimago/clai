@@ -97,25 +97,16 @@ func claudifyMessages(msgs []models.Message) []models.Message {
 	}
 
 	// claude also doesn't like it when two user messages are in a row
-	newMsgs := make([]models.Message, 0)
-	for i := 0; i < len(msgs); i++ {
-		hasMatched := false
-		jointString := ""
-		for (i+1 < len(msgs)) && msgs[i].Role == "user" && msgs[i+1].Role == "user" {
-			hasMatched = true
-			jointString = fmt.Sprintf("%v\n%v", jointString, fmt.Sprintf("%v\n%v", msgs[i].Content, msgs[i+1].Content))
-			i += 2
-		}
-		if hasMatched {
-			newMsgs = append(newMsgs, models.Message{
-				Role:    "user",
-				Content: jointString,
-			})
+	for i := 1; i < len(msgs); {
+		if msgs[i-1].Role == "user" && msgs[i].Role == "user" {
+			msgs[i].Content = fmt.Sprintf("%v\n%v", msgs[i-1].Content, msgs[i].Content)
+			tmp := msgs[0 : i-1]
+			tmp = append(tmp, msgs[i:]...)
+			msgs = tmp
 		} else {
-			hasMatched = false
-			newMsgs = append(newMsgs, msgs[i])
+			i++
 		}
 	}
 
-	return newMsgs
+	return msgs
 }
