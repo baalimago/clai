@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"runtime/pprof"
 
 	"github.com/baalimago/clai/internal"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
@@ -27,9 +28,9 @@ Flags:
   -cm, -chat-model string      Set the chat model to use. Default is 'gpt-4-turbo-preview'. 
   -pm, -photo-model string     Set the image model to use. Default is 'dall-e-3'. 
   -pd, -photo-dir string       Set the directory to store the generated pictures. Default is $HOME/Pictures. 
-  -pp, -photo-prefix string  Set the prefix for the generated pictures. Default is 'clai'. 
+  -pp, -photo-prefix string    Set the prefix for the generated pictures. Default is 'clai'. 
   -I, -replace string          Set the string to replace with stdin. Default is '{}'. (flag syntax borrowed from xargs)
-  -i bool                       Set to true to replace '{}' with stdin. This is overwritten by -I and -replace. Default is false. (flag syntax borrowed from xargs)
+  -i bool                      Set to true to replace '{}' with stdin. This is overwritten by -I and -replace. Default is false. (flag syntax borrowed from xargs)
 
 Commands:
   h|help                        Display this help message
@@ -58,6 +59,23 @@ Examples:
 `
 
 func main() {
+	if misc.Truthy(os.Getenv("DEBUG_CPU")) {
+		f, err := os.Create("cpu_profile.prof")
+		ok := true
+		if err != nil {
+			ancli.PrintErr(fmt.Sprintf("failed to create profiler file: %v", err))
+		}
+		if ok {
+			defer f.Close()
+			// Start the CPU profile
+			err = pprof.StartCPUProfile(f)
+			if err != nil {
+				ancli.PrintErr(fmt.Sprintf("failed to start profiler : %v", err))
+			}
+			defer pprof.StopCPUProfile()
+		}
+	}
+
 	err := handleOopsies()
 	if err != nil {
 		ancli.PrintWarn(fmt.Sprintf("failed to handle oopsies, but as we didn't panic, it should be benign. Error: %v\n", err))
