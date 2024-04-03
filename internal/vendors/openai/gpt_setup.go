@@ -26,7 +26,6 @@ func loadQuerier(loadFrom, model string) (*ChatGPT, error) {
 	}
 	defaultCpy := defaultGpt
 	defaultCpy.Model = model
-	defaultCpy.Url = ChatURL
 	// Load config based on model, allowing for different configs for each model
 	gptQuerier, err := tools.LoadConfigFromFile[ChatGPT](loadFrom, fmt.Sprintf("openai_gpt_%v.json", model), nil, &defaultCpy)
 	if misc.Truthy(os.Getenv("DEBUG")) {
