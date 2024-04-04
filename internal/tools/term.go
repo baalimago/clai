@@ -15,7 +15,7 @@ func TermWidth() (int, error) {
 
 	retCode, _, errno := syscall.Syscall(
 		syscall.SYS_IOCTL,
-		uintptr(syscall.Stdin),
+		uintptr(syscall.Stderr),
 		uintptr(syscall.TIOCGWINSZ),
 		uintptr(unsafe.Pointer(ws)),
 	)
