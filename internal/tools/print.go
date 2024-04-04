@@ -10,20 +10,10 @@ import (
 
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
-	"golang.org/x/term"
 )
 
 func WillBeNewLine(line, msg string, termWidth int) bool {
 	return utf8.RuneCountInString(line+msg) > termWidth
-}
-
-func TerminalWidth() (int, error) {
-	termInt := int(os.Stderr.Fd())
-	termWidth, _, err := term.GetSize(termInt)
-	if err != nil {
-		return 0, err
-	}
-	return termWidth, nil
 }
 
 func ClearTermTo(termWidth, upTo int) {

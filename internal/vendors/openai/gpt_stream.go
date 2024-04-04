@@ -91,7 +91,7 @@ func (q *ChatGPT) handleStreamResponse(res *http.Response, printRaw bool) (model
 	br := bufio.NewReader(res.Body)
 	line := ""
 	lineCount := 0
-	termWidth, err := tools.TerminalWidth()
+	termWidth, err := tools.TermWidth()
 	if err != nil {
 		ancli.PrintWarn(fmt.Sprintf("failed to get terminal size: %v\n", err))
 	}

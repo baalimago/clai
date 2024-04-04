@@ -2,20 +2,18 @@ package photo
 
 import (
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
+	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
-	"golang.org/x/term"
 )
 
 func StartAnimation() func() {
 	t0 := time.Now()
 	ticker := time.NewTicker(time.Second / 60)
 	stop := make(chan struct{})
-	termInt := int(os.Stderr.Fd())
-	termWidth, _, err := term.GetSize(termInt)
+	termWidth, err := tools.TermWidth()
 	if err != nil {
 		ancli.PrintWarn(fmt.Sprintf("failed to get terminal size: %v\n", err))
 		termWidth = 100

@@ -66,7 +66,7 @@ func (c *Claude) handleStreamResponse(resp *http.Response) (models.Message, erro
 	br := bufio.NewReader(resp.Body)
 	line := ""
 	lineCount := 0
-	termWidth, err := tools.TerminalWidth()
+	termWidth, err := tools.TermWidth()
 	if err != nil {
 		ancli.PrintWarn(fmt.Sprintf("failed to get terminal size: %v\n", err))
 	}
