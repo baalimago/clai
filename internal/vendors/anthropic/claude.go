@@ -1,13 +1,11 @@
 package anthropic
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"os"
 
 	"github.com/baalimago/clai/internal/models"
-	"github.com/baalimago/clai/internal/reply"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
@@ -18,12 +16,18 @@ type Claude struct {
 	Url              string       `json:"url"`
 	AnthropicVersion string       `json:"anthropic-version"`
 	AnthropicBeta    string       `json:"anthropic-beta"`
-	Raw              bool         `json:"raw"`
 	client           *http.Client `json:"-"`
-	chat             models.Chat  `json:"-"`
+	origChat         models.Chat  `json:"-"`
 	apiKey           string       `json:"-"`
-	username         string       `json:"-"`
 	debug            bool         `json:"-"`
+}
+
+var CLAUDE_DEFAULT = Claude{
+	Model:            "claude-3-opus-20240229",
+	Url:              ClaudeURL,
+	AnthropicVersion: "2023-06-01",
+	AnthropicBeta:    "messages-2023-12-15",
+	MaxTokens:        1024,
 }
 
 type claudeReq struct {
@@ -32,33 +36,6 @@ type claudeReq struct {
 	MaxTokens int              `json:"max_tokens"`
 	Stream    bool             `json:"stream"`
 	System    string           `json:"system"`
-}
-
-// Query performs a streamCompletion and appends the returned message to it's internal chat.
-// Then it stores the internal chat as prevQuery.json, so that it may be used n upcoming queries
-func (c *Claude) Query(ctx context.Context) error {
-	nextMsg, err := c.streamCompletions(ctx, c.chat)
-	if err != nil {
-		return fmt.Errorf("failed to stream completions: %w", err)
-	}
-	c.chat.Messages = append(c.chat.Messages, nextMsg)
-	err = reply.SaveAsPreviousQuery(c.chat.Messages)
-	if err != nil {
-		return fmt.Errorf("failed to save as previous query: %w", err)
-	}
-	return nil
-}
-
-// TextQuery performs a streamCompletion and appends the returned message to it's internal chat.
-// It therefore does not store it to prevQuery.json, and assumes that the calee will deal with
-// storing the chat.
-func (c *Claude) TextQuery(ctx context.Context, chat models.Chat) (models.Chat, error) {
-	nextMsg, err := c.streamCompletions(ctx, chat)
-	if err != nil {
-		return chat, fmt.Errorf("failed to stream completions: %w", err)
-	}
-	chat.Messages = append(chat.Messages, nextMsg)
-	return chat, nil
 }
 
 // claudifyMessages converts from 'normal' openai chat format into a format which claud prefers

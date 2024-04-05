@@ -2,8 +2,10 @@ package tools
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -99,7 +101,7 @@ func WriteFile[T any](path string, toWrite *T) error {
 
 // ReadAndUnmarshal by first finding the file, then attempting to read + unmarshal to T
 func ReadAndUnmarshal[T any](filePath string, config *T) error {
-	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+	if _, err := os.Stat(filePath); errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("failed to find file: %w", err)
 	}
 	file, err := os.Open(filePath)

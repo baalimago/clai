@@ -72,7 +72,7 @@ func migrateOldChatConfig(configDirPath string) error {
 		Url:              oldConf.URL,
 	}
 
-	err = tools.CreateFile(fmt.Sprintf("%v/openai_gpt_%v.json", configDirPath, oldConf.Model), &migratedChatgptConfig)
+	err = tools.CreateFile[openai.ChatGPT](fmt.Sprintf("%v/openai_gpt_%v.json", configDirPath, oldConf.Model), &migratedChatgptConfig)
 	if err != nil {
 		return fmt.Errorf("failed to write gpt4 turbo preview config: %w", err)
 	}

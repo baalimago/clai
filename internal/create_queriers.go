@@ -10,7 +10,6 @@ import (
 	"github.com/baalimago/clai/internal/photo"
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/internal/vendors/anthropic"
-	"github.com/baalimago/clai/internal/vendors/openai"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
@@ -19,20 +18,13 @@ import (
 // a TextQuerier
 func CreateTextQuerier(conf text.Configurations) (models.Querier, error) {
 	var q models.Querier
-	if strings.Contains(conf.Model, "gpt") {
-		qTmp, err := openai.NewTextQuerier(conf)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create GPT querier: %w", err)
-		}
-		q = qTmp
-	}
 
 	if strings.Contains(conf.Model, "claude") {
-		qTmp, err := anthropic.NewTextQuerier(conf)
+		qTmp, err := text.NewQuerier(conf, &anthropic.CLAUDE_DEFAULT)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create claude querier: %w", err)
+			return nil, fmt.Errorf("failed to create text querier: %w", err)
 		}
-		q = qTmp
+		q = &qTmp
 	}
 
 	if misc.Truthy(os.Getenv("DEBUG")) {
@@ -62,14 +54,6 @@ func NewPhotoQuerier(conf photo.Configurations) (models.Querier, error) {
 		if _, err := os.Stat(conf.Output.Dir); os.IsNotExist(err) {
 			return nil, fmt.Errorf("failed to find photo output directory: %w", err)
 		}
-	}
-
-	if strings.Contains(conf.Model, "dall") {
-		dalleQuerier, err := openai.NewPhotoQuerier(conf)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create DallE querier: %w", err)
-		}
-		return dalleQuerier, nil
 	}
 
 	return nil, fmt.Errorf("failed to find text querier for model: %v", conf.Model)

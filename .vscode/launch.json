@@ -18,14 +18,27 @@
       }
     },
     {
-      "name": "Launch Claude - Glob",
+      "name": "Launch Claude - Query",
       "type": "go",
       "request": "launch",
       "program": "${workspaceFolder}",
       "args": [
-        "glob",
-        "go.mod",
-        "I have two files which are practically identical to this. How can I generalize the solution to reduce the amount of repeated code? The primary part I'm unsure of is how to set the apiKey"
+        "query",
+        "test"
+      ],
+      "env": {
+        "NO_COLOR": "true"
+      }
+    },
+    {
+      "name": "Launch Claude - Chat",
+      "type": "go",
+      "request": "launch",
+      "program": "${workspaceFolder}",
+      "args": [
+        "chat",
+        "new",
+        "im debugging my ai cli tool's conversation functionality, reply with something short"
       ],
       "env": {
         "NO_COLOR": "true"

@@ -61,6 +61,7 @@ func getModeFromArgs(cmd string) (Mode, error) {
 
 func setupTextQuerier(mode Mode, confDir string, flagSet Configurations) (models.Querier, error) {
 	tConf, err := tools.LoadConfigFromFile[text.Configurations](confDir, "textConfig.json", migrateOldChatConfig, &text.DEFAULT)
+	tConf.ConfigDir = confDir
 	if err != nil {
 		return nil, fmt.Errorf("failed to load configs: %err", err)
 	}

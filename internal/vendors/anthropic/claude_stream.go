@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/baalimago/clai/internal/models"
-	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
@@ -27,80 +26,68 @@ type ContentBlockDelta struct {
 	Delta Delta  `json:"delta"`
 }
 
-func (c *Claude) streamCompletions(ctx context.Context, chat models.Chat) (models.Message, error) {
+func (c *Claude) StreamCompletions(ctx context.Context, chat models.Chat) (chan models.CompletionEvent, error) {
 	req, err := c.constructRequest(ctx, chat)
 	if err != nil {
-		return models.Message{}, fmt.Errorf("failed to construct request: %w", err)
+		return nil, fmt.Errorf("failed to construct request: %w", err)
 	}
 
-	nextMsg, err := c.stream(ctx, req)
-	if err != nil {
-		return models.Message{}, fmt.Errorf("failed to stream completions: %w", err)
-	}
-	return nextMsg, nil
+	return c.stream(ctx, req)
 }
 
-func (c *Claude) stream(ctx context.Context, req *http.Request) (models.Message, error) {
+func (c *Claude) stream(ctx context.Context, req *http.Request) (chan models.CompletionEvent, error) {
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return models.Message{}, fmt.Errorf("failed to do request: %w", err)
+		return nil, fmt.Errorf("failed to do request: %w", err)
 	}
-	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return models.Message{}, fmt.Errorf("failed to execute request: %v, body: %v", resp.Status, string(body))
+		return nil, fmt.Errorf("failed to execute request: %v, body: %v", resp.Status, string(body))
 	}
 
-	nextMsg, err := c.handleStreamResponse(resp)
+	outChan, err := c.handleStreamResponse(ctx, resp)
 	if err != nil {
-		return models.Message{}, fmt.Errorf("failed to parse response: %w", err)
+		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
-	return nextMsg, nil
+	return outChan, nil
 }
 
-func (c *Claude) handleStreamResponse(resp *http.Response) (models.Message, error) {
-	fullMessage := models.Message{
-		Role: "system",
-	}
-	br := bufio.NewReader(resp.Body)
-	line := ""
-	lineCount := 0
-	termWidth, err := tools.TermWidth()
-	if err != nil {
-		ancli.PrintWarn(fmt.Sprintf("failed to get terminal size: %v\n", err))
-	}
-
-	defer func() {
-		c.clearAndPrettyPrint(termWidth, lineCount, fullMessage)
+func (c *Claude) handleStreamResponse(ctx context.Context, resp *http.Response) (chan models.CompletionEvent, error) {
+	outChan := make(chan models.CompletionEvent)
+	go func() {
+		br := bufio.NewReader(resp.Body)
+		defer func() {
+			resp.Body.Close()
+			close(outChan)
+		}()
+		for {
+			token, err := br.ReadString('\n')
+			if err != nil {
+				outChan <- models.CompletionEvent(errors.New(fmt.Sprintf("failed to read line: %v\n", err)))
+				return
+			}
+			token = strings.TrimSpace(token)
+			if ctx.Err() != nil {
+				outChan <- models.CompletionEvent(errors.New("context cancelled"))
+				return
+			}
+			if token == "" {
+				continue
+			}
+			claudeMsg, err := c.handleToken(br, token)
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					return
+				}
+				outChan <- models.CompletionEvent(errors.New(fmt.Sprintf("failed to handle token: %v\n", err)))
+			}
+			if claudeMsg != "" {
+				outChan <- models.CompletionEvent(claudeMsg)
+			}
+		}
 	}()
-
-	for {
-		token, err := br.ReadString('\n')
-		token = strings.TrimSpace(token)
-		if token == "" {
-			continue
-		}
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			return models.Message{}, fmt.Errorf("failed to read line: %w", err)
-		}
-		claudeMsg, err := c.handleToken(br, token)
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			ancli.PrintWarn(fmt.Sprintf("failed to handle token: %v\n", err))
-		}
-		fullMessage.Content += claudeMsg
-		if termWidth > 0 {
-			tools.UpdateMessageTerminalMetadata(claudeMsg, &line, &lineCount, termWidth)
-		}
-		fmt.Print(claudeMsg)
-	}
-	return fullMessage, nil
+	return outChan, nil
 }
 
 func (c *Claude) handleToken(br *bufio.Reader, token string) (string, error) {
@@ -161,31 +148,15 @@ func (c *Claude) stringFromDeltaToken(deltaToken string) (string, error) {
 	return delta.Delta.Text, nil
 }
 
-func (c *Claude) clearAndPrettyPrint(termWidth, lineCount int, fullMessage models.Message) {
-	// If raw, just leave all the tokens as is, since it's been streamed to terminal already
-	if c.Raw {
-		return
-	}
-	if termWidth > 0 {
-		tools.ClearTermTo(termWidth, lineCount)
-	} else {
-		fmt.Println()
-	}
-
-	err := tools.AttemptPrettyPrint(fullMessage, c.username)
-	if err != nil {
-		ancli.PrintErr(fmt.Sprintf("failed to pretty print, normal printing. Error was: %v\n", err))
-		fmt.Print(fullMessage.Content)
-	}
-}
-
 func (c *Claude) constructRequest(ctx context.Context, chat models.Chat) (*http.Request, error) {
 	// ignored for now as error is not used
 	sysMsg, _ := chat.SystemMessage()
 	if c.debug {
 		ancli.PrintOK(fmt.Sprintf("pre-claudified messages: %+v\n", chat.Messages))
 	}
-	claudifiedMsgs := claudifyMessages(chat.Messages)
+	msgCopy := make([]models.Message, len(chat.Messages))
+	copy(msgCopy, chat.Messages)
+	claudifiedMsgs := claudifyMessages(msgCopy)
 	if c.debug {
 		ancli.PrintOK(fmt.Sprintf("claudified messages: %+v\n", claudifiedMsgs))
 	}
