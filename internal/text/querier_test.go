@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -176,6 +177,8 @@ three `,
 }
 
 func Test_Querier_Query_errors(t *testing.T) {
+	rcMu := sync.Mutex{}
+	rcMu.Lock()
 	testCases := []struct {
 		desc  string
 		q     Querier[*MockQuerier]
@@ -219,9 +222,16 @@ func Test_Querier_Query_errors(t *testing.T) {
 			want:  errors.New("some other error"),
 		},
 	}
+	rcMu.Unlock()
 	for _, tC := range testCases {
+		// Race flag being pissy for minimal reasons
+		rcMu.Lock()
+		tC := tC
+		rcMu.Unlock()
 		t.Run(tC.desc, func(t *testing.T) {
 			go func() {
+				rcMu.Lock()
+				defer rcMu.Unlock()
 				tC.q.Model.errChan <- tC.given
 				tC.q.Model.stringChan <- "CLOSE"
 			}()
