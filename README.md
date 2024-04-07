@@ -24,9 +24,9 @@ For stable version supporting only openai:
 go install github.com/baalimago/clai@v1.0
 ```
 
-For the latest version supporting multiple vendors (anthropic textmodels + openai). Note that this is less stable as of 2024-04-01:
+For the latest version supporting multiple vendors (anthropic textmodels + openai). Note that this is less stable as of 2024-04-07:
 ```bash
-go install github.com/baalimago/clai@v1.1
+go install github.com/baalimago/clai@v1.2
 ```
 
 
