@@ -193,10 +193,6 @@ func (cq *ChatHandler) list() ([]models.Chat, error) {
 		chats = append(chats, chat)
 	}
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to list chats: %w", err)
-	}
-
 	return chats, err
 }
 

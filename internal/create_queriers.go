@@ -10,6 +10,7 @@ import (
 	"github.com/baalimago/clai/internal/photo"
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/internal/vendors/anthropic"
+	"github.com/baalimago/clai/internal/vendors/openai"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
@@ -21,6 +22,14 @@ func CreateTextQuerier(conf text.Configurations) (models.Querier, error) {
 
 	if strings.Contains(conf.Model, "claude") {
 		qTmp, err := text.NewQuerier(conf, &anthropic.CLAUDE_DEFAULT)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create text querier: %w", err)
+		}
+		q = &qTmp
+	}
+
+	if strings.Contains(conf.Model, "gpt") {
+		qTmp, err := text.NewQuerier(conf, &openai.GPT_DEFAULT)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create text querier: %w", err)
 		}

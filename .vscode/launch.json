@@ -2,23 +2,22 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Launch ChatGPT - Glob",
+      "name": "ChatGPT - Query",
       "type": "go",
       "request": "launch",
       "program": "${workspaceFolder}",
       "args": [
         "-cm",
         "gpt-4-turbo-preview",
-        "glob",
-        "*.go",
-        "I have two files which are practically identical to this. How can I generalize the solution to reduce the amount of repeated code? The primary part I'm unsure of is how to set the apiKey"
+        "query",
+        "I'm debugging my cli ai too. Write a short consice response."
       ],
       "env": {
         "NO_COLOR": "true"
       }
     },
     {
-      "name": "Launch Claude - Query",
+      "name": "Claude - Query",
       "type": "go",
       "request": "launch",
       "program": "${workspaceFolder}",
@@ -31,7 +30,7 @@
       }
     },
     {
-      "name": "Launch Claude - Chat",
+      "name": "Claude - Chat",
       "type": "go",
       "request": "launch",
       "program": "${workspaceFolder}",

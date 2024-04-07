@@ -36,9 +36,9 @@ func LoadConfigFromFile[T any](
 			ancli.PrintWarn(fmt.Sprintf("failed to migrate for config: '%v', error: %v\n", configFileName, err))
 		}
 	}
-	photoConfigPath := configDirPath + configFileName
+	configPath := configDirPath + configFileName
 	var conf T
-	err = ReadAndUnmarshal(photoConfigPath, &conf)
+	err = ReadAndUnmarshal(configPath, &conf)
 	if err != nil {
 		return conf, fmt.Errorf("failed to unmarshal config '%v', error: %v", configFileName, err)
 	}

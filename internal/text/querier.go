@@ -117,7 +117,14 @@ func (q *Querier[C]) Query(ctx context.Context) error {
 	}
 }
 
+func (q *Querier[C]) reset() {
+	q.fullMsg = ""
+	q.line = ""
+	q.lineCount = 0
+}
+
 func (q *Querier[C]) TextQuery(ctx context.Context, chat models.Chat) (models.Chat, error) {
+	q.reset()
 	q.chat = chat
 	err := q.Query(ctx)
 	if err != nil {

@@ -16,6 +16,14 @@ type ChatGPT struct {
 	Url              string       `json:"url"`
 	client           *http.Client `json:"-"`
 	apiKey           string       `json:"-"`
+	debug            bool         `json:"-"`
+}
+
+var GPT_DEFAULT = ChatGPT{
+	Model:       "gpt-4-turbo-preview",
+	Temperature: 1.0,
+	TopP:        1.0,
+	Url:         ChatURL,
 }
 
 type gptReq struct {
