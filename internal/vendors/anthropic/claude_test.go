@@ -114,7 +114,7 @@ data: {"type": "message_stop"}
 		}
 		<-testDone
 	}))
-	context, contextCancel := context.WithTimeout(context.Background(), 100*time.Second)
+	context, contextCancel := context.WithTimeout(context.Background(), time.Second/100)
 	t.Cleanup(func() {
 		contextCancel()
 		// Can't seem to figure out how to close the testserver. so well... it'll have to remain open
@@ -138,6 +138,9 @@ data: {"type": "message_stop"}
 			{Role: "user", Content: "test"},
 		},
 	})
+	if err != nil {
+		t.Fatalf("failed to stream completions: %v", err)
+	}
 
 	got := ""
 OUTER:

@@ -9,9 +9,8 @@ import (
 	"os"
 	"path"
 	"strings"
-	"time"
-
 	"testing"
+	"time"
 
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
@@ -73,8 +72,8 @@ func Test_Querier_NewQuerier(t *testing.T) {
 			t.Fatalf("failed to marshal saveModel: %v", err)
 		}
 		tmpDir := t.TempDir()
-		os.Mkdir(path.Join(tmpDir, ".clai"), os.FileMode(0755))
-		err = os.WriteFile(path.Join(tmpDir, ".clai", fmt.Sprintf("%v.json", model)), bytes, os.FileMode(0755))
+		os.Mkdir(path.Join(tmpDir, ".clai"), os.FileMode(0o755))
+		err = os.WriteFile(path.Join(tmpDir, ".clai", fmt.Sprintf("%v.json", model)), bytes, os.FileMode(0o755))
 		if err != nil {
 			t.Fatalf("failed to write mock savedModel: %v", err)
 		}
@@ -234,7 +233,6 @@ func Test_Querier_Query_errors(t *testing.T) {
 					t.Fatalf("expected: %v, got: %v", tC.want, got)
 				}
 			} else {
-
 				if !strings.Contains(got.Error(), tC.want.Error()) {
 					t.Fatalf("expected: %v, got: %v", tC.want, got.Error())
 				}

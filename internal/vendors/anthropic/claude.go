@@ -17,7 +17,6 @@ type Claude struct {
 	AnthropicVersion string       `json:"anthropic-version"`
 	AnthropicBeta    string       `json:"anthropic-beta"`
 	client           *http.Client `json:"-"`
-	origChat         models.Chat  `json:"-"`
 	apiKey           string       `json:"-"`
 	debug            bool         `json:"-"`
 }

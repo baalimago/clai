@@ -8,14 +8,6 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
-var defaultClaude = Claude{
-	Model:            "claude-3-opus-20240229",
-	Url:              ClaudeURL,
-	AnthropicVersion: "2023-06-01",
-	AnthropicBeta:    "messages-2023-12-15",
-	MaxTokens:        1024,
-}
-
 func (c *Claude) Setup() error {
 	apiKey := os.Getenv("ANTHROPIC_API_KEY")
 	if apiKey == "" {

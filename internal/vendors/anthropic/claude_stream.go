@@ -64,7 +64,7 @@ func (c *Claude) handleStreamResponse(ctx context.Context, resp *http.Response) 
 		for {
 			token, err := br.ReadString('\n')
 			if err != nil {
-				outChan <- models.CompletionEvent(errors.New(fmt.Sprintf("failed to read line: %v\n", err)))
+				outChan <- models.CompletionEvent(fmt.Errorf("failed to read line: %w", err))
 				return
 			}
 			token = strings.TrimSpace(token)
@@ -80,7 +80,7 @@ func (c *Claude) handleStreamResponse(ctx context.Context, resp *http.Response) 
 				if errors.Is(err, io.EOF) {
 					return
 				}
-				outChan <- models.CompletionEvent(errors.New(fmt.Sprintf("failed to handle token: %v\n", err)))
+				outChan <- models.CompletionEvent(fmt.Errorf("failed to handle token: %w", err))
 			}
 			if claudeMsg != "" {
 				outChan <- models.CompletionEvent(claudeMsg)

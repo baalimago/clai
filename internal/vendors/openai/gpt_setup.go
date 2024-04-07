@@ -8,12 +8,6 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
-var defaultGpt = ChatGPT{
-	Model:       "gpt-4-turbo-preview",
-	Temperature: 1.0,
-	TopP:        1.0,
-}
-
 func (g *ChatGPT) Setup() error {
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {

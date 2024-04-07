@@ -1,6 +1,7 @@
 package text
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,8 +9,6 @@ import (
 	"os"
 	"os/user"
 	"path"
-
-	"context"
 
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/tools"
@@ -21,7 +20,6 @@ type Querier[C models.StreamCompleter] struct {
 	Url       string
 	Raw       bool
 	chat      models.Chat
-	apiKey    string
 	username  string
 	termWidth int
 	lineCount int
@@ -42,7 +40,7 @@ func NewQuerier[C models.StreamCompleter](userConf Configurations, dfault C) (Qu
 			if err != nil {
 				return querier, fmt.Errorf("failed to marshal default model: %v, error: %w", dfault, err)
 			}
-			os.WriteFile(configPath, data, os.FileMode(0644))
+			os.WriteFile(configPath, data, os.FileMode(0o644))
 		} else {
 			return querier, fmt.Errorf("failed to load querier of model: %v, error: %w", userConf.Model, err)
 		}
