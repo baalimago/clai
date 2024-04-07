@@ -31,15 +31,15 @@ func (q *MockQuerier) Setup() error {
 }
 
 func (q *MockQuerier) StreamCompletions(ctx context.Context, chat models.Chat) (chan models.CompletionEvent, error) {
-	if q.shouldBlock {
-		ch := make(chan struct{})
-		<-ch
-	}
 	// simulate a stream of completions via the sendChan, so that
 	// it's possible to send messages from outside the test
 	if q.stringChan != nil {
 		outChan := make(chan models.CompletionEvent)
 		go func() {
+			if q.shouldBlock {
+				ch := make(chan struct{})
+				<-ch
+			}
 			for {
 				select {
 				case <-ctx.Done():
@@ -121,7 +121,7 @@ func Test_Context(t *testing.T) {
 	}
 	testboil.ReturnsOnContextCancel(t, func(ctx context.Context) {
 		q.Query(ctx)
-	}, time.Second*1)
+	}, time.Second)
 }
 
 func Test_Querier_Query_strings(t *testing.T) {
