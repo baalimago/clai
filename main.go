@@ -94,6 +94,6 @@ func main() {
 	}
 	cancel()
 	if misc.Truthy(os.Getenv("DEBUG")) {
-		ancli.PrintOK("things seems to have worked out. Good bye! 🚀\n")
+		ancli.PrintOK("things seems to have worked out. Bye bye! 🚀\n")
 	}
 }
