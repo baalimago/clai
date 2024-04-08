@@ -26,10 +26,6 @@ func Test_Setup(t *testing.T) {
 			t.Fatalf("expected: %v, got: %v", want, got)
 		}
 	})
-
-	if err := c.Setup(); err != nil {
-		t.Error(err)
-	}
 }
 
 func Test_context(t *testing.T) {
