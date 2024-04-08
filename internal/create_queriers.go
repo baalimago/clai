@@ -19,8 +19,10 @@ import (
 // a TextQuerier
 func CreateTextQuerier(conf text.Configurations) (models.Querier, error) {
 	var q models.Querier
+	found := false
 
 	if strings.Contains(conf.Model, "claude") {
+		found = true
 		qTmp, err := text.NewQuerier(conf, &anthropic.CLAUDE_DEFAULT)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create text querier: %w", err)
@@ -29,11 +31,15 @@ func CreateTextQuerier(conf text.Configurations) (models.Querier, error) {
 	}
 
 	if strings.Contains(conf.Model, "gpt") {
+		found = true
 		qTmp, err := text.NewQuerier(conf, &openai.GPT_DEFAULT)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create text querier: %w", err)
 		}
 		q = &qTmp
+	}
+	if !found {
+		return nil, fmt.Errorf("failed to find text querier for model: %v", conf.Model)
 	}
 
 	if misc.Truthy(os.Getenv("DEBUG")) {

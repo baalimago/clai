@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/user"
 	"path"
+	"strings"
 
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/tools"
@@ -29,8 +30,20 @@ type Querier[C models.StreamCompleter] struct {
 	Model     C
 }
 
+func vendorType(fromModel string) (string, string, string) {
+	if strings.Contains(fromModel, "gpt") {
+		return "openai", "gpt", fromModel
+	}
+	if strings.Contains(fromModel, "claude") {
+		return "anthropic", "claude", fromModel
+	}
+
+	return "VENDOR", "NOT", "FOUND"
+}
+
 func NewQuerier[C models.StreamCompleter](userConf Configurations, dfault C) (Querier[C], error) {
-	configPath := path.Join(userConf.ConfigDir, ".clai", fmt.Sprintf("%v.json", userConf.Model))
+	vendor, model, modelVersion := vendorType(userConf.Model)
+	configPath := path.Join(userConf.ConfigDir, ".clai", fmt.Sprintf("%v_%v_%v.json", vendor, model, modelVersion))
 	querier := Querier[C]{}
 	var modelConf C
 	err := tools.ReadAndUnmarshal(configPath, &modelConf)
@@ -40,7 +53,15 @@ func NewQuerier[C models.StreamCompleter](userConf Configurations, dfault C) (Qu
 			if err != nil {
 				return querier, fmt.Errorf("failed to marshal default model: %v, error: %w", dfault, err)
 			}
-			os.WriteFile(configPath, data, os.FileMode(0o644))
+			err = os.WriteFile(configPath, data, os.FileMode(0o644))
+			if err != nil {
+				return querier, fmt.Errorf("failed to write default model: %v, error: %w", dfault, err)
+			}
+
+			err = tools.ReadAndUnmarshal(configPath, &modelConf)
+			if err != nil {
+				return querier, fmt.Errorf("failed to read default model: %v, error: %w", dfault, err)
+			}
 		} else {
 			return querier, fmt.Errorf("failed to load querier of model: %v, error: %w", userConf.Model, err)
 		}
