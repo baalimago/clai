@@ -37,6 +37,9 @@ func vendorType(fromModel string) (string, string, string) {
 	if strings.Contains(fromModel, "claude") {
 		return "anthropic", "claude", fromModel
 	}
+	if strings.Contains(fromModel, "mock") {
+		return "mock", "mock", "mock"
+	}
 
 	return "VENDOR", "NOT", "FOUND"
 }

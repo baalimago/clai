@@ -74,7 +74,7 @@ func Test_Querier_NewQuerier(t *testing.T) {
 		}
 		tmpDir := t.TempDir()
 		os.Mkdir(path.Join(tmpDir, ".clai"), os.FileMode(0o755))
-		err = os.WriteFile(path.Join(tmpDir, ".clai", fmt.Sprintf("%v.json", model)), bytes, os.FileMode(0o755))
+		err = os.WriteFile(path.Join(tmpDir, ".clai", fmt.Sprintf("%v_%v_%v.json", model, model, model)), bytes, os.FileMode(0o755))
 		if err != nil {
 			t.Fatalf("failed to write mock savedModel: %v", err)
 		}
