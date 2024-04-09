@@ -20,7 +20,7 @@ func SaveAsPreviousQuery(claiConfDir string, msgs []models.Message) error {
 }
 
 func Load(claiConfDir string) (models.Chat, error) {
-	c, err := chat.FromPath(path.Join(claiConfDir, "conversations", fmt.Sprintf("prevQuery.json")))
+	c, err := chat.FromPath(path.Join(claiConfDir, "conversations", "prevQuery.json"))
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			ancli.PrintWarn("no previous query found\n")
