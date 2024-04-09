@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/baalimago/clai/internal/models"
+	"github.com/baalimago/clai/internal/reply"
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
@@ -103,6 +104,10 @@ func (q *Querier[C]) Query(ctx context.Context) error {
 	}
 
 	defer func() {
+		err := reply.SaveAsPreviousQuery(q.chat.Messages)
+		if err != nil {
+			ancli.PrintErr(fmt.Sprintf("failed to save previous query: %v\n", err))
+		}
 		if q.Raw {
 			return
 		}
