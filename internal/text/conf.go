@@ -57,7 +57,7 @@ func (c *Configurations) SetupPrompts() error {
 
 	if c.ReplyMode {
 		primed = true
-		iP, err := reply.Load()
+		iP, err := reply.Load(c.ConfigDir)
 		if err != nil {
 			return fmt.Errorf("failed to load previous query: %w", err)
 		}

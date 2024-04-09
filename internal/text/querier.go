@@ -27,6 +27,7 @@ type Querier[C models.StreamCompleter] struct {
 	lineCount int
 	line      string
 	fullMsg   string
+	configDir string
 	debug     bool
 	Model     C
 }
@@ -47,8 +48,10 @@ func vendorType(fromModel string) (string, string, string) {
 
 func NewQuerier[C models.StreamCompleter](userConf Configurations, dfault C) (Querier[C], error) {
 	vendor, model, modelVersion := vendorType(userConf.Model)
-	configPath := path.Join(userConf.ConfigDir, ".clai", fmt.Sprintf("%v_%v_%v.json", vendor, model, modelVersion))
+	claiConfDir := path.Join(userConf.ConfigDir, ".clai")
+	configPath := path.Join(claiConfDir, fmt.Sprintf("%v_%v_%v.json", vendor, model, modelVersion))
 	querier := Querier[C]{}
+	querier.configDir = userConf.ConfigDir
 	var modelConf C
 	err := tools.ReadAndUnmarshal(configPath, &modelConf)
 	if err != nil {
@@ -104,7 +107,15 @@ func (q *Querier[C]) Query(ctx context.Context) error {
 	}
 
 	defer func() {
-		err := reply.SaveAsPreviousQuery(q.chat.Messages)
+		chatMsgscopy := make([]models.Message, len(q.chat.Messages))
+
+		copy(chatMsgscopy, q.chat.Messages)
+		newSysMsg := models.Message{
+			Role:    "system",
+			Content: q.fullMsg,
+		}
+		chatMsgscopy = append(chatMsgscopy, newSysMsg)
+		err := reply.SaveAsPreviousQuery(q.configDir, chatMsgscopy)
 		if err != nil {
 			ancli.PrintErr(fmt.Sprintf("failed to save previous query: %v\n", err))
 		}
@@ -117,10 +128,7 @@ func (q *Querier[C]) Query(ctx context.Context) error {
 		} else {
 			fmt.Println()
 		}
-		tools.AttemptPrettyPrint(models.Message{
-			Role:    "system",
-			Content: q.fullMsg,
-		}, q.username)
+		tools.AttemptPrettyPrint(newSysMsg, q.username)
 	}()
 
 	for {
