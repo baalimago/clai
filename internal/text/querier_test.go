@@ -253,12 +253,13 @@ func Test_Querier_Query_errors(t *testing.T) {
 }
 
 func Test_Querier(t *testing.T) {
-	t.Run("it should save to prevQuery if in reply mode", func(t *testing.T) {
+	t.Run("it should only save to prevQuery if in reply mode", func(t *testing.T) {
 		tmpConfigDir := path.Join(t.TempDir(), ".clai")
 		os.MkdirAll(path.Join(tmpConfigDir, "conversations"), os.ModePerm)
 		q := Querier[*MockQuerier]{
-			Raw:       true,
-			configDir: tmpConfigDir,
+			Raw:             true,
+			shouldSaveReply: true,
+			configDir:       tmpConfigDir,
 			chat: models.Chat{
 				ID: "prevQuery",
 				Messages: []models.Message{
@@ -284,6 +285,27 @@ func Test_Querier(t *testing.T) {
 			t.Fatalf("didn't expect error: %v", err)
 		}
 		lastReply, err := reply.Load(q.configDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(lastReply.Messages) != 2 {
+			t.Fatalf("expected length 2, got: %v, data: %v", len(lastReply.Messages), lastReply.Messages)
+		}
+		if lastReply.Messages[1].Content != want {
+			t.Fatalf("expected: %v, got: %v", want, lastReply.Messages[1].Content)
+		}
+
+		// Redo test with replyMode false
+		q.shouldSaveReply = false
+		go func() {
+			q.Model.stringChan <- want
+			q.Model.stringChan <- "CLOSE"
+		}()
+		err = q.Query(context.Background())
+		if err != nil {
+			t.Fatalf("didn't expect error: %v", err)
+		}
+		lastReply, err = reply.Load(q.configDir)
 		if err != nil {
 			t.Fatal(err)
 		}

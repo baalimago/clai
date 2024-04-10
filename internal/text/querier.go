@@ -19,17 +19,18 @@ import (
 )
 
 type Querier[C models.StreamCompleter] struct {
-	Url       string
-	Raw       bool
-	chat      models.Chat
-	username  string
-	termWidth int
-	lineCount int
-	line      string
-	fullMsg   string
-	configDir string
-	debug     bool
-	Model     C
+	Url             string
+	Raw             bool
+	chat            models.Chat
+	username        string
+	termWidth       int
+	lineCount       int
+	line            string
+	fullMsg         string
+	configDir       string
+	debug           bool
+	shouldSaveReply bool
+	Model           C
 }
 
 func vendorType(fromModel string) (string, string, string) {
@@ -48,10 +49,10 @@ func vendorType(fromModel string) (string, string, string) {
 
 func NewQuerier[C models.StreamCompleter](userConf Configurations, dfault C) (Querier[C], error) {
 	vendor, model, modelVersion := vendorType(userConf.Model)
-	claiConfDir := path.Join(userConf.ConfigDir, ".clai")
+	claiConfDir := userConf.ConfigDir
 	configPath := path.Join(claiConfDir, fmt.Sprintf("%v_%v_%v.json", vendor, model, modelVersion))
 	querier := Querier[C]{}
-	querier.configDir = userConf.ConfigDir
+	querier.configDir = claiConfDir
 	var modelConf C
 	err := tools.ReadAndUnmarshal(configPath, &modelConf)
 	if err != nil {
@@ -95,6 +96,7 @@ func NewQuerier[C models.StreamCompleter](userConf Configurations, dfault C) (Qu
 	if misc.Truthy(os.Getenv("DEBUG")) {
 		querier.debug = true
 	}
+	querier.shouldSaveReply = !userConf.ChatMode
 	return querier, nil
 }
 
@@ -108,17 +110,19 @@ func (q *Querier[C]) Query(ctx context.Context) error {
 
 	defer func() {
 		chatMsgscopy := make([]models.Message, len(q.chat.Messages))
-
 		copy(chatMsgscopy, q.chat.Messages)
 		newSysMsg := models.Message{
 			Role:    "system",
 			Content: q.fullMsg,
 		}
 		chatMsgscopy = append(chatMsgscopy, newSysMsg)
-		err := reply.SaveAsPreviousQuery(q.configDir, chatMsgscopy)
-		if err != nil {
-			ancli.PrintErr(fmt.Sprintf("failed to save previous query: %v\n", err))
+		if q.shouldSaveReply {
+			err := reply.SaveAsPreviousQuery(q.configDir, chatMsgscopy)
+			if err != nil {
+				ancli.PrintErr(fmt.Sprintf("failed to save previous query: %v\n", err))
+			}
 		}
+
 		if q.Raw {
 			return
 		}

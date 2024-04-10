@@ -42,6 +42,20 @@
       "env": {
         "NO_COLOR": "true"
       }
+    },
+    {
+      "name": "Claude - Query - Reply",
+      "type": "go",
+      "request": "launch",
+      "program": "${workspaceFolder}",
+      "args": [
+        "-re",
+        "query",
+        "test"
+      ],
+      "env": {
+        "NO_COLOR": "true"
+      }
     }
   ]
 }

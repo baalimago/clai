@@ -40,10 +40,14 @@ func (c *Configurations) SetupPrompts() error {
 		ancli.PrintWarn("Using glob + reply modes together might yield strange results. The prevQuery will be appended after the glob messages.\n")
 	}
 
-	primed := false
+	c.InitialPrompt = models.Chat{
+		Messages: []models.Message{
+			{Role: "system", Content: c.SystemPrompt},
+		},
+	}
+
 	args := flag.Args()
 	if c.Glob != "" {
-		primed = true
 		globChat, err := glob.CreateChat(c.Glob, c.SystemPrompt)
 		if err != nil {
 			return fmt.Errorf("failed to get glob chat: %w", err)
@@ -56,19 +60,13 @@ func (c *Configurations) SetupPrompts() error {
 	}
 
 	if c.ReplyMode {
-		primed = true
 		iP, err := reply.Load(c.ConfigDir)
 		if err != nil {
 			return fmt.Errorf("failed to load previous query: %w", err)
 		}
 		c.InitialPrompt.Messages = append(c.InitialPrompt.Messages, iP.Messages...)
 	}
-	if !primed {
-		c.InitialPrompt.Messages = append(c.InitialPrompt.Messages, models.Message{
-			Role:    "system",
-			Content: c.SystemPrompt,
-		})
-	}
+
 	prompt, err := tools.Prompt(c.StdinReplace, args)
 	if err != nil {
 		return fmt.Errorf("failed to setup prompt: %w", err)

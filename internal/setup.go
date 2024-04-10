@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path"
 	"runtime/debug"
 
 	"github.com/baalimago/clai/internal/glob"
@@ -61,7 +62,7 @@ func getModeFromArgs(cmd string) (Mode, error) {
 
 func setupTextQuerier(mode Mode, confDir string, flagSet Configurations) (models.Querier, error) {
 	tConf, err := tools.LoadConfigFromFile(confDir, "textConfig.json", migrateOldChatConfig, &text.DEFAULT)
-	tConf.ConfigDir = confDir
+	tConf.ConfigDir = path.Join(confDir, ".clai")
 	if err != nil {
 		return nil, fmt.Errorf("failed to load configs: %err", err)
 	}

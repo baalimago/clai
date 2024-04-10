@@ -11,6 +11,7 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
+// SaveAsPreviousQuery at claiConfDir/conversations/prevQuery.json with ID prevQuery
 func SaveAsPreviousQuery(claiConfDir string, msgs []models.Message) error {
 	c := models.Chat{
 		ID:       "prevQuery",
@@ -19,6 +20,7 @@ func SaveAsPreviousQuery(claiConfDir string, msgs []models.Message) error {
 	return chat.Save(path.Join(claiConfDir, "conversations"), c)
 }
 
+// Load the prevQuery.json from the claiConfDir/conversations directory
 func Load(claiConfDir string) (models.Chat, error) {
 	c, err := chat.FromPath(path.Join(claiConfDir, "conversations", "prevQuery.json"))
 	if err != nil {

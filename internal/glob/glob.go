@@ -43,10 +43,6 @@ func constructGlobMessages(globMessages []models.Message, systemPrompt string) [
 	ret := make([]models.Message, 0, len(globMessages)+4)
 	ret = append(ret, models.Message{
 		Role:    "system",
-		Content: systemPrompt,
-	})
-	ret = append(ret, models.Message{
-		Role:    "system",
 		Content: "You will be given a series of messages each containing contents from files, then a message containing this: '#####'. Using the file content as context, perform the request given in the message after the '#####'.",
 	})
 	ret = append(ret, globMessages...)
@@ -68,6 +64,9 @@ func parseGlob(glob string) ([]models.Message, error) {
 	}
 
 	if len(files) == 0 {
+		if strings.Contains(glob, "~/") {
+			ancli.PrintWarn("found '~/', which wont work. Use absolute path '/home/<user>/'. Maybe I fix this some day, we'll see.")
+		}
 		return nil, fmt.Errorf("no files found")
 	}
 
