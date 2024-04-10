@@ -81,7 +81,7 @@ func Test_Querier_NewQuerier(t *testing.T) {
 		}
 		conf := Configurations{
 			Model:     model,
-			ConfigDir: tmpDir,
+			ConfigDir: path.Join(tmpDir, ".clai"),
 		}
 
 		// Here we want to ensure that using only the conf + the type of the model,
