@@ -20,7 +20,7 @@ type ChatGPT struct {
 }
 
 var GPT_DEFAULT = ChatGPT{
-	Model:       "gpt-4-turbo-preview",
+	Model:       "gpt-4-turbo",
 	Temperature: 1.0,
 	TopP:        1.0,
 	Url:         ChatURL,
