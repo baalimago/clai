@@ -46,7 +46,8 @@ func Prompt(stdinReplace string, args []string) (string, error) {
 		return "", fmt.Errorf("failed to read stdin: %v", err)
 	}
 	pipeIn := string(inputData)
-	if len(args) == 1 {
+	// Add the pipeIn to the args if there are no args
+	if len(args) == 0 {
 		args = append(args, strings.Split(pipeIn, " ")...)
 	}
 

@@ -1,13 +1,9 @@
 package anthropic
 
 import (
-	"fmt"
 	"net/http"
-	"os"
 
 	"github.com/baalimago/clai/internal/models"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
-	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
 type Claude struct {
@@ -39,49 +35,41 @@ type claudeReq struct {
 
 // claudifyMessages converts from 'normal' openai chat format into a format which claud prefers
 func claudifyMessages(msgs []models.Message) []models.Message {
-	// the 'system' role only is accepted as a separate parameter in json
 	// If the first message is a system one, assume it's the system prompt and pop it
-	// This system message has already been added into the initial query
 	if msgs[0].Role == "system" {
 		msgs = msgs[1:]
 	}
 
-	// Convert system messages from 'system' to 'assistant', since
+	// Convert system messages from 'system' to 'assistant'
 	for i, v := range msgs {
-		v := v
 		if v.Role == "system" {
-			// Claude only likes user messages as first, and messages needs to be alternating
-			v.Role = "assistant"
+			msgs[i].Role = "assistant"
 		}
-		msgs[i] = v
 	}
 
-	// claude doesn't like having 'assistant' messages as the first messag
-	// so, if there is a assistant message first, merge it into the upcoming
-	// user message
-	for msgs[0].Role == "assistant" {
-		msgs[1].Content = fmt.Sprintf("%v\n%v", msgs[0].Content, msgs[1].Content)
-		msgs = msgs[1:]
+	// Merge consecutive assistant messages into the first one
+	for i := 1; i < len(msgs); i++ {
+		if msgs[i].Role == "assistant" && msgs[i-1].Role == "assistant" {
+			msgs[i-1].Content += "\n" + msgs[i].Content
+			msgs = append(msgs[:i], msgs[i+1:]...)
+			i--
+		}
 	}
 
-	// claude doesn't reply if the latest message is from an assistant
-	if msgs[len(msgs)-1].Role == "assistant" {
-		if misc.Truthy(os.Getenv("DEBUG")) {
-			ancli.PrintOK(fmt.Sprintf("removing last message: %v", msgs[len(msgs)-1].Content))
+	// Merge consecutive user messages into the last one
+	for i := len(msgs) - 2; i >= 0; i-- {
+		if msgs[i].Role == "user" && msgs[i+1].Role == "user" {
+			msgs[i+1].Content = msgs[i].Content + "\n" + msgs[i+1].Content
+			msgs = append(msgs[:i], msgs[i+1:]...)
 		}
+	}
+
+	// If the first message is from an assistant, keep it as is
+	// (no need to merge it into the upcoming user message)
+
+	// If the last message is from an assistant, remove it
+	if len(msgs) > 0 && msgs[len(msgs)-1].Role == "assistant" {
 		msgs = msgs[:len(msgs)-1]
-	}
-
-	// claude also doesn't like it when two user messages are in a row
-	for i := 1; i < len(msgs); {
-		if msgs[i-1].Role == "user" && msgs[i].Role == "user" {
-			msgs[i].Content = fmt.Sprintf("%v\n%v", msgs[i-1].Content, msgs[i].Content)
-			tmp := msgs[0 : i-1]
-			tmp = append(tmp, msgs[i:]...)
-			msgs = tmp
-		} else {
-			i++
-		}
 	}
 
 	return msgs

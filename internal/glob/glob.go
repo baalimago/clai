@@ -14,7 +14,7 @@ import (
 
 func Setup() (string, error) {
 	args := flag.Args()
-	if len(args) <= 2 {
+	if len(args) < 2 {
 		return "", fmt.Errorf("not enough arguments provided")
 	}
 	glob := args[1]
@@ -35,11 +35,11 @@ func CreateChat(glob, systemPrompt string) (models.Chat, error) {
 
 	return models.Chat{
 		ID:       fmt.Sprintf("glob_%v", glob),
-		Messages: constructGlobMessages(fileMessages, systemPrompt),
+		Messages: constructGlobMessages(fileMessages),
 	}, nil
 }
 
-func constructGlobMessages(globMessages []models.Message, systemPrompt string) []models.Message {
+func constructGlobMessages(globMessages []models.Message) []models.Message {
 	ret := make([]models.Message, 0, len(globMessages)+4)
 	ret = append(ret, models.Message{
 		Role:    "system",

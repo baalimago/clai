@@ -1,9 +1,9 @@
-package tools_test
+package tools
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
-
-	"github.com/baalimago/clai/internal/tools"
 )
 
 func TestReturnNonDefault(t *testing.T) {
@@ -59,7 +59,7 @@ func TestReturnNonDefault(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := tools.ReturnNonDefault(tt.a, tt.b, tt.defaultVal)
+			got, err := ReturnNonDefault(tt.a, tt.b, tt.defaultVal)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ReturnNonDefault() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -68,5 +68,82 @@ func TestReturnNonDefault(t *testing.T) {
 				t.Errorf("ReturnNonDefault() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestRunMigrationCallback(t *testing.T) {
+	// Create a test migration callback
+	var migrationCalled bool
+	migrationCb := func(configDirPath string) error {
+		migrationCalled = true
+		return nil
+	}
+
+	// Test running the migration callback
+	configDirPath := "/path/to/config"
+	err := runMigrationCallback(migrationCb, configDirPath)
+	if err != nil {
+		t.Errorf("Unexpected error running migration callback: %v", err)
+	}
+	if !migrationCalled {
+		t.Error("Expected migration callback to be called")
+	}
+
+	// Test running the migration callback with nil callback
+	migrationCalled = false
+	err = runMigrationCallback(nil, configDirPath)
+	if err != nil {
+		t.Errorf("Unexpected error running nil migration callback: %v", err)
+	}
+	if migrationCalled {
+		t.Error("Expected migration callback not to be called")
+	}
+}
+
+func TestCreateConfigDir(t *testing.T) {
+	// Create a temporary directory for testing
+	configDirPath := filepath.Join(t.TempDir(), ".clai")
+
+	// Test creating a new config directory
+	err := createConfigDir(configDirPath)
+	if err != nil {
+		t.Errorf("Unexpected error creating config directory: %v", err)
+	}
+	if _, err := os.Stat(configDirPath); os.IsNotExist(err) {
+		t.Error("Expected config directory to exist")
+	}
+
+	// Test creating an existing config directory
+	err = createConfigDir(configDirPath)
+	if err != nil {
+		t.Errorf("Unexpected error creating existing config directory: %v", err)
+	}
+}
+
+func TestCreateDefaultConfigFile(t *testing.T) {
+	// Create a temporary directory for testing
+	tempDir := t.TempDir()
+	os.MkdirAll(filepath.Join(tempDir, ".clai"), 0755)
+
+	configDirPath := filepath.Join(tempDir, ".clai")
+	configFileName := "config.json"
+
+	// Test creating a new default config file
+	dflt := &struct {
+		Name string `json:"name"`
+	}{Name: "John"}
+	err := createDefaultConfigFile(configDirPath, configFileName, dflt)
+	if err != nil {
+		t.Errorf("Unexpected error creating default config file: %v", err)
+	}
+	configFilePath := filepath.Join(configDirPath, configFileName)
+	if _, err := os.Stat(configFilePath); os.IsNotExist(err) {
+		t.Error("Expected default config file to exist")
+	}
+
+	// Test creating an existing default config file
+	err = createDefaultConfigFile(configDirPath, configFileName, dflt)
+	if err != nil {
+		t.Errorf("Unexpected error creating existing default config file: %v", err)
 	}
 }

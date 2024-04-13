@@ -25,6 +25,10 @@ type StreamCompleter interface {
 	StreamCompletions(context.Context, Chat) (chan CompletionEvent, error)
 }
 
+type FunctionRequester interface {
+	RegisterFunction()
+}
+
 type CompletionEvent any
 
 type Chat struct {
@@ -35,6 +39,22 @@ type Chat struct {
 type Message struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
+}
+
+type GetCurrentWeatherParams struct {
+	Location string `json:"location"`
+	Unit     string `json:"unit"`
+}
+
+type GetCurrentWeatherFunction struct {
+	Name        string                  `json:"name"`
+	Description string                  `json:"description"`
+	Parameters  GetCurrentWeatherParams `json:"parameters"`
+}
+
+type Function struct {
+	Type     string                    `json:"type"`
+	Function GetCurrentWeatherFunction `json:"function"`
 }
 
 // SystemMessage returns the first encountered Message with role 'system'

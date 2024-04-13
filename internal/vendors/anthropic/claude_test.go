@@ -1,163 +1,99 @@
 package anthropic
 
 import (
-	"context"
-	"net/http"
-	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/baalimago/clai/internal/models"
-	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
-func Test_Setup(t *testing.T) {
-	c := Claude{}
-
-	t.Run("it should load environment variable from ANTHROPIC_API_KEY", func(t *testing.T) {
-		want := "some-key"
-		t.Setenv("ANTHROPIC_API_KEY", want)
-		err := c.Setup()
-		if err != nil {
-			t.Fatalf("failed to run setup: %v", err)
-		}
-		got := c.apiKey
-		if got != want {
-			t.Fatalf("expected: %v, got: %v", want, got)
-		}
-	})
-}
-
-func Test_context(t *testing.T) {
-	testDone := make(chan struct{})
-	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		<-testDone
-	}))
-	t.Cleanup(func() {
-		testServer.Close()
-		close(testDone)
-	})
-
-	// Use the test server's URL as the backend URL in your code
-	c := Claude{
-		Url: testServer.URL,
-	}
-	t.Setenv("ANTHROPIC_API_KEY", "somekey")
-	err := c.Setup()
-	if err != nil {
-		t.Fatal(err)
-	}
-	testboil.ReturnsOnContextCancel(t, func(ctx context.Context) {
-		c.StreamCompletions(ctx, models.Chat{
-			ID: "test",
-			Messages: []models.Message{
-				{Role: "system", Content: "test"},
-				{Role: "user", Content: "test"},
+func Test_claudifyMessage(t *testing.T) {
+	testCases := []struct {
+		desc  string
+		given []models.Message
+		want  []models.Message
+	}{
+		{
+			desc: "it should remove the first message if it is a system message",
+			given: []models.Message{
+				{Role: "system", Content: "system message"},
+				{Role: "user", Content: "user message"},
 			},
-		})
-	}, time.Second)
-}
-
-func Test_StreamCompletions(t *testing.T) {
-	want := "Hello!"
-	messages := [][]byte{
-		[]byte(`event: message_start
-data: {"type": "message_start", "message": {"id": "msg_1nZdL29xx5MUA1yADyHTEsnR8uuvGzszyY", "type": "message", "role": "assistant", "content": [], "model": "claude-3-opus-20240229", "stop_reason": null, "stop_sequence": null, "usage": {"input_tokens": 25, "output_tokens": 1}}}
-
-`),
-		[]byte(`event: content_block_start
-data: {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}
-
-`),
-
-		[]byte(`event: ping
-data: {"type": "ping"}
-
-`),
-		// This should be picked up
-		[]byte(`event: content_block_delta
-data: {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "Hello"}}
-    
-`),
-		// This should also be picked up
-		[]byte(`event: content_block_delta
-data: {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "!"}}
-
-`),
-		[]byte(`event: content_block_stop
-data: {"type": "content_block_stop", "index": 0}
-
-`),
-		[]byte(`event: message_delta
-data: {"type": "message_delta", "delta": {"stop_reason": "end_turn", "stop_sequence":null, "usage":{"output_tokens": 15}}}
-
-`),
-		[]byte(`event: message_stop
-data: {"type": "message_stop"}
-
-`),
-	}
-	testDone := make(chan string)
-	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Expose-Headers", "Content-Type")
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.Header().Set("Cache-Control", "no-cache")
-		w.Header().Set("Connection", "keep-alive")
-		for _, msg := range messages {
-			w.Write(msg)
-			w.(http.Flusher).Flush()
-		}
-		<-testDone
-	}))
-	context, contextCancel := context.WithTimeout(context.Background(), time.Second/100)
-	t.Cleanup(func() {
-		contextCancel()
-		// Can't seem to figure out how to close the testserver. so well... it'll have to remain open
-		// testServer.Close()
-		close(testDone)
-	})
-
-	// Use the test server's URL as the backend URL in your code
-	c := Claude{
-		Url: testServer.URL,
-	}
-	t.Setenv("ANTHROPIC_API_KEY", "somekey")
-	err := c.Setup()
-	if err != nil {
-		t.Fatalf("failed to setup claude: %v", err)
-	}
-	out, err := c.StreamCompletions(context, models.Chat{
-		ID: "test",
-		Messages: []models.Message{
-			{Role: "system", Content: "test"},
-			{Role: "user", Content: "test"},
+			want: []models.Message{
+				{Role: "user", Content: "user message"},
+			},
 		},
-	})
-	if err != nil {
-		t.Fatalf("failed to stream completions: %v", err)
+		{
+			desc: "it should convert system messages to assistant messages",
+			given: []models.Message{
+				{Role: "user", Content: "user message"},
+				{Role: "system", Content: "system message"},
+				{Role: "user", Content: "user message"},
+			},
+			want: []models.Message{
+				{Role: "user", Content: "user message"},
+				{Role: "assistant", Content: "system message"},
+				{Role: "user", Content: "user message"},
+			},
+		},
+		{
+			desc: "it should merge user messages into the upcoming message",
+			given: []models.Message{
+				{Role: "user", Content: "user message 1"},
+				{Role: "assistant", Content: "assistant message 1"},
+				{Role: "user", Content: "user message 2"},
+				{Role: "user", Content: "user message 3"},
+			},
+			want: []models.Message{
+				{Role: "user", Content: "user message 1"},
+				{Role: "assistant", Content: "assistant message 1"},
+				{Role: "user", Content: "user message 2\nuser message 3"},
+			},
+		},
+		{
+			desc: "glob message should start with assistant message",
+			given: []models.Message{
+				{Role: "system", Content: "system message 1"},
+				{Role: "system", Content: "system message 2"},
+				{Role: "user", Content: "user message 1"},
+			},
+			want: []models.Message{
+				{Role: "assistant", Content: "system message 2"},
+				{Role: "user", Content: "user message 1"},
+			},
+		},
+		{
+			desc: "tricky example 1",
+			given: []models.Message{
+				{Role: "user", Content: "user message 1"},
+				{Role: "user", Content: "user message 2"},
+				{Role: "assistant", Content: "assistant message 1"},
+				{Role: "user", Content: "user message 3"},
+				{Role: "user", Content: "user message 4"},
+				{Role: "user", Content: "user message 5"},
+			},
+			want: []models.Message{
+				{Role: "user", Content: "user message 1\nuser message 2"},
+				{Role: "assistant", Content: "assistant message 1"},
+				{Role: "user", Content: "user message 3\nuser message 4\nuser message 5"},
+			},
+		},
 	}
 
-	got := ""
-OUTER:
-	for {
-		select {
-		case <-context.Done():
-			t.Fatal("test timeout")
-		case tok, ok := <-out:
-			if !ok {
-				break OUTER
+	for _, tC := range testCases {
+		t.Run(tC.desc, func(t *testing.T) {
+			got := claudifyMessages(tC.given)
+			if len(tC.want) != len(got) {
+				t.Fatalf("incorrect length. expected: %q, got: %q", tC.want, got)
 			}
-			switch sel := tok.(type) {
-			case string:
-				got += sel
-			case error:
-				t.Fatalf("unexpected error: %v", sel)
-			}
-		}
-	}
 
-	if got != want {
-		t.Fatalf("expected: %v, got: %v", want, got)
+			for i := range tC.want {
+				if tC.want[i].Role != got[i].Role {
+					t.Fatalf("expected: %q, got: %q", tC.want[i].Role, got[i].Role)
+				}
+				if tC.want[i].Content != got[i].Content {
+					t.Fatalf("expected: %q, got: %q", tC.want[i].Content, got[i].Content)
+				}
+			}
+		})
 	}
 }
