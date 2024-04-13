@@ -73,7 +73,7 @@ func TestMigrateOldPhotoConfig(t *testing.T) {
                 "prompt-format": "test-prompt-format"                                                                                                                                                                                        
         }`
 	oldPhotoConfigPath := filepath.Join(tempDir, "photoConfig.json")
-	err := os.WriteFile(oldPhotoConfigPath, []byte(oldPhotoConfigData), 0644)
+	err := os.WriteFile(oldPhotoConfigPath, []byte(oldPhotoConfigData), 0o644)
 	if err != nil {
 		t.Fatalf("Failed to create old photoConfig.json: %v", err)
 	}

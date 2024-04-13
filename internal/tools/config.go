@@ -56,6 +56,7 @@ func runMigrationCallback(migrationCb func(string) error, configDirPath string) 
 	}
 	return nil
 }
+
 func LoadConfigFromFile[T any](
 	placeConfigPath,
 	configFileName string,

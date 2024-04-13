@@ -40,6 +40,7 @@ func TestParseGlob(t *testing.T) {
 		})
 	}
 }
+
 func TestSetup(t *testing.T) {
 	// Set up test cases
 	testCases := []struct {

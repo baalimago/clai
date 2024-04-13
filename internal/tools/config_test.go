@@ -123,7 +123,7 @@ func TestCreateConfigDir(t *testing.T) {
 func TestCreateDefaultConfigFile(t *testing.T) {
 	// Create a temporary directory for testing
 	tempDir := t.TempDir()
-	os.MkdirAll(filepath.Join(tempDir, ".clai"), 0755)
+	os.MkdirAll(filepath.Join(tempDir, ".clai"), 0o755)
 
 	configDirPath := filepath.Join(tempDir, ".clai")
 	configFileName := "config.json"
