@@ -40,10 +40,12 @@ func (c *Configurations) SetupPrompts() error {
 		ancli.PrintWarn("Using glob + reply modes together might yield strange results. The prevQuery will be appended after the glob messages.\n")
 	}
 
-	c.InitialPrompt = models.Chat{
-		Messages: []models.Message{
-			{Role: "system", Content: c.SystemPrompt},
-		},
+	if !c.ReplyMode {
+		c.InitialPrompt = models.Chat{
+			Messages: []models.Message{
+				{Role: "system", Content: c.SystemPrompt},
+			},
+		}
 	}
 
 	args := flag.Args()
