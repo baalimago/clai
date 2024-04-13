@@ -1,5 +1,6 @@
 # clai: command line artificial intelligence
 [![Go Report Card](https://goreportcard.com/badge/github.com/baalimago/clai)](https://goreportcard.com/report/github.com/baalimago/clai)
+Test coverage: 
 
 `clai` integrates AI models of multiple vendors via with the terminal.
 You can generate images, text, summarize content and chat while using native terminal functionality, such as pipes and termination signals.
