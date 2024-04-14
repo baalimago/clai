@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/baalimago/clai/internal/models"
-	"github.com/baalimago/clai/internal/tools"
+	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
@@ -154,7 +154,7 @@ func (cq *ChatHandler) cont(ctx context.Context) error {
 	}
 
 	for _, message := range chat.Messages {
-		err := tools.AttemptPrettyPrint(message, cq.username)
+		err := utils.AttemptPrettyPrint(message, cq.username)
 		if err != nil {
 			return fmt.Errorf("failed to print chat message: %w", err)
 		}

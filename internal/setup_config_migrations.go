@@ -7,7 +7,7 @@ import (
 
 	"github.com/baalimago/clai/internal/photo"
 	"github.com/baalimago/clai/internal/text"
-	"github.com/baalimago/clai/internal/tools"
+	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/internal/vendors/openai"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
@@ -43,7 +43,7 @@ func migrateOldChatConfig(configDirPath string) error {
 		return nil
 	}
 	var oldConf oldChatConfig
-	err := tools.ReadAndUnmarshal(oldChatConfigPath, &oldConf)
+	err := utils.ReadAndUnmarshal(oldChatConfigPath, &oldConf)
 	if err != nil {
 		return fmt.Errorf("failed to unmarshal old photo config: %w", err)
 	}
@@ -57,7 +57,7 @@ func migrateOldChatConfig(configDirPath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to remove old chatConfig: %w", err)
 	}
-	err = tools.CreateFile(fmt.Sprintf("%v/textConfig.json", configDirPath), &migratedTextConfig)
+	err = utils.CreateFile(fmt.Sprintf("%v/textConfig.json", configDirPath), &migratedTextConfig)
 	if err != nil {
 		return fmt.Errorf("failed to write new text config: %w", err)
 	}
@@ -72,7 +72,7 @@ func migrateOldChatConfig(configDirPath string) error {
 		Url:              oldConf.URL,
 	}
 
-	err = tools.CreateFile(fmt.Sprintf("%v/openai_gpt_%v.json", configDirPath, oldConf.Model), &migratedChatgptConfig)
+	err = utils.CreateFile(fmt.Sprintf("%v/openai_gpt_%v.json", configDirPath, oldConf.Model), &migratedChatgptConfig)
 	if err != nil {
 		return fmt.Errorf("failed to write gpt4 turbo preview config: %w", err)
 	}
@@ -89,7 +89,7 @@ func migrateOldPhotoConfig(configDirPath string) error {
 		return nil
 	}
 	var oldConf oldPhotoConfig
-	err := tools.ReadAndUnmarshal(oldPhotoConfigPath, &oldConf)
+	err := utils.ReadAndUnmarshal(oldPhotoConfigPath, &oldConf)
 	if err != nil {
 		return fmt.Errorf("failed to unmarshal old photo config: %w", err)
 	}
@@ -115,7 +115,7 @@ func migrateOldPhotoConfig(configDirPath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to remove old photoConfig: %w", err)
 	}
-	err = tools.CreateFile(newFilePath, &migratedPhotoConfig)
+	err = utils.CreateFile(newFilePath, &migratedPhotoConfig)
 	if err != nil {
 		return fmt.Errorf("failed to write new chat config: %w", err)
 	}

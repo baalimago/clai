@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/baalimago/clai/internal/models"
-	"github.com/baalimago/clai/internal/tools"
+	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
@@ -43,5 +43,5 @@ func Save(saveAt string, chat models.Chat) error {
 }
 
 func IdFromPrompt(prompt string) string {
-	return strings.Join(tools.GetFirstTokens(strings.Split(prompt, " "), 5), "_")
+	return strings.Join(utils.GetFirstTokens(strings.Split(prompt, " "), 5), "_")
 }

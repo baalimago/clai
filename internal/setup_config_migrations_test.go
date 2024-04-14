@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/baalimago/clai/internal/photo"
-	"github.com/baalimago/clai/internal/tools"
+	"github.com/baalimago/clai/internal/utils"
 )
 
 func TestMigrateOldChatConfig(t *testing.T) {
@@ -29,7 +29,7 @@ func TestMigrateOldChatConfig(t *testing.T) {
 		URL:              "https://api.openai.com",
 	}
 	oldChatConfigPath := filepath.Join(tempDir, "chatConfig.json")
-	err = tools.CreateFile(oldChatConfigPath, &oldChatConfig)
+	err = utils.CreateFile(oldChatConfigPath, &oldChatConfig)
 	if err != nil {
 		t.Fatalf("failed to create file: %v", err)
 	}
@@ -92,7 +92,7 @@ func TestMigrateOldPhotoConfig(t *testing.T) {
 
 	// Read the new photoConfig.json file and check its contents
 	var newPhotoConfig photo.Configurations
-	err = tools.ReadAndUnmarshal(newPhotoConfigPath, &newPhotoConfig)
+	err = utils.ReadAndUnmarshal(newPhotoConfigPath, &newPhotoConfig)
 	if err != nil {
 		t.Fatalf("Failed to read new photoConfig.json: %v", err)
 	}

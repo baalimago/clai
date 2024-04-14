@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/baalimago/clai/internal/tools"
+	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
@@ -13,7 +13,7 @@ func StartAnimation() func() {
 	t0 := time.Now()
 	ticker := time.NewTicker(time.Second / 60)
 	stop := make(chan struct{})
-	termWidth, err := tools.TermWidth()
+	termWidth, err := utils.TermWidth()
 	if err != nil {
 		ancli.PrintWarn(fmt.Sprintf("failed to get terminal size: %v\n", err))
 		termWidth = 100

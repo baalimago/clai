@@ -12,7 +12,7 @@ import (
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/photo"
 	"github.com/baalimago/clai/internal/text"
-	"github.com/baalimago/clai/internal/tools"
+	"github.com/baalimago/clai/internal/utils"
 )
 
 type PromptConfig struct {
@@ -61,7 +61,7 @@ func getModeFromArgs(cmd string) (Mode, error) {
 }
 
 func setupTextQuerier(mode Mode, confDir string, flagSet Configurations) (models.Querier, error) {
-	tConf, err := tools.LoadConfigFromFile(confDir, "textConfig.json", migrateOldChatConfig, &text.DEFAULT)
+	tConf, err := utils.LoadConfigFromFile(confDir, "textConfig.json", migrateOldChatConfig, &text.DEFAULT)
 	tConf.ConfigDir = path.Join(confDir, ".clai")
 	if err != nil {
 		return nil, fmt.Errorf("failed to load configs: %err", err)
@@ -104,7 +104,7 @@ func Setup(usage string) (models.Querier, error) {
 	case CHAT, QUERY, GLOB:
 		return setupTextQuerier(mode, confDir, flagSet)
 	case PHOTO:
-		pConf, err := tools.LoadConfigFromFile(confDir, "photoConfig.json", migrateOldPhotoConfig, &photo.DEFAULT)
+		pConf, err := utils.LoadConfigFromFile(confDir, "photoConfig.json", migrateOldPhotoConfig, &photo.DEFAULT)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load configs: %w", err)
 		}

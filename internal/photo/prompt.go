@@ -8,7 +8,7 @@ import (
 	"path"
 
 	"github.com/baalimago/clai/internal/reply"
-	"github.com/baalimago/clai/internal/tools"
+	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
@@ -37,7 +37,7 @@ func (c *Configurations) SetupPrompts() error {
 			c.Prompt += replyMessages
 		}
 	}
-	prompt, err := tools.Prompt(c.StdinReplace, args)
+	prompt, err := utils.Prompt(c.StdinReplace, args)
 	if err != nil {
 		return fmt.Errorf("failed to setup prompt from stdin: %w", err)
 	}

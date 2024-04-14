@@ -13,7 +13,7 @@ import (
 
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/reply"
-	"github.com/baalimago/clai/internal/tools"
+	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
@@ -54,7 +54,7 @@ func NewQuerier[C models.StreamCompleter](userConf Configurations, dfault C) (Qu
 	querier := Querier[C]{}
 	querier.configDir = claiConfDir
 	var modelConf C
-	err := tools.ReadAndUnmarshal(configPath, &modelConf)
+	err := utils.ReadAndUnmarshal(configPath, &modelConf)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			data, err := json.Marshal(dfault)
@@ -66,7 +66,7 @@ func NewQuerier[C models.StreamCompleter](userConf Configurations, dfault C) (Qu
 				return querier, fmt.Errorf("failed to write default model: %v, error: %w", dfault, err)
 			}
 
-			err = tools.ReadAndUnmarshal(configPath, &modelConf)
+			err = utils.ReadAndUnmarshal(configPath, &modelConf)
 			if err != nil {
 				return querier, fmt.Errorf("failed to read default model: %v, error: %w", dfault, err)
 			}
@@ -80,7 +80,7 @@ func NewQuerier[C models.StreamCompleter](userConf Configurations, dfault C) (Qu
 		return Querier[C]{}, fmt.Errorf("failed to setup model: %w", err)
 	}
 
-	termWidth, err := tools.TermWidth()
+	termWidth, err := utils.TermWidth()
 	querier.termWidth = termWidth
 	if err != nil {
 		ancli.PrintWarn(fmt.Sprintf("failed to get terminal size: %v\n", err))
@@ -128,11 +128,11 @@ func (q *Querier[C]) Query(ctx context.Context) error {
 		}
 
 		if q.termWidth > 0 {
-			tools.ClearTermTo(q.termWidth, q.lineCount)
+			utils.ClearTermTo(q.termWidth, q.lineCount)
 		} else {
 			fmt.Println()
 		}
-		tools.AttemptPrettyPrint(newSysMsg, q.username)
+		utils.AttemptPrettyPrint(newSysMsg, q.username)
 	}()
 
 	for {
@@ -193,7 +193,7 @@ func (q *Querier[C]) handleCompletion(completion models.CompletionEvent) error {
 
 func (q *Querier[C]) handleToken(token string) {
 	if q.termWidth > 0 {
-		tools.UpdateMessageTerminalMetadata(token, &q.line, &q.lineCount, q.termWidth)
+		utils.UpdateMessageTerminalMetadata(token, &q.line, &q.lineCount, q.termWidth)
 	}
 	q.fullMsg += token
 	fmt.Print(token)

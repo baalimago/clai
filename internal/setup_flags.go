@@ -7,7 +7,7 @@ import (
 
 	"github.com/baalimago/clai/internal/photo"
 	"github.com/baalimago/clai/internal/text"
-	"github.com/baalimago/clai/internal/tools"
+	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
@@ -47,15 +47,15 @@ func setupFlags(defaults Configurations) Configurations {
 	replyLong := flag.Bool("reply", defaults.ReplyMode, "Set to true to reply to the previous query, meaning that it will be used as context for your next query. Default is false.")
 
 	flag.Parse()
-	chatModel, err := tools.ReturnNonDefault(*cmShort, *cmLong, defaults.ChatModel)
+	chatModel, err := utils.ReturnNonDefault(*cmShort, *cmLong, defaults.ChatModel)
 	exitWithFlagError(err, "cm", "chat-model")
-	photoModel, err := tools.ReturnNonDefault(*pmShort, *pmLong, defaults.PhotoModel)
+	photoModel, err := utils.ReturnNonDefault(*pmShort, *pmLong, defaults.PhotoModel)
 	exitWithFlagError(err, "pm", "photo-model")
-	pictureDir, err := tools.ReturnNonDefault(*pdShort, *pdLong, defaults.PhotoDir)
+	pictureDir, err := utils.ReturnNonDefault(*pdShort, *pdLong, defaults.PhotoDir)
 	exitWithFlagError(err, "pd", "photo-dir")
-	picturePrefix, err := tools.ReturnNonDefault(*ppShort, *ppLong, defaults.PhotoPrefix)
+	picturePrefix, err := utils.ReturnNonDefault(*ppShort, *ppLong, defaults.PhotoPrefix)
 	exitWithFlagError(err, "pp", "photo-prefix")
-	stdinReplace, err := tools.ReturnNonDefault(*stdinReplaceShort, *stdinReplaceLong, defaults.StdinReplace)
+	stdinReplace, err := utils.ReturnNonDefault(*stdinReplaceShort, *stdinReplaceLong, defaults.StdinReplace)
 	exitWithFlagError(err, "I", "replace")
 	replyMode := *replyShort || *replyLong
 	printRaw := *printRawShort || *printRawLong

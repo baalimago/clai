@@ -12,7 +12,7 @@ import (
 
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/photo"
-	"github.com/baalimago/clai/internal/tools"
+	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
@@ -73,7 +73,7 @@ func NewPhotoQuerier(pConf photo.Configurations) (models.Querier, error) {
 	defaultCpy.Model = model
 	defaultCpy.Output = pConf.Output
 	// Load config based on model, allowing for different configs for each model
-	dalleQuerier, err := tools.LoadConfigFromFile(home, fmt.Sprintf("openai_dalle_%v.json", model), nil, &defaultCpy)
+	dalleQuerier, err := utils.LoadConfigFromFile(home, fmt.Sprintf("openai_dalle_%v.json", model), nil, &defaultCpy)
 	if dalleQuerier.Output.Type == photo.URL {
 		dalleQuerier.ResponseFormat = "url"
 	} else if dalleQuerier.Output.Type == photo.LOCAL {
@@ -176,7 +176,7 @@ func (q *DallE) saveImage(imgResp ImageResponse) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to decode base64: %w", err)
 	}
-	pictureName := fmt.Sprintf("%v_%v.jpg", q.Output.Prefix, tools.RandomPrefix())
+	pictureName := fmt.Sprintf("%v_%v.jpg", q.Output.Prefix, utils.RandomPrefix())
 	outFile := fmt.Sprintf("%v/%v", q.Output.Dir, pictureName)
 	err = os.WriteFile(outFile, data, 0o644)
 	if err != nil {
