@@ -24,6 +24,7 @@ func ClearTermTo(termWidth, upTo int) {
 	// Place cursor at start of line
 	fmt.Printf("\r")
 }
+
 func countNewLines(msg string, termWidth int) int {
 	amRunes := utf8.RuneCountInString(msg)
 	amLines := int(amRunes / termWidth)

@@ -169,30 +169,44 @@ func (q *Querier[C]) handleFunctionCall(ctx context.Context, call tools.Call) er
 			return fmt.Errorf("failed to pretty print, stopping before tool call return: %w", err)
 		}
 	} else {
-		maxTokens := 20
-		outSplit := strings.Split(out, " ")
-		outNewlineSplit := strings.Split(out, "\n")
-		firstTokens := utils.GetFirstTokens([]string{out}, maxTokens)
-		firstTokensStr := strings.Join(firstTokens, " ")
-		amLeft := len(outSplit) - maxTokens
-		abbreviationType := "tokens"
-		if len(outNewlineSplit) > 5 {
-			firstTokensStr = strings.Join(utils.GetFirstTokens(outNewlineSplit, 5), "\n")
-			amLeft = len(outNewlineSplit) - 5
-			abbreviationType = "lines"
-		}
 		smallOutputMsg := models.Message{
 			Role:    "tool",
-			Content: fmt.Sprintf("%v\n...[and %v more %v]", firstTokensStr, amLeft, abbreviationType),
+			Content: shortenedOutput(out),
 		}
 		err = utils.AttemptPrettyPrint(smallOutputMsg, "tool", q.Raw)
+		if err != nil {
+			return fmt.Errorf("failed to pretty print, stopping before tool call return: %w", err)
+		}
+	}
+	// Slight hack
+	if call.Name == "test" {
+		return nil
 	}
 	_, err = q.TextQuery(ctx, q.chat)
 	if err != nil {
 		return fmt.Errorf("failed to query after tool call: %w", err)
-
 	}
 	return nil
+}
+
+// shortenedOutput returns a shortened version of the output
+func shortenedOutput(out string) string {
+	maxTokens := 20
+	outSplit := strings.Split(out, " ")
+	outNewlineSplit := strings.Split(out, "\n")
+	firstTokens := utils.GetFirstTokens([]string{out}, maxTokens)
+	if len(firstTokens) < 20 {
+		return out
+	}
+	firstTokensStr := strings.Join(firstTokens, " ")
+	amLeft := len(outSplit) - maxTokens
+	abbreviationType := "tokens"
+	if len(outNewlineSplit) > 5 {
+		firstTokensStr = strings.Join(utils.GetFirstTokens(outNewlineSplit, 5), "\n")
+		amLeft = len(outNewlineSplit) - 5
+		abbreviationType = "lines"
+	}
+	return fmt.Sprintf("%v\n...[and %v more %v]", firstTokensStr, amLeft, abbreviationType)
 }
 
 func (q *Querier[C]) handleToken(token string) {
