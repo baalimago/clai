@@ -44,14 +44,14 @@
       }
     },
     {
-      "name": "Claude - Query - Reply",
+      "name": "Claude - Query - Tree",
       "type": "go",
       "request": "launch",
       "program": "${workspaceFolder}",
       "args": [
-        "-re",
+        "-t",
         "query",
-        "test"
+        "try to call the file tree command, i'm debugging this functionality. Try to find where I keep the project 'clai' and then analyze its file structure. You're allowed to procedurally explore the file system. My username is 'imago'"
       ],
       "env": {
         "NO_COLOR": "true"

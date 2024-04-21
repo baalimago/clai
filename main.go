@@ -31,6 +31,7 @@ Flags:
   -pp, -photo-prefix string    Set the prefix for the generated pictures. Default is 'clai'. 
   -I, -replace string          Set the string to replace with stdin. Default is '{}'. (flag syntax borrowed from xargs)
   -i bool                      Set to true to replace '{}' with stdin. This is overwritten by -I and -replace. Default is false. (flag syntax borrowed from xargs)
+  -t, -tools bool              Set to true to use text tools. Some models might not support streaming. Default is false.
 
 Commands:
   h|help                        Display this help message

@@ -154,7 +154,7 @@ func (cq *ChatHandler) cont(ctx context.Context) error {
 	}
 
 	for _, message := range chat.Messages {
-		err := utils.AttemptPrettyPrint(message, cq.username)
+		err := utils.AttemptPrettyPrint(message, cq.username, false)
 		if err != nil {
 			return fmt.Errorf("failed to print chat message: %w", err)
 		}

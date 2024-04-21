@@ -19,6 +19,7 @@ type Configurations struct {
 	Model         string      `json:"model"`
 	SystemPrompt  string      `json:"system-prompt"`
 	Raw           bool        `json:"raw"`
+	UseTools      bool        `json:"use-tools"`
 	ConfigDir     string      `json:"-"`
 	StdinReplace  string      `json:"-"`
 	Stream        bool        `json:"-"`

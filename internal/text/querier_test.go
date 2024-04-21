@@ -15,15 +15,16 @@ import (
 
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/reply"
+	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
 type MockQuerier struct {
 	Somefield   string `json:"somefield"`
 	shouldBlock bool
-	// stringChan is used to simulate a stream of completions
+	// completionChan is used to simulate a stream of completions
 	// send 'CLOSE' outChan, used in tests, plus the MockQuerier
-	stringChan chan string
+	completionChan chan models.CompletionEvent
 	// errChan is used to simulate a stream of errors. Send
 	errChan chan error
 }
@@ -35,7 +36,7 @@ func (q *MockQuerier) Setup() error {
 func (q *MockQuerier) StreamCompletions(ctx context.Context, chat models.Chat) (chan models.CompletionEvent, error) {
 	// simulate a stream of completions via the sendChan, so that
 	// it's possible to send messages from outside the test
-	if q.stringChan != nil {
+	if q.completionChan != nil {
 		outChan := make(chan models.CompletionEvent)
 		go func() {
 			if q.shouldBlock {
@@ -48,7 +49,7 @@ func (q *MockQuerier) StreamCompletions(ctx context.Context, chat models.Chat) (
 					return
 				case err := <-q.errChan:
 					outChan <- models.CompletionEvent(err)
-				case msg := <-q.stringChan:
+				case msg := <-q.completionChan:
 					if msg == "CLOSE" {
 						close(outChan)
 						return
@@ -126,22 +127,22 @@ func Test_Context(t *testing.T) {
 	}, time.Second)
 }
 
-func Test_Querier_Query_strings(t *testing.T) {
+func Test_Querier_eventHandling(t *testing.T) {
 	testCases := []struct {
 		desc  string
 		q     Querier[*MockQuerier]
-		given []string
+		given []models.CompletionEvent
 		want  string
 	}{
 		{
-			desc: "it should print to stdout",
+			desc: "it should print token to stdout",
 			q: Querier[*MockQuerier]{
 				Raw: true,
 				Model: &MockQuerier{
-					stringChan: make(chan string),
+					completionChan: make(chan models.CompletionEvent),
 				},
 			},
-			given: []string{"test", "CLOSE"},
+			given: []models.CompletionEvent{"test", "CLOSE"},
 			want:  "test",
 		},
 		{
@@ -149,19 +150,39 @@ func Test_Querier_Query_strings(t *testing.T) {
 			q: Querier[*MockQuerier]{
 				Raw: true,
 				Model: &MockQuerier{
-					stringChan: make(chan string),
+					completionChan: make(chan models.CompletionEvent),
 				},
 			},
-			given: []string{" one", "two\n", "three ", "CLOSE"},
+			given: []models.CompletionEvent{" one", "two\n", "  three ", "CLOSE"},
 			want: ` onetwo
-three `,
+  three `,
+		},
+		{
+			desc: "it should call test function when asked to",
+			q: Querier[*MockQuerier]{
+				Raw: true,
+				Model: &MockQuerier{
+					completionChan: make(chan models.CompletionEvent),
+				},
+			},
+			given: []models.CompletionEvent{
+				"first the model said something",
+				tools.Call{
+					Name: "test",
+					Inputs: tools.Input{
+						"testKey": "testVal",
+					},
+				},
+				"CLOSE",
+			},
+			want: "first the model said something\nfunction call struct:\n{\"testKey\":\"testVal\"}\n{Name:test Inputs:map[testKey:testVal]}\n",
 		},
 	}
 	for _, tC := range testCases {
 		t.Run(tC.desc, func(t *testing.T) {
 			go func() {
 				for _, msg := range tC.given {
-					tC.q.Model.stringChan <- msg
+					tC.q.Model.completionChan <- msg
 				}
 			}()
 
@@ -171,7 +192,7 @@ three `,
 			})
 
 			if got != tC.want {
-				t.Fatalf("expected: %v, got: %v", tC.want, got)
+				t.Fatalf("expected: %q, got: %q", tC.want, got)
 			}
 		})
 	}
@@ -191,8 +212,8 @@ func Test_Querier_Query_errors(t *testing.T) {
 			q: Querier[*MockQuerier]{
 				Raw: true,
 				Model: &MockQuerier{
-					stringChan: make(chan string),
-					errChan:    make(chan error),
+					completionChan: make(chan models.CompletionEvent),
+					errChan:        make(chan error),
 				},
 			},
 			given: io.EOF,
@@ -203,8 +224,8 @@ func Test_Querier_Query_errors(t *testing.T) {
 			q: Querier[*MockQuerier]{
 				Raw: true,
 				Model: &MockQuerier{
-					stringChan: make(chan string),
-					errChan:    make(chan error),
+					completionChan: make(chan models.CompletionEvent),
+					errChan:        make(chan error),
 				},
 			},
 			given: context.Canceled,
@@ -215,8 +236,8 @@ func Test_Querier_Query_errors(t *testing.T) {
 			q: Querier[*MockQuerier]{
 				Raw: true,
 				Model: &MockQuerier{
-					stringChan: make(chan string),
-					errChan:    make(chan error),
+					completionChan: make(chan models.CompletionEvent),
+					errChan:        make(chan error),
 				},
 			},
 			given: errors.New("some other error"),
@@ -234,7 +255,7 @@ func Test_Querier_Query_errors(t *testing.T) {
 				rcMu.Lock()
 				defer rcMu.Unlock()
 				tC.q.Model.errChan <- tC.given
-				tC.q.Model.stringChan <- "CLOSE"
+				tC.q.Model.completionChan <- "CLOSE"
 			}()
 
 			got := tC.q.Query(context.Background())
@@ -270,15 +291,15 @@ func Test_Querier(t *testing.T) {
 				},
 			},
 			Model: &MockQuerier{
-				shouldBlock: false,
-				stringChan:  make(chan string),
-				errChan:     make(chan error),
+				shouldBlock:    false,
+				completionChan: make(chan models.CompletionEvent),
+				errChan:        make(chan error),
 			},
 		}
 		want := "something to remember"
 		go func() {
-			q.Model.stringChan <- want
-			q.Model.stringChan <- "CLOSE"
+			q.Model.completionChan <- want
+			q.Model.completionChan <- "CLOSE"
 		}()
 		err := q.Query(context.Background())
 		if err != nil {
@@ -298,8 +319,8 @@ func Test_Querier(t *testing.T) {
 		// Redo test with replyMode false
 		q.shouldSaveReply = false
 		go func() {
-			q.Model.stringChan <- want
-			q.Model.stringChan <- "CLOSE"
+			q.Model.completionChan <- want
+			q.Model.completionChan <- "CLOSE"
 		}()
 		err = q.Query(context.Background())
 		if err != nil {

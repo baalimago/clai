@@ -4,33 +4,36 @@ import (
 	"net/http"
 
 	"github.com/baalimago/clai/internal/models"
+	"github.com/baalimago/clai/internal/tools"
 )
 
 type Claude struct {
-	Model            string       `json:"model"`
-	MaxTokens        int          `json:"max_tokens"`
-	Url              string       `json:"url"`
-	AnthropicVersion string       `json:"anthropic-version"`
-	AnthropicBeta    string       `json:"anthropic-beta"`
-	client           *http.Client `json:"-"`
-	apiKey           string       `json:"-"`
-	debug            bool         `json:"-"`
+	Model            string               `json:"model"`
+	MaxTokens        int                  `json:"max_tokens"`
+	Url              string               `json:"url"`
+	AnthropicVersion string               `json:"anthropic-version"`
+	AnthropicBeta    string               `json:"anthropic-beta"`
+	client           *http.Client         `json:"-"`
+	apiKey           string               `json:"-"`
+	debug            bool                 `json:"-"`
+	tools            []tools.UserFunction `json:"-"`
 }
 
 var CLAUDE_DEFAULT = Claude{
 	Model:            "claude-3-opus-20240229",
 	Url:              ClaudeURL,
 	AnthropicVersion: "2023-06-01",
-	AnthropicBeta:    "messages-2023-12-15",
+	AnthropicBeta:    "tools-2024-04-04",
 	MaxTokens:        1024,
 }
 
 type claudeReq struct {
-	Model     string           `json:"model"`
-	Messages  []models.Message `json:"messages"`
-	MaxTokens int              `json:"max_tokens"`
-	Stream    bool             `json:"stream"`
-	System    string           `json:"system"`
+	Model     string               `json:"model"`
+	Messages  []models.Message     `json:"messages"`
+	MaxTokens int                  `json:"max_tokens"`
+	Stream    bool                 `json:"stream"`
+	System    string               `json:"system"`
+	Tools     []tools.UserFunction `json:"tools,omitempty"`
 }
 
 // claudifyMessages converts from 'normal' openai chat format into a format which claud prefers
@@ -44,6 +47,12 @@ func claudifyMessages(msgs []models.Message) []models.Message {
 	for i, v := range msgs {
 		if v.Role == "system" {
 			msgs[i].Role = "assistant"
+		}
+	}
+
+	for i, v := range msgs {
+		if v.Role == "tool" {
+			msgs[i].Role = "user"
 		}
 	}
 

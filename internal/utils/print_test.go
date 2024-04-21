@@ -19,7 +19,7 @@ func TestUpdateMessageTerminalMetadata(t *testing.T) {
 			lineCount:         0,
 			termWidth:         10,
 			expectedLine:      "Hello",
-			expectedLineCount: 0,
+			expectedLineCount: 1,
 		},
 		{
 			name:              "Message with newline",
@@ -27,8 +27,8 @@ func TestUpdateMessageTerminalMetadata(t *testing.T) {
 			line:              "",
 			lineCount:         0,
 			termWidth:         10,
-			expectedLine:      "",
-			expectedLineCount: 1,
+			expectedLine:      "World",
+			expectedLineCount: 2,
 		},
 		{
 			name:              "Message exceeding terminal width",
@@ -36,8 +36,8 @@ func TestUpdateMessageTerminalMetadata(t *testing.T) {
 			line:              "",
 			lineCount:         0,
 			termWidth:         5,
-			expectedLine:      "",
-			expectedLineCount: 1,
+			expectedLine:      "World",
+			expectedLineCount: 2,
 		},
 		{
 			name:              "Append to existing line",
@@ -46,7 +46,16 @@ func TestUpdateMessageTerminalMetadata(t *testing.T) {
 			lineCount:         0,
 			termWidth:         20,
 			expectedLine:      "Hello World",
-			expectedLineCount: 0,
+			expectedLineCount: 1,
+		},
+		{
+			name:              "It should handle very large blocks of text lines",
+			msg:               "One oneone two twotwo threethree. Four four five five six\nSeven",
+			line:              "",
+			lineCount:         0,
+			termWidth:         10,
+			expectedLine:      "Seven",
+			expectedLineCount: 6,
 		},
 	}
 

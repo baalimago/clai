@@ -39,6 +39,7 @@ var defaultFlags = Configurations{
 	StdinReplace: "",
 	PrintRaw:     false,
 	ReplyMode:    false,
+	UseTools:     false,
 }
 
 func getModeFromArgs(cmd string) (Mode, error) {

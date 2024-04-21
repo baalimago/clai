@@ -21,6 +21,7 @@ type Configurations struct {
 	StdinReplace string
 	PrintRaw     bool
 	ReplyMode    bool
+	UseTools     bool
 }
 
 func setupFlags(defaults Configurations) Configurations {
@@ -46,6 +47,9 @@ func setupFlags(defaults Configurations) Configurations {
 	replyShort := flag.Bool("re", defaults.ReplyMode, "Set to true to reply to the previous query, meaning that it will be used as context for your next query. Default is false.")
 	replyLong := flag.Bool("reply", defaults.ReplyMode, "Set to true to reply to the previous query, meaning that it will be used as context for your next query. Default is false.")
 
+	useToolsShort := flag.Bool("t", defaults.UseTools, "Set to true to use tools. Default is false.")
+	useToolsLong := flag.Bool("tools", defaults.UseTools, "Set to true to use tools. Default is false.")
+
 	flag.Parse()
 	chatModel, err := utils.ReturnNonDefault(*cmShort, *cmLong, defaults.ChatModel)
 	exitWithFlagError(err, "cm", "chat-model")
@@ -57,6 +61,8 @@ func setupFlags(defaults Configurations) Configurations {
 	exitWithFlagError(err, "pp", "photo-prefix")
 	stdinReplace, err := utils.ReturnNonDefault(*stdinReplaceShort, *stdinReplaceLong, defaults.StdinReplace)
 	exitWithFlagError(err, "I", "replace")
+	useTools, err := utils.ReturnNonDefault(*useToolsShort, *useToolsLong, defaults.UseTools)
+	exitWithFlagError(err, "t", "tools")
 	replyMode := *replyShort || *replyLong
 	printRaw := *printRawShort || *printRawLong
 
@@ -72,6 +78,7 @@ func setupFlags(defaults Configurations) Configurations {
 		StdinReplace: stdinReplace,
 		PrintRaw:     printRaw,
 		ReplyMode:    replyMode,
+		UseTools:     useTools,
 	}
 }
 
@@ -87,6 +94,9 @@ func applyFlagOverridesForText(tConf *text.Configurations, flagSet, defaultFlags
 	}
 	if flagSet.PrintRaw != defaultFlags.PrintRaw {
 		tConf.Raw = flagSet.PrintRaw
+	}
+	if flagSet.UseTools != defaultFlags.UseTools {
+		tConf.UseTools = flagSet.UseTools
 	}
 }
 

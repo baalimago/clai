@@ -2,20 +2,16 @@ package text
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"os/user"
-	"path"
 	"strings"
 
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/reply"
+	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
-	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
 type Querier[C models.StreamCompleter] struct {
@@ -30,74 +26,8 @@ type Querier[C models.StreamCompleter] struct {
 	configDir       string
 	debug           bool
 	shouldSaveReply bool
+	hasPrinted      bool
 	Model           C
-}
-
-func vendorType(fromModel string) (string, string, string) {
-	if strings.Contains(fromModel, "gpt") {
-		return "openai", "gpt", fromModel
-	}
-	if strings.Contains(fromModel, "claude") {
-		return "anthropic", "claude", fromModel
-	}
-	if strings.Contains(fromModel, "mock") {
-		return "mock", "mock", "mock"
-	}
-
-	return "VENDOR", "NOT", "FOUND"
-}
-
-func NewQuerier[C models.StreamCompleter](userConf Configurations, dfault C) (Querier[C], error) {
-	vendor, model, modelVersion := vendorType(userConf.Model)
-	claiConfDir := userConf.ConfigDir
-	configPath := path.Join(claiConfDir, fmt.Sprintf("%v_%v_%v.json", vendor, model, modelVersion))
-	querier := Querier[C]{}
-	querier.configDir = claiConfDir
-	var modelConf C
-	err := utils.ReadAndUnmarshal(configPath, &modelConf)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			data, err := json.Marshal(dfault)
-			if err != nil {
-				return querier, fmt.Errorf("failed to marshal default model: %v, error: %w", dfault, err)
-			}
-			err = os.WriteFile(configPath, data, os.FileMode(0o644))
-			if err != nil {
-				return querier, fmt.Errorf("failed to write default model: %v, error: %w", dfault, err)
-			}
-
-			err = utils.ReadAndUnmarshal(configPath, &modelConf)
-			if err != nil {
-				return querier, fmt.Errorf("failed to read default model: %v, error: %w", dfault, err)
-			}
-		} else {
-			return querier, fmt.Errorf("failed to load querier of model: %v, error: %w", userConf.Model, err)
-		}
-	}
-
-	err = modelConf.Setup()
-	if err != nil {
-		return Querier[C]{}, fmt.Errorf("failed to setup model: %w", err)
-	}
-
-	termWidth, err := utils.TermWidth()
-	querier.termWidth = termWidth
-	if err != nil {
-		ancli.PrintWarn(fmt.Sprintf("failed to get terminal size: %v\n", err))
-	}
-	currentUser, err := user.Current()
-	if err == nil {
-		querier.username = currentUser.Username
-	} else {
-		querier.username = "user"
-	}
-	querier.Model = modelConf
-	querier.chat = userConf.InitialPrompt
-	if misc.Truthy(os.Getenv("DEBUG")) {
-		querier.debug = true
-	}
-	querier.shouldSaveReply = !userConf.ChatMode
-	return querier, nil
 }
 
 // Query using the underlying model to stream completions and then print the output
@@ -108,32 +38,7 @@ func (q *Querier[C]) Query(ctx context.Context) error {
 		return fmt.Errorf("failed to stream completions: %w", err)
 	}
 
-	defer func() {
-		chatMsgscopy := make([]models.Message, len(q.chat.Messages))
-		copy(chatMsgscopy, q.chat.Messages)
-		newSysMsg := models.Message{
-			Role:    "system",
-			Content: q.fullMsg,
-		}
-		chatMsgscopy = append(chatMsgscopy, newSysMsg)
-		if q.shouldSaveReply {
-			err := reply.SaveAsPreviousQuery(q.configDir, chatMsgscopy)
-			if err != nil {
-				ancli.PrintErr(fmt.Sprintf("failed to save previous query: %v\n", err))
-			}
-		}
-
-		if q.Raw {
-			return
-		}
-
-		if q.termWidth > 0 {
-			utils.ClearTermTo(q.termWidth, q.lineCount)
-		} else {
-			fmt.Println()
-		}
-		utils.AttemptPrettyPrint(newSysMsg, q.username)
-	}()
+	defer q.postProcess()
 
 	for {
 		select {
@@ -142,7 +47,7 @@ func (q *Querier[C]) Query(ctx context.Context) error {
 			if !ok {
 				return nil
 			}
-			err := q.handleCompletion(completion)
+			err := q.handleCompletion(ctx, completion)
 			if err != nil {
 				// check if error is context canceled or EOF, return nil as these are expected and handeled elsewhere
 				if errors.Is(err, context.Canceled) || errors.Is(err, io.EOF) {
@@ -156,10 +61,45 @@ func (q *Querier[C]) Query(ctx context.Context) error {
 	}
 }
 
+func (q *Querier[C]) postProcess() {
+	// This is to ensure that it only post-processes once in recursive calls
+	if q.hasPrinted {
+		return
+	}
+	q.hasPrinted = true
+	chatMsgscopy := make([]models.Message, len(q.chat.Messages))
+	copy(chatMsgscopy, q.chat.Messages)
+	newSysMsg := models.Message{
+		Role:    "system",
+		Content: q.fullMsg,
+	}
+	chatMsgscopy = append(chatMsgscopy, newSysMsg)
+	if q.shouldSaveReply {
+		err := reply.SaveAsPreviousQuery(q.configDir, chatMsgscopy)
+		if err != nil {
+			ancli.PrintErr(fmt.Sprintf("failed to save previous query: %v\n", err))
+		}
+	}
+
+	// The token should already have been printed while streamed
+	if q.Raw {
+		return
+	}
+
+	if q.termWidth > 0 {
+		utils.UpdateMessageTerminalMetadata(q.fullMsg, &q.line, &q.lineCount, q.termWidth)
+		utils.ClearTermTo(q.termWidth, q.lineCount-1)
+	} else {
+		fmt.Println()
+	}
+	utils.AttemptPrettyPrint(newSysMsg, q.username, q.Raw)
+}
+
 func (q *Querier[C]) reset() {
 	q.fullMsg = ""
 	q.line = ""
 	q.lineCount = 0
+	q.hasPrinted = false
 }
 
 func (q *Querier[C]) TextQuery(ctx context.Context, chat models.Chat) (models.Chat, error) {
@@ -179,8 +119,10 @@ func (q *Querier[C]) TextQuery(ctx context.Context, chat models.Chat) (models.Ch
 	return q.chat, nil
 }
 
-func (q *Querier[C]) handleCompletion(completion models.CompletionEvent) error {
+func (q *Querier[C]) handleCompletion(ctx context.Context, completion models.CompletionEvent) error {
 	switch cast := completion.(type) {
+	case tools.Call:
+		return q.handleFunctionCall(ctx, cast)
 	case string:
 		q.handleToken(cast)
 		return nil
@@ -191,10 +133,69 @@ func (q *Querier[C]) handleCompletion(completion models.CompletionEvent) error {
 	}
 }
 
-func (q *Querier[C]) handleToken(token string) {
-	if q.termWidth > 0 {
-		utils.UpdateMessageTerminalMetadata(token, &q.line, &q.lineCount, q.termWidth)
+// handleFunctionCall by invoking the call, and then resondng to the ai with the output
+func (q *Querier[C]) handleFunctionCall(ctx context.Context, call tools.Call) error {
+	// Whatever is in q.fullMessage now is what the AI has streamed before the function call
+	// which normally is handeled by the supercallee of Query, now we need to handle it here
+	// There's room for improvement of this system..
+	systemPreCallMessage := models.Message{
+		Role:    "system",
+		Content: q.fullMsg,
 	}
+	q.chat.Messages = append(q.chat.Messages, systemPreCallMessage)
+	// Post process here since a function call should be treated as the function call
+	// should be handeled mid-stream, but still requires multiple rounds of user input
+	q.postProcess()
+	systemToolsCall := models.Message{
+		Role:    "tool",
+		Content: fmt.Sprintf("retrieved funtion call struct from AI:\n%v", call.Json()),
+	}
+	q.chat.Messages = append(q.chat.Messages, systemToolsCall)
+	q.reset()
+	err := utils.AttemptPrettyPrint(systemToolsCall, "tool", q.Raw)
+	if err != nil {
+		return fmt.Errorf("failed to pretty print, stopping before tool invocation: %w", err)
+	}
+
+	out := tools.Invoke(call)
+	toolsOutput := models.Message{
+		Role:    "tool",
+		Content: out,
+	}
+	q.chat.Messages = append(q.chat.Messages, toolsOutput)
+	if q.debug || q.Raw {
+		err = utils.AttemptPrettyPrint(toolsOutput, "tool", q.Raw)
+		if err != nil {
+			return fmt.Errorf("failed to pretty print, stopping before tool call return: %w", err)
+		}
+	} else {
+		maxTokens := 20
+		outSplit := strings.Split(out, " ")
+		outNewlineSplit := strings.Split(out, "\n")
+		firstTokens := utils.GetFirstTokens([]string{out}, maxTokens)
+		firstTokensStr := strings.Join(firstTokens, " ")
+		amLeft := len(outSplit) - maxTokens
+		abbreviationType := "tokens"
+		if len(outNewlineSplit) > 5 {
+			firstTokensStr = strings.Join(utils.GetFirstTokens(outNewlineSplit, 5), "\n")
+			amLeft = len(outNewlineSplit) - 5
+			abbreviationType = "lines"
+		}
+		smallOutputMsg := models.Message{
+			Role:    "tool",
+			Content: fmt.Sprintf("%v\n...[and %v more %v]", firstTokensStr, amLeft, abbreviationType),
+		}
+		err = utils.AttemptPrettyPrint(smallOutputMsg, "tool", q.Raw)
+	}
+	_, err = q.TextQuery(ctx, q.chat)
+	if err != nil {
+		return fmt.Errorf("failed to query after tool call: %w", err)
+
+	}
+	return nil
+}
+
+func (q *Querier[C]) handleToken(token string) {
 	q.fullMsg += token
 	fmt.Print(token)
 }

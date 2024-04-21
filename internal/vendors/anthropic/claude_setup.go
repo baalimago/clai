@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
@@ -19,4 +20,8 @@ func (c *Claude) Setup() error {
 		c.debug = true
 	}
 	return nil
+}
+
+func (c *Claude) RegisterTool(tool tools.AiTool) {
+	c.tools = append(c.tools, tool.UserFunction())
 }

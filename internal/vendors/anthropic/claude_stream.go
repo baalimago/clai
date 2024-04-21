@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/baalimago/clai/internal/models"
+	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
@@ -64,6 +65,9 @@ func (c *Claude) handleStreamResponse(ctx context.Context, resp *http.Response) 
 		for {
 			token, err := br.ReadString('\n')
 			if err != nil {
+				if errors.Is(err, io.EOF) {
+					c.handleFullResponse(token, outChan)
+				}
 				outChan <- models.CompletionEvent(fmt.Errorf("failed to read line: %w", err))
 				return
 			}
@@ -88,6 +92,26 @@ func (c *Claude) handleStreamResponse(ctx context.Context, resp *http.Response) 
 		}
 	}()
 	return outChan, nil
+}
+
+func (c *Claude) handleFullResponse(token string, outChan chan models.CompletionEvent) {
+	var rspBody ClaudeResponse
+	err := json.Unmarshal([]byte(token), &rspBody)
+	if err != nil {
+		outChan <- models.CompletionEvent(fmt.Errorf("failed to unmarshal response: %w", err))
+		return
+	}
+	for _, content := range rspBody.Content {
+		switch content.Type {
+		case "text":
+			outChan <- content.Text
+		case "tool_use":
+			outChan <- tools.Call{
+				Name:   content.Name,
+				Inputs: content.Input,
+			}
+		}
+	}
 }
 
 func (c *Claude) handleToken(br *bufio.Reader, token string) (string, error) {
@@ -160,12 +184,17 @@ func (c *Claude) constructRequest(ctx context.Context, chat models.Chat) (*http.
 	if c.debug {
 		ancli.PrintOK(fmt.Sprintf("claudified messages: %+v\n", claudifiedMsgs))
 	}
+
+	shouldStream := len(c.tools) == 0
 	reqData := claudeReq{
 		Model:     c.Model,
 		Messages:  claudifiedMsgs,
 		MaxTokens: c.MaxTokens,
-		Stream:    true,
+		Stream:    shouldStream,
 		System:    sysMsg.Content,
+	}
+	if len(c.tools) > 0 {
+		reqData.Tools = c.tools
 	}
 	jsonData, err := json.Marshal(reqData)
 	if err != nil {
@@ -178,6 +207,7 @@ func (c *Claude) constructRequest(ctx context.Context, chat models.Chat) (*http.
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-api-key", c.apiKey)
 	req.Header.Set("anthropic-version", c.AnthropicVersion)
+	req.Header.Set("anthropic-beta", c.AnthropicBeta)
 	if c.debug {
 		ancli.PrintOK(fmt.Sprintf("Request: %+v\n", req))
 	}
