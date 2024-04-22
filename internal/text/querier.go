@@ -194,7 +194,7 @@ func shortenedOutput(out string) string {
 	maxTokens := 20
 	outSplit := strings.Split(out, " ")
 	outNewlineSplit := strings.Split(out, "\n")
-	firstTokens := utils.GetFirstTokens([]string{out}, maxTokens)
+	firstTokens := utils.GetFirstTokens(outSplit, maxTokens)
 	if len(firstTokens) < 20 {
 		return out
 	}
