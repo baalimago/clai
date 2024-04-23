@@ -66,6 +66,10 @@ func (q *Querier[C]) postProcess() {
 	if q.hasPrinted {
 		return
 	}
+	// Nothing to post process if message for some reason is empty (happens during tools calls sometimes)
+	if q.fullMsg == "" {
+		return
+	}
 	q.hasPrinted = true
 	chatMsgscopy := make([]models.Message, len(q.chat.Messages))
 	copy(chatMsgscopy, q.chat.Messages)
@@ -128,6 +132,13 @@ func (q *Querier[C]) handleCompletion(ctx context.Context, completion models.Com
 		return nil
 	case error:
 		return fmt.Errorf("completion stream error: %w", cast)
+	case models.NoopEvent:
+		return nil
+	case nil:
+		if q.debug {
+			ancli.PrintWarn("received nil completion event, which is slightly weird, but not necessarily an error")
+		}
+		return nil
 	default:
 		return fmt.Errorf("unknown completion type: %v", completion)
 	}
@@ -136,30 +147,33 @@ func (q *Querier[C]) handleCompletion(ctx context.Context, completion models.Com
 // handleFunctionCall by invoking the call, and then resondng to the ai with the output
 func (q *Querier[C]) handleFunctionCall(ctx context.Context, call tools.Call) error {
 	// Whatever is in q.fullMessage now is what the AI has streamed before the function call
-	// which normally is handeled by the supercallee of Query, now we need to handle it here
+	// which normally is handeled by the supercallee of Query, now we need to handle it here.
 	// There's room for improvement of this system..
-	systemPreCallMessage := models.Message{
-		Role:    "system",
-		Content: q.fullMsg,
+	if q.fullMsg != "" {
+		systemPreCallMessage := models.Message{
+			Role:    "system",
+			Content: q.fullMsg,
+		}
+		q.chat.Messages = append(q.chat.Messages, systemPreCallMessage)
 	}
-	q.chat.Messages = append(q.chat.Messages, systemPreCallMessage)
+
 	// Post process here since a function call should be treated as the function call
 	// should be handeled mid-stream, but still requires multiple rounds of user input
 	q.postProcess()
 	systemToolsCall := models.Message{
-		Role:    "tool",
-		Content: fmt.Sprintf("retrieved funtion call struct from AI:\n%v", call.Json()),
+		Role:    "user",
+		Content: fmt.Sprintf("retrieved tool_calls struct from AI:\n%v", call.Json()),
 	}
 	q.chat.Messages = append(q.chat.Messages, systemToolsCall)
 	q.reset()
-	err := utils.AttemptPrettyPrint(systemToolsCall, "tool", q.Raw)
+	err := utils.AttemptPrettyPrint(systemToolsCall, q.username, q.Raw)
 	if err != nil {
 		return fmt.Errorf("failed to pretty print, stopping before tool invocation: %w", err)
 	}
 
 	out := tools.Invoke(call)
 	toolsOutput := models.Message{
-		Role:    "tool",
+		Role:    "user",
 		Content: out,
 	}
 	q.chat.Messages = append(q.chat.Messages, toolsOutput)

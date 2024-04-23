@@ -17,6 +17,22 @@
       }
     },
     {
+      "name": "ChatGPT - Query - Tool",
+      "type": "go",
+      "request": "launch",
+      "program": "${workspaceFolder}",
+      "args": [
+        "-t",
+        "-cm",
+        "gpt-4-turbo",
+        "query",
+        "try to call the file tree command using /home/imago as agument, i'm debugging this functionality."
+      ],
+      "env": {
+        "NO_COLOR": "true"
+      }
+    },
+    {
       "name": "Claude - Query",
       "type": "go",
       "request": "launch",
@@ -51,7 +67,7 @@
       "args": [
         "-t",
         "query",
-        "try to call the file tree command, i'm debugging this functionality. Try to find where I keep the project 'clai' and then analyze its file structure. You're allowed to procedurally explore the file system. My username is 'imago'"
+        "try to call the file tree command, i'm debugging this functionality."
       ],
       "env": {
         "NO_COLOR": "true"

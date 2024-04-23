@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
@@ -21,4 +22,19 @@ func (g *ChatGPT) Setup() error {
 	}
 
 	return nil
+}
+
+func convertToGptTool(tool tools.UserFunction) GptTool {
+	return GptTool{
+		Name:        tool.Name,
+		Description: tool.Description,
+		Inputs:      tool.Inputs,
+	}
+}
+
+func (g *ChatGPT) RegisterTool(tool tools.AiTool) {
+	g.tools = append(g.tools, GptToolSuper{
+		Type:     "function",
+		Function: convertToGptTool(tool.UserFunction()),
+	})
 }

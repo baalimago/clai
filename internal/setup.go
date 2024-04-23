@@ -13,6 +13,8 @@ import (
 	"github.com/baalimago/clai/internal/photo"
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/internal/utils"
+	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
+	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
 type PromptConfig struct {
@@ -71,6 +73,9 @@ func setupTextQuerier(mode Mode, confDir string, flagSet Configurations) (models
 		tConf.ChatMode = true
 	}
 	applyFlagOverridesForText(&tConf, flagSet, defaultFlags)
+	if misc.Truthy(os.Getenv("DEBUG")) {
+		ancli.PrintOK(fmt.Sprintf("config post flag override: %+v\n", tConf))
+	}
 	if mode == GLOB {
 		globStr, err := glob.Setup()
 		if err != nil {

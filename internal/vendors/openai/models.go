@@ -1,7 +1,5 @@
 package openai
 
-import "github.com/baalimago/clai/internal/models"
-
 type ChatCompletion struct {
 	ID                string   `json:"id"`
 	Object            string   `json:"object"`
@@ -13,14 +11,32 @@ type ChatCompletion struct {
 }
 
 type Choice struct {
-	Index        int            `json:"index"`
-	Message      models.Message `json:"message"`
-	Logprobs     interface{}    `json:"logprobs"` // null or complex object, hence interface{}
-	FinishReason string         `json:"finish_reason"`
+	Index        int         `json:"index"`
+	Delta        Delta       `json:"delta"`
+	Logprobs     interface{} `json:"logprobs"` // null or complex object, hence interface{}
+	FinishReason string      `json:"finish_reason"`
 }
 
 type Usage struct {
 	PromptTokens     int `json:"prompt_tokens"`
 	CompletionTokens int `json:"completion_tokens"`
 	TotalTokens      int `json:"total_tokens"`
+}
+
+type Delta struct {
+	Content   any         `json:"content"`
+	Role      string      `json:"role"`
+	ToolCalls []ToolsCall `json:"tool_calls"`
+}
+
+type ToolsCall struct {
+	Function GptFunc `json:"function"`
+	ID       string  `json:"id"`
+	Index    int     `json:"index"`
+	Type     string  `json:"type"`
+}
+
+type GptFunc struct {
+	Arguments string `json:"arguments"`
+	Name      string `json:"name"`
 }

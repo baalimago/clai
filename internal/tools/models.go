@@ -54,9 +54,6 @@ func (v ValidationError) Error() string {
 }
 
 type AiTool interface {
-	// Validate the InputSchema to ensure that the AI is making a valid request
-	Validate(Input) error
-
 	// Call the AI tool with the given Input. Returns output from the tool or an error
 	// if the call returned an error-like. An error-like is either exit code non-zero or
 	// restful response non 2xx.
