@@ -92,6 +92,9 @@ func setupTextQuerier(mode Mode, confDir string, flagSet Configurations) (models
 func Setup(usage string) (models.Querier, error) {
 	flagSet := setupFlags(defaultFlags)
 	args := flag.Args()
+	if len(args) == 0 {
+		return nil, fmt.Errorf("no command provided")
+	}
 	mode, err := getModeFromArgs(args[0])
 	if err != nil {
 		return nil, err
