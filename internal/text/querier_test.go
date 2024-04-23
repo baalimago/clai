@@ -175,7 +175,7 @@ func Test_Querier_eventHandling(t *testing.T) {
 				},
 				"CLOSE",
 			},
-			want: "first the model said somethingretrieved funtion call struct from AI:\n{\"name\":\"test\",\"inputs\":{\"testKey\":\"testVal\"}}\n{Name:test Inputs:map[testKey:testVal]}\n",
+			want: "first the model said somethingretrieved tool_calls struct from AI:\n{\"name\":\"test\",\"inputs\":{\"testKey\":\"testVal\"}}\n{Name:test Inputs:map[testKey:testVal]}\n",
 		},
 	}
 	for _, tC := range testCases {
