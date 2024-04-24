@@ -32,8 +32,10 @@ type Configurations struct {
 }
 
 var DEFAULT = Configurations{
-	Model:        "gpt-4-turbo-preview",
+	Model:        "gpt-4-turbo",
 	SystemPrompt: "You are an assistant for a CLI interface. Answer concisely and informatively. Prefer markdown if possible.",
+	Raw:          false,
+	UseTools:     false,
 }
 
 func (c *Configurations) SetupPrompts() error {

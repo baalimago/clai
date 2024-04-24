@@ -23,7 +23,14 @@ func CreateTextQuerier(conf text.Configurations) (models.Querier, error) {
 
 	if strings.Contains(conf.Model, "claude") {
 		found = true
-		qTmp, err := text.NewQuerier(conf, &anthropic.CLAUDE_DEFAULT)
+		defaultCpy := anthropic.CLAUDE_DEFAULT
+		// The model determines where to check for the config using
+		// cfgdir/vendor_model_version.json. If it doesn't find it,
+		// it will use the default to create a new config with this
+		// path and the default values. In there, the model needs to be
+		// the configured model (not the default one)
+		defaultCpy.Model = conf.Model
+		qTmp, err := text.NewQuerier(conf, &defaultCpy)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create text querier: %w", err)
 		}
@@ -32,7 +39,9 @@ func CreateTextQuerier(conf text.Configurations) (models.Querier, error) {
 
 	if strings.Contains(conf.Model, "gpt") {
 		found = true
-		qTmp, err := text.NewQuerier(conf, &openai.GPT_DEFAULT)
+		defaultCpy := openai.GPT_DEFAULT
+		defaultCpy.Model = conf.Model
+		qTmp, err := text.NewQuerier(conf, &defaultCpy)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create text querier: %w", err)
 		}

@@ -34,14 +34,17 @@ const (
 )
 
 var defaultFlags = Configurations{
-	ChatModel:    "",
-	PhotoModel:   "",
-	PhotoPrefix:  "clai",
+	ChatModel:    "gpt-4-turbo",
+	PhotoModel:   "dall-e-3",
 	PhotoDir:     fmt.Sprintf("%v/Pictures", os.Getenv("HOME")),
-	StdinReplace: "",
-	PrintRaw:     false,
-	ReplyMode:    false,
-	UseTools:     false,
+	PhotoPrefix:  "clai",
+	PhotoOutput:  "local",
+	StdinReplace: "{}",
+	// Zero value, but explicitly set for clarity
+	PrintRaw:      false,
+	ExpectReplace: false,
+	ReplyMode:     false,
+	UseTools:      false,
 }
 
 func getModeFromArgs(cmd string) (Mode, error) {
@@ -73,6 +76,7 @@ func setupTextQuerier(mode Mode, confDir string, flagSet Configurations) (models
 		tConf.ChatMode = true
 	}
 	applyFlagOverridesForText(&tConf, flagSet, defaultFlags)
+
 	if misc.Truthy(os.Getenv("DEBUG")) {
 		ancli.PrintOK(fmt.Sprintf("config post flag override: %+v\n", tConf))
 	}
@@ -87,7 +91,12 @@ func setupTextQuerier(mode Mode, confDir string, flagSet Configurations) (models
 	if err != nil {
 		return nil, fmt.Errorf("failed to setup prompt: %v", err)
 	}
+
 	cq, err := CreateTextQuerier(tConf)
+
+	if misc.Truthy(os.Getenv("DEBUG")) {
+		ancli.PrintOK(fmt.Sprintf("querier post text querier create: %+v\n", tConf))
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to create text querier: %v", err)
 	}
@@ -100,6 +109,7 @@ func Setup(usage string) (models.Querier, error) {
 	if len(args) == 0 {
 		return nil, fmt.Errorf("no command provided")
 	}
+
 	mode, err := getModeFromArgs(args[0])
 	if err != nil {
 		return nil, err
@@ -109,6 +119,7 @@ func Setup(usage string) (models.Querier, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to find home dir: %v", err)
 	}
+
 	switch mode {
 	case CHAT, QUERY, GLOB:
 		return setupTextQuerier(mode, confDir, flagSet)
@@ -128,7 +139,17 @@ func Setup(usage string) (models.Querier, error) {
 		}
 		return pq, nil
 	case HELP:
-		fmt.Print(usage)
+		fmt.Printf(usage,
+			defaultFlags.ReplyMode,
+			defaultFlags.PrintRaw,
+			defaultFlags.ChatModel,
+			defaultFlags.PhotoModel,
+			defaultFlags.PhotoDir,
+			defaultFlags.PhotoPrefix,
+			defaultFlags.StdinReplace,
+			defaultFlags.ExpectReplace,
+			defaultFlags.UseTools,
+		)
 		os.Exit(0)
 	case VERSION:
 		bi, ok := debug.ReadBuildInfo()

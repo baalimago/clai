@@ -48,7 +48,7 @@ func (g *ChatGPT) StreamCompletions(ctx context.Context, chat models.Chat) (chan
 		reqData.Tools = g.tools
 	}
 	if misc.Truthy(os.Getenv("DEBUG")) {
-		ancli.PrintOK(fmt.Sprintf("streamCompletions: %+v\n", reqData))
+		ancli.PrintOK(fmt.Sprintf("chatgpt request: %+v\n", reqData))
 	}
 	jsonData, err := json.Marshal(reqData)
 	if err != nil {

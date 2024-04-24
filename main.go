@@ -23,15 +23,15 @@ Prerequisites:
 Usage: clai [flags] <command>
 
 Flags:
-  -re, -reply bool             Set to true to reply to the previous query, meaning that it will be used as context for your next query. Default is false.
-  -r, -raw bool                Set to true to print raw output (no animation, no glow). Default is false.
-  -cm, -chat-model string      Set the chat model to use. Default is 'gpt-4-turbo-preview'. 
-  -pm, -photo-model string     Set the image model to use. Default is 'dall-e-3'. 
-  -pd, -photo-dir string       Set the directory to store the generated pictures. Default is $HOME/Pictures. 
-  -pp, -photo-prefix string    Set the prefix for the generated pictures. Default is 'clai'. 
-  -I, -replace string          Set the string to replace with stdin. Default is '{}'. (flag syntax borrowed from xargs)
-  -i bool                      Set to true to replace '{}' with stdin. This is overwritten by -I and -replace. Default is false. (flag syntax borrowed from xargs)
-  -t, -tools bool              Set to true to use text tools. Some models might not support streaming. Default is false.
+  -re, -reply bool             Set to true to reply to the previous query, meaning that it will be used as context for your next query. (default %v)
+  -r, -raw bool                Set to true to print raw output (no animation, no glow). (default %v)
+  -cm, -chat-model string      Set the chat model to use. (default %v)
+  -pm, -photo-model string     Set the image model to use. (default %v)
+  -pd, -photo-dir string       Set the directory to store the generated pictures. (default %v)
+  -pp, -photo-prefix string    Set the prefix for the generated pictures. (default %v)
+  -I, -replace string          Set the string to replace with stdin. (default %v)
+  -i bool                      Set to true to replace '-replace' flag value with stdin. This is overwritten by -I and -replace. (default %v)
+  -t, -tools bool              Set to true to use text tools. Some models might not support streaming. (default %v)
 
 Commands:
   h|help                        Display this help message

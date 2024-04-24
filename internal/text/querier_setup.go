@@ -80,6 +80,9 @@ func NewQuerier[C models.StreamCompleter](userConf Configurations, dfault C) (Qu
 		querier.username = "user"
 	}
 	querier.Model = modelConf
+	if misc.Truthy(os.Getenv("DEBUG")) {
+		ancli.PrintOK(fmt.Sprintf("querier: %+v, models: %+v", querier, modelConf))
+	}
 	querier.chat = userConf.InitialPrompt
 	if misc.Truthy(os.Getenv("DEBUG")) {
 		querier.debug = true

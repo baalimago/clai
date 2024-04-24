@@ -5,22 +5,6 @@ import (
 	"os"
 )
 
-type OutputType string
-
-const (
-	URL   OutputType = "url"
-	LOCAL OutputType = "local"
-)
-
-func ValidateOutputType(outputType OutputType) error {
-	switch outputType {
-	case URL, LOCAL:
-		return nil
-	default:
-		return fmt.Errorf("invalid output type: %v", outputType)
-	}
-}
-
 type Configurations struct {
 	Model string `json:"model"`
 	// Format of the prompt, will place prompt at '%v'
@@ -46,4 +30,20 @@ var DEFAULT = Configurations{
 		Dir:    fmt.Sprintf("%v/Pictures", os.Getenv("HOME")),
 		Prefix: "clai",
 	},
+}
+
+type OutputType string
+
+const (
+	URL   OutputType = "url"
+	LOCAL OutputType = "local"
+)
+
+func ValidateOutputType(outputType OutputType) error {
+	switch outputType {
+	case URL, LOCAL:
+		return nil
+	default:
+		return fmt.Errorf("invalid output type: %v", outputType)
+	}
 }
