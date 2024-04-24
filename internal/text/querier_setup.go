@@ -84,6 +84,7 @@ func NewQuerier[C models.StreamCompleter](userConf Configurations, dfault C) (Qu
 	if misc.Truthy(os.Getenv("DEBUG")) {
 		querier.debug = true
 	}
+	querier.Raw = userConf.Raw
 	querier.shouldSaveReply = !userConf.ChatMode
 	return querier, nil
 }

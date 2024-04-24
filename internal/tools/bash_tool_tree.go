@@ -26,25 +26,6 @@ var FileTree = FileTreeTool{
 	},
 }
 
-func (f FileTreeTool) Validate(input Input) error {
-	var missingFields []string
-	for _, requiredField := range f.Inputs.Required {
-		if _, ok := input[requiredField]; !ok {
-			missingFields = append(missingFields, requiredField)
-		}
-	}
-	if input["level"] != nil {
-		_, ok := input["level"].(float64)
-		if !ok {
-			return fmt.Errorf("level must be an integer")
-		}
-	}
-	if len(missingFields) > 0 {
-		return NewValidationError(missingFields)
-	}
-	return nil
-}
-
 func (f FileTreeTool) Call(input Input) (string, error) {
 	directory, ok := input["directory"].(string)
 	if !ok {
