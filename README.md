@@ -20,16 +20,9 @@ Note that only one of the vendors are required, but you can only access the mode
 Most text and photo based models within the respective vendors are supported, see [model configurations](#models) for how to swap.
 
 ## Installation
-For stable version supporting only openai:
 ```bash
-go install github.com/baalimago/clai@v1.0
+go install github.com/baalimago/clai@latest
 ```
-
-For the latest version supporting multiple vendors (anthropic textmodels + openai). Note that this is less stable as of 2024-04-07:
-```bash
-go install github.com/baalimago/clai@v1.2
-```
-
 
 ### Examples
 
