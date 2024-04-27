@@ -129,7 +129,6 @@ func Test_applyFlagOverridesForTest(t *testing.T) {
 		want         text.Configurations
 	}{
 		{
-
 			desc: "it should set stdinput config if flagged and default is empty",
 			given: text.Configurations{
 				StdinReplace: "",
