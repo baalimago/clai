@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/baalimago/clai/internal/text"
+	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
 // helper function to reset flags between tests
@@ -148,7 +149,7 @@ func Test_applyFlagOverridesForTest(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			applyFlagOverridesForText(&tc.given, tc.flagSet, tc.defaultFlags)
-			failTestIfDiff(t, tc.given.StdinReplace, tc.want.StdinReplace)
+			testboil.FailTestIfDiff(t, tc.given.StdinReplace, tc.want.StdinReplace)
 		})
 	}
 }

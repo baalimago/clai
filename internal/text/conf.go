@@ -16,17 +16,18 @@ import (
 
 // Configurations used to setup the requirements of text models
 type Configurations struct {
-	Model         string      `json:"model"`
-	SystemPrompt  string      `json:"system-prompt"`
-	Raw           bool        `json:"raw"`
-	UseTools      bool        `json:"use-tools"`
-	ConfigDir     string      `json:"-"`
-	StdinReplace  string      `json:"-"`
-	Stream        bool        `json:"-"`
-	ReplyMode     bool        `json:"-"`
-	ChatMode      bool        `json:"-"`
-	Glob          string      `json:"-"`
-	InitialPrompt models.Chat `json:"-"`
+	Model          string      `json:"model"`
+	SystemPrompt   string      `json:"system-prompt"`
+	Raw            bool        `json:"raw"`
+	UseTools       bool        `json:"use-tools"`
+	TokenWarnLimit int         `json:"token-warn-limit"`
+	ConfigDir      string      `json:"-"`
+	StdinReplace   string      `json:"-"`
+	Stream         bool        `json:"-"`
+	ReplyMode      bool        `json:"-"`
+	ChatMode       bool        `json:"-"`
+	Glob           string      `json:"-"`
+	InitialPrompt  models.Chat `json:"-"`
 	// PostProccessedPrompt which has had it's strings replaced etc
 	PostProccessedPrompt string `json:"-"`
 }
@@ -36,6 +37,8 @@ var DEFAULT = Configurations{
 	SystemPrompt: "You are an assistant for a CLI interface. Answer concisely and informatively. Prefer markdown if possible.",
 	Raw:          false,
 	UseTools:     false,
+	// Aproximately $1 for the worst input rates as of 2024-05
+	TokenWarnLimit: 17000,
 }
 
 func (c *Configurations) SetupPrompts() error {

@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
 func TestReturnNonDefault(t *testing.T) {
@@ -145,5 +147,42 @@ func TestCreateDefaultConfigFile(t *testing.T) {
 	err = createDefaultConfigFile(configDirPath, configFileName, dflt)
 	if err != nil {
 		t.Errorf("Unexpected error creating existing default config file: %v", err)
+	}
+}
+
+type testStruct struct {
+	A string
+	B string
+}
+
+func Test_appendNewFieldsFromDefault(t *testing.T) {
+	testCases := []struct {
+		desc  string
+		given testStruct
+		when  testStruct
+		want  testStruct
+	}{
+		{
+			desc: "it should append new fields from default if they are zero value in want",
+			given: testStruct{
+				A: "filled",
+			},
+			when: testStruct{
+				A: "filled",
+				B: "new",
+			},
+			want: testStruct{
+				A: "filled",
+				B: "new",
+			},
+		},
+	}
+	for _, tC := range testCases {
+		t.Run(tC.desc, func(t *testing.T) {
+			setNonZeroValueFields(&tC.given, &tC.when)
+			got := tC.given
+			testboil.FailTestIfDiff(t, got.A, tC.want.A)
+			testboil.FailTestIfDiff(t, got.B, tC.want.B)
+		})
 	}
 }

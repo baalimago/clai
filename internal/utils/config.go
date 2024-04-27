@@ -5,6 +5,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"reflect"
 
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
@@ -93,10 +94,37 @@ func LoadConfigFromFile[T any](
 		return conf, fmt.Errorf("failed to unmarshal config '%v', error: %v", configFileName, err)
 	}
 
+	// Append any new fields from defauly config, in case of config extension
+	hasChanged := setNonZeroValueFields(&conf, dflt)
+
+	if hasChanged {
+		err = CreateFile(configPath, &conf)
+		if err != nil {
+			return conf, fmt.Errorf("failed to write config '%v' post zero-field appendage, error: %v", configFileName, err)
+		}
+		ancli.PrintOK(fmt.Sprintf("appended new fields to textConfig and updated config file: %v\n", configPath))
+	}
+
 	if misc.Truthy(os.Getenv("DEBUG")) {
 		ancli.PrintOK(fmt.Sprintf("found config: %+v\n", conf))
 	}
 	return conf, nil
+}
+
+// setNonZeroValueFields on a using b as template
+func setNonZeroValueFields[T any](a, b *T) bool {
+	hasChanged := false
+	t := reflect.TypeOf(*a)
+	for i := range t.NumField() {
+		f := t.Field(i)
+		aVal := reflect.ValueOf(a).Elem().FieldByName(f.Name)
+		bVal := reflect.ValueOf(b).Elem().FieldByName(f.Name)
+		if f.IsExported() && aVal.IsZero() && !bVal.IsZero() {
+			hasChanged = true
+			aVal.Set(bVal)
+		}
+	}
+	return hasChanged
 }
 
 func ReturnNonDefault[T comparable](a, b, defaultVal T) (T, error) {

@@ -87,8 +87,9 @@ func setupFlags(defaults Configurations) Configurations {
 
 // applyFlagOverridesForText is defined here, and not as a method on text.Confugrations, as that would
 // cause import cycle.
-// The default flags are needed to ensure that the configuration isn't being
-// overwritten by the default flags, which would mean that changes made to the config file gets nullified.
+//
+// The default flags are needed to ensure that the configuration isn't being overwritten by the default flags.
+// Meaning: Only set the value of tConf to the flag, if it's not the default, leave the configuration found in file.
 // If there is no check if the flagSet is default, there may be a case where default > file, which breaks
 // the configuration convention flags > file > default
 func applyFlagOverridesForText(tConf *text.Configurations, flagSet, defaultFlags Configurations) {

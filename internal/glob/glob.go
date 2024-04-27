@@ -65,7 +65,7 @@ func parseGlob(glob string) ([]models.Message, error) {
 
 	if len(files) == 0 {
 		if strings.Contains(glob, "~/") {
-			ancli.PrintWarn("found '~/', which wont work. Use absolute path '/home/<user>/'. Maybe I fix this some day, we'll see.")
+			ancli.PrintWarn("found '~/', which wont work. Use absolute path '/home/<user>/'. Maybe I fix this some day, we'll see.\n")
 		}
 		return nil, fmt.Errorf("no files found")
 	}

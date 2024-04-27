@@ -1,10 +1,13 @@
 package text
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path"
 	"strings"
 
 	"github.com/baalimago/clai/internal/models"
@@ -13,6 +16,8 @@ import (
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
+
+const TOKEN_COUNT_FACTOR = 1.1
 
 type Querier[C models.StreamCompleter] struct {
 	Url             string
@@ -28,11 +33,34 @@ type Querier[C models.StreamCompleter] struct {
 	shouldSaveReply bool
 	hasPrinted      bool
 	Model           C
+	tokenWarnLimit  int
 }
 
 // Query using the underlying model to stream completions and then print the output
 // from the model to stdout. Blocking operation.
 func (q *Querier[C]) Query(ctx context.Context) error {
+	amTokens := q.countTokens()
+	if amTokens > q.tokenWarnLimit {
+		ancli.PrintWarn(
+			fmt.Sprintf("You're about to send approximately: %v tokens to the model, which may amount to aproximately: $%.3f (applying worst input rates as of 2024-05). This limit may be changed in: '%v'. Do you wish to continue? [yY]: ",
+				amTokens,
+				// Worst rates found at 2024-05 were gpt-4-32k at $60 per 1M tokens
+				float64(amTokens)*(float64(60)/float64(1000000)),
+				path.Join(q.configDir, "textConfig.json"),
+			))
+		var userInput string
+		reader := bufio.NewReader(os.Stdin)
+		userInput, err := reader.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("failed to read user input: %w", err)
+		}
+		switch userInput {
+		case "y\n", "Y\n":
+			// Continue on y or Y
+		default:
+			return errors.New("query canceled due to token amount check")
+		}
+	}
 	completionsChan, err := q.Model.StreamCompletions(ctx, q.chat)
 	if err != nil {
 		return fmt.Errorf("failed to stream completions: %w", err)
@@ -59,6 +87,17 @@ func (q *Querier[C]) Query(ctx context.Context) error {
 			return nil
 		}
 	}
+}
+
+// countTokens by simply counting the amount of strings which are delimited by whitespace
+// and multiply by some factor. This factor is somewhat arbritrary, and adjusted to be good enough
+// for all the different models
+func (q *Querier[C]) countTokens() int {
+	ret := 0
+	for _, msg := range q.chat.Messages {
+		ret += len(strings.Split(msg.Content, " "))
+	}
+	return int(float64(ret) * TOKEN_COUNT_FACTOR)
 }
 
 func (q *Querier[C]) postProcess() {
