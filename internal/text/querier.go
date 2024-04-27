@@ -17,8 +17,10 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
-const TOKEN_COUNT_FACTOR = 1.1
-const MAX_SHORTENED_NEWLINES = 5
+const (
+	TOKEN_COUNT_FACTOR     = 1.1
+	MAX_SHORTENED_NEWLINES = 5
+)
 
 type Querier[C models.StreamCompleter] struct {
 	Url             string
