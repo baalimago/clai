@@ -40,7 +40,7 @@ type Querier[C models.StreamCompleter] struct {
 // from the model to stdout. Blocking operation.
 func (q *Querier[C]) Query(ctx context.Context) error {
 	amTokens := q.countTokens()
-	if amTokens > q.tokenWarnLimit {
+	if q.tokenWarnLimit > 0 && amTokens > q.tokenWarnLimit {
 		ancli.PrintWarn(
 			fmt.Sprintf("You're about to send approximately: %v tokens to the model, which may amount to aproximately: $%.3f (applying worst input rates as of 2024-05). This limit may be changed in: '%v'. Do you wish to continue? [yY]: ",
 				amTokens,
