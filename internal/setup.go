@@ -67,6 +67,7 @@ func getModeFromArgs(cmd string) (Mode, error) {
 }
 
 func setupTextQuerier(mode Mode, confDir string, flagSet Configurations) (models.Querier, error) {
+	// The flagset is first used to find chatModel and potentially setup a new configuration file from some default
 	tConf, err := utils.LoadConfigFromFile(confDir, "textConfig.json", migrateOldChatConfig, &text.DEFAULT)
 	tConf.ConfigDir = path.Join(confDir, ".clai")
 	if err != nil {
@@ -75,6 +76,9 @@ func setupTextQuerier(mode Mode, confDir string, flagSet Configurations) (models
 	if mode == CHAT {
 		tConf.ChatMode = true
 	}
+	// At the moment, the configurations are based on the config file. But
+	// the configuration presecende is flags > file > default. So, we need
+	// to re-apply the flag overrides to the configuration
 	applyFlagOverridesForText(&tConf, flagSet, defaultFlags)
 
 	if misc.Truthy(os.Getenv("DEBUG")) {

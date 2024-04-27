@@ -41,7 +41,7 @@ func setupFlags(defaults Configurations) Configurations {
 
 	stdinReplaceShort := flag.String("I", defaults.StdinReplace, "Set the string to replace with stdin. (flag syntax borrowed from xargs)")
 	stdinReplaceLong := flag.String("replace", defaults.StdinReplace, "Set the string to replace with stdin. (flag syntax borrowed from xargs)'")
-	defaultStdinReplace := flag.Bool("i", defaults.ExpectReplace, "Set to true to replace '{}' with stdin. This is overwritten by -I and -replace. (flag syntax borrowed from xargs)'")
+	expectReplace := flag.Bool("i", defaults.ExpectReplace, "Set to true to replace '{}' with stdin. This is overwritten by -I and -replace. (flag syntax borrowed from xargs)'")
 
 	printRawShort := flag.Bool("r", defaults.PrintRaw, "Set to true to print raw output (don't attempt to use 'glow').")
 	printRawLong := flag.Bool("raw", defaults.PrintRaw, "Set to true to print raw output (don't attempt to use 'glow').")
@@ -68,24 +68,31 @@ func setupFlags(defaults Configurations) Configurations {
 	replyMode := *replyShort || *replyLong
 	printRaw := *printRawShort || *printRawLong
 
-	if *defaultStdinReplace && defaults.StdinReplace == "" {
+	if *expectReplace && defaults.StdinReplace == "" {
 		stdinReplace = "{}"
 	}
 
 	return Configurations{
-		ChatModel:    chatModel,
-		PhotoModel:   photoModel,
-		PhotoDir:     pictureDir,
-		PhotoPrefix:  picturePrefix,
-		StdinReplace: stdinReplace,
-		PrintRaw:     printRaw,
-		ReplyMode:    replyMode,
-		UseTools:     useTools,
+		ChatModel:     chatModel,
+		PhotoModel:    photoModel,
+		PhotoDir:      pictureDir,
+		PhotoPrefix:   picturePrefix,
+		StdinReplace:  stdinReplace,
+		PrintRaw:      printRaw,
+		ReplyMode:     replyMode,
+		UseTools:      useTools,
+		ExpectReplace: *expectReplace,
 	}
 }
 
+// applyFlagOverridesForText is defined here, and not as a method on text.Confugrations, as that would
+// cause import cycle.
+// The default flags are needed to ensure that the configuration isn't being
+// overwritten by the default flags, which would mean that changes made to the config file gets nullified.
+// If there is no check if the flagSet is default, there may be a case where default > file, which breaks
+// the configuration convention flags > file > default
 func applyFlagOverridesForText(tConf *text.Configurations, flagSet, defaultFlags Configurations) {
-	if flagSet.StdinReplace != defaultFlags.StdinReplace {
+	if flagSet.ExpectReplace {
 		tConf.StdinReplace = flagSet.StdinReplace
 	}
 	if flagSet.ChatModel != defaultFlags.ChatModel {
