@@ -18,6 +18,7 @@ import (
 )
 
 const TOKEN_COUNT_FACTOR = 1.1
+const MAX_SHORTENED_NEWLINES = 5
 
 type Querier[C models.StreamCompleter] struct {
 	Url             string
@@ -248,15 +249,15 @@ func shortenedOutput(out string) string {
 	outSplit := strings.Split(out, " ")
 	outNewlineSplit := strings.Split(out, "\n")
 	firstTokens := utils.GetFirstTokens(outSplit, maxTokens)
-	if len(firstTokens) < 20 {
+	if len(firstTokens) < 20 && len(outNewlineSplit) < MAX_SHORTENED_NEWLINES {
 		return out
 	}
 	firstTokensStr := strings.Join(firstTokens, " ")
 	amLeft := len(outSplit) - maxTokens
 	abbreviationType := "tokens"
-	if len(outNewlineSplit) > 5 {
-		firstTokensStr = strings.Join(utils.GetFirstTokens(outNewlineSplit, 5), "\n")
-		amLeft = len(outNewlineSplit) - 5
+	if len(outNewlineSplit) > MAX_SHORTENED_NEWLINES {
+		firstTokensStr = strings.Join(utils.GetFirstTokens(outNewlineSplit, MAX_SHORTENED_NEWLINES), "\n")
+		amLeft = len(outNewlineSplit) - MAX_SHORTENED_NEWLINES
 		abbreviationType = "lines"
 	}
 	return fmt.Sprintf("%v\n...[and %v more %v]", firstTokensStr, amLeft, abbreviationType)

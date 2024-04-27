@@ -61,6 +61,10 @@ func NewQuerier[C models.StreamCompleter](userConf Configurations, dfault C) (Qu
 	toolBox, ok := any(modelConf).(models.ToolBox)
 	if ok && userConf.UseTools {
 		toolBox.RegisterTool(tools.FileTree)
+		toolBox.RegisterTool(tools.Cat)
+		toolBox.RegisterTool(tools.FileType)
+		toolBox.RegisterTool(tools.LS)
+		toolBox.RegisterTool(tools.Find)
 	}
 
 	err = modelConf.Setup()

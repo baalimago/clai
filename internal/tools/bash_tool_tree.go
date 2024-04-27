@@ -8,7 +8,7 @@ import (
 type FileTreeTool UserFunction
 
 var FileTree = FileTreeTool{
-	Name:        "local_file_tree",
+	Name:        "file_tree",
 	Description: "List the filetree of some directory. Uses linux command 'tree'.",
 	Inputs: InputSchema{
 		Type: "object",
