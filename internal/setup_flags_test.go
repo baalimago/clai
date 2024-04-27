@@ -153,10 +153,3 @@ func Test_applyFlagOverridesForTest(t *testing.T) {
 		})
 	}
 }
-
-func failTestIfDiff[C comparable](t *testing.T, got, expected C) {
-	t.Helper()
-	if got != expected {
-		t.Errorf("Expected %v, but got %v", expected, got)
-	}
-}
