@@ -17,35 +17,33 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
-const chatUsage = `clai - (c)omand (l)ine (a)rtificial (i)intelligence 
+const chatUsage = `clai - (c)omand (l)ine (a)rtificial (i)intelligence
 
-chat usage:
+Usage: clai [flags] chat <subcommand> <prompt/chatID>
 
-Commands:                                                                                                         
-  chat n [prompt]                   Create a new chat with the given prompt.                                      
-  chat new [prompt]                 (Alias of the above)                                                          
-  chat c [chatID]                   Continue an existing chat with the given chat ID.                             
-  chat continue [chatID]            (Alias of the above)                                                          
-  chat l                            List all existing chats.                                                      
-  chat list                         (Alias of the above)                                                          
-  chat d [chatID]                   Delete the chat with the given chat ID.                                       
-  chat delete [chatID]              (Alias of the above)                                                          
-  chat q [prompt]                   (Not yet implemented) Query an existing chat with the given prompt.           
+You may start a new chat using the prompt-modification flags which
+are normally used in query mode.
+
+Commands:
+  n|new      <prompt>             Create a new chat with the given prompt.
+  c|cotinue  <chatID>             Continue an existing chat with the given chat ID.
+  d|delete   <chatID>             Delete the chat with the given chat ID.
+  l|list                          List all existing chats.
 
 The chatID is the 5 first words of the prompt joined by underscores. Easiest
-way to get the chatID is to list all chats with 'clai chat list'.
+way to get the chatID is to list all chats with 'clai chat list'. You may also select
+a chat by its index in the list of chats.
 
-You can also manually edit each message in the chats in ~/.clai/conversations.
+The chats are found in %v/.clai/conversations, here they may be manually edited
+as JSON files.
 
-Examples:                                                                                                         
-  - Create a new chat:                                                                                            
-    clai chat new "How's the weather?"                                                                          
-  - Continue an existing chat by ID:                                                                              
-    clai chat continue my_chat_id                                                                               
-  - List all chats:                                                                                               
-    clai chat list                                                                                              
-  - Delete a chat by ID:                                                                                          
-    clai chat delete my_chat_id`
+Examples:
+  - clai chat new "How's the weather?"
+  - clai chat list
+  - clai chat continue my_chat_id
+  - clai chat continue 3
+  - clai chat delete my_chat_id
+`
 
 type ChatHandler struct {
 	q        models.ChatQuerier
@@ -106,7 +104,8 @@ func (cq *ChatHandler) actOnSubCmd(ctx context.Context) error {
 		// return cq.continueQueryAsChat(ctx, API_KEY, prompt)
 		return errors.New("not yet implemented")
 	case "help", "h":
-		fmt.Print(chatUsage)
+		cfgDir, _ := os.UserConfigDir()
+		fmt.Printf(chatUsage, cfgDir)
 		return nil
 	default:
 		return fmt.Errorf("unknown subcommand: '%s'\n%v", cq.subCmd, chatUsage)
