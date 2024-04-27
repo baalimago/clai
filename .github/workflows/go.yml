@@ -9,3 +9,5 @@ on:
 jobs:
   call-workflow:
     uses: baalimago/simple-go-pipeline/.github/workflows/go.yml@main
+    with:
+      go-version: '1.22'
