@@ -54,6 +54,11 @@ func constructGlobMessages(globMessages []models.Message) []models.Message {
 }
 
 func parseGlob(glob string) ([]models.Message, error) {
+	home, err := os.UserHomeDir()
+	if err != nil && strings.Contains(glob, "~/") { // only fail if glob contains ~/ and home dir is not found
+		return nil, fmt.Errorf("failed to get home dir: %w", err)
+	}
+	glob = strings.Replace(glob, "~", home, 1)
 	files, err := filepath.Glob(glob)
 	ret := make([]models.Message, 0, len(files))
 	if err != nil {
@@ -64,9 +69,6 @@ func parseGlob(glob string) ([]models.Message, error) {
 	}
 
 	if len(files) == 0 {
-		if strings.Contains(glob, "~/") {
-			ancli.PrintWarn("found '~/', which wont work. Use absolute path '/home/<user>/'. Maybe I fix this some day, we'll see.\n")
-		}
 		return nil, fmt.Errorf("no files found")
 	}
 
