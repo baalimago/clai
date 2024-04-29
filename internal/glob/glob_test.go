@@ -25,8 +25,13 @@ func TestParseGlob(t *testing.T) {
 		{"two files", fmt.Sprintf("%v/*.txt", tmpDir), 2, false},
 		{"no match", "*.log", 0, true},
 		{"invalid pattern", "[", 0, true},
+		{"home directory", "~/*.txt", 2, false}, // This test case will fail on windows and plan9
 	}
-
+	oldHome := os.Getenv("HOME")
+	_ = os.Setenv("HOME", tmpDir)
+	defer func() {
+		_ = os.Setenv("HOME", oldHome)
+	}()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := parseGlob(tt.glob)
