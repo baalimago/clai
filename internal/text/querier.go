@@ -45,7 +45,7 @@ func (q *Querier[C]) Query(ctx context.Context) error {
 	amTokens := q.countTokens()
 	if q.tokenWarnLimit > 0 && amTokens > q.tokenWarnLimit {
 		ancli.PrintWarn(
-			fmt.Sprintf("You're about to send approximately: %v tokens to the model, which may amount to aproximately: $%.3f (applying worst input rates as of 2024-05). This limit may be changed in: '%v'. Do you wish to continue? [yY]: ",
+			fmt.Sprintf("You're about to send: ~%v tokens to the model, which may amount to: ~$%.3f (applying worst input rates as of 2024-05). This limit may be changed in: '%v'. Do you wish to continue? [yY]: ",
 				amTokens,
 				// Worst rates found at 2024-05 were gpt-4-32k at $60 per 1M tokens
 				float64(amTokens)*(float64(60)/float64(1000000)),
@@ -76,17 +76,30 @@ func (q *Querier[C]) Query(ctx context.Context) error {
 		case completion, ok := <-completionsChan:
 			// Channel most likely gracefully closed
 			if !ok {
+				if q.debug {
+					ancli.PrintOK("exiting querier due to closed channel\n")
+				}
 				return nil
 			}
 			err := q.handleCompletion(ctx, completion)
 			if err != nil {
 				// check if error is context canceled or EOF, return nil as these are expected and handeled elsewhere
 				if errors.Is(err, context.Canceled) || errors.Is(err, io.EOF) {
+					if q.debug {
+						ancli.PrintOK("exiting querier due to EOF error\n")
+					}
 					return nil
+				}
+
+				if q.debug {
+					ancli.PrintOK("exiting querier due to EOF error\n")
 				}
 				return fmt.Errorf("failed to handle completion: %w", err)
 			}
 		case <-ctx.Done():
+			if q.debug {
+				ancli.PrintOK("exiting querier due to context cancelation\n")
+			}
 			return nil
 		}
 	}
@@ -166,6 +179,9 @@ func (q *Querier[C]) TextQuery(ctx context.Context, chat models.Chat) (models.Ch
 }
 
 func (q *Querier[C]) handleCompletion(ctx context.Context, completion models.CompletionEvent) error {
+	if q.debug {
+		// ancli.PrintOK(fmt.Sprintf("Type: %T, content: %+v\n", completion, completion))
+	}
 	switch cast := completion.(type) {
 	case tools.Call:
 		return q.handleFunctionCall(ctx, cast)
@@ -199,6 +215,9 @@ func (q *Querier[C]) handleFunctionCall(ctx context.Context, call tools.Call) er
 		q.chat.Messages = append(q.chat.Messages, systemPreCallMessage)
 	}
 
+	if q.debug {
+		ancli.PrintOK(fmt.Sprintf("received tool call: %v", call))
+	}
 	// Post process here since a function call should be treated as the function call
 	// should be handeled mid-stream, but still requires multiple rounds of user input
 	q.postProcess()

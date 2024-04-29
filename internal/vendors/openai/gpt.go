@@ -4,8 +4,14 @@ import (
 	"net/http"
 
 	"github.com/baalimago/clai/internal/models"
-	"github.com/baalimago/clai/internal/tools"
 )
+
+var GPT_DEFAULT = ChatGPT{
+	Model:       "gpt-4-turbo",
+	Temperature: 1.0,
+	TopP:        1.0,
+	Url:         ChatURL,
+}
 
 type ChatGPT struct {
 	Model            string         `json:"model"`
@@ -22,24 +28,6 @@ type ChatGPT struct {
 	client              *http.Client `json:"-"`
 	apiKey              string       `json:"-"`
 	debug               bool         `json:"-"`
-}
-
-type GptTool struct {
-	Name        string            `json:"name"`
-	Description string            `json:"description"`
-	Inputs      tools.InputSchema `json:"parameters"`
-}
-
-type GptToolSuper struct {
-	Type     string  `json:"type"`
-	Function GptTool `json:"function"`
-}
-
-var GPT_DEFAULT = ChatGPT{
-	Model:       "gpt-4-turbo",
-	Temperature: 1.0,
-	TopP:        1.0,
-	Url:         ChatURL,
 }
 
 type gptReq struct {

@@ -1,5 +1,7 @@
 package openai
 
+import "github.com/baalimago/clai/internal/tools"
+
 type ChatCompletion struct {
 	ID                string   `json:"id"`
 	Object            string   `json:"object"`
@@ -39,4 +41,15 @@ type ToolsCall struct {
 type GptFunc struct {
 	Arguments string `json:"arguments"`
 	Name      string `json:"name"`
+}
+
+type GptTool struct {
+	Name        string            `json:"name"`
+	Description string            `json:"description"`
+	Inputs      tools.InputSchema `json:"parameters"`
+}
+
+type GptToolSuper struct {
+	Type     string  `json:"type"`
+	Function GptTool `json:"function"`
 }

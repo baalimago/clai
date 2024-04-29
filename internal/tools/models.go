@@ -14,8 +14,8 @@ type UserFunction struct {
 
 type InputSchema struct {
 	Type       string                     `json:"type"`
-	Properties map[string]ParameterObject `json:"properties"`
 	Required   []string                   `json:"required"`
+	Properties map[string]ParameterObject `json:"properties"`
 }
 
 type Input map[string]any

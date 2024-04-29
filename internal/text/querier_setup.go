@@ -23,6 +23,9 @@ func vendorType(fromModel string) (string, string, string) {
 	if strings.Contains(fromModel, "claude") {
 		return "anthropic", "claude", fromModel
 	}
+	if strings.Contains(fromModel, "mistral") || strings.Contains(fromModel, "mixtral") {
+		return "mistral", "mistral", fromModel
+	}
 	if strings.Contains(fromModel, "mock") {
 		return "mock", "mock", "mock"
 	}
@@ -88,7 +91,7 @@ func NewQuerier[C models.StreamCompleter](userConf Configurations, dfault C) (Qu
 		ancli.PrintOK(fmt.Sprintf("querier: %+v, models: %+v", querier, modelConf))
 	}
 	querier.chat = userConf.InitialPrompt
-	if misc.Truthy(os.Getenv("DEBUG")) {
+	if misc.Truthy(os.Getenv("DEBUG")) || misc.Truthy(os.Getenv("TEXT_QUERIER_DEBUG")) {
 		querier.debug = true
 	}
 	querier.Raw = userConf.Raw
