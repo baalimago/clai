@@ -179,9 +179,6 @@ func (q *Querier[C]) TextQuery(ctx context.Context, chat models.Chat) (models.Ch
 }
 
 func (q *Querier[C]) handleCompletion(ctx context.Context, completion models.CompletionEvent) error {
-	if q.debug {
-		// ancli.PrintOK(fmt.Sprintf("Type: %T, content: %+v\n", completion, completion))
-	}
 	switch cast := completion.(type) {
 	case tools.Call:
 		return q.handleFunctionCall(ctx, cast)

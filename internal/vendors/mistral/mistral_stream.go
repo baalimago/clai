@@ -50,6 +50,9 @@ func (m *Mistral) createRequest(ctx context.Context, chat models.Chat) (*http.Re
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", m.Url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %v", m.apiKey))
@@ -125,5 +128,5 @@ func (m *Mistral) handleStreamChunk(chunkB []byte) models.CompletionEvent {
 		msg := choice
 		return msg.Delta.Content
 	}
-	return errors.New("Unexpectd logical branch in handleStreamChunk")
+	return errors.New("unexpected logical branch in handleStreamChunk, how did you end up here..?")
 }

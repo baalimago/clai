@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
@@ -31,10 +30,10 @@ func (m *Mistral) Setup() error {
 // 	})
 // }
 
-func mistralifyUserFunction(uf tools.UserFunction) MistralTool {
-	return MistralTool{
-		Description: uf.Description,
-		Name:        uf.Name,
-		Parameters:  uf.Inputs,
-	}
-}
+// func mistralifyUserFunction(uf tools.UserFunction) MistralTool {
+// 	return MistralTool{
+// 		Description: uf.Description,
+// 		Name:        uf.Name,
+// 		Parameters:  uf.Inputs,
+// 	}
+// }
