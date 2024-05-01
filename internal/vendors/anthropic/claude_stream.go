@@ -66,8 +66,11 @@ func (c *Claude) handleStreamResponse(ctx context.Context, resp *http.Response) 
 			token, err := br.ReadString('\n')
 			if err != nil {
 				if errors.Is(err, io.EOF) {
-					outChan <- fmt.Errorf("eof error: %w", err)
-					return
+					if token != "" {
+						c.handleFullResponse(token, outChan)
+					} else {
+						outChan <- err
+					}
 				}
 				outChan <- models.CompletionEvent(fmt.Errorf("failed to read line: %w", err))
 				return
