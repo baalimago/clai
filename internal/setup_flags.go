@@ -111,6 +111,9 @@ func applyFlagOverridesForText(tConf *text.Configurations, flagSet, defaultFlags
 }
 
 func applyFlagOverridesForPhoto(pConf *photo.Configurations, flagSet, defaultFlags Configurations) {
+	if flagSet.ExpectReplace {
+		pConf.StdinReplace = flagSet.StdinReplace
+	}
 	if flagSet.ReplyMode != defaultFlags.ReplyMode {
 		pConf.ReplyMode = flagSet.ReplyMode
 	}
@@ -124,9 +127,9 @@ func applyFlagOverridesForPhoto(pConf *photo.Configurations, flagSet, defaultFla
 		pConf.Output.Prefix = flagSet.PhotoPrefix
 	}
 	if flagSet.PhotoDir != defaultFlags.PhotoDir {
-		pConf.Output.Dir = flagSet.PhotoPrefix
+		pConf.Output.Dir = flagSet.PhotoDir
 	}
-	if flagSet.PhotoOutput != defaultFlags.PhotoOutput {
+	if flagSet.PhotoOutput != defaultFlags.PhotoOutput && flagSet.PhotoOutput != "" {
 		pConf.Output.Type = photo.OutputType(flagSet.PhotoOutput)
 	}
 }

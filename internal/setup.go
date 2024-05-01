@@ -132,12 +132,21 @@ func Setup(usage string) (models.Querier, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to load configs: %w", err)
 		}
+		if misc.Truthy(os.Getenv("DEBUG")) {
+			ancli.PrintOK(fmt.Sprintf("photoConfig pre override: %+v\n", pConf))
+		}
 		applyFlagOverridesForPhoto(&pConf, flagSet, defaultFlags)
+		if misc.Truthy(os.Getenv("DEBUG")) {
+			ancli.PrintOK(fmt.Sprintf("photoConfig post override: %+v\n", pConf))
+		}
 		err = pConf.SetupPrompts()
 		if err != nil {
 			return nil, fmt.Errorf("failed to setup prompt: %v", err)
 		}
 		pq, err := NewPhotoQuerier(pConf)
+		if misc.Truthy(os.Getenv("DEBUG")) {
+			ancli.PrintOK(fmt.Sprintf("photo querier: %+v\n", pq))
+		}
 		if err != nil {
 			return nil, fmt.Errorf("failed to create photo querier: %v", err)
 		}

@@ -93,5 +93,13 @@ func NewPhotoQuerier(conf photo.Configurations) (models.Querier, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("failed to find text querier for model: %v", conf.Model)
+	if strings.Contains(conf.Model, "dall-e") {
+		q, err := openai.NewPhotoQuerier(conf)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create dall-e photo querier: %w", err)
+		}
+		return q, nil
+	}
+
+	return nil, fmt.Errorf("failed to find photo querier for model: %v", conf.Model)
 }
