@@ -17,7 +17,7 @@ The multi-vendor aspect enables easy comparisons between different models, also 
 
 Note that you can only use the models that you have bought an API key for.
 
-Most text and photo based models within the respective vendors are supported, see [model configurations](#models) for how to swap.
+Most text and photo based models within the respective vendors are supported, see [model configurations](./EXAMPLES.md#Models) for how to swap.
 
 ## Get started
 ```bash
