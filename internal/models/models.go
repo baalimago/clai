@@ -49,12 +49,21 @@ type Message struct {
 	ToolCallID string       `json:"tool_call_id,omitempty"`
 }
 
-// SystemMessage returns the first encountered Message with role 'system'
-func (c *Chat) SystemMessage() (Message, error) {
+// FirstSystemMessage returns the first encountered Message with role 'system'
+func (c *Chat) FirstSystemMessage() (Message, error) {
 	for _, msg := range c.Messages {
 		if msg.Role == "system" {
 			return msg, nil
 		}
 	}
 	return Message{}, errors.New("failed to find any system message")
+}
+
+func (c *Chat) FirstUserMessage() (Message, error) {
+	for _, msg := range c.Messages {
+		if msg.Role == "user" {
+			return msg, nil
+		}
+	}
+	return Message{}, errors.New("failed to find any user message")
 }

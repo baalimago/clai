@@ -63,7 +63,9 @@ func NewQuerier[C models.StreamCompleter](userConf Configurations, dfault C) (Qu
 
 	toolBox, ok := any(modelConf).(models.ToolBox)
 	if ok && userConf.UseTools {
-		ancli.PrintOK(fmt.Sprintf("Registering tools, type: %T\n", modelConf))
+		if misc.Truthy(os.Getenv("DEBUG")) {
+			ancli.PrintOK(fmt.Sprintf("Registering tools, type: %T\n", modelConf))
+		}
 		toolBox.RegisterTool(tools.FileTree)
 		toolBox.RegisterTool(tools.Cat)
 		toolBox.RegisterTool(tools.FileType)

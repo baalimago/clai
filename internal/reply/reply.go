@@ -13,11 +13,28 @@ import (
 
 // SaveAsPreviousQuery at claiConfDir/conversations/prevQuery.json with ID prevQuery
 func SaveAsPreviousQuery(claiConfDir string, msgs []models.Message) error {
-	c := models.Chat{
+	prevQueryChat := models.Chat{
 		ID:       "prevQuery",
 		Messages: msgs,
 	}
-	return chat.Save(path.Join(claiConfDir, "conversations"), c)
+	// This check avoid storing queries without any replies, which would most likely
+	// flood the conversations needlessly
+	if len(msgs) > 2 {
+		firstUserMsg, err := prevQueryChat.FirstUserMessage()
+		if err != nil {
+			return fmt.Errorf("failed to get first user message: %w", err)
+		}
+		convChat := models.Chat{
+			ID:       chat.IdFromPrompt(firstUserMsg.Content),
+			Messages: msgs,
+		}
+		err = chat.Save(path.Join(claiConfDir, "conversations"), convChat)
+		if err != nil {
+			return fmt.Errorf("failed to save previous query as new conversation: %w", err)
+		}
+	}
+
+	return chat.Save(path.Join(claiConfDir, "conversations"), prevQueryChat)
 }
 
 // Load the prevQuery.json from the claiConfDir/conversations directory
