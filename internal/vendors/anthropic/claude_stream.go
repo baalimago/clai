@@ -66,7 +66,8 @@ func (c *Claude) handleStreamResponse(ctx context.Context, resp *http.Response) 
 			token, err := br.ReadString('\n')
 			if err != nil {
 				if errors.Is(err, io.EOF) {
-					c.handleFullResponse(token, outChan)
+					outChan <- fmt.Errorf("eof error: %w", err)
+					return
 				}
 				outChan <- models.CompletionEvent(fmt.Errorf("failed to read line: %w", err))
 				return
@@ -98,7 +99,7 @@ func (c *Claude) handleFullResponse(token string, outChan chan models.Completion
 	var rspBody ClaudeResponse
 	err := json.Unmarshal([]byte(token), &rspBody)
 	if err != nil {
-		outChan <- models.CompletionEvent(fmt.Errorf("failed to unmarshal response: %w", err))
+		outChan <- models.CompletionEvent(fmt.Errorf("failed to unmarshal response: %w, resp body as string: %v", err, token))
 		return
 	}
 	for _, content := range rspBody.Content {
