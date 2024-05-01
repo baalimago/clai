@@ -18,7 +18,6 @@ The multi-vendor aspect enables easy comparisons between different models, also 
 Note that you can only use the models that you have bought an API key for.
 
 Most text and photo based models within the respective vendors are supported, see [model configurations](#models) for how to swap.
-Mistral does not have function call support as of 2024-05 since it doesn't work very well.
 
 ## Installation
 ```bash
@@ -27,8 +26,9 @@ go install github.com/baalimago/clai@latest
 
 ## Examples
 
-All of the queries support xargs-like `-i`/`-I`/`-replace` flags.
-Example `clai h | clai -i q Summarize this for me: {}`, this would summarize the output of `clai h`.
+All of the commands support xargs-like `-i`/`-I`/`-replace` flags.
+
+Example: `clai h | clai -i q Summarize this for me: {}`, this would summarize the output of `clai h`.
 
 Regardless of you wish to generate a photo, continue a chat or reply to your previous query, the prompt system remains the same.
 
@@ -48,18 +48,37 @@ clai -re `# Use the -re flag to use the previous query as context for some next 
 Personally I have `alias ask=clai q` and then `alias rask=clai -re q`.
 This way I can `ask` -> `rask` -> `rask` for a temporary conversation.
 
-Every 'temporary conversation' is also saved as a chat, so it's possible to continue it later, see below.
+Every 'temporary conversation' is also saved as a chat, so it's possible to continue it later, see below on how to list chats.
+
+### Tooling
+Many vendors support function calling/tooling.
+This basically means that the AI model will ask your local machine to run some command, then it will analyze the output of said command.
+The most important thing to understand is that _the tools are run on your local machine_.
+
+See all the currently available tools [here](./internal/tools/), please create an issue if you'd like to see some tool added.
+```bash
+clai -t q  `# Specify you wish to enable tools with -t/-tools` \
+   Analyze the project found at ~/Projects/clai and give me a brief summary of what it does
+```
+
+ChatGPT has native support and works well.
+As of 2024-05, claude does not have support for tools + streaming, but works otherwise.
+Mistral tooling works, but it's so overly [Pydantic](https://docs.pydantic.dev/latest/) that it breaks the generic solution, so I've chosen to not have it enable it for now.
 
 ### Chatting
 ```bash
-clai chat new Lets have a conversation about Hegel
-```
-```bash
-clai chat list `# List all your chats`
-```
-```bash
 clai -chat-model claude-3-opus-20240229 `  # Using some other model` \
-    c continue 1`                          # Continue some previous chat` 
+    chat new Lets have a conversation about Hegel
+```
+
+The `-cm`/`-chat-model` flag works for any textQuery command.
+Meaning: you can start a conversation with one chat model, then continue it with another.
+```bash
+clai chat list
+```
+```bash
+clai 
+    c continue Lets_have_a_conversation_about
 ```
 
 ```bash
@@ -74,11 +93,16 @@ Ditto, `-photo-model` for any photo-based models.
 clai -raw `                    # Don't format output as markdown` \
     glob '*.go' Generate a README for this project > README.md
 ```
+The `-raw` flag will ensure that the output stays what the model outputs, without `glow` or animations.
 
 ### Photos
 ```bash
-printf "flowers" | clai -i --photo-prefix=flowercat --photo-dir=/tmp photo "A cat made out of {}"
+printf "flowers" | clai -i `    # stdin replacement works for photos also` \
+    --photo-prefix=flowercat `  # Sets the prefix for local photo` \
+    --photo-dir=/tmp `          # Sets the output dir` \
+    photo A cat made out of {}
 ```
+
 Since -N alternatives are disabled for many newer OpenAI models, you can use [repeater](https://github.com/baalimago/repeater) to generate several responses from the same prompt:
 ```bash
 NO_COLOR=true repeater -n 10 -w 3 -increment -file out.txt -output BOTH \
