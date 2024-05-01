@@ -83,7 +83,7 @@ func Test_claudifyMessage(t *testing.T) {
 		t.Run(tC.desc, func(t *testing.T) {
 			got := claudifyMessages(tC.given)
 			if len(tC.want) != len(got) {
-				t.Fatalf("incorrect length. expected: %q, got: %q", tC.want, got)
+				t.Fatalf("incorrect length. expected: %v, got: %v", tC.want, got)
 			}
 
 			for i := range tC.want {

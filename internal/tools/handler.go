@@ -30,3 +30,20 @@ func Invoke(call Call) string {
 	}
 	return out
 }
+
+func UserFunctionFromName(name string) UserFunction {
+	switch name {
+	case "file_tree":
+		return FileTree.UserFunction()
+	case "cat":
+		return Cat.UserFunction()
+	case "find":
+		return Find.UserFunction()
+	case "file_type":
+		return FileType.UserFunction()
+	case "ls":
+		return LS.UserFunction()
+	default:
+		return UserFunction{}
+	}
+}

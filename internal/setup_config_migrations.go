@@ -18,11 +18,11 @@ type oldChatConfig struct {
 	SystemPrompt     string  `json:"system_prompt"`
 	Raw              bool    `json:"raw"`
 	URL              string  `json:"url"`
-	FrequencyPenalty float32 `json:"frequency_penalty"`
+	FrequencyPenalty float64 `json:"frequency_penalty"`
 	MaxTokens        *int    `json:"max_tokens"` // Use a pointer to allow null value
-	PresencePenalty  float32 `json:"presence_penalty"`
-	Temperature      float32 `json:"temperature"`
-	TopP             float32 `json:"top_p"`
+	PresencePenalty  float64 `json:"presence_penalty"`
+	Temperature      float64 `json:"temperature"`
+	TopP             float64 `json:"top_p"`
 }
 
 type oldPhotoConfig struct {

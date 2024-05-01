@@ -10,7 +10,7 @@ type LsTool UserFunction
 var LS = LsTool{
 	Name:        "ls",
 	Description: "List the files in a directory. Uses the Linux command 'ls'.",
-	Inputs: InputSchema{
+	Inputs: &InputSchema{
 		Type: "object",
 		Properties: map[string]ParameterObject{
 			"directory": {

@@ -2,39 +2,25 @@ package openai
 
 import (
 	"fmt"
-	"net/http"
-	"os"
 
 	"github.com/baalimago/clai/internal/tools"
-	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
 func (g *ChatGPT) Setup() error {
-	apiKey := os.Getenv("OPENAI_API_KEY")
-	if apiKey == "" {
-		return fmt.Errorf("environment variable 'OPENAI_API_KEY' not set")
+	err := g.StreamCompleter.Setup("OPENAI_API_KEY", ChatURL, "DEBUG_OPENAI")
+	if err != nil {
+		return fmt.Errorf("failed to setup stream completer: %w", err)
 	}
-	g.client = &http.Client{}
-	g.apiKey = apiKey
-
-	if misc.Truthy(os.Getenv("DEBUG")) || misc.Truthy(os.Getenv("OPENAI_DEBUG")) {
-		g.debug = true
-	}
-
+	g.StreamCompleter.Model = g.Model
+	g.StreamCompleter.FrequencyPenalty = &g.FrequencyPenalty
+	g.StreamCompleter.MaxTokens = g.MaxTokens
+	g.StreamCompleter.Temperature = &g.Temperature
+	g.StreamCompleter.TopP = &g.TopP
+	toolChoice := "auto"
+	g.StreamCompleter.ToolChoice = &toolChoice
 	return nil
 }
 
-func convertToGptTool(tool tools.UserFunction) GptTool {
-	return GptTool{
-		Name:        tool.Name,
-		Description: tool.Description,
-		Inputs:      tool.Inputs,
-	}
-}
-
 func (g *ChatGPT) RegisterTool(tool tools.AiTool) {
-	g.tools = append(g.tools, GptToolSuper{
-		Type:     "function",
-		Function: convertToGptTool(tool.UserFunction()),
-	})
+	g.StreamCompleter.InternalRegisterTool(tool)
 }

@@ -7,9 +7,13 @@ import (
 )
 
 type UserFunction struct {
-	Name        string      `json:"name"`
-	Description string      `json:"description"`
-	Inputs      InputSchema `json:"input_schema"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	// Format is the same, but name of the field different. So this way, each
+	// vendor can set their own field name
+	Inputs *InputSchema `json:"input_schema,omitempty"`
+	// Chatgpt wants this
+	Arguments string `json:"arguments,omitempty"`
 }
 
 type InputSchema struct {
@@ -21,8 +25,11 @@ type InputSchema struct {
 type Input map[string]any
 
 type Call struct {
-	Name   string `json:"name"`
-	Inputs Input  `json:"inputs"`
+	ID       string       `json:"id,omitempty"`
+	Name     string       `json:"name,omitempty"`
+	Type     string       `json:"type,omitempty"`
+	Inputs   Input        `json:"inputs,omitempty"`
+	Function UserFunction `json:"function,omitempty"`
 }
 
 func (c Call) Json() string {

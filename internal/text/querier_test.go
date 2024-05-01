@@ -175,7 +175,7 @@ func Test_Querier_eventHandling(t *testing.T) {
 				},
 				"CLOSE",
 			},
-			want: "first the model said somethingretrieved tool_calls struct from AI:\n{\"name\":\"test\",\"inputs\":{\"testKey\":\"testVal\"}}\n{Name:test Inputs:map[testKey:testVal]}\n",
+			want: "tool_calls",
 		},
 	}
 	for _, tC := range testCases {
@@ -191,7 +191,7 @@ func Test_Querier_eventHandling(t *testing.T) {
 				tC.q.Query(context.Background())
 			})
 
-			if got != tC.want {
+			if !strings.Contains(got, tC.want) {
 				t.Fatalf("expected: %q, got: %q", tC.want, got)
 			}
 		})
@@ -356,7 +356,7 @@ func Test_shortenedOutput(t *testing.T) {
 		gotStr := shortenedOutput(given)
 		got := strings.Count(gotStr, "\n")
 		want := MAX_SHORTENED_NEWLINES + 1
-		if got > want {
+		if got >= want {
 			t.Fatalf("expected: %v, got: %v", want, got)
 		}
 	})

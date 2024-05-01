@@ -10,7 +10,7 @@ type FindTool UserFunction
 var Find = FindTool{
 	Name:        "find",
 	Description: "Search for files in a directory hierarchy. Uses linux command 'find'.",
-	Inputs: InputSchema{
+	Inputs: &InputSchema{
 		Type: "object",
 		Properties: map[string]ParameterObject{
 			"directory": {

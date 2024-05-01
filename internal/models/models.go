@@ -43,8 +43,10 @@ type Chat struct {
 }
 
 type Message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role       string       `json:"role"`
+	Content    string       `json:"content,omitempty"`
+	ToolCalls  []tools.Call `json:"tool_calls,omitempty"`
+	ToolCallID string       `json:"tool_call_id,omitempty"`
 }
 
 // SystemMessage returns the first encountered Message with role 'system'

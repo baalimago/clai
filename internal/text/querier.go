@@ -218,21 +218,23 @@ func (q *Querier[C]) handleFunctionCall(ctx context.Context, call tools.Call) er
 	// Post process here since a function call should be treated as the function call
 	// should be handeled mid-stream, but still requires multiple rounds of user input
 	q.postProcess()
-	systemToolsCall := models.Message{
-		Role:    "user",
-		Content: fmt.Sprintf("retrieved tool_calls struct from AI:\n%v", call.Json()),
+	assistantToolsCall := models.Message{
+		Role:      "assistant",
+		Content:   fmt.Sprintf("tool_calls:\n%v", call.Json()),
+		ToolCalls: []tools.Call{call},
 	}
-	q.chat.Messages = append(q.chat.Messages, systemToolsCall)
 	q.reset()
-	err := utils.AttemptPrettyPrint(systemToolsCall, q.username, q.Raw)
+	err := utils.AttemptPrettyPrint(assistantToolsCall, q.username, q.Raw)
 	if err != nil {
 		return fmt.Errorf("failed to pretty print, stopping before tool invocation: %w", err)
 	}
+	q.chat.Messages = append(q.chat.Messages, assistantToolsCall)
 
 	out := tools.Invoke(call)
 	toolsOutput := models.Message{
-		Role:    "user",
-		Content: out,
+		Role:       "tool",
+		Content:    out,
+		ToolCallID: call.ID,
 	}
 	q.chat.Messages = append(q.chat.Messages, toolsOutput)
 	if q.debug || q.Raw {
