@@ -52,8 +52,7 @@ Every 'temporary conversation' is also saved as a chat, so it's possible to cont
 
 ### Tooling
 Many vendors support function calling/tooling.
-This basically means that the AI model will ask your local machine to run some command, then it will analyze the output of said command.
-The most important thing to understand is that _the tools are run on your local machine_.
+This basically means that the AI model will ask *your local machine* to run some command, then it will analyze the output of said command.
 
 See all the currently available tools [here](./internal/tools/), please create an issue if you'd like to see some tool added.
 ```bash
@@ -71,26 +70,22 @@ clai -chat-model claude-3-opus-20240229 `  # Using some other model` \
     chat new Lets have a conversation about Hegel
 ```
 
-The `-cm`/`-chat-model` flag works for any textQuery command.
+The `-cm`/`-chat-model` flag works for any text-like command.
 Meaning: you can start a conversation with one chat model, then continue it with another.
 ```bash
 clai chat list
 ```
 ```bash
-clai 
-    c continue Lets_have_a_conversation_about
+clai c continue Lets_have_a_conversation_about
 ```
 
 ```bash
-clai c continue 1 now here is what i would like to s `# Continue some previous chat with message ` 
+clai c continue 1 kant is better `# Continue some previous chat with message ` 
 ```
-
-Flag `-chat-model` works for any text-based model, regardless of vendor. 
-Ditto, `-photo-model` for any photo-based models.
 
 ### Globs
 ```bash
-clai -raw `                    # Don't format output as markdown` \
+clai -raw `# Don't format output as markdown` \
     glob '*.go' Generate a README for this project > README.md
 ```
 The `-raw` flag will ensure that the output stays what the model outputs, without `glow` or animations.
