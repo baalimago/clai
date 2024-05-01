@@ -26,7 +26,7 @@ are normally used in query mode.
 
 Commands:
   n|new      <prompt>             Create a new chat with the given prompt.
-  c|cotinue  <chatID>             Continue an existing chat with the given chat ID.
+  c|cotinue  <chatID> <prompt>    Continue an existing chat with the given chat ID. Prompt is optional
   d|delete   <chatID>             Delete the chat with the given chat ID.
   l|list                          List all existing chats.
 
@@ -132,11 +132,16 @@ func (cq *ChatHandler) findChatByID(potentialChatIdx string) (models.Chat, error
 	if err != nil {
 		return models.Chat{}, fmt.Errorf("failed to list chats: %w", err)
 	}
-	chatIdx, err := strconv.Atoi(potentialChatIdx)
+	split := strings.Split(potentialChatIdx, " ")
+	firstToken := split[0]
+	chatIdx, err := strconv.Atoi(firstToken)
 	if err == nil {
 		if chatIdx < 0 || chatIdx >= len(chats) {
 			return models.Chat{}, fmt.Errorf("chat index out of range")
 		}
+		// Reassemble the prompt from the split tokens, but without the index
+		// selecting the chat
+		cq.prompt = strings.Join(split[1:], " ")
 		return chats[chatIdx], nil
 	} else {
 		return cq.getByID(IdFromPrompt(potentialChatIdx))
@@ -157,6 +162,9 @@ func (cq *ChatHandler) cont(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("failed to print chat message: %w", err)
 		}
+	}
+	if cq.prompt != "" {
+		chat.Messages = append(chat.Messages, models.Message{Role: "user", Content: cq.prompt})
 	}
 	cq.chat = chat
 	return cq.loop(ctx)
@@ -214,17 +222,24 @@ func (cq *ChatHandler) loop(ctx context.Context) error {
 		}
 	}()
 	for {
-		fmt.Printf("%v(%v): ", ancli.ColoredMessage(ancli.CYAN, cq.username), "'exit' or 'quit' to quit")
-		var userInput string
-		reader := bufio.NewReader(os.Stdin)
-		userInput, err := reader.ReadString('\n')
-		if err != nil {
-			return fmt.Errorf("failed to read user input: %w", err)
+		lastMessage := cq.chat.Messages[len(cq.chat.Messages)-1]
+		if lastMessage.Role == "user" {
+			utils.AttemptPrettyPrint(lastMessage, cq.username, false)
+		} else {
+			fmt.Printf("%v(%v): ", ancli.ColoredMessage(ancli.CYAN, cq.username), "'exit/e/quit/q' to quit")
+			var userInput string
+			reader := bufio.NewReader(os.Stdin)
+			userInput, err := reader.ReadString('\n')
+			if err != nil {
+				return fmt.Errorf("failed to read user input: %w", err)
+			}
+			if userInput == "exit\n" || userInput == "quit\n" || userInput == "q\n" || userInput == "e\n" || ctx.Err() != nil {
+				return nil
+			}
+			cq.chat.Messages = append(cq.chat.Messages, models.Message{Role: "user", Content: userInput})
+
 		}
-		if userInput == "exit\n" || userInput == "quit\n" || ctx.Err() != nil {
-			return nil
-		}
-		cq.chat.Messages = append(cq.chat.Messages, models.Message{Role: "user", Content: userInput})
+
 		newChat, err := cq.q.TextQuery(ctx, cq.chat)
 		if err != nil {
 			return fmt.Errorf("failed to print chat completion: %w", err)
