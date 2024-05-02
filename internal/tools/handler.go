@@ -22,6 +22,8 @@ func Invoke(call Call) string {
 		out, err = FileType.Call(call.Inputs)
 	case "ls":
 		out, err = LS.Call(call.Inputs)
+	case "website_text":
+		out, err = WebsiteText.Call(call.Inputs)
 	default:
 		return "ERROR: unknown tool call: " + call.Name
 	}
