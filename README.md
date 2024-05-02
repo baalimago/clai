@@ -8,6 +8,17 @@ The multi-vendor aspect enables easy comparisons between different models, also 
 
 ![clai_in_action_example](./img/example.gif "Example of clai in action")
 
+## Features
+* Text summarization from:
+    * Piped data
+    * Globbed file input
+* Conversations
+* Tools calling [with easily forkable + extendable tools](./internal/tools/)
+* Photo generation
+* Human readable / robot readable output
+* 100% standard go library (except for /x/net)
+    
+
 ## Prerequisites
 - **Go:** Install Go from [here](https://golang.org/doc/install).
 - **OpenAI API Key:** Set the `OPENAI_API_KEY` env var to your [OpenAI API key](https://platform.openai.com/docs/quickstart/step-2-set-up-your-api-key). [Text models](https://platform.openai.com/docs/models/gpt-4-and-gpt-4-turbo), [photo models](https://platform.openai.com/docs/models/dall-e).
