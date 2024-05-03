@@ -43,5 +43,10 @@ func Save(saveAt string, chat models.Chat) error {
 }
 
 func IdFromPrompt(prompt string) string {
-	return strings.Join(utils.GetFirstTokens(strings.Split(prompt, " "), 5), "_")
+	id := strings.Join(utils.GetFirstTokens(strings.Split(prompt, " "), 5), "_")
+	// Slashes messes up the save path pretty bad
+	id = strings.Replace(id, "/", ".", -1)
+	// You're welcome, windows users. You're also weird.
+	id = strings.Replace(id, "\\", ".", -1)
+	return id
 }

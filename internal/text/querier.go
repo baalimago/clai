@@ -168,10 +168,6 @@ func (q *Querier[C]) TextQuery(ctx context.Context, chat models.Chat) (models.Ch
 	if err != nil {
 		return models.Chat{}, fmt.Errorf("failed to query: %w", err)
 	}
-	q.chat.Messages = append(q.chat.Messages, models.Message{
-		Role:    "system",
-		Content: q.fullMsg,
-	})
 	if q.debug {
 		ancli.PrintOK(fmt.Sprintf("chat: %v", q.chat))
 	}
@@ -218,6 +214,20 @@ func (q *Querier[C]) handleFunctionCall(ctx context.Context, call tools.Call) er
 	// Post process here since a function call should be treated as the function call
 	// should be handeled mid-stream, but still requires multiple rounds of user input
 	q.postProcess()
+
+	// Fill some fields to make the chatgpt function spec happy
+	if call.ID == "" {
+		call.ID = "now-chatgpt-is-happy"
+	}
+	if call.Type == "" {
+		call.Type = "function"
+	}
+	if call.Function.Name == "" {
+		call.Function.Name = call.Name
+	}
+	if call.Function.Arguments == "" {
+		call.Function.Arguments = call.Json()
+	}
 	assistantToolsCall := models.Message{
 		Role:      "assistant",
 		Content:   fmt.Sprintf("tool_calls:\n%v", call.Json()),
@@ -231,6 +241,10 @@ func (q *Querier[C]) handleFunctionCall(ctx context.Context, call tools.Call) er
 	q.chat.Messages = append(q.chat.Messages, assistantToolsCall)
 
 	out := tools.Invoke(call)
+	// Chatgpt doesn't like responses which yield no output, even if they're valid (ls on empty dir)
+	if out == "" {
+		out = "<EMPTY-RESPONSE>"
+	}
 	toolsOutput := models.Message{
 		Role:       "tool",
 		Content:    out,

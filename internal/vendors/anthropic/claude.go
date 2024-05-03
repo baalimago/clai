@@ -50,6 +50,16 @@ type claudeReq struct {
 
 // claudifyMessages converts from 'normal' openai chat format into a format which claud prefers
 func claudifyMessages(msgs []models.Message) []models.Message {
+	cleanedMsgs := make([]models.Message, 0, len(msgs))
+	// Remove any additional fields from the messages
+	for _, msg := range msgs {
+		cleanedMsgs = append(cleanedMsgs, models.Message{
+			Role:    msg.Role,
+			Content: msg.Content,
+		})
+	}
+	msgs = cleanedMsgs
+
 	// If the first message is a system one, assume it's the system prompt and pop it
 	if msgs[0].Role == "system" {
 		msgs = msgs[1:]

@@ -28,11 +28,11 @@ func (s *StreamCompleter) Setup(apiKeyEnv, url, debugEnv string) error {
 func (g *StreamCompleter) InternalRegisterTool(tool tools.AiTool) {
 	g.tools = append(g.tools, ToolSuper{
 		Type:     "function",
-		Function: convertToGptTool(tool.UserFunction()),
+		Function: convertToGenericTool(tool.UserFunction()),
 	})
 }
 
-func convertToGptTool(tool tools.UserFunction) Tool {
+func convertToGenericTool(tool tools.UserFunction) Tool {
 	return Tool{
 		Name:        tool.Name,
 		Description: tool.Description,

@@ -51,10 +51,10 @@ func (s *StreamCompleter) createRequest(ctx context.Context, chat models.Chat) (
 		ResponseFormat:   responseFormat{Type: "text"},
 		Messages:         chat.Messages,
 		Stream:           true,
-		ToolChoice:       s.ToolChoice,
 	}
 	if len(s.tools) > 0 {
 		reqData.Tools = s.tools
+		reqData.ToolChoice = s.ToolChoice
 	}
 	if s.debug {
 		ancli.PrintOK(fmt.Sprintf("generic streamcompleter request: %+v\n", reqData))
@@ -153,18 +153,25 @@ func (s *StreamCompleter) handleChoice(choice Choice) models.CompletionEvent {
 
 	// Function name is only shown in first chunk of a functions call
 	// TODO: Implement support for parallel function calls, now we only handle first tools call in list
+	var funcName, argChunk string
 	if len(choice.Delta.ToolCalls) > 0 && choice.Delta.ToolCalls[0].Function.Name != "" {
+		funcName = choice.Delta.ToolCalls[0].Function.Name
 		s.toolsCallName = choice.Delta.ToolCalls[0].Function.Name
 		s.toolsCallID = choice.Delta.ToolCalls[0].ID
 	}
 
 	if len(choice.Delta.ToolCalls) > 0 {
+		argChunk = choice.Delta.ToolCalls[0].Function.Arguments
 		// The arguments is streamed as a stringified json for chatgpt, chunk by chunk, with no apparent structure
-		// This rustles my jimmies. But I am calm. I am composed. I am a tranquil pool of water.
-		s.toolsCallArgsString += choice.Delta.ToolCalls[0].Function.Arguments
+		s.toolsCallArgsString += argChunk
+		if s.debug {
+			ancli.PrintOK(fmt.Sprintf("toolsCallArgsString: %v\n", s.toolsCallArgsString))
+		}
 	}
 
-	if choice.FinishReason != "" {
+	if choice.FinishReason != "" ||
+		// This is an indication that chatgpt wants to call another function, or a variant of the function call
+		(s.toolsCallArgsString != "" && argChunk == "" && funcName != "") {
 		return s.doToolsCall()
 	}
 	return models.NoopEvent{}
