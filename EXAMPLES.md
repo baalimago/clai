@@ -81,12 +81,13 @@ NO_COLOR=true repeater -n 10 -w 3 -increment -file out.txt -output BOTH \
 
 ## Configuration
 `clai` will create configuration files at [os.GetConfigDir()](https://pkg.go.dev/os#UserConfigDir)`/.clai/`.
-Two default command-related ones `textConfig.json` and `photoConfig.json`, then one for each specific model.
-The configuration system is as follows:
-1. Default configurations from `textConfig.json` or `photoConfig.json`, here you can set your default model (which implies vendor)
-1. Override the configurations using flags
+First time you run `clai`, two default command-related ones, `textConfig.json` and `photoConfig.json`,  will be created and then one for each specific model.
+The configuration presedence is as follows (from lowest to highest):
+1. Default hard-coded configurations [such as this](./internal/text/conf.go), these gets written to file first time you run `clai`
+1. Configurations from local `textConfig.json` or `photoConfig.json` file
+1. Flags
 
-The `text/photo-Config.json` files configures _what_ you want done, **not** how the models should perform it.
+The `textConfig.json/photoConfig.json` files configures _what_ you want done, not _how_ the models should perform it.
 This way it scales for any vendor + model.
 
 ### Models
@@ -96,7 +97,8 @@ There's two ways to configure the models:
 
 Then, for each model, a new configuration file will be created.
 Since each vendor's model supports quite different configurations, the model configurations aren't exposed as flags.
-Example `.../.clai/openai_gpt_gpt-4-turbo-preview.json` which the contains configurations specific for this model, such as temperature.
+Instead, modify the model by adjusting its configuration file, found in [os.GetConfigDir()](https://pkg.go.dev/os#UserConfigDir)`/.clai/<vendor>_<model-type>_<model-name>.json`.
+This config json will in effect be unmarshaled into a request send to the model's vendor.
 
 ### Conversations
 Within [os.GetConfigDir()](https://pkg.go.dev/os#UserConfigDir)`/.clai/conversations` you'll find all the conversations.
