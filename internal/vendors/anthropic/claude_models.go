@@ -27,3 +27,14 @@ type TokenInfo struct {
 	InputTokens  int `json:"input_tokens"`
 	OutputTokens int `json:"output_tokens"`
 }
+
+type Delta struct {
+	Type string `json:"type"`
+	Text string `json:"text,omitempty"`
+}
+
+type ContentBlockDelta struct {
+	Type  string `json:"type"`
+	Index int    `json:"index"`
+	Delta Delta  `json:"delta"`
+}

@@ -13,6 +13,10 @@ type Claude struct {
 	Url              string               `json:"url"`
 	AnthropicVersion string               `json:"anthropic-version"`
 	AnthropicBeta    string               `json:"anthropic-beta"`
+	Temperature      float64              `json:"temperature"`
+	TopP             float64              `json:"top_p"`
+	TopK             int                  `json:"top_k"`
+	StopSequences    []string             `json:"stop_sequences"`
 	client           *http.Client         `json:"-"`
 	apiKey           string               `json:"-"`
 	debug            bool                 `json:"-"`
@@ -24,16 +28,24 @@ var CLAUDE_DEFAULT = Claude{
 	Url:              ClaudeURL,
 	AnthropicVersion: "2023-06-01",
 	AnthropicBeta:    "tools-2024-04-04",
+	Temperature:      0.7,
 	MaxTokens:        1024,
+	TopP:             -1,
+	TopK:             -1,
+	StopSequences:    make([]string, 0),
 }
 
 type claudeReq struct {
-	Model     string               `json:"model"`
-	Messages  []models.Message     `json:"messages"`
-	MaxTokens int                  `json:"max_tokens"`
-	Stream    bool                 `json:"stream"`
-	System    string               `json:"system"`
-	Tools     []tools.UserFunction `json:"tools,omitempty"`
+	Model         string               `json:"model"`
+	Messages      []models.Message     `json:"messages"`
+	MaxTokens     int                  `json:"max_tokens"`
+	Stream        bool                 `json:"stream"`
+	System        string               `json:"system"`
+	Temperature   float64              `json:"temperature"`
+	TopP          float64              `json:"top_p"`
+	TopK          int                  `json:"top_k"`
+	StopSequences []string             `json:"stop_sequences"`
+	Tools         []tools.UserFunction `json:"tools,omitempty"`
 }
 
 // claudifyMessages converts from 'normal' openai chat format into a format which claud prefers

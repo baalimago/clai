@@ -16,17 +16,6 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
-type Delta struct {
-	Type string `json:"type"`
-	Text string `json:"text,omitempty"`
-}
-
-type ContentBlockDelta struct {
-	Type  string `json:"type"`
-	Index int    `json:"index"`
-	Delta Delta  `json:"delta"`
-}
-
 func (c *Claude) StreamCompletions(ctx context.Context, chat models.Chat) (chan models.CompletionEvent, error) {
 	req, err := c.constructRequest(ctx, chat)
 	if err != nil {
@@ -191,11 +180,15 @@ func (c *Claude) constructRequest(ctx context.Context, chat models.Chat) (*http.
 
 	shouldStream := len(c.tools) == 0
 	reqData := claudeReq{
-		Model:     c.Model,
-		Messages:  claudifiedMsgs,
-		MaxTokens: c.MaxTokens,
-		Stream:    shouldStream,
-		System:    sysMsg.Content,
+		Model:         c.Model,
+		Messages:      claudifiedMsgs,
+		MaxTokens:     c.MaxTokens,
+		Stream:        shouldStream,
+		System:        sysMsg.Content,
+		Temperature:   c.Temperature,
+		TopP:          c.TopP,
+		TopK:          c.TopK,
+		StopSequences: c.StopSequences,
 	}
 	if len(c.tools) > 0 {
 		reqData.Tools = c.tools
