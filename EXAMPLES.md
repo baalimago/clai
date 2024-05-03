@@ -36,7 +36,6 @@ clai -t q  `# Specify you wish to enable tools with -t/-tools` \
 
 ChatGPT has native support and works well.
 As of 2024-05, claude does not have support for tools + streaming, but works otherwise.
-Mistral tooling works, but it's so overly [Pydantic](https://docs.pydantic.dev/latest/) that it breaks the generic solution, so I've chosen to not have it enable it for now.
 
 ### Chatting
 ```bash

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/baalimago/clai/internal/models"
+	"github.com/baalimago/clai/internal/tools"
 )
 
 func (m *Mistral) Setup() error {
@@ -17,12 +18,17 @@ func (m *Mistral) Setup() error {
 	m.StreamCompleter.MaxTokens = &m.MaxTokens
 	m.StreamCompleter.Temperature = &m.Temperature
 	m.StreamCompleter.TopP = &m.TopP
-	toolChoice := "none"
+	toolChoice := "auto"
 	m.StreamCompleter.ToolChoice = &toolChoice
+	m.StreamCompleter.Clean = clean
 
 	return nil
 }
 
 func (m *Mistral) StreamCompletions(ctx context.Context, chat models.Chat) (chan models.CompletionEvent, error) {
 	return m.StreamCompleter.StreamCompletions(ctx, chat)
+}
+
+func (m *Mistral) RegisterTool(tool tools.AiTool) {
+	m.StreamCompleter.InternalRegisterTool(tool)
 }
