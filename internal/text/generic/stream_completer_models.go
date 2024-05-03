@@ -16,6 +16,7 @@ type StreamCompleter struct {
 	Temperature      *float64
 	TopP             *float64
 	ToolChoice       *string
+	Clean            func([]models.Message) []models.Message
 	url              string
 	tools            []ToolSuper
 	toolsCallName    string
