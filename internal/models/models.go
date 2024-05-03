@@ -18,11 +18,11 @@ type ChatQuerier interface {
 
 type StreamCompleter interface {
 	// Setup the stream completer, do things like init http.Client/websocket etc
-	// Will be called asynchronously. Should return error if setup fails
+	// Will be called synchronously. Should return error if setup fails
 	Setup() error
 
 	// StreamCompletions and return a channel which sends CompletionsEvents.
-	// The CompletionEvents should either be a string or an error. If there is
+	// The CompletionEvents should be a string, an error, NoopEvent or a models.Call. If there is
 	// a catastrophic error, return the error and close the channel.
 	StreamCompletions(context.Context, Chat) (chan CompletionEvent, error)
 }
