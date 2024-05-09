@@ -8,8 +8,10 @@ import (
 	"os"
 	"os/user"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/utils"
@@ -114,7 +116,8 @@ func (cq *ChatHandler) actOnSubCmd(ctx context.Context) error {
 
 func (cq *ChatHandler) new(ctx context.Context) error {
 	newChat := models.Chat{
-		ID: IdFromPrompt(cq.prompt),
+		Created: time.Now(),
+		ID:      IdFromPrompt(cq.prompt),
 		Messages: []models.Message{
 			{Role: "user", Content: cq.prompt},
 		},
@@ -199,14 +202,16 @@ func (cq *ChatHandler) list() ([]models.Chat, error) {
 		}
 		chats = append(chats, chat)
 	}
-
+	slices.SortFunc(chats, func(a, b models.Chat) int {
+		return b.Created.Compare(a.Created)
+	})
 	return chats, err
 }
 
 func printChats(chats []models.Chat) {
 	ancli.PrintOK(fmt.Sprintf("found '%v' conversations:\n", len(chats)))
 	for i, chat := range chats {
-		fmt.Printf("\t%v: %v\n", i, chat.ID)
+		fmt.Printf("\t%-3s| %s: %v\n", fmt.Sprintf("%v", i), chat.Created.Format("2006-01-02 15:04:05"), chat.ID)
 	}
 }
 
@@ -237,7 +242,6 @@ func (cq *ChatHandler) loop(ctx context.Context) error {
 				return nil
 			}
 			cq.chat.Messages = append(cq.chat.Messages, models.Message{Role: "user", Content: userInput})
-
 		}
 
 		newChat, err := cq.q.TextQuery(ctx, cq.chat)

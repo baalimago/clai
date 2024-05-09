@@ -3,6 +3,7 @@ package models
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/baalimago/clai/internal/tools"
 )
@@ -38,6 +39,7 @@ type CompletionEvent any
 type NoopEvent struct{}
 
 type Chat struct {
+	Created  time.Time `json:"created,omitempty"`
 	ID       string    `json:"id"`
 	Messages []Message `json:"messages"`
 }

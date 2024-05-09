@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"path"
+	"time"
 
 	"github.com/baalimago/clai/internal/chat"
 	"github.com/baalimago/clai/internal/models"
@@ -14,6 +15,7 @@ import (
 // SaveAsPreviousQuery at claiConfDir/conversations/prevQuery.json with ID prevQuery
 func SaveAsPreviousQuery(claiConfDir string, msgs []models.Message) error {
 	prevQueryChat := models.Chat{
+		Created:  time.Now(),
 		ID:       "prevQuery",
 		Messages: msgs,
 	}
@@ -25,6 +27,7 @@ func SaveAsPreviousQuery(claiConfDir string, msgs []models.Message) error {
 			return fmt.Errorf("failed to get first user message: %w", err)
 		}
 		convChat := models.Chat{
+			Created:  time.Now(),
 			ID:       chat.IdFromPrompt(firstUserMsg.Content),
 			Messages: msgs,
 		}

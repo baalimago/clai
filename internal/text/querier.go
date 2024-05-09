@@ -251,6 +251,10 @@ func (q *Querier[C]) handleFunctionCall(ctx context.Context, call tools.Call) er
 		ToolCallID: call.ID,
 	}
 	q.chat.Messages = append(q.chat.Messages, toolsOutput)
+	q.chat.Messages = append(q.chat.Messages, models.Message{
+		Role:    "tool",
+		Content: "did you like that?",
+	})
 	if q.debug || q.Raw {
 		err = utils.AttemptPrettyPrint(toolsOutput, "tool", q.Raw)
 		if err != nil {
