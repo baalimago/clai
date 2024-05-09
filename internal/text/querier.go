@@ -126,15 +126,13 @@ func (q *Querier[C]) postProcess() {
 		return
 	}
 	q.hasPrinted = true
-	chatMsgscopy := make([]models.Message, len(q.chat.Messages))
-	copy(chatMsgscopy, q.chat.Messages)
 	newSysMsg := models.Message{
 		Role:    "system",
 		Content: q.fullMsg,
 	}
-	chatMsgscopy = append(chatMsgscopy, newSysMsg)
+	q.chat.Messages = append(q.chat.Messages, newSysMsg)
 	if q.shouldSaveReply {
-		err := reply.SaveAsPreviousQuery(q.configDir, chatMsgscopy)
+		err := reply.SaveAsPreviousQuery(q.configDir, q.chat.Messages)
 		if err != nil {
 			ancli.PrintErr(fmt.Sprintf("failed to save previous query: %v\n", err))
 		}
