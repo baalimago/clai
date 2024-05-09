@@ -210,8 +210,11 @@ func (cq *ChatHandler) list() ([]models.Chat, error) {
 
 func printChats(chats []models.Chat) {
 	ancli.PrintOK(fmt.Sprintf("found '%v' conversations:\n", len(chats)))
+	fmt.Printf("\t%-3s| %-20s| %v\n", "ID", "Created", "Filename + prompt")
+	line := strings.Repeat("-", 55)
+	fmt.Printf("\t%v\n", line)
 	for i, chat := range chats {
-		fmt.Printf("\t%-3s| %s: %v\n", fmt.Sprintf("%v", i), chat.Created.Format("2006-01-02 15:04:05"), chat.ID)
+		fmt.Printf("\t%-3s| %s | %v\n", fmt.Sprintf("%v", i), chat.Created.Format("2006-01-02 15:04:05"), chat.ID)
 	}
 }
 
