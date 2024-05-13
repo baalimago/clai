@@ -24,6 +24,8 @@ func Invoke(call Call) string {
 		out, err = LS.Call(call.Inputs)
 	case "website_text":
 		out, err = WebsiteText.Call(call.Inputs)
+	case "rg":
+		out, err = RipGrep.Call(call.Inputs)
 	default:
 		return "ERROR: unknown tool call: " + call.Name
 	}

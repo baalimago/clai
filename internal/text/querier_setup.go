@@ -72,6 +72,7 @@ func NewQuerier[C models.StreamCompleter](userConf Configurations, dfault C) (Qu
 		toolBox.RegisterTool(tools.LS)
 		toolBox.RegisterTool(tools.Find)
 		toolBox.RegisterTool(tools.WebsiteText)
+		toolBox.RegisterTool(tools.RipGrep)
 	}
 
 	err = modelConf.Setup()
