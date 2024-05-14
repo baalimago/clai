@@ -33,7 +33,7 @@ type Configurations struct {
 }
 
 var DEFAULT = Configurations{
-	Model:        "gpt-4-turbo",
+	Model:        "gpt-4o",
 	SystemPrompt: "You are an assistant for a CLI interface. Answer concisely and informatively. Prefer markdown if possible.",
 	Raw:          false,
 	UseTools:     false,
