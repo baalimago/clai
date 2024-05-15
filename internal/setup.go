@@ -31,6 +31,7 @@ const (
 	GLOB
 	PHOTO
 	VERSION
+	SETUP
 )
 
 var defaultFlags = Configurations{
@@ -60,6 +61,8 @@ func getModeFromArgs(cmd string) (Mode, error) {
 		return GLOB, nil
 	case "help", "h":
 		return HELP, nil
+	case "setup", "s":
+		return SETUP, nil
 	case "version", "v":
 		return VERSION, nil
 	default:
