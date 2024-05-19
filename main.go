@@ -25,8 +25,8 @@ Usage: clai [flags] <command>
 Flags:
   -re, -reply bool             Set to true to reply to the previous query, meaning that it will be used as context for your next query. (default %v)
   -r, -raw bool                Set to true to print raw output (no animation, no glow). (default %v)
-  -cm, -chat-model string      Set the chat model to use. (default %v)
-  -pm, -photo-model string     Set the image model to use. (default %v)
+  -cm, -chat-model string      Set the chat model to use. (default is found in textConfig.json)
+  -pm, -photo-model string     Set the image model to use. (default is found in photoConfig.json)
   -pd, -photo-dir string       Set the directory to store the generated pictures. (default %v)
   -pp, -photo-prefix string    Set the prefix for the generated pictures. (default %v)
   -I, -replace string          Set the string to replace with stdin. (default %v)
