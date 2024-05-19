@@ -55,7 +55,7 @@ func TestSetup(t *testing.T) {
 	}{
 		{
 			name:        "Not enough arguments",
-			args:        []string{"clai", "glob"},
+			args:        []string{"glob"},
 			expectedErr: true,
 		},
 		{
@@ -69,7 +69,7 @@ func TestSetup(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			flag.Parse()
-			_, err := Setup("", tc.args)
+			_, _, err := Setup("", tc.args)
 			if tc.expectedErr && err == nil {
 				t.Errorf("Expected an error, but got none")
 			}

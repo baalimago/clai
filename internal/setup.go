@@ -56,7 +56,7 @@ func getModeFromArgs(cmd string) (Mode, error) {
 	case "query", "q":
 		return QUERY, nil
 	case "glob", "g":
-		ancli.PrintWarn("this way of calling glob will be depracated in the future. Please use the -g <glob> flag with query/chat commands instead.\n")
+		ancli.PrintWarn("this way of calling glob will be deprecated in the future. Please use the -g <glob> flag with query/chat commands instead.\n")
 		return GLOB, nil
 	case "help", "h":
 		return HELP, nil
@@ -87,7 +87,8 @@ func setupTextQuerier(mode Mode, confDir string, flagSet Configurations) (models
 	}
 	args := flag.Args()
 	if mode == GLOB || flagSet.Glob != "" {
-		globStr, err := glob.Setup(flagSet.Glob, args)
+		globStr, retArgs, err := glob.Setup(flagSet.Glob, args)
+		args = retArgs
 		if err != nil {
 			return nil, fmt.Errorf("failed to setup glob: %w", err)
 		}

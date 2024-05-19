@@ -14,10 +14,10 @@ import (
 // Setup the glob parsing. Currently this is a bit messy as it works
 // both for flag glob and arg glob. Once arg glob is deprecated, this
 // function may be cleaned up
-func Setup(flagGlob string, args []string) (string, error) {
+func Setup(flagGlob string, args []string) (string, []string, error) {
 	globArg := args[0] == "g" || args[0] == "glob"
 	if globArg && len(args) < 2 {
-		return "", fmt.Errorf("not enough arguments provided")
+		return "", args, fmt.Errorf("not enough arguments provided")
 	}
 	glob := args[1]
 	if globArg {
@@ -34,7 +34,7 @@ func Setup(flagGlob string, args []string) (string, error) {
 	if misc.Truthy(os.Getenv("DEBUG")) {
 		ancli.PrintOK(fmt.Sprintf("found glob: %v\n", glob))
 	}
-	return glob, nil
+	return glob, args, nil
 }
 
 func CreateChat(glob, systemPrompt string) (models.Chat, error) {
