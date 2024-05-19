@@ -1,7 +1,6 @@
 package glob
 
 import (
-	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,19 +11,30 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
-func Setup() (string, error) {
-	args := flag.Args()
-	if len(args) < 2 {
-		return "", fmt.Errorf("not enough arguments provided")
+// Setup the glob parsing. Currently this is a bit messy as it works
+// both for flag glob and arg glob. Once arg glob is deprecated, this
+// function may be cleaned up
+func Setup(flagGlob string, args []string) (string, []string, error) {
+	globArg := args[0] == "g" || args[0] == "glob"
+	if globArg && len(args) < 2 {
+		return "", args, fmt.Errorf("not enough arguments provided")
 	}
 	glob := args[1]
+	if globArg {
+		if flagGlob != "" {
+			ancli.PrintWarn(fmt.Sprintf("both glob-arg and glob-flag is specified. This is confusing. Using glob-arg query: %v\n", glob))
+		}
+		args = args[1:]
+	} else {
+		glob = flagGlob
+	}
 	if !strings.Contains(glob, "*") {
 		ancli.PrintWarn(fmt.Sprintf("found no '*' in glob: %v, has it already been expanded? Consider enclosing glob in single quotes\n", glob))
 	}
 	if misc.Truthy(os.Getenv("DEBUG")) {
 		ancli.PrintOK(fmt.Sprintf("found glob: %v\n", glob))
 	}
-	return glob, nil
+	return glob, args, nil
 }
 
 func CreateChat(glob, systemPrompt string) (models.Chat, error) {

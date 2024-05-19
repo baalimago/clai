@@ -22,6 +22,7 @@ type Configurations struct {
 	PrintRaw      bool
 	ReplyMode     bool
 	UseTools      bool
+	Glob          string
 }
 
 func setupFlags(defaults Configurations) Configurations {
@@ -38,6 +39,9 @@ func setupFlags(defaults Configurations) Configurations {
 
 	ppShort := flag.String("pp", defaults.PhotoPrefix, "Set the prefix for the generated pictures. Default is 'clai'")
 	ppLong := flag.String("photo-prefix", defaults.PhotoPrefix, "Set the prefix for the generated pictures. Default is 'clai'")
+
+	gShort := flag.String("g", defaults.Glob, "Set this to true to use globbing, but from query/chat. This flag will deperecate glob mode in some upcoming release.")
+	gLong := flag.String("glob", defaults.Glob, "Set this to true to use globbing, but from query/chat. This flag will deperecate glob mode in some upcoming release.")
 
 	stdinReplaceShort := flag.String("I", defaults.StdinReplace, "Set the string to replace with stdin. (flag syntax borrowed from xargs)")
 	stdinReplaceLong := flag.String("replace", defaults.StdinReplace, "Set the string to replace with stdin. (flag syntax borrowed from xargs)'")
@@ -61,6 +65,8 @@ func setupFlags(defaults Configurations) Configurations {
 	exitWithFlagError(err, "pd", "photo-dir")
 	picturePrefix, err := utils.ReturnNonDefault(*ppShort, *ppLong, defaults.PhotoPrefix)
 	exitWithFlagError(err, "pp", "photo-prefix")
+	glob, err := utils.ReturnNonDefault(*gShort, *gLong, defaults.Glob)
+	exitWithFlagError(err, "g", "glob")
 	stdinReplace, err := utils.ReturnNonDefault(*stdinReplaceShort, *stdinReplaceLong, defaults.StdinReplace)
 	exitWithFlagError(err, "I", "replace")
 	useTools, err := utils.ReturnNonDefault(*useToolsShort, *useToolsLong, defaults.UseTools)
@@ -81,6 +87,7 @@ func setupFlags(defaults Configurations) Configurations {
 		PrintRaw:      printRaw,
 		ReplyMode:     replyMode,
 		UseTools:      useTools,
+		Glob:          glob,
 		ExpectReplace: *expectReplace,
 	}
 }
