@@ -86,10 +86,9 @@ func AttemptPrettyPrint(chatMessage models.Message, username string, raw bool) e
 
 	cmd = exec.Command("glow")
 	inp := chatMessage.Content
-	// Glow does not like < and >, it treats them (perhaps rightfully so) as
-	// xml-like elements, so we replace them with [ and ]
-	inp = strings.ReplaceAll(inp, "<", "[")
-	inp = strings.ReplaceAll(inp, ">", "]")
+	// For some reason glow hides specifically <thikning>. So, replace it to [thinking]
+	inp = strings.ReplaceAll(inp, "<thinking>", "[thinking]")
+	inp = strings.ReplaceAll(inp, "</thinking>", "[/thinking]")
 	cmd.Stdin = bytes.NewBufferString(inp)
 	cmd.Stdout = os.Stdout
 	fmt.Printf("%v:", ancli.ColoredMessage(color, role))
