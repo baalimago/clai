@@ -1,7 +1,6 @@
 package text
 
 import (
-	"flag"
 	"fmt"
 	"os"
 
@@ -41,7 +40,7 @@ var DEFAULT = Configurations{
 	TokenWarnLimit: 17000,
 }
 
-func (c *Configurations) SetupPrompts() error {
+func (c *Configurations) SetupPrompts(args []string) error {
 	if c.Glob != "" && c.ReplyMode {
 		ancli.PrintWarn("Using glob + reply modes together might yield strange results. The prevQuery will be appended after the glob messages.\n")
 	}
@@ -53,8 +52,6 @@ func (c *Configurations) SetupPrompts() error {
 			},
 		}
 	}
-
-	args := flag.Args()
 	if c.Glob != "" {
 		globChat, err := glob.CreateChat(c.Glob, c.SystemPrompt)
 		if err != nil {
@@ -64,7 +61,6 @@ func (c *Configurations) SetupPrompts() error {
 			ancli.PrintOK(fmt.Sprintf("glob messages: %v", globChat.Messages))
 		}
 		c.InitialPrompt = globChat
-		args = args[1:]
 	}
 
 	if c.ReplyMode {

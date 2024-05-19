@@ -72,6 +72,24 @@
       "env": {
         "NO_COLOR": "true"
       }
+    },
+    {
+      "name": "ChatGPT - Chat - GlobMode",
+      "type": "go",
+      "request": "launch",
+      "program": "${workspaceFolder}",
+      "args": [
+        "-cm",
+        "gpt-4o",
+        "-glob",
+        "README.md",
+        "chat",
+        "new",
+        "Explain this project in 5 words"
+      ],
+      "env": {
+        "NO_COLOR": "true"
+      }
     }
   ]
 }

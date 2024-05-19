@@ -68,9 +68,8 @@ func TestSetup(t *testing.T) {
 	// Run test cases
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			os.Args = tc.args
 			flag.Parse()
-			_, err := Setup()
+			_, err := Setup("", tc.args)
 			if tc.expectedErr && err == nil {
 				t.Errorf("Expected an error, but got none")
 			}

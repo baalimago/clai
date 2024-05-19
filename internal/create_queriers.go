@@ -73,7 +73,7 @@ func CreateTextQuerier(conf text.Configurations) (models.Querier, error) {
 			return nil, fmt.Errorf("failed to cast Querier using model: '%v' to TextQuerier, cannot proceed to chat", conf.Model)
 		}
 		configDir, _ := os.UserConfigDir()
-		chatQ, err := chat.New(tq, configDir, conf.PostProccessedPrompt)
+		chatQ, err := chat.New(tq, configDir, conf.PostProccessedPrompt, conf.InitialPrompt.Messages)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create chat querier: %w", err)
 		}

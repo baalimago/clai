@@ -48,20 +48,21 @@ Examples:
 `
 
 type ChatHandler struct {
-	q        models.ChatQuerier
-	debug    bool
-	username string
-	subCmd   string
-	chat     models.Chat
-	prompt   string
-	convDir  string
+	q           models.ChatQuerier
+	debug       bool
+	username    string
+	subCmd      string
+	chat        models.Chat
+	preMessages []models.Message
+	prompt      string
+	convDir     string
 }
 
 func (q *ChatHandler) Query(ctx context.Context) error {
 	return q.actOnSubCmd(ctx)
 }
 
-func New(q models.ChatQuerier, confDir, args string) (*ChatHandler, error) {
+func New(q models.ChatQuerier, confDir, args string, preMessages []models.Message) (*ChatHandler, error) {
 	username := "user"
 	debug := false
 	if misc.Truthy(os.Getenv("DEBUG")) {
@@ -76,12 +77,13 @@ func New(q models.ChatQuerier, confDir, args string) (*ChatHandler, error) {
 
 	subPrompt := strings.Join(argsArr[1:], " ")
 	return &ChatHandler{
-		q:        q,
-		username: username,
-		debug:    debug,
-		subCmd:   subCmd,
-		prompt:   subPrompt,
-		convDir:  path.Join(confDir, "/.clai/conversations/"),
+		q:           q,
+		username:    username,
+		debug:       debug,
+		subCmd:      subCmd,
+		prompt:      subPrompt,
+		preMessages: preMessages,
+		convDir:     path.Join(confDir, "/.clai/conversations/"),
 	}, nil
 }
 
@@ -115,12 +117,13 @@ func (cq *ChatHandler) actOnSubCmd(ctx context.Context) error {
 }
 
 func (cq *ChatHandler) new(ctx context.Context) error {
+	msgs := make([]models.Message, 0)
+	msgs = append(msgs, cq.preMessages...)
+	msgs = append(msgs, models.Message{Role: "user", Content: cq.prompt})
 	newChat := models.Chat{
-		Created: time.Now(),
-		ID:      IdFromPrompt(cq.prompt),
-		Messages: []models.Message{
-			{Role: "user", Content: cq.prompt},
-		},
+		Created:  time.Now(),
+		ID:       IdFromPrompt(cq.prompt),
+		Messages: msgs,
 	}
 	newChat, err := cq.q.TextQuery(ctx, newChat)
 	if err != nil {
