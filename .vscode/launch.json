@@ -46,28 +46,16 @@
       }
     },
     {
-      "name": "Claude - Chat",
-      "type": "go",
-      "request": "launch",
-      "program": "${workspaceFolder}",
-      "args": [
-        "chat",
-        "new",
-        "im debugging my ai cli tool's conversation functionality, reply with something short"
-      ],
-      "env": {
-        "NO_COLOR": "true"
-      }
-    },
-    {
-      "name": "Claude - Query - Tree",
+      "name": "Claude - Query - Tool",
       "type": "go",
       "request": "launch",
       "program": "${workspaceFolder}",
       "args": [
         "-t",
+        "-cm",
+        "claude-3-opus-20240229",
         "query",
-        "try to call the file tree command, i'm debugging this functionality."
+        "try to call the file ls command on ~/, i'm debugging this functionality."
       ],
       "env": {
         "NO_COLOR": "true"

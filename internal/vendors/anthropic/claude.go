@@ -21,6 +21,9 @@ type Claude struct {
 	apiKey           string               `json:"-"`
 	debug            bool                 `json:"-"`
 	tools            []tools.UserFunction `json:"-"`
+	functionName     string               `json:"-"`
+	functionJson     string               `json:"-"`
+	contentBlockType string               `json:"-"`
 }
 
 var CLAUDE_DEFAULT = Claude{

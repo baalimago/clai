@@ -72,16 +72,7 @@ func (c *Claude) handleStreamResponse(ctx context.Context, resp *http.Response) 
 			if token == "" {
 				continue
 			}
-			claudeMsg, err := c.handleToken(br, token)
-			if err != nil {
-				if errors.Is(err, io.EOF) {
-					return
-				}
-				outChan <- models.CompletionEvent(fmt.Errorf("failed to handle token: %w", err))
-			}
-			if claudeMsg != "" {
-				outChan <- models.CompletionEvent(claudeMsg)
-			}
+			outChan <- c.handleToken(br, token)
 		}
 	}()
 	return outChan, nil
@@ -107,15 +98,15 @@ func (c *Claude) handleFullResponse(token string, outChan chan models.Completion
 	}
 }
 
-func (c *Claude) handleToken(br *bufio.Reader, token string) (string, error) {
+func (c *Claude) handleToken(br *bufio.Reader, token string) models.CompletionEvent {
 	tokSplit := strings.Split(token, " ")
 	if len(tokSplit) != 2 {
-		return "", fmt.Errorf("unexpected token length for token: '%v', expected format: 'event: <event>'", token)
+		return fmt.Errorf("unexpected token length for token: '%v', expected format: 'event: <event>'", token)
 	}
 	eventTok := tokSplit[0]
 	eventType := tokSplit[1]
 	if eventTok != "event:" {
-		return "", fmt.Errorf("unexpected token, want: 'event:', got: '%v'", eventTok)
+		return fmt.Errorf("unexpected token, want: 'event:', got: '%v'", eventTok)
 	}
 	eventType = strings.TrimSpace(eventType)
 	if c.debug {
@@ -123,46 +114,53 @@ func (c *Claude) handleToken(br *bufio.Reader, token string) (string, error) {
 	}
 	switch eventType {
 	case "message_stop":
-		return "", io.EOF
+		return io.EOF
+
+	case "content_block_start":
+		blockStart, err := br.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("failed to read content_block_delta: %w", err)
+		}
+		return c.handleContentBlockStart(blockStart)
 	// TODO: Print token amount
 	case "content_block_delta":
 		deltaToken, err := br.ReadString('\n')
 		if err != nil {
-			return "", fmt.Errorf("failed to read content_block_delta: %w", err)
+			return fmt.Errorf("failed to read content_block_delta: %w", err)
 		}
-		claudeMsg, err := c.stringFromDeltaToken(deltaToken)
+		return c.handleContentBlockDelta(deltaToken)
+	case "content_block_stop":
+		blockStop, err := br.ReadString('\n')
 		if err != nil {
-			return "", fmt.Errorf("failed to convert string to delta token: %w", err)
+			return fmt.Errorf("failed to read content_block_stop: %w", err)
 		}
-		if c.debug {
-			fmt.Printf("deltaToken: '%v', claudeMsg: '%v'", deltaToken, claudeMsg)
-		}
-		return claudeMsg, nil
+		return c.handleContentBlockStop(blockStop)
 	}
 
 	// Jump down one line to setup next event
 	br.ReadString('\n')
-	return "", nil
+	return models.NoopEvent{}
 }
 
-func (c *Claude) stringFromDeltaToken(deltaToken string) (string, error) {
+func trimDataPrefix(data string) string {
+	return strings.TrimPrefix(data, "data: ")
+}
+
+func (c *Claude) stringFromDeltaToken(deltaToken string) (Delta, error) {
 	deltaTokSplit := strings.Split(deltaToken, " ")
 	if deltaTokSplit[0] != "data:" {
-		return "", fmt.Errorf("unexpected split token. Expected: 'data:', got: '%v'", deltaTokSplit[0])
+		return Delta{}, fmt.Errorf("unexpected split token. Expected: 'data:', got: '%v'", deltaTokSplit[0])
 	}
 	deltaJsonString := strings.Join(deltaTokSplit[1:], " ")
-	var delta ContentBlockDelta
-	err := json.Unmarshal([]byte(deltaJsonString), &delta)
+	var contentBlockDelta ContentBlockDelta
+	err := json.Unmarshal([]byte(deltaJsonString), &contentBlockDelta)
 	if err != nil {
-		return "", fmt.Errorf("failed to unmarshal deltaJsonString: '%v' to struct, err: %w", deltaJsonString, err)
+		return Delta{}, fmt.Errorf("failed to unmarshal deltaJsonString: '%v' to struct, err: %w", deltaJsonString, err)
 	}
 	if c.debug {
-		ancli.PrintOK(fmt.Sprintf("delta struct: %+v\nstring: %v", delta, deltaJsonString))
+		ancli.PrintOK(fmt.Sprintf("delta struct: %+v\nstring: %v", contentBlockDelta, deltaJsonString))
 	}
-	if delta.Delta.Text == "" {
-		return "", errors.New("unexpected empty response")
-	}
-	return delta.Delta.Text, nil
+	return contentBlockDelta.Delta, nil
 }
 
 func (c *Claude) constructRequest(ctx context.Context, chat models.Chat) (*http.Request, error) {
@@ -178,12 +176,11 @@ func (c *Claude) constructRequest(ctx context.Context, chat models.Chat) (*http.
 		ancli.PrintOK(fmt.Sprintf("claudified messages: %+v\n", claudifiedMsgs))
 	}
 
-	shouldStream := len(c.tools) == 0
 	reqData := claudeReq{
 		Model:         c.Model,
 		Messages:      claudifiedMsgs,
 		MaxTokens:     c.MaxTokens,
-		Stream:        shouldStream,
+		Stream:        true,
 		System:        sysMsg.Content,
 		Temperature:   c.Temperature,
 		TopP:          c.TopP,
