@@ -159,13 +159,12 @@ func Setup(usage string) (models.Querier, error) {
 		fmt.Printf(usage,
 			defaultFlags.ReplyMode,
 			defaultFlags.PrintRaw,
-			defaultFlags.ChatModel,
-			defaultFlags.PhotoModel,
 			defaultFlags.PhotoDir,
 			defaultFlags.PhotoPrefix,
 			defaultFlags.StdinReplace,
 			defaultFlags.ExpectReplace,
 			defaultFlags.UseTools,
+			defaultFlags.Glob,
 		)
 		os.Exit(0)
 	case VERSION:
