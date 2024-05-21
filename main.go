@@ -32,6 +32,7 @@ Flags:
   -I, -replace string          Set the string to replace with stdin. (default %v)
   -i bool                      Set to true to replace '-replace' flag value with stdin. This is overwritten by -I and -replace. (default %v)
   -t, -tools bool              Set to true to use text tools. Some models might not support streaming. (default %v)
+  -g, -glob string             Set the glob to use for globbing. Same as glob mode. (default '%v')
 
 Commands:
   h|help                        Display this help message
