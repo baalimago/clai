@@ -69,6 +69,5 @@ func (c *Claude) handleContentBlockStop(blockStop string) models.CompletionEvent
 			Inputs: inputs,
 		}
 	}
-	// end new block with a newline
-	return "\n"
+	return models.NoopEvent{}
 }
