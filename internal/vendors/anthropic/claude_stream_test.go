@@ -2,6 +2,8 @@ package anthropic
 
 import (
 	"context"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -105,6 +107,10 @@ OUTER:
 			case string:
 				got += sel
 			case error:
+				if errors.Is(sel, io.EOF) {
+					break OUTER
+					return
+				}
 				t.Fatalf("unexpected error: %v", sel)
 			}
 		}
