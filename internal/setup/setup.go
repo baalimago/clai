@@ -178,12 +178,15 @@ func interractiveReconfigure(cfg config, b []byte) error {
 	}
 	fmt.Printf("Current config:\n%s\n---\n", b)
 	newConfig, err := buildNewConfig(jzon)
+	if err != nil {
+		return fmt.Errorf("failed to build new config: %v", err)
+	}
 
 	newB, err := json.MarshalIndent(newConfig, "", "\t")
 	if err != nil {
 		return fmt.Errorf("failed to marshal new config: %v", err)
 	}
-	err = os.WriteFile(cfg.filePath, newB, 0644)
+	err = os.WriteFile(cfg.filePath, newB, 0o644)
 	if err != nil {
 		return fmt.Errorf("failed to write new config at: '%v', error: %v", cfg.filePath, err)
 	}
