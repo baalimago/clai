@@ -17,12 +17,21 @@ type config struct {
 	filePath string
 }
 
+type action uint8
+
+const (
+	unset action = iota
+	conf
+	del
+)
+
 // Run the setup to configure the different files
 func Run() error {
 	var input string
 	fmt.Print("Do you wish to configure:\n\t0. mode-files (example: textConfig.json/photoConfig.json)\n\t1. model files (example: openai-gpt-4o.json, anthropic-claude-opus.json)\n[0/1]: ")
 	fmt.Scanln(&input)
 	var configs []config
+	var a action
 	switch input {
 	case "0":
 		t, err := modeConfigs()
@@ -30,17 +39,18 @@ func Run() error {
 			return fmt.Errorf("failed to get config files: %v", err)
 		}
 		configs = t
+		a = conf
 	case "1":
 		t, err := modelConfigs()
 		if err != nil {
 			return fmt.Errorf("failed to get model configs: %v", err)
 		}
+
 		configs = t
 	default:
 		return fmt.Errorf("unrecognized selection: %v", input)
 	}
-
-	return configure(configs)
+	return configure(configs, a)
 }
 
 // modelConfigs gets the model configuration files using pattern os.UserConfigDir()/.clai/*.json
@@ -94,14 +104,14 @@ func modeConfigs() ([]config, error) {
 	return configs, nil
 }
 
-func configure(cfgs []config) error {
+func configure(cfgs []config, a action) error {
 	fmt.Println("Found config files: ")
 	for i, cfg := range cfgs {
 		fmt.Printf("\t%v: %v\n", i, cfg.name)
 	}
 
 	var input string
-	fmt.Println("Please pick index: ")
+	fmt.Print("Please pick index: ")
 	fmt.Scanln(&input)
 	index, err := strconv.Atoi(input)
 	if err != nil {
@@ -110,7 +120,27 @@ func configure(cfgs []config) error {
 	if index < 0 || index >= len(cfgs) {
 		return fmt.Errorf("invalid index: %v, must be between 0 and %v", index, len(cfgs))
 	}
-	return reconfigure(cfgs[index])
+	if a == unset {
+		fmt.Print("Do you wish to [c]onfigure or [d]elete?\n[c/d]: ")
+		fmt.Scanln(&input)
+		switch input {
+		case "c", "configure":
+			a = conf
+		case "d", "delete":
+			a = del
+		default:
+			return fmt.Errorf("invalid choice: %v", input)
+		}
+	}
+
+	switch a {
+	case conf:
+		return reconfigure(cfgs[index])
+	case del:
+		return remove(cfgs[index])
+	default:
+		return fmt.Errorf("invalid action, expected conf or del: %v", input)
+	}
 }
 
 func reconfigure(cfg config) error {
@@ -123,6 +153,21 @@ func reconfigure(cfg config) error {
 		return fmt.Errorf("failed to read file %s: %v", cfg.filePath, err)
 	}
 	return interractiveReconfigure(cfg, b)
+}
+
+func remove(cfg config) error {
+	fmt.Printf("Are you sure you want to delete: '%v'?\n[y/n]: ", cfg.filePath)
+	var input string
+	fmt.Scanln(&input)
+	if input != "y" {
+		return fmt.Errorf("aborting deletion")
+	}
+	err := os.Remove(cfg.filePath)
+	if err != nil {
+		return fmt.Errorf("failed to delete file: '%v', error: %v", cfg.filePath, err)
+	}
+	ancli.PrintOK(fmt.Sprintf("deleted file: '%v'\n", cfg.filePath))
+	return nil
 }
 
 func interractiveReconfigure(cfg config, b []byte) error {
