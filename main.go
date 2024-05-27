@@ -36,6 +36,7 @@ Flags:
 
 Commands:
   h|help                        Display this help message
+  s|setup                       Setup the configuration files
   q|query <text>                Query the chat model with the given text
   p|photo <text>                Ask the photo model a picture with the requested prompt
   g|glob  <glob> <text>         Query the chat model with the contents of the files found by the glob and the given text
