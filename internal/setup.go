@@ -11,6 +11,7 @@ import (
 	"github.com/baalimago/clai/internal/glob"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/photo"
+	"github.com/baalimago/clai/internal/setup"
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
@@ -31,6 +32,7 @@ const (
 	GLOB
 	PHOTO
 	VERSION
+	SETUP
 )
 
 var defaultFlags = Configurations{
@@ -60,6 +62,8 @@ func getModeFromArgs(cmd string) (Mode, error) {
 		return GLOB, nil
 	case "help", "h":
 		return HELP, nil
+	case "setup", "s":
+		return SETUP, nil
 	case "version", "v":
 		return VERSION, nil
 	default:
@@ -174,6 +178,13 @@ func Setup(usage string) (models.Querier, error) {
 		}
 		fmt.Printf("version: %v, go version: %v, checksum: %v\n", bi.Main.Version, bi.GoVersion, bi.Main.Sum)
 		os.Exit(0)
+	case SETUP:
+		err := setup.Run()
+		if err != nil {
+			return nil, fmt.Errorf("failed to run setup: %v", err)
+		}
+		os.Exit(0)
+		return nil, nil
 	default:
 		return nil, fmt.Errorf("unknown mode: %v", mode)
 	}
