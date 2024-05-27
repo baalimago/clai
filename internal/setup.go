@@ -183,6 +183,7 @@ func Setup(usage string) (models.Querier, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to run setup: %v", err)
 		}
+		os.Exit(0)
 		return nil, nil
 	default:
 		return nil, fmt.Errorf("unknown mode: %v", mode)

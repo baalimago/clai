@@ -9,6 +9,7 @@ import (
 	"strconv"
 
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
+	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
 type config struct {
@@ -133,7 +134,7 @@ func interractiveReconfigure(cfg config, b []byte) error {
 	fmt.Printf("Current config:\n%s\n---\n", b)
 	newConfig, err := buildNewConfig(jzon)
 
-	newB, err := json.Marshal(newConfig)
+	newB, err := json.MarshalIndent(newConfig, "", "\t")
 	if err != nil {
 		return fmt.Errorf("failed to marshal new config: %v", err)
 	}
@@ -164,9 +165,35 @@ func buildNewConfig(jzon map[string]any) (map[string]any, error) {
 				newValue = v
 			} else {
 				newValue = input
+				newValue = castPrimitive(newValue)
 			}
 		}
 		newConfig[k] = newValue
 	}
 	return newConfig, nil
+}
+
+func castPrimitive(v any) any {
+	if misc.Truthy(v) {
+		return true
+	}
+
+	if misc.Falsy(v) {
+		return false
+	}
+
+	s, isString := v.(string)
+	if !isString {
+		// We don't really know what unholy value this might be, but let's just return it and hope it's benign
+		return v
+	}
+	i, err := strconv.Atoi(s)
+	if err == nil {
+		return i
+	}
+	f, err := strconv.ParseFloat(s, 64)
+	if err == nil {
+		return f
+	}
+	return s
 }
