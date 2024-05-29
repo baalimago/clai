@@ -1,4 +1,4 @@
-name: Simple Go Pipeline
+name: Simple Go Pipeline - validate
 
 on:
   push:
@@ -8,6 +8,6 @@ on:
 
 jobs:
   call-workflow:
-    uses: baalimago/simple-go-pipeline/.github/workflows/go.yml@main
+    uses: baalimago/simple-go-pipeline/.github/workflows/validate.yml@main
     with:
       go-version: '1.22'
