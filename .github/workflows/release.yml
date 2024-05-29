@@ -10,3 +10,7 @@ jobs:
     uses: baalimago/simple-go-pipeline/.github/workflows/release.yml@releases
     with:
       go-version: '1.22'
+      owner: baalimago
+      project-name: clai
+      repository: clai
+      branch: master
