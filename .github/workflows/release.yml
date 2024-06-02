@@ -11,5 +11,5 @@ jobs:
     with:
       go-version: '1.22'
       project-name: clai
-      branch: master
+      branch: main
 
