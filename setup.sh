@@ -38,7 +38,7 @@ case "$arch" in
   armv7*)
     arch="arm"
     ;;
-  aarch64)
+  aarch64|arm64)
     arch="arm64"
     ;;
   i?86)
