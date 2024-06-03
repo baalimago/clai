@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 # Function to get the latest release download URL for the specified OS and architecture
 get_latest_release_url() {
@@ -16,14 +16,18 @@ get_latest_release_url() {
 }
 
 # Detect the OS
-if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-  os="linux"
-elif [[ "$OSTYPE" == "darwin"* ]]; then
-  os="darwin"
-else
-  echo "Unsupported OS: $OSTYPE"
-  exit 1
-fi
+case "$(uname)" in
+  Linux*)
+    os="linux"
+    ;;
+  Darwin*)
+    os="darwin"
+    ;;
+  *)
+    echo "Unsupported OS: $(uname)"
+    exit 1
+    ;;
+esac
 
 # Detect the architecture
 arch=$(uname -m)
@@ -46,7 +50,7 @@ case "$arch" in
     ;;
 esac
 
-printf "detected os: '$os', arch: '$arch'\n"
+printf "detected os: '%s', arch: '%s'\n" "$os" "$arch"
 
 # Get the download URL for the latest release
 printf "finding asset url..."
