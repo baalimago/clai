@@ -40,7 +40,7 @@ go install github.com/baalimago/clai@latest
 
 You may also use the setup script:
 ```bash
-<LINK> | sh
+curl -fsSL https://raw.githubusercontent.com/baalimago/clai/main/setup.sh | sh
 ```
 
 Either look at `clai help` or the [examples](./EXAMPLES.md) for how to use `clai`.
