@@ -1,0 +1,16 @@
+name: Simple Go Pipeline - relesae
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  call-workflow:
+    uses: baalimago/simple-go-pipeline/.github/workflows/release.yml@v0.2.5
+    with:
+      go-version: '1.22'
+      project-name: clai
+      branch: main
+      version-var: "github.com/baalimago/clai/internal.BUILD_VERSION"
+

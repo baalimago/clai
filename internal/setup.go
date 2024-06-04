@@ -176,7 +176,15 @@ func Setup(usage string) (models.Querier, error) {
 		if !ok {
 			return nil, errors.New("failed to read build info")
 		}
-		fmt.Printf("version: %v, go version: %v, checksum: %v\n", bi.Main.Version, bi.GoVersion, bi.Main.Sum)
+		version := bi.Main.Version
+		checksum := bi.Main.Sum
+		if version == "" || version == "(devel)" {
+			version = BUILD_VERSION
+		}
+		if checksum == "" {
+			checksum = BUILD_CHECKSUM
+		}
+		fmt.Printf("version: %v, go version: %v, checksum: %v\n", version, bi.GoVersion, checksum)
 		os.Exit(0)
 	case SETUP:
 		err := setup.Run()
