@@ -8,6 +8,7 @@ import (
 	"reflect"
 
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
+	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
@@ -106,7 +107,7 @@ func LoadConfigFromFile[T any](
 	}
 
 	if misc.Truthy(os.Getenv("DEBUG")) {
-		ancli.PrintOK(fmt.Sprintf("found config: %+v\n", conf))
+		ancli.PrintOK(fmt.Sprintf("found config: %v\n", debug.IndentedJsonFmt(conf)))
 	}
 	return conf, nil
 }

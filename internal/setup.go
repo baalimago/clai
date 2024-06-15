@@ -15,6 +15,8 @@ import (
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
+	imagodebug "github.com/baalimago/go_away_boilerplate/pkg/debug"
+
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
@@ -90,7 +92,7 @@ func setupTextQuerier(mode Mode, confDir string, flagSet Configurations) (models
 	applyFlagOverridesForText(&tConf, flagSet, defaultFlags)
 
 	if misc.Truthy(os.Getenv("DEBUG")) {
-		ancli.PrintOK(fmt.Sprintf("config post flag override: %+v\n", tConf))
+		ancli.PrintOK(fmt.Sprintf("config post flag override: %+v\n", imagodebug.IndentedJsonFmt(tConf)))
 	}
 	args := flag.Args()
 	if mode == GLOB || flagSet.Glob != "" {
@@ -156,7 +158,7 @@ func Setup(usage string) (models.Querier, error) {
 		}
 		pq, err := NewPhotoQuerier(pConf)
 		if misc.Truthy(os.Getenv("DEBUG")) {
-			ancli.PrintOK(fmt.Sprintf("photo querier: %+v\n", pq))
+			ancli.PrintOK(fmt.Sprintf("photo querier: %+v\n", imagodebug.IndentedJsonFmt(pq)))
 		}
 		if err != nil {
 			return nil, fmt.Errorf("failed to create photo querier: %v", err)

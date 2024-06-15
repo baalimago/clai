@@ -10,6 +10,7 @@ import (
 	"github.com/baalimago/clai/internal/reply"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
+	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
@@ -84,7 +85,7 @@ func (c *Configurations) SetupPrompts(args []string) error {
 	}
 
 	if misc.Truthy(os.Getenv("DEBUG")) {
-		ancli.PrintOK(fmt.Sprintf("InitialPrompt: %+v\n", c.InitialPrompt))
+		ancli.PrintOK(fmt.Sprintf("InitialPrompt: %v\n", debug.IndentedJsonFmt(c.InitialPrompt)))
 	}
 	c.PostProccessedPrompt = prompt
 	if c.InitialPrompt.ID == "" {
