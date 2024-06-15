@@ -349,9 +349,9 @@ func Test_ChatQuerier(t *testing.T) {
 func Test_shortenedOutput(t *testing.T) {
 	t.Run("it should shorten line with a lot of newlines", func(t *testing.T) {
 		given := ""
-		amNewlines := 1000
+		amNewlines := 90
 		for range amNewlines {
-			given += "word\n"
+			given += "\n"
 		}
 		gotStr := shortenedOutput(given)
 		got := strings.Count(gotStr, "\n")

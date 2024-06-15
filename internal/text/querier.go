@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/reply"
@@ -221,6 +222,9 @@ func (q *Querier[C]) handleFunctionCall(ctx context.Context, call tools.Call) er
 		call.Type = "function"
 	}
 	if call.Function.Name == "" {
+		if call.Name == "" {
+			call.Name = "EMPTY-STRING"
+		}
 		call.Function.Name = call.Name
 	}
 	if call.Function.Arguments == "" {
@@ -278,11 +282,16 @@ func (q *Querier[C]) handleFunctionCall(ctx context.Context, call tools.Call) er
 // shortenedOutput returns a shortened version of the output
 func shortenedOutput(out string) string {
 	maxTokens := 20
+	maxRunes := 100
 	outSplit := strings.Split(out, " ")
 	outNewlineSplit := strings.Split(out, "\n")
 	firstTokens := utils.GetFirstTokens(outSplit, maxTokens)
-	if len(firstTokens) < 20 && len(outNewlineSplit) < MAX_SHORTENED_NEWLINES {
+	amRunes := utf8.RuneCountInString(out)
+	if len(firstTokens) < maxTokens && len(outNewlineSplit) < MAX_SHORTENED_NEWLINES && amRunes < maxRunes {
 		return out
+	}
+	if amRunes > maxRunes {
+		return fmt.Sprintf("%v... and %v more runes", out[:maxRunes], amRunes-maxRunes)
 	}
 	firstTokensStr := strings.Join(firstTokens, " ")
 	amLeft := len(outSplit) - maxTokens
