@@ -33,6 +33,7 @@ const (
 	PHOTO
 	VERSION
 	SETUP
+	CMD
 )
 
 var defaultFlags = Configurations{
@@ -66,6 +67,8 @@ func getModeFromArgs(cmd string) (Mode, error) {
 		return SETUP, nil
 	case "version", "v":
 		return VERSION, nil
+	case "cmd":
+		return CMD, nil
 	default:
 		return HELP, fmt.Errorf("unknown command: '%s'", os.Args[1])
 	}
@@ -133,7 +136,7 @@ func Setup(usage string) (models.Querier, error) {
 	}
 
 	switch mode {
-	case CHAT, QUERY, GLOB:
+	case CHAT, QUERY, GLOB, CMD:
 		return setupTextQuerier(mode, confDir, flagSet)
 	case PHOTO:
 		pConf, err := utils.LoadConfigFromFile(confDir, "photoConfig.json", migrateOldPhotoConfig, &photo.DEFAULT)
