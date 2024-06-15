@@ -18,7 +18,7 @@ import (
 
 var dataPrefix = []byte("data: ")
 
-// // streamCompletions taking the messages as prompt conversation. Returns the messages from the chat model.
+// streamCompletions taking the messages as prompt conversation. Returns the messages from the chat model.
 func (s *StreamCompleter) StreamCompletions(ctx context.Context, chat models.Chat) (chan models.CompletionEvent, error) {
 	if s.Clean != nil {
 		cpy := make([]models.Message, len(chat.Messages))
@@ -56,6 +56,8 @@ func (s *StreamCompleter) createRequest(ctx context.Context, chat models.Chat) (
 		ResponseFormat:   responseFormat{Type: "text"},
 		Messages:         chat.Messages,
 		Stream:           true,
+		// No support for this yet since it's limited usecase and high complexity
+		ParalellToolCalls: false,
 	}
 	if len(s.tools) > 0 {
 		reqData.Tools = s.tools

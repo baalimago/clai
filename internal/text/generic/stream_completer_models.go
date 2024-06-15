@@ -78,15 +78,16 @@ type responseFormat struct {
 }
 
 type req struct {
-	Model            string           `json:"model,omitempty"`
-	ResponseFormat   responseFormat   `json:"response_format,omitempty"`
-	Messages         []models.Message `json:"messages,omitempty"`
-	Stream           bool             `json:"stream,omitempty"`
-	FrequencyPenalty *float64         `json:"frequency_penalty,omitempty"`
-	MaxTokens        *int             `json:"max_tokens,omitempty"`
-	PresencePenalty  *float64         `json:"presence_penalty,omitempty"`
-	Temperature      *float64         `json:"temperature,omitempty"`
-	TopP             *float64         `json:"top_p,omitempty"`
-	ToolChoice       *string          `json:"tool_choice,omitempty"`
-	Tools            []ToolSuper      `json:"tools,omitempty"`
+	Model             string           `json:"model,omitempty"`
+	ResponseFormat    responseFormat   `json:"response_format,omitempty"`
+	Messages          []models.Message `json:"messages,omitempty"`
+	Stream            bool             `json:"stream,omitempty"`
+	FrequencyPenalty  *float64         `json:"frequency_penalty,omitempty"`
+	MaxTokens         *int             `json:"max_tokens,omitempty"`
+	PresencePenalty   *float64         `json:"presence_penalty,omitempty"`
+	Temperature       *float64         `json:"temperature,omitempty"`
+	TopP              *float64         `json:"top_p,omitempty"`
+	ToolChoice        *string          `json:"tool_choice,omitempty"`
+	Tools             []ToolSuper      `json:"tools,omitempty"`
+	ParalellToolCalls bool             `json:"parallel_tools_call,omitempty"`
 }
