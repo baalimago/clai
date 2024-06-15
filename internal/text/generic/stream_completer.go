@@ -13,6 +13,7 @@ import (
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
+	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
@@ -64,7 +65,7 @@ func (s *StreamCompleter) createRequest(ctx context.Context, chat models.Chat) (
 		reqData.ToolChoice = s.ToolChoice
 	}
 	if s.debug {
-		ancli.PrintOK(fmt.Sprintf("generic streamcompleter request: %+v\n", reqData))
+		ancli.PrintOK(fmt.Sprintf("generic streamcompleter request: %v\n", debug.IndentedJsonFmt(reqData)))
 	}
 	jsonData, err := json.Marshal(reqData)
 	if err != nil {
