@@ -40,6 +40,7 @@ Commands:
   q|query <text>                Query the chat model with the given text
   p|photo <text>                Ask the photo model a picture with the requested prompt
   g|glob  <glob> <text>         Query the chat model with the contents of the files found by the glob and the given text
+  cmd <text>                    Describe the command you wish to do, then correct or execute the suggested command
 
   c|chat   n|new       <prompt>   Create a new chat with the given prompt.
   c|chat   c|continue  <chatID>   Continue an existing chat with the given chat ID.

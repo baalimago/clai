@@ -38,6 +38,7 @@ type Querier[C models.StreamCompleter] struct {
 	hasPrinted      bool
 	Model           C
 	tokenWarnLimit  int
+	cmdMode         bool
 }
 
 // Query using the underlying model to stream completions and then print the output
@@ -139,6 +140,15 @@ func (q *Querier[C]) postProcess() {
 		}
 	}
 
+	// Cmd mode is a bit of a hack, it will handle all output
+	if q.cmdMode {
+		return
+	}
+
+	q.postProcessOutput(newSysMsg)
+}
+
+func (q *Querier[C]) postProcessOutput(newSysMsg models.Message) {
 	// The token should already have been printed while streamed
 	if q.Raw {
 		return
@@ -163,6 +173,7 @@ func (q *Querier[C]) reset() {
 func (q *Querier[C]) TextQuery(ctx context.Context, chat models.Chat) (models.Chat, error) {
 	q.reset()
 	q.chat = chat
+	// Query will update the chat with the latest system message
 	err := q.Query(ctx)
 	if err != nil {
 		return models.Chat{}, fmt.Errorf("failed to query: %w", err)
