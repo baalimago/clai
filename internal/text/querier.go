@@ -222,6 +222,9 @@ func (q *Querier[C]) handleFunctionCall(ctx context.Context, call tools.Call) er
 		call.Type = "function"
 	}
 	if call.Function.Name == "" {
+		if call.Name == "" {
+			call.Name = "EMPTY-STRING"
+		}
 		call.Function.Name = call.Name
 	}
 	if call.Function.Arguments == "" {
