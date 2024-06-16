@@ -78,6 +78,21 @@
       "env": {
         "NO_COLOR": "true"
       }
+    },
+    {
+      "name": "ChatGPT - Chat - Cmd",
+      "type": "go",
+      "request": "launch",
+      "program": "${workspaceFolder}",
+      "args": [
+        "-cm",
+        "gpt-4o",
+        "cmd",
+        "give me a command to show my current directory"
+      ],
+      "env": {
+        "NO_COLOR": "true"
+      }
     }
   ]
 }

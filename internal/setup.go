@@ -86,6 +86,12 @@ func setupTextQuerier(mode Mode, confDir string, flagSet Configurations) (models
 	if mode == CHAT {
 		tConf.ChatMode = true
 	}
+
+	if mode == CMD {
+		tConf.CmdMode = true
+		tConf.SystemPrompt = tConf.CmdModePrompt
+	}
+
 	// At the moment, the configurations are based on the config file. But
 	// the configuration presecende is flags > file > default. So, we need
 	// to re-apply the flag overrides to the configuration

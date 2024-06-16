@@ -18,6 +18,7 @@ import (
 type Configurations struct {
 	Model          string      `json:"model"`
 	SystemPrompt   string      `json:"system-prompt"`
+	CmdModePrompt  string      `json:"cmd-mode-prompt"`
 	Raw            bool        `json:"raw"`
 	UseTools       bool        `json:"use-tools"`
 	TokenWarnLimit int         `json:"token-warn-limit"`
@@ -26,6 +27,7 @@ type Configurations struct {
 	Stream         bool        `json:"-"`
 	ReplyMode      bool        `json:"-"`
 	ChatMode       bool        `json:"-"`
+	CmdMode        bool        `json:"-"`
 	Glob           string      `json:"-"`
 	InitialPrompt  models.Chat `json:"-"`
 	// PostProccessedPrompt which has had it's strings replaced etc
@@ -33,10 +35,11 @@ type Configurations struct {
 }
 
 var DEFAULT = Configurations{
-	Model:        "gpt-4o",
-	SystemPrompt: "You are an assistant for a CLI interface. Answer concisely and informatively. Prefer markdown if possible.",
-	Raw:          false,
-	UseTools:     false,
+	Model:         "gpt-4o",
+	SystemPrompt:  "You are an assistant for a CLI tool. Answer concisely and informatively. Prefer markdown if possible.",
+	CmdModePrompt: "You are an assistant for a CLI tool aiding with cli tool suggestions. Write ONLY the command and nothing else.",
+	Raw:           false,
+	UseTools:      false,
 	// Aproximately $1 for the worst input rates as of 2024-05
 	TokenWarnLimit: 17000,
 }
@@ -46,6 +49,8 @@ func (c *Configurations) SetupPrompts(args []string) error {
 		ancli.PrintWarn("Using glob + reply modes together might yield strange results. The prevQuery will be appended after the glob messages.\n")
 	}
 
+	// Allways replace system prompt on cmd mode. This somewhat corrupts the chat since it always will
+	// be the command prompt. But it's better than not having it
 	if !c.ReplyMode {
 		c.InitialPrompt = models.Chat{
 			Messages: []models.Message{
@@ -70,6 +75,12 @@ func (c *Configurations) SetupPrompts(args []string) error {
 			return fmt.Errorf("failed to load previous query: %w", err)
 		}
 		c.InitialPrompt.Messages = append(c.InitialPrompt.Messages, iP.Messages...)
+
+		if c.CmdMode {
+			// Replace the initial message with the cmd prompt. This sort of
+			// destroys the history, but since the conversation might be long it's fine
+			c.InitialPrompt.Messages[0].Content = c.SystemPrompt
+		}
 	}
 
 	prompt, err := utils.Prompt(c.StdinReplace, args)
