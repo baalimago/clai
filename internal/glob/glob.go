@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/baalimago/clai/internal/models"
+	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
@@ -64,11 +65,10 @@ func constructGlobMessages(globMessages []models.Message) []models.Message {
 }
 
 func parseGlob(glob string) ([]models.Message, error) {
-	home, err := os.UserHomeDir()
-	if err != nil && strings.Contains(glob, "~/") { // only fail if glob contains ~/ and home dir is not found
-		return nil, fmt.Errorf("failed to get home dir: %w", err)
+	glob, err := utils.ReplaceTildeWithHome(glob)
+	if err != nil {
+		return nil, fmt.Errorf("parseGlob, ReplaceTildeWithHome: %w", err)
 	}
-	glob = strings.Replace(glob, "~", home, 1)
 	files, err := filepath.Glob(glob)
 	ret := make([]models.Message, 0, len(files))
 	if err != nil {

@@ -68,3 +68,11 @@ func Prompt(stdinReplace string, args []string) (string, error) {
 	}
 	return strings.Join(args, " "), nil
 }
+
+func ReplaceTildeWithHome(s string) (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil && strings.Contains(s, "~/") { // only fail if glob contains ~/ and home dir is not found
+		return "", fmt.Errorf("failed to get home dir: %w", err)
+	}
+	return strings.Replace(s, "~", home, -1), nil
+}

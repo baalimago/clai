@@ -101,6 +101,7 @@ func NewQuerier[C models.StreamCompleter](userConf Configurations, dfault C) (Qu
 		querier.debug = true
 	}
 	querier.Raw = userConf.Raw
+	querier.cmdMode = userConf.CmdMode
 	querier.shouldSaveReply = !userConf.ChatMode
 	querier.tokenWarnLimit = userConf.TokenWarnLimit
 	return querier, nil
