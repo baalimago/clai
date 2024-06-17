@@ -3,11 +3,7 @@ name: Simple Go Pipeline - release
 on:
   push:
     tags:
-      - "v*.*.*"
-    branches-ignore:
-      # This is to be able to have release candidates in feature/bug branches
-      - "!main"
-
+      - 'v[0-9]+.[0-9]+.[0-9]+'
 jobs:
   call-workflow:
     uses: baalimago/simple-go-pipeline/.github/workflows/release.yml@v0.2.5
