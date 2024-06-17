@@ -60,7 +60,7 @@ clai -raw `# Don't format output as markdown` \
 ```
 The `-raw` flag will ensure that the output stays what the model outputs, without `glow` or animations.
 
-Note that the glob mode also can be used by using the `-g '<glob>' flag`.
+Note that the glob mode also can be used by using the `-g` flag, as in, `clai -g '<glob>' query/chat/photo/cmd`.
 Glob-as-arg will be deprecated at some point.
 
 ### Cmd
@@ -69,7 +69,7 @@ clai cmd to show all files in home
 ```
 
 Will work like many of the popular command suggestion LLM tools out there.
-Flags works with this tool as well, such as `clai -re -g 'some_file.go' cmd to cleanup this messy code`, but it's not guaranteed the LLM will output an executable output.
+Flags works with this mode as well, such as `clai -re -g 'some_file.go' cmd to cleanup this messy code`, but it's not guaranteed the LLM will output an executable output.
 
 ### Photos
 ```bash
