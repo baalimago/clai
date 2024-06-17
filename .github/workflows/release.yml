@@ -4,8 +4,8 @@ on:
   push:
     tags:
       - "v*.*.*"
-    branches:
-      - "main"
+    tags-ignore:
+      - "v*.*.*-rc*"
 
 jobs:
   call-workflow:
