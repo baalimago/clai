@@ -16,6 +16,7 @@ import (
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
+	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 )
 
 const (
@@ -38,32 +39,15 @@ type Querier[C models.StreamCompleter] struct {
 	hasPrinted      bool
 	Model           C
 	tokenWarnLimit  int
+	cmdMode         bool
 }
 
 // Query using the underlying model to stream completions and then print the output
 // from the model to stdout. Blocking operation.
 func (q *Querier[C]) Query(ctx context.Context) error {
-	amTokens := q.countTokens()
-	if q.tokenWarnLimit > 0 && amTokens > q.tokenWarnLimit {
-		ancli.PrintWarn(
-			fmt.Sprintf("You're about to send: ~%v tokens to the model, which may amount to: ~$%.3f (applying worst input rates as of 2024-05). This limit may be changed in: '%v'. Do you wish to continue? [yY]: ",
-				amTokens,
-				// Worst rates found at 2024-05 were gpt-4-32k at $60 per 1M tokens
-				float64(amTokens)*(float64(60)/float64(1000000)),
-				path.Join(q.configDir, "textConfig.json"),
-			))
-		var userInput string
-		reader := bufio.NewReader(os.Stdin)
-		userInput, err := reader.ReadString('\n')
-		if err != nil {
-			return fmt.Errorf("failed to read user input: %w", err)
-		}
-		switch userInput {
-		case "y\n", "Y\n":
-			// Continue on y or Y
-		default:
-			return errors.New("query canceled due to token amount check")
-		}
+	err := q.tokenLengthWarning()
+	if err != nil {
+		return fmt.Errorf("Querier.Query: %w", err)
 	}
 	completionsChan, err := q.Model.StreamCompletions(ctx, q.chat)
 	if err != nil {
@@ -106,6 +90,32 @@ func (q *Querier[C]) Query(ctx context.Context) error {
 	}
 }
 
+func (q *Querier[C]) tokenLengthWarning() error {
+	amTokens := q.countTokens()
+	if q.tokenWarnLimit > 0 && amTokens > q.tokenWarnLimit {
+		ancli.PrintWarn(
+			fmt.Sprintf("You're about to send: ~%v tokens to the model, which may amount to: ~$%.3f (applying worst input rates as of 2024-05). This limit may be changed in: '%v'. Do you wish to continue? [yY]: ",
+				amTokens,
+				// Worst rates found at 2024-05 were gpt-4-32k at $60 per 1M tokens
+				float64(amTokens)*(float64(60)/float64(1000000)),
+				path.Join(q.configDir, "textConfig.json"),
+			))
+		var userInput string
+		reader := bufio.NewReader(os.Stdin)
+		userInput, err := reader.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("failed to read user input: %w", err)
+		}
+		switch userInput {
+		case "y\n", "Y\n":
+			// Continue on y or Y
+		default:
+			return errors.New("Querier.tokenLengthWarning: query canceled due to token amount check")
+		}
+	}
+	return nil
+}
+
 // countTokens by simply counting the amount of strings which are delimited by whitespace
 // and multiply by some factor. This factor is somewhat arbritrary, and adjusted to be good enough
 // for all the different models
@@ -139,6 +149,23 @@ func (q *Querier[C]) postProcess() {
 		}
 	}
 
+	if q.debug {
+		ancli.PrintOK(fmt.Sprintf("Querier.postProcess:\n%v\n", debug.IndentedJsonFmt(q)))
+	}
+
+	// Cmd mode is a bit of a hack, it will handle all output
+	if q.cmdMode {
+		err := q.handleCmdMode()
+		if err != nil {
+			ancli.PrintErr(fmt.Sprintf("Querier.postProcess: %v\n", err))
+		}
+		return
+	}
+
+	q.postProcessOutput(newSysMsg)
+}
+
+func (q *Querier[C]) postProcessOutput(newSysMsg models.Message) {
 	// The token should already have been printed while streamed
 	if q.Raw {
 		return
@@ -163,13 +190,15 @@ func (q *Querier[C]) reset() {
 func (q *Querier[C]) TextQuery(ctx context.Context, chat models.Chat) (models.Chat, error) {
 	q.reset()
 	q.chat = chat
+	// Query will update the chat with the latest system message
 	err := q.Query(ctx)
 	if err != nil {
-		return models.Chat{}, fmt.Errorf("failed to query: %w", err)
+		return models.Chat{}, fmt.Errorf("TextQuery: %w", err)
 	}
 	if q.debug {
-		ancli.PrintOK(fmt.Sprintf("chat: %v", q.chat))
+		ancli.PrintOK(fmt.Sprintf("Querier.TextQuery:\n%v", debug.IndentedJsonFmt(q)))
 	}
+
 	return q.chat, nil
 }
 

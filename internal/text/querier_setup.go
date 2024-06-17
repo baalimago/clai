@@ -13,6 +13,7 @@ import (
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
+	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
@@ -93,13 +94,14 @@ func NewQuerier[C models.StreamCompleter](userConf Configurations, dfault C) (Qu
 	}
 	querier.Model = modelConf
 	if misc.Truthy(os.Getenv("DEBUG")) {
-		ancli.PrintOK(fmt.Sprintf("querier: %+v, models: %+v\n", querier, modelConf))
+		ancli.PrintOK(fmt.Sprintf("querier: %v,\n===\nmodels: %v\n", debug.IndentedJsonFmt(querier), debug.IndentedJsonFmt(modelConf)))
 	}
 	querier.chat = userConf.InitialPrompt
 	if misc.Truthy(os.Getenv("DEBUG")) || misc.Truthy(os.Getenv("TEXT_QUERIER_DEBUG")) {
 		querier.debug = true
 	}
 	querier.Raw = userConf.Raw
+	querier.cmdMode = userConf.CmdMode
 	querier.shouldSaveReply = !userConf.ChatMode
 	querier.tokenWarnLimit = userConf.TokenWarnLimit
 	return querier, nil

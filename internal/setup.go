@@ -15,6 +15,8 @@ import (
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
+	imagodebug "github.com/baalimago/go_away_boilerplate/pkg/debug"
+
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
@@ -33,6 +35,7 @@ const (
 	PHOTO
 	VERSION
 	SETUP
+	CMD
 )
 
 var defaultFlags = Configurations{
@@ -66,6 +69,8 @@ func getModeFromArgs(cmd string) (Mode, error) {
 		return SETUP, nil
 	case "version", "v":
 		return VERSION, nil
+	case "cmd":
+		return CMD, nil
 	default:
 		return HELP, fmt.Errorf("unknown command: '%s'", os.Args[1])
 	}
@@ -81,13 +86,19 @@ func setupTextQuerier(mode Mode, confDir string, flagSet Configurations) (models
 	if mode == CHAT {
 		tConf.ChatMode = true
 	}
+
+	if mode == CMD {
+		tConf.CmdMode = true
+		tConf.SystemPrompt = tConf.CmdModePrompt
+	}
+
 	// At the moment, the configurations are based on the config file. But
 	// the configuration presecende is flags > file > default. So, we need
 	// to re-apply the flag overrides to the configuration
 	applyFlagOverridesForText(&tConf, flagSet, defaultFlags)
 
 	if misc.Truthy(os.Getenv("DEBUG")) {
-		ancli.PrintOK(fmt.Sprintf("config post flag override: %+v\n", tConf))
+		ancli.PrintOK(fmt.Sprintf("config post flag override: %+v\n", imagodebug.IndentedJsonFmt(tConf)))
 	}
 	args := flag.Args()
 	if mode == GLOB || flagSet.Glob != "" {
@@ -133,7 +144,7 @@ func Setup(usage string) (models.Querier, error) {
 	}
 
 	switch mode {
-	case CHAT, QUERY, GLOB:
+	case CHAT, QUERY, GLOB, CMD:
 		return setupTextQuerier(mode, confDir, flagSet)
 	case PHOTO:
 		pConf, err := utils.LoadConfigFromFile(confDir, "photoConfig.json", migrateOldPhotoConfig, &photo.DEFAULT)
@@ -153,7 +164,7 @@ func Setup(usage string) (models.Querier, error) {
 		}
 		pq, err := NewPhotoQuerier(pConf)
 		if misc.Truthy(os.Getenv("DEBUG")) {
-			ancli.PrintOK(fmt.Sprintf("photo querier: %+v\n", pq))
+			ancli.PrintOK(fmt.Sprintf("photo querier: %+v\n", imagodebug.IndentedJsonFmt(pq)))
 		}
 		if err != nil {
 			return nil, fmt.Errorf("failed to create photo querier: %v", err)
