@@ -34,9 +34,6 @@ clai -t q  `# Specify you wish to enable tools with -t/-tools` \
    Analyze the project found at ~/Projects/clai and give me a brief summary of what it does
 ```
 
-ChatGPT has native support and works well.
-As of 2024-05, claude does not have support for tools + streaming, but works otherwise.
-
 ### Chatting
 ```bash
 clai -chat-model claude-3-opus-20240229 `  # Using some other model` \
@@ -62,6 +59,17 @@ clai -raw `# Don't format output as markdown` \
     glob '*.go' Generate a README for this project > README.md
 ```
 The `-raw` flag will ensure that the output stays what the model outputs, without `glow` or animations.
+
+Note that the glob mode also can be used by using the `-g '<glob>' flag`.
+Glob-as-arg will be deprecated at some point.
+
+### Cmd
+```bash
+clai cmd to show all files in home
+```
+
+Will work like many of the popular command suggestion LLM tools out there.
+Flags works with this tool as well, such as `clai -re -g 'some_file.go' cmd to cleanup this messy code`, but it's not guaranteed the LLM will output an executable output.
 
 ### Photos
 ```bash
