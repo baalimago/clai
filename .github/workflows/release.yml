@@ -4,8 +4,9 @@ on:
   push:
     tags:
       - "v*.*.*"
-    tags-ignore:
-      - "v*.*.*-rc*"
+    branches-ignore:
+      # This is to be able to have release candidates in feature/bug branches
+      - "!main"
 
 jobs:
   call-workflow:
