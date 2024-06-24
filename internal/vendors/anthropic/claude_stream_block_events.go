@@ -64,6 +64,7 @@ func (c *Claude) handleContentBlockStop(blockStop string) models.CompletionEvent
 		if err := json.Unmarshal([]byte(c.functionJson), &inputs); err != nil {
 			return fmt.Errorf("failed to unmarshal functionJson: %v, error is: %w", c.functionJson, err)
 		}
+		c.functionJson = ""
 		return tools.Call{
 			Name:   c.functionName,
 			Inputs: inputs,
