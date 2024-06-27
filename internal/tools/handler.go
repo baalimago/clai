@@ -26,7 +26,12 @@ func Invoke(call Call) string {
 		out, err = WebsiteText.Call(call.Inputs)
 	case "rg":
 		out, err = RipGrep.Call(call.Inputs)
+	case "go":
+		out, err = Go.Call(call.Inputs)
+	case "write_file":
+		out, err = WriteFile.Call(call.Inputs)
 	default:
+		// This error is a string as it's being returned to the LLM
 		return "ERROR: unknown tool call: " + call.Name
 	}
 	if err != nil {
@@ -47,6 +52,14 @@ func UserFunctionFromName(name string) UserFunction {
 		return FileType.UserFunction()
 	case "ls":
 		return LS.UserFunction()
+	case "website_text":
+		return WebsiteText.UserFunction()
+	case "rg":
+		return RipGrep.UserFunction()
+	case "go":
+		return Go.UserFunction()
+	case "write_file":
+		return WriteFile.UserFunction()
 	default:
 		return UserFunction{}
 	}

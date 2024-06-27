@@ -38,17 +38,17 @@ type CompletionEvent any
 
 type NoopEvent struct{}
 
-type Chat struct {
-	Created  time.Time `json:"created,omitempty"`
-	ID       string    `json:"id"`
-	Messages []Message `json:"messages"`
-}
-
 type Message struct {
 	Role       string       `json:"role"`
 	Content    string       `json:"content,omitempty"`
 	ToolCalls  []tools.Call `json:"tool_calls,omitempty"`
 	ToolCallID string       `json:"tool_call_id,omitempty"`
+}
+
+type Chat struct {
+	Created  time.Time `json:"created,omitempty"`
+	ID       string    `json:"id"`
+	Messages []Message `json:"messages"`
 }
 
 // FirstSystemMessage returns the first encountered Message with role 'system'
