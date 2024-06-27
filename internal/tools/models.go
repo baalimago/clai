@@ -33,7 +33,7 @@ type Call struct {
 }
 
 func (c Call) Json() string {
-	json, err := json.Marshal(c)
+	json, err := json.MarshalIndent(c, "", " ")
 	if err != nil {
 		return fmt.Sprintf("ERROR: Failed to unmarshal: %v", err)
 	}
