@@ -26,7 +26,7 @@ const (
 	newaction
 )
 
-var UserExit = errors.New("user exit")
+var ErrUserExit = errors.New("user exit")
 
 func (a action) String() string {
 	switch a {

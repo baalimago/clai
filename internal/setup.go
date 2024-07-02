@@ -205,7 +205,7 @@ func Setup(usage string) (models.Querier, error) {
 	case SETUP:
 		err := setup.Run()
 		if err != nil {
-			if errors.Is(err, setup.UserExit) {
+			if errors.Is(err, setup.ErrUserExit) {
 				ancli.PrintOK("user exit\n")
 				os.Exit(0)
 			}

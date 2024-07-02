@@ -20,7 +20,7 @@ import (
 func queryForAction(options []action) (action, error) {
 	var input string
 	var ret action
-	var userQuery = "Do you wish to "
+	userQuery := "Do you wish to "
 	for _, s := range options {
 		userQuery += fmt.Sprintf("%v, ", s)
 	}
@@ -37,11 +37,11 @@ func queryForAction(options []action) (action, error) {
 			ret = del
 		}
 	case "n", "new":
-		if slices.Contains(options, del) {
+		if slices.Contains(options, newaction) {
 			ret = newaction
 		}
 	case "q", "quit":
-		return unset, UserExit
+		return unset, ErrUserExit
 	}
 
 	if ret == unset {
@@ -159,7 +159,7 @@ func getToolsValue(v any) ([]string, error) {
 		return nil, fmt.Errorf("failed to read input: %v", err)
 	}
 	if input == "q" || input == "quit" {
-		return []string{}, UserExit
+		return []string{}, ErrUserExit
 	}
 
 	if input == "" {
