@@ -67,15 +67,14 @@ func NewQuerier[C models.StreamCompleter](userConf Configurations, dfault C) (Qu
 		if misc.Truthy(os.Getenv("DEBUG")) {
 			ancli.PrintOK(fmt.Sprintf("Registering tools, type: %T\n", modelConf))
 		}
-		toolBox.RegisterTool(tools.FileTree)
-		toolBox.RegisterTool(tools.Cat)
-		toolBox.RegisterTool(tools.FileType)
-		toolBox.RegisterTool(tools.LS)
-		toolBox.RegisterTool(tools.Find)
-		toolBox.RegisterTool(tools.WebsiteText)
-		toolBox.RegisterTool(tools.RipGrep)
-		toolBox.RegisterTool(tools.Go)
-		toolBox.RegisterTool(tools.WriteFile)
+		for _, t := range userConf.Tools {
+			tool, exists := tools.Tools[t]
+			if !exists {
+				ancli.PrintWarn(fmt.Sprintf("attempted to find tool: '%v', which doesn't exist, skipping", tool))
+				continue
+			}
+			toolBox.RegisterTool(tool)
+		}
 	}
 
 	err = modelConf.Setup()

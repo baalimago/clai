@@ -16,21 +16,23 @@ import (
 
 // Configurations used to setup the requirements of text models
 type Configurations struct {
-	Model          string      `json:"model"`
-	SystemPrompt   string      `json:"system-prompt"`
-	CmdModePrompt  string      `json:"cmd-mode-prompt"`
-	Raw            bool        `json:"raw"`
-	UseTools       bool        `json:"use-tools"`
-	TokenWarnLimit int         `json:"token-warn-limit"`
-	ConfigDir      string      `json:"-"`
-	StdinReplace   string      `json:"-"`
-	Stream         bool        `json:"-"`
-	ReplyMode      bool        `json:"-"`
-	ChatMode       bool        `json:"-"`
-	CmdMode        bool        `json:"-"`
-	Glob           string      `json:"-"`
-	InitialPrompt  models.Chat `json:"-"`
-	UseProfile     string      `json:"-"`
+	Model           string      `json:"model"`
+	SystemPrompt    string      `json:"system-prompt"`
+	CmdModePrompt   string      `json:"cmd-mode-prompt"`
+	Raw             bool        `json:"raw"`
+	UseTools        bool        `json:"use-tools"`
+	TokenWarnLimit  int         `json:"token-warn-limit"`
+	SaveReplyAsConv bool        `json:"save-reply-as-prompt"`
+	ConfigDir       string      `json:"-"`
+	StdinReplace    string      `json:"-"`
+	Stream          bool        `json:"-"`
+	ReplyMode       bool        `json:"-"`
+	ChatMode        bool        `json:"-"`
+	CmdMode         bool        `json:"-"`
+	Glob            string      `json:"-"`
+	InitialPrompt   models.Chat `json:"-"`
+	UseProfile      string      `json:"-"`
+	Tools           []string    `json:"-"`
 	// PostProccessedPrompt which has had it's strings replaced etc
 	PostProccessedPrompt string `json:"-"`
 }
@@ -57,6 +59,7 @@ var DEFAULT = Configurations{
 var DEFAULT_PROFILE = Profile{
 	UseTools:        true,
 	SaveReplyAsConv: true,
+	Tools:           []string{},
 }
 
 func (c *Configurations) SetupPrompts(args []string) error {

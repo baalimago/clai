@@ -65,7 +65,7 @@ func configure(cfgs []config, a action) error {
 		fmt.Scanln(&input)
 		i, err := strconv.Atoi(input)
 		if err != nil {
-			return fmt.Errorf("invalid response, failed to convert choice: %v, to integer: %v", input, err)
+			return fmt.Errorf("invalid index: %v", input)
 		}
 		index = i
 		if index < 0 || index >= len(cfgs) {
@@ -160,6 +160,10 @@ func getToolsValue(v any) ([]string, error) {
 	}
 	if input == "q" || input == "quit" {
 		return []string{}, UserExit
+	}
+
+	if input == "" {
+		return v.([]string), nil
 	}
 	re := regexp.MustCompile(`\d`)
 	digits := re.FindAllString(input, -1)
