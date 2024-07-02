@@ -115,6 +115,11 @@ func setupTextQuerier(mode Mode, confDir string, flagSet Configurations) (models
 		return nil, fmt.Errorf("failed to setup prompt: %v", err)
 	}
 
+	err = tConf.ProfileOverrides()
+	if err != nil {
+		return nil, fmt.Errorf("profile override failure: %v", err)
+	}
+
 	cq, err := CreateTextQuerier(tConf)
 
 	if misc.Truthy(os.Getenv("DEBUG")) {
@@ -200,6 +205,10 @@ func Setup(usage string) (models.Querier, error) {
 	case SETUP:
 		err := setup.Run()
 		if err != nil {
+			if errors.Is(err, setup.UserExit) {
+				ancli.PrintOK("user exit\n")
+				os.Exit(0)
+			}
 			return nil, fmt.Errorf("failed to run setup: %v", err)
 		}
 		os.Exit(0)

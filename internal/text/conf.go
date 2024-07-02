@@ -30,8 +30,18 @@ type Configurations struct {
 	CmdMode        bool        `json:"-"`
 	Glob           string      `json:"-"`
 	InitialPrompt  models.Chat `json:"-"`
+	UseProfile     string      `json:"-"`
 	// PostProccessedPrompt which has had it's strings replaced etc
 	PostProccessedPrompt string `json:"-"`
+}
+
+// Profile which allows for specialized ai configurations for specific tasks
+type Profile struct {
+	Model           string   `json:"model"`
+	UseTools        bool     `json:"use_tools"`
+	Tools           []string `json:"tools"`
+	Prompt          string   `json:"prompt"`
+	SaveReplyAsConv bool     `json:"save_reply_as_conv"`
 }
 
 var DEFAULT = Configurations{
@@ -44,13 +54,16 @@ var DEFAULT = Configurations{
 	TokenWarnLimit: 17000,
 }
 
+var DEFAULT_PROFILE = Profile{
+	UseTools:        true,
+	SaveReplyAsConv: true,
+}
+
 func (c *Configurations) SetupPrompts(args []string) error {
 	if c.Glob != "" && c.ReplyMode {
 		ancli.PrintWarn("Using glob + reply modes together might yield strange results. The prevQuery will be appended after the glob messages.\n")
 	}
 
-	// Allways replace system prompt on cmd mode. This somewhat corrupts the chat since it always will
-	// be the command prompt. But it's better than not having it
 	if !c.ReplyMode {
 		c.InitialPrompt = models.Chat{
 			Messages: []models.Message{
