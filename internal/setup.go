@@ -52,6 +52,15 @@ var defaultFlags = Configurations{
 	UseTools:      false,
 }
 
+const PROFILE_HELP = `Profiles allows you to create a preconfiguration to quickly prompt the
+llm for a specific task. For instance, you may create a 'gopher' profile which has a prompt 
+that tells the agent that it's a programming helper and then specify which tools it's allowed to use.
+
+Then you can use this profile by specifying it using the '-p/-profile' flag. Example:
+
+1. clai setup -> 2 -> follow setup wizard (create 'gopher' profile)
+2. clai -p gopher -g internal/thing/handler.go q write tests for this file`
+
 func getModeFromArgs(cmd string) (Mode, error) {
 	switch cmd {
 	case "photo", "p":
@@ -131,6 +140,23 @@ func setupTextQuerier(mode Mode, confDir string, flagSet Configurations) (models
 	return cq, nil
 }
 
+func printHelp(usage string, args []string) {
+	if len(args) > 1 && (args[1] == "profile" || args[1] == "p") {
+		fmt.Println(PROFILE_HELP)
+		return
+	}
+	fmt.Printf(usage,
+		defaultFlags.ReplyMode,
+		defaultFlags.PrintRaw,
+		defaultFlags.PhotoDir,
+		defaultFlags.PhotoPrefix,
+		defaultFlags.StdinReplace,
+		defaultFlags.ExpectReplace,
+		defaultFlags.UseTools,
+		defaultFlags.Glob,
+	)
+}
+
 func Setup(usage string) (models.Querier, error) {
 	flagSet := setupFlags(defaultFlags)
 	args := flag.Args()
@@ -176,16 +202,7 @@ func Setup(usage string) (models.Querier, error) {
 		}
 		return pq, nil
 	case HELP:
-		fmt.Printf(usage,
-			defaultFlags.ReplyMode,
-			defaultFlags.PrintRaw,
-			defaultFlags.PhotoDir,
-			defaultFlags.PhotoPrefix,
-			defaultFlags.StdinReplace,
-			defaultFlags.ExpectReplace,
-			defaultFlags.UseTools,
-			defaultFlags.Glob,
-		)
+		printHelp(usage, args)
 		os.Exit(0)
 	case VERSION:
 		bi, ok := debug.ReadBuildInfo()
