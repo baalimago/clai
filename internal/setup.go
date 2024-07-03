@@ -119,14 +119,13 @@ func setupTextQuerier(mode Mode, confDir string, flagSet Configurations) (models
 
 		tConf.Glob = globStr
 	}
-	err = tConf.SetupPrompts(args)
-	if err != nil {
-		return nil, fmt.Errorf("failed to setup prompt: %v", err)
-	}
-
 	err = tConf.ProfileOverrides()
 	if err != nil {
 		return nil, fmt.Errorf("profile override failure: %v", err)
+	}
+	err = tConf.SetupPrompts(args)
+	if err != nil {
+		return nil, fmt.Errorf("failed to setup prompt: %v", err)
 	}
 
 	cq, err := CreateTextQuerier(tConf)
