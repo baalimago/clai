@@ -24,6 +24,13 @@ func vendorType(fromModel string) (string, string, string) {
 	if strings.Contains(fromModel, "claude") {
 		return "anthropic", "claude", fromModel
 	}
+	if strings.Contains(fromModel, "ollama") {
+		m := "llama3"
+		if strings.HasPrefix(fromModel, "ollama:") {
+			m = fromModel[7:]
+		}
+		return "ollama", m, fromModel
+	}
 	if strings.Contains(fromModel, "mistral") || strings.Contains(fromModel, "mixtral") {
 		return "mistral", "mistral", fromModel
 	}
