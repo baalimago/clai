@@ -46,7 +46,7 @@ func (a action) String() string {
 const stage_0 = `Do you wish to configure:
   0. mode-files (example: <config>/.clai/textConfig.json- or photoConfig.json)
   1. model files (example: <config>/.clai/openai-gpt-4o.json, <config>/.clai/anthropic-claude-opus.json)
-  2. text generation profiles (see: "clai h/help profiles" for additional info) 
+  2. text generation profiles (see: "clai [h]elp [p]rofile" for additional info) 
 [0/1/2]: `
 
 // Run the setup to configure the different files

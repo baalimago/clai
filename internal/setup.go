@@ -52,9 +52,10 @@ var defaultFlags = Configurations{
 	UseTools:      false,
 }
 
-const PROFILE_HELP = `Profiles allows you to create a preconfiguration to quickly prompt the
-llm for a specific task. For instance, you may create a 'gopher' profile which has a prompt 
-that tells the agent that it's a programming helper and then specify which tools it's allowed to use.
+const PROFILE_HELP = `Profiles overwrites certain model configurations. The intent of profiles
+is to reduce usage for repetitive flags, and to persist + tweak specifc llm agents.
+For instance, you may create a 'gopher' profile which has a prompt that tells the agent that it's
+a programming helper and then specify which tools it's allowed to use.
 
 Then you can use this profile by specifying it using the '-p/-profile' flag. Example:
 
