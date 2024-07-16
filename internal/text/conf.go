@@ -43,7 +43,7 @@ type Profile struct {
 	UseTools        bool     `json:"use_tools"`
 	Tools           []string `json:"tools"`
 	Prompt          string   `json:"prompt"`
-	SaveReplyAsConv bool     `json:"save_reply_as_conv"`
+	SaveReplyAsConv bool     `json:"save-reply-as-conv"`
 }
 
 var DEFAULT = Configurations{
@@ -53,7 +53,8 @@ var DEFAULT = Configurations{
 	Raw:           false,
 	UseTools:      false,
 	// Aproximately $1 for the worst input rates as of 2024-05
-	TokenWarnLimit: 17000,
+	TokenWarnLimit:  17000,
+	SaveReplyAsConv: true,
 }
 
 var DEFAULT_PROFILE = Profile{
