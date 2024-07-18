@@ -45,6 +45,7 @@ func (q *Querier[C]) executeAiCmd() (string, error) {
 		return "", fmt.Errorf("parseGlob, ReplaceTildeWithHome: %w", err)
 	}
 	split := strings.Split(fullMsg, " ")
+	fmt.Println(split)
 	if len(split) < 1 {
 		return "", errors.New("Querier.executeAiCmd: too few tokens in q.fullMsg")
 	}

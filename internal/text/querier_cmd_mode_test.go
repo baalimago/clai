@@ -45,6 +45,16 @@ func Test_executeAiCmd(t *testing.T) {
 			want:    fmt.Sprintf(okFormat, "./testfile\n"),
 			wantErr: nil,
 		},
+		{
+			description: "it should work without quotes",
+			setup: func(t *testing.T) {
+				t.Helper()
+				os.Chdir(filepath.Dir(testboil.CreateTestFile(t, "testfile").Name()))
+			},
+			given:   "find ./ -name testfile",
+			want:    fmt.Sprintf(okFormat, "./testfile\n"),
+			wantErr: nil,
+		},
 	}
 
 	for _, tc := range testCases {
