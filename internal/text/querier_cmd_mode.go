@@ -26,7 +26,7 @@ func (q *Querier[C]) handleCmdMode() error {
 		case "q":
 			return nil
 		case "e":
-			out, err := q.executeAiCmd()
+			out, err := q.executeLlmCmd()
 			if err == nil {
 				ancli.PrintOK(fmt.Sprintf("%v\n", out))
 				return nil
@@ -39,13 +39,18 @@ func (q *Querier[C]) handleCmdMode() error {
 	}
 }
 
-func (q *Querier[C]) executeAiCmd() (string, error) {
+func (q *Querier[C]) executeLlmCmd() (string, error) {
 	fullMsg, err := utils.ReplaceTildeWithHome(q.fullMsg)
 	if err != nil {
 		return "", fmt.Errorf("parseGlob, ReplaceTildeWithHome: %w", err)
 	}
+	// Quotes are, in 99% of the time, expanded by the shell in
+	// different ways and then passed into the shell. So when LLM
+	// suggests a command, executeAiCmd needs to act the same (meaning)
+	// remove/expand the quotes
+	fullMsg = strings.ReplaceAll(fullMsg, "\"", "")
+	fullMsg = strings.ReplaceAll(fullMsg, "'", "")
 	split := strings.Split(fullMsg, " ")
-	fmt.Println(split)
 	if len(split) < 1 {
 		return "", errors.New("Querier.executeAiCmd: too few tokens in q.fullMsg")
 	}

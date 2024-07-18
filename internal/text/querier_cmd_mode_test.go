@@ -32,7 +32,7 @@ func Test_executeAiCmd(t *testing.T) {
 		{
 			description: "it should run shell cmd",
 			given:       "printf 'test'",
-			want:        fmt.Sprintf(okFormat, "'test'"),
+			want:        fmt.Sprintf(okFormat, "test"),
 			wantErr:     nil,
 		},
 		{
@@ -64,7 +64,7 @@ func Test_executeAiCmd(t *testing.T) {
 				tc.setup(t)
 			}
 			q.fullMsg = tc.given
-			gotFormated, gotErr := q.executeAiCmd()
+			gotFormated, gotErr := q.executeLlmCmd()
 
 			if gotFormated != tc.want {
 				t.Fatalf("expected: %v, got: %v", tc.want, gotFormated)
