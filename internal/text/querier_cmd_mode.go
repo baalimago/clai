@@ -11,8 +11,10 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
-var errFormat = "code: %v, stderr: '%v', stdout: '%v'\n"
-var okFormat = "stdout on new line:\n%v\n"
+var (
+	errFormat = "code: %v, stderr: '%v', stdout: '%v'\n"
+	okFormat  = "stdout on new line:\n%v\n"
+)
 
 func (q *Querier[C]) handleCmdMode() error {
 	// Tokens stream end without endline
