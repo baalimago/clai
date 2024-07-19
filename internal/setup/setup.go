@@ -1,15 +1,15 @@
 package setup
 
 import (
-	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
 	"os"
+	"path"
 	"path/filepath"
-	"strconv"
+	"strings"
 
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
-	"github.com/baalimago/go_away_boilerplate/pkg/misc"
+	"github.com/baalimago/clai/internal/text"
+	"github.com/baalimago/clai/internal/utils"
 )
 
 type config struct {
@@ -23,53 +23,126 @@ const (
 	unset action = iota
 	conf
 	del
+	newaction
 )
+
+var ErrUserExit = errors.New("user exit")
+
+func (a action) String() string {
+	switch a {
+	case unset:
+		return "unset"
+	case conf:
+		return "[c]onfigure"
+	case del:
+		return "[d]el"
+	case newaction:
+		return "create [n]ew"
+	default:
+		return "unset"
+	}
+}
+
+const stage_0 = `Do you wish to configure:
+  0. mode-files (example: <config>/.clai/textConfig.json- or photoConfig.json)
+  1. model files (example: <config>/.clai/openai-gpt-4o.json, <config>/.clai/anthropic-claude-opus.json)
+  2. text generation profiles (see: "clai [h]elp [p]rofile" for additional info) 
+[0/1/2]: `
 
 // Run the setup to configure the different files
 func Run() error {
 	var input string
-	fmt.Print("Do you wish to configure:\n\t0. mode-files (example: textConfig.json/photoConfig.json)\n\t1. model files (example: openai-gpt-4o.json, anthropic-claude-opus.json)\n[0/1]: ")
+	fmt.Print(stage_0)
 	fmt.Scanln(&input)
 	var configs []config
 	var a action
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		return fmt.Errorf("failed to get user config directory: %v", err)
+	}
+	claiDir := filepath.Join(configDir, ".clai")
 	switch input {
 	case "0":
-		t, err := modeConfigs()
+		t, err := getConfigs(filepath.Join(claiDir, "*Config.json"), []string{})
 		if err != nil {
-			return fmt.Errorf("failed to get config files: %v", err)
+			return fmt.Errorf("failed to get configs files: %w", err)
 		}
 		configs = t
 		a = conf
 	case "1":
-		t, err := modelConfigs()
+		t, err := getConfigs(filepath.Join(claiDir, "*.json"), []string{"textConfig", "photoConfig"})
 		if err != nil {
-			return fmt.Errorf("failed to get model configs: %v", err)
+			return fmt.Errorf("failed to get configs files: %w", err)
 		}
-
 		configs = t
+		action, err := queryForAction([]action{conf, del})
+		if err != nil {
+			return fmt.Errorf("failed to find action: %w", err)
+		}
+		a = action
+	case "2":
+		profilesDir := filepath.Join(claiDir, "profiles")
+		t, err := getConfigs(filepath.Join(profilesDir, "*.json"), []string{})
+		if err != nil {
+			return fmt.Errorf("failed to get configs files: %w", err)
+		}
+		configs = t
+		action, err := queryForAction([]action{conf, del, newaction})
+		if err != nil {
+			return fmt.Errorf("failed to find action: %w", err)
+		}
+		a = action
+		if a == newaction {
+			c, err := createProFile(profilesDir)
+			if err != nil {
+				return fmt.Errorf("failed to create profile file: %w", err)
+			}
+			// Reset config list as the user most likely only wants to edit the newly configured profile
+			configs = make([]config, 0)
+			configs = append(configs, c)
+			// Once new file has potentially been created, potentially alter it
+			a = conf
+		}
 	default:
 		return fmt.Errorf("unrecognized selection: %v", input)
 	}
 	return configure(configs, a)
 }
 
-// modelConfigs gets the model configuration files using pattern os.UserConfigDir()/.clai/*.json
-func modelConfigs() ([]config, error) {
-	configDir, err := os.UserConfigDir()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user config directory: %v", err)
+// createProFile, as in create profile file. I'm a very funny person.
+func createProFile(profilePath string) (config, error) {
+	if _, err := os.Stat(profilePath); os.IsNotExist(err) {
+		os.MkdirAll(profilePath, os.ModePerm)
 	}
-
-	pattern := filepath.Join(configDir, ".clai", "*.json")
-	files, err := filepath.Glob(pattern)
+	var profileName string
+	fmt.Print("Enter profile name: ")
+	fmt.Scanln(&profileName)
+	newProfilePath := path.Join(profilePath, fmt.Sprintf("%v.json", profileName))
+	err := utils.CreateFile(newProfilePath, &text.DEFAULT_PROFILE)
 	if err != nil {
-		return nil, fmt.Errorf("failed to glob pattern %v: %v", pattern, err)
+		return config{}, err
 	}
+	return config{
+		name:     profileName,
+		filePath: newProfilePath,
+	}, nil
+}
 
+// getConfigs using a glob, and then exclude files using strings.Contains()
+func getConfigs(includeGlob string, excludeContains []string) ([]config, error) {
+	files, err := filepath.Glob(includeGlob)
+	if err != nil {
+		return nil, fmt.Errorf("failed to glob pattern %v: %v", includeGlob, err)
+	}
 	var configs []config
+OUTER:
 	for _, file := range files {
-		if filepath.Base(file) == "textConfig.json" || filepath.Base(file) == "photoConfig.json" {
-			continue
+		// The moment this becomes a performance issue it's time to think about
+		// maybe reducing the amount of config files
+		for _, e := range excludeContains {
+			if strings.Contains(filepath.Base(file), e) {
+				continue OUTER
+			}
 		}
 		configs = append(configs, config{
 			name:     filepath.Base(file),
@@ -78,170 +151,4 @@ func modelConfigs() ([]config, error) {
 	}
 
 	return configs, nil
-}
-
-// modeConfigs gets the mode configuration files using pattern os.UserConfigDir()/.clai/*Config.json
-func modeConfigs() ([]config, error) {
-	configDir, err := os.UserConfigDir()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user config directory: %v", err)
-	}
-
-	pattern := filepath.Join(configDir, ".clai", "*Config.json")
-	files, err := filepath.Glob(pattern)
-	if err != nil {
-		return nil, fmt.Errorf("failed to glob pattern %v: %v", pattern, err)
-	}
-
-	var configs []config
-	for _, file := range files {
-		configs = append(configs, config{
-			name:     filepath.Base(file),
-			filePath: file,
-		})
-	}
-
-	return configs, nil
-}
-
-func configure(cfgs []config, a action) error {
-	fmt.Println("Found config files: ")
-	for i, cfg := range cfgs {
-		fmt.Printf("\t%v: %v\n", i, cfg.name)
-	}
-
-	var input string
-	fmt.Print("Please pick index: ")
-	fmt.Scanln(&input)
-	index, err := strconv.Atoi(input)
-	if err != nil {
-		return fmt.Errorf("invalid response, failed to convert choice: %v, to integer: %v", input, err)
-	}
-	if index < 0 || index >= len(cfgs) {
-		return fmt.Errorf("invalid index: %v, must be between 0 and %v", index, len(cfgs))
-	}
-	if a == unset {
-		fmt.Print("Do you wish to [c]onfigure or [d]elete?\n[c/d]: ")
-		fmt.Scanln(&input)
-		switch input {
-		case "c", "configure":
-			a = conf
-		case "d", "delete":
-			a = del
-		default:
-			return fmt.Errorf("invalid choice: %v", input)
-		}
-	}
-
-	switch a {
-	case conf:
-		return reconfigure(cfgs[index])
-	case del:
-		return remove(cfgs[index])
-	default:
-		return fmt.Errorf("invalid action, expected conf or del: %v", input)
-	}
-}
-
-func reconfigure(cfg config) error {
-	f, err := os.Open(cfg.filePath)
-	if err != nil {
-		return fmt.Errorf("failed to open file %s: %v", cfg.filePath, err)
-	}
-	b, err := io.ReadAll(f)
-	if err != nil {
-		return fmt.Errorf("failed to read file %s: %v", cfg.filePath, err)
-	}
-	return interractiveReconfigure(cfg, b)
-}
-
-func remove(cfg config) error {
-	fmt.Printf("Are you sure you want to delete: '%v'?\n[y/n]: ", cfg.filePath)
-	var input string
-	fmt.Scanln(&input)
-	if input != "y" {
-		return fmt.Errorf("aborting deletion")
-	}
-	err := os.Remove(cfg.filePath)
-	if err != nil {
-		return fmt.Errorf("failed to delete file: '%v', error: %v", cfg.filePath, err)
-	}
-	ancli.PrintOK(fmt.Sprintf("deleted file: '%v'\n", cfg.filePath))
-	return nil
-}
-
-func interractiveReconfigure(cfg config, b []byte) error {
-	var jzon map[string]any
-	err := json.Unmarshal(b, &jzon)
-	if err != nil {
-		return fmt.Errorf("failed to unmarshal config: %v, error: %w", cfg.name, err)
-	}
-	fmt.Printf("Current config:\n%s\n---\n", b)
-	newConfig, err := buildNewConfig(jzon)
-	if err != nil {
-		return fmt.Errorf("failed to build new config: %v", err)
-	}
-
-	newB, err := json.MarshalIndent(newConfig, "", "\t")
-	if err != nil {
-		return fmt.Errorf("failed to marshal new config: %v", err)
-	}
-	err = os.WriteFile(cfg.filePath, newB, 0o644)
-	if err != nil {
-		return fmt.Errorf("failed to write new config at: '%v', error: %v", cfg.filePath, err)
-	}
-	ancli.PrintOK(fmt.Sprintf("wrote new config to: '%v'\n", cfg.filePath))
-	return nil
-}
-
-func buildNewConfig(jzon map[string]any) (map[string]any, error) {
-	newConfig := make(map[string]any)
-	for k, v := range jzon {
-		var input string
-		var newValue any
-		maplike, isMap := v.(map[string]any)
-		if isMap {
-			m, err := buildNewConfig(maplike)
-			if err != nil {
-				return nil, fmt.Errorf("failed to parse nested map-like: %v", err)
-			}
-			newValue = m
-		} else {
-			fmt.Printf("Key: '%v', current: '%v'\nPlease enter new value, or leave empty to keep: ", k, v)
-			fmt.Scanln(&input)
-			if input == "" {
-				newValue = v
-			} else {
-				newValue = input
-				newValue = castPrimitive(newValue)
-			}
-		}
-		newConfig[k] = newValue
-	}
-	return newConfig, nil
-}
-
-func castPrimitive(v any) any {
-	if misc.Truthy(v) {
-		return true
-	}
-
-	if misc.Falsy(v) {
-		return false
-	}
-
-	s, isString := v.(string)
-	if !isString {
-		// We don't really know what unholy value this might be, but let's just return it and hope it's benign
-		return v
-	}
-	i, err := strconv.Atoi(s)
-	if err == nil {
-		return i
-	}
-	f, err := strconv.ParseFloat(s, 64)
-	if err == nil {
-		return f
-	}
-	return s
 }

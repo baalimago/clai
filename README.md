@@ -16,6 +16,7 @@ The multi-vendor aspect enables easy comparisons between different models, also 
     * Args
 * Conversations (with same input options as above)
 * Tools calling [with easily forkable + extendable tools](./internal/tools/)
+* LLM Profiles - Preconfigured prompts with specific tools
 * Photo generation*
 * Human readable / robot readable output
 * 100% go standard library (except for /x/net)

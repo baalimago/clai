@@ -71,6 +71,19 @@ clai cmd to show all files in home
 Will work like many of the popular command suggestion LLM tools out there.
 Flags works with this mode as well, such as `clai -re -g 'some_file.go' cmd to cleanup this messy code`, but it's not guaranteed the LLM will output an executable output.
 
+### Profiles
+1. `clai setup -> 2 -> n`
+1. Write some profile, example 'gopher'
+1. `clai -p gopher -g './internal/moneymaker/handler_test.go' q Fix the tests in this file
+
+Profiles allows you to preconfigure certain fields which will be passed to the llms, most noteably the prompt and which tools to use.
+This, in turn, enables you to quickly swap between different 'LLM-modes'.
+For instance, you may have one profile which is prompted for golang programming tasks "gopher", it has tools `write_file`, `rip grep` and `go` enabled, and then another profile which is for terraform that does not named "terry".
+With these, you don't have to 'pre-prompt' with `clai q _in terraform_ ...` or `clai q _in golang_ ...` but instead can use `clai -p terry q ...`/`clai -p gopher q ...` and also restrict which tools are allowed, as opposed to enabling _all_ tools (with `-t`).
+
+These profiles are saved as json at [os.GetConfigDir()](https://pkg.go.dev/os#UserConfigDir)`/.clai/profiles`.
+This means that you can sync them across all of your machines and tweak your prompts wherever you code. 
+
 ### Photos
 ```bash
 printf "flowers" | clai -i `    # stdin replacement works for photos also` \
@@ -92,6 +105,7 @@ First time you run `clai`, two default command-related ones, `textConfig.json` a
 The configuration presedence is as follows (from lowest to highest):
 1. Default hard-coded configurations [such as this](./internal/text/conf.go), these gets written to file first time you run `clai`
 1. Configurations from local `textConfig.json` or `photoConfig.json` file
+1. Profiles
 1. Flags
 
 The `textConfig.json/photoConfig.json` files configures _what_ you want done, not _how_ the models should perform it.

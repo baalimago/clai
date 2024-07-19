@@ -52,6 +52,16 @@ var defaultFlags = Configurations{
 	UseTools:      false,
 }
 
+const PROFILE_HELP = `Profiles overwrites certain model configurations. The intent of profiles
+is to reduce usage for repetitive flags, and to persist + tweak specifc llm agents.
+For instance, you may create a 'gopher' profile which has a prompt that tells the agent that it's
+a programming helper and then specify which tools it's allowed to use.
+
+Then you can use this profile by specifying it using the '-p/-profile' flag. Example:
+
+1. clai setup -> 2 -> follow setup wizard (create 'gopher' profile)
+2. clai -p gopher -g internal/thing/handler.go q write tests for this file`
+
 func getModeFromArgs(cmd string) (Mode, error) {
 	switch cmd {
 	case "photo", "p":
@@ -110,6 +120,14 @@ func setupTextQuerier(mode Mode, confDir string, flagSet Configurations) (models
 
 		tConf.Glob = globStr
 	}
+	err = tConf.ProfileOverrides()
+	if err != nil {
+		return nil, fmt.Errorf("profile override failure: %v", err)
+	}
+
+	// We want some flags, such as model, to be able to overwrite the profile configurations
+	// If this gets too confusing, it should be changed
+	applyProfileOverridesForText(&tConf, flagSet, defaultFlags)
 	err = tConf.SetupPrompts(args)
 	if err != nil {
 		return nil, fmt.Errorf("failed to setup prompt: %v", err)
@@ -124,6 +142,23 @@ func setupTextQuerier(mode Mode, confDir string, flagSet Configurations) (models
 		return nil, fmt.Errorf("failed to create text querier: %v", err)
 	}
 	return cq, nil
+}
+
+func printHelp(usage string, args []string) {
+	if len(args) > 1 && (args[1] == "profile" || args[1] == "p") {
+		fmt.Println(PROFILE_HELP)
+		return
+	}
+	fmt.Printf(usage,
+		defaultFlags.ReplyMode,
+		defaultFlags.PrintRaw,
+		defaultFlags.PhotoDir,
+		defaultFlags.PhotoPrefix,
+		defaultFlags.StdinReplace,
+		defaultFlags.ExpectReplace,
+		defaultFlags.UseTools,
+		defaultFlags.Glob,
+	)
 }
 
 func Setup(usage string) (models.Querier, error) {
@@ -171,16 +206,7 @@ func Setup(usage string) (models.Querier, error) {
 		}
 		return pq, nil
 	case HELP:
-		fmt.Printf(usage,
-			defaultFlags.ReplyMode,
-			defaultFlags.PrintRaw,
-			defaultFlags.PhotoDir,
-			defaultFlags.PhotoPrefix,
-			defaultFlags.StdinReplace,
-			defaultFlags.ExpectReplace,
-			defaultFlags.UseTools,
-			defaultFlags.Glob,
-		)
+		printHelp(usage, args)
 		os.Exit(0)
 	case VERSION:
 		bi, ok := debug.ReadBuildInfo()
@@ -200,6 +226,10 @@ func Setup(usage string) (models.Querier, error) {
 	case SETUP:
 		err := setup.Run()
 		if err != nil {
+			if errors.Is(err, setup.ErrUserExit) {
+				ancli.PrintOK("user exit\n")
+				os.Exit(0)
+			}
 			return nil, fmt.Errorf("failed to run setup: %v", err)
 		}
 		os.Exit(0)

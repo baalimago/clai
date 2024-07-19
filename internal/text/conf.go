@@ -16,22 +16,34 @@ import (
 
 // Configurations used to setup the requirements of text models
 type Configurations struct {
-	Model          string      `json:"model"`
-	SystemPrompt   string      `json:"system-prompt"`
-	CmdModePrompt  string      `json:"cmd-mode-prompt"`
-	Raw            bool        `json:"raw"`
-	UseTools       bool        `json:"use-tools"`
-	TokenWarnLimit int         `json:"token-warn-limit"`
-	ConfigDir      string      `json:"-"`
-	StdinReplace   string      `json:"-"`
-	Stream         bool        `json:"-"`
-	ReplyMode      bool        `json:"-"`
-	ChatMode       bool        `json:"-"`
-	CmdMode        bool        `json:"-"`
-	Glob           string      `json:"-"`
-	InitialPrompt  models.Chat `json:"-"`
+	Model           string      `json:"model"`
+	SystemPrompt    string      `json:"system-prompt"`
+	CmdModePrompt   string      `json:"cmd-mode-prompt"`
+	Raw             bool        `json:"raw"`
+	UseTools        bool        `json:"use-tools"`
+	TokenWarnLimit  int         `json:"token-warn-limit"`
+	SaveReplyAsConv bool        `json:"save-reply-as-prompt"`
+	ConfigDir       string      `json:"-"`
+	StdinReplace    string      `json:"-"`
+	Stream          bool        `json:"-"`
+	ReplyMode       bool        `json:"-"`
+	ChatMode        bool        `json:"-"`
+	CmdMode         bool        `json:"-"`
+	Glob            string      `json:"-"`
+	InitialPrompt   models.Chat `json:"-"`
+	UseProfile      string      `json:"-"`
+	Tools           []string    `json:"-"`
 	// PostProccessedPrompt which has had it's strings replaced etc
 	PostProccessedPrompt string `json:"-"`
+}
+
+// Profile which allows for specialized ai configurations for specific tasks
+type Profile struct {
+	Model           string   `json:"model"`
+	UseTools        bool     `json:"use_tools"`
+	Tools           []string `json:"tools"`
+	Prompt          string   `json:"prompt"`
+	SaveReplyAsConv bool     `json:"save-reply-as-conv"`
 }
 
 var DEFAULT = Configurations{
@@ -41,7 +53,14 @@ var DEFAULT = Configurations{
 	Raw:           false,
 	UseTools:      false,
 	// Aproximately $1 for the worst input rates as of 2024-05
-	TokenWarnLimit: 17000,
+	TokenWarnLimit:  17000,
+	SaveReplyAsConv: true,
+}
+
+var DEFAULT_PROFILE = Profile{
+	UseTools:        true,
+	SaveReplyAsConv: true,
+	Tools:           []string{},
 }
 
 func (c *Configurations) SetupPrompts(args []string) error {
@@ -49,8 +68,6 @@ func (c *Configurations) SetupPrompts(args []string) error {
 		ancli.PrintWarn("Using glob + reply modes together might yield strange results. The prevQuery will be appended after the glob messages.\n")
 	}
 
-	// Allways replace system prompt on cmd mode. This somewhat corrupts the chat since it always will
-	// be the command prompt. But it's better than not having it
 	if !c.ReplyMode {
 		c.InitialPrompt = models.Chat{
 			Messages: []models.Message{
