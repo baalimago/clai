@@ -127,6 +127,12 @@ func applyFlagOverridesForText(tConf *text.Configurations, flagSet, defaultFlags
 	}
 }
 
+func applyProfileOverridesForText(tConf *text.Configurations, flagSet, defaultFlags Configurations) {
+	if flagSet.ChatModel != defaultFlags.ChatModel {
+		tConf.Model = flagSet.ChatModel
+	}
+}
+
 func applyFlagOverridesForPhoto(pConf *photo.Configurations, flagSet, defaultFlags Configurations) {
 	if flagSet.ExpectReplace {
 		pConf.StdinReplace = flagSet.StdinReplace

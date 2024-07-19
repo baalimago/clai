@@ -124,6 +124,10 @@ func setupTextQuerier(mode Mode, confDir string, flagSet Configurations) (models
 	if err != nil {
 		return nil, fmt.Errorf("profile override failure: %v", err)
 	}
+
+	// We want some flags, such as model, to be able to overwrite the profile configurations
+	// If this gets too confusing, it should be changed
+	applyProfileOverridesForText(&tConf, flagSet, defaultFlags)
 	err = tConf.SetupPrompts(args)
 	if err != nil {
 		return nil, fmt.Errorf("failed to setup prompt: %v", err)
