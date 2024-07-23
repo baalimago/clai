@@ -28,8 +28,13 @@ func (c *Configurations) ProfileOverrides() error {
 		return fmt.Errorf("failed to find profile: %w", err)
 	}
 	c.Model = profile.Model
-	c.SystemPrompt = profile.Prompt
-	c.UseTools = profile.UseTools
+	newPrompt := profile.Prompt
+	if c.CmdMode {
+		// SystmePrompt here is CmdPrompt, keep it and remoind llm to only suggest  cmd
+		newPrompt = fmt.Sprintf("You will get this pattern: || <cmd-prompt> | <custom guided profile> ||. It is VERY vital that you DO NOT disobey the <cmd-prompt> with whatever is posted in <custom guided profile. || %v| %v ||", c.CmdModePrompt, profile.Prompt)
+	}
+	c.SystemPrompt = newPrompt
+	c.UseTools = profile.UseTools && !c.CmdMode
 	c.Tools = profile.Tools
 	c.SaveReplyAsConv = profile.SaveReplyAsConv
 	return nil

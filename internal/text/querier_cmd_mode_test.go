@@ -2,7 +2,6 @@ package text
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -32,7 +31,7 @@ func Test_executeAiCmd(t *testing.T) {
 		{
 			description: "it should run shell cmd",
 			given:       "printf 'test'",
-			want:        fmt.Sprintf(okFormat, "test"),
+			want:        "'test'",
 			wantErr:     nil,
 		},
 		{
@@ -42,7 +41,7 @@ func Test_executeAiCmd(t *testing.T) {
 				os.Chdir(filepath.Dir(testboil.CreateTestFile(t, "testfile").Name()))
 			},
 			given:   "find ./ -name \"testfile\"",
-			want:    fmt.Sprintf(okFormat, "./testfile\n"),
+			want:    "./testfile\n",
 			wantErr: nil,
 		},
 		{
@@ -52,22 +51,25 @@ func Test_executeAiCmd(t *testing.T) {
 				os.Chdir(filepath.Dir(testboil.CreateTestFile(t, "testfile").Name()))
 			},
 			given:   "find ./ -name testfile",
-			want:    fmt.Sprintf(okFormat, "./testfile\n"),
+			want:    "./testfile\n",
 			wantErr: nil,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.description, func(t *testing.T) {
-			q := Querier[mockCompleter]{}
-			if tc.setup != nil {
-				tc.setup(t)
-			}
-			q.fullMsg = tc.given
-			gotFormated, gotErr := q.executeLlmCmd()
-
-			if gotFormated != tc.want {
-				t.Fatalf("expected: %v, got: %v", tc.want, gotFormated)
+			var gotErr error
+			got := testboil.CaptureStdout(t, func(t *testing.T) {
+				q := Querier[mockCompleter]{}
+				if tc.setup != nil {
+					tc.setup(t)
+				}
+				q.fullMsg = tc.given
+				tmp := q.executeLlmCmd()
+				gotErr = tmp
+			})
+			if got != tc.want {
+				t.Fatalf("expected: %v, got: %v", tc.want, got)
 			}
 
 			if gotErr != tc.wantErr {

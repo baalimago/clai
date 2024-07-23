@@ -40,6 +40,7 @@ type Querier[C models.StreamCompleter] struct {
 	Model           C
 	tokenWarnLimit  int
 	cmdMode         bool
+	execErr         error
 }
 
 // Query using the underlying model to stream completions and then print the output
@@ -75,6 +76,8 @@ func (q *Querier[C]) Query(ctx context.Context) error {
 					}
 					return nil
 				}
+				// Only add error if its not EOF or context.Canceled
+				q.execErr = err
 
 				if q.debug {
 					ancli.PrintOK("exiting querier due to EOF error\n")
@@ -181,6 +184,7 @@ func (q *Querier[C]) postProcessOutput(newSysMsg models.Message) {
 }
 
 func (q *Querier[C]) reset() {
+	q.execErr = nil
 	q.fullMsg = ""
 	q.line = ""
 	q.lineCount = 0
@@ -225,6 +229,9 @@ func (q *Querier[C]) handleCompletion(ctx context.Context, completion models.Com
 
 // handleFunctionCall by invoking the call, and then resondng to the ai with the output
 func (q *Querier[C]) handleFunctionCall(ctx context.Context, call tools.Call) error {
+	if q.cmdMode {
+		return errors.New("cant call tools in cmd mode")
+	}
 	// Whatever is in q.fullMessage now is what the AI has streamed before the function call
 	// which normally is handeled by the supercallee of Query, now we need to handle it here.
 	// There's room for improvement of this system..
@@ -261,7 +268,7 @@ func (q *Querier[C]) handleFunctionCall(ctx context.Context, call tools.Call) er
 	}
 	assistantToolsCall := models.Message{
 		Role:      "assistant",
-		Content:   fmt.Sprintf("tool_calls:\n%v", call.Json()),
+		Content:   fmt.Sprintf("tool calls for: %v", call.Name),
 		ToolCalls: []tools.Call{call},
 	}
 	q.reset()
