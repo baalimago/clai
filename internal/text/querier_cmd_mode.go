@@ -11,10 +11,7 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
-var (
-	errFormat = "code: %v, stderr: '%v'\n"
-	okFormat  = "stdout on new line:\n%v\n"
-)
+var errFormat = "code: %v, stderr: '%v'\n"
 
 func (q *Querier[C]) handleCmdMode() error {
 	// Tokens stream end without endline
@@ -69,7 +66,6 @@ func (q *Querier[C]) executeLlmCmd() error {
 	command.Stdout = os.Stdout
 	command.Stderr = os.Stderr
 	err = command.Run()
-
 	if err != nil {
 		cast := &exec.ExitError{}
 		if errors.As(err, &cast) {
