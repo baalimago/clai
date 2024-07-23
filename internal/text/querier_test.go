@@ -175,7 +175,7 @@ func Test_Querier_eventHandling(t *testing.T) {
 				},
 				"CLOSE",
 			},
-			want: "tool_calls",
+			want: "tool calls",
 		},
 	}
 	for _, tC := range testCases {
