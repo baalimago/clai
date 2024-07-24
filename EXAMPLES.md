@@ -74,11 +74,12 @@ Flags works with this mode as well, such as `clai -re -g 'some_file.go' cmd to c
 ### Profiles
 1. `clai setup -> 2 -> n`
 1. Write some profile, example 'gopher'
-1. `clai -p gopher -g './internal/moneymaker/handler_test.go' q Fix the tests in this file
+1. `clai -p gopher -g './internal/moneymaker/handler_test.go' q Fix the tests in this file`
 
 Profiles allows you to preconfigure certain fields which will be passed to the llms, most noteably the prompt and which tools to use.
 This, in turn, enables you to quickly swap between different 'LLM-modes'.
-For instance, you may have one profile which is prompted for golang programming tasks "gopher", it has tools `write_file`, `rip grep` and `go` enabled, and then another profile which is for terraform that does not named "terry".
+
+For instance, you may have one profile which is prompted for golang programming tasks "gopher", it has tools `write_file`, `rip grep` and `go` enabled, and then another profile which is for terraform named "terry".
 With these, you don't have to 'pre-prompt' with `clai q _in terraform_ ...` or `clai q _in golang_ ...` but instead can use `clai -p terry q ...`/`clai -p gopher q ...` and also restrict which tools are allowed, as opposed to enabling _all_ tools (with `-t`).
 
 These profiles are saved as json at [os.GetConfigDir()](https://pkg.go.dev/os#UserConfigDir)`/.clai/profiles`.
