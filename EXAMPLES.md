@@ -85,6 +85,11 @@ With these, you don't have to 'pre-prompt' with `clai q _in terraform_ ...` or `
 These profiles are saved as json at [os.GetConfigDir()](https://pkg.go.dev/os#UserConfigDir)`/.clai/profiles`.
 This means that you can sync them across all of your machines and tweak your prompts wherever you code. 
 
+Yet again, I've personally utilized aliases here.
+`ask` -> Generic profile-less prompt
+`gask` -> `clai -p gopher q`, `grask` -> `clai -re -p gopher q` and then `task` -> `clai -p terry q`, etc.
+These aliases are later on synched with the rest of my dotfiles + clai profiles, so they're shared on all my development machines.
+
 ### Photos
 ```bash
 printf "flowers" | clai -i `    # stdin replacement works for photos also` \
