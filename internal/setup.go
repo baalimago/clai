@@ -158,6 +158,7 @@ func printHelp(usage string, args []string) {
 		defaultFlags.ExpectReplace,
 		defaultFlags.UseTools,
 		defaultFlags.Glob,
+		defaultFlags.Profile,
 	)
 }
 

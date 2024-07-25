@@ -33,6 +33,7 @@ Flags:
   -i bool                      Set to true to replace '-replace' flag value with stdin. This is overwritten by -I and -replace. (default %v)
   -t, -tools bool              Set to true to use text tools. Some models might not support streaming. (default %v)
   -g, -glob string             Set the glob to use for globbing. Same as glob mode. (default '%v')
+  -p, -profile string          Set the profile which should be used. For details, see 'clai help profile'. (default '%v')
 
 Commands:
   h|help                        Display this help message
