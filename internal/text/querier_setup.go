@@ -62,18 +62,35 @@ func NewQuerier[C models.StreamCompleter](userConf Configurations, dfault C) (Qu
 		}
 	}
 
+	if misc.Truthy(os.Getenv("DEBUG")) {
+		ancli.PrintOK(fmt.Sprintf("userConf: %v\n", debug.IndentedJsonFmt(userConf)))
+	}
 	toolBox, ok := any(modelConf).(models.ToolBox)
 	if ok && userConf.UseTools {
 		if misc.Truthy(os.Getenv("DEBUG")) {
-			ancli.PrintOK(fmt.Sprintf("Registering tools, type: %T\n", modelConf))
+			ancli.PrintOK(fmt.Sprintf("Registering tools on type: %T\n", modelConf))
 		}
-		for _, t := range userConf.Tools {
-			tool, exists := tools.Tools[t]
-			if !exists {
-				ancli.PrintWarn(fmt.Sprintf("attempted to find tool: '%v', which doesn't exist, skipping", tool))
-				continue
+		// If usetools and no specific tools chocen, assume all are valid
+		if len(userConf.Tools) == 0 {
+			for _, tool := range tools.Tools {
+				if misc.Truthy(os.Getenv("DEBUG")) {
+					ancli.PrintOK(fmt.Sprintf("\tadding tool: %T\n", tool))
+				}
+				toolBox.RegisterTool(tool)
 			}
-			toolBox.RegisterTool(tool)
+		} else {
+			for _, t := range userConf.Tools {
+				tool, exists := tools.Tools[t]
+				if !exists {
+					ancli.PrintWarn(fmt.Sprintf("attempted to find tool: '%v', which doesn't exist, skipping", tool))
+					continue
+				}
+
+				if misc.Truthy(os.Getenv("DEBUG")) {
+					ancli.PrintOK(fmt.Sprintf("\tadding tool: %T\n", tool))
+				}
+				toolBox.RegisterTool(tool)
+			}
 		}
 	}
 
