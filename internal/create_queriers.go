@@ -11,6 +11,7 @@ import (
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/internal/vendors/anthropic"
 	"github.com/baalimago/clai/internal/vendors/mistral"
+	"github.com/baalimago/clai/internal/vendors/ollama"
 	"github.com/baalimago/clai/internal/vendors/openai"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
@@ -49,7 +50,19 @@ func CreateTextQuerier(conf text.Configurations) (models.Querier, error) {
 		q = &qTmp
 	}
 
-	if strings.Contains(conf.Model, "mistral") || strings.Contains(conf.Model, "mixtral") {
+	// process before mistral, in case we want to use mistral for ollama
+	if strings.HasPrefix(conf.Model, "ollama:") || conf.Model == "ollama" {
+		found = true
+		defaultCpy := ollama.OLLAMA_DEFAULT
+		if len(conf.Model) > 7 {
+			defaultCpy.Model = conf.Model[7:]
+		}
+		qTmp, err := text.NewQuerier(conf, &defaultCpy)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create text querier: %w", err)
+		}
+		q = &qTmp
+	} else if strings.Contains(conf.Model, "mistral") || strings.Contains(conf.Model, "mixtral") {
 		found = true
 		defaultCpy := mistral.MINSTRAL_DEFAULT
 		defaultCpy.Model = conf.Model
