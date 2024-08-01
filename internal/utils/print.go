@@ -34,20 +34,24 @@ func countNewLines(msg string, termWidth int) int {
 // UpdateMessageTerminalMetadata updates the terminal metadata. Meaning the lineCount, to eventually
 // clear the terminal
 func UpdateMessageTerminalMetadata(msg string, line *string, lineCount *int, termWidth int) {
-	msgSplit := strings.Split(*line+msg, "\n")
+	newlineSplit := strings.Split(*line+msg, "\n")
 	amNewlines := 0
-	for _, line := range msgSplit {
+	for _, line := range newlineSplit {
 		amNewlines += countNewLines(line, termWidth)
 	}
-	if amNewlines == 0 {
-		amNewlines = 1
-	}
-	amNewlines += len(msgSplit) - 1
 
-	*lineCount += amNewlines
-	lastToken := msgSplit[len(msgSplit)-1]
-	if len(lastToken) > termWidth {
-		lastTokenWords := strings.Split(lastToken, " ")
+	amNewlineChars := len(newlineSplit)
+	if amNewlineChars == 1 {
+		amNewlineChars = 0
+	}
+
+	*lineCount += amNewlines + amNewlineChars
+	if *lineCount == 0 {
+		*lineCount = 1
+	}
+	lastNewline := newlineSplit[len(newlineSplit)-1]
+	if len(lastNewline) > termWidth {
+		lastTokenWords := strings.Split(lastNewline, " ")
 		lastWord := lastTokenWords[len(lastTokenWords)-1]
 		if len(lastWord) > termWidth {
 			trimmedWord := lastWord[termWidth:]
@@ -56,7 +60,7 @@ func UpdateMessageTerminalMetadata(msg string, line *string, lineCount *int, ter
 			*line = lastWord
 		}
 	} else {
-		*line = lastToken
+		*line = lastNewline
 	}
 }
 
