@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path"
 	"time"
 
@@ -41,7 +42,17 @@ func SaveAsPreviousQuery(claiConfDir string, msgs []models.Message) error {
 }
 
 // Load the prevQuery.json from the claiConfDir/conversations directory
+// If claiConfDir is left empty, it will be re-constructed. The technical debt
+// is piling up quite fast here
 func Load(claiConfDir string) (models.Chat, error) {
+	if claiConfDir == "" {
+		confDir, err := os.UserConfigDir()
+		if err != nil {
+			return models.Chat{}, fmt.Errorf("failed to find home dir: %v", err)
+		}
+		claiConfDir = path.Join(confDir, ".clai")
+	}
+
 	c, err := chat.FromPath(path.Join(claiConfDir, "conversations", "prevQuery.json"))
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {

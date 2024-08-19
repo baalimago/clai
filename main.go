@@ -42,6 +42,7 @@ Commands:
   p|photo <text>                Ask the photo model a picture with the requested prompt
   g|glob  <glob> <text>         Query the chat model with the contents of the files found by the glob and the given text
   cmd <text>                    Describe the command you wish to do, then execute the suggested command. It's a bit wonky when used with -re.
+  re|replay                     Replay the most recent message.
 
   c|chat   n|new       <prompt>   Create a new chat with the given prompt.
   c|chat   c|continue  <chatID>   Continue an existing chat with the given chat ID.
