@@ -11,6 +11,7 @@ import (
 	"github.com/baalimago/clai/internal/glob"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/photo"
+	"github.com/baalimago/clai/internal/reply"
 	"github.com/baalimago/clai/internal/setup"
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/internal/utils"
@@ -36,6 +37,7 @@ const (
 	VERSION
 	SETUP
 	CMD
+	REPLAY
 )
 
 var defaultFlags = Configurations{
@@ -81,6 +83,8 @@ func getModeFromArgs(cmd string) (Mode, error) {
 		return VERSION, nil
 	case "cmd":
 		return CMD, nil
+	case "replay", "re":
+		return REPLAY, nil
 	default:
 		return HELP, fmt.Errorf("unknown command: '%s'", os.Args[1])
 	}
@@ -235,6 +239,12 @@ func Setup(usage string) (models.Querier, error) {
 		}
 		os.Exit(0)
 		return nil, nil
+	case REPLAY:
+		err := reply.Replay(flagSet.PrintRaw)
+		if err != nil {
+			return nil, fmt.Errorf("failed to replay previous reply: %v", err)
+		}
+		os.Exit(0)
 	default:
 		return nil, fmt.Errorf("unknown mode: %v", mode)
 	}
