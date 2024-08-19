@@ -9,13 +9,13 @@ import (
 
 // StreamCompleter is a struct which follows the model for both OpenAI and Mistral
 type StreamCompleter struct {
-	Model            string
-	FrequencyPenalty *float64
-	MaxTokens        *int
-	PresencePenalty  *float64
-	Temperature      *float64
-	TopP             *float64
-	ToolChoice       *string
+	Model            string                                  `json:"-"`
+	FrequencyPenalty *float64                                `json:"-"`
+	MaxTokens        *int                                    `json:"-"`
+	PresencePenalty  *float64                                `json:"-"`
+	Temperature      *float64                                `json:"-"`
+	TopP             *float64                                `json:"-"`
+	ToolChoice       *string                                 `json:"-"`
 	Clean            func([]models.Message) []models.Message `json:"-"`
 	url              string
 	tools            []ToolSuper
