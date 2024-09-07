@@ -1,4 +1,6 @@
 github.com/baalimago/go_away_boilerplate v1.3.11 h1:dM3Hckn55zSb6D9N03+TTSUxFJ6207GsCiS6n8vVZCs=
 github.com/baalimago/go_away_boilerplate v1.3.11/go.mod h1:2O+zQ0Zm8vPD5SeccFFlgyf3AnYWQSHAut/ecPMmRdU=
+github.com/baalimago/go_away_boilerplate v1.3.33 h1:X9e12eFjgYaXu/J0QrBRebt7RHHa6NKJTsFkXSwCfhg=
+github.com/baalimago/go_away_boilerplate v1.3.33/go.mod h1:2O+zQ0Zm8vPD5SeccFFlgyf3AnYWQSHAut/ecPMmRdU=
 golang.org/x/net v0.24.0 h1:1PcaxkF854Fu3+lvBIx5SYn9wRlBzzcnHZSiaFFAb0w=
 golang.org/x/net v0.24.0/go.mod h1:2Q7sJY5mzlzWjKtYUEXSlBWCdyaioyXzRB2RtU8KVE8=
