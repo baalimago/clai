@@ -87,8 +87,8 @@ if [ -x /usr/bin/id ]; then
     fi
 fi
 
-if ! mv "$tmp_file" $INSTALL_DIR/wd-41; then
-  echo "Failed to move the binary to $INSTALL_DIR/wd-41, see error above. Try making sure you have write permission there, or run 'mv $tmp_file <desired-position>'."
+if ! mv "$tmp_file" $INSTALL_DIR/clai; then
+  echo "Failed to move the binary to $INSTALL_DIR/clai, see error above. Try making sure you have write permission there, or run 'mv $tmp_file <desired-position>'."
   exit 1
 fi
 
