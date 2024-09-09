@@ -78,10 +78,18 @@ if ! chmod +x "$tmp_file"; then
 fi
 printf "OK!\n"
 
-# Move the binary to /usr/local/bin and handle permission errors
-if ! mv "$tmp_file" /usr/local/bin/clai; then
-  echo "Failed to move the binary to /usr/local/bin/clai, see error above. Try running the script with sudo, or run 'mv $tmp_file <desired-position>'."
+# Move the binary to standard XDG location and handle permission errors
+INSTALL_DIR=$HOME/.local/bin
+# If run as 'sudo', install to /usr/local/bin for systemwide use
+if [ -x /usr/bin/id ]; then
+    if [ `/usr/bin/id -u` -eq 0 ]; then
+            INSTALL_DIR=/usr/local/bin
+    fi
+fi
+
+if ! mv "$tmp_file" $INSTALL_DIR/clai; then
+  echo "Failed to move the binary to $INSTALL_DIR/clai, see error above. Try making sure you have write permission there, or run 'mv $tmp_file <desired-position>'."
   exit 1
 fi
 
-echo "clai installed successfully in /usr/local/bin, try it out with 'clai h'"
+echo "clai installed successfully in $INSTALL_DIR, try it out with 'clai h'"
