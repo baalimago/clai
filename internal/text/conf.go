@@ -43,7 +43,7 @@ type Profile struct {
 	UseTools        bool     `json:"use_tools"`
 	Tools           []string `json:"tools"`
 	Prompt          string   `json:"prompt"`
-	SaveReplyAsConv bool     `json:"save-reply-as-conv"`
+	SaveReplyAsConv bool     `json:"save_reply_as_conv"`
 }
 
 var DEFAULT = Configurations{
