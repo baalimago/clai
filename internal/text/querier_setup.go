@@ -31,6 +31,19 @@ func vendorType(fromModel string) (string, string, string) {
 		}
 		return "ollama", m, fromModel
 	}
+	if strings.Contains(fromModel, "novita") {
+		m := ""
+		modelVersion := fromModel
+		if strings.HasPrefix(fromModel, "novita:") {
+			parts := strings.Split(fromModel[7:], "/")
+			if len(parts) > 1 {
+				m = parts[0]
+				modelVersion = parts[1]
+			}
+		}
+
+		return "novita", m, modelVersion
+	}
 	if strings.Contains(fromModel, "mistral") || strings.Contains(fromModel, "mixtral") {
 		return "mistral", "mistral", fromModel
 	}

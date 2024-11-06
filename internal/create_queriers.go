@@ -11,6 +11,7 @@ import (
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/internal/vendors/anthropic"
 	"github.com/baalimago/clai/internal/vendors/mistral"
+	"github.com/baalimago/clai/internal/vendors/novita"
 	"github.com/baalimago/clai/internal/vendors/ollama"
 	"github.com/baalimago/clai/internal/vendors/openai"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
@@ -57,6 +58,15 @@ func CreateTextQuerier(conf text.Configurations) (models.Querier, error) {
 		if len(conf.Model) > 7 {
 			defaultCpy.Model = conf.Model[7:]
 		}
+		qTmp, err := text.NewQuerier(conf, &defaultCpy)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create text querier: %w", err)
+		}
+		q = &qTmp
+	} else if strings.HasPrefix(conf.Model, "novita:") {
+		found = true
+		defaultCpy := novita.NOVITA_DEFAULT
+		defaultCpy.Model = conf.Model[7:]
 		qTmp, err := text.NewQuerier(conf, &defaultCpy)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create text querier: %w", err)
