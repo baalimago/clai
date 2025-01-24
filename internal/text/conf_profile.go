@@ -14,6 +14,7 @@ func findProfile(profileName string) (Profile, error) {
 	var p Profile
 	err := utils.ReadAndUnmarshal(path.Join(profilePath, fmt.Sprintf("%v.json", profileName)), &p)
 	if err != nil {
+		p.Name = profileName
 		return p, err
 	}
 	return p, nil

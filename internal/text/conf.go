@@ -39,6 +39,7 @@ type Configurations struct {
 
 // Profile which allows for specialized ai configurations for specific tasks
 type Profile struct {
+	Name            string   `json:"-"`
 	Model           string   `json:"model"`
 	UseTools        bool     `json:"use_tools"`
 	Tools           []string `json:"tools"`

@@ -47,6 +47,12 @@ Examples:
   - clai chat delete my_chat_id
 `
 
+type NotCyclicalImport struct {
+	UseTools   bool
+	UseProfile string
+	Model      string
+}
+
 type ChatHandler struct {
 	q           models.ChatQuerier
 	debug       bool
@@ -56,13 +62,14 @@ type ChatHandler struct {
 	preMessages []models.Message
 	prompt      string
 	convDir     string
+	config      NotCyclicalImport
 }
 
 func (q *ChatHandler) Query(ctx context.Context) error {
 	return q.actOnSubCmd(ctx)
 }
 
-func New(q models.ChatQuerier, confDir, args string, preMessages []models.Message) (*ChatHandler, error) {
+func New(q models.ChatQuerier, confDir, args string, preMessages []models.Message, conf NotCyclicalImport) (*ChatHandler, error) {
 	username := "user"
 	debug := false
 	if misc.Truthy(os.Getenv("DEBUG")) {
@@ -84,6 +91,7 @@ func New(q models.ChatQuerier, confDir, args string, preMessages []models.Messag
 		prompt:      subPrompt,
 		preMessages: preMessages,
 		convDir:     path.Join(confDir, "/.clai/conversations/"),
+		config:      conf,
 	}, nil
 }
 
@@ -225,6 +233,10 @@ func (cq *ChatHandler) getByID(ID string) (models.Chat, error) {
 	return FromPath(path.Join(cq.convDir, fmt.Sprintf("%v.json", ID)))
 }
 
+func (cq *ChatHandler) profileInfo() string {
+	return fmt.Sprintf("tools: '%v', p: '%v', model: '%v'", cq.config.UseTools, cq.config.UseProfile, cq.config.Model)
+}
+
 func (cq *ChatHandler) loop(ctx context.Context) error {
 	defer func() {
 		err := Save(cq.convDir, cq.chat)
@@ -237,7 +249,7 @@ func (cq *ChatHandler) loop(ctx context.Context) error {
 		if lastMessage.Role == "user" {
 			utils.AttemptPrettyPrint(lastMessage, cq.username, false)
 		} else {
-			fmt.Printf("%v(%v): ", ancli.ColoredMessage(ancli.CYAN, cq.username), "'exit/e/quit/q' to quit")
+			fmt.Printf("%v(%v%v): ", ancli.ColoredMessage(ancli.CYAN, cq.username), cq.profileInfo(), " | type exit/e/quit/q to quit")
 			var userInput string
 			reader := bufio.NewReader(os.Stdin)
 			userInput, err := reader.ReadString('\n')
