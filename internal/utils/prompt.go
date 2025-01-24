@@ -51,6 +51,11 @@ func Prompt(stdinReplace string, args []string) (string, error) {
 		args = append(args, strings.Split(pipeIn, " ")...)
 	}
 
+	if stdinReplace == "" && hasPipe {
+		stdinReplace = "{}"
+		args = append(args, "{}")
+	}
+
 	// Replace all occurrence of stdinReplaceSignal with pipeIn
 	if stdinReplace != "" {
 		if debug {
