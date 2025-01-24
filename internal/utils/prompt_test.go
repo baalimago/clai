@@ -54,6 +54,14 @@ func TestPrompt(t *testing.T) {
 			expectedPrompt: "prefix input from stdin suffix",
 			expectedError:  false,
 		},
+		{
+			name:           "Arguments with stdinReplace",
+			stdinReplace:   "",
+			args:           []string{"cmd", "prefix", "suffix"},
+			stdin:          "input from stdin",
+			expectedPrompt: "prefix suffix input from stdin",
+			expectedError:  false,
+		},
 	}
 
 	for _, tc := range testCases {
