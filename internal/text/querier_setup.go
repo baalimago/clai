@@ -120,8 +120,9 @@ func NewQuerier[C models.StreamCompleter](userConf Configurations, dfault C) (Qu
 	}
 
 	termWidth, err := utils.TermWidth()
-	querier.termWidth = termWidth
-	if err != nil {
+	if err == nil {
+		querier.termWidth = termWidth
+	} else {
 		ancli.PrintWarn(fmt.Sprintf("failed to get terminal size: %v\n", err))
 	}
 	currentUser, err := user.Current()
