@@ -253,7 +253,7 @@ func (cq *ChatHandler) listChats(ctx context.Context, chats []models.Chat) error
 	fmt.Printf("\t%-3s| %-20s| %v\n", "ID", "Created", "Filename + prompt")
 	line := strings.Repeat("-", 55)
 	fmt.Printf("\t%v\n", line)
-	itemsPerPage := 10
+	pageSize := 10
 	amChats := len(chats)
 	for i, chat := range chats {
 		chatName := formatChatName(chat.ID)
@@ -262,8 +262,8 @@ func (cq *ChatHandler) listChats(ctx context.Context, chats []models.Chat) error
 			chat.Created.Format("2006-01-02 15:04:05"),
 			chatName,
 		)
-		if (i+1)%itemsPerPage == 0 && i != 1 {
-			fmt.Printf("(page: [%v/%v]. goto chat: <num>, continue: <enter>, q/quit/e/exit: <quit>): ", i, amChats)
+		if (i+1)%pageSize == 0 && i != 1 {
+			fmt.Printf("(page: [%v/%v]. goto chat: <num>, continue: <enter>, q/quit/e/exit: <quit>): ", i/pageSize, amChats/pageSize)
 			input, err := readUserInput()
 			if err != nil {
 				return fmt.Errorf("failed to read input: %v", err)
@@ -288,7 +288,7 @@ func (cq *ChatHandler) listChats(ctx context.Context, chats []models.Chat) error
 			if err != nil {
 				return fmt.Errorf("failed to get terminal width: %v", err)
 			}
-			utils.ClearTermTo(termWidth, itemsPerPage+1)
+			utils.ClearTermTo(termWidth, pageSize+1)
 		}
 	}
 	return nil
