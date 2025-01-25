@@ -108,7 +108,7 @@ func (cq *ChatHandler) actOnSubCmd(ctx context.Context) error {
 	case "list", "l":
 		chats, err := cq.list()
 		if err == nil {
-			cq.listChats(ctx, chats)
+			return cq.listChats(ctx, chats)
 		}
 		return err
 	case "delete", "d":
@@ -274,7 +274,7 @@ func (cq *ChatHandler) listChats(ctx context.Context, chats []models.Chat) error
 			if input != "\n" && input != "" && input != "c" {
 				convNum, atoiErr := strconv.Atoi(input)
 				if atoiErr != nil {
-					return fmt.Errorf("not a number, now what..? maybe break. yeah let's break. Use numbers or enter..! error: %v", err)
+					return fmt.Errorf("'%v' is not a number, now what..? maybe break. yeah let's break. Use numbers or enter..! error: %v", input, atoiErr)
 				}
 				chat := chats[convNum]
 				err = cq.printChat(chat)
