@@ -17,6 +17,9 @@ const usage = `clai - (c)ommand (l)ine (a)rtificial (i)ntelligence
 Prerequisites:
   - Set the OPENAI_API_KEY environment variable to your OpenAI API key
   - Set the ANTHROPIC_API_KEY environment variable to your Anthropic API key
+  - Set the MISTRAL_API_KEY environment variable to your Mistral API key
+  - Set the DEEPSEEK_API_KEY environment variable to your Deepseek API key
+  - Set the NOVITA_API_KEY environment variable to your Novita API key
   - (Optional) Set the NO_COLOR environment variable to disable ansi color output
   - (Optional) Install glow - https://github.com/charmbracelet/glow for formated markdown output
 
