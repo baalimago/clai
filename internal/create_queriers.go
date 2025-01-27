@@ -10,6 +10,7 @@ import (
 	"github.com/baalimago/clai/internal/photo"
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/internal/vendors/anthropic"
+	"github.com/baalimago/clai/internal/vendors/deepseek"
 	"github.com/baalimago/clai/internal/vendors/mistral"
 	"github.com/baalimago/clai/internal/vendors/novita"
 	"github.com/baalimago/clai/internal/vendors/ollama"
@@ -43,6 +44,17 @@ func CreateTextQuerier(conf text.Configurations) (models.Querier, error) {
 	if strings.Contains(conf.Model, "gpt") {
 		found = true
 		defaultCpy := openai.GPT_DEFAULT
+		defaultCpy.Model = conf.Model
+		qTmp, err := text.NewQuerier(conf, &defaultCpy)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create text querier: %w", err)
+		}
+		q = &qTmp
+	}
+
+	if strings.Contains(conf.Model, "deepseek") {
+		found = true
+		defaultCpy := deepseek.DEEPSEEK_DEFAULT
 		defaultCpy.Model = conf.Model
 		qTmp, err := text.NewQuerier(conf, &defaultCpy)
 		if err != nil {
