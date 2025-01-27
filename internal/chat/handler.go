@@ -17,6 +17,7 @@ import (
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
+	"github.com/baalimago/go_away_boilerplate/pkg/num"
 )
 
 const chatUsage = `clai - (c)omand (l)ine (a)rtificial (i)intelligence
@@ -107,7 +108,7 @@ func (cq *ChatHandler) actOnSubCmd(ctx context.Context) error {
 	case "list", "l":
 		chats, err := cq.list()
 		if err == nil {
-			printChats(chats)
+			return cq.listChats(ctx, chats)
 		}
 		return err
 	case "delete", "d":
@@ -162,15 +163,7 @@ func (cq *ChatHandler) findChatByID(potentialChatIdx string) (models.Chat, error
 	}
 }
 
-func (cq *ChatHandler) cont(ctx context.Context) error {
-	if misc.Truthy(os.Getenv("DEBUG")) {
-		ancli.PrintOK(fmt.Sprintf("prompt: %v", cq.prompt))
-	}
-	chat, err := cq.findChatByID(cq.prompt)
-	if err != nil {
-		return fmt.Errorf("failed to get chat: %w", err)
-	}
-
+func (cq *ChatHandler) printChat(chat models.Chat) error {
 	for _, message := range chat.Messages {
 		err := utils.AttemptPrettyPrint(message, cq.username, false)
 		if err != nil {
@@ -180,6 +173,22 @@ func (cq *ChatHandler) cont(ctx context.Context) error {
 	if cq.prompt != "" {
 		chat.Messages = append(chat.Messages, models.Message{Role: "user", Content: cq.prompt})
 	}
+	return nil
+}
+
+func (cq *ChatHandler) cont(ctx context.Context) error {
+	if misc.Truthy(os.Getenv("DEBUG")) {
+		ancli.PrintOK(fmt.Sprintf("prompt: %v", cq.prompt))
+	}
+	chat, err := cq.findChatByID(cq.prompt)
+	if err != nil {
+		return fmt.Errorf("failed to get chat: %w", err)
+	}
+	err = cq.printChat(chat)
+	if err != nil {
+		return fmt.Errorf("failed to print chat: %v", err)
+	}
+
 	cq.chat = chat
 	return cq.loop(ctx)
 }
@@ -219,14 +228,70 @@ func (cq *ChatHandler) list() ([]models.Chat, error) {
 	return chats, err
 }
 
-func printChats(chats []models.Chat) {
+func readUserInput() (string, error) {
+	reader := bufio.NewReader(os.Stdin)
+	input, err := reader.ReadString('\n')
+	if err != nil {
+		return "", fmt.Errorf("failed to read user input: %w", err)
+	}
+	return strings.TrimSpace(input), nil
+}
+
+func formatChatName(chatName string) string {
+	chatNameLen := len(chatName)
+	amCharsToPrint := num.Cap(chatNameLen, 0, 25)
+	overflow := chatNameLen > amCharsToPrint
+	chatName = chatName[:amCharsToPrint]
+	if overflow {
+		chatName += "..."
+	}
+	return strings.ReplaceAll(chatName, "\n", "\\n")
+}
+
+func (cq *ChatHandler) listChats(ctx context.Context, chats []models.Chat) error {
 	ancli.PrintOK(fmt.Sprintf("found '%v' conversations:\n", len(chats)))
 	fmt.Printf("\t%-3s| %-20s| %v\n", "ID", "Created", "Filename + prompt")
 	line := strings.Repeat("-", 55)
 	fmt.Printf("\t%v\n", line)
+	pageSize := 10
+	amChats := len(chats)
 	for i, chat := range chats {
-		fmt.Printf("\t%-3s| %s | %v\n", fmt.Sprintf("%v", i), chat.Created.Format("2006-01-02 15:04:05"), chat.ID)
+		chatName := formatChatName(chat.ID)
+		fmt.Printf("\t%-3s| %s | %v\n",
+			fmt.Sprintf("%v", i),
+			chat.Created.Format("2006-01-02 15:04:05"),
+			chatName,
+		)
+		if (i+1)%pageSize == 0 && i != 1 {
+			fmt.Printf("(page: [%v/%v]. goto chat: <num>, continue: <enter>, q/quit/e/exit: <quit>): ", i/pageSize, amChats/pageSize)
+			input, err := readUserInput()
+			if err != nil {
+				return fmt.Errorf("failed to read input: %v", err)
+			}
+			if input == "q" || input == "quit" || input == "e" || input == "exit" {
+				return nil
+			}
+			if input != "\n" && input != "" && input != "c" {
+				convNum, atoiErr := strconv.Atoi(input)
+				if atoiErr != nil {
+					return fmt.Errorf("'%v' is not a number, now what..? maybe break. yeah let's break. Use numbers or enter..! error: %v", input, atoiErr)
+				}
+				chat := chats[convNum]
+				err = cq.printChat(chat)
+				if err != nil {
+					return fmt.Errorf("selection ok, print chat not ok: %v", err)
+				}
+				cq.chat = chat
+				return cq.loop(ctx)
+			}
+			termWidth, err := utils.TermWidth()
+			if err != nil {
+				return fmt.Errorf("failed to get terminal width: %v", err)
+			}
+			utils.ClearTermTo(termWidth, pageSize+1)
+		}
 	}
+	return nil
 }
 
 func (cq *ChatHandler) getByID(ID string) (models.Chat, error) {
