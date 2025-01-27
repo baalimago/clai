@@ -47,6 +47,10 @@ func vendorType(fromModel string) (string, string, string) {
 	if strings.Contains(fromModel, "mistral") || strings.Contains(fromModel, "mixtral") {
 		return "mistral", "mistral", fromModel
 	}
+
+	if strings.Contains(fromModel, "deepseek") {
+		return "deepseek", "deepseek", fromModel
+	}
 	if strings.Contains(fromModel, "mock") {
 		return "mock", "mock", "mock"
 	}
