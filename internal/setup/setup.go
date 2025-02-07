@@ -24,6 +24,7 @@ const (
 	conf
 	del
 	newaction
+	confWithEditor
 )
 
 var ErrUserExit = errors.New("user exit")
@@ -38,6 +39,8 @@ func (a action) String() string {
 		return "[d]el"
 	case newaction:
 		return "create [n]ew"
+	case confWithEditor:
+		return "configure with [e]ditor"
 	default:
 		return "unset"
 	}
@@ -75,11 +78,11 @@ func Run() error {
 			return fmt.Errorf("failed to get configs files: %w", err)
 		}
 		configs = t
-		action, err := queryForAction([]action{conf, del})
+		qAct, err := queryForAction([]action{conf, del, confWithEditor})
 		if err != nil {
 			return fmt.Errorf("failed to find action: %w", err)
 		}
-		a = action
+		a = qAct
 	case "2":
 		profilesDir := filepath.Join(claiDir, "profiles")
 		t, err := getConfigs(filepath.Join(profilesDir, "*.json"), []string{})
@@ -87,11 +90,11 @@ func Run() error {
 			return fmt.Errorf("failed to get configs files: %w", err)
 		}
 		configs = t
-		action, err := queryForAction([]action{conf, del, newaction})
+		qAct, err := queryForAction([]action{conf, del, newaction, confWithEditor})
 		if err != nil {
 			return fmt.Errorf("failed to find action: %w", err)
 		}
-		a = action
+		a = qAct
 		if a == newaction {
 			c, err := createProFile(profilesDir)
 			if err != nil {
