@@ -2,6 +2,7 @@ package setup
 
 import (
 	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 )
@@ -86,5 +87,53 @@ func TestGetToolsValue(t *testing.T) {
 	// The actual tool names might be different, so we'll just check the length
 	if len(result) != 3 {
 		t.Errorf("getToolsValue() returned %d tools, want 3", len(result))
+	}
+}
+
+func TestReconfigureWithEditor(t *testing.T) {
+	tests := []struct {
+		name    string
+		editor  string
+		content string
+		wantErr bool
+	}{
+		{
+			name:    "No editor set",
+			editor:  "",
+			content: "",
+			wantErr: true,
+		},
+		{
+			name:    "Valid editor",
+			editor:  "echo",
+			content: "{\"test\": \"value\"}",
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Setup temporary file
+			tmpDir := t.TempDir()
+			tmpFile := filepath.Join(tmpDir, "config.json")
+			if err := os.WriteFile(tmpFile, []byte(tt.content), 0o644); err != nil {
+				t.Fatal(err)
+			}
+
+			// Set environment
+			oldEditor := os.Getenv("EDITOR")
+			defer os.Setenv("EDITOR", oldEditor)
+			os.Setenv("EDITOR", tt.editor)
+
+			cfg := config{
+				name:     "test",
+				filePath: tmpFile,
+			}
+
+			err := reconfigureWithEditor(cfg)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("reconfigureWithEditor() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
 	}
 }

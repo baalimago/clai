@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"regexp"
 	"slices"
 	"strconv"
@@ -39,6 +40,10 @@ func queryForAction(options []action) (action, error) {
 	case "n", "new":
 		if slices.Contains(options, newaction) {
 			ret = newaction
+		}
+	case "e", "configureWithEditor":
+		if slices.Contains(options, confWithEditor) {
+			ret = confWithEditor
 		}
 	case "q", "quit":
 		return unset, ErrUserExit
@@ -76,6 +81,8 @@ func configure(cfgs []config, a action) error {
 	switch a {
 	case conf:
 		return reconfigure(cfgs[index])
+	case confWithEditor:
+		return reconfigureWithEditor(cfgs[index])
 	case del:
 		return remove(cfgs[index])
 	default:
@@ -93,6 +100,29 @@ func reconfigure(cfg config) error {
 		return fmt.Errorf("failed to read file %s: %v", cfg.filePath, err)
 	}
 	return interractiveReconfigure(cfg, b)
+}
+
+// reconfigureWithEditor. As in the $EDITOR environment variable
+func reconfigureWithEditor(cfg config) error {
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		return fmt.Errorf("environment variable EDITOR is not set")
+	}
+	cmd := exec.Command(editor, cfg.filePath)
+
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to edit file %s: %v", cfg.filePath, err)
+	}
+	newConfig, err := os.ReadFile(cfg.filePath)
+	if err != nil {
+		return fmt.Errorf("editor exited OK, failed to read config file '%v' after, error: %v", cfg.filePath, err)
+	}
+	ancli.Okf("new config:\n%v", string(newConfig))
+	return nil
 }
 
 func remove(cfg config) error {
