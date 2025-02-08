@@ -77,5 +77,5 @@ func ReplaceTildeWithHome(s string) (string, error) {
 	if err != nil && strings.Contains(s, "~/") { // only fail if glob contains ~/ and home dir is not found
 		return "", fmt.Errorf("failed to get home dir: %w", err)
 	}
-	return strings.Replace(s, "~", home, -1), nil
+	return strings.ReplaceAll(s, "~", home), nil
 }

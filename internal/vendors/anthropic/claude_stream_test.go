@@ -109,7 +109,6 @@ OUTER:
 			case error:
 				if errors.Is(sel, io.EOF) {
 					break OUTER
-					return
 				}
 				t.Fatalf("unexpected error: %v", sel)
 			}
