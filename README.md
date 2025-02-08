@@ -8,40 +8,36 @@ You can generate images, text, summarize content and chat while using native ter
 
 The multi-vendor aspect enables easy comparisons between different models, also removes the need for multiple subscriptions: most APIs are usage-based (some with expiration time).
 
-![clai_in_action_example](./img/example.gif "Example of clai in action")
-
 ## Features
 
-- Prompting with input from:
-  - Piped data
-  - Globbed file input
-  - Args
-- Conversations (with same input options as above)
-- Tools calling [with easily forkable + extendable tools](./internal/tools/)
-- LLM Profiles - Preconfigured prompts with specific tools
-- Photo generation\*
-- Human readable / robot readable output
-- 100% go standard library (except for /x/net)
+Piping into LLM:
+![piping](./img/piping.gif "Piping data into queries")
 
-\* Only with dall-e for the moment.
-Nag on me to implement modellabs and I'll do it.
+Easily configurable profiles (note the built in tools!):
+![profiles](./img/profiles.gif "Profiles allowing easily customized propmpts")
 
-## Prerequisites
+Conversation history and simple GUI to continue old chats:
+![chats](./img/chats.gif "Conversation history and simple GUI to continue old chats:")
 
-- **Go:** Install Go from [here](https://golang.org/doc/install).
+These three features combined makes it quite portable.
+Personally I have customized my neovim setup to pipe/glob buffers into it, alongside pre-prompted profiles, to create what I call GhettoPilot.
+But that's besides the point.
+Let's continue:
+
+## Supported vendors
+
 - **OpenAI API Key:** Set the `OPENAI_API_KEY` env var to your [OpenAI API key](https://platform.openai.com/docs/quickstart/step-2-set-up-your-api-key). [Text models](https://platform.openai.com/docs/models/gpt-4-and-gpt-4-turbo), [photo models](https://platform.openai.com/docs/models/dall-e).
 - **Anthropic API Key:** Set the `ANTHROPIC_API_KEY` env var to your [Anthropic API key](https://console.anthropic.com/login?returnTo=%2F). [Text models](https://docs.anthropic.com/claude/docs/models-overview#model-recommendations).
 - **Mistral API Key:** Set the `MISTRAL_API_KEY` env var to your [Mistral API key](https://console.mistral.ai/). [Text models](https://docs.mistral.ai/getting-started/models/)
 - **Deepseek:** Set the `DEEPSEEK_API_KEY` env var to your [Deepseek API key](https://api-docs.deepseek.com/). [Text models](https://api-docs.deepseek.com/quick_start/pricing)
 - **Novita AI:** Set the `NOVITA_API_KEY` env var to your [Novita API key](https://novita.ai/settings?utm_source=github_clai&utm_medium=github_readme&utm_campaign=link#key-management). Target the model using novita prefix, like this: `novita:<target>`, where `<target>` is one of the [text models](https://novita.ai/model-api/product/llm-api?utm_source=github_clai&utm_medium=github_readme&utm_campaign=link).
 - **Ollama:** Start your ollama server (defaults to localhost:11434). Target using model format `ollama:<target>`, where `<target>` is optional (defaults to llama3). Reconfigure url with `clai s -> 1 -> <ollama-model-conf>`
-- **Glow**(Optional): Install [Glow](https://github.com/charmbracelet/glow) for formatted markdown output when querying text responses.
 
 Note that you can only use the models that you have bought an API key for.
 
-Most text and photo based models within the respective vendors are supported, see [model configurations](./EXAMPLES.md#Models) for how to swap.
-
 ## Get started
+
+Install [Glow](https://github.com/charmbracelet/glow) for formatted markdown output when querying text responses.
 
 ```bash
 go install github.com/baalimago/clai@latest
