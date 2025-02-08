@@ -1,12 +1,10 @@
 package chat
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
 	"os"
-	"os/signal"
 	"os/user"
 	"path"
 	"slices"
@@ -73,10 +71,7 @@ func (q *ChatHandler) Query(ctx context.Context) error {
 
 func New(q models.ChatQuerier, confDir, args string, preMessages []models.Message, conf NotCyclicalImport) (*ChatHandler, error) {
 	username := "user"
-	debug := false
-	if misc.Truthy(os.Getenv("DEBUG")) {
-		debug = true
-	}
+	debug := misc.Truthy(os.Getenv("DEBUG"))
 	argsArr := strings.Split(args, " ")
 	subCmd := argsArr[0]
 	currentUser, err := user.Current()
@@ -217,9 +212,9 @@ func (cq *ChatHandler) list() ([]models.Chat, error) {
 		ancli.PrintOK(fmt.Sprintf("found '%v' conversations:\n", len(files)))
 	}
 	for _, file := range files {
-		chat, err := FromPath(path.Join(cq.convDir, file.Name()))
-		if err != nil {
-			return nil, fmt.Errorf("failed to get chat: %w", err)
+		chat, pathErr := FromPath(path.Join(cq.convDir, file.Name()))
+		if pathErr != nil {
+			return nil, fmt.Errorf("failed to get chat: %w", pathErr)
 		}
 		chats = append(chats, chat)
 	}
@@ -227,15 +222,6 @@ func (cq *ChatHandler) list() ([]models.Chat, error) {
 		return b.Created.Compare(a.Created)
 	})
 	return chats, err
-}
-
-func readUserInput() (string, error) {
-	reader := bufio.NewReader(os.Stdin)
-	input, err := reader.ReadString('\n')
-	if err != nil {
-		return "", fmt.Errorf("failed to read user input: %w", err)
-	}
-	return strings.TrimSpace(input), nil
 }
 
 func formatChatName(chatName string) string {
@@ -282,13 +268,9 @@ func (cq *ChatHandler) listChats(ctx context.Context, chats []models.Chat) error
 
 		}
 		fmt.Printf("(page: (%v/%v). goto chat: [<num>], next: [<enter>]/[n]ext, [p]rev, [q]uit/[e]it): ", page, amChats/pageSize)
-		input, readErr := readUserInput()
+		input, readErr := utils.ReadUserInput()
 		if readErr != nil {
-			return fmt.Errorf("failed to read input: %v", readErr)
-		}
-		quitters := []string{"q", "quit", "e", "exit"}
-		if slices.Contains(quitters, input) {
-			return nil
+			return fmt.Errorf("failed to read input: %w", readErr)
 		}
 		convNum, atoiErr := strconv.Atoi(input)
 		noNumberSelected = atoiErr != nil
@@ -317,7 +299,7 @@ func (cq *ChatHandler) listChats(ctx context.Context, chats []models.Chat) error
 	// Table header and some stuff like that
 	utils.ClearTermTo(termWidth, 3)
 	chat := chats[selectedNumber]
-	ancli.Okf("selected conversation with index: '%v', name: '%v', with '%v' messages", selectedNumber, chat.ID, len(chat.Messages))
+	ancli.Okf("selected conversation with index: '%v', name: '%v', with '%v' messages\n", selectedNumber, chat.ID, len(chat.Messages))
 	err = cq.printChat(chat)
 	if err != nil {
 		return fmt.Errorf("selection ok, print chat not ok: %v", err)
@@ -335,10 +317,6 @@ func (cq *ChatHandler) profileInfo() string {
 }
 
 func (cq *ChatHandler) loop(ctx context.Context) error {
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt)
-	defer signal.Stop(sigChan)
-
 	defer func() {
 		err := Save(cq.convDir, cq.chat)
 		if err != nil {
@@ -353,31 +331,12 @@ func (cq *ChatHandler) loop(ctx context.Context) error {
 		} else {
 			fmt.Printf("%v(%v%v): ", ancli.ColoredMessage(ancli.CYAN, cq.username), cq.profileInfo(), " | [e]xit/[q]uit")
 
-			inputChan := make(chan string)
-			errChan := make(chan error)
-
-			go func() {
-				reader := bufio.NewReader(os.Stdin)
-				userInput, err := reader.ReadString('\n')
-				if err != nil {
-					errChan <- err
-					return
-				}
-				inputChan <- userInput
-			}()
-
-			select {
-			case <-sigChan:
-				return nil
-			case err := <-errChan:
-				return fmt.Errorf("failed to read user input: %w", err)
-			case userInput := <-inputChan:
-				quitters := []string{"exit", "e", "quit", "q"}
-				if slices.Contains(quitters, strings.TrimSpace(userInput)) {
-					return nil
-				}
-				cq.chat.Messages = append(cq.chat.Messages, models.Message{Role: "user", Content: userInput})
+			userInput, err := utils.ReadUserInput()
+			if err != nil {
+				// No context, error should contain context
+				return err
 			}
+			cq.chat.Messages = append(cq.chat.Messages, models.Message{Role: "user", Content: userInput})
 		}
 
 		newChat, err := cq.q.TextQuery(ctx, cq.chat)

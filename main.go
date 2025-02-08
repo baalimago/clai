@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"runtime/pprof"
 
 	"github.com/baalimago/clai/internal"
+	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 	"github.com/baalimago/go_away_boilerplate/pkg/shutdown"
@@ -91,6 +93,10 @@ func main() {
 	}
 	querier, err := internal.Setup(usage)
 	if err != nil {
+		if errors.Is(err, utils.ErrUserInitiatedExit) {
+			ancli.Okf("Seems like you wanted out. Byebye!\n")
+			os.Exit(0)
+		}
 		ancli.PrintErr(fmt.Sprintf("failed to setup: %v\n", err))
 		os.Exit(1)
 	}
@@ -98,8 +104,13 @@ func main() {
 	go func() { shutdown.Monitor(cancel) }()
 	err = querier.Query(ctx)
 	if err != nil {
-		ancli.PrintErr(fmt.Sprintf("failed to run: %v\n", err))
-		os.Exit(1)
+		if errors.Is(err, utils.ErrUserInitiatedExit) {
+			ancli.Okf("Seems like you wanted out. Byebye!\n")
+			os.Exit(0)
+		} else {
+			ancli.PrintErr(fmt.Sprintf("failed to run: %v\n", err))
+			os.Exit(1)
+		}
 	}
 	cancel()
 	if misc.Truthy(os.Getenv("DEBUG")) {

@@ -231,18 +231,14 @@ func Setup(usage string) (models.Querier, error) {
 	case SETUP:
 		err := setup.Run()
 		if err != nil {
-			if errors.Is(err, setup.ErrUserExit) {
-				ancli.PrintOK("user exit\n")
-				os.Exit(0)
-			}
-			return nil, fmt.Errorf("failed to run setup: %v", err)
+			return nil, fmt.Errorf("failed to run setup: %w", err)
 		}
 		os.Exit(0)
 		return nil, nil
 	case REPLAY:
 		err := reply.Replay(flagSet.PrintRaw)
 		if err != nil {
-			return nil, fmt.Errorf("failed to replay previous reply: %v", err)
+			return nil, fmt.Errorf("failed to replay previous reply: %w", err)
 		}
 		os.Exit(0)
 	default:

@@ -1,7 +1,6 @@
 package setup
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,6 +13,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/baalimago/clai/internal/tools"
+	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
@@ -27,7 +27,10 @@ func queryForAction(options []action) (action, error) {
 	}
 	userQuery += "[q]uit: "
 	fmt.Print(userQuery)
-	fmt.Scanln(&input)
+	input, err := utils.ReadUserInput()
+	if err != nil {
+		return unset, fmt.Errorf("failed to query for action: %w", err)
+	}
 	switch input {
 	case "c", "configure":
 		if slices.Contains(options, conf) {
@@ -46,7 +49,7 @@ func queryForAction(options []action) (action, error) {
 			ret = confWithEditor
 		}
 	case "q", "quit":
-		return unset, ErrUserExit
+		return unset, utils.ErrUserInitiatedExit
 	}
 
 	if ret == unset {
@@ -67,7 +70,11 @@ func configure(cfgs []config, a action) error {
 			fmt.Printf("\t%v: %v\n", i, cfg.name)
 		}
 		fmt.Print("Please pick index: ")
-		fmt.Scanln(&input)
+		shadowInput, err := utils.ReadUserInput()
+		if err != nil {
+			return err
+		}
+		input = shadowInput
 		i, err := strconv.Atoi(input)
 		if err != nil {
 			return fmt.Errorf("invalid index: %v", input)
@@ -127,12 +134,14 @@ func reconfigureWithEditor(cfg config) error {
 
 func remove(cfg config) error {
 	fmt.Printf("Are you sure you want to delete: '%v'?\n[y/n]: ", cfg.filePath)
-	var input string
-	fmt.Scanln(&input)
+	input, err := utils.ReadUserInput()
+	if err != nil {
+		return err
+	}
 	if input != "y" {
 		return fmt.Errorf("aborting deletion")
 	}
-	err := os.Remove(cfg.filePath)
+	err = os.Remove(cfg.filePath)
 	if err != nil {
 		return fmt.Errorf("failed to delete file: '%v', error: %v", cfg.filePath, err)
 	}
@@ -149,16 +158,16 @@ func interractiveReconfigure(cfg config, b []byte) error {
 	fmt.Printf("Current config:\n%s\n---\n", b)
 	newConfig, err := buildNewConfig(jzon)
 	if err != nil {
-		return fmt.Errorf("failed to build new config: %v", err)
+		return fmt.Errorf("failed to build new config: %w", err)
 	}
 
 	newB, err := json.MarshalIndent(newConfig, "", "\t")
 	if err != nil {
-		return fmt.Errorf("failed to marshal new config: %v", err)
+		return fmt.Errorf("failed to marshal new config: %w", err)
 	}
 	err = os.WriteFile(cfg.filePath, newB, 0o644)
 	if err != nil {
-		return fmt.Errorf("failed to write new config at: '%v', error: %v", cfg.filePath, err)
+		return fmt.Errorf("failed to write new config at: '%v', error: %w", cfg.filePath, err)
 	}
 	ancli.PrintOK(fmt.Sprintf("wrote new config to: '%v'\n", cfg.filePath))
 	return nil
@@ -182,14 +191,13 @@ func getToolsValue(v any) ([]string, error) {
 		i++
 	}
 	w.Flush()
-	reader := bufio.NewReader(os.Stdin)
 	fmt.Print("Enter indices of tools to use (example: '1,3,4,2'): ")
-	input, err := reader.ReadString('\n')
+	input, err := utils.ReadUserInput()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read input: %v", err)
 	}
 	if input == "q" || input == "quit" {
-		return []string{}, ErrUserExit
+		return []string{}, utils.ErrUserInitiatedExit
 	}
 
 	if input == "" {
@@ -216,11 +224,10 @@ func getNewValue(k string, v any) (any, error) {
 		return getToolsValue(v)
 	}
 	var ret any
-	reader := bufio.NewReader(os.Stdin)
 	fmt.Printf("Key: '%v', current: '%v'\nPlease enter new value, or leave empty to keep: ", k, v)
-	input, err := reader.ReadString('\n')
+	input, err := utils.ReadUserInput()
 	if err != nil {
-		return nil, fmt.Errorf("failed to read input: %v", err)
+		return nil, fmt.Errorf("failed to read input: %w", err)
 	}
 	input = strings.TrimRight(input, "\n")
 	if input == "" {

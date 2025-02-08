@@ -16,7 +16,6 @@ var errFormat = "code: %v, stderr: '%v'\n"
 func (q *Querier[C]) handleCmdMode() error {
 	// Tokens stream end without endline
 	fmt.Println()
-	var input string
 
 	if q.execErr != nil {
 		return nil
@@ -24,7 +23,10 @@ func (q *Querier[C]) handleCmdMode() error {
 
 	for {
 		fmt.Print("Do you want to [e]xecute cmd, [q]uit?: ")
-		fmt.Scanln(&input)
+		input, err := utils.ReadUserInput()
+		if err != nil {
+			return err
+		}
 		switch strings.ToLower(input) {
 		case "q":
 			return nil
