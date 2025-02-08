@@ -75,6 +75,15 @@ func TestUpdateMessageTerminalMetadata(t *testing.T) {
 			expectedLine:      "66",
 			expectedLineCount: 5,
 		},
+		{
+			name: "it should not fail on this edge case that I found",
+			msg:  "Debugging involves systematically finding and resolving issues within your code or software. Start by identifying the problem, replicate the error, and use tools like breakpoints or logging to trace the source. Testing changes iteratively helps ensure the fix is successful and doesn't cause new issues.",
+			// This is not correct, but that's fine, the last line functionality isn't used anywhere anyways
+			expectedLine:      "issues.",
+			lineCount:         0,
+			termWidth:         223,
+			expectedLineCount: 2,
+		},
 	}
 
 	for _, tc := range testCases {

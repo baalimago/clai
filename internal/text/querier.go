@@ -176,6 +176,29 @@ func (q *Querier[C]) postProcessOutput(newSysMsg models.Message) {
 
 	if q.termWidth > 0 {
 		utils.UpdateMessageTerminalMetadata(q.fullMsg, &q.line, &q.lineCount, q.termWidth)
+		// Write the details of q to the file determined by the environment variable DEBUG_OUTPUT_FILE
+		if debugOutputFile := os.Getenv("DEBUG_OUTPUT_FILE"); debugOutputFile != "" {
+			file, err := os.Create(debugOutputFile)
+			if err != nil {
+				ancli.PrintErr(fmt.Sprintf("failed to create debug output file: %v\n", err))
+			} else {
+				defer file.Close()
+				_, err = file.WriteString(debug.IndentedJsonFmt(struct {
+					FullMessage string
+					Line        string
+					LineCount   int
+					TermWidth   int
+				}{
+					FullMessage: q.fullMsg,
+					Line:        q.line,
+					LineCount:   q.lineCount,
+					TermWidth:   q.termWidth,
+				}))
+				if err != nil {
+					ancli.PrintErr(fmt.Sprintf("failed to write to debug output file: %v\n", err))
+				}
+			}
+		}
 		utils.ClearTermTo(q.termWidth, q.lineCount-1)
 	} else {
 		fmt.Println()
