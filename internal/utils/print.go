@@ -39,6 +39,9 @@ func UpdateMessageTerminalMetadata(msg string, line *string, lineCount *int, ter
 	for _, line := range newlineSplit {
 		amNewlines += countNewLines(line, termWidth)
 	}
+	if amNewlines == 1 {
+		amNewlines = 2
+	}
 
 	amNewlineChars := len(newlineSplit)
 	if amNewlineChars == 1 {
