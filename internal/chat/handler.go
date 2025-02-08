@@ -1,7 +1,6 @@
 package chat
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -72,10 +71,7 @@ func (q *ChatHandler) Query(ctx context.Context) error {
 
 func New(q models.ChatQuerier, confDir, args string, preMessages []models.Message, conf NotCyclicalImport) (*ChatHandler, error) {
 	username := "user"
-	debug := false
-	if misc.Truthy(os.Getenv("DEBUG")) {
-		debug = true
-	}
+	debug := misc.Truthy(os.Getenv("DEBUG"))
 	argsArr := strings.Split(args, " ")
 	subCmd := argsArr[0]
 	currentUser, err := user.Current()
@@ -131,7 +127,7 @@ func (cq *ChatHandler) new(ctx context.Context) error {
 	msgs = append(msgs, models.Message{Role: "user", Content: cq.prompt})
 	newChat := models.Chat{
 		Created:  time.Now(),
-		ID:       IdFromPrompt(cq.prompt),
+		ID:       IDFromPrompt(cq.prompt),
 		Messages: msgs,
 	}
 	newChat, err := cq.q.TextQuery(ctx, newChat)
@@ -159,7 +155,7 @@ func (cq *ChatHandler) findChatByID(potentialChatIdx string) (models.Chat, error
 		cq.prompt = strings.Join(split[1:], " ")
 		return chats[chatIdx], nil
 	} else {
-		return cq.getByID(IdFromPrompt(potentialChatIdx))
+		return cq.getByID(IDFromPrompt(potentialChatIdx))
 	}
 }
 
@@ -216,9 +212,9 @@ func (cq *ChatHandler) list() ([]models.Chat, error) {
 		ancli.PrintOK(fmt.Sprintf("found '%v' conversations:\n", len(files)))
 	}
 	for _, file := range files {
-		chat, err := FromPath(path.Join(cq.convDir, file.Name()))
-		if err != nil {
-			return nil, fmt.Errorf("failed to get chat: %w", err)
+		chat, pathErr := FromPath(path.Join(cq.convDir, file.Name()))
+		if pathErr != nil {
+			return nil, fmt.Errorf("failed to get chat: %w", pathErr)
 		}
 		chats = append(chats, chat)
 	}
@@ -226,15 +222,6 @@ func (cq *ChatHandler) list() ([]models.Chat, error) {
 		return b.Created.Compare(a.Created)
 	})
 	return chats, err
-}
-
-func readUserInput() (string, error) {
-	reader := bufio.NewReader(os.Stdin)
-	input, err := reader.ReadString('\n')
-	if err != nil {
-		return "", fmt.Errorf("failed to read user input: %w", err)
-	}
-	return strings.TrimSpace(input), nil
 }
 
 func formatChatName(chatName string) string {
@@ -250,48 +237,75 @@ func formatChatName(chatName string) string {
 
 func (cq *ChatHandler) listChats(ctx context.Context, chats []models.Chat) error {
 	ancli.PrintOK(fmt.Sprintf("found '%v' conversations:\n", len(chats)))
-	fmt.Printf("\t%-3s| %-20s| %v\n", "ID", "Created", "Filename + prompt")
+	fmt.Printf("\t%-3s| %-20s| %v | %v\n", "ID", "Created", "Messages", "Filename + prompt")
 	line := strings.Repeat("-", 55)
 	fmt.Printf("\t%v\n", line)
-	pageSize := 10
-	amChats := len(chats)
-	for i, chat := range chats {
-		chatName := formatChatName(chat.ID)
-		fmt.Printf("\t%-3s| %s | %v\n",
-			fmt.Sprintf("%v", i),
-			chat.Created.Format("2006-01-02 15:04:05"),
-			chatName,
-		)
-		if (i+1)%pageSize == 0 && i != 1 {
-			fmt.Printf("(page: [%v/%v]. goto chat: <num>, continue: <enter>, q/quit/e/exit: <quit>): ", i/pageSize, amChats/pageSize)
-			input, err := readUserInput()
-			if err != nil {
-				return fmt.Errorf("failed to read input: %v", err)
-			}
-			if input == "q" || input == "quit" || input == "e" || input == "exit" {
-				return nil
-			}
-			if input != "\n" && input != "" && input != "c" {
-				convNum, atoiErr := strconv.Atoi(input)
-				if atoiErr != nil {
-					return fmt.Errorf("'%v' is not a number, now what..? maybe break. yeah let's break. Use numbers or enter..! error: %v", input, atoiErr)
-				}
-				chat := chats[convNum]
-				err = cq.printChat(chat)
-				if err != nil {
-					return fmt.Errorf("selection ok, print chat not ok: %v", err)
-				}
-				cq.chat = chat
-				return cq.loop(ctx)
-			}
-			termWidth, err := utils.TermWidth()
-			if err != nil {
-				return fmt.Errorf("failed to get terminal width: %v", err)
-			}
-			utils.ClearTermTo(termWidth, pageSize+1)
-		}
+
+	termWidth, err := utils.TermWidth()
+	if err != nil {
+		return fmt.Errorf("failed to get terminal width: %v", err)
 	}
-	return nil
+	pageSize := 10
+	page := 0
+	amChats := len(chats)
+	noNumberSelected := true
+	selectedNumber := -1
+	for noNumberSelected {
+		pageIndex := page * pageSize
+		listToIndex := pageIndex + pageSize
+		if listToIndex > amChats-1 {
+			listToIndex = amChats - 1
+		}
+		for i := pageIndex; i < listToIndex; i++ {
+			chat := chats[i]
+			chatName := formatChatName(chat.ID)
+			fmt.Printf("\t%-3s| %s | %-8v | %v\n",
+				fmt.Sprintf("%v", i),
+				chat.Created.Format("2006-01-02 15:04:05"),
+				len(chat.Messages),
+				chatName,
+			)
+
+		}
+		fmt.Printf("(page: (%v/%v). goto chat: [<num>], next: [<enter>]/[n]ext, [p]rev, [q]uit/[e]it): ", page, amChats/pageSize)
+		input, readErr := utils.ReadUserInput()
+		if readErr != nil {
+			return fmt.Errorf("failed to read input: %w", readErr)
+		}
+		convNum, atoiErr := strconv.Atoi(input)
+		noNumberSelected = atoiErr != nil
+		if !noNumberSelected {
+			selectedNumber = convNum
+		}
+
+		prevers := []string{"prev", "p"}
+		if slices.Contains(prevers, input) {
+			page -= 1
+			if page < 0 {
+				page = 0
+			}
+			// Lets just assume everything but prev is next
+		} else {
+			if (page+1)*pageSize < amChats {
+				page += 1
+			}
+		}
+		utils.ClearTermTo(termWidth, (listToIndex-pageIndex)+1)
+	}
+	if selectedNumber > len(chats) {
+		return fmt.Errorf("selection: '%v' is higher than available chats: '%v'", selectedNumber, len(chats))
+	}
+
+	// Table header and some stuff like that
+	utils.ClearTermTo(termWidth, 3)
+	chat := chats[selectedNumber]
+	ancli.Okf("selected conversation with index: '%v', name: '%v', with '%v' messages\n", selectedNumber, chat.ID, len(chat.Messages))
+	err = cq.printChat(chat)
+	if err != nil {
+		return fmt.Errorf("selection ok, print chat not ok: %v", err)
+	}
+	cq.chat = chat
+	return cq.loop(ctx)
 }
 
 func (cq *ChatHandler) getByID(ID string) (models.Chat, error) {
@@ -309,20 +323,18 @@ func (cq *ChatHandler) loop(ctx context.Context) error {
 			panic(err)
 		}
 	}()
+
 	for {
 		lastMessage := cq.chat.Messages[len(cq.chat.Messages)-1]
 		if lastMessage.Role == "user" {
 			utils.AttemptPrettyPrint(lastMessage, cq.username, false)
 		} else {
-			fmt.Printf("%v(%v%v): ", ancli.ColoredMessage(ancli.CYAN, cq.username), cq.profileInfo(), " | type exit/e/quit/q to quit")
-			var userInput string
-			reader := bufio.NewReader(os.Stdin)
-			userInput, err := reader.ReadString('\n')
+			fmt.Printf("%v(%v%v): ", ancli.ColoredMessage(ancli.CYAN, cq.username), cq.profileInfo(), " | [e]xit/[q]uit")
+
+			userInput, err := utils.ReadUserInput()
 			if err != nil {
-				return fmt.Errorf("failed to read user input: %w", err)
-			}
-			if userInput == "exit\n" || userInput == "quit\n" || userInput == "q\n" || userInput == "e\n" || ctx.Err() != nil {
-				return nil
+				// No context, error should contain context
+				return err
 			}
 			cq.chat.Messages = append(cq.chat.Messages, models.Message{Role: "user", Content: userInput})
 		}

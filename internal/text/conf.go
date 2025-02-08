@@ -118,7 +118,7 @@ func (c *Configurations) SetupPrompts(args []string) error {
 	}
 	c.PostProccessedPrompt = prompt
 	if c.InitialPrompt.ID == "" {
-		c.InitialPrompt.ID = chat.IdFromPrompt(prompt)
+		c.InitialPrompt.ID = chat.IDFromPrompt(prompt)
 	}
 	return nil
 }

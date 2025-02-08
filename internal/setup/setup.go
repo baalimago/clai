@@ -1,7 +1,6 @@
 package setup
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -26,8 +25,6 @@ const (
 	newaction
 	confWithEditor
 )
-
-var ErrUserExit = errors.New("user exit")
 
 func (a action) String() string {
 	switch a {
@@ -54,9 +51,12 @@ const stage_0 = `Do you wish to configure:
 
 // Run the setup to configure the different files
 func Run() error {
-	var input string
 	fmt.Print(stage_0)
-	fmt.Scanln(&input)
+
+	input, err := utils.ReadUserInput()
+	if err != nil {
+		return fmt.Errorf("failed to read input while running: %w", err)
+	}
 	var configs []config
 	var a action
 	configDir, err := os.UserConfigDir()
@@ -106,6 +106,8 @@ func Run() error {
 			// Once new file has potentially been created, potentially alter it
 			a = conf
 		}
+	case "q", "quit", "e", "exit":
+		return utils.ErrUserInitiatedExit
 	default:
 		return fmt.Errorf("unrecognized selection: %v", input)
 	}
@@ -117,11 +119,13 @@ func createProFile(profilePath string) (config, error) {
 	if _, err := os.Stat(profilePath); os.IsNotExist(err) {
 		os.MkdirAll(profilePath, os.ModePerm)
 	}
-	var profileName string
 	fmt.Print("Enter profile name: ")
-	fmt.Scanln(&profileName)
+	profileName, err := utils.ReadUserInput()
+	if err != nil {
+		return config{}, err
+	}
 	newProfilePath := path.Join(profilePath, fmt.Sprintf("%v.json", profileName))
-	err := utils.CreateFile(newProfilePath, &text.DEFAULT_PROFILE)
+	err = utils.CreateFile(newProfilePath, &text.DEFAULT_PROFILE)
 	if err != nil {
 		return config{}, err
 	}
