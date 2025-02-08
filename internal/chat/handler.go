@@ -250,9 +250,14 @@ func formatChatName(chatName string) string {
 
 func (cq *ChatHandler) listChats(ctx context.Context, chats []models.Chat) error {
 	ancli.PrintOK(fmt.Sprintf("found '%v' conversations:\n", len(chats)))
-	fmt.Printf("\t%-3s| %-20s| %v\n", "ID", "Created", "Filename + prompt")
+	fmt.Printf("\t%-3s| %-20s| %v | %v\n", "ID", "Created", "Messages", "Filename + prompt")
 	line := strings.Repeat("-", 55)
 	fmt.Printf("\t%v\n", line)
+
+	termWidth, err := utils.TermWidth()
+	if err != nil {
+		return fmt.Errorf("failed to get terminal width: %v", err)
+	}
 	pageSize := 10
 	page := 0
 	amChats := len(chats)
@@ -267,17 +272,18 @@ func (cq *ChatHandler) listChats(ctx context.Context, chats []models.Chat) error
 		for i := pageIndex; i < listToIndex; i++ {
 			chat := chats[i]
 			chatName := formatChatName(chat.ID)
-			fmt.Printf("\t%-3s| %s | %v\n",
+			fmt.Printf("\t%-3s| %s | %-8v | %v\n",
 				fmt.Sprintf("%v", i),
 				chat.Created.Format("2006-01-02 15:04:05"),
+				len(chat.Messages),
 				chatName,
 			)
 
 		}
 		fmt.Printf("(page: (%v/%v). goto chat: [<num>], next: [<enter>]/[n]ext, [p]rev, [q]uit/[e]it): ", page, amChats/pageSize)
-		input, err := readUserInput()
-		if err != nil {
-			return fmt.Errorf("failed to read input: %v", err)
+		input, readErr := readUserInput()
+		if readErr != nil {
+			return fmt.Errorf("failed to read input: %v", readErr)
 		}
 		quitters := []string{"q", "quit", "e", "exit"}
 		if slices.Contains(quitters, input) {
@@ -301,17 +307,17 @@ func (cq *ChatHandler) listChats(ctx context.Context, chats []models.Chat) error
 				page += 1
 			}
 		}
-		termWidth, err := utils.TermWidth()
-		if err != nil {
-			return fmt.Errorf("failed to get terminal width: %v", err)
-		}
 		utils.ClearTermTo(termWidth, (listToIndex-pageIndex)+1)
 	}
 	if selectedNumber > len(chats) {
 		return fmt.Errorf("selection: '%v' is higher than available chats: '%v'", selectedNumber, len(chats))
 	}
+
+	// Table header and some stuff like that
+	utils.ClearTermTo(termWidth, 3)
 	chat := chats[selectedNumber]
-	err := cq.printChat(chat)
+	ancli.Okf("selected conversation with index: '%v', name: '%v', with '%v' messages", selectedNumber, chat.ID, len(chat.Messages))
+	err = cq.printChat(chat)
 	if err != nil {
 		return fmt.Errorf("selection ok, print chat not ok: %v", err)
 	}
