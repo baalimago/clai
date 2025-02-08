@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/signal"
 	"os/user"
 	"path"
 	"slices"
@@ -131,7 +132,7 @@ func (cq *ChatHandler) new(ctx context.Context) error {
 	msgs = append(msgs, models.Message{Role: "user", Content: cq.prompt})
 	newChat := models.Chat{
 		Created:  time.Now(),
-		ID:       IdFromPrompt(cq.prompt),
+		ID:       IDFromPrompt(cq.prompt),
 		Messages: msgs,
 	}
 	newChat, err := cq.q.TextQuery(ctx, newChat)
@@ -159,7 +160,7 @@ func (cq *ChatHandler) findChatByID(potentialChatIdx string) (models.Chat, error
 		cq.prompt = strings.Join(split[1:], " ")
 		return chats[chatIdx], nil
 	} else {
-		return cq.getByID(IdFromPrompt(potentialChatIdx))
+		return cq.getByID(IDFromPrompt(potentialChatIdx))
 	}
 }
 
@@ -334,28 +335,49 @@ func (cq *ChatHandler) profileInfo() string {
 }
 
 func (cq *ChatHandler) loop(ctx context.Context) error {
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt)
+	defer signal.Stop(sigChan)
+
 	defer func() {
 		err := Save(cq.convDir, cq.chat)
 		if err != nil {
 			panic(err)
 		}
 	}()
+
 	for {
 		lastMessage := cq.chat.Messages[len(cq.chat.Messages)-1]
 		if lastMessage.Role == "user" {
 			utils.AttemptPrettyPrint(lastMessage, cq.username, false)
 		} else {
-			fmt.Printf("%v(%v%v): ", ancli.ColoredMessage(ancli.CYAN, cq.username), cq.profileInfo(), " | type exit/e/quit/q to quit")
-			var userInput string
-			reader := bufio.NewReader(os.Stdin)
-			userInput, err := reader.ReadString('\n')
-			if err != nil {
-				return fmt.Errorf("failed to read user input: %w", err)
-			}
-			if userInput == "exit\n" || userInput == "quit\n" || userInput == "q\n" || userInput == "e\n" || ctx.Err() != nil {
+			fmt.Printf("%v(%v%v): ", ancli.ColoredMessage(ancli.CYAN, cq.username), cq.profileInfo(), " | [e]xit/[q]uit")
+
+			inputChan := make(chan string)
+			errChan := make(chan error)
+
+			go func() {
+				reader := bufio.NewReader(os.Stdin)
+				userInput, err := reader.ReadString('\n')
+				if err != nil {
+					errChan <- err
+					return
+				}
+				inputChan <- userInput
+			}()
+
+			select {
+			case <-sigChan:
 				return nil
+			case err := <-errChan:
+				return fmt.Errorf("failed to read user input: %w", err)
+			case userInput := <-inputChan:
+				quitters := []string{"exit", "e", "quit", "q"}
+				if slices.Contains(quitters, strings.TrimSpace(userInput)) {
+					return nil
+				}
+				cq.chat.Messages = append(cq.chat.Messages, models.Message{Role: "user", Content: userInput})
 			}
-			cq.chat.Messages = append(cq.chat.Messages, models.Message{Role: "user", Content: userInput})
 		}
 
 		newChat, err := cq.q.TextQuery(ctx, cq.chat)

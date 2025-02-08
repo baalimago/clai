@@ -29,7 +29,7 @@ func SaveAsPreviousQuery(claiConfDir string, msgs []models.Message) error {
 		}
 		convChat := models.Chat{
 			Created:  time.Now(),
-			ID:       chat.IdFromPrompt(firstUserMsg.Content),
+			ID:       chat.IDFromPrompt(firstUserMsg.Content),
 			Messages: msgs,
 		}
 		err = chat.Save(path.Join(claiConfDir, "conversations"), convChat)
