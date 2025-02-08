@@ -254,44 +254,69 @@ func (cq *ChatHandler) listChats(ctx context.Context, chats []models.Chat) error
 	line := strings.Repeat("-", 55)
 	fmt.Printf("\t%v\n", line)
 	pageSize := 10
+	page := 0
 	amChats := len(chats)
-	for i, chat := range chats {
-		chatName := formatChatName(chat.ID)
-		fmt.Printf("\t%-3s| %s | %v\n",
-			fmt.Sprintf("%v", i),
-			chat.Created.Format("2006-01-02 15:04:05"),
-			chatName,
-		)
-		if (i+1)%pageSize == 0 && i != 1 {
-			fmt.Printf("(page: [%v/%v]. goto chat: <num>, continue: <enter>, q/quit/e/exit: <quit>): ", i/pageSize, amChats/pageSize)
-			input, err := readUserInput()
-			if err != nil {
-				return fmt.Errorf("failed to read input: %v", err)
-			}
-			if input == "q" || input == "quit" || input == "e" || input == "exit" {
-				return nil
-			}
-			if input != "\n" && input != "" && input != "c" {
-				convNum, atoiErr := strconv.Atoi(input)
-				if atoiErr != nil {
-					return fmt.Errorf("'%v' is not a number, now what..? maybe break. yeah let's break. Use numbers or enter..! error: %v", input, atoiErr)
-				}
-				chat := chats[convNum]
-				err = cq.printChat(chat)
-				if err != nil {
-					return fmt.Errorf("selection ok, print chat not ok: %v", err)
-				}
-				cq.chat = chat
-				return cq.loop(ctx)
-			}
-			termWidth, err := utils.TermWidth()
-			if err != nil {
-				return fmt.Errorf("failed to get terminal width: %v", err)
-			}
-			utils.ClearTermTo(termWidth, pageSize+1)
+	noNumberSelected := true
+	selectedNumber := -1
+	for noNumberSelected {
+		pageIndex := page * pageSize
+		listToIndex := pageIndex + pageSize
+		if listToIndex > amChats-1 {
+			listToIndex = amChats - 1
 		}
+		for i := pageIndex; i < listToIndex; i++ {
+			chat := chats[i]
+			chatName := formatChatName(chat.ID)
+			fmt.Printf("\t%-3s| %s | %v\n",
+				fmt.Sprintf("%v", i),
+				chat.Created.Format("2006-01-02 15:04:05"),
+				chatName,
+			)
+
+		}
+		fmt.Printf("(page: (%v/%v). goto chat: [<num>], next: [<enter>]/[n]ext, [p]rev, [q]uit/[e]it): ", page, amChats/pageSize)
+		input, err := readUserInput()
+		if err != nil {
+			return fmt.Errorf("failed to read input: %v", err)
+		}
+		quitters := []string{"q", "quit", "e", "exit"}
+		if slices.Contains(quitters, input) {
+			return nil
+		}
+		convNum, atoiErr := strconv.Atoi(input)
+		noNumberSelected = atoiErr != nil
+		if !noNumberSelected {
+			selectedNumber = convNum
+		}
+
+		prevers := []string{"prev", "p"}
+		if slices.Contains(prevers, input) {
+			page -= 1
+			if page < 0 {
+				page = 0
+			}
+			// Lets just assume everything but prev is next
+		} else {
+			if (page+1)*pageSize < amChats {
+				page += 1
+			}
+		}
+		termWidth, err := utils.TermWidth()
+		if err != nil {
+			return fmt.Errorf("failed to get terminal width: %v", err)
+		}
+		utils.ClearTermTo(termWidth, (listToIndex-pageIndex)+1)
 	}
-	return nil
+	if selectedNumber > len(chats) {
+		return fmt.Errorf("selection: '%v' is higher than available chats: '%v'", selectedNumber, len(chats))
+	}
+	chat := chats[selectedNumber]
+	err := cq.printChat(chat)
+	if err != nil {
+		return fmt.Errorf("selection ok, print chat not ok: %v", err)
+	}
+	cq.chat = chat
+	return cq.loop(ctx)
 }
 
 func (cq *ChatHandler) getByID(ID string) (models.Chat, error) {
