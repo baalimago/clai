@@ -37,8 +37,6 @@ Note that you can only use the models that you have bought an API key for.
 
 ## Get started
 
-Install [Glow](https://github.com/charmbracelet/glow) for formatted markdown output when querying text responses.
-
 ```bash
 go install github.com/baalimago/clai@latest
 ```
@@ -51,6 +49,4 @@ curl -fsSL https://raw.githubusercontent.com/baalimago/clai/main/setup.sh | sh
 
 Either look at `clai help` or the [examples](./EXAMPLES.md) for how to use `clai`.
 
-## Honorable mentions
-
-This project was originally inspired by: [https://github.com/Licheam/zsh-ask](https://github.com/Licheam/zsh-ask), many thanks to Licheam for the inspiration.
+Install [Glow](https://github.com/charmbracelet/glow) for formatted markdown output when querying text responses.
