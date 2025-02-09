@@ -16,7 +16,7 @@ Piping into LLM:
 Easily configurable profiles (note the built in tools!):
 ![profiles](./img/profiles.gif "Profiles allowing easily customized propmpts")
 
-Conversation history and simple GUI to continue old chats:
+Conversation history and simple TUI to browse and continue old chats:
 ![chats](./img/chats.gif "Conversation history and simple GUI to continue old chats:")
 
 These three features combined makes it quite portable.
