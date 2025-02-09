@@ -3,12 +3,10 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/baalimago/clai)](https://goreportcard.com/report/github.com/baalimago/clai)
 ![Wakatime](https://wakatime.com/badge/user/018cc8d2-3fd9-47ef-81dc-e4ad645d5f34/project/018e07e1-bd22-4077-a213-c16290d3db52.svg)
 
-`clai` integrates AI models of multiple vendors via with the terminal.
+`clai` integrates AI models of multiple vendors via cli.
 You can generate images, text, summarize content and chat while using native terminal functionality, such as pipes and termination signals.
 
-Many popular LLM cli tools utilizes the LLM to automatically generate commands.
-Although you can `clai` for this also (`clai cmd`), this is not the original intent of this tool.
-Instead, `clai` is designed to be a cli native LLM engine, which seamlessly integrates into your own workflow, whatever it may be.
+It's not (only) a LLM powered command suggester, instead it's a cli native LLM context feeder designed to fit into each user's own workflows.
 
 The multi-vendor aspect enables easy comparisons between different models, also removes the need for multiple subscriptions: most APIs are usage-based (some with expiration time).
 
@@ -18,7 +16,7 @@ Piping into LLM:
 ![piping](./img/piping.gif "Piping data into queries")
 
 Easily configurable profiles (note the built in tools!):
-![profiles](./img/profiles.gif "Profiles allowing easily customized propmpts")
+![profiles](./img/profiles.gif "Profiles allowing easily customized prompts")
 
 Conversation history and simple TUI to browse and continue old chats:
 ![chats](./img/chats.gif "Conversation history and simple GUI to continue old chats:")
@@ -29,7 +27,7 @@ Continue a chat with another profile, or another chat model.
 
 All the configuration files and chats are json, so manual tweaks and manipulation is easy to do.
 
-If you have time, checkout [this blogpost](https://lorentz.app/blog-item.html?id=clai) for a slightly more structured introduction on how I use clai to optimize my workflow.
+If you have time, checkout [this blogpost](https://lorentz.app/blog-item.html?id=clai) for a slightly more structured introduction on how to use clai efficiently.
 
 ## Supported vendors
 
