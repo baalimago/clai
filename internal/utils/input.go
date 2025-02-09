@@ -36,7 +36,7 @@ func ReadUserInput() (string, error) {
 	case userInput, open := <-inputChan:
 		if open {
 			trimmedInput := strings.TrimSpace(userInput)
-			quitters := []string{"q", "quit", "e", "exit"}
+			quitters := []string{"q", "quit"}
 			if slices.Contains(quitters, trimmedInput) {
 				return "", ErrUserInitiatedExit
 			}
