@@ -6,6 +6,10 @@
 `clai` integrates AI models of multiple vendors via with the terminal.
 You can generate images, text, summarize content and chat while using native terminal functionality, such as pipes and termination signals.
 
+Many popular LLM cli tools utilizes the LLM to automatically generate commands.
+Although you can `clai` for this also (`clai cmd`), this is not the original intent of this tool.
+Instead, `clai` is designed to be a cli native LLM engine, which seamlessly integrates into your own workflow, whatever it may be.
+
 The multi-vendor aspect enables easy comparisons between different models, also removes the need for multiple subscriptions: most APIs are usage-based (some with expiration time).
 
 ## Features
@@ -19,10 +23,13 @@ Easily configurable profiles (note the built in tools!):
 Conversation history and simple TUI to browse and continue old chats:
 ![chats](./img/chats.gif "Conversation history and simple GUI to continue old chats:")
 
-These three features combined makes it quite portable.
-Personally I have customized my neovim setup to pipe/glob buffers into it, alongside pre-prompted profiles, to create what I call GhettoPilot.
-But that's besides the point.
-Let's continue:
+These are the core features which can be combined.
+For instance, you can pipe data into an existing chat.
+Continue a chat with another profile, or another chat model.
+
+All the configuration files and chats are json, so manual tweaks and manipulation is easy to do.
+
+If you have time, checkout [this blogpost](https://lorentz.app/blog-item.html?id=clai) for a slightly more structured introduction on how I use clai to optimize my workflow.
 
 ## Supported vendors
 
