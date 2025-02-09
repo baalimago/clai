@@ -37,7 +37,7 @@ func TestUpdateMessageTerminalMetadata(t *testing.T) {
 			lineCount:         0,
 			termWidth:         5,
 			expectedLine:      "World",
-			expectedLineCount: 2,
+			expectedLineCount: 3,
 		},
 		{
 			name:              "Append to existing line",
@@ -55,7 +55,7 @@ func TestUpdateMessageTerminalMetadata(t *testing.T) {
 			lineCount:         0,
 			termWidth:         5,
 			expectedLine:      "4444",
-			expectedLineCount: 3,
+			expectedLineCount: 4,
 		},
 		{
 			name:              "It should handle multiple termwidth overflows + newlines",
@@ -73,7 +73,7 @@ func TestUpdateMessageTerminalMetadata(t *testing.T) {
 			lineCount:         0,
 			termWidth:         3,
 			expectedLine:      "66",
-			expectedLineCount: 5,
+			expectedLineCount: 6,
 		},
 		{
 			name: "it should not fail on this edge case that I found",
@@ -83,6 +83,14 @@ func TestUpdateMessageTerminalMetadata(t *testing.T) {
 			lineCount:         0,
 			termWidth:         223,
 			expectedLineCount: 2,
+		},
+		{
+			name:              "it should not fail on this edge case that I found",
+			msg:               "*Hurrmph* I'm as well as a 90-year old can be, which is better than the alternative, I suppose. My joints are creaking like an old rocking chair, but my mind is still sharp as a tack.\n\nWhat can I help you with today, young whippersnapper? *adjusts spectacles*\n",
+			expectedLine:      "",
+			lineCount:         0,
+			termWidth:         127,
+			expectedLineCount: 5,
 		},
 	}
 
@@ -99,71 +107,6 @@ func TestUpdateMessageTerminalMetadata(t *testing.T) {
 
 			if lineCount != tc.expectedLineCount {
 				t.Errorf("Expected lineCount: %d, got: %d", tc.expectedLineCount, lineCount)
-			}
-		})
-	}
-}
-
-func Test_countNewLines(t *testing.T) {
-	testCases := []struct {
-		desc  string
-		given struct {
-			msg       string
-			termWidth int
-		}
-		want int
-	}{
-		{
-			desc: "it should count spaces when splitting into new lines",
-			given: struct {
-				msg       string
-				termWidth int
-			}{
-				msg:       "          ",
-				termWidth: 5,
-			},
-			want: 2,
-		},
-		{
-			desc: "it should count spaces when splitting into new lines, test 2",
-			given: struct {
-				msg       string
-				termWidth int
-			}{
-				msg:       "1 2 3 ",
-				termWidth: 2,
-			},
-			want: 3,
-		},
-		{
-			desc: "it should count spaces when splitting into new lines, test 3",
-			given: struct {
-				msg       string
-				termWidth int
-			}{
-				msg:       "1 2 3 4",
-				termWidth: 2,
-			},
-			want: 3,
-		},
-		{
-			desc: "it should sometimes treat space as newline, maybe",
-			given: struct {
-				msg       string
-				termWidth int
-			}{
-				msg:       "Hello World",
-				termWidth: 5,
-			},
-			want: 2,
-		},
-	}
-	for _, tC := range testCases {
-		t.Run(tC.desc, func(t *testing.T) {
-			got := countNewLines(tC.given.msg, tC.given.termWidth)
-			want := tC.want
-			if got != want {
-				t.Fatalf("expected: %v, got: %v", want, got)
 			}
 		})
 	}

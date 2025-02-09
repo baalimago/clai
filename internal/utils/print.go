@@ -25,45 +25,45 @@ func ClearTermTo(termWidth, upTo int) {
 	fmt.Printf("\r")
 }
 
-func countNewLines(msg string, termWidth int) int {
-	amRunes := utf8.RuneCountInString(msg)
-	amLines := int(amRunes / termWidth)
-	return amLines
-}
-
 // UpdateMessageTerminalMetadata updates the terminal metadata. Meaning the lineCount, to eventually
 // clear the terminal
 func UpdateMessageTerminalMetadata(msg string, line *string, lineCount *int, termWidth int) {
+	if termWidth <= 0 {
+		termWidth = 1
+	}
+
 	newlineSplit := strings.Split(*line+msg, "\n")
-	amNewlines := 0
-	for _, line := range newlineSplit {
-		amNewlines += countNewLines(line, termWidth)
-	}
-	if amNewlines == 1 {
-		amNewlines = 2
+	*lineCount = 0
+
+	for _, segment := range newlineSplit {
+		if len(segment) == 0 {
+			*lineCount++
+			continue
+		}
+
+		runeCount := utf8.RuneCountInString(segment)
+		fullLines := runeCount / termWidth
+		if runeCount%termWidth > 0 {
+			fullLines++
+		}
+		*lineCount += fullLines
 	}
 
-	amNewlineChars := len(newlineSplit)
-	if amNewlineChars == 1 {
-		amNewlineChars = 0
-	}
-
-	*lineCount += amNewlines + amNewlineChars
 	if *lineCount == 0 {
 		*lineCount = 1
 	}
-	lastNewline := newlineSplit[len(newlineSplit)-1]
-	if len(lastNewline) > termWidth {
-		lastTokenWords := strings.Split(lastNewline, " ")
-		lastWord := lastTokenWords[len(lastTokenWords)-1]
+
+	lastSegment := newlineSplit[len(newlineSplit)-1]
+	if len(lastSegment) > termWidth {
+		lastWords := strings.Split(lastSegment, " ")
+		lastWord := lastWords[len(lastWords)-1]
 		if len(lastWord) > termWidth {
-			trimmedWord := lastWord[termWidth:]
-			*line = trimmedWord
+			*line = lastWord[len(lastWord)-termWidth:]
 		} else {
 			*line = lastWord
 		}
 	} else {
-		*line = lastNewline
+		*line = lastSegment
 	}
 }
 
