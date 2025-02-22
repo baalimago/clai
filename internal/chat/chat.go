@@ -6,6 +6,7 @@ import (
 	"os"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/utils"
@@ -31,11 +32,24 @@ func FromPath(path string) (models.Chat, error) {
 }
 
 func Save(saveAt string, chat models.Chat) error {
+	if chat.Created.IsZero() {
+		chat.Created = time.Now()
+	}
+
 	b, err := json.Marshal(chat)
 	if err != nil {
 		return fmt.Errorf("failed to encode JSON: %w", err)
 	}
 	fileName := path.Join(saveAt, fmt.Sprintf("%v.json", chat.ID))
+	if misc.Truthy(os.Getenv("DEBUG_ID")) {
+		ancli.PrintOK(fmt.Sprintf("chat id: %v", chat.ID))
+	}
+
+	if _, err := os.Stat(fileName); err == nil && chat.ID != "prevQuery" {
+		datePrefix := chat.Created.Format("20060102")
+		fileName = path.Join(saveAt, fmt.Sprintf("%v_%v.json", datePrefix, chat.ID))
+	}
+
 	if misc.Truthy(os.Getenv("DEBUG")) || misc.Truthy(os.Getenv("DEBUG_REPLY_MODE")) {
 		ancli.PrintOK(fmt.Sprintf("saving chat to: '%v', content (on new line):\n'%v'\n", fileName, string(b)))
 	}

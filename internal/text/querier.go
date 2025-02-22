@@ -146,7 +146,7 @@ func (q *Querier[C]) postProcess() {
 	}
 	q.chat.Messages = append(q.chat.Messages, newSysMsg)
 	if q.shouldSaveReply {
-		err := reply.SaveAsPreviousQuery(q.configDir, q.chat.Messages)
+		err := reply.SaveAsPreviousQuery(q.configDir, q.chat)
 		if err != nil {
 			ancli.PrintErr(fmt.Sprintf("failed to save previous query: %v\n", err))
 		}

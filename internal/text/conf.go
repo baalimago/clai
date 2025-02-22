@@ -84,7 +84,13 @@ func (c *Configurations) SetupPrompts(args []string) error {
 		if misc.Truthy(os.Getenv("DEBUG")) {
 			ancli.PrintOK(fmt.Sprintf("glob messages: %v", globChat.Messages))
 		}
-		c.InitialPrompt = globChat
+		if c.InitialPrompt.ID == "" {
+			c.InitialPrompt.ID = globChat.ID
+			if misc.Truthy(os.Getenv("DEBUG_ID")) {
+				ancli.PrintOK(fmt.Sprintf("setting id to: %v", globChat.ID))
+			}
+		}
+		c.InitialPrompt.Messages = append(c.InitialPrompt.Messages, globChat.Messages...)
 	}
 
 	if c.ReplyMode {

@@ -45,7 +45,7 @@ func CreateChat(glob, systemPrompt string) (models.Chat, error) {
 	}
 
 	return models.Chat{
-		ID:       fmt.Sprintf("glob_%v", glob),
+		ID:       fmt.Sprintf("glob_%v", filepath.Base(glob)),
 		Messages: constructGlobMessages(fileMessages),
 	}, nil
 }
