@@ -287,11 +287,11 @@ func (q *Querier[C]) handleFunctionCall(ctx context.Context, call tools.Call) er
 		call.Function.Name = call.Name
 	}
 	if call.Function.Arguments == "" {
-		call.Function.Arguments = call.Json()
+		call.Function.Arguments = call.JSON()
 	}
 	assistantToolsCall := models.Message{
 		Role:      "assistant",
-		Content:   fmt.Sprintf("tool calls for: %v", call.Name),
+		Content:   call.PrettyPrint(),
 		ToolCalls: []tools.Call{call},
 	}
 	q.reset()
