@@ -36,8 +36,14 @@ type Call struct {
 // on a concise way
 func (c Call) PrettyPrint() string {
 	paramStr := ""
+	i := 0
+	lenInp := len(c.Inputs)
 	for flag, val := range c.Inputs {
 		paramStr += fmt.Sprintf("'%v': '%v'", flag, val)
+		if i < lenInp-1 {
+			paramStr += ","
+		}
+		i++
 	}
 
 	return fmt.Sprintf("Call: '%s', inputs: [ %s ]", c.Name, paramStr)
