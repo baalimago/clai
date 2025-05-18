@@ -3,13 +3,11 @@ name: Simple Go Pipeline - release
 on:
   push:
     tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - "v[0-9]+.[0-9]+.[0-9]+"
 jobs:
   call-workflow:
-    uses: baalimago/simple-go-pipeline/.github/workflows/release.yml@v0.2.5
+    uses: baalimago/simple-go-pipeline/.github/workflows/release.yml@v0.3.0
     with:
-      go-version: '1.22'
       project-name: clai
       branch: main
       version-var: "github.com/baalimago/clai/internal.BUILD_VERSION"
-
