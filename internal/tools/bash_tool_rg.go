@@ -79,6 +79,11 @@ func (r RipGrepTool) Call(input Input) (string, error) {
 		}
 	}
 	output, err := cmd.CombinedOutput()
+	// exit status 1 is not found, and not to be considered an error
+	if err.Error() == "exit status 1" {
+		err = nil
+		output = []byte(fmt.Sprintf("found no hits with pattern: '%s'", pattern))
+	}
 	if err != nil {
 		return "", fmt.Errorf("failed to run rg: %w, output: %v", err, string(output))
 	}
