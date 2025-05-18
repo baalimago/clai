@@ -32,7 +32,18 @@ type Call struct {
 	Function UserFunction `json:"function,omitempty"`
 }
 
-func (c Call) Json() string {
+// PrettyPrint the call, showing name and what input params is used
+// on a concise way
+func (c Call) PrettyPrint() string {
+	paramStr := ""
+	for flag, val := range c.Inputs {
+		paramStr += fmt.Sprintf("'%v': '%v'", flag, val)
+	}
+
+	return fmt.Sprintf("Call: '%s', inputs: [ %s ]", c.Name, paramStr)
+}
+
+func (c Call) JSON() string {
 	json, err := json.MarshalIndent(c, "", " ")
 	if err != nil {
 		return fmt.Sprintf("ERROR: Failed to unmarshal: %v", err)

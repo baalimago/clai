@@ -5,7 +5,7 @@ import (
 )
 
 var GPT_DEFAULT = ChatGPT{
-	Model:       "gpt-4-turbo",
+	Model:       "gpt-4.1-mini",
 	Temperature: 1.0,
 	TopP:        1.0,
 	Url:         ChatURL,

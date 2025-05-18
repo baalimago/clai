@@ -27,7 +27,7 @@ type Claude struct {
 }
 
 var CLAUDE_DEFAULT = Claude{
-	Model:            "claude-3-opus-20240229",
+	Model:            "claude-3-7-sonnet-latest",
 	Url:              ClaudeURL,
 	AnthropicVersion: "2023-06-01",
 	AnthropicBeta:    "tools-2024-04-04",
