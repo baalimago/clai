@@ -3,15 +3,16 @@ package tools
 import "fmt"
 
 var Tools = map[string]AiTool{
-	"file_tree":    FileTree,
-	"cat":          Cat,
-	"find":         Find,
-	"file_type":    FileType,
-	"ls":           LS,
-	"website_text": WebsiteText,
-	"rg":           RipGrep,
-	"go":           Go,
-	"write_file":   WriteFile,
+	"file_tree":        FileTree,
+	"cat":              Cat,
+	"find":             Find,
+	"file_type":        FileType,
+	"ls":               LS,
+	"website_text":     WebsiteText,
+	"rg":               RipGrep,
+	"go":               Go,
+	"write_file":       WriteFile,
+	"freetext_command": FreetextCmd,
 }
 
 // Invoke the call, and gather both error and output in the same string
