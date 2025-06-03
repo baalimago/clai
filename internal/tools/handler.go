@@ -13,6 +13,8 @@ var Tools = map[string]AiTool{
 	"go":               Go,
 	"write_file":       WriteFile,
 	"freetext_command": FreetextCmd,
+	"sed":              Sed,
+	"rows_between":     RowsBetween,
 }
 
 // Invoke the call, and gather both error and output in the same string
