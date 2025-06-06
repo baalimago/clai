@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/photo"
@@ -22,7 +23,7 @@ type DallE struct {
 	N       int          `json:"n"`
 	Size    string       `json:"size"`
 	Quality string       `json:"quality"`
-	Style   string       `json:"style"`
+	Style   string       `json:"style,omitempty"`
 	Output  photo.Output `json:"output"`
 	// Don't save this as this is set via the Output struct
 	ResponseFormat string       `json:"-"`
@@ -38,8 +39,8 @@ type DallERequest struct {
 	N              int    `json:"n"`
 	Size           string `json:"size"`
 	Quality        string `json:"quality"`
-	Style          string `json:"style"`
-	ResponseFormat string `json:"response_format"`
+	Style          string `json:"style,omitempty"`
+	ResponseFormat string `json:"response_format,omitempty"`
 	Prompt         string `json:"prompt"`
 }
 
@@ -55,11 +56,10 @@ type ImageResponses struct {
 }
 
 var defaultDalle = DallE{
-	Model:   "dall-e-3",
+	Model:   "gpt-image-1",
 	Size:    "1024x1024",
 	N:       1,
-	Style:   "vivid",
-	Quality: "hd",
+	Quality: "auto",
 }
 
 func NewPhotoQuerier(pConf photo.Configurations) (models.Querier, error) {
@@ -72,12 +72,19 @@ func NewPhotoQuerier(pConf photo.Configurations) (models.Querier, error) {
 	defaultCpy := defaultDalle
 	defaultCpy.Model = model
 	defaultCpy.Output = pConf.Output
+	if strings.Contains(model, "dall-e") {
+		defaultCpy.Quality = "hd"
+		defaultCpy.Output.Type = photo.LOCAL
+	}
 	// Load config based on model, allowing for different configs for each model
 	dalleQuerier, err := utils.LoadConfigFromFile(home, fmt.Sprintf("openai_dalle_%v.json", model), nil, &defaultCpy)
-	if dalleQuerier.Output.Type == photo.URL {
+	switch dalleQuerier.Output.Type {
+	case photo.URL:
 		dalleQuerier.ResponseFormat = "url"
-	} else if dalleQuerier.Output.Type == photo.LOCAL {
+	case photo.LOCAL:
 		dalleQuerier.ResponseFormat = "b64_json"
+	case photo.UNSET:
+		dalleQuerier.ResponseFormat = ""
 	}
 
 	if misc.Truthy(os.Getenv("DEBUG")) {
@@ -149,7 +156,11 @@ func (q *DallE) do(req *http.Request) error {
 		return fmt.Errorf("failed to decode JSON: %w", err)
 	}
 
-	if q.Output.Type == photo.LOCAL {
+	if q.Output.Type == photo.URL {
+		defer func() {
+			ancli.PrintOK(fmt.Sprintf("image URL: '%v'", imgResps.Data[0].URL))
+		}()
+	} else {
 		localPath, err := q.saveImage(imgResps.Data[0])
 		if err != nil {
 			return fmt.Errorf("failed to save image: %w", err)
@@ -158,10 +169,7 @@ func (q *DallE) do(req *http.Request) error {
 		defer func() {
 			ancli.PrintOK(fmt.Sprintf("image saved to: '%v'\n", localPath))
 		}()
-	} else {
-		defer func() {
-			ancli.PrintOK(fmt.Sprintf("image URL: '%v'", imgResps.Data[0].URL))
-		}()
+
 	}
 	defer func() {
 		fmt.Println()

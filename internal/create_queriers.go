@@ -132,7 +132,7 @@ func NewPhotoQuerier(conf photo.Configurations) (models.Querier, error) {
 		}
 	}
 
-	if strings.Contains(conf.Model, "dall-e") {
+	if strings.Contains(conf.Model, "dall-e") || strings.Contains(conf.Model, "gpt") {
 		q, err := openai.NewPhotoQuerier(conf)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create dall-e photo querier: %w", err)

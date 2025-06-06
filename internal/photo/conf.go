@@ -23,10 +23,10 @@ type Output struct {
 }
 
 var DEFAULT = Configurations{
-	Model:        "dall-e-3",
+	Model:        "gpt-image-1",
 	PromptFormat: "I NEED to test how the tool works with extremely simple prompts. DO NOT add any detail, just use it AS-IS: '%v'",
 	Output: Output{
-		Type:   LOCAL,
+		Type:   UNSET,
 		Dir:    fmt.Sprintf("%v/Pictures", os.Getenv("HOME")),
 		Prefix: "clai",
 	},
@@ -35,13 +35,15 @@ var DEFAULT = Configurations{
 type OutputType string
 
 const (
-	URL   OutputType = "url"
 	LOCAL OutputType = "local"
+	URL   OutputType = "url"
+	UNSET OutputType = "unset"
 )
 
+// ValidateOutputType is kind of dumb. Why did I add this..?
 func ValidateOutputType(outputType OutputType) error {
 	switch outputType {
-	case URL, LOCAL:
+	case URL, LOCAL, UNSET:
 		return nil
 	default:
 		return fmt.Errorf("invalid output type: %v", outputType)
