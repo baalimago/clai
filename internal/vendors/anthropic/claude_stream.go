@@ -185,9 +185,14 @@ func (c *Claude) constructRequest(ctx context.Context, chat models.Chat) (*http.
 	msgCopy := make([]models.Message, len(chat.Messages))
 	copy(msgCopy, chat.Messages)
 	claudifiedMsgs := claudifyMessages(msgCopy)
-	// if c.debug {
-	// 	ancli.PrintOK(fmt.Sprintf("claudified messages: %+v\n", claudifiedMsgs))
-	// }
+	if c.debug {
+		ancli.PrintOK(
+			fmt.Sprintf(
+				"claudified messages: %+v\n",
+				debug.IndentedJsonFmt(claudifiedMsgs),
+			),
+		)
+	}
 
 	reqData := claudeReq{
 		Model:         c.Model,
