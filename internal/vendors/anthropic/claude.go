@@ -27,8 +27,8 @@ type Claude struct {
 	contentBlockType   string               `json:"-"`
 }
 
-var CLAUDE_DEFAULT = Claude{
-	Model:            "claude-3-7-sonnet-latest",
+var ClaudeDefault = Claude{
+	Model:            "claude-4-sonnet-latest",
 	Url:              ClaudeURL,
 	AnthropicVersion: "2023-06-01",
 	AnthropicBeta:    "",

@@ -70,6 +70,7 @@ func (c *Claude) handleInputJSONDelta(delta Delta) models.CompletionEvent {
 func (c *Claude) handleContentBlockStop(blockStop string) models.CompletionEvent {
 	defer func() {
 		c.debugFullStreamMsg = ""
+		c.functionJson = ""
 	}()
 	var block ContentBlock
 	blockStop = trimDataPrefix(blockStop)
@@ -83,7 +84,6 @@ func (c *Claude) handleContentBlockStop(blockStop string) models.CompletionEvent
 		if err := json.Unmarshal([]byte(c.functionJson), &inputs); err != nil {
 			return fmt.Errorf("failed to unmarshal functionJson: %v, error is: %w", c.functionJson, err)
 		}
-		c.functionJson = ""
 		return tools.Call{
 			Name:   c.functionName,
 			Inputs: inputs,

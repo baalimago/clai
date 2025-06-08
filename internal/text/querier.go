@@ -223,7 +223,7 @@ func (q *Querier[C]) TextQuery(ctx context.Context, chat models.Chat) (models.Ch
 	if err != nil {
 		return models.Chat{}, fmt.Errorf("TextQuery: %w", err)
 	}
-	if q.debug && q.debugTextQuerierPrinted == false {
+	if q.debug && !q.debugTextQuerierPrinted {
 		q.debugTextQuerierPrinted = true
 		ancli.PrintOK(fmt.Sprintf("Querier.TextQuery:\n%v", debug.IndentedJsonFmt(q)))
 	}

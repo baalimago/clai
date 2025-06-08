@@ -27,7 +27,7 @@ func CreateTextQuerier(conf text.Configurations) (models.Querier, error) {
 
 	if strings.Contains(conf.Model, "claude") {
 		found = true
-		defaultCpy := anthropic.CLAUDE_DEFAULT
+		defaultCpy := anthropic.ClaudeDefault
 		// The model determines where to check for the config using
 		// cfgdir/vendor_model_version.json. If it doesn't find it,
 		// it will use the default to create a new config with this
