@@ -5,7 +5,7 @@ import (
 	"os/exec"
 )
 
-type RipGrepTool UserFunction
+type RipGrepTool Specification
 
 var RipGrep = RipGrepTool{
 	Name:        "rg",
@@ -91,6 +91,6 @@ func (r RipGrepTool) Call(input Input) (string, error) {
 	return string(output), nil
 }
 
-func (r RipGrepTool) UserFunction() UserFunction {
-	return UserFunction(RipGrep)
+func (r RipGrepTool) Specification() Specification {
+	return Specification(RipGrep)
 }

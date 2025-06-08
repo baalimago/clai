@@ -27,6 +27,6 @@ func (g *Deepseek) Setup() error {
 	return nil
 }
 
-func (g *Deepseek) RegisterTool(tool tools.AiTool) {
+func (g *Deepseek) RegisterTool(tool tools.LLMTool) {
 	g.InternalRegisterTool(tool)
 }

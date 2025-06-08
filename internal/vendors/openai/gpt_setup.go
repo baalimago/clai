@@ -21,6 +21,6 @@ func (g *ChatGPT) Setup() error {
 	return nil
 }
 
-func (g *ChatGPT) RegisterTool(tool tools.AiTool) {
+func (g *ChatGPT) RegisterTool(tool tools.LLMTool) {
 	g.StreamCompleter.InternalRegisterTool(tool)
 }

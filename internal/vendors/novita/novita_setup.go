@@ -27,6 +27,6 @@ func (g *Novita) Setup() error {
 	return nil
 }
 
-func (g *Novita) RegisterTool(tool tools.AiTool) {
+func (g *Novita) RegisterTool(tool tools.LLMTool) {
 	g.StreamCompleter.InternalRegisterTool(tool)
 }

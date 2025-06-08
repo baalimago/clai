@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-type FreetextCmdTool UserFunction
+type FreetextCmdTool Specification
 
 var FreetextCmd = FreetextCmdTool{
 	Name:        "freetext_command",
@@ -42,6 +42,6 @@ func (r FreetextCmdTool) Call(input Input) (string, error) {
 	return string(output), nil
 }
 
-func (r FreetextCmdTool) UserFunction() UserFunction {
-	return UserFunction(FreetextCmd)
+func (r FreetextCmdTool) Specification() Specification {
+	return Specification(FreetextCmd)
 }

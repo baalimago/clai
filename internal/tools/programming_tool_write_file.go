@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 )
 
-type WriteFileTool UserFunction
+type WriteFileTool Specification
 
 var WriteFile = WriteFileTool{
 	Name:        "write_file",
@@ -77,6 +77,6 @@ func (w WriteFileTool) Call(input Input) (string, error) {
 	return fmt.Sprintf("Successfully wrote %d bytes to %s", len(content), filePath), nil
 }
 
-func (w WriteFileTool) UserFunction() UserFunction {
-	return UserFunction(WriteFile)
+func (w WriteFileTool) Specification() Specification {
+	return Specification(WriteFile)
 }
