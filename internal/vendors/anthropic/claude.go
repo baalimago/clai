@@ -39,9 +39,14 @@ var ClaudeDefault = Claude{
 	StopSequences:    make([]string, 0),
 }
 
+type claudeReqMessage struct {
+	Role    string          `json:"role"`
+	Content []ClaudeMessage `json:"content"`
+}
+
 type claudeReq struct {
 	Model         string               `json:"model"`
-	Messages      []models.Message     `json:"messages"`
+	Messages      []claudeReqMessage   `json:"messages"`
 	MaxTokens     int                  `json:"max_tokens"`
 	Stream        bool                 `json:"stream"`
 	System        string               `json:"system"`
@@ -53,49 +58,52 @@ type claudeReq struct {
 }
 
 // claudifyMessages converts from 'normal' openai chat format into a format which claud prefers
-func claudifyMessages(msgs []models.Message) []models.Message {
-	cleanedMsgs := make([]models.Message, 0, len(msgs))
+func claudifyMessages(msgs []models.Message) []claudeReqMessage {
+	claudeMsgs := make([]claudeReqMessage, 0, len(msgs))
 	// Remove any additional fields from the messages
 	for _, msg := range msgs {
-		cleanedMsgs = append(cleanedMsgs, models.Message{
-			Role:    msg.Role,
-			Content: msg.Content,
+		claudeMsgs = append(claudeMsgs, claudeReqMessage{
+			Role: msg.Role,
+			Content: []ClaudeMessage{{
+				Type: "text",
+				Text: msg.Content,
+			}},
 		})
 	}
-	msgs = cleanedMsgs
 
 	// If the first message is a system one, assume it's the system prompt and pop it
-	if msgs[0].Role == "system" {
-		msgs = msgs[1:]
+	if claudeMsgs[0].Role == "system" {
+		claudeMsgs = claudeMsgs[1:]
 	}
 
 	// Convert system messages from 'system' to 'assistant'
-	for i, v := range msgs {
+	for i, v := range claudeMsgs {
 		if v.Role == "system" {
-			msgs[i].Role = "assistant"
+			claudeMsgs[i].Role = "assistant"
 		}
 	}
 
-	for i, v := range msgs {
+	for i, v := range claudeMsgs {
 		if v.Role == "tool" {
-			msgs[i].Role = "user"
+			claudeMsgs[i].Role = "user"
 		}
 	}
 
 	// Merge consecutive assistant messages into the first one
-	for i := 1; i < len(msgs); i++ {
-		if msgs[i].Role == "assistant" && msgs[i-1].Role == "assistant" {
-			msgs[i-1].Content += "\n" + msgs[i].Content
-			msgs = append(msgs[:i], msgs[i+1:]...)
-			i--
+	for i := 1; i < len(claudeMsgs); {
+		if claudeMsgs[i].Role == "assistant" && claudeMsgs[i-1].Role == "assistant" {
+			claudeMsgs[i-1].Content = append(claudeMsgs[i-1].Content, claudeMsgs[i].Content...)
+			claudeMsgs = append(claudeMsgs[:i], claudeMsgs[i+1:]...)
+		} else {
+			i++
 		}
 	}
 
 	// Merge consecutive user messages into the last one
-	for i := len(msgs) - 2; i >= 0; i-- {
-		if msgs[i].Role == "user" && msgs[i+1].Role == "user" {
-			msgs[i+1].Content = msgs[i].Content + "\n" + msgs[i+1].Content
-			msgs = append(msgs[:i], msgs[i+1:]...)
+	for i := len(claudeMsgs) - 2; i >= 0; i-- {
+		if claudeMsgs[i].Role == "user" && claudeMsgs[i+1].Role == "user" {
+			claudeMsgs[i+1].Content = append(claudeMsgs[i].Content, claudeMsgs[i+1].Content...)
+			claudeMsgs = append(claudeMsgs[:i], claudeMsgs[i+1:]...)
 		}
 	}
 
@@ -103,9 +111,9 @@ func claudifyMessages(msgs []models.Message) []models.Message {
 	// (no need to merge it into the upcoming user message)
 
 	// If the last message is from an assistant, remove it
-	if len(msgs) > 0 && msgs[len(msgs)-1].Role == "assistant" {
-		msgs = msgs[:len(msgs)-1]
+	if len(claudeMsgs) > 0 && claudeMsgs[len(claudeMsgs)-1].Role == "assistant" {
+		claudeMsgs = claudeMsgs[:len(claudeMsgs)-1]
 	}
 
-	return msgs
+	return claudeMsgs
 }

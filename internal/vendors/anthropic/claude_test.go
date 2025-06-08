@@ -10,7 +10,7 @@ func Test_claudifyMessage(t *testing.T) {
 	testCases := []struct {
 		desc  string
 		given []models.Message
-		want  []models.Message
+		want  []claudeReqMessage
 	}{
 		{
 			desc: "it should remove the first message if it is a system message",
@@ -18,8 +18,8 @@ func Test_claudifyMessage(t *testing.T) {
 				{Role: "system", Content: "system message"},
 				{Role: "user", Content: "user message"},
 			},
-			want: []models.Message{
-				{Role: "user", Content: "user message"},
+			want: []claudeReqMessage{
+				{Role: "user", Content: []ClaudeMessage{{Type: "text", Text: "user message"}}},
 			},
 		},
 		{
@@ -29,10 +29,10 @@ func Test_claudifyMessage(t *testing.T) {
 				{Role: "system", Content: "system message"},
 				{Role: "user", Content: "user message"},
 			},
-			want: []models.Message{
-				{Role: "user", Content: "user message"},
-				{Role: "assistant", Content: "system message"},
-				{Role: "user", Content: "user message"},
+			want: []claudeReqMessage{
+				{Role: "user", Content: []ClaudeMessage{{Type: "text", Text: "user message"}}},
+				{Role: "assistant", Content: []ClaudeMessage{{Type: "text", Text: "system message"}}},
+				{Role: "user", Content: []ClaudeMessage{{Type: "text", Text: "user message"}}},
 			},
 		},
 		{
@@ -43,10 +43,13 @@ func Test_claudifyMessage(t *testing.T) {
 				{Role: "user", Content: "user message 2"},
 				{Role: "user", Content: "user message 3"},
 			},
-			want: []models.Message{
-				{Role: "user", Content: "user message 1"},
-				{Role: "assistant", Content: "assistant message 1"},
-				{Role: "user", Content: "user message 2\nuser message 3"},
+			want: []claudeReqMessage{
+				{Role: "user", Content: []ClaudeMessage{{Type: "text", Text: "user message 1"}}},
+				{Role: "assistant", Content: []ClaudeMessage{{Type: "text", Text: "assistant message 1"}}},
+				{Role: "user", Content: []ClaudeMessage{
+					{Type: "text", Text: "user message 2"},
+					{Type: "text", Text: "user message 3"},
+				}},
 			},
 		},
 		{
@@ -56,9 +59,9 @@ func Test_claudifyMessage(t *testing.T) {
 				{Role: "system", Content: "system message 2"},
 				{Role: "user", Content: "user message 1"},
 			},
-			want: []models.Message{
-				{Role: "assistant", Content: "system message 2"},
-				{Role: "user", Content: "user message 1"},
+			want: []claudeReqMessage{
+				{Role: "assistant", Content: []ClaudeMessage{{Type: "text", Text: "system message 2"}}},
+				{Role: "user", Content: []ClaudeMessage{{Type: "text", Text: "user message 1"}}},
 			},
 		},
 		{
@@ -71,10 +74,17 @@ func Test_claudifyMessage(t *testing.T) {
 				{Role: "user", Content: "user message 4"},
 				{Role: "user", Content: "user message 5"},
 			},
-			want: []models.Message{
-				{Role: "user", Content: "user message 1\nuser message 2"},
-				{Role: "assistant", Content: "assistant message 1"},
-				{Role: "user", Content: "user message 3\nuser message 4\nuser message 5"},
+			want: []claudeReqMessage{
+				{Role: "user", Content: []ClaudeMessage{
+					{Type: "text", Text: "user message 1"},
+					{Type: "text", Text: "user message 2"},
+				}},
+				{Role: "assistant", Content: []ClaudeMessage{{Type: "text", Text: "assistant message 1"}}},
+				{Role: "user", Content: []ClaudeMessage{
+					{Type: "text", Text: "user message 3"},
+					{Type: "text", Text: "user message 4"},
+					{Type: "text", Text: "user message 5"},
+				}},
 			},
 		},
 	}
@@ -90,8 +100,17 @@ func Test_claudifyMessage(t *testing.T) {
 				if tC.want[i].Role != got[i].Role {
 					t.Fatalf("expected: %q, got: %q", tC.want[i].Role, got[i].Role)
 				}
-				if tC.want[i].Content != got[i].Content {
-					t.Fatalf("expected: %q, got: %q", tC.want[i].Content, got[i].Content)
+
+				if len(tC.want[i].Content) != len(got[i].Content) {
+					t.Fatalf("content length mismatch. expected %v, got %v", len(tC.want[i].Content), len(got[i].Content))
+				}
+
+				for j := range tC.want[i].Content {
+					wantText := tC.want[i].Content[j].Text
+					gotText := got[i].Content[j].Text
+					if wantText != gotText {
+						t.Fatalf("expected: %q, got: %q", wantText, gotText)
+					}
 				}
 			}
 		})
