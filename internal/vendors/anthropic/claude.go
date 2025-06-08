@@ -8,29 +8,30 @@ import (
 )
 
 type Claude struct {
-	Model            string               `json:"model"`
-	MaxTokens        int                  `json:"max_tokens"`
-	Url              string               `json:"url"`
-	AnthropicVersion string               `json:"anthropic-version"`
-	AnthropicBeta    string               `json:"anthropic-beta"`
-	Temperature      float64              `json:"temperature"`
-	TopP             float64              `json:"top_p"`
-	TopK             int                  `json:"top_k"`
-	StopSequences    []string             `json:"stop_sequences"`
-	client           *http.Client         `json:"-"`
-	apiKey           string               `json:"-"`
-	debug            bool                 `json:"-"`
-	tools            []tools.UserFunction `json:"-"`
-	functionName     string               `json:"-"`
-	functionJson     string               `json:"-"`
-	contentBlockType string               `json:"-"`
+	Model              string               `json:"model"`
+	MaxTokens          int                  `json:"max_tokens"`
+	Url                string               `json:"url"`
+	AnthropicVersion   string               `json:"anthropic-version"`
+	AnthropicBeta      string               `json:"anthropic-beta"`
+	Temperature        float64              `json:"temperature"`
+	TopP               float64              `json:"top_p"`
+	TopK               int                  `json:"top_k"`
+	StopSequences      []string             `json:"stop_sequences"`
+	client             *http.Client         `json:"-"`
+	apiKey             string               `json:"-"`
+	debug              bool                 `json:"-"`
+	debugFullStreamMsg string               `json:"-"`
+	tools              []tools.UserFunction `json:"-"`
+	functionName       string               `json:"-"`
+	functionJson       string               `json:"-"`
+	contentBlockType   string               `json:"-"`
 }
 
 var CLAUDE_DEFAULT = Claude{
 	Model:            "claude-3-7-sonnet-latest",
 	Url:              ClaudeURL,
 	AnthropicVersion: "2023-06-01",
-	AnthropicBeta:    "tools-2024-04-04",
+	AnthropicBeta:    "",
 	Temperature:      0.7,
 	MaxTokens:        1024,
 	TopP:             -1,
