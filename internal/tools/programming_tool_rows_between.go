@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-type RowsBetweenTool UserFunction
+type RowsBetweenTool Specification
 
 var RowsBetween = RowsBetweenTool{
 	Name:        "rows_between",
@@ -88,6 +88,6 @@ func (r RowsBetweenTool) Call(input Input) (string, error) {
 	return strings.Join(lines, "\n"), nil
 }
 
-func (r RowsBetweenTool) UserFunction() UserFunction {
-	return UserFunction(RowsBetween)
+func (r RowsBetweenTool) Specification() Specification {
+	return Specification(RowsBetween)
 }

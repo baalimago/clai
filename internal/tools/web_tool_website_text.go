@@ -10,7 +10,7 @@ import (
 	"golang.org/x/net/html"
 )
 
-type WebsiteTextTool UserFunction
+type WebsiteTextTool Specification
 
 var WebsiteText = WebsiteTextTool{
 	Name:        "website_text",
@@ -59,6 +59,6 @@ func (w WebsiteTextTool) Call(input Input) (string, error) {
 	return text.String(), nil
 }
 
-func (w WebsiteTextTool) UserFunction() UserFunction {
-	return UserFunction(WebsiteText)
+func (w WebsiteTextTool) Specification() Specification {
+	return Specification(WebsiteText)
 }

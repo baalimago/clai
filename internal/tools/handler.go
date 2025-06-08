@@ -2,7 +2,7 @@ package tools
 
 import "fmt"
 
-var Tools = map[string]AiTool{
+var Tools = map[string]LLMTool{
 	"file_tree":        FileTree,
 	"cat":              Cat,
 	"find":             Find,
@@ -32,10 +32,11 @@ func Invoke(call Call) string {
 	return out
 }
 
-func UserFunctionFromName(name string) UserFunction {
+// ToolFromName looks at the static tools.Tools map
+func ToolFromName(name string) Specification {
 	t, exists := Tools[name]
 	if !exists {
-		return UserFunction{}
+		return Specification{}
 	}
-	return t.UserFunction()
+	return t.Specification()
 }

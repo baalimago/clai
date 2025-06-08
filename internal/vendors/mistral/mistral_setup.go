@@ -29,6 +29,6 @@ func (m *Mistral) StreamCompletions(ctx context.Context, chat models.Chat) (chan
 	return m.StreamCompleter.StreamCompletions(ctx, chat)
 }
 
-func (m *Mistral) RegisterTool(tool tools.AiTool) {
+func (m *Mistral) RegisterTool(tool tools.LLMTool) {
 	m.StreamCompleter.InternalRegisterTool(tool)
 }

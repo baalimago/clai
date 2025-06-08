@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-type SedTool UserFunction
+type SedTool Specification
 
 var Sed = SedTool{
 	Name:        "sed",
@@ -106,6 +106,6 @@ func (s SedTool) Call(input Input) (string, error) {
 	return fmt.Sprintf("sed: replaced occurrences of %q with %q in %s (%d-%d)", pattern, repl, filePath, startLine, endLine), nil
 }
 
-func (s SedTool) UserFunction() UserFunction {
-	return UserFunction(Sed)
+func (s SedTool) Specification() Specification {
+	return Specification(Sed)
 }

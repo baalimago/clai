@@ -27,6 +27,6 @@ func (g *Ollama) Setup() error {
 	return nil
 }
 
-func (g *Ollama) RegisterTool(tool tools.AiTool) {
+func (g *Ollama) RegisterTool(tool tools.LLMTool) {
 	g.StreamCompleter.InternalRegisterTool(tool)
 }

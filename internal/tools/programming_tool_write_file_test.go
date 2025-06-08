@@ -118,9 +118,9 @@ func TestWriteFileTool_Call(t *testing.T) {
 	}
 }
 
-func TestWriteFileTool_UserFunction(t *testing.T) {
+func TestWriteFileTool_Specification(t *testing.T) {
 	writeTool := WriteFileTool{}
-	userFunc := writeTool.UserFunction()
+	userFunc := writeTool.Specification()
 
 	if userFunc.Name != "write_file" {
 		t.Errorf("Expected name 'write_file', got '%s'", userFunc.Name)
