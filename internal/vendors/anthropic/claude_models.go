@@ -41,20 +41,37 @@ type ContentBlockDelta struct {
 }
 
 type ContentBlockSuper struct {
-	Type         string       `json:"type"`
-	Index        int          `json:"index"`
-	ContentBlock ContentBlock `json:"content_block"`
+	Type             string              `json:"type"`
+	Index            int                 `json:"index"`
+	ToolContentBlock ToolUseContentBlock `json:"content_block"`
 }
 
-type ContentBlock struct {
+type ToolUseContentBlock struct {
 	Type  string                 `json:"type"`
 	ID    string                 `json:"id"`
 	Name  string                 `json:"name"`
 	Input map[string]interface{} `json:"input"`
 }
 
+type ToolResultContentBlock struct {
+	Type      string `json:"type"`
+	Content   string `json:"content"`
+	ToolUseID string `json:"tool_use_id"`
+}
+
+type TextContentBlock struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
 type Root struct {
-	Type         string       `json:"type"`
-	Index        int          `json:"index"`
-	ContentBlock ContentBlock `json:"content_block"`
+	Type         string              `json:"type"`
+	Index        int                 `json:"index"`
+	ContentBlock ToolUseContentBlock `json:"content_block"`
+}
+
+type ClaudeConvMessage struct {
+	Role string `json:"role"`
+	// Content may be either ToolContentBlock or TextContentBlock
+	Content []any `json:"content"`
 }

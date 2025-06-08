@@ -16,11 +16,12 @@ func (c *Claude) handleContentBlockStart(blockStart string) models.CompletionEve
 	if err := json.Unmarshal([]byte(blockStart), &blockSuper); err != nil {
 		return fmt.Errorf("failed to unmarshal blockStart with content: %v, error: %w", blockStart, err)
 	}
-	block := blockSuper.ContentBlock
+	block := blockSuper.ToolContentBlock
 	c.contentBlockType = block.Type
 	switch block.Type {
 	case "tool_use":
 		c.functionName = block.Name
+		c.functionID = block.ID
 	}
 	return models.NoopEvent{}
 }
@@ -72,7 +73,7 @@ func (c *Claude) handleContentBlockStop(blockStop string) models.CompletionEvent
 		c.debugFullStreamMsg = ""
 		c.functionJson = ""
 	}()
-	var block ContentBlock
+	var block ToolUseContentBlock
 	blockStop = trimDataPrefix(blockStop)
 	if err := json.Unmarshal([]byte(blockStop), &block); err != nil {
 		return fmt.Errorf("failed to unmarshal blockStop: %w", err)
@@ -87,6 +88,7 @@ func (c *Claude) handleContentBlockStop(blockStop string) models.CompletionEvent
 		return tools.Call{
 			Name:   c.functionName,
 			Inputs: inputs,
+			ID:     c.functionID,
 		}
 	}
 	return models.NoopEvent{}

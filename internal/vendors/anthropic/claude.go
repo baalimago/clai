@@ -2,6 +2,7 @@ package anthropic
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/tools"
@@ -23,6 +24,7 @@ type Claude struct {
 	debugFullStreamMsg string               `json:"-"`
 	tools              []tools.UserFunction `json:"-"`
 	functionName       string               `json:"-"`
+	functionID         string               `json:"-"`
 	functionJson       string               `json:"-"`
 	contentBlockType   string               `json:"-"`
 }
@@ -41,7 +43,7 @@ var ClaudeDefault = Claude{
 
 type claudeReq struct {
 	Model         string               `json:"model"`
-	Messages      []models.Message     `json:"messages"`
+	Messages      []ClaudeConvMessage  `json:"messages"`
 	MaxTokens     int                  `json:"max_tokens"`
 	Stream        bool                 `json:"stream"`
 	System        string               `json:"system"`
@@ -53,59 +55,59 @@ type claudeReq struct {
 }
 
 // claudifyMessages converts from 'normal' openai chat format into a format which claud prefers
-func claudifyMessages(msgs []models.Message) []models.Message {
-	cleanedMsgs := make([]models.Message, 0, len(msgs))
-	// Remove any additional fields from the messages
-	for _, msg := range msgs {
-		cleanedMsgs = append(cleanedMsgs, models.Message{
-			Role:    msg.Role,
-			Content: msg.Content,
-		})
+// this is especially important in order to make tooling work, probably reasoning too
+func claudifyMessages(msgs []models.Message) []ClaudeConvMessage {
+	var ret []ClaudeConvMessage
+	if len(msgs) == 0 {
+		return ret
 	}
-	msgs = cleanedMsgs
 
-	// If the first message is a system one, assume it's the system prompt and pop it
+	// Start from the second message if the first is a system message
+	start := 0
 	if msgs[0].Role == "system" {
-		msgs = msgs[1:]
+		start = 1
 	}
 
-	// Convert system messages from 'system' to 'assistant'
-	for i, v := range msgs {
-		if v.Role == "system" {
-			msgs[i].Role = "assistant"
+	for i := start; i < len(msgs); i++ {
+		msg := msgs[i]
+		role := msg.Role
+		if role == "system" {
+			role = "assistant"
+		}
+
+		var contentBlock any
+
+		if len(msg.ToolCalls) > 0 {
+			toolCallMsg := msg.ToolCalls[0]
+			contentBlock = ToolUseContentBlock{
+				Type:  "tool_use",
+				ID:    toolCallMsg.ID,
+				Name:  toolCallMsg.Name,
+				Input: toolCallMsg.Inputs,
+			}
+		} else if msg.Role == "tool" {
+			role = "user"
+			contentBlock = ToolResultContentBlock{
+				Type:      "tool_result",
+				ToolUseID: msg.ToolCallID,
+				Content:   msg.Content,
+			}
+		} else {
+			contentBlock = TextContentBlock{
+				Type: "text",
+				Text: strings.TrimSpace(msg.Content),
+			}
+		}
+
+		if len(ret) > 0 && ret[len(ret)-1].Role == role {
+			ret[len(ret)-1].Content = append(ret[len(ret)-1].Content, contentBlock)
+		} else {
+			ret = append(ret, ClaudeConvMessage{
+				Role:    role,
+				Content: []any{contentBlock},
+			})
 		}
 	}
 
-	for i, v := range msgs {
-		if v.Role == "tool" {
-			msgs[i].Role = "user"
-		}
-	}
-
-	// Merge consecutive assistant messages into the first one
-	for i := 1; i < len(msgs); i++ {
-		if msgs[i].Role == "assistant" && msgs[i-1].Role == "assistant" {
-			msgs[i-1].Content += "\n" + msgs[i].Content
-			msgs = append(msgs[:i], msgs[i+1:]...)
-			i--
-		}
-	}
-
-	// Merge consecutive user messages into the last one
-	for i := len(msgs) - 2; i >= 0; i-- {
-		if msgs[i].Role == "user" && msgs[i+1].Role == "user" {
-			msgs[i+1].Content = msgs[i].Content + "\n" + msgs[i+1].Content
-			msgs = append(msgs[:i], msgs[i+1:]...)
-		}
-	}
-
-	// If the first message is from an assistant, keep it as is
-	// (no need to merge it into the upcoming user message)
-
-	// If the last message is from an assistant, remove it
-	if len(msgs) > 0 && msgs[len(msgs)-1].Role == "assistant" {
-		msgs = msgs[:len(msgs)-1]
-	}
-
-	return msgs
+	return ret
 }
