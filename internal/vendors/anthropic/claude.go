@@ -43,7 +43,7 @@ var ClaudeDefault = Claude{
 
 type claudeReq struct {
 	Model         string                `json:"model"`
-	Messages      []models.Message      `json:"messages"`
+	Messages      []ClaudeConvMessage   `json:"messages"`
 	MaxTokens     int                   `json:"max_tokens"`
 	Stream        bool                  `json:"stream"`
 	System        string                `json:"system"`

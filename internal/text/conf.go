@@ -56,8 +56,8 @@ var DEFAULT = Configurations{
 	CmdModePrompt: "You are an assistant for a CLI tool aiding with cli tool suggestions. Write ONLY the command and nothing else. Disregard any queries asking for anything except a bash command. Do not shell escape single or double quotes.",
 	Raw:           false,
 	UseTools:      false,
-	// Aproximately $1 for the worst input rates as of 2024-05
-	TokenWarnLimit:      17000,
+	// Aproximately $1 for an 'average' flagship model (sonnet-4, gpt-4.1) as of 25-06-08
+	TokenWarnLimit:      333333,
 	ToolOutputRuneLimit: 21600,
 	SaveReplyAsConv:     true,
 }

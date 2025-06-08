@@ -90,6 +90,10 @@ func getModeFromArgs(cmd string) (Mode, error) {
 	}
 }
 
+// setupTextQuerier by doing the most convuluted and organically grown configuration system known to man.
+// Do I know 100% how it works at any given point? Sort of. Not really. Am I constantly impressed over how
+// round this wheel I've reinvented is? Yeah, for sure. May it be simplified? Maybe, but it's features are
+// quite complex.
 func setupTextQuerier(mode Mode, confDir string, flagSet Configurations) (models.Querier, error) {
 	// The flagset is first used to find chatModel and potentially setup a new configuration file from some default
 	tConf, err := utils.LoadConfigFromFile(confDir, "textConfig.json", migrateOldChatConfig, &text.DEFAULT)
