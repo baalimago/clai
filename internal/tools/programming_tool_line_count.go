@@ -6,7 +6,7 @@ import (
 	"os"
 )
 
-type LineCountTool UserFunction
+type LineCountTool Specification
 
 var LineCount = LineCountTool{
 	Name:        "line_count",
@@ -45,6 +45,6 @@ func (l LineCountTool) Call(input Input) (string, error) {
 	return fmt.Sprintf("%d", count), nil
 }
 
-func (l LineCountTool) UserFunction() UserFunction {
-	return UserFunction(LineCount)
+func (l LineCountTool) Specification() Specification {
+	return Specification(LineCount)
 }

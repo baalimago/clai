@@ -28,7 +28,7 @@ type StreamCompleter interface {
 	StreamCompletions(context.Context, Chat) (chan CompletionEvent, error)
 }
 
-// A ToolBox can register tools which later on will be added to the chat completion queries
+// ToolBox can register tools which later on will be added to the chat completion queries
 type ToolBox interface {
 	// RegisterTool registers a tool to the ToolBox
 	RegisterTool(tools.LLMTool)

@@ -58,37 +58,7 @@ func vendorType(fromModel string) (string, string, string) {
 	return "VENDOR", "NOT", "FOUND"
 }
 
-func NewQuerier[C models.StreamCompleter](userConf Configurations, dfault C) (Querier[C], error) {
-	vendor, model, modelVersion := vendorType(userConf.Model)
-	claiConfDir := userConf.ConfigDir
-	configPath := path.Join(claiConfDir, fmt.Sprintf("%v_%v_%v.json", vendor, model, modelVersion))
-	querier := Querier[C]{}
-	querier.configDir = claiConfDir
-	var modelConf C
-	err := utils.ReadAndUnmarshal(configPath, &modelConf)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			data, err := json.Marshal(dfault)
-			if err != nil {
-				return querier, fmt.Errorf("failed to marshal default model: %v, error: %w", dfault, err)
-			}
-			err = os.WriteFile(configPath, data, os.FileMode(0o644))
-			if err != nil {
-				return querier, fmt.Errorf("failed to write default model: %v, error: %w", dfault, err)
-			}
-
-			err = utils.ReadAndUnmarshal(configPath, &modelConf)
-			if err != nil {
-				return querier, fmt.Errorf("failed to read default model: %v, error: %w", dfault, err)
-			}
-		} else {
-			return querier, fmt.Errorf("failed to load querier of model: %v, error: %w", userConf.Model, err)
-		}
-	}
-
-	if misc.Truthy(os.Getenv("DEBUG")) {
-		ancli.PrintOK(fmt.Sprintf("userConf: %v\n", debug.IndentedJsonFmt(userConf)))
-	}
+func setupTooling[C models.StreamCompleter](modelConf C, userConf Configurations) {
 	toolBox, ok := any(modelConf).(models.ToolBox)
 	if ok && userConf.UseTools {
 		if misc.Truthy(os.Getenv("DEBUG")) {
@@ -117,6 +87,54 @@ func NewQuerier[C models.StreamCompleter](userConf Configurations, dfault C) (Qu
 			}
 		}
 	}
+}
+
+// setupConfigFile using unholy named returns since it kind of fits and im too lazy to explicitly declare. Hobby project
+// and all that, be happy im refactoring this into something comprehensive at all..!
+func setupConfigFile[C models.StreamCompleter](configPath string, userConf Configurations, dfault C) (modelConf C, retErr error) {
+	retErr = utils.ReadAndUnmarshal(configPath, &modelConf)
+	if retErr != nil {
+		if errors.Is(retErr, os.ErrNotExist) {
+			// Reset the retErr since any further error
+			// will be returned as new errors
+			retErr = nil
+			data, err := json.Marshal(dfault)
+			if err != nil {
+				retErr = err
+				return modelConf, fmt.Errorf("failed to marshal default model: %v, error: %w", dfault, retErr)
+			}
+			err = os.WriteFile(configPath, data, os.FileMode(0o644))
+			if err != nil {
+				return modelConf, fmt.Errorf("failed to write default model: %v, error: %w", dfault, retErr)
+			}
+
+			err = utils.ReadAndUnmarshal(configPath, &modelConf)
+			if err != nil {
+				return modelConf, fmt.Errorf("failed to read default model: %v, error: %w", dfault, retErr)
+			}
+		} else {
+			return modelConf, fmt.Errorf("failed to load querier of model: %v, error: %w", userConf.Model, retErr)
+		}
+	}
+	retErr = nil
+	return
+}
+
+func NewQuerier[C models.StreamCompleter](userConf Configurations, dfault C) (Querier[C], error) {
+	vendor, model, modelVersion := vendorType(userConf.Model)
+	claiConfDir := userConf.ConfigDir
+	configPath := path.Join(claiConfDir, fmt.Sprintf("%v_%v_%v.json", vendor, model, modelVersion))
+	querier := Querier[C]{}
+	querier.configDir = claiConfDir
+	modelConf, err := setupConfigFile(configPath, userConf, dfault)
+	if err != nil {
+		return Querier[C]{}, fmt.Errorf("failed to setup config file: %w", err)
+	}
+
+	if misc.Truthy(os.Getenv("DEBUG")) {
+		ancli.PrintOK(fmt.Sprintf("userConf: %v\n", debug.IndentedJsonFmt(userConf)))
+	}
+	setupTooling(modelConf, userConf)
 
 	err = modelConf.Setup()
 	if err != nil {

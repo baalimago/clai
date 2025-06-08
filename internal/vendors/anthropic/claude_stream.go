@@ -179,9 +179,6 @@ func (c *Claude) stringFromDeltaToken(deltaToken string) (Delta, error) {
 func (c *Claude) constructRequest(ctx context.Context, chat models.Chat) (*http.Request, error) {
 	// ignored for now as error is not used
 	sysMsg, _ := chat.FirstSystemMessage()
-	// if c.debug {
-	// 	ancli.PrintOK(fmt.Sprintf("pre-claudified messages: %+v\n", chat.Messages))
-	// }
 	msgCopy := make([]models.Message, len(chat.Messages))
 	copy(msgCopy, chat.Messages)
 	claudifiedMsgs := claudifyMessages(msgCopy)
