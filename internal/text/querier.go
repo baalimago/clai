@@ -25,22 +25,23 @@ const (
 )
 
 type Querier[C models.StreamCompleter] struct {
-	Url             string
-	Raw             bool
-	chat            models.Chat
-	username        string
-	termWidth       int
-	lineCount       int
-	line            string
-	fullMsg         string
-	configDir       string
-	debug           bool
-	shouldSaveReply bool
-	hasPrinted      bool
-	Model           C
-	tokenWarnLimit  int
-	cmdMode         bool
-	execErr         error
+	Url                     string
+	Raw                     bool
+	chat                    models.Chat
+	username                string
+	termWidth               int
+	lineCount               int
+	line                    string
+	fullMsg                 string
+	configDir               string
+	debug                   bool
+	debugTextQuerierPrinted bool
+	shouldSaveReply         bool
+	hasPrinted              bool
+	Model                   C
+	tokenWarnLimit          int
+	cmdMode                 bool
+	execErr                 error
 }
 
 // Query using the underlying model to stream completions and then print the output
@@ -222,7 +223,8 @@ func (q *Querier[C]) TextQuery(ctx context.Context, chat models.Chat) (models.Ch
 	if err != nil {
 		return models.Chat{}, fmt.Errorf("TextQuery: %w", err)
 	}
-	if q.debug {
+	if q.debug && !q.debugTextQuerierPrinted {
+		q.debugTextQuerierPrinted = true
 		ancli.PrintOK(fmt.Sprintf("Querier.TextQuery:\n%v", debug.IndentedJsonFmt(q)))
 	}
 
@@ -255,16 +257,6 @@ func (q *Querier[C]) handleFunctionCall(ctx context.Context, call tools.Call) er
 	if q.cmdMode {
 		return errors.New("cant call tools in cmd mode")
 	}
-	// Whatever is in q.fullMessage now is what the AI has streamed before the function call
-	// which normally is handeled by the supercallee of Query, now we need to handle it here.
-	// There's room for improvement of this system..
-	if q.fullMsg != "" {
-		systemPreCallMessage := models.Message{
-			Role:    "system",
-			Content: q.fullMsg,
-		}
-		q.chat.Messages = append(q.chat.Messages, systemPreCallMessage)
-	}
 
 	if q.debug {
 		ancli.PrintOK(fmt.Sprintf("received tool call: %v", call))
@@ -295,10 +287,13 @@ func (q *Querier[C]) handleFunctionCall(ctx context.Context, call tools.Call) er
 		ToolCalls: []tools.Call{call},
 	}
 	q.reset()
-	err := utils.AttemptPrettyPrint(assistantToolsCall, q.username, q.Raw)
-	if err != nil {
-		return fmt.Errorf("failed to pretty print, stopping before tool invocation: %w", err)
+	if !q.debug {
+		err := utils.AttemptPrettyPrint(assistantToolsCall, q.username, q.Raw)
+		if err != nil {
+			return fmt.Errorf("failed to pretty print, stopping before tool invocation: %w", err)
+		}
 	}
+
 	q.chat.Messages = append(q.chat.Messages, assistantToolsCall)
 
 	out := tools.Invoke(call)
@@ -312,17 +307,19 @@ func (q *Querier[C]) handleFunctionCall(ctx context.Context, call tools.Call) er
 		ToolCallID: call.ID,
 	}
 	q.chat.Messages = append(q.chat.Messages, toolsOutput)
-	if q.debug || q.Raw {
-		err = utils.AttemptPrettyPrint(toolsOutput, "tool", q.Raw)
+	if q.Raw {
+		err := utils.AttemptPrettyPrint(toolsOutput, "tool", q.Raw)
 		if err != nil {
 			return fmt.Errorf("failed to pretty print, stopping before tool call return: %w", err)
 		}
+	} else if q.debug {
+		// NOOP, no printing
 	} else {
 		smallOutputMsg := models.Message{
 			Role:    "tool",
 			Content: shortenedOutput(out),
 		}
-		err = utils.AttemptPrettyPrint(smallOutputMsg, "tool", q.Raw)
+		err := utils.AttemptPrettyPrint(smallOutputMsg, "tool", q.Raw)
 		if err != nil {
 			return fmt.Errorf("failed to pretty print, stopping before tool call return: %w", err)
 		}
@@ -331,7 +328,7 @@ func (q *Querier[C]) handleFunctionCall(ctx context.Context, call tools.Call) er
 	if call.Name == "test" {
 		return nil
 	}
-	_, err = q.TextQuery(ctx, q.chat)
+	_, err := q.TextQuery(ctx, q.chat)
 	if err != nil {
 		return fmt.Errorf("failed to query after tool call: %w", err)
 	}
@@ -365,5 +362,7 @@ func shortenedOutput(out string) string {
 
 func (q *Querier[C]) handleToken(token string) {
 	q.fullMsg += token
-	fmt.Print(token)
+	if !q.debug {
+		fmt.Print(token)
+	}
 }

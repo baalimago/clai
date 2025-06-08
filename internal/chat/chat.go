@@ -36,7 +36,7 @@ func Save(saveAt string, chat models.Chat) error {
 		return fmt.Errorf("failed to encode JSON: %w", err)
 	}
 	fileName := path.Join(saveAt, fmt.Sprintf("%v.json", chat.ID))
-	if misc.Truthy(os.Getenv("DEBUG")) || misc.Truthy(os.Getenv("DEBUG_REPLY_MODE")) {
+	if misc.Truthy(os.Getenv("DEBUG")) && misc.Truthy(os.Getenv("DEBUG_VERBOSE")) || misc.Truthy(os.Getenv("DEBUG_REPLY_MODE")) {
 		ancli.PrintOK(fmt.Sprintf("saving chat to: '%v', content (on new line):\n'%v'\n", fileName, string(b)))
 	}
 	return os.WriteFile(fileName, b, 0o644)

@@ -9,11 +9,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
+	"github.com/baalimago/go_away_boilerplate/pkg/debug"
+	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
 func (c *Claude) StreamCompletions(ctx context.Context, chat models.Chat) (chan models.CompletionEvent, error) {
@@ -48,6 +51,7 @@ func (c *Claude) handleStreamResponse(ctx context.Context, resp *http.Response) 
 	go func() {
 		br := bufio.NewReader(resp.Body)
 		defer func() {
+			c.debugFullStreamMsg = ""
 			resp.Body.Close()
 			close(outChan)
 		}()
@@ -72,7 +76,15 @@ func (c *Claude) handleStreamResponse(ctx context.Context, resp *http.Response) 
 			if token == "" {
 				continue
 			}
-			outChan <- c.handleToken(br, token)
+			processed := c.handleToken(br, token)
+			if c.debug {
+				switch cast := processed.(type) {
+				case string:
+					c.debugFullStreamMsg += cast
+					ancli.Okf("full message: '%v'\n--\n", c.debugFullStreamMsg)
+				}
+			}
+			outChan <- processed
 		}
 	}()
 	return outChan, nil
@@ -117,6 +129,7 @@ func (c *Claude) handleToken(br *bufio.Reader, token string) models.CompletionEv
 		return io.EOF
 
 	case "content_block_start":
+		c.debugFullStreamMsg = ""
 		blockStart, err := br.ReadString('\n')
 		if err != nil {
 			return fmt.Errorf("failed to read content_block_delta: %w", err)
@@ -151,14 +164,14 @@ func (c *Claude) stringFromDeltaToken(deltaToken string) (Delta, error) {
 	if deltaTokSplit[0] != "data:" {
 		return Delta{}, fmt.Errorf("unexpected split token. Expected: 'data:', got: '%v'", deltaTokSplit[0])
 	}
-	deltaJsonString := strings.Join(deltaTokSplit[1:], " ")
+	deltaJSONString := strings.Join(deltaTokSplit[1:], " ")
 	var contentBlockDelta ContentBlockDelta
-	err := json.Unmarshal([]byte(deltaJsonString), &contentBlockDelta)
+	err := json.Unmarshal([]byte(deltaJSONString), &contentBlockDelta)
 	if err != nil {
-		return Delta{}, fmt.Errorf("failed to unmarshal deltaJsonString: '%v' to struct, err: %w", deltaJsonString, err)
+		return Delta{}, fmt.Errorf("failed to unmarshal deltaJsonString: '%v' to struct, err: %w", deltaJSONString, err)
 	}
 	if c.debug {
-		ancli.PrintOK(fmt.Sprintf("delta struct: %+v\nstring: %v", contentBlockDelta, deltaJsonString))
+		ancli.PrintOK(fmt.Sprintf("delta struct: %+v\nstring: %v", debug.IndentedJsonFmt(contentBlockDelta), deltaJSONString))
 	}
 	return contentBlockDelta.Delta, nil
 }
@@ -166,15 +179,15 @@ func (c *Claude) stringFromDeltaToken(deltaToken string) (Delta, error) {
 func (c *Claude) constructRequest(ctx context.Context, chat models.Chat) (*http.Request, error) {
 	// ignored for now as error is not used
 	sysMsg, _ := chat.FirstSystemMessage()
-	if c.debug {
-		ancli.PrintOK(fmt.Sprintf("pre-claudified messages: %+v\n", chat.Messages))
-	}
+	// if c.debug {
+	// 	ancli.PrintOK(fmt.Sprintf("pre-claudified messages: %+v\n", chat.Messages))
+	// }
 	msgCopy := make([]models.Message, len(chat.Messages))
 	copy(msgCopy, chat.Messages)
 	claudifiedMsgs := claudifyMessages(msgCopy)
-	if c.debug {
-		ancli.PrintOK(fmt.Sprintf("claudified messages: %+v\n", claudifiedMsgs))
-	}
+	// if c.debug {
+	// 	ancli.PrintOK(fmt.Sprintf("claudified messages: %+v\n", claudifiedMsgs))
+	// }
 
 	reqData := claudeReq{
 		Model:         c.Model,
@@ -201,8 +214,7 @@ func (c *Claude) constructRequest(ctx context.Context, chat models.Chat) (*http.
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-api-key", c.apiKey)
 	req.Header.Set("anthropic-version", c.AnthropicVersion)
-	req.Header.Set("anthropic-beta", c.AnthropicBeta)
-	if c.debug {
+	if c.debug && misc.Truthy(os.Getenv("DEBUG_VERBOSE")) {
 		ancli.PrintOK(fmt.Sprintf("Request: %+v\n", req))
 	}
 	return req, nil
