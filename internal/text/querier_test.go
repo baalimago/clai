@@ -12,12 +12,12 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/reply"
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
-	"unicode/utf8"
 )
 
 type MockQuerier struct {
