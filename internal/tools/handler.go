@@ -15,6 +15,7 @@ var Tools = map[string]AiTool{
 	"freetext_command": FreetextCmd,
 	"sed":              Sed,
 	"rows_between":     RowsBetween,
+	"line_count":       LineCount,
 }
 
 // Invoke the call, and gather both error and output in the same string
