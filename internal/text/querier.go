@@ -20,9 +20,8 @@ import (
 )
 
 const (
-	TOKEN_COUNT_FACTOR     = 1.1
-	MAX_SHORTENED_NEWLINES = 5
-	TOOL_OUTPUT_DISCLAIMER = "\n\noutput too large, concentrate your tool call"
+	TokenCountFactor     = 1.1
+	MaxShortenedNewlines = 5
 )
 
 type Querier[C models.StreamCompleter] struct {
@@ -130,7 +129,7 @@ func (q *Querier[C]) countTokens() int {
 	for _, msg := range q.chat.Messages {
 		ret += len(strings.Split(msg.Content, " "))
 	}
-	return int(float64(ret) * TOKEN_COUNT_FACTOR)
+	return int(float64(ret) * TokenCountFactor)
 }
 
 func (q *Querier[C]) postProcess() {
@@ -346,7 +345,7 @@ func shortenedOutput(out string) string {
 	outNewlineSplit := strings.Split(out, "\n")
 	firstTokens := utils.GetFirstTokens(outSplit, maxTokens)
 	amRunes := utf8.RuneCountInString(out)
-	if len(firstTokens) < maxTokens && len(outNewlineSplit) < MAX_SHORTENED_NEWLINES && amRunes < maxRunes {
+	if len(firstTokens) < maxTokens && len(outNewlineSplit) < MaxShortenedNewlines && amRunes < maxRunes {
 		return out
 	}
 	if amRunes > maxRunes {
@@ -355,9 +354,9 @@ func shortenedOutput(out string) string {
 	firstTokensStr := strings.Join(firstTokens, " ")
 	amLeft := len(outSplit) - maxTokens
 	abbreviationType := "tokens"
-	if len(outNewlineSplit) > MAX_SHORTENED_NEWLINES {
-		firstTokensStr = strings.Join(utils.GetFirstTokens(outNewlineSplit, MAX_SHORTENED_NEWLINES), "\n")
-		amLeft = len(outNewlineSplit) - MAX_SHORTENED_NEWLINES
+	if len(outNewlineSplit) > MaxShortenedNewlines {
+		firstTokensStr = strings.Join(utils.GetFirstTokens(outNewlineSplit, MaxShortenedNewlines), "\n")
+		amLeft = len(outNewlineSplit) - MaxShortenedNewlines
 		abbreviationType = "lines"
 	}
 	return fmt.Sprintf("%v\n...[and %v more %v]", firstTokensStr, amLeft, abbreviationType)
@@ -367,11 +366,13 @@ func limitToolOutput(out string, limit int) string {
 	if limit <= 0 {
 		return out
 	}
-	r := []rune(out)
-	if len(r) <= limit {
+	amRunes := utf8.RuneCountInString(out)
+	if amRunes <= limit {
 		return out
 	}
-	return string(r[:limit]) + TOOL_OUTPUT_DISCLAIMER
+	return fmt.Sprintf(
+		"%v... and %v more characters. The tool's output has been restricted as it's too long. Please concentrate your tool calls to reduce the amount of tokens used!",
+		out[:limit], amRunes-limit)
 }
 
 func (q *Querier[C]) handleToken(token string) {
