@@ -16,23 +16,26 @@ import (
 
 // Configurations used to setup the requirements of text models
 type Configurations struct {
-	Model           string      `json:"model"`
-	SystemPrompt    string      `json:"system-prompt"`
-	CmdModePrompt   string      `json:"cmd-mode-prompt"`
-	Raw             bool        `json:"raw"`
-	UseTools        bool        `json:"use-tools"`
-	TokenWarnLimit  int         `json:"token-warn-limit"`
-	SaveReplyAsConv bool        `json:"save-reply-as-prompt"`
-	ConfigDir       string      `json:"-"`
-	StdinReplace    string      `json:"-"`
-	Stream          bool        `json:"-"`
-	ReplyMode       bool        `json:"-"`
-	ChatMode        bool        `json:"-"`
-	CmdMode         bool        `json:"-"`
-	Glob            string      `json:"-"`
-	InitialPrompt   models.Chat `json:"-"`
-	UseProfile      string      `json:"-"`
-	Tools           []string    `json:"-"`
+	Model          string `json:"model"`
+	SystemPrompt   string `json:"system-prompt"`
+	CmdModePrompt  string `json:"cmd-mode-prompt"`
+	Raw            bool   `json:"raw"`
+	UseTools       bool   `json:"use-tools"`
+	TokenWarnLimit int    `json:"token-warn-limit"`
+	// ToolOutputRuneLimit limits the amount of runes a tool may return
+	// before clai truncates the output. Zero means no limit.
+	ToolOutputRuneLimit int         `json:"tool-output-rune-limit"`
+	SaveReplyAsConv     bool        `json:"save-reply-as-prompt"`
+	ConfigDir           string      `json:"-"`
+	StdinReplace        string      `json:"-"`
+	Stream              bool        `json:"-"`
+	ReplyMode           bool        `json:"-"`
+	ChatMode            bool        `json:"-"`
+	CmdMode             bool        `json:"-"`
+	Glob                string      `json:"-"`
+	InitialPrompt       models.Chat `json:"-"`
+	UseProfile          string      `json:"-"`
+	Tools               []string    `json:"-"`
 	// PostProccessedPrompt which has had it's strings replaced etc
 	PostProccessedPrompt string `json:"-"`
 }
@@ -54,8 +57,9 @@ var DEFAULT = Configurations{
 	Raw:           false,
 	UseTools:      false,
 	// Aproximately $1 for the worst input rates as of 2024-05
-	TokenWarnLimit:  17000,
-	SaveReplyAsConv: true,
+	TokenWarnLimit:      17000,
+	ToolOutputRuneLimit: 21600,
+	SaveReplyAsConv:     true,
 }
 
 var DEFAULT_PROFILE = Profile{
