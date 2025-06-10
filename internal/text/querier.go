@@ -22,6 +22,7 @@ import (
 const (
 	TOKEN_COUNT_FACTOR     = 1.1
 	MAX_SHORTENED_NEWLINES = 5
+	TOOL_OUTPUT_DISCLAIMER = "\n\noutput too large, concentrate your tool call"
 )
 
 type Querier[C models.StreamCompleter] struct {
@@ -40,6 +41,7 @@ type Querier[C models.StreamCompleter] struct {
 	hasPrinted              bool
 	Model                   C
 	tokenWarnLimit          int
+	toolOutputRuneLimit     int
 	cmdMode                 bool
 	execErr                 error
 }
@@ -297,6 +299,7 @@ func (q *Querier[C]) handleFunctionCall(ctx context.Context, call tools.Call) er
 	q.chat.Messages = append(q.chat.Messages, assistantToolsCall)
 
 	out := tools.Invoke(call)
+	out = limitToolOutput(out, q.toolOutputRuneLimit)
 	// Chatgpt doesn't like responses which yield no output, even if they're valid (ls on empty dir)
 	if out == "" {
 		out = "<EMPTY-RESPONSE>"
@@ -358,6 +361,17 @@ func shortenedOutput(out string) string {
 		abbreviationType = "lines"
 	}
 	return fmt.Sprintf("%v\n...[and %v more %v]", firstTokensStr, amLeft, abbreviationType)
+}
+
+func limitToolOutput(out string, limit int) string {
+	if limit <= 0 {
+		return out
+	}
+	r := []rune(out)
+	if len(r) <= limit {
+		return out
+	}
+	return string(r[:limit]) + TOOL_OUTPUT_DISCLAIMER
 }
 
 func (q *Querier[C]) handleToken(token string) {

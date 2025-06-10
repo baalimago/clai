@@ -17,6 +17,7 @@ import (
 	"github.com/baalimago/clai/internal/reply"
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
+	"unicode/utf8"
 )
 
 type MockQuerier struct {
@@ -358,6 +359,28 @@ func Test_shortenedOutput(t *testing.T) {
 		want := MAX_SHORTENED_NEWLINES + 1
 		if got >= want {
 			t.Fatalf("expected: %v, got: %v", want, got)
+		}
+	})
+}
+
+func Test_limitToolOutput(t *testing.T) {
+	t.Run("should append disclaimer when exceeding limit", func(t *testing.T) {
+		given := "abcdefghijklmnopqrstuvwxyz"
+		got := limitToolOutput(given, 10)
+		if !strings.Contains(got, TOOL_OUTPUT_DISCLAIMER) {
+			t.Fatalf("expected disclaimer in output, got: %v", got)
+		}
+		runeLen := utf8.RuneCountInString(got)
+		if runeLen <= 10 {
+			t.Fatalf("expected output to be longer than limit due to disclaimer, got %v runes", runeLen)
+		}
+	})
+
+	t.Run("should return same string when within limit", func(t *testing.T) {
+		given := "short"
+		got := limitToolOutput(given, 10)
+		if got != given {
+			t.Fatalf("expected %v, got %v", given, got)
 		}
 	})
 }
