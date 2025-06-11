@@ -3,8 +3,19 @@ package tools
 import (
 	"encoding/json"
 	"fmt"
-	"slices"
 )
+
+type LLMTool interface {
+	// Call the LLM tool with the given Input. Returns output from the tool or an error
+	// if the call returned an error-like. An error-like is either exit code non-zero or
+	// http response which isn't 2xx or 3xx.
+	Call(Input) (string, error)
+
+	// Return the Specification, later on used
+	// by text queriers to send to their respective
+	// models
+	Specification() Specification
+}
 
 type Specification struct {
 	Name        string `json:"name"`
@@ -63,28 +74,10 @@ type ParameterObject struct {
 	Enum        []string `json:"enum,omitempty"`
 }
 
-type ValidationError struct {
-	fieldsMissing []string
-}
+type McpServerConfig map[string]McpServer
 
-func NewValidationError(fieldsMissing []string) error {
-	// Sort for deterministic error print
-	slices.Sort(fieldsMissing)
-	return ValidationError{fieldsMissing: fieldsMissing}
-}
-
-func (v ValidationError) Error() string {
-	return fmt.Sprintf("validation error, fields missing: %v", v.fieldsMissing)
-}
-
-type LLMTool interface {
-	// Call the LLM tool with the given Input. Returns output from the tool or an error
-	// if the call returned an error-like. An error-like is either exit code non-zero or
-	// http response which isn't 2xx or 3xx.
-	Call(Input) (string, error)
-
-	// Return the Specification, later on used
-	// by text queriers to send to their respective
-	// models
-	Specification() Specification
+type McpServer struct {
+	Command string            `json:"command"`
+	Args    []string          `json:"args"`
+	Env     map[string]string `json:"env"`
 }
