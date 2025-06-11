@@ -74,7 +74,8 @@ func (r RowsBetweenTool) Call(input Input) (string, error) {
 	scanner := bufio.NewScanner(file)
 	for i := 1; scanner.Scan(); i++ {
 		if i >= startLine && i <= endLine {
-			lines = append(lines, scanner.Text())
+			lineWithNumber := fmt.Sprintf("%d: %s", i, scanner.Text())
+			lines = append(lines, lineWithNumber)
 		}
 		if i > endLine {
 			break
