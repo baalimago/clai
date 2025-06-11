@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -13,14 +14,14 @@ func TestCreateTextQuerier(t *testing.T) {
 	os.Setenv("OPENAI_API_KEY", "key")
 	defer os.Unsetenv("OPENAI_API_KEY")
 	conf := text.Configurations{Model: "gpt-4", ConfigDir: tmp}
-	q, err := CreateTextQuerier(conf)
+	q, err := CreateTextQuerier(context.Background(), conf)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if q == nil {
 		t.Fatal("expected querier")
 	}
-	if _, err := CreateTextQuerier(text.Configurations{Model: "unknown", ConfigDir: tmp}); err == nil {
+	if _, err := CreateTextQuerier(context.Background(), text.Configurations{Model: "unknown", ConfigDir: tmp}); err == nil {
 		t.Error("expected error for unknown model")
 	}
 }

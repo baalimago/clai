@@ -1,6 +1,7 @@
 package text
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -88,7 +89,7 @@ func setupConfigFile[C models.StreamCompleter](configPath string, userConf Confi
 	return
 }
 
-func NewQuerier[C models.StreamCompleter](userConf Configurations, dfault C) (Querier[C], error) {
+func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configurations, dfault C) (Querier[C], error) {
 	vendor, model, modelVersion := vendorType(userConf.Model)
 	claiConfDir := userConf.ConfigDir
 	configPath := path.Join(claiConfDir, fmt.Sprintf("%v_%v_%v.json", vendor, model, modelVersion))
@@ -102,7 +103,7 @@ func NewQuerier[C models.StreamCompleter](userConf Configurations, dfault C) (Qu
 	if misc.Truthy(os.Getenv("DEBUG")) {
 		ancli.PrintOK(fmt.Sprintf("userConf: %v\n", debug.IndentedJsonFmt(userConf)))
 	}
-	setupTooling(modelConf, userConf)
+	setupTooling(ctx, modelConf, userConf)
 
 	err = modelConf.Setup()
 	if err != nil {
