@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/baalimago/clai/internal/models"
-	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
@@ -56,37 +55,6 @@ func vendorType(fromModel string) (string, string, string) {
 	}
 
 	return "VENDOR", "NOT", "FOUND"
-}
-
-func setupTooling[C models.StreamCompleter](modelConf C, userConf Configurations) {
-	toolBox, ok := any(modelConf).(models.ToolBox)
-	if ok && userConf.UseTools {
-		if misc.Truthy(os.Getenv("DEBUG")) {
-			ancli.PrintOK(fmt.Sprintf("Registering tools on type: %T\n", modelConf))
-		}
-		// If usetools and no specific tools chocen, assume all are valid
-		if len(userConf.Tools) == 0 {
-			for _, tool := range tools.Tools {
-				if misc.Truthy(os.Getenv("DEBUG")) {
-					ancli.PrintOK(fmt.Sprintf("\tadding tool: %T\n", tool))
-				}
-				toolBox.RegisterTool(tool)
-			}
-		} else {
-			for _, t := range userConf.Tools {
-				tool, exists := tools.Tools[t]
-				if !exists {
-					ancli.PrintWarn(fmt.Sprintf("attempted to find tool: '%v', which doesn't exist, skipping", tool))
-					continue
-				}
-
-				if misc.Truthy(os.Getenv("DEBUG")) {
-					ancli.PrintOK(fmt.Sprintf("\tadding tool: %T\n", tool))
-				}
-				toolBox.RegisterTool(tool)
-			}
-		}
-	}
 }
 
 // setupConfigFile using unholy named returns since it kind of fits and im too lazy to explicitly declare. Hobby project
