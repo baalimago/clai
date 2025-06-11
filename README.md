@@ -3,7 +3,7 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/baalimago/clai)](https://goreportcard.com/report/github.com/baalimago/clai)
 ![Wakatime](https://wakatime.com/badge/user/018cc8d2-3fd9-47ef-81dc-e4ad645d5f34/project/018e07e1-bd22-4077-a213-c16290d3db52.svg)
 
-Test coverage: 44.480% 😒👍
+Test coverage: 44.314% 😒👍
 
 `clai` integrates AI models of multiple vendors via cli.
 You can generate images, text, summarize content and chat while using native terminal functionality, such as pipes and termination signals.
