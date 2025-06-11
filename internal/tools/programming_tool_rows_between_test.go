@@ -18,10 +18,10 @@ func TestRowsBetweenTool_Call(t *testing.T) {
 		start, end int
 		expected   string
 	}{
-		{1, 3, "one\ntwo\nthree"},
-		{2, 4, "two\nthree\nfour"},
-		{4, 5, "four\nfive"},
-		{3, 3, "three"},
+		{1, 3, "1: one\n2: two\n3: three"},
+		{2, 4, "2: two\n3: three\n4: four"},
+		{4, 5, "4: four\n5: five"},
+		{3, 3, "3: three"},
 	}
 
 	for _, tc := range cases {
