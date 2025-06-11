@@ -132,6 +132,11 @@ func (q *Querier[C]) countTokens() int {
 }
 
 func (q *Querier[C]) postProcess() {
+	if q.Raw {
+		// Print a new line, otherwise cursor remains on the same position on
+		// the next contet block
+		fmt.Println()
+	}
 	// This is to ensure that it only post-processes once in recursive calls
 	if q.hasPrinted {
 		return
