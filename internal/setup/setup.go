@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/baalimago/clai/internal/text"
+	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/utils"
 )
 
@@ -25,6 +26,14 @@ const (
 	newaction
 	confWithEditor
 )
+
+var defaultMcpConfig = tools.McpServerConfig{
+	"example": {
+		Command: "echo",
+		Args:    []string{"hello from mcp"},
+		Env:     map[string]string{},
+	},
+}
 
 func (a action) String() string {
 	switch a {
@@ -46,8 +55,9 @@ func (a action) String() string {
 const stage_0 = `Do you wish to configure:
   0. mode-files (example: <config>/.clai/textConfig.json- or photoConfig.json)
   1. model files (example: <config>/.clai/openai-gpt-4o.json, <config>/.clai/anthropic-claude-opus.json)
-  2. text generation profiles (see: "clai [h]elp [p]rofile" for additional info) 
-[0/1/2]: `
+  2. text generation profiles (see: "clai [h]elp [p]rofile" for additional info)
+  3. MCP server configuration (enables custom tools)
+[0/1/2/3]: `
 
 // Run the setup to configure the different files
 func Run() error {
@@ -106,6 +116,20 @@ func Run() error {
 			// Once new file has potentially been created, potentially alter it
 			a = conf
 		}
+	case "3":
+		mcpServerConfPath := filepath.Join(claiDir, "mcpServerConfig.json")
+		if _, err := os.Stat(mcpServerConfPath); os.IsNotExist(err) {
+			os.MkdirAll(claiDir, os.ModePerm)
+			if err := utils.CreateFile(mcpServerConfPath, &defaultMcpConfig); err != nil {
+				return fmt.Errorf("failed to create default mcp server config: %w", err)
+			}
+		}
+		configs = []config{{name: "mcpServerConfig.json", filePath: mcpServerConfPath}}
+		qAct, err := queryForAction([]action{conf, del, confWithEditor})
+		if err != nil {
+			return fmt.Errorf("failed to find action: %w", err)
+		}
+		a = qAct
 	case "q", "quit", "e", "exit":
 		return utils.ErrUserInitiatedExit
 	default:
