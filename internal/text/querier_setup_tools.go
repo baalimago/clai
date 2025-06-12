@@ -21,7 +21,7 @@ import (
 // If the config is missing, return an error highlighting this
 func addMcpTools(ctx context.Context, mcpServerConfigPath string) error {
 	if _, err := os.Stat(mcpServerConfigPath); os.IsNotExist(err) {
-		return fmt.Errorf("MCP server config not found at %s. If you want MCP server support, create one using 'clai setup' and select option 3", mcpServerConfigPath)
+		return fmt.Errorf("MCP server config not found at %s.\nIf you want MCP server support, create one using 'clai setup' and select option 3", mcpServerConfigPath)
 	}
 
 	configData, err := os.ReadFile(mcpServerConfigPath)

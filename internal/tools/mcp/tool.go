@@ -3,6 +3,7 @@ package mcp
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -57,7 +58,7 @@ func (m *mcpTool) Call(input tools.Input) (string, error) {
 			continue
 		}
 		if resp.Error != nil {
-			return "", fmt.Errorf(resp.Error.Message)
+			return "", errors.New(resp.Error.Message)
 		}
 		var result struct {
 			Content []struct {
@@ -76,7 +77,7 @@ func (m *mcpTool) Call(input tools.Input) (string, error) {
 			}
 		}
 		if result.IsError {
-			return "", fmt.Errorf(buf.String())
+			return "", errors.New(buf.String())
 		}
 		return buf.String(), nil
 	}
