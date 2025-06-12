@@ -185,7 +185,7 @@ func getToolsValue(v any) ([]string, error) {
 	fmt.Fprint(w, "-----\t----\t----------\n")
 	indexMap := map[int]string{}
 	i := 0
-	for name, v := range tools.Tools {
+	for name, v := range tools.Tools.All() {
 		indexMap[i] = name
 		fmt.Fprintf(w, "%v\t%v\t%v\n", i, name, v.Specification().Description)
 		i++
