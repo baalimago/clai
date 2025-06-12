@@ -76,7 +76,7 @@ func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, us
 		}
 		// If usetools and no specific tools chocen, assume all are valid
 		if len(userConf.Tools) == 0 {
-			for _, tool := range tools.Tools {
+			for _, tool := range tools.Tools.All() {
 				if misc.Truthy(os.Getenv("DEBUG")) {
 					ancli.PrintOK(fmt.Sprintf("\tadding tool: %T\n", tool))
 				}
@@ -84,7 +84,7 @@ func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, us
 			}
 		} else {
 			for _, t := range userConf.Tools {
-				tool, exists := tools.Tools[t]
+				tool, exists := tools.Tools.Get(t)
 				if !exists {
 					ancli.PrintWarn(fmt.Sprintf("attempted to find tool: '%v', which doesn't exist, skipping", tool))
 					continue
