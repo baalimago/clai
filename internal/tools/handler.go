@@ -16,6 +16,7 @@ var Tools = map[string]AiTool{
 	"sed":              Sed,
 	"rows_between":     RowsBetween,
 	"line_count":       LineCount,
+	"git":              Git,
 }
 
 // Invoke the call, and gather both error and output in the same string
