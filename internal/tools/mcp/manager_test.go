@@ -19,7 +19,7 @@ func TestHandleServerRegistersTool(t *testing.T) {
 	}
 
 	orig := tools.Tools
-	tools.Tools = make(map[string]tools.LLMTool)
+	tools.Tools = tools.NewRegistry()
 	defer func() { tools.Tools = orig }()
 
 	ev := ControlEvent{ServerName: "ts", Server: srv, InputChan: in, OutputChan: out}
@@ -27,7 +27,7 @@ func TestHandleServerRegistersTool(t *testing.T) {
 		t.Fatalf("handleServer: %v", err)
 	}
 
-	tool, ok := tools.Tools["ts_echo"]
+	tool, ok := tools.Tools.Get("ts_echo")
 	if !ok {
 		t.Fatal("tool not registered")
 	}
@@ -54,7 +54,7 @@ func TestManager(t *testing.T) {
 	}
 
 	orig := tools.Tools
-	tools.Tools = make(map[string]tools.LLMTool)
+	tools.Tools = tools.NewRegistry()
 	defer func() { tools.Tools = orig }()
 
 	controlCh := make(chan ControlEvent)
@@ -65,7 +65,7 @@ func TestManager(t *testing.T) {
 
 	var ok bool
 	for i := 0; i < 20; i++ {
-		_, ok = tools.Tools["man_echo"]
+		_, ok = tools.Tools.Get("man_echo")
 		if ok {
 			break
 		}

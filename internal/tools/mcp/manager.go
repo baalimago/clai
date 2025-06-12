@@ -92,7 +92,7 @@ func handleServer(ctx context.Context, ev ControlEvent) error {
 			inputChan:  ev.InputChan,
 			outputChan: ev.OutputChan,
 		}
-		tools.Tools[spec.Name] = mt
+		tools.Tools.Set(spec.Name, mt)
 	}
 	return nil
 }
