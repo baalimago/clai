@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/baalimago/clai/internal/tools"
@@ -33,6 +34,15 @@ func (m ToolWrapper) Call(inp tools.Input) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("mcp server closed")
 	}
+
+	if raw, ok := resp.(json.RawMessage); ok {
+		var out string
+		if err := json.Unmarshal(raw, &out); err != nil {
+			return "", fmt.Errorf("failed to unmarshal mcp response: %w", err)
+		}
+		return out, nil
+	}
+
 	s, ok := resp.(string)
 	if !ok {
 		return "", fmt.Errorf("unexpected response type %T", resp)
