@@ -5,7 +5,7 @@ import (
 	"os/exec"
 )
 
-type CatTool UserFunction
+type CatTool Specification
 
 var Cat = CatTool{
 	Name:        "cat",
@@ -74,6 +74,6 @@ func (c CatTool) Call(input Input) (string, error) {
 	return string(output), nil
 }
 
-func (c CatTool) UserFunction() UserFunction {
-	return UserFunction(Cat)
+func (c CatTool) Specification() Specification {
+	return Specification(Cat)
 }

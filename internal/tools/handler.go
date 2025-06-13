@@ -2,26 +2,28 @@ package tools
 
 import "fmt"
 
-var Tools = map[string]AiTool{
-	"file_tree":        FileTree,
-	"cat":              Cat,
-	"find":             Find,
-	"file_type":        FileType,
-	"ls":               LS,
-	"website_text":     WebsiteText,
-	"rg":               RipGrep,
-	"go":               Go,
-	"write_file":       WriteFile,
-	"freetext_command": FreetextCmd,
-	"sed":              Sed,
-	"rows_between":     RowsBetween,
-	"line_count":       LineCount,
-	"git":              Git,
+// Tools is the global registry of available LLM tools.
+var Tools = NewRegistry()
+
+func init() {
+	Tools.Set("file_tree", FileTree)
+	Tools.Set("cat", Cat)
+	Tools.Set("find", Find)
+	Tools.Set("file_type", FileType)
+	Tools.Set("ls", LS)
+	Tools.Set("website_text", WebsiteText)
+	Tools.Set("rg", RipGrep)
+	Tools.Set("go", Go)
+	Tools.Set("write_file", WriteFile)
+	Tools.Set("freetext_command", FreetextCmd)
+	Tools.Set("sed", Sed)
+	Tools.Set("rows_between", RowsBetween)
+	Tools.Set("line_count", LineCount)
 }
 
 // Invoke the call, and gather both error and output in the same string
 func Invoke(call Call) string {
-	t, exists := Tools[call.Name]
+	t, exists := Tools.Get(call.Name)
 	if !exists {
 		return "ERROR: unknown tool call: " + call.Name
 	}
@@ -32,10 +34,11 @@ func Invoke(call Call) string {
 	return out
 }
 
-func UserFunctionFromName(name string) UserFunction {
-	t, exists := Tools[name]
+// ToolFromName looks at the static tools.Tools map
+func ToolFromName(name string) Specification {
+	t, exists := Tools.Get(name)
 	if !exists {
-		return UserFunction{}
+		return Specification{}
 	}
-	return t.UserFunction()
+	return t.Specification()
 }

@@ -9,13 +9,13 @@ import (
 	"regexp"
 	"slices"
 	"strconv"
-	"strings"
 	"text/tabwriter"
 
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
+	"golang.org/x/exp/maps"
 )
 
 func queryForAction(options []action) (action, error) {
@@ -185,9 +185,9 @@ func getToolsValue(v any) ([]string, error) {
 	fmt.Fprint(w, "-----\t----\t----------\n")
 	indexMap := map[int]string{}
 	i := 0
-	for name, v := range tools.Tools {
+	for name, v := range tools.Tools.All() {
 		indexMap[i] = name
-		fmt.Fprintf(w, "%v\t%v\t%v\n", i, name, v.UserFunction().Description)
+		fmt.Fprintf(w, "%v\t%v\t%v\n", i, name, v.Specification().Description)
 		i++
 	}
 	w.Flush()
@@ -229,35 +229,138 @@ func getNewValue(k string, v any) (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read input: %w", err)
 	}
-	input = strings.TrimRight(input, "\n")
 	if input == "" {
 		ret = v
 	} else {
-		ret = input
-		ret = castPrimitive(ret)
+		ret = castPrimitive(input)
 	}
 	return ret, nil
+}
+
+func handleValue(k string, v any) (any, error) {
+	switch val := v.(type) {
+	case map[string]any:
+		return editMap(k, val)
+	case []any:
+		return editSlice(k, val)
+	default:
+		return getNewValue(k, val)
+	}
+}
+
+func editMap(k string, m map[string]any) (map[string]any, error) {
+	edited := maps.Clone(m)
+	for {
+		var keys []string
+		for key := range edited {
+			keys = append(keys, key)
+		}
+		fmt.Printf("Map '%s' keys: %v\n[a]dd [u]pdate [r]emove [d]one: ", k, keys)
+		action, err := utils.ReadUserInput()
+		if err != nil {
+			return nil, err
+		}
+		switch action {
+		case "d", "":
+			return edited, nil
+		case "a":
+			fmt.Print("New key: ")
+			nk, err := utils.ReadUserInput()
+			if err != nil {
+				return nil, err
+			}
+			fmt.Print("Value: ")
+			nv, err := utils.ReadUserInput()
+			if err != nil {
+				return nil, err
+			}
+			edited[nk] = castPrimitive(nv)
+		case "r":
+			fmt.Print("Key to remove: ")
+			rk, err := utils.ReadUserInput()
+			if err != nil {
+				return nil, err
+			}
+			delete(edited, rk)
+		case "u":
+			fmt.Print("Key to update: ")
+			uk, err := utils.ReadUserInput()
+			if err != nil {
+				return nil, err
+			}
+			val, ok := edited[uk]
+			if !ok {
+				fmt.Printf("no such key '%s'\n", uk)
+				continue
+			}
+			nv, err := handleValue(fmt.Sprintf("%s.%s", k, uk), val)
+			if err != nil {
+				return nil, err
+			}
+			edited[uk] = nv
+		}
+	}
+}
+
+func editSlice(k string, s []any) ([]any, error) {
+	edited := append([]any(nil), s...)
+	for {
+		fmt.Printf("Slice '%s': %v\n[a]ppend [u]pdate [r]emove [d]one: ", k, edited)
+		action, err := utils.ReadUserInput()
+		if err != nil {
+			return nil, err
+		}
+		switch action {
+		case "d", "":
+			return edited, nil
+		case "a":
+			fmt.Print("Value: ")
+			nv, err := utils.ReadUserInput()
+			if err != nil {
+				return nil, err
+			}
+			edited = append(edited, castPrimitive(nv))
+		case "r":
+			fmt.Printf("Index to remove (0-%d): ", len(edited)-1)
+			idxStr, err := utils.ReadUserInput()
+			if err != nil {
+				return nil, err
+			}
+			idx, err := strconv.Atoi(idxStr)
+			if err != nil || idx < 0 || idx >= len(edited) {
+				fmt.Println("invalid index")
+				continue
+			}
+			edited = append(edited[:idx], edited[idx+1:]...)
+		case "u":
+			fmt.Printf("Index to update (0-%d): ", len(edited)-1)
+			idxStr, err := utils.ReadUserInput()
+			if err != nil {
+				return nil, err
+			}
+			idx, err := strconv.Atoi(idxStr)
+			if err != nil || idx < 0 || idx >= len(edited) {
+				fmt.Println("invalid index")
+				continue
+			}
+			val := edited[idx]
+			nv, err := handleValue(fmt.Sprintf("%s[%d]", k, idx), val)
+			if err != nil {
+				return nil, err
+			}
+			edited[idx] = nv
+		}
+	}
 }
 
 func buildNewConfig(jzon map[string]any) (map[string]any, error) {
 	newConfig := make(map[string]any)
 	for k, v := range jzon {
-		var newValue any
-		maplike, isMap := v.(map[string]any)
-		if isMap {
-			m, err := buildNewConfig(maplike)
-			if err != nil {
-				return nil, fmt.Errorf("failed to parse nested map-like: %v", err)
-			}
-			newValue = m
-		} else {
-			n, err := getNewValue(k, v)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get new value: %w", err)
-			}
-			newValue = n
+		nv, err := handleValue(k, v)
+		if err != nil {
+			return nil, err
 		}
-		newConfig[k] = newValue
+		newConfig[k] = nv
 	}
 	return newConfig, nil
 }

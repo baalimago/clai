@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -90,7 +91,11 @@ func getModeFromArgs(cmd string) (Mode, error) {
 	}
 }
 
-func setupTextQuerier(mode Mode, confDir string, flagSet Configurations) (models.Querier, error) {
+// setupTextQuerier by doing the most convuluted and organically grown configuration system known to man.
+// Do I know 100% how it works at any given point? Sort of. Not really. Am I constantly impressed over how
+// round this wheel I've reinvented is? Yeah, for sure. May it be simplified? Maybe, but it's features are
+// quite complex.
+func setupTextQuerier(ctx context.Context, mode Mode, confDir string, flagSet Configurations) (models.Querier, error) {
 	// The flagset is first used to find chatModel and potentially setup a new configuration file from some default
 	tConf, err := utils.LoadConfigFromFile(confDir, "textConfig.json", migrateOldChatConfig, &text.DEFAULT)
 	tConf.ConfigDir = path.Join(confDir, ".clai")
@@ -137,7 +142,7 @@ func setupTextQuerier(mode Mode, confDir string, flagSet Configurations) (models
 		return nil, fmt.Errorf("failed to setup prompt: %v", err)
 	}
 
-	cq, err := CreateTextQuerier(tConf)
+	cq, err := CreateTextQuerier(ctx, tConf)
 
 	if misc.Truthy(os.Getenv("DEBUG")) {
 		ancli.PrintOK(fmt.Sprintf("querier post text querier create: %+v\n", tConf))
@@ -166,7 +171,7 @@ func printHelp(usage string, args []string) {
 	)
 }
 
-func Setup(usage string) (models.Querier, error) {
+func Setup(ctx context.Context, usage string) (models.Querier, error) {
 	flagSet := setupFlags(defaultFlags)
 	args := flag.Args()
 	if len(args) == 0 {
@@ -185,7 +190,7 @@ func Setup(usage string) (models.Querier, error) {
 
 	switch mode {
 	case CHAT, QUERY, GLOB, CMD:
-		return setupTextQuerier(mode, confDir, flagSet)
+		return setupTextQuerier(ctx, mode, confDir, flagSet)
 	case PHOTO:
 		pConf, err := utils.LoadConfigFromFile(confDir, "photoConfig.json", migrateOldPhotoConfig, &photo.DEFAULT)
 		if err != nil {
@@ -221,7 +226,7 @@ func Setup(usage string) (models.Querier, error) {
 		version := bi.Main.Version
 		checksum := bi.Main.Sum
 		if version == "" || version == "(devel)" {
-			version = BUILD_VERSION
+			version = BuildVersion
 		}
 		if checksum == "" {
 			checksum = BUILD_CHECKSUM

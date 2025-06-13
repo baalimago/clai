@@ -25,14 +25,14 @@ func (s *StreamCompleter) Setup(apiKeyEnv, url, debugEnv string) error {
 	return nil
 }
 
-func (g *StreamCompleter) InternalRegisterTool(tool tools.AiTool) {
+func (g *StreamCompleter) InternalRegisterTool(tool tools.LLMTool) {
 	g.tools = append(g.tools, ToolSuper{
 		Type:     "function",
-		Function: convertToGenericTool(tool.UserFunction()),
+		Function: convertToGenericTool(tool.Specification()),
 	})
 }
 
-func convertToGenericTool(tool tools.UserFunction) Tool {
+func convertToGenericTool(tool tools.Specification) Tool {
 	return Tool{
 		Name:        tool.Name,
 		Description: tool.Description,

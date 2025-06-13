@@ -17,11 +17,12 @@ import (
 	"github.com/baalimago/clai/internal/vendors/openai"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
+	"golang.org/x/net/context"
 )
 
 // CreateTextQuerier by checking the model for which vendor to use, then initiating
 // a TextQuerier
-func CreateTextQuerier(conf text.Configurations) (models.Querier, error) {
+func CreateTextQuerier(ctx context.Context, conf text.Configurations) (models.Querier, error) {
 	var q models.Querier
 	found := false
 
@@ -34,7 +35,7 @@ func CreateTextQuerier(conf text.Configurations) (models.Querier, error) {
 		// path and the default values. In there, the model needs to be
 		// the configured model (not the default one)
 		defaultCpy.Model = conf.Model
-		qTmp, err := text.NewQuerier(conf, &defaultCpy)
+		qTmp, err := text.NewQuerier(ctx, conf, &defaultCpy)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create text querier: %w", err)
 		}
@@ -45,7 +46,7 @@ func CreateTextQuerier(conf text.Configurations) (models.Querier, error) {
 		found = true
 		defaultCpy := openai.GPT_DEFAULT
 		defaultCpy.Model = conf.Model
-		qTmp, err := text.NewQuerier(conf, &defaultCpy)
+		qTmp, err := text.NewQuerier(ctx, conf, &defaultCpy)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create text querier: %w", err)
 		}
@@ -56,7 +57,7 @@ func CreateTextQuerier(conf text.Configurations) (models.Querier, error) {
 		found = true
 		defaultCpy := deepseek.DEEPSEEK_DEFAULT
 		defaultCpy.Model = conf.Model
-		qTmp, err := text.NewQuerier(conf, &defaultCpy)
+		qTmp, err := text.NewQuerier(ctx, conf, &defaultCpy)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create text querier: %w", err)
 		}
@@ -70,7 +71,7 @@ func CreateTextQuerier(conf text.Configurations) (models.Querier, error) {
 		if len(conf.Model) > 7 {
 			defaultCpy.Model = conf.Model[7:]
 		}
-		qTmp, err := text.NewQuerier(conf, &defaultCpy)
+		qTmp, err := text.NewQuerier(ctx, conf, &defaultCpy)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create text querier: %w", err)
 		}
@@ -79,7 +80,7 @@ func CreateTextQuerier(conf text.Configurations) (models.Querier, error) {
 		found = true
 		defaultCpy := novita.NOVITA_DEFAULT
 		defaultCpy.Model = conf.Model[7:]
-		qTmp, err := text.NewQuerier(conf, &defaultCpy)
+		qTmp, err := text.NewQuerier(ctx, conf, &defaultCpy)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create text querier: %w", err)
 		}
@@ -88,7 +89,7 @@ func CreateTextQuerier(conf text.Configurations) (models.Querier, error) {
 		found = true
 		defaultCpy := mistral.MINSTRAL_DEFAULT
 		defaultCpy.Model = conf.Model
-		qTmp, err := text.NewQuerier(conf, &defaultCpy)
+		qTmp, err := text.NewQuerier(ctx, conf, &defaultCpy)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create text querier: %w", err)
 		}

@@ -91,7 +91,8 @@ func main() {
 	if err != nil {
 		ancli.PrintWarn(fmt.Sprintf("failed to handle oopsies, but as we didn't panic, it should be benign. Error: %v\n", err))
 	}
-	querier, err := internal.Setup(usage)
+	ctx, cancel := context.WithCancel(context.Background())
+	querier, err := internal.Setup(ctx, usage)
 	if err != nil {
 		if errors.Is(err, utils.ErrUserInitiatedExit) {
 			ancli.Okf("Seems like you wanted out. Byebye!\n")
@@ -100,7 +101,6 @@ func main() {
 		ancli.PrintErr(fmt.Sprintf("failed to setup: %v\n", err))
 		os.Exit(1)
 	}
-	ctx, cancel := context.WithCancel(context.Background())
 	go func() { shutdown.Monitor(cancel) }()
 	err = querier.Query(ctx)
 	if err != nil {

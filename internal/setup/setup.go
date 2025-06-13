@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/baalimago/clai/internal/text"
+	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/utils"
 )
 
@@ -25,6 +26,12 @@ const (
 	newaction
 	confWithEditor
 )
+
+var defaultMcpServer = tools.McpServer{
+	Command: "echo",
+	Args:    []string{"-n", "hello", "from", "mcp"},
+	Env:     map[string]string{},
+}
 
 func (a action) String() string {
 	switch a {
@@ -46,8 +53,9 @@ func (a action) String() string {
 const stage_0 = `Do you wish to configure:
   0. mode-files (example: <config>/.clai/textConfig.json- or photoConfig.json)
   1. model files (example: <config>/.clai/openai-gpt-4o.json, <config>/.clai/anthropic-claude-opus.json)
-  2. text generation profiles (see: "clai [h]elp [p]rofile" for additional info) 
-[0/1/2]: `
+  2. text generation profiles (see: "clai [h]elp [p]rofile" for additional info)
+  3. MCP server configuration (enables custom tools)
+[0/1/2/3]: `
 
 // Run the setup to configure the different files
 func Run() error {
@@ -106,6 +114,34 @@ func Run() error {
 			// Once new file has potentially been created, potentially alter it
 			a = conf
 		}
+	case "3":
+		mcpServersDir := filepath.Join(claiDir, "mcpServers")
+		if _, err := os.Stat(mcpServersDir); os.IsNotExist(err) {
+			if err := os.MkdirAll(mcpServersDir, os.ModePerm); err != nil {
+				return fmt.Errorf("failed to create mcpServers dir: %w", err)
+			}
+			if err := utils.CreateFile(filepath.Join(mcpServersDir, "example.json"), &defaultMcpServer); err != nil {
+				return fmt.Errorf("failed to create default mcp server config: %w", err)
+			}
+		}
+		t, err := getConfigs(filepath.Join(mcpServersDir, "*.json"), []string{})
+		if err != nil {
+			return fmt.Errorf("failed to get configs files: %w", err)
+		}
+		configs = t
+		qAct, err := queryForAction([]action{conf, del, newaction, confWithEditor})
+		if err != nil {
+			return fmt.Errorf("failed to find action: %w", err)
+		}
+		a = qAct
+		if a == newaction {
+			c, err := createMcpServerFile(mcpServersDir)
+			if err != nil {
+				return fmt.Errorf("failed to create mcp server file: %w", err)
+			}
+			configs = []config{c}
+			a = conf
+		}
 	case "q", "quit", "e", "exit":
 		return utils.ErrUserInitiatedExit
 	default:
@@ -132,6 +168,28 @@ func createProFile(profilePath string) (config, error) {
 	return config{
 		name:     profileName,
 		filePath: newProfilePath,
+	}, nil
+}
+
+// createMcpServerFile creates a new MCP server configuration file inside
+// mcpServersPath using the provided server name and a default configuration.
+func createMcpServerFile(mcpServersPath string) (config, error) {
+	if _, err := os.Stat(mcpServersPath); os.IsNotExist(err) {
+		os.MkdirAll(mcpServersPath, os.ModePerm)
+	}
+	fmt.Print("Enter server name: ")
+	serverName, err := utils.ReadUserInput()
+	if err != nil {
+		return config{}, err
+	}
+	newServerPath := path.Join(mcpServersPath, fmt.Sprintf("%v.json", serverName))
+	err = utils.CreateFile(newServerPath, &defaultMcpServer)
+	if err != nil {
+		return config{}, err
+	}
+	return config{
+		name:     serverName,
+		filePath: newServerPath,
 	}, nil
 }
 

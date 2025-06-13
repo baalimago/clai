@@ -5,7 +5,7 @@ import (
 	"os/exec"
 )
 
-type FindTool UserFunction
+type FindTool Specification
 
 var Find = FindTool{
 	Name:        "find",
@@ -68,6 +68,6 @@ func (f FindTool) Call(input Input) (string, error) {
 	return string(output), nil
 }
 
-func (f FindTool) UserFunction() UserFunction {
-	return UserFunction(Find)
+func (f FindTool) Specification() Specification {
+	return Specification(Find)
 }

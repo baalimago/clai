@@ -88,7 +88,7 @@ func Test_Querier_NewQuerier(t *testing.T) {
 
 		// Here we want to ensure that using only the conf + the type of the model,
 		// we get the correct querier back
-		q, err := NewQuerier(conf, &MockQuerier{})
+		q, err := NewQuerier(context.Background(), conf, &MockQuerier{})
 		if err != nil {
 			t.Errorf("got error: %v", err)
 		}

@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-type GoTool UserFunction
+type GoTool Specification
 
 var Go = GoTool{
 	Name:        "go",
@@ -57,6 +57,6 @@ func (g GoTool) Call(input Input) (string, error) {
 	return string(output), nil
 }
 
-func (g GoTool) UserFunction() UserFunction {
-	return UserFunction(Go)
+func (g GoTool) Specification() Specification {
+	return Specification(Go)
 }

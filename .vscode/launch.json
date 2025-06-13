@@ -93,6 +93,20 @@
       "env": {
         "NO_COLOR": "true"
       }
+    },
+    {
+      "name": "ChatGPT - Query - MCP",
+      "type": "go",
+      "request": "launch",
+      "program": "${workspaceFolder}",
+      "args": [
+        "-t",
+        "q",
+        "Use my browser a little"
+      ],
+      "env": {
+        "NO_COLOR": "true"
+      }
     }
   ]
 }

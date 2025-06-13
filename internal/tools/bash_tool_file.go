@@ -5,7 +5,7 @@ import (
 	"os/exec"
 )
 
-type FileTypeTool UserFunction
+type FileTypeTool Specification
 
 var FileType = FileTypeTool{
 	Name:        "file_type",
@@ -48,6 +48,6 @@ func (f FileTypeTool) Call(input Input) (string, error) {
 	return string(output), nil
 }
 
-func (f FileTypeTool) UserFunction() UserFunction {
-	return UserFunction(FileType)
+func (f FileTypeTool) Specification() Specification {
+	return Specification(FileType)
 }

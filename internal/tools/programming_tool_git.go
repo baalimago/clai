@@ -6,7 +6,7 @@ import (
 	"strconv"
 )
 
-type GitTool UserFunction
+type GitTool Specification
 
 var Git = GitTool{
 	Name:        "git",
@@ -110,6 +110,6 @@ func (g GitTool) Call(input Input) (string, error) {
 	return string(output), nil
 }
 
-func (g GitTool) UserFunction() UserFunction {
-	return UserFunction(Git)
+func (g GitTool) Specification() Specification {
+	return Specification(Git)
 }

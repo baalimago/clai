@@ -22,6 +22,6 @@ func (c *Claude) Setup() error {
 	return nil
 }
 
-func (c *Claude) RegisterTool(tool tools.AiTool) {
-	c.tools = append(c.tools, tool.UserFunction())
+func (c *Claude) RegisterTool(tool tools.LLMTool) {
+	c.tools = append(c.tools, tool.Specification())
 }

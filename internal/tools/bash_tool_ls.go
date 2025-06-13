@@ -5,7 +5,7 @@ import (
 	"os/exec"
 )
 
-type LsTool UserFunction
+type LsTool Specification
 
 var LS = LsTool{
 	Name:        "ls",
@@ -61,6 +61,6 @@ func (f LsTool) Call(input Input) (string, error) {
 	return string(output), nil
 }
 
-func (f LsTool) UserFunction() UserFunction {
-	return UserFunction(LS)
+func (f LsTool) Specification() Specification {
+	return Specification(LS)
 }

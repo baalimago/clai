@@ -201,7 +201,7 @@ func (s *StreamCompleter) doToolsCall() models.CompletionEvent {
 		return fmt.Errorf("failed to unmarshal argument string: %w, argsString: %v", err, s.toolsCallArgsString)
 	}
 
-	userFunc := tools.UserFunctionFromName(s.toolsCallName)
+	userFunc := tools.ToolFromName(s.toolsCallName)
 	userFunc.Arguments = s.toolsCallArgsString
 	userFunc.Inputs = nil
 

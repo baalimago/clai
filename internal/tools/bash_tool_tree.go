@@ -5,7 +5,7 @@ import (
 	"os/exec"
 )
 
-type FileTreeTool UserFunction
+type FileTreeTool Specification
 
 var FileTree = FileTreeTool{
 	Name:        "file_tree",
@@ -47,6 +47,6 @@ func (f FileTreeTool) Call(input Input) (string, error) {
 	return string(output), nil
 }
 
-func (f FileTreeTool) UserFunction() UserFunction {
-	return UserFunction(FileTree)
+func (f FileTreeTool) Specification() Specification {
+	return Specification(FileTree)
 }

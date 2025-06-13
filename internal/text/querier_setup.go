@@ -1,6 +1,7 @@
 package text
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/baalimago/clai/internal/models"
-	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
@@ -58,65 +58,52 @@ func vendorType(fromModel string) (string, string, string) {
 	return "VENDOR", "NOT", "FOUND"
 }
 
-func NewQuerier[C models.StreamCompleter](userConf Configurations, dfault C) (Querier[C], error) {
+// setupConfigFile using unholy named returns since it kind of fits and im too lazy to explicitly declare. Hobby project
+// and all that, be happy im refactoring this into something comprehensive at all..!
+func setupConfigFile[C models.StreamCompleter](configPath string, userConf Configurations, dfault C) (modelConf C, retErr error) {
+	retErr = utils.ReadAndUnmarshal(configPath, &modelConf)
+	if retErr != nil {
+		if errors.Is(retErr, os.ErrNotExist) {
+			// Reset the retErr since any further error
+			// will be returned as new errors
+			retErr = nil
+			data, err := json.Marshal(dfault)
+			if err != nil {
+				retErr = err
+				return modelConf, fmt.Errorf("failed to marshal default model: %v, error: %w", dfault, retErr)
+			}
+			err = os.WriteFile(configPath, data, os.FileMode(0o644))
+			if err != nil {
+				return modelConf, fmt.Errorf("failed to write default model: %v, error: %w", dfault, retErr)
+			}
+
+			err = utils.ReadAndUnmarshal(configPath, &modelConf)
+			if err != nil {
+				return modelConf, fmt.Errorf("failed to read default model: %v, error: %w", dfault, retErr)
+			}
+		} else {
+			return modelConf, fmt.Errorf("failed to load querier of model: %v, error: %w", userConf.Model, retErr)
+		}
+	}
+	retErr = nil
+	return
+}
+
+func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configurations, dfault C) (Querier[C], error) {
 	vendor, model, modelVersion := vendorType(userConf.Model)
 	claiConfDir := userConf.ConfigDir
 	configPath := path.Join(claiConfDir, fmt.Sprintf("%v_%v_%v.json", vendor, model, modelVersion))
 	querier := Querier[C]{}
 	querier.configDir = claiConfDir
-	var modelConf C
-	err := utils.ReadAndUnmarshal(configPath, &modelConf)
+	modelConf, err := setupConfigFile(configPath, userConf, dfault)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			data, err := json.Marshal(dfault)
-			if err != nil {
-				return querier, fmt.Errorf("failed to marshal default model: %v, error: %w", dfault, err)
-			}
-			err = os.WriteFile(configPath, data, os.FileMode(0o644))
-			if err != nil {
-				return querier, fmt.Errorf("failed to write default model: %v, error: %w", dfault, err)
-			}
-
-			err = utils.ReadAndUnmarshal(configPath, &modelConf)
-			if err != nil {
-				return querier, fmt.Errorf("failed to read default model: %v, error: %w", dfault, err)
-			}
-		} else {
-			return querier, fmt.Errorf("failed to load querier of model: %v, error: %w", userConf.Model, err)
-		}
+		return Querier[C]{}, fmt.Errorf("failed to setup config file: %w", err)
 	}
 
 	if misc.Truthy(os.Getenv("DEBUG")) {
 		ancli.PrintOK(fmt.Sprintf("userConf: %v\n", debug.IndentedJsonFmt(userConf)))
 	}
-	toolBox, ok := any(modelConf).(models.ToolBox)
-	if ok && userConf.UseTools {
-		if misc.Truthy(os.Getenv("DEBUG")) {
-			ancli.PrintOK(fmt.Sprintf("Registering tools on type: %T\n", modelConf))
-		}
-		// If usetools and no specific tools chocen, assume all are valid
-		if len(userConf.Tools) == 0 {
-			for _, tool := range tools.Tools {
-				if misc.Truthy(os.Getenv("DEBUG")) {
-					ancli.PrintOK(fmt.Sprintf("\tadding tool: %T\n", tool))
-				}
-				toolBox.RegisterTool(tool)
-			}
-		} else {
-			for _, t := range userConf.Tools {
-				tool, exists := tools.Tools[t]
-				if !exists {
-					ancli.PrintWarn(fmt.Sprintf("attempted to find tool: '%v', which doesn't exist, skipping", tool))
-					continue
-				}
-
-				if misc.Truthy(os.Getenv("DEBUG")) {
-					ancli.PrintOK(fmt.Sprintf("\tadding tool: %T\n", tool))
-				}
-				toolBox.RegisterTool(tool)
-			}
-		}
-	}
+	setupTooling(ctx, modelConf, userConf)
 
 	err = modelConf.Setup()
 	if err != nil {
