@@ -29,7 +29,7 @@ const (
 
 var defaultMcpServer = tools.McpServer{
 	Command: "echo",
-	Args:    []string{"hello from mcp"},
+	Args:    []string{"-n", "hello", "from", "mcp"},
 	Env:     map[string]string{},
 }
 
