@@ -27,12 +27,10 @@ const (
 	confWithEditor
 )
 
-var defaultMcpConfig = tools.McpServerConfig{
-	"example": {
-		Command: "echo",
-		Args:    []string{"hello from mcp"},
-		Env:     map[string]string{},
-	},
+var defaultMcpServer = tools.McpServer{
+	Command: "echo",
+	Args:    []string{"hello from mcp"},
+	Env:     map[string]string{},
 }
 
 func (a action) String() string {
@@ -117,19 +115,33 @@ func Run() error {
 			a = conf
 		}
 	case "3":
-		mcpServerConfPath := filepath.Join(claiDir, "mcpServerConfig.json")
-		if _, err := os.Stat(mcpServerConfPath); os.IsNotExist(err) {
-			os.MkdirAll(claiDir, os.ModePerm)
-			if err := utils.CreateFile(mcpServerConfPath, &defaultMcpConfig); err != nil {
+		mcpServersDir := filepath.Join(claiDir, "mcpServers")
+		if _, err := os.Stat(mcpServersDir); os.IsNotExist(err) {
+			if err := os.MkdirAll(mcpServersDir, os.ModePerm); err != nil {
+				return fmt.Errorf("failed to create mcpServers dir: %w", err)
+			}
+			if err := utils.CreateFile(filepath.Join(mcpServersDir, "example.json"), &defaultMcpServer); err != nil {
 				return fmt.Errorf("failed to create default mcp server config: %w", err)
 			}
 		}
-		configs = []config{{name: "mcpServerConfig.json", filePath: mcpServerConfPath}}
-		qAct, err := queryForAction([]action{conf, del, confWithEditor})
+		t, err := getConfigs(filepath.Join(mcpServersDir, "*.json"), []string{})
+		if err != nil {
+			return fmt.Errorf("failed to get configs files: %w", err)
+		}
+		configs = t
+		qAct, err := queryForAction([]action{conf, del, newaction, confWithEditor})
 		if err != nil {
 			return fmt.Errorf("failed to find action: %w", err)
 		}
 		a = qAct
+		if a == newaction {
+			c, err := createMcpServerFile(mcpServersDir)
+			if err != nil {
+				return fmt.Errorf("failed to create mcp server file: %w", err)
+			}
+			configs = []config{c}
+			a = conf
+		}
 	case "q", "quit", "e", "exit":
 		return utils.ErrUserInitiatedExit
 	default:
@@ -156,6 +168,28 @@ func createProFile(profilePath string) (config, error) {
 	return config{
 		name:     profileName,
 		filePath: newProfilePath,
+	}, nil
+}
+
+// createMcpServerFile creates a new MCP server configuration file inside
+// mcpServersPath using the provided server name and a default configuration.
+func createMcpServerFile(mcpServersPath string) (config, error) {
+	if _, err := os.Stat(mcpServersPath); os.IsNotExist(err) {
+		os.MkdirAll(mcpServersPath, os.ModePerm)
+	}
+	fmt.Print("Enter server name: ")
+	serverName, err := utils.ReadUserInput()
+	if err != nil {
+		return config{}, err
+	}
+	newServerPath := path.Join(mcpServersPath, fmt.Sprintf("%v.json", serverName))
+	err = utils.CreateFile(newServerPath, &defaultMcpServer)
+	if err != nil {
+		return config{}, err
+	}
+	return config{
+		name:     serverName,
+		filePath: newServerPath,
 	}, nil
 }
 

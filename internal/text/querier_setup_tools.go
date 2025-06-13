@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"path/filepath"
+	"strings"
 
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/tools"
@@ -14,24 +16,18 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
-// addMcpTools by loading os.GetConfigDir()/.clai/mcpServerConfig.json
-// Each MCP server is then spawned as a context aware subprocess and if successfully
-// started the tools it hosts are queried + appended to the tools.Tools list with the
-// MCP server's name as prefix
-// If the config is missing, return an error highlighting this
-func addMcpTools(ctx context.Context, mcpServerConfigPath string) error {
-	if _, err := os.Stat(mcpServerConfigPath); os.IsNotExist(err) {
-		return fmt.Errorf("MCP server config not found at %s.\nIf you want MCP server support, create one using 'clai setup' and select option 3", mcpServerConfigPath)
+// addMcpTools loads MCP server configurations from a directory.
+// Each file inside the directory should contain a single MCP server configuration.
+// Every server is started and its tools registered with a prefix of the filename.
+// If the directory is missing, an error is returned.
+func addMcpTools(ctx context.Context, mcpServersDir string) error {
+	if _, err := os.Stat(mcpServersDir); os.IsNotExist(err) {
+		return fmt.Errorf("MCP servers directory not found at %s.\nIf you want MCP server support, create one using 'clai setup' and select option 3", mcpServersDir)
 	}
 
-	configData, err := os.ReadFile(mcpServerConfigPath)
+	files, err := filepath.Glob(filepath.Join(mcpServersDir, "*.json"))
 	if err != nil {
-		return fmt.Errorf("failed to read MCP server config: %w", err)
-	}
-
-	var mcpServerConfig tools.McpServerConfig
-	if err := json.Unmarshal(configData, &mcpServerConfig); err != nil {
-		return fmt.Errorf("failed to unmarshal MCP server config: %w", err)
+		return fmt.Errorf("failed to list mcp server configs: %w", err)
 	}
 
 	controlChannel := make(chan mcp.ControlEvent)
@@ -39,7 +35,16 @@ func addMcpTools(ctx context.Context, mcpServerConfigPath string) error {
 
 	go mcp.Manager(ctx, controlChannel, statusChan)
 
-	for serverName, mcpServer := range mcpServerConfig {
+	for _, file := range files {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			continue
+		}
+		var mcpServer tools.McpServer
+		if err := json.Unmarshal(data, &mcpServer); err != nil {
+			continue
+		}
+		serverName := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
 		inputChan, outputChan, err := mcp.Client(ctx, mcpServer)
 		if err != nil {
 			continue
@@ -70,7 +75,7 @@ func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, us
 		if misc.Truthy(os.Getenv("DEBUG")) {
 			ancli.PrintOK(fmt.Sprintf("Registering tools on type: %T\n", modelConf))
 		}
-		err := addMcpTools(ctx, path.Join(userConf.ConfigDir, "mcpServerConfig.json"))
+		err := addMcpTools(ctx, path.Join(userConf.ConfigDir, "mcpServers"))
 		if err != nil {
 			ancli.Warnf("failed to add mcp tools: %v", err)
 		}
