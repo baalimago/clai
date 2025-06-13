@@ -8,6 +8,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/tools"
@@ -33,7 +34,9 @@ func addMcpTools(ctx context.Context, mcpServersDir string) error {
 	controlChannel := make(chan mcp.ControlEvent)
 	statusChan := make(chan error, 1)
 
-	go mcp.Manager(ctx, controlChannel, statusChan)
+	toolWg := sync.WaitGroup{}
+	toolWg.Add(len(files))
+	go mcp.Manager(ctx, controlChannel, statusChan, &toolWg)
 
 	for _, file := range files {
 		data, err := os.ReadFile(file)
@@ -41,7 +44,8 @@ func addMcpTools(ctx context.Context, mcpServersDir string) error {
 			continue
 		}
 		var mcpServer tools.McpServer
-		if err := json.Unmarshal(data, &mcpServer); err != nil {
+		if unmarshalErr := json.Unmarshal(data, &mcpServer); unmarshalErr != nil {
+			ancli.Warnf("failed to unmarshal: '%s', error: %v", file, unmarshalErr)
 			continue
 		}
 		serverName := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
@@ -57,6 +61,10 @@ func addMcpTools(ctx context.Context, mcpServersDir string) error {
 			OutputChan: outputChan,
 		}
 	}
+	go func() {
+		toolWg.Wait()
+		statusChan <- nil
+	}()
 
 	select {
 	case err := <-statusChan:

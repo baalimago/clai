@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -23,7 +24,8 @@ func TestHandleServerRegistersTool(t *testing.T) {
 	defer func() { tools.Tools = orig }()
 
 	ev := ControlEvent{ServerName: "ts", Server: srv, InputChan: in, OutputChan: out}
-	if err := handleServer(ctx, ev); err != nil {
+	readyChan := make(chan struct{}, 1)
+	if err := handleServer(ctx, ev, readyChan); err != nil {
 		t.Fatalf("handleServer: %v", err)
 	}
 
@@ -59,7 +61,9 @@ func TestManager(t *testing.T) {
 
 	controlCh := make(chan ControlEvent)
 	statusCh := make(chan error, 1)
-	go Manager(ctx, controlCh, statusCh)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go Manager(ctx, controlCh, statusCh, &wg)
 
 	controlCh <- ControlEvent{ServerName: "man", Server: srv, InputChan: in, OutputChan: out}
 
@@ -76,6 +80,7 @@ func TestManager(t *testing.T) {
 	}
 
 	cancel()
+	wg.Wait()
 	if err := <-statusCh; err != nil {
 		t.Fatalf("manager error: %v", err)
 	}

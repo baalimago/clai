@@ -10,18 +10,23 @@ import (
 )
 
 // Manager registers MCP servers and their tools.
-func Manager(ctx context.Context, controlChannel <-chan ControlEvent, statusChan chan<- error) {
+func Manager(ctx context.Context, controlChannel <-chan ControlEvent, statusChan chan<- error, allToolsWg *sync.WaitGroup) {
 	var wg sync.WaitGroup
+	readyChan := make(chan struct{})
+	defer close(readyChan)
 	for {
 		select {
 		case ev := <-controlChannel:
 			wg.Add(1)
 			go func(e ControlEvent) {
 				defer wg.Done()
-				if err := handleServer(ctx, e); err != nil {
+				if err := handleServer(ctx, e, readyChan); err != nil {
 					statusChan <- err
+					allToolsWg.Done()
 				}
 			}(ev)
+		case <-readyChan:
+			allToolsWg.Done()
 		case <-ctx.Done():
 			wg.Wait()
 			statusChan <- nil
@@ -30,7 +35,7 @@ func Manager(ctx context.Context, controlChannel <-chan ControlEvent, statusChan
 	}
 }
 
-func handleServer(ctx context.Context, ev ControlEvent) error {
+func handleServer(ctx context.Context, ev ControlEvent, readyChan chan struct{}) error {
 	// Initialize
 	initReq := Request{
 		JSONRPC: "2.0",
@@ -47,10 +52,10 @@ func handleServer(ctx context.Context, ev ControlEvent) error {
 	}
 	resp, err := sendRequest(ctx, ev.InputChan, ev.OutputChan, initReq)
 	if err != nil {
-		return fmt.Errorf("initialize: %w", err)
+		return fmt.Errorf("initialize err: %w", err)
 	}
 	if resp.Error != nil {
-		return fmt.Errorf("initialize: %s", resp.Error.Message)
+		return fmt.Errorf("initialize responded with err: %s", resp.Error.Message)
 	}
 
 	// Send initialized notification
@@ -94,6 +99,7 @@ func handleServer(ctx context.Context, ev ControlEvent) error {
 		}
 		tools.Tools.Set(spec.Name, mt)
 	}
+	readyChan <- struct{}{}
 	return nil
 }
 

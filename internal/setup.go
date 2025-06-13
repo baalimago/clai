@@ -226,7 +226,7 @@ func Setup(ctx context.Context, usage string) (models.Querier, error) {
 		version := bi.Main.Version
 		checksum := bi.Main.Sum
 		if version == "" || version == "(devel)" {
-			version = BUILD_VERSION
+			version = BuildVersion
 		}
 		if checksum == "" {
 			checksum = BUILD_CHECKSUM
