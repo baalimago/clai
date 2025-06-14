@@ -87,7 +87,7 @@ func handleServer(ctx context.Context, ev ControlEvent, readyChan chan struct{})
 
 	for _, t := range listRes.Tools {
 		spec := tools.Specification{
-			Name:        fmt.Sprintf("%s_%s", ev.ServerName, t.Name),
+			Name:        fmt.Sprintf("mcp_%s", t.Name),
 			Description: t.Description,
 			Inputs:      &t.InputSchema,
 		}
@@ -97,7 +97,7 @@ func handleServer(ctx context.Context, ev ControlEvent, readyChan chan struct{})
 			inputChan:  ev.InputChan,
 			outputChan: ev.OutputChan,
 		}
-		tools.Tools.Set(spec.Name, mt)
+		tools.Registry.Set(spec.Name, mt)
 	}
 	readyChan <- struct{}{}
 	return nil

@@ -85,32 +85,43 @@ func addMcpTools(ctx context.Context, mcpServersDir string) error {
 
 func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, userConf Configurations) {
 	toolBox, ok := any(modelConf).(models.ToolBox)
-	if ok && userConf.UseTools {
-		if misc.Truthy(os.Getenv("DEBUG")) {
-			ancli.PrintOK(fmt.Sprintf("Registering tools on type: %T\n", modelConf))
-		}
+	if ok && userConf.UsingProfile() {
+		tools.Init()
+		// Only setup MCP tools if they're there's a chance of using tools
 		err := addMcpTools(ctx, path.Join(userConf.ConfigDir, "mcpServers"))
+		if misc.Truthy(os.Getenv("DEBUG")) {
+			ancli.Okf("Registering tools on querier of type: %T\n", modelConf)
+		}
 		if err != nil {
 			ancli.Warnf("failed to add mcp tools: %v", err)
 		}
 		// If usetools and no specific tools chocen, assume all are valid
 		if len(userConf.Tools) == 0 {
-			for _, tool := range tools.Tools.All() {
-				if misc.Truthy(os.Getenv("DEBUG")) {
-					ancli.PrintOK(fmt.Sprintf("\tadding tool: %T\n", tool))
-				}
+			for _, tool := range tools.Registry.All() {
 				toolBox.RegisterTool(tool)
 			}
 		} else {
+			toAdd := make([]tools.LLMTool, 0)
 			for _, t := range userConf.Tools {
-				tool, exists := tools.Tools.Get(t)
+				if strings.Contains(t, "*") {
+					matchingTools := tools.Registry.WildcardGet(t)
+					if len(matchingTools) == 0 {
+						ancli.Warnf("attempted to find tools using wildcard search: '%v', found none\n", t)
+					}
+					toAdd = append(toAdd, matchingTools...)
+					continue
+				}
+				tool, exists := tools.Registry.Get(t)
 				if !exists {
 					ancli.Warnf("attempted to find tool: '%v', which doesn't exist, skipping\n", t)
 					continue
 				}
+				toAdd = append(toAdd, tool)
+			}
 
+			for _, tool := range toAdd {
 				if misc.Truthy(os.Getenv("DEBUG")) {
-					ancli.PrintOK(fmt.Sprintf("\tadding tool: %T\n", tool))
+					ancli.PrintOK(fmt.Sprintf("\tname: %v, desc: %v\n", tool.Specification().Name, tool.Specification().Description))
 				}
 				toolBox.RegisterTool(tool)
 			}

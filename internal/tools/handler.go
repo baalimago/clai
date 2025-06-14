@@ -2,29 +2,35 @@ package tools
 
 import "fmt"
 
-// Tools is the global registry of available LLM tools.
-var Tools = NewRegistry()
+// Registry is the global registry of available LLM tools.
+var Registry = NewRegistry()
 
-func init() {
-	Tools.Set("file_tree", FileTree)
-	Tools.Set("cat", Cat)
-	Tools.Set("find", Find)
-	Tools.Set("file_type", FileType)
-	Tools.Set("ls", LS)
-	Tools.Set("website_text", WebsiteText)
-	Tools.Set("rg", RipGrep)
-	Tools.Set("go", Go)
-	Tools.Set("write_file", WriteFile)
-	Tools.Set("freetext_command", FreetextCmd)
-	Tools.Set("sed", Sed)
-	Tools.Set("rows_between", RowsBetween)
-	Tools.Set("line_count", LineCount)
-	Tools.Set("git", Git)
+// Init initializes the global Registry with available local LLM tools.
+// If the Registry has already been initialized, it simply returns.
+func Init() {
+	if Registry.hasBeenInit {
+		return
+	}
+	Registry.hasBeenInit = true
+	Registry.Set("file_tree", FileTree)
+	Registry.Set("cat", Cat)
+	Registry.Set("find", Find)
+	Registry.Set("file_type", FileType)
+	Registry.Set("ls", LS)
+	Registry.Set("website_text", WebsiteText)
+	Registry.Set("rg", RipGrep)
+	Registry.Set("go", Go)
+	Registry.Set("write_file", WriteFile)
+	Registry.Set("freetext_command", FreetextCmd)
+	Registry.Set("sed", Sed)
+	Registry.Set("rows_between", RowsBetween)
+	Registry.Set("line_count", LineCount)
+	Registry.Set("git", Git)
 }
 
 // Invoke the call, and gather both error and output in the same string
 func Invoke(call Call) string {
-	t, exists := Tools.Get(call.Name)
+	t, exists := Registry.Get(call.Name)
 	if !exists {
 		return "ERROR: unknown tool call: " + call.Name
 	}
@@ -37,7 +43,7 @@ func Invoke(call Call) string {
 
 // ToolFromName looks at the static tools.Tools map
 func ToolFromName(name string) Specification {
-	t, exists := Tools.Get(name)
+	t, exists := Registry.Get(name)
 	if !exists {
 		return Specification{}
 	}

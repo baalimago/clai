@@ -41,6 +41,10 @@ type Configurations struct {
 	PostProccessedPrompt string `json:"-"`
 }
 
+func (c Configurations) UsingProfile() bool {
+	return c.ProfilePath != "" || c.UseProfile != ""
+}
+
 // Profile which allows for specialized ai configurations for specific tasks
 type Profile struct {
 	Name            string   `json:"-"`
