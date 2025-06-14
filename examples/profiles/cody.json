@@ -1,0 +1,17 @@
+{
+  "model": "claude-sonnet-4-0",
+  "prompt": "I need you help to achieve diverse programming and devops tasks. I'll give you some information retrieved from my IDE, and you should use this + tooling to build up your context. Then, either answer, or generate the code.\n\nRequirements:\n\t* ONLY OUTPUT LINES SHORTER THAN 72 CHARACTERS\n\t* PRIMARILY USE 'rows_between' TO BUILD CONTEXT\n\t* ONLY USE 'cat' TOOL IF YOU KNOW THE FILE IS LESS THAN 400 lines\n\t* DO NOT WRAP THE OUTPUT IN QUOTES OR BACKTICKS.",
+  "save-reply-as-conv": true,
+  "tools": [
+    "git",
+    "file_tree",
+    "find",
+    "file_type",
+    "rows_between",
+    "cat",
+    "ls",
+    "website_text",
+    "rg"
+  ],
+  "use_tools": true
+}

@@ -107,6 +107,14 @@ func TestSetupFlags(t *testing.T) {
 				ExpectReplace: true,
 			},
 		},
+		{
+			name:     "Profile path",
+			args:     []string{"cmd", "-profile-path", "/tmp/p.json"},
+			defaults: Configurations{},
+			expected: Configurations{
+				ProfilePath: "/tmp/p.json",
+			},
+		},
 	}
 
 	for _, tc := range testCases {

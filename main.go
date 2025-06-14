@@ -39,6 +39,7 @@ Flags:
   -t, -tools bool              Set to true to use text tools. Some models might not support streaming. (default %v)
   -g, -glob string             Set the glob to use for globbing. Same as glob mode. (default '%v')
   -p, -profile string          Set the profile which should be used. For details, see 'clai help profile'. (default '%v')
+  -profile-path string        Set the path to a profile file to use instead of -p/-profile.
 
 Commands:
   h|help                        Display this help message

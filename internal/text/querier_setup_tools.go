@@ -105,7 +105,7 @@ func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, us
 			for _, t := range userConf.Tools {
 				tool, exists := tools.Tools.Get(t)
 				if !exists {
-					ancli.PrintWarn(fmt.Sprintf("attempted to find tool: '%v', which doesn't exist, skipping", tool))
+					ancli.Warnf("attempted to find tool: '%v', which doesn't exist, skipping\n", t)
 					continue
 				}
 
