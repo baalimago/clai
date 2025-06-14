@@ -19,6 +19,7 @@ func init() {
 	Tools.Set("sed", Sed)
 	Tools.Set("rows_between", RowsBetween)
 	Tools.Set("line_count", LineCount)
+	Tools.Set("git", Git)
 }
 
 // Invoke the call, and gather both error and output in the same string
