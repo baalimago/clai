@@ -35,6 +35,7 @@ type Configurations struct {
 	Glob                string      `json:"-"`
 	InitialPrompt       models.Chat `json:"-"`
 	UseProfile          string      `json:"-"`
+	ProfilePath         string      `json:"-"`
 	Tools               []string    `json:"-"`
 	// PostProccessedPrompt which has had it's strings replaced etc
 	PostProccessedPrompt string `json:"-"`

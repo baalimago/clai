@@ -20,11 +20,29 @@ func findProfile(profileName string) (Profile, error) {
 	return p, nil
 }
 
+func findProfileByPath(p string) (Profile, error) {
+	var prof Profile
+	err := utils.ReadAndUnmarshal(p, &prof)
+	if err != nil {
+		return prof, err
+	}
+	return prof, nil
+}
+
 func (c *Configurations) ProfileOverrides() error {
-	if c.UseProfile == "" {
+	if c.UseProfile == "" && c.ProfilePath == "" {
 		return nil
 	}
-	profile, err := findProfile(c.UseProfile)
+	if c.UseProfile != "" && c.ProfilePath != "" {
+		return fmt.Errorf("profile and profile-path are mutually exclusive")
+	}
+	var profile Profile
+	var err error
+	if c.ProfilePath != "" {
+		profile, err = findProfileByPath(c.ProfilePath)
+	} else {
+		profile, err = findProfile(c.UseProfile)
+	}
 	if err != nil {
 		return fmt.Errorf("failed to find profile: %w", err)
 	}

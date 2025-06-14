@@ -24,6 +24,7 @@ type Configurations struct {
 	UseTools      bool
 	Glob          string
 	Profile       string
+	ProfilePath   string
 }
 
 func setupFlags(defaults Configurations) Configurations {
@@ -46,6 +47,7 @@ func setupFlags(defaults Configurations) Configurations {
 
 	pShort := flag.String("p", defaults.Profile, "Set this to the override profile you'd like to use. Configure with 'clai setup' -> 2.")
 	pLong := flag.String("profile", defaults.Profile, "Set this to the override profile you'd like to use. Configure with 'clai setup' -> 2.")
+	pPath := flag.String("profile-path", defaults.ProfilePath, "Set this to the path of a profile file to use. Mutually exclusive with -p/-profile.")
 
 	stdinReplaceShort := flag.String("I", defaults.StdinReplace, "Set the string to replace with stdin. (flag syntax borrowed from xargs)")
 	stdinReplaceLong := flag.String("replace", defaults.StdinReplace, "Set the string to replace with stdin. (flag syntax borrowed from xargs)'")
@@ -77,6 +79,10 @@ func setupFlags(defaults Configurations) Configurations {
 	exitWithFlagError(err, "t", "tools")
 	profile, err := utils.ReturnNonDefault(*pShort, *pLong, defaults.Profile)
 	exitWithFlagError(err, "p", "profile")
+	profilePath := *pPath
+	if profile != defaults.Profile && profilePath != defaults.ProfilePath {
+		exitWithFlagError(fmt.Errorf("values are mutually exclusive"), "profile", "profile-path")
+	}
 	replyMode := *replyShort || *replyLong
 	printRaw := *printRawShort || *printRawLong
 
@@ -96,6 +102,7 @@ func setupFlags(defaults Configurations) Configurations {
 		Glob:          glob,
 		ExpectReplace: *expectReplace,
 		Profile:       profile,
+		ProfilePath:   profilePath,
 	}
 }
 
@@ -124,6 +131,9 @@ func applyFlagOverridesForText(tConf *text.Configurations, flagSet, defaultFlags
 	}
 	if flagSet.Profile != defaultFlags.Profile {
 		tConf.UseProfile = flagSet.Profile
+	}
+	if flagSet.ProfilePath != defaultFlags.ProfilePath {
+		tConf.ProfilePath = flagSet.ProfilePath
 	}
 }
 

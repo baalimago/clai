@@ -53,6 +53,7 @@ var defaultFlags = Configurations{
 	ExpectReplace: false,
 	ReplyMode:     false,
 	UseTools:      false,
+	ProfilePath:   "",
 }
 
 const PROFILE_HELP = `Profiles overwrites certain model configurations. The intent of profiles
