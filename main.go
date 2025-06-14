@@ -23,7 +23,7 @@ Prerequisites:
   - Set the DEEPSEEK_API_KEY environment variable to your Deepseek API key
   - Set the NOVITA_API_KEY environment variable to your Novita API key
   - (Optional) Set the NO_COLOR environment variable to disable ansi color output
-  - (Optional) Install glow - https://github.com/charmbracelet/glow for formated markdown output
+  - (Optional) Install glow - https://github.com/charmbracelet/glow for formatted markdown output
 
 Usage: clai [flags] <command>
 
@@ -45,7 +45,7 @@ Commands:
   h|help                        Display this help message
   s|setup                       Setup the configuration files
   q|query <text>                Query the chat model with the given text
-  p|photo <text>                Ask the photo model a picture with the requested prompt
+  p|photo <text>                Ask the photo model for a picture with the given prompt
   g|glob  <glob> <text>         Query the chat model with the contents of the files found by the glob and the given text
   cmd <text>                    Describe the command you wish to do, then execute the suggested command. It's a bit wonky when used with -re.
   re|replay                     Replay the most recent message.

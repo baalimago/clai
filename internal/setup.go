@@ -56,14 +56,14 @@ var defaultFlags = Configurations{
 	ProfilePath:   "",
 }
 
-const PROFILE_HELP = `Profiles overwrites certain model configurations. The intent of profiles
-is to reduce usage for repetitive flags, and to persist + tweak specifc llm agents.
-For instance, you may create a 'gopher' profile which has a prompt that tells the agent that it's
-a programming helper and then specify which tools it's allowed to use.
+const PROFILE_HELP = `Profiles overwrite certain model configurations. The intent of profiles
+is to reduce usage for repetitive flags and to persist and tweak specific LLM agents.
+For instance, you may create a 'gopher' profile with a prompt that explains the agent is
+a programming helper and then specify which tools it may use.
 
-Then you can use this profile by specifying it using the '-p/-profile' flag. Example:
+Use this profile by passing the '-p/-profile' flag. Example:
 
-1. clai setup -> 2 -> follow setup wizard (create 'gopher' profile)
+1. clai setup -> 2 -> follow the setup wizard (create 'gopher' profile)
 2. clai -p gopher -g internal/thing/handler.go q write tests for this file`
 
 func getModeFromArgs(cmd string) (Mode, error) {
