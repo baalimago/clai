@@ -4,7 +4,7 @@ All of the commands support xargs-like `-i`/`-I`/`-replace` flags.
 
 Example: `clai h | clai -i q Summarize this for me: {}`, this would summarize the output of `clai h`.
 
-Regardless of you wish to generate a photo, continue a chat or reply to your previous query, the prompt system remains the same.
+Regardless of whether you want to generate a photo, continue a chat, or reply to your previous query, the prompt system remains the same.
 
 ```bash
 clai help `# For more info about the available commands (and shorthands)`
@@ -78,8 +78,8 @@ Glob-as-arg will be deprecated at some point.
 clai cmd to show all files in home
 ```
 
-Will work like many of the popular command suggestion LLM tools out there.
-Flags works with this mode as well, such as `clai -re -g 'some_file.go' cmd to cleanup this messy code`, but it's not guaranteed the LLM will output an executable output.
+This works like many popular command-suggestion LLM tools.
+Flags work with this mode as well, for example `clai -re -g 'some_file.go' cmd to cleanup this messy code`, but it's not guaranteed the LLM will return an executable command.
 
 ### Profiles
 
@@ -89,7 +89,7 @@ Flags works with this mode as well, such as `clai -re -g 'some_file.go' cmd to c
 
 See examples [here](./examples/profiles/), try them out with `go run . -prp ./examples/profiles/cody.json q What is your purpose\?`
 
-Profiles allows you to preconfigure certain fields which will be passed to the llms, most noteably the prompt and which tools to use.
+Profiles allow you to preconfigure certain fields passed to the LLMs, most notably the prompt and which tools to use.
 This, in turn, enables you to quickly swap between different 'LLM-modes'.
 
 For instance, you may have one profile which is prompted for golang programming tasks "gopher", it has tools `write_file`, `rip grep` and `go` enabled, and then another profile which is for terraform named "terry".
@@ -101,7 +101,7 @@ This means that you can sync them across all of your machines and tweak your pro
 Yet again, I've personally utilized aliases here.
 `ask` -> Generic profile-less prompt
 `gask` -> `clai -p gopher q`, `grask` -> `clai -re -p gopher q` and then `task` -> `clai -p terry q`, etc.
-These aliases are later on synched with the rest of my dotfiles + clai profiles, so they're shared on all my development machines.
+These aliases are later synced with the rest of my dotfiles and clai profiles, so they're shared on all my development machines.
 
 ### Photos
 
@@ -123,9 +123,9 @@ NO_COLOR=true repeater -n 10 -w 3 -increment -file out.txt -output BOTH \
 
 `clai` will create configuration files at [os.GetConfigDir()](https://pkg.go.dev/os#UserConfigDir)`/.clai/`.
 First time you run `clai`, two default command-related ones, `textConfig.json` and `photoConfig.json`, will be created and then one for each specific model.
-The configuration presedence is as follows (from lowest to highest):
+The configuration precedence is as follows (from lowest to highest):
 
-1. Default hard-coded configurations [such as this](./internal/text/conf.go), these gets written to file first time you run `clai`
+1. Default hard-coded configurations [such as this](./internal/text/conf.go), these get written to file the first time you run `clai`
 1. Configurations from local `textConfig.json` or `photoConfig.json` file
 1. Profiles
 1. Flags
@@ -143,7 +143,7 @@ There's two ways to configure the models:
 Then, for each model, a new configuration file will be created.
 Since each vendor's model supports quite different configurations, the model configurations aren't exposed as flags.
 Instead, modify the model by adjusting its configuration file, found in [os.GetConfigDir()](https://pkg.go.dev/os#UserConfigDir)`/.clai/<vendor>_<model-type>_<model-name>.json`.
-This config json will in effect be unmarshaled into a request send to the model's vendor.
+This config JSON will in effect be unmarshaled into a request sent to the model's vendor.
 
 ### Conversations
 

@@ -19,7 +19,7 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/num"
 )
 
-const chatUsage = `clai - (c)omand (l)ine (a)rtificial (i)intelligence
+const chatUsage = `clai - (c)ommand (l)ine (a)rtificial (i)ntelligence
 
 Usage: clai [flags] chat <subcommand> <prompt/chatID>
 
@@ -28,7 +28,7 @@ are normally used in query mode.
 
 Commands:
   n|new      <prompt>             Create a new chat with the given prompt.
-  c|cotinue  <chatID> <prompt>    Continue an existing chat with the given chat ID. Prompt is optional
+  c|continue <chatID> <prompt>    Continue an existing chat with the given chat ID. Prompt is optional
   d|delete   <chatID>             Delete the chat with the given chat ID.
   l|list                          List all existing chats.
 

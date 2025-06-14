@@ -42,8 +42,8 @@ func setupFlags(defaults Configurations) Configurations {
 	ppShort := flag.String("pp", defaults.PhotoPrefix, "Set the prefix for the generated pictures. Default is 'clai'")
 	ppLong := flag.String("photo-prefix", defaults.PhotoPrefix, "Set the prefix for the generated pictures. Default is 'clai'")
 
-	gShort := flag.String("g", defaults.Glob, "Set this to true to use globbing, but from query/chat. This flag will deperecate glob mode in some upcoming release.")
-	gLong := flag.String("glob", defaults.Glob, "Set this to true to use globbing, but from query/chat. This flag will deperecate glob mode in some upcoming release.")
+	gShort := flag.String("g", defaults.Glob, "Use globbing from query or chat. This flag will deprecate glob mode in a future release.")
+	gLong := flag.String("glob", defaults.Glob, "Use globbing from query or chat. This flag will deprecate glob mode in a future release.")
 
 	pShort := flag.String("p", defaults.Profile, "Set this to the override profile you'd like to use. Configure with 'clai setup' -> 2.")
 	pLong := flag.String("profile", defaults.Profile, "Set this to the override profile you'd like to use. Configure with 'clai setup' -> 2.")

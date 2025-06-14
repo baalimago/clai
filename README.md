@@ -29,7 +29,7 @@ Continue a chat with another profile, or another chat model.
 
 All the configuration files and chats are json, so manual tweaks and manipulation is easy to do.
 
-If you have time, checkout [this blogpost](https://lorentz.app/blog-item.html?id=clai) for a slightly more structured introduction on how to use clai efficiently.
+If you have time, check out [this blogpost](https://lorentz.app/blog-item.html?id=clai) for a slightly more structured introduction on how to use clai efficiently.
 
 ## Supported vendors
 
