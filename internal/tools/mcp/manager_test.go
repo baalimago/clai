@@ -25,8 +25,8 @@ func TestHandleServerRegistersTool(t *testing.T) {
 
 	ev := ControlEvent{ServerName: "ts", Server: srv, InputChan: in, OutputChan: out}
 	readyChan := make(chan struct{}, 1)
-	if err := handleServer(ctx, ev, readyChan); err != nil {
-		t.Fatalf("handleServer: %v", err)
+	if serveErr := handleServer(ctx, ev, readyChan); serveErr != nil {
+		t.Fatalf("handleServer: %v", serveErr)
 	}
 
 	tool, ok := tools.Tools.Get("ts_echo")

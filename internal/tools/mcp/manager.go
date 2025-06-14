@@ -21,8 +21,8 @@ func Manager(ctx context.Context, controlChannel <-chan ControlEvent, statusChan
 			go func(e ControlEvent) {
 				defer wg.Done()
 				if err := handleServer(ctx, e, readyChan); err != nil {
-					statusChan <- err
 					allToolsWg.Done()
+					statusChan <- err
 				}
 			}(ev)
 		case <-readyChan:

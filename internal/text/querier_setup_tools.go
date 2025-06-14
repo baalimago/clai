@@ -49,8 +49,14 @@ func addMcpTools(ctx context.Context, mcpServersDir string) error {
 			continue
 		}
 		serverName := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
-		inputChan, outputChan, err := mcp.Client(ctx, mcpServer)
+		// No context leak here as it's a child of the root context, which will cascade the cancel
+		// for all other code paths
+		clientContext, clientContextCancel := context.WithCancel(ctx)
+		inputChan, outputChan, err := mcp.Client(clientContext, mcpServer)
 		if err != nil {
+			ancli.Warnf("failed to setup: '%v', err: %v\n", serverName, err)
+			toolWg.Done()
+			clientContextCancel()
 			continue
 		}
 
