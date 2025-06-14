@@ -166,9 +166,6 @@ func (cq *ChatHandler) printChat(chat models.Chat) error {
 			return fmt.Errorf("failed to print chat message: %w", err)
 		}
 	}
-	if cq.prompt != "" {
-		chat.Messages = append(chat.Messages, models.Message{Role: "user", Content: cq.prompt})
-	}
 	return nil
 }
 
@@ -179,6 +176,9 @@ func (cq *ChatHandler) cont(ctx context.Context) error {
 	chat, err := cq.findChatByID(cq.prompt)
 	if err != nil {
 		return fmt.Errorf("failed to get chat: %w", err)
+	}
+	if cq.prompt != "" {
+		chat.Messages = append(chat.Messages, models.Message{Role: "user", Content: cq.prompt})
 	}
 	err = cq.printChat(chat)
 	if err != nil {

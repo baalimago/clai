@@ -19,7 +19,15 @@ func ReadUserInput() (string, error) {
 	errChan := make(chan error)
 
 	go func() {
-		reader := bufio.NewReader(os.Stdin)
+		// Open /dev/tty for direct terminal access
+		tty, err := os.Open("/dev/tty")
+		if err != nil {
+			errChan <- fmt.Errorf("cannot open terminal: %w", err)
+			return
+		}
+		defer tty.Close()
+
+		reader := bufio.NewReader(tty)
 		userInput, err := reader.ReadString('\n')
 		if err != nil {
 			errChan <- err
