@@ -15,6 +15,7 @@ func (s *StreamCompleter) Setup(apiKeyEnv, url, debugEnv string) error {
 		return fmt.Errorf("environment variable '%v' not set", apiKeyEnv)
 	}
 	s.client = &http.Client{}
+	s.limiter = RateLimiter{}
 	s.apiKey = apiKey
 	s.url = url
 
@@ -30,6 +31,10 @@ func (g *StreamCompleter) InternalRegisterTool(tool tools.LLMTool) {
 		Type:     "function",
 		Function: convertToGenericTool(tool.Specification()),
 	})
+}
+
+func (g *StreamCompleter) SetRateLimiter(rl RateLimiter) {
+	g.limiter = rl
 }
 
 func convertToGenericTool(tool tools.Specification) Tool {

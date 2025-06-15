@@ -3,6 +3,7 @@ package openai
 import (
 	"fmt"
 
+	"github.com/baalimago/clai/internal/text/generic"
 	"github.com/baalimago/clai/internal/tools"
 )
 
@@ -18,6 +19,7 @@ func (g *ChatGPT) Setup() error {
 	g.StreamCompleter.TopP = &g.TopP
 	toolChoice := "auto"
 	g.StreamCompleter.ToolChoice = &toolChoice
+	g.StreamCompleter.SetRateLimiter(generic.NewRateLimiter("x-ratelimit-remaining-tokens", "x-ratelimit-reset-tokens"))
 	return nil
 }
 

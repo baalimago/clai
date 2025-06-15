@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/baalimago/clai/internal/text/generic"
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
@@ -16,6 +17,7 @@ func (c *Claude) Setup() error {
 	}
 	c.client = &http.Client{}
 	c.apiKey = apiKey
+	c.limiter = generic.NewRateLimiter("anthropic-ratelimit-tokens-remaining", "anthropic-ratelimit-tokens-reset")
 	if misc.Truthy(os.Getenv("DEBUG")) || misc.Truthy(os.Getenv("ANTHROPIC_DEBUG")) {
 		c.debug = true
 	}

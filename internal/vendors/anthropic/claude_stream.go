@@ -20,6 +20,7 @@ import (
 )
 
 func (c *Claude) StreamCompletions(ctx context.Context, chat models.Chat) (chan models.CompletionEvent, error) {
+	c.limiter.WaitIfNeeded(ctx)
 	req, err := c.constructRequest(ctx, chat)
 	if err != nil {
 		return nil, fmt.Errorf("failed to construct request: %w", err)
@@ -37,6 +38,9 @@ func (c *Claude) stream(ctx context.Context, req *http.Request) (chan models.Com
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("failed to execute request: %v, body: %v", resp.Status, string(body))
+	}
+	if err := c.limiter.UpdateFromHeaders(resp.Header); err != nil {
+		ancli.PrintWarn(fmt.Sprintf("rate limit header parse failed: %v", err))
 	}
 
 	outChan, err := c.handleStreamResponse(ctx, resp)

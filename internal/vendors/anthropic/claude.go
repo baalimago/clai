@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/baalimago/clai/internal/models"
+	"github.com/baalimago/clai/internal/text/generic"
 	"github.com/baalimago/clai/internal/tools"
 )
 
@@ -27,6 +28,7 @@ type Claude struct {
 	functionID         string                `json:"-"`
 	functionJson       string                `json:"-"`
 	contentBlockType   string                `json:"-"`
+	limiter            generic.RateLimiter   `json:"-"`
 }
 
 var ClaudeDefault = Claude{

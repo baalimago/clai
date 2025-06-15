@@ -26,6 +26,7 @@ type StreamCompleter struct {
 	client              *http.Client
 	apiKey              string
 	debug               bool
+	limiter             RateLimiter
 }
 
 type ToolSuper struct {

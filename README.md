@@ -42,6 +42,10 @@ If you have time, check out [this blogpost](https://lorentz.app/blog-item.html?i
 
 Note that you can only use the models that you have bought an API key for.
 
+`clai` automatically respects API rate limits. When a vendor indicates that a limit
+has been reached, the query pipeline will pause until the limit resets and you
+will be notified of the wait time.
+
 ## Get started
 
 ```bash

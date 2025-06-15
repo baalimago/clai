@@ -21,6 +21,7 @@ var dataPrefix = []byte("data: ")
 
 // streamCompletions taking the messages as prompt conversation. Returns the messages from the chat model.
 func (s *StreamCompleter) StreamCompletions(ctx context.Context, chat models.Chat) (chan models.CompletionEvent, error) {
+	s.limiter.WaitIfNeeded(ctx)
 	if s.Clean != nil {
 		cpy := make([]models.Message, len(chat.Messages))
 		copy(cpy, chat.Messages)
@@ -37,6 +38,9 @@ func (s *StreamCompleter) StreamCompletions(ctx context.Context, chat models.Cha
 	if res.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(res.Body)
 		return nil, fmt.Errorf("unexpected status code: %v, body: %v", res.Status, string(body))
+	}
+	if err := s.limiter.UpdateFromHeaders(res.Header); err != nil {
+		ancli.PrintWarn(fmt.Sprintf("rate limit header parse failed: %v", err))
 	}
 	outChan, err := s.handleStreamResponse(ctx, res)
 	if err != nil {
