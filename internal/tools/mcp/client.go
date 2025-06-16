@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"os/exec"
 
 	"github.com/baalimago/clai/internal/tools"
+	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
 // Client starts the MCP server process defined by mcpConfig and returns channels
@@ -23,6 +25,10 @@ func Client(ctx context.Context, mcpConfig tools.McpServer) (chan<- any, <-chan 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, nil, fmt.Errorf("stdout pipe: %w", err)
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return nil, nil, fmt.Errorf("stderr pipe: %w", err)
 	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -64,6 +70,13 @@ func Client(ctx context.Context, mcpConfig tools.McpServer) (chan<- any, <-chan 
 				return
 			}
 			out <- raw
+		}
+	}()
+
+	go func() {
+		scanner := bufio.NewScanner(stderr)
+		for scanner.Scan() {
+			ancli.Noticef("mcp output: %s\n", scanner.Text())
 		}
 	}()
 

@@ -31,12 +31,16 @@ func addMcpTools(ctx context.Context, mcpServersDir string) error {
 		return fmt.Errorf("failed to list mcp server configs: %w", err)
 	}
 
+	if len(files) == 0 {
+		return nil
+	}
+
 	controlChannel := make(chan mcp.ControlEvent)
-	statusChan := make(chan error, 1)
+	errChan := make(chan error, len(files))
 
 	toolWg := sync.WaitGroup{}
 	toolWg.Add(len(files))
-	go mcp.Manager(ctx, controlChannel, statusChan, &toolWg)
+	go mcp.Manager(ctx, controlChannel, errChan, &toolWg)
 
 	for _, file := range files {
 		data, err := os.ReadFile(file)
@@ -51,12 +55,10 @@ func addMcpTools(ctx context.Context, mcpServersDir string) error {
 		serverName := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
 		// No context leak here as it's a child of the root context, which will cascade the cancel
 		// for all other code paths
-		clientContext, clientContextCancel := context.WithCancel(ctx)
-		inputChan, outputChan, err := mcp.Client(clientContext, mcpServer)
+		inputChan, outputChan, err := mcp.Client(ctx, mcpServer)
 		if err != nil {
 			ancli.Warnf("failed to setup: '%v', err: %v\n", serverName, err)
 			toolWg.Done()
-			clientContextCancel()
 			continue
 		}
 
@@ -67,16 +69,22 @@ func addMcpTools(ctx context.Context, mcpServersDir string) error {
 			OutputChan: outputChan,
 		}
 	}
+	done := make(chan struct{})
 	go func() {
 		toolWg.Wait()
-		statusChan <- nil
+		close(done)
+	}()
+
+	go func() {
+		for err := range errChan {
+			if err != nil {
+				ancli.Warnf("MCP manager: %v", err)
+			}
+		}
 	}()
 
 	select {
-	case err := <-statusChan:
-		if err != nil {
-			return fmt.Errorf("MCP client manager failed: %w", err)
-		}
+	case <-done:
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
