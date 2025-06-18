@@ -27,6 +27,7 @@ type Claude struct {
 	functionID         string                `json:"-"`
 	functionJson       string                `json:"-"`
 	contentBlockType   string                `json:"-"`
+	amInputTokens      int                   `json:"-"`
 }
 
 var ClaudeDefault = Claude{
@@ -44,13 +45,13 @@ var ClaudeDefault = Claude{
 type claudeReq struct {
 	Model         string                `json:"model"`
 	Messages      []ClaudeConvMessage   `json:"messages"`
-	MaxTokens     int                   `json:"max_tokens"`
-	Stream        bool                  `json:"stream"`
-	System        string                `json:"system"`
-	Temperature   float64               `json:"temperature"`
-	TopP          float64               `json:"top_p"`
-	TopK          int                   `json:"top_k"`
-	StopSequences []string              `json:"stop_sequences"`
+	MaxTokens     int                   `json:"max_tokens,omitempty"`
+	Stream        bool                  `json:"stream,omitempty"`
+	System        string                `json:"system,omitempty"`
+	Temperature   float64               `json:"temperature,omitempty"`
+	TopP          float64               `json:"top_p,omitempty"`
+	TopK          int                   `json:"top_k,omitempty"`
+	StopSequences []string              `json:"stop_sequences,omitempty"`
 	Tools         []tools.Specification `json:"tools,omitempty"`
 }
 

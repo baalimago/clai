@@ -3,6 +3,7 @@ package models
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/baalimago/clai/internal/tools"
@@ -26,6 +27,13 @@ type StreamCompleter interface {
 	// The CompletionEvents should be a string, an error, NoopEvent or a models.Call. If there is
 	// a catastrophic error, return the error and close the channel.
 	StreamCompletions(context.Context, Chat) (chan CompletionEvent, error)
+}
+
+// RateLimitDodger will avoid getting rate limited at any cost (as long as it's low)!
+type RateLimitDodger interface {
+	// Circumvent by some means. Either by simply waiting, or by
+	// implementing more advanced logic, such as conversation summary to reduce input size
+	Circumvent(context.Context, ChatQuerier, Chat, int, int) error
 }
 
 // ToolBox can register tools which later on will be added to the chat completion queries
@@ -68,4 +76,22 @@ func (c *Chat) FirstUserMessage() (Message, error) {
 		}
 	}
 	return Message{}, errors.New("failed to find any user message")
+}
+
+type ErrRateLimit struct {
+	ResetAt         time.Time
+	TokensRemaining int
+	MaxInputTokens  int
+}
+
+func (erl *ErrRateLimit) Error() string {
+	return fmt.Sprintf("reset at: '%v', input tokens used at time of rate limit: '%v'", erl.ResetAt, erl.TokensRemaining)
+}
+
+func NewRateLimitError(resetAt time.Time, maxInputTokens int, tokensRemaining int) error {
+	return &ErrRateLimit{
+		ResetAt:         resetAt,
+		MaxInputTokens:  maxInputTokens,
+		TokensRemaining: tokensRemaining,
+	}
 }

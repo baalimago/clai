@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/baalimago/clai/internal/models"
@@ -54,6 +55,24 @@ func (q *Querier[C]) Query(ctx context.Context) error {
 	}
 	completionsChan, err := q.Model.StreamCompletions(ctx, q.chat)
 	if err != nil {
+		var rateLimitErr *models.ErrRateLimit
+		if errors.As(err, &rateLimitErr) {
+			rateLimitDodger, ok := any(q.Model).(models.RateLimitDodger)
+			if ok {
+				err = rateLimitDodger.Circumvent(ctx, q, q.chat, rateLimitErr.TokensRemaining, rateLimitErr.MaxInputTokens)
+				if err != nil {
+					return fmt.Errorf("failed to circumvent rate limit: %w", err)
+				}
+			} else {
+				// No fancy logic, just sleep a while
+				ancli.Warnf("detected rate limit at: %v tokens, will sleep until: %v\n", rateLimitErr.TokensRemaining, rateLimitErr.ResetAt)
+				time.Sleep(time.Until(rateLimitErr.ResetAt.Add(time.Second * 10)))
+				// Recursively call. This will look a bit wonky but should cause no side effects as post process
+				// deferral is called below
+				return q.Query(ctx)
+			}
+
+		}
 		return fmt.Errorf("failed to stream completions: %w", err)
 	}
 
