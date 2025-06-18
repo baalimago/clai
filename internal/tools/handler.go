@@ -26,6 +26,7 @@ func Init() {
 	Registry.Set("rows_between", RowsBetween)
 	Registry.Set("line_count", LineCount)
 	Registry.Set("git", Git)
+	Registry.Set("recall", Recall)
 }
 
 // Invoke the call, and gather both error and output in the same string
