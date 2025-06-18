@@ -30,10 +30,16 @@ type StreamCompleter interface {
 }
 
 // RateLimitDodger will avoid getting rate limited at any cost (as long as it's low)!
+
+// RateLimitDodger was previously used for custom rate limit logic.
+// Deprecated in favour of the generic CircumventRateLimit function.
 type RateLimitDodger interface {
-	// Circumvent by some means. Either by simply waiting, or by
-	// implementing more advanced logic, such as conversation summary to reduce input size
 	Circumvent(context.Context, ChatQuerier, Chat, int, int) error
+}
+
+// InputTokenCounter can return the amount of input tokens for a chat.
+type InputTokenCounter interface {
+	CountInputTokens(context.Context, Chat) (int, error)
 }
 
 // ToolBox can register tools which later on will be added to the chat completion queries

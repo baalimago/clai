@@ -14,6 +14,7 @@ import (
 
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/reply"
+	"github.com/baalimago/clai/internal/text/generic"
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
@@ -57,9 +58,14 @@ func (q *Querier[C]) Query(ctx context.Context) error {
 	if err != nil {
 		var rateLimitErr *models.ErrRateLimit
 		if errors.As(err, &rateLimitErr) {
-			rateLimitDodger, ok := any(q.Model).(models.RateLimitDodger)
+			counter, ok := any(q.Model).(models.InputTokenCounter)
+			var inCount int
 			if ok {
-				err = rateLimitDodger.Circumvent(ctx, q, q.chat, rateLimitErr.TokensRemaining, rateLimitErr.MaxInputTokens)
+				inCount, err = counter.CountInputTokens(ctx, q.chat)
+				if err != nil {
+					return fmt.Errorf("failed to count tokens: %w", err)
+				}
+				err = generic.CircumventRateLimit(ctx, q, q.chat, inCount, rateLimitErr.TokensRemaining, rateLimitErr.MaxInputTokens)
 				if err != nil {
 					return fmt.Errorf("failed to circumvent rate limit: %w", err)
 				}
