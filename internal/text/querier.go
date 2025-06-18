@@ -14,6 +14,7 @@ import (
 
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/reply"
+	"github.com/baalimago/clai/internal/text/generic"
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/internal/vendors/anthropic"
@@ -67,7 +68,7 @@ func (q *Querier[C]) Query(ctx context.Context) error {
 						return fmt.Errorf("failed to count tokens: %w", err)
 					}
 				}
-				err = anthropic.CircumventRateLimit(ctx, q, q.chat, inCount, rateLimitErr.TokensRemaining, rateLimitErr.MaxInputTokens)
+				err = generic.CircumventRateLimit(ctx, q, q.chat, inCount, rateLimitErr.TokensRemaining, rateLimitErr.MaxInputTokens)
 				if err != nil {
 					return fmt.Errorf("failed to circumvent rate limit: %w", err)
 				}
