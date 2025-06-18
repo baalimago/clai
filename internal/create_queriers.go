@@ -108,8 +108,7 @@ func CreateTextQuerier(ctx context.Context, conf text.Configurations) (models.Qu
 		if !isTextQuerier {
 			return nil, fmt.Errorf("failed to cast Querier using model: '%v' to TextQuerier, cannot proceed to chat", conf.Model)
 		}
-		configDir, _ := os.UserConfigDir()
-		chatQ, err := chat.New(tq, configDir, conf.PostProccessedPrompt, conf.InitialPrompt.Messages, chat.NotCyclicalImport{
+		chatQ, err := chat.New(tq, conf.PostProccessedPrompt, conf.InitialPrompt.Messages, chat.NotCyclicalImport{
 			UseTools:   conf.UseTools,
 			UseProfile: conf.UseProfile,
 			Model:      conf.Model,

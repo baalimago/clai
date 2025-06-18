@@ -67,11 +67,10 @@ func Run() error {
 	}
 	var configs []config
 	var a action
-	configDir, err := os.UserConfigDir()
+	claiDir, err := utils.GetClaiConfigDir()
 	if err != nil {
 		return fmt.Errorf("failed to get user config directory: %v", err)
 	}
-	claiDir := filepath.Join(configDir, ".clai")
 	switch input {
 	case "0":
 		t, err := getConfigs(filepath.Join(claiDir, "*Config.json"), []string{})

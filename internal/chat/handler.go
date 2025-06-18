@@ -69,7 +69,7 @@ func (q *ChatHandler) Query(ctx context.Context) error {
 	return q.actOnSubCmd(ctx)
 }
 
-func New(q models.ChatQuerier, confDir, args string, preMessages []models.Message, conf NotCyclicalImport) (*ChatHandler, error) {
+func New(q models.ChatQuerier, args string, preMessages []models.Message, conf NotCyclicalImport) (*ChatHandler, error) {
 	username := "user"
 	debug := misc.Truthy(os.Getenv("DEBUG"))
 	argsArr := strings.Split(args, " ")
@@ -80,6 +80,10 @@ func New(q models.ChatQuerier, confDir, args string, preMessages []models.Messag
 	}
 
 	subPrompt := strings.Join(argsArr[1:], " ")
+	claiDir, err := utils.GetClaiConfigDir()
+	if err != nil {
+		return nil, err
+	}
 	return &ChatHandler{
 		q:           q,
 		username:    username,
@@ -87,7 +91,7 @@ func New(q models.ChatQuerier, confDir, args string, preMessages []models.Messag
 		subCmd:      subCmd,
 		prompt:      subPrompt,
 		preMessages: preMessages,
-		convDir:     path.Join(confDir, "/.clai/conversations/"),
+		convDir:     path.Join(claiDir, "conversations"),
 		config:      conf,
 	}, nil
 }

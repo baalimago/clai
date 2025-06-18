@@ -4,12 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
 	"path"
 	"time"
 
 	"github.com/baalimago/clai/internal/chat"
 	"github.com/baalimago/clai/internal/models"
+	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
@@ -46,11 +46,11 @@ func SaveAsPreviousQuery(claiConfDir string, msgs []models.Message) error {
 // is piling up quite fast here
 func Load(claiConfDir string) (models.Chat, error) {
 	if claiConfDir == "" {
-		confDir, err := os.UserConfigDir()
+		dir, err := utils.GetClaiConfigDir()
 		if err != nil {
 			return models.Chat{}, fmt.Errorf("failed to find home dir: %v", err)
 		}
-		claiConfDir = path.Join(confDir, ".clai")
+		claiConfDir = dir
 	}
 
 	c, err := chat.FromPath(path.Join(claiConfDir, "conversations", "prevQuery.json"))
