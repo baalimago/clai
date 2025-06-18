@@ -17,7 +17,6 @@ import (
 	"github.com/baalimago/clai/internal/text/generic"
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/utils"
-	"github.com/baalimago/clai/internal/vendors/anthropic"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 )
@@ -59,14 +58,12 @@ func (q *Querier[C]) Query(ctx context.Context) error {
 	if err != nil {
 		var rateLimitErr *models.ErrRateLimit
 		if errors.As(err, &rateLimitErr) {
-			if _, isClaude := any(q.Model).(*anthropic.Claude); isClaude {
-				counter, ok := any(q.Model).(models.InputTokenCounter)
-				var inCount int
-				if ok {
-					inCount, err = counter.CountInputTokens(ctx, q.chat)
-					if err != nil {
-						return fmt.Errorf("failed to count tokens: %w", err)
-					}
+			counter, ok := any(q.Model).(models.InputTokenCounter)
+			var inCount int
+			if ok {
+				inCount, err = counter.CountInputTokens(ctx, q.chat)
+				if err != nil {
+					return fmt.Errorf("failed to count tokens: %w", err)
 				}
 				err = generic.CircumventRateLimit(ctx, q, q.chat, inCount, rateLimitErr.TokensRemaining, rateLimitErr.MaxInputTokens)
 				if err != nil {
