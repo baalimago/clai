@@ -1,4 +1,4 @@
-package anthropic
+package generic
 
 import (
 	"context"
