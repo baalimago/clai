@@ -111,7 +111,7 @@ func (c *Claude) handleStreamResponse(ctx context.Context, resp *http.Response) 
 				switch cast := processed.(type) {
 				case string:
 					c.debugFullStreamMsg += cast
-					ancli.Okf("full message: '%v'\n--\n", c.debugFullStreamMsg)
+					ancli.Okf("new bit: %v, full message: '%v'\n--\n", cast, c.debugFullStreamMsg)
 				}
 			}
 			outChan <- processed
@@ -212,7 +212,7 @@ func (c *Claude) constructRequest(ctx context.Context, chat models.Chat) (*http.
 	msgCopy := make([]models.Message, len(chat.Messages))
 	copy(msgCopy, chat.Messages)
 	claudifiedMsgs := claudifyMessages(msgCopy)
-	if c.debug {
+	if c.debug || misc.Truthy(os.Getenv("DEBUG_CLAUDIFIED_MSGS")) {
 		ancli.PrintOK(
 			fmt.Sprintf(
 				"claudified messages: %+v\n",
