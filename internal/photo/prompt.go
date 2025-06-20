@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path"
 
 	"github.com/baalimago/clai/internal/reply"
 	"github.com/baalimago/clai/internal/utils"
@@ -16,11 +15,11 @@ import (
 func (c *Configurations) SetupPrompts() error {
 	args := flag.Args()
 	if c.ReplyMode {
-		confDir, err := os.UserConfigDir()
+		confDir, err := utils.GetClaiConfigDir()
 		if err != nil {
 			return fmt.Errorf("failed to get config dir: %w", err)
 		}
-		iP, err := reply.Load(path.Join(confDir, ".clai"))
+		iP, err := reply.Load(confDir)
 		if err != nil {
 			return fmt.Errorf("failed to load previous query: %w", err)
 		}

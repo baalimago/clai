@@ -2,15 +2,14 @@ package text
 
 import (
 	"fmt"
-	"os"
 	"path"
 
 	"github.com/baalimago/clai/internal/utils"
 )
 
 func findProfile(profileName string) (Profile, error) {
-	cfg, _ := os.UserConfigDir()
-	profilePath := path.Join(cfg, ".clai", "profiles")
+	cfg, _ := utils.GetClaiConfigDir()
+	profilePath := path.Join(cfg, "profiles")
 	var p Profile
 	err := utils.ReadAndUnmarshal(path.Join(profilePath, fmt.Sprintf("%v.json", profileName)), &p)
 	if err != nil {

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path"
 
+	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
@@ -23,7 +24,10 @@ func moveConfFromHomeToConfig() error {
 			return fmt.Errorf("failed to get conf dir: %w", err)
 		}
 		ancli.PrintWarn(fmt.Sprintf("oopsie detected: attempting to move config from: %v, to %v, to better adhere to standards\n", oldClaiDir, confDir))
-		newClaiDir := path.Join(confDir, ".clai")
+		newClaiDir, err := utils.GetClaiConfigDir()
+		if err != nil {
+			return fmt.Errorf("failed to get new config dir: %w", err)
+		}
 		err = os.Rename(oldClaiDir, newClaiDir)
 		if err != nil {
 			return fmt.Errorf("failed to rename: %w", err)

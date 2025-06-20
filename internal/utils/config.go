@@ -12,25 +12,26 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
-func createConfigDir(configDirPath string) error {
-	if _, err := os.Stat(configDirPath); os.IsNotExist(err) {
-		err := setupClaiConfigDir(configDirPath)
+func createConfigDir(configPath string) error {
+	requiredDirs := []string{"conversations", "profiles", "mcpServers"}
+	for _, d := range requiredDirs {
+		err := ensureDirExists(configPath, d)
 		if err != nil {
-			return fmt.Errorf("failed to setup config dotdir: %w", err)
+			return fmt.Errorf("failed to setup config dir: %w", err)
 		}
 	}
 	return nil
 }
 
-func setupClaiConfigDir(configPath string) error {
-	conversationsDir := filepath.Join(configPath, "conversations")
-	ancli.PrintOK("created conversations directory\n")
-
-	// Create the .clai directory.
-	if err := os.MkdirAll(conversationsDir, os.ModePerm); err != nil {
-		return fmt.Errorf("failed to create .clai + .clai/conversations directory: %w", err)
+func ensureDirExists(configPath, toCreate string) error {
+	shouldExist := path.Join(configPath, toCreate)
+	if _, err := os.Stat(shouldExist); os.IsNotExist(err) {
+		// Create the .clai directory.
+		if err := os.MkdirAll(shouldExist, os.ModePerm); err != nil {
+			return fmt.Errorf("failed to create .clai + .clai/%v directory: %w", toCreate, err)
+		}
+		ancli.Okf("created directory: %v \n", shouldExist)
 	}
-	ancli.PrintOK(fmt.Sprintf("created .clai directory at: '%v'\n", configPath))
 	return nil
 }
 
