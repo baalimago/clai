@@ -36,7 +36,7 @@ Format of summary should be:
 Example:
 
 ## Key insights
-The user is having an issue setting up anycast. The user is quite stressed and wishes to have a concise conversatoin. The service is at <VENDOR> and we have together attempted these things:
+The user is having an issue setting up anycast. The user is quite stressed and wishes to have a concise conversation. The service is at <VENDOR> and we have together attempted these things:
 
 * Thing 0
 * Thing 1

@@ -1,3 +1,5 @@
+// This package contains test intended to be used by the implementations of the
+// Querier, ChatQuerier and StreamCompleter interfaces
 package models
 
 import (
