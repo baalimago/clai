@@ -3,30 +3,8 @@
 package models
 
 import (
-	"context"
 	"testing"
-	"time"
-
-	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
-
-func TestQuerier_Context(t *testing.T, q Querier) {
-	testboil.ReturnsOnContextCancel(t, func(ctx context.Context) {
-		q.Query(ctx)
-	}, time.Second)
-}
-
-func TestChatQuerier(t *testing.T, q ChatQuerier) {
-	testboil.ReturnsOnContextCancel(t, func(ctx context.Context) {
-		q.TextQuery(ctx, Chat{})
-	}, time.Second)
-}
-
-func TestStreamCompleter(t *testing.T, s StreamCompleter) {
-	testboil.ReturnsOnContextCancel(t, func(ctx context.Context) {
-		s.StreamCompletions(ctx, Chat{})
-	}, time.Second)
-}
 
 func TestLastOfRole(t *testing.T) {
 	chat := Chat{Messages: []Message{
@@ -61,5 +39,41 @@ func TestLastOfRole(t *testing.T) {
 	_, _, err = chat.LastOfRole("nonexistent")
 	if err == nil {
 		t.Error("expected error for nonexistent role")
+	}
+}
+
+func TestFirstSystemMessage(t *testing.T) {
+	chat := Chat{Messages: []Message{
+		{Role: "user", Content: "hi"},
+		{Role: "system", Content: "rules"},
+	}}
+	msg, err := chat.FirstSystemMessage()
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if msg.Content != "rules" {
+		t.Errorf("expected 'rules', got %q", msg.Content)
+	}
+	chat.Messages = []Message{{Role: "user", Content: "hi"}}
+	if _, err := chat.FirstSystemMessage(); err == nil {
+		t.Error("expected error when no system message")
+	}
+}
+
+func TestFirstUserMessage(t *testing.T) {
+	chat := Chat{Messages: []Message{
+		{Role: "system", Content: "sys"},
+		{Role: "user", Content: "ok"},
+	}}
+	msg, err := chat.FirstUserMessage()
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if msg.Content != "ok" {
+		t.Errorf("expected 'ok', got %q", msg.Content)
+	}
+	chat.Messages = []Message{{Role: "system", Content: "sys"}}
+	if _, err := chat.FirstUserMessage(); err == nil {
+		t.Error("expected error when no user message")
 	}
 }
