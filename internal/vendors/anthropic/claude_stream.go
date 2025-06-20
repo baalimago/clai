@@ -306,7 +306,7 @@ func (c *Claude) CountInputTokens(ctx context.Context, chat models.Chat) (int, e
 		return 0, fmt.Errorf("failed to decode token count response: %w", err)
 	}
 
-	if c.debug || true {
+	if c.debug || c.PrintInputCount {
 		ancli.Okf("Token count: %d\n", tokenResp.InputTokens)
 	}
 

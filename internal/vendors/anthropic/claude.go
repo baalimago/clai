@@ -18,6 +18,7 @@ type Claude struct {
 	TopP               float64               `json:"top_p"`
 	TopK               int                   `json:"top_k"`
 	StopSequences      []string              `json:"stop_sequences"`
+	PrintInputCount    bool                  `json:"print_input_count"`
 	client             *http.Client          `json:"-"`
 	apiKey             string                `json:"-"`
 	debug              bool                  `json:"-"`
