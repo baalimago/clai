@@ -84,6 +84,16 @@ func (c *Chat) FirstUserMessage() (Message, error) {
 	return Message{}, errors.New("failed to find any user message")
 }
 
+func (c *Chat) LastOfRole(role string) (Message, int, error) {
+	for i := len(c.Messages) - 1; i > 0; i-- {
+		msg := c.Messages[i]
+		if msg.Role == role {
+			return msg, i, nil
+		}
+	}
+	return Message{}, -1, errors.New("failed to find any user message")
+}
+
 type ErrRateLimit struct {
 	ResetAt         time.Time
 	TokensRemaining int
