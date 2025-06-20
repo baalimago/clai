@@ -2,7 +2,7 @@ module github.com/baalimago/clai
 
 go 1.23
 
-require github.com/baalimago/go_away_boilerplate v1.3.34
+require github.com/baalimago/go_away_boilerplate v1.3.337
 
 require golang.org/x/net v0.24.0
 
