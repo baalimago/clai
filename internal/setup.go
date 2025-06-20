@@ -55,7 +55,7 @@ var defaultFlags = Configurations{
 	ProfilePath:   "",
 }
 
-const PROFILE_HELP = `Profiles overwrite certain model configurations. The intent of profiles
+const ProfileHelp = `Profiles overwrite certain model configurations. The intent of profiles
 is to reduce usage for repetitive flags and to persist and tweak specific LLM agents.
 For instance, you may create a 'gopher' profile with a prompt that explains the agent is
 a programming helper and then specify which tools it may use.
@@ -155,7 +155,7 @@ func setupTextQuerier(ctx context.Context, mode Mode, confDir string, flagSet Co
 
 func printHelp(usage string, args []string) {
 	if len(args) > 1 && (args[1] == "profile" || args[1] == "p") {
-		fmt.Println(PROFILE_HELP)
+		fmt.Println(ProfileHelp)
 		return
 	}
 	fmt.Printf(usage,

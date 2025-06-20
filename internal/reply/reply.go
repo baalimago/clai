@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path"
 	"time"
 
@@ -32,7 +33,11 @@ func SaveAsPreviousQuery(claiConfDir string, msgs []models.Message) error {
 			ID:       chat.IDFromPrompt(firstUserMsg.Content),
 			Messages: msgs,
 		}
-		err = chat.Save(path.Join(claiConfDir, "conversations"), convChat)
+		convPath := path.Join(claiConfDir, "conversations")
+		if _, convDirExistsErr := os.Stat(convPath); convDirExistsErr != nil {
+			os.MkdirAll(convPath, 0o755)
+		}
+		err = chat.Save(convPath, convChat)
 		if err != nil {
 			return fmt.Errorf("failed to save previous query as new conversation: %w", err)
 		}
