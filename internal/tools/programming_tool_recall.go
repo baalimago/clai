@@ -28,7 +28,7 @@ var Recall = RecallTool{
 				Description: "Index of the message to retrieve",
 			},
 		},
-		Required: []string{"conversation", "index"},
+		Required: &[]string{"conversation", "index"},
 	},
 }
 
