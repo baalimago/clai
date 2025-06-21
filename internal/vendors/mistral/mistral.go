@@ -3,6 +3,8 @@ package mistral
 import (
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/text/generic"
+	"github.com/baalimago/clai/internal/utils"
+	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
 const MistralURL = "https://api.mistral.ai/v1/chat/completions"
@@ -53,7 +55,11 @@ func clean(msg []models.Message) []models.Message {
 	for i := 1; i < len(msg); i++ {
 		if msg[i].Role == "assistant" && msg[i-1].Role == "assistant" {
 			msg[i-1].Content += "\n" + msg[i].Content
-			msg = append(msg[:i], msg[i+1:]...)
+			nMsg, err := utils.DeleteRange(msg, i, i)
+			if err != nil {
+				ancli.Errf("failed to delete range. No error management here... Not great. Why error here? Stop please...: %v", err)
+			}
+			msg = nMsg
 			i--
 		}
 	}

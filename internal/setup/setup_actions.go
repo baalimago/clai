@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"slices"
 	"strconv"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/baalimago/clai/internal/tools"
@@ -321,17 +322,55 @@ func editSlice(k string, s []any) ([]any, error) {
 			}
 			edited = append(edited, castPrimitive(nv))
 		case "r":
-			fmt.Printf("Index to remove (0-%d): ", len(edited)-1)
+			fmt.Printf("Index to remove (0-%d, multi-select with ex: '1-3'): ", len(edited)-1)
 			idxStr, err := utils.ReadUserInput()
 			if err != nil {
 				return nil, err
 			}
-			idx, err := strconv.Atoi(idxStr)
-			if err != nil || idx < 0 || idx >= len(edited) {
-				fmt.Println("invalid index")
-				continue
+			if strings.Contains(idxStr, "-") {
+				split := strings.Split(idxStr, "-")
+				p, q := -1, -1
+				var multiDelErr error
+			SPLIT_LOOP:
+				for _, i := range split {
+					idx, atoiErr := strconv.Atoi(i)
+					if atoiErr != nil {
+						ancli.Errf("failed to convert: '%v', err: %v", i, err)
+						break SPLIT_LOOP
+					}
+					if p == -1 {
+						p = idx
+					} else {
+						q = idx
+					}
+					pTooLow := p < -1
+					qTooLow := (p > -1 && q < -1)
+					qTooHigh := q >= len(edited)
+					pHigherThanQ := (p > q && q != -1)
+					if qTooLow || pTooLow || qTooHigh || pHigherThanQ {
+						checks := fmt.Sprintf("qTooLow: %v, pTooLow: %v, qTooHigh: %v, pHigherThanQ: %v",
+							pTooLow, qTooLow, qTooHigh, pHigherThanQ)
+						multiDelErr = fmt.Errorf("invalid range selection, p: %v, q: %v, len: %v\nChecks:%v", p, q, len(edited), checks)
+						break SPLIT_LOOP
+					}
+				}
+				if multiDelErr != nil {
+					ancli.Errf("failed to delete range: %v", multiDelErr)
+					continue
+				}
+				edited, err = utils.DeleteRange(edited, p, q)
+				if err != nil {
+					ancli.Errf("failed to delete range: %v", err)
+					continue
+				}
+			} else {
+				idx, err := strconv.Atoi(idxStr)
+				if err != nil || idx < 0 || idx >= len(edited) {
+					ancli.Errf("invalid index: %v", idx)
+					continue
+				}
 			}
-			edited = append(edited[:idx], edited[idx+1:]...)
+
 		case "u":
 			fmt.Printf("Index to update (0-%d): ", len(edited)-1)
 			idxStr, err := utils.ReadUserInput()
