@@ -49,6 +49,7 @@ func addMcpTools(ctx context.Context, mcpServersDir string) error {
 			continue
 		}
 		serverName := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
+		mcpServer.Name = serverName
 		// No context leak here as it's a child of the root context, which will cascade the cancel
 		// for all other code paths
 		clientContext, clientContextCancel := context.WithCancel(ctx)

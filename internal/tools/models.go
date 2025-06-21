@@ -91,6 +91,7 @@ type ParameterObject struct {
 type McpServerConfig map[string]McpServer
 
 type McpServer struct {
+	Name    string            `json:"-"`
 	Command string            `json:"command"`
 	Args    []string          `json:"args"`
 	Env     map[string]string `json:"env"`

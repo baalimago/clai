@@ -323,9 +323,13 @@ func (q *Querier[C]) handleFunctionCall(ctx context.Context, call tools.Call) er
 	} else if q.debug {
 		// NOOP, no printing
 	} else {
+		toolPrintContent := out
+		if !strings.Contains(toolPrintContent, "mcp_") {
+			toolPrintContent = shortenedOutput(out)
+		}
 		smallOutputMsg := models.Message{
 			Role:    "tool",
-			Content: shortenedOutput(out),
+			Content: toolPrintContent,
 		}
 		err := utils.AttemptPrettyPrint(smallOutputMsg, "tool", q.Raw)
 		if err != nil {
