@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/tools"
@@ -212,4 +213,17 @@ func (s *StreamCompleter) doToolsCall() models.CompletionEvent {
 		Type:     "function",
 		Function: userFunc,
 	}
+}
+
+// heuristicTokenCountFactor is used to approximate token usage when
+// the vendor does not expose an endpoint for counting tokens.
+const heuristicTokenCountFactor = 1.1
+
+// CountInputTokens estimates the amount of input tokens in the chat.
+func (s *StreamCompleter) CountInputTokens(ctx context.Context, chat models.Chat) (int, error) {
+	var count int
+	for _, m := range chat.Messages {
+		count += len(strings.Split(m.Content, " "))
+	}
+	return int(float64(count) * heuristicTokenCountFactor), nil
 }

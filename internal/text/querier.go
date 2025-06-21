@@ -9,10 +9,12 @@ import (
 	"os"
 	"path"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/reply"
+	"github.com/baalimago/clai/internal/text/generic"
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
@@ -22,10 +24,11 @@ import (
 const (
 	TokenCountFactor     = 1.1
 	MaxShortenedNewlines = 5
+	RateLimitRetries     = 3
 )
 
 type Querier[C models.StreamCompleter] struct {
-	Url                     string
+	URL                     string
 	Raw                     bool
 	chat                    models.Chat
 	username                string
@@ -43,17 +46,59 @@ type Querier[C models.StreamCompleter] struct {
 	toolOutputRuneLimit     int
 	cmdMode                 bool
 	execErr                 error
+	rateLimitRetries        int
 }
 
 // Query using the underlying model to stream completions and then print the output
 // from the model to stdout. Blocking operation.
 func (q *Querier[C]) Query(ctx context.Context) error {
+	if q.rateLimitRetries > RateLimitRetries {
+		return fmt.Errorf("rate limit retry limit exceeded (%v), giving up", RateLimitRetries)
+	}
 	err := q.tokenLengthWarning()
 	if err != nil {
 		return fmt.Errorf("Querier.Query: %w", err)
 	}
 	completionsChan, err := q.Model.StreamCompletions(ctx, q.chat)
 	if err != nil {
+		var rateLimitErr *models.ErrRateLimit
+		if errors.As(err, &rateLimitErr) {
+
+			q.rateLimitRetries++
+			counter, ok := any(q.Model).(models.InputTokenCounter)
+			var inCount int
+			if ok {
+				inCount, err = counter.CountInputTokens(ctx, q.chat)
+				if err != nil {
+					return fmt.Errorf("failed to count tokens: %w", err)
+				}
+				summarizedChat, circumErr := generic.CircumventRateLimit(ctx,
+					q,
+					q.chat,
+					inCount,
+					rateLimitErr.TokensRemaining,
+					rateLimitErr.MaxInputTokens,
+					rateLimitErr.ResetAt)
+				if circumErr != nil {
+					return fmt.Errorf("failed to circumvent rate limit: %w", circumErr)
+				}
+				// Replace existing chat with summarized chat
+				q.chat = summarizedChat
+
+				// Retry by using the new chat and querying once more. Will fill call stack.
+				q.reset()
+				return q.Query(ctx)
+			} else {
+				// No fancy logic, just sleep a while
+				ancli.Warnf("detected rate limit at: %v tokens, will sleep until: %v\n", rateLimitErr.TokensRemaining, rateLimitErr.ResetAt)
+				time.Sleep(time.Until(rateLimitErr.ResetAt.Add(time.Second * 10)))
+				// Recursively call. This will look a bit wonky but should cause no side effects as post process
+				// deferral is called below
+				q.reset()
+				return q.Query(ctx)
+			}
+
+		}
 		return fmt.Errorf("failed to stream completions: %w", err)
 	}
 
@@ -220,6 +265,7 @@ func (q *Querier[C]) reset() {
 	q.line = ""
 	q.lineCount = 0
 	q.hasPrinted = false
+	q.rateLimitRetries = 0
 }
 
 func (q *Querier[C]) TextQuery(ctx context.Context, chat models.Chat) (models.Chat, error) {

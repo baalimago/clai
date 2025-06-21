@@ -10,7 +10,9 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/tools"
@@ -19,12 +21,16 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
+const heuristicTokenCountFactor = 1.1
+
 func (c *Claude) StreamCompletions(ctx context.Context, chat models.Chat) (chan models.CompletionEvent, error) {
 	req, err := c.constructRequest(ctx, chat)
 	if err != nil {
 		return nil, fmt.Errorf("failed to construct request: %w", err)
 	}
-
+	if _, err = c.CountInputTokens(ctx, chat); err != nil {
+		return nil, fmt.Errorf("failed to count input tokens: %w", err)
+	}
 	return c.stream(ctx, req)
 }
 
@@ -36,6 +42,30 @@ func (c *Claude) stream(ctx context.Context, req *http.Request) (chan models.Com
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode == http.StatusTooManyRequests {
+			retryAtStr := resp.Header.Get("anthropic-ratelimit-tokens-reset")
+			resetAt, timeParseErr := time.Parse(time.RFC3339, retryAtStr)
+			if timeParseErr != nil {
+				ancli.Warnf("failed to parse rate limit reset, defaulting to 30 seconds from now")
+				resetAt = time.Now().Add(time.Minute / 2)
+			}
+
+			limitStr := resp.Header.Get("anthropic-ratelimit-input-tokens-limit")
+			limit, atoiErr := strconv.Atoi(limitStr)
+			if atoiErr != nil {
+				ancli.Warnf("failed to parse input tokens limit, defaulting to 0")
+				limit = 0
+			}
+
+			remainingStr := resp.Header.Get("anthropic-ratelimit-tokens-remaining")
+			remaining, atoiErr := strconv.Atoi(remainingStr)
+			if atoiErr != nil {
+				ancli.Warnf("failed to parse am remaining tokens header: '%s', defaulting to 0", remainingStr)
+				remaining = 0
+			}
+
+			return nil, models.NewRateLimitError(resetAt, limit, remaining)
+		}
 		return nil, fmt.Errorf("failed to execute request: %v, body: %v", resp.Status, string(body))
 	}
 
@@ -81,7 +111,7 @@ func (c *Claude) handleStreamResponse(ctx context.Context, resp *http.Response) 
 				switch cast := processed.(type) {
 				case string:
 					c.debugFullStreamMsg += cast
-					ancli.Okf("full message: '%v'\n--\n", c.debugFullStreamMsg)
+					ancli.Okf("new bit: %v, full message: '%v'\n--\n", cast, c.debugFullStreamMsg)
 				}
 			}
 			outChan <- processed
@@ -182,7 +212,7 @@ func (c *Claude) constructRequest(ctx context.Context, chat models.Chat) (*http.
 	msgCopy := make([]models.Message, len(chat.Messages))
 	copy(msgCopy, chat.Messages)
 	claudifiedMsgs := claudifyMessages(msgCopy)
-	if c.debug {
+	if c.debug || misc.Truthy(os.Getenv("DEBUG_CLAUDIFIED_MSGS")) {
 		ancli.PrintOK(
 			fmt.Sprintf(
 				"claudified messages: %+v\n",
@@ -220,4 +250,66 @@ func (c *Claude) constructRequest(ctx context.Context, chat models.Chat) (*http.
 		ancli.PrintOK(fmt.Sprintf("Request: %+v\n", req))
 	}
 	return req, nil
+}
+
+func (c *Claude) CountInputTokens(ctx context.Context, chat models.Chat) (int, error) {
+	msgCopy := make([]models.Message, len(chat.Messages))
+	copy(msgCopy, chat.Messages)
+	claudifiedMsgs := claudifyMessages(msgCopy)
+
+	reqData := claudeReq{
+		Model:    c.Model,
+		Messages: claudifiedMsgs,
+	}
+
+	jsonData, err := json.Marshal(reqData)
+	if err != nil {
+		return 0, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	countURL := strings.TrimSuffix(c.Url, "/messages") + "/messages/count_tokens"
+	if !strings.Contains(countURL, "anthropic.com") {
+		// In tests or when using a custom URL, fall back to heuristic counting
+		var count int
+		for _, m := range chat.Messages {
+			count += len(strings.Split(m.Content, " "))
+		}
+		heuristic := int(float64(count) * heuristicTokenCountFactor)
+		c.amInputTokens = heuristic
+		return heuristic, nil
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, countURL, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return 0, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", c.apiKey)
+	req.Header.Set("anthropic-version", c.AnthropicVersion)
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("failed to execute request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return 0, fmt.Errorf("token count request failed: %v, body: %v", resp.Status, string(body))
+	}
+
+	var tokenResp struct {
+		InputTokens int `json:"input_tokens"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+		return 0, fmt.Errorf("failed to decode token count response: %w", err)
+	}
+
+	if c.debug || c.PrintInputCount {
+		ancli.Okf("Token count: %d\n", tokenResp.InputTokens)
+	}
+
+	c.amInputTokens = tokenResp.InputTokens
+	return tokenResp.InputTokens, nil
 }

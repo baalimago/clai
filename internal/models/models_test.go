@@ -1,6 +1,44 @@
 package models
 
-import "testing"
+import (
+	"testing"
+)
+
+func TestLastOfRole(t *testing.T) {
+	chat := Chat{Messages: []Message{
+		{Role: "system", Content: "sys"},
+		{Role: "user", Content: "first"},
+		{Role: "admin", Content: "admin-msg"},
+		{Role: "user", Content: "last"},
+	}}
+
+	msg, i, err := chat.LastOfRole("admin")
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if msg.Content != "admin-msg" {
+		t.Errorf("expected 'admin-msg', got %q", msg.Content)
+	}
+	if i != 2 {
+		t.Errorf("expected '2', got %v", i)
+	}
+
+	msg, i, err = chat.LastOfRole("user")
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if msg.Content != "last" {
+		t.Errorf("expected 'last', got %q", msg.Content)
+	}
+	if i != 3 {
+		t.Errorf("expected '3', got %v", i)
+	}
+
+	_, _, err = chat.LastOfRole("nonexistent")
+	if err == nil {
+		t.Error("expected error for nonexistent role")
+	}
+}
 
 func TestFirstSystemMessage(t *testing.T) {
 	chat := Chat{Messages: []Message{

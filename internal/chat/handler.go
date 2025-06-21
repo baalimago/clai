@@ -63,13 +63,20 @@ type ChatHandler struct {
 	prompt      string
 	convDir     string
 	config      NotCyclicalImport
+	raw         bool
 }
 
 func (q *ChatHandler) Query(ctx context.Context) error {
 	return q.actOnSubCmd(ctx)
 }
 
-func New(q models.ChatQuerier, args string, preMessages []models.Message, conf NotCyclicalImport) (*ChatHandler, error) {
+func New(q models.ChatQuerier,
+	confDir,
+	args string,
+	preMessages []models.Message,
+	conf NotCyclicalImport,
+	raw bool,
+) (*ChatHandler, error) {
 	username := "user"
 	debug := misc.Truthy(os.Getenv("DEBUG"))
 	argsArr := strings.Split(args, " ")
@@ -93,6 +100,7 @@ func New(q models.ChatQuerier, args string, preMessages []models.Message, conf N
 		preMessages: preMessages,
 		convDir:     path.Join(claiDir, "conversations"),
 		config:      conf,
+		raw:         raw,
 	}, nil
 }
 
@@ -165,7 +173,7 @@ func (cq *ChatHandler) findChatByID(potentialChatIdx string) (models.Chat, error
 
 func (cq *ChatHandler) printChat(chat models.Chat) error {
 	for _, message := range chat.Messages {
-		err := utils.AttemptPrettyPrint(message, cq.username, false)
+		err := utils.AttemptPrettyPrint(message, cq.username, cq.raw)
 		if err != nil {
 			return fmt.Errorf("failed to print chat message: %w", err)
 		}
@@ -331,9 +339,9 @@ func (cq *ChatHandler) loop(ctx context.Context) error {
 	for {
 		lastMessage := cq.chat.Messages[len(cq.chat.Messages)-1]
 		if lastMessage.Role == "user" {
-			utils.AttemptPrettyPrint(lastMessage, cq.username, false)
+			utils.AttemptPrettyPrint(lastMessage, cq.username, cq.raw)
 		} else {
-			fmt.Printf("%v(%v%v): ", ancli.ColoredMessage(ancli.CYAN, cq.username), cq.profileInfo(), " | [e]xit/[q]uit")
+			fmt.Printf("%v(%v%v): ", ancli.ColoredMessage(ancli.CYAN, cq.username), cq.profileInfo(), " | [q]uit")
 
 			userInput, err := utils.ReadUserInput()
 			if err != nil {

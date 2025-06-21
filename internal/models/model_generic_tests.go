@@ -10,6 +10,8 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
+// These tests are used in other places of code, an attempt at generic testing
+// to ensure implementation standards are kept
 func Querier_Context_Test(t *testing.T, q Querier) {
 	testboil.ReturnsOnContextCancel(t, func(ctx context.Context) {
 		q.Query(ctx)

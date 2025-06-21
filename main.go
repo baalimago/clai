@@ -71,6 +71,7 @@ Examples:
 `
 
 func main() {
+	ancli.SetupSlog()
 	if misc.Truthy(os.Getenv("DEBUG_CPU")) {
 		f, err := os.Create("cpu_profile.prof")
 		ok := true
