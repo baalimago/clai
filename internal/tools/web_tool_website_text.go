@@ -23,7 +23,7 @@ var WebsiteText = WebsiteTextTool{
 				Description: "The URL of the website to retrieve the text content from.",
 			},
 		},
-		Required: []string{"url"},
+		Required: &[]string{"url"},
 	},
 }
 

@@ -29,7 +29,7 @@ var RowsBetween = RowsBetweenTool{
 				Description: "Last line to include (1-based, inclusive).",
 			},
 		},
-		Required: []string{"file_path", "start_line", "end_line"},
+		Required: &[]string{"file_path", "start_line", "end_line"},
 	},
 }
 

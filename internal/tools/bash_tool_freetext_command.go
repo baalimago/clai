@@ -19,7 +19,7 @@ var FreetextCmd = FreetextCmdTool{
 				Description: "The freetext comand. May be any string. Will return error on non-zero exit code.",
 			},
 		},
-		Required: []string{"command"},
+		Required: &[]string{"command"},
 	},
 }
 

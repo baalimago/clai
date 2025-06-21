@@ -19,7 +19,7 @@ var LineCount = LineCountTool{
 				Description: "The path to the file to count lines of.",
 			},
 		},
-		Required: []string{"file_path"},
+		Required: &[]string{"file_path"},
 	},
 }
 

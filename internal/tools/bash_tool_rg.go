@@ -34,7 +34,7 @@ var RipGrep = RipGrepTool{
 				Description: "Whether to search hidden files and directories.",
 			},
 		},
-		Required: []string{"pattern"},
+		Required: &[]string{"pattern"},
 	},
 }
 

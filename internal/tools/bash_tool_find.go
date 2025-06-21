@@ -30,7 +30,7 @@ var Find = FindTool{
 				Description: "The maximum depth of directories to search.",
 			},
 		},
-		Required: []string{"directory"},
+		Required: &[]string{"directory"},
 	},
 }
 

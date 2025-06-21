@@ -27,7 +27,7 @@ var WriteFile = WriteFileTool{
 				Description: "If true, append to the file instead of overwriting it.",
 			},
 		},
-		Required: []string{"file_path", "content"},
+		Required: &[]string{"file_path", "content"},
 	},
 }
 

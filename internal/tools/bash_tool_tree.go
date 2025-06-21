@@ -22,7 +22,7 @@ var FileTree = FileTreeTool{
 				Description: "The depth of the tree to display.",
 			},
 		},
-		Required: []string{"directory"},
+		Required: &[]string{"directory"},
 	},
 }
 

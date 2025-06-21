@@ -17,7 +17,7 @@ var Git = GitTool{
 			"operation": {
 				Type:        "string",
 				Description: "The git operation to run.",
-				Enum:        []string{"log", "diff", "show", "status", "blame"},
+				Enum:        &[]string{"log", "diff", "show", "status", "blame"},
 			},
 			"file": {
 				Type:        "string",
@@ -40,7 +40,7 @@ var Git = GitTool{
 				Description: "Directory containing the git repository (optional).",
 			},
 		},
-		Required: []string{"operation"},
+		Required: &[]string{"operation"},
 	},
 }
 

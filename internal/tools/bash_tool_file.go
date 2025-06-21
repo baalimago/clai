@@ -22,7 +22,7 @@ var FileType = FileTypeTool{
 				Description: "Whether to display the MIME type of the file.",
 			},
 		},
-		Required: []string{"file_path"},
+		Required: &[]string{"file_path"},
 	},
 }
 

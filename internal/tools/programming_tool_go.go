@@ -27,7 +27,7 @@ var Go = GoTool{
 				Description: "The directory to run the command in (optional, defaults to current directory).",
 			},
 		},
-		Required: []string{"command"},
+		Required: &[]string{"command"},
 	},
 }
 

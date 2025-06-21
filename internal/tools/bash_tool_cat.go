@@ -30,7 +30,7 @@ var Cat = CatTool{
 				Description: "Suppress repeated empty output lines.",
 			},
 		},
-		Required: []string{"file"},
+		Required: &[]string{"file"},
 	},
 }
 

@@ -29,8 +29,22 @@ type Specification struct {
 
 type InputSchema struct {
 	Type       string                     `json:"type"`
-	Required   []string                   `json:"required"`
-	Properties map[string]ParameterObject `json:"properties"`
+	Required   *[]string                  `json:"required"`
+	Properties map[string]ParameterObject `json:"properties,omitempty"`
+}
+
+func (is *InputSchema) IsEmpty() bool {
+	return is != nil && is.Type == "object" && is.Required == nil && len(is.Properties) == 0
+}
+
+// IsOk checks if the input schema is ok
+func (is *InputSchema) IsOk() bool {
+	for _, p := range is.Properties {
+		if p.Type == "array" && p.Enum == nil {
+			return false
+		}
+	}
+	return true
 }
 
 type Input map[string]any
@@ -69,9 +83,9 @@ func (c Call) JSON() string {
 }
 
 type ParameterObject struct {
-	Type        string   `json:"type"`
-	Description string   `json:"description"`
-	Enum        []string `json:"enum,omitempty"`
+	Type        string    `json:"type"`
+	Description string    `json:"description"`
+	Enum        *[]string `json:"enum,omitempty"`
 }
 
 type McpServerConfig map[string]McpServer

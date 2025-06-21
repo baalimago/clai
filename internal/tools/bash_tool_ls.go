@@ -26,7 +26,7 @@ var LS = LsTool{
 				Description: "Use a long listing format.",
 			},
 		},
-		Required: []string{"directory"},
+		Required: &[]string{"directory"},
 	},
 }
 

@@ -130,7 +130,7 @@ func TestWriteFileTool_Specification(t *testing.T) {
 		t.Errorf("Unexpected description: %s", userFunc.Description)
 	}
 
-	if len(userFunc.Inputs.Required) != 2 || userFunc.Inputs.Required[0] != "file_path" || userFunc.Inputs.Required[1] != "content" {
+	if len(*userFunc.Inputs.Required) != 2 || (*userFunc.Inputs.Required)[0] != "file_path" || (*userFunc.Inputs.Required)[1] != "content" {
 		t.Errorf("Unexpected required inputs: %v", userFunc.Inputs.Required)
 	}
 

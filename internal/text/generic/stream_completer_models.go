@@ -34,9 +34,9 @@ type ToolSuper struct {
 }
 
 type Tool struct {
-	Name        string            `json:"name"`
-	Description string            `json:"description"`
-	Inputs      tools.InputSchema `json:"parameters"`
+	Name        string             `json:"name"`
+	Description string             `json:"description"`
+	Inputs      *tools.InputSchema `json:"parameters,omitempty"`
 }
 
 type chatCompletionChunk struct {

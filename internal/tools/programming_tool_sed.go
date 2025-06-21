@@ -37,7 +37,7 @@ var Sed = SedTool{
 				Description: "Optional. Last line to modify (1-based, inclusive).",
 			},
 		},
-		Required: []string{"file_path", "pattern", "repl"},
+		Required: &[]string{"file_path", "pattern", "repl"},
 	},
 }
 
