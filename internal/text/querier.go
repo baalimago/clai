@@ -84,6 +84,7 @@ func (q *Querier[C]) Query(ctx context.Context) error {
 				}
 				// Replace existing chat with summarized chat
 				q.chat = summarizedChat
+
 				// Retry by using the new chat and querying once more. Will fill call stack.
 				q.reset()
 				return q.Query(ctx)
@@ -264,6 +265,7 @@ func (q *Querier[C]) reset() {
 	q.line = ""
 	q.lineCount = 0
 	q.hasPrinted = false
+	q.rateLimitRetries = 0
 }
 
 func (q *Querier[C]) TextQuery(ctx context.Context, chat models.Chat) (models.Chat, error) {
