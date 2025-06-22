@@ -31,7 +31,7 @@ Every 'temporary conversation' is also saved as a chat, so it's possible to cont
 Many vendors support function calling/tooling.
 This basically means that the AI model will ask _your local machine_ to run some command, then it will analyze the output of said command.
 
-See all the currently available tools [here](./internal/tools/), please create an issue if you'd like to see some tool added.
+See all the currently available tools [here](./internal/tools/).
 
 ```bash
 clai -t q  `# Specify you wish to enable tools with -t/-tools` \
@@ -41,7 +41,7 @@ clai -t q  `# Specify you wish to enable tools with -t/-tools` \
 ### Chatting
 
 ```bash
-clai -chat-model claude-3-opus-20240229 `  # Using some other model` \
+clai -chat-model claude-sonnet-4-20250514 `  # Using some other model` \
     chat new Lets have a conversation about Hegel
 ```
 
@@ -60,34 +60,13 @@ clai c continue Lets_have_a_conversation_about
 clai c continue 1 kant is better `# Continue some previous chat with message `
 ```
 
-### Globs
-
-```bash
-clai -raw `# Don't format output as markdown` \
-    glob '*.go' Generate a README for this project > README.md
-```
-
-The `-raw` flag will ensure that the output stays what the model outputs, without `glow` or animations.
-
-Note that the glob mode also can be used by using the `-g` flag, as in, `clai -g '<glob>' query/chat/photo/cmd`.
-Glob-as-arg will be deprecated at some point.
-
-### Cmd
-
-```bash
-clai cmd to show all files in home
-```
-
-This works like many popular command-suggestion LLM tools.
-Flags work with this mode as well, for example `clai -re -g 'some_file.go' cmd to cleanup this messy code`, but it's not guaranteed the LLM will return an executable command.
-
 ### Profiles
 
 1. `clai setup -> 2 -> n`
 1. Write some profile, example 'gopher'
-1. `clai -p gopher -g './internal/moneymaker/handler_test.go' q Fix the tests in this file`
+1. `cat main.go | clai -profile gopher q Fix the tests in this file: `
 
-See examples [here](./examples/profiles/), try them out with `go run . -prp ./examples/profiles/cody.json q What is your purpose\?`
+See examples [here](./examples/profiles/), try them out with `go run . -profile-path ./examples/profiles/cody.json q What is your purpose\?`
 
 Profiles allow you to preconfigure certain fields passed to the LLMs, most notably the prompt and which tools to use.
 This, in turn, enables you to quickly swap between different 'LLM-modes'.
