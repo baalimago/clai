@@ -107,7 +107,7 @@ func TestCreateConfigDir(t *testing.T) {
 	configDirPath := filepath.Join(t.TempDir(), ".clai")
 
 	// Test creating a new config directory
-	err := createConfigDir(configDirPath)
+	err := CreateConfigDir(configDirPath)
 	if err != nil {
 		t.Errorf("Unexpected error creating config directory: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestCreateConfigDir(t *testing.T) {
 	}
 
 	// Test creating an existing config directory
-	err = createConfigDir(configDirPath)
+	err = CreateConfigDir(configDirPath)
 	if err != nil {
 		t.Errorf("Unexpected error creating existing config directory: %v", err)
 	}

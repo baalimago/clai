@@ -1,6 +1,7 @@
 package setup
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"path"
@@ -10,6 +11,7 @@ import (
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/utils"
+	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
 type config struct {
@@ -25,12 +27,12 @@ const (
 	del
 	newaction
 	confWithEditor
+	pasteNew
 )
 
 var defaultMcpServer = tools.McpServer{
-	Command: "echo",
-	Args:    []string{"-n", "hello", "from", "mcp"},
-	Env:     map[string]string{},
+	Command: "npx",
+	Args:    []string{"-y", "@modelcontextprotocol/server-everything"},
 }
 
 func (a action) String() string {
@@ -45,6 +47,8 @@ func (a action) String() string {
 		return "create [n]ew"
 	case confWithEditor:
 		return "configure with [e]ditor"
+	case pasteNew:
+		return "[p]aste new config"
 	default:
 		return "unset"
 	}
@@ -116,10 +120,7 @@ func Run() error {
 	case "3":
 		mcpServersDir := filepath.Join(claiDir, "mcpServers")
 		if _, err := os.Stat(mcpServersDir); os.IsNotExist(err) {
-			if err := os.MkdirAll(mcpServersDir, os.ModePerm); err != nil {
-				return fmt.Errorf("failed to create mcpServers dir: %w", err)
-			}
-			if err := utils.CreateFile(filepath.Join(mcpServersDir, "example.json"), &defaultMcpServer); err != nil {
+			if err := utils.CreateFile(filepath.Join(mcpServersDir, "everything.json"), &defaultMcpServer); err != nil {
 				return fmt.Errorf("failed to create default mcp server config: %w", err)
 			}
 		}
@@ -128,7 +129,7 @@ func Run() error {
 			return fmt.Errorf("failed to get configs files: %w", err)
 		}
 		configs = t
-		qAct, err := queryForAction([]action{conf, del, newaction, confWithEditor})
+		qAct, err := queryForAction([]action{conf, del, newaction, confWithEditor, pasteNew})
 		if err != nil {
 			return fmt.Errorf("failed to find action: %w", err)
 		}
@@ -139,6 +140,15 @@ func Run() error {
 				return fmt.Errorf("failed to create mcp server file: %w", err)
 			}
 			configs = []config{c}
+			a = conf
+		}
+
+		if a == pasteNew {
+			pastedConfigs, err := pasteMcpServerConfig(mcpServersDir)
+			if err != nil {
+				return fmt.Errorf("failed to paste mcp server config: %w", err)
+			}
+			configs = pastedConfigs
 			a = conf
 		}
 	case "q", "quit", "e", "exit":
@@ -215,4 +225,44 @@ OUTER:
 	}
 
 	return configs, nil
+}
+
+func pasteMcpServerConfig(mcpConfDir string) ([]config, error) {
+	ancli.Noticef("Paste your MCP server configuration below.")
+	ancli.Noticef("Press Ctrl+D when finished (or type 'EOF' on a new line):")
+
+	var lines []string
+	scanner := bufio.NewScanner(os.Stdin)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "EOF" {
+			break
+		}
+		lines = append(lines, line)
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("error reading input: %w", err)
+	}
+
+	pastedConfig := strings.Join(lines, "\n")
+	if strings.TrimSpace(pastedConfig) == "" {
+		return nil, fmt.Errorf("no configuration provided")
+	}
+
+	serverNames, err := ParseAndAddMcpServer(mcpConfDir, pastedConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse mcp server: %w", err)
+	}
+
+	ret := make([]config, 0)
+	for _, s := range serverNames {
+		ret = append(ret, config{
+			name:     s,
+			filePath: filepath.Join(mcpConfDir, fmt.Sprintf("%v.json", s)),
+		})
+	}
+
+	return ret, nil
 }

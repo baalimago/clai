@@ -12,7 +12,7 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
-func createConfigDir(configPath string) error {
+func CreateConfigDir(configPath string) error {
 	requiredDirs := []string{"conversations", "profiles", "mcpServers"}
 	for _, d := range requiredDirs {
 		err := ensureDirExists(configPath, d)
@@ -71,7 +71,7 @@ func LoadConfigFromFile[T any](
 		ancli.PrintOK(fmt.Sprintf("attempting to load file: %v%v\n", configDirPath, configFileName))
 	}
 
-	err := createConfigDir(configDirPath)
+	err := CreateConfigDir(configDirPath)
 	if err != nil {
 		var nilVal T
 		return nilVal, err
