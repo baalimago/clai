@@ -93,6 +93,19 @@ func main() {
 	if err != nil {
 		ancli.PrintWarn(fmt.Sprintf("failed to handle oopsies, but as we didn't panic, it should be benign. Error: %v\n", err))
 	}
+
+	configDirPath, err := utils.GetClaiConfigDir()
+	if err != nil {
+		ancli.Errf("failed to find config dir path: %v", err)
+		os.Exit(1)
+	}
+
+	err = utils.CreateConfigDir(configDirPath)
+	if err != nil {
+		ancli.Errf("failed to find config dir path: %v", err)
+		os.Exit(1)
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	querier, err := internal.Setup(ctx, usage)
 	if err != nil {

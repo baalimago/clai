@@ -49,8 +49,11 @@ func queryForAction(options []action) (action, error) {
 		if slices.Contains(options, confWithEditor) {
 			ret = confWithEditor
 		}
+	case "p", "pasteNew":
+		ret = pasteNew
 	case "q", "quit":
 		return unset, utils.ErrUserInitiatedExit
+
 	}
 
 	if ret == unset {
