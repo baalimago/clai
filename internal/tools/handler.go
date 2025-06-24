@@ -19,21 +19,21 @@ func Init() {
 		return
 	}
 	Registry.hasBeenInit = true
-	// Registry.Set("file_tree", FileTree)
-	// Registry.Set("cat", Cat)
-	// Registry.Set("find", Find)
-	// Registry.Set("file_type", FileType)
-	// Registry.Set("ls", LS)
-	// Registry.Set("website_text", WebsiteText)
-	// Registry.Set("rg", RipGrep)
-	// Registry.Set("go", Go)
-	// Registry.Set("write_file", WriteFile)
-	// Registry.Set("freetext_command", FreetextCmd)
-	// Registry.Set("sed", Sed)
-	// Registry.Set("rows_between", RowsBetween)
-	// Registry.Set("line_count", LineCount)
-	// Registry.Set("git", Git)
-	// Registry.Set("recall", Recall)
+	Registry.Set("file_tree", FileTree)
+	Registry.Set("cat", Cat)
+	Registry.Set("find", Find)
+	Registry.Set("file_type", FileType)
+	Registry.Set("ls", LS)
+	Registry.Set("website_text", WebsiteText)
+	Registry.Set("rg", RipGrep)
+	Registry.Set("go", Go)
+	Registry.Set("write_file", WriteFile)
+	Registry.Set("freetext_command", FreetextCmd)
+	Registry.Set("sed", Sed)
+	Registry.Set("rows_between", RowsBetween)
+	Registry.Set("line_count", LineCount)
+	Registry.Set("git", Git)
+	Registry.Set("recall", Recall)
 }
 
 // Invoke the call, and gather both error and output in the same string
