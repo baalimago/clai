@@ -22,19 +22,30 @@ type Specification struct {
 	Description string `json:"description,omitempty"`
 	// Format is the same, but name of the field different. So this way, each
 	// vendor can set their own field name
-	Inputs *InputSchema `json:"input_schema,omitempty"`
+	Inputs InputSchema `json:"input_schema"`
 	// Chatgpt wants this
 	Arguments string `json:"arguments,omitempty"`
 }
 
 type InputSchema struct {
 	Type       string                     `json:"type"`
-	Required   *[]string                  `json:"required"`
-	Properties map[string]ParameterObject `json:"properties,omitempty"`
+	Required   []string                   `json:"required"`
+	Properties map[string]ParameterObject `json:"properties"`
 }
 
-func (is *InputSchema) IsEmpty() bool {
-	return is != nil && is.Type == "object" && is.Required == nil && len(is.Properties) == 0
+// Patch the input schema, making it compatible with mcp server
+// everything https://github.com/modelcontextprotocol/servers/tree/main/src/everything
+// which I'm calibrating towards
+func (is *InputSchema) Patch() {
+	if is.Required == nil {
+		is.Required = make([]string, 0)
+	}
+	if is.Properties == nil {
+		is.Properties = make(map[string]ParameterObject)
+	}
+	if is.Type == "" {
+		is.Type = "object"
+	}
 }
 
 // IsOk checks if the input schema is ok
@@ -53,8 +64,30 @@ type Call struct {
 	ID       string        `json:"id,omitempty"`
 	Name     string        `json:"name,omitempty"`
 	Type     string        `json:"type,omitempty"`
-	Inputs   Input         `json:"inputs,omitempty"`
+	Inputs   Input         `json:"inputs"`
 	Function Specification `json:"function,omitempty"`
+}
+
+// Patch the call, filling structs and initializing fields so that
+// all vendors become as happy as they can be, padding initialization
+// inconsistencies
+func (c *Call) Patch() {
+	if c.Type == "" {
+		c.Type = "function"
+	}
+	if c.Function.Name == "" {
+		if c.Name == "" {
+			c.Name = "EMPTY-STRING"
+		}
+		c.Function.Name = c.Name
+	}
+	if c.Inputs == nil {
+		c.Inputs = make(Input)
+	}
+	c.Function.Inputs.Patch()
+	if c.Function.Arguments == "" {
+		c.Function.Arguments = c.JSON()
+	}
 }
 
 // PrettyPrint the call, showing name and what input params is used
@@ -75,7 +108,7 @@ func (c Call) PrettyPrint() string {
 }
 
 func (c Call) JSON() string {
-	json, err := json.MarshalIndent(c, "", " ")
+	json, err := json.Marshal(c)
 	if err != nil {
 		return fmt.Sprintf("ERROR: Failed to unmarshal: %v", err)
 	}

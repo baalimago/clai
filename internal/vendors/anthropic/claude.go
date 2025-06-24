@@ -11,7 +11,7 @@ import (
 type Claude struct {
 	Model              string                `json:"model"`
 	MaxTokens          int                   `json:"max_tokens"`
-	Url                string                `json:"url"`
+	URL                string                `json:"url"`
 	AnthropicVersion   string                `json:"anthropic-version"`
 	AnthropicBeta      string                `json:"anthropic-beta"`
 	Temperature        float64               `json:"temperature"`
@@ -26,14 +26,14 @@ type Claude struct {
 	tools              []tools.Specification `json:"-"`
 	functionName       string                `json:"-"`
 	functionID         string                `json:"-"`
-	functionJson       string                `json:"-"`
+	functionJSON       string                `json:"-"`
 	contentBlockType   string                `json:"-"`
 	amInputTokens      int                   `json:"-"`
 }
 
 var ClaudeDefault = Claude{
-	Model:            "claude-4-sonnet-latest",
-	Url:              ClaudeURL,
+	Model:            "claude-sonnet-4-20250514",
+	URL:              ClaudeURL,
 	AnthropicVersion: "2023-06-01",
 	AnthropicBeta:    "",
 	Temperature:      0.7,

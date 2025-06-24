@@ -64,14 +64,14 @@ func (c *Claude) handleContentBlockDelta(deltaToken string) models.CompletionEve
 
 func (c *Claude) handleInputJSONDelta(delta Delta) models.CompletionEvent {
 	partial := delta.PartialJson
-	c.functionJson += partial
+	c.functionJSON += partial
 	return partial
 }
 
 func (c *Claude) handleContentBlockStop(blockStop string) models.CompletionEvent {
 	defer func() {
 		c.debugFullStreamMsg = ""
-		c.functionJson = ""
+		c.functionJSON = ""
 	}()
 	var block ToolUseContentBlock
 	blockStop = trimDataPrefix(blockStop)
@@ -82,8 +82,10 @@ func (c *Claude) handleContentBlockStop(blockStop string) models.CompletionEvent
 	switch c.contentBlockType {
 	case "tool_use":
 		var inputs tools.Input
-		if err := json.Unmarshal([]byte(c.functionJson), &inputs); err != nil {
-			return fmt.Errorf("failed to unmarshal functionJson: %v, error is: %w", c.functionJson, err)
+		if c.functionJSON != "" {
+			if err := json.Unmarshal([]byte(c.functionJSON), &inputs); err != nil {
+				return fmt.Errorf("failed to unmarshal functionJSON: %v, error is: %w", c.functionJSON, err)
+			}
 		}
 		return tools.Call{
 			Name:   c.functionName,

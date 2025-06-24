@@ -212,7 +212,7 @@ func (c *Claude) constructRequest(ctx context.Context, chat models.Chat) (*http.
 	msgCopy := make([]models.Message, len(chat.Messages))
 	copy(msgCopy, chat.Messages)
 	claudifiedMsgs := claudifyMessages(msgCopy)
-	if c.debug || misc.Truthy(os.Getenv("DEBUG_CLAUDIFIED_MSGS")) {
+	if misc.Truthy(os.Getenv("DEBUG_CLAUDIFIED_MSGS")) {
 		ancli.PrintOK(
 			fmt.Sprintf(
 				"claudified messages: %+v\n",
@@ -239,7 +239,7 @@ func (c *Claude) constructRequest(ctx context.Context, chat models.Chat) (*http.
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal ClaudeReq: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.Url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.URL, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -267,7 +267,7 @@ func (c *Claude) CountInputTokens(ctx context.Context, chat models.Chat) (int, e
 		return 0, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	countURL := strings.TrimSuffix(c.Url, "/messages") + "/messages/count_tokens"
+	countURL := strings.TrimSuffix(c.URL, "/messages") + "/messages/count_tokens"
 	if !strings.Contains(countURL, "anthropic.com") {
 		// In tests or when using a custom URL, fall back to heuristic counting
 		var count int

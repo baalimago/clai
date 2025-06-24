@@ -13,7 +13,7 @@ type SedTool Specification
 var Sed = SedTool{
 	Name:        "sed",
 	Description: "Perform a basic regex substitution on each line or within a specific line range of a file (like 'sed s/pattern/repl/g'). Overwrites the file.",
-	Inputs: &InputSchema{
+	Inputs: InputSchema{
 		Type: "object",
 		Properties: map[string]ParameterObject{
 			"file_path": {
@@ -37,7 +37,7 @@ var Sed = SedTool{
 				Description: "Optional. Last line to modify (1-based, inclusive).",
 			},
 		},
-		Required: &[]string{"file_path", "pattern", "repl"},
+		Required: []string{"file_path", "pattern", "repl"},
 	},
 }
 

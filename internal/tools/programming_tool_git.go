@@ -11,7 +11,7 @@ type GitTool Specification
 var Git = GitTool{
 	Name:        "git",
 	Description: "Run read-only git commands like log, diff, show, blame and status.",
-	Inputs: &InputSchema{
+	Inputs: InputSchema{
 		Type: "object",
 		Properties: map[string]ParameterObject{
 			"operation": {
@@ -40,7 +40,7 @@ var Git = GitTool{
 				Description: "Directory containing the git repository (optional).",
 			},
 		},
-		Required: &[]string{"operation"},
+		Required: []string{"operation"},
 	},
 }
 

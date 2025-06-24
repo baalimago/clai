@@ -16,7 +16,7 @@ type RecallTool Specification
 var Recall = RecallTool{
 	Name:        "recall",
 	Description: "Recall a message from a stored conversation by name and index.",
-	Inputs: &InputSchema{
+	Inputs: InputSchema{
 		Type: "object",
 		Properties: map[string]ParameterObject{
 			"conversation": {
@@ -28,7 +28,7 @@ var Recall = RecallTool{
 				Description: "Index of the message to retrieve",
 			},
 		},
-		Required: &[]string{"conversation", "index"},
+		Required: []string{"conversation", "index"},
 	},
 }
 

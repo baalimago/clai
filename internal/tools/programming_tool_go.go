@@ -11,7 +11,7 @@ type GoTool Specification
 var Go = GoTool{
 	Name:        "go",
 	Description: "Run Go commands like 'go test' and 'go run' to compile, test, and run Go programs. Run 'go help' to get details of this tool.",
-	Inputs: &InputSchema{
+	Inputs: InputSchema{
 		Type: "object",
 		Properties: map[string]ParameterObject{
 			"command": {
@@ -27,7 +27,7 @@ var Go = GoTool{
 				Description: "The directory to run the command in (optional, defaults to current directory).",
 			},
 		},
-		Required: &[]string{"command"},
+		Required: []string{"command"},
 	},
 }
 

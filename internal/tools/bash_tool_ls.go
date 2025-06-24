@@ -10,7 +10,7 @@ type LsTool Specification
 var LS = LsTool{
 	Name:        "ls",
 	Description: "List the files in a directory. Uses the Linux command 'ls'.",
-	Inputs: &InputSchema{
+	Inputs: InputSchema{
 		Type: "object",
 		Properties: map[string]ParameterObject{
 			"directory": {
@@ -26,7 +26,7 @@ var LS = LsTool{
 				Description: "Use a long listing format.",
 			},
 		},
-		Required: &[]string{"directory"},
+		Required: []string{"directory"},
 	},
 }
 

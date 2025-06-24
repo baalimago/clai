@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"reflect"
 
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
@@ -34,15 +33,9 @@ func (g *StreamCompleter) InternalRegisterTool(tool tools.LLMTool) {
 }
 
 func convertToGenericTool(tool tools.Specification) Tool {
-	var inputs *tools.InputSchema
-	// For some reason, the struct sometimes is created but zeroed, even though omitempty is set
-	isZero := reflect.ValueOf(tool.Inputs).IsZero()
-	if !isZero {
-		inputs = tool.Inputs
-	}
 	return Tool{
 		Name:        tool.Name,
 		Description: tool.Description,
-		Inputs:      inputs,
+		Inputs:      tool.Inputs,
 	}
 }

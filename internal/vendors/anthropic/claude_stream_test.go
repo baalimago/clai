@@ -75,7 +75,7 @@ data: {"type": "message_stop"}
 
 	// Use the test server's URL as the backend URL in your code
 	c := Claude{
-		Url: testServer.URL,
+		URL: testServer.URL,
 	}
 	t.Setenv("ANTHROPIC_API_KEY", "somekey")
 	err := c.Setup()
@@ -132,7 +132,7 @@ func Test_context(t *testing.T) {
 
 	// Use the test server's URL as the backend URL in your code
 	c := Claude{
-		Url: testServer.URL,
+		URL: testServer.URL,
 	}
 	t.Setenv("ANTHROPIC_API_KEY", "somekey")
 	err := c.Setup()

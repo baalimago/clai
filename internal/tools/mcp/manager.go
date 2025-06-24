@@ -87,18 +87,16 @@ func handleServer(ctx context.Context, ev ControlEvent, readyChan chan struct{})
 	}
 
 	for _, t := range listRes.Tools {
-		var inputs *tools.InputSchema
-		if t.InputSchema != nil && !t.InputSchema.IsEmpty() {
-			inputs = t.InputSchema
-		}
-		if inputs != nil && !inputs.IsOk() {
+		t.InputSchema.Patch()
+
+		if !t.InputSchema.IsOk() {
 			ancli.Warnf("tool: 'mcp_%v' has issues that the LLM will complain about, skipping\n", t.Name)
 			continue
 		}
 		spec := tools.Specification{
 			Name:        fmt.Sprintf("mcp_%s", t.Name),
 			Description: t.Description,
-			Inputs:      inputs,
+			Inputs:      t.InputSchema,
 		}
 		mt := &mcpTool{
 			remoteName: t.Name,

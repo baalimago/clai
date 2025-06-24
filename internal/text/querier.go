@@ -318,22 +318,9 @@ func (q *Querier[C]) handleFunctionCall(ctx context.Context, call tools.Call) er
 	// should be handeled mid-stream, but still requires multiple rounds of user input
 	q.postProcess()
 
-	// Fill some fields to make the chatgpt function spec happy
-	if call.ID == "" {
-		call.ID = "now-chatgpt-is-happy"
-	}
-	if call.Type == "" {
-		call.Type = "function"
-	}
-	if call.Function.Name == "" {
-		if call.Name == "" {
-			call.Name = "EMPTY-STRING"
-		}
-		call.Function.Name = call.Name
-	}
-	if call.Function.Arguments == "" {
-		call.Function.Arguments = call.JSON()
-	}
+	call.Patch()
+	call.Function.Inputs.Patch()
+
 	assistantToolsCall := models.Message{
 		Role:      "assistant",
 		Content:   call.PrettyPrint(),
