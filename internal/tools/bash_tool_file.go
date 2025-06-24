@@ -10,7 +10,7 @@ type FileTypeTool Specification
 var FileType = FileTypeTool{
 	Name:        "file_type",
 	Description: "Determine the file type of a given file. Uses the linux command 'file'.",
-	Inputs: &InputSchema{
+	Inputs: InputSchema{
 		Type: "object",
 		Properties: map[string]ParameterObject{
 			"file_path": {
@@ -22,7 +22,7 @@ var FileType = FileTypeTool{
 				Description: "Whether to display the MIME type of the file.",
 			},
 		},
-		Required: &[]string{"file_path"},
+		Required: []string{"file_path"},
 	},
 }
 

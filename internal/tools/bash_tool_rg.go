@@ -10,7 +10,7 @@ type RipGrepTool Specification
 var RipGrep = RipGrepTool{
 	Name:        "rg",
 	Description: "Search for a pattern in files using ripgrep.",
-	Inputs: &InputSchema{
+	Inputs: InputSchema{
 		Type: "object",
 		Properties: map[string]ParameterObject{
 			"pattern": {
@@ -34,7 +34,7 @@ var RipGrep = RipGrepTool{
 				Description: "Whether to search hidden files and directories.",
 			},
 		},
-		Required: &[]string{"pattern"},
+		Required: []string{"pattern"},
 	},
 }
 

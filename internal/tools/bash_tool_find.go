@@ -10,7 +10,7 @@ type FindTool Specification
 var Find = FindTool{
 	Name:        "find",
 	Description: "Search for files in a directory hierarchy. Uses linux command 'find'.",
-	Inputs: &InputSchema{
+	Inputs: InputSchema{
 		Type: "object",
 		Properties: map[string]ParameterObject{
 			"directory": {
@@ -30,7 +30,7 @@ var Find = FindTool{
 				Description: "The maximum depth of directories to search.",
 			},
 		},
-		Required: &[]string{"directory"},
+		Required: []string{"directory"},
 	},
 }
 

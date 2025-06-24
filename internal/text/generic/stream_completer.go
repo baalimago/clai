@@ -204,7 +204,7 @@ func (s *StreamCompleter) doToolsCall() models.CompletionEvent {
 
 	userFunc := tools.ToolFromName(s.toolsCallName)
 	userFunc.Arguments = s.toolsCallArgsString
-	userFunc.Inputs = nil
+	userFunc.Inputs = tools.InputSchema{}
 
 	return tools.Call{
 		ID:       s.toolsCallID,

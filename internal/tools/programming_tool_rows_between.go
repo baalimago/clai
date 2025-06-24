@@ -13,7 +13,7 @@ type RowsBetweenTool Specification
 var RowsBetween = RowsBetweenTool{
 	Name:        "rows_between",
 	Description: "Fetch the lines between two line numbers (inclusive) from a file.",
-	Inputs: &InputSchema{
+	Inputs: InputSchema{
 		Type: "object",
 		Properties: map[string]ParameterObject{
 			"file_path": {
@@ -29,7 +29,7 @@ var RowsBetween = RowsBetweenTool{
 				Description: "Last line to include (1-based, inclusive).",
 			},
 		},
-		Required: &[]string{"file_path", "start_line", "end_line"},
+		Required: []string{"file_path", "start_line", "end_line"},
 	},
 }
 

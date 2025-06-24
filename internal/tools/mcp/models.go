@@ -39,7 +39,7 @@ type RPCError struct {
 
 // Tool describes a tool as returned by tools/list.
 type Tool struct {
-	Name        string             `json:"name"`
-	Description string             `json:"description,omitempty"`
-	InputSchema *tools.InputSchema `json:"inputSchema,omitempty"`
+	Name        string            `json:"name"`
+	Description string            `json:"description,omitempty"`
+	InputSchema tools.InputSchema `json:"inputSchema"`
 }
