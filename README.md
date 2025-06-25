@@ -5,7 +5,7 @@
 
 Test coverage: 42.995% 😒👍
 
-`clai` (/klaɪ/, like "cli" in "**cli**mate") is a command line multi-tool for any ai task.
+`clai` (/klaɪ/, like "cli" in "**cli**mate") is a command line context-feeder for any ai task.
 
 <div align="center">
   <img src="img/banner.jpg" alt="Banner">
@@ -13,14 +13,15 @@ Test coverage: 42.995% 😒👍
 
 ## Features
 
-- **MCP client support** - Add any MCP server you'd like by simply pasting their configuration.
-- **Conversations** - Create, manage and continue conversations.
-- **Rate limit circumvention** - Automatically summarize + recall on complex tasks, allowing for context in millions of tokens.
-- **Vendor agnosticism** - Use any functionality in Clai with any vendor (see below) interchangeably.
-- **Profiles** - Pre-prompted profiles enabling customized workflows and agents.
+- **[MCP client support](./EXAMPLES.md#Tooling)** - Add any MCP server you'd like by simply pasting their configuration.
+- **Vendor agnosticism** - Use any functionality in Clai with [most LLM vendors](#supported-vendors) interchangeably.
+- **[Conversations](./EXAMPLES.md#Conversations)** - Create, manage and continue conversations.
+- **Rate limit circumvention** - Automatically summarize + recall complex tasks.
+- **[Profiles](./EXAMPLES.md#Profiles)** - Pre-prompted profiles enabling customized workflows and agents.
 - **Unix-like** - Clai follows the [unix philosophy](https://en.wikipedia.org/wiki/Unix_philosophy) and works seamlessly with data piped in and out.
 
 All of these features are easily combined and tweaked, empowering users to accomplish very diverse use cases.
+See [examples](./EXAMPLES.md) for additional info.
 
 ## Supported vendors
 
