@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sync"
 
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
+	"github.com/baalimago/go_away_boilerplate/pkg/debug"
+	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
 // Manager registers MCP servers and their tools.
@@ -82,19 +85,17 @@ func handleServer(ctx context.Context, ev ControlEvent, readyChan chan struct{})
 	var listRes struct {
 		Tools []Tool `json:"tools"`
 	}
+	if misc.Truthy(os.Getenv("DEBUG_MCP_TOOLS")) {
+		ancli.Noticef("mcp.Manager.handleServer: %v", debug.IndentedJsonFmt(resp.Result))
+	}
 	if err := json.Unmarshal(resp.Result, &listRes); err != nil {
 		return fmt.Errorf("decode list result: %w", err)
 	}
 
 	for _, t := range listRes.Tools {
 		t.InputSchema.Patch()
-
-		if !t.InputSchema.IsOk() {
-			ancli.Warnf("tool: 'mcp_%v' has issues that the LLM will complain about, skipping\n", t.Name)
-			continue
-		}
 		spec := tools.Specification{
-			Name:        fmt.Sprintf("mcp_%s", t.Name),
+			Name:        fmt.Sprintf("mcp_%s_%s", ev.ServerName, t.Name),
 			Description: t.Description,
 			Inputs:      t.InputSchema,
 		}
@@ -103,6 +104,9 @@ func handleServer(ctx context.Context, ev ControlEvent, readyChan chan struct{})
 			spec:       spec,
 			inputChan:  ev.InputChan,
 			outputChan: ev.OutputChan,
+		}
+		if misc.Truthy(os.Getenv("DEBUG_MCP_TOOLS")) {
+			ancli.Noticef("registering: '%v', body: %v", t.Name, debug.IndentedJsonFmt(spec))
 		}
 		tools.Registry.Set(spec.Name, mt)
 	}

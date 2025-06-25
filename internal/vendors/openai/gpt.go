@@ -4,11 +4,11 @@ import (
 	"github.com/baalimago/clai/internal/text/generic"
 )
 
-var GPT_DEFAULT = ChatGPT{
+var GptDefault = ChatGPT{
 	Model:       "gpt-4.1-mini",
 	Temperature: 1.0,
 	TopP:        1.0,
-	Url:         ChatURL,
+	URL:         ChatURL,
 }
 
 type ChatGPT struct {
@@ -19,5 +19,5 @@ type ChatGPT struct {
 	PresencePenalty  float64 `json:"presence_penalty"`
 	Temperature      float64 `json:"temperature"`
 	TopP             float64 `json:"top_p"`
-	Url              string  `json:"url"`
+	URL              string  `json:"url"`
 }

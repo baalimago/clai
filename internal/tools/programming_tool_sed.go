@@ -19,22 +19,27 @@ var Sed = SedTool{
 			"file_path": {
 				Type:        "string",
 				Description: "The path to the file to modify.",
+				Enum:        make([]string, 0),
 			},
 			"pattern": {
 				Type:        "string",
 				Description: "The regex pattern to search for.",
+				Enum:        make([]string, 0),
 			},
 			"repl": {
 				Type:        "string",
 				Description: "The replacement string.",
+				Enum:        make([]string, 0),
 			},
 			"start_line": {
 				Type:        "integer",
 				Description: "Optional. First line to modify (1-based, inclusive).",
+				Enum:        make([]string, 0),
 			},
 			"end_line": {
 				Type:        "integer",
 				Description: "Optional. Last line to modify (1-based, inclusive).",
+				Enum:        make([]string, 0),
 			},
 		},
 		Required: []string{"file_path", "pattern", "repl"},

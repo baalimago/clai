@@ -69,7 +69,7 @@ func migrateOldChatConfig(configDirPath string) error {
 		Temperature:      oldConf.Temperature,
 		TopP:             oldConf.TopP,
 		Model:            oldConf.Model,
-		Url:              oldConf.URL,
+		URL:              oldConf.URL,
 	}
 
 	err = utils.CreateFile(fmt.Sprintf("%v/openai_gpt_%v.json", configDirPath, oldConf.Model), &migratedChatgptConfig)

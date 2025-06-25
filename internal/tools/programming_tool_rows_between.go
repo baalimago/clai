@@ -19,14 +19,17 @@ var RowsBetween = RowsBetweenTool{
 			"file_path": {
 				Type:        "string",
 				Description: "The path to the file to read.",
+				Enum:        make([]string, 0),
 			},
 			"start_line": {
 				Type:        "integer",
 				Description: "First line to include (1-based, inclusive).",
+				Enum:        make([]string, 0),
 			},
 			"end_line": {
 				Type:        "integer",
 				Description: "Last line to include (1-based, inclusive).",
+				Enum:        make([]string, 0),
 			},
 		},
 		Required: []string{"file_path", "start_line", "end_line"},

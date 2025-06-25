@@ -21,6 +21,7 @@ var WebsiteText = WebsiteTextTool{
 			"url": {
 				Type:        "string",
 				Description: "The URL of the website to retrieve the text content from.",
+				Enum:        make([]string, 0),
 			},
 		},
 		Required: []string{"url"},

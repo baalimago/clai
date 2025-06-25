@@ -17,14 +17,17 @@ var WriteFile = WriteFileTool{
 			"file_path": {
 				Type:        "string",
 				Description: "The path to the file to write to.",
+				Enum:        make([]string, 0),
 			},
 			"content": {
 				Type:        "string",
 				Description: "The content to write to the file.",
+				Enum:        make([]string, 0),
 			},
 			"append": {
 				Type:        "boolean",
 				Description: "If true, append to the file instead of overwriting it.",
+				Enum:        make([]string, 0),
 			},
 		},
 		Required: []string{"file_path", "content"},

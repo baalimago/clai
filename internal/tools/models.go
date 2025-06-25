@@ -27,6 +27,10 @@ type Specification struct {
 	Arguments string `json:"arguments,omitempty"`
 }
 
+func (s *Specification) Patch() {
+	s.Inputs.Patch()
+}
+
 type InputSchema struct {
 	Type       string                     `json:"type"`
 	Required   []string                   `json:"required"`
@@ -46,16 +50,16 @@ func (is *InputSchema) Patch() {
 	if is.Type == "" {
 		is.Type = "object"
 	}
-}
-
-// IsOk checks if the input schema is ok
-func (is *InputSchema) IsOk() bool {
-	for _, p := range is.Properties {
-		if p.Type == "array" && p.Enum == nil {
-			return false
+	for k := range is.Properties {
+		p := is.Properties[k]
+		if p.Enum == nil {
+			p.Enum = make([]string, 0)
 		}
+		if p.Type == "array" && p.Items == nil {
+			p.Items = &ItemsSpec{}
+		}
+		is.Properties[k] = p
 	}
-	return true
 }
 
 type Input map[string]any
@@ -115,10 +119,15 @@ func (c Call) JSON() string {
 	return string(json)
 }
 
+type ItemsSpec struct {
+	Type string `json:"type"`
+}
+
 type ParameterObject struct {
-	Type        string    `json:"type"`
-	Description string    `json:"description"`
-	Enum        *[]string `json:"enum,omitempty"`
+	Type        string     `json:"type"`
+	Description string     `json:"description"`
+	Enum        []string   `json:"enum"`
+	Items       *ItemsSpec `json:"items,omitempty"`
 }
 
 type McpServerConfig map[string]McpServer

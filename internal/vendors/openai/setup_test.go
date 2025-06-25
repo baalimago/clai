@@ -9,7 +9,7 @@ import (
 
 func TestSetup(t *testing.T) {
 	vendorstest.RunSetupTests(t, "OPENAI_API_KEY", true, func() models.StreamCompleter {
-		v := GPT_DEFAULT
+		v := GptDefault
 		return &v
 	})
 }

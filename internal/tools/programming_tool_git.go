@@ -17,27 +17,32 @@ var Git = GitTool{
 			"operation": {
 				Type:        "string",
 				Description: "The git operation to run.",
-				Enum:        &[]string{"log", "diff", "show", "status", "blame"},
+				Enum:        []string{"log", "diff", "show", "status", "blame"},
 			},
 			"file": {
 				Type:        "string",
 				Description: "Optional file path used by diff, show or blame.",
+				Enum:        make([]string, 0),
 			},
 			"commit": {
 				Type:        "string",
 				Description: "Optional commit hash used by show or diff.",
+				Enum:        make([]string, 0),
 			},
 			"range": {
 				Type:        "string",
 				Description: "Optional revision range for log or diff.",
+				Enum:        make([]string, 0),
 			},
 			"n": {
 				Type:        "integer",
 				Description: "Number of log entries to display.",
+				Enum:        make([]string, 0),
 			},
 			"dir": {
 				Type:        "string",
 				Description: "Directory containing the git repository (optional).",
+				Enum:        make([]string, 0),
 			},
 		},
 		Required: []string{"operation"},

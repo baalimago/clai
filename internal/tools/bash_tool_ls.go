@@ -16,14 +16,17 @@ var LS = LsTool{
 			"directory": {
 				Type:        "string",
 				Description: "The directory to list the files of.",
+				Enum:        make([]string, 0),
 			},
 			"all": {
 				Type:        "boolean",
 				Description: "Show all files, including hidden files.",
+				Enum:        make([]string, 0),
 			},
 			"long": {
 				Type:        "boolean",
 				Description: "Use a long listing format.",
+				Enum:        make([]string, 0),
 			},
 		},
 		Required: []string{"directory"},

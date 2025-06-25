@@ -17,6 +17,7 @@ var FreetextCmd = FreetextCmdTool{
 			"command": {
 				Type:        "string",
 				Description: "The freetext comand. May be any string. Will return error on non-zero exit code.",
+				Enum:        make([]string, 0),
 			},
 		},
 		Required: []string{"command"},

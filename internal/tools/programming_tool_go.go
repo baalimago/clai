@@ -17,14 +17,17 @@ var Go = GoTool{
 			"command": {
 				Type:        "string",
 				Description: "The Go command to run (e.g., 'run', 'test', 'build').",
+				Enum:        make([]string, 0),
 			},
 			"args": {
 				Type:        "string",
 				Description: "Additional arguments for the Go command (e.g., file names, flags).",
+				Enum:        make([]string, 0),
 			},
 			"dir": {
 				Type:        "string",
 				Description: "The directory to run the command in (optional, defaults to current directory).",
+				Enum:        make([]string, 0),
 			},
 		},
 		Required: []string{"command"},

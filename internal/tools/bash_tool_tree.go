@@ -16,10 +16,12 @@ var FileTree = FileTreeTool{
 			"directory": {
 				Type:        "string",
 				Description: "The directory to list the filetree of.",
+				Enum:        make([]string, 0),
 			},
 			"level": {
 				Type:        "integer",
 				Description: "The depth of the tree to display.",
+				Enum:        make([]string, 0),
 			},
 		},
 		Required: []string{"directory"},

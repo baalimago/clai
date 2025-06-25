@@ -22,10 +22,12 @@ var Recall = RecallTool{
 			"conversation": {
 				Type:        "string",
 				Description: "Conversation name or id",
+				Enum:        make([]string, 0),
 			},
 			"index": {
 				Type:        "integer",
 				Description: "Index of the message to retrieve",
+				Enum:        make([]string, 0),
 			},
 		},
 		Required: []string{"conversation", "index"},

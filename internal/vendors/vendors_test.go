@@ -28,7 +28,7 @@ func Test_VendorSetup(t *testing.T) {
 			envVar:      "OPENAI_API_KEY",
 			requiresEnv: true,
 			newVendor: func() models.StreamCompleter {
-				v := openai.GPT_DEFAULT
+				v := openai.GptDefault
 				return &v
 			},
 		},

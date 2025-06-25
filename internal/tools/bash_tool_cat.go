@@ -16,18 +16,22 @@ var Cat = CatTool{
 			"file": {
 				Type:        "string",
 				Description: "The file to display the contents of.",
+				Enum:        make([]string, 0),
 			},
 			"number": {
 				Type:        "boolean",
 				Description: "Number all output lines.",
+				Enum:        make([]string, 0),
 			},
 			"showEnds": {
 				Type:        "boolean",
 				Description: "Display $ at end of each line.",
+				Enum:        make([]string, 0),
 			},
 			"squeezeBlank": {
 				Type:        "boolean",
 				Description: "Suppress repeated empty output lines.",
+				Enum:        make([]string, 0),
 			},
 		},
 		Required: []string{"file"},

@@ -235,6 +235,9 @@ func (c *Claude) constructRequest(ctx context.Context, chat models.Chat) (*http.
 	if len(c.tools) > 0 {
 		reqData.Tools = c.tools
 	}
+	if misc.Truthy(os.Getenv("DEBUG_REQ")) {
+		ancli.Noticef("claude req: %v", debug.IndentedJsonFmt(reqData))
+	}
 	jsonData, err := json.Marshal(reqData)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal ClaudeReq: %w", err)

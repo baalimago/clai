@@ -44,7 +44,7 @@ func CreateTextQuerier(ctx context.Context, conf text.Configurations) (models.Qu
 
 	if strings.Contains(conf.Model, "gpt") {
 		found = true
-		defaultCpy := openai.GPT_DEFAULT
+		defaultCpy := openai.GptDefault
 		defaultCpy.Model = conf.Model
 		qTmp, err := text.NewQuerier(ctx, conf, &defaultCpy)
 		if err != nil {

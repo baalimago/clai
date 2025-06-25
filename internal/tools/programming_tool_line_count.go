@@ -17,6 +17,7 @@ var LineCount = LineCountTool{
 			"file_path": {
 				Type:        "string",
 				Description: "The path to the file to count lines of.",
+				Enum:        make([]string, 0),
 			},
 		},
 		Required: []string{"file_path"},

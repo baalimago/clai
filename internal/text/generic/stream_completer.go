@@ -61,15 +61,12 @@ func (s *StreamCompleter) createRequest(ctx context.Context, chat models.Chat) (
 		// No support for this yet since it's limited usecase and high complexity
 		ParalellToolCalls: false,
 	}
-	if s.debug {
-		ancli.PrintOK(fmt.Sprintf("streamcompleter: %v\n", debug.IndentedJsonFmt(s)))
-	}
 	if len(s.tools) > 0 {
 		reqData.Tools = s.tools
 		reqData.ToolChoice = s.ToolChoice
 	}
-	if s.debug {
-		ancli.PrintOK(fmt.Sprintf("generic streamcompleter request: %v\n", debug.IndentedJsonFmt(reqData)))
+	if s.debug || misc.Truthy(os.Getenv("DEBUG_REQ")) {
+		ancli.Noticef("StreamComplete.createRequest req: %v", debug.IndentedJsonFmt(reqData))
 	}
 	jsonData, err := json.Marshal(reqData)
 	if err != nil {

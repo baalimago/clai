@@ -16,22 +16,27 @@ var RipGrep = RipGrepTool{
 			"pattern": {
 				Type:        "string",
 				Description: "The pattern to search for.",
+				Enum:        make([]string, 0),
 			},
 			"path": {
 				Type:        "string",
 				Description: "The path to search in.",
+				Enum:        make([]string, 0),
 			},
 			"case_sensitive": {
 				Type:        "boolean",
 				Description: "Whether the search should be case sensitive.",
+				Enum:        make([]string, 0),
 			},
 			"line_number": {
 				Type:        "boolean",
 				Description: "Whether to show line numbers.",
+				Enum:        make([]string, 0),
 			},
 			"hidden": {
 				Type:        "boolean",
 				Description: "Whether to search hidden files and directories.",
+				Enum:        make([]string, 0),
 			},
 		},
 		Required: []string{"pattern"},

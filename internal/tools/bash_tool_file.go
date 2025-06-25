@@ -16,10 +16,12 @@ var FileType = FileTypeTool{
 			"file_path": {
 				Type:        "string",
 				Description: "The path to the file to analyze.",
+				Enum:        make([]string, 0),
 			},
 			"mime_type": {
 				Type:        "boolean",
 				Description: "Whether to display the MIME type of the file.",
+				Enum:        make([]string, 0),
 			},
 		},
 		Required: []string{"file_path"},

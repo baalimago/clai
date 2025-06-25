@@ -16,18 +16,22 @@ var Find = FindTool{
 			"directory": {
 				Type:        "string",
 				Description: "The directory to start the search from.",
+				Enum:        make([]string, 0),
 			},
 			"name": {
 				Type:        "string",
 				Description: "The name pattern to search for.",
+				Enum:        make([]string, 0),
 			},
 			"type": {
 				Type:        "string",
 				Description: "The file type to search for (f: regular file, d: directory).",
+				Enum:        make([]string, 0),
 			},
 			"maxdepth": {
 				Type:        "integer",
 				Description: "The maximum depth of directories to search.",
+				Enum:        make([]string, 0),
 			},
 		},
 		Required: []string{"directory"},
