@@ -25,6 +25,7 @@ const (
 	TokenCountFactor     = 1.1
 	MaxShortenedNewlines = 5
 	RateLimitRetries     = 3
+	FallbackWaitDuration = 20 * time.Second
 )
 
 type Querier[C models.StreamCompleter] struct {
@@ -47,6 +48,63 @@ type Querier[C models.StreamCompleter] struct {
 	cmdMode                 bool
 	execErr                 error
 	rateLimitRetries        int
+	rateLimitLastAmTokens   int
+	rateLimitRecursionLevel int
+}
+
+func (q *Querier[C]) handleRateLimitErr(ctx context.Context, rateLimitErr models.ErrRateLimit) error {
+	q.rateLimitRetries++
+	counter, ok := any(q.Model).(models.InputTokenCounter)
+	if ok {
+		inCount, err := counter.CountInputTokens(ctx, q.chat)
+		if err != nil {
+			return fmt.Errorf("failed to count tokens: %w", err)
+		}
+		waitDur := time.Until(rateLimitErr.ResetAt)
+		if waitDur < time.Second {
+			ancli.Warnf("rate limit wait duration less than 1 second, setting to %v", FallbackWaitDuration)
+			waitDur = FallbackWaitDuration
+		}
+		// Increase wait time if the rate limit 'didnt work', as in, gradually reduce amount of tokens
+		// which can be used. But only by a factor of 20%
+		if inCount < int(float64(q.rateLimitLastAmTokens)*0.8) {
+			waitDur *= 2
+			ancli.Warnf("am of input tokens is: %v, which is: %v lower than last. Exp-increasing sleep to: %v",
+				inCount,
+				q.rateLimitLastAmTokens-inCount,
+				waitDur,
+			)
+		}
+		time.Sleep(waitDur)
+		q.rateLimitLastAmTokens = inCount
+		summarizedChat, circumErr := generic.CircumventRateLimit(ctx,
+			q,
+			q.chat,
+			inCount,
+			rateLimitErr.TokensRemaining,
+			rateLimitErr.MaxInputTokens,
+			rateLimitErr.ResetAt,
+			q.rateLimitRecursionLevel,
+		)
+		q.rateLimitRecursionLevel++
+		if circumErr != nil {
+			return fmt.Errorf("failed to circumvent rate limit: %w", circumErr)
+		}
+		// Replace existing chat with summarized chat
+		q.chat = summarizedChat
+
+		// Retry by using the new chat and querying once more. Will fill call stack.
+		q.reset()
+		return q.Query(ctx)
+	} else {
+		// No fancy logic, just sleep a while
+		ancli.Warnf("detected rate limit at: %v tokens, will sleep until: %v\n", rateLimitErr.TokensRemaining, rateLimitErr.ResetAt)
+		time.Sleep(time.Until(rateLimitErr.ResetAt.Add(time.Second * 10)))
+		// Recursively call. This will look a bit wonky but should cause no side effects as post process
+		// deferral is called below
+		q.reset()
+		return q.Query(ctx)
+	}
 }
 
 // Query using the underlying model to stream completions and then print the output
@@ -63,41 +121,7 @@ func (q *Querier[C]) Query(ctx context.Context) error {
 	if err != nil {
 		var rateLimitErr *models.ErrRateLimit
 		if errors.As(err, &rateLimitErr) {
-
-			q.rateLimitRetries++
-			counter, ok := any(q.Model).(models.InputTokenCounter)
-			var inCount int
-			if ok {
-				inCount, err = counter.CountInputTokens(ctx, q.chat)
-				if err != nil {
-					return fmt.Errorf("failed to count tokens: %w", err)
-				}
-				summarizedChat, circumErr := generic.CircumventRateLimit(ctx,
-					q,
-					q.chat,
-					inCount,
-					rateLimitErr.TokensRemaining,
-					rateLimitErr.MaxInputTokens,
-					rateLimitErr.ResetAt)
-				if circumErr != nil {
-					return fmt.Errorf("failed to circumvent rate limit: %w", circumErr)
-				}
-				// Replace existing chat with summarized chat
-				q.chat = summarizedChat
-
-				// Retry by using the new chat and querying once more. Will fill call stack.
-				q.reset()
-				return q.Query(ctx)
-			} else {
-				// No fancy logic, just sleep a while
-				ancli.Warnf("detected rate limit at: %v tokens, will sleep until: %v\n", rateLimitErr.TokensRemaining, rateLimitErr.ResetAt)
-				time.Sleep(time.Until(rateLimitErr.ResetAt.Add(time.Second * 10)))
-				// Recursively call. This will look a bit wonky but should cause no side effects as post process
-				// deferral is called below
-				q.reset()
-				return q.Query(ctx)
-			}
-
+			return q.handleRateLimitErr(ctx, *rateLimitErr)
 		}
 		return fmt.Errorf("failed to stream completions: %w", err)
 	}
@@ -316,7 +340,9 @@ func (q *Querier[C]) handleFunctionCall(ctx context.Context, call tools.Call) er
 	}
 	// Post process here since a function call should be treated as the function call
 	// should be handeled mid-stream, but still requires multiple rounds of user input
+	q.shouldSaveReply = false
 	q.postProcess()
+	q.shouldSaveReply = true
 
 	call.Patch()
 	call.Function.Inputs.Patch()

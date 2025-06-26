@@ -37,7 +37,7 @@ func Save(saveAt string, chat models.Chat) error {
 	}
 	fileName := path.Join(saveAt, fmt.Sprintf("%v.json", chat.ID))
 	if misc.Truthy(os.Getenv("DEBUG")) && misc.Truthy(os.Getenv("DEBUG_VERBOSE")) || misc.Truthy(os.Getenv("DEBUG_REPLY_MODE")) {
-		ancli.PrintOK(fmt.Sprintf("saving chat to: '%v', content (on new line):\n'%v'\n", fileName, string(b)))
+		ancli.PrintOK(fmt.Sprintf("saving chat to: '%v'", fileName))
 	}
 	return os.WriteFile(fileName, b, 0o644)
 }
