@@ -75,8 +75,9 @@ func (r RecallTool) Call(input Input) (string, error) {
 		return "", fmt.Errorf("failed to decode conversation: %w", err)
 	}
 
-	if idx < 0 || idx >= len(conv.Messages) {
-		return "", fmt.Errorf("index out of range")
+	lenConv := len(conv.Messages)
+	if idx < 0 || idx >= lenConv {
+		return "", fmt.Errorf("index out of range. Am messages: %v, index: %v", lenConv, idx)
 	}
 	msg := conv.Messages[idx]
 	return fmt.Sprintf("%s: %s", msg.Role, msg.Content), nil

@@ -37,14 +37,14 @@ func (r *registry) WildcardGet(pattern string) []LLMTool {
 
 	var matches []LLMTool
 	for name, tool := range r.tools {
-		if wildcardMatch(pattern, name) {
+		if WildcardMatch(pattern, name) {
 			matches = append(matches, tool)
 		}
 	}
 	return matches
 }
 
-func wildcardMatch(pattern, name string) bool {
+func WildcardMatch(pattern, name string) bool {
 	if pattern == "*" {
 		return true
 	}
@@ -71,7 +71,7 @@ func wildcardMatch(pattern, name string) bool {
 // Set registers tool under the provided name.
 func (r *registry) Set(name string, t LLMTool) {
 	r.mu.Lock()
-	if r.debug {
+	if r.debug || misc.Truthy(os.Getenv("DEBUG_TOOLS_REGISTRY_SET")) {
 		ancli.Okf("adding tool too registry, name: %v\n", t.Specification().Name)
 	}
 	r.tools[name] = t

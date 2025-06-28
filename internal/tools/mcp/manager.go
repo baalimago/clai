@@ -74,10 +74,10 @@ func handleServer(ctx context.Context, ev ControlEvent, readyChan chan struct{})
 	}
 	resp, err = sendRequest(ctx, ev.InputChan, ev.OutputChan, listReq)
 	if err != nil {
-		return fmt.Errorf("tools/list: %w", err)
+		return fmt.Errorf("tools/list err: %w", err)
 	}
 	if resp.Error != nil {
-		return fmt.Errorf("tools/list: %s", resp.Error.Message)
+		return fmt.Errorf("tools/list resp.Error: %s", resp.Error.Message)
 	}
 	var listRes struct {
 		Tools []Tool `json:"tools"`
@@ -94,7 +94,7 @@ func handleServer(ctx context.Context, ev ControlEvent, readyChan chan struct{})
 			continue
 		}
 		spec := tools.Specification{
-			Name:        fmt.Sprintf("mcp_%s", t.Name),
+			Name:        fmt.Sprintf("mcp_%s_%s", ev.ServerName, t.Name),
 			Description: t.Description,
 			Inputs:      t.InputSchema,
 		}
@@ -122,7 +122,7 @@ func sendRequest(ctx context.Context, in chan<- any, out <-chan any, req Request
 			raw, ok := msg.(json.RawMessage)
 			if !ok {
 				if err, ok := msg.(error); ok {
-					return Response{}, err
+					return Response{}, fmt.Errorf("failed to parse json.RawMessage: '%v', err: %w", msg, err)
 				}
 				continue
 			}

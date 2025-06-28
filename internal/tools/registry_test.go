@@ -113,11 +113,12 @@ func TestRegistry_WildcardGet(t *testing.T) {
 
 	// Setup test tools
 	tools := map[string]*mockLLMTool{
-		"bash_cat":  newMockTool("bash_cat"),
-		"bash_find": newMockTool("bash_find"),
-		"prog_git":  newMockTool("prog_git"),
-		"prog_go":   newMockTool("prog_go"),
-		"web_fetch": newMockTool("web_fetch"),
+		"bash_cat":           newMockTool("bash_cat"),
+		"bash_find":          newMockTool("bash_find"),
+		"prog_git":           newMockTool("prog_git"),
+		"prog_go":            newMockTool("prog_go"),
+		"web_fetch":          newMockTool("web_fetch"),
+		"mcp_everyhing_test": newMockTool("mcp_everyhing_test"),
 	}
 
 	for name, tool := range tools {
@@ -128,13 +129,14 @@ func TestRegistry_WildcardGet(t *testing.T) {
 		pattern  string
 		expected []string
 	}{
-		{"*", []string{"bash_cat", "bash_find", "prog_git", "prog_go", "web_fetch"}},
+		{"*", []string{"bash_cat", "bash_find", "prog_git", "prog_go", "web_fetch", "mcp_everyhing_test"}},
 		{"bash_*", []string{"bash_cat", "bash_find"}},
 		{"*_git", []string{"prog_git"}},
 		{"*prog*", []string{"prog_git", "prog_go"}},
 		{"bash_cat", []string{"bash_cat"}},
 		{"nonexistent", []string{}},
 		{"*nonexistent*", []string{}},
+		{"mcp_everyhing*", []string{"mcp_everyhing_test"}},
 	}
 
 	for _, tc := range testCases {
@@ -187,7 +189,7 @@ func TestWildcardMatch(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.pattern+"_"+tc.name, func(t *testing.T) {
-			result := wildcardMatch(tc.pattern, tc.name)
+			result := WildcardMatch(tc.pattern, tc.name)
 			if result != tc.expected {
 				t.Errorf("wildcardMatch(%q, %q) = %v, want %v",
 					tc.pattern, tc.name, result, tc.expected)
