@@ -13,7 +13,7 @@ type RowsBetweenTool Specification
 var RowsBetween = RowsBetweenTool{
 	Name:        "rows_between",
 	Description: "Fetch the lines between two line numbers (inclusive) from a file.",
-	Inputs: InputSchema{
+	Inputs: &InputSchema{
 		Type: "object",
 		Properties: map[string]ParameterObject{
 			"file_path": {
@@ -41,9 +41,9 @@ func (r RowsBetweenTool) Call(input Input) (string, error) {
 	startLine, ok := input["start_line"].(int)
 	if !ok {
 		// Accept float64 (from JSON decoding)
-		if f, ok := input["start_line"].(float64); ok {
+		if f, isFloat := input["start_line"].(float64); isFloat {
 			startLine = int(f)
-		} else if s, ok := input["start_line"].(string); ok {
+		} else if s, isString := input["start_line"].(string); isString {
 			startLine, _ = strconv.Atoi(s)
 		} else {
 			return "", fmt.Errorf("start_line must be an integer")

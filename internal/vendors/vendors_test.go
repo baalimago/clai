@@ -46,7 +46,7 @@ func Test_VendorSetup(t *testing.T) {
 			envVar:      "MISTRAL_API_KEY",
 			requiresEnv: true,
 			newVendor: func() models.StreamCompleter {
-				v := mistral.MINSTRAL_DEFAULT
+				v := mistral.MistralDefault
 				return &v
 			},
 		},

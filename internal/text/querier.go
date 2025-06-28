@@ -19,6 +19,7 @@ import (
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
+	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
 const (
@@ -335,8 +336,8 @@ func (q *Querier[C]) handleFunctionCall(ctx context.Context, call tools.Call) er
 		return errors.New("cant call tools in cmd mode")
 	}
 
-	if q.debug {
-		ancli.PrintOK(fmt.Sprintf("received tool call: %v", call))
+	if q.debug || misc.Truthy(os.Getenv("DEBUG_CALL")) {
+		ancli.PrintOK(fmt.Sprintf("received tool call: %v", debug.IndentedJsonFmt(call)))
 	}
 	// Post process here since a function call should be treated as the function call
 	// should be handeled mid-stream, but still requires multiple rounds of user input
@@ -346,7 +347,6 @@ func (q *Querier[C]) handleFunctionCall(ctx context.Context, call tools.Call) er
 	q.shouldSaveReply = pre
 
 	call.Patch()
-	call.Function.Inputs.Patch()
 
 	assistantToolsCall := models.Message{
 		Role:      "assistant",

@@ -16,10 +16,10 @@ type ControlEvent struct {
 
 // Request represents a JSON-RPC request.
 type Request struct {
-	JSONRPC string      `json:"jsonrpc"`
-	ID      int         `json:"id,omitempty"`
-	Method  string      `json:"method"`
-	Params  interface{} `json:"params,omitempty"`
+	JSONRPC string         `json:"jsonrpc"`
+	ID      int            `json:"id,omitempty"`
+	Method  string         `json:"method"`
+	Params  map[string]any `json:"params,omitempty"`
 }
 
 // Response represents a JSON-RPC response.

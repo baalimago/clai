@@ -81,11 +81,18 @@ func claudifyMessages(msgs []models.Message) []ClaudeConvMessage {
 
 		if len(msg.ToolCalls) > 0 {
 			toolCallMsg := msg.ToolCalls[0]
+			var tmp map[string]interface{}
+			if toolCallMsg.Inputs != nil {
+				tmp = make(map[string]interface{})
+				for k, v := range *toolCallMsg.Inputs {
+					tmp[k] = v
+				}
+			}
 			contentBlock = ToolUseContentBlock{
 				Type:  "tool_use",
 				ID:    toolCallMsg.ID,
 				Name:  toolCallMsg.Name,
-				Input: toolCallMsg.Inputs,
+				Input: &tmp,
 			}
 		} else if msg.Role == "tool" {
 			role = "user"

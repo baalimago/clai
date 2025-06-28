@@ -10,7 +10,7 @@ type FileTreeTool Specification
 var FileTree = FileTreeTool{
 	Name:        "file_tree",
 	Description: "List the filetree of some directory. Uses linux command 'tree'.",
-	Inputs: InputSchema{
+	Inputs: &InputSchema{
 		Type: "object",
 		Properties: map[string]ParameterObject{
 			"directory": {

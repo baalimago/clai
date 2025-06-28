@@ -9,18 +9,18 @@ import (
 
 const MistralURL = "https://api.mistral.ai/v1/chat/completions"
 
-var MINSTRAL_DEFAULT = Mistral{
+var MistralDefault = Mistral{
 	Model:       "mistral-large-latest",
 	Temperature: 0.7,
 	TopP:        1.0,
-	Url:         MistralURL,
+	URL:         MistralURL,
 	MaxTokens:   100000,
 }
 
 type Mistral struct {
 	generic.StreamCompleter
 	Model       string  `json:"model"`
-	Url         string  `json:"url"`
+	URL         string  `json:"url"`
 	TopP        float64 `json:"top_p"`
 	Temperature float64 `json:"temperature"`
 	SafePrompt  bool    `json:"safe_prompt"`
@@ -39,6 +39,7 @@ func clean(msg []models.Message) []models.Message {
 				tc.Name = ""
 				tc.Inputs = nil
 				tc.Function.Description = ""
+				tc.Function.Inputs = nil
 				m.ToolCalls[j] = tc
 			}
 		}

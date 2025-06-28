@@ -170,7 +170,7 @@ func Test_Querier_eventHandling(t *testing.T) {
 				"first the model said something",
 				tools.Call{
 					Name: "test",
-					Inputs: tools.Input{
+					Inputs: &tools.Input{
 						"testKey": "testVal",
 					},
 				},

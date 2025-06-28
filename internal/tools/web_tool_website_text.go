@@ -15,7 +15,7 @@ type WebsiteTextTool Specification
 var WebsiteText = WebsiteTextTool{
 	Name:        "website_text",
 	Description: "Get the text content of a website by stripping all non-text tags and trimming whitespace.",
-	Inputs: InputSchema{
+	Inputs: &InputSchema{
 		Type: "object",
 		Properties: map[string]ParameterObject{
 			"url": {

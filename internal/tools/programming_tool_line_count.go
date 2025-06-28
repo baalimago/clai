@@ -11,7 +11,7 @@ type LineCountTool Specification
 var LineCount = LineCountTool{
 	Name:        "line_count",
 	Description: "Count the number of lines in a file.",
-	Inputs: InputSchema{
+	Inputs: &InputSchema{
 		Type: "object",
 		Properties: map[string]ParameterObject{
 			"file_path": {

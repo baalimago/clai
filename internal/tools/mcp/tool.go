@@ -5,9 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"sync"
 
 	"github.com/baalimago/clai/internal/tools"
+	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
+	"github.com/baalimago/go_away_boilerplate/pkg/debug"
+	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
 // mcpTool wraps a tool provided by an MCP server and implements tools.LLMTool.
@@ -29,6 +33,10 @@ func (m *mcpTool) nextID() int {
 }
 
 func (m *mcpTool) Call(input tools.Input) (string, error) {
+	nonNullableInp := make(map[string]any)
+	if len(input) != 0 {
+		nonNullableInp = input
+	}
 	id := m.nextID()
 	req := Request{
 		JSONRPC: "2.0",
@@ -36,8 +44,11 @@ func (m *mcpTool) Call(input tools.Input) (string, error) {
 		Method:  "tools/call",
 		Params: map[string]any{
 			"name":      m.remoteName,
-			"arguments": input,
+			"arguments": nonNullableInp,
 		},
+	}
+	if misc.Truthy(os.Getenv("DEBUG_CALL")) {
+		ancli.Noticef("mcpTool.Call req: %v", debug.IndentedJsonFmt(req))
 	}
 
 	m.inputChan <- req
