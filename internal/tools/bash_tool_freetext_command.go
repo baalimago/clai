@@ -11,7 +11,7 @@ type FreetextCmdTool Specification
 var FreetextCmd = FreetextCmdTool{
 	Name:        "freetext_command",
 	Description: "Run any entered string as a terminal command.",
-	Inputs: InputSchema{
+	Inputs: &InputSchema{
 		Type: "object",
 		Properties: map[string]ParameterObject{
 			"command": {

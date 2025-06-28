@@ -22,7 +22,7 @@ type Specification struct {
 	Description string `json:"description,omitempty"`
 	// Format is the same, but name of the field different. So this way, each
 	// vendor can set their own field name
-	Inputs InputSchema `json:"input_schema"`
+	Inputs *InputSchema `json:"input_schema,omitempty"`
 	// Chatgpt wants this
 	Arguments string `json:"arguments,omitempty"`
 }
@@ -64,7 +64,7 @@ type Call struct {
 	ID       string        `json:"id,omitempty"`
 	Name     string        `json:"name,omitempty"`
 	Type     string        `json:"type,omitempty"`
-	Inputs   Input         `json:"inputs"`
+	Inputs   *Input        `json:"inputs,omitempty"`
 	Function Specification `json:"function,omitempty"`
 }
 
@@ -81,10 +81,9 @@ func (c *Call) Patch() {
 		}
 		c.Function.Name = c.Name
 	}
-	if c.Inputs == nil {
-		c.Inputs = make(Input)
+	if c.Function.Inputs != nil {
+		c.Function.Inputs.Patch()
 	}
-	c.Function.Inputs.Patch()
 	if c.Function.Arguments == "" {
 		c.Function.Arguments = c.JSON()
 	}
@@ -95,8 +94,12 @@ func (c *Call) Patch() {
 func (c Call) PrettyPrint() string {
 	paramStr := ""
 	i := 0
-	lenInp := len(c.Inputs)
-	for flag, val := range c.Inputs {
+	var inp Input
+	if c.Inputs != nil {
+		inp = *c.Inputs
+	}
+	lenInp := len(inp)
+	for flag, val := range inp {
 		paramStr += fmt.Sprintf("'%v': '%v'", flag, val)
 		if i < lenInp-1 {
 			paramStr += ","

@@ -40,13 +40,13 @@ func Test_claudifyMessages(t *testing.T) {
 			name: "Tool call and result",
 			msgs: []models.Message{
 				{Role: "user", ToolCalls: []tools.Call{
-					{Name: "exampleTool", ID: "tool1", Inputs: tools.Input{"test": 0}},
+					{Name: "exampleTool", ID: "tool1", Inputs: &tools.Input{"test": 0}},
 				}},
 				{Role: "tool", ToolCallID: "tool1", Content: "tool result"},
 			},
 			want: []ClaudeConvMessage{
 				{Role: "user", Content: []any{
-					ToolUseContentBlock{Type: "tool_use", ID: "tool1", Name: "exampleTool", Input: tools.Input{"test": 0}},
+					ToolUseContentBlock{Type: "tool_use", ID: "tool1", Name: "exampleTool", Input: &map[string]interface{}{"test": 0}},
 					ToolResultContentBlock{Type: "tool_result", ToolUseID: "tool1", Content: "tool result"},
 				}},
 			},

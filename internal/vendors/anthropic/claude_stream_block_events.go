@@ -63,7 +63,7 @@ func (c *Claude) handleContentBlockDelta(deltaToken string) models.CompletionEve
 }
 
 func (c *Claude) handleInputJSONDelta(delta Delta) models.CompletionEvent {
-	partial := delta.PartialJson
+	partial := delta.PartialJSON
 	c.functionJSON += partial
 	return partial
 }
@@ -89,7 +89,7 @@ func (c *Claude) handleContentBlockStop(blockStop string) models.CompletionEvent
 		}
 		return tools.Call{
 			Name:   c.functionName,
-			Inputs: inputs,
+			Inputs: &inputs,
 			ID:     c.functionID,
 		}
 	}

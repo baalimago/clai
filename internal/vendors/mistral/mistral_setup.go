@@ -14,13 +14,12 @@ func (m *Mistral) Setup() error {
 		return fmt.Errorf("failed to setup stream completer: %w", err)
 	}
 	m.StreamCompleter.Model = m.Model
-	m.StreamCompleter.FrequencyPenalty = m.FrequencyPenalty
 	m.StreamCompleter.MaxTokens = &m.MaxTokens
 	m.StreamCompleter.Temperature = &m.Temperature
 	m.StreamCompleter.TopP = &m.TopP
-	toolChoice := "auto"
-	m.StreamCompleter.ToolChoice = &toolChoice
-	m.StreamCompleter.Clean = clean
+	toolChoice := "any"
+	m.ToolChoice = &toolChoice
+	m.Clean = clean
 
 	return nil
 }
@@ -30,5 +29,5 @@ func (m *Mistral) StreamCompletions(ctx context.Context, chat models.Chat) (chan
 }
 
 func (m *Mistral) RegisterTool(tool tools.LLMTool) {
-	m.StreamCompleter.InternalRegisterTool(tool)
+	m.InternalRegisterTool(tool)
 }

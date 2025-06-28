@@ -87,7 +87,7 @@ func CreateTextQuerier(ctx context.Context, conf text.Configurations) (models.Qu
 		q = &qTmp
 	} else if strings.Contains(conf.Model, "mistral") || strings.Contains(conf.Model, "mixtral") {
 		found = true
-		defaultCpy := mistral.MINSTRAL_DEFAULT
+		defaultCpy := mistral.MistralDefault
 		defaultCpy.Model = conf.Model
 		qTmp, err := text.NewQuerier(ctx, conf, &defaultCpy)
 		if err != nil {

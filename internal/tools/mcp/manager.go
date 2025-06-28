@@ -96,7 +96,7 @@ func handleServer(ctx context.Context, ev ControlEvent, readyChan chan struct{})
 		spec := tools.Specification{
 			Name:        fmt.Sprintf("mcp_%s_%s", ev.ServerName, t.Name),
 			Description: t.Description,
-			Inputs:      t.InputSchema,
+			Inputs:      &t.InputSchema,
 		}
 		mt := &mcpTool{
 			remoteName: t.Name,

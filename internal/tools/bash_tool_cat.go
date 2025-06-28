@@ -10,7 +10,7 @@ type CatTool Specification
 var Cat = CatTool{
 	Name:        "cat",
 	Description: "Display the contents of a file. Uses the linux command 'cat'.",
-	Inputs: InputSchema{
+	Inputs: &InputSchema{
 		Type: "object",
 		Properties: map[string]ParameterObject{
 			"file": {

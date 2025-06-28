@@ -36,6 +36,6 @@ func convertToGenericTool(tool tools.Specification) Tool {
 	return Tool{
 		Name:        tool.Name,
 		Description: tool.Description,
-		Inputs:      tool.Inputs,
+		Inputs:      *tool.Inputs,
 	}
 }

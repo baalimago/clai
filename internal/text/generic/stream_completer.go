@@ -158,16 +158,15 @@ func (s *StreamCompleter) handleStreamChunk(token []byte) models.CompletionEvent
 }
 
 func (s *StreamCompleter) handleChoice(choice Choice) models.CompletionEvent {
-	// If there is no tools call, just handle it as a strins. This works for most cases
+	// If there is no tools call, just handle it as a strings. This works for most cases
 	if len(choice.Delta.ToolCalls) == 0 && choice.FinishReason != "tool_calls" {
 		return choice.Delta.Content
 	}
 
 	// Function name is only shown in first chunk of a functions call
 	// TODO: Implement support for parallel function calls, now we only handle first tools call in list
-	var funcName, argChunk string
+	var argChunk string
 	if len(choice.Delta.ToolCalls) > 0 && choice.Delta.ToolCalls[0].Function.Name != "" {
-		funcName = choice.Delta.ToolCalls[0].Function.Name
 		s.toolsCallName = choice.Delta.ToolCalls[0].Function.Name
 		s.toolsCallID = choice.Delta.ToolCalls[0].ID
 	}
@@ -176,15 +175,15 @@ func (s *StreamCompleter) handleChoice(choice Choice) models.CompletionEvent {
 		argChunk = choice.Delta.ToolCalls[0].Function.Arguments
 		// The arguments is streamed as a stringified json for chatgpt, chunk by chunk, with no apparent structure
 		s.toolsCallArgsString += argChunk
+
 		if s.debug {
 			ancli.PrintOK(fmt.Sprintf("toolsCallArgsString: %v\n", s.toolsCallArgsString))
 		}
-	}
-
-	if choice.FinishReason != "" ||
-		// This is an indication that chatgpt wants to call another function, or a variant of the function call
-		(s.toolsCallArgsString != "" && argChunk == "" && funcName != "") {
-		return s.doToolsCall()
+		var input tools.Input
+		err := json.Unmarshal([]byte(s.toolsCallArgsString), &input)
+		if err == nil {
+			return s.doToolsCall()
+		}
 	}
 	return models.NoopEvent{}
 }
@@ -204,12 +203,12 @@ func (s *StreamCompleter) doToolsCall() models.CompletionEvent {
 
 	userFunc := tools.ToolFromName(s.toolsCallName)
 	userFunc.Arguments = s.toolsCallArgsString
-	userFunc.Inputs = tools.InputSchema{}
+	userFunc.Inputs = &tools.InputSchema{}
 
 	return tools.Call{
 		ID:       s.toolsCallID,
 		Name:     s.toolsCallName,
-		Inputs:   input,
+		Inputs:   &input,
 		Type:     "function",
 		Function: userFunc,
 	}

@@ -16,11 +16,11 @@ type ClaudeResponse struct {
 }
 
 type ClaudeMessage struct {
-	ID    string      `json:"id,omitempty"`
-	Input tools.Input `json:"input,omitempty"`
-	Name  string      `json:"name,omitempty"`
-	Text  string      `json:"text,omitempty"`
-	Type  string      `json:"type"`
+	ID    string       `json:"id,omitempty"`
+	Input *tools.Input `json:"input,omitempty"`
+	Name  string       `json:"name,omitempty"`
+	Text  string       `json:"text,omitempty"`
+	Type  string       `json:"type"`
 }
 
 type TokenInfo struct {
@@ -31,7 +31,7 @@ type TokenInfo struct {
 type Delta struct {
 	Type        string `json:"type"`
 	Text        string `json:"text,omitempty"`
-	PartialJson string `json:"partial_json,omitempty"`
+	PartialJSON string `json:"partial_json,omitempty"`
 }
 
 type ContentBlockDelta struct {
@@ -47,10 +47,10 @@ type ContentBlockSuper struct {
 }
 
 type ToolUseContentBlock struct {
-	Type  string                 `json:"type"`
-	ID    string                 `json:"id"`
-	Name  string                 `json:"name"`
-	Input map[string]interface{} `json:"input"`
+	Type  string                  `json:"type"`
+	ID    string                  `json:"id"`
+	Name  string                  `json:"name"`
+	Input *map[string]interface{} `json:"input,omitempty"`
 }
 
 type ToolResultContentBlock struct {

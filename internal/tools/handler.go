@@ -45,7 +45,11 @@ func Invoke(call Call) string {
 	if misc.Truthy(os.Getenv("DEBUG_CALL")) {
 		ancli.Noticef("Invoke call: %v", debug.IndentedJsonFmt(call))
 	}
-	out, err := t.Call(call.Inputs)
+	inp := Input{}
+	if call.Inputs != nil {
+		inp = *call.Inputs
+	}
+	out, err := t.Call(inp)
 	if err != nil {
 		return fmt.Sprintf("ERROR: failed to run tool: %v, error: %v", call.Name, err)
 	}

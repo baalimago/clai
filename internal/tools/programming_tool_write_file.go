@@ -11,7 +11,7 @@ type WriteFileTool Specification
 var WriteFile = WriteFileTool{
 	Name:        "write_file",
 	Description: "Write content to a file. Creates the file if it doesn't exist, or overwrites it if it does.",
-	Inputs: InputSchema{
+	Inputs: &InputSchema{
 		Type: "object",
 		Properties: map[string]ParameterObject{
 			"file_path": {

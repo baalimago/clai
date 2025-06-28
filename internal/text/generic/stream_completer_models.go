@@ -40,7 +40,7 @@ type Tool struct {
 }
 
 type chatCompletionChunk struct {
-	Id                string   `json:"id"`
+	ID                string   `json:"id"`
 	Object            string   `json:"object"`
 	Created           int      `json:"created"`
 	Model             string   `json:"model"`
