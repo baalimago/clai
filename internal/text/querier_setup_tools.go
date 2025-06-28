@@ -18,22 +18,32 @@ import (
 )
 
 // filterMcpServersByProfile filters MCP server files based on whether their tools are needed by the profile
-func filterMcpServersByProfile(files []string, userConf Configurations) []string {
+func filterMcpServersByProfile(mcpServerPaths []string, userConf Configurations) []string {
 	// If no specific tools are configured, load all servers (existing behavior)
 	if len(userConf.Tools) == 0 {
-		return files
+		return mcpServerPaths
 	}
 
 	var filteredFiles []string
-	for _, file := range files {
+	for _, file := range mcpServerPaths {
 		serverName := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
-		mcpPrefix := "mcp_" + serverName + "_"
 
-		// Check if any tool in the profile matches this MCP server
+	INNER:
 		for _, tool := range userConf.Tools {
-			if strings.HasPrefix(tool, mcpPrefix) || strings.Contains(tool, "*") {
+			toolSplit := strings.Split(tool, "_")
+			// It can't have mcp prefix
+			if len(toolSplit) < 2 {
+				continue
+			}
+			// Its not a mcp server nor tool
+			if toolSplit[0] != "mcp" {
+				continue
+			}
+			toolServer := toolSplit[1]
+			hit := tools.WildcardMatch(toolServer, serverName)
+			if hit {
 				filteredFiles = append(filteredFiles, file)
-				break
+				break INNER
 			}
 		}
 	}

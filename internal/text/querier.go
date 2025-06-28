@@ -340,9 +340,10 @@ func (q *Querier[C]) handleFunctionCall(ctx context.Context, call tools.Call) er
 	}
 	// Post process here since a function call should be treated as the function call
 	// should be handeled mid-stream, but still requires multiple rounds of user input
+	pre := q.shouldSaveReply
 	q.shouldSaveReply = false
 	q.postProcess()
-	q.shouldSaveReply = true
+	q.shouldSaveReply = pre
 
 	call.Patch()
 	call.Function.Inputs.Patch()

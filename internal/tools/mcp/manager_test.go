@@ -23,13 +23,13 @@ func TestHandleServerRegistersTool(t *testing.T) {
 	tools.Registry = tools.NewRegistry()
 	defer func() { tools.Registry = orig }()
 
-	ev := ControlEvent{ServerName: "ts", Server: srv, InputChan: in, OutputChan: out}
+	ev := ControlEvent{ServerName: "echo", Server: srv, InputChan: in, OutputChan: out}
 	readyChan := make(chan struct{}, 1)
 	if serveErr := handleServer(ctx, ev, readyChan); serveErr != nil {
 		t.Fatalf("handleServer: %v", serveErr)
 	}
 
-	tool, ok := tools.Registry.Get("mcp_echo")
+	tool, ok := tools.Registry.Get("mcp_echo_echo")
 	if !ok {
 		t.Fatal("tool not registered")
 	}
@@ -65,11 +65,11 @@ func TestManager(t *testing.T) {
 	wg.Add(1)
 	go Manager(ctx, controlCh, statusCh, &wg)
 
-	controlCh <- ControlEvent{ServerName: "man", Server: srv, InputChan: in, OutputChan: out}
+	controlCh <- ControlEvent{ServerName: "echo", Server: srv, InputChan: in, OutputChan: out}
 
 	var ok bool
 	for i := 0; i < 20; i++ {
-		_, ok = tools.Registry.Get("mcp_echo")
+		_, ok = tools.Registry.Get("mcp_echo_echo")
 		if ok {
 			break
 		}
