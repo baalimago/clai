@@ -54,6 +54,9 @@ func vendorType(fromModel string) (string, string, string) {
 	if strings.Contains(fromModel, "mock") {
 		return "mock", "mock", "mock"
 	}
+	if strings.Contains(fromModel, "mercury") {
+		return "inception", "mercury", fromModel
+	}
 
 	return "VENDOR", "NOT", "FOUND"
 }

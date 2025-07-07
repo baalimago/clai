@@ -11,6 +11,7 @@ import (
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/internal/vendors/anthropic"
 	"github.com/baalimago/clai/internal/vendors/deepseek"
+	"github.com/baalimago/clai/internal/vendors/inception"
 	"github.com/baalimago/clai/internal/vendors/mistral"
 	"github.com/baalimago/clai/internal/vendors/novita"
 	"github.com/baalimago/clai/internal/vendors/ollama"
@@ -20,9 +21,7 @@ import (
 	"golang.org/x/net/context"
 )
 
-// CreateTextQuerier by checking the model for which vendor to use, then initiating
-// a TextQuerier
-func CreateTextQuerier(ctx context.Context, conf text.Configurations) (models.Querier, error) {
+func selectTextQuerier(ctx context.Context, conf text.Configurations) (models.Querier, bool, error) {
 	var q models.Querier
 	found := false
 
@@ -37,7 +36,7 @@ func CreateTextQuerier(ctx context.Context, conf text.Configurations) (models.Qu
 		defaultCpy.Model = conf.Model
 		qTmp, err := text.NewQuerier(ctx, conf, &defaultCpy)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create text querier: %w", err)
+			return nil, found, fmt.Errorf("failed to create text querier: %w", err)
 		}
 		q = &qTmp
 	}
@@ -48,7 +47,7 @@ func CreateTextQuerier(ctx context.Context, conf text.Configurations) (models.Qu
 		defaultCpy.Model = conf.Model
 		qTmp, err := text.NewQuerier(ctx, conf, &defaultCpy)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create text querier: %w", err)
+			return nil, found, fmt.Errorf("failed to create text querier: %w", err)
 		}
 		q = &qTmp
 	}
@@ -59,7 +58,30 @@ func CreateTextQuerier(ctx context.Context, conf text.Configurations) (models.Qu
 		defaultCpy.Model = conf.Model
 		qTmp, err := text.NewQuerier(ctx, conf, &defaultCpy)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create text querier: %w", err)
+			return nil, found, fmt.Errorf("failed to create text querier: %w", err)
+		}
+		q = &qTmp
+	}
+
+	if strings.Contains(conf.Model, "mercury") {
+		found = true
+		defaultCpy := inception.Default
+		defaultCpy.Model = conf.Model
+		qTmp, err := text.NewQuerier(ctx, conf, &defaultCpy)
+		if err != nil {
+			return nil, found, fmt.Errorf("failed to create text querier: %w", err)
+		}
+		q = &qTmp
+
+	}
+
+	if strings.Contains(conf.Model, "mistral") || strings.Contains(conf.Model, "mixtral") {
+		found = true
+		defaultCpy := mistral.Default
+		defaultCpy.Model = conf.Model
+		qTmp, err := text.NewQuerier(ctx, conf, &defaultCpy)
+		if err != nil {
+			return nil, false, fmt.Errorf("failed to create text querier: %w", err)
 		}
 		q = &qTmp
 	}
@@ -73,7 +95,7 @@ func CreateTextQuerier(ctx context.Context, conf text.Configurations) (models.Qu
 		}
 		qTmp, err := text.NewQuerier(ctx, conf, &defaultCpy)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create text querier: %w", err)
+			return nil, found, fmt.Errorf("failed to create text querier: %w", err)
 		}
 		q = &qTmp
 	} else if strings.HasPrefix(conf.Model, "novita:") {
@@ -82,20 +104,20 @@ func CreateTextQuerier(ctx context.Context, conf text.Configurations) (models.Qu
 		defaultCpy.Model = conf.Model[7:]
 		qTmp, err := text.NewQuerier(ctx, conf, &defaultCpy)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create text querier: %w", err)
-		}
-		q = &qTmp
-	} else if strings.Contains(conf.Model, "mistral") || strings.Contains(conf.Model, "mixtral") {
-		found = true
-		defaultCpy := mistral.Default
-		defaultCpy.Model = conf.Model
-		qTmp, err := text.NewQuerier(ctx, conf, &defaultCpy)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create text querier: %w", err)
+			return nil, found, fmt.Errorf("failed to create text querier: %w", err)
 		}
 		q = &qTmp
 	}
+	return q, found, nil
+}
 
+// CreateTextQuerier by checking the model for which vendor to use, then initiating
+// a TextQuerier
+func CreateTextQuerier(ctx context.Context, conf text.Configurations) (models.Querier, error) {
+	q, found, err := selectTextQuerier(ctx, conf)
+	if err != nil {
+		return nil, fmt.Errorf("failed to select text querier: %w", err)
+	}
 	if !found {
 		return nil, fmt.Errorf("failed to find text querier for model: %v", conf.Model)
 	}
