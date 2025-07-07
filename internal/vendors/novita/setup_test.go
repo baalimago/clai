@@ -9,7 +9,7 @@ import (
 
 func TestSetup(t *testing.T) {
 	vendorstest.RunSetupTests(t, "NOVITA_API_KEY", false, func() models.StreamCompleter {
-		v := NOVITA_DEFAULT
+		v := Default
 		return &v
 	})
 }

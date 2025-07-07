@@ -9,7 +9,7 @@ import (
 
 func TestSetup(t *testing.T) {
 	vendorstest.RunSetupTests(t, "MISTRAL_API_KEY", true, func() models.StreamCompleter {
-		v := MistralDefault
+		v := Default
 		return &v
 	})
 }

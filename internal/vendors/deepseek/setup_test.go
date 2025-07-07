@@ -9,7 +9,7 @@ import (
 
 func TestSetup(t *testing.T) {
 	vendorstest.RunSetupTests(t, "DEEPSEEK_API_KEY", false, func() models.StreamCompleter {
-		v := DEEPSEEK_DEFAULT
+		v := Default
 		return &v
 	})
 }

@@ -47,7 +47,7 @@ type DallERequest struct {
 type ImageResponse struct {
 	RevisedPrompt string `json:"revised_prompt"`
 	URL           string `json:"url"`
-	B64_JSON      string `json:"b64_json"`
+	B64JSON       string `json:"b64_json"`
 }
 
 type ImageResponses struct {
@@ -180,7 +180,7 @@ func (q *DallE) do(req *http.Request) error {
 }
 
 func (q *DallE) saveImage(imgResp ImageResponse) (string, error) {
-	data, err := base64.StdEncoding.DecodeString(imgResp.B64_JSON)
+	data, err := base64.StdEncoding.DecodeString(imgResp.B64JSON)
 	if err != nil {
 		return "", fmt.Errorf("failed to decode base64: %w", err)
 	}

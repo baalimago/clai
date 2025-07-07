@@ -1,14 +1,18 @@
 package deepseek
 
 import (
+	"fmt"
+	"os"
+
 	"github.com/baalimago/clai/internal/text/generic"
+	"github.com/baalimago/clai/internal/tools"
 )
 
-var DEEPSEEK_DEFAULT = Deepseek{
+var Default = Deepseek{
 	Model:       "deepseek-chat",
 	Temperature: 1.0,
 	TopP:        1.0,
-	Url:         ChatURL,
+	URL:         ChatURL,
 }
 
 type Deepseek struct {
@@ -19,5 +23,29 @@ type Deepseek struct {
 	PresencePenalty  float64 `json:"presence_penalty"`
 	Temperature      float64 `json:"temperature"`
 	TopP             float64 `json:"top_p"`
-	Url              string  `json:"url"`
+	URL              string  `json:"url"`
+}
+
+const ChatURL = "https://api.deepseek.com/chat/completions"
+
+func (g *Deepseek) Setup() error {
+	if os.Getenv("DEEPSEEK_API_KEY") == "" {
+		os.Setenv("DEEPSEEK_API_KEY", "deepseek")
+	}
+	err := g.StreamCompleter.Setup("DEEPSEEK_API_KEY", ChatURL, "DEEPSEEK_DEBUG")
+	if err != nil {
+		return fmt.Errorf("failed to setup stream completer: %w", err)
+	}
+	g.StreamCompleter.Model = g.Model
+	g.StreamCompleter.FrequencyPenalty = &g.FrequencyPenalty
+	g.StreamCompleter.MaxTokens = g.MaxTokens
+	g.StreamCompleter.Temperature = &g.Temperature
+	g.StreamCompleter.TopP = &g.TopP
+	toolChoice := "auto"
+	g.ToolChoice = &toolChoice
+	return nil
+}
+
+func (g *Deepseek) RegisterTool(tool tools.LLMTool) {
+	g.InternalRegisterTool(tool)
 }
