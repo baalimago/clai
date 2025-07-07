@@ -33,6 +33,7 @@ See [examples](./EXAMPLES.md) for additional info.
 | Deepseek  | `DEEPSEEK_API_KEY`   | [Text models](https://api-docs.deepseek.com/quick_start/pricing)                                                                                           |
 | Novita AI | `NOVITA_API_KEY`     | [Text models](https://novita.ai/model-api/product/llm-api?utm_source=github_clai&utm_medium=github_readme&utm_campaign=link), use prefix `novita:<target>` |
 | Ollama    | N/A                  | Use format `ollama:<target>` (defaults to llama3), server defaults to localhost:11434                                                                      |
+| Inception | `INCEPTION_API_KEY`  | [Text models](https://platform.inceptionlabs.ai/docs#models)                                                                                               |
 
 Note that you can only use the models that you have bought an API key for.
 

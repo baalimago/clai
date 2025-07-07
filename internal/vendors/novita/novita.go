@@ -1,14 +1,18 @@
 package novita
 
 import (
+	"fmt"
+	"os"
+
 	"github.com/baalimago/clai/internal/text/generic"
+	"github.com/baalimago/clai/internal/tools"
 )
 
-var NOVITA_DEFAULT = Novita{
+var Default = Novita{
 	Model:       "gryphe/mythomax-l2-13b",
 	Temperature: 1.0,
 	TopP:        1.0,
-	Url:         ChatURL,
+	URL:         ChatURL,
 }
 
 type Novita struct {
@@ -19,5 +23,29 @@ type Novita struct {
 	PresencePenalty  float64 `json:"presence_penalty"`
 	Temperature      float64 `json:"temperature"`
 	TopP             float64 `json:"top_p"`
-	Url              string  `json:"url"`
+	URL              string  `json:"url"`
+}
+
+const ChatURL = "https://api.novita.ai/v3/openai/chat/completions"
+
+func (g *Novita) Setup() error {
+	if os.Getenv("NOVITA_API_KEY") == "" {
+		os.Setenv("NOVITA_API_KEY", "novita")
+	}
+	err := g.StreamCompleter.Setup("NOVITA_API_KEY", ChatURL, "NOVITA_DEBUG")
+	if err != nil {
+		return fmt.Errorf("failed to setup stream completer: %w", err)
+	}
+	g.StreamCompleter.Model = g.Model
+	g.StreamCompleter.FrequencyPenalty = &g.FrequencyPenalty
+	g.StreamCompleter.MaxTokens = g.MaxTokens
+	g.StreamCompleter.Temperature = &g.Temperature
+	g.StreamCompleter.TopP = &g.TopP
+	toolChoice := "auto"
+	g.ToolChoice = &toolChoice
+	return nil
+}
+
+func (g *Novita) RegisterTool(tool tools.LLMTool) {
+	g.InternalRegisterTool(tool)
 }

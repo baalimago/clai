@@ -31,7 +31,7 @@ type Claude struct {
 	amInputTokens      int                   `json:"-"`
 }
 
-var ClaudeDefault = Claude{
+var Default = Claude{
 	Model:            "claude-sonnet-4-20250514",
 	URL:              ClaudeURL,
 	AnthropicVersion: "2023-06-01",

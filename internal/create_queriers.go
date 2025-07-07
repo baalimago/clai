@@ -11,6 +11,7 @@ import (
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/internal/vendors/anthropic"
 	"github.com/baalimago/clai/internal/vendors/deepseek"
+	"github.com/baalimago/clai/internal/vendors/inception"
 	"github.com/baalimago/clai/internal/vendors/mistral"
 	"github.com/baalimago/clai/internal/vendors/novita"
 	"github.com/baalimago/clai/internal/vendors/ollama"
@@ -20,15 +21,13 @@ import (
 	"golang.org/x/net/context"
 )
 
-// CreateTextQuerier by checking the model for which vendor to use, then initiating
-// a TextQuerier
-func CreateTextQuerier(ctx context.Context, conf text.Configurations) (models.Querier, error) {
+func selectTextQuerier(ctx context.Context, conf text.Configurations) (models.Querier, bool, error) {
 	var q models.Querier
 	found := false
 
 	if strings.Contains(conf.Model, "claude") {
 		found = true
-		defaultCpy := anthropic.ClaudeDefault
+		defaultCpy := anthropic.Default
 		// The model determines where to check for the config using
 		// cfgdir/vendor_model_version.json. If it doesn't find it,
 		// it will use the default to create a new config with this
@@ -37,29 +36,52 @@ func CreateTextQuerier(ctx context.Context, conf text.Configurations) (models.Qu
 		defaultCpy.Model = conf.Model
 		qTmp, err := text.NewQuerier(ctx, conf, &defaultCpy)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create text querier: %w", err)
+			return nil, found, fmt.Errorf("failed to create text querier: %w", err)
 		}
 		q = &qTmp
 	}
 
 	if strings.Contains(conf.Model, "gpt") {
 		found = true
-		defaultCpy := openai.GPT_DEFAULT
+		defaultCpy := openai.GptDefault
 		defaultCpy.Model = conf.Model
 		qTmp, err := text.NewQuerier(ctx, conf, &defaultCpy)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create text querier: %w", err)
+			return nil, found, fmt.Errorf("failed to create text querier: %w", err)
 		}
 		q = &qTmp
 	}
 
 	if strings.Contains(conf.Model, "deepseek") {
 		found = true
-		defaultCpy := deepseek.DEEPSEEK_DEFAULT
+		defaultCpy := deepseek.Default
 		defaultCpy.Model = conf.Model
 		qTmp, err := text.NewQuerier(ctx, conf, &defaultCpy)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create text querier: %w", err)
+			return nil, found, fmt.Errorf("failed to create text querier: %w", err)
+		}
+		q = &qTmp
+	}
+
+	if strings.Contains(conf.Model, "mercury") {
+		found = true
+		defaultCpy := inception.Default
+		defaultCpy.Model = conf.Model
+		qTmp, err := text.NewQuerier(ctx, conf, &defaultCpy)
+		if err != nil {
+			return nil, found, fmt.Errorf("failed to create text querier: %w", err)
+		}
+		q = &qTmp
+
+	}
+
+	if strings.Contains(conf.Model, "mistral") || strings.Contains(conf.Model, "mixtral") {
+		found = true
+		defaultCpy := mistral.Default
+		defaultCpy.Model = conf.Model
+		qTmp, err := text.NewQuerier(ctx, conf, &defaultCpy)
+		if err != nil {
+			return nil, false, fmt.Errorf("failed to create text querier: %w", err)
 		}
 		q = &qTmp
 	}
@@ -67,35 +89,35 @@ func CreateTextQuerier(ctx context.Context, conf text.Configurations) (models.Qu
 	// process before mistral, in case we want to use mistral for ollama
 	if strings.HasPrefix(conf.Model, "ollama:") || conf.Model == "ollama" {
 		found = true
-		defaultCpy := ollama.OLLAMA_DEFAULT
+		defaultCpy := ollama.Default
 		if len(conf.Model) > 7 {
 			defaultCpy.Model = conf.Model[7:]
 		}
 		qTmp, err := text.NewQuerier(ctx, conf, &defaultCpy)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create text querier: %w", err)
+			return nil, found, fmt.Errorf("failed to create text querier: %w", err)
 		}
 		q = &qTmp
 	} else if strings.HasPrefix(conf.Model, "novita:") {
 		found = true
-		defaultCpy := novita.NOVITA_DEFAULT
+		defaultCpy := novita.Default
 		defaultCpy.Model = conf.Model[7:]
 		qTmp, err := text.NewQuerier(ctx, conf, &defaultCpy)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create text querier: %w", err)
-		}
-		q = &qTmp
-	} else if strings.Contains(conf.Model, "mistral") || strings.Contains(conf.Model, "mixtral") {
-		found = true
-		defaultCpy := mistral.MistralDefault
-		defaultCpy.Model = conf.Model
-		qTmp, err := text.NewQuerier(ctx, conf, &defaultCpy)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create text querier: %w", err)
+			return nil, found, fmt.Errorf("failed to create text querier: %w", err)
 		}
 		q = &qTmp
 	}
+	return q, found, nil
+}
 
+// CreateTextQuerier by checking the model for which vendor to use, then initiating
+// a TextQuerier
+func CreateTextQuerier(ctx context.Context, conf text.Configurations) (models.Querier, error) {
+	q, found, err := selectTextQuerier(ctx, conf)
+	if err != nil {
+		return nil, fmt.Errorf("failed to select text querier: %w", err)
+	}
 	if !found {
 		return nil, fmt.Errorf("failed to find text querier for model: %v", conf.Model)
 	}
