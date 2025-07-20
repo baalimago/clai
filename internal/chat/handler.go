@@ -14,6 +14,7 @@ import (
 
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/utils"
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 	"github.com/baalimago/go_away_boilerplate/pkg/num"
@@ -58,8 +59,8 @@ type ChatHandler struct {
 	debug       bool
 	username    string
 	subCmd      string
-	chat        models.Chat
-	preMessages []models.Message
+	chat        pub_models.Chat
+	preMessages []pub_models.Message
 	prompt      string
 	convDir     string
 	config      NotCyclicalImport
@@ -73,7 +74,7 @@ func (q *ChatHandler) Query(ctx context.Context) error {
 func New(q models.ChatQuerier,
 	confDir,
 	args string,
-	preMessages []models.Message,
+	preMessages []pub_models.Message,
 	conf NotCyclicalImport,
 	raw bool,
 ) (*ChatHandler, error) {
@@ -134,10 +135,10 @@ func (cq *ChatHandler) actOnSubCmd(ctx context.Context) error {
 }
 
 func (cq *ChatHandler) new(ctx context.Context) error {
-	msgs := make([]models.Message, 0)
+	msgs := make([]pub_models.Message, 0)
 	msgs = append(msgs, cq.preMessages...)
-	msgs = append(msgs, models.Message{Role: "user", Content: cq.prompt})
-	newChat := models.Chat{
+	msgs = append(msgs, pub_models.Message{Role: "user", Content: cq.prompt})
+	newChat := pub_models.Chat{
 		Created:  time.Now(),
 		ID:       IDFromPrompt(cq.prompt),
 		Messages: msgs,
@@ -150,17 +151,17 @@ func (cq *ChatHandler) new(ctx context.Context) error {
 	return cq.loop(ctx)
 }
 
-func (cq *ChatHandler) findChatByID(potentialChatIdx string) (models.Chat, error) {
+func (cq *ChatHandler) findChatByID(potentialChatIdx string) (pub_models.Chat, error) {
 	chats, err := cq.list()
 	if err != nil {
-		return models.Chat{}, fmt.Errorf("failed to list chats: %w", err)
+		return pub_models.Chat{}, fmt.Errorf("failed to list chats: %w", err)
 	}
 	split := strings.Split(potentialChatIdx, " ")
 	firstToken := split[0]
 	chatIdx, err := strconv.Atoi(firstToken)
 	if err == nil {
 		if chatIdx < 0 || chatIdx >= len(chats) {
-			return models.Chat{}, fmt.Errorf("chat index out of range")
+			return pub_models.Chat{}, fmt.Errorf("chat index out of range")
 		}
 		// Reassemble the prompt from the split tokens, but without the index
 		// selecting the chat
@@ -171,7 +172,7 @@ func (cq *ChatHandler) findChatByID(potentialChatIdx string) (models.Chat, error
 	}
 }
 
-func (cq *ChatHandler) printChat(chat models.Chat) error {
+func (cq *ChatHandler) printChat(chat pub_models.Chat) error {
 	for _, message := range chat.Messages {
 		err := utils.AttemptPrettyPrint(message, cq.username, cq.raw)
 		if err != nil {
@@ -190,7 +191,7 @@ func (cq *ChatHandler) cont(ctx context.Context) error {
 		return fmt.Errorf("failed to get chat: %w", err)
 	}
 	if cq.prompt != "" {
-		chat.Messages = append(chat.Messages, models.Message{Role: "user", Content: cq.prompt})
+		chat.Messages = append(chat.Messages, pub_models.Message{Role: "user", Content: cq.prompt})
 	}
 	err = cq.printChat(chat)
 	if err != nil {
@@ -214,12 +215,12 @@ func (cq *ChatHandler) deleteFromPrompt() error {
 	return nil
 }
 
-func (cq *ChatHandler) list() ([]models.Chat, error) {
+func (cq *ChatHandler) list() ([]pub_models.Chat, error) {
 	files, err := os.ReadDir(cq.convDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list conversations: %w", err)
 	}
-	var chats []models.Chat
+	var chats []pub_models.Chat
 	if misc.Truthy(os.Getenv("DEBUG")) {
 		ancli.PrintOK(fmt.Sprintf("found '%v' conversations:\n", len(files)))
 	}
@@ -230,7 +231,7 @@ func (cq *ChatHandler) list() ([]models.Chat, error) {
 		}
 		chats = append(chats, chat)
 	}
-	slices.SortFunc(chats, func(a, b models.Chat) int {
+	slices.SortFunc(chats, func(a, b pub_models.Chat) int {
 		return b.Created.Compare(a.Created)
 	})
 	return chats, err
@@ -247,7 +248,7 @@ func formatChatName(chatName string) string {
 	return strings.ReplaceAll(chatName, "\n", "\\n")
 }
 
-func (cq *ChatHandler) listChats(ctx context.Context, chats []models.Chat) error {
+func (cq *ChatHandler) listChats(ctx context.Context, chats []pub_models.Chat) error {
 	ancli.PrintOK(fmt.Sprintf("found '%v' conversations:\n", len(chats)))
 	fmt.Printf("\t%-3s| %-20s| %v | %v\n", "ID", "Created", "Messages", "Filename + prompt")
 	line := strings.Repeat("-", 55)
@@ -320,7 +321,7 @@ func (cq *ChatHandler) listChats(ctx context.Context, chats []models.Chat) error
 	return cq.loop(ctx)
 }
 
-func (cq *ChatHandler) getByID(ID string) (models.Chat, error) {
+func (cq *ChatHandler) getByID(ID string) (pub_models.Chat, error) {
 	return FromPath(path.Join(cq.convDir, fmt.Sprintf("%v.json", ID)))
 }
 
@@ -348,7 +349,7 @@ func (cq *ChatHandler) loop(ctx context.Context) error {
 				// No context, error should contain context
 				return err
 			}
-			cq.chat.Messages = append(cq.chat.Messages, models.Message{Role: "user", Content: userInput})
+			cq.chat.Messages = append(cq.chat.Messages, pub_models.Message{Role: "user", Content: userInput})
 		}
 
 		newChat, err := cq.q.TextQuery(ctx, cq.chat)

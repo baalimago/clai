@@ -6,13 +6,13 @@ import (
 	"testing"
 
 	"github.com/baalimago/clai/internal/chat"
-	"github.com/baalimago/clai/internal/models"
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
 func TestSaveAsPreviousQuery(t *testing.T) {
 	tmp := t.TempDir()
 	os.MkdirAll(filepath.Join(tmp, "conversations"), 0o755)
-	msgs := []models.Message{
+	msgs := []pub_models.Message{
 		{Role: "system", Content: "sys"},
 		{Role: "user", Content: "what is life"},
 		{Role: "assistant", Content: "42"},
@@ -34,7 +34,7 @@ func TestSaveAsPreviousQuery(t *testing.T) {
 func TestLoad(t *testing.T) {
 	tmp := t.TempDir()
 	os.MkdirAll(filepath.Join(tmp, "conversations"), 0o755)
-	ch := models.Chat{ID: "prevQuery", Messages: []models.Message{{Role: "user", Content: "hi"}}}
+	ch := pub_models.Chat{ID: "prevQuery", Messages: []pub_models.Message{{Role: "user", Content: "hi"}}}
 	if err := chat.Save(filepath.Join(tmp, "conversations"), ch); err != nil {
 		t.Fatalf("setup save failed: %v", err)
 	}

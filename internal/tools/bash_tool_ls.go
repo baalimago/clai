@@ -3,16 +3,18 @@ package tools
 import (
 	"fmt"
 	"os/exec"
+
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
-type LsTool Specification
+type LsTool pub_models.Specification
 
 var LS = LsTool{
 	Name:        "ls",
 	Description: "List the files in a directory. Uses the Linux command 'ls'.",
-	Inputs: &InputSchema{
+	Inputs: &pub_models.InputSchema{
 		Type: "object",
-		Properties: map[string]ParameterObject{
+		Properties: map[string]pub_models.ParameterObject{
 			"directory": {
 				Type:        "string",
 				Description: "The directory to list the files of.",
@@ -30,7 +32,7 @@ var LS = LsTool{
 	},
 }
 
-func (f LsTool) Call(input Input) (string, error) {
+func (f LsTool) Call(input pub_models.Input) (string, error) {
 	directory, ok := input["directory"].(string)
 	if !ok {
 		return "", fmt.Errorf("directory must be a string")
@@ -61,6 +63,6 @@ func (f LsTool) Call(input Input) (string, error) {
 	return string(output), nil
 }
 
-func (f LsTool) Specification() Specification {
-	return Specification(LS)
+func (f LsTool) Specification() pub_models.Specification {
+	return pub_models.Specification(LS)
 }

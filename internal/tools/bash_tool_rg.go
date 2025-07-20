@@ -3,16 +3,18 @@ package tools
 import (
 	"fmt"
 	"os/exec"
+
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
-type RipGrepTool Specification
+type RipGrepTool pub_models.Specification
 
 var RipGrep = RipGrepTool{
 	Name:        "rg",
 	Description: "Search for a pattern in files using ripgrep.",
-	Inputs: &InputSchema{
+	Inputs: &pub_models.InputSchema{
 		Type: "object",
-		Properties: map[string]ParameterObject{
+		Properties: map[string]pub_models.ParameterObject{
 			"pattern": {
 				Type:        "string",
 				Description: "The pattern to search for.",
@@ -38,7 +40,7 @@ var RipGrep = RipGrepTool{
 	},
 }
 
-func (r RipGrepTool) Call(input Input) (string, error) {
+func (r RipGrepTool) Call(input pub_models.Input) (string, error) {
 	pattern, ok := input["pattern"].(string)
 	if !ok {
 		return "", fmt.Errorf("pattern must be a string")
@@ -91,6 +93,6 @@ func (r RipGrepTool) Call(input Input) (string, error) {
 	return string(output), nil
 }
 
-func (r RipGrepTool) Specification() Specification {
-	return Specification(RipGrep)
+func (r RipGrepTool) Specification() pub_models.Specification {
+	return pub_models.Specification(RipGrep)
 }

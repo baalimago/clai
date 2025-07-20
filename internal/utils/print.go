@@ -8,7 +8,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/baalimago/clai/internal/models"
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
@@ -69,7 +69,7 @@ func UpdateMessageTerminalMetadata(msg string, line *string, lineCount *int, ter
 
 // AttemptPrettyPrint by first checking if the glow command is available, and if so, pretty print the chat message
 // if not found, simply print the message as is
-func AttemptPrettyPrint(chatMessage models.Message, username string, raw bool) error {
+func AttemptPrettyPrint(chatMessage pub_models.Message, username string, raw bool) error {
 	if raw {
 		fmt.Println(chatMessage.Content)
 		return nil

@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/utils"
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
@@ -38,39 +38,39 @@ func Setup(flagGlob string, args []string) (string, []string, error) {
 	return glob, args, nil
 }
 
-func CreateChat(glob, systemPrompt string) (models.Chat, error) {
+func CreateChat(glob, systemPrompt string) (pub_models.Chat, error) {
 	fileMessages, err := parseGlob(glob)
 	if err != nil {
-		return models.Chat{}, fmt.Errorf("failed to parse glob string: '%v', err: %w", glob, err)
+		return pub_models.Chat{}, fmt.Errorf("failed to parse glob string: '%v', err: %w", glob, err)
 	}
 
-	return models.Chat{
+	return pub_models.Chat{
 		ID:       fmt.Sprintf("glob_%v", glob),
 		Messages: constructGlobMessages(fileMessages),
 	}, nil
 }
 
-func constructGlobMessages(globMessages []models.Message) []models.Message {
-	ret := make([]models.Message, 0, len(globMessages)+4)
-	ret = append(ret, models.Message{
+func constructGlobMessages(globMessages []pub_models.Message) []pub_models.Message {
+	ret := make([]pub_models.Message, 0, len(globMessages)+4)
+	ret = append(ret, pub_models.Message{
 		Role:    "system",
 		Content: "You will be given a series of messages each containing contents from files, then a message containing this: '#####'. Using the file content as context, perform the request given in the message after the '#####'.",
 	})
 	ret = append(ret, globMessages...)
-	ret = append(ret, models.Message{
+	ret = append(ret, pub_models.Message{
 		Role:    "user",
 		Content: "#####",
 	})
 	return ret
 }
 
-func parseGlob(glob string) ([]models.Message, error) {
+func parseGlob(glob string) ([]pub_models.Message, error) {
 	glob, err := utils.ReplaceTildeWithHome(glob)
 	if err != nil {
 		return nil, fmt.Errorf("parseGlob, ReplaceTildeWithHome: %w", err)
 	}
 	files, err := filepath.Glob(glob)
-	ret := make([]models.Message, 0, len(files))
+	ret := make([]pub_models.Message, 0, len(files))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse glob: %w", err)
 	}
@@ -88,7 +88,7 @@ func parseGlob(glob string) ([]models.Message, error) {
 			ancli.PrintWarn(fmt.Sprintf("failed to read file: %v\n", err))
 			continue
 		}
-		ret = append(ret, models.Message{
+		ret = append(ret, pub_models.Message{
 			Role:    "user",
 			Content: fmt.Sprintf("{\"fileName\": \"%v\", \"data\": \"%v\"}", file, string(data)),
 		})

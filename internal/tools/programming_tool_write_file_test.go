@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
 func TestWriteFileTool_Call(t *testing.T) {
@@ -11,13 +13,13 @@ func TestWriteFileTool_Call(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		input   Input
+		input   pub_models.Input
 		wantErr bool
 		check   func(t *testing.T, filePath string)
 	}{
 		{
 			name: "write new file",
-			input: Input{
+			input: pub_models.Input{
 				"file_path": filepath.Join(tempDir, "test1.txt"),
 				"content":   "Hello, World!",
 			},
@@ -34,7 +36,7 @@ func TestWriteFileTool_Call(t *testing.T) {
 		},
 		{
 			name: "overwrite existing file",
-			input: Input{
+			input: pub_models.Input{
 				"file_path": filepath.Join(tempDir, "test2.txt"),
 				"content":   "New content",
 			},
@@ -51,7 +53,7 @@ func TestWriteFileTool_Call(t *testing.T) {
 		},
 		{
 			name: "append to existing file",
-			input: Input{
+			input: pub_models.Input{
 				"file_path": filepath.Join(tempDir, "test3.txt"),
 				"content":   " Appended content",
 				"append":    true,
@@ -69,21 +71,21 @@ func TestWriteFileTool_Call(t *testing.T) {
 		},
 		{
 			name: "missing file_path",
-			input: Input{
+			input: pub_models.Input{
 				"content": "Some content",
 			},
 			wantErr: true,
 		},
 		{
 			name: "missing content",
-			input: Input{
+			input: pub_models.Input{
 				"file_path": filepath.Join(tempDir, "test4.txt"),
 			},
 			wantErr: true,
 		},
 		{
 			name: "invalid append type",
-			input: Input{
+			input: pub_models.Input{
 				"file_path": filepath.Join(tempDir, "test5.txt"),
 				"content":   "Some content",
 				"append":    "true",

@@ -3,16 +3,18 @@ package tools
 import (
 	"fmt"
 	"os/exec"
+
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
-type FileTypeTool Specification
+type FileTypeTool pub_models.Specification
 
 var FileType = FileTypeTool{
 	Name:        "file_type",
 	Description: "Determine the file type of a given file. Uses the linux command 'file'.",
-	Inputs: &InputSchema{
+	Inputs: &pub_models.InputSchema{
 		Type: "object",
-		Properties: map[string]ParameterObject{
+		Properties: map[string]pub_models.ParameterObject{
 			"file_path": {
 				Type:        "string",
 				Description: "The path to the file to analyze.",
@@ -26,7 +28,7 @@ var FileType = FileTypeTool{
 	},
 }
 
-func (f FileTypeTool) Call(input Input) (string, error) {
+func (f FileTypeTool) Call(input pub_models.Input) (string, error) {
 	filePath, ok := input["file_path"].(string)
 	if !ok {
 		return "", fmt.Errorf("file_path must be a string")
@@ -48,6 +50,6 @@ func (f FileTypeTool) Call(input Input) (string, error) {
 	return string(output), nil
 }
 
-func (f FileTypeTool) Specification() Specification {
-	return Specification(FileType)
+func (f FileTypeTool) Specification() pub_models.Specification {
+	return pub_models.Specification(FileType)
 }

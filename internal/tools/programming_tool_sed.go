@@ -6,16 +6,18 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
-type SedTool Specification
+type SedTool pub_models.Specification
 
 var Sed = SedTool{
 	Name:        "sed",
 	Description: "Perform a basic regex substitution on each line or within a specific line range of a file (like 'sed s/pattern/repl/g'). Overwrites the file.",
-	Inputs: &InputSchema{
+	Inputs: &pub_models.InputSchema{
 		Type: "object",
-		Properties: map[string]ParameterObject{
+		Properties: map[string]pub_models.ParameterObject{
 			"file_path": {
 				Type:        "string",
 				Description: "The path to the file to modify.",
@@ -41,7 +43,7 @@ var Sed = SedTool{
 	},
 }
 
-func (s SedTool) Call(input Input) (string, error) {
+func (s SedTool) Call(input pub_models.Input) (string, error) {
 	filePath, ok := input["file_path"].(string)
 	if !ok {
 		return "", fmt.Errorf("file_path must be a string")
@@ -106,6 +108,6 @@ func (s SedTool) Call(input Input) (string, error) {
 	return fmt.Sprintf("sed: replaced occurrences of %q with %q in %s (%d-%d)", pattern, repl, filePath, startLine, endLine), nil
 }
 
-func (s SedTool) Specification() Specification {
-	return Specification(Sed)
+func (s SedTool) Specification() pub_models.Specification {
+	return pub_models.Specification(Sed)
 }

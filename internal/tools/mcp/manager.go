@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/baalimago/clai/internal/tools"
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
@@ -93,7 +94,7 @@ func handleServer(ctx context.Context, ev ControlEvent, readyChan chan struct{})
 			ancli.Warnf("tool: 'mcp_%v' has issues that the LLM will complain about, skipping\n", t.Name)
 			continue
 		}
-		spec := tools.Specification{
+		spec := pub_models.Specification{
 			Name:        fmt.Sprintf("mcp_%s_%s", ev.ServerName, t.Name),
 			Description: t.Description,
 			Inputs:      &t.InputSchema,

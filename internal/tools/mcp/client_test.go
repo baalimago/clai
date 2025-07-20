@@ -5,14 +5,14 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/baalimago/clai/internal/tools"
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
 func TestClient(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	srv := tools.McpServer{Command: "go", Args: []string{"run", "./testserver"}}
+	srv := pub_models.McpServer{Command: "go", Args: []string{"run", "./testserver"}}
 	in, out, err := Client(ctx, srv)
 	if err != nil {
 		t.Fatalf("client: %v", err)
@@ -37,7 +37,7 @@ func TestClient(t *testing.T) {
 func TestClientBadCommand(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	_, _, err := Client(ctx, tools.McpServer{Command: "does-not-exist"})
+	_, _, err := Client(ctx, pub_models.McpServer{Command: "does-not-exist"})
 	if err == nil {
 		t.Fatal("expected error for bad command")
 	}

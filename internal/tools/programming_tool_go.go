@@ -4,16 +4,18 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
-type GoTool Specification
+type GoTool pub_models.Specification
 
 var Go = GoTool{
 	Name:        "go",
 	Description: "Run Go commands like 'go test' and 'go run' to compile, test, and run Go programs. Run 'go help' to get details of this tool.",
-	Inputs: &InputSchema{
+	Inputs: &pub_models.InputSchema{
 		Type: "object",
-		Properties: map[string]ParameterObject{
+		Properties: map[string]pub_models.ParameterObject{
 			"command": {
 				Type:        "string",
 				Description: "The Go command to run (e.g., 'run', 'test', 'build').",
@@ -31,7 +33,7 @@ var Go = GoTool{
 	},
 }
 
-func (g GoTool) Call(input Input) (string, error) {
+func (g GoTool) Call(input pub_models.Input) (string, error) {
 	command, ok := input["command"].(string)
 	if !ok {
 		return "", fmt.Errorf("command must be a string")
@@ -57,6 +59,6 @@ func (g GoTool) Call(input Input) (string, error) {
 	return string(output), nil
 }
 
-func (g GoTool) Specification() Specification {
-	return Specification(Go)
+func (g GoTool) Specification() pub_models.Specification {
+	return pub_models.Specification(Go)
 }

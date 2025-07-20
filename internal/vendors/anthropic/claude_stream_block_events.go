@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/baalimago/clai/internal/models"
-	"github.com/baalimago/clai/internal/tools"
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 )
 
@@ -81,13 +81,13 @@ func (c *Claude) handleContentBlockStop(blockStop string) models.CompletionEvent
 
 	switch c.contentBlockType {
 	case "tool_use":
-		var inputs tools.Input
+		var inputs pub_models.Input
 		if c.functionJSON != "" {
 			if err := json.Unmarshal([]byte(c.functionJSON), &inputs); err != nil {
 				return fmt.Errorf("failed to unmarshal functionJSON: %v, error is: %w", c.functionJSON, err)
 			}
 		}
-		return tools.Call{
+		return pub_models.Call{
 			Name:   c.functionName,
 			Inputs: &inputs,
 			ID:     c.functionID,

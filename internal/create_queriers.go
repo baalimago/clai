@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -18,7 +19,6 @@ import (
 	"github.com/baalimago/clai/internal/vendors/openai"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
-	"golang.org/x/net/context"
 )
 
 func selectTextQuerier(ctx context.Context, conf text.Configurations) (models.Querier, bool, error) {
@@ -123,7 +123,7 @@ func CreateTextQuerier(ctx context.Context, conf text.Configurations) (models.Qu
 	}
 
 	if misc.Truthy(os.Getenv("DEBUG")) {
-		ancli.PrintOK(fmt.Sprintf("chat mode: %v\n", conf.ChatMode))
+		ancli.PrintOK(fmt.Sprintf("chat mode: %v, type of querier: %T\n", conf.ChatMode, q))
 	}
 	if conf.ChatMode {
 		tq, isTextQuerier := q.(models.ChatQuerier)

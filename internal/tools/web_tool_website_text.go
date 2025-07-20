@@ -7,17 +7,18 @@ import (
 	"net/http"
 	"strings"
 
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"golang.org/x/net/html"
 )
 
-type WebsiteTextTool Specification
+type WebsiteTextTool pub_models.Specification
 
 var WebsiteText = WebsiteTextTool{
 	Name:        "website_text",
 	Description: "Get the text content of a website by stripping all non-text tags and trimming whitespace.",
-	Inputs: &InputSchema{
+	Inputs: &pub_models.InputSchema{
 		Type: "object",
-		Properties: map[string]ParameterObject{
+		Properties: map[string]pub_models.ParameterObject{
 			"url": {
 				Type:        "string",
 				Description: "The URL of the website to retrieve the text content from.",
@@ -27,7 +28,7 @@ var WebsiteText = WebsiteTextTool{
 	},
 }
 
-func (w WebsiteTextTool) Call(input Input) (string, error) {
+func (w WebsiteTextTool) Call(input pub_models.Input) (string, error) {
 	url, ok := input["url"].(string)
 	if !ok {
 		return "", fmt.Errorf("url must be a string")
@@ -59,6 +60,6 @@ func (w WebsiteTextTool) Call(input Input) (string, error) {
 	return text.String(), nil
 }
 
-func (w WebsiteTextTool) Specification() Specification {
-	return Specification(WebsiteText)
+func (w WebsiteTextTool) Specification() pub_models.Specification {
+	return pub_models.Specification(WebsiteText)
 }

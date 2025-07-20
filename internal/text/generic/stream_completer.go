@@ -13,6 +13,7 @@ import (
 
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/tools"
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
@@ -21,9 +22,9 @@ import (
 var dataPrefix = []byte("data: ")
 
 // streamCompletions taking the messages as prompt conversation. Returns the messages from the chat model.
-func (s *StreamCompleter) StreamCompletions(ctx context.Context, chat models.Chat) (chan models.CompletionEvent, error) {
+func (s *StreamCompleter) StreamCompletions(ctx context.Context, chat pub_models.Chat) (chan models.CompletionEvent, error) {
 	if s.Clean != nil {
-		cpy := make([]models.Message, len(chat.Messages))
+		cpy := make([]pub_models.Message, len(chat.Messages))
 		copy(cpy, chat.Messages)
 		chat.Messages = s.Clean(cpy)
 	}
@@ -47,7 +48,7 @@ func (s *StreamCompleter) StreamCompletions(ctx context.Context, chat models.Cha
 	return outChan, nil
 }
 
-func (s *StreamCompleter) createRequest(ctx context.Context, chat models.Chat) (*http.Request, error) {
+func (s *StreamCompleter) createRequest(ctx context.Context, chat pub_models.Chat) (*http.Request, error) {
 	reqData := req{
 		Model:            s.Model,
 		FrequencyPenalty: s.FrequencyPenalty,
@@ -145,7 +146,7 @@ func (s *StreamCompleter) handleStreamChunk(token []byte) models.CompletionEvent
 			if chosen == nil || isNoopEvent {
 				chosen = compEvent
 			}
-		case tools.Call:
+		case pub_models.Call:
 			// Always prefer tools call, if possible
 			chosen = compEvent
 		}
@@ -179,7 +180,7 @@ func (s *StreamCompleter) handleChoice(choice Choice) models.CompletionEvent {
 		if s.debug {
 			ancli.PrintOK(fmt.Sprintf("toolsCallArgsString: %v\n", s.toolsCallArgsString))
 		}
-		var input tools.Input
+		var input pub_models.Input
 		err := json.Unmarshal([]byte(s.toolsCallArgsString), &input)
 		if err == nil {
 			return s.doToolsCall()
@@ -195,7 +196,7 @@ func (s *StreamCompleter) doToolsCall() models.CompletionEvent {
 		s.toolsCallName = ""
 		s.toolsCallArgsString = ""
 	}()
-	var input tools.Input
+	var input pub_models.Input
 	err := json.Unmarshal([]byte(s.toolsCallArgsString), &input)
 	if err != nil {
 		return fmt.Errorf("failed to unmarshal argument string: %w, argsString: %v", err, s.toolsCallArgsString)
@@ -203,9 +204,9 @@ func (s *StreamCompleter) doToolsCall() models.CompletionEvent {
 
 	userFunc := tools.ToolFromName(s.toolsCallName)
 	userFunc.Arguments = s.toolsCallArgsString
-	userFunc.Inputs = &tools.InputSchema{}
+	userFunc.Inputs = &pub_models.InputSchema{}
 
-	return tools.Call{
+	return pub_models.Call{
 		ID:       s.toolsCallID,
 		Name:     s.toolsCallName,
 		Inputs:   &input,
@@ -219,7 +220,7 @@ func (s *StreamCompleter) doToolsCall() models.CompletionEvent {
 const heuristicTokenCountFactor = 1.1
 
 // CountInputTokens estimates the amount of input tokens in the chat.
-func (s *StreamCompleter) CountInputTokens(ctx context.Context, chat models.Chat) (int, error) {
+func (s *StreamCompleter) CountInputTokens(ctx context.Context, chat pub_models.Chat) (int, error) {
 	var count int
 	for _, m := range chat.Messages {
 		count += len(strings.Split(m.Content, " "))

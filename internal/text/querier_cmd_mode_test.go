@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/baalimago/clai/internal/models"
+	pub_models "github.com/baalimago/clai/pkg/text/models"
+
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
@@ -16,7 +18,7 @@ func (m mockCompleter) Setup() error {
 	return nil
 }
 
-func (m mockCompleter) StreamCompletions(ctx context.Context, c models.Chat) (chan models.CompletionEvent, error) {
+func (m mockCompleter) StreamCompletions(ctx context.Context, c pub_models.Chat) (chan models.CompletionEvent, error) {
 	return nil, nil
 }
 

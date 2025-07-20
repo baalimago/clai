@@ -3,6 +3,8 @@ package tools
 import (
 	"os"
 	"testing"
+
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
 func TestLineCountTool_Call(t *testing.T) {
@@ -13,7 +15,7 @@ func TestLineCountTool_Call(t *testing.T) {
 	}
 	defer os.Remove(fileName)
 
-	out, err := LineCount.Call(Input{"file_path": fileName})
+	out, err := LineCount.Call(pub_models.Input{"file_path": fileName})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -23,10 +25,10 @@ func TestLineCountTool_Call(t *testing.T) {
 }
 
 func TestLineCountTool_BadInputs(t *testing.T) {
-	if _, err := LineCount.Call(Input{"file_path": 123}); err == nil {
+	if _, err := LineCount.Call(pub_models.Input{"file_path": 123}); err == nil {
 		t.Error("expected error for bad file_path type")
 	}
-	if _, err := LineCount.Call(Input{"file_path": "no_such_file.txt"}); err == nil {
+	if _, err := LineCount.Call(pub_models.Input{"file_path": "no_such_file.txt"}); err == nil {
 		t.Error("expected error for missing file")
 	}
 }

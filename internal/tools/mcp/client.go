@@ -9,13 +9,13 @@ import (
 	"os"
 	"os/exec"
 
-	"github.com/baalimago/clai/internal/tools"
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
 // Client starts the MCP server process defined by mcpConfig and returns channels
 // for sending requests and receiving responses.
-func Client(ctx context.Context, mcpConfig tools.McpServer) (chan<- any, <-chan any, error) {
+func Client(ctx context.Context, mcpConfig pub_models.McpServer) (chan<- any, <-chan any, error) {
 	cmd := exec.CommandContext(ctx, mcpConfig.Command, mcpConfig.Args...)
 	cmd.Env = os.Environ()
 	for k, v := range mcpConfig.Env {

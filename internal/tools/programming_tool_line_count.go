@@ -4,16 +4,18 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
-type LineCountTool Specification
+type LineCountTool pub_models.Specification
 
 var LineCount = LineCountTool{
 	Name:        "line_count",
 	Description: "Count the number of lines in a file.",
-	Inputs: &InputSchema{
+	Inputs: &pub_models.InputSchema{
 		Type: "object",
-		Properties: map[string]ParameterObject{
+		Properties: map[string]pub_models.ParameterObject{
 			"file_path": {
 				Type:        "string",
 				Description: "The path to the file to count lines of.",
@@ -23,7 +25,7 @@ var LineCount = LineCountTool{
 	},
 }
 
-func (l LineCountTool) Call(input Input) (string, error) {
+func (l LineCountTool) Call(input pub_models.Input) (string, error) {
 	filePath, ok := input["file_path"].(string)
 	if !ok {
 		return "", fmt.Errorf("file_path must be a string")
@@ -45,6 +47,6 @@ func (l LineCountTool) Call(input Input) (string, error) {
 	return fmt.Sprintf("%d", count), nil
 }
 
-func (l LineCountTool) Specification() Specification {
-	return Specification(LineCount)
+func (l LineCountTool) Specification() pub_models.Specification {
+	return pub_models.Specification(LineCount)
 }

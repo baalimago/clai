@@ -8,7 +8,7 @@ import (
 	"os"
 	"sync"
 
-	"github.com/baalimago/clai/internal/tools"
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
@@ -17,7 +17,7 @@ import (
 // mcpTool wraps a tool provided by an MCP server and implements tools.LLMTool.
 type mcpTool struct {
 	remoteName string
-	spec       tools.Specification
+	spec       pub_models.Specification
 	inputChan  chan<- any
 	outputChan <-chan any
 
@@ -32,7 +32,7 @@ func (m *mcpTool) nextID() int {
 	return m.seq
 }
 
-func (m *mcpTool) Call(input tools.Input) (string, error) {
+func (m *mcpTool) Call(input pub_models.Input) (string, error) {
 	nonNullableInp := make(map[string]any)
 	if len(input) != 0 {
 		nonNullableInp = input
@@ -95,6 +95,6 @@ func (m *mcpTool) Call(input tools.Input) (string, error) {
 	return "", fmt.Errorf("connection closed")
 }
 
-func (m *mcpTool) Specification() tools.Specification {
+func (m *mcpTool) Specification() pub_models.Specification {
 	return m.spec
 }

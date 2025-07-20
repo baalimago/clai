@@ -8,6 +8,7 @@ import (
 	"github.com/baalimago/clai/internal/text/generic"
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/utils"
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
@@ -32,7 +33,7 @@ type Mistral struct {
 	RandomSeed  int     `json:"random_seed"`
 }
 
-func clean(msg []models.Message) []models.Message {
+func clean(msg []pub_models.Message) []pub_models.Message {
 	// Mistral doesn't like additional fields in the tools call
 	for i, m := range msg {
 		if m.Role == "assistant" {
@@ -88,7 +89,7 @@ func (m *Mistral) Setup() error {
 	return nil
 }
 
-func (m *Mistral) StreamCompletions(ctx context.Context, chat models.Chat) (chan models.CompletionEvent, error) {
+func (m *Mistral) StreamCompletions(ctx context.Context, chat pub_models.Chat) (chan models.CompletionEvent, error) {
 	return m.StreamCompleter.StreamCompletions(ctx, chat)
 }
 

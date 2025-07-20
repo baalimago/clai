@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
@@ -20,12 +21,12 @@ func Querier_Context_Test(t *testing.T, q Querier) {
 
 func ChatQuerier_Test(t *testing.T, q ChatQuerier) {
 	testboil.ReturnsOnContextCancel(t, func(ctx context.Context) {
-		q.TextQuery(ctx, Chat{})
+		q.TextQuery(ctx, pub_models.Chat{})
 	}, time.Second)
 }
 
 func StreamCompleter_Test(t *testing.T, s StreamCompleter) {
 	testboil.ReturnsOnContextCancel(t, func(ctx context.Context) {
-		s.StreamCompletions(ctx, Chat{})
+		s.StreamCompletions(ctx, pub_models.Chat{})
 	}, time.Second)
 }

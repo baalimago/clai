@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
 func setupRepo(t *testing.T) string {
@@ -30,7 +32,7 @@ func setupRepo(t *testing.T) string {
 
 func TestGitTool_Log(t *testing.T) {
 	repo := setupRepo(t)
-	out, err := Git.Call(Input{"operation": "log", "n": 1, "range": "HEAD", "dir": repo})
+	out, err := Git.Call(pub_models.Input{"operation": "log", "n": 1, "range": "HEAD", "dir": repo})
 	if err != nil {
 		t.Fatalf("git log failed: %v", err)
 	}
@@ -41,7 +43,7 @@ func TestGitTool_Log(t *testing.T) {
 
 func TestGitTool_Diff(t *testing.T) {
 	repo := setupRepo(t)
-	out, err := Git.Call(Input{"operation": "diff", "range": "HEAD~1..HEAD", "file": "a.txt", "dir": repo})
+	out, err := Git.Call(pub_models.Input{"operation": "diff", "range": "HEAD~1..HEAD", "file": "a.txt", "dir": repo})
 	if err != nil {
 		t.Fatalf("git diff failed: %v", err)
 	}
@@ -53,7 +55,7 @@ func TestGitTool_Diff(t *testing.T) {
 func TestGitTool_Status(t *testing.T) {
 	repo := setupRepo(t)
 	os.WriteFile(filepath.Join(repo, "b.txt"), []byte("x"), 0o644)
-	out, err := Git.Call(Input{"operation": "status", "dir": repo})
+	out, err := Git.Call(pub_models.Input{"operation": "status", "dir": repo})
 	if err != nil {
 		t.Fatalf("git status failed: %v", err)
 	}

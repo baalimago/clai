@@ -97,7 +97,7 @@ func getModeFromArgs(cmd string) (Mode, error) {
 // quite complex.
 func setupTextQuerier(ctx context.Context, mode Mode, confDir string, flagSet Configurations) (models.Querier, error) {
 	// The flagset is first used to find chatModel and potentially setup a new configuration file from some default
-	tConf, err := utils.LoadConfigFromFile(confDir, "textConfig.json", migrateOldChatConfig, &text.DEFAULT)
+	tConf, err := utils.LoadConfigFromFile(confDir, "textConfig.json", migrateOldChatConfig, &text.Default)
 	tConf.ConfigDir, _ = utils.GetClaiConfigDir()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load configs: %err", err)
@@ -121,10 +121,10 @@ func setupTextQuerier(ctx context.Context, mode Mode, confDir string, flagSet Co
 	}
 	args := flag.Args()
 	if mode == GLOB || flagSet.Glob != "" {
-		globStr, retArgs, err := glob.Setup(flagSet.Glob, args)
+		globStr, retArgs, globErr := glob.Setup(flagSet.Glob, args)
 		args = retArgs
-		if err != nil {
-			return nil, fmt.Errorf("failed to setup glob: %w", err)
+		if globErr != nil {
+			return nil, fmt.Errorf("failed to setup glob: %w", globErr)
 		}
 
 		tConf.Glob = globStr
@@ -137,7 +137,7 @@ func setupTextQuerier(ctx context.Context, mode Mode, confDir string, flagSet Co
 	// We want some flags, such as model, to be able to overwrite the profile configurations
 	// If this gets too confusing, it should be changed
 	applyProfileOverridesForText(&tConf, flagSet, defaultFlags)
-	err = tConf.SetupPrompts(args)
+	err = tConf.SetupInitialChat(args)
 	if err != nil {
 		return nil, fmt.Errorf("failed to setup prompt: %v", err)
 	}

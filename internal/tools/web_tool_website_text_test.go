@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
 func TestWebsiteTextTool(t *testing.T) {
@@ -19,7 +21,7 @@ func TestWebsiteTextTool(t *testing.T) {
 	}))
 	defer server.Close()
 
-	input := Input{"url": server.URL}
+	input := pub_models.Input{"url": server.URL}
 	expected := "Hello World\nThis is some text\n"
 
 	actual, err := WebsiteText.Call(input)
@@ -31,14 +33,14 @@ func TestWebsiteTextTool(t *testing.T) {
 	}
 
 	// Test invalid URL
-	input = Input{"url": "invalid"}
+	input = pub_models.Input{"url": "invalid"}
 	_, err = WebsiteText.Call(input)
 	if err == nil {
 		t.Error("Expected error for invalid URL, got nil")
 	}
 
 	// Test invalid input type
-	input = Input{"url": 123}
+	input = pub_models.Input{"url": 123}
 	_, err = WebsiteText.Call(input)
 	if err == nil {
 		t.Error("Expected error for invalid input type, got nil")

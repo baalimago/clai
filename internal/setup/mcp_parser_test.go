@@ -7,7 +7,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/baalimago/clai/internal/tools"
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
 func TestValidateMcpServerConfig(t *testing.T) {
@@ -146,7 +146,7 @@ func TestParseAndAddMcpServer(t *testing.T) {
 		t.Fatalf("failed to read browsermcp.json: %v", err)
 	}
 
-	var server tools.McpServer
+	var server pub_models.McpServer
 	if err := json.Unmarshal(data, &server); err != nil {
 		t.Fatalf("failed to unmarshal server config: %v", err)
 	}

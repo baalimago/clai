@@ -16,7 +16,7 @@ import (
 
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/reply"
-	"github.com/baalimago/clai/internal/tools"
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
@@ -34,7 +34,7 @@ func (q *MockQuerier) Setup() error {
 	return nil
 }
 
-func (q *MockQuerier) StreamCompletions(ctx context.Context, chat models.Chat) (chan models.CompletionEvent, error) {
+func (q *MockQuerier) StreamCompletions(ctx context.Context, chat pub_models.Chat) (chan models.CompletionEvent, error) {
 	// simulate a stream of completions via the sendChan, so that
 	// it's possible to send messages from outside the test
 	if q.completionChan != nil {
@@ -168,9 +168,9 @@ func Test_Querier_eventHandling(t *testing.T) {
 			},
 			given: []models.CompletionEvent{
 				"first the model said something",
-				tools.Call{
+				pub_models.Call{
 					Name: "test",
-					Inputs: &tools.Input{
+					Inputs: &pub_models.Input{
 						"testKey": "testVal",
 					},
 				},
@@ -282,9 +282,9 @@ func Test_Querier(t *testing.T) {
 			Raw:             true,
 			shouldSaveReply: true,
 			configDir:       tmpConfigDir,
-			chat: models.Chat{
+			chat: pub_models.Chat{
 				ID: "prevQuery",
-				Messages: []models.Message{
+				Messages: []pub_models.Message{
 					{
 						Role:    "system",
 						Content: "some system message",

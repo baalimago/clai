@@ -4,16 +4,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
-type WriteFileTool Specification
+type WriteFileTool pub_models.Specification
 
 var WriteFile = WriteFileTool{
 	Name:        "write_file",
 	Description: "Write content to a file. Creates the file if it doesn't exist, or overwrites it if it does.",
-	Inputs: &InputSchema{
+	Inputs: &pub_models.InputSchema{
 		Type: "object",
-		Properties: map[string]ParameterObject{
+		Properties: map[string]pub_models.ParameterObject{
 			"file_path": {
 				Type:        "string",
 				Description: "The path to the file to write to.",
@@ -31,7 +33,7 @@ var WriteFile = WriteFileTool{
 	},
 }
 
-func (w WriteFileTool) Call(input Input) (string, error) {
+func (w WriteFileTool) Call(input pub_models.Input) (string, error) {
 	filePath, ok := input["file_path"].(string)
 	if !ok {
 		return "", fmt.Errorf("file_path must be a string")
@@ -77,6 +79,6 @@ func (w WriteFileTool) Call(input Input) (string, error) {
 	return fmt.Sprintf("Successfully wrote %d bytes to %s", len(content), filePath), nil
 }
 
-func (w WriteFileTool) Specification() Specification {
-	return Specification(WriteFile)
+func (w WriteFileTool) Specification() pub_models.Specification {
+	return pub_models.Specification(WriteFile)
 }

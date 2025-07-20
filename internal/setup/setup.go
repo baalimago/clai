@@ -9,9 +9,10 @@ import (
 	"strings"
 
 	"github.com/baalimago/clai/internal/text"
-	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
+
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
 type config struct {
@@ -30,7 +31,7 @@ const (
 	pasteNew
 )
 
-var defaultMcpServer = tools.McpServer{
+var defaultMcpServer = pub_models.McpServer{
 	Command: "npx",
 	Args:    []string{"-y", "@modelcontextprotocol/server-everything"},
 }
@@ -170,7 +171,7 @@ func createProFile(profilePath string) (config, error) {
 		return config{}, err
 	}
 	newProfilePath := path.Join(profilePath, fmt.Sprintf("%v.json", profileName))
-	err = utils.CreateFile(newProfilePath, &text.DEFAULT_PROFILE)
+	err = utils.CreateFile(newProfilePath, &text.DefaultProfile)
 	if err != nil {
 		return config{}, err
 	}

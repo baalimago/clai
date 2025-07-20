@@ -3,6 +3,8 @@ package tools
 import (
 	"os"
 	"testing"
+
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
 func TestRowsBetweenTool_Call(t *testing.T) {
@@ -25,7 +27,7 @@ func TestRowsBetweenTool_Call(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		got, err := RowsBetween.Call(Input{
+		got, err := RowsBetween.Call(pub_models.Input{
 			"file_path":  fileName,
 			"start_line": tc.start,
 			"end_line":   tc.end,
@@ -40,20 +42,20 @@ func TestRowsBetweenTool_Call(t *testing.T) {
 }
 
 func TestRowsBetweenTool_BadInputs(t *testing.T) {
-	_, err := RowsBetween.Call(Input{"file_path": "nonexistent.txt", "start_line": 1, "end_line": 3})
+	_, err := RowsBetween.Call(pub_models.Input{"file_path": "nonexistent.txt", "start_line": 1, "end_line": 3})
 	if err == nil {
 		t.Error("expected error for missing file")
 	}
 
-	_, err = RowsBetween.Call(Input{"file_path": "", "start_line": 1, "end_line": 3})
+	_, err = RowsBetween.Call(pub_models.Input{"file_path": "", "start_line": 1, "end_line": 3})
 	if err == nil {
 		t.Error("expected error for missing file_path")
 	}
-	_, err = RowsBetween.Call(Input{"file_path": "test_rows_between.txt", "start_line": -2, "end_line": 3})
+	_, err = RowsBetween.Call(pub_models.Input{"file_path": "test_rows_between.txt", "start_line": -2, "end_line": 3})
 	if err == nil {
 		t.Error("expected error for bad start_line")
 	}
-	_, err = RowsBetween.Call(Input{"file_path": "test_rows_between.txt", "start_line": 4, "end_line": 2})
+	_, err = RowsBetween.Call(pub_models.Input{"file_path": "test_rows_between.txt", "start_line": 4, "end_line": 2})
 	if err == nil {
 		t.Error("expected error for inverted lines")
 	}
