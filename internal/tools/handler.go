@@ -35,6 +35,7 @@ func Init() {
 	Registry.Set("line_count", LineCount)
 	Registry.Set("git", Git)
 	Registry.Set("recall", Recall)
+	Registry.Set("ffprobe", FFProbe)
 }
 
 // Invoke the call, and gather both error and output in the same string
