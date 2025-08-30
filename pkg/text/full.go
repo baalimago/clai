@@ -12,6 +12,7 @@ import (
 	"github.com/baalimago/clai/pkg/text/models"
 )
 
+// FullResponse text querier, as opposed to returning a stream or something
 type FullResponse interface {
 	Setup(context.Context) error
 
