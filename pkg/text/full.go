@@ -82,5 +82,9 @@ func (pq *publicQuerier) Setup(ctx context.Context) error {
 }
 
 func (pq *publicQuerier) Query(ctx context.Context, inpChat models.Chat) (models.Chat, error) {
+	err := pq.Setup(ctx)
+	if err != nil {
+		return models.Chat{}, fmt.Errorf("pq.Query failed to Setup clone: %v", err)
+	}
 	return pq.querier.TextQuery(ctx, inpChat)
 }
