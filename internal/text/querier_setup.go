@@ -44,7 +44,10 @@ func vendorType(fromModel string) (string, string, string) {
 
 		return "novita", m, modelVersion
 	}
-	if strings.Contains(fromModel, "mistral") || strings.Contains(fromModel, "mixtral") {
+	if strings.Contains(fromModel, "mistral") ||
+		strings.Contains(fromModel, "mixtral") ||
+		strings.Contains(fromModel, "codestral") ||
+		strings.Contains(fromModel, "devstral") {
 		return "mistral", "mistral", fromModel
 	}
 
@@ -56,6 +59,9 @@ func vendorType(fromModel string) (string, string, string) {
 	}
 	if strings.Contains(fromModel, "mercury") {
 		return "inception", "mercury", fromModel
+	}
+	if strings.Contains(fromModel, "grok") {
+		return "xai", "grok", fromModel
 	}
 
 	return "VENDOR", "NOT", "FOUND"

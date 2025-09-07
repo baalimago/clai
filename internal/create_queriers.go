@@ -17,6 +17,7 @@ import (
 	"github.com/baalimago/clai/internal/vendors/novita"
 	"github.com/baalimago/clai/internal/vendors/ollama"
 	"github.com/baalimago/clai/internal/vendors/openai"
+	"github.com/baalimago/clai/internal/vendors/xai"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
@@ -72,7 +73,17 @@ func selectTextQuerier(ctx context.Context, conf text.Configurations) (models.Qu
 			return nil, found, fmt.Errorf("failed to create text querier: %w", err)
 		}
 		q = &qTmp
+	}
 
+	if strings.Contains(conf.Model, "grok") {
+		found = true
+		defaultCpy := xai.Default
+		defaultCpy.Model = conf.Model
+		qTmp, err := text.NewQuerier(ctx, conf, &defaultCpy)
+		if err != nil {
+			return nil, found, fmt.Errorf("failed to create text querier: %w", err)
+		}
+		q = &qTmp
 	}
 
 	if strings.Contains(conf.Model, "mistral") ||

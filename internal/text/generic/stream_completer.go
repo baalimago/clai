@@ -63,7 +63,7 @@ func (s *StreamCompleter) createRequest(ctx context.Context, chat pub_models.Cha
 		ParalellToolCalls: false,
 	}
 	if s.debug {
-		ancli.PrintOK(fmt.Sprintf("streamcompleter: %v\n", debug.IndentedJsonFmt(s)))
+		ancli.PrintOK(fmt.Sprintf("streamcompleter api key: %v\n", s.apiKey))
 	}
 	if len(s.tools) > 0 {
 		reqData.Tools = s.tools
@@ -86,6 +86,9 @@ func (s *StreamCompleter) createRequest(ctx context.Context, chat pub_models.Cha
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %v", s.apiKey))
 	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("Connection", "keep-alive")
+	if s.debug {
+		ancli.Okf("%v", debug.IndentedJsonFmt(req.Header))
+	}
 	return req, nil
 }
 
