@@ -16,7 +16,7 @@ import (
 type FullResponse interface {
 	Setup(context.Context) error
 
-	// Query the underlying llm with some propt. Will cancel on context cancel.
+	// Query the underlying llm with some prompt. Will cancel on context cancel.
 	Query(context.Context, models.Chat) (models.Chat, error)
 }
 
@@ -57,6 +57,8 @@ func pubConfigToInternal(c models.Configurations) text.Configurations {
 	}
 }
 
+// Setup the public querier by creating a config dir + supportive directories, then by initiating
+// the querier following the config
 func (pq *publicQuerier) Setup(ctx context.Context) error {
 	if _, err := os.Stat(pq.conf.ConfigDir); os.IsNotExist(err) {
 		os.Mkdir(pq.conf.ConfigDir, 0o755)
@@ -81,6 +83,8 @@ func (pq *publicQuerier) Setup(ctx context.Context) error {
 	return nil
 }
 
+// Query the model with some input chat. Will return a chat containing updated responses. The returning chat may
+// append multiple messages to the chat, if the querier is configured to be agentic (use tools)
 func (pq *publicQuerier) Query(ctx context.Context, inpChat models.Chat) (models.Chat, error) {
 	err := pq.Setup(ctx)
 	if err != nil {
