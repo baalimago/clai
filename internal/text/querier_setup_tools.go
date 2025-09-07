@@ -123,7 +123,7 @@ func addMcpTools(ctx context.Context, mcpServersDir string, userConf Configurati
 
 func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, userConf Configurations) {
 	toolBox, ok := any(modelConf).(models.ToolBox)
-	if ok && (userConf.UsingProfile() || userConf.UseTools) {
+	if ok && userConf.UseTools {
 		tools.Init()
 		// Only setup MCP tools if they're there's a chance of using tools
 		err := addMcpTools(ctx, path.Join(userConf.ConfigDir, "mcpServers"), userConf)
