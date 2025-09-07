@@ -75,7 +75,10 @@ func selectTextQuerier(ctx context.Context, conf text.Configurations) (models.Qu
 
 	}
 
-	if strings.Contains(conf.Model, "mistral") || strings.Contains(conf.Model, "mixtral") {
+	if strings.Contains(conf.Model, "mistral") ||
+		strings.Contains(conf.Model, "mixtral") ||
+		strings.Contains(conf.Model, "codestral") ||
+		strings.Contains(conf.Model, "devstral") {
 		found = true
 		defaultCpy := mistral.Default
 		defaultCpy.Model = conf.Model
