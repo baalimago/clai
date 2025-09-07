@@ -1,7 +1,7 @@
 package anthropic
 
 import (
-	"github.com/baalimago/clai/internal/tools"
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
 type ClaudeResponse struct {
@@ -16,11 +16,11 @@ type ClaudeResponse struct {
 }
 
 type ClaudeMessage struct {
-	ID    string       `json:"id,omitempty"`
-	Input *tools.Input `json:"input,omitempty"`
-	Name  string       `json:"name,omitempty"`
-	Text  string       `json:"text,omitempty"`
-	Type  string       `json:"type"`
+	ID    string            `json:"id,omitempty"`
+	Input *pub_models.Input `json:"input,omitempty"`
+	Name  string            `json:"name,omitempty"`
+	Text  string            `json:"text,omitempty"`
+	Type  string            `json:"type"`
 }
 
 type TokenInfo struct {

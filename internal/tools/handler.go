@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
@@ -34,10 +35,11 @@ func Init() {
 	Registry.Set("line_count", LineCount)
 	Registry.Set("git", Git)
 	Registry.Set("recall", Recall)
+	Registry.Set("ffprobe", FFProbe)
 }
 
 // Invoke the call, and gather both error and output in the same string
-func Invoke(call Call) string {
+func Invoke(call pub_models.Call) string {
 	t, exists := Registry.Get(call.Name)
 	if !exists {
 		return "ERROR: unknown tool call: " + call.Name
@@ -45,7 +47,7 @@ func Invoke(call Call) string {
 	if misc.Truthy(os.Getenv("DEBUG_CALL")) {
 		ancli.Noticef("Invoke call: %v", debug.IndentedJsonFmt(call))
 	}
-	inp := Input{}
+	inp := pub_models.Input{}
 	if call.Inputs != nil {
 		inp = *call.Inputs
 	}
@@ -57,10 +59,10 @@ func Invoke(call Call) string {
 }
 
 // ToolFromName looks at the static tools.Tools map
-func ToolFromName(name string) Specification {
+func ToolFromName(name string) pub_models.Specification {
 	t, exists := Registry.Get(name)
 	if !exists {
-		return Specification{}
+		return pub_models.Specification{}
 	}
 	return t.Specification()
 }

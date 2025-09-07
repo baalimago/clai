@@ -6,14 +6,14 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/baalimago/clai/internal/models"
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
 func TestSaveAndFromPath(t *testing.T) {
 	tmp := t.TempDir()
-	ch := models.Chat{
+	ch := pub_models.Chat{
 		ID:       "my_chat",
-		Messages: []models.Message{{Role: "user", Content: "hello"}},
+		Messages: []pub_models.Message{{Role: "user", Content: "hello"}},
 	}
 	if err := Save(tmp, ch); err != nil {
 		t.Fatalf("save failed: %v", err)

@@ -9,14 +9,14 @@ import (
 	"time"
 
 	"github.com/baalimago/clai/internal/chat"
-	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/utils"
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
 // SaveAsPreviousQuery at claiConfDir/conversations/prevQuery.json with ID prevQuery
-func SaveAsPreviousQuery(claiConfDir string, msgs []models.Message) error {
-	prevQueryChat := models.Chat{
+func SaveAsPreviousQuery(claiConfDir string, msgs []pub_models.Message) error {
+	prevQueryChat := pub_models.Chat{
 		Created:  time.Now(),
 		ID:       "prevQuery",
 		Messages: msgs,
@@ -28,7 +28,7 @@ func SaveAsPreviousQuery(claiConfDir string, msgs []models.Message) error {
 		if err != nil {
 			return fmt.Errorf("failed to get first user message: %w", err)
 		}
-		convChat := models.Chat{
+		convChat := pub_models.Chat{
 			Created:  time.Now(),
 			ID:       chat.IDFromPrompt(firstUserMsg.Content),
 			Messages: msgs,
@@ -49,11 +49,11 @@ func SaveAsPreviousQuery(claiConfDir string, msgs []models.Message) error {
 // Load the prevQuery.json from the claiConfDir/conversations directory
 // If claiConfDir is left empty, it will be re-constructed. The technical debt
 // is piling up quite fast here
-func Load(claiConfDir string) (models.Chat, error) {
+func Load(claiConfDir string) (pub_models.Chat, error) {
 	if claiConfDir == "" {
 		dir, err := utils.GetClaiConfigDir()
 		if err != nil {
-			return models.Chat{}, fmt.Errorf("failed to find home dir: %v", err)
+			return pub_models.Chat{}, fmt.Errorf("failed to find home dir: %v", err)
 		}
 		claiConfDir = dir
 	}
@@ -63,7 +63,7 @@ func Load(claiConfDir string) (models.Chat, error) {
 		if errors.Is(err, fs.ErrNotExist) {
 			ancli.PrintWarn("no previous query found\n")
 		} else {
-			return models.Chat{}, fmt.Errorf("failed to read from path: %w", err)
+			return pub_models.Chat{}, fmt.Errorf("failed to read from path: %w", err)
 		}
 	}
 	return c, nil

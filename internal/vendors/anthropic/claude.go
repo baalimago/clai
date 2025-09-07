@@ -4,31 +4,30 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/baalimago/clai/internal/models"
-	"github.com/baalimago/clai/internal/tools"
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
 type Claude struct {
-	Model              string                `json:"model"`
-	MaxTokens          int                   `json:"max_tokens"`
-	URL                string                `json:"url"`
-	AnthropicVersion   string                `json:"anthropic-version"`
-	AnthropicBeta      string                `json:"anthropic-beta"`
-	Temperature        float64               `json:"temperature"`
-	TopP               float64               `json:"top_p"`
-	TopK               int                   `json:"top_k"`
-	StopSequences      []string              `json:"stop_sequences"`
-	PrintInputCount    bool                  `json:"print_input_count"`
-	client             *http.Client          `json:"-"`
-	apiKey             string                `json:"-"`
-	debug              bool                  `json:"-"`
-	debugFullStreamMsg string                `json:"-"`
-	tools              []tools.Specification `json:"-"`
-	functionName       string                `json:"-"`
-	functionID         string                `json:"-"`
-	functionJSON       string                `json:"-"`
-	contentBlockType   string                `json:"-"`
-	amInputTokens      int                   `json:"-"`
+	Model              string                     `json:"model"`
+	MaxTokens          int                        `json:"max_tokens"`
+	URL                string                     `json:"url"`
+	AnthropicVersion   string                     `json:"anthropic-version"`
+	AnthropicBeta      string                     `json:"anthropic-beta"`
+	Temperature        float64                    `json:"temperature"`
+	TopP               float64                    `json:"top_p"`
+	TopK               int                        `json:"top_k"`
+	StopSequences      []string                   `json:"stop_sequences"`
+	PrintInputCount    bool                       `json:"print_input_count"`
+	client             *http.Client               `json:"-"`
+	apiKey             string                     `json:"-"`
+	debug              bool                       `json:"-"`
+	debugFullStreamMsg string                     `json:"-"`
+	tools              []pub_models.Specification `json:"-"`
+	functionName       string                     `json:"-"`
+	functionID         string                     `json:"-"`
+	functionJSON       string                     `json:"-"`
+	contentBlockType   string                     `json:"-"`
+	amInputTokens      int                        `json:"-"`
 }
 
 var Default = Claude{
@@ -44,21 +43,21 @@ var Default = Claude{
 }
 
 type claudeReq struct {
-	Model         string                `json:"model"`
-	Messages      []ClaudeConvMessage   `json:"messages"`
-	MaxTokens     int                   `json:"max_tokens,omitempty"`
-	Stream        bool                  `json:"stream,omitempty"`
-	System        string                `json:"system,omitempty"`
-	Temperature   float64               `json:"temperature,omitempty"`
-	TopP          float64               `json:"top_p,omitempty"`
-	TopK          int                   `json:"top_k,omitempty"`
-	StopSequences []string              `json:"stop_sequences,omitempty"`
-	Tools         []tools.Specification `json:"tools,omitempty"`
+	Model         string                     `json:"model"`
+	Messages      []ClaudeConvMessage        `json:"messages"`
+	MaxTokens     int                        `json:"max_tokens,omitempty"`
+	Stream        bool                       `json:"stream,omitempty"`
+	System        string                     `json:"system,omitempty"`
+	Temperature   float64                    `json:"temperature,omitempty"`
+	TopP          float64                    `json:"top_p,omitempty"`
+	TopK          int                        `json:"top_k,omitempty"`
+	StopSequences []string                   `json:"stop_sequences,omitempty"`
+	Tools         []pub_models.Specification `json:"tools,omitempty"`
 }
 
 // claudifyMessages converts from 'normal' openai chat format into a format which claud prefers
 // this is especially important in order to make tooling work, probably reasoning too
-func claudifyMessages(msgs []models.Message) []ClaudeConvMessage {
+func claudifyMessages(msgs []pub_models.Message) []ClaudeConvMessage {
 	var ret []ClaudeConvMessage
 	if len(msgs) == 0 {
 		return ret

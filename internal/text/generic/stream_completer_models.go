@@ -3,20 +3,19 @@ package generic
 import (
 	"net/http"
 
-	"github.com/baalimago/clai/internal/models"
-	"github.com/baalimago/clai/internal/tools"
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
 // StreamCompleter is a struct which follows the model for both OpenAI and Mistral
 type StreamCompleter struct {
-	Model            string                                  `json:"-"`
-	FrequencyPenalty *float64                                `json:"-"`
-	MaxTokens        *int                                    `json:"-"`
-	PresencePenalty  *float64                                `json:"-"`
-	Temperature      *float64                                `json:"-"`
-	TopP             *float64                                `json:"-"`
-	ToolChoice       *string                                 `json:"-"`
-	Clean            func([]models.Message) []models.Message `json:"-"`
+	Model            string                                          `json:"-"`
+	FrequencyPenalty *float64                                        `json:"-"`
+	MaxTokens        *int                                            `json:"-"`
+	PresencePenalty  *float64                                        `json:"-"`
+	Temperature      *float64                                        `json:"-"`
+	TopP             *float64                                        `json:"-"`
+	ToolChoice       *string                                         `json:"-"`
+	Clean            func([]pub_models.Message) []pub_models.Message `json:"-"`
 	url              string
 	tools            []ToolSuper
 	toolsCallName    string
@@ -34,9 +33,9 @@ type ToolSuper struct {
 }
 
 type Tool struct {
-	Name        string            `json:"name"`
-	Description string            `json:"description"`
-	Inputs      tools.InputSchema `json:"parameters,omitempty"`
+	Name        string                 `json:"name"`
+	Description string                 `json:"description"`
+	Inputs      pub_models.InputSchema `json:"parameters,omitempty"`
 }
 
 type chatCompletionChunk struct {
@@ -78,16 +77,16 @@ type responseFormat struct {
 }
 
 type req struct {
-	Model             string           `json:"model,omitempty"`
-	ResponseFormat    responseFormat   `json:"response_format,omitempty"`
-	Messages          []models.Message `json:"messages,omitempty"`
-	Stream            bool             `json:"stream,omitempty"`
-	FrequencyPenalty  *float64         `json:"frequency_penalty,omitempty"`
-	MaxTokens         *int             `json:"max_tokens,omitempty"`
-	PresencePenalty   *float64         `json:"presence_penalty,omitempty"`
-	Temperature       *float64         `json:"temperature,omitempty"`
-	TopP              *float64         `json:"top_p,omitempty"`
-	ToolChoice        *string          `json:"tool_choice,omitempty"`
-	Tools             []ToolSuper      `json:"tools,omitempty"`
-	ParalellToolCalls bool             `json:"parallel_tools_call,omitempty"`
+	Model             string               `json:"model,omitempty"`
+	ResponseFormat    responseFormat       `json:"response_format,omitempty"`
+	Messages          []pub_models.Message `json:"messages,omitempty"`
+	Stream            bool                 `json:"stream,omitempty"`
+	FrequencyPenalty  *float64             `json:"frequency_penalty,omitempty"`
+	MaxTokens         *int                 `json:"max_tokens,omitempty"`
+	PresencePenalty   *float64             `json:"presence_penalty,omitempty"`
+	Temperature       *float64             `json:"temperature,omitempty"`
+	TopP              *float64             `json:"top_p,omitempty"`
+	ToolChoice        *string              `json:"tool_choice,omitempty"`
+	Tools             []ToolSuper          `json:"tools,omitempty"`
+	ParalellToolCalls bool                 `json:"parallel_tools_call,omitempty"`
 }

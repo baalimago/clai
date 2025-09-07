@@ -3,16 +3,18 @@ package tools
 import (
 	"fmt"
 	"os/exec"
+
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
-type FindTool Specification
+type FindTool pub_models.Specification
 
 var Find = FindTool{
 	Name:        "find",
 	Description: "Search for files in a directory hierarchy. Uses linux command 'find'.",
-	Inputs: &InputSchema{
+	Inputs: &pub_models.InputSchema{
 		Type: "object",
-		Properties: map[string]ParameterObject{
+		Properties: map[string]pub_models.ParameterObject{
 			"directory": {
 				Type:        "string",
 				Description: "The directory to start the search from.",
@@ -34,7 +36,7 @@ var Find = FindTool{
 	},
 }
 
-func (f FindTool) Call(input Input) (string, error) {
+func (f FindTool) Call(input pub_models.Input) (string, error) {
 	directory, ok := input["directory"].(string)
 	if !ok {
 		return "", fmt.Errorf("directory must be a string")
@@ -68,6 +70,6 @@ func (f FindTool) Call(input Input) (string, error) {
 	return string(output), nil
 }
 
-func (f FindTool) Specification() Specification {
-	return Specification(Find)
+func (f FindTool) Specification() pub_models.Specification {
+	return pub_models.Specification(Find)
 }

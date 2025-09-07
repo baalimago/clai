@@ -4,16 +4,18 @@ import (
 	"fmt"
 	"os/exec"
 	"strconv"
+
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
-type GitTool Specification
+type GitTool pub_models.Specification
 
 var Git = GitTool{
 	Name:        "git",
 	Description: "Run read-only git commands like log, diff, show, blame and status.",
-	Inputs: &InputSchema{
+	Inputs: &pub_models.InputSchema{
 		Type: "object",
-		Properties: map[string]ParameterObject{
+		Properties: map[string]pub_models.ParameterObject{
 			"operation": {
 				Type:        "string",
 				Description: "The git operation to run.",
@@ -44,7 +46,7 @@ var Git = GitTool{
 	},
 }
 
-func (g GitTool) Call(input Input) (string, error) {
+func (g GitTool) Call(input pub_models.Input) (string, error) {
 	op, ok := input["operation"].(string)
 	if !ok {
 		return "", fmt.Errorf("operation must be a string")
@@ -110,6 +112,6 @@ func (g GitTool) Call(input Input) (string, error) {
 	return string(output), nil
 }
 
-func (g GitTool) Specification() Specification {
-	return Specification(Git)
+func (g GitTool) Specification() pub_models.Specification {
+	return pub_models.Specification(Git)
 }

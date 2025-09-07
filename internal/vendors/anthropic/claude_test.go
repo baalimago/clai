@@ -4,19 +4,18 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/baalimago/clai/internal/models"
-	"github.com/baalimago/clai/internal/tools"
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
 func Test_claudifyMessages(t *testing.T) {
 	tests := []struct {
 		name string
-		msgs []models.Message
+		msgs []pub_models.Message
 		want []ClaudeConvMessage
 	}{
 		{
 			name: "Single text message",
-			msgs: []models.Message{
+			msgs: []pub_models.Message{
 				{Role: "user", Content: "Hello"},
 			},
 			want: []ClaudeConvMessage{
@@ -25,7 +24,7 @@ func Test_claudifyMessages(t *testing.T) {
 		},
 		{
 			name: "Multiple text messages same role",
-			msgs: []models.Message{
+			msgs: []pub_models.Message{
 				{Role: "user", Content: "Hello"},
 				{Role: "user", Content: "World"},
 			},
@@ -38,9 +37,9 @@ func Test_claudifyMessages(t *testing.T) {
 		},
 		{
 			name: "Tool call and result",
-			msgs: []models.Message{
-				{Role: "user", ToolCalls: []tools.Call{
-					{Name: "exampleTool", ID: "tool1", Inputs: &tools.Input{"test": 0}},
+			msgs: []pub_models.Message{
+				{Role: "user", ToolCalls: []pub_models.Call{
+					{Name: "exampleTool", ID: "tool1", Inputs: &pub_models.Input{"test": 0}},
 				}},
 				{Role: "tool", ToolCallID: "tool1", Content: "tool result"},
 			},
@@ -53,7 +52,7 @@ func Test_claudifyMessages(t *testing.T) {
 		},
 		{
 			name: "System message ignored",
-			msgs: []models.Message{
+			msgs: []pub_models.Message{
 				{Role: "system", Content: "system message"},
 				{Role: "user", Content: "Hello"},
 			},

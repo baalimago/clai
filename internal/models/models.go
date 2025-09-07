@@ -2,11 +2,12 @@ package models
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
 	"github.com/baalimago/clai/internal/tools"
+
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
 type Querier interface {
@@ -15,7 +16,7 @@ type Querier interface {
 
 type ChatQuerier interface {
 	Querier
-	TextQuery(context.Context, Chat) (Chat, error)
+	TextQuery(context.Context, pub_models.Chat) (pub_models.Chat, error)
 }
 
 type StreamCompleter interface {
@@ -26,12 +27,12 @@ type StreamCompleter interface {
 	// StreamCompletions and return a channel which sends CompletionsEvents.
 	// The CompletionEvents should be a string, an error, NoopEvent or a models.Call. If there is
 	// a catastrophic error, return the error and close the channel.
-	StreamCompletions(context.Context, Chat) (chan CompletionEvent, error)
+	StreamCompletions(context.Context, pub_models.Chat) (chan CompletionEvent, error)
 }
 
 // InputTokenCounter can return the amount of input tokens for a chat.
 type InputTokenCounter interface {
-	CountInputTokens(context.Context, Chat) (int, error)
+	CountInputTokens(context.Context, pub_models.Chat) (int, error)
 }
 
 // ToolBox can register tools which later on will be added to the chat completion queries
@@ -43,48 +44,6 @@ type ToolBox interface {
 type CompletionEvent any
 
 type NoopEvent struct{}
-
-type Message struct {
-	Role       string       `json:"role"`
-	Content    string       `json:"content,omitempty"`
-	ToolCalls  []tools.Call `json:"tool_calls,omitempty"`
-	ToolCallID string       `json:"tool_call_id,omitempty"`
-}
-
-type Chat struct {
-	Created  time.Time `json:"created,omitempty"`
-	ID       string    `json:"id"`
-	Messages []Message `json:"messages"`
-}
-
-// FirstSystemMessage returns the first encountered Message with role 'system'
-func (c *Chat) FirstSystemMessage() (Message, error) {
-	for _, msg := range c.Messages {
-		if msg.Role == "system" {
-			return msg, nil
-		}
-	}
-	return Message{}, errors.New("failed to find any system message")
-}
-
-func (c *Chat) FirstUserMessage() (Message, error) {
-	for _, msg := range c.Messages {
-		if msg.Role == "user" {
-			return msg, nil
-		}
-	}
-	return Message{}, errors.New("failed to find any user message")
-}
-
-func (c *Chat) LastOfRole(role string) (Message, int, error) {
-	for i := len(c.Messages) - 1; i > 0; i-- {
-		msg := c.Messages[i]
-		if msg.Role == role {
-			return msg, i, nil
-		}
-	}
-	return Message{}, -1, errors.New("failed to find any user message")
-}
 
 type ErrRateLimit struct {
 	ResetAt         time.Time

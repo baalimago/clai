@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/utils"
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
@@ -54,9 +54,9 @@ func ParseAndAddMcpServer(mcpServersDir, pastedConfig string) ([]string, error) 
 	return ret, nil
 }
 
-// convertToInternalFormat converts external format to internal tools.McpServer format
-func convertToInternalFormat(external McpServerExternal) tools.McpServer {
-	internal := tools.McpServer{
+// convertToInternalFormat converts external format to internal pub_models.McpServer format
+func convertToInternalFormat(external McpServerExternal) pub_models.McpServer {
+	internal := pub_models.McpServer{
 		Command: external.Command,
 		Args:    external.Args,
 		Env:     external.Env,

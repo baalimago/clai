@@ -11,6 +11,7 @@ import (
 	"github.com/baalimago/clai/internal/chat"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/utils"
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
@@ -74,11 +75,11 @@ IMPORTANT:
 	* DO NOT RE-DO RESEARCH
 	* USE RECALL ON REFERENCES IF NEEDED`
 
-func constructSummaryPromptedChat(chat models.Chat) models.Chat {
-	m := make([]models.Message, 0)
+func constructSummaryPromptedChat(chat pub_models.Chat) pub_models.Chat {
+	m := make([]pub_models.Message, 0)
 	// Add system message
 	m = append(m, chat.Messages[0])
-	m = append(m, models.Message{
+	m = append(m, pub_models.Message{
 		Role:    "user",
 		Content: fmt.Sprintf(SummaryPrompt, chat.ID),
 	})
@@ -91,12 +92,12 @@ func constructSummaryPromptedChat(chat models.Chat) models.Chat {
 		m = append(m, chat.Messages[i])
 	}
 
-	m = append(m, models.Message{
+	m = append(m, pub_models.Message{
 		Role:    "user",
 		Content: "=======================================================================\n RESPOND ONLY WITH THE SUMMARY! DO NOT USE ANY TOOLS!",
 	})
 
-	return models.Chat{
+	return pub_models.Chat{
 		ID:       fmt.Sprintf("%s_S", chat.ID),
 		Created:  time.Now(),
 		Messages: m,
@@ -107,19 +108,19 @@ func constructSummaryPromptedChat(chat models.Chat) models.Chat {
 // instructions for using the recall tool.
 func CircumventRateLimit(ctx context.Context,
 	cq models.ChatQuerier,
-	longChat models.Chat,
+	longChat pub_models.Chat,
 	inputCount,
 	tokensRemaining,
 	maxInputTokens int,
 	waitUntil time.Time,
 	// Noone will review the code this thoroghly, for sue
 	recursionLevel int,
-) (models.Chat, error) {
+) (pub_models.Chat, error) {
 	summaryChat := constructSummaryPromptedChat(longChat)
 
 	confDir, err := utils.GetClaiConfigDir()
 	if err != nil {
-		return models.Chat{}, fmt.Errorf("failed to get conf dir: %v", err)
+		return pub_models.Chat{}, fmt.Errorf("failed to get conf dir: %v", err)
 	}
 	// Save the chat so that it may be referenced in recall
 	chat.Save(path.Join(confDir, "conversations"), longChat)
@@ -127,10 +128,10 @@ func CircumventRateLimit(ctx context.Context,
 	time.Sleep(time.Until(waitUntil))
 	summarized, err := cq.TextQuery(ctx, summaryChat)
 	if err != nil {
-		return models.Chat{}, fmt.Errorf("failed to generate summary: %w", err)
+		return pub_models.Chat{}, fmt.Errorf("failed to generate summary: %w", err)
 	}
 	if len(summarized.Messages) == 0 {
-		return models.Chat{}, errors.New("summary returned no messages")
+		return pub_models.Chat{}, errors.New("summary returned no messages")
 	}
 	summary := summarized.Messages[len(summarized.Messages)-1].Content
 
@@ -140,10 +141,10 @@ func CircumventRateLimit(ctx context.Context,
 
 	instructions := summary + fmt.Sprintf(ContinuationPrompt, longChat.ID)
 
-	newChat := models.Chat{
+	newChat := pub_models.Chat{
 		Created:  time.Now(),
 		ID:       fmt.Sprintf("%v_%v", longChat.ID, recursionLevel),
-		Messages: []models.Message{sysMsg, {Role: "system", Content: instructions}, firstUser},
+		Messages: []pub_models.Message{sysMsg, {Role: "system", Content: instructions}, firstUser},
 	}
 
 	if last.Role == "user" && last.Content != firstUser.Content {

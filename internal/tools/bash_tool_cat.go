@@ -3,16 +3,18 @@ package tools
 import (
 	"fmt"
 	"os/exec"
+
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
-type CatTool Specification
+type CatTool pub_models.Specification
 
 var Cat = CatTool{
 	Name:        "cat",
 	Description: "Display the contents of a file. Uses the linux command 'cat'.",
-	Inputs: &InputSchema{
+	Inputs: &pub_models.InputSchema{
 		Type: "object",
-		Properties: map[string]ParameterObject{
+		Properties: map[string]pub_models.ParameterObject{
 			"file": {
 				Type:        "string",
 				Description: "The file to display the contents of.",
@@ -34,7 +36,7 @@ var Cat = CatTool{
 	},
 }
 
-func (c CatTool) Call(input Input) (string, error) {
+func (c CatTool) Call(input pub_models.Input) (string, error) {
 	file, ok := input["file"].(string)
 	if !ok {
 		return "", fmt.Errorf("file must be a string")
@@ -74,6 +76,6 @@ func (c CatTool) Call(input Input) (string, error) {
 	return string(output), nil
 }
 
-func (c CatTool) Specification() Specification {
-	return Specification(Cat)
+func (c CatTool) Specification() pub_models.Specification {
+	return pub_models.Specification(Cat)
 }

@@ -3,16 +3,18 @@ package tools
 import (
 	"fmt"
 	"os/exec"
+
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
-type FileTreeTool Specification
+type FileTreeTool pub_models.Specification
 
 var FileTree = FileTreeTool{
 	Name:        "file_tree",
 	Description: "List the filetree of some directory. Uses linux command 'tree'.",
-	Inputs: &InputSchema{
+	Inputs: &pub_models.InputSchema{
 		Type: "object",
-		Properties: map[string]ParameterObject{
+		Properties: map[string]pub_models.ParameterObject{
 			"directory": {
 				Type:        "string",
 				Description: "The directory to list the filetree of.",
@@ -26,7 +28,7 @@ var FileTree = FileTreeTool{
 	},
 }
 
-func (f FileTreeTool) Call(input Input) (string, error) {
+func (f FileTreeTool) Call(input pub_models.Input) (string, error) {
 	directory, ok := input["directory"].(string)
 	if !ok {
 		return "", fmt.Errorf("directory must be a string")
@@ -47,6 +49,6 @@ func (f FileTreeTool) Call(input Input) (string, error) {
 	return string(output), nil
 }
 
-func (f FileTreeTool) Specification() Specification {
-	return Specification(FileTree)
+func (f FileTreeTool) Specification() pub_models.Specification {
+	return pub_models.Specification(FileTree)
 }

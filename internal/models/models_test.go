@@ -2,10 +2,12 @@ package models
 
 import (
 	"testing"
+
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
 func TestLastOfRole(t *testing.T) {
-	chat := Chat{Messages: []Message{
+	chat := pub_models.Chat{Messages: []pub_models.Message{
 		{Role: "system", Content: "sys"},
 		{Role: "user", Content: "first"},
 		{Role: "admin", Content: "admin-msg"},
@@ -41,7 +43,7 @@ func TestLastOfRole(t *testing.T) {
 }
 
 func TestFirstSystemMessage(t *testing.T) {
-	chat := Chat{Messages: []Message{
+	chat := pub_models.Chat{Messages: []pub_models.Message{
 		{Role: "user", Content: "hi"},
 		{Role: "system", Content: "rules"},
 	}}
@@ -52,14 +54,14 @@ func TestFirstSystemMessage(t *testing.T) {
 	if msg.Content != "rules" {
 		t.Errorf("expected 'rules', got %q", msg.Content)
 	}
-	chat.Messages = []Message{{Role: "user", Content: "hi"}}
+	chat.Messages = []pub_models.Message{{Role: "user", Content: "hi"}}
 	if _, err := chat.FirstSystemMessage(); err == nil {
 		t.Error("expected error when no system message")
 	}
 }
 
 func TestFirstUserMessage(t *testing.T) {
-	chat := Chat{Messages: []Message{
+	chat := pub_models.Chat{Messages: []pub_models.Message{
 		{Role: "system", Content: "sys"},
 		{Role: "user", Content: "ok"},
 	}}
@@ -70,7 +72,7 @@ func TestFirstUserMessage(t *testing.T) {
 	if msg.Content != "ok" {
 		t.Errorf("expected 'ok', got %q", msg.Content)
 	}
-	chat.Messages = []Message{{Role: "system", Content: "sys"}}
+	chat.Messages = []pub_models.Message{{Role: "system", Content: "sys"}}
 	if _, err := chat.FirstUserMessage(); err == nil {
 		t.Error("expected error when no user message")
 	}

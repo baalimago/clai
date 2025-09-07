@@ -6,9 +6,9 @@ import (
 
 	"github.com/baalimago/clai/internal/chat"
 	"github.com/baalimago/clai/internal/glob"
-	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/reply"
 	"github.com/baalimago/clai/internal/utils"
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
@@ -24,19 +24,19 @@ type Configurations struct {
 	TokenWarnLimit int    `json:"token-warn-limit"`
 	// ToolOutputRuneLimit limits the amount of runes a tool may return
 	// before clai truncates the output. Zero means no limit.
-	ToolOutputRuneLimit int         `json:"tool-output-rune-limit"`
-	SaveReplyAsConv     bool        `json:"save-reply-as-prompt"`
-	ConfigDir           string      `json:"-"`
-	StdinReplace        string      `json:"-"`
-	Stream              bool        `json:"-"`
-	ReplyMode           bool        `json:"-"`
-	ChatMode            bool        `json:"-"`
-	CmdMode             bool        `json:"-"`
-	Glob                string      `json:"-"`
-	InitialPrompt       models.Chat `json:"-"`
-	UseProfile          string      `json:"-"`
-	ProfilePath         string      `json:"-"`
-	Tools               []string    `json:"-"`
+	ToolOutputRuneLimit int             `json:"tool-output-rune-limit"`
+	SaveReplyAsConv     bool            `json:"save-reply-as-prompt"`
+	ConfigDir           string          `json:"-"`
+	StdinReplace        string          `json:"-"`
+	Stream              bool            `json:"-"`
+	ReplyMode           bool            `json:"-"`
+	ChatMode            bool            `json:"-"`
+	CmdMode             bool            `json:"-"`
+	Glob                string          `json:"-"`
+	InitialPrompt       pub_models.Chat `json:"-"`
+	UseProfile          string          `json:"-"`
+	ProfilePath         string          `json:"-"`
+	Tools               []string        `json:"-"`
 	// PostProccessedPrompt which has had it's strings replaced etc
 	PostProccessedPrompt string `json:"-"`
 }
@@ -55,8 +55,8 @@ type Profile struct {
 	SaveReplyAsConv bool     `json:"save-reply-as-conv"`
 }
 
-var DEFAULT = Configurations{
-	Model:         "gpt-4.1",
+var Default = Configurations{
+	Model:         "gpt-5",
 	SystemPrompt:  "You are an assistant for a CLI tool. Answer concisely and informatively. Prefer markdown if possible.",
 	CmdModePrompt: "You are an assistant for a CLI tool aiding with cli tool suggestions. Write ONLY the command and nothing else. Disregard any queries asking for anything except a bash command. Do not shell escape single or double quotes.",
 	Raw:           false,
@@ -67,23 +67,29 @@ var DEFAULT = Configurations{
 	SaveReplyAsConv:     true,
 }
 
-var DEFAULT_PROFILE = Profile{
+var DefaultProfile = Profile{
 	UseTools:        true,
 	SaveReplyAsConv: true,
 	Tools:           []string{},
 }
 
-func (c *Configurations) SetupPrompts(args []string) error {
+func (c *Configurations) setupSystemPrompt() {
+	c.InitialPrompt = pub_models.Chat{
+		Messages: []pub_models.Message{
+			{Role: "system", Content: c.SystemPrompt},
+		},
+	}
+}
+
+// SetupInitialChat by doing all sorts of organically grown stuff. Don't touch this
+// code too closely. Something will break, most likely.
+func (c *Configurations) SetupInitialChat(args []string) error {
 	if c.Glob != "" && c.ReplyMode {
 		ancli.PrintWarn("Using glob + reply modes together might yield strange results. The prevQuery will be appended after the glob messages.\n")
 	}
 
 	if !c.ReplyMode {
-		c.InitialPrompt = models.Chat{
-			Messages: []models.Message{
-				{Role: "system", Content: c.SystemPrompt},
-			},
-		}
+		c.setupSystemPrompt()
 	}
 	if c.Glob != "" {
 		globChat, err := glob.CreateChat(c.Glob, c.SystemPrompt)
@@ -116,7 +122,7 @@ func (c *Configurations) SetupPrompts(args []string) error {
 	}
 	// If chatmode, the initial message will be handled by the chat querier
 	if !c.ChatMode {
-		c.InitialPrompt.Messages = append(c.InitialPrompt.Messages, models.Message{
+		c.InitialPrompt.Messages = append(c.InitialPrompt.Messages, pub_models.Message{
 			Role:    "user",
 			Content: prompt,
 		})

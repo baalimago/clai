@@ -6,16 +6,18 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
-type RowsBetweenTool Specification
+type RowsBetweenTool pub_models.Specification
 
 var RowsBetween = RowsBetweenTool{
 	Name:        "rows_between",
 	Description: "Fetch the lines between two line numbers (inclusive) from a file.",
-	Inputs: &InputSchema{
+	Inputs: &pub_models.InputSchema{
 		Type: "object",
-		Properties: map[string]ParameterObject{
+		Properties: map[string]pub_models.ParameterObject{
 			"file_path": {
 				Type:        "string",
 				Description: "The path to the file to read.",
@@ -33,7 +35,7 @@ var RowsBetween = RowsBetweenTool{
 	},
 }
 
-func (r RowsBetweenTool) Call(input Input) (string, error) {
+func (r RowsBetweenTool) Call(input pub_models.Input) (string, error) {
 	filePath, ok := input["file_path"].(string)
 	if !ok {
 		return "", fmt.Errorf("file_path must be a string")
@@ -88,6 +90,6 @@ func (r RowsBetweenTool) Call(input Input) (string, error) {
 	return strings.Join(lines, "\n"), nil
 }
 
-func (r RowsBetweenTool) Specification() Specification {
-	return Specification(RowsBetween)
+func (r RowsBetweenTool) Specification() pub_models.Specification {
+	return pub_models.Specification(RowsBetween)
 }

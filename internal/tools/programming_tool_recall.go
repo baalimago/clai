@@ -6,19 +6,21 @@ import (
 	"os"
 	"path"
 	"strconv"
+
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
 // RecallTool fetches a message from a stored conversation
 // given its name and message index.
-type RecallTool Specification
+type RecallTool pub_models.Specification
 
 // Recall is the exported instance of RecallTool.
 var Recall = RecallTool{
 	Name:        "recall",
 	Description: "Recall a message from a stored conversation by name and index.",
-	Inputs: &InputSchema{
+	Inputs: &pub_models.InputSchema{
 		Type: "object",
-		Properties: map[string]ParameterObject{
+		Properties: map[string]pub_models.ParameterObject{
 			"conversation": {
 				Type:        "string",
 				Description: "Conversation name or id",
@@ -32,7 +34,7 @@ var Recall = RecallTool{
 	},
 }
 
-func (r RecallTool) Call(input Input) (string, error) {
+func (r RecallTool) Call(input pub_models.Input) (string, error) {
 	convName, ok := input["conversation"].(string)
 	if !ok {
 		return "", fmt.Errorf("conversation must be a string")
@@ -83,6 +85,6 @@ func (r RecallTool) Call(input Input) (string, error) {
 	return fmt.Sprintf("%s: %s", msg.Role, msg.Content), nil
 }
 
-func (r RecallTool) Specification() Specification {
-	return Specification(Recall)
+func (r RecallTool) Specification() pub_models.Specification {
+	return pub_models.Specification(Recall)
 }

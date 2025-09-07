@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
 func TestCatTool_Call(t *testing.T) {
@@ -12,7 +14,7 @@ func TestCatTool_Call(t *testing.T) {
 	if err := os.WriteFile(f, []byte("hello\nworld"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	out, err := Cat.Call(Input{"file": f})
+	out, err := Cat.Call(pub_models.Input{"file": f})
 	if err != nil {
 		t.Fatalf("cat failed: %v", err)
 	}
@@ -22,7 +24,7 @@ func TestCatTool_Call(t *testing.T) {
 }
 
 func TestCatTool_BadType(t *testing.T) {
-	if _, err := Cat.Call(Input{"file": 123}); err == nil {
+	if _, err := Cat.Call(pub_models.Input{"file": 123}); err == nil {
 		t.Error("expected error for bad file type")
 	}
 }

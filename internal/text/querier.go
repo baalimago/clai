@@ -17,6 +17,7 @@ import (
 	"github.com/baalimago/clai/internal/text/generic"
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/utils"
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
@@ -32,7 +33,7 @@ const (
 type Querier[C models.StreamCompleter] struct {
 	URL                     string
 	Raw                     bool
-	chat                    models.Chat
+	chat                    pub_models.Chat
 	username                string
 	termWidth               int
 	lineCount               int
@@ -218,7 +219,7 @@ func (q *Querier[C]) postProcess() {
 		return
 	}
 	q.hasPrinted = true
-	newSysMsg := models.Message{
+	newSysMsg := pub_models.Message{
 		Role:    "system",
 		Content: q.fullMsg,
 	}
@@ -246,7 +247,7 @@ func (q *Querier[C]) postProcess() {
 	q.postProcessOutput(newSysMsg)
 }
 
-func (q *Querier[C]) postProcessOutput(newSysMsg models.Message) {
+func (q *Querier[C]) postProcessOutput(newSysMsg pub_models.Message) {
 	// The token should already have been printed while streamed
 	if q.Raw {
 		return
@@ -293,13 +294,13 @@ func (q *Querier[C]) reset() {
 	q.rateLimitRetries = 0
 }
 
-func (q *Querier[C]) TextQuery(ctx context.Context, chat models.Chat) (models.Chat, error) {
+func (q *Querier[C]) TextQuery(ctx context.Context, chat pub_models.Chat) (pub_models.Chat, error) {
 	q.reset()
 	q.chat = chat
 	// Query will update the chat with the latest system message
 	err := q.Query(ctx)
 	if err != nil {
-		return models.Chat{}, fmt.Errorf("TextQuery: %w", err)
+		return pub_models.Chat{}, fmt.Errorf("TextQuery: %w", err)
 	}
 	if q.debug && !q.debugTextQuerierPrinted {
 		q.debugTextQuerierPrinted = true
@@ -311,7 +312,7 @@ func (q *Querier[C]) TextQuery(ctx context.Context, chat models.Chat) (models.Ch
 
 func (q *Querier[C]) handleCompletion(ctx context.Context, completion models.CompletionEvent) error {
 	switch cast := completion.(type) {
-	case tools.Call:
+	case pub_models.Call:
 		return q.handleFunctionCall(ctx, cast)
 	case string:
 		q.handleToken(cast)
@@ -331,7 +332,7 @@ func (q *Querier[C]) handleCompletion(ctx context.Context, completion models.Com
 }
 
 // handleFunctionCall by invoking the call, and then resondng to the ai with the output
-func (q *Querier[C]) handleFunctionCall(ctx context.Context, call tools.Call) error {
+func (q *Querier[C]) handleFunctionCall(ctx context.Context, call pub_models.Call) error {
 	if q.cmdMode {
 		return errors.New("cant call tools in cmd mode")
 	}
@@ -348,10 +349,10 @@ func (q *Querier[C]) handleFunctionCall(ctx context.Context, call tools.Call) er
 
 	call.Patch()
 
-	assistantToolsCall := models.Message{
+	assistantToolsCall := pub_models.Message{
 		Role:      "assistant",
 		Content:   call.PrettyPrint(),
-		ToolCalls: []tools.Call{call},
+		ToolCalls: []pub_models.Call{call},
 	}
 	q.reset()
 	if !q.debug {
@@ -369,7 +370,7 @@ func (q *Querier[C]) handleFunctionCall(ctx context.Context, call tools.Call) er
 	if out == "" {
 		out = "<EMPTY-RESPONSE>"
 	}
-	toolsOutput := models.Message{
+	toolsOutput := pub_models.Message{
 		Role:       "tool",
 		Content:    out,
 		ToolCallID: call.ID,
@@ -387,7 +388,7 @@ func (q *Querier[C]) handleFunctionCall(ctx context.Context, call tools.Call) er
 		if !strings.Contains(toolPrintContent, "mcp_") {
 			toolPrintContent = shortenedOutput(out)
 		}
-		smallOutputMsg := models.Message{
+		smallOutputMsg := pub_models.Message{
 			Role:    "tool",
 			Content: toolPrintContent,
 		}

@@ -15,6 +15,8 @@ import (
 	"github.com/baalimago/clai/internal/tools/mcp"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
+
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
 // filterMcpServersByProfile filters MCP server files based on whether their tools are needed by the profile
@@ -57,7 +59,7 @@ func filterMcpServersByProfile(mcpServerPaths []string, userConf Configurations)
 // If the directory is missing, an error is returned.
 func addMcpTools(ctx context.Context, mcpServersDir string, userConf Configurations) error {
 	if _, err := os.Stat(mcpServersDir); os.IsNotExist(err) {
-		return fmt.Errorf("MCP servers directory not found at %s.\nIf you want MCP server support, create one using 'clai setup' and select option 3", mcpServersDir)
+		return fmt.Errorf("MCP servers directory not found at %s. If you want MCP server support, create one using 'clai setup' and select option 3", mcpServersDir)
 	}
 
 	files, err := filepath.Glob(filepath.Join(mcpServersDir, "*.json"))
@@ -78,7 +80,7 @@ func addMcpTools(ctx context.Context, mcpServersDir string, userConf Configurati
 		if err != nil {
 			continue
 		}
-		var mcpServer tools.McpServer
+		var mcpServer pub_models.McpServer
 		if unmarshalErr := json.Unmarshal(data, &mcpServer); unmarshalErr != nil {
 			ancli.Warnf("failed to unmarshal: '%s', error: %v", file, unmarshalErr)
 			continue

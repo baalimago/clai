@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/baalimago/clai/internal/tools"
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
@@ -32,7 +33,7 @@ func (g *StreamCompleter) InternalRegisterTool(tool tools.LLMTool) {
 	})
 }
 
-func convertToGenericTool(tool tools.Specification) Tool {
+func convertToGenericTool(tool pub_models.Specification) Tool {
 	return Tool{
 		Name:        tool.Name,
 		Description: tool.Description,

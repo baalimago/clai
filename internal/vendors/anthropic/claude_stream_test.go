@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/baalimago/clai/internal/models"
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
@@ -82,9 +82,9 @@ data: {"type": "message_stop"}
 	if err != nil {
 		t.Fatalf("failed to setup claude: %v", err)
 	}
-	out, err := c.StreamCompletions(context, models.Chat{
+	out, err := c.StreamCompletions(context, pub_models.Chat{
 		ID: "test",
-		Messages: []models.Message{
+		Messages: []pub_models.Message{
 			{Role: "system", Content: "test"},
 			{Role: "user", Content: "test"},
 		},
@@ -140,9 +140,9 @@ func Test_context(t *testing.T) {
 		t.Fatal(err)
 	}
 	testboil.ReturnsOnContextCancel(t, func(ctx context.Context) {
-		c.StreamCompletions(ctx, models.Chat{
+		c.StreamCompletions(ctx, pub_models.Chat{
 			ID: "test",
-			Messages: []models.Message{
+			Messages: []pub_models.Message{
 				{Role: "system", Content: "test"},
 				{Role: "user", Content: "test"},
 			},

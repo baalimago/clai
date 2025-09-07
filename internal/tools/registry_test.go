@@ -2,25 +2,27 @@ package tools
 
 import (
 	"testing"
+
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
 type mockLLMTool struct {
 	name string
-	spec Specification
+	spec pub_models.Specification
 }
 
-func (m *mockLLMTool) Call(input Input) (string, error) {
+func (m *mockLLMTool) Call(input pub_models.Input) (string, error) {
 	return "mock output", nil
 }
 
-func (m *mockLLMTool) Specification() Specification {
+func (m *mockLLMTool) Specification() pub_models.Specification {
 	return m.spec
 }
 
 func newMockTool(name string) *mockLLMTool {
 	return &mockLLMTool{
 		name: name,
-		spec: Specification{Name: name},
+		spec: pub_models.Specification{Name: name},
 	}
 }
 

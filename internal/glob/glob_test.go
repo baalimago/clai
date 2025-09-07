@@ -6,7 +6,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/baalimago/clai/internal/models"
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
 func TestParseGlob(t *testing.T) {
@@ -105,7 +105,7 @@ func TestCreateChat(t *testing.T) {
 
 func TestConstructGlobMessages(t *testing.T) {
 	// Set up test case
-	globMessages := []models.Message{
+	globMessages := []pub_models.Message{
 		{Role: "user", Content: "{\"fileName\": \"file1.go\", \"data\": \"package main\"}"},
 		{Role: "user", Content: "{\"fileName\": \"file2.go\", \"data\": \"func main()\"}"},
 	}

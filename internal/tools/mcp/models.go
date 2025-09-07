@@ -3,13 +3,13 @@ package mcp
 import (
 	"encoding/json"
 
-	"github.com/baalimago/clai/internal/tools"
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
 // ControlEvent instructs the Manager to register a new MCP server.
 type ControlEvent struct {
 	ServerName string
-	Server     tools.McpServer
+	Server     pub_models.McpServer
 	InputChan  chan<- any
 	OutputChan <-chan any
 }
@@ -39,7 +39,7 @@ type RPCError struct {
 
 // Tool describes a tool as returned by tools/list.
 type Tool struct {
-	Name        string            `json:"name"`
-	Description string            `json:"description,omitempty"`
-	InputSchema tools.InputSchema `json:"inputSchema"`
+	Name        string                 `json:"name"`
+	Description string                 `json:"description,omitempty"`
+	InputSchema pub_models.InputSchema `json:"inputSchema"`
 }

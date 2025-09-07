@@ -3,6 +3,8 @@ package tools
 import (
 	"os"
 	"testing"
+
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
 func TestSedTool_Call(t *testing.T) {
@@ -14,7 +16,7 @@ func TestSedTool_Call(t *testing.T) {
 	}
 	defer os.Remove(fileName)
 
-	_, err = Sed.Call(Input{
+	_, err = Sed.Call(pub_models.Input{
 		"file_path": fileName,
 		"pattern":   "apple",
 		"repl":      "orange",
@@ -43,7 +45,7 @@ func TestSedTool_Range(t *testing.T) {
 	}
 	defer os.Remove(fileName)
 
-	_, err = Sed.Call(Input{
+	_, err = Sed.Call(pub_models.Input{
 		"file_path":  fileName,
 		"pattern":    "foo",
 		"repl":       "bar",

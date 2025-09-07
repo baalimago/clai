@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/baalimago/clai/internal/models"
-	"github.com/baalimago/clai/internal/tools"
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
@@ -23,7 +23,7 @@ import (
 
 const heuristicTokenCountFactor = 1.1
 
-func (c *Claude) StreamCompletions(ctx context.Context, chat models.Chat) (chan models.CompletionEvent, error) {
+func (c *Claude) StreamCompletions(ctx context.Context, chat pub_models.Chat) (chan models.CompletionEvent, error) {
 	req, err := c.constructRequest(ctx, chat)
 	if err != nil {
 		return nil, fmt.Errorf("failed to construct request: %w", err)
@@ -132,7 +132,7 @@ func (c *Claude) handleFullResponse(token string, outChan chan models.Completion
 		case "text":
 			outChan <- content.Text
 		case "tool_use":
-			outChan <- tools.Call{
+			outChan <- pub_models.Call{
 				Name:   content.Name,
 				Inputs: content.Input,
 			}
@@ -206,10 +206,10 @@ func (c *Claude) stringFromDeltaToken(deltaToken string) (Delta, error) {
 	return contentBlockDelta.Delta, nil
 }
 
-func (c *Claude) constructRequest(ctx context.Context, chat models.Chat) (*http.Request, error) {
+func (c *Claude) constructRequest(ctx context.Context, chat pub_models.Chat) (*http.Request, error) {
 	// ignored for now as error is not used
 	sysMsg, _ := chat.FirstSystemMessage()
-	msgCopy := make([]models.Message, len(chat.Messages))
+	msgCopy := make([]pub_models.Message, len(chat.Messages))
 	copy(msgCopy, chat.Messages)
 	claudifiedMsgs := claudifyMessages(msgCopy)
 	if misc.Truthy(os.Getenv("DEBUG_CLAUDIFIED_MSGS")) {
@@ -252,8 +252,8 @@ func (c *Claude) constructRequest(ctx context.Context, chat models.Chat) (*http.
 	return req, nil
 }
 
-func (c *Claude) CountInputTokens(ctx context.Context, chat models.Chat) (int, error) {
-	msgCopy := make([]models.Message, len(chat.Messages))
+func (c *Claude) CountInputTokens(ctx context.Context, chat pub_models.Chat) (int, error) {
+	msgCopy := make([]pub_models.Message, len(chat.Messages))
 	copy(msgCopy, chat.Messages)
 	claudifiedMsgs := claudifyMessages(msgCopy)
 

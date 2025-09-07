@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/baalimago/clai/internal/models"
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
 func TestFormatChatName(t *testing.T) {
@@ -20,13 +20,13 @@ func TestFormatChatName(t *testing.T) {
 type mockChatQuerier struct{}
 
 func (mockChatQuerier) Query(ctx context.Context) error { return nil }
-func (mockChatQuerier) TextQuery(ctx context.Context, c models.Chat) (models.Chat, error) {
+func (mockChatQuerier) TextQuery(ctx context.Context, c pub_models.Chat) (pub_models.Chat, error) {
 	return c, nil
 }
 
 func TestChatHandlerListAndFind(t *testing.T) {
 	tmp := t.TempDir()
-	chats := []models.Chat{
+	chats := []pub_models.Chat{
 		{ID: "one", Created: time.Now().Add(-time.Hour)},
 		{ID: "two", Created: time.Now()},
 	}
