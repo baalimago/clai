@@ -19,7 +19,7 @@ func TestFFProbeCall(t *testing.T) {
 	// Create a temporary test file (simple text file for testing)
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "test.txt")
-	if err := os.WriteFile(testFile, []byte("test content"), 0644); err != nil {
+	if err := os.WriteFile(testFile, []byte("test content"), 0o644); err != nil {
 		t.Fatalf("failed to create test file: %v", err)
 	}
 

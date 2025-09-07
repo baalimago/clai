@@ -22,7 +22,6 @@ type FullResponse interface {
 
 type publicQuerier struct {
 	conf    text.Configurations
-	chat    models.Chat
 	querier priv_models.ChatQuerier
 }
 
