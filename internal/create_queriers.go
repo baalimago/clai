@@ -12,6 +12,7 @@ import (
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/internal/vendors/anthropic"
 	"github.com/baalimago/clai/internal/vendors/deepseek"
+	"github.com/baalimago/clai/internal/vendors/gemini"
 	"github.com/baalimago/clai/internal/vendors/inception"
 	"github.com/baalimago/clai/internal/vendors/mistral"
 	"github.com/baalimago/clai/internal/vendors/novita"
@@ -92,6 +93,17 @@ func selectTextQuerier(ctx context.Context, conf text.Configurations) (models.Qu
 		strings.Contains(conf.Model, "devstral") {
 		found = true
 		defaultCpy := mistral.Default
+		defaultCpy.Model = conf.Model
+		qTmp, err := text.NewQuerier(ctx, conf, &defaultCpy)
+		if err != nil {
+			return nil, false, fmt.Errorf("failed to create text querier: %w", err)
+		}
+		q = &qTmp
+	}
+
+	if strings.Contains(conf.Model, "gemini") {
+		found = true
+		defaultCpy := gemini.Default
 		defaultCpy.Model = conf.Model
 		qTmp, err := text.NewQuerier(ctx, conf, &defaultCpy)
 		if err != nil {
