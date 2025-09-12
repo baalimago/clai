@@ -17,19 +17,19 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
-func vendorType(fromModel string) (string, string, string) {
+func vendorType(fromModel string) (string, string, string, error) {
 	if strings.Contains(fromModel, "gpt") {
-		return "openai", "gpt", fromModel
+		return "openai", "gpt", fromModel, nil
 	}
 	if strings.Contains(fromModel, "claude") {
-		return "anthropic", "claude", fromModel
+		return "anthropic", "claude", fromModel, nil
 	}
 	if strings.Contains(fromModel, "ollama") {
 		m := "llama3"
 		if strings.HasPrefix(fromModel, "ollama:") {
 			m = fromModel[7:]
 		}
-		return "ollama", m, fromModel
+		return "ollama", m, fromModel, nil
 	}
 	if strings.Contains(fromModel, "novita") {
 		m := ""
@@ -42,32 +42,32 @@ func vendorType(fromModel string) (string, string, string) {
 			}
 		}
 
-		return "novita", m, modelVersion
+		return "novita", m, modelVersion, nil
 	}
 	if strings.Contains(fromModel, "mistral") ||
 		strings.Contains(fromModel, "mixtral") ||
 		strings.Contains(fromModel, "codestral") ||
 		strings.Contains(fromModel, "devstral") {
-		return "mistral", "mistral", fromModel
+		return "mistral", "mistral", fromModel, nil
 	}
 
 	if strings.Contains(fromModel, "deepseek") {
-		return "deepseek", "deepseek", fromModel
+		return "deepseek", "deepseek", fromModel, nil
 	}
 	if strings.Contains(fromModel, "mock") {
-		return "mock", "mock", "mock"
+		return "mock", "mock", "mock", nil
 	}
 	if strings.Contains(fromModel, "mercury") {
-		return "inception", "mercury", fromModel
+		return "inception", "mercury", fromModel, nil
 	}
 	if strings.Contains(fromModel, "grok") {
-		return "xai", "grok", fromModel
+		return "xai", "grok", fromModel, nil
 	}
 	if strings.Contains(fromModel, "gemini") {
-		return "gogole", "gemini", fromModel
+		return "google", "gemini", fromModel, nil
 	}
 
-	return "VENDOR", "NOT", "FOUND"
+	return "", "", "", fmt.Errorf("failed to find vendor for: %v", fromModel)
 }
 
 // setupConfigFile using unholy named returns since it kind of fits and im too lazy to explicitly declare. Hobby project
@@ -102,7 +102,10 @@ func setupConfigFile[C models.StreamCompleter](configPath string, userConf Confi
 }
 
 func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configurations, dfault C) (Querier[C], error) {
-	vendor, model, modelVersion := vendorType(userConf.Model)
+	vendor, model, modelVersion, err := vendorType(userConf.Model)
+	if err != nil {
+		return Querier[C]{}, fmt.Errorf("failed to find vendorType: %v", err)
+	}
 	claiConfDir := userConf.ConfigDir
 	configPath := path.Join(claiConfDir, fmt.Sprintf("%v_%v_%v.json", vendor, model, modelVersion))
 	querier := Querier[C]{}
