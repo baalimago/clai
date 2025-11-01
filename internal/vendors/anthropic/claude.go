@@ -80,7 +80,7 @@ func claudifyMessages(msgs []pub_models.Message) []ClaudeConvMessage {
 
 		if len(msg.ToolCalls) > 0 {
 			toolCallMsg := msg.ToolCalls[0]
-			var tmp map[string]interface{}
+			tmp := make(map[string]interface{})
 			if toolCallMsg.Inputs != nil {
 				tmp = make(map[string]interface{})
 				for k, v := range *toolCallMsg.Inputs {
