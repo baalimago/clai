@@ -136,8 +136,8 @@ func (is *InputSchema) IsOk() bool {
 }
 
 type ParameterObject struct {
-	Type        string    `json:"type"`
-	Description string    `json:"description"`
-	Enum        *[]string `json:"enum,omitempty"`
+	Type        string           `json:"type"`
+	Description string           `json:"description"`
+	Enum        *[]string        `json:"enum,omitempty"`
 	Items       *ParameterObject `json:"items,omitempty"`
 }
