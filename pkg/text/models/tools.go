@@ -128,7 +128,7 @@ func (is *InputSchema) Patch() {
 // IsOk checks if the input schema is ok
 func (is *InputSchema) IsOk() bool {
 	for _, p := range is.Properties {
-		if p.Type == "array" && p.Enum == nil {
+		if p.Type == "array" && p.Items == nil {
 			return false
 		}
 	}
@@ -136,7 +136,8 @@ func (is *InputSchema) IsOk() bool {
 }
 
 type ParameterObject struct {
-	Type        string    `json:"type"`
-	Description string    `json:"description"`
-	Enum        *[]string `json:"enum,omitempty"`
+	Type        string           `json:"type"`
+	Description string           `json:"description"`
+	Enum        *[]string        `json:"enum,omitempty"`
+	Items       *ParameterObject `json:"items,omitempty"`
 }
