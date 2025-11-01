@@ -123,46 +123,48 @@ func addMcpTools(ctx context.Context, mcpServersDir string, userConf Configurati
 
 func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, userConf Configurations) {
 	toolBox, ok := any(modelConf).(models.ToolBox)
-	if ok && userConf.UseTools {
-		tools.Init()
-		// Only setup MCP tools if they're there's a chance of using tools
-		err := addMcpTools(ctx, path.Join(userConf.ConfigDir, "mcpServers"), userConf)
-		if misc.Truthy(os.Getenv("DEBUG")) {
-			ancli.Okf("Registering tools on querier of type: %T\n", modelConf)
+	if !ok || !userConf.UseTools {
+		return
+	}
+	tools.Init()
+	// Only setup MCP tools if they're there's a chance of using tools
+	err := addMcpTools(ctx, path.Join(userConf.ConfigDir, "mcpServers"), userConf)
+	if misc.Truthy(os.Getenv("DEBUG")) {
+		ancli.Okf("Registering tools on querier of type: %T\n", modelConf)
+	}
+	if err != nil {
+		ancli.Warnf("failed to add mcp tools: %v", err)
+		return
+	}
+	// If usetools and no specific tools chocen, assume all are valid
+	if len(userConf.Tools) == 0 {
+		for _, tool := range tools.Registry.All() {
+			toolBox.RegisterTool(tool)
 		}
-		if err != nil {
-			ancli.Warnf("failed to add mcp tools: %v", err)
+		return
+	}
+	toAdd := make([]tools.LLMTool, 0)
+	for _, t := range userConf.Tools {
+		if strings.Contains(t, "*") {
+			matchingTools := tools.Registry.WildcardGet(t)
+			if len(matchingTools) == 0 {
+				ancli.Warnf("attempted to find tools using wildcard search: '%v', found none\n", t)
+			}
+			toAdd = append(toAdd, matchingTools...)
+			continue
 		}
-		// If usetools and no specific tools chocen, assume all are valid
-		if len(userConf.Tools) == 0 {
-			for _, tool := range tools.Registry.All() {
-				toolBox.RegisterTool(tool)
-			}
-		} else {
-			toAdd := make([]tools.LLMTool, 0)
-			for _, t := range userConf.Tools {
-				if strings.Contains(t, "*") {
-					matchingTools := tools.Registry.WildcardGet(t)
-					if len(matchingTools) == 0 {
-						ancli.Warnf("attempted to find tools using wildcard search: '%v', found none\n", t)
-					}
-					toAdd = append(toAdd, matchingTools...)
-					continue
-				}
-				tool, exists := tools.Registry.Get(t)
-				if !exists {
-					ancli.Warnf("attempted to find tool: '%v', which doesn't exist, skipping\n", t)
-					continue
-				}
-				toAdd = append(toAdd, tool)
-			}
+		tool, exists := tools.Registry.Get(t)
+		if !exists {
+			ancli.Warnf("attempted to find tool: '%v', which doesn't exist, skipping\n", t)
+			continue
+		}
+		toAdd = append(toAdd, tool)
+	}
 
-			for _, tool := range toAdd {
-				if misc.Truthy(os.Getenv("DEBUG")) {
-					ancli.PrintOK(fmt.Sprintf("\tname: %v, desc: %v\n", tool.Specification().Name, tool.Specification().Description))
-				}
-				toolBox.RegisterTool(tool)
-			}
+	for _, tool := range toAdd {
+		if misc.Truthy(os.Getenv("DEBUG")) {
+			ancli.PrintOK(fmt.Sprintf("\tname: %v, desc: %v\n", tool.Specification().Name, tool.Specification().Description))
 		}
+		toolBox.RegisterTool(tool)
 	}
 }

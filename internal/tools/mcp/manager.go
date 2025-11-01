@@ -89,13 +89,14 @@ func handleServer(ctx context.Context, ev ControlEvent, readyChan chan struct{})
 
 	for _, t := range listRes.Tools {
 		t.InputSchema.Patch()
+		toolName := fmt.Sprintf("mcp_%s_%s", ev.ServerName, t.Name)
 
 		if !t.InputSchema.IsOk() {
-			ancli.Warnf("tool: 'mcp_%v' has issues that the LLM will complain about, skipping\n", t.Name)
+			ancli.Warnf("tool: '%v' has issues that the LLM will complain about, skipping\n", toolName)
 			continue
 		}
 		spec := pub_models.Specification{
-			Name:        fmt.Sprintf("mcp_%s_%s", ev.ServerName, t.Name),
+			Name:        toolName,
 			Description: t.Description,
 			Inputs:      &t.InputSchema,
 		}
