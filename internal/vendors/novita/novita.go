@@ -3,6 +3,7 @@ package novita
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/baalimago/clai/internal/text/generic"
 	"github.com/baalimago/clai/internal/tools"
@@ -26,7 +27,7 @@ type Novita struct {
 	URL              string  `json:"url"`
 }
 
-const ChatURL = "https://api.novita.ai/v3/openai/chat/completions"
+const ChatURL = "https://api.novita.ai/openai/v1/chat/completions"
 
 func (g *Novita) Setup() error {
 	if os.Getenv("NOVITA_API_KEY") == "" {
@@ -36,7 +37,9 @@ func (g *Novita) Setup() error {
 	if err != nil {
 		return fmt.Errorf("failed to setup stream completer: %w", err)
 	}
-	g.StreamCompleter.Model = g.Model
+
+	modelName := strings.TrimLeft(g.Model, "novita:")
+	g.StreamCompleter.Model = modelName
 	g.StreamCompleter.FrequencyPenalty = &g.FrequencyPenalty
 	g.StreamCompleter.MaxTokens = g.MaxTokens
 	g.StreamCompleter.Temperature = &g.Temperature
