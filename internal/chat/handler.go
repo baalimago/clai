@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/user"
 	"path"
@@ -11,13 +12,13 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
-	"github.com/baalimago/go_away_boilerplate/pkg/num"
 )
 
 const chatUsage = `clai - (c)ommand (l)ine (a)rtificial (i)ntelligence
@@ -237,26 +238,140 @@ func (cq *ChatHandler) list() ([]pub_models.Chat, error) {
 	return chats, err
 }
 
-func formatChatName(chatName string) string {
-	chatNameLen := len(chatName)
-	amCharsToPrint := num.Cap(chatNameLen, 0, 25)
-	overflow := chatNameLen > amCharsToPrint
-	chatName = chatName[:amCharsToPrint]
-	if overflow {
-		chatName += "..."
-	}
-	return strings.ReplaceAll(chatName, "\n", "\\n")
+const tableFormat = "%-3s| %-20s| %v | %v\n"
+
+func printHeader(w io.Writer) {
+	fmt.Fprintf(w, tableFormat,
+		"ID",
+		"Created",
+		"Messages",
+		"Prompt")
+
+	line := strings.Repeat("-", 55)
+	fmt.Fprintf(w, "%v\n", line)
 }
 
-func (cq *ChatHandler) listChats(ctx context.Context, chats []pub_models.Chat) error {
-	ancli.PrintOK(fmt.Sprintf("found '%v' conversations:\n", len(chats)))
-	fmt.Printf("\t%-3s| %-20s| %v | %v\n", "ID", "Created", "Messages", "Filename + prompt")
-	line := strings.Repeat("-", 55)
-	fmt.Printf("\t%v\n", line)
+// fillRemainderOfTermWidth by:
+// 1. Counting remaining width until termWidth
+// 2. Fit remainder into remaining width, keeping padding
+// 3. Format: "<start> ... <end>" when truncating
+func fillRemainderOfTermWidth(prefix, remainder string, termWidth, padding int) string {
+	remainingWidth := termWidth - utf8.RuneCountInString(prefix) - padding
+	if remainingWidth < 0 {
+		remainingWidth = 0
+	}
+	widthAdjustedRemainder := ""
+	r := []rune(remainder)
+	if remainingWidth == 0 {
+		widthAdjustedRemainder = ""
+	} else if len(r) <= remainingWidth {
+		widthAdjustedRemainder = remainder
+	} else if remainingWidth <= 5 {
+		widthAdjustedRemainder = string(r[:remainingWidth])
+	} else {
+		avail := remainingWidth - 5
+		startLen := avail / 2
+		endLen := avail - startLen
+		if endLen < 0 {
+			endLen = 0
+		}
+		if startLen < 0 {
+			startLen = 0
+		}
+		if startLen > len(r) {
+			startLen = len(r)
+		}
+		if endLen > len(r)-startLen {
+			endLen = len(r) - startLen
+		}
+		endStart := len(r) - endLen
+		if endStart < 0 {
+			endStart = 0
+		}
+		widthAdjustedRemainder = string(r[:startLen]) +
+			" ... " +
+			string(r[endStart:])
+	}
 
+	return prefix + widthAdjustedRemainder
+}
+
+func printRow(w io.Writer, i int, chats []pub_models.Chat, termWidth int) {
+	chat := chats[i]
+	firstMessages := ""
+	uMsg, uMsgErr := chat.FirstUserMessage()
+	if uMsgErr == nil {
+		firstMessages = uMsg.Content
+	}
+
+	firstMessages = strings.ReplaceAll(firstMessages, "\n", "\\n")
+
+	prefix := fmt.Sprintf(
+		"%-3s| %s | %-8v | ",
+		fmt.Sprintf("%v", i),
+		chat.Created.Format(
+			"2006-01-02 15:04:05",
+		),
+		len(chat.Messages),
+	)
+
+	fmt.Fprintln(w, fillRemainderOfTermWidth(prefix, firstMessages, termWidth, 13))
+}
+
+func printOptions(page, pageSize, amItems, termWidth int, chats []pub_models.Chat, choiesFormat string) int {
+	pageIndex := page * pageSize
+	listToIndex := pageIndex + pageSize
+	if listToIndex > amItems {
+		listToIndex = amItems
+	}
+	// Could this be "calculated" using "maths"
+	// Yes. Most likely. Don't judge me.
+	amPrinted := 0
+	for i := pageIndex; i < listToIndex; i++ {
+		amPrinted++
+		printRow(os.Stdout, i, chats, termWidth)
+	}
+	fmt.Printf(choiesFormat, page, amItems/pageSize)
+
+	return amPrinted
+}
+
+func isInt(s string) bool {
+	_, err := strconv.Atoi(s)
+	return err == nil
+}
+
+func (cq *ChatHandler) openChat(ctx context.Context, chat pub_models.Chat) error {
+	err := cq.printChat(chat)
+	if err != nil {
+		return fmt.Errorf(
+			"selection ok, print chat not ok: %v",
+			err,
+		)
+	}
+	cq.chat = chat
+	return cq.loop(ctx)
+}
+
+func (cq *ChatHandler) listChats(
+	ctx context.Context,
+	chats []pub_models.Chat,
+) error {
+	ancli.PrintOK(
+		fmt.Sprintf(
+			"found '%v' conversations:\n",
+			len(chats),
+		),
+	)
+	printHeader(os.Stdout)
+
+	// Recalculate just in case changed in width of terminal
 	termWidth, err := utils.TermWidth()
 	if err != nil {
-		return fmt.Errorf("failed to get terminal width: %v", err)
+		return fmt.Errorf(
+			"failed to get terminal width: %v",
+			err,
+		)
 	}
 	pageSize := 10
 	page := 0
@@ -264,61 +379,44 @@ func (cq *ChatHandler) listChats(ctx context.Context, chats []pub_models.Chat) e
 	noNumberSelected := true
 	selectedNumber := -1
 	for noNumberSelected {
-		pageIndex := page * pageSize
-		listToIndex := pageIndex + pageSize
-		if listToIndex > amChats-1 {
-			listToIndex = amChats - 1
+		amPrinted := printOptions(page, pageSize, amChats, termWidth, chats,
+			"(page: (%v/%v). goto chat: [<num>], next: [<enter>]/[n]ext, [p]rev, [q]uit): ")
+		choice, usrReadErr := utils.ReadUserInput()
+		if usrReadErr != nil {
+			return fmt.Errorf("conv list failed to read user: %w", usrReadErr)
 		}
-		for i := pageIndex; i < listToIndex; i++ {
-			chat := chats[i]
-			chatName := formatChatName(chat.ID)
-			fmt.Printf("\t%-3s| %s | %-8v | %v\n",
-				fmt.Sprintf("%v", i),
-				chat.Created.Format("2006-01-02 15:04:05"),
-				len(chat.Messages),
-				chatName,
-			)
-
+		maybeInt, intIfNil := strconv.Atoi(choice)
+		if intIfNil == nil {
+			selectedNumber = maybeInt
+			break
 		}
-		fmt.Printf("(page: (%v/%v). goto chat: [<num>], next: [<enter>]/[n]ext, [p]rev, [q]uit/[e]it): ", page, amChats/pageSize)
-		input, readErr := utils.ReadUserInput()
-		if readErr != nil {
-			return fmt.Errorf("failed to read input: %w", readErr)
-		}
-		convNum, atoiErr := strconv.Atoi(input)
-		noNumberSelected = atoiErr != nil
-		if !noNumberSelected {
-			selectedNumber = convNum
-		}
-
-		prevers := []string{"prev", "p"}
-		if slices.Contains(prevers, input) {
-			page -= 1
+		goPrevPageChoices := []string{"p", "prev"}
+		if slices.Contains(goPrevPageChoices, choice) {
+			page--
 			if page < 0 {
+				page = amChats / pageSize
+			}
+		} else {
+			page++
+			if page > amChats/pageSize {
 				page = 0
 			}
-			// Lets just assume everything but prev is next
-		} else {
-			if (page+1)*pageSize < amChats {
-				page += 1
-			}
 		}
-		utils.ClearTermTo(termWidth, (listToIndex-pageIndex)+1)
-	}
-	if selectedNumber > len(chats) {
-		return fmt.Errorf("selection: '%v' is higher than available chats: '%v'", selectedNumber, len(chats))
+
+		utils.ClearTermTo(termWidth, amPrinted+1)
 	}
 
-	// Table header and some stuff like that
-	utils.ClearTermTo(termWidth, 3)
-	chat := chats[selectedNumber]
-	ancli.Okf("selected conversation with index: '%v', name: '%v', with '%v' messages\n", selectedNumber, chat.ID, len(chat.Messages))
-	err = cq.printChat(chat)
-	if err != nil {
-		return fmt.Errorf("selection ok, print chat not ok: %v", err)
+	if selectedNumber > len(chats) {
+		return fmt.Errorf(
+			"selection: '%v' is higher than available "+
+				"chats: '%v'",
+			selectedNumber,
+			len(chats),
+		)
 	}
-	cq.chat = chat
-	return cq.loop(ctx)
+
+	utils.ClearTermTo(termWidth, 3)
+	return cq.openChat(ctx, chats[selectedNumber])
 }
 
 func (cq *ChatHandler) getByID(ID string) (pub_models.Chat, error) {

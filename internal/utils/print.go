@@ -12,6 +12,7 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
+// ClearTermTo a certain amount of rows upwards by printing termWidth amount of empty spaces
 func ClearTermTo(termWidth, upTo int) {
 	clearLine := strings.Repeat(" ", termWidth)
 	// Move cursor up line by line and clear the line
