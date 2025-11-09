@@ -1,4 +1,4 @@
-package reply
+package chat
 
 import (
 	"errors"
@@ -8,7 +8,7 @@ import (
 )
 
 func Replay(raw bool) error {
-	prevReply, err := Load("")
+	prevReply, err := LoadPrevQuery("")
 	if err != nil {
 		return fmt.Errorf("failed to load previous reply: %v", err)
 	}

@@ -13,7 +13,15 @@ import (
 )
 
 // ClearTermTo a certain amount of rows upwards by printing termWidth amount of empty spaces
-func ClearTermTo(termWidth, upTo int) {
+func ClearTermTo(termWidth, upTo int) error {
+	// Auto-set term width and hope it doesn't break
+	if termWidth == -1 {
+		t, err := TermWidth()
+		if err != nil {
+			return fmt.Errorf("failed to find term width: %w", err)
+		}
+		termWidth = t
+	}
 	clearLine := strings.Repeat(" ", termWidth)
 	// Move cursor up line by line and clear the line
 	for upTo > 0 {
@@ -24,6 +32,7 @@ func ClearTermTo(termWidth, upTo int) {
 	fmt.Printf("\r%v", clearLine)
 	// Place cursor at start of line
 	fmt.Printf("\r")
+	return nil
 }
 
 // UpdateMessageTerminalMetadata updates the terminal metadata. Meaning the lineCount, to eventually
