@@ -261,15 +261,12 @@ func (cq *ChatHandler) printChatInfo(w io.Writer, chat pub_models.Chat) error {
 }
 
 // escapeEditString by:
-// 1. Unescaping toEdit
-// 2. Writing the string to a temporary file
-// 3. Opening the file with EDITOR
-// 4. On close, reading the edited file
-// 5. Re-escaping the edited string
-// 6. Returning the newly re-escaped edited string
+// 1. Writing the string to a temporary file
+// 2. Opening the file with EDITOR
+// 3. On close, reading the edited file
+// 4. Returning the newly edited string
 func escapeEditString(toEdit string) (string, error) {
-	ret := strings.ReplaceAll(toEdit, "\\n", "\n")
-	ret = strings.ReplaceAll(ret, "\\t", "\t")
+	ret := toEdit
 
 	f, err := os.CreateTemp("", "clai-edit-*.txt")
 	if err != nil {
@@ -282,8 +279,8 @@ func escapeEditString(toEdit string) (string, error) {
 		f.Close()
 		return "", fmt.Errorf("failed to write temp file: %w", err)
 	}
-	if err := f.Close(); err != nil {
-		return "", fmt.Errorf("failed to close temp file: %w", err)
+	if closeErr := f.Close(); closeErr != nil {
+		return "", fmt.Errorf("failed to close temp file: %w", closeErr)
 	}
 
 	editor := os.Getenv("EDITOR")
@@ -296,8 +293,8 @@ func escapeEditString(toEdit string) (string, error) {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("failed to edit file %s: %v", f.Name(), err)
+	if runErr := cmd.Run(); runErr != nil {
+		return "", fmt.Errorf("failed to edit file %s: %v", f.Name(), runErr)
 	}
 
 	b, err := os.ReadFile(f.Name())
@@ -305,10 +302,6 @@ func escapeEditString(toEdit string) (string, error) {
 		return "", fmt.Errorf("failed to read edited file: %w", err)
 	}
 	edited := string(b)
-
-	edited = strings.ReplaceAll(edited, "\r\n", "\n")
-	edited = strings.ReplaceAll(edited, "\n", "\\n")
-	edited = strings.ReplaceAll(edited, "\t", "\\t")
 
 	return edited, nil
 }
