@@ -55,18 +55,7 @@ func SelectFromTable[T any](header string, items []T,
 				page = amItems / pageSize
 			}
 		} else {
-			maybeInts := strings.Split(choice, ",")
-			for _, maybeIntAsString := range maybeInts {
-				maybeIntAsInt, intIfNil := strconv.Atoi(maybeIntAsString)
-				if intIfNil == nil {
-					if maybeIntAsInt > amItems {
-						ancli.Warnf("selected index: '%v' is greater than amount of items: '%v'", maybeIntAsInt, amItems)
-						continue
-					}
-					selectedNumbers = append(selectedNumbers, maybeIntAsInt)
-				}
-			}
-
+			selectedNumbers = parseNumbersFromString(choice, amItems)
 			noNumberSelected = len(selectedNumbers) == 0
 			if !noNumberSelected {
 				// +2 in case of break since we want to remove "---" line and header
@@ -89,6 +78,69 @@ func SelectFromTable[T any](header string, items []T,
 	}
 
 	return selectedNumbers, nil
+}
+
+func parseNumbersFromString(choice string, max int) []int {
+	selectedNumbers := make([]int, 0)
+	// check if matches pattern nr0:nr1, if yes select range
+	tokens := strings.Split(choice, ",")
+	for _, tok := range tokens {
+		tok = strings.TrimSpace(tok)
+		if strings.Contains(tok, ":") {
+			parts := strings.SplitN(tok, ":", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			start, err0 := strconv.Atoi(
+				strings.TrimSpace(parts[0]),
+			)
+			end, err1 := strconv.Atoi(
+				strings.TrimSpace(parts[1]),
+			)
+			if err0 != nil || err1 != nil {
+				continue
+			}
+			if end < start {
+				ancli.Warnf(
+					"invalid range (end < start): '%s'",
+					tok,
+				)
+				continue
+			}
+			for j := start; j <= end; j++ {
+				if j > max {
+					ancli.Warnf(
+						"selected index: '%v' is greater "+
+							"than amount of items: '%v'",
+						j,
+						max,
+					)
+					continue
+				}
+				selectedNumbers = append(
+					selectedNumbers, j,
+				)
+			}
+			continue
+		}
+		v, err := strconv.Atoi(tok)
+		if err == nil {
+			if v > max {
+				ancli.Warnf(
+					"selected index: '%v' is greater "+
+						"than amount of items: '%v'",
+					v,
+					max,
+				)
+				continue
+			}
+			selectedNumbers = append(
+				selectedNumbers, v,
+			)
+		}
+	}
+
+	return selectedNumbers
 }
 
 func printSelectRow[T any](w io.Writer, i int, chats []T, formatRow func(int, T) (string, error)) error {
