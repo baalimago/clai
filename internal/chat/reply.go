@@ -1,4 +1,4 @@
-package reply
+package chat
 
 import (
 	"errors"
@@ -8,7 +8,6 @@ import (
 	"path"
 	"time"
 
-	"github.com/baalimago/clai/internal/chat"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
@@ -30,26 +29,26 @@ func SaveAsPreviousQuery(claiConfDir string, msgs []pub_models.Message) error {
 		}
 		convChat := pub_models.Chat{
 			Created:  time.Now(),
-			ID:       chat.IDFromPrompt(firstUserMsg.Content),
+			ID:       IDFromPrompt(firstUserMsg.Content),
 			Messages: msgs,
 		}
 		convPath := path.Join(claiConfDir, "conversations")
 		if _, convDirExistsErr := os.Stat(convPath); convDirExistsErr != nil {
 			os.MkdirAll(convPath, 0o755)
 		}
-		err = chat.Save(convPath, convChat)
+		err = Save(convPath, convChat)
 		if err != nil {
 			return fmt.Errorf("failed to save previous query as new conversation: %w", err)
 		}
 	}
 
-	return chat.Save(path.Join(claiConfDir, "conversations"), prevQueryChat)
+	return Save(path.Join(claiConfDir, "conversations"), prevQueryChat)
 }
 
-// Load the prevQuery.json from the claiConfDir/conversations directory
+// LoadPrevQuery the prevQuery.json from the claiConfDir/conversations directory
 // If claiConfDir is left empty, it will be re-constructed. The technical debt
 // is piling up quite fast here
-func Load(claiConfDir string) (pub_models.Chat, error) {
+func LoadPrevQuery(claiConfDir string) (pub_models.Chat, error) {
 	if claiConfDir == "" {
 		dir, err := utils.GetClaiConfigDir()
 		if err != nil {
@@ -58,7 +57,7 @@ func Load(claiConfDir string) (pub_models.Chat, error) {
 		claiConfDir = dir
 	}
 
-	c, err := chat.FromPath(path.Join(claiConfDir, "conversations", "prevQuery.json"))
+	c, err := FromPath(path.Join(claiConfDir, "conversations", "prevQuery.json"))
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			ancli.PrintWarn("no previous query found\n")

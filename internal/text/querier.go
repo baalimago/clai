@@ -12,8 +12,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/baalimago/clai/internal/chat"
 	"github.com/baalimago/clai/internal/models"
-	"github.com/baalimago/clai/internal/reply"
 	"github.com/baalimago/clai/internal/text/generic"
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/utils"
@@ -225,7 +225,7 @@ func (q *Querier[C]) postProcess() {
 	}
 	q.chat.Messages = append(q.chat.Messages, newSysMsg)
 	if q.shouldSaveReply {
-		err := reply.SaveAsPreviousQuery(q.configDir, q.chat.Messages)
+		err := chat.SaveAsPreviousQuery(q.configDir, q.chat.Messages)
 		if err != nil {
 			ancli.PrintErr(fmt.Sprintf("failed to save previous query: %v\n", err))
 		}

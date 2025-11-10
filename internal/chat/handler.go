@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/user"
 	"path"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -17,7 +16,6 @@ import (
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
-	"github.com/baalimago/go_away_boilerplate/pkg/num"
 )
 
 const chatUsage = `clai - (c)ommand (l)ine (a)rtificial (i)ntelligence
@@ -48,6 +46,30 @@ Examples:
   - clai chat delete my_chat_id
 `
 
+const (
+	// index | created | messages | prompt
+	selectChatTblFormat        = "%-6s| %-20s| %-7v | %v"
+	selectChatTblChoicesFormat = "(page: (%v/%v). goto chat: [<num>], next: [<enter>]/[n]ext, [p]rev, [q]uit): "
+	actOnChatFormat            = `=== Chat info ===
+
+file path: %v
+created_at: %v
+am replies:
+	user:   '%v'
+	tool:   '%v'
+	system: '%v'
+	assistant: '%v'
+
+%v
+
+(make [p]revQuery (-re/-reply flag), go [b]ack to list, [e]dit messages, [d]elete messages, [c]ontinue conversation, [q]uit): `
+
+	// index | role | length | summary
+	editMessageTblFormat        = "%-6v| %-10v| %-7v| %v"
+	editMessageChoicesFormat    = `(page: (%v/%v). edit message: [<num>], next: [<enter>]/[n]ext, [p]rev, [q]uit): `
+	deleteMessagesChoicesFormat = `(page: (%v/%v). delete message: [<num0>,<num1>,<num2>,...], next: [<enter>]/[n]ext, [p]rev, [q]uit): `
+)
+
 type NotCyclicalImport struct {
 	UseTools   bool
 	UseProfile string
@@ -62,6 +84,7 @@ type ChatHandler struct {
 	chat        pub_models.Chat
 	preMessages []pub_models.Message
 	prompt      string
+	confDir     string
 	convDir     string
 	config      NotCyclicalImport
 	raw         bool
@@ -69,40 +92,6 @@ type ChatHandler struct {
 
 func (q *ChatHandler) Query(ctx context.Context) error {
 	return q.actOnSubCmd(ctx)
-}
-
-func New(q models.ChatQuerier,
-	confDir,
-	args string,
-	preMessages []pub_models.Message,
-	conf NotCyclicalImport,
-	raw bool,
-) (*ChatHandler, error) {
-	username := "user"
-	debug := misc.Truthy(os.Getenv("DEBUG"))
-	argsArr := strings.Split(args, " ")
-	subCmd := argsArr[0]
-	currentUser, err := user.Current()
-	if err == nil {
-		username = currentUser.Username
-	}
-
-	subPrompt := strings.Join(argsArr[1:], " ")
-	claiDir, err := utils.GetClaiConfigDir()
-	if err != nil {
-		return nil, err
-	}
-	return &ChatHandler{
-		q:           q,
-		username:    username,
-		debug:       debug,
-		subCmd:      subCmd,
-		prompt:      subPrompt,
-		preMessages: preMessages,
-		convDir:     path.Join(claiDir, "conversations"),
-		config:      conf,
-		raw:         raw,
-	}, nil
 }
 
 func (cq *ChatHandler) actOnSubCmd(ctx context.Context) error {
@@ -115,11 +104,7 @@ func (cq *ChatHandler) actOnSubCmd(ctx context.Context) error {
 	case "continue", "c":
 		return cq.cont(ctx)
 	case "list", "l":
-		chats, err := cq.list()
-		if err == nil {
-			return cq.listChats(ctx, chats)
-		}
-		return err
+		return cq.handleListCmd(ctx)
 	case "delete", "d":
 		return cq.deleteFromPrompt()
 	case "query", "q":
@@ -215,112 +200,6 @@ func (cq *ChatHandler) deleteFromPrompt() error {
 	return nil
 }
 
-func (cq *ChatHandler) list() ([]pub_models.Chat, error) {
-	files, err := os.ReadDir(cq.convDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list conversations: %w", err)
-	}
-	var chats []pub_models.Chat
-	if misc.Truthy(os.Getenv("DEBUG")) {
-		ancli.PrintOK(fmt.Sprintf("found '%v' conversations:\n", len(files)))
-	}
-	for _, file := range files {
-		chat, pathErr := FromPath(path.Join(cq.convDir, file.Name()))
-		if pathErr != nil {
-			return nil, fmt.Errorf("failed to get chat: %w", pathErr)
-		}
-		chats = append(chats, chat)
-	}
-	slices.SortFunc(chats, func(a, b pub_models.Chat) int {
-		return b.Created.Compare(a.Created)
-	})
-	return chats, err
-}
-
-func formatChatName(chatName string) string {
-	chatNameLen := len(chatName)
-	amCharsToPrint := num.Cap(chatNameLen, 0, 25)
-	overflow := chatNameLen > amCharsToPrint
-	chatName = chatName[:amCharsToPrint]
-	if overflow {
-		chatName += "..."
-	}
-	return strings.ReplaceAll(chatName, "\n", "\\n")
-}
-
-func (cq *ChatHandler) listChats(ctx context.Context, chats []pub_models.Chat) error {
-	ancli.PrintOK(fmt.Sprintf("found '%v' conversations:\n", len(chats)))
-	fmt.Printf("\t%-3s| %-20s| %v | %v\n", "ID", "Created", "Messages", "Filename + prompt")
-	line := strings.Repeat("-", 55)
-	fmt.Printf("\t%v\n", line)
-
-	termWidth, err := utils.TermWidth()
-	if err != nil {
-		return fmt.Errorf("failed to get terminal width: %v", err)
-	}
-	pageSize := 10
-	page := 0
-	amChats := len(chats)
-	noNumberSelected := true
-	selectedNumber := -1
-	for noNumberSelected {
-		pageIndex := page * pageSize
-		listToIndex := pageIndex + pageSize
-		if listToIndex > amChats-1 {
-			listToIndex = amChats - 1
-		}
-		for i := pageIndex; i < listToIndex; i++ {
-			chat := chats[i]
-			chatName := formatChatName(chat.ID)
-			fmt.Printf("\t%-3s| %s | %-8v | %v\n",
-				fmt.Sprintf("%v", i),
-				chat.Created.Format("2006-01-02 15:04:05"),
-				len(chat.Messages),
-				chatName,
-			)
-
-		}
-		fmt.Printf("(page: (%v/%v). goto chat: [<num>], next: [<enter>]/[n]ext, [p]rev, [q]uit/[e]it): ", page, amChats/pageSize)
-		input, readErr := utils.ReadUserInput()
-		if readErr != nil {
-			return fmt.Errorf("failed to read input: %w", readErr)
-		}
-		convNum, atoiErr := strconv.Atoi(input)
-		noNumberSelected = atoiErr != nil
-		if !noNumberSelected {
-			selectedNumber = convNum
-		}
-
-		prevers := []string{"prev", "p"}
-		if slices.Contains(prevers, input) {
-			page -= 1
-			if page < 0 {
-				page = 0
-			}
-			// Lets just assume everything but prev is next
-		} else {
-			if (page+1)*pageSize < amChats {
-				page += 1
-			}
-		}
-		utils.ClearTermTo(termWidth, (listToIndex-pageIndex)+1)
-	}
-	if selectedNumber > len(chats) {
-		return fmt.Errorf("selection: '%v' is higher than available chats: '%v'", selectedNumber, len(chats))
-	}
-
-	// Table header and some stuff like that
-	utils.ClearTermTo(termWidth, 3)
-	chat := chats[selectedNumber]
-	ancli.Okf("selected conversation with index: '%v', name: '%v', with '%v' messages\n", selectedNumber, chat.ID, len(chat.Messages))
-	err = cq.printChat(chat)
-	if err != nil {
-		return fmt.Errorf("selection ok, print chat not ok: %v", err)
-	}
-	cq.chat = chat
-	return cq.loop(ctx)
-}
-
 func (cq *ChatHandler) getByID(ID string) (pub_models.Chat, error) {
 	return FromPath(path.Join(cq.convDir, fmt.Sprintf("%v.json", ID)))
 }
@@ -358,4 +237,39 @@ func (cq *ChatHandler) loop(ctx context.Context) error {
 		}
 		cq.chat = newChat
 	}
+}
+
+func New(q models.ChatQuerier,
+	confDir,
+	args string,
+	preMessages []pub_models.Message,
+	conf NotCyclicalImport,
+	raw bool,
+) (*ChatHandler, error) {
+	username := "user"
+	debug := misc.Truthy(os.Getenv("DEBUG"))
+	argsArr := strings.Split(args, " ")
+	subCmd := argsArr[0]
+	currentUser, err := user.Current()
+	if err == nil {
+		username = currentUser.Username
+	}
+
+	subPrompt := strings.Join(argsArr[1:], " ")
+	claiDir, err := utils.GetClaiConfigDir()
+	if err != nil {
+		return nil, err
+	}
+	return &ChatHandler{
+		q:           q,
+		username:    username,
+		debug:       debug,
+		subCmd:      subCmd,
+		prompt:      subPrompt,
+		preMessages: preMessages,
+		confDir:     claiDir,
+		convDir:     path.Join(claiDir, "conversations"),
+		config:      conf,
+		raw:         raw,
+	}, nil
 }

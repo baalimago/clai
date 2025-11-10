@@ -8,15 +8,6 @@ import (
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
-func TestFormatChatName(t *testing.T) {
-	name := "line1\nline2line2line2line2line2line2"
-	got := formatChatName(name)
-	// expected trimmed to 25 and newline replaced
-	if got != "line1\\nline2line2line2line..." {
-		t.Errorf("unexpected output: %q", got)
-	}
-}
-
 type mockChatQuerier struct{}
 
 func (mockChatQuerier) Query(ctx context.Context) error { return nil }

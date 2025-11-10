@@ -8,10 +8,10 @@ import (
 	"os"
 	"runtime/debug"
 
+	"github.com/baalimago/clai/internal/chat"
 	"github.com/baalimago/clai/internal/glob"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/photo"
-	"github.com/baalimago/clai/internal/reply"
 	"github.com/baalimago/clai/internal/setup"
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/internal/utils"
@@ -241,7 +241,7 @@ func Setup(ctx context.Context, usage string) (models.Querier, error) {
 		os.Exit(0)
 		return nil, nil
 	case REPLAY:
-		err := reply.Replay(flagSet.PrintRaw)
+		err := chat.Replay(flagSet.PrintRaw)
 		if err != nil {
 			return nil, fmt.Errorf("failed to replay previous reply: %w", err)
 		}

@@ -6,7 +6,6 @@ import (
 
 	"github.com/baalimago/clai/internal/chat"
 	"github.com/baalimago/clai/internal/glob"
-	"github.com/baalimago/clai/internal/reply"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
@@ -103,7 +102,7 @@ func (c *Configurations) SetupInitialChat(args []string) error {
 	}
 
 	if c.ReplyMode {
-		iP, err := reply.Load(c.ConfigDir)
+		iP, err := chat.LoadPrevQuery(c.ConfigDir)
 		if err != nil {
 			return fmt.Errorf("failed to load previous query: %w", err)
 		}
