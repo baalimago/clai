@@ -14,8 +14,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/baalimago/clai/internal/chat"
 	"github.com/baalimago/clai/internal/models"
-	"github.com/baalimago/clai/internal/reply"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
@@ -306,7 +306,7 @@ func Test_Querier(t *testing.T) {
 		if err != nil {
 			t.Fatalf("didn't expect error: %v", err)
 		}
-		lastReply, err := reply.Load(q.configDir)
+		lastReply, err := chat.LoadPrevQuery(q.configDir)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -327,7 +327,7 @@ func Test_Querier(t *testing.T) {
 		if err != nil {
 			t.Fatalf("didn't expect error: %v", err)
 		}
-		lastReply, err = reply.Load(q.configDir)
+		lastReply, err = chat.LoadPrevQuery(q.configDir)
 		if err != nil {
 			t.Fatal(err)
 		}

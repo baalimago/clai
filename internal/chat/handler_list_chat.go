@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"path"
 	"slices"
-	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -27,7 +26,7 @@ func (cq *ChatHandler) actOnChat(ctx context.Context, chat pub_models.Chat) erro
 	}
 	choice, err := utils.ReadUserInput()
 	if err != nil {
-		return fmt.Errorf("falied to read user input: %w", err)
+		return fmt.Errorf("failed to read user input: %w", err)
 	}
 	switch choice {
 	case "E", "e":
@@ -224,20 +223,15 @@ func widthAppropriateChatSummary(toShorten, prefix string, padding int) (string,
 	return fillRemainderOfTermWidth(prefix, toShorten, termWidth, padding), nil
 }
 
-func isInt(s string) bool {
-	_, err := strconv.Atoi(s)
-	return err == nil
-}
-
 func (cq *ChatHandler) printChatInfo(w io.Writer, chat pub_models.Chat) error {
 	claiConfDir, err := utils.GetClaiConfigDir()
 	if err != nil {
 		return fmt.Errorf("failed to get clai config dir: %w", err)
 	}
 	filePath := path.Join(claiConfDir, "conversations", chat.ID)
-	messgeTypeCounter := make(map[string]int)
+	messageTypeCounter := make(map[string]int)
 	for _, m := range chat.Messages {
-		messgeTypeCounter[m.Role] += 1
+		messageTypeCounter[m.Role] += 1
 	}
 	firstMessages := ""
 	uMsg, uMsgErr := chat.FirstUserMessage()
@@ -251,21 +245,21 @@ func (cq *ChatHandler) printChatInfo(w io.Writer, chat pub_models.Chat) error {
 	fmt.Fprintf(w, actOnChatFormat,
 		filePath,
 		chat.Created,
-		messgeTypeCounter["user"],
-		messgeTypeCounter["tools"],
-		messgeTypeCounter["system"],
-		messgeTypeCounter["assistant"],
+		messageTypeCounter["user"],
+		messageTypeCounter["tools"],
+		messageTypeCounter["system"],
+		messageTypeCounter["assistant"],
 		summary+"\"",
 	)
 	return nil
 }
 
-// escapeEditString by:
+// editorEditString by:
 // 1. Writing the string to a temporary file
 // 2. Opening the file with EDITOR
 // 3. On close, reading the edited file
 // 4. Returning the newly edited string
-func escapeEditString(toEdit string) (string, error) {
+func editorEditString(toEdit string) (string, error) {
 	ret := toEdit
 
 	f, err := os.CreateTemp("", "clai-edit-*.txt")
@@ -407,7 +401,7 @@ func (cq *ChatHandler) editMessageInChat(chat pub_models.Chat) error {
 	}
 	selectedNumber := selectedNumbers[0]
 	selectedMessage := chat.Messages[selectedNumber]
-	editedString, err := escapeEditString(selectedMessage.Content)
+	editedString, err := editorEditString(selectedMessage.Content)
 	if err != nil {
 		return fmt.Errorf("failed to escapeEdit string: %w", err)
 	}

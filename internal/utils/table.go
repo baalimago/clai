@@ -13,9 +13,13 @@ import (
 )
 
 // SelectFromTable by:
-// 1. Listing rows according to rowFormater (note that header isn't listed)
+// 1. Listing rows according to rowFormater
 // 2. Returning a list of chosen numbers
-// 3. Amount of printed rows on last iteration (this is to clear terminal, if needed)
+//
+// Valid inputs:
+//   - nr = int < len(items)
+//   - nr,nr,nr - This selects multiple numbers
+//   - nr:nr,nr,nr:nr - This selects two ranges of nr, as well as a singular nr
 func SelectFromTable[T any](header string, items []T,
 	choicesFormat string,
 	rowFormater func(int, T) (string, error),

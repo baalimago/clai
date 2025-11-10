@@ -47,7 +47,7 @@ Examples:
 `
 
 const (
-	// index | created | messges | prompt
+	// index | created | messages | prompt
 	selectChatTblFormat        = "%-6s| %-20s| %-7v | %v"
 	selectChatTblChoicesFormat = "(page: (%v/%v). goto chat: [<num>], next: [<enter>]/[n]ext, [p]rev, [q]uit): "
 	actOnChatFormat            = `=== Chat info ===

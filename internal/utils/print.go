@@ -14,7 +14,6 @@ import (
 
 // ClearTermTo a certain amount of rows upwards by printing termWidth amount of empty spaces
 func ClearTermTo(termWidth, upTo int) error {
-	// Auto-set term width and hope it doesn't break
 	if termWidth == -1 {
 		t, err := TermWidth()
 		if err != nil {
