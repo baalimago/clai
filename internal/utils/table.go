@@ -62,8 +62,10 @@ func SelectFromTable[T any](header string, items []T,
 			selectedNumbers = parseNumbersFromString(choice, amItems)
 			noNumberSelected = len(selectedNumbers) == 0
 			if !noNumberSelected {
-				// +2 in case of break since we want to remove "---" line and header
+				// +2 in case of since we want to remove "---" line and header
 				toClear += 2
+				// Explicit break for clarity
+				break
 			}
 			page++
 			if page > amItems/pageSize {
