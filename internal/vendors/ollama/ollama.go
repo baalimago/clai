@@ -8,11 +8,12 @@ import (
 	"github.com/baalimago/clai/internal/tools"
 )
 
+const ChatURL = "http://localhost:11434/v1/chat/completions"
+
 var Default = Ollama{
 	Model:       "llama3",
 	Temperature: 1.0,
 	TopP:        1.0,
-	URL:         ChatURL,
 }
 
 type Ollama struct {
@@ -23,10 +24,7 @@ type Ollama struct {
 	PresencePenalty  float64 `json:"presence_penalty"`
 	Temperature      float64 `json:"temperature"`
 	TopP             float64 `json:"top_p"`
-	URL              string  `json:"url"`
 }
-
-const ChatURL = "http://localhost:11434/v1/chat/completions"
 
 func (g *Ollama) Setup() error {
 	if os.Getenv("OLLAMA_API_KEY") == "" {

@@ -139,7 +139,10 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	}
 	querier.Model = modelConf
 	if misc.Truthy(os.Getenv("DEBUG")) {
-		ancli.PrintOK(fmt.Sprintf("querier: %v,\n===\nmodels: %v\n", debug.IndentedJsonFmt(querier), debug.IndentedJsonFmt(modelConf)))
+		ancli.PrintOK(
+			fmt.Sprintf("querier: %v,\n===\nmodels: %v\n",
+				debug.IndentedJsonFmt(querier),
+				debug.IndentedJsonFmt(modelConf)))
 	}
 	querier.chat = userConf.InitialPrompt
 	if misc.Truthy(os.Getenv("DEBUG")) || misc.Truthy(os.Getenv("TEXT_QUERIER_DEBUG")) {

@@ -77,7 +77,7 @@ func (s *StreamCompleter) createRequest(ctx context.Context, chat pub_models.Cha
 		return nil, fmt.Errorf("failed to encode JSON: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", s.url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "POST", s.URL, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
