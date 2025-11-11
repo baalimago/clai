@@ -25,17 +25,17 @@ See [examples](./EXAMPLES.md) for additional info.
 
 ## Supported vendors
 
-| Vendor    | Environment Variable | Models                                                                                                                                             |
-| --------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| OpenAI    | `OPENAI_API_KEY`     | [Text models](https://platform.openai.com/docs/models/gpt-4-and-gpt-4-turbo), [photo models](https://platform.openai.com/docs/models/dall-e)       |
-| Anthropic | `ANTHROPIC_API_KEY`  | [Text models](https://docs.anthropic.com/claude/docs/models-overview#model-recommendations)                                                        |
-| Mistral   | `MISTRAL_API_KEY`    | [Text models](https://docs.mistral.ai/getting-started/models/)                                                                                     |
-| Deepseek  | `DEEPSEEK_API_KEY`   | [Text models](https://api-docs.deepseek.com/quick_start/pricing)                                                                                   |
-| Novita AI | `NOVITA_API_KEY`     | [Text models](https://novita.ai/model-api/product/llm-api?utm_source=github_clai&utm_medium=github_readme&utm_campaign=link), use prefix `novita:` |
-| Ollama    | N/A                  | Use format `ollama:` (defaults to llama3), server defaults to localhost:11434                                                                      |
-| Inception | `INCEPTION_API_KEY`  | [Text models](https://platform.inceptionlabs.ai/docs#models)                                                                                       |
-| xAi       | `XAI_API_KEY`        | [Text models](https://docs.x.ai/docs/models)                                                                                                       |
-| Gemini    | `GEMINI_API_KEY`     | [Text models](https://ai.google.dev/gemini-api/docs/models)                                                                                        |
+| Vendor    | Environment Variable | Models                                                                                                                                                             |
+| --------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| OpenAI    | `OPENAI_API_KEY`     | [Text models](https://platform.openai.com/docs/models/gpt-4-and-gpt-4-turbo), [photo models](https://platform.openai.com/docs/models/dall-e)                       |
+| Anthropic | `ANTHROPIC_API_KEY`  | [Text models](https://docs.anthropic.com/claude/docs/models-overview#model-recommendations)                                                                        |
+| Mistral   | `MISTRAL_API_KEY`    | [Text models](https://docs.mistral.ai/getting-started/models/)                                                                                                     |
+| Deepseek  | `DEEPSEEK_API_KEY`   | [Text models](https://api-docs.deepseek.com/quick_start/pricing)                                                                                                   |
+| Novita AI | `NOVITA_API_KEY`     | [Text models](https://novita.ai/model-api/product/llm-api?utm_source=github_clai&utm_medium=github_readme&utm_campaign=link), use prefix `novita:`                 |
+| Ollama    | N/A                  | Use format `ollama:` (defaults to llama3), server defaults to localhost:11434                                                                                      |
+| Inception | `INCEPTION_API_KEY`  | [Text models](https://platform.inceptionlabs.ai/docs#models)                                                                                                       |
+| xAi       | `XAI_API_KEY`        | [Text models](https://docs.x.ai/docs/models)                                                                                                                       |
+| Gemini    | `GEMINI_API_KEY`     | [Text models](https://ai.google.dev/gemini-api/docs/models), [photo models](https://ai.google.dev/gemini-api/docs/image-generation#image_generation_text-to-image) |
 
 ## Get started
 

@@ -175,7 +175,7 @@ func CreateTextQuerier(ctx context.Context, conf text.Configurations) (models.Qu
 	return q, nil
 }
 
-func NewPhotoQuerier(conf photo.Configurations) (models.Querier, error) {
+func CreatePhotoQuerier(conf photo.Configurations) (models.Querier, error) {
 	if err := photo.ValidateOutputType(conf.Output.Type); err != nil {
 		return nil, err
 	}
@@ -190,6 +190,14 @@ func NewPhotoQuerier(conf photo.Configurations) (models.Querier, error) {
 		q, err := openai.NewPhotoQuerier(conf)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create dall-e photo querier: %w", err)
+		}
+		return q, nil
+	}
+
+	if strings.Contains(conf.Model, "gemini") {
+		q, err := gemini.NewPhotoQuerier(conf)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create gemini photo querier: %w", err)
 		}
 		return q, nil
 	}

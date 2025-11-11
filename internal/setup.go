@@ -207,7 +207,7 @@ func Setup(ctx context.Context, usage string) (models.Querier, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to setup prompt: %v", err)
 		}
-		pq, err := NewPhotoQuerier(pConf)
+		pq, err := CreatePhotoQuerier(pConf)
 		if misc.Truthy(os.Getenv("DEBUG")) {
 			ancli.PrintOK(fmt.Sprintf("photo querier: %+v\n", imagodebug.IndentedJsonFmt(pq)))
 		}
