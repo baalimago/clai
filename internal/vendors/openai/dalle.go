@@ -3,7 +3,6 @@ package openai
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -161,7 +160,7 @@ func (q *DallE) do(req *http.Request) error {
 			ancli.PrintOK(fmt.Sprintf("image URL: '%v'", imgResps.Data[0].URL))
 		}()
 	} else {
-		localPath, err := q.saveImage(imgResps.Data[0])
+		localPath, err := photo.SaveImage(q.Output, imgResps.Data[0].B64JSON, "jpg")
 		if err != nil {
 			return fmt.Errorf("failed to save image: %w", err)
 		}
@@ -177,25 +176,6 @@ func (q *DallE) do(req *http.Request) error {
 	}()
 
 	return nil
-}
-
-func (q *DallE) saveImage(imgResp ImageResponse) (string, error) {
-	data, err := base64.StdEncoding.DecodeString(imgResp.B64JSON)
-	if err != nil {
-		return "", fmt.Errorf("failed to decode base64: %w", err)
-	}
-	pictureName := fmt.Sprintf("%v_%v.jpg", q.Output.Prefix, utils.RandomPrefix())
-	outFile := fmt.Sprintf("%v/%v", q.Output.Dir, pictureName)
-	err = os.WriteFile(outFile, data, 0o644)
-	if err != nil {
-		ancli.PrintWarn(fmt.Sprintf("failed to write file: '%v', attempting tmp file...\n", err))
-		outFile = fmt.Sprintf("/tmp/%v", pictureName)
-		err = os.WriteFile(outFile, data, 0o644)
-		if err != nil {
-			return "", fmt.Errorf("failed to write file: %w", err)
-		}
-	}
-	return outFile, nil
 }
 
 func (q *DallE) Query(ctx context.Context) error {

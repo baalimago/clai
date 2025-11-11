@@ -31,7 +31,7 @@ func TestNewPhotoQuerier(t *testing.T) {
 	os.Setenv("OPENAI_API_KEY", "key")
 	defer os.Unsetenv("OPENAI_API_KEY")
 	conf := photo.Configurations{Model: "dall-e-3", Output: photo.Output{Type: photo.URL, Dir: tmp}}
-	q, err := NewPhotoQuerier(conf)
+	q, err := CreatePhotoQuerier(conf)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
