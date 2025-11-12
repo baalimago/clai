@@ -3,6 +3,7 @@ package ollama
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/baalimago/clai/internal/text/generic"
 	"github.com/baalimago/clai/internal/tools"
@@ -34,7 +35,8 @@ func (g *Ollama) Setup() error {
 	if err != nil {
 		return fmt.Errorf("failed to setup stream completer: %w", err)
 	}
-	g.StreamCompleter.Model = g.Model
+	modelName := strings.TrimPrefix(g.Model, "ollama:")
+	g.StreamCompleter.Model = modelName
 	g.StreamCompleter.FrequencyPenalty = &g.FrequencyPenalty
 	g.StreamCompleter.MaxTokens = g.MaxTokens
 	g.StreamCompleter.Temperature = &g.Temperature
