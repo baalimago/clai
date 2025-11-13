@@ -61,7 +61,7 @@ func TestSetupPrompts_ReplyModePrependsMessages(t *testing.T) {
 	t.Cleanup(func() { _ = os.Setenv("XDG_CONFIG_HOME", oldEnv) })
 	_ = os.Setenv("XDG_CONFIG_HOME", tmp)
 	claiConfDir := path.Join(tmp, ".clai")
-	if err := os.MkdirAll(claiConfDir, 0o755); err != nil {
+	if err := os.MkdirAll(path.Join(claiConfDir, "conversations"), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 
