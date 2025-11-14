@@ -160,7 +160,7 @@ func CreateTextQuerier(ctx context.Context, conf text.Configurations) (models.Qu
 		chatQ, err := chat.New(tq,
 			configDir,
 			conf.PostProccessedPrompt,
-			conf.InitialPrompt.Messages,
+			conf.InitialChat.Messages,
 			chat.NotCyclicalImport{
 				UseTools:   conf.UseTools,
 				UseProfile: conf.UseProfile,
