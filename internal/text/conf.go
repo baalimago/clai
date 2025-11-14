@@ -121,10 +121,11 @@ func (c *Configurations) SetupInitialChat(args []string) error {
 	}
 	// If chatmode, the initial message will be handled by the chat querier
 	if !c.ChatMode {
-		c.InitialChat.Messages = append(c.InitialChat.Messages, pub_models.Message{
-			Role:    "user",
-			Content: prompt,
-		})
+		imgMsg, err := chat.PromptToImageMessage(prompt)
+		if err != nil {
+			return fmt.Errorf("failed to convert prompt to imageMessage: %w", err)
+		}
+		c.InitialChat.Messages = append(c.InitialChat.Messages, imgMsg...)
 	}
 
 	if misc.Truthy(os.Getenv("DEBUG")) {
