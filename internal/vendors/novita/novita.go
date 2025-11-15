@@ -38,7 +38,7 @@ func (g *Novita) Setup() error {
 		return fmt.Errorf("failed to setup stream completer: %w", err)
 	}
 
-	modelName := strings.TrimLeft(g.Model, "novita:")
+	modelName := strings.TrimPrefix(g.Model, "novita:")
 	g.StreamCompleter.Model = modelName
 	g.StreamCompleter.FrequencyPenalty = &g.FrequencyPenalty
 	g.StreamCompleter.MaxTokens = g.MaxTokens

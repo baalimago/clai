@@ -31,7 +31,6 @@ const (
 )
 
 type Querier[C models.StreamCompleter] struct {
-	URL                     string
 	Raw                     bool
 	chat                    pub_models.Chat
 	username                string

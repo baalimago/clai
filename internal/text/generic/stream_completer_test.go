@@ -32,7 +32,7 @@ func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { retu
 func TestStreamCompletions_DoError(t *testing.T) {
 	s := &StreamCompleter{client: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		return nil, errors.New("boom")
-	})}, apiKey: "k", url: "http://example.invalid"}
+	})}, apiKey: "k", URL: "http://example.invalid"}
 
 	ch, err := s.StreamCompletions(context.Background(), pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "x"}}})
 	if err == nil || !strings.Contains(err.Error(), "failed to execute request") {
@@ -57,7 +57,7 @@ func TestStreamCompletions_Non200_And_CleanDoesNotMutateOriginal(t *testing.T) {
 	}))
 	defer ts.Close()
 	s.client = ts.Client()
-	s.url = ts.URL
+	s.URL = ts.URL
 
 	ch, err := s.StreamCompletions(context.Background(), orig)
 	if err == nil || !strings.Contains(err.Error(), "unexpected status code") {
@@ -86,7 +86,7 @@ func TestStreamCompletions_HappyPath_FirstEventOnly(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	s := &StreamCompleter{client: ts.Client(), apiKey: "k", url: ts.URL}
+	s := &StreamCompleter{client: ts.Client(), apiKey: "k", URL: ts.URL}
 	ctx := context.Background()
 	out, err := s.StreamCompletions(ctx, pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "hi"}}})
 	if err != nil {
@@ -116,7 +116,7 @@ func TestCreateRequest_BodyAndHeaders(t *testing.T) {
 		MaxTokens:        &max,
 		ToolChoice:       &choice,
 		apiKey:           "sekret",
-		url:              "http://example.invalid",
+		URL:              "http://example.invalid",
 		tools:            []ToolSuper{{Type: "function", Function: Tool{Name: "x", Description: "d", Inputs: pub_models.InputSchema{Type: "object"}}}},
 	}
 	chat := pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "c"}}}

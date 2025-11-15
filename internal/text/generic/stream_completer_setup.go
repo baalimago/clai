@@ -17,7 +17,7 @@ func (s *StreamCompleter) Setup(apiKeyEnv, url, debugEnv string) error {
 	}
 	s.client = &http.Client{}
 	s.apiKey = apiKey
-	s.url = url
+	s.URL = url
 
 	if misc.Truthy(os.Getenv("DEBUG")) || misc.Truthy(os.Getenv(debugEnv)) {
 		s.debug = true

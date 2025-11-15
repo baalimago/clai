@@ -3,16 +3,18 @@ package ollama
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/baalimago/clai/internal/text/generic"
 	"github.com/baalimago/clai/internal/tools"
 )
 
+const ChatURL = "http://localhost:11434/v1/chat/completions"
+
 var Default = Ollama{
 	Model:       "llama3",
 	Temperature: 1.0,
 	TopP:        1.0,
-	URL:         ChatURL,
 }
 
 type Ollama struct {
@@ -23,10 +25,7 @@ type Ollama struct {
 	PresencePenalty  float64 `json:"presence_penalty"`
 	Temperature      float64 `json:"temperature"`
 	TopP             float64 `json:"top_p"`
-	URL              string  `json:"url"`
 }
-
-const ChatURL = "http://localhost:11434/v1/chat/completions"
 
 func (g *Ollama) Setup() error {
 	if os.Getenv("OLLAMA_API_KEY") == "" {
@@ -36,7 +35,8 @@ func (g *Ollama) Setup() error {
 	if err != nil {
 		return fmt.Errorf("failed to setup stream completer: %w", err)
 	}
-	g.StreamCompleter.Model = g.Model
+	modelName := strings.TrimPrefix(g.Model, "ollama:")
+	g.StreamCompleter.Model = modelName
 	g.StreamCompleter.FrequencyPenalty = &g.FrequencyPenalty
 	g.StreamCompleter.MaxTokens = g.MaxTokens
 	g.StreamCompleter.Temperature = &g.Temperature
