@@ -8,9 +8,12 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/baalimago/clai/internal/chat"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/photo"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
+	"github.com/baalimago/go_away_boilerplate/pkg/debug"
+	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 	"golang.org/x/net/context"
 )
 
@@ -46,15 +49,15 @@ type GeminiResponse struct {
 	Candidates []Candidate `json:"candidates"`
 }
 
-func (gr *GeminiResponse) GetFirstB64Blob() string {
+func (gr *GeminiResponse) GetFirstB64Blob() (string, error) {
 	for _, candidate := range gr.Candidates {
 		for _, part := range candidate.Content.Parts {
 			if part.InlineData != nil {
-				return part.InlineData.Data
+				return part.InlineData.Data, nil
 			}
 		}
 	}
-	return ""
+	return "", fmt.Errorf("failed to find any image in response: %v", debug.IndentedJsonFmt(*gr))
 }
 
 // Seems like gemini lacks a lot of configuration. Even the model selection is via url, not body
@@ -66,15 +69,42 @@ func (g *GeminiFlashImage) Query(ctx context.Context) error {
 		defer stop()
 	}
 
+	msgs, err := chat.PromptToImageMessage(g.Prompt)
+	if err != nil {
+		return fmt.Errorf("failed to prompt to image message: %w", err)
+	}
+
+	if misc.Truthy(os.Getenv("DEBUG")) {
+		ancli.Okf("prompt to image msg msgs: %v", debug.IndentedJsonFmt(msgs))
+	}
+
+	parts := make([]Part, 0)
+	for _, msg := range msgs {
+		for _, cp := range msg.ContentParts {
+			var p Part
+			var inD InlineData
+			if cp.Type == "image_url" {
+				inD.Data = cp.ImageB64.RawB64
+				inD.MimeType = cp.ImageB64.MIMEType
+				p.InlineData = &inD
+			}
+			if cp.Type == "text" {
+				p.Text = &cp.Text
+			}
+			parts = append(parts, p)
+		}
+		if msg.Content != "" {
+			parts = append(parts, Part{
+				Text: &msg.Content,
+			})
+		}
+	}
+
 	url := fmt.Sprintf(urlFormat, g.Model)
 	req := GeminiRequest{
 		Contents: []Content{
 			{
-				Parts: []Part{
-					{
-						Text: &g.Prompt,
-					},
-				},
+				Parts: parts,
 			},
 		},
 	}
@@ -114,13 +144,17 @@ func (g *GeminiFlashImage) Query(ctx context.Context) error {
 		return fmt.Errorf("failed to read body: %w", err)
 	}
 	var gemResp GeminiResponse
-	if err := json.Unmarshal(body, &gemResp); err != nil {
-		return fmt.Errorf("failed to decode JSON: %w", err)
+	if unnmarshalErr := json.Unmarshal(body, &gemResp); unnmarshalErr != nil {
+		return fmt.Errorf("failed to decode JSON: %w", unnmarshalErr)
 	}
 
+	firstb64, err := gemResp.GetFirstB64Blob()
+	if err != nil {
+		return fmt.Errorf("failed to get first b64 blob: %w", err)
+	}
 	localPath, err := photo.SaveImage(
 		g.Output,
-		gemResp.GetFirstB64Blob(),
+		firstb64,
 		"png")
 	if err != nil {
 		return fmt.Errorf("failed to save image: %w", err)

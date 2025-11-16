@@ -9,7 +9,7 @@ import (
 )
 
 type Chat struct {
-	Created  time.Time `json:"created,omitempty"`
+	Created  time.Time `json:"created"`
 	ID       string    `json:"id"`
 	Messages []Message `json:"messages"`
 }
@@ -17,7 +17,17 @@ type Chat struct {
 type ImageURL struct {
 	URL    string `json:"url"`
 	Detail string `json:"detail"`
+	// RawB64 is here for the vendors who does not encode
+	// their mimetype and data into the "URL" field
+	RawB64   string `json:"-"`
+	MIMEType string `json:"-"`
 }
+
+type ImageOrTextInputTypes string
+
+const (
+	Image ImageOrTextInputTypes = "image_url"
+)
 
 type ImageOrTextInput struct {
 	Text string `json:"text,omitempty"`

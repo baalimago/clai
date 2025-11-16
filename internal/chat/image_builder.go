@@ -5,12 +5,16 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"regexp"
 	"strings"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
+	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
+
+var ErrNoMIMEType = errors.New("failed to find mimetype")
 
 // PromptToImageMessage by extracting b64 encoded images into becoming
 // a message with ContentParts. If no b64 image is found in the prompt,
@@ -22,11 +26,19 @@ func PromptToImageMessage(prompt string) ([]pub_models.Message, error) {
 		for _, b64 := range b64Strings {
 			mime, err := detectB64MIME(b64)
 			if err != nil {
+				if errors.Is(err, ErrNoMIMEType) {
+					// It's most likely a path, so simply skip it. It will make the
+					// prompt a bit wonky
+					ancli.Warnf("detected string without mimetype, which was falsely identified as image. Prompt will now be wonky, falsely identified substring: '%v'", b64)
+					continue
+				}
 				return nil, fmt.Errorf("failed to detect b64 mime: %w", err)
 			}
 			imgURL := pub_models.ImageURL{
-				URL:    fmt.Sprintf("data:%v;base64,%v", mime, b64),
-				Detail: "auto",
+				URL:      fmt.Sprintf("data:%v;base64,%v", mime, b64),
+				Detail:   "auto",
+				MIMEType: mime,
+				RawB64:   b64,
 			}
 			imgOrTxt = append(imgOrTxt, pub_models.ImageOrTextInput{
 				Type:     "image_url",
@@ -69,7 +81,7 @@ func extractB64Strings(prompt string) ([]string, string) {
 
 	parsed := re.ReplaceAllStringFunc(prompt, func(s string) string {
 		// Quick filters to avoid obvious non-base64 tokens
-		if len(s) < 8 || len(s)%4 != 0 {
+		if len(s) < 256 || len(s)%4 != 0 {
 			return s
 		}
 		// padding must be at the end and at most 2 characters
@@ -101,7 +113,9 @@ func extractB64Strings(prompt string) ([]string, string) {
 		return repl
 	})
 
-	ancli.Okf("len prompt: %v, am b64: %v", len(parsed), len(out))
+	if misc.Truthy(os.Getenv("DEBUG")) {
+		ancli.Okf("len prompt: %v, am b64: %v, out: %v", len(parsed), len(out), out)
+	}
 	return out, parsed
 }
 
@@ -151,5 +165,5 @@ func detectB64MIME(b64 string) (string, error) {
 			return "image/webp", nil
 		}
 	}
-	return "", errors.New("failed to find mimetype")
+	return "", ErrNoMIMEType
 }
