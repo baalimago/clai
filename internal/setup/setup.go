@@ -29,6 +29,7 @@ const (
 	newaction
 	confWithEditor
 	pasteNew
+	promptEditWithEditor
 )
 
 var defaultMcpServer = pub_models.McpServer{
@@ -50,16 +51,20 @@ func (a action) String() string {
 		return "configure with [e]ditor"
 	case pasteNew:
 		return "[p]aste new config"
+	case promptEditWithEditor:
+		return "[pr]ompt edit with editor"
 	default:
 		return "unset"
 	}
 }
 
 const stage_0 = `Do you wish to configure:
+
   0. mode-files (example: <config>/.clai/textConfig.json- or photoConfig.json)
   1. model files (example: <config>/.clai/openai-gpt-4o.json, <config>/.clai/anthropic-claude-opus.json)
   2. text generation profiles (see: "clai [h]elp [p]rofile" for additional info)
   3. MCP server configuration (enables custom tools)
+
 [0/1/2/3]: `
 
 // Run the setup to configure the different files
@@ -102,7 +107,7 @@ func Run() error {
 			return fmt.Errorf("failed to get configs files: %w", err)
 		}
 		configs = t
-		qAct, err := queryForAction([]action{conf, del, newaction, confWithEditor})
+		qAct, err := queryForAction([]action{conf, del, newaction, confWithEditor, promptEditWithEditor})
 		if err != nil {
 			return fmt.Errorf("failed to find action: %w", err)
 		}

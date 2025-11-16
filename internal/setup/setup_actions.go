@@ -12,6 +12,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
@@ -51,9 +52,12 @@ func queryForAction(options []action) (action, error) {
 		}
 	case "p", "pasteNew":
 		ret = pasteNew
+	case "pr", "promptWithEditor":
+		if slices.Contains(options, promptEditWithEditor) {
+			ret = promptEditWithEditor
+		}
 	case "q", "quit":
 		return unset, utils.ErrUserInitiatedExit
-
 	}
 
 	if ret == unset {
@@ -94,6 +98,8 @@ func configure(cfgs []config, a action) error {
 		return reconfigure(cfgs[index])
 	case confWithEditor:
 		return reconfigureWithEditor(cfgs[index])
+	case promptEditWithEditor:
+		return reconfigurePromptWithEditor(cfgs[index])
 	case del:
 		return remove(cfgs[index])
 	default:
@@ -111,6 +117,70 @@ func reconfigure(cfg config) error {
 		return fmt.Errorf("failed to read file %s: %v", cfg.filePath, err)
 	}
 	return interractiveReconfigure(cfg, b)
+}
+
+func unescapeEditWithEditor(toEdit string) (string, error) {
+	unescapedStr := strings.ReplaceAll(toEdit, "\\t", "\t")
+	unescapedStr = strings.ReplaceAll(unescapedStr, "\\n", "\n")
+	tmp, err := os.CreateTemp("", "unescapeEdit_*")
+	if err != nil {
+		tmp.Close()
+		return "", fmt.Errorf("failed to create temp file: %w", err)
+	}
+	_, err = tmp.WriteString(unescapedStr)
+	tmp.Close()
+	if err != nil {
+		return "", fmt.Errorf("failed to write string toEdit: %w", err)
+	}
+	tmpCfg := config{
+		"tmpToEdit",
+		tmp.Name(),
+	}
+
+	err = reconfigureWithEditor(tmpCfg)
+	if err != nil {
+		return "", fmt.Errorf("failed to reconfigureWithEditor: %w", err)
+	}
+
+	b, err := os.ReadFile(tmpCfg.filePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read edited file: %w", err)
+	}
+
+	unescapedStr = string(b)
+	escapedStr := strings.ReplaceAll(unescapedStr, "\t", "\\t")
+	escapedStr = strings.ReplaceAll(escapedStr, "\n", "\\n")
+	return escapedStr, nil
+}
+
+// reconfigurePromptWithEditor by extracting the prompt from the selected config
+// and then escape-editing the field. Lastly, reapply the prompt and save the profile
+func reconfigurePromptWithEditor(cfg config) error {
+	b, err := os.ReadFile(cfg.filePath)
+	if err != nil {
+		return fmt.Errorf("failed to read file: %w", err)
+	}
+	var profile text.Profile
+	err = json.Unmarshal(b, &profile)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal to profile: %w", err)
+	}
+	editedPrompt, err := unescapeEditWithEditor(profile.Prompt)
+	if err != nil {
+		return fmt.Errorf("failed to unescapeEditWithEditor: %w", err)
+	}
+	profile.Prompt = editedPrompt
+	editedB, err := json.MarshalIndent(profile, "", "\t")
+	if err != nil {
+		return fmt.Errorf("failed to marshal edited profile: %w", err)
+	}
+
+	err = os.WriteFile(cfg.filePath, editedB, 0x755)
+	if err != nil {
+		return fmt.Errorf("failed to write file: %w", err)
+	}
+	ancli.Okf("updated profile at path: %v", cfg.filePath)
+	return nil
 }
 
 // reconfigureWithEditor. As in the $EDITOR environment variable
@@ -132,7 +202,7 @@ func reconfigureWithEditor(cfg config) error {
 	if err != nil {
 		return fmt.Errorf("editor exited OK, failed to read config file '%v' after, error: %v", cfg.filePath, err)
 	}
-	ancli.Okf("new config:\n%v", string(newConfig))
+	ancli.Okf("updated:\n%v", string(newConfig))
 	return nil
 }
 
