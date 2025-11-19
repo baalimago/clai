@@ -127,7 +127,6 @@ func (q *DallE) createRequest(ctx context.Context) (*http.Request, error) {
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", q.apiKey))
 	req.Header.Set("Content-Type", "application/json")
 
-	ancli.PrintOK(fmt.Sprintf("pre-revision prompt: '%v'\n", q.Prompt))
 	return req, nil
 }
 

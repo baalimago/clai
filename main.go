@@ -37,7 +37,7 @@ Flags:
   -I, -replace string          Set the string to replace with stdin. (default %v)
   -i bool                      Set to true to replace '-replace' flag value with stdin. This is overwritten by -I and -replace. (default %v)
   -t, -tools bool              Set to true to use text tools. Some models might not support streaming. (default %v)
-  -g, -glob string             Set the glob to use for globbing. Same as glob mode. (default '%v')
+  -g, -glob string             Set the glob to use for globbing. (default '%v')
   -p, -profile string          Set the profile which should be used. For details, see 'clai help profile'. (default '%v')
   -prp, profile-path string    Set the path to a profile file to use instead of -p/-profile.
 
@@ -46,7 +46,6 @@ Commands:
   s|setup                       Setup the configuration files
   q|query <text>                Query the chat model with the given text
   p|photo <text>                Ask the photo model for a picture with the given prompt
-  g|glob  <glob> <text>         Query the chat model with the contents of the files found by the glob and the given text
   cmd <text>                    Describe the command you wish to do, then execute the suggested command. It's a bit wonky when used with -re.
   re|replay                     Replay the most recent message.
 
@@ -59,7 +58,7 @@ Commands:
 Examples:
   - clai h | clai -i q generate some examples for this usage string: '{}'
   - clai query "What's the weather like in Tokyo?"
-  - clai glob "*.txt" "Summarize these documents."
+  - clai -glob "*.txt" query "Please summarize these documents: "
   - clai -cm claude-3-opus-20240229 chat new "What are the latest advancements in AI?"
   - clai photo "A futuristic cityscape"
   - clai -pm dall-e-2 photo A cat in space

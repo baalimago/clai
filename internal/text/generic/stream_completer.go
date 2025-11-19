@@ -63,7 +63,7 @@ func (s *StreamCompleter) createRequest(ctx context.Context, chat pub_models.Cha
 		ParalellToolCalls: false,
 	}
 	if s.debug {
-		ancli.PrintOK(fmt.Sprintf("streamcompleter api key: %v\n", s.apiKey))
+		ancli.PrintOK(fmt.Sprintf("streamcompleter api key: %v...\n", s.apiKey[:5]))
 	}
 	if len(s.tools) > 0 {
 		reqData.Tools = s.tools

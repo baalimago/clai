@@ -32,7 +32,7 @@ type Configurations struct {
 	ChatMode            bool            `json:"-"`
 	CmdMode             bool            `json:"-"`
 	Glob                string          `json:"-"`
-	InitialPrompt       pub_models.Chat `json:"-"`
+	InitialChat         pub_models.Chat `json:"-"`
 	UseProfile          string          `json:"-"`
 	ProfilePath         string          `json:"-"`
 	Tools               []string        `json:"-"`
@@ -73,7 +73,7 @@ var DefaultProfile = Profile{
 }
 
 func (c *Configurations) setupSystemPrompt() {
-	c.InitialPrompt = pub_models.Chat{
+	c.InitialChat = pub_models.Chat{
 		Messages: []pub_models.Message{
 			{Role: "system", Content: c.SystemPrompt},
 		},
@@ -98,7 +98,7 @@ func (c *Configurations) SetupInitialChat(args []string) error {
 		if misc.Truthy(os.Getenv("DEBUG")) {
 			ancli.PrintOK(fmt.Sprintf("glob messages: %v", globChat.Messages))
 		}
-		c.InitialPrompt = globChat
+		c.InitialChat = globChat
 	}
 
 	if c.ReplyMode {
@@ -106,12 +106,12 @@ func (c *Configurations) SetupInitialChat(args []string) error {
 		if err != nil {
 			return fmt.Errorf("failed to load previous query: %w", err)
 		}
-		c.InitialPrompt.Messages = append(c.InitialPrompt.Messages, iP.Messages...)
+		c.InitialChat.Messages = append(c.InitialChat.Messages, iP.Messages...)
 
 		if c.CmdMode {
 			// Replace the initial message with the cmd prompt. This sort of
 			// destroys the history, but since the conversation might be long it's fine
-			c.InitialPrompt.Messages[0].Content = c.SystemPrompt
+			c.InitialChat.Messages[0].Content = c.SystemPrompt
 		}
 	}
 
@@ -121,18 +121,19 @@ func (c *Configurations) SetupInitialChat(args []string) error {
 	}
 	// If chatmode, the initial message will be handled by the chat querier
 	if !c.ChatMode {
-		c.InitialPrompt.Messages = append(c.InitialPrompt.Messages, pub_models.Message{
-			Role:    "user",
-			Content: prompt,
-		})
+		imgMsg, err := chat.PromptToImageMessage(prompt)
+		if err != nil {
+			return fmt.Errorf("failed to convert prompt to imageMessage: %w", err)
+		}
+		c.InitialChat.Messages = append(c.InitialChat.Messages, imgMsg...)
 	}
 
 	if misc.Truthy(os.Getenv("DEBUG")) {
-		ancli.PrintOK(fmt.Sprintf("InitialPrompt: %v\n", debug.IndentedJsonFmt(c.InitialPrompt)))
+		ancli.PrintOK(fmt.Sprintf("InitialPrompt: %v\n", debug.IndentedJsonFmt(c.InitialChat)))
 	}
 	c.PostProccessedPrompt = prompt
-	if c.InitialPrompt.ID == "" {
-		c.InitialPrompt.ID = chat.IDFromPrompt(prompt)
+	if c.InitialChat.ID == "" {
+		c.InitialChat.ID = chat.IDFromPrompt(prompt)
 	}
 	return nil
 }

@@ -144,7 +144,7 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 				debug.IndentedJsonFmt(querier),
 				debug.IndentedJsonFmt(modelConf)))
 	}
-	querier.chat = userConf.InitialPrompt
+	querier.chat = userConf.InitialChat
 	if misc.Truthy(os.Getenv("DEBUG")) || misc.Truthy(os.Getenv("TEXT_QUERIER_DEBUG")) {
 		querier.debug = true
 	}
