@@ -71,6 +71,9 @@ func WildcardMatch(pattern, name string) bool {
 // Set registers tool under the provided name.
 func (r *registry) Set(name string, t LLMTool) {
 	r.mu.Lock()
+	if strings.Contains(name, "printEnv") {
+		ancli.Warnf("found env printing tool, skipping for security's sake. Tool name: '%v'", name)
+	}
 	if r.debug || misc.Truthy(os.Getenv("DEBUG_TOOLS_REGISTRY_SET")) {
 		ancli.Okf("adding tool too registry, name: %v\n", t.Specification().Name)
 	}

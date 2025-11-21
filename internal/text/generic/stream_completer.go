@@ -70,7 +70,9 @@ func (s *StreamCompleter) createRequest(ctx context.Context, chat pub_models.Cha
 		reqData.ToolChoice = s.ToolChoice
 	}
 	if s.debug {
-		ancli.PrintOK(fmt.Sprintf("generic streamcompleter request: %v\n", debug.IndentedJsonFmt(reqData)))
+		noTools := reqData
+		noTools.Tools = make([]ToolSuper, 0)
+		ancli.PrintOK(fmt.Sprintf("generic streamcompleter request (tools redacted): %v\n", debug.IndentedJsonFmt(noTools)))
 	}
 	jsonData, err := json.Marshal(reqData)
 	if err != nil {
@@ -86,9 +88,6 @@ func (s *StreamCompleter) createRequest(ctx context.Context, chat pub_models.Cha
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %v", s.apiKey))
 	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("Connection", "keep-alive")
-	if s.debug {
-		ancli.Okf("%v", debug.IndentedJsonFmt(req.Header))
-	}
 	return req, nil
 }
 
@@ -108,6 +107,9 @@ func (s *StreamCompleter) handleStreamResponse(ctx context.Context, res *http.Re
 			token, err := br.ReadBytes('\n')
 			if err != nil {
 				outChan <- fmt.Errorf("failed to read line: %w", err)
+			}
+			if s.debug {
+				ancli.PrintOK("received data from model")
 			}
 			outChan <- s.handleStreamChunk(token)
 		}
@@ -131,7 +133,7 @@ func (s *StreamCompleter) handleStreamChunk(token []byte) models.CompletionEvent
 	if err != nil {
 		if misc.Truthy(os.Getenv("DEBUG")) {
 			// Expect some failing unmarshalls, which seems to be fine
-			ancli.PrintWarn(fmt.Sprintf("failed to unmarshal token: %v, err: %v\n", token, err))
+			ancli.PrintWarn(fmt.Sprintf("failed to unmarshal token: %s, err: %v\n", token, err))
 			return models.NoopEvent{}
 		}
 	}
@@ -186,6 +188,7 @@ func (s *StreamCompleter) handleChoice(choice Choice) models.CompletionEvent {
 		var input pub_models.Input
 		err := json.Unmarshal([]byte(s.toolsCallArgsString), &input)
 		if err == nil {
+			s.extraContent = choice.Delta.ToolCalls[0].ExtraContent
 			return s.doToolsCall()
 		}
 	}
@@ -210,11 +213,12 @@ func (s *StreamCompleter) doToolsCall() models.CompletionEvent {
 	userFunc.Inputs = &pub_models.InputSchema{}
 
 	return pub_models.Call{
-		ID:       s.toolsCallID,
-		Name:     s.toolsCallName,
-		Inputs:   &input,
-		Type:     "function",
-		Function: userFunc,
+		ID:           s.toolsCallID,
+		Name:         s.toolsCallName,
+		Inputs:       &input,
+		Type:         "function",
+		Function:     userFunc,
+		ExtraContent: s.extraContent,
 	}
 }
 

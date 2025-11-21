@@ -22,6 +22,7 @@ type StreamCompleter struct {
 	// Argument string exists since the arguments for function calls is streamed token by token... yeah... great idea
 	toolsCallArgsString string
 	toolsCallID         string
+	extraContent        map[string]any
 	client              *http.Client
 	apiKey              string
 	debug               bool
@@ -60,11 +61,16 @@ type Delta struct {
 	ToolCalls []ToolsCall `json:"tool_calls"`
 }
 
+type ExtraContent map[string]map[string]any
+
 type ToolsCall struct {
 	Function Func   `json:"function"`
 	ID       string `json:"id"`
 	Index    int    `json:"index"`
 	Type     string `json:"type"`
+
+	// ExtraContent for initially google thought_signature
+	ExtraContent map[string]any `json:"extra_content,omitempty"`
 }
 
 type Func struct {
