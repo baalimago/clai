@@ -8,6 +8,7 @@ import (
 	"github.com/baalimago/clai/internal/photo"
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/internal/utils"
+	"github.com/baalimago/clai/internal/video"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
@@ -17,6 +18,10 @@ type Configurations struct {
 	PhotoDir      string
 	PhotoPrefix   string
 	PhotoOutput   string
+	VideoModel    string
+	VideoDir      string
+	VideoPrefix   string
+	VideoOutput   string
 	StdinReplace  string
 	ExpectReplace bool
 	PrintRaw      bool
@@ -41,6 +46,15 @@ func setupFlags(defaults Configurations) Configurations {
 
 	ppShort := flag.String("pp", defaults.PhotoPrefix, "Set the prefix for the generated pictures. Default is 'clai'")
 	ppLong := flag.String("photo-prefix", defaults.PhotoPrefix, "Set the prefix for the generated pictures. Default is 'clai'")
+
+	vmShort := flag.String("vm", defaults.VideoModel, "Set the video model. Mutually exclusive with video-model.")
+	vmLong := flag.String("video-model", defaults.VideoModel, "Set the video model. Mutually exclusive with vm.")
+
+	vdShort := flag.String("vd", defaults.VideoDir, "Set dir for generated videos. Default $HOME/Videos")
+	vdLong := flag.String("video-dir", defaults.VideoDir, "Set dir for generated videos. Default $HOME/Videos")
+
+	vpShort := flag.String("vp", defaults.VideoPrefix, "Set prefix for generated videos. Default 'clai'")
+	vpLong := flag.String("video-prefix", defaults.VideoPrefix, "Set prefix for generated videos. Default 'clai'")
 
 	gShort := flag.String("g", defaults.Glob, "Use globbing from query or chat. This flag will deprecate glob mode in a future release.")
 	gLong := flag.String("glob", defaults.Glob, "Use globbing from query or chat. This flag will deprecate glob mode in a future release.")
@@ -82,6 +96,13 @@ func setupFlags(defaults Configurations) Configurations {
 	exitWithFlagError(err, "p", "profile")
 	profilePath, err := utils.ReturnNonDefault(*prPathShort, *prPathLong, defaults.ProfilePath)
 	exitWithFlagError(err, "prp", "profile-path")
+	videoModel, err := utils.ReturnNonDefault(*vmShort, *vmLong, defaults.VideoModel)
+	exitWithFlagError(err, "vm", "video-model")
+	videoDir, err := utils.ReturnNonDefault(*vdShort, *vdLong, defaults.VideoDir)
+	exitWithFlagError(err, "vd", "video-dir")
+	videoPrefix, err := utils.ReturnNonDefault(*vpShort, *vpLong, defaults.VideoPrefix)
+	exitWithFlagError(err, "vp", "video-prefix")
+
 	replyMode := *replyShort || *replyLong
 	printRaw := *printRawShort || *printRawLong
 
@@ -94,6 +115,9 @@ func setupFlags(defaults Configurations) Configurations {
 		PhotoModel:    photoModel,
 		PhotoDir:      pictureDir,
 		PhotoPrefix:   picturePrefix,
+		VideoModel:    videoModel,
+		VideoDir:      videoDir,
+		VideoPrefix:   videoPrefix,
 		StdinReplace:  stdinReplace,
 		PrintRaw:      printRaw,
 		ReplyMode:     replyMode,
@@ -163,6 +187,30 @@ func applyFlagOverridesForPhoto(pConf *photo.Configurations, flagSet, defaultFla
 	}
 	if flagSet.PhotoOutput != defaultFlags.PhotoOutput && flagSet.PhotoOutput != "" {
 		pConf.Output.Type = photo.OutputType(flagSet.PhotoOutput)
+	}
+}
+
+func applyFlagOverridesForVideo(vConf *video.Configurations, flagSet, defaultFlags Configurations) {
+	if flagSet.ExpectReplace {
+		vConf.StdinReplace = flagSet.StdinReplace
+	}
+	if flagSet.ReplyMode != defaultFlags.ReplyMode {
+		vConf.ReplyMode = flagSet.ReplyMode
+	}
+	if flagSet.StdinReplace != defaultFlags.StdinReplace {
+		vConf.StdinReplace = flagSet.StdinReplace
+	}
+	if flagSet.VideoModel != defaultFlags.VideoModel {
+		vConf.Model = flagSet.VideoModel
+	}
+	if flagSet.VideoPrefix != defaultFlags.VideoPrefix {
+		vConf.Output.Prefix = flagSet.VideoPrefix
+	}
+	if flagSet.VideoDir != defaultFlags.VideoDir {
+		vConf.Output.Dir = flagSet.VideoDir
+	}
+	if flagSet.VideoOutput != defaultFlags.VideoOutput && flagSet.VideoOutput != "" {
+		vConf.Output.Type = video.OutputType(flagSet.VideoOutput)
 	}
 }
 

@@ -29,6 +29,9 @@ func TestSetupFlags(t *testing.T) {
 				PhotoModel:   "dall-e-3",
 				PhotoPrefix:  "clai",
 				PhotoDir:     "picDir",
+				VideoModel:   "gpt-4o-mini",
+				VideoPrefix:  "clai",
+				VideoDir:     "vidDir",
 				StdinReplace: "stdInReplace",
 				PrintRaw:     false,
 				ReplyMode:    false,
@@ -38,34 +41,54 @@ func TestSetupFlags(t *testing.T) {
 				PhotoModel:   "dall-e-3",
 				PhotoPrefix:  "clai",
 				PhotoDir:     "picDir",
+				VideoModel:   "gpt-4o-mini",
+				VideoPrefix:  "clai",
+				VideoDir:     "vidDir",
 				StdinReplace: "stdInReplace",
 				PrintRaw:     false,
 				ReplyMode:    false,
 			},
 		},
 		{
-			name:     "Short Flags",
-			args:     []string{"cmd", "-cm", "gpt-4", "-pm", "dall-e-2", "-pd", "/tmp", "-pp", "test-", "-I", "[stdin]", "-r", "-re"},
+			name: "Short Flags",
+			args: []string{
+				"cmd", "-cm", "gpt-4", "-pm", "dall-e-2",
+				"-pd", "/tmp", "-pp", "test-", "-I", "[stdin]",
+				"-r", "-re", "-vm", "gpt-4o-mini",
+				"-vd", "/videos", "-vp", "vid-",
+			},
 			defaults: Configurations{},
 			expected: Configurations{
 				ChatModel:    "gpt-4",
 				PhotoModel:   "dall-e-2",
 				PhotoDir:     "/tmp",
 				PhotoPrefix:  "test-",
+				VideoModel:   "gpt-4o-mini",
+				VideoDir:     "/videos",
+				VideoPrefix:  "vid-",
 				StdinReplace: "[stdin]",
 				PrintRaw:     true,
 				ReplyMode:    true,
 			},
 		},
 		{
-			name:     "Long Flags",
-			args:     []string{"cmd", "-chat-model", "gpt-4", "-photo-model", "dall-e-2", "-photo-dir", "/tmp", "-photo-prefix", "test-", "-replace", "[stdin]", "-raw", "-reply"},
+			name: "Long Flags",
+			args: []string{
+				"cmd", "-chat-model", "gpt-4",
+				"-photo-model", "dall-e-2", "-photo-dir", "/tmp",
+				"-photo-prefix", "test-", "-replace", "[stdin]",
+				"-raw", "-reply", "-video-model", "gpt-4o-mini",
+				"-video-dir", "/videos", "-video-prefix", "vid-",
+			},
 			defaults: Configurations{},
 			expected: Configurations{
 				ChatModel:    "gpt-4",
 				PhotoModel:   "dall-e-2",
 				PhotoDir:     "/tmp",
 				PhotoPrefix:  "test-",
+				VideoModel:   "gpt-4o-mini",
+				VideoDir:     "/videos",
+				VideoPrefix:  "vid-",
 				StdinReplace: "[stdin]",
 				PrintRaw:     true,
 				ReplyMode:    true,
@@ -73,14 +96,19 @@ func TestSetupFlags(t *testing.T) {
 		},
 		{
 			name: "Precedence",
-			args: []string{"cmd", "-cm", "gpt-4-short", "-pm", "dall-e-2-short"},
+			args: []string{
+				"cmd", "-cm", "gpt-4-short",
+				"-pm", "dall-e-2-short", "-vm", "gpt-4o-mini-short",
+			},
 			defaults: Configurations{
 				ChatModel:  "shouldBeReplaced",
 				PhotoModel: "shouldBeReplaced",
+				VideoModel: "shouldBeReplaced",
 			},
 			expected: Configurations{
 				ChatModel:  "gpt-4-short",
 				PhotoModel: "dall-e-2-short",
+				VideoModel: "gpt-4o-mini-short",
 			},
 		},
 		{
@@ -91,6 +119,9 @@ func TestSetupFlags(t *testing.T) {
 				PhotoModel:    "dall-e-2",
 				PhotoDir:      "/tmp",
 				PhotoPrefix:   "test-",
+				VideoModel:    "gpt-4o-mini",
+				VideoDir:      "/videos",
+				VideoPrefix:   "vid-",
 				StdinReplace:  "{}",
 				PrintRaw:      true,
 				ReplyMode:     true,
@@ -101,6 +132,9 @@ func TestSetupFlags(t *testing.T) {
 				PhotoModel:    "dall-e-2",
 				PhotoDir:      "/tmp",
 				PhotoPrefix:   "test-",
+				VideoModel:    "gpt-4o-mini",
+				VideoDir:      "/videos",
+				VideoPrefix:   "vid-",
 				StdinReplace:  "{}",
 				PrintRaw:      true,
 				ReplyMode:     true,
@@ -123,7 +157,8 @@ func TestSetupFlags(t *testing.T) {
 			os.Args = tc.args
 			result := setupFlags(tc.defaults)
 			if result != tc.expected {
-				t.Errorf("Expected %+v, but got %+v", tc.expected, result)
+				t.Errorf("Expected %+v, but got %+v",
+					tc.expected, result)
 			}
 		})
 	}
@@ -138,7 +173,8 @@ func Test_applyFlagOverridesForTest(t *testing.T) {
 		want         text.Configurations
 	}{
 		{
-			desc: "it should set stdinput config if flagged and default is empty",
+			desc: "it should set stdinput config if flagged and " +
+				"default is empty",
 			given: text.Configurations{
 				StdinReplace: "",
 			},
@@ -146,7 +182,8 @@ func Test_applyFlagOverridesForTest(t *testing.T) {
 				ExpectReplace: true,
 				StdinReplace:  "{}",
 			},
-			// Use real defualtFlags here to check for regressions if defaults change
+			// Use real defualtFlags here to check for regressions
+			// if defaults change
 			defaultFlags: defaultFlags,
 			want: text.Configurations{
 				StdinReplace: "{}",
@@ -156,8 +193,10 @@ func Test_applyFlagOverridesForTest(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			applyFlagOverridesForText(&tc.given, tc.flagSet, tc.defaultFlags)
-			testboil.FailTestIfDiff(t, tc.given.StdinReplace, tc.want.StdinReplace)
+			applyFlagOverridesForText(&tc.given, tc.flagSet,
+				tc.defaultFlags)
+			testboil.FailTestIfDiff(t, tc.given.StdinReplace,
+				tc.want.StdinReplace)
 		})
 	}
 }

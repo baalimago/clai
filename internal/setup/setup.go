@@ -90,7 +90,7 @@ func Run() error {
 		configs = t
 		a = conf
 	case "1":
-		t, err := getConfigs(filepath.Join(claiDir, "*.json"), []string{"textConfig", "photoConfig"})
+		t, err := getConfigs(filepath.Join(claiDir, "*.json"), []string{"textConfig", "photoConfig", "videoConfig"})
 		if err != nil {
 			return fmt.Errorf("failed to get configs files: %w", err)
 		}

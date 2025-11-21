@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path"
 	"runtime/debug"
 
 	"github.com/baalimago/clai/internal/chat"
@@ -15,6 +16,7 @@ import (
 	"github.com/baalimago/clai/internal/setup"
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/internal/utils"
+	"github.com/baalimago/clai/internal/video"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	imagodebug "github.com/baalimago/go_away_boilerplate/pkg/debug"
 
@@ -34,6 +36,7 @@ const (
 	CHAT
 	GLOB
 	PHOTO
+	VIDEO
 	VERSION
 	SETUP
 	CMD
@@ -43,9 +46,13 @@ const (
 var defaultFlags = Configurations{
 	ChatModel:    "",
 	PhotoModel:   "",
-	PhotoDir:     fmt.Sprintf("%v/Pictures", os.Getenv("HOME")),
+	PhotoDir:     path.Join(os.Getenv("HOME"), "Pictures"),
 	PhotoPrefix:  "clai",
 	PhotoOutput:  "local",
+	VideoModel:   "",
+	VideoDir:     path.Join(os.Getenv("HOME"), "Videos"),
+	VideoPrefix:  "clai",
+	VideoOutput:  "url",
 	StdinReplace: "{}",
 	// Zero value, but explicitly set for clarity
 	PrintRaw:      false,
@@ -69,6 +76,8 @@ func getModeFromArgs(cmd string) (Mode, error) {
 	switch cmd {
 	case "photo", "p":
 		return PHOTO, nil
+	case "video", "v":
+		return VIDEO, nil
 	case "chat", "c":
 		return CHAT, nil
 	case "query", "q":
@@ -80,7 +89,7 @@ func getModeFromArgs(cmd string) (Mode, error) {
 		return HELP, nil
 	case "setup", "s":
 		return SETUP, nil
-	case "version", "v":
+	case "version":
 		return VERSION, nil
 	case "cmd":
 		return CMD, nil
@@ -191,6 +200,22 @@ func Setup(ctx context.Context, usage string) (models.Querier, error) {
 	switch mode {
 	case CHAT, QUERY, GLOB, CMD:
 		return setupTextQuerier(ctx, mode, confDir, flagSet)
+	case VIDEO:
+		vConf, err := utils.LoadConfigFromFile(confDir, "videoConfig.json", nil, &video.Default)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load configs: %w", err)
+		}
+		applyFlagOverridesForVideo(&vConf, flagSet, defaultFlags)
+
+		err = vConf.SetupPrompts()
+		if err != nil {
+			return nil, fmt.Errorf("failed to setup prompt: %v", err)
+		}
+		vq, err := CreateVideoQuerier(vConf)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create video querier: %v", err)
+		}
+		return vq, nil
 	case PHOTO:
 		pConf, err := utils.LoadConfigFromFile(confDir, "photoConfig.json", migrateOldPhotoConfig, &photo.DEFAULT)
 		if err != nil {
