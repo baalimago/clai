@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path"
+	rdebug "runtime/debug"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -51,6 +52,13 @@ type Querier[C models.StreamCompleter] struct {
 	rateLimitRetries        int
 	rateLimitLastAmTokens   int
 	rateLimitRecursionLevel int
+
+	// isLikelyGemini3Preview is set to true if it's likely that the current underlying model
+	// is the gemini 3 preview which suffers from an issue where it insists on crashing if there
+	// is no "though_signature" within extra content, while also sending requests which lack "though_signature"
+	//
+	// Maybe one day this hack can be removed.
+	isLikelyGemini3Preview bool
 }
 
 func (q *Querier[C]) handleRateLimitErr(ctx context.Context, rateLimitErr models.ErrRateLimit) error {
@@ -142,18 +150,16 @@ func (q *Querier[C]) Query(ctx context.Context) error {
 			err := q.handleCompletion(ctx, completion)
 			if err != nil {
 				// check if error is context canceled or EOF, return nil as these are expected and handeled elsewhere
+				// where is "elsewhere?" not 100% sure. - LK 25-11
 				if errors.Is(err, context.Canceled) || errors.Is(err, io.EOF) {
 					if q.debug {
 						ancli.PrintOK("exiting querier due to EOF error\n")
 					}
+					q.reset()
 					return nil
 				}
 				// Only add error if its not EOF or context.Canceled
 				q.execErr = err
-
-				if q.debug {
-					ancli.PrintOK("exiting querier due to EOF error\n")
-				}
 				return fmt.Errorf("failed to handle completion: %w", err)
 			}
 		case <-ctx.Done():
@@ -330,6 +336,26 @@ func (q *Querier[C]) handleCompletion(ctx context.Context, completion models.Com
 	}
 }
 
+// checkIfGemini3Preview will check for thought_signature and if one is detected, return true
+// otherwise false. It will also return true if q.isLikelyGemini3Preview is true.
+func (q *Querier[C]) checkIfGemini3Preview(call pub_models.Call) bool {
+	if q.isLikelyGemini3Preview {
+		return q.isLikelyGemini3Preview
+	}
+	if call.ExtraContent == nil {
+		return false
+	}
+
+	googleExtraContent, isGoogle := call.ExtraContent["google"]
+	if !isGoogle {
+		return false
+	}
+	googleExtraContentAsMap, _ := googleExtraContent.(map[string]any)
+	_, hasThoughSignature := googleExtraContentAsMap["thought_signature"]
+	ancli.Noticef("detected that its likely gemini 3 preview: %v", hasThoughSignature)
+	return hasThoughSignature
+}
+
 // handleFunctionCall by invoking the call, and then resondng to the ai with the output
 func (q *Querier[C]) handleFunctionCall(ctx context.Context, call pub_models.Call) error {
 	if q.cmdMode {
@@ -339,6 +365,20 @@ func (q *Querier[C]) handleFunctionCall(ctx context.Context, call pub_models.Cal
 	if q.debug || misc.Truthy(os.Getenv("DEBUG_CALL")) {
 		ancli.PrintOK(fmt.Sprintf("received tool call: %v", debug.IndentedJsonFmt(call)))
 	}
+
+	q.isLikelyGemini3Preview = q.checkIfGemini3Preview(call)
+
+	if q.isLikelyGemini3Preview {
+		if call.ExtraContent == nil {
+			// Return nil if gemini 3 preview tries to call a tools call without
+			// having extra content. This will break execution and dodge any post processing
+			// by design, as the call from gemini is faulty. It seems to only happen
+			// when the "true" call chain is complete and gemini actually wishes to end
+			// the conversation/return to user
+			return nil
+		}
+	}
+
 	// Post process here since a function call should be treated as the function call
 	// should be handeled mid-stream, but still requires multiple rounds of user input
 	pre := q.shouldSaveReply
@@ -402,6 +442,7 @@ func (q *Querier[C]) handleFunctionCall(ctx context.Context, call pub_models.Cal
 	}
 	_, err := q.TextQuery(ctx, q.chat)
 	if err != nil {
+		ancli.PrintErr("stack trace:\n" + string(rdebug.Stack()))
 		return fmt.Errorf("failed to query after tool call: %w", err)
 	}
 	return nil
