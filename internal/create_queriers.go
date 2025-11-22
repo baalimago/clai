@@ -19,6 +19,7 @@ import (
 	"github.com/baalimago/clai/internal/vendors/ollama"
 	"github.com/baalimago/clai/internal/vendors/openai"
 	"github.com/baalimago/clai/internal/vendors/xai"
+	"github.com/baalimago/clai/internal/video"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
@@ -203,4 +204,30 @@ func CreatePhotoQuerier(conf photo.Configurations) (models.Querier, error) {
 	}
 
 	return nil, fmt.Errorf("failed to find photo querier for model: %v", conf.Model)
+}
+
+func CreateVideoQuerier(conf video.Configurations) (models.Querier, error) {
+	if err := video.ValidateOutputType(conf.Output.Type); err != nil {
+		return nil, err
+	}
+
+	if conf.Output.Type == video.LOCAL {
+		// Create directory if not exists
+		if _, err := os.Stat(conf.Output.Dir); os.IsNotExist(err) {
+			err = os.MkdirAll(conf.Output.Dir, 0o755)
+			if err != nil {
+				return nil, fmt.Errorf("failed to find or create video output directory: %w", err)
+			}
+		}
+	}
+
+	if strings.Contains(conf.Model, "sora") {
+		q, err := openai.NewVideoQuerier(conf)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create sora video querier: %w", err)
+		}
+		return q, nil
+	}
+
+	return nil, fmt.Errorf("failed to find video querier for model: %v", conf.Model)
 }
