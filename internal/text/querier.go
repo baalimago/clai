@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"path"
-	rdebug "runtime/debug"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -442,7 +441,6 @@ func (q *Querier[C]) handleFunctionCall(ctx context.Context, call pub_models.Cal
 	}
 	_, err := q.TextQuery(ctx, q.chat)
 	if err != nil {
-		ancli.PrintErr("stack trace:\n" + string(rdebug.Stack()))
 		return fmt.Errorf("failed to query after tool call: %w", err)
 	}
 	return nil
