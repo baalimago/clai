@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 )
+
 func TestCallPatchAndPretty(t *testing.T) {
 	// empty -> defaults
 	c := Call{}

@@ -2,7 +2,6 @@ package video
 
 import (
 	"encoding/base64"
-	
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,7 +19,7 @@ func TestSaveVideo(t *testing.T) {
 	// Create valid base64 data
 	testContent := "Hello Video"
 	b64Data := base64.StdEncoding.EncodeToString([]byte(testContent))
-	
+
 	container := "mp4"
 
 	t.Run("success write to dir", func(t *testing.T) {
@@ -47,7 +46,7 @@ func TestSaveVideo(t *testing.T) {
 		if string(content) != testContent {
 			t.Errorf("File content mismatch. Got %s, want %s", string(content), testContent)
 		}
-		
+
 		// Check filename format
 		baseName := filepath.Base(filePath)
 		if !strings.HasPrefix(baseName, "test_") || !strings.HasSuffix(baseName, "."+container) {
@@ -69,10 +68,10 @@ func TestSaveVideo(t *testing.T) {
 	t.Run("fallback to tmp", func(t *testing.T) {
 		// Use a non-existent directory to force error (and thus fallback)
 		// Or a directory we can"t write to.
-		// Using a nested non-existent dir usually causes write error unless MkdirAll involves, 
+		// Using a nested non-existent dir usually causes write error unless MkdirAll involves,
 		// but WriteFile doesn"t create parent dirs.
 		nonExistentDir := filepath.Join(tmpDir, "nonexistent")
-		
+
 		out := Output{
 			Dir:    nonExistentDir,
 			Prefix: "fallback",
@@ -92,7 +91,7 @@ func TestSaveVideo(t *testing.T) {
 		if _, err := os.Stat(filePath); os.IsNotExist(err) {
 			t.Errorf("File was not created at fallback location %v", filePath)
 		}
-		
+
 		// Clean up the file in /tmp
 		defer os.Remove(filePath)
 	})
