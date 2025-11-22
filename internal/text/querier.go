@@ -209,6 +209,9 @@ func (q *Querier[C]) countTokens() int {
 }
 
 func (q *Querier[C]) postProcess() {
+	if q.debug {
+		ancli.Noticef("post process querier: %+v", q)
+	}
 	if q.Raw {
 		// Print a new line, otherwise cursor remains on the same position on
 		// the next contet block
@@ -325,6 +328,14 @@ func (q *Querier[C]) handleCompletion(ctx context.Context, completion models.Com
 		return fmt.Errorf("completion stream error: %w", cast)
 	case models.NoopEvent:
 		return nil
+	case models.StopEvent:
+		contextCancel := ctx.Value(utils.ContextCancelKey)
+		castContextCancel, ok := contextCancel.(context.CancelFunc)
+		if !ok {
+			return fmt.Errorf("failed to find context cancel on: %T, val: %v", contextCancel, contextCancel)
+		}
+		castContextCancel()
+		return nil
 	case nil:
 		if q.debug {
 			ancli.PrintWarn("received nil completion event, which is slightly weird, but not necessarily an error")
@@ -439,8 +450,14 @@ func (q *Querier[C]) handleFunctionCall(ctx context.Context, call pub_models.Cal
 	if call.Name == "test" {
 		return nil
 	}
-	_, err := q.TextQuery(ctx, q.chat)
-	if err != nil {
+
+	subCtx, subCtxCancel := context.WithCancel(ctx)
+	// Overwrite parent cancel context to isolate context cancellation to
+	// only be sub context. This way the nested toolscalls (which, honestly, is
+	// quite the hack) can gracefully cancel while subsequent calls may continue
+	subCtx = context.WithValue(subCtx, utils.ContextCancelKey, subCtxCancel)
+	_, err := q.TextQuery(subCtx, q.chat)
+	if err != nil && !errors.Is(err, context.Canceled) {
 		return fmt.Errorf("failed to query after tool call: %w", err)
 	}
 	return nil

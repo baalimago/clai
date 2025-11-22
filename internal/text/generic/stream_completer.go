@@ -101,7 +101,6 @@ func (s *StreamCompleter) handleStreamResponse(ctx context.Context, res *http.Re
 		}()
 		for {
 			if ctx.Err() != nil {
-				close(outChan)
 				return
 			}
 			token, err := br.ReadBytes('\n')
@@ -109,9 +108,15 @@ func (s *StreamCompleter) handleStreamResponse(ctx context.Context, res *http.Re
 				outChan <- fmt.Errorf("failed to read line: %w", err)
 			}
 			if s.debug {
-				ancli.PrintOK("received data from model")
+				ancli.Okf("received data from model, len: '%v', content: '%s'", len(token), token)
 			}
-			outChan <- s.handleStreamChunk(token)
+			// Only send if there is something to send. Not entirely sure why
+			// we sometimes endup in the case of sending empty messages, but it
+			// messes things up downstream. Openai has also started sending empty
+			// newlines, which also messes up the completion prints.
+			if len(token) != 0 && (string(token) != "\n") {
+				outChan <- s.handleStreamChunk(token)
+			}
 		}
 	}()
 
@@ -121,8 +126,8 @@ func (s *StreamCompleter) handleStreamResponse(ctx context.Context, res *http.Re
 func (s *StreamCompleter) handleStreamChunk(token []byte) models.CompletionEvent {
 	token = bytes.TrimPrefix(token, dataPrefix)
 	token = bytes.TrimSpace(token)
-	if string(token) == "[DONE]" {
-		return models.NoopEvent{}
+	if string(token) == "[DONE]" || len(token) == 0 {
+		return models.StopEvent{}
 	}
 
 	if s.debug {
@@ -165,7 +170,13 @@ func (s *StreamCompleter) handleStreamChunk(token []byte) models.CompletionEvent
 
 func (s *StreamCompleter) handleChoice(choice Choice) models.CompletionEvent {
 	// If there is no tools call, just handle it as a strings. This works for most cases
-	if len(choice.Delta.ToolCalls) == 0 && choice.FinishReason != "tool_calls" {
+	if len(choice.Delta.ToolCalls) == 0 {
+		if choice.FinishReason != "" {
+			if s.debug {
+				ancli.Noticef("stopping due to FinishReason: '%v'", choice.FinishReason)
+			}
+			return models.StopEvent{}
+		}
 		return choice.Delta.Content
 	}
 

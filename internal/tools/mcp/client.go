@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -81,6 +82,9 @@ func Client(ctx context.Context, mcpConfig pub_models.McpServer) (chan<- any, <-
 			if line != "" {
 				ancli.Noticef("mcp_%v: %v\n", mcpConfig.Name, line)
 			}
+		}
+		if ctx.Err() != nil && errors.Is(ctx.Err(), context.Canceled) {
+			return
 		}
 		if err := scanner.Err(); err != nil {
 			ancli.Errf("mcp_%v: %s\n", mcpConfig.Name, err)
