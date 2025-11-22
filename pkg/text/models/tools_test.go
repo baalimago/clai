@@ -1,7 +1,10 @@
 package models
 
-import "testing"
-
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+)
 func TestCallPatchAndPretty(t *testing.T) {
 	// empty -> defaults
 	c := Call{}
@@ -15,16 +18,35 @@ func TestCallPatchAndPretty(t *testing.T) {
 	if c.Function.Arguments == "" {
 		t.Fatalf("expected arguments to be auto-filled with JSON")
 	}
-	_ = c.PrettyPrint() // smoke
-
-	// with inputs order-independent
+	// Test PrettyPrint and JSON on populated object
 	inp := Input{"path": "a", "flags": 2}
 	c = Call{Name: "ls", Inputs: &inp}
 	c.Patch()
 	if c.Function.Name != "ls" || c.Type != "function" {
 		t.Fatalf("unexpected patch results: %#v", c)
 	}
-	_ = c.JSON() // smoke
+
+	// Test PrettyPrint output
+	pp := c.PrettyPrint()
+	if !strings.Contains(pp, "Call: 'ls'") {
+		t.Errorf("PrettyPrint expected to contain name 'ls', got %q", pp)
+	}
+	// Since map iteration is random, we check if keys exist in the string
+	if !strings.Contains(pp, "'path': 'a'") {
+		t.Errorf("PrettyPrint expected to contain path input, got %q", pp)
+	}
+	if !strings.Contains(pp, "'flags': '2'") {
+		t.Errorf("PrettyPrint expected to contain flags input, got %q", pp)
+	}
+
+	// Test JSON output
+	js := c.JSON()
+	if !json.Valid([]byte(js)) {
+		t.Errorf("JSON() returned invalid json: %s", js)
+	}
+	if !strings.Contains(js, `"name":"ls"`) {
+		t.Errorf("JSON output missing name field: %s", js)
+	}
 }
 
 func TestInputSchemaPatchAndIsOk(t *testing.T) {
