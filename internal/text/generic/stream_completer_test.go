@@ -226,8 +226,10 @@ func TestHandleStreamChunk_Table(t *testing.T) {
 	s := &StreamCompleter{}
 
 	// DONE -> Noop
-	if ev := s.handleStreamChunk([]byte("data: [DONE]\n")); !isNoop(ev) {
-		t.Fatalf("expected Noop for DONE, got: %T %v", ev, ev)
+	maybeStopEv := s.handleStreamChunk([]byte("data: [DONE]\n"))
+	_, isStopEvent := maybeStopEv.(models.StopEvent)
+	if !isStopEvent {
+		t.Fatalf("expected STOP for DONE, got: %T %v", maybeStopEv, maybeStopEv)
 	}
 
 	// Invalid JSON with DEBUG=false -> Noop
@@ -260,9 +262,9 @@ func TestHandleStreamChunk_Table(t *testing.T) {
 	// Prefer Call over string
 	tools.Init()
 	payload := `{"choices":[{"delta":{"content":"text"}},{"delta":{"tool_calls":[{"id":"1","type":"function","index":0,"function":{"name":"ls","arguments":"{}"}}]}}]}`
-	ev := s.handleStreamChunk([]byte("data: " + payload + "\n"))
-	if _, ok := ev.(pub_models.Call); !ok {
-		t.Fatalf("expected Call to be preferred, got: %T %v", ev, ev)
+	maybeStopEv = s.handleStreamChunk([]byte("data: " + payload + "\n"))
+	if _, ok := maybeStopEv.(pub_models.Call); !ok {
+		t.Fatalf("expected Call to be preferred, got: %T %v", maybeStopEv, maybeStopEv)
 	}
 }
 

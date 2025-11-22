@@ -45,6 +45,8 @@ type CompletionEvent any
 
 type NoopEvent struct{}
 
+type StopEvent struct{}
+
 type ErrRateLimit struct {
 	ResetAt         time.Time
 	TokensRemaining int

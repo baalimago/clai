@@ -106,6 +106,10 @@ func main() {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
+	// Build in cancel into the context to allow it to be called downstream
+	// Anti-pattern? Not sure, honestly, needed here to cleanly stop
+	// clai. Could've been solved by proper structure
+	ctx = context.WithValue(ctx, utils.ContextCancelKey, cancel)
 	querier, err := internal.Setup(ctx, usage)
 	if err != nil {
 		if errors.Is(err, utils.ErrUserInitiatedExit) {
