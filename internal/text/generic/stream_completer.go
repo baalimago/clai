@@ -105,18 +105,15 @@ func (s *StreamCompleter) handleStreamResponse(ctx context.Context, res *http.Re
 			}
 			token, err := br.ReadBytes('\n')
 			if err != nil {
-				outChan <- fmt.Errorf("failed to read line: %w", err)
+				if err != io.EOF {
+					outChan <- fmt.Errorf("failed to read line: %w", err)
+				}
+				return
 			}
 			if s.debug {
 				ancli.Okf("received data from model, len: '%v', content: '%s'", len(token), token)
 			}
-			// Only send if there is something to send. Not entirely sure why
-			// we sometimes endup in the case of sending empty messages, but it
-			// messes things up downstream. Openai has also started sending empty
-			// newlines, which also messes up the completion prints.
-			if len(token) != 0 && (string(token) != "\n") {
-				outChan <- s.handleStreamChunk(token)
-			}
+			outChan <- s.handleStreamChunk(token)
 		}
 	}()
 
@@ -126,8 +123,15 @@ func (s *StreamCompleter) handleStreamResponse(ctx context.Context, res *http.Re
 func (s *StreamCompleter) handleStreamChunk(token []byte) models.CompletionEvent {
 	token = bytes.TrimPrefix(token, dataPrefix)
 	token = bytes.TrimSpace(token)
-	if string(token) == "[DONE]" || len(token) == 0 {
+	if string(token) == "[DONE]" {
+		if s.debug {
+			ancli.Okf("sending StopEvent due to [DONE]")
+		}
 		return models.StopEvent{}
+	}
+
+	if len(token) == 0 {
+		return models.NoopEvent{}
 	}
 
 	if s.debug {
