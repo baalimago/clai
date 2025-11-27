@@ -156,7 +156,7 @@ func (c *Claude) handleToken(br *bufio.Reader, token string) models.CompletionEv
 	}
 	switch eventType {
 	case "message_stop":
-		return models.StopEvent{}
+		return io.EOF
 
 	case "content_block_start":
 		c.debugFullStreamMsg = ""
