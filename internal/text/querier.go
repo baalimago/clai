@@ -154,7 +154,6 @@ func (q *Querier[C]) Query(ctx context.Context) error {
 					if q.debug {
 						ancli.PrintOK("exiting querier due to EOF error\n")
 					}
-					q.reset()
 					return nil
 				}
 				// Only add error if its not EOF or context.Canceled

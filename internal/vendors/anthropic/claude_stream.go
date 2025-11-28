@@ -115,6 +115,16 @@ func (c *Claude) handleStreamResponse(ctx context.Context, resp *http.Response) 
 				}
 			}
 			outChan <- processed
+			asErr, isErr := processed.(error)
+			_, isFunctionCall := processed.(pub_models.Call)
+			if isErr && errors.Is(asErr, io.EOF) ||
+				// On function call, we want to return. Nothing more of value coming from
+				// the specific request, conversation is continued in a new request
+				isFunctionCall {
+				// On EOF, we dont want to continue. The model keeps outputting jibberish and doesn't
+				// close the stream on its own. I think this additional data is failsafes or similar
+				return
+			}
 		}
 	}()
 	return outChan, nil
