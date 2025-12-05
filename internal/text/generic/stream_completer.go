@@ -104,16 +104,20 @@ func (s *StreamCompleter) handleStreamResponse(ctx context.Context, res *http.Re
 				return
 			}
 			token, err := br.ReadBytes('\n')
+			if len(token) > 0 {
+				if s.debug {
+					ancli.Okf("received data from model, len: '%v', content: '%s'", len(token), token)
+				}
+				outChan <- s.handleStreamChunk(token)
+			}
 			if err != nil {
 				if err != io.EOF {
 					outChan <- fmt.Errorf("failed to read line: %w", err)
+				} else {
+					outChan <- err
 				}
 				return
 			}
-			if s.debug {
-				ancli.Okf("received data from model, len: '%v', content: '%s'", len(token), token)
-			}
-			outChan <- s.handleStreamChunk(token)
 		}
 	}()
 

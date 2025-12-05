@@ -18,9 +18,10 @@ type McpServerInput struct {
 
 // McpServerExternal represents various external MCP server formats
 type McpServerExternal struct {
-	Command string            `json:"command"`
-	Args    []string          `json:"args"`
+	Command string            `json:"command,omitempty"`
+	Args    []string          `json:"args,omitempty"`
 	Env     map[string]string `json:"env,omitempty"`
+	Url     string            `json:"url,omitempty"`
 }
 
 // ParseAndAddMcpServer parses pasted MCP server configuration and adds it to the system
@@ -60,6 +61,7 @@ func convertToInternalFormat(external McpServerExternal) pub_models.McpServer {
 		Command: external.Command,
 		Args:    external.Args,
 		Env:     external.Env,
+		Url:     external.Url,
 	}
 
 	// Initialize empty env map if nil
@@ -92,8 +94,8 @@ func ValidateMcpServerConfig(pastedConfig string) error {
 		if serverName == "" {
 			return fmt.Errorf("server name cannot be empty")
 		}
-		if server.Command == "" {
-			return fmt.Errorf("command cannot be empty for server '%s'", serverName)
+		if server.Command == "" && server.Url == "" {
+			return fmt.Errorf("either command or url must be provided for server '%s'", serverName)
 		}
 	}
 

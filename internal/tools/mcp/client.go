@@ -17,6 +17,13 @@ import (
 // Client starts the MCP server process defined by mcpConfig and returns channels
 // for sending requests and receiving responses.
 func Client(ctx context.Context, mcpConfig pub_models.McpServer) (chan<- any, <-chan any, error) {
+	if mcpConfig.Url != "" {
+		return startHttpClient(ctx, mcpConfig)
+	}
+	return startProcessClient(ctx, mcpConfig)
+}
+
+func startProcessClient(ctx context.Context, mcpConfig pub_models.McpServer) (chan<- any, <-chan any, error) {
 	cmd := exec.CommandContext(ctx, mcpConfig.Command, mcpConfig.Args...)
 	cmd.Env = os.Environ()
 	for k, v := range mcpConfig.Env {

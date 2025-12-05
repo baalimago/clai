@@ -49,6 +49,17 @@ func TestValidateMcpServerConfig(t *testing.T) {
 			}`,
 			expectError: true,
 		},
+		{
+			name: "url only",
+			config: `{
+				"mcpServers": {
+					"test": {
+						"url": "http://localhost/sse"
+					}
+				}
+			}`,
+			expectError: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -69,6 +80,7 @@ func TestConvertToInternalFormat(t *testing.T) {
 		Command: "npx",
 		Args:    []string{"@browsermcp/mcp@latest"},
 		Env:     map[string]string{"NODE_ENV": "production"},
+		Url:     "http://localhost/sse",
 	}
 
 	internal := convertToInternalFormat(external)
@@ -81,6 +93,9 @@ func TestConvertToInternalFormat(t *testing.T) {
 	}
 	if internal.Env["NODE_ENV"] != "production" {
 		t.Errorf("expected env NODE_ENV=production, got %v", internal.Env)
+	}
+	if internal.Url != "http://localhost/sse" {
+		t.Errorf("expected url 'http://localhost/sse', got '%s'", internal.Url)
 	}
 }
 
