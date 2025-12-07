@@ -2,12 +2,14 @@ package internal
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"path"
 	"runtime/debug"
+	"sort"
 
 	"github.com/baalimago/clai/internal/chat"
 	"github.com/baalimago/clai/internal/glob"
@@ -15,6 +17,7 @@ import (
 	"github.com/baalimago/clai/internal/photo"
 	"github.com/baalimago/clai/internal/setup"
 	"github.com/baalimago/clai/internal/text"
+	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/internal/video"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
@@ -41,6 +44,7 @@ const (
 	SETUP
 	CMD
 	REPLAY
+	TOOLS
 )
 
 var defaultFlags = Configurations{
@@ -95,6 +99,8 @@ func getModeFromArgs(cmd string) (Mode, error) {
 		return CMD, nil
 	case "replay", "re":
 		return REPLAY, nil
+	case "tools", "t":
+		return TOOLS, nil
 	default:
 		return HELP, fmt.Errorf("unknown command: '%s'", os.Args[1])
 	}
@@ -271,6 +277,60 @@ func Setup(ctx context.Context, usage string) (models.Querier, error) {
 			return nil, fmt.Errorf("failed to replay previous reply: %w", err)
 		}
 		os.Exit(0)
+	case TOOLS:
+		tools.Init()
+		configDir, err := utils.GetClaiConfigDir()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get config dir: %w", err)
+		}
+		tmpConf := text.Default
+		tmpConf.ConfigDir = configDir
+		tmpConf.UseTools = true
+
+		mcpDir := path.Join(configDir, "mcpServers")
+		if _, err := os.Stat(mcpDir); err == nil {
+			err = text.AddMcpTools(ctx, mcpDir, tmpConf)
+			if err != nil {
+				ancli.Warnf("failed to load MCP tools: %v\n", err)
+			}
+		}
+
+		if len(args) > 1 {
+			toolName := args[1]
+			tool, exists := tools.Registry.Get(toolName)
+			if !exists {
+				return nil, fmt.Errorf("tool '%s' not found", toolName)
+			}
+			spec := tool.Specification()
+			jsonSpec, err := json.MarshalIndent(spec, "", "  ")
+			if err != nil {
+				return nil, fmt.Errorf("failed to marshal tool specification: %w", err)
+			}
+			fmt.Printf("%s\n", string(jsonSpec))
+			os.Exit(0)
+			return nil, nil
+		}
+
+		tls := tools.Registry.All()
+		var toolNames []string
+		for k := range tls {
+			toolNames = append(toolNames, k)
+		}
+		sort.Strings(toolNames)
+
+		fmt.Printf("Available Tools:\n")
+		for _, name := range toolNames {
+			tool := tls[name]
+			spec := tool.Specification()
+			desc := spec.Description
+			if len(desc) > 300 {
+				desc = desc[:300] + "..."
+			}
+			fmt.Printf("- %s: %s\n", name, desc)
+		}
+		fmt.Println("\nRun 'clai tools <tool-name>' for more details.")
+		os.Exit(0)
+		return nil, nil
 	default:
 		return nil, fmt.Errorf("unknown mode: %v", mode)
 	}

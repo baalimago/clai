@@ -38,6 +38,12 @@ func Init() {
 	Registry.Set(FFProbe.Specification().Name, FFProbe)
 	Registry.Set(Date.Specification().Name, Date)
 	Registry.Set(Pwd.Specification().Name, Pwd)
+	Registry.Set(ClaiHelp.Specification().Name, ClaiHelp)
+	Registry.Set(ClaiRun.Specification().Name, ClaiRun)
+	Registry.Set(ClaiCheck.Specification().Name, ClaiCheck)
+	Registry.Set(ClaiResult.Specification().Name, ClaiResult)
+	Registry.Set(ClaiCreateProfile.Specification().Name, ClaiCreateProfile)
+	Registry.Set(ClaiListProfiles.Specification().Name, ClaiListProfiles)
 }
 
 // Invoke the call, and gather both error and output in the same string

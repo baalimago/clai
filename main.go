@@ -49,6 +49,7 @@ Commands:
   v|video <text>                Ask the video model for a video with the given prompt
   cmd <text>                    Describe the command you wish to do, then execute the suggested command. It's a bit wonky when used with -re.
   re|replay                     Replay the most recent message.
+  t|tools [tool name]           List available tools or show details for a specific tool.
 
   c|chat   n|new       <prompt>   Create a new chat with the given prompt.
   c|chat   c|continue  <chatID>   Continue an existing chat with the given chat ID.
