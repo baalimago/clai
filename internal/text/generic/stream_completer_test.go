@@ -213,7 +213,10 @@ func TestHandleStreamResponse_EmitsEventsAndErrorOnEOF(t *testing.T) {
 		}
 	}
 	select {
-	case ev := <-out:
+	case ev, open := <-out:
+		if !open {
+			return
+		}
 		if _, ok := ev.(error); !ok {
 			t.Fatalf("expected error event after EOF, got: %T %v", ev, ev)
 		}
