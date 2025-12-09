@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"path"
 	"slices"
-	"strings"
 	"unicode/utf8"
 
 	"github.com/baalimago/clai/internal/utils"
@@ -149,7 +148,7 @@ func (cq *ChatHandler) listChats(
 				firstMessages = uMsg.Content
 			}
 
-			withSummary, err := widthAppropriateChatSummary(firstMessages, prefix, 15)
+			withSummary, err := utils.WidthAppropriateStringTrunk(firstMessages, prefix, 15)
 			if err != nil {
 				return "", fmt.Errorf("failed to get widthAppropriateChatSummary: %w", err)
 			}
@@ -169,59 +168,6 @@ func (cq *ChatHandler) listChats(
 // 1. Counting remaining width until termWidth
 // 2. Fit remainder into remaining width, keeping padding
 // 3. Format: "<start> ... <end>" when truncating
-func fillRemainderOfTermWidth(prefix, remainder string, termWidth, padding int) string {
-	infix := " ... "
-	infixLen := utf8.RuneCountInString(infix)
-	remainingWidth := termWidth - utf8.RuneCountInString(prefix) - padding
-	if remainingWidth < 0 {
-		remainingWidth = 0
-	}
-	widthAdjustedRemainder := ""
-	r := []rune(remainder)
-	if remainingWidth == 0 {
-		widthAdjustedRemainder = ""
-	} else if len(r) <= remainingWidth {
-		widthAdjustedRemainder = remainder
-	} else if remainingWidth <= infixLen {
-		widthAdjustedRemainder = string(r[:remainingWidth])
-	} else {
-		avail := remainingWidth - infixLen
-		startLen := avail / 2
-		endLen := avail - startLen
-		if endLen < 0 {
-			endLen = 0
-		}
-		if startLen < 0 {
-			startLen = 0
-		}
-		if startLen > len(r) {
-			startLen = len(r)
-		}
-		if endLen > len(r)-startLen {
-			endLen = len(r) - startLen
-		}
-		endStart := len(r) - endLen
-		if endStart < 0 {
-			endStart = 0
-		}
-		widthAdjustedRemainder = string(r[:startLen]) +
-			infix +
-			string(r[endStart:])
-	}
-
-	return prefix + widthAdjustedRemainder
-}
-
-func widthAppropriateChatSummary(toShorten, prefix string, padding int) (string, error) {
-	toShorten = strings.ReplaceAll(toShorten, "\n", "\\n")
-	toShorten = strings.ReplaceAll(toShorten, "\t", "\\t")
-	termWidth, err := utils.TermWidth()
-	if err != nil {
-		return "", fmt.Errorf("failed to get termWidth: %w", err)
-	}
-
-	return fillRemainderOfTermWidth(prefix, toShorten, termWidth, padding), nil
-}
 
 func (cq *ChatHandler) printChatInfo(w io.Writer, chat pub_models.Chat) error {
 	claiConfDir, err := utils.GetClaiConfigDir()
@@ -238,7 +184,7 @@ func (cq *ChatHandler) printChatInfo(w io.Writer, chat pub_models.Chat) error {
 	if uMsgErr == nil {
 		firstMessages = uMsg.Content
 	}
-	summary, err := widthAppropriateChatSummary(firstMessages, "summary: \"", 10)
+	summary, err := utils.WidthAppropriateStringTrunk(firstMessages, "summary: \"", 10)
 	if err != nil {
 		return fmt.Errorf("failed to create widthAppropriateChatSummary: %w", err)
 	}
@@ -323,7 +269,7 @@ func (cq *ChatHandler) deleteMessageInChat(
 				"",
 			)
 
-			withSummary, err := widthAppropriateChatSummary(
+			withSummary, err := utils.WidthAppropriateStringTrunk(
 				t.Content,
 				prefix,
 				25,
@@ -388,7 +334,7 @@ func (cq *ChatHandler) editMessageInChat(chat pub_models.Chat) error {
 				"",
 			)
 
-			withSummary, err := widthAppropriateChatSummary(t.Content, prefix, 25)
+			withSummary, err := utils.WidthAppropriateStringTrunk(t.Content, prefix, 25)
 			if err != nil {
 				return "", fmt.Errorf("failed to get widthAppropriateChatSummary: %w", err)
 			}

@@ -2,14 +2,12 @@ package internal
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"path"
 	"runtime/debug"
-	"sort"
 
 	"github.com/baalimago/clai/internal/chat"
 	"github.com/baalimago/clai/internal/glob"
@@ -278,6 +276,7 @@ func Setup(ctx context.Context, usage string) (models.Querier, error) {
 		}
 		os.Exit(0)
 	case TOOLS:
+		// Inited and preped here since it causes import cycles otherwise
 		tools.Init()
 		configDir, err := utils.GetClaiConfigDir()
 		if err != nil {
@@ -294,43 +293,7 @@ func Setup(ctx context.Context, usage string) (models.Querier, error) {
 				ancli.Warnf("failed to load MCP tools: %v\n", err)
 			}
 		}
-
-		if len(args) > 1 {
-			toolName := args[1]
-			tool, exists := tools.Registry.Get(toolName)
-			if !exists {
-				return nil, fmt.Errorf("tool '%s' not found", toolName)
-			}
-			spec := tool.Specification()
-			jsonSpec, err := json.MarshalIndent(spec, "", "  ")
-			if err != nil {
-				return nil, fmt.Errorf("failed to marshal tool specification: %w", err)
-			}
-			fmt.Printf("%s\n", string(jsonSpec))
-			os.Exit(0)
-			return nil, nil
-		}
-
-		tls := tools.Registry.All()
-		var toolNames []string
-		for k := range tls {
-			toolNames = append(toolNames, k)
-		}
-		sort.Strings(toolNames)
-
-		fmt.Printf("Available Tools:\n")
-		for _, name := range toolNames {
-			tool := tls[name]
-			spec := tool.Specification()
-			desc := spec.Description
-			if len(desc) > 300 {
-				desc = desc[:300] + "..."
-			}
-			fmt.Printf("- %s: %s\n", name, desc)
-		}
-		fmt.Println("\nRun 'clai tools <tool-name>' for more details.")
-		os.Exit(0)
-		return nil, nil
+		return nil, tools.SubCmd(ctx, args)
 	default:
 		return nil, fmt.Errorf("unknown mode: %v", mode)
 	}
