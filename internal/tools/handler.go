@@ -37,6 +37,7 @@ func Init() {
 	Registry.Set(Recall.Specification().Name, Recall)
 	Registry.Set(FFProbe.Specification().Name, FFProbe)
 	Registry.Set(Date.Specification().Name, Date)
+	Registry.Set(Pwd.Specification().Name, Pwd)
 }
 
 // Invoke the call, and gather both error and output in the same string
