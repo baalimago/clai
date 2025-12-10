@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path"
 	"slices"
 	"strings"
 	"sync"
@@ -67,7 +66,6 @@ func (t *claiRunTool) setupFlags(input pub_models.Input) ([]string, error) {
 		return nil, fmt.Errorf("missing args")
 	}
 
-	var args string
 	args, isOk := argsRaw.(string)
 	if !isOk {
 		return nil, fmt.Errorf("failed to cast data of type: '%T' to string. Data: '%v'", argsRaw, argsRaw)
@@ -75,7 +73,7 @@ func (t *claiRunTool) setupFlags(input pub_models.Input) ([]string, error) {
 
 	argsSplit := strings.Split(args, " ")
 
-	// Automaticall append q to assume text query if noting else is listed
+	// Automatically append q to assume text query if nothing else is listed
 	if !slices.Contains(argsSplit, "q") && !slices.Contains(argsSplit, "query") {
 		argsSplit = append([]string{"q"}, argsSplit...)
 	}
@@ -84,35 +82,6 @@ func (t *claiRunTool) setupFlags(input pub_models.Input) ([]string, error) {
 		ret = append([]string{"-r"}, argsSplit...)
 	}
 
-	profileRaw, ok := input["profile"]
-	if !ok {
-		// No attempt to select profile, all good lets return
-		return ret, nil
-	}
-	profile, ok := profileRaw.(string)
-	if !ok {
-		return nil, fmt.Errorf("failed to cast data of type: '%T' to string. Data: '%v'", profileRaw, profileRaw)
-	}
-
-	cacheDir, err := os.UserCacheDir()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user cache dir: %w", err)
-	}
-	profiles, err := loadDynProfiles(cacheDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load profiles: %v", err)
-	}
-	found := false
-	for _, p := range profiles {
-		if p.Name == profile {
-			ret = append([]string{"-prp", path.Join(cacheDir, "clai", "dynProfiles", fmt.Sprintf("%v.json", profile))}, ret...)
-			found = true
-			break
-		}
-	}
-	if !found {
-		return nil, fmt.Errorf("failed to find profile: '%v'", profile)
-	}
 	return ret, nil
 }
 

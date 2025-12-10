@@ -42,7 +42,6 @@ func Init() {
 	Registry.Set(ClaiRun.Specification().Name, ClaiRun)
 	Registry.Set(ClaiCheck.Specification().Name, ClaiCheck)
 	Registry.Set(ClaiResult.Specification().Name, ClaiResult)
-	Registry.Set(Sleep.Specification().Name, Sleep)
 	Registry.Set(Date.Specification().Name, Date)
 }
 

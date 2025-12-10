@@ -13,6 +13,7 @@ import (
 	"github.com/baalimago/clai/internal/glob"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/photo"
+	"github.com/baalimago/clai/internal/profiles"
 	"github.com/baalimago/clai/internal/setup"
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/internal/tools"
@@ -43,6 +44,7 @@ const (
 	CMD
 	REPLAY
 	TOOLS
+	PROFILES
 )
 
 var defaultFlags = Configurations{
@@ -99,6 +101,8 @@ func getModeFromArgs(cmd string) (Mode, error) {
 		return REPLAY, nil
 	case "tools", "t":
 		return TOOLS, nil
+	case "profiles":
+		return PROFILES, nil
 	default:
 		return HELP, fmt.Errorf("unknown command: '%s'", os.Args[1])
 	}
@@ -296,6 +300,8 @@ func Setup(ctx context.Context, usage string) (models.Querier, error) {
 			}
 		}
 		return nil, tools.SubCmd(ctx, args)
+	case PROFILES:
+		return nil, profiles.SubCmd(ctx, args)
 	default:
 		return nil, fmt.Errorf("unknown mode: %v", mode)
 	}

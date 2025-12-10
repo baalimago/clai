@@ -3,6 +3,7 @@ package text
 import (
 	"fmt"
 	"path"
+	"strings"
 
 	"github.com/baalimago/clai/internal/utils"
 )
@@ -13,8 +14,13 @@ func findProfile(profileName string) (Profile, error) {
 	var p Profile
 	err := utils.ReadAndUnmarshal(path.Join(profilePath, fmt.Sprintf("%v.json", profileName)), &p)
 	if err != nil {
+		// Backwards compatibility: if we fail to load, at least surface the requested name.
 		p.Name = profileName
 		return p, err
+	}
+	// If Name is empty in the stored profile, normalize it to the filename/profileName.
+	if strings.TrimSpace(p.Name) == "" {
+		p.Name = profileName
 	}
 	return p, nil
 }
