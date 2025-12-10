@@ -17,11 +17,7 @@ import (
 const usage = `clai - (c)ommand (l)ine (a)rtificial (i)ntelligence
 
 Prerequisites:
-  - Set the OPENAI_API_KEY environment variable to your OpenAI API key
-  - Set the ANTHROPIC_API_KEY environment variable to your Anthropic API key
-  - Set the MISTRAL_API_KEY environment variable to your Mistral API key
-  - Set the DEEPSEEK_API_KEY environment variable to your Deepseek API key
-  - Set the NOVITA_API_KEY environment variable to your Novita API key
+  - Set the environment variable to your API key according to the vendor you seek to use
   - (Optional) Set the NO_COLOR environment variable to disable ansi color output
   - (Optional) Install glow - https://github.com/charmbracelet/glow for formatted markdown output
 
@@ -34,7 +30,8 @@ Flags:
   -pm, -photo-model string     Set the image model to use. (default is found in photoConfig.json)
   -pd, -photo-dir string       Set the directory to store the generated pictures. (default %v)
   -pp, -photo-prefix string    Set the prefix for the generated pictures. (default %v)
-  -I, -replace string          Set the string to replace with stdin. (default %v)
+  -vd, -video-dir string 			 Set the directory to store the generated videos. (default %v)
+  -vp, -video-prefix string 	 Set the prefix for the generated videos. (default %v)
   -i bool                      Set to true to replace '-replace' flag value with stdin. This is overwritten by -I and -replace. (default %v)
   -t, -tools bool              Set to true to use text tools. Some models might not support streaming. (default %v)
   -g, -glob string             Set the glob to use for globbing. (default '%v')
@@ -47,7 +44,6 @@ Commands:
   q|query <text>                Query the chat model with the given text
   p|photo <text>                Ask the photo model for a picture with the given prompt
   v|video <text>                Ask the video model for a video with the given prompt
-  cmd <text>                    Describe the command you wish to do, then execute the suggested command. It's a bit wonky when used with -re.
   re|replay                     Replay the most recent message.
   t|tools [tool name]           List available tools or show details for a specific tool.
 

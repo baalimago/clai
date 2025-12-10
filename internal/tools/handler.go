@@ -42,8 +42,8 @@ func Init() {
 	Registry.Set(ClaiRun.Specification().Name, ClaiRun)
 	Registry.Set(ClaiCheck.Specification().Name, ClaiCheck)
 	Registry.Set(ClaiResult.Specification().Name, ClaiResult)
-	Registry.Set(ClaiCreateProfile.Specification().Name, ClaiCreateProfile)
-	Registry.Set(ClaiListProfiles.Specification().Name, ClaiListProfiles)
+	Registry.Set(Sleep.Specification().Name, Sleep)
+	Registry.Set(Date.Specification().Name, Date)
 }
 
 // Invoke the call, and gather both error and output in the same string

@@ -55,10 +55,6 @@ func (t *claiRunTool) Specification() pub_models.Specification {
 					Type:        "string",
 					Description: "Arguments to pass to clai",
 				},
-				"profile": {
-					Type:        "string",
-					Description: "Profile to use fur the run. May be any profile listed by clai_tool_list_profiles.",
-				},
 			},
 		},
 	}

@@ -176,6 +176,8 @@ func printHelp(usage string, args []string) {
 		defaultFlags.PrintRaw,
 		defaultFlags.PhotoDir,
 		defaultFlags.PhotoPrefix,
+		defaultFlags.VideoDir,
+		defaultFlags.VideoPrefix,
 		defaultFlags.StdinReplace,
 		defaultFlags.ExpectReplace,
 		defaultFlags.UseTools,
