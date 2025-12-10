@@ -42,7 +42,7 @@ type Call struct {
 	Type         string         `json:"type,omitempty"`
 	Inputs       *Input         `json:"inputs,omitempty"`
 	Function     Specification  `json:"function,omitempty"`
-	ExtraContent map[string]any `json:"extra_content"`
+	ExtraContent map[string]any `json:"extra_content,omitempty"`
 }
 
 // Patch the call, filling structs and initializing fields so that

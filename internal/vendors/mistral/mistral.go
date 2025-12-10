@@ -45,6 +45,7 @@ func clean(msg []pub_models.Message) []pub_models.Message {
 				tc.Inputs = nil
 				tc.Function.Description = ""
 				tc.Function.Inputs = nil
+				tc.ExtraContent = nil
 				m.ToolCalls[j] = tc
 			}
 		}
