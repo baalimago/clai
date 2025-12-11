@@ -121,3 +121,62 @@ func TestSubCmd_UnknownSubcommand(t *testing.T) {
 		t.Fatalf("expected error for unknown subcommand, got nil")
 	}
 }
+
+func TestGetFirstSentence(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "empty string",
+			input:    "",
+			expected: "[Empty prompt]",
+		},
+		{
+			name:     "ends with period",
+			input:    "Hello world.",
+			expected: "Hello world.",
+		},
+		{
+			name:     "ends with exclamation",
+			input:    "Hello world!",
+			expected: "Hello world!",
+		},
+		{
+			name:     "ends with question",
+			input:    "Hello world?",
+			expected: "Hello world?",
+		},
+		{
+			name:     "ends with newline",
+			input:    "Hello world\nSecond line",
+			expected: "Hello world\n",
+		},
+		{
+			name:     "multiple terminators",
+			input:    "First. Second! Third",
+			expected: "First.",
+		},
+		{
+			name:     "no terminator",
+			input:    "Just a string",
+			expected: "Just a string",
+		},
+		{
+			name:     "single character",
+			input:    "A",
+			expected: "A",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := getFirstSentence(tt.input)
+			if result != tt.expected {
+				t.Fatalf("expected %q, got %q",
+					tt.expected, result)
+			}
+		})
+	}
+}
