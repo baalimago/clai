@@ -67,8 +67,8 @@ const stage_0 = `Do you wish to configure:
 
 [0/1/2/3]: `
 
-// Run the setup to configure the different files
-func Run() error {
+// SubCmd the setup to configure the different files
+func SubCmd() error {
 	fmt.Print(stage_0)
 
 	input, err := utils.ReadUserInput()

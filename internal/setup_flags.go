@@ -26,12 +26,21 @@ type Configurations struct {
 	ExpectReplace bool
 	PrintRaw      bool
 	ReplyMode     bool
-	UseTools      bool
-	Glob          string
-	Profile       string
-	ProfilePath   string
+	// UseTools encodes tooling selection from CLI:
+	//   ""      => no override
+	//   "*"     => all tools
+	//   "a,b,c" => only these tools
+	UseTools    string
+	Glob        string
+	Profile     string
+	ProfilePath string
 }
 
+// setupFlags parses CLI flags into an internal Configurations.
+// For tooling:
+//   -t=* or -tools=*          => UseTools="*" (all tools)
+//   -t=a,b or -tools=a,b      => UseTools="a,b" (specific tools)
+//   (flag omitted)            => UseTools="" (no override)
 func setupFlags(defaults Configurations) Configurations {
 	flag.String("A-helpful-nonexisting-flag", "there is no default", "This isn't a flag. It's only here to tell you that 'clai h/help' gives better overview of usage than 'clai -h'.")
 
@@ -74,8 +83,10 @@ func setupFlags(defaults Configurations) Configurations {
 	replyShort := flag.Bool("re", defaults.ReplyMode, "Set to true to reply to the previous query, meaning that it will be used as context for your next query.")
 	replyLong := flag.Bool("reply", defaults.ReplyMode, "Set to true to reply to the previous query, meaning that it will be used as context for your next query.")
 
-	useToolsShort := flag.Bool("t", defaults.UseTools, "Set to true to use tools.")
-	useToolsLong := flag.Bool("tools", defaults.UseTools, "Set to true to use tools.")
+	// Breaking change: -t/-tools are string-only value flags.
+	// Use: -t=* or -t=a,b ("-t" without value is undefined/ignored).
+	useToolsShort := flag.String("t", defaults.UseTools, "Enable tools. Use '*' for all tools or comma-separated list for specific tools.")
+	useToolsLong := flag.String("tools", defaults.UseTools, "Enable tools. Use '*' for all tools or comma-separated list for specific tools.")
 
 	flag.Parse()
 	chatModel, err := utils.ReturnNonDefault(*cmShort, *cmLong, defaults.ChatModel)
@@ -149,9 +160,7 @@ func applyFlagOverridesForText(tConf *text.Configurations, flagSet, defaultFlags
 	if flagSet.PrintRaw != defaultFlags.PrintRaw {
 		tConf.Raw = flagSet.PrintRaw
 	}
-	if flagSet.UseTools != defaultFlags.UseTools {
-		tConf.UseTools = flagSet.UseTools
-	}
+	// Tool selection is interpreted in setupTextQuerier based on flagSet.UseTools.
 	if flagSet.Profile != defaultFlags.Profile {
 		tConf.UseProfile = flagSet.Profile
 	}

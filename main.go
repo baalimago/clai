@@ -32,8 +32,7 @@ Flags:
   -pp, -photo-prefix string    Set the prefix for the generated pictures. (default %v)
   -vd, -video-dir string 			 Set the directory to store the generated videos. (default %v)
   -vp, -video-prefix string 	 Set the prefix for the generated videos. (default %v)
-  -i bool                      Set to true to replace '-replace' flag value with stdin. This is overwritten by -I and -replace. (default %v)
-  -t, -tools bool              Set to true to use text tools. Some models might not support streaming. (default %v)
+  -t, -tools string 					 Set to <tool_a>,<tool_b> for specific tool, or */"" to use all built in or MCP tools. See available tools with 'clai tools' (default %v)
   -g, -glob string             Set the glob to use for globbing. (default '%v')
   -p, -profile string          Set the profile which should be used. For details, see 'clai help profile'. (default '%v')
   -prp, profile-path string    Set the path to a profile file to use instead of -p/-profile.
@@ -45,22 +44,20 @@ Commands:
   p|photo <text>                Ask the photo model for a picture with the given prompt
   v|video <text>                Ask the video model for a video with the given prompt
   re|replay                     Replay the most recent message.
-  t|tools [tool name]           List available tools or show details for a specific tool.
+  t|tools [tool name]           List available tools, both mcp and built-in. Or show details for a specific tool.
 
   c|chat   n|new       <prompt>   Create a new chat with the given prompt.
-  c|chat   c|continue  <chatID>   Continue an existing chat with the given chat ID.
-  c|chat   d|delete    <chatID>   Delete the chat with the given chat ID.
+  c|chat   c|continue  <chatID>   Continue an existing chat with the given chat ID or index.
+  c|chat   d|delete    <chatID>   Delete the chat with the given chat ID or index.
   c|chat   l|list                 List all existing chats.
   c|chat   h|help                 Display detailed help for chat subcommands.
 
 Examples:
-  - clai h | clai -i q generate some examples for this usage string: '{}'
-  - clai query "What's the weather like in Tokyo?"
-  - clai -glob "*.txt" query "Please summarize these documents: "
+  - clai h | clai query generate some examples for this usage string: 
+  - clai -t website_text query "What's the weather like in Tokyo? Use website_text to fetch data"
+  - clai -glob "*.txt" query Please summarize these documents: 
   - clai -cm claude-3-opus-20240229 chat new "What are the latest advancements in AI?"
-  - clai photo "A futuristic cityscape"
   - clai -pm dall-e-2 photo A cat in space
-  - clai -pd ~/Downloads -pp holiday A beach at sunset
   - docker logs example | clai -I LOG q "Find errors in these logs: LOG"
   - clai c new "Let's have a conversation about climate change."
   - clai c list
