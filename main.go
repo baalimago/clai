@@ -83,11 +83,6 @@ func main() {
 		}
 	}
 
-	err := handleOopsies()
-	if err != nil {
-		ancli.PrintWarn(fmt.Sprintf("failed to handle oopsies, but as we didn't panic, it should be benign. Error: %v\n", err))
-	}
-
 	configDirPath, err := utils.GetClaiConfigDir()
 	if err != nil {
 		ancli.Errf("failed to find config dir path: %v", err)
@@ -103,7 +98,8 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	// Build in cancel into the context to allow it to be called downstream
 	// Anti-pattern? Not sure, honestly, needed here to cleanly stop
-	// clai. Could've been solved by proper structure
+	// clai in case of nested tool calls. Could've been solved by proper structure
+	// but who has time for proper structure?
 	ctx = context.WithValue(ctx, utils.ContextCancelKey, cancel)
 	querier, err := internal.Setup(ctx, usage)
 	if err != nil {
