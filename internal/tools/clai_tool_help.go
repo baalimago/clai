@@ -15,7 +15,7 @@ type claiHelpTool struct{}
 func (t *claiHelpTool) Specification() pub_models.Specification {
 	return pub_models.Specification{
 		Name:        "clai_help",
-		Description: "Run `clai help` to output instructions on how to use the tool",
+		Description: "Run `clai help` to output instructions on how to use the tool. ALWAYS RUN THIS BEFORE USING CLAI.",
 		Inputs: &pub_models.InputSchema{
 			Type:       "object",
 			Properties: map[string]pub_models.ParameterObject{},

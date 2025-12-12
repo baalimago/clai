@@ -5,8 +5,10 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -86,56 +88,107 @@ func (t *claiRunTool) setupFlags(input pub_models.Input) ([]string, error) {
 }
 
 func (t *claiRunTool) Call(input pub_models.Input) (string, error) {
-	runID := generateRunID()
-
+	// Validate and parse input arguments
 	argsSplit, err := t.setupFlags(input)
 	if err != nil {
 		return "", fmt.Errorf("failed to setup automatic clai run flags: %w", err)
 	}
 
-	ancli.Okf("now running: %v %v", ClaiBinaryPath, argsSplit)
+	// Generate unique identifier for this run
+	runID := generateRunID()
 
-	cmd := exec.Command(ClaiBinaryPath, argsSplit...)
-	cmd.Env = append(os.Environ(), "NO_COLOR=true")
-	stdout := &bytes.Buffer{}
-	stderr := &bytes.Buffer{}
-	cmd.Stdout = stdout
-	cmd.Stderr = stderr
-
-	process := &claiProcess{
-		cmd:    cmd,
-		stdout: stdout,
-		stderr: stderr,
+	// Create temporary files for stdout and stderr with run ID
+	stdoutFile, stderrFile, err := createTempOutputFiles(runID)
+	if err != nil {
+		return "", fmt.Errorf("failed to create temporary output files: %w", err)
 	}
 
+	// Log the temporary file paths for output tracking
+	ancli.Okf("stdout log written to: %s", stdoutFile.Name())
+	ancli.Okf("stderr log written to: %s", stderrFile.Name())
+
+	// Create command with environment configuration
+	cmd := exec.Command(ClaiBinaryPath, argsSplit...)
+	cmd.Env = append(os.Environ(), "NO_COLOR=true")
+
+	// Setup output buffers and multi-writers to write to both buffer and file
+	stdoutBuffer := &bytes.Buffer{}
+	stderrBuffer := &bytes.Buffer{}
+	cmd.Stdout = io.MultiWriter(stdoutBuffer, stdoutFile)
+	cmd.Stderr = io.MultiWriter(stderrBuffer, stderrFile)
+
+	// Initialize process tracking structure
+	process := &claiProcess{
+		cmd:    cmd,
+		stdout: stdoutBuffer,
+		stderr: stderrBuffer,
+		done:   false,
+	}
+
+	// Register process in global map
 	claiRunsMu.Lock()
 	claiRuns[runID] = process
 	claiRunsMu.Unlock()
 
+	// Start the subprocess
 	if err := cmd.Start(); err != nil {
+		// Mark as done and record error on startup failure
 		process.done = true
 		process.err = err
 		process.exitCode = -1
-		return "", fmt.Errorf("failed to start process: %w", err)
+		stdoutFile.Close()
+		stderrFile.Close()
+		return "", fmt.Errorf("failed to start clai process: %w", err)
 	}
 
-	go func() {
-		err := cmd.Wait()
-		claiRunsMu.Lock()
-		defer claiRunsMu.Unlock()
-
-		process.done = true
-		process.err = err
-		if err != nil {
-			if exitErr, ok := err.(*exec.ExitError); ok {
-				process.exitCode = exitErr.ExitCode()
-			} else {
-				process.exitCode = -1
-			}
-		} else {
-			process.exitCode = 0
-		}
-	}()
+	// Spawn goroutine to wait for process completion and close files
+	go t.waitForProcessCompletion(process, stdoutFile, stderrFile)
 
 	return runID, nil
+}
+
+// waitForProcessCompletion blocks until the process finishes and records its exit status.
+func (t *claiRunTool) waitForProcessCompletion(process *claiProcess, stdoutFile, stderrFile *os.File) {
+	err := process.cmd.Wait()
+
+	// Close files once the process has finished
+	stdoutFile.Close()
+	stderrFile.Close()
+
+	claiRunsMu.Lock()
+	defer claiRunsMu.Unlock()
+
+	process.done = true
+	process.err = err
+
+	// Extract exit code from error if available
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			process.exitCode = exitErr.ExitCode()
+		} else {
+			process.exitCode = -1
+		}
+	} else {
+		process.exitCode = 0
+	}
+}
+
+// createTempOutputFiles creates temporary files for stdout and stderr with the run ID.
+func createTempOutputFiles(runID string) (*os.File, *os.File, error) {
+	tempDir := os.TempDir()
+
+	stdoutPath := filepath.Join(tempDir, fmt.Sprintf("clai-worker-%s-stdout.log", runID))
+	stdoutFile, err := os.Create(stdoutPath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create stdout file: %w", err)
+	}
+
+	stderrPath := filepath.Join(tempDir, fmt.Sprintf("clai-worker-%s-stderr.log", runID))
+	stderrFile, err := os.Create(stderrPath)
+	if err != nil {
+		stdoutFile.Close()
+		return nil, nil, fmt.Errorf("failed to create stderr file: %w", err)
+	}
+
+	return stdoutFile, stderrFile, nil
 }
