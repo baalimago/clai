@@ -149,6 +149,22 @@ func TestSetupFlags(t *testing.T) {
 				ProfilePath: "/tmp/p.json",
 			},
 		},
+		{
+			name:     "Tools explicit all",
+			args:     []string{"cmd", "-t=*"},
+			defaults: Configurations{},
+			expected: Configurations{
+				UseTools: "*",
+			},
+		},
+		{
+			name:     "Tools flag with comma-separated list => specific tools",
+			args:     []string{"cmd", "-t=write_file,rg"},
+			defaults: Configurations{},
+			expected: Configurations{
+				UseTools: "write_file,rg",
+			},
+		},
 	}
 
 	for _, tc := range testCases {

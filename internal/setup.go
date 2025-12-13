@@ -8,13 +8,16 @@ import (
 	"os"
 	"path"
 	"runtime/debug"
+	"strings"
 
 	"github.com/baalimago/clai/internal/chat"
 	"github.com/baalimago/clai/internal/glob"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/photo"
+	"github.com/baalimago/clai/internal/profiles"
 	"github.com/baalimago/clai/internal/setup"
 	"github.com/baalimago/clai/internal/text"
+	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/internal/video"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
@@ -41,6 +44,8 @@ const (
 	SETUP
 	CMD
 	REPLAY
+	TOOLS
+	PROFILES
 )
 
 var defaultFlags = Configurations{
@@ -58,7 +63,7 @@ var defaultFlags = Configurations{
 	PrintRaw:      false,
 	ExpectReplace: false,
 	ReplyMode:     false,
-	UseTools:      false,
+	UseTools:      "",
 	ProfilePath:   "",
 }
 
@@ -95,6 +100,10 @@ func getModeFromArgs(cmd string) (Mode, error) {
 		return CMD, nil
 	case "replay", "re":
 		return REPLAY, nil
+	case "tools", "t":
+		return TOOLS, nil
+	case "profiles":
+		return PROFILES, nil
 	default:
 		return HELP, fmt.Errorf("unknown command: '%s'", os.Args[1])
 	}
@@ -143,6 +152,58 @@ func setupTextQuerier(ctx context.Context, mode Mode, confDir string, flagSet Co
 		return nil, fmt.Errorf("profile override failure: %v", err)
 	}
 
+	// Interpret CLI tools flag string:
+	// flagSet.UseTools:
+	//   ""       => no override, leave tConf.UseTools/Tools as config/profile decided
+	//   "*"      => enable tooling, all tools
+	//   "a,b,c"  => enable tooling, only those tools
+	if flagSet.UseTools != "" {
+		tConf.UseTools = true
+
+		if flagSet.UseTools == "*" {
+			// All tools: len(Tools)==0 is interpreted as "all tools"
+			tConf.Tools = nil
+		} else {
+			// Validate against tool registry and allow MCP-prefixed names.
+			// tools.Registry only knows *local* tools; MCP tools are prefixed "mcp_".
+			tools.Init()
+			parts := strings.Split(flagSet.UseTools, ",")
+			validTools := make([]string, 0, len(parts))
+
+			for _, p := range parts {
+				p = strings.TrimSpace(p)
+				if p == "" {
+					continue
+				}
+
+				// MCP tools: accept any name starting with "mcp_"
+				if strings.HasPrefix(p, "mcp_") {
+					validTools = append(validTools, p)
+					continue
+				}
+
+				// Local tools: must exist in the registry
+				wCardTools := tools.Registry.WildcardGet(p)
+				if len(wCardTools) > 0 {
+					for _, t := range wCardTools {
+						validTools = append(validTools, t.Specification().Name)
+					}
+				} else {
+					ancli.Warnf("attempted to select unknown tool '%s' via -t/-tools, skipping\n", p)
+				}
+			}
+
+			// If nothing valid was found, disable tools from CLI perspective
+			if len(validTools) == 0 {
+				ancli.Warnf("no valid tools found from -t/-tools flag; disabling tools for this run\n")
+				tConf.UseTools = false
+				tConf.Tools = nil
+			} else {
+				tConf.Tools = validTools
+			}
+		}
+	}
+
 	// We want some flags, such as model, to be able to overwrite the profile configurations
 	// If this gets too confusing, it should be changed
 	applyProfileOverridesForText(&tConf, flagSet, defaultFlags)
@@ -172,6 +233,8 @@ func printHelp(usage string, args []string) {
 		defaultFlags.PrintRaw,
 		defaultFlags.PhotoDir,
 		defaultFlags.PhotoPrefix,
+		defaultFlags.VideoDir,
+		defaultFlags.VideoPrefix,
 		defaultFlags.StdinReplace,
 		defaultFlags.ExpectReplace,
 		defaultFlags.UseTools,
@@ -248,18 +311,13 @@ func Setup(ctx context.Context, usage string) (models.Querier, error) {
 		if !ok {
 			return nil, errors.New("failed to read build info")
 		}
-		version := bi.Main.Version
-		checksum := bi.Main.Sum
-		if version == "" || version == "(devel)" {
-			version = BuildVersion
+		fmt.Println(bi.Main.Path)
+		for _, dep := range bi.Deps {
+			fmt.Printf("%s %s\n", dep.Path, dep.Version)
 		}
-		if checksum == "" {
-			checksum = BUILD_CHECKSUM
-		}
-		fmt.Printf("version: %v, go version: %v, checksum: %v\n", version, bi.GoVersion, checksum)
-		os.Exit(0)
+		return nil, nil
 	case SETUP:
-		err := setup.Run()
+		err := setup.SubCmd()
 		if err != nil {
 			return nil, fmt.Errorf("failed to run setup: %w", err)
 		}
@@ -271,6 +329,11 @@ func Setup(ctx context.Context, usage string) (models.Querier, error) {
 			return nil, fmt.Errorf("failed to replay previous reply: %w", err)
 		}
 		os.Exit(0)
+	case TOOLS:
+		tools.Init()
+		return nil, tools.SubCmd(ctx, args)
+	case PROFILES:
+		return nil, profiles.SubCmd(ctx, args)
 	default:
 		return nil, fmt.Errorf("unknown mode: %v", mode)
 	}

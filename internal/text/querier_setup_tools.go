@@ -57,7 +57,7 @@ func filterMcpServersByProfile(mcpServerPaths []string, userConf Configurations)
 // Each file inside the directory should contain a single MCP server configuration.
 // Every server is started and its tools registered with a prefix of the filename.
 // If the directory is missing, an error is returned.
-func addMcpTools(ctx context.Context, mcpServersDir string, userConf Configurations) error {
+func AddMcpTools(ctx context.Context, mcpServersDir string, userConf Configurations) error {
 	if _, err := os.Stat(mcpServersDir); os.IsNotExist(err) {
 		return fmt.Errorf("MCP servers directory not found at %s. If you want MCP server support, create one using 'clai setup' and select option 3", mcpServersDir)
 	}
@@ -128,7 +128,7 @@ func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, us
 	}
 	tools.Init()
 	// Only setup MCP tools if they're there's a chance of using tools
-	err := addMcpTools(ctx, path.Join(userConf.ConfigDir, "mcpServers"), userConf)
+	err := AddMcpTools(ctx, path.Join(userConf.ConfigDir, "mcpServers"), userConf)
 	if misc.Truthy(os.Getenv("DEBUG")) {
 		ancli.Okf("Registering tools on querier of type: %T\n", modelConf)
 	}

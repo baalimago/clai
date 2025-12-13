@@ -23,6 +23,7 @@ func TestGetModeFromArgs(t *testing.T) {
 		{"cmd", CMD},
 		{"setup", SETUP},
 		{"version", VERSION},
+		{"tools", TOOLS},
 	}
 	for _, tc := range tests {
 		got, err := getModeFromArgs(tc.arg)

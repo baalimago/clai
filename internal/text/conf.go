@@ -46,7 +46,7 @@ func (c Configurations) UsingProfile() bool {
 
 // Profile which allows for specialized ai configurations for specific tasks
 type Profile struct {
-	Name            string   `json:"-"`
+	Name            string   `json:"name"`
 	Model           string   `json:"model"`
 	UseTools        bool     `json:"use_tools"`
 	Tools           []string `json:"tools"`
@@ -67,9 +67,12 @@ var Default = Configurations{
 }
 
 var DefaultProfile = Profile{
+	Name:            "",
+	Model:           "",
 	UseTools:        true,
-	SaveReplyAsConv: true,
 	Tools:           []string{},
+	Prompt:          "",
+	SaveReplyAsConv: true,
 }
 
 func (c *Configurations) setupSystemPrompt() {

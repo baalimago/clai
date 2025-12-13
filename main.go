@@ -17,11 +17,7 @@ import (
 const usage = `clai - (c)ommand (l)ine (a)rtificial (i)ntelligence
 
 Prerequisites:
-  - Set the OPENAI_API_KEY environment variable to your OpenAI API key
-  - Set the ANTHROPIC_API_KEY environment variable to your Anthropic API key
-  - Set the MISTRAL_API_KEY environment variable to your Mistral API key
-  - Set the DEEPSEEK_API_KEY environment variable to your Deepseek API key
-  - Set the NOVITA_API_KEY environment variable to your Novita API key
+  - Set the environment variable to your API key according to the vendor you seek to use
   - (Optional) Set the NO_COLOR environment variable to disable ansi color output
   - (Optional) Install glow - https://github.com/charmbracelet/glow for formatted markdown output
 
@@ -34,9 +30,9 @@ Flags:
   -pm, -photo-model string     Set the image model to use. (default is found in photoConfig.json)
   -pd, -photo-dir string       Set the directory to store the generated pictures. (default %v)
   -pp, -photo-prefix string    Set the prefix for the generated pictures. (default %v)
-  -I, -replace string          Set the string to replace with stdin. (default %v)
-  -i bool                      Set to true to replace '-replace' flag value with stdin. This is overwritten by -I and -replace. (default %v)
-  -t, -tools bool              Set to true to use text tools. Some models might not support streaming. (default %v)
+  -vd, -video-dir string 			 Set the directory to store the generated videos. (default %v)
+  -vp, -video-prefix string 	 Set the prefix for the generated videos. (default %v)
+  -t, -tools string 					 Set to <tool_a>,<tool_b> for specific tool, or */"" to use all built in or MCP tools. See available tools with 'clai tools' (default %v)
   -g, -glob string             Set the glob to use for globbing. (default '%v')
   -p, -profile string          Set the profile which should be used. For details, see 'clai help profile'. (default '%v')
   -prp, profile-path string    Set the path to a profile file to use instead of -p/-profile.
@@ -47,23 +43,21 @@ Commands:
   q|query <text>                Query the chat model with the given text
   p|photo <text>                Ask the photo model for a picture with the given prompt
   v|video <text>                Ask the video model for a video with the given prompt
-  cmd <text>                    Describe the command you wish to do, then execute the suggested command. It's a bit wonky when used with -re.
   re|replay                     Replay the most recent message.
+  t|tools [tool name]           List available tools, both mcp and built-in. Or show details for a specific tool.
 
   c|chat   n|new       <prompt>   Create a new chat with the given prompt.
-  c|chat   c|continue  <chatID>   Continue an existing chat with the given chat ID.
-  c|chat   d|delete    <chatID>   Delete the chat with the given chat ID.
+  c|chat   c|continue  <chatID>   Continue an existing chat with the given chat ID or index.
+  c|chat   d|delete    <chatID>   Delete the chat with the given chat ID or index.
   c|chat   l|list                 List all existing chats.
   c|chat   h|help                 Display detailed help for chat subcommands.
 
 Examples:
-  - clai h | clai -i q generate some examples for this usage string: '{}'
-  - clai query "What's the weather like in Tokyo?"
-  - clai -glob "*.txt" query "Please summarize these documents: "
+  - clai h | clai query generate some examples for this usage string: 
+  - clai -t website_text query "What's the weather like in Tokyo? Use website_text to fetch data"
+  - clai -glob "*.txt" query Please summarize these documents: 
   - clai -cm claude-3-opus-20240229 chat new "What are the latest advancements in AI?"
-  - clai photo "A futuristic cityscape"
   - clai -pm dall-e-2 photo A cat in space
-  - clai -pd ~/Downloads -pp holiday A beach at sunset
   - docker logs example | clai -I LOG q "Find errors in these logs: LOG"
   - clai c new "Let's have a conversation about climate change."
   - clai c list
@@ -89,11 +83,6 @@ func main() {
 		}
 	}
 
-	err := handleOopsies()
-	if err != nil {
-		ancli.PrintWarn(fmt.Sprintf("failed to handle oopsies, but as we didn't panic, it should be benign. Error: %v\n", err))
-	}
-
 	configDirPath, err := utils.GetClaiConfigDir()
 	if err != nil {
 		ancli.Errf("failed to find config dir path: %v", err)
@@ -109,7 +98,8 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	// Build in cancel into the context to allow it to be called downstream
 	// Anti-pattern? Not sure, honestly, needed here to cleanly stop
-	// clai. Could've been solved by proper structure
+	// clai in case of nested tool calls. Could've been solved by proper structure
+	// but who has time for proper structure?
 	ctx = context.WithValue(ctx, utils.ContextCancelKey, cancel)
 	querier, err := internal.Setup(ctx, usage)
 	if err != nil {

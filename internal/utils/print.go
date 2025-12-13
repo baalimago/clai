@@ -113,3 +113,57 @@ func AttemptPrettyPrint(chatMessage pub_models.Message, username string, raw boo
 	}
 	return nil
 }
+
+func WidthAppropriateStringTrunk(toShorten, prefix string, padding int) (string, error) {
+	toShorten = strings.ReplaceAll(toShorten, "\n", "\\n")
+	toShorten = strings.ReplaceAll(toShorten, "\t", "\\t")
+	termWidth, err := TermWidth()
+	if err != nil {
+		return "", fmt.Errorf("failed to get termWidth: %w", err)
+	}
+
+	return fillRemainderOfTermWidth(prefix, toShorten, termWidth, padding), nil
+}
+
+func fillRemainderOfTermWidth(prefix, remainder string, termWidth, padding int) string {
+	infix := " ... "
+	infixLen := utf8.RuneCountInString(infix)
+	remainingWidth := termWidth - utf8.RuneCountInString(prefix) - padding
+	if remainingWidth < 0 {
+		remainingWidth = 0
+	}
+	widthAdjustedRemainder := ""
+	r := []rune(remainder)
+	if remainingWidth == 0 {
+		widthAdjustedRemainder = ""
+	} else if len(r) <= remainingWidth {
+		widthAdjustedRemainder = remainder
+	} else if remainingWidth <= infixLen {
+		widthAdjustedRemainder = string(r[:remainingWidth])
+	} else {
+		avail := remainingWidth - infixLen
+		startLen := avail / 2
+		endLen := avail - startLen
+		if endLen < 0 {
+			endLen = 0
+		}
+		if startLen < 0 {
+			startLen = 0
+		}
+		if startLen > len(r) {
+			startLen = len(r)
+		}
+		if endLen > len(r)-startLen {
+			endLen = len(r) - startLen
+		}
+		endStart := len(r) - endLen
+		if endStart < 0 {
+			endStart = 0
+		}
+		widthAdjustedRemainder = string(r[:startLen]) +
+			infix +
+			string(r[endStart:])
+	}
+
+	return prefix + widthAdjustedRemainder
+}

@@ -109,13 +109,16 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	claiConfDir := userConf.ConfigDir
 	configPath := path.Join(claiConfDir, fmt.Sprintf("%v_%v_%v.json", vendor, model, modelVersion))
 	querier := Querier[C]{}
+	if misc.Truthy(os.Getenv("DEBUG")) || misc.Truthy(os.Getenv("TEXT_QUERIER_DEBUG")) {
+		querier.debug = true
+	}
 	querier.configDir = claiConfDir
 	modelConf, err := setupConfigFile(configPath, userConf, dfault)
 	if err != nil {
 		return Querier[C]{}, fmt.Errorf("failed to setup config file: %w", err)
 	}
 
-	if misc.Truthy(os.Getenv("DEBUG")) {
+	if querier.debug {
 		ancli.PrintOK(fmt.Sprintf("userConf: %v\n", debug.IndentedJsonFmt(userConf)))
 	}
 	setupTooling(ctx, modelConf, userConf)
@@ -129,7 +132,9 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	if err == nil {
 		querier.termWidth = termWidth
 	} else {
-		ancli.PrintWarn(fmt.Sprintf("failed to get terminal size: %v\n", err))
+		if querier.debug {
+			ancli.PrintWarn(fmt.Sprintf("failed to get terminal size: %v\n", err))
+		}
 	}
 	currentUser, err := user.Current()
 	if err == nil {
@@ -138,16 +143,13 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 		querier.username = "user"
 	}
 	querier.Model = modelConf
-	if misc.Truthy(os.Getenv("DEBUG")) {
+	if querier.debug {
 		ancli.PrintOK(
 			fmt.Sprintf("querier: %v,\n===\nmodels: %v\n",
 				debug.IndentedJsonFmt(querier),
 				debug.IndentedJsonFmt(modelConf)))
 	}
 	querier.chat = userConf.InitialChat
-	if misc.Truthy(os.Getenv("DEBUG")) || misc.Truthy(os.Getenv("TEXT_QUERIER_DEBUG")) {
-		querier.debug = true
-	}
 	querier.Raw = userConf.Raw
 	querier.cmdMode = userConf.CmdMode
 	querier.shouldSaveReply = !userConf.ChatMode && userConf.SaveReplyAsConv
