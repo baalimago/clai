@@ -5,7 +5,8 @@ import (
 	"os"
 
 	"github.com/baalimago/clai/internal/text/generic"
-	"github.com/baalimago/clai/internal/tools"
+
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
 var Default = XAI{
@@ -44,6 +45,6 @@ func (g *XAI) Setup() error {
 	return nil
 }
 
-func (g *XAI) RegisterTool(tool tools.LLMTool) {
+func (g *XAI) RegisterTool(tool pub_models.LLMTool) {
 	g.InternalRegisterTool(tool)
 }

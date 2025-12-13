@@ -5,6 +5,18 @@ import (
 	"fmt"
 )
 
+type LLMTool interface {
+	// Call the LLM tool with the given Input. Returns output from the tool or an error
+	// if the call returned an error-like. An error-like is either exit code non-zero or
+	// http response which isn't 2xx or 3xx.
+	Call(Input) (string, error)
+
+	// Return the Specification, later on used
+	// by text queriers to send to their respective
+	// models
+	Specification() Specification
+}
+
 type McpServer struct {
 	Name    string            `json:"-"`
 	Command string            `json:"command"`
@@ -16,22 +28,29 @@ type McpServer struct {
 type ToolName string
 
 const (
-	FileTreeTool    ToolName = "file_tree"
-	CatTool         ToolName = "cat"
-	FindTool        ToolName = "find"
-	FileTypeTool    ToolName = "file_type"
-	LSTool          ToolName = "ls"
-	WebsiteTextTool ToolName = "website_text"
-	RipGrepTool     ToolName = "rg"
-	GoTool          ToolName = "go"
-	WriteFileTool   ToolName = "write_file"
-	FreetextCmdTool ToolName = "freetext_command"
-	SedTool         ToolName = "sed"
-	RowsBetweenTool ToolName = "rows_between"
-	LineCountTool   ToolName = "line_count"
-	GitTool         ToolName = "git"
-	RecallTool      ToolName = "recall"
-	FFProbeTool     ToolName = "ffprobe"
+	FileTreeTool           ToolName = "file_tree"
+	CatTool                ToolName = "cat"
+	FindTool               ToolName = "find"
+	FileTypeTool           ToolName = "file_type"
+	LSTool                 ToolName = "ls"
+	WebsiteTextTool        ToolName = "website_text"
+	RipGrepTool            ToolName = "rg"
+	GoTool                 ToolName = "go"
+	WriteFileTool          ToolName = "write_file"
+	FreetextCmdTool        ToolName = "freetext_command"
+	SedTool                ToolName = "sed"
+	RowsBetweenTool        ToolName = "rows_between"
+	LineCountTool          ToolName = "line_count"
+	GitTool                ToolName = "git"
+	RecallTool             ToolName = "recall"
+	FFProbeTool            ToolName = "ffprobe"
+	DateTool               ToolName = "date"
+	PwdTool                ToolName = "pwd"
+	ClaiHelpTool           ToolName = "clai_help"
+	ClaiRunTool            ToolName = "clai_run"
+	ClaiCheckTool          ToolName = "clai_check"
+	ClaiResultTool         ToolName = "clai_result"
+	ClaiWaitForWorkersTool ToolName = "clai_wait_for_workers"
 )
 
 type Input map[string]any

@@ -6,7 +6,6 @@ import (
 
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/text/generic"
-	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
@@ -94,6 +93,6 @@ func (m *Mistral) StreamCompletions(ctx context.Context, chat pub_models.Chat) (
 	return m.StreamCompleter.StreamCompletions(ctx, chat)
 }
 
-func (m *Mistral) RegisterTool(tool tools.LLMTool) {
+func (m *Mistral) RegisterTool(tool pub_models.LLMTool) {
 	m.InternalRegisterTool(tool)
 }

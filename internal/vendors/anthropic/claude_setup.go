@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/baalimago/clai/internal/tools"
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
@@ -22,6 +22,6 @@ func (c *Claude) Setup() error {
 	return nil
 }
 
-func (c *Claude) RegisterTool(tool tools.LLMTool) {
+func (c *Claude) RegisterTool(tool pub_models.LLMTool) {
 	c.tools = append(c.tools, tool.Specification())
 }

@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/baalimago/clai/internal/tools"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
@@ -26,7 +25,7 @@ func (s *StreamCompleter) Setup(apiKeyEnv, url, debugEnv string) error {
 	return nil
 }
 
-func (g *StreamCompleter) InternalRegisterTool(tool tools.LLMTool) {
+func (g *StreamCompleter) InternalRegisterTool(tool pub_models.LLMTool) {
 	g.tools = append(g.tools, ToolSuper{
 		Type:     "function",
 		Function: convertToGenericTool(tool.Specification()),

@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/baalimago/clai/internal/tools"
-
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -38,7 +36,7 @@ type InputTokenCounter interface {
 // ToolBox can register tools which later on will be added to the chat completion queries
 type ToolBox interface {
 	// RegisterTool registers a tool to the ToolBox
-	RegisterTool(tools.LLMTool)
+	RegisterTool(pub_models.LLMTool)
 }
 
 type CompletionEvent any

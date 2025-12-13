@@ -143,7 +143,7 @@ func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, us
 		}
 		return
 	}
-	toAdd := make([]tools.LLMTool, 0)
+	toAdd := make([]pub_models.LLMTool, 0)
 	for _, t := range userConf.Tools {
 		if strings.Contains(t, "*") {
 			matchingTools := tools.Registry.WildcardGet(t)
