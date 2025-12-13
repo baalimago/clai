@@ -150,16 +150,16 @@ func TestSetupFlags(t *testing.T) {
 			},
 		},
 		{
-			name: "Tools explicit all",
-			args: []string{"cmd", "-t=*"},
+			name:     "Tools explicit all",
+			args:     []string{"cmd", "-t=*"},
 			defaults: Configurations{},
 			expected: Configurations{
 				UseTools: "*",
 			},
 		},
 		{
-			name: "Tools flag with comma-separated list => specific tools",
-			args: []string{"cmd", "-t=write_file,rg"},
+			name:     "Tools flag with comma-separated list => specific tools",
+			args:     []string{"cmd", "-t=write_file,rg"},
 			defaults: Configurations{},
 			expected: Configurations{
 				UseTools: "write_file,rg",
@@ -174,7 +174,7 @@ func TestSetupFlags(t *testing.T) {
 			result := setupFlags(tc.defaults)
 			if result != tc.expected {
 				t.Errorf("Expected %+v, but got %+v",
-										 tc.expected, result)
+					tc.expected, result)
 			}
 		})
 	}

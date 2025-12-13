@@ -38,9 +38,10 @@ type Configurations struct {
 
 // setupFlags parses CLI flags into an internal Configurations.
 // For tooling:
-//   -t=* or -tools=*          => UseTools="*" (all tools)
-//   -t=a,b or -tools=a,b      => UseTools="a,b" (specific tools)
-//   (flag omitted)            => UseTools="" (no override)
+//
+//	-t=* or -tools=*          => UseTools="*" (all tools)
+//	-t=a,b or -tools=a,b      => UseTools="a,b" (specific tools)
+//	(flag omitted)            => UseTools="" (no override)
 func setupFlags(defaults Configurations) Configurations {
 	flag.String("A-helpful-nonexisting-flag", "there is no default", "This isn't a flag. It's only here to tell you that 'clai h/help' gives better overview of usage than 'clai -h'.")
 
