@@ -10,6 +10,7 @@ import (
 	priv_models "github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/pkg/text/models"
+	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
 // FullResponse text querier, as opposed to returning a stream or something
@@ -142,6 +143,9 @@ func (pq *publicQuerier) Setup(ctx context.Context) error {
 	// for advanced users.
 	if len(pq.llmTools) > 0 {
 		if registrar, ok := querier.(interface{ RegisterLLMTools(...models.LLMTool) }); ok {
+			for _, t := range pq.llmTools {
+				ancli.Okf("Adding llm tools: %T", t)
+			}
 			registrar.RegisterLLMTools(pq.llmTools...)
 		}
 	}
@@ -150,6 +154,9 @@ func (pq *publicQuerier) Setup(ctx context.Context) error {
 	// internal querier implementation.
 	if len(pq.mcpServers) > 0 {
 		if mcpCfg, ok := querier.(interface{ RegisterMcpServers([]models.McpServer) }); ok {
+			for _, t := range pq.llmTools {
+				ancli.Okf("Adding mcp server: %T", t)
+			}
 			mcpCfg.RegisterMcpServers(pq.mcpServers)
 		}
 	}
