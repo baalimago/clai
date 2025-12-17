@@ -35,9 +35,13 @@ type Configurations struct {
 	InitialChat         pub_models.Chat `json:"-"`
 	UseProfile          string          `json:"-"`
 	ProfilePath         string          `json:"-"`
-	Tools               []string        `json:"-"`
+	RequestedToolGlobs  []string        `json:"-"`
 	// PostProccessedPrompt which has had it's strings replaced etc
 	PostProccessedPrompt string `json:"-"`
+
+	// These are to allow tools to be injected via public package.
+	Tools      []pub_models.LLMTool   `json:"-"`
+	McpServers []pub_models.McpServer `json:"-"`
 }
 
 func (c Configurations) UsingProfile() bool {

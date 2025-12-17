@@ -1,0 +1,111 @@
+package agent
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path"
+
+	"github.com/baalimago/clai/internal"
+	priv_models "github.com/baalimago/clai/internal/models"
+	"github.com/baalimago/clai/internal/text"
+	"github.com/baalimago/clai/pkg/text/models"
+)
+
+type agent struct {
+	name       string
+	model      string
+	prompt     string
+	tools      []models.LLMTool
+	mcpServers []models.McpServer
+	cfgDir     string
+
+	querierCreator func(ctx context.Context, conf text.Configurations) (priv_models.Querier, error)
+
+	querier   priv_models.ChatQuerier
+	errorChan chan error
+}
+
+var defaultConf = agent{
+	model:          "gpt-5.2",
+	prompt:         "Uh-oh. Something is not quite right. Please ask the user to overlook his agentic setup, and to update the prompt.",
+	tools:          make([]models.LLMTool, 0),
+	mcpServers:     make([]models.McpServer, 0),
+	querierCreator: internal.CreateTextQuerier,
+}
+
+type Option func(*agent)
+
+func New(options ...Option) agent {
+	home, _ := os.UserHomeDir()
+	if home == "" {
+		home = "."
+	}
+	defaultConf.cfgDir = path.Join(home, ".config", "clai")
+
+	for _, o := range options {
+		o(&defaultConf)
+	}
+	return defaultConf
+}
+
+func WithModel(model string) Option {
+	return func(a *agent) {
+		a.model = model
+	}
+}
+
+func WithPrompt(prompt string) Option {
+	return func(a *agent) {
+		a.prompt = prompt
+	}
+}
+
+func WithTools(tools []models.LLMTool) Option {
+	return func(a *agent) {
+		a.tools = tools
+	}
+}
+
+func WithMcpServers(mcpServers []models.McpServer) Option {
+	return func(a *agent) {
+		a.mcpServers = mcpServers
+	}
+}
+
+func (a *agent) asInternalConfig() text.Configurations {
+	return text.Configurations{
+		Model:           a.model,
+		SystemPrompt:    a.prompt,
+		ConfigDir:       a.cfgDir,
+		UseTools:        true,
+		SaveReplyAsConv: true,
+		McpServers:      a.mcpServers,
+		Tools:           a.tools,
+	}
+}
+
+func (a *agent) Setup(ctx context.Context) (chan error, error) {
+	if _, err := os.Stat(a.cfgDir); os.IsNotExist(err) {
+		os.Mkdir(a.cfgDir, 0o755)
+	}
+	mcpServersDir := path.Join(a.cfgDir, "mcpServers")
+	if _, err := os.Stat(mcpServersDir); os.IsNotExist(err) {
+		os.Mkdir(mcpServersDir, 0o755)
+	}
+	conversationsDir := path.Join(a.cfgDir, "conversations")
+	if _, err := os.Stat(mcpServersDir); os.IsNotExist(err) {
+		os.Mkdir(conversationsDir, 0o755)
+	}
+	querier, err := a.querierCreator(ctx, a.asInternalConfig())
+	if err != nil {
+		return nil, fmt.Errorf("publicQuerier.Setup failed to CreateTextQuerier: %v", err)
+	}
+	tq, isChatQuerier := querier.(priv_models.ChatQuerier)
+	if !isChatQuerier {
+		return nil, fmt.Errorf("failed to cast Querier using model: '%v' to TextQuerier, cannot proceed", a.model)
+	}
+	a.querier = tq
+	a.errorChan = make(chan error)
+	return a.errorChan, nil
+}

@@ -3,6 +3,7 @@ package text
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -22,7 +23,7 @@ import (
 // filterMcpServersByProfile filters MCP server files based on whether their tools are needed by the profile
 func filterMcpServersByProfile(mcpServerPaths []string, userConf Configurations) []string {
 	// If no specific tools are configured, load all servers (existing behavior)
-	if len(userConf.Tools) == 0 {
+	if len(userConf.RequestedToolGlobs) == 0 {
 		return mcpServerPaths
 	}
 
@@ -31,7 +32,7 @@ func filterMcpServersByProfile(mcpServerPaths []string, userConf Configurations)
 		serverName := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
 
 	INNER:
-		for _, tool := range userConf.Tools {
+		for _, tool := range userConf.RequestedToolGlobs {
 			toolSplit := strings.Split(tool, "_")
 			// It can't have mcp prefix
 			if len(toolSplit) < 2 {
@@ -53,6 +54,26 @@ func filterMcpServersByProfile(mcpServerPaths []string, userConf Configurations)
 	return filteredFiles
 }
 
+func findConfiguredMcpServers(filePaths []string) ([]pub_models.McpServer, error) {
+	ret := make([]pub_models.McpServer, 0)
+	errs := make([]error, 0)
+	for _, file := range filePaths {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			continue
+		}
+		var mcpServer pub_models.McpServer
+		if unmarshalErr := json.Unmarshal(data, &mcpServer); unmarshalErr != nil {
+			errs = append(errs, fmt.Errorf("failed to unmarshal: '%s', error: %v", file, unmarshalErr))
+			continue
+		}
+		serverName := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
+		mcpServer.Name = serverName
+		ret = append(ret, mcpServer)
+	}
+	return ret, errors.Join(errs...)
+}
+
 // addMcpTools loads MCP server configurations from a directory.
 // Each file inside the directory should contain a single MCP server configuration.
 // Every server is started and its tools registered with a prefix of the filename.
@@ -66,8 +87,17 @@ func AddMcpTools(ctx context.Context, mcpServersDir string, userConf Configurati
 	if err != nil {
 		return fmt.Errorf("failed to list mcp server configs: %w", err)
 	}
+
 	// Filter MCP servers based on profile tools
 	filteredFiles := filterMcpServersByProfile(files, userConf)
+	mcpServers, err := findConfiguredMcpServers(filteredFiles)
+	if len(mcpServers) == 0 {
+		if err != nil {
+			return fmt.Errorf("failed to find mcpServers: %w", err)
+		}
+		// Nothing to do, no need to start mcp.Manager etc, just return
+		return nil
+	}
 	controlChannel := make(chan mcp.ControlEvent)
 	statusChan := make(chan error, 1)
 
@@ -75,31 +105,20 @@ func AddMcpTools(ctx context.Context, mcpServersDir string, userConf Configurati
 	toolWg.Add(len(filteredFiles))
 	go mcp.Manager(ctx, controlChannel, statusChan, &toolWg)
 
-	for _, file := range filteredFiles {
-		data, err := os.ReadFile(file)
-		if err != nil {
-			continue
-		}
-		var mcpServer pub_models.McpServer
-		if unmarshalErr := json.Unmarshal(data, &mcpServer); unmarshalErr != nil {
-			ancli.Warnf("failed to unmarshal: '%s', error: %v", file, unmarshalErr)
-			continue
-		}
-		serverName := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
-		mcpServer.Name = serverName
+	for _, mcpServer := range mcpServers {
 		// No context leak here as it's a child of the root context, which will cascade the cancel
 		// for all other code paths
 		clientContext, clientContextCancel := context.WithCancel(ctx)
 		inputChan, outputChan, err := mcp.Client(clientContext, mcpServer)
 		if err != nil {
-			ancli.Warnf("failed to setup: '%v', err: %v\n", serverName, err)
+			ancli.Warnf("failed to setup: '%v', err: %v\n", mcpServer.Name, err)
 			toolWg.Done()
 			clientContextCancel()
 			continue
 		}
 
 		controlChannel <- mcp.ControlEvent{
-			ServerName: serverName,
+			ServerName: mcpServer.Name,
 			Server:     mcpServer,
 			InputChan:  inputChan,
 			OutputChan: outputChan,
@@ -137,14 +156,14 @@ func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, us
 		return
 	}
 	// If usetools and no specific tools chocen, assume all are valid
-	if len(userConf.Tools) == 0 {
+	if len(userConf.RequestedToolGlobs) == 0 {
 		for _, tool := range tools.Registry.All() {
 			toolBox.RegisterTool(tool)
 		}
 		return
 	}
 	toAdd := make([]pub_models.LLMTool, 0)
-	for _, t := range userConf.Tools {
+	for _, t := range userConf.RequestedToolGlobs {
 		if strings.Contains(t, "*") {
 			matchingTools := tools.Registry.WildcardGet(t)
 			if len(matchingTools) == 0 {

@@ -18,7 +18,7 @@ func Test_filterMcpServersByProfile(t *testing.T) {
 			name:  "No specific tools configured, return all files",
 			files: []string{"server1.json", "server2.json"},
 			userConf: Configurations{
-				Tools: []string{},
+				RequestedToolGlobs: []string{},
 			},
 			want: []string{"server1.json", "server2.json"},
 		},
@@ -26,7 +26,7 @@ func Test_filterMcpServersByProfile(t *testing.T) {
 			name:  "Specific tool matches one server",
 			files: []string{"server1.json", "server2.json"},
 			userConf: Configurations{
-				Tools: []string{"mcp_server1"},
+				RequestedToolGlobs: []string{"mcp_server1"},
 			},
 			want: []string{"server1.json"},
 		},
@@ -34,7 +34,7 @@ func Test_filterMcpServersByProfile(t *testing.T) {
 			name:  "Wildcard matches all mcp",
 			files: []string{"server1.json", "server2.json"},
 			userConf: Configurations{
-				Tools: []string{"mcp_*"},
+				RequestedToolGlobs: []string{"mcp_*"},
 			},
 			want: []string{"server1.json", "server2.json"},
 		},
@@ -42,7 +42,7 @@ func Test_filterMcpServersByProfile(t *testing.T) {
 			name:  "Wildcard match on some servers",
 			files: []string{"server1.json", "server2.json"},
 			userConf: Configurations{
-				Tools: []string{"mcp_server1*"},
+				RequestedToolGlobs: []string{"mcp_server1*"},
 			},
 			want: []string{"server1.json"},
 		},
@@ -50,7 +50,7 @@ func Test_filterMcpServersByProfile(t *testing.T) {
 			name:  "Match on server tool",
 			files: []string{"server1.json", "server2.json"},
 			userConf: Configurations{
-				Tools: []string{"mcp_server1_tool0"},
+				RequestedToolGlobs: []string{"mcp_server1_tool0"},
 			},
 			want: []string{"server1.json"},
 		},
@@ -58,7 +58,7 @@ func Test_filterMcpServersByProfile(t *testing.T) {
 			name:  "No match for any servers",
 			files: []string{"server1.json", "server2.json"},
 			userConf: Configurations{
-				Tools: []string{"mcp_server3"},
+				RequestedToolGlobs: []string{"mcp_server3"},
 			},
 			want: []string{},
 		},

@@ -162,7 +162,7 @@ func setupTextQuerier(ctx context.Context, mode Mode, confDir string, flagSet Co
 
 		if flagSet.UseTools == "*" {
 			// All tools: len(Tools)==0 is interpreted as "all tools"
-			tConf.Tools = nil
+			tConf.RequestedToolGlobs = nil
 		} else {
 			// Validate against tool registry and allow MCP-prefixed names.
 			// tools.Registry only knows *local* tools; MCP tools are prefixed "mcp_".
@@ -197,9 +197,9 @@ func setupTextQuerier(ctx context.Context, mode Mode, confDir string, flagSet Co
 			if len(validTools) == 0 {
 				ancli.Warnf("no valid tools found from -t/-tools flag; disabling tools for this run\n")
 				tConf.UseTools = false
-				tConf.Tools = nil
+				tConf.RequestedToolGlobs = nil
 			} else {
-				tConf.Tools = validTools
+				tConf.RequestedToolGlobs = validTools
 			}
 		}
 	}

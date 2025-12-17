@@ -10,7 +10,6 @@ import (
 	priv_models "github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/pkg/text/models"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
 // FullResponse text querier, as opposed to returning a stream or something
@@ -116,7 +115,7 @@ func pubConfigToInternal(c models.Configurations) text.Configurations {
 		Stream:              true,
 		UseProfile:          "",
 		ProfilePath:         "",
-		Tools:               internalToolsToString(c.InternalTools),
+		RequestedToolGlobs:  internalToolsToString(c.InternalTools),
 	}
 }
 
