@@ -21,73 +21,13 @@ type FullResponse interface {
 }
 
 type publicQuerier struct {
-	conf       text.Configurations
-	querier    priv_models.ChatQuerier
-	llmTools   []models.LLMTool
-	mcpServers []models.McpServer
+	conf    text.Configurations
+	querier priv_models.ChatQuerier
 }
 
-// Option configures a publicQuerier.
-type Option func(*publicQuerier)
-
-// WithLLMTools injects concrete LLM tools that will be registered with the
-// internal text querier during Setup.
-func WithLLMTools(tools ...models.LLMTool) Option {
-	return func(pq *publicQuerier) {
-		pq.llmTools = append(pq.llmTools, tools...)
-	}
-}
-
-// WithMcpServers configures MCP servers that will be passed to the internal
-// text querier implementation if it supports it.
-func WithMcpServers(servers ...models.McpServer) Option {
-	return func(pq *publicQuerier) {
-		pq.mcpServers = append(pq.mcpServers, servers...)
-	}
-}
-
-// NewFullResponseQuerier constructs a FullResponse using a default
-// configuration plus optional functional options.
-//
-// Default configuration:
-//   - Model:        "gpt-5.2"
-//   - SystemPrompt: ""
-//   - ConfigDir:    "$HOME/.config/clai"
-//   - Use of tools is enabled; internal tools list is empty unless provided
-//     via options.
-func NewFullResponseQuerier(opts ...Option) FullResponse {
-	pq := &publicQuerier{
-		conf: defaultInternalConfig(),
-	}
-
-	for _, opt := range opts {
-		opt(pq)
-	}
-
-	return pq
-}
-
-// defaultInternalConfig builds a sane default internal text configuration
-// for public callers that do not want to provide a custom configuration.
-func defaultInternalConfig() text.Configurations {
-	home, _ := os.UserHomeDir()
-	if home == "" {
-		home = "."
-	}
-	cfgDir := path.Join(home, ".config", "clai")
-
-	return text.Configurations{
-		Model:               "gpt-5.2",
-		SystemPrompt:        "",
-		UseTools:            true,
-		ConfigDir:           cfgDir,
-		TokenWarnLimit:      300000,
-		ToolOutputRuneLimit: 30000,
-		SaveReplyAsConv:     true,
-		Stream:              true,
-		UseProfile:          "",
-		ProfilePath:         "",
-		Tools:               nil,
+func NewFullResponseQuerier(c models.Configurations) FullResponse {
+	return &publicQuerier{
+		conf: pubConfigToInternal(c),
 	}
 }
 
@@ -98,9 +38,6 @@ func internalToolsToString(in []models.ToolName) (ret []string) {
 	return
 }
 
-// pubConfigToInternal is kept for compatibility with existing internal tests
-// and code paths; it is no longer used by the exported constructor but may be
-// useful for future extension or direct internal usage.
 func pubConfigToInternal(c models.Configurations) text.Configurations {
 	claiDir := path.Join(c.ConfigDir, "clai")
 
@@ -115,7 +52,7 @@ func pubConfigToInternal(c models.Configurations) text.Configurations {
 		Stream:              true,
 		UseProfile:          "",
 		ProfilePath:         "",
-		RequestedToolGlobs:  internalToolsToString(c.InternalTools),
+		Tools:               internalToolsToString(c.InternalTools),
 	}
 }
 
@@ -137,29 +74,6 @@ func (pq *publicQuerier) Setup(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("publicQuerier.Setup failed to CreateTextQuerier: %v", err)
 	}
-	// If the underlying querier knows how to accept injected tools, do so
-	// here. This keeps the public API stable while enabling custom tools
-	// for advanced users.
-	if len(pq.llmTools) > 0 {
-		if registrar, ok := querier.(interface{ RegisterLLMTools(...models.LLMTool) }); ok {
-			for _, t := range pq.llmTools {
-				ancli.Okf("Adding llm tools: %T", t)
-			}
-			registrar.RegisterLLMTools(pq.llmTools...)
-		}
-	}
-
-	// Pass any MCP server configuration through, if supported by the
-	// internal querier implementation.
-	if len(pq.mcpServers) > 0 {
-		if mcpCfg, ok := querier.(interface{ RegisterMcpServers([]models.McpServer) }); ok {
-			for _, t := range pq.llmTools {
-				ancli.Okf("Adding mcp server: %T", t)
-			}
-			mcpCfg.RegisterMcpServers(pq.mcpServers)
-		}
-	}
-
 	tq, isChatQuerier := querier.(priv_models.ChatQuerier)
 	if !isChatQuerier {
 		return fmt.Errorf("failed to cast Querier using model: '%v' to TextQuerier, cannot proceed", pq.conf.Model)
