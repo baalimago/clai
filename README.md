@@ -27,7 +27,7 @@ See [examples](./EXAMPLES.md) for additional info.
 
 | Vendor    | Environment Variable | Models                                                                                                                                                             |
 | --------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| OpenAI    | `OPENAI_API_KEY`     | [Text models](https://platform.openai.com/docs/models/gpt-4-and-gpt-4-turbo), [photo models](https://platform.openai.com/docs/models/dall-e)                       |
+| OpenAI    | `OPENAI_API_KEY`     | [Text models](https://platform.openai.com/docs/models), [photo models](https://platform.openai.com/docs/models/dall-e)                                             |
 | Anthropic | `ANTHROPIC_API_KEY`  | [Text models](https://docs.anthropic.com/claude/docs/models-overview#model-recommendations)                                                                        |
 | Mistral   | `MISTRAL_API_KEY`    | [Text models](https://docs.mistral.ai/getting-started/models/)                                                                                                     |
 | Deepseek  | `DEEPSEEK_API_KEY`   | [Text models](https://api-docs.deepseek.com/quick_start/pricing)                                                                                                   |
