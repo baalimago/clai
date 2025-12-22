@@ -114,13 +114,15 @@ func (c Call) JSON() string {
 	return string(json)
 }
 
+// Specification of the tool which will be sent to some LLM
 type Specification struct {
-	Name        string `json:"name"`
+	// Name of the tool. Prefer snake_case names
+	Name string `json:"name"`
+	// Description of the tool. This will be sent to the LLM. Simple instructions on how to use the tool is suitable here
 	Description string `json:"description,omitempty"`
-	// Format is the same, but name of the field different. So this way, each
-	// vendor can set their own field name
+	// Inputs for the tool. Describe the inputs and how to use them. This will be sent to the LLM.
 	Inputs *InputSchema `json:"input_schema,omitempty"`
-	// Chatgpt wants this
+	// Arguments which may be left unfilled. This field is requirement by ChatGPT
 	Arguments string `json:"arguments,omitempty"`
 }
 
