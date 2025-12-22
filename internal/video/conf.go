@@ -14,6 +14,8 @@ type Configurations struct {
 	StdinReplace string `json:"-"`
 	ReplyMode    bool   `json:"-"`
 	Prompt       string `json:"-"`
+
+	PromptImageB64 string `json:"-"`
 }
 
 type Output struct {
