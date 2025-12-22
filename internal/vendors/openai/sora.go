@@ -6,11 +6,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/baalimago/clai/internal/models"
+	"github.com/baalimago/clai/internal/photo"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/internal/video"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
@@ -24,30 +28,24 @@ type Sora struct {
 	Quality string       `json:"quality"`
 	Output  video.Output `json:"output"`
 
-	Prompt string       `json:"-"`
-	client *http.Client `json:"-"`
-	debug  bool         `json:"-"`
-	apiKey string       `json:"-"`
-}
-
-type SoraRequest struct {
-	Model   string `json:"model"`
-	Prompt  string `json:"prompt"`
-	Size    string `json:"size,omitempty"`
-	Seconds string `json:"seconds,omitempty"`
+	Prompt         string `json:"-"`
+	client         *http.Client
+	debug          bool
+	apiKey         string
+	promptImageB64 string
 }
 
 type VideoJob struct {
-	ID       string      `json:"id"`
-	Status   string      `json:"status"`
-	Progress int         `json:"progress"`
-	Error    interface{} `json:"error"`
+	ID       string `json:"id"`
+	Status   string `json:"status"`
+	Progress int    `json:"progress"`
+	Error    any    `json:"error"`
 }
 
 var defaultSora = Sora{
 	Model:   "sora-2",
 	Size:    "720x1280",
-	Seconds: "10",
+	Seconds: "4",
 }
 
 func NewVideoQuerier(vConf video.Configurations) (models.Querier, error) {
@@ -73,6 +71,7 @@ func NewVideoQuerier(vConf video.Configurations) (models.Querier, error) {
 	soraQuerier.client = &http.Client{}
 	soraQuerier.apiKey = apiKey
 	soraQuerier.Prompt = vConf.Prompt
+	soraQuerier.promptImageB64 = vConf.PromptImageB64
 
 	if soraQuerier.Output.Type == video.UNSET {
 		soraQuerier.Output.Type = video.LOCAL
@@ -87,25 +86,72 @@ func (q *Sora) createRequest(ctx context.Context) (*http.Request, error) {
 		tmp.apiKey = q.apiKey[:5] + "..."
 		ancli.PrintOK(fmt.Sprintf("Sora request: %+v\n", tmp))
 	}
-	reqBody := SoraRequest{
-		Model:   q.Model,
-		Prompt:  q.Prompt,
-		Size:    q.Size,
-		Seconds: q.Seconds,
+
+	// The working curl uses multipart/form-data directly to /v1/videos.
+	// We replicate that here.
+	var body bytes.Buffer
+	w := multipart.NewWriter(&body)
+
+	if err := w.WriteField("prompt", q.Prompt); err != nil {
+		return nil, fmt.Errorf("failed to write prompt field: %w", err)
+	}
+	if err := w.WriteField("model", q.Model); err != nil {
+		return nil, fmt.Errorf("failed to write model field: %w", err)
+	}
+	if q.Size != "" {
+		if err := w.WriteField("size", q.Size); err != nil {
+			return nil, fmt.Errorf("failed to write size field: %w", err)
+		}
+	}
+	if q.Seconds != "" {
+		if err := w.WriteField("seconds", q.Seconds); err != nil {
+			return nil, fmt.Errorf("failed to write seconds field: %w", err)
+		}
 	}
 
-	bodyBytes, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to encode JSON: %w", err)
+	// Optional input reference file, like:
+	// -F input_reference=@sample_720p.jpeg;type=image/jpeg
+	if q.promptImageB64 != "" {
+		// NOTE: in our app q.promptImageB64 is base64, not a file path.
+		// We save it to disk first (assume png), then attach that file.
+		imgPath, err := photo.SaveImage(photo.Output{Dir: os.TempDir(), Prefix: q.Output.Prefix}, q.promptImageB64, "png")
+		if err != nil {
+			return nil, err
+		}
+		// best-effort cleanup
+		defer func() { _ = os.Remove(imgPath) }()
+
+		f, err := os.Open(imgPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open input_reference file '%s': %w", imgPath, err)
+		}
+		defer f.Close()
+
+		filename := filepath.Base(imgPath)
+		// Set the per-part Content-Type like curl ";type=image/png".
+		h := make(textproto.MIMEHeader)
+		h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"; filename="%s"`, "input_reference", filename))
+		h.Set("Content-Type", "image/png")
+		part, err := w.CreatePart(h)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create input_reference multipart part: %w", err)
+		}
+		if _, err := io.Copy(part, f); err != nil {
+			return nil, fmt.Errorf("failed to copy input_reference into multipart: %w", err)
+		}
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", VideoURL, bytes.NewBuffer(bodyBytes))
+	if err := w.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close multipart writer: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", VideoURL, &body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", q.apiKey))
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", w.FormDataContentType())
 
 	return req, nil
 }

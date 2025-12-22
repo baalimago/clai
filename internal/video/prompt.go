@@ -41,8 +41,28 @@ func (c *Configurations) SetupPrompts() error {
 	if err != nil {
 		return fmt.Errorf("failed to setup prompt from stdin: %w", err)
 	}
+	chat, err := chat.PromptToImageMessage(prompt)
+	if err != nil {
+		return fmt.Errorf("failed to convert to chat with image message")
+	}
+	isImagePrompt := false
+	for _, m := range chat {
+		for _, cp := range m.ContentParts {
+			if cp.Type == "image_url" {
+				isImagePrompt = true
+				c.PromptImageB64 = cp.ImageB64.RawB64
+			}
+			if cp.Type == "text" {
+				c.Prompt = cp.Text
+			}
+		}
+	}
 	if misc.Truthy(os.Getenv("DEBUG")) {
 		ancli.PrintOK(fmt.Sprintf("format: '%v', prompt: '%v'\n", c.PromptFormat, prompt))
+	}
+	// Don't do additional weird stuff if it's an image prompt
+	if isImagePrompt {
+		return nil
 	}
 	// If prompt format has %v, formatting it, otherwise just appending
 	if strings.Contains(c.PromptFormat, "%v") {
