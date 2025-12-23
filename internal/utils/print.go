@@ -3,6 +3,7 @@ package utils
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -12,8 +13,13 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
-// ClearTermTo a certain amount of rows upwards by printing termWidth amount of empty spaces
-func ClearTermTo(termWidth, upTo int) error {
+// ClearTermTo a certain amount of rows upwards by printing termWidth amount of empty spaces.
+//
+// If w is nil, os.Stdout is used.
+func ClearTermTo(w io.Writer, termWidth, upTo int) error {
+	if w == nil {
+		w = os.Stdout
+	}
 	if termWidth == -1 {
 		t, err := TermWidth()
 		if err != nil {
@@ -24,13 +30,13 @@ func ClearTermTo(termWidth, upTo int) error {
 	clearLine := strings.Repeat(" ", termWidth)
 	// Move cursor up line by line and clear the line
 	for upTo > 0 {
-		fmt.Printf("\r%v", clearLine)
-		fmt.Printf("\033[%dA", 1)
+		fmt.Fprintf(w, "\r%v", clearLine)
+		fmt.Fprintf(w, "\033[%dA", 1)
 		upTo--
 	}
-	fmt.Printf("\r%v", clearLine)
+	fmt.Fprintf(w, "\r%v", clearLine)
 	// Place cursor at start of line
-	fmt.Printf("\r")
+	fmt.Fprintf(w, "\r")
 	return nil
 }
 
@@ -76,11 +82,16 @@ func UpdateMessageTerminalMetadata(msg string, line *string, lineCount *int, ter
 	}
 }
 
-// AttemptPrettyPrint by first checking if the glow command is available, and if so, pretty print the chat message
-// if not found, simply print the message as is
-func AttemptPrettyPrint(chatMessage pub_models.Message, username string, raw bool) error {
+// AttemptPrettyPrint by first checking if the glow command is available, and if so, pretty print the chat message.
+// If not found, simply print the message as is.
+//
+// If w is nil, os.Stdout is used.
+func AttemptPrettyPrint(w io.Writer, chatMessage pub_models.Message, username string, raw bool) error {
+	if w == nil {
+		w = os.Stdout
+	}
 	if raw {
-		fmt.Println(chatMessage.Content)
+		fmt.Fprintln(w, chatMessage.Content)
 		return nil
 	}
 	role := chatMessage.Role
@@ -96,7 +107,7 @@ func AttemptPrettyPrint(chatMessage pub_models.Message, username string, raw boo
 	}
 	cmd := exec.Command("glow", "--version")
 	if err := cmd.Run(); err != nil {
-		fmt.Printf("%v: %v\n", ancli.ColoredMessage(color, role), chatMessage.Content)
+		fmt.Fprintf(w, "%v: %v\n", ancli.ColoredMessage(color, role), chatMessage.Content)
 		return nil
 	}
 
@@ -106,12 +117,23 @@ func AttemptPrettyPrint(chatMessage pub_models.Message, username string, raw boo
 	inp = strings.ReplaceAll(inp, "<thinking>", "[thinking]")
 	inp = strings.ReplaceAll(inp, "</thinking>", "[/thinking]")
 	cmd.Stdin = bytes.NewBufferString(inp)
-	cmd.Stdout = os.Stdout
-	fmt.Printf("%v:", ancli.ColoredMessage(color, role))
+	cmd.Stdout = w
+	fmt.Fprintf(w, "%v:", ancli.ColoredMessage(color, role))
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to run glow: %w", err)
 	}
 	return nil
+}
+
+// ClearTermTo a certain amount of rows upwards by printing termWidth amount of empty spaces.
+// Uses os.Stdout as default.
+func ClearTermToStdout(termWidth, upTo int) error {
+	return ClearTermTo(os.Stdout, termWidth, upTo)
+}
+
+// AttemptPrettyPrint to os.Stdout.
+func AttemptPrettyPrintStdout(chatMessage pub_models.Message, username string, raw bool) error {
+	return AttemptPrettyPrint(os.Stdout, chatMessage, username, raw)
 }
 
 func WidthAppropriateStringTrunk(toShorten, prefix string, padding int) (string, error) {

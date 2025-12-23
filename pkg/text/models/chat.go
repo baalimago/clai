@@ -109,6 +109,18 @@ func (m *Message) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+func (m *Message) String() string {
+	if m.Content != "" {
+		return m.Content
+	}
+	for _, cp := range m.ContentParts {
+		if cp.Text != "" {
+			return cp.Text
+		}
+	}
+	return ""
+}
+
 // FirstSystemMessage returns the first encountered Message with role 'system'
 func (c *Chat) FirstSystemMessage() (Message, error) {
 	for _, msg := range c.Messages {
@@ -128,6 +140,9 @@ func (c *Chat) FirstUserMessage() (Message, error) {
 	return Message{}, errors.New("failed to find any user message")
 }
 
+// LastOfRole returns the last Message with the given role,
+// along with its index position in the Messages slice.
+// Returns an error if no message with that role is found.
 func (c *Chat) LastOfRole(role string) (Message, int, error) {
 	for i := len(c.Messages) - 1; i >= 0; i-- {
 		msg := c.Messages[i]

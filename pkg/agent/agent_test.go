@@ -95,13 +95,9 @@ func TestAgent_Setup(t *testing.T) {
 		}
 
 		ctx := context.Background()
-		errChan, err := a.Setup(ctx)
+		err = a.Setup(ctx)
 		if err != nil {
 			t.Fatalf("Setup failed: %v", err)
-		}
-
-		if errChan == nil {
-			t.Fatal("expected errChan to be initialized")
 		}
 
 		if a.querier != mockQuerier {
@@ -129,7 +125,7 @@ func TestAgent_Setup(t *testing.T) {
 			return nil, expectedErr
 		}
 
-		_, err := a.Setup(context.Background())
+		err := a.Setup(context.Background())
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}
@@ -147,7 +143,7 @@ func TestAgent_Setup(t *testing.T) {
 			return &simpleQuerier{}, nil
 		}
 
-		_, err := a.Setup(context.Background())
+		err := a.Setup(context.Background())
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}
@@ -190,7 +186,7 @@ func TestAgent_asInternalConfig(t *testing.T) {
 	}
 }
 
-func TestAgent_Start(t *testing.T) {
+func TestAgent_Run(t *testing.T) {
 	mockQuerier := &mockChatQuerier{}
 	a := &Agent{
 		name:    "test-agent",
@@ -201,12 +197,7 @@ func TestAgent_Start(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 
-	// Start with a very short interval
-	err := a.Start(ctx)
-
-	if err != nil && err != context.DeadlineExceeded {
-		t.Errorf("expected context deadline exceeded or nil, got %v", err)
-	}
+	_, _ = a.Run(ctx)
 
 	if !mockQuerier.textQueryCalled {
 		t.Error("expected TextQuery to be called")

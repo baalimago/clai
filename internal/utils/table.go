@@ -72,7 +72,7 @@ func SelectFromTable[T any](header string, items []T,
 				page = 0
 			}
 		}
-		err := ClearTermTo(-1, toClear)
+		err := ClearTermTo(os.Stdout, -1, toClear)
 		if err != nil {
 			return []int{}, fmt.Errorf("failed to clear term: %w", err)
 		}

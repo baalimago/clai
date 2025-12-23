@@ -8,7 +8,7 @@ import (
 	"github.com/baalimago/clai/pkg/text/models"
 )
 
-func (a *Agent) Run(ctx context.Context) error {
+func (a *Agent) Run(ctx context.Context) (string, error) {
 	now := time.Now()
 	c := models.Chat{
 		Created: now,
@@ -20,9 +20,13 @@ func (a *Agent) Run(ctx context.Context) error {
 			},
 		},
 	}
-	_, err := a.querier.TextQuery(ctx, c)
+	c, err := a.querier.TextQuery(ctx, c)
 	if err != nil {
-		return fmt.Errorf("failed to TextQuery: %w", err)
+		return "", fmt.Errorf("failed to TextQuery: %w", err)
 	}
-	return nil
+	msg, _, err := c.LastOfRole("system")
+	if err != nil {
+		return "", fmt.Errorf("failed to get last message of system role: %w", err)
+	}
+	return msg.String(), nil
 }

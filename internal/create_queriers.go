@@ -167,7 +167,8 @@ func CreateTextQuerier(ctx context.Context, conf text.Configurations) (models.Qu
 				UseProfile: conf.UseProfile,
 				Model:      conf.Model,
 			},
-			conf.Raw)
+			conf.Raw,
+			conf.Out)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create chat querier: %w", err)
 		}

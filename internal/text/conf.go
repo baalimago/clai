@@ -2,6 +2,7 @@ package text
 
 import (
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/baalimago/clai/internal/chat"
@@ -42,6 +43,9 @@ type Configurations struct {
 	// These are to allow tools to be injected via public package.
 	Tools      []pub_models.LLMTool   `json:"-"`
 	McpServers []pub_models.McpServer `json:"-"`
+
+	// Out writer. Normally stdout, but may also be a file when invoked as a package
+	Out io.Writer `json:"-"`
 }
 
 func (c Configurations) UsingProfile() bool {

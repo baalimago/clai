@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path"
 
@@ -22,6 +23,8 @@ type Agent struct {
 
 	querierCreator func(ctx context.Context, conf text.Configurations) (priv_models.Querier, error)
 
+	out io.Writer
+
 	querier   priv_models.ChatQuerier
 	errorChan chan error
 }
@@ -32,6 +35,7 @@ var defaultConf = Agent{
 	tools:          make([]models.LLMTool, 0),
 	mcpServers:     make([]models.McpServer, 0),
 	querierCreator: internal.CreateTextQuerier,
+	out:            os.Stdout,
 }
 
 type Option func(*Agent)
@@ -71,6 +75,12 @@ func WithTools(tools []models.LLMTool) Option {
 func WithMcpServers(mcpServers []models.McpServer) Option {
 	return func(a *Agent) {
 		a.mcpServers = mcpServers
+	}
+}
+
+func WithOutputTo(out io.Writer) Option {
+	return func(a *Agent) {
+		a.out = out
 	}
 }
 

@@ -33,7 +33,7 @@ func (cq *ChatHandler) actOnChat(ctx context.Context, chat pub_models.Chat) erro
 	case "D", "d":
 		return cq.handleDeleteMessages(ctx, chat)
 	case "B", "b":
-		clearErr := utils.ClearTermTo(-1, chatInfoPrintHeight)
+		clearErr := utils.ClearTermTo(cq.out, -1, chatInfoPrintHeight)
 		if clearErr != nil {
 			return fmt.Errorf("failed to clear term: %w", clearErr)
 		}
@@ -58,7 +58,7 @@ func (cq *ChatHandler) actOnChat(ctx context.Context, chat pub_models.Chat) erro
 }
 
 func (cq *ChatHandler) handleEditMessages(ctx context.Context, chat pub_models.Chat) error {
-	clearErr := utils.ClearTermTo(-1, chatInfoPrintHeight)
+	clearErr := utils.ClearTermTo(cq.out, -1, chatInfoPrintHeight)
 	if clearErr != nil {
 		return fmt.Errorf("failed to clear term: %w", clearErr)
 	}
@@ -70,7 +70,7 @@ func (cq *ChatHandler) handleEditMessages(ctx context.Context, chat pub_models.C
 }
 
 func (cq *ChatHandler) handleDeleteMessages(ctx context.Context, chat pub_models.Chat) error {
-	clearErr := utils.ClearTermTo(-1, chatInfoPrintHeight)
+	clearErr := utils.ClearTermTo(cq.out, -1, chatInfoPrintHeight)
 	if clearErr != nil {
 		return fmt.Errorf("failed to clear term: %w", clearErr)
 	}

@@ -52,6 +52,8 @@ type Querier[C models.StreamCompleter] struct {
 	rateLimitLastAmTokens   int
 	rateLimitRecursionLevel int
 
+	out io.Writer
+
 	// isLikelyGemini3Preview is set to true if it's likely that the current underlying model
 	// is the gemini 3 preview which suffers from an issue where it insists on crashing if there
 	// is no "though_signature" within extra content, while also sending requests which lack "though_signature"
@@ -284,11 +286,11 @@ func (q *Querier[C]) postProcessOutput(newSysMsg pub_models.Message) {
 				}
 			}
 		}
-		utils.ClearTermTo(q.termWidth, q.lineCount-1)
+		utils.ClearTermTo(q.out, q.termWidth, q.lineCount-1)
 	} else {
 		fmt.Println()
 	}
-	utils.AttemptPrettyPrint(newSysMsg, q.username, q.Raw)
+	utils.AttemptPrettyPrint(q.out, newSysMsg, q.username, q.Raw)
 }
 
 func (q *Querier[C]) reset() {
@@ -404,7 +406,7 @@ func (q *Querier[C]) handleFunctionCall(ctx context.Context, call pub_models.Cal
 	}
 	q.reset()
 	if !q.debug {
-		err := utils.AttemptPrettyPrint(assistantToolsCall, q.username, q.Raw)
+		err := utils.AttemptPrettyPrint(q.out, assistantToolsCall, q.username, q.Raw)
 		if err != nil {
 			return fmt.Errorf("failed to pretty print, stopping before tool invocation: %w", err)
 		}
@@ -425,7 +427,7 @@ func (q *Querier[C]) handleFunctionCall(ctx context.Context, call pub_models.Cal
 	}
 	q.chat.Messages = append(q.chat.Messages, toolsOutput)
 	if q.Raw {
-		err := utils.AttemptPrettyPrint(toolsOutput, "tool", q.Raw)
+		err := utils.AttemptPrettyPrint(q.out, toolsOutput, "tool", q.Raw)
 		if err != nil {
 			return fmt.Errorf("failed to pretty print, stopping before tool call return: %w", err)
 		}
@@ -440,7 +442,7 @@ func (q *Querier[C]) handleFunctionCall(ctx context.Context, call pub_models.Cal
 			Role:    "tool",
 			Content: toolPrintContent,
 		}
-		err := utils.AttemptPrettyPrint(smallOutputMsg, "tool", q.Raw)
+		err := utils.AttemptPrettyPrint(q.out, smallOutputMsg, "tool", q.Raw)
 		if err != nil {
 			return fmt.Errorf("failed to pretty print, stopping before tool call return: %w", err)
 		}

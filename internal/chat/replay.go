@@ -17,6 +17,5 @@ func Replay(raw bool) error {
 		return errors.New("failed to find any recent reply")
 	}
 	mostRecentMsg := prevReply.Messages[amMessages-1]
-	utils.AttemptPrettyPrint(mostRecentMsg, "system", raw)
-	return nil
+	return utils.AttemptPrettyPrint(nil, mostRecentMsg, "system", raw)
 }
