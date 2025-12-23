@@ -30,7 +30,7 @@ func TestPubConfigToInternalAndInternalToolsToString(t *testing.T) {
 	if !ic.UseTools || ic.Model != cfg.Model || ic.SystemPrompt != cfg.SystemPrompt {
 		t.Fatalf("unexpected mapping: %#v", ic)
 	}
-	if len(ic.Tools) != 2 || ic.Tools[0] != string(pub_models.CatTool) {
+	if len(ic.RequestedToolGlobs) != 2 || ic.RequestedToolGlobs[0] != string(pub_models.CatTool) {
 		t.Fatalf("tools mapping unexpected: %#v", ic.Tools)
 	}
 }
