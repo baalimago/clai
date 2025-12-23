@@ -8,7 +8,7 @@ import (
 	"github.com/baalimago/clai/pkg/text/models"
 )
 
-func (a *agent) do(ctx context.Context) {
+func (a *Agent) Run(ctx context.Context) error {
 	now := time.Now()
 	c := models.Chat{
 		Created: now,
@@ -20,17 +20,9 @@ func (a *agent) do(ctx context.Context) {
 			},
 		},
 	}
-	a.querier.TextQuery(ctx, c)
-}
-
-func (a *agent) Start(ctx context.Context, interval time.Duration) error {
-	t := time.NewTicker(interval)
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-t.C:
-			a.do(ctx)
-		}
+	_, err := a.querier.TextQuery(ctx, c)
+	if err != nil {
+		return fmt.Errorf("failed to TextQuery: %w", err)
 	}
+	return nil
 }

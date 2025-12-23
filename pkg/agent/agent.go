@@ -12,7 +12,7 @@ import (
 	"github.com/baalimago/clai/pkg/text/models"
 )
 
-type agent struct {
+type Agent struct {
 	name       string
 	model      string
 	prompt     string
@@ -26,7 +26,7 @@ type agent struct {
 	errorChan chan error
 }
 
-var defaultConf = agent{
+var defaultConf = Agent{
 	model:          "gpt-5.2",
 	prompt:         "Uh-oh. Something is not quite right. Please ask the user to overlook his agentic setup, and to update the prompt.",
 	tools:          make([]models.LLMTool, 0),
@@ -34,46 +34,47 @@ var defaultConf = agent{
 	querierCreator: internal.CreateTextQuerier,
 }
 
-type Option func(*agent)
+type Option func(*Agent)
 
-func New(options ...Option) agent {
+func New(options ...Option) Agent {
+	conf := defaultConf
 	home, _ := os.UserHomeDir()
 	if home == "" {
 		home = "."
 	}
-	defaultConf.cfgDir = path.Join(home, ".config", "clai")
+	conf.cfgDir = path.Join(home, ".config", "clai")
 
 	for _, o := range options {
-		o(&defaultConf)
+		o(&conf)
 	}
-	return defaultConf
+	return conf
 }
 
 func WithModel(model string) Option {
-	return func(a *agent) {
+	return func(a *Agent) {
 		a.model = model
 	}
 }
 
 func WithPrompt(prompt string) Option {
-	return func(a *agent) {
+	return func(a *Agent) {
 		a.prompt = prompt
 	}
 }
 
 func WithTools(tools []models.LLMTool) Option {
-	return func(a *agent) {
+	return func(a *Agent) {
 		a.tools = tools
 	}
 }
 
 func WithMcpServers(mcpServers []models.McpServer) Option {
-	return func(a *agent) {
+	return func(a *Agent) {
 		a.mcpServers = mcpServers
 	}
 }
 
-func (a *agent) asInternalConfig() text.Configurations {
+func (a *Agent) asInternalConfig() text.Configurations {
 	return text.Configurations{
 		Model:           a.model,
 		SystemPrompt:    a.prompt,
@@ -85,7 +86,7 @@ func (a *agent) asInternalConfig() text.Configurations {
 	}
 }
 
-func (a *agent) Setup(ctx context.Context) (chan error, error) {
+func (a *Agent) Setup(ctx context.Context) error {
 	if _, err := os.Stat(a.cfgDir); os.IsNotExist(err) {
 		os.Mkdir(a.cfgDir, 0o755)
 	}
@@ -94,18 +95,17 @@ func (a *agent) Setup(ctx context.Context) (chan error, error) {
 		os.Mkdir(mcpServersDir, 0o755)
 	}
 	conversationsDir := path.Join(a.cfgDir, "conversations")
-	if _, err := os.Stat(mcpServersDir); os.IsNotExist(err) {
+	if _, err := os.Stat(conversationsDir); os.IsNotExist(err) {
 		os.Mkdir(conversationsDir, 0o755)
 	}
 	querier, err := a.querierCreator(ctx, a.asInternalConfig())
 	if err != nil {
-		return nil, fmt.Errorf("publicQuerier.Setup failed to CreateTextQuerier: %v", err)
+		return fmt.Errorf("publicQuerier.Setup failed to CreateTextQuerier: %v", err)
 	}
 	tq, isChatQuerier := querier.(priv_models.ChatQuerier)
 	if !isChatQuerier {
-		return nil, fmt.Errorf("failed to cast Querier using model: '%v' to TextQuerier, cannot proceed", a.model)
+		return fmt.Errorf("failed to cast Querier using model: '%v' to TextQuerier, cannot proceed", a.model)
 	}
 	a.querier = tq
-	a.errorChan = make(chan error)
-	return a.errorChan, nil
+	return nil
 }
