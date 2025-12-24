@@ -8,6 +8,7 @@ import (
 	"github.com/baalimago/clai/pkg/text/models"
 )
 
+// Run the agent using some context. Will return the last system message, or an error.
 func (a *Agent) Run(ctx context.Context) (string, error) {
 	now := time.Now()
 	c := models.Chat{

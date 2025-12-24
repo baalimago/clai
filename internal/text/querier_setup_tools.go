@@ -98,6 +98,8 @@ func AddMcpTools(ctx context.Context, mcpServersDir string, userConf Configurati
 		// Nothing to do, no need to start mcp.Manager etc, just return
 		return nil
 	}
+
+	mcpServers = append(mcpServers, userConf.McpServers...)
 	controlChannel := make(chan mcp.ControlEvent)
 	statusChan := make(chan error, 1)
 
@@ -156,7 +158,7 @@ func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, us
 		return
 	}
 	// If usetools and no specific tools chocen, assume all are valid
-	if len(userConf.RequestedToolGlobs) == 0 {
+	if len(userConf.RequestedToolGlobs) == 0 && len(userConf.Tools) == 0 {
 		for _, tool := range tools.Registry.All() {
 			toolBox.RegisterTool(tool)
 		}
@@ -185,5 +187,10 @@ func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, us
 			ancli.PrintOK(fmt.Sprintf("\tname: %v, desc: %v\n", tool.Specification().Name, tool.Specification().Description))
 		}
 		toolBox.RegisterTool(tool)
+	}
+
+	for _, t := range userConf.Tools {
+		tools.Registry.Set(t.Specification().Name, t)
+		toolBox.RegisterTool(t)
 	}
 }

@@ -125,17 +125,6 @@ func AttemptPrettyPrint(w io.Writer, chatMessage pub_models.Message, username st
 	return nil
 }
 
-// ClearTermTo a certain amount of rows upwards by printing termWidth amount of empty spaces.
-// Uses os.Stdout as default.
-func ClearTermToStdout(termWidth, upTo int) error {
-	return ClearTermTo(os.Stdout, termWidth, upTo)
-}
-
-// AttemptPrettyPrint to os.Stdout.
-func AttemptPrettyPrintStdout(chatMessage pub_models.Message, username string, raw bool) error {
-	return AttemptPrettyPrint(os.Stdout, chatMessage, username, raw)
-}
-
 func WidthAppropriateStringTrunk(toShorten, prefix string, padding int) (string, error) {
 	toShorten = strings.ReplaceAll(toShorten, "\n", "\\n")
 	toShorten = strings.ReplaceAll(toShorten, "\t", "\\t")

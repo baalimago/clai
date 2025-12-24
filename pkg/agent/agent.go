@@ -25,8 +25,7 @@ type Agent struct {
 
 	out io.Writer
 
-	querier   priv_models.ChatQuerier
-	errorChan chan error
+	querier priv_models.ChatQuerier
 }
 
 var defaultConf = Agent{

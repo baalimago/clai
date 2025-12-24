@@ -8,15 +8,15 @@
 // Typical usage is to construct a FullResponse querier and issue a chat
 // style request:
 //
-//   ctx := context.Background()
-//   q := text.NewFullResponseQuerier()
+//	ctx := context.Background()
+//	q := text.NewFullResponseQuerier()
 //
-//   chat := models.Chat{ /* populate chat with messages */ }
-//   reply, err := q.Query(ctx, chat)
-//   if err != nil {
-//       // handle error
-//   }
-//   _ = reply
+//	chat := models.Chat{ /* populate chat with messages */ }
+//	reply, err := q.Query(ctx, chat)
+//	if err != nil {
+//	    // handle error
+//	}
+//	_ = reply
 //
 // The concrete configuration of the underlying engine (model name,
 // system prompt, config directory, tool usage, etc.) is managed inside

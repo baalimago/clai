@@ -332,10 +332,12 @@ func (q *Querier[C]) handleCompletion(ctx context.Context, completion models.Com
 	case models.StopEvent:
 		contextCancel := ctx.Value(utils.ContextCancelKey)
 		castContextCancel, ok := contextCancel.(context.CancelFunc)
-		if !ok {
-			return fmt.Errorf("failed to find context cancel on: %T, val: %v", contextCancel, contextCancel)
+		if ok {
+			// If the context lacks key to cancel context, we're not nested and
+			// not called from clai (invoked via package). If this is the case, simply
+			// return
+			castContextCancel()
 		}
-		castContextCancel()
 		return nil
 	case nil:
 		if q.debug {
