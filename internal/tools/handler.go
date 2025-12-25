@@ -35,7 +35,6 @@ func Init() {
 	Registry.Set(tools.RowsBetween.Specification().Name, tools.RowsBetween)
 	Registry.Set(tools.LineCount.Specification().Name, tools.LineCount)
 	Registry.Set(tools.Git.Specification().Name, tools.Git)
-	Registry.Set(tools.Recall.Specification().Name, tools.Recall)
 	Registry.Set(tools.FFProbe.Specification().Name, tools.FFProbe)
 	Registry.Set(tools.Date.Specification().Name, tools.Date)
 	Registry.Set(tools.Pwd.Specification().Name, tools.Pwd)
