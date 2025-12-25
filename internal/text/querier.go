@@ -14,7 +14,6 @@ import (
 
 	"github.com/baalimago/clai/internal/chat"
 	"github.com/baalimago/clai/internal/models"
-	"github.com/baalimago/clai/internal/text/generic"
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -87,22 +86,7 @@ func (q *Querier[C]) handleRateLimitErr(ctx context.Context, rateLimitErr models
 		}
 		time.Sleep(waitDur)
 		q.rateLimitLastAmTokens = inCount
-		summarizedChat, circumErr := generic.CircumventRateLimit(ctx,
-			q,
-			q.chat,
-			inCount,
-			rateLimitErr.TokensRemaining,
-			rateLimitErr.MaxInputTokens,
-			rateLimitErr.ResetAt,
-			q.rateLimitRecursionLevel,
-		)
 		q.rateLimitRecursionLevel++
-		if circumErr != nil {
-			return fmt.Errorf("failed to circumvent rate limit: %w", circumErr)
-		}
-		// Replace existing chat with summarized chat
-		q.chat = summarizedChat
-
 		// Retry by using the new chat and querying once more. Will fill call stack.
 		q.reset()
 		return q.Query(ctx)
