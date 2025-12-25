@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/baalimago/clai/internal/text/generic"
-	"github.com/baalimago/clai/internal/tools"
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
 const ChatURL = "http://localhost:11434/v1/chat/completions"
@@ -46,6 +46,6 @@ func (g *Ollama) Setup() error {
 	return nil
 }
 
-func (g *Ollama) RegisterTool(tool tools.LLMTool) {
+func (g *Ollama) RegisterTool(tool pub_models.LLMTool) {
 	g.InternalRegisterTool(tool)
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/user"
 	"path"
@@ -88,6 +89,8 @@ type ChatHandler struct {
 	convDir     string
 	config      NotCyclicalImport
 	raw         bool
+
+	out io.Writer
 }
 
 func (q *ChatHandler) Query(ctx context.Context) error {
@@ -159,7 +162,7 @@ func (cq *ChatHandler) findChatByID(potentialChatIdx string) (pub_models.Chat, e
 
 func (cq *ChatHandler) printChat(chat pub_models.Chat) error {
 	for _, message := range chat.Messages {
-		err := utils.AttemptPrettyPrint(message, cq.username, cq.raw)
+		err := utils.AttemptPrettyPrint(cq.out, message, cq.username, cq.raw)
 		if err != nil {
 			return fmt.Errorf("failed to print chat message: %w", err)
 		}
@@ -219,7 +222,7 @@ func (cq *ChatHandler) loop(ctx context.Context) error {
 	for {
 		lastMessage := cq.chat.Messages[len(cq.chat.Messages)-1]
 		if lastMessage.Role == "user" {
-			utils.AttemptPrettyPrint(lastMessage, cq.username, cq.raw)
+			_ = utils.AttemptPrettyPrint(cq.out, lastMessage, cq.username, cq.raw)
 		} else {
 			fmt.Printf("%v(%v%v): ", ancli.ColoredMessage(ancli.CYAN, cq.username), cq.profileInfo(), " | [q]uit")
 
@@ -245,6 +248,7 @@ func New(q models.ChatQuerier,
 	preMessages []pub_models.Message,
 	conf NotCyclicalImport,
 	raw bool,
+	out io.Writer,
 ) (*ChatHandler, error) {
 	username := "user"
 	debug := misc.Truthy(os.Getenv("DEBUG"))
@@ -271,5 +275,6 @@ func New(q models.ChatQuerier,
 		convDir:     path.Join(claiDir, "conversations"),
 		config:      conf,
 		raw:         raw,
+		out:         out,
 	}, nil
 }

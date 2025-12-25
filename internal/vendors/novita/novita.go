@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/baalimago/clai/internal/text/generic"
-	"github.com/baalimago/clai/internal/tools"
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
 var Default = Novita{
@@ -49,6 +49,6 @@ func (g *Novita) Setup() error {
 	return nil
 }
 
-func (g *Novita) RegisterTool(tool tools.LLMTool) {
+func (g *Novita) RegisterTool(tool pub_models.LLMTool) {
 	g.InternalRegisterTool(tool)
 }

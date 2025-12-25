@@ -52,7 +52,7 @@ func pubConfigToInternal(c models.Configurations) text.Configurations {
 		Stream:              true,
 		UseProfile:          "",
 		ProfilePath:         "",
-		Tools:               internalToolsToString(c.InternalTools),
+		RequestedToolGlobs:  internalToolsToString(c.InternalTools),
 	}
 }
 

@@ -40,6 +40,9 @@ func (s *StreamCompleter) StreamCompletions(ctx context.Context, chat pub_models
 		body, _ := io.ReadAll(res.Body)
 		return nil, fmt.Errorf("unexpected status code: %v, body: %v", res.Status, string(body))
 	}
+	if s.debug {
+		ancli.Noticef("now attepmting to handle response")
+	}
 	outChan, err := s.handleStreamResponse(ctx, res)
 	if err != nil {
 		return outChan, fmt.Errorf("failed to handle stream response: %w", err)
@@ -72,7 +75,7 @@ func (s *StreamCompleter) createRequest(ctx context.Context, chat pub_models.Cha
 	if s.debug {
 		noTools := reqData
 		noTools.Tools = make([]ToolSuper, 0)
-		ancli.PrintOK(fmt.Sprintf("generic streamcompleter request (tools redacted): %v\n", debug.IndentedJsonFmt(noTools)))
+		ancli.PrintOK(fmt.Sprintf("generic streamcompleter request (tools redacted):\nurl: %v\nstruct: %v\n", s.URL, debug.IndentedJsonFmt(noTools)))
 	}
 	jsonData, err := json.Marshal(reqData)
 	if err != nil {

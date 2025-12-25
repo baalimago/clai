@@ -87,3 +87,73 @@ func TestChatHelpers(t *testing.T) {
 		t.Fatalf("expected error for missing role")
 	}
 }
+
+func TestMessageString(t *testing.T) {
+	// Test with Content field set
+	msg := Message{Role: "user", Content: "hello"}
+	if msg.String() != "hello" {
+		t.Errorf("expected 'hello', got %q",
+			msg.String())
+	}
+
+	// Test with ContentParts text
+	msg = Message{
+		Role: "user",
+		ContentParts: []ImageOrTextInput{
+			{Type: "text", Text: "from parts"},
+		},
+	}
+	if msg.String() != "from parts" {
+		t.Errorf("expected 'from parts', got %q",
+			msg.String())
+	}
+
+	// Test with mixed ContentParts (text first)
+	msg = Message{
+		Role: "user",
+		ContentParts: []ImageOrTextInput{
+			{Type: "image_url", ImageB64: &ImageURL{
+				URL: "http://example.com/img.png",
+			}},
+			{Type: "text", Text: "second text"},
+		},
+	}
+	if msg.String() != "second text" {
+		t.Errorf("expected 'second text', got %q",
+			msg.String())
+	}
+
+	// Test with image only in ContentParts
+	msg = Message{
+		Role: "user",
+		ContentParts: []ImageOrTextInput{
+			{Type: "image_url", ImageB64: &ImageURL{
+				URL: "http://example.com/img.png",
+			}},
+		},
+	}
+	if msg.String() != "" {
+		t.Errorf("expected empty string, got %q",
+			msg.String())
+	}
+
+	// Test empty message
+	msg = Message{Role: "user"}
+	if msg.String() != "" {
+		t.Errorf("expected empty string, got %q",
+			msg.String())
+	}
+
+	// Test Content takes precedence over ContentParts
+	msg = Message{
+		Role:    "user",
+		Content: "content text",
+		ContentParts: []ImageOrTextInput{
+			{Type: "text", Text: "parts text"},
+		},
+	}
+	if msg.String() != "content text" {
+		t.Errorf("expected 'content text', got %q",
+			msg.String())
+	}
+}

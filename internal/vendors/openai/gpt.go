@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/baalimago/clai/internal/text/generic"
-	"github.com/baalimago/clai/internal/tools"
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
 var GptDefault = ChatGPT{
@@ -40,6 +40,6 @@ func (g *ChatGPT) Setup() error {
 	return nil
 }
 
-func (g *ChatGPT) RegisterTool(tool tools.LLMTool) {
+func (g *ChatGPT) RegisterTool(tool pub_models.LLMTool) {
 	g.InternalRegisterTool(tool)
 }

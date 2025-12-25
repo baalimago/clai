@@ -5,6 +5,18 @@ import (
 	"fmt"
 )
 
+type LLMTool interface {
+	// Call the LLM tool with the given Input. Returns output from the tool or an error
+	// if the call returned an error-like. An error-like is either exit code non-zero or
+	// http response which isn't 2xx or 3xx.
+	Call(Input) (string, error)
+
+	// Return the Specification, later on used
+	// by text queriers to send to their respective
+	// models
+	Specification() Specification
+}
+
 type McpServer struct {
 	Name    string            `json:"-"`
 	Command string            `json:"command"`
@@ -16,22 +28,29 @@ type McpServer struct {
 type ToolName string
 
 const (
-	FileTreeTool    ToolName = "file_tree"
-	CatTool         ToolName = "cat"
-	FindTool        ToolName = "find"
-	FileTypeTool    ToolName = "file_type"
-	LSTool          ToolName = "ls"
-	WebsiteTextTool ToolName = "website_text"
-	RipGrepTool     ToolName = "rg"
-	GoTool          ToolName = "go"
-	WriteFileTool   ToolName = "write_file"
-	FreetextCmdTool ToolName = "freetext_command"
-	SedTool         ToolName = "sed"
-	RowsBetweenTool ToolName = "rows_between"
-	LineCountTool   ToolName = "line_count"
-	GitTool         ToolName = "git"
-	RecallTool      ToolName = "recall"
-	FFProbeTool     ToolName = "ffprobe"
+	FileTreeTool           ToolName = "file_tree"
+	CatTool                ToolName = "cat"
+	FindTool               ToolName = "find"
+	FileTypeTool           ToolName = "file_type"
+	LSTool                 ToolName = "ls"
+	WebsiteTextTool        ToolName = "website_text"
+	RipGrepTool            ToolName = "rg"
+	GoTool                 ToolName = "go"
+	WriteFileTool          ToolName = "write_file"
+	FreetextCmdTool        ToolName = "freetext_command"
+	SedTool                ToolName = "sed"
+	RowsBetweenTool        ToolName = "rows_between"
+	LineCountTool          ToolName = "line_count"
+	GitTool                ToolName = "git"
+	RecallTool             ToolName = "recall"
+	FFProbeTool            ToolName = "ffprobe"
+	DateTool               ToolName = "date"
+	PwdTool                ToolName = "pwd"
+	ClaiHelpTool           ToolName = "clai_help"
+	ClaiRunTool            ToolName = "clai_run"
+	ClaiCheckTool          ToolName = "clai_check"
+	ClaiResultTool         ToolName = "clai_result"
+	ClaiWaitForWorkersTool ToolName = "clai_wait_for_workers"
 )
 
 type Input map[string]any
@@ -95,13 +114,15 @@ func (c Call) JSON() string {
 	return string(json)
 }
 
+// Specification of the tool which will be sent to some LLM
 type Specification struct {
-	Name        string `json:"name"`
+	// Name of the tool. Prefer snake_case names
+	Name string `json:"name"`
+	// Description of the tool. This will be sent to the LLM. Simple instructions on how to use the tool is suitable here
 	Description string `json:"description,omitempty"`
-	// Format is the same, but name of the field different. So this way, each
-	// vendor can set their own field name
+	// Inputs for the tool. Describe the inputs and how to use them. This will be sent to the LLM.
 	Inputs *InputSchema `json:"input_schema,omitempty"`
-	// Chatgpt wants this
+	// Arguments which may be left unfilled. This field is requirement by ChatGPT
 	Arguments string `json:"arguments,omitempty"`
 }
 

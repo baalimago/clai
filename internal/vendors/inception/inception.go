@@ -4,7 +4,8 @@ import (
 	"fmt"
 
 	"github.com/baalimago/clai/internal/text/generic"
-	"github.com/baalimago/clai/internal/tools"
+
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
 var Default = Inception{
@@ -38,6 +39,6 @@ func (g *Inception) Setup() error {
 	return nil
 }
 
-func (g *Inception) RegisterTool(tool tools.LLMTool) {
+func (g *Inception) RegisterTool(tool pub_models.LLMTool) {
 	g.InternalRegisterTool(tool)
 }

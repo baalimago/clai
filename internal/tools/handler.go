@@ -5,6 +5,7 @@ import (
 	"os"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
+	"github.com/baalimago/clai/pkg/tools"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
@@ -20,30 +21,30 @@ func Init() {
 		return
 	}
 	Registry.hasBeenInit = true
-	Registry.Set(FileTree.Specification().Name, FileTree)
-	Registry.Set(Cat.Specification().Name, Cat)
-	Registry.Set(Find.Specification().Name, Find)
-	Registry.Set(FileType.Specification().Name, FileType)
-	Registry.Set(LS.Specification().Name, LS)
-	Registry.Set(WebsiteText.Specification().Name, WebsiteText)
-	Registry.Set(RipGrep.Specification().Name, RipGrep)
-	Registry.Set(Go.Specification().Name, Go)
-	Registry.Set(WriteFile.Specification().Name, WriteFile)
-	Registry.Set(FreetextCmd.Specification().Name, FreetextCmd)
-	Registry.Set(Sed.Specification().Name, Sed)
-	Registry.Set(RowsBetween.Specification().Name, RowsBetween)
-	Registry.Set(LineCount.Specification().Name, LineCount)
-	Registry.Set(Git.Specification().Name, Git)
-	Registry.Set(Recall.Specification().Name, Recall)
-	Registry.Set(FFProbe.Specification().Name, FFProbe)
-	Registry.Set(Date.Specification().Name, Date)
-	Registry.Set(Pwd.Specification().Name, Pwd)
-	Registry.Set(ClaiHelp.Specification().Name, ClaiHelp)
-	Registry.Set(ClaiRun.Specification().Name, ClaiRun)
-	Registry.Set(ClaiCheck.Specification().Name, ClaiCheck)
-	Registry.Set(ClaiResult.Specification().Name, ClaiResult)
-	Registry.Set(ClaiWaitForWorkers.Specification().Name, ClaiWaitForWorkers)
-	Registry.Set(Date.Specification().Name, Date)
+	Registry.Set(tools.FileTree.Specification().Name, tools.FileTree)
+	Registry.Set(tools.Cat.Specification().Name, tools.Cat)
+	Registry.Set(tools.Find.Specification().Name, tools.Find)
+	Registry.Set(tools.FileType.Specification().Name, tools.FileType)
+	Registry.Set(tools.LS.Specification().Name, tools.LS)
+	Registry.Set(tools.WebsiteText.Specification().Name, tools.WebsiteText)
+	Registry.Set(tools.RipGrep.Specification().Name, tools.RipGrep)
+	Registry.Set(tools.Go.Specification().Name, tools.Go)
+	Registry.Set(tools.WriteFile.Specification().Name, tools.WriteFile)
+	Registry.Set(tools.FreetextCmd.Specification().Name, tools.FreetextCmd)
+	Registry.Set(tools.Sed.Specification().Name, tools.Sed)
+	Registry.Set(tools.RowsBetween.Specification().Name, tools.RowsBetween)
+	Registry.Set(tools.LineCount.Specification().Name, tools.LineCount)
+	Registry.Set(tools.Git.Specification().Name, tools.Git)
+	Registry.Set(tools.Recall.Specification().Name, tools.Recall)
+	Registry.Set(tools.FFProbe.Specification().Name, tools.FFProbe)
+	Registry.Set(tools.Date.Specification().Name, tools.Date)
+	Registry.Set(tools.Pwd.Specification().Name, tools.Pwd)
+	Registry.Set(tools.ClaiHelp.Specification().Name, tools.ClaiHelp)
+	Registry.Set(tools.ClaiRun.Specification().Name, tools.ClaiRun)
+	Registry.Set(tools.ClaiCheck.Specification().Name, tools.ClaiCheck)
+	Registry.Set(tools.ClaiResult.Specification().Name, tools.ClaiResult)
+	Registry.Set(tools.ClaiWaitForWorkers.Specification().Name, tools.ClaiWaitForWorkers)
+	Registry.Set(tools.Date.Specification().Name, tools.Date)
 }
 
 // Invoke the call, and gather both error and output in the same string

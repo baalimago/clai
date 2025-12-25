@@ -5,6 +5,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
@@ -12,18 +13,18 @@ import (
 // registry is a threadsafe storage for LLMTools.
 type registry struct {
 	mu          sync.RWMutex
-	tools       map[string]LLMTool
+	tools       map[string]models.LLMTool
 	debug       bool
 	hasBeenInit bool
 }
 
 // NewRegistry returns an empty tools registry.
 func NewRegistry() *registry {
-	return &registry{tools: make(map[string]LLMTool), debug: misc.Truthy(os.Getenv("DEBUG"))}
+	return &registry{tools: make(map[string]models.LLMTool), debug: misc.Truthy(os.Getenv("DEBUG"))}
 }
 
 // Get returns the tool registered under name.
-func (r *registry) Get(name string) (LLMTool, bool) {
+func (r *registry) Get(name string) (models.LLMTool, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	t, ok := r.tools[name]
@@ -31,11 +32,11 @@ func (r *registry) Get(name string) (LLMTool, bool) {
 }
 
 // Add to registry.go
-func (r *registry) WildcardGet(pattern string) []LLMTool {
+func (r *registry) WildcardGet(pattern string) []models.LLMTool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	var matches []LLMTool
+	var matches []models.LLMTool
 	for name, tool := range r.tools {
 		if WildcardMatch(pattern, name) {
 			matches = append(matches, tool)
@@ -69,7 +70,7 @@ func WildcardMatch(pattern, name string) bool {
 }
 
 // Set registers tool under the provided name.
-func (r *registry) Set(name string, t LLMTool) {
+func (r *registry) Set(name string, t models.LLMTool) {
 	r.mu.Lock()
 	if strings.Contains(name, "printEnv") {
 		ancli.Warnf("found env printing tool, skipping for security's sake. Tool name: '%v'", name)
@@ -82,10 +83,10 @@ func (r *registry) Set(name string, t LLMTool) {
 }
 
 // All returns a copy of all registered tools keyed by name.
-func (r *registry) All() map[string]LLMTool {
+func (r *registry) All() map[string]models.LLMTool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	cp := make(map[string]LLMTool, len(r.tools))
+	cp := make(map[string]models.LLMTool, len(r.tools))
 	for k, v := range r.tools {
 		cp[k] = v
 	}
@@ -95,6 +96,6 @@ func (r *registry) All() map[string]LLMTool {
 // Reset removes all registered tools. Primarily used for tests.
 func (r *registry) Reset() {
 	r.mu.Lock()
-	r.tools = make(map[string]LLMTool)
+	r.tools = make(map[string]models.LLMTool)
 	r.mu.Unlock()
 }

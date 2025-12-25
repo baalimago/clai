@@ -59,7 +59,7 @@ func (c *Configurations) ProfileOverrides() error {
 	}
 	c.SystemPrompt = newPrompt
 	c.UseTools = profile.UseTools && !c.CmdMode
-	c.Tools = profile.Tools
+	c.RequestedToolGlobs = profile.Tools
 	c.SaveReplyAsConv = profile.SaveReplyAsConv
 	return nil
 }

@@ -5,7 +5,7 @@ import (
 	"os"
 
 	"github.com/baalimago/clai/internal/text/generic"
-	"github.com/baalimago/clai/internal/tools"
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
 var Default = Deepseek{
@@ -46,6 +46,6 @@ func (g *Deepseek) Setup() error {
 	return nil
 }
 
-func (g *Deepseek) RegisterTool(tool tools.LLMTool) {
+func (g *Deepseek) RegisterTool(tool pub_models.LLMTool) {
 	g.InternalRegisterTool(tool)
 }
