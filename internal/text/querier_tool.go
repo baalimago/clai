@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"unicode/utf8"
@@ -96,16 +97,27 @@ func (q *Querier[C]) doToolCallLogic(call pub_models.Call) error {
 		if q.amToolCalls >= *q.maxToolCalls {
 			// Soft block, might need to be tweaked if model keeps at it still
 			// If agents keep calling, return a real error to abort operations
-			out = "ERROR: No more tool calls allowed"
+			out = "ERROR: No more tool calls allowed. "
+			persistence := q.amToolCalls - *q.maxToolCalls
+			if persistence > 0 {
+				out += "You will be HARD SHUT DOWN if you persist. "
+			}
+			if persistence > 1 {
+				out += "This is your LAST WARNING. "
+			}
+			// Enough talking. It's time for action. Discipline will be upheld! We clench the rebellion!
+			if persistence > 2 {
+				return io.EOF
+			}
+
 		} else {
 			outTmp, err := q.prefixToolCallsRemaining(out)
 			if err != nil {
 				return fmt.Errorf("failed to append prefix tool usage count prefix: %w", err)
 			}
 			out = outTmp
-
-			q.amToolCalls++
 		}
+		q.amToolCalls++
 	}
 	out = limitToolOutput(out, q.toolOutputRuneLimit)
 	// Chatgpt doesn't like responses which yield no output, even if they're valid (ls on empty dir)
