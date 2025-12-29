@@ -1,15 +1,38 @@
 package text
 
 import (
+	"fmt"
 	"testing"
 
-	"github.com/baalimago/go_away_boilerplate/pkg/misc"
+	"github.com/baalimago/clai/pkg/text/models"
+	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
-func Test_handleFunctionCall(t *testing.T) {
+func Test_maxToolCalls(t *testing.T) {
+	amToolCalls := 3
 	q := Querier[mockCompleter]{
-		remainingToolCalls: misc.Pointer(5),
+		maxToolCalls: &amToolCalls,
 	}
 
-	_ = q
+	getLastMsgStr := func(m []models.Message) string {
+		return m[len(q.chat.Messages)-1].Content
+	}
+
+	for i := range amToolCalls {
+		err := q.doToolCallLogic(models.Call{})
+		if err != nil {
+			t.Fatalf("failed to handleToolCall: %v", err)
+		}
+
+		got := getLastMsgStr(q.chat.Messages)
+		want := fmt.Sprintf("Tool calls remaining: %v", amToolCalls-i)
+		testboil.AssertStringContains(t, got, want)
+	}
+
+	err := q.doToolCallLogic(models.Call{})
+	if err != nil {
+		t.Fatalf("failed to handleToolCall: %v", err)
+	}
+	got := getLastMsgStr(q.chat.Messages)
+	testboil.AssertStringContains(t, got, "ERROR: No more tool calls allowed")
 }
