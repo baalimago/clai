@@ -54,7 +54,9 @@ func (q *Querier[C]) prefixToolCallsRemaining(out string) (string, error) {
 		return "", errors.New("maxToolCalls is not configured")
 	}
 
-	return fmt.Sprintf("[ Tool calls remaining: %v ] ", *q.maxToolCalls-q.amToolCalls), nil
+	return fmt.Sprintf("[ Tool calls remaining: %v ] %v",
+			(*q.maxToolCalls - q.amToolCalls), out),
+		nil
 }
 
 // doToolCallLogic in a separate method to isolate complexities and allow for
