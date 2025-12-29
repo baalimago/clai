@@ -155,5 +155,6 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	querier.shouldSaveReply = !userConf.ChatMode && userConf.SaveReplyAsConv
 	querier.tokenWarnLimit = userConf.TokenWarnLimit
 	querier.toolOutputRuneLimit = userConf.ToolOutputRuneLimit
+	querier.maxToolCalls = userConf.MaxToolCalls
 	return querier, nil
 }
