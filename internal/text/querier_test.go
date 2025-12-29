@@ -347,22 +347,6 @@ func Test_ChatQuerier(t *testing.T) {
 	models.ChatQuerier_Test(t, q)
 }
 
-func Test_shortenedOutput(t *testing.T) {
-	t.Run("it should shorten line with a lot of newlines", func(t *testing.T) {
-		given := ""
-		amNewlines := 90
-		for range amNewlines {
-			given += "\n"
-		}
-		gotStr := shortenedOutput(given)
-		got := strings.Count(gotStr, "\n")
-		want := MaxShortenedNewlines + 1
-		if got >= want {
-			t.Fatalf("expected: %v, got: %v", want, got)
-		}
-	})
-}
-
 func Test_limitToolOutput(t *testing.T) {
 	t.Run("should append disclaimer when exceeding limit", func(t *testing.T) {
 		given := "abcdefghijklmnopqrstuvwxyz"

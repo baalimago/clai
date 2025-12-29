@@ -1,11 +1,7 @@
-github.com/baalimago/go_away_boilerplate v1.3.34 h1:6fzbpN/mWPYkboO9TF8F6jdV7wNQfahyNh4pQ2NxM3A=
-github.com/baalimago/go_away_boilerplate v1.3.34/go.mod h1:2O+zQ0Zm8vPD5SeccFFlgyf3AnYWQSHAut/ecPMmRdU=
-github.com/baalimago/go_away_boilerplate v1.3.337 h1:7vq2hlpklKB7tABy3KiV34jfopOEAYrAueVa3Yp3sLI=
-github.com/baalimago/go_away_boilerplate v1.3.337/go.mod h1:2O+zQ0Zm8vPD5SeccFFlgyf3AnYWQSHAut/ecPMmRdU=
+github.com/baalimago/go_away_boilerplate v1.3.333337 h1:UhUSRLS6jc7tV9WYATQBeI+2yWMhRxbomIgM6cY4uJY=
+github.com/baalimago/go_away_boilerplate v1.3.333337/go.mod h1:2O+zQ0Zm8vPD5SeccFFlgyf3AnYWQSHAut/ecPMmRdU=
 golang.org/x/exp v0.0.0-20240119083558-1b970713d09a h1:Q8/wZp0KX97QFTc2ywcOE0YRjZPVIx+MXInMzdvQqcA=
 golang.org/x/exp v0.0.0-20240119083558-1b970713d09a/go.mod h1:idGWGoKP1toJGkd5/ig9ZLuPcZBC3ewk7SzmH0uou08=
-golang.org/x/net v0.24.0 h1:1PcaxkF854Fu3+lvBIx5SYn9wRlBzzcnHZSiaFFAb0w=
-golang.org/x/net v0.24.0/go.mod h1:2Q7sJY5mzlzWjKtYUEXSlBWCdyaioyXzRB2RtU8KVE8=
 golang.org/x/net v0.43.0 h1:lat02VYK2j4aLzMzecihNvTlJNQUq316m2Mr9rnM6YE=
 golang.org/x/net v0.43.0/go.mod h1:vhO1fvI4dGsIjh73sWfUVjj3N7CA9WkKJNQm2svM6Jg=
 golang.org/x/text v0.28.0 h1:rhazDwis8INMIwQ4tpjLDzUhx6RlXqZNPEM0huQojng=
