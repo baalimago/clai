@@ -1,7 +1,9 @@
 package text
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"testing"
 
 	"github.com/baalimago/clai/pkg/text/models"
@@ -29,10 +31,29 @@ func Test_maxToolCalls(t *testing.T) {
 		testboil.AssertStringContains(t, got, want)
 	}
 
-	err := q.doToolCallLogic(models.Call{})
-	if err != nil {
-		t.Fatalf("failed to handleToolCall: %v", err)
+	var err error
+	var got string
+	iter := func() {
+		err = q.doToolCallLogic(models.Call{})
+		if err != nil {
+			t.Fatalf("failed to handleToolCall: %v", err)
+		}
+		got = getLastMsgStr(q.chat.Messages)
 	}
-	got := getLastMsgStr(q.chat.Messages)
+
+	iter()
 	testboil.AssertStringContains(t, got, "ERROR: No more tool calls allowed")
+
+	iter()
+	testboil.AssertStringContains(t, got, "ERROR: No more tool calls allowed")
+	testboil.AssertStringContains(t, got, "You will be HARD SHUT DOWN if you persist.")
+
+	iter()
+	testboil.AssertStringContains(t, got, "ERROR: No more tool calls allowed")
+	testboil.AssertStringContains(t, got, "You will be HARD SHUT DOWN if you persist.")
+	testboil.AssertStringContains(t, got, "LAST WARNING")
+	err = q.doToolCallLogic(models.Call{})
+	if !errors.Is(err, io.EOF) {
+		t.Fatalf("expected EOF error, got: %T", err)
+	}
 }
