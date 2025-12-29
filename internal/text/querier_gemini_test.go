@@ -55,7 +55,7 @@ func Test_checkIfGemini3Preview(t *testing.T) {
 	})
 }
 
-func Test_handleFunctionCall_GeminiLogic(t *testing.T) {
+func Test_handleToolCall_GeminiLogic(t *testing.T) {
 	t.Run("should return nil and not call tool if Gemini 3 detected and no extra content", func(t *testing.T) {
 		q := &Querier[*MockQuerier]{
 			isLikelyGemini3Preview: true,
@@ -67,7 +67,7 @@ func Test_handleFunctionCall_GeminiLogic(t *testing.T) {
 			ExtraContent: nil,
 		}
 
-		err := q.handleFunctionCall(context.Background(), call)
+		err := q.handleToolCall(context.Background(), call)
 		if err != nil {
 			t.Errorf("expected nil error (early return), got: %v", err)
 		}
@@ -92,7 +92,7 @@ func Test_handleFunctionCall_GeminiLogic(t *testing.T) {
 			},
 		}
 
-		err := q.handleFunctionCall(context.Background(), call)
+		err := q.handleToolCall(context.Background(), call)
 
 		expectedErr := "failed to query after tool call: TextQuery: failed to handle completion: completion stream error: mock error to stop query"
 		if err == nil {
@@ -126,7 +126,7 @@ func Test_handleFunctionCall_GeminiLogic(t *testing.T) {
 			},
 		}
 
-		err := q.handleFunctionCall(context.Background(), call1)
+		err := q.handleToolCall(context.Background(), call1)
 		expectedErr := "failed to query after tool call: TextQuery: failed to handle completion: completion stream error: mock error to stop query"
 		if err == nil {
 			t.Error("expected error, got nil")
@@ -143,7 +143,7 @@ func Test_handleFunctionCall_GeminiLogic(t *testing.T) {
 			Name:         "some_tool",
 			ExtraContent: nil,
 		}
-		err = q.handleFunctionCall(context.Background(), call2)
+		err = q.handleToolCall(context.Background(), call2)
 		if err != nil {
 			t.Errorf("expected nil error (early return), got: %v", err)
 		}

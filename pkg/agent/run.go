@@ -11,6 +11,10 @@ import (
 // Run the agent using some context. Will return the last system message, or an error.
 func (a *Agent) Run(ctx context.Context) (string, error) {
 	now := time.Now()
+	err := a.Setup(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to reset/re-Setup querier: %w", err)
+	}
 	c := models.Chat{
 		Created: now,
 		ID:      fmt.Sprintf("%v_agent-%v", now, a.name),
@@ -21,7 +25,7 @@ func (a *Agent) Run(ctx context.Context) (string, error) {
 			},
 		},
 	}
-	c, err := a.querier.TextQuery(ctx, c)
+	c, err = a.querier.TextQuery(ctx, c)
 	if err != nil {
 		return "", fmt.Errorf("failed to TextQuery: %w", err)
 	}

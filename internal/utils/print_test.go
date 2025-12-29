@@ -1,6 +1,9 @@
 package utils
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestUpdateMessageTerminalMetadata(t *testing.T) {
 	testCases := []struct {
@@ -110,4 +113,21 @@ func TestUpdateMessageTerminalMetadata(t *testing.T) {
 			}
 		})
 	}
+}
+
+func Test_ShortenedOutput(t *testing.T) {
+	t.Run("it should shorten line with a lot of newlines", func(t *testing.T) {
+		given := ""
+		amNewlines := 90
+		maxShortenedNewlines := 5
+		for range amNewlines {
+			given += "\n"
+		}
+		gotStr := ShortenedOutput(given, maxShortenedNewlines)
+		got := strings.Count(gotStr, "\n")
+		want := maxShortenedNewlines + 1
+		if got >= want {
+			t.Fatalf("expected: %v, got: %v", want, got)
+		}
+	})
 }

@@ -193,11 +193,15 @@ func TestAgent_Run(t *testing.T) {
 		prompt:  "test-prompt",
 		querier: mockQuerier,
 	}
+	a.querierCreator = func(ctx context.Context, conf text.Configurations) (priv_models.Querier, error) {
+		return mockQuerier, nil
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 
-	_, _ = a.Run(ctx)
+	t.Logf("is this nil: %v", a)
+	a.Run(ctx)
 
 	if !mockQuerier.textQueryCalled {
 		t.Error("expected TextQuery to be called")
