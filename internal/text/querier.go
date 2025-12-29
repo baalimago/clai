@@ -58,6 +58,9 @@ type Querier[C models.StreamCompleter] struct {
 	//
 	// Maybe one day this hack can be removed.
 	isLikelyGemini3Preview bool
+
+	maxToolCalls *int
+	amToolCalls  int
 }
 
 func (q *Querier[C]) handleRateLimitErr(ctx context.Context, rateLimitErr models.ErrRateLimit) error {

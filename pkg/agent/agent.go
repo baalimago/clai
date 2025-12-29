@@ -14,12 +14,13 @@ import (
 )
 
 type Agent struct {
-	name       string
-	model      string
-	prompt     string
-	tools      []models.LLMTool
-	mcpServers []models.McpServer
-	cfgDir     string
+	name         string
+	model        string
+	prompt       string
+	tools        []models.LLMTool
+	mcpServers   []models.McpServer
+	cfgDir       string
+	maxToolCalls *int
 
 	querierCreator func(ctx context.Context, conf text.Configurations) (priv_models.Querier, error)
 
@@ -51,6 +52,12 @@ func New(options ...Option) Agent {
 		o(&conf)
 	}
 	return conf
+}
+
+func WithMaxToolCalls(am int) Option {
+	return func(a *Agent) {
+		a.maxToolCalls = &am
+	}
 }
 
 func WithModel(model string) Option {
@@ -92,6 +99,7 @@ func (a *Agent) asInternalConfig() text.Configurations {
 		SaveReplyAsConv: true,
 		McpServers:      a.mcpServers,
 		Tools:           a.tools,
+		MaxToolCalls:    a.maxToolCalls,
 	}
 }
 

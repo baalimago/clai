@@ -12,14 +12,16 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
-type mockCompleter struct{}
+type mockCompleter struct {
+	c chan models.CompletionEvent
+}
 
 func (m mockCompleter) Setup() error {
 	return nil
 }
 
 func (m mockCompleter) StreamCompletions(ctx context.Context, c pub_models.Chat) (chan models.CompletionEvent, error) {
-	return nil, nil
+	return m.c, nil
 }
 
 func Test_executeAiCmd(t *testing.T) {
