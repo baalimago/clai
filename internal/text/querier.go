@@ -233,7 +233,6 @@ func (q *Querier[C]) reset() {
 	q.lineCount = 0
 	q.hasPrinted = false
 	q.rateLimitRetries = 0
-	q.amToolCalls = 0
 }
 
 func (q *Querier[C]) handleToken(token string) {
