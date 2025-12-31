@@ -8,11 +8,10 @@ import (
 
 // GetClaiConfigDir returns the path to the clai configuration directory.
 // The directory is located inside the user's configuration directory
-// as <UserConfigDir>/.clai.
+// as <UserConfigDir>/.clai, unless overridden by CLAI_CONFIG_HOME.
 func GetClaiConfigDir() (string, error) {
-	// Respect XDG override to allow tests to isolate config paths.
-	if xdgConfigHome := os.Getenv("XDG_CONFIG_HOME"); xdgConfigHome != "" {
-		return path.Join(xdgConfigHome, ".clai"), nil
+	if claiConfigHome := os.Getenv("CLAI_CONFIG_HOME"); claiConfigHome != "" {
+		return claiConfigHome, nil
 	}
 	cfg, err := os.UserConfigDir()
 	if err != nil {
@@ -23,11 +22,10 @@ func GetClaiConfigDir() (string, error) {
 
 // GetClaiCacheDir returns the path to the clai cache directory.
 // The directory is located inside the user's cache directory
-// as <UserCacheDir>/clai.
+// as <UserCacheDir>/clai, unless overridden by CLAI_CACHE_HOME.
 func GetClaiCacheDir() (string, error) {
-	// Respect XDG override to allow tests to isolate cache paths.
-	if xdgCacheHome := os.Getenv("XDG_CACHE_HOME"); xdgCacheHome != "" {
-		return path.Join(xdgCacheHome, "clai"), nil
+	if claiCacheHome := os.Getenv("CLAI_CACHE_HOME"); claiCacheHome != "" {
+		return claiCacheHome, nil
 	}
 	cacheDir, err := os.UserCacheDir()
 	if err != nil {

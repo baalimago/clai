@@ -39,7 +39,7 @@ func SubCmd(ctx context.Context, args []string) error {
 	return fmt.Errorf("unknown profiles subcommand: %q", rest[0])
 }
 
-// runProfilesList lists all static profiles from <XDG_CONFIG_HOME>/.clai/profiles.
+// runProfilesList lists all static profiles from <UserConfigDir>/.clai/profiles.
 func runProfilesList() error {
 	configDir, err := utils.GetClaiConfigDir()
 	if err != nil {

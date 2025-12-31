@@ -22,14 +22,13 @@ func TestSetupPrompts(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpInfo)
 
-	// Set XDG_CONFIG_HOME to tmpInfo.
-	// utils.GetClaiConfigDir uses os.UserConfigDir which respects XDG_CONFIG_HOME on Unix.
-	t.Setenv("XDG_CONFIG_HOME", tmpInfo)
+	// Set config dir override for testing
+	claiDir := filepath.Join(tmpInfo, ".clai")
+	t.Setenv("CLAI_CONFIG_HOME", claiDir)
 
-	// We expect the code to look in <XDG_CONFIG_HOME>/.clai/conversations/prevQuery.json
+	// We expect the code to look in <claiDir>/conversations/prevQuery.json
 
 	// Create .clai/conversations directory
-	claiDir := filepath.Join(tmpInfo, ".clai")
 	convDir := filepath.Join(claiDir, "conversations")
 	err = os.MkdirAll(convDir, 0o755)
 	if err != nil {
