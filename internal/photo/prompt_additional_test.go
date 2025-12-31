@@ -59,7 +59,7 @@ func TestSetupPrompts_ReplyModePrependsMessages(t *testing.T) {
 	tmp := t.TempDir()
 	claiConfDir := path.Join(tmp, ".clai")
 	t.Setenv("CLAI_CONFIG_HOME", claiConfDir)
-	
+
 	if err := os.MkdirAll(path.Join(claiConfDir, "conversations"), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}

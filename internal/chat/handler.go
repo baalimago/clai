@@ -114,8 +114,8 @@ func (cq *ChatHandler) actOnSubCmd(ctx context.Context) error {
 		// return cq.continueQueryAsChat(ctx, API_KEY, prompt)
 		return errors.New("not yet implemented")
 	case "help", "h":
-		cfgDir, _ := os.UserConfigDir()
-		fmt.Printf(chatUsage, cfgDir)
+		claiConfDir, _ := utils.GetClaiConfigDir()
+		fmt.Printf(chatUsage, claiConfDir)
 		return nil
 	default:
 		return fmt.Errorf("unknown subcommand: '%s'\n%v", cq.subCmd, chatUsage)

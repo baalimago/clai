@@ -116,7 +116,7 @@ func getModeFromArgs(cmd string) (Mode, error) {
 func setupTextQuerier(ctx context.Context, mode Mode, confDir string, flagSet Configurations) (models.Querier, error) {
 	// The flagset is first used to find chatModel and potentially setup a new configuration file from some default
 	tConf, err := utils.LoadConfigFromFile(confDir, "textConfig.json", migrateOldChatConfig, &text.Default)
-	tConf.ConfigDir, _ = utils.GetClaiConfigDir()
+	tConf.ConfigDir = confDir
 	if err != nil {
 		return nil, fmt.Errorf("failed to load configs: %err", err)
 	}
@@ -260,16 +260,16 @@ func Setup(ctx context.Context, usage string) (models.Querier, error) {
 		return nil, err
 	}
 
-	confDir, err := os.UserConfigDir()
+	claiConfDir, err := utils.GetClaiConfigDir()
 	if err != nil {
-		return nil, fmt.Errorf("failed to find home dir: %v", err)
+		return nil, fmt.Errorf("failed to find config dir: %v", err)
 	}
 
 	switch mode {
 	case CHAT, QUERY, GLOB, CMD:
-		return setupTextQuerier(ctx, mode, confDir, flagSet)
+		return setupTextQuerier(ctx, mode, claiConfDir, flagSet)
 	case VIDEO:
-		vConf, err := utils.LoadConfigFromFile(confDir, "videoConfig.json", nil, &video.Default)
+		vConf, err := utils.LoadConfigFromFile(claiConfDir, "videoConfig.json", nil, &video.Default)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load configs: %w", err)
 		}
@@ -285,7 +285,7 @@ func Setup(ctx context.Context, usage string) (models.Querier, error) {
 		}
 		return vq, nil
 	case PHOTO:
-		pConf, err := utils.LoadConfigFromFile(confDir, "photoConfig.json", migrateOldPhotoConfig, &photo.DEFAULT)
+		pConf, err := utils.LoadConfigFromFile(claiConfDir, "photoConfig.json", migrateOldPhotoConfig, &photo.DEFAULT)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load configs: %w", err)
 		}

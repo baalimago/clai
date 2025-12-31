@@ -62,7 +62,10 @@ var defaultDalle = DallE{
 }
 
 func NewPhotoQuerier(pConf photo.Configurations) (models.Querier, error) {
-	home, _ := os.UserConfigDir()
+	claiConfDir, err := utils.GetClaiConfigDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get config dir: %v", err)
+	}
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {
 		return nil, fmt.Errorf("environment variable 'OPENAI_API_KEY' not set")
@@ -76,7 +79,7 @@ func NewPhotoQuerier(pConf photo.Configurations) (models.Querier, error) {
 		defaultCpy.Output.Type = photo.LOCAL
 	}
 	// Load config based on model, allowing for different configs for each model
-	dalleQuerier, err := utils.LoadConfigFromFile(home, fmt.Sprintf("openai_dalle_%v.json", model), nil, &defaultCpy)
+	dalleQuerier, err := utils.LoadConfigFromFile(claiConfDir, fmt.Sprintf("openai_dalle_%v.json", model), nil, &defaultCpy)
 	switch dalleQuerier.Output.Type {
 	case photo.URL:
 		dalleQuerier.ResponseFormat = "url"

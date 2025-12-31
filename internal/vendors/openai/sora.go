@@ -49,7 +49,10 @@ var defaultSora = Sora{
 }
 
 func NewVideoQuerier(vConf video.Configurations) (models.Querier, error) {
-	home, _ := os.UserConfigDir()
+	claiConfDir, err := utils.GetClaiConfigDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get config dir: %v", err)
+	}
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {
 		return nil, fmt.Errorf("environment variable 'OPENAI_API_KEY' not set")
@@ -59,7 +62,7 @@ func NewVideoQuerier(vConf video.Configurations) (models.Querier, error) {
 	defaultCpy.Model = model
 	defaultCpy.Output = vConf.Output
 
-	soraQuerier, err := utils.LoadConfigFromFile(home, fmt.Sprintf("openai_sora_%v.json", model), nil, &defaultCpy)
+	soraQuerier, err := utils.LoadConfigFromFile(claiConfDir, fmt.Sprintf("openai_sora_%v.json", model), nil, &defaultCpy)
 	if err != nil {
 		ancli.PrintWarn(fmt.Sprintf("failed to load config for model: %v, error: %v\n", model, err))
 	}
