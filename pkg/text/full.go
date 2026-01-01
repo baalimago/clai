@@ -53,6 +53,7 @@ func pubConfigToInternal(c models.Configurations) text.Configurations {
 		UseProfile:          "",
 		ProfilePath:         "",
 		RequestedToolGlobs:  internalToolsToString(c.InternalTools),
+		Out:                 c.Out,
 	}
 }
 
