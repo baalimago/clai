@@ -26,16 +26,19 @@ Usage: clai [flags] <command>
 Flags:
   -re, -reply bool             Set to true to reply to the previous query, meaning that it will be used as context for your next query. (default %v)
   -r, -raw bool                Set to true to print raw output (no animation, no glow). (default %v)
-  -cm, -chat-model string      Set the chat model to use. (default is found in textConfig.json)
-  -pm, -photo-model string     Set the image model to use. (default is found in photoConfig.json)
-  -pd, -photo-dir string       Set the directory to store the generated pictures. (default %v)
-  -pp, -photo-prefix string    Set the prefix for the generated pictures. (default %v)
-  -vd, -video-dir string 			 Set the directory to store the generated videos. (default %v)
-  -vp, -video-prefix string 	 Set the prefix for the generated videos. (default %v)
-  -t, -tools string 					 Set to <tool_a>,<tool_b> for specific tool, or */"" to use all built in or MCP tools. See available tools with 'clai tools' (default %v)
+  -cm, -chat-model string      Set the chat model to use. (default is found in %v/textConfig.json)
+  -pm, -photo-model string     Set the image model to use. (default is found in %v/photoConfig.json)
+  -pd, -photo-dir string       Set the directory to store the generated pictures. (default is found in %v/photoConfig.json)
+  -pp, -photo-prefix string    Set the prefix for the generated pictures. (default is found in %v/photoConfig.json)
+  -vd, -video-dir string       Set the directory to store the generated videos. (default %v)
+  -vp, -video-prefix string    Set the prefix for the generated videos. (default %v)
+  -t, -tools string            Set to <tool_a>,<tool_b> for specific tool, or */"" to use all built in or MCP tools. See available tools with 'clai tools' (default %v)
   -g, -glob string             Set the glob to use for globbing. (default '%v')
   -p, -profile string          Set the profile which should be used. For details, see 'clai help profile'. (default '%v')
   -prp, profile-path string    Set the path to a profile file to use instead of -p/-profile.
+
+Config dir: %v
+Cache dir:  %v
 
 Commands:
   h|help                        Display this help message
