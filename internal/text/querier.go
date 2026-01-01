@@ -163,7 +163,7 @@ func (q *Querier[C]) postProcess() {
 	if q.Raw {
 		// Print a new line, otherwise cursor remains on the same position on
 		// the next contet block
-		fmt.Println()
+		fmt.Fprintln(q.out)
 	}
 	// This is to ensure that it only post-processes once in recursive calls
 	if q.hasPrinted {
@@ -250,9 +250,13 @@ func (q *Querier[C]) reset() {
 }
 
 func (q *Querier[C]) handleToken(token string) {
+	w := q.out
+	if w == nil {
+		w = os.Stdout
+	}
 	q.fullMsg += token
 	if !q.debug {
-		fmt.Print(token)
+		fmt.Fprint(w, token)
 	}
 }
 

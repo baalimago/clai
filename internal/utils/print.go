@@ -118,6 +118,7 @@ func AttemptPrettyPrint(w io.Writer, chatMessage pub_models.Message, username st
 	inp = strings.ReplaceAll(inp, "</thinking>", "[/thinking]")
 	cmd.Stdin = bytes.NewBufferString(inp)
 	cmd.Stdout = w
+	cmd.Stderr = w
 	fmt.Fprintf(w, "%v:", ancli.ColoredMessage(color, role))
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to run glow: %w", err)
