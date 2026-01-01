@@ -228,18 +228,23 @@ func printHelp(usage string, args []string) {
 		fmt.Println(ProfileHelp)
 		return
 	}
+
+	cfgDir, _ := utils.GetClaiConfigDir()
+	cacheDir, _ := utils.GetClaiCacheDir()
 	fmt.Printf(usage,
 		defaultFlags.ReplyMode,
 		defaultFlags.PrintRaw,
-		defaultFlags.PhotoDir,
-		defaultFlags.PhotoPrefix,
+		cfgDir,
+		cfgDir,
+		cfgDir,
+		cfgDir,
 		defaultFlags.VideoDir,
 		defaultFlags.VideoPrefix,
-		defaultFlags.StdinReplace,
-		defaultFlags.ExpectReplace,
 		defaultFlags.UseTools,
 		defaultFlags.Glob,
 		defaultFlags.Profile,
+		cfgDir,
+		cacheDir,
 	)
 }
 
