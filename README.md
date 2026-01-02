@@ -16,7 +16,6 @@ Test coverage: 65.622% 😌👏
 - **[MCP client support](./EXAMPLES.md#Tooling)** - Add any MCP server you'd like by simply pasting their configuration.
 - **Vendor agnosticism** - Use any functionality in Clai with [most LLM vendors](#supported-vendors) interchangeably.
 - **[Conversations](./EXAMPLES.md#Conversations)** - Create, manage and continue conversations.
-- **Rate limit circumvention** - Automatically summarize + recall complex tasks.
 - **[Profiles](./EXAMPLES.md#Profiles)** - Pre-prompted profiles enabling customized workflows and agents.
 - **Unix-like** - Clai follows the [unix philosophy](https://en.wikipedia.org/wiki/Unix_philosophy) and works seamlessly with data piped in and out.
 
