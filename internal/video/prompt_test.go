@@ -24,7 +24,7 @@ func TestSetupPrompts(t *testing.T) {
 
 	// Set config dir override for testing
 	claiDir := filepath.Join(tmpInfo, ".clai")
-	t.Setenv("CLAI_CONFIG_HOME", claiDir)
+	t.Setenv("CLAI_CONFIG_DIR", claiDir)
 
 	// We expect the code to look in <claiDir>/conversations/prevQuery.json
 

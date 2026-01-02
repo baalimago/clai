@@ -14,7 +14,7 @@ func TestRunProfilesList_NoProfilesDir(t *testing.T) {
 	tmp := t.TempDir()
 
 	// Override config dir so GetClaiConfigDir points into our temp dir.
-	t.Setenv("CLAI_CONFIG_HOME", filepath.Join(tmp, ".clai"))
+	t.Setenv("CLAI_CONFIG_DIR", filepath.Join(tmp, ".clai"))
 
 	// Sanity: confirm GetClaiConfigDir resolves inside tmp
 	cfgDir, err := utils.GetClaiConfigDir()
@@ -62,7 +62,7 @@ func TestRunProfilesList_EmptyProfilesDir(t *testing.T) {
 		t.Fatalf("failed to create profiles dir: %v", err)
 	}
 
-	t.Setenv("CLAI_CONFIG_HOME", claiDir)
+	t.Setenv("CLAI_CONFIG_DIR", claiDir)
 
 	var buf bytes.Buffer
 	origStdout := os.Stdout

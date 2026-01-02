@@ -58,7 +58,7 @@ func TestSetupPrompts_ReplyModePrependsMessages(t *testing.T) {
 	// Point config dir to a temp directory
 	tmp := t.TempDir()
 	claiConfDir := path.Join(tmp, ".clai")
-	t.Setenv("CLAI_CONFIG_HOME", claiConfDir)
+	t.Setenv("CLAI_CONFIG_DIR", claiConfDir)
 
 	if err := os.MkdirAll(path.Join(claiConfDir, "conversations"), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
