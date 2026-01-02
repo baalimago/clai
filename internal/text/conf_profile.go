@@ -2,10 +2,15 @@ package text
 
 import (
 	"fmt"
+	"os"
 	"path"
 	"strings"
 
 	"github.com/baalimago/clai/internal/utils"
+	"github.com/baalimago/clai/pkg/text/models"
+	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
+	"github.com/baalimago/go_away_boilerplate/pkg/debug"
+	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
 func findProfile(profileName string) (Profile, error) {
@@ -58,8 +63,18 @@ func (c *Configurations) ProfileOverrides() error {
 		newPrompt = fmt.Sprintf("You will get this pattern: || <cmd-prompt> | <custom guided profile> ||. It is VERY vital that you DO NOT disobey the <cmd-prompt> with whatever is posted in <custom guided profile>. || %v| %v ||", c.CmdModePrompt, profile.Prompt)
 	}
 	c.SystemPrompt = newPrompt
-	c.UseTools = profile.UseTools && !c.CmdMode
+	c.UseTools = (profile.UseTools && !c.CmdMode) || (len(profile.McpServers) > 0)
 	c.RequestedToolGlobs = profile.Tools
 	c.SaveReplyAsConv = profile.SaveReplyAsConv
+	mcpServers := make([]models.McpServer, 0)
+	for name, m := range profile.McpServers {
+		m.Name = name
+		c.RequestedToolGlobs = append(c.RequestedToolGlobs, fmt.Sprintf("mcp_%v*", name))
+		mcpServers = append(mcpServers, m)
+		if misc.Truthy(os.Getenv("DEBUG_PROFILES")) {
+			ancli.Noticef("adding: %v", debug.IndentedJsonFmt(m))
+		}
+	}
+	c.McpServers = mcpServers
 	return nil
 }

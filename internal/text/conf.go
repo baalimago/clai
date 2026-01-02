@@ -55,12 +55,13 @@ func (c Configurations) UsingProfile() bool {
 
 // Profile which allows for specialized ai configurations for specific tasks
 type Profile struct {
-	Name            string   `json:"name"`
-	Model           string   `json:"model"`
-	UseTools        bool     `json:"use_tools"`
-	Tools           []string `json:"tools"`
-	Prompt          string   `json:"prompt"`
-	SaveReplyAsConv bool     `json:"save-reply-as-conv"`
+	Name            string                          `json:"name"`
+	Model           string                          `json:"model"`
+	UseTools        bool                            `json:"use_tools"`
+	Tools           []string                        `json:"tools"`
+	Prompt          string                          `json:"prompt"`
+	SaveReplyAsConv bool                            `json:"save-reply-as-conv"`
+	McpServers      map[string]pub_models.McpServer `json:"mcp_servers,omitempty"`
 }
 
 var Default = Configurations{

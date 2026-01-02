@@ -15,6 +15,7 @@ import (
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/tools/mcp"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
+	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -31,15 +32,24 @@ func filterMcpServersByProfile(mcpServerPaths []string, userConf Configurations)
 	for _, file := range mcpServerPaths {
 		serverName := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
 
+		if misc.Truthy(os.Getenv("DEBUG_PROFILES")) {
+			ancli.Noticef("checking out: %v...", file)
+		}
 	INNER:
 		for _, tool := range userConf.RequestedToolGlobs {
 			toolSplit := strings.Split(tool, "_")
 			// It can't have mcp prefix
 			if len(toolSplit) < 2 {
+				if misc.Truthy(os.Getenv("DEBUG_PROFILES")) {
+					ancli.Noticef("SKIP: no mcp prefix, wrong length of split")
+				}
 				continue
 			}
 			// Its not a mcp server nor tool
 			if toolSplit[0] != "mcp" {
+				if misc.Truthy(os.Getenv("DEBUG_PROFILES")) {
+					ancli.Noticef("SKIP: no mcp prefix")
+				}
 				continue
 			}
 			toolServer := toolSplit[1]
@@ -74,11 +84,11 @@ func findConfiguredMcpServers(filePaths []string) ([]pub_models.McpServer, error
 	return ret, errors.Join(errs...)
 }
 
-// addMcpTools loads MCP server configurations from a directory.
+// setupMcpManager loads MCP server configurations from a directory.
 // Each file inside the directory should contain a single MCP server configuration.
 // Every server is started and its tools registered with a prefix of the filename.
 // If the directory is missing, an error is returned.
-func AddMcpTools(ctx context.Context, mcpServersDir string, userConf Configurations) error {
+func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configurations) error {
 	if _, err := os.Stat(mcpServersDir); os.IsNotExist(err) {
 		return fmt.Errorf("MCP servers directory not found at %s. If you want MCP server support, create one using 'clai setup' and select option 3", mcpServersDir)
 	}
@@ -91,6 +101,11 @@ func AddMcpTools(ctx context.Context, mcpServersDir string, userConf Configurati
 	// Filter MCP servers based on profile tools
 	filteredFiles := filterMcpServersByProfile(files, userConf)
 	mcpServers, err := findConfiguredMcpServers(filteredFiles)
+	mcpServers = append(mcpServers, userConf.McpServers...)
+
+	if misc.Truthy(os.Getenv("DEBUG")) {
+		ancli.Okf("mcpServers: %v", debug.IndentedJsonFmt(mcpServers))
+	}
 	if len(mcpServers) == 0 {
 		if err != nil {
 			return fmt.Errorf("failed to find mcpServers: %w", err)
@@ -99,12 +114,11 @@ func AddMcpTools(ctx context.Context, mcpServersDir string, userConf Configurati
 		return nil
 	}
 
-	mcpServers = append(mcpServers, userConf.McpServers...)
 	controlChannel := make(chan mcp.ControlEvent)
 	statusChan := make(chan error, 1)
 
 	toolWg := sync.WaitGroup{}
-	toolWg.Add(len(filteredFiles))
+	toolWg.Add(len(mcpServers))
 	go mcp.Manager(ctx, controlChannel, statusChan, &toolWg)
 
 	for _, mcpServer := range mcpServers {
@@ -148,8 +162,7 @@ func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, us
 		return
 	}
 	tools.Init()
-	// Only setup MCP tools if they're there's a chance of using tools
-	err := AddMcpTools(ctx, path.Join(userConf.ConfigDir, "mcpServers"), userConf)
+	err := setupMcpManager(ctx, path.Join(userConf.ConfigDir, "mcpServers"), userConf)
 	if misc.Truthy(os.Getenv("DEBUG")) {
 		ancli.Okf("Registering tools on querier of type: %T\n", modelConf)
 	}

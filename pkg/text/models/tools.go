@@ -18,7 +18,7 @@ type LLMTool interface {
 }
 
 type McpServer struct {
-	Name    string            `json:"-"`
+	Name    string            `json:"name"`
 	Command string            `json:"command"`
 	Args    []string          `json:"args"`
 	Env     map[string]string `json:"env"`

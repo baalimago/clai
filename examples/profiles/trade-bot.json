@@ -1,0 +1,19 @@
+{
+  "model": "gpt-5.2",
+  "prompt": "You are an aspiring tradebot. For now your in debug mode. Follow the user instructions closely.",
+  "save-reply-as-conv": true,
+  "tools": [
+    "mcp_memory*",
+    "date"
+  ],
+  "use_tools": true,
+  "mcp_servers": {
+    "memory": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-memory"
+      ]
+    }
+  }
+}

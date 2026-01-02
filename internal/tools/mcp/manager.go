@@ -23,7 +23,6 @@ func Manager(ctx context.Context, controlChannel <-chan ControlEvent, statusChan
 			go func(e ControlEvent) {
 				defer wg.Done()
 				if err := handleServer(ctx, e, readyChan); err != nil {
-					allToolsWg.Done()
 					statusChan <- err
 				}
 			}(ev)
@@ -38,6 +37,9 @@ func Manager(ctx context.Context, controlChannel <-chan ControlEvent, statusChan
 }
 
 func handleServer(ctx context.Context, ev ControlEvent, readyChan chan struct{}) error {
+	defer func() {
+		readyChan <- struct{}{}
+	}()
 	// Initialize
 	initReq := Request{
 		JSONRPC: "2.0",
@@ -108,7 +110,6 @@ func handleServer(ctx context.Context, ev ControlEvent, readyChan chan struct{})
 		}
 		tools.Registry.Set(spec.Name, mt)
 	}
-	readyChan <- struct{}{}
 	return nil
 }
 
