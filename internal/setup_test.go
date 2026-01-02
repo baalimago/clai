@@ -44,6 +44,7 @@ func Test_setupTextQuerier(t *testing.T) {
 	// Issue reported here: https://github.com/baalimago/clai/pull/16#issuecomment-3506586071
 	t.Run("deepseek url on ollama:deepseek-r1:8b chat model", func(t *testing.T) {
 		t.Setenv("DEBUG", "1")
+		t.Setenv("CLAI_CONFIG_DIR", testDir)
 		oldFS := flag.CommandLine
 		defer func() { flag.CommandLine = oldFS }()
 		fs := flag.NewFlagSet("clai", flag.ContinueOnError)

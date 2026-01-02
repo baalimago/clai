@@ -55,12 +55,11 @@ func TestSetupPrompts_StdinOnly(t *testing.T) {
 }
 
 func TestSetupPrompts_ReplyModePrependsMessages(t *testing.T) {
-	// Point config dir to a temp XDG config home
+	// Point config dir to a temp directory
 	tmp := t.TempDir()
-	oldEnv := os.Getenv("XDG_CONFIG_HOME")
-	t.Cleanup(func() { _ = os.Setenv("XDG_CONFIG_HOME", oldEnv) })
-	_ = os.Setenv("XDG_CONFIG_HOME", tmp)
 	claiConfDir := path.Join(tmp, ".clai")
+	t.Setenv("CLAI_CONFIG_DIR", claiConfDir)
+
 	if err := os.MkdirAll(path.Join(claiConfDir, "conversations"), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}

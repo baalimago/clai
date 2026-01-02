@@ -61,12 +61,11 @@ func runMigrationCallback(migrationCb func(string) error, configDirPath string) 
 }
 
 func LoadConfigFromFile[T any](
-	placeConfigPath,
+	configDirPath,
 	configFileName string,
 	migrationCb func(string) error,
 	dflt *T,
 ) (T, error) {
-	configDirPath := fmt.Sprintf("%v/.clai/", placeConfigPath)
 	if misc.Truthy(os.Getenv("DEBUG")) {
 		ancli.PrintOK(fmt.Sprintf("attempting to load file: %v%v\n", configDirPath, configFileName))
 	}

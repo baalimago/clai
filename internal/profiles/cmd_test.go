@@ -13,12 +13,8 @@ import (
 func TestRunProfilesList_NoProfilesDir(t *testing.T) {
 	tmp := t.TempDir()
 
-	// Override XDG_CONFIG_HOME so GetClaiConfigDir points into our temp dir.
-	origXDG := os.Getenv("XDG_CONFIG_HOME")
-	if err := os.Setenv("XDG_CONFIG_HOME", tmp); err != nil {
-		t.Fatalf("failed to set XDG_CONFIG_HOME: %v", err)
-	}
-	defer os.Setenv("XDG_CONFIG_HOME", origXDG)
+	// Override config dir so GetClaiConfigDir points into our temp dir.
+	t.Setenv("CLAI_CONFIG_DIR", filepath.Join(tmp, ".clai"))
 
 	// Sanity: confirm GetClaiConfigDir resolves inside tmp
 	cfgDir, err := utils.GetClaiConfigDir()
@@ -59,23 +55,14 @@ func TestRunProfilesList_NoProfilesDir(t *testing.T) {
 func TestRunProfilesList_EmptyProfilesDir(t *testing.T) {
 	tmp := t.TempDir()
 
-	cfgDir, err := utils.GetClaiConfigDir()
-	if err != nil {
-		t.Fatalf("failed to get original clai config dir: %v", err)
-	}
-	_ = cfgDir // silence unused if not needed
-
 	// Create a .clai/profiles dir inside tmp
-	claiDir := filepath.Join(tmp, ".clai", "profiles")
-	if err := os.MkdirAll(claiDir, 0o755); err != nil {
+	claiDir := filepath.Join(tmp, ".clai")
+	profilesDir := filepath.Join(claiDir, "profiles")
+	if err := os.MkdirAll(profilesDir, 0o755); err != nil {
 		t.Fatalf("failed to create profiles dir: %v", err)
 	}
 
-	origXDG := os.Getenv("XDG_CONFIG_HOME")
-	if err := os.Setenv("XDG_CONFIG_HOME", tmp); err != nil {
-		t.Fatalf("failed to set XDG_CONFIG_HOME: %v", err)
-	}
-	defer os.Setenv("XDG_CONFIG_HOME", origXDG)
+	t.Setenv("CLAI_CONFIG_DIR", claiDir)
 
 	var buf bytes.Buffer
 	origStdout := os.Stdout
@@ -90,7 +77,7 @@ func TestRunProfilesList_EmptyProfilesDir(t *testing.T) {
 		close(done)
 	}()
 
-	err = runProfilesList()
+	err := runProfilesList()
 	w.Close()
 	os.Stdout = origStdout
 	<-done
