@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"strings"
 
 	"github.com/baalimago/clai/internal"
 	priv_models "github.com/baalimago/clai/internal/models"
@@ -56,6 +57,9 @@ func New(options ...Option) Agent {
 
 func WithConfigDir(cfgDir string) Option {
 	return func(a *Agent) {
+		if !strings.HasSuffix(cfgDir, "clai") {
+			cfgDir = path.Join(cfgDir, "clai")
+		}
 		a.cfgDir = cfgDir
 	}
 }
