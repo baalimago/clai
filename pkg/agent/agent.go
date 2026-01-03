@@ -54,6 +54,12 @@ func New(options ...Option) Agent {
 	return conf
 }
 
+func WithConfigDir(cfgDir string) Option {
+	return func(a *Agent) {
+		a.cfgDir = cfgDir
+	}
+}
+
 func WithMaxToolCalls(am int) Option {
 	return func(a *Agent) {
 		a.maxToolCalls = &am
