@@ -144,10 +144,11 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	}
 	querier.Model = modelConf
 	if querier.debug {
-		ancli.PrintOK(
-			fmt.Sprintf("querier: %v,\n===\nmodels: %v\n",
-				debug.IndentedJsonFmt(querier),
-				debug.IndentedJsonFmt(modelConf)))
+		ancli.Okf("querier: %v,\n===\nmodels: %v\n",
+			debug.IndentedJsonFmt(querier),
+			debug.IndentedJsonFmt(modelConf))
+
+		ancli.Okf("Out is: %v", userConf.Out)
 	}
 	querier.chat = userConf.InitialChat
 	querier.Raw = userConf.Raw
@@ -155,5 +156,7 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	querier.shouldSaveReply = !userConf.ChatMode && userConf.SaveReplyAsConv
 	querier.tokenWarnLimit = userConf.TokenWarnLimit
 	querier.toolOutputRuneLimit = userConf.ToolOutputRuneLimit
+	querier.maxToolCalls = userConf.MaxToolCalls
+	querier.out = userConf.Out
 	return querier, nil
 }

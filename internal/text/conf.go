@@ -41,8 +41,9 @@ type Configurations struct {
 	PostProccessedPrompt string `json:"-"`
 
 	// These are to allow tools to be injected via public package.
-	Tools      []pub_models.LLMTool   `json:"-"`
-	McpServers []pub_models.McpServer `json:"-"`
+	Tools        []pub_models.LLMTool   `json:"-"`
+	McpServers   []pub_models.McpServer `json:"-"`
+	MaxToolCalls *int                   `json:"max-tool-calls,omitempty"`
 
 	// Out writer. Normally stdout, but may also be a file when invoked as a package
 	Out io.Writer `json:"-"`
@@ -63,7 +64,7 @@ type Profile struct {
 }
 
 var Default = Configurations{
-	Model:         "gpt-5",
+	Model:         "gpt-5-2",
 	SystemPrompt:  "You are an assistant for a CLI tool. Answer concisely and informatively. Prefer markdown if possible.",
 	CmdModePrompt: "You are an assistant for a CLI tool aiding with cli tool suggestions. Write ONLY the command and nothing else. Disregard any queries asking for anything except a bash command. Do not shell escape single or double quotes.",
 	Raw:           false,
@@ -75,11 +76,11 @@ var Default = Configurations{
 }
 
 var DefaultProfile = Profile{
-	Name:            "",
-	Model:           "",
+	Name:            "example-name",
+	Model:           Default.Model,
 	UseTools:        true,
 	Tools:           []string{},
-	Prompt:          "",
+	Prompt:          Default.SystemPrompt,
 	SaveReplyAsConv: true,
 }
 

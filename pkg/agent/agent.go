@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"strings"
 
 	"github.com/baalimago/clai/internal"
 	priv_models "github.com/baalimago/clai/internal/models"
@@ -14,12 +15,13 @@ import (
 )
 
 type Agent struct {
-	name       string
-	model      string
-	prompt     string
-	tools      []models.LLMTool
-	mcpServers []models.McpServer
-	cfgDir     string
+	name         string
+	model        string
+	prompt       string
+	tools        []models.LLMTool
+	mcpServers   []models.McpServer
+	cfgDir       string
+	maxToolCalls *int
 
 	querierCreator func(ctx context.Context, conf text.Configurations) (priv_models.Querier, error)
 
@@ -51,6 +53,21 @@ func New(options ...Option) Agent {
 		o(&conf)
 	}
 	return conf
+}
+
+func WithConfigDir(cfgDir string) Option {
+	return func(a *Agent) {
+		if !strings.HasSuffix(cfgDir, "clai") {
+			cfgDir = path.Join(cfgDir, "clai")
+		}
+		a.cfgDir = cfgDir
+	}
+}
+
+func WithMaxToolCalls(am int) Option {
+	return func(a *Agent) {
+		a.maxToolCalls = &am
+	}
 }
 
 func WithModel(model string) Option {
@@ -92,6 +109,7 @@ func (a *Agent) asInternalConfig() text.Configurations {
 		SaveReplyAsConv: true,
 		McpServers:      a.mcpServers,
 		Tools:           a.tools,
+		MaxToolCalls:    a.maxToolCalls,
 	}
 }
 
@@ -107,6 +125,7 @@ func (a *Agent) Setup(ctx context.Context) error {
 	if _, err := os.Stat(conversationsDir); os.IsNotExist(err) {
 		os.Mkdir(conversationsDir, 0o755)
 	}
+
 	querier, err := a.querierCreator(ctx, a.asInternalConfig())
 	if err != nil {
 		return fmt.Errorf("publicQuerier.Setup failed to CreateTextQuerier: %v", err)

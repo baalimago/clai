@@ -118,6 +118,7 @@ func AttemptPrettyPrint(w io.Writer, chatMessage pub_models.Message, username st
 	inp = strings.ReplaceAll(inp, "</thinking>", "[/thinking]")
 	cmd.Stdin = bytes.NewBufferString(inp)
 	cmd.Stdout = w
+	cmd.Stderr = w
 	fmt.Fprintf(w, "%v:", ancli.ColoredMessage(color, role))
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to run glow: %w", err)
@@ -177,4 +178,29 @@ func fillRemainderOfTermWidth(prefix, remainder string, termWidth, padding int) 
 	}
 
 	return prefix + widthAdjustedRemainder
+}
+
+// ShortenedOutput returns a shortened version of the output
+func ShortenedOutput(out string, maxShortenedNewlines int) string {
+	maxTokens := 20
+	maxRunes := 100
+	outSplit := strings.Split(out, " ")
+	outNewlineSplit := strings.Split(out, "\n")
+	firstTokens := GetFirstTokens(outSplit, maxTokens)
+	amRunes := utf8.RuneCountInString(out)
+	if len(firstTokens) < maxTokens && len(outNewlineSplit) < maxShortenedNewlines && amRunes < maxRunes {
+		return out
+	}
+	if amRunes > maxRunes {
+		return fmt.Sprintf("%v... and %v more runes", out[:maxRunes], amRunes-maxRunes)
+	}
+	firstTokensStr := strings.Join(firstTokens, " ")
+	amLeft := len(outSplit) - maxTokens
+	abbreviationType := "tokens"
+	if len(outNewlineSplit) > maxShortenedNewlines {
+		firstTokensStr = strings.Join(GetFirstTokens(outNewlineSplit, maxShortenedNewlines), "\n")
+		amLeft = len(outNewlineSplit) - maxShortenedNewlines
+		abbreviationType = "lines"
+	}
+	return fmt.Sprintf("%v\n...[and %v more %v]", firstTokensStr, amLeft, abbreviationType)
 }
