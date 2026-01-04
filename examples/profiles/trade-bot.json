@@ -1,5 +1,5 @@
 {
-  "description": "Use this tradebot by targeting it via: 'source ~/.secrets_trade-bot && clai -prp <path to this json> query Do your hourly run.'. You need to have Polymarket credentials setup, easiest is to configure an etherium wallet, expose private key and have it be funded.",
+  "description": "Use this tradebot by targeting it via: 'source ~/.secrets_trade-bot && clai -profile-path <path to this json> query Do your hourly run.'. You need to have Polymarket credentials setup, easiest is to configure an etherium wallet, expose private key and have it be funded.",
   "model": "gpt-5.2",
   "save-reply-as-conv": true,
   "tools": [
