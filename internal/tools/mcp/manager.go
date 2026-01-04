@@ -121,16 +121,19 @@ func sendRequest(ctx context.Context, in chan<- any, out <-chan any, req Request
 	}
 	for {
 		select {
-		case msg := <-out:
+		case msg, ok := <-out:
+			if !ok {
+				ancli.Errf("channel closed")
+				return Response{}, nil
+			}
 			raw, ok := msg.(json.RawMessage)
 			if !ok {
-				if err, ok := msg.(error); ok {
-					return Response{}, fmt.Errorf("failed to parse json.RawMessage: '%v', err: %w", msg, err)
-				}
+				ancli.Errf("failed to parse json.RawMessage, message: '%v'", msg)
 				continue
 			}
 			var resp Response
 			if err := json.Unmarshal(raw, &resp); err != nil {
+				ancli.Errf("failed to unmarshal to Response, error: '%v'", msg)
 				continue
 			}
 			if resp.ID == req.ID {

@@ -6,13 +6,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
+	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
+
+// 2Mib, some mcp servers sends very large messages
+const mcpServerOutBufferSizeKib = 2048
 
 // Client starts the MCP server process defined by mcpConfig and returns channels
 // for sending requests and receiving responses.
@@ -51,7 +54,11 @@ func Client(ctx context.Context, mcpConfig pub_models.McpServer) (chan<- any, <-
 				if !ok {
 					return
 				}
-				enc.Encode(msg)
+				err := enc.Encode(msg)
+				if err != nil {
+					ancli.Errf("client: %v, got error when encoding message: '%v', error: %v", mcpConfig.Name, msg, err)
+				}
+
 			case <-ctx.Done():
 				return
 			}
@@ -59,24 +66,44 @@ func Client(ctx context.Context, mcpConfig pub_models.McpServer) (chan<- any, <-
 	}()
 
 	go func() {
-		dec := json.NewDecoder(stdout)
-		for {
+		scanner := bufio.NewScanner(stdout)
+
+		const maxCapacity = mcpServerOutBufferSizeKib * 1024
+		buf := make([]byte, maxCapacity)
+		scanner.Buffer(buf, maxCapacity)
+
+		for scanner.Scan() {
 			var raw json.RawMessage
-			if err := dec.Decode(&raw); err != nil {
-				if err == io.EOF {
-					close(out)
-					return
+			if err := json.Unmarshal(
+				scanner.Bytes(), &raw); err != nil {
+
+				if misc.Truthy(os.Getenv("DEBUG_MCP_TOOL")) {
+					ancli.Warnf(
+						"mcp_server: '%v' got decode error: %v",
+						mcpConfig.Name, err)
 				}
-				out <- fmt.Errorf("decode: %w", err)
-				close(out)
-				return
+				// Don't pass faulty messages upstream, instead just log them
+				// Assume that the mcp server will eventually return json-formated data
+				continue
 			}
+
 			out <- raw
+		}
+		close(out)
+		if ctx.Err() != nil &&
+			errors.Is(ctx.Err(), context.Canceled) {
+			return
+		}
+		if err := scanner.Err(); err != nil {
+			ancli.Errf("mcp_%v: %s\n", mcpConfig.Name, err)
 		}
 	}()
 
 	go func() {
 		scanner := bufio.NewScanner(stderr)
+		const maxCapacity = mcpServerOutBufferSizeKib * 1024
+		buf := make([]byte, maxCapacity)
+		scanner.Buffer(buf, maxCapacity)
 		for scanner.Scan() {
 			line := scanner.Text()
 			if line != "" {

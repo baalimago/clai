@@ -8,6 +8,7 @@ import (
 	"os"
 	"sync"
 
+	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
@@ -54,21 +55,34 @@ func (m *mcpTool) Call(input pub_models.Input) (string, error) {
 	m.inputChan <- req
 
 	for msg := range m.outputChan {
-		raw, ok := msg.(json.RawMessage)
-		if !ok {
+		raw, open := msg.(json.RawMessage)
+		if !open {
 			if err, ok := msg.(error); ok {
+				if misc.Truthy(os.Getenv("DEBUG_MCP_TOOL")) {
+					ancli.Okf("mcp_server closed outputChan msg: '%s', err: %v", msg, err)
+				}
 				return "", err
 			}
-			continue
+			return "", errors.New("output channel unexpectedly closed")
+		}
+
+		if misc.Truthy(os.Getenv("DEBUG_MCP_TOOL")) {
+			rawS, _ := raw.MarshalJSON()
+			shortened, _ := utils.WidthAppropriateStringTrunk(string(rawS), "", 10)
+			ancli.Okf("mcp_server client received: '%s'", shortened)
 		}
 		var resp Response
 		if err := json.Unmarshal(raw, &resp); err != nil {
+			ancli.Errf("mcpTool: '%v' failed to unmarshal: '%v'", m.remoteName, err)
 			continue
 		}
 		if resp.ID != id {
 			continue
 		}
 		if resp.Error != nil {
+			if misc.Truthy(os.Getenv("DEBUG_MCP_TOOL")) {
+				ancli.Okf("Now returning response.Error: '%v'", resp.Error)
+			}
 			return "", errors.New(resp.Error.Message)
 		}
 		var result struct {
@@ -79,6 +93,9 @@ func (m *mcpTool) Call(input pub_models.Input) (string, error) {
 			IsError bool `json:"isError"`
 		}
 		if err := json.Unmarshal(resp.Result, &result); err != nil {
+			if misc.Truthy(os.Getenv("DEBUG_MCP_TOOL")) {
+				ancli.Okf("Now returning result error: '%v'", err)
+			}
 			return "", fmt.Errorf("decode result: %w", err)
 		}
 		var buf bytes.Buffer
@@ -88,7 +105,13 @@ func (m *mcpTool) Call(input pub_models.Input) (string, error) {
 			}
 		}
 		if result.IsError {
+			if misc.Truthy(os.Getenv("DEBUG_MCP_TOOL")) {
+				ancli.Okf("Now returning result as error: '%v'", buf.String())
+			}
 			return "", errors.New(buf.String())
+		}
+		if misc.Truthy(os.Getenv("DEBUG_MCP_TOOL")) {
+			ancli.Okf("Now returning: '%v'", buf.String())
 		}
 		return buf.String(), nil
 	}
