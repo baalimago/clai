@@ -23,7 +23,6 @@ func Manager(ctx context.Context, controlChannel <-chan ControlEvent, statusChan
 			go func(e ControlEvent) {
 				defer wg.Done()
 				if err := handleServer(ctx, e, readyChan); err != nil {
-					allToolsWg.Done()
 					statusChan <- err
 				}
 			}(ev)
@@ -38,6 +37,9 @@ func Manager(ctx context.Context, controlChannel <-chan ControlEvent, statusChan
 }
 
 func handleServer(ctx context.Context, ev ControlEvent, readyChan chan struct{}) error {
+	defer func() {
+		readyChan <- struct{}{}
+	}()
 	// Initialize
 	initReq := Request{
 		JSONRPC: "2.0",
@@ -108,7 +110,6 @@ func handleServer(ctx context.Context, ev ControlEvent, readyChan chan struct{})
 		}
 		tools.Registry.Set(spec.Name, mt)
 	}
-	readyChan <- struct{}{}
 	return nil
 }
 
@@ -120,16 +121,19 @@ func sendRequest(ctx context.Context, in chan<- any, out <-chan any, req Request
 	}
 	for {
 		select {
-		case msg := <-out:
+		case msg, ok := <-out:
+			if !ok {
+				ancli.Errf("channel closed")
+				return Response{}, nil
+			}
 			raw, ok := msg.(json.RawMessage)
 			if !ok {
-				if err, ok := msg.(error); ok {
-					return Response{}, fmt.Errorf("failed to parse json.RawMessage: '%v', err: %w", msg, err)
-				}
+				ancli.Errf("failed to parse json.RawMessage, message: '%v'", msg)
 				continue
 			}
 			var resp Response
 			if err := json.Unmarshal(raw, &resp); err != nil {
+				ancli.Errf("failed to unmarshal to Response, error: '%v'", msg)
 				continue
 			}
 			if resp.ID == req.ID {

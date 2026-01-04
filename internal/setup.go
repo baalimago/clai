@@ -109,6 +109,66 @@ func getModeFromArgs(cmd string) (Mode, error) {
 	}
 }
 
+// setupToolConfig by matching configuration in flagSet with tConf to ensure that tools
+// are propperly enabled
+func setupToolConfig(tConf *text.Configurations, flagSet Configurations) {
+	if !tConf.UseTools {
+		// Any indication from flags about tools is considered as a flag
+		// that user wants the LLM to use some sort of tool configuration
+		tConf.UseTools = flagSet.UseTools != ""
+		return
+	}
+
+	tConf.RequestedToolGlobs = append(tConf.RequestedToolGlobs, strings.Split(flagSet.UseTools, ",")...)
+	if tConf.UseTools {
+		// Validate against tool registry and allow MCP-prefixed names.
+		// tools.Registry only knows *local* tools; MCP tools are prefixed "mcp_".
+		tools.Init()
+
+		validTools := make([]string, 0, len(tConf.RequestedToolGlobs))
+
+		for _, p := range tConf.RequestedToolGlobs {
+			if misc.Truthy(os.Getenv("DEBUG_PROFILES")) {
+				ancli.Noticef("found: '%v' in RequestedToolGlobs", p)
+			}
+			p = strings.TrimSpace(p)
+			if p == "" {
+				continue
+			}
+
+			if p == "*" {
+				tConf.RequestedToolGlobs = nil
+				return
+			}
+
+			// MCP tools: accept any name starting with "mcp_"
+			if strings.HasPrefix(p, "mcp_") {
+				validTools = append(validTools, p)
+				continue
+			}
+
+			// Local tools: must exist in the registry
+			wCardTools := tools.Registry.WildcardGet(p)
+			if len(wCardTools) > 0 {
+				for _, t := range wCardTools {
+					validTools = append(validTools, t.Specification().Name)
+				}
+			} else {
+				ancli.Warnf("attempted to select unknown tool '%s' via -t/-tools, skipping\n", p)
+			}
+		}
+
+		// If nothing valid was found, disable tools from CLI perspective
+		if len(validTools) == 0 && flagSet.UseTools != "" {
+			ancli.Warnf("no valid tools found from -t/-tools flag; disabling tools for this run\n")
+			tConf.UseTools = false
+			tConf.RequestedToolGlobs = nil
+		} else {
+			tConf.RequestedToolGlobs = validTools
+		}
+	}
+}
+
 // setupTextQuerier by doing the most convuluted and organically grown configuration system known to man.
 // Do I know 100% how it works at any given point? Sort of. Not really. Am I constantly impressed over how
 // round this wheel I've reinvented is? Yeah, for sure. May it be simplified? Maybe, but it's features are
@@ -152,57 +212,7 @@ func setupTextQuerier(ctx context.Context, mode Mode, confDir string, flagSet Co
 		return nil, fmt.Errorf("profile override failure: %v", err)
 	}
 
-	// Interpret CLI tools flag string:
-	// flagSet.UseTools:
-	//   ""       => no override, leave tConf.UseTools/Tools as config/profile decided
-	//   "*"      => enable tooling, all tools
-	//   "a,b,c"  => enable tooling, only those tools
-	if flagSet.UseTools != "" {
-		tConf.UseTools = true
-
-		if flagSet.UseTools == "*" {
-			// All tools: len(Tools)==0 is interpreted as "all tools"
-			tConf.RequestedToolGlobs = nil
-		} else {
-			// Validate against tool registry and allow MCP-prefixed names.
-			// tools.Registry only knows *local* tools; MCP tools are prefixed "mcp_".
-			tools.Init()
-			parts := strings.Split(flagSet.UseTools, ",")
-			validTools := make([]string, 0, len(parts))
-
-			for _, p := range parts {
-				p = strings.TrimSpace(p)
-				if p == "" {
-					continue
-				}
-
-				// MCP tools: accept any name starting with "mcp_"
-				if strings.HasPrefix(p, "mcp_") {
-					validTools = append(validTools, p)
-					continue
-				}
-
-				// Local tools: must exist in the registry
-				wCardTools := tools.Registry.WildcardGet(p)
-				if len(wCardTools) > 0 {
-					for _, t := range wCardTools {
-						validTools = append(validTools, t.Specification().Name)
-					}
-				} else {
-					ancli.Warnf("attempted to select unknown tool '%s' via -t/-tools, skipping\n", p)
-				}
-			}
-
-			// If nothing valid was found, disable tools from CLI perspective
-			if len(validTools) == 0 {
-				ancli.Warnf("no valid tools found from -t/-tools flag; disabling tools for this run\n")
-				tConf.UseTools = false
-				tConf.RequestedToolGlobs = nil
-			} else {
-				tConf.RequestedToolGlobs = validTools
-			}
-		}
-	}
+	setupToolConfig(&tConf, flagSet)
 
 	// We want some flags, such as model, to be able to overwrite the profile configurations
 	// If this gets too confusing, it should be changed
