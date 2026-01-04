@@ -125,6 +125,7 @@ func (a *Agent) Setup(ctx context.Context) error {
 	if _, err := os.Stat(conversationsDir); os.IsNotExist(err) {
 		os.Mkdir(conversationsDir, 0o755)
 	}
+
 	querier, err := a.querierCreator(ctx, a.asInternalConfig())
 	if err != nil {
 		return fmt.Errorf("publicQuerier.Setup failed to CreateTextQuerier: %v", err)

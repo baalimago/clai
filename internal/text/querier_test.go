@@ -136,35 +136,47 @@ func Test_Querier_eventHandling(t *testing.T) {
 		want  string
 	}{
 		{
-			desc: "it should print token to stdout",
+			desc: "it should write token to writer",
 			q: Querier[*MockQuerier]{
 				Raw: true,
 				Model: &MockQuerier{
-					completionChan: make(chan models.CompletionEvent),
+					completionChan: make(
+						chan models.CompletionEvent),
 				},
+				out: &strings.Builder{},
 			},
-			given: []models.CompletionEvent{"test", "CLOSE"},
-			want:  "test",
+			given: []models.CompletionEvent{
+				"test", "CLOSE",
+			},
+			want: "test",
 		},
 		{
-			desc: "token whitespace should be respected",
+			desc: "token whitespace should be " +
+				"respected",
 			q: Querier[*MockQuerier]{
 				Raw: true,
 				Model: &MockQuerier{
-					completionChan: make(chan models.CompletionEvent),
+					completionChan: make(
+						chan models.CompletionEvent),
 				},
+				out: &strings.Builder{},
 			},
-			given: []models.CompletionEvent{" one", "two\n", "  three ", "CLOSE"},
-			want: ` onetwo
-  three `,
+			given: []models.CompletionEvent{
+				" one", "two\n", "  three ",
+				"CLOSE",
+			},
+			want: " onetwo\n  three ",
 		},
 		{
-			desc: "it should call test function when asked to",
+			desc: "it should call test function " +
+				"when asked to",
 			q: Querier[*MockQuerier]{
 				Raw: true,
 				Model: &MockQuerier{
-					completionChan: make(chan models.CompletionEvent),
+					completionChan: make(
+						chan models.CompletionEvent),
 				},
+				out: &strings.Builder{},
 			},
 			given: []models.CompletionEvent{
 				"first the model said something",
@@ -176,7 +188,8 @@ func Test_Querier_eventHandling(t *testing.T) {
 				},
 				"CLOSE",
 			},
-			want: "Call: 'test', inputs: [ 'testKey': 'testVal' ]",
+			want: "Call: 'test', inputs: [ " +
+				"'testKey': 'testVal' ]",
 		},
 	}
 	for _, tC := range testCases {
@@ -187,13 +200,20 @@ func Test_Querier_eventHandling(t *testing.T) {
 				}
 			}()
 
-			got := testboil.CaptureStdout(t, func(t *testing.T) {
-				t.Helper()
-				tC.q.Query(context.Background())
-			})
+			err := tC.q.Query(context.Background())
+			if err != nil {
+				t.Fatalf("Query returned err: %v", err)
+			}
+
+			b, ok := tC.q.out.(*strings.Builder)
+			if !ok {
+				t.Fatalf("expected out to be *strings.Builder")
+			}
+			got := b.String()
 
 			if !strings.Contains(got, tC.want) {
-				t.Fatalf("expected: %q, got: %q", tC.want, got)
+				t.Fatalf("expected: %q, got: %q",
+					tC.want, got)
 			}
 		})
 	}
@@ -212,6 +232,7 @@ func Test_Querier_Query_errors(t *testing.T) {
 			desc: "given EOF it should exit without print",
 			q: Querier[*MockQuerier]{
 				Raw: true,
+				out: os.Stdout,
 				Model: &MockQuerier{
 					completionChan: make(chan models.CompletionEvent),
 					errChan:        make(chan error),
@@ -224,6 +245,7 @@ func Test_Querier_Query_errors(t *testing.T) {
 			desc: "given context cancel error it should exit without print",
 			q: Querier[*MockQuerier]{
 				Raw: true,
+				out: os.Stdout,
 				Model: &MockQuerier{
 					completionChan: make(chan models.CompletionEvent),
 					errChan:        make(chan error),
@@ -236,6 +258,7 @@ func Test_Querier_Query_errors(t *testing.T) {
 			desc: "on some other error, the error should be printed",
 			q: Querier[*MockQuerier]{
 				Raw: true,
+				out: os.Stdout,
 				Model: &MockQuerier{
 					completionChan: make(chan models.CompletionEvent),
 					errChan:        make(chan error),
@@ -280,6 +303,7 @@ func Test_Querier(t *testing.T) {
 		os.MkdirAll(path.Join(tmpConfigDir, "conversations"), os.ModePerm)
 		q := Querier[*MockQuerier]{
 			Raw:             true,
+			out:             os.Stdout,
 			shouldSaveReply: true,
 			configDir:       tmpConfigDir,
 			chat: pub_models.Chat{
