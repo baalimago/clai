@@ -278,6 +278,10 @@ func (q *Querier[C]) handleCompletion(ctx context.Context, completion models.Com
 // Query using the underlying model to stream completions and then print the output
 // from the model to stdout. Blocking operation.
 func (q *Querier[C]) Query(ctx context.Context) error {
+	// Catch-all in the csae that stdout isn't set
+	if q.out == nil {
+		q.out = os.Stdout
+	}
 	if q.rateLimitRetries > RateLimitRetries {
 		return fmt.Errorf("rate limit retry limit exceeded (%v), giving up", RateLimitRetries)
 	}
