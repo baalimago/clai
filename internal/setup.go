@@ -315,7 +315,7 @@ func Setup(ctx context.Context, usage string) (models.Querier, error) {
 		for _, dep := range bi.Deps {
 			fmt.Printf("%s %s\n", dep.Path, dep.Version)
 		}
-		return nil, nil
+		return nil, utils.ErrUserInitiatedExit
 	case SETUP:
 		err := setup.SubCmd()
 		if err != nil {
