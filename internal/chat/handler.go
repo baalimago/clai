@@ -126,6 +126,7 @@ func (cq *ChatHandler) new(ctx context.Context) error {
 	newChat := pub_models.Chat{
 		Created:  time.Now(),
 		ID:       IDFromPrompt(cq.prompt),
+		Profile:  cq.config.UseProfile,
 		Messages: msgs,
 	}
 	newChat, err := cq.q.TextQuery(ctx, newChat)
@@ -175,6 +176,16 @@ func (cq *ChatHandler) cont(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to get chat: %w", err)
 	}
+
+	// If the conversation has a profile associated with it, prefer that when continuing.
+	// This makes `chat continue <id-or-index>` use the profile last used for that chat.
+	if chat.Profile != "" {
+		cq.config.UseProfile = chat.Profile
+	} else if cq.config.UseProfile != "" {
+		// If no profile stored yet, stamp it so it persists going forward.
+		chat.Profile = cq.config.UseProfile
+	}
+
 	if cq.prompt != "" {
 		chat.Messages = append(chat.Messages, pub_models.Message{Role: "user", Content: cq.prompt})
 	}
@@ -218,6 +229,10 @@ func (cq *ChatHandler) loop(ctx context.Context) error {
 
 	for {
 		lastMessage := cq.chat.Messages[len(cq.chat.Messages)-1]
+
+		// Keep chat in sync with the currently active profile.
+		cq.chat.Profile = cq.config.UseProfile
+
 		if lastMessage.Role == "user" {
 			utils.AttemptPrettyPrint(lastMessage, cq.username, cq.raw)
 		} else {

@@ -11,6 +11,7 @@ import (
 type Chat struct {
 	Created  time.Time `json:"created"`
 	ID       string    `json:"id"`
+	Profile  string    `json:"profile,omitempty"`
 	Messages []Message `json:"messages"`
 }
 
