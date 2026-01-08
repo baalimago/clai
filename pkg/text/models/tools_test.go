@@ -69,3 +69,34 @@ func TestInputSchemaPatchAndIsOk(t *testing.T) {
 		t.Fatalf("expected IsOk to pass when array items are provided")
 	}
 }
+
+func TestParameterObjectUnmarshalTypeAsStringOrArray(t *testing.T) {
+	// Test unmarshaling type as a string
+	jsonStr := `{"type": "string", "description": "A string parameter"}`
+	var p1 ParameterObject
+	if err := json.Unmarshal([]byte(jsonStr), &p1); err != nil {
+		t.Fatalf("failed to unmarshal type as string: %v", err)
+	}
+	if p1.Type != "string" {
+		t.Errorf("expected type 'string', got %q", p1.Type)
+	}
+
+	// Test unmarshaling type as an array (union type like ["string", "null"])
+	jsonArr := `{"type": ["string", "null"], "description": "A string or null parameter"}`
+	var p2 ParameterObject
+	if err := json.Unmarshal([]byte(jsonArr), &p2); err != nil {
+		t.Fatalf("failed to unmarshal type as array: %v", err)
+	}
+	if p2.Type != "string" {
+		t.Errorf("expected type 'string' (first element of array), got %q", p2.Type)
+	}
+
+	// Test marshaling always outputs string
+	data, err := json.Marshal(p2)
+	if err != nil {
+		t.Fatalf("failed to marshal ParameterObject: %v", err)
+	}
+	if !strings.Contains(string(data), `"type":"string"`) {
+		t.Errorf("expected marshaled JSON to contain type as string, got: %s", string(data))
+	}
+}
