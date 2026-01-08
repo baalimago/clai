@@ -158,8 +158,56 @@ func (is *InputSchema) IsOk() bool {
 }
 
 type ParameterObject struct {
-	Type        string           `json:"type"`
+	Type        string           `json:"-"`
 	Description string           `json:"description"`
 	Enum        *[]string        `json:"enum,omitempty"`
 	Items       *ParameterObject `json:"items,omitempty"`
+}
+
+// UnmarshalJSON implements custom unmarshaling to handle type field as string or array
+func (p *ParameterObject) UnmarshalJSON(data []byte) error {
+	// Use an auxiliary type to avoid recursion
+	type Alias ParameterObject
+	aux := &struct {
+		TypeRaw json.RawMessage `json:"type"`
+		*Alias
+	}{
+		Alias: (*Alias)(p),
+	}
+
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	// Handle the type field specially
+	if len(aux.TypeRaw) > 0 {
+		// Try to unmarshal as string first
+		var str string
+		if err := json.Unmarshal(aux.TypeRaw, &str); err == nil {
+			p.Type = str
+		} else {
+			// Try to unmarshal as array of strings
+			var arr []string
+			if err := json.Unmarshal(aux.TypeRaw, &arr); err == nil && len(arr) > 0 {
+				// Use the first type in the array
+				p.Type = arr[0]
+			} else {
+				return fmt.Errorf("type must be a string or array of strings")
+			}
+		}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements custom marshaling to always output type as a string
+func (p ParameterObject) MarshalJSON() ([]byte, error) {
+	type Alias ParameterObject
+	return json.Marshal(&struct {
+		Type string `json:"type"`
+		*Alias
+	}{
+		Type:  p.Type,
+		Alias: (*Alias)(&p),
+	})
 }
