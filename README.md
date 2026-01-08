@@ -3,7 +3,7 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/baalimago/clai)](https://goreportcard.com/report/github.com/baalimago/clai)
 ![Wakatime](https://wakatime.com/badge/user/018cc8d2-3fd9-47ef-81dc-e4ad645d5f34/project/018e07e1-bd22-4077-a213-c16290d3db52.svg)
 
-Test coverage: 65.764% 😌👏
+Test coverage: 65.775% 😌👏
 
 `clai` (/klaɪ/, like "cli" in "**cli**mate") is a command line context-feeder for any ai task.
 
