@@ -31,14 +31,12 @@ type Claude struct {
 }
 
 var Default = Claude{
-	Model:            "claude-sonnet-4-20250514",
+	Model:            "claude-sonnet-4",
 	URL:              ClaudeURL,
 	AnthropicVersion: "2023-06-01",
 	AnthropicBeta:    "",
-	Temperature:      0.7,
-	MaxTokens:        1024,
-	TopP:             -1,
-	TopK:             -1,
+	Temperature:      0.5,
+	MaxTokens:        8192,
 	StopSequences:    make([]string, 0),
 }
 
