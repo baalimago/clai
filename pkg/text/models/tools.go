@@ -158,13 +158,17 @@ func (is *InputSchema) IsOk() bool {
 }
 
 type ParameterObject struct {
-	Type        string           `json:"-"`
-	Description string           `json:"description"`
-	Enum        *[]string        `json:"enum,omitempty"`
-	Items       *ParameterObject `json:"items,omitempty"`
+	Type        string            `json:"-"`
+	Description string            `json:"description"`
+	Enum        *[]string         `json:"enum,omitempty"`
+	Items       *ParameterObject  `json:"items,omitempty"`
+	AllOf       []ParameterObject `json:"allOf,omitempty"`
+	AnyOf       []ParameterObject `json:"anyOf,omitempty"`
+	OneOf       []ParameterObject `json:"oneOf,omitempty"`
 }
 
 // UnmarshalJSON implements custom unmarshaling to handle type field as string or array
+// and composition keywords (allOf, anyOf, oneOf)
 func (p *ParameterObject) UnmarshalJSON(data []byte) error {
 	// Use an auxiliary type to avoid recursion
 	type Alias ParameterObject
@@ -204,7 +208,7 @@ func (p *ParameterObject) UnmarshalJSON(data []byte) error {
 func (p ParameterObject) MarshalJSON() ([]byte, error) {
 	type Alias ParameterObject
 	return json.Marshal(&struct {
-		Type string `json:"type"`
+		Type string `json:"type,omitempty"`
 		*Alias
 	}{
 		Type:  p.Type,
