@@ -116,9 +116,11 @@ func setupToolConfig(tConf *text.Configurations, flagSet Configurations) {
 		// Any indication from flags about tools is considered as a flag
 		// that user wants the LLM to use some sort of tool configuration
 		tConf.UseTools = flagSet.UseTools != ""
-		return
 	}
 
+	if flagSet.UseTools == "" {
+		return
+	}
 	tConf.RequestedToolGlobs = append(tConf.RequestedToolGlobs, strings.Split(flagSet.UseTools, ",")...)
 	if tConf.UseTools {
 		// Validate against tool registry and allow MCP-prefixed names.
