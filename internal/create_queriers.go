@@ -14,6 +14,7 @@ import (
 	"github.com/baalimago/clai/internal/vendors/anthropic"
 	"github.com/baalimago/clai/internal/vendors/deepseek"
 	"github.com/baalimago/clai/internal/vendors/gemini"
+	"github.com/baalimago/clai/internal/vendors/huggingface"
 	"github.com/baalimago/clai/internal/vendors/inception"
 	"github.com/baalimago/clai/internal/vendors/mistral"
 	"github.com/baalimago/clai/internal/vendors/novita"
@@ -28,6 +29,20 @@ import (
 func selectTextQuerier(ctx context.Context, conf text.Configurations) (models.Querier, bool, error) {
 	var q models.Querier
 	found := false
+
+	// Explicit prefix routing: avoids accidental matches (e.g. model name contains "gpt").
+	if strings.HasPrefix(conf.Model, "hf:") || strings.HasPrefix(conf.Model, "huggingface:") {
+		found = true
+		defaultCpy := huggingface.DefaultChat
+		modelName := strings.TrimPrefix(conf.Model, "hf:")
+		modelName = strings.TrimPrefix(modelName, "huggingface:")
+		defaultCpy.Model = modelName
+		qTmp, err := text.NewQuerier(ctx, conf, &defaultCpy)
+		if err != nil {
+			return nil, found, fmt.Errorf("failed to create text querier: %w", err)
+		}
+		q = &qTmp
+	}
 
 	if strings.Contains(conf.Model, "claude") {
 		found = true
