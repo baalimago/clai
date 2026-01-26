@@ -66,6 +66,9 @@ func vendorType(fromModel string) (string, string, string, error) {
 	if strings.Contains(fromModel, "gemini") {
 		return "google", "gemini", fromModel, nil
 	}
+	if strings.HasPrefix(fromModel, "hf:") || strings.HasPrefix(fromModel, "huggingface:") {
+		return "huggingface", "hf", fromModel, nil
+	}
 
 	return "", "", "", fmt.Errorf("failed to find vendor for: %v", fromModel)
 }
@@ -84,14 +87,21 @@ func setupConfigFile[C models.StreamCompleter](configPath string, userConf Confi
 				retErr = err
 				return modelConf, fmt.Errorf("failed to marshal default model: %v, error: %w", dfault, retErr)
 			}
+
+			// model identifiers can contain '/' and end up inside the filename;
+			// ensure parent directories exist so tests (and real runs) don't fail.
+			if mkErr := os.MkdirAll(path.Dir(configPath), 0o755); mkErr != nil {
+				return modelConf, fmt.Errorf("failed to create config directory: %w", mkErr)
+			}
+
 			err = os.WriteFile(configPath, data, os.FileMode(0o644))
 			if err != nil {
-				return modelConf, fmt.Errorf("failed to write default model: %v, error: %w", dfault, retErr)
+				return modelConf, fmt.Errorf("failed to write default model: %v, error: %w", dfault, err)
 			}
 
 			err = utils.ReadAndUnmarshal(configPath, &modelConf)
 			if err != nil {
-				return modelConf, fmt.Errorf("failed to read default model: %v, error: %w", dfault, retErr)
+				return modelConf, fmt.Errorf("failed to read default model: %v, error: %w", dfault, err)
 			}
 		} else {
 			return modelConf, fmt.Errorf("failed to load querier of model: %v, error: %w", userConf.Model, retErr)
