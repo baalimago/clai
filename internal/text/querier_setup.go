@@ -67,7 +67,15 @@ func vendorType(fromModel string) (string, string, string, error) {
 		return "google", "gemini", fromModel, nil
 	}
 	if strings.HasPrefix(fromModel, "hf:") || strings.HasPrefix(fromModel, "huggingface:") {
-		return "huggingface", "hf", fromModel, nil
+		split := strings.Split(fromModel, ":")
+		if len(split) < 2 {
+			return "huggingface", fromModel, "", nil
+		} else {
+			// Format is: "hf:<model>:<inference provider>"
+			// So we return modelVersion as split[1], and inference provider as "model"
+			// The model is currently (26-01) only semantic, so it has no other usecase, so it works for now
+			return split[0], split[2], split[1], nil
+		}
 	}
 
 	return "", "", "", fmt.Errorf("failed to find vendor for: %v", fromModel)
@@ -86,12 +94,6 @@ func setupConfigFile[C models.StreamCompleter](configPath string, userConf Confi
 			if err != nil {
 				retErr = err
 				return modelConf, fmt.Errorf("failed to marshal default model: %v, error: %w", dfault, retErr)
-			}
-
-			// model identifiers can contain '/' and end up inside the filename;
-			// ensure parent directories exist so tests (and real runs) don't fail.
-			if mkErr := os.MkdirAll(path.Dir(configPath), 0o755); mkErr != nil {
-				return modelConf, fmt.Errorf("failed to create config directory: %w", mkErr)
 			}
 
 			err = os.WriteFile(configPath, data, os.FileMode(0o644))
@@ -117,7 +119,9 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 		return Querier[C]{}, fmt.Errorf("failed to find vendorType: %v", err)
 	}
 	claiConfDir := userConf.ConfigDir
-	configPath := path.Join(claiConfDir, fmt.Sprintf("%v_%v_%v.json", vendor, model, modelVersion))
+	noFrontslashModelVersion := strings.ReplaceAll(modelVersion, "/", "_")
+	configPath := path.Join(claiConfDir, fmt.Sprintf("%v_%v_%v.json", vendor, model, noFrontslashModelVersion))
+	ancli.Noticef("config path: %v, modelVersion: %v", configPath, modelVersion)
 	querier := Querier[C]{}
 	if misc.Truthy(os.Getenv("DEBUG")) || misc.Truthy(os.Getenv("TEXT_QUERIER_DEBUG")) {
 		querier.debug = true
