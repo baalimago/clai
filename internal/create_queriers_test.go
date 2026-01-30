@@ -10,6 +10,7 @@ import (
 	"github.com/baalimago/clai/internal/photo"
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/internal/vendors/ollama"
+	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
@@ -58,12 +59,17 @@ func TestNewPhotoQuerier(t *testing.T) {
 }
 
 func TestSelectTextQuerier_AllVendors(t *testing.T) {
-	tmp := t.TempDir()
+	ancli.Silent = true
 	cases := []struct {
 		name  string
 		model string
 		env   map[string]string
 	}{
+		{
+			name:  "huggingface",
+			model: "hf:Qwen/Qwen2.5-72B-Instruct:novita",
+			env:   map[string]string{"HF_API_KEY": "k"},
+		},
 		{
 			name:  "anthropic",
 			model: "claude-3-opus",
@@ -118,6 +124,10 @@ func TestSelectTextQuerier_AllVendors(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			// isolate config directories per vendor case (some models include "/" which
+			// becomes part of the config filename and would require nested dirs).
+			tmp := t.TempDir()
+
 			for k, v := range tc.env {
 				t.Setenv(k, v)
 			}

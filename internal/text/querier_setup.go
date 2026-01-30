@@ -66,6 +66,17 @@ func vendorType(fromModel string) (string, string, string, error) {
 	if strings.Contains(fromModel, "gemini") {
 		return "google", "gemini", fromModel, nil
 	}
+	if strings.HasPrefix(fromModel, "hf:") || strings.HasPrefix(fromModel, "huggingface:") {
+		split := strings.Split(fromModel, ":")
+		if len(split) < 3 {
+			return "huggingface", fromModel, "", nil
+		} else {
+			// Format is: "hf:<model>:<inference provider>"
+			// So we return modelVersion as split[1], and inference provider as "model"
+			// The model is currently (26-01) only semantic, so it has no other usecase, so it works for now
+			return split[0], split[2], split[1], nil
+		}
+	}
 
 	return "", "", "", fmt.Errorf("failed to find vendor for: %v", fromModel)
 }
@@ -84,14 +95,15 @@ func setupConfigFile[C models.StreamCompleter](configPath string, userConf Confi
 				retErr = err
 				return modelConf, fmt.Errorf("failed to marshal default model: %v, error: %w", dfault, retErr)
 			}
+
 			err = os.WriteFile(configPath, data, os.FileMode(0o644))
 			if err != nil {
-				return modelConf, fmt.Errorf("failed to write default model: %v, error: %w", dfault, retErr)
+				return modelConf, fmt.Errorf("failed to write default model: %v, error: %w", dfault, err)
 			}
 
 			err = utils.ReadAndUnmarshal(configPath, &modelConf)
 			if err != nil {
-				return modelConf, fmt.Errorf("failed to read default model: %v, error: %w", dfault, retErr)
+				return modelConf, fmt.Errorf("failed to read default model: %v, error: %w", dfault, err)
 			}
 		} else {
 			return modelConf, fmt.Errorf("failed to load querier of model: %v, error: %w", userConf.Model, retErr)
@@ -107,7 +119,9 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 		return Querier[C]{}, fmt.Errorf("failed to find vendorType: %v", err)
 	}
 	claiConfDir := userConf.ConfigDir
-	configPath := path.Join(claiConfDir, fmt.Sprintf("%v_%v_%v.json", vendor, model, modelVersion))
+	noFrontslashModelVersion := strings.ReplaceAll(modelVersion, "/", "_")
+	configPath := path.Join(claiConfDir, fmt.Sprintf("%v_%v_%v.json", vendor, model, noFrontslashModelVersion))
+	ancli.Noticef("config path: %v, modelVersion: %v", configPath, modelVersion)
 	querier := Querier[C]{}
 	if misc.Truthy(os.Getenv("DEBUG")) || misc.Truthy(os.Getenv("TEXT_QUERIER_DEBUG")) {
 		querier.debug = true
