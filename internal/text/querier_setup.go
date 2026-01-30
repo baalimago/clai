@@ -68,7 +68,7 @@ func vendorType(fromModel string) (string, string, string, error) {
 	}
 	if strings.HasPrefix(fromModel, "hf:") || strings.HasPrefix(fromModel, "huggingface:") {
 		split := strings.Split(fromModel, ":")
-		if len(split) < 2 {
+		if len(split) < 3 {
 			return "huggingface", fromModel, "", nil
 		} else {
 			// Format is: "hf:<model>:<inference provider>"

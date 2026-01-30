@@ -10,6 +10,7 @@ import (
 	"github.com/baalimago/clai/internal/photo"
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/internal/vendors/ollama"
+	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
@@ -58,6 +59,7 @@ func TestNewPhotoQuerier(t *testing.T) {
 }
 
 func TestSelectTextQuerier_AllVendors(t *testing.T) {
+	ancli.Silent = true
 	cases := []struct {
 		name  string
 		model string
@@ -65,7 +67,7 @@ func TestSelectTextQuerier_AllVendors(t *testing.T) {
 	}{
 		{
 			name:  "huggingface",
-			model: "hf:Qwen/Qwen2.5-72B-Instruct",
+			model: "hf:Qwen/Qwen2.5-72B-Instruct:novita",
 			env:   map[string]string{"HF_API_KEY": "k"},
 		},
 		{
