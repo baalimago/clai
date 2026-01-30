@@ -11,6 +11,33 @@ Test coverage: 66.618% 😌👏
   <img src="img/banner.jpg" alt="Banner">
 </div>
 
+## Get started
+
+Installing:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/baalimago/clai/main/setup.sh | sh
+```
+
+You can also install via go:
+
+```bash
+go install github.com/baalimago/clai@latest
+```
+
+Then run:
+
+```bash
+clai help | clai query Please explain how to use clai in a concise way:
+```
+
+Either look at `clai help` or the [examples](./EXAMPLES.md) for how to use `clai`.
+If you have time, you can also check out [this blogpost](https://lorentz.app/blog-item.html?id=clai) for a slightly more structured introduction on how to use Clai efficiently.
+
+Install [Glow](https://github.com/charmbracelet/glow) for formatted markdown output when querying text responses.
+
+<hr>
+
 ## Features
 
 - **[MCP client support](./EXAMPLES.md#Tooling)** - Add any MCP server you'd like by simply pasting their configuration.
@@ -34,20 +61,3 @@ See [examples](./EXAMPLES.md) for additional info.
 | xAi         | `XAI_API_KEY`        | [Text models](https://docs.x.ai/docs/models)                                                                                                                       |
 | Inception   | `INCEPTION_API_KEY`  | [Text models](https://platform.inceptionlabs.ai/docs#models)                                                                                                       |
 | Ollama      | N/A                  | Use format `ollama:` (defaults to llama3), server defaults to localhost:11434                                                                                      |
-
-## Get started
-
-```bash
-go install github.com/baalimago/clai@latest
-```
-
-You may also use the setup script:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/baalimago/clai/main/setup.sh | sh
-```
-
-Either look at `clai help` or the [examples](./EXAMPLES.md) for how to use `clai`.
-If you have time, you can also check out [this blogpost](https://lorentz.app/blog-item.html?id=clai) for a slightly more structured introduction on how to use Clai efficiently.
-
-Install [Glow](https://github.com/charmbracelet/glow) for formatted markdown output when querying text responses.
