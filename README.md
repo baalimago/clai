@@ -28,7 +28,7 @@ go install github.com/baalimago/clai@latest
 Then run:
 
 ```bash
-clai help | clai query Please explain how to use clai in a concise way:
+clai help | clai query Please give a concise explanation of clai
 ```
 
 Either look at `clai help` or the [examples](./EXAMPLES.md) for how to use `clai`.
