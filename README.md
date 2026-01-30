@@ -36,8 +36,6 @@ If you have time, you can also check out [this blogpost](https://lorentz.app/blo
 
 Install [Glow](https://github.com/charmbracelet/glow) for formatted markdown output when querying text responses.
 
-<hr>
-
 ## Features
 
 - **[MCP client support](./EXAMPLES.md#Tooling)** - Add any MCP server you'd like by simply pasting their configuration.
