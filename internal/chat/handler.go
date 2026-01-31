@@ -17,6 +17,7 @@ import (
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
+	"github.com/baalimago/go_away_boilerplate/pkg/num"
 )
 
 const chatUsage = `clai - (c)ommand (l)ine (a)rtificial (i)ntelligence

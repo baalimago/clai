@@ -67,25 +67,7 @@ Examples:
   - clai c help
 `
 
-func main() {
-	ancli.SetupSlog()
-	if misc.Truthy(os.Getenv("DEBUG_CPU")) {
-		f, err := os.Create("cpu_profile.prof")
-		ok := true
-		if err != nil {
-			ancli.PrintErr(fmt.Sprintf("failed to create profiler file: %v", err))
-		}
-		if ok {
-			defer f.Close()
-			// Start the CPU profile
-			err = pprof.StartCPUProfile(f)
-			if err != nil {
-				ancli.PrintErr(fmt.Sprintf("failed to start profiler : %v", err))
-			}
-			defer pprof.StopCPUProfile()
-		}
-	}
-
+func run() {
 	configDirPath, err := utils.GetClaiConfigDir()
 	if err != nil {
 		ancli.Errf("failed to find config dir path: %v", err)
@@ -128,4 +110,26 @@ func main() {
 	if misc.Truthy(os.Getenv("DEBUG")) {
 		ancli.PrintOK("things seems to have worked out. Bye bye! 🚀\n")
 	}
+}
+
+func main() {
+	ancli.SetupSlog()
+	if misc.Truthy(os.Getenv("DEBUG_CPU")) {
+		f, err := os.Create("cpu_profile.prof")
+		ok := true
+		if err != nil {
+			ancli.PrintErr(fmt.Sprintf("failed to create profiler file: %v", err))
+		}
+		if ok {
+			defer f.Close()
+			// Start the CPU profile
+			err = pprof.StartCPUProfile(f)
+			if err != nil {
+				ancli.PrintErr(fmt.Sprintf("failed to start profiler : %v", err))
+			}
+			defer pprof.StopCPUProfile()
+		}
+	}
+
+	run()
 }

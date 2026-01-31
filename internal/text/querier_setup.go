@@ -18,6 +18,9 @@ import (
 )
 
 func vendorType(fromModel string) (string, string, string, error) {
+	if strings.Contains(fromModel, "test") {
+		return "mock", "test", fromModel, nil
+	}
 	if strings.Contains(fromModel, "gpt") {
 		return "openai", "gpt", fromModel, nil
 	}

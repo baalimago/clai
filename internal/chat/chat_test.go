@@ -45,3 +45,17 @@ func TestIDFromPrompt(t *testing.T) {
 		t.Errorf("IDFromPrompt() = %q, want %q", got, want)
 	}
 }
+
+func TestList_WhenConversationsContainDirs_DoesNotError(t *testing.T) {
+	confDir := t.TempDir()
+	convDir := filepath.Join(confDir, "conversations")
+	if err := os.MkdirAll(filepath.Join(convDir, "dirs"), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	cq := &ChatHandler{convDir: convDir}
+	_, err := cq.list()
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+}

@@ -11,6 +11,7 @@ import (
 	"github.com/baalimago/clai/internal/photo"
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/internal/utils"
+	"github.com/baalimago/clai/internal/vendors"
 	"github.com/baalimago/clai/internal/vendors/anthropic"
 	"github.com/baalimago/clai/internal/vendors/deepseek"
 	"github.com/baalimago/clai/internal/vendors/gemini"
@@ -29,6 +30,15 @@ import (
 func selectTextQuerier(ctx context.Context, conf text.Configurations) (models.Querier, bool, error) {
 	var q models.Querier
 	found := false
+
+	if conf.Model == "test" {
+		found = true
+		qTmp, err := text.NewQuerier(ctx, conf, misc.Pointer(vendors.Mock{}))
+		if err != nil {
+			return nil, false, fmt.Errorf("failed to create test querier: %w", err)
+		}
+		q = &qTmp
+	}
 
 	// Explicit prefix routing: avoids accidental matches (e.g. model name contains "gpt").
 	if strings.HasPrefix(conf.Model, "hf:") || strings.HasPrefix(conf.Model, "huggingface:") {
