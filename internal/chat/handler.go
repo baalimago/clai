@@ -162,7 +162,12 @@ func (cq *ChatHandler) findChatByID(potentialChatIdx string) (pub_models.Chat, e
 }
 
 func (cq *ChatHandler) printChat(chat pub_models.Chat) error {
-	for _, message := range chat.Messages {
+	chatMsgs := chat.Messages
+	if !cq.raw {
+		// Only print last 5 rows unless raw, as the glow pretty-print takes forever
+		chatMsgs = chatMsgs[num.Cap(len(chatMsgs), 0, 5):]
+	}
+	for _, message := range chatMsgs {
 		err := utils.AttemptPrettyPrint(cq.out, message, cq.username, cq.raw)
 		if err != nil {
 			return fmt.Errorf("failed to print chat message: %w", err)
@@ -278,6 +283,10 @@ func New(q models.ChatQuerier,
 	claiDir, err := utils.GetClaiConfigDir()
 	if err != nil {
 		return nil, err
+	}
+
+	if out == nil {
+		out = os.Stdout
 	}
 	return &ChatHandler{
 		q:           q,

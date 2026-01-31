@@ -121,7 +121,6 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	claiConfDir := userConf.ConfigDir
 	noFrontslashModelVersion := strings.ReplaceAll(modelVersion, "/", "_")
 	configPath := path.Join(claiConfDir, fmt.Sprintf("%v_%v_%v.json", vendor, model, noFrontslashModelVersion))
-	ancli.Noticef("config path: %v, modelVersion: %v", configPath, modelVersion)
 	querier := Querier[C]{}
 	if misc.Truthy(os.Getenv("DEBUG")) || misc.Truthy(os.Getenv("TEXT_QUERIER_DEBUG")) {
 		querier.debug = true
