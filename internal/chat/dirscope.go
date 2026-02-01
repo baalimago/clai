@@ -116,3 +116,31 @@ func (cq *ChatHandler) SaveDirScope(dir, chatID string) error {
 	}
 	return nil
 }
+
+// UpdateDirScopeFromCWD binds the current working directory to the provided chatID.
+// It is used after non-reply interactions (e.g. query) to keep the directory-scoped
+// pointer up to date.
+func (cq *ChatHandler) UpdateDirScopeFromCWD(chatID string) error {
+	if chatID == "" {
+		return fmt.Errorf("empty chatID")
+	}
+	wd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("getwd: %w", err)
+	}
+	if err := cq.SaveDirScope(wd, chatID); err != nil {
+		return fmt.Errorf("save dirscope binding: %w", err)
+	}
+	return nil
+}
+
+// UpdateDirScopeFromCWD binds the current working directory to the provided chatID.
+// This is a convenience wrapper for the internal package (which can not access
+// ChatHandler's unexported fields).
+func UpdateDirScopeFromCWD(confDir, chatID string) error {
+	if chatID == "" {
+		return fmt.Errorf("empty chatID")
+	}
+	cq := &ChatHandler{confDir: confDir}
+	return cq.UpdateDirScopeFromCWD(chatID)
+}

@@ -43,6 +43,7 @@ const (
 	SETUP
 	CMD
 	REPLAY
+	DRE
 	TOOLS
 	PROFILES
 )
@@ -104,6 +105,8 @@ func getCmdFromArgs(args []string) (Mode, error) {
 		return CMD, nil
 	case "replay", "re":
 		return REPLAY, nil
+	case "dre":
+		return DRE, nil
 	case "tools", "t":
 		return TOOLS, nil
 	case "profiles":
@@ -180,11 +183,16 @@ func setupToolConfig(tConf *text.Configurations, flagSet Configurations) {
 // round this wheel I've reinvented is? Yeah, for sure. May it be simplified? Maybe, but it's features are
 // quite complex.
 func setupTextQuerier(ctx context.Context, mode Mode, confDir string, flagSet Configurations, args []string) (models.Querier, error) {
+	q, _, err := setupTextQuerierWithConf(ctx, mode, confDir, flagSet, args)
+	return q, err
+}
+
+func setupTextQuerierWithConf(ctx context.Context, mode Mode, confDir string, flagSet Configurations, args []string) (models.Querier, *text.Configurations, error) {
 	// The flagset is first used to find chatModel and potentially setup a new configuration file from some default
 	tConf, err := utils.LoadConfigFromFile(confDir, "textConfig.json", migrateOldChatConfig, &text.Default)
 	tConf.ConfigDir = confDir
 	if err != nil {
-		return nil, fmt.Errorf("failed to load configs: %w", err)
+		return nil, nil, fmt.Errorf("failed to load configs: %w", err)
 	}
 	if mode == CHAT {
 		tConf.ChatMode = true
@@ -207,14 +215,14 @@ func setupTextQuerier(ctx context.Context, mode Mode, confDir string, flagSet Co
 		globStr, retArgs, globErr := glob.Setup(flagSet.Glob, args)
 		args = retArgs
 		if globErr != nil {
-			return nil, fmt.Errorf("failed to setup glob: %w", globErr)
+			return nil, nil, fmt.Errorf("failed to setup glob: %w", globErr)
 		}
 
 		tConf.Glob = globStr
 	}
 	err = tConf.ProfileOverrides()
 	if err != nil {
-		return nil, fmt.Errorf("profile override failure: %v", err)
+		return nil, nil, fmt.Errorf("profile override failure: %v", err)
 	}
 
 	setupToolConfig(&tConf, flagSet)
@@ -224,7 +232,7 @@ func setupTextQuerier(ctx context.Context, mode Mode, confDir string, flagSet Co
 	applyProfileOverridesForText(&tConf, flagSet, defaultFlags)
 	err = tConf.SetupInitialChat(args)
 	if err != nil {
-		return nil, fmt.Errorf("failed to setup prompt: %v", err)
+		return nil, nil, fmt.Errorf("failed to setup prompt: %v", err)
 	}
 
 	cq, err := CreateTextQuerier(ctx, tConf)
@@ -233,9 +241,9 @@ func setupTextQuerier(ctx context.Context, mode Mode, confDir string, flagSet Co
 		ancli.PrintOK(fmt.Sprintf("querier post text querier create: %+v\n", tConf))
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to create text querier: %v", err)
+		return nil, nil, fmt.Errorf("failed to create text querier: %v", err)
 	}
-	return cq, nil
+	return cq, &tConf, nil
 }
 
 func printHelp(usage string, args []string) {
@@ -284,7 +292,18 @@ func Setup(ctx context.Context, usage string, allArgs []string) (models.Querier,
 
 	switch mode {
 	case CHAT, QUERY, GLOB, CMD:
-		return setupTextQuerier(ctx, mode, claiConfDir, postFlagConf, postFlagArgs)
+		q, tConf, err := setupTextQuerierWithConf(ctx, mode, claiConfDir, postFlagConf, postFlagArgs)
+		if err != nil {
+			return nil, err
+		}
+		// Update directory binding after successful non-reply query.
+		if mode == QUERY && !postFlagConf.ReplyMode {
+			if err := chat.UpdateDirScopeFromCWD(claiConfDir, tConf.InitialChat.ID); err != nil {
+				// non-fatal; it only affects dir-scoped replay
+				ancli.Warnf("failed to update directory-scoped binding: %v\n", err)
+			}
+		}
+		return q, nil
 	case VIDEO:
 		vConf, err := utils.LoadConfigFromFile(claiConfDir, "videoConfig.json", nil, &video.Default)
 		if err != nil {
@@ -345,11 +364,13 @@ func Setup(ctx context.Context, usage string, allArgs []string) (models.Querier,
 		}
 		return nil, utils.ErrUserInitiatedExit
 	case REPLAY:
-		err := chat.Replay(postFlagConf.PrintRaw)
+		err := chat.Replay(postFlagConf.PrintRaw, false)
 		if err != nil {
 			return nil, fmt.Errorf("failed to replay previous reply: %w", err)
 		}
 		return nil, utils.ErrUserInitiatedExit
+	case DRE:
+		return setupDRE(mode, postFlagConf, postFlagArgs)
 	case TOOLS:
 		tools.Init()
 		return nil, tools.SubCmd(ctx, allArgs)

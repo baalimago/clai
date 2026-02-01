@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -77,4 +78,37 @@ func TestDirScope_StableHashAfterClean(t *testing.T) {
 	ha := cq.dirHash(a)
 	hb := cq.dirHash(b)
 	testboil.FailTestIfDiff(t, ha, hb)
+}
+
+func Test_UpdateDirScopeFromCWD_updatesBinding(t *testing.T) {
+	confDir := t.TempDir()
+
+	// Ensure required dirs exist (CreateConfigDir is called by main, but we use it directly here).
+	if err := os.MkdirAll(filepath.Join(confDir, "conversations", "dirs"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(dirs): %v", err)
+	}
+
+	wd := t.TempDir()
+	oldWd, _ := os.Getwd()
+	t.Cleanup(func() { _ = os.Chdir(oldWd) })
+	if err := os.Chdir(wd); err != nil {
+		t.Fatalf("Chdir: %v", err)
+	}
+
+	chatID := "some_chat"
+	cq := &ChatHandler{confDir: confDir}
+	if err := cq.UpdateDirScopeFromCWD(chatID); err != nil {
+		t.Fatalf("UpdateDirScopeFromCWD: %v", err)
+	}
+
+	ds, ok, err := cq.LoadDirScope(wd)
+	if err != nil {
+		t.Fatalf("LoadDirScope: %v", err)
+	}
+	if !ok {
+		t.Fatalf("expected ok=true")
+	}
+	if ds.ChatID != chatID {
+		t.Fatalf("expected chatID %q got %q", chatID, ds.ChatID)
+	}
 }
