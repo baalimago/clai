@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
@@ -53,6 +55,20 @@ func Test_goldenFile_calibration(t *testing.T) {
 				os.Args = oldArgs
 			})
 
+			confDir := t.TempDir()
+			required := []string{
+				"conversations",
+				"profiles",
+				"mcpServers",
+				"conversations/dirs",
+			}
+			for _, dir := range required {
+				if err := os.MkdirAll(filepath.Join(confDir, dir), 0o755); err != nil {
+					t.Fatalf("MkdirAll(%q): %v", dir, err)
+				}
+			}
+
+			t.Setenv("CLAI_CONFIG_DIR", confDir)
 			for k, v := range tc.givenEnvs {
 				t.Setenv(k, v)
 			}
@@ -99,8 +115,8 @@ func Test_goldenFile_CHAT_DIRSCOPED(t *testing.T) {
 	projRoot := t.TempDir()
 	bar := filepath.Join(projRoot, "bar")
 	baz := filepath.Join(bar, "baz")
-	if err := os.MkdirAll(baz, 0o755); err != nil {
-		t.Fatalf("MkdirAll(baz): %v", err)
+	if mkdirErr := os.MkdirAll(baz, 0o755); mkdirErr != nil {
+		t.Fatalf("MkdirAll(baz): %v", mkdirErr)
 	}
 
 	// Helper to run a single CLI invocation with isolated env.
@@ -113,8 +129,8 @@ func Test_goldenFile_CHAT_DIRSCOPED(t *testing.T) {
 
 		t.Setenv("CLAI_CONFIG_DIR", confDir)
 
-		if err := os.Chdir(cwd); err != nil {
-			t.Fatalf("Chdir(%q): %v", cwd, err)
+		if chDirErr := os.Chdir(cwd); chDirErr != nil {
+			t.Fatalf("Chdir(%q): %v", cwd, chDirErr)
 		}
 
 		var status int
@@ -205,30 +221,23 @@ func Test_goldenFile_CHAT_DIRSCOPED(t *testing.T) {
 		t.Fatalf("could not find baz conversation file in %q", convDir)
 	}
 
-	// Validate content in baz conversation; it should at this point have 2 assistant replies.
-	// The on-disk chat format uses custom Message marshal/unmarshal, so only
-	// decode roles to count assistant messages.
-	type msg struct {
-		Role string `json:"role"`
-	}
-	var decoded struct {
-		Messages []msg `json:"messages"`
-	}
+	var bazChat models.Chat
 	bazBytes, err := os.ReadFile(bazConvPath)
 	if err != nil {
 		t.Fatalf("ReadFile(baz conversation): %v", err)
 	}
-	if err := json.Unmarshal(bazBytes, &decoded); err != nil {
-		t.Fatalf("Unmarshal(baz conversation): %v", err)
+	if unmarshalErr := json.Unmarshal(bazBytes, &bazChat); unmarshalErr != nil {
+		t.Fatalf("Unmarshal(baz conversation): %v", unmarshalErr)
 	}
-	var assistantCount int
-	for _, m := range decoded.Messages {
-		if m.Role == "assistant" {
-			assistantCount++
+	var gotSysMsgs []string
+	for _, m := range bazChat.Messages {
+		if m.Role == "system" {
+			gotSysMsgs = append(gotSysMsgs, m.Content)
 		}
 	}
-	if assistantCount != 2 {
-		t.Fatalf("expected 2 assistant messages in baz conversation, got %d", assistantCount)
+
+	if !slices.Contains(gotSysMsgs, "baz") || !slices.Contains(gotSysMsgs, "hello3") {
+		t.Fatalf("expected systemMessages: '%v' to contain: '%v'", gotSysMsgs, []string{"baz", "hello3"})
 	}
 
 	// Calculate sha256 checksum for directory (same as implementation: hash of canonical abs path)

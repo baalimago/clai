@@ -32,12 +32,6 @@ func SaveDirScopedAsPrevQuery(confDir string) (origChatID string, err error) {
 	for _, m := range c.Messages {
 		msgs = append(msgs, pub_models.Message{Role: m.Role, Content: m.Content})
 	}
-	// Append 2 assistant marker messages so the subsequent query produces 2 assistant-role messages
-	// in the persisted conversation, matching the CLI-level contract asserted in main_test.go.
-	msgs = append(msgs,
-		pub_models.Message{Role: "assistant", Content: ""},
-		pub_models.Message{Role: "assistant", Content: ""},
-	)
 
 	if err := SaveAsPreviousQuery(confDir, msgs); err != nil {
 		return "", fmt.Errorf("save as previous query: %w", err)
