@@ -26,6 +26,10 @@ type Configurations struct {
 	ExpectReplace bool
 	PrintRaw      bool
 	ReplyMode     bool
+	// DirReplyMode enables directory-scoped reply mode.
+	// When true, the previous conversation is loaded from the directory binding
+	// instead of the global prevQuery.json.
+	DirReplyMode bool
 	// UseTools encodes tooling selection from CLI:
 	//   ""      => no override
 	//   "*"     => all tools
@@ -85,6 +89,9 @@ func parseFlags(defaults Configurations, args []string) (Configurations, []strin
 	replyShort := fs.Bool("re", defaults.ReplyMode, "Set to true to reply to the previous query, meaning that it will be used as context for your next query.")
 	replyLong := fs.Bool("reply", defaults.ReplyMode, "Set to true to reply to the previous query, meaning that it will be used as context for your next query.")
 
+	dirReplyShort := fs.Bool("dre", defaults.DirReplyMode, "Set to true to reply to the previous directory-scoped conversation (bound to the current working directory).")
+	dirReplyLong := fs.Bool("dir-reply", defaults.DirReplyMode, "Set to true to reply to the previous directory-scoped conversation (bound to the current working directory).")
+
 	// Breaking change: -t/-tools are string-only value flags.
 	// Use: -t=* or -t=a,b ("-t" without value is undefined/ignored).
 	useToolsShort := fs.String("t", defaults.UseTools, "Enable tools. Use '*' for all tools or comma-separated list for specific tools.")
@@ -124,6 +131,7 @@ func parseFlags(defaults Configurations, args []string) (Configurations, []strin
 
 	replyMode := *replyShort || *replyLong
 	printRaw := *printRawShort || *printRawLong
+	dirReplyMode := *dirReplyShort || *dirReplyLong
 
 	if *expectReplace && defaults.StdinReplace == "" {
 		stdinReplace = "{}"
@@ -140,6 +148,7 @@ func parseFlags(defaults Configurations, args []string) (Configurations, []strin
 		StdinReplace:  stdinReplace,
 		PrintRaw:      printRaw,
 		ReplyMode:     replyMode,
+		DirReplyMode:  dirReplyMode,
 		UseTools:      useTools,
 		Glob:          glob,
 		ExpectReplace: *expectReplace,

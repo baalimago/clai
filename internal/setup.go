@@ -63,18 +63,19 @@ var defaultFlags = Configurations{
 	PrintRaw:      false,
 	ExpectReplace: false,
 	ReplyMode:     false,
+	DirReplyMode:  false,
 	UseTools:      "",
 	ProfilePath:   "",
 }
 
 const ProfileHelp = `Profiles overwrite certain model configurations. The intent of profiles
 is to reduce usage for repetitive flags and to persist and tweak specific LLM agents.
-For instance, you may create a 'gopher' profile with a prompt that explains the agent is
+For instance, you may create a \'gopher\' profile with a prompt that explains the agent is
 a programming helper and then specify which tools it may use.
 
-Use this profile by passing the '-p/-profile' flag. Example:
+Use this profile by passing the \'-p/-profile\' flag. Example:
 
-1. clai setup -> 2 -> follow the setup wizard (create 'gopher' profile)
+1. clai setup -> 2 -> follow the setup wizard (create \'gopher\' profile)
 2. clai -p gopher -g internal/thing/handler.go q write tests for this file`
 
 // getCmdFromArgs returns the mode based on args where args[0] is the command.
@@ -292,13 +293,31 @@ func Setup(ctx context.Context, usage string, allArgs []string) (models.Querier,
 
 	switch mode {
 	case CHAT, QUERY, GLOB, CMD:
+		var dirReplyChatID string
+		// If directory reply mode is requested we first copy the directory-scoped
+		// conversation into prevQuery.json so that the existing reply flow can reuse it.
+		if mode == QUERY && postFlagConf.DirReplyMode {
+			chatID, err := chat.SaveDirScopedAsPrevQuery(claiConfDir)
+			if err != nil {
+				return nil, fmt.Errorf("failed to setup dir-scoped reply: %w", err)
+			}
+			dirReplyChatID = chatID
+			// Ensure the existing reply plumbing is used.
+			postFlagConf.ReplyMode = true
+		}
+
 		q, tConf, err := setupTextQuerierWithConf(ctx, mode, claiConfDir, postFlagConf, postFlagArgs)
 		if err != nil {
 			return nil, err
 		}
-		// Update directory binding after successful non-reply query.
-		if mode == QUERY && !postFlagConf.ReplyMode {
-			if err := chat.UpdateDirScopeFromCWD(claiConfDir, tConf.InitialChat.ID); err != nil {
+
+		// Update directory binding after successful query.
+		if mode == QUERY {
+			updateChatID := tConf.InitialChat.ID
+			if postFlagConf.DirReplyMode && dirReplyChatID != "" {
+				updateChatID = dirReplyChatID
+			}
+			if err := chat.UpdateDirScopeFromCWD(claiConfDir, updateChatID); err != nil {
 				// non-fatal; it only affects dir-scoped replay
 				ancli.Warnf("failed to update directory-scoped binding: %v\n", err)
 			}

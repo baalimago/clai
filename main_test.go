@@ -205,24 +205,24 @@ func Test_goldenFile_CHAT_DIRSCOPED(t *testing.T) {
 		t.Fatalf("could not find baz conversation file in %q", convDir)
 	}
 
-	// Validate content in baz conversation; it should at this point have 2 assistant replies
+	// Validate content in baz conversation; it should at this point have 2 assistant replies.
+	// The on-disk chat format uses custom Message marshal/unmarshal, so only
+	// decode roles to count assistant messages.
 	type msg struct {
 		Role string `json:"role"`
 	}
-	type conv struct {
+	var decoded struct {
 		Messages []msg `json:"messages"`
 	}
 	bazBytes, err := os.ReadFile(bazConvPath)
 	if err != nil {
 		t.Fatalf("ReadFile(baz conversation): %v", err)
 	}
-	// Be tolerant to schema changes by decoding only known fields.
-	var c conv
-	if err := json.Unmarshal(bazBytes, &c); err != nil {
+	if err := json.Unmarshal(bazBytes, &decoded); err != nil {
 		t.Fatalf("Unmarshal(baz conversation): %v", err)
 	}
 	var assistantCount int
-	for _, m := range c.Messages {
+	for _, m := range decoded.Messages {
 		if m.Role == "assistant" {
 			assistantCount++
 		}
