@@ -327,7 +327,7 @@ func Setup(ctx context.Context, usage string, allArgs []string) (models.Querier,
 		return pq, nil
 	case HELP:
 		printHelp(usage, allArgs)
-		os.Exit(0)
+		return nil, utils.ErrUserInitiatedExit
 	case VERSION:
 		bi, ok := debug.ReadBuildInfo()
 		if !ok {
@@ -343,14 +343,13 @@ func Setup(ctx context.Context, usage string, allArgs []string) (models.Querier,
 		if err != nil {
 			return nil, fmt.Errorf("failed to run setup: %w", err)
 		}
-		os.Exit(0)
-		return nil, nil
+		return nil, utils.ErrUserInitiatedExit
 	case REPLAY:
 		err := chat.Replay(postFlagConf.PrintRaw)
 		if err != nil {
 			return nil, fmt.Errorf("failed to replay previous reply: %w", err)
 		}
-		os.Exit(0)
+		return nil, utils.ErrUserInitiatedExit
 	case TOOLS:
 		tools.Init()
 		return nil, tools.SubCmd(ctx, allArgs)
