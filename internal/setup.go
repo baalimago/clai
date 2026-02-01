@@ -3,7 +3,6 @@ package internal
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"os"
 	"path"
@@ -77,7 +76,12 @@ Use this profile by passing the '-p/-profile' flag. Example:
 1. clai setup -> 2 -> follow the setup wizard (create 'gopher' profile)
 2. clai -p gopher -g internal/thing/handler.go q write tests for this file`
 
-func getModeFromArgs(cmd string) (Mode, error) {
+// getCmdFromArgs returns the mode based on args where args[0] is the command.
+func getCmdFromArgs(args []string) (Mode, error) {
+	if len(args) == 0 {
+		return HELP, fmt.Errorf("no command provided")
+	}
+	cmd := args[0]
 	switch cmd {
 	case "photo", "p":
 		return PHOTO, nil
@@ -105,7 +109,7 @@ func getModeFromArgs(cmd string) (Mode, error) {
 	case "profiles":
 		return PROFILES, nil
 	default:
-		return HELP, fmt.Errorf("unknown command: '%s'", os.Args[1])
+		return HELP, fmt.Errorf("unknown command: '%s' all args: '%s'", cmd, args)
 	}
 }
 
@@ -175,12 +179,12 @@ func setupToolConfig(tConf *text.Configurations, flagSet Configurations) {
 // Do I know 100% how it works at any given point? Sort of. Not really. Am I constantly impressed over how
 // round this wheel I've reinvented is? Yeah, for sure. May it be simplified? Maybe, but it's features are
 // quite complex.
-func setupTextQuerier(ctx context.Context, mode Mode, confDir string, flagSet Configurations) (models.Querier, error) {
+func setupTextQuerier(ctx context.Context, mode Mode, confDir string, flagSet Configurations, args []string) (models.Querier, error) {
 	// The flagset is first used to find chatModel and potentially setup a new configuration file from some default
 	tConf, err := utils.LoadConfigFromFile(confDir, "textConfig.json", migrateOldChatConfig, &text.Default)
 	tConf.ConfigDir = confDir
 	if err != nil {
-		return nil, fmt.Errorf("failed to load configs: %err", err)
+		return nil, fmt.Errorf("failed to load configs: %w", err)
 	}
 	if mode == CHAT {
 		tConf.ChatMode = true
@@ -199,7 +203,6 @@ func setupTextQuerier(ctx context.Context, mode Mode, confDir string, flagSet Co
 	if misc.Truthy(os.Getenv("DEBUG")) {
 		ancli.PrintOK(fmt.Sprintf("config post flag override: %+v\n", imagodebug.IndentedJsonFmt(tConf)))
 	}
-	args := flag.Args()
 	if mode == GLOB || flagSet.Glob != "" {
 		globStr, retArgs, globErr := glob.Setup(flagSet.Glob, args)
 		args = retArgs
@@ -260,14 +263,16 @@ func printHelp(usage string, args []string) {
 	)
 }
 
-func Setup(ctx context.Context, usage string) (models.Querier, error) {
-	flagSet := setupFlags(defaultFlags)
-	args := flag.Args()
-	if len(args) == 0 {
+func Setup(ctx context.Context, usage string, allArgs []string) (models.Querier, error) {
+	postFlagConf, postFlagArgs, err := parseFlags(defaultFlags, allArgs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse flags: %w", err)
+	}
+	if len(postFlagArgs) == 0 {
 		return nil, fmt.Errorf("no command provided")
 	}
 
-	mode, err := getModeFromArgs(args[0])
+	mode, err := getCmdFromArgs(postFlagArgs)
 	if err != nil {
 		return nil, err
 	}
@@ -279,13 +284,13 @@ func Setup(ctx context.Context, usage string) (models.Querier, error) {
 
 	switch mode {
 	case CHAT, QUERY, GLOB, CMD:
-		return setupTextQuerier(ctx, mode, claiConfDir, flagSet)
+		return setupTextQuerier(ctx, mode, claiConfDir, postFlagConf, postFlagArgs)
 	case VIDEO:
 		vConf, err := utils.LoadConfigFromFile(claiConfDir, "videoConfig.json", nil, &video.Default)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load configs: %w", err)
 		}
-		applyFlagOverridesForVideo(&vConf, flagSet, defaultFlags)
+		applyFlagOverridesForVideo(&vConf, postFlagConf, defaultFlags)
 
 		err = vConf.SetupPrompts()
 		if err != nil {
@@ -304,7 +309,7 @@ func Setup(ctx context.Context, usage string) (models.Querier, error) {
 		if misc.Truthy(os.Getenv("DEBUG")) {
 			ancli.PrintOK(fmt.Sprintf("photoConfig pre override: %+v\n", pConf))
 		}
-		applyFlagOverridesForPhoto(&pConf, flagSet, defaultFlags)
+		applyFlagOverridesForPhoto(&pConf, postFlagConf, defaultFlags)
 		if misc.Truthy(os.Getenv("DEBUG")) {
 			ancli.PrintOK(fmt.Sprintf("photoConfig post override: %+v\n", pConf))
 		}
@@ -321,7 +326,7 @@ func Setup(ctx context.Context, usage string) (models.Querier, error) {
 		}
 		return pq, nil
 	case HELP:
-		printHelp(usage, args)
+		printHelp(usage, allArgs)
 		os.Exit(0)
 	case VERSION:
 		bi, ok := debug.ReadBuildInfo()
@@ -341,16 +346,16 @@ func Setup(ctx context.Context, usage string) (models.Querier, error) {
 		os.Exit(0)
 		return nil, nil
 	case REPLAY:
-		err := chat.Replay(flagSet.PrintRaw)
+		err := chat.Replay(postFlagConf.PrintRaw)
 		if err != nil {
 			return nil, fmt.Errorf("failed to replay previous reply: %w", err)
 		}
 		os.Exit(0)
 	case TOOLS:
 		tools.Init()
-		return nil, tools.SubCmd(ctx, args)
+		return nil, tools.SubCmd(ctx, allArgs)
 	case PROFILES:
-		return nil, profiles.SubCmd(ctx, args)
+		return nil, profiles.SubCmd(ctx, allArgs)
 	default:
 		return nil, fmt.Errorf("unknown mode: %v", mode)
 	}

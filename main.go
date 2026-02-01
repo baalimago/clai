@@ -30,8 +30,8 @@ Flags:
   -pm, -photo-model string     Set the image model to use. (default is found in %v/photoConfig.json)
   -pd, -photo-dir string       Set the directory to store the generated pictures. (default is found in %v/photoConfig.json)
   -pp, -photo-prefix string    Set the prefix for the generated pictures. (default is found in %v/photoConfig.json)
-  -vd, -video-dir string       Set the directory to store the generated videos. (default %v)
-  -vp, -video-prefix string    Set the prefix for the generated videos. (default %v)
+  -vd, -video-dir string       Set dir for generated videos. Default $HOME/Videos (default %v)
+  -vp, -video-prefix string    Set prefix for generated videos. Default 'clai' (default %v)
   -t, -tools string            Set to <tool_a>,<tool_b> for specific tool, or */"" to use all built in or MCP tools. See available tools with 'clai tools' (default %v)
   -g, -glob string             Set the glob to use for globbing. (default '%v')
   -p, -profile string          Set the profile which should be used. For details, see 'clai help profile'. (default '%v')
@@ -67,17 +67,17 @@ Examples:
   - clai c help
 `
 
-func run() {
+func run(args []string) int {
 	configDirPath, err := utils.GetClaiConfigDir()
 	if err != nil {
 		ancli.Errf("failed to find config dir path: %v", err)
-		os.Exit(1)
+		return 1
 	}
 
 	err = utils.CreateConfigDir(configDirPath)
 	if err != nil {
 		ancli.Errf("failed to find config dir path: %v", err)
-		os.Exit(1)
+		return 1
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -86,30 +86,31 @@ func run() {
 	// clai in case of nested tool calls. Could've been solved by proper structure
 	// but who has time for proper structure?
 	ctx = context.WithValue(ctx, utils.ContextCancelKey, cancel)
-	querier, err := internal.Setup(ctx, usage)
+	querier, err := internal.Setup(ctx, usage, args)
 	if err != nil {
 		if errors.Is(err, utils.ErrUserInitiatedExit) {
 			ancli.Okf("Seems like you wanted out. Byebye!\n")
-			os.Exit(0)
+			return 0
 		}
 		ancli.PrintErr(fmt.Sprintf("failed to setup: %v\n", err))
-		os.Exit(1)
+		return 1
 	}
 	go func() { shutdown.Monitor(cancel) }()
 	err = querier.Query(ctx)
 	if err != nil {
 		if errors.Is(err, utils.ErrUserInitiatedExit) {
 			ancli.Okf("Seems like you wanted out. Byebye!\n")
-			os.Exit(0)
+			return 0
 		} else {
 			ancli.PrintErr(fmt.Sprintf("failed to run: %v\n", err))
-			os.Exit(1)
+			return 1
 		}
 	}
 	cancel()
 	if misc.Truthy(os.Getenv("DEBUG")) {
 		ancli.PrintOK("things seems to have worked out. Bye bye! 🚀\n")
 	}
+	return 0
 }
 
 func main() {
@@ -131,5 +132,5 @@ func main() {
 		}
 	}
 
-	run()
+	os.Exit(run(os.Args))
 }
