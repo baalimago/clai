@@ -22,6 +22,15 @@ const mcpServerOutBufferSizeKib = 2048
 func Client(ctx context.Context, mcpConfig pub_models.McpServer) (chan<- any, <-chan any, error) {
 	cmd := exec.CommandContext(ctx, mcpConfig.Command, mcpConfig.Args...)
 	cmd.Env = os.Environ()
+	if mcpConfig.EnvFile != "" {
+		envFromFile, err := loadEnvFile(mcpConfig.EnvFile)
+		if err != nil {
+			return nil, nil, err
+		}
+		for k, v := range envFromFile {
+			cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
+		}
+	}
 	for k, v := range mcpConfig.Env {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
 	}

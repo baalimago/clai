@@ -22,6 +22,7 @@ type McpServer struct {
 	Command string            `json:"command"`
 	Args    []string          `json:"args"`
 	Env     map[string]string `json:"env"`
+	EnvFile string            `json:"envfile,omitempty"`
 }
 
 // ToolName is an enum-like type for available tools.

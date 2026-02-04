@@ -21,6 +21,7 @@ type McpServerExternal struct {
 	Command string            `json:"command"`
 	Args    []string          `json:"args"`
 	Env     map[string]string `json:"env,omitempty"`
+	EnvFile string            `json:"envfile,omitempty"`
 }
 
 // ParseAndAddMcpServer parses pasted MCP server configuration and adds it to the system
@@ -60,6 +61,7 @@ func convertToInternalFormat(external McpServerExternal) pub_models.McpServer {
 		Command: external.Command,
 		Args:    external.Args,
 		Env:     external.Env,
+		EnvFile: external.EnvFile,
 	}
 
 	// Initialize empty env map if nil
