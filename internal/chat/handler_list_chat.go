@@ -51,7 +51,7 @@ func (cq *ChatHandler) actOnChat(ctx context.Context, chat pub_models.Chat) erro
 		return cq.loop(ctx)
 
 	case "P", "p":
-		return SaveAsPreviousQuery(cq.confDir, chat.Messages)
+		return SaveAsPreviousQuery(cq.confDir, chat)
 	default:
 		return fmt.Errorf("unknown choice: '%v'", choice)
 	}

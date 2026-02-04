@@ -164,7 +164,7 @@ func (q *Querier[C]) postProcess() {
 	}
 	q.chat.Messages = append(q.chat.Messages, newSysMsg)
 	if q.shouldSaveReply {
-		err := chat.SaveAsPreviousQuery(q.configDir, q.chat.Messages)
+		err := chat.SaveAsPreviousQuery(q.configDir, q.chat)
 		if err != nil {
 			ancli.PrintErr(fmt.Sprintf("failed to save previous query: %v\n", err))
 		}
@@ -299,6 +299,19 @@ func (q *Querier[C]) Query(ctx context.Context) error {
 	}
 
 	defer q.postProcess()
+	defer func() {
+		tokenCounter, isModelCounter := any(q.Model).(models.UsageTokenCounter)
+		if !isModelCounter {
+			if q.debug {
+				ancli.Okf("is not usage token counter")
+			}
+			return
+		}
+		if q.debug {
+			ancli.Okf("token usage: %v", *tokenCounter.TokenUsage())
+		}
+		q.chat.TokenUsage = tokenCounter.TokenUsage()
+	}()
 
 	for {
 		select {
