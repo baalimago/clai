@@ -60,11 +60,14 @@ Easiest way to integrate them is to paste them using the setup command: `clai se
       "args": [
         "-y",
         "@modelcontextprotocol/server-everything"
-      ]
+      ],
+      "envfile": "/path/to/mcp.env"
     }
   }
 }
 ```
+
+Use `envfile` to load credentials from a separate file so you can check in profiles and mcpServers to version control without secrets.
 
 ### Conversations
 

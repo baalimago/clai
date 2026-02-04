@@ -77,6 +77,9 @@ func findConfiguredMcpServers(filePaths []string) ([]pub_models.McpServer, error
 			errs = append(errs, fmt.Errorf("failed to unmarshal: '%s', error: %v", file, unmarshalErr))
 			continue
 		}
+		if mcpServer.EnvFile != "" && !filepath.IsAbs(mcpServer.EnvFile) {
+			mcpServer.EnvFile = filepath.Join(filepath.Dir(file), mcpServer.EnvFile)
+		}
 		serverName := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
 		mcpServer.Name = serverName
 		ret = append(ret, mcpServer)

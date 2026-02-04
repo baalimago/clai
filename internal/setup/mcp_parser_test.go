@@ -69,6 +69,7 @@ func TestConvertToInternalFormat(t *testing.T) {
 		Command: "npx",
 		Args:    []string{"@browsermcp/mcp@latest"},
 		Env:     map[string]string{"NODE_ENV": "production"},
+		EnvFile: "/tmp/mcp.env",
 	}
 
 	internal := convertToInternalFormat(external)
@@ -81,6 +82,9 @@ func TestConvertToInternalFormat(t *testing.T) {
 	}
 	if internal.Env["NODE_ENV"] != "production" {
 		t.Errorf("expected env NODE_ENV=production, got %v", internal.Env)
+	}
+	if internal.EnvFile != "/tmp/mcp.env" {
+		t.Errorf("expected envfile '/tmp/mcp.env', got %q", internal.EnvFile)
 	}
 }
 
@@ -104,7 +108,8 @@ func TestParseAndAddMcpServer(t *testing.T) {
 		"mcpServers": {
 			"browsermcp": {
 				"command": "npx",
-				"args": ["@browsermcp/mcp@latest"]
+				"args": ["@browsermcp/mcp@latest"],
+				"envfile": "/tmp/mcp.env"
 			},
 			"filesystem": {
 				"command": "npx",
@@ -153,5 +158,8 @@ func TestParseAndAddMcpServer(t *testing.T) {
 
 	if server.Command != "npx" {
 		t.Errorf("expected command 'npx', got '%s'", server.Command)
+	}
+	if server.EnvFile != "/tmp/mcp.env" {
+		t.Errorf("expected envfile '/tmp/mcp.env', got %q", server.EnvFile)
 	}
 }

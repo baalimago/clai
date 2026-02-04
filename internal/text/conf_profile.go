@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 
 	"github.com/baalimago/clai/internal/utils"
@@ -48,10 +49,14 @@ func (c *Configurations) ProfileOverrides() error {
 	}
 	var profile Profile
 	var err error
+	profileDir := ""
 	if c.ProfilePath != "" {
 		profile, err = findProfileByPath(c.ProfilePath)
+		profileDir = filepath.Dir(c.ProfilePath)
 	} else {
 		profile, err = findProfile(c.UseProfile)
+		cfg, _ := utils.GetClaiConfigDir()
+		profileDir = filepath.Join(cfg, "profiles")
 	}
 	if err != nil {
 		return fmt.Errorf("failed to find profile: %w", err)
@@ -69,6 +74,9 @@ func (c *Configurations) ProfileOverrides() error {
 	mcpServers := make([]models.McpServer, 0)
 	for name, m := range profile.McpServers {
 		m.Name = name
+		if m.EnvFile != "" && profileDir != "" && !filepath.IsAbs(m.EnvFile) {
+			m.EnvFile = filepath.Join(profileDir, m.EnvFile)
+		}
 		c.RequestedToolGlobs = append(c.RequestedToolGlobs, fmt.Sprintf("mcp_%v*", name))
 		mcpServers = append(mcpServers, m)
 		if misc.Truthy(os.Getenv("DEBUG_PROFILES")) {
