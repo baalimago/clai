@@ -333,7 +333,7 @@ This ensures we start with a red test and a stable contract.
 ### Step 1: Add the new subcommand in chat handler
 
 - Add `dir` to the `clai chat <subcommand>` parser (see `internal/chat/handler.go`).
-- It should *not* require a prompt/chat id.
+- It should _not_ require a prompt/chat id.
 
 ### Step 2: Implement resolution: dir binding → else global prevQuery → else empty
 
@@ -377,11 +377,3 @@ tokens_total: T
 
 - Ensure the new command is wired into `main.run(...)` via existing chat handler.
 - Run `go test ./...` until `Test_goldenFile_CHAT_DIRSCOPED` is green.
-
-### Step 7 (follow-up, separate PR): persist token totals
-
-- Extend `pkg/text/models.Chat` with `TokensTotal int  json:"tokens_total,omitempty"`
-  - Backward compatible with old JSON.
-- Thread token usage from queriers/vendors into chat saving logic and increment `TokensTotal`.
-- Update `clai chat dir` to return the persisted value.
-- Update spec test to assert a non-zero `tokens_total` in at least one scenario.
