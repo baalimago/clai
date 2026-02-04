@@ -406,5 +406,4 @@ func Setup(ctx context.Context, usage string, allArgs []string) (models.Querier,
 	default:
 		return nil, fmt.Errorf("unknown mode: %v", mode)
 	}
-	return nil, errors.New("unexpected conditional: how did you end up here?")
 }
