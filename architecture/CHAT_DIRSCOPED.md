@@ -148,17 +148,55 @@ Add a new subcommand:
 
 - `clai chat dir`
 
-It prints JSON describing the conversation bound to CWD.
+### Behaviour
 
-Initial fields (extensible):
+It prints information about the chat associated with the current working directory (CWD).
 
+Resolution rules:
+
+1. If a dir-scoped binding exists for CWD and the referenced chat can be loaded, show info for that chat.
+2. Else, show info for the **global chat** (the one used by global reply / `prevQuery.json`).
+3. If neither exists, print `{}` in raw mode (`-r`) and a short human-readable message otherwise.
+
+### Output formats
+
+#### Raw (`-r`): JSON
+
+`clai -r chat dir` prints a small, stable JSON object.
+
+Empty state: `{}`
+
+Suggested fields (extensible):
+
+- `scope`: one of `"dir" | "global"`
 - `chat_id`
 - `profile`
-- `am_messages`
-- `updated` (from pointer file)
-- `conversation_created` (from conversation file)
+- `updated` (dir pointer file `updated`, only present for `scope="dir"`)
+- `conversation_created` (from chat file)
+- `replies_by_role`: map role->count
+  - e.g. `{ "user": 3, "assistant": 3, "system": 1 }`
+- `tokens_total`: integer total amount of tokens in the conversation
+  - if tokens are not stored today, we need to extend the chat object to store this
 
-If no binding exists, it prints `{}`.
+#### Non-raw: human-readable
+
+`clai chat dir` prints a concise pretty format intended for humans:
+
+Example:
+
+```
+scope: dir
+chat_id: my_chat_id
+replies_by_role:
+  user: 3
+  assistant: 3
+tokens_total: 1234
+```
+
+Notes:
+
+- Roles should be computed from the stored messages in the chat transcript.
+- `tokens_total` should match the token accounting used elsewhere in the codebase.
 
 ## Implementation details (how it works in this repo)
 
@@ -182,7 +220,7 @@ This document describes the _intended_ design. Here is how it is actually implem
 
 - `internal/setup.go`
   - Orchestrator that wires flags/modes to the right behavior.
-  - When `-dre/-dir-reply` is used with `query`, it first calls `SaveDirScopedAsPrevQuery(...)` and then sets
+  - When `-dre/-dir-reply` is used with `query`, it first calls `chat.SaveDirScopedAsPrevQuery(...)` and then sets
     `ReplyMode=true` so the existing reply path uses `prevQuery.json`.
   - After a successful `query`, it updates the directory binding via `chat.UpdateDirScopeFromCWD(...)`.
 
@@ -272,3 +310,78 @@ In the current implementation, `-dre` for queries works by:
 - then using the existing global reply code path against `prevQuery.json`.
 
 So the reply plumbing is still "global", but the source transcript gets swapped beforehand.
+
+---
+
+## Addendum: stepwise implementation plan for `clai chat dir`
+
+This is a concrete, reviewable plan to implement `clai chat dir` (with both raw JSON and human-readable output) without adding dependencies.
+
+### Step 0: Extend CLI-spec test (already started)
+
+- Extend `Test_goldenFile_CHAT_DIRSCOPED` in `main_test.go` to assert:
+  - `clai -r chat dir`:
+    - empty state -> `{}`
+    - `/bar` with only global -> JSON scope `global`, chat_id `prevQuery`
+    - `/baz` with binding -> JSON scope `dir`, chat_id non-empty
+  - `clai chat dir` (non-raw):
+    - empty state -> prints a short human-readable message (exit 0)
+    - otherwise prints the pretty block and includes `scope:`, `chat_id:`, role counts and `tokens_total`.
+
+This ensures we start with a red test and a stable contract.
+
+### Step 1: Add the new subcommand in chat handler
+
+- Add `dir` to the `clai chat <subcommand>` parser (see `internal/chat/handler.go`).
+- It should *not* require a prompt/chat id.
+
+### Step 2: Implement resolution: dir binding → else global prevQuery → else empty
+
+- In the new handler action:
+  1. Call `LoadDirScope("")`.
+     - If ok: load chat from `<confDir>/conversations/<chat_id>.json`.
+     - Remember `scope="dir"`.
+  2. Else try to load `<confDir>/conversations/prevQuery.json`.
+     - If ok: `scope="global"`, `chat_id="prevQuery"`.
+  3. Else: empty.
+
+### Step 3: Compute `replies_by_role`
+
+- Iterate messages and count by `m.Role`.
+- Recommendation: skip empty `content==""` messages (this avoids counting the two marker assistant messages used when copying dir chats into `prevQuery.json`).
+
+### Step 4: Tokens total (initially)
+
+- Initially return `tokens_total: 0` to satisfy the CLI contract without changing storage.
+- This keeps the change minimal while we decide how to persist tokens.
+
+### Step 5: Output formatting based on `-r`
+
+- If raw (`-r`): print JSON.
+  - Empty state: `{}`.
+- Else: print human-readable block:
+
+```
+scope: <dir|global>
+chat_id: <id>
+replies_by_role:
+  user: N
+  assistant: M
+...
+tokens_total: T
+```
+
+- Empty state (non-raw): print e.g. `no dir-scoped chat and no global chat`.
+
+### Step 6: Make tests pass
+
+- Ensure the new command is wired into `main.run(...)` via existing chat handler.
+- Run `go test ./...` until `Test_goldenFile_CHAT_DIRSCOPED` is green.
+
+### Step 7 (follow-up, separate PR): persist token totals
+
+- Extend `pkg/text/models.Chat` with `TokensTotal int  json:"tokens_total,omitempty"`
+  - Backward compatible with old JSON.
+- Thread token usage from queriers/vendors into chat saving logic and increment `TokensTotal`.
+- Update `clai chat dir` to return the persisted value.
+- Update spec test to assert a non-zero `tokens_total` in at least one scenario.

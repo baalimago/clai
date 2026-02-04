@@ -102,6 +102,19 @@ func Test_goldenFile_CHAT_DIRSCOPED(t *testing.T) {
 	// - a conversation file exists for the scoped directory
 	// - the directory binding file exists at conversations/dirs/<sha256(canonicalDir)>.json
 	// - the binding points at the correct conversation (chat_id matches the conversation filename)
+	//
+	// Extended spec (new command):
+	// - `clai chat dir` prints short JSON info about the dirscoped chat bound to CWD.
+	// - If no dirscoped chat exists, it prints info for the global chat (prevQuery.json).
+	// - If neither exists, it prints `{}`.
+	// - It includes `replies_by_role` counts and `tokens_total`.
+
+	type chatDirInfo struct {
+		Scope         string         `json:"scope"`
+		ChatID        string         `json:"chat_id"`
+		RepliesByRole map[string]int `json:"replies_by_role"`
+		TokensTotal   int            `json:"tokens_total"`
+	}
 
 	oldWd, err := os.Getwd()
 	if err != nil {
@@ -140,11 +153,56 @@ func Test_goldenFile_CHAT_DIRSCOPED(t *testing.T) {
 		return stdout, status
 	}
 
+	parseChatDir := func(t *testing.T, stdout string) chatDirInfo {
+		t.Helper()
+		trimmed := strings.TrimSpace(stdout)
+		if trimmed == "" {
+			t.Fatalf("expected non-empty stdout")
+		}
+		if trimmed == "{}" {
+			return chatDirInfo{}
+		}
+		var got chatDirInfo
+		if err := json.Unmarshal([]byte(trimmed), &got); err != nil {
+			t.Fatalf("Unmarshal(chat dir json): %v\nstdout=%q", err, stdout)
+		}
+		return got
+	}
+
+	// 0) (/bar) no dir binding and no prevQuery yet => `chat dir` should print {}
+	out, status := runOne(t, bar, "-r chat dir")
+	if status != 0 {
+		t.Fatalf("expected status 0 for 'chat dir' when empty, got %d", status)
+	}
+	if strings.TrimSpace(out) != "{}" {
+		t.Fatalf("expected '{}' for empty state, got %q", out)
+	}
+
 	// 1) (/bar) query hello
-	out, status := runOne(t, bar, "-r -cm test q hello")
+	out, status = runOne(t, bar, "-r -cm test q hello")
 	testboil.FailTestIfDiff(t, status, 0)
 	// config init may print "created directory ..." before the model output
 	testboil.AssertStringContains(t, out, "hello\n")
+
+	// 1b) (/bar) chat dir => should fall back to global (prevQuery)
+	out, status = runOne(t, bar, "-r chat dir")
+	testboil.FailTestIfDiff(t, status, 0)
+	barInfo := parseChatDir(t, out)
+	if barInfo.Scope != "global" {
+		t.Fatalf("expected scope=global, got %q", barInfo.Scope)
+	}
+	if barInfo.ChatID != "prevQuery" {
+		t.Fatalf("expected chat_id=prevQuery, got %q", barInfo.ChatID)
+	}
+	if barInfo.RepliesByRole == nil {
+		t.Fatalf("expected replies_by_role to be present")
+	}
+	if barInfo.RepliesByRole["user"] < 1 {
+		t.Fatalf("expected at least 1 user message, got %v", barInfo.RepliesByRole)
+	}
+	if barInfo.TokensTotal < 0 {
+		t.Fatalf("expected non-negative tokens_total, got %d", barInfo.TokensTotal)
+	}
 
 	// 2) (/bar) global replay matches last message from global prevQuery
 	out, status = runOne(t, bar, "-r re")
@@ -161,6 +219,23 @@ func Test_goldenFile_CHAT_DIRSCOPED(t *testing.T) {
 	out, status = runOne(t, baz, "-r -cm test q baz")
 	testboil.FailTestIfDiff(t, status, 0)
 	testboil.AssertStringContains(t, out, "baz\n")
+
+	// 4b) (/baz) chat dir => now should be dir-scoped
+	out, status = runOne(t, baz, "-r chat dir")
+	testboil.FailTestIfDiff(t, status, 0)
+	bazInfo := parseChatDir(t, out)
+	if bazInfo.Scope != "dir" {
+		t.Fatalf("expected scope=dir, got %q", bazInfo.Scope)
+	}
+	if bazInfo.ChatID == "" {
+		t.Fatalf("expected non-empty chat_id for dir scope")
+	}
+	if bazInfo.RepliesByRole == nil {
+		t.Fatalf("expected replies_by_role to be present")
+	}
+	if bazInfo.RepliesByRole["user"] < 1 {
+		t.Fatalf("expected at least 1 user message, got %v", bazInfo.RepliesByRole)
+	}
 
 	// 5) (/baz) dir replay matches baz latest
 	out, status = runOne(t, baz, "-r dre")
