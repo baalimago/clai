@@ -94,10 +94,15 @@ func (cq *ChatHandler) list() ([]pub_models.Chat, error) {
 	if misc.Truthy(os.Getenv("DEBUG")) {
 		ancli.PrintOK(fmt.Sprintf("found '%v' conversations:\n", len(files)))
 	}
-	for _, file := range files {
-		chat, pathErr := FromPath(path.Join(cq.convDir, file.Name()))
+	for _, dirEntry := range files {
+		// Skip directories (e.g. conversations/dirs for dirscoped bindings)
+		if dirEntry.IsDir() {
+			continue
+		}
+		p := path.Join(cq.convDir, dirEntry.Name())
+		chat, pathErr := FromPath(p)
 		if pathErr != nil {
-			return nil, fmt.Errorf("failed to get chat: %w", pathErr)
+			return nil, fmt.Errorf("failed to get chat: '%v', error: %w", p, pathErr)
 		}
 		chats = append(chats, chat)
 	}

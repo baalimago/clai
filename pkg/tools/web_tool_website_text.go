@@ -31,6 +31,12 @@ var WebsiteText = WebsiteTextTool{
 	},
 }
 
+type httpDoer interface {
+	Do(*http.Request) (*http.Response, error)
+}
+
+var websiteTextHTTPClient httpDoer = &http.Client{Timeout: 10 * time.Second}
+
 func (w WebsiteTextTool) Call(input pub_models.Input) (string, error) {
 	urlStr, ok := input["url"].(string)
 	if !ok {
@@ -46,7 +52,10 @@ func (w WebsiteTextTool) Call(input pub_models.Input) (string, error) {
 		"AppleWebKit/537.36 (KHTML, like Gecko) " +
 		"Chrome/124.0.0.0 Safari/537.36"
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := websiteTextHTTPClient
+	if client == nil {
+		client = &http.Client{Timeout: 10 * time.Second}
+	}
 	req, err := http.NewRequest("GET", u.String(), nil)
 	if err != nil {
 		return "", fmt.Errorf("build request: %w", err)

@@ -3,9 +3,12 @@ package internal
 import (
 	"flag"
 	"os"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/baalimago/clai/internal/text"
+	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
@@ -16,10 +19,12 @@ func resetFlags() {
 
 func TestSetupFlags(t *testing.T) {
 	testCases := []struct {
-		name     string
-		args     []string
-		defaults Configurations
-		expected Configurations
+		name            string
+		args            []string
+		defaults        Configurations
+		want            Configurations
+		wantPostArgs    []string
+		wantErrContains string
 	}{
 		{
 			name: "Default Values",
@@ -36,7 +41,7 @@ func TestSetupFlags(t *testing.T) {
 				PrintRaw:     false,
 				ReplyMode:    false,
 			},
-			expected: Configurations{
+			want: Configurations{
 				ChatModel:    "gpt-4-turbo-preview",
 				PhotoModel:   "dall-e-3",
 				PhotoPrefix:  "clai",
@@ -58,7 +63,7 @@ func TestSetupFlags(t *testing.T) {
 				"-vd", "/videos", "-vp", "vid-",
 			},
 			defaults: Configurations{},
-			expected: Configurations{
+			want: Configurations{
 				ChatModel:    "gpt-4",
 				PhotoModel:   "dall-e-2",
 				PhotoDir:     "/tmp",
@@ -81,7 +86,7 @@ func TestSetupFlags(t *testing.T) {
 				"-video-dir", "/videos", "-video-prefix", "vid-",
 			},
 			defaults: Configurations{},
-			expected: Configurations{
+			want: Configurations{
 				ChatModel:    "gpt-4",
 				PhotoModel:   "dall-e-2",
 				PhotoDir:     "/tmp",
@@ -105,7 +110,7 @@ func TestSetupFlags(t *testing.T) {
 				PhotoModel: "shouldBeReplaced",
 				VideoModel: "shouldBeReplaced",
 			},
-			expected: Configurations{
+			want: Configurations{
 				ChatModel:  "gpt-4-short",
 				PhotoModel: "dall-e-2-short",
 				VideoModel: "gpt-4o-mini-short",
@@ -127,7 +132,7 @@ func TestSetupFlags(t *testing.T) {
 				ReplyMode:     true,
 				ExpectReplace: false,
 			},
-			expected: Configurations{
+			want: Configurations{
 				ChatModel:     "gpt-4",
 				PhotoModel:    "dall-e-2",
 				PhotoDir:      "/tmp",
@@ -145,7 +150,7 @@ func TestSetupFlags(t *testing.T) {
 			name:     "Profile path",
 			args:     []string{"cmd", "-profile-path", "/tmp/p.json"},
 			defaults: Configurations{},
-			expected: Configurations{
+			want: Configurations{
 				ProfilePath: "/tmp/p.json",
 			},
 		},
@@ -153,7 +158,7 @@ func TestSetupFlags(t *testing.T) {
 			name:     "Tools explicit all",
 			args:     []string{"cmd", "-t=*"},
 			defaults: Configurations{},
-			expected: Configurations{
+			want: Configurations{
 				UseTools: "*",
 			},
 		},
@@ -161,9 +166,18 @@ func TestSetupFlags(t *testing.T) {
 			name:     "Tools flag with comma-separated list => specific tools",
 			args:     []string{"cmd", "-t=write_file,rg"},
 			defaults: Configurations{},
-			expected: Configurations{
+			want: Configurations{
 				UseTools: "write_file,rg",
 			},
+		},
+		{
+			name:     "Pass along only args after parsing",
+			args:     []string{"cmd", "-cm", "test", "q", "hello"},
+			defaults: Configurations{},
+			want: Configurations{
+				ChatModel: "test",
+			},
+			wantPostArgs: []string{"q", "hello"},
 		},
 	}
 
@@ -171,10 +185,28 @@ func TestSetupFlags(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			resetFlags()
 			os.Args = tc.args
-			result := setupFlags(tc.defaults)
-			if result != tc.expected {
-				t.Errorf("Expected %+v, but got %+v",
-					tc.expected, result)
+
+			// parseFlags expects args WITHOUT argv[0].
+			var parseArgs []string
+			if len(tc.args) > 0 {
+				parseArgs = tc.args[1:]
+			}
+
+			got, gotPostParseArgs, err := parseFlags(tc.defaults, parseArgs)
+			testboil.FailTestIfDiff(t, debug.IndentedJsonFmt(got), debug.IndentedJsonFmt(tc.want))
+			if tc.wantPostArgs != nil && !slices.Equal(tc.wantPostArgs, gotPostParseArgs) {
+				t.Fatalf("post parse args doesnt match. Wanted: '%+v', got: '%+v'", tc.wantPostArgs, gotPostParseArgs)
+			}
+			if tc.wantErrContains != "" {
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+				if !strings.Contains(err.Error(), tc.wantErrContains) {
+					t.Fatalf("expected err: '%v', to contain: '%v'", err, tc.wantErrContains)
+				}
+			}
+			if tc.wantErrContains == "" && err != nil {
+				t.Fatalf("unexpected error: %v", err)
 			}
 		})
 	}

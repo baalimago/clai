@@ -12,9 +12,12 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
+// requiredConfigDirs lists directories that must exist under the clai config dir.
+// Keep this in sync with any feature that persists state to disk.
+var requiredConfigDirs = []string{"conversations", "profiles", "mcpServers", "conversations/dirs"}
+
 func CreateConfigDir(configPath string) error {
-	requiredDirs := []string{"conversations", "profiles", "mcpServers"}
-	for _, d := range requiredDirs {
+	for _, d := range requiredConfigDirs {
 		err := ensureDirExists(configPath, d)
 		if err != nil {
 			return fmt.Errorf("failed to setup config dir: %w", err)

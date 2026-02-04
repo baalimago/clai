@@ -114,6 +114,11 @@ func TestCreateConfigDir(t *testing.T) {
 	if _, err := os.Stat(configDirPath); os.IsNotExist(err) {
 		t.Error("Expected config directory to exist")
 	}
+	for _, d := range requiredConfigDirs {
+		if _, err := os.Stat(filepath.Join(configDirPath, d)); os.IsNotExist(err) {
+			t.Fatalf("Expected required config dir to exist: %v", d)
+		}
+	}
 
 	// Test creating an existing config directory
 	err = CreateConfigDir(configDirPath)
