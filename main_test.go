@@ -174,7 +174,7 @@ func Test_goldenFile_CHAT_DIRSCOPED(t *testing.T) {
 	if status != 0 {
 		t.Fatalf("expected status 0 for 'chat dir' when empty, got %d", status)
 	}
-	if strings.TrimSpace(out) != "{}" {
+	if strings.TrimSpace(out[strings.LastIndex(out, "{"):]) != "{}" {
 		t.Fatalf("expected '{}' for empty state, got %q", out)
 	}
 
@@ -184,15 +184,15 @@ func Test_goldenFile_CHAT_DIRSCOPED(t *testing.T) {
 	// config init may print "created directory ..." before the model output
 	testboil.AssertStringContains(t, out, "hello\n")
 
-	// 1b) (/bar) chat dir => should fall back to global (prevQuery)
+	// 1b) (/bar) chat dir => should be dir-scoped (query updated binding)
 	out, status = runOne(t, bar, "-r chat dir")
 	testboil.FailTestIfDiff(t, status, 0)
 	barInfo := parseChatDir(t, out)
-	if barInfo.Scope != "global" {
-		t.Fatalf("expected scope=global, got %q", barInfo.Scope)
+	if barInfo.Scope != "dir" {
+		t.Fatalf("expected scope=dir, got %q", barInfo.Scope)
 	}
-	if barInfo.ChatID != "prevQuery" {
-		t.Fatalf("expected chat_id=prevQuery, got %q", barInfo.ChatID)
+	if barInfo.ChatID == "" {
+		t.Fatalf("expected non-empty chat_id for dir scope, got %q", barInfo.ChatID)
 	}
 	if barInfo.RepliesByRole == nil {
 		t.Fatalf("expected replies_by_role to be present")

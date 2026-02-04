@@ -64,10 +64,10 @@ func TestSetupPrompts_ReplyModePrependsMessages(t *testing.T) {
 		t.Fatalf("mkdir: %v", err)
 	}
 
-	msgs := []pub_models.Message{
+	prev := pub_models.Chat{Messages: []pub_models.Message{
 		{Role: "user", Content: "hi there"},
-	}
-	if err := chat.SaveAsPreviousQuery(claiConfDir, msgs); err != nil {
+	}}
+	if err := chat.SaveAsPreviousQuery(claiConfDir, prev); err != nil {
 		t.Fatalf("save prev query: %v", err)
 	}
 
