@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path"
-	"runtime/debug"
 	"strings"
 
 	"github.com/baalimago/clai/internal/chat"
@@ -367,15 +366,7 @@ func Setup(ctx context.Context, usage string, allArgs []string) (models.Querier,
 		printHelp(usage, allArgs)
 		return nil, utils.ErrUserInitiatedExit
 	case VERSION:
-		bi, ok := debug.ReadBuildInfo()
-		if !ok {
-			return nil, errors.New("failed to read build info")
-		}
-		fmt.Println(bi.Main.Path)
-		for _, dep := range bi.Deps {
-			fmt.Printf("%s %s\n", dep.Path, dep.Version)
-		}
-		return nil, utils.ErrUserInitiatedExit
+		return printVersion()
 	case SETUP:
 		err := setup.SubCmd()
 		if err != nil {
