@@ -293,15 +293,13 @@ func Setup(ctx context.Context, usage string, allArgs []string) (models.Querier,
 
 	switch mode {
 	case CHAT, QUERY, GLOB, CMD:
-		var dirReplyChatID string
 		// If directory reply mode is requested we first copy the directory-scoped
 		// conversation into prevQuery.json so that the existing reply flow can reuse it.
 		if mode == QUERY && postFlagConf.DirReplyMode {
-			chatID, err := chat.SaveDirScopedAsPrevQuery(claiConfDir)
+			_, err := chat.SaveDirScopedAsPrevQuery(claiConfDir)
 			if err != nil {
 				return nil, fmt.Errorf("failed to setup dir-scoped reply: %w", err)
 			}
-			dirReplyChatID = chatID
 			// Ensure the existing reply plumbing is used.
 			postFlagConf.ReplyMode = true
 		}
@@ -312,14 +310,24 @@ func Setup(ctx context.Context, usage string, allArgs []string) (models.Querier,
 		}
 
 		// Update directory binding after successful query.
-		if mode == QUERY {
+		// Rule: update bindings after non-reply query.
+		// - normal query updates binding to the new/used chat.
+		// - dir-reply query keeps binding pointing at the chat we replied to.
+		if mode == QUERY && !postFlagConf.ReplyMode {
 			updateChatID := tConf.InitialChat.ID
-			if postFlagConf.DirReplyMode && dirReplyChatID != "" {
-				updateChatID = dirReplyChatID
-			}
 			if err := chat.UpdateDirScopeFromCWD(claiConfDir, updateChatID); err != nil {
-				// non-fatal; it only affects dir-scoped replay
 				ancli.Warnf("failed to update directory-scoped binding: %v\n", err)
+			}
+		}
+		if mode == QUERY && postFlagConf.DirReplyMode && postFlagConf.ReplyMode {
+			// -dre query: keep binding pointing to the dir-scoped chat being replied to.
+			chatID, err := chat.LoadDirScopeChatID(claiConfDir)
+			if err != nil {
+				ancli.Warnf("failed to resolve dir-reply chat id for binding update: %v\n", err)
+			} else if chatID != "" {
+				if err := chat.UpdateDirScopeFromCWD(claiConfDir, chatID); err != nil {
+					ancli.Warnf("failed to update directory-scoped binding: %v\n", err)
+				}
 			}
 		}
 		return q, nil
@@ -398,5 +406,4 @@ func Setup(ctx context.Context, usage string, allArgs []string) (models.Querier,
 	default:
 		return nil, fmt.Errorf("unknown mode: %v", mode)
 	}
-	return nil, errors.New("unexpected conditional: how did you end up here?")
 }

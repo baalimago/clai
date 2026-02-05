@@ -68,7 +68,7 @@ func (m *mcpTool) Call(input pub_models.Input) (string, error) {
 
 		if misc.Truthy(os.Getenv("DEBUG_MCP_TOOL")) {
 			rawS, _ := raw.MarshalJSON()
-			shortened, _ := utils.WidthAppropriateStringTrunk(string(rawS), "", 10)
+			shortened, _ := utils.WidthAppropriateStringTrunc(string(rawS), "", 10)
 			ancli.Okf("mcp_server client received: '%s'", shortened)
 		}
 		var resp Response

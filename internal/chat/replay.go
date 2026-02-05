@@ -37,11 +37,11 @@ func replayDirScoped(raw bool) error {
 	}
 
 	cq := &ChatHandler{confDir: claiConfDir}
-	ds, ok, err := cq.LoadDirScope("")
+	ds, err := cq.LoadDirScope("")
 	if err != nil {
 		return fmt.Errorf("load dirscope: %w", err)
 	}
-	if !ok || ds.ChatID == "" {
+	if ds.ChatID == "" {
 		return errors.New("no directory-scoped conversation bound to current directory")
 	}
 

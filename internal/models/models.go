@@ -33,6 +33,11 @@ type InputTokenCounter interface {
 	CountInputTokens(context.Context, pub_models.Chat) (int, error)
 }
 
+// UsageTokenCounter outputs the tokens that it has counterd
+type UsageTokenCounter interface {
+	TokenUsage() *pub_models.Usage
+}
+
 // ToolBox can register tools which later on will be added to the chat completion queries
 type ToolBox interface {
 	// RegisterTool registers a tool to the ToolBox

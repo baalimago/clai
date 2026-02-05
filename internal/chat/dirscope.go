@@ -4,13 +4,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
 	"time"
+
+	"github.com/baalimago/clai/internal/utils"
 )
 
 type DirScope struct {
@@ -21,14 +21,6 @@ type DirScope struct {
 }
 
 func (cq *ChatHandler) canonicalDir(dir string) (string, error) {
-	if dir == "" {
-		wd, err := os.Getwd()
-		if err != nil {
-			return "", fmt.Errorf("getwd: %w", err)
-		}
-		dir = wd
-	}
-
 	abs, err := filepath.Abs(dir)
 	if err != nil {
 		return "", fmt.Errorf("abs: %w", err)
@@ -51,27 +43,31 @@ func (cq *ChatHandler) dirScopePathFromHash(hash string) string {
 	return filepath.Join(cq.dirscopeRoot(), hash+".json")
 }
 
-func (cq *ChatHandler) LoadDirScope(dir string) (DirScope, bool, error) {
+func (cq *ChatHandler) LoadDirScope(dir string) (DirScope, error) {
+	if dir == "" {
+		wd, err := os.Getwd()
+		if err != nil {
+			return DirScope{}, fmt.Errorf("getwd: %w", err)
+		}
+		dir = wd
+	}
 	canonical, err := cq.canonicalDir(dir)
 	if err != nil {
-		return DirScope{}, false, err
+		return DirScope{}, err
 	}
 	h := cq.dirHash(canonical)
 	p := cq.dirScopePathFromHash(h)
 
 	b, err := os.ReadFile(p)
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return DirScope{}, false, nil
-		}
-		return DirScope{}, false, fmt.Errorf("read dirscope binding: %w", err)
+		return DirScope{}, fmt.Errorf("read dirscope binding: %w", err)
 	}
 
 	var ds DirScope
 	if err := json.Unmarshal(b, &ds); err != nil {
-		return DirScope{}, false, fmt.Errorf("unmarshal dirscope binding: %w", err)
+		return DirScope{}, fmt.Errorf("unmarshal dirscope binding: %w", err)
 	}
-	return ds, true, nil
+	return ds, nil
 }
 
 func (cq *ChatHandler) dirscopeRoot() string {
@@ -143,4 +139,25 @@ func UpdateDirScopeFromCWD(confDir, chatID string) error {
 	}
 	cq := &ChatHandler{confDir: confDir}
 	return cq.UpdateDirScopeFromCWD(chatID)
+}
+
+// LoadDirScopeChatID loads the bound chat id for the current working directory.
+func LoadDirScopeChatID(claiConfDir string) (string, error) {
+	if claiConfDir == "" {
+		var err error
+		claiConfDir, err = utils.GetClaiConfigDir()
+		if err != nil {
+			return "", fmt.Errorf("get clai config dir: %w", err)
+		}
+	}
+
+	cq := &ChatHandler{
+		confDir: claiConfDir,
+		convDir: path.Join(claiConfDir, "conversations"),
+	}
+	ds, err := cq.LoadDirScope("")
+	if err != nil {
+		return "", fmt.Errorf("load dir scope: %w", err)
+	}
+	return ds.ChatID, nil
 }

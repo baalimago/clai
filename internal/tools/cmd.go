@@ -38,7 +38,7 @@ func SubCmd(ctx context.Context, args []string) error {
 		spec := tool.Specification()
 		prefix := fmt.Sprintf("- %s: ", name)
 
-		maybeShortenedDesc, err := utils.WidthAppropriateStringTrunk(spec.Description, prefix, 5)
+		maybeShortenedDesc, err := utils.WidthAppropriateStringTrunc(spec.Description, prefix, 5)
 		if err != nil {
 			return fmt.Errorf("failed to truncate descriptoin: :%v", err)
 		}

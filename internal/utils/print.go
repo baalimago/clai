@@ -126,7 +126,7 @@ func AttemptPrettyPrint(w io.Writer, chatMessage pub_models.Message, username st
 	return nil
 }
 
-func WidthAppropriateStringTrunk(toShorten, prefix string, padding int) (string, error) {
+func WidthAppropriateStringTrunc(toShorten, prefix string, padding int) (string, error) {
 	toShorten = strings.ReplaceAll(toShorten, "\n", "\\n")
 	toShorten = strings.ReplaceAll(toShorten, "\t", "\\t")
 	termWidth, err := TermWidth()

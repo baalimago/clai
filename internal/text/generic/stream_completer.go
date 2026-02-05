@@ -21,7 +21,7 @@ import (
 
 var dataPrefix = []byte("data: ")
 
-// streamCompletions taking the messages as prompt conversation. Returns the messages from the chat model.
+// StreamCompletions taking the messages as prompt conversation. Returns the messages from the chat model.
 func (s *StreamCompleter) StreamCompletions(ctx context.Context, chat pub_models.Chat) (chan models.CompletionEvent, error) {
 	if s.Clean != nil {
 		cpy := make([]pub_models.Message, len(chat.Messages))
@@ -62,6 +62,9 @@ func (s *StreamCompleter) createRequest(ctx context.Context, chat pub_models.Cha
 		ResponseFormat:   responseFormat{Type: "text"},
 		Messages:         chat.Messages,
 		Stream:           true,
+		StreamOptions: map[string]any{
+			"include_usage": true,
+		},
 		// No support for this yet since it's limited usecase and high complexity
 		ParalellToolCalls: false,
 	}
@@ -149,6 +152,11 @@ func (s *StreamCompleter) handleStreamChunk(token []byte) models.CompletionEvent
 			return models.NoopEvent{}
 		}
 	}
+
+	if chunk.Usage != nil {
+		s.usage = chunk.Usage
+	}
+
 	if len(chunk.Choices) == 0 {
 		return models.NoopEvent{}
 	}
@@ -172,6 +180,7 @@ func (s *StreamCompleter) handleStreamChunk(token []byte) models.CompletionEvent
 	if s.debug {
 		ancli.PrintOK(fmt.Sprintf("chosen: %T -  %+v\n", chosen, chosen))
 	}
+
 	return chosen
 }
 
@@ -251,4 +260,8 @@ func (s *StreamCompleter) CountInputTokens(ctx context.Context, chat pub_models.
 		count += len(strings.Split(m.Content, " "))
 	}
 	return int(float64(count) * heuristicTokenCountFactor), nil
+}
+
+func (s *StreamCompleter) TokenUsage() *pub_models.Usage {
+	return s.usage
 }

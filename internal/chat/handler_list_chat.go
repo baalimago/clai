@@ -51,7 +51,7 @@ func (cq *ChatHandler) actOnChat(ctx context.Context, chat pub_models.Chat) erro
 		return cq.loop(ctx)
 
 	case "P", "p":
-		return SaveAsPreviousQuery(cq.confDir, chat.Messages)
+		return SaveAsPreviousQuery(cq.confDir, chat)
 	default:
 		return fmt.Errorf("unknown choice: '%v'", choice)
 	}
@@ -153,7 +153,7 @@ func (cq *ChatHandler) listChats(
 				firstMessages = uMsg.Content
 			}
 
-			withSummary, err := utils.WidthAppropriateStringTrunk(firstMessages, prefix, 15)
+			withSummary, err := utils.WidthAppropriateStringTrunc(firstMessages, prefix, 15)
 			if err != nil {
 				return "", fmt.Errorf("failed to get widthAppropriateChatSummary: %w", err)
 			}
@@ -189,7 +189,7 @@ func (cq *ChatHandler) printChatInfo(w io.Writer, chat pub_models.Chat) error {
 	if uMsgErr == nil {
 		firstMessages = uMsg.Content
 	}
-	summary, err := utils.WidthAppropriateStringTrunk(firstMessages, "summary: \"", 10)
+	summary, err := utils.WidthAppropriateStringTrunc(firstMessages, "summary: \"", 10)
 	if err != nil {
 		return fmt.Errorf("failed to create widthAppropriateChatSummary: %w", err)
 	}
@@ -274,7 +274,7 @@ func (cq *ChatHandler) deleteMessageInChat(
 				"",
 			)
 
-			withSummary, err := utils.WidthAppropriateStringTrunk(
+			withSummary, err := utils.WidthAppropriateStringTrunc(
 				t.Content,
 				prefix,
 				25,
@@ -339,7 +339,7 @@ func (cq *ChatHandler) editMessageInChat(chat pub_models.Chat) error {
 				"",
 			)
 
-			withSummary, err := utils.WidthAppropriateStringTrunk(t.Content, prefix, 25)
+			withSummary, err := utils.WidthAppropriateStringTrunc(t.Content, prefix, 25)
 			if err != nil {
 				return "", fmt.Errorf("failed to get widthAppropriateChatSummary: %w", err)
 			}

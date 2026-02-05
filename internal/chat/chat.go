@@ -1,6 +1,8 @@
 package chat
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -42,6 +44,17 @@ func Save(saveAt string, chat pub_models.Chat) error {
 	return os.WriteFile(fileName, b, 0o644)
 }
 
+// HashIDFromPrompt is a cleaner way to name the chats. The initial ID from prompt approach was to
+// keep readability and allow to select chat from whatever the prompt was. But this didn't work out
+// so well due to duplicates, and strange utf8 characters which then ended up as filenames, messing up
+// file structure
+func HashIDFromPrompt(prompt string) string {
+	h := sha256.Sum256([]byte(prompt))
+	return hex.EncodeToString(h[:])
+}
+
+// IDFromPrompt is deprecated since 2026-01 but kept for backwards compatibility
+// as it's used in lookup
 func IDFromPrompt(prompt string) string {
 	id := strings.Join(utils.GetFirstTokens(strings.Split(prompt, " "), 5), "_")
 	// Slashes messes up the save path pretty bad
