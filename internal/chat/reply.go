@@ -30,7 +30,7 @@ func SaveAsPreviousQuery(claiConfDir string, chat pub_models.Chat) error {
 		}
 		convChat := pub_models.Chat{
 			Created:    time.Now(),
-			ID:         IDFromPrompt(firstUserMsg.Content),
+			ID:         HashIDFromPrompt(firstUserMsg.Content),
 			Messages:   chat.Messages,
 			TokenUsage: chat.TokenUsage,
 		}

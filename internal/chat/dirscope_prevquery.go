@@ -12,11 +12,11 @@ import (
 // users opt into directory-scoped replies via -dre/-dir-reply.
 func SaveDirScopedAsPrevQuery(confDir string) (origChatID string, err error) {
 	cq := &ChatHandler{confDir: confDir}
-	ds, ok, err := cq.LoadDirScope("")
+	ds, err := cq.LoadDirScope("")
 	if err != nil {
 		return "", fmt.Errorf("load dirscope: %w", err)
 	}
-	if !ok || ds.ChatID == "" {
+	if ds.ChatID == "" {
 		return "", fmt.Errorf("no directory-scoped conversation bound to current directory")
 	}
 

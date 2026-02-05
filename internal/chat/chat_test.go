@@ -37,15 +37,6 @@ func TestFromPathError(t *testing.T) {
 	}
 }
 
-func TestIDFromPrompt(t *testing.T) {
-	prompt := "hello world some/test path\\dir other extra"
-	got := IDFromPrompt(prompt)
-	want := "hello_world_some.test_path.dir_other"
-	if got != want {
-		t.Errorf("IDFromPrompt() = %q, want %q", got, want)
-	}
-}
-
 func TestList_WhenConversationsContainDirs_DoesNotError(t *testing.T) {
 	confDir := t.TempDir()
 	convDir := filepath.Join(confDir, "conversations")

@@ -146,7 +146,7 @@ func (c *Configurations) SetupInitialChat(args []string) error {
 	}
 	c.PostProccessedPrompt = prompt
 	if c.InitialChat.ID == "" {
-		c.InitialChat.ID = chat.IDFromPrompt(prompt)
+		c.InitialChat.ID = chat.HashIDFromPrompt(prompt)
 	}
 	return nil
 }

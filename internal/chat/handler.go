@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/user"
 	"path"
@@ -116,7 +117,11 @@ func (cq *ChatHandler) actOnSubCmd(ctx context.Context) error {
 		// return cq.continueQueryAsChat(ctx, API_KEY, prompt)
 		return errors.New("not yet implemented")
 	case "dir":
-		return cq.dirInfo()
+		err := cq.dirInfo()
+		if errors.Is(err, fs.ErrNotExist) {
+			return errors.New("failed to print any chat information as there was no bound chats found. This is unusual, check if replies are enabled")
+		}
+		return err
 	case "help", "h":
 		claiConfDir, _ := utils.GetClaiConfigDir()
 		fmt.Printf(chatUsage, claiConfDir)
@@ -132,7 +137,7 @@ func (cq *ChatHandler) new(ctx context.Context) error {
 	msgs = append(msgs, pub_models.Message{Role: "user", Content: cq.prompt})
 	newChat := pub_models.Chat{
 		Created:  time.Now(),
-		ID:       IDFromPrompt(cq.prompt),
+		ID:       HashIDFromPrompt(cq.prompt),
 		Profile:  cq.config.UseProfile,
 		Messages: msgs,
 	}
@@ -156,13 +161,34 @@ func (cq *ChatHandler) findChatByID(potentialChatIdx string) (pub_models.Chat, e
 		if chatIdx < 0 || chatIdx >= len(chats) {
 			return pub_models.Chat{}, fmt.Errorf("chat index out of range")
 		}
-		// Reassemble the prompt from the split tokens, but without the index
-		// selecting the chat
+		// Reassemble the prompt from the split tokens, but without the index selecting the chat
 		cq.prompt = strings.Join(split[1:], " ")
 		return chats[chatIdx], nil
-	} else {
-		return cq.getByID(IDFromPrompt(potentialChatIdx))
 	}
+
+	// Prefer exact ID match first (covers continuing a hash-id conversation).
+	c, err := cq.getByID(firstToken)
+	if err == nil {
+		return c, nil
+	}
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return pub_models.Chat{}, fmt.Errorf("load chat by id %q: %w", firstToken, err)
+	}
+
+	// Backwards compatible fallbacks: derived IDs.
+	c, err = cq.getByID(IDFromPrompt(potentialChatIdx))
+	if err == nil {
+		return c, nil
+	}
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return pub_models.Chat{}, fmt.Errorf("load chat by legacy prompt id: %w", err)
+	}
+
+	c, err = cq.getByID(HashIDFromPrompt(potentialChatIdx))
+	if err != nil {
+		return pub_models.Chat{}, fmt.Errorf("load chat by hash-from-prompt id: %w", err)
+	}
+	return c, nil
 }
 
 func (cq *ChatHandler) printChat(chat pub_models.Chat) error {

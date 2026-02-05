@@ -62,7 +62,9 @@ Bindings are updated when the user selects/creates a chat from a directory outsi
 
 - `clai query ...`: bind CWD → the chat used for the query
 - `clai chat new ...`: bind CWD → the newly created chat
-- `clai chat continue ...`: bind CWD → the continued chat
+- `clai chat continue <chatID|index> ...`: bind CWD → the continued chat
+
+Note: chat IDs may be either legacy human-readable IDs or the newer hash IDs.
 
 Bindings are **not** updated by reply actions:
 
@@ -88,11 +90,11 @@ Resolution:
 
 1. If a dir binding exists for CWD and the referenced chat loads: show that chat (`scope="dir"`).
 2. Else, if `prevQuery.json` exists: show that global chat (`scope="global"`, `chat_id="prevQuery"`).
-3. Else: empty.
+3. Else: return an error (no chat context is available).
 
 Output:
 
-- Raw (`-r`): stable JSON object; empty state is `{}`.
+- Raw (`-r`): stable JSON object.
 - Non-raw: a short human-readable block.
 
 Fields include:

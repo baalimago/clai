@@ -169,23 +169,20 @@ func Test_goldenFile_CHAT_DIRSCOPED(t *testing.T) {
 		return got
 	}
 
-	// 0) (/bar) no dir binding and no prevQuery yet => `chat dir` should print {}
-	out, status := runOne(t, bar, "-r chat dir")
-	if status != 0 {
-		t.Fatalf("expected status 0 for 'chat dir' when empty, got %d", status)
-	}
-	if strings.TrimSpace(out[strings.LastIndex(out, "{"):]) != "{}" {
-		t.Fatalf("expected '{}' for empty state, got %q", out)
+	// 0) (/bar) no dir binding and no prevQuery yet => now errors (non-zero)
+	_, status := runOne(t, bar, "-r -cm test chat dir")
+	if status == 0 {
+		t.Fatalf("expected non-zero status for 'chat dir' when empty")
 	}
 
 	// 1) (/bar) query hello
-	out, status = runOne(t, bar, "-r -cm test q hello")
+	out, status := runOne(t, bar, "-r -cm test q hello")
 	testboil.FailTestIfDiff(t, status, 0)
 	// config init may print "created directory ..." before the model output
 	testboil.AssertStringContains(t, out, "hello\n")
 
 	// 1b) (/bar) chat dir => should be dir-scoped (query updated binding)
-	out, status = runOne(t, bar, "-r chat dir")
+	out, status = runOne(t, bar, "-r -cm test chat dir")
 	testboil.FailTestIfDiff(t, status, 0)
 	barInfo := parseChatDir(t, out)
 	if barInfo.Scope != "dir" {
@@ -221,7 +218,7 @@ func Test_goldenFile_CHAT_DIRSCOPED(t *testing.T) {
 	testboil.AssertStringContains(t, out, "baz\n")
 
 	// 4b) (/baz) chat dir => now should be dir-scoped
-	out, status = runOne(t, baz, "-r chat dir")
+	out, status = runOne(t, baz, "-r -cm test chat dir")
 	testboil.FailTestIfDiff(t, status, 0)
 	bazInfo := parseChatDir(t, out)
 	if bazInfo.Scope != "dir" {

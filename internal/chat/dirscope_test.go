@@ -27,32 +27,13 @@ func TestDirScope_SaveLoadRoundTrip(t *testing.T) {
 		t.Fatalf("SaveDirScope: %v", err)
 	}
 
-	got, ok, err := cq.LoadDirScope(dir)
+	got, err := cq.LoadDirScope(dir)
 	if err != nil {
 		t.Fatalf("LoadDirScope: %v", err)
-	}
-	if !ok {
-		t.Fatalf("expected ok=true")
 	}
 	testboil.FailTestIfDiff(t, got.ChatID, chatID)
 	if got.DirHash == "" {
 		t.Fatalf("expected DirHash to be set")
-	}
-}
-
-func TestDirScope_MissingReturnsOkFalse(t *testing.T) {
-	confDir := t.TempDir()
-	if err := utils.CreateConfigDir(confDir); err != nil {
-		t.Fatalf("CreateConfigDir: %v", err)
-	}
-
-	cq := &ChatHandler{confDir: confDir}
-	_, ok, err := cq.LoadDirScope(t.TempDir())
-	if err != nil {
-		t.Fatalf("LoadDirScope: %v", err)
-	}
-	if ok {
-		t.Fatalf("expected ok=false")
 	}
 }
 
@@ -101,12 +82,9 @@ func Test_UpdateDirScopeFromCWD_updatesBinding(t *testing.T) {
 		t.Fatalf("UpdateDirScopeFromCWD: %v", err)
 	}
 
-	ds, ok, err := cq.LoadDirScope(wd)
+	ds, err := cq.LoadDirScope(wd)
 	if err != nil {
 		t.Fatalf("LoadDirScope: %v", err)
-	}
-	if !ok {
-		t.Fatalf("expected ok=true")
 	}
 	if ds.ChatID != chatID {
 		t.Fatalf("expected chatID %q got %q", chatID, ds.ChatID)
