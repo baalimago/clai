@@ -18,7 +18,6 @@ import (
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
-	"github.com/baalimago/go_away_boilerplate/pkg/num"
 )
 
 const chatUsage = `clai - (c)ommand (l)ine (a)rtificial (i)ntelligence
@@ -192,16 +191,10 @@ func (cq *ChatHandler) findChatByID(potentialChatIdx string) (pub_models.Chat, e
 }
 
 func (cq *ChatHandler) printChat(chat pub_models.Chat) error {
-	chatMsgs := chat.Messages
-	if !cq.raw {
-		// Only print last 5 rows unless raw, as the glow pretty-print takes forever
-		chatMsgs = chatMsgs[num.Cap(len(chatMsgs), 0, 5):]
-	}
-	for _, message := range chatMsgs {
-		err := utils.AttemptPrettyPrint(cq.out, message, cq.username, cq.raw)
-		if err != nil {
-			return fmt.Errorf("failed to print chat message: %w", err)
-		}
+	// New default behavior: fast, heavily obfuscated preview.
+	// This avoids expensive glow rendering and avoids printing message bodies.
+	if err := printChatObfuscated(cq.out, chat, cq.raw); err != nil {
+		return fmt.Errorf("print obfuscated chat: %w", err)
 	}
 	return nil
 }
@@ -227,13 +220,18 @@ func (cq *ChatHandler) cont(ctx context.Context) error {
 	if cq.prompt != "" {
 		chat.Messages = append(chat.Messages, pub_models.Message{Role: "user", Content: cq.prompt})
 	}
-	err = cq.printChat(chat)
-	if err != nil {
-		return fmt.Errorf("failed to print chat: %v", err)
+	if err := cq.printChat(chat); err != nil {
+		return fmt.Errorf("failed to print chat: %w", err)
 	}
 
-	cq.chat = chat
-	return cq.loop(ctx)
+	// New behavior: `clai chat continue` should not enter interactive loop.
+	// Instead, bind the current working directory to this chat so that it can be
+	// continued using directory-reply mode (-dre).
+	if err := cq.UpdateDirScopeFromCWD(chat.ID); err != nil {
+		return fmt.Errorf("failed to update directory-scoped binding: %w", err)
+	}
+	ancli.Noticef("chat %s is now replyable with flag \"clai -dre query <prompt>\"\n", chat.ID)
+	return nil
 }
 
 func (cq *ChatHandler) deleteFromPrompt() error {

@@ -10,6 +10,8 @@ import (
 	"strings"
 )
 
+const defaultTTYPath = "/dev/tty"
+
 // ReadUserInput and return on interrupt channel
 func ReadUserInput() (string, error) {
 	sigChan := make(chan os.Signal, 1)
@@ -19,10 +21,14 @@ func ReadUserInput() (string, error) {
 	errChan := make(chan error)
 
 	go func() {
-		// Open /dev/tty for direct terminal access
-		tty, err := os.Open("/dev/tty")
+		ttyPath := os.Getenv("TTY")
+		if ttyPath == "" {
+			ttyPath = defaultTTYPath
+		}
+
+		tty, err := os.Open(ttyPath)
 		if err != nil {
-			errChan <- fmt.Errorf("cannot open terminal: %w", err)
+			errChan <- fmt.Errorf("cannot open terminal %q: %w", ttyPath, err)
 			return
 		}
 		defer tty.Close()
@@ -30,7 +36,7 @@ func ReadUserInput() (string, error) {
 		reader := bufio.NewReader(tty)
 		userInput, err := reader.ReadString('\n')
 		if err != nil {
-			errChan <- err
+			errChan <- fmt.Errorf("read from terminal %q: %w", ttyPath, err)
 			return
 		}
 		inputChan <- userInput
