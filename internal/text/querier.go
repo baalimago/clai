@@ -153,16 +153,20 @@ func (q *Querier[C]) postProcess() {
 	if q.hasPrinted {
 		return
 	}
-	// Nothing to post process if message for some reason is empty (happens during tools calls sometimes)
-	if q.fullMsg == "" {
-		return
-	}
 	q.hasPrinted = true
-	newSysMsg := pub_models.Message{
-		Role:    "system",
-		Content: q.fullMsg,
+
+	// Append the assistant response if we received any content
+	if q.fullMsg != "" {
+		newSysMsg := pub_models.Message{
+			Role:    "system",
+			Content: q.fullMsg,
+		}
+		q.chat.Messages = append(q.chat.Messages, newSysMsg)
 	}
-	q.chat.Messages = append(q.chat.Messages, newSysMsg)
+
+	// Always save the conversation when configured to do so, even on errors
+	// or when no tokens were received. This preserves the user's messages
+	// so the conversation context is not lost.
 	if q.shouldSaveReply {
 		err := chat.SaveAsPreviousQuery(q.configDir, q.chat)
 		if err != nil {
@@ -174,6 +178,11 @@ func (q *Querier[C]) postProcess() {
 		ancli.PrintOK(fmt.Sprintf("Querier.postProcess:\n%v\n", debug.IndentedJsonFmt(q)))
 	}
 
+	// Nothing to render if message is empty (happens during tool calls sometimes)
+	if q.fullMsg == "" {
+		return
+	}
+
 	// Cmd mode is a bit of a hack, it will handle all output
 	if q.cmdMode {
 		err := q.handleCmdMode()
@@ -183,7 +192,10 @@ func (q *Querier[C]) postProcess() {
 		return
 	}
 
-	q.postProcessOutput(newSysMsg)
+	q.postProcessOutput(pub_models.Message{
+		Role:    "system",
+		Content: q.fullMsg,
+	})
 }
 
 func (q *Querier[C]) postProcessOutput(newSysMsg pub_models.Message) {
@@ -282,6 +294,10 @@ func (q *Querier[C]) Query(ctx context.Context) error {
 	if q.out == nil {
 		q.out = os.Stdout
 	}
+	// Ensure we always persist the conversation in reply mode, even when we fail
+	// before we've started streaming completions.
+	defer q.postProcess()
+
 	if q.rateLimitRetries > RateLimitRetries {
 		return fmt.Errorf("rate limit retry limit exceeded (%v), giving up", RateLimitRetries)
 	}
@@ -298,7 +314,6 @@ func (q *Querier[C]) Query(ctx context.Context) error {
 		return fmt.Errorf("failed to stream completions: %w", err)
 	}
 
-	defer q.postProcess()
 	defer func() {
 		tokenCounter, isModelCounter := any(q.Model).(models.UsageTokenCounter)
 		if !isModelCounter {

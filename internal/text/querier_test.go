@@ -364,6 +364,169 @@ func Test_Querier(t *testing.T) {
 	})
 }
 
+func Test_Querier_SavesConversationOnError(t *testing.T) {
+	t.Run("it should save conversation even when query returns an error with no tokens", func(t *testing.T) {
+		tmpConfigDir := path.Join(t.TempDir(), ".clai")
+		os.MkdirAll(path.Join(tmpConfigDir, "conversations"), os.ModePerm)
+		q := Querier[*MockQuerier]{
+			Raw:             true,
+			out:             &strings.Builder{},
+			shouldSaveReply: true,
+			configDir:       tmpConfigDir,
+			chat: pub_models.Chat{
+				ID: "prevQuery",
+				Messages: []pub_models.Message{
+					{
+						Role:    "system",
+						Content: "you are a helpful assistant",
+					},
+					{
+						Role:    "user",
+						Content: "hello world",
+					},
+				},
+			},
+			Model: &MockQuerier{
+				shouldBlock:    false,
+				completionChan: make(chan models.CompletionEvent),
+				errChan:        make(chan error),
+			},
+		}
+
+		// Send an error immediately without any tokens
+		go func() {
+			q.Model.errChan <- errors.New("API connection failed")
+			q.Model.completionChan <- "CLOSE"
+		}()
+
+		err := q.Query(context.Background())
+		if err == nil {
+			t.Fatal("expected error from Query")
+		}
+
+		// The conversation should still be saved despite the error
+		lastReply, err := chat.LoadPrevQuery(q.configDir)
+		if err != nil {
+			t.Fatalf("failed to load prev query: %v", err)
+		}
+		// Should have the original messages (system + user) preserved
+		if len(lastReply.Messages) < 2 {
+			t.Fatalf("expected at least 2 messages to be saved, got: %v, data: %v", len(lastReply.Messages), lastReply.Messages)
+		}
+		if lastReply.Messages[1].Content != "hello world" {
+			t.Fatalf("expected user message to be preserved, got: %v", lastReply.Messages[1].Content)
+		}
+	})
+
+	t.Run("it should save conversation with partial content on error", func(t *testing.T) {
+		tmpConfigDir := path.Join(t.TempDir(), ".clai")
+		os.MkdirAll(path.Join(tmpConfigDir, "conversations"), os.ModePerm)
+		q := Querier[*MockQuerier]{
+			Raw:             true,
+			out:             &strings.Builder{},
+			shouldSaveReply: true,
+			configDir:       tmpConfigDir,
+			chat: pub_models.Chat{
+				ID: "prevQuery",
+				Messages: []pub_models.Message{
+					{
+						Role:    "system",
+						Content: "you are a helpful assistant",
+					},
+					{
+						Role:    "user",
+						Content: "hello world",
+					},
+				},
+			},
+			Model: &MockQuerier{
+				shouldBlock:    false,
+				completionChan: make(chan models.CompletionEvent),
+				errChan:        make(chan error),
+			},
+		}
+
+		// Send some tokens, then an error
+		go func() {
+			q.Model.completionChan <- "partial response"
+			q.Model.errChan <- errors.New("connection dropped")
+			q.Model.completionChan <- "CLOSE"
+		}()
+
+		err := q.Query(context.Background())
+		if err == nil {
+			t.Fatal("expected error from Query")
+		}
+
+		// The conversation should be saved with the partial content
+		lastReply, err := chat.LoadPrevQuery(q.configDir)
+		if err != nil {
+			t.Fatalf("failed to load prev query: %v", err)
+		}
+		// Should have original messages + the partial assistant response
+		if len(lastReply.Messages) < 3 {
+			t.Fatalf("expected at least 3 messages (system + user + partial), got: %v, data: %v", len(lastReply.Messages), lastReply.Messages)
+		}
+		if lastReply.Messages[2].Content != "partial response" {
+			t.Fatalf("expected partial response to be saved, got: %v", lastReply.Messages[2].Content)
+		}
+	})
+}
+
+func Test_Querier_SavesConversation_WhenStreamSetupFailsDueToRateLimitTokenCount(t *testing.T) {
+	tmpConfigDir := path.Join(t.TempDir(), ".clai")
+	if err := os.MkdirAll(path.Join(tmpConfigDir, "conversations"), os.ModePerm); err != nil {
+		t.Fatalf("mkdir conversations: %v", err)
+	}
+
+	q := Querier[*MockQuerierRateLimitTokenCountFail]{
+		Raw:             true,
+		out:             &strings.Builder{},
+		shouldSaveReply: true,
+		configDir:       tmpConfigDir,
+		chat: pub_models.Chat{
+			ID: "prevQuery",
+			Messages: []pub_models.Message{
+				{Role: "system", Content: "you are a helpful assistant"},
+				{Role: "user", Content: "please do the thing"},
+			},
+		},
+		Model: &MockQuerierRateLimitTokenCountFail{},
+	}
+
+	err := q.Query(context.Background())
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "failed to count tokens") {
+		t.Fatalf("expected token count error, got: %v", err)
+	}
+
+	// Even though stream setup failed, we should persist prevQuery in reply mode.
+	lastReply, err := chat.LoadPrevQuery(q.configDir)
+	if err != nil {
+		t.Fatalf("load prev query: %v", err)
+	}
+	if len(lastReply.Messages) < 2 {
+		t.Fatalf("expected at least 2 messages saved, got: %v, data: %v", len(lastReply.Messages), lastReply.Messages)
+	}
+	if lastReply.Messages[1].Content != "please do the thing" {
+		t.Fatalf("expected user message to be preserved, got: %q", lastReply.Messages[1].Content)
+	}
+}
+
+type MockQuerierRateLimitTokenCountFail struct{}
+
+func (m *MockQuerierRateLimitTokenCountFail) Setup() error { return nil }
+
+func (m *MockQuerierRateLimitTokenCountFail) StreamCompletions(context.Context, pub_models.Chat) (chan models.CompletionEvent, error) {
+	return nil, models.NewRateLimitError(time.Now().Add(time.Millisecond), 1000, 0)
+}
+
+func (m *MockQuerierRateLimitTokenCountFail) CountInputTokens(context.Context, pub_models.Chat) (int, error) {
+	return 0, errors.New("token count request failed")
+}
+
 func Test_ChatQuerier(t *testing.T) {
 	q := &Querier[*MockQuerier]{
 		Model: &MockQuerier{},
