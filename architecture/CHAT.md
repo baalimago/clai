@@ -83,7 +83,7 @@ Chat ID generation is implemented in `internal/chat/chat.go`:
 ID resolution when selecting/continuing chats (`internal/chat/handler.go:findChatByID`) supports:
 
 1. selecting by **index** from `clai chat list`
-2. selecting by **exact chat ID**
+2. selecting by **exact chat ID`
 3. fallback: derive legacy ID via `IDFromPrompt(...)`
 4. fallback: derive hash ID via `HashIDFromPrompt(...)`
 
@@ -124,6 +124,16 @@ Subsequent queries can be threaded using:
 - updates the directory-scoped binding for the current working directory to point at that chat
 
 The primary purpose is selection/binding: choose which existing transcript should be used as reply context for `-dre` in the current directory.
+
+Behavior on missing chat:
+
+- If the requested chat cannot be resolved (no exact match, legacy ID, or hash-derived ID), `clai chat continue` now prints the following error message to stderr:
+
+```
+could not find chat with id: "<id>"
+```
+
+and then reverts into the `clai chat list` UI so the user may select another conversation interactively. This is a UX-friendly fallback. Real filesystem or listing errors (for example permissions/IO errors) are still propagated as fatal errors rather than treated as a not-found case.
 
 #### Output format (preview)
 

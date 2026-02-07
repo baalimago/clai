@@ -181,7 +181,16 @@ func (cq *ChatHandler) cont(ctx context.Context) error {
 	}
 	chat, err := cq.findChatByID(cq.prompt)
 	if err != nil {
-		return fmt.Errorf("failed to get chat: %w", err)
+		// If listing of chats failed, propagate error. This indicates a real filesystem or
+		// permissions issue that should not be treated as "not found".
+		if strings.Contains(err.Error(), "failed to list chats") {
+			return fmt.Errorf("failed to get chat: %w", err)
+		}
+
+		// Otherwise, treat as a not-found case: inform the user and revert to the chat list UI.
+		firstToken := strings.Split(cq.prompt, " ")[0]
+		ancli.PrintErr(fmt.Sprintf("could not find chat with id: \"%v\"\n", firstToken))
+		return cq.handleListCmd(ctx)
 	}
 
 	// If the conversation has a profile associated with it, prefer that when continuing.
