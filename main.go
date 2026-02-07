@@ -99,7 +99,9 @@ func run(args []string) int {
 	err = querier.Query(ctx)
 	if err != nil {
 		if errors.Is(err, utils.ErrUserInitiatedExit) {
-			ancli.Okf("Seems like you wanted out. Byebye!\n")
+			if misc.Truthy(os.Getenv("DEBUG")) {
+				ancli.Okf("Seems like you wanted out. Byebye!\n")
+			}
 			return 0
 		} else {
 			ancli.PrintErr(fmt.Sprintf("failed to run: %v\n", err))
