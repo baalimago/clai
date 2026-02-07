@@ -37,7 +37,8 @@ func chatListTokenStr(item pub_models.Chat) string {
 }
 
 func (cq *ChatHandler) actOnChat(ctx context.Context, chat pub_models.Chat) error {
-	err := cq.printChatInfo(os.Stdin, chat)
+	// Print the chat info to the handler's configured output (not os.Stdin/Stdout)
+	err := cq.printChatInfo(cq.out, chat)
 	if err != nil {
 		return fmt.Errorf("failed to printChatInfo: %w", err)
 	}
@@ -59,6 +60,26 @@ func (cq *ChatHandler) actOnChat(ctx context.Context, chat pub_models.Chat) erro
 		return cq.handleListCmd(ctx)
 	case "P", "p":
 		return SaveAsPreviousQuery(cq.confDir, chat)
+	case "":
+		// Treat empty input (pressing Enter) as "continue" — bind this chat to CWD and
+		// print an obfuscated preview, mirroring the behavior of `clai chat continue`.
+		// Profile sticking logic from cont(): prefer chat.Profile when set, otherwise
+		// stamp current UseProfile into chat.Profile for persistence.
+		if chat.Profile != "" {
+			cq.config.UseProfile = chat.Profile
+		} else if cq.config.UseProfile != "" {
+			chat.Profile = cq.config.UseProfile
+		}
+
+		if err := cq.printChat(chat); err != nil {
+			return fmt.Errorf("failed to print chat: %w", err)
+		}
+
+		if err := cq.UpdateDirScopeFromCWD(chat.ID); err != nil {
+			return fmt.Errorf("failed to update directory-scoped binding: %w", err)
+		}
+		ancli.Noticef("chat %s is now replyable with flag \"clai -dre query <prompt>\"\n", chat.ID)
+		return nil
 	default:
 		return fmt.Errorf("unknown choice: %q", choice)
 	}
@@ -216,11 +237,6 @@ func (cq *ChatHandler) printChatInfo(w io.Writer, chat pub_models.Chat) error {
 	return nil
 }
 
-// editorEditString by:
-// 1. Writing the string to a temporary file
-// 2. Opening the file with EDITOR
-// 3. On close, reading the edited file
-// 4. Returning the newly edited string
 func editorEditString(toEdit string) (string, error) {
 	ret := toEdit
 

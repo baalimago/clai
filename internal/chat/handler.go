@@ -62,7 +62,7 @@ am replies:
 
 %v
 
-(make [p]revQuery (-re/-reply flag), go [b]ack to list, [e]dit messages, [d]elete messages, [q]uit): `
+(make [p]revQuery (-re/-reply flag), go [b]ack to list, [e]dit messages, [d]elete messages, [q]uit, [<enter>] to continue): `
 
 	// index | role | length | summary
 	editMessageTblFormat        = "%-6v| %-10v| %-7v| %v"
