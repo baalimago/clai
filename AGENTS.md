@@ -21,3 +21,5 @@ Before you're done, ensure that these pass:
 - go test ./... -race -cover -timeout=10s
 - go run honnef.co/go/tools/cmd/staticcheck@latest ./...
 - go run mvdan.cc/gofumpt@latest -w .
+
+ALWAYS TEST WITH TIMEOUT. Otherwise you may deadlock debugging efforts.

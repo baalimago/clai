@@ -18,6 +18,7 @@ func SaveAsPreviousQuery(claiConfDir string, chat pub_models.Chat) error {
 	prevQueryChat := pub_models.Chat{
 		Created:    time.Now(),
 		ID:         "prevQuery",
+		Profile:    chat.Profile,
 		Messages:   chat.Messages,
 		TokenUsage: chat.TokenUsage,
 	}
@@ -31,6 +32,7 @@ func SaveAsPreviousQuery(claiConfDir string, chat pub_models.Chat) error {
 		convChat := pub_models.Chat{
 			Created:    time.Now(),
 			ID:         HashIDFromPrompt(firstUserMsg.Content),
+			Profile:    chat.Profile,
 			Messages:   chat.Messages,
 			TokenUsage: chat.TokenUsage,
 		}

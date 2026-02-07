@@ -61,6 +61,13 @@ func (c *Configurations) ProfileOverrides() error {
 	if err != nil {
 		return fmt.Errorf("failed to find profile: %w", err)
 	}
+
+	// Ensure the selected profile is carried forward into persisted conversations.
+	// The underlying query flow reads `c.UseProfile` when stamping chats.
+	if strings.TrimSpace(profile.Name) != "" {
+		c.UseProfile = profile.Name
+	}
+
 	c.Model = profile.Model
 	newPrompt := profile.Prompt
 	if c.CmdMode {
