@@ -18,6 +18,24 @@ import (
 
 const chatInfoPrintHeight = 13
 
+// chatListTokenStr returns a human-readable representation of total tokens in "kilo" units.
+// Examples:
+//  - 3013  -> "3K"
+//  - 191828 -> "191K"
+//  - 15    -> "0.015K"
+func chatListTokenStr(item pub_models.Chat) string {
+	if item.TokenUsage == nil {
+		return "N/A"
+	}
+	v := item.TokenUsage.TotalTokens
+	if v >= 1000 {
+		return fmt.Sprintf("%dK", v/1000)
+	}
+	// show three decimal places for values < 1000 (e.g. 15 -> 0.015K)
+	f := float64(v) / 1000.0
+	return fmt.Sprintf("%.3fK", f)
+}
+
 func (cq *ChatHandler) actOnChat(ctx context.Context, chat pub_models.Chat) error {
 	err := cq.printChatInfo(os.Stdin, chat)
 	if err != nil {
@@ -124,9 +142,12 @@ func (cq *ChatHandler) listChats(
 		"Index",
 		"Created",
 		"Messages",
+		"Tokens",
 		"Prompt"), chats,
 		selectChatTblChoicesFormat,
 		func(i int, item pub_models.Chat) (string, error) {
+			tokenStr := chatListTokenStr(item)
+
 			prefix := fmt.Sprintf(
 				selectChatTblFormat,
 				fmt.Sprintf("%v", i),
@@ -134,6 +155,7 @@ func (cq *ChatHandler) listChats(
 					"2006-01-02 15:04:05",
 				),
 				len(item.Messages),
+				tokenStr,
 				"",
 			)
 			firstMessages := ""
