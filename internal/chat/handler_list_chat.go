@@ -39,21 +39,10 @@ func (cq *ChatHandler) actOnChat(ctx context.Context, chat pub_models.Chat) erro
 		}
 
 		return cq.handleListCmd(ctx)
-	case "C", "c":
-		err = cq.printChat(chat)
-		if err != nil {
-			return fmt.Errorf(
-				"selection ok, print chat not ok: %w",
-				err,
-			)
-		}
-		cq.chat = chat
-		return cq.loop(ctx)
-
 	case "P", "p":
 		return SaveAsPreviousQuery(cq.confDir, chat)
 	default:
-		return fmt.Errorf("unknown choice: '%v'", choice)
+		return fmt.Errorf("unknown choice: %q", choice)
 	}
 }
 
@@ -102,7 +91,7 @@ func (cq *ChatHandler) list() ([]pub_models.Chat, error) {
 		p := path.Join(cq.convDir, dirEntry.Name())
 		chat, pathErr := FromPath(p)
 		if pathErr != nil {
-			return nil, fmt.Errorf("failed to get chat: '%v', error: %w", p, pathErr)
+			return nil, fmt.Errorf("failed to get chat: %q: %w", p, pathErr)
 		}
 		chats = append(chats, chat)
 	}
@@ -115,7 +104,7 @@ func (cq *ChatHandler) list() ([]pub_models.Chat, error) {
 func (cq *ChatHandler) handleListCmd(ctx context.Context) error {
 	chats, err := cq.list()
 	if err != nil {
-		return fmt.Errorf("failed to list: %v", err)
+		return fmt.Errorf("failed to list: %w", err)
 	}
 	return cq.listChats(ctx, chats)
 }
@@ -221,7 +210,7 @@ func editorEditString(toEdit string) (string, error) {
 
 	_, err = f.WriteString(ret)
 	if err != nil {
-		f.Close()
+		_ = f.Close()
 		return "", fmt.Errorf("failed to write temp file: %w", err)
 	}
 	if closeErr := f.Close(); closeErr != nil {
@@ -239,16 +228,15 @@ func editorEditString(toEdit string) (string, error) {
 	cmd.Stderr = os.Stderr
 
 	if runErr := cmd.Run(); runErr != nil {
-		return "", fmt.Errorf("failed to edit file %s: %v", f.Name(), runErr)
+		return "", fmt.Errorf("failed to edit file %s: %w", f.Name(), runErr)
 	}
 
 	b, err := os.ReadFile(f.Name())
 	if err != nil {
 		return "", fmt.Errorf("failed to read edited file: %w", err)
 	}
-	edited := string(b)
 
-	return edited, nil
+	return string(b), nil
 }
 
 func (cq *ChatHandler) deleteMessageInChat(

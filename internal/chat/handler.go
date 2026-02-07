@@ -11,7 +11,6 @@ import (
 	"path"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/utils"
@@ -28,7 +27,6 @@ You may start a new chat using the prompt-modification flags which
 are normally used in query mode.
 
 Commands:
-  n|new      <prompt>             Create a new chat with the given prompt.
   c|continue <chatID> <prompt>    Continue an existing chat with the given chat ID. Prompt is optional
   d|delete   <chatID>             Delete the chat with the given chat ID.
   l|list                          List all existing chats.
@@ -42,7 +40,6 @@ The chats are found in %v/.clai/conversations, here they may be manually edited
 as JSON files.
 
 Examples:
-  - clai chat new "How's the weather?"
   - clai chat list
   - clai chat continue my_chat_id
   - clai chat continue 3
@@ -65,7 +62,7 @@ am replies:
 
 %v
 
-(make [p]revQuery (-re/-reply flag), go [b]ack to list, [e]dit messages, [d]elete messages, [c]ontinue conversation, [q]uit): `
+(make [p]revQuery (-re/-reply flag), go [b]ack to list, [e]dit messages, [d]elete messages, [q]uit): `
 
 	// index | role | length | summary
 	editMessageTblFormat        = "%-6v| %-10v| %-7v| %v"
@@ -104,8 +101,6 @@ func (cq *ChatHandler) actOnSubCmd(ctx context.Context) error {
 		ancli.PrintOK(fmt.Sprintf("chat: %+v\n", cq))
 	}
 	switch cq.subCmd {
-	case "new", "n":
-		return cq.new(ctx)
 	case "continue", "c":
 		return cq.cont(ctx)
 	case "list", "l":
@@ -113,7 +108,6 @@ func (cq *ChatHandler) actOnSubCmd(ctx context.Context) error {
 	case "delete", "d":
 		return cq.deleteFromPrompt()
 	case "query", "q":
-		// return cq.continueQueryAsChat(ctx, API_KEY, prompt)
 		return errors.New("not yet implemented")
 	case "dir":
 		err := cq.dirInfo()
@@ -128,24 +122,6 @@ func (cq *ChatHandler) actOnSubCmd(ctx context.Context) error {
 	default:
 		return fmt.Errorf("unknown subcommand: '%s'\n%v", cq.subCmd, chatUsage)
 	}
-}
-
-func (cq *ChatHandler) new(ctx context.Context) error {
-	msgs := make([]pub_models.Message, 0)
-	msgs = append(msgs, cq.preMessages...)
-	msgs = append(msgs, pub_models.Message{Role: "user", Content: cq.prompt})
-	newChat := pub_models.Chat{
-		Created:  time.Now(),
-		ID:       HashIDFromPrompt(cq.prompt),
-		Profile:  cq.config.UseProfile,
-		Messages: msgs,
-	}
-	newChat, err := cq.q.TextQuery(ctx, newChat)
-	if err != nil {
-		return fmt.Errorf("failed to query chat model: %w", err)
-	}
-	cq.chat = newChat
-	return cq.loop(ctx)
 }
 
 func (cq *ChatHandler) findChatByID(potentialChatIdx string) (pub_models.Chat, error) {
@@ -249,45 +225,6 @@ func (cq *ChatHandler) deleteFromPrompt() error {
 
 func (cq *ChatHandler) getByID(ID string) (pub_models.Chat, error) {
 	return FromPath(path.Join(cq.convDir, fmt.Sprintf("%v.json", ID)))
-}
-
-func (cq *ChatHandler) profileInfo() string {
-	return fmt.Sprintf("tools: '%v', p: '%v', model: '%v'", cq.config.UseTools, cq.config.UseProfile, cq.config.Model)
-}
-
-func (cq *ChatHandler) loop(ctx context.Context) error {
-	defer func() {
-		err := Save(cq.convDir, cq.chat)
-		if err != nil {
-			panic(err)
-		}
-	}()
-
-	for {
-		lastMessage := cq.chat.Messages[len(cq.chat.Messages)-1]
-
-		// Keep chat in sync with the currently active profile.
-		cq.chat.Profile = cq.config.UseProfile
-
-		if lastMessage.Role == "user" {
-			_ = utils.AttemptPrettyPrint(cq.out, lastMessage, cq.username, cq.raw)
-		} else {
-			fmt.Printf("%v(%v%v): ", ancli.ColoredMessage(ancli.CYAN, cq.username), cq.profileInfo(), " | [q]uit")
-
-			userInput, err := utils.ReadUserInput()
-			if err != nil {
-				// No context, error should contain context
-				return err
-			}
-			cq.chat.Messages = append(cq.chat.Messages, pub_models.Message{Role: "user", Content: userInput})
-		}
-
-		newChat, err := cq.q.TextQuery(ctx, cq.chat)
-		if err != nil {
-			return fmt.Errorf("failed to print chat completion: %w", err)
-		}
-		cq.chat = newChat
-	}
 }
 
 func New(q models.ChatQuerier,
