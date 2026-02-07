@@ -119,7 +119,7 @@ func setupConfigFile[C models.StreamCompleter](configPath string, userConf Confi
 func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configurations, dfault C) (Querier[C], error) {
 	vendor, model, modelVersion, err := vendorType(userConf.Model)
 	if err != nil {
-		return Querier[C]{}, fmt.Errorf("failed to find vendorType: %v", err)
+		return Querier[C]{}, fmt.Errorf("failed to find vendorType: %w", err)
 	}
 	claiConfDir := userConf.ConfigDir
 	noFrontslashModelVersion := strings.ReplaceAll(modelVersion, "/", "_")
@@ -167,6 +167,8 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 		ancli.Okf("Out is: %v", userConf.Out)
 	}
 	querier.chat = userConf.InitialChat
+	// Ensure profile selection is persisted in prevQuery/saved conversations.
+	querier.chat.Profile = userConf.UseProfile
 	querier.Raw = userConf.Raw
 	querier.cmdMode = userConf.CmdMode
 	querier.shouldSaveReply = !userConf.ChatMode && userConf.SaveReplyAsConv

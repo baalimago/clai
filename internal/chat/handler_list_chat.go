@@ -18,8 +18,27 @@ import (
 
 const chatInfoPrintHeight = 13
 
+// chatListTokenStr returns a human-readable representation of total tokens in "kilo" units.
+// Examples:
+//   - 3013  -> "3K"
+//   - 191828 -> "191K"
+//   - 15    -> "0.015K"
+func chatListTokenStr(item pub_models.Chat) string {
+	if item.TokenUsage == nil {
+		return "N/A"
+	}
+	v := item.TokenUsage.TotalTokens
+	if v >= 1000 {
+		return fmt.Sprintf("%dK", v/1000)
+	}
+	// show three decimal places for values < 1000 (e.g. 15 -> 0.015K)
+	f := float64(v) / 1000.0
+	return fmt.Sprintf("%.3fK", f)
+}
+
 func (cq *ChatHandler) actOnChat(ctx context.Context, chat pub_models.Chat) error {
-	err := cq.printChatInfo(os.Stdin, chat)
+	// Print the chat info to the handler's configured output (not os.Stdin/Stdout)
+	err := cq.printChatInfo(cq.out, chat)
 	if err != nil {
 		return fmt.Errorf("failed to printChatInfo: %w", err)
 	}
@@ -39,21 +58,30 @@ func (cq *ChatHandler) actOnChat(ctx context.Context, chat pub_models.Chat) erro
 		}
 
 		return cq.handleListCmd(ctx)
-	case "C", "c":
-		err = cq.printChat(chat)
-		if err != nil {
-			return fmt.Errorf(
-				"selection ok, print chat not ok: %w",
-				err,
-			)
-		}
-		cq.chat = chat
-		return cq.loop(ctx)
-
 	case "P", "p":
 		return SaveAsPreviousQuery(cq.confDir, chat)
+	case "":
+		// Treat empty input (pressing Enter) as "continue" — bind this chat to CWD and
+		// print an obfuscated preview, mirroring the behavior of `clai chat continue`.
+		// Profile sticking logic from cont(): prefer chat.Profile when set, otherwise
+		// stamp current UseProfile into chat.Profile for persistence.
+		if chat.Profile != "" {
+			cq.config.UseProfile = chat.Profile
+		} else if cq.config.UseProfile != "" {
+			chat.Profile = cq.config.UseProfile
+		}
+
+		if err := cq.printChat(chat); err != nil {
+			return fmt.Errorf("failed to print chat: %w", err)
+		}
+
+		if err := cq.UpdateDirScopeFromCWD(chat.ID); err != nil {
+			return fmt.Errorf("failed to update directory-scoped binding: %w", err)
+		}
+		ancli.Noticef("chat %s is now replyable with flag \"clai -dre query <prompt>\"\n", chat.ID)
+		return nil
 	default:
-		return fmt.Errorf("unknown choice: '%v'", choice)
+		return fmt.Errorf("unknown choice: %q", choice)
 	}
 }
 
@@ -102,7 +130,7 @@ func (cq *ChatHandler) list() ([]pub_models.Chat, error) {
 		p := path.Join(cq.convDir, dirEntry.Name())
 		chat, pathErr := FromPath(p)
 		if pathErr != nil {
-			return nil, fmt.Errorf("failed to get chat: '%v', error: %w", p, pathErr)
+			return nil, fmt.Errorf("failed to get chat: %q: %w", p, pathErr)
 		}
 		chats = append(chats, chat)
 	}
@@ -115,7 +143,7 @@ func (cq *ChatHandler) list() ([]pub_models.Chat, error) {
 func (cq *ChatHandler) handleListCmd(ctx context.Context) error {
 	chats, err := cq.list()
 	if err != nil {
-		return fmt.Errorf("failed to list: %v", err)
+		return fmt.Errorf("failed to list: %w", err)
 	}
 	return cq.listChats(ctx, chats)
 }
@@ -131,28 +159,53 @@ func (cq *ChatHandler) listChats(
 		),
 	)
 
-	selectedNumbers, err := utils.SelectFromTable(fmt.Sprintf(selectChatTblFormat,
-		"Index",
-		"Created",
-		"Messages",
-		"Prompt"), chats,
+	// Decide whether to include the profile column based on terminal width.
+	// When the terminal is wide (>120) show an extra "Profile" column.
+	tblFmt := selectChatTblFormat
+	headArgs := []any{"Index", "Created", "Messages", "Tokens", "Prompt"}
+	includeProfile := false
+	if tw, err := utils.TermWidth(); err == nil && tw > 120 {
+		includeProfile = true
+		tblFmt = "%-6s| %-20s| %-8v | %-10s | %-6s | %v"
+		headArgs = []any{"Index", "Created", "Messages", "Profile", "Tokens", "Prompt"}
+	}
+
+	selectedNumbers, err := utils.SelectFromTable(fmt.Sprintf(tblFmt, headArgs...), chats,
 		selectChatTblChoicesFormat,
 		func(i int, item pub_models.Chat) (string, error) {
-			prefix := fmt.Sprintf(
-				selectChatTblFormat,
-				fmt.Sprintf("%v", i),
-				item.Created.Format(
-					"2006-01-02 15:04:05",
-				),
-				len(item.Messages),
-				"",
-			)
+			tokenStr := chatListTokenStr(item)
+
 			firstMessages := ""
 			uMsg, uMsgErr := item.FirstUserMessage()
 			if uMsgErr == nil {
 				firstMessages = uMsg.Content
 			}
 
+			if includeProfile {
+				prefix := fmt.Sprintf(
+					tblFmt,
+					fmt.Sprintf("%v", i),
+					item.Created.Format("2006-01-02 15:04:05"),
+					len(item.Messages),
+					item.Profile,
+					tokenStr,
+					"",
+				)
+				withSummary, err := utils.WidthAppropriateStringTrunc(firstMessages, prefix, 15)
+				if err != nil {
+					return "", fmt.Errorf("failed to get widthAppropriateChatSummary: %w", err)
+				}
+				return withSummary, nil
+			}
+
+			prefix := fmt.Sprintf(
+				tblFmt,
+				fmt.Sprintf("%v", i),
+				item.Created.Format("2006-01-02 15:04:05"),
+				len(item.Messages),
+				tokenStr,
+				"",
+			)
 			withSummary, err := utils.WidthAppropriateStringTrunc(firstMessages, prefix, 15)
 			if err != nil {
 				return "", fmt.Errorf("failed to get widthAppropriateChatSummary: %w", err)
@@ -205,11 +258,6 @@ func (cq *ChatHandler) printChatInfo(w io.Writer, chat pub_models.Chat) error {
 	return nil
 }
 
-// editorEditString by:
-// 1. Writing the string to a temporary file
-// 2. Opening the file with EDITOR
-// 3. On close, reading the edited file
-// 4. Returning the newly edited string
 func editorEditString(toEdit string) (string, error) {
 	ret := toEdit
 
@@ -221,7 +269,7 @@ func editorEditString(toEdit string) (string, error) {
 
 	_, err = f.WriteString(ret)
 	if err != nil {
-		f.Close()
+		_ = f.Close()
 		return "", fmt.Errorf("failed to write temp file: %w", err)
 	}
 	if closeErr := f.Close(); closeErr != nil {
@@ -239,22 +287,21 @@ func editorEditString(toEdit string) (string, error) {
 	cmd.Stderr = os.Stderr
 
 	if runErr := cmd.Run(); runErr != nil {
-		return "", fmt.Errorf("failed to edit file %s: %v", f.Name(), runErr)
+		return "", fmt.Errorf("failed to edit file %s: %w", f.Name(), runErr)
 	}
 
 	b, err := os.ReadFile(f.Name())
 	if err != nil {
 		return "", fmt.Errorf("failed to read edited file: %w", err)
 	}
-	edited := string(b)
 
-	return edited, nil
+	return string(b), nil
 }
 
 func (cq *ChatHandler) deleteMessageInChat(
 	chat pub_models.Chat,
 ) error {
-	header := fmt.Sprintf(
+	head := fmt.Sprintf(
 		editMessageTblFormat,
 		"Index",
 		"Role",
@@ -262,7 +309,7 @@ func (cq *ChatHandler) deleteMessageInChat(
 		"Summary",
 	)
 	selectedIndices, err := utils.SelectFromTable(
-		header,
+		head,
 		chat.Messages,
 		deleteMessagesChoicesFormat,
 		func(i int, t pub_models.Message) (string, error) {
@@ -292,10 +339,7 @@ func (cq *ChatHandler) deleteMessageInChat(
 		false,
 	)
 	if err != nil {
-		return fmt.Errorf(
-			"failed to select from table: %w",
-			err,
-		)
+		return fmt.Errorf("failed to select from table: %w", err)
 	}
 
 	idxSet := make(map[int]struct{}, len(selectedIndices))
@@ -329,8 +373,8 @@ func (cq *ChatHandler) deleteMessageInChat(
 }
 
 func (cq *ChatHandler) editMessageInChat(chat pub_models.Chat) error {
-	header := fmt.Sprintf(editMessageTblFormat, "Index", "Role", "Length", "Summary")
-	selectedNumbers, err := utils.SelectFromTable(header, chat.Messages, editMessageChoicesFormat,
+	head := fmt.Sprintf(editMessageTblFormat, "Index", "Role", "Length", "Summary")
+	selectedNumbers, err := utils.SelectFromTable(head, chat.Messages, editMessageChoicesFormat,
 		func(i int, t pub_models.Message) (string, error) {
 			prefix := fmt.Sprintf(editMessageTblFormat,
 				i,

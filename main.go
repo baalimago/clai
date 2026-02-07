@@ -49,7 +49,6 @@ Commands:
   re|replay                     Replay the most recent message.
   t|tools [tool name]           List available tools, both mcp and built-in. Or show details for a specific tool.
 
-  c|chat   n|new       <prompt>   Create a new chat with the given prompt.
   c|chat   c|continue  <chatID>   Continue an existing chat with the given chat ID or index.
   c|chat   d|delete    <chatID>   Delete the chat with the given chat ID or index.
   c|chat   l|list                 List all existing chats.
@@ -59,10 +58,8 @@ Examples:
   - clai h | clai query generate some examples for this usage string: 
   - clai -t website_text query "What's the weather like in Tokyo? Use website_text to fetch data"
   - clai -glob "*.txt" query Please summarize these documents: 
-  - clai -cm claude-3-opus-20240229 chat new "What are the latest advancements in AI?"
   - clai -pm dall-e-2 photo A cat in space
   - docker logs example | clai -I LOG q "Find errors in these logs: LOG"
-  - clai c new "Let's have a conversation about climate change."
   - clai c list
   - clai c help
 `
@@ -89,7 +86,9 @@ func run(args []string) int {
 	querier, err := internal.Setup(ctx, usage, args)
 	if err != nil {
 		if errors.Is(err, utils.ErrUserInitiatedExit) {
-			ancli.Okf("Seems like you wanted out. Byebye!\n")
+			if misc.Truthy(os.Getenv("DEBUG")) {
+				ancli.Okf("Seems like you wanted out. Byebye!\n")
+			}
 			return 0
 		}
 		ancli.PrintErr(fmt.Sprintf("failed to setup: %v\n", err))
@@ -99,7 +98,9 @@ func run(args []string) int {
 	err = querier.Query(ctx)
 	if err != nil {
 		if errors.Is(err, utils.ErrUserInitiatedExit) {
-			ancli.Okf("Seems like you wanted out. Byebye!\n")
+			if misc.Truthy(os.Getenv("DEBUG")) {
+				ancli.Okf("Seems like you wanted out. Byebye!\n")
+			}
 			return 0
 		} else {
 			ancli.PrintErr(fmt.Sprintf("failed to run: %v\n", err))

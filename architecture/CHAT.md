@@ -1,28 +1,34 @@
 # Chat architecture
 
-This document describes how **chats/conversations** are implemented in this repository (CLI flow, storage format, and how model replies are produced).
+This document describes how **chats/conversations** work in this repository: storage format, “previous query” replay, and the CLI flows around `clai chat continue` and directory-scoped replies.
 
 ## High level
 
-There are two related features:
+There are two related mechanisms:
 
-1. **Interactive conversations** via `clai chat ...`
-2. **“Previous query” replay** via the `prevQuery.json` mechanism (used by other modes to capture a one-off query as a chat that can be replayed/inspected later).
+1. **Conversation transcripts** stored on disk as JSON (so they can be replayed/inspected/edited later).
+2. **Reply context pointers**:
+   - `prevQuery.json` (global reply context)
+   - directory-scoped bindings under `conversations/dirs/` (per-CWD reply context)
 
-Both are stored as JSON chat transcripts under the user config directory:
+Important behavioral change vs older versions:
 
-- `~/.clai/conversations/*.json` (resolved via `internal/utils.GetClaiConfigDir()`)
+- There is **no interactive chat loop**. One CLI invocation corresponds to one “turn” (or selection operation) and then exits.
+
+All transcripts/pointers live under the clai config directory:
+
+- `<clai-config>/conversations/*.json`
+
+Resolved via `internal/utils.GetClaiConfigDir()`.
 
 Core implementation lives in:
 
-- `internal/chat/*` (CLI handler + persistence helpers)
-- `pkg/text/models/chat.go` (public Chat/Message model used across queriers/vendors)
+- `internal/chat/*` (handlers, persistence helpers, and dirscope bindings)
+- `pkg/text/models/chat.go` (public `Chat`/`Message` types used throughout queriers/vendors)
 
 ## Data model
 
 ### `pkg/text/models.Chat`
-
-A chat is:
 
 ```go
 type Chat struct {
@@ -35,33 +41,20 @@ type Chat struct {
 
 Notes:
 
-- `ID` is used as filename (see persistence).
-- `Profile` is persisted on the chat and is used to “stick” the last-used profile when continuing a chat.
+- `ID` is used as the filename.
+- `Profile` can be persisted on the chat and is used to “stick” the last-used profile when continuing/using a conversation.
 - `Messages` is an ordered transcript.
 
 ### `pkg/text/models.Message`
 
-Messages support both plain text and multimodal “content parts” (primarily for vendors like OpenAI).
+Messages support both plain text and multimodal “content parts”.
 
 Key behaviors:
 
 - JSON field `content` is **either** a string **or** an array of `{type,text,image_url}` parts.
-- Internally this is represented as:
+- Internally this is represented by `Content` and `ContentParts` with custom marshal/unmarshal.
 
-```go
-type Message struct {
-    Role         string
-    ToolCalls    []Call
-    ToolCallID   string
-
-    Content      string             `json:"-"`
-    ContentParts []ImageOrTextInput `json:"-"`
-}
-```
-
-Custom marshal/unmarshal implements the polymorphic `content`.
-
-Roles used throughout the codebase include `user`, `assistant`, `system`, and tool-related roles (depending on vendor/tooling).
+Roles used include `user`, `assistant`, `system`, and tool-related roles (depending on vendor/tooling).
 
 ## Persistence format and location
 
@@ -69,9 +62,9 @@ Roles used throughout the codebase include `user`, `assistant`, `system`, and to
 
 Chats are stored as JSON files in:
 
-- `<claiConfigDir>/conversations/<chatID>.json`
+- `<clai-config>/conversations/<chatID>.json`
 
-The config directory is managed/created by `internal/utils/config.go` (it ensures `conversations/` exists).
+The config directory creation ensures `conversations/` exists (see `internal/utils/config.go`).
 
 ### Reading/writing chats
 
@@ -82,150 +75,146 @@ Implemented in `internal/chat/chat.go`:
 
 ### Chat IDs
 
-`internal/chat/chat.go:IDFromPrompt(prompt string)` creates an ID by:
+Chat ID generation is implemented in `internal/chat/chat.go`:
 
-- taking the first 5 tokens of the prompt
-- joining with `_`
-- replacing `/` and `\\` with `.` to keep it path-safe
+- `HashIDFromPrompt(prompt string)` is the current/default ID format.
+- `IDFromPrompt(prompt string)` is **deprecated** (kept for backward compatibility and resolution).
 
-This means chat IDs are deterministic from the starting prompt, and collisions are possible if two chats share the same first 5 words.
+ID resolution when selecting/continuing chats (`internal/chat/handler.go:findChatByID`) supports:
+
+1. selecting by **index** from `clai chat list`
+2. selecting by **exact chat ID`
+3. fallback: derive legacy ID via `IDFromPrompt(...)`
+4. fallback: derive hash ID via `HashIDFromPrompt(...)`
 
 ## CLI entrypoints and user flows
 
-### Handler construction
+### Mental model: the shell is the “chat UI”
 
-The chat CLI is wired through `internal/chat/handler.go`.
+You do not “enter a chat” inside `clai`.
 
-`chat.New(...)` builds a `*ChatHandler` with:
+Instead:
 
-- a `models.ChatQuerier` (`cq.q`) which is the abstraction responsible for producing the next assistant/tool messages
-- `preMessages` (seed messages, typically system prompts/profile-derived messages)
-- `config` (`UseProfile`, `UseTools`, `Model`) used to determine querying behavior
-- `convDir` set to `<claiConfigDir>/conversations`
+- each `clai ... query <prompt>` invocation appends a new user message, calls the model, and writes an updated transcript to disk
+- reply flags decide **which transcript** is used as context
 
-### Subcommands
+This makes chats composable with normal shell tooling (pipes, redirects, history, scripts).
 
-Implemented in `ChatHandler.actOnSubCmd(ctx)`:
+### Query (normal way to add a message)
 
-- `chat new <prompt>`
-  - creates a new `Chat` with `IDFromPrompt(prompt)`
-  - seeds `Messages` with `preMessages + user(prompt)`
-  - calls `TextQuery` once to get the first assistant response
-  - enters the interactive loop
+`clai query <prompt>`:
 
-- `chat continue <chatID|index> [prompt]`
-  - loads an existing chat from disk
-  - if an optional prompt is provided, appends `user(prompt)`
-  - prints the chat transcript
-  - enters the interactive loop
+- creates/updates a transcript
+- updates the global previous query (`prevQuery.json`)
+- updates the directory binding for the current working directory (CWD)
 
-- `chat list`
-  - loads all chats from `<convDir>`, sorts by `Created` desc
-  - displays a paginated selection table
-  - allows actions on a selected chat: continue, edit, delete messages, save as prevQuery
+Subsequent queries can be threaded using:
 
-- `chat delete <chatID|index>`
-  - resolves the chat and deletes its JSON file
+- `-re` (reply to global previous query)
+- `-dre` (reply to directory-scoped previous query)
 
-### ID vs index resolution
+### `chat continue` (bind a chat to the current directory)
 
-`findChatByID(potentialChatIdx string)` supports:
+`clai chat continue <chatID|index> [prompt...]`:
 
-- passing a numeric index from the `chat list` view
-- passing an ID-like prompt (it calls `IDFromPrompt(...)` on the input)
+- loads an existing chat from disk (by index or ID)
+- if extra tokens are present after an index selection, they are re-joined and treated as the optional `prompt` to append
+- if an optional prompt is present, appends `user(prompt)` in-memory
+- prints a **fast obfuscated preview** (not full transcript rendering)
+- updates the directory-scoped binding for the current working directory to point at that chat
 
-If a numeric index is provided and additional tokens exist on the command line, those tokens are re-joined and treated as the new prompt to append when continuing.
+The primary purpose is selection/binding: choose which existing transcript should be used as reply context for `-dre` in the current directory.
 
-## Interactive loop (how “chatting” happens)
+Behavior on missing chat:
 
-The interactive behavior is in `ChatHandler.loop(ctx)`:
+- If the requested chat cannot be resolved (no exact match, legacy ID, or hash-derived ID), `clai chat continue` now prints the following error message to stderr:
 
-1. A `defer Save(convDir, cq.chat)` ensures the current state is persisted when the loop exits due to errors/panic/return.
-   - Note: the loop is intended to run indefinitely until user interrupts or a query fails.
+```
+could not find chat with id: "<id>"
+```
 
-2. Every iteration:
+and then reverts into the `clai chat list` UI so the user may select another conversation interactively. This is a UX-friendly fallback. Real filesystem or listing errors (for example permissions/IO errors) are still propagated as fatal errors rather than treated as a not-found case.
 
-   - The chat’s `Profile` field is updated to the currently active profile (`cq.config.UseProfile`) so the conversation remains in sync with user configuration.
+#### Output format (preview)
 
-   - It inspects `lastMessage := cq.chat.Messages[len-1]`:
+The preview uses `internal/chat/obfuscated_print.go` and prints early messages in an obfuscated single-line form:
 
-     - If `lastMessage.Role == "user"`:
-       - it pretty-prints that message (so the prompt is shown)
+- `[#<nr> r: "<role>" l: 00042]: <msg-preview>`
 
-     - Else (assistant/tool/system last message):
-       - it prints a prompt line including the current effective config: tools/profile/model
-       - reads a new line from stdin (`utils.ReadUserInput()`)
-       - appends it as a new `user` message
+Behavioral details:
 
-3. It calls the model via the querier:
+- message length is **zero-padded** to 5 digits
+- long messages are shortened with `...` and a “and N more runes” note
+- the last messages (roughly the last six) are pretty-printed more fully
 
-   - `newChat, err := cq.q.TextQuery(ctx, cq.chat)`
+After binding the directory scope, `chat continue` prints a notice that the chat is replyable with:
 
-   The contract is: `TextQuery` takes the full transcript and returns an updated `Chat` (typically with one or more new assistant/tool messages appended, and possibly with tool call handling performed).
+- `clai -dre query <prompt>`
 
-4. The handler assigns `cq.chat = newChat` and the loop repeats.
+### Profile “sticking” when continuing
 
-### Choosing/sticking profiles when continuing
+In `internal/chat/handler.go:cont`:
 
-In `cont(ctx)`:
+- If the loaded chat already has `chat.Profile != ""`, it overrides the runtime handler config so continuation uses that profile.
+- Otherwise, if a `--profile` was provided (wired into `UseProfile`), the handler stamps it into `chat.Profile` so future continuations persist it.
 
-- If the loaded chat already has `chat.Profile != ""`, it overrides the current runtime config so continuing uses the same profile as last time.
-- Otherwise, if a `--profile`/`UseProfile` was provided on the CLI, the handler stamps it into `chat.Profile` so the first continuation persists it.
+### `chat list` / inspect / edit / delete
 
-This makes `clai chat continue <id>` default to the profile last used for that conversation.
+`clai chat list` exists for discovering chats and doing transcript operations.
 
-## Listing, inspecting, editing and deleting chats
-
-`internal/chat/handler_list_chat.go` provides a TUI-like flow:
+Implementation: `internal/chat/handler_list_chat.go`:
 
 - `list()` reads every JSON file in `<convDir>`, unmarshals to `Chat`, sorts by `Created` desc.
-- `listChats()` uses `utils.SelectFromTable` to show:
-  - index
-  - created timestamp
-  - number of messages
-  - prompt summary (taken from the first user message)
+- `listChats()` uses `utils.SelectFromTable` to show a selection table.
 
 After selecting a chat, `actOnChat()` prints a details view and offers actions:
 
-- `[c]ontinue` → starts the main loop on that chat
-- `[e]dit messages` → opens a chosen message in `$EDITOR` and saves the updated transcript
-- `[d]elete messages` → allows deleting selected message indices
-- `[p]revQuery` → saves this chat’s messages as `prevQuery.json` (see below)
+- edit messages (via `$EDITOR`)
+- delete messages
+- save as `prevQuery.json`
+
+No interactive chat session is started from this UI.
 
 ## “Previous query” capture and replay
 
-`internal/chat/reply.go` implements a special chat file:
+A special chat file is used for the global reply context:
 
-- `<claiConfigDir>/conversations/prevQuery.json`
+- `<clai-config>/conversations/prevQuery.json`
+
+Implemented in `internal/chat/reply.go`.
 
 ### SaveAsPreviousQuery
 
 `SaveAsPreviousQuery(claiConfDir, msgs)` writes:
 
 - always: `prevQuery.json` with ID `prevQuery`
-- additionally (when `len(msgs) > 2`): saves a *new conversation file* derived from the first user message using `IDFromPrompt(firstUserMsg.Content)`.
+- additionally (when `len(msgs) > 2`): saves a *new conversation file* derived from the first user message using `HashIDFromPrompt(firstUserMsg.Content)`
 
-Intent: preserve one-off queries and optionally promote richer exchanges into normal conversations.
+This preserves one-off queries and optionally promotes richer exchanges into normal conversations.
 
 ### LoadPrevQuery
 
 Loads `prevQuery.json` (printing a warning if absent).
 
+## Directory-scoped replies
+
+Directory-scoped bindings and lookup are described in more detail in `architecture/CHAT_DIRSCOPED.md`.
+
+In short:
+
+- `clai -dre query ...` replies using the conversation bound to CWD
+- `clai chat continue ...` is a convenient way to bind CWD → an existing conversation
+
 ## Model interaction surface
 
 The chat handler does not call vendor APIs directly. It depends on:
 
-- `internal/models.ChatQuerier` (interface) with method `TextQuery(ctx, chat) (Chat, error)`
+- `internal/models.ChatQuerier` with `TextQuery(ctx, chat) (Chat, error)`
 
-Different queriers/vendors implement this (see `internal/text/*` and `internal/vendors/*`). The handler treats it as a black box that:
+Different queriers/vendors implement this (see `internal/text/*` and `internal/vendors/*`). The handler treats it as a black box that may append assistant responses, run tool calls, and/or transform the transcript.
 
-- may append assistant responses
-- may execute tool calls and append tool results
-- may alter the transcript to match the vendor’s expectations
+## Caveats
 
-## Operational characteristics / caveats
-
-- **No explicit exit command in the loop**: quitting is typically via Ctrl+C or by causing input/query to fail. (The prompt prints `| [q]uit` but `q` is currently treated as a normal user message.)
-- **Filename collisions**: IDs are derived from prompt tokens; different conversations can map to the same ID.
-- **Persistence timing**: chats are saved on loop exit via `defer Save(...)`. Edits/deletes save immediately.
-- **JSON is user-editable**: the help text explicitly encourages manual editing under `.../.clai/conversations`.
+- **Shell-driven**: each question/answer is a normal CLI invocation.
+- **ID mismatches**: older conversations may use the legacy `IDFromPrompt` naming; lookup supports both.
+- **JSON is user-editable**: transcripts live under `<clai-config>/conversations` and can be edited manually.

@@ -16,6 +16,13 @@ type Chat struct {
 	TokenUsage *Usage    `json:"usage,omitempty"`
 }
 
+func (c Chat) TotalTokens() string {
+	if c.TokenUsage == nil {
+		return "N/A"
+	}
+	return fmt.Sprintf("%d", c.TokenUsage.TotalTokens)
+}
+
 type Usage struct {
 	PromptTokens     int `json:"prompt_tokens"`
 	CompletionTokens int `json:"completion_tokens"`
