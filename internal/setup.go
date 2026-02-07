@@ -41,7 +41,7 @@ const (
 	SETUP
 	CMD
 	REPLAY
-	DRE
+	DIRSCOPED_REPLAY
 	TOOLS
 	PROFILES
 )
@@ -105,7 +105,7 @@ func getCmdFromArgs(args []string) (Mode, error) {
 	case "replay", "re":
 		return REPLAY, nil
 	case "dre":
-		return DRE, nil
+		return DIRSCOPED_REPLAY, nil
 	case "tools", "t":
 		return TOOLS, nil
 	case "profiles":
@@ -386,7 +386,7 @@ func Setup(ctx context.Context, usage string, allArgs []string) (models.Querier,
 			return nil, fmt.Errorf("failed to replay previous reply: %w", err)
 		}
 		return nil, utils.ErrUserInitiatedExit
-	case DRE:
+	case DIRSCOPED_REPLAY:
 		return setupDRE(mode, postFlagConf, postFlagArgs)
 	case TOOLS:
 		tools.Init()
