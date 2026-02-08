@@ -149,6 +149,14 @@ clai -t "*" query "Inspect this repo and explain how setup works"
 
 Tool calling is only possible when tools are enabled/allowed for that run.
 
+You may also import and append mcp servers, see `clai setup -> 3`.
+These are stored in `<clai-config>/mcpServers/*.json`.
+Use all, or some, mcp servers with glob selection.
+Example:
+
+- `mcp_linear*` -> Use all tools from mcp server `linear.json`
+- `mcp_filesystem_write_file` -> Use only `write_file` tool from mcp server `filesystem`
+
 ## 9) Generate a shell command (`cmd`)
 
 Ask for a bash command (cmd mode changes the system prompt and adds an execute/quit confirmation):
