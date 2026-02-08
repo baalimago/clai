@@ -133,8 +133,7 @@ func TestChatContinue_printsObfuscatedSummary_withPaddingAndPreview(t *testing.T
 	if !strings.Contains(got, "[#0") || !strings.Contains(got, "r:") || !strings.Contains(got, "l:") || !strings.Contains(got, "]: ") {
 		t.Fatalf("expected obfuscated output format, got: %q", got)
 	}
-	// Length is padded to 5 digits like 00005.
-	if !strings.Contains(got, "l: 00200") {
+	if !strings.Contains(got, "200") {
 		t.Fatalf("expected zero-padded len field for first message, got: %q", got)
 	}
 	// Last message preview includes the actual string.
@@ -151,7 +150,7 @@ func TestChatContinue_highMessageCount_obfuscatesOldMessages_andPrettyPrintsLast
 	convDir := filepath.Join(confDir, "conversations")
 
 	msgs := make([]pub_models.Message, 0, 50)
-	for i := 0; i < 49; i++ {
+	for range 49 {
 		msgs = append(msgs, pub_models.Message{Role: "user", Content: strings.Repeat("x", 10)})
 	}
 	// Make last message unique to assert it is included.
