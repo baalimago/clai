@@ -340,7 +340,7 @@ func Setup(ctx context.Context, usage string, allArgs []string) (models.Querier,
 		}
 		applyFlagOverridesForVideo(&vConf, postFlagConf, defaultFlags)
 
-		err = vConf.SetupPrompts()
+		err = vConf.SetupPrompts(postFlagArgs)
 		if err != nil {
 			return nil, fmt.Errorf("failed to setup prompt: %v", err)
 		}
@@ -361,7 +361,7 @@ func Setup(ctx context.Context, usage string, allArgs []string) (models.Querier,
 		if misc.Truthy(os.Getenv("DEBUG")) {
 			ancli.PrintOK(fmt.Sprintf("photoConfig post override: %+v\n", pConf))
 		}
-		err = pConf.SetupPrompts()
+		err = pConf.SetupPrompts(postFlagArgs)
 		if err != nil {
 			return nil, fmt.Errorf("failed to setup prompt: %v", err)
 		}
