@@ -187,6 +187,11 @@ func (cq *ChatHandler) cont(ctx context.Context) error {
 		if dsID, err := LoadDirScopeChatID(cq.confDir); err == nil && strings.TrimSpace(dsID) != "" {
 			c, err := cq.getByID(dsID)
 			if err != nil {
+				// In the case that the linked dirscope chat for some reason doesnt exist
+				// instead attempt to run global chat
+				if errors.Is(err, fs.ErrNotExist) {
+					goto global_scope
+				}
 				return fmt.Errorf("load dirscoped chat %q: %w", dsID, err)
 			}
 			if err := cq.printChat(c); err != nil {
@@ -196,6 +201,7 @@ func (cq *ChatHandler) cont(ctx context.Context) error {
 		}
 
 		// 2) globalScope
+	global_scope:
 		g, err := LoadGlobalScope(cq.confDir)
 		if err != nil {
 			return fmt.Errorf("load global scope chat: %w", err)
