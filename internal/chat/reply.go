@@ -1,23 +1,22 @@
 package chat
 
 import (
-	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path"
 	"time"
 
-	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
-// SaveAsPreviousQuery at claiConfDir/conversations/prevQuery.json with ID prevQuery
+// SaveAsPreviousQuery saves the global-scoped chat at
+// <claiConfDir>/conversations/globalScope.json with ID globalScope.
+//
+// Name kept for backwards compatibility.
 func SaveAsPreviousQuery(claiConfDir string, chat pub_models.Chat) error {
 	prevQueryChat := pub_models.Chat{
 		Created:    time.Now(),
-		ID:         "prevQuery",
+		ID:         globalScopeChatID,
 		Profile:    chat.Profile,
 		Messages:   chat.Messages,
 		TokenUsage: chat.TokenUsage,
@@ -49,25 +48,12 @@ func SaveAsPreviousQuery(claiConfDir string, chat pub_models.Chat) error {
 	return Save(path.Join(claiConfDir, "conversations"), prevQueryChat)
 }
 
-// LoadPrevQuery the prevQuery.json from the claiConfDir/conversations directory
-// If claiConfDir is left empty, it will be re-constructed. The technical debt
-// is piling up quite fast here
+// LoadPrevQuery loads the global-scoped chat.
+// Name kept for backwards compatibility.
 func LoadPrevQuery(claiConfDir string) (pub_models.Chat, error) {
-	if claiConfDir == "" {
-		dir, err := utils.GetClaiConfigDir()
-		if err != nil {
-			return pub_models.Chat{}, fmt.Errorf("failed to find home dir: %v", err)
-		}
-		claiConfDir = dir
-	}
-
-	c, err := FromPath(path.Join(claiConfDir, "conversations", "prevQuery.json"))
+	c, err := LoadGlobalScope(claiConfDir)
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			ancli.PrintWarn("no previous query found\n")
-		} else {
-			return pub_models.Chat{}, fmt.Errorf("failed to read from path: %w", err)
-		}
+		return pub_models.Chat{}, fmt.Errorf("load global scope chat: %w", err)
 	}
 	return c, nil
 }

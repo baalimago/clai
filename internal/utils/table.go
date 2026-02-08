@@ -26,10 +26,10 @@ func SelectFromTable[T any](header string, items []T,
 	pageSize int,
 	onlyOneSelect bool,
 ) ([]int, error) {
-	fmt.Println(header)
+	fmt.Println(Colorize(ThemePrimaryColor(), header))
 	headerWidth := utf8.RuneCount([]byte(header))
 	line := strings.Repeat("-", headerWidth)
-	fmt.Printf("%v\n", line)
+	fmt.Printf("%v\n", Colorize(ThemePrimaryColor(), line))
 
 	page := 0
 	amItems := len(items)
@@ -157,7 +157,7 @@ func printSelectRow[T any](w io.Writer, i int, chats []T, formatRow func(int, T)
 		return fmt.Errorf("failed to format row: %w", err)
 	}
 
-	fmt.Fprintln(w, formatted)
+	fmt.Fprintln(w, Colorize(ThemeBreadtextColor(), formatted))
 	return nil
 }
 
@@ -178,7 +178,7 @@ func printSelectItemOptions[T any](page, pageSize, amItems int, items []T, choie
 			return 0, fmt.Errorf("failed to printRow: %w", printErr)
 		}
 	}
-	fmt.Printf(choiesFormat, page, amItems/pageSize)
+	fmt.Print(Colorize(ThemeSecondaryColor(), fmt.Sprintf(choiesFormat, page, amItems/pageSize)))
 
 	return amPrinted, nil
 }

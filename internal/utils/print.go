@@ -10,7 +10,6 @@ import (
 	"unicode/utf8"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
 // ClearTermTo a certain amount of rows upwards by printing termWidth amount of empty spaces.
@@ -94,20 +93,28 @@ func AttemptPrettyPrint(w io.Writer, chatMessage pub_models.Message, username st
 		fmt.Fprintln(w, chatMessage.Content)
 		return nil
 	}
+
 	role := chatMessage.Role
-	color := ancli.BLUE
-	switch chatMessage.Role {
-	case "tool":
-		color = ancli.MAGENTA
-	case "user":
-		color = ancli.CYAN
+	if chatMessage.Role == "user" {
 		role = username
-	case "system":
-		color = ancli.BLUE
 	}
+
+	// Respect NO_COLOR.
+	if NoColor() {
+		if _, err := fmt.Fprintf(w, "%v: %v\n", role, chatMessage.Content); err != nil {
+			return fmt.Errorf("write chat message: %w", err)
+		}
+		return nil
+	}
+
+	roleCol := RoleColor(chatMessage.Role)
+	coloredRole := Colorize(roleCol, role)
+
 	cmd := exec.Command("glow", "--version")
 	if err := cmd.Run(); err != nil {
-		fmt.Fprintf(w, "%v: %v\n", ancli.ColoredMessage(color, role), chatMessage.Content)
+		if _, err := fmt.Fprintf(w, "%v: %v\n", coloredRole, chatMessage.Content); err != nil {
+			return fmt.Errorf("write chat message (no glow): %w", err)
+		}
 		return nil
 	}
 
@@ -119,65 +126,17 @@ func AttemptPrettyPrint(w io.Writer, chatMessage pub_models.Message, username st
 	cmd.Stdin = bytes.NewBufferString(inp)
 	cmd.Stdout = w
 	cmd.Stderr = w
-	fmt.Fprintf(w, "%v:", ancli.ColoredMessage(color, role))
+	if _, err := fmt.Fprintf(w, "%v:", coloredRole); err != nil {
+		return fmt.Errorf("write role prefix: %w", err)
+	}
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to run glow: %w", err)
+		return fmt.Errorf("run glow: %w", err)
 	}
 	return nil
 }
 
 func WidthAppropriateStringTrunc(toShorten, prefix string, padding int) (string, error) {
-	toShorten = strings.ReplaceAll(toShorten, "\n", "\\n")
-	toShorten = strings.ReplaceAll(toShorten, "\t", "\\t")
-	termWidth, err := TermWidth()
-	if err != nil {
-		return "", fmt.Errorf("failed to get termWidth: %w", err)
-	}
-
-	return fillRemainderOfTermWidth(prefix, toShorten, termWidth, padding), nil
-}
-
-func fillRemainderOfTermWidth(prefix, remainder string, termWidth, padding int) string {
-	infix := " ... "
-	infixLen := utf8.RuneCountInString(infix)
-	remainingWidth := termWidth - utf8.RuneCountInString(prefix) - padding
-	if remainingWidth < 0 {
-		remainingWidth = 0
-	}
-	widthAdjustedRemainder := ""
-	r := []rune(remainder)
-	if remainingWidth == 0 {
-		widthAdjustedRemainder = ""
-	} else if len(r) <= remainingWidth {
-		widthAdjustedRemainder = remainder
-	} else if remainingWidth <= infixLen {
-		widthAdjustedRemainder = string(r[:remainingWidth])
-	} else {
-		avail := remainingWidth - infixLen
-		startLen := avail / 2
-		endLen := avail - startLen
-		if endLen < 0 {
-			endLen = 0
-		}
-		if startLen < 0 {
-			startLen = 0
-		}
-		if startLen > len(r) {
-			startLen = len(r)
-		}
-		if endLen > len(r)-startLen {
-			endLen = len(r) - startLen
-		}
-		endStart := len(r) - endLen
-		if endStart < 0 {
-			endStart = 0
-		}
-		widthAdjustedRemainder = string(r[:startLen]) +
-			infix +
-			string(r[endStart:])
-	}
-
-	return prefix + widthAdjustedRemainder
+	return WidthAppropriateStringTruncColored(toShorten, prefix, "", "", padding)
 }
 
 // ShortenedOutput returns a shortened version of the output

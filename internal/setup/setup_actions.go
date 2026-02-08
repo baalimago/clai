@@ -28,7 +28,7 @@ func queryForAction(options []action) (action, error) {
 		userQuery += fmt.Sprintf("%v, ", s)
 	}
 	userQuery += "[q]uit: "
-	fmt.Print(userQuery)
+	fmt.Print(colorSecondary(userQuery))
 	input, err := utils.ReadUserInput()
 	if err != nil {
 		return unset, fmt.Errorf("failed to query for action: %w", err)
@@ -73,14 +73,14 @@ func configure(cfgs []config, a action) error {
 		return fmt.Errorf("found no configuration files, cant %v", a)
 	}
 	if index != 0 {
-		fmt.Println("Found config files: ")
+		fmt.Println(colorPrimary("Found config files: "))
 		for i, cfg := range cfgs {
-			fmt.Printf("\t%v: %v\n", i, cfg.name)
+			fmt.Print(colorBreadtext(fmt.Sprintf("\t%v: %v\n", i, cfg.name)))
 		}
-		fmt.Print("Please pick index: ")
+		fmt.Print(colorSecondary("Please pick index: "))
 		shadowInput, err := utils.ReadUserInput()
 		if err != nil {
-			return err
+			return fmt.Errorf("read config index: %w", err)
 		}
 		input = shadowInput
 		i, err := strconv.Atoi(input)
@@ -207,10 +207,10 @@ func reconfigureWithEditor(cfg config) error {
 }
 
 func remove(cfg config) error {
-	fmt.Printf("Are you sure you want to delete: '%v'?\n[y/n]: ", cfg.filePath)
+	fmt.Print(colorSecondary(fmt.Sprintf("Are you sure you want to delete: '%v'?\n[y/n]: ", cfg.filePath)))
 	input, err := utils.ReadUserInput()
 	if err != nil {
-		return err
+		return fmt.Errorf("read delete confirmation: %w", err)
 	}
 	if input != "y" {
 		return fmt.Errorf("aborting deletion")
@@ -229,7 +229,8 @@ func interractiveReconfigure(cfg config, b []byte) error {
 	if err != nil {
 		return fmt.Errorf("failed to unmarshal config: %v, error: %w", cfg.name, err)
 	}
-	fmt.Printf("Current config:\n%s\n---\n", b)
+	fmt.Print(colorPrimary("Current config:\n"))
+	fmt.Print(colorBreadtext(fmt.Sprintf("%s\n---\n", b)))
 	newConfig, err := buildNewConfig(jzon)
 	if err != nil {
 		return fmt.Errorf("failed to build new config: %w", err)
@@ -253,7 +254,7 @@ func getToolsValue(v any) ([]string, error) {
 		ancli.PrintWarn(fmt.Sprintf("invalid type for tools, expected string slice, got: %v. Returning empty slice\n", sArr))
 		return []string{}, nil
 	}
-	fmt.Println("Tooling configuration, select which tools you'd like for the profile to use")
+	fmt.Println(colorPrimary("Tooling configuration, select which tools you'd like for the profile to use"))
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "Index\tName\tDescription")
 	fmt.Fprint(w, "-----\t----\t----------\n")
@@ -265,7 +266,7 @@ func getToolsValue(v any) ([]string, error) {
 		i++
 	}
 	w.Flush()
-	fmt.Print("Enter indices of tools to use (example: '1,3,4,2'): ")
+	fmt.Print(colorSecondary("Enter indices of tools to use (example: '1,3,4,2'): "))
 	input, err := utils.ReadUserInput()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read input: %v", err)
@@ -298,7 +299,9 @@ func getNewValue(k string, v any) (any, error) {
 		return getToolsValue(v)
 	}
 	var ret any
-	fmt.Printf("Key: '%v', current: '%v'\nPlease enter new value, or leave empty to keep: ", k, v)
+	// Keep the descriptive parts readable (breadtext), but keep the interactive prompt (cursor line) secondary.
+	fmt.Print(colorBreadtext(fmt.Sprintf("Key: '%v', current: '%v'\n", k, v)))
+	fmt.Print(colorSecondary("Please enter new value, or leave empty to keep: "))
 	input, err := utils.ReadUserInput()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read input: %w", err)
@@ -329,42 +332,42 @@ func editMap(k string, m map[string]any) (map[string]any, error) {
 		for key := range edited {
 			keys = append(keys, key)
 		}
-		fmt.Printf("Map '%s' keys: %v\n[a]dd [u]pdate [r]emove [d]one: ", k, keys)
+		fmt.Print(colorSecondary(fmt.Sprintf("Map '%s' keys: %v\n[a]dd [u]pdate [r]emove [d]one: ", k, keys)))
 		action, err := utils.ReadUserInput()
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("read map action: %w", err)
 		}
 		switch action {
 		case "d", "":
 			return edited, nil
 		case "a":
-			fmt.Print("New key: ")
+			fmt.Print(colorSecondary("New key: "))
 			nk, err := utils.ReadUserInput()
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("read new key: %w", err)
 			}
-			fmt.Print("Value: ")
+			fmt.Print(colorSecondary("Value: "))
 			nv, err := utils.ReadUserInput()
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("read new value: %w", err)
 			}
 			edited[nk] = castPrimitive(nv)
 		case "r":
-			fmt.Print("Key to remove: ")
+			fmt.Print(colorSecondary("Key to remove: "))
 			rk, err := utils.ReadUserInput()
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("read key to remove: %w", err)
 			}
 			delete(edited, rk)
 		case "u":
-			fmt.Print("Key to update: ")
+			fmt.Print(colorSecondary("Key to update: "))
 			uk, err := utils.ReadUserInput()
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("read key to update: %w", err)
 			}
-			val, ok := edited[uk]
-			if !ok {
-				fmt.Printf("no such key '%s'\n", uk)
+			val, exists := edited[uk]
+			if !exists {
+				fmt.Print(colorBreadtext(fmt.Sprintf("no such key '%s'\n", uk)))
 				continue
 			}
 			nv, err := handleValue(fmt.Sprintf("%s.%s", k, uk), val)
@@ -379,26 +382,26 @@ func editMap(k string, m map[string]any) (map[string]any, error) {
 func editSlice(k string, s []any) ([]any, error) {
 	edited := append([]any(nil), s...)
 	for {
-		fmt.Printf("Slice '%s': %v\n[a]ppend [u]pdate [r]emove [d]one: ", k, edited)
+		fmt.Print(colorSecondary(fmt.Sprintf("Slice '%s': %v\n[a]ppend [u]pdate [r]emove [d]one: ", k, edited)))
 		action, err := utils.ReadUserInput()
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("read slice action: %w", err)
 		}
 		switch action {
 		case "d", "":
 			return edited, nil
 		case "a":
-			fmt.Print("Value: ")
+			fmt.Print(colorSecondary("Value: "))
 			nv, err := utils.ReadUserInput()
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("read append value: %w", err)
 			}
 			edited = append(edited, castPrimitive(nv))
 		case "r":
-			fmt.Printf("Index to remove (0-%d, multi-select with ex: '1-3'): ", len(edited)-1)
+			fmt.Print(colorSecondary(fmt.Sprintf("Index to remove (0-%d, multi-select with ex: '1-3'): ", len(edited)-1)))
 			idxStr, err := utils.ReadUserInput()
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("read remove index: %w", err)
 			}
 			if strings.Contains(idxStr, "-") {
 				split := strings.Split(idxStr, "-")
@@ -442,17 +445,18 @@ func editSlice(k string, s []any) ([]any, error) {
 					ancli.Errf("invalid index: %v", idx)
 					continue
 				}
+				_ = idx
 			}
 
 		case "u":
-			fmt.Printf("Index to update (0-%d): ", len(edited)-1)
+			fmt.Print(colorSecondary(fmt.Sprintf("Index to update (0-%d): ", len(edited)-1)))
 			idxStr, err := utils.ReadUserInput()
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("read update index: %w", err)
 			}
 			idx, err := strconv.Atoi(idxStr)
 			if err != nil || idx < 0 || idx >= len(edited) {
-				fmt.Println("invalid index")
+				fmt.Println(colorBreadtext("invalid index"))
 				continue
 			}
 			val := edited[idx]
