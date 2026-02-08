@@ -26,13 +26,13 @@ func TestChatHandler_dirInfo_NoDirScopeNoPrevQuery(t *testing.T) {
 		out:     &out,
 	}
 
-	// Now: it errors when neither a dir binding nor prevQuery exists.
-	if err := cq.dirInfo(); err == nil {
-		t.Fatalf("expected error, got nil")
+	// It should succeed and return empty info when neither a dir binding nor global scope exists.
+	if err := cq.dirInfo(); err != nil {
+		t.Fatalf("expected nil error, got: %v", err)
 	}
 }
 
-func TestChatHandler_dirInfo_GlobalPrevQuery_Raw(t *testing.T) {
+func TestChatHandler_dirInfo_GlobalScope_Raw(t *testing.T) {
 	confDir := t.TempDir()
 	if err := utils.CreateConfigDir(confDir); err != nil {
 		t.Fatalf("CreateConfigDir: %v", err)
@@ -49,7 +49,7 @@ func TestChatHandler_dirInfo_GlobalPrevQuery_Raw(t *testing.T) {
 	convDir := filepath.Join(confDir, "conversations")
 	created := time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC)
 	ch := pub_models.Chat{
-		ID:      "prevQuery",
+		ID:      "globalScope",
 		Created: created,
 		Profile: "profA",
 		Messages: []pub_models.Message{
@@ -75,12 +75,7 @@ func TestChatHandler_dirInfo_GlobalPrevQuery_Raw(t *testing.T) {
 		out:     &out,
 	}
 
-	// With no dir binding, the command now errors (even if prevQuery exists).
-	// Bind the current directory to force the "dir" path and keep this test meaningful.
-	if err := cq.SaveDirScope("", "prevQuery"); err != nil {
-		t.Fatalf("SaveDirScope: %v", err)
-	}
-
+	// With no dir binding, it should show global scope info.
 	if err := cq.dirInfo(); err != nil {
 		t.Fatalf("dirInfo: %v", err)
 	}
@@ -90,10 +85,10 @@ func TestChatHandler_dirInfo_GlobalPrevQuery_Raw(t *testing.T) {
 		t.Fatalf("unmarshal: %v, out=%q", err, out.String())
 	}
 
-	if got.Scope != "dir" {
+	if got.Scope != "global" {
 		t.Fatalf("scope: got %q", got.Scope)
 	}
-	if got.ChatID != "prevQuery" {
+	if got.ChatID != "globalScope" {
 		t.Fatalf("chat_id: got %q", got.ChatID)
 	}
 	if got.Profile != "profA" {
@@ -142,7 +137,7 @@ func TestChatHandler_dirInfo_DirScopeWinsOverPrevQuery_Raw(t *testing.T) {
 		t.Fatalf("Save(bound): %v", err)
 	}
 
-	prev := pub_models.Chat{ID: "prevQuery", Created: time.Now()}
+	prev := pub_models.Chat{ID: "globalScope", Created: time.Now()}
 	if err := Save(convDir, prev); err != nil {
 		t.Fatalf("Save(prev): %v", err)
 	}

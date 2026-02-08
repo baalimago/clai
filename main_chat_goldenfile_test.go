@@ -20,7 +20,7 @@ func Test_goldenFile_CHAT_DIRSCOPED(t *testing.T) {
 	// t.Parallel(), since it changes the process working directory (CWD).
 	//
 	// API expectations (TDD):
-	// - `clai re` prints the most recent message from the *global* previous query (prevQuery.json)
+	// - `clai re` prints the most recent message from the *global* previous query (globalScope.json)
 	// - `clai dre` prints the most recent message from the *directory binding* for CWD
 	// - `clai dre` errors (non-zero status code) if no binding exists for CWD
 	//
@@ -31,7 +31,7 @@ func Test_goldenFile_CHAT_DIRSCOPED(t *testing.T) {
 	//
 	// Extended spec (new command):
 	// - `clai chat dir` prints short JSON info about the dirscoped chat bound to CWD.
-	// - If no dirscoped chat exists, it prints info for the global chat (prevQuery.json).
+	// - If no dirscoped chat exists, it prints info for the global chat (globalScope.json).
 	// - If neither exists, it prints `{}`.
 	// - It includes `replies_by_role` counts and `tokens_total`.
 
@@ -95,10 +95,10 @@ func Test_goldenFile_CHAT_DIRSCOPED(t *testing.T) {
 		return got
 	}
 
-	// 0) (/bar) no dir binding and no prevQuery yet => now errors (non-zero)
+	// 0) (/bar) no dir binding and no global scope yet => prints {} (exit 0)
 	_, status := runOne(t, bar, "-r -cm test chat dir")
-	if status == 0 {
-		t.Fatalf("expected non-zero status for 'chat dir' when empty")
+	if status != 0 {
+		t.Fatalf("expected zero status for 'chat dir' when empty, got %v", status)
 	}
 
 	// 1) (/bar) query hello
@@ -194,7 +194,7 @@ func Test_goldenFile_CHAT_DIRSCOPED(t *testing.T) {
 			continue
 		}
 		name := e.Name()
-		if strings.HasSuffix(name, ".json") && name != "prevQuery.json" {
+		if strings.HasSuffix(name, ".json") && name != "globalScope.json" {
 			convFiles = append(convFiles, filepath.Join(convDir, name))
 		}
 	}

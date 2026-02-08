@@ -90,27 +90,30 @@ func (cq *ChatHandler) resolveChatDirInfo() (chatDirInfo, error) {
 	// 1) Dir scope
 	ds, err := cq.LoadDirScope("")
 	if err != nil {
-		return chatDirInfo{}, fmt.Errorf("load dir scope: %w", err)
-	}
-	c, err := FromPath(path.Join(cq.convDir, ds.ChatID+".json"))
-	if err == nil {
-		info := cq.infoFromChat("dir", ds.ChatID, c)
-		info.Updated = ds.Updated
-		info.ConversationCreated = c.Created.Format("2006-01-02T15:04:05Z07:00")
-		// Error could be that there is no initial user message, which is very weird and
-		// wont ever happen ofc ofc
-		initialMsg, _ := c.FirstUserMessage()
-		info.initialMessage = initialMsg.String()
-		return info, nil
-	}
-	if !errors.Is(err, fs.ErrNotExist) {
-		return chatDirInfo{}, fmt.Errorf("load bound dir chat: %w", err)
+		if !errors.Is(err, fs.ErrNotExist) {
+			return chatDirInfo{}, fmt.Errorf("load dir scope: %w", err)
+		}
+	} else {
+		c, err := FromPath(path.Join(cq.convDir, ds.ChatID+".json"))
+		if err == nil {
+			info := cq.infoFromChat("dir", ds.ChatID, c)
+			info.Updated = ds.Updated
+			info.ConversationCreated = c.Created.Format("2006-01-02T15:04:05Z07:00")
+			// Error could be that there is no initial user message, which is very weird and
+			// wont ever happen ofc ofc
+			initialMsg, _ := c.FirstUserMessage()
+			info.initialMessage = initialMsg.String()
+			return info, nil
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			return chatDirInfo{}, fmt.Errorf("load bound dir chat: %w", err)
+		}
 	}
 
-	// 2) Global prevQuery
-	prev, err := FromPath(path.Join(cq.convDir, "prevQuery.json"))
+	// 2) Global scope
+	prev, err := FromPath(path.Join(cq.convDir, globalScopeFile))
 	if err == nil {
-		info := cq.infoFromChat("global", "prevQuery", prev)
+		info := cq.infoFromChat("global", globalScopeChatID, prev)
 		info.ConversationCreated = prev.Created.Format("2006-01-02T15:04:05Z07:00")
 		initialMsg, _ := prev.FirstUserMessage()
 		info.initialMessage = initialMsg.String()
