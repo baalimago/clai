@@ -179,6 +179,39 @@ func (cq *ChatHandler) cont(ctx context.Context) error {
 	if misc.Truthy(os.Getenv("DEBUG")) {
 		ancli.PrintOK(fmt.Sprintf("prompt: %v", cq.prompt))
 	}
+
+	// Special case: `clai chat continue` with an empty string continues the chat
+	// in the current directory. Fallback: globalScope.
+	if strings.TrimSpace(cq.prompt) == "" {
+		// 1) dir-scoped (CWD)
+		if dsID, err := LoadDirScopeChatID(cq.confDir); err == nil && strings.TrimSpace(dsID) != "" {
+			c, err := cq.getByID(dsID)
+			if err != nil {
+				return fmt.Errorf("load dirscoped chat %q: %w", dsID, err)
+			}
+			if err := cq.printChat(c); err != nil {
+				return fmt.Errorf("print dirscoped chat: %w", err)
+			}
+			return nil
+		}
+
+		// 2) globalScope
+		g, err := LoadGlobalScope(cq.confDir)
+		if err != nil {
+			return fmt.Errorf("load global scope chat: %w", err)
+		}
+		if strings.TrimSpace(g.ID) != "" {
+			if err := cq.printChat(g); err != nil {
+				return fmt.Errorf("print global scope chat: %w", err)
+			}
+			return nil
+		}
+
+		// 3) no chat found
+		ancli.PrintErr("could not find chat with id: \"\"\n")
+		return cq.handleListCmd(ctx)
+	}
+
 	chat, err := cq.findChatByID(cq.prompt)
 	if err != nil {
 		// If listing of chats failed, propagate error. This indicates a real filesystem or
