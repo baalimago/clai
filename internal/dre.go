@@ -27,7 +27,7 @@ func (q dreQuerier) Query(ctx context.Context) error {
 var _ models.Querier = (*dreQuerier)(nil)
 
 func setupDRE(mode Mode, postFlagConf Configurations, _ []string) (models.Querier, error) {
-	if mode != DRE {
+	if mode != DIRSCOPED_REPLAY {
 		return nil, errors.New("setupDRE: unexpected mode")
 	}
 	return &dreQuerier{raw: postFlagConf.PrintRaw}, nil
