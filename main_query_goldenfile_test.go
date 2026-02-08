@@ -32,17 +32,17 @@ func Test_goldenFile_QUERY_stdin_and_token_replacement(t *testing.T) {
 			wantCode: 0,
 		},
 		{
-			name:     "stdin_replaces_default_token",
-			stdin:    "X",
-			args:     "-r -cm test q hello {} world",
+			name:  "stdin_replaces_default_token",
+			stdin: "X",
+			args:  "-r -cm test q hello {} world",
 			// Note: current Prompt() semantics append stdin after args as well.
 			wantOut:  "hello X world X\n",
 			wantCode: 0,
 		},
 		{
-			name:     "stdin_replaces_custom_token",
-			stdin:    "Y",
-			args:     "-r -cm test -I __ q hello __ world",
+			name:  "stdin_replaces_custom_token",
+			stdin: "Y",
+			args:  "-r -cm test -I __ q hello __ world",
 			// Note: replacement does not currently occur for custom token, stdin is appended.
 			wantOut:  "hello __ world Y\n",
 			wantCode: 0,
