@@ -69,7 +69,7 @@ main.go:run()
 
 `Configurations.SetupPrompts()` in `internal/video/prompt.go`:
 
-1. If **reply mode** (`-re`): loads `prevQuery.json`, serializes messages as JSON context, prepends to prompt
+1. If **reply mode** (`-re`): loads `globalScope.json`, serializes messages as JSON context, prepends to prompt
 2. Calls `utils.Prompt(stdinReplace, args)` to build user prompt from CLI args + stdin
 3. Runs `chat.PromptToImageMessage(prompt)` to detect base64-encoded images in the prompt
    - If an image is found: sets `PromptImageB64` for image-to-video generation

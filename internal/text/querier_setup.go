@@ -167,7 +167,7 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 		ancli.Okf("Out is: %v", userConf.Out)
 	}
 	querier.chat = userConf.InitialChat
-	// Ensure profile selection is persisted in prevQuery/saved conversations.
+	// Ensure profile selection is persisted in globalScope/saved conversations.
 	querier.chat.Profile = userConf.UseProfile
 	querier.Raw = userConf.Raw
 	querier.cmdMode = userConf.CmdMode

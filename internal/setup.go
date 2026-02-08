@@ -104,7 +104,7 @@ func getCmdFromArgs(args []string) (Mode, error) {
 		return CMD, nil
 	case "replay", "re":
 		return REPLAY, nil
-	case "dre":
+	case "dir-replay", "dre":
 		return DIRSCOPED_REPLAY, nil
 	case "tools", "t":
 		return TOOLS, nil
@@ -296,7 +296,7 @@ func Setup(ctx context.Context, usage string, allArgs []string) (models.Querier,
 	switch mode {
 	case CHAT, QUERY, GLOB, CMD:
 		// If directory reply mode is requested we first copy the directory-scoped
-		// conversation into prevQuery.json so that the existing reply flow can reuse it.
+		// conversation into globalScope.json so that the existing reply flow can reuse it.
 		if mode == QUERY && postFlagConf.DirReplyMode {
 			_, err := chat.SaveDirScopedAsPrevQuery(claiConfDir)
 			if err != nil {

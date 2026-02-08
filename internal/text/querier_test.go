@@ -298,7 +298,7 @@ func Test_Querier_Query_errors(t *testing.T) {
 }
 
 func Test_Querier(t *testing.T) {
-	t.Run("it should only save to prevQuery if in reply mode", func(t *testing.T) {
+	t.Run("it should only save to globalScope if in reply mode", func(t *testing.T) {
 		tmpConfigDir := path.Join(t.TempDir(), ".clai")
 		os.MkdirAll(path.Join(tmpConfigDir, "conversations"), os.ModePerm)
 		q := Querier[*MockQuerier]{
@@ -307,7 +307,7 @@ func Test_Querier(t *testing.T) {
 			shouldSaveReply: true,
 			configDir:       tmpConfigDir,
 			chat: pub_models.Chat{
-				ID: "prevQuery",
+				ID: "globalScope",
 				Messages: []pub_models.Message{
 					{
 						Role:    "system",
@@ -374,7 +374,7 @@ func Test_Querier_SavesConversationOnError(t *testing.T) {
 			shouldSaveReply: true,
 			configDir:       tmpConfigDir,
 			chat: pub_models.Chat{
-				ID: "prevQuery",
+				ID: "globalScope",
 				Messages: []pub_models.Message{
 					{
 						Role:    "system",
@@ -427,7 +427,7 @@ func Test_Querier_SavesConversationOnError(t *testing.T) {
 			shouldSaveReply: true,
 			configDir:       tmpConfigDir,
 			chat: pub_models.Chat{
-				ID: "prevQuery",
+				ID: "globalScope",
 				Messages: []pub_models.Message{
 					{
 						Role:    "system",
@@ -485,7 +485,7 @@ func Test_Querier_SavesConversation_WhenStreamSetupFailsDueToRateLimitTokenCount
 		shouldSaveReply: true,
 		configDir:       tmpConfigDir,
 		chat: pub_models.Chat{
-			ID: "prevQuery",
+			ID: "globalScope",
 			Messages: []pub_models.Message{
 				{Role: "system", Content: "you are a helpful assistant"},
 				{Role: "user", Content: "please do the thing"},
@@ -502,7 +502,7 @@ func Test_Querier_SavesConversation_WhenStreamSetupFailsDueToRateLimitTokenCount
 		t.Fatalf("expected token count error, got: %v", err)
 	}
 
-	// Even though stream setup failed, we should persist prevQuery in reply mode.
+	// Even though stream setup failed, we should persist globalScope in reply mode.
 	lastReply, err := chat.LoadPrevQuery(q.configDir)
 	if err != nil {
 		t.Fatalf("load prev query: %v", err)

@@ -26,7 +26,7 @@ func TestSetupPrompts(t *testing.T) {
 	claiDir := filepath.Join(tmpInfo, ".clai")
 	t.Setenv("CLAI_CONFIG_DIR", claiDir)
 
-	// We expect the code to look in <claiDir>/conversations/prevQuery.json
+	// We expect the code to look in <claiDir>/conversations/globalScope.json
 
 	// Create .clai/conversations directory
 	convDir := filepath.Join(claiDir, "conversations")
@@ -35,14 +35,14 @@ func TestSetupPrompts(t *testing.T) {
 		t.Fatalf("Failed to create conv dir: %v", err)
 	}
 
-	// Create prevQuery.json content
+	// Create globalScope.json content
 	msgs := []pub_models.Message{
 		{Role: "user", Content: "Hello previous query"},
 		{Role: "system", Content: "System reply"},
 	}
 	prevChat := pub_models.Chat{
 		Created:  time.Now(),
-		ID:       "prevQuery",
+		ID:       "globalScope",
 		Messages: msgs,
 	}
 
@@ -51,9 +51,9 @@ func TestSetupPrompts(t *testing.T) {
 		t.Fatalf("Failed to marshal chat: %v", err)
 	}
 
-	err = os.WriteFile(filepath.Join(convDir, "prevQuery.json"), b, 0o644)
+	err = os.WriteFile(filepath.Join(convDir, "globalScope.json"), b, 0o644)
 	if err != nil {
-		t.Fatalf("Failed to write prevQuery.json: %v", err)
+		t.Fatalf("Failed to write globalScope.json: %v", err)
 	}
 
 	// 2. Prepare for flag.Args() mocking

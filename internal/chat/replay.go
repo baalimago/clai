@@ -12,7 +12,7 @@ import (
 //
 // If dirScoped is true, it prints the most recent message from the conversation
 // bound to the current working directory (and errors if no binding exists).
-// Otherwise it prints the most recent message from the global prevQuery.json.
+// Otherwise it prints the most recent message from the global globalScope.json.
 func Replay(raw bool, dirScoped bool) error {
 	if dirScoped {
 		return replayDirScoped(raw)

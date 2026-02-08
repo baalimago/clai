@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 )
 
-// SaveDirScopedAsPrevQuery overwrites <confDir>/conversations/prevQuery.json with the
+// SaveDirScopedAsPrevQuery overwrites <confDir>/conversations/globalScope.json with the
 // directory-scoped conversation bound to the current working directory.
 //
 // This allows us to reuse the existing global "reply" plumbing (-re) while letting

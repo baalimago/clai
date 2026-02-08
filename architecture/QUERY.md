@@ -48,7 +48,7 @@ See `CONFIG.md` for full details.
 
 1. If **not reply mode**: creates initial chat with system prompt message
 2. If **glob mode** (`-g` flag): reads matching files into messages via `glob.CreateChat()`
-3. If **reply mode** (`-re`): loads `prevQuery.json` and prepends those messages
+3. If **reply mode** (`-re`): loads `globalScope.json` and prepends those messages
 4. Calls `utils.Prompt(stdinReplace, args)` to build the user prompt from CLI args + stdin
 5. Runs `chat.PromptToImageMessage(prompt)` to detect and extract base64-encoded images
 6. Appends the user message to `InitialChat.Messages`

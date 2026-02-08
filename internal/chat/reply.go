@@ -14,7 +14,7 @@ import (
 //
 // Name kept for backwards compatibility.
 func SaveAsPreviousQuery(claiConfDir string, chat pub_models.Chat) error {
-	prevQueryChat := pub_models.Chat{
+	globalScopeChat := pub_models.Chat{
 		Created:    time.Now(),
 		ID:         globalScopeChatID,
 		Profile:    chat.Profile,
@@ -24,7 +24,7 @@ func SaveAsPreviousQuery(claiConfDir string, chat pub_models.Chat) error {
 	// This check avoid storing queries without any replies, which would most likely
 	// flood the conversations needlessly
 	if len(chat.Messages) > 2 {
-		firstUserMsg, err := prevQueryChat.FirstUserMessage()
+		firstUserMsg, err := globalScopeChat.FirstUserMessage()
 		if err != nil {
 			return fmt.Errorf("failed to get first user message: %w", err)
 		}
@@ -45,7 +45,7 @@ func SaveAsPreviousQuery(claiConfDir string, chat pub_models.Chat) error {
 		}
 	}
 
-	return Save(path.Join(claiConfDir, "conversations"), prevQueryChat)
+	return Save(path.Join(claiConfDir, "conversations"), globalScopeChat)
 }
 
 // LoadPrevQuery loads the global-scoped chat.

@@ -97,7 +97,7 @@ func (c *Configurations) setupSystemPrompt() {
 // code too closely. Something will break, most likely.
 func (c *Configurations) SetupInitialChat(args []string) error {
 	if c.Glob != "" && c.ReplyMode {
-		ancli.PrintWarn("Using glob + reply modes together might yield strange results. The prevQuery will be appended after the glob messages.\n")
+		ancli.PrintWarn("Using glob + reply modes together might yield strange results. The globalScope will be appended after the glob messages.\n")
 	}
 
 	if !c.ReplyMode {

@@ -127,7 +127,7 @@ func Test_goldenFile_CHAT_DIRSCOPED(t *testing.T) {
 		t.Fatalf("expected non-negative tokens_total, got %d", barInfo.TokensTotal)
 	}
 
-	// 2) (/bar) global replay matches last message from global prevQuery
+	// 2) (/bar) global replay matches last message from global globalScope
 	out, status = runOne(t, bar, "-r re")
 	testboil.FailTestIfDiff(t, status, 0)
 	testboil.AssertStringContains(t, out, "hello")

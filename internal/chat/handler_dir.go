@@ -120,7 +120,7 @@ func (cq *ChatHandler) resolveChatDirInfo() (chatDirInfo, error) {
 		return info, nil
 	}
 	if !errors.Is(err, fs.ErrNotExist) {
-		return chatDirInfo{}, fmt.Errorf("load prevQuery: %w", err)
+		return chatDirInfo{}, fmt.Errorf("load globalScope: %w", err)
 	}
 
 	return chatDirInfo{}, nil
