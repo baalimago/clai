@@ -48,12 +48,17 @@ func printChatObfuscated(w io.Writer, ch pub_models.Chat, raw bool) error {
 
 	for i, m := range ch.Messages {
 		lenRunes := messageContentLen(m)
-		prefix := fmt.Sprintf("[#%-4d r: %-9s l: %05d]: ", i, m.Role, lenRunes)
 
 		// Old messages: oneliners, width-truncated, no pretty print.
 		if i < prettyStart {
-			preview := messagePreview(m)
-			trunc, err := utils.WidthAppropriateStringTrunc(preview, prefix, 20)
+			// Everything inside [] is primary, except role value which matches AttemptPrettyPrint.
+			prefix := utils.Colorize(utils.ThemePrimaryColor(), fmt.Sprintf("[#%-3d r: ", i)) +
+				utils.Colorize(utils.RoleColor(m.Role), fmt.Sprintf("%-9s", m.Role)) +
+				utils.Colorize(utils.ThemePrimaryColor(), fmt.Sprintf(" l: %5d]: ", lenRunes))
+
+			trunc, err := utils.WidthAppropriateStringTruncColored(
+				m.String(), prefix, "", utils.ThemeBreadtextColor(), 5,
+			)
 			if err != nil {
 				return fmt.Errorf("truncate message preview: %w", err)
 			}
@@ -63,7 +68,7 @@ func printChatObfuscated(w io.Writer, ch pub_models.Chat, raw bool) error {
 			continue
 		}
 
-		// The last 4 messages: pretty print but shorten content.
+		// The last 6 messages: pretty print but shorten content.
 		m2 := m
 		// Leave full length for most recent message
 		if i < len(ch.Messages)-1 {
@@ -73,10 +78,6 @@ func printChatObfuscated(w io.Writer, ch pub_models.Chat, raw bool) error {
 		if err := utils.AttemptPrettyPrint(w, m2, "user", raw); err != nil {
 			return fmt.Errorf("pretty print chat message: %w", err)
 		}
-		if i != len(ch.Messages)-1 {
-			continue
-		}
-
 	}
 	return nil
 }

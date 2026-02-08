@@ -289,6 +289,10 @@ func Setup(ctx context.Context, usage string, allArgs []string) (models.Querier,
 		return nil, fmt.Errorf("failed to find config dir: %v", err)
 	}
 
+	if err := utils.LoadTheme(claiConfDir); err != nil {
+		return nil, fmt.Errorf("failed to load theme: %w", err)
+	}
+
 	switch mode {
 	case CHAT, QUERY, GLOB, CMD:
 		// If directory reply mode is requested we first copy the directory-scoped

@@ -12,6 +12,67 @@ import (
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
+func TestPrintChatObfuscated_NO_COLOR_disablesAllColor(t *testing.T) {
+	confDir := t.TempDir()
+	if err := utils.CreateConfigDir(confDir); err != nil {
+		t.Fatalf("CreateConfigDir: %v", err)
+	}
+	if err := utils.LoadTheme(confDir); err != nil {
+		t.Fatalf("LoadTheme: %v", err)
+	}
+
+	t.Setenv("NO_COLOR", "true")
+
+	ch := pub_models.Chat{Messages: []pub_models.Message{
+		{Role: "system", Content: strings.Repeat("a", 200)},
+		{Role: "user", Content: "hello"},
+		{Role: "assistant", Content: "world"},
+		{Role: "user", Content: "m3"},
+		{Role: "assistant", Content: "m4"},
+		{Role: "user", Content: "m5"},
+		{Role: "assistant", Content: "m6"},
+	}}
+
+	var b strings.Builder
+	if err := printChatObfuscated(&b, ch, false); err != nil {
+		t.Fatalf("printChatObfuscated: %v", err)
+	}
+	got := b.String()
+	if strings.Contains(got, "\u001b[") {
+		t.Fatalf("expected no ANSI escapes when NO_COLOR=true, got: %q", got)
+	}
+}
+
+func TestPrintChatObfuscated_coloriziesPrefix(t *testing.T) {
+	confDir := t.TempDir()
+	if err := utils.CreateConfigDir(confDir); err != nil {
+		t.Fatalf("CreateConfigDir: %v", err)
+	}
+	if err := utils.LoadTheme(confDir); err != nil {
+		t.Fatalf("LoadTheme: %v", err)
+	}
+
+	ch := pub_models.Chat{Messages: []pub_models.Message{
+		{Role: "system", Content: strings.Repeat("a", 200)},
+		{Role: "user", Content: "hello"},
+		{Role: "assistant", Content: "world"},
+		{Role: "user", Content: "m3"},
+		{Role: "assistant", Content: "m4"},
+		{Role: "user", Content: "m5"},
+		{Role: "assistant", Content: "m6"},
+	}}
+
+	var b strings.Builder
+	if err := printChatObfuscated(&b, ch, false); err != nil {
+		t.Fatalf("printChatObfuscated: %v", err)
+	}
+	got := b.String()
+	// First line is obfuscated; it should contain our primary color.
+	if !strings.Contains(got, utils.ThemePrimaryColor()+"[") {
+		t.Fatalf("expected prefix to be colored, got: %q", got)
+	}
+}
+
 type stubChatQuerier struct{}
 
 func (stubChatQuerier) Query(ctx context.Context) error { return nil }
@@ -75,10 +136,6 @@ func TestChatContinue_printsObfuscatedSummary_withPaddingAndPreview(t *testing.T
 	// Length is padded to 5 digits like 00005.
 	if !strings.Contains(got, "l: 00200") {
 		t.Fatalf("expected zero-padded len field for first message, got: %q", got)
-	}
-	// Pretty printed shortened output includes the ... marker.
-	if !strings.Contains(got, "...") {
-		t.Fatalf("expected shortened output for non-last messages, got: %q", got)
 	}
 	// Last message preview includes the actual string.
 	if !strings.Contains(got, "m6") {

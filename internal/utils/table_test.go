@@ -45,6 +45,15 @@ func Test_parseNumbersFromString(t *testing.T) {
 }
 
 func Test_printSelectRow_success(t *testing.T) {
+	// ensure we exercise color output
+	t.Setenv("NO_COLOR", "")
+
+	globalTheme = Theme{
+		Primary:   "<PRIMARY>",
+		Secondary: "<SECONDARY>",
+		Breadtext: "<BREADTEXT>",
+	}
+
 	var buf bytes.Buffer
 	items := []string{"a", "b", "c"}
 	format := func(i int, s string) (string, error) {
@@ -55,7 +64,7 @@ func Test_printSelectRow_success(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	got := buf.String()
-	want := "1-b\n"
+	want := "<BREADTEXT>1-b" + ansiReset + "\n"
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
@@ -77,6 +86,15 @@ func Test_printSelectRow_format_error(t *testing.T) {
 }
 
 func Test_printSelectItemOptions_first_page(t *testing.T) {
+	// ensure we exercise color output
+	t.Setenv("NO_COLOR", "")
+
+	globalTheme = Theme{
+		Primary:   "<PRIMARY>",
+		Secondary: "<SECONDARY>",
+		Breadtext: "<BREADTEXT>",
+	}
+
 	items := []string{"a", "b", "c", "d", "e"}
 	format := func(i int, s string) (string, error) {
 		return fmt.Sprintf("%d-%s", i, s), nil
@@ -96,15 +114,29 @@ func Test_printSelectItemOptions_first_page(t *testing.T) {
 		t.Fatalf("amPrinted=%d, want 3", am)
 	}
 	want := strings.Join(
-		[]string{"0-a", "1-b", "2-c", "[0/1]"},
+		[]string{
+			"<BREADTEXT>0-a" + ansiReset,
+			"<BREADTEXT>1-b" + ansiReset,
+			"<BREADTEXT>2-c" + ansiReset,
+			"<SECONDARY>[0/1]\n" + ansiReset,
+		},
 		"\n",
-	) + "\n"
+	)
 	if out != want {
 		t.Fatalf("out=%q, want %q", out, want)
 	}
 }
 
 func Test_printSelectItemOptions_last_partial_page(t *testing.T) {
+	// ensure we exercise color output
+	t.Setenv("NO_COLOR", "")
+
+	globalTheme = Theme{
+		Primary:   "<PRIMARY>",
+		Secondary: "<SECONDARY>",
+		Breadtext: "<BREADTEXT>",
+	}
+
 	items := []string{"a", "b", "c", "d", "e"}
 	format := func(i int, s string) (string, error) {
 		return fmt.Sprintf("%d-%s", i, s), nil
@@ -123,9 +155,13 @@ func Test_printSelectItemOptions_last_partial_page(t *testing.T) {
 		t.Fatalf("amPrinted=%d, want 2", am)
 	}
 	want := strings.Join(
-		[]string{"3-d", "4-e", "[1/1]"},
+		[]string{
+			"<BREADTEXT>3-d" + ansiReset,
+			"<BREADTEXT>4-e" + ansiReset,
+			"<SECONDARY>[1/1]\n" + ansiReset,
+		},
 		"\n",
-	) + "\n"
+	)
 	if out != want {
 		t.Fatalf("out=%q, want %q", out, want)
 	}
@@ -153,6 +189,15 @@ func Test_printSelectItemOptions_format_error(t *testing.T) {
 }
 
 func Test_printSelectItemOptions_empty_items(t *testing.T) {
+	// ensure we exercise color output
+	t.Setenv("NO_COLOR", "")
+
+	globalTheme = Theme{
+		Primary:   "<PRIMARY>",
+		Secondary: "<SECONDARY>",
+		Breadtext: "<BREADTEXT>",
+	}
+
 	items := []string{}
 	format := func(i int, s string) (string, error) {
 		return fmt.Sprintf("%d-%s", i, s), nil
@@ -170,7 +215,7 @@ func Test_printSelectItemOptions_empty_items(t *testing.T) {
 	if am != 0 {
 		t.Fatalf("amPrinted=%d, want 0", am)
 	}
-	want := "[0/0]\n"
+	want := "<SECONDARY>[0/0]\n" + ansiReset
 	if out != want {
 		t.Fatalf("out=%q, want %q", out, want)
 	}
