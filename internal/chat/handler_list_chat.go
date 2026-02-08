@@ -246,15 +246,54 @@ func (cq *ChatHandler) printChatInfo(w io.Writer, chat pub_models.Chat) error {
 	if err != nil {
 		return fmt.Errorf("failed to create widthAppropriateChatSummary: %w", err)
 	}
-	fmt.Fprintf(w, actOnChatFormat,
-		filePath,
-		chat.Created,
-		messageTypeCounter["user"],
-		messageTypeCounter["tools"],
-		messageTypeCounter["system"],
-		messageTypeCounter["assistant"],
-		summary+"\"",
-	)
+
+	// Build colorized output according to theme.
+	header := utils.Colorize(utils.ThemePrimaryColor(), "=== Chat info ===")
+	fileKey := utils.Colorize(utils.ThemePrimaryColor(), "file path:")
+	createdKey := utils.Colorize(utils.ThemePrimaryColor(), "created_at:")
+	amRepliesKey := utils.Colorize(utils.ThemePrimaryColor(), "am replies:")
+	// Role labels colorized according to role palette.
+	userRole := utils.Colorize(utils.RoleColor("user"), "user:")
+	toolRole := utils.Colorize(utils.RoleColor("tool"), "tool:")
+	systemRole := utils.Colorize(utils.RoleColor("system"), "system:")
+	assistantRole := utils.Colorize(utils.RoleColor("assistant"), "assistant:")
+	// Values use breadtext color for readability.
+	bread := utils.ThemeBreadtextColor()
+
+	if _, err := fmt.Fprintf(w, "%s\n\n", header); err != nil {
+		return fmt.Errorf("write chat header: %w", err)
+	}
+	if _, err := fmt.Fprintf(w, "%s %s\n", fileKey, utils.Colorize(bread, filePath)); err != nil {
+		return fmt.Errorf("write file path: %w", err)
+	}
+	if _, err := fmt.Fprintf(w, "%s %s\n", createdKey, utils.Colorize(bread, fmt.Sprintf("%v", chat.Created))); err != nil {
+		return fmt.Errorf("write created at: %w", err)
+	}
+	if _, err := fmt.Fprintf(w, "%s\n", amRepliesKey); err != nil {
+		return fmt.Errorf("write am replies key: %w", err)
+	}
+	if _, err := fmt.Fprintf(w, "\t%s %s'%v'\n", userRole, utils.Colorize(bread, "   "), messageTypeCounter["user"]); err != nil {
+		return fmt.Errorf("write user replies: %w", err)
+	}
+	if _, err := fmt.Fprintf(w, "\t%s %s'%v'\n", toolRole, utils.Colorize(bread, "   "), messageTypeCounter["tools"]); err != nil {
+		return fmt.Errorf("write tool replies: %w", err)
+	}
+	if _, err := fmt.Fprintf(w, "\t%s %s'%v'\n", systemRole, utils.Colorize(bread, "  "), messageTypeCounter["system"]); err != nil {
+		return fmt.Errorf("write system replies: %w", err)
+	}
+	if _, err := fmt.Fprintf(w, "\t%s %s'%v'\n\n", assistantRole, utils.Colorize(bread, ""), messageTypeCounter["assistant"]); err != nil {
+		return fmt.Errorf("write assistant replies: %w", err)
+	}
+
+	if _, err := fmt.Fprintf(w, "%s\n\n", utils.Colorize(bread, summary+"\"")); err != nil {
+		return fmt.Errorf("write summary: %w", err)
+	}
+
+	choices := utils.Colorize(utils.ThemePrimaryColor(), "(make [p]revQuery (-re/-reply flag), go [b]ack to list, [e]dit messages, [d]elete messages, [q]uit, [<enter>] to continue): ")
+	if _, err := fmt.Fprint(w, choices); err != nil {
+		return fmt.Errorf("write choices: %w", err)
+	}
+
 	return nil
 }
 

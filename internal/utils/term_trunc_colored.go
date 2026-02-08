@@ -39,10 +39,7 @@ func fillRemainderOfTermWidthColored(prefix, remainder, prefixColor, truncColor 
 
 	// NOTE: prefix may already contain ANSI sequences (callers might pre-colorize).
 	// Do not let these escape sequences count towards the terminal width.
-	remainingWidth := termWidth - visibleRuneCount(prefix) - padding
-	if remainingWidth < 0 {
-		remainingWidth = 0
-	}
+	remainingWidth := max(termWidth-visibleRuneCount(prefix)-padding, 0)
 	widthAdjustedRemainder := ""
 	r := []rune(remainder)
 	if remainingWidth == 0 {
@@ -54,10 +51,7 @@ func fillRemainderOfTermWidthColored(prefix, remainder, prefixColor, truncColor 
 	} else {
 		avail := remainingWidth - infixLen
 		startLen := avail / 2
-		endLen := avail - startLen
-		if endLen < 0 {
-			endLen = 0
-		}
+		endLen := max(avail-startLen, 0)
 		if startLen < 0 {
 			startLen = 0
 		}
@@ -67,15 +61,12 @@ func fillRemainderOfTermWidthColored(prefix, remainder, prefixColor, truncColor 
 		if endLen > len(r)-startLen {
 			endLen = len(r) - startLen
 		}
-		endStart := len(r) - endLen
-		if endStart < 0 {
-			endStart = 0
-		}
+		endStart := max(len(r)-endLen, 0)
 
 		widthAdjustedRemainder = string(r[:startLen]) +
-			Colorize(truncColor, infix) +
+			infix +
 			string(r[endStart:])
 	}
 
-	return Colorize(prefixColor, prefix) + widthAdjustedRemainder
+	return Colorize(prefixColor, prefix) + Colorize(truncColor, widthAdjustedRemainder)
 }

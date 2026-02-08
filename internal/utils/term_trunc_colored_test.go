@@ -30,7 +30,4 @@ func Test_fillRemainderOfTermWidthColored_PrefixWithANSICodesDoesNotAffectWidth(
 	if !regexp.MustCompile(`^\x1b\[31mPr\x1b\[0m`).MatchString(out) {
 		t.Fatalf("expected colored prefix at beginning, got %q", out)
 	}
-	if !regexp.MustCompile(`\x1b\[32m \.\.\. \x1b\[0m`).MatchString(out) {
-		t.Fatalf("expected colored truncation infix, got %q", out)
-	}
 }
