@@ -58,7 +58,7 @@ func (a action) String() string {
 	}
 }
 
-const stage_0 = `Do you wish to configure:
+const stage0Raw = `Do you wish to configure:
 
   0. mode-files (example: <config>/.clai/textConfig.json- or photoConfig.json)
   1. model files (example: <config>/.clai/openai-gpt-4o.json, <config>/.clai/anthropic-claude-opus.json)
@@ -67,9 +67,34 @@ const stage_0 = `Do you wish to configure:
 
 [0/1/2/3]: `
 
+func stage0Colorized() string {
+	// We manually colorize rather than depending on a parser.
+	// Pattern (see COLOURS.md):
+	// - header/prefix: primary
+	// - interactive prompt: secondary
+	// - normal text rows: breadtext
+	return colorizeLines(stage0Raw, func(l string) (string, bool) {
+		switch {
+		case strings.HasPrefix(l, "Do you wish to configure"):
+			return colorPrimary(l), true
+		case strings.HasPrefix(strings.TrimSpace(l), "0.") || strings.HasPrefix(strings.TrimSpace(l), "1.") ||
+			strings.HasPrefix(strings.TrimSpace(l), "2.") || strings.HasPrefix(strings.TrimSpace(l), "3."):
+			return colorBreadtext(l), true
+		case strings.HasPrefix(l, "["):
+			return colorSecondary(l), true
+		default:
+			// Keep indentation and blank lines uncolored.
+			if strings.TrimSpace(l) != "" {
+				return colorBreadtext(l), true
+			}
+			return l, false
+		}
+	})
+}
+
 // SubCmd the setup to configure the different files
 func SubCmd() error {
-	fmt.Print(stage_0)
+	fmt.Print(stage0Colorized())
 
 	input, err := utils.ReadUserInput()
 	if err != nil {
@@ -170,15 +195,15 @@ func createProFile(profilePath string) (config, error) {
 	if _, err := os.Stat(profilePath); os.IsNotExist(err) {
 		os.MkdirAll(profilePath, os.ModePerm)
 	}
-	fmt.Print("Enter profile name: ")
+	fmt.Print(colorSecondary("Enter profile name: "))
 	profileName, err := utils.ReadUserInput()
 	if err != nil {
-		return config{}, err
+		return config{}, fmt.Errorf("read profile name: %w", err)
 	}
 	newProfilePath := path.Join(profilePath, fmt.Sprintf("%v.json", profileName))
 	err = utils.CreateFile(newProfilePath, &text.DefaultProfile)
 	if err != nil {
-		return config{}, err
+		return config{}, fmt.Errorf("create profile file: %w", err)
 	}
 	return config{
 		name:     profileName,
@@ -192,15 +217,15 @@ func createMcpServerFile(mcpServersPath string) (config, error) {
 	if _, err := os.Stat(mcpServersPath); os.IsNotExist(err) {
 		os.MkdirAll(mcpServersPath, os.ModePerm)
 	}
-	fmt.Print("Enter server name: ")
+	fmt.Print(colorSecondary("Enter server name: "))
 	serverName, err := utils.ReadUserInput()
 	if err != nil {
-		return config{}, err
+		return config{}, fmt.Errorf("read server name: %w", err)
 	}
 	newServerPath := path.Join(mcpServersPath, fmt.Sprintf("%v.json", serverName))
 	err = utils.CreateFile(newServerPath, &defaultMcpServer)
 	if err != nil {
-		return config{}, err
+		return config{}, fmt.Errorf("create mcp server file: %w", err)
 	}
 	return config{
 		name:     serverName,
