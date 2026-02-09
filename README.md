@@ -6,7 +6,7 @@
 Test coverage: 65.614% 😌👏
 <hr>
 <div align="center">
-  <p>`clai` (/klaɪ/, like "cli" in "**cli**mate") is a command line context-feeder for any ai task.</p>
+  <p><code>clai</code> (<i>/klaɪ/</i>, like "cli" in "<b>cli</b>mate") is a command line context-feeder for any ai task.</p>
 </div>
 
 <div align="center">
