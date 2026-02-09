@@ -8,7 +8,7 @@ There are two related mechanisms:
 
 1. **Conversation transcripts** stored on disk as JSON (so they can be replayed/inspected/edited later).
 2. **Reply context pointers**:
-   - `prevQuery.json` (global reply context)
+   - `globalScope.json` (global reply context)
    - directory-scoped bindings under `conversations/dirs/` (per-CWD reply context)
 
 Important behavioral change vs older versions:
@@ -105,7 +105,7 @@ This makes chats composable with normal shell tooling (pipes, redirects, history
 `clai query <prompt>`:
 
 - creates/updates a transcript
-- updates the global previous query (`prevQuery.json`)
+- updates the global previous query (`globalScope.json`)
 - updates the directory binding for the current working directory (CWD)
 
 Subsequent queries can be threaded using:
@@ -171,7 +171,7 @@ After selecting a chat, `actOnChat()` prints a details view and offers actions:
 
 - edit messages (via `$EDITOR`)
 - delete messages
-- save as `prevQuery.json`
+- save as `globalScope.json`
 
 No interactive chat session is started from this UI.
 
@@ -179,7 +179,7 @@ No interactive chat session is started from this UI.
 
 A special chat file is used for the global reply context:
 
-- `<clai-config>/conversations/prevQuery.json`
+- `<clai-config>/conversations/globalScope.json`
 
 Implemented in `internal/chat/reply.go`.
 
@@ -187,14 +187,14 @@ Implemented in `internal/chat/reply.go`.
 
 `SaveAsPreviousQuery(claiConfDir, msgs)` writes:
 
-- always: `prevQuery.json` with ID `prevQuery`
+- always: `globalScope.json` with ID `globalScope`
 - additionally (when `len(msgs) > 2`): saves a *new conversation file* derived from the first user message using `HashIDFromPrompt(firstUserMsg.Content)`
 
 This preserves one-off queries and optionally promotes richer exchanges into normal conversations.
 
 ### LoadPrevQuery
 
-Loads `prevQuery.json` (printing a warning if absent).
+Loads `globalScope.json` (printing a warning if absent).
 
 ## Directory-scoped replies
 

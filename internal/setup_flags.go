@@ -28,7 +28,7 @@ type Configurations struct {
 	ReplyMode     bool
 	// DirReplyMode enables directory-scoped reply mode.
 	// When true, the previous conversation is loaded from the directory binding
-	// instead of the global prevQuery.json.
+	// instead of the global globalScope.json.
 	DirReplyMode bool
 	// UseTools encodes tooling selection from CLI:
 	//   ""      => no override

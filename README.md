@@ -38,6 +38,10 @@ Install [Glow](https://github.com/charmbracelet/glow) for formatted markdown out
 
 ## Features
 
+<div align="center">
+  <img src="img/showcase.gif" alt="Showcase">
+</div>
+
 - **[MCP client support](./EXAMPLES.md#Tooling)** - Add any MCP server you'd like by simply pasting their configuration.
 - **Vendor agnosticism** - Use any functionality in Clai with [most LLM vendors](#supported-vendors) interchangeably.
 - **[Conversations](./EXAMPLES.md#Conversations)** - Create, manage and continue conversations.

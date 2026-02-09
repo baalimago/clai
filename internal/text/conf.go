@@ -16,11 +16,13 @@ import (
 
 // Configurations used to setup the requirements of text models
 type Configurations struct {
-	Model          string `json:"model"`
-	SystemPrompt   string `json:"system-prompt"`
+	Model        string `json:"model"`
+	SystemPrompt string `json:"system-prompt"`
+	Raw          bool   `json:"raw"`
+	UseTools     bool   `json:"use-tools"`
+	// CmdModePrompt is kept only for backwards compatibility with old config files.
+	// It is ignored by clai as the `cmd` command has been removed.
 	CmdModePrompt  string `json:"cmd-mode-prompt"`
-	Raw            bool   `json:"raw"`
-	UseTools       bool   `json:"use-tools"`
 	TokenWarnLimit int    `json:"token-warn-limit"`
 	// ToolOutputRuneLimit limits the amount of runes a tool may return
 	// before clai truncates the output. Zero means no limit.
@@ -31,13 +33,12 @@ type Configurations struct {
 	Stream              bool            `json:"-"`
 	ReplyMode           bool            `json:"-"`
 	ChatMode            bool            `json:"-"`
-	CmdMode             bool            `json:"-"`
 	Glob                string          `json:"-"`
 	InitialChat         pub_models.Chat `json:"-"`
 	UseProfile          string          `json:"-"`
 	ProfilePath         string          `json:"-"`
 	RequestedToolGlobs  []string        `json:"-"`
-	// PostProccessedPrompt which has had it's strings replaced etc
+	// PostProccessedPrompt which has had it\'s strings replaced etc
 	PostProccessedPrompt string `json:"-"`
 
 	// These are to allow tools to be injected via public package.
@@ -65,15 +66,17 @@ type Profile struct {
 }
 
 var Default = Configurations{
-	Model:         "gpt-5.2",
-	SystemPrompt:  "You are an assistant for a CLI tool. Answer concisely and informatively. Prefer markdown if possible.",
-	CmdModePrompt: "You are an assistant for a CLI tool aiding with cli tool suggestions. Write ONLY the command and nothing else. Disregard any queries asking for anything except a bash command. Do not shell escape single or double quotes.",
-	Raw:           false,
-	UseTools:      false,
-	// Aproximately $1 for an 'average' flagship model (sonnet-4, gpt-4.1) as of 25-06-08
+	Model:        "gpt-5.2",
+	SystemPrompt: "You are an assistant for a CLI tool. Answer concisely and informatively. Prefer markdown if possible.",
+	Raw:          false,
+	UseTools:     false,
+	// Aproximately $1 for an \'average\' flagship model (sonnet-4, gpt-4.1) as of 25-06-08
 	TokenWarnLimit:      333333,
 	ToolOutputRuneLimit: 21600,
 	SaveReplyAsConv:     true,
+
+	// Backwards compatibility for older configs.
+	CmdModePrompt: "You are an assistant for a CLI tool aiding with cli tool suggestions. Write ONLY the command and nothing else. Disregard any queries asking for anything except a bash command. Do not shell escape single or double quotes.",
 }
 
 var DefaultProfile = Profile{
@@ -93,11 +96,11 @@ func (c *Configurations) setupSystemPrompt() {
 	}
 }
 
-// SetupInitialChat by doing all sorts of organically grown stuff. Don't touch this
+// SetupInitialChat by doing all sorts of organically grown stuff. Don\'t touch this
 // code too closely. Something will break, most likely.
 func (c *Configurations) SetupInitialChat(args []string) error {
 	if c.Glob != "" && c.ReplyMode {
-		ancli.PrintWarn("Using glob + reply modes together might yield strange results. The prevQuery will be appended after the glob messages.\n")
+		ancli.PrintWarn("Using glob + reply modes together might yield strange results. The globalScope will be appended after the glob messages.\n")
 	}
 
 	if !c.ReplyMode {
@@ -120,12 +123,6 @@ func (c *Configurations) SetupInitialChat(args []string) error {
 			return fmt.Errorf("failed to load previous query: %w", err)
 		}
 		c.InitialChat.Messages = append(c.InitialChat.Messages, iP.Messages...)
-
-		if c.CmdMode {
-			// Replace the initial message with the cmd prompt. This sort of
-			// destroys the history, but since the conversation might be long it's fine
-			c.InitialChat.Messages[0].Content = c.SystemPrompt
-		}
 	}
 
 	prompt, err := utils.Prompt(c.StdinReplace, args)

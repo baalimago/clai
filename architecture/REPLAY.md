@@ -2,7 +2,7 @@
 
 Commands:
 
-- `clai replay` (aliases: `re`) – replay the most recent message from the global previous query (`prevQuery.json`).
+- `clai replay` (aliases: `re`) – replay the most recent message from the global previous query (`globalScope.json`).
 - `clai dre` – replay the most recent message from the *directory-scoped* conversation bound to the current working directory.
 
 These are *display* commands; they don’t call any LLM vendor.
@@ -41,7 +41,7 @@ main.go:run()
 | `internal/dre.go` | Implements `dreQuerier` and `setupDRE` |
 | `internal/chat/replay.go` | Implements `chat.Replay(raw, dirScoped)` |
 | `internal/chat/dirscope.go` | Directory binding resolution needed for dir-scoped replay |
-| `internal/chat/reply.go` | Stores/loads `prevQuery.json` |
+| `internal/chat/reply.go` | Stores/loads `globalScope.json` |
 | `internal/utils/pretty_print.go` (or similar) | `AttemptPrettyPrint` (glow formatting, raw mode) |
 
 ## What gets replayed
@@ -50,11 +50,11 @@ main.go:run()
 
 `chat.Replay(raw=false, dirScoped=false)`:
 
-1. Loads `<clai-config>/conversations/prevQuery.json` via `LoadPrevQuery("")`.
+1. Loads `<clai-config>/conversations/globalScope.json` via `LoadPrevQuery("")`.
 2. Selects the last message in the transcript.
 3. Pretty prints it via `utils.AttemptPrettyPrint(..., raw)`.
 
-If `prevQuery.json` is missing, `LoadPrevQuery` prints a warning (`no previous query found`) and returns an empty chat.
+If `globalScope.json` is missing, `LoadPrevQuery` prints a warning (`no previous query found`) and returns an empty chat.
 
 ### Directory-scoped replay (`clai dre`)
 
@@ -75,7 +75,7 @@ Both `replay` and `dre` honor `-r/-raw`:
 
 ## Relationship to query reply flags
 
-- `-re` (reply mode) *uses* `prevQuery.json` as context for the next query.
-- `-dre` (dir-reply mode) is implemented by copying the directory-scoped conversation into `prevQuery.json` (see `SaveDirScopedAsPrevQuery`) and then using the normal `-re` plumbing.
+- `-re` (reply mode) *uses* `globalScope.json` as context for the next query.
+- `-dre` (dir-reply mode) is implemented by copying the directory-scoped conversation into `globalScope.json` (see `SaveDirScopedAsPrevQuery`) and then using the normal `-re` plumbing.
 
 So `replay`/`dre` are for inspection; `-re`/`-dre` are for context selection.

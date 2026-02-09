@@ -30,7 +30,7 @@ Commands:
   c|continue <chatID> <prompt>    Continue an existing chat with the given chat ID. Prompt is optional
   d|delete   <chatID>             Delete the chat with the given chat ID.
   l|list                          List all existing chats.
-  dir                             Show chat info for CWD (dir binding or global prevQuery).
+  dir                             Show chat info for CWD (dir binding or global globalScope).
 
 The chatID is the 5 first words of the prompt joined by underscores. Easiest
 way to get the chatID is to list all chats with 'clai chat list'. You may also select

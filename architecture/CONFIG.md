@@ -108,7 +108,7 @@ Profiles are applied inside `text.Configurations.ProfileOverrides()` (see `inter
 Stored under:
 
 - `<config>/conversations/*.json`
-- `<config>/conversations/prevQuery.json` (global reply context)
+- `<config>/conversations/globalScope.json` (global reply context)
 - `<config>/conversations/dirs/*` (directory-scoped binding metadata)
 
 These are described in `architecture/CHAT.md`.
@@ -154,7 +154,7 @@ For **text** the important override functions are:
 Key behaviors:
 
 - default flags should *not* override file values; overrides only happen when the user provided a non-default flag value.
-- `-dre` is implemented in `internal.Setup` by copying the directory-scoped conversation into `prevQuery.json` and then turning on reply mode.
+- `-dre` is implemented in `internal.Setup` by copying the directory-scoped conversation into `globalScope.json` and then turning on reply mode.
 
 ### Tool selection configuration
 
@@ -185,7 +185,7 @@ Notable rules:
   - `chat.SaveDirScopedAsPrevQuery(confDir)`
   - flips reply mode on
 
-This means the rest of the system only needs to understand one reply mechanism: loading `prevQuery.json`.
+This means the rest of the system only needs to understand one reply mechanism: loading `globalScope.json`.
 
 ## Non-text config flows
 

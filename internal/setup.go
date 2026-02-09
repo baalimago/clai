@@ -39,7 +39,6 @@ const (
 	VIDEO
 	VERSION
 	SETUP
-	CMD
 	REPLAY
 	DIRSCOPED_REPLAY
 	TOOLS
@@ -100,11 +99,9 @@ func getCmdFromArgs(args []string) (Mode, error) {
 		return SETUP, nil
 	case "version":
 		return VERSION, nil
-	case "cmd":
-		return CMD, nil
 	case "replay", "re":
 		return REPLAY, nil
-	case "dre":
+	case "dir-replay", "dre":
 		return DIRSCOPED_REPLAY, nil
 	case "tools", "t":
 		return TOOLS, nil
@@ -195,11 +192,6 @@ func setupTextQuerierWithConf(ctx context.Context, mode Mode, confDir string, fl
 	}
 	if mode == CHAT {
 		tConf.ChatMode = true
-	}
-
-	if mode == CMD {
-		tConf.CmdMode = true
-		tConf.SystemPrompt = tConf.CmdModePrompt
 	}
 
 	// At the moment, the configurations are based on the config file. But
@@ -294,9 +286,9 @@ func Setup(ctx context.Context, usage string, allArgs []string) (models.Querier,
 	}
 
 	switch mode {
-	case CHAT, QUERY, GLOB, CMD:
+	case CHAT, QUERY, GLOB:
 		// If directory reply mode is requested we first copy the directory-scoped
-		// conversation into prevQuery.json so that the existing reply flow can reuse it.
+		// conversation into globalScope.json so that the existing reply flow can reuse it.
 		if mode == QUERY && postFlagConf.DirReplyMode {
 			_, err := chat.SaveDirScopedAsPrevQuery(claiConfDir)
 			if err != nil {
@@ -340,7 +332,7 @@ func Setup(ctx context.Context, usage string, allArgs []string) (models.Querier,
 		}
 		applyFlagOverridesForVideo(&vConf, postFlagConf, defaultFlags)
 
-		err = vConf.SetupPrompts()
+		err = vConf.SetupPrompts(postFlagArgs)
 		if err != nil {
 			return nil, fmt.Errorf("failed to setup prompt: %v", err)
 		}
@@ -361,7 +353,7 @@ func Setup(ctx context.Context, usage string, allArgs []string) (models.Querier,
 		if misc.Truthy(os.Getenv("DEBUG")) {
 			ancli.PrintOK(fmt.Sprintf("photoConfig post override: %+v\n", pConf))
 		}
-		err = pConf.SetupPrompts()
+		err = pConf.SetupPrompts(postFlagArgs)
 		if err != nil {
 			return nil, fmt.Errorf("failed to setup prompt: %v", err)
 		}

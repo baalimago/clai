@@ -23,7 +23,7 @@ func TestReplyMode_AttachesProfileToPrevQueryConversation(t *testing.T) {
 		shouldSaveReply: true,
 		configDir:       tmpConfigDir,
 		chat: pub_models.Chat{
-			ID:      "prevQuery",
+			ID:      "globalScope",
 			Profile: "gopher",
 			Messages: []pub_models.Message{
 				{Role: "system", Content: "prior"},
@@ -50,6 +50,6 @@ func TestReplyMode_AttachesProfileToPrevQueryConversation(t *testing.T) {
 		t.Fatalf("load prevquery: %v", err)
 	}
 	if prev.Profile != "gopher" {
-		t.Fatalf("expected prevQuery to have profile %q, got %q", "gopher", prev.Profile)
+		t.Fatalf("expected globalScope to have profile %q, got %q", "gopher", prev.Profile)
 	}
 }

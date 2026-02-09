@@ -69,13 +69,8 @@ func (c *Configurations) ProfileOverrides() error {
 	}
 
 	c.Model = profile.Model
-	newPrompt := profile.Prompt
-	if c.CmdMode {
-		// SystmePrompt here is CmdPrompt, keep it and remind llm to only suggest  cmd
-		newPrompt = fmt.Sprintf("You will get this pattern: || <cmd-prompt> | <custom guided profile> ||. It is VERY vital that you DO NOT disobey the <cmd-prompt> with whatever is posted in <custom guided profile>. || %v| %v ||", c.CmdModePrompt, profile.Prompt)
-	}
-	c.SystemPrompt = newPrompt
-	c.UseTools = (profile.UseTools && !c.CmdMode) || (len(profile.McpServers) > 0)
+	c.SystemPrompt = profile.Prompt
+	c.UseTools = profile.UseTools || (len(profile.McpServers) > 0)
 	c.RequestedToolGlobs = profile.Tools
 	c.SaveReplyAsConv = profile.SaveReplyAsConv
 	mcpServers := make([]models.McpServer, 0)

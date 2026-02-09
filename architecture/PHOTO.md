@@ -70,7 +70,7 @@ main.go:run()
 
 `Configurations.SetupPrompts()` in `internal/photo/prompt.go`:
 
-1. If **reply mode** (`-re`): loads `prevQuery.json`, serializes messages as JSON context, prepends to prompt
+1. If **reply mode** (`-re`): loads `globalScope.json`, serializes messages as JSON context, prepends to prompt
 2. Calls `utils.Prompt(stdinReplace, args)` to build user prompt from CLI args + stdin
 3. Formats prompt through `PromptFormat` (e.g., wrapping in the "AS-IS" instruction)
 
