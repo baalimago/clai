@@ -1,208 +1,124 @@
 # Examples
 
-These examples build up from “one-shot prompts” to replies, directory-scoped conversations, tools, and multimodal.
+Dive deeper into the subject you're interested in by seeing the different files in the [./architecture](./architecture), see links below.
 
-> Notes
->
-> - There is **no interactive chat loop**: each command is one turn and exits.
-> - clai stores transcripts under `<clai-config>/conversations/` and uses `globalScope.json` for replies.
-
-## 1) One-shot text query
-
-Ask a question:
+## Query + reply + directory reply
 
 ```bash
-clai query "Explain big-O in one paragraph"
-# alias: clai q "..."
+clai query "Explain the design"
+clai -re query "Now give the trade-offs"
+clai -dre query "Apply it to this repo"
 ```
 
-- Streams the answer to stdout.
-- Saves context to `<clai-config>/conversations/globalScope.json`.
-- Also writes a conversation transcript `<clai-config>/conversations/<chatID>.json`.
+- `query` saves reply context to `<clai-config>/conversations/globalScope.json`.
+- Non-reply queries also bind CWD → chat ID (dir-scope).
+- `-re` loads `globalScope.json` as context.
+- `-dre` first copies the directory-bound chat into `globalScope.json`, then uses normal `-re` plumbing.
 
-## 2) Use stdin as the prompt
+See: [`QUERY.md`](./architecture/QUERY.md), [`CHAT.md`](./architecture/CHAT.md), [`DRE.md`](./architecture/DRE.md).
 
-Pipe text into clai:
+## Inspect “what did it say last time?”
 
 ```bash
-cat notes.txt | clai query Summarize:
+clai replay     # last message from globalScope.json
+clai dre        # last message from directory-bound chat
+clai -r replay  # raw (no pretty/glow)
 ```
 
-If stdin is piped and **no args** are provided, stdin becomes the prompt.
+- `replay` and `dre` do not call any LLM.
+- They load a chat transcript and pretty-print the last message.
 
-## 3) Reply to the previous query (`-re`)
+See: [`REPLAY.md`](./architecture/REPLAY.md), [`DRE.md`](./architecture/DRE.md).
 
-Continue from the last run (global):
-
-```bash
-clai -re query "Now rewrite that as bullet points"
-```
-
-This loads `<clai-config>/conversations/globalScope.json` and prepends it as context.
-
-## 4) Inspect the most recent message
-
-Replay the last message from the global previous query:
-
-```bash
-clai replay
-# alias: clai re
-```
-
-Raw (no pretty-print/glow):
-
-```bash
-clai -r replay
-```
-
-## 5) Directory-scoped replies (`-dre`)
-
-clai also tracks a conversation bound to your current working directory (CWD).
-
-After you run a normal (non-reply) query in a directory, that chat becomes the directory binding.
-
-Reply using the directory-bound conversation:
-
-```bash
-clai -dre query "Continue, but apply it to this project"
-```
-
-Show the last message from the directory-bound conversation:
-
-```bash
-clai dre
-```
-
-If nothing is bound, `dre` errors with:
-
-```text
-no directory-scoped conversation bound to current directory
-```
-
-## 6) List and continue an older conversation
-
-List saved conversations:
+## Bind a previous conversation to the current directory
 
 ```bash
 clai chat list
-```
-
-Bind an existing chat to the current directory (by index from the list):
-
-```bash
 clai chat continue 3
+clai -dre query "Continue from that context"
 ```
 
-Optionally append a new prompt while continuing:
+- `chat continue <index|id>` selects an existing transcript and stores a directory binding.
+- After that, `-dre` in this directory uses that conversation as context.
 
-```bash
-clai chat continue 3 "What did we decide about the approach?"
-```
+See: [`CHAT.md`](./architecture/CHAT.md).
 
-After binding, you can continue from that chat in this directory with:
-
-```bash
-clai -dre query "Ok—next steps?"
-```
-
-## 7) Use a profile (workflow preset)
-
-Profiles live under `<clai-config>/profiles/*.json` and can override model/prompt/tool defaults.
-
-List profiles:
+## Profiles = workflow presets
 
 ```bash
 clai profiles list
+clai -p ops query "Find the owners of this subsystem"
 ```
 
-Run a query with a profile:
+- Profiles live in `<clai-config>/profiles/*.json`.
+- They can override model, prompts, and requested tools.
+- These are colliqualy "agent configurations"
 
-```bash
-clai -p "my-profile" query "Draft a design note"
-```
+See: [`PROFILES.md`](./architecture/PROFILES.md), [`CONFIG.md`](./architecture/CONFIG.md).
 
-## 8) See and select tools
+Also see examples:
 
-List tools available to the runtime:
+- [ops](./examples/profiles/ops.json) - This agent can answer any question about your company's systems and customers
+- [tradebot](./examples/profiles/trade-bot.json) - Fully functional polymarket trade bot, defined as json. Swap prompt and model, try it out!
+
+## Tools: inspect vs enable
 
 ```bash
 clai tools
-```
-
-Show the JSON schema for a specific tool:
-
-```bash
 clai tools rg
+clai -t "rg,cat" query "Search for parsing logic and show me the file"
 ```
 
-Allow tool calling for a run:
+- `clai tools` is inspection only.
+- `-t` enables tool calling for that _run_; without it, tool calls are disabled.
+- `-t "*"` allows all registered tools.
+
+See: [`TOOLS.md`](./architecture/TOOLS.md), [`TOOLING.md`](./architecture/TOOLING.md), [`CONFIG.md`](./architecture/CONFIG.md).
+
+## MCP tools (external tool servers)
 
 ```bash
-clai -t "rg,cat" query "Search for where Configurations is defined and show the relevant file"
+clai setup      # stage 3: MCP server configs
+clai -t "mcp_linear*" query "List open incidents assigned to me"
 ```
 
-Allow _all_ tools:
+- MCP server configs are stored in `<clai-config>/mcpServers/*.json`.
+- MCP tool names are typically `mcp_<server>_<tool>` (and can be globbed).
 
-```bash
-clai -t "*" query "Inspect this repo and explain how setup works"
-```
+See: [`TOOLING.md`](./architecture/TOOLING.md), [`SETUP.md`](./architecture/SETUP.md).
 
-Tool calling is only possible when tools are enabled/allowed for that run.
-
-You may also import and append mcp servers, see `clai setup -> 3`.
-These are stored in `<clai-config>/mcpServers/*.json`.
-Use all, or some, mcp servers with glob selection.
-Example:
-
-- `mcp_linear*` -> Use all tools from mcp server `linear.json`
-- `mcp_filesystem_write_file` -> Use only `write_file` tool from mcp server `filesystem`
-
-## 9) Generate a shell command (`cmd`)
-
-Ask for a bash command (cmd mode changes the system prompt and adds an execute/quit confirmation):
+## Cmd mode: generate a shell command safely
 
 ```bash
 clai cmd "find all .go files changed in the last commit"
 ```
 
-After the model outputs the command, clai asks:
+- Uses a “bash only” prompt.
+- After streaming, prompts: execute vs quit.
+- Still uses the normal text pipeline; it’s a specialized configuration.
 
-```text
-Do you want to [e]xecute cmd, [q]uit?:
-```
+See: [`CMD.md`](./architecture/CMD.md).
 
-## 10) Generate an image (`photo`)
-
-Generate an image from text:
+## Multimodal: photo + video
 
 ```bash
-clai photo "A simple diagram of a request/response cycle"
-```
+clai photo "A minimal architecture diagram"
+clai -re photo "Now simplify it further"
 
-Output behavior is controlled by `photoConfig.json` (save locally vs print URL).
-
-Reply mode also works for photo:
-
-```bash
-clai -re photo "Now make it more minimal"
-```
-
-## 11) Generate a video (`video`)
-
-Generate a video from text:
-
-```bash
 clai video "A slow pan across a terminal showing streaming output"
 ```
 
-If your prompt contains a base64 image, clai can treat it as an input image for image-to-video (model-dependent).
+- `photo`/`video` have separate mode configs: `photoConfig.json`, `videoConfig.json`.
+- Output can be saved locally or printed as a URL, depending on config.
 
-## 12) Raw vs pretty output (`-r`)
+See: [`PHOTO.md`](./architecture/PHOTO.md), [`VIDEO.md`](./architecture/VIDEO.md), [`CONFIG.md`](./architecture/CONFIG.md).
 
-Most commands that print model output support raw printing:
+## Streaming: one normalized event loop
 
-```bash
-clai -r query "Output markdown without formatting"
-```
+- All vendors map their streaming responses to a small set of normalized events:
+  - `string` text deltas
+  - tool call events
+  - stop/no-op/error events
+- The querier loop is vendor-agnostic: it prints deltas, executes tools, and finalizes output.
 
-Non-raw mode attempts pretty printing (and uses `glow` if installed).
+See: [`STREAMING.md`](./architecture/STREAMING.md), [`QUERY.md`](./architecture/QUERY.md).

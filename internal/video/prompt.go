@@ -13,14 +13,15 @@ import (
 )
 
 func (c *Configurations) SetupPrompts(args []string) error {
+	prefix := ""
 	if c.ReplyMode {
 		confDir, err := utils.GetClaiConfigDir()
 		if err != nil {
-			return fmt.Errorf("failed to get config dir: %w", err)
+			return fmt.Errorf("get config dir: %w", err)
 		}
 		iP, err := chat.LoadPrevQuery(confDir)
 		if err != nil {
-			return fmt.Errorf("failed to load previous query: %w", err)
+			return fmt.Errorf("load previous query: %w", err)
 		}
 		if len(iP.Messages) > 0 {
 			replyMessages := "You will be given a serie of messages from different roles, then a prompt descibing what to do with these messages. "
@@ -29,44 +30,56 @@ func (c *Configurations) SetupPrompts(args []string) error {
 			replyMessages += "The roles are 'system' and 'user'. "
 			b, err := json.Marshal(iP.Messages)
 			if err != nil {
-				return fmt.Errorf("failed to encode reply JSON: %w", err)
+				return fmt.Errorf("encode reply JSON: %w", err)
 			}
 			replyMessages = fmt.Sprintf("%vMessages:\n%v\n-------------\n", replyMessages, string(b))
-			c.Prompt += replyMessages
+			prefix = replyMessages
 		}
 	}
+
 	prompt, err := utils.Prompt(c.StdinReplace, args)
 	if err != nil {
-		return fmt.Errorf("failed to setup prompt from stdin: %w", err)
+		return fmt.Errorf("setup prompt from stdin/args: %w", err)
 	}
-	chat, err := chat.PromptToImageMessage(prompt)
+
+	msgs, err := chat.PromptToImageMessage(prompt)
 	if err != nil {
-		return fmt.Errorf("failed to convert to chat with image message")
+		return fmt.Errorf("convert prompt to image message: %w", err)
 	}
+
+	// Default to the full prompt; if PromptToImageMessage extracted a text part,
+	// we use that, but we must not end up with an empty prompt for normal text input.
+	plainPrompt := prompt
+
 	isImagePrompt := false
-	for _, m := range chat {
+	for _, m := range msgs {
 		for _, cp := range m.ContentParts {
-			if cp.Type == "image_url" {
+			switch cp.Type {
+			case "image_url":
 				isImagePrompt = true
 				c.PromptImageB64 = cp.ImageB64.RawB64
-			}
-			if cp.Type == "text" {
-				c.Prompt = cp.Text
+			case "text":
+				if cp.Text != "" {
+					plainPrompt = cp.Text
+				}
 			}
 		}
 	}
+
 	if misc.Truthy(os.Getenv("DEBUG")) {
 		ancli.PrintOK(fmt.Sprintf("format: '%v', prompt: '%v'\n", c.PromptFormat, prompt))
 	}
-	// Don't do additional weird stuff if it's an image prompt
+
+	// For image prompts we don't add reply prefixes or formatting.
 	if isImagePrompt {
+		c.Prompt = plainPrompt
 		return nil
 	}
-	// If prompt format has %v, formatting it, otherwise just appending
+
 	if strings.Contains(c.PromptFormat, "%v") {
-		c.Prompt += fmt.Sprintf(c.PromptFormat, prompt)
-	} else {
-		c.Prompt += prompt
+		plainPrompt = fmt.Sprintf(c.PromptFormat, plainPrompt)
 	}
+
+	c.Prompt = prefix + plainPrompt
 	return nil
 }
