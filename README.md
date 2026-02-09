@@ -42,10 +42,10 @@ Install [Glow](https://github.com/charmbracelet/glow) for formatted markdown out
   <img src="img/showcase.gif" alt="Showcase">
 </div>
 
-- **[MCP client support](./EXAMPLES.md#Tooling)** - Add any MCP server you'd like by simply pasting their configuration.
+- **[MCP client support](./EXAMPLES.md#mcp-tools-external-tool-servers)** - Add any MCP server you'd like by simply pasting their configuration.
 - **Vendor agnosticism** - Use any functionality in Clai with [most LLM vendors](#supported-vendors) interchangeably.
-- **[Conversations](./EXAMPLES.md#Conversations)** - Create, manage and continue conversations.
-- **[Profiles](./EXAMPLES.md#Profiles)** - Pre-prompted profiles enabling customized workflows and agents.
+- **[Conversations](./EXAMPLES.md#bind-a-previous-conversation-to-the-current-directory)** - Create, manage and continue conversations.
+- **[Profiles](./EXAMPLES.md#profiles--workflow-presets)** - Pre-prompted profiles enabling customized workflows and agents.
 - **Unix-like** - Clai follows the [unix philosophy](https://en.wikipedia.org/wiki/Unix_philosophy) and works seamlessly with data piped in and out.
 
 All of these features are easily combined and tweaked, empowering users to accomplish very diverse use cases.
