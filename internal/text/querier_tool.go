@@ -56,7 +56,7 @@ func (q *Querier[C]) prefixToolCallsRemaining(out string) (string, error) {
 	}
 
 	return fmt.Sprintf("[ Tool calls remaining: %v ] %v",
-			(*q.maxToolCalls-q.amToolCalls), out),
+			(*q.maxToolCalls - q.amToolCalls), out),
 		nil
 }
 

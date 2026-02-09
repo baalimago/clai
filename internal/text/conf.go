@@ -66,7 +66,7 @@ type Profile struct {
 }
 
 var Default = Configurations{
-	Model:       "gpt-5.2",
+	Model:        "gpt-5.2",
 	SystemPrompt: "You are an assistant for a CLI tool. Answer concisely and informatively. Prefer markdown if possible.",
 	Raw:          false,
 	UseTools:     false,
