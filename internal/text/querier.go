@@ -42,7 +42,6 @@ type Querier[C models.StreamCompleter] struct {
 	Model                   C
 	tokenWarnLimit          int
 	toolOutputRuneLimit     int
-	cmdMode                 bool
 	execErr                 error
 	rateLimitRetries        int
 	rateLimitLastAmTokens   int
@@ -91,15 +90,15 @@ func (q *Querier[C]) handleRateLimitErr(ctx context.Context, rateLimitErr models
 		// Retry by using the new chat and querying once more. Will fill call stack.
 		q.reset()
 		return q.Query(ctx)
-	} else {
-		// No fancy logic, just sleep a while
-		ancli.Warnf("detected rate limit at: %v tokens, will sleep until: %v\n", rateLimitErr.TokensRemaining, rateLimitErr.ResetAt)
-		time.Sleep(time.Until(rateLimitErr.ResetAt.Add(time.Second * 10)))
-		// Recursively call. This will look a bit wonky but should cause no side effects as post process
-		// deferral is called below
-		q.reset()
-		return q.Query(ctx)
 	}
+
+	// No fancy logic, just sleep a while
+	ancli.Warnf("detected rate limit at: %v tokens, will sleep until: %v\n", rateLimitErr.TokensRemaining, rateLimitErr.ResetAt)
+	time.Sleep(time.Until(rateLimitErr.ResetAt.Add(time.Second * 10)))
+	// Recursively call. This will look a bit wonky but should cause no side effects as post process
+	// deferral is called below
+	q.reset()
+	return q.Query(ctx)
 }
 
 func (q *Querier[C]) tokenLengthWarning() error {
@@ -112,7 +111,6 @@ func (q *Querier[C]) tokenLengthWarning() error {
 				float64(amTokens)*(float64(3)/float64(1000000)),
 				path.Join(q.configDir, "textConfig.json"),
 			))
-		var userInput string
 		reader := bufio.NewReader(os.Stdin)
 		userInput, err := reader.ReadString('\n')
 		if err != nil {
@@ -180,15 +178,6 @@ func (q *Querier[C]) postProcess() {
 
 	// Nothing to render if message is empty (happens during tool calls sometimes)
 	if q.fullMsg == "" {
-		return
-	}
-
-	// Cmd mode is a bit of a hack, it will handle all output
-	if q.cmdMode {
-		err := q.handleCmdMode()
-		if err != nil {
-			ancli.PrintErr(fmt.Sprintf("Querier.postProcess: %v\n", err))
-		}
 		return
 	}
 

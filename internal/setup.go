@@ -39,7 +39,6 @@ const (
 	VIDEO
 	VERSION
 	SETUP
-	CMD
 	REPLAY
 	DIRSCOPED_REPLAY
 	TOOLS
@@ -100,8 +99,6 @@ func getCmdFromArgs(args []string) (Mode, error) {
 		return SETUP, nil
 	case "version":
 		return VERSION, nil
-	case "cmd":
-		return CMD, nil
 	case "replay", "re":
 		return REPLAY, nil
 	case "dir-replay", "dre":
@@ -197,11 +194,6 @@ func setupTextQuerierWithConf(ctx context.Context, mode Mode, confDir string, fl
 		tConf.ChatMode = true
 	}
 
-	if mode == CMD {
-		tConf.CmdMode = true
-		tConf.SystemPrompt = tConf.CmdModePrompt
-	}
-
 	// At the moment, the configurations are based on the config file. But
 	// the configuration presecende is flags > file > default. So, we need
 	// to re-apply the flag overrides to the configuration
@@ -294,7 +286,7 @@ func Setup(ctx context.Context, usage string, allArgs []string) (models.Querier,
 	}
 
 	switch mode {
-	case CHAT, QUERY, GLOB, CMD:
+	case CHAT, QUERY, GLOB:
 		// If directory reply mode is requested we first copy the directory-scoped
 		// conversation into globalScope.json so that the existing reply flow can reuse it.
 		if mode == QUERY && postFlagConf.DirReplyMode {

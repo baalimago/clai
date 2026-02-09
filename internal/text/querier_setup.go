@@ -73,12 +73,11 @@ func vendorType(fromModel string) (string, string, string, error) {
 		split := strings.Split(fromModel, ":")
 		if len(split) < 3 {
 			return "huggingface", fromModel, "", nil
-		} else {
-			// Format is: "hf:<model>:<inference provider>"
-			// So we return modelVersion as split[1], and inference provider as "model"
-			// The model is currently (26-01) only semantic, so it has no other usecase, so it works for now
-			return split[0], split[2], split[1], nil
 		}
+		// Format is: "hf:<model>:<inference provider>"
+		// So we return modelVersion as split[1], and inference provider as "model"
+		// The model is currently (26-01) only semantic, so it has no other usecase, so it works for now
+		return split[0], split[2], split[1], nil
 	}
 
 	return "", "", "", fmt.Errorf("failed to find vendor for: %v", fromModel)
@@ -170,7 +169,6 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	// Ensure profile selection is persisted in globalScope/saved conversations.
 	querier.chat.Profile = userConf.UseProfile
 	querier.Raw = userConf.Raw
-	querier.cmdMode = userConf.CmdMode
 	querier.shouldSaveReply = !userConf.ChatMode && userConf.SaveReplyAsConv
 	querier.tokenWarnLimit = userConf.TokenWarnLimit
 	querier.toolOutputRuneLimit = userConf.ToolOutputRuneLimit

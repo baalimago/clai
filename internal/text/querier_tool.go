@@ -56,7 +56,7 @@ func (q *Querier[C]) prefixToolCallsRemaining(out string) (string, error) {
 	}
 
 	return fmt.Sprintf("[ Tool calls remaining: %v ] %v",
-			(*q.maxToolCalls - q.amToolCalls), out),
+			(*q.maxToolCalls-q.amToolCalls), out),
 		nil
 }
 
@@ -157,10 +157,6 @@ func (q *Querier[C]) doToolCallLogic(call pub_models.Call) error {
 
 // handleToolCall by invoking the call, and then resondng to the ai with the output
 func (q *Querier[C]) handleToolCall(ctx context.Context, call pub_models.Call) error {
-	if q.cmdMode {
-		return errors.New("cant call tools in cmd mode")
-	}
-
 	if q.debug || misc.Truthy(os.Getenv("DEBUG_CALL")) {
 		ancli.PrintOK(fmt.Sprintf("received tool call: %v", debug.IndentedJsonFmt(call)))
 	}

@@ -87,18 +87,6 @@ clai -t "mcp_linear*" query "List open incidents assigned to me"
 
 See: [`TOOLING.md`](./architecture/TOOLING.md), [`SETUP.md`](./architecture/SETUP.md).
 
-## Cmd mode: generate a shell command safely
-
-```bash
-clai cmd "find all .go files changed in the last commit"
-```
-
-- Uses a “bash only” prompt.
-- After streaming, prompts: execute vs quit.
-- Still uses the normal text pipeline; it’s a specialized configuration.
-
-See: [`CMD.md`](./architecture/CMD.md).
-
 ## Multimodal: photo + video
 
 ```bash
