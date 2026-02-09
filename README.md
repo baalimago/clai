@@ -5,7 +5,9 @@
 
 Test coverage: 65.614% 😌👏
 
-`clai` (/klaɪ/, like "cli" in "**cli**mate") is a command line context-feeder for any ai task.
+<div align="center">
+  <p>`clai` (/klaɪ/, like "cli" in "**cli**mate") is a command line context-feeder for any ai task.</p>
+</div>
 
 <div align="center">
   <img src="img/banner.jpg" alt="Banner">
