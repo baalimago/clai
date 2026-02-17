@@ -8,13 +8,13 @@ import (
 	"net/http"
 	"os"
 
+	"context"
 	"github.com/baalimago/clai/internal/chat"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/photo"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
-	"golang.org/x/net/context"
 )
 
 // Behold, a multi-billion dollar company API request/resonse schema
