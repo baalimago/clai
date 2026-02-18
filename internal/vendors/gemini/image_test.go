@@ -246,7 +246,7 @@ func TestQueryNoImageInResponse(t *testing.T) {
 		Candidates: []Candidate{
 			{Content: Content{
 				Parts: []Part{
-					{Text: ptr("hi")},
+					{Text: new("hi")},
 				},
 			}},
 		},
@@ -284,5 +284,3 @@ func TestQueryNoImageInResponse(t *testing.T) {
 		t.Fatalf("err %v", err)
 	}
 }
-
-func ptr(s string) *string { return &s }

@@ -85,7 +85,7 @@ func (r RipGrepTool) Call(input pub_models.Input) (string, error) {
 		// exit status 1 is not found, and not to be considered an error
 		if err.Error() == "exit status 1" {
 			err = nil
-			output = []byte(fmt.Sprintf("found no hits with pattern: '%s'", pattern))
+			output = fmt.Appendf(nil, "found no hits with pattern: '%s'", pattern)
 		} else {
 			return "", fmt.Errorf("failed to run rg: %w, output: %v", err, string(output))
 		}

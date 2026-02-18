@@ -47,10 +47,10 @@ type ContentBlockSuper struct {
 }
 
 type ToolUseContentBlock struct {
-	Type  string                  `json:"type"`
-	ID    string                  `json:"id"`
-	Name  string                  `json:"name"`
-	Input *map[string]interface{} `json:"input,omitempty"`
+	Type  string          `json:"type"`
+	ID    string          `json:"id"`
+	Name  string          `json:"name"`
+	Input *map[string]any `json:"input,omitempty"`
 }
 
 type ToolResultContentBlock struct {

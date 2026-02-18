@@ -33,7 +33,7 @@ func selectTextQuerier(ctx context.Context, conf text.Configurations) (models.Qu
 
 	if conf.Model == "test" {
 		found = true
-		qTmp, err := text.NewQuerier(ctx, conf, misc.Pointer(vendors.Mock{}))
+		qTmp, err := text.NewQuerier(ctx, conf, new(vendors.Mock{}))
 		if err != nil {
 			return nil, false, fmt.Errorf("failed to create test querier: %w", err)
 		}

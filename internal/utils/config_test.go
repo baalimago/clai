@@ -11,10 +11,10 @@ import (
 func TestReturnNonDefault(t *testing.T) {
 	tests := []struct {
 		name       string
-		a          interface{}
-		b          interface{}
-		defaultVal interface{}
-		want       interface{}
+		a          any
+		b          any
+		defaultVal any
+		want       any
 		wantErr    bool
 	}{
 		{

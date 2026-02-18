@@ -89,8 +89,8 @@ func SelectFromTable[T any](header string, items []T,
 func parseNumbersFromString(choice string, max int) []int {
 	selectedNumbers := make([]int, 0)
 	// check if matches pattern nr0:nr1, if yes select range
-	tokens := strings.Split(choice, ",")
-	for _, tok := range tokens {
+	tokens := strings.SplitSeq(choice, ",")
+	for tok := range tokens {
 		tok = strings.TrimSpace(tok)
 		if strings.Contains(tok, ":") {
 			parts := strings.SplitN(tok, ":", 2)
@@ -163,10 +163,7 @@ func printSelectRow[T any](w io.Writer, i int, chats []T, formatRow func(int, T)
 
 func printSelectItemOptions[T any](page, pageSize, amItems int, items []T, choiesFormat string, formatRow func(int, T) (string, error)) (int, error) {
 	pageIndex := page * pageSize
-	listToIndex := pageIndex + pageSize
-	if listToIndex > amItems {
-		listToIndex = amItems
-	}
+	listToIndex := min(pageIndex+pageSize, amItems)
 
 	// Could this be "calculated" using "maths"
 	// Yes. Most likely. Don't judge me.

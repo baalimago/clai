@@ -202,7 +202,7 @@ func TestHandleStreamResponse_EmitsEventsAndErrorOnEOF(t *testing.T) {
 	}()
 
 	// Expect first two string events then an error
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		select {
 		case ev := <-out:
 			if s, ok := ev.(string); !ok || (i == 0 && s != "first") || (i == 1 && s != "second") {

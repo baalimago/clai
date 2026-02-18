@@ -45,7 +45,7 @@ func Test_claudifyMessages(t *testing.T) {
 			},
 			want: []ClaudeConvMessage{
 				{Role: "user", Content: []any{
-					ToolUseContentBlock{Type: "tool_use", ID: "tool1", Name: "exampleTool", Input: &map[string]interface{}{"test": 0}},
+					ToolUseContentBlock{Type: "tool_use", ID: "tool1", Name: "exampleTool", Input: &map[string]any{"test": 0}},
 					ToolResultContentBlock{Type: "tool_result", ToolUseID: "tool1", Content: "tool result"},
 				}},
 			},

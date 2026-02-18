@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"time"
@@ -74,9 +75,7 @@ func (t *claiWaitForWorkersTool) Call(input pub_models.Input) (string, error) {
 	// Snapshot current runs
 	claiRunsMu.Lock()
 	localRuns := make(map[string]*claiProcess, len(claiRuns))
-	for id, p := range claiRuns {
-		localRuns[id] = p
-	}
+	maps.Copy(localRuns, claiRuns)
 	claiRunsMu.Unlock()
 
 	if len(localRuns) == 0 {

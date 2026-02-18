@@ -11,8 +11,7 @@ import (
 )
 
 func TestHandleServerRegistersTool(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	srv := pub_models.McpServer{Command: "go", Args: []string{"run", "./testserver"}}
 	in, out, err := Client(ctx, srv)
@@ -69,7 +68,7 @@ func TestManager(t *testing.T) {
 	controlCh <- ControlEvent{ServerName: "echo", Server: srv, InputChan: in, OutputChan: out}
 
 	var ok bool
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		_, ok = tools.Registry.Get("mcp_echo_echo")
 		if ok {
 			break

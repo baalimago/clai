@@ -1,7 +1,6 @@
 package mcp
 
 import (
-	"context"
 	"encoding/json"
 	"testing"
 
@@ -9,8 +8,7 @@ import (
 )
 
 func TestClient(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	srv := pub_models.McpServer{Command: "go", Args: []string{"run", "./testserver"}}
 	in, out, err := Client(ctx, srv)
@@ -35,8 +33,7 @@ func TestClient(t *testing.T) {
 }
 
 func TestClientBadCommand(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	_, _, err := Client(ctx, pub_models.McpServer{Command: "does-not-exist"})
 	if err == nil {
 		t.Fatal("expected error for bad command")

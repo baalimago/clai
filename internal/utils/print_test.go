@@ -117,13 +117,13 @@ func TestUpdateMessageTerminalMetadata(t *testing.T) {
 
 func Test_ShortenedOutput(t *testing.T) {
 	t.Run("it should shorten line with a lot of newlines", func(t *testing.T) {
-		given := ""
+		var given strings.Builder
 		amNewlines := 90
 		maxShortenedNewlines := 5
 		for range amNewlines {
-			given += "\n"
+			given.WriteString("\n")
 		}
-		gotStr := ShortenedOutput(given, maxShortenedNewlines)
+		gotStr := ShortenedOutput(given.String(), maxShortenedNewlines)
 		got := strings.Count(gotStr, "\n")
 		want := maxShortenedNewlines + 1
 		if got >= want {

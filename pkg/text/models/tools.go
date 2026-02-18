@@ -3,6 +3,7 @@ package models
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 type LLMTool interface {
@@ -61,7 +62,7 @@ type Call struct {
 	Name         string         `json:"name,omitempty"`
 	Type         string         `json:"type,omitempty"`
 	Inputs       *Input         `json:"inputs,omitempty"`
-	Function     Specification  `json:"function,omitempty"`
+	Function     Specification  `json:"function"`
 	ExtraContent map[string]any `json:"extra_content,omitempty"`
 }
 
@@ -89,7 +90,7 @@ func (c *Call) Patch() {
 // PrettyPrint the call, showing name and what input params is used
 // on a concise way
 func (c Call) PrettyPrint() string {
-	paramStr := ""
+	var paramStr strings.Builder
 	i := 0
 	var inp Input
 	if c.Inputs != nil {
@@ -97,14 +98,14 @@ func (c Call) PrettyPrint() string {
 	}
 	lenInp := len(inp)
 	for flag, val := range inp {
-		paramStr += fmt.Sprintf("'%v': '%v'", flag, val)
+		paramStr.WriteString(fmt.Sprintf("'%v': '%v'", flag, val))
 		if i < lenInp-1 {
-			paramStr += ","
+			paramStr.WriteString(",")
 		}
 		i++
 	}
 
-	return fmt.Sprintf("Call: '%s', inputs: [ %s ]", c.Name, paramStr)
+	return fmt.Sprintf("Call: '%s', inputs: [ %s ]", c.Name, paramStr.String())
 }
 
 func (c Call) JSON() string {

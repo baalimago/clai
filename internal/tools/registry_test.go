@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"slices"
 	"testing"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -156,13 +157,7 @@ func TestRegistry_WildcardGet(t *testing.T) {
 			}
 
 			for _, expected := range tc.expected {
-				found := false
-				for _, name := range matchNames {
-					if name == expected {
-						found = true
-						break
-					}
-				}
+				found := slices.Contains(matchNames, expected)
 				if !found {
 					t.Errorf("expected tool %s not found in matches", expected)
 				}

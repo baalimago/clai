@@ -10,10 +10,10 @@ import (
 )
 
 type testReq struct {
-	JSONRPC string      `json:"jsonrpc"`
-	ID      int         `json:"id,omitempty"`
-	Method  string      `json:"method"`
-	Params  interface{} `json:"params,omitempty"`
+	JSONRPC string `json:"jsonrpc"`
+	ID      int    `json:"id,omitempty"`
+	Method  string `json:"method"`
+	Params  any    `json:"params,omitempty"`
 }
 
 func runServer(t *testing.T, reqs []testReq) []map[string]any {
@@ -32,11 +32,9 @@ func runServer(t *testing.T, reqs []testReq) []map[string]any {
 	os.Stdin, os.Stdout = rIn, wOut
 
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		main()
-	}()
+	})
 
 	enc := json.NewEncoder(wIn)
 	for _, rq := range reqs {
