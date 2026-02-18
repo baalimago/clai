@@ -11,4 +11,4 @@ jobs:
     uses: baalimago/simple-go-pipeline/.github/workflows/validate.yml@main
     with:
       go-version: "1.26"
-      staticcheck-version: "2026.1.1"
+      staticcheck-version: "2026.1"
