@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"maps"
 	"os"
 	"strings"
 	"sync"
@@ -87,9 +88,7 @@ func (r *registry) All() map[string]models.LLMTool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	cp := make(map[string]models.LLMTool, len(r.tools))
-	for k, v := range r.tools {
-		cp[k] = v
-	}
+	maps.Copy(cp, r.tools)
 	return cp
 }
 

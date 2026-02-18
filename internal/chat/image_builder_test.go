@@ -2,6 +2,7 @@ package chat
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -68,11 +69,11 @@ func TestExtractB64Strings_MultipleImages(t *testing.T) {
 }
 
 func TestExtractB64Strings_IgnoreMiddleEq(t *testing.T) {
-	s := ""
-	for i := 0; i < 70; i++ {
-		s += "AAA="
+	var s strings.Builder
+	for range 70 {
+		s.WriteString("AAA=")
 	}
-	in := "x " + s + " y"
+	in := "x " + s.String() + " y"
 	b64s, parsed := extractB64Strings(in)
 	if len(b64s) != 0 {
 		t.Fatalf("expected 0 b64s, got %d", len(b64s))
@@ -83,12 +84,12 @@ func TestExtractB64Strings_IgnoreMiddleEq(t *testing.T) {
 }
 
 func TestExtractB64Strings_IgnorePadGt2(t *testing.T) {
-	s := ""
-	for i := 0; i < 64; i++ {
-		s += "AAAA"
+	var s strings.Builder
+	for range 64 {
+		s.WriteString("AAAA")
 	}
-	s += "===="
-	in := "pre " + s + " post"
+	s.WriteString("====")
+	in := "pre " + s.String() + " post"
 	b64s, parsed := extractB64Strings(in)
 	if len(b64s) != 0 {
 		t.Fatalf("expected 0 b64s, got %d", len(b64s))

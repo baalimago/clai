@@ -56,18 +56,18 @@ func parseEnvFileContent(content string) (map[string]string, error) {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		if strings.HasPrefix(line, "export ") {
-			line = strings.TrimSpace(strings.TrimPrefix(line, "export "))
+		if after, ok := strings.CutPrefix(line, "export "); ok {
+			line = strings.TrimSpace(after)
 		}
-		idx := strings.IndexByte(line, '=')
-		if idx < 0 {
+		before, after, ok := strings.Cut(line, "=")
+		if !ok {
 			return nil, fmt.Errorf("line %d missing '='", lineNo)
 		}
-		key := strings.TrimSpace(line[:idx])
+		key := strings.TrimSpace(before)
 		if key == "" {
 			return nil, fmt.Errorf("line %d has empty key", lineNo)
 		}
-		val := strings.TrimSpace(line[idx+1:])
+		val := strings.TrimSpace(after)
 		if len(val) >= 2 {
 			if (val[0] == '"' && val[len(val)-1] == '"') || (val[0] == '\'' && val[len(val)-1] == '\'') {
 				val = val[1 : len(val)-1]

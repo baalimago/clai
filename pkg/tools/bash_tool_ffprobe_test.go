@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -151,13 +152,7 @@ func TestFFProbeSpecification(t *testing.T) {
 	}
 
 	for _, req := range expectedRequired {
-		found := false
-		for _, actual := range spec.Inputs.Required {
-			if actual == req {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(spec.Inputs.Required, req)
 		if !found {
 			t.Errorf("expected required field %q not found", req)
 		}

@@ -119,8 +119,7 @@ func LoadConfigFromFile[T any](
 func setNonZeroValueFields[T any](a, b *T) []string {
 	hasChanged := []string{}
 	t := reflect.TypeOf(*a)
-	for i := range t.NumField() {
-		f := t.Field(i)
+	for f := range t.Fields() {
 		aVal := reflect.ValueOf(a).Elem().FieldByName(f.Name)
 		bVal := reflect.ValueOf(b).Elem().FieldByName(f.Name)
 		if f.IsExported() && aVal.IsZero() && !bVal.IsZero() {

@@ -23,12 +23,13 @@ import (
 func queryForAction(options []action) (action, error) {
 	var input string
 	var ret action
-	userQuery := "Do you wish to "
+	var userQuery strings.Builder
+	userQuery.WriteString("Do you wish to ")
 	for _, s := range options {
-		userQuery += fmt.Sprintf("%v, ", s)
+		userQuery.WriteString(fmt.Sprintf("%v, ", s))
 	}
-	userQuery += "[q]uit: "
-	fmt.Print(colorSecondary(userQuery))
+	userQuery.WriteString("[q]uit: ")
+	fmt.Print(colorSecondary(userQuery.String()))
 	input, err := utils.ReadUserInput()
 	if err != nil {
 		return unset, fmt.Errorf("failed to query for action: %w", err)
