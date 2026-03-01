@@ -1,21 +1,24 @@
 package openai
 
 import (
+	"context"
 	"fmt"
+	"net/http"
+	"os"
 
-	"github.com/baalimago/clai/internal/text/generic"
+	"github.com/baalimago/clai/internal/models"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
+	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
 var GptDefault = ChatGPT{
 	Model:       "gpt-4.1-mini",
 	Temperature: 1.0,
 	TopP:        1.0,
-	URL:         ChatURL,
+	URL:         ResponsesURL,
 }
 
 type ChatGPT struct {
-	generic.StreamCompleter
 	Model            string  `json:"model"`
 	FrequencyPenalty float64 `json:"frequency_penalty"`
 	MaxTokens        *int    `json:"max_tokens"` // Use a pointer to allow null value
@@ -23,23 +26,60 @@ type ChatGPT struct {
 	Temperature      float64 `json:"temperature"`
 	TopP             float64 `json:"top_p"`
 	URL              string  `json:"url"`
+
+	apiKey string
+	debug  bool
+
+	tools []pub_models.LLMTool
 }
 
 func (g *ChatGPT) Setup() error {
-	err := g.StreamCompleter.Setup("OPENAI_API_KEY", ChatURL, "DEBUG_OPENAI")
-	if err != nil {
-		return fmt.Errorf("failed to setup stream completer: %w", err)
+	apiKey := os.Getenv("OPENAI_API_KEY")
+	if apiKey == "" {
+		return fmt.Errorf("openai: missing OPENAI_API_KEY")
 	}
-	g.StreamCompleter.Model = g.Model
-	g.StreamCompleter.FrequencyPenalty = &g.FrequencyPenalty
-	g.StreamCompleter.MaxTokens = g.MaxTokens
-	g.StreamCompleter.Temperature = &g.Temperature
-	g.StreamCompleter.TopP = &g.TopP
-	toolChoice := "auto"
-	g.ToolChoice = &toolChoice
+	g.apiKey = apiKey
+	g.debug = misc.Truthy(os.Getenv("DEBUG_OPENAI"))
+	if g.URL == "" {
+		g.URL = ResponsesURL
+	}
+	if g.Model == "" {
+		g.Model = GptDefault.Model
+	}
 	return nil
 }
 
 func (g *ChatGPT) RegisterTool(tool pub_models.LLMTool) {
-	g.InternalRegisterTool(tool)
+	g.tools = append(g.tools, tool)
+}
+
+func (g *ChatGPT) StreamCompletions(ctx context.Context, chat pub_models.Chat) (chan models.CompletionEvent, error) {
+	toolsMapped := make([]responsesTool, 0, len(g.tools))
+	for _, t := range g.tools {
+		spec := t.Specification()
+		toolsMapped = append(toolsMapped, responsesTool{
+			Type: "function",
+			Name: spec.Name,
+			Function: responsesToolFunction{
+				Name:        spec.Name,
+				Description: spec.Description,
+				Parameters:  spec.Inputs,
+			},
+		})
+	}
+
+	s := &responsesStreamer{
+		apiKey: g.apiKey,
+		url:    g.URL,
+		model:  g.Model,
+		debug:  g.debug,
+		client: http.DefaultClient,
+		tools:  toolsMapped,
+	}
+
+	out, err := s.stream(ctx, chat)
+	if err != nil {
+		return nil, fmt.Errorf("openai responses: stream: %w", err)
+	}
+	return out, nil
 }
