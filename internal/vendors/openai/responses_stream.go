@@ -111,6 +111,9 @@ func (s *responsesStreamer) stream(ctx context.Context, chat pub_models.Chat) (c
 				return
 			}
 
+			if s.debug {
+				ancli.Okf("got: '%s'", line)
+			}
 			evt, ok, parseErr := parseResponsesLine(line)
 			if parseErr != nil {
 				out <- fmt.Errorf("openai responses: parse stream event: %w", parseErr)
@@ -208,7 +211,6 @@ func (s *responsesStreamer) createRequest(ctx context.Context, chat pub_models.C
 
 	if s.debug {
 		noTools := reqBody
-		noTools.Tools = nil
 		ancli.PrintOK(fmt.Sprintf("openai responses request (tools redacted):\nurl: %s\nbody: %s\n", s.url, debug.IndentedJsonFmt(noTools)))
 	}
 

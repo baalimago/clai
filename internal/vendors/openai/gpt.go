@@ -58,13 +58,10 @@ func (g *ChatGPT) StreamCompletions(ctx context.Context, chat pub_models.Chat) (
 	for _, t := range g.tools {
 		spec := t.Specification()
 		toolsMapped = append(toolsMapped, responsesTool{
-			Type: "function",
-			Name: spec.Name,
-			Function: responsesToolFunction{
-				Name:        spec.Name,
-				Description: spec.Description,
-				Parameters:  spec.Inputs,
-			},
+			Type:        "function",
+			Name:        spec.Name,
+			Description: spec.Description,
+			Parameters:  spec.Inputs,
 		})
 	}
 

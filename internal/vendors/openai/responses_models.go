@@ -45,20 +45,10 @@ type responsesInputContent struct {
 	Text string `json:"text,omitempty"`
 }
 
-// NOTE: OpenAI Responses tool schema has been inconsistent across rollouts.
-// Our live API currently requires both:
-//   - tools[i].name (top-level)
-//   - tools[i].function.name
-
 type responsesTool struct {
-	Type     string                `json:"type"` // "function"
-	Name     string                `json:"name"`
-	Function responsesToolFunction `json:"function"`
-}
-
-type responsesToolFunction struct {
+	Type        string `json:"type"` // "function"
 	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
+	Description string `json:"description"`
 	Parameters  any    `json:"parameters,omitempty"`
 }
 
