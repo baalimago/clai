@@ -70,11 +70,11 @@ type responsesResponse struct {
 }
 
 type responsesUsage struct {
-	InputTokens         int                            `json:"input_tokens"`
-	OutputTokens        int                            `json:"output_tokens"`
-	TotalTokens         int                            `json:"total_tokens"`
-	InputTokensDetails  *responsesInputTokensDetails   `json:"input_tokens_details,omitempty"`
-	OutputTokensDetails *responsesOutputTokensDetails  `json:"output_tokens_details,omitempty"`
+	InputTokens         int                           `json:"input_tokens"`
+	OutputTokens        int                           `json:"output_tokens"`
+	TotalTokens         int                           `json:"total_tokens"`
+	InputTokensDetails  *responsesInputTokensDetails  `json:"input_tokens_details,omitempty"`
+	OutputTokensDetails *responsesOutputTokensDetails `json:"output_tokens_details,omitempty"`
 }
 
 type responsesInputTokensDetails struct {

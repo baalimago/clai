@@ -19,20 +19,20 @@ import (
 var responsesDataPrefix = []byte("data: ")
 
 type responsesStreamer struct {
-	apiKey       string
-	url          string
-	model        string
-	debug        bool
-	client       *http.Client
-	usageSetter  func(*pub_models.Usage) error
+	apiKey      string
+	url         string
+	model       string
+	debug       bool
+	client      *http.Client
+	usageSetter func(*pub_models.Usage) error
 
 	tools []responsesTool
 }
 
 type toolCallState struct {
-	callID     string
-	toolName   string
-	argsBuf    bytes.Buffer
+	callID      string
+	toolName    string
+	argsBuf     bytes.Buffer
 	callEmitted bool
 }
 
