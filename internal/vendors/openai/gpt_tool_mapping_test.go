@@ -13,7 +13,7 @@ type fakeTool struct {
 func (f fakeTool) Specification() pub_models.Specification { return f.spec }
 func (f fakeTool) Call(pub_models.Input) (string, error)   { return "", nil }
 
-func TestChatGPT_ToolMappingSetsFunctionName(t *testing.T) {
+func TestChatGPT_ToolMappingSetsToolName(t *testing.T) {
 	t.Parallel()
 
 	g := &ChatGPT{}
@@ -28,22 +28,20 @@ func TestChatGPT_ToolMappingSetsFunctionName(t *testing.T) {
 	}})
 
 	toolsMapped := make([]responsesTool, 0, len(g.tools))
-	for _, t := range g.tools {
-		spec := t.Specification()
+	for _, tool := range g.tools {
+		spec := tool.Specification()
 		toolsMapped = append(toolsMapped, responsesTool{
-			Type: "function",
-			Function: responsesToolFunction{
-				Name:        spec.Name,
-				Description: spec.Description,
-				Parameters:  spec.Inputs,
-			},
+			Type:        "function",
+			Name:        spec.Name,
+			Description: spec.Description,
+			Parameters:  spec.Inputs,
 		})
 	}
 
 	if len(toolsMapped) != 1 {
 		t.Fatalf("expected 1 tool, got %d", len(toolsMapped))
 	}
-	if toolsMapped[0].Function.Name != "ls" {
-		t.Fatalf("expected function name %q, got %q", "ls", toolsMapped[0].Function.Name)
+	if toolsMapped[0].Name != "ls" {
+		t.Fatalf("expected tool name %q, got %q", "ls", toolsMapped[0].Name)
 	}
 }

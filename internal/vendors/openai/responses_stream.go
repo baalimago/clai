@@ -28,6 +28,79 @@ type responsesStreamer struct {
 	tools []responsesTool
 }
 
+type toolCallState struct {
+	callID     string
+	toolName   string
+	argsBuf    bytes.Buffer
+	callEmitted bool
+}
+
+func (st *toolCallState) reset() {
+	st.callID = ""
+	st.toolName = ""
+	st.argsBuf.Reset()
+	st.callEmitted = false
+}
+
+func (st *toolCallState) beginFromItem(item *responsesOutputItem) {
+	st.reset()
+	if item == nil {
+		return
+	}
+	if item.CallID != "" {
+		st.callID = item.CallID
+	} else if item.ID != "" {
+		st.callID = item.ID
+	}
+	if item.Name != "" {
+		st.toolName = item.Name
+	}
+}
+
+func (st *toolCallState) appendArgs(delta string) error {
+	if delta == "" {
+		return nil
+	}
+	if _, err := st.argsBuf.WriteString(delta); err != nil {
+		return fmt.Errorf("write args delta: %w", err)
+	}
+	return nil
+}
+
+func (st *toolCallState) emitCall(out chan<- models.CompletionEvent) error {
+	if st.callEmitted {
+		return nil
+	}
+	if st.toolName == "" {
+		return fmt.Errorf("missing tool name for call_id=%q", st.callID)
+	}
+	if st.callID == "" {
+		return fmt.Errorf("missing call id for tool=%q", st.toolName)
+	}
+
+	var input pub_models.Input
+	if err := json.Unmarshal(st.argsBuf.Bytes(), &input); err != nil {
+		return fmt.Errorf("unmarshal tool args for tool=%q call_id=%q: %w", st.toolName, st.callID, err)
+	}
+
+	userFunc := tools.ToolFromName(st.toolName)
+	if userFunc.Name == "" {
+		return fmt.Errorf("resolve tool from name %q: %w", st.toolName, fmt.Errorf("tool not found"))
+	}
+	userFunc.Arguments = st.argsBuf.String()
+
+	out <- pub_models.Call{
+		ID:       st.callID,
+		Name:     st.toolName,
+		Inputs:   &input,
+		Type:     "function",
+		Function: userFunc,
+	}
+	st.callEmitted = true
+	st.reset()
+	return nil
+}
+
 func (s *responsesStreamer) stream(ctx context.Context, chat pub_models.Chat) (chan models.CompletionEvent, error) {
 	req, err := s.createRequest(ctx, chat)
 	if err != nil {
@@ -39,158 +112,143 @@ func (s *responsesStreamer) stream(ctx context.Context, chat pub_models.Chat) (c
 		return nil, fmt.Errorf("openai responses: do request: %w", err)
 	}
 
-	if res.StatusCode != http.StatusOK {
-		defer func() { _ = res.Body.Close() }()
-		body, readErr := io.ReadAll(res.Body)
-		if readErr != nil {
-			return nil, fmt.Errorf("openai responses: read error body: %w", readErr)
-		}
-		return nil, fmt.Errorf("openai responses: unexpected status code %v, body: %s", res.Status, string(body))
+	if err := validateResponsesHTTPResponse(res); err != nil {
+		return nil, fmt.Errorf("openai responses: validate response: %w", err)
 	}
 
 	out := make(chan models.CompletionEvent)
-	go func() {
-		defer func() {
-			_ = res.Body.Close()
-			close(out)
-		}()
+	go s.readResponsesStream(ctx, res.Body, out)
+	return out, nil
+}
 
-		br := bufio.NewReader(res.Body)
+func validateResponsesHTTPResponse(res *http.Response) error {
+	if res.StatusCode == http.StatusOK {
+		return nil
+	}
+	defer func() { _ = res.Body.Close() }()
 
-		var currentCallID string
-		var currentToolName string
-		var argsBuf bytes.Buffer
-		var callEmitted bool
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		return fmt.Errorf("read error body: %w", err)
+	}
+	return fmt.Errorf("unexpected status code %v, body: %s", res.Status, string(body))
+}
 
-		emitCall := func() error {
-			if callEmitted {
-				return nil
-			}
-			if currentToolName == "" {
-				return fmt.Errorf("missing tool name for call_id=%q", currentCallID)
-			}
-			if currentCallID == "" {
-				return fmt.Errorf("missing call id for tool=%q", currentToolName)
-			}
-
-			var input pub_models.Input
-			if err := json.Unmarshal(argsBuf.Bytes(), &input); err != nil {
-				return fmt.Errorf("unmarshal tool args for tool=%q call_id=%q: %w", currentToolName, currentCallID, err)
-			}
-
-			userFunc := tools.ToolFromName(currentToolName)
-			if userFunc.Name == "" {
-				return fmt.Errorf("resolve tool from name %q: %w", currentToolName, fmt.Errorf("tool not found"))
-			}
-			userFunc.Arguments = argsBuf.String()
-
-			out <- pub_models.Call{
-				ID:       currentCallID,
-				Name:     currentToolName,
-				Inputs:   &input,
-				Type:     "function",
-				Function: userFunc,
-			}
-			callEmitted = true
-
-			currentCallID = ""
-			currentToolName = ""
-			argsBuf.Reset()
-			return nil
-		}
-
-		for {
-			if ctx.Err() != nil {
-				return
-			}
-			line, err := br.ReadBytes('\n')
-			if err != nil {
-				if err != io.EOF {
-					out <- fmt.Errorf("openai responses: read stream line: %w", err)
-				}
-				return
-			}
-
-			if s.debug {
-				ancli.Okf("got: '%s'", line)
-			}
-			evt, ok, parseErr := parseResponsesLine(line)
-			if parseErr != nil {
-				out <- fmt.Errorf("openai responses: parse stream event: %w", parseErr)
-				return
-			}
-			if !ok {
-				continue
-			}
-
-			switch evt.Type {
-			case "response.output_text.delta":
-				if evt.Delta != "" {
-					out <- evt.Delta
-				} else {
-					out <- models.NoopEvent{}
-				}
-
-			case "response.output_item.added":
-				if evt.Item == nil {
-					out <- models.NoopEvent{}
-					continue
-				}
-				if evt.Item.Type != "function_call" {
-					out <- models.NoopEvent{}
-					continue
-				}
-
-				// A new tool call is starting. Reset any previous in-flight state.
-				currentCallID = ""
-				currentToolName = ""
-				argsBuf.Reset()
-				callEmitted = false
-
-				if evt.Item.CallID != "" {
-					currentCallID = evt.Item.CallID
-				} else if evt.Item.ID != "" {
-					currentCallID = evt.Item.ID
-				}
-				if evt.Item.Name != "" {
-					currentToolName = evt.Item.Name
-				}
-				out <- models.NoopEvent{}
-
-			case "response.function_call_arguments.delta":
-				if evt.Delta == "" {
-					out <- models.NoopEvent{}
-					continue
-				}
-				if _, wErr := argsBuf.WriteString(evt.Delta); wErr != nil {
-					out <- fmt.Errorf("openai responses: buffer tool args: %w", wErr)
-					return
-				}
-
-			case "response.function_call_arguments.done":
-				if emitErr := emitCall(); emitErr != nil {
-					out <- fmt.Errorf("openai responses: emit tool call: %w", emitErr)
-					return
-				}
-
-			case "response.completed":
-				out <- models.StopEvent{}
-
-			case "response.failed":
-				msg := "response failed"
-				if evt.Error != nil && evt.Error.Message != "" {
-					msg = evt.Error.Message
-				}
-				out <- fmt.Errorf("openai responses: %s", msg)
-				return
-
-			default:
-				out <- models.NoopEvent{}
-			}
-		}
+func (s *responsesStreamer) readResponsesStream(ctx context.Context, body io.ReadCloser, out chan models.CompletionEvent) {
+	defer func() {
+		_ = body.Close()
+		close(out)
 	}()
 
-	return out, nil
+	br := bufio.NewReader(body)
+	var st toolCallState
+
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+
+		line, err := br.ReadBytes('\n')
+		if err != nil {
+			if err != io.EOF {
+				out <- fmt.Errorf("openai responses: read stream line: %w", err)
+			}
+			return
+		}
+
+		evt, ok, err := s.parseStreamLine(line)
+		if err != nil {
+			out <- fmt.Errorf("openai responses: parse stream event: %w", err)
+			return
+		}
+		if !ok {
+			continue
+		}
+
+		if err := handleResponsesStreamEvent(out, &st, evt); err != nil {
+			out <- fmt.Errorf("openai responses: handle event %q: %w", evt.Type, err)
+			return
+		}
+	}
+}
+
+func (s *responsesStreamer) parseStreamLine(line []byte) (responsesStreamEvent, bool, error) {
+	if s.debug {
+		ancli.Okf("got: '%s'", line)
+	}
+
+	evt, ok, err := parseResponsesLine(line)
+	if err != nil {
+		return responsesStreamEvent{}, false, fmt.Errorf("parse: %w", err)
+	}
+	return evt, ok, nil
+}
+
+func handleResponsesStreamEvent(out chan<- models.CompletionEvent, st *toolCallState, evt responsesStreamEvent) error {
+	switch evt.Type {
+	case "response.output_text.delta":
+		return emitTextDelta(out, evt.Delta)
+
+	case "response.output_item.added":
+		return handleOutputItemAdded(out, st, evt.Item)
+
+	case "response.function_call_arguments.delta":
+		return handleFunctionCallArgumentsDelta(out, st, evt.Delta)
+
+	case "response.function_call_arguments.done":
+		return st.emitCall(out)
+
+	case "response.completed":
+		out <- models.StopEvent{}
+		return nil
+
+	case "response.failed":
+		msg := "response failed"
+		if evt.Error != nil && evt.Error.Message != "" {
+			msg = evt.Error.Message
+		}
+		return fmt.Errorf("%s", msg)
+
+	default:
+		out <- models.NoopEvent{}
+		return nil
+	}
+}
+
+func emitTextDelta(out chan<- models.CompletionEvent, delta string) error {
+	if delta != "" {
+		out <- delta
+		return nil
+	}
+	out <- models.NoopEvent{}
+	return nil
+}
+
+func handleOutputItemAdded(out chan<- models.CompletionEvent, st *toolCallState, item *responsesOutputItem) error {
+	if item == nil {
+		out <- models.NoopEvent{}
+		return nil
+	}
+	if item.Type != "function_call" {
+		out <- models.NoopEvent{}
+		return nil
+	}
+
+	st.beginFromItem(item)
+	out <- models.NoopEvent{}
+	return nil
+}
+
+func handleFunctionCallArgumentsDelta(out chan<- models.CompletionEvent, st *toolCallState, delta string) error {
+	if delta == "" {
+		out <- models.NoopEvent{}
+		return nil
+	}
+
+	if err := st.appendArgs(delta); err != nil {
+		return fmt.Errorf("buffer tool args: %w", err)
+	}
+	return nil
 }
 
 func (s *responsesStreamer) createRequest(ctx context.Context, chat pub_models.Chat) (*http.Request, error) {
