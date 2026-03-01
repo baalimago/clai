@@ -34,17 +34,19 @@ func TestStreamCompleter_EmitsToolCall(t *testing.T) {
 			Arguments: `{"messageType":"`,
 		},
 	}}}}
-	if ev := s.handleChoice(first); ev.(models.NoopEvent) == (models.NoopEvent{}) {
-		// expected
+	ev := s.handleChoice(first)
+	if _, ok := ev.(models.NoopEvent); !ok {
+		t.Fatalf("expected NoopEvent, got %T: %#v", ev, ev)
 	}
 
 	second := Choice{Delta: Delta{ToolCalls: []ToolsCall{{Function: Func{Arguments: `debug"`}}}}}
-	if ev := s.handleChoice(second); ev.(models.NoopEvent) == (models.NoopEvent{}) {
-		// expected
+	ev = s.handleChoice(second)
+	if _, ok := ev.(models.NoopEvent); !ok {
+		t.Fatalf("expected NoopEvent, got %T: %#v", ev, ev)
 	}
 
 	third := Choice{Delta: Delta{ToolCalls: []ToolsCall{{Function: Func{Arguments: `}`}}}}}
-	ev := s.handleChoice(third)
+	ev = s.handleChoice(third)
 	call, ok := ev.(pub_models.Call)
 	if !ok {
 		t.Fatalf("expected Call, got %T: %#v", ev, ev)
