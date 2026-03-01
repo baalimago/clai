@@ -266,3 +266,48 @@ func TestResponsesStreamer_MalformedSSEJSON(t *testing.T) {
 		t.Fatalf("expected context in error, got %v", gotErr)
 	}
 }
+
+func TestResponsesStreamer_UsageCapturedOnCompleted(t *testing.T) {
+	t.Parallel()
+
+	var captured *pub_models.Usage
+	usageSetter := func(u *pub_models.Usage) error {
+		captured = u
+		return nil
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":123,\"output_tokens\":34,\"total_tokens\":157,\"input_tokens_details\":{\"cached_tokens\":0},\"output_tokens_details\":{\"reasoning_tokens\":0}}}}\n\n")
+	}))
+	t.Cleanup(srv.Close)
+
+	s := &responsesStreamer{
+		apiKey:      "k",
+		url:         srv.URL + "/v1/responses",
+		model:       "gpt-test",
+		client:      srv.Client(),
+		usageSetter: usageSetter,
+	}
+
+	ch, err := s.stream(context.Background(), pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "hi"}}})
+	if err != nil {
+		t.Fatalf("stream: %v", err)
+	}
+
+	for range ch {
+	}
+
+	if captured == nil {
+		t.Fatalf("expected usage to be captured")
+	}
+	if captured.PromptTokens != 123 || captured.CompletionTokens != 34 || captured.TotalTokens != 157 {
+		t.Fatalf("usage: got %+v", *captured)
+	}
+	if captured.PromptTokensDetails.CachedTokens != 0 {
+		t.Fatalf("prompt cached: got %d", captured.PromptTokensDetails.CachedTokens)
+	}
+	if captured.CompletionTokensDetails.ReasoningTokens != 0 {
+		t.Fatalf("completion reasoning: got %d", captured.CompletionTokensDetails.ReasoningTokens)
+	}
+}

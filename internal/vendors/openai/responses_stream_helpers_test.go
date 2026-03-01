@@ -112,7 +112,7 @@ func TestHandleResponsesStreamEvent_FailedReturnsErrorMessage(t *testing.T) {
 	out := make(chan models.CompletionEvent, 1)
 	var st toolCallState
 
-	err := handleResponsesStreamEvent(out, &st, responsesStreamEvent{Type: "response.failed", Error: &responsesStreamErrBody{Message: "boom"}})
+	err := handleResponsesStreamEvent(out, &st, responsesStreamEvent{Type: "response.failed", Error: &responsesStreamErrBody{Message: "boom"}}, nil)
 	if err == nil {
 		t.Fatalf("expected error")
 	}

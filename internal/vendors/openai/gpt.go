@@ -31,6 +31,7 @@ type ChatGPT struct {
 	debug  bool
 
 	tools []pub_models.LLMTool
+	usage *pub_models.Usage
 }
 
 func (g *ChatGPT) Setup() error {
@@ -53,7 +54,17 @@ func (g *ChatGPT) RegisterTool(tool pub_models.LLMTool) {
 	g.tools = append(g.tools, tool)
 }
 
+func (g *ChatGPT) TokenUsage() *pub_models.Usage {
+	return g.usage
+}
+
+func (g *ChatGPT) setUsage(usage *pub_models.Usage) error {
+	g.usage = usage
+	return nil
+}
+
 func (g *ChatGPT) StreamCompletions(ctx context.Context, chat pub_models.Chat) (chan models.CompletionEvent, error) {
+	g.usage = nil
 	toolsMapped := make([]responsesTool, 0, len(g.tools))
 	for _, t := range g.tools {
 		spec := t.Specification()
@@ -66,12 +77,13 @@ func (g *ChatGPT) StreamCompletions(ctx context.Context, chat pub_models.Chat) (
 	}
 
 	s := &responsesStreamer{
-		apiKey: g.apiKey,
-		url:    g.URL,
-		model:  g.Model,
-		debug:  g.debug,
-		client: http.DefaultClient,
-		tools:  toolsMapped,
+		apiKey:      g.apiKey,
+		url:         g.URL,
+		model:       g.Model,
+		debug:       g.debug,
+		client:      http.DefaultClient,
+		tools:       toolsMapped,
+		usageSetter: g.setUsage,
 	}
 
 	out, err := s.stream(ctx, chat)

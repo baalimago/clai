@@ -53,15 +53,40 @@ type responsesTool struct {
 }
 
 type responsesStreamEvent struct {
-	Type  string                  `json:"type"`
-	Delta string                  `json:"delta,omitempty"`
-	Item  *responsesOutputItem    `json:"item,omitempty"`
-	Error *responsesStreamErrBody `json:"error,omitempty"`
+	Type     string                  `json:"type"`
+	Delta    string                  `json:"delta,omitempty"`
+	Item     *responsesOutputItem    `json:"item,omitempty"`
+	Error    *responsesStreamErrBody `json:"error,omitempty"`
+	Response *responsesResponse      `json:"response,omitempty"`
 }
 
 type responsesStreamErrBody struct {
 	Message string `json:"message,omitempty"`
 	Type    string `json:"type,omitempty"`
+}
+
+type responsesResponse struct {
+	Usage *responsesUsage `json:"usage,omitempty"`
+}
+
+type responsesUsage struct {
+	InputTokens         int                            `json:"input_tokens"`
+	OutputTokens        int                            `json:"output_tokens"`
+	TotalTokens         int                            `json:"total_tokens"`
+	InputTokensDetails  *responsesInputTokensDetails   `json:"input_tokens_details,omitempty"`
+	OutputTokensDetails *responsesOutputTokensDetails  `json:"output_tokens_details,omitempty"`
+}
+
+type responsesInputTokensDetails struct {
+	CachedTokens int `json:"cached_tokens"`
+	AudioTokens  int `json:"audio_tokens"`
+}
+
+type responsesOutputTokensDetails struct {
+	ReasoningTokens          int `json:"reasoning_tokens"`
+	AudioTokens              int `json:"audio_tokens"`
+	AcceptedPredictionTokens int `json:"accepted_prediction_tokens"`
+	RejectedPredictionTokens int `json:"rejected_prediction_tokens"`
 }
 
 type responsesOutputItem struct {

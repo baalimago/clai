@@ -19,11 +19,12 @@ import (
 var responsesDataPrefix = []byte("data: ")
 
 type responsesStreamer struct {
-	apiKey string
-	url    string
-	model  string
-	debug  bool
-	client *http.Client
+	apiKey       string
+	url          string
+	model        string
+	debug        bool
+	client       *http.Client
+	usageSetter  func(*pub_models.Usage) error
 
 	tools []responsesTool
 }
@@ -165,7 +166,7 @@ func (s *responsesStreamer) readResponsesStream(ctx context.Context, body io.Rea
 			continue
 		}
 
-		if err := handleResponsesStreamEvent(out, &st, evt); err != nil {
+		if err := handleResponsesStreamEvent(out, &st, evt, s.usageSetter); err != nil {
 			out <- fmt.Errorf("openai responses: handle event %q: %w", evt.Type, err)
 			return
 		}
@@ -184,7 +185,7 @@ func (s *responsesStreamer) parseStreamLine(line []byte) (responsesStreamEvent, 
 	return evt, ok, nil
 }
 
-func handleResponsesStreamEvent(out chan<- models.CompletionEvent, st *toolCallState, evt responsesStreamEvent) error {
+func handleResponsesStreamEvent(out chan<- models.CompletionEvent, st *toolCallState, evt responsesStreamEvent, usageSetter func(*pub_models.Usage) error) error {
 	switch evt.Type {
 	case "response.output_text.delta":
 		return emitTextDelta(out, evt.Delta)
@@ -199,6 +200,9 @@ func handleResponsesStreamEvent(out chan<- models.CompletionEvent, st *toolCallS
 		return st.emitCall(out)
 
 	case "response.completed":
+		if err := maybeSetUsage(evt, usageSetter); err != nil {
+			return fmt.Errorf("set usage: %w", err)
+		}
 		out <- models.StopEvent{}
 		return nil
 
@@ -213,6 +217,43 @@ func handleResponsesStreamEvent(out chan<- models.CompletionEvent, st *toolCallS
 		out <- models.NoopEvent{}
 		return nil
 	}
+}
+
+func maybeSetUsage(evt responsesStreamEvent, usageSetter func(*pub_models.Usage) error) error {
+	if usageSetter == nil || evt.Response == nil || evt.Response.Usage == nil {
+		return nil
+	}
+	mapped := mapUsage(evt.Response.Usage)
+	if err := usageSetter(mapped); err != nil {
+		return fmt.Errorf("usage setter: %w", err)
+	}
+	return nil
+}
+
+func mapUsage(u *responsesUsage) *pub_models.Usage {
+	if u == nil {
+		return nil
+	}
+	out := &pub_models.Usage{
+		PromptTokens:     u.InputTokens,
+		CompletionTokens: u.OutputTokens,
+		TotalTokens:      u.TotalTokens,
+	}
+	if u.InputTokensDetails != nil {
+		out.PromptTokensDetails = pub_models.PromptTokensDetails{
+			CachedTokens: u.InputTokensDetails.CachedTokens,
+			AudioTokens:  u.InputTokensDetails.AudioTokens,
+		}
+	}
+	if u.OutputTokensDetails != nil {
+		out.CompletionTokensDetails = pub_models.CompletionTokensDetails{
+			ReasoningTokens:          u.OutputTokensDetails.ReasoningTokens,
+			AudioTokens:              u.OutputTokensDetails.AudioTokens,
+			AcceptedPredictionTokens: u.OutputTokensDetails.AcceptedPredictionTokens,
+			RejectedPredictionTokens: u.OutputTokensDetails.RejectedPredictionTokens,
+		}
+	}
+	return out
 }
 
 func emitTextDelta(out chan<- models.CompletionEvent, delta string) error {
