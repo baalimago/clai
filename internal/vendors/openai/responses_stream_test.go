@@ -139,65 +139,63 @@ func TestResponsesStreamer_TextStreaming(t *testing.T) {
 func TestResponsesStreamer_FunctionCallStreaming_EmitsOnDoneBoundary(t *testing.T) {
 	t.Parallel()
 
-	orig := tools.Registry
-	tools.Registry = tools.NewRegistry()
-	t.Cleanup(func() { tools.Registry = orig })
+	tools.WithTestRegistry(t, func() {
+		tools.Registry.Set("rg", fakeTool{spec: pub_models.Specification{Name: "rg"}})
 
-	tools.Registry.Set("rg", fakeTool{spec: pub_models.Specification{Name: "rg"}})
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = io.WriteString(w, "data: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"function_call\",\"call_id\":\"call_1\",\"name\":\"rg\"}}\n\n")
+			_, _ = io.WriteString(w, "data: {\"type\":\"response.function_call_arguments.delta\",\"delta\":\"{\\\"pattern\\\":\\\"foo\\\"\"}\n\n")
+			_, _ = io.WriteString(w, "data: {\"type\":\"response.function_call_arguments.delta\",\"delta\":\",\\\"path\\\":\\\".\\\"\"}\n\n")
+			_, _ = io.WriteString(w, "data: {\"type\":\"response.function_call_arguments.delta\",\"delta\":\"}\"}\n\n")
+			_, _ = io.WriteString(w, "data: {\"type\":\"response.function_call_arguments.done\"}\n\n")
+			_, _ = io.WriteString(w, "data: [DONE]\n\n")
+		}))
+		t.Cleanup(srv.Close)
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = io.WriteString(w, "data: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"function_call\",\"call_id\":\"call_1\",\"name\":\"rg\"}}\n\n")
-		_, _ = io.WriteString(w, "data: {\"type\":\"response.function_call_arguments.delta\",\"delta\":\"{\\\"pattern\\\":\\\"foo\\\"\"}\n\n")
-		_, _ = io.WriteString(w, "data: {\"type\":\"response.function_call_arguments.delta\",\"delta\":\",\\\"path\\\":\\\".\\\"\"}\n\n")
-		_, _ = io.WriteString(w, "data: {\"type\":\"response.function_call_arguments.delta\",\"delta\":\"}\"}\n\n")
-		_, _ = io.WriteString(w, "data: {\"type\":\"response.function_call_arguments.done\"}\n\n")
-		_, _ = io.WriteString(w, "data: [DONE]\n\n")
-	}))
-	t.Cleanup(srv.Close)
-
-	s := &responsesStreamer{
-		apiKey: "k",
-		url:    srv.URL + "/v1/responses",
-		model:  "gpt-test",
-		client: srv.Client(),
-	}
-
-	ch, err := s.stream(context.Background(), pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "hi"}}})
-	if err != nil {
-		t.Fatalf("stream: %v", err)
-	}
-
-	var calls []pub_models.Call
-	for ev := range ch {
-		if c, ok := ev.(pub_models.Call); ok {
-			calls = append(calls, c)
+		s := &responsesStreamer{
+			apiKey: "k",
+			url:    srv.URL + "/v1/responses",
+			model:  "gpt-test",
+			client: srv.Client(),
 		}
-	}
 
-	if len(calls) != 1 {
-		t.Fatalf("calls: got %d want 1", len(calls))
-	}
-	if calls[0].ID != "call_1" {
-		t.Fatalf("call id: got %q want %q", calls[0].ID, "call_1")
-	}
-	if calls[0].Name != "rg" {
-		t.Fatalf("call name: got %q want %q", calls[0].Name, "rg")
-	}
-	if calls[0].Inputs == nil {
-		t.Fatalf("expected Inputs")
-	}
-	b, err := json.Marshal(calls[0].Inputs)
-	if err != nil {
-		t.Fatalf("marshal inputs: %v", err)
-	}
-	var m map[string]any
-	if uErr := json.Unmarshal(b, &m); uErr != nil {
-		t.Fatalf("unmarshal inputs json: %v", uErr)
-	}
-	if m["path"] != "." || m["pattern"] != "foo" {
-		t.Fatalf("inputs: got %s", string(b))
-	}
+		ch, err := s.stream(context.Background(), pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "hi"}}})
+		if err != nil {
+			t.Fatalf("stream: %v", err)
+		}
+
+		var calls []pub_models.Call
+		for ev := range ch {
+			if c, ok := ev.(pub_models.Call); ok {
+				calls = append(calls, c)
+			}
+		}
+
+		if len(calls) != 1 {
+			t.Fatalf("calls: got %d want 1", len(calls))
+		}
+		if calls[0].ID != "call_1" {
+			t.Fatalf("call id: got %q want %q", calls[0].ID, "call_1")
+		}
+		if calls[0].Name != "rg" {
+			t.Fatalf("call name: got %q want %q", calls[0].Name, "rg")
+		}
+		if calls[0].Inputs == nil {
+			t.Fatalf("expected Inputs")
+		}
+		b, err := json.Marshal(calls[0].Inputs)
+		if err != nil {
+			t.Fatalf("marshal inputs: %v", err)
+		}
+		var m map[string]any
+		if uErr := json.Unmarshal(b, &m); uErr != nil {
+			t.Fatalf("unmarshal inputs json: %v", uErr)
+		}
+		if m["path"] != "." || m["pattern"] != "foo" {
+			t.Fatalf("inputs: got %s", string(b))
+		}
+	})
 }
 
 func TestResponsesStreamer_Non200Response(t *testing.T) {
@@ -270,9 +268,9 @@ func TestResponsesStreamer_MalformedSSEJSON(t *testing.T) {
 func TestResponsesStreamer_UsageCapturedOnCompleted(t *testing.T) {
 	t.Parallel()
 
-	var captured *pub_models.Usage
+	capturedCh := make(chan *pub_models.Usage, 1)
 	usageSetter := func(u *pub_models.Usage) error {
-		captured = u
+		capturedCh <- u
 		return nil
 	}
 
@@ -296,6 +294,13 @@ func TestResponsesStreamer_UsageCapturedOnCompleted(t *testing.T) {
 	}
 
 	for range ch {
+	}
+
+	var captured *pub_models.Usage
+	select {
+	case captured = <-capturedCh:
+	default:
+		captured = nil
 	}
 
 	if captured == nil {

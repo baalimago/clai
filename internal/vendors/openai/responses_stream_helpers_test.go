@@ -59,51 +59,48 @@ func TestValidateResponsesHTTPResponse_Non200IncludesBody(t *testing.T) {
 func TestToolCallState_EmitCall_ToolNotFound(t *testing.T) {
 	t.Parallel()
 
-	orig := tools.Registry
-	tools.Registry = tools.NewRegistry()
-	t.Cleanup(func() { tools.Registry = orig })
+	tools.WithTestRegistry(t, func() {
+		// Deliberately do not register tool.
+		var st toolCallState
+		st.callID = "call_1"
+		st.toolName = "missing"
+		if err := st.appendArgs("{}"); err != nil {
+			t.Fatalf("appendArgs: %v", err)
+		}
 
-	// Deliberately do not register tool.
-	var st toolCallState
-	st.callID = "call_1"
-	st.toolName = "missing"
-	if err := st.appendArgs("{}"); err != nil {
-		t.Fatalf("appendArgs: %v", err)
-	}
-
-	out := make(chan models.CompletionEvent, 1)
-	err := st.emitCall(out)
-	if err == nil {
-		t.Fatalf("expected error")
-	}
-	if got := err.Error(); got == "" || !containsAll(got, []string{"resolve tool", "tool not found"}) {
-		t.Fatalf("expected resolve/tool not found context, got %q", got)
-	}
+		out := make(chan models.CompletionEvent, 1)
+		err := st.emitCall(out)
+		if err == nil {
+			t.Fatalf("expected error")
+		}
+		if got := err.Error(); got == "" || !containsAll(got, []string{"resolve tool", "tool not found"}) {
+			t.Fatalf("expected resolve/tool not found context, got %q", got)
+		}
+	})
 }
 
 func TestToolCallState_EmitCall_InvalidJSONArgs(t *testing.T) {
 	t.Parallel()
 
-	orig := tools.Registry
-	tools.Registry = tools.NewRegistry()
-	tools.Registry.Set("rg", fakeTool{spec: pub_models.Specification{Name: "rg"}})
-	t.Cleanup(func() { tools.Registry = orig })
+	tools.WithTestRegistry(t, func() {
+		tools.Registry.Set("rg", fakeTool{spec: pub_models.Specification{Name: "rg"}})
 
-	var st toolCallState
-	st.callID = "call_1"
-	st.toolName = "rg"
-	if err := st.appendArgs("{"); err != nil {
-		t.Fatalf("appendArgs: %v", err)
-	}
+		var st toolCallState
+		st.callID = "call_1"
+		st.toolName = "rg"
+		if err := st.appendArgs("{"); err != nil {
+			t.Fatalf("appendArgs: %v", err)
+		}
 
-	out := make(chan models.CompletionEvent, 1)
-	err := st.emitCall(out)
-	if err == nil {
-		t.Fatalf("expected error")
-	}
-	if got := err.Error(); got == "" || !containsAll(got, []string{"unmarshal tool args", "call_1", "rg"}) {
-		t.Fatalf("expected unmarshal context, got %q", got)
-	}
+		out := make(chan models.CompletionEvent, 1)
+		err := st.emitCall(out)
+		if err == nil {
+			t.Fatalf("expected error")
+		}
+		if got := err.Error(); got == "" || !containsAll(got, []string{"unmarshal tool args", "call_1", "rg"}) {
+			t.Fatalf("expected unmarshal context, got %q", got)
+		}
+	})
 }
 
 func TestHandleResponsesStreamEvent_FailedReturnsErrorMessage(t *testing.T) {
