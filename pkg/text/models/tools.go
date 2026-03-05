@@ -39,6 +39,7 @@ const (
 	RipGrepTool            ToolName = "rg"
 	GoTool                 ToolName = "go"
 	WriteFileTool          ToolName = "write_file"
+	ApplyPatchTool         ToolName = "apply_patch"
 	FreetextCmdTool        ToolName = "freetext_command"
 	SedTool                ToolName = "sed"
 	RowsBetweenTool        ToolName = "rows_between"

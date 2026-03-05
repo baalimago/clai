@@ -81,6 +81,20 @@ func TestRegistry_Get(t *testing.T) {
 	}
 }
 
+func TestInitRegistersApplyPatch(t *testing.T) {
+	origRegistry := Registry
+	Registry = NewRegistry()
+	Registry.hasBeenInit = false
+	t.Cleanup(func() {
+		Registry = origRegistry
+	})
+
+	Init()
+	if _, ok := Registry.Get("apply_patch"); !ok {
+		t.Fatalf("expected apply_patch to be registered")
+	}
+}
+
 func TestRegistry_All(t *testing.T) {
 	r := NewRegistry()
 	tool1 := newMockTool("tool1")

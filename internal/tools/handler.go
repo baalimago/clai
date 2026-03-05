@@ -30,6 +30,7 @@ func Init() {
 	Registry.Set(tools.RipGrep.Specification().Name, tools.RipGrep)
 	Registry.Set(tools.Go.Specification().Name, tools.Go)
 	Registry.Set(tools.WriteFile.Specification().Name, tools.WriteFile)
+	Registry.Set(tools.ApplyPatch.Specification().Name, tools.ApplyPatch)
 	Registry.Set(tools.FreetextCmd.Specification().Name, tools.FreetextCmd)
 	Registry.Set(tools.Sed.Specification().Name, tools.Sed)
 	Registry.Set(tools.RowsBetween.Specification().Name, tools.RowsBetween)
