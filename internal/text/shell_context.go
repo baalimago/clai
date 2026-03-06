@@ -113,7 +113,3 @@ func runShellVar(ctx context.Context, shell, cmd string, timeout time.Duration) 
 	}
 	return strings.TrimSpace(string(out)), nil
 }
-
-func sprintf(format string, args ...any) string {
-	return fmt.Sprintf(format, args...)
-}

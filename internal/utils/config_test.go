@@ -3,6 +3,7 @@ package utils
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
@@ -118,6 +119,33 @@ func TestCreateConfigDir(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(configDirPath, d)); os.IsNotExist(err) {
 			t.Fatalf("Expected required config dir to exist: %v", d)
 		}
+	}
+
+	shellContextPath := filepath.Join(configDirPath, "shellContexts", "default.json")
+	gotShellContextBytes, err := os.ReadFile(shellContextPath)
+	if err != nil {
+		t.Fatalf("ReadFile(%q): %v", shellContextPath, err)
+	}
+	gotShellContext := string(gotShellContextBytes)
+	for _, wantFragment := range []string{
+		`"template":`,
+		`"cwd": "pwd"`,
+		`"date": "date`,
+		`"user": "id -un`,
+		`"python_venv":`,
+		`"k8s_context":`,
+		`"go_version":`,
+		`"git_branch":`,
+		`"docker_context":`,
+		`"hostname":`,
+	} {
+		if !strings.Contains(gotShellContext, wantFragment) {
+			t.Fatalf("default shell context missing fragment %q in:\n%s", wantFragment, gotShellContext)
+		}
+	}
+
+	if _, err := os.Stat(filepath.Join(configDirPath, "shellContexts", "neat.json")); !os.IsNotExist(err) {
+		t.Fatalf("expected legacy shell context file neat.json to not exist, got err=%v", err)
 	}
 
 	// Test creating an existing config directory

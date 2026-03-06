@@ -9,7 +9,7 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
-func Test_goldenFile_QUERY_shell_context_flag_appends_rendered_block(t *testing.T) {
+func Test_goldenFile_QUERY_shell_context_flag_appends_wrapped_rendered_block(t *testing.T) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
 
@@ -32,7 +32,7 @@ func Test_goldenFile_QUERY_shell_context_flag_appends_rendered_block(t *testing.
   "timeout_ms": 1000,
   "timed_out_value": "<timed out>",
   "error_value": "<error>",
-  "template": "[Shell context]\nfoo={{.foo}}\n",
+  "template": "foo={{.foo}}\n",
   "vars": {
     "foo": "printf foo"
   }
@@ -48,7 +48,7 @@ func Test_goldenFile_QUERY_shell_context_flag_appends_rendered_block(t *testing.
 		gotStatusCode = run(strings.Split("-r -cm test -add-shell-context minimal q hello", " "))
 	})
 
-	want := "[Shell context]\nfoo=foo\nhello\n"
+	want := "<shell context>\nfoo=foo\n</shell context>\nhello\n"
 	testboil.FailTestIfDiff(t, gotStatusCode, 0)
 	testboil.FailTestIfDiff(t, gotStdout, want)
 }

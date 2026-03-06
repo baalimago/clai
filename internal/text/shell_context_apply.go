@@ -11,9 +11,8 @@ import (
 // AppendShellContextIfConfigured inserts the rendered shell context block into prompt.
 //
 // Insertion rule:
-// - if rendered is non-empty: rendered + "\n" + <original-prompt-with-leading-whitespace-trimmed>
-//
-// This makes templates ending with "\n" behave naturally (single newline separation).
+//   - if rendered is non-empty: "<shell context>\n" + rendered + "\n</shell context>\n" +
+//     <original-prompt-with-leading-whitespace-trimmed>
 func AppendShellContextIfConfigured(ctx context.Context, configDir, shellContextName, prompt string, r ShellContextRenderer) (string, error) {
 	name := strings.TrimSpace(shellContextName)
 	if name == "" {
@@ -38,5 +37,5 @@ func AppendShellContextIfConfigured(ctx context.Context, configDir, shellContext
 	}
 
 	prompt = strings.TrimLeft(prompt, " \t\r\n")
-	return rendered + "\n" + prompt, nil
+	return "<shell context>\n" + rendered + "\n</shell context>\n" + prompt, nil
 }
