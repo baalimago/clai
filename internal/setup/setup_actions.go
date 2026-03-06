@@ -2,6 +2,7 @@ package setup
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -21,14 +22,13 @@ import (
 )
 
 func queryForAction(options []action) (action, error) {
-	var input string
 	var ret action
 	var userQuery strings.Builder
 	userQuery.WriteString("Do you wish to ")
 	for _, s := range options {
 		userQuery.WriteString(fmt.Sprintf("%v, ", s))
 	}
-	userQuery.WriteString("[q]uit: ")
+	userQuery.WriteString("[b]ack [q]uit: ")
 	fmt.Print(colorSecondary(userQuery.String()))
 	input, err := utils.ReadUserInput()
 	if err != nil {
@@ -52,11 +52,15 @@ func queryForAction(options []action) (action, error) {
 			ret = confWithEditor
 		}
 	case "p", "pasteNew":
-		ret = pasteNew
+		if slices.Contains(options, pasteNew) {
+			ret = pasteNew
+		}
 	case "pr", "promptWithEditor":
 		if slices.Contains(options, promptEditWithEditor) {
 			ret = promptEditWithEditor
 		}
+	case "b", "back":
+		return unset, fmt.Errorf("user chose to go back from actions: %w", utils.ErrBack)
 	case "q", "quit":
 		return unset, utils.ErrUserInitiatedExit
 	}
@@ -67,55 +71,136 @@ func queryForAction(options []action) (action, error) {
 	return ret, nil
 }
 
-func configure(cfgs []config, a action) error {
-	var input string
-	index := len(cfgs) - 1
-	if index == -1 {
-		return fmt.Errorf("found no configuration files, cant %v", a)
-	}
-	if index != 0 {
-		fmt.Println(colorPrimary("Found config files: "))
-		for i, cfg := range cfgs {
-			fmt.Print(colorBreadtext(fmt.Sprintf("\t%v: %v\n", i, cfg.name)))
-		}
-		fmt.Print(colorSecondary("Please pick index: "))
-		shadowInput, err := utils.ReadUserInput()
-		if err != nil {
-			return fmt.Errorf("read config index: %w", err)
-		}
-		input = shadowInput
-		i, err := strconv.Atoi(input)
-		if err != nil {
-			return fmt.Errorf("invalid index: %v", input)
-		}
-		index = i
-		if index < 0 || index >= len(cfgs) {
-			return fmt.Errorf("invalid index: %v, must be between 0 and %v", index, len(cfgs))
-		}
+func selectConfigItem(category setupCategory, cfgs []config) error {
+	if len(cfgs) == 0 {
+		return fmt.Errorf("found no configuration files for category %q", category.name)
 	}
 
+	selectedIndices, err := utils.SelectFromTable(
+		fmt.Sprintf("Configs in %s", category.name),
+		cfgs,
+		"select config: [<num>], next[<enter>]/[n]ext, [p]rev, [q]uit): ",
+		func(i int, cfg config) (string, error) {
+			return fmt.Sprintf("%d. %s", i, cfg.name), nil
+		},
+		10,
+		true,
+		true,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to select config item: %w", err)
+	}
+
+	selectedIndex := selectedIndices[0]
+	if selectedIndex < 0 || selectedIndex >= len(cfgs) {
+		return fmt.Errorf("selected config index %d out of range", selectedIndex)
+	}
+
+	selectedCfg := cfgs[selectedIndex]
+	if err := previewConfigItem(selectedCfg); err != nil {
+		return fmt.Errorf("failed to preview selected config item %q: %w", selectedCfg.name, err)
+	}
+
+	return actOnConfigItem(category, selectedCfg)
+}
+
+func previewConfigItem(cfg config) error {
+	if cfg.isSynthetic {
+		return nil
+	}
+
+	b, err := os.ReadFile(cfg.filePath)
+	if err != nil {
+		return fmt.Errorf("failed to read config preview from %q: %w", cfg.filePath, err)
+	}
+
+	fmt.Print(colorPrimary("Selected config preview:\n"))
+	fmt.Print(colorBreadtext(fmt.Sprintf("%s\n---\n", b)))
+	return nil
+}
+
+func actOnConfigItem(category setupCategory, cfg config) error {
+	if cfg.isSynthetic {
+		return executeSyntheticConfig(cfg)
+	}
+
+	selectedAction, err := queryForAction(category.actions)
+	if err != nil {
+		if errors.Is(err, utils.ErrBack) {
+			return fmt.Errorf("user returned to config list: %w", err)
+		}
+		return fmt.Errorf("failed to query for config action: %w", err)
+	}
+
+	if err := executeConfigAction(cfg, selectedAction); err != nil {
+		return fmt.Errorf("failed to execute action %q for %q: %w", selectedAction, cfg.name, err)
+	}
+	return nil
+}
+
+func executeSyntheticConfig(cfg config) error {
+	switch cfg.kind {
+	case configKindCreateProfile:
+		createdCfg, err := createProFile(cfg.filePath)
+		if err != nil {
+			return fmt.Errorf("failed to create profile config: %w", err)
+		}
+		if err := executeConfigAction(createdCfg, conf); err != nil {
+			return fmt.Errorf("failed to configure created profile %q: %w", createdCfg.name, err)
+		}
+		return nil
+	case configKindCreateMCPServer:
+		createdCfg, err := createMcpServerFile(cfg.filePath)
+		if err != nil {
+			return fmt.Errorf("failed to create mcp server config: %w", err)
+		}
+		if err := executeConfigAction(createdCfg, conf); err != nil {
+			return fmt.Errorf("failed to configure created mcp server %q: %w", createdCfg.name, err)
+		}
+		return nil
+	case configKindPasteMCPConfig:
+		pastedCfgs, err := pasteMcpServerConfig(cfg.filePath)
+		if err != nil {
+			return fmt.Errorf("failed to paste mcp server config: %w", err)
+		}
+		for _, pastedCfg := range pastedCfgs {
+			if err := executeConfigAction(pastedCfg, conf); err != nil {
+				return fmt.Errorf("failed to configure pasted mcp server %q: %w", pastedCfg.name, err)
+			}
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported synthetic config kind %d", cfg.kind)
+	}
+}
+
+func executeConfigAction(cfg config, a action) error {
 	switch a {
 	case conf:
-		return reconfigure(cfgs[index])
+		return reconfigure(cfg)
 	case confWithEditor:
-		return reconfigureWithEditor(cfgs[index])
+		return reconfigureWithEditor(cfg)
 	case promptEditWithEditor:
-		return reconfigurePromptWithEditor(cfgs[index])
+		return reconfigurePromptWithEditor(cfg)
 	case del:
-		return remove(cfgs[index])
+		return remove(cfg)
 	default:
-		return fmt.Errorf("invalid action, expected conf or del: %v", input)
+		return fmt.Errorf("invalid action for config %q: %v", cfg.name, a)
 	}
 }
 
 func reconfigure(cfg config) error {
 	f, err := os.Open(cfg.filePath)
 	if err != nil {
-		return fmt.Errorf("failed to open file %s: %v", cfg.filePath, err)
+		return fmt.Errorf("failed to open file %s: %w", cfg.filePath, err)
 	}
+	defer func() {
+		_ = f.Close()
+	}()
+
 	b, err := io.ReadAll(f)
 	if err != nil {
-		return fmt.Errorf("failed to read file %s: %v", cfg.filePath, err)
+		return fmt.Errorf("failed to read file %s: %w", cfg.filePath, err)
 	}
 	return interractiveReconfigure(cfg, b)
 }
@@ -125,22 +210,26 @@ func unescapeEditWithEditor(toEdit string) (string, error) {
 	unescapedStr = strings.ReplaceAll(unescapedStr, "\\n", "\n")
 	tmp, err := os.CreateTemp("", "unescapeEdit_*")
 	if err != nil {
-		tmp.Close()
 		return "", fmt.Errorf("failed to create temp file: %w", err)
 	}
 	_, err = tmp.WriteString(unescapedStr)
-	tmp.Close()
-	if err != nil {
-		return "", fmt.Errorf("failed to write string toEdit: %w", err)
+	if closeErr := tmp.Close(); closeErr != nil {
+		return "", fmt.Errorf("failed to close temp file: %w", closeErr)
 	}
+	if err != nil {
+		return "", fmt.Errorf("failed to write string to edit: %w", err)
+	}
+	defer os.Remove(tmp.Name())
+
 	tmpCfg := config{
-		"tmpToEdit",
-		tmp.Name(),
+		name:     "tmpToEdit",
+		filePath: tmp.Name(),
+		kind:     configKindNormal,
 	}
 
 	err = reconfigureWithEditor(tmpCfg)
 	if err != nil {
-		return "", fmt.Errorf("failed to reconfigureWithEditor: %w", err)
+		return "", fmt.Errorf("failed to reconfigure with editor: %w", err)
 	}
 
 	b, err := os.ReadFile(tmpCfg.filePath)
@@ -159,26 +248,26 @@ func unescapeEditWithEditor(toEdit string) (string, error) {
 func reconfigurePromptWithEditor(cfg config) error {
 	b, err := os.ReadFile(cfg.filePath)
 	if err != nil {
-		return fmt.Errorf("failed to read file: %w", err)
+		return fmt.Errorf("failed to read file %s: %w", cfg.filePath, err)
 	}
 	var profile text.Profile
 	err = json.Unmarshal(b, &profile)
 	if err != nil {
-		return fmt.Errorf("failed to unmarshal to profile: %w", err)
+		return fmt.Errorf("failed to unmarshal profile from %s: %w", cfg.filePath, err)
 	}
 	editedPrompt, err := unescapeEditWithEditor(profile.Prompt)
 	if err != nil {
-		return fmt.Errorf("failed to unescapeEditWithEditor: %w", err)
+		return fmt.Errorf("failed to edit prompt with editor: %w", err)
 	}
 	profile.Prompt = editedPrompt
 	editedB, err := json.MarshalIndent(profile, "", "\t")
 	if err != nil {
-		return fmt.Errorf("failed to marshal edited profile: %w", err)
+		return fmt.Errorf("failed to marshal edited profile %s: %w", cfg.filePath, err)
 	}
 
 	err = os.WriteFile(cfg.filePath, editedB, 0x755)
 	if err != nil {
-		return fmt.Errorf("failed to write file: %w", err)
+		return fmt.Errorf("failed to write profile %s: %w", cfg.filePath, err)
 	}
 	ancli.Okf("updated profile at path: %v", cfg.filePath)
 	return nil
@@ -197,11 +286,11 @@ func reconfigureWithEditor(cfg config) error {
 	cmd.Stderr = os.Stderr
 
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to edit file %s: %v", cfg.filePath, err)
+		return fmt.Errorf("failed to edit file %s: %w", cfg.filePath, err)
 	}
 	newConfig, err := os.ReadFile(cfg.filePath)
 	if err != nil {
-		return fmt.Errorf("editor exited OK, failed to read config file '%v' after, error: %v", cfg.filePath, err)
+		return fmt.Errorf("editor exited OK, failed to read config file %q after edit: %w", cfg.filePath, err)
 	}
 	ancli.Okf("updated:\n%v", string(newConfig))
 	return nil
@@ -214,11 +303,11 @@ func remove(cfg config) error {
 		return fmt.Errorf("read delete confirmation: %w", err)
 	}
 	if input != "y" {
-		return fmt.Errorf("aborting deletion")
+		return fmt.Errorf("aborting deletion: %w", errors.New("delete not confirmed"))
 	}
 	err = os.Remove(cfg.filePath)
 	if err != nil {
-		return fmt.Errorf("failed to delete file: '%v', error: %v", cfg.filePath, err)
+		return fmt.Errorf("failed to delete file %q: %w", cfg.filePath, err)
 	}
 	ancli.PrintOK(fmt.Sprintf("deleted file: '%v'\n", cfg.filePath))
 	return nil
@@ -228,22 +317,22 @@ func interractiveReconfigure(cfg config, b []byte) error {
 	var jzon map[string]any
 	err := json.Unmarshal(b, &jzon)
 	if err != nil {
-		return fmt.Errorf("failed to unmarshal config: %v, error: %w", cfg.name, err)
+		return fmt.Errorf("failed to unmarshal config %v: %w", cfg.name, err)
 	}
 	fmt.Print(colorPrimary("Current config:\n"))
 	fmt.Print(colorBreadtext(fmt.Sprintf("%s\n---\n", b)))
 	newConfig, err := buildNewConfig(jzon)
 	if err != nil {
-		return fmt.Errorf("failed to build new config: %w", err)
+		return fmt.Errorf("failed to build new config for %s: %w", cfg.name, err)
 	}
 
 	newB, err := json.MarshalIndent(newConfig, "", "\t")
 	if err != nil {
-		return fmt.Errorf("failed to marshal new config: %w", err)
+		return fmt.Errorf("failed to marshal new config for %s: %w", cfg.name, err)
 	}
 	err = os.WriteFile(cfg.filePath, newB, 0o644)
 	if err != nil {
-		return fmt.Errorf("failed to write new config at: '%v', error: %w", cfg.filePath, err)
+		return fmt.Errorf("failed to write new config at %q: %w", cfg.filePath, err)
 	}
 	ancli.PrintOK(fmt.Sprintf("wrote new config to: '%v'\n", cfg.filePath))
 	return nil
@@ -266,25 +355,34 @@ func getToolsValue(v any) ([]string, error) {
 		fmt.Fprintf(w, "%v\t%v\t%v\n", i, name, v.Specification().Description)
 		i++
 	}
-	w.Flush()
+	if err := w.Flush(); err != nil {
+		return nil, fmt.Errorf("failed to flush tool table: %w", err)
+	}
 	fmt.Print(colorSecondary("Enter indices of tools to use (example: '1,3,4,2'): "))
 	input, err := utils.ReadUserInput()
 	if err != nil {
-		return nil, fmt.Errorf("failed to read input: %v", err)
+		return nil, fmt.Errorf("failed to read input: %w", err)
 	}
 	if input == "q" || input == "quit" {
 		return []string{}, utils.ErrUserInitiatedExit
 	}
 
 	if input == "" {
-		return v.([]string), nil
+		stringSlice, ok := v.([]string)
+		if ok {
+			return stringSlice, nil
+		}
+		return []string{}, nil
 	}
 	re := regexp.MustCompile(`\d`)
 	digits := re.FindAllString(input, -1)
 
 	var ret []string
 	for _, d := range digits {
-		dint, _ := strconv.Atoi(d)
+		dint, convErr := strconv.Atoi(d)
+		if convErr != nil {
+			return nil, fmt.Errorf("failed to convert tool index %q: %w", d, convErr)
+		}
 		t, exists := indexMap[dint]
 		if !exists {
 			ancli.PrintWarn(fmt.Sprintf("there is no index: %v, skipping", d))
@@ -300,12 +398,11 @@ func getNewValue(k string, v any) (any, error) {
 		return getToolsValue(v)
 	}
 	var ret any
-	// Keep the descriptive parts readable (breadtext), but keep the interactive prompt (cursor line) secondary.
 	fmt.Print(colorBreadtext(fmt.Sprintf("Key: '%v', current: '%v'\n", k, v)))
 	fmt.Print(colorSecondary("Please enter new value, or leave empty to keep: "))
 	input, err := utils.ReadUserInput()
 	if err != nil {
-		return nil, fmt.Errorf("failed to read input: %w", err)
+		return nil, fmt.Errorf("failed to read input for key %q: %w", k, err)
 	}
 	if input == "" {
 		ret = v
@@ -373,9 +470,11 @@ func editMap(k string, m map[string]any) (map[string]any, error) {
 			}
 			nv, err := handleValue(fmt.Sprintf("%s.%s", k, uk), val)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("failed to handle map value %q: %w", uk, err)
 			}
 			edited[uk] = nv
+		default:
+			fmt.Print(colorBreadtext(fmt.Sprintf("unsupported map action %q\n", action)))
 		}
 	}
 }
@@ -412,7 +511,7 @@ func editSlice(k string, s []any) ([]any, error) {
 				for _, i := range split {
 					idx, atoiErr := strconv.Atoi(i)
 					if atoiErr != nil {
-						ancli.Errf("failed to convert: '%v', err: %v", i, err)
+						multiDelErr = fmt.Errorf("failed to convert %q to integer: %w", i, atoiErr)
 						break SPLIT_LOOP
 					}
 					if p == -1 {
@@ -421,13 +520,12 @@ func editSlice(k string, s []any) ([]any, error) {
 						q = idx
 					}
 					pTooLow := p < -1
-					qTooLow := (p > -1 && q < -1)
+					qTooLow := p > -1 && q < -1
 					qTooHigh := q >= len(edited)
-					pHigherThanQ := (p > q && q != -1)
+					pHigherThanQ := p > q && q != -1
 					if qTooLow || pTooLow || qTooHigh || pHigherThanQ {
-						checks := fmt.Sprintf("qTooLow: %v, pTooLow: %v, qTooHigh: %v, pHigherThanQ: %v",
-							pTooLow, qTooLow, qTooHigh, pHigherThanQ)
-						multiDelErr = fmt.Errorf("invalid range selection, p: %v, q: %v, len: %v\nChecks:%v", p, q, len(edited), checks)
+						checks := fmt.Sprintf("qTooLow: %v, pTooLow: %v, qTooHigh: %v, pHigherThanQ: %v", pTooLow, qTooLow, qTooHigh, pHigherThanQ)
+						multiDelErr = fmt.Errorf("invalid range selection, p: %v, q: %v, len: %v. checks: %v", p, q, len(edited), checks)
 						break SPLIT_LOOP
 					}
 				}
@@ -441,12 +539,12 @@ func editSlice(k string, s []any) ([]any, error) {
 					continue
 				}
 			} else {
-				idx, err := strconv.Atoi(idxStr)
-				if err != nil || idx < 0 || idx >= len(edited) {
-					ancli.Errf("invalid index: %v", idx)
+				idx, convErr := strconv.Atoi(idxStr)
+				if convErr != nil || idx < 0 || idx >= len(edited) {
+					ancli.Errf("invalid index: %v", idxStr)
 					continue
 				}
-				_ = idx
+				edited = append(edited[:idx], edited[idx+1:]...)
 			}
 
 		case "u":
@@ -463,9 +561,11 @@ func editSlice(k string, s []any) ([]any, error) {
 			val := edited[idx]
 			nv, err := handleValue(fmt.Sprintf("%s[%d]", k, idx), val)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("failed to handle slice value at %d: %w", idx, err)
 			}
 			edited[idx] = nv
+		default:
+			fmt.Println(colorBreadtext("invalid slice action"))
 		}
 	}
 }
@@ -475,7 +575,7 @@ func buildNewConfig(jzon map[string]any) (map[string]any, error) {
 	for k, v := range jzon {
 		nv, err := handleValue(k, v)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to handle key %q: %w", k, err)
 		}
 		newConfig[k] = nv
 	}
@@ -493,7 +593,6 @@ func castPrimitive(v any) any {
 
 	s, isString := v.(string)
 	if !isString {
-		// We don't really know what unholy value this might be, but let's just return it and hope it's benign
 		return v
 	}
 	i, err := strconv.Atoi(s)

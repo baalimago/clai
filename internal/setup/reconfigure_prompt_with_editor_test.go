@@ -115,8 +115,8 @@ func TestPromptEdit_EditorFail(t *testing.T) {
 	ed := makeEditorScript(t, dir, "", 1)
 	t.Setenv("EDITOR", ed)
 	err := reconfigurePromptWithEditor(cfg)
-	if err == nil || !strings.Contains(err.Error(), "unescapeEditWithEditor") {
-		t.Fatalf("want unescape err, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "failed to edit prompt with editor") {
+		t.Fatalf("want wrapped prompt-edit err, got %v", err)
 	}
 }
 

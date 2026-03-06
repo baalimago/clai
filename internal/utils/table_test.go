@@ -2,6 +2,7 @@ package utils
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -44,8 +45,69 @@ func Test_parseNumbersFromString(t *testing.T) {
 	}
 }
 
+func TestSelectFromTable_WithBack(t *testing.T) {
+	restore := UseReadUserInputForTests(func() (string, error) {
+		return "b", nil
+	})
+	defer restore()
+
+	out := testboil.CaptureStdout(t, func(t *testing.T) {
+		_, err := SelectFromTable(
+			"header",
+			[]string{"a", "b"},
+			"[%d/%d]\n",
+			func(i int, item string) (string, error) {
+				return fmt.Sprintf("%d-%s", i, item), nil
+			},
+			10,
+			true,
+			true,
+		)
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if !errors.Is(err, ErrBack) {
+			t.Fatalf("expected ErrBack, got %v", err)
+		}
+	})
+	if !strings.Contains(strings.ToLower(out), "[b]ack") {
+		t.Fatalf("expected back hint in output, got %q", out)
+	}
+}
+
+func TestSelectFromTable_WithoutBackTreatsBAsInvalid(t *testing.T) {
+	inputs := []string{"b", "0"}
+	restore := UseReadUserInputForTests(func() (string, error) {
+		if len(inputs) == 0 {
+			return "", fmt.Errorf("stub input exhausted")
+		}
+		ret := inputs[0]
+		inputs = inputs[1:]
+		return ret, nil
+	})
+	defer restore()
+
+	selected, err := SelectFromTable(
+		"header",
+		[]string{"a", "b"},
+		"[%d/%d]\n",
+		func(i int, item string) (string, error) {
+			return fmt.Sprintf("%d-%s", i, item), nil
+		},
+		10,
+		true,
+		false,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []int{0}
+	if !reflect.DeepEqual(selected, want) {
+		t.Fatalf("got %v, want %v", selected, want)
+	}
+}
+
 func Test_printSelectRow_success(t *testing.T) {
-	// ensure we exercise color output
 	t.Setenv("NO_COLOR", "")
 
 	globalTheme = Theme{
@@ -86,7 +148,6 @@ func Test_printSelectRow_format_error(t *testing.T) {
 }
 
 func Test_printSelectItemOptions_first_page(t *testing.T) {
-	// ensure we exercise color output
 	t.Setenv("NO_COLOR", "")
 
 	globalTheme = Theme{
@@ -102,7 +163,6 @@ func Test_printSelectItemOptions_first_page(t *testing.T) {
 	var am int
 	out := testboil.CaptureStdout(t, func(t *testing.T) {
 		n, err := printSelectItemOptions(
-
 			0, 3, len(items), items, "[%d/%d]\n", format,
 		)
 		if err != nil {
@@ -128,7 +188,6 @@ func Test_printSelectItemOptions_first_page(t *testing.T) {
 }
 
 func Test_printSelectItemOptions_last_partial_page(t *testing.T) {
-	// ensure we exercise color output
 	t.Setenv("NO_COLOR", "")
 
 	globalTheme = Theme{
@@ -179,7 +238,7 @@ func Test_printSelectItemOptions_format_error(t *testing.T) {
 		if err == nil {
 			t.Fatalf("expected error")
 		}
-		if !strings.Contains(err.Error(), "printRow") {
+		if !strings.Contains(err.Error(), "print row") {
 			t.Fatalf("err=%v", err)
 		}
 	})
@@ -189,7 +248,6 @@ func Test_printSelectItemOptions_format_error(t *testing.T) {
 }
 
 func Test_printSelectItemOptions_empty_items(t *testing.T) {
-	// ensure we exercise color output
 	t.Setenv("NO_COLOR", "")
 
 	globalTheme = Theme{
