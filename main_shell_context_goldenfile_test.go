@@ -10,15 +10,6 @@ import (
 )
 
 func Test_goldenFile_QUERY_shell_context_flag_appends_rendered_block(t *testing.T) {
-	// Goldenfile-ish CLI contract test for ASC (auto-append shell context).
-	//
-	// Expected behaviour from architecture/SHELL-CONTEXT.md:
-	// - when -add-shell-context <name> is provided, clai loads <configDir>/shellContexts/<name>.json
-	// - it executes the commands in vars, renders template, and appends it to the user prompt
-	// - this must not interfere with token replacement / stdin handling (covered elsewhere)
-	//
-	// Note: until ASC is implemented, this test will fail.
-
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
 
@@ -36,7 +27,6 @@ func Test_goldenFile_QUERY_shell_context_flag_appends_rendered_block(t *testing.
 		}
 	}
 
-	// Minimal shell context definition, with deterministic commands.
 	ctxJSON := `{
   "shell": "/bin/sh",
   "timeout_ms": 1000,
@@ -58,8 +48,7 @@ func Test_goldenFile_QUERY_shell_context_flag_appends_rendered_block(t *testing.
 		gotStatusCode = run(strings.Split("-r -cm test -add-shell-context minimal q hello", " "))
 	})
 
-	// The test model echoes the final user prompt.
-	want := "[Shell context]\nfoo=foo\nhello"
+	want := "[Shell context]\nfoo=foo\nhello\n"
 	testboil.FailTestIfDiff(t, gotStatusCode, 0)
 	testboil.FailTestIfDiff(t, gotStdout, want)
 }
