@@ -1,134 +1,96 @@
 package setup
 
 import (
+	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"path"
+	"path/filepath"
+	"reflect"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 	"text/tabwriter"
 
-	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/utils"
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 	"golang.org/x/exp/maps"
 )
 
+var defaultMcpServer = pub_models.McpServer{
+	Command: "npx",
+	Args:    []string{"-y", "@modelcontextprotocol/server-everything"},
+}
+
+func previewConfigItem(cfg config) error {
+	b, err := os.ReadFile(cfg.filePath)
+	if err != nil {
+		return fmt.Errorf(
+			"failed to read config preview from %q: %w",
+			cfg.filePath,
+			err,
+		)
+	}
+
+	var jzon any
+	if err := json.Unmarshal(b, &jzon); err != nil {
+		return fmt.Errorf("failed to unmarshal json: %w", err)
+	}
+
+	indentedJSON, err := json.MarshalIndent(jzon, "", " ")
+	if err != nil {
+		return fmt.Errorf("failed to indent json: %w", err)
+	}
+
+	fmt.Print(colorPrimary("Selected config preview:\n"))
+	fmt.Print(
+		colorBreadtext(fmt.Sprintf("%s\n---\n", string(indentedJSON))),
+	)
+	return nil
+}
+
 func queryForAction(options []action) (action, error) {
 	var ret action
 	var userQuery strings.Builder
 	userQuery.WriteString("Do you wish to ")
-	for _, s := range options {
-		userQuery.WriteString(fmt.Sprintf("%v, ", s))
+	for i, s := range options {
+		if i > 0 {
+			userQuery.WriteString(", ")
+		}
+		userQuery.WriteString(s.String())
 	}
-	userQuery.WriteString("[b]ack [q]uit: ")
+	userQuery.WriteString(": ")
 	fmt.Print(colorSecondary(userQuery.String()))
 	input, err := utils.ReadUserInput()
 	if err != nil {
 		return unset, fmt.Errorf("failed to query for action: %w", err)
 	}
-	switch input {
-	case "c", "configure":
-		if slices.Contains(options, conf) {
-			ret = conf
+	for choiceStr, act := range choiceToAction {
+		split := strings.Split(choiceStr, ",")
+		if slices.Contains(split, input) {
+			ret = act
+			break
 		}
-	case "d", "delete":
-		if slices.Contains(options, del) {
-			ret = del
-		}
-	case "n", "new":
-		if slices.Contains(options, newaction) {
-			ret = newaction
-		}
-	case "e", "configureWithEditor":
-		if slices.Contains(options, confWithEditor) {
-			ret = confWithEditor
-		}
-	case "p", "pasteNew":
-		if slices.Contains(options, pasteNew) {
-			ret = pasteNew
-		}
-	case "pr", "promptWithEditor":
-		if slices.Contains(options, promptEditWithEditor) {
-			ret = promptEditWithEditor
-		}
-	case "b", "back":
-		return unset, fmt.Errorf("user chose to go back from actions: %w", utils.ErrBack)
-	case "q", "quit":
-		return unset, utils.ErrUserInitiatedExit
 	}
-
 	if ret == unset {
-		return unset, fmt.Errorf("invalid choice: %v", input)
+		ancli.Warnf("invalid choice: %v", input)
+		return queryForAction(options)
 	}
 	return ret, nil
 }
 
-func selectConfigItem(category setupCategory, cfgs []config) error {
-	if len(cfgs) == 0 {
-		return fmt.Errorf("found no configuration files for category %q", category.name)
-	}
-
-	selectedIndices, err := utils.SelectFromTable(
-		fmt.Sprintf("Configs in %s", category.name),
-		cfgs,
-		"select config: [<num>], next[<enter>]/[n]ext, [p]rev, [q]uit): ",
-		func(i int, cfg config) (string, error) {
-			return fmt.Sprintf("%d. %s", i, cfg.name), nil
-		},
-		10,
-		true,
-		true,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to select config item: %w", err)
-	}
-
-	selectedIndex := selectedIndices[0]
-	if selectedIndex < 0 || selectedIndex >= len(cfgs) {
-		return fmt.Errorf("selected config index %d out of range", selectedIndex)
-	}
-
-	selectedCfg := cfgs[selectedIndex]
-	if err := previewConfigItem(selectedCfg); err != nil {
-		return fmt.Errorf("failed to preview selected config item %q: %w", selectedCfg.name, err)
-	}
-
-	return actOnConfigItem(category, selectedCfg)
-}
-
-func previewConfigItem(cfg config) error {
-	if cfg.isSynthetic {
-		return nil
-	}
-
-	b, err := os.ReadFile(cfg.filePath)
-	if err != nil {
-		return fmt.Errorf("failed to read config preview from %q: %w", cfg.filePath, err)
-	}
-
-	fmt.Print(colorPrimary("Selected config preview:\n"))
-	fmt.Print(colorBreadtext(fmt.Sprintf("%s\n---\n", b)))
-	return nil
-}
-
 func actOnConfigItem(category setupCategory, cfg config) error {
-	if cfg.isSynthetic {
-		return executeSyntheticConfig(cfg)
-	}
-
-	selectedAction, err := queryForAction(category.actions)
+	actionsWithBackQuit := append(category.itemActions, back)
+	selectedAction, err := queryForAction(actionsWithBackQuit)
 	if err != nil {
-		if errors.Is(err, utils.ErrBack) {
-			return fmt.Errorf("user returned to config list: %w", err)
-		}
 		return fmt.Errorf("failed to query for config action: %w", err)
 	}
 
@@ -138,58 +100,20 @@ func actOnConfigItem(category setupCategory, cfg config) error {
 	return nil
 }
 
-func executeSyntheticConfig(cfg config) error {
-	switch cfg.kind {
-	case configKindCreateProfile:
-		createdCfg, err := createProFile(cfg.filePath)
-		if err != nil {
-			return fmt.Errorf("failed to create profile config: %w", err)
-		}
-		if err := executeConfigAction(createdCfg, conf); err != nil {
-			return fmt.Errorf("failed to configure created profile %q: %w", createdCfg.name, err)
-		}
-		return nil
-	case configKindCreateMCPServer:
-		createdCfg, err := createMcpServerFile(cfg.filePath)
-		if err != nil {
-			return fmt.Errorf("failed to create mcp server config: %w", err)
-		}
-		if err := executeConfigAction(createdCfg, conf); err != nil {
-			return fmt.Errorf("failed to configure created mcp server %q: %w", createdCfg.name, err)
-		}
-		return nil
-	case configKindPasteMCPConfig:
-		pastedCfgs, err := pasteMcpServerConfig(cfg.filePath)
-		if err != nil {
-			return fmt.Errorf("failed to paste mcp server config: %w", err)
-		}
-		for _, pastedCfg := range pastedCfgs {
-			if err := executeConfigAction(pastedCfg, conf); err != nil {
-				return fmt.Errorf("failed to configure pasted mcp server %q: %w", pastedCfg.name, err)
-			}
-		}
-		return nil
-	default:
-		return fmt.Errorf("unsupported synthetic config kind %d", cfg.kind)
+func actionPasteMcpServer(mcpCfgPath string) error {
+	pastedCfgs, err := pasteMcpServerConfig(mcpCfgPath)
+	if err != nil {
+		return fmt.Errorf("failed to paste mcp server config: %w", err)
 	}
+	for _, pastedCfg := range pastedCfgs {
+		if err := executeConfigAction(pastedCfg, conf); err != nil {
+			return fmt.Errorf("failed to configure pasted mcp server %q: %w", pastedCfg.name, err)
+		}
+	}
+	return nil
 }
 
-func executeConfigAction(cfg config, a action) error {
-	switch a {
-	case conf:
-		return reconfigure(cfg)
-	case confWithEditor:
-		return reconfigureWithEditor(cfg)
-	case promptEditWithEditor:
-		return reconfigurePromptWithEditor(cfg)
-	case del:
-		return remove(cfg)
-	default:
-		return fmt.Errorf("invalid action for config %q: %v", cfg.name, a)
-	}
-}
-
-func reconfigure(cfg config) error {
+func actionReconfigure(cfg config) error {
 	f, err := os.Open(cfg.filePath)
 	if err != nil {
 		return fmt.Errorf("failed to open file %s: %w", cfg.filePath, err)
@@ -224,10 +148,9 @@ func unescapeEditWithEditor(toEdit string) (string, error) {
 	tmpCfg := config{
 		name:     "tmpToEdit",
 		filePath: tmp.Name(),
-		kind:     configKindNormal,
 	}
 
-	err = reconfigureWithEditor(tmpCfg)
+	err = actionReconfigureWithEditor(tmpCfg)
 	if err != nil {
 		return "", fmt.Errorf("failed to reconfigure with editor: %w", err)
 	}
@@ -238,43 +161,101 @@ func unescapeEditWithEditor(toEdit string) (string, error) {
 	}
 
 	unescapedStr = string(b)
+	unescapedStr = strings.TrimSuffix(unescapedStr, "\r\n")
+	unescapedStr = strings.TrimSuffix(unescapedStr, "\n")
+
 	escapedStr := strings.ReplaceAll(unescapedStr, "\t", "\\t")
 	escapedStr = strings.ReplaceAll(escapedStr, "\n", "\\n")
 	return escapedStr, nil
 }
 
-// reconfigurePromptWithEditor by extracting the prompt from the selected config
-// and then escape-editing the field. Lastly, reapply the prompt and save the profile
-func reconfigurePromptWithEditor(cfg config) error {
+// actionReconfigureStringFieldWithEditor. If fieldName is empty string the user will be
+// queried to select some field from the json
+func actionReconfigureStringFieldWithEditor(cfg config, fieldName string) error {
 	b, err := os.ReadFile(cfg.filePath)
 	if err != nil {
 		return fmt.Errorf("failed to read file %s: %w", cfg.filePath, err)
 	}
-	var profile text.Profile
-	err = json.Unmarshal(b, &profile)
-	if err != nil {
-		return fmt.Errorf("failed to unmarshal profile from %s: %w", cfg.filePath, err)
+
+	var jzon map[string]any
+	if err := json.Unmarshal(b, &jzon); err != nil {
+		return fmt.Errorf("failed to unmarshal config from %s: %w", cfg.filePath, err)
 	}
-	editedPrompt, err := unescapeEditWithEditor(profile.Prompt)
-	if err != nil {
-		return fmt.Errorf("failed to edit prompt with editor: %w", err)
-	}
-	profile.Prompt = editedPrompt
-	editedB, err := json.MarshalIndent(profile, "", "\t")
-	if err != nil {
-		return fmt.Errorf("failed to marshal edited profile %s: %w", cfg.filePath, err)
+	if fieldName == "" {
+		fields := []string{}
+		for f, v := range jzon {
+			typeOf := reflect.TypeOf(v)
+			if typeOf == nil {
+				continue
+			}
+			if typeOf.String() == "string" {
+				fields = append(fields, f)
+			}
+		}
+
+		choice, err := utils.SelectFromTable("Select field",
+			fields,
+			"Select field <num>: ",
+			func(i int, t string) (string, error) {
+				return fmt.Sprintf("%v. %v", i, t), nil
+			},
+			10,
+			true,
+			[]utils.CustomTableAction{
+				actionToTableAction[back],
+			})
+
+		if len(choice) > 1 {
+			return fmt.Errorf("recieved an unexpectd amount of choices: '%v'", choice)
+		}
+
+		if err != nil {
+			return fmt.Errorf("failed to select field choice: %w", err)
+		}
+
+		fieldName = fields[choice[0]]
 	}
 
-	err = os.WriteFile(cfg.filePath, editedB, 0x755)
-	if err != nil {
-		return fmt.Errorf("failed to write profile %s: %w", cfg.filePath, err)
+	rawValue, found := jzon[fieldName]
+	if !found {
+		return fmt.Errorf("missing string field %q in %s", fieldName, cfg.filePath)
 	}
-	ancli.Okf("updated profile at path: %v", cfg.filePath)
+
+	stringValue, ok := rawValue.(string)
+	if !ok {
+		return fmt.Errorf("field %q in %s is not a string, got %T", fieldName, cfg.filePath, rawValue)
+	}
+
+	editedValue, err := unescapeEditWithEditor(stringValue)
+	if err != nil {
+		return fmt.Errorf("failed to edit field %q with editor: %w", fieldName, err)
+	}
+	jzon[fieldName] = editedValue
+
+	editedB, err := json.MarshalIndent(jzon, "", "\t")
+	if err != nil {
+		return fmt.Errorf("failed to marshal edited config for %s: %w", cfg.filePath, err)
+	}
+
+	if err := os.WriteFile(cfg.filePath, editedB, 0o755); err != nil {
+		return fmt.Errorf("failed to write config %s: %w", cfg.filePath, err)
+	}
+
+	ancli.Okf("updated field %q at path: %v", fieldName, cfg.filePath)
 	return nil
 }
 
-// reconfigureWithEditor. As in the $EDITOR environment variable
-func reconfigureWithEditor(cfg config) error {
+// actionReconfigurePromptWithEditor by extracting the prompt from the selected config
+// and then escape-editing the field. Lastly, reapply the prompt and save the profile
+func actionReconfigurePromptWithEditor(cfg config) error {
+	if err := actionReconfigureStringFieldWithEditor(cfg, "prompt"); err != nil {
+		return fmt.Errorf("failed to edit prompt with editor: %w", err)
+	}
+	return nil
+}
+
+// actionReconfigureWithEditor. As in the $EDITOR environment variable
+func actionReconfigureWithEditor(cfg config) error {
 	editor := os.Getenv("EDITOR")
 	if editor == "" {
 		return fmt.Errorf("environment variable EDITOR is not set")
@@ -296,7 +277,7 @@ func reconfigureWithEditor(cfg config) error {
 	return nil
 }
 
-func remove(cfg config) error {
+func actionRemove(cfg config) error {
 	fmt.Print(colorSecondary(fmt.Sprintf("Are you sure you want to delete: '%v'?\n[y/n]: ", cfg.filePath)))
 	input, err := utils.ReadUserInput()
 	if err != nil {
@@ -604,4 +585,66 @@ func castPrimitive(v any) any {
 		return f
 	}
 	return s
+}
+
+func createConfigFile[T any](configTypePath, configType string, defaultConfig T) (config, error) {
+	if _, err := os.Stat(configTypePath); os.IsNotExist(err) {
+		if err := os.MkdirAll(configTypePath, os.ModePerm); err != nil {
+			return config{}, fmt.Errorf("failed to create %s directory: %w", configType, err)
+		}
+	}
+	fmt.Print(colorSecondary(fmt.Sprintf("Enter %s name: ", configType)))
+	configName, err := utils.ReadUserInput()
+	if err != nil {
+		return config{}, fmt.Errorf("read %s name: %w", configType, err)
+	}
+	newConfigPath := path.Join(configTypePath, fmt.Sprintf("%v.json", configName))
+	err = utils.CreateFile(newConfigPath, &defaultConfig)
+	if err != nil {
+		return config{}, fmt.Errorf("create %s file: %w", configType, err)
+	}
+	return config{
+		name:     configName,
+		filePath: newConfigPath,
+	}, nil
+}
+
+func pasteMcpServerConfig(mcpConfDir string) ([]config, error) {
+	ancli.Noticef("Paste your MCP server configuration below.")
+	ancli.Noticef("Press Ctrl+D when finished (or type 'EOF' on a new line):")
+
+	var lines []string
+	scanner := bufio.NewScanner(os.Stdin)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "EOF" {
+			break
+		}
+		lines = append(lines, line)
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("error reading input: %w", err)
+	}
+
+	pastedConfig := strings.Join(lines, "\n")
+	if strings.TrimSpace(pastedConfig) == "" {
+		return nil, fmt.Errorf("no configuration provided")
+	}
+
+	serverNames, err := ParseAndAddMcpServer(mcpConfDir, pastedConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse mcp server: %w", err)
+	}
+
+	ret := make([]config, 0, len(serverNames))
+	for _, s := range serverNames {
+		ret = append(ret, config{
+			name:     s,
+			filePath: filepath.Join(mcpConfDir, fmt.Sprintf("%v.json", s)),
+		})
+	}
+
+	return ret, nil
 }

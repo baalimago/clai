@@ -208,7 +208,7 @@ func (cq *ChatHandler) listChats(
 		},
 		10,
 		true,
-		false,
+		[]utils.CustomTableAction{},
 	)
 	if err != nil {
 		return fmt.Errorf("failed to select chat: %w", err)
@@ -359,7 +359,7 @@ func (cq *ChatHandler) deleteMessageInChat(
 		},
 		10,
 		false,
-		false,
+		[]utils.CustomTableAction{},
 	)
 	if err != nil {
 		return fmt.Errorf("failed to select from table: %w", err)
@@ -419,7 +419,7 @@ func (cq *ChatHandler) editMessageInChat(chat pub_models.Chat) error {
 		},
 		10,
 		true,
-		false,
+		[]utils.CustomTableAction{},
 	)
 	if err != nil {
 		return fmt.Errorf("failed to select from table: %w", err)

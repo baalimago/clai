@@ -52,8 +52,8 @@ func TestSelectConfigItem_PreviewsSelectedItemBeforeActionPrompt(t *testing.T) {
 	}()
 
 	err = selectConfigItem(
-		setupCategory{name: "model files", actions: []action{conf}},
-		[]config{{name: "preview.json", filePath: tmpFile.Name(), kind: configKindNormal}},
+		setupCategory{name: "model files", itemActions: []action{conf, back, quit}},
+		[]config{{name: "preview.json", filePath: tmpFile.Name()}},
 	)
 
 	_ = w.Close()

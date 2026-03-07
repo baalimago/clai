@@ -7,10 +7,19 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
+
+type CustomTableAction struct {
+	// Format for the the menu item to be printed. Include short and long Format. Example [b]ack
+	Format string
+	// Short name back -> "b"
+	Short string
+	// Long name "back"
+	Long   string
+	Action func() error
+}
 
 // SelectFromTable by:
 // 1. Listing rows according to rowFormater
@@ -21,14 +30,14 @@ import (
 //   - nr,nr,nr - This selects multiple numbers
 //   - nr:nr,nr,nr:nr - This selects two ranges of nr, as well as a singular nr
 func SelectFromTable[T any](header string, items []T,
-	choicesFormat string,
+	selectionType string,
 	rowFormater func(int, T) (string, error),
 	pageSize int,
 	onlyOneSelect bool,
-	withBack bool,
+	additionalTableActions []CustomTableAction,
 ) ([]int, error) {
 	fmt.Println(Colorize(ThemePrimaryColor(), header))
-	headerWidth := utf8.RuneCount([]byte(header))
+	headerWidth := visibleRuneCount(header)
 	line := strings.Repeat("-", headerWidth)
 	fmt.Printf("%v\n", Colorize(ThemePrimaryColor(), line))
 
@@ -44,7 +53,7 @@ func SelectFromTable[T any](header string, items []T,
 			pageSize,
 			amItems,
 			items,
-			choicesFormatForSelection(choicesFormat, withBack),
+			maybeAddAdditionalActions(selectionType, additionalTableActions),
 			rowFormater,
 		)
 		if printErr != nil {
@@ -55,18 +64,26 @@ func SelectFromTable[T any](header string, items []T,
 		if usrReadErr != nil {
 			return []int{}, fmt.Errorf("failed to read table selection: %w", usrReadErr)
 		}
+
+		for _, ata := range additionalTableActions {
+			tmpChoices := []string{ata.Long, ata.Short}
+			if slices.Contains(tmpChoices, choice) {
+				if ata.Action == nil {
+					return []int{}, fmt.Errorf("action %q lacks action", ata.Long)
+				}
+				return []int{}, ata.Action()
+			}
+		}
+
 		goPrevPageChoices := []string{"p", "prev"}
-		goBackChoices := []string{"b", "back"}
 		toClear := amPrinted + 1
 		if slices.Contains(goPrevPageChoices, choice) {
 			page--
 			if page < 0 {
 				page = lastPage
 			}
-		} else if withBack && slices.Contains(goBackChoices, choice) {
-			return []int{}, fmt.Errorf("user chose to go back: %w", ErrBack)
 		} else {
-			selectedNumbers = parseNumbersFromString(choice, amItems)
+			selectedNumbers = parseNumbersFromString(choice, amItems-1)
 			noNumberSelected = len(selectedNumbers) == 0
 			if !noNumberSelected {
 				toClear += 2
@@ -90,12 +107,26 @@ func SelectFromTable[T any](header string, items []T,
 	return selectedNumbers, nil
 }
 
-func choicesFormatForSelection(choicesFormat string, withBack bool) string {
-	if !withBack {
+func maybeAddAdditionalActions(choicesFormat string, additionalTableActions []CustomTableAction) string {
+	if len(additionalTableActions) == 0 {
 		return choicesFormat
 	}
-	trimmed := strings.TrimSuffix(choicesFormat, "): ")
-	return fmt.Sprintf("%s, [b]ack): ", trimmed)
+
+	trimmed := strings.TrimSpace(choicesFormat)
+	trimmed = strings.TrimSuffix(trimmed, ":")
+	trimmed = strings.TrimSpace(trimmed)
+
+	sb := strings.Builder{}
+	sb.WriteString(trimmed)
+	for _, ata := range additionalTableActions {
+		if sb.Len() > 0 {
+			sb.WriteString(", ")
+		}
+		sb.WriteString(ata.Format)
+	}
+	sb.WriteString(": ")
+
+	return sb.String()
 }
 
 func pageCount(amItems, pageSize int) int {
@@ -121,12 +152,12 @@ func parseNumbersFromString(choice string, max int) []int {
 				continue
 			}
 			if end < start {
-				ancli.Warnf("invalid range (end < start): '%s'", tok)
+				ancli.Warnf("invalid range (end < start): %q", tok)
 				continue
 			}
 			for j := start; j <= end; j++ {
 				if j > max {
-					ancli.Warnf("selected index: '%v' is greater than amount of items: '%v'", j, max)
+					ancli.Warnf("selected index %q is greater than amount of items %q", strconv.Itoa(j), strconv.Itoa(max))
 					continue
 				}
 				selectedNumbers = append(selectedNumbers, j)
@@ -136,7 +167,7 @@ func parseNumbersFromString(choice string, max int) []int {
 		v, err := strconv.Atoi(tok)
 		if err == nil {
 			if v > max {
-				ancli.Warnf("selected index: '%v' is greater than amount of items: '%v'", v, max)
+				ancli.Warnf("selected index %q is greater than amount of items %q", tok, strconv.Itoa(max))
 				continue
 			}
 			selectedNumbers = append(selectedNumbers, v)
@@ -158,7 +189,30 @@ func printSelectRow[T any](w io.Writer, i int, chats []T, formatRow func(int, T)
 	return nil
 }
 
-func printSelectItemOptions[T any](page, pageSize, amItems int, items []T, choiesFormat string, formatRow func(int, T) (string, error)) (int, error) {
+func formatChoicesPrompt(choicesFormat string, page, lastPage int) string {
+	if strings.Contains(choicesFormat, "%") {
+		return fmt.Sprintf(choicesFormat, page, lastPage)
+	}
+	return choicesFormat
+}
+
+func sanitizePagedPrompt(prompt string) string {
+	sanitized := strings.TrimSpace(prompt)
+	sanitized = strings.TrimSuffix(sanitized, ":")
+	sanitized = strings.TrimSpace(sanitized)
+
+	redundantSuffixes := []string{
+		", [p]rev, [q]uit",
+		"[p]rev, [q]uit",
+	}
+	for _, suffix := range redundantSuffixes {
+		sanitized = strings.TrimSuffix(sanitized, suffix)
+		sanitized = strings.TrimSpace(sanitized)
+	}
+	return sanitized
+}
+
+func printSelectItemOptions[T any](page, pageSize, amItems int, items []T, choicesFormat string, formatRow func(int, T) (string, error)) (int, error) {
 	pageIndex := page * pageSize
 	listToIndex := min(pageIndex+pageSize, amItems)
 
@@ -170,10 +224,21 @@ func printSelectItemOptions[T any](page, pageSize, amItems int, items []T, choie
 			return 0, fmt.Errorf("failed to print row: %w", printErr)
 		}
 	}
+
+	lastPage := pageCount(amItems, pageSize)
 	if amItems <= pageSize {
-		fmt.Print(Colorize(ThemeSecondaryColor(), choiesFormat))
+		fmt.Print(Colorize(ThemeSecondaryColor(), formatChoicesPrompt(choicesFormat, 0, 0)))
 	} else {
-		fmt.Print(Colorize(ThemeSecondaryColor(), fmt.Sprintf("(page: (%v/%v). %v", page, pageCount(amItems, pageSize), choiesFormat)))
+		innerPrompt := sanitizePagedPrompt(formatChoicesPrompt(choicesFormat, page, lastPage))
+		fmt.Print(Colorize(
+			ThemeSecondaryColor(),
+			fmt.Sprintf(
+				"(page: (%v/%v). %s, next: [<enter>]/[n]ext, [p]rev, [q]uit): ",
+				page,
+				lastPage,
+				innerPrompt,
+			),
+		))
 	}
 
 	return amPrinted, nil

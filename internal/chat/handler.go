@@ -66,8 +66,8 @@ am replies:
 
 	// index | role | length | summary
 	editMessageTblFormat        = "%-6v| %-10v| %-7v| %v"
-	editMessageChoicesFormat    = `edit message: [<num>], next: [<enter>]/[n]ext, [p]rev, [q]uit): `
-	deleteMessagesChoicesFormat = `delete message: [<num0>,<num1>,<num2>,...], next: [<enter>]/[n]ext, [p]rev, [q]uit): `
+	editMessageChoicesFormat    = `edit message: [<num>]`
+	deleteMessagesChoicesFormat = `delete message: [<num0>,<num1> / <num2>:<num10>]`
 )
 
 type NotCyclicalImport struct {

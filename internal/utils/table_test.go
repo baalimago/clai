@@ -2,7 +2,6 @@ package utils
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -42,68 +41,6 @@ func Test_parseNumbersFromString(t *testing.T) {
 				t.Errorf("got %v, want %v", got, tt.want)
 			}
 		})
-	}
-}
-
-func TestSelectFromTable_WithBack(t *testing.T) {
-	restore := UseReadUserInputForTests(func() (string, error) {
-		return "b", nil
-	})
-	defer restore()
-
-	out := testboil.CaptureStdout(t, func(t *testing.T) {
-		_, err := SelectFromTable(
-			"header",
-			[]string{"a", "b"},
-			"[%d/%d]\n",
-			func(i int, item string) (string, error) {
-				return fmt.Sprintf("%d-%s", i, item), nil
-			},
-			10,
-			true,
-			true,
-		)
-		if err == nil {
-			t.Fatal("expected error")
-		}
-		if !errors.Is(err, ErrBack) {
-			t.Fatalf("expected ErrBack, got %v", err)
-		}
-	})
-	if !strings.Contains(strings.ToLower(out), "[b]ack") {
-		t.Fatalf("expected back hint in output, got %q", out)
-	}
-}
-
-func TestSelectFromTable_WithoutBackTreatsBAsInvalid(t *testing.T) {
-	inputs := []string{"b", "0"}
-	restore := UseReadUserInputForTests(func() (string, error) {
-		if len(inputs) == 0 {
-			return "", fmt.Errorf("stub input exhausted")
-		}
-		ret := inputs[0]
-		inputs = inputs[1:]
-		return ret, nil
-	})
-	defer restore()
-
-	selected, err := SelectFromTable(
-		"header",
-		[]string{"a", "b"},
-		"[%d/%d]\n",
-		func(i int, item string) (string, error) {
-			return fmt.Sprintf("%d-%s", i, item), nil
-		},
-		10,
-		true,
-		false,
-	)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	want := []int{0}
-	if !reflect.DeepEqual(selected, want) {
-		t.Fatalf("got %v, want %v", selected, want)
 	}
 }
 
@@ -173,17 +110,13 @@ func Test_printSelectItemOptions_first_page(t *testing.T) {
 	if am != 3 {
 		t.Fatalf("amPrinted=%d, want 3", am)
 	}
-	want := strings.Join(
-		[]string{
-			"<BREADTEXT>0-a" + ansiReset,
-			"<BREADTEXT>1-b" + ansiReset,
-			"<BREADTEXT>2-c" + ansiReset,
-			"<SECONDARY>[0/1]\n" + ansiReset,
-		},
-		"\n",
-	)
-	if out != want {
-		t.Fatalf("out=%q, want %q", out, want)
+	if !strings.Contains(out, "<BREADTEXT>0-a"+ansiReset) ||
+		!strings.Contains(out, "<BREADTEXT>1-b"+ansiReset) ||
+		!strings.Contains(out, "<BREADTEXT>2-c"+ansiReset) {
+		t.Fatalf("row output missing, got %q", out)
+	}
+	if !strings.Contains(out, "(page: (0/1). [0/1], next: [<enter>]/[n]ext, [p]rev, [q]uit): ") {
+		t.Fatalf("prompt output missing expected pager, got %q", out)
 	}
 }
 
@@ -213,16 +146,12 @@ func Test_printSelectItemOptions_last_partial_page(t *testing.T) {
 	if am != 2 {
 		t.Fatalf("amPrinted=%d, want 2", am)
 	}
-	want := strings.Join(
-		[]string{
-			"<BREADTEXT>3-d" + ansiReset,
-			"<BREADTEXT>4-e" + ansiReset,
-			"<SECONDARY>[1/1]\n" + ansiReset,
-		},
-		"\n",
-	)
-	if out != want {
-		t.Fatalf("out=%q, want %q", out, want)
+	if !strings.Contains(out, "<BREADTEXT>3-d"+ansiReset) ||
+		!strings.Contains(out, "<BREADTEXT>4-e"+ansiReset) {
+		t.Fatalf("row output missing, got %q", out)
+	}
+	if !strings.Contains(out, "(page: (1/1). [1/1], next: [<enter>]/[n]ext, [p]rev, [q]uit): ") {
+		t.Fatalf("prompt output missing expected pager, got %q", out)
 	}
 }
 

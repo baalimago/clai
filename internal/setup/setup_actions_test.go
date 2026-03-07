@@ -1,13 +1,10 @@
 package setup
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
-
-	"github.com/baalimago/clai/internal/utils"
 )
 
 func TestCastPrimitive(t *testing.T) {
@@ -69,43 +66,12 @@ func TestReconfigureWithEditor(t *testing.T) {
 			cfg := config{
 				name:     "test",
 				filePath: tmpFile,
-				kind:     configKindNormal,
 			}
 
-			err := reconfigureWithEditor(cfg)
+			err := actionReconfigureWithEditor(cfg)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("reconfigureWithEditor() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
-	}
-}
-
-func TestQueryForAction_Back(t *testing.T) {
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
-		return "b", nil
-	})
-	defer restore()
-
-	_, err := queryForAction([]action{conf})
-	if err == nil {
-		t.Fatal("expected error")
-	}
-	if !errors.Is(err, utils.ErrBack) {
-		t.Fatalf("expected ErrBack, got %v", err)
-	}
-}
-
-func TestActOnConfigItem_BackFromActions(t *testing.T) {
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
-		return "b", nil
-	})
-	defer restore()
-
-	err := actOnConfigItem(setupCategory{actions: []action{conf}}, config{name: "cfg", filePath: "cfg.json", kind: configKindNormal})
-	if err == nil {
-		t.Fatal("expected error")
-	}
-	if !errors.Is(err, utils.ErrBack) {
-		t.Fatalf("expected ErrBack, got %v", err)
 	}
 }

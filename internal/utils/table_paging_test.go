@@ -87,3 +87,68 @@ func TestPrintSelectItemOptions_UsesRoundedPageCountForPrompt(t *testing.T) {
 		t.Fatalf("got output %q, want page indicator for rounded last page", out)
 	}
 }
+
+func TestPrintSelectItemOptions_DoesNotFormatNonTemplatedPrompt(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+
+	globalTheme = Theme{
+		Primary:   "<PRIMARY>",
+		Secondary: "<SECONDARY>",
+		Breadtext: "<BREADTEXT>",
+	}
+
+	items := []string{"a", "b"}
+	format := func(i int, s string) (string, error) {
+		return s, nil
+	}
+
+	out := testboil.CaptureStdout(t, func(t *testing.T) {
+		_, err := printSelectItemOptions(
+			0, 10, len(items), items, "Select category, [p]rev, [q]uit: ", format,
+		)
+		if err != nil {
+			t.Fatalf("unexpected err: %v", err)
+		}
+	})
+
+	if strings.Contains(out, "%!(EXTRA") {
+		t.Fatalf("unexpected fmt extra output: %q", out)
+	}
+	if !strings.Contains(out, "Select category, [p]rev, [q]uit: ") {
+		t.Fatalf("missing prompt in output: %q", out)
+	}
+}
+
+func TestPrintSelectItemOptions_DoesNotDuplicatePrevQuitOnPagedPrompt(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+
+	globalTheme = Theme{
+		Primary:   "<PRIMARY>",
+		Secondary: "<SECONDARY>",
+		Breadtext: "<BREADTEXT>",
+	}
+
+	items := make([]string, 11)
+	for i := range items {
+		items[i] = "item"
+	}
+	format := func(i int, s string) (string, error) {
+		return s, nil
+	}
+
+	out := testboil.CaptureStdout(t, func(t *testing.T) {
+		_, err := printSelectItemOptions(
+			1, 2, len(items), items, "select config, [p]rev, [q]uit: ", format,
+		)
+		if err != nil {
+			t.Fatalf("unexpected err: %v", err)
+		}
+	})
+
+	if strings.Count(out, "[p]rev") != 1 {
+		t.Fatalf("expected single [p]rev occurrence, got %q", out)
+	}
+	if strings.Count(out, "[q]uit") != 1 {
+		t.Fatalf("expected single [q]uit occurrence, got %q", out)
+	}
+}

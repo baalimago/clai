@@ -74,14 +74,14 @@ func TestPromptEdit_Success(t *testing.T) {
 	ed := makeEditorScript(t, dir, body, 0)
 	t.Setenv("EDITOR", ed)
 	out := testboil.CaptureStdout(t, func(t *testing.T) {
-		if err := reconfigurePromptWithEditor(cfg); err != nil {
+		if err := actionReconfigurePromptWithEditor(cfg); err != nil {
 			t.Fatalf("err: %v", err)
 		}
 	})
 	got := readPrompt(t, cfg.filePath)
 	want := "L1\\nL2\\tY\\n"
 	testboil.FailTestIfDiff(t, got, want)
-	if !strings.Contains(out, "updated profile") {
+	if !strings.Contains(out, "updated field \"prompt\"") {
 		t.Fatalf("stdout miss update")
 	}
 }
@@ -92,7 +92,7 @@ func TestPromptEdit_Unicode(t *testing.T) {
 	body := "bye 🌈"
 	ed := makeEditorScript(t, dir, body, 0)
 	t.Setenv("EDITOR", ed)
-	if err := reconfigurePromptWithEditor(cfg); err != nil {
+	if err := actionReconfigurePromptWithEditor(cfg); err != nil {
 		t.Fatalf("err: %v", err)
 	}
 	got := readPrompt(t, cfg.filePath)
@@ -103,7 +103,7 @@ func TestPromptEdit_NoEditor(t *testing.T) {
 	dir := t.TempDir()
 	cfg := makeProfile(t, dir, "p")
 	t.Setenv("EDITOR", "")
-	err := reconfigurePromptWithEditor(cfg)
+	err := actionReconfigurePromptWithEditor(cfg)
 	if err == nil || !strings.Contains(err.Error(), "EDITOR") {
 		t.Fatalf("want EDITOR err, got %v", err)
 	}
@@ -114,7 +114,7 @@ func TestPromptEdit_EditorFail(t *testing.T) {
 	cfg := makeProfile(t, dir, "p")
 	ed := makeEditorScript(t, dir, "", 1)
 	t.Setenv("EDITOR", ed)
-	err := reconfigurePromptWithEditor(cfg)
+	err := actionReconfigurePromptWithEditor(cfg)
 	if err == nil || !strings.Contains(err.Error(), "failed to edit prompt with editor") {
 		t.Fatalf("want wrapped prompt-edit err, got %v", err)
 	}
@@ -128,7 +128,7 @@ func TestPromptEdit_InvalidJSON(t *testing.T) {
 	}
 	cfg := config{name: "p", filePath: fp}
 	t.Setenv("EDITOR", "/bin/true")
-	err := reconfigurePromptWithEditor(cfg)
+	err := actionReconfigurePromptWithEditor(cfg)
 	if err == nil || !strings.Contains(err.Error(), "unmarshal") {
 		t.Fatalf("want unmarshal err, got %v", err)
 	}
@@ -143,7 +143,7 @@ func TestPromptEdit_WriteFail(t *testing.T) {
 	if err := os.Chmod(cfg.filePath, 0o444); err != nil {
 		t.Fatal(err)
 	}
-	err := reconfigurePromptWithEditor(cfg)
+	err := actionReconfigurePromptWithEditor(cfg)
 	if err == nil || !strings.Contains(err.Error(), "write") {
 		t.Fatalf("want write err, got %v", err)
 	}
@@ -155,7 +155,7 @@ func TestPromptEdit_FileMode(t *testing.T) {
 	body := "z\n"
 	ed := makeEditorScript(t, dir, body, 0)
 	t.Setenv("EDITOR", ed)
-	if err := reconfigurePromptWithEditor(cfg); err != nil {
+	if err := actionReconfigurePromptWithEditor(cfg); err != nil {
 		t.Fatal(err)
 	}
 	fi, err := os.Stat(cfg.filePath)
@@ -173,11 +173,11 @@ func TestPromptEdit_StdoutMsg(t *testing.T) {
 	ed := makeEditorScript(t, dir, "ok\n", 0)
 	t.Setenv("EDITOR", ed)
 	out := testboil.CaptureStdout(t, func(t *testing.T) {
-		if err := reconfigurePromptWithEditor(cfg); err != nil {
+		if err := actionReconfigurePromptWithEditor(cfg); err != nil {
 			t.Fatal(err)
 		}
 	})
-	if !strings.Contains(out, "updated profile at path") {
+	if !strings.Contains(out, "updated field \"prompt\" at path") {
 		t.Fatalf("stdout msg missing")
 	}
 }
@@ -198,7 +198,7 @@ func TestPromptEdit_LargePrompt(t *testing.T) {
 	body := "A\nB\tC\nD\tE"
 	ed := makeEditorScript(t, dir, body, 0)
 	t.Setenv("EDITOR", ed)
-	if err := reconfigurePromptWithEditor(cfg); err != nil {
+	if err := actionReconfigurePromptWithEditor(cfg); err != nil {
 		t.Fatal(err)
 	}
 	got := readPrompt(t, cfg.filePath)
@@ -213,7 +213,7 @@ func TestPromptEdit_NoOpEditor(t *testing.T) {
 	cfg := makeProfile(t, dir, "orig\\nval")
 	ed := makeEditorScript(t, dir, "", 0)
 	t.Setenv("EDITOR", ed)
-	if err := reconfigurePromptWithEditor(cfg); err != nil {
+	if err := actionReconfigurePromptWithEditor(cfg); err != nil {
 		t.Fatal(err)
 	}
 	got := readPrompt(t, cfg.filePath)
@@ -240,7 +240,7 @@ func TestPromptEdit_JSONStability(t *testing.T) {
 	cfg := config{name: "p", filePath: fp}
 	ed := makeEditorScript(t, dir, "R\nS", 0)
 	t.Setenv("EDITOR", ed)
-	if err := reconfigurePromptWithEditor(cfg); err != nil {
+	if err := actionReconfigurePromptWithEditor(cfg); err != nil {
 		t.Fatal(err)
 	}
 	b2, _ := os.ReadFile(fp)
@@ -258,7 +258,7 @@ func TestPromptEdit_EmptyBoundary(t *testing.T) {
 	cfg := makeProfile(t, dir, "")
 	ed := makeEditorScript(t, dir, "", 0)
 	t.Setenv("EDITOR", ed)
-	if err := reconfigurePromptWithEditor(cfg); err != nil {
+	if err := actionReconfigurePromptWithEditor(cfg); err != nil {
 		t.Fatal(err)
 	}
 	got := readPrompt(t, cfg.filePath)
