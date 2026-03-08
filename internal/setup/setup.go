@@ -56,6 +56,11 @@ var actionToTableAction = map[action]utils.CustomTableAction{
 		Long:   "new",
 		Format: "[n]ew",
 	},
+	pasteConfig: {
+		Short:  "p",
+		Long:   "paste",
+		Format: "[p]aste config",
+	},
 	confWithEditor: {
 		Short:  "e",
 		Long:   "configureWithEditor",

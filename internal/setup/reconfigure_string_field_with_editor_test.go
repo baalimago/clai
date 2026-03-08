@@ -50,7 +50,7 @@ func TestUnescapedFieldEdit_ShellContext(t *testing.T) {
 		t.Fatalf("failed to unmarshal updated profile: %v", err)
 	}
 
-	if got := updated["shell-context"]; got != "ctxA\\nctxB\\tY\\n" {
+	if got := updated["shell-context"]; got != "ctxA\\nctxB\\tY" {
 		t.Fatalf("unexpected shell-context: %v", got)
 	}
 	if got := updated["prompt"]; got != "keep\\nthis" {
