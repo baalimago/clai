@@ -2,6 +2,7 @@ package setup
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,6 +18,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -169,6 +171,26 @@ func unescapeEditWithEditor(toEdit string) (string, error) {
 	return escapedStr, nil
 }
 
+func validateEditedStringField(cfg config, fieldName, rawEditedValue string) error {
+	if fieldName != "template" {
+		return nil
+	}
+
+	if filepath.Base(filepath.Dir(cfg.filePath)) != "shellContexts" {
+		return nil
+	}
+
+	def := text.ShellContextDefinition{
+		Template: strings.ReplaceAll(strings.ReplaceAll(rawEditedValue, "\\n", "\n"), "\\t", "\t"),
+	}
+	renderer := text.ShellContextRenderer{}
+	_, err := renderer.Render(context.Background(), cfg.name, def)
+	if err != nil {
+		return fmt.Errorf("validate shell context template for %q: %w", cfg.filePath, err)
+	}
+	return nil
+}
+
 // actionReconfigureStringFieldWithEditor. If fieldName is empty string the user will be
 // queried to select some field from the json
 func actionReconfigureStringFieldWithEditor(cfg config, fieldName string) error {
@@ -229,6 +251,9 @@ func actionReconfigureStringFieldWithEditor(cfg config, fieldName string) error 
 	editedValue, err := unescapeEditWithEditor(stringValue)
 	if err != nil {
 		return fmt.Errorf("failed to edit field %q with editor: %w", fieldName, err)
+	}
+	if err := validateEditedStringField(cfg, fieldName, editedValue); err != nil {
+		return fmt.Errorf("failed to validate edited field %q: %w", fieldName, err)
 	}
 	jzon[fieldName] = editedValue
 

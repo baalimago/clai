@@ -192,6 +192,7 @@ func InitCmd() error {
 			subdirPath:        "./mcpServers",
 			defaultConfig:     defaultMcpServer,
 		},
+		shellContextSetupCategory(),
 	}
 
 	for {
