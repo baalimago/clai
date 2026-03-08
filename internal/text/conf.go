@@ -69,7 +69,7 @@ type Profile struct {
 	Prompt          string                          `json:"prompt"`
 	SaveReplyAsConv bool                            `json:"save-reply-as-conv"`
 	McpServers      map[string]pub_models.McpServer `json:"mcp_servers,omitempty"`
-	ShellContext    string                          `json:"shell-context,omitempty"`
+	ShellContext    string                          `json:"shell_context,omitempty"`
 }
 
 var Default = Configurations{

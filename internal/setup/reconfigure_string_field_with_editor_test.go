@@ -37,7 +37,7 @@ func TestUnescapedFieldEdit_ShellContext(t *testing.T) {
 	t.Setenv("EDITOR", editor)
 
 	cfg := config{name: "prof.json", filePath: fp}
-	if err := actionReconfigureStringFieldWithEditor(cfg, "shell-context"); err != nil {
+	if err := actionReconfigureStringFieldWithEditor(cfg, "shell_context"); err != nil {
 		t.Fatalf("failed to edit shell-context: %v", err)
 	}
 
@@ -50,7 +50,7 @@ func TestUnescapedFieldEdit_ShellContext(t *testing.T) {
 		t.Fatalf("failed to unmarshal updated profile: %v", err)
 	}
 
-	if got := updated["shell-context"]; got != "ctxA\\nctxB\\tY" {
+	if got := updated["shell_context"]; got != "ctxA\\nctxB\\tY" {
 		t.Fatalf("unexpected shell-context: %v", got)
 	}
 	if got := updated["prompt"]; got != "keep\\nthis" {
