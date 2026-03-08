@@ -17,6 +17,19 @@ clai -dre query "Apply it to this repo"
 
 See: [`QUERY.md`](./architecture/QUERY.md), [`CHAT.md`](./architecture/CHAT.md), [`DRE.md`](./architecture/DRE.md).
 
+## Auto-append shell context
+
+```bash
+clai -asc minimal query "Why is this command failing?"
+clai -append-shell-context git query "Summarize the current repo state before answering"
+```
+
+- Shell contexts live in `<clai-config>/shellContexts/<name>.json`.
+- The selected context runs shell commands, renders a template, and appends the result to your final query prompt.
+- Use this when you want runtime context like cwd, branch name, or git status included automatically.
+
+See: [`SHELL-CONTEXT.md`](./architecture/SHELL-CONTEXT.md).
+
 ## Inspect “what did it say last time?”
 
 ```bash

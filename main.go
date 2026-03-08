@@ -24,18 +24,19 @@ Prerequisites:
 Usage: clai [flags] <command>
 
 Flags:
-  -re, -reply bool             Set to true to reply to the previous query, meaning that it will be used as context for your next query. (default %v)
-  -r, -raw bool                Set to true to print raw output (no animation, no glow). (default %v)
-  -cm, -chat-model string      Set the chat model to use. (default is found in %v/textConfig.json)
-  -pm, -photo-model string     Set the image model to use. (default is found in %v/photoConfig.json)
-  -pd, -photo-dir string       Set the directory to store the generated pictures. (default is found in %v/photoConfig.json)
-  -pp, -photo-prefix string    Set the prefix for the generated pictures. (default is found in %v/photoConfig.json)
-  -vd, -video-dir string       Set dir for generated videos. Default $HOME/Videos (default %v)
-  -vp, -video-prefix string    Set prefix for generated videos. Default 'clai' (default %v)
-  -t, -tools string            Set to <tool_a>,<tool_b> for specific tool, or */"" to use all built in or MCP tools. See available tools with 'clai tools' (default %v)
-  -g, -glob string             Set the glob to use for globbing. (default '%v')
-  -p, -profile string          Set the profile which should be used. For details, see 'clai help profile'. (default '%v')
-  -prp, profile-path string    Set the path to a profile file to use instead of -p/-profile.
+  -re, -reply bool                 Set to true to reply to the previous query, meaning that it will be used as context for your next query. (default %v)
+  -r, -raw bool                    Set to true to print raw output (no animation, no glow). (default %v)
+  -cm, -chat-model string          Set the chat model to use. (default is found in %v/textConfig.json)
+  -pm, -photo-model string         Set the image model to use. (default is found in %v/photoConfig.json)
+  -pd, -photo-dir string           Set the directory to store the generated pictures. (default is found in %v/photoConfig.json)
+  -pp, -photo-prefix string        Set the prefix for the generated pictures. (default is found in %v/photoConfig.json)
+  -vd, -video-dir string           Set dir for generated videos. Default $HOME/Videos (default %v)
+  -vp, -video-prefix string        Set prefix for generated videos. Default 'clai' (default %v)
+  -t, -tools string                Set to <tool_a>,<tool_b> for specific tool, or */"" to use all built in or MCP tools. See available tools with 'clai tools' (default %v)
+  -g, -glob string                 Set the glob to use for globbing. (default '%v')
+  -p, -profile string              Set the profile which should be used. For details, see 'clai help profile'. (default '%v')
+  -prp, profile-path string        Set the path to a profile file to use instead of -p/-profile.
+  -asc, -append-shell-context str  Append a named shell context from <config-dir>/shellContexts/<name>.json to the final query prompt.
 
 Config dir: %v
 Cache dir:  %v
@@ -56,8 +57,9 @@ Commands:
 
 Examples:
   - clai h | clai query generate some examples for this usage string: 
-  - clai -t website_text query "What's the weather like in Tokyo? Use website_text to fetch data"
+  - clai -t website_text query "What'\''s the weather like in Tokyo? Use website_text to fetch data"
   - clai -glob "*.txt" query Please summarize these documents: 
+  - clai -asc minimal q "what changed in this repo?"
   - clai -pm dall-e-2 photo A cat in space
   - docker logs example | clai -I LOG q "Find errors in these logs: LOG"
   - clai c list

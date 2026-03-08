@@ -40,8 +40,10 @@ func Test_goldenFile_HELP_prints_usage(t *testing.T) {
 	if gotStdout == "" {
 		t.Fatal("expected help output to be non-empty")
 	}
-	// The usage string is large; check for one stable snippet and that config dir was interpolated.
+	// The usage string is large; check for a few stable snippets and that config dir was interpolated.
 	testboil.AssertStringContains(t, gotStdout, "Usage:")
+	testboil.AssertStringContains(t, gotStdout, "-asc, -append-shell-context string")
+	testboil.AssertStringContains(t, gotStdout, "clai -asc minimal q \"what changed in this repo?\"")
 	testboil.AssertStringContains(t, gotStdout, confDir)
 }
 
