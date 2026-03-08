@@ -1,9 +1,11 @@
 package text
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/baalimago/clai/internal/chat"
 	"github.com/baalimago/clai/internal/glob"
@@ -38,6 +40,10 @@ type Configurations struct {
 	UseProfile          string          `json:"-"`
 	ProfilePath         string          `json:"-"`
 	RequestedToolGlobs  []string        `json:"-"`
+	// ShellContext is a context definition name for ASC (auto-append shell context).
+	// When non-empty, clai will load <configDir>/shellContexts/<name>.json and append
+	// the rendered template block to the final user prompt.
+	ShellContext string `json:"-"`
 	// PostProccessedPrompt which has had it\'s strings replaced etc
 	PostProccessedPrompt string `json:"-"`
 
@@ -63,6 +69,7 @@ type Profile struct {
 	Prompt          string                          `json:"prompt"`
 	SaveReplyAsConv bool                            `json:"save-reply-as-conv"`
 	McpServers      map[string]pub_models.McpServer `json:"mcp_servers,omitempty"`
+	ShellContext    string                          `json:"shell-context,omitempty"`
 }
 
 var Default = Configurations{
@@ -129,6 +136,13 @@ func (c *Configurations) SetupInitialChat(args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to setup prompt: %w", err)
 	}
+
+	promptWithCtx, err := AppendShellContextIfConfigured(context.Background(), c.ConfigDir, c.ShellContext, prompt, ShellContextRenderer{})
+	if err != nil {
+		return fmt.Errorf("append shell context: %w", err)
+	}
+	prompt = strings.TrimRight(promptWithCtx, " \t\r\n")
+
 	// If chatmode, the initial message will be handled by the chat querier
 	if !c.ChatMode {
 		imgMsg, err := chat.PromptToImageMessage(prompt)

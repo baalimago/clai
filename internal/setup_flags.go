@@ -38,6 +38,8 @@ type Configurations struct {
 	Glob        string
 	Profile     string
 	ProfilePath string
+	// ShellContext is the selected shell context name (ASC).
+	ShellContext string
 }
 
 // parseFlags parses CLI flags into an internal Configurations.
@@ -92,6 +94,10 @@ func parseFlags(defaults Configurations, args []string) (Configurations, []strin
 	dirReplyShort := fs.Bool("dre", defaults.DirReplyMode, "Set to true to reply to the previous directory-scoped conversation (bound to the current working directory).")
 	dirReplyLong := fs.Bool("dir-reply", defaults.DirReplyMode, "Set to true to reply to the previous directory-scoped conversation (bound to the current working directory).")
 
+	// ASC (auto-append shell context)
+	ascShort := fs.String("asc", defaults.ShellContext, "Auto-append shell context by name. Mutually exclusive with add-shell-context.")
+	ascLong := fs.String("add-shell-context", defaults.ShellContext, "Auto-append shell context by name. Mutually exclusive with asc.")
+
 	// Breaking change: -t/-tools are string-only value flags.
 	// Use: -t=* or -t=a,b ("-t" without value is undefined/ignored).
 	useToolsShort := fs.String("t", defaults.UseTools, "Enable tools. Use '*' for all tools or comma-separated list for specific tools.")
@@ -128,6 +134,8 @@ func parseFlags(defaults Configurations, args []string) (Configurations, []strin
 	exitWithFlagError(err, "vd", "video-dir")
 	videoPrefix, err := utils.ReturnNonDefault(*vpShort, *vpLong, defaults.VideoPrefix)
 	exitWithFlagError(err, "vp", "video-prefix")
+	shellContext, err := utils.ReturnNonDefault(*ascShort, *ascLong, defaults.ShellContext)
+	exitWithFlagError(err, "asc", "add-shell-context")
 
 	replyMode := *replyShort || *replyLong
 	printRaw := *printRawShort || *printRawLong
@@ -154,6 +162,7 @@ func parseFlags(defaults Configurations, args []string) (Configurations, []strin
 		ExpectReplace: *expectReplace,
 		Profile:       profile,
 		ProfilePath:   profilePath,
+		ShellContext:  shellContext,
 	}
 
 	return newConf, postParseArgs, nil
@@ -185,6 +194,9 @@ func applyFlagOverridesForText(tConf *text.Configurations, flagSet, defaultFlags
 	}
 	if flagSet.ProfilePath != defaultFlags.ProfilePath {
 		tConf.ProfilePath = flagSet.ProfilePath
+	}
+	if flagSet.ShellContext != defaultFlags.ShellContext {
+		tConf.ShellContext = flagSet.ShellContext
 	}
 }
 

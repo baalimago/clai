@@ -49,7 +49,7 @@ Examples:
 const (
 	// index | created | messages | tokens | prompt
 	selectChatTblFormat        = "%-6s| %-20s| %-8v | %-6s | %v"
-	selectChatTblChoicesFormat = "(page: (%v/%v). goto chat: [<num>], next: [<enter>]/[n]ext, [p]rev, [q]uit): "
+	selectChatTblChoicesFormat = "goto chat: [<num>], next: [<enter>]/[n]ext, [p]rev, [q]uit): "
 	actOnChatFormat            = `=== Chat info ===
 
 file path: %v
@@ -66,8 +66,8 @@ am replies:
 
 	// index | role | length | summary
 	editMessageTblFormat        = "%-6v| %-10v| %-7v| %v"
-	editMessageChoicesFormat    = `(page: (%v/%v). edit message: [<num>], next: [<enter>]/[n]ext, [p]rev, [q]uit): `
-	deleteMessagesChoicesFormat = `(page: (%v/%v). delete message: [<num0>,<num1>,<num2>,...], next: [<enter>]/[n]ext, [p]rev, [q]uit): `
+	editMessageChoicesFormat    = `edit message: [<num>]`
+	deleteMessagesChoicesFormat = `delete message: [<num0>,<num1> / <num2>:<num10>]`
 )
 
 type NotCyclicalImport struct {

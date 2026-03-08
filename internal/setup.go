@@ -371,7 +371,7 @@ func Setup(ctx context.Context, usage string, allArgs []string) (models.Querier,
 	case VERSION:
 		return printVersion()
 	case SETUP:
-		err := setup.SubCmd()
+		err := setup.InitCmd()
 		if err != nil {
 			return nil, fmt.Errorf("failed to run setup: %w", err)
 		}

@@ -53,14 +53,12 @@ func TestReconfigureWithEditor(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Setup temporary file
 			tmpDir := t.TempDir()
 			tmpFile := filepath.Join(tmpDir, "config.json")
 			if err := os.WriteFile(tmpFile, []byte(tt.content), 0o644); err != nil {
 				t.Fatal(err)
 			}
 
-			// Set environment
 			oldEditor := os.Getenv("EDITOR")
 			defer os.Setenv("EDITOR", oldEditor)
 			os.Setenv("EDITOR", tt.editor)
@@ -70,7 +68,7 @@ func TestReconfigureWithEditor(t *testing.T) {
 				filePath: tmpFile,
 			}
 
-			err := reconfigureWithEditor(cfg)
+			err := actionReconfigureWithEditor(cfg)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("reconfigureWithEditor() error = %v, wantErr %v", err, tt.wantErr)
 			}

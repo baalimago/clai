@@ -12,8 +12,22 @@ import (
 
 const defaultTTYPath = "/dev/tty"
 
+var readUserInputImpl = defaultReadUserInput
+
+func UseReadUserInputForTests(fn func() (string, error)) func() {
+	orig := readUserInputImpl
+	readUserInputImpl = fn
+	return func() {
+		readUserInputImpl = orig
+	}
+}
+
 // ReadUserInput and return on interrupt channel
 func ReadUserInput() (string, error) {
+	return readUserInputImpl()
+}
+
+func defaultReadUserInput() (string, error) {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt)
 	defer signal.Stop(sigChan)
@@ -55,8 +69,7 @@ func ReadUserInput() (string, error) {
 				return "", ErrUserInitiatedExit
 			}
 			return trimmedInput, nil
-		} else {
-			return "", errors.New("user input channel closed. Not sure how we ended up here🤔")
 		}
+		return "", fmt.Errorf("user input channel closed: %w", errors.New("channel closed"))
 	}
 }

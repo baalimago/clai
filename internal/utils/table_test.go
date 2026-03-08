@@ -45,7 +45,6 @@ func Test_parseNumbersFromString(t *testing.T) {
 }
 
 func Test_printSelectRow_success(t *testing.T) {
-	// ensure we exercise color output
 	t.Setenv("NO_COLOR", "")
 
 	globalTheme = Theme{
@@ -86,7 +85,6 @@ func Test_printSelectRow_format_error(t *testing.T) {
 }
 
 func Test_printSelectItemOptions_first_page(t *testing.T) {
-	// ensure we exercise color output
 	t.Setenv("NO_COLOR", "")
 
 	globalTheme = Theme{
@@ -102,7 +100,6 @@ func Test_printSelectItemOptions_first_page(t *testing.T) {
 	var am int
 	out := testboil.CaptureStdout(t, func(t *testing.T) {
 		n, err := printSelectItemOptions(
-
 			0, 3, len(items), items, "[%d/%d]\n", format,
 		)
 		if err != nil {
@@ -113,22 +110,17 @@ func Test_printSelectItemOptions_first_page(t *testing.T) {
 	if am != 3 {
 		t.Fatalf("amPrinted=%d, want 3", am)
 	}
-	want := strings.Join(
-		[]string{
-			"<BREADTEXT>0-a" + ansiReset,
-			"<BREADTEXT>1-b" + ansiReset,
-			"<BREADTEXT>2-c" + ansiReset,
-			"<SECONDARY>[0/1]\n" + ansiReset,
-		},
-		"\n",
-	)
-	if out != want {
-		t.Fatalf("out=%q, want %q", out, want)
+	if !strings.Contains(out, "<BREADTEXT>0-a"+ansiReset) ||
+		!strings.Contains(out, "<BREADTEXT>1-b"+ansiReset) ||
+		!strings.Contains(out, "<BREADTEXT>2-c"+ansiReset) {
+		t.Fatalf("row output missing, got %q", out)
+	}
+	if !strings.Contains(out, "(page: (0/1). [0/1], next: [<enter>]/[n]ext, [p]rev, [q]uit): ") {
+		t.Fatalf("prompt output missing expected pager, got %q", out)
 	}
 }
 
 func Test_printSelectItemOptions_last_partial_page(t *testing.T) {
-	// ensure we exercise color output
 	t.Setenv("NO_COLOR", "")
 
 	globalTheme = Theme{
@@ -154,16 +146,12 @@ func Test_printSelectItemOptions_last_partial_page(t *testing.T) {
 	if am != 2 {
 		t.Fatalf("amPrinted=%d, want 2", am)
 	}
-	want := strings.Join(
-		[]string{
-			"<BREADTEXT>3-d" + ansiReset,
-			"<BREADTEXT>4-e" + ansiReset,
-			"<SECONDARY>[1/1]\n" + ansiReset,
-		},
-		"\n",
-	)
-	if out != want {
-		t.Fatalf("out=%q, want %q", out, want)
+	if !strings.Contains(out, "<BREADTEXT>3-d"+ansiReset) ||
+		!strings.Contains(out, "<BREADTEXT>4-e"+ansiReset) {
+		t.Fatalf("row output missing, got %q", out)
+	}
+	if !strings.Contains(out, "(page: (1/1). [1/1], next: [<enter>]/[n]ext, [p]rev, [q]uit): ") {
+		t.Fatalf("prompt output missing expected pager, got %q", out)
 	}
 }
 
@@ -179,7 +167,7 @@ func Test_printSelectItemOptions_format_error(t *testing.T) {
 		if err == nil {
 			t.Fatalf("expected error")
 		}
-		if !strings.Contains(err.Error(), "printRow") {
+		if !strings.Contains(err.Error(), "print row") {
 			t.Fatalf("err=%v", err)
 		}
 	})
@@ -189,7 +177,6 @@ func Test_printSelectItemOptions_format_error(t *testing.T) {
 }
 
 func Test_printSelectItemOptions_empty_items(t *testing.T) {
-	// ensure we exercise color output
 	t.Setenv("NO_COLOR", "")
 
 	globalTheme = Theme{

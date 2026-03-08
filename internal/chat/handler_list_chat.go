@@ -31,13 +31,11 @@ func chatListTokenStr(item pub_models.Chat) string {
 	if v >= 1000 {
 		return fmt.Sprintf("%dK", v/1000)
 	}
-	// show three decimal places for values < 1000 (e.g. 15 -> 0.015K)
 	f := float64(v) / 1000.0
 	return fmt.Sprintf("%.3fK", f)
 }
 
 func (cq *ChatHandler) actOnChat(ctx context.Context, chat pub_models.Chat) error {
-	// Print the chat info to the handler's configured output (not os.Stdin/Stdout)
 	err := cq.printChatInfo(cq.out, chat)
 	if err != nil {
 		return fmt.Errorf("failed to printChatInfo: %w", err)
@@ -61,10 +59,6 @@ func (cq *ChatHandler) actOnChat(ctx context.Context, chat pub_models.Chat) erro
 	case "P", "p":
 		return SaveAsPreviousQuery(cq.confDir, chat)
 	case "":
-		// Treat empty input (pressing Enter) as "continue" — bind this chat to CWD and
-		// print an obfuscated preview, mirroring the behavior of `clai chat continue`.
-		// Profile sticking logic from cont(): prefer chat.Profile when set, otherwise
-		// stamp current UseProfile into chat.Profile for persistence.
 		if chat.Profile != "" {
 			cq.config.UseProfile = chat.Profile
 		} else if cq.config.UseProfile != "" {
@@ -123,21 +117,20 @@ func (cq *ChatHandler) list() ([]pub_models.Chat, error) {
 		ancli.PrintOK(fmt.Sprintf("found '%v' conversations:\n", len(files)))
 	}
 	for _, dirEntry := range files {
-		// Skip directories (e.g. conversations/dirs for dirscoped bindings)
 		if dirEntry.IsDir() {
 			continue
 		}
 		p := path.Join(cq.convDir, dirEntry.Name())
 		chat, pathErr := FromPath(p)
 		if pathErr != nil {
-			return nil, fmt.Errorf("failed to get chat: %q: %w", p, pathErr)
+			return nil, fmt.Errorf("failed to get chat %q: %w", p, pathErr)
 		}
 		chats = append(chats, chat)
 	}
 	slices.SortFunc(chats, func(a, b pub_models.Chat) int {
 		return b.Created.Compare(a.Created)
 	})
-	return chats, err
+	return chats, nil
 }
 
 func (cq *ChatHandler) handleListCmd(ctx context.Context) error {
@@ -159,8 +152,6 @@ func (cq *ChatHandler) listChats(
 		),
 	)
 
-	// Decide whether to include the profile column based on terminal width.
-	// When the terminal is wide (>120) show an extra "Profile" column.
 	tblFmt := selectChatTblFormat
 	headArgs := []any{"Index", "Created", "Messages", "Tokens", "Prompt"}
 	includeProfile := false
@@ -170,7 +161,9 @@ func (cq *ChatHandler) listChats(
 		headArgs = []any{"Index", "Created", "Messages", "Profile", "Tokens", "Prompt"}
 	}
 
-	selectedNumbers, err := utils.SelectFromTable(fmt.Sprintf(tblFmt, headArgs...), chats,
+	selectedNumbers, err := utils.SelectFromTable(
+		fmt.Sprintf(tblFmt, headArgs...),
+		chats,
 		selectChatTblChoicesFormat,
 		func(i int, item pub_models.Chat) (string, error) {
 			tokenStr := chatListTokenStr(item)
@@ -215,17 +208,13 @@ func (cq *ChatHandler) listChats(
 		},
 		10,
 		true,
+		[]utils.CustomTableAction{},
 	)
 	if err != nil {
 		return fmt.Errorf("failed to select chat: %w", err)
 	}
 	return cq.actOnChat(ctx, chats[selectedNumbers[0]])
 }
-
-// fillRemainderOfTermWidth by:
-// 1. Counting remaining width until termWidth
-// 2. Fit remainder into remaining width, keeping padding
-// 3. Format: "<start> ... <end>" when truncating
 
 func (cq *ChatHandler) printChatInfo(w io.Writer, chat pub_models.Chat) error {
 	claiConfDir, err := utils.GetClaiConfigDir()
@@ -247,17 +236,14 @@ func (cq *ChatHandler) printChatInfo(w io.Writer, chat pub_models.Chat) error {
 		return fmt.Errorf("failed to create widthAppropriateChatSummary: %w", err)
 	}
 
-	// Build colorized output according to theme.
 	header := utils.Colorize(utils.ThemePrimaryColor(), "=== Chat info ===")
 	fileKey := utils.Colorize(utils.ThemePrimaryColor(), "file path:")
 	createdKey := utils.Colorize(utils.ThemePrimaryColor(), "created_at:")
 	amRepliesKey := utils.Colorize(utils.ThemePrimaryColor(), "am replies:")
-	// Role labels colorized according to role palette.
 	userRole := utils.Colorize(utils.RoleColor("user"), "user:")
 	toolRole := utils.Colorize(utils.RoleColor("tool"), "tool:")
 	systemRole := utils.Colorize(utils.RoleColor("system"), "system:")
 	assistantRole := utils.Colorize(utils.RoleColor("assistant"), "assistant:")
-	// Values use breadtext color for readability.
 	bread := utils.ThemeBreadtextColor()
 
 	if _, err := fmt.Fprintf(w, "%s\n\n", header); err != nil {
@@ -366,16 +352,14 @@ func (cq *ChatHandler) deleteMessageInChat(
 				25,
 			)
 			if err != nil {
-				return "", fmt.Errorf(
-					"failed to get widthAppropriateChatSummary: %w",
-					err,
-				)
+				return "", fmt.Errorf("failed to get widthAppropriateChatSummary: %w", err)
 			}
 
 			return withSummary, nil
 		},
 		10,
 		false,
+		[]utils.CustomTableAction{},
 	)
 	if err != nil {
 		return fmt.Errorf("failed to select from table: %w", err)
@@ -413,9 +397,13 @@ func (cq *ChatHandler) deleteMessageInChat(
 
 func (cq *ChatHandler) editMessageInChat(chat pub_models.Chat) error {
 	head := fmt.Sprintf(editMessageTblFormat, "Index", "Role", "Length", "Summary")
-	selectedNumbers, err := utils.SelectFromTable(head, chat.Messages, editMessageChoicesFormat,
+	selectedNumbers, err := utils.SelectFromTable(
+		head,
+		chat.Messages,
+		editMessageChoicesFormat,
 		func(i int, t pub_models.Message) (string, error) {
-			prefix := fmt.Sprintf(editMessageTblFormat,
+			prefix := fmt.Sprintf(
+				editMessageTblFormat,
 				i,
 				t.Role,
 				utf8.RuneCount([]byte(t.Content)),
@@ -428,7 +416,10 @@ func (cq *ChatHandler) editMessageInChat(chat pub_models.Chat) error {
 			}
 
 			return withSummary, nil
-		}, 10, true,
+		},
+		10,
+		true,
+		[]utils.CustomTableAction{},
 	)
 	if err != nil {
 		return fmt.Errorf("failed to select from table: %w", err)

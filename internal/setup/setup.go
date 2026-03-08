@@ -1,18 +1,15 @@
 package setup
 
 import (
-	"bufio"
+	"errors"
 	"fmt"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
-
-	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
 type config struct {
@@ -27,15 +24,70 @@ const (
 	conf
 	del
 	newaction
+	pasteConfig
 	confWithEditor
-	pasteNew
 	promptEditWithEditor
+	unescapedFieldEditWithEditor
+	back
 )
 
-var defaultMcpServer = pub_models.McpServer{
-	Command: "npx",
-	Args:    []string{"-y", "@modelcontextprotocol/server-everything"},
+// choiceToAction is a comma-separated string of choice strings which should trigger
+// the action
+var choiceToAction = map[string]action{
+	"b,back":                 back,
+	"c,configure":            conf,
+	"d,delete":               del,
+	"n,new":                  newaction,
+	"p,paste":                pasteConfig,
+	"e,configureWithEditor":  confWithEditor,
+	"pr,promptWithEditor":    promptEditWithEditor,
+	"ufe,unescapedFieldEdit": unescapedFieldEditWithEditor,
 }
+
+var actionToTableAction = map[action]utils.CustomTableAction{
+	back: {
+		Short:  "b",
+		Long:   "back",
+		Format: "[b]ack",
+		Action: func() error { return utils.ErrBack },
+	},
+	newaction: {
+		Short:  "n",
+		Long:   "new",
+		Format: "[n]ew",
+	},
+	pasteConfig: {
+		Short:  "p",
+		Long:   "paste",
+		Format: "[p]aste config",
+	},
+	confWithEditor: {
+		Short:  "e",
+		Long:   "configureWithEditor",
+		Format: "conf with [e]ditor",
+	},
+	promptEditWithEditor: {
+		Short:  "pr",
+		Long:   "promptWithEditor",
+		Format: "[pr]ompt edit with editor",
+	},
+	unescapedFieldEditWithEditor: {
+		Short:  "ufe",
+		Long:   "unescapedFieldEdit",
+		Format: "(u)nescaped (f)ield (e)dit [ufe]",
+	},
+}
+
+type setupCategory struct {
+	name              string
+	subdirPath        string
+	defaultConfig     any
+	load              func(string) ([]config, error)
+	itemSelectActions []action
+	itemActions       []action
+}
+
+const stage0Raw = "Setup categories"
 
 func (a action) String() string {
 	switch a {
@@ -49,201 +101,171 @@ func (a action) String() string {
 		return "create [n]ew"
 	case confWithEditor:
 		return "configure with [e]ditor"
-	case pasteNew:
-		return "[p]aste new config"
 	case promptEditWithEditor:
 		return "[pr]ompt edit with editor"
+	case unescapedFieldEditWithEditor:
+		return "(u)nescaped (f)ield (e)dit [ufe]"
+	case pasteConfig:
+		return "[p]aste config"
+	case back:
+		return "[b]ack"
 	default:
 		return "unset"
 	}
 }
 
-const stage0Raw = `Do you wish to configure:
-
-  0. mode-files (example: <config>/.clai/textConfig.json- or photoConfig.json)
-  1. model files (example: <config>/.clai/openai-gpt-4o.json, <config>/.clai/anthropic-claude-opus.json)
-  2. text generation profiles (see: "clai [h]elp [p]rofile" for additional info)
-  3. MCP server configuration (enables custom tools)
-
-[0/1/2/3]: `
-
-func stage0Colorized() string {
-	// We manually colorize rather than depending on a parser.
-	// Pattern (see COLOURS.md):
-	// - header/prefix: primary
-	// - interactive prompt: secondary
-	// - normal text rows: breadtext
-	return colorizeLines(stage0Raw, func(l string) (string, bool) {
-		switch {
-		case strings.HasPrefix(l, "Do you wish to configure"):
-			return colorPrimary(l), true
-		case strings.HasPrefix(strings.TrimSpace(l), "0.") || strings.HasPrefix(strings.TrimSpace(l), "1.") ||
-			strings.HasPrefix(strings.TrimSpace(l), "2.") || strings.HasPrefix(strings.TrimSpace(l), "3."):
-			return colorBreadtext(l), true
-		case strings.HasPrefix(l, "["):
-			return colorSecondary(l), true
-		default:
-			// Keep indentation and blank lines uncolored.
-			if strings.TrimSpace(l) != "" {
-				return colorBreadtext(l), true
-			}
-			return l, false
-		}
-	})
+func executeConfigAction(cfg config, a action) error {
+	switch a {
+	case conf:
+		return actionReconfigure(cfg)
+	case confWithEditor:
+		return actionReconfigureWithEditor(cfg)
+	case promptEditWithEditor:
+		return actionReconfigurePromptWithEditor(cfg)
+	case unescapedFieldEditWithEditor:
+		return actionReconfigureStringFieldWithEditor(cfg, "")
+	case del:
+		return actionRemove(cfg)
+	case back:
+		return utils.ErrBack
+	default:
+		return fmt.Errorf("invalid action for config %q: %v", cfg.name, a)
+	}
 }
 
-// SubCmd the setup to configure the different files
-func SubCmd() error {
-	fmt.Print(stage0Colorized())
-
-	input, err := utils.ReadUserInput()
-	if err != nil {
-		return fmt.Errorf("failed to read input while running: %w", err)
-	}
-	var configs []config
-	var a action
+// InitCmd the setup to configure the different files
+func InitCmd() error {
 	claiDir, err := utils.GetClaiConfigDir()
 	if err != nil {
-		return fmt.Errorf("failed to get user config directory: %v", err)
+		return fmt.Errorf("failed to get user config directory: %w", err)
 	}
-	switch input {
-	case "0":
-		t, err := getConfigs(filepath.Join(claiDir, "*Config.json"), []string{})
-		if err != nil {
-			return fmt.Errorf("failed to get configs files: %w", err)
-		}
-		configs = t
-		a = conf
-	case "1":
-		t, err := getConfigs(filepath.Join(claiDir, "*.json"), []string{"textConfig", "photoConfig", "videoConfig"})
-		if err != nil {
-			return fmt.Errorf("failed to get configs files: %w", err)
-		}
-		configs = t
-		qAct, err := queryForAction([]action{conf, del, confWithEditor})
-		if err != nil {
-			return fmt.Errorf("failed to find action: %w", err)
-		}
-		a = qAct
-	case "2":
-		profilesDir := filepath.Join(claiDir, "profiles")
-		t, err := getConfigs(filepath.Join(profilesDir, "*.json"), []string{})
-		if err != nil {
-			return fmt.Errorf("failed to get configs files: %w", err)
-		}
-		configs = t
-		qAct, err := queryForAction([]action{conf, del, newaction, confWithEditor, promptEditWithEditor})
-		if err != nil {
-			return fmt.Errorf("failed to find action: %w", err)
-		}
-		a = qAct
-		if a == newaction {
-			c, err := createProFile(profilesDir)
-			if err != nil {
-				return fmt.Errorf("failed to create profile file: %w", err)
-			}
-			// Reset config list as the user most likely only wants to edit the newly configured profile
-			configs = make([]config, 0)
-			configs = append(configs, c)
-			// Once new file has potentially been created, potentially alter it
-			a = conf
-		}
-	case "3":
-		mcpServersDir := filepath.Join(claiDir, "mcpServers")
-		if _, err := os.Stat(mcpServersDir); os.IsNotExist(err) {
-			if err := utils.CreateFile(filepath.Join(mcpServersDir, "everything.json"), &defaultMcpServer); err != nil {
-				return fmt.Errorf("failed to create default mcp server config: %w", err)
-			}
-		}
-		t, err := getConfigs(filepath.Join(mcpServersDir, "*.json"), []string{})
-		if err != nil {
-			return fmt.Errorf("failed to get configs files: %w", err)
-		}
-		configs = t
-		qAct, err := queryForAction([]action{conf, del, newaction, confWithEditor, pasteNew})
-		if err != nil {
-			return fmt.Errorf("failed to find action: %w", err)
-		}
-		a = qAct
-		if a == newaction {
-			c, err := createMcpServerFile(mcpServersDir)
-			if err != nil {
-				return fmt.Errorf("failed to create mcp server file: %w", err)
-			}
-			configs = []config{c}
-			a = conf
-		}
 
-		if a == pasteNew {
-			pastedConfigs, err := pasteMcpServerConfig(mcpServersDir)
-			if err != nil {
-				return fmt.Errorf("failed to paste mcp server config: %w", err)
-			}
-			configs = pastedConfigs
-			a = conf
-		}
-	case "q", "quit", "e", "exit":
-		return utils.ErrUserInitiatedExit
-	default:
-		return fmt.Errorf("unrecognized selection: %v", input)
+	categories := []setupCategory{
+		{
+			name: "mode-files",
+			load: func(dir string) ([]config, error) {
+				return getConfigs(filepath.Join(dir, "*Config.json"), []string{})
+			},
+			itemSelectActions: nil,
+			itemActions:       []action{conf, confWithEditor},
+		},
+		{
+			name: "model files",
+			load: func(dir string) ([]config, error) {
+				return getConfigs(filepath.Join(dir, "*.json"), []string{"textConfig", "photoConfig", "videoConfig"})
+			},
+			itemSelectActions: nil,
+			itemActions:       []action{conf, confWithEditor},
+		},
+		{
+			name: "text generation profiles",
+			load: func(dir string) ([]config, error) {
+				profilesDir := filepath.Join(dir, "profiles")
+				cfgs, err := getConfigs(filepath.Join(profilesDir, "*.json"), []string{})
+				if err != nil {
+					return nil, fmt.Errorf("failed to get profile configs: %w", err)
+				}
+				return cfgs, nil
+			},
+			itemSelectActions: []action{newaction},
+			itemActions:       []action{conf, del, confWithEditor, promptEditWithEditor, unescapedFieldEditWithEditor},
+			subdirPath:        "./profiles",
+			defaultConfig:     text.DefaultProfile,
+		},
+		{
+			name: "MCP server configuration",
+			load: func(dir string) ([]config, error) {
+				mcpServersDir := filepath.Join(dir, "mcpServers")
+				if _, statErr := os.Stat(mcpServersDir); os.IsNotExist(statErr) {
+					if err := utils.CreateFile(filepath.Join(mcpServersDir, "everything.json"), &defaultMcpServer); err != nil {
+						return nil, fmt.Errorf("failed to create default mcp server config: %w", err)
+					}
+				}
+				cfgs, err := getConfigs(filepath.Join(mcpServersDir, "*.json"), []string{})
+				if err != nil {
+					return nil, fmt.Errorf("failed to get mcp configs: %w", err)
+				}
+				return cfgs, nil
+			},
+			itemSelectActions: []action{newaction, pasteConfig},
+			itemActions:       []action{conf, del, confWithEditor},
+			subdirPath:        "./mcpServers",
+			defaultConfig:     defaultMcpServer,
+		},
+		shellContextSetupCategory(),
 	}
-	return configure(configs, a)
+
+	for {
+		category, err := selectCategory(categories)
+		if err != nil {
+			if errors.Is(err, utils.ErrUserInitiatedExit) {
+				return utils.ErrUserInitiatedExit
+			}
+			return fmt.Errorf("failed to select category: %w", err)
+		}
+		if err := runCategory(claiDir, category); err != nil {
+			if errors.Is(err, utils.ErrBack) {
+				continue
+			}
+			if errors.Is(err, utils.ErrUserInitiatedExit) {
+				return utils.ErrUserInitiatedExit
+			}
+			return fmt.Errorf("failed to run category %q: %w", category.name, err)
+		}
+	}
 }
 
-// createProFile, as in create profile file. I'm a very funny person.
-func createProFile(profilePath string) (config, error) {
-	if _, err := os.Stat(profilePath); os.IsNotExist(err) {
-		os.MkdirAll(profilePath, os.ModePerm)
-	}
-	fmt.Print(colorSecondary("Enter profile name: "))
-	profileName, err := utils.ReadUserInput()
+func selectCategory(categories []setupCategory) (setupCategory, error) {
+	choicesFormat := "Select category <num>, [q]uit: "
+	selected, err := utils.SelectFromTable(
+		stage0Raw,
+		categories,
+		choicesFormat,
+		func(i int, category setupCategory) (string, error) {
+			return fmt.Sprintf("%d. %s", i, category.name), nil
+		},
+		10,
+		true,
+		[]utils.CustomTableAction{},
+	)
 	if err != nil {
-		return config{}, fmt.Errorf("read profile name: %w", err)
+		return setupCategory{}, fmt.Errorf("failed to select setup category: %w", err)
 	}
-	newProfilePath := path.Join(profilePath, fmt.Sprintf("%v.json", profileName))
-	err = utils.CreateFile(newProfilePath, &text.DefaultProfile)
-	if err != nil {
-		return config{}, fmt.Errorf("create profile file: %w", err)
+	index := selected[0]
+	if index < 0 || index >= len(categories) {
+		return setupCategory{}, fmt.Errorf("selected category index %d out of range", index)
 	}
-	return config{
-		name:     profileName,
-		filePath: newProfilePath,
-	}, nil
+	return categories[index], nil
 }
 
-// createMcpServerFile creates a new MCP server configuration file inside
-// mcpServersPath using the provided server name and a default configuration.
-func createMcpServerFile(mcpServersPath string) (config, error) {
-	if _, err := os.Stat(mcpServersPath); os.IsNotExist(err) {
-		os.MkdirAll(mcpServersPath, os.ModePerm)
+func runCategory(claiDir string, category setupCategory) error {
+	for {
+		cfgs, err := category.load(claiDir)
+		if err != nil {
+			return fmt.Errorf("failed to load category configs: %w", err)
+		}
+		err = selectConfigItem(category, cfgs)
+		if err != nil {
+			if errors.Is(err, utils.ErrBack) {
+				return fmt.Errorf("user returned to category selection: %w", err)
+			}
+			if errors.Is(err, utils.ErrUserInitiatedExit) {
+				return utils.ErrUserInitiatedExit
+			}
+			return fmt.Errorf("failed to select config item: %w", err)
+		}
 	}
-	fmt.Print(colorSecondary("Enter server name: "))
-	serverName, err := utils.ReadUserInput()
-	if err != nil {
-		return config{}, fmt.Errorf("read server name: %w", err)
-	}
-	newServerPath := path.Join(mcpServersPath, fmt.Sprintf("%v.json", serverName))
-	err = utils.CreateFile(newServerPath, &defaultMcpServer)
-	if err != nil {
-		return config{}, fmt.Errorf("create mcp server file: %w", err)
-	}
-	return config{
-		name:     serverName,
-		filePath: newServerPath,
-	}, nil
 }
 
 // getConfigs using a glob, and then exclude files using strings.Contains()
 func getConfigs(includeGlob string, excludeContains []string) ([]config, error) {
 	files, err := filepath.Glob(includeGlob)
 	if err != nil {
-		return nil, fmt.Errorf("failed to glob pattern %v: %v", includeGlob, err)
+		return nil, fmt.Errorf("failed to glob pattern %v: %w", includeGlob, err)
 	}
 	var configs []config
 OUTER:
 	for _, file := range files {
-		// The moment this becomes a performance issue it's time to think about
-		// maybe reducing the amount of config files
 		for _, e := range excludeContains {
 			if strings.Contains(filepath.Base(file), e) {
 				continue OUTER
@@ -258,42 +280,71 @@ OUTER:
 	return configs, nil
 }
 
-func pasteMcpServerConfig(mcpConfDir string) ([]config, error) {
-	ancli.Noticef("Paste your MCP server configuration below.")
-	ancli.Noticef("Press Ctrl+D when finished (or type 'EOF' on a new line):")
-
-	var lines []string
-	scanner := bufio.NewScanner(os.Stdin)
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line == "EOF" {
-			break
+func setupCustomTableActions(category setupCategory) []utils.CustomTableAction {
+	ret := []utils.CustomTableAction{
+		actionToTableAction[back],
+	}
+	for _, a := range category.itemSelectActions {
+		cta, found := actionToTableAction[a]
+		if !found {
+			ancli.Warnf("custom table action not found: %q, this is a bit odd", a)
+			continue
 		}
-		lines = append(lines, line)
+		switch a {
+		case newaction:
+			cta.Action = func() error {
+				cfg, err := createConfigFile(category.subdirPath, category.name, category.defaultConfig)
+				if err != nil {
+					return fmt.Errorf("failed to create config file: %w", err)
+				}
+				return actionReconfigure(cfg)
+			}
+		case pasteConfig:
+			cta.Action = func() error {
+				return actionPasteMcpServer(category.subdirPath)
+			}
+		}
+		ret = append(ret, cta)
+	}
+	return ret
+}
+
+func selectConfigItem(category setupCategory, cfgs []config) error {
+	if len(cfgs) == 0 {
+		return fmt.Errorf("found no configuration files for category %q", category.name)
 	}
 
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("error reading input: %w", err)
-	}
-
-	pastedConfig := strings.Join(lines, "\n")
-	if strings.TrimSpace(pastedConfig) == "" {
-		return nil, fmt.Errorf("no configuration provided")
-	}
-
-	serverNames, err := ParseAndAddMcpServer(mcpConfDir, pastedConfig)
+	customTableActions := setupCustomTableActions(category)
+	selectedIndices, err := utils.SelectFromTable(
+		fmt.Sprintf("Configs in %s", category.name),
+		cfgs,
+		"Select config <num>: ",
+		func(i int, cfg config) (string, error) {
+			return fmt.Sprintf("%d. %s", i, cfg.name), nil
+		},
+		10,
+		true,
+		customTableActions,
+	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse mcp server: %w", err)
+		return fmt.Errorf("failed to select config item: %w", err)
 	}
 
-	ret := make([]config, 0)
-	for _, s := range serverNames {
-		ret = append(ret, config{
-			name:     s,
-			filePath: filepath.Join(mcpConfDir, fmt.Sprintf("%v.json", s)),
-		})
+	selectedIndex := selectedIndices[0]
+	if selectedIndex < 0 || selectedIndex >= len(cfgs) {
+		return fmt.Errorf("selected config index %d out of range", selectedIndex)
 	}
 
-	return ret, nil
+	selectedCfg := cfgs[selectedIndex]
+	if err := previewConfigItem(selectedCfg); err != nil {
+		return fmt.Errorf("failed to preview selected config item %q: %w", selectedCfg.name, err)
+	}
+
+	err = actOnConfigItem(category, selectedCfg)
+	// Allow the user to go one step back on back actions
+	// Will fill callstack, but veeeeeery slowly
+	if err != nil && errors.Is(err, utils.ErrBack) {
+		return selectConfigItem(category, cfgs)
+	}
+	return err
 }

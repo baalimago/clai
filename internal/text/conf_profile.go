@@ -73,6 +73,9 @@ func (c *Configurations) ProfileOverrides() error {
 	c.UseTools = profile.UseTools || (len(profile.McpServers) > 0)
 	c.RequestedToolGlobs = profile.Tools
 	c.SaveReplyAsConv = profile.SaveReplyAsConv
+	if strings.TrimSpace(profile.ShellContext) != "" {
+		c.ShellContext = profile.ShellContext
+	}
 	mcpServers := make([]models.McpServer, 0)
 	for name, m := range profile.McpServers {
 		m.Name = name
