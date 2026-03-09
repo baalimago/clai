@@ -17,6 +17,41 @@ import (
 // Keep this in sync with any feature that persists state to disk.
 var requiredConfigDirs = []string{"conversations", "profiles", "mcpServers", "conversations/dirs", "shellContexts"}
 
+func ConfigDirPaths() []string {
+	paths := make([]string, len(requiredConfigDirs))
+	copy(paths, requiredConfigDirs)
+	return paths
+}
+
+func ResolveConfigDirPath(configDir string, components []string) (string, error) {
+	if len(components) == 0 {
+		return configDir, nil
+	}
+
+	known := make(map[string]struct{}, len(requiredConfigDirs))
+	for _, p := range requiredConfigDirs {
+		known[p] = struct{}{}
+	}
+
+	var joined []string
+	for _, component := range components {
+		if component == "" {
+			continue
+		}
+		joined = append(joined, component)
+	}
+	if len(joined) == 0 {
+		return configDir, nil
+	}
+
+	subPath := path.Join(joined...)
+	if _, exists := known[subPath]; !exists {
+		return "", fmt.Errorf("unknown config subpath %q", subPath)
+	}
+
+	return filepath.Join(configDir, subPath), nil
+}
+
 type shellContextDefaultFile struct {
 	Shell         string            `json:"shell"`
 	TimeoutMS     int               `json:"timeout_ms"`

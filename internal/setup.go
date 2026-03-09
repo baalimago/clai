@@ -43,6 +43,7 @@ const (
 	DIRSCOPED_REPLAY
 	TOOLS
 	PROFILES
+	CONFDIR
 )
 
 var defaultFlags = Configurations{
@@ -107,6 +108,8 @@ func getCmdFromArgs(args []string) (Mode, error) {
 		return TOOLS, nil
 	case "profiles":
 		return PROFILES, nil
+	case "confdir":
+		return CONFDIR, nil
 	default:
 		return HELP, fmt.Errorf("unknown command: '%s' all args: '%s'", cmd, args)
 	}
@@ -389,6 +392,8 @@ func Setup(ctx context.Context, usage string, allArgs []string) (models.Querier,
 		return nil, tools.SubCmd(ctx, allArgs)
 	case PROFILES:
 		return nil, profiles.SubCmd(ctx, allArgs)
+	case CONFDIR:
+		return printConfDir(ctx, postFlagArgs)
 	default:
 		return nil, fmt.Errorf("unknown mode: %v", mode)
 	}

@@ -2,6 +2,21 @@
 
 Dive deeper into the subject you're interested in by seeing the different files in the [./architecture](./architecture), see links below.
 
+## Find your config dir
+
+```bash
+clai confdir
+cd "$(clai confdir)"
+clai confdir mcpServers
+clai confdir conversations dirs
+```
+
+- `confdir` prints the absolute clai config dir path.
+- You may also pass a registered config subpath, such as `mcpServers` or `conversations dirs`.
+- This is useful for quickly jumping into config-managed files.
+
+See: [`CONFIG.md`](./architecture/CONFIG.md).
+
 ## Query + reply + directory reply
 
 ```bash
