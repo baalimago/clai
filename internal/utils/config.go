@@ -230,15 +230,17 @@ func LoadConfigFromFile[T any](
 		return conf, fmt.Errorf("failed to unmarshal config '%v', error: %v", configFileName, err)
 	}
 
-	// Append any new fields from defauly config, in case of config extension
+	// Append any new fields from default config, in case of config extension.
 	hasChanged := setNonZeroValueFields(&conf, dflt)
 
 	if len(hasChanged) > 0 {
 		err = CreateFile(configPath, &conf)
 		if err != nil {
-			return conf, fmt.Errorf("failed to write config '%v' post zero-field appendage, error: %v", configFileName, err)
+			return conf, fmt.Errorf("failed to write config '%v' post zero-field appendage, error: %w", configFileName, err)
 		}
-		ancli.PrintOK(fmt.Sprintf("appended new fields: '%s', to textConfig and updated config file: '%v'\n", hasChanged, configPath))
+		if misc.Truthy(os.Getenv("DEBUG")) {
+			ancli.PrintOK(fmt.Sprintf("appended new fields: '%s', updated config file: '%v'\n", hasChanged, configPath))
+		}
 	}
 
 	if misc.Truthy(os.Getenv("DEBUG")) {

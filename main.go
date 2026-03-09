@@ -59,7 +59,7 @@ Commands:
 Examples:
   - clai h | clai query generate some examples for this usage string: 
   - clai confdir
-  - clai -t website_text query "What'\''s the weather like in Tokyo? Use website_text to fetch data"
+  - clai -t website_text query "What'\''\'''s the weather like in Tokyo? Use website_text to fetch data"
   - clai -glob "*.txt" query Please summarize these documents: 
   - clai -asc minimal q "what changed in this repo?"
   - clai -pm dall-e-2 photo A cat in space
@@ -67,6 +67,13 @@ Examples:
   - clai c list
   - clai c help
 `
+
+func triggerCompletionNotification() {
+	if !utils.NotificationBellEnabled() {
+		return
+	}
+	fmt.Fprint(os.Stdout, "\a")
+}
 
 func run(args []string) int {
 	configDirPath, err := utils.GetClaiConfigDir()
@@ -112,6 +119,7 @@ func run(args []string) int {
 		}
 	}
 	cancel()
+	triggerCompletionNotification()
 	if misc.Truthy(os.Getenv("DEBUG")) {
 		ancli.PrintOK("things seems to have worked out. Bye bye! 🚀\n")
 	}

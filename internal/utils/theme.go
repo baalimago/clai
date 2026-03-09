@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -25,6 +26,8 @@ type Theme struct {
 	RoleUser   string `json:"roleUser"`
 	RoleTool   string `json:"roleTool"`
 	RoleOther  string `json:"roleOther"`
+
+	NotificationBell bool `json:"notificationBell"`
 }
 
 func defaultTheme() *Theme {
@@ -35,10 +38,11 @@ func defaultTheme() *Theme {
 		Breadtext: "\u001b[38;2;200;210;220m",
 
 		// Match AttemptPrettyPrint defaults (BLUE/CYAN/MAGENTA).
-		RoleSystem: "\u001b[34m",
-		RoleUser:   "\u001b[36m",
-		RoleTool:   "\u001b[35m",
-		RoleOther:  "\u001b[34m",
+		RoleSystem:       "\u001b[34m",
+		RoleUser:         "\u001b[36m",
+		RoleTool:         "\u001b[35m",
+		RoleOther:        "\u001b[34m",
+		NotificationBell: true,
 	}
 }
 
@@ -47,11 +51,44 @@ var globalTheme = *defaultTheme()
 // LoadTheme loads (and possibly creates) the theme.json file within the config dir.
 // It is safe to call multiple times.
 func LoadTheme(configDirPath string) error {
-	conf, err := LoadConfigFromFile(configDirPath, "theme.json", nil, defaultTheme())
+	conf, err := LoadConfigFromFile(configDirPath, "theme.json", migrateThemeConfig, defaultTheme())
 	if err != nil {
 		return fmt.Errorf("load theme config: %w", err)
 	}
 	globalTheme = conf
+	return nil
+}
+
+func migrateThemeConfig(configDirPath string) error {
+	themePath := ThemeConfigPath(configDirPath)
+	hasNotificationBell := hasJSONKey(themePath, "notificationBell")
+	if hasNotificationBell {
+		return nil
+	}
+
+	type themeMigration struct {
+		Primary          string `json:"primary"`
+		Secondary        string `json:"secondary"`
+		Breadtext        string `json:"breadtext"`
+		RoleSystem       string `json:"roleSystem"`
+		RoleUser         string `json:"roleUser"`
+		RoleTool         string `json:"roleTool"`
+		RoleOther        string `json:"roleOther"`
+		NotificationBell bool   `json:"notificationBell"`
+	}
+
+	var conf themeMigration
+	err := ReadAndUnmarshal(themePath, &conf)
+	if err != nil {
+		return fmt.Errorf("read theme config for migration: %w", err)
+	}
+
+	conf.NotificationBell = true
+
+	err = WriteFile(themePath, &conf)
+	if err != nil {
+		return fmt.Errorf("write theme config migration: %w", err)
+	}
 	return nil
 }
 
@@ -92,3 +129,19 @@ func RoleColor(role string) string {
 func ThemePrimaryColor() string   { return globalTheme.Primary }
 func ThemeSecondaryColor() string { return globalTheme.Secondary }
 func ThemeBreadtextColor() string { return globalTheme.Breadtext }
+
+func NotificationBellEnabled() bool { return globalTheme.NotificationBell }
+
+func hasJSONKey(path, key string) bool {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	var raw map[string]json.RawMessage
+	err = json.Unmarshal(content, &raw)
+	if err != nil {
+		return false
+	}
+	_, exists := raw[key]
+	return exists
+}
