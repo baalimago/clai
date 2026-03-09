@@ -15,8 +15,7 @@ func Test_goldenFile_CONFDIR_prints_config_dir(t *testing.T) {
 		os.Args = oldArgs
 	})
 
-	confDir := t.TempDir()
-	t.Setenv("CLAI_CONFIG_DIR", confDir)
+	confDir := setupMainTestConfigDir(t)
 
 	var gotStatus int
 	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
@@ -33,8 +32,7 @@ func Test_goldenFile_CONFDIR_prints_registered_subdir(t *testing.T) {
 		os.Args = oldArgs
 	})
 
-	confDir := t.TempDir()
-	t.Setenv("CLAI_CONFIG_DIR", confDir)
+	confDir := setupMainTestConfigDir(t)
 
 	var gotStatus int
 	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
@@ -51,8 +49,7 @@ func Test_goldenFile_CONFDIR_unknown_subpath_errors(t *testing.T) {
 		os.Args = oldArgs
 	})
 
-	confDir := t.TempDir()
-	t.Setenv("CLAI_CONFIG_DIR", confDir)
+	_ = setupMainTestConfigDir(t)
 
 	var gotStatus int
 	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
@@ -73,8 +70,7 @@ func Test_goldenFile_HELP_mentions_confdir_command(t *testing.T) {
 		os.Args = oldArgs
 	})
 
-	confDir := t.TempDir()
-	t.Setenv("CLAI_CONFIG_DIR", confDir)
+	_ = setupMainTestConfigDir(t)
 
 	var gotStatus int
 	stdout := testboil.CaptureStdout(t, func(t *testing.T) {

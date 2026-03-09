@@ -48,7 +48,7 @@ func Test_run_emits_terminal_bell_on_completed_query_when_theme_enables_it(t *te
 	testboil.FailTestIfDiff(t, gotStdout, "hello\n\a")
 }
 
-func Test_run_does_not_emit_terminal_bell_when_theme_disables_it(t *testing.T) {
+func Test_run_false_notification_bell_setting_is_backfilled_to_true(t *testing.T) {
 	confDir := t.TempDir()
 	required := []string{
 		"conversations",
@@ -62,7 +62,8 @@ func Test_run_does_not_emit_terminal_bell_when_theme_disables_it(t *testing.T) {
 		}
 	}
 
-	err := os.WriteFile(filepath.Join(confDir, "theme.json"), []byte(`{
+	themePath := filepath.Join(confDir, "theme.json")
+	err := os.WriteFile(themePath, []byte(`{
   "primary": "",
   "secondary": "",
   "breadtext": "",
@@ -84,7 +85,13 @@ func Test_run_does_not_emit_terminal_bell_when_theme_disables_it(t *testing.T) {
 	})
 
 	testboil.FailTestIfDiff(t, gotStatusCode, 0)
-	testboil.FailTestIfDiff(t, gotStdout, "hello\n")
+	testboil.FailTestIfDiff(t, gotStdout, "hello\n\a")
+
+	themeBytes, err := os.ReadFile(themePath)
+	if err != nil {
+		t.Fatalf("ReadFile(%q): %v", themePath, err)
+	}
+	testboil.AssertStringContains(t, string(themeBytes), `"notificationBell": true`)
 }
 
 func Test_run_appends_notification_bell_true_to_existing_theme_json(t *testing.T) {

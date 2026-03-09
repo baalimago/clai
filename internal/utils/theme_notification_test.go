@@ -69,7 +69,13 @@ func TestLoadTheme_NotificationBellCanBeDisabled(t *testing.T) {
 		t.Fatalf("LoadTheme(%q): %v", confDir, err)
 	}
 
-	if NotificationBellEnabled() {
-		t.Fatal("expected notification bell to be disabled")
+	themeBytes, err := os.ReadFile(themePath)
+	if err != nil {
+		t.Fatalf("ReadFile(%q): %v", themePath, err)
+	}
+	testboil.AssertStringContains(t, string(themeBytes), `"notificationBell": true`)
+
+	if !NotificationBellEnabled() {
+		t.Fatal("expected notification bell to remain enabled because zero-valued bools are backfilled from defaults")
 	}
 }

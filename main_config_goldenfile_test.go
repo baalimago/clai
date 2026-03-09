@@ -18,21 +18,7 @@ func Test_goldenFile_CONFIG_flag_defaults_do_not_override_mode_config(t *testing
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
 
-	confDir := t.TempDir()
-	t.Setenv("CLAI_CONFIG_DIR", confDir)
-
-	// Create required config subdirs (matches existing goldenfile tests).
-	required := []string{
-		"conversations",
-		"profiles",
-		"mcpServers",
-		"conversations/dirs",
-	}
-	for _, dir := range required {
-		if err := os.MkdirAll(filepath.Join(confDir, dir), 0o755); err != nil {
-			t.Fatalf("MkdirAll(%q): %v", dir, err)
-		}
-	}
+	confDir := setupMainTestConfigDir(t)
 
 	// Write a textConfig.json that sets the model to "test".
 	cfg := text.Default
@@ -52,5 +38,5 @@ func Test_goldenFile_CONFIG_flag_defaults_do_not_override_mode_config(t *testing
 	})
 
 	testboil.FailTestIfDiff(t, gotStatus, 0)
-	testboil.FailTestIfDiff(t, stdout, "hello\n")
+	testboil.FailTestIfDiff(t, stdout, "hello\n\a")
 }

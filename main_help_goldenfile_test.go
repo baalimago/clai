@@ -2,7 +2,6 @@ package main
 
 import (
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -16,20 +15,7 @@ func Test_goldenFile_HELP_prints_usage(t *testing.T) {
 		os.Args = oldArgs
 	})
 
-	confDir := t.TempDir()
-	required := []string{
-		"conversations",
-		"profiles",
-		"mcpServers",
-		"conversations/dirs",
-	}
-	for _, dir := range required {
-		if err := os.MkdirAll(filepath.Join(confDir, dir), 0o755); err != nil {
-			t.Fatalf("MkdirAll(%q): %v", dir, err)
-		}
-	}
-
-	t.Setenv("CLAI_CONFIG_DIR", confDir)
+	confDir := setupMainTestConfigDir(t)
 
 	var gotStatusCode int
 	gotStdout := testboil.CaptureStdout(t, func(t *testing.T) {
@@ -53,20 +39,7 @@ func Test_goldenFile_HELP_profile_prints_profile_help(t *testing.T) {
 		os.Args = oldArgs
 	})
 
-	confDir := t.TempDir()
-	required := []string{
-		"conversations",
-		"profiles",
-		"mcpServers",
-		"conversations/dirs",
-	}
-	for _, dir := range required {
-		if err := os.MkdirAll(filepath.Join(confDir, dir), 0o755); err != nil {
-			t.Fatalf("MkdirAll(%q): %v", dir, err)
-		}
-	}
-
-	t.Setenv("CLAI_CONFIG_DIR", confDir)
+	_ = setupMainTestConfigDir(t)
 
 	var gotStatusCode int
 	gotStdout := testboil.CaptureStdout(t, func(t *testing.T) {
