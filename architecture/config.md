@@ -111,7 +111,7 @@ Stored under:
 - `<config>/conversations/globalScope.json` (global reply context)
 - `<config>/conversations/dirs/*` (directory-scoped binding metadata)
 
-These are described in `architecture/CHAT.md`.
+These are described in `architecture/chat.md`.
 
 They aren’t traditional config, but they influence prompt assembly (`-re`, `-dre`, `chat continue`, etc.).
 

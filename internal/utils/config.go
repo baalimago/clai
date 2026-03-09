@@ -17,6 +17,41 @@ import (
 // Keep this in sync with any feature that persists state to disk.
 var requiredConfigDirs = []string{"conversations", "profiles", "mcpServers", "conversations/dirs", "shellContexts"}
 
+func ConfigDirPaths() []string {
+	paths := make([]string, len(requiredConfigDirs))
+	copy(paths, requiredConfigDirs)
+	return paths
+}
+
+func ResolveConfigDirPath(configDir string, components []string) (string, error) {
+	if len(components) == 0 {
+		return configDir, nil
+	}
+
+	known := make(map[string]struct{}, len(requiredConfigDirs))
+	for _, p := range requiredConfigDirs {
+		known[p] = struct{}{}
+	}
+
+	var joined []string
+	for _, component := range components {
+		if component == "" {
+			continue
+		}
+		joined = append(joined, component)
+	}
+	if len(joined) == 0 {
+		return configDir, nil
+	}
+
+	subPath := path.Join(joined...)
+	if _, exists := known[subPath]; !exists {
+		return "", fmt.Errorf("unknown config subpath %q", subPath)
+	}
+
+	return filepath.Join(configDir, subPath), nil
+}
+
 type shellContextDefaultFile struct {
 	Shell         string            `json:"shell"`
 	TimeoutMS     int               `json:"timeout_ms"`
@@ -195,15 +230,17 @@ func LoadConfigFromFile[T any](
 		return conf, fmt.Errorf("failed to unmarshal config '%v', error: %v", configFileName, err)
 	}
 
-	// Append any new fields from defauly config, in case of config extension
+	// Append any new fields from default config, in case of config extension.
 	hasChanged := setNonZeroValueFields(&conf, dflt)
 
 	if len(hasChanged) > 0 {
 		err = CreateFile(configPath, &conf)
 		if err != nil {
-			return conf, fmt.Errorf("failed to write config '%v' post zero-field appendage, error: %v", configFileName, err)
+			return conf, fmt.Errorf("failed to write config '%v' post zero-field appendage, error: %w", configFileName, err)
 		}
-		ancli.PrintOK(fmt.Sprintf("appended new fields: '%s', to textConfig and updated config file: '%v'\n", hasChanged, configPath))
+		if misc.Truthy(os.Getenv("DEBUG")) {
+			ancli.PrintOK(fmt.Sprintf("appended new fields: '%s', updated config file: '%v'\n", hasChanged, configPath))
+		}
 	}
 
 	if misc.Truthy(os.Getenv("DEBUG")) {

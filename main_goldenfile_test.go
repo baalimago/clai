@@ -2,7 +2,6 @@ package main
 
 import (
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -28,7 +27,7 @@ func Test_goldenFile_calibration(t *testing.T) {
 			// echo text querier. It will respond with whatever the input is
 			givenArgs:      "-r -cm test q test",
 			givenEnvs:      make(map[string]string),
-			wantOutExactly: "test\n",
+			wantOutExactly: "test\n\a",
 			wantErr:        "",
 			wantStatusCode: 0,
 		},
@@ -37,7 +36,7 @@ func Test_goldenFile_calibration(t *testing.T) {
 			expect:         "Multiple tests-test",
 			givenArgs:      "-r -cm test q another test",
 			givenEnvs:      make(map[string]string),
-			wantOutExactly: "another test\n",
+			wantOutExactly: "another test\n\a",
 			wantErr:        "",
 			wantStatusCode: 0,
 		},
@@ -50,20 +49,7 @@ func Test_goldenFile_calibration(t *testing.T) {
 				os.Args = oldArgs
 			})
 
-			confDir := t.TempDir()
-			required := []string{
-				"conversations",
-				"profiles",
-				"mcpServers",
-				"conversations/dirs",
-			}
-			for _, dir := range required {
-				if err := os.MkdirAll(filepath.Join(confDir, dir), 0o755); err != nil {
-					t.Fatalf("MkdirAll(%q): %v", dir, err)
-				}
-			}
-
-			t.Setenv("CLAI_CONFIG_DIR", confDir)
+			_ = setupMainTestConfigDir(t)
 			for k, v := range tc.givenEnvs {
 				t.Setenv(k, v)
 			}

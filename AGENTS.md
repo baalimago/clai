@@ -5,7 +5,6 @@ You're working on a project called "clai".
 ## Always read:
 
 - ./main.go - This contains usage which gives a functional overview
-- ./main_test.go - This contains goldenfile tests, which explains functionality in further detail
 - ./go.mod - This shows which libraries are used, do not add additional third party libraries
 - ./architecture - This is a directory with many files explaining the architecture of sub-features. Read the document regarding the feature you wish to know more about.
 

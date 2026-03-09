@@ -30,20 +30,7 @@ func Test_goldenFile_profile2_is_applied_to_conversations(t *testing.T) {
 		os.Args = oldArgs
 	})
 
-	confDir := t.TempDir()
-	t.Setenv("CLAI_CONFIG_DIR", confDir)
-
-	required := []string{
-		"conversations",
-		"profiles",
-		"mcpServers",
-		"conversations/dirs",
-	}
-	for _, dir := range required {
-		if err := os.MkdirAll(filepath.Join(confDir, dir), 0o755); err != nil {
-			t.Fatalf("MkdirAll(%q): %v", dir, err)
-		}
-	}
+	confDir := setupMainTestConfigDir(t)
 
 	profileName := "2"
 	profilePath := filepath.Join(confDir, "profiles", fmt.Sprintf("%s.json", profileName))

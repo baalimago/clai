@@ -1,9 +1,9 @@
 # Shell Context (ASC) Architecture
 
-This document specifies the **auto-append shell context** feature (ASC): a configurable mechanism to append runtime “shell context” to the **final user prompt** for text queries.
+This document specifies the **auto-append shell context** feature (ASC): a configurable mechanism to render runtime “shell context” and inject it into the **system prompt** for text queries.
 
 ASC is enabled by selecting a named shell-context definition file, which:
-- defines a **template** (Go `text/template`) used to render the appended context block
+- defines a **template** (Go `text/template`) used to render the shell context block
 - defines a **vars** map where each variable value is produced by running a command in a subprocess shell
 - defines execution settings such as which shell to run and per-variable timeout
 
@@ -17,7 +17,7 @@ ASC is enabled by selecting a context **by name**:
 - `-asc <name>` (short)
 - `-add-shell-context <name>` (long)
 
-If the flag is **not** provided (empty name), no shell context is appended.
+If the flag is **not** provided (empty name), no shell context is injected.
 
 Examples:
 ```bash
@@ -47,24 +47,41 @@ Meaning:
 
 ASC must **not** change stdin handling or token replacement.
 
-Prompt assembly currently happens in `text.Configurations.SetupInitialChat(...)` (see `architecture/QUERY.md`). The flow becomes:
+Prompt assembly currently happens in `text.Configurations.SetupInitialChat(...)` (see `architecture/query.md`). The flow is:
 
-1. Build the user prompt normally:
-   - `prompt := utils.Prompt(tConf.StdinReplace, args)`
-   - (glob/reply context logic remains unchanged)
+1. Build the system prompt normally from `tConf.SystemPrompt`
 2. If `tConf.ShellContext` (string name) is non-empty:
    - load the selected shell context definition (see below)
    - evaluate its variables by running subprocess commands
    - render the template into a text block
-   - append to the prompt:
-     - `prompt = prompt + "\n\n" + renderedBlock`
-3. Continue existing image detection, message append, chat ID creation, etc.
+   - inject that block into the **system prompt**
+3. Build the user prompt normally:
+   - `prompt := utils.Prompt(tConf.StdinReplace, args)`
+   - (glob/reply context logic remains unchanged)
+4. Continue existing image detection, message append, chat ID creation, etc.
 
 This keeps ASC orthogonal to:
 - stdin piping
 - `{}` / `-I` replacement
 - globbing
 - reply/dir-reply context
+
+### Current injection format
+The rendered shell context is inserted using the existing helper wrapper format:
+
+```text
+<shell context>
+...rendered template output...
+</shell context>
+...system prompt...
+```
+
+This means the shell context is visible to the model as part of the system message, while the user message remains unchanged.
+
+### Failure behavior
+ASC is **best-effort**:
+- if loading or rendering the shell context fails during system-prompt setup, clai prints a warning and continues without shell context
+- user prompt assembly and query execution continue normally
 
 ---
 
@@ -117,7 +134,7 @@ Each file `shellContexts/<name>.json` describes:
 - which shell to spawn for commands
 - per-variable timeout
 - placeholder values for timeouts and errors
-- a Go template used to format the final appended block
+- a Go template used to format the rendered shell context block
 - a set of variables (command map)
 
 Proposed schema:
@@ -151,7 +168,7 @@ Proposed schema:
 - `error_value` (string): Value substituted for a variable when the command fails (non-zero exit, missing binary, etc.).
   - Default: `"<error>"` (may be empty string if desired)
 
-- `template` (string): Go `text/template` template used to render the final appended block.
+- `template` (string): Go `text/template` template used to render the final shell context block.
   - Variables are accessed as `{{.varName}}`.
   - Templates may use conditionals (`if`, `with`), loops (`range`), etc.
 
@@ -204,18 +221,14 @@ This enables user-authored rich contexts, e.g.:
 ```gotemplate
 [Shell context]
 wd: {{.cwd}}
-{{- if (contains .cwd "/prod/") }}
-mode: production
-{{- end }}
 {{- if .git_branch }}
 git: {{.git_branch}}
 {{- end }}
 ```
 
-Implementations may provide a small safe `FuncMap` (e.g. `contains`, `hasPrefix`, `trim`, etc.) to make templates ergonomic.
-
 If template parsing or execution fails:
-- the shell context should be omitted (ASC is best-effort)
+- the shell context should be omitted from the system prompt
+- clai should continue best-effort
 - optionally warn under `DEBUG`
 
 ---
@@ -238,10 +251,11 @@ If template parsing or execution fails:
   - apply during profile override step
 
 ### Prompt assembly
-- in `internal/text/conf.go`, `SetupInitialChat(...)`:
-  - after `utils.Prompt(...)`, if `ShellContext != ""`:
+- in `internal/text/conf.go`:
+  - during `setupSystemPrompt(...)`, if `ShellContext != ""`:
     - render shell context block
-    - append `\n\n` + block to prompt
+    - inject it into the system prompt
+  - user prompt assembly via `utils.Prompt(...)` remains unchanged
 
 ---
 
@@ -253,9 +267,9 @@ Recommended approach:
 - implement command execution via an injected runner (func/interface), allowing tests to:
   - return fixed stdout per var
   - simulate timeouts
-- add an end-to-end-ish contract test in `main_query_goldenfile_test.go`:
+- add an end-to-end-ish contract test:
   - run `clai -r -cm test -add-shell-context minimal q hello`
-  - assert stdout includes the appended rendered block
+  - assert stdout remains just the user-visible prompt/response path, i.e. shell context is **not** echoed as part of the user message
 - add a test verifying timeout behavior:
   - a var exceeding `timeout_ms` yields `timed_out_value`
   - a warning is printed (via `ancli`) for each timed-out var

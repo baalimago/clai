@@ -2,7 +2,6 @@ package main
 
 import (
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -15,20 +14,7 @@ func Test_goldenFile_TOOLS_lists_tools_and_footer(t *testing.T) {
 		os.Args = oldArgs
 	})
 
-	confDir := t.TempDir()
-	required := []string{
-		"conversations",
-		"profiles",
-		"mcpServers",
-		"conversations/dirs",
-	}
-	for _, dir := range required {
-		if err := os.MkdirAll(filepath.Join(confDir, dir), 0o755); err != nil {
-			t.Fatalf("MkdirAll(%q): %v", dir, err)
-		}
-	}
-
-	t.Setenv("CLAI_CONFIG_DIR", confDir)
+	_ = setupMainTestConfigDir(t)
 
 	var gotStatus int
 	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
@@ -38,7 +24,7 @@ func Test_goldenFile_TOOLS_lists_tools_and_footer(t *testing.T) {
 	testboil.FailTestIfDiff(t, gotStatus, 0)
 
 	// We don't assert the entire listing because it changes as tools are added.
-	// Instead, assert stable behaviors described in architecture/TOOLS.md.
+	// Instead, assert stable behaviors described in architecture/tools.md.
 	testboil.AssertStringContains(t, stdout, "Run 'clai tools <tool-name>' for more details.\n")
 }
 
@@ -48,20 +34,7 @@ func Test_goldenFile_TOOLS_unknown_tool_errors(t *testing.T) {
 		os.Args = oldArgs
 	})
 
-	confDir := t.TempDir()
-	required := []string{
-		"conversations",
-		"profiles",
-		"mcpServers",
-		"conversations/dirs",
-	}
-	for _, dir := range required {
-		if err := os.MkdirAll(filepath.Join(confDir, dir), 0o755); err != nil {
-			t.Fatalf("MkdirAll(%q): %v", dir, err)
-		}
-	}
-
-	t.Setenv("CLAI_CONFIG_DIR", confDir)
+	_ = setupMainTestConfigDir(t)
 
 	var gotStatus int
 	stdout := testboil.CaptureStdout(t, func(t *testing.T) {

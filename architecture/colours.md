@@ -25,7 +25,7 @@ The file is automatically created with defaults if missing.
 
 ### Theme fields
 
-All fields are raw ANSI escape sequences represented as JSON strings.
+All colour fields are raw ANSI escape sequences represented as JSON strings.
 
 | Field | Purpose |
 |------:|---------|
@@ -36,8 +36,26 @@ All fields are raw ANSI escape sequences represented as JSON strings.
 | `roleUser` | Colour for `user` role labels. |
 | `roleTool` | Colour for `tool` role labels. |
 | `roleOther` | Fallback colour for any other/unknown role. |
+| `notificationBell` | Whether clai should emit terminal BEL (`\a`) after successful task completion. |
 
 Defaults are chosen to match the existing `AttemptPrettyPrint` role palette (system=blue, user=cyan, tool=magenta).
+
+Example:
+
+```json
+{
+  "primary": "\u001b[38;2;110;130;150m",
+  "secondary": "\u001b[38;2;140;165;190m",
+  "breadtext": "\u001b[38;2;200;210;220m",
+  "roleSystem": "\u001b[34m",
+  "roleUser": "\u001b[36m",
+  "roleTool": "\u001b[35m",
+  "roleOther": "\u001b[34m",
+  "notificationBell": true
+}
+```
+
+`notificationBell` is intended for terminal/tmux attention behavior. Depending on terminal and tmux configuration, BEL may produce an audible bell, visual flash, or other attention marker.
 
 ## Disabling colour: `NO_COLOR`
 
@@ -83,6 +101,14 @@ All colouring is applied via `utils.Colorize(...)`, so it automatically respects
 - Table header + divider: `theme.primary`
 - Table rows: `theme.breadtext`
 - Interactive prompt line: `theme.secondary`
+
+### 4) Completion notification
+
+After a successful task/query completes, clai may emit terminal BEL depending on `theme.notificationBell`.
+
+Implementation:
+- `main.go:triggerCompletionNotification()`
+- `internal/utils.NotificationBellEnabled()`
 
 ## Customization
 

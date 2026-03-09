@@ -44,6 +44,7 @@ Cache dir:  %v
 Commands:
   h|help                        Display this help message
   s|setup                       Setup the configuration files
+  confdir [subpath ...]        Print clai config dir or a registered config subpath
   q|query <text>                Query the chat model with the given text
   p|photo <text>                Ask the photo model for a picture with the given prompt
   v|video <text>                Ask the video model for a video with the given prompt
@@ -57,7 +58,8 @@ Commands:
 
 Examples:
   - clai h | clai query generate some examples for this usage string: 
-  - clai -t website_text query "What'\''s the weather like in Tokyo? Use website_text to fetch data"
+  - clai confdir
+  - clai -t website_text query "What'\''\'''s the weather like in Tokyo? Use website_text to fetch data"
   - clai -glob "*.txt" query Please summarize these documents: 
   - clai -asc minimal q "what changed in this repo?"
   - clai -pm dall-e-2 photo A cat in space
@@ -65,6 +67,13 @@ Examples:
   - clai c list
   - clai c help
 `
+
+func triggerCompletionNotification() {
+	if !utils.NotificationBellEnabled() {
+		return
+	}
+	fmt.Fprint(os.Stdout, "\a")
+}
 
 func run(args []string) int {
 	configDirPath, err := utils.GetClaiConfigDir()
@@ -110,6 +119,7 @@ func run(args []string) int {
 		}
 	}
 	cancel()
+	triggerCompletionNotification()
 	if misc.Truthy(os.Getenv("DEBUG")) {
 		ancli.PrintOK("things seems to have worked out. Bye bye! 🚀\n")
 	}

@@ -2,6 +2,21 @@
 
 Dive deeper into the subject you're interested in by seeing the different files in the [./architecture](./architecture), see links below.
 
+## Find your config dir
+
+```bash
+clai confdir
+cd "$(clai confdir)"
+clai confdir mcpServers
+clai confdir conversations dirs
+```
+
+- `confdir` prints the absolute clai config dir path.
+- You may also pass a registered config subpath, such as `mcpServers` or `conversations dirs`.
+- This is useful for quickly jumping into config-managed files.
+
+See: [`config.md`](./architecture/config.md).
+
 ## Query + reply + directory reply
 
 ```bash
@@ -15,7 +30,7 @@ clai -dre query "Apply it to this repo"
 - `-re` loads `globalScope.json` as context.
 - `-dre` first copies the directory-bound chat into `globalScope.json`, then uses normal `-re` plumbing.
 
-See: [`QUERY.md`](./architecture/QUERY.md), [`CHAT.md`](./architecture/CHAT.md), [`DRE.md`](./architecture/DRE.md).
+See: [`query.md`](./architecture/query.md), [`chat.md`](./architecture/chat.md), [`dre.md`](./architecture/dre.md).
 
 ## Auto-append shell context
 
@@ -28,7 +43,7 @@ clai -append-shell-context git query "Summarize the current repo state before an
 - The selected context runs shell commands, renders a template, and appends the result to your final query prompt.
 - Use this when you want runtime context like cwd, branch name, or git status included automatically.
 
-See: [`SHELL-CONTEXT.md`](./architecture/SHELL-CONTEXT.md).
+See: [`shell-context.md`](./architecture/shell-context.md).
 
 ## Inspect “what did it say last time?”
 
@@ -41,7 +56,7 @@ clai -r replay  # raw (no pretty/glow)
 - `replay` and `dre` do not call any LLM.
 - They load a chat transcript and pretty-print the last message.
 
-See: [`REPLAY.md`](./architecture/REPLAY.md), [`DRE.md`](./architecture/DRE.md).
+See: [`replay.md`](./architecture/replay.md), [`dre.md`](./architecture/dre.md).
 
 ## Bind a previous conversation to the current directory
 
@@ -54,7 +69,7 @@ clai -dre query "Continue from that context"
 - `chat continue <index|id>` selects an existing transcript and stores a directory binding.
 - After that, `-dre` in this directory uses that conversation as context.
 
-See: [`CHAT.md`](./architecture/CHAT.md).
+See: [`chat.md`](./architecture/chat.md).
 
 ## Profiles = workflow presets
 
@@ -67,7 +82,7 @@ clai -p ops query "Find the owners of this subsystem"
 - They can override model, prompts, and requested tools.
 - These are colliqualy "agent configurations"
 
-See: [`PROFILES.md`](./architecture/PROFILES.md), [`CONFIG.md`](./architecture/CONFIG.md).
+See: [`profiles.md`](./architecture/profiles.md), [`config.md`](./architecture/config.md).
 
 Also see examples:
 
@@ -86,7 +101,7 @@ clai -t "rg,cat" query "Search for parsing logic and show me the file"
 - `-t` enables tool calling for that _run_; without it, tool calls are disabled.
 - `-t "*"` allows all registered tools.
 
-See: [`TOOLS.md`](./architecture/TOOLS.md), [`TOOLING.md`](./architecture/TOOLING.md), [`CONFIG.md`](./architecture/CONFIG.md).
+See: [`tools.md`](./architecture/tools.md), [`tooling.md`](./architecture/tooling.md), [`config.md`](./architecture/config.md).
 
 ## MCP tools (external tool servers)
 
@@ -98,7 +113,7 @@ clai -t "mcp_linear*" query "List open incidents assigned to me"
 - MCP server configs are stored in `<clai-config>/mcpServers/*.json`.
 - MCP tool names are typically `mcp_<server>_<tool>` (and can be globbed).
 
-See: [`TOOLING.md`](./architecture/TOOLING.md), [`SETUP.md`](./architecture/SETUP.md).
+See: [`tooling.md`](./architecture/tooling.md), [`setup.md`](./architecture/setup.md).
 
 ## Multimodal: photo + video
 
@@ -112,7 +127,7 @@ clai video "A slow pan across a terminal showing streaming output"
 - `photo`/`video` have separate mode configs: `photoConfig.json`, `videoConfig.json`.
 - Output can be saved locally or printed as a URL, depending on config.
 
-See: [`PHOTO.md`](./architecture/PHOTO.md), [`VIDEO.md`](./architecture/VIDEO.md), [`CONFIG.md`](./architecture/CONFIG.md).
+See: [`photo.md`](./architecture/photo.md), [`video.md`](./architecture/video.md), [`config.md`](./architecture/config.md).
 
 ## Streaming: one normalized event loop
 
@@ -122,4 +137,4 @@ See: [`PHOTO.md`](./architecture/PHOTO.md), [`VIDEO.md`](./architecture/VIDEO.md
   - stop/no-op/error events
 - The querier loop is vendor-agnostic: it prints deltas, executes tools, and finalizes output.
 
-See: [`STREAMING.md`](./architecture/STREAMING.md), [`QUERY.md`](./architecture/QUERY.md).
+See: [`streaming.md`](./architecture/streaming.md), [`query.md`](./architecture/query.md).
