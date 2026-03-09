@@ -9,7 +9,7 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
-func Test_goldenFile_QUERY_shell_context_flag_appends_wrapped_rendered_block(t *testing.T) {
+func Test_goldenFile_QUERY_shell_context_flag_keeps_user_message_output_clean(t *testing.T) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
 
@@ -34,7 +34,7 @@ func Test_goldenFile_QUERY_shell_context_flag_appends_wrapped_rendered_block(t *
 		gotStatusCode = run(strings.Split("-r -cm test -add-shell-context minimal q hello", " "))
 	})
 
-	want := "<shell context>\nfoo=foo\n</shell context>\nhello\n\a"
+	want := "hello\n\a"
 	testboil.FailTestIfDiff(t, gotStatusCode, 0)
 	testboil.FailTestIfDiff(t, gotStdout, want)
 }

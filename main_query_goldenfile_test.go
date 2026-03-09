@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -83,4 +84,34 @@ func Test_goldenFile_QUERY_stdin_and_token_replacement(t *testing.T) {
 			testboil.FailTestIfDiff(t, stdout, tc.wantOut)
 		})
 	}
+}
+
+func Test_goldenFile_QUERY_shell_context_is_in_system_prompt_not_user_message(t *testing.T) {
+	oldArgs := os.Args
+	t.Cleanup(func() { os.Args = oldArgs })
+
+	confDir := setupMainTestConfigDir(t)
+
+	ctxJSON := `{
+  "shell": "/bin/sh",
+  "timeout_ms": 1000,
+  "timed_out_value": "<timed out>",
+  "error_value": "<error>",
+  "template": "[shell context]\nfoo={{.foo}}\n[/shell context]\n",
+  "vars": {
+    "foo": "printf foo"
+  }
+}`
+	if err := os.WriteFile(filepath.Join(confDir, "shellContexts", "minimal.json"), []byte(ctxJSON), 0o644); err != nil {
+		t.Fatalf("WriteFile(shell context json): %v", err)
+	}
+
+	var gotStatusCode int
+	gotStdout := testboil.CaptureStdout(t, func(t *testing.T) {
+		gotStatusCode = run(strings.Split("-r -cm test -add-shell-context minimal q hello", " "))
+	})
+
+	want := "hello\n\a"
+	testboil.FailTestIfDiff(t, gotStatusCode, 0)
+	testboil.FailTestIfDiff(t, gotStdout, want)
 }

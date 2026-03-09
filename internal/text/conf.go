@@ -41,8 +41,8 @@ type Configurations struct {
 	ProfilePath         string          `json:"-"`
 	RequestedToolGlobs  []string        `json:"-"`
 	// ShellContext is a context definition name for ASC (auto-append shell context).
-	// When non-empty, clai will load <configDir>/shellContexts/<name>.json and append
-	// the rendered template block to the final user prompt.
+	// When non-empty, clai will load <configDir>/shellContexts/<name>.json and insert
+	// the rendered template block into the system prompt instead of the user prompt.
 	ShellContext string `json:"-"`
 	// PostProccessedPrompt which has had it\'s strings replaced etc
 	PostProccessedPrompt string `json:"-"`
@@ -96,9 +96,18 @@ var DefaultProfile = Profile{
 }
 
 func (c *Configurations) setupSystemPrompt() {
+	systemPrompt := c.SystemPrompt
+	if strings.TrimSpace(c.ShellContext) != "" {
+		promptWithCtx, err := AppendShellContextIfConfigured(context.Background(), c.ConfigDir, c.ShellContext, systemPrompt, ShellContextRenderer{})
+		if err != nil {
+			ancli.PrintWarn(fmt.Sprintf("failed to append shell context to system prompt: %v\n", err))
+		} else {
+			systemPrompt = promptWithCtx
+		}
+	}
 	c.InitialChat = pub_models.Chat{
 		Messages: []pub_models.Message{
-			{Role: "system", Content: c.SystemPrompt},
+			{Role: "system", Content: systemPrompt},
 		},
 	}
 }
@@ -136,12 +145,7 @@ func (c *Configurations) SetupInitialChat(args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to setup prompt: %w", err)
 	}
-
-	promptWithCtx, err := AppendShellContextIfConfigured(context.Background(), c.ConfigDir, c.ShellContext, prompt, ShellContextRenderer{})
-	if err != nil {
-		return fmt.Errorf("append shell context: %w", err)
-	}
-	prompt = strings.TrimRight(promptWithCtx, " \t\r\n")
+	prompt = strings.TrimRight(prompt, " \t\r\n")
 
 	// If chatmode, the initial message will be handled by the chat querier
 	if !c.ChatMode {
