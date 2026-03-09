@@ -47,7 +47,7 @@ Meaning:
 
 ASC must **not** change stdin handling or token replacement.
 
-Prompt assembly currently happens in `text.Configurations.SetupInitialChat(...)` (see `architecture/QUERY.md`). The flow is:
+Prompt assembly currently happens in `text.Configurations.SetupInitialChat(...)` (see `architecture/query.md`). The flow is:
 
 1. Build the system prompt normally from `tConf.SystemPrompt`
 2. If `tConf.ShellContext` (string name) is non-empty:

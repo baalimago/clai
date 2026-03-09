@@ -2,7 +2,7 @@
 
 This document explains how **streaming** works in clai when calling LLM chat-completions APIs.
 
-It is an extension of `architecture/QUERY.md`: QUERY describes **when** a streaming request is executed; this document describes **how the streamed response is represented, normalized, and consumed**, independent of vendor.
+It is an extension of `architecture/query.md`: QUERY describes **when** a streaming request is executed; this document describes **how the streamed response is represented, normalized, and consumed**, independent of vendor.
 
 ## Scope
 
@@ -27,7 +27,7 @@ In code, the contract is:
 
 ### Normalized event types
 
-Across vendors, clai reduces streaming to a small set of event shapes (as described in `architecture/QUERY.md`):
+Across vendors, clai reduces streaming to a small set of event shapes (as described in `architecture/query.md`):
 
 - `string` chunks: plain assistant text deltas
 - `pub_models.Call`: a tool/function call request (name + JSON args)

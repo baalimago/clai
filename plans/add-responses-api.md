@@ -147,7 +147,7 @@ Run:
 ### 6) Remove/stop using Chat Completions for OpenAI
 Once tests pass and OpenAI vendor is switched:
 - Ensure nothing in OpenAI vendor depends on `generic.StreamCompleter` anymore.
-- Ensure docs reflect that `architecture/STREAMING.md` is no longer OpenAI-specific (it currently names Chat Completions in the title).
+- Ensure docs reflect that `architecture/streaming.md` is no longer OpenAI-specific (it currently names Chat Completions in the title).
 
 ## Acceptance criteria
 - OpenAI streaming uses `/v1/responses` by default for all OpenAI models.

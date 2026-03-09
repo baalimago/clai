@@ -28,7 +28,7 @@ main.go:run()
 | `internal/dre.go` | Implements the `dre` command querier (`dreQuerier`) |
 | `internal/chat/replay.go` | `Replay(raw, dirScoped)` + `replayDirScoped` |
 | `internal/chat/dirscope.go` | Directory binding storage + lookup (`LoadDirScope`) |
-| `architecture/CHAT.md` | Background: how conversations and dir bindings work |
+| `architecture/chat.md` | Background: how conversations and dir bindings work |
 
 ## How it finds the conversation
 

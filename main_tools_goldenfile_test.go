@@ -24,7 +24,7 @@ func Test_goldenFile_TOOLS_lists_tools_and_footer(t *testing.T) {
 	testboil.FailTestIfDiff(t, gotStatus, 0)
 
 	// We don't assert the entire listing because it changes as tools are added.
-	// Instead, assert stable behaviors described in architecture/TOOLS.md.
+	// Instead, assert stable behaviors described in architecture/tools.md.
 	testboil.AssertStringContains(t, stdout, "Run 'clai tools <tool-name>' for more details.\n")
 }
 
