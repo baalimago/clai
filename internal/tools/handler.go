@@ -26,6 +26,7 @@ func Init() {
 	Registry.Set(tools.Find.Specification().Name, tools.Find)
 	Registry.Set(tools.FileType.Specification().Name, tools.FileType)
 	Registry.Set(tools.LS.Specification().Name, tools.LS)
+	Registry.Set(tools.Mkdir.Specification().Name, tools.Mkdir)
 	Registry.Set(tools.WebsiteText.Specification().Name, tools.WebsiteText)
 	Registry.Set(tools.RipGrep.Specification().Name, tools.RipGrep)
 	Registry.Set(tools.Go.Specification().Name, tools.Go)

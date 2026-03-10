@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -76,23 +77,27 @@ func (a ApplyPatchTool) Specification() pub_models.Specification {
 }
 
 func parseApplyPatch(patch string) ([]patchOperation, error) {
-	scanner := bufio.NewScanner(strings.NewReader(patch))
-	var lines []string
-	for scanner.Scan() {
-		lines = append(lines, scanner.Text())
-	}
-	if err := scanner.Err(); err != nil {
+	lines, err := patchLines(patch)
+	if err != nil {
 		return nil, fmt.Errorf("parse apply_patch scan: %w", err)
 	}
 	if len(lines) == 0 {
 		return nil, fmt.Errorf("parse apply_patch: %w", errors.New("patch is empty"))
 	}
-	if strings.TrimSpace(lines[0]) != "*** Begin Patch" {
+
+	beginIndex := -1
+	for i, line := range lines {
+		if strings.TrimSpace(line) == "*** Begin Patch" {
+			beginIndex = i
+			break
+		}
+	}
+	if beginIndex == -1 {
 		return nil, fmt.Errorf("parse apply_patch: %w", errors.New("missing Begin Patch marker"))
 	}
 
 	var ops []patchOperation
-	for i := 1; i < len(lines); {
+	for i := beginIndex + 1; i < len(lines); {
 		line := lines[i]
 		if strings.TrimSpace(line) == "*** End Patch" {
 			return ops, nil
@@ -163,6 +168,18 @@ func parseApplyPatch(patch string) ([]patchOperation, error) {
 	}
 
 	return nil, fmt.Errorf("parse apply_patch: %w", errors.New("missing End Patch marker"))
+}
+
+func patchLines(patch string) ([]string, error) {
+	scanner := bufio.NewScanner(strings.NewReader(patch))
+	var lines []string
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("scan patch lines: %w", err)
+	}
+	return lines, nil
 }
 
 func applyPatchOperation(op patchOperation) (string, error) {
@@ -239,29 +256,42 @@ func applyDiff(original string, diffLines []string, endOfFile bool) (string, err
 	origLines := strings.Split(original, "\n")
 	idx := 0
 	out := make([]string, 0, len(origLines))
+
 	for _, line := range diffLines {
+		if strings.TrimSpace(line) == "*** End of File" {
+			endOfFile = true
+			continue
+		}
 		if strings.HasPrefix(line, "@@") {
+			rangeStart, err := parseUnifiedDiffOldRange(line)
+			if err != nil {
+				return "", fmt.Errorf("apply diff parse hunk header %q: %w", line, err)
+			}
+			if rangeStart > 0 {
+				targetIdx := rangeStart - 1
+				if targetIdx < idx || targetIdx > len(origLines) {
+					return "", fmt.Errorf("apply diff hunk header %q: %w", line, fmt.Errorf("target index %d out of bounds", targetIdx))
+				}
+				out = append(out, origLines[idx:targetIdx]...)
+				idx = targetIdx
+			}
 			continue
 		}
 		if line == "" {
 			return "", fmt.Errorf("apply diff: %w", errors.New("diff line missing prefix"))
 		}
-		if strings.TrimSpace(line) == "*** End of File" {
-			endOfFile = true
-			continue
-		}
+
 		prefix := line[0]
 		content := line[1:]
 		switch prefix {
 		case ' ':
-			if idx >= len(origLines) {
-				return "", fmt.Errorf("apply diff: %w", errors.New("context beyond end of file"))
+			matchIdx, err := findMatchingContextStart(origLines, idx, content)
+			if err != nil {
+				return "", fmt.Errorf("apply diff: %w", err)
 			}
-			if origLines[idx] != content {
-				return "", fmt.Errorf("apply diff: %w", fmt.Errorf("context mismatch: expected %q, got %q", origLines[idx], content))
-			}
+			out = append(out, origLines[idx:matchIdx]...)
 			out = append(out, content)
-			idx++
+			idx = matchIdx + 1
 		case '-':
 			if idx >= len(origLines) {
 				return "", fmt.Errorf("apply diff: %w", errors.New("delete beyond end of file"))
@@ -284,4 +314,42 @@ func applyDiff(original string, diffLines []string, endOfFile bool) (string, err
 		result = strings.TrimSuffix(result, "\n")
 	}
 	return result, nil
+}
+
+func findMatchingContextStart(lines []string, startIdx int, content string) (int, error) {
+	for i := startIdx; i < len(lines); i++ {
+		if lines[i] == content {
+			return i, nil
+		}
+	}
+	return 0, fmt.Errorf("context mismatch: %w", fmt.Errorf("expected one of remaining lines to equal %q", content))
+}
+
+func parseUnifiedDiffOldRange(header string) (int, error) {
+	if header == "@@" {
+		return 0, nil
+	}
+	fields := strings.Fields(header)
+	if len(fields) < 2 {
+		return 0, fmt.Errorf("parse unified diff old range: %w", fmt.Errorf("invalid hunk header %q", header))
+	}
+	oldRangeField := fields[1]
+	if !strings.HasPrefix(oldRangeField, "-") {
+		return 0, fmt.Errorf("parse unified diff old range: %w", fmt.Errorf("missing old range in header %q", header))
+	}
+	return parseUnifiedDiffRange(strings.TrimPrefix(oldRangeField, "-"))
+}
+
+func parseUnifiedDiffRange(raw string) (int, error) {
+	parts := strings.SplitN(raw, ",", 2)
+	start, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return 0, fmt.Errorf("parse unified diff range start %q: %w", raw, err)
+	}
+	if len(parts) == 2 {
+		if _, err := strconv.Atoi(parts[1]); err != nil {
+			return 0, fmt.Errorf("parse unified diff range count %q: %w", raw, err)
+		}
+	}
+	return start, nil
 }
