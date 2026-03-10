@@ -17,6 +17,7 @@ type StreamCompleter struct {
 	ToolChoice       *string                                         `json:"-"`
 	Clean            func([]pub_models.Message) []pub_models.Message `json:"-"`
 	URL              string
+	ExtraHeaders     map[string]string `json:"-"`
 	tools            []ToolSuper
 	toolsCallName    string
 	// Argument string exists since the arguments for function calls is streamed token by token... yeah... great idea

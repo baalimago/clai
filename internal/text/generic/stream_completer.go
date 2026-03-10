@@ -94,6 +94,9 @@ func (s *StreamCompleter) createRequest(ctx context.Context, chat pub_models.Cha
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %v", s.apiKey))
 	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("Connection", "keep-alive")
+	for key, value := range s.ExtraHeaders {
+		req.Header.Set(key, value)
+	}
 	return req, nil
 }
 

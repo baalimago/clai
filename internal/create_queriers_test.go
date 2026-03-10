@@ -10,6 +10,7 @@ import (
 	"github.com/baalimago/clai/internal/photo"
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/internal/vendors/ollama"
+	"github.com/baalimago/clai/internal/vendors/openrouter"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
@@ -81,6 +82,11 @@ func TestSelectTextQuerier_AllVendors(t *testing.T) {
 			env:   map[string]string{"OPENAI_API_KEY": "k"},
 		},
 		{
+			name:  "openrouter",
+			model: "or:openai/gpt-5.2",
+			env:   map[string]string{"OPENROUTER_API_KEY": "k"},
+		},
+		{
 			name:  "deepseek",
 			model: "deepseek-chat",
 			env:   nil,
@@ -149,6 +155,33 @@ func TestSelectTextQuerier_AllVendors(t *testing.T) {
 				t.Fatal("expected querier")
 			}
 		})
+	}
+}
+
+func TestSelectTextQuerier_OpenRouterPrefix(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("OPENROUTER_API_KEY", "k")
+	t.Setenv("CLAI_CONFIG_DIR", tmp)
+
+	q, found, err := selectTextQuerier(context.Background(), text.Configurations{
+		Model:     "or:openai/gpt-5.2",
+		ConfigDir: tmp,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !found {
+		t.Fatal("expected found")
+	}
+	if q == nil {
+		t.Fatal("expected querier")
+	}
+	typed, ok := q.(*text.Querier[*openrouter.OpenRouter])
+	if !ok {
+		t.Fatalf("expected openrouter querier, got: %T", q)
+	}
+	if configDir := typed.Model.URL; configDir == "" {
+		t.Fatal("expected openrouter model url to be set")
 	}
 }
 

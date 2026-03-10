@@ -57,11 +57,12 @@ See [examples](./EXAMPLES.md) for additional info.
 
 | Vendor      | Environment Variable | Models                                                                                                                                                             |
 | ----------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| OpenRouter  | `OPENROUTER_API_KEY` | [Text models](https://openrouter.ai/models), use prefix `or:`                                                                                                       |
 | Mistral     | `MISTRAL_API_KEY`    | [Text models](https://docs.mistral.ai/getting-started/models/)                                                                                                     |
-| HuggingFace | `HF_API_KEY`         | [Text models](https://huggingface.co/docs/inference-endpoints/chat-completions), use prefix `hf:`                                                                  |
 | OpenAI      | `OPENAI_API_KEY`     | [Text models](https://platform.openai.com/docs/models), [photo models](https://platform.openai.com/docs/models/dall-e)                                             |
 | Anthropic   | `ANTHROPIC_API_KEY`  | [Text models](https://platform.claude.com/docs/en/about-claude/models/overview)                                                                                    |
 | Gemini      | `GEMINI_API_KEY`     | [Text models](https://ai.google.dev/gemini-api/docs/models), [photo models](https://ai.google.dev/gemini-api/docs/image-generation#image_generation_text-to-image) |
+| HuggingFace | `HF_API_KEY`         | [Text models](https://huggingface.co/docs/inference-endpoints/chat-completions), use prefix `hf:`                                                                  |
 | xAi         | `XAI_API_KEY`        | [Text models](https://docs.x.ai/docs/models)                                                                                                                       |
 | Inception   | `INCEPTION_API_KEY`  | [Text models](https://platform.inceptionlabs.ai/docs#models)                                                                                                       |
 | Ollama      | N/A                  | Use format `ollama:` (defaults to llama3), server defaults to localhost:11434                                                                                      |

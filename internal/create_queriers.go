@@ -21,6 +21,7 @@ import (
 	"github.com/baalimago/clai/internal/vendors/novita"
 	"github.com/baalimago/clai/internal/vendors/ollama"
 	"github.com/baalimago/clai/internal/vendors/openai"
+	"github.com/baalimago/clai/internal/vendors/openrouter"
 	"github.com/baalimago/clai/internal/vendors/xai"
 	"github.com/baalimago/clai/internal/video"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
@@ -57,11 +58,6 @@ func selectTextQuerier(ctx context.Context, conf text.Configurations) (models.Qu
 	if strings.Contains(conf.Model, "claude") {
 		found = true
 		defaultCpy := anthropic.Default
-		// The model determines where to check for the config using
-		// cfgdir/vendor_model_version.json. If it doesn't find it,
-		// it will use the default to create a new config with this
-		// path and the default values. In there, the model needs to be
-		// the configured model (not the default one)
 		defaultCpy.Model = conf.Model
 		qTmp, err := text.NewQuerier(ctx, conf, &defaultCpy)
 		if err != nil {
@@ -70,7 +66,18 @@ func selectTextQuerier(ctx context.Context, conf text.Configurations) (models.Qu
 		q = &qTmp
 	}
 
-	if strings.Contains(conf.Model, "gpt") {
+	if strings.HasPrefix(conf.Model, "or:") {
+		found = true
+		defaultCpy := openrouter.Default
+		defaultCpy.Model = conf.Model
+		qTmp, err := text.NewQuerier(ctx, conf, &defaultCpy)
+		if err != nil {
+			return nil, found, fmt.Errorf("failed to create text querier: %w", err)
+		}
+		q = &qTmp
+	}
+
+	if strings.Contains(conf.Model, "gpt") && !strings.HasPrefix(conf.Model, "or:") {
 		found = true
 		defaultCpy := openai.GptDefault
 		defaultCpy.Model = conf.Model
@@ -239,7 +246,6 @@ func CreateVideoQuerier(conf video.Configurations) (models.Querier, error) {
 	}
 
 	if conf.Output.Type == video.LOCAL {
-		// Create directory if not exists
 		if _, err := os.Stat(conf.Output.Dir); os.IsNotExist(err) {
 			err = os.MkdirAll(conf.Output.Dir, 0o755)
 			if err != nil {
