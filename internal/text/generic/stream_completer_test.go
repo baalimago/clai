@@ -178,6 +178,27 @@ func TestCreateRequest_BodyAndHeaders(t *testing.T) {
 	}
 }
 
+func TestCreateRequest_ExtraHeaders(t *testing.T) {
+	s := &StreamCompleter{
+		Model:        "m",
+		apiKey:       "sekret",
+		URL:          "http://example.invalid",
+		ExtraHeaders: map[string]string{"HTTP-Referer": "clai", "X-OpenRouter-Title": "clai"},
+	}
+
+	httpReq, err := s.createRequest(context.Background(), pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "c"}}})
+	if err != nil {
+		t.Fatalf("createRequest err: %v", err)
+	}
+
+	if got := httpReq.Header.Get("HTTP-Referer"); got != "clai" {
+		t.Fatalf("http-referer mismatch: got %q want %q", got, "clai")
+	}
+	if got := httpReq.Header.Get("X-OpenRouter-Title"); got != "clai" {
+		t.Fatalf("x-openrouter-title mismatch: got %q want %q", got, "clai")
+	}
+}
+
 // helper to avoid external json pkg alias confusion in tests
 func jsonUnmarshal(b []byte, v any) error { return json.Unmarshal(b, v) }
 

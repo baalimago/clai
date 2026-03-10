@@ -21,6 +21,10 @@ func vendorType(fromModel string) (string, string, string, error) {
 	if strings.Contains(fromModel, "test") {
 		return "mock", "test", fromModel, nil
 	}
+	if after, ok := strings.CutPrefix(fromModel, "or:"); ok {
+		modelVersion := after
+		return "openrouter", "chat", modelVersion, nil
+	}
 	if strings.Contains(fromModel, "gpt") {
 		return "openai", "gpt", fromModel, nil
 	}

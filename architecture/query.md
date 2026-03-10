@@ -69,6 +69,7 @@ See `CONFIG.md` for full details.
 | Pattern | Vendor |
 |---------|--------|
 | `hf:` / `huggingface:` prefix | HuggingFace |
+| `or:` prefix | OpenRouter |
 | contains `claude` | Anthropic |
 | contains `gpt` | OpenAI |
 | contains `deepseek` | DeepSeek |
