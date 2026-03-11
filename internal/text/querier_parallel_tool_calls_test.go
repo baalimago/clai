@@ -10,6 +10,7 @@ import (
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/tools"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
+	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 )
 
 type recorderCompleter struct {
@@ -291,3 +292,163 @@ func TestFormatParallelToolCallsBanner_DebugOrderPreserved(t *testing.T) {
 		t.Fatalf("unexpected banner, got %q want %q", got, want)
 	}
 }
+
+func TestHandleToolCalls_DebugToolsLogging(t *testing.T) {
+	orig := tools.Registry
+	tools.Registry = tools.NewRegistry()
+	defer func() { tools.Registry = orig }()
+
+	tools.Registry.Set("tool_a", staticTool{name: "tool_a"})
+	tools.Registry.Set("tool_b", staticTool{name: "tool_b"})
+	t.Setenv("DEBUG_TOOLS", "1")
+
+	out := &strings.Builder{}
+	model := &recorderCompleter{}
+	q := Querier[*recorderCompleter]{
+		Raw:   true,
+		Model: model,
+		out:   out,
+		chat: pub_models.Chat{
+			Messages: []pub_models.Message{{Role: "user", Content: "hi"}},
+		},
+	}
+
+	err := q.handleToolCalls(context.Background(), []pub_models.Call{
+		{ID: "id1", Name: "tool_a", Inputs: &pub_models.Input{}},
+		{ID: "id2", Name: "tool_b", Inputs: &pub_models.Input{}},
+	})
+	if err != nil {
+		t.Fatalf("handleToolCalls err: %v", err)
+	}
+
+	got := out.String()
+	if strings.Contains(got, "parallel tool batch received") {
+		t.Fatalf("expected DEBUG_TOOLS logs to not be written to querier out builder, got: %q", got)
+	}
+	if !strings.Contains(got, `parallel tool calls: 2, tools: ["tool_a", "tool_b"]`) {
+		t.Fatalf("expected normal batched assistant banner to remain, got: %q", got)
+	}
+	if len(model.chats) != 1 {
+		t.Fatalf("expected one follow-up query, got %d", len(model.chats))
+	}
+}
+
+func TestHandleToolCalls_FollowUpChatPersistsAllToolOutputs(t *testing.T) {
+	orig := tools.Registry
+	tools.Registry = tools.NewRegistry()
+	defer func() { tools.Registry = orig }()
+
+	tools.Registry.Set("tool_a", staticTool{name: "tool_a"})
+	tools.Registry.Set("tool_b", staticTool{name: "tool_b"})
+
+	model := &recorderCompleter{}
+	q := Querier[*recorderCompleter]{
+		Raw:   true,
+		Model: model,
+		out:   &strings.Builder{},
+		chat: pub_models.Chat{
+			Messages: []pub_models.Message{{Role: "user", Content: "hi"}},
+		},
+	}
+
+	err := q.handleToolCalls(context.Background(), []pub_models.Call{
+		{ID: "id1", Name: "tool_a", Inputs: &pub_models.Input{"x": "1"}},
+		{ID: "id2", Name: "tool_b", Inputs: &pub_models.Input{"y": "2"}},
+	})
+	if err != nil {
+		t.Fatalf("handleToolCalls err: %v", err)
+	}
+
+	if len(model.chats) != 1 {
+		t.Fatalf("expected exactly one follow-up chat persisted to model, got %d", len(model.chats))
+	}
+
+	followUp := model.chats[0]
+	if got := len(followUp.Messages); got != 4 {
+		t.Fatalf("expected follow-up chat to persist assistant tool call plus all tool outputs, got %d messages: %+v", got, followUp.Messages)
+	}
+	if followUp.Messages[1].Role != "assistant" {
+		t.Fatalf("expected assistant tool-call message at index 1, got %+v", followUp.Messages[1])
+	}
+	if got := len(followUp.Messages[1].ToolCalls); got != 2 {
+		t.Fatalf("expected assistant tool-call message to persist both calls, got %d: %+v", got, followUp.Messages[1])
+	}
+	if followUp.Messages[2].Role != "tool" || followUp.Messages[2].ToolCallID != "id1" {
+		t.Fatalf("expected first persisted tool output for id1, got %+v", followUp.Messages[2])
+	}
+	if !strings.Contains(followUp.Messages[2].Content, "tool_a-out") {
+		t.Fatalf("expected first persisted tool output content, got %+v", followUp.Messages[2])
+	}
+	if followUp.Messages[3].Role != "tool" || followUp.Messages[3].ToolCallID != "id2" {
+		t.Fatalf("expected second persisted tool output for id2, got %+v", followUp.Messages[3])
+	}
+	if !strings.Contains(followUp.Messages[3].Content, "tool_b-out") {
+		t.Fatalf("expected second persisted tool output content, got %+v", followUp.Messages[3])
+	}
+}
+
+func TestHandleToolCall_MultiToolUseParallel_ExpandsNestedCalls(t *testing.T) {
+	orig := tools.Registry
+	tools.Registry = tools.NewRegistry()
+	defer func() { tools.Registry = orig }()
+
+	tools.Registry.Set("tool_a", staticTool{name: "tool_a"})
+	tools.Registry.Set("tool_b", staticTool{name: "tool_b"})
+
+	model := &recorderCompleter{}
+	q := Querier[*recorderCompleter]{
+		Raw:   true,
+		Model: model,
+		out:   &strings.Builder{},
+		chat: pub_models.Chat{
+			Messages: []pub_models.Message{{Role: "user", Content: "hi"}},
+		},
+	}
+
+	call := pub_models.Call{
+		ID:   "mtp1",
+		Name: "multi_tool_use.parallel",
+		Inputs: &pub_models.Input{
+			"tool_uses": []any{
+				map[string]any{
+					"recipient_name": "functions.tool_a",
+					"parameters":     map[string]any{"x": "1"},
+				},
+				map[string]any{
+					"recipient_name": "functions.tool_b",
+					"parameters":     map[string]any{"y": "2"},
+				},
+			},
+		},
+	}
+
+	err := q.handleToolCall(context.Background(), call)
+	if err != nil {
+		t.Fatalf("handleToolCall err: %v", err)
+	}
+
+	if len(model.chats) != 1 {
+		t.Fatalf("expected exactly one follow-up model call, got %d", len(model.chats))
+	}
+
+	followUp := model.chats[0]
+	if got := len(followUp.Messages); got != 4 {
+		t.Fatalf("expected expanded follow-up chat with assistant tool-call message plus both tool outputs, got %d: %v", got, debug.IndentedJsonFmt(followUp.Messages))
+	}
+	if got := len(followUp.Messages[1].ToolCalls); got != 2 {
+		t.Fatalf("expected assistant message to contain expanded nested tool calls, got %d: %+v", got, followUp.Messages[1])
+	}
+	if got := followUp.Messages[1].ToolCalls[0].Name; got != "tool_a" {
+		t.Fatalf("expected first expanded tool name tool_a, got %q", got)
+	}
+	if got := followUp.Messages[1].ToolCalls[1].Name; got != "tool_b" {
+		t.Fatalf("expected second expanded tool name tool_b, got %q", got)
+	}
+	if followUp.Messages[2].Role != "tool" || !strings.Contains(followUp.Messages[2].Content, "tool_a-out") {
+		t.Fatalf("expected first nested tool output persisted, got %+v", followUp.Messages[2])
+	}
+	if followUp.Messages[3].Role != "tool" || !strings.Contains(followUp.Messages[3].Content, "tool_b-out") {
+		t.Fatalf("expected second nested tool output persisted, got %+v", followUp.Messages[3])
+	}
+}
+

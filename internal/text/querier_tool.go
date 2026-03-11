@@ -2,6 +2,7 @@ package text
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -17,6 +18,83 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
+
+func debugToolsEnabled() bool {
+	return misc.Truthy(os.Getenv("DEBUG_TOOLS"))
+}
+
+func (q *Querier[C]) noticeToolDebugf(format string, args ...any) {
+	if !debugToolsEnabled() {
+		return
+	}
+	ancli.Noticef(format, args...)
+}
+
+func expandMultiToolUseParallel(call pub_models.Call) ([]pub_models.Call, bool, error) {
+	if call.Name != "multi_tool_use.parallel" {
+		return nil, false, nil
+	}
+	if call.Inputs == nil {
+		return nil, true, errors.New("expand multi_tool_use.parallel: missing inputs")
+	}
+	rawToolUses, exists := (*call.Inputs)["tool_uses"]
+	if !exists {
+		return nil, true, errors.New("expand multi_tool_use.parallel: missing tool_uses")
+	}
+	toolUses, ok := rawToolUses.([]any)
+	if !ok {
+		return nil, true, fmt.Errorf("expand multi_tool_use.parallel: tool_uses has unexpected type %T", rawToolUses)
+	}
+
+	expanded := make([]pub_models.Call, 0, len(toolUses))
+	for i, rawToolUse := range toolUses {
+		toolUseMap, ok := rawToolUse.(map[string]any)
+		if !ok {
+			return nil, true, fmt.Errorf("expand multi_tool_use.parallel: tool_uses[%d] has unexpected type %T", i, rawToolUse)
+		}
+
+		rawRecipientName, exists := toolUseMap["recipient_name"]
+		if !exists {
+			return nil, true, fmt.Errorf("expand multi_tool_use.parallel: tool_uses[%d] missing recipient_name", i)
+		}
+		recipientName, ok := rawRecipientName.(string)
+		if !ok {
+			return nil, true, fmt.Errorf("expand multi_tool_use.parallel: tool_uses[%d] recipient_name has unexpected type %T", i, rawRecipientName)
+		}
+		toolName := strings.TrimPrefix(recipientName, "functions.")
+
+		inputs := pub_models.Input{}
+		rawParameters, exists := toolUseMap["parameters"]
+		if exists && rawParameters != nil {
+			parameters, ok := rawParameters.(map[string]any)
+			if !ok {
+				return nil, true, fmt.Errorf("expand multi_tool_use.parallel: tool_uses[%d] parameters has unexpected type %T", i, rawParameters)
+			}
+			inputs = pub_models.Input(parameters)
+		}
+
+		callID := fmt.Sprintf("%s:%d", call.ID, i)
+		if call.ID == "" {
+			callID = fmt.Sprintf("multi_tool_use.parallel:%d", i)
+		}
+		expandedCall := pub_models.Call{
+			ID:     callID,
+			Name:   toolName,
+			Type:   "function",
+			Inputs: &inputs,
+		}
+		expandedCall.Function.Name = toolName
+
+		argsJSON, err := json.Marshal(inputs)
+		if err != nil {
+			return nil, true, fmt.Errorf("expand multi_tool_use.parallel: marshal parameters for tool_uses[%d]: %w", i, err)
+		}
+		expandedCall.Function.Arguments = string(argsJSON)
+		expanded = append(expanded, expandedCall)
+	}
+
+	return expanded, true, nil
+}
 
 func limitToolOutput(out string, limit int) string {
 	if limit <= 0 {
@@ -77,6 +155,7 @@ func (q *Querier[C]) doToolCallLogic(call pub_models.Call) error {
 
 	// Patch the call to clean up any potential vendor-specific issues
 	call.Patch()
+	q.noticeToolDebugf("patched tool call: %s", call.PrettyPrint())
 
 	assistantToolsCall := pub_models.Message{
 		Role:      "assistant",
@@ -93,7 +172,9 @@ func (q *Querier[C]) doToolCallLogic(call pub_models.Call) error {
 
 	q.chat.Messages = append(q.chat.Messages, assistantToolsCall)
 
+	q.noticeToolDebugf("invoking tool %q", call.Name)
 	out := tools.Invoke(call)
+	q.noticeToolDebugf("tool %q returned %d chars", call.Name, len(out))
 	if q.maxToolCalls != nil {
 		if q.amToolCalls >= *q.maxToolCalls {
 			// Soft block, might need to be tweaked if model keeps at it still
@@ -130,6 +211,7 @@ func (q *Querier[C]) doToolCallLogic(call pub_models.Call) error {
 		Content:    out,
 		ToolCallID: call.ID,
 	}
+	q.noticeToolDebugf("appending tool output for %q", call.Name)
 	q.chat.Messages = append(q.chat.Messages, toolsOutput)
 	if q.Raw {
 		err := utils.AttemptPrettyPrint(q.out, toolsOutput, "tool", q.Raw)
@@ -161,6 +243,15 @@ func (q *Querier[C]) handleToolCall(ctx context.Context, call pub_models.Call) e
 	if q.debug || misc.Truthy(os.Getenv("DEBUG_CALL")) {
 		ancli.PrintOK(fmt.Sprintf("received tool call: %v", debug.IndentedJsonFmt(call)))
 	}
+	q.noticeToolDebugf("tool call received: %s", call.PrettyPrint())
+
+	expandedCalls, wasParallelWrapper, err := expandMultiToolUseParallel(call)
+	if err != nil {
+		return fmt.Errorf("failed to expand multi_tool_use.parallel call: %w", err)
+	}
+	if wasParallelWrapper {
+		return q.handleToolCalls(ctx, expandedCalls)
+	}
 
 	q.isLikelyGemini3Preview = q.checkIfGemini3Preview(call)
 
@@ -175,7 +266,7 @@ func (q *Querier[C]) handleToolCall(ctx context.Context, call pub_models.Call) e
 		}
 	}
 
-	err := q.doToolCallLogic(call)
+	err = q.doToolCallLogic(call)
 	if err != nil {
 		return fmt.Errorf("failed to append tool messages to chat: %w", err)
 	}
@@ -190,6 +281,7 @@ func (q *Querier[C]) handleToolCall(ctx context.Context, call pub_models.Call) e
 	// only be sub context. This way the nested toolscalls can gracefully cancel
 	// while subsequent calls may continue
 	subCtx = context.WithValue(subCtx, utils.ContextCancelKey, subCtxCancel)
+	q.noticeToolDebugf("follow-up query after single tool call: %q", call.Name)
 	_, err = q.TextQuery(subCtx, q.chat)
 	if err != nil && !errors.Is(err, context.Canceled) {
 		return fmt.Errorf("failed to query after tool call: %w", err)
@@ -222,6 +314,7 @@ func (q *Querier[C]) handleToolCalls(ctx context.Context, calls []pub_models.Cal
 	if len(calls) == 0 {
 		return nil
 	}
+	q.noticeToolDebugf("parallel tool batch received: %s", formatParallelToolCallsBanner(calls))
 
 	pre := q.shouldSaveReply
 	q.shouldSaveReply = false
@@ -255,6 +348,7 @@ func (q *Querier[C]) handleToolCalls(ctx context.Context, calls []pub_models.Cal
 			remaining = 0
 		}
 	}
+	q.noticeToolDebugf("remaining tool-call budget before launch: %d", remaining)
 
 	results := make([]toolCallResult, len(patchedCalls))
 	var wg sync.WaitGroup
@@ -273,14 +367,17 @@ func (q *Querier[C]) handleToolCalls(ctx context.Context, calls []pub_models.Cal
 			continue
 		}
 
+		q.noticeToolDebugf("launching tool[%d]: %s", i, call.Name)
 		wg.Add(1)
 		go func(idx int, currentCall pub_models.Call) {
 			defer wg.Done()
 			out := tools.Invoke(currentCall)
 			results[idx].Out = out
+			q.noticeToolDebugf("completed tool[%d]: %s, chars: %d", idx, currentCall.Name, len(out))
 		}(i, call)
 	}
 	wg.Wait()
+	q.noticeToolDebugf("appending batched tool outputs in original order")
 
 	for i := range results {
 		out := results[i].Out
@@ -308,6 +405,7 @@ func (q *Querier[C]) handleToolCalls(ctx context.Context, calls []pub_models.Cal
 
 	subCtx, subCtxCancel := context.WithCancel(ctx)
 	subCtx = context.WithValue(subCtx, utils.ContextCancelKey, subCtxCancel)
+	q.noticeToolDebugf("follow-up query after tool call batch")
 	_, err := q.TextQuery(subCtx, q.chat)
 	if err != nil && !errors.Is(err, context.Canceled) {
 		return fmt.Errorf("failed to query after tool call batch: %w", err)
