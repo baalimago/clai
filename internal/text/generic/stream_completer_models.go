@@ -18,16 +18,21 @@ type StreamCompleter struct {
 	Clean            func([]pub_models.Message) []pub_models.Message `json:"-"`
 	URL              string
 	tools            []ToolSuper
-	toolsCallName    string
-	// Argument string exists since the arguments for function calls is streamed token by token... yeah... great idea
-	toolsCallArgsString string
-	toolsCallID         string
-	extraContent        map[string]any
-	client              *http.Client
-	apiKey              string
-	debug               bool
+	toolCalls        map[int]*toolCallAssembly
+	client           *http.Client
+	apiKey           string
+	debug            bool
 
 	usage *pub_models.Usage
+}
+
+type toolCallAssembly struct {
+	Index        int
+	ID           string
+	Name         string
+	Type         string
+	Arguments    string
+	ExtraContent map[string]any
 }
 
 type ToolSuper struct {
@@ -54,7 +59,7 @@ type chatCompletionChunk struct {
 type Choice struct {
 	Index        int    `json:"index"`
 	Delta        Delta  `json:"delta"`
-	Logprobs     any    `json:"logprobs"` // null or complex object, hence interface{}
+	Logprobs     any    `json:"logprobs"`
 	FinishReason string `json:"finish_reason"`
 }
 
@@ -98,5 +103,5 @@ type req struct {
 	TopP              *float64             `json:"top_p,omitempty"`
 	ToolChoice        *string              `json:"tool_choice,omitempty"`
 	Tools             []ToolSuper          `json:"tools,omitempty"`
-	ParalellToolCalls bool                 `json:"parallel_tools_call,omitempty"`
+	ParallelToolCalls bool                 `json:"parallel_tool_calls,omitempty"`
 }

@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/baalimago/clai/internal/models"
@@ -65,8 +66,7 @@ func (s *StreamCompleter) createRequest(ctx context.Context, chat pub_models.Cha
 		StreamOptions: map[string]any{
 			"include_usage": true,
 		},
-		// No support for this yet since it's limited usecase and high complexity
-		ParalellToolCalls: false,
+		ParallelToolCalls: len(s.tools) > 0,
 	}
 	if s.debug {
 		ancli.PrintOK(fmt.Sprintf("streamcompleter api key: %v...\n", s.apiKey[:5]))
@@ -102,7 +102,7 @@ func (s *StreamCompleter) handleStreamResponse(ctx context.Context, res *http.Re
 	go func() {
 		br := bufio.NewReader(res.Body)
 		defer func() {
-			res.Body.Close()
+			_ = res.Body.Close()
 			close(outChan)
 		}()
 		for {
@@ -147,7 +147,6 @@ func (s *StreamCompleter) handleStreamChunk(token []byte) models.CompletionEvent
 	err := json.Unmarshal(token, &chunk)
 	if err != nil {
 		if misc.Truthy(os.Getenv("DEBUG")) {
-			// Expect some failing unmarshalls, which seems to be fine
 			ancli.PrintWarn(fmt.Sprintf("failed to unmarshal token: %s, err: %v\n", token, err))
 			return models.NoopEvent{}
 		}
@@ -165,14 +164,12 @@ func (s *StreamCompleter) handleStreamChunk(token []byte) models.CompletionEvent
 	for _, choice := range chunk.Choices {
 		compEvent := s.handleChoice(choice)
 		switch compEvent.(type) {
-		// Set chosen to the first error, string
 		case error, string, models.NoopEvent:
 			_, isNoopEvent := chosen.(models.NoopEvent)
 			if chosen == nil || isNoopEvent {
 				chosen = compEvent
 			}
-		case pub_models.Call:
-			// Always prefer tools call, if possible
+		case pub_models.Call, models.ToolCallsEvent:
 			chosen = compEvent
 		}
 	}
@@ -185,7 +182,14 @@ func (s *StreamCompleter) handleStreamChunk(token []byte) models.CompletionEvent
 }
 
 func (s *StreamCompleter) handleChoice(choice Choice) models.CompletionEvent {
-	// If there is no tools call, just handle it as a strings. This works for most cases
+	if len(choice.Delta.ToolCalls) > 0 {
+		for _, callChunk := range choice.Delta.ToolCalls {
+			s.mergeToolCallChunk(callChunk)
+		}
+	}
+	if choice.FinishReason == "tool_calls" {
+		return s.flushToolsCallBatch()
+	}
 	if len(choice.Delta.ToolCalls) == 0 {
 		if choice.FinishReason != "" {
 			if s.debug {
@@ -195,58 +199,90 @@ func (s *StreamCompleter) handleChoice(choice Choice) models.CompletionEvent {
 		}
 		return choice.Delta.Content
 	}
-
-	// Function name is only shown in first chunk of a functions call
-	// TODO: Implement support for parallel function calls, now we only handle first tools call in list
-	var argChunk string
-	if len(choice.Delta.ToolCalls) > 0 && choice.Delta.ToolCalls[0].Function.Name != "" {
-		s.toolsCallName = choice.Delta.ToolCalls[0].Function.Name
-		s.toolsCallID = choice.Delta.ToolCalls[0].ID
-	}
-
-	if len(choice.Delta.ToolCalls) > 0 {
-		argChunk = choice.Delta.ToolCalls[0].Function.Arguments
-		// The arguments is streamed as a stringified json for chatgpt, chunk by chunk, with no apparent structure
-		s.toolsCallArgsString += argChunk
-
-		if s.debug {
-			ancli.PrintOK(fmt.Sprintf("toolsCallArgsString: %v\n", s.toolsCallArgsString))
-		}
-		var input pub_models.Input
-		err := json.Unmarshal([]byte(s.toolsCallArgsString), &input)
-		if err == nil {
-			s.extraContent = choice.Delta.ToolCalls[0].ExtraContent
-			return s.doToolsCall()
-		}
+	if !hasIncompleteToolCallJSON(s.toolCalls) {
+		return s.flushToolsCallBatch()
 	}
 	return models.NoopEvent{}
 }
 
-// doToolsCall by parsing the arguments
-func (s *StreamCompleter) doToolsCall() models.CompletionEvent {
-	defer func() {
-		// Reset tools call construction strings to prepare for consequtive calls
-		s.toolsCallName = ""
-		s.toolsCallArgsString = ""
-	}()
+func hasIncompleteToolCallJSON(toolCalls map[int]*toolCallAssembly) bool {
+	for _, assembly := range toolCalls {
+		var input pub_models.Input
+		if err := json.Unmarshal([]byte(assembly.Arguments), &input); err != nil {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *StreamCompleter) mergeToolCallChunk(callChunk ToolsCall) {
+	if s.toolCalls == nil {
+		s.toolCalls = make(map[int]*toolCallAssembly)
+	}
+	idx := max(callChunk.Index, 0)
+	assembly, exists := s.toolCalls[idx]
+	if !exists {
+		assembly = &toolCallAssembly{Index: idx}
+		s.toolCalls[idx] = assembly
+	}
+	if callChunk.ID != "" {
+		assembly.ID = callChunk.ID
+	}
+	if callChunk.Type != "" {
+		assembly.Type = callChunk.Type
+	}
+	if callChunk.Function.Name != "" {
+		assembly.Name = callChunk.Function.Name
+	}
+	if callChunk.Function.Arguments != "" {
+		assembly.Arguments += callChunk.Function.Arguments
+	}
+	if callChunk.ExtraContent != nil {
+		assembly.ExtraContent = callChunk.ExtraContent
+	}
+}
+
+func (s *StreamCompleter) flushToolsCallBatch() models.CompletionEvent {
+	if len(s.toolCalls) == 0 {
+		return models.StopEvent{}
+	}
+	indices := make([]int, 0, len(s.toolCalls))
+	for idx := range s.toolCalls {
+		indices = append(indices, idx)
+	}
+	slices.Sort(indices)
+
+	calls := make([]pub_models.Call, 0, len(indices))
+	for _, idx := range indices {
+		call, err := s.assembleToolCall(*s.toolCalls[idx])
+		if err != nil {
+			return err
+		}
+		calls = append(calls, call)
+	}
+	s.toolCalls = nil
+	return models.ToolCallsEvent{Calls: calls}
+}
+
+func (s *StreamCompleter) assembleToolCall(assembly toolCallAssembly) (pub_models.Call, error) {
 	var input pub_models.Input
-	err := json.Unmarshal([]byte(s.toolsCallArgsString), &input)
+	err := json.Unmarshal([]byte(assembly.Arguments), &input)
 	if err != nil {
-		return fmt.Errorf("failed to unmarshal argument string: %w, argsString: %v", err, s.toolsCallArgsString)
+		return pub_models.Call{}, fmt.Errorf("failed to unmarshal argument string for index %d: %w", assembly.Index, err)
 	}
 
-	userFunc := tools.ToolFromName(s.toolsCallName)
-	userFunc.Arguments = s.toolsCallArgsString
+	userFunc := tools.ToolFromName(assembly.Name)
+	userFunc.Arguments = assembly.Arguments
 	userFunc.Inputs = &pub_models.InputSchema{}
 
 	return pub_models.Call{
-		ID:           s.toolsCallID,
-		Name:         s.toolsCallName,
+		ID:           assembly.ID,
+		Name:         assembly.Name,
 		Inputs:       &input,
 		Type:         "function",
 		Function:     userFunc,
-		ExtraContent: s.extraContent,
-	}
+		ExtraContent: assembly.ExtraContent,
+	}, nil
 }
 
 // heuristicTokenCountFactor is used to approximate token usage when

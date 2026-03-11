@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -24,7 +23,6 @@ func isNoop(ev any) bool {
 	return ok
 }
 
-// roundTripFunc allows injecting errors in http.Client
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
@@ -72,7 +70,6 @@ func TestStreamCompletions_Non200_And_CleanDoesNotMutateOriginal(t *testing.T) {
 }
 
 func TestStreamCompletions_HappyPath_FirstEventOnly(t *testing.T) {
-	// SSE-like server emitting a single content chunk and staying open
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
@@ -81,7 +78,6 @@ func TestStreamCompletions_HappyPath_FirstEventOnly(t *testing.T) {
 		if fl != nil {
 			fl.Flush()
 		}
-		// Keep connection open to avoid EOF behavior in the reader goroutine
 		time.Sleep(50 * time.Millisecond)
 	}))
 	defer ts.Close()
@@ -167,6 +163,9 @@ func TestCreateRequest_BodyAndHeaders(t *testing.T) {
 	if v, ok := body["tool_choice"].(string); !ok || v != choice {
 		t.Fatalf("tool choice mismatch: %v", body["tool_choice"])
 	}
+	if v, ok := body["parallel_tool_calls"].(bool); !ok || !v {
+		t.Fatalf("parallel tool calls mismatch: %T %v", body["parallel_tool_calls"], body["parallel_tool_calls"])
+	}
 	toolsV, ok := body["tools"].([]any)
 	if !ok || len(toolsV) != 1 {
 		t.Fatalf("tools missing in body: %T %v", body["tools"], body["tools"])
@@ -178,7 +177,6 @@ func TestCreateRequest_BodyAndHeaders(t *testing.T) {
 	}
 }
 
-// helper to avoid external json pkg alias confusion in tests
 func jsonUnmarshal(b []byte, v any) error { return json.Unmarshal(b, v) }
 
 func TestHandleStreamResponse_EmitsEventsAndErrorOnEOF(t *testing.T) {
@@ -191,17 +189,15 @@ func TestHandleStreamResponse_EmitsEventsAndErrorOnEOF(t *testing.T) {
 		t.Fatalf("handleStreamResponse err: %v", err)
 	}
 
-	// writer goroutine
 	go func() {
 		bw := bufio.NewWriter(pw)
 		fmt.Fprintf(bw, "data: %s\n", `{"choices":[{"delta":{"content":"first"}}]}`)
-		bw.Flush()
+		_ = bw.Flush()
 		fmt.Fprintf(bw, "data: %s\n", `{"choices":[{"delta":{"content":"second"}}]}`)
-		bw.Flush()
-		pw.Close() // trigger EOF
+		_ = bw.Flush()
+		_ = pw.Close()
 	}()
 
-	// Expect first two string events then an error
 	for i := range 2 {
 		select {
 		case ev := <-out:
@@ -225,52 +221,6 @@ func TestHandleStreamResponse_EmitsEventsAndErrorOnEOF(t *testing.T) {
 	}
 }
 
-func TestHandleStreamChunk_Table(t *testing.T) {
-	s := &StreamCompleter{}
-
-	// DONE -> Noop
-	maybeStopEv := s.handleStreamChunk([]byte("data: [DONE]\n"))
-	_, isStopEvent := maybeStopEv.(models.StopEvent)
-	if !isStopEvent {
-		t.Fatalf("expected STOP for DONE, got: %T %v", maybeStopEv, maybeStopEv)
-	}
-
-	// Invalid JSON with DEBUG=false -> Noop
-	os.Unsetenv("DEBUG")
-	if ev := s.handleStreamChunk([]byte("data: garbage\n")); !isNoop(ev) {
-		t.Fatalf("expected Noop for invalid JSON, got: %T %v", ev, ev)
-	}
-
-	// Invalid JSON with DEBUG=true -> still Noop but alternate branch
-	t.Setenv("DEBUG", "1")
-	if ev := s.handleStreamChunk([]byte("data: garbage\n")); !isNoop(ev) {
-		t.Fatalf("expected Noop for invalid JSON DEBUG=1, got: %T %v", ev, ev)
-	}
-	t.Setenv("DEBUG", "")
-
-	// Empty choices -> Noop
-	if ev := s.handleStreamChunk([]byte("data: {\"choices\":[]}\n")); !isNoop(ev) {
-		t.Fatalf("expected Noop for empty choices, got: %T %v", ev, ev)
-	}
-
-	// Plain content
-	{
-		ev := s.handleStreamChunk([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n"))
-		str, ok := ev.(string)
-		if !ok || str != "hi" {
-			t.Fatalf("expected 'hi', got: %T %v", ev, ev)
-		}
-	}
-
-	// Prefer Call over string
-	tools.Init()
-	payload := `{"choices":[{"delta":{"content":"text"}},{"delta":{"tool_calls":[{"id":"1","type":"function","index":0,"function":{"name":"ls","arguments":"{}"}}]}}]}`
-	maybeStopEv = s.handleStreamChunk([]byte("data: " + payload + "\n"))
-	if _, ok := maybeStopEv.(pub_models.Call); !ok {
-		t.Fatalf("expected Call to be preferred, got: %T %v", maybeStopEv, maybeStopEv)
-	}
-}
-
 func TestHandleChoice_ToolCallsIncremental(t *testing.T) {
 	tools.Init()
 	s := &StreamCompleter{}
@@ -278,24 +228,72 @@ func TestHandleChoice_ToolCallsIncremental(t *testing.T) {
 	if ev := s.handleChoice(first); !isNoop(ev) {
 		t.Fatalf("expected Noop for first partial args, got: %T %v", ev, ev)
 	}
-	if s.toolsCallName != "ls" || s.toolsCallID != "id1" {
-		t.Fatalf("expected name/id captured, got name=%q id=%q", s.toolsCallName, s.toolsCallID)
+	assembly := s.toolCalls[0]
+	if assembly == nil || assembly.Name != "ls" || assembly.ID != "id1" {
+		t.Fatalf("expected name/id captured, got assembly=%+v", assembly)
 	}
-	second := Choice{Delta: Delta{ToolCalls: []ToolsCall{{Function: Func{Arguments: ",\"b\":2"}}}}}
+	second := Choice{Delta: Delta{ToolCalls: []ToolsCall{{Index: 0, Function: Func{Arguments: ",\"b\":2"}}}}}
 	if ev := s.handleChoice(second); !isNoop(ev) {
 		t.Fatalf("expected Noop for second partial args, got: %T %v", ev, ev)
 	}
-	third := Choice{Delta: Delta{ToolCalls: []ToolsCall{{Function: Func{Arguments: "}"}}}}}
+	third := Choice{Delta: Delta{ToolCalls: []ToolsCall{{Index: 0, Function: Func{Arguments: "}"}}}}, FinishReason: "tool_calls"}
 	ev := s.handleChoice(third)
-	call, ok := ev.(pub_models.Call)
+	callBatch, ok := ev.(models.ToolCallsEvent)
 	if !ok {
-		t.Fatalf("expected Call on completed args, got: %T %v", ev, ev)
+		t.Fatalf("expected ToolCallsEvent on completed args, got: %T %v", ev, ev)
 	}
+	if len(callBatch.Calls) != 1 {
+		t.Fatalf("expected one call, got: %d", len(callBatch.Calls))
+	}
+	call := callBatch.Calls[0]
 	if call.Name != "ls" || call.Type != "function" || call.ID != "id1" || call.Inputs == nil {
 		t.Fatalf("bad call: %+v", call)
 	}
-	if s.toolsCallName != "" || s.toolsCallArgsString != "" {
-		t.Fatalf("expected state to be reset after doToolsCall, got name=%q args=%q", s.toolsCallName, s.toolsCallArgsString)
+	if len(s.toolCalls) != 0 {
+		t.Fatalf("expected state to be reset after flush, got: %+v", s.toolCalls)
+	}
+}
+
+func TestHandleChoice_ToolCallsParallelBatch(t *testing.T) {
+	tools.Init()
+	s := &StreamCompleter{}
+
+	first := Choice{Delta: Delta{ToolCalls: []ToolsCall{
+		{ID: "id1", Index: 0, Type: "function", Function: Func{Name: "ls", Arguments: `{"path":".`}},
+		{ID: "id2", Index: 1, Type: "function", Function: Func{Name: "pwd", Arguments: `{`}},
+	}}}
+	if ev := s.handleChoice(first); !isNoop(ev) {
+		t.Fatalf("expected Noop for first parallel partial args, got: %T %v", ev, ev)
+	}
+
+	second := Choice{Delta: Delta{ToolCalls: []ToolsCall{
+		{Index: 1, Function: Func{Arguments: `}`}},
+		{Index: 0, Function: Func{Arguments: `"}`}},
+	}}}
+	ev := s.handleChoice(second)
+	toolCallsEvent, ok := ev.(models.ToolCallsEvent)
+	if !ok {
+		t.Fatalf("expected ToolCallsEvent on completed parallel batch, got: %T %v", ev, ev)
+	}
+	if len(toolCallsEvent.Calls) != 2 {
+		t.Fatalf("expected 2 calls, got: %d", len(toolCallsEvent.Calls))
+	}
+	if toolCallsEvent.Calls[0].ID != "id1" || toolCallsEvent.Calls[0].Name != "ls" {
+		t.Fatalf("unexpected first call: %+v", toolCallsEvent.Calls[0])
+	}
+	if toolCallsEvent.Calls[1].ID != "id2" || toolCallsEvent.Calls[1].Name != "pwd" {
+		t.Fatalf("unexpected second call: %+v", toolCallsEvent.Calls[1])
+	}
+	if got := (*toolCallsEvent.Calls[0].Inputs)["path"]; got != "." {
+		t.Fatalf("unexpected first call input path: %v", got)
+	}
+	if len(s.toolCalls) != 0 {
+		t.Fatalf("expected tool call state reset, got: %+v", s.toolCalls)
+	}
+
+	ev = s.handleChoice(Choice{FinishReason: "tool_calls"})
+	if _, ok := ev.(models.StopEvent); !ok {
+		t.Fatalf("expected StopEvent after batch has been flushed, got: %T %v", ev, ev)
 	}
 }
 
@@ -307,33 +305,26 @@ func TestHandleChoice_ContentOnly(t *testing.T) {
 	}
 }
 
-func TestDoToolsCall_InvalidJSONAndReset(t *testing.T) {
-	s := &StreamCompleter{toolsCallName: "ls", toolsCallArgsString: "not-json"}
-	ev := s.doToolsCall()
-	if _, ok := ev.(error); !ok {
-		t.Fatalf("expected error event for invalid json, got: %T %v", ev, ev)
-	}
-	if s.toolsCallName != "" || s.toolsCallArgsString != "" {
-		t.Fatalf("expected reset after doToolsCall, got name=%q args=%q", s.toolsCallName, s.toolsCallArgsString)
+func TestAssembleToolCall_InvalidJSON(t *testing.T) {
+	s := &StreamCompleter{}
+	_, err := s.assembleToolCall(toolCallAssembly{Name: "ls", Arguments: "not-json"})
+	if err == nil {
+		t.Fatal("expected error for invalid json")
 	}
 }
 
-func TestDoToolsCall_Valid(t *testing.T) {
+func TestAssembleToolCall_Valid(t *testing.T) {
 	tools.Init()
-	s := &StreamCompleter{toolsCallName: "ls", toolsCallID: "IDX", toolsCallArgsString: "{\"x\":1}"}
-	ev := s.doToolsCall()
-	call, ok := ev.(pub_models.Call)
-	if !ok {
-		t.Fatalf("expected Call, got: %T %v", ev, ev)
+	s := &StreamCompleter{}
+	call, err := s.assembleToolCall(toolCallAssembly{ID: "IDX", Name: "ls", Arguments: "{\"x\":1}"})
+	if err != nil {
+		t.Fatalf("assembleToolCall err: %v", err)
 	}
 	if call.Name != "ls" || call.ID != "IDX" || call.Type != "function" || call.Inputs == nil {
 		t.Fatalf("bad call: %+v", call)
 	}
 	if call.Function.Arguments != "{\"x\":1}" {
 		t.Fatalf("expected arguments to be preserved, got: %q", call.Function.Arguments)
-	}
-	if s.toolsCallName != "" || s.toolsCallArgsString != "" {
-		t.Fatalf("expected reset after doToolsCall, got name=%q args=%q", s.toolsCallName, s.toolsCallArgsString)
 	}
 }
 

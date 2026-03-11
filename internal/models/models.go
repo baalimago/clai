@@ -50,6 +50,10 @@ type NoopEvent struct{}
 
 type StopEvent struct{}
 
+type ToolCallsEvent struct {
+	Calls []pub_models.Call
+}
+
 type ErrRateLimit struct {
 	ResetAt         time.Time
 	TokensRemaining int

@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
 	"github.com/baalimago/clai/internal/tools"
@@ -192,6 +193,124 @@ func (q *Querier[C]) handleToolCall(ctx context.Context, call pub_models.Call) e
 	_, err = q.TextQuery(subCtx, q.chat)
 	if err != nil && !errors.Is(err, context.Canceled) {
 		return fmt.Errorf("failed to query after tool call: %w", err)
+	}
+	return nil
+}
+
+type toolCallResult struct {
+	Index int
+	Call  pub_models.Call
+	Out   string
+}
+
+func formatParallelToolCallsBanner(calls []pub_models.Call) string {
+	if len(calls) == 1 {
+		return calls[0].PrettyPrint()
+	}
+	toolNames := make([]string, 0, len(calls))
+	for _, call := range calls {
+		toolNames = append(toolNames, call.Name)
+	}
+	quoted := make([]string, 0, len(toolNames))
+	for _, toolName := range toolNames {
+		quoted = append(quoted, fmt.Sprintf("%q", toolName))
+	}
+	return fmt.Sprintf("parallel tool calls: %d, tools: [%s]", len(calls), strings.Join(quoted, ", "))
+}
+
+func (q *Querier[C]) handleToolCalls(ctx context.Context, calls []pub_models.Call) error {
+	if len(calls) == 0 {
+		return nil
+	}
+
+	pre := q.shouldSaveReply
+	q.shouldSaveReply = false
+	q.postProcess()
+	q.shouldSaveReply = pre
+
+	patchedCalls := make([]pub_models.Call, len(calls))
+	for i, call := range calls {
+		call.Patch()
+		patchedCalls[i] = call
+	}
+
+	assistantToolsCall := pub_models.Message{
+		Role:      "assistant",
+		Content:   formatParallelToolCallsBanner(patchedCalls),
+		ToolCalls: patchedCalls,
+	}
+	q.reset()
+	if !q.debug {
+		err := utils.AttemptPrettyPrint(q.out, assistantToolsCall, q.username, q.Raw)
+		if err != nil {
+			return fmt.Errorf("failed to pretty print, stopping before tool invocation: %w", err)
+		}
+	}
+	q.chat.Messages = append(q.chat.Messages, assistantToolsCall)
+
+	remaining := len(patchedCalls)
+	if q.maxToolCalls != nil {
+		remaining = *q.maxToolCalls - q.amToolCalls
+		if remaining < 0 {
+			remaining = 0
+		}
+	}
+
+	results := make([]toolCallResult, len(patchedCalls))
+	var wg sync.WaitGroup
+	for i, call := range patchedCalls {
+		results[i] = toolCallResult{Index: i, Call: call}
+		if i >= remaining {
+			out := "ERROR: No more tool calls allowed. "
+			persistence := q.amToolCalls + i - *q.maxToolCalls
+			if persistence > 0 {
+				out += "You will be HARD SHUT DOWN if you persist. "
+			}
+			if persistence > 1 {
+				out += "This is your LAST WARNING. "
+			}
+			results[i].Out = out
+			continue
+		}
+
+		wg.Add(1)
+		go func(idx int, currentCall pub_models.Call) {
+			defer wg.Done()
+			out := tools.Invoke(currentCall)
+			results[idx].Out = out
+		}(i, call)
+	}
+	wg.Wait()
+
+	for i := range results {
+		out := results[i].Out
+		if q.maxToolCalls != nil {
+			if i < remaining {
+				outTmp, err := q.prefixToolCallsRemaining(out)
+				if err != nil {
+					return fmt.Errorf("failed to append prefix tool usage count prefix: %w", err)
+				}
+				out = outTmp
+			}
+			q.amToolCalls++
+		}
+		out = limitToolOutput(out, q.toolOutputRuneLimit)
+		if out == "" {
+			out = "<EMPTY-RESPONSE>"
+		}
+		toolsOutput := pub_models.Message{
+			Role:       "tool",
+			Content:    out,
+			ToolCallID: results[i].Call.ID,
+		}
+		q.chat.Messages = append(q.chat.Messages, toolsOutput)
+	}
+
+	subCtx, subCtxCancel := context.WithCancel(ctx)
+	subCtx = context.WithValue(subCtx, utils.ContextCancelKey, subCtxCancel)
+	_, err := q.TextQuery(subCtx, q.chat)
+	if err != nil && !errors.Is(err, context.Canceled) {
+		return fmt.Errorf("failed to query after tool call batch: %w", err)
 	}
 	return nil
 }

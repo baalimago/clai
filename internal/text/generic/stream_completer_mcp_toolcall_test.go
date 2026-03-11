@@ -14,7 +14,7 @@ func (f fakeTool) Call(input pub_models.Input) (string, error) { return "", nil 
 func (f fakeTool) Specification() pub_models.Specification     { return f.spec }
 
 // Validates that streamed OpenAI-style tool_calls are assembled, parsed as JSON,
-// and emitted as a pub_models.Call.
+// and emitted as a single-call batch event.
 func TestStreamCompleter_EmitsToolCall(t *testing.T) {
 	s := &StreamCompleter{}
 
@@ -39,18 +39,22 @@ func TestStreamCompleter_EmitsToolCall(t *testing.T) {
 		t.Fatalf("expected NoopEvent, got %T: %#v", ev, ev)
 	}
 
-	second := Choice{Delta: Delta{ToolCalls: []ToolsCall{{Function: Func{Arguments: `debug"`}}}}}
+	second := Choice{Delta: Delta{ToolCalls: []ToolsCall{{Index: 0, Function: Func{Arguments: `debug"`}}}}}
 	ev = s.handleChoice(second)
 	if _, ok := ev.(models.NoopEvent); !ok {
 		t.Fatalf("expected NoopEvent, got %T: %#v", ev, ev)
 	}
 
-	third := Choice{Delta: Delta{ToolCalls: []ToolsCall{{Function: Func{Arguments: `}`}}}}}
+	third := Choice{Delta: Delta{ToolCalls: []ToolsCall{{Index: 0, Function: Func{Arguments: `}`}}}}}
 	ev = s.handleChoice(third)
-	call, ok := ev.(pub_models.Call)
+	batch, ok := ev.(models.ToolCallsEvent)
 	if !ok {
-		t.Fatalf("expected Call, got %T: %#v", ev, ev)
+		t.Fatalf("expected ToolCallsEvent, got %T: %#v", ev, ev)
 	}
+	if len(batch.Calls) != 1 {
+		t.Fatalf("expected single call batch, got %d", len(batch.Calls))
+	}
+	call := batch.Calls[0]
 	if call.Name != "mcp_everything_get-annotated-message" {
 		t.Fatalf("unexpected tool name: %q", call.Name)
 	}

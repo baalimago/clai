@@ -249,6 +249,8 @@ func (q *Querier[C]) handleCompletion(ctx context.Context, completion models.Com
 	switch cast := completion.(type) {
 	case pub_models.Call:
 		return q.handleToolCall(ctx, cast)
+	case models.ToolCallsEvent:
+		return q.handleToolCalls(ctx, cast.Calls)
 	case string:
 		q.handleToken(cast)
 		return nil
