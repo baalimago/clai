@@ -261,7 +261,7 @@ func (cq *ChatHandler) printChatInfo(w io.Writer, chat pub_models.Chat) error {
 	if _, err := fmt.Fprintf(w, "\t%s %s'%v'\n", userRole, utils.Colorize(bread, "   "), messageTypeCounter["user"]); err != nil {
 		return fmt.Errorf("write user replies: %w", err)
 	}
-	if _, err := fmt.Fprintf(w, "\t%s %s'%v'\n", toolRole, utils.Colorize(bread, "   "), messageTypeCounter["tools"]); err != nil {
+	if _, err := fmt.Fprintf(w, "\t%s %s'%v'\n", toolRole, utils.Colorize(bread, "   "), messageTypeCounter["tool"]); err != nil {
 		return fmt.Errorf("write tool replies: %w", err)
 	}
 	if _, err := fmt.Fprintf(w, "\t%s %s'%v'\n", systemRole, utils.Colorize(bread, "  "), messageTypeCounter["system"]); err != nil {
