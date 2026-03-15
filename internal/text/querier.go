@@ -29,6 +29,7 @@ const (
 type Querier[C models.StreamCompleter] struct {
 	Raw                     bool
 	chat                    pub_models.Chat
+	callStackLevel          int
 	username                string
 	termWidth               int
 	lineCount               int
@@ -59,6 +60,10 @@ type Querier[C models.StreamCompleter] struct {
 
 	maxToolCalls *int
 	amToolCalls  int
+
+	costManager    CostManager
+	costMgrRdyChan <-chan struct{}
+	costMgrErrChan <-chan error
 }
 
 func (q *Querier[C]) handleRateLimitErr(ctx context.Context, rateLimitErr models.ErrRateLimit) error {
@@ -166,6 +171,32 @@ func (q *Querier[C]) postProcess() {
 	// or when no tokens were received. This preserves the user's messages
 	// so the conversation context is not lost.
 	if q.shouldSaveReply {
+		if q.costManager != nil {
+			timeoutdur := time.Millisecond * 200
+			timeout := time.NewTimer(timeoutdur)
+			defer func() {
+				if !timeout.Stop() {
+					select {
+					case <-timeout.C:
+					default:
+					}
+				}
+			}()
+			select {
+			case <-timeout.C:
+				// Dont wait for too long,
+				ancli.Warnf("skippng wait for cost manager model price fetch after: %v", timeoutdur)
+				goto costMgrDone
+			case <-q.costMgrRdyChan:
+			}
+			enrichedChat, err := q.costManager.Enrich(q.chat)
+			if err != nil {
+				ancli.PrintErr(fmt.Sprintf("failed to enrich chat with cost estimate: %v\n", err))
+			} else {
+				q.chat = enrichedChat
+			}
+		}
+	costMgrDone:
 		err := chat.SaveAsPreviousQuery(q.configDir, q.chat)
 		if err != nil {
 			ancli.PrintErr(fmt.Sprintf("failed to save previous query: %v\n", err))
@@ -226,12 +257,16 @@ func (q *Querier[C]) postProcessOutput(newSysMsg pub_models.Message) {
 }
 
 func (q *Querier[C]) reset() {
+	q.resetTransientState()
+	q.rateLimitRetries = 0
+}
+
+func (q *Querier[C]) resetTransientState() {
 	q.execErr = nil
 	q.fullMsg = ""
 	q.line = ""
 	q.lineCount = 0
 	q.hasPrinted = false
-	q.rateLimitRetries = 0
 }
 
 func (q *Querier[C]) handleToken(token string) {
@@ -290,10 +325,13 @@ func (q *Querier[C]) Query(ctx context.Context) error {
 	if q.rateLimitRetries > RateLimitRetries {
 		return fmt.Errorf("rate limit retry limit exceeded (%v), giving up", RateLimitRetries)
 	}
+	traceChatf("query start chat_id=%q messages=%d raw=%t should_save_reply=%t", q.chat.ID, len(q.chat.Messages), q.Raw, q.shouldSaveReply)
+
 	err := q.tokenLengthWarning()
 	if err != nil {
 		return fmt.Errorf("Querier.Query: %w", err)
 	}
+	traceChatf("query sending chat to stream completions chat_id=%q messages=%d", q.chat.ID, len(q.chat.Messages))
 	completionsChan, err := q.Model.StreamCompletions(ctx, q.chat)
 	if err != nil {
 		var rateLimitErr *models.ErrRateLimit
@@ -314,7 +352,9 @@ func (q *Querier[C]) Query(ctx context.Context) error {
 		if q.debug {
 			ancli.Okf("token usage: %v", *tokenCounter.TokenUsage())
 		}
-		q.chat.TokenUsage = tokenCounter.TokenUsage()
+		if q.callStackLevel == 0 || q.chat.TokenUsage == nil {
+			q.chat.TokenUsage = tokenCounter.TokenUsage()
+		}
 	}()
 
 	for {
@@ -351,7 +391,7 @@ func (q *Querier[C]) Query(ctx context.Context) error {
 }
 
 func (q *Querier[C]) TextQuery(ctx context.Context, chat pub_models.Chat) (pub_models.Chat, error) {
-	q.reset()
+	q.resetTransientState()
 	q.chat = chat
 	// Query will update the chat with the latest system message
 	err := q.Query(ctx)

@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/baalimago/clai/internal/cost"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
@@ -22,6 +23,8 @@ type chatDirInfo struct {
 	RepliesByRole       map[string]int `json:"replies_by_role"`
 	InputTokens         int            `json:"input_tokens"`
 	OutputTokens        int            `json:"output_tokens"`
+	CostUSD             float64        `json:"cost_usd,omitempty"`
+	Cost                string         `json:"cost,omitempty"`
 	initialMessage      string         `json:"-"`
 }
 
@@ -38,6 +41,7 @@ chat id: %v
 prompt: %v%v
 replies by role:
 %v
+total cost: %v
 tokens used:
 	input: %v
 	output: %v
@@ -80,10 +84,18 @@ func (cq *ChatHandler) dirInfo() error {
 		info.initialPrompt(),
 		profileOut,
 		rolesOut.String(),
+		info.costString(),
 		info.InputTokens,
 		info.OutputTokens,
 	)
 	return nil
+}
+
+func (cdi chatDirInfo) costString() string {
+	if cdi.Cost != "" {
+		return cdi.Cost
+	}
+	return "N/A"
 }
 
 func (cq *ChatHandler) resolveChatDirInfo() (chatDirInfo, error) {
@@ -146,6 +158,10 @@ func (cq *ChatHandler) infoFromChat(scope, chatID string, c pub_models.Chat) cha
 	if c.TokenUsage != nil {
 		cdi.InputTokens = c.TokenUsage.PromptTokens
 		cdi.OutputTokens = c.TokenUsage.CompletionTokens
+	}
+	if c.HasCostEstimates() {
+		cdi.CostUSD = c.TotalCostUSD()
+		cdi.Cost = cost.FormatUSD(c.TotalCostUSD())
 	}
 
 	return cdi

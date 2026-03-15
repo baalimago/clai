@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -8,6 +9,27 @@ import (
 
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
+
+func writeNotificationTestPriceFiles(t *testing.T, confDir string) {
+	t.Helper()
+
+	priceConfig := map[string]any{
+		"price": map[string]any{
+			"input_usd_per_token":        0.001,
+			"input_cached_usd_per_token": 0.0005,
+			"output_usd_per_token":       0.002,
+		},
+	}
+	priceBytes, err := json.Marshal(priceConfig)
+	if err != nil {
+		t.Fatalf("Marshal(price config): %v", err)
+	}
+	for _, name := range []string{"mock_test_test.json", "mock_test_mock_test.json"} {
+		if err := os.WriteFile(filepath.Join(confDir, name), priceBytes, 0o644); err != nil {
+			t.Fatalf("WriteFile(%q): %v", name, err)
+		}
+	}
+}
 
 func Test_run_emits_terminal_bell_on_completed_query_when_theme_enables_it(t *testing.T) {
 	confDir := t.TempDir()
@@ -38,6 +60,7 @@ func Test_run_emits_terminal_bell_on_completed_query_when_theme_enables_it(t *te
 	}
 
 	t.Setenv("CLAI_CONFIG_DIR", confDir)
+	writeNotificationTestPriceFiles(t, confDir)
 
 	var gotStatusCode int
 	gotStdout := testboil.CaptureStdout(t, func(t *testing.T) {
@@ -78,6 +101,7 @@ func Test_run_false_notification_bell_setting_is_backfilled_to_true(t *testing.T
 	}
 
 	t.Setenv("CLAI_CONFIG_DIR", confDir)
+	writeNotificationTestPriceFiles(t, confDir)
 
 	var gotStatusCode int
 	gotStdout := testboil.CaptureStdout(t, func(t *testing.T) {
@@ -123,6 +147,7 @@ func Test_run_appends_notification_bell_true_to_existing_theme_json(t *testing.T
 	}
 
 	t.Setenv("CLAI_CONFIG_DIR", confDir)
+	writeNotificationTestPriceFiles(t, confDir)
 
 	var gotStatusCode int
 	_ = testboil.CaptureStdout(t, func(t *testing.T) {

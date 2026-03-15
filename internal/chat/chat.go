@@ -16,18 +16,25 @@ import (
 )
 
 func FromPath(path string) (pub_models.Chat, error) {
-	if misc.Truthy(os.Getenv("DEBUG")) || misc.Truthy(os.Getenv("DEBUG_REPLY_MODE")) {
-		ancli.PrintOK(fmt.Sprintf("reading chat from '%v'\n", path))
+	traceChatf("loading chat file path=%q", path)
+	if debugChatEnabled() {
+		if stat, err := os.Stat(path); err == nil {
+			traceChatf("chat file stat path=%q size_bytes=%d", path, stat.Size())
+		} else {
+			traceChatf("chat file stat failed path=%q err=%v", path, err)
+		}
 	}
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return pub_models.Chat{}, fmt.Errorf("failed to read file: %w", err)
 	}
+	traceChatf("chat file read path=%q bytes=%d", path, len(b))
 	var chat pub_models.Chat
 	err = json.Unmarshal(b, &chat)
 	if err != nil {
 		return pub_models.Chat{}, fmt.Errorf("failed to decode JSON: %w", err)
 	}
+	traceChatf("chat file decoded path=%q chat_id=%q messages=%d", path, chat.ID, len(chat.Messages))
 
 	return chat, nil
 }
@@ -41,6 +48,7 @@ func Save(saveAt string, chat pub_models.Chat) error {
 	if misc.Truthy(os.Getenv("DEBUG")) && misc.Truthy(os.Getenv("DEBUG_VERBOSE")) || misc.Truthy(os.Getenv("DEBUG_REPLY_MODE")) {
 		ancli.PrintOK(fmt.Sprintf("saving chat to: '%v'", fileName))
 	}
+	traceChatf("saving chat file path=%q chat_id=%q messages=%d", fileName, chat.ID, len(chat.Messages))
 	return os.WriteFile(fileName, b, 0o644)
 }
 

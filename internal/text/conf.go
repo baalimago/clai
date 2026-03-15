@@ -56,6 +56,19 @@ type Configurations struct {
 	Out io.Writer `json:"-"`
 }
 
+type CostManager interface {
+	// Start the cost manager. Will return with errors on errCh and close readyCh once there is
+	// a token price for the model
+	Start(ctx context.Context) (readyCh <-chan struct{}, errCh <-chan error)
+
+	// Enrich the chat with cost for the chat
+	Enrich(chat pub_models.Chat) (pub_models.Chat, error)
+}
+
+type ModelNamer interface {
+	ModelName() string
+}
+
 func (c Configurations) UsingProfile() bool {
 	return c.ProfilePath != "" || c.UseProfile != ""
 }
@@ -96,6 +109,7 @@ var DefaultProfile = Profile{
 }
 
 func (c *Configurations) setupSystemPrompt() {
+	traceChatf("setup initial chat system prompt start shell_context=%q", c.ShellContext)
 	systemPrompt := c.SystemPrompt
 	if strings.TrimSpace(c.ShellContext) != "" {
 		promptWithCtx, err := AppendShellContextIfConfigured(context.Background(), c.ConfigDir, c.ShellContext, systemPrompt, ShellContextRenderer{})
@@ -110,11 +124,13 @@ func (c *Configurations) setupSystemPrompt() {
 			{Role: "system", Content: systemPrompt},
 		},
 	}
+	traceChatf("setup initial chat system prompt done messages=%d", len(c.InitialChat.Messages))
 }
 
 // SetupInitialChat by doing all sorts of organically grown stuff. Don\'t touch this
 // code too closely. Something will break, most likely.
 func (c *Configurations) SetupInitialChat(args []string) error {
+	traceChatf("setup initial chat start reply_mode=%t chat_mode=%t glob=%q args=%q", c.ReplyMode, c.ChatMode, c.Glob, strings.Join(args, " "))
 	if c.Glob != "" && c.ReplyMode {
 		ancli.PrintWarn("Using glob + reply modes together might yield strange results. The globalScope will be appended after the glob messages.\n")
 	}
@@ -123,6 +139,7 @@ func (c *Configurations) SetupInitialChat(args []string) error {
 		c.setupSystemPrompt()
 	}
 	if c.Glob != "" {
+		traceChatf("setup initial chat creating glob chat glob=%q", c.Glob)
 		globChat, err := glob.CreateChat(c.Glob, c.SystemPrompt)
 		if err != nil {
 			return fmt.Errorf("failed to get glob chat: %w", err)
@@ -131,29 +148,38 @@ func (c *Configurations) SetupInitialChat(args []string) error {
 			ancli.PrintOK(fmt.Sprintf("glob messages: %v", globChat.Messages))
 		}
 		c.InitialChat = globChat
+		traceChatf("setup initial chat glob chat loaded messages=%d", len(c.InitialChat.Messages))
 	}
 
 	if c.ReplyMode {
+		traceChatf("setup initial chat loading reply context from previous query config_dir=%q", c.ConfigDir)
 		iP, err := chat.LoadPrevQuery(c.ConfigDir)
 		if err != nil {
 			return fmt.Errorf("failed to load previous query: %w", err)
 		}
+		traceChatf("setup initial chat loaded previous query chat_id=%q messages=%d, queries=%d", iP.ID, len(iP.Messages), len(iP.Queries))
 		c.InitialChat.Messages = append(c.InitialChat.Messages, iP.Messages...)
+		c.InitialChat.Queries = append(c.InitialChat.Queries, iP.Queries...)
+		traceChatf("setup initial chat appended previous query messages=%d total_messages=%d", len(iP.Messages), len(c.InitialChat.Messages))
 	}
 
+	traceChatf("setup initial chat building prompt stdin_replace=%q", c.StdinReplace)
 	prompt, err := utils.Prompt(c.StdinReplace, args)
 	if err != nil {
 		return fmt.Errorf("failed to setup prompt: %w", err)
 	}
 	prompt = strings.TrimRight(prompt, " \t\r\n")
+	traceChatf("setup initial chat prompt ready prompt_len=%d", len(prompt))
 
 	// If chatmode, the initial message will be handled by the chat querier
 	if !c.ChatMode {
+		traceChatf("setup initial chat converting prompt to message parts")
 		imgMsg, err := chat.PromptToImageMessage(prompt)
 		if err != nil {
 			return fmt.Errorf("failed to convert prompt to imageMessage: %w", err)
 		}
 		c.InitialChat.Messages = append(c.InitialChat.Messages, imgMsg...)
+		traceChatf("setup initial chat appended prompt messages=%d total_messages=%d", len(imgMsg), len(c.InitialChat.Messages))
 	}
 
 	if misc.Truthy(os.Getenv("DEBUG")) {
@@ -162,6 +188,8 @@ func (c *Configurations) SetupInitialChat(args []string) error {
 	c.PostProccessedPrompt = prompt
 	if c.InitialChat.ID == "" {
 		c.InitialChat.ID = chat.HashIDFromPrompt(prompt)
+		traceChatf("setup initial chat generated chat id=%q", c.InitialChat.ID)
 	}
+	traceChatf("setup initial chat done chat_id=%q total_messages=%d", c.InitialChat.ID, len(c.InitialChat.Messages))
 	return nil
 }
