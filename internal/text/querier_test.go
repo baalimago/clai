@@ -23,6 +23,10 @@ import (
 type MockQuerier struct {
 	Somefield   string `json:"somefield"`
 	shouldBlock bool
+	streamFn    func(
+		context.Context,
+		pub_models.Chat,
+	) (chan models.CompletionEvent, error)
 	// completionChan is used to simulate a stream of completions
 	// send 'CLOSE' outChan, used in tests, plus the MockQuerier
 	completionChan chan models.CompletionEvent
@@ -35,6 +39,9 @@ func (q *MockQuerier) Setup() error {
 }
 
 func (q *MockQuerier) StreamCompletions(ctx context.Context, chat pub_models.Chat) (chan models.CompletionEvent, error) {
+	if q.streamFn != nil {
+		return q.streamFn(ctx, chat)
+	}
 	// simulate a stream of completions via the sendChan, so that
 	// it's possible to send messages from outside the test
 	if q.completionChan != nil {
@@ -513,6 +520,199 @@ func Test_Querier_SavesConversation_WhenStreamSetupFailsDueToRateLimitTokenCount
 	if lastReply.Messages[1].Content != "please do the thing" {
 		t.Fatalf("expected user message to be preserved, got: %q", lastReply.Messages[1].Content)
 	}
+	if len(lastReply.Queries) != 0 {
+		t.Fatalf("expected no queries in failed reply save, got: %d", len(lastReply.Queries))
+	}
+}
+
+func Test_Querier_postProcess_OnlyOuterCallEnrichesChat(t *testing.T) {
+	tmpConfigDir := path.Join(t.TempDir(), ".clai")
+	if err := os.MkdirAll(
+		path.Join(tmpConfigDir, "conversations"),
+		os.ModePerm,
+	); err != nil {
+		t.Fatalf("mkdir conversations: %v", err)
+	}
+
+	ready := make(chan struct{})
+	close(ready)
+	costMgr := &mockCostManager{
+		t: t,
+		enrichFn: func(got pub_models.Chat) pub_models.Chat {
+			if len(got.Messages) != 2 {
+				t.Fatalf(
+					"expected 2 messages before enrich, got: %d",
+					len(got.Messages),
+				)
+			}
+			if got.Messages[1].Content != "outer response" {
+				t.Fatalf(
+					"expected outer response, got: %q",
+					got.Messages[1].Content,
+				)
+			}
+			got.ID = "enriched"
+			return got
+		},
+	}
+
+	q := Querier[*MockQuerier]{
+		Raw:             true,
+		out:             &strings.Builder{},
+		shouldSaveReply: true,
+		configDir:       tmpConfigDir,
+		callStackLevel:  2,
+		costManager:     costMgr,
+		costMgrRdyChan:  ready,
+		chat: pub_models.Chat{
+			ID: "globalScope",
+			Messages: []pub_models.Message{
+				{Role: "user", Content: "hello"},
+			},
+		},
+		fullMsg: "outer response",
+	}
+
+	q.postProcess()
+
+	if costMgr.calls != 0 {
+		t.Fatalf("expected no enrich call, got: %d", costMgr.calls)
+	}
+	if q.chat.ID != "globalScope" {
+		t.Fatalf("expected chat to remain unchanged, got: %q", q.chat.ID)
+	}
+
+	saved, err := chat.LoadPrevQuery(tmpConfigDir)
+	if err != nil {
+		t.Fatalf("load prev query: %v", err)
+	}
+	if len(saved.Messages) != 2 {
+		t.Fatalf("expected 2 saved messages, got: %d", len(saved.Messages))
+	}
+	if saved.Messages[1].Content != "outer response" {
+		t.Fatalf(
+			"expected saved outer response, got: %q",
+			saved.Messages[1].Content,
+		)
+	}
+}
+
+func Test_Querier_Query_ToolCallRecursion_EnrichesOnlyOnce(t *testing.T) {
+	tmpConfigDir := path.Join(t.TempDir(), ".clai")
+	if err := os.MkdirAll(
+		path.Join(tmpConfigDir, "conversations"),
+		os.ModePerm,
+	); err != nil {
+		t.Fatalf("mkdir conversations: %v", err)
+	}
+
+	costMgr := &mockCostManager{
+		enrichFn: func(got pub_models.Chat) pub_models.Chat {
+			got.ID = "enriched"
+			return got
+		},
+	}
+
+	model := &MockQuerier{}
+	model.streamFn = func(
+		ctx context.Context,
+		chat pub_models.Chat,
+	) (chan models.CompletionEvent, error) {
+		out := make(chan models.CompletionEvent, 4)
+		go func() {
+			defer close(out)
+			if len(chat.Messages) == 1 {
+				out <- pub_models.Call{
+					ID:   "call1",
+					Name: "pwd",
+				}
+				return
+			}
+			out <- "final answer"
+		}()
+		return out, nil
+	}
+
+	q := Querier[*MockQuerier]{
+		Raw:             true,
+		out:             &strings.Builder{},
+		shouldSaveReply: true,
+		configDir:       tmpConfigDir,
+		costManager:     costMgr,
+		costMgrRdyChan:  makeClosedChan(),
+		chat: pub_models.Chat{
+			ID: "globalScope",
+			Messages: []pub_models.Message{
+				{Role: "user", Content: "hello"},
+			},
+		},
+		Model: model,
+	}
+
+	if err := q.Query(context.Background()); err != nil {
+		t.Fatalf("Query returned err: %v", err)
+	}
+	if costMgr.calls != 1 {
+		t.Fatalf("expected 1 enrich call, got: %d", costMgr.calls)
+	}
+	if q.chat.ID != "enriched" {
+		t.Fatalf("expected in-memory chat enriched, got: %q", q.chat.ID)
+	}
+	if q.callStackLevel != 0 {
+		t.Fatalf("expected callStackLevel 0, got: %d", q.callStackLevel)
+	}
+
+	saved, err := chat.LoadPrevQuery(tmpConfigDir)
+	if err != nil {
+		t.Fatalf("load prev query: %v", err)
+	}
+	if len(saved.Messages) != 4 {
+		t.Fatalf("expected 4 saved messages, got: %d", len(saved.Messages))
+	}
+	if saved.Messages[1].Role != "assistant" {
+		t.Fatalf("expected assistant tool call, got: %q",
+			saved.Messages[1].Role)
+	}
+	if saved.Messages[2].Role != "tool" {
+		t.Fatalf("expected tool output, got: %q",
+			saved.Messages[2].Role)
+	}
+	if saved.Messages[3].Content != "final answer" {
+		t.Fatalf("expected final answer, got: %q",
+			saved.Messages[3].Content)
+	}
+}
+
+func makeClosedChan() <-chan struct{} {
+	ch := make(chan struct{})
+	close(ch)
+	return ch
+}
+
+type mockCostManager struct {
+	t        *testing.T
+	calls    int
+	enrichFn func(pub_models.Chat) pub_models.Chat
+}
+
+func (m *mockCostManager) Start(
+	context.Context,
+) (<-chan struct{}, <-chan error) {
+	ready := make(chan struct{})
+	close(ready)
+	errCh := make(chan error)
+	return ready, errCh
+}
+
+func (m *mockCostManager) Enrich(chat pub_models.Chat) (
+	pub_models.Chat,
+	error,
+) {
+	m.calls++
+	if m.enrichFn == nil {
+		return chat, nil
+	}
+	return m.enrichFn(chat), nil
 }
 
 type MockQuerierRateLimitTokenCountFail struct{}

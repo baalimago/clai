@@ -25,13 +25,11 @@ func TestChatHandler_continue_emptyPrompt_prefersDirScope_thenGlobalScope(t *tes
 
 	convDir := filepath.Join(confDir, "conversations")
 
-	// Create a global scope chat.
 	global := pub_models.Chat{ID: "globalScope", Created: time.Now(), Messages: []pub_models.Message{{Role: "user", Content: "global msg"}}}
 	if err := Save(convDir, global); err != nil {
 		t.Fatalf("Save global: %v", err)
 	}
 
-	// Create a directory scoped chat and bind it to CWD.
 	dirChat := pub_models.Chat{ID: HashIDFromPrompt("dir"), Created: time.Now(), Messages: []pub_models.Message{{Role: "user", Content: "dir msg"}}}
 	if err := Save(convDir, dirChat); err != nil {
 		t.Fatalf("Save dir chat: %v", err)
@@ -76,4 +74,53 @@ func TestChatHandler_continue_emptyPrompt_fallsBackToGlobalScope(t *testing.T) {
 		t.Fatalf("cont: %v", err)
 	}
 	testboil.AssertStringContains(t, buf.String(), "global msg")
+}
+
+func TestChatHandler_continueByID_preservesStoredQueries(t *testing.T) {
+	t.Setenv("DEBUG", "")
+	ctx := context.Background()
+
+	confDir := t.TempDir()
+	if err := utils.CreateConfigDir(confDir); err != nil {
+		t.Fatalf("CreateConfigDir: %v", err)
+	}
+	convDir := filepath.Join(confDir, "conversations")
+
+	chatID := HashIDFromPrompt("continue this")
+	stored := pub_models.Chat{
+		ID:      chatID,
+		Created: time.Now(),
+		Messages: []pub_models.Message{
+			{Role: "system", Content: "sys"},
+			{Role: "user", Content: "continue this"},
+			{Role: "assistant", Content: "done"},
+		},
+		Queries: []pub_models.QueryCost{{
+			CreatedAt: time.Date(2026, 2, 3, 4, 5, 6, 0, time.UTC),
+			CostUSD:   0.123,
+			Model:     "openrouter/test-model",
+			Usage:     pub_models.Usage{TotalTokens: 321},
+		}},
+	}
+	if err := Save(convDir, stored); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	var buf strings.Builder
+	cq := &ChatHandler{confDir: confDir, convDir: convDir, prompt: chatID, out: &buf}
+
+	if err := cq.cont(ctx); err != nil {
+		t.Fatalf("cont: %v", err)
+	}
+
+	continued, err := FromPath(filepath.Join(convDir, chatID+".json"))
+	if err != nil {
+		t.Fatalf("FromPath: %v", err)
+	}
+	if len(continued.Queries) != 1 {
+		t.Fatalf("queries length mismatch: got %d", len(continued.Queries))
+	}
+	if continued.Queries[0].CostUSD != 0.123 {
+		t.Fatalf("query cost mismatch: got %v", continued.Queries[0].CostUSD)
+	}
 }

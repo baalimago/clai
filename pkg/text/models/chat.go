@@ -9,11 +9,22 @@ import (
 )
 
 type Chat struct {
-	Created    time.Time `json:"created"`
-	ID         string    `json:"id"`
-	Profile    string    `json:"profile,omitempty"`
-	Messages   []Message `json:"messages"`
-	TokenUsage *Usage    `json:"usage,omitempty"`
+	Created    time.Time   `json:"created"`
+	ID         string      `json:"id"`
+	Profile    string      `json:"profile,omitempty"`
+	Messages   []Message   `json:"messages"`
+	TokenUsage *Usage      `json:"usage,omitempty"`
+	Queries    []QueryCost `json:"queries,omitempty"`
+}
+
+type QueryCost struct {
+	CreatedAt time.Time `json:"created_at"`
+	CostUSD   float64   `json:"cost_usd"`
+	// MessageTrigger points at the most recent user message at the time
+	// of the query cost
+	MessageTrigger int    `json:"current_index"`
+	Model          string `json:"model,omitempty"`
+	Usage          Usage  `json:"usage"`
 }
 
 func (c Chat) TotalTokens() string {
@@ -21,6 +32,18 @@ func (c Chat) TotalTokens() string {
 		return "N/A"
 	}
 	return fmt.Sprintf("%d", c.TokenUsage.TotalTokens)
+}
+
+func (c Chat) TotalCostUSD() float64 {
+	total := 0.0
+	for _, q := range c.Queries {
+		total += q.CostUSD
+	}
+	return total
+}
+
+func (c Chat) HasCostEstimates() bool {
+	return len(c.Queries) > 0
 }
 
 type Usage struct {

@@ -24,19 +24,23 @@ const (
 // If the legacy file <confDir>/conversations/prevQuery.json exists, it is moved to
 // globalScope.json, overwriting any existing globalScope.json.
 func LoadGlobalScope(confDir string) (pub_models.Chat, error) {
+	traceChatf("load global scope start conf_dir=%q", confDir)
 	if confDir == "" {
 		dir, err := utils.GetClaiConfigDir()
 		if err != nil {
 			return pub_models.Chat{}, fmt.Errorf("get clai config dir: %w", err)
 		}
 		confDir = dir
+		traceChatf("load global scope resolved empty conf_dir to=%q", confDir)
 	}
 
 	convDir := filepath.Join(confDir, "conversations")
 	newPath := filepath.Join(convDir, globalScopeFile)
 	oldPath := filepath.Join(convDir, prevQueryFile)
+	traceChatf("load global scope paths conv_dir=%q new_path=%q old_path=%q", convDir, newPath, oldPath)
 
 	if _, err := os.Stat(oldPath); err == nil {
+		traceChatf("load global scope migrating legacy file from=%q to=%q", oldPath, newPath)
 		b, err := os.ReadFile(oldPath)
 		if err != nil {
 			return pub_models.Chat{}, fmt.Errorf("read legacy global chat %q: %w", oldPath, err)
@@ -55,15 +59,19 @@ func LoadGlobalScope(confDir string) (pub_models.Chat, error) {
 	}
 
 	c, err := FromPath(newPath)
+	traceChatf("global scope msgs: %v, queries: %v", len(c.Messages), len(c.Queries))
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
+			traceChatf("load global scope no previous query at path=%q", newPath)
 			ancli.PrintWarn("no previous query found\n")
 			return pub_models.Chat{}, nil
 		}
 		return pub_models.Chat{}, fmt.Errorf("read global scope chat %q: %w", newPath, err)
 	}
+	traceChatf("load global scope loaded path=%q chat_id=%q messages=%d", newPath, c.ID, len(c.Messages))
 
 	if c.ID != globalScopeChatID {
+		traceChatf("load global scope normalizing chat id from=%q to=%q", c.ID, globalScopeChatID)
 		c.ID = globalScopeChatID
 		if err := Save(convDir, c); err != nil {
 			return pub_models.Chat{}, fmt.Errorf("rewrite global scope chat with normalized id: %w", err)

@@ -77,17 +77,16 @@ type NotCyclicalImport struct {
 }
 
 type ChatHandler struct {
-	q           models.ChatQuerier
-	debug       bool
-	username    string
-	subCmd      string
-	chat        pub_models.Chat
-	preMessages []pub_models.Message
-	prompt      string
-	confDir     string
-	convDir     string
-	config      NotCyclicalImport
-	raw         bool
+	q        models.ChatQuerier
+	debug    bool
+	username string
+	subCmd   string
+	chat     pub_models.Chat
+	prompt   string
+	confDir  string
+	convDir  string
+	config   NotCyclicalImport
+	raw      bool
 
 	out io.Writer
 }
@@ -282,6 +281,7 @@ func New(q models.ChatQuerier,
 	conf NotCyclicalImport,
 	raw bool,
 	out io.Writer,
+	chatQuerierCosts []pub_models.QueryCost,
 ) (*ChatHandler, error) {
 	username := "user"
 	debug := misc.Truthy(os.Getenv("DEBUG"))
@@ -302,16 +302,15 @@ func New(q models.ChatQuerier,
 		out = os.Stdout
 	}
 	return &ChatHandler{
-		q:           q,
-		username:    username,
-		debug:       debug,
-		subCmd:      subCmd,
-		prompt:      subPrompt,
-		preMessages: preMessages,
-		confDir:     claiDir,
-		convDir:     path.Join(claiDir, "conversations"),
-		config:      conf,
-		raw:         raw,
-		out:         out,
+		q:        q,
+		username: username,
+		debug:    debug,
+		subCmd:   subCmd,
+		prompt:   subPrompt,
+		confDir:  claiDir,
+		convDir:  path.Join(claiDir, "conversations"),
+		config:   conf,
+		raw:      raw,
+		out:      out,
 	}, nil
 }

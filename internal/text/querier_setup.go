@@ -10,8 +10,10 @@ import (
 	"path"
 	"strings"
 
+	"github.com/baalimago/clai/internal/cost"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/utils"
+	"github.com/baalimago/clai/internal/vendors/openrouter"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
@@ -120,13 +122,16 @@ func setupConfigFile[C models.StreamCompleter](configPath string, userConf Confi
 }
 
 func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configurations, dfault C) (Querier[C], error) {
+	traceChatf("new querier start model=%q config_dir=%q initial_chat_id=%q messages=%d", userConf.Model, userConf.ConfigDir, userConf.InitialChat.ID, len(userConf.InitialChat.Messages))
 	vendor, model, modelVersion, err := vendorType(userConf.Model)
 	if err != nil {
 		return Querier[C]{}, fmt.Errorf("failed to find vendorType: %w", err)
 	}
+	traceChatf("new querier vendor resolved vendor=%q model=%q version=%q", vendor, model, modelVersion)
 	claiConfDir := userConf.ConfigDir
 	noFrontslashModelVersion := strings.ReplaceAll(modelVersion, "/", "_")
 	configPath := path.Join(claiConfDir, fmt.Sprintf("%v_%v_%v.json", vendor, model, noFrontslashModelVersion))
+	traceChatf("new querier model config path=%q", configPath)
 	querier := Querier[C]{}
 	if misc.Truthy(os.Getenv("DEBUG")) || misc.Truthy(os.Getenv("TEXT_QUERIER_DEBUG")) {
 		querier.debug = true
@@ -136,6 +141,7 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	if err != nil {
 		return Querier[C]{}, fmt.Errorf("failed to setup config file: %w", err)
 	}
+	traceChatf("new querier model config loaded path=%q", configPath)
 
 	if querier.debug {
 		ancli.PrintOK(fmt.Sprintf("userConf: %v\n", debug.IndentedJsonFmt(userConf)))
@@ -170,6 +176,7 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 		ancli.Okf("Out is: %v", userConf.Out)
 	}
 	querier.chat = userConf.InitialChat
+	traceChatf("new querier chat attached chat_id=%q messages=%d", querier.chat.ID, len(querier.chat.Messages))
 	// Ensure profile selection is persisted in globalScope/saved conversations.
 	querier.chat.Profile = userConf.UseProfile
 	querier.Raw = userConf.Raw
@@ -178,5 +185,36 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	querier.toolOutputRuneLimit = userConf.ToolOutputRuneLimit
 	querier.maxToolCalls = userConf.MaxToolCalls
 	querier.out = userConf.Out
+
+	var fetcher cost.ModelCatalogFetcher
+	if fetcher == nil {
+		openrouterAPIKey := os.Getenv("OPENROUTER_API_KEY")
+		if openrouterAPIKey != "" {
+			openrouterCatalogFetcher, err := openrouter.NewModelCatalog(openrouterAPIKey)
+			if err != nil {
+				ancli.Warnf("found OPENROUTER_API_KEY but failed to init catalog fether: %v", err)
+			}
+			fetcher = openrouterCatalogFetcher
+		}
+	}
+	costManager := new(cost.NewManager(fetcher, modelVersion, configPath))
+	rdyChan, errChan := costManager.Start(ctx)
+	querier.costMgrRdyChan = rdyChan
+	querier.costMgrErrChan = errChan
+	querier.costManager = costManager
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case err, open := <-errChan:
+				if !open {
+					return
+				}
+				ancli.Warnf("cost manager error: %v", err)
+			}
+		}
+	}()
+
 	return querier, nil
 }

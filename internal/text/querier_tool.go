@@ -189,6 +189,10 @@ func (q *Querier[C]) handleToolCall(ctx context.Context, call pub_models.Call) e
 	// only be sub context. This way the nested toolscalls can gracefully cancel
 	// while subsequent calls may continue
 	subCtx = context.WithValue(subCtx, utils.ContextCancelKey, subCtxCancel)
+	q.callStackLevel++
+	defer func() {
+		q.callStackLevel--
+	}()
 	_, err = q.TextQuery(subCtx, q.chat)
 	if err != nil && !errors.Is(err, context.Canceled) {
 		return fmt.Errorf("failed to query after tool call: %w", err)
