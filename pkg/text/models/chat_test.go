@@ -2,9 +2,86 @@ package models
 
 import (
 	"encoding/json"
+	"math"
 	"testing"
 	"time"
 )
+
+func TestChatQueriesBackwardCompatibleUnmarshal(t *testing.T) {
+	raw := `{"created":"2026-01-02T03:04:05Z","id":"chat-1","messages":[{"role":"user","content":"hello"}]}`
+	var got Chat
+	if err := json.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("unmarshal old chat json: %v", err)
+	}
+	if got.ID != "chat-1" {
+		t.Fatalf("id mismatch: got %q", got.ID)
+	}
+	if len(got.Queries) != 0 {
+		t.Fatalf("expected no queries, got %d", len(got.Queries))
+	}
+	if got.HasCostEstimates() {
+		t.Fatal("expected HasCostEstimates to be false")
+	}
+}
+
+func TestChatQueriesRoundTrip(t *testing.T) {
+	chat := Chat{
+		Created: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
+		ID:      "chat-1",
+		Messages: []Message{
+			{Role: "user", Content: "hello"},
+		},
+		Queries: []QueryCost{
+			{
+				CreatedAt: time.Date(2026, 1, 2, 3, 5, 5, 0, time.UTC),
+				CostUSD:   0.12,
+				Model:     "openai/gpt-4.1-mini",
+				Usage: Usage{
+					PromptTokens:     10,
+					CompletionTokens: 2,
+					TotalTokens:      12,
+				},
+			},
+		},
+	}
+	b, err := json.Marshal(chat)
+	if err != nil {
+		t.Fatalf("marshal chat: %v", err)
+	}
+	var roundTripped Chat
+	if err := json.Unmarshal(b, &roundTripped); err != nil {
+		t.Fatalf("unmarshal chat: %v", err)
+	}
+	if len(roundTripped.Queries) != 1 {
+		t.Fatalf("queries length mismatch: got %d", len(roundTripped.Queries))
+	}
+	if roundTripped.Queries[0].Model != "openai/gpt-4.1-mini" {
+		t.Fatalf("query model mismatch: got %q", roundTripped.Queries[0].Model)
+	}
+	if !roundTripped.Queries[0].CreatedAt.Equal(chat.Queries[0].CreatedAt) {
+		t.Fatalf("query created_at mismatch: got %v want %v", roundTripped.Queries[0].CreatedAt, chat.Queries[0].CreatedAt)
+	}
+}
+
+func TestChatTotalCostUSD(t *testing.T) {
+	chat := Chat{
+		Queries: []QueryCost{{CostUSD: 0.10}, {CostUSD: 1.25}, {CostUSD: 0.005}},
+	}
+	got := chat.TotalCostUSD()
+	want := 1.355
+	if math.Abs(got-want) > 1e-9 {
+		t.Fatalf("total cost mismatch: got %v want %v", got, want)
+	}
+}
+
+func TestChatHasCostEstimates(t *testing.T) {
+	if (Chat{}).HasCostEstimates() {
+		t.Fatal("expected empty chat to not have cost estimates")
+	}
+	if !(Chat{Queries: []QueryCost{{CostUSD: 0}}}).HasCostEstimates() {
+		t.Fatal("expected chat with queries to have cost estimates")
+	}
+}
 
 func TestMessageJSON(t *testing.T) {
 	// Test round-trip with simple string content

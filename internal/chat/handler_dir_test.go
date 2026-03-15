@@ -172,3 +172,57 @@ func TestChatHandler_dirInfo_DirScopeWinsOverPrevQuery_Raw(t *testing.T) {
 		t.Fatalf("conversation_created: got %q", got.ConversationCreated)
 	}
 }
+
+func TestChatHandler_dirInfo_DirScopeIncludesCost_Raw(t *testing.T) {
+	confDir := t.TempDir()
+	if err := utils.CreateConfigDir(confDir); err != nil {
+		t.Fatalf("CreateConfigDir: %v", err)
+	}
+
+	wd := t.TempDir()
+	oldWd, _ := os.Getwd()
+	t.Cleanup(func() { _ = os.Chdir(oldWd) })
+	if err := os.Chdir(wd); err != nil {
+		t.Fatalf("Chdir: %v", err)
+	}
+
+	convDir := filepath.Join(confDir, "conversations")
+	bound := pub_models.Chat{
+		ID:      "bound_chat_with_cost",
+		Created: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC),
+		Messages: []pub_models.Message{
+			{Role: "user", Content: "u"},
+			{Role: "assistant", Content: "a"},
+		},
+		Queries: []pub_models.QueryCost{
+			{CostUSD: 0.1234},
+			{CostUSD: 0.0066},
+		},
+	}
+	if err := Save(convDir, bound); err != nil {
+		t.Fatalf("Save(bound): %v", err)
+	}
+
+	cq := &ChatHandler{confDir: confDir, convDir: convDir}
+	if err := cq.SaveDirScope("", bound.ID); err != nil {
+		t.Fatalf("SaveDirScope: %v", err)
+	}
+
+	var out bytes.Buffer
+	cq.raw = true
+	cq.out = &out
+
+	if err := cq.dirInfo(); err != nil {
+		t.Fatalf("dirInfo: %v", err)
+	}
+
+	var got struct {
+		CostUSD float64 `json:"cost_usd"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got.CostUSD != 0.13 {
+		t.Fatalf("cost_usd: got %v", got.CostUSD)
+	}
+}

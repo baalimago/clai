@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -35,6 +36,27 @@ func setupMainTestConfigDir(t *testing.T) string {
 }`
 	if err := os.WriteFile(filepath.Join(confDir, "theme.json"), []byte(themeContent), 0o644); err != nil {
 		t.Fatalf("WriteFile(theme.json): %v", err)
+	}
+
+	priceConfig := map[string]any{
+		"price": map[string]any{
+			"input_usd_per_token":        0.001,
+			"input_cached_usd_per_token": 0.0005,
+			"output_usd_per_token":       0.002,
+		},
+	}
+	priceBytes, err := json.Marshal(priceConfig)
+	if err != nil {
+		t.Fatalf("Marshal(price config): %v", err)
+	}
+	priceFiles := []string{
+		"mock_test_test.json",
+		"mock_test_mock_test.json",
+	}
+	for _, name := range priceFiles {
+		if err := os.WriteFile(filepath.Join(confDir, name), priceBytes, 0o644); err != nil {
+			t.Fatalf("WriteFile(%q): %v", name, err)
+		}
 	}
 
 	t.Setenv("CLAI_CONFIG_DIR", confDir)
