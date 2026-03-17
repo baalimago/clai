@@ -3,7 +3,6 @@ package tools
 import (
 	"fmt"
 	"os/exec"
-	"strings"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
@@ -28,18 +27,17 @@ var FreetextCmd = FreetextCmdTool{
 func (r FreetextCmdTool) Call(input pub_models.Input) (string, error) {
 	freetextCmd, ok := input["command"].(string)
 	if !ok {
-		return "", fmt.Errorf("freetextCmd must be a string")
+		return "", fmt.Errorf("read command input: command must be a string")
 	}
-	freetextCmdSplit := strings.Split(freetextCmd, " ")
-	var potentialArgsFlags []string
-	if len(freetextCmdSplit) > 0 {
-		potentialArgsFlags = freetextCmdSplit[1:]
+	if freetextCmd == "" {
+		return "", fmt.Errorf("validate command input: command must not be empty")
 	}
-	cmd := exec.Command(freetextCmdSplit[0], potentialArgsFlags...)
+
+	cmd := exec.Command("sh", "-c", freetextCmd)
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("error: '%w', output: %v", err, string(output))
+		return "", fmt.Errorf("run freetext command %q: %w, output: %v", freetextCmd, err, string(output))
 	}
 	return string(output), nil
 }
