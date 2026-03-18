@@ -166,6 +166,36 @@ func TestApplyPatchTool_Call_WithScopedHunkContext(t *testing.T) {
 	}
 }
 
+func TestApplyPatchTool_Call_WithRepeatedContextAnchors(t *testing.T) {
+	tempDir := t.TempDir()
+	path := filepath.Join(tempDir, "existing.txt")
+	err := os.WriteFile(path, []byte("target\nold\nshared\nother\nshared\nkeep\n"), 0o644)
+	if err != nil {
+		t.Fatalf("write existing file: %v", err)
+	}
+
+	patch := fmt.Sprintf(`*** Begin Patch
+*** Update File: %s
+@@
+ shared
+-keep
++KEPT
+*** End Patch`, path)
+
+	_, err = ApplyPatchTool{}.Call(pub_models.Input{"patch": patch})
+	if err != nil {
+		t.Fatalf("call apply_patch with repeated anchors: %v", err)
+	}
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read patched file: %v", err)
+	}
+	if string(got) != "target\nold\nshared\nother\nshared\nKEPT\n" {
+		t.Fatalf("unexpected patched content: %q", string(got))
+	}
+}
+
 func TestApplyPatchTool_Errors(t *testing.T) {
 	tool := ApplyPatchTool{}
 

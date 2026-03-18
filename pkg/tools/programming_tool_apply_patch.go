@@ -23,6 +23,11 @@ type patchOperation struct {
 	lineNumber int
 }
 
+type diffHunk struct {
+	oldStart int
+	lines    []string
+}
+
 const (
 	patchKindAdd    = "add"
 	patchKindUpdate = "update"
@@ -257,54 +262,23 @@ func applyDiff(original string, diffLines []string, endOfFile bool) (string, err
 	idx := 0
 	out := make([]string, 0, len(origLines))
 
-	for _, line := range diffLines {
-		if strings.TrimSpace(line) == "*** End of File" {
-			endOfFile = true
-			continue
-		}
-		if strings.HasPrefix(line, "@@") {
-			rangeStart, err := parseUnifiedDiffOldRange(line)
-			if err != nil {
-				return "", fmt.Errorf("apply diff parse hunk header %q: %w", line, err)
-			}
-			if rangeStart > 0 {
-				targetIdx := rangeStart - 1
-				if targetIdx < idx || targetIdx > len(origLines) {
-					return "", fmt.Errorf("apply diff hunk header %q: %w", line, fmt.Errorf("target index %d out of bounds", targetIdx))
-				}
-				out = append(out, origLines[idx:targetIdx]...)
-				idx = targetIdx
-			}
-			continue
-		}
-		if line == "" {
-			return "", fmt.Errorf("apply diff: %w", errors.New("diff line missing prefix"))
-		}
+	hunks, err := splitDiffIntoHunks(diffLines)
+	if err != nil {
+		return "", fmt.Errorf("apply diff split hunks: %w", err)
+	}
 
-		prefix := line[0]
-		content := line[1:]
-		switch prefix {
-		case ' ':
-			matchIdx, err := findMatchingContextStart(origLines, idx, content)
-			if err != nil {
-				return "", fmt.Errorf("apply diff: %w", err)
-			}
-			out = append(out, origLines[idx:matchIdx]...)
-			out = append(out, content)
-			idx = matchIdx + 1
-		case '-':
-			if idx >= len(origLines) {
-				return "", fmt.Errorf("apply diff: %w", errors.New("delete beyond end of file"))
-			}
-			if origLines[idx] != content {
-				return "", fmt.Errorf("apply diff: %w", fmt.Errorf("delete mismatch: expected %q, got %q", origLines[idx], content))
-			}
-			idx++
-		case '+':
-			out = append(out, content)
-		default:
-			return "", fmt.Errorf("apply diff: %w", fmt.Errorf("invalid diff prefix %q", string(prefix)))
+	for _, hunk := range hunks {
+		matchIdx, err := findHunkStart(origLines, idx, hunk)
+		if err != nil {
+			return "", fmt.Errorf("apply diff find hunk start: %w", err)
 		}
+		out = append(out, origLines[idx:matchIdx]...)
+		updatedLines, consumed, err := applyHunkAt(origLines, matchIdx, hunk)
+		if err != nil {
+			return "", fmt.Errorf("apply diff apply hunk at %d: %w", matchIdx, err)
+		}
+		out = append(out, updatedLines...)
+		idx = matchIdx + consumed
 	}
 	if idx < len(origLines) {
 		out = append(out, origLines[idx:]...)
@@ -316,13 +290,127 @@ func applyDiff(original string, diffLines []string, endOfFile bool) (string, err
 	return result, nil
 }
 
-func findMatchingContextStart(lines []string, startIdx int, content string) (int, error) {
-	for i := startIdx; i < len(lines); i++ {
-		if lines[i] == content {
+func splitDiffIntoHunks(diffLines []string) ([]diffHunk, error) {
+	var hunks []diffHunk
+	current := diffHunk{}
+	haveCurrent := false
+
+	flush := func() error {
+		if !haveCurrent {
+			return nil
+		}
+		if len(current.lines) == 0 {
+			return fmt.Errorf("empty hunk")
+		}
+		hunks = append(hunks, current)
+		current = diffHunk{}
+		haveCurrent = false
+		return nil
+	}
+
+	for _, line := range diffLines {
+		if strings.TrimSpace(line) == "*** End of File" {
+			continue
+		}
+		if strings.HasPrefix(line, "@@") {
+			if err := flush(); err != nil {
+				return nil, fmt.Errorf("flush previous hunk: %w", err)
+			}
+			oldStart, err := parseUnifiedDiffOldRange(line)
+			if err != nil {
+				return nil, fmt.Errorf("parse hunk header %q: %w", line, err)
+			}
+			current = diffHunk{oldStart: oldStart}
+			haveCurrent = true
+			continue
+		}
+		if line == "" {
+			return nil, fmt.Errorf("diff line missing prefix: %w", errors.New("empty line"))
+		}
+		prefix := line[0]
+		if prefix != ' ' && prefix != '+' && prefix != '-' {
+			return nil, fmt.Errorf("invalid diff prefix %q", string(prefix))
+		}
+		if !haveCurrent {
+			current = diffHunk{}
+			haveCurrent = true
+		}
+		current.lines = append(current.lines, line)
+	}
+
+	if err := flush(); err != nil {
+		return nil, fmt.Errorf("flush final hunk: %w", err)
+	}
+	if len(hunks) == 0 {
+		return nil, fmt.Errorf("no hunks found")
+	}
+	return hunks, nil
+}
+
+func findHunkStart(lines []string, startIdx int, hunk diffHunk) (int, error) {
+	if hunk.oldStart > 0 {
+		targetIdx := hunk.oldStart - 1
+		if targetIdx >= startIdx && targetIdx <= len(lines) && hunkMatchesAt(lines, targetIdx, hunk) {
+			return targetIdx, nil
+		}
+	}
+	for i := startIdx; i <= len(lines); i++ {
+		if hunkMatchesAt(lines, i, hunk) {
 			return i, nil
 		}
 	}
-	return 0, fmt.Errorf("context mismatch: %w", fmt.Errorf("expected one of remaining lines to equal %q", content))
+	return 0, fmt.Errorf("no matching hunk position from line %d", startIdx+1)
+}
+
+func hunkMatchesAt(lines []string, start int, hunk diffHunk) bool {
+	idx := start
+	for _, line := range hunk.lines {
+		content := line[1:]
+		switch line[0] {
+		case ' ', '-':
+			if idx >= len(lines) || lines[idx] != content {
+				return false
+			}
+			idx++
+		case '+':
+			continue
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func applyHunkAt(lines []string, start int, hunk diffHunk) ([]string, int, error) {
+	idx := start
+	updated := make([]string, 0, len(hunk.lines))
+	for _, line := range hunk.lines {
+		content := line[1:]
+		switch line[0] {
+		case ' ':
+			if idx >= len(lines) {
+				return nil, 0, fmt.Errorf("context beyond end of file")
+			}
+			if lines[idx] != content {
+				return nil, 0, fmt.Errorf("context mismatch: expected %q, got %q", lines[idx], content)
+			}
+			updated = append(updated, content)
+			idx++
+		case '-':
+			if idx >= len(lines) {
+				return nil, 0, fmt.Errorf("delete beyond end of file")
+			}
+			if lines[idx] != content {
+				return nil, 0, fmt.Errorf("delete mismatch: expected %q, got %q", lines[idx], content)
+			}
+			idx++
+		case '+':
+			updated = append(updated, content)
+		default:
+			return nil, 0, fmt.Errorf("invalid diff prefix %q", string(line[0]))
+		}
+	}
+	return updated, idx - start, nil
 }
 
 func parseUnifiedDiffOldRange(header string) (int, error) {
