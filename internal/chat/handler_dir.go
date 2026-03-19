@@ -9,20 +9,33 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/baalimago/clai/internal/cost"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
 type chatDirInfo struct {
-	Scope               string         `json:"scope"`
-	ChatID              string         `json:"chat_id"`
-	Profile             string         `json:"profile,omitempty"`
-	Updated             string         `json:"updated,omitempty"`
-	ConversationCreated string         `json:"conversation_created,omitempty"`
-	RepliesByRole       map[string]int `json:"replies_by_role"`
-	InputTokens         int            `json:"input_tokens"`
-	OutputTokens        int            `json:"output_tokens"`
-	initialMessage      string         `json:"-"`
+	Scope                string           `json:"scope"`
+	ChatID               string           `json:"chat_id"`
+	Profile              string           `json:"profile,omitempty"`
+	Updated              string           `json:"updated,omitempty"`
+	ConversationCreated  string           `json:"conversation_created,omitempty"`
+	RepliesByRole        map[string]int   `json:"replies_by_role"`
+	InputTokens          int              `json:"input_tokens"`
+	NonCachedInputTokens int              `json:"non_cached_input_tokens"`
+	CachedTokens         int              `json:"cached_tokens"`
+	OutputTokens         int              `json:"output_tokens"`
+	CostUSD              float64          `json:"cost_usd,omitempty"`
+	Cost                 string           `json:"cost,omitempty"`
+	Price                chatDirPriceInfo `json:"price,omitempty"`
+	initialMessage       string           `json:"-"`
+}
+
+type chatDirPriceInfo struct {
+	Input  string `json:"input,omitempty"`
+	Cached string `json:"cached,omitempty"`
+	Output string `json:"output,omitempty"`
+	Total  string `json:"total,omitempty"`
 }
 
 func (cdi chatDirInfo) initialPrompt() string {
@@ -38,9 +51,16 @@ chat id: %v
 prompt: %v%v
 replies by role:
 %v
+total cost: %v
 tokens used:
 	input: %v
+	cached: %v
 	output: %v
+price details:
+	input: %v
+	cached: %v
+	output: %v
+	total: %v
 `
 
 func (cq *ChatHandler) dirInfo() error {
@@ -80,10 +100,30 @@ func (cq *ChatHandler) dirInfo() error {
 		info.initialPrompt(),
 		profileOut,
 		rolesOut.String(),
+		info.costString(),
 		info.InputTokens,
+		info.CachedTokens,
 		info.OutputTokens,
+		info.Price.Input,
+		info.Price.Cached,
+		info.Price.Output,
+		info.priceTotalString(),
 	)
 	return nil
+}
+
+func (cdi chatDirInfo) costString() string {
+	if cdi.Cost != "" {
+		return cdi.Cost
+	}
+	return "N/A"
+}
+
+func (cdi chatDirInfo) priceTotalString() string {
+	if cdi.Price.Total != "" {
+		return cdi.Price.Total
+	}
+	return cdi.costString()
 }
 
 func (cq *ChatHandler) resolveChatDirInfo() (chatDirInfo, error) {
@@ -145,7 +185,31 @@ func (cq *ChatHandler) infoFromChat(scope, chatID string, c pub_models.Chat) cha
 
 	if c.TokenUsage != nil {
 		cdi.InputTokens = c.TokenUsage.PromptTokens
+		cdi.CachedTokens = c.TokenUsage.PromptTokensDetails.CachedTokens
+		cdi.NonCachedInputTokens = max(c.TokenUsage.PromptTokens-cdi.CachedTokens, 0)
 		cdi.OutputTokens = c.TokenUsage.CompletionTokens
+	}
+	if c.HasCostEstimates() {
+		cdi.CostUSD = c.TotalCostUSD()
+		cdi.Cost = cost.FormatUSD(c.TotalCostUSD())
+		lastQuery := c.Queries[len(c.Queries)-1]
+		cachedTokens := lastQuery.Usage.PromptTokensDetails.CachedTokens
+		nonCachedTokens := max(lastQuery.Usage.PromptTokens-cachedTokens, 0)
+		totalCost := lastQuery.CostUSD
+		inputCost := 0.0
+		cachedCost := 0.0
+		outputCost := 0.0
+		if totalTokens := nonCachedTokens + cachedTokens + lastQuery.Usage.CompletionTokens; totalTokens > 0 && totalCost > 0 {
+			inputCost = totalCost * float64(nonCachedTokens) / float64(totalTokens)
+			cachedCost = totalCost * float64(cachedTokens) / float64(totalTokens)
+			outputCost = totalCost * float64(lastQuery.Usage.CompletionTokens) / float64(totalTokens)
+		}
+		cdi.Price = chatDirPriceInfo{
+			Input:  cost.FormatUSD(inputCost),
+			Cached: cost.FormatUSD(cachedCost),
+			Output: cost.FormatUSD(outputCost),
+			Total:  cost.FormatUSD(totalCost),
+		}
 	}
 
 	return cdi

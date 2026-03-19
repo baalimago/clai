@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/baalimago/clai/internal/chat"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -29,6 +28,7 @@ const (
 type Querier[C models.StreamCompleter] struct {
 	Raw                     bool
 	chat                    pub_models.Chat
+	callStackLevel          int
 	username                string
 	termWidth               int
 	lineCount               int
@@ -42,10 +42,7 @@ type Querier[C models.StreamCompleter] struct {
 	Model                   C
 	tokenWarnLimit          int
 	toolOutputRuneLimit     int
-	execErr                 error
-	rateLimitRetries        int
 	rateLimitLastAmTokens   int
-	rateLimitRecursionLevel int
 
 	// Output of the querier. This is used mostly when Querier is invoked as an agent
 	out io.Writer
@@ -59,46 +56,11 @@ type Querier[C models.StreamCompleter] struct {
 
 	maxToolCalls *int
 	amToolCalls  int
-}
 
-func (q *Querier[C]) handleRateLimitErr(ctx context.Context, rateLimitErr models.ErrRateLimit) error {
-	q.rateLimitRetries++
-	counter, ok := any(q.Model).(models.InputTokenCounter)
-	if ok {
-		inCount, err := counter.CountInputTokens(ctx, q.chat)
-		if err != nil {
-			return fmt.Errorf("failed to count tokens: %w", err)
-		}
-		waitDur := time.Until(rateLimitErr.ResetAt)
-		if waitDur < time.Second {
-			ancli.Warnf("rate limit wait duration less than 1 second, setting to %v", FallbackWaitDuration)
-			waitDur = FallbackWaitDuration
-		}
-		// Increase wait time if the rate limit 'didnt work', as in, gradually reduce amount of tokens
-		// which can be used. But only by a factor of 20%
-		if inCount < int(float64(q.rateLimitLastAmTokens)*0.8) {
-			waitDur *= 2
-			ancli.Warnf("am of input tokens is: %v, which is: %v lower than last. Exp-increasing sleep to: %v",
-				inCount,
-				q.rateLimitLastAmTokens-inCount,
-				waitDur,
-			)
-		}
-		time.Sleep(waitDur)
-		q.rateLimitLastAmTokens = inCount
-		q.rateLimitRecursionLevel++
-		// Retry by using the new chat and querying once more. Will fill call stack.
-		q.reset()
-		return q.Query(ctx)
-	}
-
-	// No fancy logic, just sleep a while
-	ancli.Warnf("detected rate limit at: %v tokens, will sleep until: %v\n", rateLimitErr.TokensRemaining, rateLimitErr.ResetAt)
-	time.Sleep(time.Until(rateLimitErr.ResetAt.Add(time.Second * 10)))
-	// Recursively call. This will look a bit wonky but should cause no side effects as post process
-	// deferral is called below
-	q.reset()
-	return q.Query(ctx)
+	costManager       CostManager
+	costMgrRdyChan    <-chan struct{}
+	costMgrErrChan    <-chan error
+	callUsageRecorder CallUsageRecorder
 }
 
 func (q *Querier[C]) tokenLengthWarning() error {
@@ -136,55 +98,6 @@ func (q *Querier[C]) countTokens() int {
 		ret += len(strings.Split(msg.Content, " "))
 	}
 	return int(float64(ret) * TokenCountFactor)
-}
-
-func (q *Querier[C]) postProcess() {
-	if q.debug {
-		ancli.Noticef("post process querier: %+v", q)
-	}
-	if q.Raw {
-		// Print a new line, otherwise cursor remains on the same position on
-		// the next contet block
-		fmt.Fprintln(q.out)
-	}
-	// This is to ensure that it only post-processes once in recursive calls
-	if q.hasPrinted {
-		return
-	}
-	q.hasPrinted = true
-
-	// Append the assistant response if we received any content
-	if q.fullMsg != "" {
-		newSysMsg := pub_models.Message{
-			Role:    "system",
-			Content: q.fullMsg,
-		}
-		q.chat.Messages = append(q.chat.Messages, newSysMsg)
-	}
-
-	// Always save the conversation when configured to do so, even on errors
-	// or when no tokens were received. This preserves the user's messages
-	// so the conversation context is not lost.
-	if q.shouldSaveReply {
-		err := chat.SaveAsPreviousQuery(q.configDir, q.chat)
-		if err != nil {
-			ancli.PrintErr(fmt.Sprintf("failed to save previous query: %v\n", err))
-		}
-	}
-
-	if q.debug {
-		ancli.PrintOK(fmt.Sprintf("Querier.postProcess:\n%v\n", debug.IndentedJsonFmt(q)))
-	}
-
-	// Nothing to render if message is empty (happens during tool calls sometimes)
-	if q.fullMsg == "" {
-		return
-	}
-
-	q.postProcessOutput(pub_models.Message{
-		Role:    "system",
-		Content: q.fullMsg,
-	})
 }
 
 func (q *Querier[C]) postProcessOutput(newSysMsg pub_models.Message) {
@@ -225,13 +138,30 @@ func (q *Querier[C]) postProcessOutput(newSysMsg pub_models.Message) {
 	utils.AttemptPrettyPrint(q.out, newSysMsg, q.username, q.Raw)
 }
 
-func (q *Querier[C]) reset() {
-	q.execErr = nil
+func (q *Querier[C]) postProcess() {
+	session := &QuerySession{
+		Chat:               q.chat,
+		ShouldSaveReply:    q.shouldSaveReply,
+		Raw:                q.Raw,
+		FinalAssistantText: q.fullMsg,
+		FinalUsage:         q.chat.TokenUsage,
+		Finalized:          q.hasPrinted,
+		Line:               q.line,
+		LineCount:          q.lineCount,
+	}
+	sessionFinalizer[C]{querier: q}.Finalize(session)
+	q.chat = session.Chat
+	q.fullMsg = session.FinalAssistantText
+	q.line = session.Line
+	q.lineCount = session.LineCount
+	q.hasPrinted = session.Finalized
+}
+
+func (q *Querier[C]) resetTransientState() {
 	q.fullMsg = ""
 	q.line = ""
 	q.lineCount = 0
 	q.hasPrinted = false
-	q.rateLimitRetries = 0
 }
 
 func (q *Querier[C]) handleToken(token string) {
@@ -245,35 +175,30 @@ func (q *Querier[C]) handleToken(token string) {
 	}
 }
 
-func (q *Querier[C]) handleCompletion(ctx context.Context, completion models.CompletionEvent) error {
-	switch cast := completion.(type) {
-	case pub_models.Call:
-		return q.handleToolCall(ctx, cast)
-	case string:
-		q.handleToken(cast)
-		return nil
-	case error:
-		return fmt.Errorf("completion stream error: %w", cast)
-	case models.NoopEvent:
-		return nil
-	case models.StopEvent:
-		contextCancel := ctx.Value(utils.ContextCancelKey)
-		castContextCancel, ok := contextCancel.(context.CancelFunc)
-		if ok {
-			// If the context lacks key to cancel context, we're not nested and
-			// not called from clai (invoked via package). If this is the case, simply
-			// return
-			castContextCancel()
-		}
-		return nil
-	case nil:
-		if q.debug {
-			ancli.PrintWarn("received nil completion event, which is slightly weird, but not necessarily an error")
-		}
-		return nil
-	default:
-		return fmt.Errorf("unknown completion type: %v", completion)
+func (q *Querier[C]) handleTokenForSession(session *QuerySession, token string) {
+	w := q.out
+	if w == nil {
+		w = os.Stdout
 	}
+	session.AppendPendingText(token)
+	q.fullMsg = session.PendingTextString()
+	if !q.debug {
+		fmt.Fprint(w, token)
+	}
+}
+
+func (q *Querier[C]) currentTokenUsage() *pub_models.Usage {
+	tokenCounter, isModelCounter := any(q.Model).(models.UsageTokenCounter)
+	if !isModelCounter {
+		if q.debug {
+			ancli.Okf("is not usage token counter")
+		}
+		return nil
+	}
+	if q.debug && tokenCounter.TokenUsage() != nil {
+		ancli.Okf("token usage: %v", *tokenCounter.TokenUsage())
+	}
+	return tokenCounter.TokenUsage()
 }
 
 // Query using the underlying model to stream completions and then print the output
@@ -283,75 +208,32 @@ func (q *Querier[C]) Query(ctx context.Context) error {
 	if q.out == nil {
 		q.out = os.Stdout
 	}
-	// Ensure we always persist the conversation in reply mode, even when we fail
-	// before we've started streaming completions.
-	defer q.postProcess()
-
-	if q.rateLimitRetries > RateLimitRetries {
-		return fmt.Errorf("rate limit retry limit exceeded (%v), giving up", RateLimitRetries)
+	session := &QuerySession{
+		Chat:            q.chat,
+		ShouldSaveReply: q.shouldSaveReply,
+		Raw:             q.Raw,
+		Line:            q.line,
+		LineCount:       q.lineCount,
 	}
-	err := q.tokenLengthWarning()
-	if err != nil {
-		return fmt.Errorf("Querier.Query: %w", err)
+	runner := sessionRunner[C]{
+		querier:      q,
+		recorder:     q.callUsageRecorder,
+		toolExecutor: toolExecutor[C]{querier: q},
+		finalizer:    sessionFinalizer[C]{querier: q},
 	}
-	completionsChan, err := q.Model.StreamCompletions(ctx, q.chat)
-	if err != nil {
-		var rateLimitErr *models.ErrRateLimit
-		if errors.As(err, &rateLimitErr) {
-			return q.handleRateLimitErr(ctx, *rateLimitErr)
-		}
-		return fmt.Errorf("failed to stream completions: %w", err)
-	}
-
-	defer func() {
-		tokenCounter, isModelCounter := any(q.Model).(models.UsageTokenCounter)
-		if !isModelCounter {
-			if q.debug {
-				ancli.Okf("is not usage token counter")
-			}
-			return
-		}
-		if q.debug {
-			ancli.Okf("token usage: %v", *tokenCounter.TokenUsage())
-		}
-		q.chat.TokenUsage = tokenCounter.TokenUsage()
-	}()
-
-	for {
-		select {
-		case completion, ok := <-completionsChan:
-			// Channel most likely gracefully closed
-			if !ok {
-				if q.debug {
-					ancli.PrintOK("exiting querier due to closed channel\n")
-				}
-				return nil
-			}
-			err := q.handleCompletion(ctx, completion)
-			if err != nil {
-				// check if error is context canceled or EOF, return nil as these are expected and handeled elsewhere
-				// where is "elsewhere?" not 100% sure. - LK 25-11
-				if errors.Is(err, context.Canceled) || errors.Is(err, io.EOF) {
-					if q.debug {
-						ancli.PrintOK("exiting querier due to EOF error\n")
-					}
-					return nil
-				}
-				// Only add error if its not EOF or context.Canceled
-				q.execErr = err
-				return fmt.Errorf("failed to handle completion: %w", err)
-			}
-		case <-ctx.Done():
-			if q.debug {
-				ancli.PrintOK("exiting querier due to context cancelation\n")
-			}
-			return nil
-		}
-	}
+	err := runner.Run(ctx, session)
+	q.chat = session.Chat
+	q.fullMsg = session.FinalAssistantText
+	q.line = session.Line
+	q.lineCount = session.LineCount
+	q.hasPrinted = session.Finalized
+	q.amToolCalls = session.ToolCallsUsed
+	q.isLikelyGemini3Preview = session.LikelyGeminiPreview
+	return err
 }
 
 func (q *Querier[C]) TextQuery(ctx context.Context, chat pub_models.Chat) (pub_models.Chat, error) {
-	q.reset()
+	q.resetTransientState()
 	q.chat = chat
 	// Query will update the chat with the latest system message
 	err := q.Query(ctx)

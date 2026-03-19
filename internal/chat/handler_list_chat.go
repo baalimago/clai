@@ -10,6 +10,7 @@ import (
 	"slices"
 	"unicode/utf8"
 
+	"github.com/baalimago/clai/internal/cost"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
@@ -33,6 +34,13 @@ func chatListTokenStr(item pub_models.Chat) string {
 	}
 	f := float64(v) / 1000.0
 	return fmt.Sprintf("%.3fK", f)
+}
+
+func chatListCostStr(item pub_models.Chat) string {
+	if !item.HasCostEstimates() {
+		return "N/A"
+	}
+	return cost.FormatUSD(item.TotalCostUSD())
 }
 
 func (cq *ChatHandler) actOnChat(ctx context.Context, chat pub_models.Chat) error {
@@ -141,24 +149,16 @@ func (cq *ChatHandler) handleListCmd(ctx context.Context) error {
 	return cq.listChats(ctx, chats)
 }
 
-func (cq *ChatHandler) listChats(
-	ctx context.Context,
-	chats []pub_models.Chat,
-) error {
-	ancli.PrintOK(
-		fmt.Sprintf(
-			"found '%v' conversations:\n",
-			len(chats),
-		),
-	)
+func (cq *ChatHandler) listChats(ctx context.Context, chats []pub_models.Chat) error {
+	ancli.PrintOK(fmt.Sprintf("found '%v' conversations:\n", len(chats)))
 
 	tblFmt := selectChatTblFormat
-	headArgs := []any{"Index", "Created", "Messages", "Tokens", "Prompt"}
+	headArgs := []any{"Index", "Created", "Messages", "Cost", "Prompt"}
 	includeProfile := false
 	if tw, err := utils.TermWidth(); err == nil && tw > 120 {
 		includeProfile = true
-		tblFmt = "%-6s| %-20s| %-8v | %-10s | %-6s | %v"
-		headArgs = []any{"Index", "Created", "Messages", "Profile", "Tokens", "Prompt"}
+		tblFmt = "%-6s| %-20s| %-8v | %-10s | %-8s | %-6s | %v"
+		headArgs = []any{"Index", "Created", "Messages", "Profile", "Cost", "Tokens", "Prompt"}
 	}
 
 	selectedNumbers, err := utils.SelectFromTable(
@@ -167,6 +167,7 @@ func (cq *ChatHandler) listChats(
 		selectChatTblChoicesFormat,
 		func(i int, item pub_models.Chat) (string, error) {
 			tokenStr := chatListTokenStr(item)
+			costStr := chatListCostStr(item)
 
 			firstMessages := ""
 			uMsg, uMsgErr := item.FirstUserMessage()
@@ -181,6 +182,7 @@ func (cq *ChatHandler) listChats(
 					item.Created.Format("2006-01-02 15:04:05"),
 					len(item.Messages),
 					item.Profile,
+					costStr,
 					tokenStr,
 					"",
 				)
@@ -196,7 +198,7 @@ func (cq *ChatHandler) listChats(
 				fmt.Sprintf("%v", i),
 				item.Created.Format("2006-01-02 15:04:05"),
 				len(item.Messages),
-				tokenStr,
+				costStr,
 				"",
 			)
 			withSummary, err := utils.WidthAppropriateStringTrunc(firstMessages, prefix, 15)
@@ -239,6 +241,7 @@ func (cq *ChatHandler) printChatInfo(w io.Writer, chat pub_models.Chat) error {
 	header := utils.Colorize(utils.ThemePrimaryColor(), "=== Chat info ===")
 	fileKey := utils.Colorize(utils.ThemePrimaryColor(), "file path:")
 	createdKey := utils.Colorize(utils.ThemePrimaryColor(), "created_at:")
+	costKey := utils.Colorize(utils.ThemePrimaryColor(), "total cost:")
 	amRepliesKey := utils.Colorize(utils.ThemePrimaryColor(), "am replies:")
 	userRole := utils.Colorize(utils.RoleColor("user"), "user:")
 	toolRole := utils.Colorize(utils.RoleColor("tool"), "tool:")
@@ -254,6 +257,9 @@ func (cq *ChatHandler) printChatInfo(w io.Writer, chat pub_models.Chat) error {
 	}
 	if _, err := fmt.Fprintf(w, "%s %s\n", createdKey, utils.Colorize(bread, fmt.Sprintf("%v", chat.Created))); err != nil {
 		return fmt.Errorf("write created at: %w", err)
+	}
+	if _, err := fmt.Fprintf(w, "%s %s\n", costKey, utils.Colorize(bread, chatListCostStr(chat))); err != nil {
+		return fmt.Errorf("write total cost: %w", err)
 	}
 	if _, err := fmt.Fprintf(w, "%s\n", amRepliesKey); err != nil {
 		return fmt.Errorf("write am replies key: %w", err)
@@ -323,34 +329,16 @@ func editorEditString(toEdit string) (string, error) {
 	return string(b), nil
 }
 
-func (cq *ChatHandler) deleteMessageInChat(
-	chat pub_models.Chat,
-) error {
-	head := fmt.Sprintf(
-		editMessageTblFormat,
-		"Index",
-		"Role",
-		"Length",
-		"Summary",
-	)
+func (cq *ChatHandler) deleteMessageInChat(chat pub_models.Chat) error {
+	head := fmt.Sprintf(editMessageTblFormat, "Index", "Role", "Length", "Summary")
 	selectedIndices, err := utils.SelectFromTable(
 		head,
 		chat.Messages,
 		deleteMessagesChoicesFormat,
 		func(i int, t pub_models.Message) (string, error) {
-			prefix := fmt.Sprintf(
-				editMessageTblFormat,
-				i,
-				t.Role,
-				utf8.RuneCount([]byte(t.Content)),
-				"",
-			)
+			prefix := fmt.Sprintf(editMessageTblFormat, i, t.Role, utf8.RuneCount([]byte(t.Content)), "")
 
-			withSummary, err := utils.WidthAppropriateStringTrunc(
-				t.Content,
-				prefix,
-				25,
-			)
+			withSummary, err := utils.WidthAppropriateStringTrunc(t.Content, prefix, 25)
 			if err != nil {
 				return "", fmt.Errorf("failed to get widthAppropriateChatSummary: %w", err)
 			}
@@ -370,11 +358,7 @@ func (cq *ChatHandler) deleteMessageInChat(
 		idxSet[idx] = struct{}{}
 	}
 
-	filtered := make(
-		[]pub_models.Message,
-		0,
-		len(chat.Messages),
-	)
+	filtered := make([]pub_models.Message, 0, len(chat.Messages))
 	for i, m := range chat.Messages {
 		if _, ok := idxSet[i]; ok {
 			continue
@@ -387,11 +371,7 @@ func (cq *ChatHandler) deleteMessageInChat(
 		return fmt.Errorf("failed to save chat: %w", err)
 	}
 
-	ancli.Okf(
-		"modified chat: '%v', deleted messages: '%v'",
-		chat.ID,
-		selectedIndices,
-	)
+	ancli.Okf("modified chat: '%v', deleted messages: '%v'", chat.ID, selectedIndices)
 	return nil
 }
 
@@ -402,13 +382,7 @@ func (cq *ChatHandler) editMessageInChat(chat pub_models.Chat) error {
 		chat.Messages,
 		editMessageChoicesFormat,
 		func(i int, t pub_models.Message) (string, error) {
-			prefix := fmt.Sprintf(
-				editMessageTblFormat,
-				i,
-				t.Role,
-				utf8.RuneCount([]byte(t.Content)),
-				"",
-			)
+			prefix := fmt.Sprintf(editMessageTblFormat, i, t.Role, utf8.RuneCount([]byte(t.Content)), "")
 
 			withSummary, err := utils.WidthAppropriateStringTrunc(t.Content, prefix, 25)
 			if err != nil {

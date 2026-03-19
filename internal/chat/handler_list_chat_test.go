@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -100,5 +101,62 @@ func TestActOnChat_enter_continues(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("expected dirscope binding for chat id %q not found", id)
+	}
+}
+
+func TestChatListCostFormattingHelpers(t *testing.T) {
+	chatWithCost := pub_models.Chat{Queries: []pub_models.QueryCost{{CostUSD: 1.2}, {CostUSD: 0.034}}}
+	chatWithoutCost := pub_models.Chat{}
+
+	if got := chatListCostStr(chatWithCost); got != "$1.23" {
+		t.Fatalf("cost string mismatch: got %q", got)
+	}
+	if got := chatListCostStr(chatWithoutCost); got != "N/A" {
+		t.Fatalf("expected N/A, got %q", got)
+	}
+}
+
+func TestPrintChatInfo_ShowsCost(t *testing.T) {
+	confDir := t.TempDir()
+	if err := utils.CreateConfigDir(confDir); err != nil {
+		t.Fatalf("CreateConfigDir: %v", err)
+	}
+	oldConf := os.Getenv("CLAI_CONFIG_DIR")
+	if err := os.Setenv("CLAI_CONFIG_DIR", confDir); err != nil {
+		t.Fatalf("set CLAI_CONFIG_DIR: %v", err)
+	}
+	defer func() {
+		if err := os.Setenv("CLAI_CONFIG_DIR", oldConf); err != nil {
+			t.Fatalf("restore CLAI_CONFIG_DIR: %v", err)
+		}
+	}()
+
+	chatWithCost := pub_models.Chat{
+		ID:       "chat-with-cost",
+		Created:  time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
+		Messages: []pub_models.Message{{Role: "user", Content: "hello"}},
+		Queries:  []pub_models.QueryCost{{CostUSD: 14.53}},
+	}
+	chatWithoutCost := pub_models.Chat{
+		ID:       "chat-without-cost",
+		Created:  time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
+		Messages: []pub_models.Message{{Role: "user", Content: "hello"}},
+	}
+
+	var out strings.Builder
+	cq := &ChatHandler{out: &out}
+	if err := cq.printChatInfo(&out, chatWithCost); err != nil {
+		t.Fatalf("printChatInfo with cost: %v", err)
+	}
+	if !strings.Contains(out.String(), "$14.53") {
+		t.Fatalf("expected cost in output, got: %q", out.String())
+	}
+
+	out.Reset()
+	if err := cq.printChatInfo(&out, chatWithoutCost); err != nil {
+		t.Fatalf("printChatInfo without cost: %v", err)
+	}
+	if !strings.Contains(out.String(), "N/A") {
+		t.Fatalf("expected N/A in output, got: %q", out.String())
 	}
 }

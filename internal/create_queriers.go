@@ -201,7 +201,9 @@ func CreateTextQuerier(ctx context.Context, conf text.Configurations) (models.Qu
 				Model:      conf.Model,
 			},
 			conf.Raw,
-			conf.Out)
+			conf.Out,
+			conf.InitialChat.Queries,
+		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create chat querier: %w", err)
 		}
