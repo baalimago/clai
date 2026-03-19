@@ -15,9 +15,22 @@ import (
 
 	"github.com/baalimago/clai/internal/chat"
 	"github.com/baalimago/clai/internal/models"
+	inttools "github.com/baalimago/clai/internal/tools"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
+
+type stubTool struct {
+	output string
+}
+
+func (s stubTool) Call(pub_models.Input) (string, error) {
+	return s.output, nil
+}
+
+func (s stubTool) Specification() pub_models.Specification {
+	return pub_models.Specification{Name: "test"}
+}
 
 type MockQuerier struct {
 	Somefield   string `json:"somefield"`
@@ -145,94 +158,87 @@ func Test_Context(t *testing.T) {
 }
 
 func Test_Querier_eventHandling(t *testing.T) {
-	testCases := []struct {
-		desc  string
-		q     Querier[*MockQuerier]
-		given []models.CompletionEvent
-		want  string
-	}{
-		{
-			desc: "it should write token to writer",
-			q: Querier[*MockQuerier]{
-				Raw: true,
-				Model: &MockQuerier{
-					completionChan: make(
-						chan models.CompletionEvent),
+	inttools.WithTestRegistry(t, func() {
+		inttools.Registry.Set("test", stubTool{output: "testVal"})
+		testCases := []struct {
+			desc string
+			q    Querier[*MockQuerier]
+			run  func(t *testing.T, q *Querier[*MockQuerier]) string
+		}{
+			{
+				desc: "it should write token to writer",
+				q: Querier[*MockQuerier]{
+					Raw:   true,
+					Model: &MockQuerier{completionChan: make(chan models.CompletionEvent)},
+					out:   &strings.Builder{},
 				},
-				out: &strings.Builder{},
-			},
-			given: []models.CompletionEvent{
-				"test", "CLOSE",
-			},
-			want: "test",
-		},
-		{
-			desc: "token whitespace should be " +
-				"respected",
-			q: Querier[*MockQuerier]{
-				Raw: true,
-				Model: &MockQuerier{
-					completionChan: make(
-						chan models.CompletionEvent),
+				run: func(t *testing.T, q *Querier[*MockQuerier]) string {
+					t.Helper()
+					go func() {
+						q.Model.completionChan <- "test"
+						q.Model.completionChan <- "CLOSE"
+					}()
+					return "test"
 				},
-				out: &strings.Builder{},
 			},
-			given: []models.CompletionEvent{
-				" one", "two\n", "  three ",
-				"CLOSE",
-			},
-			want: " onetwo\n  three ",
-		},
-		{
-			desc: "it should call test function " +
-				"when asked to",
-			q: Querier[*MockQuerier]{
-				Raw: true,
-				Model: &MockQuerier{
-					completionChan: make(
-						chan models.CompletionEvent),
+			{
+				desc: "token whitespace should be respected",
+				q: Querier[*MockQuerier]{
+					Raw:   true,
+					Model: &MockQuerier{completionChan: make(chan models.CompletionEvent)},
+					out:   &strings.Builder{},
 				},
-				out: &strings.Builder{},
-			},
-			given: []models.CompletionEvent{
-				"first the model said something",
-				pub_models.Call{
-					Name: "test",
-					Inputs: &pub_models.Input{
-						"testKey": "testVal",
-					},
+				run: func(t *testing.T, q *Querier[*MockQuerier]) string {
+					t.Helper()
+					go func() {
+						q.Model.completionChan <- " one"
+						q.Model.completionChan <- "two\n"
+						q.Model.completionChan <- "  three "
+						q.Model.completionChan <- "CLOSE"
+					}()
+					return " onetwo\n  three "
 				},
-				"CLOSE",
 			},
-			want: "Call: 'test', inputs: [ " +
-				"'testKey': 'testVal' ]",
-		},
-	}
-	for _, tC := range testCases {
-		t.Run(tC.desc, func(t *testing.T) {
-			go func() {
-				for _, msg := range tC.given {
-					tC.q.Model.completionChan <- msg
+			{
+				desc: "it should call test function when asked to",
+				q:    Querier[*MockQuerier]{out: &strings.Builder{}},
+				run: func(t *testing.T, q *Querier[*MockQuerier]) string {
+					t.Helper()
+					call := pub_models.Call{
+						Name: "test",
+						Inputs: &pub_models.Input{
+							"testKey": "testVal",
+						},
+					}
+					if err := q.doToolCallLogic(call); err != nil {
+						t.Fatalf("doToolCallLogic returned err: %v", err)
+					}
+					return "Call: 'test', inputs: [ 'testKey': 'testVal' ]"
+				},
+			},
+		}
+		for _, tC := range testCases {
+			t.Run(tC.desc, func(t *testing.T) {
+				want := tC.run(t, &tC.q)
+				if tC.q.Model != nil {
+					err := tC.q.Query(context.Background())
+					if err != nil {
+						t.Fatalf("Query returned err: %v", err)
+					}
 				}
-			}()
 
-			err := tC.q.Query(context.Background())
-			if err != nil {
-				t.Fatalf("Query returned err: %v", err)
-			}
+				b, ok := tC.q.out.(*strings.Builder)
+				if !ok {
+					t.Fatalf("expected out to be *strings.Builder")
+				}
+				got := b.String()
 
-			b, ok := tC.q.out.(*strings.Builder)
-			if !ok {
-				t.Fatalf("expected out to be *strings.Builder")
-			}
-			got := b.String()
-
-			if !strings.Contains(got, tC.want) {
-				t.Fatalf("expected: %q, got: %q",
-					tC.want, got)
-			}
-		})
-	}
+				if !strings.Contains(got, want) {
+					t.Fatalf("expected: %q, got: %q", want, got)
+				}
+			})
+		}
+	})
 }
 
 func Test_Querier_Query_errors(t *testing.T) {
@@ -514,7 +520,7 @@ func Test_Querier_SavesConversation_WhenStreamSetupFailsDueToRateLimitTokenCount
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if !strings.Contains(err.Error(), "failed to count tokens") {
+	if !strings.Contains(err.Error(), "count input tokens: mock token count failure") {
 		t.Fatalf("expected token count error, got: %v", err)
 	}
 
@@ -1223,6 +1229,113 @@ func Test_Querier_Query_ToolCallRecursion_CostEnrichmentUsesFinalAssistantTurnTo
 	}
 	if enrichCalls != 1 {
 		t.Fatalf("expected 1 enrich call, got: %d", enrichCalls)
+	}
+}
+
+func Test_Querier_Query_ToolCallSession_PreservesFinalReplyRoleAndFinalUsage(t *testing.T) {
+	tmpConfigDir := path.Join(t.TempDir(), ".clai")
+	if err := os.MkdirAll(path.Join(tmpConfigDir, "conversations"), os.ModePerm); err != nil {
+		t.Fatalf("mkdir conversations: %v", err)
+	}
+
+	var enrichCalls int
+	costMgr := &mockCostManager{
+		t: t,
+		enrichFn: func(got pub_models.Chat) pub_models.Chat {
+			enrichCalls++
+			if got.TokenUsage == nil {
+				t.Fatalf("expected token usage to be populated before enrich")
+			}
+			if got.TokenUsage.PromptTokens != 3 {
+				t.Fatalf("prompt tokens mismatch: got %d want %d", got.TokenUsage.PromptTokens, 3)
+			}
+			if got.TokenUsage.CompletionTokens != 5 {
+				t.Fatalf("completion tokens mismatch: got %d want %d", got.TokenUsage.CompletionTokens, 5)
+			}
+			if got.TokenUsage.TotalTokens != 8 {
+				t.Fatalf("total tokens mismatch: got %d want %d", got.TokenUsage.TotalTokens, 8)
+			}
+			return got
+		},
+	}
+
+	model := &MockQuerier{}
+	callCount := 0
+	model.streamFn = func(
+		ctx context.Context,
+		chat pub_models.Chat,
+	) (chan models.CompletionEvent, error) {
+		callCount++
+		out := make(chan models.CompletionEvent, 4)
+		go func() {
+			defer close(out)
+			if callCount == 1 {
+				model.usage = &pub_models.Usage{
+					PromptTokens:     2,
+					CompletionTokens: 4,
+					TotalTokens:      6,
+				}
+				out <- pub_models.Call{
+					ID:   "call1",
+					Name: "pwd",
+				}
+				return
+			}
+			model.usage = &pub_models.Usage{
+				PromptTokens:     3,
+				CompletionTokens: 5,
+				TotalTokens:      8,
+			}
+			out <- "final answer"
+		}()
+		return out, nil
+	}
+
+	q := Querier[*MockQuerier]{
+		Raw:             true,
+		out:             &strings.Builder{},
+		shouldSaveReply: true,
+		configDir:       tmpConfigDir,
+		costManager:     costMgr,
+		costMgrRdyChan:  makeClosedChan(),
+		chat: pub_models.Chat{
+			ID:       "globalScope",
+			Messages: []pub_models.Message{{Role: "user", Content: "hello there"}},
+		},
+		Model: model,
+	}
+
+	if err := q.Query(context.Background()); err != nil {
+		t.Fatalf("Query returned err: %v", err)
+	}
+
+	saved, err := chat.LoadPrevQuery(tmpConfigDir)
+	if err != nil {
+		t.Fatalf("load prev query: %v", err)
+	}
+	if len(saved.Messages) != 4 {
+		t.Fatalf("expected 4 messages, got %d", len(saved.Messages))
+	}
+	if saved.Messages[3].Role != "system" {
+		t.Fatalf("expected final saved reply role system, got %+v", saved.Messages[3])
+	}
+	if saved.Messages[3].Content != "final answer" {
+		t.Fatalf("expected final answer, got %q", saved.Messages[3].Content)
+	}
+	if saved.TokenUsage == nil {
+		t.Fatal("expected token usage to be saved")
+	}
+	if saved.TokenUsage.TotalTokens != 8 {
+		t.Fatalf("expected final token usage total 8, got %d", saved.TokenUsage.TotalTokens)
+	}
+	if enrichCalls != 1 {
+		t.Fatalf("expected 1 enrich call, got: %d", enrichCalls)
+	}
+	if callCount != 2 {
+		t.Fatalf("expected 2 model calls, got: %d", callCount)
+	}
+	if q.callStackLevel != 0 {
+		t.Fatalf("expected final call stack level 0, got %d", q.callStackLevel)
 	}
 }
 
