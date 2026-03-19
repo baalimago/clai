@@ -2,10 +2,9 @@ package text
 
 import (
 	"context"
-	"errors"
+	"strings"
 	"testing"
 
-	"github.com/baalimago/clai/internal/models"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -56,96 +55,126 @@ func Test_checkIfGemini3Preview(t *testing.T) {
 }
 
 func Test_handleToolCall_GeminiLogic(t *testing.T) {
-	t.Run("should return nil and not call tool if Gemini 3 detected and no extra content", func(t *testing.T) {
+	t.Run("should return to user and not execute tool if Gemini 3 already detected and no extra content", func(t *testing.T) {
 		q := &Querier[*MockQuerier]{
 			isLikelyGemini3Preview: true,
-			// Model is nil, will panic if TextQuery is called
+		}
+		session := &QuerySession{
+			LikelyGeminiPreview: true,
 		}
 
-		call := pub_models.Call{
-			Name:         "some_tool",
-			ExtraContent: nil,
-		}
+		decision := q.decideToolCall(session, pub_models.Call{Name: "some_tool"})
 
-		err := q.handleToolCall(context.Background(), call)
-		if err != nil {
-			t.Errorf("expected nil error (early return), got: %v", err)
+		if !decision.TreatAsReturnToUser {
+			t.Fatal("expected TreatAsReturnToUser to be true")
+		}
+		if !decision.SkipExecution {
+			t.Fatal("expected SkipExecution to be true")
 		}
 	})
 
-	t.Run("should NOT return early if Gemini 3 detected AND extra content present", func(t *testing.T) {
-		mockModel := &MockQuerier{
-			errChan:        make(chan error, 1),
-			completionChan: make(chan models.CompletionEvent, 1),
-		}
-		mockModel.errChan <- errors.New("mock error to stop query")
-
+	t.Run("should execute tool if Gemini 3 detected and extra content present", func(t *testing.T) {
 		q := &Querier[*MockQuerier]{
 			isLikelyGemini3Preview: true,
-			Model:                  mockModel,
+		}
+		session := &QuerySession{
+			LikelyGeminiPreview: true,
 		}
 
-		call := pub_models.Call{
+		decision := q.decideToolCall(session, pub_models.Call{
 			Name: "some_tool",
 			ExtraContent: map[string]any{
 				"foo": "bar",
 			},
+		})
+
+		if decision.TreatAsReturnToUser {
+			t.Fatal("expected TreatAsReturnToUser to be false")
 		}
-
-		err := q.handleToolCall(context.Background(), call)
-
-		expectedErr := "failed to query after tool call: TextQuery: failed to handle completion: completion stream error: mock error to stop query"
-		if err == nil {
-			t.Error("expected error, got nil")
-		} else if err.Error() != expectedErr {
-			t.Errorf("expected error \n'%v'\n, got: \n'%v'", expectedErr, err)
+		if decision.SkipExecution {
+			t.Fatal("expected SkipExecution to be false")
+		}
+		if decision.PatchedCall.Name != "some_tool" {
+			t.Fatalf("expected patched call name preserved, got %q", decision.PatchedCall.Name)
 		}
 	})
 
-	t.Run("should detect Gemini 3 and return early in one pass", func(t *testing.T) {
-		mockModel := &MockQuerier{
-			errChan:        make(chan error, 1),
-			completionChan: make(chan models.CompletionEvent, 1),
-		}
+	t.Run("should detect Gemini 3 and then return early on later call without extra content", func(t *testing.T) {
+		q := &Querier[*MockQuerier]{}
+		session := &QuerySession{}
 
-		go func() {
-			mockModel.errChan <- errors.New("mock error to stop query")
-		}()
-
-		q := &Querier[*MockQuerier]{
-			isLikelyGemini3Preview: false,
-			Model:                  mockModel,
-		}
-
-		call1 := pub_models.Call{
+		firstDecision := q.decideToolCall(session, pub_models.Call{
 			Name: "some_tool",
 			ExtraContent: map[string]any{
 				"google": map[string]any{
 					"thought_signature": "confirmed",
 				},
 			},
+		})
+		if firstDecision.TreatAsReturnToUser {
+			t.Fatal("expected first Gemini preview call to still execute")
+		}
+		if !session.LikelyGeminiPreview {
+			t.Fatal("expected session likely Gemini preview to be set")
 		}
 
-		err := q.handleToolCall(context.Background(), call1)
-		expectedErr := "failed to query after tool call: TextQuery: failed to handle completion: completion stream error: mock error to stop query"
-		if err == nil {
-			t.Error("expected error, got nil")
-		} else if err.Error() != expectedErr {
-			t.Errorf("expected error \n'%v'\n, got: \n'%v'", expectedErr, err)
+		secondDecision := q.decideToolCall(session, pub_models.Call{Name: "some_tool"})
+		if !secondDecision.TreatAsReturnToUser {
+			t.Fatal("expected second call to return to user")
 		}
+		if !secondDecision.SkipExecution {
+			t.Fatal("expected second call to skip execution")
+		}
+	})
 
-		if !q.isLikelyGemini3Preview {
-			t.Error("expected isLikelyGemini3Preview to be set to true")
+	t.Run("tool executor should preserve streamed text as final assistant text when Gemini returns to user", func(t *testing.T) {
+		q := &Querier[*MockQuerier]{}
+		session := &QuerySession{
+			LikelyGeminiPreview: true,
 		}
+		session.AppendPendingText("partial answer")
 
-		// Second call has NO extra content. Should return early (no error).
-		call2 := pub_models.Call{
-			Name:         "some_tool",
-			ExtraContent: nil,
-		}
-		err = q.handleToolCall(context.Background(), call2)
+		err := toolExecutor[*MockQuerier]{querier: q}.Execute(context.TODO(), session, pub_models.Call{Name: "some_tool"})
 		if err != nil {
-			t.Errorf("expected nil error (early return), got: %v", err)
+			t.Fatalf("Execute returned err: %v", err)
+		}
+		if session.FinalAssistantText != "partial answer" {
+			t.Fatalf("expected final assistant text to be preserved, got %q", session.FinalAssistantText)
+		}
+		if got := session.PendingTextString(); got != "" {
+			t.Fatalf("expected pending text to be cleared, got %q", got)
+		}
+	})
+
+	t.Run("tool executor should append assistant and tool messages when Gemini call has extra content", func(t *testing.T) {
+		q := &Querier[*MockQuerier]{
+			out: &strings.Builder{},
+		}
+		session := &QuerySession{
+			LikelyGeminiPreview: true,
+			Chat: pub_models.Chat{
+				Messages: []pub_models.Message{{Role: "user", Content: "hello"}},
+			},
+		}
+
+		err := toolExecutor[*MockQuerier]{querier: q}.Execute(context.TODO(), session, pub_models.Call{
+			ID:   "call-1",
+			Name: "some_tool",
+			ExtraContent: map[string]any{
+				"foo": "bar",
+			},
+		})
+		if err != nil {
+			t.Fatalf("Execute returned err: %v", err)
+		}
+		if len(session.Chat.Messages) != 3 {
+			t.Fatalf("expected 3 messages, got %d", len(session.Chat.Messages))
+		}
+		if session.Chat.Messages[1].Role != "assistant" {
+			t.Fatalf("expected assistant tool call message, got %+v", session.Chat.Messages[1])
+		}
+		if session.Chat.Messages[2].Role != "tool" {
+			t.Fatalf("expected tool message, got %+v", session.Chat.Messages[2])
 		}
 	})
 }
