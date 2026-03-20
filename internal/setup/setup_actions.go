@@ -216,16 +216,18 @@ func actionReconfigureStringFieldWithEditor(cfg config, fieldName string) error 
 		}
 
 		choice, err := utils.SelectFromTable("Select field",
-			fields,
+			utils.SlicePaginator(fields),
 			"Select field <num>: ",
 			func(i int, t string) (string, error) {
 				return fmt.Sprintf("%v. %v", i, t), nil
 			},
 			10,
 			true,
-			[]utils.CustomTableAction{
+			[]utils.TableAction{
 				actionToTableAction[back],
-			})
+			},
+			os.Stdout,
+		)
 
 		if len(choice) > 1 {
 			return fmt.Errorf("recieved an unexpectd amount of choices: '%v'", choice)

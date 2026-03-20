@@ -1,9 +1,9 @@
 package utils
 
 import (
+	"errors"
 	"fmt"
 	"io"
-	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -11,14 +11,126 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
-type CustomTableAction struct {
+type TableAction struct {
 	// Format for the the menu item to be printed. Include short and long Format. Example [b]ack
 	Format string
 	// Short name back -> "b"
 	Short string
 	// Long name "back"
-	Long   string
-	Action func() error
+	Long string
+	// AdditionalHotkeys which will trigger action
+	AdditionalHotkeys string
+	Action            func() error
+}
+
+//lint:ignore U1000 interface methods are exercised through generic interface values
+type Paginator[T any] interface {
+	totalAm() int
+	findPage(start, offset int) ([]T, error)
+}
+
+func SlicePaginator[T any](items []T) Paginator[T] {
+	return paginatorFuncs[T]{
+		totalFn: func() int {
+			return len(items)
+		},
+		findFn: func(start, offset int) ([]T, error) {
+			if start < 0 {
+				return nil, fmt.Errorf("start index %d below zero", start)
+			}
+			if offset < 0 {
+				return nil, fmt.Errorf("offset %d below zero", offset)
+			}
+			if start >= len(items) {
+				return []T{}, nil
+			}
+			end := min(start+offset, len(items))
+			return items[start:end], nil
+		},
+	}
+}
+
+//lint:ignore U1000 methods are used via the Paginator interface
+type paginatorFuncs[T any] struct {
+	totalFn func() int
+	findFn  func(start, offset int) ([]T, error)
+}
+
+//lint:ignore U1000 used via interface dispatch
+func (pf paginatorFuncs[T]) totalAm() int {
+	return pf.totalFn()
+}
+
+//lint:ignore U1000 used via interface dispatch
+func (pf paginatorFuncs[T]) findPage(start, offset int) ([]T, error) {
+	return pf.findFn(start, offset)
+}
+
+type table[T any] struct {
+	debug         bool
+	page          int
+	pageSize      int
+	lastPage      int
+	selectionType string
+	paginator     Paginator[T]
+	rowFormater   func(int, T) (string, error)
+	tableActions  []TableAction
+	out           io.Writer
+}
+
+var clearTermToFn = ClearTermTo
+
+func (t *table[T]) nextPage() TableAction {
+	return TableAction{
+		Format:            "[n]ext",
+		Short:             "n",
+		Long:              "next",
+		AdditionalHotkeys: "",
+		Action: func() error {
+			t.page++
+			if t.page > t.lastPage {
+				t.page = 0
+			}
+			return nil
+		},
+	}
+}
+
+func (t *table[T]) prevPage() TableAction {
+	return TableAction{
+		Format: "[p]rev",
+		Short:  "p",
+		Long:   "prev",
+		Action: func() error {
+			t.page--
+			if t.page < 0 {
+				t.page = t.lastPage
+			}
+			return nil
+		},
+	}
+}
+
+func (t *table[T]) quit() TableAction {
+	return TableAction{
+		Format: "[q]uit",
+		Short:  "q",
+		Long:   "quit",
+		Action: func() error {
+			return ErrUserInitiatedExit
+		},
+	}
+}
+
+func (t *table[T]) back() TableAction {
+	return TableAction{
+		Format: "[b]ack",
+		Short:  "b",
+		Long:   "back",
+		Action: func() error {
+			return ErrBack
+		},
+	}
 }
 
 // SelectFromTable by:
@@ -29,74 +141,53 @@ type CustomTableAction struct {
 //   - nr = int < len(items)
 //   - nr,nr,nr - This selects multiple numbers
 //   - nr:nr,nr,nr:nr - This selects two ranges of nr, as well as a singular nr
-func SelectFromTable[T any](header string, items []T,
+func SelectFromTable[T any](
+	header string,
+	paginator Paginator[T],
 	selectionType string,
 	rowFormater func(int, T) (string, error),
 	pageSize int,
 	onlyOneSelect bool,
-	additionalTableActions []CustomTableAction,
+	additionalTableActions []TableAction,
+	out io.Writer,
 ) ([]int, error) {
-	fmt.Println(Colorize(ThemePrimaryColor(), header))
+	_ = selectionType
+	if out == nil {
+		out = io.Writer(io.Discard)
+	}
+	fmt.Fprintln(out, Colorize(ThemePrimaryColor(), header))
 	headerWidth := visibleRuneCount(header)
 	line := strings.Repeat("-", headerWidth)
-	fmt.Printf("%v\n", Colorize(ThemePrimaryColor(), line))
+	fmt.Fprintf(out, "%v\n", Colorize(ThemePrimaryColor(), line))
 
-	page := 0
-	amItems := len(items)
-	lastPage := pageCount(amItems, pageSize)
-	noNumberSelected := true
-	selectedNumbers := []int{}
-	amPrinted := 0
-	for noNumberSelected {
-		tmpAmPrinted, printErr := printSelectItemOptions(
-			page,
-			pageSize,
-			amItems,
-			items,
-			maybeAddAdditionalActions(selectionType, additionalTableActions),
-			rowFormater,
-		)
-		if printErr != nil {
-			return []int{}, fmt.Errorf("failed to print options: %w", printErr)
+	tab := table[T]{
+		page:          0,
+		pageSize:      pageSize,
+		lastPage:      0,
+		selectionType: selectionType,
+		paginator:     paginator,
+		rowFormater:   rowFormater,
+		tableActions:  additionalTableActions,
+		out:           out,
+	}
+	tab.lastPage = tab.pageCount()
+	defer func() {
+		if err := clearTermToFn(out, -1, 2); err != nil && tab.debug {
+			ancli.Errf("failed to clear header: %v", err)
 		}
-		amPrinted = tmpAmPrinted
-		choice, usrReadErr := ReadUserInput()
-		if usrReadErr != nil {
-			return []int{}, fmt.Errorf("failed to read table selection: %w", usrReadErr)
-		}
-
-		for _, ata := range additionalTableActions {
-			tmpChoices := []string{ata.Long, ata.Short}
-			if slices.Contains(tmpChoices, choice) {
-				if ata.Action == nil {
-					return []int{}, fmt.Errorf("action %q lacks action", ata.Long)
-				}
-				return []int{}, ata.Action()
-			}
-		}
-
-		goPrevPageChoices := []string{"p", "prev"}
-		toClear := amPrinted + 1
-		if slices.Contains(goPrevPageChoices, choice) {
-			page--
-			if page < 0 {
-				page = lastPage
-			}
-		} else {
-			selectedNumbers = parseNumbersFromString(choice, amItems-1)
-			noNumberSelected = len(selectedNumbers) == 0
-			if !noNumberSelected {
-				toClear += 2
-				break
-			}
-			page++
-			if page > lastPage {
-				page = 0
-			}
-		}
-		err := ClearTermTo(os.Stdout, -1, toClear)
+	}()
+	tab.tableActions = append(tab.tableActions, tab.prevPage(), tab.nextPage(), tab.back(), tab.quit())
+	var (
+		selectedNumbers []int
+		err             error
+	)
+	for {
+		selectedNumbers, err = tab.selectNumbers()
 		if err != nil {
-			return []int{}, fmt.Errorf("failed to clear term: %w", err)
+			return nil, fmt.Errorf("failed to select number: %w", err)
+		}
+		if selectedNumbers != nil {
+			break
 		}
 	}
 
@@ -107,139 +198,202 @@ func SelectFromTable[T any](header string, items []T,
 	return selectedNumbers, nil
 }
 
-func maybeAddAdditionalActions(choicesFormat string, additionalTableActions []CustomTableAction) string {
-	if len(additionalTableActions) == 0 {
-		return choicesFormat
+func (t *table[T]) printRow(i int, item T) error {
+	formatted, err := t.rowFormater(i, item)
+	if err != nil {
+		return fmt.Errorf("failed to format row: %w", err)
 	}
 
-	trimmed := strings.TrimSpace(choicesFormat)
-	trimmed = strings.TrimSuffix(trimmed, ":")
-	trimmed = strings.TrimSpace(trimmed)
+	_, err = fmt.Fprintln(t.out, Colorize(ThemeBreadtextColor(), formatted))
+	if err != nil {
+		return fmt.Errorf("failed to print: %w", err)
+	}
+	return nil
+}
 
+func (t *table[T]) print() (int, error) {
+	totalItems := t.paginator.totalAm()
+	pageIndex := t.page * t.pageSize
+	listToIndex := min(pageIndex+t.pageSize, totalItems)
+
+	amPrinted := 0
+	items, err := t.paginator.findPage(pageIndex, t.pageSize)
+	if err != nil {
+		return 0, fmt.Errorf("failed to find page with pageIndex: %v, pageSize: %v. Error was: %w", pageIndex, t.pageSize, err)
+	}
+	for rowIndex := pageIndex; rowIndex < listToIndex; rowIndex++ {
+		printErr := t.printRow(rowIndex, items[rowIndex-pageIndex])
+		if printErr != nil {
+			return 0, fmt.Errorf("failed to print row: %w", printErr)
+		}
+		amPrinted++
+	}
+	fmt.Fprint(t.out, Colorize(
+		ThemeSecondaryColor(),
+		fmt.Sprintf(
+			"%s (page: (%v/%v). %s): ",
+			selectionTypeOrDefault(t.selectionType),
+			t.page,
+			t.pageCount(),
+			t.tableActionsString(),
+		),
+	))
+	return amPrinted, nil
+}
+
+func selectionTypeOrDefault(selectionType string) string {
+	if strings.TrimSpace(selectionType) == "" {
+		return "select"
+	}
+	return selectionType
+}
+
+func (t *table[T]) selectNumbers() ([]int, error) {
+	// Print the table for display in terminal
+	amPrinted, err := t.print()
+	if err != nil {
+		return nil, fmt.Errorf("failed to print table: %w", err)
+	}
+
+	// Clear the terminal to provide clean output
+	defer func() {
+		if err := clearTermToFn(t.out, -1, amPrinted+1); err != nil {
+			if t.debug {
+				ancli.Errf("failed to clear table: %v", err)
+			}
+		}
+	}()
+
+	// Read user input to find out what to do next
+	choice, err := ReadUserInput()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read table selection: %w", err)
+	}
+
+	// See if the choice is a table action, if so, run it and return
+	for _, action := range t.tableActions {
+		additionalHotkeyMatch := false
+		if action.AdditionalHotkeys != "" || (action.Long == "next" && action.Short == "n") {
+			additionalHotkeyMatch = slices.Contains(strings.Split(action.AdditionalHotkeys, ","), choice)
+		}
+		if choice == action.Long || choice == action.Short || additionalHotkeyMatch {
+			if action.Action == nil {
+				return nil, fmt.Errorf("table action %q has nil action", action.Long)
+			}
+
+			if actErr := action.Action(); actErr != nil {
+				return nil, actErr
+			}
+			return nil, nil
+		}
+	}
+
+	// Its not a table action: see if some index has been selected
+	selectedNumbers, err := t.parseNumbersFromString(choice)
+	if err != nil {
+		return selectedNumbers, fmt.Errorf("failed to parse selected numbers from choice %q: %w", choice, err)
+	}
+
+	return selectedNumbers, nil
+}
+
+func (t *table[T]) tableActionsString() string {
+	if len(t.tableActions) == 0 {
+		return ""
+	}
 	sb := strings.Builder{}
-	sb.WriteString(trimmed)
-	for _, ata := range additionalTableActions {
+	lowerSelectionType := strings.ToLower(t.selectionType)
+	for _, ata := range t.tableActions {
+		if actionAlreadyDescribed(lowerSelectionType, ata) {
+			continue
+		}
 		if sb.Len() > 0 {
 			sb.WriteString(", ")
 		}
 		sb.WriteString(ata.Format)
 	}
-	sb.WriteString(": ")
-
 	return sb.String()
 }
 
-func pageCount(amItems, pageSize int) int {
-	if pageSize <= 0 || amItems <= 0 {
-		return 0
+func actionAlreadyDescribed(selectionType string, action TableAction) bool {
+	if selectionType == "" {
+		return false
 	}
-	return (amItems - 1) / pageSize
+
+	candidates := []string{action.Format}
+	for _, candidate := range candidates {
+		candidate = strings.ToLower(strings.TrimSpace(candidate))
+		if candidate == "" {
+			continue
+		}
+		if strings.Contains(selectionType, candidate) {
+			return true
+		}
+	}
+	return false
 }
 
-func parseNumbersFromString(choice string, max int) []int {
+func (t *table[T]) pageCount() int {
+	if t.pageSize <= 0 || t.paginator.totalAm() <= 0 {
+		return 0
+	}
+	return (t.paginator.totalAm() - 1) / t.pageSize
+}
+
+func (t *table[T]) multiPartParse(maybeRange string) ([]int, error) {
+	parts := strings.Split(maybeRange, ":")
+	if len(parts) != 2 {
+		return []int{}, fmt.Errorf("expected 2 numbers from range: '%v', got: %v", maybeRange, len(parts))
+	}
+	start, err := strconv.Atoi(strings.TrimSpace(parts[0]))
+	if err != nil {
+		return []int{}, fmt.Errorf("failed to parse start: '%v', err: %w", parts[0], err)
+	}
+	end, err := strconv.Atoi(strings.TrimSpace(parts[1]))
+	if err != nil {
+		return []int{}, fmt.Errorf("failed to parse end: '%v', err: %w", parts[1], err)
+	}
+
+	if end < start {
+		return []int{}, fmt.Errorf("start of range: %v, is greater than end: %v", start, end)
+	}
 	selectedNumbers := make([]int, 0)
+	for i := start; i <= end; i++ {
+		// End on max am to provide easy way to clear all items
+		if i > t.paginator.totalAm() {
+			return selectedNumbers, nil
+		}
+		selectedNumbers = append(selectedNumbers, i)
+	}
+	return selectedNumbers, nil
+}
+
+func (t *table[T]) parseNumbersFromString(choice string) ([]int, error) {
+	selectedNumbers := make([]int, 0)
+	parseErrors := make([]error, 0)
 	tokens := strings.SplitSeq(choice, ",")
 	for tok := range tokens {
 		tok = strings.TrimSpace(tok)
 		if strings.Contains(tok, ":") {
-			parts := strings.SplitN(tok, ":", 2)
-			if len(parts) != 2 {
+			multiPartParseSelNum, err := t.multiPartParse(tok)
+			if err != nil {
+				parseErrors = append(parseErrors, fmt.Errorf("failed to parse range selection: %w", err))
 				continue
 			}
-			start, err0 := strconv.Atoi(strings.TrimSpace(parts[0]))
-			end, err1 := strconv.Atoi(strings.TrimSpace(parts[1]))
-			if err0 != nil || err1 != nil {
-				continue
-			}
-			if end < start {
-				ancli.Warnf("invalid range (end < start): %q", tok)
-				continue
-			}
-			for j := start; j <= end; j++ {
-				if j > max {
-					ancli.Warnf("selected index %q is greater than amount of items %q", strconv.Itoa(j), strconv.Itoa(max))
-					continue
-				}
-				selectedNumbers = append(selectedNumbers, j)
-			}
+			selectedNumbers = append(selectedNumbers, multiPartParseSelNum...)
 			continue
 		}
 		v, err := strconv.Atoi(tok)
-		if err == nil {
-			if v > max {
-				ancli.Warnf("selected index %q is greater than amount of items %q", tok, strconv.Itoa(max))
-				continue
-			}
-			selectedNumbers = append(selectedNumbers, v)
+		if err != nil {
+			parseErrors = append(parseErrors, fmt.Errorf("token: '%v' failed to parse to int: %w", tok, err))
+			continue
 		}
-	}
-
-	return selectedNumbers
-}
-
-func printSelectRow[T any](w io.Writer, i int, chats []T, formatRow func(int, T) (string, error)) error {
-	item := chats[i]
-
-	formatted, err := formatRow(i, item)
-	if err != nil {
-		return fmt.Errorf("failed to format row: %w", err)
-	}
-
-	fmt.Fprintln(w, Colorize(ThemeBreadtextColor(), formatted))
-	return nil
-}
-
-func formatChoicesPrompt(choicesFormat string, page, lastPage int) string {
-	if strings.Contains(choicesFormat, "%") {
-		return fmt.Sprintf(choicesFormat, page, lastPage)
-	}
-	return choicesFormat
-}
-
-func sanitizePagedPrompt(prompt string) string {
-	sanitized := strings.TrimSpace(prompt)
-	sanitized = strings.TrimSuffix(sanitized, ":")
-	sanitized = strings.TrimSpace(sanitized)
-
-	redundantSuffixes := []string{
-		", [p]rev, [q]uit",
-		"[p]rev, [q]uit",
-	}
-	for _, suffix := range redundantSuffixes {
-		sanitized = strings.TrimSuffix(sanitized, suffix)
-		sanitized = strings.TrimSpace(sanitized)
-	}
-	return sanitized
-}
-
-func printSelectItemOptions[T any](page, pageSize, amItems int, items []T, choicesFormat string, formatRow func(int, T) (string, error)) (int, error) {
-	pageIndex := page * pageSize
-	listToIndex := min(pageIndex+pageSize, amItems)
-
-	amPrinted := 0
-	for i := pageIndex; i < listToIndex; i++ {
-		amPrinted++
-		printErr := printSelectRow(os.Stdout, i, items, formatRow)
-		if printErr != nil {
-			return 0, fmt.Errorf("failed to print row: %w", printErr)
+		if v > t.paginator.totalAm() {
+			parseErrors = append(parseErrors, fmt.Errorf("index: '%v' is higher than max amount of items", v))
+			continue
 		}
+		selectedNumbers = append(selectedNumbers, v)
 	}
 
-	lastPage := pageCount(amItems, pageSize)
-	if amItems <= pageSize {
-		fmt.Print(Colorize(ThemeSecondaryColor(), formatChoicesPrompt(choicesFormat, 0, 0)))
-	} else {
-		innerPrompt := sanitizePagedPrompt(formatChoicesPrompt(choicesFormat, page, lastPage))
-		fmt.Print(Colorize(
-			ThemeSecondaryColor(),
-			fmt.Sprintf(
-				"(page: (%v/%v). %s, next: [<enter>]/[n]ext, [p]rev, [q]uit): ",
-				page,
-				lastPage,
-				innerPrompt,
-			),
-		))
-	}
-
-	return amPrinted, nil
+	return selectedNumbers, errors.Join(parseErrors...)
 }

@@ -163,7 +163,7 @@ func (cq *ChatHandler) listChats(ctx context.Context, chats []pub_models.Chat) e
 
 	selectedNumbers, err := utils.SelectFromTable(
 		fmt.Sprintf(tblFmt, headArgs...),
-		chats,
+		utils.SlicePaginator(chats),
 		selectChatTblChoicesFormat,
 		func(i int, item pub_models.Chat) (string, error) {
 			tokenStr := chatListTokenStr(item)
@@ -210,7 +210,8 @@ func (cq *ChatHandler) listChats(ctx context.Context, chats []pub_models.Chat) e
 		},
 		10,
 		true,
-		[]utils.CustomTableAction{},
+		[]utils.TableAction{},
+		cq.out,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to select chat: %w", err)
@@ -333,7 +334,7 @@ func (cq *ChatHandler) deleteMessageInChat(chat pub_models.Chat) error {
 	head := fmt.Sprintf(editMessageTblFormat, "Index", "Role", "Length", "Summary")
 	selectedIndices, err := utils.SelectFromTable(
 		head,
-		chat.Messages,
+		utils.SlicePaginator(chat.Messages),
 		deleteMessagesChoicesFormat,
 		func(i int, t pub_models.Message) (string, error) {
 			prefix := fmt.Sprintf(editMessageTblFormat, i, t.Role, utf8.RuneCount([]byte(t.Content)), "")
@@ -347,7 +348,8 @@ func (cq *ChatHandler) deleteMessageInChat(chat pub_models.Chat) error {
 		},
 		10,
 		false,
-		[]utils.CustomTableAction{},
+		[]utils.TableAction{},
+		cq.out,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to select from table: %w", err)
@@ -379,7 +381,7 @@ func (cq *ChatHandler) editMessageInChat(chat pub_models.Chat) error {
 	head := fmt.Sprintf(editMessageTblFormat, "Index", "Role", "Length", "Summary")
 	selectedNumbers, err := utils.SelectFromTable(
 		head,
-		chat.Messages,
+		utils.SlicePaginator(chat.Messages),
 		editMessageChoicesFormat,
 		func(i int, t pub_models.Message) (string, error) {
 			prefix := fmt.Sprintf(editMessageTblFormat, i, t.Role, utf8.RuneCount([]byte(t.Content)), "")
@@ -393,7 +395,8 @@ func (cq *ChatHandler) editMessageInChat(chat pub_models.Chat) error {
 		},
 		10,
 		true,
-		[]utils.CustomTableAction{},
+		[]utils.TableAction{},
+		cq.out,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to select from table: %w", err)
