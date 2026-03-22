@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/user"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -124,20 +125,35 @@ func (cq *ChatHandler) actOnSubCmd(ctx context.Context) error {
 }
 
 func (cq *ChatHandler) findChatByID(potentialChatIdx string) (pub_models.Chat, error) {
-	chats, err := cq.list()
-	if err != nil {
-		return pub_models.Chat{}, fmt.Errorf("failed to list chats: %w", err)
-	}
 	split := strings.Split(potentialChatIdx, " ")
 	firstToken := split[0]
 	chatIdx, err := strconv.Atoi(firstToken)
 	if err == nil {
-		if chatIdx < 0 || chatIdx >= len(chats) {
+		rows, err := readChatIndex(cq.convDir)
+		if err != nil {
+			return pub_models.Chat{}, fmt.Errorf("failed to read chat index: %w", err)
+		}
+		slices.SortFunc(rows, func(a, b chatIndexRow) int {
+			return b.Created.Compare(a.Created)
+		})
+		if len(rows) == 0 {
+			chats, listErr := cq.list()
+			if listErr != nil {
+				return pub_models.Chat{}, fmt.Errorf("failed to list chats: %w", listErr)
+			}
+			if chatIdx < 0 || chatIdx >= len(chats) {
+				return pub_models.Chat{}, fmt.Errorf("chat index out of range")
+			}
+			cq.prompt = strings.Join(split[1:], " ")
+			return chats[chatIdx], nil
+		}
+
+		if chatIdx < 0 || chatIdx >= len(rows) {
 			return pub_models.Chat{}, fmt.Errorf("chat index out of range")
 		}
 		// Reassemble the prompt from the split tokens, but without the index selecting the chat
 		cq.prompt = strings.Join(split[1:], " ")
-		return chats[chatIdx], nil
+		return cq.getByID(rows[chatIdx].ID)
 	}
 
 	// Prefer exact ID match first (covers continuing a hash-id conversation).
