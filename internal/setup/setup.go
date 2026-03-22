@@ -44,7 +44,7 @@ var choiceToAction = map[string]action{
 	"ufe,unescapedFieldEdit": unescapedFieldEditWithEditor,
 }
 
-var actionToTableAction = map[action]utils.CustomTableAction{
+var actionToTableAction = map[action]utils.TableAction{
 	back: {
 		Short:  "b",
 		Long:   "back",
@@ -219,14 +219,15 @@ func selectCategory(categories []setupCategory) (setupCategory, error) {
 	choicesFormat := "Select category <num>, [q]uit: "
 	selected, err := utils.SelectFromTable(
 		stage0Raw,
-		categories,
+		utils.SlicePaginator(categories),
 		choicesFormat,
 		func(i int, category setupCategory) (string, error) {
 			return fmt.Sprintf("%d. %s", i, category.name), nil
 		},
 		10,
 		true,
-		[]utils.CustomTableAction{},
+		[]utils.TableAction{},
+		os.Stdout,
 	)
 	if err != nil {
 		return setupCategory{}, fmt.Errorf("failed to select setup category: %w", err)
@@ -280,8 +281,8 @@ OUTER:
 	return configs, nil
 }
 
-func setupCustomTableActions(category setupCategory) []utils.CustomTableAction {
-	ret := []utils.CustomTableAction{
+func setupCustomTableActions(category setupCategory) []utils.TableAction {
+	ret := []utils.TableAction{
 		actionToTableAction[back],
 	}
 	for _, a := range category.itemSelectActions {
@@ -317,7 +318,7 @@ func selectConfigItem(category setupCategory, cfgs []config) error {
 	customTableActions := setupCustomTableActions(category)
 	selectedIndices, err := utils.SelectFromTable(
 		fmt.Sprintf("Configs in %s", category.name),
-		cfgs,
+		utils.SlicePaginator(cfgs),
 		"Select config <num>: ",
 		func(i int, cfg config) (string, error) {
 			return fmt.Sprintf("%d. %s", i, cfg.name), nil
@@ -325,6 +326,7 @@ func selectConfigItem(category setupCategory, cfgs []config) error {
 		10,
 		true,
 		customTableActions,
+		os.Stdout,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to select config item: %w", err)

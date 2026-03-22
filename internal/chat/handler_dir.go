@@ -27,7 +27,7 @@ type chatDirInfo struct {
 	OutputTokens         int              `json:"output_tokens"`
 	CostUSD              float64          `json:"cost_usd,omitempty"`
 	Cost                 string           `json:"cost,omitempty"`
-	Price                chatDirPriceInfo `json:"price,omitempty"`
+	Price                chatDirPriceInfo `json:"price"`
 	initialMessage       string           `json:"-"`
 }
 

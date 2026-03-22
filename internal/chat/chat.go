@@ -49,7 +49,13 @@ func Save(saveAt string, chat pub_models.Chat) error {
 		ancli.PrintOK(fmt.Sprintf("saving chat to: '%v'", fileName))
 	}
 	traceChatf("saving chat file path=%q chat_id=%q messages=%d", fileName, chat.ID, len(chat.Messages))
-	return os.WriteFile(fileName, b, 0o644)
+	if err := os.WriteFile(fileName, b, 0o644); err != nil {
+		return fmt.Errorf("failed to write chat file: %w", err)
+	}
+	if err := upsertChatIndex(saveAt, chat); err != nil {
+		return fmt.Errorf("failed to update chat index: %w", err)
+	}
+	return nil
 }
 
 // HashIDFromPrompt is a cleaner way to name the chats. The initial ID from prompt approach was to

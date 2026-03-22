@@ -12,22 +12,22 @@ import (
 
 const defaultTTYPath = "/dev/tty"
 
-var readUserInputImpl = defaultReadUserInput
+var readUserInputFn = readUserInput
 
 func UseReadUserInputForTests(fn func() (string, error)) func() {
-	orig := readUserInputImpl
-	readUserInputImpl = fn
+	prev := readUserInputFn
+	readUserInputFn = fn
 	return func() {
-		readUserInputImpl = orig
+		readUserInputFn = prev
 	}
 }
 
 // ReadUserInput and return on interrupt channel
 func ReadUserInput() (string, error) {
-	return readUserInputImpl()
+	return readUserInputFn()
 }
 
-func defaultReadUserInput() (string, error) {
+func readUserInput() (string, error) {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt)
 	defer signal.Stop(sigChan)
