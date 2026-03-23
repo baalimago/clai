@@ -101,7 +101,7 @@ func TestChatContinue_printsObfuscatedSummary_withPaddingAndPreview(t *testing.T
 
 	conv := pub_models.Chat{
 		Created:  time.Now(),
-		ID:       HashIDFromPrompt("hello"),
+		ID:       "chat-hello",
 		Messages: msgs,
 	}
 	if err := Save(convDir, conv); err != nil {
@@ -158,7 +158,7 @@ func TestChatContinue_highMessageCount_obfuscatesOldMessages_andPrettyPrintsLast
 
 	conv := pub_models.Chat{
 		Created:  time.Now(),
-		ID:       HashIDFromPrompt("high-msg-count"),
+		ID:       "chat-high-msg-count",
 		Messages: msgs,
 	}
 	if err := Save(convDir, conv); err != nil {

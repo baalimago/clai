@@ -12,21 +12,21 @@ import (
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
-func TestChatHandler_listSelectContinue_keepsHashChatID(t *testing.T) {
+func TestChatHandler_listSelectContinue_keepsStoredChatID(t *testing.T) {
 	confDir := t.TempDir()
 	if err := utils.CreateConfigDir(confDir); err != nil {
 		t.Fatalf("CreateConfigDir: %v", err)
 	}
 
 	convDir := filepath.Join(confDir, "conversations")
-	id := HashIDFromPrompt("seed")
+	id := "seed-chat"
 	ch := pub_models.Chat{ID: id, Created: time.Now(), Messages: []pub_models.Message{{Role: "user", Content: "seed"}}}
 	if err := Save(convDir, ch); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
 	// The list->select->continue path uses the Chat object selected from the table.
-	// Ensure that continuing does not transform the chat id (hash IDs must remain stable).
+	// Ensure that continuing does not transform the chat id.
 	cq := &ChatHandler{confDir: confDir, convDir: convDir, out: io.Discard}
 
 	// We cannot call actOnChat("c") in a unit test without fully stubbing the interactive loop.
@@ -37,14 +37,14 @@ func TestChatHandler_listSelectContinue_keepsHashChatID(t *testing.T) {
 	}
 }
 
-func TestChatHandler_findChatByID_prefersExactID_forHashIDs(t *testing.T) {
+func TestChatHandler_findChatByID_prefersExactID(t *testing.T) {
 	confDir := t.TempDir()
 	if err := utils.CreateConfigDir(confDir); err != nil {
 		t.Fatalf("CreateConfigDir: %v", err)
 	}
 
 	convDir := filepath.Join(confDir, "conversations")
-	id := HashIDFromPrompt("hello world")
+	id := "hello-world-chat"
 	ch := pub_models.Chat{ID: id, Created: time.Now()}
 	if err := Save(convDir, ch); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -59,7 +59,7 @@ func TestChatHandler_findChatByID_prefersExactID_forHashIDs(t *testing.T) {
 		t.Fatalf("expected id %q got %q", id, got.ID)
 	}
 
-	// Also ensure cont() lookup path works when given a hash id as the first arg.
+	// Also ensure cont() lookup path works when given an exact id as the first arg.
 	cq2 := &ChatHandler{confDir: confDir, convDir: convDir, subCmd: "continue", prompt: id, out: os.Stdout}
 	_, err = cq2.findChatByID(id)
 	if err != nil {

@@ -35,6 +35,7 @@ func (f sessionFinalizer[C]) Finalize(session *QuerySession) {
 			Content: session.FinalAssistantText,
 		})
 	}
+	q.chat = session.Chat
 	if session.FinalUsage != nil {
 		session.Chat.TokenUsage = session.FinalUsage
 	}

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/baalimago/clai/internal/chat"
+	"github.com/baalimago/clai/internal/chatid"
 	"github.com/baalimago/clai/internal/glob"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -187,7 +188,11 @@ func (c *Configurations) SetupInitialChat(args []string) error {
 	}
 	c.PostProccessedPrompt = prompt
 	if c.InitialChat.ID == "" {
-		c.InitialChat.ID = chat.HashIDFromPrompt(prompt)
+		chatID, err := chatid.New()
+		if err != nil {
+			return fmt.Errorf("generate chat id: %w", err)
+		}
+		c.InitialChat.ID = chatID
 		traceChatf("setup initial chat generated chat id=%q", c.InitialChat.ID)
 	}
 	traceChatf("setup initial chat done chat_id=%q total_messages=%d", c.InitialChat.ID, len(c.InitialChat.Messages))

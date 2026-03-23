@@ -35,7 +35,7 @@ func Test_goldenFile_CHAT_CONTINUE_obfuscated_preview(t *testing.T) {
 	convDir := filepath.Join(confDir, "conversations")
 	conv := pub_models.Chat{
 		Created: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
-		ID:      chat.HashIDFromPrompt("hello"),
+		ID:      "hello-chat",
 		Messages: []pub_models.Message{
 			{Role: "system", Content: strings.Repeat("a", 200)},
 			{Role: "user", Content: "hello"},

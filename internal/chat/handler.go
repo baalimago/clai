@@ -156,7 +156,7 @@ func (cq *ChatHandler) findChatByID(potentialChatIdx string) (pub_models.Chat, e
 		return cq.getByID(rows[chatIdx].ID)
 	}
 
-	// Prefer exact ID match first (covers continuing a hash-id conversation).
+	// Prefer exact ID match first.
 	c, err := cq.getByID(firstToken)
 	if err == nil {
 		return c, nil
@@ -164,21 +164,7 @@ func (cq *ChatHandler) findChatByID(potentialChatIdx string) (pub_models.Chat, e
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return pub_models.Chat{}, fmt.Errorf("load chat by id %q: %w", firstToken, err)
 	}
-
-	// Backwards compatible fallbacks: derived IDs.
-	c, err = cq.getByID(IDFromPrompt(potentialChatIdx))
-	if err == nil {
-		return c, nil
-	}
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return pub_models.Chat{}, fmt.Errorf("load chat by legacy prompt id: %w", err)
-	}
-
-	c, err = cq.getByID(HashIDFromPrompt(potentialChatIdx))
-	if err != nil {
-		return pub_models.Chat{}, fmt.Errorf("load chat by hash-from-prompt id: %w", err)
-	}
-	return c, nil
+	return pub_models.Chat{}, fmt.Errorf("load chat by id %q: %w", firstToken, err)
 }
 
 func (cq *ChatHandler) printChat(chat pub_models.Chat) error {
