@@ -17,6 +17,7 @@ type chatIndexRow struct {
 	ID               string    `json:"id"`
 	Created          time.Time `json:"created"`
 	Profile          string    `json:"profile,omitempty"`
+	Model            string    `json:"model,omitempty"`
 	MessageCount     int       `json:"message_count"`
 	TotalTokens      int       `json:"total_tokens,omitempty"`
 	TotalCostUSD     float64   `json:"total_cost_usd,omitempty"`
@@ -59,6 +60,13 @@ func chatIndexRowFromChat(chat pub_models.Chat) chatIndexRow {
 	}
 	if chat.TokenUsage != nil {
 		row.TotalTokens = chat.TokenUsage.TotalTokens
+	}
+	for i := len(chat.Queries) - 1; i >= 0; i-- {
+		if chat.Queries[i].Model == "" {
+			continue
+		}
+		row.Model = chat.Queries[i].Model
+		break
 	}
 	if msg, err := chat.FirstUserMessage(); err == nil {
 		row.FirstUserMessage = msg.Content

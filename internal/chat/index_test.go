@@ -23,7 +23,7 @@ func TestSave_UpdatesChatIndex(t *testing.T) {
 			{Role: "assistant", Content: "reply"},
 		},
 		TokenUsage: &pub_models.Usage{TotalTokens: 1234},
-		Queries:    []pub_models.QueryCost{{CostUSD: 1.25}},
+		Queries:    []pub_models.QueryCost{{CostUSD: 1.25, Model: "openai/gpt-4.1-mini"}},
 	}
 
 	if err := Save(tmp, ch); err != nil {
@@ -62,6 +62,9 @@ func TestSave_UpdatesChatIndex(t *testing.T) {
 	}
 	if got.TotalCostUSD != 1.25 {
 		t.Fatalf("row TotalCostUSD = %v, want 1.25", got.TotalCostUSD)
+	}
+	if got.Model != "openai/gpt-4.1-mini" {
+		t.Fatalf("row Model = %q, want %q", got.Model, "openai/gpt-4.1-mini")
 	}
 	if got.FirstUserMessage != "hello world" {
 		t.Fatalf("row FirstUserMessage = %q, want %q", got.FirstUserMessage, "hello world")
