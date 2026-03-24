@@ -216,7 +216,7 @@ func InitCmd() error {
 }
 
 func selectCategory(categories []setupCategory) (setupCategory, error) {
-	choicesFormat := "Select category <num>, [q]uit: "
+	choicesFormat := "Select category [<num>]"
 	selected, err := utils.SelectFromTable(
 		stage0Raw,
 		utils.SlicePaginator(categories),
@@ -322,7 +322,7 @@ func selectConfigItem(category setupCategory, cfgs []config) error {
 	selectedIndices, err := utils.SelectFromTable(
 		fmt.Sprintf("Configs in %s", category.name),
 		utils.SlicePaginator(cfgs),
-		"Select config <num>: ",
+		"Select config [<num>]",
 		func(i int, cfg config) (string, error) {
 			return fmt.Sprintf("%d. %s", i, cfg.name), nil
 		},

@@ -339,7 +339,7 @@ func Test_table_print(t *testing.T) {
 			t.Fatalf("print() printed = %d, want 2", got)
 		}
 
-		wantContains := []string{"2=30\n", "3=40\n", "select ([n]ext, [q]uit, page 1/2): "}
+		wantContains := []string{"2=30\n", "3=40\n", "(select, [n]ext, [q]uit, page 1/2): "}
 		for _, want := range wantContains {
 			if !strings.Contains(out.String(), want) {
 				t.Fatalf("print() output = %q, want substring %q", out.String(), want)
@@ -697,7 +697,7 @@ func Test_SelectFromTable(t *testing.T) {
 		}
 
 		output := out.String()
-		for _, want := range []string{"0=10\n", "1=20\n", "2=30\n", "3=40\n", "page 0/1", "page 1/1"} {
+		for _, want := range []string{"0=10\n", "1=20\n", "2=30\n", "3=40\n", "(select, [p]rev, [n]ext, [b]ack, [q]uit, page 0/1): ", "(select, [p]rev, [n]ext, [b]ack, [q]uit, page 1/1): "} {
 			if !strings.Contains(output, want) {
 				t.Fatalf("SelectFromTable() output = %q, want substring %q", output, want)
 			}
@@ -750,7 +750,7 @@ func Test_SelectFromTable(t *testing.T) {
 		}
 	})
 
-	t.Run("selection type suppresses duplicate built in actions", func(t *testing.T) {
+	t.Run("selection type is combined with actions in unified prompt", func(t *testing.T) {
 		t.Setenv("TTY", filepath.Join(t.TempDir(), "missing-tty"))
 
 		var out bytes.Buffer
@@ -758,7 +758,7 @@ func Test_SelectFromTable(t *testing.T) {
 			pageSize:      1,
 			paginator:     testPaginator{total: 1, items: []int{10}},
 			rowFormater:   func(i, item int) (string, error) { return fmt.Sprintf("%d=%d", i, item), nil },
-			selectionType: "goto chat: [<num>], next: [<enter>]/[n]ext, [p]rev, [q]uit",
+			selectionType: "goto chat [<num>] / [<enter>]",
 			tableActions: []TableAction{
 				{Format: "[p]rev", Short: "p", Long: "prev", Action: func() error { return nil }},
 				{Format: "[n]ext", Short: "n", Long: "next", AdditionalHotkeys: "", Action: func() error { return nil }},
@@ -773,11 +773,8 @@ func Test_SelectFromTable(t *testing.T) {
 		}
 
 		got := out.String()
-		if strings.Contains(got, "[p]rev, [n]ext, [b]ack, [q]uit") {
-			t.Fatalf("print() output = %q, want built-in actions omitted from prompt", got)
-		}
-		if !strings.Contains(got, "goto chat: [<num>], next: [<enter>]/[n]ext, [p]rev, [q]uit") {
-			t.Fatalf("print() output = %q, want custom selection type prompt", got)
+		if !strings.Contains(got, "(goto chat [<num>] / [<enter>], [p]rev, [n]ext, [b]ack, [q]uit): ") {
+			t.Fatalf("print() output = %q, want unified prompt", got)
 		}
 	})
 
@@ -809,6 +806,9 @@ func Test_SelectFromTable(t *testing.T) {
 		}
 		if strings.Contains(out.String(), "page ") {
 			t.Fatalf("SelectFromTable() output = %q, want no page indicator", out.String())
+		}
+		if !strings.Contains(out.String(), "(Select item <num>, [p]rev, [n]ext, [b]ack, [q]uit): ") {
+			t.Fatalf("SelectFromTable() output = %q, want unified prompt format", out.String())
 		}
 	})
 

@@ -242,10 +242,15 @@ func (t *table[T]) print() (int, error) {
 func (t *table[T]) promptLine() string {
 	selection := selectionTypeOrDefault(t.selectionType)
 	actions := t.tableActionsString()
-	if t.pageCount() == 0 {
-		return fmt.Sprintf("%s (%s): ", selection, actions)
+	parts := []string{selection}
+	if actions != "" {
+		parts = append(parts, actions)
 	}
-	return fmt.Sprintf("%s (%s, page %v/%v): ", selection, actions, t.page, t.pageCount())
+	if t.pageCount() == 0 {
+		return fmt.Sprintf("(%s): ", strings.Join(parts, ", "))
+	}
+	parts = append(parts, fmt.Sprintf("page %v/%v", t.page, t.pageCount()))
+	return fmt.Sprintf("(%s): ", strings.Join(parts, ", "))
 }
 
 func selectionTypeOrDefault(selectionType string) string {
@@ -309,35 +314,13 @@ func (t *table[T]) tableActionsString() string {
 		return ""
 	}
 	sb := strings.Builder{}
-	lowerSelectionType := strings.ToLower(t.selectionType)
 	for _, ata := range t.tableActions {
-		if actionAlreadyDescribed(lowerSelectionType, ata) {
-			continue
-		}
 		if sb.Len() > 0 {
 			sb.WriteString(", ")
 		}
 		sb.WriteString(ata.Format)
 	}
 	return sb.String()
-}
-
-func actionAlreadyDescribed(selectionType string, action TableAction) bool {
-	if selectionType == "" {
-		return false
-	}
-
-	candidates := []string{action.Format}
-	for _, candidate := range candidates {
-		candidate = strings.ToLower(strings.TrimSpace(candidate))
-		if candidate == "" {
-			continue
-		}
-		if strings.Contains(selectionType, candidate) {
-			return true
-		}
-	}
-	return false
 }
 
 func validateTableActions(additionalActions, baseActions []TableAction) error {
