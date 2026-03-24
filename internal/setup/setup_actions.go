@@ -65,7 +65,7 @@ func queryForAction(options []action) (action, error) {
 	for _, option := range options {
 		formattedOptions = append(formattedOptions, option.String())
 	}
-	fmt.Print(colorSecondary(fmt.Sprintf("Choose action (%s): ", strings.Join(formattedOptions, ", "))))
+	fmt.Print(colorSecondary(fmt.Sprintf("(%s): ", strings.Join(formattedOptions, ", "))))
 	input, err := utils.ReadUserInput()
 	if err != nil {
 		return unset, fmt.Errorf("failed to query for action: %w", err)
@@ -81,11 +81,14 @@ func queryForAction(options []action) (action, error) {
 		ancli.Warnf("invalid choice: %v", input)
 		return queryForAction(options)
 	}
+	if ret == quit {
+		return unset, utils.ErrUserInitiatedExit
+	}
 	return ret, nil
 }
 
 func actOnConfigItem(category setupCategory, cfg config) error {
-	selectedAction, err := queryForAction(category.itemActions)
+	selectedAction, err := queryForAction(actionsWithNavigation(category.itemActions))
 	if err != nil {
 		return fmt.Errorf("failed to query for config action: %w", err)
 	}

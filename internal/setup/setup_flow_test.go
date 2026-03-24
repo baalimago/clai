@@ -2,6 +2,7 @@ package setup
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -152,7 +153,7 @@ func TestSelectConfigItem_ItemSelectionOnlyShowsPaginationAndNew(t *testing.T) {
 	}
 }
 
-func TestActionQueryAfterSelection_DoesNotShowNewButShowsProfileEditors(t *testing.T) {
+func TestActionQueryAfterSelection_ShowsBackQuitAndProfileEditorsButNotNew(t *testing.T) {
 	inputs := []string{"pr"}
 	inputIdx := 0
 	restoreInput := utils.UseReadUserInputForTests(func() (string, error) {
@@ -175,7 +176,7 @@ func TestActionQueryAfterSelection_DoesNotShowNewButShowsProfileEditors(t *testi
 		os.Stdout = origStdout
 	}()
 
-	selectedAction, err := queryForAction([]action{conf, del, confWithEditor, promptEditWithEditor, unescapedFieldEditWithEditor, back})
+	selectedAction, err := queryForAction(actionsWithNavigation([]action{conf, del, confWithEditor, promptEditWithEditor, unescapedFieldEditWithEditor}))
 	_ = w.Close()
 	if err != nil {
 		t.Fatalf("failed to query for action: %v", err)
@@ -194,5 +195,135 @@ func TestActionQueryAfterSelection_DoesNotShowNewButShowsProfileEditors(t *testi
 	}
 	if !strings.Contains(out, "[pr]ompt edit with editor") {
 		t.Fatalf("expected prompt edit action in output, got %q", out)
+	}
+	if !strings.Contains(out, "[b]ack") {
+		t.Fatalf("expected back action in output, got %q", out)
+	}
+	if !strings.Contains(out, "[q]uit") {
+		t.Fatalf("expected quit action in output, got %q", out)
+	}
+}
+
+func TestActionQueryAfterSelection_AlwaysAnnotatesBackAndQuit(t *testing.T) {
+	inputs := []string{"b"}
+	inputIdx := 0
+	restoreInput := utils.UseReadUserInputForTests(func() (string, error) {
+		if inputIdx >= len(inputs) {
+			return "", io.EOF
+		}
+		ret := inputs[inputIdx]
+		inputIdx++
+		return ret, nil
+	})
+	defer restoreInput()
+
+	origStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("failed to create stdout pipe: %v", err)
+	}
+	os.Stdout = w
+	defer func() {
+		os.Stdout = origStdout
+	}()
+
+	selectedAction, err := queryForAction(actionsWithNavigation([]action{conf, confWithEditor}))
+	_ = w.Close()
+	if err != nil {
+		t.Fatalf("failed to query for action: %v", err)
+	}
+	if selectedAction != back {
+		t.Fatalf("expected back action, got %v", selectedAction)
+	}
+
+	outBytes, readErr := io.ReadAll(r)
+	if readErr != nil {
+		t.Fatalf("failed to read stdout: %v", readErr)
+	}
+	out := string(outBytes)
+	if !strings.Contains(out, "[b]ack") {
+		t.Fatalf("expected prompt to annotate back action, got %q", out)
+	}
+	if !strings.Contains(out, "[q]uit") {
+		t.Fatalf("expected prompt to annotate quit action, got %q", out)
+	}
+}
+
+func TestActionQueryAfterSelection_CategoryActionsIncludeBackAndQuitAsSourceOfTruth(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		actions []action
+	}{
+		{name: "model files", actions: []action{conf, confWithEditor, back, quit}},
+		{name: "profiles", actions: []action{conf, del, confWithEditor, promptEditWithEditor, unescapedFieldEditWithEditor, back, quit}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			inputs := []string{"b"}
+			inputIdx := 0
+			restoreInput := utils.UseReadUserInputForTests(func() (string, error) {
+				if inputIdx >= len(inputs) {
+					return "", io.EOF
+				}
+				ret := inputs[inputIdx]
+				inputIdx++
+				return ret, nil
+			})
+			defer restoreInput()
+
+			origStdout := os.Stdout
+			r, w, err := os.Pipe()
+			if err != nil {
+				t.Fatalf("failed to create stdout pipe: %v", err)
+			}
+			os.Stdout = w
+			defer func() {
+				os.Stdout = origStdout
+			}()
+
+			selectedAction, err := queryForAction(tc.actions)
+			_ = w.Close()
+			if err != nil {
+				t.Fatalf("failed to query for action: %v", err)
+			}
+			if selectedAction != back {
+				t.Fatalf("expected back action, got %v", selectedAction)
+			}
+
+			outBytes, readErr := io.ReadAll(r)
+			if readErr != nil {
+				t.Fatalf("failed to read stdout: %v", readErr)
+			}
+			out := string(outBytes)
+			if !strings.Contains(out, "[b]ack") {
+				t.Fatalf("expected prompt to include back from caller-provided actions, got %q", out)
+			}
+			if !strings.Contains(out, "[q]uit") {
+				t.Fatalf("expected prompt to include quit from caller-provided actions, got %q", out)
+			}
+		})
+	}
+}
+
+func TestActOnConfigItem_BackWithoutAnnotatedPromptReturnsErrBack(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "cfg.json")
+	if err := os.WriteFile(cfgPath, []byte(`{"model":"gpt-test"}`), 0o644); err != nil {
+		t.Fatalf("write config file: %v", err)
+	}
+
+	restoreInput := utils.UseReadUserInputForTests(func() (string, error) {
+		return "b", nil
+	})
+	defer restoreInput()
+
+	err := actOnConfigItem(setupCategory{
+		name:        "model files",
+		itemActions: []action{conf, confWithEditor},
+	}, config{name: "cfg.json", filePath: cfgPath})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !errors.Is(err, utils.ErrBack) {
+		t.Fatalf("expected ErrBack, got %v", err)
 	}
 }

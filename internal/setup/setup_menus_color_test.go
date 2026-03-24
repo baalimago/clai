@@ -15,7 +15,7 @@ func TestSetupSubMenus_RespectThemeAndNoColor(t *testing.T) {
 	t.Run("queryForAction prompt is colored", func(t *testing.T) {
 		t.Setenv("NO_COLOR", "")
 		// Ensure we have at least one option so the prompt includes structured pieces.
-		out := colorSecondary("Do you wish to [c]onfigure, [q]uit: ")
+		out := colorSecondary("([c]onfigure): ")
 		if !strings.Contains(out, utils.ThemeSecondaryColor()) {
 			t.Fatalf("expected secondary color in output, got %q", out)
 		}

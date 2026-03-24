@@ -29,6 +29,7 @@ const (
 	promptEditWithEditor
 	unescapedFieldEditWithEditor
 	back
+	quit
 )
 
 // choiceToAction is a comma-separated string of choice strings which should trigger
@@ -39,6 +40,7 @@ var choiceToAction = map[string]action{
 	"d,delete":               del,
 	"n,new":                  newaction,
 	"p,paste":                pasteConfig,
+	"q,quit":                 quit,
 	"e,configureWithEditor":  confWithEditor,
 	"pr,promptWithEditor":    promptEditWithEditor,
 	"ufe,unescapedFieldEdit": unescapedFieldEditWithEditor,
@@ -50,6 +52,12 @@ var actionToTableAction = map[action]utils.TableAction{
 		Long:   "back",
 		Format: "[b]ack",
 		Action: func() error { return utils.ErrBack },
+	},
+	quit: {
+		Short:  "q",
+		Long:   "quit",
+		Format: "[q]uit",
+		Action: func() error { return utils.ErrUserInitiatedExit },
 	},
 	newaction: {
 		Short:  "a",
@@ -98,7 +106,7 @@ func (a action) String() string {
 	case del:
 		return "[d]el"
 	case newaction:
-		return "create [n]ew"
+		return "cre[a]te new"
 	case confWithEditor:
 		return "configure with [e]ditor"
 	case promptEditWithEditor:
@@ -106,9 +114,11 @@ func (a action) String() string {
 	case unescapedFieldEditWithEditor:
 		return "(u)nescaped (f)ield (e)dit [ufe]"
 	case pasteConfig:
-		return "[p]aste config"
+		return "ctrl-[v] config"
 	case back:
 		return "[b]ack"
+	case quit:
+		return "[q]uit"
 	default:
 		return "unset"
 	}
@@ -309,6 +319,24 @@ func setupCustomTableActions(category setupCategory) []utils.TableAction {
 		}
 		ret = append(ret, cta)
 		seenActions[a] = struct{}{}
+	}
+	return ret
+}
+
+func actionsWithNavigation(actions []action) []action {
+	ret := append([]action{}, actions...)
+	for _, navigationAction := range []action{back, quit} {
+		found := false
+		for _, existing := range ret {
+			if existing == navigationAction {
+				found = true
+				break
+			}
+		}
+		if found {
+			continue
+		}
+		ret = append(ret, navigationAction)
 	}
 	return ret
 }

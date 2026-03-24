@@ -68,7 +68,7 @@ func TestSelectConfigItem_PreviewsSelectedItemBeforeActionPrompt(t *testing.T) {
 	if !strings.Contains(out.String(), "\"model\": \"gpt-test\"") {
 		t.Fatalf("expected selected item preview in output, got: %q", out.String())
 	}
-	if !strings.Contains(out.String(), "Choose action ([c]onfigure):") {
+	if !strings.Contains(out.String(), "([c]onfigure, [b]ack, [q]uit): ") {
 		t.Fatalf("expected action prompt in output, got: %q", out.String())
 	}
 }
