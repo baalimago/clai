@@ -23,7 +23,7 @@ func TestSetupCustomTableActions_CategorySpecific(t *testing.T) {
 			name: "mode files only allow configure from selection",
 			category: setupCategory{
 				name:        "mode-files",
-				itemActions: []action{conf, back},
+				itemActions: []action{conf},
 			},
 			want:    nil,
 			notWant: []action{newaction, confWithEditor, promptEditWithEditor, unescapedFieldEditWithEditor},
@@ -32,7 +32,7 @@ func TestSetupCustomTableActions_CategorySpecific(t *testing.T) {
 			name: "model files do not expose prompt specific actions",
 			category: setupCategory{
 				name:        "model files",
-				itemActions: []action{conf, del, confWithEditor, back},
+				itemActions: []action{conf, del, confWithEditor},
 			},
 			want:    nil,
 			notWant: []action{newaction, promptEditWithEditor, unescapedFieldEditWithEditor},
@@ -43,7 +43,7 @@ func TestSetupCustomTableActions_CategorySpecific(t *testing.T) {
 				name:              "text generation profiles",
 				subdirPath:        t.TempDir(),
 				itemSelectActions: []action{newaction},
-				itemActions:       []action{conf, del, confWithEditor, promptEditWithEditor, unescapedFieldEditWithEditor, back},
+				itemActions:       []action{conf, del, confWithEditor, promptEditWithEditor, unescapedFieldEditWithEditor},
 			},
 			want:    []action{newaction},
 			notWant: []action{confWithEditor, promptEditWithEditor, unescapedFieldEditWithEditor},
@@ -114,7 +114,7 @@ func TestSelectConfigItem_ItemSelectionOnlyShowsPaginationAndNew(t *testing.T) {
 			name:              "text generation profiles",
 			subdirPath:        dir,
 			itemSelectActions: []action{newaction},
-			itemActions:       []action{conf, del, confWithEditor, promptEditWithEditor, unescapedFieldEditWithEditor, back},
+			itemActions:       []action{conf, del, confWithEditor, promptEditWithEditor, unescapedFieldEditWithEditor},
 		},
 		[]config{{name: "prof.json", filePath: cfgPath}},
 	)
@@ -129,8 +129,8 @@ func TestSelectConfigItem_ItemSelectionOnlyShowsPaginationAndNew(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if !strings.Contains(out, "[n]ew") {
-		t.Fatalf("expected [n]ew in item selection output, got %q", out)
+	if !strings.Contains(out, "cre[a]te new") {
+		t.Fatalf("expected create-new action in item selection output, got %q", out)
 	}
 	selectPromptPos := strings.Index(strings.ToLower(out), "select config")
 	if selectPromptPos == -1 {

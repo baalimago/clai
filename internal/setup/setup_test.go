@@ -219,11 +219,11 @@ func TestSetupCustomTableActions_TableDriven(t *testing.T) {
 		notWant  []action
 	}{
 		{
-			name: "always includes back",
+			name: "does not add built-in back as custom action",
 			category: setupCategory{
 				name: "plain",
 			},
-			want:    []action{back},
+			want:    []action{},
 			notWant: []action{newaction, pasteConfig},
 		},
 		{
@@ -233,7 +233,7 @@ func TestSetupCustomTableActions_TableDriven(t *testing.T) {
 				subdirPath:        t.TempDir(),
 				itemSelectActions: []action{newaction},
 			},
-			want:    []action{back, newaction},
+			want:    []action{newaction},
 			notWant: []action{pasteConfig},
 		},
 		{
@@ -243,7 +243,7 @@ func TestSetupCustomTableActions_TableDriven(t *testing.T) {
 				subdirPath:        t.TempDir(),
 				itemSelectActions: []action{newaction, pasteConfig},
 			},
-			want: []action{back, newaction, pasteConfig},
+			want: []action{newaction, pasteConfig},
 		},
 	}
 
@@ -375,16 +375,47 @@ func TestSetupCustomTableActions_McpIncludesPasteAction(t *testing.T) {
 	got := setupCustomTableActions(category)
 
 	foundPaste := false
+	foundNew := false
 	for _, cta := range got {
-		if cta.Short == "p" && cta.Long == "paste" {
+		if cta.Short == "v" && cta.Long == "paste" {
 			foundPaste = true
 			if cta.Action == nil {
 				t.Fatalf("paste action missing callback: %+v", cta)
+			}
+			if cta.Format != "ctrl-[v] config" {
+				t.Fatalf("paste action format = %q, want %q", cta.Format, "ctrl-[v] config")
+			}
+		}
+		if cta.Long == "new" {
+			foundNew = true
+			if cta.Short != "a" {
+				t.Fatalf("new action short = %q, want %q", cta.Short, "a")
 			}
 		}
 	}
 
 	if !foundPaste {
 		t.Fatalf("expected MCP item selection to include paste action, got %+v", got)
+	}
+	if !foundNew {
+		t.Fatalf("expected MCP item selection to include new action, got %+v", got)
+	}
+}
+
+func TestSetupCustomTableActions_DoesNotAddBack(t *testing.T) {
+	got := setupCustomTableActions(setupCategory{
+		name:              "profiles",
+		itemSelectActions: []action{back, newaction},
+	})
+
+	backCount := 0
+	for _, action := range got {
+		if action.Long == "back" {
+			backCount++
+		}
+	}
+
+	if backCount != 0 {
+		t.Fatalf("back action count = %d, want 0", backCount)
 	}
 }

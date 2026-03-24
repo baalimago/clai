@@ -52,14 +52,14 @@ var actionToTableAction = map[action]utils.TableAction{
 		Action: func() error { return utils.ErrBack },
 	},
 	newaction: {
-		Short:  "n",
+		Short:  "a",
 		Long:   "new",
-		Format: "[n]ew",
+		Format: "cre[a]te new",
 	},
 	pasteConfig: {
-		Short:  "p",
+		Short:  "v",
 		Long:   "paste",
-		Format: "[p]aste config",
+		Format: "ctrl-[v] config",
 	},
 	confWithEditor: {
 		Short:  "e",
@@ -282,10 +282,12 @@ OUTER:
 }
 
 func setupCustomTableActions(category setupCategory) []utils.TableAction {
-	ret := []utils.TableAction{
-		actionToTableAction[back],
-	}
+	ret := []utils.TableAction{}
+	seenActions := map[action]struct{}{back: {}}
 	for _, a := range category.itemSelectActions {
+		if _, found := seenActions[a]; found {
+			continue
+		}
 		cta, found := actionToTableAction[a]
 		if !found {
 			ancli.Warnf("custom table action not found: %q, this is a bit odd", a)
@@ -306,6 +308,7 @@ func setupCustomTableActions(category setupCategory) []utils.TableAction {
 			}
 		}
 		ret = append(ret, cta)
+		seenActions[a] = struct{}{}
 	}
 	return ret
 }

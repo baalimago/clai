@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -338,7 +339,7 @@ func Test_table_print(t *testing.T) {
 			t.Fatalf("print() printed = %d, want 2", got)
 		}
 
-		wantContains := []string{"2=30\n", "3=40\n", "(page: (1/2). [n]ext, [q]uit): "}
+		wantContains := []string{"2=30\n", "3=40\n", "select ([n]ext, [q]uit, page 1/2): "}
 		for _, want := range wantContains {
 			if !strings.Contains(out.String(), want) {
 				t.Fatalf("print() output = %q, want substring %q", out.String(), want)
@@ -592,11 +593,10 @@ func Test_SelectFromTable(t *testing.T) {
 	})
 
 	t.Run("wraps selectNumbers error", func(t *testing.T) {
-		ttyPath := filepath.Join(t.TempDir(), "tty")
-		if err := os.WriteFile(ttyPath, []byte("next\n"), 0o600); err != nil {
-			t.Fatalf("write tty input: %v", err)
-		}
-		t.Setenv("TTY", ttyPath)
+		restoreReadUserInput := UseReadUserInputForTests(func() (string, error) {
+			return "x", nil
+		})
+		defer restoreReadUserInput()
 
 		_, err := SelectFromTable(
 			"header",
@@ -605,7 +605,7 @@ func Test_SelectFromTable(t *testing.T) {
 			func(i, item int) (string, error) { return fmt.Sprintf("%d=%d", i, item), nil },
 			1,
 			false,
-			[]TableAction{{Format: "[n]ext", Short: "n", Long: "next", Action: nil}},
+			[]TableAction{{Format: "[x]tra", Short: "x", Long: "extra", Action: nil}},
 			new(bytes.Buffer),
 		)
 		if err == nil {
@@ -697,7 +697,7 @@ func Test_SelectFromTable(t *testing.T) {
 		}
 
 		output := out.String()
-		for _, want := range []string{"0=10\n", "1=20\n", "2=30\n", "3=40\n", "(page: (0/1).", "(page: (1/1)."} {
+		for _, want := range []string{"0=10\n", "1=20\n", "2=30\n", "3=40\n", "page 0/1", "page 1/1"} {
 			if !strings.Contains(output, want) {
 				t.Fatalf("SelectFromTable() output = %q, want substring %q", output, want)
 			}
@@ -778,6 +778,91 @@ func Test_SelectFromTable(t *testing.T) {
 		}
 		if !strings.Contains(got, "goto chat: [<num>], next: [<enter>]/[n]ext, [p]rev, [q]uit") {
 			t.Fatalf("print() output = %q, want custom selection type prompt", got)
+		}
+	})
+
+	t.Run("does not print page indicator for single page", func(t *testing.T) {
+		prevReadUserInput := readUserInputFn
+		defer func() { readUserInputFn = prevReadUserInput }()
+		readUserInputFn = func() (string, error) { return "0", nil }
+
+		prevClear := clearTermToFn
+		defer func() { clearTermToFn = prevClear }()
+		clearTermToFn = func(io.Writer, int, int) error { return nil }
+
+		var out bytes.Buffer
+		got, err := SelectFromTable(
+			"header",
+			testPaginator{total: 1, items: []int{10}},
+			"Select item <num>",
+			func(i int, item int) (string, error) { return fmt.Sprintf("%d=%d", i, item), nil },
+			10,
+			true,
+			nil,
+			&out,
+		)
+		if err != nil {
+			t.Fatalf("SelectFromTable() unexpected error: %v", err)
+		}
+		if !slices.Equal(got, []int{0}) {
+			t.Fatalf("SelectFromTable() = %v, want [0]", got)
+		}
+		if strings.Contains(out.String(), "page ") {
+			t.Fatalf("SelectFromTable() output = %q, want no page indicator", out.String())
+		}
+	})
+
+	t.Run("returns error on duplicate table action hotkeys", func(t *testing.T) {
+		prevReadUserInput := readUserInputFn
+		defer func() { readUserInputFn = prevReadUserInput }()
+		readUserInputFn = func() (string, error) { return "0", nil }
+
+		prevClear := clearTermToFn
+		defer func() { clearTermToFn = prevClear }()
+		clearTermToFn = func(io.Writer, int, int) error { return nil }
+
+		_, err := SelectFromTable(
+			"header",
+			testPaginator{total: 1, items: []int{10}},
+			"Select item <num>",
+			func(i int, item int) (string, error) { return fmt.Sprintf("%d=%d", i, item), nil },
+			10,
+			true,
+			[]TableAction{{Format: "[n]ew", Short: "n", Long: "new", Action: func() error { return nil }}},
+			io.Discard,
+		)
+		if err == nil {
+			t.Fatal("SelectFromTable() error = nil, want duplicate hotkey error")
+		}
+		if !strings.Contains(err.Error(), `duplicate table action hotkey "n"`) {
+			t.Fatalf("SelectFromTable() error = %q, want duplicate hotkey context", err.Error())
+		}
+	})
+
+	t.Run("returns error on duplicate built-in and additional action even when identical", func(t *testing.T) {
+		prevReadUserInput := readUserInputFn
+		defer func() { readUserInputFn = prevReadUserInput }()
+		readUserInputFn = func() (string, error) { return "0", nil }
+
+		prevClear := clearTermToFn
+		defer func() { clearTermToFn = prevClear }()
+		clearTermToFn = func(io.Writer, int, int) error { return nil }
+
+		_, err := SelectFromTable(
+			"header",
+			testPaginator{total: 1, items: []int{10}},
+			"Select item <num>",
+			func(i int, item int) (string, error) { return fmt.Sprintf("%d=%d", i, item), nil },
+			10,
+			true,
+			[]TableAction{{Format: "[b]ack", Short: "b", Long: "back", Action: func() error { return nil }}},
+			io.Discard,
+		)
+		if err == nil {
+			t.Fatal("SelectFromTable() error = nil, want duplicate hotkey error")
+		}
+		if !strings.Contains(err.Error(), `duplicate table action hotkey "b"`) {
+			t.Fatalf("SelectFromTable() error = %q, want duplicate hotkey context", err.Error())
 		}
 	})
 }

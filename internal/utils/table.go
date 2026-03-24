@@ -171,12 +171,16 @@ func SelectFromTable[T any](
 		out:           out,
 	}
 	tab.lastPage = tab.pageCount()
+	baseActions := []TableAction{tab.prevPage(), tab.nextPage(), tab.back(), tab.quit()}
+	if err := validateTableActions(additionalTableActions, baseActions); err != nil {
+		return nil, fmt.Errorf("failed to validate table actions: %w", err)
+	}
 	defer func() {
 		if err := clearTermToFn(out, -1, 2); err != nil && tab.debug {
 			ancli.Errf("failed to clear header: %v", err)
 		}
 	}()
-	tab.tableActions = append(tab.tableActions, tab.prevPage(), tab.nextPage(), tab.back(), tab.quit())
+	tab.tableActions = append(tab.tableActions, baseActions...)
 	var (
 		selectedNumbers []int
 		err             error
@@ -228,17 +232,20 @@ func (t *table[T]) print() (int, error) {
 		}
 		amPrinted++
 	}
-	fmt.Fprint(t.out, Colorize(
-		ThemeSecondaryColor(),
-		fmt.Sprintf(
-			"%s (page: (%v/%v). %s): ",
-			selectionTypeOrDefault(t.selectionType),
-			t.page,
-			t.pageCount(),
-			t.tableActionsString(),
-		),
-	))
+	_, err = fmt.Fprint(t.out, Colorize(ThemeSecondaryColor(), t.promptLine()))
+	if err != nil {
+		return 0, fmt.Errorf("failed to print prompt line: %w", err)
+	}
 	return amPrinted, nil
+}
+
+func (t *table[T]) promptLine() string {
+	selection := selectionTypeOrDefault(t.selectionType)
+	actions := t.tableActionsString()
+	if t.pageCount() == 0 {
+		return fmt.Sprintf("%s (%s): ", selection, actions)
+	}
+	return fmt.Sprintf("%s (%s, page %v/%v): ", selection, actions, t.page, t.pageCount())
 }
 
 func selectionTypeOrDefault(selectionType string) string {
@@ -331,6 +338,40 @@ func actionAlreadyDescribed(selectionType string, action TableAction) bool {
 		}
 	}
 	return false
+}
+
+func validateTableActions(additionalActions, baseActions []TableAction) error {
+	seen := map[string]TableAction{}
+	for _, action := range baseActions {
+		for _, key := range tableActionKeys(action) {
+			seen[key] = action
+		}
+	}
+	for _, action := range additionalActions {
+		for _, key := range tableActionKeys(action) {
+			if existing, found := seen[key]; found {
+				return fmt.Errorf("duplicate table action hotkey %q between %q and %q", key, existing.Long, action.Long)
+			}
+			seen[key] = action
+		}
+	}
+	return nil
+}
+
+func tableActionKeys(action TableAction) []string {
+	keys := []string{action.Short, action.Long}
+	if action.AdditionalHotkeys != "" {
+		keys = append(keys, strings.Split(action.AdditionalHotkeys, ",")...)
+	}
+	ret := make([]string, 0, len(keys))
+	for _, key := range keys {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		ret = append(ret, key)
+	}
+	return ret
 }
 
 func (t *table[T]) pageCount() int {

@@ -61,16 +61,11 @@ func previewConfigItem(cfg config) error {
 
 func queryForAction(options []action) (action, error) {
 	var ret action
-	var userQuery strings.Builder
-	userQuery.WriteString("Do you wish to ")
-	for i, s := range options {
-		if i > 0 {
-			userQuery.WriteString(", ")
-		}
-		userQuery.WriteString(s.String())
+	formattedOptions := make([]string, 0, len(options))
+	for _, option := range options {
+		formattedOptions = append(formattedOptions, option.String())
 	}
-	userQuery.WriteString(": ")
-	fmt.Print(colorSecondary(userQuery.String()))
+	fmt.Print(colorSecondary(fmt.Sprintf("Choose action (%s): ", strings.Join(formattedOptions, ", "))))
 	input, err := utils.ReadUserInput()
 	if err != nil {
 		return unset, fmt.Errorf("failed to query for action: %w", err)
@@ -90,8 +85,7 @@ func queryForAction(options []action) (action, error) {
 }
 
 func actOnConfigItem(category setupCategory, cfg config) error {
-	actionsWithBackQuit := append(category.itemActions, back)
-	selectedAction, err := queryForAction(actionsWithBackQuit)
+	selectedAction, err := queryForAction(category.itemActions)
 	if err != nil {
 		return fmt.Errorf("failed to query for config action: %w", err)
 	}

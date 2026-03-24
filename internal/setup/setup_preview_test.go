@@ -52,7 +52,7 @@ func TestSelectConfigItem_PreviewsSelectedItemBeforeActionPrompt(t *testing.T) {
 	}()
 
 	err = selectConfigItem(
-		setupCategory{name: "model files", itemActions: []action{conf, back}},
+		setupCategory{name: "model files", itemActions: []action{conf}},
 		[]config{{name: "preview.json", filePath: tmpFile.Name()}},
 	)
 
@@ -68,7 +68,7 @@ func TestSelectConfigItem_PreviewsSelectedItemBeforeActionPrompt(t *testing.T) {
 	if !strings.Contains(out.String(), "\"model\": \"gpt-test\"") {
 		t.Fatalf("expected selected item preview in output, got: %q", out.String())
 	}
-	if !strings.Contains(out.String(), "Do you wish to") {
+	if !strings.Contains(out.String(), "Choose action ([c]onfigure):") {
 		t.Fatalf("expected action prompt in output, got: %q", out.String())
 	}
 }
