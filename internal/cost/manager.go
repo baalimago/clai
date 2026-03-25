@@ -13,6 +13,30 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
+func usageDelta(current pub_models.Usage, previous *pub_models.Usage) pub_models.Usage {
+	if previous == nil {
+		return current
+	}
+
+	delta := pub_models.Usage{
+		PromptTokens:     max(current.PromptTokens-previous.PromptTokens, 0),
+		CompletionTokens: max(current.CompletionTokens-previous.CompletionTokens, 0),
+		TotalTokens:      max(current.TotalTokens-previous.TotalTokens, 0),
+		PromptTokensDetails: pub_models.PromptTokensDetails{
+			CachedTokens: max(current.PromptTokensDetails.CachedTokens-previous.PromptTokensDetails.CachedTokens, 0),
+			AudioTokens:  max(current.PromptTokensDetails.AudioTokens-previous.PromptTokensDetails.AudioTokens, 0),
+		},
+		CompletionTokensDetails: pub_models.CompletionTokensDetails{
+			ReasoningTokens:          max(current.CompletionTokensDetails.ReasoningTokens-previous.CompletionTokensDetails.ReasoningTokens, 0),
+			AudioTokens:              max(current.CompletionTokensDetails.AudioTokens-previous.CompletionTokensDetails.AudioTokens, 0),
+			AcceptedPredictionTokens: max(current.CompletionTokensDetails.AcceptedPredictionTokens-previous.CompletionTokensDetails.AcceptedPredictionTokens, 0),
+			RejectedPredictionTokens: max(current.CompletionTokensDetails.RejectedPredictionTokens-previous.CompletionTokensDetails.RejectedPredictionTokens, 0),
+		},
+	}
+
+	return delta
+}
+
 type ModelCatalogFetcher interface {
 	FetchModel(ctx context.Context, model string) (ModelPriceScheme, error)
 }
@@ -190,7 +214,8 @@ func (m *Manager) Enrich(chat pub_models.Chat) (pub_models.Chat, error) {
 	if m.debug {
 		ancli.Noticef("encirchening (?) chat: %v, which has: %v queries", chat.ID, len(chat.Queries))
 	}
-	estimate, err := m.estimateUSD(chat.TokenUsage)
+	usage := usageDelta(*chat.TokenUsage, latestRecordedUsage(chat.Queries))
+	estimate, err := m.estimateUSD(&usage)
 	if err != nil {
 		return pub_models.Chat{}, fmt.Errorf("enrich chat with cost estimate: %w", err)
 	}
@@ -212,11 +237,19 @@ func (m *Manager) Enrich(chat pub_models.Chat) (pub_models.Chat, error) {
 		CostUSD:        estimate,
 		MessageTrigger: idx,
 		Model:          modelName,
-		Usage:          *chat.TokenUsage,
+		Usage:          usage,
 	})
 
 	if m.debug {
 		ancli.Noticef("chat now has: %v query entries", len(chat.Queries))
 	}
 	return chat, nil
+}
+
+func latestRecordedUsage(queries []pub_models.QueryCost) *pub_models.Usage {
+	if len(queries) == 0 {
+		return nil
+	}
+	usage := queries[len(queries)-1].Usage
+	return &usage
 }

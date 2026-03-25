@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/baalimago/clai/internal/text"
@@ -326,13 +327,7 @@ func setupCustomTableActions(category setupCategory) []utils.TableAction {
 func actionsWithNavigation(actions []action) []action {
 	ret := append([]action{}, actions...)
 	for _, navigationAction := range []action{back, quit} {
-		found := false
-		for _, existing := range ret {
-			if existing == navigationAction {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(ret, navigationAction)
 		if found {
 			continue
 		}
