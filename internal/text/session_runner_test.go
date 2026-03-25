@@ -3,6 +3,7 @@ package text
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -10,6 +11,39 @@ import (
 	"github.com/baalimago/clai/internal/models"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
+
+func stripANSIEscapes(s string) string {
+	var out strings.Builder
+	out.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		if s[i] != 0x1b {
+			out.WriteByte(s[i])
+			continue
+		}
+		i++
+		if i >= len(s) {
+			break
+		}
+		if s[i] != '[' {
+			continue
+		}
+		for i+1 < len(s) {
+			i++
+			c := s[i]
+			if c >= '@' && c <= '~' {
+				break
+			}
+		}
+	}
+	return out.String()
+}
+
+func withEmptyClaiConfigDir(t *testing.T) string {
+	t.Helper()
+	confDir := filepath.Join(t.TempDir(), ".clai")
+	t.Setenv("CLAI_CONFIG_DIR", confDir)
+	return confDir
+}
 
 type recordingCallUsageRecorder struct {
 	calls []CompletedModelCall
@@ -210,6 +244,140 @@ func Test_sessionRunner_Run_PartialStreamFailureFinalizesOnce(t *testing.T) {
 	}
 	if finalizer.count != 1 {
 		t.Fatalf("expected finalizer once, got %d", finalizer.count)
+	}
+}
+
+func Test_sessionRunner_Run_DoesNotDuplicateToolCallEchoBeforeStructuredCall(t *testing.T) {
+	withEmptyClaiConfigDir(t)
+
+	model := &MockQuerier{}
+	callCount := 0
+	echoCall := pub_models.Call{
+		ID:   "call-1",
+		Name: "pwd",
+		Inputs: &pub_models.Input{
+			"path": ".",
+		},
+	}
+	model.streamFn = func(_ context.Context, _ pub_models.Chat) (chan models.CompletionEvent, error) {
+		callCount++
+		out := make(chan models.CompletionEvent, 3)
+		if callCount == 1 {
+			out <- echoCall.PrettyPrint()
+			out <- echoCall
+			close(out)
+			return out, nil
+		}
+		out <- "final answer"
+		close(out)
+		return out, nil
+	}
+
+	var printed strings.Builder
+	q := &Querier[*MockQuerier]{
+		out:       &printed,
+		termWidth: 80,
+		Model:     model,
+	}
+	session := &QuerySession{Chat: pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "hello"}}}}
+	runner := sessionRunner[*MockQuerier]{
+		querier:      q,
+		recorder:     &recordingCallUsageRecorder{},
+		finalizer:    sessionFinalizer[*MockQuerier]{querier: q},
+		toolExecutor: toolExecutor[*MockQuerier]{querier: q},
+	}
+
+	err := runner.Run(context.Background(), session)
+	if err != nil {
+		t.Fatalf("Run returned err: %v", err)
+	}
+
+	printedOutput := printed.String()
+	normalizedOutput := stripANSIEscapes(printedOutput)
+	rawEchoAt := strings.Index(normalizedOutput, echoCall.PrettyPrint())
+	if rawEchoAt == -1 {
+		t.Fatalf("expected raw echoed tool call in output, got:\n%s", normalizedOutput)
+	}
+	clearAt := strings.Index(normalizedOutput[rawEchoAt+len(echoCall.PrettyPrint()):], "\r")
+	if clearAt == -1 {
+		t.Fatalf("expected terminal clear/control output after echoed tool call, got output:\n%s", normalizedOutput)
+	}
+	clearAt += rawEchoAt + len(echoCall.PrettyPrint())
+	structuredAt := strings.Index(normalizedOutput[clearAt:], "assistant:")
+	if structuredAt == -1 {
+		t.Fatalf("expected structured assistant render after clear, got output:\n%s", normalizedOutput)
+	}
+	structuredAt += clearAt
+	if got := strings.Count(normalizedOutput[structuredAt:], echoCall.PrettyPrint()); got != 1 {
+		t.Fatalf("expected exactly one structured tool-call pretty print after assistant render, got %d occurrences in output:\n%s", got, normalizedOutput)
+	}
+	if session.FinalAssistantText != "final answer" {
+		t.Fatalf("expected final assistant text from follow-up step, got %q", session.FinalAssistantText)
+	}
+}
+
+func Test_toolExecutor_FinalizeAssistantTextBeforeToolCall_PreservesAssistantProse(t *testing.T) {
+	withEmptyClaiConfigDir(t)
+
+	call := pub_models.Call{
+		ID:   "call-1",
+		Name: "pwd",
+	}
+	var printed strings.Builder
+	q := &Querier[*MockQuerier]{
+		out:       &printed,
+		termWidth: 80,
+	}
+	session := &QuerySession{}
+	session.AppendPendingText("I will check that for you.")
+
+	err := toolExecutor[*MockQuerier]{querier: q}.finalizeAssistantTextBeforeToolCall(session, call)
+	if err != nil {
+		t.Fatalf("finalizeAssistantTextBeforeToolCall returned err: %v", err)
+	}
+
+	if got := session.PendingTextString(); got != "" {
+		t.Fatalf("expected pending text to be cleared, got %q", got)
+	}
+	if session.FinalAssistantText != "I will check that for you." {
+		t.Fatalf("expected prose to be preserved as final assistant text, got %q", session.FinalAssistantText)
+	}
+
+	normalizedOutput := stripANSIEscapes(printed.String())
+	if !strings.Contains(normalizedOutput, "I will check that for you.") {
+		t.Fatalf("expected prose to be rendered during finalization, got output:\n%s", normalizedOutput)
+	}
+}
+
+func Test_toolExecutor_FinalizeAssistantTextBeforeToolCall_DropsWhitespaceEquivalentEcho(t *testing.T) {
+	withEmptyClaiConfigDir(t)
+
+	call := pub_models.Call{
+		ID:   "call-1",
+		Name: "pwd",
+	}
+	echoed := "\n" + call.PrettyPrint() + "\n"
+	var printed strings.Builder
+	q := &Querier[*MockQuerier]{
+		out:       &printed,
+		termWidth: 80,
+	}
+	session := &QuerySession{}
+	session.AppendPendingText(echoed)
+
+	err := toolExecutor[*MockQuerier]{querier: q}.finalizeAssistantTextBeforeToolCall(session, call)
+	if err != nil {
+		t.Fatalf("finalizeAssistantTextBeforeToolCall returned err: %v", err)
+	}
+
+	if got := session.PendingTextString(); got != "" {
+		t.Fatalf("expected pending text to be cleared, got %q", got)
+	}
+	if session.FinalAssistantText != "" {
+		t.Fatalf("expected echoed tool-call text not to be finalized, got %q", session.FinalAssistantText)
+	}
+	if got := stripANSIEscapes(printed.String()); strings.Contains(got, call.PrettyPrint()) {
+		t.Fatalf("expected echoed tool-call text not to be post-processed, got output:\n%s", got)
 	}
 }
 

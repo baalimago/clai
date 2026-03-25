@@ -40,6 +40,9 @@ func (e toolExecutor[C]) Execute(ctx context.Context, session *QuerySession, cal
 		session.ResetPendingText()
 		return nil
 	}
+	if err := e.finalizeAssistantTextBeforeToolCall(session, call); err != nil {
+		return fmt.Errorf("finalize assistant text before tool call: %w", err)
+	}
 	call = decision.PatchedCall
 
 	assistantToolsCall := pub_models.Message{
@@ -109,6 +112,46 @@ func (e toolExecutor[C]) Execute(ctx context.Context, session *QuerySession, cal
 	}
 	session.ResetPendingText()
 	return nil
+}
+
+func (e toolExecutor[C]) finalizeAssistantTextBeforeToolCall(session *QuerySession, call pub_models.Call) error {
+	if session == nil {
+		return errors.New("session is nil")
+	}
+	pending := session.PendingTextString()
+	if pending == "" {
+		return nil
+	}
+	q := e.querier
+	if !q.Raw && q.termWidth > 0 {
+		utils.UpdateMessageTerminalMetadata(pending, &session.Line, &session.LineCount, q.termWidth)
+		if err := utils.ClearTermTo(q.out, q.termWidth, session.LineCount-1); err != nil {
+			return fmt.Errorf("clear streamed assistant text before tool call: %w", err)
+		}
+	}
+	if isEchoedToolCallText(pending, call) {
+		session.ResetPendingText()
+		q.fullMsg = ""
+		q.line = ""
+		q.lineCount = 0
+		return nil
+	}
+	session.ResetPendingText()
+	session.FinalAssistantText = pending
+	q.fullMsg = pending
+	q.line = ""
+	q.lineCount = 0
+	q.postProcessOutput(pub_models.Message{
+		Role:    "assistant",
+		Content: pending,
+	})
+	session.Line = q.line
+	session.LineCount = q.lineCount
+	return nil
+}
+
+func isEchoedToolCallText(pending string, call pub_models.Call) bool {
+	return strings.TrimSpace(pending) == strings.TrimSpace(call.PrettyPrint())
 }
 
 func (q *Querier[C]) decideToolCall(session *QuerySession, call pub_models.Call) ToolDecision {
