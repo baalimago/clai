@@ -158,12 +158,12 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 	ancli.PrintOK(fmt.Sprintf("found '%v' conversations:\n", paginator.Len()))
 
 	tblFmt := selectChatTblFormat
-	headArgs := []any{"Index", "Created", "Messages", "Cost", "Prompt"}
+	headArgs := []any{"Index", "Created", "Messages", "Model", "Cost", "Prompt"}
 	includeProfile := false
 	if tw, err := utils.TermWidth(); err == nil && tw > 120 {
 		includeProfile = true
-		tblFmt = "%-6s| %-20s| %-8v | %-10s | %-8s | %-6s | %v"
-		headArgs = []any{"Index", "Created", "Messages", "Profile", "Cost", "Tokens", "Prompt"}
+		tblFmt = "%-6s| %-20s| %-8v | %-10s | %-18s | %-8s | %-6s | %v"
+		headArgs = []any{"Index", "Created", "Messages", "Profile", "Model", "Cost", "Tokens", "Prompt"}
 	}
 
 	selectedNumbers, err := utils.SelectFromTable(
@@ -180,6 +180,7 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 					item.Created.Format("2006-01-02 15:04:05"),
 					item.MessageCount,
 					item.Profile,
+					item.Model,
 					costStr,
 					tokenStr,
 					"",
@@ -196,6 +197,7 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 				fmt.Sprintf("%v", i),
 				item.Created.Format("2006-01-02 15:04:05"),
 				item.MessageCount,
+				item.Model,
 				costStr,
 				"",
 			)

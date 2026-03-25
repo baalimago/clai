@@ -30,7 +30,7 @@ func TestChatHandler_continue_emptyPrompt_prefersDirScope_thenGlobalScope(t *tes
 		t.Fatalf("Save global: %v", err)
 	}
 
-	dirChat := pub_models.Chat{ID: HashIDFromPrompt("dir"), Created: time.Now(), Messages: []pub_models.Message{{Role: "user", Content: "dir msg"}}}
+	dirChat := pub_models.Chat{ID: "dir-chat", Created: time.Now(), Messages: []pub_models.Message{{Role: "user", Content: "dir msg"}}}
 	if err := Save(convDir, dirChat); err != nil {
 		t.Fatalf("Save dir chat: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestChatHandler_continueByID_preservesStoredQueries(t *testing.T) {
 	}
 	convDir := filepath.Join(confDir, "conversations")
 
-	chatID := HashIDFromPrompt("continue this")
+	chatID := "continue-this-chat"
 	stored := pub_models.Chat{
 		ID:      chatID,
 		Created: time.Now(),

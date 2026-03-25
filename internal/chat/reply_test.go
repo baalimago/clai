@@ -1,6 +1,8 @@
 package chat
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -38,11 +40,25 @@ func TestSaveAsPreviousQuery_PreservesQueries(t *testing.T) {
 		t.Fatalf("query cost mismatch: got %v", got.Queries[0].CostUSD)
 	}
 
-	conv, err := FromPath(confDir + "/conversations/" + HashIDFromPrompt("hello") + ".json")
+	entries, err := os.ReadDir(filepath.Join(confDir, "conversations"))
 	if err != nil {
-		t.Fatalf("load saved conversation: %v", err)
+		t.Fatalf("ReadDir(conversations): %v", err)
 	}
-	if len(conv.Queries) != 1 {
-		t.Fatalf("conversation queries length mismatch: got %d", len(conv.Queries))
+	foundConversation := false
+	for _, entry := range entries {
+		if entry.IsDir() || entry.Name() == "globalScope.json" || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		conv, err := FromPath(filepath.Join(confDir, "conversations", entry.Name()))
+		if err != nil {
+			t.Fatalf("load saved conversation %q: %v", entry.Name(), err)
+		}
+		if len(conv.Queries) != 1 {
+			t.Fatalf("conversation queries length mismatch: got %d", len(conv.Queries))
+		}
+		foundConversation = true
+	}
+	if !foundConversation {
+		t.Fatalf("expected a persisted conversation besides globalScope")
 	}
 }

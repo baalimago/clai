@@ -6,6 +6,7 @@ import (
 	"path"
 	"time"
 
+	"github.com/baalimago/clai/internal/chatid"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -15,6 +16,7 @@ import (
 // Name kept for backwards compatibility.
 func SaveAsPreviousQuery(claiConfDir string, chat pub_models.Chat) error {
 	traceChatf("save previous query start conf_dir=%q chat_id=%q messages=%d profile=%q", claiConfDir, chat.ID, len(chat.Messages), chat.Profile)
+	sourceChat := chat
 	globalScopeChat := pub_models.Chat{
 		Created:    time.Now(),
 		ID:         globalScopeChatID,
@@ -31,9 +33,13 @@ func SaveAsPreviousQuery(claiConfDir string, chat pub_models.Chat) error {
 			return fmt.Errorf("failed to get first user message: %w", err)
 		}
 		traceChatf("save previous query promoting conversation first_user_len=%d", len(firstUserMsg.Content))
+		convID, err := chatid.New()
+		if err != nil {
+			return fmt.Errorf("generate promoted conversation id: %w", err)
+		}
 		convChat := pub_models.Chat{
 			Created:    time.Now(),
-			ID:         HashIDFromPrompt(firstUserMsg.Content),
+			ID:         convID,
 			Profile:    chat.Profile,
 			Messages:   chat.Messages,
 			TokenUsage: chat.TokenUsage,
@@ -53,7 +59,17 @@ func SaveAsPreviousQuery(claiConfDir string, chat pub_models.Chat) error {
 	}
 
 	traceChatf("save previous query global scope path=%q", path.Join(claiConfDir, "conversations", globalScopeFile))
-	return Save(path.Join(claiConfDir, "conversations"), globalScopeChat)
+	if err := Save(path.Join(claiConfDir, "conversations"), globalScopeChat); err != nil {
+		return fmt.Errorf("save global scope chat: %w", err)
+	}
+	if sourceChat.ID != "" && sourceChat.ID != globalScopeChatID {
+		convPath := path.Join(claiConfDir, "conversations")
+		traceChatf("save previous query update source conversation path=%q chat_id=%q", convPath, sourceChat.ID)
+		if err := Save(convPath, sourceChat); err != nil {
+			return fmt.Errorf("save source conversation chat: %w", err)
+		}
+	}
+	return nil
 }
 
 // LoadPrevQuery loads the global-scoped chat.
