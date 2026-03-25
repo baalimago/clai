@@ -212,3 +212,52 @@ func TestManagerEnrich_AppendsConfiguredModelForNewTurn(t *testing.T) {
 		t.Fatalf("query[1] message trigger: got %d want %d", got.Queries[1].MessageTrigger, 3)
 	}
 }
+
+func TestManagerEnrich_AccumulatedUsageAppendsIncrementalCostOnly(t *testing.T) {
+	mgr := Manager{
+		model: "model-b",
+		price: &ModelPriceScheme{
+			InputUSDPerToken:  0.001,
+			OutputUSDPerToken: 0.002,
+		},
+	}
+
+	chat := pub_models.Chat{
+		Messages: []pub_models.Message{
+			{Role: "system", Content: "sys"},
+			{Role: "user", Content: "question"},
+		},
+		TokenUsage: &pub_models.Usage{
+			PromptTokens:     10,
+			CompletionTokens: 7,
+			TotalTokens:      17,
+		},
+		Queries: []pub_models.QueryCost{
+			{
+				CreatedAt:      time.Now().Add(-time.Minute),
+				CostUSD:        0.012,
+				MessageTrigger: 1,
+				Model:          "model-b",
+				Usage: pub_models.Usage{
+					PromptTokens:     6,
+					CompletionTokens: 1,
+					TotalTokens:      7,
+				},
+			},
+		},
+	}
+
+	got, err := mgr.Enrich(chat)
+	if err != nil {
+		t.Fatalf("Enrich: %v", err)
+	}
+	if len(got.Queries) != 2 {
+		t.Fatalf("queries len: got %d want %d", len(got.Queries), 2)
+	}
+	if got.Queries[1].CostUSD != 0.016 {
+		t.Fatalf("query[1] cost: got %v want %v", got.Queries[1].CostUSD, 0.016)
+	}
+	if got.Queries[1].Usage.PromptTokens != 4 || got.Queries[1].Usage.CompletionTokens != 6 || got.Queries[1].Usage.TotalTokens != 10 {
+		t.Fatalf("query[1] usage delta: got %+v", got.Queries[1].Usage)
+	}
+}
