@@ -213,6 +213,54 @@ func Test_sessionRunner_Run_PartialStreamFailureFinalizesOnce(t *testing.T) {
 	}
 }
 
+func Test_sessionRunner_Run_DoesNotDuplicateToolCallEchoBeforeStructuredCall(t *testing.T) {
+	model := &MockQuerier{}
+	callCount := 0
+	echoCall := pub_models.Call{
+		ID:   "call-1",
+		Name: "mcp_postgres_execute_sql",
+		Inputs: &pub_models.Input{
+			"sql": "SELECT 1",
+		},
+	}
+	model.streamFn = func(_ context.Context, _ pub_models.Chat) (chan models.CompletionEvent, error) {
+		callCount++
+		out := make(chan models.CompletionEvent, 3)
+		if callCount == 1 {
+			out <- echoCall.PrettyPrint()
+			out <- echoCall
+			close(out)
+			return out, nil
+		}
+		out <- "final answer"
+		close(out)
+		return out, nil
+	}
+
+	var printed strings.Builder
+	q := &Querier[*MockQuerier]{
+		out:   &printed,
+		Model: model,
+	}
+	session := &QuerySession{Chat: pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "hello"}}}}
+	runner := sessionRunner[*MockQuerier]{
+		querier:      q,
+		recorder:     &recordingCallUsageRecorder{},
+		finalizer:    sessionFinalizer[*MockQuerier]{querier: q},
+		toolExecutor: toolExecutor[*MockQuerier]{querier: q},
+	}
+
+	err := runner.Run(context.Background(), session)
+	if err != nil {
+		t.Fatalf("Run returned err: %v", err)
+	}
+
+	printedOutput := printed.String()
+	if got := strings.Count(printedOutput, echoCall.PrettyPrint()); got != 1 {
+		t.Fatalf("expected tool call pretty-print once, got %d occurrences in output:\n%s", got, printedOutput)
+	}
+}
+
 func Test_sessionRunner_Run_RateLimitRetryIsIterative(t *testing.T) {
 	model := &MockQuerier{}
 	callCount := 0
