@@ -3,6 +3,7 @@ package text
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -35,6 +36,13 @@ func stripANSIEscapes(s string) string {
 		}
 	}
 	return out.String()
+}
+
+func withEmptyClaiConfigDir(t *testing.T) string {
+	t.Helper()
+	confDir := filepath.Join(t.TempDir(), ".clai")
+	t.Setenv("CLAI_CONFIG_DIR", confDir)
+	return confDir
 }
 
 type recordingCallUsageRecorder struct {
@@ -240,13 +248,15 @@ func Test_sessionRunner_Run_PartialStreamFailureFinalizesOnce(t *testing.T) {
 }
 
 func Test_sessionRunner_Run_DoesNotDuplicateToolCallEchoBeforeStructuredCall(t *testing.T) {
+	withEmptyClaiConfigDir(t)
+
 	model := &MockQuerier{}
 	callCount := 0
 	echoCall := pub_models.Call{
 		ID:   "call-1",
-		Name: "mcp_postgres_execute_sql",
+		Name: "pwd",
 		Inputs: &pub_models.Input{
-			"sql": "SELECT 1",
+			"path": ".",
 		},
 	}
 	model.streamFn = func(_ context.Context, _ pub_models.Chat) (chan models.CompletionEvent, error) {
@@ -284,11 +294,22 @@ func Test_sessionRunner_Run_DoesNotDuplicateToolCallEchoBeforeStructuredCall(t *
 
 	printedOutput := printed.String()
 	normalizedOutput := stripANSIEscapes(printedOutput)
-	if got := strings.Count(normalizedOutput, "assistant:\n  "+echoCall.PrettyPrint()); got != 1 {
-		t.Fatalf("expected exactly one structured assistant tool-call render, got %d occurrences in output:\n%s", got, normalizedOutput)
+	rawEchoAt := strings.Index(normalizedOutput, echoCall.PrettyPrint())
+	if rawEchoAt == -1 {
+		t.Fatalf("expected raw echoed tool call in output, got:\n%s", normalizedOutput)
 	}
-	if !strings.Contains(printedOutput, "\r") {
-		t.Fatalf("expected terminal clear/control output to be emitted when removing streamed echo, got output:\n%s", printedOutput)
+	clearAt := strings.Index(normalizedOutput[rawEchoAt+len(echoCall.PrettyPrint()):], "\r")
+	if clearAt == -1 {
+		t.Fatalf("expected terminal clear/control output after echoed tool call, got output:\n%s", normalizedOutput)
+	}
+	clearAt += rawEchoAt + len(echoCall.PrettyPrint())
+	structuredAt := strings.Index(normalizedOutput[clearAt:], "assistant:")
+	if structuredAt == -1 {
+		t.Fatalf("expected structured assistant render after clear, got output:\n%s", normalizedOutput)
+	}
+	structuredAt += clearAt
+	if got := strings.Count(normalizedOutput[structuredAt:], echoCall.PrettyPrint()); got != 1 {
+		t.Fatalf("expected exactly one structured tool-call pretty print after assistant render, got %d occurrences in output:\n%s", got, normalizedOutput)
 	}
 	if session.FinalAssistantText != "final answer" {
 		t.Fatalf("expected final assistant text from follow-up step, got %q", session.FinalAssistantText)
@@ -296,6 +317,8 @@ func Test_sessionRunner_Run_DoesNotDuplicateToolCallEchoBeforeStructuredCall(t *
 }
 
 func Test_toolExecutor_FinalizeAssistantTextBeforeToolCall_PreservesAssistantProse(t *testing.T) {
+	withEmptyClaiConfigDir(t)
+
 	call := pub_models.Call{
 		ID:   "call-1",
 		Name: "pwd",
@@ -327,6 +350,8 @@ func Test_toolExecutor_FinalizeAssistantTextBeforeToolCall_PreservesAssistantPro
 }
 
 func Test_toolExecutor_FinalizeAssistantTextBeforeToolCall_DropsWhitespaceEquivalentEcho(t *testing.T) {
+	withEmptyClaiConfigDir(t)
+
 	call := pub_models.Call{
 		ID:   "call-1",
 		Name: "pwd",
