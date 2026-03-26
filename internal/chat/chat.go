@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
@@ -40,7 +39,7 @@ func Save(saveAt string, chat pub_models.Chat) error {
 	if err != nil {
 		return fmt.Errorf("failed to encode JSON: %w", err)
 	}
-	fileName := path.Join(saveAt, fmt.Sprintf("%v.json", chat.ID))
+	fileName := conversationPathFromDir(saveAt, chat.ID)
 	if misc.Truthy(os.Getenv("DEBUG")) && misc.Truthy(os.Getenv("DEBUG_VERBOSE")) || misc.Truthy(os.Getenv("DEBUG_REPLY_MODE")) {
 		ancli.PrintOK(fmt.Sprintf("saving chat to: '%v'", fileName))
 	}

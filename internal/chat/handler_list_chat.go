@@ -6,7 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path"
+	"path/filepath"
 	"slices"
 	"unicode/utf8"
 
@@ -133,7 +133,7 @@ func (cq *ChatHandler) list() ([]pub_models.Chat, error) {
 		if dirEntry.IsDir() || dirEntry.Name() == chatIndexFileName {
 			continue
 		}
-		p := path.Join(cq.convDir, dirEntry.Name())
+		p := filepath.Join(cq.convDir, dirEntry.Name())
 		chat, err := FromPath(p)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get chat %q: %w", p, err)
@@ -234,7 +234,7 @@ func (cq *ChatHandler) printChatInfo(w io.Writer, chat pub_models.Chat) error {
 	if err != nil {
 		return fmt.Errorf("failed to get clai config dir: %w", err)
 	}
-	filePath := path.Join(claiConfDir, "conversations", chat.ID)
+	filePath := conversationPath(claiConfDir, chat.ID)
 	messageTypeCounter := make(map[string]int)
 	for _, m := range chat.Messages {
 		messageTypeCounter[m.Role]++

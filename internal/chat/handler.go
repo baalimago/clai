@@ -8,7 +8,6 @@ import (
 	"io/fs"
 	"os"
 	"os/user"
-	"path"
 	"slices"
 	"strconv"
 	"strings"
@@ -264,7 +263,7 @@ func (cq *ChatHandler) deleteFromPrompt() error {
 	if err != nil {
 		return fmt.Errorf("failed to get chat to delete: %w", err)
 	}
-	err = os.Remove(path.Join(cq.convDir, fmt.Sprintf("%v.json", c.ID)))
+	err = os.Remove(conversationPathFromDir(cq.convDir, c.ID))
 	if err != nil {
 		return fmt.Errorf("failed to delete chat: %w", err)
 	}
@@ -273,7 +272,7 @@ func (cq *ChatHandler) deleteFromPrompt() error {
 }
 
 func (cq *ChatHandler) getByID(ID string) (pub_models.Chat, error) {
-	return FromPath(path.Join(cq.convDir, fmt.Sprintf("%v.json", ID)))
+	return FromPath(conversationPathFromDir(cq.convDir, ID))
 }
 
 func New(q models.ChatQuerier,
@@ -310,7 +309,7 @@ func New(q models.ChatQuerier,
 		subCmd:   subCmd,
 		prompt:   subPrompt,
 		confDir:  claiDir,
-		convDir:  path.Join(claiDir, "conversations"),
+		convDir:  conversationsDir(claiDir),
 		config:   conf,
 		raw:      raw,
 		out:      out,

@@ -6,20 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path"
 	"path/filepath"
 	"time"
 
 	"github.com/baalimago/clai/internal/utils"
 )
-
-func conversationsDir(confDir string) string {
-	return filepath.Join(confDir, "conversations")
-}
-
-func conversationPath(confDir, chatID string) string {
-	return filepath.Join(conversationsDir(confDir), chatID+".json")
-}
 
 type DirScope struct {
 	Version int    `json:"version"`
@@ -48,7 +39,7 @@ func (cq *ChatHandler) dirHash(canonicalDir string) string {
 }
 
 func (cq *ChatHandler) dirScopePathFromHash(hash string) string {
-	return filepath.Join(cq.dirscopeRoot(), hash+".json")
+	return dirscopePath(cq.confDir, hash)
 }
 
 func (cq *ChatHandler) LoadDirScope(dir string) (DirScope, error) {
@@ -59,9 +50,9 @@ func (cq *ChatHandler) LoadDirScope(dir string) (DirScope, error) {
 }
 
 func (cq *ChatHandler) LoadDirScopeFromCWD() (DirScope, error) {
-	wd, err := os.Getwd()
+	wd, err := currentWorkingDirectory()
 	if err != nil {
-		return DirScope{}, fmt.Errorf("get current working directory: %w", err)
+		return DirScope{}, err
 	}
 	return loadDirScope(cq.confDir, wd)
 }
@@ -95,16 +86,16 @@ func (cq *ChatHandler) loadDirScopeForDir(dir string) (DirScope, error) {
 }
 
 func (cq *ChatHandler) dirscopeRoot() string {
-	return path.Join(cq.confDir, "conversations", "dirs")
+	return dirscopeRoot(cq.confDir)
 }
 
 func (cq *ChatHandler) SaveDirScope(dir, chatID string) error {
 	canonical, err := cq.canonicalDir(dir)
 	if err != nil {
-		return fmt.Errorf("failed to get canonicalDir: %w", err)
+		return fmt.Errorf("canonicalize directory %q: %w", dir, err)
 	}
-	if _, existsErr := os.Stat(cq.dirscopeRoot()); existsErr != nil {
-		return fmt.Errorf("dir: '%v' does not exist: %w", cq.dirscopeRoot(), err)
+	if _, statErr := os.Stat(cq.dirscopeRoot()); statErr != nil {
+		return fmt.Errorf("stat dirscope root %q: %w", cq.dirscopeRoot(), statErr)
 	}
 	h := cq.dirHash(canonical)
 	binding := DirScope{
@@ -144,9 +135,9 @@ func (cq *ChatHandler) UpdateDirScopeFromCWD(chatID string) error {
 	if chatID == "" {
 		return fmt.Errorf("empty chatID")
 	}
-	wd, err := os.Getwd()
+	wd, err := currentWorkingDirectory()
 	if err != nil {
-		return fmt.Errorf("getwd: %w", err)
+		return err
 	}
 	if err := cq.SaveDirScope(wd, chatID); err != nil {
 		return fmt.Errorf("save dirscope binding: %w", err)
@@ -209,9 +200,9 @@ func SaveDirScopedAsPrevQuery(confDir string) (err error) {
 }
 
 func loadDirScopeForCurrentDir(confDir string) (DirScope, error) {
-	wd, err := os.Getwd()
+	wd, err := currentWorkingDirectory()
 	if err != nil {
-		return DirScope{}, fmt.Errorf("get current working directory: %w", err)
+		return DirScope{}, err
 	}
 	scope, err := loadDirScope(confDir, wd)
 	if err != nil {

@@ -3,8 +3,6 @@ package chat
 import (
 	"errors"
 	"fmt"
-	"path/filepath"
-
 	"github.com/baalimago/clai/internal/utils"
 )
 
@@ -45,7 +43,7 @@ func replayDirScoped(raw bool) error {
 		return errors.New("no directory-scoped conversation bound to current directory")
 	}
 
-	convPath := filepath.Join(claiConfDir, "conversations", ds.ChatID+".json")
+	convPath := conversationPath(claiConfDir, ds.ChatID)
 	c, err := FromPath(convPath)
 	if err != nil {
 		return fmt.Errorf("load conversation for chat_id %q: %w", ds.ChatID, err)

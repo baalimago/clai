@@ -3,7 +3,6 @@ package chat
 import (
 	"fmt"
 	"os"
-	"path"
 	"time"
 
 	"github.com/baalimago/clai/internal/chatid"
@@ -17,7 +16,7 @@ import (
 func SaveAsPreviousQuery(claiConfDir string, chat pub_models.Chat) error {
 	traceChatf("save previous query start conf_dir=%q chat_id=%q messages=%d profile=%q", claiConfDir, chat.ID, len(chat.Messages), chat.Profile)
 	sourceChat := chat
-	convPath := path.Join(claiConfDir, "conversations")
+	convPath := conversationsDir(claiConfDir)
 	if _, convDirExistsErr := os.Stat(convPath); convDirExistsErr != nil {
 		if err := os.MkdirAll(convPath, 0o755); err != nil {
 			return fmt.Errorf("create conversations dir %q: %w", convPath, err)
@@ -59,8 +58,8 @@ func SaveAsPreviousQuery(claiConfDir string, chat pub_models.Chat) error {
 		}
 	}
 
-	traceChatf("save previous query global scope path=%q", path.Join(claiConfDir, "conversations", globalScopeFile))
-	if err := Save(path.Join(claiConfDir, "conversations"), globalScopeChat); err != nil {
+	traceChatf("save previous query global scope path=%q", globalScopePath(claiConfDir))
+	if err := Save(conversationsDir(claiConfDir), globalScopeChat); err != nil {
 		return fmt.Errorf("save global scope chat: %w", err)
 	}
 	if sourceChat.ID != "" && sourceChat.ID != globalScopeChatID {

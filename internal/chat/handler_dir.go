@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"path"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -134,7 +134,7 @@ func (cq *ChatHandler) resolveChatDirInfo() (chatDirInfo, error) {
 			return chatDirInfo{}, fmt.Errorf("load dir scope: %w", err)
 		}
 	} else {
-		c, err := FromPath(path.Join(cq.convDir, ds.ChatID+".json"))
+		c, err := FromPath(conversationPathFromDir(cq.convDir, ds.ChatID))
 		if err == nil {
 			info := cq.infoFromChat("dir", ds.ChatID, c)
 			info.Updated = ds.Updated
@@ -151,7 +151,7 @@ func (cq *ChatHandler) resolveChatDirInfo() (chatDirInfo, error) {
 	}
 
 	// 2) Global scope
-	prev, err := FromPath(path.Join(cq.convDir, globalScopeFile))
+	prev, err := FromPath(filepath.Join(cq.convDir, globalScopeFile))
 	if err == nil {
 		info := cq.infoFromChat("global", globalScopeChatID, prev)
 		info.ConversationCreated = prev.Created.Format("2006-01-02T15:04:05Z07:00")
