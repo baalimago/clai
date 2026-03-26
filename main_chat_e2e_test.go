@@ -169,23 +169,15 @@ func Test_goldenFile_CHAT_DIRSCOPED(t *testing.T) {
 	}
 
 	var bazConvPath string
-	var newestBazModTime int64
 	for _, p := range convFiles {
-		info, statErr := os.Stat(p)
-		if statErr != nil {
-			t.Fatalf("Stat(%q): %v", p, statErr)
-		}
 		b, readErr := os.ReadFile(p)
 		if readErr != nil {
 			t.Fatalf("ReadFile(%q): %v", p, readErr)
 		}
 		s := string(b)
 		if strings.Contains(s, "baz") && strings.Contains(s, "hello3") {
-			modUnix := info.ModTime().UnixNano()
-			if bazConvPath == "" || modUnix > newestBazModTime {
-				bazConvPath = p
-				newestBazModTime = modUnix
-			}
+			bazConvPath = p
+			break
 		}
 	}
 	if bazConvPath == "" {
@@ -235,23 +227,8 @@ func Test_goldenFile_CHAT_DIRSCOPED(t *testing.T) {
 		t.Fatalf("expected non-empty chat_id in binding file %q", bindingPath)
 	}
 	wantChatFile := filepath.Join(confDir, "conversations", b.ChatID+".json")
-	boundBytes, err := os.ReadFile(wantChatFile)
-	if err != nil {
-		t.Fatalf("ReadFile(bound chat %q): %v", wantChatFile, err)
-	}
-	var boundChat models.Chat
-	if err := json.Unmarshal(boundBytes, &boundChat); err != nil {
-		t.Fatalf("Unmarshal(bound chat %q): %v", wantChatFile, err)
-	}
-
-	var boundSysMsgs []string
-	for _, m := range boundChat.Messages {
-		if m.Role == "system" {
-			boundSysMsgs = append(boundSysMsgs, m.Content)
-		}
-	}
-	if !slices.Contains(boundSysMsgs, "baz") {
-		t.Fatalf("expected bound chat system messages %v to contain baz", boundSysMsgs)
+	if filepath.Clean(wantChatFile) != filepath.Clean(bazConvPath) {
+		t.Fatalf("binding chat_id points to %q, but baz conversation is %q", wantChatFile, bazConvPath)
 	}
 }
 
@@ -275,10 +252,10 @@ func Test_goldenFile_CHAT_CONTINUE_obfuscated_preview(t *testing.T) {
 	t.Setenv("CLAI_CONFIG_DIR", confDir)
 
 	convDir := filepath.Join(confDir, "conversations")
-	conv := pub_models.Chat{
+	conv := models.Chat{
 		Created: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
 		ID:      "hello-chat",
-		Messages: []pub_models.Message{
+		Messages: []models.Message{
 			{Role: "system", Content: strings.Repeat("a", 200)},
 			{Role: "user", Content: "hello"},
 			{Role: "assistant", Content: "world"},
