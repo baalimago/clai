@@ -294,13 +294,12 @@ func Setup(ctx context.Context, usage string, allArgs []string) (models.Querier,
 		// If directory reply mode is requested we first copy the directory-scoped
 		// conversation into globalScope.json so that the existing reply flow can reuse it.
 		if mode == QUERY && postFlagConf.DirReplyMode {
-			dirScopedChatID, err := chat.SaveDirScopedAsPrevQuery(claiConfDir)
+			err := chat.SaveDirScopedAsPrevQuery(claiConfDir)
 			if err != nil {
 				return nil, fmt.Errorf("failed to setup dir-scoped reply: %w", err)
 			}
 			// Ensure the existing reply plumbing is used.
 			postFlagConf.ReplyMode = true
-			_ = dirScopedChatID
 		}
 
 		q, tConf, err := setupTextQuerierWithConf(ctx, mode, claiConfDir, postFlagConf, postFlagArgs)

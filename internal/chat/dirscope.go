@@ -13,6 +13,14 @@ import (
 	"github.com/baalimago/clai/internal/utils"
 )
 
+func conversationsDir(confDir string) string {
+	return filepath.Join(confDir, "conversations")
+}
+
+func conversationPath(confDir, chatID string) string {
+	return filepath.Join(conversationsDir(confDir), chatID+".json")
+}
+
 type DirScope struct {
 	Version int    `json:"version"`
 	DirHash string `json:"dir_hash"`
@@ -45,29 +53,45 @@ func (cq *ChatHandler) dirScopePathFromHash(hash string) string {
 
 func (cq *ChatHandler) LoadDirScope(dir string) (DirScope, error) {
 	if dir == "" {
-		wd, err := os.Getwd()
-		if err != nil {
-			return DirScope{}, fmt.Errorf("getwd: %w", err)
-		}
-		dir = wd
+		return cq.LoadDirScopeFromCWD()
+	}
+	return loadDirScope(cq.confDir, dir)
+}
+
+func (cq *ChatHandler) LoadDirScopeFromCWD() (DirScope, error) {
+	wd, err := os.Getwd()
+	if err != nil {
+		return DirScope{}, fmt.Errorf("get current working directory: %w", err)
+	}
+	return loadDirScope(cq.confDir, wd)
+}
+
+func loadDirScope(confDir, dir string) (DirScope, error) {
+	handler := &ChatHandler{confDir: confDir}
+	return handler.loadDirScopeForDir(dir)
+}
+
+func (cq *ChatHandler) loadDirScopeForDir(dir string) (DirScope, error) {
+	if dir == "" {
+		return DirScope{}, fmt.Errorf("directory is empty")
 	}
 	canonical, err := cq.canonicalDir(dir)
 	if err != nil {
-		return DirScope{}, err
+		return DirScope{}, fmt.Errorf("canonicalize directory %q: %w", dir, err)
 	}
-	h := cq.dirHash(canonical)
-	p := cq.dirScopePathFromHash(h)
+	dirHash := cq.dirHash(canonical)
+	bindingPath := cq.dirScopePathFromHash(dirHash)
 
-	b, err := os.ReadFile(p)
+	b, err := os.ReadFile(bindingPath)
 	if err != nil {
-		return DirScope{}, fmt.Errorf("read dirscope binding: %w", err)
+		return DirScope{}, fmt.Errorf("read dirscope binding %q: %w", bindingPath, err)
 	}
 
-	var ds DirScope
-	if err := json.Unmarshal(b, &ds); err != nil {
-		return DirScope{}, fmt.Errorf("unmarshal dirscope binding: %w", err)
+	var scope DirScope
+	if err := json.Unmarshal(b, &scope); err != nil {
+		return DirScope{}, fmt.Errorf("unmarshal dirscope binding %q: %w", bindingPath, err)
 	}
-	return ds, nil
+	return scope, nil
 }
 
 func (cq *ChatHandler) dirscopeRoot() string {
@@ -151,15 +175,11 @@ func LoadDirScopeChatID(claiConfDir string) (string, error) {
 		}
 	}
 
-	cq := &ChatHandler{
-		confDir: claiConfDir,
-		convDir: path.Join(claiConfDir, "conversations"),
-	}
-	ds, err := cq.LoadDirScope("")
+	scope, err := loadDirScopeForCurrentDir(claiConfDir)
 	if err != nil {
 		return "", fmt.Errorf("load dir scope: %w", err)
 	}
-	return ds.ChatID, nil
+	return scope.ChatID, nil
 }
 
 // SaveDirScopedAsPrevQuery overwrites <confDir>/conversations/globalScope.json with the
@@ -168,19 +188,18 @@ func LoadDirScopeChatID(claiConfDir string) (string, error) {
 // This allows us to reuse the existing global "reply" plumbing (-re) while letting
 // users opt into directory-scoped replies via -dre/-dir-reply.
 func SaveDirScopedAsPrevQuery(confDir string) (err error) {
-	cq := &ChatHandler{confDir: confDir}
-	ds, err := cq.LoadDirScope("")
+	scope, err := loadDirScopeForCurrentDir(confDir)
 	if err != nil {
 		return fmt.Errorf("load dirscope: %w", err)
 	}
-	if ds.ChatID == "" {
+	if scope.ChatID == "" {
 		return fmt.Errorf("no directory-scoped conversation bound to current directory")
 	}
 
-	convPath := filepath.Join(confDir, "conversations", ds.ChatID+".json")
+	convPath := conversationPath(confDir, scope.ChatID)
 	c, err := FromPath(convPath)
 	if err != nil {
-		return fmt.Errorf("load conversation for chat_id %q: %w", ds.ChatID, err)
+		return fmt.Errorf("load conversation for chat_id %q: %w", scope.ChatID, err)
 	}
 
 	if err := SaveAsPreviousQuery(confDir, c); err != nil {
@@ -188,3 +207,16 @@ func SaveDirScopedAsPrevQuery(confDir string) (err error) {
 	}
 	return nil
 }
+
+func loadDirScopeForCurrentDir(confDir string) (DirScope, error) {
+	wd, err := os.Getwd()
+	if err != nil {
+		return DirScope{}, fmt.Errorf("get current working directory: %w", err)
+	}
+	scope, err := loadDirScope(confDir, wd)
+	if err != nil {
+		return DirScope{}, fmt.Errorf("load dir scope for current working directory %q: %w", wd, err)
+	}
+	return scope, nil
+}
+
