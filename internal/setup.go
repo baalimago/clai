@@ -16,6 +16,7 @@ import (
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/utils"
+	"github.com/baalimago/clai/internal/vendors"
 	"github.com/baalimago/clai/internal/video"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	imagodebug "github.com/baalimago/go_away_boilerplate/pkg/debug"
@@ -293,17 +294,30 @@ func Setup(ctx context.Context, usage string, allArgs []string) (models.Querier,
 		// If directory reply mode is requested we first copy the directory-scoped
 		// conversation into globalScope.json so that the existing reply flow can reuse it.
 		if mode == QUERY && postFlagConf.DirReplyMode {
-			_, err := chat.SaveDirScopedAsPrevQuery(claiConfDir)
+			dirScopedChatID, err := chat.SaveDirScopedAsPrevQuery(claiConfDir)
 			if err != nil {
 				return nil, fmt.Errorf("failed to setup dir-scoped reply: %w", err)
 			}
 			// Ensure the existing reply plumbing is used.
 			postFlagConf.ReplyMode = true
+			_ = dirScopedChatID
 		}
 
 		q, tConf, err := setupTextQuerierWithConf(ctx, mode, claiConfDir, postFlagConf, postFlagArgs)
 		if err != nil {
 			return nil, err
+		}
+		if mode == QUERY && postFlagConf.DirReplyMode && postFlagConf.ReplyMode {
+			chatID, loadErr := chat.LoadDirScopeChatID(claiConfDir)
+			if loadErr != nil {
+				return nil, fmt.Errorf("load dir reply chat id: %w", loadErr)
+			}
+			if chatID != "" {
+				tConf.InitialChat.ID = chatID
+				if textQuerier, ok := q.(*text.Querier[*vendors.Mock]); ok {
+					textQuerier.SetChatID(chatID)
+				}
+			}
 		}
 
 		// Update directory binding after successful query.
