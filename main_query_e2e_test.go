@@ -115,3 +115,48 @@ func Test_goldenFile_QUERY_shell_context_is_in_system_prompt_not_user_message(t 
 	testboil.FailTestIfDiff(t, gotStatusCode, 0)
 	testboil.FailTestIfDiff(t, gotStdout, want)
 }
+
+func Test_goldenFile_QUERY_raw_output_ends_with_newline_before_bell(t *testing.T) {
+	_ = setupMainTestConfigDir(t)
+
+	oldArgs := os.Args
+	t.Cleanup(func() { os.Args = oldArgs })
+
+	var gotStatus int
+	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
+		gotStatus = run(strings.Split("-r -cm test q hello", " "))
+	})
+
+	testboil.FailTestIfDiff(t, gotStatus, 0)
+	testboil.FailTestIfDiff(t, stdout, "hello\n\a")
+}
+
+func Test_goldenFile_QUERY_shell_context_flag_keeps_user_message_output_clean(t *testing.T) {
+	oldArgs := os.Args
+	t.Cleanup(func() { os.Args = oldArgs })
+
+	confDir := setupMainTestConfigDir(t)
+
+	ctxJSON := `{
+  "shell": "/bin/sh",
+  "timeout_ms": 1000,
+  "timed_out_value": "<timed out>",
+  "error_value": "<error>",
+  "template": "foo={{.foo}}\n",
+  "vars": {
+    "foo": "printf foo"
+  }
+}`
+	if err := os.WriteFile(filepath.Join(confDir, "shellContexts", "minimal.json"), []byte(ctxJSON), 0o644); err != nil {
+		t.Fatalf("WriteFile(shell context json): %v", err)
+	}
+
+	var gotStatusCode int
+	gotStdout := testboil.CaptureStdout(t, func(t *testing.T) {
+		gotStatusCode = run(strings.Split("-r -cm test -add-shell-context minimal q hello", " "))
+	})
+
+	want := "hello\n\a"
+	testboil.FailTestIfDiff(t, gotStatusCode, 0)
+	testboil.FailTestIfDiff(t, gotStdout, want)
+}
