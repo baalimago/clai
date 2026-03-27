@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"testing"
 
@@ -59,14 +60,58 @@ func Test_maxToolCalls(t *testing.T) {
 	}
 }
 
-func Test_limitToolOutput_TruncatesByRuneCount(t *testing.T) {
-	out := "abcdef"
+func Test_limitToolOutput_WritesOversizedOutputToTempFile(t *testing.T) {
+	out := "abcdefghijklmnopqrstuvwxyz"
 	got := limitToolOutput(out, 3)
-	if !strings.Contains(got, "abc") {
-		t.Fatalf("expected truncated prefix in output, got %q", got)
+	if !strings.Contains(got, "tool output too large") {
+		t.Fatalf("expected oversize metadata, got %q", got)
 	}
-	if !strings.Contains(got, "3 more characters") {
-		t.Fatalf("expected remaining rune count in output, got %q", got)
+	if !strings.Contains(got, "full output saved to temp file: ") {
+		t.Fatalf("expected temp file message, got %q", got)
+	}
+	if !strings.Contains(got, "preview:") {
+		t.Fatalf("expected preview section, got %q", got)
+	}
+	if !strings.Contains(got, "abc") {
+		t.Fatalf("expected preview to include leading content, got %q", got)
+	}
+	path := tempPathFromMaterializedOutput(t, got)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("failed to read temp file %q: %v", path, err)
+	}
+	if string(data) != out {
+		t.Fatalf("expected temp file to contain %q, got %q", out, string(data))
+	}
+}
+
+func Test_limitToolOutput_PassthroughWhenWithinLimit(t *testing.T) {
+	out := "abc"
+	got := limitToolOutput(out, 3)
+	if got != out {
+		t.Fatalf("expected passthrough %q, got %q", out, got)
+	}
+}
+
+func Test_limitToolOutput_PassthroughWhenLimitDisabled(t *testing.T) {
+	out := "abcdef"
+	got := limitToolOutput(out, 0)
+	if got != out {
+		t.Fatalf("expected passthrough %q, got %q", out, got)
+	}
+}
+
+func Test_limitToolOutput_UsesRuneAwarePreview(t *testing.T) {
+	out := "åäö漢字🙂end"
+	got := limitToolOutput(out, 3)
+	if !strings.Contains(got, "3 runes") {
+		t.Fatalf("expected preview rune metadata, got %q", got)
+	}
+	if !strings.Contains(got, "preview:\nåäö") {
+		t.Fatalf("expected rune-aware preview, got %q", got)
+	}
+	if strings.Contains(got, "漢") {
+		t.Fatalf("expected preview to stop at rune limit, got %q", got)
 	}
 }
 
@@ -93,4 +138,23 @@ func Test_toolExecutor_NormalizesEmptyToolOutput(t *testing.T) {
 	if session.Chat.Messages[0].Content != "<EMPTY-RESPONSE>" {
 		t.Fatalf("expected normalized placeholder, got %q", session.Chat.Messages[0].Content)
 	}
+}
+
+func tempPathFromMaterializedOutput(t *testing.T, got string) string {
+	t.Helper()
+	const prefix = "full output saved to temp file: "
+	idx := strings.Index(got, prefix)
+	if idx == -1 {
+		t.Fatalf("expected temp file prefix in %q", got)
+	}
+	pathStart := idx + len(prefix)
+	rest := got[pathStart:]
+	newlineIdx := strings.Index(rest, "\n")
+	trimmed := rest
+	if newlineIdx == -1 {
+		trimmed = strings.TrimSpace(rest)
+	} else {
+		trimmed = strings.TrimSpace(rest[:newlineIdx])
+	}
+	return strings.TrimSuffix(trimmed, "]")
 }
