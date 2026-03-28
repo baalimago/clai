@@ -210,4 +210,3 @@ func loadDirScopeForCurrentDir(confDir string) (DirScope, error) {
 	}
 	return scope, nil
 }
-

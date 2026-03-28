@@ -3,6 +3,7 @@ package chat
 import (
 	"errors"
 	"fmt"
+
 	"github.com/baalimago/clai/internal/utils"
 )
 
