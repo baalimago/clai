@@ -247,3 +247,7 @@ func (q *Querier[C]) TextQuery(ctx context.Context, chat pub_models.Chat) (pub_m
 
 	return q.chat, nil
 }
+
+func (q *Querier[C]) SetChatID(chatID string) {
+	q.chat.ID = chatID
+}

@@ -3,7 +3,6 @@ package chat
 import (
 	"fmt"
 	"os"
-	"path"
 	"time"
 
 	"github.com/baalimago/clai/internal/chatid"
@@ -17,6 +16,12 @@ import (
 func SaveAsPreviousQuery(claiConfDir string, chat pub_models.Chat) error {
 	traceChatf("save previous query start conf_dir=%q chat_id=%q messages=%d profile=%q", claiConfDir, chat.ID, len(chat.Messages), chat.Profile)
 	sourceChat := chat
+	convPath := conversationsDir(claiConfDir)
+	if _, convDirExistsErr := os.Stat(convPath); convDirExistsErr != nil {
+		if err := os.MkdirAll(convPath, 0o755); err != nil {
+			return fmt.Errorf("create conversations dir %q: %w", convPath, err)
+		}
+	}
 	globalScopeChat := pub_models.Chat{
 		Created:    time.Now(),
 		ID:         globalScopeChatID,
@@ -25,9 +30,10 @@ func SaveAsPreviousQuery(claiConfDir string, chat pub_models.Chat) error {
 		TokenUsage: chat.TokenUsage,
 		Queries:    chat.Queries,
 	}
-	// This check avoid storing queries without any replies, which would most likely
-	// flood the conversations needlessly
-	if len(chat.Messages) > 2 {
+	// This check avoids storing queries without any replies, which would most likely
+	// flood the conversations needlessly. Only promote to a fresh conversation when
+	// there is no existing source conversation to update.
+	if len(chat.Messages) > 2 && (sourceChat.ID == "" || sourceChat.ID == globalScopeChatID) {
 		firstUserMsg, err := globalScopeChat.FirstUserMessage()
 		if err != nil {
 			return fmt.Errorf("failed to get first user message: %w", err)
@@ -45,25 +51,18 @@ func SaveAsPreviousQuery(claiConfDir string, chat pub_models.Chat) error {
 			TokenUsage: chat.TokenUsage,
 			Queries:    chat.Queries,
 		}
-		convPath := path.Join(claiConfDir, "conversations")
 		traceChatf("save previous query conversation path=%q conv_id=%q", convPath, convChat.ID)
-		if _, convDirExistsErr := os.Stat(convPath); convDirExistsErr != nil {
-			if err := os.MkdirAll(convPath, 0o755); err != nil {
-				return fmt.Errorf("create conversations dir %q: %w", convPath, err)
-			}
-		}
 		err = Save(convPath, convChat)
 		if err != nil {
 			return fmt.Errorf("failed to save previous query as new conversation: %w", err)
 		}
 	}
 
-	traceChatf("save previous query global scope path=%q", path.Join(claiConfDir, "conversations", globalScopeFile))
-	if err := Save(path.Join(claiConfDir, "conversations"), globalScopeChat); err != nil {
+	traceChatf("save previous query global scope path=%q", globalScopePath(claiConfDir))
+	if err := Save(conversationsDir(claiConfDir), globalScopeChat); err != nil {
 		return fmt.Errorf("save global scope chat: %w", err)
 	}
 	if sourceChat.ID != "" && sourceChat.ID != globalScopeChatID {
-		convPath := path.Join(claiConfDir, "conversations")
 		traceChatf("save previous query update source conversation path=%q chat_id=%q", convPath, sourceChat.ID)
 		if err := Save(convPath, sourceChat); err != nil {
 			return fmt.Errorf("save source conversation chat: %w", err)

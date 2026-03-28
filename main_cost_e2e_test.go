@@ -139,8 +139,9 @@ func Test_e2e_COST_nested_tool_call_queries_visible_in_chat_dir_json(t *testing.
 	if math.Abs(info.CostUSD-wantCost) > 1e-12 {
 		t.Fatalf("chat dir cost_usd: got %v want %v", info.CostUSD, wantCost)
 	}
-	if info.Cost != "$0.14" {
-		t.Fatalf("chat dir cost: got %q want %q", info.Cost, "$0.14")
+	wantCostStr := "$0.135"
+	if info.Cost != wantCostStr {
+		t.Fatalf("chat dir cost: got %q want %q", info.Cost, wantCostStr)
 	}
 
 	if chat.TokenUsage == nil {

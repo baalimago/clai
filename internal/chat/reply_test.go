@@ -62,3 +62,43 @@ func TestSaveAsPreviousQuery_PreservesQueries(t *testing.T) {
 		t.Fatalf("expected a persisted conversation besides globalScope")
 	}
 }
+
+func TestSaveAsPreviousQuery_DoesNotCreateDuplicateConversationForExistingChat(t *testing.T) {
+	confDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(confDir, "conversations"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(conversations): %v", err)
+	}
+	chat := pub_models.Chat{
+		ID:      "existing-chat",
+		Created: time.Now(),
+		Messages: []pub_models.Message{
+			{Role: "system", Content: "sys"},
+			{Role: "user", Content: "hello"},
+			{Role: "assistant", Content: "hi"},
+		},
+	}
+
+	if err := SaveAsPreviousQuery(confDir, chat); err != nil {
+		t.Fatalf("SaveAsPreviousQuery: %v", err)
+	}
+
+	entries, err := os.ReadDir(filepath.Join(confDir, "conversations"))
+	if err != nil {
+		t.Fatalf("ReadDir(conversations): %v", err)
+	}
+
+	var conversationFiles []string
+	for _, entry := range entries {
+		if entry.IsDir() || entry.Name() == "globalScope.json" || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		conversationFiles = append(conversationFiles, entry.Name())
+	}
+
+	if len(conversationFiles) != 1 {
+		t.Fatalf("expected exactly 1 persisted conversation, got %d: %v", len(conversationFiles), conversationFiles)
+	}
+	if conversationFiles[0] != "existing-chat.json" {
+		t.Fatalf("expected persisted conversation %q, got %q", "existing-chat.json", conversationFiles[0])
+	}
+}

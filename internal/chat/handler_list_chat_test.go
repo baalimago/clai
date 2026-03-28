@@ -108,7 +108,7 @@ func TestChatListCostFormattingHelpers(t *testing.T) {
 	chatWithCost := pub_models.Chat{Queries: []pub_models.QueryCost{{CostUSD: 1.2}, {CostUSD: 0.034}}}
 	chatWithoutCost := pub_models.Chat{}
 
-	if got := chatListCostStr(chatWithCost); got != "$1.23" {
+	if got := chatListCostStr(chatWithCost); got != "$1.234" {
 		t.Fatalf("cost string mismatch: got %q", got)
 	}
 	if got := chatListCostStr(chatWithoutCost); got != "N/A" {

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"path/filepath"
 
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -34,9 +33,9 @@ func LoadGlobalScope(confDir string) (pub_models.Chat, error) {
 		traceChatf("load global scope resolved empty conf_dir to=%q", confDir)
 	}
 
-	convDir := filepath.Join(confDir, "conversations")
-	newPath := filepath.Join(convDir, globalScopeFile)
-	oldPath := filepath.Join(convDir, prevQueryFile)
+	convDir := conversationsDir(confDir)
+	newPath := globalScopePath(confDir)
+	oldPath := prevQueryPath(confDir)
 	traceChatf("load global scope paths conv_dir=%q new_path=%q old_path=%q", convDir, newPath, oldPath)
 
 	if _, err := os.Stat(oldPath); err == nil {
