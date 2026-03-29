@@ -32,25 +32,11 @@ func limitToolOutput(out string, limit int) string {
 		_ = os.Remove(f.Name())
 		return fmt.Sprintf("tool output too large (%d runes); failed to sync temporary file %q: %v", totalRunes, f.Name(), err)
 	}
-	preview := firstNRunes(out, limit)
 	return fmt.Sprintf(
-		"[tool output too large: %d runes; preview: %d runes; full output saved to temp file: %s]\npreview:\n%s",
+		"[tool output too large: %d runes; full output saved to temp file: %s]",
 		totalRunes,
-		utf8.RuneCountInString(preview),
 		f.Name(),
-		preview,
 	)
-}
-
-func firstNRunes(s string, n int) string {
-	if n <= 0 {
-		return ""
-	}
-	runes := []rune(s)
-	if len(runes) <= n {
-		return s
-	}
-	return string(runes[:n])
 }
 
 func (q *Querier[C]) checkIfGemini3Preview(call pub_models.Call) bool {

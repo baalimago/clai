@@ -69,11 +69,11 @@ func Test_limitToolOutput_WritesOversizedOutputToTempFile(t *testing.T) {
 	if !strings.Contains(got, "full output saved to temp file: ") {
 		t.Fatalf("expected temp file message, got %q", got)
 	}
-	if !strings.Contains(got, "preview:") {
-		t.Fatalf("expected preview section, got %q", got)
+	if strings.Contains(got, "preview:") {
+		t.Fatalf("expected preview section to be omitted, got %q", got)
 	}
-	if !strings.Contains(got, "abc") {
-		t.Fatalf("expected preview to include leading content, got %q", got)
+	if strings.Contains(got, "abc") {
+		t.Fatalf("expected preview content to be omitted, got %q", got)
 	}
 	path := tempPathFromMaterializedOutput(t, got)
 	data, err := os.ReadFile(path)
@@ -104,14 +104,14 @@ func Test_limitToolOutput_PassthroughWhenLimitDisabled(t *testing.T) {
 func Test_limitToolOutput_UsesRuneAwarePreview(t *testing.T) {
 	out := "åäö漢字🙂end"
 	got := limitToolOutput(out, 3)
-	if !strings.Contains(got, "3 runes") {
-		t.Fatalf("expected preview rune metadata, got %q", got)
+	if strings.Contains(got, "3 runes") {
+		t.Fatalf("expected preview rune metadata to be omitted, got %q", got)
 	}
-	if !strings.Contains(got, "preview:\nåäö") {
-		t.Fatalf("expected rune-aware preview, got %q", got)
+	if strings.Contains(got, "preview:\nåäö") {
+		t.Fatalf("expected rune-aware preview to be omitted, got %q", got)
 	}
-	if strings.Contains(got, "漢") {
-		t.Fatalf("expected preview to stop at rune limit, got %q", got)
+	if strings.Contains(got, "åäö") {
+		t.Fatalf("expected no preview content in materialized output, got %q", got)
 	}
 }
 
