@@ -1,134 +1,105 @@
-# Add shell completion with clai-native completion suggestions
+# Add shell completion with clai-native suggestions
 
 ## Goal
 
-Add a shell completion system where the installed shell delegates completion queries back to the `clai` binary itself, instead of relying on a large statically generated completion script with all logic embedded in shell code.
+Add shell completion where the user’s shell delegates completion queries back to the installed `clai` binary.
 
-This means:
+This keeps:
 
-- shell integration stays thin
-- completion rules live in Go, close to existing CLI parsing and runtime state
-- dynamic values can be suggested from real runtime sources
-- command, flag, tool, profile, and config-derived completions stay in sync with the binary version the user is actually running
+- shell scripts thin
+- completion logic in Go
+- dynamic suggestions close to real runtime state
+- behavior aligned with the exact binary/version the user is running
+
+This should be implemented as a focused MVP first, without requiring a broad CLI refactor up front.
 
 ---
 
-## Why this approach is neat
+## Summary
 
-The “binary suggests its own completions” design is attractive here because `clai` already has:
+`clai` is a good fit for binary-driven completion because it already has:
 
 - command aliases
-- dynamic tool inventory (`tools.Init()`, MCP tools)
-- config-aware values (`profiles`, shell contexts, config subpaths)
-- subcommands with positional structure (`chat`, `tools`, `confdir`)
+- dynamic tools
+- profiles and shell contexts from config
+- command/subcommand structure (`chat`, `tools`, `confdir`)
 
-If completion logic is generated once into shell script, drift is likely. If the shell asks `clai` directly, the completion behavior can reuse the same code paths and data sources as the real command.
+The recommended shape is:
 
----
-
-## Current state
-
-From the codebase:
-
-- command dispatch is in `internal/setup.go:getCmdFromArgs`
-- global flags are parsed in `internal/setup_flags.go:parseFlags`
-- tool listing exists via `internal/tools/cmd.go` and dynamic registry init via `tools.Init()`
-- help text in `main.go` documents user-facing commands and aliases
-- `confdir`, `profiles`, `tools`, `chat`, `query`, `photo`, `video`, `replay`, `version`, `setup` already exist as top-level commands
-
-There is currently no shell completion subsystem.
+- a visible `completion` command for installing/exporting shell wrappers
+- a hidden `__complete` command used by those wrappers
+- a shell-neutral completion engine in Go
+- shell-specific adapter scripts that stay minimal
 
 ---
 
-## High-level design
+## Design principles
 
-Introduce a hidden command family dedicated to completion, for example:
+### 1. Keep the completion path cheap
 
-```text
-clai __complete <shell> -- <words...>
-```
+Completion must feel instant.
 
-or simpler:
+Hard requirements:
 
-```text
-clai __complete <words...>
-```
+- no network I/O
+- no model/provider setup
+- no expensive query-path initialization
+- no blocking MCP handshakes
+- only load local config/state that is actually needed
 
-where the shell wrapper passes:
+If some dynamic source is slow or unavailable, completion should degrade gracefully instead of blocking.
 
-- the current argv words
-- cursor position or current token
-- shell type if needed
+### 2. Do not block MVP on a full CLI metadata refactor
 
-The binary responds with machine-readable suggestions.
+Long term, shared command/flag metadata would be good.
 
-Recommended response format:
+For MVP, do **not** require a large unification of:
 
-- line-oriented plain text for simplicity, or
-- JSON for extensibility
+- usage text
+- runtime command dispatch
+- flag parsing
+- completion data
 
-Prefer JSON internally because it supports richer metadata:
+Instead:
 
-- suggestion value
-- display text
-- description
-- completion kind (`flag`, `command`, `file`, `value`)
-- whether shell should append a space
+- introduce completion-local metadata first
+- keep it small and behavior-oriented
+- extract shared metadata later if the implementation proves stable
 
-Example response shape:
+### 3. Shell wrappers should stay dumb
 
-```json
-{
-  "items": [
-    {"value": "query", "description": "Query the chat model"},
-    {"value": "tools", "description": "List available tools"}
-  ]
-}
-```
+The shell-specific code should:
 
-The shell adapter can stay tiny and shell-specific.
+- collect shell completion context
+- call `clai __complete ...`
+- render the returned suggestions using native shell facilities
 
----
+The wrappers should not contain command knowledge.
 
-## Architecture proposal
+### 4. Prefer a simple response protocol for MVP
 
-### 1. Add a dedicated completion package
+Do not overdesign the wire format initially.
 
-Create something like:
+Recommended MVP response:
 
-- `internal/completion/engine.go`
-- `internal/completion/model.go`
-- `internal/completion/context.go`
-- `internal/completion/shell_bash.go`
-- `internal/completion/shell_zsh.go`
+- line-oriented text
+- one candidate per line
+- optional tab-separated description: `value<TAB>description`
 
-Responsibilities:
+This is sufficient for:
 
-- parse completion request context
-- determine whether user is completing a command, flag, flag value, or positional argument
-- emit suggestions
-- optionally emit shell bootstrap scripts
+- bash candidate insertion
+- zsh descriptions
 
-Keep shell-specific behavior at the boundary only. Core decision logic should be shell-agnostic.
+If richer metadata is needed later, the hidden command can grow a structured mode after the MVP ships.
 
 ---
 
-### 2. Add user-facing commands
+## Command surface
 
-Add two new entrypoints:
+Add two command entrypoints.
 
-#### A. Hidden internal command
-
-```text
-clai __complete ...
-```
-
-Purpose:
-
-- invoked only by shell integration
-- returns machine-readable completions
-
-#### B. Visible install/export command
+### Visible command
 
 ```text
 clai completion bash
@@ -137,431 +108,478 @@ clai completion zsh
 
 Purpose:
 
-- prints the shell bootstrap script
-- user can source it or install it under shell completion directories
+- print shell bootstrap/wrapper scripts
+- let users source or install them using familiar CLI patterns
 
-This is a familiar UX and keeps setup discoverable.
+### Hidden command
+
+```text
+clai __complete ...
+```
+
+Purpose:
+
+- used only by shell wrappers
+- returns completion suggestions for the current shell state
+
+Important:
+
+- `completion` and `__complete` must bypass normal query/setup paths
+- they must be detected early in dispatch
+- they must not trigger expensive initialization from normal command execution
 
 ---
 
-### 3. Completion engine data model
+## Request semantics
 
-Define a shell-neutral request model, e.g.:
+Do not model completion requests using only `Words` and `CursorWord`.
+
+The engine should receive enough information to distinguish:
+
+- the already-parsed argv excluding the binary name
+- the token currently being completed
+- whether the cursor is after a trailing space
+- the previous token
+- the shell type if needed for adapter-specific behavior
+
+Suggested shape:
 
 ```go
 type Request struct {
-    Words      []string
-    CursorWord int
-    Shell      string
-}
-
-type Item struct {
-    Value       string `json:"value"`
-    Description string `json:"description,omitempty"`
-    NoSpace     bool   `json:"no_space,omitempty"`
-}
-
-type Response struct {
-    Items []Item `json:"items"`
+    Shell            string
+    Args             []string
+    Current          string
+    Prev             string
+    HasTrailingSpace bool
 }
 ```
 
-The shell wrapper translates shell-native completion state into this request.
+This makes ambiguous states easier to handle correctly:
+
+- `clai chat `
+- `clai -t `
+- `clai qu`
+- `clai -asc mi`
 
 ---
 
-## Completion behavior plan
+## Response semantics
+
+For MVP, return plain candidates with optional descriptions.
+
+Suggested internal model:
+
+```go
+type Item struct {
+    Value       string
+    Description string
+}
+```
+
+The hidden command can print these as:
+
+```text
+query\tQuery the chat model
+tools\tList available tools
+```
+
+If a description is empty, emit just:
+
+```text
+query
+```
+
+---
+
+## Completion kinds
+
+The engine should distinguish between logical result kinds even if the output protocol remains simple.
+
+Suggested kinds:
+
+- `plain`
+- `file`
+- `dir`
+
+Why:
+
+- some flags should trigger native file completion
+- some flags should trigger native directory completion
+- this decision belongs at the engine boundary, not scattered inside shell scripts
+
+Shell wrappers can then:
+
+- use returned candidates for `plain`
+- invoke native file completion for `file`
+- invoke native directory completion for `dir`
+
+---
+
+## Parsing strategy
+
+Do **not** use strict `flag.FlagSet.Parse()` behavior for completion logic.
+
+Completion happens in incomplete states such as:
+
+- partial flags
+- unknown partial commands
+- dangling values
+- trailing spaces
+
+Instead build a forgiving parser that:
+
+1. walks argv left to right
+2. recognizes known global flags and whether they consume a value
+3. tracks when a top-level command has been selected
+4. tracks known subcommand state where relevant
+5. determines what should be completed at the cursor
+
+Unknown tokens should never cause errors in completion mode.
+
+They should either:
+
+- be ignored for state tracking where possible, or
+- end in “no suggestions” if that is the safest outcome
+
+No stderr noise should be emitted on successful completion requests.
+
+---
+
+## Flag behavior
+
+The current CLI prominently uses single-dash long-ish flags like:
+
+- `-chat-model`
+- `-profile`
+- `-photo-dir`
+
+MVP completion should mirror actual parser behavior rather than assume GNU-style `--long`.
+
+Decision:
+
+- prioritize support for the flag forms that runtime parsing actually accepts
+- only add `--long` completion if parser support already exists or is intentionally added
+
+---
+
+## Command-specific behavior
 
 ### Top-level command completion
 
-When completing first positional after global flags, suggest:
+When completing the main command position, suggest canonical commands first:
 
-- `help`, `h`
-- `setup`, `s`
+- `help`
+- `setup`
 - `confdir`
-- `query`, `q`
-- `photo`, `p`
-- `video`, `v`
-- `replay`, `re`
-- `tools`, `t`
-- `chat`, `c`
-- `profiles`
-- `version`
-- possibly `dre`, `dir-replay` if intended to be public
+- `query`
+- `photo`
+- `video`
+- `replay`
+- `tools`
+- `chat`
+- `completion`
 
-Recommendation: only suggest aliases if the prefix matches them naturally; otherwise prioritize canonical names to reduce noise.
+Include aliases only when useful and not too noisy, for example:
 
----
+- on clear prefix matches
+- or as explicit additional candidates when the alias is a common entrypoint
+
+The goal is to avoid flooding the user with duplicate meanings.
 
 ### Global flag completion
 
-Always suggest global flags when:
+When the current token begins with `-`, suggest matching known global flags.
 
-- current token starts with `-`
-- or parser determines next token is a flag value
+These should initially be described in small completion-local metadata, including:
 
-Flags from `parseFlags()` should be represented once in completion metadata instead of duplicated ad hoc.
-
-Recommended refactor:
-
-- extract flag definitions into shared metadata
-- use that metadata both for flag parsing and for completion suggestions
-
-That prevents divergence.
-
-Metadata should include:
-
-- long name
-- short name
-- takes value or bool
-- value kind (`model`, `dir`, `profile`, `tool-list`, `shell-context`, `glob`, `file`)
-- description
-
----
+- name
+- aliases if any
+- whether the flag takes a value
+- completion behavior for its value
 
 ### Flag value completion
 
-Implement targeted value completion for these flags first:
+Initial targeted support:
 
 #### `-t`, `-tools`
 
 Suggest:
 
 - `*`
-- built-in tool names from `tools.Registry`
-- MCP tool names after `tools.Init()`
+- built-in tool names
+- any locally, cheaply discoverable dynamic tool names
 
-Special handling:
+Support comma-separated values.
 
-- support comma-separated partial completion
-- if user typed `rg,fi`, only replace the last segment with matching candidates
+Important behavior decision:
 
-This is one of the strongest reasons to keep completion in the binary.
+- the engine should return the **full replacement token**, not only the last segment
+
+Example:
+
+- input token: `rg,fi`
+- returned candidate: `rg,file_read`
+
+This keeps shell wrappers simple and consistent.
 
 #### `-p`, `-profile`
 
 Suggest configured profile names.
 
-Completion source likely comes from the same config directory used by `profiles` command.
+#### `-asc`
 
-#### `-prp`, `-profile-path`
+Suggest shell context names from the configured shell context directory.
 
-Delegate to shell file completion.
+#### `-prp`
 
-#### `-asc`, `-add-shell-context`
-
-Suggest shell context names from `<config-dir>/shellContexts/*.json`.
+Return `file` completion kind.
 
 #### `-pd`, `-photo-dir`, `-vd`, `-video-dir`
 
-Delegate to shell directory completion.
+Return `dir` completion kind.
 
-#### `-cm`, `-chat-model`, `-pm`, `-photo-model`, `-vm`, `-video-model`
+#### `-cm`, `-chat-model`, `-pm`, `-photo-model`
 
-Phase 1: no dynamic suggestions, only allow free text.
+MVP: free text, no special model suggestions required.
 
-Phase 2 optional:
+Model completion can be added later if it proves useful and cheap.
 
-- suggest models from config defaults
-- maybe suggest vendor-prefixed common models
+### `clai tools <tool-name>`
 
----
+Suggest tool names.
 
-### Command-specific positional completion
-
-#### `clai tools <tool-name>`
-
-Suggest tool names from `tools.Registry`.
-
-#### `clai confdir [subpath ...]`
-
-Suggest known registered config subpaths if they are finite and discoverable.
-If `confdir` accepts arbitrary descendants, offer file/dir completion after known subpaths.
-
-#### `clai chat ...`
+### `clai chat ...`
 
 Suggest subcommands:
 
-- `continue`, `c`
-- `delete`, `d`
-- `list`, `l`
-- `help`, `h`
+- `continue`
+- `delete`
+- `list`
+- `help`
 
-For `chat continue <chatID>` and `chat delete <chatID>`, optional later phase:
+Aliases may also be suggested selectively.
 
-- suggest recent chat IDs or indices from persisted chats
+For `chat continue <chatID>` and `chat delete <chatID>`:
 
-#### `query`, `photo`, `video`
+- MVP may return no suggestions
+- a later phase can add recent chat IDs or indices
 
-These mostly accept free-form text, so once command position is resolved, completion should generally stop or defer to shell default behavior.
+### `clai confdir ...`
 
----
+MVP may suggest known config subpaths if they are already centrally defined and cheap to enumerate.
 
-## Parsing strategy
+If this is not already easy, defer deeper `confdir` completion until after the core system ships.
 
-Do not try to reuse `flag.FlagSet.Parse()` directly for completion decisions. Shell completion often occurs on incomplete argv, such as:
+### `query`, `photo`, `video`
 
-- dangling `-t`
-- partial `--pro`
-- command not yet chosen
-- unterminated quoted strings
+These become free-form prompt commands after command selection.
 
-Instead build a lightweight completion parser that:
+After entering prompt territory, completion should generally stop suggesting command structure.
 
-1. walks tokens left to right
-2. recognizes known flags and whether they consume the next token
-3. tracks the first non-flag command token
-4. tracks subcommand state for `chat`, `tools`, `confdir`
-5. determines what kind of thing is expected at cursor
+Specifically:
 
-This parser should be forgiving and never error on incomplete input.
+- do not keep suggesting subcommands
+- only suggest flags if the runtime parser genuinely supports flag parsing in that position
+
+Completion should mirror real CLI behavior rather than inventing extra parsing flexibility.
 
 ---
 
-## Suggested implementation phases
+## Initial package shape
 
-### Phase 1: skeleton and static completion
+Suggested package layout:
 
-Deliver:
+- `internal/completion/engine.go`
+- `internal/completion/request.go`
+- `internal/completion/items.go`
+- `internal/completion/providers.go`
+- `internal/completion/shell_bash.go`
+- `internal/completion/shell_zsh.go`
 
-- `clai completion bash`
-- `clai completion zsh`
+This is only a suggestion. The core point is:
+
+- shell-neutral engine separated from shell-specific wrappers
+
+---
+
+## Dynamic providers
+
+Dynamic providers should be lazy and per-invocation cached.
+
+Useful providers:
+
+- tools
+- profiles
+- shell contexts
+
+Requirements:
+
+- initialize only when the active completion path needs them
+- memoize results for the lifetime of one `__complete` invocation
+- prefer local/config-driven discovery only
+
+For tools specifically:
+
+- built-ins should be available cheaply
+- dynamically configured tools may be included only if discoverable without expensive setup
+- if not cheap, skip them rather than slowing completion down
+
+---
+
+## Phased rollout
+
+### Phase 1: completion skeleton
+
+Ship:
+
 - hidden `clai __complete`
+- visible `clai completion bash|zsh`
+- shell wrapper output
 - top-level command completion
 - global flag completion
 - `chat` subcommand completion
+
+### Phase 2: high-value dynamic completion
+
+Ship:
+
 - `tools <tool-name>` completion
+- `-t/-tools` completion with comma-separated token replacement
+- `-p/-profile` completion
+- `-asc` completion
 
-This already provides a lot of value.
+### Phase 3: optional additions
 
-### Phase 2: dynamic value completion
+Consider:
 
-Deliver:
-
-- tool flag value completion for `-t/-tools`, including comma-separated values
-- profile name completion
-- shell context name completion
-- config subpath completion for `confdir`
-
-### Phase 3: richer dynamic completion
-
-Optional:
-
+- `confdir` subpath completion
 - recent chat ID/index completion
-- model name suggestions
-- contextual descriptions in zsh
-- shell fallback hints for file/dir completion
-
----
-
-## Shell integration approach
-
-### Bash
-
-Provide a function that:
-
-1. reads `COMP_WORDS` and `COMP_CWORD`
-2. calls `clai __complete bash ...`
-3. parses returned items
-4. populates `COMPREPLY`
-
-Keep script minimal. Do not embed command knowledge in the script.
-
-### Zsh
-
-Provide a `_clai` function that:
-
-1. gathers `$words` and `$CURRENT`
-2. calls `clai __complete zsh ...`
-3. maps results into `compadd`
-
-If descriptions are returned, zsh can display them nicely.
-
----
-
-## Refactors that will help
-
-### Centralize CLI metadata
-
-Right now command names, aliases, and flags are spread across:
-
-- `main.go` usage string
-- `internal/setup.go:getCmdFromArgs`
-- `internal/setup_flags.go:parseFlags`
-
-Introduce a small shared command/flag metadata layer.
-
-For example:
-
-- command specs with names, aliases, summary, positional expectations
-- flag specs with names, aliases, takes-value, value kind
-
-Then use this metadata for:
-
-- completion
-- help generation later if desired
-- parser support
-
-This is the single best design investment for keeping completion maintainable.
+- model suggestions
+- richer metadata/protocol if warranted
+- broader CLI metadata unification
 
 ---
 
 ## Testing plan
 
-Follow repo convention: tests first, validate fail, implement, validate pass.
+Follow repository convention:
 
-Suggested test layers:
+- write tests first
+- validate they fail
+- implement
+- validate they pass
 
-### Unit tests for completion parser
+Use explicit timeouts for Go tests.
 
-Cases:
+### Engine behavior tests
 
-- no args => suggest top-level commands
-- partial command => filtered commands
-- `-` => suggest flags
-- `--cha` => suggest `--chat-model` if long-flag style is supported via current parser behavior
-- `chat ` => suggest chat subcommands
-- `tools ` => suggest tool names
-- `-t r` => suggest tool names matching `r`
-- `-t rg,fi` => only replace last segment candidates
+At minimum:
 
-### Unit tests for dynamic providers
+- `clai ` → top-level commands
+- `clai -` → matching flags
+- `clai chat ` → chat subcommands
+- `clai tools ` → tool names
+- `clai -t ` → tool names
+- `clai -t rg,fi` → full-token replacement candidates
+- `clai -p pr` → profile matches
+- `clai -asc mi` → shell context matches
+- `clai q hello` → no structural suggestions
+- unknown command → no panic, no error
+- unknown flag → no panic, does not poison parsing
 
-Cases:
+### Hidden command tests
 
-- tool provider with local registry
-- tool provider with MCP-prefixed names
-- shell context discovery from config dir
-- profile name discovery
+Verify:
 
-### Golden-ish tests for shell script output
+- stable line-based output format
+- no stderr noise for successful completion calls
+- early dispatch path works without entering expensive runtime setup
 
-Cases:
+### Shell wrapper tests
 
-- `completion bash` emits wrapper invoking `clai __complete`
-- `completion zsh` emits wrapper invoking `clai __complete`
+For both bash and zsh output:
 
-### Integration-ish tests
-
-Exercise the hidden command directly:
-
-- `clai __complete ...` returns stable JSON schema
-
----
-
-## Risks and edge cases
-
-### 1. Alias noise
-
-Showing both canonical names and aliases can overwhelm users.
-
-Mitigation:
-
-- prefer canonical names in suggestions
-- optionally include aliases only on exact-prefix match
-
-### 2. Incomplete shell quoting
-
-Shell completion often sends partially typed tokens.
-
-Mitigation:
-
-- avoid strict parsing
-- rely on raw words rather than reparsing shell syntax
-
-### 3. Dynamic initialization cost
-
-`tools.Init()` may be somewhat expensive, especially if MCP setup becomes heavier.
-
-Mitigation:
-
-- only initialize dynamic sources when needed
-- cache tool names for the duration of one completion invocation
-- avoid network calls in completion path
-
-Completion must feel instant.
-
-### 4. Shell-specific escaping
-
-Returned values may need escaping differences between bash and zsh.
-
-Mitigation:
-
-- return raw candidate values
-- let shell wrapper pass them to native completion helpers carefully
-
-### 5. Divergence from actual parser
-
-If completion parser and runtime parser evolve separately, drift returns.
-
-Mitigation:
-
-- centralize command and flag metadata
-- keep completion parser intentionally tiny and metadata-driven
+- emitted script calls `clai __complete`
+- script remains thin and does not embed command knowledge
 
 ---
 
-## Concrete rollout plan
+## Risks
 
-1. **Introduce CLI metadata types**
-   - command specs
-   - flag specs
-   - value-kind enum
+### 1. Over-refactoring before MVP
 
-2. **Implement completion engine**
-   - request/response types
-   - forgiving parser
-   - top-level command and global flag suggestions
+Risk:
 
-3. **Add visible `completion` command and hidden `__complete` command**
-   - update command dispatch
-   - keep hidden command out of normal help text unless desired
+- trying to unify all CLI metadata before completion works at all
 
-4. **Implement bash and zsh bootstrap output**
-   - wrappers call the hidden command
+Mitigation:
 
-5. **Add dynamic providers**
-   - tools
-   - profiles
-   - shell contexts
-   - confdir subpaths
+- start with completion-local metadata
+- refactor only after behavior is proven
 
-6. **Add tests for behavior first**
-   - parser tests
-   - provider tests
-   - command output tests
+### 2. Slow completion from dynamic sources
 
-7. **Document installation**
-   - README section
-   - `clai help` mention of `completion`
+Risk:
+
+- completion feels laggy if it initializes too much
+
+Mitigation:
+
+- treat completion speed as a design constraint
+- lazy-load providers
+- skip expensive sources
+
+### 3. Ambiguous cursor handling
+
+Risk:
+
+- incorrect suggestions around trailing spaces and partial tokens
+
+Mitigation:
+
+- define request semantics precisely
+- test incomplete shell states explicitly
+
+### 4. Wrapper complexity leaking shell logic
+
+Risk:
+
+- shell scripts grow completion rules of their own
+
+Mitigation:
+
+- keep shell wrappers as transport/render layers only
 
 ---
 
-## Recommended MVP scope
+## Recommended MVP
 
-If you want the neat version without overbuilding, ship this MVP:
+Ship this first:
 
 - `clai completion bash|zsh`
-- hidden `clai __complete`
-- command completion
-- global flag completion
+- `clai __complete`
+- top-level commands
+- global flags
 - `chat` subcommands
 - `tools <tool-name>`
-- `-t/-tools` dynamic tool value completion
-- `-p/-profile` and `-asc` dynamic value completion
+- `-t/-tools`
+- `-p/-profile`
+- `-asc`
 
-That covers the most visible and uniquely useful parts while keeping implementation bounded.
+That is enough to deliver visible value while keeping scope controlled.
 
 ---
 
-## My recommendation
+## Recommendation
 
-Yes — use the binary-driven completion model.
+Yes, binary-driven completion is the right design for `clai`.
 
-For `clai`, it fits especially well because the CLI already has dynamic state and runtime-discovered values. The cleanest implementation is:
+The implementation should optimize for:
 
-- thin shell wrapper
-- hidden machine-readable `__complete` endpoint
-- Go-native completion engine driven by shared CLI metadata
+- fast execution
+- thin shell integration
+- forgiving parsing
+- dynamic local suggestions
+- incremental rollout
 
-If implemented that way, this should remain easy to extend and much less fragile than a static generated completion script.
+Do the MVP first, then consider protocol expansion and metadata unification once the behavior is stable.

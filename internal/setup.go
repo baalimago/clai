@@ -45,6 +45,8 @@ const (
 	TOOLS
 	PROFILES
 	CONFDIR
+	COMPLETION
+	HIDDEN_COMPLETION
 )
 
 var defaultFlags = Configurations{
@@ -111,6 +113,10 @@ func getCmdFromArgs(args []string) (Mode, error) {
 		return PROFILES, nil
 	case "confdir":
 		return CONFDIR, nil
+	case "completion":
+		return COMPLETION, nil
+	case "__complete":
+		return HIDDEN_COMPLETION, nil
 	default:
 		return HELP, fmt.Errorf("unknown command: '%s' all args: '%s'", cmd, args)
 	}
@@ -267,6 +273,24 @@ func printHelp(usage string, args []string) {
 }
 
 func Setup(ctx context.Context, usage string, allArgs []string) (models.Querier, error) {
+	// Completion commands must bypass normal setup because shell completion invokes
+	// them frequently and should avoid loading theme/runtime state unrelated to
+	// generating suggestions.
+	if hasEarlyCompletionCommand(allArgs) {
+		mode, err := getCmdFromArgs(allArgs)
+		if err != nil {
+			return nil, fmt.Errorf("resolve completion command: %w", err)
+		}
+		switch mode {
+		case COMPLETION:
+			return nil, handleCompletionCommand(ctx, allArgs)
+		case HIDDEN_COMPLETION:
+			return nil, handleHiddenCompletion(ctx, allArgs)
+		default:
+			return nil, fmt.Errorf("unexpected early completion mode: %v", mode)
+		}
+	}
+
 	postFlagConf, postFlagArgs, err := parseFlags(defaultFlags, allArgs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse flags: %w", err)
@@ -407,6 +431,10 @@ func Setup(ctx context.Context, usage string, allArgs []string) (models.Querier,
 		return nil, profiles.SubCmd(ctx, allArgs)
 	case CONFDIR:
 		return printConfDir(ctx, postFlagArgs)
+	case COMPLETION:
+		return nil, handleCompletionCommand(ctx, postFlagArgs)
+	case HIDDEN_COMPLETION:
+		return nil, handleHiddenCompletion(ctx, postFlagArgs)
 	default:
 		return nil, fmt.Errorf("unknown mode: %v", mode)
 	}
