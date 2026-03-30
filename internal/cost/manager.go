@@ -214,6 +214,9 @@ func (m *Manager) Enrich(chat pub_models.Chat) (pub_models.Chat, error) {
 	if m.debug {
 		ancli.Noticef("encirchening (?) chat: %v, which has: %v queries", chat.ID, len(chat.Queries))
 	}
+	if chat.TokenUsage == nil {
+		return pub_models.Chat{}, errors.New("token usage is not yet set")
+	}
 	usage := usageDelta(*chat.TokenUsage, latestRecordedUsage(chat.Queries))
 	estimate, err := m.estimateUSD(&usage)
 	if err != nil {
