@@ -45,15 +45,15 @@ func TestCompletionEngineComplete(t *testing.T) {
 			{
 				name:        "top level after trailing space lists commands and flags",
 				line:        []string{"clai", ""},
-				wantValues:  []string{"chat", "completion", "confdir", "help", "photo", "profiles", "query", "replay", "setup", "tools", "version", "video", "-asc", "-cm", "-g", "-p", "-pd", "-pm", "-pp", "-prp", "-r", "-re", "-reply", "-t", "-tools", "-vd", "-vm", "-vp"},
-				wantKinds:   repeatKind(completionResultKindPlain, 28),
+				wantValues:  []string{"chat", "completion", "confdir", "help", "photo", "profiles", "query", "replay", "setup", "tools", "version", "video", "-I", "-add-shell-context", "-asc", "-chat-model", "-cm", "-dir-reply", "-g", "-glob", "-i", "-p", "-pd", "-photo-dir", "-photo-model", "-photo-prefix", "-pm", "-pp", "-profile", "-profile-path", "-prp", "-r", "-raw", "-re", "-replace", "-reply", "-t", "-tools", "-vd", "-video-dir", "-video-model", "-video-prefix", "-vm", "-vp"},
+				wantKinds:   repeatKind(completionResultKindPlain, 44),
 				wantReplace: "",
 			},
 			{
 				name:        "dash completes global flags",
 				line:        []string{"clai", "-"},
-				wantValues:  []string{"-asc", "-cm", "-g", "-p", "-pd", "-pm", "-pp", "-prp", "-r", "-re", "-reply", "-t", "-tools", "-vd", "-vm", "-vp"},
-				wantKinds:   repeatKind(completionResultKindPlain, 16),
+				wantValues:  []string{"-I", "-add-shell-context", "-asc", "-chat-model", "-cm", "-dir-reply", "-g", "-glob", "-i", "-p", "-pd", "-photo-dir", "-photo-model", "-photo-prefix", "-pm", "-pp", "-profile", "-profile-path", "-prp", "-r", "-raw", "-re", "-replace", "-reply", "-t", "-tools", "-vd", "-video-dir", "-video-model", "-video-prefix", "-vm", "-vp"},
+				wantKinds:   repeatKind(completionResultKindPlain, 32),
 				wantReplace: "-",
 			},
 			{
@@ -87,6 +87,13 @@ func TestCompletionEngineComplete(t *testing.T) {
 			{
 				name:        "profile values",
 				line:        []string{"clai", "-p", "pr"},
+				wantValues:  []string{"prod", "project"},
+				wantKinds:   repeatKind(completionResultKindPlain, 2),
+				wantReplace: "pr",
+			},
+			{
+				name:        "long profile values",
+				line:        []string{"clai", "-profile", "pr"},
 				wantValues:  []string{"prod", "project"},
 				wantKinds:   repeatKind(completionResultKindPlain, 2),
 				wantReplace: "pr",
@@ -127,8 +134,22 @@ func TestCompletionEngineComplete(t *testing.T) {
 				wantReplace: "",
 			},
 			{
+				name:        "long profile path returns file kind",
+				line:        []string{"clai", "-profile-path", ""},
+				wantValues:  []string{"__files__"},
+				wantKinds:   []completionResultKind{completionResultKindFile},
+				wantReplace: "",
+			},
+			{
 				name:        "directory flags return dir kind",
 				line:        []string{"clai", "-vd", ""},
+				wantValues:  []string{"__dirs__"},
+				wantKinds:   []completionResultKind{completionResultKindDir},
+				wantReplace: "",
+			},
+			{
+				name:        "long directory flags return dir kind",
+				line:        []string{"clai", "-video-dir", ""},
 				wantValues:  []string{"__dirs__"},
 				wantKinds:   []completionResultKind{completionResultKindDir},
 				wantReplace: "",
