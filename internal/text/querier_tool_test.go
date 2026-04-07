@@ -149,12 +149,12 @@ func tempPathFromMaterializedOutput(t *testing.T, got string) string {
 	}
 	pathStart := idx + len(prefix)
 	rest := got[pathStart:]
-	newlineIdx := strings.Index(rest, "\n")
+	before, _, ok := strings.Cut(rest, "\n")
 	trimmed := rest
-	if newlineIdx == -1 {
+	if !ok {
 		trimmed = strings.TrimSpace(rest)
 	} else {
-		trimmed = strings.TrimSpace(rest[:newlineIdx])
+		trimmed = strings.TrimSpace(before)
 	}
 	return strings.TrimSuffix(trimmed, "]")
 }

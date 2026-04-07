@@ -44,6 +44,7 @@ Cache dir:  %v
 Commands:
   h|help                        Display this help message
   s|setup                       Setup the configuration files
+  completion <bash|zsh>         Print shell completion script
   confdir [subpath ...]        Print clai config dir or a registered config subpath
   q|query <text>                Query the chat model with the given text
   p|photo <text>                Ask the photo model for a picture with the given prompt

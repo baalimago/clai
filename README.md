@@ -66,3 +66,28 @@ See [examples](./EXAMPLES.md) for additional info.
 | xAi         | `XAI_API_KEY`        | [Text models](https://docs.x.ai/docs/models)                                                                                                                       |
 | Inception   | `INCEPTION_API_KEY`  | [Text models](https://platform.inceptionlabs.ai/docs#models)                                                                                                       |
 | Ollama      | N/A                  | Use format `ollama:` (defaults to llama3), server defaults to localhost:11434                                                                                      |
+
+---
+
+Shell completions are also available:
+
+```bash
+# bash
+mkdir -p ~/.local/share/bash-completion/completions
+clai completion bash > ~/.local/share/bash-completion/completions/clai
+```
+```bash
+# zsh
+mkdir -p ~/.zsh/completions
+clai completion zsh > ~/.zsh/completions/_clai
+```
+
+For zsh, ensure your `fpath` includes the completions directory before `compinit`, for example:
+
+```bash
+fpath=(~/.zsh/completions $fpath)
+autoload -Uz compinit && compinit
+```
+
+Then restart your shell or reload your shell configuration.
+
