@@ -54,17 +54,27 @@ type completionFlagSpec struct {
 }
 
 var completionCommands = []string{
+	"c",
 	"chat",
 	"completion",
 	"confdir",
+	"g",
+	"glob",
+	"h",
 	"help",
+	"p",
 	"photo",
 	"profiles",
+	"q",
 	"query",
+	"re",
 	"replay",
+	"s",
 	"setup",
+	"t",
 	"tools",
 	"version",
+	"v",
 	"video",
 }
 
@@ -88,6 +98,7 @@ var completionGlobalFlags = []completionFlagSpec{
 	{Name: "-chat-model", TakesValue: true, ValueSource: "model"},
 	{Name: "-cm", TakesValue: true, ValueSource: "model"},
 	{Name: "-dir-reply"},
+	{Name: "-dre"},
 	{Name: "-g", TakesValue: true},
 	{Name: "-glob", TakesValue: true},
 	{Name: "-i"},

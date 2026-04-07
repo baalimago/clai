@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/baalimago/clai/internal/tools"
@@ -45,15 +46,15 @@ func TestCompletionEngineComplete(t *testing.T) {
 			{
 				name:        "top level after trailing space lists commands and flags",
 				line:        []string{"clai", ""},
-				wantValues:  []string{"chat", "completion", "confdir", "help", "photo", "profiles", "query", "replay", "setup", "tools", "version", "video", "-I", "-add-shell-context", "-asc", "-chat-model", "-cm", "-dir-reply", "-g", "-glob", "-i", "-p", "-pd", "-photo-dir", "-photo-model", "-photo-prefix", "-pm", "-pp", "-profile", "-profile-path", "-prp", "-r", "-raw", "-re", "-replace", "-reply", "-t", "-tools", "-vd", "-video-dir", "-video-model", "-video-prefix", "-vm", "-vp"},
-				wantKinds:   repeatKind(completionResultKindPlain, 44),
+				wantValues:  []string{"c", "chat", "completion", "confdir", "g", "glob", "h", "help", "p", "photo", "profiles", "q", "query", "re", "replay", "s", "setup", "t", "tools", "v", "version", "video", "-I", "-add-shell-context", "-asc", "-chat-model", "-cm", "-dir-reply", "-dre", "-g", "-glob", "-i", "-p", "-pd", "-photo-dir", "-photo-model", "-photo-prefix", "-pm", "-pp", "-profile", "-profile-path", "-prp", "-r", "-raw", "-re", "-replace", "-reply", "-t", "-tools", "-vd", "-video-dir", "-video-model", "-video-prefix", "-vm", "-vp"},
+				wantKinds:   repeatKind(completionResultKindPlain, 55),
 				wantReplace: "",
 			},
 			{
 				name:        "dash completes global flags",
 				line:        []string{"clai", "-"},
-				wantValues:  []string{"-I", "-add-shell-context", "-asc", "-chat-model", "-cm", "-dir-reply", "-g", "-glob", "-i", "-p", "-pd", "-photo-dir", "-photo-model", "-photo-prefix", "-pm", "-pp", "-profile", "-profile-path", "-prp", "-r", "-raw", "-re", "-replace", "-reply", "-t", "-tools", "-vd", "-video-dir", "-video-model", "-video-prefix", "-vm", "-vp"},
-				wantKinds:   repeatKind(completionResultKindPlain, 32),
+				wantValues:  []string{"-I", "-add-shell-context", "-asc", "-chat-model", "-cm", "-dir-reply", "-dre", "-g", "-glob", "-i", "-p", "-pd", "-photo-dir", "-photo-model", "-photo-prefix", "-pm", "-pp", "-profile", "-profile-path", "-prp", "-r", "-raw", "-re", "-replace", "-reply", "-t", "-tools", "-vd", "-video-dir", "-video-model", "-video-prefix", "-vm", "-vp"},
+				wantKinds:   repeatKind(completionResultKindPlain, 33),
 				wantReplace: "-",
 			},
 			{
@@ -157,7 +158,6 @@ func TestCompletionEngineComplete(t *testing.T) {
 		}
 
 		for _, tc := range testCases {
-			tc := tc
 			t.Run(tc.name, func(t *testing.T) {
 				t.Parallel()
 
@@ -189,6 +189,109 @@ func TestCompletionEngineComplete(t *testing.T) {
 			})
 		}
 	})
+}
+
+func TestCompletionEngineComplete_CommandShortcuts(t *testing.T) {
+	t.Parallel()
+
+	engine := newCompletionEngine(completionData{})
+
+	testCases := []struct {
+		name     string
+		prefix   string
+		wantSeen string
+	}{
+		{name: "help short alias is suggested", prefix: "h", wantSeen: "h"},
+		{name: "setup short alias is suggested", prefix: "s", wantSeen: "s"},
+		{name: "query short alias is suggested", prefix: "q", wantSeen: "q"},
+		{name: "photo short alias is suggested", prefix: "p", wantSeen: "p"},
+		{name: "video short alias is suggested", prefix: "v", wantSeen: "v"},
+		{name: "chat short alias is suggested", prefix: "c", wantSeen: "c"},
+		{name: "tools short alias is suggested", prefix: "t", wantSeen: "t"},
+		{name: "replay short alias is suggested", prefix: "re", wantSeen: "re"},
+		{name: "glob short alias is suggested", prefix: "g", wantSeen: "g"},
+		{name: "glob long command is suggested", prefix: "g", wantSeen: "glob"},
+		{name: "query long command is suggested", prefix: "q", wantSeen: "query"},
+		{name: "chat long command is suggested", prefix: "c", wantSeen: "chat"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := engine.Complete(completionRequest{Args: []string{"clai", tc.prefix}})
+			gotValues := make([]string, 0, len(got.Items))
+			for _, item := range got.Items {
+				gotValues = append(gotValues, item.Value)
+			}
+
+			if !containsString(gotValues, tc.wantSeen) {
+				t.Fatalf("completion values %v do not contain %q", gotValues, tc.wantSeen)
+			}
+		})
+	}
+}
+
+func TestCompletionEngineComplete_FlagShortcuts(t *testing.T) {
+	t.Parallel()
+
+	engine := newCompletionEngine(completionData{})
+
+	testCases := []struct {
+		name     string
+		prefix   string
+		wantSeen string
+	}{
+		{name: "chat model short flag is suggested", prefix: "-cm", wantSeen: "-cm"},
+		{name: "chat model long flag is suggested", prefix: "-chat", wantSeen: "-chat-model"},
+		{name: "photo model short flag is suggested", prefix: "-pm", wantSeen: "-pm"},
+		{name: "photo model long flag is suggested", prefix: "-photo-m", wantSeen: "-photo-model"},
+		{name: "photo dir short flag is suggested", prefix: "-pd", wantSeen: "-pd"},
+		{name: "photo dir long flag is suggested", prefix: "-photo-d", wantSeen: "-photo-dir"},
+		{name: "photo prefix short flag is suggested", prefix: "-pp", wantSeen: "-pp"},
+		{name: "photo prefix long flag is suggested", prefix: "-photo-p", wantSeen: "-photo-prefix"},
+		{name: "video model short flag is suggested", prefix: "-vm", wantSeen: "-vm"},
+		{name: "video model long flag is suggested", prefix: "-video-m", wantSeen: "-video-model"},
+		{name: "video dir short flag is suggested", prefix: "-vd", wantSeen: "-vd"},
+		{name: "video dir long flag is suggested", prefix: "-video-d", wantSeen: "-video-dir"},
+		{name: "video prefix short flag is suggested", prefix: "-vp", wantSeen: "-vp"},
+		{name: "video prefix long flag is suggested", prefix: "-video-p", wantSeen: "-video-prefix"},
+		{name: "glob short flag is suggested", prefix: "-g", wantSeen: "-g"},
+		{name: "glob long flag is suggested", prefix: "-gl", wantSeen: "-glob"},
+		{name: "profile short flag is suggested", prefix: "-p", wantSeen: "-p"},
+		{name: "profile long flag is suggested", prefix: "-prof", wantSeen: "-profile"},
+		{name: "profile path short flag is suggested", prefix: "-prp", wantSeen: "-prp"},
+		{name: "profile path long flag is suggested", prefix: "-profile-pa", wantSeen: "-profile-path"},
+		{name: "replace short flag is suggested", prefix: "-I", wantSeen: "-I"},
+		{name: "replace long flag is suggested", prefix: "-rep", wantSeen: "-replace"},
+		{name: "stdin shortcut flag is suggested", prefix: "-i", wantSeen: "-i"},
+		{name: "raw short flag is suggested", prefix: "-r", wantSeen: "-r"},
+		{name: "raw long flag is suggested", prefix: "-ra", wantSeen: "-raw"},
+		{name: "reply short flag is suggested", prefix: "-re", wantSeen: "-re"},
+		{name: "reply long flag is suggested", prefix: "-reply", wantSeen: "-reply"},
+		{name: "tools short flag is suggested", prefix: "-t", wantSeen: "-t"},
+		{name: "tools long flag is suggested", prefix: "-too", wantSeen: "-tools"},
+		{name: "append shell context short flag is suggested", prefix: "-asc", wantSeen: "-asc"},
+		{name: "append shell context long flag is suggested", prefix: "-add-s", wantSeen: "-add-shell-context"},
+		{name: "dir reply short flag is suggested", prefix: "-dre", wantSeen: "-dre"},
+		{name: "dir reply long flag is suggested", prefix: "-dir-r", wantSeen: "-dir-reply"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := engine.Complete(completionRequest{Args: []string{"clai", tc.prefix}})
+			gotValues := make([]string, 0, len(got.Items))
+			for _, item := range got.Items {
+				gotValues = append(gotValues, item.Value)
+			}
+
+			if !containsString(gotValues, tc.wantSeen) {
+				t.Fatalf("completion values %v do not contain %q", gotValues, tc.wantSeen)
+			}
+		})
+	}
 }
 
 func TestLoadCompletionData_ModelsFromConfigHistory(t *testing.T) {
@@ -268,4 +371,8 @@ func repeatKind(kind completionResultKind, count int) []completionResultKind {
 		out = append(out, kind)
 	}
 	return out
+}
+
+func containsString(values []string, want string) bool {
+	return slices.Contains(values, want)
 }
