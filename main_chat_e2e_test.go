@@ -338,3 +338,59 @@ func Test_e2e_same_prompt_twice_creates_two_separate_chats(t *testing.T) {
 		t.Fatalf("expected at least 2 separate persisted chats for same prompt, got %d: %v", len(chatFiles), chatFiles)
 	}
 }
+
+func Test_e2e_newly_saved_conversation_has_created_timestamp(t *testing.T) {
+	confDir := setupMainTestConfigDir(t)
+
+	runOne := func(t *testing.T, args string) int {
+		t.Helper()
+		oldArgs := os.Args
+		t.Cleanup(func() {
+			os.Args = oldArgs
+		})
+
+		var status int
+		_ = testboil.CaptureStdout(t, func(t *testing.T) {
+			status = run(strings.Split(args, " "))
+		})
+		return status
+	}
+
+	status := runOne(t, "-r -cm test q verify created timestamp persists")
+	testboil.FailTestIfDiff(t, status, 0)
+
+	entries, err := os.ReadDir(filepath.Join(confDir, "conversations"))
+	if err != nil {
+		t.Fatalf("ReadDir(conversations): %v", err)
+	}
+
+	var conversationPath string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !strings.HasSuffix(name, ".json") || name == "globalScope.json" {
+			continue
+		}
+		conversationPath = filepath.Join(confDir, "conversations", name)
+		break
+	}
+	if conversationPath == "" {
+		t.Fatalf("expected a saved conversation file in %q", filepath.Join(confDir, "conversations"))
+	}
+
+	var saved models.Chat
+	b, err := os.ReadFile(conversationPath)
+	if err != nil {
+		t.Fatalf("ReadFile(%q): %v", conversationPath, err)
+	}
+	if err := json.Unmarshal(b, &saved); err != nil {
+		t.Fatalf("Unmarshal(%q): %v", conversationPath, err)
+	}
+
+	if saved.Created.IsZero() {
+		t.Fatalf("expected saved conversation %q to have non-zero created timestamp, got zero value; raw=%s", conversationPath, string(b))
+	}
+}
+

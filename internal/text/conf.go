@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/baalimago/clai/internal/chat"
 	"github.com/baalimago/clai/internal/chatid"
@@ -194,6 +195,10 @@ func (c *Configurations) SetupInitialChat(args []string) error {
 		}
 		c.InitialChat.ID = chatID
 		traceChatf("setup initial chat generated chat id=%q", c.InitialChat.ID)
+	}
+	if c.InitialChat.Created.IsZero() {
+		c.InitialChat.Created = time.Now()
+		traceChatf("setup initial chat set created timestamp created=%q", c.InitialChat.Created.Format(time.RFC3339Nano))
 	}
 	traceChatf("setup initial chat done chat_id=%q total_messages=%d", c.InitialChat.ID, len(c.InitialChat.Messages))
 	return nil
