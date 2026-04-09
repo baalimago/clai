@@ -32,7 +32,7 @@ func SaveAsPreviousQuery(claiConfDir string, chat pub_models.Chat) error {
 	}
 	// This check avoids storing queries without any replies, which would most likely
 	// flood the conversations needlessly. Only promote to a fresh conversation when
-	// there is no existing source conversation to update.
+	// the chat does not already identify an existing persisted conversation.
 	if len(chat.Messages) > 2 && (sourceChat.ID == "" || sourceChat.ID == globalScopeChatID) {
 		firstUserMsg, err := globalScopeChat.FirstUserMessage()
 		if err != nil {

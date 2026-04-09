@@ -16,7 +16,6 @@ import (
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/utils"
-	"github.com/baalimago/clai/internal/vendors"
 	"github.com/baalimago/clai/internal/video"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	imagodebug "github.com/baalimago/go_away_boilerplate/pkg/debug"
@@ -335,29 +334,11 @@ func Setup(ctx context.Context, usage string, allArgs []string) (models.Querier,
 			if loadErr != nil {
 				return nil, fmt.Errorf("load dir reply chat id: %w", loadErr)
 			}
+			// A bit hacky, but better than alternatives for now
 			if chatID != "" {
 				tConf.InitialChat.ID = chatID
-			}
-		}
-
-		// Update directory binding after successful query.
-		// Rule: update bindings after non-reply query.
-		// - normal query updates binding to the new/used chat.
-		// - dir-reply query keeps binding pointing at the chat we replied to.
-		if mode == QUERY && !postFlagConf.ReplyMode {
-			updateChatID := tConf.InitialChat.ID
-			if err := chat.UpdateDirScopeFromCWD(claiConfDir, updateChatID); err != nil {
-				ancli.Warnf("failed to update directory-scoped binding: %v\n", err)
-			}
-		}
-		if mode == QUERY && postFlagConf.DirReplyMode && postFlagConf.ReplyMode {
-			// -dre query: keep binding pointing to the dir-scoped chat being replied to.
-			chatID, err := chat.LoadDirScopeChatID(claiConfDir)
-			if err != nil {
-				ancli.Warnf("failed to resolve dir-reply chat id for binding update: %v\n", err)
-			} else if chatID != "" {
-				if err := chat.UpdateDirScopeFromCWD(claiConfDir, chatID); err != nil {
-					ancli.Warnf("failed to update directory-scoped binding: %v\n", err)
+				if chatSetter, ok := q.(interface{ SetChatID(string) }); ok {
+					chatSetter.SetChatID(chatID)
 				}
 			}
 		}

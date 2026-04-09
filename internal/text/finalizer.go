@@ -70,6 +70,11 @@ func (f sessionFinalizer[C]) Finalize(session *QuerySession) {
 		if err != nil {
 			ancli.PrintErr(fmt.Sprintf("failed to save previous query: %v\n", err))
 		}
+		if session.Chat.ID != "" && session.Chat.ID != "globalScope" {
+			if updateErr := chat.UpdateDirScopeFromCWD(q.configDir, session.Chat.ID); updateErr != nil {
+				ancli.Warnf("failed to update directory-scoped binding: %v\n", updateErr)
+			}
+		}
 	}
 
 	if q.debug {
