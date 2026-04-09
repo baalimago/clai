@@ -8,7 +8,7 @@ import (
 )
 
 func debugChatEnabled() bool {
-	return misc.Truthy(os.Getenv("DEBUG_CHAT"))
+	return misc.Truthy(os.Getenv("DEBUG_CHAT")) || misc.Truthy(os.Getenv("DEBUG"))
 }
 
 func traceChatf(format string, args ...any) {

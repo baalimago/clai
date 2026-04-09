@@ -17,6 +17,24 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
+func runOne(t *testing.T, cwd string, args string) (string, int) {
+	t.Helper()
+	oldArgs := os.Args
+	t.Cleanup(func() {
+		os.Args = oldArgs
+	})
+
+	if chDirErr := os.Chdir(cwd); chDirErr != nil {
+		t.Fatalf("Chdir(%q): %v", cwd, chDirErr)
+	}
+
+	var status int
+	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
+		status = run(strings.Split(args, " "))
+	})
+	return stdout, status
+}
+
 func Test_goldenFile_CHAT_DIRSCOPED(t *testing.T) {
 	type chatDirInfo struct {
 		Scope         string         `json:"scope"`
@@ -39,24 +57,6 @@ func Test_goldenFile_CHAT_DIRSCOPED(t *testing.T) {
 	baz := filepath.Join(bar, "baz")
 	if mkdirErr := os.MkdirAll(baz, 0o755); mkdirErr != nil {
 		t.Fatalf("MkdirAll(baz): %v", mkdirErr)
-	}
-
-	runOne := func(t *testing.T, cwd string, args string) (string, int) {
-		t.Helper()
-		oldArgs := os.Args
-		t.Cleanup(func() {
-			os.Args = oldArgs
-		})
-
-		if chDirErr := os.Chdir(cwd); chDirErr != nil {
-			t.Fatalf("Chdir(%q): %v", cwd, chDirErr)
-		}
-
-		var status int
-		stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-			status = run(strings.Split(args, " "))
-		})
-		return stdout, status
 	}
 
 	parseChatDir := func(t *testing.T, stdout string) chatDirInfo {
@@ -241,9 +241,6 @@ func Test_goldenFile_CHAT_CONTINUE_obfuscated_preview(t *testing.T) {
 	//   replied to using -dre.
 	// - It prints a notice about the new replyable mechanism.
 
-	oldArgs := os.Args
-	t.Cleanup(func() { os.Args = oldArgs })
-
 	confDir := t.TempDir()
 	if err := utils.CreateConfigDir(confDir); err != nil {
 		t.Fatalf("CreateConfigDir: %v", err)
@@ -265,10 +262,15 @@ func Test_goldenFile_CHAT_CONTINUE_obfuscated_preview(t *testing.T) {
 		t.Fatalf("Save: %v", err)
 	}
 
-	var status int
-	out := testboil.CaptureStdout(t, func(t *testing.T) {
-		status = run(strings.Split("-r -cm test c c 0", " "))
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(oldWd)
 	})
+
+	out, status := runOne(t, confDir, "-r -cm test c c 0")
 	if status != 0 {
 		t.Fatalf("expected status code 0, got %v. stdout=%q", status, out)
 	}
@@ -295,26 +297,19 @@ func Test_goldenFile_CHAT_CONTINUE_obfuscated_preview(t *testing.T) {
 
 func Test_e2e_same_prompt_twice_creates_two_separate_chats(t *testing.T) {
 	confDir := setupMainTestConfigDir(t)
-
-	runOne := func(t *testing.T, args string) int {
-		t.Helper()
-		oldArgs := os.Args
-		t.Cleanup(func() {
-			os.Args = oldArgs
-		})
-
-		var status int
-		_ = testboil.CaptureStdout(t, func(t *testing.T) {
-			status = run(strings.Split(args, " "))
-		})
-		return status
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
 	}
+	t.Cleanup(func() {
+		_ = os.Chdir(oldWd)
+	})
 
 	prompt := "please keep these as separate chats"
-	status := runOne(t, "-r -cm test q "+prompt)
+	_, status := runOne(t, confDir, "-r -cm test q "+prompt)
 	testboil.FailTestIfDiff(t, status, 0)
 
-	status = runOne(t, "-r -cm test q "+prompt)
+	_, status = runOne(t, confDir, "-r -cm test q "+prompt)
 	testboil.FailTestIfDiff(t, status, 0)
 
 	entries, err := os.ReadDir(filepath.Join(confDir, "conversations"))
@@ -341,22 +336,15 @@ func Test_e2e_same_prompt_twice_creates_two_separate_chats(t *testing.T) {
 
 func Test_e2e_newly_saved_conversation_has_created_timestamp(t *testing.T) {
 	confDir := setupMainTestConfigDir(t)
-
-	runOne := func(t *testing.T, args string) int {
-		t.Helper()
-		oldArgs := os.Args
-		t.Cleanup(func() {
-			os.Args = oldArgs
-		})
-
-		var status int
-		_ = testboil.CaptureStdout(t, func(t *testing.T) {
-			status = run(strings.Split(args, " "))
-		})
-		return status
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
 	}
+	t.Cleanup(func() {
+		_ = os.Chdir(oldWd)
+	})
 
-	status := runOne(t, "-r -cm test q verify created timestamp persists")
+	_, status := runOne(t, confDir, "-r -cm test q verify created timestamp persists")
 	testboil.FailTestIfDiff(t, status, 0)
 
 	entries, err := os.ReadDir(filepath.Join(confDir, "conversations"))
@@ -394,3 +382,184 @@ func Test_e2e_newly_saved_conversation_has_created_timestamp(t *testing.T) {
 	}
 }
 
+func Test_e2e_dre_queries_continue_directory_scoped_conversation(t *testing.T) {
+	confDir := setupMainTestConfigDir(t)
+
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(oldWd)
+	})
+
+	workDir := filepath.Join(t.TempDir(), "a")
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(%q): %v", workDir, err)
+	}
+
+	type chatDirInfo struct {
+		Scope         string         `json:"scope"`
+		ChatID        string         `json:"chat_id"`
+		RepliesByRole map[string]int `json:"replies_by_role"`
+		TokensTotal   int            `json:"tokens_total"`
+	}
+
+	parseChatDir := func(t *testing.T, stdout string) chatDirInfo {
+		t.Helper()
+		trimmed := strings.TrimSpace(strings.TrimSuffix(stdout, "\a"))
+		if trimmed == "" {
+			t.Fatalf("expected non-empty stdout")
+		}
+		var got chatDirInfo
+		if err := json.Unmarshal([]byte(trimmed), &got); err != nil {
+			t.Fatalf("Unmarshal(chat dir json): %v\nstdout=%q", err, stdout)
+		}
+		return got
+	}
+
+	out, status := runOne(t, workDir, "-r -cm test q I like blue")
+	testboil.FailTestIfDiff(t, status, 0)
+	testboil.FailTestIfDiff(t, out, "I like blue\n\a")
+
+	out, status = runOne(t, workDir, "-r -cm test chat dir")
+	testboil.FailTestIfDiff(t, status, 0)
+	initialDirInfo := parseChatDir(t, out)
+	if initialDirInfo.ChatID == "" {
+		t.Fatalf("expected initial directory-scoped chat id to be set")
+	}
+	initialConversationPath := filepath.Join(confDir, "conversations", initialDirInfo.ChatID+".json")
+	initialConversationBytes, err := os.ReadFile(initialConversationPath)
+	if err != nil {
+		t.Fatalf("ReadFile(%q): %v", initialConversationPath, err)
+	}
+	var initialConversation models.Chat
+	if err := json.Unmarshal(initialConversationBytes, &initialConversation); err != nil {
+		t.Fatalf("Unmarshal(%q): %v", initialConversationPath, err)
+	}
+	if initialConversation.ID != initialDirInfo.ChatID {
+		t.Fatalf("expected initial conversation file %q to decode to chat ID %q, got %q", initialConversationPath, initialDirInfo.ChatID, initialConversation.ID)
+	}
+
+	for _, tc := range []struct {
+		name string
+		args string
+	}{
+		{name: "first dre reply", args: "-r -cm test -dre q I like cookies"},
+		{name: "second dre reply", args: "-r -cm test -dre q I like buns"},
+		{name: "third dre reply", args: "-r -cm test -dre q I like tacos"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, status := runOne(t, workDir, tc.args)
+			testboil.FailTestIfDiff(t, status, 0)
+		})
+	}
+
+	out, status = runOne(t, workDir, "-r -cm test chat dir")
+	testboil.FailTestIfDiff(t, status, 0)
+	finalDirInfo := parseChatDir(t, out)
+	if finalDirInfo.ChatID != initialDirInfo.ChatID {
+		t.Fatalf("expected directory-scoped chat id to remain %q across -dre replies, got %q", initialDirInfo.ChatID, finalDirInfo.ChatID)
+	}
+	finalConversationBytes, err := os.ReadFile(initialConversationPath)
+	if err != nil {
+		t.Fatalf("ReadFile(%q): %v", initialConversationPath, err)
+	}
+	var finalConversation models.Chat
+	if err := json.Unmarshal(finalConversationBytes, &finalConversation); err != nil {
+		t.Fatalf("Unmarshal(%q): %v", initialConversationPath, err)
+	}
+	if finalConversation.ID != initialDirInfo.ChatID {
+		t.Fatalf("expected final conversation file %q to keep chat ID %q, got %q", initialConversationPath, initialDirInfo.ChatID, finalConversation.ID)
+	}
+
+	entries, err := os.ReadDir(filepath.Join(confDir, "conversations"))
+	if err != nil {
+		t.Fatalf("ReadDir(conversations): %v", err)
+	}
+
+	var conversationFiles []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		if !strings.HasSuffix(entry.Name(), ".json") || entry.Name() == "globalScope.json" {
+			continue
+		}
+		conversationFiles = append(conversationFiles, filepath.Join(confDir, "conversations", entry.Name()))
+	}
+
+	if len(conversationFiles) != 1 {
+		t.Fatalf("expected exactly 1 persisted conversation after repeated -dre queries, got %d: %v", len(conversationFiles), conversationFiles)
+	}
+
+	b, err := os.ReadFile(conversationFiles[0])
+	if err != nil {
+		t.Fatalf("ReadFile(%q): %v", conversationFiles[0], err)
+	}
+
+	var persisted models.Chat
+	if err := json.Unmarshal(b, &persisted); err != nil {
+		t.Fatalf("Unmarshal(%q): %v", conversationFiles[0], err)
+	}
+
+	var userMessages []string
+	for _, msg := range persisted.Messages {
+		if msg.Role != "user" {
+			continue
+		}
+		userMessages = append(userMessages, msg.Content)
+	}
+
+	wantMessages := []string{
+		"I like blue",
+		"I like cookies",
+		"I like buns",
+		"I like tacos",
+	}
+	if !slices.Equal(userMessages, wantMessages) {
+		t.Fatalf("expected user messages %v in single persisted conversation, got %v", wantMessages, userMessages)
+	}
+}
+
+func Test_e2e_dre_setup_keeps_bound_chat_id(t *testing.T) {
+	confDir := setupMainTestConfigDir(t)
+
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(oldWd)
+	})
+
+	workDir := filepath.Join(t.TempDir(), "reply-bound")
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(%q): %v", workDir, err)
+	}
+	if err := os.Chdir(workDir); err != nil {
+		t.Fatalf("Chdir(%q): %v", workDir, err)
+	}
+
+	_, status := runOne(t, workDir, "-r -cm test q initial prompt")
+	testboil.FailTestIfDiff(t, status, 0)
+
+	initialChatID, err := chat.LoadDirScopeChatID(confDir)
+	if err != nil {
+		t.Fatalf("LoadDirScopeChatID(initial): %v", err)
+	}
+	if initialChatID == "" {
+		t.Fatalf("expected initial dirscope chat id to be non-empty")
+	}
+
+	_, status = runOne(t, workDir, "-r -cm test -dre q follow-up prompt")
+	testboil.FailTestIfDiff(t, status, 0)
+
+	finalChatID, err := chat.LoadDirScopeChatID(confDir)
+	if err != nil {
+		t.Fatalf("LoadDirScopeChatID(final): %v", err)
+	}
+	if finalChatID != initialChatID {
+		t.Fatalf("expected -dre query to keep dirscope binding on %q, got %q", initialChatID, finalChatID)
+	}
+}

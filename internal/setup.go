@@ -337,9 +337,6 @@ func Setup(ctx context.Context, usage string, allArgs []string) (models.Querier,
 			}
 			if chatID != "" {
 				tConf.InitialChat.ID = chatID
-				if textQuerier, ok := q.(*text.Querier[*vendors.Mock]); ok {
-					textQuerier.SetChatID(chatID)
-				}
 			}
 		}
 

@@ -48,7 +48,7 @@ func captureStdout(t *testing.T, fn func()) string {
 	return got
 }
 
-func TestLoadPrevQuery_TraceOnlyWhenDebugChatTrue(t *testing.T) {
+func TestLoadPrevQuery_TraceShowsLoadedConversationIDWhenDebugEnabled(t *testing.T) {
 	confDir := t.TempDir()
 	convDir := filepath.Join(confDir, "conversations")
 	if err := os.MkdirAll(convDir, 0o755); err != nil {
@@ -62,23 +62,25 @@ func TestLoadPrevQuery_TraceOnlyWhenDebugChatTrue(t *testing.T) {
 		t.Fatalf("save global scope chat: %v", err)
 	}
 
+	t.Setenv("DEBUG", "false")
 	t.Setenv("DEBUG_CHAT", "false")
 	withoutDebug := captureStdout(t, func() {
 		if _, err := LoadPrevQuery(confDir); err != nil {
 			t.Fatalf("LoadPrevQuery without debug: %v", err)
 		}
 	})
-	if strings.Contains(withoutDebug, "globalScope.json") {
-		t.Fatalf("expected no trace output when DEBUG_CHAT is false, got %q", withoutDebug)
+	if strings.Contains(withoutDebug, "chat_id=") {
+		t.Fatalf("expected no trace output when debug is disabled, got %q", withoutDebug)
 	}
 
-	t.Setenv("DEBUG_CHAT", "true")
+	t.Setenv("DEBUG", "true")
+	t.Setenv("DEBUG_CHAT", "false")
 	withDebug := captureStdout(t, func() {
 		if _, err := LoadPrevQuery(confDir); err != nil {
 			t.Fatalf("LoadPrevQuery with debug: %v", err)
 		}
 	})
-	if !strings.Contains(withDebug, "globalScope.json") {
-		t.Fatalf("expected trace output to mention loaded chat file, got %q", withDebug)
+	if !strings.Contains(withDebug, `chat_id="globalScope"`) {
+		t.Fatalf("expected trace output to mention loaded conversation id, got %q", withDebug)
 	}
 }
