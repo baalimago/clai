@@ -90,10 +90,16 @@ func queryForAction(options []action) (action, error) {
 func actOnConfigItem(category setupCategory, cfg config) error {
 	selectedAction, err := queryForAction(actionsWithNavigation(category.itemActions))
 	if err != nil {
+		if errors.Is(err, utils.ErrBack) || errors.Is(err, utils.ErrUserInitiatedExit) {
+			return err
+		}
 		return fmt.Errorf("failed to query for config action: %w", err)
 	}
 
 	if err := executeConfigAction(cfg, selectedAction); err != nil {
+		if errors.Is(err, utils.ErrBack) || errors.Is(err, utils.ErrUserInitiatedExit) {
+			return err
+		}
 		return fmt.Errorf("failed to execute action %q for %q: %w", selectedAction, cfg.name, err)
 	}
 	return nil
@@ -220,9 +226,7 @@ func actionReconfigureStringFieldWithEditor(cfg config, fieldName string) error 
 			},
 			10,
 			true,
-			[]utils.TableAction{
-				actionToTableAction[back],
-			},
+			nil,
 			os.Stdout,
 		)
 
