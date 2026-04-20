@@ -88,11 +88,72 @@ Execution properties:
 - inherits the current environment
 - stdout is captured
 - stderr is captured
-- output is not streamed directly to the user during subprocess execution
+- stdout may be streamed directly to the user while still being captured
+- stderr may be streamed directly to the user while still being captured
 
-This is intentionally different from a normal shell run. The command result is buffered for analysis first, then the LLM answer is shown.
+This gives `wrap` a stream-and-capture execution model. The user can see command output live during execution, and the same bytes are buffered for later analysis. The final LLM answer is still shown after the subprocess has finished and the prompt has been assembled.
 
 The subprocess exit code is always captured. A non-zero exit code does not stop the query path. Instead, it becomes part of the generated prompt.
+
+## Stream-and-capture execution model
+
+`wrap` uses a tee-like execution strategy for both stdout and stderr.
+
+High-level flow:
+
+1. start the subprocess
+2. connect pipes for stdout and stderr
+3. spawn one copy loop per stream
+4. write each stream live to the matching terminal stream
+5. write the same bytes into that stream's capture buffer
+6. wait for subprocess exit
+7. wait for the stream copy loops to finish
+8. build the prompt from the captured data
+9. submit the prompt to the normal text query flow
+
+Important properties:
+
+- stdout and stderr remain separate throughout capture
+- stdout is streamed to the user's stdout
+- stderr is streamed to the user's stderr
+- prompt capture keeps stdout and stderr as independent sections
+- streaming output to the user does not replace capture for the LLM
+
+If output limiting is enabled, the terminal stream may still receive the full live output while the in-memory capture is truncated according to the configured byte limit.
+
+## Interrupt handling
+
+`wrap` owns interrupt handling while the subprocess is running.
+
+The intended policy is:
+
+1. the first interrupt is forwarded to the wrapped subprocess
+2. `wrap` continues capturing stdout and stderr while the subprocess shuts down
+3. when the subprocess exits, `wrap` still builds the prompt from the final captured data
+4. the LLM query still runs using all captured bytes, including output produced after the first interrupt
+5. a later interrupt cancels the overall `wrap` flow and no LLM query is performed
+
+This allows a user to ask a long-running command to stop, while still getting analysis of everything that happened before it exited.
+
+## Process-group handling
+
+To avoid the parent and child reacting to the same terminal interrupt in uncontrolled ways, the wrapped subprocess should be started in its own process group where the platform allows it.
+
+On platforms with process-group support, the parent process receives the interrupt first and then decides whether to forward that interrupt to the child process or child process group.
+
+This forwarding is best-effort and may vary by platform.
+
+## Prompt content after interrupt
+
+If the wrapped subprocess is interrupted by the user and then exits, `wrap` still follows the normal prompt structure:
+
+1. instruction block
+2. `Command:`
+3. `Exit code:`
+4. `Stdout:`
+5. `Stderr:`
+
+No additional prompt section is required in v1. The exit code and captured stream content remain the source of truth for later analysis.
 
 ## Captured data model
 
@@ -228,7 +289,7 @@ They do not change how the wrapped subprocess is executed, except where a wrap-s
 
 If raw output mode is enabled via `-r` or `--raw`, only the final model answer changes rendering mode.
 
-The wrapped subprocess output still does not stream directly to the terminal.
+The wrapped subprocess may still stream directly to the terminal while executing.
 
 ## Reply behavior
 
@@ -270,6 +331,11 @@ The following outcomes are part of the v1 contract and should drive end-to-end t
 13. normal query flags such as `-r` still work with `wrap`
 14. `--max-bytes` truncates stdout and stderr independently
 15. the `Command:` section is rendered as one escaped command line
+16. subprocess stdout may stream live to the user while still appearing in the final prompt
+17. subprocess stderr may stream live to the user while still appearing in the final prompt
+18. the first interrupt is forwarded to the wrapped subprocess
+19. if the subprocess exits after the first interrupt, the captured data is still sent to the model
+20. a later interrupt cancels the overall wrap flow before model output
 
 ## Out of scope for v1
 
@@ -279,7 +345,6 @@ The initial `wrap` command does not include:
 - automatically wrapping the previous shell command
 - capturing previously printed terminal output
 - shell-specific widgets or aliases
-- streaming subprocess output live while also capturing it
 - replaying a previous wrapped command execution
 
 These may be built later, but they are not part of the v1 architecture contract.
