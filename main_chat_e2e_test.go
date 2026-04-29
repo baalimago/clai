@@ -483,7 +483,7 @@ func Test_e2e_dre_queries_continue_directory_scoped_conversation(t *testing.T) {
 		if entry.IsDir() {
 			continue
 		}
-		if !strings.HasSuffix(entry.Name(), ".json") || entry.Name() == "globalScope.json" {
+		if !strings.HasSuffix(entry.Name(), ".json") || entry.Name() == "globalScope.json" || entry.Name() == "chat_index.cache" {
 			continue
 		}
 		conversationFiles = append(conversationFiles, filepath.Join(confDir, "conversations", entry.Name()))
@@ -561,5 +561,127 @@ func Test_e2e_dre_setup_keeps_bound_chat_id(t *testing.T) {
 	}
 	if finalChatID != initialChatID {
 		t.Fatalf("expected -dre query to keep dirscope binding on %q, got %q", initialChatID, finalChatID)
+	}
+}
+
+func Test_e2e_dre_profile_swap_does_not_create_new_conversation(t *testing.T) {
+	confDir := setupMainTestConfigDir(t)
+	for _, name := range []string{"first", "second", "third"} {
+		profilePath := filepath.Join(confDir, "profiles", name+".json")
+		profileContent := `{"name":"` + name + `","model":"test"}`
+		if err := os.WriteFile(profilePath, []byte(profileContent), 0o644); err != nil {
+			t.Fatalf("WriteFile(%q): %v", profilePath, err)
+		}
+	}
+
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(oldWd)
+	})
+
+	workDir := filepath.Join(t.TempDir(), "profile-swap")
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(%q): %v", workDir, err)
+	}
+
+	out, status := runOne(t, workDir, "-r -cm test q seed prompt")
+	testboil.FailTestIfDiff(t, status, 0)
+	testboil.FailTestIfDiff(t, out, "seed prompt\n\a")
+
+	initialChatID, err := chat.LoadDirScopeChatID(confDir)
+	if err != nil {
+		t.Fatalf("LoadDirScopeChatID(initial): %v", err)
+	}
+	if initialChatID == "" {
+		t.Fatalf("expected initial dirscope chat id to be non-empty")
+	}
+
+	for _, tc := range []struct {
+		name string
+		args string
+	}{
+		{name: "swap to second profile", args: "-r -cm test -p second -dre q follow-up one"},
+		{name: "swap to third profile", args: "-r -cm test -p third -dre q follow-up two"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			out, status := runOne(t, workDir, tc.args)
+			testboil.FailTestIfDiff(t, status, 0)
+			testboil.AssertStringContains(t, out, "\n")
+
+			gotChatID, err := chat.LoadDirScopeChatID(confDir)
+			if err != nil {
+				t.Fatalf("LoadDirScopeChatID(%s): %v", tc.name, err)
+			}
+			if gotChatID != initialChatID {
+				t.Fatalf("expected dirscope chat id to remain %q after profile swap, got %q", initialChatID, gotChatID)
+			}
+		})
+	}
+
+	entries, err := os.ReadDir(filepath.Join(confDir, "conversations"))
+	if err != nil {
+		t.Fatalf("ReadDir(conversations): %v", err)
+	}
+
+	var conversationFiles []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		if !strings.HasSuffix(entry.Name(), ".json") || entry.Name() == "globalScope.json" || entry.Name() == "chat_index.cache" {
+			continue
+		}
+		conversationFiles = append(conversationFiles, filepath.Join(confDir, "conversations", entry.Name()))
+	}
+
+	if len(conversationFiles) != 1 {
+		t.Fatalf("expected exactly 1 persisted conversation after -dre profile swaps, got %d: %v", len(conversationFiles), conversationFiles)
+	}
+
+	b, err := os.ReadFile(conversationFiles[0])
+	if err != nil {
+		t.Fatalf("ReadFile(%q): %v", conversationFiles[0], err)
+	}
+
+	var persisted models.Chat
+	if err := json.Unmarshal(b, &persisted); err != nil {
+		t.Fatalf("Unmarshal(%q): %v", conversationFiles[0], err)
+	}
+	if persisted.ID != initialChatID {
+		t.Fatalf("expected persisted conversation id %q, got %q", initialChatID, persisted.ID)
+	}
+	if persisted.Profile != "third" {
+		t.Fatalf("expected persisted conversation profile %q, got %q", "third", persisted.Profile)
+	}
+	globalScopeBytes, err := os.ReadFile(filepath.Join(confDir, "conversations", "globalScope.json"))
+	if err != nil {
+		t.Fatalf("ReadFile(globalScope.json): %v", err)
+	}
+	var globalScope models.Chat
+	if err := json.Unmarshal(globalScopeBytes, &globalScope); err != nil {
+		t.Fatalf("Unmarshal(globalScope.json): %v", err)
+	}
+	if globalScope.Profile != "third" {
+		t.Fatalf("expected globalScope profile %q, got %q", "third", globalScope.Profile)
+	}
+
+	var userMessages []string
+	for _, msg := range persisted.Messages {
+		if msg.Role != "user" {
+			continue
+		}
+		userMessages = append(userMessages, msg.Content)
+	}
+
+	wantMessages := []string{
+		"seed prompt",
+		"follow-up one",
+		"follow-up two",
+	}
+	if !slices.Equal(userMessages, wantMessages) {
+		t.Fatalf("expected user messages %v in single persisted conversation, got %v; globalScopeProfile=%q globalScopeID=%q", wantMessages, userMessages, globalScope.Profile, globalScope.ID)
 	}
 }

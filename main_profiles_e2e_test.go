@@ -154,7 +154,7 @@ func Test_goldenFile_profile2_is_applied_to_conversations(t *testing.T) {
 		UseTools:        false,
 		Tools:           []string{},
 		Prompt:          "profile2 system prompt",
-		SaveReplyAsConv: true,
+		SaveReplyAsConv: new(true),
 		McpServers:      nil,
 	}
 	b, err := json.Marshal(profile)
