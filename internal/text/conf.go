@@ -82,7 +82,7 @@ type Profile struct {
 	UseTools        bool                            `json:"use_tools"`
 	Tools           []string                        `json:"tools"`
 	Prompt          string                          `json:"prompt"`
-	SaveReplyAsConv bool                            `json:"save-reply-as-conv"`
+	SaveReplyAsConv *bool                           `json:"save-reply-as-conv,omitempty"`
 	McpServers      map[string]pub_models.McpServer `json:"mcp_servers,omitempty"`
 	ShellContext    string                          `json:"shell_context,omitempty"`
 }
@@ -107,7 +107,7 @@ var DefaultProfile = Profile{
 	UseTools:        true,
 	Tools:           []string{},
 	Prompt:          Default.SystemPrompt,
-	SaveReplyAsConv: true,
+	SaveReplyAsConv: new(true),
 }
 
 func (c *Configurations) setupSystemPrompt() {
@@ -158,6 +158,14 @@ func (c *Configurations) SetupInitialChat(args []string) error {
 		iP, err := chat.LoadPrevQuery(c.ConfigDir)
 		if err != nil {
 			return fmt.Errorf("failed to load previous query: %w", err)
+		}
+		if c.InitialChat.ID == "" && iP.ID != "" && iP.ID != "globalScope" {
+			c.InitialChat.ID = iP.ID
+			traceChatf("setup initial chat adopted previous query chat id=%q", c.InitialChat.ID)
+		}
+		if c.InitialChat.Created.IsZero() && !iP.Created.IsZero() {
+			c.InitialChat.Created = iP.Created
+			traceChatf("setup initial chat adopted previous query created=%q", c.InitialChat.Created.Format(time.RFC3339Nano))
 		}
 		traceChatf("setup initial chat loaded previous query chat_id=%q messages=%d, queries=%d", iP.ID, len(iP.Messages), len(iP.Queries))
 		c.InitialChat.Messages = append(c.InitialChat.Messages, iP.Messages...)

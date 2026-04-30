@@ -246,6 +246,24 @@ func setupTextQuerierWithConf(ctx context.Context, mode Mode, confDir string, fl
 	return cq, &tConf, nil
 }
 
+func applyDirReplyChatID(confDir string, tConf *text.Configurations, q models.Querier) error {
+	if tConf == nil {
+		return fmt.Errorf("text configuration is nil")
+	}
+	chatID, err := chat.LoadDirScopeChatID(confDir)
+	if err != nil {
+		return fmt.Errorf("load dir reply chat id: %w", err)
+	}
+	if chatID == "" {
+		return nil
+	}
+	tConf.InitialChat.ID = chatID
+	if chatSetter, ok := q.(interface{ SetChatID(string) }); ok {
+		chatSetter.SetChatID(chatID)
+	}
+	return nil
+}
+
 func printHelp(usage string, args []string) {
 	if len(args) > 1 && (args[1] == "profile" || args[1] == "p") {
 		fmt.Println(ProfileHelp)
@@ -330,16 +348,8 @@ func Setup(ctx context.Context, usage string, allArgs []string) (models.Querier,
 			return nil, err
 		}
 		if mode == QUERY && postFlagConf.DirReplyMode && postFlagConf.ReplyMode {
-			chatID, loadErr := chat.LoadDirScopeChatID(claiConfDir)
-			if loadErr != nil {
-				return nil, fmt.Errorf("load dir reply chat id: %w", loadErr)
-			}
-			// A bit hacky, but better than alternatives for now
-			if chatID != "" {
-				tConf.InitialChat.ID = chatID
-				if chatSetter, ok := q.(interface{ SetChatID(string) }); ok {
-					chatSetter.SetChatID(chatID)
-				}
+			if err := applyDirReplyChatID(claiConfDir, tConf, q); err != nil {
+				return nil, fmt.Errorf("apply dir reply chat id: %w", err)
 			}
 		}
 		return q, nil

@@ -19,7 +19,7 @@ func makeProfile(t *testing.T, dir, prompt string) config {
 		UseTools:        true,
 		Tools:           []string{"t1"},
 		Prompt:          prompt,
-		SaveReplyAsConv: true,
+		SaveReplyAsConv: new(true),
 	}
 	b, err := json.MarshalIndent(p, "", "\t")
 	if err != nil {

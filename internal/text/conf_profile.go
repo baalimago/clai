@@ -72,7 +72,9 @@ func (c *Configurations) ProfileOverrides() error {
 	c.SystemPrompt = profile.Prompt
 	c.UseTools = profile.UseTools || (len(profile.McpServers) > 0)
 	c.RequestedToolGlobs = profile.Tools
-	c.SaveReplyAsConv = profile.SaveReplyAsConv
+	if profile.SaveReplyAsConv != nil {
+		c.SaveReplyAsConv = *profile.SaveReplyAsConv
+	}
 	if strings.TrimSpace(profile.ShellContext) != "" {
 		c.ShellContext = profile.ShellContext
 	}

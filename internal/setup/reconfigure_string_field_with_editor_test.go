@@ -18,7 +18,7 @@ func TestUnescapedFieldEdit_ShellContext(t *testing.T) {
 		Tools:           []string{"t1"},
 		Prompt:          "keep\\nthis",
 		ShellContext:    "line1\\nline2\\tX",
-		SaveReplyAsConv: true,
+		SaveReplyAsConv: new(true),
 	}
 	b, err := json.MarshalIndent(profile, "", "\t")
 	if err != nil {
