@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"time"
 
 	"github.com/baalimago/clai/internal/models"
@@ -169,6 +170,7 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 		select {
 		case completion, ok := <-completionsChan:
 			if !ok {
+				q.closeReasoningIfOpen(session)
 				result.EndedNormally = true
 				result.AssistantText = session.PendingTextString()
 				result.Usage = q.currentTokenUsage()
@@ -176,14 +178,17 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 			}
 			switch cast := completion.(type) {
 			case pub_models.Call:
+				q.closeReasoningIfOpen(session)
 				result.ToolCall = &cast
 				result.AssistantText = session.PendingTextString()
 				result.Usage = q.currentTokenUsage()
 				return result, nil
 			case string:
+				q.closeReasoningIfOpen(session)
 				q.handleTokenForSession(session, cast)
 			case error:
 				if errors.Is(cast, context.Canceled) || errors.Is(cast, io.EOF) {
+					q.closeReasoningIfOpen(session)
 					result.EndedNormally = true
 					result.AssistantText = session.PendingTextString()
 					result.Usage = q.currentTokenUsage()
@@ -191,7 +196,21 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 				}
 				return ModelStepResult{}, fmt.Errorf("completion stream error: %w", cast)
 			case models.NoopEvent:
+			case models.ReasoningEvent:
+				if !q.debug {
+					w := q.out
+					if w == nil {
+						w = os.Stdout
+					}
+					if !q.reasoningActive {
+						fmt.Fprint(w, utils.Colorize(utils.RoleColor("reasoning"), "[thinking]"))
+						q.reasoningActive = true
+					}
+					fmt.Fprint(w, utils.Colorize(utils.RoleColor("reasoning"), cast.Content))
+					q.reasoningBuf.WriteString(cast.Content)
+				}
 			case models.StopEvent:
+				q.closeReasoningIfOpen(session)
 				contextCancel := ctx.Value(utils.ContextCancelKey)
 				castContextCancel, ok := contextCancel.(context.CancelFunc)
 				if ok {
@@ -210,6 +229,7 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 				return ModelStepResult{}, fmt.Errorf("unknown completion type: %v", completion)
 			}
 		case <-ctx.Done():
+			q.closeReasoningIfOpen(session)
 			result.StopRequested = true
 			result.AssistantText = session.PendingTextString()
 			result.Usage = q.currentTokenUsage()

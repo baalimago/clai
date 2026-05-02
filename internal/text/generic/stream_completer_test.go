@@ -104,6 +104,32 @@ func TestStreamCompletions_HappyPath_FirstEventOnly(t *testing.T) {
 	}
 }
 
+func TestHandleStreamChunk_ReasoningContentIsTracked(t *testing.T) {
+	s := &StreamCompleter{}
+
+	ev := s.handleStreamChunk([]byte(`data: {"choices":[{"delta":{"reasoning_content":"I should inspect."}}]}` + "\n"))
+	rev, ok := ev.(models.ReasoningEvent)
+	if !ok {
+		t.Fatalf("expected reasoning-only delta to be a ReasoningEvent, got: %T %v", ev, ev)
+	}
+	if rev.Content != "I should inspect." {
+		t.Fatalf("expected reasoning event content, got %q", rev.Content)
+	}
+	if s.reasoningContent != "I should inspect." {
+		t.Fatalf("expected reasoning content captured, got %q", s.reasoningContent)
+	}
+
+	tools.Init()
+	ev = s.handleStreamChunk([]byte(`data: {"choices":[{"delta":{"reasoning_content":" Then call."}},{"delta":{"tool_calls":[{"id":"call-1","type":"function","index":0,"function":{"name":"ls","arguments":"{}"}}]}}]}` + "\n"))
+	call, ok := ev.(pub_models.Call)
+	if !ok {
+		t.Fatalf("expected tool call, got: %T %v", ev, ev)
+	}
+	if call.ReasoningContent != "I should inspect. Then call." {
+		t.Fatalf("expected reasoning on tool call, got %q", call.ReasoningContent)
+	}
+}
+
 func TestCreateRequest_BodyAndHeaders(t *testing.T) {
 	fpen, ppen, temp, top, max := 0.25, 0.75, 0.5, 0.9, 123
 	choice := "auto"
@@ -175,6 +201,41 @@ func TestCreateRequest_BodyAndHeaders(t *testing.T) {
 	fn, _ := tool0["function"].(map[string]any)
 	if name, _ := fn["name"].(string); name != "x" {
 		t.Fatalf("tool name mismatch: %v", name)
+	}
+}
+
+func TestCreateRequest_PassesBackReasoningContent(t *testing.T) {
+	s := &StreamCompleter{
+		Model:  "m",
+		apiKey: "sekret",
+		URL:    "http://example.invalid",
+	}
+	chat := pub_models.Chat{Messages: []pub_models.Message{{
+		Role:             "assistant",
+		Content:          "Let me inspect.",
+		ReasoningContent: "Need tool.",
+		ToolCalls:        []pub_models.Call{{ID: "call-1", Name: "ls", Type: "function"}},
+	}}}
+	httpReq, err := s.createRequest(context.Background(), chat)
+	if err != nil {
+		t.Fatalf("createRequest err: %v", err)
+	}
+
+	b, _ := io.ReadAll(httpReq.Body)
+	var body map[string]any
+	if err := jsonUnmarshal(b, &body); err != nil {
+		t.Fatalf("unmarshal body: %v\nbody=%s", err, string(b))
+	}
+	messages, ok := body["messages"].([]any)
+	if !ok || len(messages) != 1 {
+		t.Fatalf("expected one message, got: %T %v", body["messages"], body["messages"])
+	}
+	msg, ok := messages[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected message object, got: %T %v", messages[0], messages[0])
+	}
+	if got, _ := msg["reasoning_content"].(string); got != "Need tool." {
+		t.Fatalf("reasoning_content mismatch: got %q", got)
 	}
 }
 

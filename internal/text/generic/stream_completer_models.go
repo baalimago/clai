@@ -24,6 +24,7 @@ type StreamCompleter struct {
 	toolsCallArgsString string
 	toolsCallID         string
 	extraContent        map[string]any
+	reasoningContent    string
 	client              *http.Client
 	apiKey              string
 	debug               bool
@@ -60,9 +61,10 @@ type Choice struct {
 }
 
 type Delta struct {
-	Content   any         `json:"content"`
-	Role      string      `json:"role"`
-	ToolCalls []ToolsCall `json:"tool_calls"`
+	Content          any         `json:"content"`
+	ReasoningContent string      `json:"reasoning_content"`
+	Role             string      `json:"role"`
+	ToolCalls        []ToolsCall `json:"tool_calls"`
 }
 
 type ExtraContent map[string]map[string]any

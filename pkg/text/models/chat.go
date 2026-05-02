@@ -91,9 +91,10 @@ type ImageOrTextInput struct {
 }
 
 type Message struct {
-	Role       string `json:"role"`
-	ToolCalls  []Call `json:"tool_calls,omitempty"`
-	ToolCallID string `json:"tool_call_id,omitempty"`
+	Role             string `json:"role"`
+	ToolCalls        []Call `json:"tool_calls,omitempty"`
+	ToolCallID       string `json:"tool_call_id,omitempty"`
+	ReasoningContent string `json:"reasoning_content,omitempty"`
 	// Content and ContentParts is like this since
 	// making Mesage generic would cause changes in 70+ places.
 	//
@@ -112,6 +113,9 @@ func (m Message) MarshalJSON() ([]byte, error) {
 	}
 	if m.ToolCallID != "" {
 		obj["tool_call_id"] = m.ToolCallID
+	}
+	if m.ReasoningContent != "" {
+		obj["reasoning_content"] = m.ReasoningContent
 	}
 	if len(m.ContentParts) > 0 {
 		obj["content"] = m.ContentParts
@@ -138,6 +142,11 @@ func (m *Message) UnmarshalJSON(data []byte) error {
 	}
 	if v, ok := raw["tool_call_id"]; ok {
 		if err := json.Unmarshal(v, &m.ToolCallID); err != nil {
+			return err
+		}
+	}
+	if v, ok := raw["reasoning_content"]; ok {
+		if err := json.Unmarshal(v, &m.ReasoningContent); err != nil {
 			return err
 		}
 	}

@@ -23,6 +23,7 @@ var dataPrefix = []byte("data: ")
 
 // StreamCompletions taking the messages as prompt conversation. Returns the messages from the chat model.
 func (s *StreamCompleter) StreamCompletions(ctx context.Context, chat pub_models.Chat) (chan models.CompletionEvent, error) {
+	s.reasoningContent = ""
 	if s.Clean != nil {
 		cpy := make([]pub_models.Message, len(chat.Messages))
 		copy(cpy, chat.Messages)
@@ -168,10 +169,12 @@ func (s *StreamCompleter) handleStreamChunk(token []byte) models.CompletionEvent
 	for _, choice := range chunk.Choices {
 		compEvent := s.handleChoice(choice)
 		switch compEvent.(type) {
-		// Set chosen to the first error, string
-		case error, string, models.NoopEvent:
+		// Set chosen to the first error, string, or reasoning event.
+		// NoopEvents and ReasoningEvents can be replaced by more useful events.
+		case error, string, models.NoopEvent, models.ReasoningEvent:
 			_, isNoopEvent := chosen.(models.NoopEvent)
-			if chosen == nil || isNoopEvent {
+			_, isReasoningEvent := chosen.(models.ReasoningEvent)
+			if chosen == nil || isNoopEvent || isReasoningEvent {
 				chosen = compEvent
 			}
 		case pub_models.Call:
@@ -188,6 +191,9 @@ func (s *StreamCompleter) handleStreamChunk(token []byte) models.CompletionEvent
 }
 
 func (s *StreamCompleter) handleChoice(choice Choice) models.CompletionEvent {
+	if choice.Delta.ReasoningContent != "" {
+		s.reasoningContent += choice.Delta.ReasoningContent
+	}
 	// If there is no tools call, just handle it as a strings. This works for most cases
 	if len(choice.Delta.ToolCalls) == 0 {
 		if choice.FinishReason != "" {
@@ -195,6 +201,9 @@ func (s *StreamCompleter) handleChoice(choice Choice) models.CompletionEvent {
 				ancli.Noticef("stopping due to FinishReason: '%v'", choice.FinishReason)
 			}
 			return models.StopEvent{}
+		}
+		if choice.Delta.Content == nil && choice.Delta.ReasoningContent != "" {
+			return models.ReasoningEvent{Content: choice.Delta.ReasoningContent}
 		}
 		return choice.Delta.Content
 	}
@@ -243,12 +252,13 @@ func (s *StreamCompleter) doToolsCall() models.CompletionEvent {
 	userFunc.Inputs = &pub_models.InputSchema{}
 
 	return pub_models.Call{
-		ID:           s.toolsCallID,
-		Name:         s.toolsCallName,
-		Inputs:       &input,
-		Type:         "function",
-		Function:     userFunc,
-		ExtraContent: s.extraContent,
+		ID:               s.toolsCallID,
+		Name:             s.toolsCallName,
+		Inputs:           &input,
+		Type:             "function",
+		Function:         userFunc,
+		ExtraContent:     s.extraContent,
+		ReasoningContent: s.reasoningContent,
 	}
 }
 

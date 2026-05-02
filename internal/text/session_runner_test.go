@@ -179,6 +179,53 @@ func Test_sessionRunner_Run_ToolThenReplyRecordsEachCompletedCall(t *testing.T) 
 	}
 }
 
+func Test_sessionRunner_Run_ToolCallPropagatesReasoningContent(t *testing.T) {
+	model := &MockQuerier{}
+	callCount := 0
+	model.streamFn = func(_ context.Context, chat pub_models.Chat) (chan models.CompletionEvent, error) {
+		callCount++
+		out := make(chan models.CompletionEvent, 1)
+		if callCount == 1 {
+			out <- pub_models.Call{ID: "call-1", Name: "pwd", ReasoningContent: "Need cwd."}
+			close(out)
+			return out, nil
+		}
+		if len(chat.Messages) < 2 {
+			t.Fatalf("expected assistant tool-call message in follow-up chat, got %d messages", len(chat.Messages))
+		}
+		assistantToolCall := chat.Messages[1]
+		if assistantToolCall.Role != "assistant" {
+			t.Fatalf("expected assistant tool-call message, got role %q", assistantToolCall.Role)
+		}
+		if assistantToolCall.ReasoningContent != "Need cwd." {
+			t.Fatalf("expected reasoning content passed back, got %q", assistantToolCall.ReasoningContent)
+		}
+		out <- "done"
+		close(out)
+		return out, nil
+	}
+
+	q := &Querier[*MockQuerier]{
+		out:   &strings.Builder{},
+		Model: model,
+	}
+	session := &QuerySession{Chat: pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "hello"}}}}
+	runner := sessionRunner[*MockQuerier]{
+		querier:      q,
+		recorder:     &recordingCallUsageRecorder{},
+		finalizer:    &countingFinalizer{},
+		toolExecutor: toolExecutor[*MockQuerier]{querier: q},
+	}
+
+	err := runner.Run(context.Background(), session)
+	if err != nil {
+		t.Fatalf("Run returned err: %v", err)
+	}
+	if callCount != 2 {
+		t.Fatalf("expected 2 calls, got %d", callCount)
+	}
+}
+
 func Test_sessionRunner_Run_RecorderFailureDoesNotFailQuery(t *testing.T) {
 	model := &MockQuerier{}
 	model.streamFn = func(_ context.Context, _ pub_models.Chat) (chan models.CompletionEvent, error) {

@@ -35,10 +35,11 @@ All colour fields are raw ANSI escape sequences represented as JSON strings.
 | `roleSystem` | Colour for `system` role labels. |
 | `roleUser` | Colour for `user` role labels. |
 | `roleTool` | Colour for `tool` role labels. |
+| `roleReasoning` | Colour for `reasoning` role labels (thinking/chain-of-thought). |
 | `roleOther` | Fallback colour for any other/unknown role. |
 | `notificationBell` | Whether clai should emit terminal BEL (`\a`) after successful task completion. |
 
-Defaults are chosen to match the existing `AttemptPrettyPrint` role palette (system=blue, user=cyan, tool=magenta).
+Defaults are chosen to match the existing `AttemptPrettyPrint` role palette (system=blue, user=cyan, tool=magenta, reasoning=warm-gray).
 
 Example:
 
@@ -50,6 +51,7 @@ Example:
   "roleSystem": "\u001b[34m",
   "roleUser": "\u001b[36m",
   "roleTool": "\u001b[35m",
+  "roleReasoning": "\u001b[38;2;180;170;150m",
   "roleOther": "\u001b[34m",
   "notificationBell": true
 }
