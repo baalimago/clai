@@ -75,6 +75,7 @@ func selectTextQuerier(ctx context.Context, conf text.Configurations) (models.Qu
 			return nil, found, fmt.Errorf("failed to create text querier: %w", err)
 		}
 		q = &qTmp
+		return q, found, nil
 	}
 
 	if strings.Contains(conf.Model, "gpt") && !strings.HasPrefix(conf.Model, "or:") {

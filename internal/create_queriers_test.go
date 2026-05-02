@@ -183,6 +183,33 @@ func TestSelectTextQuerier_OpenRouterPrefix(t *testing.T) {
 	}
 }
 
+func TestSelectTextQuerier_OpenRouterPrefixBeatsProviderSubstring(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("OPENROUTER_API_KEY", "k")
+	t.Setenv("CLAI_CONFIG_DIR", tmp)
+
+	q, found, err := selectTextQuerier(context.Background(), text.Configurations{
+		Model:     "or:deepseek/deepseek-v4-pro",
+		ConfigDir: tmp,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !found {
+		t.Fatal("expected found")
+	}
+	if q == nil {
+		t.Fatal("expected querier")
+	}
+	typed, ok := q.(*text.Querier[*openrouter.OpenRouter])
+	if !ok {
+		t.Fatalf("expected openrouter querier, got: %T", q)
+	}
+	if typed.Model.Model != "or:deepseek/deepseek-v4-pro" {
+		t.Fatalf("expected prefixed openrouter model, got: %q", typed.Model.Model)
+	}
+}
+
 func TestSelectTextQuerier_ErrorPropagation(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("ANTHROPIC_API_KEY", "")
