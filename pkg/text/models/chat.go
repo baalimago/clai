@@ -96,7 +96,7 @@ type Message struct {
 	ToolCallID       string `json:"tool_call_id,omitempty"`
 	ReasoningContent string `json:"reasoning_content,omitempty"`
 	// Content and ContentParts is like this since
-	// making Mesage generic would cause changes in 70+ places.
+	// making Message generic would cause changes in 70+ places.
 	//
 	// This way we can use ContentParts (ImageInput) without
 	// updating all places
