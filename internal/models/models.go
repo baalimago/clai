@@ -48,6 +48,13 @@ type CompletionEvent any
 
 type NoopEvent struct{}
 
+// ReasoningEvent carries a single reasoning/thinking token from the model.
+// It is handled like content but displayed dimmed so users can distinguish
+// chain-of-thought from the final answer.
+type ReasoningEvent struct {
+	Content string
+}
+
 type StopEvent struct{}
 
 type ErrRateLimit struct {

@@ -44,6 +44,12 @@ type Querier[C models.StreamCompleter] struct {
 	toolOutputRuneLimit     int
 	rateLimitLastAmTokens   int
 
+	// reasoningBuf accumulates thinking/chain-of-thought tokens streamed
+	// before the final answer.  It is wrapped in [thinking]…[/thinking]
+	// when displayed.
+	reasoningBuf    strings.Builder
+	reasoningActive bool
+
 	// Output of the querier. This is used mostly when Querier is invoked as an agent
 	out io.Writer
 
@@ -162,6 +168,8 @@ func (q *Querier[C]) resetTransientState() {
 	q.line = ""
 	q.lineCount = 0
 	q.hasPrinted = false
+	q.reasoningBuf.Reset()
+	q.reasoningActive = false
 }
 
 func (q *Querier[C]) handleToken(token string) {
@@ -185,6 +193,33 @@ func (q *Querier[C]) handleTokenForSession(session *QuerySession, token string) 
 	if !q.debug {
 		fmt.Fprint(w, token)
 	}
+}
+
+// closeReasoningIfOpen prints the closing [/thinking] tag and prepends the
+// wrapped reasoning block to session.PendingText so it survives terminal
+// line-clearing and gets re-printed by the pretty-printer.
+func (q *Querier[C]) closeReasoningIfOpen(session *QuerySession) {
+	if !q.reasoningActive {
+		return
+	}
+	q.reasoningActive = false
+	if !q.debug {
+		w := q.out
+		if w == nil {
+			w = os.Stdout
+		}
+		fmt.Fprint(w, utils.Colorize(utils.RoleColor("reasoning"), "[/thinking]\n"))
+	}
+	reasoningWrapped := "[thinking]" + q.reasoningBuf.String() + "[/thinking]\n"
+	if session.PendingTextString() == "" {
+		session.PendingText.WriteString(reasoningWrapped)
+	} else {
+		existing := session.PendingText.String()
+		session.PendingText.Reset()
+		session.PendingText.WriteString(reasoningWrapped + existing)
+	}
+	q.fullMsg = session.PendingTextString()
+	q.reasoningBuf.Reset()
 }
 
 func (q *Querier[C]) currentTokenUsage() *pub_models.Usage {

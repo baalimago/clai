@@ -46,9 +46,10 @@ func (e toolExecutor[C]) Execute(ctx context.Context, session *QuerySession, cal
 	call = decision.PatchedCall
 
 	assistantToolsCall := pub_models.Message{
-		Role:      "assistant",
-		Content:   call.PrettyPrint(),
-		ToolCalls: []pub_models.Call{call},
+		Role:             "assistant",
+		Content:          call.PrettyPrint(),
+		ToolCalls:        []pub_models.Call{call},
+		ReasoningContent: call.ReasoningContent,
 	}
 	if !q.debug {
 		err := utils.AttemptPrettyPrint(q.out, assistantToolsCall, q.username, q.Raw)

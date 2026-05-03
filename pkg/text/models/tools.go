@@ -59,12 +59,13 @@ const (
 type Input map[string]any
 
 type Call struct {
-	ID           string         `json:"id,omitempty"`
-	Name         string         `json:"name,omitempty"`
-	Type         string         `json:"type,omitempty"`
-	Inputs       *Input         `json:"inputs,omitempty"`
-	Function     Specification  `json:"function"`
-	ExtraContent map[string]any `json:"extra_content,omitempty"`
+	ID               string         `json:"id,omitempty"`
+	Name             string         `json:"name,omitempty"`
+	Type             string         `json:"type,omitempty"`
+	Inputs           *Input         `json:"inputs,omitempty"`
+	Function         Specification  `json:"function"`
+	ExtraContent     map[string]any `json:"extra_content,omitempty"`
+	ReasoningContent string         `json:"-"`
 }
 
 // Patch the call, filling structs and initializing fields so that

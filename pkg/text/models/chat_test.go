@@ -134,6 +134,35 @@ func TestMessageJSON(t *testing.T) {
 	}
 }
 
+func TestMessageJSONReasoningContentRoundTrip(t *testing.T) {
+	msg := Message{
+		Role:             "assistant",
+		Content:          "I will call a tool.",
+		ReasoningContent: "Need current files.",
+		ToolCalls:        []Call{{ID: "call-1", Name: "ls", Type: "function"}},
+	}
+	data, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatalf("failed to marshal message: %v", err)
+	}
+
+	var encoded map[string]any
+	if err := json.Unmarshal(data, &encoded); err != nil {
+		t.Fatalf("failed to unmarshal encoded message: %v", err)
+	}
+	if got, _ := encoded["reasoning_content"].(string); got != msg.ReasoningContent {
+		t.Fatalf("reasoning_content missing from json: got %q", got)
+	}
+
+	var decoded Message
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("failed to unmarshal message: %v", err)
+	}
+	if decoded.ReasoningContent != msg.ReasoningContent {
+		t.Fatalf("reasoning_content roundtrip mismatch: got %q", decoded.ReasoningContent)
+	}
+}
+
 func TestChatHelpers(t *testing.T) {
 	c := Chat{
 		Created: time.Now(),

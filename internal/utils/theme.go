@@ -22,10 +22,11 @@ type Theme struct {
 	Secondary string `json:"secondary"`
 	Breadtext string `json:"breadtext"`
 
-	RoleSystem string `json:"roleSystem"`
-	RoleUser   string `json:"roleUser"`
-	RoleTool   string `json:"roleTool"`
-	RoleOther  string `json:"roleOther"`
+	RoleSystem    string `json:"roleSystem"`
+	RoleUser      string `json:"roleUser"`
+	RoleTool      string `json:"roleTool"`
+	RoleReasoning string `json:"roleReasoning"`
+	RoleOther     string `json:"roleOther"`
 
 	NotificationBell bool `json:"notificationBell"`
 }
@@ -41,6 +42,7 @@ func defaultTheme() *Theme {
 		RoleSystem:       "\u001b[34m",
 		RoleUser:         "\u001b[36m",
 		RoleTool:         "\u001b[35m",
+		RoleReasoning:    "\u001b[38;2;180;170;150m",
 		RoleOther:        "\u001b[34m",
 		NotificationBell: true,
 	}
@@ -121,6 +123,8 @@ func RoleColor(role string) string {
 		return globalTheme.RoleUser
 	case "system":
 		return globalTheme.RoleSystem
+	case "reasoning":
+		return globalTheme.RoleReasoning
 	default:
 		return globalTheme.RoleOther
 	}
