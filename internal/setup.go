@@ -272,7 +272,8 @@ func printHelp(usage string, args []string) {
 
 	cfgDir, _ := utils.GetClaiConfigDir()
 	cacheDir, _ := utils.GetClaiCacheDir()
-	fmt.Printf(usage,
+	fmt.Printf(
+		usage,
 		defaultFlags.ReplyMode,
 		defaultFlags.PrintRaw,
 		cfgDir,

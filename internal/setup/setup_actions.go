@@ -218,7 +218,8 @@ func actionReconfigureStringFieldWithEditor(cfg config, fieldName string) error 
 			}
 		}
 
-		choice, err := utils.SelectFromTable("Select field",
+		choice, err := utils.SelectFromTable(
+			"Select field",
 			utils.SlicePaginator(fields),
 			"Select field <num>: ",
 			func(i int, t string) (string, error) {

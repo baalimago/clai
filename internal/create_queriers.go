@@ -192,7 +192,8 @@ func CreateTextQuerier(ctx context.Context, conf text.Configurations) (models.Qu
 			return nil, fmt.Errorf("failed to cast Querier using model: '%v' to TextQuerier, cannot proceed to chat", conf.Model)
 		}
 		configDir, _ := utils.GetClaiConfigDir()
-		chatQ, err := chat.New(tq,
+		chatQ, err := chat.New(
+			tq,
 			configDir,
 			conf.PostProccessedPrompt,
 			conf.InitialChat.Messages,

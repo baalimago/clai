@@ -94,7 +94,8 @@ func (cq *ChatHandler) dirInfo() error {
 			fmt.Fprintf(&rolesOut, "\n")
 		}
 	}
-	fmt.Fprintf(cq.out, prettyDirInfoFormat,
+	fmt.Fprintf(
+		cq.out, prettyDirInfoFormat,
 		info.Scope,
 		info.ChatID,
 		info.initialPrompt(),

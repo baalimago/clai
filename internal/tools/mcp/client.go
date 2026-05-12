@@ -84,12 +84,14 @@ func Client(ctx context.Context, mcpConfig pub_models.McpServer) (chan<- any, <-
 		for scanner.Scan() {
 			var raw json.RawMessage
 			if err := json.Unmarshal(
-				scanner.Bytes(), &raw); err != nil {
+				scanner.Bytes(), &raw,
+			); err != nil {
 
 				if misc.Truthy(os.Getenv("DEBUG_MCP_TOOL")) {
 					ancli.Warnf(
 						"mcp_server: '%v' got decode error: %v",
-						mcpConfig.Name, err)
+						mcpConfig.Name, err,
+					)
 				}
 				// Don't pass faulty messages upstream, instead just log them
 				// Assume that the mcp server will eventually return json-formated data

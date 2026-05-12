@@ -90,7 +90,8 @@ func runProfilesList() error {
 			p.Name = strings.TrimSuffix(base, filepath.Ext(base))
 		}
 
-		fmt.Printf("Name: %s\nModel: %s\nTools: %v\nFirst sentence prompt: %s\n---\n",
+		fmt.Printf(
+			"Name: %s\nModel: %s\nTools: %v\nFirst sentence prompt: %s\n---\n",
 			p.Name,
 			p.Model,
 			p.Tools,

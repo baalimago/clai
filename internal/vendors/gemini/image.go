@@ -155,7 +155,8 @@ func (g *GeminiFlashImage) Query(ctx context.Context) error {
 	localPath, err := photo.SaveImage(
 		g.Output,
 		firstb64,
-		"png")
+		"png",
+	)
 	if err != nil {
 		return fmt.Errorf("failed to save image: %w", err)
 	}

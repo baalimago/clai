@@ -73,12 +73,14 @@ func (q *Querier[C]) tokenLengthWarning() error {
 	amTokens := q.countTokens()
 	if q.tokenWarnLimit > 0 && amTokens > q.tokenWarnLimit {
 		ancli.PrintWarn(
-			fmt.Sprintf("You're about to send: ~%v tokens to the model, which may amount to: ~$%.3f (using $3 /1 million tokens). This limit may be changed in: '%v'. Do you wish to continue? [yY]: ",
+			fmt.Sprintf(
+				"You're about to send: ~%v tokens to the model, which may amount to: ~$%.3f (using $3 /1 million tokens). This limit may be changed in: '%v'. Do you wish to continue? [yY]: ",
 				amTokens,
 				// Average rate at 25-06 at $3/1M tokens
 				float64(amTokens)*(float64(3)/float64(1000000)),
 				path.Join(q.configDir, "textConfig.json"),
-			))
+			),
+		)
 		reader := bufio.NewReader(os.Stdin)
 		userInput, err := reader.ReadString('\n')
 		if err != nil {
