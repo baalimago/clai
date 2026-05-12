@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -118,7 +119,16 @@ func AttemptPrettyPrint(w io.Writer, chatMessage pub_models.Message, username st
 		return nil
 	}
 
-	cmd = exec.Command("glow")
+	termWidth, err := TermWidth()
+	if err != nil {
+		return fmt.Errorf("get terminal width for glow: %w", err)
+	}
+	glowWidth := termWidth - 5
+	if glowWidth < 1 {
+		glowWidth = 1
+	}
+
+	cmd = exec.Command("glow", "-w", strconv.Itoa(glowWidth))
 	inp := chatMessage.Content
 	// For some reason glow hides specifically <thikning>. So, replace it to [thinking]
 	inp = strings.ReplaceAll(inp, "<thinking>", "[thinking]")
