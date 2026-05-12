@@ -2,7 +2,10 @@ package utils
 
 import (
 	"bytes"
+	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -41,5 +44,48 @@ func TestAttemptPrettyPrint_UsesThemeColorsWhenNoGlow(t *testing.T) {
 	// We should see the themed role color applied (wrapped with ansiReset) and the username used for user role.
 	if want := "<USER_COLOR>alice" + ansiReset + ": hello\n"; out != want {
 		t.Fatalf("unexpected output\nwant: %q\ngot:  %q", want, out)
+	}
+}
+
+func TestAttemptPrettyPrint_PassesTerminalWidthMinusFiveToGlow(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+	t.Setenv("COLUMNS", "100")
+
+	origTheme := globalTheme
+	t.Cleanup(func() { globalTheme = origTheme })
+	globalTheme = Theme{}
+
+	tmpDir := t.TempDir()
+	argsPath := filepath.Join(tmpDir, "glow-args.txt")
+	glowPath := filepath.Join(tmpDir, "glow")
+
+	script := fmt.Sprintf(`#!/bin/sh
+if [ "$1" = "--version" ]; then
+	echo "glow test"
+	exit 0
+fi
+printf '%%s\n' "$*" > %q
+/bin/cat
+`, argsPath)
+
+	if err := os.WriteFile(glowPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake glow: %v", err)
+	}
+
+	t.Setenv("PATH", tmpDir)
+
+	var buf bytes.Buffer
+	msg := pub_models.Message{Role: "assistant", Content: "hello markdown"}
+	if err := AttemptPrettyPrint(&buf, msg, "alice", false); err != nil {
+		t.Fatalf("AttemptPrettyPrint: %v", err)
+	}
+
+	gotArgsBytes, err := os.ReadFile(argsPath)
+	if err != nil {
+		t.Fatalf("read fake glow args: %v", err)
+	}
+
+	if got, want := strings.TrimSpace(string(gotArgsBytes)), "-w 95"; got != want {
+		t.Fatalf("unexpected glow args\nwant: %q\ngot:  %q", want, got)
 	}
 }
