@@ -75,7 +75,14 @@ func (cq *ChatHandler) loadDirScopeForDir(dir string) (DirScope, error) {
 
 	b, err := os.ReadFile(bindingPath)
 	if err != nil {
-		return DirScope{}, fmt.Errorf("read dirscope binding %q: %w", bindingPath, err)
+		if !os.IsNotExist(err) {
+			return DirScope{}, fmt.Errorf("read dirscope binding %q: %w", bindingPath, err)
+		}
+		legacyPath := cq.dirScopePathFromHash(cq.dirHash(dir))
+		b, err = os.ReadFile(legacyPath)
+		if err != nil {
+			return DirScope{}, fmt.Errorf("read dirscope binding %q: %w", bindingPath, err)
+		}
 	}
 
 	var scope DirScope

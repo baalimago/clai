@@ -295,6 +295,112 @@ func Test_goldenFile_CHAT_CONTINUE_obfuscated_preview(t *testing.T) {
 	}
 }
 
+func Test_e2e_chat_continue_from_other_directory_keeps_single_shared_chat_intended_future_behavior(t *testing.T) {
+	confDir := setupMainTestConfigDir(t)
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(oldWd)
+	})
+
+	root := t.TempDir()
+	dirA := filepath.Join(root, "dirA")
+	dirB := filepath.Join(root, "dirB")
+	if err := os.MkdirAll(dirA, 0o755); err != nil {
+		t.Fatalf("MkdirAll(dirA): %v", err)
+	}
+	if err := os.MkdirAll(dirB, 0o755); err != nil {
+		t.Fatalf("MkdirAll(dirB): %v", err)
+	}
+
+	readDirChatID := func(t *testing.T, cwd string) string {
+		t.Helper()
+		out, status := runOne(t, cwd, "-r -cm test chat dir")
+		if status != 0 {
+			t.Fatalf("chat dir status=%d stdout=%q", status, out)
+		}
+		type chatDirInfo struct {
+			ChatID string `json:"chat_id"`
+		}
+		var info chatDirInfo
+		trimmed := strings.TrimSpace(strings.TrimSuffix(out, "\a"))
+		if err := json.Unmarshal([]byte(trimmed), &info); err != nil {
+			t.Fatalf("Unmarshal(chat dir): %v stdout=%q", err, out)
+		}
+		return info.ChatID
+	}
+
+	nonGlobalConversationFiles := func(t *testing.T) []string {
+		t.Helper()
+		entries, err := os.ReadDir(filepath.Join(confDir, "conversations"))
+		if err != nil {
+			t.Fatalf("ReadDir(conversations): %v", err)
+		}
+		var ret []string
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			name := entry.Name()
+			if !strings.HasSuffix(name, ".json") || name == "globalScope.json" {
+				continue
+			}
+			ret = append(ret, name)
+		}
+		slices.Sort(ret)
+		return ret
+	}
+
+	out, status := runOne(t, dirA, "-r -cm test q started in a")
+	if status != 0 {
+		t.Fatalf("dirA initial query status=%d stdout=%q", status, out)
+	}
+	testboil.FailTestIfDiff(t, out, "started in a\n\a")
+
+	chatIDFromA := readDirChatID(t, dirA)
+	if chatIDFromA == "" {
+		t.Fatalf("expected non-empty chat id from dirA")
+	}
+
+	out, status = runOne(t, dirB, "-r -cm test chat continue "+chatIDFromA)
+	if status != 0 {
+		t.Fatalf("dirB continue status=%d stdout=%q", status, out)
+	}
+	testboil.AssertStringContains(t, out, "is now replyable with flag")
+
+	dirBChatID := readDirChatID(t, dirB)
+	if dirBChatID != chatIDFromA {
+		t.Fatalf("expected dirB to bind to %q, got %q", chatIDFromA, dirBChatID)
+	}
+
+	out, status = runOne(t, dirB, "-r -cm test -dre q reply from b")
+	if status != 0 {
+		t.Fatalf("dirB dre query status=%d stdout=%q", status, out)
+	}
+	testboil.FailTestIfDiff(t, out, "reply from b\n\a")
+
+	dirAChatIDAfterBReply := readDirChatID(t, dirA)
+	if dirAChatIDAfterBReply != chatIDFromA {
+		t.Fatalf("expected dirA to remain bound to %q, got %q", chatIDFromA, dirAChatIDAfterBReply)
+	}
+
+	out, status = runOne(t, dirA, "-r dre")
+	if status != 0 {
+		t.Fatalf("dirA dre status=%d stdout=%q", status, out)
+	}
+	testboil.AssertStringContains(t, out, "reply from b")
+
+	chatFiles := nonGlobalConversationFiles(t)
+	if len(chatFiles) != 1 {
+		t.Fatalf("cross-directory continue plus -dre should persist exactly one shared conversation file; got %d files: %v", len(chatFiles), chatFiles)
+	}
+	if chatFiles[0] != chatIDFromA+".json" {
+		t.Fatalf("expected shared conversation file %q, got %v", chatIDFromA+".json", chatFiles)
+	}
+}
+
 func Test_e2e_same_prompt_twice_creates_two_separate_chats(t *testing.T) {
 	confDir := setupMainTestConfigDir(t)
 	oldWd, err := os.Getwd()
