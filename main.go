@@ -37,6 +37,7 @@ Flags:
   -p, -profile string              Set the profile which should be used. For details, see 'clai help profile'. (default '%v')
   -prp, profile-path string        Set the path to a profile file to use instead of -p/-profile.
   -asc, -append-shell-context str  Append a named shell context from <config-dir>/shellContexts/<name>.json to the final query prompt.
+  -rf, -response-format string     Path to a response_format JSON file for structured output (json_object, json_schema).
 
 Config dir: %v
 Cache dir:  %v

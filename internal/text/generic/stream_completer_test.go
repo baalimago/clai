@@ -554,3 +554,70 @@ func TestSetResponseFormat(t *testing.T) {
 		t.Fatalf("expected nil after reset")
 	}
 }
+
+// TestDumpResponseFormatPayloads is a visual validation test that prints the
+// actual JSON payloads for each response format mode. Run with:
+//
+//	go test -v -run TestDumpResponseFormatPayloads ./internal/text/generic/
+func TestDumpResponseFormatPayloads(t *testing.T) {
+	examples := []struct {
+		name string
+		sc   *StreamCompleter
+	}{
+		{
+			"text (default)",
+			&StreamCompleter{Model: "gpt-4.1", apiKey: "sk-test", URL: "http://localhost"},
+		},
+		{
+			"json_object",
+			&StreamCompleter{
+				Model:          "gpt-4.1",
+				apiKey:         "sk-test",
+				URL:            "http://localhost",
+				ResponseFormat: &ResponseFormat{Type: "json_object"},
+			},
+		},
+		{
+			"json_schema",
+			&StreamCompleter{
+				Model:  "gpt-4.1",
+				apiKey: "sk-test",
+				URL:    "http://localhost",
+				ResponseFormat: &ResponseFormat{
+					Type: "json_schema",
+					JSONSchema: &JSONSchemaSpec{
+						Name:   "person",
+						Strict: true,
+						Schema: map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"name": map[string]any{"type": "string"},
+								"age":  map[string]any{"type": "integer"},
+							},
+							"required": []any{"name", "age"},
+						},
+					},
+				},
+			},
+		},
+	}
+	for _, ex := range examples {
+		ex.sc.client = &http.Client{}
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			b, _ := io.ReadAll(r.Body)
+			var body map[string]any
+			json.Unmarshal(b, &body)
+			rf := body["response_format"]
+			jsn, _ := json.MarshalIndent(rf, "", "  ")
+			t.Logf("\n=== %s ===\n%s", ex.name, string(jsn))
+		}))
+		ex.sc.URL = ts.URL
+		ch, _ := ex.sc.StreamCompletions(context.Background(),
+			pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "hello"}}})
+		if ch != nil {
+			for range ch {
+			}
+		}
+		ts.Close()
+	}
+}

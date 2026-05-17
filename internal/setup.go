@@ -208,6 +208,13 @@ func setupTextQuerierWithConf(ctx context.Context, mode Mode, confDir string, fl
 	// to re-apply the flag overrides to the configuration
 	applyFlagOverridesForText(&tConf, flagSet, defaultFlags)
 
+	// Load response format from file if specified
+	if flagSet.ResponseFormatPath != "" {
+		if err := tConf.LoadResponseFormat(flagSet.ResponseFormatPath); err != nil {
+			return nil, nil, fmt.Errorf("response format: %w", err)
+		}
+	}
+
 	if misc.Truthy(os.Getenv("DEBUG")) {
 		ancli.PrintOK(fmt.Sprintf("config post flag override: %+v\n", imagodebug.IndentedJsonFmt(tConf)))
 	}

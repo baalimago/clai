@@ -190,7 +190,7 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 
 	// Propagate response format to the model if it supports it
 	if userConf.ResponseFormat != nil {
-		if setter, ok := any(&modelConf).(generic.ResponseFormatSetter); ok {
+		if setter, ok := any(modelConf).(generic.ResponseFormatSetter); ok {
 			setter.SetResponseFormat(toGenericResponseFormat(userConf.ResponseFormat))
 		}
 	}

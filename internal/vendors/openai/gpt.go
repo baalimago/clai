@@ -36,6 +36,7 @@ type ChatGPT struct {
 
 	streamCompleter *generic.StreamCompleter
 	useResponses    bool
+	responseFormat  *generic.ResponseFormat
 }
 
 func (g *ChatGPT) Setup() error {
@@ -66,6 +67,10 @@ func (g *ChatGPT) TokenUsage() *pub_models.Usage {
 		return nil
 	}
 	return g.streamCompleter.TokenUsage()
+}
+
+func (g *ChatGPT) SetResponseFormat(rf *generic.ResponseFormat) {
+	g.responseFormat = rf
 }
 
 func (g *ChatGPT) setUsage(usage *pub_models.Usage) error {
@@ -123,6 +128,11 @@ func (g *ChatGPT) StreamCompletions(ctx context.Context, chat pub_models.Chat) (
 	g.streamCompleter.ToolChoice = &toolChoice
 	for _, tool := range g.tools {
 		g.streamCompleter.InternalRegisterTool(tool)
+	}
+
+	// Propagate response format if configured
+	if g.responseFormat != nil {
+		g.streamCompleter.ResponseFormat = g.responseFormat
 	}
 
 	out, err := g.streamCompleter.StreamCompletions(ctx, chat)

@@ -237,3 +237,34 @@ func toGenericResponseFormat(rf *pub_models.ResponseFormat) *generic.ResponseFor
 	}
 	return gf
 }
+
+// responseFormatFromGeneric converts the internal generic.ResponseFormat (used for
+// JSON deserialization from files) to the public ResponseFormat.
+func responseFormatFromGeneric(gf *generic.ResponseFormat) *pub_models.ResponseFormat {
+	if gf == nil {
+		return nil
+	}
+	rf := &pub_models.ResponseFormat{
+		Type: gf.Type,
+	}
+	if gf.JSONSchema != nil {
+		rf.Schema = &pub_models.JSONSchema{
+			Name:        gf.JSONSchema.Name,
+			Description: gf.JSONSchema.Description,
+			Strict:      gf.JSONSchema.Strict,
+			Schema:      gf.JSONSchema.Schema,
+		}
+	}
+	return rf
+}
+
+// LoadResponseFormat loads a response_format JSON file from disk and sets it
+// on the configuration. The file must follow the OpenAI response_format schema.
+func (c *Configurations) LoadResponseFormat(path string) error {
+	var gf generic.ResponseFormat
+	if err := utils.ReadAndUnmarshal(path, &gf); err != nil {
+		return fmt.Errorf("failed to load response format from %q: %w", path, err)
+	}
+	c.ResponseFormat = responseFormatFromGeneric(&gf)
+	return nil
+}
