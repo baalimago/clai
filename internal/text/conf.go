@@ -11,6 +11,7 @@ import (
 	"github.com/baalimago/clai/internal/chat"
 	"github.com/baalimago/clai/internal/chatid"
 	"github.com/baalimago/clai/internal/glob"
+	"github.com/baalimago/clai/internal/text/generic"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
@@ -56,6 +57,10 @@ type Configurations struct {
 
 	// Out writer. Normally stdout, but may also be a file when invoked as a package
 	Out io.Writer `json:"-"`
+
+	// ResponseFormat configures structured output (json_object, json_schema).
+	// When nil, no response_format is sent (defaults to text).
+	ResponseFormat *pub_models.ResponseFormat `json:"-"`
 }
 
 type CostManager interface {
@@ -210,4 +215,25 @@ func (c *Configurations) SetupInitialChat(args []string) error {
 	}
 	traceChatf("setup initial chat done chat_id=%q total_messages=%d", c.InitialChat.ID, len(c.InitialChat.Messages))
 	return nil
+}
+
+// toGenericResponseFormat converts the public ResponseFormat to the internal type
+// used by generic.StreamCompleter.
+func toGenericResponseFormat(rf *pub_models.ResponseFormat) *generic.ResponseFormat {
+	if rf == nil {
+		return nil
+	}
+	gf := &generic.ResponseFormat{
+		Type: rf.Type,
+	}
+	if rf.Schema != nil {
+		s := rf.Schema
+		gf.JSONSchema = &generic.JSONSchemaSpec{
+			Name:        s.Name,
+			Description: s.Description,
+			Strict:      s.Strict,
+			Schema:      s.Schema,
+		}
+	}
+	return gf
 }

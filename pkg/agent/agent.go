@@ -15,13 +15,14 @@ import (
 )
 
 type Agent struct {
-	name         string
-	model        string
-	prompt       string
-	tools        []models.LLMTool
-	mcpServers   []models.McpServer
-	cfgDir       string
-	maxToolCalls *int
+	name           string
+	model          string
+	prompt         string
+	tools          []models.LLMTool
+	mcpServers     []models.McpServer
+	cfgDir         string
+	maxToolCalls   *int
+	responseFormat *models.ResponseFormat
 
 	querierCreator func(ctx context.Context, conf text.Configurations) (priv_models.Querier, error)
 
@@ -100,6 +101,14 @@ func WithOutputTo(out io.Writer) Option {
 	}
 }
 
+// WithResponseFormat configures structured output for the agent.
+// Supports "json_object" and "json_schema" types.
+func WithResponseFormat(rf models.ResponseFormat) Option {
+	return func(a *Agent) {
+		a.responseFormat = &rf
+	}
+}
+
 func (a *Agent) asInternalConfig() text.Configurations {
 	return text.Configurations{
 		Model:           a.model,
@@ -110,6 +119,7 @@ func (a *Agent) asInternalConfig() text.Configurations {
 		McpServers:      a.mcpServers,
 		Tools:           a.tools,
 		MaxToolCalls:    a.maxToolCalls,
+		ResponseFormat:  a.responseFormat,
 	}
 }
 

@@ -437,3 +437,120 @@ func TestCountInputTokens(t *testing.T) {
 		t.Fatalf("expected 0, got %d", n)
 	}
 }
+
+func TestCreateRequest_ResponseFormat_DefaultText(t *testing.T) {
+	s := &StreamCompleter{
+		Model:  "m",
+		apiKey: "sekret",
+		URL:    "http://example.invalid",
+	}
+	httpReq, err := s.createRequest(context.Background(), pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "c"}}})
+	if err != nil {
+		t.Fatalf("createRequest err: %v", err)
+	}
+	b, _ := io.ReadAll(httpReq.Body)
+	var body map[string]any
+	if err := jsonUnmarshal(b, &body); err != nil {
+		t.Fatalf("unmarshal body: %v", err)
+	}
+	rf, ok := body["response_format"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected response_format map, got: %T", body["response_format"])
+	}
+	if rf["type"] != "text" {
+		t.Fatalf("expected type=text, got: %v", rf["type"])
+	}
+}
+
+func TestCreateRequest_ResponseFormat_JSONObject(t *testing.T) {
+	s := &StreamCompleter{
+		Model:          "m",
+		apiKey:         "sekret",
+		URL:            "http://example.invalid",
+		ResponseFormat: &ResponseFormat{Type: "json_object"},
+	}
+	httpReq, err := s.createRequest(context.Background(), pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "c"}}})
+	if err != nil {
+		t.Fatalf("createRequest err: %v", err)
+	}
+	b, _ := io.ReadAll(httpReq.Body)
+	var body map[string]any
+	if err := jsonUnmarshal(b, &body); err != nil {
+		t.Fatalf("unmarshal body: %v", err)
+	}
+	rf, ok := body["response_format"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected response_format map, got: %T", body["response_format"])
+	}
+	if rf["type"] != "json_object" {
+		t.Fatalf("expected type=json_object, got: %v", rf["type"])
+	}
+}
+
+func TestCreateRequest_ResponseFormat_JSONSchema(t *testing.T) {
+	schema := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"name": map[string]any{"type": "string"},
+			"age":  map[string]any{"type": "integer"},
+		},
+		"required": []any{"name", "age"},
+	}
+	s := &StreamCompleter{
+		Model:  "m",
+		apiKey: "sekret",
+		URL:    "http://example.invalid",
+		ResponseFormat: &ResponseFormat{
+			Type: "json_schema",
+			JSONSchema: &JSONSchemaSpec{
+				Name:   "person",
+				Strict: true,
+				Schema: schema,
+			},
+		},
+	}
+	httpReq, err := s.createRequest(context.Background(), pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "c"}}})
+	if err != nil {
+		t.Fatalf("createRequest err: %v", err)
+	}
+	b, _ := io.ReadAll(httpReq.Body)
+	var body map[string]any
+	if err := jsonUnmarshal(b, &body); err != nil {
+		t.Fatalf("unmarshal body: %v", err)
+	}
+	rf, ok := body["response_format"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected response_format map, got: %T", body["response_format"])
+	}
+	if rf["type"] != "json_schema" {
+		t.Fatalf("expected type=json_schema, got: %v", rf["type"])
+	}
+	js, ok := rf["json_schema"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected json_schema map, got: %T", rf["json_schema"])
+	}
+	if js["name"] != "person" {
+		t.Fatalf("expected name=person, got: %v", js["name"])
+	}
+	if js["strict"] != true {
+		t.Fatalf("expected strict=true, got: %v", js["strict"])
+	}
+	if js["schema"] == nil {
+		t.Fatalf("expected schema to be present")
+	}
+}
+
+func TestSetResponseFormat(t *testing.T) {
+	s := &StreamCompleter{}
+	if s.ResponseFormat != nil {
+		t.Fatalf("expected nil ResponseFormat")
+	}
+	s.SetResponseFormat(&ResponseFormat{Type: "json_object"})
+	if s.ResponseFormat == nil || s.ResponseFormat.Type != "json_object" {
+		t.Fatalf("expected json_object, got: %+v", s.ResponseFormat)
+	}
+	s.SetResponseFormat(nil)
+	if s.ResponseFormat != nil {
+		t.Fatalf("expected nil after reset")
+	}
+}

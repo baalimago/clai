@@ -53,6 +53,10 @@ func (s *StreamCompleter) StreamCompletions(ctx context.Context, chat pub_models
 }
 
 func (s *StreamCompleter) createRequest(ctx context.Context, chat pub_models.Chat) (*http.Request, error) {
+	respFmt := ResponseFormat{Type: "text"}
+	if s.ResponseFormat != nil {
+		respFmt = *s.ResponseFormat
+	}
 	reqData := req{
 		Model:            s.Model,
 		FrequencyPenalty: s.FrequencyPenalty,
@@ -60,7 +64,7 @@ func (s *StreamCompleter) createRequest(ctx context.Context, chat pub_models.Cha
 		PresencePenalty:  s.PresencePenalty,
 		Temperature:      s.Temperature,
 		TopP:             s.TopP,
-		ResponseFormat:   responseFormat{Type: "text"},
+		ResponseFormat:   respFmt,
 		Messages:         chat.Messages,
 		Stream:           true,
 		StreamOptions: map[string]any{
