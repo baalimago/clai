@@ -11,6 +11,7 @@ import (
 	"github.com/baalimago/clai/internal/chat"
 	"github.com/baalimago/clai/internal/chatid"
 	"github.com/baalimago/clai/internal/glob"
+	"github.com/baalimago/clai/internal/text/generic"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
@@ -56,6 +57,10 @@ type Configurations struct {
 
 	// Out writer. Normally stdout, but may also be a file when invoked as a package
 	Out io.Writer `json:"-"`
+
+	// ResponseFormat configures structured output (json_object, json_schema).
+	// When nil, no response_format is sent (defaults to text).
+	ResponseFormat *pub_models.ResponseFormat `json:"-"`
 }
 
 type CostManager interface {
@@ -209,5 +214,57 @@ func (c *Configurations) SetupInitialChat(args []string) error {
 		traceChatf("setup initial chat set created timestamp created=%q", c.InitialChat.Created.Format(time.RFC3339Nano))
 	}
 	traceChatf("setup initial chat done chat_id=%q total_messages=%d", c.InitialChat.ID, len(c.InitialChat.Messages))
+	return nil
+}
+
+// toGenericResponseFormat converts the public ResponseFormat to the internal type
+// used by generic.StreamCompleter.
+func toGenericResponseFormat(rf *pub_models.ResponseFormat) *generic.ResponseFormat {
+	if rf == nil {
+		return nil
+	}
+	gf := &generic.ResponseFormat{
+		Type: rf.Type,
+	}
+	if rf.Schema != nil {
+		s := rf.Schema
+		gf.JSONSchema = &generic.JSONSchemaSpec{
+			Name:        s.Name,
+			Description: s.Description,
+			Strict:      s.Strict,
+			Schema:      s.Schema,
+		}
+	}
+	return gf
+}
+
+// responseFormatFromGeneric converts the internal generic.ResponseFormat (used for
+// JSON deserialization from files) to the public ResponseFormat.
+func responseFormatFromGeneric(gf *generic.ResponseFormat) *pub_models.ResponseFormat {
+	if gf == nil {
+		return nil
+	}
+	rf := &pub_models.ResponseFormat{
+		Type: gf.Type,
+	}
+	if gf.JSONSchema != nil {
+		rf.Schema = &pub_models.JSONSchema{
+			Name:        gf.JSONSchema.Name,
+			Description: gf.JSONSchema.Description,
+			Strict:      gf.JSONSchema.Strict,
+			Schema:      gf.JSONSchema.Schema,
+		}
+	}
+	return rf
+}
+
+// LoadResponseFormat loads a response_format JSON file from disk and sets it
+// on the configuration. The file must follow the OpenAI response_format schema.
+func (c *Configurations) LoadResponseFormat(path string) error {
+	var gf generic.ResponseFormat
+	if err := utils.ReadAndUnmarshal(path, &gf); err != nil {
+		return fmt.Errorf("failed to load response format from %q: %w", path, err)
+	}
+	c.ResponseFormat = responseFormatFromGeneric(&gf)
 	return nil
 }

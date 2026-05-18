@@ -437,3 +437,187 @@ func TestCountInputTokens(t *testing.T) {
 		t.Fatalf("expected 0, got %d", n)
 	}
 }
+
+func TestCreateRequest_ResponseFormat_DefaultText(t *testing.T) {
+	s := &StreamCompleter{
+		Model:  "m",
+		apiKey: "sekret",
+		URL:    "http://example.invalid",
+	}
+	httpReq, err := s.createRequest(context.Background(), pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "c"}}})
+	if err != nil {
+		t.Fatalf("createRequest err: %v", err)
+	}
+	b, _ := io.ReadAll(httpReq.Body)
+	var body map[string]any
+	if err := jsonUnmarshal(b, &body); err != nil {
+		t.Fatalf("unmarshal body: %v", err)
+	}
+	rf, ok := body["response_format"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected response_format map, got: %T", body["response_format"])
+	}
+	if rf["type"] != "text" {
+		t.Fatalf("expected type=text, got: %v", rf["type"])
+	}
+}
+
+func TestCreateRequest_ResponseFormat_JSONObject(t *testing.T) {
+	s := &StreamCompleter{
+		Model:          "m",
+		apiKey:         "sekret",
+		URL:            "http://example.invalid",
+		ResponseFormat: &ResponseFormat{Type: "json_object"},
+	}
+	httpReq, err := s.createRequest(context.Background(), pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "c"}}})
+	if err != nil {
+		t.Fatalf("createRequest err: %v", err)
+	}
+	b, _ := io.ReadAll(httpReq.Body)
+	var body map[string]any
+	if err := jsonUnmarshal(b, &body); err != nil {
+		t.Fatalf("unmarshal body: %v", err)
+	}
+	rf, ok := body["response_format"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected response_format map, got: %T", body["response_format"])
+	}
+	if rf["type"] != "json_object" {
+		t.Fatalf("expected type=json_object, got: %v", rf["type"])
+	}
+}
+
+func TestCreateRequest_ResponseFormat_JSONSchema(t *testing.T) {
+	schema := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"name": map[string]any{"type": "string"},
+			"age":  map[string]any{"type": "integer"},
+		},
+		"required": []any{"name", "age"},
+	}
+	s := &StreamCompleter{
+		Model:  "m",
+		apiKey: "sekret",
+		URL:    "http://example.invalid",
+		ResponseFormat: &ResponseFormat{
+			Type: "json_schema",
+			JSONSchema: &JSONSchemaSpec{
+				Name:   "person",
+				Strict: true,
+				Schema: schema,
+			},
+		},
+	}
+	httpReq, err := s.createRequest(context.Background(), pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "c"}}})
+	if err != nil {
+		t.Fatalf("createRequest err: %v", err)
+	}
+	b, _ := io.ReadAll(httpReq.Body)
+	var body map[string]any
+	if err := jsonUnmarshal(b, &body); err != nil {
+		t.Fatalf("unmarshal body: %v", err)
+	}
+	rf, ok := body["response_format"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected response_format map, got: %T", body["response_format"])
+	}
+	if rf["type"] != "json_schema" {
+		t.Fatalf("expected type=json_schema, got: %v", rf["type"])
+	}
+	js, ok := rf["json_schema"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected json_schema map, got: %T", rf["json_schema"])
+	}
+	if js["name"] != "person" {
+		t.Fatalf("expected name=person, got: %v", js["name"])
+	}
+	if js["strict"] != true {
+		t.Fatalf("expected strict=true, got: %v", js["strict"])
+	}
+	if js["schema"] == nil {
+		t.Fatalf("expected schema to be present")
+	}
+}
+
+func TestSetResponseFormat(t *testing.T) {
+	s := &StreamCompleter{}
+	if s.ResponseFormat != nil {
+		t.Fatalf("expected nil ResponseFormat")
+	}
+	s.SetResponseFormat(&ResponseFormat{Type: "json_object"})
+	if s.ResponseFormat == nil || s.ResponseFormat.Type != "json_object" {
+		t.Fatalf("expected json_object, got: %+v", s.ResponseFormat)
+	}
+	s.SetResponseFormat(nil)
+	if s.ResponseFormat != nil {
+		t.Fatalf("expected nil after reset")
+	}
+}
+
+// TestDumpResponseFormatPayloads is a visual validation test that prints the
+// actual JSON payloads for each response format mode. Run with:
+//
+//	go test -v -run TestDumpResponseFormatPayloads ./internal/text/generic/
+func TestDumpResponseFormatPayloads(t *testing.T) {
+	examples := []struct {
+		name string
+		sc   *StreamCompleter
+	}{
+		{
+			"text (default)",
+			&StreamCompleter{Model: "gpt-4.1", apiKey: "sk-test", URL: "http://localhost"},
+		},
+		{
+			"json_object",
+			&StreamCompleter{
+				Model:          "gpt-4.1",
+				apiKey:         "sk-test",
+				URL:            "http://localhost",
+				ResponseFormat: &ResponseFormat{Type: "json_object"},
+			},
+		},
+		{
+			"json_schema",
+			&StreamCompleter{
+				Model:  "gpt-4.1",
+				apiKey: "sk-test",
+				URL:    "http://localhost",
+				ResponseFormat: &ResponseFormat{
+					Type: "json_schema",
+					JSONSchema: &JSONSchemaSpec{
+						Name:   "person",
+						Strict: true,
+						Schema: map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"name": map[string]any{"type": "string"},
+								"age":  map[string]any{"type": "integer"},
+							},
+							"required": []any{"name", "age"},
+						},
+					},
+				},
+			},
+		},
+	}
+	for _, ex := range examples {
+		ex.sc.client = &http.Client{}
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			b, _ := io.ReadAll(r.Body)
+			var body map[string]any
+			json.Unmarshal(b, &body)
+			rf := body["response_format"]
+			jsn, _ := json.MarshalIndent(rf, "", "  ")
+			t.Logf("\n=== %s ===\n%s", ex.name, string(jsn))
+		}))
+		ex.sc.URL = ts.URL
+		ch, _ := ex.sc.StreamCompletions(context.Background(),
+			pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "hello"}}})
+		if ch != nil {
+			for range ch {
+			}
+		}
+		ts.Close()
+	}
+}

@@ -29,7 +29,21 @@ type StreamCompleter struct {
 	apiKey              string
 	debug               bool
 
+	// ResponseFormat configures structured output. When nil, defaults to {type: "text"}.
+	ResponseFormat *ResponseFormat `json:"-"`
+
 	usage *pub_models.Usage
+}
+
+// SetResponseFormat configures the response format for structured output.
+// Pass nil to reset to default (text).
+func (s *StreamCompleter) SetResponseFormat(rf *ResponseFormat) {
+	s.ResponseFormat = rf
+}
+
+// ResponseFormatSetter is implemented by types that can accept a response format.
+type ResponseFormatSetter interface {
+	SetResponseFormat(*ResponseFormat)
 }
 
 type ToolSuper struct {
@@ -84,13 +98,24 @@ type Func struct {
 	Name      string `json:"name"`
 }
 
-type responseFormat struct {
-	Type string `json:"type"`
+// ResponseFormat follows the OpenAI chat completions response_format schema.
+// Supported types: "text", "json_object", "json_schema".
+type ResponseFormat struct {
+	Type       string          `json:"type"`
+	JSONSchema *JSONSchemaSpec `json:"json_schema,omitempty"`
+}
+
+// JSONSchemaSpec defines the schema when response_format type is "json_schema".
+type JSONSchemaSpec struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description,omitempty"`
+	Strict      bool           `json:"strict,omitempty"`
+	Schema      map[string]any `json:"schema"`
 }
 
 type req struct {
 	Model             string               `json:"model,omitempty"`
-	ResponseFormat    responseFormat       `json:"response_format"`
+	ResponseFormat    ResponseFormat       `json:"response_format"`
 	Messages          []pub_models.Message `json:"messages,omitempty"`
 	Stream            bool                 `json:"stream,omitempty"`
 	StreamOptions     map[string]any       `json:"stream_options"`

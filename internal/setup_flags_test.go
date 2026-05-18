@@ -179,6 +179,22 @@ func TestSetupFlags(t *testing.T) {
 			},
 			wantPostArgs: []string{"q", "hello"},
 		},
+		{
+			name:     "Response format path short flag",
+			args:     []string{"cmd", "-rf", "/tmp/rf.json"},
+			defaults: Configurations{},
+			want: Configurations{
+				ResponseFormatPath: "/tmp/rf.json",
+			},
+		},
+		{
+			name:     "Response format path long flag",
+			args:     []string{"cmd", "-response-format", "/tmp/rf.json"},
+			defaults: Configurations{},
+			want: Configurations{
+				ResponseFormatPath: "/tmp/rf.json",
+			},
+		},
 	}
 
 	for _, tc := range testCases {

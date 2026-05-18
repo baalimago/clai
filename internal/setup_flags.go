@@ -40,6 +40,9 @@ type Configurations struct {
 	ProfilePath string
 	// ShellContext is the selected shell context name (ASC).
 	ShellContext string
+	// ResponseFormatPath is a path to a JSON file describing the OpenAI response_format.
+	// Supports "json_object" and "json_schema" types.
+	ResponseFormatPath string
 }
 
 // parseFlags parses CLI flags into an internal Configurations.
@@ -98,6 +101,9 @@ func parseFlags(defaults Configurations, args []string) (Configurations, []strin
 	ascShort := fs.String("asc", defaults.ShellContext, "Auto-append shell context by name. Mutually exclusive with add-shell-context.")
 	ascLong := fs.String("add-shell-context", defaults.ShellContext, "Auto-append shell context by name. Mutually exclusive with asc.")
 
+	rfShort := fs.String("rf", defaults.ResponseFormatPath, "Path to a response_format JSON file for structured output.")
+	rfLong := fs.String("response-format", defaults.ResponseFormatPath, "Path to a response_format JSON file for structured output.")
+
 	// Breaking change: -t/-tools are string-only value flags.
 	// Use: -t=* or -t=a,b ("-t" without value is undefined/ignored).
 	useToolsShort := fs.String("t", defaults.UseTools, "Enable tools. Use '*' for all tools or comma-separated list for specific tools.")
@@ -136,6 +142,8 @@ func parseFlags(defaults Configurations, args []string) (Configurations, []strin
 	exitWithFlagError(err, "vp", "video-prefix")
 	shellContext, err := utils.ReturnNonDefault(*ascShort, *ascLong, defaults.ShellContext)
 	exitWithFlagError(err, "asc", "add-shell-context")
+	responseFormatPath, err := utils.ReturnNonDefault(*rfShort, *rfLong, defaults.ResponseFormatPath)
+	exitWithFlagError(err, "rf", "response-format")
 
 	replyMode := *replyShort || *replyLong
 	printRaw := *printRawShort || *printRawLong
@@ -146,23 +154,24 @@ func parseFlags(defaults Configurations, args []string) (Configurations, []strin
 	}
 
 	newConf := Configurations{
-		ChatModel:     chatModel,
-		PhotoModel:    photoModel,
-		PhotoDir:      pictureDir,
-		PhotoPrefix:   picturePrefix,
-		VideoModel:    videoModel,
-		VideoDir:      videoDir,
-		VideoPrefix:   videoPrefix,
-		StdinReplace:  stdinReplace,
-		PrintRaw:      printRaw,
-		ReplyMode:     replyMode,
-		DirReplyMode:  dirReplyMode,
-		UseTools:      useTools,
-		Glob:          glob,
-		ExpectReplace: *expectReplace,
-		Profile:       profile,
-		ProfilePath:   profilePath,
-		ShellContext:  shellContext,
+		ChatModel:          chatModel,
+		PhotoModel:         photoModel,
+		PhotoDir:           pictureDir,
+		PhotoPrefix:        picturePrefix,
+		VideoModel:         videoModel,
+		VideoDir:           videoDir,
+		VideoPrefix:        videoPrefix,
+		StdinReplace:       stdinReplace,
+		PrintRaw:           printRaw,
+		ReplyMode:          replyMode,
+		DirReplyMode:       dirReplyMode,
+		UseTools:           useTools,
+		Glob:               glob,
+		ExpectReplace:      *expectReplace,
+		Profile:            profile,
+		ProfilePath:        profilePath,
+		ShellContext:       shellContext,
+		ResponseFormatPath: responseFormatPath,
 	}
 
 	return newConf, postParseArgs, nil

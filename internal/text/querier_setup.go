@@ -12,6 +12,7 @@ import (
 
 	"github.com/baalimago/clai/internal/cost"
 	"github.com/baalimago/clai/internal/models"
+	"github.com/baalimago/clai/internal/text/generic"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/internal/vendors/openrouter"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -186,6 +187,13 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	querier.toolOutputRuneLimit = userConf.ToolOutputRuneLimit
 	querier.maxToolCalls = userConf.MaxToolCalls
 	querier.out = userConf.Out
+
+	// Propagate response format to the model if it supports it
+	if userConf.ResponseFormat != nil {
+		if setter, ok := any(modelConf).(generic.ResponseFormatSetter); ok {
+			setter.SetResponseFormat(toGenericResponseFormat(userConf.ResponseFormat))
+		}
+	}
 
 	var fetcher cost.ModelCatalogFetcher
 	if fetcher == nil {
