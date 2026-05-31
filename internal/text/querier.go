@@ -210,9 +210,9 @@ func (q *Querier[C]) closeReasoningIfOpen(session *QuerySession) {
 		if w == nil {
 			w = os.Stdout
 		}
-		fmt.Fprint(w, utils.Colorize(utils.RoleColor("reasoning"), "[/thinking]\n"))
+		fmt.Fprint(w, utils.Colorize(utils.RoleColor("reasoning"), "\n[/thinking]\n"))
 	}
-	reasoningWrapped := "[thinking]" + q.reasoningBuf.String() + "[/thinking]\n"
+	reasoningWrapped := "[thinking]" + q.reasoningBuf.String() + "\n[/thinking]\n"
 	if session.PendingTextString() == "" {
 		session.PendingText.WriteString(reasoningWrapped)
 	} else {
