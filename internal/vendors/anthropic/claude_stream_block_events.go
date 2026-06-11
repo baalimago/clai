@@ -57,6 +57,10 @@ func (c *Claude) handleContentBlockDelta(deltaToken string) models.CompletionEve
 		return delta.Text
 	case "input_json_delta":
 		return c.handleInputJSONDelta(delta)
+	case "thinking_delta":
+		return models.ReasoningEvent{Content: delta.Thinking}
+	case "signature_delta":
+		return models.NoopEvent{}
 	default:
 		return fmt.Errorf("unexpected delta type: %v", delta.Type)
 	}
