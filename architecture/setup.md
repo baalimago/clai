@@ -39,18 +39,19 @@ main.go:run()
 The UI begins with `stage_0`:
 
 ```text
-0. mode-files
+0. general config
 1. model files
 2. text generation profiles
 3. MCP server configuration
 ```
 
-### Stage 0 → Mode-files (selection `0`)
+### Stage 0 → General config (selection `0`)
 
 - Uses `getConfigs(<claiDir>/*Config.json, exclude=[])`.
+- Ensures `<claiDir>/skills.json` exists and includes it in the same list.
 - Immediately enters `configure(configs, conf)`.
 
-Intent: let users quickly edit top-level per-mode config such as `textConfig.json`.
+Intent: let users quickly edit top-level config such as `textConfig.json`, `photoConfig.json`, `videoConfig.json`, and `skills.json`.
 
 ### Stage 0 → Model files (selection `1`)
 
