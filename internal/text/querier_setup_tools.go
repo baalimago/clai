@@ -19,6 +19,7 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
+	pkgtools "github.com/baalimago/clai/pkg/tools"
 )
 
 // filterMcpServersByProfile filters MCP server files based on whether their tools are needed by the profile
@@ -161,7 +162,13 @@ func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configu
 
 func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, userConf Configurations) {
 	toolBox, ok := any(modelConf).(models.ToolBox)
-	if !ok || !userConf.UseTools {
+	if !ok {
+		return
+	}
+	if userConf.UseSkills {
+		toolBox.RegisterTool(pkgtools.LoadSkill)
+	}
+	if !userConf.UseTools {
 		return
 	}
 	tools.Init()
@@ -177,6 +184,9 @@ func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, us
 	if len(userConf.RequestedToolGlobs) == 0 && len(userConf.Tools) == 0 {
 		for _, tool := range tools.Registry.All() {
 			toolBox.RegisterTool(tool)
+		}
+		if userConf.BaseTools == nil {
+			userConf.BaseTools = tools.Registry.All()
 		}
 		return
 	}
@@ -203,10 +213,18 @@ func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, us
 			ancli.PrintOK(fmt.Sprintf("\tname: %v, desc: %v\n", tool.Specification().Name, tool.Specification().Description))
 		}
 		toolBox.RegisterTool(tool)
+		if userConf.BaseTools == nil {
+			userConf.BaseTools = map[string]pub_models.LLMTool{}
+		}
+		userConf.BaseTools[tool.Specification().Name] = tool
 	}
 
 	for _, t := range userConf.Tools {
 		tools.Registry.Set(t.Specification().Name, t)
 		toolBox.RegisterTool(t)
+		if userConf.BaseTools == nil {
+			userConf.BaseTools = map[string]pub_models.LLMTool{}
+		}
+		userConf.BaseTools[t.Specification().Name] = t
 	}
 }

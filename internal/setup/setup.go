@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/baalimago/clai/internal/skills"
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
@@ -153,9 +154,17 @@ func InitCmd() error {
 
 	categories := []setupCategory{
 		{
-			name: "mode-files",
+			name: "general config",
 			load: func(dir string) ([]config, error) {
-				return getConfigs(filepath.Join(dir, "*Config.json"), []string{})
+				cfgs, err := getConfigs(filepath.Join(dir, "*Config.json"), []string{})
+				if err != nil {
+					return nil, err
+				}
+				if _, err := skills.LoadConfig(dir); err != nil {
+					return nil, fmt.Errorf("failed to ensure skills config: %w", err)
+				}
+				cfgs = append(cfgs, config{name: "skills.json", filePath: filepath.Join(dir, "skills.json")})
+				return cfgs, nil
 			},
 			itemSelectActions: nil,
 			itemActions:       []action{conf, confWithEditor},

@@ -15,7 +15,7 @@ import (
 
 // requiredConfigDirs lists directories that must exist under the clai config dir.
 // Keep this in sync with any feature that persists state to disk.
-var requiredConfigDirs = []string{"conversations", "profiles", "mcpServers", "conversations/dirs", "shellContexts"}
+var requiredConfigDirs = []string{"conversations", "profiles", "mcpServers", "conversations/dirs", "shellContexts", "skills"}
 
 func ConfigDirPaths() []string {
 	paths := make([]string, len(requiredConfigDirs))

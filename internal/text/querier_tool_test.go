@@ -1,6 +1,8 @@
 package text
 
 import (
+	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -138,6 +140,99 @@ func Test_toolExecutor_NormalizesEmptyToolOutput(t *testing.T) {
 	if session.Chat.Messages[0].Content != "<EMPTY-RESPONSE>" {
 		t.Fatalf("expected normalized placeholder, got %q", session.Chat.Messages[0].Content)
 	}
+}
+
+func Test_toolExecutor_ExecuteLoadSkill_PrintsSummary(t *testing.T) {
+	var out bytes.Buffer
+	q := Querier[*MockQuerier]{out: &out, skillLoader: fakeSkillLoader{
+		loaded: LoadedSkillRuntime{
+			Name:         "review",
+			SourceClass:  "project",
+			RenderedBody: "skill body",
+		},
+	}}
+	session := &QuerySession{}
+	inputs := pub_models.Input{"skill": "review"}
+	call := pub_models.Call{ID: "call-1", Name: "load_skill", Inputs: &inputs}
+	err := toolExecutor[*MockQuerier]{querier: &q}.Execute(context.Background(), session, call)
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+}
+
+func Test_toolExecutor_ExecuteLoadSkill_TruncatesUserVisibleOutputUnlessRaw(t *testing.T) {
+	t.Run("non_raw", func(t *testing.T) {
+		var out bytes.Buffer
+		q := Querier[*MockQuerier]{out: &out, skillLoader: fakeSkillLoader{
+			loaded: LoadedSkillRuntime{
+				Name:         "review",
+				SourceClass:  "default",
+				RenderedBody: "## Title\nDescription: concise\nBody line\nAnother line",
+			},
+		}}
+		session := &QuerySession{}
+		inputs := pub_models.Input{"skill": "review"}
+		call := pub_models.Call{ID: "call-1", Name: "load_skill", Inputs: &inputs}
+		err := toolExecutor[*MockQuerier]{querier: &q}.Execute(context.Background(), session, call)
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		got := out.String()
+		if !strings.Contains(got, "## Title") || !strings.Contains(got, "Description: concise") {
+			t.Fatalf("expected truncated title+description in output, got %q", got)
+		}
+		for _, notWant := range []string{"Body line", "Another line"} {
+			if strings.Contains(got, notWant) {
+				t.Fatalf("expected non-raw output to omit %q, got %q", notWant, got)
+			}
+		}
+		if len(session.Chat.Messages) < 2 || !strings.Contains(session.Chat.Messages[1].Content, "Body line") {
+			t.Fatalf("expected full rendered body retained in transcript, got %#v", session.Chat.Messages)
+		}
+	})
+
+	t.Run("raw", func(t *testing.T) {
+		var out bytes.Buffer
+		q := Querier[*MockQuerier]{out: &out, Raw: true, skillLoader: fakeSkillLoader{
+			loaded: LoadedSkillRuntime{
+				Name:         "review",
+				SourceClass:  "default",
+				RenderedBody: "## Title\nDescription: concise\nBody line",
+			},
+		}}
+		session := &QuerySession{}
+		inputs := pub_models.Input{"skill": "review"}
+		call := pub_models.Call{ID: "call-1", Name: "load_skill", Inputs: &inputs}
+		err := toolExecutor[*MockQuerier]{querier: &q}.Execute(context.Background(), session, call)
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		if !strings.Contains(out.String(), "Body line") {
+			t.Fatalf("expected raw output to include full body, got %q", out.String())
+		}
+	})
+}
+
+func Test_toolExecutor_ExecuteLoadSkill_ActivationCapAppendsError(t *testing.T) {
+	q := Querier[*MockQuerier]{skillLoader: fakeSkillLoader{
+		loaded: LoadedSkillRuntime{ActivationErr: "skill activation cap exceeded: maxActivatedSkills=1"},
+	}}
+	session := &QuerySession{}
+	inputs := pub_models.Input{"skill": "review"}
+	call := pub_models.Call{ID: "call-1", Name: "load_skill", Inputs: &inputs}
+	err := toolExecutor[*MockQuerier]{querier: &q}.Execute(context.Background(), session, call)
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if len(session.Chat.Messages) != 2 || !strings.Contains(session.Chat.Messages[1].Content, "ERROR: skill activation cap exceeded") {
+		t.Fatalf("unexpected messages: %#v", session.Chat.Messages)
+	}
+}
+
+type fakeSkillLoader struct{ loaded LoadedSkillRuntime }
+
+func (f fakeSkillLoader) LoadSkill(context.Context, string, string, map[string]pub_models.LLMTool) (LoadedSkillRuntime, error) {
+	return f.loaded, nil
 }
 
 func tempPathFromMaterializedOutput(t *testing.T, got string) string {

@@ -187,6 +187,8 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	querier.toolOutputRuneLimit = userConf.ToolOutputRuneLimit
 	querier.maxToolCalls = userConf.MaxToolCalls
 	querier.out = userConf.Out
+	querier.skillLoader = userConf.SkillLoader
+	querier.baseTools = userConf.BaseTools
 
 	// Propagate response format to the model if it supports it
 	if userConf.ResponseFormat != nil {

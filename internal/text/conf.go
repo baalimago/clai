@@ -25,6 +25,7 @@ type Configurations struct {
 	SystemPrompt string `json:"system-prompt"`
 	Raw          bool   `json:"raw"`
 	UseTools     bool   `json:"use-tools"`
+	UseSkills    bool   `json:"-"`
 	// CmdModePrompt is kept only for backwards compatibility with old config files.
 	// It is ignored by clai as the `cmd` command has been removed.
 	CmdModePrompt  string `json:"cmd-mode-prompt"`
@@ -42,6 +43,7 @@ type Configurations struct {
 	InitialChat         pub_models.Chat `json:"-"`
 	UseProfile          string          `json:"-"`
 	ProfilePath         string          `json:"-"`
+	ProfileUseSkillsSet bool            `json:"-"`
 	RequestedToolGlobs  []string        `json:"-"`
 	// ShellContext is a context definition name for ASC (auto-append shell context).
 	// When non-empty, clai will load <configDir>/shellContexts/<name>.json and insert
@@ -51,16 +53,19 @@ type Configurations struct {
 	PostProccessedPrompt string `json:"-"`
 
 	// These are to allow tools to be injected via public package.
-	Tools        []pub_models.LLMTool   `json:"-"`
-	McpServers   []pub_models.McpServer `json:"-"`
-	MaxToolCalls *int                   `json:"max-tool-calls,omitempty"`
+	Tools        []pub_models.LLMTool          `json:"-"`
+	McpServers   []pub_models.McpServer        `json:"-"`
+	BaseTools    map[string]pub_models.LLMTool `json:"-"`
+	MaxToolCalls *int                          `json:"max-tool-calls,omitempty"`
 
 	// Out writer. Normally stdout, but may also be a file when invoked as a package
 	Out io.Writer `json:"-"`
 
 	// ResponseFormat configures structured output (json_object, json_schema).
 	// When nil, no response_format is sent (defaults to text).
-	ResponseFormat *pub_models.ResponseFormat `json:"-"`
+	ResponseFormat   *pub_models.ResponseFormat `json:"-"`
+	SkillsDescriptor string                     `json:"-"`
+	SkillLoader      SkillLoader                `json:"-"`
 }
 
 type CostManager interface {
@@ -85,6 +90,7 @@ type Profile struct {
 	Name            string                          `json:"name"`
 	Model           string                          `json:"model"`
 	UseTools        bool                            `json:"use_tools"`
+	UseSkills       *bool                           `json:"use_skills,omitempty"`
 	Tools           []string                        `json:"tools"`
 	Prompt          string                          `json:"prompt"`
 	SaveReplyAsConv *bool                           `json:"save-reply-as-conv,omitempty"`
@@ -110,6 +116,7 @@ var DefaultProfile = Profile{
 	Name:            "example-name",
 	Model:           Default.Model,
 	UseTools:        true,
+	UseSkills:       nil,
 	Tools:           []string{},
 	Prompt:          Default.SystemPrompt,
 	SaveReplyAsConv: new(true),
@@ -118,6 +125,9 @@ var DefaultProfile = Profile{
 func (c *Configurations) setupSystemPrompt() {
 	traceChatf("setup initial chat system prompt start shell_context=%q", c.ShellContext)
 	systemPrompt := c.SystemPrompt
+	if strings.TrimSpace(c.SkillsDescriptor) != "" {
+		systemPrompt += "\n\n" + c.SkillsDescriptor
+	}
 	if strings.TrimSpace(c.ShellContext) != "" {
 		promptWithCtx, err := AppendShellContextIfConfigured(context.Background(), c.ConfigDir, c.ShellContext, systemPrompt, ShellContextRenderer{})
 		if err != nil {

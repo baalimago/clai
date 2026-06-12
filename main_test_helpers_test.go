@@ -5,6 +5,10 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/baalimago/clai/internal/skills"
+	"github.com/baalimago/clai/internal/text"
+	"github.com/baalimago/clai/internal/utils"
 )
 
 func setupMainTestConfigDir(t *testing.T) string {
@@ -17,6 +21,7 @@ func setupMainTestConfigDir(t *testing.T) string {
 		"mcpServers",
 		"conversations/dirs",
 		"shellContexts",
+		"skills",
 	}
 	for _, dir := range required {
 		if err := os.MkdirAll(filepath.Join(confDir, dir), 0o755); err != nil {
@@ -57,6 +62,19 @@ func setupMainTestConfigDir(t *testing.T) string {
 		if err := os.WriteFile(filepath.Join(confDir, name), priceBytes, 0o644); err != nil {
 			t.Fatalf("WriteFile(%q): %v", name, err)
 		}
+	}
+
+	if err := utils.CreateFile(filepath.Join(confDir, "textConfig.json"), &text.Default); err != nil {
+		t.Fatalf("CreateFile(textConfig.json): %v", err)
+	}
+	if err := utils.CreateFile(filepath.Join(confDir, "skills.json"), &skills.Config{
+		Enabled:            false,
+		GlobalSkillDirs:    []string{},
+		ProjectSkillDirs:   []string{"./agents/skills", ".claude/skills"},
+		TrustAllSkills:     false,
+		MaxActivatedSkills: 10,
+	}); err != nil {
+		t.Fatalf("CreateFile(skills.json): %v", err)
 	}
 
 	t.Setenv("CLAI_CONFIG_DIR", confDir)

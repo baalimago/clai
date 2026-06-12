@@ -4,7 +4,7 @@ This document defines how **skills** work in clai. Skills are prompt-packaged ca
 
 The design follows the **Agent Skills progressive-disclosure model** used in pi: the agent is always told which skills exist through compact descriptors, and it requests the full `SKILL.md` content only when a task matches a skill description. The design remains compatible with Claude-style skill directories while fitting clai’s own configuration model, terse UI, and tooling architecture.
 
-Skills are intentionally **opt-in**. clai must remain silent and behaviorally unchanged unless the user enables skills through text config, profile, or CLI flag.
+Skills are intentionally **opt-in**. clai must remain silent and behaviorally unchanged unless the user enables skills through `skills.json`, a profile, or a CLI flag.
 
 ## Scope
 
@@ -100,25 +100,23 @@ Discovery only runs when skills are enabled for the current run. When skills are
 
 ## Runtime enablement
 
-Skills are gated by a run-level `use_skills` control.
+Skills are gated by a run-level enablement control rooted in `skills.json.enabled`.
 
 ### Default behavior
 
-`use_skills` defaults to `false`. Skills are disabled unless explicitly enabled.
+`enabled` defaults to `false`. Skills are disabled unless explicitly enabled.
 
-### Text config
+### Skills config
 
-`textConfig.json` may include:
+`skills.json` contains the default run-level enablement switch:
 
 ```json
 {
-  "use_skills": false
+  "enabled": false
 }
 ```
 
-This field is optional for backwards compatibility with existing user configs. If omitted, clai behaves as though it were `false`.
-
-Setup-generated and migrated default config surfaces should include `use_skills` so the opt-in capability becomes visible over time without breaking older files.
+This field is optional. If omitted, clai behaves as though it were `false`.
 
 ### Profiles
 
@@ -130,7 +128,7 @@ Profiles may include:
 }
 ```
 
-This field is optional. When omitted, a profile inherits the current text-config/runtime value rather than forcing either enablement or disablement.
+This field is optional. When omitted, a profile inherits the current `skills.json`/runtime value rather than forcing either enablement or disablement.
 
 ### CLI flag
 
@@ -151,7 +149,7 @@ The long form is:
 The effective precedence is:
 
 ```text
-CLI flag > profile > textConfig > default(false)
+CLI flag > profile > skills.json.enabled > default(false)
 ```
 
 The string vocabulary is intentionally narrow in MVP. `*` means enable the subsystem; `none` means disable it. Other values are invalid and should produce a user-facing configuration error rather than being silently reinterpreted.
@@ -509,8 +507,7 @@ These lines are emitted during setup in the same general area where tooling and 
 
 ### Activation rendering
 
-Skill activation is rendered using a dedicated event style comparable to
-how clai visually distinguishes thinking and tool-call activity.
+Skill activation is rendered with standard ancli/log-style output plus the normal tool-call pretty print already used by clai.
 
 The rendered tool activity includes:
 
@@ -526,7 +523,7 @@ assistant called load_skill(review)
 loaded skill review [project]
 ```
 
-The exact colour/styling follows clai's standard tool-call rendering. The post-load summary text remains terse and stable and is printed at the moment the runtime attaches a trusted skill to the current run.
+The exact colour/styling follows clai's existing ancli and tool-call rendering. Discovery root summaries, trust prompts, and post-load activation summaries are emitted through ancli. The post-load summary text remains terse and stable and is printed at the moment the runtime attaches a trusted skill to the current run.
 
 ## Configuration files and persistence
 
@@ -540,7 +537,7 @@ Initial contents:
 
 ```json
 {
-  "use_skills": false,
+  "enabled": false,
   "globalSkillDirs": [],
   "projectSkillDirs": ["./agents/skills", ".claude/skills"],
   "trust_all_skills": false,
@@ -612,15 +609,15 @@ The skills subsystem is complete when all of the following are true:
    - global over default
 
 7. when enabled discovery loads at least one valid skill, clai prints concise line-oriented logs that include:
-   - each scanned source path that contributed at least one loaded skill
-   - loaded counts per source
+   - each scanned source path that contributed at least one canonical loaded skill
+   - loaded counts per source after precedence resolution
    - total loaded, shadowed, and invalid counts
 
 7a. when skills are disabled, or when enabled discovery finds no valid skills, clai remains silent and prints no skills setup lines.
 
-8. skill loading is visible through normal tool-call rendering for the internal `load_skill` tool and prints concise post-load lines containing:
+8. skill loading is visible through normal tool-call rendering for the internal `load_skill` tool and prints concise ancli post-load lines containing:
    - skill name
-   - skill source
+   - skill source class
    - resolved arguments when present
 
 9. activated skills render argument substitutions correctly for:
