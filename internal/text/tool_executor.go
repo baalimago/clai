@@ -44,6 +44,9 @@ func (e toolExecutor[C]) Execute(ctx context.Context, session *QuerySession, cal
 		return fmt.Errorf("finalize assistant text before tool call: %w", err)
 	}
 	call = decision.PatchedCall
+	if call.Name == string(pub_models.LoadSkillTool) {
+		return e.executeLoadSkill(ctx, session, call)
+	}
 
 	assistantToolsCall := pub_models.Message{
 		Role:             "assistant",
@@ -113,6 +116,134 @@ func (e toolExecutor[C]) Execute(ctx context.Context, session *QuerySession, cal
 	}
 	session.ResetPendingText()
 	return nil
+}
+
+func (e toolExecutor[C]) executeLoadSkill(ctx context.Context, session *QuerySession, call pub_models.Call) error {
+	q := e.querier
+	if q.skillLoader == nil {
+		return fmt.Errorf("load_skill requested but skills are unavailable")
+	}
+	var skillName, rawArgs string
+	if call.Inputs != nil {
+		if v, ok := (*call.Inputs)["skill"].(string); ok {
+			skillName = v
+		}
+		if v, ok := (*call.Inputs)["arguments"].(string); ok {
+			rawArgs = v
+		}
+	}
+	loaded, err := q.skillLoader.LoadSkill(ctx, skillName, rawArgs, q.baseTools)
+	if err != nil {
+		return err
+	}
+	if loaded.ActivationErr != "" {
+		assistantToolsCall := pub_models.Message{
+			Role:      "assistant",
+			Content:   call.PrettyPrint(),
+			ToolCalls: []pub_models.Call{call},
+		}
+		if !q.debug {
+			if err := utils.AttemptPrettyPrint(q.out, assistantToolsCall, q.username, q.Raw); err != nil {
+				return fmt.Errorf("pretty print assistant tool call: %w", err)
+			}
+		}
+		session.Chat.Messages = append(session.Chat.Messages, assistantToolsCall)
+		outMsg := pub_models.Message{Role: "tool", Content: "ERROR: " + loaded.ActivationErr, ToolCallID: call.ID}
+		session.Chat.Messages = append(session.Chat.Messages, outMsg)
+		if !q.debug {
+			if err := utils.AttemptPrettyPrint(q.out, outMsg, "tool", q.Raw); err != nil {
+				return fmt.Errorf("pretty print skill output: %w", err)
+			}
+		}
+		session.ResetPendingText()
+		return nil
+	}
+	if len(loaded.ActiveTools) > 0 {
+		q.baseTools = loaded.ActiveTools
+	}
+	content := loaded.RenderedBody
+	userVisibleContent := loaded.UserVisibleBody
+	if strings.TrimSpace(userVisibleContent) == "" {
+		userVisibleContent = loaded.RenderedBody
+	}
+	if !q.Raw {
+		userVisibleContent = truncateSkillOutputForUser(userVisibleContent)
+	}
+	if len(loaded.Warnings) > 0 {
+		body := strings.TrimSpace(userVisibleContent)
+		userVisibleContent = "Warnings:\n- " + strings.Join(loaded.Warnings, "\n- ")
+		if body != "" {
+			userVisibleContent = body + "\n\n" + userVisibleContent
+		}
+	}
+	assistantToolsCall := pub_models.Message{
+		Role:      "assistant",
+		Content:   call.PrettyPrint(),
+		ToolCalls: []pub_models.Call{call},
+	}
+	if !q.debug {
+		if err := utils.AttemptPrettyPrint(q.out, assistantToolsCall, q.username, q.Raw); err != nil {
+			return fmt.Errorf("pretty print assistant tool call: %w", err)
+		}
+	}
+	session.Chat.Messages = append(session.Chat.Messages, assistantToolsCall)
+	outMsg := pub_models.Message{Role: "tool", Content: content, ToolCallID: call.ID}
+	session.Chat.Messages = append(session.Chat.Messages, outMsg)
+	if !q.debug {
+		printMsg := outMsg
+		printMsg.Content = userVisibleContent
+		if err := utils.AttemptPrettyPrint(q.out, printMsg, "tool", q.Raw); err != nil {
+			return fmt.Errorf("pretty print skill output: %w", err)
+		}
+		summary := fmt.Sprintf("loaded skill %s [%s]", loaded.Name, loaded.SourceClass)
+		if strings.TrimSpace(loaded.RawArgs) != "" {
+			summary += fmt.Sprintf(" args=%q", loaded.RawArgs)
+		}
+		ancli.Noticef("%s", summary)
+	}
+	session.ResetPendingText()
+	return nil
+}
+
+func truncateSkillOutputForUser(content string) string {
+	content = strings.TrimSpace(strings.ReplaceAll(content, "\r\n", "\n"))
+	if content == "" {
+		return content
+	}
+	lines := strings.Split(content, "\n")
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "#") {
+			for _, next := range lines[i+1:] {
+				nextTrimmed := strings.TrimSpace(next)
+				if nextTrimmed == "" {
+					continue
+				}
+				if strings.HasPrefix(strings.ToLower(nextTrimmed), "description:") {
+					return line + "\n" + next
+				}
+				break
+			}
+		}
+		break
+	}
+	kept := make([]string, 0, 2)
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			if len(kept) == 1 {
+				kept = append(kept, "")
+			}
+			continue
+		}
+		kept = append(kept, line)
+		if len(kept) == 2 {
+			break
+		}
+	}
+	return strings.TrimSpace(strings.Join(kept, "\n"))
 }
 
 func (e toolExecutor[C]) finalizeAssistantTextBeforeToolCall(session *QuerySession, call pub_models.Call) error {

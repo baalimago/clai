@@ -3,6 +3,7 @@ package vendors
 import (
 	"context"
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 
@@ -146,6 +147,15 @@ func inputsForTool(toolName string) pub_models.Input {
 	switch toolName {
 	case "ls":
 		return pub_models.Input{"directory": "."}
+	case "load_skill":
+		input := pub_models.Input{"skill": "review"}
+		if prompt := os.Getenv("CLAI_MOCK_LOAD_SKILL_NAME"); prompt != "" {
+			input["skill"] = prompt
+		}
+		if prompt := os.Getenv("CLAI_MOCK_LOAD_SKILL_ARGS"); prompt != "" {
+			input["arguments"] = prompt
+		}
+		return input
 	default:
 		return pub_models.Input{}
 	}

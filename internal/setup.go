@@ -13,10 +13,12 @@ import (
 	"github.com/baalimago/clai/internal/photo"
 	"github.com/baalimago/clai/internal/profiles"
 	"github.com/baalimago/clai/internal/setup"
+	"github.com/baalimago/clai/internal/skills"
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/internal/video"
+	textmodels "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	imagodebug "github.com/baalimago/go_away_boilerplate/pkg/debug"
 
@@ -65,6 +67,7 @@ var defaultFlags = Configurations{
 	ReplyMode:     false,
 	DirReplyMode:  false,
 	UseTools:      "",
+	UseSkills:     "",
 	ProfilePath:   "",
 }
 
@@ -237,6 +240,46 @@ func setupTextQuerierWithConf(ctx context.Context, mode Mode, confDir string, fl
 	// We want some flags, such as model, to be able to overwrite the profile configurations
 	// If this gets too confusing, it should be changed
 	applyProfileOverridesForText(&tConf, flagSet, defaultFlags)
+	skillsConfig, err := skills.LoadConfig(confDir)
+	if err != nil {
+		return nil, nil, fmt.Errorf("load skills config: %w", err)
+	}
+	if !profileSetsSkills(&tConf) {
+		tConf.UseSkills = skillsConfig.Enabled
+	}
+	if err := applyUseSkillsOverride(&tConf, flagSet, defaultFlags); err != nil {
+		return nil, nil, err
+	}
+	if tConf.UseSkills {
+		tools.Init()
+		allTools := tools.Registry.All()
+		knownToolNames := make([]string, 0, len(allTools))
+		for name := range allTools {
+			knownToolNames = append(knownToolNames, name)
+		}
+		cacheDir, _ := utils.GetClaiCacheDir()
+		skillMgr, err := skills.Discover(skills.Options{
+			ConfigDir:  confDir,
+			CacheDir:   cacheDir,
+			WorkingDir: mustGetwd(),
+			TrustPrompter: func(_ context.Context, prompt skills.TrustPrompt) (bool, error) {
+				ancli.Warnf("%s", formatSkillTrustPrompt(prompt))
+				answer, err := utils.ReadUserInput()
+				if err != nil {
+					return false, err
+				}
+				answer = strings.ToLower(strings.TrimSpace(answer))
+				return answer == "y" || answer == "yes", nil
+			},
+			LogLevel:       skills.ParseLogLevelFromEnv(),
+			KnownToolNames: knownToolNames,
+		})
+		if err != nil {
+			return nil, nil, fmt.Errorf("discover skills: %w", err)
+		}
+		tConf.SkillsDescriptor = skillMgr.DescriptorBlock()
+		tConf.SkillLoader = skillRuntimeAdapter{mgr: skillMgr}
+	}
 	err = tConf.SetupInitialChat(args)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to setup prompt: %v", err)
@@ -251,6 +294,25 @@ func setupTextQuerierWithConf(ctx context.Context, mode Mode, confDir string, fl
 		return nil, nil, fmt.Errorf("failed to create text querier: %v", err)
 	}
 	return cq, &tConf, nil
+}
+
+func applyUseSkillsOverride(tConf *text.Configurations, flagSet, defaultFlags Configurations) error {
+	if flagSet.UseSkills == defaultFlags.UseSkills {
+		return nil
+	}
+	switch flagSet.UseSkills {
+	case "*":
+		tConf.UseSkills = true
+	case "none":
+		tConf.UseSkills = false
+	default:
+		return fmt.Errorf("invalid skills flag value %q: expected '*' or 'none'", flagSet.UseSkills)
+	}
+	return nil
+}
+
+func profileSetsSkills(tConf *text.Configurations) bool {
+	return tConf.ProfileUseSkillsSet
 }
 
 func applyDirReplyChatID(confDir string, tConf *text.Configurations, q models.Querier) error {
@@ -434,4 +496,40 @@ func Setup(ctx context.Context, usage string, allArgs []string) (models.Querier,
 	default:
 		return nil, fmt.Errorf("unknown mode: %v", mode)
 	}
+}
+
+type skillRuntimeAdapter struct{ mgr *skills.Manager }
+
+func (s skillRuntimeAdapter) LoadSkill(ctx context.Context, name, args string, baseTools map[string]textmodels.LLMTool) (text.LoadedSkillRuntime, error) {
+	loaded, err := s.mgr.LoadSkill(ctx, name, args, baseTools)
+	if err != nil {
+		return text.LoadedSkillRuntime{}, err
+	}
+	return text.LoadedSkillRuntime{
+		Name:            loaded.Skill.Name,
+		SourceClass:     loaded.Skill.SourceClass,
+		RenderedBody:    loaded.RenderedBody,
+		UserVisibleBody: loaded.RenderedBody,
+		Warnings:        loaded.Warnings,
+		ActiveTools:     loaded.ActiveTools,
+		ActivationErr:   loaded.ActivationErr,
+		RawArgs:         loaded.RawArgs,
+	}, nil
+}
+
+func formatSkillPromptDescription(description string) string {
+	description = strings.TrimSpace(description)
+	if description == "" {
+		return "(none)"
+	}
+	return description
+}
+
+func formatSkillTrustPrompt(prompt skills.TrustPrompt) string {
+	return fmt.Sprintf("Untrusted skill detected!\n  Name: %s\n  Source: %s\n  Path: %s\n  Hash: %s\n  Description: %s\n  Note: disable this check in settings with trust_all_skills.\nTrust this skill? [y/N]", prompt.Name, prompt.SourceClass, prompt.Path, prompt.Hash, formatSkillPromptDescription(prompt.Description))
+}
+
+func mustGetwd() string {
+	wd, _ := os.Getwd()
+	return wd
 }

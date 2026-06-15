@@ -35,6 +35,7 @@ type Configurations struct {
 	//   "*"     => all tools
 	//   "a,b,c" => only these tools
 	UseTools    string
+	UseSkills   string
 	Glob        string
 	Profile     string
 	ProfilePath string
@@ -108,6 +109,8 @@ func parseFlags(defaults Configurations, args []string) (Configurations, []strin
 	// Use: -t=* or -t=a,b ("-t" without value is undefined/ignored).
 	useToolsShort := fs.String("t", defaults.UseTools, "Enable tools. Use '*' for all tools or comma-separated list for specific tools.")
 	useToolsLong := fs.String("tools", defaults.UseTools, "Enable tools. Use '*' for all tools or comma-separated list for specific tools.")
+	useSkillsShort := fs.String("s", defaults.UseSkills, "Enable skills. Use '*' to enable or 'none' to disable for the current run.")
+	useSkillsLong := fs.String("skills", defaults.UseSkills, "Enable skills. Use '*' to enable or 'none' to disable for the current run.")
 
 	err := fs.Parse(args)
 	if err != nil {
@@ -130,6 +133,8 @@ func parseFlags(defaults Configurations, args []string) (Configurations, []strin
 	exitWithFlagError(err, "I", "replace")
 	useTools, err := utils.ReturnNonDefault(*useToolsShort, *useToolsLong, defaults.UseTools)
 	exitWithFlagError(err, "t", "tools")
+	useSkills, err := utils.ReturnNonDefault(*useSkillsShort, *useSkillsLong, defaults.UseSkills)
+	exitWithFlagError(err, "s", "skills")
 	profile, err := utils.ReturnNonDefault(*pShort, *pLong, defaults.Profile)
 	exitWithFlagError(err, "p", "profile")
 	profilePath, err := utils.ReturnNonDefault(*prPathShort, *prPathLong, defaults.ProfilePath)
@@ -166,6 +171,7 @@ func parseFlags(defaults Configurations, args []string) (Configurations, []strin
 		ReplyMode:          replyMode,
 		DirReplyMode:       dirReplyMode,
 		UseTools:           useTools,
+		UseSkills:          useSkills,
 		Glob:               glob,
 		ExpectReplace:      *expectReplace,
 		Profile:            profile,

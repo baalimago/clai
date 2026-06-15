@@ -2,23 +2,18 @@ package text
 
 import (
 	"fmt"
-	"os"
 	"path"
 	"path/filepath"
 	"strings"
 
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/pkg/text/models"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
-	"github.com/baalimago/go_away_boilerplate/pkg/debug"
-	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
 func findProfile(profileName string) (Profile, error) {
 	cfg, _ := utils.GetClaiConfigDir()
-	profilePath := path.Join(cfg, "profiles")
-	var p Profile
-	err := utils.ReadAndUnmarshal(path.Join(profilePath, fmt.Sprintf("%v.json", profileName)), &p)
+	profilePath := path.Join(cfg, "profiles", fmt.Sprintf("%v.json", profileName))
+	p, err := loadProfile(profilePath)
 	if err != nil {
 		// Backwards compatibility: if we fail to load, at least surface the requested name.
 		p.Name = profileName
@@ -32,12 +27,13 @@ func findProfile(profileName string) (Profile, error) {
 }
 
 func findProfileByPath(p string) (Profile, error) {
-	var prof Profile
-	err := utils.ReadAndUnmarshal(p, &prof)
-	if err != nil {
-		return prof, err
-	}
-	return prof, nil
+	return loadProfile(p)
+}
+
+func loadProfile(profilePath string) (Profile, error) {
+	dir := filepath.Dir(profilePath)
+	name := filepath.Base(profilePath)
+	return utils.LoadConfigFromFile(dir, name, nil, &DefaultProfile)
 }
 
 func (c *Configurations) ProfileOverrides() error {
@@ -71,6 +67,10 @@ func (c *Configurations) ProfileOverrides() error {
 	c.Model = profile.Model
 	c.SystemPrompt = profile.Prompt
 	c.UseTools = profile.UseTools || (len(profile.McpServers) > 0)
+	if profile.UseSkills != nil {
+		c.UseSkills = *profile.UseSkills
+		c.ProfileUseSkillsSet = true
+	}
 	c.RequestedToolGlobs = profile.Tools
 	if profile.SaveReplyAsConv != nil {
 		c.SaveReplyAsConv = *profile.SaveReplyAsConv
@@ -86,9 +86,6 @@ func (c *Configurations) ProfileOverrides() error {
 		}
 		c.RequestedToolGlobs = append(c.RequestedToolGlobs, fmt.Sprintf("mcp_%v*", name))
 		mcpServers = append(mcpServers, m)
-		if misc.Truthy(os.Getenv("DEBUG_PROFILES")) {
-			ancli.Noticef("adding: %v", debug.IndentedJsonFmt(m))
-		}
 	}
 	c.McpServers = mcpServers
 	return nil

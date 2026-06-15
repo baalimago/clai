@@ -45,6 +45,7 @@ func Init() {
 	Registry.Set(tools.ClaiCheck.Specification().Name, tools.ClaiCheck)
 	Registry.Set(tools.ClaiResult.Specification().Name, tools.ClaiResult)
 	Registry.Set(tools.ClaiWaitForWorkers.Specification().Name, tools.ClaiWaitForWorkers)
+	Registry.Set(tools.LoadSkill.Specification().Name, tools.LoadSkill)
 	Registry.Set(tools.Date.Specification().Name, tools.Date)
 }
 

@@ -32,7 +32,7 @@ func selectTextQuerier(ctx context.Context, conf text.Configurations) (models.Qu
 	var q models.Querier
 	found := false
 
-	if conf.Model == "test" {
+	if conf.Model == "test" || conf.Model == "mock_test" {
 		found = true
 		qTmp, err := text.NewQuerier(ctx, conf, new(vendors.Mock{}))
 		if err != nil {

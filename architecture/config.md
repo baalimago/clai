@@ -98,6 +98,7 @@ Profiles are applied only for text-like modes (query/chat/cmd) and are intended 
 - quickly switch prompts/workflows
 - pin a model
 - restrict or expand tool choices
+- opt into skills for a specialized workflow
 
 Profiles are created/edited via `clai setup` (stage 2), and inspected via `clai profiles list`.
 
@@ -177,6 +178,33 @@ Notable rules:
 - unknown tools are skipped with warnings.
 - if nothing valid remains, tooling is disabled for that run.
 - MCP tools are not validated against the local registry; names prefixed with `mcp_` are allowed.
+
+### Skills enablement configuration
+
+Skills are controlled as an explicit opt-in subsystem.
+
+- `text.Configurations.UseSkills` boolean enables skills at the text-config/runtime layer
+- profiles may optionally set `use_skills`
+- `-s/-skills` is a string flag with special values, mirroring the parser style of `-t/-tools`
+
+Rules:
+
+- default is disabled
+- omitted `use_skills` in existing config or profile files must continue to work for backwards compatibility
+- setup-generated and migrated config surfaces should include `use_skills` so the feature becomes visible without breaking existing user files
+- CLI has highest precedence:
+
+```text
+-s=*      => enable skills for the run
+-s=none   => disable skills for the run
+omitted   => no CLI override
+```
+
+Effective precedence:
+
+```text
+flags > profile > textConfig > default(false)
+```
 
 ### Reply/dir-reply configuration
 

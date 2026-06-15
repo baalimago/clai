@@ -163,6 +163,22 @@ func TestSetupFlags(t *testing.T) {
 			},
 		},
 		{
+			name:     "Skills explicit all",
+			args:     []string{"cmd", "-s=*"},
+			defaults: Configurations{},
+			want: Configurations{
+				UseSkills: "*",
+			},
+		},
+		{
+			name:     "Skills explicit none",
+			args:     []string{"cmd", "-skills=none"},
+			defaults: Configurations{},
+			want: Configurations{
+				UseSkills: "none",
+			},
+		},
+		{
 			name:     "Tools flag with comma-separated list => specific tools",
 			args:     []string{"cmd", "-t=write_file,rg"},
 			defaults: Configurations{},

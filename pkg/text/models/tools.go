@@ -54,6 +54,7 @@ const (
 	ClaiCheckTool          ToolName = "clai_check"
 	ClaiResultTool         ToolName = "clai_result"
 	ClaiWaitForWorkersTool ToolName = "clai_wait_for_workers"
+	LoadSkillTool          ToolName = "load_skill"
 )
 
 type Input map[string]any
@@ -100,7 +101,7 @@ func (c Call) PrettyPrint() string {
 	}
 	lenInp := len(inp)
 	for flag, val := range inp {
-		paramStr.WriteString(fmt.Sprintf("'%v': '%v'", flag, val))
+		fmt.Fprintf(&paramStr, "'%v': '%v'", flag, val)
 		if i < lenInp-1 {
 			paramStr.WriteString(",")
 		}

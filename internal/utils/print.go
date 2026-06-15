@@ -123,10 +123,7 @@ func AttemptPrettyPrint(w io.Writer, chatMessage pub_models.Message, username st
 	if err != nil {
 		return fmt.Errorf("get terminal width for glow: %w", err)
 	}
-	glowWidth := termWidth - 5
-	if glowWidth < 1 {
-		glowWidth = 1
-	}
+	glowWidth := max(termWidth-5, 1)
 
 	cmd = exec.Command("glow", "-w", strconv.Itoa(glowWidth))
 	inp := chatMessage.Content

@@ -67,6 +67,23 @@ type Querier[C models.StreamCompleter] struct {
 	costMgrRdyChan    <-chan struct{}
 	costMgrErrChan    <-chan error
 	callUsageRecorder CallUsageRecorder
+	skillLoader       SkillLoader
+	baseTools         map[string]pub_models.LLMTool
+}
+
+type SkillLoader interface {
+	LoadSkill(context.Context, string, string, map[string]pub_models.LLMTool) (LoadedSkillRuntime, error)
+}
+
+type LoadedSkillRuntime struct {
+	Name            string
+	SourceClass     string
+	RenderedBody    string
+	UserVisibleBody string
+	Warnings        []string
+	ActiveTools     map[string]pub_models.LLMTool
+	ActivationErr   string
+	RawArgs         string
 }
 
 func (q *Querier[C]) tokenLengthWarning() error {
@@ -218,7 +235,8 @@ func (q *Querier[C]) closeReasoningIfOpen(session *QuerySession) {
 	} else {
 		existing := session.PendingText.String()
 		session.PendingText.Reset()
-		session.PendingText.WriteString(reasoningWrapped + existing)
+		session.PendingText.WriteString(reasoningWrapped)
+		session.PendingText.WriteString(existing)
 	}
 	q.fullMsg = session.PendingTextString()
 	q.reasoningBuf.Reset()

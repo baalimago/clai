@@ -21,9 +21,9 @@ func TestSetupCustomTableActions_CategorySpecific(t *testing.T) {
 		notWant  []action
 	}{
 		{
-			name: "mode files only allow configure from selection",
+			name: "general config only allow configure from selection",
 			category: setupCategory{
-				name:        "mode-files",
+				name:        "general config",
 				itemActions: []action{conf},
 			},
 			want:    nil,
