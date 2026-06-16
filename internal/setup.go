@@ -205,6 +205,7 @@ func setupTextQuerierWithConf(ctx context.Context, mode Mode, confDir string, fl
 	if mode == CHAT {
 		tConf.ChatMode = true
 	}
+	logSkillDiscovery := shouldLogSkillDiscovery(mode, args)
 
 	// At the moment, the configurations are based on the config file. But
 	// the configuration presecende is flags > file > default. So, we need
@@ -259,9 +260,10 @@ func setupTextQuerierWithConf(ctx context.Context, mode Mode, confDir string, fl
 		}
 		cacheDir, _ := utils.GetClaiCacheDir()
 		skillMgr, err := skills.Discover(skills.Options{
-			ConfigDir:  confDir,
-			CacheDir:   cacheDir,
-			WorkingDir: mustGetwd(),
+			ConfigDir:    confDir,
+			CacheDir:     cacheDir,
+			WorkingDir:   mustGetwd(),
+			LogQueryText: logSkillDiscovery,
 			TrustPrompter: func(_ context.Context, prompt skills.TrustPrompt) (bool, error) {
 				ancli.Warnf("%s", formatSkillTrustPrompt(prompt))
 				answer, err := utils.ReadUserInput()
@@ -313,6 +315,18 @@ func applyUseSkillsOverride(tConf *text.Configurations, flagSet, defaultFlags Co
 
 func profileSetsSkills(tConf *text.Configurations) bool {
 	return tConf.ProfileUseSkillsSet
+}
+
+func shouldLogSkillDiscovery(mode Mode, args []string) bool {
+	if mode != QUERY && mode != GLOB {
+		return false
+	}
+	for _, arg := range args[1:] {
+		if strings.TrimSpace(arg) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func applyDirReplyChatID(confDir string, tConf *text.Configurations, q models.Querier) error {

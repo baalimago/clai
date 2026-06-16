@@ -38,6 +38,11 @@ func Manager(ctx context.Context, controlChannel <-chan ControlEvent, statusChan
 
 func handleServer(ctx context.Context, ev ControlEvent, readyChan chan struct{}) error {
 	defer func() {
+		if ev.Cancel != nil {
+			ev.Cancel()
+		}
+	}()
+	defer func() {
 		readyChan <- struct{}{}
 	}()
 	// Initialize

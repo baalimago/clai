@@ -142,6 +142,7 @@ func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configu
 			Server:     mcpServer,
 			InputChan:  inputChan,
 			OutputChan: outputChan,
+			Cancel:     clientContextCancel,
 		}
 	}
 	go func() {

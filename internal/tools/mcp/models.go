@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -12,6 +13,7 @@ type ControlEvent struct {
 	Server     pub_models.McpServer
 	InputChan  chan<- any
 	OutputChan <-chan any
+	Cancel     context.CancelFunc
 }
 
 // Request represents a JSON-RPC request.

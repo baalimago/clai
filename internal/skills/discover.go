@@ -55,7 +55,7 @@ func Discover(opts Options) (*Manager, error) {
 	for _, skill := range resolution.Active {
 		loadedByRoot[skill.SourceRoot]++
 	}
-	if len(resolution.Active) > 0 {
+	if opts.LogQueryText && len(resolution.Active) > 0 {
 		for _, summary := range sources {
 			if loaded := loadedByRoot[summary.Path]; loaded > 0 {
 				log.Infof("skills %s: %s [loaded=%d]", summary.Class, summary.Path, loaded)

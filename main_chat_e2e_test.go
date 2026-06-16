@@ -35,6 +35,28 @@ func runOne(t *testing.T, cwd string, args string) (string, int) {
 	return stdout, status
 }
 
+func Test_chat_dir_does_not_print_skills_logs_without_text_query(t *testing.T) {
+	confDir := setupMainTestConfigDir(t)
+	oldWd, _ := os.Getwd()
+	workDir := t.TempDir()
+	t.Cleanup(func() { _ = os.Chdir(oldWd) })
+	if err := os.Chdir(workDir); err != nil {
+		t.Fatalf("Chdir(%q): %v", workDir, err)
+	}
+	writeSkillFile(t, filepath.Join(confDir, "skills", "review", "SKILL.md"), "---\ndescription: review\n---\nBody")
+	writeSkillsConfigJSON(t, confDir, map[string]any{
+		"enabled": true,
+	})
+
+	stdout, status := runOne(t, workDir, "-r -cm test chat dir")
+	if status != 0 {
+		t.Fatalf("expected zero status, got %d stdout=%q", status, stdout)
+	}
+	if strings.Contains(stdout, "skills") {
+		t.Fatalf("expected no skills logs in chat dir output, got %q", stdout)
+	}
+}
+
 func Test_goldenFile_CHAT_DIRSCOPED(t *testing.T) {
 	type chatDirInfo struct {
 		Scope         string         `json:"scope"`

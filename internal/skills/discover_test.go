@@ -75,9 +75,10 @@ func TestDiscover_LogsPostResolutionRootCounts(t *testing.T) {
 
 	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
 		_, err := Discover(Options{
-			ConfigDir:  cfgDir,
-			CacheDir:   cacheDir,
-			WorkingDir: cwd,
+			ConfigDir:    cfgDir,
+			CacheDir:     cacheDir,
+			WorkingDir:   cwd,
+			LogQueryText: true,
 			TrustPrompter: func(context.Context, TrustPrompt) (bool, error) {
 				return true, nil
 			},
@@ -95,5 +96,32 @@ func TestDiscover_LogsPostResolutionRootCounts(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "skills project: "+projectRoot+" [loaded=1]") {
 		t.Fatalf("expected winning project root log, got %q", stdout)
+	}
+}
+
+func TestDiscover_DoesNotLogWithoutQueryText(t *testing.T) {
+	cfgDir := t.TempDir()
+	cacheDir := t.TempDir()
+	cwd := filepath.Join(t.TempDir(), "repo")
+	mustMkdirAll(t, cwd)
+	writeSkill(t, filepath.Join(cfgDir, "skills", "review", "SKILL.md"), "---\ndescription: review\n---\nBody")
+	mustWriteSkillsConfig(t, cfgDir, Config{Enabled: true})
+
+	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
+		_, err := Discover(Options{
+			ConfigDir:  cfgDir,
+			CacheDir:   cacheDir,
+			WorkingDir: cwd,
+			TrustPrompter: func(context.Context, TrustPrompt) (bool, error) {
+				return true, nil
+			},
+			LogLevel: LogLevelInfo,
+		})
+		if err != nil {
+			t.Fatalf("Discover() error = %v", err)
+		}
+	})
+	if strings.Contains(stdout, "skills") {
+		t.Fatalf("expected no non-debug skills logs without query text, got %q", stdout)
 	}
 }

@@ -35,6 +35,7 @@ type Options struct {
 	ConfigOverride *Config
 	TrustPrompter  func(context.Context, TrustPrompt) (bool, error)
 	LogLevel       LogLevel
+	LogQueryText   bool
 	KnownToolNames []string
 }
 
