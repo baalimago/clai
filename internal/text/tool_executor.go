@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/tools"
@@ -62,7 +63,7 @@ func (e toolExecutor[C]) Execute(ctx context.Context, session *QuerySession, cal
 	}
 	session.Chat.Messages = append(session.Chat.Messages, assistantToolsCall)
 
-	out := tools.Invoke(call)
+	out := tools.Invoke(ctx, call)
 	if q.maxToolCalls != nil {
 		if session.ToolCallsUsed >= *q.maxToolCalls {
 			out = "ERROR: No more tool calls allowed. "
@@ -167,7 +168,7 @@ func (e toolExecutor[C]) executeLoadSkill(ctx context.Context, session *QuerySes
 		userVisibleContent = loaded.RenderedBody
 	}
 	if !q.Raw {
-		userVisibleContent = truncateSkillOutputForUser(userVisibleContent)
+		userVisibleContent = formatSkillOutputForDisplay(loaded)
 	}
 	if len(loaded.Warnings) > 0 {
 		body := strings.TrimSpace(userVisibleContent)
@@ -195,9 +196,17 @@ func (e toolExecutor[C]) executeLoadSkill(ctx context.Context, session *QuerySes
 		if err := utils.AttemptPrettyPrint(q.out, printMsg, "tool", q.Raw); err != nil {
 			return fmt.Errorf("pretty print skill output: %w", err)
 		}
-		summary := fmt.Sprintf("loaded skill %s [%s]", loaded.Name, loaded.SourceClass)
+		summary := fmt.Sprintf("Loaded skill\n  Name: %s\n  Source: %s\nloaded skill %s [%s]", loaded.Name, loaded.SourceClass, loaded.Name, loaded.SourceClass)
+		if desc := strings.TrimSpace(loaded.Description); desc != "" {
+			summary += fmt.Sprintf("\n  Description: %s", desc)
+		}
+		content := strings.TrimSpace(loaded.RenderedBody)
+		length := utf8.RuneCountInString(content)
+		approxTokens := (length + 3) / 4
+		summary += fmt.Sprintf("\n  Length: %d chars\n  Estimated tokens: ~%d", length, approxTokens)
 		if strings.TrimSpace(loaded.RawArgs) != "" {
-			summary += fmt.Sprintf(" args=%q", loaded.RawArgs)
+			summary += fmt.Sprintf("\n  Arguments: %q", loaded.RawArgs)
+			summary += fmt.Sprintf("\nloaded skill %s [%s] args=%q", loaded.Name, loaded.SourceClass, loaded.RawArgs)
 		}
 		ancli.Noticef("%s", summary)
 	}
@@ -205,45 +214,17 @@ func (e toolExecutor[C]) executeLoadSkill(ctx context.Context, session *QuerySes
 	return nil
 }
 
-func truncateSkillOutputForUser(content string) string {
-	content = strings.TrimSpace(strings.ReplaceAll(content, "\r\n", "\n"))
-	if content == "" {
-		return content
-	}
-	lines := strings.Split(content, "\n")
-	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" {
-			continue
-		}
-		if strings.HasPrefix(trimmed, "#") {
-			for _, next := range lines[i+1:] {
-				nextTrimmed := strings.TrimSpace(next)
-				if nextTrimmed == "" {
-					continue
-				}
-				if strings.HasPrefix(strings.ToLower(nextTrimmed), "description:") {
-					return line + "\n" + next
-				}
-				break
-			}
-		}
-		break
-	}
-	kept := make([]string, 0, 2)
-	for _, line := range lines {
-		if strings.TrimSpace(line) == "" {
-			if len(kept) == 1 {
-				kept = append(kept, "")
-			}
-			continue
-		}
-		kept = append(kept, line)
-		if len(kept) == 2 {
-			break
-		}
-	}
-	return strings.TrimSpace(strings.Join(kept, "\n"))
+func formatSkillOutputForDisplay(loaded LoadedSkillRuntime) string {
+	content := strings.TrimSpace(loaded.RenderedBody)
+	length := utf8.RuneCountInString(content)
+	approxTokens := (length + 3) / 4
+	return fmt.Sprintf(
+		"Name: %s\nDescription: %s\nLength: %d chars\nEstimated tokens: ~%d",
+		loaded.Name,
+		strings.TrimSpace(loaded.Description),
+		length,
+		approxTokens,
+	)
 }
 
 func (e toolExecutor[C]) finalizeAssistantTextBeforeToolCall(session *QuerySession, call pub_models.Call) error {

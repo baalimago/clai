@@ -524,6 +524,7 @@ func (s skillRuntimeAdapter) LoadSkill(ctx context.Context, name, args string, b
 		SourceClass:     loaded.Skill.SourceClass,
 		RenderedBody:    loaded.RenderedBody,
 		UserVisibleBody: loaded.RenderedBody,
+		Description:     loaded.Skill.Parsed.Metadata.Description,
 		Warnings:        loaded.Warnings,
 		ActiveTools:     loaded.ActiveTools,
 		ActivationErr:   loaded.ActivationErr,

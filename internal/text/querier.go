@@ -80,6 +80,7 @@ type LoadedSkillRuntime struct {
 	SourceClass     string
 	RenderedBody    string
 	UserVisibleBody string
+	Description     string
 	Warnings        []string
 	ActiveTools     map[string]pub_models.LLMTool
 	ActivationErr   string

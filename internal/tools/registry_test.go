@@ -93,6 +93,11 @@ func TestInitRegistersApplyPatch(t *testing.T) {
 	if _, ok := Registry.Get("apply_patch"); !ok {
 		t.Fatalf("expected apply_patch to be registered")
 	}
+	for _, name := range []string{"cmd", "freetext_command", "async_cmd_run", "async_cmd_status", "async_cmd_logs", "async_cmd_await", "async_cmd_cancel"} {
+		if _, ok := Registry.Get(name); !ok {
+			t.Fatalf("expected %s to be registered", name)
+		}
+	}
 }
 
 func TestRegistry_All(t *testing.T) {
@@ -135,6 +140,9 @@ func TestRegistry_WildcardGet(t *testing.T) {
 		"prog_git":           newMockTool("prog_git"),
 		"prog_go":            newMockTool("prog_go"),
 		"web_fetch":          newMockTool("web_fetch"),
+		"cmd":                newMockTool("cmd"),
+		"async_cmd_run":      newMockTool("async_cmd_run"),
+		"freetext_command":   newMockTool("freetext_command"),
 		"mcp_everyhing_test": newMockTool("mcp_everyhing_test"),
 	}
 
@@ -146,7 +154,7 @@ func TestRegistry_WildcardGet(t *testing.T) {
 		pattern  string
 		expected []string
 	}{
-		{"*", []string{"bash_cat", "bash_find", "prog_git", "prog_go", "web_fetch", "mcp_everyhing_test"}},
+		{"*", []string{"bash_cat", "bash_find", "prog_git", "prog_go", "web_fetch", "cmd", "async_cmd_run", "freetext_command", "mcp_everyhing_test"}},
 		{"bash_*", []string{"bash_cat", "bash_find"}},
 		{"*_git", []string{"prog_git"}},
 		{"*prog*", []string{"prog_git", "prog_go"}},
@@ -154,6 +162,7 @@ func TestRegistry_WildcardGet(t *testing.T) {
 		{"nonexistent", []string{}},
 		{"*nonexistent*", []string{}},
 		{"mcp_everyhing*", []string{"mcp_everyhing_test"}},
+		{"*cmd*", []string{"cmd", "async_cmd_run"}},
 	}
 
 	for _, tc := range testCases {

@@ -335,7 +335,12 @@ func Test_e2e_skills_descriptor_activation_and_persistence(t *testing.T) {
 	for _, want := range []string{
 		"Call: 'load_skill'",
 		"Untrusted skill detected!",
-		"loaded skill review [default]",
+		"Loaded skill",
+		"  Name: review",
+		"  Source: default",
+		"  Description: Review pending changes",
+		"  Length: 4 chars",
+		"  Estimated tokens: ~1",
 		"done after tool for: please tool_load_skill",
 		"Warnings:\n- skill requested unavailable tool \"rg\"\n- skill requested unknown tool \"unknown_tool\"",
 	} {
@@ -348,8 +353,10 @@ func Test_e2e_skills_descriptor_activation_and_persistence(t *testing.T) {
 			t.Fatalf("expected non-raw user-visible skill output to omit %q, got %q", notWant, stdout)
 		}
 	}
-	if !strings.Contains(stdout, "\nBody\n\nWarnings:\n- ") {
-		t.Fatalf("expected concise first-line body preview plus warnings, got %q", stdout)
+	for _, want := range []string{"\nBody\n\nWarnings:\n- "} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("expected %q in output, got %q", want, stdout)
+		}
 	}
 
 	savedConversation := findSavedConversationFile(t, confDir)
