@@ -2,6 +2,8 @@ package tools
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strconv"
@@ -127,6 +129,65 @@ func (r FreetextCmdTool) Call(input pub_models.Input) (string, error) {
 	}
 	if didTimeout {
 		return "", fmt.Errorf("run freetext command %q: %s Output: %s", freetextCmd, timeoutMessage(timeout, killAfter, state), string(output))
+	}
+	return string(output), nil
+}
+
+func (r FreetextCmdTool) CallWithContext(ctx context.Context, input pub_models.Input) (string, error) {
+	freetextCmd, ok := input["command"].(string)
+	if !ok {
+		return "", fmt.Errorf("read command input: command must be a string")
+	}
+	if freetextCmd == "" {
+		return "", fmt.Errorf("validate command input: command must not be empty")
+	}
+
+	timeout, err := parseOptionalCmdTimeout(input["timeout_seconds"])
+	if err != nil {
+		return "", err
+	}
+
+	cmd := exec.Command("sh", "-c", freetextCmd)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	var stdoutBuf, stderrBuf bytes.Buffer
+	cmd.Stdout = &stdoutBuf
+	cmd.Stderr = &stderrBuf
+
+	if startErr := cmd.Start(); startErr != nil {
+		return "", fmt.Errorf("run freetext command %q: %w", freetextCmd, startErr)
+	}
+	pid := cmd.Process.Pid
+
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Wait()
+	}()
+
+	select {
+	case err = <-done:
+	case <-ctx.Done():
+		_ = syscall.Kill(-pid, syscall.SIGKILL)
+		<-done
+		err = ctx.Err()
+	case <-time.After(timeout):
+		_ = syscall.Kill(-pid, syscall.SIGKILL)
+		<-done
+		err = context.DeadlineExceeded
+	}
+
+	output := append(stdoutBuf.Bytes(), stderrBuf.Bytes()...)
+
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return "", fmt.Errorf("run freetext command %q: timed out after %v; use async_cmd_run for longer-running commands", freetextCmd, timeout)
+		}
+		if errors.Is(err, context.Canceled) {
+			return "", fmt.Errorf("run freetext command %q: cancelled by session", freetextCmd)
+		}
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			return "", fmt.Errorf("run freetext command %q: exit code %d, output: %v", freetextCmd, exitErr.ExitCode(), string(output))
+		}
+		return "", fmt.Errorf("run freetext command %q: %w, output: %v", freetextCmd, err, string(output))
 	}
 	return string(output), nil
 }

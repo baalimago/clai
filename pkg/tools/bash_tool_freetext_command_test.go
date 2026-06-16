@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -171,6 +172,40 @@ func TestFreetextCmdTool_Call_TimeoutErrorReportsHardKill(t *testing.T) {
 	errStr := strings.ToLower(err.Error())
 	if !strings.Contains(errStr, "required a hard-kill") {
 		t.Fatalf("expected hard kill detail, got %q", errStr)
+	}
+}
+
+func TestFreetextCmdTool_CallWithContext_CancelsOnContextDone(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := FreetextCmd.CallWithContext(ctx, pub_models.Input{"command": "sleep 10"})
+	if err == nil {
+		t.Fatal("expected error for cancelled context, got nil")
+	}
+	if !strings.Contains(err.Error(), "cancelled by session") {
+		t.Fatalf("expected 'cancelled by session', got: %v", err)
+	}
+}
+
+func TestFreetextCmdTool_CallWithContext_TimesOutProperly(t *testing.T) {
+	ctx := context.Background()
+	_, err := FreetextCmd.CallWithContext(ctx, pub_models.Input{"command": "sleep 10", "timeout_seconds": float64(0.1)})
+	if err == nil {
+		t.Fatal("expected timeout error, got nil")
+	}
+	if !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("expected 'timed out', got: %v", err)
+	}
+}
+
+func TestFreetextCmdTool_CallWithContext_ReturnsOutputOnSuccess(t *testing.T) {
+	ctx := context.Background()
+	out, err := FreetextCmd.CallWithContext(ctx, pub_models.Input{"command": "echo hello", "timeout_seconds": float64(10)})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out, "hello") {
+		t.Fatalf("expected 'hello' in output, got: %q", out)
 	}
 }
 
