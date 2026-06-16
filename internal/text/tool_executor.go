@@ -88,7 +88,7 @@ func (e toolExecutor[C]) Execute(ctx context.Context, session *QuerySession, cal
 	}
 	out = limitToolOutput(out, q.toolOutputRuneLimit)
 	if out == "" {
-		out = "<EMPTY-RESPONSE>"
+		out = fmt.Sprintf("<NO-OUTPUT> tool %s completed successfully but produced no stdout/stderr.", call.Name)
 	}
 	toolsOutput := pub_models.Message{
 		Role:       "tool",
@@ -102,15 +102,7 @@ func (e toolExecutor[C]) Execute(ctx context.Context, session *QuerySession, cal
 			return fmt.Errorf("pretty print raw tool output: %w", err)
 		}
 	} else if !q.debug {
-		toolPrintContent := out
-		if !strings.Contains(toolPrintContent, "mcp_") {
-			toolPrintContent = utils.ShortenedOutput(out, MaxShortenedNewlines)
-		}
-		smallOutputMsg := pub_models.Message{
-			Role:    "tool",
-			Content: toolPrintContent,
-		}
-		err := utils.AttemptPrettyPrint(q.out, smallOutputMsg, "tool", q.Raw)
+		err := utils.AttemptPrettyPrint(q.out, utils.PrepareDisplayMessage(toolsOutput), "tool", q.Raw)
 		if err != nil {
 			return fmt.Errorf("pretty print tool output: %w", err)
 		}
@@ -254,10 +246,10 @@ func (e toolExecutor[C]) finalizeAssistantTextBeforeToolCall(session *QuerySessi
 	q.fullMsg = pending
 	q.line = ""
 	q.lineCount = 0
-	q.postProcessOutput(pub_models.Message{
+	q.postProcessOutput(utils.PrepareDisplayMessage(pub_models.Message{
 		Role:    "assistant",
 		Content: pending,
-	})
+	}))
 	session.Line = q.line
 	session.LineCount = q.lineCount
 	return nil

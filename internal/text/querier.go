@@ -20,7 +20,6 @@ import (
 
 const (
 	TokenCountFactor     = 1.1
-	MaxShortenedNewlines = 5
 	RateLimitRetries     = 3
 	FallbackWaitDuration = 20 * time.Second
 )

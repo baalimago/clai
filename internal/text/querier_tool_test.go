@@ -7,9 +7,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	internaltools "github.com/baalimago/clai/internal/tools"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
@@ -139,6 +142,60 @@ func Test_toolExecutor_NormalizesEmptyToolOutput(t *testing.T) {
 
 	if session.Chat.Messages[0].Content != "<EMPTY-RESPONSE>" {
 		t.Fatalf("expected normalized placeholder, got %q", session.Chat.Messages[0].Content)
+	}
+}
+
+func Test_toolExecutor_Execute_EmptyNonAsyncToolOutputBecomesDescriptiveMessage(t *testing.T) {
+	internaltools.Init()
+	repo := t.TempDir()
+	cmd := exec.Command("git", "init")
+	cmd.Dir = repo
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init failed: %v, %s", err, out)
+	}
+	_ = exec.Command("git", "-C", repo, "config", "user.email", "test@example.com").Run()
+	_ = exec.Command("git", "-C", repo, "config", "user.name", "tester").Run()
+	if err := os.WriteFile(filepath.Join(repo, "a.txt"), []byte("hello"), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	_ = exec.Command("git", "-C", repo, "add", "a.txt").Run()
+	_ = exec.Command("git", "-C", repo, "commit", "-m", "first").Run()
+
+	q := Querier[*MockQuerier]{}
+	session := &QuerySession{}
+	inputs := pub_models.Input{"operation": "status", "dir": repo}
+	call := pub_models.Call{ID: "call-1", Name: "git", Inputs: &inputs}
+
+	err := toolExecutor[*MockQuerier]{querier: &q}.Execute(context.Background(), session, call)
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if got := session.Chat.Messages[len(session.Chat.Messages)-1].Content; got != "<NO-OUTPUT> tool git completed successfully but produced no stdout/stderr." {
+		t.Fatalf("unexpected normalized empty output: %q", got)
+	}
+}
+
+func Test_toolExecutor_Execute_LargeToolOutputStoresTruncatedTranscriptButShortensPrettyPrint(t *testing.T) {
+	internaltools.Init()
+	var printed bytes.Buffer
+	q := Querier[*MockQuerier]{out: &printed, toolOutputRuneLimit: 10000}
+	session := &QuerySession{}
+	dir := t.TempDir()
+	for i := 0; i < 20; i++ {
+		if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("file-%d-with-long-name.txt", i)), []byte{}, 0o644); err != nil {
+			t.Fatalf("write file %d: %v", i, err)
+		}
+	}
+	inputs := pub_models.Input{"directory": dir, "long": true}
+	call := pub_models.Call{ID: "call-1", Name: "ls", Inputs: &inputs}
+
+	err := toolExecutor[*MockQuerier]{querier: &q}.Execute(context.Background(), session, call)
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	printedStr := printed.String()
+	if !strings.Contains(printedStr, "...[and ") {
+		t.Fatalf("expected pretty print to shorten tool output, got %q", printedStr)
 	}
 }
 

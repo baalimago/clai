@@ -3,6 +3,8 @@ package utils
 import (
 	"strings"
 	"testing"
+
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
 func TestUpdateMessageTerminalMetadata(t *testing.T) {
@@ -128,6 +130,63 @@ func Test_ShortenedOutput(t *testing.T) {
 		want := maxShortenedNewlines + 1
 		if got >= want {
 			t.Fatalf("expected: %v, got: %v", want, got)
+		}
+	})
+
+	t.Run("it should prioritize newline shortening over rune shortening", func(t *testing.T) {
+		var given strings.Builder
+		for i := 0; i < 30; i++ {
+			given.WriteString("0123456789\n")
+		}
+		got := ShortenedOutput(given.String(), 5)
+		if !strings.Contains(got, "[and 26 more lines]") {
+			t.Fatalf("expected line-based shortening, got %q", got)
+		}
+	})
+}
+
+func TestPrepareDisplayMessage(t *testing.T) {
+	t.Run("tool messages are shortened", func(t *testing.T) {
+		msg := pub_models.Message{Role: "tool", Content: strings.Repeat("0123456789\n", 30)}
+		got := PrepareDisplayMessage(msg)
+		if !strings.Contains(got.Content, "[and 26 more lines]") {
+			t.Fatalf("expected shortened tool output, got %q", got.Content)
+		}
+	})
+
+	t.Run("assistant messages are shortened using same formatter", func(t *testing.T) {
+		msg := pub_models.Message{Role: "assistant", Content: strings.Repeat("0123456789\n", 30)}
+		got := PrepareDisplayMessage(msg)
+		if !strings.Contains(got.Content, "[and 26 more lines]") {
+			t.Fatalf("expected shortened assistant output, got %q", got.Content)
+		}
+	})
+
+	t.Run("system messages are not shortened (final output)", func(t *testing.T) {
+		msg := pub_models.Message{Role: "system", Content: strings.Repeat("0123456789\n", 30)}
+		got := PrepareDisplayMessage(msg)
+		if got.Content != msg.Content {
+			t.Fatalf("expected system message to remain untouched")
+		}
+	})
+
+	t.Run("assistant reasoning messages are preserved", func(t *testing.T) {
+		msg := pub_models.Message{
+			Role:             "assistant",
+			Content:          "Body\n\nWarnings:\n- a\n- b\n- c\n- d\n- e\n- f",
+			ReasoningContent: "Need tool.",
+		}
+		got := PrepareDisplayMessage(msg)
+		if got.Content != msg.Content {
+			t.Fatalf("expected reasoning-bearing assistant message to remain untouched")
+		}
+	})
+
+	t.Run("mcp tool messages are preserved", func(t *testing.T) {
+		msg := pub_models.Message{Role: "tool", Content: "mcp_result\n" + strings.Repeat("0123456789\n", 30)}
+		got := PrepareDisplayMessage(msg)
+		if got.Content != msg.Content {
+			t.Fatalf("expected mcp tool output to remain untouched")
 		}
 	})
 }

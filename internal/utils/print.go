@@ -13,6 +13,8 @@ import (
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
+const MaxShortenedNewlines = 5
+
 // ClearTermTo a certain amount of rows upwards by printing termWidth amount of empty spaces.
 //
 // If w is nil, os.Stdout is used.
@@ -157,9 +159,6 @@ func ShortenedOutput(out string, maxShortenedNewlines int) string {
 	if len(firstTokens) < maxTokens && len(outNewlineSplit) < maxShortenedNewlines && amRunes < maxRunes {
 		return out
 	}
-	if amRunes > maxRunes {
-		return fmt.Sprintf("%v... and %v more runes", out[:maxRunes], amRunes-maxRunes)
-	}
 	firstTokensStr := strings.Join(firstTokens, " ")
 	amLeft := len(outSplit) - maxTokens
 	abbreviationType := "tokens"
@@ -167,6 +166,22 @@ func ShortenedOutput(out string, maxShortenedNewlines int) string {
 		firstTokensStr = strings.Join(GetFirstTokens(outNewlineSplit, maxShortenedNewlines), "\n")
 		amLeft = len(outNewlineSplit) - maxShortenedNewlines
 		abbreviationType = "lines"
+		return fmt.Sprintf("%v\n...[and %v more %v]", firstTokensStr, amLeft, abbreviationType)
+	}
+	if amRunes > maxRunes {
+		return fmt.Sprintf("%v\n...[and %v more runes]", out[:maxRunes], amRunes-maxRunes)
 	}
 	return fmt.Sprintf("%v\n...[and %v more %v]", firstTokensStr, amLeft, abbreviationType)
+}
+
+func PrepareDisplayMessage(msg pub_models.Message) pub_models.Message {
+	display := msg
+	if display.Role == "tool" && !strings.Contains(display.Content, "mcp_") {
+		display.Content = ShortenedOutput(display.Content, MaxShortenedNewlines)
+		return display
+	}
+	if display.Role == "assistant" && display.ReasoningContent == "" {
+		display.Content = ShortenedOutput(display.Content, MaxShortenedNewlines)
+	}
+	return display
 }
