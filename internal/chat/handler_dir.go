@@ -38,6 +38,35 @@ type chatDirPriceInfo struct {
 	Total  string `json:"total,omitempty"`
 }
 
+func aggregateQueryPriceInfo(queries []pub_models.QueryCost) (chatDirPriceInfo, float64) {
+	if len(queries) == 0 {
+		return chatDirPriceInfo{}, 0
+	}
+
+	var nonCachedTokens, cachedTokens, outputTokens int
+	totalCost := 0.0
+	for _, query := range queries {
+		cached := query.Usage.PromptTokensDetails.CachedTokens
+		nonCachedTokens += max(query.Usage.PromptTokens-cached, 0)
+		cachedTokens += cached
+		outputTokens += query.Usage.CompletionTokens
+		totalCost += query.CostUSD
+	}
+
+	price := chatDirPriceInfo{
+		Total: cost.FormatUSD(totalCost),
+	}
+	totalTokens := nonCachedTokens + cachedTokens + outputTokens
+	if totalTokens <= 0 || totalCost <= 0 {
+		return price, totalCost
+	}
+
+	price.Input = cost.FormatUSD(totalCost * float64(nonCachedTokens) / float64(totalTokens))
+	price.Cached = cost.FormatUSD(totalCost * float64(cachedTokens) / float64(totalTokens))
+	price.Output = cost.FormatUSD(totalCost * float64(outputTokens) / float64(totalTokens))
+	return price, totalCost
+}
+
 func (cdi chatDirInfo) initialPrompt() string {
 	truncPrompt, err := utils.WidthAppropriateStringTrunc(cdi.initialMessage, "", 30)
 	if err != nil {
@@ -191,26 +220,8 @@ func (cq *ChatHandler) infoFromChat(scope, chatID string, c pub_models.Chat) cha
 		cdi.OutputTokens = c.TokenUsage.CompletionTokens
 	}
 	if c.HasCostEstimates() {
-		cdi.CostUSD = c.TotalCostUSD()
-		cdi.Cost = cost.FormatUSD(c.TotalCostUSD())
-		lastQuery := c.Queries[len(c.Queries)-1]
-		cachedTokens := lastQuery.Usage.PromptTokensDetails.CachedTokens
-		nonCachedTokens := max(lastQuery.Usage.PromptTokens-cachedTokens, 0)
-		totalCost := lastQuery.CostUSD
-		inputCost := 0.0
-		cachedCost := 0.0
-		outputCost := 0.0
-		if totalTokens := nonCachedTokens + cachedTokens + lastQuery.Usage.CompletionTokens; totalTokens > 0 && totalCost > 0 {
-			inputCost = totalCost * float64(nonCachedTokens) / float64(totalTokens)
-			cachedCost = totalCost * float64(cachedTokens) / float64(totalTokens)
-			outputCost = totalCost * float64(lastQuery.Usage.CompletionTokens) / float64(totalTokens)
-		}
-		cdi.Price = chatDirPriceInfo{
-			Input:  cost.FormatUSD(inputCost),
-			Cached: cost.FormatUSD(cachedCost),
-			Output: cost.FormatUSD(outputCost),
-			Total:  cost.FormatUSD(totalCost),
-		}
+		cdi.Price, cdi.CostUSD = aggregateQueryPriceInfo(c.Queries)
+		cdi.Cost = cost.FormatUSD(cdi.CostUSD)
 	}
 
 	return cdi

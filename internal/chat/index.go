@@ -50,6 +50,14 @@ func chatIndexPath(convDir string) string {
 	return path.Join(convDir, chatIndexFileName)
 }
 
+func aggregateQueryTotalTokens(queries []pub_models.QueryCost) int {
+	total := 0
+	for _, query := range queries {
+		total += query.Usage.TotalTokens
+	}
+	return total
+}
+
 func chatIndexRowFromChat(chat pub_models.Chat) chatIndexRow {
 	row := chatIndexRow{
 		ID:           chat.ID,
@@ -58,7 +66,10 @@ func chatIndexRowFromChat(chat pub_models.Chat) chatIndexRow {
 		MessageCount: len(chat.Messages),
 		TotalCostUSD: chat.TotalCostUSD(),
 	}
-	if chat.TokenUsage != nil {
+	if len(chat.Queries) > 0 {
+		row.TotalTokens = aggregateQueryTotalTokens(chat.Queries)
+	}
+	if row.TotalTokens == 0 && chat.TokenUsage != nil {
 		row.TotalTokens = chat.TokenUsage.TotalTokens
 	}
 	for i := len(chat.Queries) - 1; i >= 0; i-- {

@@ -158,7 +158,7 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 	ancli.PrintOK(fmt.Sprintf("found '%v' conversations:\n", paginator.Len()))
 
 	tblFmt := selectChatTblFormat
-	headArgs := []any{"Index", "Created", "Messages", "Model", "Cost", "Prompt"}
+	headArgs := []any{"Index", "Created", "Messages", "Model", "Prompt"}
 	includeProfile := false
 	if tw, err := utils.TermWidth(); err == nil && tw > 120 {
 		includeProfile = true
@@ -172,8 +172,8 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 		selectChatTblChoicesFormat,
 		func(i int, item chatIndexRow) (string, error) {
 			tokenStr := chatIndexTokenStr(item)
-			costStr := chatIndexCostStr(item)
 			if includeProfile {
+				costStr := chatIndexCostStr(item)
 				prefix := fmt.Sprintf(
 					tblFmt,
 					fmt.Sprintf("%v", i),
@@ -198,7 +198,6 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 				item.Created.Format("2006-01-02 15:04:05"),
 				item.MessageCount,
 				item.Model,
-				costStr,
 				"",
 			)
 			withSummary, err := utils.WidthAppropriateStringTrunc(item.FirstUserMessage, prefix, 15)

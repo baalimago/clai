@@ -212,3 +212,66 @@ func TestListChats_IncludesModelColumnAndValue(t *testing.T) {
 		t.Fatalf("expected table row to include model value, got: %q", got)
 	}
 }
+
+func TestListChats_NarrowWidthOmitsCostAndShowsPrompt(t *testing.T) {
+	confDir := t.TempDir()
+	if err := utils.CreateConfigDir(confDir); err != nil {
+		t.Fatalf("CreateConfigDir: %v", err)
+	}
+
+	convDir := filepath.Join(confDir, "conversations")
+	chat := pub_models.Chat{
+		ID:       "chat-narrow-width",
+		Created:  time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
+		Messages: []pub_models.Message{{Role: "user", Content: "hello from a fairly descriptive prompt"}},
+		Queries:  []pub_models.QueryCost{{CostUSD: 0.42, Model: "gpt-5.4"}},
+	}
+	if err := Save(convDir, chat); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	oldTTY := os.Getenv("TTY")
+	if err := os.Setenv("TTY", "/dev/null"); err != nil {
+		t.Fatalf("set TTY: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Setenv("TTY", oldTTY); err != nil {
+			t.Fatalf("restore TTY: %v", err)
+		}
+	})
+	oldColumns := os.Getenv("COLUMNS")
+	if err := os.Setenv("COLUMNS", "100"); err != nil {
+		t.Fatalf("set COLUMNS: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Setenv("COLUMNS", oldColumns); err != nil {
+			t.Fatalf("restore COLUMNS: %v", err)
+		}
+	})
+
+	paginator, err := NewChatIndexPaginator(convDir)
+	if err != nil {
+		t.Fatalf("NewChatIndexPaginator: %v", err)
+	}
+
+	var out strings.Builder
+	cq := &ChatHandler{confDir: confDir, convDir: convDir, out: &out}
+	err = cq.listChats(context.Background(), paginator)
+	if err == nil {
+		t.Fatal("listChats() error = nil, want error from empty selection input")
+	}
+	if !strings.Contains(err.Error(), "failed to select chat") {
+		t.Fatalf("listChats() error = %q, want selection context", err.Error())
+	}
+
+	got := out.String()
+	if strings.Contains(got, "%!(EXTRA") {
+		t.Fatalf("expected no fmt extra marker, got: %q", got)
+	}
+	if strings.Contains(got, "Cost") {
+		t.Fatalf("expected narrow table to omit Cost, got: %q", got)
+	}
+	if !strings.Contains(got, "Prompt") {
+		t.Fatalf("expected narrow table to include Prompt, got: %q", got)
+	}
+}
