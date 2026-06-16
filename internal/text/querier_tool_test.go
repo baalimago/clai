@@ -165,9 +165,10 @@ func Test_toolExecutor_ExecuteLoadSkill_TruncatesUserVisibleOutputUnlessRaw(t *t
 		var out bytes.Buffer
 		q := Querier[*MockQuerier]{out: &out, skillLoader: fakeSkillLoader{
 			loaded: LoadedSkillRuntime{
-				Name:         "review",
-				SourceClass:  "default",
-				RenderedBody: "## Title\nDescription: concise\nBody line\nAnother line",
+				Name:            "review",
+				SourceClass:     "default",
+				RenderedBody:    "full skill body\nwith details",
+				Description:     "concise",
 			},
 		}}
 		session := &QuerySession{}
@@ -178,15 +179,17 @@ func Test_toolExecutor_ExecuteLoadSkill_TruncatesUserVisibleOutputUnlessRaw(t *t
 			t.Fatalf("Execute() error = %v", err)
 		}
 		got := out.String()
-		if !strings.Contains(got, "## Title") || !strings.Contains(got, "Description: concise") {
-			t.Fatalf("expected truncated title+description in output, got %q", got)
+		for _, want := range []string{"Name: review", "Description: concise", "Length: 28 chars", "Estimated tokens: ~7"} {
+			if !strings.Contains(got, want) {
+				t.Fatalf("expected output to contain %q, got %q", want, got)
+			}
 		}
-		for _, notWant := range []string{"Body line", "Another line"} {
+		for _, notWant := range []string{"full skill body", "with details"} {
 			if strings.Contains(got, notWant) {
 				t.Fatalf("expected non-raw output to omit %q, got %q", notWant, got)
 			}
 		}
-		if len(session.Chat.Messages) < 2 || !strings.Contains(session.Chat.Messages[1].Content, "Body line") {
+		if len(session.Chat.Messages) < 2 || !strings.Contains(session.Chat.Messages[1].Content, "with details") {
 			t.Fatalf("expected full rendered body retained in transcript, got %#v", session.Chat.Messages)
 		}
 	})
