@@ -71,6 +71,27 @@ func TestSave_UpdatesChatIndex(t *testing.T) {
 	}
 }
 
+func TestChatIndexRowFromChat_AggregatesSessionTokensFromQueries(t *testing.T) {
+	ch := pub_models.Chat{
+		ID:      "agg_tokens",
+		Created: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
+		Messages: []pub_models.Message{
+			{Role: "user", Content: "hello"},
+			{Role: "assistant", Content: "reply"},
+		},
+		TokenUsage: &pub_models.Usage{TotalTokens: 8},
+		Queries: []pub_models.QueryCost{
+			{Usage: pub_models.Usage{TotalTokens: 10}},
+			{Usage: pub_models.Usage{TotalTokens: 20}},
+		},
+	}
+
+	got := chatIndexRowFromChat(ch)
+	if got.TotalTokens != 30 {
+		t.Fatalf("row TotalTokens = %d, want 30", got.TotalTokens)
+	}
+}
+
 func TestChatIndexPaginator_ReturnsSortedPages(t *testing.T) {
 	tmp := t.TempDir()
 	chats := []pub_models.Chat{

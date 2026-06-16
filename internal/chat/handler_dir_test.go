@@ -3,6 +3,7 @@ package chat
 import (
 	"bytes"
 	"encoding/json"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -325,6 +326,103 @@ func TestChatHandler_dirInfo_GlobalScope_Raw_IncludesTokenAndPriceBreakdown(t *t
 	}
 	if got.Price.Output == "" {
 		t.Fatalf("expected output price breakdown, got empty output: %q", out.String())
+	}
+}
+
+func TestChatHandler_dirInfo_Raw_PriceBreakdownAggregatesAllQueries(t *testing.T) {
+	confDir := t.TempDir()
+	if err := utils.CreateConfigDir(confDir); err != nil {
+		t.Fatalf("CreateConfigDir: %v", err)
+	}
+
+	wd := t.TempDir()
+	oldWd, _ := os.Getwd()
+	t.Cleanup(func() { _ = os.Chdir(oldWd) })
+	if err := os.Chdir(wd); err != nil {
+		t.Fatalf("Chdir: %v", err)
+	}
+
+	convDir := filepath.Join(confDir, "conversations")
+	ch := pub_models.Chat{
+		ID:      "globalScopeAggregatedPrices",
+		Created: time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC),
+		Messages: []pub_models.Message{
+			{Role: "user", Content: "hi"},
+			{Role: "assistant", Content: "ok"},
+		},
+		TokenUsage: &pub_models.Usage{
+			PromptTokens:     20,
+			CompletionTokens: 8,
+			TotalTokens:      28,
+			PromptTokensDetails: pub_models.PromptTokensDetails{
+				CachedTokens: 8,
+			},
+		},
+		Queries: []pub_models.QueryCost{
+			{
+				CostUSD: 0.1,
+				Usage: pub_models.Usage{
+					PromptTokens:     12,
+					CompletionTokens: 3,
+					PromptTokensDetails: pub_models.PromptTokensDetails{
+						CachedTokens: 5,
+					},
+				},
+			},
+			{
+				CostUSD: 0.2,
+				Usage: pub_models.Usage{
+					PromptTokens:     8,
+					CompletionTokens: 5,
+					PromptTokensDetails: pub_models.PromptTokensDetails{
+						CachedTokens: 3,
+					},
+				},
+			},
+		},
+	}
+	if err := Save(convDir, ch); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	cqInit := &ChatHandler{confDir: confDir, convDir: convDir}
+	if err := cqInit.SaveDirScope("", ch.ID); err != nil {
+		t.Fatalf("SaveDirScope: %v", err)
+	}
+
+	var out bytes.Buffer
+	cq := &ChatHandler{confDir: confDir, convDir: convDir, raw: true, out: &out}
+
+	if err := cq.dirInfo(); err != nil {
+		t.Fatalf("dirInfo: %v", err)
+	}
+
+	var got struct {
+		CostUSD float64 `json:"cost_usd"`
+		Price   struct {
+			Input  string `json:"input"`
+			Cached string `json:"cached"`
+			Output string `json:"output"`
+			Total  string `json:"total"`
+		} `json:"price"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal: %v, out=%q", err, out.String())
+	}
+
+	if math.Abs(got.CostUSD-0.3) > 1e-9 {
+		t.Fatalf("cost_usd: got %v want %v", got.CostUSD, 0.3)
+	}
+	if got.Price.Total != "$0.3" {
+		t.Fatalf("price.total: got %q want %q", got.Price.Total, "$0.3")
+	}
+	if got.Price.Input != "$0.129" {
+		t.Fatalf("price.input: got %q want %q", got.Price.Input, "$0.129")
+	}
+	if got.Price.Cached != "$0.086" {
+		t.Fatalf("price.cached: got %q want %q", got.Price.Cached, "$0.086")
+	}
+	if got.Price.Output != "$0.086" {
+		t.Fatalf("price.output: got %q want %q", got.Price.Output, "$0.086")
 	}
 }
 
