@@ -21,7 +21,6 @@ import (
 )
 
 const (
-	asyncStatusStarting  = "starting"
 	asyncStatusRunning   = "running"
 	asyncStatusSucceeded = "succeeded"
 	asyncStatusFailed    = "failed"

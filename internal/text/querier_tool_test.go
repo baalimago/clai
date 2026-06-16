@@ -165,10 +165,10 @@ func Test_toolExecutor_ExecuteLoadSkill_TruncatesUserVisibleOutputUnlessRaw(t *t
 		var out bytes.Buffer
 		q := Querier[*MockQuerier]{out: &out, skillLoader: fakeSkillLoader{
 			loaded: LoadedSkillRuntime{
-				Name:            "review",
-				SourceClass:     "default",
-				RenderedBody:    "full skill body\nwith details",
-				Description:     "concise",
+				Name:         "review",
+				SourceClass:  "default",
+				RenderedBody: "full skill body\nwith details",
+				Description:  "concise",
 			},
 		}}
 		session := &QuerySession{}

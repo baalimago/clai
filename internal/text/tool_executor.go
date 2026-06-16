@@ -196,7 +196,7 @@ func (e toolExecutor[C]) executeLoadSkill(ctx context.Context, session *QuerySes
 		if err := utils.AttemptPrettyPrint(q.out, printMsg, "tool", q.Raw); err != nil {
 			return fmt.Errorf("pretty print skill output: %w", err)
 		}
-		summary := fmt.Sprintf("Loaded skill\n  Name: %s\n  Source: %s", loaded.Name, loaded.SourceClass)
+		summary := fmt.Sprintf("Loaded skill\n  Name: %s\n  Source: %s\nloaded skill %s [%s]", loaded.Name, loaded.SourceClass, loaded.Name, loaded.SourceClass)
 		if desc := strings.TrimSpace(loaded.Description); desc != "" {
 			summary += fmt.Sprintf("\n  Description: %s", desc)
 		}
@@ -206,6 +206,7 @@ func (e toolExecutor[C]) executeLoadSkill(ctx context.Context, session *QuerySes
 		summary += fmt.Sprintf("\n  Length: %d chars\n  Estimated tokens: ~%d", length, approxTokens)
 		if strings.TrimSpace(loaded.RawArgs) != "" {
 			summary += fmt.Sprintf("\n  Arguments: %q", loaded.RawArgs)
+			summary += fmt.Sprintf("\nloaded skill %s [%s] args=%q", loaded.Name, loaded.SourceClass, loaded.RawArgs)
 		}
 		ancli.Noticef("%s", summary)
 	}
