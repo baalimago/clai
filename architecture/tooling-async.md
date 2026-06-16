@@ -1,6 +1,8 @@
-# Tooling System Architecture Addendum: Asynchronous Tool Jobs
+# Tooling System Architecture Addendum: Asynchronous Tool Async Commands
 
 This document is an **addendum to `architecture/tooling.md`**. It specifies how clai should support **asynchronous tool execution** for long-running work where success is producing a managed child process that keeps running after the tool call returns.
+
+This v1 design is intended for **POSIX systems only**. Process-group creation and signal-driven cancellation are part of the contract.
 
 Typical cases are:
 
@@ -13,7 +15,7 @@ The goal is simple: let an agent start a subprocess, get back a handle immediate
 
 Non-goals:
 
-- persisting jobs across independent clai invocations
+- persisting async commands across independent clai invocations
 - exposing arbitrary daemon management outside the owning session
 - introducing a distributed scheduler, queue, or workflow engine
 
@@ -23,21 +25,21 @@ This document is intentionally declarative about **v1 only**.
 
 V1 includes:
 
-- a session-bound in-memory job registry
-- subprocess-backed jobs only
-- `run_command_async`
-- `job_status`
-- `job_logs`
-- `job_await` for one or more explicit `job_id` values
-- `job_cancel`
+- a session-bound in-memory async command registry
+- subprocess-backed async commands only
+- `async_cmd_run`
+- `async_cmd_status`
+- `async_cmd_logs`
+- `async_cmd_await` for one or more explicit `async_cmd_id` values
+- `async_cmd_cancel`
 - bounded previews plus on-disk logs
-- cleanup of all session-owned jobs on session end
+- cleanup of all session-owned async commands on session end
 
 Explicitly out of scope for v1:
 
-- filter-based `job_await`
+- filter-based `async_cmd_await`
 - cross-session persistence
-- non-process job kinds
+- non-process async command kinds
 - compatibility wrappers around `clai_run`
 - any MCP lifecycle unification work
 - user-configurable retention or eviction policies
@@ -67,7 +69,7 @@ The current subprocess-oriented tools already demonstrate the essential behavior
 - stdout/stderr capture
 - background wait goroutine
 - later inspection by ID
-- waiting for active jobs with timeout
+- waiting for active async commands with timeout
 
 These tools should be treated as a **reference for implementation**, not as the public shape of the new design.
 
@@ -79,7 +81,7 @@ That code should be treated as an implementation reference for process tracking 
 
 ## Design goal
 
-Introduce a **generic async job runtime** for subprocess-backed tools.
+Introduce a **generic async command runtime** for subprocess-backed tools.
 
 This runtime should be:
 
@@ -96,7 +98,7 @@ The purpose is not to invent a scheduler or orchestration system. It is only to 
 
 The design hypothesis is:
 
-> clai already has enough subprocess lifecycle machinery that a small shared job substrate can unify existing worker-style tools and future long-running commands without changing the synchronous tool-call contract.
+> clai already has enough subprocess lifecycle machinery that a small shared async command substrate can unify existing worker-style tools and future long-running commands without changing the synchronous tool-call contract.
 
 This hypothesis is supported by the current codebase:
 
@@ -105,26 +107,26 @@ This hypothesis is supported by the current codebase:
 
 So the architectural move is justified. The main risk is not feasibility, but allowing the public API to drift away from the actual lifecycle guarantees the runtime can enforce.
 
-## Core abstraction: Job Registry
+## Core abstraction: Async command registry
 
-Add a process/job subsystem conceptually named a **Job Registry**.
+Add a process-tracking subsystem conceptually named an **async command registry**.
 
-It is the async analogue of the tool registry:
+It is the asynchronous analogue of the tool registry:
 
 - the **tool registry** stores callable capabilities
-- the **job registry** stores active and completed subprocess jobs
+- the **async command registry** stores active and completed subprocess async commands
 
-Each async subprocess creates a **job record**.
+Each async subprocess creates an **async command record**.
 
-## Job model
+## Async command model
 
-Each job should have a structured record with fields roughly like these.
+Each async command should have a structured record with fields roughly like these.
 
 ```json
 {
-  "job_id": "job_...",
+  "async_cmd_id": "async_cmd_...",
   "kind": "process",
-  "tool_name": "run_command_async",
+  "tool_name": "async_cmd_run",
   "owner": "session",
   "status": "starting|running|succeeded|failed|cancelled",
   "started_at": "RFC3339 timestamp",
@@ -149,7 +151,7 @@ One field should be clarified up front:
 
 And one field should probably be deferred from the externally visible contract:
 
-- `pid` is operationally useful, but should be treated as best-effort metadata rather than a primary handle. `job_id` must remain the only stable identifier.
+- `pid` is operationally useful, but should be treated as best-effort metadata rather than a primary handle. `async_cmd_id` must remain the only stable identifier.
 
 ## State machine
 
@@ -166,7 +168,7 @@ The important part is that status is typed and monotonic.
 
 Cancellation semantics should also be explicit:
 
-- if cancellation begins while a job is non-terminal, the final status becomes `cancelled`
+- if cancellation begins while an async command is non-terminal, the final status becomes `cancelled`
 - `exit_code` and underlying process error remain recorded as metadata
 - if the process reaches a terminal state before cancellation wins the race, preserve that original terminal state
 
@@ -179,15 +181,17 @@ That distinction matters for `await`, `list`, and cleanup semantics.
 
 ## Ownership and cleanup
 
-The session owns every job.
+The session owns every async command.
 
-When the parent clai process context is cancelled, interrupted, or completed, all jobs started in that session must begin cleanup. Jobs must not outlive the session that created them.
+When the parent clai process context is cancelled, interrupted, or completed, all async commands started in that session must begin cleanup. Async commands must not outlive the session that created them.
 
-Completed jobs remain inspectable until the owning session ends. In v1:
+Completed async commands remain inspectable until the owning session ends. In v1:
 
-- terminal job metadata remains in memory until session teardown
+- terminal async command metadata remains in memory until session teardown
 - associated log files remain available until session teardown
-- `job_id` values are unique within a session and are never reused
+- `async_cmd_id` values are unique within a session and are never reused
+
+Tool output is also retained in the session conversation transcript as normal tool result messages. The on-disk stdout/stderr logs are therefore an operational companion for inspection, not the only place the agent-visible result exists.
 
 This is the right default, but the shutdown contract should be made explicit:
 
@@ -197,7 +201,7 @@ This is the right default, but the shutdown contract should be made explicit:
 
 Without this, AC6 is underspecified and may become flaky across platforms.
 
-Concretely, the substrate should expose one cancellation policy used by both explicit `job_cancel` and session teardown:
+Concretely, the substrate should expose one cancellation policy used by both explicit `async_cmd_cancel` and session teardown:
 
 ```text
 cancel request
@@ -215,7 +219,7 @@ The runtime should be split into two layers.
 
 This is internal Go code responsible for:
 
-- creating job IDs
+- creating async command IDs
 - spawning processes with context
 - capturing stdout/stderr
 - maintaining status transitions
@@ -227,12 +231,12 @@ This layer should not know about LLM vendors.
 
 These are the tools exposed to the model, for example:
 
-- `run_command_async`
-- `job_status`
-- `job_await`
-- `job_cancel`
-- `job_list`
-- `job_logs`
+- `async_cmd_run`
+- `async_cmd_status`
+- `async_cmd_await`
+- `async_cmd_cancel`
+- `async_cmd_list`
+- `async_cmd_logs`
 
 These tools translate JSON input/output into substrate operations.
 
@@ -254,12 +258,12 @@ Extract the shared concepts currently embedded in the subprocess tools:
 
 Move these to an internal package, conceptually something like:
 
-`internal/tools/asyncjobs`
+`internal/tools/async_cmds`
 
 Suggested primitives:
 
 - `Manager`
-- `Job`
+- `asyncCmd` (internal runtime type)
 - `SpawnSpec`
 - `Status`
 
@@ -269,9 +273,9 @@ Add a small, general tool surface for async lifecycle management.
 
 Recommended minimum set:
 
-#### `run_command_async`
+#### `async_cmd_run`
 
-Starts a subprocess and returns a structured job handle.
+Starts a subprocess and returns a structured async command handle.
 
 Inputs should be minimal:
 
@@ -307,7 +311,7 @@ Output should include at least:
 
 ```json
 {
-  "job_id": "job_123",
+  "async_cmd_id": "async_cmd_123",
   "status": "running",
   "pid": 12345,
   "stdout_log_path": "...",
@@ -315,15 +319,15 @@ Output should include at least:
 }
 ```
 
-#### `job_status`
+#### `async_cmd_status`
 
-Returns structured current state for one job.
+Returns structured current state for one async command.
 
 Recommended response shape:
 
 ```json
 {
-  "job_id": "job_123",
+  "async_cmd_id": "async_cmd_123",
   "status": "running",
   "started_at": "2026-06-15T12:00:00Z",
   "finished_at": null,
@@ -333,7 +337,7 @@ Recommended response shape:
 }
 ```
 
-#### `job_logs`
+#### `async_cmd_logs`
 
 Returns either current output, a truncated view, or file paths if the output is too large.
 
@@ -349,37 +353,37 @@ Recommended response shape:
 
 ```json
 {
-  "job_id": "job_123",
+  "async_cmd_id": "async_cmd_123",
   "status": "running",
   "stdout": {
     "preview": "line 1\nline 2\n",
     "truncated": false,
-    "log_path": "/tmp/clai-job-job_123-stdout.log"
+    "log_path": "/tmp/clai-async-cmd-async_cmd_123-stdout.log"
   },
   "stderr": {
     "preview": "",
     "truncated": false,
-    "log_path": "/tmp/clai-job-job_123-stderr.log"
+    "log_path": "/tmp/clai-async-cmd-async_cmd_123-stderr.log"
   }
 }
 ```
 
-#### `job_await`
+#### `async_cmd_await`
 
-Waits for one or more explicitly named jobs to reach terminal state, with timeout.
+Waits for one or more explicitly named async commands to reach terminal state, with timeout.
 
-In v1, this tool accepts explicit `job_id` values only. Filter-based await semantics are intentionally out of scope.
+In v1, this tool accepts explicit `async_cmd_id` values only. Filter-based await semantics are intentionally out of scope.
 
-This tool should only return per-job terminal snapshots plus a deterministic aggregate result such as `completed`, `timed_out`, or `cancelled_by_session`.
+This tool should only return per-async-command terminal snapshots plus a deterministic aggregate result such as `completed`, `timed_out`, or `cancelled_by_session`.
 
 Recommended response shape:
 
 ```json
 {
   "result": "completed",
-  "jobs": [
+  "async_cmds": [
     {
-      "job_id": "job_123",
+      "async_cmd_id": "async_cmd_123",
       "status": "succeeded",
       "exit_code": 0,
       "error": null
@@ -388,11 +392,11 @@ Recommended response shape:
 }
 ```
 
-#### `job_cancel`
+#### `async_cmd_cancel`
 
-Requests that a running job be stopped.
+Requests that a running async command be stopped.
 
-#### `job_list`
+#### `async_cmd_list`
 
 Deferred from v1.
 
@@ -433,7 +437,7 @@ If a caller needs to start a subprocess, the normal expectation should be:
 - supply args
 - optionally set cwd
 - optionally set env
-- get back a job handle
+- get back an async command handle
 
 Anything beyond that should be justified by a demonstrated need, not designed up front.
 
@@ -448,6 +452,12 @@ So the call boundary is synchronous, while the subprocess lifecycle is asynchron
 
 No future/promise abstraction is required.
 
+The immediate output of each async lifecycle tool call is still captured like any other tool result through the normal tool invocation path and appended to the session transcript. This means:
+
+- `async_cmd_run` returns the initial handle payload into the transcript
+- `async_cmd_status`, `async_cmd_logs`, `async_cmd_await`, and `async_cmd_cancel` each append their structured result payloads into the transcript
+- the referenced stdout/stderr log files complement those transcript entries with stream-oriented process output suitable for deeper investigation by both agent and user
+
 ## Suggested output shape
 
 For agentic reliability, async tools should return stable, machine-friendly fields.
@@ -456,23 +466,23 @@ Recommendation:
 
 - preserve human readability
 - ensure stable field names
-- include the `job_id` prominently
+- include the `async_cmd_id` prominently
 
 Example:
 
 ```json
 {
-  "job_id": "job_pf_abc123",
+  "async_cmd_id": "async_cmd_pf_abc123",
   "status": "running",
   "pid": 43122,
-  "stdout_log_path": "/tmp/clai-job-job_pf_abc123-stdout.log",
-  "stderr_log_path": "/tmp/clai-job-job_pf_abc123-stderr.log"
+  "stdout_log_path": "/tmp/clai-async-cmd-async_cmd_pf_abc123-stdout.log",
+  "stderr_log_path": "/tmp/clai-async-cmd-async_cmd_pf_abc123-stderr.log"
 }
 ```
 
 ## Concurrency and thread safety
 
-The job registry must be safe under:
+The async command registry must be safe under:
 
 - concurrent tool calls
 - background process completion goroutines
@@ -494,17 +504,20 @@ Recommended initial position:
 
 This stays aligned with session-only ownership.
 
-This is sound. It also implies a user-visible constraint worth stating plainly: a later, separate `clai` invocation cannot inspect jobs created by a previous invocation.
+This is sound. It also implies two user-visible constraints worth stating plainly:
+
+- a later, separate `clai` invocation cannot inspect async commands created by a previous invocation
+- while the session is alive, both transcripted tool results and referenced log files are valid investigation surfaces
 
 ## Relationship to MCP
 
 MCP lifecycle management is a separate concern.
 
-It may inform implementation style, but this async job design does not require shared managers, shared registries, or shared public APIs with MCP. Any future convergence should be justified separately.
+It may inform implementation style, but this async command design does not require shared managers, shared registries, or shared public APIs with MCP. Any future convergence should be justified separately.
 
 ## Security and safety
 
-Async jobs increase risk because they persist beyond one tool call.
+Async commands increase risk because they persist beyond one tool call.
 
 Minimum safeguards:
 
@@ -525,31 +538,31 @@ These criteria should map directly to e2e tests.
 
 ### AC1: async spawn returns a stable handle
 
-Given a tool call that starts a long-running subprocess, clai returns a stable `job_id` immediately without blocking for completion.
+Given a tool call that starts a long-running subprocess, clai returns a stable `async_cmd_id` immediately without blocking for completion.
 
 ### AC2: status inspection is typed and monotonic
 
-For a running job, `job_status` returns one of the documented states. Once a job reaches a terminal state, later inspections never move it back to a non-terminal state.
+For a running async command, `async_cmd_status` returns one of the documented states. Once an async command reaches a terminal state, later inspections never move it back to a non-terminal state.
 
-### AC3: logs are inspectable while the job is still running
+### AC3: logs are inspectable while the async command is still running
 
-While a job is active, the agent can inspect current stdout/stderr previews and/or referenced log file paths.
+While an async command is active, the agent can inspect current stdout/stderr previews and/or referenced log file paths.
 
-### AC4: await works for one or multiple jobs
+### AC4: await works for one or multiple async commands
 
-An agent can wait for one or multiple explicit job IDs and receives deterministic completion or timeout results.
+An agent can wait for one or multiple explicit async command IDs and receives deterministic completion or timeout results.
 
 ### AC5: cancel stops the subprocess
 
-Cancelling a running job transitions it to a terminal state and the underlying OS process no longer remains active after a bounded shutdown window.
+Cancelling a running async command transitions it to a terminal state and the underlying OS process no longer remains active after a bounded shutdown window.
 
 ### AC6: session cleanup prevents orphaned processes
 
-When the owning session ends or is cancelled, all jobs started in that session are signalled for shutdown and do not remain orphaned.
+When the owning session ends or is cancelled, all async commands started in that session are signalled for shutdown and do not remain orphaned.
 
-### AC7: unknown job IDs fail deterministically
+### AC7: unknown async command IDs fail deterministically
 
-Querying, awaiting, logging, or cancelling an unknown `job_id` returns a structured not-found error and does not mutate registry state.
+Querying, awaiting, logging, or cancelling an unknown `async_cmd_id` returns a structured not-found error and does not mutate registry state.
 
 ## Suggested e2e test mapping
 
@@ -559,9 +572,9 @@ Start a command that sleeps briefly and then prints output.
 
 Assert:
 
-- spawn returns quickly with `job_id`
+- spawn returns quickly with `async_cmd_id`
 - immediate status is `starting` or `running`
-- `job_await` completes successfully
+- `async_cmd_await` completes successfully
 - final logs contain expected output
 
 ### E2E-2: live log inspection
@@ -570,7 +583,7 @@ Start a command that emits lines over time.
 
 Assert:
 
-- mid-flight `job_logs` shows partial output
+- mid-flight `async_cmd_logs` shows partial output
 - final output contains all lines after await
 
 ### E2E-3: cancellation
@@ -579,11 +592,11 @@ Start a long-running command.
 
 Assert:
 
-- `job_cancel` returns success
-- later `job_status` is terminal
+- `async_cmd_cancel` returns success
+- later `async_cmd_status` is terminal
 - process is no longer alive
 
-This test should additionally assert idempotency: cancelling an already-terminal job should not corrupt state.
+This test should additionally assert idempotency: cancelling an already-terminal async command should not corrupt state.
 
 ### E2E-4: session cleanup
 
@@ -598,9 +611,9 @@ Assert:
 
 The lowest-risk order is:
 
-1. extract shared async job manager
-2. add `run_command_async`
-3. add `job_status`, `job_logs`, `job_await`, and `job_cancel`
+1. extract a shared async command manager
+2. add `async_cmd_run`
+3. add `async_cmd_status`, `async_cmd_logs`, `async_cmd_await`, and `async_cmd_cancel`
 4. implement retention, not-found handling, and cancellation semantics as first-class tests
 5. remove `clai_run`-style worker-specific tooling rather than preserving it as part of the target design
 
@@ -609,7 +622,7 @@ The lowest-risk order is:
 The correct mental model is:
 
 - tools are still invoked synchronously
-- some tools create **managed subprocess jobs**
-- those jobs become runtime objects that can be inspected, awaited, and cancelled
+- some tools create **managed subprocess async commands**
+- those async commands become runtime objects that can be inspected, awaited, and cancelled
 
-clai already has the necessary implementation reference in existing subprocess handling. The architectural change is to build one small, session-bound job subsystem for async tool processes, not to grow a larger orchestration layer or entangle it with MCP lifecycle management.
+clai already has the necessary implementation reference in existing subprocess handling. The architectural change is to build one small, session-bound async command subsystem for async tool processes, not to grow a larger orchestration layer or entangle it with MCP lifecycle management.

@@ -25,7 +25,7 @@ func Test_maxToolCalls(t *testing.T) {
 	}
 
 	for i := range amToolCalls {
-		err := q.doToolCallLogic(pub_models.Call{})
+		err := q.doToolCallLogic(context.Background(), pub_models.Call{})
 		if err != nil {
 			t.Fatalf("failed to handleToolCall: %v", err)
 		}
@@ -38,7 +38,7 @@ func Test_maxToolCalls(t *testing.T) {
 	var err error
 	var got string
 	iter := func() {
-		err = q.doToolCallLogic(pub_models.Call{})
+		err = q.doToolCallLogic(context.Background(), pub_models.Call{})
 		if err != nil {
 			t.Fatalf("failed to handleToolCall: %v", err)
 		}
@@ -56,7 +56,7 @@ func Test_maxToolCalls(t *testing.T) {
 	testboil.AssertStringContains(t, got, "ERROR: No more tool calls allowed")
 	testboil.AssertStringContains(t, got, "You will be HARD SHUT DOWN if you persist.")
 	testboil.AssertStringContains(t, got, "LAST WARNING")
-	err = q.doToolCallLogic(pub_models.Call{})
+	err = q.doToolCallLogic(context.Background(), pub_models.Call{})
 	if !errors.Is(err, io.EOF) {
 		t.Fatalf("expected EOF error, got: %T", err)
 	}

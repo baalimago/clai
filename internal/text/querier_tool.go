@@ -56,14 +56,14 @@ func (q *Querier[C]) checkIfGemini3Preview(call pub_models.Call) bool {
 	return hasThoughSignature
 }
 
-func (q *Querier[C]) doToolCallLogic(call pub_models.Call) error {
+func (q *Querier[C]) doToolCallLogic(ctx context.Context, call pub_models.Call) error {
 	session := &QuerySession{
 		Chat:            q.chat,
 		ShouldSaveReply: q.shouldSaveReply,
 		Raw:             q.Raw,
 		ToolCallsUsed:   q.amToolCalls,
 	}
-	err := toolExecutor[C]{querier: q}.Execute(context.Background(), session, call)
+	err := toolExecutor[C]{querier: q}.Execute(ctx, session, call)
 	q.chat = session.Chat
 	q.amToolCalls = session.ToolCallsUsed
 	return err

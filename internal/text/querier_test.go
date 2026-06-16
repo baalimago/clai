@@ -210,7 +210,7 @@ func Test_Querier_eventHandling(t *testing.T) {
 							"testKey": "testVal",
 						},
 					}
-					if err := q.doToolCallLogic(call); err != nil {
+					if err := q.doToolCallLogic(context.Background(), call); err != nil {
 						t.Fatalf("doToolCallLogic returned err: %v", err)
 					}
 					return "Call: 'test', inputs: [ 'testKey': 'testVal' ]"

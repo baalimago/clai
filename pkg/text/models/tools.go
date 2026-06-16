@@ -41,6 +41,7 @@ const (
 	WriteFileTool          ToolName = "write_file"
 	ApplyPatchTool         ToolName = "apply_patch"
 	FreetextCmdTool        ToolName = "freetext_command"
+	CmdTool                ToolName = "cmd"
 	SedTool                ToolName = "sed"
 	RowsBetweenTool        ToolName = "rows_between"
 	LineCountTool          ToolName = "line_count"

@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -10,6 +11,10 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
+
+type contextualTool interface {
+	CallWithContext(context.Context, pub_models.Input) (string, error)
+}
 
 // Registry is the global registry of available LLM tools.
 var Registry = NewRegistry()
@@ -33,6 +38,7 @@ func Init() {
 	Registry.Set(tools.WriteFile.Specification().Name, tools.WriteFile)
 	Registry.Set(tools.ApplyPatch.Specification().Name, tools.ApplyPatch)
 	Registry.Set(tools.FreetextCmd.Specification().Name, tools.FreetextCmd)
+	Registry.Set(tools.Cmd.Specification().Name, tools.Cmd)
 	Registry.Set(tools.Sed.Specification().Name, tools.Sed)
 	Registry.Set(tools.RowsBetween.Specification().Name, tools.RowsBetween)
 	Registry.Set(tools.LineCount.Specification().Name, tools.LineCount)
@@ -45,12 +51,17 @@ func Init() {
 	Registry.Set(tools.ClaiCheck.Specification().Name, tools.ClaiCheck)
 	Registry.Set(tools.ClaiResult.Specification().Name, tools.ClaiResult)
 	Registry.Set(tools.ClaiWaitForWorkers.Specification().Name, tools.ClaiWaitForWorkers)
+	Registry.Set(tools.AsyncCmdRun.Specification().Name, tools.AsyncCmdRun)
+	Registry.Set(tools.AsyncCmdStatus.Specification().Name, tools.AsyncCmdStatus)
+	Registry.Set(tools.AsyncCmdLogs.Specification().Name, tools.AsyncCmdLogs)
+	Registry.Set(tools.AsyncCmdAwait.Specification().Name, tools.AsyncCmdAwait)
+	Registry.Set(tools.AsyncCmdCancel.Specification().Name, tools.AsyncCmdCancel)
 	Registry.Set(tools.LoadSkill.Specification().Name, tools.LoadSkill)
 	Registry.Set(tools.Date.Specification().Name, tools.Date)
 }
 
 // Invoke the call, and gather both error and output in the same string
-func Invoke(call pub_models.Call) string {
+func Invoke(ctx context.Context, call pub_models.Call) string {
 	t, exists := Registry.Get(call.Name)
 	if !exists {
 		return "ERROR: unknown tool call: " + call.Name
@@ -61,6 +72,13 @@ func Invoke(call pub_models.Call) string {
 	inp := pub_models.Input{}
 	if call.Inputs != nil {
 		inp = *call.Inputs
+	}
+	if ct, ok := t.(contextualTool); ok {
+		out, err := ct.CallWithContext(ctx, inp)
+		if err != nil {
+			return fmt.Sprintf("ERROR: failed to run tool: %v, error: %v", call.Name, err)
+		}
+		return out
 	}
 	out, err := t.Call(inp)
 	if err != nil {

@@ -62,7 +62,7 @@ func (e toolExecutor[C]) Execute(ctx context.Context, session *QuerySession, cal
 	}
 	session.Chat.Messages = append(session.Chat.Messages, assistantToolsCall)
 
-	out := tools.Invoke(call)
+	out := tools.Invoke(ctx, call)
 	if q.maxToolCalls != nil {
 		if session.ToolCallsUsed >= *q.maxToolCalls {
 			out = "ERROR: No more tool calls allowed. "
