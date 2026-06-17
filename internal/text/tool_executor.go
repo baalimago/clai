@@ -246,10 +246,18 @@ func (e toolExecutor[C]) finalizeAssistantTextBeforeToolCall(session *QuerySessi
 	q.fullMsg = pending
 	q.line = ""
 	q.lineCount = 0
-	q.postProcessOutput(utils.PrepareDisplayMessage(pub_models.Message{
+	displayMsg := utils.PrepareDisplayMessage(pub_models.Message{
 		Role:    "assistant",
 		Content: pending,
-	}))
+	})
+	if !q.Raw {
+		if q.termWidth > 0 {
+			utils.UpdateMessageTerminalMetadata(displayMsg.Content, &q.line, &q.lineCount, q.termWidth)
+		} else {
+			fmt.Fprintln(q.out)
+		}
+		utils.AttemptPrettyPrint(q.out, displayMsg, q.username, q.Raw)
+	}
 	session.Line = q.line
 	session.LineCount = q.lineCount
 	return nil

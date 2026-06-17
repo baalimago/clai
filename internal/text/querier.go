@@ -132,7 +132,7 @@ func (q *Querier[C]) postProcessOutput(newSysMsg pub_models.Message) {
 	}
 
 	if q.termWidth > 0 {
-		utils.UpdateMessageTerminalMetadata(q.fullMsg, &q.line, &q.lineCount, q.termWidth)
+		utils.UpdateMessageTerminalMetadata(newSysMsg.Content, &q.line, &q.lineCount, q.termWidth)
 		// Write the details of q to the file determined by the environment variable DEBUG_OUTPUT_FILE
 		if debugOutputFile := os.Getenv("DEBUG_OUTPUT_FILE"); debugOutputFile != "" {
 			file, err := os.Create(debugOutputFile)
