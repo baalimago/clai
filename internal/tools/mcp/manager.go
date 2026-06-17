@@ -14,7 +14,7 @@ import (
 // Manager registers MCP servers and their tools.
 func Manager(ctx context.Context, controlChannel <-chan ControlEvent, statusChan chan<- error, allToolsWg *sync.WaitGroup) {
 	var wg sync.WaitGroup
-	readyChan := make(chan struct{})
+	readyChan := make(chan struct{}, 1)
 	defer close(readyChan)
 	for {
 		select {
@@ -37,8 +37,12 @@ func Manager(ctx context.Context, controlChannel <-chan ControlEvent, statusChan
 }
 
 func handleServer(ctx context.Context, ev ControlEvent, readyChan chan struct{}) error {
+	// Only cancel the client context on failure; on success the client
+	// must remain alive to serve tool calls.  Cleanup happens when the
+	// parent Manager context is cancelled.
+	var initOk bool
 	defer func() {
-		if ev.Cancel != nil {
+		if !initOk && ev.Cancel != nil {
 			ev.Cancel()
 		}
 	}()
@@ -115,6 +119,7 @@ func handleServer(ctx context.Context, ev ControlEvent, readyChan chan struct{})
 		}
 		tools.Registry.Set(spec.Name, mt)
 	}
+	initOk = true
 	return nil
 }
 

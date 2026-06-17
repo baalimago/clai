@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -83,5 +84,39 @@ func TestManager(t *testing.T) {
 	wg.Wait()
 	if err := <-statusCh; err != nil {
 		t.Fatalf("manager error: %v", err)
+	}
+}
+
+func TestMcpTool_CallWithContext_CancelBeforeSend(t *testing.T) {
+	// Use a live context for Client and handleServer
+	srvCtx := context.Background()
+	srv := pub_models.McpServer{Command: "go", Args: []string{"run", "./testserver"}}
+	in, out, err := Client(srvCtx, srv)
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+
+	orig := tools.Registry
+	tools.Registry = tools.NewRegistry()
+	defer func() { tools.Registry = orig }()
+
+	ev := ControlEvent{ServerName: "echo", Server: srv, InputChan: in, OutputChan: out}
+	readyChan := make(chan struct{}, 1)
+	_ = handleServer(srvCtx, ev, readyChan)
+
+	tool, ok := tools.Registry.Get("mcp_echo_echo")
+	if !ok {
+		t.Fatal("tool not registered")
+	}
+
+	// Now call with an already-cancelled context — should fail immediately on send
+	cancelledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = tool.(*mcpTool).CallWithContext(cancelledCtx, pub_models.Input{"text": "hello"})
+	if err == nil {
+		t.Fatal("expected error for cancelled context, got nil")
+	}
+	if !strings.Contains(err.Error(), "cancelled") {
+		t.Fatalf("expected cancellation error, got: %v", err)
 	}
 }

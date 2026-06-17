@@ -135,7 +135,7 @@ func Test_ShortenedOutput(t *testing.T) {
 
 	t.Run("it should prioritize newline shortening over rune shortening", func(t *testing.T) {
 		var given strings.Builder
-		for i := 0; i < 30; i++ {
+		for range 30 {
 			given.WriteString("0123456789\n")
 		}
 		got := ShortenedOutput(given.String(), 5)

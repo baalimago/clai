@@ -174,6 +174,7 @@ func (m *asyncCmdManagerImpl) Spawn(parent context.Context, toolName string, spe
 	if err := cmd.Start(); err != nil {
 		_ = stdoutFile.Close()
 		_ = stderrFile.Close()
+		cancel()
 		_ = os.Remove(stdoutPath)
 		_ = os.Remove(stderrPath)
 		return nil, fmt.Errorf("start async command: %w", err)
@@ -213,7 +214,6 @@ func (m *asyncCmdManagerImpl) waitForCmd(cmd *asyncCmd, stdoutFile, stderrFile *
 	err := cmd.cmd.Wait()
 	_ = stdoutFile.Close()
 	_ = stderrFile.Close()
-
 	now := time.Now().UTC()
 	cmd.mu.Lock()
 	defer cmd.mu.Unlock()

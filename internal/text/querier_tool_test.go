@@ -181,7 +181,7 @@ func Test_toolExecutor_Execute_LargeToolOutputStoresTruncatedTranscriptButShorte
 	q := Querier[*MockQuerier]{out: &printed, toolOutputRuneLimit: 10000}
 	session := &QuerySession{}
 	dir := t.TempDir()
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("file-%d-with-long-name.txt", i)), []byte{}, 0o644); err != nil {
 			t.Fatalf("write file %d: %v", i, err)
 		}

@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -94,7 +95,7 @@ data: {"type": "message_stop"}
 		t.Fatalf("failed to stream completions: %v", err)
 	}
 
-	got := ""
+	var got strings.Builder
 OUTER:
 	for {
 		select {
@@ -106,7 +107,7 @@ OUTER:
 			}
 			switch sel := tok.(type) {
 			case string:
-				got += sel
+				got.WriteString(sel)
 			case error:
 				if errors.Is(sel, io.EOF) {
 					break OUTER
@@ -116,8 +117,8 @@ OUTER:
 		}
 	}
 
-	if got != want {
-		t.Fatalf("expected: %v, got: %v", want, got)
+	if got.String() != want {
+		t.Fatalf("expected: %v, got: %v", want, got.String())
 	}
 }
 
@@ -220,7 +221,7 @@ data: {"type": "message_stop"}
 		t.Fatalf("failed to stream completions: %v", err)
 	}
 
-	got := ""
+	var got strings.Builder
 	gotThinking := ""
 	sawSignatureDelta := false
 OUTER:
@@ -234,7 +235,7 @@ OUTER:
 			}
 			switch sel := tok.(type) {
 			case string:
-				got += sel
+				got.WriteString(sel)
 			case models.ReasoningEvent:
 				gotThinking += sel.Content
 			case models.NoopEvent:
@@ -252,8 +253,8 @@ OUTER:
 		}
 	}
 
-	if got != want {
-		t.Fatalf("expected text: %q, got: %q", want, got)
+	if got.String() != want {
+		t.Fatalf("expected text: %q, got: %q", want, got.String())
 	}
 	if gotThinking != wantThinking {
 		t.Fatalf("expected thinking: %q, got: %q", wantThinking, gotThinking)
