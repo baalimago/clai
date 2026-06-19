@@ -29,6 +29,16 @@ func vendorType(fromModel string) (string, string, string, error) {
 		modelVersion := after
 		return "openrouter", "chat", modelVersion, nil
 	}
+	if strings.HasPrefix(fromModel, "berget:") {
+		vendor := "berget"
+		modelVersion := fromModel[7:]
+		parts := strings.Split(modelVersion, "/")
+		if len(parts) > 1 {
+			vendor = parts[0]
+			modelVersion = parts[1]
+		}
+		return "berget", vendor, modelVersion, nil
+	}
 	if strings.Contains(fromModel, "gpt") {
 		return "openai", "gpt", fromModel, nil
 	}
