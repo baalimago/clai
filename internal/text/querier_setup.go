@@ -186,7 +186,8 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 		debug.IndentedJsonFmt(querier),
 		debug.IndentedJsonFmt(modelConf))
 	querier.chat = userConf.InitialChat
-	traceChatf("new querier chat attached chat_id=%q messages=%d", querier.chat.ID, len(querier.chat.Messages))
+	querier.systemPrompt = userConf.SystemPrompt
+	traceChatf("new querier chat attached chat_id=%q messages=%d system_prompt_len=%d", querier.chat.ID, len(querier.chat.Messages), len(querier.systemPrompt))
 	// Ensure profile selection is persisted in globalScope/saved conversations.
 	querier.chat.Profile = userConf.UseProfile
 	querier.Raw = userConf.Raw
