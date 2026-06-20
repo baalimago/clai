@@ -24,7 +24,7 @@ type OpenRouterModelCatalog struct {
 func NewModelCatalog(apiKey string) (OpenRouterModelCatalog, error) {
 	debug := misc.Truthy(os.Getenv("DEBUG")) || misc.Truthy(os.Getenv("DEBUG_OPENROUTER_MODEL_CATALOG"))
 	if debug {
-		ancli.Noticef("setting up openrouter model catalog with api key: %v...(redacted)", apiKey[:5])
+		ancli.Noticef("setting up openrouter model catalog with api key: %v...(redacted)\n", apiKey[:5])
 	}
 	return OpenRouterModelCatalog{
 		debug: debug,

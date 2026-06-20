@@ -165,6 +165,7 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 		return Querier[C]{}, fmt.Errorf("failed to setup model: %w", err)
 	}
 
+	traceChatf("post setup")
 	termWidth, err := utils.TermWidth()
 	if err == nil {
 		querier.termWidth = termWidth
@@ -179,14 +180,11 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	} else {
 		querier.username = "user"
 	}
+	traceChatf("user is: %v", currentUser.Name)
 	querier.Model = modelConf
-	if querier.debug {
-		ancli.Okf("querier: %v,\n===\nmodels: %v\n",
-			debug.IndentedJsonFmt(querier),
-			debug.IndentedJsonFmt(modelConf))
-
-		ancli.Okf("Out is: %v", userConf.Out)
-	}
+	traceChatf("querier: %v,\n===\nmodels: %v\n",
+		debug.IndentedJsonFmt(querier),
+		debug.IndentedJsonFmt(modelConf))
 	querier.chat = userConf.InitialChat
 	traceChatf("new querier chat attached chat_id=%q messages=%d", querier.chat.ID, len(querier.chat.Messages))
 	// Ensure profile selection is persisted in globalScope/saved conversations.
