@@ -222,7 +222,7 @@ data: {"type": "message_stop"}
 	}
 
 	var got strings.Builder
-	gotThinking := ""
+	var gotThinking strings.Builder
 	sawSignatureDelta := false
 OUTER:
 	for {
@@ -237,11 +237,11 @@ OUTER:
 			case string:
 				got.WriteString(sel)
 			case models.ReasoningEvent:
-				gotThinking += sel.Content
+				gotThinking.WriteString(sel.Content)
 			case models.NoopEvent:
 				// signature_delta produces a NoopEvent; detect it indirectly
 				// by checking that we have thinking content already accumulated
-				if gotThinking != "" {
+				if gotThinking.String() != "" {
 					sawSignatureDelta = true
 				}
 			case error:
@@ -256,8 +256,8 @@ OUTER:
 	if got.String() != want {
 		t.Fatalf("expected text: %q, got: %q", want, got.String())
 	}
-	if gotThinking != wantThinking {
-		t.Fatalf("expected thinking: %q, got: %q", wantThinking, gotThinking)
+	if gotThinking.String() != wantThinking {
+		t.Fatalf("expected thinking: %q, got: %q", wantThinking, gotThinking.String())
 	}
 	if !sawSignatureDelta {
 		t.Fatal("expected to see a NoopEvent from signature_delta after thinking content")
