@@ -57,6 +57,7 @@ See [examples](./EXAMPLES.md) for additional info.
 
 | Vendor      | Environment Variable | Models                                                                                                                                                             |
 | ----------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Berget AI   | `BERGET_API_KEY`     | [Text models](https://berget.ai/models), use prefix `berget:`                                                                                                      |
 | OpenRouter  | `OPENROUTER_API_KEY` | [Text models](https://openrouter.ai/models), use prefix `or:`                                                                                                       |
 | Mistral     | `MISTRAL_API_KEY`    | [Text models](https://docs.mistral.ai/getting-started/models/)                                                                                                     |
 | OpenAI      | `OPENAI_API_KEY`     | [Text models](https://platform.openai.com/docs/models), [photo models](https://platform.openai.com/docs/models/dall-e)                                             |

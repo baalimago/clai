@@ -47,12 +47,14 @@ func TestNew(t *testing.T) {
 		prompt := "test-prompt"
 		tools := []models.LLMTool{&mockTool{}}
 		mcpServers := []models.McpServer{{Name: "test-mcp"}}
+		toolGlobs := []string{"mcp_test_*", "cat"}
 
 		a := New(
 			WithModel(model),
 			WithPrompt(prompt),
 			WithTools(tools),
 			WithMcpServers(mcpServers),
+			WithToolGlobs(toolGlobs...),
 		)
 
 		if a.model != model {
@@ -66,6 +68,9 @@ func TestNew(t *testing.T) {
 		}
 		if !reflect.DeepEqual(a.mcpServers, mcpServers) {
 			t.Errorf("expected mcpServers %v, got %v", mcpServers, a.mcpServers)
+		}
+		if !reflect.DeepEqual(a.toolGlobs, toolGlobs) {
+			t.Errorf("expected toolGlobs %v, got %v", toolGlobs, a.toolGlobs)
 		}
 	})
 
@@ -153,11 +158,13 @@ func TestAgent_Setup(t *testing.T) {
 func TestAgent_asInternalConfig(t *testing.T) {
 	tools := []models.LLMTool{&mockTool{}}
 	mcpServers := []models.McpServer{{Name: "test-mcp"}}
+	toolGlobs := []string{"mcp_*", "cat"}
 	a := New(
 		WithModel("test-model"),
 		WithPrompt("test-prompt"),
 		WithTools(tools),
 		WithMcpServers(mcpServers),
+		WithToolGlobs(toolGlobs...),
 	)
 	a.cfgDir = "/tmp/test"
 
@@ -177,6 +184,9 @@ func TestAgent_asInternalConfig(t *testing.T) {
 	}
 	if !reflect.DeepEqual(conf.McpServers, mcpServers) {
 		t.Errorf("expected mcpServers %v, got %v", mcpServers, conf.McpServers)
+	}
+	if !reflect.DeepEqual(conf.RequestedToolGlobs, toolGlobs) {
+		t.Errorf("expected RequestedToolGlobs %v, got %v", toolGlobs, conf.RequestedToolGlobs)
 	}
 	if !conf.UseTools {
 		t.Error("expected UseTools to be true")

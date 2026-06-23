@@ -13,6 +13,7 @@ import (
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/internal/vendors"
 	"github.com/baalimago/clai/internal/vendors/anthropic"
+	"github.com/baalimago/clai/internal/vendors/berget"
 	"github.com/baalimago/clai/internal/vendors/deepseek"
 	"github.com/baalimago/clai/internal/vendors/gemini"
 	"github.com/baalimago/clai/internal/vendors/huggingface"
@@ -162,6 +163,15 @@ func selectTextQuerier(ctx context.Context, conf text.Configurations) (models.Qu
 	} else if strings.HasPrefix(conf.Model, "novita:") {
 		found = true
 		defaultCpy := novita.Default
+		defaultCpy.Model = conf.Model[7:]
+		qTmp, err := text.NewQuerier(ctx, conf, &defaultCpy)
+		if err != nil {
+			return nil, found, fmt.Errorf("failed to create text querier: %w", err)
+		}
+		q = &qTmp
+	} else if strings.HasPrefix(conf.Model, "berget:") {
+		found = true
+		defaultCpy := berget.Default
 		defaultCpy.Model = conf.Model[7:]
 		qTmp, err := text.NewQuerier(ctx, conf, &defaultCpy)
 		if err != nil {

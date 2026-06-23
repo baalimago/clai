@@ -21,6 +21,7 @@ type Agent struct {
 	tools          []models.LLMTool
 	mcpServers     []models.McpServer
 	cfgDir         string
+	toolGlobs      []string
 	maxToolCalls   *int
 	responseFormat *models.ResponseFormat
 
@@ -101,6 +102,14 @@ func WithOutputTo(out io.Writer) Option {
 	}
 }
 
+// WithToolGlobs sets freetext glob patterns to filter which tools are registered.
+// Supports wildcards like "mcp_*", "mcp_playwright_*", or exact names like "cat".
+func WithToolGlobs(globs ...string) Option {
+	return func(a *Agent) {
+		a.toolGlobs = globs
+	}
+}
+
 // WithResponseFormat configures structured output for the agent.
 // Supports "json_object" and "json_schema" types.
 func WithResponseFormat(rf models.ResponseFormat) Option {
@@ -111,15 +120,16 @@ func WithResponseFormat(rf models.ResponseFormat) Option {
 
 func (a *Agent) asInternalConfig() text.Configurations {
 	return text.Configurations{
-		Model:           a.model,
-		SystemPrompt:    a.prompt,
-		ConfigDir:       a.cfgDir,
-		UseTools:        true,
-		SaveReplyAsConv: true,
-		McpServers:      a.mcpServers,
-		Tools:           a.tools,
-		MaxToolCalls:    a.maxToolCalls,
-		ResponseFormat:  a.responseFormat,
+		Model:              a.model,
+		SystemPrompt:       a.prompt,
+		ConfigDir:          a.cfgDir,
+		UseTools:           true,
+		SaveReplyAsConv:    true,
+		McpServers:         a.mcpServers,
+		Tools:              a.tools,
+		MaxToolCalls:       a.maxToolCalls,
+		RequestedToolGlobs: a.toolGlobs,
+		ResponseFormat:     a.responseFormat,
 	}
 }
 

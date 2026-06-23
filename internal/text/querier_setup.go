@@ -29,6 +29,16 @@ func vendorType(fromModel string) (string, string, string, error) {
 		modelVersion := after
 		return "openrouter", "chat", modelVersion, nil
 	}
+	if strings.HasPrefix(fromModel, "berget:") {
+		vendor := "berget"
+		modelVersion := fromModel[7:]
+		parts := strings.Split(modelVersion, "/")
+		if len(parts) > 1 {
+			vendor = parts[0]
+			modelVersion = parts[1]
+		}
+		return "berget", vendor, modelVersion, nil
+	}
 	if strings.Contains(fromModel, "gpt") {
 		return "openai", "gpt", fromModel, nil
 	}
@@ -155,6 +165,7 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 		return Querier[C]{}, fmt.Errorf("failed to setup model: %w", err)
 	}
 
+	traceChatf("post setup")
 	termWidth, err := utils.TermWidth()
 	if err == nil {
 		querier.termWidth = termWidth
@@ -169,16 +180,14 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	} else {
 		querier.username = "user"
 	}
+	traceChatf("user is: %v", currentUser.Name)
 	querier.Model = modelConf
-	if querier.debug {
-		ancli.Okf("querier: %v,\n===\nmodels: %v\n",
-			debug.IndentedJsonFmt(querier),
-			debug.IndentedJsonFmt(modelConf))
-
-		ancli.Okf("Out is: %v", userConf.Out)
-	}
+	traceChatf("querier: %v,\n===\nmodels: %v\n",
+		debug.IndentedJsonFmt(querier),
+		debug.IndentedJsonFmt(modelConf))
 	querier.chat = userConf.InitialChat
-	traceChatf("new querier chat attached chat_id=%q messages=%d", querier.chat.ID, len(querier.chat.Messages))
+	querier.systemPrompt = userConf.SystemPrompt
+	traceChatf("new querier chat attached chat_id=%q messages=%d system_prompt_len=%d", querier.chat.ID, len(querier.chat.Messages), len(querier.systemPrompt))
 	// Ensure profile selection is persisted in globalScope/saved conversations.
 	querier.chat.Profile = userConf.UseProfile
 	querier.Raw = userConf.Raw

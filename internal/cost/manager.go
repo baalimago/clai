@@ -58,7 +58,7 @@ type Session interface {
 func NewManager(fetcher ModelCatalogFetcher, model, configPath string) Manager {
 	debug := misc.Truthy(os.Getenv("DEBUG")) || misc.Truthy(os.Getenv("DEBUG_COST_MANAGER"))
 	if debug {
-		ancli.Noticef("setting up cost manager")
+		ancli.Noticef("setting up cost manager\n")
 	}
 
 	return Manager{
@@ -192,7 +192,7 @@ func (m *Manager) Start(ctx context.Context) (<-chan struct{}, <-chan error) {
 		defer close(readyCh)
 
 		if m.debug {
-			ancli.Noticef("resolve routine started")
+			ancli.Noticef("resolve routine started\n")
 		}
 		price, err := m.resolveModelPrice(ctx)
 		if err != nil {
@@ -204,7 +204,7 @@ func (m *Manager) Start(ctx context.Context) (<-chan struct{}, <-chan error) {
 		}
 		m.price = &price
 		if m.debug {
-			ancli.Noticef("resolve routine done, setting price to: %v", price)
+			ancli.Noticef("resolve routine done, setting price to: %v\n", price)
 		}
 	}()
 	return readyCh, errCh

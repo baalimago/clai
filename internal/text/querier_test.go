@@ -24,6 +24,110 @@ type stubTool struct {
 	output string
 }
 
+func Test_Querier_TextQuery_SystemPrompt(t *testing.T) {
+	t.Run("injects system prompt when chat has no system message", func(t *testing.T) {
+		wantPrompt := "You are a test assistant"
+		var capturedChat pub_models.Chat
+		q := &Querier[*MockQuerier]{
+			systemPrompt: wantPrompt,
+			out:          &strings.Builder{},
+			Model: &MockQuerier{
+				streamFn: func(ctx context.Context, chat pub_models.Chat) (chan models.CompletionEvent, error) {
+					capturedChat = chat
+					ch := make(chan models.CompletionEvent)
+					close(ch)
+					return ch, nil
+				},
+			},
+		}
+		chat := pub_models.Chat{
+			Messages: []pub_models.Message{
+				{Role: "user", Content: "hello"},
+			},
+		}
+		_, err := q.TextQuery(context.Background(), chat)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(capturedChat.Messages) != 2 {
+			t.Fatalf("expected 2 messages, got %d", len(capturedChat.Messages))
+		}
+		if capturedChat.Messages[0].Role != "system" {
+			t.Fatalf("expected first message role system, got %q", capturedChat.Messages[0].Role)
+		}
+		if capturedChat.Messages[0].Content != wantPrompt {
+			t.Fatalf("expected system prompt %q, got %q", wantPrompt, capturedChat.Messages[0].Content)
+		}
+	})
+
+	t.Run("does not inject when chat already has system message", func(t *testing.T) {
+		existingSystem := "existing system message"
+		var capturedChat pub_models.Chat
+		q := &Querier[*MockQuerier]{
+			systemPrompt: "should not appear",
+			out:          &strings.Builder{},
+			Model: &MockQuerier{
+				streamFn: func(ctx context.Context, chat pub_models.Chat) (chan models.CompletionEvent, error) {
+					capturedChat = chat
+					ch := make(chan models.CompletionEvent)
+					close(ch)
+					return ch, nil
+				},
+			},
+		}
+		chat := pub_models.Chat{
+			Messages: []pub_models.Message{
+				{Role: "system", Content: existingSystem},
+				{Role: "user", Content: "hello"},
+			},
+		}
+		_, err := q.TextQuery(context.Background(), chat)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(capturedChat.Messages) != 2 {
+			t.Fatalf("expected 2 messages, got %d", len(capturedChat.Messages))
+		}
+		if capturedChat.Messages[0].Role != "system" {
+			t.Fatalf("expected first message role system, got %q", capturedChat.Messages[0].Role)
+		}
+		if capturedChat.Messages[0].Content != existingSystem {
+			t.Fatalf("expected original system message %q, got %q", existingSystem, capturedChat.Messages[0].Content)
+		}
+	})
+
+	t.Run("does not inject when systemPrompt is empty", func(t *testing.T) {
+		var capturedChat pub_models.Chat
+		q := &Querier[*MockQuerier]{
+			systemPrompt: "",
+			out:          &strings.Builder{},
+			Model: &MockQuerier{
+				streamFn: func(ctx context.Context, chat pub_models.Chat) (chan models.CompletionEvent, error) {
+					capturedChat = chat
+					ch := make(chan models.CompletionEvent)
+					close(ch)
+					return ch, nil
+				},
+			},
+		}
+		chat := pub_models.Chat{
+			Messages: []pub_models.Message{
+				{Role: "user", Content: "hello"},
+			},
+		}
+		_, err := q.TextQuery(context.Background(), chat)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(capturedChat.Messages) != 1 {
+			t.Fatalf("expected 1 message, got %d", len(capturedChat.Messages))
+		}
+		if capturedChat.Messages[0].Role != "user" {
+			t.Fatalf("expected user message, got %q", capturedChat.Messages[0].Role)
+		}
+	})
+}
+
 func (s stubTool) Call(pub_models.Input) (string, error) {
 	return s.output, nil
 }

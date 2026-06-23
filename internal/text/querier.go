@@ -43,6 +43,10 @@ type Querier[C models.StreamCompleter] struct {
 	toolOutputRuneLimit     int
 	rateLimitLastAmTokens   int
 
+	// systemPrompt is the configured system prompt, injected into every
+	// TextQuery call that does not already carry a system message.
+	systemPrompt string
+
 	// reasoningBuf accumulates thinking/chain-of-thought tokens streamed
 	// before the final answer.  It is wrapped in [thinking]…[/thinking]
 	// when displayed.
@@ -289,6 +293,26 @@ func (q *Querier[C]) Query(ctx context.Context) error {
 
 func (q *Querier[C]) TextQuery(ctx context.Context, chat pub_models.Chat) (pub_models.Chat, error) {
 	q.resetTransientState()
+	// Inject the configured system prompt when the incoming chat
+	// does not already carry one.  This ensures system prompts
+	// configured via Configurations.SystemPrompt (e.g. through
+	// agent.WithPrompt) reach the model even when the caller
+	// bypasses SetupInitialChat (the CLI path).
+	if q.systemPrompt != "" {
+		hasSystem := false
+		for _, m := range chat.Messages {
+			if m.Role == "system" {
+				hasSystem = true
+				break
+			}
+		}
+		if !hasSystem {
+			chat.Messages = append(
+				[]pub_models.Message{{Role: "system", Content: q.systemPrompt}},
+				chat.Messages...,
+			)
+		}
+	}
 	q.chat = chat
 	// Query will update the chat with the latest system message
 	err := q.Query(ctx)
