@@ -49,9 +49,17 @@ func (e toolExecutor[C]) Execute(ctx context.Context, session *QuerySession, cal
 		return e.executeLoadSkill(ctx, session, call)
 	}
 
+	// Build display message (has PrettyPrint in Content for user-facing output).
+	// The model-safe message for chat history omits Content so the model does not
+	// learn the "Call: ..." text format, which causes hallucinations.
 	assistantToolsCall := pub_models.Message{
 		Role:             "assistant",
 		Content:          call.PrettyPrint(),
+		ToolCalls:        []pub_models.Call{call},
+		ReasoningContent: call.ReasoningContent,
+	}
+	modelSafeMsg := pub_models.Message{
+		Role:             "assistant",
 		ToolCalls:        []pub_models.Call{call},
 		ReasoningContent: call.ReasoningContent,
 	}
@@ -61,7 +69,7 @@ func (e toolExecutor[C]) Execute(ctx context.Context, session *QuerySession, cal
 			return fmt.Errorf("pretty print assistant tool call: %w", err)
 		}
 	}
-	session.Chat.Messages = append(session.Chat.Messages, assistantToolsCall)
+	session.Chat.Messages = append(session.Chat.Messages, modelSafeMsg)
 
 	out := tools.Invoke(ctx, call)
 	if q.maxToolCalls != nil {
@@ -130,9 +138,16 @@ func (e toolExecutor[C]) executeLoadSkill(ctx context.Context, session *QuerySes
 		return err
 	}
 	if loaded.ActivationErr != "" {
+		// Build display message (has PrettyPrint in Content for user-facing output).
+		// The model-safe message for chat history omits Content so the model does not
+		// learn the "Call: ..." text format, which causes hallucinations.
 		assistantToolsCall := pub_models.Message{
 			Role:      "assistant",
 			Content:   call.PrettyPrint(),
+			ToolCalls: []pub_models.Call{call},
+		}
+		modelSafeMsg := pub_models.Message{
+			Role:      "assistant",
 			ToolCalls: []pub_models.Call{call},
 		}
 		if !q.debug {
@@ -140,7 +155,7 @@ func (e toolExecutor[C]) executeLoadSkill(ctx context.Context, session *QuerySes
 				return fmt.Errorf("pretty print assistant tool call: %w", err)
 			}
 		}
-		session.Chat.Messages = append(session.Chat.Messages, assistantToolsCall)
+		session.Chat.Messages = append(session.Chat.Messages, modelSafeMsg)
 		outMsg := pub_models.Message{Role: "tool", Content: "ERROR: " + loaded.ActivationErr, ToolCallID: call.ID}
 		session.Chat.Messages = append(session.Chat.Messages, outMsg)
 		if !q.debug {
@@ -169,9 +184,16 @@ func (e toolExecutor[C]) executeLoadSkill(ctx context.Context, session *QuerySes
 			userVisibleContent = body + "\n\n" + userVisibleContent
 		}
 	}
+	// Build display message (has PrettyPrint in Content for user-facing output).
+	// The model-safe message for chat history omits Content so the model does not
+	// learn the "Call: ..." text format, which causes hallucinations.
 	assistantToolsCall := pub_models.Message{
 		Role:      "assistant",
 		Content:   call.PrettyPrint(),
+		ToolCalls: []pub_models.Call{call},
+	}
+	modelSafeMsg := pub_models.Message{
+		Role:      "assistant",
 		ToolCalls: []pub_models.Call{call},
 	}
 	if !q.debug {
@@ -179,7 +201,7 @@ func (e toolExecutor[C]) executeLoadSkill(ctx context.Context, session *QuerySes
 			return fmt.Errorf("pretty print assistant tool call: %w", err)
 		}
 	}
-	session.Chat.Messages = append(session.Chat.Messages, assistantToolsCall)
+	session.Chat.Messages = append(session.Chat.Messages, modelSafeMsg)
 	outMsg := pub_models.Message{Role: "tool", Content: content, ToolCallID: call.ID}
 	session.Chat.Messages = append(session.Chat.Messages, outMsg)
 	if !q.debug {
