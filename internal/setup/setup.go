@@ -164,6 +164,7 @@ func InitCmd() error {
 					return nil, fmt.Errorf("failed to ensure skills config: %w", err)
 				}
 				cfgs = append(cfgs, config{name: "skills.json", filePath: filepath.Join(dir, "skills.json")})
+				cfgs = append(cfgs, config{name: "theme.json", filePath: filepath.Join(dir, "theme.json")})
 				return cfgs, nil
 			},
 			itemSelectActions: nil,
@@ -244,7 +245,7 @@ func selectCategory(categories []setupCategory) (setupCategory, error) {
 		func(i int, category setupCategory) (string, error) {
 			return fmt.Sprintf("%d. %s", i, category.name), nil
 		},
-		10,
+		utils.ThemeTableItems(),
 		true,
 		[]utils.TableAction{},
 		os.Stdout,
@@ -358,7 +359,7 @@ func selectConfigItem(category setupCategory, cfgs []config) error {
 		func(i int, cfg config) (string, error) {
 			return fmt.Sprintf("%d. %s", i, cfg.name), nil
 		},
-		10,
+		utils.ThemeTableItems(),
 		true,
 		customTableActions,
 		os.Stdout,

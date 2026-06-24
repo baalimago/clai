@@ -900,6 +900,451 @@ func TestSlicePaginator(t *testing.T) {
 	}
 }
 
+func Test_table_applyFilter(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+
+	t.Run("empty string clears filter and restores original paginator", func(t *testing.T) {
+		orig := testPaginator{total: 3, items: []int{10, 20, 30}}
+		tab := table[int]{
+			paginator:         orig,
+			originalPaginator: orig,
+			filterString:      "",
+			filteredIndices:   []int{0, 2},
+			pageSize:          10,
+			rowFormater:       func(i, item int) (string, error) { return fmt.Sprintf("%d=%d", i, item), nil },
+		}
+
+		if err := tab.applyFilter(); err != nil {
+			t.Fatalf("applyFilter() unexpected error: %v", err)
+		}
+		if tab.filteredIndices != nil {
+			t.Fatal("filteredIndices not nil after clearing")
+		}
+		if tab.paginator.totalAm() != 3 {
+			t.Fatalf("total after clear = %d, want 3", tab.paginator.totalAm())
+		}
+	})
+
+	t.Run("filters items by case-insensitive substring match on rendered text", func(t *testing.T) {
+		items := []string{"Alpha", "Bravo", "Charlie", "alpha-beta"}
+		paginator := SlicePaginator(items)
+		tab := table[string]{
+			paginator:         paginator,
+			originalPaginator: paginator,
+			pageSize:          10,
+			filterString:      "alpha",
+			rowFormater:       func(i int, item string) (string, error) { return item, nil },
+		}
+
+		if err := tab.applyFilter(); err != nil {
+			t.Fatalf("applyFilter() unexpected error: %v", err)
+		}
+
+		// Alpha (idx 0) and alpha-beta (idx 3) should match
+		wantIndices := []int{0, 3}
+		if !reflect.DeepEqual(tab.filteredIndices, wantIndices) {
+			t.Fatalf("filteredIndices = %v, want %v", tab.filteredIndices, wantIndices)
+		}
+
+		gotItems, err := tab.paginator.findPage(0, 10)
+		if err != nil {
+			t.Fatalf("findPage() error: %v", err)
+		}
+		wantItems := []string{"Alpha", "alpha-beta"}
+		if !reflect.DeepEqual(gotItems, wantItems) {
+			t.Fatalf("filtered items = %v, want %v", gotItems, wantItems)
+		}
+
+		if tab.page != 0 {
+			t.Fatalf("page = %d, want 0 (reset on filter)", tab.page)
+		}
+		if tab.paginator.totalAm() != 2 {
+			t.Fatalf("total = %d, want 2", tab.paginator.totalAm())
+		}
+	})
+
+	t.Run("no matches results in empty paginator and empty filteredIndices", func(t *testing.T) {
+		items := []string{"Alpha", "Bravo"}
+		paginator := SlicePaginator(items)
+		tab := table[string]{
+			paginator:         paginator,
+			originalPaginator: paginator,
+			pageSize:          10,
+			filterString:      "xyz",
+			rowFormater:       func(i int, item string) (string, error) { return item, nil },
+		}
+
+		if err := tab.applyFilter(); err != nil {
+			t.Fatalf("applyFilter() error: %v", err)
+		}
+
+		if len(tab.filteredIndices) != 0 {
+			t.Fatalf("filteredIndices = %v, want empty", tab.filteredIndices)
+		}
+		if tab.paginator.totalAm() != 0 {
+			t.Fatalf("total = %d, want 0", tab.paginator.totalAm())
+		}
+	})
+
+	t.Run("rowFormater errors are skipped gracefully", func(t *testing.T) {
+		items := []string{"one", "boom", "two"}
+		paginator := SlicePaginator(items)
+		tab := table[string]{
+			paginator:         paginator,
+			originalPaginator: paginator,
+			pageSize:          10,
+			filterString:      "t",
+			rowFormater: func(i int, item string) (string, error) {
+				if item == "boom" {
+					return "", errors.New("boom")
+				}
+				return item, nil
+			},
+		}
+
+		if err := tab.applyFilter(); err != nil {
+			t.Fatalf("applyFilter() error: %v", err)
+		}
+
+		// Only "two" contains 't' and formats successfully
+		want := []int{2}
+		if !reflect.DeepEqual(tab.filteredIndices, want) {
+			t.Fatalf("filteredIndices = %v, want %v", tab.filteredIndices, want)
+		}
+	})
+
+	t.Run("returns error when original paginator fails", func(t *testing.T) {
+		badPaginator := testPaginator{total: 1, findErr: errors.New("read error")}
+		tab := table[int]{
+			paginator:         badPaginator,
+			originalPaginator: badPaginator,
+			pageSize:          10,
+			filterString:      "test",
+			rowFormater:       func(i, item int) (string, error) { return "ok", nil },
+		}
+
+		err := tab.applyFilter()
+		if err == nil {
+			t.Fatal("applyFilter() error = nil, want error")
+		}
+		if !strings.Contains(err.Error(), "failed to get items for filtering") {
+			t.Fatalf("error = %q, want filtering context", err.Error())
+		}
+	})
+
+	t.Run("clearing filter after one was active restores all items", func(t *testing.T) {
+		items := []string{"Alpha", "Bravo"}
+		paginator := SlicePaginator(items)
+		tab := table[string]{
+			paginator:         paginator,
+			originalPaginator: paginator,
+			pageSize:          10,
+			filterString:      "Alpha",
+			rowFormater:       func(i int, item string) (string, error) { return item, nil },
+		}
+
+		// First apply filter
+		if err := tab.applyFilter(); err != nil {
+			t.Fatalf("first applyFilter() error: %v", err)
+		}
+		if tab.paginator.totalAm() != 1 {
+			t.Fatalf("filtered total = %d, want 1", tab.paginator.totalAm())
+		}
+
+		// Then clear
+		tab.filterString = ""
+		if err := tab.applyFilter(); err != nil {
+			t.Fatalf("clear applyFilter() error: %v", err)
+		}
+		if tab.paginator.totalAm() != 2 {
+			t.Fatalf("cleared total = %d, want 2", tab.paginator.totalAm())
+		}
+		if tab.filteredIndices != nil {
+			t.Fatal("filteredIndices not nil after clear")
+		}
+	})
+
+	t.Run("filtering empty paginator returns empty", func(t *testing.T) {
+		paginator := SlicePaginator([]string{})
+		tab := table[string]{
+			paginator:         paginator,
+			originalPaginator: paginator,
+			pageSize:          10,
+			filterString:      "alpha",
+			rowFormater:       func(i int, item string) (string, error) { return item, nil },
+		}
+
+		if err := tab.applyFilter(); err != nil {
+			t.Fatalf("applyFilter() error: %v", err)
+		}
+		if tab.paginator.totalAm() != 0 {
+			t.Fatalf("total = %d, want 0", tab.paginator.totalAm())
+		}
+		if tab.filteredIndices != nil {
+			t.Fatal("filteredIndices should be nil for empty paginator")
+		}
+	})
+}
+
+func Test_table_selectNumbers_filterPrefix(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+
+	t.Run("/term sets filter and returns nil so loop continues", func(t *testing.T) {
+		inputs := []string{"/test", "0"}
+		restoreReadUserInput := UseReadUserInputForTests(func() (string, error) {
+			if len(inputs) == 0 {
+				return "", fmt.Errorf("no more test inputs")
+			}
+			next := inputs[0]
+			inputs = inputs[1:]
+			return next, nil
+		})
+		defer restoreReadUserInput()
+
+		items := []string{"first", "second", "test-item", "other"}
+		paginator := SlicePaginator(items)
+		tab := table[string]{
+			page:              0,
+			pageSize:          10,
+			lastPage:          0,
+			paginator:         paginator,
+			originalPaginator: paginator,
+			rowFormater:       func(i int, item string) (string, error) { return item, nil },
+			tableActions:      nil,
+			out:               new(bytes.Buffer),
+		}
+
+		// First call: /test sets filter and returns nil, nil
+		got, err := tab.selectNumbers()
+		if err != nil {
+			t.Fatalf("first selectNumbers() error: %v", err)
+		}
+		if got != nil {
+			t.Fatalf("first call returned %v, want nil (loop continue)", got)
+		}
+		if tab.filterString != "test" {
+			t.Fatalf("filterString = %q, want %q", tab.filterString, "test")
+		}
+		if tab.paginator.totalAm() != 1 {
+			t.Fatalf("filtered total = %d, want 1", tab.paginator.totalAm())
+		}
+
+		// Second call: "0" selects the first filtered item, translated to original index
+		got, err = tab.selectNumbers()
+		if err != nil {
+			t.Fatalf("second selectNumbers() error: %v", err)
+		}
+		want := []int{2}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("got = %v, want %v (original index)", got, want)
+		}
+	})
+
+	t.Run("/ alone clears filter", func(t *testing.T) {
+		restoreReadUserInput := UseReadUserInputForTests(func() (string, error) {
+			return "/", nil
+		})
+		defer restoreReadUserInput()
+
+		items := []string{"first", "second"}
+		paginator := SlicePaginator(items)
+		tab := table[string]{
+			page:              0,
+			pageSize:          10,
+			paginator:         SlicePaginator([]string{"first"}),
+			originalPaginator: paginator,
+			filterString:      "first",
+			filteredIndices:   []int{0},
+			rowFormater:       func(i int, item string) (string, error) { return item, nil },
+			out:               new(bytes.Buffer),
+		}
+
+		got, err := tab.selectNumbers()
+		if err != nil {
+			t.Fatalf("selectNumbers() error: %v", err)
+		}
+		if got != nil {
+			t.Fatalf("got = %v, want nil (loop continue)", got)
+		}
+		if tab.filterString != "" {
+			t.Fatalf("filterString = %q, want empty", tab.filterString)
+		}
+		if tab.filteredIndices != nil {
+			t.Fatal("filteredIndices should be nil after clear")
+		}
+		if tab.paginator.totalAm() != 2 {
+			t.Fatalf("restored total = %d, want 2", tab.paginator.totalAm())
+		}
+	})
+
+	t.Run("filtered selection with multiple numbers returns translated indices", func(t *testing.T) {
+		inputs := []string{"/alpha", "0,1"}
+		restoreReadUserInput := UseReadUserInputForTests(func() (string, error) {
+			if len(inputs) == 0 {
+				return "", fmt.Errorf("no more test inputs")
+			}
+			next := inputs[0]
+			inputs = inputs[1:]
+			return next, nil
+		})
+		defer restoreReadUserInput()
+
+		items := []string{"Alpha-zero", "Bravo", "Alpha-one"}
+		paginator := SlicePaginator(items)
+		tab := table[string]{
+			page:              0,
+			pageSize:          10,
+			paginator:         paginator,
+			originalPaginator: paginator,
+			rowFormater:       func(i int, item string) (string, error) { return item, nil },
+			out:               new(bytes.Buffer),
+		}
+
+		// First call: /alpha sets filter
+		got, err := tab.selectNumbers()
+		if err != nil {
+			t.Fatalf("first selectNumbers() error: %v", err)
+		}
+		if got != nil {
+			t.Fatalf("first call returned %v, want nil", got)
+		}
+
+		// Second call: select filtered indices 0 and 1 -> original 0 and 2
+		got, err = tab.selectNumbers()
+		if err != nil {
+			t.Fatalf("second selectNumbers() error: %v", err)
+		}
+		want := []int{0, 2}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("got = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("navigation actions work while filter is active", func(t *testing.T) {
+		inputs := []string{"/e", "n", "2"}
+		restoreReadUserInput := UseReadUserInputForTests(func() (string, error) {
+			if len(inputs) == 0 {
+				return "", fmt.Errorf("no more test inputs")
+			}
+			next := inputs[0]
+			inputs = inputs[1:]
+			return next, nil
+		})
+		defer restoreReadUserInput()
+
+		items := []string{"zero", "one", "two", "three", "four", "five", "six", "seven"}
+		paginator := SlicePaginator(items)
+		var out bytes.Buffer
+		tab := table[string]{
+			page:              0,
+			pageSize:          2,
+			paginator:         paginator,
+			originalPaginator: paginator,
+			rowFormater:       func(i int, item string) (string, error) { return item, nil },
+			tableActions:      []TableAction{},
+			out:               &out,
+		}
+		tab.tableActions = append(tab.tableActions, tab.prevPage(), tab.nextPage(), tab.back(), tab.quit())
+
+		// First: /e -> filter items containing 'e' (zero=0, one=1, three=3, five=5, seven=7)
+		got, err := tab.selectNumbers()
+		if err != nil {
+			t.Fatalf("first call: %v", err)
+		}
+		if got != nil {
+			t.Fatalf("first returned %v, want nil", got)
+		}
+		if tab.paginator.totalAm() != 5 {
+			t.Fatalf("filtered total = %d, want 5", tab.paginator.totalAm())
+		}
+
+		// Second: n -> next page
+		got, err = tab.selectNumbers()
+		if err != nil {
+			t.Fatalf("second call: %v", err)
+		}
+		if got != nil {
+			t.Fatalf("second returned %v, want nil", got)
+		}
+		if tab.page != 1 {
+			t.Fatalf("page = %d, want 1 (next from 0)", tab.page)
+		}
+
+		// Third: select 2 on page 1 -> absolute filtered position 2 -> original index (three = 3)
+		got, err = tab.selectNumbers()
+		if err != nil {
+			t.Fatalf("third call: %v", err)
+		}
+		// Filtered indices: [0, 1, 3, 5, 7]; page 1 (index 2+3) -> original 3, 5
+		// Selecting displayed index 2 = absolute filtered position 2 = original index 3
+		want := []int{3}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("got = %v, want %v", got, want)
+		}
+	})
+}
+
+func Test_table_promptLine_filter(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+
+	t.Run("shows filter string when filter is active", func(t *testing.T) {
+		tab := table[int]{
+			selectionType: "select",
+			filterString:  "hello",
+			pageSize:      10,
+			paginator:     SlicePaginator([]int{1, 2, 3}),
+		}
+		got := tab.promptLine()
+		if !strings.Contains(got, `filter: "hello"`) {
+			t.Fatalf("promptLine() = %q, want filter indicator", got)
+		}
+	})
+
+	t.Run("shows no matches for active filter with zero results", func(t *testing.T) {
+		tab := table[int]{
+			selectionType:   "select",
+			filterString:    "nothing",
+			filteredIndices: []int{},
+			pageSize:        10,
+			paginator:       SlicePaginator([]int{}),
+		}
+		got := tab.promptLine()
+		if !strings.Contains(got, "no matches") {
+			t.Fatalf("promptLine() = %q, want 'no matches' indicator", got)
+		}
+	})
+
+	t.Run("shows page when filter is active with multiple pages", func(t *testing.T) {
+		tab := table[int]{
+			selectionType:   "select",
+			filterString:    "e",
+			filteredIndices: []int{0, 1, 2, 3, 4, 5},
+			pageSize:        3,
+			page:            0,
+			paginator:       SlicePaginator([]int{10, 20, 30, 40, 50, 60}),
+		}
+		got := tab.promptLine()
+		if !strings.Contains(got, "page 0/1") {
+			t.Fatalf("promptLine() = %q, want page indicator", got)
+		}
+		if !strings.Contains(got, `filter: "e"`) {
+			t.Fatalf("promptLine() = %q, want filter indicator", got)
+		}
+	})
+
+	t.Run("no filter indicator when filter is empty", func(t *testing.T) {
+		tab := table[int]{
+			selectionType: "select",
+			pageSize:      10,
+			paginator:     SlicePaginator([]int{1}),
+		}
+		got := tab.promptLine()
+		if strings.Contains(got, "filter") {
+			t.Fatalf("promptLine() = %q, unexpected filter indicator", got)
+		}
+	})
+}
+
 type errWriter struct{}
 
 func (errWriter) Write(p []byte) (int, error) {

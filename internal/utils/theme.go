@@ -29,6 +29,8 @@ type Theme struct {
 	RoleOther     string `json:"roleOther"`
 
 	NotificationBell bool `json:"notificationBell"`
+
+	TableItems int `json:"tableItems"`
 }
 
 func defaultTheme() *Theme {
@@ -45,6 +47,8 @@ func defaultTheme() *Theme {
 		RoleReasoning:    "\u001b[38;2;180;170;150m",
 		RoleOther:        "\u001b[34m",
 		NotificationBell: true,
+
+		TableItems: 10,
 	}
 }
 
@@ -77,6 +81,7 @@ func migrateThemeConfig(configDirPath string) error {
 		RoleTool         string `json:"roleTool"`
 		RoleOther        string `json:"roleOther"`
 		NotificationBell bool   `json:"notificationBell"`
+		TableItems       int    `json:"tableItems"`
 	}
 
 	var conf themeMigration
@@ -133,6 +138,9 @@ func RoleColor(role string) string {
 func ThemePrimaryColor() string   { return globalTheme.Primary }
 func ThemeSecondaryColor() string { return globalTheme.Secondary }
 func ThemeBreadtextColor() string { return globalTheme.Breadtext }
+func ThemeTableItems() int {
+	return globalTheme.TableItems
+}
 
 func NotificationBellEnabled() bool { return globalTheme.NotificationBell }
 

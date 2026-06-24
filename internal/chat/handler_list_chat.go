@@ -206,7 +206,7 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 			}
 			return withSummary, nil
 		},
-		10,
+		utils.ThemeTableItems(),
 		true,
 		[]utils.TableAction{},
 		cq.out,
@@ -344,7 +344,7 @@ func (cq *ChatHandler) deleteMessageInChat(chat pub_models.Chat) error {
 			}
 			return withSummary, nil
 		},
-		10,
+		utils.ThemeTableItems(),
 		false,
 		[]utils.TableAction{},
 		cq.out,
@@ -387,7 +387,7 @@ func (cq *ChatHandler) editMessageInChat(chat pub_models.Chat) error {
 			}
 			return withSummary, nil
 		},
-		10,
+		utils.ThemeTableItems(),
 		true,
 		[]utils.TableAction{},
 		cq.out,
