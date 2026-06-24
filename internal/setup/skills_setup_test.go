@@ -8,7 +8,7 @@ import (
 	"github.com/baalimago/clai/internal/skills"
 )
 
-func TestGeneralConfigLoadIncludesSkillsConfig(t *testing.T) {
+func TestGeneralConfigLoadIncludesSkillsAndThemeConfig(t *testing.T) {
 	dir := t.TempDir()
 	category := setupCategory{
 		name: "general config",
@@ -21,6 +21,7 @@ func TestGeneralConfigLoadIncludesSkillsConfig(t *testing.T) {
 				return nil, err
 			}
 			cfgs = append(cfgs, config{name: "skills.json", filePath: filepath.Join(dir, "skills.json")})
+			cfgs = append(cfgs, config{name: "theme.json", filePath: filepath.Join(dir, "theme.json")})
 			return cfgs, nil
 		},
 	}
@@ -32,15 +33,21 @@ func TestGeneralConfigLoadIncludesSkillsConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load() error = %v", err)
 	}
-	found := false
+	foundSkills := false
+	foundTheme := false
 	for _, cfg := range cfgs {
 		if cfg.name == "skills.json" {
-			found = true
-			break
+			foundSkills = true
+		}
+		if cfg.name == "theme.json" {
+			foundTheme = true
 		}
 	}
-	if !found {
+	if !foundSkills {
 		t.Fatalf("expected skills.json in %+v", cfgs)
+	}
+	if !foundTheme {
+		t.Fatalf("expected theme.json in %+v", cfgs)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "skills.json")); err != nil {
 		t.Fatalf("expected skills.json to exist: %v", err)

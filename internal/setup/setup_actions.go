@@ -225,7 +225,7 @@ func actionReconfigureStringFieldWithEditor(cfg config, fieldName string) error 
 			func(i int, t string) (string, error) {
 				return fmt.Sprintf("%v. %v", i, t), nil
 			},
-			10,
+			utils.ThemeTableItems(),
 			true,
 			nil,
 			os.Stdout,
