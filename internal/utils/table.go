@@ -67,15 +67,18 @@ func (pf paginatorFuncs[T]) findPage(start, offset int) ([]T, error) {
 }
 
 type table[T any] struct {
-	debug         bool
-	page          int
-	pageSize      int
-	lastPage      int
-	selectionType string
-	paginator     Paginator[T]
-	rowFormater   func(int, T) (string, error)
-	tableActions  []TableAction
-	out           io.Writer
+	debug             bool
+	page              int
+	pageSize          int
+	lastPage          int
+	selectionType     string
+	paginator         Paginator[T]
+	originalPaginator Paginator[T]
+	filterString      string
+	filteredIndices   []int
+	rowFormater       func(int, T) (string, error)
+	tableActions      []TableAction
+	out               io.Writer
 }
 
 var clearTermToFn = ClearTermTo
@@ -161,14 +164,15 @@ func SelectFromTable[T any](
 	fmt.Fprintf(out, "%v\n", Colorize(ThemePrimaryColor(), line))
 
 	tab := table[T]{
-		page:          0,
-		pageSize:      pageSize,
-		lastPage:      0,
-		selectionType: selectionType,
-		paginator:     paginator,
-		rowFormater:   rowFormater,
-		tableActions:  additionalTableActions,
-		out:           out,
+		page:              0,
+		pageSize:          pageSize,
+		lastPage:          0,
+		selectionType:     selectionType,
+		paginator:         paginator,
+		originalPaginator: paginator,
+		rowFormater:       rowFormater,
+		tableActions:      additionalTableActions,
+		out:               out,
 	}
 	tab.lastPage = tab.pageCount()
 	baseActions := []TableAction{tab.prevPage(), tab.nextPage(), tab.back(), tab.quit()}
@@ -246,7 +250,13 @@ func (t *table[T]) promptLine() string {
 	if actions != "" {
 		parts = append(parts, actions)
 	}
+	if t.filterString != "" {
+		parts = append(parts, fmt.Sprintf("filter: %q", t.filterString))
+	}
 	if t.pageCount() == 0 {
+		if t.filteredIndices != nil && t.paginator.totalAm() == 0 {
+			return fmt.Sprintf("(%s, no matches): ", strings.Join(parts, ", "))
+		}
 		return fmt.Sprintf("(%s): ", strings.Join(parts, ", "))
 	}
 	parts = append(parts, fmt.Sprintf("page %v/%v", t.page, t.pageCount()))
@@ -282,6 +292,15 @@ func (t *table[T]) selectNumbers() ([]int, error) {
 		return nil, fmt.Errorf("failed to read table selection: %w", err)
 	}
 
+	// Handle filter prefix: /<term> applies filter, / alone clears it
+	if strings.HasPrefix(choice, "/") {
+		t.filterString = choice[1:]
+		if err := t.applyFilter(); err != nil {
+			return nil, fmt.Errorf("failed to apply filter: %w", err)
+		}
+		return nil, nil
+	}
+
 	// See if the choice is a table action, if so, run it and return
 	for _, action := range t.tableActions {
 		additionalHotkeyMatch := false
@@ -304,6 +323,15 @@ func (t *table[T]) selectNumbers() ([]int, error) {
 	selectedNumbers, err := t.parseNumbersFromString(choice)
 	if err != nil {
 		return selectedNumbers, fmt.Errorf("failed to parse selected numbers from choice %q: %w", choice, err)
+	}
+
+	// Translate filtered indices back to original indices
+	if t.filteredIndices != nil {
+		translated := make([]int, len(selectedNumbers))
+		for i, num := range selectedNumbers {
+			translated[i] = t.filteredIndices[num]
+		}
+		selectedNumbers = translated
 	}
 
 	return selectedNumbers, nil
@@ -390,6 +418,54 @@ func (t *table[T]) multiPartParse(maybeRange string) ([]int, error) {
 		selectedNumbers = append(selectedNumbers, i)
 	}
 	return selectedNumbers, nil
+}
+
+// applyFilter rebuilds the filtered view from the current filterString.
+// An empty filterString clears the filter. The original paginator is never
+// modified; filtering replaces t.paginator with a SlicePaginator over the
+// matching subset and records t.filteredIndices for reverse index translation.
+func (t *table[T]) applyFilter() error {
+	if t.filterString == "" {
+		t.paginator = t.originalPaginator
+		t.filteredIndices = nil
+		t.page = 0
+		t.lastPage = t.pageCount()
+		return nil
+	}
+
+	totalAm := t.originalPaginator.totalAm()
+	if totalAm == 0 {
+		t.filteredIndices = nil
+		t.paginator = SlicePaginator([]T{})
+		t.page = 0
+		t.lastPage = t.pageCount()
+		return nil
+	}
+
+	allItems, err := t.originalPaginator.findPage(0, totalAm)
+	if err != nil {
+		return fmt.Errorf("failed to get items for filtering: %w", err)
+	}
+
+	lower := strings.ToLower(t.filterString)
+	matchedIndices := make([]int, 0, len(allItems))
+	matchedItems := make([]T, 0, len(allItems))
+	for i, item := range allItems {
+		formatted, formatErr := t.rowFormater(i, item)
+		if formatErr != nil {
+			continue
+		}
+		if strings.Contains(strings.ToLower(formatted), lower) {
+			matchedIndices = append(matchedIndices, i)
+			matchedItems = append(matchedItems, item)
+		}
+	}
+
+	t.filteredIndices = matchedIndices
+	t.paginator = SlicePaginator(matchedItems)
+	t.page = 0
+	t.lastPage = t.pageCount()
+	return nil
 }
 
 func (t *table[T]) parseNumbersFromString(choice string) ([]int, error) {
