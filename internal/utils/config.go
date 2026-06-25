@@ -94,37 +94,17 @@ func ensureDefaultShellContexts(configPath string) error {
 			Template: `cwd: {{.cwd}}
 date: {{.date}}
 user: {{.user}}
-{{- if .hostname }}
-hostname: {{.hostname}}
-{{- end }}
-{{- if .shell }}
-shell: {{.shell}}
-{{- end }}
-{{- if .python_venv }}
-python env: {{.python_venv}}
-{{- end }}
-{{- if .k8s_context }}
-k8s context: {{.k8s_context}}
-{{- end }}
-{{- if .go_version }}
-go version: {{.go_version}}
-{{- end }}
-{{- if .git_branch }}
-git branch: {{.git_branch}}
-{{- end }}
-{{- if .git_status_short }}
-git dirty: {{.git_status_short}}
-{{- end }}
-{{- if .docker_context }}
-docker context: {{.docker_context}}
-{{- end }}
-{{- if .tmux_session }}
-tmux session: {{.tmux_session}}
-{{- end }}
-{{- if .ssh_connection }}
-ssh: {{.ssh_connection}}
-{{- end }}
-`,
+{{if .hostname}}hostname: {{.hostname}}
+{{end}}{{if .shell}}shell: {{.shell}}
+{{end}}{{if .python_venv}}python env: {{.python_venv}}
+{{end}}{{if .k8s_context}}k8s context: {{.k8s_context}}
+{{end}}{{if .go_version}}go version: {{.go_version}}
+{{end}}{{if .git_branch}}git branch: {{.git_branch}}
+{{end}}{{if .git_status_short}}git dirty: {{.git_status_short}}
+{{end}}{{if .docker_context}}docker context: {{.docker_context}}
+{{end}}{{if .tmux_session}}tmux session: {{.tmux_session}}
+{{end}}{{if .ssh_connection}}ssh: {{.ssh_connection}}
+{{end}}`,
 			Vars: map[string]string{
 				"cwd":              "pwd",
 				"date":             "date '+%Y-%m-%d %H:%M:%S %Z'",

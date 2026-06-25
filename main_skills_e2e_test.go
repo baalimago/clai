@@ -367,7 +367,7 @@ func Test_e2e_skills_descriptor_activation_and_persistence(t *testing.T) {
 	if strings.Contains(chatJSON, "<name>hidden</name>") || strings.Contains(chatJSON, "Hidden body") {
 		t.Fatalf("expected hidden skill to stay absent from persisted transcript, got %s", chatJSON)
 	}
-	if !strings.Contains(chatJSON, `"name":"load_skill"`) || !strings.Contains(chatJSON, `Body`) {
+	if !strings.Contains(chatJSON, `"name": "load_skill"`) || !strings.Contains(chatJSON, `Body`) {
 		t.Fatalf("expected loaded skill transcript in conversation, got %s", chatJSON)
 	}
 	trustJSON := readStringFile(t, filepath.Join(os.Getenv("CLAI_CACHE_DIR"), "skills_trust.json"))
@@ -585,7 +585,7 @@ func Test_e2e_skills_argument_rendering_and_activation_cap(t *testing.T) {
 			t.Fatalf("expected first load plus cap error, got %q", capOut)
 		}
 		chatJSON := readStringFile(t, findSavedConversationFile(t, confDir))
-		if !strings.Contains(chatJSON, `ERROR: skill activation cap exceeded`) || !strings.Contains(chatJSON, `"skill":"two"`) {
+		if !strings.Contains(chatJSON, `ERROR: skill activation cap exceeded`) || !strings.Contains(chatJSON, `"skill": "two"`) {
 			t.Fatalf("expected cap error persisted in conversation, got %s", chatJSON)
 		}
 	})

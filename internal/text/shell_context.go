@@ -99,7 +99,7 @@ func (r ShellContextRenderer) Render(ctx context.Context, ctxName string, def Sh
 	if err := tpl.Execute(&buf, data); err != nil {
 		return "", fmt.Errorf("execute shell context template: %w", err)
 	}
-	return buf.String(), nil
+	return strings.TrimRight(buf.String(), "\r\n"), nil
 }
 
 func runShellVar(ctx context.Context, shell, cmd string, timeout time.Duration) (string, error) {

@@ -31,11 +31,15 @@ func AppendShellContextIfConfigured(ctx context.Context, configDir, shellContext
 	if err != nil {
 		return prompt, fmt.Errorf("render shell context: %w", err)
 	}
-	rendered = strings.TrimSpace(rendered)
+	rendered = strings.Trim(rendered, " \t\r")
 	if rendered == "" {
 		return prompt, nil
 	}
+	rendered = strings.TrimPrefix(rendered, "\n")
 
 	prompt = strings.TrimLeft(prompt, " \t\r\n")
-	return "<shell context>\n" + rendered + "\n</shell context>\n" + prompt, nil
+	if !strings.HasSuffix(rendered, "\n") {
+		rendered += "\n"
+	}
+	return "<shell context>\n" + rendered + "</shell context>\n" + prompt, nil
 }

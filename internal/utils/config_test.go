@@ -129,6 +129,8 @@ func TestCreateConfigDir(t *testing.T) {
 	gotShellContext := string(gotShellContextBytes)
 	for _, wantFragment := range []string{
 		`"template":`,
+		`{{if .hostname}}hostname: {{.hostname}}\n`,
+		`{{end}}{{if .shell}}shell: {{.shell}}\n`,
 		`"cwd": "pwd"`,
 		`"date": "date`,
 		`"user": "id -un`,

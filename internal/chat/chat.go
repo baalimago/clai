@@ -35,10 +35,11 @@ func FromPath(path string) (pub_models.Chat, error) {
 }
 
 func Save(saveAt string, chat pub_models.Chat) error {
-	b, err := json.Marshal(chat)
+	b, err := json.MarshalIndent(chat, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to encode JSON: %w", err)
 	}
+	b = append(b, '\n')
 	fileName := conversationPathFromDir(saveAt, chat.ID)
 	if misc.Truthy(os.Getenv("DEBUG")) && misc.Truthy(os.Getenv("DEBUG_VERBOSE")) || misc.Truthy(os.Getenv("DEBUG_REPLY_MODE")) {
 		ancli.PrintOK(fmt.Sprintf("saving chat to: '%v'", fileName))

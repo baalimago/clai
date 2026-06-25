@@ -135,8 +135,7 @@ func actionReconfigure(cfg config) error {
 }
 
 func unescapeEditWithEditor(toEdit string) (string, error) {
-	unescapedStr := strings.ReplaceAll(toEdit, "\\t", "\t")
-	unescapedStr = strings.ReplaceAll(unescapedStr, "\\n", "\n")
+	unescapedStr := utils.UnescapeEditorString(toEdit)
 	tmp, err := os.CreateTemp("", "unescapeEdit_*")
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp file: %w", err)
@@ -169,8 +168,7 @@ func unescapeEditWithEditor(toEdit string) (string, error) {
 	unescapedStr = strings.TrimSuffix(unescapedStr, "\r\n")
 	unescapedStr = strings.TrimSuffix(unescapedStr, "\n")
 
-	escapedStr := strings.ReplaceAll(unescapedStr, "\t", "\\t")
-	escapedStr = strings.ReplaceAll(escapedStr, "\n", "\\n")
+	escapedStr := utils.EscapeEditorString(unescapedStr)
 	return escapedStr, nil
 }
 
@@ -184,7 +182,7 @@ func validateEditedStringField(cfg config, fieldName, rawEditedValue string) err
 	}
 
 	def := text.ShellContextDefinition{
-		Template: strings.ReplaceAll(strings.ReplaceAll(rawEditedValue, "\\n", "\n"), "\\t", "\t"),
+		Template: utils.UnescapeEditorString(rawEditedValue),
 	}
 	renderer := text.ShellContextRenderer{}
 	_, err := renderer.Render(context.Background(), cfg.name, def)

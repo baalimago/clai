@@ -163,6 +163,40 @@ func TestMessageJSONReasoningContentRoundTrip(t *testing.T) {
 	}
 }
 
+func TestMessageJSONPreservesMultiLineSystemContentAsString(t *testing.T) {
+	msg := Message{
+		Role:    "system",
+		Content: "<shell context>\ncwd: /tmp/project\n\nhost: box\n</shell context>\nSYSTEM",
+	}
+	data, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatalf("failed to marshal message: %v", err)
+	}
+
+	var encoded map[string]any
+	if err := json.Unmarshal(data, &encoded); err != nil {
+		t.Fatalf("failed to unmarshal encoded message: %v", err)
+	}
+	content, ok := encoded["content"].(string)
+	if !ok {
+		t.Fatalf("expected content to encode as string, got %T", encoded["content"])
+	}
+	if content != msg.Content {
+		t.Fatalf("content mismatch:\nwant: %q\n got: %q", msg.Content, content)
+	}
+
+	var decoded Message
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("failed to unmarshal message: %v", err)
+	}
+	if decoded.Content != msg.Content {
+		t.Fatalf("roundtrip content mismatch:\nwant: %q\n got: %q", msg.Content, decoded.Content)
+	}
+	if len(decoded.ContentParts) != 0 {
+		t.Fatalf("expected no content parts, got %d", len(decoded.ContentParts))
+	}
+}
+
 func TestChatHelpers(t *testing.T) {
 	c := Chat{
 		Created: time.Now(),
