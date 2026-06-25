@@ -11,7 +11,7 @@ import (
 func (m *Manager) LoadSkill(ctx context.Context, name, rawArgs string, baseTools map[string]pub_models.LLMTool) (LoadedSkill, error) {
 	skill, ok := m.Skills[name]
 	if !ok {
-		return LoadedSkill{}, fmt.Errorf("unknown skill %q", name)
+		return LoadedSkill{ActivationErr: fmt.Sprintf("unknown skill %q", name)}, nil
 	}
 	req := ActivationRequest{Name: name, RawArgs: rawArgs, Args: parseArgs(rawArgs)}
 	if m.Config.MaxActivatedSkills > 0 && len(m.state.Records) >= m.Config.MaxActivatedSkills {

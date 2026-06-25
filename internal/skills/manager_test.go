@@ -70,3 +70,27 @@ func TestLoadSkillActivationCap(t *testing.T) {
 		t.Fatalf("expected activation error, got %#v", loaded)
 	}
 }
+
+func TestLoadSkillUnknownName(t *testing.T) {
+	cfgDir := t.TempDir()
+	cacheDir := t.TempDir()
+	writeSkill(t, filepath.Join(cfgDir, "skills", "known", "SKILL.md"), "---\ndescription: known\n---\nBody")
+	mgr, err := Discover(Options{
+		ConfigDir:  cfgDir,
+		CacheDir:   cacheDir,
+		WorkingDir: t.TempDir(),
+		TrustPrompter: func(context.Context, TrustPrompt) (bool, error) {
+			return true, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("Discover() error = %v", err)
+	}
+	loaded, err := mgr.LoadSkill(context.Background(), "nonexistent", "", nil)
+	if err != nil {
+		t.Fatalf("expected nil error for unknown skill, got %v", err)
+	}
+	if !strings.Contains(loaded.ActivationErr, "unknown skill") {
+		t.Fatalf("expected activation error for unknown skill, got %#v", loaded)
+	}
+}
