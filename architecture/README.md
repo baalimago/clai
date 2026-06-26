@@ -6,6 +6,7 @@ This directory contains short design notes for key parts of **clai**. Each file 
 
 - **[config.md](./config.md)** — Where config lives (config/cache dirs), what files exist (mode configs, vendor model configs, profiles, conversations), and the override cascade (defaults → file → profiles → flags).
 - **[chat.md](./chat.md)** — Conversation storage format, global previous-query (`globalScope.json`), directory-scoped reply bindings, and the `clai chat continue` flow.
+- **[dirscope.md](./dirscope.md)** — Directory bindings and per-directory conversation history: the `sha256`-keyed `version: 2` binding record (`abs_path`, timestamped `history`), always-on recording, in-place `version: 1 → 2` upgrade, the opt-in (`-lb/-lookback`) conversation lookback (`list_conversations` / `read_conversation`), and the `[d]ir` toggle filter in `clai chat list`.
 - **[streaming.md](./streaming.md)** — How vendor streaming is normalized into a common event stream and consumed by the querier (text deltas, tool calls, stop events, errors).
 - **[tooling.md](./tooling.md)** — Tool registry + allow-list selection (`-t/-tools`), tool-call execution loop, and MCP server integration.
 - **[skills.md](./skills.md)** — Skill discovery, parsing, precedence, rendering, activation logging, and invocation-scoped tool policy.
