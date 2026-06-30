@@ -56,6 +56,10 @@ const (
 	ClaiResultTool         ToolName = "clai_result"
 	ClaiWaitForWorkersTool ToolName = "clai_wait_for_workers"
 	LoadSkillTool          ToolName = "load_skill"
+
+	SearchConversationsTool ToolName = "search_conversations"
+	InspectConversationTool ToolName = "inspect_conversation"
+	ReadMessageTool         ToolName = "read_message"
 )
 
 type Input map[string]any

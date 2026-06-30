@@ -34,8 +34,13 @@ type Configurations struct {
 	//   ""      => no override
 	//   "*"     => all tools
 	//   "a,b,c" => only these tools
-	UseTools    string
-	UseSkills   string
+	UseTools  string
+	UseSkills string
+	// UseLookback encodes conversation-lookback selection from CLI:
+	//   ""      => no override
+	//   "*"     => enable
+	//   "none"  => disable
+	UseLookback string
 	Glob        string
 	Profile     string
 	ProfilePath string
@@ -111,6 +116,8 @@ func parseFlags(defaults Configurations, args []string) (Configurations, []strin
 	useToolsLong := fs.String("tools", defaults.UseTools, "Enable tools. Use '*' for all tools or comma-separated list for specific tools.")
 	useSkillsShort := fs.String("s", defaults.UseSkills, "Enable skills. Use '*' to enable or 'none' to disable for the current run.")
 	useSkillsLong := fs.String("skills", defaults.UseSkills, "Enable skills. Use '*' to enable or 'none' to disable for the current run.")
+	useLookbackShort := fs.String("lb", defaults.UseLookback, "Enable conversation lookback (recent-conversations memory + search/inspect/read tools). Use '*' to enable or 'none' to disable.")
+	useLookbackLong := fs.String("lookback", defaults.UseLookback, "Enable conversation lookback (recent-conversations memory + search/inspect/read tools). Use '*' to enable or 'none' to disable.")
 
 	err := fs.Parse(args)
 	if err != nil {
@@ -135,6 +142,8 @@ func parseFlags(defaults Configurations, args []string) (Configurations, []strin
 	exitWithFlagError(err, "t", "tools")
 	useSkills, err := utils.ReturnNonDefault(*useSkillsShort, *useSkillsLong, defaults.UseSkills)
 	exitWithFlagError(err, "s", "skills")
+	useLookback, err := utils.ReturnNonDefault(*useLookbackShort, *useLookbackLong, defaults.UseLookback)
+	exitWithFlagError(err, "lb", "lookback")
 	profile, err := utils.ReturnNonDefault(*pShort, *pLong, defaults.Profile)
 	exitWithFlagError(err, "p", "profile")
 	profilePath, err := utils.ReturnNonDefault(*prPathShort, *prPathLong, defaults.ProfilePath)
@@ -172,6 +181,7 @@ func parseFlags(defaults Configurations, args []string) (Configurations, []strin
 		DirReplyMode:       dirReplyMode,
 		UseTools:           useTools,
 		UseSkills:          useSkills,
+		UseLookback:        useLookback,
 		Glob:               glob,
 		ExpectReplace:      *expectReplace,
 		Profile:            profile,
@@ -199,6 +209,9 @@ func applyFlagOverridesForText(tConf *text.Configurations, flagSet, defaultFlags
 	}
 	if flagSet.ReplyMode != defaultFlags.ReplyMode {
 		tConf.ReplyMode = flagSet.ReplyMode
+	}
+	if flagSet.DirReplyMode != defaultFlags.DirReplyMode {
+		tConf.DirReplyMode = flagSet.DirReplyMode
 	}
 	if flagSet.PrintRaw != defaultFlags.PrintRaw {
 		tConf.Raw = flagSet.PrintRaw

@@ -9,9 +9,14 @@ import (
 )
 
 type Chat struct {
-	Created    time.Time   `json:"created"`
-	ID         string      `json:"id"`
-	Profile    string      `json:"profile,omitempty"`
+	Created time.Time `json:"created"`
+	ID      string    `json:"id"`
+	Profile string    `json:"profile,omitempty"`
+	// OriginDir is the canonical working directory the chat was first persisted
+	// from. It is stamped once on first persist and never rewritten, enabling
+	// directory-anchored conversation search. Empty for conversations saved
+	// before origin stamping existed (forward-only).
+	OriginDir  string      `json:"origin_dir,omitempty"`
 	Messages   []Message   `json:"messages"`
 	TokenUsage *Usage      `json:"usage,omitempty"`
 	Queries    []QueryCost `json:"queries,omitempty"`

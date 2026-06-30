@@ -68,6 +68,7 @@ var defaultFlags = Configurations{
 	DirReplyMode:  false,
 	UseTools:      "",
 	UseSkills:     "",
+	UseLookback:   "",
 	ProfilePath:   "",
 }
 
@@ -282,6 +283,9 @@ func setupTextQuerierWithConf(ctx context.Context, mode Mode, confDir string, fl
 		tConf.SkillsDescriptor = skillMgr.DescriptorBlock()
 		tConf.SkillLoader = skillRuntimeAdapter{mgr: skillMgr}
 	}
+	if err := setupLookback(confDir, &tConf, flagSet, defaultFlags); err != nil {
+		return nil, nil, err
+	}
 	err = tConf.SetupInitialChat(args)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to setup prompt: %v", err)
@@ -296,6 +300,53 @@ func setupTextQuerierWithConf(ctx context.Context, mode Mode, confDir string, fl
 		return nil, nil, fmt.Errorf("failed to create text querier: %v", err)
 	}
 	return cq, &tConf, nil
+}
+
+// lookbackInjectCount is how many of the newest history entries the passive
+// descriptor block surfaces.
+const lookbackInjectCount = 5
+
+// setupLookback resolves conversation-lookback enablement with precedence
+// CLI (-lb/-lookback) > profile (use_lookback) > config default, captures the
+// session CWD as the default search anchor, and — when enabled and the CWD
+// binding has recorded history — builds the recent-conversations descriptor and
+// marks the lookback active so the tools are registered. Enabled-but-no-history
+// surfaces nothing, matching the dirscope spec.
+func setupLookback(confDir string, tConf *text.Configurations, flagSet, defaultFlags Configurations) error {
+	enabled := tConf.UseLookback
+	if flagSet.UseLookback != defaultFlags.UseLookback {
+		switch flagSet.UseLookback {
+		case "*":
+			enabled = true
+		case "none":
+			enabled = false
+		default:
+			return fmt.Errorf("invalid lookback flag value %q: expected '*' or 'none'", flagSet.UseLookback)
+		}
+	}
+
+	// The session CWD is the default anchor; the searcher canonicalizes it.
+	tConf.LookbackCWD = mustGetwd()
+	tConf.UseLookback = enabled
+	if !enabled {
+		return nil
+	}
+
+	// Tool registration is decoupled from local history: whenever lookback is
+	// enabled the search/inspect/read tools are registered (so the agent can search
+	// OTHER directories even from a dir with no recorded history). The passive
+	// descriptor block, by contrast, is only injected when the CWD has history.
+	desc, err := chat.BuildLookbackDescriptor(confDir, mustGetwd(), lookbackInjectCount)
+	if err != nil {
+		return fmt.Errorf("build lookback descriptor: %w", err)
+	}
+	if desc.HasHistory {
+		tConf.LookbackDescriptor = desc.Block
+		ancli.Noticef("lookback: surfaced %d recent conversation(s) for this directory\n", desc.Shown)
+	} else {
+		ancli.Noticef("lookback: enabled (no recorded history in this directory yet; search other paths with search_conversations)\n")
+	}
+	return nil
 }
 
 func applyUseSkillsOverride(tConf *text.Configurations, flagSet, defaultFlags Configurations) error {

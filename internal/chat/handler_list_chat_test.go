@@ -3,6 +3,7 @@ package chat
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -14,6 +15,108 @@ import (
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
+
+// chdirToTemp switches the working directory to a fresh temp dir for the duration
+// of the test, returning the temp dir. dirFilterAction binds against the live CWD,
+// so tests that exercise it must control the working directory.
+func chdirToTemp(t *testing.T) string {
+	t.Helper()
+	wd := t.TempDir()
+	old, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	if err := os.Chdir(wd); err != nil {
+		t.Fatalf("Chdir(%q): %v", wd, err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(old) })
+	return wd
+}
+
+// TestDirFilterAction_GatingAndPredicate covers acceptance #13: the [d]ir button
+// is only offered when the current directory has recorded history, and its
+// predicate keeps exactly the rows bound to the directory (head + history).
+func TestDirFilterAction_GatingAndPredicate(t *testing.T) {
+	cq, confDir := newTestHandler(t)
+	wd := chdirToTemp(t)
+
+	// No binding yet => the button must not be offered.
+	if _, ok := cq.dirFilterAction(); ok {
+		t.Fatal("expected no dir filter action before any history is recorded")
+	}
+
+	if err := cq.SaveDirScope(wd, "bound"); err != nil {
+		t.Fatalf("SaveDirScope: %v", err)
+	}
+
+	action, ok := cq.dirFilterAction()
+	if !ok {
+		t.Fatal("expected dir filter action once the directory has history")
+	}
+	if action.Format != "[d]ir" || action.Short != "d" || action.Filter == nil {
+		t.Fatalf("unexpected action wiring: %+v", action)
+	}
+	if !action.Filter(chatIndexRow{ID: "bound"}) {
+		t.Fatal("predicate should keep the bound chat")
+	}
+	if action.Filter(chatIndexRow{ID: "unbound"}) {
+		t.Fatal("predicate should drop a chat not bound to the directory")
+	}
+	if action.Filter("not-a-row") {
+		t.Fatal("predicate should drop a non-row value")
+	}
+	_ = confDir
+}
+
+// TestListChats_DirFilterTogglesThroughListChats covers acceptance #13 end-to-end:
+// the [d]ir button renders in the listChats table and pressing it activates the
+// predicate filter (surfaced as the "dir filter" prompt marker).
+func TestListChats_DirFilterTogglesThroughListChats(t *testing.T) {
+	cq, confDir := newTestHandler(t)
+	convDir := conversationsDir(confDir)
+	wd := chdirToTemp(t)
+
+	for _, c := range []pub_models.Chat{
+		{ID: "bound", Created: time.Date(2026, 1, 2, 3, 4, 6, 0, time.UTC), Messages: []pub_models.Message{{Role: "user", Content: "bound prompt"}}},
+		{ID: "unbound", Created: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC), Messages: []pub_models.Message{{Role: "user", Content: "unbound prompt"}}},
+	} {
+		if err := Save(convDir, c); err != nil {
+			t.Fatalf("Save(%q): %v", c.ID, err)
+		}
+	}
+	if err := cq.SaveDirScope(wd, "bound"); err != nil {
+		t.Fatalf("SaveDirScope: %v", err)
+	}
+
+	// Script: press "d" to toggle the dir filter on, then abort so listChats returns.
+	calls := 0
+	restore := utils.UseReadUserInputForTests(func() (string, error) {
+		calls++
+		if calls == 1 {
+			return "d", nil
+		}
+		return "", errors.New("stop")
+	})
+	t.Cleanup(restore)
+
+	paginator, err := NewChatIndexPaginator(convDir)
+	if err != nil {
+		t.Fatalf("NewChatIndexPaginator: %v", err)
+	}
+	var out strings.Builder
+	cq.out = &out
+	if err := cq.listChats(context.Background(), paginator); err == nil {
+		t.Fatal("expected listChats to surface the scripted stop error")
+	}
+
+	got := out.String()
+	if !strings.Contains(got, "[d]ir") {
+		t.Fatalf("expected the [d]ir button rendered in the table, got: %q", got)
+	}
+	if !strings.Contains(got, "dir filter") {
+		t.Fatalf("expected the dir filter to be active after pressing d, got: %q", got)
+	}
+}
 
 func TestChatListTokensOrNA(t *testing.T) {
 	chWith := pub_models.Chat{

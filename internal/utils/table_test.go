@@ -1284,6 +1284,120 @@ func Test_table_selectNumbers_filterPrefix(t *testing.T) {
 	})
 }
 
+func Test_table_togglePredicateFilter(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+
+	// Predicate keeps even original indices.
+	evenOnly := func(row any) bool {
+		s, ok := row.(string)
+		if !ok {
+			return false
+		}
+		return strings.HasSuffix(s, "0") || strings.HasSuffix(s, "2")
+	}
+
+	newTab := func(out *bytes.Buffer) *table[string] {
+		items := []string{"item0", "item1", "item2", "item3"}
+		paginator := SlicePaginator(items)
+		tab := &table[string]{
+			page:              0,
+			pageSize:          10,
+			paginator:         paginator,
+			originalPaginator: paginator,
+			rowFormater:       func(i int, item string) (string, error) { return item, nil },
+			out:               out,
+		}
+		tab.tableActions = []TableAction{{Format: "[d]ir", Short: "d", Long: "dir", Filter: evenOnly}}
+		return tab
+	}
+
+	t.Run("toggle on filters and selection translates to original index", func(t *testing.T) {
+		inputs := []string{"d", "1"}
+		restore := UseReadUserInputForTests(func() (string, error) {
+			next := inputs[0]
+			inputs = inputs[1:]
+			return next, nil
+		})
+		defer restore()
+
+		var out bytes.Buffer
+		tab := newTab(&out)
+
+		got, err := tab.selectNumbers()
+		if err != nil {
+			t.Fatalf("apply: %v", err)
+		}
+		if got != nil {
+			t.Fatalf("apply returned %v, want nil", got)
+		}
+		if !tab.predicateActive {
+			t.Fatal("expected predicateActive after toggle on")
+		}
+		if tab.paginator.totalAm() != 2 {
+			t.Fatalf("filtered total = %d, want 2", tab.paginator.totalAm())
+		}
+
+		// Displayed index 1 = matched item "item2" = original index 2.
+		got, err = tab.selectNumbers()
+		if err != nil {
+			t.Fatalf("select: %v", err)
+		}
+		if !reflect.DeepEqual(got, []int{2}) {
+			t.Fatalf("got %v, want [2] (original index)", got)
+		}
+	})
+
+	t.Run("second press toggles off and restores", func(t *testing.T) {
+		inputs := []string{"d", "d"}
+		restore := UseReadUserInputForTests(func() (string, error) {
+			next := inputs[0]
+			inputs = inputs[1:]
+			return next, nil
+		})
+		defer restore()
+
+		var out bytes.Buffer
+		tab := newTab(&out)
+		if _, err := tab.selectNumbers(); err != nil {
+			t.Fatalf("first toggle: %v", err)
+		}
+		if _, err := tab.selectNumbers(); err != nil {
+			t.Fatalf("second toggle: %v", err)
+		}
+		if tab.predicateActive {
+			t.Fatal("expected predicate cleared after second press")
+		}
+		if tab.filteredIndices != nil {
+			t.Fatal("expected filteredIndices nil after clear")
+		}
+		if tab.paginator.totalAm() != 4 {
+			t.Fatalf("restored total = %d, want 4", tab.paginator.totalAm())
+		}
+	})
+
+	t.Run("enter clears active predicate filter", func(t *testing.T) {
+		inputs := []string{"d", ""}
+		restore := UseReadUserInputForTests(func() (string, error) {
+			next := inputs[0]
+			inputs = inputs[1:]
+			return next, nil
+		})
+		defer restore()
+
+		var out bytes.Buffer
+		tab := newTab(&out)
+		if _, err := tab.selectNumbers(); err != nil {
+			t.Fatalf("toggle on: %v", err)
+		}
+		if _, err := tab.selectNumbers(); err != nil {
+			t.Fatalf("enter clear: %v", err)
+		}
+		if tab.predicateActive {
+			t.Fatal("expected enter to clear predicate filter")
+		}
+	})
+}
+
 func Test_table_promptLine_filter(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 

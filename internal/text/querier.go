@@ -37,11 +37,23 @@ type Querier[C models.StreamCompleter] struct {
 	debug                   bool
 	debugTextQuerierPrinted bool
 	shouldSaveReply         bool
-	hasPrinted              bool
-	Model                   C
-	tokenWarnLimit          int
-	toolOutputRuneLimit     int
-	rateLimitLastAmTokens   int
+	// replyMode gates always-on history recording: reply queries (-re/-dre) fork a
+	// fresh promoted id, so recording them would pollute the directory history.
+	replyMode bool
+	// dirReplyMode marks a directory-scoped reply (-dre). It continues the bound
+	// conversation in place (no fork), so unlike a plain -re it DOES record into the
+	// directory history; the finalizer gates recording on !replyMode || dirReplyMode.
+	dirReplyMode bool
+	// useLookback enables internal dispatch of the search/inspect/read tools.
+	useLookback bool
+	// lookbackCWD is the canonical session working directory, the default anchor
+	// for search_conversations.
+	lookbackCWD           string
+	hasPrinted            bool
+	Model                 C
+	tokenWarnLimit        int
+	toolOutputRuneLimit   int
+	rateLimitLastAmTokens int
 
 	// systemPrompt is the configured system prompt, injected into every
 	// TextQuery call that does not already carry a system message.

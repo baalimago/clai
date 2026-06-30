@@ -71,6 +71,11 @@ func (c *Configurations) ProfileOverrides() error {
 		c.UseSkills = *profile.UseSkills
 		c.ProfileUseSkillsSet = true
 	}
+	if profile.UseLookback != nil {
+		// Profile precedence (CLI > profile > file-default) is preserved by writing
+		// directly into UseLookback here; setupLookback reads it as the base value.
+		c.UseLookback = *profile.UseLookback
+	}
 	c.RequestedToolGlobs = profile.Tools
 	if profile.SaveReplyAsConv != nil {
 		c.SaveReplyAsConv = *profile.SaveReplyAsConv

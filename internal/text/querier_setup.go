@@ -192,6 +192,10 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	querier.chat.Profile = userConf.UseProfile
 	querier.Raw = userConf.Raw
 	querier.shouldSaveReply = !userConf.ChatMode && userConf.SaveReplyAsConv
+	querier.replyMode = userConf.ReplyMode
+	querier.dirReplyMode = userConf.DirReplyMode
+	querier.useLookback = userConf.UseLookback
+	querier.lookbackCWD = userConf.LookbackCWD
 	querier.tokenWarnLimit = userConf.TokenWarnLimit
 	querier.toolOutputRuneLimit = userConf.ToolOutputRuneLimit
 	querier.maxToolCalls = userConf.MaxToolCalls

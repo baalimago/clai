@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/baalimago/clai/internal/cost"
 	"github.com/baalimago/clai/internal/utils"
@@ -167,7 +168,9 @@ func (cq *ChatHandler) resolveChatDirInfo() (chatDirInfo, error) {
 		c, err := FromPath(conversationPathFromDir(cq.convDir, ds.ChatID))
 		if err == nil {
 			info := cq.infoFromChat("dir", ds.ChatID, c)
-			info.Updated = ds.Updated
+			if !ds.Updated.IsZero() {
+				info.Updated = ds.Updated.Format(time.RFC3339)
+			}
 			info.ConversationCreated = c.Created.Format("2006-01-02T15:04:05Z07:00")
 			// Error could be that there is no initial user message, which is very weird and
 			// wont ever happen ofc ofc

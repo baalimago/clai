@@ -158,6 +158,32 @@ func inputsForTool(toolName string) pub_models.Input {
 			input["arguments"] = prompt
 		}
 		return input
+	case "search_conversations":
+		input := pub_models.Input{"query": envOr("CLAI_MOCK_SEARCH_QUERY", "hello")}
+		if d := os.Getenv("CLAI_MOCK_SEARCH_DIRECTORY"); d != "" {
+			input["directory"] = d
+		}
+		if s := os.Getenv("CLAI_MOCK_SEARCH_SUBTREE"); s != "" {
+			input["subtree"] = s == "true"
+		}
+		return input
+	case "inspect_conversation":
+		input := pub_models.Input{"chat_id": os.Getenv("CLAI_MOCK_INSPECT_CHAT_ID")}
+		if r := os.Getenv("CLAI_MOCK_INSPECT_ROLE"); r != "" {
+			input["role"] = r
+		}
+		if m := os.Getenv("CLAI_MOCK_INSPECT_MATCH"); m != "" {
+			input["match"] = m
+		}
+		return input
+	case "read_message":
+		input := pub_models.Input{"chat_id": os.Getenv("CLAI_MOCK_READ_CHAT_ID")}
+		if idx := os.Getenv("CLAI_MOCK_READ_INDEX"); idx != "" {
+			if n, err := strconv.Atoi(idx); err == nil {
+				input["message_index"] = n
+			}
+		}
+		return input
 	case "cmd":
 		return pub_models.Input{"command": envOr("CLAI_MOCK_CMD_COMMAND", `printf mocked-cmd`)}
 	case "freetext_command":

@@ -154,8 +154,40 @@ func (cq *ChatHandler) handleListCmd(ctx context.Context) error {
 	return cq.listChats(ctx, paginator)
 }
 
+// dirFilterAction returns the toggleable [d]ir filter button, present only when
+// the current directory has recorded conversation history. The predicate keeps
+// rows whose chat_id is bound to the directory (head + history).
+func (cq *ChatHandler) dirFilterAction() (utils.TableAction, bool) {
+	wd, err := currentWorkingDirectory()
+	if err != nil {
+		return utils.TableAction{}, false
+	}
+	ids := DirHistoryChatIDs(cq.confDir, wd)
+	if len(ids) == 0 {
+		return utils.TableAction{}, false
+	}
+	return utils.TableAction{
+		Format: "[d]ir",
+		Short:  "d",
+		Long:   "dir",
+		Filter: func(row any) bool {
+			r, ok := row.(chatIndexRow)
+			if !ok {
+				return false
+			}
+			_, in := ids[r.ID]
+			return in
+		},
+	}, true
+}
+
 func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPaginator) error {
 	ancli.PrintOK(fmt.Sprintf("found '%v' conversations:\n", paginator.Len()))
+
+	tableActions := []utils.TableAction{}
+	if action, ok := cq.dirFilterAction(); ok {
+		tableActions = append(tableActions, action)
+	}
 
 	tblFmt := selectChatTblFormat
 	headArgs := []any{"Index", "Created", "Model", "Cost", "Prompt"}
@@ -208,7 +240,7 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 		},
 		utils.ThemeTableItems(),
 		true,
-		[]utils.TableAction{},
+		tableActions,
 		cq.out,
 	)
 	if err != nil {

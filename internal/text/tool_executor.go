@@ -48,6 +48,9 @@ func (e toolExecutor[C]) Execute(ctx context.Context, session *QuerySession, cal
 	if call.Name == string(pub_models.LoadSkillTool) {
 		return e.executeLoadSkill(ctx, session, call)
 	}
+	if isLookbackTool(call.Name) {
+		return e.executeLookbackTool(session, call)
+	}
 
 	// Build display message (has PrettyPrint in Content for user-facing output).
 	// The model-safe message for chat history omits Content so the model does not

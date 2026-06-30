@@ -169,6 +169,14 @@ func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, us
 	if userConf.UseSkills {
 		toolBox.RegisterTool(pkgtools.LoadSkill)
 	}
+	// Lookback tools are internal markers dispatched by the tool executor; like
+	// load_skill they are registered whenever the feature is active, independent of
+	// -t/-tools narrowing and even when external tools are disabled.
+	if userConf.UseLookback {
+		toolBox.RegisterTool(pkgtools.SearchConversations)
+		toolBox.RegisterTool(pkgtools.InspectConversation)
+		toolBox.RegisterTool(pkgtools.ReadMessage)
+	}
 	if !userConf.UseTools {
 		return
 	}
