@@ -121,17 +121,20 @@ func TestSearch_ANDSemanticsSubtreeAndExclusion(t *testing.T) {
 	}
 
 	// both tokens present, in the child dir
-	seedChat(t, confDir, "hit", child,
+	seedChat(
+		t, confDir, "hit", child,
 		msg("system", "ignored system prompt"),
 		msg("user", "fix the oauth refresh bug"),
 		msg("assistant", "patched the refresh token flow"),
 	)
 	// missing one token (no "refresh")
-	seedChat(t, confDir, "partial", child,
+	seedChat(
+		t, confDir, "partial", child,
 		msg("user", "fix the oauth login bug"),
 	)
 	// token only in leading system message -> must not match
-	seedChat(t, confDir, "sysonly", child,
+	seedChat(
+		t, confDir, "sysonly", child,
 		msg("system", "phantomtoken in system"),
 		msg("user", "unrelated content"),
 	)
@@ -182,7 +185,8 @@ func TestSearch_MatchesHTMLEscapedTokens(t *testing.T) {
 		t.Fatalf("CreateConfigDir: %v", err)
 	}
 	dir := t.TempDir()
-	seedChat(t, confDir, "htmlhit", dir,
+	seedChat(
+		t, confDir, "htmlhit", dir,
 		msg("user", "how do I render a <div> and escape a&b in this code"),
 	)
 
@@ -206,14 +210,17 @@ func TestSearch_PhraseRankingAndPagination(t *testing.T) {
 	dir := t.TempDir()
 
 	// "high" mentions the phrase several times -> higher score.
-	seedChat(t, confDir, "high", dir,
+	seedChat(
+		t, confDir, "high", dir,
 		msg("user", "deploy pipeline deploy pipeline deploy pipeline"),
 	)
-	seedChat(t, confDir, "low", dir,
+	seedChat(
+		t, confDir, "low", dir,
 		msg("user", "deploy pipeline once"),
 	)
 	// Contains the words but not the contiguous phrase.
-	seedChat(t, confDir, "nophrase", dir,
+	seedChat(
+		t, confDir, "nophrase", dir,
 		msg("user", "pipeline that we deploy separately"),
 	)
 
@@ -247,7 +254,8 @@ func TestInspectConversation_PaginationFiltersAndStorageTrueIndices(t *testing.T
 	if err := utils.CreateConfigDir(confDir); err != nil {
 		t.Fatalf("CreateConfigDir: %v", err)
 	}
-	seedChat(t, confDir, "conv", t.TempDir(),
+	seedChat(
+		t, confDir, "conv", t.TempDir(),
 		msg("system", "the system prompt"),
 		msg("user", "first question about widgets"),
 		msg("assistant", "first answer"),
@@ -287,7 +295,8 @@ func TestReadMessage_ResolutionAndOutOfRange(t *testing.T) {
 	if err := utils.CreateConfigDir(confDir); err != nil {
 		t.Fatalf("CreateConfigDir: %v", err)
 	}
-	seedChat(t, confDir, "conv", t.TempDir(),
+	seedChat(
+		t, confDir, "conv", t.TempDir(),
 		msg("system", "sys"),
 		msg("user", "hello there"),
 	)

@@ -85,10 +85,7 @@ func (s *bruteForceSearcher) Search(req SearchRequest) (SearchResult, error) {
 	if pageSize > maxSearchPageSize {
 		pageSize = maxSearchPageSize
 	}
-	page := req.Page
-	if page < 0 {
-		page = 0
-	}
+	page := max(req.Page, 0)
 
 	dir, err := canonicalDir(req.Directory)
 	if err != nil {
@@ -308,14 +305,8 @@ func snippetFor(content, lowerContent string, tokens []string) string {
 	} else {
 		idx = byteOffsetForRuneCount(content, utf8.RuneCountInString(lowerContent[:idx]))
 	}
-	start := idx - snippetRadius
-	if start < 0 {
-		start = 0
-	}
-	end := idx + snippetRadius
-	if end > len(content) {
-		end = len(content)
-	}
+	start := max(idx-snippetRadius, 0)
+	end := min(idx+snippetRadius, len(content))
 	// idx is a byte offset and the window edges land at arbitrary bytes; snap both
 	// to UTF-8 rune boundaries so a multibyte rune is never sliced in half (which
 	// would emit invalid UTF-8 into the tool result fed back to the model).

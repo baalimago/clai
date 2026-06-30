@@ -58,10 +58,7 @@ func BuildLookbackDescriptor(confDir, dir string, injectCount int) (LookbackDesc
 	if injectCount <= 0 {
 		injectCount = 5
 	}
-	shown := total
-	if shown > injectCount {
-		shown = injectCount
-	}
+	shown := min(total, injectCount)
 
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "This directory has %d recorded conversation(s) (showing the %d most recent, %d message(s) total).\n", total, shown, totalMsgs)

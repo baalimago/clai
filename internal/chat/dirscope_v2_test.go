@@ -107,7 +107,7 @@ func TestSaveDirScope_HistoryUpsertDedupAndFirstLast(t *testing.T) {
 func TestUpsertScopedHistory_CapsNewestFirst(t *testing.T) {
 	var history []ScopedChat
 	now := time.Now().UTC()
-	for i := 0; i < dirScopeHistoryCap+10; i++ {
+	for i := range dirScopeHistoryCap + 10 {
 		id := fmt.Sprintf("chat-%03d", i)
 		history = upsertScopedHistory(history, id, now.Add(time.Duration(i)*time.Second))
 	}
