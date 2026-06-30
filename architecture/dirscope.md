@@ -156,8 +156,7 @@ Accepted for a shell-driven CLI.
 
 ## Conversation lookback (opt-in via `-lb`/`-lookback`)
 
-Surfaced only when the lookback is enabled. Precedence: CLI `-lb`/`-lookback` (`*` enables, `none` disables)
-overrides the `use_lookback` profile field, which overrides the default (`false`). Resolution lives in
+Surfaced only when the lookback is enabled. Precedence: CLI `-lb`/`-lookback` (boolean flag) overrides the `use_lookback` profile field, which overrides the default (`false`). Resolution lives in
 `internal/setup.go:setupLookback`.
 
 ### Descriptor block (passive, dir-scoped memory)
@@ -389,9 +388,9 @@ E2E tests (`main_dirscope_e2e_test.go`) use the `mock` vendor with scripted tool
    into the chat index; a reply does not change an existing chat's `origin_dir`.
 5. **Lookback off by default** — without `-lb`, no `<recent_conversations>` block and no lookback tools, even
    though history and `origin_dir` are recorded.
-6. **Lookback on** — with `-lb=*` and seeded history, the system prompt contains the descriptor block with its
+6. **Lookback on** — with `-lb` and seeded history, the system prompt contains the descriptor block with its
    statistics header, and `search_conversations` / `inspect_conversation` / `read_message` are registered. With
-   `-lb=*` but **no** local history, the tools are still registered (no descriptor block injected), so the agent
+   `-lb` but **no** local history, the tools are still registered (no descriptor block injected), so the agent
    can search other paths from a fresh directory.
 7. **search_conversations** — a scripted call with a keyword finds the seeded conversation in the CWD; a search
    from a parent directory still finds it (subtree default) while `subtree=false` from that parent does not; an

@@ -257,6 +257,7 @@ func (t *table[T]) promptLine() string {
 	if actions != "" {
 		parts = append(parts, actions)
 	}
+	parts = append(parts, "[/] filter")
 	if t.filterString != "" {
 		parts = append(parts, fmt.Sprintf("filter: %q", t.filterString))
 	}

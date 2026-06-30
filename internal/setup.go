@@ -68,7 +68,7 @@ var defaultFlags = Configurations{
 	DirReplyMode:  false,
 	UseTools:      "",
 	UseSkills:     "",
-	UseLookback:   "",
+	UseLookback:   false,
 	ProfilePath:   "",
 }
 
@@ -313,22 +313,15 @@ const lookbackInjectCount = 5
 // marks the lookback active so the tools are registered. Enabled-but-no-history
 // surfaces nothing, matching the dirscope spec.
 func setupLookback(confDir string, tConf *text.Configurations, flagSet, defaultFlags Configurations) error {
-	enabled := tConf.UseLookback
+	// Profile overrides have already been applied to tConf.UseLookback.
+	// The flag (if explicitly set) takes final precedence.
 	if flagSet.UseLookback != defaultFlags.UseLookback {
-		switch flagSet.UseLookback {
-		case "*":
-			enabled = true
-		case "none":
-			enabled = false
-		default:
-			return fmt.Errorf("invalid lookback flag value %q: expected '*' or 'none'", flagSet.UseLookback)
-		}
+		tConf.UseLookback = flagSet.UseLookback
 	}
 
 	// The session CWD is the default anchor; the searcher canonicalizes it.
 	tConf.LookbackCWD = mustGetwd()
-	tConf.UseLookback = enabled
-	if !enabled {
+	if !tConf.UseLookback {
 		return nil
 	}
 

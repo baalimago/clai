@@ -339,7 +339,7 @@ func Test_table_print(t *testing.T) {
 			t.Fatalf("print() printed = %d, want 2", got)
 		}
 
-		wantContains := []string{"2=30\n", "3=40\n", "(select, [n]ext, [q]uit, page 1/2): "}
+		wantContains := []string{"2=30\n", "3=40\n", "(select, [n]ext, [q]uit, [/] filter, page 1/2): "}
 		for _, want := range wantContains {
 			if !strings.Contains(out.String(), want) {
 				t.Fatalf("print() output = %q, want substring %q", out.String(), want)
@@ -697,7 +697,7 @@ func Test_SelectFromTable(t *testing.T) {
 		}
 
 		output := out.String()
-		for _, want := range []string{"0=10\n", "1=20\n", "2=30\n", "3=40\n", "(select, [p]rev, [n]ext, [b]ack, [q]uit, page 0/1): ", "(select, [p]rev, [n]ext, [b]ack, [q]uit, page 1/1): "} {
+		for _, want := range []string{"0=10\n", "1=20\n", "2=30\n", "3=40\n", "(select, [p]rev, [n]ext, [b]ack, [q]uit, [/] filter, page 0/1): ", "(select, [p]rev, [n]ext, [b]ack, [q]uit, [/] filter, page 1/1): "} {
 			if !strings.Contains(output, want) {
 				t.Fatalf("SelectFromTable() output = %q, want substring %q", output, want)
 			}
@@ -773,7 +773,7 @@ func Test_SelectFromTable(t *testing.T) {
 		}
 
 		got := out.String()
-		if !strings.Contains(got, "(goto chat [<num>] / [<enter>], [p]rev, [n]ext, [b]ack, [q]uit): ") {
+		if !strings.Contains(got, "(goto chat [<num>] / [<enter>], [p]rev, [n]ext, [b]ack, [q]uit, [/] filter): ") {
 			t.Fatalf("print() output = %q, want unified prompt", got)
 		}
 	})
@@ -807,7 +807,7 @@ func Test_SelectFromTable(t *testing.T) {
 		if strings.Contains(out.String(), "page ") {
 			t.Fatalf("SelectFromTable() output = %q, want no page indicator", out.String())
 		}
-		if !strings.Contains(out.String(), "(Select item <num>, [p]rev, [n]ext, [b]ack, [q]uit): ") {
+		if !strings.Contains(out.String(), "(Select item <num>, [p]rev, [n]ext, [b]ack, [q]uit, [/] filter): ") {
 			t.Fatalf("SelectFromTable() output = %q, want unified prompt format", out.String())
 		}
 	})
@@ -1307,7 +1307,7 @@ func Test_table_togglePredicateFilter(t *testing.T) {
 			rowFormater:       func(i int, item string) (string, error) { return item, nil },
 			out:               out,
 		}
-		tab.tableActions = []TableAction{{Format: "[d]ir", Short: "d", Long: "dir", Filter: evenOnly}}
+		tab.tableActions = []TableAction{{Format: "[d]irscoped convs", Short: "d", Long: "dir", Filter: evenOnly}}
 		return tab
 	}
 
@@ -1446,15 +1446,15 @@ func Test_table_promptLine_filter(t *testing.T) {
 		}
 	})
 
-	t.Run("no filter indicator when filter is empty", func(t *testing.T) {
+	t.Run("always shows [/] filter legend", func(t *testing.T) {
 		tab := table[int]{
 			selectionType: "select",
 			pageSize:      10,
 			paginator:     SlicePaginator([]int{1}),
 		}
 		got := tab.promptLine()
-		if strings.Contains(got, "filter") {
-			t.Fatalf("promptLine() = %q, unexpected filter indicator", got)
+		if !strings.Contains(got, "[/] filter") {
+			t.Fatalf("promptLine() = %q, want [/] filter legend", got)
 		}
 	})
 }

@@ -274,7 +274,7 @@ func Test_e2e_dirscope_lookback_off_by_default(t *testing.T) {
 	}
 }
 
-// Covers the decoupling fix: with -lb=* in a directory that has NO recorded
+// Covers the decoupling fix: with -lb in a directory that has NO recorded
 // history, the search tools are still registered and dispatchable (so the agent can
 // investigate other paths), while no descriptor block is injected.
 func Test_e2e_dirscope_lookback_tools_without_local_history(t *testing.T) {
@@ -287,7 +287,7 @@ func Test_e2e_dirscope_lookback_tools_without_local_history(t *testing.T) {
 	// Fresh directory: no prior query, so the CWD binding has no history.
 	t.Setenv("CLAI_MOCK_SEARCH_QUERY", "anything")
 	stdout, stderr := captureStdoutStderr(t, func() {
-		_ = run(strings.Split("-r -lb=* -cm mock_test q please tool_search_conversations", " "))
+		_ = run(strings.Split("-r -lb -cm mock_test q please tool_search_conversations", " "))
 	})
 	combined := stdout + stderr
 	// Tool is registered and dispatched (header present), even with zero matches.
@@ -302,7 +302,7 @@ func Test_e2e_dirscope_lookback_tools_without_local_history(t *testing.T) {
 	}
 }
 
-// Covers E2E expectation 6/7/8: with -lb=* and seeded history the descriptor is
+// Covers E2E expectation 6/7/8: with -lb and seeded history the descriptor is
 // injected, and search_conversations / inspect_conversation / read_message work.
 func Test_e2e_dirscope_lookback_on_tools_work(t *testing.T) {
 	oldArgs := os.Args
@@ -324,7 +324,7 @@ func Test_e2e_dirscope_lookback_on_tools_work(t *testing.T) {
 	// search_conversations finds the seeded conversation and the descriptor is injected.
 	t.Setenv("CLAI_MOCK_SEARCH_QUERY", "oauthrefreshtoken")
 	stdout, stderr := captureStdoutStderr(t, func() {
-		_ = run(strings.Split("-r -lb=* -cm mock_test q please tool_search_conversations", " "))
+		_ = run(strings.Split("-r -lb -cm mock_test q please tool_search_conversations", " "))
 	})
 	combined := stdout + stderr
 	if !strings.Contains(combined, "match(es) in") {
@@ -347,7 +347,7 @@ func Test_e2e_dirscope_lookback_on_tools_work(t *testing.T) {
 	// inspect_conversation lists the seeded conversation's messages.
 	t.Setenv("CLAI_MOCK_INSPECT_CHAT_ID", seedID)
 	stdout, stderr = captureStdoutStderr(t, func() {
-		_ = run(strings.Split("-r -lb=* -cm mock_test q please tool_inspect_conversation", " "))
+		_ = run(strings.Split("-r -lb -cm mock_test q please tool_inspect_conversation", " "))
 	})
 	combined = stdout + stderr
 	if !strings.Contains(combined, "Conversation "+seedID+":") || !strings.Contains(combined, "index=0 role=system") {
@@ -358,7 +358,7 @@ func Test_e2e_dirscope_lookback_on_tools_work(t *testing.T) {
 	t.Setenv("CLAI_MOCK_READ_CHAT_ID", seedID)
 	t.Setenv("CLAI_MOCK_READ_INDEX", "1")
 	stdout, stderr = captureStdoutStderr(t, func() {
-		_ = run(strings.Split("-r -lb=* -cm mock_test q please tool_read_message", " "))
+		_ = run(strings.Split("-r -lb -cm mock_test q please tool_read_message", " "))
 	})
 	combined = stdout + stderr
 	if !strings.Contains(combined, "[user]") || !strings.Contains(combined, "oauthrefreshtoken") {
@@ -368,7 +368,7 @@ func Test_e2e_dirscope_lookback_on_tools_work(t *testing.T) {
 	// An out-of-range index returns an error tool result and the run continues.
 	t.Setenv("CLAI_MOCK_READ_INDEX", "999")
 	stdout, stderr = captureStdoutStderr(t, func() {
-		if status := run(strings.Split("-r -lb=* -cm mock_test q please tool_read_message", " ")); status != 0 {
+		if status := run(strings.Split("-r -lb -cm mock_test q please tool_read_message", " ")); status != 0 {
 			t.Fatalf("expected run to continue on out-of-range, status nonzero")
 		}
 	})

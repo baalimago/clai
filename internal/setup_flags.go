@@ -36,11 +36,9 @@ type Configurations struct {
 	//   "a,b,c" => only these tools
 	UseTools  string
 	UseSkills string
-	// UseLookback encodes conversation-lookback selection from CLI:
-	//   ""      => no override
-	//   "*"     => enable
-	//   "none"  => disable
-	UseLookback string
+	// UseLookback enables conversation lookback when true.
+	// When false (default), defers to profile/file configuration.
+	UseLookback bool
 	Glob        string
 	Profile     string
 	ProfilePath string
@@ -116,8 +114,8 @@ func parseFlags(defaults Configurations, args []string) (Configurations, []strin
 	useToolsLong := fs.String("tools", defaults.UseTools, "Enable tools. Use '*' for all tools or comma-separated list for specific tools.")
 	useSkillsShort := fs.String("s", defaults.UseSkills, "Enable skills. Use '*' to enable or 'none' to disable for the current run.")
 	useSkillsLong := fs.String("skills", defaults.UseSkills, "Enable skills. Use '*' to enable or 'none' to disable for the current run.")
-	useLookbackShort := fs.String("lb", defaults.UseLookback, "Enable conversation lookback (recent-conversations memory + search/inspect/read tools). Use '*' to enable or 'none' to disable.")
-	useLookbackLong := fs.String("lookback", defaults.UseLookback, "Enable conversation lookback (recent-conversations memory + search/inspect/read tools). Use '*' to enable or 'none' to disable.")
+	useLookbackShort := fs.Bool("lb", defaults.UseLookback, "Enable conversation lookback (recent-conversations memory + search/inspect/read tools).")
+	useLookbackLong := fs.Bool("lookback", defaults.UseLookback, "Enable conversation lookback (recent-conversations memory + search/inspect/read tools).")
 
 	err := fs.Parse(args)
 	if err != nil {
@@ -142,8 +140,7 @@ func parseFlags(defaults Configurations, args []string) (Configurations, []strin
 	exitWithFlagError(err, "t", "tools")
 	useSkills, err := utils.ReturnNonDefault(*useSkillsShort, *useSkillsLong, defaults.UseSkills)
 	exitWithFlagError(err, "s", "skills")
-	useLookback, err := utils.ReturnNonDefault(*useLookbackShort, *useLookbackLong, defaults.UseLookback)
-	exitWithFlagError(err, "lb", "lookback")
+	useLookback := *useLookbackShort || *useLookbackLong
 	profile, err := utils.ReturnNonDefault(*pShort, *pLong, defaults.Profile)
 	exitWithFlagError(err, "p", "profile")
 	profilePath, err := utils.ReturnNonDefault(*prPathShort, *prPathLong, defaults.ProfilePath)

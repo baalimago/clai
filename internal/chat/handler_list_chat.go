@@ -167,7 +167,7 @@ func (cq *ChatHandler) dirFilterAction() (utils.TableAction, bool) {
 		return utils.TableAction{}, false
 	}
 	return utils.TableAction{
-		Format: "[d]ir",
+		Format: "[d]irscoped convs",
 		Short:  "d",
 		Long:   "dir",
 		Filter: func(row any) bool {

@@ -73,7 +73,7 @@ type Configurations struct {
 
 	// UseLookback gates the opt-in conversation lookback: the recent-conversations
 	// descriptor plus the search/inspect/read tools. Resolved as
-	// CLI (-lb/-lookback) > profile (use_lookback) > default (false), and is only
+	// CLI (-lb/-lookback boolean) > profile (use_lookback) > default (false), and is only
 	// effectively true when the CWD binding has recorded history.
 	UseLookback bool `json:"use_lookback"`
 	// LookbackDescriptor is the dir-scoped recent-conversations block injected into

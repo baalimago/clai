@@ -53,7 +53,7 @@ func TestDirFilterAction_GatingAndPredicate(t *testing.T) {
 	if !ok {
 		t.Fatal("expected dir filter action once the directory has history")
 	}
-	if action.Format != "[d]ir" || action.Short != "d" || action.Filter == nil {
+	if action.Format != "[d]irscoped convs" || action.Short != "d" || action.Filter == nil {
 		t.Fatalf("unexpected action wiring: %+v", action)
 	}
 	if !action.Filter(chatIndexRow{ID: "bound"}) {
@@ -110,8 +110,8 @@ func TestListChats_DirFilterTogglesThroughListChats(t *testing.T) {
 	}
 
 	got := out.String()
-	if !strings.Contains(got, "[d]ir") {
-		t.Fatalf("expected the [d]ir button rendered in the table, got: %q", got)
+	if !strings.Contains(got, "[d]irscoped convs") {
+		t.Fatalf("expected the [d]irscoped convs button rendered in the table, got: %q", got)
 	}
 	if !strings.Contains(got, "dir filter") {
 		t.Fatalf("expected the dir filter to be active after pressing d, got: %q", got)
