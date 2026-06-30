@@ -32,12 +32,16 @@ type Configurations struct {
 	TokenWarnLimit int    `json:"token-warn-limit"`
 	// ToolOutputRuneLimit limits the amount of runes a tool may return
 	// before clai truncates the output. Zero means no limit.
-	ToolOutputRuneLimit int             `json:"tool-output-rune-limit"`
-	SaveReplyAsConv     bool            `json:"save-reply-as-prompt"`
-	ConfigDir           string          `json:"-"`
-	StdinReplace        string          `json:"-"`
-	Stream              bool            `json:"-"`
-	ReplyMode           bool            `json:"-"`
+	ToolOutputRuneLimit int    `json:"tool-output-rune-limit"`
+	SaveReplyAsConv     bool   `json:"save-reply-as-prompt"`
+	ConfigDir           string `json:"-"`
+	StdinReplace        string `json:"-"`
+	Stream              bool   `json:"-"`
+	ReplyMode           bool   `json:"-"`
+	// DirReplyMode marks a directory-scoped reply (-dre). Unlike a plain -re (which
+	// forks a fresh promoted id and must not record), -dre continues the bound
+	// conversation in place, so it DOES upsert the directory history (see finalizer).
+	DirReplyMode        bool            `json:"-"`
 	ChatMode            bool            `json:"-"`
 	Glob                string          `json:"-"`
 	InitialChat         pub_models.Chat `json:"-"`
@@ -66,6 +70,18 @@ type Configurations struct {
 	ResponseFormat   *pub_models.ResponseFormat `json:"-"`
 	SkillsDescriptor string                     `json:"-"`
 	SkillLoader      SkillLoader                `json:"-"`
+
+	// UseLookback gates the opt-in conversation lookback: the recent-conversations
+	// descriptor plus the search/inspect/read tools. Resolved as
+	// CLI (-lb/-lookback boolean) > profile (use_lookback) > default (false), and is only
+	// effectively true when the CWD binding has recorded history.
+	UseLookback bool `json:"use_lookback"`
+	// LookbackDescriptor is the dir-scoped recent-conversations block injected into
+	// the system prompt when the lookback is active.
+	LookbackDescriptor string `json:"-"`
+	// LookbackCWD is the canonical session working directory captured at setup,
+	// used as the default search anchor for search_conversations.
+	LookbackCWD string `json:"-"`
 }
 
 type CostManager interface {
@@ -96,6 +112,7 @@ type Profile struct {
 	SaveReplyAsConv *bool                           `json:"save-reply-as-conv,omitempty"`
 	McpServers      map[string]pub_models.McpServer `json:"mcp_servers,omitempty"`
 	ShellContext    string                          `json:"shell_context,omitempty"`
+	UseLookback     *bool                           `json:"use_lookback,omitempty"`
 }
 
 var Default = Configurations{
@@ -107,6 +124,7 @@ var Default = Configurations{
 	TokenWarnLimit:      333333,
 	ToolOutputRuneLimit: 21600,
 	SaveReplyAsConv:     true,
+	UseLookback:         false,
 
 	// Backwards compatibility for older configs.
 	CmdModePrompt: "You are an assistant for a CLI tool aiding with cli tool suggestions. Write ONLY the command and nothing else. Disregard any queries asking for anything except a bash command. Do not shell escape single or double quotes.",
@@ -127,6 +145,9 @@ func (c *Configurations) setupSystemPrompt() {
 	systemPrompt := c.SystemPrompt
 	if strings.TrimSpace(c.SkillsDescriptor) != "" {
 		systemPrompt += "\n\n" + c.SkillsDescriptor
+	}
+	if strings.TrimSpace(c.LookbackDescriptor) != "" {
+		systemPrompt += "\n\n" + c.LookbackDescriptor
 	}
 	if strings.TrimSpace(c.ShellContext) != "" {
 		promptWithCtx, err := AppendShellContextIfConfigured(context.Background(), c.ConfigDir, c.ShellContext, systemPrompt, ShellContextRenderer{})

@@ -21,6 +21,12 @@ type TableAction struct {
 	// AdditionalHotkeys which will trigger action
 	AdditionalHotkeys string
 	Action            func() error
+	// Filter, when non-nil, turns this action into a toggleable predicate filter:
+	// pressing it filters the table to rows for which Filter reports true, and
+	// pressing it again (or enter while any filter is active) clears it. The
+	// predicate receives each original row as an `any`. When Filter is set, Action
+	// is ignored.
+	Filter func(any) bool
 }
 
 //lint:ignore U1000 interface methods are exercised through generic interface values
@@ -76,6 +82,7 @@ type table[T any] struct {
 	originalPaginator Paginator[T]
 	filterString      string
 	filteredIndices   []int
+	predicateActive   bool
 	rowFormater       func(int, T) (string, error)
 	tableActions      []TableAction
 	out               io.Writer
@@ -250,8 +257,12 @@ func (t *table[T]) promptLine() string {
 	if actions != "" {
 		parts = append(parts, actions)
 	}
+	parts = append(parts, "[/] filter")
 	if t.filterString != "" {
 		parts = append(parts, fmt.Sprintf("filter: %q", t.filterString))
+	}
+	if t.predicateActive {
+		parts = append(parts, "dir filter")
 	}
 	if t.pageCount() == 0 {
 		if t.filteredIndices != nil && t.paginator.totalAm() == 0 {
@@ -292,8 +303,17 @@ func (t *table[T]) selectNumbers() ([]int, error) {
 		return nil, fmt.Errorf("failed to read table selection: %w", err)
 	}
 
+	// Enter (empty input) while any filter is active clears it.
+	if choice == "" && (t.filterString != "" || t.predicateActive) {
+		t.clearFilters()
+		return nil, nil
+	}
+
 	// Handle filter prefix: /<term> applies filter, / alone clears it
 	if strings.HasPrefix(choice, "/") {
+		if t.predicateActive {
+			t.clearPredicateFilter()
+		}
 		t.filterString = choice[1:]
 		if err := t.applyFilter(); err != nil {
 			return nil, fmt.Errorf("failed to apply filter: %w", err)
@@ -308,6 +328,12 @@ func (t *table[T]) selectNumbers() ([]int, error) {
 			additionalHotkeyMatch = slices.Contains(strings.Split(action.AdditionalHotkeys, ","), choice)
 		}
 		if choice == action.Long || choice == action.Short || additionalHotkeyMatch {
+			if action.Filter != nil {
+				if err := t.togglePredicateFilter(action.Filter); err != nil {
+					return nil, fmt.Errorf("failed to toggle predicate filter: %w", err)
+				}
+				return nil, nil
+			}
 			if action.Action == nil {
 				return nil, fmt.Errorf("table action %q has nil action", action.Long)
 			}
@@ -466,6 +492,52 @@ func (t *table[T]) applyFilter() error {
 	t.page = 0
 	t.lastPage = t.pageCount()
 	return nil
+}
+
+// togglePredicateFilter applies predicate over the original row set (recording
+// reverse indices so a selection still resolves to the correct original row), or
+// clears it when already active. It is mutually exclusive with the substring
+// filter: applying one clears the other.
+func (t *table[T]) togglePredicateFilter(predicate func(any) bool) error {
+	if t.predicateActive {
+		t.clearPredicateFilter()
+		return nil
+	}
+	// A predicate filter supersedes any active substring filter.
+	t.filterString = ""
+
+	totalAm := t.originalPaginator.totalAm()
+	allItems, err := t.originalPaginator.findPage(0, totalAm)
+	if err != nil {
+		return fmt.Errorf("failed to get items for predicate filtering: %w", err)
+	}
+	matchedIndices := make([]int, 0, len(allItems))
+	matchedItems := make([]T, 0, len(allItems))
+	for i, item := range allItems {
+		if predicate(any(item)) {
+			matchedIndices = append(matchedIndices, i)
+			matchedItems = append(matchedItems, item)
+		}
+	}
+	t.filteredIndices = matchedIndices
+	t.paginator = SlicePaginator(matchedItems)
+	t.predicateActive = true
+	t.page = 0
+	t.lastPage = t.pageCount()
+	return nil
+}
+
+func (t *table[T]) clearPredicateFilter() {
+	t.predicateActive = false
+	t.paginator = t.originalPaginator
+	t.filteredIndices = nil
+	t.page = 0
+	t.lastPage = t.pageCount()
+}
+
+func (t *table[T]) clearFilters() {
+	t.filterString = ""
+	t.clearPredicateFilter()
 }
 
 func (t *table[T]) parseNumbersFromString(choice string) ([]int, error) {

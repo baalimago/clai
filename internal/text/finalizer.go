@@ -66,11 +66,22 @@ func (f sessionFinalizer[C]) Finalize(session *QuerySession) {
 			}
 		}
 	costMgrDone:
+		// Origin stamping is always-on and forward-only: stamp the canonical CWD on
+		// first persist, preserve it on every later write (including replies).
+		if originErr := chat.EnsureOriginDir(q.configDir, &session.Chat); originErr != nil {
+			ancli.Warnf("failed to stamp origin directory: %v\n", originErr)
+		}
+		q.chat = session.Chat
 		err := chat.SaveAsPreviousQuery(q.configDir, session.Chat)
 		if err != nil {
 			ancli.PrintErr(fmt.Sprintf("failed to save previous query: %v\n", err))
 		}
-		if session.Chat.ID != "" && session.Chat.ID != "globalScope" {
+		// History recording is always-on for non-reply queries. A plain -re forks a
+		// fresh promoted id, so recording it would pollute the history with
+		// near-duplicates; but a directory reply (-dre) continues the bound
+		// conversation in place (same id), so recording it just bumps that entry —
+		// it keeps the directory's history current and the binding chainable.
+		if (!q.replyMode || q.dirReplyMode) && session.Chat.ID != "" && session.Chat.ID != "globalScope" {
 			if updateErr := chat.UpdateDirScopeFromCWD(q.configDir, session.Chat.ID); updateErr != nil {
 				ancli.Warnf("failed to update directory-scoped binding: %v\n", updateErr)
 			}

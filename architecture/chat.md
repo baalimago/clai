@@ -198,12 +198,14 @@ Loads `globalScope.json` (printing a warning if absent).
 
 ## Directory-scoped replies
 
-Directory-scoped bindings and lookup are described in more detail in `architecture/CHAT_DIRSCOPED.md`.
+Directory-scoped bindings, the `version: 2` binding record (`abs_path` + timestamped `history`), and
+conversation lookback are described in `architecture/dirscope.md`.
 
 In short:
 
 - `clai -dre query ...` replies using the conversation bound to CWD
 - `clai chat continue ...` is a convenient way to bind CWD → an existing conversation
+- each non-reply query also records the chat into the directory's history (see `dirscope.md`)
 
 ## Model interaction surface
 

@@ -339,7 +339,7 @@ func Test_table_print(t *testing.T) {
 			t.Fatalf("print() printed = %d, want 2", got)
 		}
 
-		wantContains := []string{"2=30\n", "3=40\n", "(select, [n]ext, [q]uit, page 1/2): "}
+		wantContains := []string{"2=30\n", "3=40\n", "(select, [n]ext, [q]uit, [/] filter, page 1/2): "}
 		for _, want := range wantContains {
 			if !strings.Contains(out.String(), want) {
 				t.Fatalf("print() output = %q, want substring %q", out.String(), want)
@@ -697,7 +697,7 @@ func Test_SelectFromTable(t *testing.T) {
 		}
 
 		output := out.String()
-		for _, want := range []string{"0=10\n", "1=20\n", "2=30\n", "3=40\n", "(select, [p]rev, [n]ext, [b]ack, [q]uit, page 0/1): ", "(select, [p]rev, [n]ext, [b]ack, [q]uit, page 1/1): "} {
+		for _, want := range []string{"0=10\n", "1=20\n", "2=30\n", "3=40\n", "(select, [p]rev, [n]ext, [b]ack, [q]uit, [/] filter, page 0/1): ", "(select, [p]rev, [n]ext, [b]ack, [q]uit, [/] filter, page 1/1): "} {
 			if !strings.Contains(output, want) {
 				t.Fatalf("SelectFromTable() output = %q, want substring %q", output, want)
 			}
@@ -773,7 +773,7 @@ func Test_SelectFromTable(t *testing.T) {
 		}
 
 		got := out.String()
-		if !strings.Contains(got, "(goto chat [<num>] / [<enter>], [p]rev, [n]ext, [b]ack, [q]uit): ") {
+		if !strings.Contains(got, "(goto chat [<num>] / [<enter>], [p]rev, [n]ext, [b]ack, [q]uit, [/] filter): ") {
 			t.Fatalf("print() output = %q, want unified prompt", got)
 		}
 	})
@@ -807,7 +807,7 @@ func Test_SelectFromTable(t *testing.T) {
 		if strings.Contains(out.String(), "page ") {
 			t.Fatalf("SelectFromTable() output = %q, want no page indicator", out.String())
 		}
-		if !strings.Contains(out.String(), "(Select item <num>, [p]rev, [n]ext, [b]ack, [q]uit): ") {
+		if !strings.Contains(out.String(), "(Select item <num>, [p]rev, [n]ext, [b]ack, [q]uit, [/] filter): ") {
 			t.Fatalf("SelectFromTable() output = %q, want unified prompt format", out.String())
 		}
 	})
@@ -1284,6 +1284,120 @@ func Test_table_selectNumbers_filterPrefix(t *testing.T) {
 	})
 }
 
+func Test_table_togglePredicateFilter(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+
+	// Predicate keeps even original indices.
+	evenOnly := func(row any) bool {
+		s, ok := row.(string)
+		if !ok {
+			return false
+		}
+		return strings.HasSuffix(s, "0") || strings.HasSuffix(s, "2")
+	}
+
+	newTab := func(out *bytes.Buffer) *table[string] {
+		items := []string{"item0", "item1", "item2", "item3"}
+		paginator := SlicePaginator(items)
+		tab := &table[string]{
+			page:              0,
+			pageSize:          10,
+			paginator:         paginator,
+			originalPaginator: paginator,
+			rowFormater:       func(i int, item string) (string, error) { return item, nil },
+			out:               out,
+		}
+		tab.tableActions = []TableAction{{Format: "[d]irscoped convs", Short: "d", Long: "dir", Filter: evenOnly}}
+		return tab
+	}
+
+	t.Run("toggle on filters and selection translates to original index", func(t *testing.T) {
+		inputs := []string{"d", "1"}
+		restore := UseReadUserInputForTests(func() (string, error) {
+			next := inputs[0]
+			inputs = inputs[1:]
+			return next, nil
+		})
+		defer restore()
+
+		var out bytes.Buffer
+		tab := newTab(&out)
+
+		got, err := tab.selectNumbers()
+		if err != nil {
+			t.Fatalf("apply: %v", err)
+		}
+		if got != nil {
+			t.Fatalf("apply returned %v, want nil", got)
+		}
+		if !tab.predicateActive {
+			t.Fatal("expected predicateActive after toggle on")
+		}
+		if tab.paginator.totalAm() != 2 {
+			t.Fatalf("filtered total = %d, want 2", tab.paginator.totalAm())
+		}
+
+		// Displayed index 1 = matched item "item2" = original index 2.
+		got, err = tab.selectNumbers()
+		if err != nil {
+			t.Fatalf("select: %v", err)
+		}
+		if !reflect.DeepEqual(got, []int{2}) {
+			t.Fatalf("got %v, want [2] (original index)", got)
+		}
+	})
+
+	t.Run("second press toggles off and restores", func(t *testing.T) {
+		inputs := []string{"d", "d"}
+		restore := UseReadUserInputForTests(func() (string, error) {
+			next := inputs[0]
+			inputs = inputs[1:]
+			return next, nil
+		})
+		defer restore()
+
+		var out bytes.Buffer
+		tab := newTab(&out)
+		if _, err := tab.selectNumbers(); err != nil {
+			t.Fatalf("first toggle: %v", err)
+		}
+		if _, err := tab.selectNumbers(); err != nil {
+			t.Fatalf("second toggle: %v", err)
+		}
+		if tab.predicateActive {
+			t.Fatal("expected predicate cleared after second press")
+		}
+		if tab.filteredIndices != nil {
+			t.Fatal("expected filteredIndices nil after clear")
+		}
+		if tab.paginator.totalAm() != 4 {
+			t.Fatalf("restored total = %d, want 4", tab.paginator.totalAm())
+		}
+	})
+
+	t.Run("enter clears active predicate filter", func(t *testing.T) {
+		inputs := []string{"d", ""}
+		restore := UseReadUserInputForTests(func() (string, error) {
+			next := inputs[0]
+			inputs = inputs[1:]
+			return next, nil
+		})
+		defer restore()
+
+		var out bytes.Buffer
+		tab := newTab(&out)
+		if _, err := tab.selectNumbers(); err != nil {
+			t.Fatalf("toggle on: %v", err)
+		}
+		if _, err := tab.selectNumbers(); err != nil {
+			t.Fatalf("enter clear: %v", err)
+		}
+		if tab.predicateActive {
+			t.Fatal("expected enter to clear predicate filter")
+		}
+	})
+}
+
 func Test_table_promptLine_filter(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 
@@ -1332,15 +1446,15 @@ func Test_table_promptLine_filter(t *testing.T) {
 		}
 	})
 
-	t.Run("no filter indicator when filter is empty", func(t *testing.T) {
+	t.Run("always shows [/] filter legend", func(t *testing.T) {
 		tab := table[int]{
 			selectionType: "select",
 			pageSize:      10,
 			paginator:     SlicePaginator([]int{1}),
 		}
 		got := tab.promptLine()
-		if strings.Contains(got, "filter") {
-			t.Fatalf("promptLine() = %q, unexpected filter indicator", got)
+		if !strings.Contains(got, "[/] filter") {
+			t.Fatalf("promptLine() = %q, want [/] filter legend", got)
 		}
 	})
 }

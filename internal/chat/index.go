@@ -22,6 +22,9 @@ type chatIndexRow struct {
 	TotalTokens      int       `json:"total_tokens,omitempty"`
 	TotalCostUSD     float64   `json:"total_cost_usd,omitempty"`
 	FirstUserMessage string    `json:"first_user_message,omitempty"`
+	// OriginDir mirrors Chat.OriginDir so directory-anchored search can filter
+	// candidates from the index without opening every conversation file.
+	OriginDir string `json:"origin_dir,omitempty"`
 }
 
 type ChatIndexPaginator struct {
@@ -65,6 +68,7 @@ func chatIndexRowFromChat(chat pub_models.Chat) chatIndexRow {
 		Profile:      chat.Profile,
 		MessageCount: len(chat.Messages),
 		TotalCostUSD: chat.TotalCostUSD(),
+		OriginDir:    chat.OriginDir,
 	}
 	if len(chat.Queries) > 0 {
 		row.TotalTokens = aggregateQueryTotalTokens(chat.Queries)

@@ -6,7 +6,7 @@ The **dre** command prints the most recent message from the **directory-scoped c
 
 This is the directory-scoped analog of `clai replay` / `clai re`.
 
-> Related: `clai -dre query ...` uses the bound chat as context. See `CHAT.md` (dir-scoped bindings) and `QUERY.md`.
+> Related: `clai -dre query ...` uses the bound chat as context. The directory binding record, its `version: 2` storage, and the always-on history recording this command reads from are defined in `architecture/dirscope.md`. See also `CHAT.md` (dir-scoped bindings) and `QUERY.md`.
 
 ## Entry Flow
 
@@ -28,6 +28,7 @@ main.go:run()
 | `internal/dre.go` | Implements the `dre` command querier (`dreQuerier`) |
 | `internal/chat/replay.go` | `Replay(raw, dirScoped)` + `replayDirScoped` |
 | `internal/chat/dirscope.go` | Directory binding storage + lookup (`LoadDirScope`) |
+| `architecture/dirscope.md` | Authoritative spec for the binding record, history recording, and lookback |
 | `architecture/chat.md` | Background: how conversations and dir bindings work |
 
 ## How it finds the conversation
