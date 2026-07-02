@@ -40,16 +40,22 @@ func TestDirFilterAction_GatingAndPredicate(t *testing.T) {
 	cq, confDir := newTestHandler(t)
 	wd := chdirToTemp(t)
 
-	// No binding yet => the button must not be offered.
-	if _, ok := cq.dirFilterAction(); ok {
-		t.Fatal("expected no dir filter action before any history is recorded")
+	action, ok := cq.dirFilterAction()
+	if !ok {
+		t.Fatal("expected dir filter action even before any history is recorded")
+	}
+	if action.Format != "[d]irscoped convs" || action.Short != "d" || action.Filter == nil {
+		t.Fatalf("unexpected action wiring before history: %+v", action)
+	}
+	if !strings.Contains(action.EmptyMessage, wd) {
+		t.Fatalf("expected empty message to mention cwd %q, got %q", wd, action.EmptyMessage)
 	}
 
 	if err := cq.SaveDirScope(wd, "bound"); err != nil {
 		t.Fatalf("SaveDirScope: %v", err)
 	}
 
-	action, ok := cq.dirFilterAction()
+	action, ok = cq.dirFilterAction()
 	if !ok {
 		t.Fatal("expected dir filter action once the directory has history")
 	}
@@ -115,6 +121,50 @@ func TestListChats_DirFilterTogglesThroughListChats(t *testing.T) {
 	}
 	if !strings.Contains(got, "dir filter") {
 		t.Fatalf("expected the dir filter to be active after pressing d, got: %q", got)
+	}
+}
+
+func TestListChats_DirFilterWithoutBindingsShowsEmptyDirScopedView(t *testing.T) {
+
+	cq, confDir := newTestHandler(t)
+	convDir := conversationsDir(confDir)
+	_ = chdirToTemp(t)
+
+	for _, c := range []pub_models.Chat{
+		{ID: "a", Created: time.Date(2026, 1, 2, 3, 4, 6, 0, time.UTC), Messages: []pub_models.Message{{Role: "user", Content: "prompt a"}}},
+		{ID: "b", Created: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC), Messages: []pub_models.Message{{Role: "user", Content: "prompt b"}}},
+	} {
+		if err := Save(convDir, c); err != nil {
+			t.Fatalf("Save(%q): %v", c.ID, err)
+		}
+	}
+
+	calls := 0
+	restore := utils.UseReadUserInputForTests(func() (string, error) {
+		calls++
+		if calls == 1 {
+			return "d", nil
+		}
+		return "", errors.New("stop")
+	})
+	t.Cleanup(restore)
+
+	paginator, err := NewChatIndexPaginator(convDir)
+	if err != nil {
+		t.Fatalf("NewChatIndexPaginator: %v", err)
+	}
+	var out strings.Builder
+	cq.out = &out
+	if err := cq.listChats(context.Background(), paginator); err == nil {
+		t.Fatal("expected listChats to surface the scripted stop error")
+	}
+
+	got := out.String()
+	if !strings.Contains(got, "[d]irscoped convs") {
+		t.Fatalf("expected the [d]irscoped convs button rendered in the table, got: %q", got)
+	}
+	if !strings.Contains(got, "no dirscoped conversations in") {
+		t.Fatalf("expected the empty dir-scoped state after pressing d, got: %q", got)
 	}
 }
 
