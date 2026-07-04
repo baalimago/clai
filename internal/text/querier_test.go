@@ -1423,8 +1423,8 @@ func Test_Querier_Query_ToolCallSession_PreservesFinalReplyRoleAndFinalUsage(t *
 	if len(saved.Messages) != 4 {
 		t.Fatalf("expected 4 messages, got %d", len(saved.Messages))
 	}
-	if saved.Messages[3].Role != "system" {
-		t.Fatalf("expected final saved reply role system, got %+v", saved.Messages[3])
+	if saved.Messages[3].Role != "assistant" {
+		t.Fatalf("expected final saved reply role assistant, got %+v", saved.Messages[3])
 	}
 	if saved.Messages[3].Content != "final answer" {
 		t.Fatalf("expected final answer, got %q", saved.Messages[3].Content)

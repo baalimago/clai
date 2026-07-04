@@ -248,11 +248,13 @@ func (q *Querier[C]) closeReasoningIfOpen(session *QuerySession) {
 	reasoningWrapped := "[thinking]" + q.reasoningBuf.String() + "\n[/thinking]\n"
 	if session.PendingTextString() == "" {
 		session.PendingText.WriteString(reasoningWrapped)
+		session.PendingReasoning.WriteString(q.reasoningBuf.String())
 	} else {
 		existing := session.PendingText.String()
 		session.PendingText.Reset()
 		session.PendingText.WriteString(reasoningWrapped)
 		session.PendingText.WriteString(existing)
+		session.PendingReasoning.WriteString(q.reasoningBuf.String())
 	}
 	q.fullMsg = session.PendingTextString()
 	q.reasoningBuf.Reset()

@@ -2,6 +2,7 @@ package text
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/baalimago/clai/internal/chat"
@@ -10,6 +11,23 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 )
+
+func stripThinkingBlocks(s string) string {
+	start := "[thinking]"
+	end := "[/thinking]"
+	for {
+		i := strings.Index(s, start)
+		if i == -1 {
+			return s
+		}
+		j := strings.Index(s[i+len(start):], end)
+		if j == -1 {
+			return s
+		}
+		j += i + len(start)
+		s = s[:i] + s[j+len(end):]
+	}
+}
 
 type sessionFinalizer[C models.StreamCompleter] struct {
 	querier *Querier[C]
@@ -31,8 +49,9 @@ func (f sessionFinalizer[C]) Finalize(session *QuerySession) {
 
 	if session.FinalAssistantText != "" {
 		session.Chat.Messages = append(session.Chat.Messages, pub_models.Message{
-			Role:    "system",
-			Content: session.FinalAssistantText,
+			Role:             "assistant",
+			Content:          stripThinkingBlocks(session.FinalAssistantText),
+			ReasoningContent: session.FinalReasoningText,
 		})
 	}
 	q.chat = session.Chat
@@ -95,7 +114,7 @@ func (f sessionFinalizer[C]) Finalize(session *QuerySession) {
 		return
 	}
 	q.postProcessOutput(pub_models.Message{
-		Role:    "system",
+		Role:    "assistant",
 		Content: session.FinalAssistantText,
 	})
 }

@@ -226,6 +226,55 @@ func Test_sessionRunner_Run_ToolCallPropagatesReasoningContent(t *testing.T) {
 	}
 }
 
+func Test_sessionRunner_Run_FinalReplyReasoningIsPersistedSeparatelyFromContent(t *testing.T) {
+	model := &MockQuerier{}
+	model.streamFn = func(_ context.Context, _ pub_models.Chat) (chan models.CompletionEvent, error) {
+		out := make(chan models.CompletionEvent, 3)
+		out <- models.ReasoningEvent{Content: "Need to inspect."}
+		out <- "done"
+		close(out)
+		return out, nil
+	}
+
+	q := &Querier[*MockQuerier]{
+		out:   &strings.Builder{},
+		Model: model,
+	}
+	session := &QuerySession{Chat: pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "hello"}}}}
+	finalizer := sessionFinalizer[*MockQuerier]{querier: q}
+	runner := sessionRunner[*MockQuerier]{
+		querier:      q,
+		recorder:     &recordingCallUsageRecorder{},
+		finalizer:    finalizer,
+		toolExecutor: toolExecutor[*MockQuerier]{querier: q},
+	}
+
+	err := runner.Run(context.Background(), session)
+	if err != nil {
+		t.Fatalf("Run returned err: %v", err)
+	}
+	if got := session.FinalAssistantText; !strings.Contains(got, "[thinking]Need to inspect.\n[/thinking]\ndone") {
+		t.Fatalf("expected final assistant text to contain wrapped reasoning, got %q", got)
+	}
+	if len(session.Chat.Messages) != 2 {
+		t.Fatalf("expected user + finalized assistant-ish message, got %d messages", len(session.Chat.Messages))
+	}
+	finalMsg := session.Chat.Messages[1]
+	if finalMsg.Role != "assistant" {
+		t.Fatalf("expected finalized message role assistant, got %q", finalMsg.Role)
+	}
+	if finalMsg.ReasoningContent != "Need to inspect." {
+		t.Fatalf("expected reasoning content to be preserved separately, got %q", finalMsg.ReasoningContent)
+	}
+	if strings.Contains(finalMsg.Content, "[thinking]") {
+		t.Fatalf("expected persisted assistant content to omit wrapped thinking markup, got %q", finalMsg.Content)
+	}
+}
+
+func Test_sessionRunner_Run_SecondToolCallDoesNotReusePreviousReasoningContent(t *testing.T) {
+	t.Skip("reasoning reuse is asserted at request-building level for generic stream completers")
+}
+
 func Test_sessionRunner_Run_RecorderFailureDoesNotFailQuery(t *testing.T) {
 	model := &MockQuerier{}
 	model.streamFn = func(_ context.Context, _ pub_models.Chat) (chan models.CompletionEvent, error) {

@@ -12,7 +12,9 @@ type QuerySession struct {
 	StartedAt           time.Time
 	FinishedAt          time.Time
 	PendingText         strings.Builder
+	PendingReasoning    strings.Builder
 	FinalAssistantText  string
+	FinalReasoningText  string
 	FinalUsage          *pub_models.Usage
 	CompletedCalls      []CompletedModelCall
 	ToolCallsUsed       int
@@ -43,6 +45,7 @@ func (s *QuerySession) PendingTextString() string {
 
 func (s *QuerySession) ResetPendingText() {
 	s.PendingText.Reset()
+	s.PendingReasoning.Reset()
 }
 
 func (s *QuerySession) AppendPendingText(token string) {
@@ -54,5 +57,7 @@ func (s *QuerySession) AppendPendingText(token string) {
 
 func (s *QuerySession) FlushPendingTextToFinal() {
 	s.FinalAssistantText = s.PendingText.String()
+	s.FinalReasoningText = s.PendingReasoning.String()
 	s.PendingText.Reset()
+	s.PendingReasoning.Reset()
 }
