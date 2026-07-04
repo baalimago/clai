@@ -11,7 +11,14 @@ import (
 type Chat struct {
 	Created time.Time `json:"created"`
 	ID      string    `json:"id"`
-	Profile string    `json:"profile,omitempty"`
+	// Source is a stable, human-readable origin label.
+	// Empty ("") for native clai chats.
+	// Examples: "claude-code", "codex", "cursor", "clai" (forked from another clai chat).
+	Source string `json:"source,omitempty"`
+	// SourceID is the originating tool's conversation identifier, or the
+	// parent chat ID when Source == "clai" (fork).
+	SourceID string `json:"source_id,omitempty"`
+	Profile  string `json:"profile,omitempty"`
 	// OriginDir is the canonical working directory the chat was first persisted
 	// from. It is stamped once on first persist and never rewritten, enabling
 	// directory-anchored conversation search. Empty for conversations saved
@@ -114,7 +121,12 @@ func (m Message) MarshalJSON() ([]byte, error) {
 		"role": m.Role,
 	}
 	if len(m.ToolCalls) > 0 {
-		obj["tool_calls"] = m.ToolCalls
+		patched := make([]Call, len(m.ToolCalls))
+		copy(patched, m.ToolCalls)
+		for i := range patched {
+			patched[i].Patch()
+		}
+		obj["tool_calls"] = patched
 	}
 	if m.ToolCallID != "" {
 		obj["tool_call_id"] = m.ToolCallID
@@ -124,7 +136,7 @@ func (m Message) MarshalJSON() ([]byte, error) {
 	}
 	if len(m.ContentParts) > 0 {
 		obj["content"] = m.ContentParts
-	} else if m.Content != "" {
+	} else {
 		obj["content"] = m.Content
 	}
 	return json.Marshal(obj)

@@ -35,6 +35,17 @@ type Chat struct {
     Created  time.Time `json:"created"`
     ID       string    `json:"id"`
     Profile  string    `json:"profile,omitempty"`
+
+    // Source is a stable, human-readable origin label.
+    // Empty ("") for native clai chats.
+    // Examples: "claude-code", "codex", "cursor", "clai" (for forked chats).
+    Source string `json:"source,omitempty"`
+
+    // SourceID is the originating tool's conversation identifier, or the
+    // parent chat ID when Source == "clai" (fork).
+    // clai treats (Source, SourceID) as a unique pair for dedup/provenance.
+    SourceID string `json:"source_id,omitempty"`
+
     Messages []Message `json:"messages"`
 }
 ```

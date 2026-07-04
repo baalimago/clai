@@ -235,6 +235,9 @@ func Test_Querier_NewQuerier(t *testing.T) {
 }
 
 func Test_Querier_handleToken(t *testing.T) {
+	// Avoid races with the cost manager error logger goroutine in NewQuerier.
+	// Some tests capture stdout by swapping the global os.Stdout.
+	t.Setenv("CLAI_DISABLE_COST_ERR_LOG_GOROUTINE", "1")
 	t.Run("it should print to stdout", func(t *testing.T) {
 		querier := Querier[*MockQuerier]{}
 		want := "somevalue"

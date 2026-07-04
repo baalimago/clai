@@ -56,11 +56,14 @@ func TestDirFilterAction_GatingAndPredicate(t *testing.T) {
 	if action.Format != "[d]irscoped convs" || action.Short != "d" || action.Filter == nil {
 		t.Fatalf("unexpected action wiring: %+v", action)
 	}
-	if !action.Filter(chatIndexRow{ID: "bound"}) {
+	if !action.Filter(chatListRow{Kind: chatRowNative, ChatID: "bound"}) {
 		t.Fatal("predicate should keep the bound chat")
 	}
-	if action.Filter(chatIndexRow{ID: "unbound"}) {
+	if action.Filter(chatListRow{Kind: chatRowNative, ChatID: "unbound"}) {
 		t.Fatal("predicate should drop a chat not bound to the directory")
+	}
+	if !action.Filter(chatListRow{Kind: chatRowForeign, Source: "claude-code", SourceID: "s1"}) {
+		t.Fatal("predicate should keep foreign rows")
 	}
 	if action.Filter("not-a-row") {
 		t.Fatal("predicate should drop a non-row value")

@@ -16,6 +16,8 @@ const chatIndexFileName = "chat_index.cache"
 type chatIndexRow struct {
 	ID               string    `json:"id"`
 	Created          time.Time `json:"created"`
+	Source           string    `json:"source,omitempty"`
+	SourceID         string    `json:"source_id,omitempty"`
 	Profile          string    `json:"profile,omitempty"`
 	Model            string    `json:"model,omitempty"`
 	MessageCount     int       `json:"message_count"`
@@ -65,6 +67,8 @@ func chatIndexRowFromChat(chat pub_models.Chat) chatIndexRow {
 	row := chatIndexRow{
 		ID:           chat.ID,
 		Created:      chat.Created,
+		Source:       chat.Source,
+		SourceID:     chat.SourceID,
 		Profile:      chat.Profile,
 		MessageCount: len(chat.Messages),
 		TotalCostUSD: chat.TotalCostUSD(),
