@@ -86,6 +86,10 @@ func TestListChats_DirFilterTogglesThroughListChats(t *testing.T) {
 	convDir := conversationsDir(confDir)
 	wd := chdirToTemp(t)
 
+	// Prevent real foreign sessions from polluting the table or causing timeout.
+	restoreReaders := useTestSourceReaders(nil)
+	t.Cleanup(restoreReaders)
+
 	for _, c := range []pub_models.Chat{
 		{ID: "bound", Created: time.Date(2026, 1, 2, 3, 4, 6, 0, time.UTC), Messages: []pub_models.Message{{Role: "user", Content: "bound prompt"}}},
 		{ID: "unbound", Created: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC), Messages: []pub_models.Message{{Role: "user", Content: "unbound prompt"}}},
@@ -132,6 +136,12 @@ func TestListChats_DirFilterWithoutBindingsShowsEmptyDirScopedView(t *testing.T)
 	cq, confDir := newTestHandler(t)
 	convDir := conversationsDir(confDir)
 	_ = chdirToTemp(t)
+
+	// Prevent real foreign sessions (claude-code, pi) on disk from bleeding
+	// into the test. The dir filter passes all foreign rows, which would
+	// prevent the "empty dir-scoped" message from appearing.
+	restoreReaders := useTestSourceReaders(nil)
+	t.Cleanup(restoreReaders)
 
 	for _, c := range []pub_models.Chat{
 		{ID: "a", Created: time.Date(2026, 1, 2, 3, 4, 6, 0, time.UTC), Messages: []pub_models.Message{{Role: "user", Content: "prompt a"}}},
@@ -325,6 +335,10 @@ func TestListChats_IncludesModelColumnAndValue(t *testing.T) {
 		t.Fatalf("CreateConfigDir: %v", err)
 	}
 
+	// Prevent real foreign sessions from polluting the table.
+	restoreReaders := useTestSourceReaders(nil)
+	t.Cleanup(restoreReaders)
+
 	convDir := filepath.Join(confDir, "conversations")
 	chat := pub_models.Chat{
 		ID:       "chat-with-model",
@@ -376,6 +390,10 @@ func TestListChats_NarrowWidthShowsCostAndPrompt(t *testing.T) {
 	if err := utils.CreateConfigDir(confDir); err != nil {
 		t.Fatalf("CreateConfigDir: %v", err)
 	}
+
+	// Prevent real foreign sessions from polluting the table or causing timeout.
+	restoreReaders := useTestSourceReaders(nil)
+	t.Cleanup(restoreReaders)
 
 	convDir := filepath.Join(confDir, "conversations")
 	chat := pub_models.Chat{
@@ -635,6 +653,10 @@ func TestListChats_GroupKeyZeroMembers_RendersGroupIndicator(t *testing.T) {
 	cq, confDir := newTestHandler(t)
 	convDir := conversationsDir(confDir)
 
+	// Prevent real foreign sessions from polluting the table and causing timeout.
+	restoreReaders := useTestSourceReaders(nil)
+	t.Cleanup(restoreReaders)
+
 	// Save chats whose GroupKey does NOT match the queried groupKey,
 	// ensuring the group view will be empty.
 	for _, c := range []pub_models.Chat{
@@ -686,4 +708,11 @@ func TestListChats_GroupKeyZeroMembers_RendersGroupIndicator(t *testing.T) {
 	if !strings.Contains(got, "[b]ack to list") {
 		t.Fatalf("expected [b]ack to list in output, got: %q", got)
 	}
+}
+
+// useTestSourceReaders replaces allSourceReaders for the duration of a test.
+func useTestSourceReaders(readers []vendors.SourceReader) func() {
+	orig := allSourceReaders
+	allSourceReaders = func() []vendors.SourceReader { return readers }
+	return func() { allSourceReaders = orig }
 }

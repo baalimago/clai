@@ -1,4 +1,4 @@
-package anthropic
+package pi
 
 import (
 	"bufio"
@@ -17,32 +17,32 @@ import (
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
-// SourceReader reads Claude Code / Claude Desktop conversation logs from disk.
+// SourceReader reads Pi coding agent session logs from disk.
 //
-// Storage (best-effort, observed): ~/.claude/projects/<project>/*.jsonl
-// Each line is JSON with a "type" such as: user, assistant, system, queue-operation.
+// Storage: ~/.pi/agent/sessions/<escaped-cwd>/<timestamp>_<uuid>.jsonl
+// Each line is JSON with top-level "type":
 //
-// This reader is intentionally conservative: discovery is bounded and skips
-// rows with missing SourceID.
+//	"session"             – metadata (id, cwd, timestamp, version)
+//	"model_change"        – provider/model change (skipped)
+//	"thinking_level_change" – thinking level change (skipped)
+//	"message"             – chat message with message.role: user, assistant, toolResult
 //
-// FS is injectable for tests.
-// If nil, os.DirFS("/") is used (absolute paths will work).
+// Content blocks within message.content array:
 //
-// Note: we keep the host-path logic (HOME expansion) outside the FS.
-// The FS is only used for opening files.
+//	{"type":"text","text":"..."}
+//	{"type":"thinking","thinking":"..."}
+//	{"type":"toolCall","id":"...","name":"...","arguments":{...}}
 //
 // clai never writes back to these sources.
 type SourceReader struct {
 	FS fs.FS
-	// Root is the absolute directory that contains the Claude projects.
-	// If empty, defaults to $HOME/.claude/projects.
-	//
-	// This exists primarily for tests; production code should leave it empty.
+	// Root is the absolute directory that contains the pi sessions.
+	// If empty, defaults to $HOME/.pi/agent/sessions.
 	Root string
 }
 
 func (r SourceReader) Source() string {
-	return "claude-code"
+	return "pi"
 }
 
 const (
@@ -50,7 +50,7 @@ const (
 )
 
 func (r SourceReader) Discover(ctx context.Context) ([]vendors.SourceRow, error) {
-	root := r.projectsRoot()
+	root := r.sessionsRoot()
 	if root == "" {
 		return []vendors.SourceRow{}, nil
 	}
@@ -59,7 +59,7 @@ func (r SourceReader) Discover(ctx context.Context) ([]vendors.SourceRow, error)
 		if errors.Is(err, os.ErrNotExist) {
 			return []vendors.SourceRow{}, nil
 		}
-		return nil, fmt.Errorf("stat claude projects dir %q: %w", root, err)
+		return nil, fmt.Errorf("stat pi sessions dir %q: %w", root, err)
 	}
 	if !st.IsDir() {
 		return []vendors.SourceRow{}, nil
@@ -89,7 +89,7 @@ func (r SourceReader) Discover(ctx context.Context) ([]vendors.SourceRow, error)
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("walk claude projects dir %q: %w", root, err)
+		return nil, fmt.Errorf("walk pi sessions dir %q: %w", root, err)
 	}
 	return rows, nil
 }
@@ -102,7 +102,7 @@ func (r SourceReader) discoverOne(ctx context.Context, absPath string) (vendors.
 	defer f.Close()
 
 	s := bufio.NewScanner(f)
-	s.Buffer(make([]byte, 0, 1<<20), 1<<20) // 1MB max token: keep bounded scanners robust.
+	s.Buffer(make([]byte, 0, 1<<20), 1<<20)
 
 	row := vendors.SourceRow{Source: r.Source(), RawPath: absPath}
 	lines := 0
@@ -124,36 +124,49 @@ func (r SourceReader) discoverOne(ctx context.Context, absPath string) (vendors.
 		if err := json.Unmarshal([]byte(line), &env); err != nil {
 			continue
 		}
-		if row.SourceID == "" {
-			if sid, _ := env["sessionId"].(string); sid != "" {
-				row.SourceID = sid
-			}
-		}
-		if row.Created.IsZero() {
-			if ts, _ := env["timestamp"].(string); ts != "" {
-				if t, err := time.Parse(time.RFC3339, ts); err == nil {
-					row.Created = t
+
+		topType, _ := env["type"].(string)
+		switch topType {
+		case "session":
+			if row.SourceID == "" {
+				if sid, _ := env["id"].(string); sid != "" {
+					row.SourceID = sid
 				}
 			}
-		}
-		typ, _ := env["type"].(string)
-		switch typ {
-		case "user":
-			row.MessageCount++
-			if row.FirstUserMessage == "" {
-				row.FirstUserMessage, row.FullFirstUserMessage = extractUserContentStrings(env)
+			if row.Created.IsZero() {
+				if ts, _ := env["timestamp"].(string); ts != "" {
+					if t, err := time.Parse(time.RFC3339Nano, ts); err == nil {
+						row.Created = t
+					}
+				}
 			}
-		case "assistant":
-			row.MessageCount++
-			if row.Model == "" {
-				if msg, _ := env["message"].(map[string]any); msg != nil {
+		case "message":
+			msg, _ := env["message"].(map[string]any)
+			if msg == nil {
+				continue
+			}
+			role, _ := msg["role"].(string)
+			switch role {
+			case "user":
+				row.MessageCount++
+				if row.FirstUserMessage == "" {
+					row.FirstUserMessage, row.FullFirstUserMessage = extractPiUserContent(msg)
+				}
+			case "assistant":
+				row.MessageCount++
+				if row.Model == "" {
 					if m, _ := msg["model"].(string); m != "" {
 						row.Model = m
 					}
 				}
+			case "toolResult":
+				row.MessageCount++
 			}
+		case "model_change", "thinking_level_change":
+			// skip, not relevant for chat history
 		}
 	}
+
 	if row.SourceID == "" {
 		return vendors.SourceRow{}, false
 	}
@@ -168,13 +181,27 @@ func (r SourceReader) discoverOne(ctx context.Context, absPath string) (vendors.
 	return row, true
 }
 
-func extractUserContentStrings(env map[string]any) (string, string) {
-	msg, _ := env["message"].(map[string]any)
-	if msg == nil {
+func extractPiUserContent(msg map[string]any) (string, string) {
+	content, _ := msg["content"].([]any)
+	if len(content) == 0 {
 		return "", ""
 	}
-	c := msg["content"]
-	s, _ := c.(string)
+	var full strings.Builder
+	for _, v := range content {
+		block, ok := v.(map[string]any)
+		if !ok {
+			continue
+		}
+		if typ, _ := block["type"].(string); typ == "text" {
+			if t, _ := block["text"].(string); t != "" {
+				if full.Len() > 0 {
+					full.WriteString("\n")
+				}
+				full.WriteString(t)
+			}
+		}
+	}
+	s := full.String()
 	return vendors.TruncateOneLine(s, 100), s
 }
 
@@ -190,10 +217,12 @@ func (r SourceReader) Read(ctx context.Context, sourceID string) (pub_models.Cha
 	defer f.Close()
 
 	s := bufio.NewScanner(f)
-	s.Buffer(make([]byte, 0, 1<<20), 10<<20) // 10MB max token: JSONL lines can be large.
+	s.Buffer(make([]byte, 0, 1<<20), 10<<20)
 	msgs := make([]pub_models.Message, 0, 128)
 	created := time.Time{}
 	cwd := ""
+	sessionFound := false
+
 	for s.Scan() {
 		line := strings.TrimSpace(s.Text())
 		if line == "" {
@@ -203,17 +232,13 @@ func (r SourceReader) Read(ctx context.Context, sourceID string) (pub_models.Cha
 		if err := json.Unmarshal([]byte(line), &env); err != nil {
 			continue
 		}
-		if sid, _ := env["sessionId"].(string); sid != "" && sid != sourceID {
-			continue
-		}
-		typ, _ := env["type"].(string)
-		switch typ {
-		case "system", "queue-operation":
-			continue
-		case "user":
+		topType, _ := env["type"].(string)
+		switch topType {
+		case "session":
+			sessionFound = true
 			if created.IsZero() {
 				if ts, _ := env["timestamp"].(string); ts != "" {
-					if t, err := time.Parse(time.RFC3339, ts); err == nil {
+					if t, err := time.Parse(time.RFC3339Nano, ts); err == nil {
 						created = t
 					}
 				}
@@ -223,22 +248,37 @@ func (r SourceReader) Read(ctx context.Context, sourceID string) (pub_models.Cha
 					cwd = v
 				}
 			}
-			msgs = append(msgs, mapUserMessage(env)...)
-		case "assistant":
-			msgs = append(msgs, mapAssistantMessage(env)...)
+		case "message":
+			if !sessionFound {
+				continue
+			}
+			msg, _ := env["message"].(map[string]any)
+			if msg == nil {
+				continue
+			}
+			role, _ := msg["role"].(string)
+			switch role {
+			case "user":
+				msgs = append(msgs, mapPiUserMessage(msg)...)
+			case "assistant":
+				msgs = append(msgs, mapPiAssistantMessage(msg)...)
+			case "toolResult":
+				msgs = append(msgs, mapPiToolResultMessage(msg))
+			}
+		case "model_change", "thinking_level_change":
+			// skip
 		}
 	}
 	if err := s.Err(); err != nil {
 		return pub_models.Chat{}, fmt.Errorf("scan jsonl %q: %w", absPath, err)
 	}
 
-	// Post-process: normalize Claude Code's parallel/interleaved tool call
-	// pattern into the strict sequential format APIs require.
+	// Post-process: normalize pi's parallel/interleaved tool call pattern
 	msgs = vendors.NormalizeToolCallSequence(msgs)
 
-	sys := pub_models.Message{Role: "system", Content: fmt.Sprintf("Continued from Claude Code session %s", sourceID)}
+	sys := pub_models.Message{Role: "system", Content: fmt.Sprintf("Continued from Pi session %s", sourceID)}
 	if cwd != "" {
-		sys.Content = fmt.Sprintf("Continued from Claude Code session %s (originally at %s).", sourceID, cwd)
+		sys.Content = fmt.Sprintf("Continued from Pi session %s (originally at %s).", sourceID, cwd)
 	}
 
 	chat := pub_models.Chat{
@@ -257,9 +297,9 @@ func (r SourceReader) Read(ctx context.Context, sourceID string) (pub_models.Cha
 }
 
 func (r SourceReader) findSessionFile(sourceID string) (string, error) {
-	root := r.projectsRoot()
+	root := r.sessionsRoot()
 	if root == "" {
-		return "", fmt.Errorf("claude projects root not configured")
+		return "", fmt.Errorf("pi sessions root not configured")
 	}
 	var found string
 	errFound := errors.New("found")
@@ -267,14 +307,13 @@ func (r SourceReader) findSessionFile(sourceID string) (string, error) {
 		if walkErr != nil {
 			return walkErr
 		}
-		// best-effort: skip dirs quickly
 		if d.IsDir() {
 			return nil
 		}
 		if !strings.HasSuffix(d.Name(), ".jsonl") {
 			return nil
 		}
-		ok, err := fileHasSessionID(r, p, sourceID)
+		ok, err := fileHasPiSessionID(r, p, sourceID)
 		if err != nil {
 			return nil
 		}
@@ -285,15 +324,15 @@ func (r SourceReader) findSessionFile(sourceID string) (string, error) {
 		return nil
 	})
 	if err != nil && !errors.Is(err, errFound) {
-		return "", fmt.Errorf("walk claude projects dir %q: %w", root, err)
+		return "", fmt.Errorf("walk pi sessions dir %q: %w", root, err)
 	}
 	if found == "" {
-		return "", fmt.Errorf("claude session %q not found", sourceID)
+		return "", fmt.Errorf("pi session %q not found", sourceID)
 	}
 	return found, nil
 }
 
-func (r SourceReader) projectsRoot() string {
+func (r SourceReader) sessionsRoot() string {
 	if r.Root != "" {
 		return r.Root
 	}
@@ -301,10 +340,10 @@ func (r SourceReader) projectsRoot() string {
 	if h == "" {
 		return ""
 	}
-	return filepath.Join(h, ".claude", "projects")
+	return filepath.Join(h, ".pi", "agent", "sessions")
 }
 
-func fileHasSessionID(r SourceReader, absPath, want string) (bool, error) {
+func fileHasPiSessionID(r SourceReader, absPath, want string) (bool, error) {
 	f, err := r.open(absPath)
 	if err != nil {
 		return false, err
@@ -327,8 +366,13 @@ func fileHasSessionID(r SourceReader, absPath, want string) (bool, error) {
 		if err := json.Unmarshal([]byte(line), &env); err != nil {
 			continue
 		}
-		if sid, _ := env["sessionId"].(string); sid == want {
-			return true, nil
+		if typ, _ := env["type"].(string); typ == "session" {
+			if sid, _ := env["id"].(string); sid == want {
+				return true, nil
+			}
+			// Session ID is only on the "session" line. If it doesn't match,
+			// this file is not the one we want.
+			return false, nil
 		}
 	}
 	if err := s.Err(); err != nil {
@@ -337,83 +381,60 @@ func fileHasSessionID(r SourceReader, absPath, want string) (bool, error) {
 	return false, nil
 }
 
-func mapUserMessage(env map[string]any) []pub_models.Message {
-	msg, _ := env["message"].(map[string]any)
-	if msg == nil {
-		return nil
-	}
-	c := msg["content"]
-	// user message can be string OR array of blocks (tool_result)
-	if s, ok := c.(string); ok {
-		return []pub_models.Message{{Role: "user", Content: s}}
-	}
-	arr, ok := c.([]any)
-	if !ok {
-		return nil
-	}
-	out := make([]pub_models.Message, 0, len(arr))
-	for _, v := range arr {
-		m, ok := v.(map[string]any)
+func mapPiUserMessage(msg map[string]any) []pub_models.Message {
+	content, _ := msg["content"].([]any)
+	var texts []string
+	for _, v := range content {
+		block, ok := v.(map[string]any)
 		if !ok {
 			continue
 		}
-		if typ, _ := m["type"].(string); typ != "tool_result" {
-			continue
+		if typ, _ := block["type"].(string); typ == "text" {
+			if t, _ := block["text"].(string); t != "" {
+				texts = append(texts, t)
+			}
 		}
-		toolID, _ := m["tool_use_id"].(string)
-		content, _ := m["content"].(string)
-		out = append(out, pub_models.Message{Role: "tool", ToolCallID: toolID, Content: content})
 	}
-	return out
+	if len(texts) == 0 {
+		return nil
+	}
+	return []pub_models.Message{{Role: "user", Content: strings.Join(texts, "\n")}}
 }
 
-func mapAssistantMessage(env map[string]any) []pub_models.Message {
-	msg, _ := env["message"].(map[string]any)
-	if msg == nil {
-		return nil
-	}
-	c := msg["content"]
-	arr, ok := c.([]any)
-	if !ok {
-		// sometimes might be string.
-		s, _ := c.(string)
-		if s != "" {
-			return []pub_models.Message{{Role: "assistant", Content: s}}
-		}
-		return nil
-	}
+func mapPiAssistantMessage(msg map[string]any) []pub_models.Message {
+	content, _ := msg["content"].([]any)
 	out := pub_models.Message{Role: "assistant"}
 	texts := make([]string, 0, 2)
-	for _, v := range arr {
-		m, ok := v.(map[string]any)
+	for _, v := range content {
+		block, ok := v.(map[string]any)
 		if !ok {
 			continue
 		}
-		typ, _ := m["type"].(string)
+		typ, _ := block["type"].(string)
 		switch typ {
 		case "text":
-			if t, _ := m["text"].(string); t != "" {
+			if t, _ := block["text"].(string); t != "" {
 				texts = append(texts, t)
 			}
 		case "thinking":
-			if th, _ := m["thinking"].(string); th != "" {
+			if th, _ := block["thinking"].(string); th != "" {
 				out.ReasoningContent = vendors.JoinNonEmpty(out.ReasoningContent, th)
 			}
-		case "tool_use":
-			id, _ := m["id"].(string)
-			name, _ := m["name"].(string)
-			input := m["input"]
-			args := "{}"
-			if input != nil {
-				if b, err := json.Marshal(input); err == nil {
-					args = string(b)
+		case "toolCall":
+			id, _ := block["id"].(string)
+			name, _ := block["name"].(string)
+			args := block["arguments"]
+			argsStr := "{}"
+			if args != nil {
+				if b, err := json.Marshal(args); err == nil {
+					argsStr = string(b)
 				}
 			}
 			call := pub_models.Call{
 				ID: id,
 				Function: pub_models.Specification{
 					Name:      name,
-					Arguments: args,
+					Arguments: argsStr,
 				},
 			}
 			call.Patch()
@@ -421,8 +442,6 @@ func mapAssistantMessage(env map[string]any) []pub_models.Message {
 		}
 	}
 	out.Content = strings.Join(texts, "\n")
-	// Skip empty assistant messages (stream "start" markers, etc).
-	// DeepSeek and similar APIs require content or tool_calls to be set.
 	if out.Content == "" && len(out.ToolCalls) == 0 {
 		if out.ReasoningContent != "" {
 			out.Content = "[thinking] " + out.ReasoningContent
@@ -433,12 +452,33 @@ func mapAssistantMessage(env map[string]any) []pub_models.Message {
 	return []pub_models.Message{out}
 }
 
+func mapPiToolResultMessage(msg map[string]any) pub_models.Message {
+	toolCallID, _ := msg["toolCallId"].(string)
+	content, _ := msg["content"].([]any)
+	var texts []string
+	for _, v := range content {
+		block, ok := v.(map[string]any)
+		if !ok {
+			continue
+		}
+		if typ, _ := block["type"].(string); typ == "text" {
+			if t, _ := block["text"].(string); t != "" {
+				texts = append(texts, t)
+			}
+		}
+	}
+	return pub_models.Message{
+		Role:       "tool",
+		ToolCallID: toolCallID,
+		Content:    strings.Join(texts, "\n"),
+	}
+}
+
 func (r SourceReader) open(absPath string) (io.ReadCloser, error) {
 	fsys := r.FS
 	if fsys == nil {
 		fsys = os.DirFS("/")
 	}
-	// absPath is absolute; os.DirFS("/") expects paths without leading slash.
 	p := strings.TrimPrefix(absPath, string(filepath.Separator))
 	f, err := fsys.Open(p)
 	if err != nil {
