@@ -89,6 +89,7 @@ func (r *sessionRunner[C]) Run(ctx context.Context, session *QuerySession) error
 
 		if stepResult.AssistantText != "" {
 			session.FinalAssistantText = stepResult.AssistantText
+			session.FinalReasoningText = session.PendingReasoning.String()
 		}
 		session.FinalUsage = stepResult.Usage
 		if stepResult.StopRequested || stepResult.EndedNormally {

@@ -198,6 +198,9 @@ func (q *MockQuerier) StreamCompletions(ctx context.Context, chat pub_models.Cha
 }
 
 func Test_Querier_NewQuerier(t *testing.T) {
+	// Avoid races with the cost manager error logger goroutine in NewQuerier.
+	// Some tests capture stdout by swapping the global os.Stdout.
+	t.Setenv("CLAI_DISABLE_COST_ERR_LOG_GOROUTINE", "1")
 	t.Run("it should load local model with correct type", func(t *testing.T) {
 		want := "somevalue"
 		model := "mock"
@@ -235,6 +238,9 @@ func Test_Querier_NewQuerier(t *testing.T) {
 }
 
 func Test_Querier_handleToken(t *testing.T) {
+	// Avoid races with the cost manager error logger goroutine in NewQuerier.
+	// Some tests capture stdout by swapping the global os.Stdout.
+	t.Setenv("CLAI_DISABLE_COST_ERR_LOG_GOROUTINE", "1")
 	t.Run("it should print to stdout", func(t *testing.T) {
 		querier := Querier[*MockQuerier]{}
 		want := "somevalue"
@@ -1420,8 +1426,8 @@ func Test_Querier_Query_ToolCallSession_PreservesFinalReplyRoleAndFinalUsage(t *
 	if len(saved.Messages) != 4 {
 		t.Fatalf("expected 4 messages, got %d", len(saved.Messages))
 	}
-	if saved.Messages[3].Role != "system" {
-		t.Fatalf("expected final saved reply role system, got %+v", saved.Messages[3])
+	if saved.Messages[3].Role != "assistant" {
+		t.Fatalf("expected final saved reply role assistant, got %+v", saved.Messages[3])
 	}
 	if saved.Messages[3].Content != "final answer" {
 		t.Fatalf("expected final answer, got %q", saved.Messages[3].Content)

@@ -26,8 +26,11 @@ func TestSaveAndFromPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("frompath failed: %v", err)
 	}
-	if !reflect.DeepEqual(ch, loaded) {
-		t.Errorf("loaded chat mismatch: %+v vs %+v", loaded, ch)
+	// Save stamps GroupKey on first persist.
+	want := ch
+	want.GroupKey = ComputeGroupKey(ch)
+	if !reflect.DeepEqual(want, loaded) {
+		t.Errorf("loaded chat mismatch: %+v vs %+v", loaded, want)
 	}
 }
 

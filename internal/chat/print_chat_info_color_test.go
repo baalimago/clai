@@ -28,7 +28,7 @@ func TestPrintChatInfoColorized(t *testing.T) {
 	}
 	cq := &ChatHandler{out: &b}
 
-	if err := cq.printChatInfo(&b, ch); err != nil {
+	if err := cq.printChatInfo(&b, ch, ""); err != nil {
 		t.Fatalf("printChatInfo: %v", err)
 	}
 

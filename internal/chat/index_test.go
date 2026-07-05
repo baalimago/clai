@@ -10,6 +10,73 @@ import (
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
+// TestRebuildChatIndex_ComputesGroupKey verifies that rebuilding the index
+// computes GroupKey for conversations that lack it (old chats from before
+// the GroupKey feature), while preserving existing GroupKeys.
+func TestRebuildChatIndex_ComputesGroupKey(t *testing.T) {
+	tmp := t.TempDir()
+
+	// Simulate an old chat saved without GroupKey (the JSON lacks "group_key").
+	oldChat := pub_models.Chat{
+		ID:       "old-chat",
+		Messages: []pub_models.Message{{Role: "user", Content: "fix the auth bug"}},
+	}
+	// Write directly to disk WITHOUT going through Save(), so GroupKey is not stamped.
+	b, err := json.MarshalIndent(oldChat, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	b = append(b, '\n')
+	if err := os.WriteFile(filepath.Join(tmp, "old-chat.json"), b, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	// Simulate a new chat saved via Save(), which stamps GroupKey.
+	newChat := pub_models.Chat{
+		ID:       "new-chat",
+		Messages: []pub_models.Message{{Role: "user", Content: "refactor database"}},
+	}
+	if err := Save(tmp, newChat); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	// Delete the index cache if it exists (Save creates it), then rebuild.
+	indexPath := chatIndexPath(tmp)
+	if err := os.Remove(indexPath); err != nil && !os.IsNotExist(err) {
+		t.Fatalf("remove index: %v", err)
+	}
+
+	rows, err := readChatIndex(tmp)
+	if err != nil {
+		t.Fatalf("readChatIndex: %v", err)
+	}
+
+	// Both rows should have non-empty GroupKey.
+	for _, row := range rows {
+		if row.GroupKey == "" {
+			t.Fatalf("row %q has empty GroupKey after rebuild", row.ID)
+		}
+	}
+
+	// Verify GroupKey matches the expected hash of the first user message.
+	wantOld := ComputeGroupKeyFromText("fix the auth bug")
+	wantNew := ComputeGroupKeyFromText("refactor database")
+	for _, row := range rows {
+		switch row.ID {
+		case "old-chat":
+			if row.GroupKey != wantOld {
+				t.Fatalf("old-chat GroupKey = %q, want %q", row.GroupKey, wantOld)
+			}
+		case "new-chat":
+			if row.GroupKey != wantNew {
+				t.Fatalf("new-chat GroupKey = %q, want %q", row.GroupKey, wantNew)
+			}
+		default:
+			t.Fatalf("unexpected row ID: %q", row.ID)
+		}
+	}
+}
+
 func TestSave_UpdatesChatIndex(t *testing.T) {
 	tmp := t.TempDir()
 	created := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
@@ -36,10 +103,11 @@ func TestSave_UpdatesChatIndex(t *testing.T) {
 		t.Fatalf("ReadFile() error = %v", err)
 	}
 
-	var rows []chatIndexRow
-	if err := json.Unmarshal(b, &rows); err != nil {
+	var cache chatIndexCache
+	if err := json.Unmarshal(b, &cache); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
+	rows := cache.Rows
 	if len(rows) != 1 {
 		t.Fatalf("len(rows) = %d, want 1", len(rows))
 	}
@@ -145,6 +213,110 @@ func TestFindChatByID_IndexLoadsOnlySelectedChat(t *testing.T) {
 	}
 	if h.prompt != "trailing prompt" {
 		t.Fatalf("prompt = %q, want trailing prompt", h.prompt)
+	}
+}
+
+// TestReadChatIndex_AutoMigratesStaleGroupKeys verifies that when the cached
+// index has rows with FirstUserMessage set but GroupKey empty, readChatIndex
+// automatically triggers a rebuild to stamp GroupKeys.
+func TestReadChatIndex_AutoMigratesStaleGroupKeys(t *testing.T) {
+	tmp := t.TempDir()
+
+	// Write a stale index cache: row has FirstUserMessage but no GroupKey.
+	staleRows := []chatIndexRow{
+		{ID: "a", FirstUserMessage: "fix the auth bug", GroupKey: ""},
+		{ID: "b", FirstUserMessage: "fix the auth bug", GroupKey: ""},
+		{ID: "c", FirstUserMessage: "refactor", GroupKey: ""},
+	}
+	b, err := json.Marshal(staleRows)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if err := os.WriteFile(chatIndexPath(tmp), b, 0o644); err != nil {
+		t.Fatalf("write cache: %v", err)
+	}
+
+	// Also write the corresponding chat files (needed for rebuild).
+	for _, r := range staleRows {
+		ch := pub_models.Chat{
+			ID:       r.ID,
+			Messages: []pub_models.Message{{Role: "user", Content: r.FirstUserMessage}},
+		}
+		bb, err := json.MarshalIndent(ch, "", "  ")
+		if err != nil {
+			t.Fatalf("marshal: %v", err)
+		}
+		bb = append(bb, '\n')
+		if err := os.WriteFile(filepath.Join(tmp, r.ID+".json"), bb, 0o644); err != nil {
+			t.Fatalf("write chat file: %v", err)
+		}
+	}
+
+	// readChatIndex should detect stale cache and rebuild.
+	rows, err := readChatIndex(tmp)
+	if err != nil {
+		t.Fatalf("readChatIndex: %v", err)
+	}
+
+	// All rows should have non-empty GroupKey now.
+	for _, r := range rows {
+		if r.FirstUserMessage != "" && r.GroupKey == "" {
+			t.Fatalf("row %q: expected GroupKey after migration, got empty", r.ID)
+		}
+	}
+
+	// Verify correct GroupKeys.
+	wantFix := ComputeGroupKeyFromText("fix the auth bug")
+	wantRefactor := ComputeGroupKeyFromText("refactor")
+	for _, r := range rows {
+		switch r.ID {
+		case "a", "b":
+			if r.GroupKey != wantFix {
+				t.Fatalf("row %q GroupKey = %q, want %q", r.ID, r.GroupKey, wantFix)
+			}
+		case "c":
+			if r.GroupKey != wantRefactor {
+				t.Fatalf("row %q GroupKey = %q, want %q", r.ID, r.GroupKey, wantRefactor)
+			}
+		}
+	}
+}
+
+// TestReadChatIndex_CorruptedCacheRecovers verifies that a malformed cache file
+// (object that is neither a valid chatIndexCache nor a legacy array) triggers
+// an automatic rebuild instead of returning a fatal error.
+func TestReadChatIndex_CorruptedCacheRecovers(t *testing.T) {
+	tmp := t.TempDir()
+
+	// Write chat files so rebuild has data to work with.
+	ch := pub_models.Chat{
+		ID:       "a",
+		Messages: []pub_models.Message{{Role: "user", Content: "hello"}},
+	}
+	bb, err := json.MarshalIndent(ch, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmp, "a.json"), append(bb, '\n'), 0o644); err != nil {
+		t.Fatalf("write chat file: %v", err)
+	}
+
+	// Write a corrupted cache: an object that is neither a valid
+	// chatIndexCache (no "rows" field) nor a legacy array.
+	corrupted := []byte(`{"garbage": true}`)
+	if err := os.WriteFile(chatIndexPath(tmp), corrupted, 0o644); err != nil {
+		t.Fatalf("write corrupted cache: %v", err)
+	}
+
+	rows, err := readChatIndex(tmp)
+	if err != nil {
+		t.Fatalf("readChatIndex should recover from corrupted cache: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row after recovery, got %d", len(rows))
+	}
+	if rows[0].ID != "a" {
+		t.Fatalf("expected row ID 'a', got %q", rows[0].ID)
 	}
 }
 

@@ -172,7 +172,7 @@ func (q *Querier[C]) postProcessOutput(newSysMsg pub_models.Message) {
 				}
 			}
 		}
-		utils.ClearTermTo(q.out, q.termWidth, q.lineCount-1)
+		utils.ClearTermTo(q.out, q.lineCount-1)
 	} else {
 		fmt.Println()
 	}
@@ -248,11 +248,13 @@ func (q *Querier[C]) closeReasoningIfOpen(session *QuerySession) {
 	reasoningWrapped := "[thinking]" + q.reasoningBuf.String() + "\n[/thinking]\n"
 	if session.PendingTextString() == "" {
 		session.PendingText.WriteString(reasoningWrapped)
+		session.PendingReasoning.WriteString(q.reasoningBuf.String())
 	} else {
 		existing := session.PendingText.String()
 		session.PendingText.Reset()
 		session.PendingText.WriteString(reasoningWrapped)
 		session.PendingText.WriteString(existing)
+		session.PendingReasoning.WriteString(q.reasoningBuf.String())
 	}
 	q.fullMsg = session.PendingTextString()
 	q.reasoningBuf.Reset()

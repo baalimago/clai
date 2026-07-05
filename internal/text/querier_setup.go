@@ -234,19 +234,24 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	querier.costMgrRdyChan = rdyChan
 	querier.costMgrErrChan = errChan
 	querier.costManager = costManager
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case err, open := <-errChan:
-				if !open {
+	// IMPORTANT: avoid spawning a goroutine that writes to stdout/stderr in tests.
+	// Some tests capture stdout by swapping the global os.Stdout which will race
+	// with concurrent writers under -race.
+	if !misc.Truthy(os.Getenv("CLAI_DISABLE_COST_ERR_LOG_GOROUTINE")) {
+		go func() {
+			for {
+				select {
+				case <-ctx.Done():
 					return
+				case err, open := <-errChan:
+					if !open {
+						return
+					}
+					ancli.Warnf("cost manager error: %v", err)
 				}
-				ancli.Warnf("cost manager error: %v", err)
 			}
-		}
-	}()
+		}()
+	}
 
 	return querier, nil
 }

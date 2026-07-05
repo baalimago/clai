@@ -255,7 +255,7 @@ func (e toolExecutor[C]) finalizeAssistantTextBeforeToolCall(session *QuerySessi
 	q := e.querier
 	if !q.Raw && q.termWidth > 0 {
 		utils.UpdateMessageTerminalMetadata(pending, &session.Line, &session.LineCount, q.termWidth)
-		if err := utils.ClearTermTo(q.out, q.termWidth, session.LineCount-1); err != nil {
+		if err := utils.ClearTermTo(q.out, session.LineCount-1); err != nil {
 			return fmt.Errorf("clear streamed assistant text before tool call: %w", err)
 		}
 	}

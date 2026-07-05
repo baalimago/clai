@@ -239,6 +239,51 @@ func TestCreateRequest_PassesBackReasoningContent(t *testing.T) {
 	}
 }
 
+func TestCreateRequest_PassesBackReasoningContentOnMultipleAssistantTurns(t *testing.T) {
+	s := &StreamCompleter{
+		Model:  "m",
+		apiKey: "sekret",
+		URL:    "http://example.invalid",
+	}
+	chat := pub_models.Chat{Messages: []pub_models.Message{
+		{
+			Role:             "assistant",
+			Content:          "First turn",
+			ReasoningContent: "Need tool A.",
+			ToolCalls:        []pub_models.Call{{ID: "call-1", Name: "ls", Type: "function"}},
+		},
+		{Role: "tool", ToolCallID: "call-1", Content: "a.txt"},
+		{
+			Role:             "assistant",
+			Content:          "Second turn",
+			ReasoningContent: "Need tool B.",
+			ToolCalls:        []pub_models.Call{{ID: "call-2", Name: "pwd", Type: "function"}},
+		},
+	}}
+	httpReq, err := s.createRequest(context.Background(), chat)
+	if err != nil {
+		t.Fatalf("createRequest err: %v", err)
+	}
+
+	b, _ := io.ReadAll(httpReq.Body)
+	var body map[string]any
+	if err := jsonUnmarshal(b, &body); err != nil {
+		t.Fatalf("unmarshal body: %v\nbody=%s", err, string(b))
+	}
+	messages, ok := body["messages"].([]any)
+	if !ok || len(messages) != 3 {
+		t.Fatalf("expected three messages, got: %T %v", body["messages"], body["messages"])
+	}
+	first, _ := messages[0].(map[string]any)
+	if got, _ := first["reasoning_content"].(string); got != "Need tool A." {
+		t.Fatalf("first reasoning_content mismatch: got %q", got)
+	}
+	third, _ := messages[2].(map[string]any)
+	if got, _ := third["reasoning_content"].(string); got != "Need tool B." {
+		t.Fatalf("second reasoning_content mismatch: got %q", got)
+	}
+}
+
 func TestCreateRequest_ExtraHeaders(t *testing.T) {
 	s := &StreamCompleter{
 		Model:        "m",

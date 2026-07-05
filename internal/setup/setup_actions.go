@@ -227,6 +227,7 @@ func actionReconfigureStringFieldWithEditor(cfg config, fieldName string) error 
 			true,
 			nil,
 			os.Stdout,
+			"",
 		)
 
 		if len(choice) > 1 {

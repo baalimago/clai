@@ -583,6 +583,7 @@ func Test_SelectFromTable(t *testing.T) {
 			false,
 			nil,
 			new(bytes.Buffer),
+			"",
 		)
 		if err != nil {
 			t.Fatalf("SelectFromTable() unexpected error: %v", err)
@@ -607,6 +608,7 @@ func Test_SelectFromTable(t *testing.T) {
 			false,
 			[]TableAction{{Format: "[x]tra", Short: "x", Long: "extra", Action: nil}},
 			new(bytes.Buffer),
+			"",
 		)
 		if err == nil {
 			t.Fatal("SelectFromTable() error = nil, want error")
@@ -632,6 +634,7 @@ func Test_SelectFromTable(t *testing.T) {
 			true,
 			nil,
 			new(bytes.Buffer),
+			"",
 		)
 		if err == nil {
 			t.Fatal("SelectFromTable() error = nil, want error")
@@ -660,6 +663,7 @@ func Test_SelectFromTable(t *testing.T) {
 			false,
 			[]TableAction{{Format: "[x]tra", Short: "x", Long: "extra", Action: func() error { return nil }}},
 			new(bytes.Buffer),
+			"",
 		)
 		if !errors.Is(err, ErrBack) {
 			t.Fatalf("SelectFromTable() error = %v, want %v", err, ErrBack)
@@ -688,6 +692,7 @@ func Test_SelectFromTable(t *testing.T) {
 			true,
 			nil,
 			&out,
+			"",
 		)
 		if err != nil {
 			t.Fatalf("SelectFromTable() unexpected error: %v", err)
@@ -709,7 +714,7 @@ func Test_SelectFromTable(t *testing.T) {
 		defer func() { clearTermToFn = originalClearTermTo }()
 
 		var cleared []int
-		clearTermToFn = func(w io.Writer, termWidth, upTo int) error {
+		clearTermToFn = func(w io.Writer, upTo int) error {
 			cleared = append(cleared, upTo)
 			return nil
 		}
@@ -734,6 +739,7 @@ func Test_SelectFromTable(t *testing.T) {
 			true,
 			nil,
 			new(bytes.Buffer),
+			"",
 		); err != nil {
 			t.Fatalf("SelectFromTable() unexpected error: %v", err)
 		}
@@ -785,7 +791,7 @@ func Test_SelectFromTable(t *testing.T) {
 
 		prevClear := clearTermToFn
 		defer func() { clearTermToFn = prevClear }()
-		clearTermToFn = func(io.Writer, int, int) error { return nil }
+		clearTermToFn = func(io.Writer, int) error { return nil }
 
 		var out bytes.Buffer
 		got, err := SelectFromTable(
@@ -797,6 +803,7 @@ func Test_SelectFromTable(t *testing.T) {
 			true,
 			nil,
 			&out,
+			"",
 		)
 		if err != nil {
 			t.Fatalf("SelectFromTable() unexpected error: %v", err)
@@ -819,7 +826,7 @@ func Test_SelectFromTable(t *testing.T) {
 
 		prevClear := clearTermToFn
 		defer func() { clearTermToFn = prevClear }()
-		clearTermToFn = func(io.Writer, int, int) error { return nil }
+		clearTermToFn = func(io.Writer, int) error { return nil }
 
 		_, err := SelectFromTable(
 			"header",
@@ -830,6 +837,7 @@ func Test_SelectFromTable(t *testing.T) {
 			true,
 			[]TableAction{{Format: "[n]ew", Short: "n", Long: "new", Action: func() error { return nil }}},
 			io.Discard,
+			"",
 		)
 		if err == nil {
 			t.Fatal("SelectFromTable() error = nil, want duplicate hotkey error")
@@ -846,7 +854,7 @@ func Test_SelectFromTable(t *testing.T) {
 
 		prevClear := clearTermToFn
 		defer func() { clearTermToFn = prevClear }()
-		clearTermToFn = func(io.Writer, int, int) error { return nil }
+		clearTermToFn = func(io.Writer, int) error { return nil }
 
 		_, err := SelectFromTable(
 			"header",
@@ -857,6 +865,7 @@ func Test_SelectFromTable(t *testing.T) {
 			true,
 			[]TableAction{{Format: "[b]ack", Short: "b", Long: "back", Action: func() error { return nil }}},
 			io.Discard,
+			"",
 		)
 		if err == nil {
 			t.Fatal("SelectFromTable() error = nil, want duplicate hotkey error")

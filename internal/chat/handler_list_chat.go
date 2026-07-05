@@ -2,22 +2,27 @@ package chat
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"time"
 	"unicode/utf8"
 
 	"github.com/baalimago/clai/internal/cost"
 	"github.com/baalimago/clai/internal/utils"
+	"github.com/baalimago/clai/internal/vendors"
+	"github.com/baalimago/clai/internal/vendors/anthropic"
+	"github.com/baalimago/clai/internal/vendors/pi"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
-const chatInfoPrintHeight = 13
+const chatInfoPrintHeight = 16
 
 func chatListTokenStr(item pub_models.Chat) string {
 	if item.TokenUsage == nil {
@@ -54,8 +59,162 @@ func chatIndexCostStr(item chatIndexRow) string {
 	return cost.FormatUSD(item.TotalCostUSD)
 }
 
-func (cq *ChatHandler) actOnChat(ctx context.Context, chat pub_models.Chat) error {
-	if err := cq.printChatInfo(cq.out, chat); err != nil {
+type chatRowKind uint8
+
+const (
+	chatRowNative chatRowKind = iota
+	chatRowForeign
+	chatRowGroup
+)
+
+// errExitList is returned by actOnChat/actOnForeignChat to signal
+// the listChats loop should exit cleanly (e.g., after [Enter] continue).
+var errExitList = errors.New("exit list")
+
+type chatListRow struct {
+	Kind    chatRowKind
+	Created time.Time
+
+	// Native
+	ChatID string
+
+	// Foreign
+	Source   string
+	SourceID string
+
+	// Display
+	Profile          string
+	Model            string
+	MessageCount     int
+	TotalTokens      int
+	TotalCostUSD     float64
+	FirstUserMessage string
+	// GroupKey is set for all rows; group rows distinguish by Kind == chatRowGroup.
+	GroupKey string
+	// GroupMemberCount is populated only for group rows (Kind == chatRowGroup).
+	GroupMemberCount int
+}
+
+func (r chatListRow) displaySource() string {
+	if r.Kind == chatRowForeign {
+		return r.Source
+	}
+	if r.Source != "" {
+		return r.Source
+	}
+	return "clai"
+}
+
+var allSourceReaders = func() []vendors.SourceReader {
+	return []vendors.SourceReader{
+		anthropic.SourceReader{},
+		pi.SourceReader{},
+	}
+}
+
+func sourceReaderByName(readers []vendors.SourceReader) (map[string]vendors.SourceReader, error) {
+	m := map[string]vendors.SourceReader{}
+	for _, r := range readers {
+		name := r.Source()
+		if name == "" {
+			return nil, fmt.Errorf("source reader returned empty Source()")
+		}
+		if _, exists := m[name]; exists {
+			return nil, fmt.Errorf("duplicate source reader name: %q", name)
+		}
+		m[name] = r
+	}
+	return m, nil
+}
+
+func sourceDedupKey(source, sourceID string) string {
+	return source + "\x00" + sourceID
+}
+
+func (cq *ChatHandler) foreignChatRows(ctx context.Context, readers []vendors.SourceReader, existing map[string]struct{}) ([]chatListRow, error) {
+	rows := []chatListRow{}
+	for _, r := range readers {
+		found, err := r.Discover(ctx)
+		if err != nil {
+			if misc.Truthy(os.Getenv("DEBUG")) {
+				ancli.Noticef("skipping source %s: %v\n", r.Source(), err)
+			}
+			continue
+		}
+		for _, fr := range found {
+			if fr.SourceID == "" {
+				continue
+			}
+			k := sourceDedupKey(fr.Source, fr.SourceID)
+			if _, ok := existing[k]; ok {
+				continue
+			}
+			rows = append(rows, chatListRow{
+				Kind:             chatRowForeign,
+				Created:          fr.Created,
+				Source:           fr.Source,
+				SourceID:         fr.SourceID,
+				MessageCount:     fr.MessageCount,
+				FirstUserMessage: fr.FirstUserMessage,
+				Model:            fr.Model,
+				GroupKey:         ComputeGroupKeyFromText(fr.FullFirstUserMessage),
+			})
+		}
+	}
+	return rows, nil
+}
+
+func (cq *ChatHandler) buildChatListRows(ctx context.Context, paginator *ChatIndexPaginator) ([]chatListRow, map[string]vendors.SourceReader, error) {
+	readers := allSourceReaders()
+	byName, err := sourceReaderByName(readers)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	existing := map[string]struct{}{}
+	native := make([]chatListRow, 0, len(paginator.rows))
+	for _, r := range paginator.rows {
+		if r.Source != "" && r.SourceID != "" {
+			existing[sourceDedupKey(r.Source, r.SourceID)] = struct{}{}
+		}
+		native = append(native, chatListRow{
+			Kind:             chatRowNative,
+			Created:          r.Created,
+			ChatID:           r.ID,
+			Source:           r.Source,
+			SourceID:         r.SourceID,
+			Profile:          r.Profile,
+			Model:            r.Model,
+			MessageCount:     r.MessageCount,
+			TotalTokens:      r.TotalTokens,
+			TotalCostUSD:     r.TotalCostUSD,
+			FirstUserMessage: r.FirstUserMessage,
+			GroupKey:         r.GroupKey,
+		})
+	}
+	foreign, err := cq.foreignChatRows(ctx, readers, existing)
+	if err != nil {
+		return nil, nil, err
+	}
+	rows := append(native, foreign...)
+	slices.SortFunc(rows, func(a, b chatListRow) int {
+		if cmp := b.Created.Compare(a.Created); cmp != 0 {
+			return cmp
+		}
+		// Tiebreaker: GroupKey lexicographic (empty sorts before non-empty)
+		if a.GroupKey < b.GroupKey {
+			return -1
+		}
+		if a.GroupKey > b.GroupKey {
+			return 1
+		}
+		return 0
+	})
+	return rows, byName, nil
+}
+
+func (cq *ChatHandler) actOnChat(ctx context.Context, chat pub_models.Chat, groupKey string) error {
+	if err := cq.printChatInfo(cq.out, chat, groupKey); err != nil {
 		return fmt.Errorf("failed to printChatInfo: %w", err)
 	}
 	choice, err := utils.ReadUserInput()
@@ -64,15 +223,15 @@ func (cq *ChatHandler) actOnChat(ctx context.Context, chat pub_models.Chat) erro
 	}
 	switch choice {
 	case "E", "e":
-		return cq.handleEditMessages(ctx, chat)
+		return cq.handleEditMessages(ctx, chat, groupKey)
 	case "D", "d":
-		return cq.handleDeleteMessages(ctx, chat)
+		return cq.handleDeleteMessages(ctx, chat, groupKey)
 	case "B", "b":
-		clearErr := utils.ClearTermTo(cq.out, -1, chatInfoPrintHeight)
+		clearErr := utils.ClearTermTo(cq.out, chatInfoPrintHeight)
 		if clearErr != nil {
 			return fmt.Errorf("failed to clear term: %w", clearErr)
 		}
-		return cq.handleListCmd(ctx)
+		return nil
 	case "P", "p":
 		return SaveAsPreviousQuery(cq.confDir, chat)
 	case "":
@@ -88,25 +247,25 @@ func (cq *ChatHandler) actOnChat(ctx context.Context, chat pub_models.Chat) erro
 			return fmt.Errorf("failed to update directory-scoped binding: %w", err)
 		}
 		ancli.Noticef("chat %s is now replyable with flag \"clai -dre query <prompt>\"\n", chat.ID)
-		return nil
+		return errExitList
 	default:
 		return fmt.Errorf("unknown choice: %q", choice)
 	}
 }
 
-func (cq *ChatHandler) handleEditMessages(ctx context.Context, chat pub_models.Chat) error {
-	clearErr := utils.ClearTermTo(cq.out, -1, chatInfoPrintHeight)
+func (cq *ChatHandler) handleEditMessages(ctx context.Context, chat pub_models.Chat, groupKey string) error {
+	clearErr := utils.ClearTermTo(cq.out, chatInfoPrintHeight)
 	if clearErr != nil {
 		return fmt.Errorf("failed to clear term: %w", clearErr)
 	}
 	if err := cq.editMessageInChat(chat); err != nil {
 		return fmt.Errorf("failed to editChat: %w", err)
 	}
-	return cq.actOnChat(ctx, chat)
+	return cq.actOnChat(ctx, chat, groupKey)
 }
 
-func (cq *ChatHandler) handleDeleteMessages(ctx context.Context, chat pub_models.Chat) error {
-	clearErr := utils.ClearTermTo(cq.out, -1, chatInfoPrintHeight)
+func (cq *ChatHandler) handleDeleteMessages(ctx context.Context, chat pub_models.Chat, groupKey string) error {
+	clearErr := utils.ClearTermTo(cq.out, chatInfoPrintHeight)
 	if clearErr != nil {
 		return fmt.Errorf("failed to clear term: %w", clearErr)
 	}
@@ -117,7 +276,7 @@ func (cq *ChatHandler) handleDeleteMessages(ctx context.Context, chat pub_models
 	if err != nil {
 		return fmt.Errorf("failed to re-fetch chat: %w", err)
 	}
-	return cq.actOnChat(ctx, updatedChat)
+	return cq.actOnChat(ctx, updatedChat, groupKey)
 }
 
 func (cq *ChatHandler) list() ([]pub_models.Chat, error) {
@@ -151,7 +310,117 @@ func (cq *ChatHandler) handleListCmd(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to create chat index paginator: %w", err)
 	}
-	return cq.listChats(ctx, paginator)
+	return cq.listChats(ctx, paginator, "")
+}
+
+// collapseGroupRows collapses rows with the same non-empty GroupKey and N≥2
+// into a single group row. Ungrouped rows pass through unchanged.
+func collapseGroupRows(rows []chatListRow) []chatListRow {
+	// Collect members per group key
+	groups := map[string][]int{} // groupKey → indices into rows
+	for i, r := range rows {
+		if r.GroupKey == "" {
+			continue
+		}
+		groups[r.GroupKey] = append(groups[r.GroupKey], i)
+	}
+
+	// Determine which indices are collapsed (first member of each multi-member group)
+	collapsedAt := map[int]chatListRow{} // index → group row
+	skipIndices := map[int]bool{}        // indices to exclude
+	for gk, members := range groups {
+		if len(members) < 2 {
+			continue
+		}
+		// Build a group row from the first (most recent) member
+		gr := buildGroupRow(rows, members, gk)
+		collapsedAt[members[0]] = gr
+		for _, idx := range members[1:] {
+			skipIndices[idx] = true
+		}
+	}
+
+	// Rebuild the list: keep all rows except skipped ones, replacing group leaders
+	out := make([]chatListRow, 0, len(rows))
+	for i, r := range rows {
+		if skipIndices[i] {
+			continue
+		}
+		if gr, ok := collapsedAt[i]; ok {
+			out = append(out, gr)
+		} else {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// buildGroupRow creates a group row from the given member indices.
+func buildGroupRow(rows []chatListRow, members []int, groupKey string) chatListRow {
+	// Find most recent member (members are in order, but verify)
+	newest := rows[members[0]]
+	for _, idx := range members[1:] {
+		if rows[idx].Created.After(newest.Created) {
+			newest = rows[idx]
+		}
+	}
+
+	// Aggregate totals (native members only; foreign contribute zero)
+	var totalTokens int
+	var totalCost float64
+	var totalMessages int
+	for _, idx := range members {
+		r := rows[idx]
+		totalMessages += r.MessageCount
+		if r.Kind == chatRowNative {
+			totalTokens += r.TotalTokens
+			totalCost += r.TotalCostUSD
+		}
+	}
+
+	// Model/profile: prefer most recent native member; fall back to most recent
+	model := newest.Model
+	profile := newest.Profile
+	if newest.Kind == chatRowForeign {
+		// members indices are in Created-desc order (inherited from the sorted rows
+		// slice passed to collapseGroupRows), so the first native encountered is
+		// the most recent native member.
+		for _, idx := range members {
+			if rows[idx].Kind == chatRowNative {
+				model = rows[idx].Model
+				profile = rows[idx].Profile
+				break
+			}
+		}
+		if profile == "" {
+			profile = "N/A"
+		}
+	}
+
+	return chatListRow{
+		Kind:             chatRowGroup,
+		Created:          newest.Created,
+		Source:           newest.Source,
+		Profile:          profile,
+		Model:            model,
+		MessageCount:     totalMessages,
+		TotalTokens:      totalTokens,
+		TotalCostUSD:     totalCost,
+		FirstUserMessage: newest.FirstUserMessage,
+		GroupKey:         groupKey,
+		GroupMemberCount: len(members),
+	}
+}
+
+// filterRowsByGroupKey returns only rows matching the given groupKey.
+func filterRowsByGroupKey(rows []chatListRow, groupKey string) []chatListRow {
+	out := make([]chatListRow, 0, len(rows))
+	for _, r := range rows {
+		if r.GroupKey == groupKey && r.Kind != chatRowGroup {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 // dirFilterAction returns the toggleable [d]ir filter button, present only when
@@ -164,55 +433,137 @@ func (cq *ChatHandler) dirFilterAction() (utils.TableAction, bool) {
 	}
 	ids := DirHistoryChatIDs(cq.confDir, wd)
 	return utils.TableAction{
-		Format: "[d]irscoped convs",
-		Short:  "d",
-		Long:   "dir",
+		Format:       "[d]irscoped convs",
+		Short:        "d",
+		Long:         "dir",
 		EmptyMessage: fmt.Sprintf("no dirscoped conversations in %s", wd),
 		Filter: func(row any) bool {
-			r, ok := row.(chatIndexRow)
+			r, ok := row.(chatListRow)
 			if !ok {
 				return false
 			}
-			_, in := ids[r.ID]
+			if r.Kind == chatRowForeign || r.Kind == chatRowGroup {
+				return true
+			}
+			_, in := ids[r.ChatID]
 			return in
 		},
 	}, true
 }
 
-func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPaginator) error {
-	ancli.PrintOK(fmt.Sprintf("found '%v' conversations:\n", paginator.Len()))
+// preparedRows bundles the rows ready for display and the source-reader
+// lookup map needed for dispatching foreign-row selections.
+type preparedRows struct {
+	rows   []chatListRow
+	byName map[string]vendors.SourceReader
+}
 
-	tableActions := []utils.TableAction{}
-	if action, ok := cq.dirFilterAction(); ok {
-		tableActions = append(tableActions, action)
+func (cq *ChatHandler) prepareListRows(ctx context.Context, paginator *ChatIndexPaginator, groupKey string) (preparedRows, error) {
+	allRows, byName, err := cq.buildChatListRows(ctx, paginator)
+	if err != nil {
+		return preparedRows{}, err
 	}
-
-	tblFmt := selectChatTblFormat
-	headArgs := []any{"Index", "Created", "Model", "Cost", "Prompt"}
-	isWide := false
-	if tw, err := utils.TermWidth(); err == nil && tw > 120 {
-		isWide = true
-		tblFmt = "%-6s| %-20s| %-8v | %-15s | %-18s | %-8s | %-6s | %v"
-		headArgs = []any{"Index", "Created", "Messages", "Profile", "Model", "Cost", "Tokens", "Prompt"}
+	if groupKey != "" {
+		return preparedRows{rows: filterRowsByGroupKey(allRows, groupKey), byName: byName}, nil
 	}
+	return preparedRows{rows: collapseGroupRows(allRows), byName: byName}, nil
+}
 
-	selectedNumbers, err := utils.SelectFromTable(
-		fmt.Sprintf(tblFmt, headArgs...),
-		utils.SlicePaginator(paginator.rows),
-		selectChatTblChoicesFormat,
-		func(i int, item chatIndexRow) (string, error) {
-			tokenStr := chatIndexTokenStr(item)
-			costStr := chatIndexCostStr(item)
-			if isWide {
+func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPaginator, groupKey string) error {
+	for {
+		pr, err := cq.prepareListRows(ctx, paginator, groupKey)
+		if err != nil {
+			return fmt.Errorf("failed to prepare list rows: %w", err)
+		}
+
+		tableActions := []utils.TableAction{}
+		if action, ok := cq.dirFilterAction(); ok {
+			tableActions = append(tableActions, action)
+		}
+
+		// Compute the widest index string across all visible rows.
+		maxIdxLen := 5 // "Index"
+		for i, r := range pr.rows {
+			s := fmt.Sprintf("%v", i)
+			if r.Kind == chatRowGroup {
+				s = fmt.Sprintf("%v [group:%v]", i, r.GroupMemberCount)
+			}
+			if len(s) > maxIdxLen {
+				maxIdxLen = len(s)
+			}
+		}
+
+		tblFmt := fmt.Sprintf("%%-%ds| %%-15s | %%-20s| %%-18s | %%-8s | %%v", maxIdxLen)
+		headArgs := []any{"Index", "Source", "Created", "Model", "Cost", "Prompt"}
+		isWide := false
+		if tw, err := utils.TermWidth(); err == nil && tw > 120 {
+			isWide = true
+			tblFmt = fmt.Sprintf("%%-%ds| %%-15s | %%-20s| %%-8v | %%-15s | %%-18s | %%-8s | %%-6s | %%v", maxIdxLen)
+			headArgs = []any{"Index", "Source", "Created", "Messages", "Profile", "Model", "Cost", "Tokens", "Prompt"}
+		}
+
+		choicesFormat := selectChatTblChoicesFormat
+		backLabel := ""
+		if groupKey != "" {
+			displayKey := groupKey
+			if len(groupKey) >= 8 {
+				displayKey = groupKey[:8] + "..."
+			}
+			if len(pr.rows) > 0 {
+				choicesFormat = fmt.Sprintf("group: %q", pr.rows[0].FirstUserMessage)
+			} else {
+				choicesFormat = fmt.Sprintf("group: %s", displayKey)
+			}
+			backLabel = "[b]ack to list"
+		}
+
+		selectedNumbers, err := utils.SelectFromTable(
+			fmt.Sprintf(tblFmt, headArgs...),
+			utils.SlicePaginator(pr.rows),
+			choicesFormat,
+			func(i int, item chatListRow) (string, error) {
+				tokenStr := "N/A"
+				costStr := "N/A"
+				model := item.Model
+				profile := item.Profile
+				msgs := item.MessageCount
+				idxStr := fmt.Sprintf("%v", i)
+				if item.Kind == chatRowGroup {
+					idxStr = fmt.Sprintf("%v [group:%v]", i, item.GroupMemberCount)
+				}
+				if item.Kind == chatRowNative || item.Kind == chatRowGroup {
+					tokenStr = chatIndexTokenStr(chatIndexRow{TotalTokens: item.TotalTokens})
+					costStr = chatIndexCostStr(chatIndexRow{TotalCostUSD: item.TotalCostUSD})
+				} else {
+					profile = "N/A"
+				}
+				if isWide {
+					prefix := fmt.Sprintf(
+						tblFmt,
+						idxStr,
+						item.displaySource(),
+						item.Created.Format("2006-01-02 15:04:05"),
+						msgs,
+						profile,
+						model,
+						costStr,
+						tokenStr,
+						"",
+					)
+					withSummary, err := utils.WidthAppropriateStringTrunc(item.FirstUserMessage, prefix, 15)
+					if err != nil {
+						return "", fmt.Errorf("failed to get widthAppropriateChatSummary: %w", err)
+					}
+					return withSummary, nil
+				}
+
 				prefix := fmt.Sprintf(
 					tblFmt,
-					fmt.Sprintf("%v", i),
+					idxStr,
+					item.displaySource(),
 					item.Created.Format("2006-01-02 15:04:05"),
-					item.MessageCount,
-					item.Profile,
-					item.Model,
+					model,
 					costStr,
-					tokenStr,
 					"",
 				)
 				withSummary, err := utils.WidthAppropriateStringTrunc(item.FirstUserMessage, prefix, 15)
@@ -220,50 +571,104 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 					return "", fmt.Errorf("failed to get widthAppropriateChatSummary: %w", err)
 				}
 				return withSummary, nil
+			},
+			utils.ThemeTableItems(),
+			true,
+			tableActions,
+			cq.out,
+			backLabel,
+		)
+		if err != nil {
+			if errors.Is(err, utils.ErrBack) {
+				if groupKey != "" {
+					groupKey = ""
+					continue
+				}
+				return nil
 			}
-
-			prefix := fmt.Sprintf(
-				tblFmt,
-				fmt.Sprintf("%v", i),
-				item.Created.Format("2006-01-02 15:04:05"),
-				item.Model,
-				costStr,
-				"",
-			)
-			withSummary, err := utils.WidthAppropriateStringTrunc(item.FirstUserMessage, prefix, 15)
+			return fmt.Errorf("failed to select chat: %w", err)
+		}
+		sel := pr.rows[selectedNumbers[0]]
+		if sel.Kind == chatRowGroup {
+			groupKey = sel.GroupKey
+			continue
+		}
+		if sel.Kind == chatRowNative {
+			selectedChat, err := cq.getByID(sel.ChatID)
 			if err != nil {
-				return "", fmt.Errorf("failed to get widthAppropriateChatSummary: %w", err)
+				return fmt.Errorf("failed to load selected chat %q: %w", sel.ChatID, err)
 			}
-			return withSummary, nil
-		},
-		utils.ThemeTableItems(),
-		true,
-		tableActions,
-		cq.out,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to select chat: %w", err)
+			if err := cq.actOnChat(ctx, selectedChat, groupKey); err != nil {
+				if errors.Is(err, errExitList) {
+					return nil
+				}
+				return err
+			}
+			continue
+		}
+
+		reader, ok := pr.byName[sel.Source]
+		if !ok {
+			return fmt.Errorf("unknown source reader %q", sel.Source)
+		}
+		foreign, err := reader.Read(ctx, sel.SourceID)
+		if err != nil {
+			return fmt.Errorf("failed to read %s session %q: %w", sel.Source, sel.SourceID, err)
+		}
+		if err := cq.actOnForeignChat(ctx, foreign, reader, groupKey); err != nil {
+			if errors.Is(err, errExitList) {
+				return nil
+			}
+			return err
+		}
+		continue
 	}
-	rows, err := paginator.Page(selectedNumbers[0], 1)
-	if err != nil {
-		return fmt.Errorf("failed to fetch selected chat metadata row: %w", err)
-	}
-	if len(rows) != 1 {
-		return fmt.Errorf("failed to find selected chat metadata row at index %d", selectedNumbers[0])
-	}
-	selectedChat, err := cq.getByID(rows[0].ID)
-	if err != nil {
-		return fmt.Errorf("failed to load selected chat %q: %w", rows[0].ID, err)
-	}
-	return cq.actOnChat(ctx, selectedChat)
 }
 
-func (cq *ChatHandler) printChatInfo(w io.Writer, chat pub_models.Chat) error {
+func (cq *ChatHandler) actOnForeignChat(ctx context.Context, chat pub_models.Chat, reader vendors.SourceReader, groupKey string) error {
+	if err := cq.printChatInfoForeign(cq.out, chat, groupKey); err != nil {
+		return fmt.Errorf("failed to printChatInfoForeign: %w", err)
+	}
+	choice, err := utils.ReadUserInput()
+	if err != nil {
+		return fmt.Errorf("failed to read user input: %w", err)
+	}
+	switch choice {
+	case "C", "c", "":
+		cloned, err := cq.cloneForeignChat(ctx, chat)
+		if err != nil {
+			return err
+		}
+		ancli.Noticef("cloned %s session %s → chat %s\n", reader.Source(), chat.SourceID, cloned.ID)
+		ancli.Noticef("chat %s is now replyable with flag \"clai -dre query <prompt>\"\n", cloned.ID)
+		return errExitList
+	case "B", "b":
+		clearErr := utils.ClearTermTo(cq.out, chatInfoPrintHeight)
+		if clearErr != nil {
+			return fmt.Errorf("failed to clear term: %w", clearErr)
+		}
+		return nil
+	case "Q", "q":
+		return utils.ErrUserInitiatedExit
+	default:
+		return fmt.Errorf("unknown choice: %q", choice)
+	}
+}
+
+// chatInfoOpts controls differences between native and foreign chat info display.
+type chatInfoOpts struct {
+	foreign bool
+}
+
+func (cq *ChatHandler) printChatInfoCommon(w io.Writer, chat pub_models.Chat, groupKey string, opts chatInfoOpts) error {
 	claiConfDir, err := utils.GetClaiConfigDir()
 	if err != nil {
 		return fmt.Errorf("failed to get clai config dir: %w", err)
 	}
 	filePath := conversationPath(claiConfDir, chat.ID)
+	if opts.foreign && chat.ID == "" {
+		filePath = "(not cloned)"
+	}
 	messageTypeCounter := make(map[string]int)
 	for _, m := range chat.Messages {
 		messageTypeCounter[m.Role]++
@@ -282,6 +687,7 @@ func (cq *ChatHandler) printChatInfo(w io.Writer, chat pub_models.Chat) error {
 	createdKey := utils.Colorize(utils.ThemePrimaryColor(), "created_at:")
 	costKey := utils.Colorize(utils.ThemePrimaryColor(), "total cost:")
 	amRepliesKey := utils.Colorize(utils.ThemePrimaryColor(), "am replies:")
+	sourceKey := utils.Colorize(utils.ThemePrimaryColor(), "source:")
 	userRole := utils.Colorize(utils.RoleColor("user"), "user:")
 	toolRole := utils.Colorize(utils.RoleColor("tool"), "tool:")
 	systemRole := utils.Colorize(utils.RoleColor("system"), "system:")
@@ -291,8 +697,19 @@ func (cq *ChatHandler) printChatInfo(w io.Writer, chat pub_models.Chat) error {
 	if _, err := fmt.Fprintf(w, "%s\n\n", header); err != nil {
 		return fmt.Errorf("write chat header: %w", err)
 	}
+	// GroupKey display (when non-empty)
+	if chat.GroupKey != "" {
+		if _, err := fmt.Fprintf(w, "%s %s\n", utils.Colorize(utils.ThemePrimaryColor(), "group key:"), utils.Colorize(bread, chat.GroupKey)); err != nil {
+			return fmt.Errorf("write group key: %w", err)
+		}
+	}
 	if _, err := fmt.Fprintf(w, "%s %s\n", fileKey, utils.Colorize(bread, filePath)); err != nil {
 		return fmt.Errorf("write file path: %w", err)
+	}
+	if opts.foreign {
+		if _, err := fmt.Fprintf(w, "%s %s\n", sourceKey, utils.Colorize(bread, fmt.Sprintf("%s (session: %s)", chat.Source, chat.SourceID))); err != nil {
+			return fmt.Errorf("write source: %w", err)
+		}
 	}
 	if _, err := fmt.Fprintf(w, "%s %s\n", createdKey, utils.Colorize(bread, fmt.Sprintf("%v", chat.Created))); err != nil {
 		return fmt.Errorf("write created at: %w", err)
@@ -318,11 +735,48 @@ func (cq *ChatHandler) printChatInfo(w io.Writer, chat pub_models.Chat) error {
 	if _, err := fmt.Fprintf(w, "%s\n\n", utils.Colorize(bread, summary+"\"")); err != nil {
 		return fmt.Errorf("write summary: %w", err)
 	}
-	choices := utils.Colorize(utils.ThemePrimaryColor(), "(make [p]revQuery (-re/-reply flag), go [b]ack to list, [e]dit messages, [d]elete messages, [q]uit, [<enter>] to continue): ")
+	backLabel := "go [b]ack to list"
+	if groupKey != "" {
+		backLabel = "[b]ack to group"
+	}
+	var choices string
+	if opts.foreign {
+		choices = utils.Colorize(utils.ThemePrimaryColor(), fmt.Sprintf("(press [c]ontinue (clone to clai), %s, [q]uit): ", backLabel))
+	} else {
+		choices = utils.Colorize(utils.ThemePrimaryColor(), fmt.Sprintf("(make [p]revQuery (-re/-reply flag), %s, [e]dit messages, [d]elete messages, [q]uit, [<enter>] to continue): ", backLabel))
+	}
 	if _, err := fmt.Fprint(w, choices); err != nil {
 		return fmt.Errorf("write choices: %w", err)
 	}
 	return nil
+}
+
+func (cq *ChatHandler) printChatInfo(w io.Writer, chat pub_models.Chat, groupKey string) error {
+	return cq.printChatInfoCommon(w, chat, groupKey, chatInfoOpts{})
+}
+
+func (cq *ChatHandler) printChatInfoForeign(w io.Writer, chat pub_models.Chat, groupKey string) error {
+	return cq.printChatInfoCommon(w, chat, groupKey, chatInfoOpts{foreign: true})
+}
+
+func (cq *ChatHandler) cloneForeignChat(ctx context.Context, foreign pub_models.Chat) (pub_models.Chat, error) {
+	_ = ctx
+	if foreign.Source == "" || foreign.SourceID == "" {
+		return pub_models.Chat{}, fmt.Errorf("invalid foreign chat: missing source or source_id")
+	}
+	cloned := foreign
+	cloned.ID = NewChatID()
+	// Preserve Created as discovered/read. Do not stamp wall clock here.
+	if err := Save(cq.convDir, cloned); err != nil {
+		return pub_models.Chat{}, fmt.Errorf("failed to save cloned chat: %w", err)
+	}
+	if err := upsertChatIndex(cq.convDir, cloned); err != nil {
+		return pub_models.Chat{}, fmt.Errorf("failed to upsert chat index for cloned chat: %w", err)
+	}
+	if err := cq.UpdateDirScopeFromCWD(cloned.ID); err != nil {
+		return pub_models.Chat{}, fmt.Errorf("failed to update directory-scoped binding: %w", err)
+	}
+	return cloned, nil
 }
 
 func editorEditString(toEdit string) (string, error) {
@@ -378,6 +832,7 @@ func (cq *ChatHandler) deleteMessageInChat(chat pub_models.Chat) error {
 		false,
 		[]utils.TableAction{},
 		cq.out,
+		"",
 	)
 	if err != nil {
 		return fmt.Errorf("failed to select from table: %w", err)
@@ -421,6 +876,7 @@ func (cq *ChatHandler) editMessageInChat(chat pub_models.Chat) error {
 		true,
 		[]utils.TableAction{},
 		cq.out,
+		"",
 	)
 	if err != nil {
 		return fmt.Errorf("failed to select from table: %w", err)

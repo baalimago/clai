@@ -76,20 +76,21 @@ func (pf paginatorFuncs[T]) findPage(start, offset int) ([]T, error) {
 }
 
 type table[T any] struct {
-	debug             bool
-	page              int
-	pageSize          int
-	lastPage          int
-	selectionType     string
-	paginator         Paginator[T]
-	originalPaginator Paginator[T]
-	filterString      string
-	filteredIndices   []int
-	predicateActive   bool
+	debug                       bool
+	page                        int
+	pageSize                    int
+	lastPage                    int
+	selectionType               string
+	backLabel                   string
+	paginator                   Paginator[T]
+	originalPaginator           Paginator[T]
+	filterString                string
+	filteredIndices             []int
+	predicateActive             bool
 	activePredicateEmptyMessage string
-	rowFormater       func(int, T) (string, error)
-	tableActions      []TableAction
-	out               io.Writer
+	rowFormater                 func(int, T) (string, error)
+	tableActions                []TableAction
+	out                         io.Writer
 }
 
 var clearTermToFn = ClearTermTo
@@ -137,8 +138,12 @@ func (t *table[T]) quit() TableAction {
 }
 
 func (t *table[T]) back() TableAction {
+	label := "[b]ack"
+	if t.backLabel != "" {
+		label = t.backLabel
+	}
 	return TableAction{
-		Format: "[b]ack",
+		Format: label,
 		Short:  "b",
 		Long:   "back",
 		Action: func() error {
@@ -164,6 +169,7 @@ func SelectFromTable[T any](
 	onlyOneSelect bool,
 	additionalTableActions []TableAction,
 	out io.Writer,
+	backLabel string,
 ) ([]int, error) {
 	_ = selectionType
 	if out == nil {
@@ -179,6 +185,7 @@ func SelectFromTable[T any](
 		pageSize:          pageSize,
 		lastPage:          0,
 		selectionType:     selectionType,
+		backLabel:         backLabel,
 		paginator:         paginator,
 		originalPaginator: paginator,
 		rowFormater:       rowFormater,
@@ -191,7 +198,7 @@ func SelectFromTable[T any](
 		return nil, fmt.Errorf("failed to validate table actions: %w", err)
 	}
 	defer func() {
-		if err := clearTermToFn(out, -1, 2); err != nil && tab.debug {
+		if err := clearTermToFn(out, 2); err != nil && tab.debug {
 			ancli.Errf("failed to clear header: %v", err)
 		}
 	}()
@@ -297,7 +304,7 @@ func (t *table[T]) selectNumbers() ([]int, error) {
 
 	// Clear the terminal to provide clean output
 	defer func() {
-		if err := clearTermToFn(t.out, -1, amPrinted+1); err != nil {
+		if err := clearTermToFn(t.out, amPrinted+1); err != nil {
 			if t.debug {
 				ancli.Errf("failed to clear table: %v", err)
 			}
