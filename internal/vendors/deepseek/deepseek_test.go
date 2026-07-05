@@ -52,4 +52,3 @@ func TestSetupSetsDefaultEnvWhenMissing(t *testing.T) {
 		t.Fatalf("expected DEEPSEEK_API_KEY to be set, got empty")
 	}
 }
-

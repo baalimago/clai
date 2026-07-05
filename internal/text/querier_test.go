@@ -198,6 +198,9 @@ func (q *MockQuerier) StreamCompletions(ctx context.Context, chat pub_models.Cha
 }
 
 func Test_Querier_NewQuerier(t *testing.T) {
+	// Avoid races with the cost manager error logger goroutine in NewQuerier.
+	// Some tests capture stdout by swapping the global os.Stdout.
+	t.Setenv("CLAI_DISABLE_COST_ERR_LOG_GOROUTINE", "1")
 	t.Run("it should load local model with correct type", func(t *testing.T) {
 		want := "somevalue"
 		model := "mock"

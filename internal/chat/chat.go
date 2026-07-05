@@ -35,6 +35,10 @@ func FromPath(path string) (pub_models.Chat, error) {
 }
 
 func Save(saveAt string, chat pub_models.Chat) error {
+	// Stamp GroupKey once on first persist (never overwritten).
+	if chat.GroupKey == "" {
+		chat.GroupKey = ComputeGroupKey(chat)
+	}
 	b, err := json.MarshalIndent(chat, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to encode JSON: %w", err)

@@ -214,15 +214,15 @@ func Test_goldenFile_CHAT_DIRSCOPED(t *testing.T) {
 	if unmarshalErr := json.Unmarshal(bazBytes, &bazChat); unmarshalErr != nil {
 		t.Fatalf("Unmarshal(baz conversation): %v", unmarshalErr)
 	}
-	var gotSysMsgs []string
+	var gotUserMsgs []string
 	for _, m := range bazChat.Messages {
-		if m.Role == "system" {
-			gotSysMsgs = append(gotSysMsgs, m.Content)
+		if m.Role == "user" {
+			gotUserMsgs = append(gotUserMsgs, m.Content)
 		}
 	}
 
-	if !slices.Contains(gotSysMsgs, "baz") || !slices.Contains(gotSysMsgs, "hello3") {
-		t.Fatalf("expected systemMessages: '%v' to contain: '%v'", gotSysMsgs, []string{"baz", "hello3"})
+	if !slices.Contains(gotUserMsgs, "baz") || !slices.Contains(gotUserMsgs, "hello3") {
+		t.Fatalf("expected userMessages: '%v' to contain: '%v'", gotUserMsgs, []string{"baz", "hello3"})
 	}
 
 	bazAbs, err := filepath.Abs(baz)

@@ -172,7 +172,7 @@ func (q *Querier[C]) postProcessOutput(newSysMsg pub_models.Message) {
 				}
 			}
 		}
-		utils.ClearTermTo(q.out, q.termWidth, q.lineCount-1)
+		utils.ClearTermTo(q.out, q.lineCount-1)
 	} else {
 		fmt.Println()
 	}

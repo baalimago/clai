@@ -15,30 +15,31 @@ import (
 
 const MaxShortenedNewlines = 5
 
-// ClearTermTo a certain amount of rows upwards by printing termWidth amount of empty spaces.
-//
-// If w is nil, os.Stdout is used.
-func ClearTermTo(w io.Writer, termWidth, upTo int) error {
+// ClearLine writes a carriage return followed by the ANSI "clear to end of line"
+// escape, so the next write starts at column 0 on a clean line. Useful for
+// single-line progress indicators that may vary in length.
+func ClearLine(w io.Writer) {
 	if w == nil {
 		w = os.Stdout
 	}
-	if termWidth == -1 {
-		t, err := TermWidth()
-		if err != nil {
-			return fmt.Errorf("failed to find term width: %w", err)
-		}
-		termWidth = t
+	fmt.Fprint(w, "\r\x1b[K")
+}
+
+// ClearTermTo clears upTo lines upwards, leaving the cursor at column 0
+// of the last cleared line. Each line is cleared via ClearLine.
+//
+// If w is nil, os.Stdout is used.
+func ClearTermTo(w io.Writer, upTo int) error {
+	if w == nil {
+		w = os.Stdout
 	}
-	clearLine := strings.Repeat(" ", termWidth)
-	// Move cursor up line by line and clear the line
+	// Move cursor up line by line and clear each.
 	for upTo > 0 {
-		fmt.Fprintf(w, "\r%v", clearLine)
+		ClearLine(w)
 		fmt.Fprintf(w, "\033[%dA", 1)
 		upTo--
 	}
-	fmt.Fprintf(w, "\r%v", clearLine)
-	// Place cursor at start of line
-	fmt.Fprintf(w, "\r")
+	ClearLine(w)
 	return nil
 }
 

@@ -196,7 +196,7 @@ Scans:
 
 1. `~/.claude/projects/` — each subdirectory is a project; each `*.jsonl` inside is a conversation.
 
-For each `.jsonl` file, reads a **bounded prefix** (scan up to *K lines*; current implementation: **K=200**) to extract:
+For each `.jsonl` file, reads a **bounded prefix** (scan up to _K lines_; current implementation: **K=200**) to extract:
 
 - `SourceID` = `sessionId` from the first valid JSON line that contains it (typically `type: "user"`).
 - `Created` = `timestamp` from the first valid JSON line that contains it (falls back to file mtime).
@@ -419,7 +419,7 @@ Foreign conversations are never persisted until the user explicitly clones them.
 2. **Display-only rule:** native chats **store** `Source == ""` but **render** the Source column as `clai`. Foreign chats render their source name. Model/Cost/Tokens show `N/A` for foreign rows.
 3. If the Claude directories do not exist, `clai chat list` still succeeds (foreign rows are simply absent).
    3b. If an external conversation is missing a usable `SourceID`, it is skipped (it must not appear as a foreign row).
-3c. If an external conversation is missing a usable timestamp for `Created`, the row SHOULD still be shown, using the source file's mtime for ordering (but still requiring `SourceID`). If both parsed timestamp and mtime are unavailable, show the row with `Created = time.Time{}` and sort it last.
+   3c. If an external conversation is missing a usable timestamp for `Created`, the row SHOULD still be shown, using the source file's mtime for ordering (but still requiring `SourceID`). If both parsed timestamp and mtime are unavailable, show the row with `Created = time.Time{}` and sort it last.
 4. If a `SourceReader.Discover` fails, the error is non-fatal: it skips that source.
    - In non-`DEBUG` mode: silent skip.
    - In `DEBUG` mode: print a **single-line** warning per source with only: source name + high-level error + (optional) path(s). Do **not** print message bodies or full JSON payloads.
@@ -434,31 +434,28 @@ Foreign conversations are never persisted until the user explicitly clones them.
 - Preferred: return to the list selection UI (non-fatal).
 - Acceptable for first iteration: print error and exit non-zero.
 
-4d. "Back" semantics: if an action prompt offers `[b]ack`, the first iteration MAY implement it as an early return without re-displaying the list. If a full back-to-list loop is implemented later, it MUST be covered by tests.
-5. Selecting a foreign chat prints chat info with the source line and offers `[c]ontinue` instead of `[e]dit`/`[d]elete`.
-6. `[c]ontinue` on a foreign chat clones it to a native `conversations/<id>.json`, sets `Source`/`SourceID`, updates the index, binds to the directory, and uses a **unique** chat ID strategy.
+4d. "Back" semantics: if an action prompt offers `[b]ack`, the first iteration MAY implement it as an early return without re-displaying the list. If a full back-to-list loop is implemented later, it MUST be covered by tests. 5. Selecting a foreign chat prints chat info with the source line and offers `[c]ontinue` instead of `[e]dit`/`[d]elete`. 6. `[c]ontinue` on a foreign chat clones it to a native `conversations/<id>.json`, sets `Source`/`SourceID`, updates the index, binds to the directory, and uses a **unique** chat ID strategy.
 
-   **Testability requirement:** source discovery MUST be testable with a temp HOME. `Discover()` implementations SHOULD take their base search paths from environment (e.g. `HOME`) or a helper that can be overridden in tests; avoid hardcoding `os.UserHomeDir()` in a way that is difficult to control.
+**Testability requirement:** source discovery MUST be testable with a temp HOME. `Discover()` implementations SHOULD take their base search paths from environment (e.g. `HOME`) or a helper that can be overridden in tests; avoid hardcoding `os.UserHomeDir()` in a way that is difficult to control.
 
-   **Additional constraint:** clone must not mutate message ordering; it must preserve the external chronological order as best as possible.
+**Additional constraint:** clone must not mutate message ordering; it must preserve the external chronological order as best as possible.
 
-   **ID strategy requirement:** MUST NOT rely on `HashIDFromPrompt(...)` alone.
+**ID strategy requirement:** MUST NOT rely on `HashIDFromPrompt(...)` alone.
 
-   Preferred: reuse clai’s existing new-chat ID generator (random/entropy-based).
+Preferred: reuse clai’s existing new-chat ID generator (random/entropy-based).
 
-   If clai does not have a suitable helper, implement `NewChatID()` using stdlib only (`time` + `crypto/rand`) to guarantee uniqueness within a run. A ULID-ish approach (time prefix + randomness) is acceptable as long as it’s deterministic-format and collision-resistant. Add unit tests for basic format and non-equality across many generations.
+If clai does not have a suitable helper, implement `NewChatID()` using stdlib only (`time` + `crypto/rand`) to guarantee uniqueness within a run. A ULID-ish approach (time prefix + randomness) is acceptable as long as it’s deterministic-format and collision-resistant. Add unit tests for basic format and non-equality across many generations.
 
 7. After cloning, the foreign listing is suppressed (dedup via `Source + SourceID` in the index).
 8. Deleting the cloned native chat and re-listing re-surfaces the foreign conversation.
 9. `clai chat continue <id>` on a cloned chat works identically to any native chat.
 10. The `Source` column is present in both narrow and wide table formats.
 
-10b. Foreign rows MUST NOT show an `OriginDir`/dirscope-derived value in the list UI (render as `N/A`/empty). Only cloned native chats participate in dirscope.
-11. Rebuilding the chat index preserves `Source` and `SourceID` (they are fields on `Chat` and mirrored by `chatIndexRowFromChat`).
-12. Tests exist and map to the above.
+10b. Foreign rows MUST NOT show an `OriginDir`/dirscope-derived value in the list UI (render as `N/A`/empty). Only cloned native chats participate in dirscope. 11. Rebuilding the chat index preserves `Source` and `SourceID` (they are fields on `Chat` and mirrored by `chatIndexRowFromChat`). 12. Tests exist and map to the above.
 
-   - Unit tests: Claude JSONL parsing (multi-block assistant, tool use/result, thinking), discovery + dedup, non-fatal failure modes, duplicate `Source()` detection, index round-trip, and table formatting.
-   - CLI/e2e tests: run `clai chat list` against a temp HOME with fixture Claude directories; select a foreign row and continue/clone; verify subsequent `chat list` dedups it and `chat continue <newID>` works. (May be implemented as integration tests that invoke handlers directly if the project does not yet have subprocess-driven CLI tests.)
+- Unit tests: Claude JSONL parsing (multi-block assistant, tool use/result, thinking), discovery + dedup, non-fatal failure modes, duplicate `Source()` detection, index round-trip, and table formatting.
+- CLI/e2e tests: run `clai chat list` against a temp HOME with fixture Claude directories; select a foreign row and continue/clone; verify subsequent `chat list` dedups it and `chat continue <newID>` works. (May be implemented as integration tests that invoke handlers directly if the project does not yet have subprocess-driven CLI tests.)
+
 13. `go test ./... -race -cover -timeout=10s` passes.
 14. `go run honnef.co/go/tools/cmd/staticcheck@latest ./...` passes.
 15. `go run mvdan.cc/gofumpt@latest -w .` is clean.

@@ -23,7 +23,12 @@ type Chat struct {
 	// from. It is stamped once on first persist and never rewritten, enabling
 	// directory-anchored conversation search. Empty for conversations saved
 	// before origin stamping existed (forward-only).
-	OriginDir  string      `json:"origin_dir,omitempty"`
+	OriginDir string `json:"origin_dir,omitempty"`
+	// GroupKey is the hex-encoded SHA-256 of the first user message's canonical
+	// text content. Empty when no user message exists, the first message is
+	// image-only, or the chat predates this feature. Stamped once on first
+	// persist; never rewritten.
+	GroupKey   string      `json:"group_key,omitempty"`
 	Messages   []Message   `json:"messages"`
 	TokenUsage *Usage      `json:"usage,omitempty"`
 	Queries    []QueryCost `json:"queries,omitempty"`

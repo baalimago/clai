@@ -46,6 +46,11 @@ type Chat struct {
     // clai treats (Source, SourceID) as a unique pair for dedup/provenance.
     SourceID string `json:"source_id,omitempty"`
 
+    // GroupKey is a hex-encoded SHA-256 of the first user message's canonical
+    // text. Stamped once on first persist, never rewritten. Empty for pre-feature
+    // chats or conversations without a user message.
+    GroupKey string `json:"group_key,omitempty"`
+
     Messages []Message `json:"messages"`
 }
 ```

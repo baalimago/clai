@@ -249,6 +249,7 @@ func selectCategory(categories []setupCategory) (setupCategory, error) {
 		true,
 		[]utils.TableAction{},
 		os.Stdout,
+		"",
 	)
 	if err != nil {
 		return setupCategory{}, fmt.Errorf("failed to select setup category: %w", err)
@@ -363,6 +364,7 @@ func selectConfigItem(category setupCategory, cfgs []config) error {
 		true,
 		customTableActions,
 		os.Stdout,
+		"",
 	)
 	if err != nil {
 		return fmt.Errorf("failed to select config item: %w", err)

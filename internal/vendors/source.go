@@ -17,8 +17,11 @@ import (
 //
 // RawPath is used only for diagnostics (and must never leak message bodies).
 //
-// FirstUserMessage should be a short preview snippet.
-// It may also be a title if the underlying source provides one.
+// FirstUserMessage should be a short preview snippet (~100 chars, newlines→spaces).
+// FullFirstUserMessage holds the complete, untruncated first user message text.
+// FullFirstUserMessage is used for GroupKey computation to ensure foreign
+// conversations participate in grouping identically to native conversations.
+// Use FirstUserMessage for display; use FullFirstUserMessage for hashing/grouping.
 //
 // MessageCount may be approximate during discovery.
 // Exact counts are available after Read() parses the full conversation.
@@ -37,9 +40,13 @@ type SourceRow struct {
 	SourceID         string
 	Created          time.Time
 	FirstUserMessage string
-	MessageCount     int
-	Model            string
-	RawPath          string
+	// Model is best-effort, discovered during Discover(), and may be
+	// empty when the external source does not expose a model identifier.
+	// Do not rely on it for logic; use it for display only.
+	FullFirstUserMessage string
+	MessageCount         int
+	Model                string
+	RawPath              string
 }
 
 // SourceReader discovers and reads conversations from an external tool.

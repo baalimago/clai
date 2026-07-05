@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/baalimago/clai/internal/utils"
+	"github.com/baalimago/clai/internal/vendors"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -108,7 +109,7 @@ func TestListChats_DirFilterTogglesThroughListChats(t *testing.T) {
 	}
 	var out strings.Builder
 	cq.out = &out
-	if err := cq.listChats(context.Background(), paginator); err == nil {
+	if err := cq.listChats(context.Background(), paginator, ""); err == nil {
 		t.Fatal("expected listChats to surface the scripted stop error")
 	}
 
@@ -177,8 +178,10 @@ func TestActOnChat_enter_continues(t *testing.T) {
 	defer func() { _ = os.Setenv("TTY", oldTTY) }()
 
 	cq := &ChatHandler{q: nil, confDir: confDir, convDir: convDir, out: io.Discard}
-	if err := cq.actOnChat(context.Background(), ch); err != nil {
-		t.Fatalf("actOnChat: %v", err)
+	if err := cq.actOnChat(context.Background(), ch, ""); err != nil {
+		if !errors.Is(err, errExitList) {
+			t.Fatalf("actOnChat: %v", err)
+		}
 	}
 
 	// Verify a dirscope binding file was created and references the chat id.
@@ -251,7 +254,7 @@ func TestPrintChatInfo_ShowsCost(t *testing.T) {
 
 	var out strings.Builder
 	cq := &ChatHandler{out: &out}
-	if err := cq.printChatInfo(&out, chatWithCost); err != nil {
+	if err := cq.printChatInfo(&out, chatWithCost, ""); err != nil {
 		t.Fatalf("printChatInfo with cost: %v", err)
 	}
 	if !strings.Contains(out.String(), "$14.53") {
@@ -259,7 +262,7 @@ func TestPrintChatInfo_ShowsCost(t *testing.T) {
 	}
 
 	out.Reset()
-	if err := cq.printChatInfo(&out, chatWithoutCost); err != nil {
+	if err := cq.printChatInfo(&out, chatWithoutCost, ""); err != nil {
 		t.Fatalf("printChatInfo without cost: %v", err)
 	}
 	if !strings.Contains(out.String(), "N/A") {
@@ -302,7 +305,7 @@ func TestListChats_IncludesModelColumnAndValue(t *testing.T) {
 
 	var out strings.Builder
 	cq := &ChatHandler{confDir: confDir, convDir: convDir, out: &out}
-	err = cq.listChats(context.Background(), paginator)
+	err = cq.listChats(context.Background(), paginator, "")
 	if err == nil {
 		t.Fatal("listChats() error = nil, want error from empty selection input")
 	}
@@ -362,7 +365,7 @@ func TestListChats_NarrowWidthShowsCostAndPrompt(t *testing.T) {
 
 	var out strings.Builder
 	cq := &ChatHandler{confDir: confDir, convDir: convDir, out: &out}
-	err = cq.listChats(context.Background(), paginator)
+	err = cq.listChats(context.Background(), paginator, "")
 	if err == nil {
 		t.Fatal("listChats() error = nil, want error from empty selection input")
 	}
@@ -379,5 +382,259 @@ func TestListChats_NarrowWidthShowsCostAndPrompt(t *testing.T) {
 	}
 	if !strings.Contains(got, "Prompt") {
 		t.Fatalf("expected narrow table to include Prompt, got: %q", got)
+	}
+}
+
+// TestCollapseGroupRows_BasicGrouping verifies that conversations with the same
+// first-user-message GroupKey are collapsed into a single [group:N] row, while
+// conversations with unique GroupKeys remain ungrouped.
+func TestCollapseGroupRows_BasicGrouping(t *testing.T) {
+	gk := ComputeGroupKeyFromText("fix the auth bug")
+	rows := []chatListRow{
+		{
+			Kind: chatRowNative, Created: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
+			ChatID: "a", FirstUserMessage: "fix the auth bug", GroupKey: gk,
+			Profile: "default", Model: "gpt-5", MessageCount: 5, TotalTokens: 100, TotalCostUSD: 1.23,
+		},
+		{
+			Kind: chatRowNative, Created: time.Date(2026, 1, 2, 3, 4, 4, 0, time.UTC),
+			ChatID: "b", FirstUserMessage: "fix the auth bug", GroupKey: gk,
+			Profile: "default", Model: "gpt-5", MessageCount: 3, TotalTokens: 60, TotalCostUSD: 0.50,
+		},
+		{
+			Kind: chatRowNative, Created: time.Date(2026, 1, 2, 3, 4, 3, 0, time.UTC),
+			ChatID: "c", FirstUserMessage: "refactor database", GroupKey: ComputeGroupKeyFromText("refactor database"),
+			Profile: "default", Model: "gpt-4o", MessageCount: 4, TotalTokens: 80, TotalCostUSD: 0.80,
+		},
+	}
+	got := collapseGroupRows(rows)
+	if len(got) != 2 {
+		t.Fatalf("collapseGroupRows: expected 2 rows (1 group + 1 ungrouped), got %d", len(got))
+	}
+	if got[0].Kind != chatRowGroup {
+		t.Fatalf("collapseGroupRows[0]: expected chatRowGroup, got %v", got[0].Kind)
+	}
+	if got[0].GroupMemberCount != 2 {
+		t.Fatalf("collapseGroupRows[0].GroupMemberCount = %d, want 2", got[0].GroupMemberCount)
+	}
+	if got[0].GroupKey != gk {
+		t.Fatalf("collapseGroupRows[0].GroupKey = %q, want %q", got[0].GroupKey, gk)
+	}
+	// Aggregate totals: 100+60 = 160 tokens, 1.23+0.50 = 1.73 cost
+	if got[0].TotalTokens != 160 {
+		t.Fatalf("collapseGroupRows[0].TotalTokens = %d, want 160", got[0].TotalTokens)
+	}
+	if got[0].TotalCostUSD != 1.73 {
+		t.Fatalf("collapseGroupRows[0].TotalCostUSD = %.2f, want 1.73", got[0].TotalCostUSD)
+	}
+	// Second row should be the refactor-database conversation (ungrouped)
+	if got[1].Kind != chatRowNative {
+		t.Fatalf("collapseGroupRows[1]: expected chatRowNative, got %v", got[1].Kind)
+	}
+	if got[1].ChatID != "c" {
+		t.Fatalf("collapseGroupRows[1].ChatID = %q, want %q", got[1].ChatID, "c")
+	}
+}
+
+// TestCollapseGroupRows_EmptyGroupKeyNeverGrouped verifies that rows with empty
+// GroupKey never form groups, even when their FirstUserMessage text matches.
+func TestCollapseGroupRows_EmptyGroupKeyNeverGrouped(t *testing.T) {
+	rows := []chatListRow{
+		{Kind: chatRowNative, Created: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC), ChatID: "a", FirstUserMessage: "same prompt", GroupKey: ""},
+		{Kind: chatRowNative, Created: time.Date(2026, 1, 2, 3, 4, 4, 0, time.UTC), ChatID: "b", FirstUserMessage: "same prompt", GroupKey: ""},
+	}
+	got := collapseGroupRows(rows)
+	if len(got) != 2 {
+		t.Fatalf("collapseGroupRows: expected 2 ungrouped rows, got %d", len(got))
+	}
+	for i, r := range got {
+		if r.Kind == chatRowGroup {
+			t.Fatalf("collapseGroupRows[%d]: unexpected group row with empty GroupKey: %+v", i, r)
+		}
+	}
+}
+
+// TestCollapseGroupRows_SingleMemberSuppressed verifies that a GroupKey with only
+// one conversation produces no group row.
+func TestCollapseGroupRows_SingleMemberSuppressed(t *testing.T) {
+	gk := ComputeGroupKeyFromText("unique prompt")
+	rows := []chatListRow{
+		{Kind: chatRowNative, Created: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC), ChatID: "a", FirstUserMessage: "unique prompt", GroupKey: gk},
+	}
+	got := collapseGroupRows(rows)
+	if len(got) != 1 {
+		t.Fatalf("collapseGroupRows: expected 1 ungrouped row, got %d", len(got))
+	}
+	if got[0].Kind == chatRowGroup {
+		t.Fatal("collapseGroupRows: single member should not produce a group row")
+	}
+}
+
+// TestSave_StampsGroupKeyOnFirstPersist verifies that Save() computes and
+// persists GroupKey when a chat with messages is first saved.
+func TestSave_StampsGroupKeyOnFirstPersist(t *testing.T) {
+	tmp := t.TempDir()
+	ch := pub_models.Chat{
+		ID:       "test-chat",
+		Messages: []pub_models.Message{{Role: "system", Content: "sys"}, {Role: "user", Content: "fix the auth bug"}},
+	}
+	if ch.GroupKey != "" {
+		t.Fatal("expected empty GroupKey before save")
+	}
+	if err := Save(tmp, ch); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	// Reload from disk
+	loaded, err := FromPath(filepath.Join(tmp, "test-chat.json"))
+	if err != nil {
+		t.Fatalf("FromPath: %v", err)
+	}
+	wantGK := ComputeGroupKeyFromText("fix the auth bug")
+	if loaded.GroupKey != wantGK {
+		t.Fatalf("loaded.GroupKey = %q, want %q", loaded.GroupKey, wantGK)
+	}
+	if loaded.GroupKey == "" {
+		t.Fatal("expected non-empty GroupKey after save")
+	}
+}
+
+// stubSourceReader implements vendors.SourceReader for tests.
+type stubSourceReader struct {
+	name string
+	rows []vendors.SourceRow
+}
+
+func (s stubSourceReader) Source() string { return s.name }
+func (s stubSourceReader) Discover(ctx context.Context) ([]vendors.SourceRow, error) {
+	return s.rows, nil
+}
+
+func (s stubSourceReader) Read(ctx context.Context, sourceID string) (pub_models.Chat, error) {
+	return pub_models.Chat{}, nil
+}
+
+// TestForeignChatRows_GroupKeyFromFullFirstUserMessage verifies that
+// foreignChatRows computes GroupKey from FullFirstUserMessage, not the
+// truncated FirstUserMessage. This prevents two foreign conversations whose
+// first 100 chars match but full text differs from colliding into the same group.
+func TestForeignChatRows_GroupKeyFromFullFirstUserMessage(t *testing.T) {
+	cq, _ := newTestHandler(t)
+
+	// Two conversations whose first 100 chars are identical but full text differs.
+	prefix := ""
+	for i := 0; i < 100; i++ {
+		prefix += "x"
+	}
+	suffixA := "-This-is-the-unique-suffix-for-A"
+	suffixB := "-This-is-the-unique-suffix-for-B"
+
+	reader := stubSourceReader{
+		name: "test-source",
+		rows: []vendors.SourceRow{
+			{
+				Source:               "test-source",
+				SourceID:             "a",
+				FirstUserMessage:     prefix, // truncated (same for both)
+				FullFirstUserMessage: prefix + suffixA,
+				Created:              time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
+			},
+			{
+				Source:               "test-source",
+				SourceID:             "b",
+				FirstUserMessage:     prefix, // truncated (same for both)
+				FullFirstUserMessage: prefix + suffixB,
+				Created:              time.Date(2026, 1, 2, 3, 4, 4, 0, time.UTC),
+			},
+		},
+	}
+
+	rows, err := cq.foreignChatRows(context.Background(), []vendors.SourceReader{reader}, map[string]struct{}{})
+	if err != nil {
+		t.Fatalf("foreignChatRows: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("expected 2 rows, got %d", len(rows))
+	}
+
+	// Verify GroupKeys are different (because FullFirstUserMessage differs)
+	if rows[0].GroupKey == rows[1].GroupKey {
+		t.Fatalf("expected different GroupKeys for different FullFirstUserMessage, got same: %q", rows[0].GroupKey)
+	}
+
+	// Verify GroupKeys match what we'd compute from full text
+	want0 := ComputeGroupKeyFromText(prefix + suffixA)
+	want1 := ComputeGroupKeyFromText(prefix + suffixB)
+	if rows[0].GroupKey != want0 {
+		t.Fatalf("row 0 GroupKey: got %q, want %q", rows[0].GroupKey, want0)
+	}
+	if rows[1].GroupKey != want1 {
+		t.Fatalf("row 1 GroupKey: got %q, want %q", rows[1].GroupKey, want1)
+	}
+
+	// Sanity check: if we had used truncated FirstUserMessage, keys would be equal
+	collidedKey := ComputeGroupKeyFromText(prefix)
+	if collidedKey == want0 || collidedKey == want1 {
+		t.Fatal("test setup error: truncated key should not match full-text keys")
+	}
+}
+
+// TestListChats_GroupKeyZeroMembers_RendersGroupIndicator covers issue #3:
+// when a group view expands to zero members (groupKey != "" but no rows
+// match), the prompt bar must still indicate the group context with the
+// truncated hash and a [b]ack to list button.
+func TestListChats_GroupKeyZeroMembers_RendersGroupIndicator(t *testing.T) {
+	cq, confDir := newTestHandler(t)
+	convDir := conversationsDir(confDir)
+
+	// Save chats whose GroupKey does NOT match the queried groupKey,
+	// ensuring the group view will be empty.
+	for _, c := range []pub_models.Chat{
+		{
+			ID:       "chat-a",
+			Created:  time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
+			Messages: []pub_models.Message{{Role: "user", Content: "unrelated prompt"}},
+			GroupKey: ComputeGroupKeyFromText("unrelated prompt"),
+		},
+		{
+			ID:       "chat-b",
+			Created:  time.Date(2026, 1, 2, 3, 4, 4, 0, time.UTC),
+			Messages: []pub_models.Message{{Role: "user", Content: "another unrelated"}},
+			GroupKey: ComputeGroupKeyFromText("another unrelated"),
+		},
+	} {
+		if err := Save(convDir, c); err != nil {
+			t.Fatalf("Save(%q): %v", c.ID, err)
+		}
+	}
+
+	// A hex groupKey that won't match any saved chat.
+	nonMatchingGroupKey := "deadbeefcafebabedeadbeefcafebabedeadbeefcafebabedeadbeefcafebabe"
+
+	calls := 0
+	restore := utils.UseReadUserInputForTests(func() (string, error) {
+		calls++
+		return "b", nil // back to list
+	})
+	t.Cleanup(restore)
+
+	paginator, err := NewChatIndexPaginator(convDir)
+	if err != nil {
+		t.Fatalf("NewChatIndexPaginator: %v", err)
+	}
+	var out strings.Builder
+	cq.out = &out
+	if err := cq.listChats(context.Background(), paginator, nonMatchingGroupKey); err != nil {
+		t.Fatalf("listChats: %v", err)
+	}
+
+	got := out.String()
+	if !strings.Contains(got, "group:") {
+		t.Fatalf("expected group indicator in output, got: %q", got)
+	}
+	if !strings.Contains(got, "deadbeef...") {
+		t.Fatalf("expected truncated hash in output, got: %q", got)
+	}
+	if !strings.Contains(got, "[b]ack to list") {
+		t.Fatalf("expected [b]ack to list in output, got: %q", got)
 	}
 }

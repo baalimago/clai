@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
 func TestSourceReader_Discover_NoDirs(t *testing.T) {
@@ -204,5 +206,166 @@ func TestSourceReader_Discover_LongLine(t *testing.T) {
 	}
 	if rows[0].SourceID != "s1" {
 		t.Fatalf("expected sourceID s1, got %q", rows[0].SourceID)
+	}
+}
+
+// TestDiscover_FullFirstUserMessage_Populated verifies that discoverOne populates
+// both FirstUserMessage (truncated) and FullFirstUserMessage (complete).
+func TestDiscover_FullFirstUserMessage_Populated(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projDir := filepath.Join(home, ".claude", "projects", "p1")
+	if err := os.MkdirAll(projDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	// Message longer than 100 chars → truncated preview differs from full text.
+	longMsg := ""
+	for i := 0; i < 150; i++ {
+		longMsg += "x"
+	}
+	p := filepath.Join(projDir, "sess.jsonl")
+	jsonl := `{"type":"user","timestamp":"2026-01-01T00:00:00Z","sessionId":"s1","message":{"content":"` + longMsg + `"}}` + "\n"
+	if err := os.WriteFile(p, []byte(jsonl), 0o644); err != nil {
+		t.Fatalf("write jsonl: %v", err)
+	}
+
+	r := SourceReader{FS: os.DirFS("/")}
+	rows, err := r.Discover(context.Background())
+	if err != nil {
+		t.Fatalf("discover: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(rows))
+	}
+	// FirstUserMessage should be truncated to 100 chars.
+	if len(rows[0].FirstUserMessage) > 100 {
+		t.Fatalf("FirstUserMessage should be truncated to ≤100 chars, got %d: %q", len(rows[0].FirstUserMessage), rows[0].FirstUserMessage)
+	}
+	// FullFirstUserMessage should contain the complete text.
+	if rows[0].FullFirstUserMessage != longMsg {
+		t.Fatalf("FullFirstUserMessage mismatch: len=%d, want len=%d", len(rows[0].FullFirstUserMessage), len(longMsg))
+	}
+}
+
+// TestNormalizeClaudeToolCallSequence_AdjacentMerge verifies two consecutive
+// tool-call-only assistant messages are merged into one.
+func TestNormalizeClaudeToolCallSequence_AdjacentMerge(t *testing.T) {
+	msgs := []pub_models.Message{
+		{Role: "assistant", ToolCalls: []pub_models.Call{{ID: "A", Function: pub_models.Specification{Name: "read"}}}},
+		{Role: "assistant", ToolCalls: []pub_models.Call{{ID: "B", Function: pub_models.Specification{Name: "write"}}}},
+	}
+	got := normalizeClaudeToolCallSequence(msgs)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 merged message, got %d", len(got))
+	}
+	if len(got[0].ToolCalls) != 2 {
+		t.Fatalf("expected 2 tool calls, got %d", len(got[0].ToolCalls))
+	}
+	if got[0].ToolCalls[0].ID != "A" {
+		t.Fatalf("expected first tool call ID A, got %q", got[0].ToolCalls[0].ID)
+	}
+	if got[0].ToolCalls[1].ID != "B" {
+		t.Fatalf("expected second tool call ID B, got %q", got[0].ToolCalls[1].ID)
+	}
+}
+
+// TestNormalizeClaudeToolCallSequence_InterleavedMerge verifies interleaved
+// tool-call-only assistants merge into the prior pending batch.
+// Input: assistant(tool_use A), assistant(tool_use B), tool_result A,
+// assistant(tool_use C), tool_result B, tool_result C
+// Output: assistant(tool_calls [A, B, C]), tool_result A, tool_result B, tool_result C
+func TestNormalizeClaudeToolCallSequence_InterleavedMerge(t *testing.T) {
+	msgs := []pub_models.Message{
+		{Role: "assistant", ToolCalls: []pub_models.Call{{ID: "A", Function: pub_models.Specification{Name: "f"}}}},
+		{Role: "assistant", ToolCalls: []pub_models.Call{{ID: "B", Function: pub_models.Specification{Name: "f"}}}},
+		{Role: "tool", ToolCallID: "A", Content: "result-A"},
+		{Role: "assistant", ToolCalls: []pub_models.Call{{ID: "C", Function: pub_models.Specification{Name: "f"}}}},
+		{Role: "tool", ToolCallID: "B", Content: "result-B"},
+		{Role: "tool", ToolCallID: "C", Content: "result-C"},
+	}
+	got := normalizeClaudeToolCallSequence(msgs)
+	// Expected: assistant[A,B,C], tool:A, tool:B, tool:C
+	if len(got) != 4 {
+		t.Fatalf("expected 4 messages, got %d", len(got))
+	}
+	if got[0].Role != "assistant" {
+		t.Fatalf("expected first msg assistant, got %q", got[0].Role)
+	}
+	if len(got[0].ToolCalls) != 3 {
+		t.Fatalf("expected 3 tool calls in merged assistant, got %d", len(got[0].ToolCalls))
+	}
+	ids := []string{got[0].ToolCalls[0].ID, got[0].ToolCalls[1].ID, got[0].ToolCalls[2].ID}
+	want := []string{"A", "B", "C"}
+	for i, id := range ids {
+		if id != want[i] {
+			t.Fatalf("tool call %d: got %q, want %q", i, id, want[i])
+		}
+	}
+}
+
+// TestNormalizeClaudeToolCallSequence_NoMergeWhenTextSeparates verifies that when a
+// text-content assistant separates two tool-call-only assistants, they are not merged.
+func TestNormalizeClaudeToolCallSequence_NoMergeWhenTextSeparates(t *testing.T) {
+	msgs := []pub_models.Message{
+		{Role: "assistant", ToolCalls: []pub_models.Call{{ID: "A", Function: pub_models.Specification{Name: "f"}}}},
+		{Role: "assistant", Content: "hello"},
+		{Role: "assistant", ToolCalls: []pub_models.Call{{ID: "B", Function: pub_models.Specification{Name: "f"}}}},
+	}
+	got := normalizeClaudeToolCallSequence(msgs)
+	if len(got) != 3 {
+		t.Fatalf("expected 3 messages, got %d", len(got))
+	}
+	if got[0].Role != "assistant" || len(got[0].ToolCalls) != 1 {
+		t.Fatal("expected first msg to be untouched assistant with 1 tool call")
+	}
+	if got[1].Role != "assistant" || got[1].Content != "hello" {
+		t.Fatal("expected middle text assistant preserved")
+	}
+	if got[2].Role != "assistant" || len(got[2].ToolCalls) != 1 {
+		t.Fatal("expected last msg to be untouched assistant with 1 tool call")
+	}
+}
+
+// TestNormalizeClaudeToolCallSequence_EmptyInput returns empty output.
+func TestNormalizeClaudeToolCallSequence_EmptyInput(t *testing.T) {
+	got := normalizeClaudeToolCallSequence(nil)
+	if got != nil {
+		t.Fatalf("expected nil, got %v", got)
+	}
+	got = normalizeClaudeToolCallSequence([]pub_models.Message{})
+	if len(got) != 0 {
+		t.Fatalf("expected empty, got %d", len(got))
+	}
+}
+
+// TestNormalizeClaudeToolCallSequence_SingleElementNoOp verifies a single-element
+// slice passes through unchanged.
+func TestNormalizeClaudeToolCallSequence_SingleElementNoOp(t *testing.T) {
+	msgs := []pub_models.Message{
+		{Role: "user", Content: "hi"},
+	}
+	got := normalizeClaudeToolCallSequence(msgs)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 msg, got %d", len(got))
+	}
+	if got[0].Content != "hi" {
+		t.Fatalf("expected content hi, got %q", got[0].Content)
+	}
+}
+
+// TestNormalizeClaudeToolCallSequence_ReasoningPreservedDuringMerge verifies that
+// ReasoningContent is joined with "\n" when merging tool-call-only assistants.
+func TestNormalizeClaudeToolCallSequence_ReasoningPreservedDuringMerge(t *testing.T) {
+	msgs := []pub_models.Message{
+		{Role: "assistant", ReasoningContent: "think A", ToolCalls: []pub_models.Call{{ID: "A", Function: pub_models.Specification{Name: "f"}}}},
+		{Role: "assistant", ReasoningContent: "think B", ToolCalls: []pub_models.Call{{ID: "B", Function: pub_models.Specification{Name: "f"}}}},
+	}
+	got := normalizeClaudeToolCallSequence(msgs)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 msg, got %d", len(got))
+	}
+	if got[0].ReasoningContent != "think A\nthink B" {
+		t.Fatalf("expected joined reasoning, got %q", got[0].ReasoningContent)
 	}
 }

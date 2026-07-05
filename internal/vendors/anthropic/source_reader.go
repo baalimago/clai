@@ -141,7 +141,7 @@ func (r SourceReader) discoverOne(ctx context.Context, absPath string) (vendors.
 		case "user":
 			row.MessageCount++
 			if row.FirstUserMessage == "" {
-				row.FirstUserMessage = extractUserContentString(env)
+				row.FirstUserMessage, row.FullFirstUserMessage = extractUserContentStrings(env)
 			}
 		case "assistant":
 			row.MessageCount++
@@ -168,14 +168,14 @@ func (r SourceReader) discoverOne(ctx context.Context, absPath string) (vendors.
 	return row, true
 }
 
-func extractUserContentString(env map[string]any) string {
+func extractUserContentStrings(env map[string]any) (string, string) {
 	msg, _ := env["message"].(map[string]any)
 	if msg == nil {
-		return ""
+		return "", ""
 	}
 	c := msg["content"]
 	s, _ := c.(string)
-	return truncateOneLine(s, 100)
+	return truncateOneLine(s, 100), s
 }
 
 func (r SourceReader) Read(ctx context.Context, sourceID string) (pub_models.Chat, error) {
