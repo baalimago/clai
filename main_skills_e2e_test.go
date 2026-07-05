@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/baalimago/clai/internal/utils"
+	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
@@ -649,23 +650,32 @@ func readStringFile(t *testing.T, path string) string {
 func captureStdoutStderr(t *testing.T, fn func()) (string, string) {
 	t.Helper()
 
-	// These end-to-end tests run alongside other package tests.
-	// Rebinding the global os.Stdout/os.Stderr is process-global, so without
-	// serialization it races with other tests reading/writing the same globals.
+	// Serialize capture across all tests that use this helper.
 	captureStdoutStderrMu.Lock()
 	defer captureStdoutStderrMu.Unlock()
 
+	// Hold ancli mutexes while swapping os.Stdout/os.Stderr to avoid
+	// racing with background goroutines that write via ancli.PrintErr etc.
+	ancli.OutMu.Lock()
+	ancli.ErrMut.Lock()
 	oldOut, oldErr := os.Stdout, os.Stderr
 	outR, outW, err := os.Pipe()
 	if err != nil {
+		ancli.ErrMut.Unlock()
+		ancli.OutMu.Unlock()
 		t.Fatalf("Pipe(stdout): %v", err)
 	}
 	errR, errW, err := os.Pipe()
 	if err != nil {
+		ancli.ErrMut.Unlock()
+		ancli.OutMu.Unlock()
 		t.Fatalf("Pipe(stderr): %v", err)
 	}
 	os.Stdout = outW
 	os.Stderr = errW
+	ancli.ErrMut.Unlock()
+	ancli.OutMu.Unlock()
+
 	doneOut := make(chan string, 1)
 	doneErr := make(chan string, 1)
 	go func() {
@@ -679,7 +689,14 @@ func captureStdoutStderr(t *testing.T, fn func()) (string, string) {
 	fn()
 	_ = outW.Close()
 	_ = errW.Close()
+
+	// Restore under the ancli mutexes.
+	ancli.OutMu.Lock()
+	ancli.ErrMut.Lock()
 	os.Stdout = oldOut
 	os.Stderr = oldErr
+	ancli.ErrMut.Unlock()
+	ancli.OutMu.Unlock()
+
 	return <-doneOut, <-doneErr
 }

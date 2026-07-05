@@ -1,7 +1,6 @@
 package internal
 
 import (
-	"flag"
 	"os"
 	"slices"
 	"strings"
@@ -11,11 +10,6 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
-
-// helper function to reset flags between tests
-func resetFlags() {
-	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
-}
 
 func TestSetupFlags(t *testing.T) {
 	testCases := []struct {
@@ -215,7 +209,6 @@ func TestSetupFlags(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			resetFlags()
 			os.Args = tc.args
 
 			// parseFlags expects args WITHOUT argv[0].
