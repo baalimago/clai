@@ -430,13 +430,11 @@ func (cq *ChatHandler) dirFilterAction() (utils.TableAction, bool) {
 		return utils.TableAction{}, false
 	}
 	ids := DirHistoryChatIDs(cq.confDir, wd)
-	if len(ids) == 0 {
-		return utils.TableAction{}, false
-	}
 	return utils.TableAction{
-		Format: "[d]irscoped convs",
-		Short:  "d",
-		Long:   "dir",
+		Format:       "[d]irscoped convs",
+		Short:        "d",
+		Long:         "dir",
+		EmptyMessage: fmt.Sprintf("no dirscoped conversations in %s", wd),
 		Filter: func(row any) bool {
 			r, ok := row.(chatListRow)
 			if !ok {

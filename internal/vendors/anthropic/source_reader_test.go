@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -220,12 +221,12 @@ func TestDiscover_FullFirstUserMessage_Populated(t *testing.T) {
 		t.Fatalf("mkdir: %v", err)
 	}
 	// Message longer than 100 chars → truncated preview differs from full text.
-	longMsg := ""
-	for i := 0; i < 150; i++ {
-		longMsg += "x"
+	var longMsg strings.Builder
+	for range 150 {
+		longMsg.WriteString("x")
 	}
 	p := filepath.Join(projDir, "sess.jsonl")
-	jsonl := `{"type":"user","timestamp":"2026-01-01T00:00:00Z","sessionId":"s1","message":{"content":"` + longMsg + `"}}` + "\n"
+	jsonl := `{"type":"user","timestamp":"2026-01-01T00:00:00Z","sessionId":"s1","message":{"content":"` + longMsg.String() + `"}}` + "\n"
 	if err := os.WriteFile(p, []byte(jsonl), 0o644); err != nil {
 		t.Fatalf("write jsonl: %v", err)
 	}
@@ -243,8 +244,8 @@ func TestDiscover_FullFirstUserMessage_Populated(t *testing.T) {
 		t.Fatalf("FirstUserMessage should be truncated to ≤100 chars, got %d: %q", len(rows[0].FirstUserMessage), rows[0].FirstUserMessage)
 	}
 	// FullFirstUserMessage should contain the complete text.
-	if rows[0].FullFirstUserMessage != longMsg {
-		t.Fatalf("FullFirstUserMessage mismatch: len=%d, want len=%d", len(rows[0].FullFirstUserMessage), len(longMsg))
+	if rows[0].FullFirstUserMessage != longMsg.String() {
+		t.Fatalf("FullFirstUserMessage mismatch: len=%d, want len=%d", len(rows[0].FullFirstUserMessage), len(longMsg.String()))
 	}
 }
 

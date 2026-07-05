@@ -82,7 +82,7 @@ func TestComputeGroupKey_deterministic(t *testing.T) {
 		},
 	}
 	first := ComputeGroupKey(chat)
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		if got := ComputeGroupKey(chat); got != first {
 			t.Fatalf("ComputeGroupKey not deterministic: %q != %q", got, first)
 		}

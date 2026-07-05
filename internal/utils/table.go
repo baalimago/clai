@@ -27,6 +27,9 @@ type TableAction struct {
 	// predicate receives each original row as an `any`. When Filter is set, Action
 	// is ignored.
 	Filter func(any) bool
+	// EmptyMessage is appended in the prompt when this predicate filter is active
+	// and yields zero rows.
+	EmptyMessage string
 }
 
 //lint:ignore U1000 interface methods are exercised through generic interface values
@@ -73,20 +76,21 @@ func (pf paginatorFuncs[T]) findPage(start, offset int) ([]T, error) {
 }
 
 type table[T any] struct {
-	debug             bool
-	page              int
-	pageSize          int
-	lastPage          int
-	selectionType     string
-	backLabel         string
-	paginator         Paginator[T]
-	originalPaginator Paginator[T]
-	filterString      string
-	filteredIndices   []int
-	predicateActive   bool
-	rowFormater       func(int, T) (string, error)
-	tableActions      []TableAction
-	out               io.Writer
+	debug                       bool
+	page                        int
+	pageSize                    int
+	lastPage                    int
+	selectionType               string
+	backLabel                   string
+	paginator                   Paginator[T]
+	originalPaginator           Paginator[T]
+	filterString                string
+	filteredIndices             []int
+	predicateActive             bool
+	activePredicateEmptyMessage string
+	rowFormater                 func(int, T) (string, error)
+	tableActions                []TableAction
+	out                         io.Writer
 }
 
 var clearTermToFn = ClearTermTo
@@ -272,6 +276,9 @@ func (t *table[T]) promptLine() string {
 		parts = append(parts, "dir filter")
 	}
 	if t.pageCount() == 0 {
+		if t.predicateActive && t.activePredicateEmptyMessage != "" {
+			return fmt.Sprintf("(%s, %s): ", strings.Join(parts, ", "), t.activePredicateEmptyMessage)
+		}
 		if t.filteredIndices != nil && t.paginator.totalAm() == 0 {
 			return fmt.Sprintf("(%s, no matches): ", strings.Join(parts, ", "))
 		}
@@ -338,6 +345,9 @@ func (t *table[T]) selectNumbers() ([]int, error) {
 			if action.Filter != nil {
 				if err := t.togglePredicateFilter(action.Filter); err != nil {
 					return nil, fmt.Errorf("failed to toggle predicate filter: %w", err)
+				}
+				if t.predicateActive {
+					t.activePredicateEmptyMessage = action.EmptyMessage
 				}
 				return nil, nil
 			}
@@ -529,6 +539,7 @@ func (t *table[T]) togglePredicateFilter(predicate func(any) bool) error {
 	t.filteredIndices = matchedIndices
 	t.paginator = SlicePaginator(matchedItems)
 	t.predicateActive = true
+	t.activePredicateEmptyMessage = ""
 	t.page = 0
 	t.lastPage = t.pageCount()
 	return nil
@@ -536,6 +547,7 @@ func (t *table[T]) togglePredicateFilter(predicate func(any) bool) error {
 
 func (t *table[T]) clearPredicateFilter() {
 	t.predicateActive = false
+	t.activePredicateEmptyMessage = ""
 	t.paginator = t.originalPaginator
 	t.filteredIndices = nil
 	t.page = 0

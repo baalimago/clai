@@ -9,7 +9,7 @@ func TestNewChatID_FormatAndUniqueness(t *testing.T) {
 	seen := map[string]struct{}{}
 	re := regexp.MustCompile(`^[0-9a-f]+-[0-9a-f]{20}$`)
 
-	for i := 0; i < 500; i++ {
+	for range 500 {
 		id := NewChatID()
 		if !re.MatchString(id) {
 			t.Fatalf("id %q did not match expected format", id)
