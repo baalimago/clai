@@ -237,7 +237,7 @@ func TestActOnChat_enter_continues(t *testing.T) {
 	defer func() { _ = os.Setenv("TTY", oldTTY) }()
 
 	cq := &ChatHandler{q: nil, confDir: confDir, convDir: convDir, out: io.Discard}
-	if err := cq.actOnChat(context.Background(), ch, ""); err != nil {
+	if err := cq.actOnChat(ch, ""); err != nil {
 		if !errors.Is(err, errExitList) {
 			t.Fatalf("actOnChat: %v", err)
 		}
@@ -518,6 +518,31 @@ func TestCollapseGroupRows_EmptyGroupKeyNeverGrouped(t *testing.T) {
 		if r.Kind == chatRowGroup {
 			t.Fatalf("collapseGroupRows[%d]: unexpected group row with empty GroupKey: %+v", i, r)
 		}
+	}
+}
+
+// TestCollapseGroupRows_GlobalScopeMirrorNeverGrouped verifies the globalScope
+// mirror (which shares the newest conversation's GroupKey) is excluded from
+// grouping, so aggregates are not double-counted and no phantom group forms.
+func TestCollapseGroupRows_GlobalScopeMirrorNeverGrouped(t *testing.T) {
+	gk := ComputeGroupKeyFromText("latest prompt")
+	rows := []chatListRow{
+		{Kind: chatRowNative, Created: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC), ChatID: globalScopeChatID, FirstUserMessage: "latest prompt", GroupKey: gk, MessageCount: 4},
+		{Kind: chatRowNative, Created: time.Date(2026, 1, 2, 3, 4, 4, 0, time.UTC), ChatID: "real", FirstUserMessage: "latest prompt", GroupKey: gk, MessageCount: 4},
+	}
+	got := collapseGroupRows(rows)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 ungrouped rows (mirror excluded), got %d", len(got))
+	}
+	for i, r := range got {
+		if r.Kind == chatRowGroup {
+			t.Fatalf("row %d: globalScope mirror formed a group: %+v", i, r)
+		}
+	}
+	// Entering a group must never surface the mirror either.
+	members := filterRowsByGroupKey(rows, gk)
+	if len(members) != 1 || members[0].ChatID != "real" {
+		t.Fatalf("expected only the real conversation as group member, got %+v", members)
 	}
 }
 

@@ -205,6 +205,50 @@ func Test_table_multiPartParse(t *testing.T) {
 	}
 }
 
+// Test_SelectFromTable_MistypedSelectionReprompts pins that a mistyped
+// selection (e.g. fat-fingering "d") or a fully out-of-range range shows a
+// one-shot notice in the prompt and re-prompts, instead of aborting the table.
+func Test_SelectFromTable_MistypedSelectionReprompts(t *testing.T) {
+	in := []string{"d", "50:60", "1"}
+	restore := UseReadUserInputForTests(func() (string, error) {
+		if len(in) == 0 {
+			t.Fatal("input script exhausted: table did not accept the valid selection")
+		}
+		next := in[0]
+		in = in[1:]
+		return next, nil
+	})
+	t.Cleanup(restore)
+
+	var out bytes.Buffer
+	got, err := SelectFromTable(
+		"header",
+		SlicePaginator([]int{10, 20, 30}),
+		"select",
+		func(i int, item int) (string, error) { return fmt.Sprintf("%d: %d", i, item), nil },
+		10,
+		true,
+		nil,
+		&out,
+		"",
+	)
+	if err != nil {
+		t.Fatalf("SelectFromTable should survive mistyped input: %v", err)
+	}
+	if !reflect.DeepEqual(got, []int{1}) {
+		t.Fatalf("expected selection [1] after retries, got %v", got)
+	}
+	if len(in) != 0 {
+		t.Fatalf("input script not fully consumed, remaining: %v", in)
+	}
+	if !strings.Contains(out.String(), `invalid selection "d"`) {
+		t.Fatalf("expected mistype notice in prompt, got:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), `no selectable index in "50:60"`) {
+		t.Fatalf("expected out-of-range notice in prompt, got:\n%s", out.String())
+	}
+}
+
 func Test_table_parseNumbersFromString(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -387,14 +431,15 @@ func Test_table_selectNumbers(t *testing.T) {
 	t.Setenv("COLUMNS", "5")
 
 	tests := []struct {
-		name      string
-		input     string
-		actions   []TableAction
-		want      []int
-		wantErr   string
-		wantErrIs error
-		wantNil   bool
-		wantPage  int
+		name       string
+		input      string
+		actions    []TableAction
+		want       []int
+		wantErr    string
+		wantErrIs  error
+		wantNil    bool
+		wantNotice string
+		wantPage   int
 	}{
 		{
 			name:     "returns parsed numbers",
@@ -453,10 +498,10 @@ func Test_table_selectNumbers(t *testing.T) {
 			wantErrIs: ErrUserInitiatedExit,
 		},
 		{
-			name:    "parse error returns selected numbers and wrapped error",
-			input:   "1,bad\n",
-			want:    []int{1},
-			wantErr: `failed to parse selected numbers from choice "1,bad"`,
+			name:       "parse error re-prompts with a notice instead of failing",
+			input:      "1,bad\n",
+			wantNil:    true,
+			wantNotice: `invalid selection "1,bad"`,
 		},
 		{
 			name:  "action can mutate table page",
@@ -515,6 +560,9 @@ func Test_table_selectNumbers(t *testing.T) {
 			}
 			if tt.wantNil && got != nil {
 				t.Fatalf("selectNumbers() = %v, want nil selection", got)
+			}
+			if tt.wantNotice != "" && !strings.Contains(tab.notice, tt.wantNotice) {
+				t.Fatalf("notice = %q, want substring %q", tab.notice, tt.wantNotice)
 			}
 			if tab.page != tt.wantPage {
 				t.Fatalf("page after selectNumbers() = %d, want %d", tab.page, tt.wantPage)

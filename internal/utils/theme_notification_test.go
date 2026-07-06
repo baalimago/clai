@@ -44,6 +44,31 @@ func TestLoadTheme_AppendsNotificationBellTrueForExistingThemeWithoutField(t *te
 	testboil.AssertStringContains(t, string(themeBytes), `"notificationBell": true`)
 }
 
+// TestLoadTheme_MalformedFileKeepsDefaults pins that a hand-edited broken
+// theme.json surfaces an error without clobbering the in-memory defaults —
+// the caller downgrades the error to a warning so the CLI stays usable.
+func TestLoadTheme_MalformedFileKeepsDefaults(t *testing.T) {
+	prev := globalTheme
+	t.Cleanup(func() { globalTheme = prev })
+	globalTheme = *defaultTheme()
+
+	confDir := t.TempDir()
+	themePath := filepath.Join(confDir, "theme.json")
+	if err := os.WriteFile(themePath, []byte(`{"primary": "p",`), 0o644); err != nil {
+		t.Fatalf("WriteFile(%q): %v", themePath, err)
+	}
+
+	if err := LoadTheme(confDir); err == nil {
+		t.Fatal("expected error for malformed theme.json")
+	}
+	if ThemeTableItems() != defaultTheme().TableItems {
+		t.Fatalf("expected default tableItems after failed load, got %d", ThemeTableItems())
+	}
+	if ThemePrimaryColor() != defaultTheme().Primary {
+		t.Fatal("expected default primary color after failed load")
+	}
+}
+
 func TestLoadTheme_NotificationBellCanBeDisabled(t *testing.T) {
 	confDir := t.TempDir()
 	themePath := filepath.Join(confDir, "theme.json")

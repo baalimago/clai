@@ -52,51 +52,63 @@ func (e toolExecutor[C]) Execute(ctx context.Context, session *QuerySession, cal
 		return e.executeLookbackTool(session, call)
 	}
 
-	// Build display message (has PrettyPrint in Content for user-facing output).
-	// The model-safe message for chat history omits Content so the model does not
-	// learn the "Call: ..." text format, which causes hallucinations.
-	assistantToolsCall := pub_models.Message{
-		Role:             "assistant",
-		Content:          call.PrettyPrint(),
-		ToolCalls:        []pub_models.Call{call},
-		ReasoningContent: call.ReasoningContent,
+	if err := e.emitAssistantToolCall(session, call); err != nil {
+		return err
 	}
-	modelSafeMsg := pub_models.Message{
-		Role:             "assistant",
-		ToolCalls:        []pub_models.Call{call},
-		ReasoningContent: call.ReasoningContent,
-	}
-	if !q.debug {
-		err := utils.AttemptPrettyPrint(q.out, assistantToolsCall, q.username, q.Raw)
-		if err != nil {
-			return fmt.Errorf("pretty print assistant tool call: %w", err)
-		}
-	}
-	session.Chat.Messages = append(session.Chat.Messages, modelSafeMsg)
-
 	out := tools.Invoke(ctx, call)
 	out, err := e.applyToolCallBudget(session, out)
 	if err != nil {
 		return err
 	}
+	return e.emitToolResult(session, call, out)
+}
+
+// emitAssistantToolCall prints the user-facing assistant tool-call turn and
+// appends the model-safe version to the chat history. The model-safe message
+// omits the PrettyPrint content so the model does not learn the "Call: ..."
+// text format, which causes hallucinations.
+func (e toolExecutor[C]) emitAssistantToolCall(session *QuerySession, call pub_models.Call) error {
+	q := e.querier
+	display := pub_models.Message{
+		Role:             "assistant",
+		Content:          call.PrettyPrint(),
+		ToolCalls:        []pub_models.Call{call},
+		ReasoningContent: call.ReasoningContent,
+	}
+	modelSafe := pub_models.Message{
+		Role:             "assistant",
+		ToolCalls:        []pub_models.Call{call},
+		ReasoningContent: call.ReasoningContent,
+	}
+	if !q.debug {
+		if err := utils.AttemptPrettyPrint(q.out, display, q.username, q.Raw); err != nil {
+			return fmt.Errorf("pretty print assistant tool call: %w", err)
+		}
+	}
+	session.Chat.Messages = append(session.Chat.Messages, modelSafe)
+	return nil
+}
+
+// emitToolResult bounds the output, appends it as the tool-result turn, prints
+// it, and resets pending text — the shared tail of every tool-call exchange.
+func (e toolExecutor[C]) emitToolResult(session *QuerySession, call pub_models.Call, out string) error {
+	q := e.querier
 	out = limitToolOutput(out, q.toolOutputRuneLimit)
 	if out == "" {
 		out = fmt.Sprintf("<NO-OUTPUT> tool %s completed successfully but produced no stdout/stderr.", call.Name)
 	}
-	toolsOutput := pub_models.Message{
+	outMsg := pub_models.Message{
 		Role:       "tool",
 		Content:    out,
 		ToolCallID: call.ID,
 	}
-	session.Chat.Messages = append(session.Chat.Messages, toolsOutput)
+	session.Chat.Messages = append(session.Chat.Messages, outMsg)
 	if q.Raw {
-		err := utils.AttemptPrettyPrint(q.out, toolsOutput, "tool", q.Raw)
-		if err != nil {
+		if err := utils.AttemptPrettyPrint(q.out, outMsg, "tool", q.Raw); err != nil {
 			return fmt.Errorf("pretty print raw tool output: %w", err)
 		}
 	} else if !q.debug {
-		err := utils.AttemptPrettyPrint(q.out, utils.PrepareDisplayMessage(toolsOutput), "tool", q.Raw)
-		if err != nil {
+		if err := utils.AttemptPrettyPrint(q.out, utils.PrepareDisplayMessage(outMsg), "tool", q.Raw); err != nil {
 			return fmt.Errorf("pretty print tool output: %w", err)
 		}
 	}
@@ -155,33 +167,10 @@ func (e toolExecutor[C]) executeLoadSkill(ctx context.Context, session *QuerySes
 		return err
 	}
 	if loaded.ActivationErr != "" {
-		// Build display message (has PrettyPrint in Content for user-facing output).
-		// The model-safe message for chat history omits Content so the model does not
-		// learn the "Call: ..." text format, which causes hallucinations.
-		assistantToolsCall := pub_models.Message{
-			Role:      "assistant",
-			Content:   call.PrettyPrint(),
-			ToolCalls: []pub_models.Call{call},
+		if err := e.emitAssistantToolCall(session, call); err != nil {
+			return err
 		}
-		modelSafeMsg := pub_models.Message{
-			Role:      "assistant",
-			ToolCalls: []pub_models.Call{call},
-		}
-		if !q.debug {
-			if err := utils.AttemptPrettyPrint(q.out, assistantToolsCall, q.username, q.Raw); err != nil {
-				return fmt.Errorf("pretty print assistant tool call: %w", err)
-			}
-		}
-		session.Chat.Messages = append(session.Chat.Messages, modelSafeMsg)
-		outMsg := pub_models.Message{Role: "tool", Content: "ERROR: " + loaded.ActivationErr, ToolCallID: call.ID}
-		session.Chat.Messages = append(session.Chat.Messages, outMsg)
-		if !q.debug {
-			if err := utils.AttemptPrettyPrint(q.out, outMsg, "tool", q.Raw); err != nil {
-				return fmt.Errorf("pretty print skill output: %w", err)
-			}
-		}
-		session.ResetPendingText()
-		return nil
+		return e.emitToolResult(session, call, "ERROR: "+loaded.ActivationErr)
 	}
 	if len(loaded.ActiveTools) > 0 {
 		q.baseTools = loaded.ActiveTools
@@ -201,24 +190,11 @@ func (e toolExecutor[C]) executeLoadSkill(ctx context.Context, session *QuerySes
 			userVisibleContent = body + "\n\n" + userVisibleContent
 		}
 	}
-	// Build display message (has PrettyPrint in Content for user-facing output).
-	// The model-safe message for chat history omits Content so the model does not
-	// learn the "Call: ..." text format, which causes hallucinations.
-	assistantToolsCall := pub_models.Message{
-		Role:      "assistant",
-		Content:   call.PrettyPrint(),
-		ToolCalls: []pub_models.Call{call},
+	if err := e.emitAssistantToolCall(session, call); err != nil {
+		return err
 	}
-	modelSafeMsg := pub_models.Message{
-		Role:      "assistant",
-		ToolCalls: []pub_models.Call{call},
-	}
-	if !q.debug {
-		if err := utils.AttemptPrettyPrint(q.out, assistantToolsCall, q.username, q.Raw); err != nil {
-			return fmt.Errorf("pretty print assistant tool call: %w", err)
-		}
-	}
-	session.Chat.Messages = append(session.Chat.Messages, modelSafeMsg)
+	// Skill bodies are persisted and displayed in full (no output limit, no
+	// display shortening): the loaded skill IS the instruction set.
 	outMsg := pub_models.Message{Role: "tool", Content: content, ToolCallID: call.ID}
 	session.Chat.Messages = append(session.Chat.Messages, outMsg)
 	if !q.debug {

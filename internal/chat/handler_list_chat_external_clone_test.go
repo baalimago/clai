@@ -30,7 +30,7 @@ func TestCloneForeignChat_UpsertsIndexAndDedupsOnNextListBuild(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Setenv("TTY", oldTTY) })
 
-	cloned, err := cq.cloneForeignChat(context.Background(), foreign)
+	cloned, err := cq.cloneForeignChat(foreign)
 	if err != nil {
 		t.Fatalf("cloneForeignChat: %v", err)
 	}

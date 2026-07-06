@@ -90,14 +90,6 @@ func originMatches(origin, queryDir string, subtree bool) bool {
 	return strings.HasPrefix(origin, queryDir+sep)
 }
 
-func (cq *ChatHandler) canonicalDir(dir string) (string, error) {
-	return canonicalDir(dir)
-}
-
-func (cq *ChatHandler) dirHash(canonicalDir string) string {
-	return dirHash(canonicalDir)
-}
-
 func (cq *ChatHandler) dirScopePathFromHash(hash string) string {
 	return dirscopePath(cq.confDir, hash)
 }
@@ -126,12 +118,11 @@ func (cq *ChatHandler) loadDirScopeForDir(dir string) (DirScope, error) {
 	if dir == "" {
 		return DirScope{}, fmt.Errorf("directory is empty")
 	}
-	canonical, err := cq.canonicalDir(dir)
+	canonical, err := canonicalDir(dir)
 	if err != nil {
 		return DirScope{}, fmt.Errorf("canonicalize directory %q: %w", dir, err)
 	}
-	dirHash := cq.dirHash(canonical)
-	bindingPath := cq.dirScopePathFromHash(dirHash)
+	bindingPath := cq.dirScopePathFromHash(dirHash(canonical))
 
 	b, err := os.ReadFile(bindingPath)
 	if err != nil {
@@ -153,7 +144,7 @@ func (cq *ChatHandler) dirscopeRoot() string {
 // it sets the head ChatID, refreshes abs_path + updated, upserts the chat into
 // the capped newest-first history, and persists atomically (temp + rename).
 func (cq *ChatHandler) SaveDirScope(dir, chatID string) error {
-	canonical, err := cq.canonicalDir(dir)
+	canonical, err := canonicalDir(dir)
 	if err != nil {
 		return fmt.Errorf("canonicalize directory %q: %w", dir, err)
 	}
@@ -168,7 +159,7 @@ func (cq *ChatHandler) SaveDirScope(dir, chatID string) error {
 
 	now := time.Now().UTC()
 	binding.Version = 2
-	binding.DirHash = cq.dirHash(canonical)
+	binding.DirHash = dirHash(canonical)
 	binding.AbsPath = canonical
 	binding.ChatID = chatID
 	binding.History = upsertScopedHistory(binding.History, chatID, now)

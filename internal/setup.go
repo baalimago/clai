@@ -283,7 +283,7 @@ func setupTextQuerierWithConf(ctx context.Context, mode Mode, confDir string, fl
 		tConf.SkillsDescriptor = skillMgr.DescriptorBlock()
 		tConf.SkillLoader = skillRuntimeAdapter{mgr: skillMgr}
 	}
-	if err := setupLookback(confDir, &tConf, flagSet, defaultFlags); err != nil {
+	if err := setupLookback(confDir, &tConf, flagSet); err != nil {
 		return nil, nil, err
 	}
 	err = tConf.SetupInitialChat(args)
@@ -312,7 +312,7 @@ const lookbackInjectCount = 5
 // binding has recorded history — builds the recent-conversations descriptor and
 // marks the lookback active so the tools are registered. Enabled-but-no-history
 // surfaces nothing, matching the dirscope spec.
-func setupLookback(confDir string, tConf *text.Configurations, flagSet, defaultFlags Configurations) error {
+func setupLookback(confDir string, tConf *text.Configurations, flagSet Configurations) error {
 	// Profile overrides have already been applied to tConf.UseLookback.
 	// The flag (if explicitly set) takes final precedence, in both directions:
 	// -lb enables, -lb=false disables profile/file-enabled lookback.
@@ -330,7 +330,7 @@ func setupLookback(confDir string, tConf *text.Configurations, flagSet, defaultF
 	// enabled the search/inspect/read tools are registered (so the agent can search
 	// OTHER directories even from a dir with no recorded history). The passive
 	// descriptor block, by contrast, is only injected when the CWD has history.
-	desc, err := chat.BuildLookbackDescriptor(confDir, mustGetwd(), lookbackInjectCount)
+	desc, err := chat.BuildLookbackDescriptor(confDir, tConf.LookbackCWD, lookbackInjectCount)
 	if err != nil {
 		return fmt.Errorf("build lookback descriptor: %w", err)
 	}

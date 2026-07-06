@@ -320,6 +320,34 @@ func TestReadChatIndex_CorruptedCacheRecovers(t *testing.T) {
 	}
 }
 
+// TestRebuildChatIndex_SkipsUnreadableChatFiles verifies one corrupt/stray file
+// in the conversations dir does not permanently break the index rebuild (and
+// with it list/search/save) — it is skipped with a warning instead.
+func TestRebuildChatIndex_SkipsUnreadableChatFiles(t *testing.T) {
+	tmp := t.TempDir()
+
+	good := pub_models.Chat{ID: "good", Messages: []pub_models.Message{{Role: "user", Content: "hello"}}}
+	bb, err := json.MarshalIndent(good, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmp, "good.json"), append(bb, '\n'), 0o644); err != nil {
+		t.Fatalf("write chat file: %v", err)
+	}
+	// A truncated/garbage conversation file, as left by a crash mid-write.
+	if err := os.WriteFile(filepath.Join(tmp, "corrupt.json"), []byte(`{"id":"corr`), 0o644); err != nil {
+		t.Fatalf("write corrupt file: %v", err)
+	}
+
+	rows, err := rebuildChatIndex(tmp, 0, "test")
+	if err != nil {
+		t.Fatalf("rebuildChatIndex should skip unreadable files, got: %v", err)
+	}
+	if len(rows) != 1 || rows[0].ID != "good" {
+		t.Fatalf("expected only the readable chat indexed, got %+v", rows)
+	}
+}
+
 func TestNewChatIndexPaginator_RebuildsFromExistingChatFiles(t *testing.T) {
 	tmp := t.TempDir()
 	chats := []pub_models.Chat{

@@ -213,7 +213,7 @@ func (cq *ChatHandler) buildChatListRows(ctx context.Context, paginator *ChatInd
 	return rows, byName, nil
 }
 
-func (cq *ChatHandler) actOnChat(ctx context.Context, chat pub_models.Chat, groupKey string) error {
+func (cq *ChatHandler) actOnChat(chat pub_models.Chat, groupKey string) error {
 	if err := cq.printChatInfo(cq.out, chat, groupKey); err != nil {
 		return fmt.Errorf("failed to printChatInfo: %w", err)
 	}
@@ -223,9 +223,9 @@ func (cq *ChatHandler) actOnChat(ctx context.Context, chat pub_models.Chat, grou
 	}
 	switch choice {
 	case "E", "e":
-		return cq.handleEditMessages(ctx, chat, groupKey)
+		return cq.handleEditMessages(chat)
 	case "D", "d":
-		return cq.handleDeleteMessages(ctx, chat, groupKey)
+		return cq.handleDeleteMessages(chat)
 	case "B", "b":
 		clearErr := utils.ClearTermTo(cq.out, chatInfoPrintHeight)
 		if clearErr != nil {
@@ -255,7 +255,11 @@ func (cq *ChatHandler) actOnChat(ctx context.Context, chat pub_models.Chat, grou
 	}
 }
 
-func (cq *ChatHandler) handleEditMessages(ctx context.Context, chat pub_models.Chat, groupKey string) error {
+// handleEditMessages is a peek + edit: the message picker stays open across
+// edits, reopening on the page each selection was made from, so a conversation
+// can be studied and reworked in one sitting. Backing out returns to the chat
+// list, which also keeps its page.
+func (cq *ChatHandler) handleEditMessages(chat pub_models.Chat) error {
 	clearErr := utils.ClearTermTo(cq.out, chatInfoPrintHeight)
 	if clearErr != nil {
 		return fmt.Errorf("failed to clear term: %w", clearErr)
@@ -263,22 +267,20 @@ func (cq *ChatHandler) handleEditMessages(ctx context.Context, chat pub_models.C
 	if err := cq.editMessageInChat(chat); err != nil {
 		return fmt.Errorf("failed to editChat: %w", err)
 	}
-	return cq.actOnChat(ctx, chat, groupKey)
+	return nil
 }
 
-func (cq *ChatHandler) handleDeleteMessages(ctx context.Context, chat pub_models.Chat, groupKey string) error {
+// handleDeleteMessages is a peek + delete, symmetric with handleEditMessages:
+// the message picker stays open across deletions, reopening on the same page.
+func (cq *ChatHandler) handleDeleteMessages(chat pub_models.Chat) error {
 	clearErr := utils.ClearTermTo(cq.out, chatInfoPrintHeight)
 	if clearErr != nil {
 		return fmt.Errorf("failed to clear term: %w", clearErr)
 	}
 	if err := cq.deleteMessageInChat(chat); err != nil {
-		return fmt.Errorf("failed to editChat: %w", err)
+		return fmt.Errorf("failed to deleteMessageInChat: %w", err)
 	}
-	updatedChat, err := cq.getByID(chat.ID)
-	if err != nil {
-		return fmt.Errorf("failed to re-fetch chat: %w", err)
-	}
-	return cq.actOnChat(ctx, updatedChat, groupKey)
+	return nil
 }
 
 func (cq *ChatHandler) list() ([]pub_models.Chat, error) {
@@ -465,23 +467,31 @@ type preparedRows struct {
 	byName map[string]vendors.SourceReader
 }
 
-func (cq *ChatHandler) prepareListRows(ctx context.Context, paginator *ChatIndexPaginator, groupKey string) (preparedRows, error) {
-	allRows, byName, err := cq.buildChatListRows(ctx, paginator)
-	if err != nil {
-		return preparedRows{}, err
-	}
+// prepareListRows derives the display view for the given group context from
+// an already-built row set — pure in-memory work.
+func prepareListRows(allRows []chatListRow, byName map[string]vendors.SourceReader, groupKey string) preparedRows {
 	if groupKey != "" {
-		return preparedRows{rows: filterRowsByGroupKey(allRows, groupKey), byName: byName}, nil
+		return preparedRows{rows: filterRowsByGroupKey(allRows, groupKey), byName: byName}
 	}
-	return preparedRows{rows: collapseGroupRows(allRows), byName: byName}, nil
+	return preparedRows{rows: collapseGroupRows(allRows), byName: byName}
 }
 
 func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPaginator, groupKey string) error {
+	// Foreign-session discovery walks every source's session dir on disk
+	// (all of ~/.claude/projects, ~/.pi/agent/sessions, ...) — by far the
+	// most expensive part of listing. Discover once per list session;
+	// re-entering the list after a peek/edit or a group toggle only
+	// re-derives the in-memory view, keeping the round-trip instant.
+	allRows, byName, err := cq.buildChatListRows(ctx, paginator)
+	if err != nil {
+		return fmt.Errorf("failed to build chat list rows: %w", err)
+	}
+	// The table page survives peek/edit round-trips so a user studying a
+	// conversation lands back where they left off. The main list and the
+	// group view page independently.
+	listPage, groupPage := 0, 0
 	for {
-		pr, err := cq.prepareListRows(ctx, paginator, groupKey)
-		if err != nil {
-			return fmt.Errorf("failed to prepare list rows: %w", err)
-		}
+		pr := prepareListRows(allRows, byName, groupKey)
 
 		tableActions := []utils.TableAction{}
 		if action, ok := cq.dirFilterAction(); ok {
@@ -524,7 +534,11 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 			backLabel = "[b]ack to list"
 		}
 
-		selectedNumbers, err := utils.SelectFromTable(
+		startPage := listPage
+		if groupKey != "" {
+			startPage = groupPage
+		}
+		selectedNumbers, shownPage, err := utils.SelectFromTableAt(
 			fmt.Sprintf(tblFmt, headArgs...),
 			utils.SlicePaginator(pr.rows),
 			choicesFormat,
@@ -584,7 +598,13 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 			tableActions,
 			cq.out,
 			backLabel,
+			startPage,
 		)
+		if groupKey != "" {
+			groupPage = shownPage
+		} else {
+			listPage = shownPage
+		}
 		if err != nil {
 			if errors.Is(err, utils.ErrBack) {
 				if groupKey != "" {
@@ -602,6 +622,7 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 		sel := pr.rows[selectedNumbers[0]]
 		if sel.Kind == chatRowGroup {
 			groupKey = sel.GroupKey
+			groupPage = 0
 			continue
 		}
 		if sel.Kind == chatRowNative {
@@ -609,7 +630,7 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 			if err != nil {
 				return fmt.Errorf("failed to load selected chat %q: %w", sel.ChatID, err)
 			}
-			if err := cq.actOnChat(ctx, selectedChat, groupKey); err != nil {
+			if err := cq.actOnChat(selectedChat, groupKey); err != nil {
 				if errors.Is(err, errExitList) {
 					return nil
 				}
@@ -626,7 +647,7 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 		if err != nil {
 			return fmt.Errorf("failed to read %s session %q: %w", sel.Source, sel.SourceID, err)
 		}
-		if err := cq.actOnForeignChat(ctx, foreign, reader, groupKey); err != nil {
+		if err := cq.actOnForeignChat(foreign, reader, groupKey); err != nil {
 			if errors.Is(err, errExitList) {
 				return nil
 			}
@@ -636,7 +657,7 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 	}
 }
 
-func (cq *ChatHandler) actOnForeignChat(ctx context.Context, chat pub_models.Chat, reader vendors.SourceReader, groupKey string) error {
+func (cq *ChatHandler) actOnForeignChat(chat pub_models.Chat, reader vendors.SourceReader, groupKey string) error {
 	if err := cq.printChatInfoForeign(cq.out, chat, groupKey); err != nil {
 		return fmt.Errorf("failed to printChatInfoForeign: %w", err)
 	}
@@ -646,7 +667,7 @@ func (cq *ChatHandler) actOnForeignChat(ctx context.Context, chat pub_models.Cha
 	}
 	switch choice {
 	case "C", "c", "":
-		cloned, err := cq.cloneForeignChat(ctx, chat)
+		cloned, err := cq.cloneForeignChat(chat)
 		if err != nil {
 			return err
 		}
@@ -770,8 +791,7 @@ func (cq *ChatHandler) printChatInfoForeign(w io.Writer, chat pub_models.Chat, g
 	return cq.printChatInfoCommon(w, chat, groupKey, chatInfoOpts{foreign: true})
 }
 
-func (cq *ChatHandler) cloneForeignChat(ctx context.Context, foreign pub_models.Chat) (pub_models.Chat, error) {
-	_ = ctx
+func (cq *ChatHandler) cloneForeignChat(foreign pub_models.Chat) (pub_models.Chat, error) {
 	if foreign.Source == "" || foreign.SourceID == "" {
 		return pub_models.Chat{}, fmt.Errorf("invalid foreign chat: missing source or source_id")
 	}
@@ -824,12 +844,14 @@ func editorEditString(toEdit string) (string, error) {
 	return string(b), nil
 }
 
-func (cq *ChatHandler) deleteMessageInChat(chat pub_models.Chat) error {
+// selectMessagesAt shows the conversation's message picker opened at startPage
+// and returns the selection plus the page it was made on.
+func (cq *ChatHandler) selectMessagesAt(chat pub_models.Chat, selectionType string, onlyOneSelect bool, startPage int) ([]int, int, error) {
 	head := fmt.Sprintf(editMessageTblFormat, "Index", "Role", "Length", "Summary")
-	selectedIndices, err := utils.SelectFromTable(
+	return utils.SelectFromTableAt(
 		head,
 		utils.SlicePaginator(chat.Messages),
-		deleteMessagesChoicesFormat,
+		selectionType,
 		func(i int, t pub_models.Message) (string, error) {
 			prefix := fmt.Sprintf(editMessageTblFormat, i, t.Role, utf8.RuneCount([]byte(t.Content)), "")
 			withSummary, err := utils.WidthAppropriateStringTrunc(t.Content, prefix, 25)
@@ -839,69 +861,79 @@ func (cq *ChatHandler) deleteMessageInChat(chat pub_models.Chat) error {
 			return withSummary, nil
 		},
 		utils.ThemeTableItems(),
-		false,
+		onlyOneSelect,
 		[]utils.TableAction{},
 		cq.out,
 		"",
+		startPage,
 	)
-	if err != nil {
-		return fmt.Errorf("failed to select from table: %w", err)
-	}
-
-	idxSet := make(map[int]struct{}, len(selectedIndices))
-	for _, idx := range selectedIndices {
-		idxSet[idx] = struct{}{}
-	}
-	filtered := make([]pub_models.Message, 0, len(chat.Messages))
-	for i, m := range chat.Messages {
-		if _, ok := idxSet[i]; ok {
-			continue
-		}
-		filtered = append(filtered, m)
-	}
-	chat.Messages = filtered
-
-	if err := Save(cq.convDir, chat); err != nil {
-		return fmt.Errorf("failed to save chat: %w", err)
-	}
-	ancli.Okf("modified chat: '%v', deleted messages: '%v'", chat.ID, selectedIndices)
-	return nil
 }
 
-func (cq *ChatHandler) editMessageInChat(chat pub_models.Chat) error {
-	head := fmt.Sprintf(editMessageTblFormat, "Index", "Role", "Length", "Summary")
-	selectedNumbers, err := utils.SelectFromTable(
-		head,
-		utils.SlicePaginator(chat.Messages),
-		editMessageChoicesFormat,
-		func(i int, t pub_models.Message) (string, error) {
-			prefix := fmt.Sprintf(editMessageTblFormat, i, t.Role, utf8.RuneCount([]byte(t.Content)), "")
-			withSummary, err := utils.WidthAppropriateStringTrunc(t.Content, prefix, 25)
-			if err != nil {
-				return "", fmt.Errorf("failed to get widthAppropriateChatSummary: %w", err)
+// deleteMessageInChat loops the message picker, symmetric with edit: delete
+// messages, then reopen the picker on the same page so a conversation can be
+// pruned in one sitting. Indices shift after each deletion; the page is
+// clamped to the shrunken range. [b]ack returns to the chat list.
+func (cq *ChatHandler) deleteMessageInChat(chat pub_models.Chat) error {
+	page := 0
+	for {
+		selectedIndices, shownPage, err := cq.selectMessagesAt(chat, deleteMessagesChoicesFormat, false, page)
+		page = shownPage
+		if err != nil {
+			if errors.Is(err, utils.ErrBack) {
+				return nil
 			}
-			return withSummary, nil
-		},
-		utils.ThemeTableItems(),
-		true,
-		[]utils.TableAction{},
-		cq.out,
-		"",
-	)
-	if err != nil {
-		return fmt.Errorf("failed to select from table: %w", err)
+			return fmt.Errorf("failed to select from table: %w", err)
+		}
+
+		idxSet := make(map[int]struct{}, len(selectedIndices))
+		for _, idx := range selectedIndices {
+			idxSet[idx] = struct{}{}
+		}
+		filtered := make([]pub_models.Message, 0, len(chat.Messages))
+		for i, m := range chat.Messages {
+			if _, ok := idxSet[i]; ok {
+				continue
+			}
+			filtered = append(filtered, m)
+		}
+		chat.Messages = filtered
+
+		if err := Save(cq.convDir, chat); err != nil {
+			return fmt.Errorf("failed to save chat: %w", err)
+		}
+		ancli.Okf("modified chat: '%v', deleted messages: '%v'", chat.ID, selectedIndices)
 	}
-	selectedNumber := selectedNumbers[0]
-	selectedMessage := chat.Messages[selectedNumber]
-	editedString, err := editorEditString(selectedMessage.Content)
-	if err != nil {
-		return fmt.Errorf("failed to escapeEdit string: %w", err)
+}
+
+// editMessageInChat loops the message picker: pick a message, edit it in
+// $EDITOR, then reopen the picker on the same page so several messages can be
+// reworked in one sitting. [b]ack returns to the chat list.
+func (cq *ChatHandler) editMessageInChat(chat pub_models.Chat) error {
+	page := 0
+	for {
+		selectedNumbers, shownPage, err := cq.selectMessagesAt(chat, editMessageChoicesFormat, true, page)
+		page = shownPage
+		if err != nil {
+			if errors.Is(err, utils.ErrBack) {
+				return nil
+			}
+			return fmt.Errorf("failed to select from table: %w", err)
+		}
+		if len(selectedNumbers) == 0 || selectedNumbers[0] < 0 || selectedNumbers[0] >= len(chat.Messages) {
+			ancli.Warnf("selected message index out of range, nothing edited\n")
+			continue
+		}
+		selectedNumber := selectedNumbers[0]
+		selectedMessage := chat.Messages[selectedNumber]
+		editedString, err := editorEditString(selectedMessage.Content)
+		if err != nil {
+			return fmt.Errorf("failed to escapeEdit string: %w", err)
+		}
+		selectedMessage.Content = editedString
+		chat.Messages[selectedNumber] = selectedMessage
+		if err := Save(cq.convDir, chat); err != nil {
+			return fmt.Errorf("failed to save chat: %w", err)
+		}
+		ancli.Okf("modified chat: '%v', message with index: '%v'", chat.ID, selectedNumber)
 	}
-	selectedMessage.Content = editedString
-	chat.Messages[selectedNumber] = selectedMessage
-	if err := Save(cq.convDir, chat); err != nil {
-		return fmt.Errorf("failed to save chat: %w", err)
-	}
-	ancli.Okf("modified chat: '%v', message with index: '%v'", chat.ID, selectedNumbers)
-	return nil
 }

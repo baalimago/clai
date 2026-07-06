@@ -88,9 +88,12 @@ type table[T any] struct {
 	filteredIndices             []int
 	predicateActive             bool
 	activePredicateEmptyMessage string
-	rowFormater                 func(int, T) (string, error)
-	tableActions                []TableAction
-	out                         io.Writer
+	// notice is a one-shot message (e.g. a mistyped selection) surfaced in the
+	// next prompt line, letting the user retry instead of aborting the table.
+	notice       string
+	rowFormater  func(int, T) (string, error)
+	tableActions []TableAction
+	out          io.Writer
 }
 
 var clearTermToFn = ClearTermTo
@@ -171,6 +174,25 @@ func SelectFromTable[T any](
 	out io.Writer,
 	backLabel string,
 ) ([]int, error) {
+	selected, _, err := SelectFromTableAt(header, paginator, selectionType, rowFormater, pageSize, onlyOneSelect, additionalTableActions, out, backLabel, 0)
+	return selected, err
+}
+
+// SelectFromTableAt is SelectFromTable opened at startPage (clamped to the
+// valid range). It also returns the page shown when the selection (or error)
+// happened, so callers can reopen the table where the user left off.
+func SelectFromTableAt[T any](
+	header string,
+	paginator Paginator[T],
+	selectionType string,
+	rowFormater func(int, T) (string, error),
+	pageSize int,
+	onlyOneSelect bool,
+	additionalTableActions []TableAction,
+	out io.Writer,
+	backLabel string,
+	startPage int,
+) ([]int, int, error) {
 	_ = selectionType
 	if out == nil {
 		out = io.Writer(io.Discard)
@@ -193,9 +215,10 @@ func SelectFromTable[T any](
 		out:               out,
 	}
 	tab.lastPage = tab.pageCount()
+	tab.page = min(max(startPage, 0), tab.lastPage)
 	baseActions := []TableAction{tab.prevPage(), tab.nextPage(), tab.back(), tab.quit()}
 	if err := validateTableActions(additionalTableActions, baseActions); err != nil {
-		return nil, fmt.Errorf("failed to validate table actions: %w", err)
+		return nil, tab.page, fmt.Errorf("failed to validate table actions: %w", err)
 	}
 	defer func() {
 		if err := clearTermToFn(out, 2); err != nil && tab.debug {
@@ -210,7 +233,7 @@ func SelectFromTable[T any](
 	for {
 		selectedNumbers, err = tab.selectNumbers()
 		if err != nil {
-			return nil, fmt.Errorf("failed to select number: %w", err)
+			return nil, tab.page, fmt.Errorf("failed to select number: %w", err)
 		}
 		if selectedNumbers != nil {
 			break
@@ -218,10 +241,10 @@ func SelectFromTable[T any](
 	}
 
 	if onlyOneSelect && len(selectedNumbers) > 1 {
-		return []int{}, fmt.Errorf("only one selected number supported. selected indices: %v", selectedNumbers)
+		return []int{}, tab.page, fmt.Errorf("only one selected number supported. selected indices: %v", selectedNumbers)
 	}
 
-	return selectedNumbers, nil
+	return selectedNumbers, tab.page, nil
 }
 
 func (t *table[T]) printRow(i int, item T) error {
@@ -275,6 +298,9 @@ func (t *table[T]) promptLine() string {
 	if t.predicateActive {
 		parts = append(parts, "dir filter")
 	}
+	if t.notice != "" {
+		parts = append(parts, t.notice)
+	}
 	if t.pageCount() == 0 {
 		if t.predicateActive && t.activePredicateEmptyMessage != "" {
 			return fmt.Sprintf("(%s, %s): ", strings.Join(parts, ", "), t.activePredicateEmptyMessage)
@@ -301,6 +327,8 @@ func (t *table[T]) selectNumbers() ([]int, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to print table: %w", err)
 	}
+	// The notice has been rendered in the prompt line; show it only once.
+	t.notice = ""
 
 	// Clear the terminal to provide clean output
 	defer func() {
@@ -365,7 +393,9 @@ func (t *table[T]) selectNumbers() ([]int, error) {
 	// Its not a table action: see if some index has been selected
 	selectedNumbers, err := t.parseNumbersFromString(choice)
 	if err != nil {
-		return selectedNumbers, fmt.Errorf("failed to parse selected numbers from choice %q: %w", choice, err)
+		// A mistyped selection re-prompts with a notice instead of aborting.
+		t.notice = fmt.Sprintf("invalid selection %q: %s", choice, strings.ReplaceAll(err.Error(), "\n", "; "))
+		return nil, nil
 	}
 
 	// Translate filtered indices back to original indices. Selections outside
@@ -380,6 +410,10 @@ func (t *table[T]) selectNumbers() ([]int, error) {
 			translated = append(translated, t.filteredIndices[num])
 		}
 		selectedNumbers = translated
+	}
+	if len(selectedNumbers) == 0 {
+		t.notice = fmt.Sprintf("no selectable index in %q", choice)
+		return nil, nil
 	}
 
 	return selectedNumbers, nil

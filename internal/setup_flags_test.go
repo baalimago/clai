@@ -205,6 +205,33 @@ func TestSetupFlags(t *testing.T) {
 				ResponseFormatPath: "/tmp/rf.json",
 			},
 		},
+		{
+			name:     "Lookback short flag enables and marks explicit",
+			args:     []string{"cmd", "-lb"},
+			defaults: Configurations{},
+			want: Configurations{
+				UseLookback:    true,
+				UseLookbackSet: true,
+			},
+		},
+		{
+			name:     "Lookback long flag enables and marks explicit",
+			args:     []string{"cmd", "-lookback"},
+			defaults: Configurations{},
+			want: Configurations{
+				UseLookback:    true,
+				UseLookbackSet: true,
+			},
+		},
+		{
+			name:     "Lookback explicit disable is marked explicit so it can override profile",
+			args:     []string{"cmd", "-lb=false"},
+			defaults: Configurations{},
+			want: Configurations{
+				UseLookback:    false,
+				UseLookbackSet: true,
+			},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -234,6 +261,23 @@ func TestSetupFlags(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 		})
+	}
+}
+
+// Test_setupLookback_ExplicitDisableOverridesProfile pins the documented
+// precedence CLI > profile in the disabling direction: -lb=false must win
+// over profile/file-enabled lookback.
+func Test_setupLookback_ExplicitDisableOverridesProfile(t *testing.T) {
+	tConf := text.Configurations{UseLookback: true}
+	flagSet := Configurations{UseLookback: false, UseLookbackSet: true}
+	if err := setupLookback(t.TempDir(), &tConf, flagSet); err != nil {
+		t.Fatalf("setupLookback: %v", err)
+	}
+	if tConf.UseLookback {
+		t.Fatal("expected explicit -lb=false to disable profile-enabled lookback")
+	}
+	if tConf.LookbackCWD == "" {
+		t.Fatal("expected LookbackCWD to be captured even when lookback is disabled")
 	}
 }
 

@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/baalimago/clai/internal/vendors"
 )
 
 func TestSourceReader_Discover_NoDirs(t *testing.T) {
@@ -451,14 +453,15 @@ func TestSourceReader_Discover_TimestampWithNanos(t *testing.T) {
 	}
 }
 
-func TestExtractPiUserContent_MultipleTextBlocks(t *testing.T) {
+func TestPiUserContent_MultipleTextBlocks(t *testing.T) {
 	msg := map[string]any{
 		"content": []any{
 			map[string]any{"type": "text", "text": "hello"},
 			map[string]any{"type": "text", "text": "world"},
 		},
 	}
-	preview, full := extractPiUserContent(msg)
+	full := vendors.TextBlocksContent(msg["content"])
+	preview := vendors.TruncateOneLine(full, 100)
 	if preview != "hello world" {
 		t.Fatalf("expected 'hello world', got %q", preview)
 	}
@@ -467,18 +470,17 @@ func TestExtractPiUserContent_MultipleTextBlocks(t *testing.T) {
 	}
 }
 
-func TestExtractPiUserContent_NoTextBlocks(t *testing.T) {
+func TestPiUserContent_NoTextBlocks(t *testing.T) {
 	msg := map[string]any{
 		"content": []any{
 			map[string]any{"type": "image", "url": "http://example.com"},
 		},
 	}
-	preview, full := extractPiUserContent(msg)
-	if preview != "" {
-		t.Fatalf("expected empty preview, got %q", preview)
+	if got := vendors.TextBlocksContent(msg["content"]); got != "" {
+		t.Fatalf("expected empty content, got %q", got)
 	}
-	if full != "" {
-		t.Fatalf("expected empty full, got %q", full)
+	if got := mapPiUserMessage(msg); got != nil {
+		t.Fatalf("expected no user message for text-free content, got %+v", got)
 	}
 }
 
@@ -488,7 +490,7 @@ func TestMapPiAssistantMessage_ToolCallArgumentsMarshal(t *testing.T) {
 			map[string]any{"type": "toolCall", "id": "tc1", "name": "read", "arguments": map[string]any{"path": "/etc/hosts"}},
 		},
 	}
-	msgs := mapPiAssistantMessage(msg)
+	msgs := vendors.MapAssistantBlocks(msg["content"], toolCallKeys)
 	if len(msgs) != 1 {
 		t.Fatalf("expected 1 message, got %d", len(msgs))
 	}

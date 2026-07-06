@@ -1,15 +1,10 @@
 package anthropic
 
 import (
-	"bufio"
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -21,15 +16,16 @@ import (
 //
 // Storage (best-effort, observed): ~/.claude/projects/<project>/*.jsonl
 // Each line is JSON with a "type" such as: user, assistant, system, queue-operation.
+// Task-subagent transcripts live under <sessionId>/subagents/ and carry the
+// parent's sessionId ("isSidechain": true) — they are never sessions themselves,
+// so both the directory and sidechain lines are skipped everywhere.
 //
 // This reader is intentionally conservative: discovery is bounded and skips
 // rows with missing SourceID.
 //
-// FS is injectable for tests.
-// If nil, os.DirFS("/") is used (absolute paths will work).
-//
-// Note: we keep the host-path logic (HOME expansion) outside the FS.
-// The FS is only used for opening files.
+// FS is injectable for tests; if nil, the host root filesystem is used. The
+// host-path logic (HOME expansion, walking) stays outside the FS — it is only
+// used for opening files.
 //
 // clai never writes back to these sources.
 type SourceReader struct {
@@ -45,93 +41,37 @@ func (r SourceReader) Source() string {
 	return "claude-code"
 }
 
-const (
-	discoverMaxLines = 200
-)
+var toolCallKeys = vendors.ToolCallBlockKeys{Type: "tool_use", Args: "input"}
+
+// skipDirs holds directory names never containing sessions of their own.
+var skipDirs = []string{"subagents"}
 
 func (r SourceReader) Discover(ctx context.Context) ([]vendors.SourceRow, error) {
-	root := r.projectsRoot()
-	if root == "" {
-		return []vendors.SourceRow{}, nil
-	}
-	st, err := os.Stat(root)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return []vendors.SourceRow{}, nil
+	rows := []vendors.SourceRow{}
+	err := vendors.WalkJSONLFiles(ctx, r.projectsRoot(), skipDirs, func(p string) bool {
+		if row, ok := r.discoverOne(p); ok {
+			rows = append(rows, row)
 		}
-		return nil, fmt.Errorf("stat claude projects dir %q: %w", root, err)
-	}
-	if !st.IsDir() {
-		return []vendors.SourceRow{}, nil
-	}
-
-	var rows []vendors.SourceRow
-	err = filepath.WalkDir(root, func(p string, d fs.DirEntry, walkErr error) error {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-		if walkErr != nil {
-			// Skip unreadable entries; one bad file must not hide the source.
-			return nil
-		}
-		if d.IsDir() {
-			// Subagent (Task tool) transcripts live under <sessionId>/subagents/
-			// and carry the parent's sessionId — they are not sessions themselves.
-			if d.Name() == "subagents" {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !strings.HasSuffix(d.Name(), ".jsonl") {
-			return nil
-		}
-		row, ok := r.discoverOne(ctx, p)
-		if !ok {
-			return nil
-		}
-		rows = append(rows, row)
-		return nil
+		return false
 	})
 	if err != nil {
-		return nil, fmt.Errorf("walk claude projects dir %q: %w", root, err)
+		return nil, fmt.Errorf("discover claude sessions: %w", err)
 	}
 	return rows, nil
 }
 
-func (r SourceReader) discoverOne(ctx context.Context, absPath string) (vendors.SourceRow, bool) {
-	f, err := r.open(absPath)
+func (r SourceReader) discoverOne(absPath string) (vendors.SourceRow, bool) {
+	f, err := vendors.OpenAbs(r.FS, absPath)
 	if err != nil {
 		return vendors.SourceRow{}, false
 	}
 	defer f.Close()
 
-	s := bufio.NewScanner(f)
-	s.Buffer(make([]byte, 0, 64<<10), 10<<20) // 10MB max token: pasted-image user lines get huge.
-
 	row := vendors.SourceRow{Source: r.Source(), RawPath: absPath}
-	lines := 0
-	for s.Scan() {
-		select {
-		case <-ctx.Done():
-			return vendors.SourceRow{}, false
-		default:
-		}
-		lines++
-		if lines > discoverMaxLines {
-			break
-		}
-		line := strings.TrimSpace(s.Text())
-		if line == "" {
-			continue
-		}
-		var env map[string]any
-		if err := json.Unmarshal([]byte(line), &env); err != nil {
-			continue
-		}
-		if sc, _ := env["isSidechain"].(bool); sc {
-			continue
+	// Discovery is best effort: a scan error just yields sparser metadata.
+	_ = vendors.ScanJSONLLines(f, vendors.ReadMaxToken, vendors.DiscoverMaxLines, func(env map[string]any) bool {
+		if isSidechain(env) {
+			return true
 		}
 		if row.SourceID == "" {
 			if sid, _ := env["sessionId"].(string); sid != "" {
@@ -162,7 +102,8 @@ func (r SourceReader) discoverOne(ctx context.Context, absPath string) (vendors.
 				}
 			}
 		}
-	}
+		return true
+	})
 	if row.SourceID == "" {
 		return vendors.SourceRow{}, false
 	}
@@ -182,52 +123,41 @@ func extractUserContentStrings(env map[string]any) (string, string) {
 	if msg == nil {
 		return "", ""
 	}
-	c := msg["content"]
-	s, ok := c.(string)
-	if !ok {
-		// Block-array user content: preview only its text blocks —
-		// tool_result blocks are machine output, not the user's words.
-		s = blockContentText(c)
-	}
+	// Block-array user content previews only its text blocks — tool_result
+	// blocks are machine output, not the user's words.
+	s := vendors.TextBlocksContent(msg["content"])
 	return vendors.TruncateOneLine(s, 100), s
 }
 
+func isSidechain(env map[string]any) bool {
+	sc, _ := env["isSidechain"].(bool)
+	return sc
+}
+
 func (r SourceReader) Read(ctx context.Context, sourceID string) (pub_models.Chat, error) {
-	absPath, err := r.findSessionFile(sourceID)
+	absPath, err := r.findSessionFile(ctx, sourceID)
 	if err != nil {
 		return pub_models.Chat{}, err
 	}
-	f, err := r.open(absPath)
+	f, err := vendors.OpenAbs(r.FS, absPath)
 	if err != nil {
 		return pub_models.Chat{}, err
 	}
 	defer f.Close()
 
-	s := bufio.NewScanner(f)
-	s.Buffer(make([]byte, 0, 1<<20), 10<<20) // 10MB max token: JSONL lines can be large.
 	msgs := make([]pub_models.Message, 0, 128)
 	created := time.Time{}
 	cwd := ""
-	for s.Scan() {
-		line := strings.TrimSpace(s.Text())
-		if line == "" {
-			continue
-		}
-		var env map[string]any
-		if err := json.Unmarshal([]byte(line), &env); err != nil {
-			continue
-		}
+	err = vendors.ScanJSONLLines(f, vendors.ReadMaxToken, 0, func(env map[string]any) bool {
 		if sid, _ := env["sessionId"].(string); sid != "" && sid != sourceID {
-			continue
+			return true
 		}
 		// Sidechain lines are subagent-internal conversation, not the session.
-		if sc, _ := env["isSidechain"].(bool); sc {
-			continue
+		if isSidechain(env) {
+			return true
 		}
 		typ, _ := env["type"].(string)
 		switch typ {
-		case "system", "queue-operation":
-			continue
 		case "user":
 			if created.IsZero() {
 				if ts, _ := env["timestamp"].(string); ts != "" {
@@ -243,10 +173,13 @@ func (r SourceReader) Read(ctx context.Context, sourceID string) (pub_models.Cha
 			}
 			msgs = append(msgs, mapUserMessage(env)...)
 		case "assistant":
-			msgs = append(msgs, mapAssistantMessage(env)...)
+			if msg, _ := env["message"].(map[string]any); msg != nil {
+				msgs = append(msgs, vendors.MapAssistantBlocks(msg["content"], toolCallKeys)...)
+			}
 		}
-	}
-	if err := s.Err(); err != nil {
+		return true
+	})
+	if err != nil {
 		return pub_models.Chat{}, fmt.Errorf("scan jsonl %q: %w", absPath, err)
 	}
 
@@ -274,41 +207,21 @@ func (r SourceReader) Read(ctx context.Context, sourceID string) (pub_models.Cha
 	return chat, nil
 }
 
-func (r SourceReader) findSessionFile(sourceID string) (string, error) {
+func (r SourceReader) findSessionFile(ctx context.Context, sourceID string) (string, error) {
 	root := r.projectsRoot()
 	if root == "" {
 		return "", fmt.Errorf("claude projects root not configured")
 	}
 	var found string
-	errFound := errors.New("found")
-	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return nil
-		}
-		// best-effort: skip dirs quickly
-		if d.IsDir() {
-			// Subagent transcripts carry the parent's sessionId; matching one
-			// here would import the subagent's conversation as the session.
-			if d.Name() == "subagents" {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !strings.HasSuffix(d.Name(), ".jsonl") {
-			return nil
-		}
-		ok, err := fileHasSessionID(r, p, sourceID)
-		if err != nil {
-			return nil
-		}
-		if ok {
+	err := vendors.WalkJSONLFiles(ctx, root, skipDirs, func(p string) bool {
+		if r.fileHasSessionID(p, sourceID) {
 			found = p
-			return errFound
+			return true
 		}
-		return nil
+		return false
 	})
-	if err != nil && !errors.Is(err, errFound) {
-		return "", fmt.Errorf("walk claude projects dir %q: %w", root, err)
+	if err != nil {
+		return "", fmt.Errorf("find claude session: %w", err)
 	}
 	if found == "" {
 		return "", fmt.Errorf("claude session %q not found", sourceID)
@@ -317,47 +230,28 @@ func (r SourceReader) findSessionFile(sourceID string) (string, error) {
 }
 
 func (r SourceReader) projectsRoot() string {
-	if r.Root != "" {
-		return r.Root
-	}
-	h := os.Getenv("HOME")
-	if h == "" {
-		return ""
-	}
-	return filepath.Join(h, ".claude", "projects")
+	return vendors.HomeRelativeRoot(r.Root, ".claude", "projects")
 }
 
-func fileHasSessionID(r SourceReader, absPath, want string) (bool, error) {
-	f, err := r.open(absPath)
+func (r SourceReader) fileHasSessionID(absPath, want string) bool {
+	f, err := vendors.OpenAbs(r.FS, absPath)
 	if err != nil {
-		return false, err
+		return false
 	}
 	defer f.Close()
 
-	s := bufio.NewScanner(f)
-	s.Buffer(make([]byte, 0, 1<<20), 1<<20)
-	lines := 0
-	for s.Scan() {
-		lines++
-		if lines > discoverMaxLines {
-			break
-		}
-		line := strings.TrimSpace(s.Text())
-		if line == "" {
-			continue
-		}
-		var env map[string]any
-		if err := json.Unmarshal([]byte(line), &env); err != nil {
-			continue
+	found := false
+	_ = vendors.ScanJSONLLines(f, vendors.ReadMaxToken, vendors.DiscoverMaxLines, func(env map[string]any) bool {
+		if isSidechain(env) {
+			return true
 		}
 		if sid, _ := env["sessionId"].(string); sid == want {
-			return true, nil
+			found = true
+			return false
 		}
-	}
-	if err := s.Err(); err != nil {
-		return false, err
-	}
-	return false, nil
+		return true
+	})
+	return found
 }
 
 func mapUserMessage(env map[string]any) []pub_models.Message {
@@ -384,7 +278,7 @@ func mapUserMessage(env map[string]any) []pub_models.Message {
 		switch typ, _ := m["type"].(string); typ {
 		case "tool_result":
 			toolID, _ := m["tool_use_id"].(string)
-			out = append(out, pub_models.Message{Role: "tool", ToolCallID: toolID, Content: blockContentText(m["content"])})
+			out = append(out, pub_models.Message{Role: "tool", ToolCallID: toolID, Content: vendors.TextBlocksContent(m["content"])})
 		case "text":
 			if t, _ := m["text"].(string); t != "" {
 				texts = append(texts, t)
@@ -395,114 +289,4 @@ func mapUserMessage(env map[string]any) []pub_models.Message {
 		out = append(out, pub_models.Message{Role: "user", Content: strings.Join(texts, "\n")})
 	}
 	return out
-}
-
-// blockContentText flattens content that Claude Code stores as either a plain
-// string or an array of {"type":"text"} blocks.
-func blockContentText(c any) string {
-	if s, ok := c.(string); ok {
-		return s
-	}
-	arr, ok := c.([]any)
-	if !ok {
-		return ""
-	}
-	texts := make([]string, 0, len(arr))
-	for _, v := range arr {
-		m, ok := v.(map[string]any)
-		if !ok {
-			continue
-		}
-		if typ, _ := m["type"].(string); typ != "text" {
-			continue
-		}
-		if t, _ := m["text"].(string); t != "" {
-			texts = append(texts, t)
-		}
-	}
-	return strings.Join(texts, "\n")
-}
-
-func mapAssistantMessage(env map[string]any) []pub_models.Message {
-	msg, _ := env["message"].(map[string]any)
-	if msg == nil {
-		return nil
-	}
-	c := msg["content"]
-	arr, ok := c.([]any)
-	if !ok {
-		// sometimes might be string.
-		s, _ := c.(string)
-		if s != "" {
-			return []pub_models.Message{{Role: "assistant", Content: s}}
-		}
-		return nil
-	}
-	out := pub_models.Message{Role: "assistant"}
-	texts := make([]string, 0, 2)
-	for _, v := range arr {
-		m, ok := v.(map[string]any)
-		if !ok {
-			continue
-		}
-		typ, _ := m["type"].(string)
-		switch typ {
-		case "text":
-			if t, _ := m["text"].(string); t != "" {
-				texts = append(texts, t)
-			}
-		case "thinking":
-			if th, _ := m["thinking"].(string); th != "" {
-				out.ReasoningContent = vendors.JoinNonEmpty(out.ReasoningContent, th)
-			}
-		case "tool_use":
-			id, _ := m["id"].(string)
-			name, _ := m["name"].(string)
-			input := m["input"]
-			args := "{}"
-			if input != nil {
-				if b, err := json.Marshal(input); err == nil {
-					args = string(b)
-				}
-			}
-			call := pub_models.Call{
-				ID: id,
-				Function: pub_models.Specification{
-					Name:      name,
-					Arguments: args,
-				},
-			}
-			call.Patch()
-			out.ToolCalls = append(out.ToolCalls, call)
-		}
-	}
-	out.Content = strings.Join(texts, "\n")
-	// Skip empty assistant messages (stream "start" markers, etc).
-	// DeepSeek and similar APIs require content or tool_calls to be set.
-	if out.Content == "" && len(out.ToolCalls) == 0 {
-		if out.ReasoningContent != "" {
-			out.Content = "[thinking] " + out.ReasoningContent
-		} else {
-			return nil
-		}
-	}
-	return []pub_models.Message{out}
-}
-
-func (r SourceReader) open(absPath string) (io.ReadCloser, error) {
-	fsys := r.FS
-	if fsys == nil {
-		fsys = os.DirFS("/")
-	}
-	// absPath is absolute; os.DirFS("/") expects paths without leading slash.
-	p := strings.TrimPrefix(absPath, string(filepath.Separator))
-	f, err := fsys.Open(p)
-	if err != nil {
-		return nil, fmt.Errorf("open %q: %w", absPath, err)
-	}
-	rc, ok := f.(io.ReadCloser)
-	if ok {
-		return rc, nil
-	}
-	return io.NopCloser(f), nil
 }

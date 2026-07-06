@@ -38,26 +38,19 @@ func TestDirScope_SaveLoadRoundTrip(t *testing.T) {
 }
 
 func TestDirScope_StableHashAfterClean(t *testing.T) {
-	confDir := t.TempDir()
-	if err := utils.CreateConfigDir(confDir); err != nil {
-		t.Fatalf("CreateConfigDir: %v", err)
-	}
-
-	cq := &ChatHandler{confDir: confDir}
-
 	d := t.TempDir()
-	a, err := cq.canonicalDir(d + string(filepath.Separator) + ".")
+	a, err := canonicalDir(d + string(filepath.Separator) + ".")
 	if err != nil {
 		t.Fatalf("canonicalDir(a): %v", err)
 	}
-	b, err := cq.canonicalDir(d)
+	b, err := canonicalDir(d)
 	if err != nil {
 		t.Fatalf("canonicalDir(b): %v", err)
 	}
 	testboil.FailTestIfDiff(t, a, b)
 
-	ha := cq.dirHash(a)
-	hb := cq.dirHash(b)
+	ha := dirHash(a)
+	hb := dirHash(b)
 	testboil.FailTestIfDiff(t, ha, hb)
 }
 

@@ -6,7 +6,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/baalimago/clai/internal/chat"
-	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -37,45 +36,14 @@ func (e toolExecutor[C]) executeLookbackTool(session *QuerySession, call pub_mod
 		out = res
 	}
 
-	assistantToolsCall := pub_models.Message{
-		Role:             "assistant",
-		Content:          call.PrettyPrint(),
-		ToolCalls:        []pub_models.Call{call},
-		ReasoningContent: call.ReasoningContent,
+	if err := e.emitAssistantToolCall(session, call); err != nil {
+		return err
 	}
-	modelSafeMsg := pub_models.Message{
-		Role:             "assistant",
-		ToolCalls:        []pub_models.Call{call},
-		ReasoningContent: call.ReasoningContent,
-	}
-	if !q.debug {
-		if printErr := utils.AttemptPrettyPrint(q.out, assistantToolsCall, q.username, q.Raw); printErr != nil {
-			return fmt.Errorf("pretty print assistant tool call: %w", printErr)
-		}
-	}
-	session.Chat.Messages = append(session.Chat.Messages, modelSafeMsg)
-
 	out, budgetErr := e.applyToolCallBudget(session, out)
 	if budgetErr != nil {
 		return budgetErr
 	}
-	out = limitToolOutput(out, q.toolOutputRuneLimit)
-	if out == "" {
-		out = fmt.Sprintf("<NO-OUTPUT> tool %s completed successfully but produced no stdout/stderr.", call.Name)
-	}
-	outMsg := pub_models.Message{Role: "tool", Content: out, ToolCallID: call.ID}
-	session.Chat.Messages = append(session.Chat.Messages, outMsg)
-	if q.Raw {
-		if printErr := utils.AttemptPrettyPrint(q.out, outMsg, "tool", q.Raw); printErr != nil {
-			return fmt.Errorf("pretty print raw lookback output: %w", printErr)
-		}
-	} else if !q.debug {
-		if printErr := utils.AttemptPrettyPrint(q.out, utils.PrepareDisplayMessage(outMsg), "tool", q.Raw); printErr != nil {
-			return fmt.Errorf("pretty print lookback output: %w", printErr)
-		}
-	}
-	session.ResetPendingText()
-	return nil
+	return e.emitToolResult(session, call, out)
 }
 
 func (e toolExecutor[C]) runLookbackTool(call pub_models.Call) (string, error) {

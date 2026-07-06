@@ -1,43 +1,37 @@
 package pi
 
 import (
-	"bufio"
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
-	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/baalimago/clai/internal/vendors"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
-// SourceReader reads Pi coding agent session logs from disk.
+// SourceReader reads pi agent session logs from disk.
 //
-// Storage: ~/.pi/agent/sessions/<escaped-cwd>/<timestamp>_<uuid>.jsonl
-// Each line is JSON with top-level "type":
+// Storage (best-effort, observed): ~/.pi/agent/sessions/<project>/*.jsonl
+// Each line is JSON with a "type" such as: session, message, model_change,
+// thinking_level_change. The session id lives only on the "session" line;
+// messages carry role user/assistant/toolResult.
 //
-//	"session"             – metadata (id, cwd, timestamp, version)
-//	"model_change"        – provider/model change (skipped)
-//	"thinking_level_change" – thinking level change (skipped)
-//	"message"             – chat message with message.role: user, assistant, toolResult
+// This reader is intentionally conservative: discovery is bounded and skips
+// rows with missing SourceID.
 //
-// Content blocks within message.content array:
-//
-//	{"type":"text","text":"..."}
-//	{"type":"thinking","thinking":"..."}
-//	{"type":"toolCall","id":"...","name":"...","arguments":{...}}
+// FS is injectable for tests; if nil, the host root filesystem is used. The
+// host-path logic (HOME expansion, walking) stays outside the FS — it is only
+// used for opening files.
 //
 // clai never writes back to these sources.
 type SourceReader struct {
 	FS fs.FS
 	// Root is the absolute directory that contains the pi sessions.
 	// If empty, defaults to $HOME/.pi/agent/sessions.
+	//
+	// This exists primarily for tests; production code should leave it empty.
 	Root string
 }
 
@@ -45,87 +39,32 @@ func (r SourceReader) Source() string {
 	return "pi"
 }
 
-const (
-	discoverMaxLines = 200
-)
+var toolCallKeys = vendors.ToolCallBlockKeys{Type: "toolCall", Args: "arguments"}
 
 func (r SourceReader) Discover(ctx context.Context) ([]vendors.SourceRow, error) {
-	root := r.sessionsRoot()
-	if root == "" {
-		return []vendors.SourceRow{}, nil
-	}
-	st, err := os.Stat(root)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return []vendors.SourceRow{}, nil
+	rows := []vendors.SourceRow{}
+	err := vendors.WalkJSONLFiles(ctx, r.sessionsRoot(), nil, func(p string) bool {
+		if row, ok := r.discoverOne(p); ok {
+			rows = append(rows, row)
 		}
-		return nil, fmt.Errorf("stat pi sessions dir %q: %w", root, err)
-	}
-	if !st.IsDir() {
-		return []vendors.SourceRow{}, nil
-	}
-
-	var rows []vendors.SourceRow
-	err = filepath.WalkDir(root, func(p string, d fs.DirEntry, walkErr error) error {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-		if walkErr != nil {
-			// Skip unreadable entries; one bad file must not hide the source.
-			return nil
-		}
-		if d.IsDir() {
-			return nil
-		}
-		if !strings.HasSuffix(d.Name(), ".jsonl") {
-			return nil
-		}
-		row, ok := r.discoverOne(ctx, p)
-		if !ok {
-			return nil
-		}
-		rows = append(rows, row)
-		return nil
+		return false
 	})
 	if err != nil {
-		return nil, fmt.Errorf("walk pi sessions dir %q: %w", root, err)
+		return nil, fmt.Errorf("discover pi sessions: %w", err)
 	}
 	return rows, nil
 }
 
-func (r SourceReader) discoverOne(ctx context.Context, absPath string) (vendors.SourceRow, bool) {
-	f, err := r.open(absPath)
+func (r SourceReader) discoverOne(absPath string) (vendors.SourceRow, bool) {
+	f, err := vendors.OpenAbs(r.FS, absPath)
 	if err != nil {
 		return vendors.SourceRow{}, false
 	}
 	defer f.Close()
 
-	s := bufio.NewScanner(f)
-	s.Buffer(make([]byte, 0, 1<<20), 1<<20)
-
 	row := vendors.SourceRow{Source: r.Source(), RawPath: absPath}
-	lines := 0
-	for s.Scan() {
-		select {
-		case <-ctx.Done():
-			return vendors.SourceRow{}, false
-		default:
-		}
-		lines++
-		if lines > discoverMaxLines {
-			break
-		}
-		line := strings.TrimSpace(s.Text())
-		if line == "" {
-			continue
-		}
-		var env map[string]any
-		if err := json.Unmarshal([]byte(line), &env); err != nil {
-			continue
-		}
-
+	// Discovery is best effort: a scan error just yields sparser metadata.
+	_ = vendors.ScanJSONLLines(f, vendors.ReadMaxToken, vendors.DiscoverMaxLines, func(env map[string]any) bool {
 		topType, _ := env["type"].(string)
 		switch topType {
 		case "session":
@@ -144,14 +83,16 @@ func (r SourceReader) discoverOne(ctx context.Context, absPath string) (vendors.
 		case "message":
 			msg, _ := env["message"].(map[string]any)
 			if msg == nil {
-				continue
+				return true
 			}
 			role, _ := msg["role"].(string)
 			switch role {
 			case "user":
 				row.MessageCount++
 				if row.FirstUserMessage == "" {
-					row.FirstUserMessage, row.FullFirstUserMessage = extractPiUserContent(msg)
+					full := vendors.TextBlocksContent(msg["content"])
+					row.FirstUserMessage = vendors.TruncateOneLine(full, 100)
+					row.FullFirstUserMessage = full
 				}
 			case "assistant":
 				row.MessageCount++
@@ -163,10 +104,9 @@ func (r SourceReader) discoverOne(ctx context.Context, absPath string) (vendors.
 			case "toolResult":
 				row.MessageCount++
 			}
-		case "model_change", "thinking_level_change":
-			// skip, not relevant for chat history
 		}
-	}
+		return true
+	})
 
 	if row.SourceID == "" {
 		return vendors.SourceRow{}, false
@@ -182,57 +122,22 @@ func (r SourceReader) discoverOne(ctx context.Context, absPath string) (vendors.
 	return row, true
 }
 
-func extractPiUserContent(msg map[string]any) (string, string) {
-	content, _ := msg["content"].([]any)
-	if len(content) == 0 {
-		return "", ""
-	}
-	var full strings.Builder
-	for _, v := range content {
-		block, ok := v.(map[string]any)
-		if !ok {
-			continue
-		}
-		if typ, _ := block["type"].(string); typ == "text" {
-			if t, _ := block["text"].(string); t != "" {
-				if full.Len() > 0 {
-					full.WriteString("\n")
-				}
-				full.WriteString(t)
-			}
-		}
-	}
-	s := full.String()
-	return vendors.TruncateOneLine(s, 100), s
-}
-
 func (r SourceReader) Read(ctx context.Context, sourceID string) (pub_models.Chat, error) {
-	absPath, err := r.findSessionFile(sourceID)
+	absPath, err := r.findSessionFile(ctx, sourceID)
 	if err != nil {
 		return pub_models.Chat{}, err
 	}
-	f, err := r.open(absPath)
+	f, err := vendors.OpenAbs(r.FS, absPath)
 	if err != nil {
 		return pub_models.Chat{}, err
 	}
 	defer f.Close()
 
-	s := bufio.NewScanner(f)
-	s.Buffer(make([]byte, 0, 1<<20), 10<<20)
 	msgs := make([]pub_models.Message, 0, 128)
 	created := time.Time{}
 	cwd := ""
 	sessionFound := false
-
-	for s.Scan() {
-		line := strings.TrimSpace(s.Text())
-		if line == "" {
-			continue
-		}
-		var env map[string]any
-		if err := json.Unmarshal([]byte(line), &env); err != nil {
-			continue
-		}
+	err = vendors.ScanJSONLLines(f, vendors.ReadMaxToken, 0, func(env map[string]any) bool {
 		topType, _ := env["type"].(string)
 		switch topType {
 		case "session":
@@ -251,26 +156,25 @@ func (r SourceReader) Read(ctx context.Context, sourceID string) (pub_models.Cha
 			}
 		case "message":
 			if !sessionFound {
-				continue
+				return true
 			}
 			msg, _ := env["message"].(map[string]any)
 			if msg == nil {
-				continue
+				return true
 			}
 			role, _ := msg["role"].(string)
 			switch role {
 			case "user":
 				msgs = append(msgs, mapPiUserMessage(msg)...)
 			case "assistant":
-				msgs = append(msgs, mapPiAssistantMessage(msg)...)
+				msgs = append(msgs, vendors.MapAssistantBlocks(msg["content"], toolCallKeys)...)
 			case "toolResult":
 				msgs = append(msgs, mapPiToolResultMessage(msg))
 			}
-		case "model_change", "thinking_level_change":
-			// skip
 		}
-	}
-	if err := s.Err(); err != nil {
+		return true
+	})
+	if err != nil {
 		return pub_models.Chat{}, fmt.Errorf("scan jsonl %q: %w", absPath, err)
 	}
 
@@ -297,36 +201,21 @@ func (r SourceReader) Read(ctx context.Context, sourceID string) (pub_models.Cha
 	return chat, nil
 }
 
-func (r SourceReader) findSessionFile(sourceID string) (string, error) {
+func (r SourceReader) findSessionFile(ctx context.Context, sourceID string) (string, error) {
 	root := r.sessionsRoot()
 	if root == "" {
 		return "", fmt.Errorf("pi sessions root not configured")
 	}
 	var found string
-	errFound := errors.New("found")
-	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			// Skip unreadable entries; one bad file must not hide the source.
-			return nil
-		}
-		if d.IsDir() {
-			return nil
-		}
-		if !strings.HasSuffix(d.Name(), ".jsonl") {
-			return nil
-		}
-		ok, err := fileHasPiSessionID(r, p, sourceID)
-		if err != nil {
-			return nil
-		}
-		if ok {
+	err := vendors.WalkJSONLFiles(ctx, root, nil, func(p string) bool {
+		if r.fileHasSessionID(p, sourceID) {
 			found = p
-			return errFound
+			return true
 		}
-		return nil
+		return false
 	})
-	if err != nil && !errors.Is(err, errFound) {
-		return "", fmt.Errorf("walk pi sessions dir %q: %w", root, err)
+	if err != nil {
+		return "", fmt.Errorf("find pi session: %w", err)
 	}
 	if found == "" {
 		return "", fmt.Errorf("pi session %q not found", sourceID)
@@ -335,160 +224,42 @@ func (r SourceReader) findSessionFile(sourceID string) (string, error) {
 }
 
 func (r SourceReader) sessionsRoot() string {
-	if r.Root != "" {
-		return r.Root
-	}
-	h := os.Getenv("HOME")
-	if h == "" {
-		return ""
-	}
-	return filepath.Join(h, ".pi", "agent", "sessions")
+	return vendors.HomeRelativeRoot(r.Root, ".pi", "agent", "sessions")
 }
 
-func fileHasPiSessionID(r SourceReader, absPath, want string) (bool, error) {
-	f, err := r.open(absPath)
+func (r SourceReader) fileHasSessionID(absPath, want string) bool {
+	f, err := vendors.OpenAbs(r.FS, absPath)
 	if err != nil {
-		return false, err
+		return false
 	}
 	defer f.Close()
 
-	s := bufio.NewScanner(f)
-	s.Buffer(make([]byte, 0, 1<<20), 1<<20)
-	lines := 0
-	for s.Scan() {
-		lines++
-		if lines > discoverMaxLines {
-			break
-		}
-		line := strings.TrimSpace(s.Text())
-		if line == "" {
-			continue
-		}
-		var env map[string]any
-		if err := json.Unmarshal([]byte(line), &env); err != nil {
-			continue
-		}
+	found := false
+	_ = vendors.ScanJSONLLines(f, vendors.ReadMaxToken, vendors.DiscoverMaxLines, func(env map[string]any) bool {
 		if typ, _ := env["type"].(string); typ == "session" {
-			if sid, _ := env["id"].(string); sid == want {
-				return true, nil
-			}
-			// Session ID is only on the "session" line. If it doesn't match,
-			// this file is not the one we want.
-			return false, nil
+			// The session id lives only on the "session" line: match or bail.
+			sid, _ := env["id"].(string)
+			found = sid == want
+			return false
 		}
-	}
-	if err := s.Err(); err != nil {
-		return false, err
-	}
-	return false, nil
+		return true
+	})
+	return found
 }
 
 func mapPiUserMessage(msg map[string]any) []pub_models.Message {
-	content, _ := msg["content"].([]any)
-	var texts []string
-	for _, v := range content {
-		block, ok := v.(map[string]any)
-		if !ok {
-			continue
-		}
-		if typ, _ := block["type"].(string); typ == "text" {
-			if t, _ := block["text"].(string); t != "" {
-				texts = append(texts, t)
-			}
-		}
-	}
-	if len(texts) == 0 {
+	content := vendors.TextBlocksContent(msg["content"])
+	if content == "" {
 		return nil
 	}
-	return []pub_models.Message{{Role: "user", Content: strings.Join(texts, "\n")}}
-}
-
-func mapPiAssistantMessage(msg map[string]any) []pub_models.Message {
-	content, _ := msg["content"].([]any)
-	out := pub_models.Message{Role: "assistant"}
-	texts := make([]string, 0, 2)
-	for _, v := range content {
-		block, ok := v.(map[string]any)
-		if !ok {
-			continue
-		}
-		typ, _ := block["type"].(string)
-		switch typ {
-		case "text":
-			if t, _ := block["text"].(string); t != "" {
-				texts = append(texts, t)
-			}
-		case "thinking":
-			if th, _ := block["thinking"].(string); th != "" {
-				out.ReasoningContent = vendors.JoinNonEmpty(out.ReasoningContent, th)
-			}
-		case "toolCall":
-			id, _ := block["id"].(string)
-			name, _ := block["name"].(string)
-			args := block["arguments"]
-			argsStr := "{}"
-			if args != nil {
-				if b, err := json.Marshal(args); err == nil {
-					argsStr = string(b)
-				}
-			}
-			call := pub_models.Call{
-				ID: id,
-				Function: pub_models.Specification{
-					Name:      name,
-					Arguments: argsStr,
-				},
-			}
-			call.Patch()
-			out.ToolCalls = append(out.ToolCalls, call)
-		}
-	}
-	out.Content = strings.Join(texts, "\n")
-	if out.Content == "" && len(out.ToolCalls) == 0 {
-		if out.ReasoningContent != "" {
-			out.Content = "[thinking] " + out.ReasoningContent
-		} else {
-			return nil
-		}
-	}
-	return []pub_models.Message{out}
+	return []pub_models.Message{{Role: "user", Content: content}}
 }
 
 func mapPiToolResultMessage(msg map[string]any) pub_models.Message {
 	toolCallID, _ := msg["toolCallId"].(string)
-	content, _ := msg["content"].([]any)
-	var texts []string
-	for _, v := range content {
-		block, ok := v.(map[string]any)
-		if !ok {
-			continue
-		}
-		if typ, _ := block["type"].(string); typ == "text" {
-			if t, _ := block["text"].(string); t != "" {
-				texts = append(texts, t)
-			}
-		}
-	}
 	return pub_models.Message{
 		Role:       "tool",
 		ToolCallID: toolCallID,
-		Content:    strings.Join(texts, "\n"),
+		Content:    vendors.TextBlocksContent(msg["content"]),
 	}
-}
-
-func (r SourceReader) open(absPath string) (io.ReadCloser, error) {
-	fsys := r.FS
-	if fsys == nil {
-		fsys = os.DirFS("/")
-	}
-	p := strings.TrimPrefix(absPath, string(filepath.Separator))
-	f, err := fsys.Open(p)
-	if err != nil {
-		return nil, fmt.Errorf("open %q: %w", absPath, err)
-	}
-	rc, ok := f.(io.ReadCloser)
-	if ok {
-		return rc, nil
-	}
-	return io.NopCloser(f), nil
 }

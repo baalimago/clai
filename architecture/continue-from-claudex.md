@@ -133,6 +133,20 @@ type SourceReader interface {
 // NOTE: internal/vendors/source.go must import "time" (and "context").
 ```
 
+### Shared JSONL skeleton
+
+The filesystem/scanner boilerplate common to every JSONL-backed source lives
+in `internal/vendors/jsonl.go`: `WalkJSONLFiles` (tolerant `*.jsonl` walking
+with skip-dirs, e.g. Claude's `subagents/`), `ScanJSONLLines` (bounded
+line-by-line JSON scanning), `OpenAbs` (FS-injectable file opening),
+`HomeRelativeRoot`, `TextBlocksContent` (string-or-text-block content
+flattening), and `MapAssistantBlocks` (assistant text/thinking/tool-call block
+mapping, parameterized by `ToolCallBlockKeys` for vendor key names). A new
+source implements only its schema: line-shape recognition in `discoverOne`,
+session-id matching, and user/tool-result mapping. See
+`internal/vendors/anthropic/source_reader.go` and
+`internal/vendors/pi/source_reader.go` as references.
+
 ### Registration
 
 Each vendor package that supports conversation reading exposes a constructor or package-level instance. `internal/chat` imports the vendors it needs and calls their `Discover`.
