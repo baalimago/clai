@@ -39,9 +39,12 @@ type Configurations struct {
 	// UseLookback enables conversation lookback when true.
 	// When false (default), defers to profile/file configuration.
 	UseLookback bool
-	Glob        string
-	Profile     string
-	ProfilePath string
+	// UseLookbackSet is true when -lb/-lookback was explicitly passed, so an
+	// explicit -lb=false can override profile/file-enabled lookback.
+	UseLookbackSet bool
+	Glob           string
+	Profile        string
+	ProfilePath    string
 	// ShellContext is the selected shell context name (ASC).
 	ShellContext string
 	// ResponseFormatPath is a path to a JSON file describing the OpenAI response_format.
@@ -141,6 +144,12 @@ func parseFlags(defaults Configurations, args []string) (Configurations, []strin
 	useSkills, err := utils.ReturnNonDefault(*useSkillsShort, *useSkillsLong, defaults.UseSkills)
 	exitWithFlagError(err, "s", "skills")
 	useLookback := *useLookbackShort || *useLookbackLong
+	useLookbackSet := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "lb" || f.Name == "lookback" {
+			useLookbackSet = true
+		}
+	})
 	profile, err := utils.ReturnNonDefault(*pShort, *pLong, defaults.Profile)
 	exitWithFlagError(err, "p", "profile")
 	profilePath, err := utils.ReturnNonDefault(*prPathShort, *prPathLong, defaults.ProfilePath)
@@ -179,6 +188,7 @@ func parseFlags(defaults Configurations, args []string) (Configurations, []strin
 		UseTools:           useTools,
 		UseSkills:          useSkills,
 		UseLookback:        useLookback,
+		UseLookbackSet:     useLookbackSet,
 		Glob:               glob,
 		ExpectReplace:      *expectReplace,
 		Profile:            profile,

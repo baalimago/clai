@@ -208,6 +208,94 @@ func TestSourceReader_Discover_LongLine(t *testing.T) {
 	}
 }
 
+// TestSourceReader_SkipsSubagentTranscripts verifies that Task-subagent
+// transcripts (stored under <sessionId>/subagents/ and carrying the parent's
+// sessionId) are neither discovered as sessions nor matched by Read.
+func TestSourceReader_SkipsSubagentTranscripts(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projDir := filepath.Join(home, ".claude", "projects", "p1")
+	subagentDir := filepath.Join(projDir, "s1", "subagents")
+	if err := os.MkdirAll(subagentDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	// The subagent dir sorts before s1.jsonl in the walk; without filtering it
+	// would be discovered as a duplicate row and matched first by Read.
+	subagent := `{"type":"user","isSidechain":true,"timestamp":"2026-01-01T00:00:00Z","sessionId":"s1","message":{"content":"subagent task prompt"}}` + "\n"
+	if err := os.WriteFile(filepath.Join(subagentDir, "agent-1.jsonl"), []byte(subagent), 0o644); err != nil {
+		t.Fatalf("write subagent jsonl: %v", err)
+	}
+	main := `{"type":"user","timestamp":"2026-01-01T00:00:01Z","sessionId":"s1","message":{"content":"main user msg"}}` + "\n"
+	if err := os.WriteFile(filepath.Join(projDir, "s1.jsonl"), []byte(main), 0o644); err != nil {
+		t.Fatalf("write main jsonl: %v", err)
+	}
+
+	r := SourceReader{FS: os.DirFS("/")}
+	rows, err := r.Discover(context.Background())
+	if err != nil {
+		t.Fatalf("discover: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row (subagent transcript skipped), got %d", len(rows))
+	}
+	if rows[0].FirstUserMessage != "main user msg" {
+		t.Fatalf("expected main session preview, got %q", rows[0].FirstUserMessage)
+	}
+
+	chat, err := r.Read(context.Background(), "s1")
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	for _, m := range chat.Messages {
+		if strings.Contains(m.Content, "subagent task prompt") {
+			t.Fatalf("subagent content leaked into imported chat: %q", m.Content)
+		}
+	}
+}
+
+// TestSourceReader_Read_BlockArrayContent verifies that array-shaped
+// tool_result content and user text blocks survive the import.
+func TestSourceReader_Read_BlockArrayContent(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projDir := filepath.Join(home, ".claude", "projects", "p1")
+	if err := os.MkdirAll(projDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	jsonl := `{"type":"user","timestamp":"2026-01-01T00:00:00Z","sessionId":"s1","message":{"content":[{"type":"text","text":"user text block"}]}}` + "\n" +
+		`{"type":"assistant","timestamp":"2026-01-01T00:00:01Z","sessionId":"s1","message":{"content":[{"type":"tool_use","id":"tu1","name":"rg","input":{}}]}}` + "\n" +
+		`{"type":"user","timestamp":"2026-01-01T00:00:02Z","sessionId":"s1","message":{"content":[{"type":"tool_result","tool_use_id":"tu1","content":[{"type":"text","text":"array result"}]}]}}` + "\n"
+	if err := os.WriteFile(filepath.Join(projDir, "s1.jsonl"), []byte(jsonl), 0o644); err != nil {
+		t.Fatalf("write jsonl: %v", err)
+	}
+
+	r := SourceReader{FS: os.DirFS("/")}
+	chat, err := r.Read(context.Background(), "s1")
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	foundUser, foundTool := false, false
+	for _, m := range chat.Messages {
+		if m.Role == "user" && m.Content == "user text block" {
+			foundUser = true
+		}
+		if m.Role == "tool" {
+			foundTool = true
+			if m.Content != "array result" {
+				t.Fatalf("expected flattened tool_result content, got %q", m.Content)
+			}
+		}
+	}
+	if !foundUser {
+		t.Fatalf("user text block message was dropped")
+	}
+	if !foundTool {
+		t.Fatalf("tool result message was dropped")
+	}
+}
+
 // TestDiscover_FullFirstUserMessage_Populated verifies that discoverOne populates
 // both FirstUserMessage (truncated) and FullFirstUserMessage (complete).
 func TestDiscover_FullFirstUserMessage_Populated(t *testing.T) {

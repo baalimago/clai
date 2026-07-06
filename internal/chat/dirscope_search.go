@@ -388,6 +388,9 @@ func InspectConversation(confDir, chatID string, page, pageSize int, role, match
 	if page < 0 {
 		page = 0
 	}
+	if err := validateChatID(chatID); err != nil {
+		return "", err
+	}
 	chat, err := FromPath(conversationPath(confDir, chatID))
 	if err != nil {
 		return "", fmt.Errorf("load conversation %q: %w", chatID, err)
@@ -450,6 +453,9 @@ func InspectConversation(confDir, chatID string, page, pageSize int, role, match
 // it when the content is truncated by the tool-output limit. An out-of-range
 // index or unresolvable chat id returns an error.
 func ReadMessage(confDir, chatID string, messageIndex int) (content, path string, err error) {
+	if err := validateChatID(chatID); err != nil {
+		return "", "", err
+	}
 	path = conversationPath(confDir, chatID)
 	chat, err := FromPath(path)
 	if err != nil {
@@ -460,6 +466,16 @@ func ReadMessage(confDir, chatID string, messageIndex int) (content, path string
 	}
 	msg := chat.Messages[messageIndex]
 	return fmt.Sprintf("[%s]\n%s", msg.Role, msg.String()), path, nil
+}
+
+// validateChatID rejects ids that could escape the conversations directory —
+// the id is model-supplied via the lookback tools, so it must never contain
+// path separators or relative components.
+func validateChatID(chatID string) error {
+	if chatID == "" || chatID == "." || chatID == ".." || strings.ContainsAny(chatID, `/\`) {
+		return fmt.Errorf("invalid chat_id %q", chatID)
+	}
+	return nil
 }
 
 func previewOf(body string, n int) string {

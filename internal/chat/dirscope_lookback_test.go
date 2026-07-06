@@ -1,6 +1,8 @@
 package chat
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -317,6 +319,29 @@ func TestReadMessage_ResolutionAndOutOfRange(t *testing.T) {
 	}
 	if _, _, err := ReadMessage(confDir, "missing", 0); err == nil {
 		t.Fatalf("expected unresolvable chat_id error")
+	}
+}
+
+// TestLookback_RejectsPathTraversalChatID verifies model-supplied chat ids
+// cannot escape the conversations directory.
+func TestLookback_RejectsPathTraversalChatID(t *testing.T) {
+	confDir := t.TempDir()
+	if err := utils.CreateConfigDir(confDir); err != nil {
+		t.Fatalf("CreateConfigDir: %v", err)
+	}
+	// A chat-shaped JSON outside the conversations dir: traversal would read it.
+	outside := filepath.Join(confDir, "secret")
+	if err := os.WriteFile(outside+".json", []byte(`{"id":"secret","messages":[{"role":"user","content":"leaked"}]}`), 0o644); err != nil {
+		t.Fatalf("write outside file: %v", err)
+	}
+
+	for _, chatID := range []string{"../secret", "..", ".", "", `..\secret`, "/etc/passwd"} {
+		if _, _, err := ReadMessage(confDir, chatID, 0); err == nil {
+			t.Fatalf("ReadMessage accepted traversal chat_id %q", chatID)
+		}
+		if _, err := InspectConversation(confDir, chatID, 0, 0, "", ""); err == nil {
+			t.Fatalf("InspectConversation accepted traversal chat_id %q", chatID)
+		}
 	}
 }
 

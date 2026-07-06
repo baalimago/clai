@@ -234,6 +234,8 @@ func (cq *ChatHandler) actOnChat(ctx context.Context, chat pub_models.Chat, grou
 		return nil
 	case "P", "p":
 		return SaveAsPreviousQuery(cq.confDir, chat)
+	case "Q", "q":
+		return utils.ErrUserInitiatedExit
 	case "":
 		if chat.Profile != "" {
 			cq.config.UseProfile = chat.Profile
@@ -320,6 +322,11 @@ func collapseGroupRows(rows []chatListRow) []chatListRow {
 	groups := map[string][]int{} // groupKey → indices into rows
 	for i, r := range rows {
 		if r.GroupKey == "" {
+			continue
+		}
+		// The globalScope mirror shares the newest conversation's GroupKey;
+		// grouping it would double-count that conversation's aggregates.
+		if r.ChatID == globalScopeChatID {
 			continue
 		}
 		groups[r.GroupKey] = append(groups[r.GroupKey], i)
@@ -416,7 +423,7 @@ func buildGroupRow(rows []chatListRow, members []int, groupKey string) chatListR
 func filterRowsByGroupKey(rows []chatListRow, groupKey string) []chatListRow {
 	out := make([]chatListRow, 0, len(rows))
 	for _, r := range rows {
-		if r.GroupKey == groupKey && r.Kind != chatRowGroup {
+		if r.GroupKey == groupKey && r.Kind != chatRowGroup && r.ChatID != globalScopeChatID {
 			out = append(out, r)
 		}
 	}
@@ -587,6 +594,10 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 				return nil
 			}
 			return fmt.Errorf("failed to select chat: %w", err)
+		}
+		if len(selectedNumbers) == 0 || selectedNumbers[0] < 0 || selectedNumbers[0] >= len(pr.rows) {
+			fmt.Fprintf(cq.out, "selection out of range, please pick one of the listed indices\n")
+			continue
 		}
 		sel := pr.rows[selectedNumbers[0]]
 		if sel.Kind == chatRowGroup {
@@ -767,11 +778,10 @@ func (cq *ChatHandler) cloneForeignChat(ctx context.Context, foreign pub_models.
 	cloned := foreign
 	cloned.ID = NewChatID()
 	// Preserve Created as discovered/read. Do not stamp wall clock here.
+	// Save stamps GroupKey and upserts the index itself; a second upsert with
+	// the pre-stamp copy would wipe the group_key from the index row.
 	if err := Save(cq.convDir, cloned); err != nil {
 		return pub_models.Chat{}, fmt.Errorf("failed to save cloned chat: %w", err)
-	}
-	if err := upsertChatIndex(cq.convDir, cloned); err != nil {
-		return pub_models.Chat{}, fmt.Errorf("failed to upsert chat index for cloned chat: %w", err)
 	}
 	if err := cq.UpdateDirScopeFromCWD(cloned.ID); err != nil {
 		return pub_models.Chat{}, fmt.Errorf("failed to update directory-scoped binding: %w", err)

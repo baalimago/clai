@@ -187,7 +187,11 @@ func rebuildChatIndex(convDir string, fromVersion int, reason string) ([]chatInd
 		chatPath := path.Join(convDir, file.Name())
 		chat, err := FromPath(chatPath)
 		if err != nil {
-			return nil, fmt.Errorf("failed to load chat %q while rebuilding index: %w", chatPath, err)
+			// One corrupt/stray file must not permanently break list/search
+			// for every invocation; index what parses and warn.
+			utils.ClearLine(os.Stderr)
+			fmt.Fprintf(os.Stderr, "  skipping unreadable chat %q: %v\n", chatPath, err)
+			continue
 		}
 		// Stamp GroupKey for pre-existing conversations that lack it
 		// (saved before the GroupKey feature was added).

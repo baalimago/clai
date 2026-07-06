@@ -73,9 +73,15 @@ func (r SourceReader) Discover(ctx context.Context) ([]vendors.SourceRow, error)
 		default:
 		}
 		if walkErr != nil {
-			return walkErr
+			// Skip unreadable entries; one bad file must not hide the source.
+			return nil
 		}
 		if d.IsDir() {
+			// Subagent (Task tool) transcripts live under <sessionId>/subagents/
+			// and carry the parent's sessionId — they are not sessions themselves.
+			if d.Name() == "subagents" {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		if !strings.HasSuffix(d.Name(), ".jsonl") {
@@ -102,7 +108,7 @@ func (r SourceReader) discoverOne(ctx context.Context, absPath string) (vendors.
 	defer f.Close()
 
 	s := bufio.NewScanner(f)
-	s.Buffer(make([]byte, 0, 1<<20), 1<<20) // 1MB max token: keep bounded scanners robust.
+	s.Buffer(make([]byte, 0, 64<<10), 10<<20) // 10MB max token: pasted-image user lines get huge.
 
 	row := vendors.SourceRow{Source: r.Source(), RawPath: absPath}
 	lines := 0
@@ -122,6 +128,9 @@ func (r SourceReader) discoverOne(ctx context.Context, absPath string) (vendors.
 		}
 		var env map[string]any
 		if err := json.Unmarshal([]byte(line), &env); err != nil {
+			continue
+		}
+		if sc, _ := env["isSidechain"].(bool); sc {
 			continue
 		}
 		if row.SourceID == "" {
@@ -174,7 +183,12 @@ func extractUserContentStrings(env map[string]any) (string, string) {
 		return "", ""
 	}
 	c := msg["content"]
-	s, _ := c.(string)
+	s, ok := c.(string)
+	if !ok {
+		// Block-array user content: preview only its text blocks —
+		// tool_result blocks are machine output, not the user's words.
+		s = blockContentText(c)
+	}
 	return vendors.TruncateOneLine(s, 100), s
 }
 
@@ -204,6 +218,10 @@ func (r SourceReader) Read(ctx context.Context, sourceID string) (pub_models.Cha
 			continue
 		}
 		if sid, _ := env["sessionId"].(string); sid != "" && sid != sourceID {
+			continue
+		}
+		// Sidechain lines are subagent-internal conversation, not the session.
+		if sc, _ := env["isSidechain"].(bool); sc {
 			continue
 		}
 		typ, _ := env["type"].(string)
@@ -265,10 +283,15 @@ func (r SourceReader) findSessionFile(sourceID string) (string, error) {
 	errFound := errors.New("found")
 	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
-			return walkErr
+			return nil
 		}
 		// best-effort: skip dirs quickly
 		if d.IsDir() {
+			// Subagent transcripts carry the parent's sessionId; matching one
+			// here would import the subagent's conversation as the session.
+			if d.Name() == "subagents" {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		if !strings.HasSuffix(d.Name(), ".jsonl") {
@@ -343,7 +366,7 @@ func mapUserMessage(env map[string]any) []pub_models.Message {
 		return nil
 	}
 	c := msg["content"]
-	// user message can be string OR array of blocks (tool_result)
+	// user message can be string OR array of blocks (text and/or tool_result)
 	if s, ok := c.(string); ok {
 		return []pub_models.Message{{Role: "user", Content: s}}
 	}
@@ -352,19 +375,52 @@ func mapUserMessage(env map[string]any) []pub_models.Message {
 		return nil
 	}
 	out := make([]pub_models.Message, 0, len(arr))
+	texts := make([]string, 0, 1)
 	for _, v := range arr {
 		m, ok := v.(map[string]any)
 		if !ok {
 			continue
 		}
-		if typ, _ := m["type"].(string); typ != "tool_result" {
-			continue
+		switch typ, _ := m["type"].(string); typ {
+		case "tool_result":
+			toolID, _ := m["tool_use_id"].(string)
+			out = append(out, pub_models.Message{Role: "tool", ToolCallID: toolID, Content: blockContentText(m["content"])})
+		case "text":
+			if t, _ := m["text"].(string); t != "" {
+				texts = append(texts, t)
+			}
 		}
-		toolID, _ := m["tool_use_id"].(string)
-		content, _ := m["content"].(string)
-		out = append(out, pub_models.Message{Role: "tool", ToolCallID: toolID, Content: content})
+	}
+	if len(texts) > 0 {
+		out = append(out, pub_models.Message{Role: "user", Content: strings.Join(texts, "\n")})
 	}
 	return out
+}
+
+// blockContentText flattens content that Claude Code stores as either a plain
+// string or an array of {"type":"text"} blocks.
+func blockContentText(c any) string {
+	if s, ok := c.(string); ok {
+		return s
+	}
+	arr, ok := c.([]any)
+	if !ok {
+		return ""
+	}
+	texts := make([]string, 0, len(arr))
+	for _, v := range arr {
+		m, ok := v.(map[string]any)
+		if !ok {
+			continue
+		}
+		if typ, _ := m["type"].(string); typ != "text" {
+			continue
+		}
+		if t, _ := m["text"].(string); t != "" {
+			texts = append(texts, t)
+		}
+	}
+	return strings.Join(texts, "\n")
 }
 
 func mapAssistantMessage(env map[string]any) []pub_models.Message {

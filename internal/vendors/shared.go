@@ -2,6 +2,7 @@ package vendors
 
 import (
 	"strings"
+	"unicode/utf8"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
@@ -90,14 +91,14 @@ func IsToolCallOnlyAssistant(m pub_models.Message) bool {
 	return m.Role == "assistant" && m.Content == "" && len(m.ToolCalls) > 0
 }
 
-// truncateOneLine collapses newlines to spaces, trims, and truncates to max.
+// TruncateOneLine collapses newlines to spaces, trims, and truncates to max runes.
 func TruncateOneLine(s string, max int) string {
 	s = strings.ReplaceAll(s, "\n", " ")
 	s = strings.TrimSpace(s)
-	if len(s) <= max {
+	if utf8.RuneCountInString(s) <= max {
 		return s
 	}
-	return s[:max]
+	return string([]rune(s)[:max])
 }
 
 // JoinNonEmpty joins two strings with "\n" if both are non-empty.

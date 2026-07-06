@@ -368,11 +368,16 @@ func (t *table[T]) selectNumbers() ([]int, error) {
 		return selectedNumbers, fmt.Errorf("failed to parse selected numbers from choice %q: %w", choice, err)
 	}
 
-	// Translate filtered indices back to original indices
+	// Translate filtered indices back to original indices. Selections outside
+	// the filtered view are dropped rather than panicking — parsing tolerates
+	// over-shooting indices (the '0:9999' clear-all idiom).
 	if t.filteredIndices != nil {
-		translated := make([]int, len(selectedNumbers))
-		for i, num := range selectedNumbers {
-			translated[i] = t.filteredIndices[num]
+		translated := make([]int, 0, len(selectedNumbers))
+		for _, num := range selectedNumbers {
+			if num < 0 || num >= len(t.filteredIndices) {
+				continue
+			}
+			translated = append(translated, t.filteredIndices[num])
 		}
 		selectedNumbers = translated
 	}
@@ -579,8 +584,8 @@ func (t *table[T]) parseNumbersFromString(choice string) ([]int, error) {
 			parseErrors = append(parseErrors, fmt.Errorf("token: '%v' failed to parse to int: %w", tok, err))
 			continue
 		}
-		if v > t.paginator.totalAm() {
-			parseErrors = append(parseErrors, fmt.Errorf("index: '%v' is higher than max amount of items", v))
+		if v < 0 || v > t.paginator.totalAm() {
+			parseErrors = append(parseErrors, fmt.Errorf("index: '%v' is outside the range of items", v))
 			continue
 		}
 		selectedNumbers = append(selectedNumbers, v)

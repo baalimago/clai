@@ -25,7 +25,9 @@ func stripThinkingBlocks(s string) string {
 			return s
 		}
 		j += i + len(start)
-		s = s[:i] + s[j+len(end):]
+		// The wrapper appends a newline after [/thinking]; drop it too so the
+		// persisted content does not start with a stray blank line.
+		s = s[:i] + strings.TrimPrefix(s[j+len(end):], "\n")
 	}
 }
 

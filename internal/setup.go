@@ -314,8 +314,9 @@ const lookbackInjectCount = 5
 // surfaces nothing, matching the dirscope spec.
 func setupLookback(confDir string, tConf *text.Configurations, flagSet, defaultFlags Configurations) error {
 	// Profile overrides have already been applied to tConf.UseLookback.
-	// The flag (if explicitly set) takes final precedence.
-	if flagSet.UseLookback != defaultFlags.UseLookback {
+	// The flag (if explicitly set) takes final precedence, in both directions:
+	// -lb enables, -lb=false disables profile/file-enabled lookback.
+	if flagSet.UseLookbackSet {
 		tConf.UseLookback = flagSet.UseLookback
 	}
 
@@ -455,7 +456,9 @@ func Setup(ctx context.Context, usage string, allArgs []string) (models.Querier,
 	}
 
 	if err := utils.LoadTheme(claiConfDir); err != nil {
-		return nil, fmt.Errorf("failed to load theme: %w", err)
+		// A broken theme.json must not brick the CLI (including the setup
+		// command needed to repair it); fall back to the built-in theme.
+		ancli.Warnf("failed to load theme, using defaults: %v\n", err)
 	}
 
 	switch mode {

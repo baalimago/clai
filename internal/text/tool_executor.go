@@ -75,27 +75,9 @@ func (e toolExecutor[C]) Execute(ctx context.Context, session *QuerySession, cal
 	session.Chat.Messages = append(session.Chat.Messages, modelSafeMsg)
 
 	out := tools.Invoke(ctx, call)
-	if q.maxToolCalls != nil {
-		if session.ToolCallsUsed >= *q.maxToolCalls {
-			out = "ERROR: No more tool calls allowed. "
-			persistence := session.ToolCallsUsed - *q.maxToolCalls
-			if persistence > 0 {
-				out += "You will be HARD SHUT DOWN if you persist. "
-			}
-			if persistence > 1 {
-				out += "This is your LAST WARNING. "
-			}
-			if persistence > 2 {
-				return io.EOF
-			}
-		} else {
-			outTmp, err := q.prefixToolCallsRemainingWithCount(out, session.ToolCallsUsed)
-			if err != nil {
-				return fmt.Errorf("prefix tool calls remaining: %w", err)
-			}
-			out = outTmp
-		}
-		session.ToolCallsUsed++
+	out, err := e.applyToolCallBudget(session, out)
+	if err != nil {
+		return err
 	}
 	out = limitToolOutput(out, q.toolOutputRuneLimit)
 	if out == "" {
@@ -120,6 +102,38 @@ func (e toolExecutor[C]) Execute(ctx context.Context, session *QuerySession, cal
 	}
 	session.ResetPendingText()
 	return nil
+}
+
+// applyToolCallBudget enforces -max-tool-calls: within budget it prefixes the
+// remaining-count onto the output, over budget it replaces the output with an
+// escalating warning, and past the final warning it returns io.EOF to hard-stop
+// the run.
+func (e toolExecutor[C]) applyToolCallBudget(session *QuerySession, out string) (string, error) {
+	q := e.querier
+	if q.maxToolCalls == nil {
+		return out, nil
+	}
+	if session.ToolCallsUsed >= *q.maxToolCalls {
+		out = "ERROR: No more tool calls allowed. "
+		persistence := session.ToolCallsUsed - *q.maxToolCalls
+		if persistence > 0 {
+			out += "You will be HARD SHUT DOWN if you persist. "
+		}
+		if persistence > 1 {
+			out += "This is your LAST WARNING. "
+		}
+		if persistence > 2 {
+			return out, io.EOF
+		}
+	} else {
+		outTmp, err := q.prefixToolCallsRemainingWithCount(out, session.ToolCallsUsed)
+		if err != nil {
+			return out, fmt.Errorf("prefix tool calls remaining: %w", err)
+		}
+		out = outTmp
+	}
+	session.ToolCallsUsed++
+	return out, nil
 }
 
 func (e toolExecutor[C]) executeLoadSkill(ctx context.Context, session *QuerySession, call pub_models.Call) error {

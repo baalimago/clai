@@ -218,7 +218,7 @@ func Test_table_parseNumbersFromString(t *testing.T) {
 		{name: "parses mixed integers and ranges in order", total: 10, input: "0, 2:4, 6", want: []int{0, 2, 3, 4, 6}},
 		{name: "truncates ranges at total amount", total: 3, input: "2:5", want: []int{2, 3}},
 		{name: "keeps valid selections when one token is invalid", total: 10, input: "1, nope, 4", want: []int{1, 4}, wantErr: []string{"token: 'nope' failed to parse to int"}},
-		{name: "reports out of bounds singular values", total: 3, input: "1,4", want: []int{1}, wantErr: []string{"index: '4' is higher than max amount of items"}},
+		{name: "reports out of bounds singular values", total: 3, input: "1,4", want: []int{1}, wantErr: []string{"index: '4' is outside the range of items"}},
 		{name: "reports malformed ranges without adding values", total: 10, input: "1:bad", want: []int{}, wantErr: []string{"failed to parse range selection: failed to parse end"}},
 		{name: "empty token is reported", total: 3, input: "1,,2", want: []int{1, 2}, wantErr: []string{"token: '' failed to parse to int"}},
 		{
@@ -229,7 +229,7 @@ func Test_table_parseNumbersFromString(t *testing.T) {
 			wantErr: []string{
 				"token: 'bad' failed to parse to int",
 				"failed to parse range selection: failed to parse end",
-				"index: '4' is higher than max amount of items",
+				"index: '4' is outside the range of items",
 			},
 		},
 	}

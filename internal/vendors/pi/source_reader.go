@@ -73,7 +73,8 @@ func (r SourceReader) Discover(ctx context.Context) ([]vendors.SourceRow, error)
 		default:
 		}
 		if walkErr != nil {
-			return walkErr
+			// Skip unreadable entries; one bad file must not hide the source.
+			return nil
 		}
 		if d.IsDir() {
 			return nil
@@ -305,7 +306,8 @@ func (r SourceReader) findSessionFile(sourceID string) (string, error) {
 	errFound := errors.New("found")
 	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
-			return walkErr
+			// Skip unreadable entries; one bad file must not hide the source.
+			return nil
 		}
 		if d.IsDir() {
 			return nil

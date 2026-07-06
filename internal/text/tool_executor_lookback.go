@@ -28,23 +28,25 @@ func isLookbackTool(name string) bool {
 // continues rather than aborting.
 func (e toolExecutor[C]) executeLookbackTool(session *QuerySession, call pub_models.Call) error {
 	q := e.querier
+	var out string
 	if !q.useLookback {
-		return fmt.Errorf("%s requested but lookback is unavailable", call.Name)
-	}
-
-	out, err := e.runLookbackTool(call)
-	if err != nil {
+		out = fmt.Sprintf("ERROR: %s requested but lookback is disabled for this run (enable with -lb/-lookback)", call.Name)
+	} else if res, err := e.runLookbackTool(call); err != nil {
 		out = "ERROR: " + err.Error()
+	} else {
+		out = res
 	}
 
 	assistantToolsCall := pub_models.Message{
-		Role:      "assistant",
-		Content:   call.PrettyPrint(),
-		ToolCalls: []pub_models.Call{call},
+		Role:             "assistant",
+		Content:          call.PrettyPrint(),
+		ToolCalls:        []pub_models.Call{call},
+		ReasoningContent: call.ReasoningContent,
 	}
 	modelSafeMsg := pub_models.Message{
-		Role:      "assistant",
-		ToolCalls: []pub_models.Call{call},
+		Role:             "assistant",
+		ToolCalls:        []pub_models.Call{call},
+		ReasoningContent: call.ReasoningContent,
 	}
 	if !q.debug {
 		if printErr := utils.AttemptPrettyPrint(q.out, assistantToolsCall, q.username, q.Raw); printErr != nil {
@@ -53,6 +55,10 @@ func (e toolExecutor[C]) executeLookbackTool(session *QuerySession, call pub_mod
 	}
 	session.Chat.Messages = append(session.Chat.Messages, modelSafeMsg)
 
+	out, budgetErr := e.applyToolCallBudget(session, out)
+	if budgetErr != nil {
+		return budgetErr
+	}
 	out = limitToolOutput(out, q.toolOutputRuneLimit)
 	if out == "" {
 		out = fmt.Sprintf("<NO-OUTPUT> tool %s completed successfully but produced no stdout/stderr.", call.Name)
