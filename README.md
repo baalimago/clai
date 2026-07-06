@@ -1,9 +1,9 @@
 # Command Line Artificial Intelligence
 
-[![Go Report Card](https://goreportcard.com/badge/github.com/baalimago/clai)](https://goreportcard.com/report/github.com/baalimago/clai)
 ![Wakatime](https://wakatime.com/badge/user/018cc8d2-3fd9-47ef-81dc-e4ad645d5f34/project/018e07e1-bd22-4077-a213-c16290d3db52.svg)
 
 Test coverage: 70.564% 😌👏
+
 <hr>
 <div align="center">
   <p><code>clai</code> (<i>/klaɪ/</i>, like "cli" in "<b>cli</b>mate") is a command line context-feeder for any ai task.</p>
@@ -44,11 +44,12 @@ Install [Glow](https://github.com/charmbracelet/glow) for formatted markdown out
   <img src="img/showcase.gif" alt="Showcase">
 </div>
 
-- **[MCP client support](./EXAMPLES.md#mcp-tools-external-tool-servers)** - Add any MCP server you'd like by simply pasting their configuration.
-- **Vendor agnosticism** - Use any functionality in Clai with [most LLM vendors](#supported-vendors) interchangeably.
-- **[Conversations](./EXAMPLES.md#bind-a-previous-conversation-to-the-current-directory)** - Create, manage and continue conversations.
+- **[Shell context injection](./architecture/shell-context.md)** - Inject runtime context (cwd, git branch, custom commands) into the system prompt via configurable templates.
+- **[Seamless conversation import](./architecture/continue-from-claudex.md)** - Clai finds conversations from popular agentic harnesses and seamlessly imports them. Ran out of session? Continue in clai!
+- **[Agent Skills](./architecture/skills.md)** - Import skills from custom directories, Claude-style `SKILL.md` files, or project-level `.claude/skills`. Skills auto-load on demand when the agent detects a matching task, with trust-gating and per-skill tool policies.
 - **[Profiles](./EXAMPLES.md#profiles--workflow-presets)** - Pre-prompted profiles enabling customized workflows and agents.
-- **Unix-like** - Clai follows the [unix philosophy](https://en.wikipedia.org/wiki/Unix_philosophy) and works seamlessly with data piped in and out.
+- **[MCP client support](./EXAMPLES.md#mcp-tools-external-tool-servers)** - Add any MCP server you'd like by simply pasting their configuration.
+- **Unix-like** - Clai follows the [unix philosophy](https://en.wikipedia.org/wiki/Unix_philosophy) and works seamlessly with data piped in and out. Combine with `-rf`/`-response-format` to enforce JSON Schema structured output for reliable scripting.
 
 All of these features are easily combined and tweaked, empowering users to accomplish very diverse use cases.
 See [examples](./EXAMPLES.md) for additional info.
@@ -58,7 +59,7 @@ See [examples](./EXAMPLES.md) for additional info.
 | Vendor      | Environment Variable | Models                                                                                                                                                             |
 | ----------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Berget AI   | `BERGET_API_KEY`     | [Text models](https://berget.ai/models), use prefix `berget:`                                                                                                      |
-| OpenRouter  | `OPENROUTER_API_KEY` | [Text models](https://openrouter.ai/models), use prefix `or:`                                                                                                       |
+| OpenRouter  | `OPENROUTER_API_KEY` | [Text models](https://openrouter.ai/models), use prefix `or:`                                                                                                      |
 | Mistral     | `MISTRAL_API_KEY`    | [Text models](https://docs.mistral.ai/getting-started/models/)                                                                                                     |
 | OpenAI      | `OPENAI_API_KEY`     | [Text models](https://platform.openai.com/docs/models), [photo models](https://platform.openai.com/docs/models/dall-e)                                             |
 | Anthropic   | `ANTHROPIC_API_KEY`  | [Text models](https://platform.claude.com/docs/en/about-claude/models/overview)                                                                                    |
@@ -77,6 +78,7 @@ Shell completions are also available:
 mkdir -p ~/.local/share/bash-completion/completions
 clai completion bash > ~/.local/share/bash-completion/completions/clai
 ```
+
 ```bash
 # zsh
 mkdir -p ~/.zsh/completions
@@ -91,4 +93,3 @@ autoload -Uz compinit && compinit
 ```
 
 Then restart your shell or reload your shell configuration.
-
