@@ -71,6 +71,12 @@ const (
 // the listChats loop should exit cleanly (e.g., after [Enter] continue).
 var errExitList = errors.New("exit list")
 
+// errToggleDirFilter is returned by the [d]ir table action to signal listChats
+// to flip the dir-scoped view and re-derive the rows. The filtering happens
+// before group collapsing (see prepareListRows), so it cannot be expressed as
+// an in-table predicate over the already-collapsed rows.
+var errToggleDirFilter = errors.New("toggle dir filter")
+
 type chatListRow struct {
 	Kind    chatRowKind
 	Created time.Time
@@ -81,6 +87,9 @@ type chatListRow struct {
 	// Foreign
 	Source   string
 	SourceID string
+	// OriginDir is the directory the conversation was started from,
+	// best-effort (empty when neither clai nor the source recorded one).
+	OriginDir string
 
 	// Display
 	Profile          string
@@ -154,6 +163,7 @@ func (cq *ChatHandler) foreignChatRows(ctx context.Context, readers []vendors.So
 				Created:          fr.Created,
 				Source:           fr.Source,
 				SourceID:         fr.SourceID,
+				OriginDir:        fr.Cwd,
 				MessageCount:     fr.MessageCount,
 				FirstUserMessage: fr.FirstUserMessage,
 				Model:            fr.Model,
@@ -183,6 +193,7 @@ func (cq *ChatHandler) buildChatListRows(ctx context.Context, paginator *ChatInd
 			ChatID:           r.ID,
 			Source:           r.Source,
 			SourceID:         r.SourceID,
+			OriginDir:        r.OriginDir,
 			Profile:          r.Profile,
 			Model:            r.Model,
 			MessageCount:     r.MessageCount,
@@ -432,32 +443,59 @@ func filterRowsByGroupKey(rows []chatListRow, groupKey string) []chatListRow {
 	return out
 }
 
-// dirFilterAction returns the toggleable [d]ir filter button, present only when
-// the current directory has recorded conversation history. The predicate keeps
-// rows whose chat_id is bound to the directory (head + history).
-func (cq *ChatHandler) dirFilterAction() (utils.TableAction, bool) {
+// dirScopeRowPredicate returns a predicate reporting whether a row belongs to
+// the current working directory, plus the wd it was anchored to. Native rows
+// belong when their chat_id is bound to the directory (head + history) or
+// their conversation originated in it; foreign rows when their recorded origin
+// directory is the current directory. The globalScope mirror never belongs: it
+// duplicates another conversation and carries no directory history of its own.
+//
+// The binding snapshot is taken once at construction. That is safe for a list
+// session: every path that rebinds a chat (Enter-continue, foreign clone)
+// exits the list via errExitList.
+func (cq *ChatHandler) dirScopeRowPredicate() (func(chatListRow) bool, string, bool) {
 	wd, err := currentWorkingDirectory()
 	if err != nil {
-		return utils.TableAction{}, false
+		return nil, "", false
 	}
 	ids := DirHistoryChatIDs(cq.confDir, wd)
-	return utils.TableAction{
-		Format:       "[d]irscoped convs",
-		Short:        "d",
-		Long:         "dir",
-		EmptyMessage: fmt.Sprintf("no dirscoped conversations in %s", wd),
-		Filter: func(row any) bool {
-			r, ok := row.(chatListRow)
-			if !ok {
+	canonicalWd, err := canonicalDir(wd)
+	if err != nil {
+		canonicalWd = wd
+	}
+	// Canonicalization hits the filesystem (EvalSymlinks); memoize per origin
+	// since the predicate runs over the full row set on every [d] toggle.
+	originCache := map[string]bool{}
+	originInWd := func(origin string) bool {
+		if origin == "" {
+			return false
+		}
+		if match, ok := originCache[origin]; ok {
+			return match
+		}
+		canonical, err := canonicalDir(origin)
+		if err != nil {
+			canonical = origin
+		}
+		match := originMatches(canonical, canonicalWd, false)
+		originCache[origin] = match
+		return match
+	}
+	return func(r chatListRow) bool {
+		switch r.Kind {
+		case chatRowNative:
+			if r.ChatID == globalScopeChatID {
 				return false
 			}
-			if r.Kind == chatRowForeign || r.Kind == chatRowGroup {
+			if _, in := ids[r.ChatID]; in {
 				return true
 			}
-			_, in := ids[r.ChatID]
-			return in
-		},
-	}, true
+			return originInWd(r.OriginDir)
+		case chatRowForeign:
+			return originInWd(r.OriginDir)
+		}
+		return false
+	}, wd, true
 }
 
 // preparedRows bundles the rows ready for display and the source-reader
@@ -468,12 +506,24 @@ type preparedRows struct {
 }
 
 // prepareListRows derives the display view for the given group context from
-// an already-built row set — pure in-memory work.
-func prepareListRows(allRows []chatListRow, byName map[string]vendors.SourceReader, groupKey string) preparedRows {
-	if groupKey != "" {
-		return preparedRows{rows: filterRowsByGroupKey(allRows, groupKey), byName: byName}
+// an already-built row set — pure in-memory work. A non-nil inDir predicate
+// dir-scopes the view; member rows are filtered BEFORE group collapsing, so
+// group rows, their aggregates, and group drill-downs only ever count
+// dir-scoped members.
+func prepareListRows(allRows []chatListRow, byName map[string]vendors.SourceReader, groupKey string, inDir func(chatListRow) bool) preparedRows {
+	rows := allRows
+	if inDir != nil {
+		rows = make([]chatListRow, 0, len(allRows))
+		for _, r := range allRows {
+			if inDir(r) {
+				rows = append(rows, r)
+			}
+		}
 	}
-	return preparedRows{rows: collapseGroupRows(allRows), byName: byName}
+	if groupKey != "" {
+		return preparedRows{rows: filterRowsByGroupKey(rows, groupKey), byName: byName}
+	}
+	return preparedRows{rows: collapseGroupRows(rows), byName: byName}
 }
 
 func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPaginator, groupKey string) error {
@@ -486,16 +536,27 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 	if err != nil {
 		return fmt.Errorf("failed to build chat list rows: %w", err)
 	}
+	inDir, wd, hasDirFilter := cq.dirScopeRowPredicate()
+	dirFilterOn := false
 	// The table page survives peek/edit round-trips so a user studying a
 	// conversation lands back where they left off. The main list and the
 	// group view page independently.
 	listPage, groupPage := 0, 0
 	for {
-		pr := prepareListRows(allRows, byName, groupKey)
+		var scope func(chatListRow) bool
+		if dirFilterOn {
+			scope = inDir
+		}
+		pr := prepareListRows(allRows, byName, groupKey, scope)
 
 		tableActions := []utils.TableAction{}
-		if action, ok := cq.dirFilterAction(); ok {
-			tableActions = append(tableActions, action)
+		if hasDirFilter {
+			tableActions = append(tableActions, utils.TableAction{
+				Format: "[d]irscoped convs",
+				Short:  "d",
+				Long:   "dir",
+				Action: func() error { return errToggleDirFilter },
+			})
 		}
 
 		// Compute the widest index string across all visible rows.
@@ -532,6 +593,13 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 				choicesFormat = fmt.Sprintf("group: %s", displayKey)
 			}
 			backLabel = "[b]ack to list"
+		}
+		if dirFilterOn {
+			if len(pr.rows) == 0 {
+				choicesFormat = fmt.Sprintf("dir filter, no dirscoped conversations in %s", wd)
+			} else {
+				choicesFormat = fmt.Sprintf("dir filter, %s", choicesFormat)
+			}
 		}
 
 		startPage := listPage
@@ -606,6 +674,12 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 			listPage = shownPage
 		}
 		if err != nil {
+			if errors.Is(err, errToggleDirFilter) {
+				dirFilterOn = !dirFilterOn
+				// The scoped and unscoped views paginate differently.
+				listPage, groupPage = 0, 0
+				continue
+			}
 			if errors.Is(err, utils.ErrBack) {
 				if groupKey != "" {
 					groupKey = ""

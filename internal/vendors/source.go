@@ -26,6 +26,10 @@ import (
 // MessageCount may be approximate during discovery.
 // Exact counts are available after Read() parses the full conversation.
 //
+// Cwd is the working directory the session was started from, best-effort;
+// empty when the source does not record one. Used by the chat list's [d]ir
+// filter to scope foreign conversations to the current directory.
+//
 // Created should be best-effort; if unknown, use the most sensible file timestamp.
 //
 // All fields are read-only.
@@ -47,6 +51,7 @@ type SourceRow struct {
 	MessageCount         int
 	Model                string
 	RawPath              string
+	Cwd                  string
 }
 
 // SourceReader discovers and reads conversations from an external tool.

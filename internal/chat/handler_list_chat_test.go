@@ -18,8 +18,8 @@ import (
 )
 
 // chdirToTemp switches the working directory to a fresh temp dir for the duration
-// of the test, returning the temp dir. dirFilterAction binds against the live CWD,
-// so tests that exercise it must control the working directory.
+// of the test, returning the temp dir. dirScopeRowPredicate binds against the live
+// CWD, so tests that exercise it must control the working directory.
 func chdirToTemp(t *testing.T) string {
 	t.Helper()
 	wd := t.TempDir()
@@ -34,53 +34,121 @@ func chdirToTemp(t *testing.T) string {
 	return wd
 }
 
-// TestDirFilterAction_GatingAndPredicate covers acceptance #13: the [d]ir button
-// is only offered when the current directory has recorded history, and its
-// predicate keeps exactly the rows bound to the directory (head + history).
-func TestDirFilterAction_GatingAndPredicate(t *testing.T) {
+// TestDirScopeRowPredicate covers acceptance #13: the predicate keeps exactly
+// the rows belonging to the directory — native rows bound to it (head +
+// history) or originating in it, foreign rows originating in it — and never
+// the globalScope mirror.
+func TestDirScopeRowPredicate(t *testing.T) {
 	cq, confDir := newTestHandler(t)
 	wd := chdirToTemp(t)
 
-	action, ok := cq.dirFilterAction()
-	if !ok {
-		t.Fatal("expected dir filter action even before any history is recorded")
+	inDir, gotWd, ok := cq.dirScopeRowPredicate()
+	if !ok || inDir == nil {
+		t.Fatal("expected dir scope predicate even before any history is recorded")
 	}
-	if action.Format != "[d]irscoped convs" || action.Short != "d" || action.Filter == nil {
-		t.Fatalf("unexpected action wiring before history: %+v", action)
+	if gotWd == "" {
+		t.Fatal("expected the predicate to report the wd it anchored to")
 	}
-	if !strings.Contains(action.EmptyMessage, wd) {
-		t.Fatalf("expected empty message to mention cwd %q, got %q", wd, action.EmptyMessage)
+	if inDir(chatListRow{Kind: chatRowNative, ChatID: "bound"}) {
+		t.Fatal("predicate should drop everything before any history is recorded")
 	}
 
 	if err := cq.SaveDirScope(wd, "bound"); err != nil {
 		t.Fatalf("SaveDirScope: %v", err)
 	}
 
-	action, ok = cq.dirFilterAction()
+	inDir, _, ok = cq.dirScopeRowPredicate()
 	if !ok {
-		t.Fatal("expected dir filter action once the directory has history")
+		t.Fatal("expected dir scope predicate once the directory has history")
 	}
-	if action.Format != "[d]irscoped convs" || action.Short != "d" || action.Filter == nil {
-		t.Fatalf("unexpected action wiring: %+v", action)
-	}
-	if !action.Filter(chatListRow{Kind: chatRowNative, ChatID: "bound"}) {
+	if !inDir(chatListRow{Kind: chatRowNative, ChatID: "bound"}) {
 		t.Fatal("predicate should keep the bound chat")
 	}
-	if action.Filter(chatListRow{Kind: chatRowNative, ChatID: "unbound"}) {
-		t.Fatal("predicate should drop a chat not bound to the directory")
+	if inDir(chatListRow{Kind: chatRowNative, ChatID: "unbound"}) {
+		t.Fatal("predicate should drop a chat neither bound nor originating here")
 	}
-	if !action.Filter(chatListRow{Kind: chatRowForeign, Source: "claude-code", SourceID: "s1"}) {
-		t.Fatal("predicate should keep foreign rows")
+	if !inDir(chatListRow{Kind: chatRowNative, ChatID: "unbound-but-local", OriginDir: wd}) {
+		t.Fatal("predicate should keep an unbound native chat originating in the current directory")
 	}
-	if action.Filter("not-a-row") {
-		t.Fatal("predicate should drop a non-row value")
+	if inDir(chatListRow{Kind: chatRowNative, ChatID: globalScopeChatID, OriginDir: wd}) {
+		t.Fatal("predicate should always drop the globalScope mirror")
+	}
+	if !inDir(chatListRow{Kind: chatRowForeign, Source: "claude-code", SourceID: "s1", OriginDir: wd}) {
+		t.Fatal("predicate should keep a foreign row originating in the current directory")
+	}
+	if inDir(chatListRow{Kind: chatRowForeign, Source: "claude-code", SourceID: "s2", OriginDir: "/somewhere/else"}) {
+		t.Fatal("predicate should drop a foreign row originating elsewhere")
+	}
+	if inDir(chatListRow{Kind: chatRowForeign, Source: "claude-code", SourceID: "s3"}) {
+		t.Fatal("predicate should drop a foreign row with no recorded origin")
 	}
 	_ = confDir
 }
 
+// TestPrepareListRows_DirScopedGroups covers group semantics under the [d]
+// filter: member rows are filtered before collapsing, so groups only form
+// from — and aggregate over — dir-scoped members.
+func TestPrepareListRows_DirScopedGroups(t *testing.T) {
+	cq, _ := newTestHandler(t)
+	wd := chdirToTemp(t)
+
+	for _, id := range []string{"bound", "bound2"} {
+		if err := cq.SaveDirScope(wd, id); err != nil {
+			t.Fatalf("SaveDirScope(%q): %v", id, err)
+		}
+	}
+	inDir, _, ok := cq.dirScopeRowPredicate()
+	if !ok {
+		t.Fatal("expected dir scope predicate")
+	}
+
+	allRows := []chatListRow{
+		{Kind: chatRowNative, ChatID: "bound", GroupKey: "gk-in", MessageCount: 2, TotalTokens: 10},
+		{Kind: chatRowNative, ChatID: "bound2", GroupKey: "gk-in", MessageCount: 3, TotalTokens: 5},
+		{Kind: chatRowNative, ChatID: "unbound", GroupKey: "gk-in", MessageCount: 100},
+		{Kind: chatRowForeign, Source: "pi", SourceID: "p1", OriginDir: "/somewhere/else", GroupKey: "gk-out"},
+		{Kind: chatRowNative, ChatID: "also-unbound", GroupKey: "gk-out"},
+	}
+
+	pr := prepareListRows(allRows, nil, "", inDir)
+	if len(pr.rows) != 1 {
+		t.Fatalf("expected exactly one row (the collapsed gk-in group), got %d: %+v", len(pr.rows), pr.rows)
+	}
+	gr := pr.rows[0]
+	if gr.Kind != chatRowGroup || gr.GroupKey != "gk-in" {
+		t.Fatalf("expected a gk-in group row, got %+v", gr)
+	}
+	if gr.GroupMemberCount != 2 {
+		t.Fatalf("group should count only dir-scoped members, got %d", gr.GroupMemberCount)
+	}
+	if gr.MessageCount != 5 || gr.TotalTokens != 15 {
+		t.Fatalf("group aggregates should cover only dir-scoped members, got messages=%d tokens=%d", gr.MessageCount, gr.TotalTokens)
+	}
+
+	// Drill-down into the group under the filter lists only dir-scoped members.
+	pr = prepareListRows(allRows, nil, "gk-in", inDir)
+	if len(pr.rows) != 2 {
+		t.Fatalf("expected 2 dir-scoped members in group view, got %d: %+v", len(pr.rows), pr.rows)
+	}
+	for _, r := range pr.rows {
+		if r.ChatID == "unbound" {
+			t.Fatal("group drill-down under [d] leaked an out-of-dir member")
+		}
+	}
+
+	// Without the filter the view is unchanged: the same group collapses over
+	// all three members.
+	pr = prepareListRows(allRows, nil, "", nil)
+	for _, r := range pr.rows {
+		if r.Kind == chatRowGroup && r.GroupKey == "gk-in" && r.GroupMemberCount != 3 {
+			t.Fatalf("unfiltered group should count all members, got %d", r.GroupMemberCount)
+		}
+	}
+}
+
 // TestListChats_DirFilterTogglesThroughListChats covers acceptance #13 end-to-end:
 // the [d]ir button renders in the listChats table and pressing it activates the
-// predicate filter (surfaced as the "dir filter" prompt marker).
+// dir-scoped view (surfaced as the "dir filter" prompt marker).
 func TestListChats_DirFilterTogglesThroughListChats(t *testing.T) {
 	cq, confDir := newTestHandler(t)
 	convDir := conversationsDir(confDir)
@@ -102,11 +170,12 @@ func TestListChats_DirFilterTogglesThroughListChats(t *testing.T) {
 		t.Fatalf("SaveDirScope: %v", err)
 	}
 
-	// Script: press "d" to toggle the dir filter on, then abort so listChats returns.
+	// Script: press "d" to toggle the dir filter on, "d" again to toggle it
+	// back off, then abort so listChats returns.
 	calls := 0
 	restore := utils.UseReadUserInputForTests(func() (string, error) {
 		calls++
-		if calls == 1 {
+		if calls <= 2 {
 			return "d", nil
 		}
 		return "", errors.New("stop")
@@ -127,8 +196,10 @@ func TestListChats_DirFilterTogglesThroughListChats(t *testing.T) {
 	if !strings.Contains(got, "[d]irscoped convs") {
 		t.Fatalf("expected the [d]irscoped convs button rendered in the table, got: %q", got)
 	}
-	if !strings.Contains(got, "dir filter") {
-		t.Fatalf("expected the dir filter to be active after pressing d, got: %q", got)
+	// Three renders: off, on, off again. The marker must appear exactly once,
+	// proving the second press toggled the view back off.
+	if n := strings.Count(got, "dir filter"); n != 1 {
+		t.Fatalf("expected exactly one dir-filtered render across the on/off toggle, got %d in: %q", n, got)
 	}
 }
 
@@ -138,8 +209,7 @@ func TestListChats_DirFilterWithoutBindingsShowsEmptyDirScopedView(t *testing.T)
 	_ = chdirToTemp(t)
 
 	// Prevent real foreign sessions (claude-code, pi) on disk from bleeding
-	// into the test. The dir filter passes all foreign rows, which would
-	// prevent the "empty dir-scoped" message from appearing.
+	// into the test.
 	restoreReaders := useTestSourceReaders(nil)
 	t.Cleanup(restoreReaders)
 

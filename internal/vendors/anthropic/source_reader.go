@@ -78,6 +78,11 @@ func (r SourceReader) discoverOne(absPath string) (vendors.SourceRow, bool) {
 				row.SourceID = sid
 			}
 		}
+		if row.Cwd == "" {
+			if v, _ := env["cwd"].(string); v != "" {
+				row.Cwd = v
+			}
+		}
 		if row.Created.IsZero() {
 			if ts, _ := env["timestamp"].(string); ts != "" {
 				if t, err := time.Parse(time.RFC3339, ts); err == nil {

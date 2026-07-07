@@ -129,6 +129,9 @@ func TestSourceReader_Discover_DeduceMetadata(t *testing.T) {
 	if rows[0].Model != "claude-fable-5" {
 		t.Fatalf("expected model claude-fable-5, got %q", rows[0].Model)
 	}
+	if rows[0].Cwd != "/work" {
+		t.Fatalf("expected cwd /work, got %q", rows[0].Cwd)
+	}
 	if rows[0].Created.IsZero() {
 		t.Fatalf("expected created")
 	}
