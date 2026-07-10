@@ -15,7 +15,7 @@ func TestMapChatToResponsesInput_IncludesAssistantToolCallsBeforeToolOutputs(t *
 		{Role: "tool", ToolCallID: "call_1", Content: "result"},
 	}}
 
-	items, err := mapChatToResponsesInput(chat)
+	items, err := mapChatToResponsesInput(chat, false)
 	if err != nil {
 		t.Fatalf("mapChatToResponsesInput: %v", err)
 	}

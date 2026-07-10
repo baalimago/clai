@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
@@ -31,6 +32,12 @@ func FromPath(path string) (pub_models.Chat, error) {
 	}
 	traceChatf("chat file decoded path=%q chat_id=%q messages=%d", path, chat.ID, len(chat.Messages))
 
+	// Best-effort: restore out-of-band reasoning items. A sidecar problem must not
+	// prevent loading the conversation itself.
+	if err := loadReasoningSidecars(filepath.Dir(path), &chat); err != nil {
+		ancli.Warnf("failed to load reasoning sidecar for chat %q: %v", chat.ID, err)
+	}
+
 	return chat, nil
 }
 
@@ -54,6 +61,11 @@ func Save(saveAt string, chat pub_models.Chat) error {
 	}
 	if err := upsertChatIndex(saveAt, chat); err != nil {
 		return fmt.Errorf("failed to update chat index: %w", err)
+	}
+	// Best-effort: persist out-of-band reasoning items. The conversation is already
+	// saved; a sidecar failure only costs reasoning continuity, not the chat.
+	if err := saveReasoningSidecars(saveAt, chat); err != nil {
+		ancli.Warnf("failed to save reasoning sidecar for chat %q: %v", chat.ID, err)
 	}
 	return nil
 }

@@ -107,11 +107,26 @@ type ImageOrTextInput struct {
 	ImageB64 *ImageURL `json:"image_url,omitempty"`
 }
 
+// ReasoningItem is an opaque reasoning output item from the OpenAI Responses API.
+// EncryptedContent is sealed by OpenAI: it cannot be read locally and is only
+// meaningful when replayed to the OpenAI Responses API for a reasoning model. It is
+// never sent to other vendors. Persisted out-of-band in a per-chat sidecar so the
+// conversation JSON stays human-readable.
+type ReasoningItem struct {
+	ID               string   `json:"id"`
+	EncryptedContent string   `json:"encrypted_content"`
+	Summary          []string `json:"summary,omitempty"`
+}
+
 type Message struct {
 	Role             string `json:"role"`
 	ToolCalls        []Call `json:"tool_calls,omitempty"`
 	ToolCallID       string `json:"tool_call_id,omitempty"`
 	ReasoningContent string `json:"reasoning_content,omitempty"`
+	// ReasoningItems carry opaque reasoning continuity for a tool-bearing assistant
+	// turn. They are stored out-of-band and keyed by the first persisted tool-call
+	// ID, so the conversation JSON stays human-readable and portable.
+	ReasoningItems []ReasoningItem `json:"-"`
 	// Content and ContentParts is like this since
 	// making Message generic would cause changes in 70+ places.
 	//

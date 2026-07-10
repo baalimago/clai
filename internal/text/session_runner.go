@@ -16,7 +16,7 @@ import (
 
 type ModelStepResult struct {
 	AssistantText string
-	ToolCall      *pub_models.Call
+	ToolCalls     []pub_models.Call
 	Usage         *pub_models.Usage
 	StopRequested bool
 	EndedNormally bool
@@ -67,8 +67,8 @@ func (r *sessionRunner[C]) Run(ctx context.Context, session *QuerySession) error
 			StartedAt:      stepStartedAt,
 			FinishedAt:     time.Now(),
 			Usage:          stepResult.Usage,
-			EndedWithTool:  stepResult.ToolCall != nil,
-			EndedWithReply: stepResult.ToolCall == nil && stepResult.EndedNormally && !stepResult.StopRequested,
+			EndedWithTool:  len(stepResult.ToolCalls) > 0,
+			EndedWithReply: len(stepResult.ToolCalls) == 0 && stepResult.EndedNormally && !stepResult.StopRequested,
 			EndedWithStop:  stepResult.StopRequested,
 		}
 		session.CompletedCalls = append(session.CompletedCalls, completedCall)
@@ -76,8 +76,8 @@ func (r *sessionRunner[C]) Run(ctx context.Context, session *QuerySession) error
 			ancli.Warnf("failed to record completed model call: %v", err)
 		}
 
-		if stepResult.ToolCall != nil {
-			if err := r.toolExecutor.Execute(ctx, session, *stepResult.ToolCall); err != nil {
+		if len(stepResult.ToolCalls) > 0 {
+			if err := r.toolExecutor.ExecuteBatch(ctx, session, stepResult.ToolCalls); err != nil {
 				if errors.Is(err, io.EOF) {
 					return nil
 				}
@@ -172,7 +172,7 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 		case completion, ok := <-completionsChan:
 			if !ok {
 				q.closeReasoningIfOpen(session)
-				result.EndedNormally = true
+				result.EndedNormally = len(result.ToolCalls) == 0
 				result.AssistantText = session.PendingTextString()
 				result.Usage = q.currentTokenUsage()
 				return result, nil
@@ -180,10 +180,7 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 			switch cast := completion.(type) {
 			case pub_models.Call:
 				q.closeReasoningIfOpen(session)
-				result.ToolCall = &cast
-				result.AssistantText = session.PendingTextString()
-				result.Usage = q.currentTokenUsage()
-				return result, nil
+				result.ToolCalls = append(result.ToolCalls, cast)
 			case string:
 				q.closeReasoningIfOpen(session)
 				q.handleTokenForSession(session, cast)
@@ -212,6 +209,11 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 				}
 			case models.StopEvent:
 				q.closeReasoningIfOpen(session)
+				result.AssistantText = session.PendingTextString()
+				result.Usage = q.currentTokenUsage()
+				if len(result.ToolCalls) > 0 {
+					return result, nil
+				}
 				contextCancel := ctx.Value(utils.ContextCancelKey)
 				castContextCancel, ok := contextCancel.(context.CancelFunc)
 				if ok {
@@ -219,8 +221,6 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 				}
 				session.SawStopEvent = true
 				result.StopRequested = true
-				result.AssistantText = session.PendingTextString()
-				result.Usage = q.currentTokenUsage()
 				return result, nil
 			case nil:
 				if q.debug {

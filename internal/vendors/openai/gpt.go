@@ -16,7 +16,7 @@ var GptDefault = ChatGPT{
 	Model:       "gpt-4.1-mini",
 	Temperature: 1.0,
 	TopP:        1.0,
-	URL:         ChatURL,
+	URL:         ResponsesURL,
 }
 
 type ChatGPT struct {
@@ -26,7 +26,11 @@ type ChatGPT struct {
 	PresencePenalty  float64 `json:"presence_penalty"`
 	Temperature      float64 `json:"temperature"`
 	TopP             float64 `json:"top_p"`
-	URL              string  `json:"url"`
+	// ReasoningEffort configures how much reasoning models think.
+	// One of "minimal", "low", "medium", "high"; empty uses the API default.
+	// Ignored for non-reasoning models, which reject the parameter.
+	ReasoningEffort string `json:"reasoning_effort"`
+	URL             string `json:"url"`
 
 	apiKey string
 	debug  bool
@@ -73,6 +77,22 @@ func (g *ChatGPT) SetResponseFormat(rf *generic.ResponseFormat) {
 	g.responseFormat = rf
 }
 
+// mapResponsesTools converts the registered tools into the Responses function-tool
+// wire shape.
+func (g *ChatGPT) mapResponsesTools() []responsesTool {
+	toolsMapped := make([]responsesTool, 0, len(g.tools))
+	for _, t := range g.tools {
+		spec := t.Specification()
+		toolsMapped = append(toolsMapped, responsesTool{
+			Type:        "function",
+			Name:        spec.Name,
+			Description: spec.Description,
+			Parameters:  spec.Inputs,
+		})
+	}
+	return toolsMapped
+}
+
 func (g *ChatGPT) setUsage(usage *pub_models.Usage) error {
 	g.usage = usage
 	return nil
@@ -80,30 +100,29 @@ func (g *ChatGPT) setUsage(usage *pub_models.Usage) error {
 
 func (g *ChatGPT) StreamCompletions(ctx context.Context, chat pub_models.Chat) (chan models.CompletionEvent, error) {
 	g.usage = nil
-	url, useResponses := selectOpenAIURL(g.Model, g.URL)
-	g.URL = url
-	g.useResponses = useResponses
+	// Setup already normalized g.URL and g.useResponses; re-resolve to stay correct
+	// even if the model was changed after Setup.
+	g.URL, g.useResponses = selectOpenAIURL(g.Model, g.URL)
 
 	if g.useResponses {
-		toolsMapped := make([]responsesTool, 0, len(g.tools))
-		for _, t := range g.tools {
-			spec := t.Specification()
-			toolsMapped = append(toolsMapped, responsesTool{
-				Type:        "function",
-				Name:        spec.Name,
-				Description: spec.Description,
-				Parameters:  spec.Inputs,
-			})
-		}
-
 		s := &responsesStreamer{
-			apiKey:      g.apiKey,
-			url:         g.URL,
-			model:       g.Model,
-			debug:       g.debug,
-			client:      http.DefaultClient,
-			tools:       toolsMapped,
-			usageSetter: g.setUsage,
+			apiKey:          g.apiKey,
+			url:             g.URL,
+			model:           g.Model,
+			debug:           g.debug,
+			client:          http.DefaultClient,
+			tools:           g.mapResponsesTools(),
+			usageSetter:     g.setUsage,
+			responseFormat:  g.responseFormat,
+			maxOutputTokens: g.MaxTokens,
+		}
+		// Reasoning models reject sampling parameters; only forward them otherwise.
+		// Conversely, reasoning.effort is only meaningful for reasoning models.
+		if isReasoningModel(g.Model) {
+			s.reasoningEffort = g.ReasoningEffort
+		} else {
+			s.temperature = &g.Temperature
+			s.topP = &g.TopP
 		}
 
 		out, err := s.stream(ctx, chat)
@@ -120,10 +139,17 @@ func (g *ChatGPT) StreamCompletions(ctx context.Context, chat pub_models.Chat) (
 	g.streamCompleter = sc
 	g.streamCompleter.Model = g.Model
 	g.streamCompleter.MaxTokens = g.MaxTokens
-	g.streamCompleter.FrequencyPenalty = &g.FrequencyPenalty
-	g.streamCompleter.PresencePenalty = &g.PresencePenalty
-	g.streamCompleter.Temperature = &g.Temperature
-	g.streamCompleter.TopP = &g.TopP
+	// Reasoning models reject sampling parameters (temperature/top_p) and the
+	// frequency/presence penalties, so omit them here just like the responses path.
+	// They do accept reasoning_effort, so forward it when configured.
+	if !isReasoningModel(g.Model) {
+		g.streamCompleter.FrequencyPenalty = &g.FrequencyPenalty
+		g.streamCompleter.PresencePenalty = &g.PresencePenalty
+		g.streamCompleter.Temperature = &g.Temperature
+		g.streamCompleter.TopP = &g.TopP
+	} else if g.ReasoningEffort != "" {
+		g.streamCompleter.ReasoningEffort = g.ReasoningEffort
+	}
 	toolChoice := "auto"
 	g.streamCompleter.ToolChoice = &toolChoice
 	for _, tool := range g.tools {

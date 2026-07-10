@@ -567,3 +567,51 @@ func Test_sessionRunner_Run_MultipleToolCallsDoNotReusePreviousPendingText(t *te
 		t.Fatalf("expected user + 2 tool call pairs before finalization appends final reply, got %d messages", len(session.Chat.Messages))
 	}
 }
+
+func Test_sessionRunner_Run_DrainsAndExecutesParallelToolCallsAsOneTurn(t *testing.T) {
+	model := &MockQuerier{}
+	callCount := 0
+	model.streamFn = func(_ context.Context, chat pub_models.Chat) (chan models.CompletionEvent, error) {
+		callCount++
+		out := make(chan models.CompletionEvent)
+		go func() {
+			defer close(out)
+			if callCount == 1 {
+				model.usage = &pub_models.Usage{TotalTokens: 7}
+				out <- pub_models.Call{ID: "call-1", Name: "missing_one"}
+				out <- pub_models.Call{ID: "call-2", Name: "missing_two"}
+				out <- models.StopEvent{}
+				return
+			}
+
+			if len(chat.Messages) != 4 {
+				t.Errorf("expected user + grouped assistant calls + two outputs, got %d messages", len(chat.Messages))
+			} else if got := chat.Messages[1].ToolCalls; len(got) != 2 || got[0].ID != "call-1" || got[1].ID != "call-2" {
+				t.Errorf("expected both calls on one assistant turn, got %#v", got)
+			}
+			model.usage = &pub_models.Usage{TotalTokens: 3}
+			out <- "done"
+			out <- models.StopEvent{}
+		}()
+		return out, nil
+	}
+
+	q := &Querier[*MockQuerier]{out: &strings.Builder{}, Model: model}
+	session := &QuerySession{Chat: pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "hello"}}}}
+	runner := sessionRunner[*MockQuerier]{
+		querier:      q,
+		recorder:     &recordingCallUsageRecorder{},
+		finalizer:    &countingFinalizer{},
+		toolExecutor: toolExecutor[*MockQuerier]{querier: q},
+	}
+
+	if err := runner.Run(context.Background(), session); err != nil {
+		t.Fatalf("Run returned err: %v", err)
+	}
+	if callCount != 2 {
+		t.Fatalf("expected one continuation after the parallel tool turn, got %d model calls", callCount)
+	}
+	if session.FinalAssistantText != "done" {
+		t.Fatalf("expected final reply, got %q", session.FinalAssistantText)
+	}
+}

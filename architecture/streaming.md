@@ -16,7 +16,7 @@ All vendors ultimately stream into the same consumer loop:
 - A model implementation produces a stream of events.
 - The querier/chat handler reads events and decides what to do:
   - print text to stdout as it arrives
-  - detect tool/function calls
+  - detect and batch tool/function calls
   - track usage / stop reasons
   - terminate on errors
 
@@ -53,7 +53,7 @@ The consumer reads until it sees a terminal condition (stop event, channel close
 | Vendor | File(s) | Notes |
 |--------|---------|------|
 | Anthropic | `internal/vendors/anthropic/claude_stream.go`, `claude_stream_block_events.go` | Parses SSE/event-stream frames and turns them into blocks/deltas |
-| OpenAI | `internal/vendors/openai/gpt.go` | Uses OpenAI-compatible streaming and maps deltas/tool calls into generic events |
+| OpenAI | `internal/vendors/openai/gpt.go`, `responses_stream.go` | Defaults to the Responses API (`/v1/responses`); legacy Chat Completions is an explicit opt-out. See [openai-responses.md](./openai-responses.md). Both map deltas/tool calls into generic events |
 | Others | `internal/vendors/*/*.go` | Each vendor maps its wire format into the same normalized events |
 
 ## Streaming Data Flow (End-to-End)
@@ -101,10 +101,10 @@ The consumer loop (see `internal/text/querier.go`, and chat equivalents) is resp
    - Deltas are printed immediately for the interactive streaming experience
 
 2. **Tool call detection and execution**
-   - When a `pub_models.Call` is seen, the current assistant output is finalized
-   - The tool call is appended to the chat
-   - The tool is invoked via the registry (`internal/tools`)
-   - Tool output is appended to the chat
+   - `pub_models.Call` events are collected until the stream terminates
+   - All calls are appended as one assistant turn
+   - Tools are invoked sequentially via the registry (`internal/tools`)
+   - Every tool output is appended before the model continues
    - The model is called again (recursive continuation) so it can incorporate the tool result
 
 3. **Termination**

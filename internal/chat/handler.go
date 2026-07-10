@@ -267,6 +267,10 @@ func (cq *ChatHandler) deleteFromPrompt() error {
 	if err != nil {
 		return fmt.Errorf("failed to delete chat: %w", err)
 	}
+	// Best-effort GC of the chat's reasoning sidecar directory.
+	if err := removeReasoningSidecars(cq.convDir, c.ID); err != nil {
+		ancli.Warnf("failed to remove reasoning sidecar for chat %q: %v", c.ID, err)
+	}
 	ancli.PrintOK(fmt.Sprintf("deleted chat '%v'\n", c.ID))
 	return nil
 }

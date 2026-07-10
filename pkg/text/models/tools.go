@@ -72,6 +72,11 @@ type Call struct {
 	Function         Specification  `json:"function"`
 	ExtraContent     map[string]any `json:"extra_content,omitempty"`
 	ReasoningContent string         `json:"-"`
+	// ReasoningItems are the opaque reasoning items (id + encrypted_content) that
+	// preceded this call in the same Responses turn. They are replayed before the
+	// function call so stateless (store:false) reasoning-model tool loops keep
+	// reasoning continuity. OpenAI-only; empty for other vendors.
+	ReasoningItems []ReasoningItem `json:"-"`
 }
 
 // Patch the call, filling structs and initializing fields so that
