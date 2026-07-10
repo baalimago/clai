@@ -29,7 +29,7 @@ func TestResponsesMapper_MessageRoleBasedContentTypes(t *testing.T) {
 func TestResponsesMapper_ToolRole_IsMappedToFunctionCallOutputItem(t *testing.T) {
 	t.Parallel()
 
-	items, err := mapMessageToResponsesInputItems(pub_models.Message{Role: "tool", ToolCallID: "call_1", Content: "ok"})
+	items, err := mapMessageToResponsesInputItems(pub_models.Message{Role: "tool", ToolCallID: "call_1", Content: "ok"}, false)
 	if err != nil {
 		t.Fatalf("map tool msg: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestResponsesMapper_ToolRole_IsMappedToFunctionCallOutputItem(t *testing.T)
 func TestResponsesMapper_ToolRole_MissingToolCallID_ReturnsError(t *testing.T) {
 	t.Parallel()
 
-	_, err := mapMessageToResponsesInputItems(pub_models.Message{Role: "tool", Content: "ok"})
+	_, err := mapMessageToResponsesInputItems(pub_models.Message{Role: "tool", Content: "ok"}, false)
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -70,7 +70,7 @@ func TestResponsesMapper_MapChatToResponsesInput_IncludesAssistantMessages(t *te
 			{Role: "assistant", Content: "a"},
 			{Role: "tool", ToolCallID: "call_1", Content: "ok"},
 		},
-	})
+	}, false)
 	if err != nil {
 		t.Fatalf("mapChatToResponsesInput: %v", err)
 	}
@@ -276,7 +276,8 @@ func TestResponsesStreamer_UsageCapturedOnCompleted(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = io.WriteString(w, "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":123,\"output_tokens\":34,\"total_tokens\":157,\"input_tokens_details\":{\"cached_tokens\":0},\"output_tokens_details\":{\"reasoning_tokens\":0}}}}\n\n")
+		// Distinct non-zero details so a dropped/mis-mapped field is actually caught.
+		_, _ = io.WriteString(w, "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":123,\"output_tokens\":34,\"total_tokens\":157,\"input_tokens_details\":{\"cached_tokens\":5,\"audio_tokens\":2},\"output_tokens_details\":{\"reasoning_tokens\":7,\"audio_tokens\":3,\"accepted_prediction_tokens\":1,\"rejected_prediction_tokens\":4}}}}\n\n")
 	}))
 	t.Cleanup(srv.Close)
 
@@ -309,10 +310,22 @@ func TestResponsesStreamer_UsageCapturedOnCompleted(t *testing.T) {
 	if captured.PromptTokens != 123 || captured.CompletionTokens != 34 || captured.TotalTokens != 157 {
 		t.Fatalf("usage: got %+v", *captured)
 	}
-	if captured.PromptTokensDetails.CachedTokens != 0 {
-		t.Fatalf("prompt cached: got %d", captured.PromptTokensDetails.CachedTokens)
+	if captured.PromptTokensDetails.CachedTokens != 5 {
+		t.Fatalf("prompt cached: got %d want 5", captured.PromptTokensDetails.CachedTokens)
 	}
-	if captured.CompletionTokensDetails.ReasoningTokens != 0 {
-		t.Fatalf("completion reasoning: got %d", captured.CompletionTokensDetails.ReasoningTokens)
+	if captured.PromptTokensDetails.AudioTokens != 2 {
+		t.Fatalf("prompt audio: got %d want 2", captured.PromptTokensDetails.AudioTokens)
+	}
+	if captured.CompletionTokensDetails.ReasoningTokens != 7 {
+		t.Fatalf("completion reasoning: got %d want 7", captured.CompletionTokensDetails.ReasoningTokens)
+	}
+	if captured.CompletionTokensDetails.AudioTokens != 3 {
+		t.Fatalf("completion audio: got %d want 3", captured.CompletionTokensDetails.AudioTokens)
+	}
+	if captured.CompletionTokensDetails.AcceptedPredictionTokens != 1 {
+		t.Fatalf("accepted prediction: got %d want 1", captured.CompletionTokensDetails.AcceptedPredictionTokens)
+	}
+	if captured.CompletionTokensDetails.RejectedPredictionTokens != 4 {
+		t.Fatalf("rejected prediction: got %d want 4", captured.CompletionTokensDetails.RejectedPredictionTokens)
 	}
 }

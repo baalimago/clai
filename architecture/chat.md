@@ -69,6 +69,8 @@ Key behaviors:
 
 - JSON field `content` is **either** a string **or** an array of `{type,text,image_url}` parts.
 - Internally this is represented by `Content` and `ContentParts` with custom marshal/unmarshal.
+- OpenAI's opaque reasoning items (`ReasoningItems`) are held in memory and persisted **out
+  of band**, never inlined, so the conversation JSON stays human-readable and portable.
 
 Roles used include `user`, `assistant`, `system`, and tool-related roles (depending on vendor/tooling).
 
@@ -81,6 +83,23 @@ Chats are stored as JSON files in:
 - `<clai-config>/conversations/<chatID>.json`
 
 The config directory creation ensures `conversations/` exists (see `internal/utils/config.go`).
+
+#### Reasoning sidecar (OpenAI Responses)
+
+Reasoning-model tool loops on the OpenAI Responses API must replay the model's sealed
+reasoning items to stay coherent while remaining stateless (`store:false`). These opaque
+blobs are stored **out of band**, one file per assistant turn, keyed by response id:
+
+- `<clai-config>/conversations/reasoning/<chatID>/<tool_call_id>.json` (an ordered array of
+  `{id, encrypted_content, summary}` items).
+
+The first tool-call ID in the assistant turn keys the sidecar. That ID is already part of
+the portable transcript, avoiding an extra OpenAI-specific field in message JSON.
+
+`Save`/`FromPath` write and restore the sidecar automatically (best-effort — a sidecar
+failure never blocks saving or loading the conversation itself); deleting a chat GCs its
+`reasoning/<chatID>/` directory. See `internal/chat/reasoning_sidecar.go` and
+[openai-responses.md](./openai-responses.md#feature-parity).
 
 ### Reading/writing chats
 

@@ -64,6 +64,7 @@ func (s *StreamCompleter) createRequest(ctx context.Context, chat pub_models.Cha
 		PresencePenalty:  s.PresencePenalty,
 		Temperature:      s.Temperature,
 		TopP:             s.TopP,
+		ReasoningEffort:  s.ReasoningEffort,
 		ResponseFormat:   respFmt,
 		Messages:         chat.Messages,
 		Stream:           true,

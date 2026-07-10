@@ -8,18 +8,22 @@ import (
 
 // StreamCompleter is a struct which follows the model for both OpenAI and Mistral
 type StreamCompleter struct {
-	Model            string                                          `json:"-"`
-	FrequencyPenalty *float64                                        `json:"-"`
-	MaxTokens        *int                                            `json:"-"`
-	PresencePenalty  *float64                                        `json:"-"`
-	Temperature      *float64                                        `json:"-"`
-	TopP             *float64                                        `json:"-"`
-	ToolChoice       *string                                         `json:"-"`
-	Clean            func([]pub_models.Message) []pub_models.Message `json:"-"`
-	URL              string
-	ExtraHeaders     map[string]string `json:"-"`
-	tools            []ToolSuper
-	toolsCallName    string
+	Model            string   `json:"-"`
+	FrequencyPenalty *float64 `json:"-"`
+	MaxTokens        *int     `json:"-"`
+	PresencePenalty  *float64 `json:"-"`
+	Temperature      *float64 `json:"-"`
+	TopP             *float64 `json:"-"`
+	// ReasoningEffort maps to the Chat Completions reasoning_effort field. Only set
+	// for reasoning models (others reject it); empty omits it. Vendor-agnostic:
+	// non-OpenAI callers leave it empty.
+	ReasoningEffort string                                          `json:"-"`
+	ToolChoice      *string                                         `json:"-"`
+	Clean           func([]pub_models.Message) []pub_models.Message `json:"-"`
+	URL             string
+	ExtraHeaders    map[string]string `json:"-"`
+	tools           []ToolSuper
+	toolsCallName   string
 	// Argument string exists since the arguments for function calls is streamed token by token... yeah... great idea
 	toolsCallArgsString string
 	toolsCallID         string
@@ -124,6 +128,7 @@ type req struct {
 	PresencePenalty   *float64             `json:"presence_penalty,omitempty"`
 	Temperature       *float64             `json:"temperature,omitempty"`
 	TopP              *float64             `json:"top_p,omitempty"`
+	ReasoningEffort   string               `json:"reasoning_effort,omitempty"`
 	ToolChoice        *string              `json:"tool_choice,omitempty"`
 	Tools             []ToolSuper          `json:"tools,omitempty"`
 	ParalellToolCalls bool                 `json:"parallel_tools_call,omitempty"`

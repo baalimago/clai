@@ -34,6 +34,18 @@ func dirscopeRoot(confDir string) string {
 	return filepath.Join(conversationsDir(confDir), "dirs")
 }
 
+// reasoningDirFromConvDir is the per-chat sidecar directory holding opaque OpenAI
+// reasoning items, keyed off the conversations dir (as Save/FromPath operate on).
+func reasoningDirFromConvDir(convDir, chatID string) string {
+	return filepath.Join(convDir, "reasoning", chatID)
+}
+
+// reasoningFileFromConvDir is the sidecar file for one Responses turn, named by its
+// response id.
+func reasoningFileFromConvDir(convDir, chatID, responseID string) string {
+	return filepath.Join(reasoningDirFromConvDir(convDir, chatID), responseID+".json")
+}
+
 func dirscopePath(confDir, hash string) string {
 	return filepath.Join(dirscopeRoot(confDir), conversationFileName(hash))
 }

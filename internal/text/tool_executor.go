@@ -29,12 +29,10 @@ type toolExecutor[C models.StreamCompleter] struct {
 }
 
 func (e toolExecutor[C]) Execute(ctx context.Context, session *QuerySession, call pub_models.Call) error {
-	_ = ctx
 	q := e.querier
 	if q.debug || misc.Truthy(os.Getenv("DEBUG_CALL")) {
 		ancli.PrintOK(fmt.Sprintf("received tool call: %v", debug.IndentedJsonFmt(call)))
 	}
-
 	decision := q.decideToolCall(session, call)
 	if decision.TreatAsReturnToUser || decision.SkipExecution {
 		session.FinalAssistantText = session.PendingTextString()
@@ -44,16 +42,62 @@ func (e toolExecutor[C]) Execute(ctx context.Context, session *QuerySession, cal
 	if err := e.finalizeAssistantTextBeforeToolCall(session, call); err != nil {
 		return fmt.Errorf("finalize assistant text before tool call: %w", err)
 	}
-	call = decision.PatchedCall
+	return e.executeTool(ctx, session, decision.PatchedCall, true)
+}
+
+// ExecuteBatch records all calls from one model turn before producing any tool
+// outputs. Responses may emit several function calls in one response; preserving
+// that grouping is required when the full stateless input is replayed.
+func (e toolExecutor[C]) ExecuteBatch(ctx context.Context, session *QuerySession, calls []pub_models.Call) error {
+	if len(calls) == 0 {
+		return nil
+	}
+	if len(calls) == 1 {
+		return e.Execute(ctx, session, calls[0])
+	}
+	q := e.querier
+	patched := make([]pub_models.Call, 0, len(calls))
+	for _, call := range calls {
+		if q.debug || misc.Truthy(os.Getenv("DEBUG_CALL")) {
+			ancli.PrintOK(fmt.Sprintf("received tool call: %v", debug.IndentedJsonFmt(call)))
+		}
+		decision := q.decideToolCall(session, call)
+		if decision.TreatAsReturnToUser || decision.SkipExecution {
+			session.FinalAssistantText = session.PendingTextString()
+			session.ResetPendingText()
+			continue
+		}
+		patched = append(patched, decision.PatchedCall)
+	}
+	if len(patched) == 0 {
+		return nil
+	}
+	if err := e.finalizeAssistantTextBeforeToolCall(session, patched[0]); err != nil {
+		return fmt.Errorf("finalize assistant text before tool call: %w", err)
+	}
+	if err := e.emitAssistantToolCalls(session, patched); err != nil {
+		return err
+	}
+	for _, call := range patched {
+		if err := e.executeTool(ctx, session, call, false); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (e toolExecutor[C]) executeTool(ctx context.Context, session *QuerySession, call pub_models.Call, emitAssistant bool) error {
 	if call.Name == string(pub_models.LoadSkillTool) {
-		return e.executeLoadSkill(ctx, session, call)
+		return e.executeLoadSkill(ctx, session, call, emitAssistant)
 	}
 	if isLookbackTool(call.Name) {
-		return e.executeLookbackTool(session, call)
+		return e.executeLookbackTool(session, call, emitAssistant)
 	}
 
-	if err := e.emitAssistantToolCall(session, call); err != nil {
-		return err
+	if emitAssistant {
+		if err := e.emitAssistantToolCall(session, call); err != nil {
+			return err
+		}
 	}
 	out := tools.Invoke(ctx, call)
 	out, err := e.applyToolCallBudget(session, out)
@@ -68,21 +112,32 @@ func (e toolExecutor[C]) Execute(ctx context.Context, session *QuerySession, cal
 // omits the PrettyPrint content so the model does not learn the "Call: ..."
 // text format, which causes hallucinations.
 func (e toolExecutor[C]) emitAssistantToolCall(session *QuerySession, call pub_models.Call) error {
+	return e.emitAssistantToolCalls(session, []pub_models.Call{call})
+}
+
+func (e toolExecutor[C]) emitAssistantToolCalls(session *QuerySession, calls []pub_models.Call) error {
 	q := e.querier
-	display := pub_models.Message{
-		Role:             "assistant",
-		Content:          call.PrettyPrint(),
-		ToolCalls:        []pub_models.Call{call},
-		ReasoningContent: call.ReasoningContent,
+	if len(calls) == 0 {
+		return nil
 	}
 	modelSafe := pub_models.Message{
-		Role:             "assistant",
-		ToolCalls:        []pub_models.Call{call},
-		ReasoningContent: call.ReasoningContent,
+		Role:      "assistant",
+		ToolCalls: calls,
 	}
-	if !q.debug {
-		if err := utils.AttemptPrettyPrint(q.out, display, q.username, q.Raw); err != nil {
-			return fmt.Errorf("pretty print assistant tool call: %w", err)
+	for _, call := range calls {
+		if modelSafe.ReasoningContent == "" {
+			modelSafe.ReasoningContent = call.ReasoningContent
+		}
+		if len(modelSafe.ReasoningItems) == 0 && len(call.ReasoningItems) > 0 {
+			// Carry sealed reasoning continuity from the normalized call onto the
+			// assistant turn. Empty for other vendors.
+			modelSafe.ReasoningItems = call.ReasoningItems
+		}
+		if !q.debug {
+			display := pub_models.Message{Role: "assistant", Content: call.PrettyPrint(), ToolCalls: []pub_models.Call{call}, ReasoningContent: call.ReasoningContent}
+			if err := utils.AttemptPrettyPrint(q.out, display, q.username, q.Raw); err != nil {
+				return fmt.Errorf("pretty print assistant tool call: %w", err)
+			}
 		}
 	}
 	session.Chat.Messages = append(session.Chat.Messages, modelSafe)
@@ -148,7 +203,7 @@ func (e toolExecutor[C]) applyToolCallBudget(session *QuerySession, out string) 
 	return out, nil
 }
 
-func (e toolExecutor[C]) executeLoadSkill(ctx context.Context, session *QuerySession, call pub_models.Call) error {
+func (e toolExecutor[C]) executeLoadSkill(ctx context.Context, session *QuerySession, call pub_models.Call, emitAssistant bool) error {
 	q := e.querier
 	if q.skillLoader == nil {
 		return fmt.Errorf("load_skill requested but skills are unavailable")
@@ -167,8 +222,10 @@ func (e toolExecutor[C]) executeLoadSkill(ctx context.Context, session *QuerySes
 		return err
 	}
 	if loaded.ActivationErr != "" {
-		if err := e.emitAssistantToolCall(session, call); err != nil {
-			return err
+		if emitAssistant {
+			if err := e.emitAssistantToolCall(session, call); err != nil {
+				return err
+			}
 		}
 		return e.emitToolResult(session, call, "ERROR: "+loaded.ActivationErr)
 	}
@@ -190,8 +247,10 @@ func (e toolExecutor[C]) executeLoadSkill(ctx context.Context, session *QuerySes
 			userVisibleContent = body + "\n\n" + userVisibleContent
 		}
 	}
-	if err := e.emitAssistantToolCall(session, call); err != nil {
-		return err
+	if emitAssistant {
+		if err := e.emitAssistantToolCall(session, call); err != nil {
+			return err
+		}
 	}
 	// Skill bodies are persisted and displayed in full (no output limit, no
 	// display shortening): the loaded skill IS the instruction set.

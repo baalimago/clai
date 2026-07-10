@@ -25,7 +25,7 @@ func isLookbackTool(name string) bool {
 // the chat, pretty-prints both, and bounds the output by the standard rune limit.
 // Tool-level errors are returned as an "ERROR: ..." tool result so the run
 // continues rather than aborting.
-func (e toolExecutor[C]) executeLookbackTool(session *QuerySession, call pub_models.Call) error {
+func (e toolExecutor[C]) executeLookbackTool(session *QuerySession, call pub_models.Call, emitAssistant bool) error {
 	q := e.querier
 	var out string
 	if !q.useLookback {
@@ -36,8 +36,10 @@ func (e toolExecutor[C]) executeLookbackTool(session *QuerySession, call pub_mod
 		out = res
 	}
 
-	if err := e.emitAssistantToolCall(session, call); err != nil {
-		return err
+	if emitAssistant {
+		if err := e.emitAssistantToolCall(session, call); err != nil {
+			return err
+		}
 	}
 	out, budgetErr := e.applyToolCallBudget(session, out)
 	if budgetErr != nil {

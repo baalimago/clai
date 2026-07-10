@@ -3,40 +3,34 @@ package chat
 import (
 	"fmt"
 	"io"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
-func messageContentLen(m pub_models.Message) int {
-	if m.Content != "" {
-		return utf8.RuneCountInString(m.Content)
+// messageDisplayText returns human-facing text for a message. Assistant tool-call
+// turns are persisted with an empty Content (only ToolCalls) so the model never
+// learns the "Call: ..." format; for display we reconstruct a readable line from
+// the calls. This is display-only — Message.String() is deliberately left untouched
+// because it also feeds conversation search and agent results.
+func messageDisplayText(m pub_models.Message) string {
+	if s := m.String(); s != "" {
+		return s
 	}
-	l := 0
-	for _, p := range m.ContentParts {
-		if p.Text != "" {
-			l += utf8.RuneCountInString(p.Text)
+	if len(m.ToolCalls) > 0 {
+		parts := make([]string, 0, len(m.ToolCalls))
+		for _, c := range m.ToolCalls {
+			parts = append(parts, c.PrettyPrint())
 		}
+		return strings.Join(parts, "\n")
 	}
-	return l
+	return ""
 }
 
-func messagePreview(m pub_models.Message) string {
-	if m.Content != "" {
-		return m.Content
-	}
-	parts := ""
-	for _, p := range m.ContentParts {
-		if p.Text == "" {
-			continue
-		}
-		if parts != "" {
-			parts += " "
-		}
-		parts += p.Text
-	}
-	return parts
+func messageContentLen(m pub_models.Message) int {
+	return utf8.RuneCountInString(messageDisplayText(m))
 }
 
 func printChatObfuscated(w io.Writer, ch pub_models.Chat, raw bool) error {
@@ -57,7 +51,7 @@ func printChatObfuscated(w io.Writer, ch pub_models.Chat, raw bool) error {
 				utils.Colorize(utils.ThemePrimaryColor(), fmt.Sprintf(" l: %5d]: ", lenRunes))
 
 			trunc, err := utils.WidthAppropriateStringTruncColored(
-				m.String(), prefix, "", utils.ThemeBreadtextColor(), 5,
+				messageDisplayText(m), prefix, "", utils.ThemeBreadtextColor(), 5,
 			)
 			if err != nil {
 				return fmt.Errorf("truncate message preview: %w", err)
@@ -68,13 +62,15 @@ func printChatObfuscated(w io.Writer, ch pub_models.Chat, raw bool) error {
 			continue
 		}
 
-		// The last 6 messages: pretty print but shorten content.
+		// The last 6 messages: pretty print, reconstructing tool-call turns. Only the
+		// most recent message keeps full length.
 		m2 := m
-		// Leave full length for most recent message
+		disp := messageDisplayText(m2)
 		if i < len(ch.Messages)-1 {
-			m2.Content = utils.ShortenedOutput(messagePreview(m2), 3)
-			m2.ContentParts = nil
+			disp = utils.ShortenedOutput(disp, 3)
 		}
+		m2.Content = disp
+		m2.ContentParts = nil
 		if err := utils.AttemptPrettyPrint(w, m2, "user", raw); err != nil {
 			return fmt.Errorf("pretty print chat message: %w", err)
 		}

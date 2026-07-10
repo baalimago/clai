@@ -200,3 +200,49 @@ func TestChatContinue_highMessageCount_obfuscatesOldMessages_andPrettyPrintsLast
 		t.Fatalf("expected last message content to be present, got: %q", got)
 	}
 }
+
+// TestPrintChatObfuscated_RendersToolCallTurns guards the regression where
+// assistant tool-call turns (persisted with empty Content, only ToolCalls) render
+// as blank blocks on `clai chat continue`. They must show the call's pretty text.
+func TestPrintChatObfuscated_RendersToolCallTurns(t *testing.T) {
+	t.Parallel()
+
+	chat := pub_models.Chat{
+		ID: "c1",
+		Messages: []pub_models.Message{
+			{Role: "user", Content: "list the files"},
+			{Role: "assistant", ToolCalls: []pub_models.Call{{Name: "ls", Inputs: &pub_models.Input{"dir": "/tmp"}}}},
+			{Role: "tool", Content: "a.go\nb.go", ToolCallID: "call_1"},
+		},
+	}
+
+	var b strings.Builder
+	if err := printChatObfuscated(&b, chat, true); err != nil {
+		t.Fatalf("printChatObfuscated: %v", err)
+	}
+	if !strings.Contains(b.String(), "Call: 'ls'") {
+		t.Fatalf("expected the tool call to be rendered, got:\n%s", b.String())
+	}
+}
+
+// TestPrintChatObfuscated_RendersOldToolCallTurns covers the same message when it
+// falls into the width-truncated "old messages" branch (>6 messages after it).
+func TestPrintChatObfuscated_RendersOldToolCallTurns(t *testing.T) {
+	t.Parallel()
+
+	msgs := []pub_models.Message{{
+		Role:      "assistant",
+		ToolCalls: []pub_models.Call{{Name: "grep", Inputs: &pub_models.Input{"pattern": "todo"}}},
+	}}
+	for range 8 {
+		msgs = append(msgs, pub_models.Message{Role: "user", Content: "more"})
+	}
+
+	var b strings.Builder
+	if err := printChatObfuscated(&b, pub_models.Chat{ID: "c2", Messages: msgs}, true); err != nil {
+		t.Fatalf("printChatObfuscated: %v", err)
+	}
+	if !strings.Contains(b.String(), "Call: 'grep'") {
+		t.Fatalf("expected old-branch tool call rendered, got:\n%s", b.String())
+	}
+}

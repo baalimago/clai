@@ -27,16 +27,7 @@ func TestChatGPT_ToolMappingSetsToolName(t *testing.T) {
 		Inputs:      schema,
 	}})
 
-	toolsMapped := make([]responsesTool, 0, len(g.tools))
-	for _, tool := range g.tools {
-		spec := tool.Specification()
-		toolsMapped = append(toolsMapped, responsesTool{
-			Type:        "function",
-			Name:        spec.Name,
-			Description: spec.Description,
-			Parameters:  spec.Inputs,
-		})
-	}
+	toolsMapped := g.mapResponsesTools()
 
 	if len(toolsMapped) != 1 {
 		t.Fatalf("expected 1 tool, got %d", len(toolsMapped))
