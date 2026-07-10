@@ -44,12 +44,12 @@ Install [Glow](https://github.com/charmbracelet/glow) for formatted markdown out
   <img src="img/showcase.gif" alt="Showcase">
 </div>
 
-- **[Shell context injection](./architecture/shell-context.md)** - Inject runtime context (cwd, git branch, custom commands) into the system prompt via configurable templates.
-- **[Seamless conversation import](./architecture/continue-from-claudex.md)** - Clai finds conversations from popular agentic harnesses and seamlessly imports them. Ran out of session? Continue in clai!
-- **[Agent Skills](./architecture/skills.md)** - Import skills from custom directories, Claude-style `SKILL.md` files, or project-level `.claude/skills`. Skills auto-load on demand when the agent detects a matching task, with trust-gating and per-skill tool policies.
+- **[Shell context injection](./architecture/shell-context.md)** - Inject shell context into the system prompt via configurable templates.
+- **[Seamless conversation import](./architecture/continue-from-claudex.md)** - Ran out of session? Continue in clai!
+- **[Agent Skills](./architecture/skills.md)** - Import skills from custom directories, Claude-style `SKILL.md` files, or project-level `.agents/skills`.
 - **[Profiles](./EXAMPLES.md#profiles--workflow-presets)** - Pre-prompted profiles enabling customized workflows and agents.
 - **[MCP client support](./EXAMPLES.md#mcp-tools-external-tool-servers)** - Add any MCP server you'd like by simply pasting their configuration.
-- **Unix-like** - Clai follows the [unix philosophy](https://en.wikipedia.org/wiki/Unix_philosophy) and works seamlessly with data piped in and out. Combine with `-rf`/`-response-format` to enforce JSON Schema structured output for reliable scripting.
+- **Unix-like** - Clai follows the [unix philosophy](https://en.wikipedia.org/wiki/Unix_philosophy) and works seamlessly with data piped in and out.
 
 All of these features are easily combined and tweaked, empowering users to accomplish very diverse use cases.
 See [examples](./EXAMPLES.md) for additional info.
