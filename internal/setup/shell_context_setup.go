@@ -22,7 +22,7 @@ func shellContextSetupCategory() setupCategory {
 			return cfgs, nil
 		},
 		itemSelectActions: []action{newaction},
-		itemActions:       []action{conf, del, confWithEditor, unescapedFieldEditWithEditor},
+		itemActions:       []action{conf, del, copyAction, confWithEditor, unescapedFieldEditWithEditor},
 		subdirPath:        "./shellContexts",
 		defaultConfig:     text.ShellContextDefinition{},
 	}

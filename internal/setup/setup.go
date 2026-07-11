@@ -25,6 +25,7 @@ const (
 	unset action = iota
 	conf
 	del
+	copyAction
 	newaction
 	pasteConfig
 	confWithEditor
@@ -39,6 +40,7 @@ const (
 var choiceToAction = map[string]action{
 	"b,back":                 back,
 	"c,configure":            conf,
+	"y,copy":                 copyAction,
 	"d,delete":               del,
 	"n,new":                  newaction,
 	"p,paste":                pasteConfig,
@@ -107,6 +109,8 @@ func (a action) String() string {
 		return "[c]onfigure"
 	case del:
 		return "[d]el"
+	case copyAction:
+		return "cop[y]"
 	case newaction:
 		return "cre[a]te new"
 	case confWithEditor:
@@ -138,6 +142,12 @@ func executeConfigAction(cfg config, a action) error {
 		return actionReconfigureStringFieldWithEditor(cfg, "")
 	case del:
 		return actionRemove(cfg)
+	case copyAction:
+		newCfg, cpErr := actionCopy(cfg)
+		if cpErr != nil {
+			return fmt.Errorf("failed to copy config %q: %w", cfg.name, cpErr)
+		}
+		return actionReconfigure(newCfg)
 	case back:
 		return utils.ErrBack
 	default:
@@ -168,7 +178,7 @@ func InitCmd() error {
 				return cfgs, nil
 			},
 			itemSelectActions: nil,
-			itemActions:       []action{conf, confWithEditor},
+			itemActions:       []action{conf, del, copyAction, confWithEditor},
 		},
 		{
 			name: "model files",
@@ -176,7 +186,7 @@ func InitCmd() error {
 				return getConfigs(filepath.Join(dir, "*.json"), []string{"textConfig", "photoConfig", "videoConfig"})
 			},
 			itemSelectActions: nil,
-			itemActions:       []action{conf, confWithEditor},
+			itemActions:       []action{conf, del, copyAction, confWithEditor},
 		},
 		{
 			name: "text generation profiles",
@@ -189,7 +199,7 @@ func InitCmd() error {
 				return cfgs, nil
 			},
 			itemSelectActions: []action{newaction},
-			itemActions:       []action{conf, del, confWithEditor, promptEditWithEditor, unescapedFieldEditWithEditor},
+			itemActions:       []action{conf, del, copyAction, confWithEditor, promptEditWithEditor, unescapedFieldEditWithEditor},
 			subdirPath:        "./profiles",
 			defaultConfig:     text.DefaultProfile,
 		},
@@ -209,7 +219,7 @@ func InitCmd() error {
 				return cfgs, nil
 			},
 			itemSelectActions: []action{newaction, pasteConfig},
-			itemActions:       []action{conf, del, confWithEditor},
+			itemActions:       []action{conf, del, copyAction, confWithEditor},
 			subdirPath:        "./mcpServers",
 			defaultConfig:     defaultMcpServer,
 		},

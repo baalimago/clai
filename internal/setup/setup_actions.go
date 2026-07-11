@@ -322,6 +322,36 @@ func actionRemove(cfg config) error {
 	return nil
 }
 
+func actionCopy(cfg config) (config, error) {
+	fmt.Print(colorSecondary("Enter name for copy: "))
+	newName, err := utils.ReadUserInput()
+	if err != nil {
+		return config{}, fmt.Errorf("read copy name: %w", err)
+	}
+	if newName == "" {
+		return config{}, fmt.Errorf("name cannot be empty")
+	}
+
+	dir := filepath.Dir(cfg.filePath)
+	newPath := filepath.Join(dir, newName+".json")
+
+	if _, statErr := os.Stat(newPath); statErr == nil {
+		return config{}, fmt.Errorf("file %q already exists", newPath)
+	}
+
+	srcBytes, readErr := os.ReadFile(cfg.filePath)
+	if readErr != nil {
+		return config{}, fmt.Errorf("read source file: %w", readErr)
+	}
+
+	if writeErr := os.WriteFile(newPath, srcBytes, 0o644); writeErr != nil {
+		return config{}, fmt.Errorf("write copy: %w", writeErr)
+	}
+
+	ancli.PrintOK(fmt.Sprintf("copied to: '%v'\n", newPath))
+	return config{name: newName, filePath: newPath}, nil
+}
+
 func interractiveReconfigure(cfg config, b []byte) error {
 	var jzon map[string]any
 	err := json.Unmarshal(b, &jzon)
