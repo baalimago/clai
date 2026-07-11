@@ -234,8 +234,8 @@ func TestAsyncCmdCancel_PreservesNaturalSuccessRace(t *testing.T) {
 func TestAsyncCmdRun_FailedStartDoesNotRegisterOrLeakLogs(t *testing.T) {
 	ResetAsyncCmdManagerForTests()
 
-	beforeStdout, _ := filepath.Glob(filepath.Join(os.TempDir(), "clai-async-cmd-*-stdout.log"))
-	beforeStderr, _ := filepath.Glob(filepath.Join(os.TempDir(), "clai-async-cmd-*-stderr.log"))
+	logDir := t.TempDir()
+	asyncLogDir = logDir
 
 	_, err := AsyncCmdRun.Call(pub_models.Input{
 		"command": filepath.Join(t.TempDir(), "does-not-exist"),
@@ -246,9 +246,9 @@ func TestAsyncCmdRun_FailedStartDoesNotRegisterOrLeakLogs(t *testing.T) {
 	if got := AsyncCmdSnapshotForTests(); len(got) != 0 {
 		t.Fatalf("expected no registered cmds after failed start, got %+v", got)
 	}
-	afterStdout, _ := filepath.Glob(filepath.Join(os.TempDir(), "clai-async-cmd-*-stdout.log"))
-	afterStderr, _ := filepath.Glob(filepath.Join(os.TempDir(), "clai-async-cmd-*-stderr.log"))
-	if len(afterStdout) != len(beforeStdout) || len(afterStderr) != len(beforeStderr) {
-		t.Fatalf("expected no leaked log files, stdout %d->%d stderr %d->%d", len(beforeStdout), len(afterStdout), len(beforeStderr), len(afterStderr))
+
+	leaked, _ := filepath.Glob(filepath.Join(logDir, "clai-async-cmd-*"))
+	if len(leaked) != 0 {
+		t.Fatalf("expected no leaked log files in isolated dir, got %d: %v", len(leaked), leaked)
 	}
 }

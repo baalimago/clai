@@ -9,7 +9,7 @@ import (
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
-func TestSaveDirScopedAsPrevQueryCopiesDirectoryScopedConversationToGlobalScope(t *testing.T) {
+func TestLoadDirScopedContext_ReturnsFullConversation(t *testing.T) {
 	confDir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(confDir, "conversations", "dirs"), 0o755); err != nil {
 		t.Fatalf("MkdirAll(conversations/dirs): %v", err)
@@ -30,12 +30,14 @@ func TestSaveDirScopedAsPrevQueryCopiesDirectoryScopedConversationToGlobalScope(
 	}
 
 	sourceChat := pub_models.Chat{
-		Created: time.Unix(123, 0),
-		ID:      "chat-123",
-		Profile: "work",
+		Created:   time.Unix(500, 0),
+		ID:        "chat-dir-head",
+		Profile:   "work",
+		OriginDir: dir,
 		Messages: []pub_models.Message{
-			{Role: "user", Content: "hello"},
-			{Role: "assistant", Content: "world"},
+			{Role: "system", Content: "sys"},
+			{Role: "user", Content: "hello from dir"},
+			{Role: "assistant", Content: "response from dir"},
 		},
 	}
 	if err := Save(conversationsDir(confDir), sourceChat); err != nil {
@@ -47,29 +49,41 @@ func TestSaveDirScopedAsPrevQueryCopiesDirectoryScopedConversationToGlobalScope(
 		t.Fatalf("SaveDirScope: %v", err)
 	}
 
-	if err := SaveDirScopedAsPrevQuery(confDir); err != nil {
-		t.Fatalf("SaveDirScopedAsPrevQuery: %v", err)
+	// Pre-populate globalScope.json with stale content to prove it is NOT read.
+	staleChat := pub_models.Chat{
+		ID: globalScopeChatID,
+		Messages: []pub_models.Message{
+			{Role: "user", Content: "stale"},
+		},
+	}
+	if err := Save(conversationsDir(confDir), staleChat); err != nil {
+		t.Fatalf("Save(stale): %v", err)
 	}
 
-	globalScope, err := LoadGlobalScope(confDir)
+	got, err := LoadDirScopedContext(confDir)
+	if err != nil {
+		t.Fatalf("LoadDirScopedContext: %v", err)
+	}
+
+	if got.ID != sourceChat.ID {
+		t.Fatalf("expected ID %q, got %q", sourceChat.ID, got.ID)
+	}
+	if len(got.Messages) != len(sourceChat.Messages) {
+		t.Fatalf("expected %d messages, got %d", len(sourceChat.Messages), len(got.Messages))
+	}
+	if got.Messages[1].Content != "hello from dir" {
+		t.Fatalf("expected 'hello from dir', got %q", got.Messages[1].Content)
+	}
+	if got.Profile != sourceChat.Profile {
+		t.Fatalf("expected profile %q, got %q", sourceChat.Profile, got.Profile)
+	}
+
+	// Verify globalScope was NOT modified (the stale content is still there).
+	gs, err := LoadGlobalScope(confDir)
 	if err != nil {
 		t.Fatalf("LoadGlobalScope: %v", err)
 	}
-	if globalScope.ID != globalScopeChatID {
-		t.Fatalf("expected global scope ID %q, got %q", globalScopeChatID, globalScope.ID)
-	}
-	if len(globalScope.Messages) != len(sourceChat.Messages) {
-		t.Fatalf("expected %d messages, got %d", len(sourceChat.Messages), len(globalScope.Messages))
-	}
-	for i := range sourceChat.Messages {
-		if globalScope.Messages[i].Role != sourceChat.Messages[i].Role {
-			t.Fatalf("message %d role mismatch: got %q want %q", i, globalScope.Messages[i].Role, sourceChat.Messages[i].Role)
-		}
-		if globalScope.Messages[i].Content != sourceChat.Messages[i].Content {
-			t.Fatalf("message %d content mismatch: got %q want %q", i, globalScope.Messages[i].Content, sourceChat.Messages[i].Content)
-		}
-	}
-	if globalScope.Profile != sourceChat.Profile {
-		t.Fatalf("expected profile %q, got %q", sourceChat.Profile, globalScope.Profile)
+	if len(gs.Messages) != 1 || gs.Messages[0].Content != "stale" {
+		t.Fatalf("globalScope was modified unexpectedly: %+v", gs.Messages)
 	}
 }

@@ -22,7 +22,7 @@ func newTestHandler(t *testing.T) (*ChatHandler, string) {
 }
 
 func TestSaveDirScope_WritesVersion2WithHistoryAndTypedTime(t *testing.T) {
-	cq, _ := newTestHandler(t)
+	cq, confDir := newTestHandler(t)
 	dir := t.TempDir()
 
 	if err := cq.SaveDirScope(dir, "chat-a"); err != nil {
@@ -51,7 +51,7 @@ func TestSaveDirScope_WritesVersion2WithHistoryAndTypedTime(t *testing.T) {
 	}
 
 	// updated must marshal to an RFC3339 string on disk.
-	raw, err := os.ReadFile(cq.dirScopePathFromHash(dirHash(canon)))
+	raw, err := os.ReadFile(dirscopePath(confDir, dirHash(canon)))
 	if err != nil {
 		t.Fatalf("read binding: %v", err)
 	}

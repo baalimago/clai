@@ -33,6 +33,7 @@ const (
 var (
 	asyncCmdManager    = newAsyncCmdManager()
 	asyncSpawnObserver func(string)
+	asyncLogDir        = os.TempDir()
 )
 
 type asyncCmdManagerImpl struct {
@@ -148,8 +149,8 @@ func (m *asyncCmdManagerImpl) Spawn(parent context.Context, toolName string, spe
 		return nil, errors.New("command must not be empty")
 	}
 	cmdID := generateAsyncCmdID()
-	stdoutPath := filepath.Join(os.TempDir(), fmt.Sprintf("clai-async-cmd-%s-stdout.log", cmdID))
-	stderrPath := filepath.Join(os.TempDir(), fmt.Sprintf("clai-async-cmd-%s-stderr.log", cmdID))
+	stdoutPath := filepath.Join(asyncLogDir, fmt.Sprintf("clai-async-cmd-%s-stdout.log", cmdID))
+	stderrPath := filepath.Join(asyncLogDir, fmt.Sprintf("clai-async-cmd-%s-stderr.log", cmdID))
 	stdoutFile, err := os.Create(stdoutPath)
 	if err != nil {
 		return nil, fmt.Errorf("create stdout log: %w", err)
@@ -430,6 +431,7 @@ func mustJSONString(v any) (string, error) {
 func ResetAsyncCmdManagerForTests() {
 	asyncCmdManager = newAsyncCmdManager()
 	asyncSpawnObserver = nil
+	asyncLogDir = os.TempDir()
 	claiRunsMu.Lock()
 	claiRuns = make(map[string]*claiProcess)
 	claiRunsMu.Unlock()

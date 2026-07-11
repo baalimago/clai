@@ -35,8 +35,7 @@ func replayDirScoped(raw bool) error {
 		return fmt.Errorf("get config dir: %w", err)
 	}
 
-	cq := &ChatHandler{confDir: claiConfDir}
-	ds, err := cq.LoadDirScope("")
+	ds, err := loadDirScopeForCurrentDir(claiConfDir)
 	if err != nil {
 		return fmt.Errorf("load dirscope: %w", err)
 	}

@@ -155,7 +155,9 @@ For **text** the important override functions are:
 Key behaviors:
 
 - default flags should *not* override file values; overrides only happen when the user provided a non-default flag value.
-- `-dre` is implemented in `internal.Setup` by copying the directory-scoped conversation into `globalScope.json` and then turning on reply mode.
+- `-dre` is handled before text setup by flagging reply mode and letting
+  `setupTextQuerierWithConf` load the directory-scoped head directly into
+  `InitialChat` (via `chat.LoadDirScopedContext`).
 
 ### Tool selection configuration
 
@@ -210,10 +212,11 @@ flags > profile > textConfig > default(false)
 
 - `-re` sets `tConf.ReplyMode`.
 - `-dre` is handled before text setup:
-  - `chat.SaveDirScopedAsPrevQuery(confDir)`
   - flips reply mode on
+  - `setupTextQuerierWithConf` loads the directory-scoped head directly into `InitialChat` (via `chat.LoadDirScopedContext`)
 
-This means the rest of the system only needs to understand one reply mechanism: loading `globalScope.json`.
+`-re` continues to use `globalScope.json`. `-dre` bypasses it entirely,
+loading the directory binding’s conversation directly.
 
 ## Non-text config flows
 

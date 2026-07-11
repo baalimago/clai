@@ -21,8 +21,7 @@ type LookbackDescriptor struct {
 // newest-first history entries with a statistics header. When the directory has
 // no history, Block is empty and HasHistory is false.
 func BuildLookbackDescriptor(confDir, dir string, injectCount int) (LookbackDescriptor, error) {
-	cq := &ChatHandler{confDir: confDir}
-	scope, err := cq.LoadDirScope(dir)
+	scope, err := loadDirScope(confDir, dir)
 	if err != nil {
 		// Missing binding => no history; not an error for the caller.
 		return LookbackDescriptor{}, nil
@@ -86,8 +85,7 @@ func BuildLookbackDescriptor(confDir, dir string, injectCount int) (LookbackDesc
 // used by the [d]ir table filter. Returns an empty set (not an error) when no
 // binding exists.
 func DirHistoryChatIDs(confDir, dir string) map[string]struct{} {
-	cq := &ChatHandler{confDir: confDir}
-	scope, err := cq.LoadDirScope(dir)
+	scope, err := loadDirScope(confDir, dir)
 	if err != nil {
 		return map[string]struct{}{}
 	}

@@ -286,6 +286,20 @@ func setupTextQuerierWithConf(ctx context.Context, mode Mode, confDir string, fl
 	if err := setupLookback(confDir, &tConf, flagSet); err != nil {
 		return nil, nil, err
 	}
+
+	// When directory reply mode is active, load the dirscope head directly
+	// into InitialChat so that SetupInitialChat uses context from the
+	// directory binding instead of globalScope.json. This eliminates the
+	// filesystem roundtrip (write globalScope then read it back) that was
+	// the root cause of the -dre query forking bug.
+	if tConf.DirReplyMode {
+		dirChat, err := chat.LoadDirScopedContext(confDir)
+		if err != nil {
+			return nil, nil, fmt.Errorf("load dir-scoped context: %w", err)
+		}
+		tConf.InitialChat = dirChat
+	}
+
 	err = tConf.SetupInitialChat(args)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to setup prompt: %v", err)
@@ -463,14 +477,10 @@ func Setup(ctx context.Context, usage string, allArgs []string) (models.Querier,
 
 	switch mode {
 	case CHAT, QUERY, GLOB:
-		// If directory reply mode is requested we first copy the directory-scoped
-		// conversation into globalScope.json so that the existing reply flow can reuse it.
+		// Directory reply mode continues the directory-scoped conversation
+		// in place. We set ReplyMode so system prompt is skipped, and load
+		// the dirscope context directly in setupTextQuerierWithConf.
 		if mode == QUERY && postFlagConf.DirReplyMode {
-			err := chat.SaveDirScopedAsPrevQuery(claiConfDir)
-			if err != nil {
-				return nil, fmt.Errorf("failed to setup dir-scoped reply: %w", err)
-			}
-			// Ensure the existing reply plumbing is used.
 			postFlagConf.ReplyMode = true
 		}
 

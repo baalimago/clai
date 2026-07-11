@@ -76,6 +76,8 @@ Both `replay` and `dre` honor `-r/-raw`:
 ## Relationship to query reply flags
 
 - `-re` (reply mode) *uses* `globalScope.json` as context for the next query.
-- `-dre` (dir-reply mode) is implemented by copying the directory-scoped conversation into `globalScope.json` (see `SaveDirScopedAsPrevQuery`) and then using the normal `-re` plumbing.
+- `-dre` (dir-reply mode) loads the directory-scoped conversation directly
+  into `InitialChat` (via `chat.LoadDirScopedContext`), bypassing
+  `globalScope.json` entirely.
 
 So `replay`/`dre` are for inspection; `-re`/`-dre` are for context selection.

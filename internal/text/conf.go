@@ -190,23 +190,30 @@ func (c *Configurations) SetupInitialChat(args []string) error {
 	}
 
 	if c.ReplyMode {
-		traceChatf("setup initial chat loading reply context from previous query config_dir=%q", c.ConfigDir)
-		iP, err := chat.LoadPrevQuery(c.ConfigDir)
-		if err != nil {
-			return fmt.Errorf("failed to load previous query: %w", err)
+		// DirReplyMode loads context directly from the directory binding
+		// (pre-populated in InitialChat before SetupInitialChat). Skip the
+		// globalScope.json read entirely — no filesystem roundtrip needed.
+		if c.DirReplyMode {
+			traceChatf("setup initial chat skipping globalScope load — dirreply mode, initial chat already populated messages=%d", len(c.InitialChat.Messages))
+		} else {
+			traceChatf("setup initial chat loading reply context from previous query config_dir=%q", c.ConfigDir)
+			iP, err := chat.LoadPrevQuery(c.ConfigDir)
+			if err != nil {
+				return fmt.Errorf("failed to load previous query: %w", err)
+			}
+			if c.InitialChat.ID == "" && iP.ID != "" && iP.ID != "globalScope" {
+				c.InitialChat.ID = iP.ID
+				traceChatf("setup initial chat adopted previous query chat id=%q", c.InitialChat.ID)
+			}
+			if c.InitialChat.Created.IsZero() && !iP.Created.IsZero() {
+				c.InitialChat.Created = iP.Created
+				traceChatf("setup initial chat adopted previous query created=%q", c.InitialChat.Created.Format(time.RFC3339Nano))
+			}
+			traceChatf("setup initial chat loaded previous query chat_id=%q messages=%d, queries=%d", iP.ID, len(iP.Messages), len(iP.Queries))
+			c.InitialChat.Messages = append(c.InitialChat.Messages, iP.Messages...)
+			c.InitialChat.Queries = append(c.InitialChat.Queries, iP.Queries...)
+			traceChatf("setup initial chat appended previous query messages=%d total_messages=%d", len(iP.Messages), len(c.InitialChat.Messages))
 		}
-		if c.InitialChat.ID == "" && iP.ID != "" && iP.ID != "globalScope" {
-			c.InitialChat.ID = iP.ID
-			traceChatf("setup initial chat adopted previous query chat id=%q", c.InitialChat.ID)
-		}
-		if c.InitialChat.Created.IsZero() && !iP.Created.IsZero() {
-			c.InitialChat.Created = iP.Created
-			traceChatf("setup initial chat adopted previous query created=%q", c.InitialChat.Created.Format(time.RFC3339Nano))
-		}
-		traceChatf("setup initial chat loaded previous query chat_id=%q messages=%d, queries=%d", iP.ID, len(iP.Messages), len(iP.Queries))
-		c.InitialChat.Messages = append(c.InitialChat.Messages, iP.Messages...)
-		c.InitialChat.Queries = append(c.InitialChat.Queries, iP.Queries...)
-		traceChatf("setup initial chat appended previous query messages=%d total_messages=%d", len(iP.Messages), len(c.InitialChat.Messages))
 	}
 
 	traceChatf("setup initial chat building prompt stdin_replace=%q", c.StdinReplace)
