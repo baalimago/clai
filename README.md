@@ -46,7 +46,7 @@ Install [Glow](https://github.com/charmbracelet/glow) for formatted markdown out
 
 - **[Shell context injection](./architecture/shell-context.md)** - Inject shell context into the system prompt via configurable templates.
 - **[Seamless conversation import](./architecture/continue-from-claudex.md)** - Ran out of session? Continue in clai!
-- **[Agent Skills](./architecture/skills.md)** - Import skills from custom directories, Claude-style `SKILL.md` files, or project-level `.agents/skills`.
+- **[Agent Skills](./architecture/skills.md)** - Import skills from custom global directories, or project-level `.agents/skills`.
 - **[Profiles](./EXAMPLES.md#profiles--workflow-presets)** - Pre-prompted profiles enabling customized workflows and agents.
 - **[MCP client support](./EXAMPLES.md#mcp-tools-external-tool-servers)** - Add any MCP server you'd like by simply pasting their configuration.
 - **Unix-like** - Clai follows the [unix philosophy](https://en.wikipedia.org/wiki/Unix_philosophy) and works seamlessly with data piped in and out.
