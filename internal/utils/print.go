@@ -87,14 +87,23 @@ func UpdateMessageTerminalMetadata(msg string, line *string, lineCount *int, ter
 
 // AttemptPrettyPrint by first checking if the glow command is available, and if so, pretty print the chat message.
 // If not found, simply print the message as is.
+// If the message has ReasoningContent, it is rendered with reasoning color before the main content.
 //
 // If w is nil, os.Stdout is used.
 func AttemptPrettyPrint(w io.Writer, chatMessage pub_models.Message, username string, raw bool) error {
 	if w == nil {
 		w = os.Stdout
 	}
+
+	content := chatMessage.Content
+
 	if raw {
-		fmt.Fprintln(w, chatMessage.Content)
+		if chatMessage.ReasoningContent != "" {
+			fmt.Fprintln(w, "[thinking]")
+			fmt.Fprintln(w, chatMessage.ReasoningContent)
+			fmt.Fprintln(w, "[/thinking]")
+		}
+		fmt.Fprintln(w, content)
 		return nil
 	}
 
@@ -105,7 +114,13 @@ func AttemptPrettyPrint(w io.Writer, chatMessage pub_models.Message, username st
 
 	// Respect NO_COLOR.
 	if NoColor() {
-		if _, err := fmt.Fprintf(w, "%v: %v\n", role, chatMessage.Content); err != nil {
+		if chatMessage.ReasoningContent != "" {
+			if _, err := fmt.Fprintf(w, "[thinking]\n%v\n[/thinking]\n%v: %v\n", chatMessage.ReasoningContent, role, content); err != nil {
+				return fmt.Errorf("write chat message with reasoning: %w", err)
+			}
+			return nil
+		}
+		if _, err := fmt.Fprintf(w, "%v: %v\n", role, content); err != nil {
 			return fmt.Errorf("write chat message: %w", err)
 		}
 		return nil
@@ -116,10 +131,31 @@ func AttemptPrettyPrint(w io.Writer, chatMessage pub_models.Message, username st
 
 	cmd := exec.Command("glow", "--version")
 	if err := cmd.Run(); err != nil {
-		if _, err := fmt.Fprintf(w, "%v: %v\n", coloredRole, chatMessage.Content); err != nil {
+		// No glow: print with ANSI coloring.
+		if chatMessage.ReasoningContent != "" {
+			reasoningCol := RoleColor("reasoning")
+			if _, err := fmt.Fprintf(w, "%v:\n%v\n", coloredRole,
+				Colorize(reasoningCol, "[thinking]\n"+chatMessage.ReasoningContent+"\n[/thinking]\n"+content)); err != nil {
+				return fmt.Errorf("write chat message (no glow, reasoning): %w", err)
+			}
+			return nil
+		}
+		if _, err := fmt.Fprintf(w, "%v: %v\n", coloredRole, content); err != nil {
 			return fmt.Errorf("write chat message (no glow): %w", err)
 		}
 		return nil
+	}
+
+	// Glow available: print reasoning with ANSI coloring, then run glow on content.
+	if _, err := fmt.Fprintf(w, "%v:", coloredRole); err != nil {
+		return fmt.Errorf("write role prefix: %w", err)
+	}
+
+	if chatMessage.ReasoningContent != "" {
+		reasoningCol := RoleColor("reasoning")
+		if _, err := fmt.Fprintf(w, "\n%v", Colorize(reasoningCol, "[thinking]\n"+chatMessage.ReasoningContent+"\n[/thinking]")); err != nil {
+			return fmt.Errorf("write reasoning content: %w", err)
+		}
 	}
 
 	termWidth, err := TermWidth()
@@ -129,16 +165,13 @@ func AttemptPrettyPrint(w io.Writer, chatMessage pub_models.Message, username st
 	glowWidth := max(termWidth-5, 1)
 
 	cmd = exec.Command("glow", "-w", strconv.Itoa(glowWidth))
-	inp := chatMessage.Content
+	inp := content
 	// For some reason glow hides specifically <thikning>. So, replace it to [thinking]
 	inp = strings.ReplaceAll(inp, "<thinking>", "[thinking]")
 	inp = strings.ReplaceAll(inp, "</thinking>", "[/thinking]")
 	cmd.Stdin = bytes.NewBufferString(inp)
 	cmd.Stdout = w
 	cmd.Stderr = w
-	if _, err := fmt.Fprintf(w, "%v:", coloredRole); err != nil {
-		return fmt.Errorf("write role prefix: %w", err)
-	}
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("run glow: %w", err)
 	}

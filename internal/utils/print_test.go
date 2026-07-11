@@ -190,3 +190,68 @@ func TestPrepareDisplayMessage(t *testing.T) {
 		}
 	})
 }
+
+func TestAttemptPrettyPrint_ReasoningContent(t *testing.T) {
+	// Test raw mode includes reasoning.
+	t.Run("raw mode includes reasoning", func(t *testing.T) {
+		msg := pub_models.Message{
+			Role:             "assistant",
+			Content:          "final answer",
+			ReasoningContent: "step by step",
+		}
+		var b strings.Builder
+		if err := AttemptPrettyPrint(&b, msg, "user", true); err != nil {
+			t.Fatalf("AttemptPrettyPrint: %v", err)
+		}
+		got := b.String()
+		if !strings.Contains(got, "[thinking]") {
+			t.Fatalf("expected [thinking] marker, got: %q", got)
+		}
+		if !strings.Contains(got, "step by step") {
+			t.Fatalf("expected reasoning text, got: %q", got)
+		}
+		if !strings.Contains(got, "final answer") {
+			t.Fatalf("expected content text, got: %q", got)
+		}
+	})
+
+	// Test NO_COLOR includes reasoning.
+	t.Run("NO_COLOR includes reasoning", func(t *testing.T) {
+		t.Setenv("NO_COLOR", "true")
+		msg := pub_models.Message{
+			Role:             "assistant",
+			Content:          "final answer",
+			ReasoningContent: "step by step",
+		}
+		var b strings.Builder
+		if err := AttemptPrettyPrint(&b, msg, "user", false); err != nil {
+			t.Fatalf("AttemptPrettyPrint: %v", err)
+		}
+		got := b.String()
+		if !strings.Contains(got, "[thinking]") {
+			t.Fatalf("expected [thinking] marker, got: %q", got)
+		}
+		if !strings.Contains(got, "step by step") {
+			t.Fatalf("expected reasoning text, got: %q", got)
+		}
+	})
+
+	// Test no reasoning leaves output unchanged.
+	t.Run("no reasoning unchanged", func(t *testing.T) {
+		msg := pub_models.Message{
+			Role:    "assistant",
+			Content: "just an answer",
+		}
+		var b strings.Builder
+		if err := AttemptPrettyPrint(&b, msg, "user", true); err != nil {
+			t.Fatalf("AttemptPrettyPrint: %v", err)
+		}
+		got := b.String()
+		if strings.Contains(got, "[thinking]") {
+			t.Fatalf("expected no thinking markers, got: %q", got)
+		}
+		if !strings.Contains(got, "just an answer") {
+			t.Fatalf("expected content, got: %q", got)
+		}
+	})
+}

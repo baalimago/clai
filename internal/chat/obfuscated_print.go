@@ -10,21 +10,28 @@ import (
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
-// messageDisplayText returns human-facing text for a message. Assistant tool-call
-// turns are persisted with an empty Content (only ToolCalls) so the model never
-// learns the "Call: ..." format; for display we reconstruct a readable line from
-// the calls. This is display-only — Message.String() is deliberately left untouched
-// because it also feeds conversation search and agent results.
+// messageDisplayText returns human-facing text for a message.
+// Reasoning content is included when present, wrapped in [thinking]…[/thinking].
+// Assistant tool-call turns are persisted with an empty Content (only ToolCalls)
+// so the model never learns the "Call: ..." format; for display we reconstruct
+// a readable line from the calls.
 func messageDisplayText(m pub_models.Message) string {
+	var parts []string
+	if m.ReasoningContent != "" {
+		parts = append(parts, "[thinking]\n"+m.ReasoningContent+"\n[/thinking]")
+	}
 	if s := m.String(); s != "" {
-		return s
+		parts = append(parts, s)
+	}
+	if len(parts) > 0 {
+		return strings.Join(parts, "\n")
 	}
 	if len(m.ToolCalls) > 0 {
-		parts := make([]string, 0, len(m.ToolCalls))
+		tcParts := make([]string, 0, len(m.ToolCalls))
 		for _, c := range m.ToolCalls {
-			parts = append(parts, c.PrettyPrint())
+			tcParts = append(tcParts, c.PrettyPrint())
 		}
-		return strings.Join(parts, "\n")
+		return strings.Join(tcParts, "\n")
 	}
 	return ""
 }
@@ -33,47 +40,153 @@ func messageContentLen(m pub_models.Message) int {
 	return utf8.RuneCountInString(messageDisplayText(m))
 }
 
+const (
+	headTruncated = 3 // messages after first user to show truncated
+	tailTruncated = 3 // messages before last to show truncated
+	bridgeSample  = 3 // obfuscated 1-liners in the middle bridge
+	minForGap     = headTruncated + bridgeSample + tailTruncated + 3
+	// Need at least: 1 (first user) + headTruncated + bridgeSample + tailTruncated + 1 (last) = 11
+)
+
 func printChatObfuscated(w io.Writer, ch pub_models.Chat, raw bool) error {
-	msgCount := len(ch.Messages)
-	prettyStart := 0
-	if msgCount > 6 {
-		prettyStart = msgCount - 6
+	msgs := ch.Messages
+	msgCount := len(msgs)
+	if msgCount == 0 {
+		return nil
 	}
 
-	for i, m := range ch.Messages {
-		lenRunes := messageContentLen(m)
+	// Find first user message index.
+	firstUserIdx := -1
+	for i, m := range msgs {
+		if m.Role == "user" {
+			firstUserIdx = i
+			break
+		}
+	}
+	if firstUserIdx == -1 {
+		firstUserIdx = 0
+	}
 
-		// Old messages: oneliners, width-truncated, no pretty print.
-		if i < prettyStart {
-			// Everything inside [] is primary, except role value which matches AttemptPrettyPrint.
+	useGap := msgCount > minForGap
+
+	// Preamble: messages before the first user — shown truncated.
+	for i := 0; i < firstUserIdx; i++ {
+		m := msgs[i]
+		disp := messageDisplayText(m)
+		disp = utils.ShortenedOutput(disp, 3)
+		m.Content = disp
+		m.ContentParts = nil
+		m.ReasoningContent = ""
+		fmt.Fprintf(w, "%s ", utils.Colorize(utils.ThemePrimaryColor(), fmt.Sprintf("[#%-3d]", i)))
+		if err := utils.AttemptPrettyPrint(w, m, "user", raw); err != nil {
+			return fmt.Errorf("pretty print preamble message %d: %w", i, err)
+		}
+	}
+
+	// Section 1: First user message — full pretty print.
+	m0 := msgs[firstUserIdx]
+	disp0 := messageDisplayText(m0)
+	m0.Content = disp0
+	m0.ContentParts = nil
+	m0.ReasoningContent = ""
+	fmt.Fprintf(w, "%s ", utils.Colorize(utils.ThemePrimaryColor(), fmt.Sprintf("[#%-3d]", firstUserIdx)))
+	if err := utils.AttemptPrettyPrint(w, m0, "user", raw); err != nil {
+		return fmt.Errorf("pretty print first user message: %w", err)
+	}
+
+	headEnd := firstUserIdx + 1 + headTruncated
+	if headEnd > msgCount-1 {
+		headEnd = msgCount - 1
+	}
+
+	// Section 2: Head window — truncated messages after first user.
+	for i := firstUserIdx + 1; i < headEnd; i++ {
+		m := msgs[i]
+		disp := messageDisplayText(m)
+		disp = utils.ShortenedOutput(disp, 3)
+		m.Content = disp
+		m.ContentParts = nil
+		m.ReasoningContent = ""
+		fmt.Fprintf(w, "%s ", utils.Colorize(utils.ThemePrimaryColor(), fmt.Sprintf("[#%-3d]", i)))
+		if err := utils.AttemptPrettyPrint(w, m, "user", raw); err != nil {
+			return fmt.Errorf("pretty print head message %d: %w", i, err)
+		}
+	}
+
+	if useGap {
+		tailStart := msgCount - tailTruncated - 1 // last message is separate
+
+		// Section 3: Middle bridge — 3 obfuscated 1-liners.
+		bridgeStart := headEnd
+		bridgeEnd := bridgeStart + bridgeSample
+		if bridgeEnd > tailStart {
+			bridgeEnd = tailStart
+		}
+		for i := bridgeStart; i < bridgeEnd; i++ {
+			m := msgs[i]
+			lenRunes := messageContentLen(m)
 			prefix := utils.Colorize(utils.ThemePrimaryColor(), fmt.Sprintf("[#%-3d r: ", i)) +
 				utils.Colorize(utils.RoleColor(m.Role), fmt.Sprintf("%-9s", m.Role)) +
 				utils.Colorize(utils.ThemePrimaryColor(), fmt.Sprintf(" l: %5d]: ", lenRunes))
-
 			trunc, err := utils.WidthAppropriateStringTruncColored(
 				messageDisplayText(m), prefix, "", utils.ThemeBreadtextColor(), 5,
 			)
 			if err != nil {
-				return fmt.Errorf("truncate message preview: %w", err)
+				return fmt.Errorf("truncate bridge preview: %w", err)
 			}
 			if _, err := fmt.Fprintln(w, trunc); err != nil {
-				return fmt.Errorf("write obfuscated chat line: %w", err)
+				return fmt.Errorf("write bridge line: %w", err)
 			}
-			continue
 		}
 
-		// The last 6 messages: pretty print, reconstructing tool-call turns. Only the
-		// most recent message keeps full length.
-		m2 := m
-		disp := messageDisplayText(m2)
-		if i < len(ch.Messages)-1 {
-			disp = utils.ShortenedOutput(disp, 3)
+		// Gap label.
+		gapCount := tailStart - bridgeEnd
+		if gapCount > 0 {
+			gapLine := utils.Colorize(utils.ThemeSecondaryColor(), fmt.Sprintf("\n            ... and %d more entries\n", gapCount))
+			if _, err := fmt.Fprintln(w, gapLine); err != nil {
+				return fmt.Errorf("write gap label: %w", err)
+			}
 		}
-		m2.Content = disp
-		m2.ContentParts = nil
-		if err := utils.AttemptPrettyPrint(w, m2, "user", raw); err != nil {
-			return fmt.Errorf("pretty print chat message: %w", err)
+
+		// Section 4: Tail window — 3 truncated messages before last.
+		for i := tailStart; i < msgCount-1; i++ {
+			m := msgs[i]
+			disp := messageDisplayText(m)
+			disp = utils.ShortenedOutput(disp, 3)
+			m.Content = disp
+			m.ContentParts = nil
+			m.ReasoningContent = ""
+			fmt.Fprintf(w, "%s ", utils.Colorize(utils.ThemePrimaryColor(), fmt.Sprintf("[#%-3d]", i)))
+			if err := utils.AttemptPrettyPrint(w, m, "user", raw); err != nil {
+				return fmt.Errorf("pretty print tail message %d: %w", i, err)
+			}
+		}
+	} else {
+		// No gap: print remaining messages truncated, except the last.
+		for i := headEnd; i < msgCount-1; i++ {
+			m := msgs[i]
+			disp := messageDisplayText(m)
+			disp = utils.ShortenedOutput(disp, 3)
+			m.Content = disp
+			m.ContentParts = nil
+			m.ReasoningContent = ""
+			fmt.Fprintf(w, "%s ", utils.Colorize(utils.ThemePrimaryColor(), fmt.Sprintf("[#%-3d]", i)))
+			if err := utils.AttemptPrettyPrint(w, m, "user", raw); err != nil {
+				return fmt.Errorf("pretty print message %d: %w", i, err)
+			}
 		}
 	}
+
+	// Section 5: Last message — full pretty print.
+	last := msgs[msgCount-1]
+	dispLast := messageDisplayText(last)
+	last.Content = dispLast
+	last.ContentParts = nil
+	last.ReasoningContent = ""
+	fmt.Fprintf(w, "%s ", utils.Colorize(utils.ThemePrimaryColor(), fmt.Sprintf("[#%-3d]", msgCount-1)))
+	if err := utils.AttemptPrettyPrint(w, last, "user", raw); err != nil {
+		return fmt.Errorf("pretty print last message: %w", err)
+	}
+
 	return nil
 }
