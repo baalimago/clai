@@ -358,9 +358,15 @@ func interractiveReconfigure(cfg config, b []byte) error {
 	if err != nil {
 		return fmt.Errorf("failed to unmarshal config %v: %w", cfg.name, err)
 	}
+
+	claiConfigDir := claiConfigDirFromPath(cfg.filePath)
+	if claiConfigDir == "" {
+		return fmt.Errorf("failed to derive clai config dir from path: %q", cfg.filePath)
+	}
+
 	fmt.Print(colorPrimary("Current config:\n"))
 	fmt.Print(colorBreadtext(fmt.Sprintf("%s\n---\n", b)))
-	newConfig, err := buildNewConfig(jzon)
+	newConfig, err := buildNewConfig(jzon, claiConfigDir)
 	if err != nil {
 		return fmt.Errorf("failed to build new config for %s: %w", cfg.name, err)
 	}
@@ -375,6 +381,19 @@ func interractiveReconfigure(cfg config, b []byte) error {
 	}
 	ancli.PrintOK(fmt.Sprintf("wrote new config to: '%v'\n", cfg.filePath))
 	return nil
+}
+
+func claiConfigDirFromPath(filePath string) string {
+	dir := filepath.Dir(filePath)
+	base := filepath.Base(dir)
+	for _, sub := range []string{"profiles", "shellContexts", "mcpServers"} {
+		if base == sub {
+			return filepath.Dir(dir)
+		}
+	}
+	// For files directly in the config dir (e.g., model files, textConfig.json).
+	// Assume the parent is the config dir.
+	return dir
 }
 
 func getToolsValue(v any) ([]string, error) {
@@ -432,10 +451,17 @@ func getToolsValue(v any) ([]string, error) {
 	return ret, nil
 }
 
-func getNewValue(k string, v any) (any, error) {
+func getNewValue(k string, v any, claiConfigDir string) (any, error) {
 	if k == "tools" {
 		return getToolsValue(v)
 	}
+	if k == "model" {
+		return getModelValue(v, claiConfigDir)
+	}
+	if k == "shell_context" {
+		return getShellContextValue(v, claiConfigDir)
+	}
+
 	var ret any
 	fmt.Print(colorBreadtext(fmt.Sprintf("Key: '%v', current: '%v'\n", k, v)))
 	fmt.Print(colorSecondary("Please enter new value, or leave empty to keep: "))
@@ -451,18 +477,120 @@ func getNewValue(k string, v any) (any, error) {
 	return ret, nil
 }
 
-func handleValue(k string, v any) (any, error) {
+func getModelValue(v any, claiConfigDir string) (any, error) {
+	models, err := getAvailableModels(claiConfigDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to discover models: %w", err)
+	}
+	if len(models) == 0 {
+		return v, nil
+	}
+
+	currentStr, _ := v.(string)
+	fmt.Print(colorPrimary(fmt.Sprintf("Select model (current: %q):\n", currentStr)))
+	choice, err := utils.SelectFromTable(
+		"Available models",
+		utils.SlicePaginator(models),
+		"Select model <num>: ",
+		func(i int, name string) (string, error) {
+			return fmt.Sprintf("%d. %s", i, name), nil
+		},
+		utils.ThemeTableItems(),
+		true,
+		nil,
+		os.Stdout,
+		"",
+	)
+	if err != nil {
+		// Back/quit → keep current value
+		return v, nil
+	}
+	if len(choice) == 0 {
+		return v, nil
+	}
+	return castPrimitive(models[choice[0]]), nil
+}
+
+func getShellContextValue(v any, claiConfigDir string) (any, error) {
+	contexts, err := getAvailableShellContexts(claiConfigDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to discover shell contexts: %w", err)
+	}
+	if len(contexts) == 0 {
+		return v, nil
+	}
+
+	currentStr, _ := v.(string)
+	fmt.Print(colorPrimary(fmt.Sprintf("Select shell_context (current: %q):\n", currentStr)))
+	choice, err := utils.SelectFromTable(
+		"Available shell contexts",
+		utils.SlicePaginator(contexts),
+		"Select shell context <num>: ",
+		func(i int, name string) (string, error) {
+			return fmt.Sprintf("%d. %s", i, name), nil
+		},
+		utils.ThemeTableItems(),
+		true,
+		nil,
+		os.Stdout,
+		"",
+	)
+	if err != nil {
+		// Back/quit → keep current value
+		return v, nil
+	}
+	if len(choice) == 0 {
+		return v, nil
+	}
+	return castPrimitive(contexts[choice[0]]), nil
+}
+
+func getAvailableModels(claiConfigDir string) ([]string, error) {
+	cfgs, err := getConfigs(filepath.Join(claiConfigDir, "*.json"), []string{"textConfig", "photoConfig", "videoConfig"})
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(cfgs))
+	for _, c := range cfgs {
+		name := strings.TrimSuffix(c.name, ".json")
+		parts := strings.SplitN(name, "_", 3)
+		if len(parts) < 3 {
+			continue
+		}
+		canonical := text.CanonicalModelString(parts[0], parts[1], parts[2])
+		if canonical != "" {
+			names = append(names, canonical)
+		}
+	}
+	return names, nil
+}
+
+func getAvailableShellContexts(claiConfigDir string) ([]string, error) {
+	shellCtxDir := filepath.Join(claiConfigDir, "shellContexts")
+	cfgs, err := getConfigs(filepath.Join(shellCtxDir, "*.json"), []string{})
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(cfgs))
+	for _, c := range cfgs {
+		name := strings.TrimSuffix(c.name, ".json")
+		names = append(names, name)
+	}
+	return names, nil
+}
+
+func handleValue(k string, v any, claiConfigDir string) (any, error) {
 	switch val := v.(type) {
 	case map[string]any:
-		return editMap(k, val)
+		return editMap(k, val, claiConfigDir)
 	case []any:
-		return editSlice(k, val)
+		return editSlice(k, val, claiConfigDir)
 	default:
-		return getNewValue(k, val)
+		return getNewValue(k, val, claiConfigDir)
 	}
 }
 
-func editMap(k string, m map[string]any) (map[string]any, error) {
+func editMap(k string, m map[string]any, claiConfigDir string) (map[string]any, error) {
 	edited := maps.Clone(m)
 	for {
 		var keys []string
@@ -507,7 +635,7 @@ func editMap(k string, m map[string]any) (map[string]any, error) {
 				fmt.Print(colorBreadtext(fmt.Sprintf("no such key '%s'\n", uk)))
 				continue
 			}
-			nv, err := handleValue(fmt.Sprintf("%s.%s", k, uk), val)
+			nv, err := handleValue(fmt.Sprintf("%s.%s", k, uk), val, claiConfigDir)
 			if err != nil {
 				return nil, fmt.Errorf("failed to handle map value %q: %w", uk, err)
 			}
@@ -518,7 +646,7 @@ func editMap(k string, m map[string]any) (map[string]any, error) {
 	}
 }
 
-func editSlice(k string, s []any) ([]any, error) {
+func editSlice(k string, s []any, claiConfigDir string) ([]any, error) {
 	edited := append([]any(nil), s...)
 	for {
 		fmt.Print(colorSecondary(fmt.Sprintf("Slice '%s': %v\n[a]ppend [u]pdate [r]emove [d]one: ", k, edited)))
@@ -598,7 +726,7 @@ func editSlice(k string, s []any) ([]any, error) {
 				continue
 			}
 			val := edited[idx]
-			nv, err := handleValue(fmt.Sprintf("%s[%d]", k, idx), val)
+			nv, err := handleValue(fmt.Sprintf("%s[%d]", k, idx), val, claiConfigDir)
 			if err != nil {
 				return nil, fmt.Errorf("failed to handle slice value at %d: %w", idx, err)
 			}
@@ -609,11 +737,15 @@ func editSlice(k string, s []any) ([]any, error) {
 	}
 }
 
-func buildNewConfig(jzon map[string]any) (map[string]any, error) {
+func buildNewConfig(jzon map[string]any, claiConfigDir string) (map[string]any, error) {
 	newConfig := make(map[string]any)
 	for k, v := range jzon {
-		nv, err := handleValue(k, v)
+		nv, err := handleValue(k, v, claiConfigDir)
 		if err != nil {
+			if errors.Is(err, utils.ErrBack) || errors.Is(err, utils.ErrUserInitiatedExit) {
+				// User bailed out of interactive config → keep everything as-is
+				return jzon, nil
+			}
 			return nil, fmt.Errorf("failed to handle key %q: %w", k, err)
 		}
 		newConfig[k] = nv

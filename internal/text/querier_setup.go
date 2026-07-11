@@ -21,6 +21,38 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
+// CanonicalModelString is the inverse of vendorType. Given a (vendor, family, modelVersion)
+// triplet — typically parsed from a config filename — it returns the canonical model
+// identifier that can be placed in a profile's "model" field and correctly routed.
+func CanonicalModelString(vendor, family, modelVersion string) string {
+	switch vendor {
+	case "openrouter":
+		return "or:" + modelVersion
+	case "berget":
+		if family == "berget" {
+			return "berget:" + modelVersion
+		}
+		return "berget:" + family + "/" + modelVersion
+	case "ollama":
+		if strings.HasPrefix(modelVersion, "ollama:") {
+			return modelVersion
+		}
+		return modelVersion
+	case "novita":
+		if strings.HasPrefix(modelVersion, "novita:") {
+			return modelVersion
+		}
+		if family != "" {
+			return "novita:" + family + "/" + modelVersion
+		}
+		return modelVersion
+	case "huggingface", "hf":
+		return "hf:" + modelVersion + ":" + family
+	default:
+		return modelVersion
+	}
+}
+
 func vendorType(fromModel string) (string, string, string, error) {
 	if strings.Contains(fromModel, "test") {
 		return "mock", "test", fromModel, nil
