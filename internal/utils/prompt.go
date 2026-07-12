@@ -24,20 +24,16 @@ func Prompt(stdinReplace string, args []string) (string, error) {
 	if err != nil {
 		panic(err)
 	}
-	var hasPipe bool
-	if fi.Mode()&os.ModeNamedPipe == 0 {
-		hasPipe = false
-	} else {
-		hasPipe = true
-	}
+	// hasStdin is true when stdin is not a terminal (pipe, file redirect, etc.)
+	hasStdin := fi.Mode()&os.ModeCharDevice == 0
 
-	if len(args) == 1 && !hasPipe {
+	if len(args) == 1 && !hasStdin {
 		return "", errors.New("found no prompt, set args or pipe in some string")
 	}
 	// First argument is the command, so we skip it
 	args = args[1:]
 	// If no data is in stdin, simply return args
-	if !hasPipe {
+	if !hasStdin {
 		return strings.Join(args, " "), nil
 	}
 
@@ -49,7 +45,7 @@ func Prompt(stdinReplace string, args []string) (string, error) {
 	// Add the pipeIn to the args if there are no args
 	if len(args) == 0 {
 		args = append(args, strings.Split(pipeIn, " ")...)
-	} else if stdinReplace == "" && hasPipe {
+	} else if stdinReplace == "" && hasStdin {
 		stdinReplace = "{}"
 		args = append(args, "{}")
 	}

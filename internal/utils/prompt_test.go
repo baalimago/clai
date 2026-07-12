@@ -99,3 +99,35 @@ func TestPrompt(t *testing.T) {
 		})
 	}
 }
+
+func TestPrompt_FileRedirect(t *testing.T) {
+	// Simulate "clai q Here is file: < file" — stdin is a regular file, not a pipe.
+	// This is the case ModeNamedPipe misses but ModeCharDevice==0 catches.
+	oldStdin := os.Stdin
+	t.Cleanup(func() { os.Stdin = oldStdin })
+
+	tmp, err := os.CreateTemp("", "clai-prompt-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(tmp.Name())
+
+	content := "file content here"
+	if _, err := tmp.WriteString(content); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tmp.Seek(0, 0); err != nil {
+		t.Fatal(err)
+	}
+
+	os.Stdin = tmp
+
+	prompt, err := Prompt("", []string{"cmd", "prefix"})
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	// With no stdinReplace token, stdin is appended after args.
+	if prompt != "prefix file content here" {
+		t.Errorf("Expected 'prefix file content here', got: %q", prompt)
+	}
+}
