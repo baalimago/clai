@@ -90,6 +90,14 @@ func (m *Mistral) Setup() error {
 }
 
 func (m *Mistral) StreamCompletions(ctx context.Context, chat pub_models.Chat) (chan models.CompletionEvent, error) {
+	// Mistral's API rejects tool_choice "any" when json_schema response format
+	// is used with tools — only "auto" is accepted. Temporarily adjust.
+	orig := m.ToolChoice
+	if m.ResponseFormat != nil && m.ResponseFormat.Type == "json_schema" {
+		auto := "auto"
+		m.ToolChoice = &auto
+	}
+	defer func() { m.ToolChoice = orig }()
 	return m.StreamCompleter.StreamCompletions(ctx, chat)
 }
 

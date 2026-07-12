@@ -12,6 +12,7 @@ You're working on a project called "clai".
 
 - Always write tests first, implementation second
 - When fixing a bug, validate the issue with a test, then fix the test
+- Keep vendor-specific logic in the vendor package (`internal/vendors/<name>/`). Never add vendor-specific workarounds to generic/shared code like `internal/text/generic/` — the generic layer must remain vendor-agnostic.
 
 ## Validation:
 

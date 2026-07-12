@@ -2,8 +2,13 @@ package mistral
 
 import (
 	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
+	"github.com/baalimago/clai/internal/text/generic"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -62,4 +67,71 @@ func TestStreamCompletionsDelegates(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	_, _ = m.StreamCompletions(ctx, pub_models.Chat{})
+}
+
+func TestStreamCompletions_JSONSchemaForcesAutoToolChoice(t *testing.T) {
+	m := Default
+	t.Setenv("MISTRAL_API_KEY", "k")
+	if err := m.Setup(); err != nil {
+		t.Fatalf("setup failed: %v", err)
+	}
+
+	// Register a tool so ToolChoice is included in the request.
+	m.InternalRegisterTool(mockTool{})
+
+	// Set json_schema response format.
+	m.ResponseFormat = &generic.ResponseFormat{
+		Type: "json_schema",
+		JSONSchema: &generic.JSONSchemaSpec{
+			Name:   "test",
+			Strict: true,
+			Schema: map[string]any{"type": "object"},
+		},
+	}
+
+	var capturedToolChoice string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		var body map[string]any
+		json.Unmarshal(b, &body)
+		if tc, ok := body["tool_choice"].(string); ok {
+			capturedToolChoice = tc
+		}
+		// Return empty SSE to avoid parse errors.
+		w.Header().Set("Content-Type", "text/event-stream")
+	}))
+	defer ts.Close()
+
+	m.StreamCompleter.URL = ts.URL
+
+	ctx := context.Background()
+	ch, err := m.StreamCompletions(ctx, pub_models.Chat{
+		Messages: []pub_models.Message{{Role: "user", Content: "hi"}},
+	})
+	if err != nil {
+		t.Fatalf("StreamCompletions err: %v", err)
+	}
+	// Drain the channel.
+	for range ch {
+	}
+
+	if capturedToolChoice != "auto" {
+		t.Fatalf("expected tool_choice='auto' when json_schema is set, got: %q", capturedToolChoice)
+	}
+
+	// Verify we restored the original ToolChoice after the call.
+	if m.ToolChoice == nil || *m.ToolChoice != "any" {
+		t.Fatalf("expected ToolChoice to be restored to 'any', got: %v", m.ToolChoice)
+	}
+}
+
+type mockTool struct{}
+
+func (mockTool) Call(pub_models.Input) (string, error) { return "ok", nil }
+func (mockTool) Specification() pub_models.Specification {
+	return pub_models.Specification{
+		Name:        "test",
+		Description: "a test tool",
+		Inputs:      &pub_models.InputSchema{Type: "object"},
+	}
 }
