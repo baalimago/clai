@@ -12,11 +12,10 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/internal/tools"
@@ -192,8 +191,8 @@ func validateEditedStringField(cfg config, fieldName, rawEditedValue string) err
 	return nil
 }
 
-// actionReconfigureStringFieldWithEditor. If fieldName is empty string the user will be
-// queried to select some field from the json
+// actionReconfigureStringFieldWithEditor opens the config, optionally queries
+// the user to select a string field, then edits it via $EDITOR with unescape/re-escape.
 func actionReconfigureStringFieldWithEditor(cfg config, fieldName string) error {
 	b, err := os.ReadFile(cfg.filePath)
 	if err != nil {
@@ -204,41 +203,13 @@ func actionReconfigureStringFieldWithEditor(cfg config, fieldName string) error 
 	if err := json.Unmarshal(b, &jzon); err != nil {
 		return fmt.Errorf("failed to unmarshal config from %s: %w", cfg.filePath, err)
 	}
+
 	if fieldName == "" {
-		fields := []string{}
-		for f, v := range jzon {
-			typeOf := reflect.TypeOf(v)
-			if typeOf == nil {
-				continue
-			}
-			if typeOf.String() == "string" {
-				fields = append(fields, f)
-			}
+		var selErr error
+		fieldName, selErr = selectStringField(jzon)
+		if selErr != nil {
+			return fmt.Errorf("failed to select field: %w", selErr)
 		}
-
-		choice, err := utils.SelectFromTable(
-			"Select field",
-			utils.SlicePaginator(fields),
-			"Select field <num>: ",
-			func(i int, t string) (string, error) {
-				return fmt.Sprintf("%v. %v", i, t), nil
-			},
-			utils.ThemeTableItems(),
-			true,
-			nil,
-			os.Stdout,
-			"",
-		)
-
-		if len(choice) > 1 {
-			return fmt.Errorf("recieved an unexpectd amount of choices: '%v'", choice)
-		}
-
-		if err != nil {
-			return fmt.Errorf("failed to select field choice: %w", err)
-		}
-
-		fieldName = fields[choice[0]]
 	}
 
 	rawValue, found := jzon[fieldName]
@@ -260,17 +231,52 @@ func actionReconfigureStringFieldWithEditor(cfg config, fieldName string) error 
 	}
 	jzon[fieldName] = editedValue
 
-	editedB, err := json.MarshalIndent(jzon, "", "\t")
-	if err != nil {
-		return fmt.Errorf("failed to marshal edited config for %s: %w", cfg.filePath, err)
-	}
-
-	if err := os.WriteFile(cfg.filePath, editedB, 0o755); err != nil {
-		return fmt.Errorf("failed to write config %s: %w", cfg.filePath, err)
+	if err := writeConfig(cfg.filePath, jzon); err != nil {
+		return fmt.Errorf("failed to write config: %w", err)
 	}
 
 	ancli.Okf("updated field %q at path: %v", fieldName, cfg.filePath)
 	return nil
+}
+
+// selectStringField filters jzon to string-typed keys (sorted), presents a
+// single-choice table, and returns the selected key.
+func selectStringField(jzon map[string]any) (string, error) {
+	keys := stringKeysSorted(jzon)
+	indices, err := utils.SelectFromTable(
+		"Select field",
+		utils.SlicePaginator(keys),
+		"Select field [<num>]",
+		func(i int, t string) (string, error) {
+			return fmt.Sprintf("%d. %s", i, t), nil
+		},
+		utils.ThemeTableItems(),
+		true,
+		nil,
+		os.Stdout,
+		"",
+	)
+	if err != nil {
+		return "", err
+	}
+	return keys[indices[0]], nil
+}
+
+// stringKeysSorted returns the keys of jzon whose values are strings,
+// sorted alphabetically.
+func stringKeysSorted(jzon map[string]any) []string {
+	keys := make([]string, 0)
+	for k, v := range jzon {
+		typeOf := reflect.TypeOf(v)
+		if typeOf == nil {
+			continue
+		}
+		if typeOf.String() == "string" {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // actionReconfigurePromptWithEditor by extracting the prompt from the selected config
@@ -352,6 +358,10 @@ func actionCopy(cfg config) (config, error) {
 	return config{name: newName, filePath: newPath}, nil
 }
 
+var errDoneEditing = errors.New("done editing")
+
+// interractiveReconfigure presents the user with a field-by-field editing loop
+// over the JSON config and writes the result to disk.
 func interractiveReconfigure(cfg config, b []byte) error {
 	var jzon map[string]any
 	err := json.Unmarshal(b, &jzon)
@@ -366,21 +376,24 @@ func interractiveReconfigure(cfg config, b []byte) error {
 
 	fmt.Print(colorPrimary("Current config:\n"))
 	fmt.Print(colorBreadtext(fmt.Sprintf("%s\n---\n", b)))
-	newConfig, err := buildNewConfig(jzon, claiConfigDir)
-	if err != nil {
-		return fmt.Errorf("failed to build new config for %s: %w", cfg.name, err)
+
+	for {
+		key, err := selectFieldToEdit(jzon)
+		if err != nil {
+			if errors.Is(err, errDoneEditing) {
+				break
+			}
+			return err
+		}
+
+		nv, err := handleValue(key, jzon[key], claiConfigDir)
+		if err != nil {
+			return fmt.Errorf("failed to edit field %q: %w", key, err)
+		}
+		jzon[key] = nv
 	}
 
-	newB, err := json.MarshalIndent(newConfig, "", "\t")
-	if err != nil {
-		return fmt.Errorf("failed to marshal new config for %s: %w", cfg.name, err)
-	}
-	err = os.WriteFile(cfg.filePath, newB, 0o644)
-	if err != nil {
-		return fmt.Errorf("failed to write new config at %q: %w", cfg.filePath, err)
-	}
-	ancli.PrintOK(fmt.Sprintf("wrote new config to: '%v'\n", cfg.filePath))
-	return nil
+	return writeConfig(cfg.filePath, jzon)
 }
 
 func claiConfigDirFromPath(filePath string) string {
@@ -396,73 +409,234 @@ func claiConfigDirFromPath(filePath string) string {
 	return dir
 }
 
+// sortedKeys returns the keys of jzon in alphabetical order.
+func sortedKeys(jzon map[string]any) []string {
+	keys := make([]string, 0, len(jzon))
+	for k := range jzon {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func doneEditingAction() utils.TableAction {
+	return utils.TableAction{
+		Format: "[d]one",
+		Short:  "d",
+		Long:   "done",
+		Action: func() error { return errDoneEditing },
+	}
+}
+
+// selectFieldToEdit presents the user with a table of jzon keys and returns
+// the chosen key. It propagates errDoneEditing, utils.ErrBack, and
+// utils.ErrUserInitiatedExit directly; other errors are wrapped.
+func selectFieldToEdit(jzon map[string]any) (string, error) {
+	keys := sortedKeys(jzon)
+	indices, err := utils.SelectFromTable(
+		"Select field to edit",
+		utils.SlicePaginator(keys),
+		"Select field [<num>]",
+		func(i int, key string) (string, error) {
+			return fmt.Sprintf("%d. %s", i, key), nil
+		},
+		utils.ThemeTableItems(),
+		true,
+		[]utils.TableAction{doneEditingAction()},
+		os.Stdout,
+		"",
+	)
+	if err != nil {
+		return "", err
+	}
+	return keys[indices[0]], nil
+}
+
+// writeConfig serializes jzon as indented JSON and writes it to filePath.
+func writeConfig(filePath string, jzon map[string]any) error {
+	newB, err := json.MarshalIndent(jzon, "", "\t")
+	if err != nil {
+		return fmt.Errorf("failed to marshal new config: %w", err)
+	}
+	if err := os.WriteFile(filePath, newB, 0o644); err != nil {
+		return fmt.Errorf("failed to write config at %q: %w", filePath, err)
+	}
+	return nil
+}
+
+var (
+	errClearTools    = errors.New("clear tools")
+	errAllTools      = errors.New("all tools")
+	errDoneSelecting = errors.New("done selecting")
+)
+
+// getToolsValue presents an interactive toggle-table for tool selection
+// and returns the ordered list of selected tool names.
 func getToolsValue(v any) ([]string, error) {
 	sArr, isSSlice := v.([]any)
 	if !isSSlice {
 		ancli.PrintWarn(fmt.Sprintf("invalid type for tools, expected string slice, got: %v. Returning empty slice\n", sArr))
 		return []string{}, nil
 	}
-	fmt.Println(colorPrimary("Tooling configuration, select which tools you'd like for the profile to use"))
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "Index\tName\tDescription")
-	fmt.Fprint(w, "-----\t----\t----------\n")
-	indexMap := map[int]string{}
-	i := 0
-	for name, v := range tools.Registry.All() {
-		indexMap[i] = name
-		fmt.Fprintf(w, "%v\t%v\t%v\n", i, name, v.Specification().Description)
-		i++
-	}
-	if err := w.Flush(); err != nil {
-		return nil, fmt.Errorf("failed to flush tool table: %w", err)
-	}
-	fmt.Print(colorSecondary("Enter indices of tools to use (example: '1,3,4,2'): "))
-	input, err := utils.ReadUserInput()
-	if err != nil {
-		return nil, fmt.Errorf("failed to read input: %w", err)
-	}
-	if input == "q" || input == "quit" {
-		return []string{}, utils.ErrUserInitiatedExit
-	}
 
-	if input == "" {
-		stringSlice, ok := v.([]string)
-		if ok {
-			return stringSlice, nil
-		}
-		return []string{}, nil
-	}
-	re := regexp.MustCompile(`\d`)
-	digits := re.FindAllString(input, -1)
+	currentlySelected := parseCurrentTools(sArr)
+	names := sortedToolNames()
+	doneAction, allAction, clearAction := toolSelectionActions()
 
-	var ret []string
-	for _, d := range digits {
-		dint, convErr := strconv.Atoi(d)
-		if convErr != nil {
-			return nil, fmt.Errorf("failed to convert tool index %q: %w", d, convErr)
+	fmt.Print(colorPrimary("Tooling configuration\n"))
+	for {
+		indices, err := utils.SelectFromTable(
+			"Toggle tools with comma/range (e.g. 0,2,5 or 0:3)",
+			utils.SlicePaginator(names),
+			"Select tools [<num>]",
+			toolRowFormatter(currentlySelected),
+			len(names),
+			false,
+			[]utils.TableAction{allAction, clearAction, doneAction},
+			os.Stdout,
+			"",
+		)
+		if err != nil {
+			switch {
+			case errors.Is(err, errDoneSelecting):
+				return orderedSelectedTools(names, currentlySelected), nil
+			case errors.Is(err, errAllTools):
+				selectAllTools(names, currentlySelected)
+				continue
+			case errors.Is(err, errClearTools):
+				clearToolSelections(currentlySelected)
+				continue
+			case errors.Is(err, utils.ErrBack):
+				return drainCurrentTools(sArr), nil
+			case errors.Is(err, utils.ErrUserInitiatedExit):
+				return nil, err
+			default:
+				return nil, err
+			}
 		}
-		t, exists := indexMap[dint]
-		if !exists {
-			ancli.PrintWarn(fmt.Sprintf("there is no index: %v, skipping", d))
-			continue
-		}
-		ret = append(ret, t)
+		toggleToolSelections(indices, names, currentlySelected)
 	}
-	return ret, nil
 }
 
+// parseCurrentTools converts a []any of tool name strings into a set map.
+func parseCurrentTools(sArr []any) map[string]bool {
+	selected := make(map[string]bool, len(sArr))
+	for _, item := range sArr {
+		if s, ok := item.(string); ok {
+			selected[s] = true
+		}
+	}
+	return selected
+}
+
+// sortedToolNames returns all registered tool names in alphabetical order.
+func sortedToolNames() []string {
+	tools.Init()
+	allTools := tools.Registry.All()
+	names := make([]string, 0, len(allTools))
+	for name := range allTools {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// toolSelectionActions returns the three sentinel actions for the tools selection table.
+func toolSelectionActions() (doneAction, allAction, clearAction utils.TableAction) {
+	doneAction = utils.TableAction{
+		Format: "[d]one",
+		Short:  "d",
+		Long:   "done",
+		Action: func() error { return errDoneSelecting },
+	}
+	allAction = utils.TableAction{
+		Format: "[a]ll",
+		Short:  "a",
+		Long:   "all",
+		Action: func() error { return errAllTools },
+	}
+	clearAction = utils.TableAction{
+		Format: "[c]lear all",
+		Short:  "c",
+		Long:   "clear",
+		Action: func() error { return errClearTools },
+	}
+	return
+}
+
+// selectAllTools marks every name in the set as selected.
+func selectAllTools(names []string, selected map[string]bool) {
+	for _, n := range names {
+		selected[n] = true
+	}
+}
+
+// clearToolSelections removes all entries from the selected set.
+func clearToolSelections(selected map[string]bool) {
+	for k := range selected {
+		delete(selected, k)
+	}
+}
+
+// toggleToolSelections flips the selected state for each indexed tool name.
+func toggleToolSelections(indices []int, names []string, selected map[string]bool) {
+	for _, idx := range indices {
+		if idx >= 0 && idx < len(names) {
+			name := names[idx]
+			if selected[name] {
+				delete(selected, name)
+			} else {
+				selected[name] = true
+			}
+		}
+	}
+}
+
+// orderedSelectedTools returns the selected tool names in the order they appear
+// in the sorted names slice.
+func orderedSelectedTools(names []string, selected map[string]bool) []string {
+	ret := make([]string, 0, len(selected))
+	for _, name := range names {
+		if selected[name] {
+			ret = append(ret, name)
+		}
+	}
+	return ret
+}
+
+// drainCurrentTools extracts string values from a []any preserving order.
+func drainCurrentTools(sArr []any) []string {
+	ret := make([]string, 0, len(sArr))
+	for _, item := range sArr {
+		if s, ok := item.(string); ok {
+			ret = append(ret, s)
+		}
+	}
+	return ret
+}
+
+// toolRowFormatter returns a row formatter that prefixes selected tools
+// with "[X]" and unselected tools with "[ ]".
+func toolRowFormatter(currentlySelected map[string]bool) func(int, string) (string, error) {
+	return func(i int, name string) (string, error) {
+		prefix := "[ ]"
+		if currentlySelected[name] {
+			prefix = "[X]"
+		}
+		return fmt.Sprintf("%s %d. %s", prefix, i, name), nil
+	}
+}
+
+// getNewValue handles primitive scalar values, dispatching on key name
+// for model and shell_context or falling back to a text input prompt.
 func getNewValue(k string, v any, claiConfigDir string) (any, error) {
-	if k == "tools" {
-		return getToolsValue(v)
-	}
-	if k == "model" {
+	switch k {
+	case "model":
 		return getModelValue(v, claiConfigDir)
-	}
-	if k == "shell_context" {
+	case "shell_context":
 		return getShellContextValue(v, claiConfigDir)
 	}
 
-	var ret any
 	fmt.Print(colorBreadtext(fmt.Sprintf("Key: '%v', current: '%v'\n", k, v)))
 	fmt.Print(colorSecondary("Please enter new value, or leave empty to keep: "))
 	input, err := utils.ReadUserInput()
@@ -470,13 +644,12 @@ func getNewValue(k string, v any, claiConfigDir string) (any, error) {
 		return nil, fmt.Errorf("failed to read input for key %q: %w", k, err)
 	}
 	if input == "" {
-		ret = v
-	} else {
-		ret = castPrimitive(input)
+		return v, nil
 	}
-	return ret, nil
+	return castPrimitive(input), nil
 }
 
+// getModelValue presents a table of available models for selection.
 func getModelValue(v any, claiConfigDir string) (any, error) {
 	models, err := getAvailableModels(claiConfigDir)
 	if err != nil {
@@ -511,6 +684,7 @@ func getModelValue(v any, claiConfigDir string) (any, error) {
 	return castPrimitive(models[choice[0]]), nil
 }
 
+// getShellContextValue presents a table of available shell contexts for selection.
 func getShellContextValue(v any, claiConfigDir string) (any, error) {
 	contexts, err := getAvailableShellContexts(claiConfigDir)
 	if err != nil {
@@ -545,6 +719,7 @@ func getShellContextValue(v any, claiConfigDir string) (any, error) {
 	return castPrimitive(contexts[choice[0]]), nil
 }
 
+// getAvailableModels discovers model configurations from the clai config directory.
 func getAvailableModels(claiConfigDir string) ([]string, error) {
 	cfgs, err := getConfigs(filepath.Join(claiConfigDir, "*.json"), []string{"textConfig", "photoConfig", "videoConfig"})
 	if err != nil {
@@ -565,6 +740,7 @@ func getAvailableModels(claiConfigDir string) ([]string, error) {
 	return names, nil
 }
 
+// getAvailableShellContexts discovers shell context configurations from the clai config directory.
 func getAvailableShellContexts(claiConfigDir string) ([]string, error) {
 	shellCtxDir := filepath.Join(claiConfigDir, "shellContexts")
 	cfgs, err := getConfigs(filepath.Join(shellCtxDir, "*.json"), []string{})
@@ -579,7 +755,12 @@ func getAvailableShellContexts(claiConfigDir string) ([]string, error) {
 	return names, nil
 }
 
+// handleValue dispatches value editing to the appropriate handler based on
+// key name (for "tools") or value type (map, slice, primitive).
 func handleValue(k string, v any, claiConfigDir string) (any, error) {
+	if k == "tools" {
+		return getToolsValue(v)
+	}
 	switch val := v.(type) {
 	case map[string]any:
 		return editMap(k, val, claiConfigDir)
@@ -590,13 +771,12 @@ func handleValue(k string, v any, claiConfigDir string) (any, error) {
 	}
 }
 
+// editMap presents an interactive loop for adding, updating, removing keys
+// from a JSON map, or marking it as done.
 func editMap(k string, m map[string]any, claiConfigDir string) (map[string]any, error) {
 	edited := maps.Clone(m)
 	for {
-		var keys []string
-		for key := range edited {
-			keys = append(keys, key)
-		}
+		keys := sortedKeys(edited)
 		fmt.Print(colorSecondary(fmt.Sprintf("Map '%s' keys: %v\n[a]dd [u]pdate [r]emove [d]one: ", k, keys)))
 		action, err := utils.ReadUserInput()
 		if err != nil {
@@ -646,6 +826,8 @@ func editMap(k string, m map[string]any, claiConfigDir string) (map[string]any, 
 	}
 }
 
+// editSlice presents an interactive loop for appending, updating, removing
+// elements from a JSON array, or marking it as done.
 func editSlice(k string, s []any, claiConfigDir string) ([]any, error) {
 	edited := append([]any(nil), s...)
 	for {
@@ -670,48 +852,11 @@ func editSlice(k string, s []any, claiConfigDir string) ([]any, error) {
 			if err != nil {
 				return nil, fmt.Errorf("read remove index: %w", err)
 			}
-			if strings.Contains(idxStr, "-") {
-				split := strings.Split(idxStr, "-")
-				p, q := -1, -1
-				var multiDelErr error
-			SPLIT_LOOP:
-				for _, i := range split {
-					idx, atoiErr := strconv.Atoi(i)
-					if atoiErr != nil {
-						multiDelErr = fmt.Errorf("failed to convert %q to integer: %w", i, atoiErr)
-						break SPLIT_LOOP
-					}
-					if p == -1 {
-						p = idx
-					} else {
-						q = idx
-					}
-					pTooLow := p < -1
-					qTooLow := p > -1 && q < -1
-					qTooHigh := q >= len(edited)
-					pHigherThanQ := p > q && q != -1
-					if qTooLow || pTooLow || qTooHigh || pHigherThanQ {
-						checks := fmt.Sprintf("qTooLow: %v, pTooLow: %v, qTooHigh: %v, pHigherThanQ: %v", pTooLow, qTooLow, qTooHigh, pHigherThanQ)
-						multiDelErr = fmt.Errorf("invalid range selection, p: %v, q: %v, len: %v. checks: %v", p, q, len(edited), checks)
-						break SPLIT_LOOP
-					}
-				}
-				if multiDelErr != nil {
-					ancli.Errf("failed to delete range: %v", multiDelErr)
-					continue
-				}
-				edited, err = utils.DeleteRange(edited, p, q)
-				if err != nil {
-					ancli.Errf("failed to delete range: %v", err)
-					continue
-				}
-			} else {
-				idx, convErr := strconv.Atoi(idxStr)
-				if convErr != nil || idx < 0 || idx >= len(edited) {
-					ancli.Errf("invalid index: %v", idxStr)
-					continue
-				}
-				edited = append(edited[:idx], edited[idx+1:]...)
+			var delErr error
+			edited, delErr = deleteFromSlice(edited, idxStr)
+			if delErr != nil {
+				ancli.Errf("%v", delErr)
+				continue
 			}
 
 		case "u":
@@ -737,22 +882,52 @@ func editSlice(k string, s []any, claiConfigDir string) ([]any, error) {
 	}
 }
 
-func buildNewConfig(jzon map[string]any, claiConfigDir string) (map[string]any, error) {
-	newConfig := make(map[string]any)
-	for k, v := range jzon {
-		nv, err := handleValue(k, v, claiConfigDir)
-		if err != nil {
-			if errors.Is(err, utils.ErrBack) || errors.Is(err, utils.ErrUserInitiatedExit) {
-				// User bailed out of interactive config → keep everything as-is
-				return jzon, nil
-			}
-			return nil, fmt.Errorf("failed to handle key %q: %w", k, err)
+// deleteFromSlice removes elements from a slice. The idxStr can be a single
+// index (e.g. "2") or a range (e.g. "1-3" inclusive). Returns the modified
+// slice or an error describing why the operation was invalid.
+func deleteFromSlice(s []any, idxStr string) ([]any, error) {
+	if !strings.Contains(idxStr, "-") {
+		idx, convErr := strconv.Atoi(idxStr)
+		if convErr != nil || idx < 0 || idx >= len(s) {
+			return s, fmt.Errorf("invalid index: %v", idxStr)
 		}
-		newConfig[k] = nv
+		return append(s[:idx], s[idx+1:]...), nil
 	}
-	return newConfig, nil
+
+	split := strings.Split(idxStr, "-")
+	p, q := -1, -1
+	for _, part := range split {
+		idx, err := strconv.Atoi(part)
+		if err != nil {
+			return s, fmt.Errorf("failed to convert %q to integer: %w", part, err)
+		}
+		if p == -1 {
+			p = idx
+		} else {
+			q = idx
+		}
+	}
+
+	switch {
+	case p < 0:
+		return s, fmt.Errorf("invalid range selection, p: %v, q: %v, len: %v", p, q, len(s))
+	case q < 0:
+		return s, fmt.Errorf("invalid range selection, p: %v, q: %v, len: %v", p, q, len(s))
+	case q >= len(s):
+		return s, fmt.Errorf("invalid range selection, p: %v, q: %v, len: %v", p, q, len(s))
+	case p > q:
+		return s, fmt.Errorf("invalid range selection, p: %v, q: %v, len: %v", p, q, len(s))
+	}
+
+	result, err := utils.DeleteRange(s, p, q)
+	if err != nil {
+		return s, fmt.Errorf("failed to delete range [%d-%d]: %w", p, q, err)
+	}
+	return result, nil
 }
 
+// castPrimitive attempts to convert a string value to bool, int, or float64.
+// If the value is not a string, it is returned as-is.
 func castPrimitive(v any) any {
 	if misc.Truthy(v) {
 		return true

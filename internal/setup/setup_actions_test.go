@@ -1,13 +1,20 @@
 package setup
 
 import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/utils"
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
 func TestCastPrimitive(t *testing.T) {
@@ -328,6 +335,368 @@ func TestGetNewValue_DispatchesToShellContextSelector(t *testing.T) {
 	if got != "git" {
 		t.Fatalf("getNewValue(shell_context) = %q, want %q", got, "git")
 	}
+}
+
+type mockTool struct {
+	name string
+	desc string
+}
+
+func (m mockTool) Call(pub_models.Input) (string, error) { return "", nil }
+
+func (m mockTool) Specification() pub_models.Specification {
+	return pub_models.Specification{Name: m.name, Description: m.desc}
+}
+
+func registerMockTools(names ...string) {
+	for i, name := range names {
+		tools.Registry.Set(name, mockTool{
+			name: name,
+			desc: fmt.Sprintf("description for %s (%d)", name, i),
+		})
+	}
+}
+
+func TestGetToolsValue_UsesSelectFromTable(t *testing.T) {
+	tools.Registry.Reset()
+	tools.Init()
+	tools.Registry.Reset()
+	t.Cleanup(func() { tools.Registry.Reset() })
+
+	registerMockTools("cat", "file_tree", "ls", "rg", "go_test")
+
+	t.Run("single index selection", func(t *testing.T) {
+		inputs := []string{"2", "d"}
+		inputIdx := 0
+		restore := utils.UseReadUserInputForTests(func() (string, error) {
+			if inputIdx >= len(inputs) {
+				return "", io.EOF
+			}
+			ret := inputs[inputIdx]
+			inputIdx++
+			return ret, nil
+		})
+		defer restore()
+
+		got, err := getToolsValue([]any{})
+		if err != nil {
+			t.Fatalf("getToolsValue(): %v", err)
+		}
+
+		want := []string{"go_test"}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("getToolsValue() = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("multi index selection with comma", func(t *testing.T) {
+		inputs := []string{"0,4", "d"}
+		inputIdx := 0
+		restore := utils.UseReadUserInputForTests(func() (string, error) {
+			if inputIdx >= len(inputs) {
+				return "", io.EOF
+			}
+			ret := inputs[inputIdx]
+			inputIdx++
+			return ret, nil
+		})
+		defer restore()
+
+		got, err := getToolsValue([]any{})
+		if err != nil {
+			t.Fatalf("getToolsValue(): %v", err)
+		}
+
+		want := []string{"cat", "rg"}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("getToolsValue() = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("range selection", func(t *testing.T) {
+		inputs := []string{"0:2", "d"}
+		inputIdx := 0
+		restore := utils.UseReadUserInputForTests(func() (string, error) {
+			if inputIdx >= len(inputs) {
+				return "", io.EOF
+			}
+			ret := inputs[inputIdx]
+			inputIdx++
+			return ret, nil
+		})
+		defer restore()
+
+		got, err := getToolsValue([]any{})
+		if err != nil {
+			t.Fatalf("getToolsValue(): %v", err)
+		}
+
+		want := []string{"cat", "file_tree", "go_test"}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("getToolsValue() = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("toggle off a selected tool", func(t *testing.T) {
+		inputs := []string{"2", "2", "d"}
+		inputIdx := 0
+		restore := utils.UseReadUserInputForTests(func() (string, error) {
+			if inputIdx >= len(inputs) {
+				return "", io.EOF
+			}
+			ret := inputs[inputIdx]
+			inputIdx++
+			return ret, nil
+		})
+		defer restore()
+
+		got, err := getToolsValue([]any{})
+		if err != nil {
+			t.Fatalf("getToolsValue(): %v", err)
+		}
+
+		if len(got) != 0 {
+			t.Fatalf("getToolsValue() = %v, want empty (toggled on then off)", got)
+		}
+	})
+
+	t.Run("clear all action", func(t *testing.T) {
+		inputs := []string{"c", "d"}
+		inputIdx := 0
+		restore := utils.UseReadUserInputForTests(func() (string, error) {
+			if inputIdx >= len(inputs) {
+				return "", io.EOF
+			}
+			ret := inputs[inputIdx]
+			inputIdx++
+			return ret, nil
+		})
+		defer restore()
+
+		got, err := getToolsValue([]any{"rg", "cat"})
+		if err != nil {
+			t.Fatalf("getToolsValue(): %v", err)
+		}
+
+		if len(got) != 0 {
+			t.Fatalf("getToolsValue() = %v, want empty slice (clear all)", got)
+		}
+	})
+
+	t.Run("back keeps current value", func(t *testing.T) {
+		restore := utils.UseReadUserInputForTests(func() (string, error) {
+			return "b", nil
+		})
+		defer restore()
+
+		current := []any{"rg", "ls"}
+		got, err := getToolsValue(current)
+		if err != nil {
+			t.Fatalf("getToolsValue(): %v", err)
+		}
+
+		sort.Strings(got)
+		want := []string{"ls", "rg"}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("getToolsValue() = %v, want %v (back keeps current)", got, want)
+		}
+	})
+
+	t.Run("quit propagates error", func(t *testing.T) {
+		restore := utils.UseReadUserInputForTests(func() (string, error) {
+			return "q", nil
+		})
+		defer restore()
+
+		_, err := getToolsValue([]any{})
+		if !errors.Is(err, utils.ErrUserInitiatedExit) {
+			t.Fatalf("getToolsValue() error = %v, want ErrUserInitiatedExit", err)
+		}
+	})
+
+	t.Run("all action selects every tool", func(t *testing.T) {
+		inputs := []string{"a", "d"}
+		inputIdx := 0
+		restore := utils.UseReadUserInputForTests(func() (string, error) {
+			if inputIdx >= len(inputs) {
+				return "", io.EOF
+			}
+			ret := inputs[inputIdx]
+			inputIdx++
+			return ret, nil
+		})
+		defer restore()
+
+		got, err := getToolsValue([]any{"rg"})
+		if err != nil {
+			t.Fatalf("getToolsValue(): %v", err)
+		}
+
+		want := []string{"cat", "file_tree", "go_test", "ls", "rg"}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("getToolsValue() = %v, want %v (all tools)", got, want)
+		}
+	})
+
+	t.Run("non-slice input returns empty", func(t *testing.T) {
+		got, err := getToolsValue("not a slice")
+		if err != nil {
+			t.Fatalf("getToolsValue(): %v", err)
+		}
+		if len(got) != 0 {
+			t.Fatalf("getToolsValue() = %v, want empty slice for non-slice input", got)
+		}
+	})
+
+	t.Run("marked tools show X prefix", func(t *testing.T) {
+		currentlySelected := map[string]bool{"cat": true, "rg": true}
+
+		rowFormatter := toolRowFormatter(currentlySelected)
+
+		catRow, err := rowFormatter(0, "cat")
+		if err != nil {
+			t.Fatalf("rowFormatter(cat): %v", err)
+		}
+		if !strings.HasPrefix(catRow, "[X]") {
+			t.Fatalf("rowFormatter(cat) = %q, want [X] prefix", catRow)
+		}
+
+		ftRow, err := rowFormatter(1, "file_tree")
+		if err != nil {
+			t.Fatalf("rowFormatter(file_tree): %v", err)
+		}
+		if !strings.HasPrefix(ftRow, "[ ]") {
+			t.Fatalf("rowFormatter(file_tree) = %q, want [ ] prefix", ftRow)
+		}
+	})
+}
+
+func TestInteractiveReconfigure_FieldSelection(t *testing.T) {
+	t.Run("selects field by index and edits it", func(t *testing.T) {
+		dir := t.TempDir()
+		cfgPath := filepath.Join(dir, "test.json")
+		original := `{"name":"oldname","prompt":"hello"}`
+		if err := os.WriteFile(cfgPath, []byte(original), 0o644); err != nil {
+			t.Fatalf("WriteFile: %v", err)
+		}
+
+		// Input sequence:
+		// 1. Select field index 0 ("name", alphabetically first)
+		// 2. Enter new value for name
+		// 3. Select [d]one
+		inputs := []string{"0", "newname", "d"}
+		inputIdx := 0
+		restore := utils.UseReadUserInputForTests(func() (string, error) {
+			if inputIdx >= len(inputs) {
+				return "", io.EOF
+			}
+			ret := inputs[inputIdx]
+			inputIdx++
+			return ret, nil
+		})
+		defer restore()
+
+		err := interractiveReconfigure(config{name: "test.json", filePath: cfgPath}, []byte(original))
+		if err != nil {
+			t.Fatalf("interractiveReconfigure: %v", err)
+		}
+
+		got, err := os.ReadFile(cfgPath)
+		if err != nil {
+			t.Fatalf("ReadFile: %v", err)
+		}
+
+		var jzon map[string]any
+		if err := json.Unmarshal(got, &jzon); err != nil {
+			t.Fatalf("Unmarshal: %v", err)
+		}
+
+		if jzon["name"] != "newname" {
+			t.Fatalf("name = %q, want %q", jzon["name"], "newname")
+		}
+		if jzon["prompt"] != "hello" {
+			t.Fatalf("prompt = %q, want %q (should be unchanged)", jzon["prompt"], "hello")
+		}
+	})
+
+	t.Run("done without editing preserves config", func(t *testing.T) {
+		dir := t.TempDir()
+		cfgPath := filepath.Join(dir, "test.json")
+		original := `{"name":"oldname","prompt":"hello"}`
+		if err := os.WriteFile(cfgPath, []byte(original), 0o644); err != nil {
+			t.Fatalf("WriteFile: %v", err)
+		}
+
+		restore := utils.UseReadUserInputForTests(func() (string, error) {
+			return "d", nil
+		})
+		defer restore()
+
+		err := interractiveReconfigure(config{name: "test.json", filePath: cfgPath}, []byte(original))
+		if err != nil {
+			t.Fatalf("interractiveReconfigure: %v", err)
+		}
+
+		got, err := os.ReadFile(cfgPath)
+		if err != nil {
+			t.Fatalf("ReadFile: %v", err)
+		}
+
+		var jzon map[string]any
+		if err := json.Unmarshal(got, &jzon); err != nil {
+			t.Fatalf("Unmarshal: %v", err)
+		}
+
+		if jzon["name"] != "oldname" {
+			t.Fatalf("name = %q, want %q", jzon["name"], "oldname")
+		}
+	})
+
+	t.Run("multiple field edits", func(t *testing.T) {
+		dir := t.TempDir()
+		cfgPath := filepath.Join(dir, "test.json")
+		original := `{"name":"oldname","prompt":"hello"}`
+		if err := os.WriteFile(cfgPath, []byte(original), 0o644); err != nil {
+			t.Fatalf("WriteFile: %v", err)
+		}
+
+		// Edit name: select 0, type "newname"
+		// Then edit prompt: select 1, type "world"
+		// Then done: "d"
+		inputs := []string{"0", "newname", "1", "world", "d"}
+		inputIdx := 0
+		restore := utils.UseReadUserInputForTests(func() (string, error) {
+			if inputIdx >= len(inputs) {
+				return "", io.EOF
+			}
+			ret := inputs[inputIdx]
+			inputIdx++
+			return ret, nil
+		})
+		defer restore()
+
+		err := interractiveReconfigure(config{name: "test.json", filePath: cfgPath}, []byte(original))
+		if err != nil {
+			t.Fatalf("interractiveReconfigure: %v", err)
+		}
+
+		got, err := os.ReadFile(cfgPath)
+		if err != nil {
+			t.Fatalf("ReadFile: %v", err)
+		}
+
+		var jzon map[string]any
+		if err := json.Unmarshal(got, &jzon); err != nil {
+			t.Fatalf("Unmarshal: %v", err)
+		}
+
+		if jzon["name"] != "newname" {
+			t.Fatalf("name = %q, want %q", jzon["name"], "newname")
+		}
+		if jzon["prompt"] != "world" {
+			t.Fatalf("prompt = %q, want %q", jzon["prompt"], "world")
+		}
+	})
 }
 
 func TestActionCopy(t *testing.T) {
