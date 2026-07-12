@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -695,6 +696,167 @@ func TestInteractiveReconfigure_FieldSelection(t *testing.T) {
 		}
 		if jzon["prompt"] != "world" {
 			t.Fatalf("prompt = %q, want %q", jzon["prompt"], "world")
+		}
+	})
+}
+
+func TestSliceRowFormatter(t *testing.T) {
+	s := []any{"foo", 42, true}
+	formatter := sliceRowFormatter(s)
+
+	t.Run("formats each element with index", func(t *testing.T) {
+		for i, want := range []string{"0. foo", "1. 42", "2. true"} {
+			got, err := formatter(i, strconv.Itoa(i))
+			if err != nil {
+				t.Fatalf("formatter(%d): %v", i, err)
+			}
+			if got != want {
+				t.Fatalf("formatter(%d) = %q, want %q", i, got, want)
+			}
+		}
+	})
+}
+
+func TestEditSlice_UpdateAndRemove(t *testing.T) {
+	t.Run("update element via table selection", func(t *testing.T) {
+		// editSlice loop: "u" -> selectFromSlice: "1" (returns [1] directly) -> handleValue: "newval" -> editSlice: "d"
+		inputs := []string{"u", "1", "newval", "d"}
+		inputIdx := 0
+		restore := utils.UseReadUserInputForTests(func() (string, error) {
+			if inputIdx >= len(inputs) {
+				return "", io.EOF
+			}
+			ret := inputs[inputIdx]
+			inputIdx++
+			return ret, nil
+		})
+		defer restore()
+
+		original := []any{"a", "b", "c"}
+		got, err := editSlice("test", original, "")
+		if err != nil {
+			t.Fatalf("editSlice(): %v", err)
+		}
+
+		want := []any{"a", "newval", "c"}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("editSlice() = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("remove elements via table multi-select", func(t *testing.T) {
+		// editSlice: "r" -> selectFromSlice: "0,2" (returns [0,2] directly) -> back to editSlice: "d"
+		inputs := []string{"r", "0,2", "d"}
+		inputIdx := 0
+		restore := utils.UseReadUserInputForTests(func() (string, error) {
+			if inputIdx >= len(inputs) {
+				return "", io.EOF
+			}
+			ret := inputs[inputIdx]
+			inputIdx++
+			return ret, nil
+		})
+		defer restore()
+
+		original := []any{"a", "b", "c"}
+		got, err := editSlice("test", original, "")
+		if err != nil {
+			t.Fatalf("editSlice(): %v", err)
+		}
+
+		want := []any{"b"}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("editSlice() = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("remove via range", func(t *testing.T) {
+		inputs := []string{"r", "0:2", "d"}
+		inputIdx := 0
+		restore := utils.UseReadUserInputForTests(func() (string, error) {
+			if inputIdx >= len(inputs) {
+				return "", io.EOF
+			}
+			ret := inputs[inputIdx]
+			inputIdx++
+			return ret, nil
+		})
+		defer restore()
+
+		original := []any{"a", "b", "c", "d", "e"}
+		got, err := editSlice("test", original, "")
+		if err != nil {
+			t.Fatalf("editSlice(): %v", err)
+		}
+
+		want := []any{"d", "e"}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("editSlice() = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("append element", func(t *testing.T) {
+		inputs := []string{"a", "newitem", "d"}
+		inputIdx := 0
+		restore := utils.UseReadUserInputForTests(func() (string, error) {
+			if inputIdx >= len(inputs) {
+				return "", io.EOF
+			}
+			ret := inputs[inputIdx]
+			inputIdx++
+			return ret, nil
+		})
+		defer restore()
+
+		original := []any{"a", "b"}
+		got, err := editSlice("test", original, "")
+		if err != nil {
+			t.Fatalf("editSlice(): %v", err)
+		}
+
+		want := []any{"a", "b", "newitem"}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("editSlice() = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("done returns slice unchanged", func(t *testing.T) {
+		restore := utils.UseReadUserInputForTests(func() (string, error) {
+			return "d", nil
+		})
+		defer restore()
+
+		original := []any{"a", "b"}
+		got, err := editSlice("test", original, "")
+		if err != nil {
+			t.Fatalf("editSlice(): %v", err)
+		}
+
+		if !reflect.DeepEqual(got, original) {
+			t.Fatalf("editSlice() = %v, want %v", got, original)
+		}
+	})
+
+	t.Run("empty slice update/remove are no-ops", func(t *testing.T) {
+		inputs := []string{"u", "r", "d"}
+		inputIdx := 0
+		restore := utils.UseReadUserInputForTests(func() (string, error) {
+			if inputIdx >= len(inputs) {
+				return "", io.EOF
+			}
+			ret := inputs[inputIdx]
+			inputIdx++
+			return ret, nil
+		})
+		defer restore()
+
+		got, err := editSlice("test", []any{}, "")
+		if err != nil {
+			t.Fatalf("editSlice(): %v", err)
+		}
+
+		if len(got) != 0 {
+			t.Fatalf("editSlice() = %v, want empty slice", got)
 		}
 	})
 }

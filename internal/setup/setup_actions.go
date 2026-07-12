@@ -826,12 +826,13 @@ func editMap(k string, m map[string]any, claiConfigDir string) (map[string]any, 
 	}
 }
 
-// editSlice presents an interactive loop for appending, updating, removing
-// elements from a JSON array, or marking it as done.
+// editSlice presents a numbered table of elements and an action prompt
+// for appending, updating, removing entries, or marking as done.
 func editSlice(k string, s []any, claiConfigDir string) ([]any, error) {
 	edited := append([]any(nil), s...)
 	for {
-		fmt.Print(colorSecondary(fmt.Sprintf("Slice '%s': %v\n[a]ppend [u]pdate [r]emove [d]one: ", k, edited)))
+		printSliceTable(k, edited)
+		fmt.Print(colorSecondary("[a]ppend [u]pdate [r]emove [d]one: "))
 		action, err := utils.ReadUserInput()
 		if err != nil {
 			return nil, fmt.Errorf("read slice action: %w", err)
@@ -840,90 +841,115 @@ func editSlice(k string, s []any, claiConfigDir string) ([]any, error) {
 		case "d", "":
 			return edited, nil
 		case "a":
-			fmt.Print(colorSecondary("Value: "))
-			nv, err := utils.ReadUserInput()
-			if err != nil {
-				return nil, fmt.Errorf("read append value: %w", err)
-			}
-			edited = append(edited, castPrimitive(nv))
-		case "r":
-			fmt.Print(colorSecondary(fmt.Sprintf("Index to remove (0-%d, multi-select with ex: '1-3'): ", len(edited)-1)))
-			idxStr, err := utils.ReadUserInput()
-			if err != nil {
-				return nil, fmt.Errorf("read remove index: %w", err)
-			}
-			var delErr error
-			edited, delErr = deleteFromSlice(edited, idxStr)
-			if delErr != nil {
-				ancli.Errf("%v", delErr)
-				continue
-			}
-
+			edited = append(edited, promptSliceAppend())
 		case "u":
-			fmt.Print(colorSecondary(fmt.Sprintf("Index to update (0-%d): ", len(edited)-1)))
-			idxStr, err := utils.ReadUserInput()
+			edited, err = promptSliceUpdate(k, edited, claiConfigDir)
 			if err != nil {
-				return nil, fmt.Errorf("read update index: %w", err)
+				return nil, err
 			}
-			idx, err := strconv.Atoi(idxStr)
-			if err != nil || idx < 0 || idx >= len(edited) {
-				fmt.Println(colorBreadtext("invalid index"))
-				continue
-			}
-			val := edited[idx]
-			nv, err := handleValue(fmt.Sprintf("%s[%d]", k, idx), val, claiConfigDir)
+		case "r":
+			edited, err = promptSliceRemove(edited)
 			if err != nil {
-				return nil, fmt.Errorf("failed to handle slice value at %d: %w", idx, err)
+				ancli.Errf("%v", err)
 			}
-			edited[idx] = nv
 		default:
 			fmt.Println(colorBreadtext("invalid slice action"))
 		}
 	}
 }
 
-// deleteFromSlice removes elements from a slice. The idxStr can be a single
-// index (e.g. "2") or a range (e.g. "1-3" inclusive). Returns the modified
-// slice or an error describing why the operation was invalid.
-func deleteFromSlice(s []any, idxStr string) ([]any, error) {
-	if !strings.Contains(idxStr, "-") {
-		idx, convErr := strconv.Atoi(idxStr)
-		if convErr != nil || idx < 0 || idx >= len(s) {
-			return s, fmt.Errorf("invalid index: %v", idxStr)
-		}
-		return append(s[:idx], s[idx+1:]...), nil
+// printSliceTable renders a numbered table of slice elements.
+func printSliceTable(key string, s []any) {
+	fmt.Print(colorPrimary(fmt.Sprintf("Slice '%s' (%d elements):\n", key, len(s))))
+	if len(s) == 0 {
+		fmt.Print(colorBreadtext("  (empty)\n"))
+		return
 	}
-
-	split := strings.Split(idxStr, "-")
-	p, q := -1, -1
-	for _, part := range split {
-		idx, err := strconv.Atoi(part)
-		if err != nil {
-			return s, fmt.Errorf("failed to convert %q to integer: %w", part, err)
-		}
-		if p == -1 {
-			p = idx
-		} else {
-			q = idx
-		}
+	for i, v := range s {
+		fmt.Print(colorBreadtext(fmt.Sprintf("  %d. %v\n", i, v)))
 	}
+}
 
-	switch {
-	case p < 0:
-		return s, fmt.Errorf("invalid range selection, p: %v, q: %v, len: %v", p, q, len(s))
-	case q < 0:
-		return s, fmt.Errorf("invalid range selection, p: %v, q: %v, len: %v", p, q, len(s))
-	case q >= len(s):
-		return s, fmt.Errorf("invalid range selection, p: %v, q: %v, len: %v", p, q, len(s))
-	case p > q:
-		return s, fmt.Errorf("invalid range selection, p: %v, q: %v, len: %v", p, q, len(s))
-	}
-
-	result, err := utils.DeleteRange(s, p, q)
+// promptSliceAppend reads a single value from the user and casts it.
+func promptSliceAppend() any {
+	fmt.Print(colorSecondary("Value: "))
+	nv, err := utils.ReadUserInput()
 	if err != nil {
-		return s, fmt.Errorf("failed to delete range [%d-%d]: %w", p, q, err)
+		ancli.Errf("read append value: %v", err)
+		return nil
 	}
-	return result, nil
+	return castPrimitive(nv)
+}
+
+// promptSliceUpdate presents a single-select table of slice elements and
+// delegates to handleValue on the chosen index.
+func promptSliceUpdate(key string, s []any, claiConfigDir string) ([]any, error) {
+	if len(s) == 0 {
+		return s, nil
+	}
+	indices, err := selectFromSlice(s, true)
+	if err != nil {
+		if errors.Is(err, utils.ErrBack) || errors.Is(err, utils.ErrUserInitiatedExit) {
+			return s, nil
+		}
+		return nil, fmt.Errorf("select index for update: %w", err)
+	}
+	idx := indices[0]
+	nv, err := handleValue(fmt.Sprintf("%s[%d]", key, idx), s[idx], claiConfigDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to handle slice value at %d: %w", idx, err)
+	}
+	s[idx] = nv
+	return s, nil
+}
+
+// promptSliceRemove presents a multi-select table of slice elements and
+// deletes chosen indices in descending order.
+func promptSliceRemove(s []any) ([]any, error) {
+	if len(s) == 0 {
+		return s, nil
+	}
+	indices, err := selectFromSlice(s, false)
+	if err != nil {
+		if errors.Is(err, utils.ErrBack) || errors.Is(err, utils.ErrUserInitiatedExit) {
+			return s, nil
+		}
+		return nil, err
+	}
+	// Delete in descending order to preserve index validity.
+	sort.Sort(sort.Reverse(sort.IntSlice(indices)))
+	for _, idx := range indices {
+		s = append(s[:idx], s[idx+1:]...)
+	}
+	return s, nil
+}
+
+// selectFromSlice presents a table of slice values and returns selected
+// indices. When single is true only one index may be chosen.
+func selectFromSlice(s []any, single bool) ([]int, error) {
+	labels := make([]string, len(s))
+	for i := range labels {
+		labels[i] = strconv.Itoa(i)
+	}
+	return utils.SelectFromTable(
+		"Select elements",
+		utils.SlicePaginator(labels),
+		"Select elements [<num>]",
+		sliceRowFormatter(s),
+		len(s),
+		single,
+		nil,
+		os.Stdout,
+		"",
+	)
+}
+
+// sliceRowFormatter returns a row formatter that displays "i. value" for
+// each element, looking up the value via the global index.
+func sliceRowFormatter(s []any) func(int, string) (string, error) {
+	return func(i int, _ string) (string, error) {
+		return fmt.Sprintf("%d. %v", i, s[i]), nil
+	}
 }
 
 // castPrimitive attempts to convert a string value to bool, int, or float64.
