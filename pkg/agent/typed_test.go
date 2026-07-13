@@ -1,7 +1,10 @@
 package agent
 
 import (
+	"context"
 	"testing"
+
+	"github.com/baalimago/clai/pkg/text/models"
 )
 
 func TestExtractJSONCandidates(t *testing.T) {
@@ -112,4 +115,56 @@ func TestParseTyped(t *testing.T) {
 			t.Fatalf("expected longest candidate to win, got: %+v", result)
 		}
 	})
+}
+
+func TestTypedQuerier_Query_ReadsFromAssistantRole(t *testing.T) {
+	type platform struct {
+		PlatformType string `json:"platform_type"`
+	}
+
+	// Simulate a chat with:
+	// - system prompt containing JSON-like formatting examples (trap)
+	// - assistant response containing the actual LLM output JSON
+	chat := models.Chat{
+		Messages: []models.Message{
+			{
+				Role: "system",
+				// This system prompt contains valid JSON that matches platform fields —
+				// if Query incorrectly reads from system role, it will parse this silently.
+				Content: `OUTPUT FORMAT: {"platform_type": "ciceron"}`,
+			},
+			{
+				Role:    "user",
+				Content: "Classify this page.",
+			},
+			{
+				Role:    "assistant",
+				Content: `{"platform_type": "unknown"}`,
+			},
+		},
+	}
+
+	// Mock agent whose querier returns our crafted chat.
+	a := New()
+	a.querier = &stubChatQuerier{chat: chat}
+	tq := NewTyped[platform]()
+	tq.agent = &a
+
+	result, err := tq.Query(context.Background(), models.Chat{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.PlatformType != "unknown" {
+		t.Fatalf("expected PlatformType='unknown' (from assistant), got '%s' (likely from system prompt trap)", result.PlatformType)
+	}
+}
+
+// stubChatQuerier returns a predefined chat.
+type stubChatQuerier struct {
+	chat models.Chat
+}
+
+func (s *stubChatQuerier) Query(ctx context.Context) error { return nil }
+func (s *stubChatQuerier) TextQuery(ctx context.Context, chat models.Chat) (models.Chat, error) {
+	return s.chat, nil
 }

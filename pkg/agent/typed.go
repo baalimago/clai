@@ -10,14 +10,14 @@ import (
 )
 
 // TypedResponse is the interface for LLM queries that return a typed result
-// parsed from the system message JSON.
+// parsed from the assistant message JSON.
 type TypedResponse[T any] interface {
 	Setup(context.Context) error
 	Query(context.Context, models.Chat) (T, error)
 }
 
 // TypedQuerier wraps an Agent and adds typed JSON parsing on top of Query.
-// Each call to Query extracts the last system message, finds JSON candidates
+// Each call to Query extracts the last assistant message, finds JSON candidates
 // in its content, and unmarshals the first valid one into T.
 type TypedQuerier[T any] struct {
 	agent *Agent
@@ -43,7 +43,7 @@ func (tq *TypedQuerier[T]) Query(ctx context.Context, chat models.Chat) (T, erro
 	if err != nil {
 		return zero, fmt.Errorf("typed query: %w", err)
 	}
-	msg, _, err := resp.LastOfRole("system")
+	msg, _, err := resp.LastOfRole("assistant")
 	if err != nil {
 		return zero, fmt.Errorf("typed query: %w", err)
 	}

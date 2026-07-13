@@ -34,9 +34,9 @@ func (a *Agent) Run(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("Agent.Run: %w", err)
 	}
-	msg, _, err := c.LastOfRole("system")
+	msg, _, err := c.LastOfRole("assistant")
 	if err != nil {
-		return "", fmt.Errorf("failed to get last message of system role: %w", err)
+		return "", fmt.Errorf("failed to get last message of assistant role: %w", err)
 	}
 	return msg.String(), nil
 }
