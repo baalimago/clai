@@ -89,6 +89,35 @@ func TestResponsesMapper_MapChatToResponsesInput_IncludesAssistantMessages(t *te
 	}
 }
 
+func TestResponsesMapper_EmptyAssistantMessage_EncodesRequiredTextField(t *testing.T) {
+	t.Parallel()
+
+	items, err := mapMessageToResponsesInputItems(pub_models.Message{Role: "assistant"}, false)
+	if err != nil {
+		t.Fatalf("map assistant message: %v", err)
+	}
+
+	b, err := json.Marshal(items)
+	if err != nil {
+		t.Fatalf("marshal input items: %v", err)
+	}
+	var raw []map[string]any
+	if err := json.Unmarshal(b, &raw); err != nil {
+		t.Fatalf("unmarshal input items: %v", err)
+	}
+	content, ok := raw[0]["content"].([]any)
+	if !ok || len(content) != 1 {
+		t.Fatalf("content: got %#v", raw[0]["content"])
+	}
+	part, ok := content[0].(map[string]any)
+	if !ok {
+		t.Fatalf("content part: got %#v", content[0])
+	}
+	if text, ok := part["text"]; !ok || text != "" {
+		t.Fatalf("text: got %#v, want empty string", part["text"])
+	}
+}
+
 func TestResponsesStreamer_TextStreaming(t *testing.T) {
 	t.Parallel()
 

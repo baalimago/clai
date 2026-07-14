@@ -1,6 +1,7 @@
 package openai
 
 import (
+	"encoding/json"
 	"testing"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -35,6 +36,17 @@ func TestResponsesMapper_ImageContentPart_MapsToInputImage(t *testing.T) {
 	}
 	if parts[0].Detail != "auto" {
 		t.Fatalf("part[0] detail: got %q want auto", parts[0].Detail)
+	}
+	b, err := json.Marshal(parts[0])
+	if err != nil {
+		t.Fatalf("marshal image part: %v", err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(b, &raw); err != nil {
+		t.Fatalf("unmarshal image part: %v", err)
+	}
+	if _, ok := raw["text"]; ok {
+		t.Fatalf("image part must not encode text: %s", b)
 	}
 	if parts[1].Type != "input_text" || parts[1].Text != "describe this" {
 		t.Fatalf("part[1]: got %#v", parts[1])

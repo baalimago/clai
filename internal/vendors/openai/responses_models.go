@@ -1,5 +1,7 @@
 package openai
 
+import "encoding/json"
+
 // Minimal subset of the OpenAI Responses API request/streaming types needed by clai.
 //
 // We intentionally model only the fields we need for:
@@ -103,6 +105,27 @@ type responsesInputContent struct {
 	// (where image_url is an object), the Responses API expects a plain data-URL string.
 	ImageURL string `json:"image_url,omitempty"`
 	Detail   string `json:"detail,omitempty"` // "auto" | "low" | "high"
+}
+
+// MarshalJSON preserves the required text field for text content, including an
+// intentionally empty assistant message, without sending text on input_image.
+func (c responsesInputContent) MarshalJSON() ([]byte, error) {
+	type contentWire struct {
+		Type     string  `json:"type"`
+		Text     *string `json:"text,omitempty"`
+		ImageURL string  `json:"image_url,omitempty"`
+		Detail   string  `json:"detail,omitempty"`
+	}
+
+	wire := contentWire{
+		Type:     c.Type,
+		ImageURL: c.ImageURL,
+		Detail:   c.Detail,
+	}
+	if c.Type == "input_text" || c.Type == "output_text" {
+		wire.Text = &c.Text
+	}
+	return json.Marshal(wire)
 }
 
 type responsesTool struct {
