@@ -130,6 +130,7 @@ func (a *Agent) asInternalConfig() text.Configurations {
 		MaxToolCalls:       a.maxToolCalls,
 		RequestedToolGlobs: a.toolGlobs,
 		ResponseFormat:     a.responseFormat,
+		Out:                a.out,
 	}
 }
 
