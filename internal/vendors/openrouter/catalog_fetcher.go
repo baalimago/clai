@@ -18,7 +18,8 @@ import (
 const modelsEndpoint = "https://openrouter.ai/api/v1/models"
 
 type OpenRouterModelCatalog struct {
-	debug bool
+	debug       bool
+	fetchModels func(context.Context) ([]Model, error)
 }
 
 func NewModelCatalog(apiKey string) (OpenRouterModelCatalog, error) {
@@ -26,12 +27,14 @@ func NewModelCatalog(apiKey string) (OpenRouterModelCatalog, error) {
 	if debug {
 		ancli.Noticef("setting up openrouter model catalog with api key: %v...(redacted)\n", apiKey[:5])
 	}
-	return OpenRouterModelCatalog{
+	cat := OpenRouterModelCatalog{
 		debug: debug,
-	}, nil
+	}
+	cat.fetchModels = cat.liveFetchModels
+	return cat, nil
 }
 
-func (c OpenRouterModelCatalog) fetchModels(
+func (c OpenRouterModelCatalog) liveFetchModels(
 	ctx context.Context,
 ) ([]Model, error) {
 	resp, err := http.Get(modelsEndpoint)
@@ -68,7 +71,7 @@ func (c OpenRouterModelCatalog) FetchModel(ctx context.Context, model string) (c
 	}
 	for _, entry := range d {
 		// This is turbo inefficient, but good enough for now. Ideally we store price snapshot for all models here
-		if strings.Contains(entry.Name, model) {
+		if !strings.Contains(entry.ID, model) {
 			continue
 		}
 		prompt, err := parseOpenRouterPrice(entry.Pricing.Prompt)
