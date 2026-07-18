@@ -3,9 +3,11 @@ package agent
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -155,6 +157,52 @@ func TestAgent_Setup(t *testing.T) {
 	})
 }
 
+func TestAgent_Setup_receives_Out_in_config(t *testing.T) {
+	// When WithOutputTo is used, the custom writer must reach
+	// the querierCreator via Configurations.Out.
+	custom := new(stringsBuilderWriter)
+	var capturedOut io.Writer
+
+	a := New(WithOutputTo(custom))
+	a.cfgDir = t.TempDir()
+	a.querierCreator = func(ctx context.Context, conf text.Configurations) (priv_models.Querier, error) {
+		capturedOut = conf.Out
+		return &mockChatQuerier{}, nil
+	}
+
+	err := a.Setup(context.Background())
+	if err != nil {
+		t.Fatalf("Setup failed: %v", err)
+	}
+
+	if capturedOut != custom {
+		t.Errorf("expected Configurations.Out to be the custom writer, got %v", capturedOut)
+	}
+}
+
+func TestAgent_Setup_receives_stdout_when_no_WithOutputTo(t *testing.T) {
+	// The defaultConf sets out: os.Stdout. Verify that when no
+	// WithOutputTo is passed, the querierCreator receives os.Stdout
+	// (not nil), preserving backward compatibility.
+	var capturedOut io.Writer
+
+	a := New()
+	a.cfgDir = t.TempDir()
+	a.querierCreator = func(ctx context.Context, conf text.Configurations) (priv_models.Querier, error) {
+		capturedOut = conf.Out
+		return &mockChatQuerier{}, nil
+	}
+
+	err := a.Setup(context.Background())
+	if err != nil {
+		t.Fatalf("Setup failed: %v", err)
+	}
+
+	if capturedOut != os.Stdout {
+		t.Errorf("expected Configurations.Out to be os.Stdout by default, got %v", capturedOut)
+	}
+}
+
 func TestAgent_asInternalConfig(t *testing.T) {
 	tools := []models.LLMTool{&mockTool{}}
 	mcpServers := []models.McpServer{{Name: "test-mcp"}}
@@ -193,6 +241,45 @@ func TestAgent_asInternalConfig(t *testing.T) {
 	}
 	if !conf.SaveReplyAsConv {
 		t.Error("expected SaveReplyAsConv to be true")
+	}
+	// Verify Out is os.Stdout by default (the Agent's defaultConf sets out: os.Stdout).
+	// This preserves backward-compatible behavior: with no WithOutputTo,
+	// output goes to stdout.
+	if conf.Out != os.Stdout {
+		t.Errorf("expected Out to be os.Stdout by default, got %v", conf.Out)
+	}
+}
+
+func TestAgent_WithOutputTo_propagates(t *testing.T) {
+	// Verify that WithOutputTo propagates the custom writer to
+	// the internal Configurations so the querier can use it.
+	custom := new(stringsBuilderWriter)
+	a := New(WithOutputTo(custom))
+	conf := a.asInternalConfig()
+	if conf.Out != custom {
+		t.Errorf("expected Out to be the custom writer, got %v", conf.Out)
+	}
+}
+
+// stringsBuilderWriter is a minimal io.Writer backed by a strings.Builder for tests.
+type stringsBuilderWriter struct{ strings.Builder }
+
+func (w *stringsBuilderWriter) Write(p []byte) (int, error) {
+	return w.Builder.Write(p)
+}
+
+func (w *stringsBuilderWriter) String() string { return w.Builder.String() }
+
+func TestTypedQuerier_WithOutputTo_suppresses_stdout(t *testing.T) {
+	// A TypedQuerier with WithOutputTo(customWriter) must route its
+	// agent's output to that writer, never to os.Stdout.
+	custom := new(stringsBuilderWriter)
+	tq := NewTyped[struct{}](
+		WithOutputTo(custom),
+	).agent
+	conf := tq.asInternalConfig()
+	if conf.Out != custom {
+		t.Errorf("TypedQuerier did not propagate Out to internal config: got %v", conf.Out)
 	}
 }
 
