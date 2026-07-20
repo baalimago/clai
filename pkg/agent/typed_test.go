@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/baalimago/clai/pkg/text/models"
@@ -159,12 +160,147 @@ func TestTypedQuerier_Query_ReadsFromAssistantRole(t *testing.T) {
 	}
 }
 
-// stubChatQuerier returns a predefined chat.
+func TestTypedMetadataQuerier_Query(t *testing.T) {
+	type simple struct {
+		Name string `json:"name"`
+	}
+
+	t.Run("returns typed result with metadata", func(t *testing.T) {
+		chat := models.Chat{
+			ID: "chat-abc123",
+			TokenUsage: &models.Usage{
+				PromptTokens:     100,
+				CompletionTokens: 50,
+				TotalTokens:      150,
+			},
+			Messages: []models.Message{
+				{
+					Role:    "assistant",
+					Content: `{"name":"meta-test"}`,
+				},
+			},
+		}
+
+		a := New(WithConfigDir("/tmp/clai"))
+		a.querier = &stubChatQuerier{chat: chat}
+		tmq := NewTypedMetadata[simple]()
+		tmq.agent = &a
+
+		result, meta, err := tmq.Query(context.Background(), models.Chat{})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result.Name != "meta-test" {
+			t.Fatalf("expected Name='meta-test', got '%s'", result.Name)
+		}
+		if meta.ChatID != "chat-abc123" {
+			t.Fatalf("expected ChatID='chat-abc123', got '%s'", meta.ChatID)
+		}
+		if meta.TokenUsage == nil {
+			t.Fatal("expected non-nil TokenUsage")
+		}
+		if meta.TokenUsage.TotalTokens != 150 {
+			t.Fatalf("expected TotalTokens=150, got %d", meta.TokenUsage.TotalTokens)
+		}
+		expectedPath := "/tmp/clai/conversations/chat-abc123.json"
+		if meta.ConversationPath != expectedPath {
+			t.Fatalf("expected ConversationPath='%s', got '%s'", expectedPath, meta.ConversationPath)
+		}
+	})
+
+	t.Run("nil token usage", func(t *testing.T) {
+		chat := models.Chat{
+			ID:         "chat-no-usage",
+			TokenUsage: nil,
+			Messages: []models.Message{
+				{
+					Role:    "assistant",
+					Content: `{"name":"no-usage"}`,
+				},
+			},
+		}
+
+		a := New()
+		a.querier = &stubChatQuerier{chat: chat}
+		tmq := NewTypedMetadata[simple]()
+		tmq.agent = &a
+
+		_, meta, err := tmq.Query(context.Background(), models.Chat{})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if meta.TokenUsage != nil {
+			t.Fatalf("expected nil TokenUsage, got %+v", meta.TokenUsage)
+		}
+	})
+
+	t.Run("agent query error", func(t *testing.T) {
+		a := New()
+		a.querier = &stubChatQuerier{err: fmt.Errorf("boom")}
+		tmq := NewTypedMetadata[simple]()
+		tmq.agent = &a
+
+		_, _, err := tmq.Query(context.Background(), models.Chat{})
+		if err == nil {
+			t.Fatal("expected error when agent.Query fails")
+		}
+	})
+
+	t.Run("no assistant message", func(t *testing.T) {
+		chat := models.Chat{
+			ID: "chat-no-assist",
+			Messages: []models.Message{
+				{
+					Role:    "user",
+					Content: "hello",
+				},
+			},
+		}
+
+		a := New()
+		a.querier = &stubChatQuerier{chat: chat}
+		tmq := NewTypedMetadata[simple]()
+		tmq.agent = &a
+
+		_, _, err := tmq.Query(context.Background(), models.Chat{})
+		if err == nil {
+			t.Fatal("expected error when no assistant message exists")
+		}
+	})
+
+	t.Run("no valid json in assistant message", func(t *testing.T) {
+		chat := models.Chat{
+			ID: "chat-bad-json",
+			Messages: []models.Message{
+				{
+					Role:    "assistant",
+					Content: "sorry, no json here",
+				},
+			},
+		}
+
+		a := New()
+		a.querier = &stubChatQuerier{chat: chat}
+		tmq := NewTypedMetadata[simple]()
+		tmq.agent = &a
+
+		_, _, err := tmq.Query(context.Background(), models.Chat{})
+		if err == nil {
+			t.Fatal("expected error when assistant message has no valid JSON")
+		}
+	})
+}
+
+// stubChatQuerier returns a predefined chat, or an error if err is set.
 type stubChatQuerier struct {
 	chat models.Chat
+	err  error
 }
 
 func (s *stubChatQuerier) Query(ctx context.Context) error { return nil }
 func (s *stubChatQuerier) TextQuery(ctx context.Context, chat models.Chat) (models.Chat, error) {
+	if s.err != nil {
+		return models.Chat{}, s.err
+	}
 	return s.chat, nil
 }

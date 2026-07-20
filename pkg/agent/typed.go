@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"sort"
 
 	"github.com/baalimago/clai/pkg/text/models"
@@ -14,6 +15,60 @@ import (
 type TypedResponse[T any] interface {
 	Setup(context.Context) error
 	Query(context.Context, models.Chat) (T, error)
+}
+
+type Metadata struct {
+	TokenUsage       *models.Usage
+	ChatID           string
+	ConversationPath string
+}
+
+// TypedMetadataResponse is the interface for LLM queries that return a typed result
+// parsed from the assistant message JSON.
+type TypedMetadataResponse[T any] interface {
+	Setup(context.Context) error
+	Query(context.Context, models.Chat) (T, Metadata, error)
+}
+
+// TypedMetadataQuerier wraps an Agent and adds typed JSON parsing on top of Query,
+// returning parsed results plus metadata (token usage, chat ID, conversation path).
+type TypedMetadataQuerier[T any] struct {
+	agent *Agent
+}
+
+// NewTypedMetadata creates a TypedMetadataQuerier that wraps an agent configured
+// with the given options. The agent's response format defaults to json_object;
+// callers may override it via WithResponseFormat.
+func NewTypedMetadata[T any](options ...Option) *TypedMetadataQuerier[T] {
+	opts := append([]Option{WithResponseFormat(models.ResponseFormat{Type: "json_object"})}, options...)
+	a := New(opts...)
+	return &TypedMetadataQuerier[T]{agent: &a}
+}
+
+func (tmq *TypedMetadataQuerier[T]) Setup(ctx context.Context) error {
+	return tmq.agent.Setup(ctx)
+}
+
+func (tmq *TypedMetadataQuerier[T]) Query(ctx context.Context, chat models.Chat) (T, Metadata, error) {
+	var zero T
+	resp, err := tmq.agent.Query(ctx, chat)
+	if err != nil {
+		return zero, Metadata{}, fmt.Errorf("typed metadata query: %w", err)
+	}
+	msg, _, err := resp.LastOfRole("assistant")
+	if err != nil {
+		return zero, Metadata{}, fmt.Errorf("typed metadata query: %w", err)
+	}
+	result, err := parseTyped[T](msg.Content)
+	if err != nil {
+		return zero, Metadata{}, err
+	}
+	meta := Metadata{
+		TokenUsage:       resp.TokenUsage,
+		ChatID:           resp.ID,
+		ConversationPath: filepath.Join(tmq.agent.cfgDir, "conversations", resp.ID+".json"),
+	}
+	return result, meta, nil
 }
 
 // TypedQuerier wraps an Agent and adds typed JSON parsing on top of Query.
