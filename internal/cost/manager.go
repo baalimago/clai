@@ -13,30 +13,6 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
-func usageDelta(current pub_models.Usage, previous *pub_models.Usage) pub_models.Usage {
-	if previous == nil {
-		return current
-	}
-
-	delta := pub_models.Usage{
-		PromptTokens:     max(current.PromptTokens-previous.PromptTokens, 0),
-		CompletionTokens: max(current.CompletionTokens-previous.CompletionTokens, 0),
-		TotalTokens:      max(current.TotalTokens-previous.TotalTokens, 0),
-		PromptTokensDetails: pub_models.PromptTokensDetails{
-			CachedTokens: max(current.PromptTokensDetails.CachedTokens-previous.PromptTokensDetails.CachedTokens, 0),
-			AudioTokens:  max(current.PromptTokensDetails.AudioTokens-previous.PromptTokensDetails.AudioTokens, 0),
-		},
-		CompletionTokensDetails: pub_models.CompletionTokensDetails{
-			ReasoningTokens:          max(current.CompletionTokensDetails.ReasoningTokens-previous.CompletionTokensDetails.ReasoningTokens, 0),
-			AudioTokens:              max(current.CompletionTokensDetails.AudioTokens-previous.CompletionTokensDetails.AudioTokens, 0),
-			AcceptedPredictionTokens: max(current.CompletionTokensDetails.AcceptedPredictionTokens-previous.CompletionTokensDetails.AcceptedPredictionTokens, 0),
-			RejectedPredictionTokens: max(current.CompletionTokensDetails.RejectedPredictionTokens-previous.CompletionTokensDetails.RejectedPredictionTokens, 0),
-		},
-	}
-
-	return delta
-}
-
 type ModelCatalogFetcher interface {
 	FetchModel(ctx context.Context, model string) (ModelPriceScheme, error)
 }
@@ -217,7 +193,12 @@ func (m *Manager) Enrich(chat pub_models.Chat) (pub_models.Chat, error) {
 	if chat.TokenUsage == nil {
 		return pub_models.Chat{}, errors.New("token usage is not yet set")
 	}
-	usage := usageDelta(*chat.TokenUsage, latestRecordedUsage(chat.Queries))
+	// LLM APIs are stateless: every query re-sends and re-bills the entire
+	// conversation so far. chat.TokenUsage holds the last API call's per-call
+	// usage (input = the full transcript sent this turn, output = this reply),
+	// so each query is billed in full. Summing the per-query costs then matches
+	// what the provider bills for the whole conversation.
+	usage := *chat.TokenUsage
 	estimate, err := m.estimateUSD(&usage)
 	if err != nil {
 		return pub_models.Chat{}, fmt.Errorf("enrich chat with cost estimate: %w", err)
@@ -247,12 +228,4 @@ func (m *Manager) Enrich(chat pub_models.Chat) (pub_models.Chat, error) {
 		ancli.Noticef("chat now has: %v query entries", len(chat.Queries))
 	}
 	return chat, nil
-}
-
-func latestRecordedUsage(queries []pub_models.QueryCost) *pub_models.Usage {
-	if len(queries) == 0 {
-		return nil
-	}
-	usage := queries[len(queries)-1].Usage
-	return &usage
 }
