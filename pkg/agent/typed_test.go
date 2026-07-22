@@ -173,6 +173,26 @@ func TestTypedMetadataQuerier_Query(t *testing.T) {
 				CompletionTokens: 50,
 				TotalTokens:      150,
 			},
+			Queries: []models.QueryCost{
+				{
+					Model:  "gpt-5.2",
+					CostUSD: 0.001,
+					Usage: models.Usage{
+						PromptTokens:     60,
+						CompletionTokens: 30,
+						TotalTokens:      90,
+					},
+				},
+				{
+					Model:  "gpt-5.2",
+					CostUSD: 0.002,
+					Usage: models.Usage{
+						PromptTokens:     40,
+						CompletionTokens: 20,
+						TotalTokens:      60,
+					},
+				},
+			},
 			Messages: []models.Message{
 				{
 					Role:    "assistant",
@@ -181,7 +201,7 @@ func TestTypedMetadataQuerier_Query(t *testing.T) {
 			},
 		}
 
-		a := New(WithConfigDir("/tmp/clai"))
+		a := New(WithConfigDir("/tmp/clai"), WithModel("gpt-5-mini"))
 		a.querier = &stubChatQuerier{chat: chat}
 		tmq := NewTypedMetadata[simple]()
 		tmq.agent = &a
@@ -205,6 +225,18 @@ func TestTypedMetadataQuerier_Query(t *testing.T) {
 		expectedPath := "/tmp/clai/conversations/chat-abc123.json"
 		if meta.ConversationPath != expectedPath {
 			t.Fatalf("expected ConversationPath='%s', got '%s'", expectedPath, meta.ConversationPath)
+		}
+		if meta.Model != "gpt-5-mini" {
+			t.Fatalf("expected Model='gpt-5-mini' (configured model), got '%s'", meta.Model)
+		}
+		if meta.CostUSD != 0.003 {
+			t.Fatalf("expected CostUSD=0.003 (sum of queries), got %f", meta.CostUSD)
+		}
+		if meta.CalledAt.IsZero() {
+			t.Fatal("expected CalledAt to be non-zero")
+		}
+		if len(meta.Queries) != 2 {
+			t.Fatalf("expected 2 Queries, got %d", len(meta.Queries))
 		}
 	})
 
@@ -265,6 +297,35 @@ func TestTypedMetadataQuerier_Query(t *testing.T) {
 		_, _, err := tmq.Query(context.Background(), models.Chat{})
 		if err == nil {
 			t.Fatal("expected error when no assistant message exists")
+		}
+	})
+
+	t.Run("model from configured agent when queries empty", func(t *testing.T) {
+		chat := models.Chat{
+			ID:         "chat-no-queries",
+			TokenUsage: &models.Usage{PromptTokens: 10, CompletionTokens: 5, TotalTokens: 15},
+			Messages: []models.Message{
+				{Role: "assistant", Content: `{"name":"no-queries"}`},
+			},
+		}
+
+		a := New(WithModel("gpt-5-mini"))
+		a.querier = &stubChatQuerier{chat: chat}
+		tmq := NewTypedMetadata[simple]()
+		tmq.agent = &a
+
+		_, meta, err := tmq.Query(context.Background(), models.Chat{})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if meta.Model != "gpt-5-mini" {
+			t.Fatalf("expected Model='gpt-5-mini' (configured model), got '%s'", meta.Model)
+		}
+		if meta.CostUSD != 0.0 {
+			t.Fatalf("expected CostUSD=0 when no queries, got %f", meta.CostUSD)
+		}
+		if len(meta.Queries) != 0 {
+			t.Fatalf("expected 0 Queries, got %d", len(meta.Queries))
 		}
 	})
 

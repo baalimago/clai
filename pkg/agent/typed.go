@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"time"
 
 	"github.com/baalimago/clai/pkg/text/models"
 )
@@ -21,6 +22,10 @@ type Metadata struct {
 	TokenUsage       *models.Usage
 	ChatID           string
 	ConversationPath string
+	Model            string             // configured model of the run — survives price-fetch timeout
+	CostUSD          float64            // sum of per-query costs (resp.TotalCostUSD)
+	CalledAt         time.Time          // when the query completed
+	Queries          []models.QueryCost // per-API-call token + cost + model breakdown
 }
 
 // TypedMetadataResponse is the interface for LLM queries that return a typed result
@@ -51,6 +56,7 @@ func (tmq *TypedMetadataQuerier[T]) Setup(ctx context.Context) error {
 
 func (tmq *TypedMetadataQuerier[T]) Query(ctx context.Context, chat models.Chat) (T, Metadata, error) {
 	var zero T
+	callTime := time.Now().UTC()
 	resp, err := tmq.agent.Query(ctx, chat)
 	if err != nil {
 		return zero, Metadata{}, fmt.Errorf("typed metadata query: %w", err)
@@ -67,6 +73,10 @@ func (tmq *TypedMetadataQuerier[T]) Query(ctx context.Context, chat models.Chat)
 		TokenUsage:       resp.TokenUsage,
 		ChatID:           resp.ID,
 		ConversationPath: filepath.Join(tmq.agent.cfgDir, "conversations", resp.ID+".json"),
+		Model:            tmq.agent.model,
+		CostUSD:          resp.TotalCostUSD(),
+		CalledAt:         callTime,
+		Queries:          resp.Queries,
 	}
 	return result, meta, nil
 }
