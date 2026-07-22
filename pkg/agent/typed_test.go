@@ -173,6 +173,26 @@ func TestTypedMetadataQuerier_Query(t *testing.T) {
 				CompletionTokens: 50,
 				TotalTokens:      150,
 			},
+			Queries: []models.QueryCost{
+				{
+					Model:   "gpt-5.2",
+					CostUSD: 0.001,
+					Usage: models.Usage{
+						PromptTokens:     60,
+						CompletionTokens: 30,
+						TotalTokens:      90,
+					},
+				},
+				{
+					Model:   "gpt-5.2",
+					CostUSD: 0.002,
+					Usage: models.Usage{
+						PromptTokens:     40,
+						CompletionTokens: 20,
+						TotalTokens:      60,
+					},
+				},
+			},
 			Messages: []models.Message{
 				{
 					Role:    "assistant",
@@ -181,7 +201,7 @@ func TestTypedMetadataQuerier_Query(t *testing.T) {
 			},
 		}
 
-		a := New(WithConfigDir("/tmp/clai"))
+		a := New(WithConfigDir("/tmp/clai"), WithModel("gpt-5-mini"))
 		a.querier = &stubChatQuerier{chat: chat}
 		tmq := NewTypedMetadata[simple]()
 		tmq.agent = &a
@@ -205,6 +225,18 @@ func TestTypedMetadataQuerier_Query(t *testing.T) {
 		expectedPath := "/tmp/clai/conversations/chat-abc123.json"
 		if meta.ConversationPath != expectedPath {
 			t.Fatalf("expected ConversationPath='%s', got '%s'", expectedPath, meta.ConversationPath)
+		}
+		if meta.Model != "gpt-5-mini" {
+			t.Fatalf("expected Model='gpt-5-mini' (configured model), got '%s'", meta.Model)
+		}
+		if meta.CostUSD != 0.003 {
+			t.Fatalf("expected CostUSD=0.003 (sum of queries), got %f", meta.CostUSD)
+		}
+		if meta.CalledAt.IsZero() {
+			t.Fatal("expected CalledAt to be non-zero")
+		}
+		if len(meta.Queries) != 2 {
+			t.Fatalf("expected 2 Queries, got %d", len(meta.Queries))
 		}
 	})
 
@@ -268,6 +300,35 @@ func TestTypedMetadataQuerier_Query(t *testing.T) {
 		}
 	})
 
+	t.Run("model from configured agent when queries empty", func(t *testing.T) {
+		chat := models.Chat{
+			ID:         "chat-no-queries",
+			TokenUsage: &models.Usage{PromptTokens: 10, CompletionTokens: 5, TotalTokens: 15},
+			Messages: []models.Message{
+				{Role: "assistant", Content: `{"name":"no-queries"}`},
+			},
+		}
+
+		a := New(WithModel("gpt-5-mini"))
+		a.querier = &stubChatQuerier{chat: chat}
+		tmq := NewTypedMetadata[simple]()
+		tmq.agent = &a
+
+		_, meta, err := tmq.Query(context.Background(), models.Chat{})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if meta.Model != "gpt-5-mini" {
+			t.Fatalf("expected Model='gpt-5-mini' (configured model), got '%s'", meta.Model)
+		}
+		if meta.CostUSD != 0.0 {
+			t.Fatalf("expected CostUSD=0 when no queries, got %f", meta.CostUSD)
+		}
+		if len(meta.Queries) != 0 {
+			t.Fatalf("expected 0 Queries, got %d", len(meta.Queries))
+		}
+	})
+
 	t.Run("no valid json in assistant message", func(t *testing.T) {
 		chat := models.Chat{
 			ID: "chat-bad-json",
@@ -287,6 +348,108 @@ func TestTypedMetadataQuerier_Query(t *testing.T) {
 		_, _, err := tmq.Query(context.Background(), models.Chat{})
 		if err == nil {
 			t.Fatal("expected error when assistant message has no valid JSON")
+		}
+	})
+
+	t.Run("usage recorded on parse failure", func(t *testing.T) {
+		// R1-06: when parseTyped fails after a successful (billed) Query,
+		// Metadata must still carry the billed usage — malformed-JSON
+		// responses burn tokens that must be accounted for.
+		chat := models.Chat{
+			ID: "chat-parse-fail",
+			TokenUsage: &models.Usage{
+				PromptTokens:     200,
+				CompletionTokens: 100,
+				TotalTokens:      300,
+			},
+			Queries: []models.QueryCost{
+				{
+					Model:   "gpt-5.2",
+					CostUSD: 0.005,
+					Usage: models.Usage{
+						PromptTokens:     200,
+						CompletionTokens: 100,
+						TotalTokens:      300,
+					},
+				},
+			},
+			Messages: []models.Message{
+				{
+					Role:    "assistant",
+					Content: "{invalid json",
+				},
+			},
+		}
+
+		a := New(WithModel("gpt-5-mini"))
+		a.querier = &stubChatQuerier{chat: chat}
+		tmq := NewTypedMetadata[simple]()
+		tmq.agent = &a
+
+		_, meta, err := tmq.Query(context.Background(), models.Chat{})
+		if err == nil {
+			t.Fatal("expected error when parse fails")
+		}
+		if meta.TokenUsage == nil {
+			t.Fatal("expected non-nil TokenUsage on parse failure — billed tokens must be recorded")
+		}
+		if meta.TokenUsage.TotalTokens != 300 {
+			t.Errorf("expected TotalTokens=300, got %d", meta.TokenUsage.TotalTokens)
+		}
+		if meta.CostUSD != 0.005 {
+			t.Errorf("expected CostUSD=0.005, got %f", meta.CostUSD)
+		}
+		if meta.CalledAt.IsZero() {
+			t.Fatal("expected CalledAt to be non-zero on parse failure")
+		}
+		if meta.Model != "gpt-5-mini" {
+			t.Errorf("expected Model='gpt-5-mini', got '%s'", meta.Model)
+		}
+	})
+
+	t.Run("usage recorded on missing assistant", func(t *testing.T) {
+		// R1-06: when LastOfRole("assistant") fails after a successful
+		// (billed) Query, Metadata must still carry the billed usage.
+		chat := models.Chat{
+			ID: "chat-no-assist",
+			TokenUsage: &models.Usage{
+				PromptTokens:     50,
+				CompletionTokens: 25,
+				TotalTokens:      75,
+			},
+			Queries: []models.QueryCost{
+				{
+					Model:   "gpt-5.2",
+					CostUSD: 0.002,
+					Usage: models.Usage{
+						PromptTokens:     50,
+						CompletionTokens: 25,
+						TotalTokens:      75,
+					},
+				},
+			},
+			Messages: []models.Message{
+				{Role: "user", Content: "hello"},
+			},
+		}
+
+		a := New(WithModel("gpt-5-mini"))
+		a.querier = &stubChatQuerier{chat: chat}
+		tmq := NewTypedMetadata[simple]()
+		tmq.agent = &a
+
+		_, meta, err := tmq.Query(context.Background(), models.Chat{})
+		if err == nil {
+			t.Fatal("expected error when no assistant message")
+		}
+		if meta.TokenUsage == nil {
+			t.Fatal("expected non-nil TokenUsage on LastOfRole failure — billed tokens must be recorded")
+		}
+		if meta.TokenUsage.TotalTokens != 75 {
+			t.Errorf("expected TotalTokens=75, got %d", meta.TokenUsage.TotalTokens)
+		}
+		if meta.CostUSD != 0.002 {
+			t.Errorf("expected CostUSD=0.002, got %f", meta.CostUSD)
 		}
 	})
 }

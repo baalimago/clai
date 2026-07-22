@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"time"
 
 	"github.com/baalimago/clai/pkg/text/models"
 )
@@ -21,6 +22,10 @@ type Metadata struct {
 	TokenUsage       *models.Usage
 	ChatID           string
 	ConversationPath string
+	Model            string             // configured model of the run — survives price-fetch timeout
+	CostUSD          float64            // sum of per-query costs (resp.TotalCostUSD)
+	CalledAt         time.Time          // when the query completed
+	Queries          []models.QueryCost // per-API-call token + cost + model breakdown
 }
 
 // TypedMetadataResponse is the interface for LLM queries that return a typed result
@@ -51,22 +56,32 @@ func (tmq *TypedMetadataQuerier[T]) Setup(ctx context.Context) error {
 
 func (tmq *TypedMetadataQuerier[T]) Query(ctx context.Context, chat models.Chat) (T, Metadata, error) {
 	var zero T
+	callTime := time.Now().UTC()
 	resp, err := tmq.agent.Query(ctx, chat)
 	if err != nil {
 		return zero, Metadata{}, fmt.Errorf("typed metadata query: %w", err)
 	}
-	msg, _, err := resp.LastOfRole("assistant")
-	if err != nil {
-		return zero, Metadata{}, fmt.Errorf("typed metadata query: %w", err)
-	}
-	result, err := parseTyped[T](msg.Content)
-	if err != nil {
-		return zero, Metadata{}, err
-	}
+	// Build meta immediately after a successful (billed) Query so that
+	// usage rides every subsequent branch — even when LastOfRole or
+	// parseTyped fail. Malformed-JSON responses still burn tokens and
+	// must be accounted for; dropping usage here produces the illusion
+	// of zero-cost failures (R1-06).
 	meta := Metadata{
 		TokenUsage:       resp.TokenUsage,
 		ChatID:           resp.ID,
 		ConversationPath: filepath.Join(tmq.agent.cfgDir, "conversations", resp.ID+".json"),
+		Model:            tmq.agent.model,
+		CostUSD:          resp.TotalCostUSD(),
+		CalledAt:         callTime,
+		Queries:          resp.Queries,
+	}
+	msg, _, err := resp.LastOfRole("assistant")
+	if err != nil {
+		return zero, meta, fmt.Errorf("typed metadata query: %w", err)
+	}
+	result, err := parseTyped[T](msg.Content)
+	if err != nil {
+		return zero, meta, err
 	}
 	return result, meta, nil
 }
