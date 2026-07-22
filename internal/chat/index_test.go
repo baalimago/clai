@@ -379,3 +379,112 @@ func TestNewChatIndexPaginator_RebuildsFromExistingChatFiles(t *testing.T) {
 		t.Fatalf("page IDs = [%s %s], want [new old]", page[0].ID, page[1].ID)
 	}
 }
+
+// SkipIndex tests — verify that all index operations become no-ops when
+// SkipIndex is true, eliminating I/O and memory overhead for embedded
+// consumers.
+
+func TestSkipIndex_ReadChatIndexReturnsEmpty(t *testing.T) {
+	tmp := t.TempDir()
+
+	// Write a chat file and an index — readChatIndex should ignore both.
+	ch := pub_models.Chat{ID: "a", Messages: []pub_models.Message{{Role: "user", Content: "hello"}}}
+	b, _ := json.Marshal(ch)
+	os.WriteFile(filepath.Join(tmp, "a.json"), b, 0o644)
+	writeChatIndex(tmp, []chatIndexRow{{ID: "a", FirstUserMessage: "hello"}})
+
+	SkipIndex = true
+	t.Cleanup(func() { SkipIndex = false })
+
+	rows, err := readChatIndex(tmp)
+	if err != nil {
+		t.Fatalf("readChatIndex: %v", err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("expected 0 rows, got %d", len(rows))
+	}
+}
+
+func TestSkipIndex_WriteChatIndexNoOp(t *testing.T) {
+	tmp := t.TempDir()
+
+	SkipIndex = true
+	t.Cleanup(func() { SkipIndex = false })
+
+	rows := []chatIndexRow{{ID: "a", FirstUserMessage: "hello"}}
+	if err := writeChatIndex(tmp, rows); err != nil {
+		t.Fatalf("writeChatIndex: %v", err)
+	}
+
+	// Verify no file was created.
+	if _, err := os.Stat(chatIndexPath(tmp)); !os.IsNotExist(err) {
+		t.Fatal("chat_index.cache should not exist when SkipIndex is true")
+	}
+}
+
+func TestSkipIndex_UpsertChatIndexNoOp(t *testing.T) {
+	tmp := t.TempDir()
+
+	SkipIndex = true
+	t.Cleanup(func() { SkipIndex = false })
+
+	ch := pub_models.Chat{ID: "a", Messages: []pub_models.Message{{Role: "user", Content: "hello"}}}
+	if err := upsertChatIndex(tmp, ch); err != nil {
+		t.Fatalf("upsertChatIndex: %v", err)
+	}
+
+	// Verify no index file was created.
+	if _, err := os.Stat(chatIndexPath(tmp)); !os.IsNotExist(err) {
+		t.Fatal("chat_index.cache should not exist when SkipIndex is true")
+	}
+}
+
+func TestSkipIndex_NewChatIndexPaginatorReturnsEmpty(t *testing.T) {
+	tmp := t.TempDir()
+
+	// Write some chat files — paginator should ignore them.
+	ch := pub_models.Chat{ID: "a", Messages: []pub_models.Message{{Role: "user", Content: "hello"}}}
+	b, _ := json.Marshal(ch)
+	os.WriteFile(filepath.Join(tmp, "a.json"), b, 0o644)
+
+	SkipIndex = true
+	t.Cleanup(func() { SkipIndex = false })
+
+	paginator, err := NewChatIndexPaginator(tmp)
+	if err != nil {
+		t.Fatalf("NewChatIndexPaginator: %v", err)
+	}
+	if paginator.Len() != 0 {
+		t.Fatalf("expected 0 rows, got %d", paginator.Len())
+	}
+}
+
+func TestSkipIndex_SaveSkipsIndex(t *testing.T) {
+	tmp := t.TempDir()
+
+	SkipIndex = true
+	t.Cleanup(func() { SkipIndex = false })
+
+	ch := pub_models.Chat{
+		ID:      "my_chat",
+		Created: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
+		Messages: []pub_models.Message{
+			{Role: "user", Content: "hello"},
+			{Role: "assistant", Content: "reply"},
+		},
+	}
+	if err := Save(tmp, ch); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	// Chat file must exist.
+	chatPath := filepath.Join(tmp, ch.ID+".json")
+	if _, err := os.Stat(chatPath); os.IsNotExist(err) {
+		t.Fatal("chat file should exist when SkipIndex is true")
+	}
+
+	// Index file must not exist.
+	if _, err := os.Stat(chatIndexPath(tmp)); !os.IsNotExist(err) {
+		t.Fatal("chat_index.cache should not exist when SkipIndex is true")
+	}
+}
