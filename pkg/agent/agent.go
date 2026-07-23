@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/baalimago/clai/internal"
+	"github.com/baalimago/clai/internal/chat"
 	priv_models "github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/pkg/text/models"
@@ -135,6 +136,11 @@ func (a *Agent) asInternalConfig() text.Configurations {
 }
 
 func (a *Agent) Setup(ctx context.Context) error {
+	// Embedded consumers (kinoview, etc.) never use CLI list/search/dirscope
+	// features; the chat index is pure overhead that causes OOM on 32-bit ARM
+	// when the conversation directory is large.
+	chat.SkipIndex = true
+
 	if _, err := os.Stat(a.cfgDir); os.IsNotExist(err) {
 		os.Mkdir(a.cfgDir, 0o755)
 	}

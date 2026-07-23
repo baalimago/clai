@@ -2,6 +2,7 @@ package cost
 
 import (
 	"encoding/json"
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -213,7 +214,13 @@ func TestManagerEnrich_AppendsConfiguredModelForNewTurn(t *testing.T) {
 	}
 }
 
-func TestManagerEnrich_AccumulatedUsageAppendsIncrementalCostOnly(t *testing.T) {
+// TestManagerEnrich_BillsFullPerCallUsage verifies that every query records the
+// full cost of its own API call. LLM APIs are stateless: each query re-sends and
+// re-bills the entire conversation so far, so chat.TokenUsage (the last call's
+// per-call usage) must be billed in full rather than diffed against the previous
+// query. Summing the per-query costs then matches what the provider dashboard
+// bills for the whole conversation.
+func TestManagerEnrich_BillsFullPerCallUsage(t *testing.T) {
 	mgr := Manager{
 		model: "model-b",
 		price: &ModelPriceScheme{
@@ -254,10 +261,18 @@ func TestManagerEnrich_AccumulatedUsageAppendsIncrementalCostOnly(t *testing.T) 
 	if len(got.Queries) != 2 {
 		t.Fatalf("queries len: got %d want %d", len(got.Queries), 2)
 	}
-	if got.Queries[1].CostUSD != 0.016 {
-		t.Fatalf("query[1] cost: got %v want %v", got.Queries[1].CostUSD, 0.016)
+	// Full per-call cost: 10*0.001 + 7*0.002 = 0.024, not the token delta.
+	wantCost := 10*0.001 + 7*0.002
+	if math.Abs(got.Queries[1].CostUSD-wantCost) > 1e-12 {
+		t.Fatalf("query[1] cost: got %v want %v", got.Queries[1].CostUSD, wantCost)
 	}
-	if got.Queries[1].Usage.PromptTokens != 4 || got.Queries[1].Usage.CompletionTokens != 6 || got.Queries[1].Usage.TotalTokens != 10 {
-		t.Fatalf("query[1] usage delta: got %+v", got.Queries[1].Usage)
+	if got.Queries[1].Usage.PromptTokens != 10 || got.Queries[1].Usage.CompletionTokens != 7 || got.Queries[1].Usage.TotalTokens != 17 {
+		t.Fatalf("query[1] usage: got %+v want full per-call usage", got.Queries[1].Usage)
+	}
+
+	// Conversation total is the sum of each query's full per-call cost.
+	wantTotal := 0.012 + wantCost
+	if math.Abs(got.TotalCostUSD()-wantTotal) > 1e-12 {
+		t.Fatalf("chat total cost: got %v want %v", got.TotalCostUSD(), wantTotal)
 	}
 }

@@ -14,6 +14,12 @@ import (
 
 const chatIndexFileName = "chat_index.cache"
 
+// SkipIndex disables all chat index I/O when true. Embedded consumers (e.g.,
+// kinoview) that never use CLI list/search/dirscope features set this to
+// eliminate the memory and disk overhead of reading, rebuilding, and writing
+// the chat_index.cache on every conversation save.
+var SkipIndex bool
+
 // chatIndexVersion is bumped when the cache schema changes incompatibly.
 //
 //	2 — GroupKey field added (content-hash grouping)
@@ -108,6 +114,9 @@ func chatIndexRowFromChat(chat pub_models.Chat) chatIndexRow {
 }
 
 func readChatIndex(convDir string) ([]chatIndexRow, error) {
+	if SkipIndex {
+		return []chatIndexRow{}, nil
+	}
 	b, err := os.ReadFile(chatIndexPath(convDir))
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -222,6 +231,9 @@ func rebuildChatIndex(convDir string, fromVersion int, reason string) ([]chatInd
 }
 
 func writeChatIndex(convDir string, rows []chatIndexRow) error {
+	if SkipIndex {
+		return nil
+	}
 	slices.SortFunc(rows, func(a, b chatIndexRow) int {
 		return b.Created.Compare(a.Created)
 	})
@@ -237,6 +249,9 @@ func writeChatIndex(convDir string, rows []chatIndexRow) error {
 }
 
 func upsertChatIndex(convDir string, chat pub_models.Chat) error {
+	if SkipIndex {
+		return nil
+	}
 	rows, err := readChatIndex(convDir)
 	if err != nil {
 		return fmt.Errorf("failed to read chat index for upsert: %w", err)
@@ -260,6 +275,9 @@ func upsertChatIndex(convDir string, chat pub_models.Chat) error {
 }
 
 func NewChatIndexPaginator(convDir string) (*ChatIndexPaginator, error) {
+	if SkipIndex {
+		return &ChatIndexPaginator{rows: []chatIndexRow{}}, nil
+	}
 	rows, err := readChatIndex(convDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read chat index paginator rows: %w", err)
