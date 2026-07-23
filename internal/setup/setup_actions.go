@@ -23,6 +23,7 @@ import (
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
+	"github.com/baalimago/go_away_boilerplate/pkg/table"
 	"golang.org/x/exp/maps"
 )
 
@@ -65,7 +66,7 @@ func queryForAction(options []action) (action, error) {
 		formattedOptions = append(formattedOptions, option.String())
 	}
 	fmt.Print(colorSecondary(fmt.Sprintf("(%s): ", strings.Join(formattedOptions, ", "))))
-	input, err := utils.ReadUserInput()
+	input, err := table.ReadUserInputFrom(Input)
 	if err != nil {
 		return unset, fmt.Errorf("failed to query for action: %w", err)
 	}
@@ -81,7 +82,7 @@ func queryForAction(options []action) (action, error) {
 		return queryForAction(options)
 	}
 	if ret == quit {
-		return unset, utils.ErrUserInitiatedExit
+		return unset, table.ErrUserInitiatedExit
 	}
 	return ret, nil
 }
@@ -89,14 +90,14 @@ func queryForAction(options []action) (action, error) {
 func actOnConfigItem(category setupCategory, cfg config) error {
 	selectedAction, err := queryForAction(actionsWithNavigation(category.itemActions))
 	if err != nil {
-		if errors.Is(err, utils.ErrBack) || errors.Is(err, utils.ErrUserInitiatedExit) {
+		if errors.Is(err, table.ErrBack) || errors.Is(err, table.ErrUserInitiatedExit) {
 			return err
 		}
 		return fmt.Errorf("failed to query for config action: %w", err)
 	}
 
 	if err := executeConfigAction(cfg, selectedAction); err != nil {
-		if errors.Is(err, utils.ErrBack) || errors.Is(err, utils.ErrUserInitiatedExit) {
+		if errors.Is(err, table.ErrBack) || errors.Is(err, table.ErrUserInitiatedExit) {
 			return err
 		}
 		return fmt.Errorf("failed to execute action %q for %q: %w", selectedAction, cfg.name, err)
@@ -243,19 +244,18 @@ func actionReconfigureStringFieldWithEditor(cfg config, fieldName string) error 
 // single-choice table, and returns the selected key.
 func selectStringField(jzon map[string]any) (string, error) {
 	keys := stringKeysSorted(jzon)
-	indices, err := utils.SelectFromTable(
-		"Select field",
-		utils.SlicePaginator(keys),
-		"Select field [<num>]",
+	indices, _, err := table.New(
+		table.SlicePaginator(keys),
 		func(i int, t string) (string, error) {
 			return fmt.Sprintf("%d. %s", i, t), nil
 		},
-		utils.ThemeTableItems(),
-		true,
-		nil,
-		os.Stdout,
-		"",
-	)
+	).
+		WithHeader("Select field").
+		WithPageSize(utils.TableTheme().Items).
+		WithSingleSelect().
+		WithWriter(os.Stdout).
+		WithInput(Input).
+		Run()
 	if err != nil {
 		return "", err
 	}
@@ -313,7 +313,7 @@ func actionReconfigureWithEditor(cfg config) error {
 
 func actionRemove(cfg config) error {
 	fmt.Print(colorSecondary(fmt.Sprintf("Are you sure you want to delete: '%v'?\n[y/n]: ", cfg.filePath)))
-	input, err := utils.ReadUserInput()
+	input, err := table.ReadUserInputFrom(Input)
 	if err != nil {
 		return fmt.Errorf("read delete confirmation: %w", err)
 	}
@@ -330,7 +330,7 @@ func actionRemove(cfg config) error {
 
 func actionCopy(cfg config) (config, error) {
 	fmt.Print(colorSecondary("Enter name for copy: "))
-	newName, err := utils.ReadUserInput()
+	newName, err := table.ReadUserInputFrom(Input)
 	if err != nil {
 		return config{}, fmt.Errorf("read copy name: %w", err)
 	}
@@ -419,8 +419,8 @@ func sortedKeys(jzon map[string]any) []string {
 	return keys
 }
 
-func doneEditingAction() utils.TableAction {
-	return utils.TableAction{
+func doneEditingAction() table.TableAction {
+	return table.TableAction{
 		Format: "[d]one",
 		Short:  "d",
 		Long:   "done",
@@ -429,23 +429,23 @@ func doneEditingAction() utils.TableAction {
 }
 
 // selectFieldToEdit presents the user with a table of jzon keys and returns
-// the chosen key. It propagates errDoneEditing, utils.ErrBack, and
-// utils.ErrUserInitiatedExit directly; other errors are wrapped.
+// the chosen key. It propagates errDoneEditing, table.ErrBack, and
+// table.ErrUserInitiatedExit directly; other errors are wrapped.
 func selectFieldToEdit(jzon map[string]any) (string, error) {
 	keys := sortedKeys(jzon)
-	indices, err := utils.SelectFromTable(
-		"Select field to edit",
-		utils.SlicePaginator(keys),
-		"Select field [<num>]",
+	indices, _, err := table.New(
+		table.SlicePaginator(keys),
 		func(i int, key string) (string, error) {
 			return fmt.Sprintf("%d. %s", i, key), nil
 		},
-		utils.ThemeTableItems(),
-		true,
-		[]utils.TableAction{doneEditingAction()},
-		os.Stdout,
-		"",
-	)
+	).
+		WithHeader("Select field to edit").
+		WithPageSize(utils.TableTheme().Items).
+		WithSingleSelect().
+		WithWriter(os.Stdout).
+		WithInput(Input).
+		WithActions(doneEditingAction()).
+		Run()
 	if err != nil {
 		return "", err
 	}
@@ -485,17 +485,16 @@ func getToolsValue(v any) ([]string, error) {
 
 	fmt.Print(colorPrimary("Tooling configuration\n"))
 	for {
-		indices, err := utils.SelectFromTable(
-			"Toggle tools with comma/range (e.g. 0,2,5 or 0:3)",
-			utils.SlicePaginator(names),
-			"Select tools [<num>]",
+		indices, _, err := table.New(
+			table.SlicePaginator(names),
 			toolRowFormatter(currentlySelected),
-			len(names),
-			false,
-			[]utils.TableAction{allAction, clearAction, doneAction},
-			os.Stdout,
-			"",
-		)
+		).
+			WithHeader("Toggle tools with comma/range (e.g. 0,2,5 or 0:3)").
+			WithPageSize(len(names)).
+			WithWriter(os.Stdout).
+			WithInput(Input).
+			WithActions(allAction, clearAction, doneAction).
+			Run()
 		if err != nil {
 			switch {
 			case errors.Is(err, errDoneSelecting):
@@ -506,9 +505,9 @@ func getToolsValue(v any) ([]string, error) {
 			case errors.Is(err, errClearTools):
 				clearToolSelections(currentlySelected)
 				continue
-			case errors.Is(err, utils.ErrBack):
+			case errors.Is(err, table.ErrBack):
 				return drainCurrentTools(sArr), nil
-			case errors.Is(err, utils.ErrUserInitiatedExit):
+			case errors.Is(err, table.ErrUserInitiatedExit):
 				return nil, err
 			default:
 				return nil, err
@@ -542,20 +541,20 @@ func sortedToolNames() []string {
 }
 
 // toolSelectionActions returns the three sentinel actions for the tools selection table.
-func toolSelectionActions() (doneAction, allAction, clearAction utils.TableAction) {
-	doneAction = utils.TableAction{
+func toolSelectionActions() (doneAction, allAction, clearAction table.TableAction) {
+	doneAction = table.TableAction{
 		Format: "[d]one",
 		Short:  "d",
 		Long:   "done",
 		Action: func() error { return errDoneSelecting },
 	}
-	allAction = utils.TableAction{
+	allAction = table.TableAction{
 		Format: "[a]ll",
 		Short:  "a",
 		Long:   "all",
 		Action: func() error { return errAllTools },
 	}
-	clearAction = utils.TableAction{
+	clearAction = table.TableAction{
 		Format: "[c]lear all",
 		Short:  "c",
 		Long:   "clear",
@@ -639,7 +638,7 @@ func getNewValue(k string, v any, claiConfigDir string) (any, error) {
 
 	fmt.Print(colorBreadtext(fmt.Sprintf("Key: '%v', current: '%v'\n", k, v)))
 	fmt.Print(colorSecondary("Please enter new value, or leave empty to keep: "))
-	input, err := utils.ReadUserInput()
+	input, err := table.ReadUserInputFrom(Input)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read input for key %q: %w", k, err)
 	}
@@ -661,19 +660,18 @@ func getModelValue(v any, claiConfigDir string) (any, error) {
 
 	currentStr, _ := v.(string)
 	fmt.Print(colorPrimary(fmt.Sprintf("Select model (current: %q):\n", currentStr)))
-	choice, err := utils.SelectFromTable(
-		"Available models",
-		utils.SlicePaginator(models),
-		"Select model <num>: ",
+	choice, _, err := table.New(
+		table.SlicePaginator(models),
 		func(i int, name string) (string, error) {
 			return fmt.Sprintf("%d. %s", i, name), nil
 		},
-		utils.ThemeTableItems(),
-		true,
-		nil,
-		os.Stdout,
-		"",
-	)
+	).
+		WithHeader("Available models").
+		WithPageSize(utils.TableTheme().Items).
+		WithSingleSelect().
+		WithWriter(os.Stdout).
+		WithInput(Input).
+		Run()
 	if err != nil {
 		// Back/quit → keep current value
 		return v, nil
@@ -696,19 +694,18 @@ func getShellContextValue(v any, claiConfigDir string) (any, error) {
 
 	currentStr, _ := v.(string)
 	fmt.Print(colorPrimary(fmt.Sprintf("Select shell_context (current: %q):\n", currentStr)))
-	choice, err := utils.SelectFromTable(
-		"Available shell contexts",
-		utils.SlicePaginator(contexts),
-		"Select shell context <num>: ",
+	choice, _, err := table.New(
+		table.SlicePaginator(contexts),
 		func(i int, name string) (string, error) {
 			return fmt.Sprintf("%d. %s", i, name), nil
 		},
-		utils.ThemeTableItems(),
-		true,
-		nil,
-		os.Stdout,
-		"",
-	)
+	).
+		WithHeader("Available shell contexts").
+		WithPageSize(utils.TableTheme().Items).
+		WithSingleSelect().
+		WithWriter(os.Stdout).
+		WithInput(Input).
+		Run()
 	if err != nil {
 		// Back/quit → keep current value
 		return v, nil
@@ -778,7 +775,7 @@ func editMap(k string, m map[string]any, claiConfigDir string) (map[string]any, 
 	for {
 		keys := sortedKeys(edited)
 		fmt.Print(colorSecondary(fmt.Sprintf("Map '%s' keys: %v\n[a]dd [u]pdate [r]emove [d]one: ", k, keys)))
-		action, err := utils.ReadUserInput()
+		action, err := table.ReadUserInputFrom(Input)
 		if err != nil {
 			return nil, fmt.Errorf("read map action: %w", err)
 		}
@@ -787,26 +784,26 @@ func editMap(k string, m map[string]any, claiConfigDir string) (map[string]any, 
 			return edited, nil
 		case "a":
 			fmt.Print(colorSecondary("New key: "))
-			nk, err := utils.ReadUserInput()
+			nk, err := table.ReadUserInputFrom(Input)
 			if err != nil {
 				return nil, fmt.Errorf("read new key: %w", err)
 			}
 			fmt.Print(colorSecondary("Value: "))
-			nv, err := utils.ReadUserInput()
+			nv, err := table.ReadUserInputFrom(Input)
 			if err != nil {
 				return nil, fmt.Errorf("read new value: %w", err)
 			}
 			edited[nk] = castPrimitive(nv)
 		case "r":
 			fmt.Print(colorSecondary("Key to remove: "))
-			rk, err := utils.ReadUserInput()
+			rk, err := table.ReadUserInputFrom(Input)
 			if err != nil {
 				return nil, fmt.Errorf("read key to remove: %w", err)
 			}
 			delete(edited, rk)
 		case "u":
 			fmt.Print(colorSecondary("Key to update: "))
-			uk, err := utils.ReadUserInput()
+			uk, err := table.ReadUserInputFrom(Input)
 			if err != nil {
 				return nil, fmt.Errorf("read key to update: %w", err)
 			}
@@ -833,7 +830,7 @@ func editSlice(k string, s []any, claiConfigDir string) ([]any, error) {
 	for {
 		printSliceTable(k, edited)
 		fmt.Print(colorSecondary("[a]ppend [u]pdate [r]emove [d]one: "))
-		action, err := utils.ReadUserInput()
+		action, err := table.ReadUserInputFrom(Input)
 		if err != nil {
 			return nil, fmt.Errorf("read slice action: %w", err)
 		}
@@ -873,7 +870,7 @@ func printSliceTable(key string, s []any) {
 // promptSliceAppend reads a single value from the user and casts it.
 func promptSliceAppend() any {
 	fmt.Print(colorSecondary("Value: "))
-	nv, err := utils.ReadUserInput()
+	nv, err := table.ReadUserInputFrom(Input)
 	if err != nil {
 		ancli.Errf("read append value: %v", err)
 		return nil
@@ -889,7 +886,7 @@ func promptSliceUpdate(key string, s []any, claiConfigDir string) ([]any, error)
 	}
 	indices, err := selectFromSlice(s, true)
 	if err != nil {
-		if errors.Is(err, utils.ErrBack) || errors.Is(err, utils.ErrUserInitiatedExit) {
+		if errors.Is(err, table.ErrBack) || errors.Is(err, table.ErrUserInitiatedExit) {
 			return s, nil
 		}
 		return nil, fmt.Errorf("select index for update: %w", err)
@@ -911,7 +908,7 @@ func promptSliceRemove(s []any) ([]any, error) {
 	}
 	indices, err := selectFromSlice(s, false)
 	if err != nil {
-		if errors.Is(err, utils.ErrBack) || errors.Is(err, utils.ErrUserInitiatedExit) {
+		if errors.Is(err, table.ErrBack) || errors.Is(err, table.ErrUserInitiatedExit) {
 			return s, nil
 		}
 		return nil, err
@@ -931,17 +928,21 @@ func selectFromSlice(s []any, single bool) ([]int, error) {
 	for i := range labels {
 		labels[i] = strconv.Itoa(i)
 	}
-	return utils.SelectFromTable(
-		"Select elements",
-		utils.SlicePaginator(labels),
-		"Select elements [<num>]",
+	tb := table.New(
+		table.SlicePaginator(labels),
 		sliceRowFormatter(s),
-		len(s),
-		single,
-		nil,
-		os.Stdout,
-		"",
-	)
+	).
+		WithHeader("Select elements").
+		WithPageSize(len(s)).
+		WithWriter(os.Stdout).
+		WithInput(Input)
+
+	if single {
+		tb = tb.WithSingleSelect()
+	}
+
+	selected, _, err := tb.Run()
+	return selected, err
 }
 
 // sliceRowFormatter returns a row formatter that displays "i. value" for
@@ -985,7 +986,7 @@ func createConfigFile[T any](configTypePath, configType string, defaultConfig T)
 		}
 	}
 	fmt.Print(colorSecondary(fmt.Sprintf("Enter %s name: ", configType)))
-	configName, err := utils.ReadUserInput()
+	configName, err := table.ReadUserInputFrom(Input)
 	if err != nil {
 		return config{}, fmt.Errorf("read %s name: %w", configType, err)
 	}

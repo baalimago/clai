@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/baalimago/clai/internal/cost"
-	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
+	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
 
 type chatDirInfo struct {
@@ -69,7 +69,7 @@ func aggregateQueryPriceInfo(queries []pub_models.QueryCost) (chatDirPriceInfo, 
 }
 
 func (cdi chatDirInfo) initialPrompt() string {
-	truncPrompt, err := utils.WidthAppropriateStringTrunc(cdi.initialMessage, "", 30)
+	truncPrompt, err := table.WidthAppropriateStringTrunc(cdi.initialMessage, "", 30)
 	if err != nil {
 		return "failed to get initial prompt"
 	}

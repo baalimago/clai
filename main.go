@@ -12,6 +12,7 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 	"github.com/baalimago/go_away_boilerplate/pkg/shutdown"
+	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
 
 const usage = `clai - (c)ommand (l)ine (a)rtificial (i)ntelligence
@@ -98,7 +99,7 @@ func run(args []string) int {
 	ctx = context.WithValue(ctx, utils.ContextCancelKey, cancel)
 	querier, err := internal.Setup(ctx, usage, args)
 	if err != nil {
-		if errors.Is(err, utils.ErrUserInitiatedExit) {
+		if errors.Is(err, table.ErrUserInitiatedExit) {
 			if misc.Truthy(os.Getenv("DEBUG")) {
 				ancli.Okf("Seems like you wanted out. Byebye!\n")
 			}
@@ -110,7 +111,7 @@ func run(args []string) int {
 	go func() { shutdown.Monitor(cancel) }()
 	err = querier.Query(ctx)
 	if err != nil {
-		if errors.Is(err, utils.ErrUserInitiatedExit) {
+		if errors.Is(err, table.ErrUserInitiatedExit) {
 			if misc.Truthy(os.Getenv("DEBUG")) {
 				ancli.Okf("Seems like you wanted out. Byebye!\n")
 			}

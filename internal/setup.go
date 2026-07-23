@@ -21,6 +21,7 @@ import (
 	textmodels "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	imagodebug "github.com/baalimago/go_away_boilerplate/pkg/debug"
+	"github.com/baalimago/go_away_boilerplate/pkg/table"
 
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
@@ -267,7 +268,7 @@ func setupTextQuerierWithConf(ctx context.Context, mode Mode, confDir string, fl
 			LogQueryText: logSkillDiscovery,
 			TrustPrompter: func(_ context.Context, prompt skills.TrustPrompt) (bool, error) {
 				ancli.Warnf("%s", formatSkillTrustPrompt(prompt))
-				answer, err := utils.ReadUserInput()
+				answer, err := table.ReadUserInputFrom(setup.Input)
 				if err != nil {
 					return false, err
 				}
@@ -536,7 +537,7 @@ func Setup(ctx context.Context, usage string, allArgs []string) (models.Querier,
 		return pq, nil
 	case HELP:
 		printHelp(usage, allArgs)
-		return nil, utils.ErrUserInitiatedExit
+		return nil, table.ErrUserInitiatedExit
 	case VERSION:
 		return printVersion()
 	case SETUP:
@@ -544,13 +545,13 @@ func Setup(ctx context.Context, usage string, allArgs []string) (models.Querier,
 		if err != nil {
 			return nil, fmt.Errorf("failed to run setup: %w", err)
 		}
-		return nil, utils.ErrUserInitiatedExit
+		return nil, table.ErrUserInitiatedExit
 	case REPLAY:
 		err := chat.Replay(postFlagConf.PrintRaw, false)
 		if err != nil {
 			return nil, fmt.Errorf("failed to replay previous reply: %w", err)
 		}
-		return nil, utils.ErrUserInitiatedExit
+		return nil, table.ErrUserInitiatedExit
 	case DIRSCOPED_REPLAY:
 		return setupDRE(mode, postFlagConf, postFlagArgs)
 	case TOOLS:

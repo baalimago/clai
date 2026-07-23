@@ -12,6 +12,7 @@ import (
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
+	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
 
 type ModelStepResult struct {
@@ -201,10 +202,10 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 						w = os.Stdout
 					}
 					if !q.reasoningActive {
-						fmt.Fprint(w, utils.Colorize(utils.RoleColor("reasoning"), "[thinking]"))
+						fmt.Fprint(w, table.Colorize(utils.RoleColor("reasoning"), "[thinking]"))
 						q.reasoningActive = true
 					}
-					fmt.Fprint(w, utils.Colorize(utils.RoleColor("reasoning"), cast.Content))
+					fmt.Fprint(w, table.Colorize(utils.RoleColor("reasoning"), cast.Content))
 					q.reasoningBuf.WriteString(cast.Content)
 				}
 			case models.StopEvent:

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
+	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
 
 func TestAttemptPrettyPrint_UsesThemeColorsWhenNoGlow(t *testing.T) {
@@ -41,8 +42,8 @@ func TestAttemptPrettyPrint_UsesThemeColorsWhenNoGlow(t *testing.T) {
 	}
 	out := buf.String()
 
-	// We should see the themed role color applied (wrapped with ansiReset) and the username used for user role.
-	if want := "<USER_COLOR>alice" + ansiReset + ": hello\n"; out != want {
+	// We should see the themed role color applied (wrapped with ANSI reset) and the username used for user role.
+	if want := "<USER_COLOR>alice" + "\u001b[0m" + ": hello\n"; out != want {
 		t.Fatalf("unexpected output\nwant: %q\ngot:  %q", want, out)
 	}
 }
@@ -88,4 +89,5 @@ printf '%%s\n' "$*" > %q
 	if got, want := strings.TrimSpace(string(gotArgsBytes)), "-w 95"; got != want {
 		t.Fatalf("unexpected glow args\nwant: %q\ngot:  %q", want, got)
 	}
+	_ = table.NoColor // ensure import used
 }

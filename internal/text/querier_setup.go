@@ -19,6 +19,7 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
+	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
 
 // CanonicalModelString is the inverse of vendorType. Given a (vendor, family, modelVersion)
@@ -198,7 +199,7 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	}
 
 	traceChatf("post setup")
-	termWidth, err := utils.TermWidth()
+	termWidth, err := table.TermWidth()
 	if err == nil {
 		querier.termWidth = termWidth
 	} else {

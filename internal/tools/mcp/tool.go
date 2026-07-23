@@ -9,11 +9,11 @@ import (
 	"os"
 	"sync"
 
-	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
+	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
 
 // mcpTool wraps a tool provided by an MCP server and implements tools.LLMTool.
@@ -89,7 +89,7 @@ func (m *mcpTool) call(ctx context.Context, input pub_models.Input) (string, err
 
 			if misc.Truthy(os.Getenv("DEBUG_MCP_TOOL")) {
 				rawS, _ := raw.MarshalJSON()
-				shortened, _ := utils.WidthAppropriateStringTrunc(string(rawS), "", 10)
+				shortened, _ := table.WidthAppropriateStringTrunc(string(rawS), "", 10)
 				ancli.Okf("mcp_server client received: '%s'", shortened)
 			}
 			var resp Response

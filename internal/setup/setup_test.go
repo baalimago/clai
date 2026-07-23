@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/baalimago/clai/internal/utils"
+	"github.com/baalimago/go_away_boilerplate/pkg/table"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
@@ -99,7 +99,7 @@ func TestExecuteConfigAction_TableDriven(t *testing.T) {
 			name:          "back returns ErrBack",
 			action:        back,
 			fileContent:   `{"a":1}`,
-			wantErrSubstr: utils.ErrBack.Error(),
+			wantErrSubstr: table.ErrBack.Error(),
 		},
 		{
 			name:           "delete confirmed removes file",
@@ -166,7 +166,7 @@ func TestExecuteConfigAction_TableDriven(t *testing.T) {
 				t.Fatalf("WriteFile(%q): %v", cfgPath, err)
 			}
 
-			restoreInput := utils.UseReadUserInputForTests(func() (string, error) {
+			restoreInput := useReadUserInputForTests(func() (string, error) {
 				if len(tt.readUserInputs) == 0 {
 					return "", io.EOF
 				}
@@ -196,7 +196,7 @@ func TestExecuteConfigAction_TableDriven(t *testing.T) {
 				if !strings.Contains(err.Error(), tt.wantErrSubstr) {
 					t.Fatalf("err=%q, want substring %q", err.Error(), tt.wantErrSubstr)
 				}
-				if tt.action == back && !errors.Is(err, utils.ErrBack) {
+				if tt.action == back && !errors.Is(err, table.ErrBack) {
 					t.Fatalf("expected ErrBack, got %v", err)
 				}
 				return

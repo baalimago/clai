@@ -10,7 +10,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
@@ -326,7 +325,7 @@ func Test_e2e_skills_descriptor_activation_and_persistence(t *testing.T) {
 		"maxActivatedSkills": 10,
 	})
 
-	restoreInput := utils.UseReadUserInputForTests(func() (string, error) { return "y", nil })
+	restoreInput := useReadUserInputForTests(func() (string, error) { return "y", nil })
 	t.Cleanup(restoreInput)
 
 	var gotStatus int
@@ -404,7 +403,7 @@ func Test_e2e_skills_raw_mode_shows_full_output(t *testing.T) {
 	})
 	t.Setenv("CLAI_MOCK_LOAD_SKILL_ARGS", "raw-value")
 
-	restoreInput := utils.UseReadUserInputForTests(func() (string, error) { return "y", nil })
+	restoreInput := useReadUserInputForTests(func() (string, error) { return "y", nil })
 	t.Cleanup(restoreInput)
 
 	var gotStatus int
@@ -446,7 +445,7 @@ func Test_e2e_skills_trust_reprompt_hash_invalidation_and_trust_all(t *testing.T
 		"trust_all_skills":   false,
 		"maxActivatedSkills": 10,
 	})
-	restoreInput := utils.UseReadUserInputForTests(func() (string, error) { return "y", nil })
+	restoreInput := useReadUserInputForTests(func() (string, error) { return "y", nil })
 	t.Cleanup(restoreInput)
 
 	runPrompt := func() string {
@@ -513,7 +512,7 @@ func Test_e2e_skills_argument_rendering_and_activation_cap(t *testing.T) {
 	if err := os.Chdir(repoDir); err != nil {
 		t.Fatalf("Chdir(%q): %v", repoDir, err)
 	}
-	restoreInput := utils.UseReadUserInputForTests(func() (string, error) { return "y", nil })
+	restoreInput := useReadUserInputForTests(func() (string, error) { return "y", nil })
 	t.Cleanup(restoreInput)
 
 	writeSkillFile(t, filepath.Join(confDir, "skills", "review", "SKILL.md"), "---\ndescription: render review\narguments: [target,extra]\n---\nALL:$ARGUMENTS\nIDX0:$ARGUMENTS[0]\nPOS0:$0\nPOS1:$1\nNAMED:$target|$extra\nDIR:${CLAUDE_SKILL_DIR}\nLITERAL:!`echo nope`")

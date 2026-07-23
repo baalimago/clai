@@ -69,7 +69,7 @@ func TestPrintChatObfuscated_coloriziesPrefix(t *testing.T) {
 	}
 	got := b.String()
 	// The bridge section should contain colored obfuscated prefix.
-	if !strings.Contains(got, utils.ThemePrimaryColor()+"[") {
+	if !strings.Contains(got, utils.TableTheme().Primary+"[") {
 		t.Fatalf("expected prefix to be colored, got: %q", got)
 	}
 }

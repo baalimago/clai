@@ -10,6 +10,7 @@ import (
 
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
+	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
 
 // SubCmd handles `clai profiles` sub-commands.
@@ -49,7 +50,7 @@ func runProfilesList() error {
 	profilesDir := filepath.Join(configDir, "profiles")
 	if _, err := os.Stat(profilesDir); os.IsNotExist(err) {
 		ancli.Warnf("no profiles directory found at %s\n", profilesDir)
-		return utils.ErrUserInitiatedExit
+		return table.ErrUserInitiatedExit
 	}
 
 	files, err := os.ReadDir(profilesDir)
@@ -59,7 +60,7 @@ func runProfilesList() error {
 
 	if len(files) == 0 {
 		ancli.Warnf("no profiles found in %s\n", profilesDir)
-		return utils.ErrUserInitiatedExit
+		return table.ErrUserInitiatedExit
 	}
 
 	// local view of the on-disk profile; we only need a subset of fields here
@@ -104,7 +105,7 @@ func runProfilesList() error {
 		ancli.Warnf("no valid profiles found in %s\n", profilesDir)
 	}
 
-	return utils.ErrUserInitiatedExit
+	return table.ErrUserInitiatedExit
 }
 
 // getFirstSentence returns the first sentence / line of a prompt, used for summaries.

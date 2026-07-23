@@ -7,8 +7,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-
-	"github.com/baalimago/clai/internal/utils"
 )
 
 func TestSelectConfigItem_PreviewsSelectedItemBeforeActionPrompt(t *testing.T) {
@@ -31,7 +29,7 @@ func TestSelectConfigItem_PreviewsSelectedItemBeforeActionPrompt(t *testing.T) {
 
 	inputs := []string{"0", "b"}
 	inputIdx := 0
-	restoreInput := utils.UseReadUserInputForTests(func() (string, error) {
+	restoreInput := useReadUserInputForTests(func() (string, error) {
 		if inputIdx >= len(inputs) {
 			return "", io.EOF
 		}

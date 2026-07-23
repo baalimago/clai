@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/baalimago/go_away_boilerplate/pkg/misc"
+	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
 
 // Theme holds ANSI color configuration for terminal output.
@@ -55,7 +55,7 @@ func defaultTheme() *Theme {
 var globalTheme = *defaultTheme()
 
 // LoadTheme loads (and possibly creates) the theme.json file within the config dir.
-// It is safe to call multiple times.
+// It is safe to call multiple times. After loading, stores the theme for consumer access.
 func LoadTheme(configDirPath string) error {
 	conf, err := LoadConfigFromFile(configDirPath, "theme.json", migrateThemeConfig, defaultTheme())
 	if err != nil {
@@ -63,6 +63,16 @@ func LoadTheme(configDirPath string) error {
 	}
 	globalTheme = conf
 	return nil
+}
+
+// TableTheme returns the table.Theme derived from the current global theme.
+func TableTheme() table.Theme {
+	return table.Theme{
+		Primary:   globalTheme.Primary,
+		Secondary: globalTheme.Secondary,
+		Breadtext: globalTheme.Breadtext,
+		Items:     globalTheme.TableItems,
+	}
 }
 
 func migrateThemeConfig(configDirPath string) error {
@@ -104,21 +114,6 @@ func ThemeConfigPath(configDirPath string) string {
 	return filepath.Join(configDirPath, "theme.json")
 }
 
-// NoColor reports whether color output should be disabled.
-func NoColor() bool {
-	return misc.Truthy(os.Getenv("NO_COLOR"))
-}
-
-const ansiReset = "\u001b[0m"
-
-// Colorize wraps s with the given ANSI color code unless NO_COLOR is set or color is empty.
-func Colorize(color, s string) string {
-	if NoColor() || color == "" {
-		return s
-	}
-	return color + s + ansiReset
-}
-
 // RoleColor returns the theme color for a chat role.
 func RoleColor(role string) string {
 	switch role {
@@ -133,13 +128,6 @@ func RoleColor(role string) string {
 	default:
 		return globalTheme.RoleOther
 	}
-}
-
-func ThemePrimaryColor() string   { return globalTheme.Primary }
-func ThemeSecondaryColor() string { return globalTheme.Secondary }
-func ThemeBreadtextColor() string { return globalTheme.Breadtext }
-func ThemeTableItems() int {
-	return globalTheme.TableItems
 }
 
 func NotificationBellEnabled() bool { return globalTheme.NotificationBell }

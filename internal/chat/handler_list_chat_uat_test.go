@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
+	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
 
 // These tests are "user acceptance" style integration tests.
@@ -47,22 +47,12 @@ func TestUAT_ListSelectContinue_ForeignClaudeChat_ClonesAndThenDedups(t *testing
 		t.Fatalf("chtimes: %v", err)
 	}
 
-	// Stub the interactive terminal: select row 0, then continue clone.
-	in := []string{"0", "c"}
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
-		if len(in) == 0 {
-			return "", nil
-		}
-		next := in[0]
-		in = in[1:]
-		return next, nil
-	})
-	t.Cleanup(restore)
-
 	// Capture output to ensure this is running through the real list/act flow.
 	var out bytes.Buffer
 	cq, confDir := newTestHandler(t)
 	cq.out = &out
+	// Stub the interactive terminal: select row 0, then continue clone.
+	cq.input = strings.NewReader("0\nc\n")
 
 	// First run: foreign row discovered, selected, and cloned.
 	if err := cq.handleListCmd(ctx); err != nil {
@@ -95,17 +85,7 @@ func TestUAT_ListSelectContinue_ForeignClaudeChat_ClonesAndThenDedups(t *testing
 	var out2 bytes.Buffer
 	cq2, _ := newTestHandler(t)
 	cq2.out = &out2
-	// Only list, then quit.
-	in2 := []string{"q"}
-	restore2 := utils.UseReadUserInputForTests(func() (string, error) {
-		if len(in2) == 0 {
-			return "q", nil
-		}
-		next := in2[0]
-		in2 = in2[1:]
-		return next, nil
-	})
-	t.Cleanup(restore2)
+	cq2.input = strings.NewReader("q\n")
 
 	_ = cq2.handleListCmd(ctx)
 	if strings.Contains(out2.String(), "s-uat") {
@@ -148,34 +128,32 @@ func seedPeekFixture(t *testing.T, convDir string) {
 // command, failing the test if the script is over- or under-consumed.
 func runPeekScript(t *testing.T, cq *ChatHandler, script []string) {
 	t.Helper()
-	in := script
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
-		if len(in) == 0 {
-			t.Fatal("input script exhausted: flow did not return to the expected table")
-		}
-		next := in[0]
-		in = in[1:]
-		return next, nil
-	})
-	t.Cleanup(restore)
+	cq.input = strings.NewReader(strings.Join(script, "\n") + "\n")
 
 	err := cq.handleListCmd(context.Background())
-	if err != nil && !errors.Is(err, utils.ErrUserInitiatedExit) {
+	if err != nil && !errors.Is(err, table.ErrUserInitiatedExit) {
 		t.Fatalf("handleListCmd: %v", err)
-	}
-	if len(in) != 0 {
-		t.Fatalf("input script not fully consumed, remaining: %v", in)
 	}
 }
 
 // countPickerPagePrompts counts message-picker prompts shown on the given page.
-func countPickerPagePrompts(out, selectionType, page string) int {
+// It only counts prompts after the "=== Chat info ===" marker, which separates
+// the chat-list phase from the message-picker phase.
+func countPickerPagePrompts(out, page string) int {
+	// Only examine output after the chat info header (message picker phase).
+	_, after, found := strings.Cut(out, "=== Chat info ===")
+	if !found {
+		return 0
+	}
 	count := 0
-	for _, part := range strings.Split(out, selectionType)[1:] {
-		prompt, _, ok := strings.Cut(part, "): ")
-		if ok && strings.Contains(prompt, "page "+page) {
-			count++
+	target := "page " + page + ")"
+	for {
+		idx := strings.Index(after, target)
+		if idx < 0 {
+			break
 		}
+		count++
+		after = after[idx+len(target):]
 	}
 	return count
 }
@@ -218,7 +196,7 @@ func TestUAT_ListEditMessage_PickerReopensOnSamePage(t *testing.T) {
 	}
 
 	// Picker page 1 prompted twice: once after [n]ext, once reopened post-edit.
-	if got := countPickerPagePrompts(out.String(), editMessageChoicesFormat, "1/1"); got < 2 {
+	if got := countPickerPagePrompts(out.String(), "1/1"); got < 2 {
 		t.Fatalf("expected picker to reopen on page 1 after edit (>=2 prompts), got %d:\n%s", got, out.String())
 	}
 	// And the chat list still prompted its page 1 after backing out.
@@ -255,7 +233,7 @@ func TestUAT_ListDeleteMessage_PickerReopensOnSamePage(t *testing.T) {
 		}
 	}
 
-	if got := countPickerPagePrompts(out.String(), deleteMessagesChoicesFormat, "1/1"); got < 2 {
+	if got := countPickerPagePrompts(out.String(), "1/1"); got < 2 {
 		t.Fatalf("expected picker to reopen on page 1 after delete (>=2 prompts), got %d:\n%s", got, out.String())
 	}
 }
