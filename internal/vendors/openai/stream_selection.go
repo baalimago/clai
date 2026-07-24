@@ -123,8 +123,8 @@ func normalizeModelID(model string) string {
 		m = m[idx+1:]
 	}
 	if rest, ok := strings.CutPrefix(m, "ft:"); ok {
-		if idx := strings.IndexByte(rest, ':'); idx >= 0 {
-			m = rest[:idx]
+		if before, _, ok0 := strings.Cut(rest, ":"); ok0 {
+			m = before
 		} else {
 			m = rest
 		}

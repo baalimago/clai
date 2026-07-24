@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -149,13 +150,7 @@ func TestGetAvailableModels(t *testing.T) {
 			t.Fatalf("getAvailableModels() = %v, want 3 unique models", got)
 		}
 		for _, wantModel := range []string{"gpt-4.1", "sonnet-4", "or:gpt-4.1"} {
-			found := false
-			for _, g := range got {
-				if g == wantModel {
-					found = true
-					break
-				}
-			}
+			found := slices.Contains(got, wantModel)
 			if !found {
 				t.Fatalf("getAvailableModels() = %v, missing %q", got, wantModel)
 			}

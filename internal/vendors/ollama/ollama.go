@@ -1,10 +1,6 @@
 package ollama
 
 import (
-	"fmt"
-	"os"
-	"strings"
-
 	"github.com/baalimago/clai/internal/text/generic"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
@@ -28,22 +24,7 @@ type Ollama struct {
 }
 
 func (g *Ollama) Setup() error {
-	if os.Getenv("OLLAMA_API_KEY") == "" {
-		os.Setenv("OLLAMA_API_KEY", "ollama")
-	}
-	err := g.StreamCompleter.Setup("OLLAMA_API_KEY", ChatURL, "OLLAMA_DEBUG")
-	if err != nil {
-		return fmt.Errorf("failed to setup stream completer: %w", err)
-	}
-	modelName := strings.TrimPrefix(g.Model, "ollama:")
-	g.StreamCompleter.Model = modelName
-	g.StreamCompleter.FrequencyPenalty = &g.FrequencyPenalty
-	g.StreamCompleter.MaxTokens = g.MaxTokens
-	g.StreamCompleter.Temperature = &g.Temperature
-	g.StreamCompleter.TopP = &g.TopP
-	toolChoice := "auto"
-	g.ToolChoice = &toolChoice
-	return nil
+	return g.StreamCompleter.SetupOpenAICompatible(g.Model, "OLLAMA_API_KEY", "ollama", ChatURL, "OLLAMA_DEBUG", "ollama:", g.FrequencyPenalty, g.Temperature, g.TopP, g.MaxTokens)
 }
 
 func (g *Ollama) RegisterTool(tool pub_models.LLMTool) {

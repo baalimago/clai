@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/baalimago/clai/internal/models"
@@ -246,21 +247,21 @@ func TestResponsesStreamer_ReasoningDeltasEmitReasoningEvents(t *testing.T) {
 		t.Fatalf("stream: %v", err)
 	}
 
-	var reasoning string
-	var text string
+	var reasoning strings.Builder
+	var text strings.Builder
 	for ev := range ch {
 		switch v := ev.(type) {
 		case models.ReasoningEvent:
-			reasoning += v.Content
+			reasoning.WriteString(v.Content)
 		case string:
-			text += v
+			text.WriteString(v)
 		}
 	}
-	if reasoning != "thinking" {
-		t.Fatalf("reasoning: got %q want %q", reasoning, "thinking")
+	if reasoning.String() != "thinking" {
+		t.Fatalf("reasoning: got %q want %q", reasoning.String(), "thinking")
 	}
-	if text != "answer" {
-		t.Fatalf("text: got %q want %q", text, "answer")
+	if text.String() != "answer" {
+		t.Fatalf("text: got %q want %q", text.String(), "answer")
 	}
 }
 

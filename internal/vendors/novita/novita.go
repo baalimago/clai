@@ -1,10 +1,6 @@
 package novita
 
 import (
-	"fmt"
-	"os"
-	"strings"
-
 	"github.com/baalimago/clai/internal/text/generic"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
@@ -30,23 +26,7 @@ type Novita struct {
 const ChatURL = "https://api.novita.ai/openai/v1/chat/completions"
 
 func (g *Novita) Setup() error {
-	if os.Getenv("NOVITA_API_KEY") == "" {
-		os.Setenv("NOVITA_API_KEY", "novita")
-	}
-	err := g.StreamCompleter.Setup("NOVITA_API_KEY", ChatURL, "NOVITA_DEBUG")
-	if err != nil {
-		return fmt.Errorf("failed to setup stream completer: %w", err)
-	}
-
-	modelName := strings.TrimPrefix(g.Model, "novita:")
-	g.StreamCompleter.Model = modelName
-	g.StreamCompleter.FrequencyPenalty = &g.FrequencyPenalty
-	g.StreamCompleter.MaxTokens = g.MaxTokens
-	g.StreamCompleter.Temperature = &g.Temperature
-	g.StreamCompleter.TopP = &g.TopP
-	toolChoice := "auto"
-	g.ToolChoice = &toolChoice
-	return nil
+	return g.StreamCompleter.SetupOpenAICompatible(g.Model, "NOVITA_API_KEY", "novita", ChatURL, "NOVITA_DEBUG", "novita:", g.FrequencyPenalty, g.Temperature, g.TopP, g.MaxTokens)
 }
 
 func (g *Novita) RegisterTool(tool pub_models.LLMTool) {

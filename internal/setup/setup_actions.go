@@ -399,10 +399,8 @@ func interractiveReconfigure(cfg config, b []byte) error {
 func claiConfigDirFromPath(filePath string) string {
 	dir := filepath.Dir(filePath)
 	base := filepath.Base(dir)
-	for _, sub := range []string{"profiles", "shellContexts", "mcpServers"} {
-		if base == sub {
-			return filepath.Dir(dir)
-		}
+	if slices.Contains([]string{"profiles", "shellContexts", "mcpServers"}, base) {
+		return filepath.Dir(dir)
 	}
 	// For files directly in the config dir (e.g., model files, textConfig.json).
 	// Assume the parent is the config dir.
@@ -657,29 +655,12 @@ func getModelValue(v any, claiConfigDir string) (any, error) {
 	if len(models) == 0 {
 		return v, nil
 	}
-
 	currentStr, _ := v.(string)
-	fmt.Print(colorPrimary(fmt.Sprintf("Select model (current: %q):\n", currentStr)))
-	choice, _, err := table.New(
-		table.SlicePaginator(models),
-		func(i int, name string) (string, error) {
-			return fmt.Sprintf("%d. %s", i, name), nil
-		},
-	).
-		WithHeader("Available models").
-		WithPageSize(utils.TableTheme().Items).
-		WithSingleSelect().
-		WithWriter(os.Stdout).
-		WithInput(Input).
-		Run()
-	if err != nil {
-		// Back/quit → keep current value
+	choice, err := selectFromList(models, "Available models", fmt.Sprintf("Select model (current: %q):", currentStr))
+	if err != nil || choice == "" {
 		return v, nil
 	}
-	if len(choice) == 0 {
-		return v, nil
-	}
-	return castPrimitive(models[choice[0]]), nil
+	return castPrimitive(choice), nil
 }
 
 // getShellContextValue presents a table of available shell contexts for selection.
@@ -691,29 +672,36 @@ func getShellContextValue(v any, claiConfigDir string) (any, error) {
 	if len(contexts) == 0 {
 		return v, nil
 	}
-
 	currentStr, _ := v.(string)
-	fmt.Print(colorPrimary(fmt.Sprintf("Select shell_context (current: %q):\n", currentStr)))
-	choice, _, err := table.New(
-		table.SlicePaginator(contexts),
+	choice, err := selectFromList(contexts, "Available shell contexts", fmt.Sprintf("Select shell_context (current: %q):", currentStr))
+	if err != nil || choice == "" {
+		return v, nil
+	}
+	return castPrimitive(choice), nil
+}
+
+// selectFromList presents a single-select table of items and returns the chosen value.
+func selectFromList(items []string, header, prompt string) (string, error) {
+	fmt.Print(colorPrimary(prompt + "\n"))
+	selected, _, err := table.New(
+		table.SlicePaginator(items),
 		func(i int, name string) (string, error) {
 			return fmt.Sprintf("%d. %s", i, name), nil
 		},
 	).
-		WithHeader("Available shell contexts").
+		WithHeader(header).
 		WithPageSize(utils.TableTheme().Items).
 		WithSingleSelect().
 		WithWriter(os.Stdout).
 		WithInput(Input).
 		Run()
 	if err != nil {
-		// Back/quit → keep current value
-		return v, nil
+		return "", err
 	}
-	if len(choice) == 0 {
-		return v, nil
+	if len(selected) == 0 {
+		return "", nil
 	}
-	return castPrimitive(contexts[choice[0]]), nil
+	return items[selected[0]], nil
 }
 
 // getAvailableModels discovers model configurations from the clai config directory.

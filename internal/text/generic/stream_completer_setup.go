@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
@@ -22,6 +23,25 @@ func (s *StreamCompleter) Setup(apiKeyEnv, url, debugEnv string) error {
 		s.debug = true
 	}
 
+	return nil
+}
+
+// SetupOpenAICompatible ensures the API key env var has a fallback, calls Setup,
+// strips the vendor prefix from model, and assigns common OpenAI-compatible fields.
+func (s *StreamCompleter) SetupOpenAICompatible(model, apiKeyEnv, fallbackKey, url, debugEnv, prefix string, frequencyPenalty, temperature, topP float64, maxTokens *int) error {
+	if os.Getenv(apiKeyEnv) == "" {
+		os.Setenv(apiKeyEnv, fallbackKey)
+	}
+	if err := s.Setup(apiKeyEnv, url, debugEnv); err != nil {
+		return fmt.Errorf("failed to setup stream completer: %w", err)
+	}
+	s.Model = strings.TrimPrefix(model, prefix)
+	s.FrequencyPenalty = &frequencyPenalty
+	s.MaxTokens = maxTokens
+	s.Temperature = &temperature
+	s.TopP = &topP
+	toolChoice := "auto"
+	s.ToolChoice = &toolChoice
 	return nil
 }
 

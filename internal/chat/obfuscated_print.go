@@ -41,6 +41,20 @@ func messageContentLen(m pub_models.Message) int {
 	return utf8.RuneCountInString(messageDisplayText(m))
 }
 
+// printTruncatedMessage writes a single truncated+numbered message line.
+func printTruncatedMessage(w io.Writer, m pub_models.Message, i int, section string, raw bool) error {
+	disp := messageDisplayText(m)
+	disp = utils.ShortenedOutput(disp, 3)
+	m.Content = disp
+	m.ContentParts = nil
+	m.ReasoningContent = ""
+	fmt.Fprintf(w, "%s ", table.Colorize(utils.TableTheme().Primary, fmt.Sprintf("[#%-3d]", i)))
+	if err := utils.AttemptPrettyPrint(w, m, "user", raw); err != nil {
+		return fmt.Errorf("pretty print %s message %d: %w", section, i, err)
+	}
+	return nil
+}
+
 const (
 	headTruncated = 3 // messages after first user to show truncated
 	tailTruncated = 3 // messages before last to show truncated
@@ -72,15 +86,8 @@ func printChatObfuscated(w io.Writer, ch pub_models.Chat, raw bool) error {
 
 	// Preamble: messages before the first user — shown truncated.
 	for i := 0; i < firstUserIdx; i++ {
-		m := msgs[i]
-		disp := messageDisplayText(m)
-		disp = utils.ShortenedOutput(disp, 3)
-		m.Content = disp
-		m.ContentParts = nil
-		m.ReasoningContent = ""
-		fmt.Fprintf(w, "%s ", table.Colorize(utils.TableTheme().Primary, fmt.Sprintf("[#%-3d]", i)))
-		if err := utils.AttemptPrettyPrint(w, m, "user", raw); err != nil {
-			return fmt.Errorf("pretty print preamble message %d: %w", i, err)
+		if err := printTruncatedMessage(w, msgs[i], i, "preamble", raw); err != nil {
+			return err
 		}
 	}
 
@@ -95,22 +102,12 @@ func printChatObfuscated(w io.Writer, ch pub_models.Chat, raw bool) error {
 		return fmt.Errorf("pretty print first user message: %w", err)
 	}
 
-	headEnd := firstUserIdx + 1 + headTruncated
-	if headEnd > msgCount-1 {
-		headEnd = msgCount - 1
-	}
+	headEnd := min(firstUserIdx+1+headTruncated, msgCount-1)
 
 	// Section 2: Head window — truncated messages after first user.
 	for i := firstUserIdx + 1; i < headEnd; i++ {
-		m := msgs[i]
-		disp := messageDisplayText(m)
-		disp = utils.ShortenedOutput(disp, 3)
-		m.Content = disp
-		m.ContentParts = nil
-		m.ReasoningContent = ""
-		fmt.Fprintf(w, "%s ", table.Colorize(utils.TableTheme().Primary, fmt.Sprintf("[#%-3d]", i)))
-		if err := utils.AttemptPrettyPrint(w, m, "user", raw); err != nil {
-			return fmt.Errorf("pretty print head message %d: %w", i, err)
+		if err := printTruncatedMessage(w, msgs[i], i, "head", raw); err != nil {
+			return err
 		}
 	}
 
@@ -119,10 +116,7 @@ func printChatObfuscated(w io.Writer, ch pub_models.Chat, raw bool) error {
 
 		// Section 3: Middle bridge — 3 obfuscated 1-liners.
 		bridgeStart := headEnd
-		bridgeEnd := bridgeStart + bridgeSample
-		if bridgeEnd > tailStart {
-			bridgeEnd = tailStart
-		}
+		bridgeEnd := min(bridgeStart+bridgeSample, tailStart)
 		for i := bridgeStart; i < bridgeEnd; i++ {
 			m := msgs[i]
 			lenRunes := messageContentLen(m)
@@ -151,29 +145,15 @@ func printChatObfuscated(w io.Writer, ch pub_models.Chat, raw bool) error {
 
 		// Section 4: Tail window — 3 truncated messages before last.
 		for i := tailStart; i < msgCount-1; i++ {
-			m := msgs[i]
-			disp := messageDisplayText(m)
-			disp = utils.ShortenedOutput(disp, 3)
-			m.Content = disp
-			m.ContentParts = nil
-			m.ReasoningContent = ""
-			fmt.Fprintf(w, "%s ", table.Colorize(utils.TableTheme().Primary, fmt.Sprintf("[#%-3d]", i)))
-			if err := utils.AttemptPrettyPrint(w, m, "user", raw); err != nil {
-				return fmt.Errorf("pretty print tail message %d: %w", i, err)
+			if err := printTruncatedMessage(w, msgs[i], i, "tail", raw); err != nil {
+				return err
 			}
 		}
 	} else {
 		// No gap: print remaining messages truncated, except the last.
 		for i := headEnd; i < msgCount-1; i++ {
-			m := msgs[i]
-			disp := messageDisplayText(m)
-			disp = utils.ShortenedOutput(disp, 3)
-			m.Content = disp
-			m.ContentParts = nil
-			m.ReasoningContent = ""
-			fmt.Fprintf(w, "%s ", table.Colorize(utils.TableTheme().Primary, fmt.Sprintf("[#%-3d]", i)))
-			if err := utils.AttemptPrettyPrint(w, m, "user", raw); err != nil {
-				return fmt.Errorf("pretty print message %d: %w", i, err)
+			if err := printTruncatedMessage(w, msgs[i], i, "message", raw); err != nil {
+				return err
 			}
 		}
 	}

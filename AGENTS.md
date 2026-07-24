@@ -16,10 +16,22 @@ You're working on a project called "clai".
 
 ## Validation:
 
-Before you're done, ensure that these pass:
+Before implementing any change, run this to establish the duplication baseline:
 
-- go test ./... -race -cover -timeout=10s
-- go run honnef.co/go/tools/cmd/staticcheck@latest ./...
-- go run mvdan.cc/gofumpt@latest -w .
+```bash
+go run github.com/mibk/dupl@latest -t 80 .
+```
+
+When done, run the full QA suite:
+
+```bash
+make qa
+```
+
+Then re-run dupl to ensure no needless code duplication was added:
+
+```bash
+go run github.com/mibk/dupl@latest -t 80 .
+```
 
 ALWAYS TEST WITH TIMEOUT. Otherwise you may deadlock debugging efforts.

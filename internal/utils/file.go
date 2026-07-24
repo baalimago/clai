@@ -1,12 +1,15 @@
 package utils
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
+
+	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
 func CreateFile[T any](path string, toCreate *T) error {
@@ -23,6 +26,27 @@ func CreateFile[T any](path string, toCreate *T) error {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
 	return nil
+}
+
+// SaveBase64File decodes a base64 string and writes it to dir/prefix_random.extension.
+// Falls back to /tmp on write failure.
+func SaveBase64File(prefix, dir, b64JSON, extension string) (string, error) {
+	data, err := base64.StdEncoding.DecodeString(b64JSON)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode base64: %w", err)
+	}
+	fileName := fmt.Sprintf("%v_%v.%v", prefix, RandomPrefix(), extension)
+	outFile := fmt.Sprintf("%v/%v", dir, fileName)
+	err = os.WriteFile(outFile, data, 0o644)
+	if err != nil {
+		ancli.PrintWarn(fmt.Sprintf("failed to write file: '%v', attempting tmp file...\n", err))
+		outFile = fmt.Sprintf("/tmp/%v", fileName)
+		err = os.WriteFile(outFile, data, 0o644)
+		if err != nil {
+			return "", fmt.Errorf("failed to write file: %w", err)
+		}
+	}
+	return outFile, nil
 }
 
 func WriteFile[T any](path string, toWrite *T) error {
