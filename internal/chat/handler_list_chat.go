@@ -678,6 +678,9 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 				}
 				return nil
 			}
+			if errors.Is(err, table.ErrUserInitiatedExit) {
+				return nil
+			}
 			return fmt.Errorf("failed to select chat: %w", err)
 		}
 		if len(selectedNumbers) == 0 || selectedNumbers[0] < 0 || selectedNumbers[0] >= len(pr.rows) {
@@ -699,6 +702,9 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 				if errors.Is(err, errExitList) {
 					return nil
 				}
+				if errors.Is(err, table.ErrUserInitiatedExit) {
+					return nil
+				}
 				return err
 			}
 			continue
@@ -714,6 +720,9 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 		}
 		if err := cq.actOnForeignChat(foreign, reader, groupKey); err != nil {
 			if errors.Is(err, errExitList) {
+				return nil
+			}
+			if errors.Is(err, table.ErrUserInitiatedExit) {
 				return nil
 			}
 			return err
@@ -947,7 +956,7 @@ func (cq *ChatHandler) deleteMessageInChat(chat pub_models.Chat) error {
 		selectedIndices, shownPage, err := cq.selectMessagesAt(chat, false, page)
 		page = shownPage
 		if err != nil {
-			if errors.Is(err, table.ErrBack) {
+			if errors.Is(err, table.ErrBack) || errors.Is(err, table.ErrUserInitiatedExit) {
 				return nil
 			}
 			return fmt.Errorf("failed to select from table: %w", err)
@@ -982,7 +991,7 @@ func (cq *ChatHandler) editMessageInChat(chat pub_models.Chat) error {
 		selectedNumbers, shownPage, err := cq.selectMessagesAt(chat, true, page)
 		page = shownPage
 		if err != nil {
-			if errors.Is(err, table.ErrBack) {
+			if errors.Is(err, table.ErrBack) || errors.Is(err, table.ErrUserInitiatedExit) {
 				return nil
 			}
 			return fmt.Errorf("failed to select from table: %w", err)

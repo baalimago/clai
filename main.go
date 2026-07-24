@@ -39,6 +39,7 @@ Flags:
   -prp, profile-path string        Set the path to a profile file to use instead of -p/-profile.
   -asc, -append-shell-context str  Append a named shell context from <config-dir>/shellContexts/<name>.json to the final query prompt.
   -rf, -response-format string     Path to a response_format JSON file for structured output (json_object, json_schema).
+  -n, -non-interactive             Disable interactive stdin fallback after macro inputs; auto-exit instead.
 
 Config dir: %v
 Cache dir:  %v

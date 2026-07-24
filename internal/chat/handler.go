@@ -288,7 +288,8 @@ func New(q models.ChatQuerier,
 	if out == nil {
 		out = os.Stdout
 	}
-	return &ChatHandler{
+
+	ch := &ChatHandler{
 		q:        q,
 		username: username,
 		debug:    debug,
@@ -299,5 +300,12 @@ func New(q models.ChatQuerier,
 		config:   conf,
 		raw:      raw,
 		out:      out,
-	}, nil
+	}
+
+	// Macro mode: extra positional args after "chat list" become table inputs.
+	if (subCmd == "list" || subCmd == "l") && len(argsArr) > 1 {
+		ch.input = utils.NewMacroReader(argsArr[1:])
+	}
+
+	return ch, nil
 }
