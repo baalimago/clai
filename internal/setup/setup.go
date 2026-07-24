@@ -3,6 +3,7 @@ package setup
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -12,7 +13,13 @@ import (
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
+	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
+
+// Input is the reader used for interactive prompts and table input.
+// When nil (the default), input is read from /dev/tty. Set to a
+// strings.NewReader in tests to script interactive flows.
+var Input io.Reader
 
 type config struct {
 	name     string
@@ -50,18 +57,18 @@ var choiceToAction = map[string]action{
 	"ufe,unescapedFieldEdit": unescapedFieldEditWithEditor,
 }
 
-var actionToTableAction = map[action]utils.TableAction{
+var actionToTableAction = map[action]table.TableAction{
 	back: {
 		Short:  "b",
 		Long:   "back",
 		Format: "[b]ack",
-		Action: func() error { return utils.ErrBack },
+		Action: func() error { return table.ErrBack },
 	},
 	quit: {
 		Short:  "q",
 		Long:   "quit",
 		Format: "[q]uit",
-		Action: func() error { return utils.ErrUserInitiatedExit },
+		Action: func() error { return table.ErrUserInitiatedExit },
 	},
 	newaction: {
 		Short:  "a",
@@ -149,7 +156,7 @@ func executeConfigAction(cfg config, a action) error {
 		}
 		return actionReconfigure(newCfg)
 	case back:
-		return utils.ErrBack
+		return table.ErrBack
 	default:
 		return fmt.Errorf("invalid action for config %q: %v", cfg.name, a)
 	}
@@ -229,17 +236,17 @@ func InitCmd() error {
 	for {
 		category, err := selectCategory(categories)
 		if err != nil {
-			if errors.Is(err, utils.ErrUserInitiatedExit) {
-				return utils.ErrUserInitiatedExit
+			if errors.Is(err, table.ErrUserInitiatedExit) {
+				return table.ErrUserInitiatedExit
 			}
 			return fmt.Errorf("failed to select category: %w", err)
 		}
 		if err := runCategory(claiDir, category); err != nil {
-			if errors.Is(err, utils.ErrBack) {
+			if errors.Is(err, table.ErrBack) {
 				continue
 			}
-			if errors.Is(err, utils.ErrUserInitiatedExit) {
-				return utils.ErrUserInitiatedExit
+			if errors.Is(err, table.ErrUserInitiatedExit) {
+				return table.ErrUserInitiatedExit
 			}
 			return fmt.Errorf("failed to run category %q: %w", category.name, err)
 		}
@@ -247,20 +254,18 @@ func InitCmd() error {
 }
 
 func selectCategory(categories []setupCategory) (setupCategory, error) {
-	choicesFormat := "Select category [<num>]"
-	selected, err := utils.SelectFromTable(
-		stage0Raw,
-		utils.SlicePaginator(categories),
-		choicesFormat,
+	selected, _, err := table.New(
+		table.SlicePaginator(categories),
 		func(i int, category setupCategory) (string, error) {
 			return fmt.Sprintf("%d. %s", i, category.name), nil
 		},
-		utils.ThemeTableItems(),
-		true,
-		[]utils.TableAction{},
-		os.Stdout,
-		"",
-	)
+	).
+		WithHeader(stage0Raw).
+		WithPageSize(utils.TableTheme().Items).
+		WithSingleSelect().
+		WithWriter(os.Stdout).
+		WithInput(Input).
+		Run()
 	if err != nil {
 		return setupCategory{}, fmt.Errorf("failed to select setup category: %w", err)
 	}
@@ -279,11 +284,11 @@ func runCategory(claiDir string, category setupCategory) error {
 		}
 		err = selectConfigItem(category, cfgs)
 		if err != nil {
-			if errors.Is(err, utils.ErrBack) {
+			if errors.Is(err, table.ErrBack) {
 				return fmt.Errorf("user returned to category selection: %w", err)
 			}
-			if errors.Is(err, utils.ErrUserInitiatedExit) {
-				return utils.ErrUserInitiatedExit
+			if errors.Is(err, table.ErrUserInitiatedExit) {
+				return table.ErrUserInitiatedExit
 			}
 			return fmt.Errorf("failed to select config item: %w", err)
 		}
@@ -313,8 +318,8 @@ OUTER:
 	return configs, nil
 }
 
-func setupCustomTableActions(category setupCategory) []utils.TableAction {
-	ret := []utils.TableAction{}
+func setupCustomTableActions(category setupCategory) []table.TableAction {
+	ret := []table.TableAction{}
 	seenActions := map[action]struct{}{back: {}}
 	for _, a := range category.itemSelectActions {
 		if _, found := seenActions[a]; found {
@@ -363,19 +368,23 @@ func selectConfigItem(category setupCategory, cfgs []config) error {
 	}
 
 	customTableActions := setupCustomTableActions(category)
-	selectedIndices, err := utils.SelectFromTable(
-		fmt.Sprintf("Configs in %s", category.name),
-		utils.SlicePaginator(cfgs),
-		"Select config [<num>]",
+	tb := table.New(
+		table.SlicePaginator(cfgs),
 		func(i int, cfg config) (string, error) {
 			return fmt.Sprintf("%d. %s", i, cfg.name), nil
 		},
-		utils.ThemeTableItems(),
-		true,
-		customTableActions,
-		os.Stdout,
-		"",
-	)
+	).
+		WithHeader(fmt.Sprintf("Configs in %s", category.name)).
+		WithPageSize(utils.TableTheme().Items).
+		WithSingleSelect().
+		WithWriter(os.Stdout).
+		WithInput(Input)
+
+	if len(customTableActions) > 0 {
+		tb = tb.WithActions(customTableActions...)
+	}
+
+	selectedIndices, _, err := tb.Run()
 	if err != nil {
 		return fmt.Errorf("failed to select config item: %w", err)
 	}
@@ -393,7 +402,7 @@ func selectConfigItem(category setupCategory, cfgs []config) error {
 	err = actOnConfigItem(category, selectedCfg)
 	// Allow the user to go one step back on back actions
 	// Will fill callstack, but veeeeeery slowly
-	if err != nil && errors.Is(err, utils.ErrBack) {
+	if err != nil && errors.Is(err, table.ErrBack) {
 		return selectConfigItem(category, cfgs)
 	}
 	return err

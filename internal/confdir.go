@@ -6,6 +6,7 @@ import (
 
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/utils"
+	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
 
 func printConfDir(_ context.Context, args []string) (models.Querier, error) {
@@ -20,5 +21,5 @@ func printConfDir(_ context.Context, args []string) (models.Querier, error) {
 	}
 
 	fmt.Println(resolved)
-	return nil, utils.ErrUserInitiatedExit
+	return nil, table.ErrUserInitiatedExit
 }

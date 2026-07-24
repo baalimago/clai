@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/baalimago/clai/internal/utils"
+	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
 
 func SubCmd(ctx context.Context, args []string) error {
@@ -22,7 +22,7 @@ func SubCmd(ctx context.Context, args []string) error {
 			return fmt.Errorf("failed to marshal tool specification: %w", err)
 		}
 		fmt.Printf("%s\n", string(jsonSpec))
-		return utils.ErrUserInitiatedExit
+		return table.ErrUserInitiatedExit
 	}
 
 	tls := Registry.All()
@@ -38,12 +38,12 @@ func SubCmd(ctx context.Context, args []string) error {
 		spec := tool.Specification()
 		prefix := fmt.Sprintf("- %s: ", name)
 
-		maybeShortenedDesc, err := utils.WidthAppropriateStringTrunc(spec.Description, prefix, 5)
+		maybeShortenedDesc, err := table.WidthAppropriateStringTrunc(spec.Description, prefix, 5)
 		if err != nil {
 			return fmt.Errorf("failed to truncate descriptoin: :%v", err)
 		}
 		fmt.Println(maybeShortenedDesc)
 	}
 	fmt.Println("\nRun 'clai tools <tool-name>' for more details.")
-	return utils.ErrUserInitiatedExit
+	return table.ErrUserInitiatedExit
 }

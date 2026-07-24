@@ -11,37 +11,10 @@ import (
 	"unicode/utf8"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
+	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
 
 const MaxShortenedNewlines = 5
-
-// ClearLine writes a carriage return followed by the ANSI "clear to end of line"
-// escape, so the next write starts at column 0 on a clean line. Useful for
-// single-line progress indicators that may vary in length.
-func ClearLine(w io.Writer) {
-	if w == nil {
-		w = os.Stdout
-	}
-	fmt.Fprint(w, "\r\x1b[K")
-}
-
-// ClearTermTo clears upTo lines upwards, leaving the cursor at column 0
-// of the last cleared line. Each line is cleared via ClearLine.
-//
-// If w is nil, os.Stdout is used.
-func ClearTermTo(w io.Writer, upTo int) error {
-	if w == nil {
-		w = os.Stdout
-	}
-	// Move cursor up line by line and clear each.
-	for upTo > 0 {
-		ClearLine(w)
-		fmt.Fprintf(w, "\033[%dA", 1)
-		upTo--
-	}
-	ClearLine(w)
-	return nil
-}
 
 // UpdateMessageTerminalMetadata updates the terminal metadata. Meaning the lineCount, to eventually
 // clear the terminal
@@ -113,7 +86,7 @@ func AttemptPrettyPrint(w io.Writer, chatMessage pub_models.Message, username st
 	}
 
 	// Respect NO_COLOR.
-	if NoColor() {
+	if table.NoColor() {
 		if chatMessage.ReasoningContent != "" {
 			if _, err := fmt.Fprintf(w, "[thinking]\n%v\n[/thinking]\n%v: %v\n", chatMessage.ReasoningContent, role, content); err != nil {
 				return fmt.Errorf("write chat message with reasoning: %w", err)
@@ -127,7 +100,7 @@ func AttemptPrettyPrint(w io.Writer, chatMessage pub_models.Message, username st
 	}
 
 	roleCol := RoleColor(chatMessage.Role)
-	coloredRole := Colorize(roleCol, role)
+	coloredRole := table.Colorize(roleCol, role)
 
 	cmd := exec.Command("glow", "--version")
 	if err := cmd.Run(); err != nil {
@@ -135,7 +108,7 @@ func AttemptPrettyPrint(w io.Writer, chatMessage pub_models.Message, username st
 		if chatMessage.ReasoningContent != "" {
 			reasoningCol := RoleColor("reasoning")
 			if _, err := fmt.Fprintf(w, "%v:\n%v\n", coloredRole,
-				Colorize(reasoningCol, "[thinking]\n"+chatMessage.ReasoningContent+"\n[/thinking]\n"+content)); err != nil {
+				table.Colorize(reasoningCol, "[thinking]\n"+chatMessage.ReasoningContent+"\n[/thinking]\n"+content)); err != nil {
 				return fmt.Errorf("write chat message (no glow, reasoning): %w", err)
 			}
 			return nil
@@ -153,12 +126,12 @@ func AttemptPrettyPrint(w io.Writer, chatMessage pub_models.Message, username st
 
 	if chatMessage.ReasoningContent != "" {
 		reasoningCol := RoleColor("reasoning")
-		if _, err := fmt.Fprintf(w, "\n%v", Colorize(reasoningCol, "[thinking]\n"+chatMessage.ReasoningContent+"\n[/thinking]")); err != nil {
+		if _, err := fmt.Fprintf(w, "\n%v", table.Colorize(reasoningCol, "[thinking]\n"+chatMessage.ReasoningContent+"\n[/thinking]")); err != nil {
 			return fmt.Errorf("write reasoning content: %w", err)
 		}
 	}
 
-	termWidth, err := TermWidth()
+	termWidth, err := table.TermWidth()
 	if err != nil {
 		return fmt.Errorf("get terminal width for glow: %w", err)
 	}
@@ -176,10 +149,6 @@ func AttemptPrettyPrint(w io.Writer, chatMessage pub_models.Message, username st
 		return fmt.Errorf("run glow: %w", err)
 	}
 	return nil
-}
-
-func WidthAppropriateStringTrunc(toShorten, prefix string, padding int) (string, error) {
-	return WidthAppropriateStringTruncColored(toShorten, prefix, "", "", padding)
 }
 
 // ShortenedOutput returns a shortened version of the output

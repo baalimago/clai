@@ -6,7 +6,7 @@ import (
 	"runtime/debug"
 
 	"github.com/baalimago/clai/internal/models"
-	"github.com/baalimago/clai/internal/utils"
+	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
 
 // Set with buildflag if built in pipeline and not using go install
@@ -31,5 +31,5 @@ func printVersion() (models.Querier, error) {
 	for _, dep := range bi.Deps {
 		fmt.Printf("%s %s\n", dep.Path, dep.Version)
 	}
-	return nil, utils.ErrUserInitiatedExit
+	return nil, table.ErrUserInitiatedExit
 }

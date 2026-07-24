@@ -8,6 +8,7 @@ import (
 
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
+	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
 
 // messageDisplayText returns human-facing text for a message.
@@ -77,7 +78,7 @@ func printChatObfuscated(w io.Writer, ch pub_models.Chat, raw bool) error {
 		m.Content = disp
 		m.ContentParts = nil
 		m.ReasoningContent = ""
-		fmt.Fprintf(w, "%s ", utils.Colorize(utils.ThemePrimaryColor(), fmt.Sprintf("[#%-3d]", i)))
+		fmt.Fprintf(w, "%s ", table.Colorize(utils.TableTheme().Primary, fmt.Sprintf("[#%-3d]", i)))
 		if err := utils.AttemptPrettyPrint(w, m, "user", raw); err != nil {
 			return fmt.Errorf("pretty print preamble message %d: %w", i, err)
 		}
@@ -89,7 +90,7 @@ func printChatObfuscated(w io.Writer, ch pub_models.Chat, raw bool) error {
 	m0.Content = disp0
 	m0.ContentParts = nil
 	m0.ReasoningContent = ""
-	fmt.Fprintf(w, "%s ", utils.Colorize(utils.ThemePrimaryColor(), fmt.Sprintf("[#%-3d]", firstUserIdx)))
+	fmt.Fprintf(w, "%s ", table.Colorize(utils.TableTheme().Primary, fmt.Sprintf("[#%-3d]", firstUserIdx)))
 	if err := utils.AttemptPrettyPrint(w, m0, "user", raw); err != nil {
 		return fmt.Errorf("pretty print first user message: %w", err)
 	}
@@ -107,7 +108,7 @@ func printChatObfuscated(w io.Writer, ch pub_models.Chat, raw bool) error {
 		m.Content = disp
 		m.ContentParts = nil
 		m.ReasoningContent = ""
-		fmt.Fprintf(w, "%s ", utils.Colorize(utils.ThemePrimaryColor(), fmt.Sprintf("[#%-3d]", i)))
+		fmt.Fprintf(w, "%s ", table.Colorize(utils.TableTheme().Primary, fmt.Sprintf("[#%-3d]", i)))
 		if err := utils.AttemptPrettyPrint(w, m, "user", raw); err != nil {
 			return fmt.Errorf("pretty print head message %d: %w", i, err)
 		}
@@ -125,11 +126,11 @@ func printChatObfuscated(w io.Writer, ch pub_models.Chat, raw bool) error {
 		for i := bridgeStart; i < bridgeEnd; i++ {
 			m := msgs[i]
 			lenRunes := messageContentLen(m)
-			prefix := utils.Colorize(utils.ThemePrimaryColor(), fmt.Sprintf("[#%-3d r: ", i)) +
-				utils.Colorize(utils.RoleColor(m.Role), fmt.Sprintf("%-9s", m.Role)) +
-				utils.Colorize(utils.ThemePrimaryColor(), fmt.Sprintf(" l: %5d]: ", lenRunes))
-			trunc, err := utils.WidthAppropriateStringTruncColored(
-				messageDisplayText(m), prefix, "", utils.ThemeBreadtextColor(), 5,
+			prefix := table.Colorize(utils.TableTheme().Primary, fmt.Sprintf("[#%-3d r: ", i)) +
+				table.Colorize(utils.RoleColor(m.Role), fmt.Sprintf("%-9s", m.Role)) +
+				table.Colorize(utils.TableTheme().Primary, fmt.Sprintf(" l: %5d]: ", lenRunes))
+			trunc, err := table.WidthAppropriateStringTruncColored(
+				messageDisplayText(m), prefix, "", utils.TableTheme().Breadtext, 5,
 			)
 			if err != nil {
 				return fmt.Errorf("truncate bridge preview: %w", err)
@@ -142,7 +143,7 @@ func printChatObfuscated(w io.Writer, ch pub_models.Chat, raw bool) error {
 		// Gap label.
 		gapCount := tailStart - bridgeEnd
 		if gapCount > 0 {
-			gapLine := utils.Colorize(utils.ThemeSecondaryColor(), fmt.Sprintf("\n            ... and %d more entries\n", gapCount))
+			gapLine := table.Colorize(utils.TableTheme().Secondary, fmt.Sprintf("\n            ... and %d more entries\n", gapCount))
 			if _, err := fmt.Fprintln(w, gapLine); err != nil {
 				return fmt.Errorf("write gap label: %w", err)
 			}
@@ -156,7 +157,7 @@ func printChatObfuscated(w io.Writer, ch pub_models.Chat, raw bool) error {
 			m.Content = disp
 			m.ContentParts = nil
 			m.ReasoningContent = ""
-			fmt.Fprintf(w, "%s ", utils.Colorize(utils.ThemePrimaryColor(), fmt.Sprintf("[#%-3d]", i)))
+			fmt.Fprintf(w, "%s ", table.Colorize(utils.TableTheme().Primary, fmt.Sprintf("[#%-3d]", i)))
 			if err := utils.AttemptPrettyPrint(w, m, "user", raw); err != nil {
 				return fmt.Errorf("pretty print tail message %d: %w", i, err)
 			}
@@ -170,7 +171,7 @@ func printChatObfuscated(w io.Writer, ch pub_models.Chat, raw bool) error {
 			m.Content = disp
 			m.ContentParts = nil
 			m.ReasoningContent = ""
-			fmt.Fprintf(w, "%s ", utils.Colorize(utils.ThemePrimaryColor(), fmt.Sprintf("[#%-3d]", i)))
+			fmt.Fprintf(w, "%s ", table.Colorize(utils.TableTheme().Primary, fmt.Sprintf("[#%-3d]", i)))
 			if err := utils.AttemptPrettyPrint(w, m, "user", raw); err != nil {
 				return fmt.Errorf("pretty print message %d: %w", i, err)
 			}
@@ -183,7 +184,7 @@ func printChatObfuscated(w io.Writer, ch pub_models.Chat, raw bool) error {
 	last.Content = dispLast
 	last.ContentParts = nil
 	last.ReasoningContent = ""
-	fmt.Fprintf(w, "%s ", utils.Colorize(utils.ThemePrimaryColor(), fmt.Sprintf("[#%-3d]", msgCount-1)))
+	fmt.Fprintf(w, "%s ", table.Colorize(utils.TableTheme().Primary, fmt.Sprintf("[#%-3d]", msgCount-1)))
 	if err := utils.AttemptPrettyPrint(w, last, "user", raw); err != nil {
 		return fmt.Errorf("pretty print last message: %w", err)
 	}

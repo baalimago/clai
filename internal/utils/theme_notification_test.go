@@ -49,7 +49,9 @@ func TestLoadTheme_AppendsNotificationBellTrueForExistingThemeWithoutField(t *te
 // the caller downgrades the error to a warning so the CLI stays usable.
 func TestLoadTheme_MalformedFileKeepsDefaults(t *testing.T) {
 	prev := globalTheme
-	t.Cleanup(func() { globalTheme = prev })
+	t.Cleanup(func() {
+		globalTheme = prev
+	})
 	globalTheme = *defaultTheme()
 
 	confDir := t.TempDir()
@@ -61,10 +63,10 @@ func TestLoadTheme_MalformedFileKeepsDefaults(t *testing.T) {
 	if err := LoadTheme(confDir); err == nil {
 		t.Fatal("expected error for malformed theme.json")
 	}
-	if ThemeTableItems() != defaultTheme().TableItems {
-		t.Fatalf("expected default tableItems after failed load, got %d", ThemeTableItems())
+	if TableTheme().Items != defaultTheme().TableItems {
+		t.Fatalf("expected default tableItems after failed load, got %d", TableTheme().Items)
 	}
-	if ThemePrimaryColor() != defaultTheme().Primary {
+	if TableTheme().Primary != defaultTheme().Primary {
 		t.Fatal("expected default primary color after failed load")
 	}
 }
@@ -130,8 +132,8 @@ func TestLoadTheme_AppendsTableItemsDefaultForExistingThemeWithoutField(t *testi
 		t.Fatalf("LoadTheme(%q): %v", confDir, err)
 	}
 
-	if got := ThemeTableItems(); got != 10 {
-		t.Fatalf("ThemeTableItems() = %d, want 10", got)
+	if got := TableTheme().Items; got != 10 {
+		t.Fatalf("TableTheme().Items = %d, want 10", got)
 	}
 
 	themeBytes, err := os.ReadFile(themePath)

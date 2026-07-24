@@ -8,8 +8,8 @@ import (
 	"slices"
 	"time"
 
-	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
+	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
 
 const chatIndexFileName = "chat_index.cache"
@@ -136,7 +136,7 @@ func readChatIndex(convDir string) ([]chatIndexRow, error) {
 		var rows []chatIndexRow
 		if err := json.Unmarshal(b, &rows); err != nil {
 			// Both formats failed — cache is corrupted; rebuild from scratch.
-			utils.ClearLine(os.Stderr)
+			table.ClearLine(os.Stderr)
 			rows, rebuildErr := rebuildChatIndex(convDir, 0, "corrupted cache")
 			if rebuildErr != nil {
 				return nil, fmt.Errorf("failed to rebuild corrupted chat index: %w", rebuildErr)
@@ -198,7 +198,7 @@ func rebuildChatIndex(convDir string, fromVersion int, reason string) ([]chatInd
 		if err != nil {
 			// One corrupt/stray file must not permanently break list/search
 			// for every invocation; index what parses and warn.
-			utils.ClearLine(os.Stderr)
+			table.ClearLine(os.Stderr)
 			fmt.Fprintf(os.Stderr, "  skipping unreadable chat %q: %v\n", chatPath, err)
 			continue
 		}
@@ -216,7 +216,7 @@ func rebuildChatIndex(convDir string, fromVersion int, reason string) ([]chatInd
 			estSec := float64(remaining) / itemsPerSec
 			est := time.Duration(estSec) * time.Second
 			pct := float64(processed) / float64(total) * 100
-			utils.ClearLine(os.Stderr)
+			table.ClearLine(os.Stderr)
 			fmt.Fprintf(os.Stderr, "  %d/%d (%.0f%%, est. left: %v)", processed, total, pct, est.Truncate(time.Second))
 			batchStart = time.Now()
 		}

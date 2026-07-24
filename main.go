@@ -12,6 +12,7 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 	"github.com/baalimago/go_away_boilerplate/pkg/shutdown"
+	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
 
 const usage = `clai - (c)ommand (l)ine (a)rtificial (i)ntelligence
@@ -38,6 +39,7 @@ Flags:
   -prp, profile-path string        Set the path to a profile file to use instead of -p/-profile.
   -asc, -append-shell-context str  Append a named shell context from <config-dir>/shellContexts/<name>.json to the final query prompt.
   -rf, -response-format string     Path to a response_format JSON file for structured output (json_object, json_schema).
+  -n, -non-interactive             Disable interactive stdin fallback after macro inputs; auto-exit instead.
 
 Config dir: %v
 Cache dir:  %v
@@ -98,7 +100,7 @@ func run(args []string) int {
 	ctx = context.WithValue(ctx, utils.ContextCancelKey, cancel)
 	querier, err := internal.Setup(ctx, usage, args)
 	if err != nil {
-		if errors.Is(err, utils.ErrUserInitiatedExit) {
+		if errors.Is(err, table.ErrUserInitiatedExit) {
 			if misc.Truthy(os.Getenv("DEBUG")) {
 				ancli.Okf("Seems like you wanted out. Byebye!\n")
 			}
@@ -110,7 +112,7 @@ func run(args []string) int {
 	go func() { shutdown.Monitor(cancel) }()
 	err = querier.Query(ctx)
 	if err != nil {
-		if errors.Is(err, utils.ErrUserInitiatedExit) {
+		if errors.Is(err, table.ErrUserInitiatedExit) {
 			if misc.Truthy(os.Getenv("DEBUG")) {
 				ancli.Okf("Seems like you wanted out. Byebye!\n")
 			}

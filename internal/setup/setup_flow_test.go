@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/baalimago/clai/internal/text"
-	"github.com/baalimago/clai/internal/utils"
+	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
 
 func TestSetupCustomTableActions_CategorySpecific(t *testing.T) {
@@ -90,7 +90,7 @@ func TestSelectConfigItem_ItemSelectionOnlyShowsPaginationAndNew(t *testing.T) {
 
 	inputs := []string{"0", "b"}
 	inputIdx := 0
-	restoreInput := utils.UseReadUserInputForTests(func() (string, error) {
+	restoreInput := useReadUserInputForTests(func() (string, error) {
 		if inputIdx >= len(inputs) {
 			return "", io.EOF
 		}
@@ -133,7 +133,8 @@ func TestSelectConfigItem_ItemSelectionOnlyShowsPaginationAndNew(t *testing.T) {
 	if !strings.Contains(out, "cre[a]te new") {
 		t.Fatalf("expected create-new action in item selection output, got %q", out)
 	}
-	selectPromptPos := strings.Index(strings.ToLower(out), "select config")
+	// The select prompt is now auto-generated: (select, cre[a]te new, [p]rev, [n]ext, [b]ack, [q]uit, [/] filter):
+	selectPromptPos := strings.Index(strings.ToLower(out), "[/] filter")
 	if selectPromptPos == -1 {
 		t.Fatalf("expected select prompt in output, got %q", out)
 	}
@@ -156,7 +157,7 @@ func TestSelectConfigItem_ItemSelectionOnlyShowsPaginationAndNew(t *testing.T) {
 func TestActionQueryAfterSelection_ShowsBackQuitAndProfileEditorsButNotNew(t *testing.T) {
 	inputs := []string{"pr"}
 	inputIdx := 0
-	restoreInput := utils.UseReadUserInputForTests(func() (string, error) {
+	restoreInput := useReadUserInputForTests(func() (string, error) {
 		if inputIdx >= len(inputs) {
 			return "", io.EOF
 		}
@@ -207,7 +208,7 @@ func TestActionQueryAfterSelection_ShowsBackQuitAndProfileEditorsButNotNew(t *te
 func TestActionQueryAfterSelection_AlwaysAnnotatesBackAndQuit(t *testing.T) {
 	inputs := []string{"b"}
 	inputIdx := 0
-	restoreInput := utils.UseReadUserInputForTests(func() (string, error) {
+	restoreInput := useReadUserInputForTests(func() (string, error) {
 		if inputIdx >= len(inputs) {
 			return "", io.EOF
 		}
@@ -260,7 +261,7 @@ func TestActionQueryAfterSelection_CategoryActionsIncludeBackAndQuitAsSourceOfTr
 		t.Run(tc.name, func(t *testing.T) {
 			inputs := []string{"b"}
 			inputIdx := 0
-			restoreInput := utils.UseReadUserInputForTests(func() (string, error) {
+			restoreInput := useReadUserInputForTests(func() (string, error) {
 				if inputIdx >= len(inputs) {
 					return "", io.EOF
 				}
@@ -311,7 +312,7 @@ func TestActOnConfigItem_BackWithoutAnnotatedPromptReturnsErrBack(t *testing.T) 
 		t.Fatalf("write config file: %v", err)
 	}
 
-	restoreInput := utils.UseReadUserInputForTests(func() (string, error) {
+	restoreInput := useReadUserInputForTests(func() (string, error) {
 		return "b", nil
 	})
 	defer restoreInput()
@@ -323,7 +324,7 @@ func TestActOnConfigItem_BackWithoutAnnotatedPromptReturnsErrBack(t *testing.T) 
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if !errors.Is(err, utils.ErrBack) {
+	if !errors.Is(err, table.ErrBack) {
 		t.Fatalf("expected ErrBack, got %v", err)
 	}
 }

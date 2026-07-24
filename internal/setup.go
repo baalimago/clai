@@ -21,6 +21,7 @@ import (
 	textmodels "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	imagodebug "github.com/baalimago/go_away_boilerplate/pkg/debug"
+	"github.com/baalimago/go_away_boilerplate/pkg/table"
 
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
@@ -267,7 +268,7 @@ func setupTextQuerierWithConf(ctx context.Context, mode Mode, confDir string, fl
 			LogQueryText: logSkillDiscovery,
 			TrustPrompter: func(_ context.Context, prompt skills.TrustPrompt) (bool, error) {
 				ancli.Warnf("%s", formatSkillTrustPrompt(prompt))
-				answer, err := utils.ReadUserInput()
+				answer, err := table.ReadUserInputFrom(setup.Input)
 				if err != nil {
 					return false, err
 				}
@@ -406,6 +407,22 @@ func applyDirReplyChatID(confDir string, tConf *text.Configurations, q models.Qu
 	return nil
 }
 
+// extractMacroInputs returns extra positional args for table-driven commands.
+// postFlagArgs[0] is the command; extra args start at postFlagArgs[1:].
+// SETUP/TOOLS/PROFILES return their extra args for injection via setup.Input.
+// CHAT returns nil — chat.New() self-detects list-mode macros.
+func extractMacroInputs(mode Mode, postFlagArgs []string) []string {
+	if len(postFlagArgs) <= 1 {
+		return nil
+	}
+	switch mode {
+	case SETUP, TOOLS, PROFILES:
+		return postFlagArgs[1:]
+	default:
+		return nil
+	}
+}
+
 func printHelp(usage string, args []string) {
 	if len(args) > 1 && (args[1] == "profile" || args[1] == "p") {
 		fmt.Println(ProfileHelp)
@@ -475,6 +492,15 @@ func Setup(ctx context.Context, usage string, allArgs []string) (models.Querier,
 		ancli.Warnf("failed to load theme, using defaults: %v\n", err)
 	}
 
+	// Macro mode: extra positional args become table inputs.
+	// Inject before mode dispatch so setup/tools/profiles tables consume them.
+	// By default, after macro inputs are consumed the session stays interactive
+	// (falls through to stdin). Pass --non-interactive for the old auto-exit behavior.
+	utils.Live = !postFlagConf.NonInteractive
+	if macroInputs := extractMacroInputs(mode, postFlagArgs); len(macroInputs) > 0 {
+		setup.Input = utils.NewMacroReader(macroInputs)
+	}
+
 	switch mode {
 	case CHAT, QUERY, GLOB:
 		// Directory reply mode continues the directory-scoped conversation
@@ -536,7 +562,7 @@ func Setup(ctx context.Context, usage string, allArgs []string) (models.Querier,
 		return pq, nil
 	case HELP:
 		printHelp(usage, allArgs)
-		return nil, utils.ErrUserInitiatedExit
+		return nil, table.ErrUserInitiatedExit
 	case VERSION:
 		return printVersion()
 	case SETUP:
@@ -544,13 +570,13 @@ func Setup(ctx context.Context, usage string, allArgs []string) (models.Querier,
 		if err != nil {
 			return nil, fmt.Errorf("failed to run setup: %w", err)
 		}
-		return nil, utils.ErrUserInitiatedExit
+		return nil, table.ErrUserInitiatedExit
 	case REPLAY:
 		err := chat.Replay(postFlagConf.PrintRaw, false)
 		if err != nil {
 			return nil, fmt.Errorf("failed to replay previous reply: %w", err)
 		}
-		return nil, utils.ErrUserInitiatedExit
+		return nil, table.ErrUserInitiatedExit
 	case DIRSCOPED_REPLAY:
 		return setupDRE(mode, postFlagConf, postFlagArgs)
 	case TOOLS:

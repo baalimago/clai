@@ -47,27 +47,8 @@ Examples:
 `
 
 const (
-	// index | created | messages | tokens | prompt
-	selectChatTblFormat        = "%-6s| %-20s| %-15s | %-6s | %v"
-	selectChatTblChoicesFormat = "goto chat [<num>] / [<enter>]"
-	actOnChatFormat            = `=== Chat info ===
-
-file path: %v
-created_at: %v
-am replies:
-	user:   '%v'
-	tool:   '%v'
-	system: '%v'
-	assistant: '%v'
-
-%v
-
-(make [p]revQuery (-re/-reply flag), go [b]ack to list, [e]dit messages, [d]elete messages, [q]uit, [<enter>] to continue): `
-
 	// index | role | length | summary
-	editMessageTblFormat        = "%-6v| %-10v| %-7v| %v"
-	editMessageChoicesFormat    = `edit message: [<num>]`
-	deleteMessagesChoicesFormat = `delete message: [<num0>,<num1> / <num2>:<num10>]`
+	editMessageTblFormat = "%-6v| %-10v| %-7v| %v"
 )
 
 type NotCyclicalImport struct {
@@ -88,7 +69,8 @@ type ChatHandler struct {
 	config   NotCyclicalImport
 	raw      bool
 
-	out io.Writer
+	out   io.Writer
+	input io.Reader
 }
 
 func (q *ChatHandler) Query(ctx context.Context) error {
@@ -306,7 +288,8 @@ func New(q models.ChatQuerier,
 	if out == nil {
 		out = os.Stdout
 	}
-	return &ChatHandler{
+
+	ch := &ChatHandler{
 		q:        q,
 		username: username,
 		debug:    debug,
@@ -317,5 +300,12 @@ func New(q models.ChatQuerier,
 		config:   conf,
 		raw:      raw,
 		out:      out,
-	}, nil
+	}
+
+	// Macro mode: extra positional args after "chat list" become table inputs.
+	if (subCmd == "list" || subCmd == "l") && len(argsArr) > 1 {
+		ch.input = utils.NewMacroReader(argsArr[1:])
+	}
+
+	return ch, nil
 }

@@ -16,7 +16,7 @@ func TestSetupSubMenus_RespectThemeAndNoColor(t *testing.T) {
 		t.Setenv("NO_COLOR", "")
 		// Ensure we have at least one option so the prompt includes structured pieces.
 		out := colorSecondary("([c]onfigure): ")
-		if !strings.Contains(out, utils.ThemeSecondaryColor()) {
+		if !strings.Contains(out, utils.TableTheme().Secondary) {
 			t.Fatalf("expected secondary color in output, got %q", out)
 		}
 	})

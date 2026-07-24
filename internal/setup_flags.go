@@ -50,6 +50,10 @@ type Configurations struct {
 	// ResponseFormatPath is a path to a JSON file describing the OpenAI response_format.
 	// Supports "json_object" and "json_schema" types.
 	ResponseFormatPath string
+	// NonInteractive disables the default interactive-macro behavior.
+	// When true, macro mode appends trailing "q" terminators for auto-exit
+	// instead of falling through to interactive stdin.
+	NonInteractive bool
 }
 
 // parseFlags parses CLI flags into an internal Configurations.
@@ -119,6 +123,9 @@ func parseFlags(defaults Configurations, args []string) (Configurations, []strin
 	useSkillsLong := fs.String("skills", defaults.UseSkills, "Enable skills. Use '*' to enable or 'none' to disable for the current run.")
 	useLookbackShort := fs.Bool("lb", defaults.UseLookback, "Enable conversation lookback (recent-conversations memory + search/inspect/read tools).")
 	useLookbackLong := fs.Bool("lookback", defaults.UseLookback, "Enable conversation lookback (recent-conversations memory + search/inspect/read tools).")
+
+	nonInteractiveShort := fs.Bool("n", defaults.NonInteractive, "Disable interactive stdin fallback after macro inputs; instead auto-exit with trailing quits.")
+	nonInteractiveLong := fs.Bool("non-interactive", defaults.NonInteractive, "Disable interactive stdin fallback after macro inputs; instead auto-exit with trailing quits.")
 
 	err := fs.Parse(args)
 	if err != nil {
@@ -195,6 +202,7 @@ func parseFlags(defaults Configurations, args []string) (Configurations, []strin
 		ProfilePath:        profilePath,
 		ShellContext:       shellContext,
 		ResponseFormatPath: responseFormatPath,
+		NonInteractive:     *nonInteractiveShort || *nonInteractiveLong,
 	}
 
 	return newConf, postParseArgs, nil

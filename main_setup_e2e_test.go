@@ -5,15 +5,15 @@ import (
 	"testing"
 
 	"github.com/baalimago/clai/internal/setup"
-	"github.com/baalimago/clai/internal/utils"
+	"github.com/baalimago/go_away_boilerplate/pkg/table"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
 func Test_run_setup_returns_success_on_user_exit(t *testing.T) {
 	_ = setupMainTestConfigDir(t)
 
-	restoreInput := utils.UseReadUserInputForTests(func() (string, error) {
-		return "", utils.ErrUserInitiatedExit
+	restoreInput := useReadUserInputForTests(func() (string, error) {
+		return "", table.ErrUserInitiatedExit
 	})
 	t.Cleanup(restoreInput)
 
@@ -31,8 +31,8 @@ func Test_run_setup_returns_success_on_user_exit(t *testing.T) {
 func Test_setup_initcmd_user_exit_is_not_an_error_regression(t *testing.T) {
 	_ = setupMainTestConfigDir(t)
 
-	restoreInput := utils.UseReadUserInputForTests(func() (string, error) {
-		return "", utils.ErrUserInitiatedExit
+	restoreInput := useReadUserInputForTests(func() (string, error) {
+		return "", table.ErrUserInitiatedExit
 	})
 	t.Cleanup(restoreInput)
 
@@ -40,7 +40,7 @@ func Test_setup_initcmd_user_exit_is_not_an_error_regression(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected setup.InitCmd to return user exit sentinel")
 	}
-	if err != utils.ErrUserInitiatedExit {
+	if err != table.ErrUserInitiatedExit {
 		t.Fatalf("expected user exit sentinel, got: %v", err)
 	}
 }
@@ -50,9 +50,9 @@ func Test_run_setup_shell_context_ufe_back_does_not_duplicate_back_hotkey(t *tes
 
 	inputs := []string{"4", "0", "ufe", "b", "b"}
 	inputIdx := 0
-	restoreInput := utils.UseReadUserInputForTests(func() (string, error) {
+	restoreInput := useReadUserInputForTests(func() (string, error) {
 		if inputIdx >= len(inputs) {
-			return "", utils.ErrUserInitiatedExit
+			return "", table.ErrUserInitiatedExit
 		}
 		ret := inputs[inputIdx]
 		inputIdx++

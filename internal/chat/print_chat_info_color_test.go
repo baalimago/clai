@@ -34,7 +34,7 @@ func TestPrintChatInfoColorized(t *testing.T) {
 
 	out := b.String()
 	// Header should be colorized with primary color prefix
-	if !strings.Contains(out, utils.ThemePrimaryColor()) {
+	if !strings.Contains(out, utils.TableTheme().Primary) {
 		t.Fatalf("expected primary color code in output: got %q", out)
 	}
 

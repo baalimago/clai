@@ -15,8 +15,8 @@ import (
 	"testing"
 
 	"github.com/baalimago/clai/internal/tools"
-	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
+	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
 
 func TestCastPrimitive(t *testing.T) {
@@ -225,7 +225,7 @@ func TestGetModelValue_SelectsFromTable(t *testing.T) {
 	}
 
 	// Simulate user selecting index 0 (filename "anthropic_claude_sonnet-4.json" → display "sonnet-4")
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		return "0", nil
 	})
 	defer restore()
@@ -268,7 +268,7 @@ func TestGetShellContextValue_SelectsFromTable(t *testing.T) {
 	}
 
 	// Simulate user selecting index 0 ("git" - alphabetical first)
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		return "0", nil
 	})
 	defer restore()
@@ -300,7 +300,7 @@ func TestGetNewValue_DispatchesToModelSelector(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		return "0", nil
 	})
 	defer restore()
@@ -325,7 +325,7 @@ func TestGetNewValue_DispatchesToShellContextSelector(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		return "0", nil
 	})
 	defer restore()
@@ -370,7 +370,7 @@ func TestGetToolsValue_UsesSelectFromTable(t *testing.T) {
 	t.Run("single index selection", func(t *testing.T) {
 		inputs := []string{"2", "d"}
 		inputIdx := 0
-		restore := utils.UseReadUserInputForTests(func() (string, error) {
+		restore := useReadUserInputForTests(func() (string, error) {
 			if inputIdx >= len(inputs) {
 				return "", io.EOF
 			}
@@ -394,7 +394,7 @@ func TestGetToolsValue_UsesSelectFromTable(t *testing.T) {
 	t.Run("multi index selection with comma", func(t *testing.T) {
 		inputs := []string{"0,4", "d"}
 		inputIdx := 0
-		restore := utils.UseReadUserInputForTests(func() (string, error) {
+		restore := useReadUserInputForTests(func() (string, error) {
 			if inputIdx >= len(inputs) {
 				return "", io.EOF
 			}
@@ -418,7 +418,7 @@ func TestGetToolsValue_UsesSelectFromTable(t *testing.T) {
 	t.Run("range selection", func(t *testing.T) {
 		inputs := []string{"0:2", "d"}
 		inputIdx := 0
-		restore := utils.UseReadUserInputForTests(func() (string, error) {
+		restore := useReadUserInputForTests(func() (string, error) {
 			if inputIdx >= len(inputs) {
 				return "", io.EOF
 			}
@@ -442,7 +442,7 @@ func TestGetToolsValue_UsesSelectFromTable(t *testing.T) {
 	t.Run("toggle off a selected tool", func(t *testing.T) {
 		inputs := []string{"2", "2", "d"}
 		inputIdx := 0
-		restore := utils.UseReadUserInputForTests(func() (string, error) {
+		restore := useReadUserInputForTests(func() (string, error) {
 			if inputIdx >= len(inputs) {
 				return "", io.EOF
 			}
@@ -465,7 +465,7 @@ func TestGetToolsValue_UsesSelectFromTable(t *testing.T) {
 	t.Run("clear all action", func(t *testing.T) {
 		inputs := []string{"c", "d"}
 		inputIdx := 0
-		restore := utils.UseReadUserInputForTests(func() (string, error) {
+		restore := useReadUserInputForTests(func() (string, error) {
 			if inputIdx >= len(inputs) {
 				return "", io.EOF
 			}
@@ -486,7 +486,7 @@ func TestGetToolsValue_UsesSelectFromTable(t *testing.T) {
 	})
 
 	t.Run("back keeps current value", func(t *testing.T) {
-		restore := utils.UseReadUserInputForTests(func() (string, error) {
+		restore := useReadUserInputForTests(func() (string, error) {
 			return "b", nil
 		})
 		defer restore()
@@ -505,13 +505,13 @@ func TestGetToolsValue_UsesSelectFromTable(t *testing.T) {
 	})
 
 	t.Run("quit propagates error", func(t *testing.T) {
-		restore := utils.UseReadUserInputForTests(func() (string, error) {
+		restore := useReadUserInputForTests(func() (string, error) {
 			return "q", nil
 		})
 		defer restore()
 
 		_, err := getToolsValue([]any{})
-		if !errors.Is(err, utils.ErrUserInitiatedExit) {
+		if !errors.Is(err, table.ErrUserInitiatedExit) {
 			t.Fatalf("getToolsValue() error = %v, want ErrUserInitiatedExit", err)
 		}
 	})
@@ -519,7 +519,7 @@ func TestGetToolsValue_UsesSelectFromTable(t *testing.T) {
 	t.Run("all action selects every tool", func(t *testing.T) {
 		inputs := []string{"a", "d"}
 		inputIdx := 0
-		restore := utils.UseReadUserInputForTests(func() (string, error) {
+		restore := useReadUserInputForTests(func() (string, error) {
 			if inputIdx >= len(inputs) {
 				return "", io.EOF
 			}
@@ -588,7 +588,7 @@ func TestInteractiveReconfigure_FieldSelection(t *testing.T) {
 		// 3. Select [d]one
 		inputs := []string{"0", "newname", "d"}
 		inputIdx := 0
-		restore := utils.UseReadUserInputForTests(func() (string, error) {
+		restore := useReadUserInputForTests(func() (string, error) {
 			if inputIdx >= len(inputs) {
 				return "", io.EOF
 			}
@@ -629,7 +629,7 @@ func TestInteractiveReconfigure_FieldSelection(t *testing.T) {
 			t.Fatalf("WriteFile: %v", err)
 		}
 
-		restore := utils.UseReadUserInputForTests(func() (string, error) {
+		restore := useReadUserInputForTests(func() (string, error) {
 			return "d", nil
 		})
 		defer restore()
@@ -667,7 +667,7 @@ func TestInteractiveReconfigure_FieldSelection(t *testing.T) {
 		// Then done: "d"
 		inputs := []string{"0", "newname", "1", "world", "d"}
 		inputIdx := 0
-		restore := utils.UseReadUserInputForTests(func() (string, error) {
+		restore := useReadUserInputForTests(func() (string, error) {
 			if inputIdx >= len(inputs) {
 				return "", io.EOF
 			}
@@ -723,7 +723,7 @@ func TestEditSlice_UpdateAndRemove(t *testing.T) {
 		// editSlice loop: "u" -> selectFromSlice: "1" (returns [1] directly) -> handleValue: "newval" -> editSlice: "d"
 		inputs := []string{"u", "1", "newval", "d"}
 		inputIdx := 0
-		restore := utils.UseReadUserInputForTests(func() (string, error) {
+		restore := useReadUserInputForTests(func() (string, error) {
 			if inputIdx >= len(inputs) {
 				return "", io.EOF
 			}
@@ -749,7 +749,7 @@ func TestEditSlice_UpdateAndRemove(t *testing.T) {
 		// editSlice: "r" -> selectFromSlice: "0,2" (returns [0,2] directly) -> back to editSlice: "d"
 		inputs := []string{"r", "0,2", "d"}
 		inputIdx := 0
-		restore := utils.UseReadUserInputForTests(func() (string, error) {
+		restore := useReadUserInputForTests(func() (string, error) {
 			if inputIdx >= len(inputs) {
 				return "", io.EOF
 			}
@@ -774,7 +774,7 @@ func TestEditSlice_UpdateAndRemove(t *testing.T) {
 	t.Run("remove via range", func(t *testing.T) {
 		inputs := []string{"r", "0:2", "d"}
 		inputIdx := 0
-		restore := utils.UseReadUserInputForTests(func() (string, error) {
+		restore := useReadUserInputForTests(func() (string, error) {
 			if inputIdx >= len(inputs) {
 				return "", io.EOF
 			}
@@ -799,7 +799,7 @@ func TestEditSlice_UpdateAndRemove(t *testing.T) {
 	t.Run("append element", func(t *testing.T) {
 		inputs := []string{"a", "newitem", "d"}
 		inputIdx := 0
-		restore := utils.UseReadUserInputForTests(func() (string, error) {
+		restore := useReadUserInputForTests(func() (string, error) {
 			if inputIdx >= len(inputs) {
 				return "", io.EOF
 			}
@@ -822,7 +822,7 @@ func TestEditSlice_UpdateAndRemove(t *testing.T) {
 	})
 
 	t.Run("done returns slice unchanged", func(t *testing.T) {
-		restore := utils.UseReadUserInputForTests(func() (string, error) {
+		restore := useReadUserInputForTests(func() (string, error) {
 			return "d", nil
 		})
 		defer restore()
@@ -841,7 +841,7 @@ func TestEditSlice_UpdateAndRemove(t *testing.T) {
 	t.Run("empty slice update/remove are no-ops", func(t *testing.T) {
 		inputs := []string{"u", "r", "d"}
 		inputIdx := 0
-		restore := utils.UseReadUserInputForTests(func() (string, error) {
+		restore := useReadUserInputForTests(func() (string, error) {
 			if inputIdx >= len(inputs) {
 				return "", io.EOF
 			}
@@ -871,7 +871,7 @@ func TestActionCopy(t *testing.T) {
 			t.Fatalf("WriteFile: %v", err)
 		}
 
-		restore := utils.UseReadUserInputForTests(func() (string, error) {
+		restore := useReadUserInputForTests(func() (string, error) {
 			return "mycopy", nil
 		})
 		defer restore()
@@ -906,7 +906,7 @@ func TestActionCopy(t *testing.T) {
 			t.Fatalf("WriteFile: %v", err)
 		}
 
-		restore := utils.UseReadUserInputForTests(func() (string, error) {
+		restore := useReadUserInputForTests(func() (string, error) {
 			return "", nil
 		})
 		defer restore()
@@ -927,7 +927,7 @@ func TestActionCopy(t *testing.T) {
 			t.Fatalf("WriteFile(existing): %v", err)
 		}
 
-		restore := utils.UseReadUserInputForTests(func() (string, error) {
+		restore := useReadUserInputForTests(func() (string, error) {
 			return "existing", nil
 		})
 		defer restore()
@@ -1006,7 +1006,7 @@ func TestHandleValue_ToolsDispatch(t *testing.T) {
 	// Select tool 0 ("cat") then done
 	inputs := []string{"0", "d"}
 	inputIdx := 0
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		if inputIdx >= len(inputs) {
 			return "", io.EOF
 		}
@@ -1031,7 +1031,7 @@ func TestHandleValue_ToolsDispatch(t *testing.T) {
 }
 
 func TestHandleValue_MapDispatch(t *testing.T) {
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		return "d", nil
 	})
 	defer restore()
@@ -1052,7 +1052,7 @@ func TestHandleValue_MapDispatch(t *testing.T) {
 }
 
 func TestHandleValue_DefaultStringDispatch(t *testing.T) {
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		return "newvalue", nil
 	})
 	defer restore()
@@ -1067,7 +1067,7 @@ func TestHandleValue_DefaultStringDispatch(t *testing.T) {
 }
 
 func TestGetNewValue_EmptyInputKeepsCurrent(t *testing.T) {
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		return "", nil
 	})
 	defer restore()
@@ -1082,7 +1082,7 @@ func TestGetNewValue_EmptyInputKeepsCurrent(t *testing.T) {
 }
 
 func TestGetNewValue_ReadError(t *testing.T) {
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		return "", errors.New("mock read error")
 	})
 	defer restore()
@@ -1166,7 +1166,7 @@ func TestCastPrimitive_NonStringPassthrough(t *testing.T) {
 // ============================================================
 
 func TestEditMap_Done(t *testing.T) {
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		return "d", nil
 	})
 	defer restore()
@@ -1184,7 +1184,7 @@ func TestEditMap_Done(t *testing.T) {
 func TestEditMap_Add(t *testing.T) {
 	inputs := []string{"a", "newkey", "hello", "d"}
 	inputIdx := 0
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		if inputIdx >= len(inputs) {
 			return "", io.EOF
 		}
@@ -1214,7 +1214,7 @@ func TestEditMap_Add(t *testing.T) {
 func TestEditMap_Remove(t *testing.T) {
 	inputs := []string{"r", "toremove", "d"}
 	inputIdx := 0
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		if inputIdx >= len(inputs) {
 			return "", io.EOF
 		}
@@ -1244,7 +1244,7 @@ func TestEditMap_Remove(t *testing.T) {
 func TestEditMap_UpdateExistingKey(t *testing.T) {
 	inputs := []string{"u", "name", "newname", "d"}
 	inputIdx := 0
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		if inputIdx >= len(inputs) {
 			return "", io.EOF
 		}
@@ -1271,7 +1271,7 @@ func TestEditMap_UpdateExistingKey(t *testing.T) {
 func TestEditMap_UpdateNonExistingKey(t *testing.T) {
 	inputs := []string{"u", "ghost", "d"}
 	inputIdx := 0
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		if inputIdx >= len(inputs) {
 			return "", io.EOF
 		}
@@ -1295,7 +1295,7 @@ func TestEditMap_UpdateNonExistingKey(t *testing.T) {
 func TestEditMap_UnsupportedAction(t *testing.T) {
 	inputs := []string{"x", "d"}
 	inputIdx := 0
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		if inputIdx >= len(inputs) {
 			return "", io.EOF
 		}
@@ -1317,7 +1317,7 @@ func TestEditMap_UnsupportedAction(t *testing.T) {
 }
 
 func TestSelectStringField(t *testing.T) {
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		return "0", nil
 	})
 	defer restore()
@@ -1345,7 +1345,7 @@ func TestSelectStringField(t *testing.T) {
 // ============================================================
 
 func TestPromptSliceAppend_ReadError(t *testing.T) {
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		return "", errors.New("mock read error")
 	})
 	defer restore()
@@ -1358,7 +1358,7 @@ func TestPromptSliceAppend_ReadError(t *testing.T) {
 
 func TestPromptSliceUpdate_BackKeepsSlice(t *testing.T) {
 	// selectFromSlice reads "b" → returns ErrBack
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		return "b", nil
 	})
 	defer restore()
@@ -1375,7 +1375,7 @@ func TestPromptSliceUpdate_BackKeepsSlice(t *testing.T) {
 
 func TestPromptSliceUpdate_QuitKeepsSlice(t *testing.T) {
 	// selectFromSlice reads "q" → returns ErrUserInitiatedExit (caught by promptSliceUpdate)
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		return "q", nil
 	})
 	defer restore()
@@ -1391,7 +1391,7 @@ func TestPromptSliceUpdate_QuitKeepsSlice(t *testing.T) {
 }
 
 func TestPromptSliceRemove_BackKeepsSlice(t *testing.T) {
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		return "b", nil
 	})
 	defer restore()
@@ -1407,7 +1407,7 @@ func TestPromptSliceRemove_BackKeepsSlice(t *testing.T) {
 }
 
 func TestPromptSliceRemove_QuitKeepsSlice(t *testing.T) {
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		return "q", nil
 	})
 	defer restore()
@@ -1447,7 +1447,7 @@ func TestPromptSliceRemove_EmptySliceNoop(t *testing.T) {
 // ============================================================
 
 func TestHandleValue_SliceDispatch(t *testing.T) {
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		return "d", nil
 	})
 	defer restore()
@@ -1468,7 +1468,7 @@ func TestHandleValue_SliceDispatch(t *testing.T) {
 }
 
 func TestEditMap_ReadErrorOnActionPrompt(t *testing.T) {
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		return "", errors.New("mock read error")
 	})
 	defer restore()
@@ -1482,7 +1482,7 @@ func TestEditMap_ReadErrorOnActionPrompt(t *testing.T) {
 func TestEditSlice_InvalidAction(t *testing.T) {
 	inputs := []string{"x", "d"}
 	inputIdx := 0
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		if inputIdx >= len(inputs) {
 			return "", io.EOF
 		}
@@ -1503,7 +1503,7 @@ func TestEditSlice_InvalidAction(t *testing.T) {
 }
 
 func TestEditSlice_ReadErrorOnActionPrompt(t *testing.T) {
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		return "", errors.New("mock read error")
 	})
 	defer restore()
@@ -1521,7 +1521,7 @@ func TestGetModelValue_BackReturnsCurrent(t *testing.T) {
 	}
 
 	// "b" triggers ErrBack from SelectFromTable
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		return "b", nil
 	})
 	defer restore()
@@ -1560,7 +1560,7 @@ func TestGetShellContextValue_BackReturnsCurrent(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		return "b", nil
 	})
 	defer restore()
@@ -1578,7 +1578,7 @@ func TestPromptSliceUpdate_HandleValueError(t *testing.T) {
 	// selectFromSlice reads "0" (selects index 0), then handleValue calls
 	// getNewValue which reads input. We make that call fail.
 	callCount := 0
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		callCount++
 		// First call: selectFromSlice → "0"
 		if callCount == 1 {
@@ -1616,13 +1616,13 @@ func TestInteractiveReconfigure_SelectFieldError(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		return "q", nil // quit → ErrUserInitiatedExit
 	})
 	defer restore()
 
 	err := interractiveReconfigure(config{name: "test.json", filePath: cfgPath}, []byte(original))
-	if !errors.Is(err, utils.ErrUserInitiatedExit) {
+	if !errors.Is(err, table.ErrUserInitiatedExit) {
 		t.Fatalf("interractiveReconfigure(quit) = %v, want ErrUserInitiatedExit", err)
 	}
 }
@@ -1648,7 +1648,7 @@ func TestActionRemove_NotConfirmed(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		return "n", nil
 	})
 	defer restore()
@@ -1666,7 +1666,7 @@ func TestActionCopy_ReadError(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		return "", errors.New("mock read error")
 	})
 	defer restore()
@@ -1679,14 +1679,14 @@ func TestActionCopy_ReadError(t *testing.T) {
 
 func TestActOnConfigItem_BackPropagates(t *testing.T) {
 	// queryForAction returns unset, ErrBack — actOnConfigItem should detect and propagate.
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		return "b", nil
 	})
 	defer restore()
 
 	cat := setupCategory{itemActions: []action{conf}}
 	err := actOnConfigItem(cat, config{name: "test", filePath: "/tmp/test.json"})
-	if !errors.Is(err, utils.ErrBack) {
+	if !errors.Is(err, table.ErrBack) {
 		t.Fatalf("actOnConfigItem(back) = %v, want ErrBack", err)
 	}
 }
@@ -1700,7 +1700,7 @@ func TestInterractiveReconfigure_HandleValueError(t *testing.T) {
 	}
 
 	callCount := 0
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		callCount++
 		// 1st call: selectFieldToEdit selects index 0 ("name")
 		if callCount == 1 {
@@ -1722,7 +1722,7 @@ func TestInterractiveReconfigure_HandleValueError(t *testing.T) {
 // ============================================================
 
 func TestCreateConfigFile(t *testing.T) {
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		return "myconfig", nil
 	})
 	defer restore()
@@ -1769,7 +1769,7 @@ func TestActionReconfigure(t *testing.T) {
 	// Select field 0 ("name"), set to "newname", then done
 	inputs := []string{"0", "newname", "d"}
 	inputIdx := 0
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		if inputIdx >= len(inputs) {
 			return "", io.EOF
 		}
@@ -1806,7 +1806,7 @@ func TestEditMap_UpdateHandleValueError(t *testing.T) {
 	inputs := []string{"u", "name"}
 	inputIdx := 0
 	callCount := 0
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		callCount++
 		if callCount <= 2 {
 			ret := inputs[inputIdx]
@@ -1826,7 +1826,7 @@ func TestEditMap_UpdateHandleValueError(t *testing.T) {
 func TestEditSlice_UpdateHandleValueError(t *testing.T) {
 	// editSlice reads "u", selectFromSlice reads "0", handleValue error
 	callCount := 0
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		callCount++
 		switch callCount {
 		case 1:
@@ -1852,7 +1852,7 @@ func TestActionRemove_ReadError(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		return "", errors.New("mock read error")
 	})
 	defer restore()
@@ -1864,7 +1864,7 @@ func TestActionRemove_ReadError(t *testing.T) {
 }
 
 func TestQueryForAction_Error(t *testing.T) {
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		return "", errors.New("mock read error")
 	})
 	defer restore()
@@ -1878,7 +1878,7 @@ func TestQueryForAction_Error(t *testing.T) {
 func TestQueryForAction_InvalidThenValid(t *testing.T) {
 	inputs := []string{"invalid", "c"}
 	inputIdx := 0
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		if inputIdx >= len(inputs) {
 			return "", io.EOF
 		}
@@ -1898,13 +1898,13 @@ func TestQueryForAction_InvalidThenValid(t *testing.T) {
 }
 
 func TestQueryForAction_Quit(t *testing.T) {
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		return "q", nil
 	})
 	defer restore()
 
 	_, err := queryForAction([]action{conf, del})
-	if !errors.Is(err, utils.ErrUserInitiatedExit) {
+	if !errors.Is(err, table.ErrUserInitiatedExit) {
 		t.Fatalf("queryForAction(quit) = %v, want ErrUserInitiatedExit", err)
 	}
 }
@@ -1966,7 +1966,7 @@ func TestExecuteConfigAction_Default(t *testing.T) {
 
 func TestExecuteConfigAction_Back(t *testing.T) {
 	err := executeConfigAction(config{name: "test"}, back)
-	if !errors.Is(err, utils.ErrBack) {
+	if !errors.Is(err, table.ErrBack) {
 		t.Fatalf("executeConfigAction(back) = %v, want ErrBack", err)
 	}
 }
@@ -1976,7 +1976,7 @@ func TestExecuteConfigAction_Back(t *testing.T) {
 // ============================================================
 
 func TestCreateConfigFile_ReadError(t *testing.T) {
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		return "", errors.New("mock read error")
 	})
 	defer restore()
@@ -1988,7 +1988,7 @@ func TestCreateConfigFile_ReadError(t *testing.T) {
 }
 
 func TestActionCopy_SourceReadError(t *testing.T) {
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		return "mycopy", nil
 	})
 	defer restore()
@@ -2002,7 +2002,7 @@ func TestActionCopy_SourceReadError(t *testing.T) {
 func TestEditMap_AddReadError(t *testing.T) {
 	inputs := []string{"a", "newkey"} // 3rd call (value) will error
 	callCount := 0
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		callCount++
 		if callCount <= 2 {
 			return inputs[callCount-1], nil
@@ -2019,7 +2019,7 @@ func TestEditMap_AddReadError(t *testing.T) {
 
 func TestEditMap_RemoveReadError(t *testing.T) {
 	callCount := 0
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		callCount++
 		if callCount == 1 {
 			return "r", nil
@@ -2040,7 +2040,7 @@ func TestGetToolsValue_SelectError(t *testing.T) {
 	tools.Registry.Reset()
 	t.Cleanup(func() { tools.Registry.Reset() })
 
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		return "", errors.New("mock select error")
 	})
 	defer restore()
@@ -2119,7 +2119,7 @@ func TestExecuteConfigAction_UnescapedFieldEditWithEditor(t *testing.T) {
 	}
 
 	// selectStringField needs a string field, index 0 = "name"
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		return "0", nil
 	})
 	defer restore()
@@ -2143,7 +2143,7 @@ func TestExecuteConfigAction_Copy(t *testing.T) {
 
 	inputs := []string{"mycopy", "d"}
 	inputIdx := 0
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		if inputIdx >= len(inputs) {
 			return "", io.EOF
 		}
@@ -2172,7 +2172,7 @@ func TestExecuteConfigAction_Delete(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		return "y", nil
 	})
 	defer restore()
@@ -2189,7 +2189,7 @@ func TestActOnConfigItem_ExecuteError(t *testing.T) {
 	// Pass a non-existent file to trigger open error.
 	inputs := []string{"c"}
 	inputIdx := 0
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		if inputIdx >= len(inputs) {
 			return "", io.EOF
 		}
@@ -2216,7 +2216,7 @@ func TestCreateConfigFile_MkdirError(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		return "testname", nil
 	})
 	defer restore()
@@ -2236,7 +2236,7 @@ func TestActionReconfigureStringFieldWithEditor_FieldSelection(t *testing.T) {
 	}
 
 	// selectStringField: pick index 1 ("prompt")
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		return "1", nil
 	})
 	defer restore()
@@ -2289,14 +2289,14 @@ func TestActionReconfigureStringFieldWithEditor_ReadError(t *testing.T) {
 // ============================================================
 
 func TestActOnConfigItem_QuitFromQuery(t *testing.T) {
-	restore := utils.UseReadUserInputForTests(func() (string, error) {
+	restore := useReadUserInputForTests(func() (string, error) {
 		return "q", nil
 	})
 	defer restore()
 
 	cat := setupCategory{itemActions: []action{conf}}
 	err := actOnConfigItem(cat, config{name: "test", filePath: "/tmp/test.json"})
-	if !errors.Is(err, utils.ErrUserInitiatedExit) {
+	if !errors.Is(err, table.ErrUserInitiatedExit) {
 		t.Fatalf("actOnConfigItem(quit query) = %v, want ErrUserInitiatedExit", err)
 	}
 }

@@ -20,6 +20,7 @@ import (
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
+	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
 
 const chatInfoPrintHeight = 16
@@ -228,7 +229,7 @@ func (cq *ChatHandler) actOnChat(chat pub_models.Chat, groupKey string) error {
 	if err := cq.printChatInfo(cq.out, chat, groupKey); err != nil {
 		return fmt.Errorf("failed to printChatInfo: %w", err)
 	}
-	choice, err := utils.ReadUserInput()
+	choice, err := table.ReadUserInputFrom(cq.input)
 	if err != nil {
 		return fmt.Errorf("failed to read user input: %w", err)
 	}
@@ -238,7 +239,7 @@ func (cq *ChatHandler) actOnChat(chat pub_models.Chat, groupKey string) error {
 	case "D", "d":
 		return cq.handleDeleteMessages(chat)
 	case "B", "b":
-		clearErr := utils.ClearTermTo(cq.out, chatInfoPrintHeight)
+		clearErr := table.ClearTermTo(cq.out, chatInfoPrintHeight)
 		if clearErr != nil {
 			return fmt.Errorf("failed to clear term: %w", clearErr)
 		}
@@ -246,7 +247,7 @@ func (cq *ChatHandler) actOnChat(chat pub_models.Chat, groupKey string) error {
 	case "P", "p":
 		return SaveAsPreviousQuery(cq.confDir, chat)
 	case "Q", "q":
-		return utils.ErrUserInitiatedExit
+		return table.ErrUserInitiatedExit
 	case "":
 		if chat.Profile != "" {
 			cq.config.UseProfile = chat.Profile
@@ -271,7 +272,7 @@ func (cq *ChatHandler) actOnChat(chat pub_models.Chat, groupKey string) error {
 // can be studied and reworked in one sitting. Backing out returns to the chat
 // list, which also keeps its page.
 func (cq *ChatHandler) handleEditMessages(chat pub_models.Chat) error {
-	clearErr := utils.ClearTermTo(cq.out, chatInfoPrintHeight)
+	clearErr := table.ClearTermTo(cq.out, chatInfoPrintHeight)
 	if clearErr != nil {
 		return fmt.Errorf("failed to clear term: %w", clearErr)
 	}
@@ -284,7 +285,7 @@ func (cq *ChatHandler) handleEditMessages(chat pub_models.Chat) error {
 // handleDeleteMessages is a peek + delete, symmetric with handleEditMessages:
 // the message picker stays open across deletions, reopening on the same page.
 func (cq *ChatHandler) handleDeleteMessages(chat pub_models.Chat) error {
-	clearErr := utils.ClearTermTo(cq.out, chatInfoPrintHeight)
+	clearErr := table.ClearTermTo(cq.out, chatInfoPrintHeight)
 	if clearErr != nil {
 		return fmt.Errorf("failed to clear term: %w", clearErr)
 	}
@@ -536,7 +537,7 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 	if err != nil {
 		return fmt.Errorf("failed to build chat list rows: %w", err)
 	}
-	inDir, wd, hasDirFilter := cq.dirScopeRowPredicate()
+	inDir, _, hasDirFilter := cq.dirScopeRowPredicate()
 	dirFilterOn := false
 	// The table page survives peek/edit round-trips so a user studying a
 	// conversation lands back where they left off. The main list and the
@@ -549,9 +550,9 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 		}
 		pr := prepareListRows(allRows, byName, groupKey, scope)
 
-		tableActions := []utils.TableAction{}
+		tableActions := []table.TableAction{}
 		if hasDirFilter {
-			tableActions = append(tableActions, utils.TableAction{
+			tableActions = append(tableActions, table.TableAction{
 				Format: "[d]irscoped convs",
 				Short:  "d",
 				Long:   "dir",
@@ -574,42 +575,23 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 		tblFmt := fmt.Sprintf("%%-%ds| %%-15s | %%-20s| %%-18s | %%-8s | %%v", maxIdxLen)
 		headArgs := []any{"Index", "Source", "Created", "Model", "Cost", "Prompt"}
 		isWide := false
-		if tw, err := utils.TermWidth(); err == nil && tw > 120 {
+		if tw, err := table.TermWidth(); err == nil && tw > 120 {
 			isWide = true
 			tblFmt = fmt.Sprintf("%%-%ds| %%-15s | %%-20s| %%-8v | %%-15s | %%-18s | %%-8s | %%-6s | %%v", maxIdxLen)
 			headArgs = []any{"Index", "Source", "Created", "Messages", "Profile", "Model", "Cost", "Tokens", "Prompt"}
 		}
 
-		choicesFormat := selectChatTblChoicesFormat
 		backLabel := ""
 		if groupKey != "" {
-			displayKey := groupKey
-			if len(groupKey) >= 8 {
-				displayKey = groupKey[:8] + "..."
-			}
-			if len(pr.rows) > 0 {
-				choicesFormat = fmt.Sprintf("group: %q", pr.rows[0].FirstUserMessage)
-			} else {
-				choicesFormat = fmt.Sprintf("group: %s", displayKey)
-			}
 			backLabel = "[b]ack to list"
-		}
-		if dirFilterOn {
-			if len(pr.rows) == 0 {
-				choicesFormat = fmt.Sprintf("dir filter, no dirscoped conversations in %s", wd)
-			} else {
-				choicesFormat = fmt.Sprintf("dir filter, %s", choicesFormat)
-			}
 		}
 
 		startPage := listPage
 		if groupKey != "" {
 			startPage = groupPage
 		}
-		selectedNumbers, shownPage, err := utils.SelectFromTableAt(
-			fmt.Sprintf(tblFmt, headArgs...),
-			utils.SlicePaginator(pr.rows),
-			choicesFormat,
+		tb := table.New(
+			table.SlicePaginator(pr.rows),
 			func(i int, item chatListRow) (string, error) {
 				tokenStr := "N/A"
 				costStr := "N/A"
@@ -639,7 +621,7 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 						tokenStr,
 						"",
 					)
-					withSummary, err := utils.WidthAppropriateStringTrunc(item.FirstUserMessage, prefix, 15)
+					withSummary, err := table.WidthAppropriateStringTrunc(item.FirstUserMessage, prefix, 15)
 					if err != nil {
 						return "", fmt.Errorf("failed to get widthAppropriateChatSummary: %w", err)
 					}
@@ -655,19 +637,28 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 					costStr,
 					"",
 				)
-				withSummary, err := utils.WidthAppropriateStringTrunc(item.FirstUserMessage, prefix, 15)
+				withSummary, err := table.WidthAppropriateStringTrunc(item.FirstUserMessage, prefix, 15)
 				if err != nil {
 					return "", fmt.Errorf("failed to get widthAppropriateChatSummary: %w", err)
 				}
 				return withSummary, nil
 			},
-			utils.ThemeTableItems(),
-			true,
-			tableActions,
-			cq.out,
-			backLabel,
-			startPage,
-		)
+		).
+			WithHeader(fmt.Sprintf(tblFmt, headArgs...)).
+			WithPageSize(utils.TableTheme().Items).
+			WithSingleSelect().
+			WithWriter(cq.out).
+			WithInput(cq.input).
+			WithStartPage(startPage)
+
+		if len(tableActions) > 0 {
+			tb = tb.WithActions(tableActions...)
+		}
+		if backLabel != "" {
+			tb = tb.WithBackLabel(backLabel)
+		}
+
+		selectedNumbers, shownPage, err := tb.Run()
 		if groupKey != "" {
 			groupPage = shownPage
 		} else {
@@ -680,11 +671,14 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 				listPage, groupPage = 0, 0
 				continue
 			}
-			if errors.Is(err, utils.ErrBack) {
+			if errors.Is(err, table.ErrBack) {
 				if groupKey != "" {
 					groupKey = ""
 					continue
 				}
+				return nil
+			}
+			if errors.Is(err, table.ErrUserInitiatedExit) {
 				return nil
 			}
 			return fmt.Errorf("failed to select chat: %w", err)
@@ -708,6 +702,9 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 				if errors.Is(err, errExitList) {
 					return nil
 				}
+				if errors.Is(err, table.ErrUserInitiatedExit) {
+					return nil
+				}
 				return err
 			}
 			continue
@@ -725,6 +722,9 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 			if errors.Is(err, errExitList) {
 				return nil
 			}
+			if errors.Is(err, table.ErrUserInitiatedExit) {
+				return nil
+			}
 			return err
 		}
 		continue
@@ -735,7 +735,7 @@ func (cq *ChatHandler) actOnForeignChat(chat pub_models.Chat, reader vendors.Sou
 	if err := cq.printChatInfoForeign(cq.out, chat, groupKey); err != nil {
 		return fmt.Errorf("failed to printChatInfoForeign: %w", err)
 	}
-	choice, err := utils.ReadUserInput()
+	choice, err := table.ReadUserInputFrom(cq.input)
 	if err != nil {
 		return fmt.Errorf("failed to read user input: %w", err)
 	}
@@ -749,13 +749,13 @@ func (cq *ChatHandler) actOnForeignChat(chat pub_models.Chat, reader vendors.Sou
 		ancli.Noticef("chat %s is now replyable with flag \"clai -dre query <prompt>\"\n", cloned.ID)
 		return errExitList
 	case "B", "b":
-		clearErr := utils.ClearTermTo(cq.out, chatInfoPrintHeight)
+		clearErr := table.ClearTermTo(cq.out, chatInfoPrintHeight)
 		if clearErr != nil {
 			return fmt.Errorf("failed to clear term: %w", clearErr)
 		}
 		return nil
 	case "Q", "q":
-		return utils.ErrUserInitiatedExit
+		return table.ErrUserInitiatedExit
 	default:
 		return fmt.Errorf("unknown choice: %q", choice)
 	}
@@ -783,62 +783,62 @@ func (cq *ChatHandler) printChatInfoCommon(w io.Writer, chat pub_models.Chat, gr
 	if uMsg, err := chat.FirstUserMessage(); err == nil {
 		firstMessages = uMsg.Content
 	}
-	summary, err := utils.WidthAppropriateStringTrunc(firstMessages, "summary: \"", 10)
+	summary, err := table.WidthAppropriateStringTrunc(firstMessages, "summary: \"", 10)
 	if err != nil {
 		return fmt.Errorf("failed to create widthAppropriateChatSummary: %w", err)
 	}
 
-	header := utils.Colorize(utils.ThemePrimaryColor(), "=== Chat info ===")
-	fileKey := utils.Colorize(utils.ThemePrimaryColor(), "file path:")
-	createdKey := utils.Colorize(utils.ThemePrimaryColor(), "created_at:")
-	costKey := utils.Colorize(utils.ThemePrimaryColor(), "total cost:")
-	amRepliesKey := utils.Colorize(utils.ThemePrimaryColor(), "am replies:")
-	sourceKey := utils.Colorize(utils.ThemePrimaryColor(), "source:")
-	userRole := utils.Colorize(utils.RoleColor("user"), "user:")
-	toolRole := utils.Colorize(utils.RoleColor("tool"), "tool:")
-	systemRole := utils.Colorize(utils.RoleColor("system"), "system:")
-	assistantRole := utils.Colorize(utils.RoleColor("assistant"), "assistant:")
-	bread := utils.ThemeBreadtextColor()
+	header := table.Colorize(utils.TableTheme().Primary, "=== Chat info ===")
+	fileKey := table.Colorize(utils.TableTheme().Primary, "file path:")
+	createdKey := table.Colorize(utils.TableTheme().Primary, "created_at:")
+	costKey := table.Colorize(utils.TableTheme().Primary, "total cost:")
+	amRepliesKey := table.Colorize(utils.TableTheme().Primary, "am replies:")
+	sourceKey := table.Colorize(utils.TableTheme().Primary, "source:")
+	userRole := table.Colorize(utils.RoleColor("user"), "user:")
+	toolRole := table.Colorize(utils.RoleColor("tool"), "tool:")
+	systemRole := table.Colorize(utils.RoleColor("system"), "system:")
+	assistantRole := table.Colorize(utils.RoleColor("assistant"), "assistant:")
+	bread := utils.TableTheme().Breadtext
 
 	if _, err := fmt.Fprintf(w, "%s\n\n", header); err != nil {
 		return fmt.Errorf("write chat header: %w", err)
 	}
 	// GroupKey display (when non-empty)
 	if chat.GroupKey != "" {
-		if _, err := fmt.Fprintf(w, "%s %s\n", utils.Colorize(utils.ThemePrimaryColor(), "group key:"), utils.Colorize(bread, chat.GroupKey)); err != nil {
+		if _, err := fmt.Fprintf(w, "%s %s\n", table.Colorize(utils.TableTheme().Primary, "group key:"), table.Colorize(bread, chat.GroupKey)); err != nil {
 			return fmt.Errorf("write group key: %w", err)
 		}
 	}
-	if _, err := fmt.Fprintf(w, "%s %s\n", fileKey, utils.Colorize(bread, filePath)); err != nil {
+	if _, err := fmt.Fprintf(w, "%s %s\n", fileKey, table.Colorize(bread, filePath)); err != nil {
 		return fmt.Errorf("write file path: %w", err)
 	}
 	if opts.foreign {
-		if _, err := fmt.Fprintf(w, "%s %s\n", sourceKey, utils.Colorize(bread, fmt.Sprintf("%s (session: %s)", chat.Source, chat.SourceID))); err != nil {
+		if _, err := fmt.Fprintf(w, "%s %s\n", sourceKey, table.Colorize(bread, fmt.Sprintf("%s (session: %s)", chat.Source, chat.SourceID))); err != nil {
 			return fmt.Errorf("write source: %w", err)
 		}
 	}
-	if _, err := fmt.Fprintf(w, "%s %s\n", createdKey, utils.Colorize(bread, fmt.Sprintf("%v", chat.Created))); err != nil {
+	if _, err := fmt.Fprintf(w, "%s %s\n", createdKey, table.Colorize(bread, fmt.Sprintf("%v", chat.Created))); err != nil {
 		return fmt.Errorf("write created at: %w", err)
 	}
-	if _, err := fmt.Fprintf(w, "%s %s\n", costKey, utils.Colorize(bread, chatListCostStr(chat))); err != nil {
+	if _, err := fmt.Fprintf(w, "%s %s\n", costKey, table.Colorize(bread, chatListCostStr(chat))); err != nil {
 		return fmt.Errorf("write total cost: %w", err)
 	}
 	if _, err := fmt.Fprintf(w, "%s\n", amRepliesKey); err != nil {
 		return fmt.Errorf("write am replies key: %w", err)
 	}
-	if _, err := fmt.Fprintf(w, "\t%s %s'%v'\n", userRole, utils.Colorize(bread, "   "), messageTypeCounter["user"]); err != nil {
+	if _, err := fmt.Fprintf(w, "\t%s %s'%v'\n", userRole, table.Colorize(bread, "   "), messageTypeCounter["user"]); err != nil {
 		return fmt.Errorf("write user replies: %w", err)
 	}
-	if _, err := fmt.Fprintf(w, "\t%s %s'%v'\n", toolRole, utils.Colorize(bread, "   "), messageTypeCounter["tool"]); err != nil {
+	if _, err := fmt.Fprintf(w, "\t%s %s'%v'\n", toolRole, table.Colorize(bread, "   "), messageTypeCounter["tool"]); err != nil {
 		return fmt.Errorf("write tool replies: %w", err)
 	}
-	if _, err := fmt.Fprintf(w, "\t%s %s'%v'\n", systemRole, utils.Colorize(bread, "  "), messageTypeCounter["system"]); err != nil {
+	if _, err := fmt.Fprintf(w, "\t%s %s'%v'\n", systemRole, table.Colorize(bread, "  "), messageTypeCounter["system"]); err != nil {
 		return fmt.Errorf("write system replies: %w", err)
 	}
-	if _, err := fmt.Fprintf(w, "\t%s %s'%v'\n\n", assistantRole, utils.Colorize(bread, ""), messageTypeCounter["assistant"]); err != nil {
+	if _, err := fmt.Fprintf(w, "\t%s %s'%v'\n\n", assistantRole, table.Colorize(bread, ""), messageTypeCounter["assistant"]); err != nil {
 		return fmt.Errorf("write assistant replies: %w", err)
 	}
-	if _, err := fmt.Fprintf(w, "%s\n\n", utils.Colorize(bread, summary+"\"")); err != nil {
+	if _, err := fmt.Fprintf(w, "%s\n\n", table.Colorize(bread, summary+"\"")); err != nil {
 		return fmt.Errorf("write summary: %w", err)
 	}
 	backLabel := "go [b]ack to list"
@@ -847,9 +847,9 @@ func (cq *ChatHandler) printChatInfoCommon(w io.Writer, chat pub_models.Chat, gr
 	}
 	var choices string
 	if opts.foreign {
-		choices = utils.Colorize(utils.ThemePrimaryColor(), fmt.Sprintf("(press [c]ontinue (clone to clai), %s, [q]uit): ", backLabel))
+		choices = table.Colorize(utils.TableTheme().Primary, fmt.Sprintf("(press [c]ontinue (clone to clai), %s, [q]uit): ", backLabel))
 	} else {
-		choices = utils.Colorize(utils.ThemePrimaryColor(), fmt.Sprintf("(make [p]revQuery (-re/-reply flag), %s, [e]dit messages, [d]elete messages, [q]uit, [<enter>] to continue): ", backLabel))
+		choices = table.Colorize(utils.TableTheme().Primary, fmt.Sprintf("(make [p]revQuery (-re/-reply flag), %s, [e]dit messages, [d]elete messages, [q]uit, [<enter>] to continue): ", backLabel))
 	}
 	if _, err := fmt.Fprint(w, choices); err != nil {
 		return fmt.Errorf("write choices: %w", err)
@@ -920,27 +920,30 @@ func editorEditString(toEdit string) (string, error) {
 
 // selectMessagesAt shows the conversation's message picker opened at startPage
 // and returns the selection plus the page it was made on.
-func (cq *ChatHandler) selectMessagesAt(chat pub_models.Chat, selectionType string, onlyOneSelect bool, startPage int) ([]int, int, error) {
+func (cq *ChatHandler) selectMessagesAt(chat pub_models.Chat, onlyOneSelect bool, startPage int) ([]int, int, error) {
 	head := fmt.Sprintf(editMessageTblFormat, "Index", "Role", "Length", "Summary")
-	return utils.SelectFromTableAt(
-		head,
-		utils.SlicePaginator(chat.Messages),
-		selectionType,
+	tb := table.New(
+		table.SlicePaginator(chat.Messages),
 		func(i int, t pub_models.Message) (string, error) {
 			prefix := fmt.Sprintf(editMessageTblFormat, i, t.Role, utf8.RuneCount([]byte(t.Content)), "")
-			withSummary, err := utils.WidthAppropriateStringTrunc(t.Content, prefix, 25)
+			withSummary, err := table.WidthAppropriateStringTrunc(t.Content, prefix, 25)
 			if err != nil {
 				return "", fmt.Errorf("failed to get widthAppropriateChatSummary: %w", err)
 			}
 			return withSummary, nil
 		},
-		utils.ThemeTableItems(),
-		onlyOneSelect,
-		[]utils.TableAction{},
-		cq.out,
-		"",
-		startPage,
-	)
+	).
+		WithHeader(head).
+		WithPageSize(utils.TableTheme().Items).
+		WithWriter(cq.out).
+		WithInput(cq.input).
+		WithStartPage(startPage)
+
+	if onlyOneSelect {
+		tb = tb.WithSingleSelect()
+	}
+
+	return tb.Run()
 }
 
 // deleteMessageInChat loops the message picker, symmetric with edit: delete
@@ -950,10 +953,10 @@ func (cq *ChatHandler) selectMessagesAt(chat pub_models.Chat, selectionType stri
 func (cq *ChatHandler) deleteMessageInChat(chat pub_models.Chat) error {
 	page := 0
 	for {
-		selectedIndices, shownPage, err := cq.selectMessagesAt(chat, deleteMessagesChoicesFormat, false, page)
+		selectedIndices, shownPage, err := cq.selectMessagesAt(chat, false, page)
 		page = shownPage
 		if err != nil {
-			if errors.Is(err, utils.ErrBack) {
+			if errors.Is(err, table.ErrBack) || errors.Is(err, table.ErrUserInitiatedExit) {
 				return nil
 			}
 			return fmt.Errorf("failed to select from table: %w", err)
@@ -985,10 +988,10 @@ func (cq *ChatHandler) deleteMessageInChat(chat pub_models.Chat) error {
 func (cq *ChatHandler) editMessageInChat(chat pub_models.Chat) error {
 	page := 0
 	for {
-		selectedNumbers, shownPage, err := cq.selectMessagesAt(chat, editMessageChoicesFormat, true, page)
+		selectedNumbers, shownPage, err := cq.selectMessagesAt(chat, true, page)
 		page = shownPage
 		if err != nil {
-			if errors.Is(err, utils.ErrBack) {
+			if errors.Is(err, table.ErrBack) || errors.Is(err, table.ErrUserInitiatedExit) {
 				return nil
 			}
 			return fmt.Errorf("failed to select from table: %w", err)

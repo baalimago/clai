@@ -11,6 +11,7 @@ import (
 
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/utils"
+	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
 
 type completionResultKind string
@@ -437,16 +438,16 @@ func modelFromConfigFilename(base string) (string, bool) {
 
 func handleCompletionCommand(ctx context.Context, args []string) error {
 	if len(args) < 2 {
-		return fmt.Errorf("select shell for completion command: %w", utils.ErrUserInitiatedExit)
+		return fmt.Errorf("select shell for completion command: %w", table.ErrUserInitiatedExit)
 	}
 
 	switch args[1] {
 	case "bash":
 		fmt.Print(bashCompletionScript())
-		return utils.ErrUserInitiatedExit
+		return table.ErrUserInitiatedExit
 	case "zsh":
 		fmt.Print(zshCompletionScript())
-		return utils.ErrUserInitiatedExit
+		return table.ErrUserInitiatedExit
 	default:
 		return fmt.Errorf("unsupported completion shell %q", args[1])
 	}
@@ -470,7 +471,7 @@ func handleHiddenCompletion(ctx context.Context, args []string) error {
 	for _, item := range resp.Items {
 		fmt.Printf("%s\t%s\n", item.Value, item.Kind)
 	}
-	return utils.ErrUserInitiatedExit
+	return table.ErrUserInitiatedExit
 }
 
 func bashCompletionScript() string {

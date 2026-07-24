@@ -19,20 +19,40 @@ import (
 
 func runOne(t *testing.T, cwd string, args string) (string, int) {
 	t.Helper()
-	oldArgs := os.Args
+	oldWd, wdErr := os.Getwd()
 	t.Cleanup(func() {
-		os.Args = oldArgs
+		if wdErr == nil {
+			_ = os.Chdir(oldWd)
+		}
+		utils.Live = true
 	})
 
 	if chDirErr := os.Chdir(cwd); chDirErr != nil {
 		t.Fatalf("Chdir(%q): %v", cwd, chDirErr)
 	}
 
+	// Split args on spaces, treating "" as an explicit empty argument (shell-style).
+	parsed := splitArgsForTest(args)
+
 	var status int
 	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		status = run(strings.Split(args, " "))
+		status = run(parsed)
 	})
 	return stdout, status
+}
+
+// splitArgsForTest splits on spaces, converting empty-quote tokens into empty strings.
+func splitArgsForTest(args string) []string {
+	parts := strings.Split(args, " ")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p == `""` || p == `''` {
+			out = append(out, "")
+		} else {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func Test_chat_dir_does_not_print_skills_logs_without_text_query(t *testing.T) {
