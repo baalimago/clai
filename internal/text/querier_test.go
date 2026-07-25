@@ -1101,14 +1101,14 @@ func Test_Querier_Query_ToolCallRecursion_UsesFinalAssistantTurnTokenUsageForCos
 			if got.TokenUsage == nil {
 				t.Fatalf("expected token usage to be populated before enrich")
 			}
-			if got.TokenUsage.PromptTokens != 99 {
-				t.Fatalf("prompt tokens mismatch: got %d want %d", got.TokenUsage.PromptTokens, 99)
+			if got.TokenUsage.PromptTokens != 101 {
+				t.Fatalf("prompt tokens mismatch: got %d want %d", got.TokenUsage.PromptTokens, 101)
 			}
-			if got.TokenUsage.CompletionTokens != 111 {
-				t.Fatalf("completion tokens mismatch: got %d want %d", got.TokenUsage.CompletionTokens, 111)
+			if got.TokenUsage.CompletionTokens != 115 {
+				t.Fatalf("completion tokens mismatch: got %d want %d", got.TokenUsage.CompletionTokens, 115)
 			}
-			if got.TokenUsage.TotalTokens != 210 {
-				t.Fatalf("total tokens mismatch: got %d want %d", got.TokenUsage.TotalTokens, 210)
+			if got.TokenUsage.TotalTokens != 216 {
+				t.Fatalf("total tokens mismatch: got %d want %d", got.TokenUsage.TotalTokens, 216)
 			}
 			return got
 		},
