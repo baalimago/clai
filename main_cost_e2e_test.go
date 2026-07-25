@@ -125,8 +125,10 @@ func Test_e2e_COST_nested_tool_call_queries_visible_in_chat_dir_json(t *testing.
 		t.Fatalf("expected 1 outer query cost entry, got %d\nchat=%s", len(chat.Queries), string(chatBytes))
 	}
 
-	wantPromptTokens := len(strings.Fields(prompt))
-	wantCompletionTokens := wantPromptTokens * 2
+	basePromptTokens := len(strings.Fields(prompt))
+	nCalls := 4 // 3 tool calls (pwd, pwd, ls) + 1 final reply
+	wantPromptTokens := basePromptTokens * nCalls
+	wantCompletionTokens := basePromptTokens * 2 * nCalls
 	wantTotalTokens := wantPromptTokens + wantCompletionTokens
 	wantCost := float64(wantPromptTokens)*0.001 + float64(wantCompletionTokens)*0.002
 
@@ -139,7 +141,7 @@ func Test_e2e_COST_nested_tool_call_queries_visible_in_chat_dir_json(t *testing.
 	if math.Abs(info.CostUSD-wantCost) > 1e-12 {
 		t.Fatalf("chat dir cost_usd: got %v want %v", info.CostUSD, wantCost)
 	}
-	wantCostStr := "$0.135"
+	wantCostStr := "$0.54"
 	if info.Cost != wantCostStr {
 		t.Fatalf("chat dir cost: got %q want %q", info.Cost, wantCostStr)
 	}

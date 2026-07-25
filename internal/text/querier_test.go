@@ -1101,14 +1101,14 @@ func Test_Querier_Query_ToolCallRecursion_UsesFinalAssistantTurnTokenUsageForCos
 			if got.TokenUsage == nil {
 				t.Fatalf("expected token usage to be populated before enrich")
 			}
-			if got.TokenUsage.PromptTokens != 99 {
-				t.Fatalf("prompt tokens mismatch: got %d want %d", got.TokenUsage.PromptTokens, 99)
+			if got.TokenUsage.PromptTokens != 101 {
+				t.Fatalf("prompt tokens mismatch: got %d want %d", got.TokenUsage.PromptTokens, 101)
 			}
-			if got.TokenUsage.CompletionTokens != 111 {
-				t.Fatalf("completion tokens mismatch: got %d want %d", got.TokenUsage.CompletionTokens, 111)
+			if got.TokenUsage.CompletionTokens != 115 {
+				t.Fatalf("completion tokens mismatch: got %d want %d", got.TokenUsage.CompletionTokens, 115)
 			}
-			if got.TokenUsage.TotalTokens != 210 {
-				t.Fatalf("total tokens mismatch: got %d want %d", got.TokenUsage.TotalTokens, 210)
+			if got.TokenUsage.TotalTokens != 216 {
+				t.Fatalf("total tokens mismatch: got %d want %d", got.TokenUsage.TotalTokens, 216)
 			}
 			return got
 		},
@@ -1187,14 +1187,14 @@ func Test_Querier_Query_ToolCallRecursion_AccumulatesNestedTokenUsageForCostEnri
 			if got.TokenUsage == nil {
 				t.Fatalf("expected token usage to be populated before enrich")
 			}
-			if got.TokenUsage.PromptTokens != 99 {
-				t.Fatalf("prompt tokens mismatch: got %d want %d", got.TokenUsage.PromptTokens, 99)
+			if got.TokenUsage.PromptTokens != 101 {
+				t.Fatalf("prompt tokens mismatch: got %d want %d", got.TokenUsage.PromptTokens, 101)
 			}
-			if got.TokenUsage.CompletionTokens != 111 {
-				t.Fatalf("completion tokens mismatch: got %d want %d", got.TokenUsage.CompletionTokens, 111)
+			if got.TokenUsage.CompletionTokens != 115 {
+				t.Fatalf("completion tokens mismatch: got %d want %d", got.TokenUsage.CompletionTokens, 115)
 			}
-			if got.TokenUsage.TotalTokens != 210 {
-				t.Fatalf("total tokens mismatch: got %d want %d", got.TokenUsage.TotalTokens, 210)
+			if got.TokenUsage.TotalTokens != 216 {
+				t.Fatalf("total tokens mismatch: got %d want %d", got.TokenUsage.TotalTokens, 216)
 			}
 			return got
 		},
@@ -1273,14 +1273,14 @@ func Test_Querier_Query_ToolCallRecursion_CostEnrichmentUsesFinalAssistantTurnTo
 			if got.TokenUsage == nil {
 				t.Fatalf("expected token usage to be populated before enrich")
 			}
-			if got.TokenUsage.PromptTokens != 3 {
-				t.Fatalf("prompt tokens mismatch: got %d want %d", got.TokenUsage.PromptTokens, 3)
+			if got.TokenUsage.PromptTokens != 5 {
+				t.Fatalf("prompt tokens mismatch: got %d want %d", got.TokenUsage.PromptTokens, 5)
 			}
-			if got.TokenUsage.CompletionTokens != 5 {
-				t.Fatalf("completion tokens mismatch: got %d want %d", got.TokenUsage.CompletionTokens, 5)
+			if got.TokenUsage.CompletionTokens != 9 {
+				t.Fatalf("completion tokens mismatch: got %d want %d", got.TokenUsage.CompletionTokens, 9)
 			}
-			if got.TokenUsage.TotalTokens != 8 {
-				t.Fatalf("total tokens mismatch: got %d want %d", got.TokenUsage.TotalTokens, 8)
+			if got.TokenUsage.TotalTokens != 14 {
+				t.Fatalf("total tokens mismatch: got %d want %d", got.TokenUsage.TotalTokens, 14)
 			}
 			return got
 		},
@@ -1356,14 +1356,14 @@ func Test_Querier_Query_ToolCallSession_PreservesFinalReplyRoleAndFinalUsage(t *
 			if got.TokenUsage == nil {
 				t.Fatalf("expected token usage to be populated before enrich")
 			}
-			if got.TokenUsage.PromptTokens != 3 {
-				t.Fatalf("prompt tokens mismatch: got %d want %d", got.TokenUsage.PromptTokens, 3)
+			if got.TokenUsage.PromptTokens != 5 {
+				t.Fatalf("prompt tokens mismatch: got %d want %d", got.TokenUsage.PromptTokens, 5)
 			}
-			if got.TokenUsage.CompletionTokens != 5 {
-				t.Fatalf("completion tokens mismatch: got %d want %d", got.TokenUsage.CompletionTokens, 5)
+			if got.TokenUsage.CompletionTokens != 9 {
+				t.Fatalf("completion tokens mismatch: got %d want %d", got.TokenUsage.CompletionTokens, 9)
 			}
-			if got.TokenUsage.TotalTokens != 8 {
-				t.Fatalf("total tokens mismatch: got %d want %d", got.TokenUsage.TotalTokens, 8)
+			if got.TokenUsage.TotalTokens != 14 {
+				t.Fatalf("total tokens mismatch: got %d want %d", got.TokenUsage.TotalTokens, 14)
 			}
 			return got
 		},
@@ -1435,8 +1435,8 @@ func Test_Querier_Query_ToolCallSession_PreservesFinalReplyRoleAndFinalUsage(t *
 	if saved.TokenUsage == nil {
 		t.Fatal("expected token usage to be saved")
 	}
-	if saved.TokenUsage.TotalTokens != 8 {
-		t.Fatalf("expected final token usage total 8, got %d", saved.TokenUsage.TotalTokens)
+	if saved.TokenUsage.TotalTokens != 14 {
+		t.Fatalf("expected final token usage total 14, got %d", saved.TokenUsage.TotalTokens)
 	}
 	if enrichCalls != 1 {
 		t.Fatalf("expected 1 enrich call, got: %d", enrichCalls)

@@ -35,6 +35,36 @@ type sessionFinalizer[C models.StreamCompleter] struct {
 	querier *Querier[C]
 }
 
+// accumulateCompletedUsage sums token usage across every completed model call
+// in a multi-step agent run. Each API call returns usage on its final streaming
+// chunk, and the session runner captures it into CompletedCalls. The last step's
+// FinalUsage alone misses output tokens from earlier tool-call rounds and
+// undercounts by 10-20× for agents that use tools. Summing all CompletedCalls
+// matches the provider's billing (each call is a separate invoice line).
+// Falls back to FinalUsage when CompletedCalls is empty (e.g. single-call runs
+// where the runner hasn't populated the slice).
+func accumulateCompletedUsage(completed []CompletedModelCall, final *pub_models.Usage) *pub_models.Usage {
+	if len(completed) == 0 {
+		return final
+	}
+	var total pub_models.Usage
+	for _, call := range completed {
+		if call.Usage == nil {
+			continue
+		}
+		total.PromptTokens += call.Usage.PromptTokens
+		total.CompletionTokens += call.Usage.CompletionTokens
+		total.TotalTokens += call.Usage.TotalTokens
+		total.PromptTokensDetails.CachedTokens += call.Usage.PromptTokensDetails.CachedTokens
+		total.PromptTokensDetails.AudioTokens += call.Usage.PromptTokensDetails.AudioTokens
+		total.CompletionTokensDetails.ReasoningTokens += call.Usage.CompletionTokensDetails.ReasoningTokens
+		total.CompletionTokensDetails.AudioTokens += call.Usage.CompletionTokensDetails.AudioTokens
+		total.CompletionTokensDetails.AcceptedPredictionTokens += call.Usage.CompletionTokensDetails.AcceptedPredictionTokens
+		total.CompletionTokensDetails.RejectedPredictionTokens += call.Usage.CompletionTokensDetails.RejectedPredictionTokens
+	}
+	return &total
+}
+
 func (f sessionFinalizer[C]) Finalize(session *QuerySession) {
 	if session == nil || session.Finalized {
 		return
@@ -57,9 +87,7 @@ func (f sessionFinalizer[C]) Finalize(session *QuerySession) {
 		})
 	}
 	q.chat = session.Chat
-	if session.FinalUsage != nil {
-		session.Chat.TokenUsage = session.FinalUsage
-	}
+	session.Chat.TokenUsage = accumulateCompletedUsage(session.CompletedCalls, session.FinalUsage)
 
 	if session.ShouldSaveReply {
 		if q.costManager != nil {
