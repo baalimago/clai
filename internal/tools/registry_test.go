@@ -2,6 +2,7 @@ package tools
 
 import (
 	"slices"
+	"sync"
 	"testing"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -84,7 +85,6 @@ func TestRegistry_Get(t *testing.T) {
 func TestInitRegistersApplyPatch(t *testing.T) {
 	origRegistry := Registry
 	Registry = NewRegistry()
-	Registry.hasBeenInit = false
 	t.Cleanup(func() {
 		Registry = origRegistry
 	})
@@ -98,6 +98,23 @@ func TestInitRegistersApplyPatch(t *testing.T) {
 			t.Fatalf("expected %s to be registered", name)
 		}
 	}
+}
+
+func TestInitConcurrent(t *testing.T) {
+	WithTestRegistry(t, func() {
+		var wg sync.WaitGroup
+		for range 8 {
+			wg.Go(func() {
+				Init()
+				// Every caller must observe a fully populated registry once
+				// Init has returned, not only the one which won the race
+				if _, ok := Registry.Get("apply_patch"); !ok {
+					t.Error("expected apply_patch to be registered after Init returned")
+				}
+			})
+		}
+		wg.Wait()
+	})
 }
 
 func TestRegistry_All(t *testing.T) {

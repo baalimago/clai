@@ -13,10 +13,13 @@ import (
 
 // registry is a threadsafe storage for LLMTools.
 type registry struct {
-	mu          sync.RWMutex
-	tools       map[string]models.LLMTool
-	debug       bool
-	hasBeenInit bool
+	mu sync.RWMutex
+	// initOnce guards the one-time population of the registry, see Init. A
+	// concurrent caller arriving mid-initialisation blocks until it has
+	// completed, and so never observes a half-filled registry.
+	initOnce sync.Once
+	tools    map[string]models.LLMTool
+	debug    bool
 }
 
 // NewRegistry returns an empty tools registry.

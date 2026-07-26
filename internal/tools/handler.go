@@ -20,12 +20,16 @@ type contextualTool interface {
 var Registry = NewRegistry()
 
 // Init initializes the global Registry with available local LLM tools.
-// If the Registry has already been initialized, it simply returns.
+// If the Registry has already been initialized, it simply returns. It is safe
+// to call concurrently; the registration happens exactly once and every caller
+// blocks until it has completed.
 func Init() {
-	if Registry.hasBeenInit {
-		return
-	}
-	Registry.hasBeenInit = true
+	Registry.initOnce.Do(registerLocalTools)
+}
+
+// registerLocalTools adds every locally available LLM tool to the global
+// Registry. Only called via Init, which guarantees single execution.
+func registerLocalTools() {
 	Registry.Set(tools.FileTree.Specification().Name, tools.FileTree)
 	Registry.Set(tools.Cat.Specification().Name, tools.Cat)
 	Registry.Set(tools.Find.Specification().Name, tools.Find)
