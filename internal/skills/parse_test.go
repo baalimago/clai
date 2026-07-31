@@ -22,6 +22,30 @@ func TestParseMarkdownWithFrontmatterSupportsIndentedLists(t *testing.T) {
 	}
 }
 
+func TestParseMarkdownWithFrontmatterSupportsLiteralBlockScalar(t *testing.T) {
+	parsed, err := parseMarkdownWithFrontmatter("---\ndescription: |\n  First line.\n  Second line.\n---\nBody")
+	if err != nil {
+		t.Fatalf("parseMarkdownWithFrontmatter() error = %v", err)
+	}
+	if got, want := parsed.Metadata.Description, "First line.\nSecond line."; got != want {
+		t.Fatalf("description = %q, want %q", got, want)
+	}
+}
+
+func TestParseSkillAcceptsFrontmatterOnlySkill(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "frontmatter-only")
+	writeSkill(t, filepath.Join(dir, "SKILL.md"), "---\ndescription: A descriptor-only skill.\n---\n")
+
+	skill, invalid := parseSkill("default", root, dir)
+	if invalid != nil {
+		t.Fatalf("parseSkill() invalid = %#v", invalid)
+	}
+	if skill.Parsed.NormalizedBody != "" {
+		t.Fatalf("NormalizedBody = %q, want empty", skill.Parsed.NormalizedBody)
+	}
+}
+
 func TestParseSkillPreservesInvalidReason(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "broken")

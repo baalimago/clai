@@ -49,7 +49,7 @@ Examples:
 Each `SKILL.md` file contains:
 
 1. optional frontmatter delimited by `---`
-2. markdown instruction body
+2. an optional markdown instruction body
 
 Example:
 
@@ -90,7 +90,7 @@ The parser records the following frontmatter fields from a constrained line-orie
 
 Unknown fields are preserved in parsed metadata for inspection/debugging but have no runtime effect.
 
-The frontmatter contract for MVP is intentionally limited and does not require full YAML compliance. It supports the metadata surface listed below using simple `key: value` lines plus compact list forms already exercised by clai. Shell-style preprocessing and richer YAML constructs such as nested objects, anchors, multiline scalars, or arbitrary type inference are out of scope.
+The frontmatter contract for MVP is intentionally limited and does not require full YAML compliance. It supports the metadata surface listed below using simple `key: value` lines, compact list forms, and literal (`|`) or folded (`>`) multiline scalar values. Shell-style preprocessing and richer YAML constructs such as nested objects, anchors, and arbitrary type inference are out of scope.
 
 ## Discovery roots
 

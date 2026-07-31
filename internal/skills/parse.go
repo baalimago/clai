@@ -20,9 +20,6 @@ func parseSkill(class, root, dir string) (Skill, *InvalidSkill) {
 	if err != nil {
 		return Skill{}, &InvalidSkill{Class: class, Root: root, Dir: dir, Path: path, Err: err, Diagnostics: parsed.Diagnostics}
 	}
-	if strings.TrimSpace(parsed.NormalizedBody) == "" {
-		return Skill{}, &InvalidSkill{Class: class, Root: root, Dir: dir, Path: path, Err: fmt.Errorf("empty skill body"), Diagnostics: parsed.Diagnostics}
-	}
 	if strings.TrimSpace(parsed.Metadata.Description) == "" {
 		return Skill{}, &InvalidSkill{Class: class, Root: root, Dir: dir, Path: path, Err: fmt.Errorf("missing required description"), Diagnostics: parsed.Diagnostics}
 	}
@@ -69,6 +66,12 @@ func parseMarkdownWithFrontmatter(content string) (ParsedSkill, error) {
 		}
 		key = strings.TrimSpace(key)
 		val = strings.TrimSpace(val)
+		if val == "|" || val == ">" {
+			value, next := parseBlockScalar(lines, idx+1, val)
+			assignMetadata(&parsed, key, value, idx+1)
+			idx = next
+			continue
+		}
 		if val == "" {
 			items, next := parseIndentedList(lines, idx+1)
 			if len(items) > 0 {
@@ -87,6 +90,30 @@ func parseMarkdownWithFrontmatter(content string) (ParsedSkill, error) {
 	parsed.RawBody = body
 	parsed.NormalizedBody = strings.TrimSpace(body)
 	return parsed, nil
+}
+
+func parseBlockScalar(lines []string, start int, style string) (string, int) {
+	items := make([]string, 0)
+	i := start
+	for i < len(lines) {
+		line := lines[i]
+		if strings.TrimSpace(line) == "---" && !hasIndent(line) {
+			break
+		}
+		if strings.TrimSpace(line) != "" && !hasIndent(line) {
+			break
+		}
+		items = append(items, strings.TrimLeft(line, " \t"))
+		i++
+	}
+	if style == ">" {
+		return strings.Join(items, " "), i
+	}
+	return strings.Join(items, "\n"), i
+}
+
+func hasIndent(line string) bool {
+	return strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t")
 }
 
 func parseIndentedList(lines []string, start int) ([]string, int) {
