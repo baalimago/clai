@@ -22,7 +22,7 @@ type Config struct {
 
 var defaultConfig = Config{
 	Enabled:            false,
-	GlobalSkillDirs:    []string{},
+	GlobalSkillDirs:    []string{"~/.agents/skills"},
 	ProjectSkillDirs:   []string{"./agents/skills", ".claude/skills"},
 	TrustAllSkills:     false,
 	MaxActivatedSkills: 10,
