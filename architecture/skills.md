@@ -185,6 +185,8 @@ Initial shape:
 
 `globalSkillDirs` is a list of absolute or user-home-relative directories. Each listed directory is scanned as a root containing `<skill-name>/SKILL.md` children.
 
+By default, `globalSkillDirs` contains `~/.agents/skills`, which resolves to `/home/<user>/.agents/skills` for the active user.
+
 `projectSkillDirs` is a list of relative directory patterns, evaluated from the current working directory upward toward the filesystem root. For each ancestor directory, clai checks each configured relative path and scans any existing match as a project skill root.
 
 `trust_all_skills` disables interactive trust prompting and automatically trusts every discovered skill for activation eligibility. Even when this flag is enabled, clai still records the trusted path+hash entries so the trust cache remains warm if the flag is later disabled.
@@ -238,7 +240,7 @@ A skill is **valid** when:
 - `SKILL.md` exists
 - frontmatter, if present, parses successfully according to the MVP constrained format
 - the directory name is non-empty
-- the body is non-empty after normalization
+- the required `description` metadata is non-empty after normalization
 
 A skill is **invalid** when parsing fails or required structural conditions are not met. Invalid skills are skipped and reported in the discovery logs.
 
@@ -538,7 +540,7 @@ Initial contents:
 ```json
 {
   "enabled": false,
-  "globalSkillDirs": [],
+  "globalSkillDirs": ["~/.agents/skills"],
   "projectSkillDirs": ["./agents/skills", ".claude/skills"],
   "trust_all_skills": false,
   "maxActivatedSkills": 10

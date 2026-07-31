@@ -15,6 +15,9 @@ func TestLoadConfigDefaults(t *testing.T) {
 	if len(cfg.ProjectSkillDirs) != 2 || cfg.ProjectSkillDirs[0] != "./agents/skills" || cfg.ProjectSkillDirs[1] != ".claude/skills" {
 		t.Fatalf("unexpected project dirs: %#v", cfg.ProjectSkillDirs)
 	}
+	if len(cfg.GlobalSkillDirs) != 1 || cfg.GlobalSkillDirs[0] != "~/.agents/skills" {
+		t.Fatalf("unexpected global dirs: %#v", cfg.GlobalSkillDirs)
+	}
 	if cfg.MaxActivatedSkills != 10 {
 		t.Fatalf("unexpected max activated skills: %d", cfg.MaxActivatedSkills)
 	}
