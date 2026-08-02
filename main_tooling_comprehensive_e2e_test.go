@@ -38,10 +38,11 @@ func Test_e2e_sync_cmd_freetext(t *testing.T) {
 	_ = setupMainTestConfigDir(t)
 	t.Setenv("CLAI_MOCK_CMD_COMMAND", `printf "freetext-ok"`)
 
-	// freetext_cmd and cmd share the same mock env var
+	// cmd and its legacy alias freetext_command share the same mock env var;
+	// the tool is invoked under its canonical name cmd.
 	var gotStatus int
 	stdout, stderr := captureStdoutStderr(t, func() {
-		gotStatus = run(strings.Split("-r -cm mock_test -t=freetext_command q tool_freetext_command", " "))
+		gotStatus = run(strings.Split("-r -cm mock_test -t=cmd q tool_cmd", " "))
 	})
 	if gotStatus != 0 {
 		t.Fatalf("expected success, got %d stdout=%q stderr=%q", gotStatus, stdout, stderr)
@@ -71,7 +72,7 @@ func Test_e2e_async_await_timeout(t *testing.T) {
 
 	var gotStatus int
 	stdout, stderr := captureStdoutStderr(t, func() {
-		gotStatus = run(strings.Split("-r -cm mock_test -t=async_cmd_run,async_cmd_await q tool_async_cmd_run tool_async_cmd_await", " "))
+		gotStatus = run(strings.Split("-r -cm mock_test -t=async_cmd,async_cmd_await q tool_async_cmd tool_async_cmd_await", " "))
 	})
 	if gotStatus != 0 {
 		t.Fatalf("expected success, got %d stdout=%q stderr=%q", gotStatus, stdout, stderr)
@@ -98,7 +99,7 @@ func Test_e2e_async_long_running_logs(t *testing.T) {
 
 	var gotStatus int
 	stdout, stderr := captureStdoutStderr(t, func() {
-		gotStatus = run(strings.Split("-r -cm mock_test -t=async_cmd_run,async_cmd_logs,async_cmd_await,async_cmd_logs q tool_async_cmd_run tool_async_cmd_logs tool_async_cmd_await tool_async_cmd_logs", " "))
+		gotStatus = run(strings.Split("-r -cm mock_test -t=async_cmd,async_cmd_logs,async_cmd_await,async_cmd_logs q tool_async_cmd tool_async_cmd_logs tool_async_cmd_await tool_async_cmd_logs", " "))
 	})
 	if gotStatus != 0 {
 		t.Fatalf("expected success, got %d stdout=%q stderr=%q", gotStatus, stdout, stderr)
@@ -127,7 +128,7 @@ func Test_e2e_async_cancel_then_status(t *testing.T) {
 
 	var gotStatus int
 	stdout, stderr := captureStdoutStderr(t, func() {
-		gotStatus = run(strings.Split("-r -cm mock_test -t=async_cmd_run,async_cmd_cancel,async_cmd_status q tool_async_cmd_run tool_async_cmd_cancel tool_async_cmd_status", " "))
+		gotStatus = run(strings.Split("-r -cm mock_test -t=async_cmd,async_cmd_cancel,async_cmd_status q tool_async_cmd tool_async_cmd_cancel tool_async_cmd_status", " "))
 	})
 	if gotStatus != 0 {
 		t.Fatalf("expected success, got %d stdout=%q stderr=%q", gotStatus, stdout, stderr)
@@ -154,7 +155,7 @@ func Test_e2e_async_failed_command(t *testing.T) {
 
 	var gotStatus int
 	stdout, stderr := captureStdoutStderr(t, func() {
-		gotStatus = run(strings.Split("-r -cm mock_test -t=async_cmd_run,async_cmd_await,async_cmd_status q tool_async_cmd_run tool_async_cmd_await tool_async_cmd_status", " "))
+		gotStatus = run(strings.Split("-r -cm mock_test -t=async_cmd,async_cmd_await,async_cmd_status q tool_async_cmd tool_async_cmd_await tool_async_cmd_status", " "))
 	})
 	if gotStatus != 0 {
 		t.Fatalf("expected success, got %d stdout=%q stderr=%q", gotStatus, stdout, stderr)
@@ -167,7 +168,7 @@ func Test_e2e_async_failed_command(t *testing.T) {
 
 // --- Combined Sync + Async Scenarios ---
 
-// Test_e2e_sync_plus_async: cmd (sync) + async_cmd_run + async_cmd_await + async_cmd_logs
+// Test_e2e_sync_plus_async: cmd (sync) + async_cmd + async_cmd_await + async_cmd_logs
 func Test_e2e_sync_plus_async(t *testing.T) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
@@ -184,7 +185,7 @@ func Test_e2e_sync_plus_async(t *testing.T) {
 
 	var gotStatus int
 	stdout, stderr := captureStdoutStderr(t, func() {
-		gotStatus = run(strings.Split("-r -cm mock_test -t=cmd,async_cmd_run,async_cmd_await,async_cmd_logs q tool_cmd tool_async_cmd_run tool_async_cmd_await tool_async_cmd_logs", " "))
+		gotStatus = run(strings.Split("-r -cm mock_test -t=cmd,async_cmd,async_cmd_await,async_cmd_logs q tool_cmd tool_async_cmd tool_async_cmd_await tool_async_cmd_logs", " "))
 	})
 	if gotStatus != 0 {
 		t.Fatalf("expected success, got %d stdout=%q stderr=%q", gotStatus, stdout, stderr)
@@ -194,7 +195,7 @@ func Test_e2e_sync_plus_async(t *testing.T) {
 		t.Fatalf("expected sync-result in output, got %q", combined)
 	}
 	if !strings.Contains(combined, `"async_cmd_id":"async_cmd_`) {
-		t.Fatalf("expected async_cmd_run output, got %q", combined)
+		t.Fatalf("expected async_cmd output, got %q", combined)
 	}
 	if !strings.Contains(combined, `"result":"completed"`) {
 		t.Fatalf("expected completed await result, got %q", combined)
@@ -223,7 +224,7 @@ func Test_e2e_wildcard_all_tools(t *testing.T) {
 
 	var gotStatus int
 	stdout, stderr := captureStdoutStderr(t, func() {
-		gotStatus = run(strings.Split("-r -cm mock_test -t=* q tool_cmd tool_async_cmd_run tool_async_cmd_await tool_async_cmd_logs", " "))
+		gotStatus = run(strings.Split("-r -cm mock_test -t=* q tool_cmd tool_async_cmd tool_async_cmd_await tool_async_cmd_logs", " "))
 	})
 	if gotStatus != 0 {
 		t.Fatalf("expected success, got %d stdout=%q stderr=%q", gotStatus, stdout, stderr)
@@ -255,7 +256,7 @@ func Test_e2e_async_status_live(t *testing.T) {
 
 	var gotStatus int
 	stdout, stderr := captureStdoutStderr(t, func() {
-		gotStatus = run(strings.Split("-r -cm mock_test -t=async_cmd_run,async_cmd_status,async_cmd_await q tool_async_cmd_run tool_async_cmd_status tool_async_cmd_await", " "))
+		gotStatus = run(strings.Split("-r -cm mock_test -t=async_cmd,async_cmd_status,async_cmd_await q tool_async_cmd tool_async_cmd_status tool_async_cmd_await", " "))
 	})
 	if gotStatus != 0 {
 		t.Fatalf("expected success, got %d stdout=%q stderr=%q", gotStatus, stdout, stderr)

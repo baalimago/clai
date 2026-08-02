@@ -34,6 +34,7 @@ Flags:
   -vd, -video-dir string           Set dir for generated videos. Default $HOME/Videos (default %v)
   -vp, -video-prefix string        Set prefix for generated videos. Default 'clai' (default %v)
   -t, -tools string                Set to <tool_a>,<tool_b> for specific tool, or */"" to use all built in or MCP tools. See available tools with 'clai tools' (default %v)
+  -cmd-ban string                  Append comma-separated command bans for this run (e.g. "rm,sudo"). Commands matching a ban are refused before they spawn.
   -g, -glob string                 Set the glob to use for globbing. (default '%v')
   -p, -profile string              Set the profile which should be used. For details, see 'clai help profile'. (default '%v')
   -prp, profile-path string        Set the path to a profile file to use instead of -p/-profile.

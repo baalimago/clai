@@ -3,9 +3,11 @@ package text
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/baalimago/clai/internal/text/generic"
+	"github.com/baalimago/clai/internal/utils"
 )
 
 func TestResponseFormatFromGeneric_Nil(t *testing.T) {
@@ -137,5 +139,23 @@ func TestLoadResponseFormat_InvalidJSON(t *testing.T) {
 	err := c.LoadResponseFormat(path)
 	if err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestConfigurations_CmdBanPersistsViaTextConfigJSON(t *testing.T) {
+	dir := t.TempDir()
+	confPath := filepath.Join(dir, "textConfig.json")
+	content := `{"model":"test","cmd-ban":["rm","sudo"]}`
+	if err := os.WriteFile(confPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile(textConfig.json): %v", err)
+	}
+
+	conf, err := utils.LoadConfigFromFile(dir, "textConfig.json", nil, &Default)
+	if err != nil {
+		t.Fatalf("LoadConfigFromFile: %v", err)
+	}
+	want := []string{"rm", "sudo"}
+	if !slices.Equal(conf.CmdBan, want) {
+		t.Fatalf("expected CmdBan %v, got %v", want, conf.CmdBan)
 	}
 }

@@ -28,7 +28,7 @@ func Test_e2e_tooling_async_basic_spawn_await_and_logs(t *testing.T) {
 
 	var gotStatus int
 	stdout, stderr := captureStdoutStderr(t, func() {
-		gotStatus = run(strings.Split("-r -cm mock_test -t=async_cmd_run,async_cmd_await,async_cmd_logs q tool_async_cmd_run tool_async_cmd_await tool_async_cmd_logs", " "))
+		gotStatus = run(strings.Split("-r -cm mock_test -t=async_cmd,async_cmd_await,async_cmd_logs q tool_async_cmd tool_async_cmd_await tool_async_cmd_logs", " "))
 	})
 	if gotStatus != 0 {
 		t.Fatalf("expected success, got %d stdout=%q stderr=%q", gotStatus, stdout, stderr)
@@ -61,7 +61,7 @@ func Test_e2e_tooling_async_live_logs_and_cancel(t *testing.T) {
 
 	var gotStatus int
 	stdout, stderr := captureStdoutStderr(t, func() {
-		gotStatus = run(strings.Split("-r -cm mock_test -t=async_cmd_run,async_cmd_logs,async_cmd_cancel,async_cmd_status q tool_async_cmd_run tool_async_cmd_logs tool_async_cmd_cancel tool_async_cmd_status", " "))
+		gotStatus = run(strings.Split("-r -cm mock_test -t=async_cmd,async_cmd_logs,async_cmd_cancel,async_cmd_status q tool_async_cmd tool_async_cmd_logs tool_async_cmd_cancel tool_async_cmd_status", " "))
 	})
 	if gotStatus != 0 {
 		t.Fatalf("expected success, got %d stdout=%q stderr=%q", gotStatus, stdout, stderr)
@@ -92,7 +92,7 @@ func Test_e2e_tooling_wildcard_cmd_allows_cmd_and_async_cmd_tools(t *testing.T) 
 
 	var gotStatus int
 	stdout, stderr := captureStdoutStderr(t, func() {
-		gotStatus = run(strings.Split("-r -cm mock_test -t=*cmd* q tool_cmd tool_async_cmd_run tool_async_cmd_await tool_async_cmd_logs", " "))
+		gotStatus = run(strings.Split("-r -cm mock_test -t=*cmd* q tool_cmd tool_async_cmd tool_async_cmd_await tool_async_cmd_logs", " "))
 	})
 	if gotStatus != 0 {
 		t.Fatalf("expected success, got %d stdout=%q stderr=%q", gotStatus, stdout, stderr)
@@ -102,7 +102,7 @@ func Test_e2e_tooling_wildcard_cmd_allows_cmd_and_async_cmd_tools(t *testing.T) 
 		t.Fatalf("expected cmd output in transcript, got %q", combined)
 	}
 	if !strings.Contains(combined, `"async_cmd_id":"async_cmd_`) {
-		t.Fatalf("expected async_cmd_run output in transcript, got %q", combined)
+		t.Fatalf("expected async_cmd output in transcript, got %q", combined)
 	}
 	if !strings.Contains(combined, `"result":"completed"`) {
 		t.Fatalf("expected async_cmd_await completion in transcript, got %q", combined)
@@ -147,13 +147,13 @@ func Test_async_session_cleanup_cancels_orphanable_processes(t *testing.T) {
 	var snap pkgtools.AsyncCmdSnapshot
 	for time.Now().Before(deadline) {
 		snap = pkgtools.AsyncCmdSnapshotForTests()[asyncCmdID]
-		if snap.Status == "cancelled" || snap.Status == "failed" {
+		if snap.Status == "cancelled" {
 			break
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	if snap.Status != "cancelled" && snap.Status != "failed" {
+	if snap.Status != "cancelled" {
 		b, _ := json.Marshal(snap)
-		t.Fatalf("expected session cleanup terminal cancellation path, got %s", string(b))
+		t.Fatalf("expected session cleanup to cancel the process (R6-01), got %s", string(b))
 	}
 }

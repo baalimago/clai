@@ -161,7 +161,13 @@ func (m *asyncCmdManagerImpl) Spawn(parent context.Context, toolName string, spe
 		return nil, fmt.Errorf("create stderr log: %w", err)
 	}
 
-	cmdCtx, cancel := context.WithCancel(parent)
+	// The exec context must not inherit the session parent: session teardown
+	// must go through the single cancellation policy (graceful SIGINT, bounded
+	// grace, force kill) in Cancel via the parent-done goroutine below.
+	// Deriving cmdCtx from parent would let exec.CommandContext's watcher
+	// SIGKILL the process concurrently, racing the cancel flags and producing
+	// a spurious `failed` terminal status (R6-01).
+	cmdCtx, cancel := context.WithCancel(context.Background())
 	cmd := exec.CommandContext(cmdCtx, spec.Command, spec.Args...)
 	cmd.Dir = spec.CWD
 	cmd.Env = mergeEnv(spec.Env)
@@ -267,13 +273,13 @@ func (m *asyncCmdManagerImpl) Cancel(cmdID string) (*asyncCmd, error) {
 		cmd.mu.Unlock()
 		return cmd, nil
 	}
+	// The cancel flags and the signal send form one critical section: a
+	// process that exits because of this signal must not be able to reach
+	// waitForCmd's status write before cancelSent is set, or it would
+	// report a half-set cancel as succeeded (R6-01).
 	cmd.cancelRequested = true
 	proc := cmd.cmd.Process
-	cmd.mu.Unlock()
-
 	sentSignal := proc != nil && syscall.Kill(-proc.Pid, syscall.SIGINT) == nil
-
-	cmd.mu.Lock()
 	cmd.cancelSent = sentSignal
 	cmd.mu.Unlock()
 	select {
@@ -488,8 +494,8 @@ func (t *asyncCmdRunTool) CallWithContext(ctx context.Context, input pub_models.
 
 func (t *asyncCmdRunTool) Specification() pub_models.Specification {
 	return pub_models.Specification{
-		Name:        "async_cmd_run",
-		Description: "Start a subprocess asynchronously without waiting for completion. Executes the command directly, not through an implicit shell.",
+		Name:        "async_cmd",
+		Description: "Start a subprocess asynchronously without waiting for completion. Executes the command directly, not through an implicit shell. Some commands are refused by configured policy and must not be retried.",
 		Inputs: &pub_models.InputSchema{
 			Type:     "object",
 			Required: []string{"command"},
@@ -526,6 +532,9 @@ func callAsyncCmdRun(ctx context.Context, toolName string, input pub_models.Inpu
 	env, err := parseStringMap(input["env"])
 	if err != nil {
 		return "", fmt.Errorf("env: %w", err)
+	}
+	if err := validateCmdNotBannedWithContext(ctx, command, args); err != nil {
+		return "", fmt.Errorf("start async command: %w", err)
 	}
 	cmd, err := asyncCmdManager.Spawn(ctx, toolName, asyncCmdRunSpec{
 		Command: command,

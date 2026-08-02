@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"strings"
+	"sync"
 
 	"github.com/baalimago/clai/internal"
 	"github.com/baalimago/clai/internal/chat"
@@ -23,6 +24,7 @@ type Agent struct {
 	mcpServers     []models.McpServer
 	cfgDir         string
 	toolGlobs      []string
+	cmdBan         []string
 	maxToolCalls   *int
 	responseFormat *models.ResponseFormat
 
@@ -32,6 +34,12 @@ type Agent struct {
 
 	querier priv_models.ChatQuerier
 }
+
+// skipIndexOnce disables the chat index exactly once. Agent.Setup may run for
+// multiple agents concurrently (worklog 2026-08-02-cmd-ban-list, phase 5, R2-01
+// enforcement requires concurrent Setups); an unsynchronized write to
+// chat.SkipIndex from every Setup would race under -race.
+var skipIndexOnce sync.Once
 
 var defaultConf = Agent{
 	model:          "gpt-5.2",
@@ -111,6 +119,21 @@ func WithToolGlobs(globs ...string) Option {
 	}
 }
 
+// WithCmdBanList sets the per-run command ban list for the freetext command
+// tools (cmd, async_cmd; legacy aliases freetext_command, async_cmd_run).
+// Commands matching an entry
+// are refused before spawn and the refusal names the matched entry. The
+// default is empty, which keeps all tools fully permissive.
+//
+// The policy is carried through each query context, so agents with distinct
+// lists can run concurrently in one process. Direct tool calls outside an
+// agent query use the package-level fallback policy.
+func WithCmdBanList(entries ...string) Option {
+	return func(a *Agent) {
+		a.cmdBan = entries
+	}
+}
+
 // WithResponseFormat configures structured output for the agent.
 // Supports "json_object" and "json_schema" types.
 func WithResponseFormat(rf models.ResponseFormat) Option {
@@ -130,6 +153,7 @@ func (a *Agent) asInternalConfig() text.Configurations {
 		Tools:              a.tools,
 		MaxToolCalls:       a.maxToolCalls,
 		RequestedToolGlobs: a.toolGlobs,
+		CmdBan:             a.cmdBan,
 		ResponseFormat:     a.responseFormat,
 		Out:                a.out,
 	}
@@ -139,7 +163,7 @@ func (a *Agent) Setup(ctx context.Context) error {
 	// Embedded consumers (kinoview, etc.) never use CLI list/search/dirscope
 	// features; the chat index is pure overhead that causes OOM on 32-bit ARM
 	// when the conversation directory is large.
-	chat.SkipIndex = true
+	skipIndexOnce.Do(func() { chat.SkipIndex = true })
 
 	if _, err := os.Stat(a.cfgDir); os.IsNotExist(err) {
 		os.Mkdir(a.cfgDir, 0o755)

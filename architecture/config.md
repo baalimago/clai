@@ -181,6 +181,25 @@ Notable rules:
 - if nothing valid remains, tooling is disabled for that run.
 - MCP tools are not validated against the local registry; names prefixed with `mcp_` are allowed.
 
+### Command ban configuration
+
+The freetext command tools (`cmd`, `async_cmd`; legacy aliases
+`freetext_command`, `async_cmd_run`) can be restricted with a command ban
+list. The effective list is purely additive (D5): no source removes another
+source's bans.
+
+- `textConfig.json`: `"cmd-ban": ["rm", "git commit"]`
+- profiles: `"cmd-ban": ["git commit"]` — merges onto the file base only
+  when explicitly set; an omitted or explicitly empty list contributes
+  nothing
+- CLI: `-cmd-ban=rm,git commit` — appends, comma-separated
+- agent API: `WithCmdBanList(...)` (see `pkg/agent`)
+
+A command matching any entry is refused before it spawns; the refusal names
+the matched entry and does not abort the run. See `architecture/tooling.md`
+(Security, "Command ban list") for the matching semantics and documented
+limits.
+
 ### Skills enablement configuration
 
 Skills are controlled as an explicit opt-in subsystem.

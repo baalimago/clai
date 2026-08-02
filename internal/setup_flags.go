@@ -36,6 +36,10 @@ type Configurations struct {
 	//   "a,b,c" => only these tools
 	UseTools  string
 	UseSkills string
+	// CmdBan is the raw comma-separated -cmd-ban flag value. Entries are
+	// parsed (split, trimmed, empties dropped) and appended onto the
+	// file+profile base in setupCmdBanConfig; the flag can only add bans.
+	CmdBan string
 	// UseLookback enables conversation lookback when true.
 	// When false (default), defers to profile/file configuration.
 	UseLookback bool
@@ -119,6 +123,7 @@ func parseFlags(defaults Configurations, args []string) (Configurations, []strin
 	// Use: -t=* or -t=a,b ("-t" without value is undefined/ignored).
 	useToolsShort := fs.String("t", defaults.UseTools, "Enable tools. Use '*' for all tools or comma-separated list for specific tools.")
 	useToolsLong := fs.String("tools", defaults.UseTools, "Enable tools. Use '*' for all tools or comma-separated list for specific tools.")
+	cmdBan := fs.String("cmd-ban", defaults.CmdBan, "Append comma-separated command ban entries for this run (e.g. 'rm,sudo'). Commands matching a ban are refused before they spawn.")
 	useSkillsShort := fs.String("s", defaults.UseSkills, "Enable skills. Use '*' to enable or 'none' to disable for the current run.")
 	useSkillsLong := fs.String("skills", defaults.UseSkills, "Enable skills. Use '*' to enable or 'none' to disable for the current run.")
 	useLookbackShort := fs.Bool("lb", defaults.UseLookback, "Enable conversation lookback (recent-conversations memory + search/inspect/read tools).")
@@ -194,6 +199,7 @@ func parseFlags(defaults Configurations, args []string) (Configurations, []strin
 		DirReplyMode:       dirReplyMode,
 		UseTools:           useTools,
 		UseSkills:          useSkills,
+		CmdBan:             *cmdBan,
 		UseLookback:        useLookback,
 		UseLookbackSet:     useLookbackSet,
 		Glob:               glob,

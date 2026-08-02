@@ -27,11 +27,13 @@ V1 includes:
 
 - a session-bound in-memory async command registry
 - subprocess-backed async commands only
-- `async_cmd_run`
+- `async_cmd`
 - `async_cmd_status`
 - `async_cmd_logs`
 - `async_cmd_await` for one or more explicit `async_cmd_id` values
 - `async_cmd_cancel`
+- `async_cmd_run` as a legacy alias for `async_cmd` (pre-rename callers keep
+  working; `async_cmd` is canonical)
 - bounded previews plus on-disk logs
 - cleanup of all session-owned async commands on session end
 
@@ -126,7 +128,7 @@ Each async command should have a structured record with fields roughly like thes
 {
   "async_cmd_id": "async_cmd_...",
   "kind": "process",
-  "tool_name": "async_cmd_run",
+  "tool_name": "async_cmd",
   "owner": "session",
   "status": "starting|running|succeeded|failed|cancelled",
   "started_at": "RFC3339 timestamp",
@@ -231,12 +233,17 @@ This layer should not know about LLM vendors.
 
 These are the tools exposed to the model, for example:
 
-- `async_cmd_run`
+- `async_cmd`
 - `async_cmd_status`
 - `async_cmd_await`
 - `async_cmd_cancel`
 - `async_cmd_list`
 - `async_cmd_logs`
+
+`async_cmd_run` is registered as a legacy alias for `async_cmd` (registry
+`SetAlias`): existing callers that selected or invoked the old name keep
+working unchanged, and `clai tools` groups it under `async_cmd` instead of
+listing it twice. New callers should use `async_cmd`.
 
 These tools translate JSON input/output into substrate operations.
 
@@ -273,7 +280,7 @@ Add a small, general tool surface for async lifecycle management.
 
 Recommended minimum set:
 
-#### `async_cmd_run`
+#### `async_cmd`
 
 Starts a subprocess and returns a structured async command handle.
 
@@ -454,7 +461,7 @@ No future/promise abstraction is required.
 
 The immediate output of each async lifecycle tool call is still captured like any other tool result through the normal tool invocation path and appended to the session transcript. This means:
 
-- `async_cmd_run` returns the initial handle payload into the transcript
+- `async_cmd` returns the initial handle payload into the transcript
 - `async_cmd_status`, `async_cmd_logs`, `async_cmd_await`, and `async_cmd_cancel` each append their structured result payloads into the transcript
 - the referenced stdout/stderr log files complement those transcript entries with stream-oriented process output suitable for deeper investigation by both agent and user
 
@@ -612,7 +619,7 @@ Assert:
 The lowest-risk order is:
 
 1. extract a shared async command manager
-2. add `async_cmd_run`
+2. add `async_cmd`
 3. add `async_cmd_status`, `async_cmd_logs`, `async_cmd_await`, and `async_cmd_cancel`
 4. implement retention, not-found handling, and cancellation semantics as first-class tests
 5. remove `clai_run`-style worker-specific tooling rather than preserving it as part of the target design

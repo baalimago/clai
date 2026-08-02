@@ -41,8 +41,11 @@ func registerLocalTools() {
 	Registry.Set(tools.Go.Specification().Name, tools.Go)
 	Registry.Set(tools.WriteFile.Specification().Name, tools.WriteFile)
 	Registry.Set(tools.ApplyPatch.Specification().Name, tools.ApplyPatch)
-	Registry.Set(tools.FreetextCmd.Specification().Name, tools.FreetextCmd)
 	Registry.Set(tools.Cmd.Specification().Name, tools.Cmd)
+	// Legacy production alias: freetext_command predates the cmd name and is
+	// the same freetext shell tool. It stays resolvable and selectable, and
+	// the clai tools listing groups it under cmd.
+	Registry.SetAlias("freetext_command", tools.Cmd.Specification().Name, tools.Cmd)
 	Registry.Set(tools.Sed.Specification().Name, tools.Sed)
 	Registry.Set(tools.RowsBetween.Specification().Name, tools.RowsBetween)
 	Registry.Set(tools.LineCount.Specification().Name, tools.LineCount)
@@ -56,6 +59,11 @@ func registerLocalTools() {
 	Registry.Set(tools.ClaiResult.Specification().Name, tools.ClaiResult)
 	Registry.Set(tools.ClaiWaitForWorkers.Specification().Name, tools.ClaiWaitForWorkers)
 	Registry.Set(tools.AsyncCmdRun.Specification().Name, tools.AsyncCmdRun)
+	// Legacy production alias: async_cmd_run predates the async_cmd rename.
+	// Existing callers, tool-glob selections, and mock-vendor traffic keep
+	// working; async_cmd is the canonical name and the clai tools listing
+	// groups the alias under it.
+	Registry.SetAlias("async_cmd_run", tools.AsyncCmdRun.Specification().Name, tools.AsyncCmdRun)
 	Registry.Set(tools.AsyncCmdStatus.Specification().Name, tools.AsyncCmdStatus)
 	Registry.Set(tools.AsyncCmdLogs.Specification().Name, tools.AsyncCmdLogs)
 	Registry.Set(tools.AsyncCmdAwait.Specification().Name, tools.AsyncCmdAwait)

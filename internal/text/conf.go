@@ -49,6 +49,13 @@ type Configurations struct {
 	ProfilePath         string          `json:"-"`
 	ProfileUseSkillsSet bool            `json:"-"`
 	RequestedToolGlobs  []string        `json:"-"`
+	// CmdBan is the per-run command ban list for the freetext command tools
+	// (cmd, async_cmd; legacy aliases freetext_command, async_cmd_run).
+	// Commands matching an entry are
+	// refused before spawn (worklog 2026-08-02-cmd-ban-list). The cascade is
+	// purely additive: textConfig.json + profile cmd-ban + flag -cmd-ban +
+	// agent API; no source removes another source's bans.
+	CmdBan []string `json:"cmd-ban"`
 	// ShellContext is a context definition name for ASC (auto-append shell context).
 	// When non-empty, clai will load <configDir>/shellContexts/<name>.json and insert
 	// the rendered template block into the system prompt instead of the user prompt.
@@ -103,11 +110,15 @@ func (c Configurations) UsingProfile() bool {
 
 // Profile which allows for specialized ai configurations for specific tasks
 type Profile struct {
-	Name            string                          `json:"name"`
-	Model           string                          `json:"model"`
-	UseTools        bool                            `json:"use_tools"`
-	UseSkills       *bool                           `json:"use_skills,omitempty"`
-	Tools           []string                        `json:"tools"`
+	Name      string   `json:"name"`
+	Model     string   `json:"model"`
+	UseTools  bool     `json:"use_tools"`
+	UseSkills *bool    `json:"use_skills,omitempty"`
+	Tools     []string `json:"tools"`
+	// CmdBan merges onto the file base in ProfileOverrides. An omitted or
+	// explicitly empty list contributes nothing (purely additive cascade,
+	// worklog 2026-08-02-cmd-ban-list R1-04 revision).
+	CmdBan          []string                        `json:"cmd-ban,omitempty"`
 	Prompt          string                          `json:"prompt"`
 	SaveReplyAsConv *bool                           `json:"save-reply-as-conv,omitempty"`
 	McpServers      map[string]pub_models.McpServer `json:"mcp_servers,omitempty"`

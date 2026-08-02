@@ -19,12 +19,22 @@ type registry struct {
 	// completed, and so never observes a half-filled registry.
 	initOnce sync.Once
 	tools    map[string]models.LLMTool
-	debug    bool
+	// aliases maps alias tool names to their canonical tool name. The alias
+	// name is also a real key in tools (same tool instance), so Get and
+	// WildcardGet keep working; the alias map only exists so the clai tools
+	// listing can group aliases under their canonical entry instead of
+	// repeating the description.
+	aliases map[string]string
+	debug   bool
 }
 
 // NewRegistry returns an empty tools registry.
 func NewRegistry() *registry {
-	return &registry{tools: make(map[string]models.LLMTool), debug: misc.Truthy(os.Getenv("DEBUG"))}
+	return &registry{
+		tools:   make(map[string]models.LLMTool),
+		aliases: make(map[string]string),
+		debug:   misc.Truthy(os.Getenv("DEBUG")),
+	}
 }
 
 // Get returns the tool registered under name.
@@ -86,6 +96,26 @@ func (r *registry) Set(name string, t models.LLMTool) {
 	r.mu.Unlock()
 }
 
+// SetAlias registers t under alias (so Get/WildcardGet keep resolving it) and
+// records canonical as the name the alias points at. canonical must already be
+// registered (it usually is: SetAlias is called right after Set(canonical, t)).
+func (r *registry) SetAlias(alias, canonical string, t models.LLMTool) {
+	r.mu.Lock()
+	if _, ok := r.tools[canonical]; !ok {
+		ancli.Warnf("SetAlias: canonical tool '%s' for alias '%s' is not registered", canonical, alias)
+	}
+	r.tools[alias] = t
+	r.aliases[alias] = canonical
+	r.mu.Unlock()
+}
+
+// Aliases returns a copy of the alias → canonical name map.
+func (r *registry) Aliases() map[string]string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return maps.Clone(r.aliases)
+}
+
 // All returns a copy of all registered tools keyed by name.
 func (r *registry) All() map[string]models.LLMTool {
 	r.mu.RLock()
@@ -99,5 +129,6 @@ func (r *registry) All() map[string]models.LLMTool {
 func (r *registry) Reset() {
 	r.mu.Lock()
 	r.tools = make(map[string]models.LLMTool)
+	r.aliases = make(map[string]string)
 	r.mu.Unlock()
 }
