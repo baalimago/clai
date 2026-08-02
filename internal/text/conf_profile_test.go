@@ -3,6 +3,7 @@ package text
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -86,5 +87,79 @@ func TestConfigurations_ProfileOverrides_ExplicitFalseKeepsSaveReplyAsConvDisabl
 
 	if conf.SaveReplyAsConv {
 		t.Fatalf("expected explicit false profile save-reply-as-conv to stay disabled")
+	}
+}
+
+func TestConfigurations_ProfileOverrides_CmdBanCascade(t *testing.T) {
+	tests := []struct {
+		name        string
+		profileJSON string
+		want        []string
+	}{
+		{
+			name:        "Explicit cmd-ban merges onto file base",
+			profileJSON: `{"name":"gopher","model":"test","cmd-ban":["git commit"]}`,
+			want:        []string{"rm", "git commit"},
+		},
+		{
+			name:        "Omitted cmd-ban contributes nothing",
+			profileJSON: `{"name":"gopher","model":"test"}`,
+			want:        []string{"rm"},
+		},
+		{
+			name:        "Explicit empty cmd-ban contributes nothing",
+			profileJSON: `{"name":"gopher","model":"test","cmd-ban":[]}`,
+			want:        []string{"rm"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			confDir := t.TempDir()
+			t.Setenv("CLAI_CONFIG_DIR", confDir)
+
+			profilePath := filepath.Join(confDir, "profiles")
+			if err := os.MkdirAll(profilePath, 0o755); err != nil {
+				t.Fatalf("MkdirAll(%q): %v", profilePath, err)
+			}
+			if err := os.WriteFile(filepath.Join(profilePath, "gopher.json"), []byte(tt.profileJSON), 0o644); err != nil {
+				t.Fatalf("WriteFile(profile): %v", err)
+			}
+
+			conf := Default
+			conf.UseProfile = "gopher"
+			conf.CmdBan = []string{"rm"}
+
+			if err := conf.ProfileOverrides(); err != nil {
+				t.Fatalf("ProfileOverrides: %v", err)
+			}
+
+			if !slices.Equal(conf.CmdBan, tt.want) {
+				t.Fatalf("expected CmdBan %v, got %v", tt.want, conf.CmdBan)
+			}
+		})
+	}
+}
+
+func TestFindProfile_CmdBanPersistsViaJSON(t *testing.T) {
+	confDir := t.TempDir()
+	t.Setenv("CLAI_CONFIG_DIR", confDir)
+
+	profilePath := filepath.Join(confDir, "profiles")
+	if err := os.MkdirAll(profilePath, 0o755); err != nil {
+		t.Fatalf("MkdirAll(%q): %v", profilePath, err)
+	}
+	profileJSON := `{"name":"john","model":"test","cmd-ban":["git commit","sudo"]}`
+	if err := os.WriteFile(filepath.Join(profilePath, "john.json"), []byte(profileJSON), 0o644); err != nil {
+		t.Fatalf("WriteFile(profile): %v", err)
+	}
+
+	prof, err := findProfile("john")
+	if err != nil {
+		t.Fatalf("findProfile: %v", err)
+	}
+	want := []string{"git commit", "sudo"}
+	if !slices.Equal(prof.CmdBan, want) {
+		t.Fatalf("expected CmdBan %v, got %v", want, prof.CmdBan)
 	}
 }

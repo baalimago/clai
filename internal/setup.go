@@ -188,6 +188,23 @@ func setupToolConfig(tConf *text.Configurations, flagSet Configurations) {
 	}
 }
 
+// setupCmdBanConfig appends the -cmd-ban flag entries onto the file+profile
+// base. The cascade is purely additive (D5): the flag can only add
+// restrictions, never remove them. Entries are comma-split, space-trimmed,
+// and empty segments are dropped.
+func setupCmdBanConfig(tConf *text.Configurations, flagSet Configurations) {
+	if flagSet.CmdBan == "" {
+		return
+	}
+	for entry := range strings.SplitSeq(flagSet.CmdBan, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		tConf.CmdBan = append(tConf.CmdBan, entry)
+	}
+}
+
 // setupTextQuerier by doing the most convuluted and organically grown configuration system known to man.
 // Do I know 100% how it works at any given point? Sort of. Not really. Am I constantly impressed over how
 // round this wheel I've reinvented is? Yeah, for sure. May it be simplified? Maybe, but it's features are
@@ -239,6 +256,8 @@ func setupTextQuerierWithConf(ctx context.Context, mode Mode, confDir string, fl
 	}
 
 	setupToolConfig(&tConf, flagSet)
+
+	setupCmdBanConfig(&tConf, flagSet)
 
 	// We want some flags, such as model, to be able to overwrite the profile configurations
 	// If this gets too confusing, it should be changed

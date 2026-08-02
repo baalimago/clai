@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
@@ -26,9 +27,12 @@ func SubCmd(ctx context.Context, args []string) error {
 	}
 
 	tls := Registry.All()
+	aliases := Registry.Aliases()
 	var toolNames []string
 	for k := range tls {
-		toolNames = append(toolNames, k)
+		if _, isAlias := aliases[k]; !isAlias {
+			toolNames = append(toolNames, k)
+		}
 	}
 	sort.Strings(toolNames)
 
@@ -36,8 +40,18 @@ func SubCmd(ctx context.Context, args []string) error {
 	for _, name := range toolNames {
 		tool := tls[name]
 		spec := tool.Specification()
-		prefix := fmt.Sprintf("- %s: ", name)
-
+		aliasSuffix := ""
+		var aliasesOfTool []string
+		for alias, canonical := range aliases {
+			if canonical == name {
+				aliasesOfTool = append(aliasesOfTool, alias)
+			}
+		}
+		if len(aliasesOfTool) > 0 {
+			sort.Strings(aliasesOfTool)
+			aliasSuffix = " (alias: " + strings.Join(aliasesOfTool, ", ") + ")"
+		}
+		prefix := fmt.Sprintf("- %s%s: ", name, aliasSuffix)
 		maybeShortenedDesc, err := table.WidthAppropriateStringTrunc(spec.Description, prefix, 5)
 		if err != nil {
 			return fmt.Errorf("failed to truncate descriptoin: :%v", err)

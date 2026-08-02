@@ -186,9 +186,9 @@ func inputsForTool(toolName string) pub_models.Input {
 		return input
 	case "cmd":
 		return pub_models.Input{"command": envOr("CLAI_MOCK_CMD_COMMAND", `printf mocked-cmd`)}
-	case "freetext_command":
-		return pub_models.Input{"command": envOr("CLAI_MOCK_CMD_COMMAND", `printf mocked-freetext-cmd`)}
-	case "async_cmd_run":
+	case "freetext_command": // legacy alias of cmd
+		return pub_models.Input{"command": envOr("CLAI_MOCK_CMD_COMMAND", `printf mocked-cmd`)}
+	case "async_cmd", "async_cmd_run": // async_cmd_run is the legacy production alias
 		input := pub_models.Input{"command": envOr("CLAI_MOCK_ASYNC_CMD_RUN_COMMAND", "sh")}
 		if rawArgs := os.Getenv("CLAI_MOCK_ASYNC_CMD_RUN_ARGS"); rawArgs != "" {
 			input["args"] = splitMockArgs(rawArgs)

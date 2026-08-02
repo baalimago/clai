@@ -16,6 +16,7 @@ import (
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/internal/vendors/openrouter"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
+	pkgtools "github.com/baalimago/clai/pkg/tools"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
@@ -191,6 +192,10 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	if querier.debug {
 		ancli.PrintOK(fmt.Sprintf("userConf: %v\n", debug.IndentedJsonFmt(userConf)))
 	}
+	// Inject the per-run command ban list at the spawn point before any tool
+	// is registered, so every freetext execution in this run is covered (D6).
+	// Unconditional: the default empty list keeps behavior permissive (D4).
+	pkgtools.SetCmdBanList(userConf.CmdBan)
 	setupTooling(ctx, modelConf, userConf)
 
 	err = modelConf.Setup()

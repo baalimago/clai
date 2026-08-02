@@ -261,6 +261,32 @@ func TestAgent_WithOutputTo_propagates(t *testing.T) {
 	}
 }
 
+func TestAgent_WithCmdBanList(t *testing.T) {
+	a := New(WithCmdBanList("rm", "sudo"))
+	if !reflect.DeepEqual(a.cmdBan, []string{"rm", "sudo"}) {
+		t.Fatalf("expected cmdBan [rm sudo], got %v", a.cmdBan)
+	}
+
+	// The default must stay nil so an agent without the option is permissive.
+	plain := New()
+	if plain.cmdBan != nil {
+		t.Fatalf("expected nil cmdBan by default, got %v", plain.cmdBan)
+	}
+}
+
+func TestAgent_WithCmdBanList_PropagatesToInternalConfig(t *testing.T) {
+	a := New(WithCmdBanList("rm", "sudo"))
+	conf := a.asInternalConfig()
+	if !reflect.DeepEqual(conf.CmdBan, []string{"rm", "sudo"}) {
+		t.Fatalf("expected conf.CmdBan [rm sudo], got %v", conf.CmdBan)
+	}
+
+	plain := New()
+	if plain.asInternalConfig().CmdBan != nil {
+		t.Fatalf("expected nil CmdBan in internal config by default")
+	}
+}
+
 // stringsBuilderWriter is a minimal io.Writer backed by a strings.Builder for tests.
 type stringsBuilderWriter struct{ strings.Builder }
 

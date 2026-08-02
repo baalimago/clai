@@ -199,6 +199,71 @@ func TestAsyncCmdRun_BindsAsyncCmdToSessionContext(t *testing.T) {
 	t.Fatal("expected cancelled terminal status after session cancel")
 }
 
+func TestAsyncCmdRun_SessionCancelNeverLosesToSignalExit(t *testing.T) {
+	// R6-01 regression: cancelling the session context of a process that
+	// exits 0 in response to SIGINT must deterministically report
+	// `cancelled`. Two pre-existing scheduling races could report a
+	// different terminal status instead: the CommandContext watcher's
+	// SIGKILL could land before the cancel flags were written (-> failed),
+	// or waitForCmd could observe a half-set cancel (-> succeeded).
+	if runtime.GOOS == "windows" {
+		t.Skip("test requires POSIX shell")
+	}
+	const (
+		rounds       = 3
+		cmdsPerRound = 10
+	)
+	for round := range rounds {
+		ResetAsyncCmdManagerForTests()
+		ctx, cancel := context.WithCancel(context.Background())
+		ids := make([]string, 0, cmdsPerRound)
+		for i := range cmdsPerRound {
+			out, err := AsyncCmdRun.CallWithContext(ctx, pub_models.Input{
+				"command": "sh",
+				"args":    []any{"-c", "trap 'exit 0' INT TERM; sleep 30"},
+			})
+			if err != nil {
+				t.Fatalf("round %d spawn %d: %v", round, i, err)
+			}
+			var spawned struct {
+				CmdID string `json:"async_cmd_id"`
+			}
+			if err := json.Unmarshal([]byte(out), &spawned); err != nil {
+				t.Fatalf("round %d unmarshal spawn %d: %v", round, i, err)
+			}
+			ids = append(ids, spawned.CmdID)
+		}
+		cancel()
+		statuses := make([]string, len(ids))
+		deadline := time.Now().Add(5 * time.Second)
+	forPoll:
+		for {
+			allTerminal := true
+			for i, id := range ids {
+				statusJSON, err := AsyncCmdStatus.Call(pub_models.Input{"async_cmd_id": id})
+				if err != nil {
+					t.Fatalf("round %d status %s: %v", round, id, err)
+				}
+				statuses[i] = statusJSON
+				if !strings.Contains(statusJSON, `"status":"cancelled"`) &&
+					!strings.Contains(statusJSON, `"status":"succeeded"`) &&
+					!strings.Contains(statusJSON, `"status":"failed"`) {
+					allTerminal = false
+				}
+			}
+			if allTerminal || time.Now().After(deadline) {
+				break forPoll
+			}
+			time.Sleep(25 * time.Millisecond)
+		}
+		for i, statusJSON := range statuses {
+			if !strings.Contains(statusJSON, `"status":"cancelled"`) {
+				t.Fatalf("round %d async_cmd %s: expected cancelled after session cancel, got %s", round, ids[i], statusJSON)
+			}
+		}
+	}
+}
+
 func TestAsyncCmdCancel_PreservesNaturalSuccessRace(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("test requires POSIX shell")

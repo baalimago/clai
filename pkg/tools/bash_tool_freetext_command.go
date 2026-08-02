@@ -22,51 +22,31 @@ type cmdTimeoutState struct {
 	hardKilledAfterTimer atomic.Bool
 }
 
-const cmdDescription = "Run any entered string as a terminal command. Blocking operation. Use only for non-blocking commands, note the timeout."
+const cmdDescription = "Run any entered string as a terminal command. Blocking operation. Use only for non-blocking commands, note the timeout. Some commands are refused by configured policy and must not be retried."
 
 var (
 	defaultCmdTimeout   = 60 * time.Second
 	defaultCmdKillAfter = 90 * time.Second
 )
 
-var (
-	FreetextCmd = FreetextCmdTool{
-		Name:        "freetext_command",
-		Description: cmdDescription,
-		Inputs: &pub_models.InputSchema{
-			Type: "object",
-			Properties: map[string]pub_models.ParameterObject{
-				"command": {
-					Type:        "string",
-					Description: "The freetext comand. May be any string. Will return error on non-zero exit code. ",
-				},
-				"timeout_seconds": {
-					Type:        "number",
-					Description: "Optional timeout in seconds. Defaults to 60 seconds.",
-				},
+var Cmd = FreetextCmdTool{
+	Name:        "cmd",
+	Description: cmdDescription,
+	Inputs: &pub_models.InputSchema{
+		Type: "object",
+		Properties: map[string]pub_models.ParameterObject{
+			"command": {
+				Type:        "string",
+				Description: "The freetext comand. May be any string. Will return error on non-zero exit code.",
 			},
-			Required: []string{"command"},
-		},
-	}
-	Cmd = FreetextCmdTool{
-		Name:        "cmd",
-		Description: cmdDescription,
-		Inputs: &pub_models.InputSchema{
-			Type: "object",
-			Properties: map[string]pub_models.ParameterObject{
-				"command": {
-					Type:        "string",
-					Description: "The freetext comand. May be any string. Will return error on non-zero exit code.",
-				},
-				"timeout_seconds": {
-					Type:        "number",
-					Description: "Optional timeout in seconds. Defaults to 60 seconds.",
-				},
+			"timeout_seconds": {
+				Type:        "number",
+				Description: "Optional timeout in seconds. Defaults to 60 seconds.",
 			},
-			Required: []string{"command"},
 		},
-	}
-)
+		Required: []string{"command"},
+	},
+}
 
 func (r FreetextCmdTool) Call(input pub_models.Input) (string, error) {
 	freetextCmd, ok := input["command"].(string)
@@ -75,6 +55,9 @@ func (r FreetextCmdTool) Call(input pub_models.Input) (string, error) {
 	}
 	if freetextCmd == "" {
 		return "", fmt.Errorf("validate command input: command must not be empty")
+	}
+	if err := validateCmdNotBannedWithContext(context.Background(), freetextCmd, nil); err != nil {
+		return "", fmt.Errorf("run freetext command %q: %w", freetextCmd, err)
 	}
 
 	timeout, err := parseOptionalCmdTimeout(input["timeout_seconds"])
@@ -141,6 +124,9 @@ func (r FreetextCmdTool) CallWithContext(ctx context.Context, input pub_models.I
 	if freetextCmd == "" {
 		return "", fmt.Errorf("validate command input: command must not be empty")
 	}
+	if err := validateCmdNotBannedWithContext(ctx, freetextCmd, nil); err != nil {
+		return "", fmt.Errorf("run freetext command %q: %w", freetextCmd, err)
+	}
 
 	timeout, err := parseOptionalCmdTimeout(input["timeout_seconds"])
 	if err != nil {
@@ -179,7 +165,7 @@ func (r FreetextCmdTool) CallWithContext(ctx context.Context, input pub_models.I
 
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
-			return "", fmt.Errorf("run freetext command %q: timed out after %v; use async_cmd_run for longer-running commands", freetextCmd, timeout)
+			return "", fmt.Errorf("run freetext command %q: timed out after %v; use async_cmd for longer-running commands", freetextCmd, timeout)
 		}
 		if errors.Is(err, context.Canceled) {
 			return "", fmt.Errorf("run freetext command %q: cancelled by session", freetextCmd)
@@ -205,7 +191,7 @@ func timeoutMessage(timeout, killAfter time.Duration, state *cmdTimeoutState) st
 		shutdownState = "the command required a hard-kill"
 	}
 	return fmt.Sprintf(
-		"command timed out after %s. Interrupt was sent. Final shutdown result: %s. Hard-kill deadline was %s since start. Use async_cmd_run for longer-running commands.",
+		"command timed out after %s. Interrupt was sent. Final shutdown result: %s. Hard-kill deadline was %s since start. Use async_cmd for longer-running commands.",
 		formatSeconds(timeout),
 		shutdownState,
 		formatSeconds(killAfter),

@@ -191,7 +191,11 @@ func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, us
 	}
 	// If usetools and no specific tools chocen, assume all are valid
 	if len(userConf.RequestedToolGlobs) == 0 && len(userConf.Tools) == 0 {
+		allTools := make([]pub_models.LLMTool, 0, len(tools.Registry.All()))
 		for _, tool := range tools.Registry.All() {
+			allTools = append(allTools, tool)
+		}
+		for _, tool := range uniqueTools(allTools) {
 			toolBox.RegisterTool(tool)
 		}
 		if userConf.BaseTools == nil {
@@ -217,6 +221,7 @@ func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, us
 		toAdd = append(toAdd, tool)
 	}
 
+	toAdd = uniqueTools(toAdd)
 	for _, tool := range toAdd {
 		if misc.Truthy(os.Getenv("DEBUG")) {
 			ancli.PrintOK(fmt.Sprintf("\tname: %v, desc: %v\n", tool.Specification().Name, tool.Specification().Description))
@@ -228,12 +233,38 @@ func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, us
 		userConf.BaseTools[tool.Specification().Name] = tool
 	}
 
-	for _, t := range userConf.Tools {
+	registeredNames := make(map[string]struct{}, len(toAdd))
+	for _, tool := range toAdd {
+		registeredNames[tool.Specification().Name] = struct{}{}
+	}
+	for _, t := range uniqueTools(userConf.Tools) {
+		if _, exists := registeredNames[t.Specification().Name]; exists {
+			continue
+		}
 		tools.Registry.Set(t.Specification().Name, t)
 		toolBox.RegisterTool(t)
 		if userConf.BaseTools == nil {
 			userConf.BaseTools = map[string]pub_models.LLMTool{}
 		}
 		userConf.BaseTools[t.Specification().Name] = t
+		registeredNames[t.Specification().Name] = struct{}{}
 	}
+}
+
+// uniqueTools removes aliases and repeated selections before tool schemas are
+// sent to a model. Providers reject a request when two schemas have the same
+// specification name, even when the registry entries came from distinct
+// aliases.
+func uniqueTools(input []pub_models.LLMTool) []pub_models.LLMTool {
+	seen := make(map[string]struct{}, len(input))
+	ret := make([]pub_models.LLMTool, 0, len(input))
+	for _, tool := range input {
+		name := tool.Specification().Name
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		ret = append(ret, tool)
+	}
+	return ret
 }

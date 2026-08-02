@@ -93,7 +93,7 @@ func TestInitRegistersApplyPatch(t *testing.T) {
 	if _, ok := Registry.Get("apply_patch"); !ok {
 		t.Fatalf("expected apply_patch to be registered")
 	}
-	for _, name := range []string{"cmd", "freetext_command", "async_cmd_run", "async_cmd_status", "async_cmd_logs", "async_cmd_await", "async_cmd_cancel"} {
+	for _, name := range []string{"cmd", "freetext_command", "async_cmd", "async_cmd_run", "async_cmd_status", "async_cmd_logs", "async_cmd_await", "async_cmd_cancel"} {
 		if _, ok := Registry.Get(name); !ok {
 			t.Fatalf("expected %s to be registered", name)
 		}
@@ -146,6 +146,33 @@ func TestRegistry_All(t *testing.T) {
 	}
 }
 
+func TestRegistry_SetAlias(t *testing.T) {
+	r := NewRegistry()
+	canonical := newMockTool("canon")
+	alias := newMockTool("alias-name")
+
+	r.Set("canon", canonical)
+	r.SetAlias("alias-name", "canon", alias)
+
+	if got, ok := r.Get("alias-name"); !ok || got != alias {
+		t.Fatalf("expected alias-name to resolve to the registered tool")
+	}
+	aliases := r.Aliases()
+	if len(aliases) != 1 || aliases["alias-name"] != "canon" {
+		t.Fatalf("expected alias map {alias-name: canon}, got %v", aliases)
+	}
+	// The alias is a real registry key, so All() includes it (selection,
+	// wildcard matching and Get keep working exactly as before).
+	if _, ok := r.All()["alias-name"]; !ok {
+		t.Fatal("expected alias-name in All()")
+	}
+
+	r.Reset()
+	if len(r.Aliases()) != 0 {
+		t.Fatal("expected Reset to clear aliases")
+	}
+}
+
 // Add to registry_test.go
 func TestRegistry_WildcardGet(t *testing.T) {
 	r := NewRegistry()
@@ -158,7 +185,7 @@ func TestRegistry_WildcardGet(t *testing.T) {
 		"prog_go":            newMockTool("prog_go"),
 		"web_fetch":          newMockTool("web_fetch"),
 		"cmd":                newMockTool("cmd"),
-		"async_cmd_run":      newMockTool("async_cmd_run"),
+		"async_cmd":          newMockTool("async_cmd"),
 		"freetext_command":   newMockTool("freetext_command"),
 		"mcp_everyhing_test": newMockTool("mcp_everyhing_test"),
 	}
@@ -171,7 +198,7 @@ func TestRegistry_WildcardGet(t *testing.T) {
 		pattern  string
 		expected []string
 	}{
-		{"*", []string{"bash_cat", "bash_find", "prog_git", "prog_go", "web_fetch", "cmd", "async_cmd_run", "freetext_command", "mcp_everyhing_test"}},
+		{"*", []string{"bash_cat", "bash_find", "prog_git", "prog_go", "web_fetch", "cmd", "async_cmd", "freetext_command", "mcp_everyhing_test"}},
 		{"bash_*", []string{"bash_cat", "bash_find"}},
 		{"*_git", []string{"prog_git"}},
 		{"*prog*", []string{"prog_git", "prog_go"}},
@@ -179,7 +206,7 @@ func TestRegistry_WildcardGet(t *testing.T) {
 		{"nonexistent", []string{}},
 		{"*nonexistent*", []string{}},
 		{"mcp_everyhing*", []string{"mcp_everyhing_test"}},
-		{"*cmd*", []string{"cmd", "async_cmd_run"}},
+		{"*cmd*", []string{"cmd", "async_cmd"}},
 	}
 
 	for _, tc := range testCases {

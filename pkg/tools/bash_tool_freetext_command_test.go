@@ -18,7 +18,7 @@ func TestFreetextCmdTool_Call_PreservesQuotedArguments(t *testing.T) {
 		t.Skip("test requires a POSIX shell")
 	}
 
-	out, err := FreetextCmd.Call(pub_models.Input{"command": `printf '%s' "hello world"`})
+	out, err := Cmd.Call(pub_models.Input{"command": `printf '%s' "hello world"`})
 	if err != nil {
 		t.Fatalf("freetext command failed: %v", err)
 	}
@@ -29,7 +29,7 @@ func TestFreetextCmdTool_Call_PreservesQuotedArguments(t *testing.T) {
 }
 
 func TestFreetextCmdTool_Call_BadType(t *testing.T) {
-	_, err := FreetextCmd.Call(pub_models.Input{"command": 123})
+	_, err := Cmd.Call(pub_models.Input{"command": 123})
 	if err == nil {
 		t.Fatal("expected error for bad command type")
 	}
@@ -59,9 +59,9 @@ func TestCmdTool_Specification_HasCmdName(t *testing.T) {
 	}
 }
 
-func TestFreetextCmdTool_Specification_HasLegacyName(t *testing.T) {
-	if got, want := FreetextCmd.Specification().Name, "freetext_command"; got != want {
-		t.Fatalf("unexpected freetext command tool name: got %q want %q", got, want)
+func TestCmdTool_Specification_Name(t *testing.T) {
+	if got, want := Cmd.Specification().Name, "cmd"; got != want {
+		t.Fatalf("unexpected cmd tool name: got %q want %q", got, want)
 	}
 }
 
@@ -92,12 +92,12 @@ func TestFreetextCmdTool_Call_TimesOutClearlyAndSuggestsAsync(t *testing.T) {
 	marker := filepath.Join(dir, "got-term")
 	command := fmt.Sprintf(`trap '' INT; trap 'echo trapped > %s' TERM; while true; do sleep 1; done`, shellQuote(marker))
 
-	_, err := FreetextCmd.Call(pub_models.Input{"command": command})
+	_, err := Cmd.Call(pub_models.Input{"command": command})
 	if err == nil {
 		t.Fatal("expected timeout error")
 	}
 	errStr := strings.ToLower(err.Error())
-	for _, want := range []string{"timed out", "interrupt", "async_cmd_run"} {
+	for _, want := range []string{"timed out", "interrupt", "async_cmd"} {
 		if !strings.Contains(errStr, want) {
 			t.Fatalf("expected timeout error to mention %q, got %q", want, err)
 		}
@@ -120,7 +120,7 @@ func TestFreetextCmdTool_Call_TimeoutErrorReflectsCustomTimeoutAndKillWindow(t *
 		defaultCmdKillAfter = oldKill
 	})
 
-	_, err := FreetextCmd.Call(pub_models.Input{
+	_, err := Cmd.Call(pub_models.Input{
 		"command":         `trap '' INT; while true; do sleep 1; done`,
 		"timeout_seconds": 0.2,
 	})
@@ -128,7 +128,7 @@ func TestFreetextCmdTool_Call_TimeoutErrorReflectsCustomTimeoutAndKillWindow(t *
 		t.Fatal("expected timeout error")
 	}
 	errStr := err.Error()
-	for _, want := range []string{"0.2", "0.25", "async_cmd_run"} {
+	for _, want := range []string{"0.2", "0.25", "async_cmd"} {
 		if !strings.Contains(errStr, want) {
 			t.Fatalf("expected timeout error to mention %q, got %q", want, errStr)
 		}
@@ -140,7 +140,7 @@ func TestFreetextCmdTool_Call_TimeoutErrorReportsInterruptExit(t *testing.T) {
 		t.Skip("test requires a POSIX shell")
 	}
 
-	_, err := FreetextCmd.Call(pub_models.Input{
+	_, err := Cmd.Call(pub_models.Input{
 		"command":         `trap "exit 0" INT; while true; do sleep 1; done`,
 		"timeout_seconds": 0.1,
 	})
@@ -162,7 +162,7 @@ func TestFreetextCmdTool_Call_TimeoutErrorReportsHardKill(t *testing.T) {
 	defaultCmdKillAfter = 250 * time.Millisecond
 	t.Cleanup(func() { defaultCmdKillAfter = oldKill })
 
-	_, err := FreetextCmd.Call(pub_models.Input{
+	_, err := Cmd.Call(pub_models.Input{
 		"command":         `trap "" INT; while true; do sleep 1; done`,
 		"timeout_seconds": 0.1,
 	})
@@ -178,7 +178,7 @@ func TestFreetextCmdTool_Call_TimeoutErrorReportsHardKill(t *testing.T) {
 func TestFreetextCmdTool_CallWithContext_CancelsOnContextDone(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err := FreetextCmd.CallWithContext(ctx, pub_models.Input{"command": "sleep 10"})
+	_, err := Cmd.CallWithContext(ctx, pub_models.Input{"command": "sleep 10"})
 	if err == nil {
 		t.Fatal("expected error for cancelled context, got nil")
 	}
@@ -189,7 +189,7 @@ func TestFreetextCmdTool_CallWithContext_CancelsOnContextDone(t *testing.T) {
 
 func TestFreetextCmdTool_CallWithContext_TimesOutProperly(t *testing.T) {
 	ctx := context.Background()
-	_, err := FreetextCmd.CallWithContext(ctx, pub_models.Input{"command": "sleep 10", "timeout_seconds": float64(0.1)})
+	_, err := Cmd.CallWithContext(ctx, pub_models.Input{"command": "sleep 10", "timeout_seconds": float64(0.1)})
 	if err == nil {
 		t.Fatal("expected timeout error, got nil")
 	}
@@ -200,7 +200,7 @@ func TestFreetextCmdTool_CallWithContext_TimesOutProperly(t *testing.T) {
 
 func TestFreetextCmdTool_CallWithContext_ReturnsOutputOnSuccess(t *testing.T) {
 	ctx := context.Background()
-	out, err := FreetextCmd.CallWithContext(ctx, pub_models.Input{"command": "echo hello", "timeout_seconds": float64(10)})
+	out, err := Cmd.CallWithContext(ctx, pub_models.Input{"command": "echo hello", "timeout_seconds": float64(10)})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

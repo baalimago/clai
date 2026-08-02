@@ -181,6 +181,22 @@ func TestSetupFlags(t *testing.T) {
 			},
 		},
 		{
+			name:     "Cmd ban flag parses comma-separated entries",
+			args:     []string{"cmd", "-cmd-ban=rm,sudo"},
+			defaults: Configurations{},
+			want: Configurations{
+				CmdBan: "rm,sudo",
+			},
+		},
+		{
+			name:     "Cmd ban flag with stray spaces is kept raw for later trimming",
+			args:     []string{"cmd", "-cmd-ban=rm, sudo"},
+			defaults: Configurations{},
+			want: Configurations{
+				CmdBan: "rm, sudo",
+			},
+		},
+		{
 			name:     "Pass along only args after parsing",
 			args:     []string{"cmd", "-cm", "test", "q", "hello"},
 			defaults: Configurations{},

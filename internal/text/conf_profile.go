@@ -77,6 +77,12 @@ func (c *Configurations) ProfileOverrides() error {
 		c.UseLookback = *profile.UseLookback
 	}
 	c.RequestedToolGlobs = profile.Tools
+	// Purely additive cascade (R1-04 revision, 2026-08-02): the profile's
+	// cmd-ban merges onto the file base; an omitted or explicitly empty list
+	// contributes nothing. No source removes another source's bans.
+	if profile.CmdBan != nil {
+		c.CmdBan = append(c.CmdBan, profile.CmdBan...)
+	}
 	if profile.SaveReplyAsConv != nil {
 		c.SaveReplyAsConv = *profile.SaveReplyAsConv
 	}

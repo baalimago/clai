@@ -63,6 +63,11 @@ MCP tools are discovered from configured MCP servers (see [MCP servers](#mcp-ser
 
 To avoid name collisions and to make origin explicit, MCP tools are typically namespaced/prefixed (for example with `mcp_...`).
 
+Registry aliases are lookup names, not additional model capabilities. When
+tools are selected, clai sends one schema per specification name. This keeps a
+canonical tool and its legacy aliases from producing duplicate tool names in
+provider requests.
+
 ## Allowed tools: selection and enforcement
 
 Tool *existence* (registered) is separate from tool *permission* (allowed).
@@ -203,6 +208,52 @@ Tooling can execute code or access local files. The design relies on:
 - path scoping / allowed-root enforcement for filesystem tools
 - context cancellation + timeouts
 - clear logging/error messages
+
+### Command ban list
+
+The freetext command tools (`cmd`, `async_cmd`; legacy aliases
+`freetext_command`, `async_cmd_run`) can be restricted with an opt-in command
+ban list. The default list is empty, so ad-hoc command execution works exactly
+as before (permissive default, D4).
+
+Matching is word-boundary phrase matching (D2): each entry is a
+whitespace-separated phrase of one or more tokens; a command is banned when
+the entry's tokens appear as a contiguous, in-order run in the command's
+flattened token list. Tokens are whitespace-split with one layer of quotes
+stripped per token, quoted words flattened into inner tokens, and shell
+metacharacters (`; | & ( ) < >` and backtick) split apart — so
+`sh -c "rm -rf /"` is caught by entry `rm`, and `sh -c 'git commit'` is caught
+by entry `git commit`. Matching is exact and case-sensitive. Entries are
+whitespace-split only: quotes and metachars are never processed inside an
+entry.
+
+Scope (D1): only the two freetext/direct command-execution tools `cmd` and
+`async_cmd` (plus their legacy aliases `freetext_command` and `async_cmd_run`).
+Structured tools with fixed binaries (`go`, `git`, `sed`, `ls`, ...),
+`clai_run`, and MCP tools are not affected.
+
+The effective list is purely additive (D5): default(empty) + `textConfig.json`
+(`cmd-ban`) + profile (`cmd-ban`, only when explicitly set) + `-cmd-ban` flag
+(append) + agent API (`WithCmdBanList`). No source removes another source's
+bans; a ban is removed by editing the source that added it.
+
+Enforcement happens at the spawn point in `pkg/tools`. A banned command is
+never spawned: the tool returns an error naming the matched entry and stating
+the rule, the model sees it as a normal tool result, and the run continues —
+a refusal never aborts the run (D14).
+
+Documented matching limits (literal-text matching):
+
+- Banning is by literal content: a command is refused whenever the phrase's
+  tokens occur in it, even when nothing executes (`echo git commit` IS banned
+  by entry `git commit`).
+- The matcher sees literal text only: variable assignments are not expanded
+  (`x=git; $x commit` is NOT caught by `git commit`), and command
+  substitutions are not evaluated.
+- Contiguity: interleaved arguments can evade a phrase (`git -C /path commit`
+  is NOT caught by `git commit`).
+- Literal spelling: alternate spellings that change the literal tokens evade
+  (`/bin/rm -rf /` is NOT caught by entry `rm`).
 
 If you add a new tool:
 
