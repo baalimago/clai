@@ -59,6 +59,8 @@ Commands:
   c|chat   c|continue  <chatID>   Continue an existing chat with the given chat ID or index.
   c|chat   d|delete    <chatID>   Delete the chat with the given chat ID or index.
   c|chat   l|list                 List all existing chats.
+  c|chat   dir                    Show directory chat info with the stable v1 output.
+  c|chat   dirv2                  Show directory chat info with total and recent token usage.
   c|chat   h|help                 Display detailed help for chat subcommands.
 
 Examples:
@@ -70,6 +72,7 @@ Examples:
   - clai -pm dall-e-2 photo A cat in space
   - docker logs example | clai -I LOG q "Find errors in these logs: LOG"
   - clai c list
+  - clai -r c dirv2
   - clai c help
 `
 

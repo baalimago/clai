@@ -322,19 +322,19 @@ func TestMessagePickerRow_ShowsAssistantContent(t *testing.T) {
 	}
 }
 
-func TestMessageEditorText_ShowsStoredAndDerivedAssistantContent(t *testing.T) {
+func TestMessageEditorText_UsesOnlyStoredContent(t *testing.T) {
 	textTurn := pub_models.Message{Role: "assistant", Content: "the answer is 42"}
 	if got := messageEditorText(textTurn); got != "the answer is 42" {
 		t.Fatalf("text turn editor content = %q, want %q", got, "the answer is 42")
 	}
 
-	toolTurn := pub_models.Message{
-		Role:      "assistant",
-		ToolCalls: []pub_models.Call{{Name: "cat", Inputs: &pub_models.Input{"file": "main.go"}}},
+	structuredTurn := pub_models.Message{
+		Role:             "assistant",
+		ReasoningContent: "private reasoning",
+		ToolCalls:        []pub_models.Call{{Name: "cat", Inputs: &pub_models.Input{"file": "main.go"}}},
 	}
-	got := messageEditorText(toolTurn)
-	if !strings.Contains(got, "Call:") || !strings.Contains(got, "cat") {
-		t.Fatalf("tool-call turn editor content = %q, want reconstructed call", got)
+	if got := messageEditorText(structuredTurn); got != "" {
+		t.Fatalf("structured turn editor content = %q, want empty stored content", got)
 	}
 }
 

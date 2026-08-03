@@ -14,6 +14,12 @@ import (
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
+func TestChatHelpDocumentsDirV2(t *testing.T) {
+	if !strings.Contains(chatUsage, "dirv2") {
+		t.Fatalf("chat help does not document dirv2")
+	}
+}
+
 func TestChatHandler_dirInfo_NoDirScopeNoPrevQuery(t *testing.T) {
 	confDir := t.TempDir()
 	if err := utils.CreateConfigDir(confDir); err != nil {
@@ -426,7 +432,56 @@ func TestChatHandler_dirInfo_Raw_PriceBreakdownAggregatesAllQueries(t *testing.T
 	}
 }
 
-func TestChatHandler_dirInfo_Raw_TokenSections(t *testing.T) {
+func TestChatHandler_dirInfo_V1RemainsBackwardCompatible(t *testing.T) {
+	confDir := t.TempDir()
+	if err := utils.CreateConfigDir(confDir); err != nil {
+		t.Fatalf("CreateConfigDir: %v", err)
+	}
+	convDir := filepath.Join(confDir, "conversations")
+	chat := pub_models.Chat{
+		ID:       globalScopeChatID,
+		Created:  time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC),
+		Messages: []pub_models.Message{{Role: "user", Content: "hi"}},
+		TokenUsage: &pub_models.Usage{
+			PromptTokens:     21,
+			CompletionTokens: 9,
+			TotalTokens:      30,
+		},
+		RecentTokenUsage: &pub_models.Usage{PromptTokens: 18, CompletionTokens: 3, TotalTokens: 21},
+	}
+	if err := Save(convDir, chat); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	var out bytes.Buffer
+	cq := &ChatHandler{confDir: confDir, convDir: convDir, raw: true, out: &out}
+	if err := cq.dirInfo(); err != nil {
+		t.Fatalf("dirInfo raw: %v", err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(out.Bytes(), &raw); err != nil {
+		t.Fatalf("unmarshal: %v, out=%q", err, out.String())
+	}
+	if raw["input_tokens"] != float64(21) || raw["output_tokens"] != float64(9) {
+		t.Fatalf("legacy token fields changed: %s", out.String())
+	}
+	for _, key := range []string{"version", "token_usage", "total_input_tokens", "recent_input_tokens"} {
+		if _, exists := raw[key]; exists {
+			t.Fatalf("v1 output contains v2 field %q: %s", key, out.String())
+		}
+	}
+
+	out.Reset()
+	cq.raw = false
+	if err := cq.dirInfo(); err != nil {
+		t.Fatalf("dirInfo pretty: %v", err)
+	}
+	if !strings.Contains(out.String(), "input: 21") || strings.Contains(out.String(), "recent:") || strings.Contains(out.String(), "most recent:") {
+		t.Fatalf("v1 pretty output changed: %q", out.String())
+	}
+}
+
+func TestChatHandler_dirInfoV2_Raw_CleanTokenUsageSchema(t *testing.T) {
 	confDir := t.TempDir()
 	if err := utils.CreateConfigDir(confDir); err != nil {
 		t.Fatalf("CreateConfigDir: %v", err)
@@ -447,7 +502,6 @@ func TestChatHandler_dirInfo_Raw_TokenSections(t *testing.T) {
 			{Role: "user", Content: "hi"},
 			{Role: "assistant", Content: "ok"},
 		},
-		// Last session usage: larger than any single recorded query below.
 		TokenUsage: &pub_models.Usage{
 			PromptTokens:     30,
 			CompletionTokens: 10,
@@ -456,8 +510,17 @@ func TestChatHandler_dirInfo_Raw_TokenSections(t *testing.T) {
 				CachedTokens: 10,
 			},
 		},
+		RecentTokenUsage: &pub_models.Usage{
+			PromptTokens:     30,
+			CompletionTokens: 4,
+			TotalTokens:      34,
+			PromptTokensDetails: pub_models.PromptTokensDetails{
+				CachedTokens: 10,
+			},
+		},
 		Queries: []pub_models.QueryCost{
 			{
+				CostUSD: 0.1,
 				Usage: pub_models.Usage{
 					PromptTokens:     12,
 					CompletionTokens: 3,
@@ -468,6 +531,7 @@ func TestChatHandler_dirInfo_Raw_TokenSections(t *testing.T) {
 				},
 			},
 			{
+				CostUSD: 0.2,
 				Usage: pub_models.Usage{
 					PromptTokens:     30,
 					CompletionTokens: 10,
@@ -490,39 +554,65 @@ func TestChatHandler_dirInfo_Raw_TokenSections(t *testing.T) {
 	var out bytes.Buffer
 	cq := &ChatHandler{confDir: confDir, convDir: convDir, raw: true, out: &out}
 
-	if err := cq.dirInfo(); err != nil {
-		t.Fatalf("dirInfo: %v", err)
+	if err := cq.dirInfoV2(); err != nil {
+		t.Fatalf("dirInfoV2: %v", err)
 	}
 
-	var got chatDirInfo
+	var got map[string]any
 	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
 		t.Fatalf("unmarshal: %v, out=%q", err, out.String())
 	}
-
-	// Existing fields keep last-session semantics (chat.TokenUsage), so shell
-	// integrations parsing the old keys stay backward compatible.
-	if got.InputTokens != 30 || got.CachedTokens != 10 || got.OutputTokens != 10 {
-		t.Fatalf("existing token fields should stay last-session, got input=%d cached=%d output=%d", got.InputTokens, got.CachedTokens, got.OutputTokens)
+	if got["version"] != float64(2) {
+		t.Fatalf("version: got %#v want 2", got["version"])
+	}
+	if math.Abs(got["cost_usd"].(float64)-0.3) > 1e-9 {
+		t.Fatalf("cost_usd: got %#v want 0.3", got["cost_usd"])
+	}
+	allowed := map[string]bool{
+		"version": true, "scope": true, "chat_id": true, "profile": true,
+		"updated": true, "conversation_created": true, "replies_by_role": true,
+		"token_usage": true, "cost_usd": true,
+	}
+	for key := range got {
+		if !allowed[key] {
+			t.Fatalf("v2 output contains unknown top-level field %q: %s", key, out.String())
+		}
+	}
+	for _, key := range []string{
+		"cost", "price", "input_tokens", "non_cached_input_tokens", "cached_tokens", "output_tokens",
+		"total_input_tokens", "total_cached_tokens", "total_output_tokens", "total_tokens",
+		"recent_input_tokens", "recent_cached_tokens", "recent_output_tokens", "recent_tokens",
+	} {
+		if _, exists := got[key]; exists {
+			t.Fatalf("v2 output contains legacy field %q: %s", key, out.String())
+		}
 	}
 
-	// New total_* fields: lifetime sum across all queries (12+30, 3+10, 5+10).
-	if got.TotalInputTokens != 42 || got.TotalCachedTokens != 15 || got.TotalOutputTokens != 13 {
-		t.Fatalf("total token fields: got input=%d cached=%d output=%d, want 42/15/13", got.TotalInputTokens, got.TotalCachedTokens, got.TotalOutputTokens)
+	tokenUsage, ok := got["token_usage"].(map[string]any)
+	if !ok {
+		t.Fatalf("token_usage: got %#v", got["token_usage"])
 	}
-	if got.TotalTokens != 55 {
-		t.Fatalf("total_tokens: got %d want 55", got.TotalTokens)
+	recent, ok := tokenUsage["recent"].(map[string]any)
+	if !ok {
+		t.Fatalf("token_usage.recent: got %#v", tokenUsage["recent"])
 	}
-
-	// New recent_* fields: last session (chat.TokenUsage).
-	if got.RecentInputTokens != 30 || got.RecentCachedTokens != 10 || got.RecentOutputTokens != 10 {
-		t.Fatalf("recent token fields: got input=%d cached=%d output=%d, want 30/10/10", got.RecentInputTokens, got.RecentCachedTokens, got.RecentOutputTokens)
+	total, ok := tokenUsage["total"].(map[string]any)
+	if !ok {
+		t.Fatalf("token_usage.total: got %#v", tokenUsage["total"])
 	}
-	if got.RecentTokens != 40 {
-		t.Fatalf("recent_tokens: got %d want 40", got.RecentTokens)
+	for key, want := range map[string]float64{"uncached_input": 20, "cached_input": 10, "output": 4, "total": 34} {
+		if recent[key] != want {
+			t.Fatalf("token_usage.recent.%s: got %#v want %v", key, recent[key], want)
+		}
+	}
+	for key, want := range map[string]float64{"uncached_input": 27, "cached_input": 15, "output": 13, "total": 55} {
+		if total[key] != want {
+			t.Fatalf("token_usage.total.%s: got %#v want %v", key, total[key], want)
+		}
 	}
 }
 
-func TestChatHandler_dirInfo_Pretty_IncludesTokenAndPriceBreakdown(t *testing.T) {
+func TestChatHandler_dirInfoV2_Pretty_IncludesTotalAndRecentUsage(t *testing.T) {
 	confDir := t.TempDir()
 	if err := utils.CreateConfigDir(confDir); err != nil {
 		t.Fatalf("CreateConfigDir: %v", err)
@@ -576,41 +666,34 @@ func TestChatHandler_dirInfo_Pretty_IncludesTokenAndPriceBreakdown(t *testing.T)
 	cq.raw = false
 	cq.out = &out
 
-	if err := cq.dirInfo(); err != nil {
-		t.Fatalf("dirInfo: %v", err)
+	if err := cq.dirInfoV2(); err != nil {
+		t.Fatalf("dirInfoV2: %v", err)
 	}
 
 	printed := out.String()
 	for _, want := range []string{
-		"tokens used:",
+		"token usage:",
+		"total:",
 		"input: 0.021K",
 		"cached: 0.004K",
 		"output: 0.009K",
-		"most recent:",
-		"price details:",
-		"input:",
-		"cached:",
-		"output:",
-		"total:",
+		"recent:",
 	} {
 		if !strings.Contains(printed, want) {
 			t.Fatalf("expected %q in output, got: %q", want, printed)
 		}
 	}
-	// The two token sections must appear in order: lifetime total first, then
-	// the most recent session, before the price details block.
-	tokensIdx := strings.Index(printed, "tokens used:")
-	recentIdx := strings.Index(printed, "most recent:")
-	priceIdx := strings.Index(printed, "price details:")
-	if tokensIdx == -1 || recentIdx == -1 || priceIdx == -1 {
-		t.Fatalf("missing token sections, got: %q", printed)
+	if strings.Contains(printed, "price details:") {
+		t.Fatalf("v2 pretty output contains legacy price details: %q", printed)
 	}
-	if !(tokensIdx < recentIdx && recentIdx < priceIdx) {
+	totalIdx := strings.Index(printed, "total:")
+	recentIdx := strings.Index(printed, "recent:")
+	if totalIdx == -1 || recentIdx == -1 || totalIdx >= recentIdx {
 		t.Fatalf("token sections out of order, got: %q", printed)
 	}
 }
 
-func TestChatHandler_dirInfo_Pretty_AbbreviatesTokenCounts(t *testing.T) {
+func TestChatHandler_dirInfoV2_Pretty_AbbreviatesTokenCounts(t *testing.T) {
 	confDir := t.TempDir()
 	if err := utils.CreateConfigDir(confDir); err != nil {
 		t.Fatalf("CreateConfigDir: %v", err)
@@ -663,8 +746,8 @@ func TestChatHandler_dirInfo_Pretty_AbbreviatesTokenCounts(t *testing.T) {
 	var out bytes.Buffer
 	cq := &ChatHandler{confDir: confDir, convDir: convDir, raw: false, out: &out}
 
-	if err := cq.dirInfo(); err != nil {
-		t.Fatalf("dirInfo: %v", err)
+	if err := cq.dirInfoV2(); err != nil {
+		t.Fatalf("dirInfoV2: %v", err)
 	}
 
 	printed := out.String()
@@ -677,4 +760,30 @@ func TestChatHandler_dirInfo_Pretty_AbbreviatesTokenCounts(t *testing.T) {
 			t.Fatalf("expected %q in output, got: %q", want, printed)
 		}
 	}
+}
+
+func TestChatRecentUsagePrecedence(t *testing.T) {
+	t.Run("explicit recent call usage", func(t *testing.T) {
+		chat := pub_models.Chat{
+			TokenUsage:       &pub_models.Usage{TotalTokens: 120},
+			RecentTokenUsage: &pub_models.Usage{TotalTokens: 85},
+		}
+
+		got := chatRecentUsage(chat)
+		if got == nil || got.TotalTokens != 85 {
+			t.Fatalf("recent usage mismatch: got %+v", got)
+		}
+	})
+
+	t.Run("last query fallback", func(t *testing.T) {
+		chat := pub_models.Chat{Queries: []pub_models.QueryCost{
+			{Usage: pub_models.Usage{TotalTokens: 10}},
+			{Usage: pub_models.Usage{TotalTokens: 34}},
+		}}
+
+		got := chatRecentUsage(chat)
+		if got == nil || got.TotalTokens != 34 {
+			t.Fatalf("recent query fallback mismatch: got %+v", got)
+		}
+	})
 }

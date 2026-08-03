@@ -23,13 +23,14 @@ func SaveAsPreviousQuery(claiConfDir string, chat pub_models.Chat) error {
 		}
 	}
 	globalScopeChat := pub_models.Chat{
-		Created:    time.Now(),
-		ID:         globalScopeChatID,
-		Profile:    chat.Profile,
-		OriginDir:  chat.OriginDir,
-		Messages:   chat.Messages,
-		TokenUsage: chat.TokenUsage,
-		Queries:    chat.Queries,
+		Created:          time.Now(),
+		ID:               globalScopeChatID,
+		Profile:          chat.Profile,
+		OriginDir:        chat.OriginDir,
+		Messages:         chat.Messages,
+		TokenUsage:       chat.TokenUsage,
+		RecentTokenUsage: chat.RecentTokenUsage,
+		Queries:          chat.Queries,
 	}
 	// This check avoids storing queries without any replies, which would most likely
 	// flood the conversations needlessly. Only promote to a fresh conversation when
@@ -45,13 +46,14 @@ func SaveAsPreviousQuery(claiConfDir string, chat pub_models.Chat) error {
 			return fmt.Errorf("generate promoted conversation id: %w", err)
 		}
 		convChat := pub_models.Chat{
-			Created:    time.Now(),
-			ID:         convID,
-			Profile:    chat.Profile,
-			OriginDir:  chat.OriginDir,
-			Messages:   chat.Messages,
-			TokenUsage: chat.TokenUsage,
-			Queries:    chat.Queries,
+			Created:          time.Now(),
+			ID:               convID,
+			Profile:          chat.Profile,
+			OriginDir:        chat.OriginDir,
+			Messages:         chat.Messages,
+			TokenUsage:       chat.TokenUsage,
+			RecentTokenUsage: chat.RecentTokenUsage,
+			Queries:          chat.Queries,
 		}
 		traceChatf("save previous query conversation path=%q conv_id=%q", convPath, convChat.ID)
 		err = Save(convPath, convChat)

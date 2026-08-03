@@ -300,6 +300,14 @@ discovery). All three tools are defined as `pub_models.LLMTool`s whose `Call()` 
 dispatched internally by the tool executor (it needs the resolving config dir and the session CWD), like
 `load_skill`.
 
+## Directory chat information
+
+`clai chat dir` reads the current directory binding and prints the stable v1 format. It uses the global scope when no binding exists.
+
+`clai chat dirv2` uses the same resolution order. It adds nested `token_usage.total` and `token_usage.recent` objects.
+
+The v2 raw format removes the duplicate top-level token, cost-string, and price fields. See [chat.md](./chat.md#chat-dir-and-chat-dirv2) for the schema.
+
 ## `[d]ir` table filter
 
 `clai chat list` stays the single listing entrypoint; the directory filter is an interactive **toggle button**

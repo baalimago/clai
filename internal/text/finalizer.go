@@ -65,6 +65,15 @@ func accumulateCompletedUsage(completed []CompletedModelCall, final *pub_models.
 	return &total
 }
 
+func mostRecentCompletedUsage(completed []CompletedModelCall, final *pub_models.Usage) *pub_models.Usage {
+	for i := len(completed) - 1; i >= 0; i-- {
+		if completed[i].Usage != nil {
+			return completed[i].Usage
+		}
+	}
+	return final
+}
+
 func (f sessionFinalizer[C]) Finalize(session *QuerySession) {
 	if session == nil || session.Finalized {
 		return
@@ -86,8 +95,9 @@ func (f sessionFinalizer[C]) Finalize(session *QuerySession) {
 			ReasoningContent: session.FinalReasoningText,
 		})
 	}
-	q.chat = session.Chat
 	session.Chat.TokenUsage = accumulateCompletedUsage(session.CompletedCalls, session.FinalUsage)
+	session.Chat.RecentTokenUsage = mostRecentCompletedUsage(session.CompletedCalls, session.FinalUsage)
+	q.chat = session.Chat
 
 	if session.ShouldSaveReply {
 		if q.costManager != nil {

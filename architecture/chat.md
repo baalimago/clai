@@ -51,7 +51,10 @@ type Chat struct {
     // chats or conversations without a user message.
     GroupKey string `json:"group_key,omitempty"`
 
-    Messages []Message `json:"messages"`
+    Messages         []Message   `json:"messages"`
+    TokenUsage       *Usage      `json:"usage,omitempty"`
+    RecentTokenUsage *Usage      `json:"recent_usage,omitempty"`
+    Queries          []QueryCost `json:"queries,omitempty"`
 }
 ```
 
@@ -60,6 +63,9 @@ Notes:
 - `ID` is used as the filename.
 - `Profile` can be persisted on the chat and is used to “stick” the last-used profile when continuing/using a conversation.
 - `Messages` is an ordered transcript.
+- `TokenUsage` contains the billable usage for all model calls in the latest session.
+- `RecentTokenUsage` contains only the final model call. This value estimates the context size of the next request.
+- `Queries` contains the usage and cost for each recorded session.
 
 ### `pkg/text/models.Message`
 
@@ -147,6 +153,42 @@ Subsequent queries can be threaded using:
 
 - `-re` (reply to global previous query)
 - `-dre` (reply to directory-scoped previous query)
+
+### `chat dir` and `chat dirv2`
+
+Both commands show information for the conversation that is bound to the current directory. They use `globalScope.json` when no directory binding exists.
+
+`clai chat dir` keeps the original text and JSON formats. This format does not show `RecentTokenUsage`.
+
+`clai chat dirv2` adds total and recent usage. In raw mode (`-r`), it returns this structure:
+
+```json
+{
+  "version": 2,
+  "scope": "dir",
+  "chat_id": "example-chat-id",
+  "profile": "default",
+  "updated": "2026-08-03T12:00:00Z",
+  "conversation_created": "2026-08-03T11:00:00Z",
+  "replies_by_role": {"assistant": 2, "user": 2},
+  "token_usage": {
+    "recent": {"uncached_input": 1200, "cached_input": 8000, "output": 300, "total": 9500},
+    "total": {"uncached_input": 2400, "cached_input": 15000, "output": 600, "total": 18000}
+  },
+  "cost_usd": 0.12
+}
+```
+
+The token fields have these meanings:
+
+- `uncached_input`: input tokens that were not read from the provider cache.
+- `cached_input`: input tokens that were read from the provider cache.
+- `output`: output tokens from the model.
+- `total`: the provider-reported total token count.
+
+The `token_usage.total` object sums all recorded query usage. The `token_usage.recent` object contains the final model call.
+
+The v2 format has one numeric cost field. It does not include the duplicate v1 cost strings, price fields, or top-level token fields.
 
 ### `chat continue` (bind a chat to the current directory)
 

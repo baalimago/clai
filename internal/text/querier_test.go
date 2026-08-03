@@ -1436,7 +1436,13 @@ func Test_Querier_Query_ToolCallSession_PreservesFinalReplyRoleAndFinalUsage(t *
 		t.Fatal("expected token usage to be saved")
 	}
 	if saved.TokenUsage.TotalTokens != 14 {
-		t.Fatalf("expected final token usage total 14, got %d", saved.TokenUsage.TotalTokens)
+		t.Fatalf("expected accumulated session token usage total 14, got %d", saved.TokenUsage.TotalTokens)
+	}
+	if saved.RecentTokenUsage == nil {
+		t.Fatal("expected most recent model call usage to be saved")
+	}
+	if saved.RecentTokenUsage.TotalTokens != 8 {
+		t.Fatalf("expected most recent model call usage total 8, got %d", saved.RecentTokenUsage.TotalTokens)
 	}
 	if enrichCalls != 1 {
 		t.Fatalf("expected 1 enrich call, got: %d", enrichCalls)

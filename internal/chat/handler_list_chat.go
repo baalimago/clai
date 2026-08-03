@@ -66,26 +66,40 @@ func chatTotalTokens(chat pub_models.Chat) int {
 	if chat.TokenUsage != nil {
 		return chat.TokenUsage.TotalTokens
 	}
+	if chat.RecentTokenUsage != nil {
+		return chat.RecentTokenUsage.TotalTokens
+	}
 	return 0
 }
 
-// chatRecentTokens returns the most recent session's token usage
-// (chat.TokenUsage). It is the best gauge for how close the conversation is to
-// the model's context window. Falls back to the last recorded query.
-func chatRecentTokens(chat pub_models.Chat) int {
+// chatRecentUsage returns the final model call's usage. Chats saved before
+// recent_usage was introduced fall back to the latest available session/query
+// usage, which can include multiple calls when tools were used.
+func chatRecentUsage(chat pub_models.Chat) *pub_models.Usage {
+	if chat.RecentTokenUsage != nil {
+		return chat.RecentTokenUsage
+	}
 	if chat.TokenUsage != nil {
-		return chat.TokenUsage.TotalTokens
+		return chat.TokenUsage
 	}
 	if len(chat.Queries) > 0 {
-		return chat.Queries[len(chat.Queries)-1].Usage.TotalTokens
+		return &chat.Queries[len(chat.Queries)-1].Usage
 	}
-	return 0
+	return nil
+}
+
+func chatRecentTokens(chat pub_models.Chat) int {
+	usage := chatRecentUsage(chat)
+	if usage == nil {
+		return 0
+	}
+	return usage.TotalTokens
 }
 
 // chatTokenSection renders the "token usage:" block of the chat info view:
-// one line for the lifetime total, one for the most recent session.
+// one line for the lifetime total, one for the most recent model call.
 func chatTokenSection(chat pub_models.Chat) (string, string) {
-	if chat.TokenUsage == nil && len(chat.Queries) == 0 {
+	if chat.TokenUsage == nil && chat.RecentTokenUsage == nil && len(chat.Queries) == 0 {
 		return "N/A", "N/A"
 	}
 	return abbrevTokens(chatTotalTokens(chat)), abbrevTokens(chatRecentTokens(chat))
@@ -984,11 +998,10 @@ func messagePickerRow(i int, t pub_models.Message) (string, error) {
 	return table.WidthAppropriateStringTrunc(disp, prefix, 25)
 }
 
-// messageEditorText returns the text that must be placed in $EDITOR. Tool-call
-// assistant turns intentionally have empty Content in the model-safe history,
-// so use the same derived display text as the picker and chat preview.
+// messageEditorText returns only persisted text. Display-only reconstructions
+// of tool calls and reasoning must not be written back into message Content.
 func messageEditorText(m pub_models.Message) string {
-	return messageDisplayText(m)
+	return m.Content
 }
 
 // selectMessagesAt shows the conversation's message picker opened at startPage
