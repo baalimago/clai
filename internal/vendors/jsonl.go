@@ -211,7 +211,8 @@ func MapAssistantBlocks(content any, toolKeys ToolCallBlockKeys) []pub_models.Me
 				}
 			}
 			call := pub_models.Call{
-				ID: id,
+				ID:   id,
+				Name: name,
 				Function: pub_models.Specification{
 					Name:      name,
 					Arguments: args,

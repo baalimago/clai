@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -18,6 +19,16 @@ import (
 )
 
 var responsesDataPrefix = []byte("data: ")
+
+const responsesMaxCallIDLength = 64
+
+func normalizeResponsesCallID(id string) string {
+	if len(id) <= responsesMaxCallIDLength {
+		return id
+	}
+	digest := fmt.Sprintf("%x", sha256.Sum256([]byte(id)))
+	return "call_" + digest[:responsesMaxCallIDLength-len("call_")]
+}
 
 type responsesStreamer struct {
 	apiKey      string
@@ -562,7 +573,7 @@ func mapMessageToResponsesInputItems(msg pub_models.Message, includeReasoning bo
 		}
 		return []responsesInputItem{{
 			Type:   "function_call_output",
-			CallID: msg.ToolCallID,
+			CallID: normalizeResponsesCallID(msg.ToolCallID),
 			// Responses expects `output` to be a string.
 			Output: msg.Content,
 		}}, nil
@@ -601,12 +612,17 @@ func mapMessageToResponsesInputItems(msg pub_models.Message, includeReasoning bo
 			}
 			name := tc.Name
 			if name == "" {
+				// Older foreign-chat imports populated only Function.Name.
+				// Accept both representations so persisted conversations remain usable.
+				name = tc.Function.Name
+			}
+			if name == "" {
 				return nil, fmt.Errorf("map assistant tool call %q: missing name", callID)
 			}
 
 			out = append(out, responsesInputItem{
 				Type:      "function_call",
-				CallID:    callID,
+				CallID:    normalizeResponsesCallID(callID),
 				Name:      name,
 				Arguments: tc.Function.Arguments,
 			})

@@ -500,7 +500,14 @@ func TestMapPiAssistantMessage_ToolCallArgumentsMarshal(t *testing.T) {
 	if len(msgs[0].ToolCalls) != 1 {
 		t.Fatalf("expected 1 tool call, got %d", len(msgs[0].ToolCalls))
 	}
-	if msgs[0].ToolCalls[0].Function.Arguments != `{"path":"/etc/hosts"}` {
-		t.Fatalf("expected marshalled args, got %q", msgs[0].ToolCalls[0].Function.Arguments)
+	call := msgs[0].ToolCalls[0]
+	if call.Name != "read" {
+		t.Fatalf("expected top-level tool name %q, got %q", "read", call.Name)
+	}
+	if call.Function.Name != "read" {
+		t.Fatalf("expected function tool name %q, got %q", "read", call.Function.Name)
+	}
+	if call.Function.Arguments != `{"path":"/etc/hosts"}` {
+		t.Fatalf("expected marshalled args, got %q", call.Function.Arguments)
 	}
 }
