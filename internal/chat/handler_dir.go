@@ -16,20 +16,30 @@ import (
 )
 
 type chatDirInfo struct {
-	Scope                string           `json:"scope"`
-	ChatID               string           `json:"chat_id"`
-	Profile              string           `json:"profile,omitempty"`
-	Updated              string           `json:"updated,omitempty"`
-	ConversationCreated  string           `json:"conversation_created,omitempty"`
-	RepliesByRole        map[string]int   `json:"replies_by_role"`
-	InputTokens          int              `json:"input_tokens"`
-	NonCachedInputTokens int              `json:"non_cached_input_tokens"`
-	CachedTokens         int              `json:"cached_tokens"`
-	OutputTokens         int              `json:"output_tokens"`
-	CostUSD              float64          `json:"cost_usd,omitempty"`
-	Cost                 string           `json:"cost,omitempty"`
-	Price                chatDirPriceInfo `json:"price"`
-	initialMessage       string           `json:"-"`
+	Scope                string         `json:"scope"`
+	ChatID               string         `json:"chat_id"`
+	Profile              string         `json:"profile,omitempty"`
+	Updated              string         `json:"updated,omitempty"`
+	ConversationCreated  string         `json:"conversation_created,omitempty"`
+	RepliesByRole        map[string]int `json:"replies_by_role"`
+	InputTokens          int            `json:"input_tokens"`
+	NonCachedInputTokens int            `json:"non_cached_input_tokens"`
+	CachedTokens         int            `json:"cached_tokens"`
+	OutputTokens         int            `json:"output_tokens"`
+	// Lifetime totals across all recorded queries (fall back to TokenUsage).
+	TotalInputTokens  int `json:"total_input_tokens"`
+	TotalCachedTokens int `json:"total_cached_tokens"`
+	TotalOutputTokens int `json:"total_output_tokens"`
+	TotalTokens       int `json:"total_tokens"`
+	// Most recent session's usage (chat.TokenUsage).
+	RecentInputTokens  int              `json:"recent_input_tokens"`
+	RecentCachedTokens int              `json:"recent_cached_tokens"`
+	RecentOutputTokens int              `json:"recent_output_tokens"`
+	RecentTokens       int              `json:"recent_tokens"`
+	CostUSD            float64          `json:"cost_usd,omitempty"`
+	Cost               string           `json:"cost,omitempty"`
+	Price              chatDirPriceInfo `json:"price"`
+	initialMessage     string           `json:"-"`
 }
 
 type chatDirPriceInfo struct {
@@ -86,6 +96,10 @@ tokens used:
 	input: %v
 	cached: %v
 	output: %v
+most recent:
+	input: %v
+	cached: %v
+	output: %v
 price details:
 	input: %v
 	cached: %v
@@ -132,9 +146,12 @@ func (cq *ChatHandler) dirInfo() error {
 		profileOut,
 		rolesOut.String(),
 		info.costString(),
-		info.InputTokens,
-		info.CachedTokens,
-		info.OutputTokens,
+		abbrevTokens(info.TotalInputTokens),
+		abbrevTokens(info.TotalCachedTokens),
+		abbrevTokens(info.TotalOutputTokens),
+		abbrevTokens(info.RecentInputTokens),
+		abbrevTokens(info.RecentCachedTokens),
+		abbrevTokens(info.RecentOutputTokens),
 		info.Price.Input,
 		info.Price.Cached,
 		info.Price.Output,
@@ -221,6 +238,22 @@ func (cq *ChatHandler) infoFromChat(scope, chatID string, c pub_models.Chat) cha
 		cdi.CachedTokens = c.TokenUsage.PromptTokensDetails.CachedTokens
 		cdi.NonCachedInputTokens = max(c.TokenUsage.PromptTokens-cdi.CachedTokens, 0)
 		cdi.OutputTokens = c.TokenUsage.CompletionTokens
+		cdi.RecentInputTokens = c.TokenUsage.PromptTokens
+		cdi.RecentCachedTokens = c.TokenUsage.PromptTokensDetails.CachedTokens
+		cdi.RecentOutputTokens = c.TokenUsage.CompletionTokens
+		cdi.RecentTokens = c.TokenUsage.TotalTokens
+	}
+	if len(c.Queries) > 0 {
+		total := aggregateQueryUsage(c.Queries)
+		cdi.TotalInputTokens = total.PromptTokens
+		cdi.TotalCachedTokens = total.PromptTokensDetails.CachedTokens
+		cdi.TotalOutputTokens = total.CompletionTokens
+		cdi.TotalTokens = total.TotalTokens
+	} else if c.TokenUsage != nil {
+		cdi.TotalInputTokens = c.TokenUsage.PromptTokens
+		cdi.TotalCachedTokens = c.TokenUsage.PromptTokensDetails.CachedTokens
+		cdi.TotalOutputTokens = c.TokenUsage.CompletionTokens
+		cdi.TotalTokens = c.TokenUsage.TotalTokens
 	}
 	if c.HasCostEstimates() {
 		cdi.Price, cdi.CostUSD = aggregateQueryPriceInfo(c.Queries)

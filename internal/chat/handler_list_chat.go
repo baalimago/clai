@@ -23,17 +23,31 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
 
-const chatInfoPrintHeight = 16
+const chatInfoPrintHeight = 19
+
+// abbrevTokens renders a token count with a compact SI-style suffix:
+//   - 0         -> "0"
+//   - 42        -> "0.042K"
+//   - 1234      -> "1K"
+//   - 1234000   -> "1.2M"
+func abbrevTokens(v int) string {
+	if v == 0 {
+		return "0"
+	}
+	if v >= 1_000_000 {
+		return fmt.Sprintf("%.1fM", float64(v)/1_000_000.0)
+	}
+	if v >= 1000 {
+		return fmt.Sprintf("%dK", v/1000)
+	}
+	return fmt.Sprintf("%.3fK", float64(v)/1000.0)
+}
 
 func chatListTokenStr(item pub_models.Chat) string {
 	if item.TokenUsage == nil {
 		return "N/A"
 	}
-	v := item.TokenUsage.TotalTokens
-	if v >= 1000 {
-		return fmt.Sprintf("%dK", v/1000)
-	}
-	return fmt.Sprintf("%.3fK", float64(v)/1000.0)
+	return abbrevTokens(item.TokenUsage.TotalTokens)
 }
 
 func chatListCostStr(item pub_models.Chat) string {
@@ -43,14 +57,45 @@ func chatListCostStr(item pub_models.Chat) string {
 	return cost.FormatUSD(item.TotalCostUSD())
 }
 
+// chatTotalTokens returns the lifetime token spend: the sum of every recorded
+// query, falling back to the persisted TokenUsage when no queries are recorded.
+func chatTotalTokens(chat pub_models.Chat) int {
+	if len(chat.Queries) > 0 {
+		return aggregateQueryTotalTokens(chat.Queries)
+	}
+	if chat.TokenUsage != nil {
+		return chat.TokenUsage.TotalTokens
+	}
+	return 0
+}
+
+// chatRecentTokens returns the most recent session's token usage
+// (chat.TokenUsage). It is the best gauge for how close the conversation is to
+// the model's context window. Falls back to the last recorded query.
+func chatRecentTokens(chat pub_models.Chat) int {
+	if chat.TokenUsage != nil {
+		return chat.TokenUsage.TotalTokens
+	}
+	if len(chat.Queries) > 0 {
+		return chat.Queries[len(chat.Queries)-1].Usage.TotalTokens
+	}
+	return 0
+}
+
+// chatTokenSection renders the "token usage:" block of the chat info view:
+// one line for the lifetime total, one for the most recent session.
+func chatTokenSection(chat pub_models.Chat) (string, string) {
+	if chat.TokenUsage == nil && len(chat.Queries) == 0 {
+		return "N/A", "N/A"
+	}
+	return abbrevTokens(chatTotalTokens(chat)), abbrevTokens(chatRecentTokens(chat))
+}
+
 func chatIndexTokenStr(item chatIndexRow) string {
 	if item.TotalTokens <= 0 {
 		return "N/A"
 	}
-	if item.TotalTokens >= 1000 {
-		return fmt.Sprintf("%dK", item.TotalTokens/1000)
-	}
-	return fmt.Sprintf("%.3fK", float64(item.TotalTokens)/1000.0)
+	return abbrevTokens(item.TotalTokens)
 }
 
 func chatIndexCostStr(item chatIndexRow) string {
@@ -823,6 +868,17 @@ func (cq *ChatHandler) printChatInfoCommon(w io.Writer, chat pub_models.Chat, gr
 	if _, err := fmt.Fprintf(w, "%s %s\n", costKey, table.Colorize(bread, chatListCostStr(chat))); err != nil {
 		return fmt.Errorf("write total cost: %w", err)
 	}
+	tokenTotalStr, tokenRecentStr := chatTokenSection(chat)
+	tokenUsageKey := table.Colorize(utils.TableTheme().Primary, "token usage:")
+	if _, err := fmt.Fprintf(w, "%s\n", tokenUsageKey); err != nil {
+		return fmt.Errorf("write token usage key: %w", err)
+	}
+	if _, err := fmt.Fprintf(w, "\ttotal: %s\n", table.Colorize(bread, tokenTotalStr)); err != nil {
+		return fmt.Errorf("write token usage total: %w", err)
+	}
+	if _, err := fmt.Fprintf(w, "\tmost recent: %s\n", table.Colorize(bread, tokenRecentStr)); err != nil {
+		return fmt.Errorf("write token usage recent: %w", err)
+	}
 	if _, err := fmt.Fprintf(w, "%s\n", amRepliesKey); err != nil {
 		return fmt.Errorf("write am replies key: %w", err)
 	}
@@ -918,6 +974,23 @@ func editorEditString(toEdit string) (string, error) {
 	return string(b), nil
 }
 
+// messagePickerRow renders one row of the edit/delete message picker. It
+// reuses messageDisplayText so assistant tool-call turns (persisted with empty
+// Content, model-safe) are shown as reconstructed "Call: ..." lines instead of
+// blank rows, matching the conversation view.
+func messagePickerRow(i int, t pub_models.Message) (string, error) {
+	disp := messageDisplayText(t)
+	prefix := fmt.Sprintf(editMessageTblFormat, i, t.Role, utf8.RuneCountInString(disp), "")
+	return table.WidthAppropriateStringTrunc(disp, prefix, 25)
+}
+
+// messageEditorText returns the text that must be placed in $EDITOR. Tool-call
+// assistant turns intentionally have empty Content in the model-safe history,
+// so use the same derived display text as the picker and chat preview.
+func messageEditorText(m pub_models.Message) string {
+	return messageDisplayText(m)
+}
+
 // selectMessagesAt shows the conversation's message picker opened at startPage
 // and returns the selection plus the page it was made on.
 func (cq *ChatHandler) selectMessagesAt(chat pub_models.Chat, onlyOneSelect bool, startPage int) ([]int, int, error) {
@@ -925,12 +998,7 @@ func (cq *ChatHandler) selectMessagesAt(chat pub_models.Chat, onlyOneSelect bool
 	tb := table.New(
 		table.SlicePaginator(chat.Messages),
 		func(i int, t pub_models.Message) (string, error) {
-			prefix := fmt.Sprintf(editMessageTblFormat, i, t.Role, utf8.RuneCount([]byte(t.Content)), "")
-			withSummary, err := table.WidthAppropriateStringTrunc(t.Content, prefix, 25)
-			if err != nil {
-				return "", fmt.Errorf("failed to get widthAppropriateChatSummary: %w", err)
-			}
-			return withSummary, nil
+			return messagePickerRow(i, t)
 		},
 	).
 		WithHeader(head).
@@ -1002,7 +1070,7 @@ func (cq *ChatHandler) editMessageInChat(chat pub_models.Chat) error {
 		}
 		selectedNumber := selectedNumbers[0]
 		selectedMessage := chat.Messages[selectedNumber]
-		editedString, err := editorEditString(selectedMessage.Content)
+		editedString, err := editorEditString(messageEditorText(selectedMessage))
 		if err != nil {
 			return fmt.Errorf("failed to escapeEdit string: %w", err)
 		}

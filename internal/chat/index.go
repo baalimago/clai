@@ -74,12 +74,27 @@ func chatIndexPath(convDir string) string {
 	return path.Join(convDir, chatIndexFileName)
 }
 
-func aggregateQueryTotalTokens(queries []pub_models.QueryCost) int {
-	total := 0
+// aggregateQueryUsage sums the full token usage across every recorded query.
+// LLM APIs are stateless: each query bills the entire transcript at that time,
+// so summing yields the lifetime token spend for the conversation.
+func aggregateQueryUsage(queries []pub_models.QueryCost) pub_models.Usage {
+	var total pub_models.Usage
 	for _, query := range queries {
-		total += query.Usage.TotalTokens
+		total.PromptTokens += query.Usage.PromptTokens
+		total.CompletionTokens += query.Usage.CompletionTokens
+		total.TotalTokens += query.Usage.TotalTokens
+		total.PromptTokensDetails.CachedTokens += query.Usage.PromptTokensDetails.CachedTokens
+		total.PromptTokensDetails.AudioTokens += query.Usage.PromptTokensDetails.AudioTokens
+		total.CompletionTokensDetails.ReasoningTokens += query.Usage.CompletionTokensDetails.ReasoningTokens
+		total.CompletionTokensDetails.AudioTokens += query.Usage.CompletionTokensDetails.AudioTokens
+		total.CompletionTokensDetails.AcceptedPredictionTokens += query.Usage.CompletionTokensDetails.AcceptedPredictionTokens
+		total.CompletionTokensDetails.RejectedPredictionTokens += query.Usage.CompletionTokensDetails.RejectedPredictionTokens
 	}
 	return total
+}
+
+func aggregateQueryTotalTokens(queries []pub_models.QueryCost) int {
+	return aggregateQueryUsage(queries).TotalTokens
 }
 
 func chatIndexRowFromChat(chat pub_models.Chat) chatIndexRow {
