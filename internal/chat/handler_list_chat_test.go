@@ -261,6 +261,83 @@ func TestChatListTokensOrNA(t *testing.T) {
 	}
 }
 
+func TestTokenAbbreviationTiers(t *testing.T) {
+	cases := []struct {
+		name  string
+		total int
+		want  string
+	}{
+		{"zero", 0, "0"},
+		{"sub-thousand", 42, "0.042K"},
+		{"thousand", 1234, "1K"},
+		{"hundred-thousand", 123400, "123K"},
+		{"million", 1234000, "1.2M"},
+		{"exact million", 1000000, "1.0M"},
+		{"ten million", 12345678, "12.3M"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := abbrevTokens(tc.total); got != tc.want {
+				t.Fatalf("abbrevTokens(%d) = %q, want %q", tc.total, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestChatIndexTokenStr_UsesMillions(t *testing.T) {
+	if got := chatIndexTokenStr(chatIndexRow{TotalTokens: 1234000}); got != "1.2M" {
+		t.Fatalf("chatIndexTokenStr(1,234,000) = %q, want %q", got, "1.2M")
+	}
+	if got := chatIndexTokenStr(chatIndexRow{TotalTokens: 0}); got != "N/A" {
+		t.Fatalf("chatIndexTokenStr(0) = %q, want %q", got, "N/A")
+	}
+}
+
+// TestMessagePickerRow_ShowsAssistantContent guards the edit/delete picker
+// against blank assistant rows: assistant tool-call turns are persisted with an
+// empty Content (model-safe), so the picker must reconstruct a readable line
+// from ToolCalls via messageDisplayText, exactly like the conversation view.
+func TestMessagePickerRow_ShowsAssistantContent(t *testing.T) {
+	toolTurn := pub_models.Message{
+		Role: "assistant",
+		ToolCalls: []pub_models.Call{
+			{Name: "cat", Inputs: &pub_models.Input{"file": "main.go"}},
+		},
+	}
+	row, err := messagePickerRow(2, toolTurn)
+	if err != nil {
+		t.Fatalf("messagePickerRow: %v", err)
+	}
+	if !strings.Contains(row, "Call:") || !strings.Contains(row, "cat") {
+		t.Fatalf("tool-call turn should reconstruct the call, got: %q", row)
+	}
+
+	textTurn := pub_models.Message{Role: "assistant", Content: "the answer is 42"}
+	row, err = messagePickerRow(3, textTurn)
+	if err != nil {
+		t.Fatalf("messagePickerRow: %v", err)
+	}
+	if !strings.Contains(row, "the answer is 42") {
+		t.Fatalf("text turn should show its content, got: %q", row)
+	}
+}
+
+func TestMessageEditorText_UsesOnlyStoredContent(t *testing.T) {
+	textTurn := pub_models.Message{Role: "assistant", Content: "the answer is 42"}
+	if got := messageEditorText(textTurn); got != "the answer is 42" {
+		t.Fatalf("text turn editor content = %q, want %q", got, "the answer is 42")
+	}
+
+	structuredTurn := pub_models.Message{
+		Role:             "assistant",
+		ReasoningContent: "private reasoning",
+		ToolCalls:        []pub_models.Call{{Name: "cat", Inputs: &pub_models.Input{"file": "main.go"}}},
+	}
+	if got := messageEditorText(structuredTurn); got != "" {
+		t.Fatalf("structured turn editor content = %q, want empty stored content", got)
+	}
+}
+
 func TestActOnChat_enter_continues(t *testing.T) {
 	confDir := t.TempDir()
 	if err := utils.CreateConfigDir(confDir); err != nil {
@@ -381,6 +458,66 @@ func TestPrintChatInfo_ShowsCost(t *testing.T) {
 	out.Reset()
 	if err := cq.printChatInfo(&out, chatWithoutCost, ""); err != nil {
 		t.Fatalf("printChatInfo without cost: %v", err)
+	}
+	if !strings.Contains(out.String(), "N/A") {
+		t.Fatalf("expected N/A in output, got: %q", out.String())
+	}
+}
+
+func TestPrintChatInfo_TokenUsage(t *testing.T) {
+	confDir := t.TempDir()
+	if err := utils.CreateConfigDir(confDir); err != nil {
+		t.Fatalf("CreateConfigDir: %v", err)
+	}
+	oldConf := os.Getenv("CLAI_CONFIG_DIR")
+	if err := os.Setenv("CLAI_CONFIG_DIR", confDir); err != nil {
+		t.Fatalf("set CLAI_CONFIG_DIR: %v", err)
+	}
+	defer func() {
+		if err := os.Setenv("CLAI_CONFIG_DIR", oldConf); err != nil {
+			t.Fatalf("restore CLAI_CONFIG_DIR: %v", err)
+		}
+	}()
+
+	chatWithTokens := pub_models.Chat{
+		ID:       "chat-with-tokens",
+		Created:  time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
+		Messages: []pub_models.Message{{Role: "user", Content: "hello"}},
+		// Last session: the most recent gauge.
+		TokenUsage: &pub_models.Usage{TotalTokens: 45000},
+		Queries: []pub_models.QueryCost{
+			{Usage: pub_models.Usage{TotalTokens: 1000}},
+			{Usage: pub_models.Usage{TotalTokens: 2000}},
+			{Usage: pub_models.Usage{TotalTokens: 45000}},
+		},
+	}
+	chatWithoutTokens := pub_models.Chat{
+		ID:       "chat-without-tokens",
+		Created:  time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
+		Messages: []pub_models.Message{{Role: "user", Content: "hello"}},
+	}
+
+	var out strings.Builder
+	cq := &ChatHandler{out: &out}
+	if err := cq.printChatInfo(&out, chatWithTokens, ""); err != nil {
+		t.Fatalf("printChatInfo with tokens: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "token usage:") {
+		t.Fatalf("expected token usage section, got: %q", got)
+	}
+	// Values are colorized, so assert on the value substrings (same pattern as
+	// TestPrintChatInfo_ShowsCost asserting "$14.53").
+	if !strings.Contains(got, "48K") {
+		t.Fatalf("expected lifetime total 48K (1000+2000+45000), got: %q", got)
+	}
+	if !strings.Contains(got, "45K") {
+		t.Fatalf("expected most recent 45K, got: %q", got)
+	}
+
+	out.Reset()
+	if err := cq.printChatInfo(&out, chatWithoutTokens, ""); err != nil {
+		t.Fatalf("printChatInfo without tokens: %v", err)
 	}
 	if !strings.Contains(out.String(), "N/A") {
 		t.Fatalf("expected N/A in output, got: %q", out.String())

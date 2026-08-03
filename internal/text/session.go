@@ -21,6 +21,7 @@ type QuerySession struct {
 	ShouldSaveReply     bool
 	Raw                 bool
 	Finalized           bool
+	Failed              bool
 	SawAnyText          bool
 	SawStopEvent        bool
 	LikelyGeminiPreview bool

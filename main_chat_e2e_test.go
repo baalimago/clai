@@ -55,6 +55,12 @@ func splitArgsForTest(args string) []string {
 	return out
 }
 
+func TestMainHelpDocumentsChatDirV2(t *testing.T) {
+	if !strings.Contains(usage, "chat   dirv2") {
+		t.Fatalf("main help does not document chat dirv2")
+	}
+}
+
 func Test_chat_dir_does_not_print_skills_logs_without_text_query(t *testing.T) {
 	confDir := setupMainTestConfigDir(t)
 	oldWd, _ := os.Getwd()
@@ -68,12 +74,17 @@ func Test_chat_dir_does_not_print_skills_logs_without_text_query(t *testing.T) {
 		"enabled": true,
 	})
 
-	stdout, status := runOne(t, workDir, "-r -cm test chat dir")
-	if status != 0 {
-		t.Fatalf("expected zero status, got %d stdout=%q", status, stdout)
-	}
-	if strings.Contains(stdout, "skills") {
-		t.Fatalf("expected no skills logs in chat dir output, got %q", stdout)
+	for _, subcommand := range []string{"dir", "dirv2"} {
+		stdout, status := runOne(t, workDir, "-r -cm test chat "+subcommand)
+		if status != 0 {
+			t.Fatalf("expected zero status for chat %s, got %d stdout=%q", subcommand, status, stdout)
+		}
+		if strings.Contains(stdout, "skills") {
+			t.Fatalf("expected no skills logs in chat %s output, got %q", subcommand, stdout)
+		}
+		if strings.ContainsRune(stdout, '\a') {
+			t.Fatalf("raw chat %s output contains a notification bell: %q", subcommand, stdout)
+		}
 	}
 }
 

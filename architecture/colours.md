@@ -112,6 +112,10 @@ Implementation:
 - `main.go:triggerCompletionNotification()`
 - `internal/utils.NotificationBellEnabled()`
 
+Raw `chat dir` and `chat dirv2` output does not include BEL. Model output with `-rf` or `-response-format` also excludes BEL.
+
+Structured output blocks all intermediate display output. These rules keep the JSON valid for tools such as `jq`.
+
 ## Customization
 
 To customize colours, edit:

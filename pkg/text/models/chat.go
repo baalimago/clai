@@ -28,10 +28,14 @@ type Chat struct {
 	// text content. Empty when no user message exists, the first message is
 	// image-only, or the chat predates this feature. Stamped once on first
 	// persist; never rewritten.
-	GroupKey   string      `json:"group_key,omitempty"`
-	Messages   []Message   `json:"messages"`
-	TokenUsage *Usage      `json:"usage,omitempty"`
-	Queries    []QueryCost `json:"queries,omitempty"`
+	GroupKey string    `json:"group_key,omitempty"`
+	Messages []Message `json:"messages"`
+	// TokenUsage is the billable usage accumulated across all model calls in
+	// the latest session. RecentTokenUsage is only the final model call, which
+	// is the closest persisted gauge of the next request's context size.
+	TokenUsage       *Usage      `json:"usage,omitempty"`
+	RecentTokenUsage *Usage      `json:"recent_usage,omitempty"`
+	Queries          []QueryCost `json:"queries,omitempty"`
 }
 
 type QueryCost struct {

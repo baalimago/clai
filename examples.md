@@ -32,6 +32,21 @@ clai -dre query "Apply it to this repo"
 
 See: [`query.md`](./architecture/query.md), [`chat.md`](./architecture/chat.md), [`dre.md`](./architecture/dre.md).
 
+## Blocking structured output
+
+Use the included review schema to produce JSON that you can send directly to `jq`:
+
+```bash
+go run . -rf examples/response-format-review.json query \
+  "Review the current changes. Return a summary, a findings list, and an approval decision." | jq
+```
+
+The `-rf` flag blocks streaming output. Standard output contains only the final structured response and one trailing newline.
+
+Reasoning, tool activity, skill-discovery logs, lookback notices, formatting, and the completion notification bell do not appear in this output.
+
+Errors still go to standard error.
+
 ## Auto-append shell context
 
 ```bash

@@ -1,0 +1,31 @@
+{
+  "type": "json_schema",
+  "json_schema": {
+    "name": "review_result",
+    "description": "A structured code review result.",
+    "strict": true,
+    "schema": {
+      "type": "object",
+      "properties": {
+        "summary": {
+          "type": "string"
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "approved": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "summary",
+        "findings",
+        "approved"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

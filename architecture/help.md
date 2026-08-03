@@ -47,6 +47,13 @@ This is the deep-ish help for profile concepts and usage.
    - config dir + cache dir paths
 3. Prints to stdout.
 
+The general help lists both directory-information commands:
+
+- `clai chat dir` keeps the stable v1 output.
+- `clai chat dirv2` provides total and recent token usage.
+
+`clai chat help` lists the same commands and includes raw-mode examples.
+
 ## Exit behavior
 
 Returns `utils.ErrUserInitiatedExit`, so the process exits with code 0.

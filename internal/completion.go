@@ -90,7 +90,7 @@ var completionPromptCommands = map[string]struct{}{
 	"g":     {},
 }
 
-var completionChatSubcommands = []string{"continue", "delete", "help", "list"}
+var completionChatSubcommands = []string{"continue", "delete", "dir", "dirv2", "help", "list"}
 
 var completionGlobalFlags = []completionFlagSpec{
 	{Name: "-I", TakesValue: true},

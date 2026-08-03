@@ -58,5 +58,5 @@ func TestHiddenCompletionOutputsExpectedFormat(t *testing.T) {
 	})
 
 	testboil.FailTestIfDiff(t, gotStatus, 0)
-	testboil.FailTestIfDiff(t, stdout, "continue\tplain\ndelete\tplain\nhelp\tplain\nlist\tplain\n")
+	testboil.FailTestIfDiff(t, stdout, "continue\tplain\ndelete\tplain\ndir\tplain\ndirv2\tplain\nhelp\tplain\nlist\tplain\n")
 }

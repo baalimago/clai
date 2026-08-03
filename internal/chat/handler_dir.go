@@ -16,20 +16,47 @@ import (
 )
 
 type chatDirInfo struct {
-	Scope                string           `json:"scope"`
-	ChatID               string           `json:"chat_id"`
-	Profile              string           `json:"profile,omitempty"`
-	Updated              string           `json:"updated,omitempty"`
-	ConversationCreated  string           `json:"conversation_created,omitempty"`
-	RepliesByRole        map[string]int   `json:"replies_by_role"`
-	InputTokens          int              `json:"input_tokens"`
-	NonCachedInputTokens int              `json:"non_cached_input_tokens"`
-	CachedTokens         int              `json:"cached_tokens"`
-	OutputTokens         int              `json:"output_tokens"`
-	CostUSD              float64          `json:"cost_usd,omitempty"`
-	Cost                 string           `json:"cost,omitempty"`
-	Price                chatDirPriceInfo `json:"price"`
-	initialMessage       string           `json:"-"`
+	Scope                string            `json:"scope"`
+	ChatID               string            `json:"chat_id"`
+	Profile              string            `json:"profile,omitempty"`
+	Updated              string            `json:"updated,omitempty"`
+	ConversationCreated  string            `json:"conversation_created,omitempty"`
+	RepliesByRole        map[string]int    `json:"replies_by_role"`
+	InputTokens          int               `json:"input_tokens"`
+	NonCachedInputTokens int               `json:"non_cached_input_tokens"`
+	CachedTokens         int               `json:"cached_tokens"`
+	OutputTokens         int               `json:"output_tokens"`
+	CostUSD              float64           `json:"cost_usd,omitempty"`
+	Cost                 string            `json:"cost,omitempty"`
+	Price                chatDirPriceInfo  `json:"price"`
+	initialMessage       string            `json:"-"`
+	recentUsage          *pub_models.Usage `json:"-"`
+	totalUsage           *pub_models.Usage `json:"-"`
+}
+
+type chatDirInfoV2 struct {
+	Version             int                 `json:"version"`
+	Scope               string              `json:"scope"`
+	ChatID              string              `json:"chat_id"`
+	Profile             string              `json:"profile,omitempty"`
+	Updated             string              `json:"updated,omitempty"`
+	ConversationCreated string              `json:"conversation_created,omitempty"`
+	RepliesByRole       map[string]int      `json:"replies_by_role"`
+	TokenUsage          chatDirTokenUsageV2 `json:"token_usage"`
+	CostUSD             float64             `json:"cost_usd"`
+	initialMessage      string              `json:"-"`
+}
+
+type chatDirTokenUsageV2 struct {
+	Recent chatDirTokenCountV2 `json:"recent"`
+	Total  chatDirTokenCountV2 `json:"total"`
+}
+
+type chatDirTokenCountV2 struct {
+	UncachedInput int `json:"uncached_input"`
+	CachedInput   int `json:"cached_input"`
+	Output        int `json:"output"`
+	Total         int `json:"total"`
 }
 
 type chatDirPriceInfo struct {
@@ -93,6 +120,23 @@ price details:
 	total: %v
 `
 
+const prettyDirInfoV2Format = `scope: %v
+chat id: %v
+prompt: %v%v
+replies by role:
+%v
+total cost: %v
+token usage:
+	total:
+		input: %v
+		cached: %v
+		output: %v
+	recent:
+		input: %v
+		cached: %v
+		output: %v
+`
+
 func (cq *ChatHandler) dirInfo() error {
 	info, err := cq.resolveChatDirInfo()
 	if err != nil {
@@ -108,29 +152,13 @@ func (cq *ChatHandler) dirInfo() error {
 		return nil
 	}
 
-	profileOut := ""
-	if info.Profile != "" {
-		profileOut = fmt.Sprintf("\nprofile: %v", info.Profile)
-	}
-	roles := make([]string, 0, len(info.RepliesByRole))
-	for r := range info.RepliesByRole {
-		roles = append(roles, r)
-	}
-	sort.Strings(roles)
-	rolesOut := strings.Builder{}
-	for i, r := range roles {
-		fmt.Fprintf(&rolesOut, "  %s: %v", r, info.RepliesByRole[r])
-		if i != len(roles)-1 {
-			fmt.Fprintf(&rolesOut, "\n")
-		}
-	}
 	fmt.Fprintf(
 		cq.out, prettyDirInfoFormat,
 		info.Scope,
 		info.ChatID,
 		info.initialPrompt(),
-		profileOut,
-		rolesOut.String(),
+		profileOutput(info.Profile),
+		repliesOutput(info.RepliesByRole),
 		info.costString(),
 		info.InputTokens,
 		info.CachedTokens,
@@ -141,6 +169,94 @@ func (cq *ChatHandler) dirInfo() error {
 		info.priceTotalString(),
 	)
 	return nil
+}
+
+func (cq *ChatHandler) dirInfoV2() error {
+	legacy, err := cq.resolveChatDirInfo()
+	if err != nil {
+		return fmt.Errorf("resolve chat dir info v2: %w", err)
+	}
+	info := newChatDirInfoV2(legacy)
+
+	if cq.raw {
+		b, err := json.Marshal(info)
+		if err != nil {
+			return fmt.Errorf("marshal chat dir info v2: %w", err)
+		}
+		fmt.Fprintln(cq.out, string(b))
+		return nil
+	}
+
+	fmt.Fprintf(
+		cq.out, prettyDirInfoV2Format,
+		info.Scope,
+		info.ChatID,
+		legacy.initialPrompt(),
+		profileOutput(info.Profile),
+		repliesOutput(info.RepliesByRole),
+		legacy.costString(),
+		abbrevTokens(info.TokenUsage.Total.UncachedInput+info.TokenUsage.Total.CachedInput),
+		abbrevTokens(info.TokenUsage.Total.CachedInput),
+		abbrevTokens(info.TokenUsage.Total.Output),
+		abbrevTokens(info.TokenUsage.Recent.UncachedInput+info.TokenUsage.Recent.CachedInput),
+		abbrevTokens(info.TokenUsage.Recent.CachedInput),
+		abbrevTokens(info.TokenUsage.Recent.Output),
+	)
+	return nil
+}
+
+func profileOutput(profile string) string {
+	if profile == "" {
+		return ""
+	}
+	return fmt.Sprintf("\nprofile: %v", profile)
+}
+
+func repliesOutput(replies map[string]int) string {
+	roles := make([]string, 0, len(replies))
+	for role := range replies {
+		roles = append(roles, role)
+	}
+	sort.Strings(roles)
+	var out strings.Builder
+	for i, role := range roles {
+		fmt.Fprintf(&out, "  %s: %v", role, replies[role])
+		if i != len(roles)-1 {
+			out.WriteByte('\n')
+		}
+	}
+	return out.String()
+}
+
+func newChatDirInfoV2(info chatDirInfo) chatDirInfoV2 {
+	return chatDirInfoV2{
+		Version:             2,
+		Scope:               info.Scope,
+		ChatID:              info.ChatID,
+		Profile:             info.Profile,
+		Updated:             info.Updated,
+		ConversationCreated: info.ConversationCreated,
+		RepliesByRole:       info.RepliesByRole,
+		TokenUsage: chatDirTokenUsageV2{
+			Recent: tokenCountV2(info.recentUsage),
+			Total:  tokenCountV2(info.totalUsage),
+		},
+		CostUSD:        info.CostUSD,
+		initialMessage: info.initialMessage,
+	}
+}
+
+func tokenCountV2(usage *pub_models.Usage) chatDirTokenCountV2 {
+	if usage == nil {
+		return chatDirTokenCountV2{}
+	}
+	cached := usage.PromptTokensDetails.CachedTokens
+	return chatDirTokenCountV2{
+		UncachedInput: max(usage.PromptTokens-cached, 0),
+		CachedInput:   cached,
+		Output:        usage.CompletionTokens,
+		Total:         usage.TotalTokens,
+	}
 }
 
 func (cdi chatDirInfo) costString() string {
@@ -221,6 +337,15 @@ func (cq *ChatHandler) infoFromChat(scope, chatID string, c pub_models.Chat) cha
 		cdi.CachedTokens = c.TokenUsage.PromptTokensDetails.CachedTokens
 		cdi.NonCachedInputTokens = max(c.TokenUsage.PromptTokens-cdi.CachedTokens, 0)
 		cdi.OutputTokens = c.TokenUsage.CompletionTokens
+	}
+	cdi.recentUsage = chatRecentUsage(c)
+	if len(c.Queries) > 0 {
+		total := aggregateQueryUsage(c.Queries)
+		cdi.totalUsage = &total
+	} else if c.TokenUsage != nil {
+		cdi.totalUsage = c.TokenUsage
+	} else {
+		cdi.totalUsage = c.RecentTokenUsage
 	}
 	if c.HasCostEstimates() {
 		cdi.Price, cdi.CostUSD = aggregateQueryPriceInfo(c.Queries)

@@ -225,6 +225,7 @@ func setupTextQuerierWithConf(ctx context.Context, mode Mode, confDir string, fl
 		tConf.ChatMode = true
 	}
 	logSkillDiscovery := shouldLogSkillDiscovery(mode, args)
+	structuredOutput := false
 
 	// At the moment, the configurations are based on the config file. But
 	// the configuration presecende is flags > file > default. So, we need
@@ -236,6 +237,8 @@ func setupTextQuerierWithConf(ctx context.Context, mode Mode, confDir string, fl
 		if err := tConf.LoadResponseFormat(flagSet.ResponseFormatPath); err != nil {
 			return nil, nil, fmt.Errorf("response format: %w", err)
 		}
+		structuredOutput = true
+		logSkillDiscovery = false
 	}
 
 	if misc.Truthy(os.Getenv("DEBUG")) {
@@ -280,6 +283,10 @@ func setupTextQuerierWithConf(ctx context.Context, mode Mode, confDir string, fl
 			knownToolNames = append(knownToolNames, name)
 		}
 		cacheDir, _ := utils.GetClaiCacheDir()
+		skillLogLevel := skills.ParseLogLevelFromEnv()
+		if structuredOutput {
+			skillLogLevel = skills.LogLevelError
+		}
 		skillMgr, err := skills.Discover(skills.Options{
 			ConfigDir:    confDir,
 			CacheDir:     cacheDir,
@@ -294,7 +301,7 @@ func setupTextQuerierWithConf(ctx context.Context, mode Mode, confDir string, fl
 				answer = strings.ToLower(strings.TrimSpace(answer))
 				return answer == "y" || answer == "yes", nil
 			},
-			LogLevel:       skills.ParseLogLevelFromEnv(),
+			LogLevel:       skillLogLevel,
 			KnownToolNames: knownToolNames,
 		})
 		if err != nil {
@@ -370,8 +377,10 @@ func setupLookback(confDir string, tConf *text.Configurations, flagSet Configura
 	}
 	if desc.HasHistory {
 		tConf.LookbackDescriptor = desc.Block
-		ancli.Noticef("lookback: surfaced %d recent conversation(s) for this directory\n", desc.Shown)
-	} else {
+		if tConf.ResponseFormat == nil {
+			ancli.Noticef("lookback: surfaced %d recent conversation(s) for this directory\n", desc.Shown)
+		}
+	} else if tConf.ResponseFormat == nil {
 		ancli.Noticef("lookback: enabled (no recorded history in this directory yet; search other paths with search_conversations)\n")
 	}
 	return nil

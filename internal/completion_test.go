@@ -60,8 +60,8 @@ func TestCompletionEngineComplete(t *testing.T) {
 			{
 				name:        "chat subcommands",
 				line:        []string{"clai", "chat", ""},
-				wantValues:  []string{"continue", "delete", "help", "list"},
-				wantKinds:   repeatKind(completionResultKindPlain, 4),
+				wantValues:  []string{"continue", "delete", "dir", "dirv2", "help", "list"},
+				wantKinds:   repeatKind(completionResultKindPlain, 6),
 				wantReplace: "",
 			},
 			{

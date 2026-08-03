@@ -30,7 +30,8 @@ Commands:
   c|continue <chatID> <prompt>    Continue an existing chat with the given chat ID. Prompt is optional
   d|delete   <chatID>             Delete the chat with the given chat ID.
   l|list                          List all existing chats.
-  dir                             Show chat info for CWD (dir binding or global globalScope).
+  dir                             Show legacy chat info for CWD (stable v1 output).
+  dirv2                           Show chat info with total and recent token usage.
 
 The chatID is the 5 first words of the prompt joined by underscores. Easiest
 way to get the chatID is to list all chats with 'clai chat list'. You may also select
@@ -44,6 +45,8 @@ Examples:
   - clai chat continue my_chat_id
   - clai chat continue 3
   - clai chat delete my_chat_id
+  - clai chat dir
+  - clai -r chat dirv2
 `
 
 const (
@@ -77,6 +80,10 @@ func (q *ChatHandler) Query(ctx context.Context) error {
 	return q.actOnSubCmd(ctx)
 }
 
+func (q *ChatHandler) SuppressCompletionNotification() bool {
+	return q.raw && (q.subCmd == "dir" || q.subCmd == "dirv2")
+}
+
 func (cq *ChatHandler) actOnSubCmd(ctx context.Context) error {
 	if cq.debug {
 		ancli.PrintOK(fmt.Sprintf("chat: %+v\n", cq))
@@ -90,8 +97,13 @@ func (cq *ChatHandler) actOnSubCmd(ctx context.Context) error {
 		return cq.deleteFromPrompt()
 	case "query", "q":
 		return errors.New("not yet implemented")
-	case "dir":
-		err := cq.dirInfo()
+	case "dir", "dirv2":
+		var err error
+		if cq.subCmd == "dirv2" {
+			err = cq.dirInfoV2()
+		} else {
+			err = cq.dirInfo()
+		}
 		if errors.Is(err, fs.ErrNotExist) {
 			return errors.New("failed to print any chat information as there was no bound chats found. This is unusual, check if replies are enabled")
 		}

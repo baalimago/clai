@@ -14,6 +14,12 @@ import (
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
+func TestChatHelpDocumentsDirV2(t *testing.T) {
+	if !strings.Contains(chatUsage, "dirv2") {
+		t.Fatalf("chat help does not document dirv2")
+	}
+}
+
 func TestChatHandler_dirInfo_NoDirScopeNoPrevQuery(t *testing.T) {
 	confDir := t.TempDir()
 	if err := utils.CreateConfigDir(confDir); err != nil {
@@ -426,7 +432,187 @@ func TestChatHandler_dirInfo_Raw_PriceBreakdownAggregatesAllQueries(t *testing.T
 	}
 }
 
-func TestChatHandler_dirInfo_Pretty_IncludesTokenAndPriceBreakdown(t *testing.T) {
+func TestChatHandler_dirInfo_V1RemainsBackwardCompatible(t *testing.T) {
+	confDir := t.TempDir()
+	if err := utils.CreateConfigDir(confDir); err != nil {
+		t.Fatalf("CreateConfigDir: %v", err)
+	}
+	convDir := filepath.Join(confDir, "conversations")
+	chat := pub_models.Chat{
+		ID:       globalScopeChatID,
+		Created:  time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC),
+		Messages: []pub_models.Message{{Role: "user", Content: "hi"}},
+		TokenUsage: &pub_models.Usage{
+			PromptTokens:     21,
+			CompletionTokens: 9,
+			TotalTokens:      30,
+		},
+		RecentTokenUsage: &pub_models.Usage{PromptTokens: 18, CompletionTokens: 3, TotalTokens: 21},
+	}
+	if err := Save(convDir, chat); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	var out bytes.Buffer
+	cq := &ChatHandler{confDir: confDir, convDir: convDir, raw: true, out: &out}
+	if err := cq.dirInfo(); err != nil {
+		t.Fatalf("dirInfo raw: %v", err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(out.Bytes(), &raw); err != nil {
+		t.Fatalf("unmarshal: %v, out=%q", err, out.String())
+	}
+	if raw["input_tokens"] != float64(21) || raw["output_tokens"] != float64(9) {
+		t.Fatalf("legacy token fields changed: %s", out.String())
+	}
+	for _, key := range []string{"version", "token_usage", "total_input_tokens", "recent_input_tokens"} {
+		if _, exists := raw[key]; exists {
+			t.Fatalf("v1 output contains v2 field %q: %s", key, out.String())
+		}
+	}
+
+	out.Reset()
+	cq.raw = false
+	if err := cq.dirInfo(); err != nil {
+		t.Fatalf("dirInfo pretty: %v", err)
+	}
+	if !strings.Contains(out.String(), "input: 21") || strings.Contains(out.String(), "recent:") || strings.Contains(out.String(), "most recent:") {
+		t.Fatalf("v1 pretty output changed: %q", out.String())
+	}
+}
+
+func TestChatHandler_dirInfoV2_Raw_CleanTokenUsageSchema(t *testing.T) {
+	confDir := t.TempDir()
+	if err := utils.CreateConfigDir(confDir); err != nil {
+		t.Fatalf("CreateConfigDir: %v", err)
+	}
+
+	wd := t.TempDir()
+	oldWd, _ := os.Getwd()
+	t.Cleanup(func() { _ = os.Chdir(oldWd) })
+	if err := os.Chdir(wd); err != nil {
+		t.Fatalf("Chdir: %v", err)
+	}
+
+	convDir := filepath.Join(confDir, "conversations")
+	ch := pub_models.Chat{
+		ID:      "globalScopeTokenSections",
+		Created: time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC),
+		Messages: []pub_models.Message{
+			{Role: "user", Content: "hi"},
+			{Role: "assistant", Content: "ok"},
+		},
+		TokenUsage: &pub_models.Usage{
+			PromptTokens:     30,
+			CompletionTokens: 10,
+			TotalTokens:      40,
+			PromptTokensDetails: pub_models.PromptTokensDetails{
+				CachedTokens: 10,
+			},
+		},
+		RecentTokenUsage: &pub_models.Usage{
+			PromptTokens:     30,
+			CompletionTokens: 4,
+			TotalTokens:      34,
+			PromptTokensDetails: pub_models.PromptTokensDetails{
+				CachedTokens: 10,
+			},
+		},
+		Queries: []pub_models.QueryCost{
+			{
+				CostUSD: 0.1,
+				Usage: pub_models.Usage{
+					PromptTokens:     12,
+					CompletionTokens: 3,
+					TotalTokens:      15,
+					PromptTokensDetails: pub_models.PromptTokensDetails{
+						CachedTokens: 5,
+					},
+				},
+			},
+			{
+				CostUSD: 0.2,
+				Usage: pub_models.Usage{
+					PromptTokens:     30,
+					CompletionTokens: 10,
+					TotalTokens:      40,
+					PromptTokensDetails: pub_models.PromptTokensDetails{
+						CachedTokens: 10,
+					},
+				},
+			},
+		},
+	}
+	if err := Save(convDir, ch); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	cqInit := &ChatHandler{confDir: confDir, convDir: convDir}
+	if err := cqInit.SaveDirScope("", ch.ID); err != nil {
+		t.Fatalf("SaveDirScope: %v", err)
+	}
+
+	var out bytes.Buffer
+	cq := &ChatHandler{confDir: confDir, convDir: convDir, raw: true, out: &out}
+
+	if err := cq.dirInfoV2(); err != nil {
+		t.Fatalf("dirInfoV2: %v", err)
+	}
+
+	var got map[string]any
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal: %v, out=%q", err, out.String())
+	}
+	if got["version"] != float64(2) {
+		t.Fatalf("version: got %#v want 2", got["version"])
+	}
+	if math.Abs(got["cost_usd"].(float64)-0.3) > 1e-9 {
+		t.Fatalf("cost_usd: got %#v want 0.3", got["cost_usd"])
+	}
+	allowed := map[string]bool{
+		"version": true, "scope": true, "chat_id": true, "profile": true,
+		"updated": true, "conversation_created": true, "replies_by_role": true,
+		"token_usage": true, "cost_usd": true,
+	}
+	for key := range got {
+		if !allowed[key] {
+			t.Fatalf("v2 output contains unknown top-level field %q: %s", key, out.String())
+		}
+	}
+	for _, key := range []string{
+		"cost", "price", "input_tokens", "non_cached_input_tokens", "cached_tokens", "output_tokens",
+		"total_input_tokens", "total_cached_tokens", "total_output_tokens", "total_tokens",
+		"recent_input_tokens", "recent_cached_tokens", "recent_output_tokens", "recent_tokens",
+	} {
+		if _, exists := got[key]; exists {
+			t.Fatalf("v2 output contains legacy field %q: %s", key, out.String())
+		}
+	}
+
+	tokenUsage, ok := got["token_usage"].(map[string]any)
+	if !ok {
+		t.Fatalf("token_usage: got %#v", got["token_usage"])
+	}
+	recent, ok := tokenUsage["recent"].(map[string]any)
+	if !ok {
+		t.Fatalf("token_usage.recent: got %#v", tokenUsage["recent"])
+	}
+	total, ok := tokenUsage["total"].(map[string]any)
+	if !ok {
+		t.Fatalf("token_usage.total: got %#v", tokenUsage["total"])
+	}
+	for key, want := range map[string]float64{"uncached_input": 20, "cached_input": 10, "output": 4, "total": 34} {
+		if recent[key] != want {
+			t.Fatalf("token_usage.recent.%s: got %#v want %v", key, recent[key], want)
+		}
+	}
+	for key, want := range map[string]float64{"uncached_input": 27, "cached_input": 15, "output": 13, "total": 55} {
+		if total[key] != want {
+			t.Fatalf("token_usage.total.%s: got %#v want %v", key, total[key], want)
+		}
+	}
+}
+
+func TestChatHandler_dirInfoV2_Pretty_IncludesTotalAndRecentUsage(t *testing.T) {
 	confDir := t.TempDir()
 	if err := utils.CreateConfigDir(confDir); err != nil {
 		t.Fatalf("CreateConfigDir: %v", err)
@@ -480,24 +666,124 @@ func TestChatHandler_dirInfo_Pretty_IncludesTokenAndPriceBreakdown(t *testing.T)
 	cq.raw = false
 	cq.out = &out
 
-	if err := cq.dirInfo(); err != nil {
-		t.Fatalf("dirInfo: %v", err)
+	if err := cq.dirInfoV2(); err != nil {
+		t.Fatalf("dirInfoV2: %v", err)
 	}
 
 	printed := out.String()
 	for _, want := range []string{
-		"tokens used:",
-		"input: 21",
-		"cached: 4",
-		"output: 9",
-		"price details:",
-		"input:",
-		"cached:",
-		"output:",
+		"token usage:",
 		"total:",
+		"input: 0.021K",
+		"cached: 0.004K",
+		"output: 0.009K",
+		"recent:",
 	} {
 		if !strings.Contains(printed, want) {
 			t.Fatalf("expected %q in output, got: %q", want, printed)
 		}
 	}
+	if strings.Contains(printed, "price details:") {
+		t.Fatalf("v2 pretty output contains legacy price details: %q", printed)
+	}
+	totalIdx := strings.Index(printed, "total:")
+	recentIdx := strings.Index(printed, "recent:")
+	if totalIdx == -1 || recentIdx == -1 || totalIdx >= recentIdx {
+		t.Fatalf("token sections out of order, got: %q", printed)
+	}
+}
+
+func TestChatHandler_dirInfoV2_Pretty_AbbreviatesTokenCounts(t *testing.T) {
+	confDir := t.TempDir()
+	if err := utils.CreateConfigDir(confDir); err != nil {
+		t.Fatalf("CreateConfigDir: %v", err)
+	}
+
+	wd := t.TempDir()
+	oldWd, _ := os.Getwd()
+	t.Cleanup(func() { _ = os.Chdir(oldWd) })
+	if err := os.Chdir(wd); err != nil {
+		t.Fatalf("Chdir: %v", err)
+	}
+
+	convDir := filepath.Join(confDir, "conversations")
+	ch := pub_models.Chat{
+		ID:      "globalScopeBigTokens",
+		Created: time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC),
+		Messages: []pub_models.Message{
+			{Role: "user", Content: "hi"},
+			{Role: "assistant", Content: "ok"},
+		},
+		TokenUsage: &pub_models.Usage{
+			PromptTokens:     3717276,
+			CompletionTokens: 1234567,
+			TotalTokens:      4951843,
+			PromptTokensDetails: pub_models.PromptTokensDetails{
+				CachedTokens: 500000,
+			},
+		},
+		Queries: []pub_models.QueryCost{
+			{
+				Usage: pub_models.Usage{
+					PromptTokens:     3717276,
+					CompletionTokens: 1234567,
+					TotalTokens:      4951843,
+					PromptTokensDetails: pub_models.PromptTokensDetails{
+						CachedTokens: 500000,
+					},
+				},
+			},
+		},
+	}
+	if err := Save(convDir, ch); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	cqInit := &ChatHandler{confDir: confDir, convDir: convDir}
+	if err := cqInit.SaveDirScope("", ch.ID); err != nil {
+		t.Fatalf("SaveDirScope: %v", err)
+	}
+
+	var out bytes.Buffer
+	cq := &ChatHandler{confDir: confDir, convDir: convDir, raw: false, out: &out}
+
+	if err := cq.dirInfoV2(); err != nil {
+		t.Fatalf("dirInfoV2: %v", err)
+	}
+
+	printed := out.String()
+	for _, want := range []string{
+		"input: 3.7M",
+		"cached: 500K",
+		"output: 1.2M",
+	} {
+		if !strings.Contains(printed, want) {
+			t.Fatalf("expected %q in output, got: %q", want, printed)
+		}
+	}
+}
+
+func TestChatRecentUsagePrecedence(t *testing.T) {
+	t.Run("explicit recent call usage", func(t *testing.T) {
+		chat := pub_models.Chat{
+			TokenUsage:       &pub_models.Usage{TotalTokens: 120},
+			RecentTokenUsage: &pub_models.Usage{TotalTokens: 85},
+		}
+
+		got := chatRecentUsage(chat)
+		if got == nil || got.TotalTokens != 85 {
+			t.Fatalf("recent usage mismatch: got %+v", got)
+		}
+	})
+
+	t.Run("last query fallback", func(t *testing.T) {
+		chat := pub_models.Chat{Queries: []pub_models.QueryCost{
+			{Usage: pub_models.Usage{TotalTokens: 10}},
+			{Usage: pub_models.Usage{TotalTokens: 34}},
+		}}
+
+		got := chatRecentUsage(chat)
+		if got == nil || got.TotalTokens != 34 {
+			t.Fatalf("recent query fallback mismatch: got %+v", got)
+		}
+	})
 }

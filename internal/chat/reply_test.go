@@ -19,7 +19,8 @@ func TestSaveAsPreviousQuery_PreservesQueries(t *testing.T) {
 			{Role: "user", Content: "hello"},
 			{Role: "assistant", Content: "hi"},
 		},
-		TokenUsage: &pub_models.Usage{TotalTokens: 12},
+		TokenUsage:       &pub_models.Usage{TotalTokens: 12},
+		RecentTokenUsage: &pub_models.Usage{TotalTokens: 7},
 		Queries: []pub_models.QueryCost{
 			{CreatedAt: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC), CostUSD: 0.42, Model: "openai/gpt-4.1-mini"},
 		},
@@ -39,6 +40,9 @@ func TestSaveAsPreviousQuery_PreservesQueries(t *testing.T) {
 	if got.Queries[0].CostUSD != 0.42 {
 		t.Fatalf("query cost mismatch: got %v", got.Queries[0].CostUSD)
 	}
+	if got.RecentTokenUsage == nil || got.RecentTokenUsage.TotalTokens != 7 {
+		t.Fatalf("recent token usage mismatch: got %+v", got.RecentTokenUsage)
+	}
 
 	entries, err := os.ReadDir(filepath.Join(confDir, "conversations"))
 	if err != nil {
@@ -55,6 +59,9 @@ func TestSaveAsPreviousQuery_PreservesQueries(t *testing.T) {
 		}
 		if len(conv.Queries) != 1 {
 			t.Fatalf("conversation queries length mismatch: got %d", len(conv.Queries))
+		}
+		if conv.RecentTokenUsage == nil || conv.RecentTokenUsage.TotalTokens != 7 {
+			t.Fatalf("conversation recent token usage mismatch: got %+v", conv.RecentTokenUsage)
 		}
 		foundConversation = true
 	}
