@@ -24,6 +24,10 @@ func (q dreQuerier) Query(ctx context.Context) error {
 	return nil
 }
 
+func (q dreQuerier) SuppressCompletionNotification() bool {
+	return q.raw
+}
+
 var _ models.Querier = (*dreQuerier)(nil)
 
 func setupDRE(mode Mode, postFlagConf Configurations, _ []string) (models.Querier, error) {

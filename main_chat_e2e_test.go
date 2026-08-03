@@ -82,6 +82,9 @@ func Test_chat_dir_does_not_print_skills_logs_without_text_query(t *testing.T) {
 		if strings.Contains(stdout, "skills") {
 			t.Fatalf("expected no skills logs in chat %s output, got %q", subcommand, stdout)
 		}
+		if strings.ContainsRune(stdout, '\a') {
+			t.Fatalf("raw chat %s output contains a notification bell: %q", subcommand, stdout)
+		}
 	}
 }
 

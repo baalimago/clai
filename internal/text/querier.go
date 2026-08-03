@@ -27,6 +27,7 @@ const (
 
 type Querier[C models.StreamCompleter] struct {
 	Raw                     bool
+	structuredOutput        bool
 	chat                    pub_models.Chat
 	callStackLevel          int
 	username                string
@@ -85,6 +86,10 @@ type Querier[C models.StreamCompleter] struct {
 	callUsageRecorder CallUsageRecorder
 	skillLoader       SkillLoader
 	baseTools         map[string]pub_models.LLMTool
+}
+
+func (q *Querier[C]) SuppressCompletionNotification() bool {
+	return q.structuredOutput
 }
 
 type SkillLoader interface {
@@ -226,7 +231,7 @@ func (q *Querier[C]) handleTokenForSession(session *QuerySession, token string) 
 	}
 	session.AppendPendingText(token)
 	q.fullMsg = session.PendingTextString()
-	if !q.debug {
+	if !q.debug && !q.structuredOutput {
 		fmt.Fprint(w, token)
 	}
 }
@@ -239,12 +244,18 @@ func (q *Querier[C]) closeReasoningIfOpen(session *QuerySession) {
 		return
 	}
 	q.reasoningActive = false
-	if !q.debug {
+	if !q.debug && !q.structuredOutput {
 		w := q.out
 		if w == nil {
 			w = os.Stdout
 		}
 		fmt.Fprint(w, table.Colorize(utils.RoleColor("reasoning"), "\n[/thinking]\n"))
+	}
+	if q.structuredOutput {
+		session.PendingReasoning.WriteString(q.reasoningBuf.String())
+		q.fullMsg = session.PendingTextString()
+		q.reasoningBuf.Reset()
+		return
 	}
 	reasoningWrapped := "[thinking]" + q.reasoningBuf.String() + "\n[/thinking]\n"
 	if session.PendingTextString() == "" {

@@ -31,6 +31,30 @@ func writeNotificationTestPriceFiles(t *testing.T, confDir string) {
 	}
 }
 
+func Test_run_structured_output_prints_only_response(t *testing.T) {
+	for _, rawFlag := range []string{"", "-r"} {
+		t.Run("raw="+rawFlag, func(t *testing.T) {
+			confDir := setupMainTestConfigDir(t)
+			writeNotificationTestPriceFiles(t, confDir)
+			writeSkillFile(t, filepath.Join(confDir, "skills", "review", "SKILL.md"), "---\ndescription: review\n---\nBody")
+			writeSkillsConfigJSON(t, confDir, map[string]any{"enabled": true})
+			responseFormatPath := filepath.Join("examples", "response-format-review.json")
+
+			args := []string{"-cm", "test", "-lb", "-rf", responseFormatPath, "q", "hello"}
+			if rawFlag != "" {
+				args = append([]string{rawFlag}, args...)
+			}
+			var gotStatusCode int
+			gotStdout := testboil.CaptureStdout(t, func(t *testing.T) {
+				gotStatusCode = run(args)
+			})
+
+			testboil.FailTestIfDiff(t, gotStatusCode, 0)
+			testboil.FailTestIfDiff(t, gotStdout, "hello\n")
+		})
+	}
+}
+
 func Test_run_emits_terminal_bell_on_completed_query_when_theme_enables_it(t *testing.T) {
 	confDir := t.TempDir()
 	required := []string{

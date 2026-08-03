@@ -116,8 +116,8 @@ func parseFlags(defaults Configurations, args []string) (Configurations, []strin
 	ascShort := fs.String("asc", defaults.ShellContext, "Auto-append shell context by name. Mutually exclusive with add-shell-context.")
 	ascLong := fs.String("add-shell-context", defaults.ShellContext, "Auto-append shell context by name. Mutually exclusive with asc.")
 
-	rfShort := fs.String("rf", defaults.ResponseFormatPath, "Path to a response_format JSON file for structured output.")
-	rfLong := fs.String("response-format", defaults.ResponseFormatPath, "Path to a response_format JSON file for structured output.")
+	rfShort := fs.String("rf", defaults.ResponseFormatPath, "Block streaming and print only the final structured response.")
+	rfLong := fs.String("response-format", defaults.ResponseFormatPath, "Block streaming and print only the final structured response.")
 
 	// Breaking change: -t/-tools are string-only value flags.
 	// Use: -t=* or -t=a,b ("-t" without value is undefined/ignored).

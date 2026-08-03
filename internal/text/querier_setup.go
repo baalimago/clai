@@ -229,6 +229,7 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	// Ensure profile selection is persisted in globalScope/saved conversations.
 	querier.chat.Profile = userConf.UseProfile
 	querier.Raw = userConf.Raw
+	querier.structuredOutput = userConf.ResponseFormat != nil
 	querier.shouldSaveReply = !userConf.ChatMode && userConf.SaveReplyAsConv
 	querier.replyMode = userConf.ReplyMode
 	querier.dirReplyMode = userConf.DirReplyMode

@@ -133,4 +133,5 @@ This allows subsequent `-dre` queries from the same directory to continue the co
 
 - **Default (animated)**: tokens stream to stdout character-by-character, then the full message is pretty-printed (via `glow` if installed)
 - **Raw (`-r`)**: tokens stream directly, no post-processing formatting
+- **Structured (`-rf`/`-response-format`)**: blocks streaming and prints only the final structured response, followed by one newline. It suppresses reasoning, tool activity, skill-discovery logs, lookback notices, formatting, and BEL.
 - **Cmd mode (`cmd` command)**: output is treated as a shell command; user is prompted to execute it

@@ -256,6 +256,80 @@ func Test_Querier_handleToken(t *testing.T) {
 	})
 }
 
+func TestQuerier_StructuredOutputPrintsOnlyFinalResponse(t *testing.T) {
+	inttools.WithTestRegistry(t, func() {
+		inttools.Registry.Set("test", stubTool{output: "tool output that must stay hidden"})
+
+		for _, raw := range []bool{false, true} {
+			t.Run(fmt.Sprintf("raw=%t", raw), func(t *testing.T) {
+				var callCount int
+				model := &MockQuerier{}
+				model.streamFn = func(context.Context, pub_models.Chat) (chan models.CompletionEvent, error) {
+					callCount++
+					out := make(chan models.CompletionEvent, 3)
+					if callCount == 1 {
+						out <- models.ReasoningEvent{Content: "private reasoning before tool"}
+						out <- pub_models.Call{ID: "call-1", Name: "test", Inputs: &pub_models.Input{}}
+					} else {
+						out <- models.ReasoningEvent{Content: "private final reasoning"}
+						out <- `{"summary":"ok","findings":[],"approved":true}`
+					}
+					close(out)
+					return out, nil
+				}
+
+				var output strings.Builder
+				q := Querier[*MockQuerier]{
+					Raw:              raw,
+					structuredOutput: true,
+					Model:            model,
+					out:              &output,
+					chat: pub_models.Chat{Messages: []pub_models.Message{
+						{Role: "user", Content: "review this"},
+					}},
+				}
+
+				if err := q.Query(context.Background()); err != nil {
+					t.Fatalf("Query: %v", err)
+				}
+				want := "{\"summary\":\"ok\",\"findings\":[],\"approved\":true}\n"
+				if got := output.String(); got != want {
+					t.Fatalf("structured output: got %q want %q", got, want)
+				}
+			})
+		}
+	})
+}
+
+func TestQuerier_StructuredOutputPrintsNothingOnError(t *testing.T) {
+	model := &MockQuerier{}
+	model.streamFn = func(context.Context, pub_models.Chat) (chan models.CompletionEvent, error) {
+		out := make(chan models.CompletionEvent, 2)
+		out <- `{"partial":`
+		out <- errors.New("stream failed")
+		close(out)
+		return out, nil
+	}
+
+	var output strings.Builder
+	q := Querier[*MockQuerier]{
+		Raw:              true,
+		structuredOutput: true,
+		Model:            model,
+		out:              &output,
+		chat: pub_models.Chat{Messages: []pub_models.Message{
+			{Role: "user", Content: "return json"},
+		}},
+	}
+
+	if err := q.Query(context.Background()); err == nil {
+		t.Fatal("expected query error")
+	}
+	if got := output.String(); got != "" {
+		t.Fatalf("structured output on error: got %q want empty", got)
+	}
+}
+
 func Test_Context(t *testing.T) {
 	q := Querier[*MockQuerier]{
 		Model: &MockQuerier{

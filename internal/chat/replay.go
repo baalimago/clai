@@ -52,5 +52,8 @@ func replayDirScoped(raw bool) error {
 		return errors.New("directory-scoped conversation has no messages")
 	}
 	mostRecentMsg := c.Messages[len(c.Messages)-1]
+	if raw {
+		mostRecentMsg.ReasoningContent = ""
+	}
 	return utils.AttemptPrettyPrint(nil, mostRecentMsg, "system", raw)
 }

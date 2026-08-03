@@ -39,7 +39,7 @@ Flags:
   -p, -profile string              Set the profile which should be used. For details, see 'clai help profile'. (default '%v')
   -prp, profile-path string        Set the path to a profile file to use instead of -p/-profile.
   -asc, -append-shell-context str  Append a named shell context from <config-dir>/shellContexts/<name>.json to the final query prompt.
-  -rf, -response-format string     Path to a response_format JSON file for structured output (json_object, json_schema).
+  -rf, -response-format string     Block streaming and print only the final structured response (json_object, json_schema).
   -n, -non-interactive             Disable interactive stdin fallback after macro inputs; auto-exit instead.
 
 Config dir: %v
@@ -76,7 +76,14 @@ Examples:
   - clai c help
 `
 
-func triggerCompletionNotification() {
+type completionNotificationSuppressor interface {
+	SuppressCompletionNotification() bool
+}
+
+func triggerCompletionNotification(completed any) {
+	if suppressor, ok := completed.(completionNotificationSuppressor); ok && suppressor.SuppressCompletionNotification() {
+		return
+	}
 	if !utils.NotificationBellEnabled() {
 		return
 	}
@@ -127,7 +134,7 @@ func run(args []string) int {
 		}
 	}
 	cancel()
-	triggerCompletionNotification()
+	triggerCompletionNotification(querier)
 	if misc.Truthy(os.Getenv("DEBUG")) {
 		ancli.PrintOK("things seems to have worked out. Bye bye! 🚀\n")
 	}

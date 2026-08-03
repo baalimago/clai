@@ -84,7 +84,7 @@ func (f sessionFinalizer[C]) Finalize(session *QuerySession) {
 	if q.debug {
 		ancli.Noticef("post process querier: %+v", q)
 	}
-	if session.Raw {
+	if session.Raw && !q.structuredOutput {
 		fmt.Fprintln(q.out)
 	}
 
@@ -150,7 +150,11 @@ func (f sessionFinalizer[C]) Finalize(session *QuerySession) {
 	if q.debug {
 		ancli.PrintOK(fmt.Sprintf("Querier.postProcess:\n%v\n", debug.IndentedJsonFmt(q)))
 	}
-	if session.FinalAssistantText == "" {
+	if session.FinalAssistantText == "" || session.Failed {
+		return
+	}
+	if q.structuredOutput {
+		fmt.Fprintln(q.out, stripThinkingBlocks(session.FinalAssistantText))
 		return
 	}
 	q.postProcessOutput(pub_models.Message{

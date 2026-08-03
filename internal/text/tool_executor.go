@@ -134,7 +134,7 @@ func (e toolExecutor[C]) emitAssistantToolCalls(session *QuerySession, calls []p
 			// assistant turn. Empty for other vendors.
 			modelSafe.ReasoningItems = call.ReasoningItems
 		}
-		if !q.debug {
+		if !q.debug && !q.structuredOutput {
 			display := pub_models.Message{Role: "assistant", Content: call.PrettyPrint(), ToolCalls: []pub_models.Call{call}, ReasoningContent: call.ReasoningContent}
 			if err := utils.AttemptPrettyPrint(q.out, display, q.username, q.Raw); err != nil {
 				return fmt.Errorf("pretty print assistant tool call: %w", err)
@@ -159,13 +159,15 @@ func (e toolExecutor[C]) emitToolResult(session *QuerySession, call pub_models.C
 		ToolCallID: call.ID,
 	}
 	session.Chat.Messages = append(session.Chat.Messages, outMsg)
-	if q.Raw {
-		if err := utils.AttemptPrettyPrint(q.out, outMsg, "tool", q.Raw); err != nil {
-			return fmt.Errorf("pretty print raw tool output: %w", err)
-		}
-	} else if !q.debug {
-		if err := utils.AttemptPrettyPrint(q.out, utils.PrepareDisplayMessage(outMsg), "tool", q.Raw); err != nil {
-			return fmt.Errorf("pretty print tool output: %w", err)
+	if !q.structuredOutput {
+		if q.Raw {
+			if err := utils.AttemptPrettyPrint(q.out, outMsg, "tool", q.Raw); err != nil {
+				return fmt.Errorf("pretty print raw tool output: %w", err)
+			}
+		} else if !q.debug {
+			if err := utils.AttemptPrettyPrint(q.out, utils.PrepareDisplayMessage(outMsg), "tool", q.Raw); err != nil {
+				return fmt.Errorf("pretty print tool output: %w", err)
+			}
 		}
 	}
 	session.ResetPendingText()
@@ -257,7 +259,7 @@ func (e toolExecutor[C]) executeLoadSkill(ctx context.Context, session *QuerySes
 	// display shortening): the loaded skill IS the instruction set.
 	outMsg := pub_models.Message{Role: "tool", Content: content, ToolCallID: call.ID}
 	session.Chat.Messages = append(session.Chat.Messages, outMsg)
-	if !q.debug {
+	if !q.debug && !q.structuredOutput {
 		printMsg := outMsg
 		printMsg.Content = userVisibleContent
 		if err := utils.AttemptPrettyPrint(q.out, printMsg, "tool", q.Raw); err != nil {
@@ -303,7 +305,7 @@ func (e toolExecutor[C]) finalizeAssistantTextBeforeToolCall(session *QuerySessi
 		return nil
 	}
 	q := e.querier
-	if !q.Raw && q.termWidth > 0 {
+	if !q.Raw && !q.structuredOutput && q.termWidth > 0 {
 		utils.UpdateMessageTerminalMetadata(pending, &session.Line, &session.LineCount, q.termWidth)
 		if err := table.ClearTermTo(q.out, session.LineCount-1); err != nil {
 			return fmt.Errorf("clear streamed assistant text before tool call: %w", err)
@@ -325,7 +327,7 @@ func (e toolExecutor[C]) finalizeAssistantTextBeforeToolCall(session *QuerySessi
 		Role:    "assistant",
 		Content: pending,
 	})
-	if !q.Raw {
+	if !q.Raw && !q.structuredOutput {
 		if q.termWidth > 0 {
 			utils.UpdateMessageTerminalMetadata(displayMsg.Content, &q.line, &q.lineCount, q.termWidth)
 		} else {

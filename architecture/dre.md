@@ -50,7 +50,12 @@ Once `chatID` is resolved:
 
 1. Load `<configDir>/conversations/<chatID>.json`.
 2. Select the last message in the transcript.
-3. Print via `utils.AttemptPrettyPrint(..., raw)`.
+3. If raw mode is active, remove `ReasoningContent` from the display copy.
+4. Print via `utils.AttemptPrettyPrint(..., raw)`.
+
+`clai -r dre` prints only the final message content. It does not print reasoning or the completion notification bell.
+
+Stored reasoning remains in the conversation file.
 
 ## Error handling / exit codes
 

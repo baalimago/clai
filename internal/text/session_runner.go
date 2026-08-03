@@ -35,7 +35,7 @@ type sessionFinalizerer interface {
 	Finalize(*QuerySession)
 }
 
-func (r *sessionRunner[C]) Run(ctx context.Context, session *QuerySession) error {
+func (r *sessionRunner[C]) Run(ctx context.Context, session *QuerySession) (runErr error) {
 	if session == nil {
 		return errors.New("run session: session is nil")
 	}
@@ -45,6 +45,7 @@ func (r *sessionRunner[C]) Run(ctx context.Context, session *QuerySession) error
 	session.StartedAt = time.Now()
 	defer func() {
 		session.FinishedAt = time.Now()
+		session.Failed = runErr != nil
 		r.finalizer.Finalize(session)
 	}()
 
@@ -196,18 +197,24 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 				return ModelStepResult{}, fmt.Errorf("completion stream error: %w", cast)
 			case models.NoopEvent:
 			case models.ReasoningEvent:
-				if !q.debug {
+				if !q.reasoningActive {
+					if !q.debug && !q.structuredOutput {
+						w := q.out
+						if w == nil {
+							w = os.Stdout
+						}
+						fmt.Fprint(w, table.Colorize(utils.RoleColor("reasoning"), "[thinking]"))
+					}
+					q.reasoningActive = true
+				}
+				if !q.debug && !q.structuredOutput {
 					w := q.out
 					if w == nil {
 						w = os.Stdout
 					}
-					if !q.reasoningActive {
-						fmt.Fprint(w, table.Colorize(utils.RoleColor("reasoning"), "[thinking]"))
-						q.reasoningActive = true
-					}
 					fmt.Fprint(w, table.Colorize(utils.RoleColor("reasoning"), cast.Content))
-					q.reasoningBuf.WriteString(cast.Content)
 				}
+				q.reasoningBuf.WriteString(cast.Content)
 			case models.StopEvent:
 				q.closeReasoningIfOpen(session)
 				result.AssistantText = session.PendingTextString()

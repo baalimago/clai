@@ -80,6 +80,10 @@ func (q *ChatHandler) Query(ctx context.Context) error {
 	return q.actOnSubCmd(ctx)
 }
 
+func (q *ChatHandler) SuppressCompletionNotification() bool {
+	return q.raw && (q.subCmd == "dir" || q.subCmd == "dirv2")
+}
+
 func (cq *ChatHandler) actOnSubCmd(ctx context.Context) error {
 	if cq.debug {
 		ancli.PrintOK(fmt.Sprintf("chat: %+v\n", cq))
