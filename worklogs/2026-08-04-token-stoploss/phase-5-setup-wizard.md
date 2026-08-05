@@ -1,6 +1,6 @@
 # Phase 5 — Setup wizard
 
-**Status:** Not Started
+**Status:** Complete
 **Back to:** [README](./README.md)
 
 ## Goal
@@ -106,7 +106,67 @@ contract.
 
 ## Implementation notes
 
-To be written by the executing agent.
+### 2026-08-04 — Phase 5 implemented (imago + clai, worker session 5)
+
+Verified and pinned. No production code in `internal/setup` changed: the
+`editMap`/`castPrimitive`/`interractiveReconfigure` machinery from the
+discovery already edits a `stoploss`-shaped object correctly, so acceptance
+criterion 3 holds with no revealed gap.
+
+New tests (`internal/setup/setup_stoploss_test.go`, 11 functions):
+
+- `TestEditMap_StoplossUpdate` (table-driven, 2 rows): `max-tokens` update
+  keeps an int; instructions update keeps a string; the sibling key is
+  untouched. DeepEqual pins the type: `5000` (int) != `"5000"` (string).
+- `TestEditMap_StoplossAddKey`, `TestEditMap_StoplossRemoveKey`,
+  `TestEditMap_StoplossDone_Unchanged`: add/remove/done on the
+  stoploss-shaped object, mirroring the existing `setup_actions_test.go`
+  `editMap` tests.
+- `TestEditMap_StoplossInvalidInt_StaysString`: error-coverage row;
+  `castPrimitive` keeps `"abc"` a string.
+- `TestInterractiveReconfigure_StoplossRoundTrip_Unchanged`: acceptance
+  criterion 2 — no key touched, the whole config is semantically identical
+  after the round trip (no key loss, no type corruption).
+- `TestInterractiveReconfigure_StoplossUpdate_EndToEnd`: integration rows 1–2
+  — `max-tokens` is a JSON number on disk, the instructions string is
+  written correctly, untouched keys stay intact.
+- `TestInterractiveReconfigure_StoplossRemove_EndToEnd`: integration row 3
+  — removing the instructions key deletes only that key; the `stoploss`
+  object survives.
+- `TestInterractiveReconfigure_StoplossAddToEmpty_EndToEnd`: integration
+  row 4 — an empty `stoploss` object accepts `[a]dd` and writes `max-tokens`
+  as a cast int.
+- `TestInterractiveReconfigure_StoplossInvalidInt_WritesString`: error
+  coverage end to end — `"abc"` is written as a JSON string.
+
+Field indices are computed from the fixture via `stoplossFieldIndex`
+(sorted keys + `slices.Index`), never hardcoded (R7-02).
+
+Macro-mode re-run (R7-05) against a sandbox `CLAI_CONFIG_DIR` with a
+`stoploss` object, built binary of this branch: all five flows exit 0 and
+verify on disk — update int stays a JSON number, instructions string
+JSON-escaped, no-key round-trip semantically identical (byte difference is
+only `writeConfig` re-indentation to tabs), `[r]emove` deletes only the
+key, `[a]dd` on `{}` creates an int, invalid int stays a string. The live
+`~/.clai` dir does not exist on this machine, so the live-dir re-run is not
+possible; the sandbox re-run satisfies the R7-05 intent.
+
+Non-blocking observation (not a revealed gap, no change made):
+`castPrimitive` maps the input `"0"` to the boolean `false` because
+`misc.Falsy("0")` returns true before `strconv.Atoi` runs. This is a
+pre-existing generic limitation for every numeric wizard field, the phase
+contract limits polish to the two listed candidates, and the CLI flag
+`-max-tokens=0` remains the operator path to disable a file limit — so it
+is recorded here for Phase 7/6 awareness, not fixed in this phase.
+
+Gates: `go test ./internal/setup/ -timeout=60s` ✓ before and after (green
+with the pinned tests on the first run — no production change needed);
+`go test ./internal/setup/ -timeout=60s -count=3` ✓; `go test ./... -race
+-cover -count=3 -timeout=30s` ✓ (all packages, exit 0; internal/setup
+79.6% coverage); `go build ./...` ✓; `go vet ./...` ✓; gofumpt ✓;
+staticcheck ✓; `go fix ./...` ✓; dupl 29 clone groups (baseline
+unchanged; the first draft added one clone pair between the two update
+tests, merged into one table-driven test to restore the baseline).
 
 ## Review findings (Review 7, 2026-08-04)
 
@@ -124,3 +184,8 @@ the contract is amended in place.
 
 Verdict: Phase 5 contract amended (R7-01); the remaining findings are
 non-blocking notes for the implementing agent. Phase remains **Not Started**.
+
+## Review findings (review 12, 2026-08-05)
+
+None. Verified the phase contract remains test-only and that the stoploss map
+editing path is covered by the setup tests.

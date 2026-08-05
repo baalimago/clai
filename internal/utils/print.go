@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -102,8 +103,11 @@ func AttemptPrettyPrint(w io.Writer, chatMessage pub_models.Message, username st
 	roleCol := RoleColor(chatMessage.Role)
 	coloredRole := table.Colorize(roleCol, role)
 
-	cmd := exec.Command("glow", "--version")
-	if err := cmd.Run(); err != nil {
+	// Glow is an interactive terminal renderer. For captured output (pipes,
+	// files, test buffers) spawning it adds subprocess latency and ANSI noise,
+	// so only a terminal destination gets the glow path; captured output and
+	// machines without glow share the plain ANSI fallback.
+	if !isTerminalWriter(w) || !glowAvailable() {
 		// No glow: print with ANSI coloring.
 		if chatMessage.ReasoningContent != "" {
 			reasoningCol := RoleColor("reasoning")
@@ -135,9 +139,8 @@ func AttemptPrettyPrint(w io.Writer, chatMessage pub_models.Message, username st
 	if err != nil {
 		return fmt.Errorf("get terminal width for glow: %w", err)
 	}
-	glowWidth := max(termWidth-5, 1)
 
-	cmd = exec.Command("glow", "-w", strconv.Itoa(glowWidth))
+	cmd := exec.Command("glow", glowRenderArgs(termWidth)...)
 	inp := content
 	// For some reason glow hides specifically <thikning>. So, replace it to [thinking]
 	inp = strings.ReplaceAll(inp, "<thinking>", "[thinking]")
@@ -149,6 +152,36 @@ func AttemptPrettyPrint(w io.Writer, chatMessage pub_models.Message, username st
 		return fmt.Errorf("run glow: %w", err)
 	}
 	return nil
+}
+
+// isTerminalWriter reports whether w is a character device — the standard
+// heuristic for "this writer is a terminal" (internal/utils/prompt.go uses
+// the same check for stdin). A nil writer resolves to os.Stdout.
+func isTerminalWriter(w io.Writer) bool {
+	if w == nil {
+		w = os.Stdout
+	}
+	f, ok := w.(*os.File)
+	if !ok {
+		return false
+	}
+	fi, err := f.Stat()
+	if err != nil {
+		return false
+	}
+	return fi.Mode()&os.ModeCharDevice != 0
+}
+
+// glowAvailable reports whether the glow markdown renderer is installed. The
+// probe spawns a subprocess, so it runs once per process.
+var glowAvailable = sync.OnceValue(func() bool {
+	return exec.Command("glow", "--version").Run() == nil
+})
+
+// glowRenderArgs builds the glow renderer arguments for the given terminal
+// width, leaving five columns clear for the role prefix.
+func glowRenderArgs(termWidth int) []string {
+	return []string{"-w", strconv.Itoa(max(termWidth-5, 1))}
 }
 
 // ShortenedOutput returns a shortened version of the output

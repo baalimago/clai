@@ -20,34 +20,6 @@ func isLookbackTool(name string) bool {
 	}
 }
 
-// executeLookbackTool dispatches the internally-handled lookback tools. Like
-// load_skill it appends a model-safe assistant tool call plus the tool result to
-// the chat, pretty-prints both, and bounds the output by the standard rune limit.
-// Tool-level errors are returned as an "ERROR: ..." tool result so the run
-// continues rather than aborting.
-func (e toolExecutor[C]) executeLookbackTool(session *QuerySession, call pub_models.Call, emitAssistant bool) error {
-	q := e.querier
-	var out string
-	if !q.useLookback {
-		out = fmt.Sprintf("ERROR: %s requested but lookback is disabled for this run (enable with -lb/-lookback)", call.Name)
-	} else if res, err := e.runLookbackTool(call); err != nil {
-		out = "ERROR: " + err.Error()
-	} else {
-		out = res
-	}
-
-	if emitAssistant {
-		if err := e.emitAssistantToolCall(session, call); err != nil {
-			return err
-		}
-	}
-	out, budgetErr := e.applyToolCallBudget(session, out)
-	if budgetErr != nil {
-		return budgetErr
-	}
-	return e.emitToolResult(session, call, out)
-}
-
 func (e toolExecutor[C]) runLookbackTool(call pub_models.Call) (string, error) {
 	q := e.querier
 	var inputs pub_models.Input

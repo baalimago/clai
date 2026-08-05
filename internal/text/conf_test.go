@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/baalimago/clai/internal/text/generic"
@@ -139,6 +140,37 @@ func TestLoadResponseFormat_InvalidJSON(t *testing.T) {
 	err := c.LoadResponseFormat(path)
 	if err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestConfigurations_LegacyTokenWarnLimitKeyIgnored(t *testing.T) {
+	// Sunset contract (worklog 2026-08-04-token-stoploss, Phase 1, D10):
+	// old textConfig.json files carrying the dead token-warn-limit key
+	// load without error; encoding/json ignores the unknown key and
+	// regenerated configs omit it.
+	dir := t.TempDir()
+	confPath := filepath.Join(dir, "textConfig.json")
+	content := `{"model":"test","token-warn-limit":333333}`
+	if err := os.WriteFile(confPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile(textConfig.json): %v", err)
+	}
+
+	conf, err := utils.LoadConfigFromFile(dir, "textConfig.json", nil, &Default)
+	if err != nil {
+		t.Fatalf("LoadConfigFromFile: %v", err)
+	}
+	if conf.Model != "test" {
+		t.Fatalf("expected model test, got %q", conf.Model)
+	}
+
+	// LoadConfigFromFile appends default fields and rewrites the file when
+	// anything changed; the dead key must not survive the rewrite.
+	regenerated, err := os.ReadFile(confPath)
+	if err != nil {
+		t.Fatalf("ReadFile(regenerated): %v", err)
+	}
+	if strings.Contains(string(regenerated), "token-warn-limit") {
+		t.Fatalf("regenerated config still carries token-warn-limit:\n%s", regenerated)
 	}
 }
 

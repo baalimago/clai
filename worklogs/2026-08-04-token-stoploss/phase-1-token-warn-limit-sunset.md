@@ -1,6 +1,6 @@
 # Phase 1 — token-warn-limit sunset
 
-**Status:** Not Started
+**Status:** Complete
 **Back to:** [README](./README.md)
 
 ## Goal
@@ -70,12 +70,75 @@ Phase 6. This phase removes production code only; do not edit `architecture/`.
 
 ## Implementation notes
 
-To be written by the executing agent.
+Executed 2026-08-04 (imago + clai, worker session 1).
+
+Deletions (delete, do not repurpose):
+
+- `internal/text/conf.go`: removed the `TokenWarnLimit int
+  json:"token-warn-limit"` field and the `TokenWarnLimit: 333333` entry in
+  `text.Default`. The now-orphaned cost comment above the default
+  (`Approximately $1 for an average flagship model`) was removed with it — it
+  documented the dead threshold, not `ToolOutputRuneLimit`.
+- `internal/text/querier.go`: removed `TokenCountFactor`, the
+  `tokenWarnLimit` field, `tokenLengthWarning()`, `countTokens()`, and the now
+  unused `bufio`, `errors`, and `path` imports. `strings` stays (reasoning
+  buffer); `fmt`, `io`, `os`, `time` stay.
+- `internal/text/querier_setup.go`: removed
+  `querier.tokenWarnLimit = userConf.TokenWarnLimit`.
+- `internal/text/session_runner.go`: removed the `tokenLengthWarning()` call
+  and its `run token warning` error wrap from `Run`.
+- `pkg/text/full.go`: removed `TokenWarnLimit: 300000` from
+  `pubConfigToInternal`.
+
+Kept (R1-07): `internal/text/generic/stream_completer.go` and the anthropic
+`heuristicTokenCountFactor` — they back `models.InputTokenCounter` (D12), the
+stoploss fallback seam.
+
+Tests (written first, red-green where possible):
+
+- `TestConfigurations_LegacyTokenWarnLimitKeyIgnored` (conf_test.go): wrote a
+  `textConfig.json` carrying `"token-warn-limit":333333`, loaded it via
+  `utils.LoadConfigFromFile`, asserted the load succeeds, the model value
+  survives, and the regenerated file no longer contains the dead key. This
+  test was red against the pre-sunset code (the struct field marshaled the key
+  back into the regenerated file) and green after the deletions.
+- `Test_sessionRunner_Run_OversizedFirstQueryNoTokenPrecheck`
+  (session_runner_test.go): a 50k-word first query is delivered to the model
+  as-is, the run completes, and no pre-check/prompt/stdin machinery engages.
+  This is a behavior pin — a direct `sessionRunner` construction never set the
+  old `tokenWarnLimit`, so the old prompt path could not fire in that harness;
+  the observable contract (query sent as-is, run completes) is what is pinned.
+  The no-prompt end-to-end claim is further covered by Phase 6 e2e case 5
+  (pre-validated in Review 8, R8-03).
+
+Gates (all before and after the change):
+
+- Before: `go test ./internal/text/ ./pkg/text/ -timeout=60s` ✓
+- After: `go test ./internal/text/ ./pkg/text/ -timeout=60s` ✓;
+  `go build ./...` ✓; `go vet ./...` ✓; `go run mvdan.cc/gofumpt@latest -w -l
+  .` ✓ (formatted `conf.go` alignment once);
+  `go run honnef.co/go/tools/cmd/staticcheck@latest ./...` ✓;
+  `go fix ./...` ✓; `go test ./... -race -cover -count=3 -timeout=30s` ✓;
+  dupl baseline unchanged at 29 clone groups.
+
+Verification of acceptance criterion 1: the sunset search
+(`token-warn-limit|TokenWarnLimit|tokenWarnLimit|tokenLengthWarning|countTokens|TokenCountFactor`)
+returns only the worklog contract text, `architecture/query.md:89` (deferred
+by contract to Phase 6), the new pin tests, and the intentionally retained
+`heuristicTokenCountFactor` implementations (R1-07).
 
 ## Review findings
 
-- [ ] **R1-07 — Low:** Sunset searches must exclude the worklog and the
+- [x] **R1-07 — Low:** Sunset searches must exclude the worklog and the
   intentionally retained `InputTokenCounter` heuristic implementations
   (`internal/text/generic/stream_completer.go`, anthropic
   `heuristicTokenCountFactor`). These are fallback seams for the stoploss
-  (D12), not sunset leftovers.
+  (D12), not sunset leftovers. — Verified by the executing agent: both
+  implementations compile and are referenced by the rate-limit backoff path
+  (`session_runner.go:waitForRateLimitReset`); the sunset search above lists
+  them as the only remaining non-worklog, non-arch, non-test hits.
+
+## Review findings (review 12, 2026-08-05)
+
+None. Verified legacy configuration compatibility, removal of the interactive
+pre-query path, and the architecture sunset search.

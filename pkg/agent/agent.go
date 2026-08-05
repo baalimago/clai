@@ -26,6 +26,7 @@ type Agent struct {
 	toolGlobs      []string
 	cmdBan         []string
 	maxToolCalls   *int
+	stoploss       Stoploss
 	responseFormat *models.ResponseFormat
 
 	querierCreator func(ctx context.Context, conf text.Configurations) (priv_models.Querier, error)
@@ -75,6 +76,26 @@ func WithConfigDir(cfgDir string) Option {
 	}
 }
 
+// Stoploss configures the token stoploss policy for an agent run. MaxTokens
+// <= 0 disables the stoploss. MaxTokensHandoverMsg is the user message
+// injected into the chat when the limit is crossed; empty means the default
+// message (text.DefaultHandoverInstructions).
+type Stoploss struct {
+	MaxTokens            int
+	MaxTokensHandoverMsg string
+}
+
+// WithStoploss configures the token stoploss policy for the agent. A
+// zero-value Stoploss disables the stoploss: the agent default stays
+// unlimited.
+func WithStoploss(s Stoploss) Option {
+	return func(a *Agent) {
+		a.stoploss = s
+	}
+}
+
+// WithMaxToolCalls sets the maximum number of tool calls for the run.
+// 0 means no limit.
 func WithMaxToolCalls(am int) Option {
 	return func(a *Agent) {
 		a.maxToolCalls = &am
@@ -143,7 +164,7 @@ func WithResponseFormat(rf models.ResponseFormat) Option {
 }
 
 func (a *Agent) asInternalConfig() text.Configurations {
-	return text.Configurations{
+	conf := text.Configurations{
 		Model:              a.model,
 		SystemPrompt:       a.prompt,
 		ConfigDir:          a.cfgDir,
@@ -157,6 +178,15 @@ func (a *Agent) asInternalConfig() text.Configurations {
 		ResponseFormat:     a.responseFormat,
 		Out:                a.out,
 	}
+	// A zero-value Stoploss must not create a non-nil internal pointer: the
+	// agent default stays unlimited (MaxTokens <= 0 disables the stoploss).
+	if a.stoploss.MaxTokens > 0 {
+		conf.Stoploss = &text.Stoploss{
+			MaxTokens:            a.stoploss.MaxTokens,
+			MaxTokensHandoverMsg: a.stoploss.MaxTokensHandoverMsg,
+		}
+	}
+	return conf
 }
 
 func (a *Agent) Setup(ctx context.Context) error {

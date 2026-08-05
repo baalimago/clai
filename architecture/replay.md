@@ -71,7 +71,7 @@ If `globalScope.json` is missing, `LoadPrevQuery` prints a warning (`no previous
 Both `replay` and `dre` honor `-r/-raw`:
 
 - raw: print message without glow/format post-processing
-- non-raw: attempt markdown formatting via glow
+- non-raw: attempt markdown formatting via glow (terminal output only; captured output uses the plain ANSI fallback)
 
 ## Relationship to query reply flags
 

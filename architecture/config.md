@@ -50,7 +50,14 @@ They contain settings that are broadly applicable to that “mode” (text vs im
 - printing options (raw vs glow)
 - system prompt
 - tool use selection defaults
+- tool-call budget (`max-tool-calls`; nil or 0 = unlimited)
+- token stoploss policy (`stoploss`: `max-tokens` + `max-tokens-handover-instructions`)
 - globbing selection (via `-g` flag which then modifies prompt building)
+
+The pre-query interactive token-count warning prompt is **sunset**: a legacy
+config key for it is ignored if present in old configs (encoding/json drops
+unknown keys, so no migration is needed), and the stoploss replaces it as the
+context guard.
 
 Mode config loading happens inside `internal.setupTextQuerierWithConf` / `internal.Setup`:
 
@@ -155,6 +162,7 @@ For **text** the important override functions are:
 Key behaviors:
 
 - default flags should *not* override file values; overrides only happen when the user provided a non-default flag value.
+- `-mt`/`-max-tokens` and `-mtc`/`-max-tool-calls` override the run limits: an explicit `0` disables the corresponding file limit (unlimited), and an explicit `-max-tokens=N` keeps the configured handover message.
 - `-dre` is handled before text setup by flagging reply mode and letting
   `setupTextQuerierWithConf` load the directory-scoped head directly into
   `InitialChat` (via `chat.LoadDirScopedContext`).

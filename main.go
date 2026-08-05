@@ -41,6 +41,8 @@ Flags:
   -asc, -append-shell-context str  Append a named shell context from <config-dir>/shellContexts/<name>.json to the final query prompt.
   -rf, -response-format string     Block streaming and print only the final structured response (json_object, json_schema).
   -n, -non-interactive             Disable interactive stdin fallback after macro inputs; auto-exit instead.
+  -mt, -max-tokens int             Set the max context tokens for this run. 0 = unlimited (default is found in %v/textConfig.json)
+  -mtc, -max-tool-calls int        Set the max tool calls for this run. 0 = unlimited (default is found in %v/textConfig.json)
 
 Config dir: %v
 Cache dir:  %v

@@ -235,9 +235,9 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	querier.dirReplyMode = userConf.DirReplyMode
 	querier.useLookback = userConf.UseLookback
 	querier.lookbackCWD = userConf.LookbackCWD
-	querier.tokenWarnLimit = userConf.TokenWarnLimit
 	querier.toolOutputRuneLimit = userConf.ToolOutputRuneLimit
 	querier.maxToolCalls = userConf.MaxToolCalls
+	querier.stoploss = userConf.Stoploss
 	querier.out = userConf.Out
 	querier.skillLoader = userConf.SkillLoader
 	querier.baseTools = userConf.BaseTools

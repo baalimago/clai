@@ -46,7 +46,6 @@ func pubConfigToInternal(c models.Configurations) text.Configurations {
 		SystemPrompt:        c.SystemPrompt,
 		UseTools:            true,
 		ConfigDir:           claiDir,
-		TokenWarnLimit:      300000,
 		ToolOutputRuneLimit: 30000,
 		SaveReplyAsConv:     true,
 		Stream:              true,

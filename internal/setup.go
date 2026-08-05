@@ -473,6 +473,8 @@ func printHelp(usage string, args []string) {
 		defaultFlags.Glob,
 		defaultFlags.Profile,
 		cfgDir,
+		cfgDir,
+		cfgDir,
 		cacheDir,
 	)
 }
