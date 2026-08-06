@@ -10,7 +10,7 @@
 | 4   | [CLI flags](./phase-4-cli-flags.md)                             | Complete | `-max-tokens` / `-max-tool-calls` flags; instructions are NOT a flag                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | 5   | [Setup wizard](./phase-5-setup-wizard.md)                       | Complete | Verify + pin interactive editing of the `stoploss` object (existing `editMap`); no production changes needed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | 6   | [Integration & e2e](./phase-6-integration-e2e.md)               | Complete | Mock-vendor e2e for handover flow + refusal ladder, legacy config compat, docs                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| 7   | [Quality gates](./phase-7-quality-gates.md)                     | Complete | Final gate sweep on the finished branch; reopened by review 10 (R10-01: the mandated `-race -count=3` gate timed out in `internal/text`) and fixed in the fix round: glow now spawns only for terminal output (D25) — the exact gate passes in 7 s                                                                                                                                                                                                                                                                                                                                                                                           |
+| 7   | [Quality gates](./phase-7-quality-gates.md)                     | Reopened (review 13) | Final gate sweep on the finished branch; reopened by review 10 (R10-01: the mandated `-race -count=3` gate timed out in `internal/text`) and fixed in the fix round: glow now spawns only for terminal output (D25) — the exact gate passes in 7 s; reopened by review 13 (R13-01: `-rf` structured-output runs announce config upgrades on stdout, corrupting machine output; R13-03: stale dupl baseline claim; R13-04: theme announcement not deferred in setup) — fix round pending, see Review 13                                                                                                                                                                                                                                                                                                                                                                                           |
 
 Phase order: Phase 1 (token-warn-limit sunset) is independent and runs first
 — it removes the dead pre-query machinery before any new config lands.
@@ -108,6 +108,14 @@ for every batch, including batches mixing `load_skill` with ordinary tools
 (R9-01). The tool-call ladder and the handover-message resolution must each
 live in exactly one production site — no parallel implementations that can
 drift (R9-02, R9-03).
+
+**Machine-readable output stays clean.** Human upgrade announcements
+(`added new field(s) to ...`) and read-only config loading must cover every
+machine-readable mode: raw (`-r`/`-raw`) AND structured output
+(`-rf`/`-response-format`), whose documented contract is "print only the
+final structured response". Announcements for these modes belong on stderr
+or are suppressed entirely; the raw-mode gate must not key on `PrintRaw`
+alone (R13-01).
 
 **Config scope.** `textConfig.json` + CLI flags (`-max-tokens`,
 `-max-tool-calls`) + `pkg/agent` options (`WithStoploss`,
@@ -763,6 +771,15 @@ contract amendment required.**
 | R11-01 | Medium   | [3](./phase-3-stoploss-controller.md) | `ExecuteBatch` returns io.EOF at the first hardStop plan and skips the remaining plans of the same assistant turn: declared calls lack tool results, the persisted transcript is an invalid exchange (reproduced; 5 declared, 4 results) — **resolved** (D26, fix round worker session 10): io.EOF deferred until every plan emits its result; both validity helpers now count one result per declared call |
 | R11-02 | Low      | [4](./phase-4-cli-flags.md)           | `TestSetupFlags` lacks the `-mtc`/`-max-tool-calls` both-equal (and both-equal-zero) parse-level rows required by acceptance criterion 3's letter; behavior is correct via the shared `resolveIntAlias` — **resolved** (fix round worker session 10): rows added                                                                                                                                            |
 
+### Findings index (review 13)
+
+| ID     | Severity | Phase                                      | Summary                                                                                                                                                                                                                                                                                                                                        |
+| ------ | -------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R13-01 | Medium   | [7](./phase-7-quality-gates.md) (follow-up) | `-rf` structured-output runs announce config upgrades on stdout: `internal.Setup` gates read-only mode on `PrintRaw` only (`internal/setup.go:510`), so a `-rf` scripting run whose configs need upgrading emits `added new field(s) to textConfig.json: ...` before the structured response (reproduced with the built binary) — machine output corrupted |
+| R13-02 | Low      | [2](./phase-2-config-plumbing.md)           | Phase 2's file still carries the pre-migration contract: the "No migration" section, the `setNonZeroValueFields` note, and the acceptance-criterion-4 test reference (`TestConfigurations_StoplossAbsentLoadsCleanly`, renamed and behavior changed) are stale after the config-migration follow-up |
+| R13-03 | Low      | [7](./phase-7-quality-gates.md)             | dupl baseline claim stale: the journal says "no new clone groups (30 baseline)" but the finished working tree reports 31 (HEAD: 30); the delta is a dupl re-pairing artifact between two pre-existing test functions caused by the appended `main_confdir_e2e_test.go` tests, not new duplicated code — document the delta |
+| R13-04 | Low      | [7](./phase-7-quality-gates.md) (follow-up) | `LoadTheme`'s upgrade announcement is not deferred for SETUP mode (the deferral closure covers only mode configs + profiles): a theme.json upgrade prints before the wizard header (reproduced), outside the documented deferral contract and at risk of erasure by the interactive TUI redraw |
+
 ### Review 10 (2026-08-05)
 
 Commands independently re-run from the repository root: `go test ./... -race
@@ -928,3 +945,180 @@ lookback tools, 0=unlimited semantics, flag precedence and explicit-zero
 overrides, legacy-config loading, and one tool result for every declared call,
 including hard-stop calls in the middle of a batch. No new findings. All phase
 status rows remain Complete. Verdict: **ready to sign off as complete**.
+
+### 2026-08-05 — Config migration follow-up (imago + clai)
+
+The Phase 2 "no migration" claim is superseded: existing `textConfig.json`
+files are now upgraded in place with a generic, presence-based config
+migration in `internal/utils/config.go` (`LoadConfigFromFile` →
+`fillMissingFromDefaults`). Design (interview Q1–Q5): the appended
+`stoploss` object is the disabled template `max-tokens: 0` + the default
+handover message; upgrades announce via `ancli.PrintOK` per file, only for
+pre-existing files; the merge recurses into nested objects; a key present in
+the file is never touched, even when its value is the zero value (this
+repairs the old `setNonZeroValueFields` clobbering of explicit zeros such as
+`tool-output-rune-limit: 0` and `notificationBell: false`). `text.Default`
+now carries the disabled `Stoploss` template. Tests first: presence/recursion
+unit suite + `LoadConfigFromFile` upgrade/announce/fresh-silent/idempotent
+rows in `internal/utils`, the appended-defaults and partial-object rows in
+`internal/text/stoploss_test.go`, and the presence-contract re-pins in
+`theme_notification_test.go`/`main_notification_test.go`. Gates: gofumpt ✓,
+vet ✓, staticcheck ✓, `go fix` ✓, `go test ./... -race -cover -count=3
+-timeout=30s` ✓ (all packages), dupl no new clone groups (30 baseline, one
+pre-existing accepted test-only group per Review 12).
+
+Follow-up fix (2026-08-05): the three mode configs
+(`textConfig.json`, `photoConfig.json`, `videoConfig.json`) are now migrated
+from a united place: `internal.Setup` upgrades all of them before mode
+dispatch, so every command sees the current schema, not just the ones that
+happen to load them (`clai tools`, `clai profiles`, `clai confdir`,
+`clai dre`, `clai replay` previously never migrated the mode configs). The
+per-mode loads remain but are idempotent. Broken configs downgrade to a
+warning so setup stays the repair path (same policy as `LoadTheme`).
+`LoadConfigFromFileCollect` (new) returns the added field paths without
+printing; `internal.Setup` defers the announcement until after the interactive
+setup wizard exits, because the wizard's TUI erases pre-wizard stdout when it
+redraws (`go_away_boilerplate/pkg/table` `ClearTermTo` overshoots by one
+line), which silently swallowed the pre-wizard announcement whenever the user
+navigated past the first screen. All other commands announce immediately.
+Pinned by `Test_e2e_setup_migrates_mode_configs_and_announces` (announcement
+must appear after the wizard exits) and
+`Test_e2e_confdir_migrates_mode_configs` (a non-setup command upgrades and
+announces a downgraded config).
+
+Follow-up fix (2026-08-05, raw-mode read-only): the announcement still did not
+appear in the reporter's shell. Root cause: the zsh precmd hook
+(`_clai_update_status` in `~/.zshrc`) runs `clai -r chat dirv2` after every
+command, and that query-mode invocation migrated the mode configs first —
+silently, into the captured output — so the user's own commands found nothing
+to announce. It also corrupted the dirv2 JSON for the hook's `jq` parsing.
+Fix: raw (machine-readable) runs are now read-only. `internal.Setup` sets
+`utils.ReadonlyConfig` from `-r`/`-raw` before any load, and
+`LoadConfigFromFile` fills missing fields in memory but never rewrites the
+config files and never announces. The migration therefore happens on the next
+non-raw run, where the announcement is visible, and shell hooks neither
+mutate the configs nor pollute machine output. Pinned by
+`TestLoadConfigFromFile_ReadonlyDoesNotRewriteOrAnnounce` and
+`Test_e2e_raw_run_does_not_migrate_configs`; the setup e2e test dropped its
+`-r` flag so it still exercises the migration.
+
+### 2026-08-06 — All-profiles migration + default profile name fix (clai)
+
+Follow-up: the united migration in `internal.Setup` now also upgrades every
+`profiles/*.json` against `text.DefaultProfile` before mode dispatch, so all
+profiles carry the current schema even when never selected via
+`-p`/`-profile`/`-prp`/`-profile-path` (previously only the selected profile
+was migrated lazily via `loadProfile`). The loop reuses
+`LoadConfigFromFileCollect` + the deferred/announce closure, so raw (`-r`)
+runs stay read-only and the setup wizard still defers announcements until
+after it exits; broken profiles downgrade to a warning (same policy as the
+mode configs) and a missing profiles dir is skipped silently.
+
+`DefaultProfile.Name` is now the zero value: the old `"example-name"`
+placeholder was a non-zero default, so the presence-based migration wrote it
+into every name-less profile file (e.g. `examples/profiles/trade-bot.json`),
+which defeated `findProfile`'s file-name normalization and would have made
+`clai profiles list` display `Name: example-name` instead of the file name
+once all profiles were migrated. The runtime name is derived from the file
+name as before. Pinned by `TestFindProfile_NameLessProfileStaysNameLess`,
+`Test_e2e_confdir_migrates_profiles`,
+`Test_e2e_confdir_migrates_profiles_skips_broken_and_non_json_files`,
+`Test_e2e_raw_run_does_not_migrate_profiles`,
+`Test_e2e_setup_migrates_profiles_and_announces_after_wizard`, and the
+updated `Test_goldenFile_PROFILES_list_prints_summary_for_valid_profiles_and_skips_invalid`
+(which now also pins the broken-profile warning).
+
+### Review 13 (2026-08-06)
+
+Holistic review of the finished branch plus the uncommitted config-migration
+follow-up (the 2026-08-05…08-06 journal entries: united mode-config +
+all-profiles migration, raw-mode read-only, `DefaultProfile.Name` zero fix).
+Reviewer: clai (review-only; no production code changed). This is the first
+review round covering the journal-only follow-up work; phases 1–7 were
+last reviewed in Review 12.
+
+Commands re-run from the repository root, independently of the session
+journal:
+
+- `go build ./...` ✓
+- `go vet ./...` ✓
+- `go run mvdan.cc/gofumpt@latest -l .` ✓ (no diffs)
+- `go run honnef.co/go/tools/cmd/staticcheck@latest ./...` ✓
+- `go fix ./...` ✓ (no changes)
+- `go test ./... -race -cover -count=3 -timeout=30s` ✓ — all 38 packages,
+  exit 0: internal/text 71.8%, internal/utils 71.7%, internal/setup 79.6%,
+  pkg/agent 93.8%, root 56.9%
+- `make qa` ✓ — exit 0 (lint + the same race gate)
+- `go test . -run Test_e2e_stoploss -count=1 -timeout=120s` ✓ (6/6)
+- Sunset searches: `rg -n "token-warn|tokenWarn|TokenWarn|
+tokenLengthWarning" architecture/` → no hits (exit 1)
+- `go run github.com/mibk/dupl@latest -t 80 .` → **31 clone groups** in the
+  working tree vs **30 at HEAD** (isolated by extracting HEAD to a temp
+  tree): the delta is not new duplicated code — it is a dupl re-pairing
+  artifact. The appended migration e2e tests in `main_confdir_e2e_test.go`
+  shift the greedy matching so the pre-existing pair
+  `Test_goldenFile_HELP_mentions_confdir_command` /
+  `Test_goldenFile_TOOLS_lists_tools_and_footer` now clears the threshold;
+  reverting the confdir file to HEAD restores 30. The session journal's
+  "dupl no new clone groups (30 baseline)" claim is therefore stale on the
+  finished state (R13-03).
+
+Empirical probes (built binary, sandbox `CLAI_CONFIG_DIR`):
+
+- `clai -rf <schema> -cm test q hello` with a pre-stoploss textConfig.json
+  prints `added new field(s) to textConfig.json: ...` to stdout BEFORE the
+  structured response — R13-01 (Medium). `-r` runs are protected
+  (ReadonlyConfig); `-rf` is not.
+- `clai -n -cm test s 0 0 q` with a theme.json missing `roleReasoning` /
+  `tableItems` prints the theme upgrade announcement BEFORE the wizard
+  header (line 1 of the capture) while the mode-config announcements are
+  correctly deferred until after the wizard exits — R13-04 (Low): the
+  deferral design covers mode configs + profiles but not `LoadTheme`.
+
+Trace audit (read the code, not the notes):
+
+- Verified good — the stoploss controller matches the contract on every
+  branch: metric fallback order (prompt+completion → total_tokens →
+  InputTokenCounter → skip), one-time injection after the tool batch (D11),
+  no injection on plain-reply steps, stateless controller rebuilt per run
+  (D18), single ladder (`ladderText` + `preflightToolCall`, R9-02), single
+  message resolution (`newStoploss` → `HandoverInstructions`, R9-03),
+  segment emission with immediate assistant→tool pairing (R9-01), deferred
+  io.EOF with one result per declared call (D26/R11-01), pre-invocation
+  refusal for ordinary/load_skill/lookback (R2-01/R3-02/R3-04), load_skill
+  exempt from the positive budget pre-handover.
+- Verified good — the flag layer: four-state alias resolution (R5-02),
+  errors returned from `parseFlags` (R3-03), explicit-0 disables a file
+  limit, configured handover message preserved, `printHelp` 15/15.
+- Verified good — the config-migration follow-up: presence-based merge
+  preserves explicit zeros (`notificationBell: false`,
+  `tool-output-rune-limit: 0`) where `setNonZeroValueFields` clobbered them;
+  recursion fills missing subfields of a present object; `cloneDefaultValue`
+  prevents aliasing the package defaults; the upgrade is idempotent (second
+  load silent); fresh files and migration-callback files never announce; raw
+  runs fill in memory without rewriting or announcing; the united migration
+  covers mode configs and every `profiles/*.json` before dispatch, with
+  broken files downgraded to warnings; the `DefaultProfile.Name` zero-value
+  fix keeps name-less profiles name-less on disk; setup defers mode-config
+  and profile announcements until after the wizard exits.
+- Verified good — the `-r` precmd scenario that motivated the raw-mode fix:
+  `clai -r chat dirv2` neither rewrites the configs nor pollutes machine
+  output (pinned by `Test_e2e_raw_run_does_not_migrate_configs`).
+
+Cross-cutting observation: the announcement path has two escape hatches the
+deferral/readonly design does not cover — `-rf` (structured output) and
+`LoadTheme`. The raw-mode gate keys on `PrintRaw` only, and the deferral
+closure keys on `mode == SETUP` only. The invariant promoted into the
+Strategy: machine-readable output modes must never carry human
+announcements.
+
+Verdict: **not ready to sign off as complete.** The gates are green and
+reproducible and the stoploss feature is verified good, but R13-01
+(Medium) reopens the signoff per the reopen rule — it is a deterministic
+corruption of a documented scripting mode (`-rf`) on the first run after a
+config upgrade, introduced by the follow-up. R13-02/03/04 are Low
+consistency and documentation fixes. The fix round should land R13-01's
+gate (`utils.ReadonlyConfig = postFlagConf.PrintRaw ||
+postFlagConf.ResponseFormatPath != ""`, or route announcements to stderr,
+with a `-rf` + migration e2e pin) together with the R13-02/03/04 updates,
+then re-run the gates in this entry.

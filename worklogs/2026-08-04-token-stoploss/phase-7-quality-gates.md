@@ -191,3 +191,43 @@ Cross-checks:
 None. Re-ran the mandated race/coverage suite and all build, vet, formatter,
 staticcheck, fix, e2e, and duplication checks. The 30 clone groups are the
 documented 29-group baseline plus the accepted cross-package test-helper clone.
+
+## Review findings (review 13, 2026-08-06)
+
+The exact gates were re-run from the repo root on the working tree
+(commands and results in the README's Review 13 entry); all pass. Three
+findings concern this phase's territory (the follow-up work is journal-only,
+so Phase 7 carries the reopened signoff):
+
+- [ ] **R13-01 — Medium:** The config-migration announcement is printed to
+      stdout on `-rf` (response-format) runs. `internal.Setup` sets
+      `utils.ReadonlyConfig` from `PrintRaw` only (`internal/setup.go:510`),
+      so a `-rf` scripting run whose configs need upgrading prints
+      `added new field(s) to textConfig.json: ...` before the structured
+      response (reproduced with the built binary; `-r` runs are protected).
+      This violates the `-rf` contract "print only the final structured
+      response". Fix direction: extend the machine-mode gate to
+      `ResponseFormatPath` (or route announcements to stderr), and pin with
+      a `-rf` + migration e2e test asserting the announcement never appears
+      in the structured output.
+- [ ] **R13-03 — Low:** The "dupl no new clone groups (30 baseline)" claim
+      (session journal, 2026-08-05) is stale on the finished state: the
+      working tree reports 31 clone groups vs 30 at HEAD. The delta is a
+      dupl re-pairing artifact — the appended migration e2e tests in
+      `main_confdir_e2e_test.go` shift the greedy matching so the
+      pre-existing pair `Test_goldenFile_HELP_mentions_confdir_command` /
+      `Test_goldenFile_TOOLS_lists_tools_and_footer` clears the threshold
+      (reverting the confdir file to HEAD restores 30). Document the delta
+      in the phase notes; no production code is duplicated.
+- [ ] **R13-04 — Low:** `LoadTheme`'s upgrade announcement is not deferred
+      for SETUP mode (the deferral closure covers only mode configs +
+      profiles), so a theme.json upgrade prints before the wizard header
+      (reproduced) and is at risk of erasure by the interactive TUI
+      redraw — the documented root cause of the deferral. Fix direction:
+      route the theme announcement through the same deferred-announcement
+      path for SETUP, or accept and document the divergence.
+
+Verified good in this review: `go build`, `go vet`, gofumpt, staticcheck,
+`go fix`, the exact mandated race gate (`-race -cover -count=3
+-timeout=30s`, all 38 packages, exit 0), `make qa` (exit 0), the six-case
+stoploss e2e, and both sunset searches.

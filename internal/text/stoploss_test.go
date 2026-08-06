@@ -59,10 +59,12 @@ func TestConfigurations_StoplossZeroMaxTokensDisabled(t *testing.T) {
 	}
 }
 
-// TestConfigurations_StoplossAbsentLoadsCleanly pins acceptance criterion 4:
-// old configs lacking the stoploss key unmarshal without error and leave the
-// pointer nil.
-func TestConfigurations_StoplossAbsentLoadsCleanly(t *testing.T) {
+// TestConfigurations_StoplossAbsentGetsAppendedWithDefaults pins the config
+// migration contract: a textConfig.json lacking the stoploss key loads
+// cleanly and is upgraded in place — the nested stoploss object is appended
+// with the disabled default (max-tokens: 0) and the default handover message
+// (config migration design, Q1 option B).
+func TestConfigurations_StoplossAbsentGetsAppendedWithDefaults(t *testing.T) {
 	dir := t.TempDir()
 	confPath := filepath.Join(dir, "textConfig.json")
 	content := `{"model":"test"}`
@@ -74,8 +76,45 @@ func TestConfigurations_StoplossAbsentLoadsCleanly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfigFromFile: %v", err)
 	}
-	if conf.Stoploss != nil {
-		t.Fatalf("expected nil Stoploss, got %+v", conf.Stoploss)
+	if conf.Stoploss == nil {
+		t.Fatal("expected Stoploss to be appended from defaults")
+	}
+	if conf.Stoploss.MaxTokens != 0 {
+		t.Fatalf("expected disabled max-tokens 0, got %d", conf.Stoploss.MaxTokens)
+	}
+	if conf.Stoploss.MaxTokensHandoverMsg != DefaultHandoverInstructions {
+		t.Fatalf("expected the default handover message, got %q", conf.Stoploss.MaxTokensHandoverMsg)
+	}
+	regenerated, err := os.ReadFile(confPath)
+	if err != nil {
+		t.Fatalf("ReadFile(regenerated): %v", err)
+	}
+	if !strings.Contains(string(regenerated), `"stoploss"`) {
+		t.Fatalf("expected the stoploss object appended to the file:\n%s", regenerated)
+	}
+}
+
+// TestConfigurations_StoplossPartialObjectFillsMissingSubfield pins the
+// recursive merge: a stoploss object that exists but lacks the handover
+// message subfield gets that subfield filled from the default while the
+// present max-tokens value survives untouched.
+func TestConfigurations_StoplossPartialObjectFillsMissingSubfield(t *testing.T) {
+	dir := t.TempDir()
+	confPath := filepath.Join(dir, "textConfig.json")
+	content := `{"model":"test","stoploss":{"max-tokens":0}}`
+	if err := os.WriteFile(confPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile(textConfig.json): %v", err)
+	}
+
+	conf, err := utils.LoadConfigFromFile(dir, "textConfig.json", nil, &Default)
+	if err != nil {
+		t.Fatalf("LoadConfigFromFile: %v", err)
+	}
+	if conf.Stoploss == nil || conf.Stoploss.MaxTokens != 0 {
+		t.Fatalf("present max-tokens must survive, got %+v", conf.Stoploss)
+	}
+	if conf.Stoploss.MaxTokensHandoverMsg != DefaultHandoverInstructions {
+		t.Fatalf("expected the missing subfield filled from default, got %q", conf.Stoploss.MaxTokensHandoverMsg)
 	}
 }
 

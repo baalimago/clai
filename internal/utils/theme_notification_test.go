@@ -71,6 +71,10 @@ func TestLoadTheme_MalformedFileKeepsDefaults(t *testing.T) {
 	}
 }
 
+// TestLoadTheme_NotificationBellCanBeDisabled pins the presence-based merge:
+// a present notificationBell: false in the file is the user's choice and must
+// survive the load — the old zero-value backfill clobbered it back to true
+// on every load (config migration design, Q4).
 func TestLoadTheme_NotificationBellCanBeDisabled(t *testing.T) {
 	confDir := t.TempDir()
 	themePath := filepath.Join(confDir, "theme.json")
@@ -100,10 +104,10 @@ func TestLoadTheme_NotificationBellCanBeDisabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile(%q): %v", themePath, err)
 	}
-	testboil.AssertStringContains(t, string(themeBytes), `"notificationBell": true`)
+	testboil.AssertStringContains(t, string(themeBytes), `"notificationBell": false`)
 
-	if !NotificationBellEnabled() {
-		t.Fatal("expected notification bell to remain enabled because zero-valued bools are backfilled from defaults")
+	if NotificationBellEnabled() {
+		t.Fatal("expected notification bell to stay disabled: a present false is never backfilled")
 	}
 }
 

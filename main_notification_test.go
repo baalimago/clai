@@ -76,8 +76,10 @@ func Test_run_emits_terminal_bell_on_completed_query_when_theme_enables_it(t *te
   "roleSystem": "",
   "roleUser": "",
   "roleTool": "",
+  "roleReasoning": "",
   "roleOther": "",
-  "notificationBell": true
+  "notificationBell": true,
+  "tableItems": 10
 }`), 0o644)
 	if err != nil {
 		t.Fatalf("WriteFile(theme.json): %v", err)
@@ -95,7 +97,11 @@ func Test_run_emits_terminal_bell_on_completed_query_when_theme_enables_it(t *te
 	testboil.FailTestIfDiff(t, gotStdout, "hello\n\a")
 }
 
-func Test_run_false_notification_bell_setting_is_backfilled_to_true(t *testing.T) {
+// Test_run_false_notification_bell_setting_stays_disabled pins the
+// presence-based merge (Q4): a present notificationBell: false in theme.json
+// is the user's choice and survives the load, so the run emits no bell. The
+// old zero-value backfill clobbered it back to true on every load.
+func Test_run_false_notification_bell_setting_stays_disabled(t *testing.T) {
 	confDir := t.TempDir()
 	required := []string{
 		"conversations",
@@ -117,8 +123,10 @@ func Test_run_false_notification_bell_setting_is_backfilled_to_true(t *testing.T
   "roleSystem": "",
   "roleUser": "",
   "roleTool": "",
+  "roleReasoning": "",
   "roleOther": "",
-  "notificationBell": false
+  "notificationBell": false,
+  "tableItems": 10
 }`), 0o644)
 	if err != nil {
 		t.Fatalf("WriteFile(theme.json): %v", err)
@@ -133,13 +141,13 @@ func Test_run_false_notification_bell_setting_is_backfilled_to_true(t *testing.T
 	})
 
 	testboil.FailTestIfDiff(t, gotStatusCode, 0)
-	testboil.FailTestIfDiff(t, gotStdout, "hello\n\a")
+	testboil.FailTestIfDiff(t, gotStdout, "hello\n")
 
 	themeBytes, err := os.ReadFile(themePath)
 	if err != nil {
 		t.Fatalf("ReadFile(%q): %v", themePath, err)
 	}
-	testboil.AssertStringContains(t, string(themeBytes), `"notificationBell": true`)
+	testboil.AssertStringContains(t, string(themeBytes), `"notificationBell": false`)
 }
 
 func Test_run_appends_notification_bell_true_to_existing_theme_json(t *testing.T) {

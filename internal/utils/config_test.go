@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -185,39 +186,260 @@ func TestCreateDefaultConfigFile(t *testing.T) {
 	}
 }
 
-type testStruct struct {
-	A string
-	B string
+type migrationFixture struct {
+	Model   string         `json:"model"`
+	Limit   int            `json:"limit"`
+	Ratio   float64        `json:"ratio"`
+	Enabled bool           `json:"enabled"`
+	Nested  *migrationNest `json:"nested"`
+	Flat    migrationNest  `json:"flat"`
+	SkipMe  string         `json:"-"`
+	NoTag   string
 }
 
-func Test_appendNewFieldsFromDefault(t *testing.T) {
-	testCases := []struct {
-		desc  string
-		given testStruct
-		when  testStruct
-		want  testStruct
-	}{
-		{
-			desc: "it should append new fields from default if they are zero value in want",
-			given: testStruct{
-				A: "filled",
-			},
-			when: testStruct{
-				A: "filled",
-				B: "new",
-			},
-			want: testStruct{
-				A: "filled",
-				B: "new",
-			},
-		},
+type migrationNest struct {
+	A int    `json:"a"`
+	B string `json:"b"`
+}
+
+func Test_fillMissingFromDefaults(t *testing.T) {
+	defaults := &migrationFixture{
+		Model:   "gpt-5.2",
+		Limit:   21600,
+		Ratio:   0.5,
+		Enabled: true,
+		Nested:  &migrationNest{A: 1, B: "b"},
+		Flat:    migrationNest{A: 2, B: "flat"},
+		SkipMe:  "secret",
+		NoTag:   "untagged",
 	}
-	for _, tC := range testCases {
-		t.Run(tC.desc, func(t *testing.T) {
-			setNonZeroValueFields(&tC.given, &tC.when)
-			got := tC.given
-			testboil.FailTestIfDiff(t, got.A, tC.want.A)
-			testboil.FailTestIfDiff(t, got.B, tC.want.B)
-		})
+
+	// loadFixture mirrors LoadConfigFromFile: loaded and present are both
+	// derived from the same on-disk JSON so they always agree.
+	loadFixture := func(t *testing.T, jsonStr string) (*migrationFixture, map[string]json.RawMessage) {
+		t.Helper()
+		var loaded migrationFixture
+		if err := json.Unmarshal([]byte(jsonStr), &loaded); err != nil {
+			t.Fatalf("Unmarshal: %v", err)
+		}
+		var present map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(jsonStr), &present); err != nil {
+			t.Fatalf("Unmarshal present: %v", err)
+		}
+		return &loaded, present
+	}
+
+	t.Run("absent keys are filled from non-zero defaults", func(t *testing.T) {
+		loaded, present := loadFixture(t, `{"model":"test"}`)
+		added := fillMissingFromDefaults(loaded, defaults, present, "")
+		testboil.FailTestIfDiff(t, strings.Join(added, ","), "limit,ratio,enabled,nested,flat,NoTag")
+		testboil.FailTestIfDiff(t, loaded.Limit, 21600)
+		testboil.FailTestIfDiff(t, loaded.Enabled, true)
+		if loaded.Nested == nil || loaded.Nested.A != 1 || loaded.Nested.B != "b" {
+			t.Fatalf("expected nested copied wholesale, got %+v", loaded.Nested)
+		}
+		if loaded.Flat != (migrationNest{A: 2, B: "flat"}) {
+			t.Fatalf("expected flat copied, got %+v", loaded.Flat)
+		}
+		if loaded.SkipMe != "" {
+			t.Fatalf("json:\"-\" field must not be filled, got %q", loaded.SkipMe)
+		}
+	})
+
+	t.Run("present keys are preserved even when explicitly zero", func(t *testing.T) {
+		loaded, present := loadFixture(t, `{"model":"","limit":0,"ratio":0,"enabled":false}`)
+		added := fillMissingFromDefaults(loaded, defaults, present, "")
+		testboil.FailTestIfDiff(t, strings.Join(added, ","), "nested,flat,NoTag")
+		if loaded.Model != "" || loaded.Limit != 0 || loaded.Ratio != 0 || loaded.Enabled {
+			t.Fatalf("present zero values must survive, got %+v", loaded)
+		}
+	})
+
+	t.Run("missing subkeys inside a present nested object are filled", func(t *testing.T) {
+		loaded, present := loadFixture(t, `{"model":"test","limit":100,"ratio":0.25,"enabled":true,"nested":{"a":7},"flat":{"a":2,"b":"flat"},"NoTag":"untagged"}`)
+		added := fillMissingFromDefaults(loaded, defaults, present, "")
+		testboil.FailTestIfDiff(t, strings.Join(added, ","), "nested.b")
+		testboil.FailTestIfDiff(t, loaded.Nested.A, 7)
+		testboil.FailTestIfDiff(t, loaded.Nested.B, "b")
+	})
+
+	t.Run("present nested subkeys are never overwritten", func(t *testing.T) {
+		loaded, present := loadFixture(t, `{"model":"test","limit":100,"ratio":0.25,"enabled":true,"nested":{"a":0,"b":"user"},"flat":{"a":2,"b":"flat"},"NoTag":"untagged"}`)
+		added := fillMissingFromDefaults(loaded, defaults, present, "")
+		if len(added) != 0 {
+			t.Fatalf("expected no additions, got %v", added)
+		}
+		if loaded.Nested.A != 0 || loaded.Nested.B != "user" {
+			t.Fatalf("present subkeys must survive, got %+v", loaded.Nested)
+		}
+	})
+}
+
+func TestLoadConfigFromFile_AppendsMissingFieldsAndAnnounces(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "app.json")
+	if err := os.WriteFile(configPath, []byte(`{"model":"test"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	dflt := &migrationFixture{
+		Model:  "gpt-5.2",
+		Limit:  21600,
+		Nested: &migrationNest{A: 1, B: "b"},
+	}
+
+	var conf migrationFixture
+	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
+		var err error
+		conf, err = LoadConfigFromFile(dir, "app.json", nil, dflt)
+		if err != nil {
+			t.Fatalf("LoadConfigFromFile: %v", err)
+		}
+	})
+	if conf.Model != "test" {
+		t.Fatalf("present model must survive, got %q", conf.Model)
+	}
+	if conf.Limit != 21600 {
+		t.Fatalf("expected limit filled, got %d", conf.Limit)
+	}
+	if !strings.Contains(stdout, "added new field(s) to app.json:") {
+		t.Fatalf("expected the upgrade announcement, got %q", stdout)
+	}
+	regenerated, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	for _, want := range []string{`"model": "test"`, `"limit": 21600`, `"nested"`} {
+		if !strings.Contains(string(regenerated), want) {
+			t.Fatalf("regenerated config missing %q:\n%s", want, regenerated)
+		}
+	}
+}
+
+func TestLoadConfigFromFile_ReadonlyDoesNotRewriteOrAnnounce(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "app.json")
+	orig := `{"model":"test"}`
+	if err := os.WriteFile(configPath, []byte(orig), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	dflt := &migrationFixture{
+		Model:  "gpt-5.2",
+		Limit:  21600,
+		Nested: &migrationNest{A: 1, B: "b"},
+	}
+
+	ReadonlyConfig = true
+	t.Cleanup(func() { ReadonlyConfig = false })
+
+	var conf migrationFixture
+	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
+		var err error
+		conf, err = LoadConfigFromFile(dir, "app.json", nil, dflt)
+		if err != nil {
+			t.Fatalf("LoadConfigFromFile: %v", err)
+		}
+	})
+	// The in-memory load still sees the current schema.
+	if conf.Model != "test" {
+		t.Fatalf("present model must survive, got %q", conf.Model)
+	}
+	if conf.Limit != 21600 {
+		t.Fatalf("expected limit filled in memory, got %d", conf.Limit)
+	}
+	// No announcement and no file rewrite: raw runs are machine-readable
+	// and must not mutate the user's configs as a side effect.
+	if strings.Contains(stdout, "added new field(s)") {
+		t.Fatalf("readonly load must not announce, got %q", stdout)
+	}
+	regenerated, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(regenerated) != orig {
+		t.Fatalf("readonly load must not rewrite the file, got %q want %q", regenerated, orig)
+	}
+}
+
+func TestLoadConfigFromFile_FreshCreationIsSilent(t *testing.T) {
+	dir := t.TempDir()
+	dflt := &migrationFixture{
+		Model:  "gpt-5.2",
+		Limit:  21600,
+		Nested: &migrationNest{A: 1, B: "b"},
+	}
+
+	var conf migrationFixture
+	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
+		var err error
+		conf, err = LoadConfigFromFile(dir, "app.json", nil, dflt)
+		if err != nil {
+			t.Fatalf("LoadConfigFromFile: %v", err)
+		}
+	})
+	if strings.Contains(stdout, "added new field(s)") {
+		t.Fatalf("fresh creation must not announce, got %q", stdout)
+	}
+	if conf.Limit != 21600 {
+		t.Fatalf("expected default limit, got %d", conf.Limit)
+	}
+}
+
+func TestLoadConfigFromFile_UpgradeIsIdempotent(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "app.json")
+	if err := os.WriteFile(configPath, []byte(`{"model":"test"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	dflt := &migrationFixture{Model: "gpt-5.2", Limit: 21600}
+	if _, err := LoadConfigFromFile(dir, "app.json", nil, dflt); err != nil {
+		t.Fatalf("first load: %v", err)
+	}
+	first, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+
+	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
+		if _, err := LoadConfigFromFile(dir, "app.json", nil, dflt); err != nil {
+			t.Fatalf("second load: %v", err)
+		}
+	})
+	if strings.Contains(stdout, "added new field(s)") {
+		t.Fatalf("second load must not announce, got %q", stdout)
+	}
+	second, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	testboil.FailTestIfDiff(t, string(second), string(first))
+}
+
+func TestLoadConfigFromFile_CallbackCreatedFileDoesNotAnnounce(t *testing.T) {
+	dir := t.TempDir()
+	cb := func(configDirPath string) error {
+		return os.WriteFile(filepath.Join(configDirPath, "app.json"), []byte(`{"model":"test"}`), 0o644)
+	}
+	dflt := &migrationFixture{Model: "gpt-5.2", Limit: 21600}
+
+	var conf migrationFixture
+	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
+		var err error
+		conf, err = LoadConfigFromFile(dir, "app.json", cb, dflt)
+		if err != nil {
+			t.Fatalf("LoadConfigFromFile: %v", err)
+		}
+	})
+	if strings.Contains(stdout, "added new field(s)") {
+		t.Fatalf("callback-created file must not announce, got %q", stdout)
+	}
+	if conf.Limit != 21600 {
+		t.Fatalf("expected limit filled, got %d", conf.Limit)
+	}
+	regenerated, err := os.ReadFile(filepath.Join(dir, "app.json"))
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if !strings.Contains(string(regenerated), `"limit": 21600`) {
+		t.Fatalf("expected the merged file persisted:\n%s", regenerated)
 	}
 }

@@ -59,6 +59,8 @@ Example:
 
 `notificationBell` is intended for terminal/tmux attention behavior. Depending on terminal and tmux configuration, BEL may produce an audible bell, visual flash, or other attention marker.
 
+Missing keys in an existing `theme.json` are filled from the defaults when the file is loaded, and the added keys are announced on the command line (e.g. `added new field(s) to theme.json: roleReasoning, tableItems`). A key that is present in the file is never overwritten, so a user's explicit `"notificationBell": false` stays disabled.
+
 ## Disabling colour: `NO_COLOR`
 
 clai follows the common `NO_COLOR` convention (see also `main.go` usage text).

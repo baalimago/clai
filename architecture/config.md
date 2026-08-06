@@ -59,17 +59,46 @@ config key for it is ignored if present in old configs (encoding/json drops
 unknown keys, so no migration is needed), and the stoploss replaces it as the
 context guard.
 
-Mode config loading happens inside `internal.setupTextQuerierWithConf` / `internal.Setup`:
+Mode configs are migrated from a united place: `internal.Setup` upgrades all
+three files before mode dispatch, so every command sees the current schema
+(completion commands bypass this deliberately):
 
-- `utils.LoadConfigFromFile(confDir, "textConfig.json", migrateOldChatConfig, &text.Default)`
-- `utils.LoadConfigFromFile(confDir, "photoConfig.json", migrateOldPhotoConfig, &photo.DEFAULT)`
-- `utils.LoadConfigFromFile(confDir, "videoConfig.json", nil, &video.Default)`
+- `utils.LoadConfigFromFileCollect(confDir, "textConfig.json", migrateOldChatConfig, &text.Default)`
+- `utils.LoadConfigFromFileCollect(confDir, "photoConfig.json", migrateOldPhotoConfig, &photo.DEFAULT)`
+- `utils.LoadConfigFromFileCollect(confDir, "videoConfig.json", nil, &video.Default)`
+
+The per-mode loads inside `internal.setupTextQuerierWithConf` / `internal.Setup`
+remain, but are idempotent after the united migration.
 
 `LoadConfigFromFile` is responsible for:
 
 - creating the file from defaults if it doesn’t exist
 - `json.Unmarshal` into the provided struct
 - optionally running a migration callback
+- **upgrading the file in place**: keys absent from the on-disk JSON are filled
+  from the non-zero defaults (recursively into nested objects) and the file is
+  rewritten. Keys already present are never touched, even when their value is
+  the zero value — the file is the user’s source of truth. When a
+  pre-existing file is upgraded, clai announces the added fields, e.g.
+  `added new field(s) to textConfig.json: stoploss`. This is what appends the
+  disabled `stoploss` template (`max-tokens: 0` + the default handover
+  message) to configs that predate the feature.
+
+`LoadConfigFromFileCollect` is the same loader without the stdout
+announcement: it returns the added field paths instead. `internal.Setup` uses
+it for the united migration and defers the announcement until after the
+interactive setup wizard exits — the wizard’s TUI erases pre-wizard stdout
+when it redraws (`go_away_boilerplate/pkg/table` `ClearTermTo`), so printing
+before it would lose the message. All other commands announce immediately.
+
+Raw (machine-readable) runs — `-r`/`-raw` — are read-only: `internal.Setup`
+sets `utils.ReadonlyConfig` before any load, and the loaders fill missing
+fields in memory but never rewrite the config files and never print upgrade
+announcements. This keeps shell hooks and scripts that call clai (e.g. a zsh
+precmd running `clai -r chat dirv2`) from silently migrating the user’s
+configs before their own commands run, and from corrupting machine output
+with the human announcement. The migration then happens on the next
+interactive (non-raw) run, where the announcement is visible.
 
 ### 2) Model-specific vendor configs
 

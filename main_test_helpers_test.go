@@ -36,8 +36,10 @@ func setupMainTestConfigDir(t *testing.T) string {
   "roleSystem": "",
   "roleUser": "",
   "roleTool": "",
+  "roleReasoning": "",
   "roleOther": "",
-  "notificationBell": false
+  "notificationBell": true,
+  "tableItems": 10
 }`
 	if err := os.WriteFile(filepath.Join(confDir, "theme.json"), []byte(themeContent), 0o644); err != nil {
 		t.Fatalf("WriteFile(theme.json): %v", err)

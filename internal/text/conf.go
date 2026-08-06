@@ -159,13 +159,25 @@ var Default = Configurations{
 	ToolOutputRuneLimit: 21600,
 	SaveReplyAsConv:     true,
 	UseLookback:         false,
+	// Stoploss ships as a disabled, self-documenting template: max-tokens 0
+	// keeps the stoploss off for existing configs, and the presence-based
+	// loader appends the whole object to configs that predate it (config
+	// migration design, Q1 option B).
+	Stoploss: &Stoploss{
+		MaxTokens:            0,
+		MaxTokensHandoverMsg: DefaultHandoverInstructions,
+	},
 
 	// Backwards compatibility for older configs.
 	CmdModePrompt: "You are an assistant for a CLI tool aiding with cli tool suggestions. Write ONLY the command and nothing else. Disregard any queries asking for anything except a bash command. Do not shell escape single or double quotes.",
 }
 
 var DefaultProfile = Profile{
-	Name:            "example-name",
+	// Name is intentionally zero: a profile's name is derived from its file
+	// name at load time (findProfile normalizes an empty name). The
+	// presence-based migration must never write a placeholder name into
+	// user profile files.
+	Name:            "",
 	Model:           Default.Model,
 	UseTools:        true,
 	UseSkills:       nil,

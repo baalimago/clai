@@ -200,3 +200,32 @@ None yet.
 
 None. Verified nested stoploss marshaling, default-message resolution, agent
 zero-value disabling, and querier configuration plumbing.
+
+## Review findings (review 13, 2026-08-06)
+
+- [ ] **R13-02 — Low (stale contract, superseded by the config-migration
+      follow-up):** Three passages in this file no longer describe the
+      implemented behavior:
+  - the "### No migration" section (old configs lacking `stoploss` "load
+    cleanly" leaving the pointer nil) is superseded —
+    `LoadConfigFromFile` now appends the disabled `stoploss` template
+    (`max-tokens: 0` + the default handover message) to pre-existing files
+    and announces the addition;
+  - the implementation note "`Default` gains nothing: stoploss is off by
+    default, so `setNonZeroValueFields` never regenerates the key" — the
+    loader is now the presence-based `fillMissingFromDefaults` and
+    `text.Default` deliberately carries the disabled `Stoploss` template;
+  - acceptance criterion 4's test reference
+    `TestConfigurations_StoplossAbsentLoadsCleanly` — renamed to
+    `TestConfigurations_StoplossAbsentGetsAppendedWithDefaults` and its
+    assertion changed from nil pointer to appended defaults.
+
+  The README journal records the supersession (2026-08-05 entry), but this
+  phase file — the contract of record — was not updated. Fix direction:
+  rewrite the "No migration" section to describe the presence-based
+  upgrade and update the note and the test reference.
+
+Verified good in this review: nested stoploss marshaling, default-message
+resolution, agent zero-value disabling, querier wiring, and the appended
+defaults (disabled `max-tokens: 0` + default handover message) all hold on
+the finished state.
