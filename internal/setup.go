@@ -304,6 +304,7 @@ func setupTextQuerierWithConf(ctx context.Context, mode Mode, confDir string, fl
 			},
 			LogLevel:       skillLogLevel,
 			KnownToolNames: knownToolNames,
+			LocalTools:     allTools,
 		})
 		if err != nil {
 			return nil, nil, fmt.Errorf("discover skills: %w", err)
@@ -711,6 +712,7 @@ func (s skillRuntimeAdapter) LoadSkill(ctx context.Context, name, args string, b
 		UserVisibleBody: loaded.RenderedBody,
 		Description:     loaded.Skill.Parsed.Metadata.Description,
 		Warnings:        loaded.Warnings,
+		EnabledTools:    loaded.EnabledTools,
 		ActiveTools:     loaded.ActiveTools,
 		ActivationErr:   loaded.ActivationErr,
 		RawArgs:         loaded.RawArgs,

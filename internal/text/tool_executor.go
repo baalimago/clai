@@ -242,6 +242,27 @@ func (e toolExecutor[C]) executeLoadSkill(ctx context.Context, session *QuerySes
 	if len(loaded.ActiveTools) > 0 {
 		q.baseTools = loaded.ActiveTools
 	}
+	if len(loaded.EnabledTools) > 0 {
+		toolBox, ok := any(q.Model).(models.ToolBox)
+		if !ok {
+			return fmt.Errorf("trusted skill enabled tools but the model has no tool box")
+		}
+		for _, name := range loaded.EnabledTools {
+			tool, exists := loaded.ActiveTools[name]
+			if !exists {
+				continue
+			}
+			if q.registeredTools == nil {
+				q.registeredTools = map[string]struct{}{}
+			}
+			if _, registered := q.registeredTools[name]; registered {
+				continue
+			}
+			toolBox.RegisterTool(tool)
+			q.registeredTools[name] = struct{}{}
+		}
+		loaded.Warnings = append(loaded.Warnings, "skill enabled local tools: "+strings.Join(loaded.EnabledTools, ", "))
+	}
 	content := loaded.RenderedBody
 	userVisibleContent := loaded.UserVisibleBody
 	if strings.TrimSpace(userVisibleContent) == "" {

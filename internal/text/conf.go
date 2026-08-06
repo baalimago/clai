@@ -63,10 +63,11 @@ type Configurations struct {
 	PostProccessedPrompt string `json:"-"`
 
 	// These are to allow tools to be injected via public package.
-	Tools        []pub_models.LLMTool          `json:"-"`
-	McpServers   []pub_models.McpServer        `json:"-"`
-	BaseTools    map[string]pub_models.LLMTool `json:"-"`
-	MaxToolCalls *int                          `json:"max-tool-calls,omitempty"`
+	Tools           []pub_models.LLMTool          `json:"-"`
+	McpServers      []pub_models.McpServer        `json:"-"`
+	BaseTools       map[string]pub_models.LLMTool `json:"-"`
+	RegisteredTools map[string]struct{}           `json:"-"`
+	MaxToolCalls    *int                          `json:"max-tool-calls,omitempty"`
 	// Stoploss is the token stoploss policy for the run. Nil or
 	// MaxTokens <= 0 disables the stoploss (no handover injection).
 	Stoploss *Stoploss `json:"stoploss,omitempty"`

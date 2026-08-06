@@ -19,6 +19,11 @@ func TestLoadSkillMergesPoliciesAcrossMultipleActivations(t *testing.T) {
 		CacheDir:       cacheDir,
 		WorkingDir:     t.TempDir(),
 		KnownToolNames: []string{"rg", "cat", "ls"},
+		LocalTools: map[string]pub_models.LLMTool{
+			"rg":  staticTool{name: "rg"},
+			"cat": staticTool{name: "cat"},
+			"ls":  staticTool{name: "ls"},
+		},
 		TrustPrompter: func(context.Context, TrustPrompt) (bool, error) {
 			return true, nil
 		},
@@ -37,8 +42,41 @@ func TestLoadSkillMergesPoliciesAcrossMultipleActivations(t *testing.T) {
 	if _, ok := loaded.ActiveTools["cat"]; ok {
 		t.Fatalf("expected merged disallow to remove cat")
 	}
-	if !strings.Contains(strings.Join(loaded.Warnings, "\n"), "unavailable tool \"ls\"") {
-		t.Fatalf("expected unavailable ls warning, got %#v", loaded.Warnings)
+	if _, ok := loaded.ActiveTools["ls"]; !ok {
+		t.Fatalf("expected allowed local tool to be enabled, got %#v", loaded.ActiveTools)
+	}
+	if len(loaded.Warnings) != 0 {
+		t.Fatalf("expected no warnings for known local tools, got %#v", loaded.Warnings)
+	}
+}
+
+func TestLoadSkillDoesNotEnableMCPTools(t *testing.T) {
+	cfgDir := t.TempDir()
+	writeSkill(t, filepath.Join(cfgDir, "skills", "one", "SKILL.md"), "---\ndescription: one\nallowed-tools: mcp_known_tool,mcp_unknown_tool\n---\nOne")
+	mgr, err := Discover(Options{
+		ConfigDir:      cfgDir,
+		CacheDir:       t.TempDir(),
+		WorkingDir:     t.TempDir(),
+		KnownToolNames: []string{"rg"},
+		TrustPrompter: func(context.Context, TrustPrompt) (bool, error) {
+			return true, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("Discover() error = %v", err)
+	}
+
+	loaded, err := mgr.LoadSkill(context.Background(), "one", "", map[string]pub_models.LLMTool{})
+	if err != nil {
+		t.Fatalf("LoadSkill(one): %v", err)
+	}
+	if len(loaded.ActiveTools) != 0 {
+		t.Fatalf("expected no MCP tools to be enabled, got %#v", loaded.ActiveTools)
+	}
+	for _, toolName := range []string{"mcp_known_tool", "mcp_unknown_tool"} {
+		if !strings.Contains(strings.Join(loaded.Warnings, "\n"), toolName) {
+			t.Fatalf("expected warning for %q, got %#v", toolName, loaded.Warnings)
+		}
 	}
 }
 

@@ -345,7 +345,7 @@ func Test_e2e_skills_descriptor_activation_and_persistence(t *testing.T) {
 		"  Length: 4 chars",
 		"  Estimated tokens: ~1",
 		"done after tool for: please tool_load_skill",
-		"Warnings:\n- skill requested unavailable tool \"rg\"\n- skill requested unknown tool \"unknown_tool\"",
+		"Warnings:\n- skill requested unknown tool \"unknown_tool\"\n- skill enabled local tools: rg",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("expected %q in output, got %q", want, stdout)
@@ -376,6 +376,39 @@ func Test_e2e_skills_descriptor_activation_and_persistence(t *testing.T) {
 	trustJSON := readStringFile(t, filepath.Join(os.Getenv("CLAI_CACHE_DIR"), "skills_trust.json"))
 	if !strings.Contains(trustJSON, `"hash"`) || !strings.Contains(trustJSON, `"path"`) {
 		t.Fatalf("expected populated trust cache, got %s", trustJSON)
+	}
+}
+
+func Test_e2e_skill_automatically_enables_local_tools(t *testing.T) {
+	oldWd, _ := os.Getwd()
+	t.Cleanup(func() { _ = os.Chdir(oldWd) })
+
+	confDir := setupMainTestConfigDir(t)
+	t.Setenv("CLAI_CACHE_DIR", filepath.Join(t.TempDir(), "cache"))
+	if err := os.Chdir(t.TempDir()); err != nil {
+		t.Fatalf("Chdir: %v", err)
+	}
+	writeSkillFile(t, filepath.Join(confDir, "skills", "review", "SKILL.md"), "---\ndescription: Review pending changes\nallowed-tools: async_cmd,async_cmd_status,async_cmd_logs,async_cmd_await,async_cmd_cancel\n---\nBody")
+	writeSkillsConfigJSON(t, confDir, map[string]any{
+		"enabled":            true,
+		"globalSkillDirs":    []string{},
+		"projectSkillDirs":   []string{},
+		"trust_all_skills":   true,
+		"maxActivatedSkills": 10,
+	})
+
+	var gotStatus int
+	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
+		gotStatus = run(strings.Split("-cm mock_test q please tool_load_skill", " "))
+	})
+	if gotStatus != 0 {
+		t.Fatalf("expected success status, got %d, stdout=%q", gotStatus, stdout)
+	}
+	if strings.Contains(stdout, "skill requested unavailable tool") {
+		t.Fatalf("local tools reported unavailable: %q", stdout)
+	}
+	if !strings.Contains(stdout, "skill enabled local tools: async_cmd, async_cmd_await, async_cmd_cancel, async_cmd_logs, async_cmd_status") {
+		t.Fatalf("expected automatic tool warning, got %q", stdout)
 	}
 }
 

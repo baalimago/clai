@@ -161,27 +161,27 @@ func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configu
 	}
 }
 
-func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, userConf Configurations) {
+func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, userConf *Configurations) {
 	toolBox, ok := any(modelConf).(models.ToolBox)
 	if !ok {
 		return
 	}
 	if userConf.UseSkills {
-		toolBox.RegisterTool(pkgtools.LoadSkill)
+		registerTool(toolBox, userConf, pkgtools.LoadSkill)
 	}
 	// Lookback tools are internal markers dispatched by the tool executor; like
 	// load_skill they are registered whenever the feature is active, independent of
 	// -t/-tools narrowing and even when external tools are disabled.
 	if userConf.UseLookback {
-		toolBox.RegisterTool(pkgtools.SearchConversations)
-		toolBox.RegisterTool(pkgtools.InspectConversation)
-		toolBox.RegisterTool(pkgtools.ReadMessage)
+		registerTool(toolBox, userConf, pkgtools.SearchConversations)
+		registerTool(toolBox, userConf, pkgtools.InspectConversation)
+		registerTool(toolBox, userConf, pkgtools.ReadMessage)
 	}
 	if !userConf.UseTools {
 		return
 	}
 	tools.Init()
-	err := setupMcpManager(ctx, path.Join(userConf.ConfigDir, "mcpServers"), userConf)
+	err := setupMcpManager(ctx, path.Join(userConf.ConfigDir, "mcpServers"), *userConf)
 	if misc.Truthy(os.Getenv("DEBUG")) {
 		ancli.Okf("Registering tools on querier of type: %T\n", modelConf)
 	}
@@ -196,7 +196,7 @@ func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, us
 			allTools = append(allTools, tool)
 		}
 		for _, tool := range uniqueTools(allTools) {
-			toolBox.RegisterTool(tool)
+			registerTool(toolBox, userConf, tool)
 		}
 		if userConf.BaseTools == nil {
 			userConf.BaseTools = tools.Registry.All()
@@ -226,7 +226,7 @@ func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, us
 		if misc.Truthy(os.Getenv("DEBUG")) {
 			ancli.PrintOK(fmt.Sprintf("\tname: %v, desc: %v\n", tool.Specification().Name, tool.Specification().Description))
 		}
-		toolBox.RegisterTool(tool)
+		registerTool(toolBox, userConf, tool)
 		if userConf.BaseTools == nil {
 			userConf.BaseTools = map[string]pub_models.LLMTool{}
 		}
@@ -242,13 +242,25 @@ func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, us
 			continue
 		}
 		tools.Registry.Set(t.Specification().Name, t)
-		toolBox.RegisterTool(t)
+		registerTool(toolBox, userConf, t)
 		if userConf.BaseTools == nil {
 			userConf.BaseTools = map[string]pub_models.LLMTool{}
 		}
 		userConf.BaseTools[t.Specification().Name] = t
 		registeredNames[t.Specification().Name] = struct{}{}
 	}
+}
+
+func registerTool(toolBox models.ToolBox, userConf *Configurations, tool pub_models.LLMTool) {
+	if userConf.RegisteredTools == nil {
+		userConf.RegisteredTools = map[string]struct{}{}
+	}
+	name := tool.Specification().Name
+	if _, exists := userConf.RegisteredTools[name]; exists {
+		return
+	}
+	toolBox.RegisterTool(tool)
+	userConf.RegisteredTools[name] = struct{}{}
 }
 
 // uniqueTools removes aliases and repeated selections before tool schemas are

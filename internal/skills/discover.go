@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
 func Discover(opts Options) (*Manager, error) {
@@ -70,6 +72,7 @@ func Discover(opts Options) (*Manager, error) {
 		cacheDir:       opts.CacheDir,
 		trustPrompter:  opts.TrustPrompter,
 		knownToolNames: toSet(opts.KnownToolNames),
+		localTools:     opts.LocalTools,
 		logger:         log,
 		state: ActivationState{
 			Allowed:    map[string]struct{}{},
@@ -86,6 +89,7 @@ type Manager struct {
 	cacheDir       string
 	trustPrompter  func(context.Context, TrustPrompt) (bool, error)
 	knownToolNames map[string]struct{}
+	localTools     map[string]pub_models.LLMTool
 	state          ActivationState
 	logger         logger
 }

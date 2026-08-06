@@ -79,7 +79,7 @@ The parser records the following frontmatter fields from a constrained line-orie
 | `arguments` | Ordered argument names |
 | `disable-model-invocation` | Hides the skill from the descriptor block; it is not eligible for automatic loading |
 | `user-invocable` | Parsed and stored for compatibility; clai does not rely on manual invocation UI |
-| `allowed-tools` | Tools auto-approved for this skill invocation based on existing tool approval system in clai |
+| `allowed-tools` | Known local built-in tools that clai enables for this trusted skill invocation |
 | `disallowed-tools` | Tools removed from availability for this skill invocation |
 | `model` | Parsed and stored, but not applied in MVP |
 | `effort` | Parsed and stored, but not applied in MVP |
@@ -468,13 +468,19 @@ awkward to expose through a manual-only interface.
 
 Skill tool policy applies only while the skill is active for the current run.
 
-Skills do not load tools. Skill metadata operates only on the tool set already resolved for the current run by clai’s normal setup, discovery, config, profile, and flag pipeline.
+Trusted skills can enable known local built-in tools named in `allowed-tools`.
+clai gets these tools from the existing local tool registry and registers them
+through the model `ToolBox`. clai registers each tool name only once per run.
 
-`allowed-tools` may auto-approve tools that are already known and already present in the run-resolved tool set.
+Skills never enable MCP tools. An `allowed-tools` name with the `mcp_` prefix
+does not start an MCP server or register an MCP tool. clai shows a warning when
+such an MCP tool is unavailable. Unknown MCP tool names also show a warning.
 
-If a skill requests a tool in `allowed-tools` that exists in clai but is not currently available for the run, clai emits a warning and continues. This makes the degraded behavior visible and signals to the user that the tool must be selected or allowed through the normal clai tool configuration flow.
+When a trusted skill enables one or more local tools, clai shows one visible
+warning that lists the newly enabled tool names. This warning does not repeat
+tool names that were already enabled for the run.
 
-If a skill requests a tool in `allowed-tools` that is entirely unknown, clai emits a warning and continues.
+If a skill requests an unknown local tool, clai emits a warning and continues.
 
 `disallowed-tools` removes tools from the invocation-level available set, even if those tools were otherwise enabled by config, profile, or command flag.
 
@@ -633,7 +639,11 @@ The skills subsystem is complete when all of the following are true:
 
 11. only trusted, agent-requested skill content is injected into the current run’s prompt/context without mutating persistent mode config.
 
-12. `allowed-tools` and `disallowed-tools` operate only on the tool set already resolved for the current run; skills do not load tools, unavailable or unknown requested tools produce warnings and degraded continuation, and all skill tool-policy effects are discarded when the run ends.
+12. trusted `allowed-tools` entries enable known local built-in tools through
+    the existing `ToolBox` registration path. clai never enables MCP tools.
+    Unknown and unavailable tools produce warnings and continuation. clai
+    lists newly enabled local tools in a visible warning. All skill tool-policy
+    effects are discarded when the run ends.
 
 13. shell preprocessing syntax remains disabled and unexecuted in MVP.
 

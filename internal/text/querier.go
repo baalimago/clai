@@ -85,6 +85,7 @@ type Querier[C models.StreamCompleter] struct {
 	callUsageRecorder CallUsageRecorder
 	skillLoader       SkillLoader
 	baseTools         map[string]pub_models.LLMTool
+	registeredTools   map[string]struct{}
 }
 
 func (q *Querier[C]) SuppressCompletionNotification() bool {
@@ -102,6 +103,7 @@ type LoadedSkillRuntime struct {
 	UserVisibleBody string
 	Description     string
 	Warnings        []string
+	EnabledTools    []string
 	ActiveTools     map[string]pub_models.LLMTool
 	ActivationErr   string
 	RawArgs         string

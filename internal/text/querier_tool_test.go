@@ -9,9 +9,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/internal/models"
 	internaltools "github.com/baalimago/clai/internal/tools"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
@@ -289,10 +291,50 @@ func Test_toolExecutor_ExecuteLoadSkill_ActivationCapAppendsError(t *testing.T) 
 	}
 }
 
+func Test_toolExecutor_ExecuteLoadSkill_RegistersNewlyEnabledLocalToolsOnce(t *testing.T) {
+	model := &toolRegisteringCompleter{}
+	q := Querier[*toolRegisteringCompleter]{
+		Model:           model,
+		registeredTools: map[string]struct{}{"load_skill": {}},
+		skillLoader: fakeSkillLoader{loaded: LoadedSkillRuntime{
+			Name:         "review",
+			RenderedBody: "Body",
+			EnabledTools: []string{"rg", "rg"},
+			ActiveTools: map[string]pub_models.LLMTool{
+				"rg": setupToolsTestTool{name: "rg"},
+			},
+		}},
+	}
+	session := &QuerySession{}
+	inputs := pub_models.Input{"skill": "review"}
+	call := pub_models.Call{ID: "call-1", Name: "load_skill", Inputs: &inputs}
+	if err := (toolExecutor[*toolRegisteringCompleter]{querier: &q}).Execute(context.Background(), session, call); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if got := model.registered; !slices.Equal(got, []string{"rg"}) {
+		t.Fatalf("expected one registered local tool, got %#v", got)
+	}
+	if got := session.Chat.Messages[len(session.Chat.Messages)-1].Content; got != "Body" {
+		t.Fatalf("unexpected skill body: %q", got)
+	}
+}
+
 type fakeSkillLoader struct{ loaded LoadedSkillRuntime }
 
 func (f fakeSkillLoader) LoadSkill(context.Context, string, string, map[string]pub_models.LLMTool) (LoadedSkillRuntime, error) {
 	return f.loaded, nil
+}
+
+type toolRegisteringCompleter struct{ registered []string }
+
+func (*toolRegisteringCompleter) Setup() error { return nil }
+
+func (*toolRegisteringCompleter) StreamCompletions(context.Context, pub_models.Chat) (chan models.CompletionEvent, error) {
+	return make(chan models.CompletionEvent), nil
+}
+
+func (c *toolRegisteringCompleter) RegisterTool(tool pub_models.LLMTool) {
+	c.registered = append(c.registered, tool.Specification().Name)
 }
 
 func tempPathFromMaterializedOutput(t *testing.T, got string) string {
