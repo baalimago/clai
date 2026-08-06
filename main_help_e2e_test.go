@@ -28,6 +28,7 @@ func Test_goldenFile_HELP_prints_usage(t *testing.T) {
 	}
 	// The usage string is large; check for a few stable snippets and that config dir was interpolated.
 	testboil.AssertStringContains(t, gotStdout, "Usage:")
+	testboil.AssertStringContains(t, gotStdout, "-s, -skills string")
 	testboil.AssertStringContains(t, gotStdout, "-asc, -append-shell-context str")
 	testboil.AssertStringContains(t, gotStdout, "-mt, -max-tokens int")
 	testboil.AssertStringContains(t, gotStdout, "-mtc, -max-tool-calls int")
