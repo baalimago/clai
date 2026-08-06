@@ -210,9 +210,108 @@ func ShortenedOutput(out string, maxShortenedNewlines int) string {
 	return fmt.Sprintf("%v\n...[and %v more %v]", firstTokensStr, amLeft, abbreviationType)
 }
 
+// PrintCompactToolActivity prints non-raw tool output without markdown rendering.
+// It uses at most maxRows terminal rows after the coloured role prefix.
+func PrintCompactToolActivity(w io.Writer, role, content string, termWidth, maxRows int) error {
+	if w == nil {
+		w = os.Stdout
+	}
+	prefix := compactRolePrefix(role, termWidth)
+	contentWidth := max(termWidth-utf8.RuneCountInString(prefix), 1)
+	rows := compactTerminalRows(content, contentWidth, maxRows)
+	for i, row := range rows {
+		if i > 0 {
+			if _, err := fmt.Fprint(w, "\n"); err != nil {
+				return fmt.Errorf("write tool output newline: %w", err)
+			}
+		}
+		if i == 0 {
+			if _, err := fmt.Fprint(w, table.Colorize(RoleColor(role), prefix)); err != nil {
+				return fmt.Errorf("write tool output prefix: %w", err)
+			}
+		}
+		isMarker := isToolOutputMarker(row)
+		row = truncateTerminalRow(row, contentWidth)
+		if isMarker {
+			row = table.Colorize(TableTheme().Secondary, row)
+		}
+		if _, err := fmt.Fprint(w, row); err != nil {
+			return fmt.Errorf("write tool output: %w", err)
+		}
+	}
+	_, err := fmt.Fprintln(w)
+	return err
+}
+
+// PrintCompactToolCall prints one non-raw tool-call status line without glow.
+func PrintCompactToolCall(w io.Writer, role, content string, termWidth int) error {
+	if w == nil {
+		w = os.Stdout
+	}
+	prefix := compactRolePrefix(role, termWidth)
+	content = truncateTerminalRow(content, max(termWidth-utf8.RuneCountInString(prefix), 1))
+	_, err := fmt.Fprintf(w, "%s%s\n", table.Colorize(RoleColor(role), prefix), content)
+	return err
+}
+
+func compactTerminalRows(content string, width, maxRows int) []string {
+	rows := terminalRows(content, width)
+	if maxRows <= 0 || len(rows) <= maxRows {
+		return rows
+	}
+	head := maxRows / 2
+	tail := maxRows - head - 1
+	marker := fmt.Sprintf("... [%d terminal rows omitted] ...", len(rows)-head-tail)
+	compacted := make([]string, 0, maxRows)
+	compacted = append(compacted, rows[:head]...)
+	compacted = append(compacted, marker)
+	compacted = append(compacted, rows[len(rows)-tail:]...)
+	return compacted
+}
+
+func terminalRows(content string, width int) []string {
+	width = max(width, 1)
+	var rows []string
+	for line := range strings.SplitSeq(content, "\n") {
+		runes := []rune(line)
+		if len(runes) == 0 {
+			rows = append(rows, "")
+			continue
+		}
+		for len(runes) > width {
+			rows = append(rows, string(runes[:width]))
+			runes = runes[width:]
+		}
+		rows = append(rows, string(runes))
+	}
+	return rows
+}
+
+func isToolOutputMarker(row string) bool {
+	return strings.HasPrefix(row, "... [") && strings.HasSuffix(row, " terminal rows omitted] ...")
+}
+
+func truncateTerminalRow(content string, width int) string {
+	runes := []rune(content)
+	if len(runes) <= width {
+		return content
+	}
+	if width == 1 {
+		return "…"
+	}
+	return string(runes[:width-1]) + "…"
+}
+
+func compactRolePrefix(role string, width int) string {
+	if width <= 1 {
+		return ""
+	}
+	return truncateTerminalRow(role+": ", width-1)
+}
+
 func PrepareDisplayMessage(msg pub_models.Message) pub_models.Message {
 	display := msg
-	if display.Role == "tool" && !strings.Contains(display.Content, "mcp_") {
+	if display.Role == "tool" {
 		display.Content = ShortenedOutput(display.Content, MaxShortenedNewlines)
 		return display
 	}

@@ -38,6 +38,7 @@ All colour fields are raw ANSI escape sequences represented as JSON strings.
 | `roleReasoning` | Colour for `reasoning` role labels (thinking/chain-of-thought). |
 | `roleOther` | Fallback colour for any other/unknown role. |
 | `notificationBell` | Whether clai should emit terminal BEL (`\a`) after successful task completion. |
+| `toolOutputRows` | Maximum terminal rows for each non-raw tool result. Default: `6`. |
 
 Defaults are chosen to match the existing `AttemptPrettyPrint` role palette (system=blue, user=cyan, tool=magenta, reasoning=warm-gray).
 
@@ -53,9 +54,13 @@ Example:
   "roleTool": "\u001b[35m",
   "roleReasoning": "\u001b[38;2;180;170;150m",
   "roleOther": "\u001b[34m",
-  "notificationBell": true
+  "notificationBell": true,
+  "toolOutputRows": 6
 }
 ```
+
+Existing theme files get `toolOutputRows: 6` when clai loads them. Set a
+positive value to change the display limit.
 
 `notificationBell` is intended for terminal/tmux attention behavior. Depending on terminal and tmux configuration, BEL may produce an audible bell, visual flash, or other attention marker.
 
@@ -118,6 +123,16 @@ Implementation:
 Raw `chat dir` and `chat dirv2` output does not include BEL. Model output with `-rf` or `-response-format` also excludes BEL.
 
 Structured output blocks all intermediate display output. These rules keep the JSON valid for tools such as `jq`.
+
+### 5) Tool activity
+
+Non-raw tool results do not use glow. clai wraps output for the terminal width
+and shows no more than `toolOutputRows` terminal rows. At the default limit,
+clai shows the first three rows, an omitted-row marker, and the last two rows.
+The full bounded tool result stays in the chat history and model context.
+
+Non-raw assistant tool-call status also does not use glow. It is shortened to
+one terminal row. Raw mode keeps complete tool calls and results.
 
 ## Customization
 

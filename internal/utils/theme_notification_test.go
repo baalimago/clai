@@ -153,3 +153,23 @@ func TestDefaultTheme_HasTableItemsSetTo10(t *testing.T) {
 		t.Fatalf("defaultTheme().TableItems = %d, want 10", th.TableItems)
 	}
 }
+
+func TestLoadTheme_AppendsToolOutputRowsDefaultForExistingThemeWithoutField(t *testing.T) {
+	confDir := t.TempDir()
+	themePath := filepath.Join(confDir, "theme.json")
+	if err := os.WriteFile(themePath, []byte(`{"notificationBell": true, "tableItems": 10}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(%q): %v", themePath, err)
+	}
+
+	if err := LoadTheme(confDir); err != nil {
+		t.Fatalf("LoadTheme(%q): %v", confDir, err)
+	}
+	if got := ToolOutputRows(); got != 6 {
+		t.Fatalf("ToolOutputRows() = %d, want 6", got)
+	}
+	themeBytes, err := os.ReadFile(themePath)
+	if err != nil {
+		t.Fatalf("ReadFile(%q): %v", themePath, err)
+	}
+	testboil.AssertStringContains(t, string(themeBytes), `"toolOutputRows": 6`)
+}

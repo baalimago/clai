@@ -182,11 +182,52 @@ func TestPrepareDisplayMessage(t *testing.T) {
 		}
 	})
 
-	t.Run("mcp tool messages are preserved", func(t *testing.T) {
+	t.Run("mcp tool messages are shortened", func(t *testing.T) {
 		msg := pub_models.Message{Role: "tool", Content: "mcp_result\n" + strings.Repeat("0123456789\n", 30)}
 		got := PrepareDisplayMessage(msg)
-		if got.Content != msg.Content {
-			t.Fatalf("expected mcp tool output to remain untouched")
+		if !strings.Contains(got.Content, "[and 27 more lines]") {
+			t.Fatalf("expected shortened mcp tool output, got %q", got.Content)
+		}
+	})
+}
+
+func TestCompactToolActivity(t *testing.T) {
+	t.Run("keeps the first three rows, marker, and last two rows", func(t *testing.T) {
+		rows := []string{"one", "two", "three", "four", "five", "six", "seven", "eight"}
+		got := compactTerminalRows(strings.Join(rows, "\n"), 80, 6)
+		want := []string{"one", "two", "three", "... [3 terminal rows omitted] ...", "seven", "eight"}
+		if strings.Join(got, "\n") != strings.Join(want, "\n") {
+			t.Fatalf("compactTerminalRows() = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("counts wrapped terminal rows", func(t *testing.T) {
+		got := compactTerminalRows("abcdefghijkl", 3, 3)
+		want := []string{"abc", "... [2 terminal rows omitted] ...", "jkl"}
+		if strings.Join(got, "\n") != strings.Join(want, "\n") {
+			t.Fatalf("compactTerminalRows() = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("non raw display uses no glow and respects no color", func(t *testing.T) {
+		t.Setenv("NO_COLOR", "true")
+		var out strings.Builder
+		if err := PrintCompactToolActivity(&out, "tool", "one\ntwo\nthree\nfour", 80, 3); err != nil {
+			t.Fatalf("PrintCompactToolActivity: %v", err)
+		}
+		if got, want := out.String(), "tool: one\n... [2 terminal rows omitted] ...\nfour\n"; got != want {
+			t.Fatalf("PrintCompactToolActivity() = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("tool call status is one terminal row", func(t *testing.T) {
+		t.Setenv("NO_COLOR", "true")
+		var out strings.Builder
+		if err := PrintCompactToolCall(&out, "assistant", "Call: very-long-tool-name", 16); err != nil {
+			t.Fatalf("PrintCompactToolCall: %v", err)
+		}
+		if got, want := out.String(), "assistant: Call…\n"; got != want {
+			t.Fatalf("PrintCompactToolCall() = %q, want %q", got, want)
 		}
 	})
 }

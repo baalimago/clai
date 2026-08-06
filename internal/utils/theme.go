@@ -31,6 +31,8 @@ type Theme struct {
 	NotificationBell bool `json:"notificationBell"`
 
 	TableItems int `json:"tableItems"`
+
+	ToolOutputRows int `json:"toolOutputRows"`
 }
 
 func defaultTheme() *Theme {
@@ -49,6 +51,8 @@ func defaultTheme() *Theme {
 		NotificationBell: true,
 
 		TableItems: 10,
+
+		ToolOutputRows: 6,
 	}
 }
 
@@ -131,6 +135,9 @@ func RoleColor(role string) string {
 }
 
 func NotificationBellEnabled() bool { return globalTheme.NotificationBell }
+
+// ToolOutputRows returns the maximum terminal rows used for non-raw tool output.
+func ToolOutputRows() int { return globalTheme.ToolOutputRows }
 
 func hasJSONKey(path, key string) bool {
 	content, err := os.ReadFile(path)
