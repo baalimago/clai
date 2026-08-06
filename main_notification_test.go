@@ -55,7 +55,7 @@ func Test_run_structured_output_prints_only_response(t *testing.T) {
 	}
 }
 
-func Test_run_emits_terminal_bell_on_completed_query_when_theme_enables_it(t *testing.T) {
+func Test_run_redirected_completed_query_suppresses_bell(t *testing.T) {
 	confDir := t.TempDir()
 	required := []string{
 		"conversations",
@@ -79,7 +79,12 @@ func Test_run_emits_terminal_bell_on_completed_query_when_theme_enables_it(t *te
   "roleReasoning": "",
   "roleOther": "",
   "notificationBell": true,
-  "tableItems": 10
+  "tableItems": 10,
+  "toolOutputRows": 6,
+  "rollingOutput": {
+    "enabled": true,
+    "windowCellHeight": 30
+  }
 }`), 0o644)
 	if err != nil {
 		t.Fatalf("WriteFile(theme.json): %v", err)
@@ -94,7 +99,26 @@ func Test_run_emits_terminal_bell_on_completed_query_when_theme_enables_it(t *te
 	})
 
 	testboil.FailTestIfDiff(t, gotStatusCode, 0)
-	testboil.FailTestIfDiff(t, gotStdout, "hello\n\a")
+	testboil.FailTestIfDiff(t, gotStdout, "hello\n")
+}
+
+type notificationTestCompletion struct {
+	suppress bool
+}
+
+func (c notificationTestCompletion) SuppressCompletionNotification() bool {
+	return c.suppress
+}
+
+func Test_triggerCompletionNotification_emits_bell_when_completion_does_not_suppress_it(t *testing.T) {
+	confDir := setupMainTestConfigDir(t)
+	writeNotificationTestPriceFiles(t, confDir)
+
+	gotStdout := testboil.CaptureStdout(t, func(t *testing.T) {
+		triggerCompletionNotification(notificationTestCompletion{})
+	})
+
+	testboil.FailTestIfDiff(t, gotStdout, "\a")
 }
 
 // Test_run_false_notification_bell_setting_stays_disabled pins the
@@ -126,7 +150,12 @@ func Test_run_false_notification_bell_setting_stays_disabled(t *testing.T) {
   "roleReasoning": "",
   "roleOther": "",
   "notificationBell": false,
-  "tableItems": 10
+  "tableItems": 10,
+  "toolOutputRows": 6,
+  "rollingOutput": {
+    "enabled": true,
+    "windowCellHeight": 30
+  }
 }`), 0o644)
 	if err != nil {
 		t.Fatalf("WriteFile(theme.json): %v", err)

@@ -633,9 +633,8 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 
 		tblFmt := fmt.Sprintf("%%-%ds| %%-15s | %%-20s| %%-18s | %%-8s | %%v", maxIdxLen)
 		headArgs := []any{"Index", "Source", "Created", "Model", "Cost", "Prompt"}
-		isWide := false
-		if tw, err := table.TermWidth(); err == nil && tw > 120 {
-			isWide = true
+		isWide := cq.dims.Width > 120
+		if isWide {
 			tblFmt = fmt.Sprintf("%%-%ds| %%-15s | %%-20s| %%-8v | %%-15s | %%-18s | %%-8s | %%-6s | %%v", maxIdxLen)
 			headArgs = []any{"Index", "Source", "Created", "Messages", "Profile", "Model", "Cost", "Tokens", "Prompt"}
 		}
@@ -680,10 +679,7 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 						tokenStr,
 						"",
 					)
-					withSummary, err := table.WidthAppropriateStringTrunc(item.FirstUserMessage, prefix, 15)
-					if err != nil {
-						return "", fmt.Errorf("failed to get widthAppropriateChatSummary: %w", err)
-					}
+					withSummary := table.WidthAppropriateStringTruncWithWidth(item.FirstUserMessage, prefix, 15, cq.dims.Width)
 					return withSummary, nil
 				}
 
@@ -696,10 +692,7 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 					costStr,
 					"",
 				)
-				withSummary, err := table.WidthAppropriateStringTrunc(item.FirstUserMessage, prefix, 15)
-				if err != nil {
-					return "", fmt.Errorf("failed to get widthAppropriateChatSummary: %w", err)
-				}
+				withSummary := table.WidthAppropriateStringTruncWithWidth(item.FirstUserMessage, prefix, 15, cq.dims.Width)
 				return withSummary, nil
 			},
 		).
@@ -842,10 +835,7 @@ func (cq *ChatHandler) printChatInfoCommon(w io.Writer, chat pub_models.Chat, gr
 	if uMsg, err := chat.FirstUserMessage(); err == nil {
 		firstMessages = uMsg.Content
 	}
-	summary, err := table.WidthAppropriateStringTrunc(firstMessages, "summary: \"", 10)
-	if err != nil {
-		return fmt.Errorf("failed to create widthAppropriateChatSummary: %w", err)
-	}
+	summary := table.WidthAppropriateStringTruncWithWidth(firstMessages, "summary: \"", 10, cq.dims.Width)
 
 	header := table.Colorize(utils.TableTheme().Primary, "=== Chat info ===")
 	fileKey := table.Colorize(utils.TableTheme().Primary, "file path:")
@@ -992,10 +982,10 @@ func editorEditString(toEdit string) (string, error) {
 // reuses messageDisplayText so assistant tool-call turns (persisted with empty
 // Content, model-safe) are shown as reconstructed "Call: ..." lines instead of
 // blank rows, matching the conversation view.
-func messagePickerRow(i int, t pub_models.Message) (string, error) {
+func messagePickerRow(i int, t pub_models.Message, width int) (string, error) {
 	disp := messageDisplayText(t)
 	prefix := fmt.Sprintf(editMessageTblFormat, i, t.Role, utf8.RuneCountInString(disp), "")
-	return table.WidthAppropriateStringTrunc(disp, prefix, 25)
+	return table.WidthAppropriateStringTruncWithWidth(disp, prefix, 25, width), nil
 }
 
 // messageEditorText returns only persisted text. Display-only reconstructions
@@ -1011,7 +1001,7 @@ func (cq *ChatHandler) selectMessagesAt(chat pub_models.Chat, onlyOneSelect bool
 	tb := table.New(
 		table.SlicePaginator(chat.Messages),
 		func(i int, t pub_models.Message) (string, error) {
-			return messagePickerRow(i, t)
+			return messagePickerRow(i, t, cq.dims.Width)
 		},
 	).
 		WithHeader(head).

@@ -1,6 +1,15 @@
 package text
 
-import "testing"
+import (
+	"context"
+	"encoding/json"
+	"os"
+	"path"
+	"strings"
+	"testing"
+
+	"github.com/baalimago/go_away_boilerplate/pkg/dimensions"
+)
 
 func TestVendorType_OpenRouter(t *testing.T) {
 	vendor, model, modelVersion, err := vendorType("or:openai/gpt-5.2")
@@ -119,5 +128,44 @@ func TestCanonicalModelString_FromConfigFilename(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("CanonicalModelString(%q, %q, %q) = %q, want %q", tt.vendor, tt.family, tt.modelVersion, got, tt.want)
 		}
+	}
+}
+
+// Test_Querier_NewQuerier_dimsBoundToOutputWriter proves the phase-3 snapshot
+// wiring: NewQuerier resolves one dimensions snapshot from the session output
+// writer's fd (R2-02). A non-terminal writer must not fail the querier setup;
+// it deterministically yields dimensions.Fallback, so every width-aware render
+// path of the querier reads one usable value.
+func Test_Querier_NewQuerier_dimsBoundToOutputWriter(t *testing.T) {
+	// Avoid races with the cost manager error logger goroutine in NewQuerier.
+	t.Setenv("CLAI_DISABLE_COST_ERR_LOG_GOROUTINE", "1")
+
+	model := "mock"
+	tmpDir := t.TempDir()
+	if err := os.Mkdir(path.Join(tmpDir, ".clai"), os.FileMode(0o755)); err != nil {
+		t.Fatalf("mkdir .clai: %v", err)
+	}
+	saved, err := json.Marshal(MockQuerier{Somefield: "somevalue"})
+	if err != nil {
+		t.Fatalf("marshal mock: %v", err)
+	}
+	if err := os.WriteFile(path.Join(tmpDir, ".clai", "mock_mock_mock.json"), saved, os.FileMode(0o755)); err != nil {
+		t.Fatalf("write mock config: %v", err)
+	}
+
+	conf := Configurations{
+		Model:     model,
+		ConfigDir: path.Join(tmpDir, ".clai"),
+		Out:       &strings.Builder{},
+	}
+	q, err := NewQuerier(context.Background(), conf, &MockQuerier{})
+	if err != nil {
+		t.Fatalf("NewQuerier with non-terminal output: %v", err)
+	}
+	if q.dims != dimensions.Fallback {
+		t.Fatalf("dims = %+v, want fallback %+v for a non-terminal session writer", q.dims, dimensions.Fallback)
+	}
+	if q.out == nil {
+		t.Fatal("querier output writer must be set")
 	}
 }

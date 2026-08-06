@@ -13,6 +13,7 @@ import (
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
+	"github.com/baalimago/go_away_boilerplate/pkg/dimensions"
 	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
 
@@ -22,12 +23,18 @@ const (
 )
 
 type Querier[C models.StreamCompleter] struct {
-	Raw                     bool
-	structuredOutput        bool
-	chat                    pub_models.Chat
-	callStackLevel          int
-	username                string
-	termWidth               int
+	Raw              bool
+	structuredOutput bool
+	outputModeKnown  bool
+	outputIsTerminal bool
+	chat             pub_models.Chat
+	callStackLevel   int
+	username         string
+	// dims is the one terminal-dimensions snapshot of this interactive output
+	// session. It is resolved once in NewQuerier from the session writer's fd;
+	// every width-aware render path of the querier reads this value. The
+	// snapshot is always usable: a failed read yields dimensions.Fallback.
+	dims                    dimensions.Dimensions
 	lineCount               int
 	line                    string
 	fullMsg                 string
@@ -56,11 +63,16 @@ type Querier[C models.StreamCompleter] struct {
 	// TextQuery call that does not already carry a system message.
 	systemPrompt string
 
-	// reasoningBuf accumulates thinking/chain-of-thought tokens streamed
-	// before the final answer.  It is wrapped in [thinking]…[/thinking]
-	// when displayed.
-	reasoningBuf    strings.Builder
-	reasoningActive bool
+	// reasoningBuf preserves source reasoning for the session and model. The
+	// activity viewport is a separate, bounded terminal-only copy.
+	reasoningBuf     strings.Builder
+	reasoningActive  bool
+	activityViewport *utils.ActivityViewport
+	// finalAnswerPopPending marks that the trailing assistant-prose block was
+	// removed from the viewport state at stream end. The window redraws (and
+	// the answer prints below it) only when the finalizer prints the answer,
+	// so the terminal paints the pop and the reprint as one transition.
+	finalAnswerPopPending bool
 
 	// Output of the querier. This is used mostly when Querier is invoked as an agent
 	out io.Writer
@@ -89,7 +101,7 @@ type Querier[C models.StreamCompleter] struct {
 }
 
 func (q *Querier[C]) SuppressCompletionNotification() bool {
-	return q.structuredOutput
+	return q.structuredOutput || (q.outputModeKnown && !q.outputIsTerminal)
 }
 
 type SkillLoader interface {
@@ -111,12 +123,32 @@ type LoadedSkillRuntime struct {
 
 func (q *Querier[C]) postProcessOutput(newSysMsg pub_models.Message) {
 	// The token should already have been printed while streamed
-	if q.Raw {
+	if q.rawDisplay() {
+		if q.debug {
+			w := q.out
+			if w == nil {
+				w = os.Stdout
+			}
+			fmt.Fprintln(w, newSysMsg.Content)
+		}
 		return
 	}
-
-	if q.termWidth > 0 {
-		utils.UpdateMessageTerminalMetadata(newSysMsg.Content, &q.line, &q.lineCount, q.termWidth)
+	if q.activityViewport != nil {
+		// Rolling window: the final answer was removed from the window at stream
+		// end. Redraw the window (without the answer) and print the answer below
+		// it back-to-back, so the terminal shows one transition. When no pop is
+		// pending, the assistant text already lives inside the window
+		// (intermediate prose before tool calls) and must never be re-printed.
+		if q.finalAnswerPopPending {
+			if err := q.activityViewport.Render(q.out); err != nil {
+				ancli.Warnf("failed to redraw activity viewport before final answer: %v", err)
+			}
+			utils.AttemptPrettyPrint(q.out, newSysMsg, q.username, q.Raw)
+		}
+		return
+	}
+	if q.dims.Width > 0 {
+		utils.UpdateMessageTerminalMetadata(newSysMsg.Content, &q.line, &q.lineCount, q.dims.Width)
 		// Write the details of q to the file determined by the environment variable DEBUG_OUTPUT_FILE
 		if debugOutputFile := os.Getenv("DEBUG_OUTPUT_FILE"); debugOutputFile != "" {
 			file, err := os.Create(debugOutputFile)
@@ -133,7 +165,7 @@ func (q *Querier[C]) postProcessOutput(newSysMsg pub_models.Message) {
 					FullMessage: q.fullMsg,
 					Line:        q.line,
 					LineCount:   q.lineCount,
-					TermWidth:   q.termWidth,
+					TermWidth:   q.dims.Width,
 				}))
 				if err != nil {
 					ancli.PrintErr(fmt.Sprintf("failed to write to debug output file: %v\n", err))
@@ -151,7 +183,7 @@ func (q *Querier[C]) postProcess() {
 	session := &QuerySession{
 		Chat:               q.chat,
 		ShouldSaveReply:    q.shouldSaveReply,
-		Raw:                q.Raw,
+		Raw:                q.rawDisplay(),
 		FinalAssistantText: q.fullMsg,
 		FinalUsage:         q.chat.TokenUsage,
 		Finalized:          q.hasPrinted,
@@ -173,6 +205,8 @@ func (q *Querier[C]) resetTransientState() {
 	q.hasPrinted = false
 	q.reasoningBuf.Reset()
 	q.reasoningActive = false
+	q.activityViewport = nil
+	q.finalAnswerPopPending = false
 }
 
 func (q *Querier[C]) handleToken(token string) {
@@ -186,7 +220,7 @@ func (q *Querier[C]) handleToken(token string) {
 	}
 }
 
-func (q *Querier[C]) handleTokenForSession(session *QuerySession, token string) {
+func (q *Querier[C]) handleTokenForSession(session *QuerySession, token string) error {
 	w := q.out
 	if w == nil {
 		w = os.Stdout
@@ -194,26 +228,94 @@ func (q *Querier[C]) handleTokenForSession(session *QuerySession, token string) 
 	session.AppendPendingText(token)
 	q.fullMsg = session.PendingTextString()
 	if !q.debug && !q.structuredOutput {
+		if q.usesActivityViewport() && q.activityViewport != nil {
+			q.activityViewport.AppendText(token)
+			if err := q.activityViewport.Render(w); err != nil {
+				return fmt.Errorf("render activity viewport: %w", err)
+			}
+			return nil
+		}
 		fmt.Fprint(w, token)
 	}
+	return nil
 }
 
-// closeReasoningIfOpen prints the closing [/thinking] tag and prepends the
-// wrapped reasoning block to session.PendingText so it survives terminal
-// line-clearing and gets re-printed by the pretty-printer.
+func (q *Querier[C]) usesActivityViewport() bool {
+	return utils.RollingOutputEnabled() && !q.rawDisplay() && !q.debug && !q.structuredOutput
+}
+
+// ensureActivityViewport lazily creates the rolling activity window at the
+// session's current dimensions snapshot. A resize can arrive before the first
+// reasoning or tool event; the snapshot already carries the fresh size then
+// (applyResize updates q.dims first), so the first render uses the new
+// dimensions immediately. The initial effective height is bound to
+// min(configured cap, terminal height) at creation, so the first frame never
+// exceeds the terminal even without a resize (R5-01).
+func (q *Querier[C]) ensureActivityViewport() *utils.ActivityViewport {
+	if q.activityViewport == nil {
+		q.activityViewport = utils.NewActivityViewport(q.dims.Width, utils.RollingOutputWindowCellHeight(), q.dims.Height)
+	}
+	return q.activityViewport
+}
+
+// startResizeWatcher starts one dimensions watcher for terminal
+// rolling-output sessions. It binds to the session writer's fd, the file clai
+// actually writes to, so the observed size matches the output target. The
+// watcher starts exactly when usesActivityViewport holds and the writer is an
+// *os.File; non-rolling, non-terminal, and non-file sessions get a nil
+// channel and a no-op stop and keep today's one-shot q.dims read. The stop
+// function is idempotent and must be called once per started watcher; it
+// releases the process-wide SIGWINCH registration.
+func (q *Querier[C]) startResizeWatcher(ctx context.Context) (<-chan dimensions.Dimensions, func()) {
+	if !q.usesActivityViewport() {
+		return nil, func() {}
+	}
+	f, ok := q.out.(*os.File)
+	if !ok {
+		return nil, func() {}
+	}
+	viewer := dimensions.New(ctx, f.Fd())
+	return viewer.Events(), viewer.Stop
+}
+
+// rawDisplay makes output to pipes, files, and other non-terminal writers
+// identical to explicit raw mode.
+func (q *Querier[C]) rawDisplay() bool {
+	return q.Raw || (q.outputModeKnown && !q.outputIsTerminal)
+}
+
+// closeReasoningIfOpen finishes the display viewport and persists the complete
+// source reasoning separately from assistant text.
 func (q *Querier[C]) closeReasoningIfOpen(session *QuerySession) {
 	if !q.reasoningActive {
 		return
 	}
 	q.reasoningActive = false
+	if q.usesActivityViewport() {
+		session.PendingReasoning.WriteString(q.reasoningBuf.String())
+		q.fullMsg = session.PendingTextString()
+		q.reasoningBuf.Reset()
+		q.activityViewport.FinishReasoning()
+		return
+	}
 	if !q.debug && !q.structuredOutput {
 		w := q.out
 		if w == nil {
 			w = os.Stdout
 		}
-		fmt.Fprint(w, table.Colorize(utils.RoleColor("reasoning"), "\n[/thinking]\n"))
+		if q.rawDisplay() {
+			fmt.Fprint(w, "\n[/thinking]\n")
+		} else {
+			fmt.Fprint(w, table.Colorize(utils.RoleColor("reasoning"), "\n[/thinking]\n"))
+		}
 	}
 	if q.structuredOutput {
+		session.PendingReasoning.WriteString(q.reasoningBuf.String())
+		q.fullMsg = session.PendingTextString()
+		q.reasoningBuf.Reset()
+		return
+	}
+	if !utils.RollingOutputEnabled() && !q.rawDisplay() && !q.debug {
 		session.PendingReasoning.WriteString(q.reasoningBuf.String())
 		q.fullMsg = session.PendingTextString()
 		q.reasoningBuf.Reset()
@@ -248,6 +350,19 @@ func (q *Querier[C]) currentTokenUsage() *pub_models.Usage {
 	return tokenCounter.TokenUsage()
 }
 
+// prepareFinalAnswerPop removes the trailing assistant-prose block from the
+// rolling window state at stream end without redrawing. The window still shows
+// the answer until postProcessOutput redraws it immediately before the answer
+// prints below, so the terminal paints the transition in one frame.
+func (q *Querier[C]) prepareFinalAnswerPop() {
+	if q.activityViewport == nil || !q.usesActivityViewport() {
+		return
+	}
+	if q.activityViewport.RemoveTextBlock() > 0 {
+		q.finalAnswerPopPending = true
+	}
+}
+
 // Query using the underlying model to stream completions and then print the output
 // from the model to stdout. Blocking operation.
 func (q *Querier[C]) Query(ctx context.Context) error {
@@ -255,10 +370,16 @@ func (q *Querier[C]) Query(ctx context.Context) error {
 	if q.out == nil {
 		q.out = os.Stdout
 	}
+	// One dimensions watcher for terminal rolling-output sessions. It observes
+	// the same file the session writes to; the runner consumes fresh snapshots
+	// in the serialized streaming loop. Non-rolling and non-terminal sessions
+	// keep the one-shot q.dims read and never start a signal registration.
+	resizeEvents, stopResizeWatcher := q.startResizeWatcher(ctx)
+	defer stopResizeWatcher()
 	session := &QuerySession{
 		Chat:            q.chat,
 		ShouldSaveReply: q.shouldSaveReply,
-		Raw:             q.Raw,
+		Raw:             q.rawDisplay(),
 		Line:            q.line,
 		LineCount:       q.lineCount,
 	}
@@ -268,6 +389,7 @@ func (q *Querier[C]) Query(ctx context.Context) error {
 		toolExecutor: toolExecutor[C]{querier: q},
 		finalizer:    sessionFinalizer[C]{querier: q},
 		stoploss:     q.newStoploss(),
+		resizeEvents: resizeEvents,
 	}
 	err := runner.Run(ctx, session)
 	q.chat = session.Chat
@@ -277,6 +399,9 @@ func (q *Querier[C]) Query(ctx context.Context) error {
 	q.hasPrinted = session.Finalized
 	q.amToolCalls = session.ToolCallsUsed
 	q.isLikelyGemini3Preview = session.LikelyGeminiPreview
+	// The final answer pop is consumed by the finalizer's postProcessOutput
+	// inside Run; it must not leak into the next query.
+	q.finalAnswerPopPending = false
 	return err
 }
 

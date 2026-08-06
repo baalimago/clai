@@ -2,17 +2,27 @@ package utils
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"unicode"
 	"unicode/utf8"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/table"
+	"golang.org/x/text/width"
+)
+
+var (
+	ansiEscapePattern = regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]`)
+	ansiOSCPattern    = regexp.MustCompile(`\x1b\][^\a\x1b]*(?:\a|\x1b\\)`)
 )
 
 const MaxShortenedNewlines = 5
@@ -135,10 +145,7 @@ func AttemptPrettyPrint(w io.Writer, chatMessage pub_models.Message, username st
 		}
 	}
 
-	termWidth, err := table.TermWidth()
-	if err != nil {
-		return fmt.Errorf("get terminal width for glow: %w", err)
-	}
+	termWidth := SessionDimensions(w).Width
 
 	cmd := exec.Command("glow", glowRenderArgs(termWidth)...)
 	inp := content
@@ -171,6 +178,9 @@ func isTerminalWriter(w io.Writer) bool {
 	}
 	return fi.Mode()&os.ModeCharDevice != 0
 }
+
+// IsTerminalWriter reports whether w resolves to a terminal writer.
+func IsTerminalWriter(w io.Writer) bool { return isTerminalWriter(w) }
 
 // glowAvailable reports whether the glow markdown renderer is installed. The
 // probe spawns a subprocess, so it runs once per process.
@@ -210,32 +220,30 @@ func ShortenedOutput(out string, maxShortenedNewlines int) string {
 	return fmt.Sprintf("%v\n...[and %v more %v]", firstTokensStr, amLeft, abbreviationType)
 }
 
-// PrintCompactToolActivity prints non-raw tool output without markdown rendering.
-// It uses at most maxRows terminal rows after the coloured role prefix.
-func PrintCompactToolActivity(w io.Writer, role, content string, termWidth, maxRows int) error {
+// PrintToolActivity prints one non-raw tool execution as a header and its result.
+// The model transcript remains independent from this display-only representation.
+func PrintToolActivity(w io.Writer, call pub_models.Call, content string, termWidth, maxRows int) error {
 	if w == nil {
 		w = os.Stdout
 	}
-	prefix := compactRolePrefix(role, termWidth)
-	contentWidth := max(termWidth-utf8.RuneCountInString(prefix), 1)
+	header := truncateTerminalRow(toolActivityHeader(call), max(termWidth, 1))
+	if _, err := fmt.Fprintln(w, table.Colorize(TableTheme().Primary, header)); err != nil {
+		return fmt.Errorf("write tool activity header: %w", err)
+	}
+	content = SummarizeAsyncToolResult(call.Name, content)
+	content = sanitizeTerminalText(content)
+	contentWidth := max(termWidth-2, 1)
 	rows := compactTerminalRows(content, contentWidth, maxRows)
 	for i, row := range rows {
-		if i > 0 {
-			if _, err := fmt.Fprint(w, "\n"); err != nil {
-				return fmt.Errorf("write tool output newline: %w", err)
-			}
-		}
-		if i == 0 {
-			if _, err := fmt.Fprint(w, table.Colorize(RoleColor(role), prefix)); err != nil {
-				return fmt.Errorf("write tool output prefix: %w", err)
-			}
-		}
 		isMarker := isToolOutputMarker(row)
 		row = truncateTerminalRow(row, contentWidth)
 		if isMarker {
 			row = table.Colorize(TableTheme().Secondary, row)
 		}
-		if _, err := fmt.Fprint(w, row); err != nil {
+		if i == 0 && isToolError(content) {
+			row = table.Colorize(RoleColor("tool"), truncateTerminalRow("✗ "+row, contentWidth))
+		}
+		if _, err := fmt.Fprintf(w, "  %s\n", row); err != nil {
 			return fmt.Errorf("write tool output: %w", err)
 		}
 	}
@@ -243,15 +251,590 @@ func PrintCompactToolActivity(w io.Writer, role, content string, termWidth, maxR
 	return err
 }
 
-// PrintCompactToolCall prints one non-raw tool-call status line without glow.
-func PrintCompactToolCall(w io.Writer, role, content string, termWidth int) error {
+func toolActivityHeader(call pub_models.Call) string {
+	var header strings.Builder
+	header.WriteString("▸ ")
+	header.WriteString(sanitizeTerminalRow(displayToolName(call.Name)))
+	for _, key := range sortedInputKeys(call.Inputs) {
+		fmt.Fprintf(&header, "  %s=%s", sanitizeTerminalRow(key), sanitizeTerminalRow(displayInputValue((*call.Inputs)[key])))
+	}
+	return strings.TrimSpace(header.String())
+}
+
+func displayToolName(name string) string {
+	if !strings.HasPrefix(name, "mcp_") {
+		return name
+	}
+	name = strings.TrimPrefix(name, "mcp_")
+	server, tool, found := strings.Cut(name, "_")
+	if found {
+		return server + "." + tool
+	}
+	return name
+}
+
+func sortedInputKeys(inputs *pub_models.Input) []string {
+	if inputs == nil {
+		return nil
+	}
+	keys := make([]string, 0, len(*inputs))
+	for key := range *inputs {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func displayInputValue(value any) string {
+	if text, ok := value.(string); ok {
+		return strings.Join(strings.Fields(sanitizeTerminalText(text)), " ")
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Sprint(value)
+	}
+	return string(encoded)
+}
+
+func sanitizeTerminalText(text string) string {
+	text = ansiEscapePattern.ReplaceAllString(text, "")
+	text = ansiOSCPattern.ReplaceAllString(text, "")
+	text = strings.Map(func(r rune) rune {
+		switch r {
+		case '\n':
+			return r
+		case '\t':
+			return ' '
+		case '\r':
+			return -1
+		}
+		if r < ' ' || r == 0x7f {
+			return -1
+		}
+		return r
+	}, text)
+	return text
+}
+
+// sanitizeTerminalRow makes untrusted text safe for a single terminal row.
+func sanitizeTerminalRow(text string) string {
+	return strings.TrimSpace(strings.Map(func(r rune) rune {
+		switch r {
+		case '\n', '\r', '\t':
+			return ' '
+		}
+		return r
+	}, sanitizeTerminalText(text)))
+}
+
+// ActivityViewport keeps a bounded, display-only view of streamed reasoning,
+// assistant prose, and tool activity. It never changes model or tool source data.
+//
+// Storage is logical, not visual: each block keeps the full sanitized content
+// (the source of truth) plus its display policy (kind, header and role colours,
+// 2-space body indentation, and tool output-marker and ERROR: handling).
+// Colours and indentation are re-derived at rewrap time, so a width change
+// rewraps every retained block instead of reconstructing content from already
+// wrapped rows. The active reasoning and text blocks coalesce streamed tokens
+// into one open block; finished blocks keep their logical content until the
+// retention policy evicts them (maxActivityBlocks blocks, each bounded by
+// maxActivityBlockRunes). A terminal-height grow can therefore bring retained
+// content back into view, bounded by retention, not by the last visible row
+// count.
+type ActivityViewport struct {
+	width   int
+	maxRows int
+	// height is the effective height: min(configured cap, terminal height).
+	height int
+	blocks []*activityBlock
+	// activeReasoning and activeText are the open coalescing blocks. They are
+	// always the last blocks in the history and are never evicted.
+	activeReasoning *activityBlock
+	activeText      *activityBlock
+	rows            []activityRow
+	drawnRows       int
+	lastRendered    []string
+	// dirty marks that the on-screen region no longer matches the viewport
+	// state (after Resize or a partial write); the next Render emits a complete
+	// atomic frame instead of a diff.
+	dirty bool
+}
+
+// maxActivityBlocks bounds the number of logical blocks retained in the
+// activity history. Finished blocks keep their logical content until this
+// retention policy evicts them; the open coalescing blocks always survive.
+const maxActivityBlocks = 16
+
+// maxActivityBlockRunes bounds the sanitized content retained per logical
+// block. The bound exists to keep memory bounded; realistic activity blocks
+// never reach it. Content beyond the budget is reduced to its head and tail
+// (mirroring the display policy), so a later rewrap still has the content the
+// policy would show.
+const maxActivityBlockRunes = 64 * 1024
+
+// contentTruncationMarker separates the retained head and tail of an
+// over-budget block.
+const contentTruncationMarker = "\n...[content truncated]...\n"
+
+// blockKind identifies the display policy of a logical activity block.
+type blockKind uint8
+
+const (
+	blockReasoning blockKind = iota
+	blockText
+	blockTool
+)
+
+// activityBlock is one logical activity unit. Content is the sanitized source
+// of truth; rows is a display cache re-derived at rewrap time (Resize and
+// streaming updates).
+type activityBlock struct {
+	kind    blockKind
+	content string
+	// call is the tool-call metadata used to render the tool header.
+	call pub_models.Call
+	// toolBodyRows is the body compaction budget of tool blocks.
+	toolBodyRows int
+	rows         []activityRow
+}
+
+type activityRow struct {
+	content string
+	color   string
+}
+
+// NewActivityViewport creates a viewport for all transient model activity.
+// maxRows is the configured rolling-window cap; terminalHeight is the raw
+// terminal height at creation. The effective height is
+// min(maxRows, max(terminalHeight, 1)) from the start, so the viewport never
+// renders taller than the terminal it writes to (R5-01). Resize takes raw
+// terminal dimensions and keeps the same min(cap, terminal height) bound on
+// later dimension changes.
+func NewActivityViewport(width, maxRows, terminalHeight int) *ActivityViewport {
+	capRows := max(maxRows, 1)
+	return &ActivityViewport{
+		width:   max(width, 1),
+		maxRows: capRows,
+		height:  min(capRows, max(terminalHeight, 1)),
+	}
+}
+
+// AppendReasoning adds a reasoning block. The warm colour applies only to its
+// header; its indented body has the same neutral presentation as tool output.
+// An open assistant-prose block is closed first so the reasoning starts a new
+// block.
+func (v *ActivityViewport) AppendReasoning(content string) {
+	if v == nil {
+		return
+	}
+	v.FinishText()
+	v.appendCoalescing(&v.activeReasoning, blockReasoning, content)
+}
+
+// AppendText adds an assistant-prose block to the same viewport. Streamed
+// tokens coalesce into one block until FinishText or RemoveTextBlock closes it.
+func (v *ActivityViewport) AppendText(content string) {
+	if v == nil {
+		return
+	}
+	v.FinishReasoning()
+	v.appendCoalescing(&v.activeText, blockText, content)
+}
+
+// appendCoalescing appends streamed content to the open block of the given
+// kind, creating it (and evicting the oldest finished block) when needed. The
+// open block is always the last retained block.
+func (v *ActivityViewport) appendCoalescing(active **activityBlock, kind blockKind, content string) {
+	if *active == nil {
+		*active = &activityBlock{kind: kind}
+		v.blocks = append(v.blocks, *active)
+		v.evict()
+	}
+	(*active).content = boundContent((*active).content + sanitizeTerminalText(content))
+	(*active).rows = v.wrapBlock(*active)
+	v.rewrap()
+}
+
+// FinishReasoning closes the current reasoning block. Its visible rows stay in
+// the activity history, while the next reasoning event starts a new block.
+func (v *ActivityViewport) FinishReasoning() {
+	if v == nil {
+		return
+	}
+	v.activeReasoning = nil
+}
+
+// FinishText closes the active assistant-prose block. Its visible rows stay in
+// the activity history, while the next prose stream starts a new block.
+func (v *ActivityViewport) FinishText() {
+	if v == nil {
+		return
+	}
+	v.activeText = nil
+}
+
+// RemoveTextBlock removes the active assistant-prose block from the activity
+// history and returns the number of rows removed. The final answer is removed
+// this way so it prints below the window instead of remaining inside it. The
+// active text block is the last retained block, so its rows are the cache tail.
+func (v *ActivityViewport) RemoveTextBlock() int {
+	if v == nil || v.activeText == nil {
+		return 0
+	}
+	removed := min(len(v.rows), len(v.activeText.rows))
+	for i, block := range v.blocks {
+		if block == v.activeText {
+			v.blocks = append(v.blocks[:i], v.blocks[i+1:]...)
+			break
+		}
+	}
+	v.activeText = nil
+	v.rewrap()
+	return removed
+}
+
+// TextBlockActive reports whether an assistant-prose block is currently open.
+func (v *ActivityViewport) TextBlockActive() bool {
+	return v != nil && v.activeText != nil
+}
+
+// AppendTool adds a compacted tool block to the same viewport. An open
+// assistant-prose or reasoning block is closed first so the tool starts a new
+// block.
+func (v *ActivityViewport) AppendTool(call pub_models.Call, content string, maxRows int) {
+	if v == nil {
+		return
+	}
+	v.FinishText()
+	v.FinishReasoning()
+	block := &activityBlock{
+		kind:         blockTool,
+		content:      boundContent(sanitizeTerminalText(content)),
+		call:         call,
+		toolBodyRows: maxRows,
+	}
+	v.blocks = append(v.blocks, block)
+	block.rows = v.wrapBlock(block)
+	v.evict()
+	v.rewrap()
+}
+
+// evict drops the oldest finished blocks once the retained history exceeds
+// maxActivityBlocks. The open coalescing blocks always survive; finished
+// blocks keep their logical content until this policy evicts them.
+func (v *ActivityViewport) evict() {
+	if len(v.blocks) <= maxActivityBlocks {
+		return
+	}
+	excess := len(v.blocks) - maxActivityBlocks
+	kept := make([]*activityBlock, 0, len(v.blocks)-excess)
+	dropped := 0
+	for _, block := range v.blocks {
+		if dropped < excess && block != v.activeReasoning && block != v.activeText {
+			dropped++
+			continue
+		}
+		kept = append(kept, block)
+	}
+	v.blocks = kept
+}
+
+// wrapBlock derives the display rows of one block at the current width,
+// re-applying the block's display policy. The "keep header and trailing rows,
+// drop middle" policy is width-stable: the same policy runs at every width,
+// even though the visible rows change because wrapping changes.
+func (v *ActivityViewport) wrapBlock(block *activityBlock) []activityRow {
+	switch block.kind {
+	case blockReasoning:
+		rows := []activityRow{{content: "∴ thinking", color: RoleColor("reasoning")}}
+		for _, row := range terminalRows(block.content, max(v.width-2, 1)) {
+			rows = append(rows, activityRow{content: "  " + row})
+		}
+		return compactActivityBlock(rows, v.height)
+	case blockText:
+		rows := []activityRow{{content: "assistant", color: RoleColor("assistant")}}
+		for _, row := range terminalRows(block.content, max(v.width-2, 1)) {
+			rows = append(rows, activityRow{content: "  " + row})
+		}
+		return compactActivityBlock(rows, v.height)
+	case blockTool:
+		rows := []activityRow{{content: truncateTerminalRow(toolActivityHeader(block.call), v.width), color: TableTheme().Primary}}
+		for _, row := range compactTerminalRows(block.content, max(v.width-2, 1), block.toolBodyRows) {
+			color := ""
+			if isToolOutputMarker(row) {
+				color = TableTheme().Secondary
+			}
+			if strings.HasPrefix(row, "ERROR:") {
+				row = truncateTerminalRow("✗ "+row, max(v.width-2, 1))
+				color = RoleColor("tool")
+			}
+			rows = append(rows, activityRow{content: "  " + row, color: color})
+		}
+		return append(rows, activityRow{})
+	}
+	return nil
+}
+
+// compactActivityBlock keeps a wrapped block's header and trailing rows and
+// drops its middle once it exceeds the row budget.
+func compactActivityBlock(rows []activityRow, budget int) []activityRow {
+	if budget <= 1 {
+		if len(rows) > 1 {
+			return rows[:1]
+		}
+		return rows
+	}
+	if len(rows) <= budget {
+		return rows
+	}
+	compacted := make([]activityRow, 0, budget)
+	compacted = append(compacted, rows[0])
+	compacted = append(compacted, rows[len(rows)-(budget-1):]...)
+	return compacted
+}
+
+// boundContent caps a block's retained content at maxActivityBlockRunes,
+// keeping the head and tail so a later rewrap still has the content the
+// display policy would show.
+func boundContent(content string) string {
+	if utf8.RuneCountInString(content) <= maxActivityBlockRunes {
+		return content
+	}
+	runes := []rune(content)
+	markerLen := utf8.RuneCountInString(contentTruncationMarker)
+	head := (maxActivityBlockRunes - markerLen) / 2
+	tail := maxActivityBlockRunes - markerLen - head
+	return string(runes[:head]) + contentTruncationMarker + string(runes[len(runes)-tail:])
+}
+
+// rewrap rebuilds the visible row cache from the retained blocks. Only the
+// trailing effective-height rows are kept; earlier history stays in the blocks
+// for a later height-grow reappearance.
+func (v *ActivityViewport) rewrap() {
+	rows := make([]activityRow, 0, v.height)
+	for _, block := range v.blocks {
+		rows = append(rows, block.rows...)
+	}
+	if len(rows) > v.height {
+		rows = rows[len(rows)-v.height:]
+	}
+	v.rows = rows
+}
+
+// Content returns the sanitized content of the open reasoning block, or ""
+// when no reasoning block is open.
+func (v *ActivityViewport) Content() string {
+	if v == nil || v.activeReasoning == nil {
+		return ""
+	}
+	return v.activeReasoning.content
+}
+
+// Rows returns the physical terminal rows currently visible in the viewport.
+func (v *ActivityViewport) Rows() []string {
+	if v == nil {
+		return nil
+	}
+	rows := make([]string, 0, len(v.rows))
+	for _, row := range v.rows {
+		rows = append(rows, row.content)
+	}
+	return rows
+}
+
+// Resize applies new terminal dimensions to the viewport. It mutates state
+// only: it stores the new width, computes the effective height as
+// min(configured cap, terminal height), rewraps all retained blocks at the new
+// width, invalidates the render bookkeeping, and marks the viewport dirty. It
+// never writes to the writer and is a no-op when the supplied dimensions equal
+// the current ones. Resize is invoked only from the serialized session loop,
+// never from a signal callback; mutation and rendering stay on that loop, so
+// no mutex is needed.
+func (v *ActivityViewport) Resize(width, terminalHeight int) {
+	if v == nil {
+		return
+	}
+	width = max(width, 1)
+	height := min(v.maxRows, max(terminalHeight, 1))
+	if width == v.width && height == v.height {
+		return
+	}
+	v.width = width
+	v.height = height
+	for _, block := range v.blocks {
+		block.rows = v.wrapBlock(block)
+	}
+	v.rewrap()
+	v.dirty = true
+}
+
+// Render redraws the viewport in its existing terminal region. A dirty
+// viewport (after Resize or a partial write) emits one complete atomic frame:
+// move up the previously drawn rows, clear down, and rewrite the full window.
+// The diff path is used only for normal streaming appends: pure appends print
+// below the previously drawn region without clearing, and a changed tail
+// clears from the first changed row down. The whole update lands in one write,
+// so the terminal never paints an intermediate blank frame. The cursor is left
+// below the viewport so subsequent tool activity or answer text follows it. A
+// partial or failed write leaves the viewport dirty; the next Render retries
+// the full frame.
+func (v *ActivityViewport) Render(w io.Writer) error {
+	if v == nil {
+		return nil
+	}
 	if w == nil {
 		w = os.Stdout
 	}
-	prefix := compactRolePrefix(role, termWidth)
-	content = truncateTerminalRow(content, max(termWidth-utf8.RuneCountInString(prefix), 1))
-	_, err := fmt.Fprintf(w, "%s%s\n", table.Colorize(RoleColor(role), prefix), content)
-	return err
+	rendered := make([]string, 0, len(v.rows))
+	for _, row := range v.rows {
+		rendered = append(rendered, table.Colorize(row.color, row.content))
+	}
+	var buf bytes.Buffer
+	if v.dirty {
+		if v.drawnRows > 0 {
+			fmt.Fprintf(&buf, "\x1b[%dA\r\x1b[J", v.drawnRows)
+		}
+		for _, row := range rendered {
+			fmt.Fprintln(&buf, row)
+		}
+	} else {
+		start := 0
+		clearUp := 0
+		if v.drawnRows > 0 {
+			common := commonRowPrefix(v.lastRendered, rendered)
+			switch {
+			case common == len(v.lastRendered) && common == len(rendered):
+				return nil // content unchanged, nothing to redraw
+			case common == len(v.lastRendered):
+				start = len(v.lastRendered) // pure append, no clear needed
+			default:
+				start = common
+				clearUp = len(v.lastRendered) - common
+			}
+		}
+		if clearUp > 0 {
+			fmt.Fprintf(&buf, "\x1b[%dA\r\x1b[J", clearUp)
+		}
+		for _, row := range rendered[start:] {
+			fmt.Fprintln(&buf, row)
+		}
+	}
+	if buf.Len() == 0 {
+		if v.dirty {
+			// The empty frame is complete: nothing was drawn before, nothing
+			// needs clearing, and the viewport is clean again.
+			v.drawnRows = len(rendered)
+			v.lastRendered = rendered
+			v.dirty = false
+		}
+		return nil
+	}
+	n, err := w.Write(buf.Bytes())
+	if err != nil {
+		v.dirty = true
+		return fmt.Errorf("write activity viewport: %w", err)
+	}
+	if n != buf.Len() {
+		v.dirty = true
+		return fmt.Errorf("write activity viewport: short write (%d of %d bytes)", n, buf.Len())
+	}
+	v.drawnRows = len(rendered)
+	v.lastRendered = rendered
+	v.dirty = false
+	return nil
+}
+
+// commonRowPrefix returns the number of leading rows shared by two renderings.
+func commonRowPrefix(a, b []string) int {
+	n := min(len(a), len(b))
+	i := 0
+	for i < n && a[i] == b[i] {
+		i++
+	}
+	return i
+}
+
+// DetachRenderedRegion transfers ownership of the rows already drawn to the
+// caller. The retained activity history will render at the current cursor
+// position on the next Render call.
+func (v *ActivityViewport) DetachRenderedRegion() int {
+	if v == nil {
+		return 0
+	}
+	drawnRows := v.drawnRows
+	v.drawnRows = 0
+	v.lastRendered = nil
+	v.dirty = false
+	return drawnRows
+}
+
+func isToolError(content string) bool {
+	return strings.Contains(content, "ERROR:")
+}
+
+// SummarizeAsyncToolResult returns the concise interactive representation of
+// async tool output. Raw and redirected output bypass this helper.
+func SummarizeAsyncToolResult(name, content string) string {
+	if !strings.HasPrefix(name, "async_cmd") {
+		return content
+	}
+	var result map[string]any
+	if json.Unmarshal([]byte(content), &result) != nil {
+		return content
+	}
+	if name == "async_cmd_logs" {
+		return summarizeAsyncLogs(result)
+	}
+	return summarizeAsyncStatus(result)
+}
+
+func summarizeAsyncStatus(result map[string]any) string {
+	var parts []string
+	if value := stringField(result, "result"); value != "" {
+		parts = append(parts, "result="+value)
+	}
+	if value := stringField(result, "status"); value != "" {
+		parts = append(parts, "status="+value)
+	}
+	if value := stringField(result, "async_cmd_id"); value != "" {
+		parts = append(parts, "id="+value)
+	}
+	if value, ok := result["exit_code"]; ok && value != nil {
+		parts = append(parts, "exit="+fmt.Sprint(value))
+	}
+	if value := stringField(result, "error"); value != "" {
+		parts = append(parts, "error="+value)
+	}
+	if commands, ok := result["async_cmds"].([]any); ok {
+		for _, command := range commands {
+			if status, ok := command.(map[string]any); ok {
+				parts = append(parts, summarizeAsyncStatus(status))
+			}
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+func summarizeAsyncLogs(result map[string]any) string {
+	var summary strings.Builder
+	summary.WriteString(summarizeAsyncStatus(result))
+	for _, streamName := range []string{"stdout", "stderr"} {
+		stream, ok := result[streamName].(map[string]any)
+		if !ok {
+			continue
+		}
+		preview := stringField(stream, "preview")
+		if preview == "" {
+			continue
+		}
+		summary.WriteString("\n" + streamName + ":\n" + preview)
+	}
+	return summary.String()
+}
+
+func stringField(values map[string]any, key string) string {
+	value, _ := values[key].(string)
+	return value
 }
 
 func compactTerminalRows(content string, width, maxRows int) []string {
@@ -273,16 +856,27 @@ func terminalRows(content string, width int) []string {
 	width = max(width, 1)
 	var rows []string
 	for line := range strings.SplitSeq(content, "\n") {
-		runes := []rune(line)
-		if len(runes) == 0 {
+		if line == "" {
 			rows = append(rows, "")
 			continue
 		}
-		for len(runes) > width {
-			rows = append(rows, string(runes[:width]))
-			runes = runes[width:]
+		var row strings.Builder
+		rowWidth := 0
+		for _, r := range line {
+			cellWidth := terminalRuneWidth(r)
+			if cellWidth > width {
+				r = '…'
+				cellWidth = 1
+			}
+			if rowWidth > 0 && rowWidth+cellWidth > width {
+				rows = append(rows, row.String())
+				row.Reset()
+				rowWidth = 0
+			}
+			row.WriteRune(r)
+			rowWidth += cellWidth
 		}
-		rows = append(rows, string(runes))
+		rows = append(rows, row.String())
 	}
 	return rows
 }
@@ -292,21 +886,47 @@ func isToolOutputMarker(row string) bool {
 }
 
 func truncateTerminalRow(content string, width int) string {
-	runes := []rune(content)
-	if len(runes) <= width {
+	width = max(width, 1)
+	if terminalStringWidth(content) <= width {
 		return content
 	}
 	if width == 1 {
 		return "…"
 	}
-	return string(runes[:width-1]) + "…"
+	var truncated strings.Builder
+	used := 0
+	for _, r := range content {
+		runeWidth := terminalRuneWidth(r)
+		if used+runeWidth > width-1 {
+			break
+		}
+		truncated.WriteRune(r)
+		used += runeWidth
+	}
+	truncated.WriteRune('…')
+	return truncated.String()
 }
 
-func compactRolePrefix(role string, width int) string {
-	if width <= 1 {
-		return ""
+func terminalStringWidth(content string) int {
+	cellWidth := 0
+	for _, r := range content {
+		cellWidth += terminalRuneWidth(r)
 	}
-	return truncateTerminalRow(role+": ", width-1)
+	return cellWidth
+}
+
+func terminalRuneWidth(r rune) int {
+	if unicode.Is(unicode.Mn, r) || unicode.Is(unicode.Me, r) || unicode.Is(unicode.Cf, r) {
+		return 0
+	}
+	switch width.LookupRune(r).Kind() {
+	case width.EastAsianFullwidth, width.EastAsianWide:
+		return 2
+	}
+	if r >= 0x1f000 && r <= 0x1faff {
+		return 2
+	}
+	return 1
 }
 
 func PrepareDisplayMessage(msg pub_models.Message) pub_models.Message {

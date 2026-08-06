@@ -1,11 +1,33 @@
 package utils
 
 import (
+	"bytes"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
+
+// errorWriter fails every write with a fixed error, pinning the phase-3
+// collaborator-error contract: width-aware render helpers surface writer
+// failures instead of silently dropping output.
+type errorWriter struct{ err error }
+
+func (w errorWriter) Write([]byte) (int, error) { return 0, w.err }
+
+func TestPrintToolActivity_WriterErrorSurfaces(t *testing.T) {
+	want := errors.New("disk full")
+	err := PrintToolActivity(errorWriter{err: want}, pub_models.Call{Name: "ls"}, "output", 80, 3)
+	if err == nil {
+		t.Fatal("expected the writer error to surface")
+	}
+	if !errors.Is(err, want) {
+		t.Fatalf("expected the writer error to be wrapped, got: %v", err)
+	}
+}
 
 func TestUpdateMessageTerminalMetadata(t *testing.T) {
 	testCases := []struct {
@@ -209,25 +231,368 @@ func TestCompactToolActivity(t *testing.T) {
 		}
 	})
 
-	t.Run("non raw display uses no glow and respects no color", func(t *testing.T) {
+	t.Run("pairs a concise call header with its indented result", func(t *testing.T) {
 		t.Setenv("NO_COLOR", "true")
 		var out strings.Builder
-		if err := PrintCompactToolActivity(&out, "tool", "one\ntwo\nthree\nfour", 80, 3); err != nil {
-			t.Fatalf("PrintCompactToolActivity: %v", err)
+		inputs := pub_models.Input{"long": true, "directory": "/tmp/example"}
+		call := pub_models.Call{Name: "ls", Inputs: &inputs}
+		if err := PrintToolActivity(&out, call, "one\ntwo\nthree\nfour", 80, 3); err != nil {
+			t.Fatalf("PrintToolActivity: %v", err)
 		}
-		if got, want := out.String(), "tool: one\n... [2 terminal rows omitted] ...\nfour\n"; got != want {
-			t.Fatalf("PrintCompactToolActivity() = %q, want %q", got, want)
+		if got, want := out.String(), "▸ ls  directory=/tmp/example  long=true\n  one\n  ... [2 terminal rows omitted] ...\n  four\n\n"; got != want {
+			t.Fatalf("PrintToolActivity() = %q, want %q", got, want)
 		}
 	})
 
-	t.Run("tool call status is one terminal row", func(t *testing.T) {
+	t.Run("renders MCP names as server dot tool and marks errors", func(t *testing.T) {
 		t.Setenv("NO_COLOR", "true")
 		var out strings.Builder
-		if err := PrintCompactToolCall(&out, "assistant", "Call: very-long-tool-name", 16); err != nil {
-			t.Fatalf("PrintCompactToolCall: %v", err)
+		call := pub_models.Call{Name: "mcp_filesystem_list_directory"}
+		if err := PrintToolActivity(&out, call, "ERROR: permission denied", 80, 6); err != nil {
+			t.Fatalf("PrintToolActivity: %v", err)
 		}
-		if got, want := out.String(), "assistant: Call…\n"; got != want {
-			t.Fatalf("PrintCompactToolCall() = %q, want %q", got, want)
+		if got, want := out.String(), "▸ filesystem.list_directory\n  ✗ ERROR: permission denied\n\n"; got != want {
+			t.Fatalf("PrintToolActivity() = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("keeps multiline and styled inputs on one safe header row", func(t *testing.T) {
+		t.Setenv("NO_COLOR", "true")
+		var out strings.Builder
+		inputs := pub_models.Input{"command": "printf 'one\ntwo'\n\x1b[31mecho red\x1b[0m"}
+		call := pub_models.Call{Name: "cmd", Inputs: &inputs}
+		if err := PrintToolActivity(&out, call, "done", 120, 6); err != nil {
+			t.Fatalf("PrintToolActivity: %v", err)
+		}
+		lines := strings.Split(strings.TrimSuffix(out.String(), "\n\n"), "\n")
+		if len(lines) != 2 {
+			t.Fatalf("expected one header and one result row, got %q", out.String())
+		}
+		if strings.Contains(out.String(), "\x1b[") {
+			t.Fatalf("expected tool-provided ANSI escapes to be removed, got %q", out.String())
+		}
+	})
+
+	t.Run("sanitizes tool names and keys including OSC controls", func(t *testing.T) {
+		t.Setenv("NO_COLOR", "true")
+		var out strings.Builder
+		inputs := pub_models.Input{"key\n\x1b]8;;https://bad.example\a": "value\r\x1b]0;title\a"}
+		call := pub_models.Call{Name: "tool\x1b[2J\nname", Inputs: &inputs}
+		if err := PrintToolActivity(&out, call, "done", 120, 6); err != nil {
+			t.Fatalf("PrintToolActivity: %v", err)
+		}
+		for _, forbidden := range []string{"\x1b", "\r", "\a"} {
+			if strings.Contains(out.String(), forbidden) {
+				t.Fatalf("header contains terminal control %q: %q", forbidden, out.String())
+			}
+		}
+		if got := strings.Count(strings.TrimSuffix(out.String(), "\n\n"), "\n"); got != 1 {
+			t.Fatalf("expected one safe header row and one result row, got %q", out.String())
+		}
+	})
+
+	t.Run("summarizes async logs without JSON escaping", func(t *testing.T) {
+		t.Setenv("NO_COLOR", "true")
+		var out strings.Builder
+		call := pub_models.Call{Name: "async_cmd_logs"}
+		result := `{"async_cmd_id":"async_cmd_1","status":"succeeded","stdout":{"preview":"line one\nline two","truncated":false,"log_path":"/tmp/out"},"stderr":{"preview":"warning","truncated":false,"log_path":"/tmp/err"}}`
+		if err := PrintToolActivity(&out, call, result, 80, 6); err != nil {
+			t.Fatalf("PrintToolActivity: %v", err)
+		}
+		got := out.String()
+		for _, want := range []string{"status=succeeded id=async_cmd_1", "stdout:", "line one", "line two", "stderr:", "warning"} {
+			if !strings.Contains(got, want) {
+				t.Fatalf("expected %q in %q", want, got)
+			}
+		}
+		if strings.Contains(got, `\n`) {
+			t.Fatalf("expected decoded log preview, got %q", got)
+		}
+	})
+
+	t.Run("summarizes async await lifecycle data", func(t *testing.T) {
+		t.Setenv("NO_COLOR", "true")
+		var out strings.Builder
+		call := pub_models.Call{Name: "async_cmd_await"}
+		result := `{"result":"completed","async_cmds":[{"async_cmd_id":"async_cmd_1","status":"succeeded","exit_code":0,"stdout_log_path":"/tmp/out"}]}`
+		if err := PrintToolActivity(&out, call, result, 120, 6); err != nil {
+			t.Fatalf("PrintToolActivity: %v", err)
+		}
+		got := out.String()
+		for _, want := range []string{"result=completed", "status=succeeded", "id=async_cmd_1", "exit=0"} {
+			if !strings.Contains(got, want) {
+				t.Fatalf("expected %q in %q", want, got)
+			}
+		}
+		if strings.Contains(got, "stdout_log_path") {
+			t.Fatalf("expected lifecycle paths to be omitted, got %q", got)
+		}
+	})
+}
+
+func TestActivityViewport(t *testing.T) {
+	t.Run("wraps wide unicode by terminal cells", func(t *testing.T) {
+		viewport := NewActivityViewport(10, 6, 6)
+		viewport.AppendReasoning("界界界界界")
+
+		got := viewport.Rows()
+		want := []string{"∴ thinking", "  界界界界", "  界"}
+		if strings.Join(got, "\n") != strings.Join(want, "\n") {
+			t.Fatalf("Rows() = %q, want display-cell wrapping %q", got, want)
+		}
+	})
+
+	t.Run("coalesces streamed reasoning chunks into one wrapped block", func(t *testing.T) {
+		viewport := NewActivityViewport(20, 6, 6)
+		viewport.AppendReasoning("inspect ")
+		viewport.AppendReasoning("the repository")
+
+		got := viewport.Rows()
+		want := []string{"∴ thinking", "  inspect the reposi", "  tory"}
+		if strings.Join(got, "\n") != strings.Join(want, "\n") {
+			t.Fatalf("Rows() = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("starts a new thinking block after reasoning finishes", func(t *testing.T) {
+		viewport := NewActivityViewport(40, 8, 8)
+		viewport.AppendReasoning("first")
+		viewport.FinishReasoning()
+		viewport.AppendTool(pub_models.Call{Name: "pwd"}, "/tmp", 2)
+		viewport.AppendReasoning("second")
+
+		if got := strings.Count(strings.Join(viewport.Rows(), "\n"), "∴ thinking"); got != 2 {
+			t.Fatalf("thinking header count = %d, want 2; rows=%q", got, viewport.Rows())
+		}
+	})
+
+	t.Run("keeps mixed activity within one rolling viewport", func(t *testing.T) {
+		viewport := NewActivityViewport(20, 5, 5)
+		viewport.AppendReasoning("one two")
+		inputs := pub_models.Input{"path": "/tmp"}
+		viewport.AppendTool(pub_models.Call{Name: "ls", Inputs: &inputs}, "first\nsecond", 6)
+
+		got := viewport.Rows()
+		want := []string{"  one two", "▸ ls  path=/tmp", "  first", "  second", ""}
+		if strings.Join(got, "\n") != strings.Join(want, "\n") {
+			t.Fatalf("Rows() = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("sanitizes display-only reasoning and handles tiny limits", func(t *testing.T) {
+		viewport := NewActivityViewport(0, 0, 0)
+		viewport.AppendReasoning("safe\x1b[31m text\x1b[0m")
+
+		if got, want := viewport.Rows(), []string{"∴ thinking"}; strings.Join(got, "\n") != strings.Join(want, "\n") {
+			t.Fatalf("Rows() = %q, want %q", got, want)
+		}
+		if got := viewport.Content(); got != "safe text" {
+			t.Fatalf("Content() = %q, want sanitized display content", got)
+		}
+	})
+
+	t.Run("redraws only the changed trailing rows", func(t *testing.T) {
+		t.Setenv("NO_COLOR", "true")
+		var out strings.Builder
+		viewport := NewActivityViewport(80, 3, 3)
+		viewport.AppendReasoning("first")
+		if err := viewport.Render(&out); err != nil {
+			t.Fatalf("first Render(): %v", err)
+		}
+		viewport.AppendReasoning(" second")
+		if err := viewport.Render(&out); err != nil {
+			t.Fatalf("second Render(): %v", err)
+		}
+		if got := out.String(); !strings.Contains(got, "\x1b[1A\r\x1b[J") {
+			t.Fatalf("expected a single-row redraw, got %q", got)
+		}
+	})
+
+	t.Run("appends new rows without clearing or cursor moves", func(t *testing.T) {
+		t.Setenv("NO_COLOR", "true")
+		var out strings.Builder
+		viewport := NewActivityViewport(80, 6, 6)
+		viewport.AppendReasoning("first")
+		if err := viewport.Render(&out); err != nil {
+			t.Fatalf("first Render(): %v", err)
+		}
+		viewport.AppendTool(pub_models.Call{Name: "pwd"}, "/tmp", 2)
+		if err := viewport.Render(&out); err != nil {
+			t.Fatalf("second Render(): %v", err)
+		}
+		if strings.Contains(out.String(), "\x1b[") {
+			t.Fatalf("pure appends must not emit control sequences, got %q", out.String())
+		}
+		for _, want := range []string{"∴ thinking", "  first", "▸ pwd", "  /tmp"} {
+			if !strings.Contains(out.String(), want) {
+				t.Fatalf("expected %q in %q", want, out.String())
+			}
+		}
+	})
+
+	t.Run("skips render when content is unchanged", func(t *testing.T) {
+		t.Setenv("NO_COLOR", "true")
+		var out strings.Builder
+		viewport := NewActivityViewport(80, 3, 3)
+		viewport.AppendReasoning("first")
+		if err := viewport.Render(&out); err != nil {
+			t.Fatalf("first Render(): %v", err)
+		}
+		if err := viewport.Render(&out); err != nil {
+			t.Fatalf("second Render(): %v", err)
+		}
+		if got := strings.Count(out.String(), "  first"); got != 1 {
+			t.Fatalf("unchanged render must not reprint rows, got %q", out.String())
+		}
+	})
+
+	t.Run("full redraw when the window scrolls", func(t *testing.T) {
+		t.Setenv("NO_COLOR", "true")
+		var out strings.Builder
+		viewport := NewActivityViewport(80, 3, 3)
+		viewport.AppendReasoning("inspect")
+		if err := viewport.Render(&out); err != nil {
+			t.Fatalf("first Render(): %v", err)
+		}
+		viewport.AppendTool(pub_models.Call{Name: "pwd"}, "/tmp", 2)
+		if err := viewport.Render(&out); err != nil {
+			t.Fatalf("second Render(): %v", err)
+		}
+		if !strings.Contains(out.String(), "\x1b[2A\r\x1b[J") {
+			t.Fatalf("expected a full redraw when the drawn rows shift, got %q", out.String())
+		}
+	})
+
+	t.Run("pop redraws only the removed block", func(t *testing.T) {
+		t.Setenv("NO_COLOR", "true")
+		var out strings.Builder
+		viewport := NewActivityViewport(80, 6, 6)
+		viewport.AppendReasoning("inspect")
+		viewport.AppendText("let me check")
+		if err := viewport.Render(&out); err != nil {
+			t.Fatalf("first Render(): %v", err)
+		}
+		viewport.RemoveTextBlock()
+		if err := viewport.Render(&out); err != nil {
+			t.Fatalf("second Render(): %v", err)
+		}
+		if !strings.Contains(out.String(), "\x1b[2A\r\x1b[J") {
+			t.Fatalf("expected the pop to clear only the removed rows, got %q", out.String())
+		}
+	})
+
+	t.Run("detaches a rendered region without discarding its history", func(t *testing.T) {
+		t.Setenv("NO_COLOR", "true")
+		var first strings.Builder
+		viewport := NewActivityViewport(80, 6, 6)
+		viewport.AppendReasoning("inspect")
+		if err := viewport.Render(&first); err != nil {
+			t.Fatalf("first Render(): %v", err)
+		}
+
+		if got, want := viewport.DetachRenderedRegion(), 2; got != want {
+			t.Fatalf("DetachRenderedRegion() = %d, want %d", got, want)
+		}
+		viewport.AppendTool(pub_models.Call{Name: "pwd"}, "/tmp", 2)
+		var second strings.Builder
+		if err := viewport.Render(&second); err != nil {
+			t.Fatalf("second Render(): %v", err)
+		}
+		if strings.Contains(second.String(), "\x1b[") {
+			t.Fatalf("detached viewport must render at the new cursor position, got %q", second.String())
+		}
+		for _, want := range []string{"∴ thinking", "  inspect", "▸ pwd", "  /tmp"} {
+			if !strings.Contains(second.String(), want) {
+				t.Fatalf("detached viewport lost %q from history: %q", want, second.String())
+			}
+		}
+	})
+
+	t.Run("uses the reasoning hue only for the thinking header", func(t *testing.T) {
+		t.Setenv("NO_COLOR", "false")
+		var out strings.Builder
+		viewport := NewActivityViewport(80, 3, 3)
+		viewport.AppendReasoning("inspect")
+		if err := viewport.Render(&out); err != nil {
+			t.Fatalf("Render(): %v", err)
+		}
+		if !strings.Contains(out.String(), RoleColor("reasoning")+"∴ thinking") {
+			t.Fatalf("expected warm thinking header, got %q", out.String())
+		}
+		if strings.Contains(out.String(), RoleColor("reasoning")+"  inspect") {
+			t.Fatalf("reasoning body must remain neutral, got %q", out.String())
+		}
+	})
+
+	t.Run("coalesces streamed assistant prose into one block", func(t *testing.T) {
+		viewport := NewActivityViewport(20, 6, 6)
+		viewport.AppendText("let me ")
+		viewport.AppendText("check")
+
+		got := viewport.Rows()
+		want := []string{"assistant", "  let me check"}
+		if strings.Join(got, "\n") != strings.Join(want, "\n") {
+			t.Fatalf("Rows() = %q, want %q", got, want)
+		}
+		if !viewport.TextBlockActive() {
+			t.Fatal("TextBlockActive() = false, want true")
+		}
+	})
+
+	t.Run("remove text block pops only the trailing assistant prose", func(t *testing.T) {
+		viewport := NewActivityViewport(40, 8, 8)
+		viewport.AppendReasoning("inspect")
+		viewport.AppendText("let me check")
+
+		if got, want := viewport.RemoveTextBlock(), 2; got != want {
+			t.Fatalf("RemoveTextBlock() = %d, want %d", got, want)
+		}
+		got := viewport.Rows()
+		want := []string{"∴ thinking", "  inspect"}
+		if strings.Join(got, "\n") != strings.Join(want, "\n") {
+			t.Fatalf("Rows() = %q, want %q", got, want)
+		}
+		if viewport.TextBlockActive() {
+			t.Fatal("TextBlockActive() = true after remove, want false")
+		}
+		if got := viewport.RemoveTextBlock(); got != 0 {
+			t.Fatalf("RemoveTextBlock() on empty block = %d, want 0", got)
+		}
+	})
+
+	t.Run("finish text starts a new prose block", func(t *testing.T) {
+		viewport := NewActivityViewport(40, 8, 8)
+		viewport.AppendText("first")
+		viewport.FinishText()
+		viewport.AppendText("second")
+
+		if got := strings.Count(strings.Join(viewport.Rows(), "\n"), "assistant"); got != 2 {
+			t.Fatalf("assistant header count = %d, want 2; rows=%q", got, viewport.Rows())
+		}
+	})
+
+	t.Run("reasoning and tool blocks close the active prose block", func(t *testing.T) {
+		viewport := NewActivityViewport(40, 12, 12)
+		viewport.AppendText("let me check")
+		viewport.AppendTool(pub_models.Call{Name: "pwd"}, "/tmp", 2)
+		viewport.AppendReasoning("verify")
+		viewport.AppendText("second")
+
+		if got := strings.Count(strings.Join(viewport.Rows(), "\n"), "assistant"); got != 2 {
+			t.Fatalf("assistant header count = %d, want 2; rows=%q", got, viewport.Rows())
+		}
+	})
+
+	t.Run("uses the assistant role hue for the prose header", func(t *testing.T) {
+		t.Setenv("NO_COLOR", "false")
+		var out strings.Builder
+		viewport := NewActivityViewport(80, 3, 3)
+		viewport.AppendText("hello")
+		if err := viewport.Render(&out); err != nil {
+			t.Fatalf("Render(): %v", err)
+		}
+		if !strings.Contains(out.String(), RoleColor("assistant")+"assistant") {
+			t.Fatalf("expected assistant role color on the prose header, got %q", out.String())
 		}
 	})
 }
@@ -293,6 +658,522 @@ func TestAttemptPrettyPrint_ReasoningContent(t *testing.T) {
 		}
 		if !strings.Contains(got, "just an answer") {
 			t.Fatalf("expected content, got: %q", got)
+		}
+	})
+}
+
+// failAfterWriter writes up to remaining bytes, then fails. It pins the
+// phase-4 frame contract: a partial write must leave the viewport dirty so
+// the next Render retries the full frame.
+type failAfterWriter struct {
+	remaining int
+	buf       bytes.Buffer
+}
+
+func (w *failAfterWriter) Write(p []byte) (int, error) {
+	if len(p) <= w.remaining {
+		w.remaining -= len(p)
+		w.buf.Write(p)
+		return len(p), nil
+	}
+	n := w.remaining
+	if n > 0 {
+		w.buf.Write(p[:n])
+	}
+	w.remaining = 0
+	return n, errors.New("injected write failure")
+}
+
+// shortWriter accepts at most three bytes per call and reports no error,
+// pinning the io.Writer short-write contract: Render must treat a short write
+// as a failed frame and retry the full frame on the next call.
+type shortWriter struct{ buf strings.Builder }
+
+func (w *shortWriter) Write(p []byte) (int, error) {
+	if len(p) > 3 {
+		w.buf.Write(p[:3])
+		return 3, nil
+	}
+	w.buf.Write(p)
+	return len(p), nil
+}
+
+func TestActivityViewportResize(t *testing.T) {
+	t.Run("width narrows rewraps retained blocks", func(t *testing.T) {
+		t.Setenv("NO_COLOR", "true")
+		var out strings.Builder
+		viewport := NewActivityViewport(20, 10, 10)
+		viewport.AppendReasoning("inspect directory")
+		inputs := pub_models.Input{"path": "/tmp"}
+		viewport.AppendTool(pub_models.Call{Name: "ls", Inputs: &inputs}, "one two three", 6)
+		if err := viewport.Render(&out); err != nil {
+			t.Fatalf("Render(): %v", err)
+		}
+
+		viewport.Resize(10, 10)
+
+		got := strings.Join(viewport.Rows(), "\n")
+		for _, want := range []string{"∴ thinking", "  inspect ", "  director", "  y", "  one two ", "  three"} {
+			if !strings.Contains(got, want) {
+				t.Fatalf("Rows() after narrow resize missing %q: %q", want, got)
+			}
+		}
+		if strings.Contains(got, "  inspect directory") {
+			t.Fatalf("stale old-width row survived the rewrap: %q", got)
+		}
+		if err := viewport.Render(&out); err != nil {
+			t.Fatalf("Render() after resize: %v", err)
+		}
+		if !strings.Contains(out.String(), "\x1b[5A\r\x1b[J") {
+			t.Fatalf("expected a full-frame redraw after resize, got %q", out.String())
+		}
+	})
+
+	t.Run("reasoning text and tool activity survive reflow", func(t *testing.T) {
+		t.Setenv("NO_COLOR", "true")
+		viewport := NewActivityViewport(40, 20, 20)
+		viewport.AppendReasoning("think step one\nthink step two")
+		viewport.AppendText("checking the plan")
+		viewport.AppendTool(pub_models.Call{Name: "pwd"}, "/tmp/work", 2)
+		viewport.Resize(20, 12)
+		got := strings.Join(viewport.Rows(), "\n")
+		for _, want := range []string{"∴ thinking", "think step", "assistant", "checking the", "▸ pwd", "  /tmp/work"} {
+			if !strings.Contains(got, want) {
+				t.Fatalf("Rows() after reflow missing %q: %q", want, got)
+			}
+		}
+	})
+
+	t.Run("height shrink keeps only the effective-height rows", func(t *testing.T) {
+		t.Setenv("NO_COLOR", "true")
+		var first strings.Builder
+		viewport := NewActivityViewport(40, 10, 10)
+		viewport.AppendReasoning("line one\nline two\nline three")
+		viewport.AppendTool(pub_models.Call{Name: "pwd"}, "a\nb\nc\nd\ne\nf\ng", 6)
+		if err := viewport.Render(&first); err != nil {
+			t.Fatalf("Render(): %v", err)
+		}
+
+		viewport.Resize(40, 5)
+
+		if got := len(viewport.Rows()); got != 5 {
+			t.Fatalf("Rows() after shrink = %d, want effective height 5", got)
+		}
+		var redraw strings.Builder
+		if err := viewport.Render(&redraw); err != nil {
+			t.Fatalf("Render() after shrink: %v", err)
+		}
+		if !strings.Contains(redraw.String(), "\x1b[10A\r\x1b[J") {
+			t.Fatalf("expected full-frame clear of the old window, got %q", redraw.String())
+		}
+		for _, gone := range []string{"∴ thinking", "  line one"} {
+			if strings.Contains(redraw.String(), gone) {
+				t.Fatalf("shrunk window still shows %q: %q", gone, redraw.String())
+			}
+		}
+	})
+
+	t.Run("height grow brings retained content back into view", func(t *testing.T) {
+		t.Setenv("NO_COLOR", "true")
+		viewport := NewActivityViewport(40, 30, 30) // cap high enough that the terminal height binds
+		viewport.Resize(40, 5)
+		viewport.AppendReasoning("one\ntwo\nthree\nfour\nfive\nsix\nseven\neight")
+		rows := viewport.Rows()
+		if len(rows) != 5 {
+			t.Fatalf("Rows() at height 5 = %d rows, want 5", len(rows))
+		}
+		if strings.Contains(strings.Join(rows, "\n"), "  three") {
+			t.Fatalf("middle rows must be dropped at height 5: %q", rows)
+		}
+		viewport.Resize(40, 10)
+		got := strings.Join(viewport.Rows(), "\n")
+		if !strings.Contains(got, "  three") {
+			t.Fatalf("height grow must reappear retained content, got %q", got)
+		}
+		if len(viewport.Rows()) != 9 {
+			t.Fatalf("Rows() after grow = %d rows, want 9", len(viewport.Rows()))
+		}
+	})
+
+	t.Run("unchanged dimensions leave the viewport clean", func(t *testing.T) {
+		t.Setenv("NO_COLOR", "true")
+		var first strings.Builder
+		viewport := NewActivityViewport(40, 8, 8)
+		viewport.AppendReasoning("first")
+		if err := viewport.Render(&first); err != nil {
+			t.Fatalf("Render(): %v", err)
+		}
+		viewport.Resize(40, 20) // effective height stays min(8, 20) = 8
+		var after strings.Builder
+		if err := viewport.Render(&after); err != nil {
+			t.Fatalf("Render() after a no-op Resize: %v", err)
+		}
+		if after.Len() != 0 {
+			t.Fatalf("no-op resize must not redraw, got %q", after.String())
+		}
+	})
+
+	t.Run("resize never writes to the writer", func(t *testing.T) {
+		t.Setenv("NO_COLOR", "true")
+		var out strings.Builder
+		viewport := NewActivityViewport(40, 8, 8)
+		viewport.AppendReasoning("first")
+		if err := viewport.Render(&out); err != nil {
+			t.Fatalf("Render(): %v", err)
+		}
+		// Resize takes no writer and must not emit anything; Render is the
+		// only writer in the viewport contract.
+		before := out.String()
+		viewport.Resize(30, 6)
+		if got := out.String(); got != before {
+			t.Fatalf("Resize wrote to the writer: %q", got)
+		}
+		var redraw strings.Builder
+		if err := viewport.Render(&redraw); err != nil {
+			t.Fatalf("Render(): %v", err)
+		}
+		if !strings.Contains(redraw.String(), "\x1b[2A\r\x1b[J") {
+			t.Fatalf("expected the resize redraw to go through Render, got %q", redraw.String())
+		}
+	})
+
+	t.Run("resize before the first append renders at the new dimensions", func(t *testing.T) {
+		t.Setenv("NO_COLOR", "true")
+		var out strings.Builder
+		viewport := NewActivityViewport(80, 30, 30)
+		viewport.Resize(40, 10)
+		viewport.AppendReasoning("one two three four five six seven eight")
+		want := []string{"∴ thinking", "  one two three four five six seven eigh", "  t"}
+		if got := viewport.Rows(); strings.Join(got, "\n") != strings.Join(want, "\n") {
+			t.Fatalf("Rows() = %q, want %q", got, want)
+		}
+		if err := viewport.Render(&out); err != nil {
+			t.Fatalf("Render(): %v", err)
+		}
+		if !strings.Contains(out.String(), "  t") {
+			t.Fatalf("first render must use the resized width, got %q", out.String())
+		}
+	})
+
+	t.Run("two consecutive resizes converge on the last dimensions", func(t *testing.T) {
+		t.Setenv("NO_COLOR", "true")
+		var first strings.Builder
+		viewport := NewActivityViewport(80, 30, 30)
+		viewport.AppendReasoning("one two three four five six seven eight")
+		if err := viewport.Render(&first); err != nil {
+			t.Fatalf("Render(): %v", err)
+		}
+		viewport.Resize(60, 20)
+		viewport.Resize(40, 10)
+		var redraw strings.Builder
+		if err := viewport.Render(&redraw); err != nil {
+			t.Fatalf("Render() after resizes: %v", err)
+		}
+		if !strings.Contains(redraw.String(), "\x1b[2A\r\x1b[J") {
+			t.Fatalf("expected one full frame over the old region, got %q", redraw.String())
+		}
+		if !strings.Contains(redraw.String(), "  t") {
+			t.Fatalf("expected the last width to win, got %q", redraw.String())
+		}
+		var clean strings.Builder
+		if err := viewport.Render(&clean); err != nil {
+			t.Fatalf("Render() after clean: %v", err)
+		}
+		if clean.Len() != 0 {
+			t.Fatalf("clean viewport must not redraw, got %q", clean.String())
+		}
+	})
+
+	t.Run("resize while a text block is active keeps coalescing", func(t *testing.T) {
+		t.Setenv("NO_COLOR", "true")
+		var out strings.Builder
+		viewport := NewActivityViewport(80, 10, 10)
+		viewport.AppendText("alpha beta")
+		viewport.Resize(10, 10)
+		viewport.AppendText(" gamma delta epsilon")
+		if err := viewport.Render(&out); err != nil {
+			t.Fatalf("Render(): %v", err)
+		}
+		got := strings.Join(viewport.Rows(), "\n")
+		if strings.Count(got, "assistant") != 1 {
+			t.Fatalf("text must coalesce into one block after resize, got %q", got)
+		}
+		if !strings.Contains(got, "  alpha be") || !strings.Contains(got, "  psilon") {
+			t.Fatalf("streamed tokens must rewrap and continue at the new width, got %q", got)
+		}
+		if !viewport.TextBlockActive() {
+			t.Fatal("TextBlockActive() = false after resize, want true")
+		}
+	})
+
+	t.Run("resize during the final-answer pop keeps the pop correct", func(t *testing.T) {
+		t.Setenv("NO_COLOR", "true")
+		var first strings.Builder
+		viewport := NewActivityViewport(80, 10, 10)
+		viewport.AppendReasoning("inspect")
+		viewport.AppendText("final answer text")
+		if err := viewport.Render(&first); err != nil {
+			t.Fatalf("Render(): %v", err)
+		}
+		if removed := viewport.RemoveTextBlock(); removed == 0 {
+			t.Fatal("RemoveTextBlock() = 0, want the answer block removed")
+		}
+		viewport.Resize(40, 10)
+		var redraw strings.Builder
+		if err := viewport.Render(&redraw); err != nil {
+			t.Fatalf("Render() after pop and resize: %v", err)
+		}
+		if strings.Contains(redraw.String(), "final answer text") {
+			t.Fatalf("popped answer must stay out of the window, got %q", redraw.String())
+		}
+		if !strings.Contains(redraw.String(), "∴ thinking") {
+			t.Fatalf("retained reasoning must survive the pop and resize, got %q", redraw.String())
+		}
+	})
+
+	t.Run("terminal shrink below the drawn window clears and rewrites", func(t *testing.T) {
+		t.Setenv("NO_COLOR", "true")
+		var first strings.Builder
+		viewport := NewActivityViewport(40, 10, 10)
+		viewport.AppendReasoning("one\ntwo\nthree")
+		viewport.AppendTool(pub_models.Call{Name: "pwd"}, "a\nb", 6)
+		if err := viewport.Render(&first); err != nil {
+			t.Fatalf("Render(): %v", err)
+		}
+		viewport.Resize(40, 3)
+		if got := len(viewport.Rows()); got != 3 {
+			t.Fatalf("Rows() after shrink = %d, want effective height 3", got)
+		}
+		var redraw strings.Builder
+		if err := viewport.Render(&redraw); err != nil {
+			t.Fatalf("Render() after shrink: %v", err)
+		}
+		if !strings.Contains(redraw.String(), "\x1b[8A\r\x1b[J") {
+			t.Fatalf("expected full clear of the old window, got %q", redraw.String())
+		}
+		if strings.Contains(redraw.String(), "∴ thinking") {
+			t.Fatalf("shrunk window must not reprint evicted rows, got %q", redraw.String())
+		}
+	})
+
+	t.Run("partial frame write leaves the viewport dirty and retries", func(t *testing.T) {
+		t.Setenv("NO_COLOR", "true")
+		var first strings.Builder
+		viewport := NewActivityViewport(40, 10, 10)
+		viewport.AppendReasoning("inspect")
+		if err := viewport.Render(&first); err != nil {
+			t.Fatalf("Render(): %v", err)
+		}
+		viewport.Resize(30, 10)
+		failing := &failAfterWriter{remaining: 4}
+		if err := viewport.Render(failing); err == nil {
+			t.Fatal("Render() with a failing writer must return an error")
+		}
+		var retry strings.Builder
+		if err := viewport.Render(&retry); err != nil {
+			t.Fatalf("Render() retry: %v", err)
+		}
+		if !strings.Contains(retry.String(), "\x1b[2A\r\x1b[J") {
+			t.Fatalf("retry must emit a full frame over the old region, got %q", retry.String())
+		}
+		if !strings.Contains(retry.String(), "  inspect") {
+			t.Fatalf("retry must rewrite the retained rows, got %q", retry.String())
+		}
+		var clean strings.Builder
+		if err := viewport.Render(&clean); err != nil {
+			t.Fatalf("Render() after clean: %v", err)
+		}
+		if clean.Len() != 0 {
+			t.Fatalf("viewport must be clean after a successful full frame, got %q", clean.String())
+		}
+	})
+
+	t.Run("write failure on the diff path marks the viewport dirty", func(t *testing.T) {
+		t.Setenv("NO_COLOR", "true")
+		var first strings.Builder
+		viewport := NewActivityViewport(40, 10, 10)
+		viewport.AppendReasoning("first")
+		if err := viewport.Render(&first); err != nil {
+			t.Fatalf("Render(): %v", err)
+		}
+		viewport.AppendReasoning(" second")
+		if err := viewport.Render(&failAfterWriter{}); err == nil {
+			t.Fatal("Render() with a failing writer must return an error")
+		}
+		var retry strings.Builder
+		if err := viewport.Render(&retry); err != nil {
+			t.Fatalf("Render() retry: %v", err)
+		}
+		if !strings.Contains(retry.String(), "\x1b[2A\r\x1b[J") {
+			t.Fatalf("retry must emit a full frame, got %q", retry.String())
+		}
+	})
+
+	t.Run("resize with no content renders nothing and stays clean", func(t *testing.T) {
+		t.Setenv("NO_COLOR", "true")
+		var out strings.Builder
+		viewport := NewActivityViewport(40, 8, 8)
+		viewport.Resize(30, 6)
+		if err := viewport.Render(&out); err != nil {
+			t.Fatalf("Render(): %v", err)
+		}
+		if out.Len() != 0 {
+			t.Fatalf("empty dirty viewport must render nothing, got %q", out.String())
+		}
+		if err := viewport.Render(&out); err != nil {
+			t.Fatalf("second Render(): %v", err)
+		}
+		if out.Len() != 0 {
+			t.Fatalf("clean viewport must stay silent, got %q", out.String())
+		}
+	})
+
+	t.Run("short write without error leaves the viewport dirty", func(t *testing.T) {
+		t.Setenv("NO_COLOR", "true")
+		var first strings.Builder
+		viewport := NewActivityViewport(40, 10, 10)
+		viewport.AppendReasoning("inspect")
+		if err := viewport.Render(&first); err != nil {
+			t.Fatalf("Render(): %v", err)
+		}
+		viewport.Resize(30, 10)
+		if err := viewport.Render(&shortWriter{}); err == nil {
+			t.Fatal("Render() with a short writer must return an error")
+		}
+		var retry strings.Builder
+		if err := viewport.Render(&retry); err != nil {
+			t.Fatalf("Render() retry: %v", err)
+		}
+		if !strings.Contains(retry.String(), "\x1b[2A\r\x1b[J") {
+			t.Fatalf("retry must emit a full frame over the old region, got %q", retry.String())
+		}
+	})
+
+	t.Run("empty text block renders stable empty rows", func(t *testing.T) {
+		t.Setenv("NO_COLOR", "true")
+		var out strings.Builder
+		viewport := NewActivityViewport(40, 8, 8)
+		viewport.AppendText("")
+		want := []string{"assistant", "  "}
+		if got := viewport.Rows(); strings.Join(got, "\n") != strings.Join(want, "\n") {
+			t.Fatalf("Rows() = %q, want %q", got, want)
+		}
+		if err := viewport.Render(&out); err != nil {
+			t.Fatalf("Render(): %v", err)
+		}
+		if err := viewport.Render(&out); err != nil {
+			t.Fatalf("second Render(): %v", err)
+		}
+		if got := strings.Count(out.String(), "assistant"); got != 1 {
+			t.Fatalf("unchanged empty block must render once, got %d copies", got)
+		}
+	})
+
+	t.Run("effective height is the cap capped by terminal height", func(t *testing.T) {
+		viewport := NewActivityViewport(80, 10, 10)
+		viewport.Resize(80, 99)
+		viewport.AppendReasoning("one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\neleven\ntwelve")
+		if got := len(viewport.Rows()); got != 10 {
+			t.Fatalf("Rows() = %d rows, want the cap 10", got)
+		}
+		viewport.Resize(80, 4)
+		if got := len(viewport.Rows()); got != 4 {
+			t.Fatalf("Rows() = %d rows, want terminal height 4", got)
+		}
+		viewport.Resize(80, 0)
+		if got := len(viewport.Rows()); got != 1 {
+			t.Fatalf("Rows() = %d rows, want clamped height 1", got)
+		}
+	})
+
+	t.Run("initial height binds the terminal height at creation", func(t *testing.T) {
+		viewport := NewActivityViewport(40, 30, 5)
+		viewport.AppendReasoning("one\ntwo\nthree\nfour\nfive\nsix\nseven\neight")
+		if got := len(viewport.Rows()); got != 5 {
+			t.Fatalf("Rows() = %d rows, want the terminal height 5 bound at creation", got)
+		}
+		// The min(cap, terminal height) binding stays live: growing the
+		// terminal reveals retained content without any prior Resize.
+		viewport.Resize(40, 8)
+		if got := len(viewport.Rows()); got != 8 {
+			t.Fatalf("Rows() after terminal grow = %d rows, want 8", got)
+		}
+	})
+
+	t.Run("clamps width and height below one", func(t *testing.T) {
+		t.Setenv("NO_COLOR", "true")
+		viewport := NewActivityViewport(0, 0, 0)
+		viewport.Resize(-10, -10)
+		viewport.AppendReasoning("x")
+		want := []string{"∴ thinking"}
+		if got := viewport.Rows(); strings.Join(got, "\n") != strings.Join(want, "\n") {
+			t.Fatalf("Rows() = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("retention evicts the oldest finished blocks", func(t *testing.T) {
+		viewport := NewActivityViewport(80, 30, 30)
+		for i := range maxActivityBlocks + 4 {
+			viewport.AppendReasoning(fmt.Sprintf("block %d", i))
+			viewport.FinishReasoning()
+		}
+		if got := len(viewport.blocks); got != maxActivityBlocks {
+			t.Fatalf("retained blocks = %d, want %d", got, maxActivityBlocks)
+		}
+		if got, want := viewport.blocks[0].content, "block 4"; got != want {
+			t.Fatalf("oldest retained block = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("retention bounds content per block", func(t *testing.T) {
+		viewport := NewActivityViewport(80, 30, 30)
+		big := strings.Repeat("x", maxActivityBlockRunes*2)
+		viewport.AppendReasoning(big)
+		got := viewport.activeReasoning.content
+		if utf8.RuneCountInString(got) > maxActivityBlockRunes {
+			t.Fatalf("retained content = %d runes, want at most %d", utf8.RuneCountInString(got), maxActivityBlockRunes)
+		}
+		before, after, found := strings.Cut(got, contentTruncationMarker)
+		if !found {
+			t.Fatal("expected the truncation marker in over-budget content")
+		}
+		if before != strings.Repeat("x", utf8.RuneCountInString(before)) {
+			t.Fatal("content head must survive unchanged")
+		}
+		if after != strings.Repeat("x", utf8.RuneCountInString(after)) {
+			t.Fatal("content tail must survive unchanged")
+		}
+		if utf8.RuneCountInString(before)+utf8.RuneCountInString(after)+utf8.RuneCountInString(contentTruncationMarker) > maxActivityBlockRunes {
+			t.Fatal("retained content must stay within the rune budget")
+		}
+	})
+
+	t.Run("nil viewport is safe", func(t *testing.T) {
+		var viewport *ActivityViewport
+		viewport.AppendReasoning("x")
+		viewport.AppendText("y")
+		viewport.AppendTool(pub_models.Call{Name: "pwd"}, "z", 2)
+		viewport.FinishReasoning()
+		viewport.FinishText()
+		viewport.Resize(40, 10)
+		if got := viewport.Rows(); got != nil {
+			t.Fatalf("Rows() on nil = %v, want nil", got)
+		}
+		if got := viewport.Content(); got != "" {
+			t.Fatalf("Content() on nil = %q, want empty", got)
+		}
+		if got := viewport.RemoveTextBlock(); got != 0 {
+			t.Fatalf("RemoveTextBlock() on nil = %d, want 0", got)
+		}
+		if got := viewport.DetachRenderedRegion(); got != 0 {
+			t.Fatalf("DetachRenderedRegion() on nil = %d, want 0", got)
+		}
+		if viewport.TextBlockActive() {
+			t.Fatal("TextBlockActive() on nil = true, want false")
+		}
+		var out strings.Builder
+		if err := viewport.Render(&out); err != nil {
+			t.Fatalf("Render() on nil: %v", err)
 		}
 	})
 }

@@ -3,13 +3,16 @@ package text
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/baalimago/clai/internal/models"
+	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
+	"github.com/baalimago/go_away_boilerplate/pkg/dimensions"
 )
 
 func stripANSIEscapes(s string) string {
@@ -295,8 +298,8 @@ func Test_sessionRunner_Run_FinalReplyReasoningIsPersistedSeparatelyFromContent(
 	if err != nil {
 		t.Fatalf("Run returned err: %v", err)
 	}
-	if got := session.FinalAssistantText; !strings.Contains(got, "[thinking]Need to inspect.\n[/thinking]\ndone") {
-		t.Fatalf("expected final assistant text to contain wrapped reasoning, got %q", got)
+	if got := session.FinalAssistantText; got != "done" {
+		t.Fatalf("expected final assistant text without display-only reasoning, got %q", got)
 	}
 	if len(session.Chat.Messages) != 2 {
 		t.Fatalf("expected user + finalized assistant-ish message, got %d messages", len(session.Chat.Messages))
@@ -310,6 +313,353 @@ func Test_sessionRunner_Run_FinalReplyReasoningIsPersistedSeparatelyFromContent(
 	}
 	if strings.Contains(finalMsg.Content, "[thinking]") {
 		t.Fatalf("expected persisted assistant content to omit wrapped thinking markup, got %q", finalMsg.Content)
+	}
+}
+
+func Test_sessionRunner_Run_ActivityViewportCombinesReasoningAndToolActivity(t *testing.T) {
+	model := &MockQuerier{}
+	callCount := 0
+	model.streamFn = func(_ context.Context, _ pub_models.Chat) (chan models.CompletionEvent, error) {
+		callCount++
+		out := make(chan models.CompletionEvent, 3)
+		if callCount == 1 {
+			out <- models.ReasoningEvent{Content: "inspect \x1b[31mdirectory\x1b[0m"}
+			out <- pub_models.Call{ID: "call-1", Name: "missing_tool"}
+		} else {
+			out <- "done"
+		}
+		close(out)
+		return out, nil
+	}
+
+	var printed strings.Builder
+	q := &Querier[*MockQuerier]{out: &printed, dims: dimensions.Dimensions{Width: 80, Height: 24}, Model: model}
+	session := &QuerySession{Chat: pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "hello"}}}}
+	runner := sessionRunner[*MockQuerier]{
+		querier:      q,
+		recorder:     &recordingCallUsageRecorder{},
+		finalizer:    &countingFinalizer{},
+		toolExecutor: toolExecutor[*MockQuerier]{querier: q},
+	}
+
+	if err := runner.Run(context.Background(), session); err != nil {
+		t.Fatalf("Run returned err: %v", err)
+	}
+	output := stripANSIEscapes(printed.String())
+	thinkingAt := strings.Index(output, "∴ thinking\n  inspect directory")
+	toolAt := strings.Index(output, "▸ missing_tool")
+	if thinkingAt == -1 || toolAt == -1 || thinkingAt > toolAt {
+		t.Fatalf("expected viewport before tool activity, got:\n%s", output)
+	}
+	if strings.Contains(output, "assistant: [thinking]") || strings.Contains(output, "[and ") {
+		t.Fatalf("reasoning must not be re-rendered as shortened assistant text, got:\n%s", output)
+	}
+	if session.FinalReasoningText != "" {
+		t.Fatalf("tool-step reasoning must not leak into final reply reasoning, got %q", session.FinalReasoningText)
+	}
+	if got := session.Chat.Messages[1].ReasoningContent; got != "inspect \x1b[31mdirectory\x1b[0m" {
+		t.Fatalf("expected complete reasoning on persisted tool call, got %q", got)
+	}
+}
+
+func Test_sessionRunner_Run_DisabledRollingOutputStreamsPlainThinkingAndPrintsNewToolBlock(t *testing.T) {
+	confDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(confDir, "theme.json"), []byte(`{"notificationBell":true,"rollingOutput":{"enabled":false}}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(theme.json): %v", err)
+	}
+	if err := utils.LoadTheme(confDir); err != nil {
+		t.Fatalf("LoadTheme(): %v", err)
+	}
+	resetThemeDir := t.TempDir()
+	t.Cleanup(func() {
+		if err := utils.LoadTheme(resetThemeDir); err != nil {
+			t.Errorf("reset theme: %v", err)
+		}
+	})
+
+	model := &MockQuerier{}
+	callCount := 0
+	model.streamFn = func(_ context.Context, _ pub_models.Chat) (chan models.CompletionEvent, error) {
+		callCount++
+		out := make(chan models.CompletionEvent, 3)
+		if callCount == 1 {
+			out <- models.ReasoningEvent{Content: "inspect"}
+			out <- pub_models.Call{ID: "call-1", Name: "missing_tool"}
+		} else {
+			out <- "done"
+		}
+		close(out)
+		return out, nil
+	}
+
+	var printed strings.Builder
+	q := &Querier[*MockQuerier]{out: &printed, dims: dimensions.Dimensions{Width: 80, Height: 24}, Model: model}
+	session := &QuerySession{Chat: pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "hello"}}}}
+	runner := sessionRunner[*MockQuerier]{
+		querier:      q,
+		recorder:     &recordingCallUsageRecorder{},
+		finalizer:    &countingFinalizer{},
+		toolExecutor: toolExecutor[*MockQuerier]{querier: q},
+	}
+
+	if err := runner.Run(context.Background(), session); err != nil {
+		t.Fatalf("Run returned err: %v", err)
+	}
+	output := stripANSIEscapes(printed.String())
+	for _, want := range []string{"[thinking]inspect", "[/thinking]", "▸ missing_tool", "done"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected %q in non-rolling output:\n%s", want, output)
+		}
+	}
+	for _, forbidden := range []string{"∴ thinking", "assistant: [thinking]", "\x1b[2A"} {
+		if strings.Contains(output, forbidden) {
+			t.Fatalf("non-rolling output contains %q:\n%s", forbidden, output)
+		}
+	}
+}
+
+func Test_sessionRunner_Run_AssistantProseStaysInsideRollingWindow(t *testing.T) {
+	t.Setenv("NO_COLOR", "true")
+	confDir := withEmptyClaiConfigDir(t)
+	if err := utils.LoadTheme(confDir); err != nil {
+		t.Fatalf("LoadTheme(): %v", err)
+	}
+	model := &MockQuerier{}
+	callCount := 0
+	model.streamFn = func(_ context.Context, _ pub_models.Chat) (chan models.CompletionEvent, error) {
+		callCount++
+		out := make(chan models.CompletionEvent, 4)
+		if callCount == 1 {
+			out <- models.ReasoningEvent{Content: "inspect"}
+			out <- "I will run a tool."
+			out <- pub_models.Call{ID: "call-1", Name: "missing_tool"}
+		} else {
+			out <- "done"
+		}
+		close(out)
+		return out, nil
+	}
+
+	var printed strings.Builder
+	q := &Querier[*MockQuerier]{out: &printed, dims: dimensions.Dimensions{Width: 80, Height: 24}, Model: model}
+	session := &QuerySession{Chat: pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "hello"}}}}
+	runner := sessionRunner[*MockQuerier]{
+		querier:      q,
+		recorder:     &recordingCallUsageRecorder{},
+		finalizer:    &countingFinalizer{},
+		toolExecutor: toolExecutor[*MockQuerier]{querier: q},
+	}
+
+	if err := runner.Run(context.Background(), session); err != nil {
+		t.Fatalf("Run returned err: %v", err)
+	}
+	output := stripANSIEscapes(printed.String())
+	thinkingAt := strings.Index(output, "∴ thinking\n  inspect")
+	proseAt := strings.Index(output, "assistant\n  I will run a tool.")
+	toolAt := strings.Index(output, "▸ missing_tool")
+	if thinkingAt == -1 || proseAt == -1 || toolAt == -1 {
+		t.Fatalf("expected thinking, assistant prose and tool activity inside one window, got:\n%s", output)
+	}
+	if !(thinkingAt < proseAt && proseAt < toolAt) {
+		t.Fatalf("expected order thinking < assistant prose < tool activity, got:\n%s", output)
+	}
+	if strings.Contains(output, "assistant: I will run a tool.") {
+		t.Fatalf("assistant prose must not be re-printed outside the window, got:\n%s", output)
+	}
+	if session.FinalAssistantText != "done" {
+		t.Fatalf("expected final assistant text, got %q", session.FinalAssistantText)
+	}
+}
+
+func Test_sessionRunner_Run_ProseStreamedBeforeFirstActivityMovesIntoWindow(t *testing.T) {
+	t.Setenv("NO_COLOR", "true")
+	confDir := withEmptyClaiConfigDir(t)
+	if err := utils.LoadTheme(confDir); err != nil {
+		t.Fatalf("LoadTheme(): %v", err)
+	}
+	model := &MockQuerier{}
+	callCount := 0
+	model.streamFn = func(_ context.Context, _ pub_models.Chat) (chan models.CompletionEvent, error) {
+		callCount++
+		out := make(chan models.CompletionEvent, 3)
+		if callCount == 1 {
+			out <- "Let me check."
+			out <- pub_models.Call{ID: "call-1", Name: "missing_tool"}
+		} else {
+			out <- "done"
+		}
+		close(out)
+		return out, nil
+	}
+
+	var printed strings.Builder
+	q := &Querier[*MockQuerier]{out: &printed, dims: dimensions.Dimensions{Width: 80, Height: 24}, Model: model}
+	session := &QuerySession{Chat: pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "hello"}}}}
+	runner := sessionRunner[*MockQuerier]{
+		querier:      q,
+		recorder:     &recordingCallUsageRecorder{},
+		finalizer:    &countingFinalizer{},
+		toolExecutor: toolExecutor[*MockQuerier]{querier: q},
+	}
+
+	if err := runner.Run(context.Background(), session); err != nil {
+		t.Fatalf("Run returned err: %v", err)
+	}
+	output := stripANSIEscapes(printed.String())
+	proseAt := strings.Index(output, "assistant\n  Let me check.")
+	toolAt := strings.Index(output, "▸ missing_tool")
+	if proseAt == -1 || toolAt == -1 || proseAt > toolAt {
+		t.Fatalf("expected prose inside the window before tool activity, got:\n%s", output)
+	}
+	if strings.Contains(output, "assistant: Let me check.") {
+		t.Fatalf("prose must not be re-printed outside the window, got:\n%s", output)
+	}
+}
+
+func Test_sessionRunner_Run_FinalAnswerPrintsBelowRollingWindow(t *testing.T) {
+	t.Setenv("NO_COLOR", "true")
+	confDir := withEmptyClaiConfigDir(t)
+	if err := utils.LoadTheme(confDir); err != nil {
+		t.Fatalf("LoadTheme(): %v", err)
+	}
+	model := &MockQuerier{}
+	callCount := 0
+	model.streamFn = func(_ context.Context, _ pub_models.Chat) (chan models.CompletionEvent, error) {
+		callCount++
+		out := make(chan models.CompletionEvent, 3)
+		if callCount == 1 {
+			out <- models.ReasoningEvent{Content: "inspect"}
+			out <- pub_models.Call{ID: "call-1", Name: "missing_tool"}
+		} else {
+			out <- models.ReasoningEvent{Content: "verify"}
+			out <- "The answer is done."
+		}
+		close(out)
+		return out, nil
+	}
+
+	var printed strings.Builder
+	q := &Querier[*MockQuerier]{out: &printed, dims: dimensions.Dimensions{Width: 80, Height: 24}, Model: model}
+	session := &QuerySession{Chat: pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "hello"}}}}
+	runner := sessionRunner[*MockQuerier]{
+		querier:      q,
+		recorder:     &recordingCallUsageRecorder{},
+		finalizer:    sessionFinalizer[*MockQuerier]{querier: q},
+		toolExecutor: toolExecutor[*MockQuerier]{querier: q},
+	}
+
+	if err := runner.Run(context.Background(), session); err != nil {
+		t.Fatalf("Run returned err: %v", err)
+	}
+	raw := printed.String()
+	// The answer block is the trailing two rows of the window. The pop is a
+	// pure shrink: the unchanged window above stays on screen and the pop
+	// clears only the removed rows, immediately followed by the answer print
+	// (one terminal transition, Option A).
+	popSeq := "\x1b[2A\r\x1b[J"
+	popAt := strings.LastIndex(raw, popSeq)
+	if popAt == -1 {
+		t.Fatalf("expected the pop to clear the two answer rows, got:\n%q", raw)
+	}
+	if windowAt := strings.Index(stripANSIEscapes(raw[:popAt]), "∴ thinking"); windowAt == -1 {
+		t.Fatalf("expected the window to stay on screen above the final answer, got:\n%s", stripANSIEscapes(raw[:popAt]))
+	}
+	if got := stripANSIEscapes(raw[popAt+len(popSeq):]); got != "assistant: The answer is done.\n" {
+		t.Fatalf("expected only the final answer right after the pop redraw, got %q", got)
+	}
+	if session.FinalAssistantText != "The answer is done." {
+		t.Fatalf("expected final assistant text, got %q", session.FinalAssistantText)
+	}
+}
+
+func Test_sessionRunner_Run_FinalAnswerStaysInWindowUntilFinalizer(t *testing.T) {
+	// The atomic pop (Option A) removes the answer block from the viewport
+	// state at stream end but defers the redraw to postProcessOutput, which
+	// runs right before the answer prints below. A finalizer that never prints
+	// therefore leaves the answer inside the window in the raw output.
+	t.Setenv("NO_COLOR", "true")
+	confDir := withEmptyClaiConfigDir(t)
+	if err := utils.LoadTheme(confDir); err != nil {
+		t.Fatalf("LoadTheme(): %v", err)
+	}
+	model := &MockQuerier{}
+	model.streamFn = func(_ context.Context, _ pub_models.Chat) (chan models.CompletionEvent, error) {
+		out := make(chan models.CompletionEvent, 3)
+		out <- models.ReasoningEvent{Content: "inspect"}
+		out <- "The answer is done."
+		close(out)
+		return out, nil
+	}
+
+	var printed strings.Builder
+	q := &Querier[*MockQuerier]{out: &printed, dims: dimensions.Dimensions{Width: 80, Height: 24}, Model: model}
+	session := &QuerySession{Chat: pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "hello"}}}}
+	runner := sessionRunner[*MockQuerier]{
+		querier:      q,
+		recorder:     &recordingCallUsageRecorder{},
+		finalizer:    &countingFinalizer{},
+		toolExecutor: toolExecutor[*MockQuerier]{querier: q},
+	}
+
+	if err := runner.Run(context.Background(), session); err != nil {
+		t.Fatalf("Run returned err: %v", err)
+	}
+	if !q.finalAnswerPopPending {
+		t.Fatal("expected the final-answer pop to stay pending until the finalizer prints")
+	}
+	output := stripANSIEscapes(printed.String())
+	if !strings.Contains(output, "assistant\n  The answer is done.") {
+		t.Fatalf("expected the answer to remain inside the window until the finalizer, got:\n%s", output)
+	}
+	if strings.Contains(output, "assistant: The answer is done.") {
+		t.Fatalf("answer must not be re-printed outside the window, got:\n%s", output)
+	}
+}
+
+func Test_sessionRunner_Run_RedirectedOutputUsesRawRepresentation(t *testing.T) {
+	model := &MockQuerier{}
+	callCount := 0
+	model.streamFn = func(_ context.Context, _ pub_models.Chat) (chan models.CompletionEvent, error) {
+		callCount++
+		out := make(chan models.CompletionEvent, 3)
+		if callCount == 1 {
+			out <- models.ReasoningEvent{Content: "inspect"}
+			out <- pub_models.Call{ID: "call-1", Name: "missing_tool"}
+		} else {
+			out <- "done"
+		}
+		close(out)
+		return out, nil
+	}
+
+	var printed strings.Builder
+	q := &Querier[*MockQuerier]{
+		out:              &printed,
+		outputModeKnown:  true,
+		outputIsTerminal: false,
+		Model:            model,
+	}
+	session := &QuerySession{Chat: pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "hello"}}}}
+	runner := sessionRunner[*MockQuerier]{
+		querier:      q,
+		recorder:     &recordingCallUsageRecorder{},
+		finalizer:    &countingFinalizer{},
+		toolExecutor: toolExecutor[*MockQuerier]{querier: q},
+	}
+
+	if err := runner.Run(context.Background(), session); err != nil {
+		t.Fatalf("Run returned err: %v", err)
+	}
+	output := printed.String()
+	for _, want := range []string{"[thinking]inspect", "[/thinking]", "Call: 'missing_tool'", "ERROR: unknown tool call: missing_tool", "done"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected raw output %q in %q", want, output)
+		}
+	}
+	for _, forbidden := range []string{"\x1b", "▸ missing_tool", "\x1b["} {
+		if strings.Contains(output, forbidden) {
+			t.Fatalf("redirected output contains display-only data %q: %q", forbidden, output)
+		}
 	}
 }
 
@@ -385,8 +735,11 @@ func Test_sessionRunner_Run_PartialStreamFailureFinalizesOnce(t *testing.T) {
 	}
 }
 
-func Test_sessionRunner_Run_DoesNotDuplicateToolCallEchoBeforeStructuredCall(t *testing.T) {
-	withEmptyClaiConfigDir(t)
+func Test_sessionRunner_Run_DoesNotDuplicateToolCallEchoBeforeToolActivity(t *testing.T) {
+	confDir := withEmptyClaiConfigDir(t)
+	if err := utils.LoadTheme(confDir); err != nil {
+		t.Fatalf("LoadTheme(): %v", err)
+	}
 
 	model := &MockQuerier{}
 	callCount := 0
@@ -413,9 +766,9 @@ func Test_sessionRunner_Run_DoesNotDuplicateToolCallEchoBeforeStructuredCall(t *
 
 	var printed strings.Builder
 	q := &Querier[*MockQuerier]{
-		out:       &printed,
-		termWidth: 80,
-		Model:     model,
+		out:   &printed,
+		dims:  dimensions.Dimensions{Width: 80, Height: 24},
+		Model: model,
 	}
 	session := &QuerySession{Chat: pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "hello"}}}}
 	runner := sessionRunner[*MockQuerier]{
@@ -430,24 +783,20 @@ func Test_sessionRunner_Run_DoesNotDuplicateToolCallEchoBeforeStructuredCall(t *
 		t.Fatalf("Run returned err: %v", err)
 	}
 
-	printedOutput := printed.String()
-	normalizedOutput := stripANSIEscapes(printedOutput)
-	rawEchoAt := strings.Index(normalizedOutput, echoCall.PrettyPrint())
-	if rawEchoAt == -1 {
-		t.Fatalf("expected raw echoed tool call in output, got:\n%s", normalizedOutput)
+	normalizedOutput := stripANSIEscapes(printed.String())
+	// The echoed tool-call text is streamed once and then cleared; it must
+	// never be re-printed as an assistant message.
+	if got := strings.Count(normalizedOutput, echoCall.PrettyPrint()); got != 1 {
+		t.Fatalf("expected echoed tool call text exactly once, got %d occurrences in output:\n%s", got, normalizedOutput)
 	}
-	clearAt := strings.Index(normalizedOutput[rawEchoAt+len(echoCall.PrettyPrint()):], "\r")
-	if clearAt == -1 {
-		t.Fatalf("expected terminal clear/control output after echoed tool call, got output:\n%s", normalizedOutput)
+	if strings.Contains(normalizedOutput, "assistant: "+echoCall.PrettyPrint()) {
+		t.Fatalf("echoed tool call text must not be re-printed as assistant prose, got:\n%s", normalizedOutput)
 	}
-	clearAt += rawEchoAt + len(echoCall.PrettyPrint())
-	structuredAt := strings.Index(normalizedOutput[clearAt:], "assistant:")
-	if structuredAt == -1 {
-		t.Fatalf("expected structured assistant render after clear, got output:\n%s", normalizedOutput)
+	if !strings.Contains(normalizedOutput, "▸ pwd  path=.") {
+		t.Fatalf("expected paired tool activity in the window, got:\n%s", normalizedOutput)
 	}
-	structuredAt += clearAt
-	if got := strings.Count(normalizedOutput[structuredAt:], echoCall.PrettyPrint()); got != 1 {
-		t.Fatalf("expected exactly one structured tool-call pretty print after assistant render, got %d occurrences in output:\n%s", got, normalizedOutput)
+	if got := strings.Count(normalizedOutput, "assistant: final answer"); got != 1 {
+		t.Fatalf("expected the final answer printed exactly once, got %d occurrences:\n%s", got, normalizedOutput)
 	}
 	if session.FinalAssistantText != "final answer" {
 		t.Fatalf("expected final assistant text from follow-up step, got %q", session.FinalAssistantText)
@@ -455,7 +804,10 @@ func Test_sessionRunner_Run_DoesNotDuplicateToolCallEchoBeforeStructuredCall(t *
 }
 
 func Test_toolExecutor_FinalizeAssistantTextBeforeToolCall_PreservesAssistantProse(t *testing.T) {
-	withEmptyClaiConfigDir(t)
+	confDir := withEmptyClaiConfigDir(t)
+	if err := utils.LoadTheme(confDir); err != nil {
+		t.Fatalf("LoadTheme(): %v", err)
+	}
 
 	call := pub_models.Call{
 		ID:   "call-1",
@@ -463,8 +815,8 @@ func Test_toolExecutor_FinalizeAssistantTextBeforeToolCall_PreservesAssistantPro
 	}
 	var printed strings.Builder
 	q := &Querier[*MockQuerier]{
-		out:       &printed,
-		termWidth: 80,
+		out:  &printed,
+		dims: dimensions.Dimensions{Width: 80, Height: 24},
 	}
 	session := &QuerySession{}
 	session.AppendPendingText("I will check that for you.")
@@ -482,13 +834,21 @@ func Test_toolExecutor_FinalizeAssistantTextBeforeToolCall_PreservesAssistantPro
 	}
 
 	normalizedOutput := stripANSIEscapes(printed.String())
-	if !strings.Contains(normalizedOutput, "I will check that for you.") {
-		t.Fatalf("expected prose to be rendered during finalization, got output:\n%s", normalizedOutput)
+	// The prose is moved into the rolling window; it must not be re-printed as
+	// a standalone assistant message outside the window.
+	if !strings.Contains(normalizedOutput, "assistant\n  I will check that for you.") {
+		t.Fatalf("expected prose rendered inside the rolling window, got output:\n%s", normalizedOutput)
+	}
+	if strings.Contains(normalizedOutput, "assistant: I will check that for you.") {
+		t.Fatalf("prose must not be re-printed outside the window, got output:\n%s", normalizedOutput)
 	}
 }
 
 func Test_toolExecutor_FinalizeAssistantTextBeforeToolCall_DropsWhitespaceEquivalentEcho(t *testing.T) {
-	withEmptyClaiConfigDir(t)
+	confDir := withEmptyClaiConfigDir(t)
+	if err := utils.LoadTheme(confDir); err != nil {
+		t.Fatalf("LoadTheme(): %v", err)
+	}
 
 	call := pub_models.Call{
 		ID:   "call-1",
@@ -497,8 +857,8 @@ func Test_toolExecutor_FinalizeAssistantTextBeforeToolCall_DropsWhitespaceEquiva
 	echoed := "\n" + call.PrettyPrint() + "\n"
 	var printed strings.Builder
 	q := &Querier[*MockQuerier]{
-		out:       &printed,
-		termWidth: 80,
+		out:  &printed,
+		dims: dimensions.Dimensions{Width: 80, Height: 24},
 	}
 	session := &QuerySession{}
 	session.AppendPendingText(echoed)
@@ -638,7 +998,8 @@ func Test_sessionRunner_Run_DrainsAndExecutesParallelToolCallsAsOneTurn(t *testi
 		return out, nil
 	}
 
-	q := &Querier[*MockQuerier]{out: &strings.Builder{}, Model: model}
+	var printed strings.Builder
+	q := &Querier[*MockQuerier]{out: &printed, dims: dimensions.Dimensions{Width: 80, Height: 24}, Model: model}
 	session := &QuerySession{Chat: pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "hello"}}}}
 	runner := sessionRunner[*MockQuerier]{
 		querier:      q,
@@ -655,5 +1016,15 @@ func Test_sessionRunner_Run_DrainsAndExecutesParallelToolCallsAsOneTurn(t *testi
 	}
 	if session.FinalAssistantText != "done" {
 		t.Fatalf("expected final reply, got %q", session.FinalAssistantText)
+	}
+	output := stripANSIEscapes(printed.String())
+	firstCall := strings.Index(output, "▸ missing_one")
+	secondCall := strings.Index(output, "▸ missing_two")
+	if firstCall == -1 || secondCall == -1 {
+		t.Fatalf("expected both tool activity blocks, got:\n%s", output)
+	}
+	firstResult := strings.Index(output[firstCall:], "✗ ERROR:")
+	if firstResult == -1 || firstCall+firstResult > secondCall {
+		t.Fatalf("expected the first result before the second call, got:\n%s", output)
 	}
 }

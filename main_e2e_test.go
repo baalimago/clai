@@ -27,7 +27,7 @@ func Test_goldenFile_calibration(t *testing.T) {
 			// echo text querier. It will respond with whatever the input is
 			givenArgs:      "-r -cm test q test",
 			givenEnvs:      make(map[string]string),
-			wantOutExactly: "test\n\a",
+			wantOutExactly: "test\n",
 			wantErr:        "",
 			wantStatusCode: 0,
 		},
@@ -36,7 +36,7 @@ func Test_goldenFile_calibration(t *testing.T) {
 			expect:         "Multiple tests-test",
 			givenArgs:      "-r -cm test q another test",
 			givenEnvs:      make(map[string]string),
-			wantOutExactly: "another test\n\a",
+			wantOutExactly: "another test\n",
 			wantErr:        "",
 			wantStatusCode: 0,
 		},

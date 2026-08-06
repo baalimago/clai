@@ -42,7 +42,9 @@ main.go:run()
    - one entry per canonical tool; a tool's aliases are annotated on its
      canonical row (`- async_cmd (alias: async_cmd_run): ...`) instead of
      being listed as duplicate entries
-   - attempts to fit descriptions to terminal width via `utils.WidthAppropriateStringTrunc`.
+   - attempts to fit descriptions to the width of the session's output writer
+     via `utils.SessionDimensions(os.Stdout)` and the explicit-width helper
+     `table.WidthAppropriateStringTruncWithWidth`.
 
 5. Prints an instruction footer:
 

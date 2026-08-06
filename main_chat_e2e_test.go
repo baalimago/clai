@@ -136,7 +136,7 @@ func Test_goldenFile_CHAT_DIRSCOPED(t *testing.T) {
 
 	out, status := runOne(t, bar, "-r -cm test q hello")
 	testboil.FailTestIfDiff(t, status, 0)
-	testboil.FailTestIfDiff(t, out, "hello\n\a")
+	testboil.FailTestIfDiff(t, out, "hello\n")
 
 	out, status = runOne(t, bar, "-r -cm test chat dir")
 	testboil.FailTestIfDiff(t, status, 0)
@@ -168,7 +168,7 @@ func Test_goldenFile_CHAT_DIRSCOPED(t *testing.T) {
 
 	out, status = runOne(t, baz, "-r -cm test q baz")
 	testboil.FailTestIfDiff(t, status, 0)
-	testboil.FailTestIfDiff(t, out, "baz\n\a")
+	testboil.FailTestIfDiff(t, out, "baz\n")
 
 	out, status = runOne(t, baz, "-r -cm test chat dir")
 	testboil.FailTestIfDiff(t, status, 0)
@@ -200,7 +200,7 @@ func Test_goldenFile_CHAT_DIRSCOPED(t *testing.T) {
 
 	out, status = runOne(t, baz, "-r -cm test -re -dre q hello3")
 	testboil.FailTestIfDiff(t, status, 0)
-	testboil.FailTestIfDiff(t, out, "hello3\n\a")
+	testboil.FailTestIfDiff(t, out, "hello3\n")
 
 	convDir := filepath.Join(confDir, "conversations")
 	entries, err := os.ReadDir(convDir)
@@ -474,7 +474,7 @@ func Test_e2e_dre_queries_continue_directory_scoped_conversation(t *testing.T) {
 
 	out, status := runOne(t, workDir, "-r -cm test q I like blue")
 	testboil.FailTestIfDiff(t, status, 0)
-	testboil.FailTestIfDiff(t, out, "I like blue\n\a")
+	testboil.FailTestIfDiff(t, out, "I like blue\n")
 
 	out, status = runOne(t, workDir, "-r -cm test chat dir")
 	testboil.FailTestIfDiff(t, status, 0)
@@ -643,7 +643,7 @@ func Test_e2e_dre_profile_swap_does_not_create_new_conversation(t *testing.T) {
 
 	out, status := runOne(t, workDir, "-r -cm test q seed prompt")
 	testboil.FailTestIfDiff(t, status, 0)
-	testboil.FailTestIfDiff(t, out, "seed prompt\n\a")
+	testboil.FailTestIfDiff(t, out, "seed prompt\n")
 
 	initialChatID, err := chat.LoadDirScopeChatID(confDir)
 	if err != nil {

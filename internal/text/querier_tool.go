@@ -60,7 +60,7 @@ func (q *Querier[C]) doToolCallLogic(ctx context.Context, call pub_models.Call) 
 	session := &QuerySession{
 		Chat:            q.chat,
 		ShouldSaveReply: q.shouldSaveReply,
-		Raw:             q.Raw,
+		Raw:             q.rawDisplay(),
 		ToolCallsUsed:   q.amToolCalls,
 	}
 	err := toolExecutor[C]{querier: q}.Execute(ctx, session, call)

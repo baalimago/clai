@@ -38,5 +38,5 @@ func Test_goldenFile_CONFIG_flag_defaults_do_not_override_mode_config(t *testing
 	})
 
 	testboil.FailTestIfDiff(t, gotStatus, 0)
-	testboil.FailTestIfDiff(t, stdout, "hello\n\a")
+	testboil.FailTestIfDiff(t, stdout, "hello\n")
 }

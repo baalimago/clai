@@ -20,7 +20,6 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
-	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
 
 // CanonicalModelString is the inverse of vendorType. Given a (vendor, family, modelVersion)
@@ -204,14 +203,6 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	}
 
 	traceChatf("post setup")
-	termWidth, err := table.TermWidth()
-	if err == nil {
-		querier.termWidth = termWidth
-	} else {
-		if querier.debug {
-			ancli.PrintWarn(fmt.Sprintf("failed to get terminal size: %v\n", err))
-		}
-	}
 	currentUser, err := user.Current()
 	if err == nil {
 		querier.username = currentUser.Username
@@ -229,6 +220,12 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	// Ensure profile selection is persisted in globalScope/saved conversations.
 	querier.chat.Profile = userConf.UseProfile
 	querier.Raw = userConf.Raw
+	output := userConf.Out
+	if output == nil {
+		output = os.Stdout
+	}
+	querier.outputModeKnown = true
+	querier.outputIsTerminal = utils.IsTerminalWriter(output)
 	querier.structuredOutput = userConf.ResponseFormat != nil
 	querier.shouldSaveReply = !userConf.ChatMode && userConf.SaveReplyAsConv
 	querier.replyMode = userConf.ReplyMode
@@ -238,7 +235,13 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	querier.toolOutputRuneLimit = userConf.ToolOutputRuneLimit
 	querier.maxToolCalls = userConf.MaxToolCalls
 	querier.stoploss = userConf.Stoploss
-	querier.out = userConf.Out
+	querier.out = output
+	// One dimensions snapshot per interactive output session, bound to the
+	// writer's fd: the observed size matches the file clai actually writes to
+	// (R2-02). A non-terminal writer or a failed read yields the deterministic
+	// dimensions.Fallback, so no width-aware path ever queries the terminal
+	// again.
+	querier.dims = utils.SessionDimensions(output)
 	querier.skillLoader = userConf.SkillLoader
 	querier.baseTools = userConf.BaseTools
 	querier.registeredTools = userConf.RegisteredTools

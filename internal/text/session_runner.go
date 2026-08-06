@@ -12,6 +12,7 @@ import (
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
+	"github.com/baalimago/go_away_boilerplate/pkg/dimensions"
 	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
 
@@ -30,6 +31,12 @@ type sessionRunner[C models.StreamCompleter] struct {
 	finalizer      sessionFinalizerer
 	stoploss       *stoploss
 	currentRetries int
+	// resizeEvents delivers fresh terminal dimensions after SIGWINCH. It is
+	// the dimensions.Viewer's Events channel in production and is nil for
+	// non-rolling, non-terminal, and non-file sessions, which keep the
+	// one-shot q.dims read. The runner consumes it in the serialized session
+	// loop, so a resize and its redraw can never race a token or tool write.
+	resizeEvents <-chan dimensions.Dimensions
 }
 
 type sessionFinalizerer interface {
@@ -179,6 +186,9 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 		case completion, ok := <-completionsChan:
 			if !ok {
 				q.closeReasoningIfOpen(session)
+				if len(result.ToolCalls) == 0 {
+					q.prepareFinalAnswerPop()
+				}
 				result.EndedNormally = len(result.ToolCalls) == 0
 				result.AssistantText = session.PendingTextString()
 				result.Usage = q.currentTokenUsage()
@@ -186,11 +196,16 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 			}
 			switch cast := completion.(type) {
 			case pub_models.Call:
+				if q.reasoningActive && cast.ReasoningContent == "" {
+					cast.ReasoningContent = q.reasoningBuf.String()
+				}
 				q.closeReasoningIfOpen(session)
 				result.ToolCalls = append(result.ToolCalls, cast)
 			case string:
 				q.closeReasoningIfOpen(session)
-				q.handleTokenForSession(session, cast)
+				if err := q.handleTokenForSession(session, cast); err != nil {
+					return ModelStepResult{}, err
+				}
 			case error:
 				if errors.Is(cast, context.Canceled) || errors.Is(cast, io.EOF) {
 					q.closeReasoningIfOpen(session)
@@ -203,21 +218,36 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 			case models.NoopEvent:
 			case models.ReasoningEvent:
 				if !q.reasoningActive {
-					if !q.debug && !q.structuredOutput {
+					if q.usesActivityViewport() {
+						q.ensureActivityViewport()
+					} else if !q.debug && !q.structuredOutput {
 						w := q.out
 						if w == nil {
 							w = os.Stdout
 						}
-						fmt.Fprint(w, table.Colorize(utils.RoleColor("reasoning"), "[thinking]"))
+						if q.rawDisplay() {
+							fmt.Fprint(w, "[thinking]")
+						} else {
+							fmt.Fprint(w, table.Colorize(utils.RoleColor("reasoning"), "[thinking]"))
+						}
 					}
 					q.reasoningActive = true
 				}
-				if !q.debug && !q.structuredOutput {
+				if q.usesActivityViewport() {
+					q.activityViewport.AppendReasoning(cast.Content)
+					if err := q.activityViewport.Render(q.out); err != nil {
+						return ModelStepResult{}, fmt.Errorf("render activity viewport: %w", err)
+					}
+				} else if !q.debug && !q.structuredOutput {
 					w := q.out
 					if w == nil {
 						w = os.Stdout
 					}
-					fmt.Fprint(w, table.Colorize(utils.RoleColor("reasoning"), cast.Content))
+					if q.rawDisplay() {
+						fmt.Fprint(w, cast.Content)
+					} else {
+						fmt.Fprint(w, table.Colorize(utils.RoleColor("reasoning"), cast.Content))
+					}
 				}
 				q.reasoningBuf.WriteString(cast.Content)
 			case models.StopEvent:
@@ -227,6 +257,7 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 				if len(result.ToolCalls) > 0 {
 					return result, nil
 				}
+				q.prepareFinalAnswerPop()
 				contextCancel := ctx.Value(utils.ContextCancelKey)
 				castContextCancel, ok := contextCancel.(context.CancelFunc)
 				if ok {
@@ -242,14 +273,48 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 			default:
 				return ModelStepResult{}, fmt.Errorf("unknown completion type: %v", completion)
 			}
+		case d, ok := <-r.resizeEvents:
+			if !ok {
+				// The watcher stopped (session teardown or source close); no
+				// further resize applies. Nilling the channel keeps the select
+				// from spinning on the closed channel.
+				r.resizeEvents = nil
+				continue
+			}
+			if err := r.applyResize(d); err != nil {
+				return ModelStepResult{}, err
+			}
 		case <-ctx.Done():
 			q.closeReasoningIfOpen(session)
 			result.StopRequested = true
 			result.AssistantText = session.PendingTextString()
 			result.Usage = q.currentTokenUsage()
+			q.prepareFinalAnswerPop()
 			return result, nil
 		}
 	}
+}
+
+// applyResize refreshes the session snapshot and the rolling window after a
+// SIGWINCH. It runs on the serialized session loop, never in a signal
+// callback, so the resize, its redraw, and token/tool writes cannot overlap.
+// The viewer delivers only snapshots from successful reads; a failed refresh
+// never reaches this method, so the last valid snapshot survives. A resize
+// before the first reasoning/tool event updates q.dims only; the lazy
+// viewport creation reads the fresh snapshot and its first render uses the
+// new dimensions immediately. Render errors abort the step like any other
+// viewport write error; a partial frame stays dirty and the next Render
+// retries the full frame.
+func (r *sessionRunner[C]) applyResize(d dimensions.Dimensions) error {
+	q := r.querier
+	q.dims = d
+	if q.activityViewport != nil {
+		q.activityViewport.Resize(d.Width, d.Height)
+		if err := q.activityViewport.Render(q.out); err != nil {
+			return fmt.Errorf("render activity viewport after resize: %w", err)
+		}
+	}
+	return nil
 }
 
 func (r *sessionRunner[C]) modelName() string {
