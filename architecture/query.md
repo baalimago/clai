@@ -84,20 +84,34 @@ Each vendor has a default config struct (e.g., `openai.GptDefault`). A model-spe
 
 ## Query Execution
 
-`Querier.Query()` in `internal/text/querier.go`:
+`Querier.Query()` in `internal/text/querier.go` delegates to the `sessionRunner`
+loop (`internal/text/session_runner.go`). Each model step:
 
-1. **Token warning**: estimates token count; prompts user if above `tokenWarnLimit`
-2. **StreamCompletions**: calls `Model.StreamCompletions(ctx, chat)` → returns `chan CompletionEvent`
-3. **Event loop**: reads from channel, dispatching:
+1. **StreamCompletions**: calls `Model.StreamCompletions(ctx, chat)` → returns `chan CompletionEvent`
+2. **Event loop**: reads from channel, dispatching:
    - `string` → appends to `fullMsg`, prints to stdout (streaming output)
-   - `pub_models.Call` → tool call handling (see below)
+   - `pub_models.Call` → collected for the step's tool batch (see below)
    - `error` → propagated
    - `models.StopEvent` → cancels context
    - `models.NoopEvent` → ignored
-4. **Post-processing** (`postProcess()`):
+3. **Tool batch** (when the step produced tool calls): the stoploss controller
+   preflights the whole batch against both run budgets before any tool runs
+   (`internal/text/tool_executor.go`). Refused calls never reach their
+   implementation; their tool result carries the escalation text.
+4. **Stoploss check** (after the tool batch, so the chat order stays
+   `[assistant tool-call] [tool results] [handover user msg]`): the latest
+   request footprint (`prompt_tokens + completion_tokens`, else
+   `total_tokens`, else the model's `InputTokenCounter` estimate) is compared
+   to `stoploss.max-tokens`. On the first crossing clai appends the handover
+   user message (`stoploss.max-tokens-handover-instructions`, default
+   `DefaultHandoverInstructions`), prints a notice, and marks the session
+   handover-requested. Every later tool call runs the refusal ladder until
+   the run ends cleanly (`io.EOF`). A step that ends with a plain reply ends
+   the run without a handover — there is nothing to hand over.
+5. **Post-processing** (`postProcess()`):
    - Appends assistant message to chat
    - Saves conversation via `SaveAsPreviousQuery()` (unless in chat mode)
-   - Pretty-prints final output (via glow if available, unless `-r`/`--raw`)
+   - Pretty-prints final output (via glow when the destination is a terminal, unless `-r`/`--raw`)
 
 ### Rate Limit Handling
 
@@ -105,19 +119,34 @@ If `StreamCompletions` returns `ErrRateLimit`, the querier sleeps until the rese
 
 ## Tool Calls
 
-When the LLM returns a `pub_models.Call` event:
+When a model step returns one or more `pub_models.Call` events, the
+`toolExecutor` (`internal/text/tool_executor.go`) processes them as one batch:
 
-1. `handleToolCall()` in `internal/text/querier_tool.go`
-2. Calls `doToolCallLogic()`:
-   - Post-processes current output
-   - Patches the call for vendor compatibility
-   - Appends assistant tool-call message to chat
-   - Invokes `tools.Invoke(call)` → looks up tool in registry, calls it
-   - Applies `toolOutputRuneLimit` truncation
-   - Appends tool output message to chat
-3. Recursively calls `TextQuery()` with updated chat (model sees tool output and continues)
+1. Every call is preflighted against the stoploss controller before any tool
+   side effect runs. Within the `max-tool-calls` budget a call is allowed and
+   its result carries the remaining-count prefix; over budget (or after a
+   handover) the call is refused and never invoked.
+2. The transcript keeps immediate assistant→tool pairing in the model's
+   emission order. `load_skill` self-emits its assistant tool-call at
+   execution time (the trust prompt and load errors precede the call echo, and
+   a failed load leaves no dangling call), so a batch containing `load_skill`
+   is split into segments: consecutive non-skill calls share one grouped
+   assistant turn, and each `load_skill` runs as its own pair in batch order.
+   One tool result per call is emitted in original order — including
+   refusals, whose result carries the escalation text. When a refusal reaches
+   the final warning, the `io.EOF` that ends the run is deferred until every
+   call of the batch has emitted its result, so the persisted transcript
+   always pairs one tool result with every declared call.
+3. `tools.Invoke(call)` looks the tool up in the registry and runs it, then
+   `toolOutputRuneLimit` truncation is applied to the result.
+4. The runner continues the loop with the updated chat (the model sees the
+   tool output and continues).
 
-Tool call limits (`max-tool-calls` in config) enforce a soft cap with escalating warnings.
+Tool call limits (`max-tool-calls` in config) enforce a soft cap with
+escalating warnings. `max-tool-calls: 0` (or nil) means **unlimited** — no
+budget prefix, no warnings. After a stoploss handover the effective budget is
+0, so every tool call is refused by the same escalation ladder until the run
+ends cleanly.
 
 ## Directory Scope Binding
 
@@ -131,7 +160,7 @@ This allows subsequent `-dre` queries from the same directory to continue the co
 
 ## Output Modes
 
-- **Default (animated)**: tokens stream to stdout character-by-character, then the full message is pretty-printed (via `glow` if installed)
+- **Default (animated)**: tokens stream to stdout character-by-character, then the full message is pretty-printed (via `glow` when the destination is a terminal)
 - **Raw (`-r`)**: tokens stream directly, no post-processing formatting
 - **Structured (`-rf`/`-response-format`)**: blocks streaming and prints only the final structured response, followed by one newline. It suppresses reasoning, tool activity, skill-discovery logs, lookback notices, formatting, and BEL.
 - **Cmd mode (`cmd` command)**: output is treated as a shell command; user is prompted to execute it

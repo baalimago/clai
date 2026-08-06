@@ -1,13 +1,10 @@
 package text
 
 import (
-	"bufio"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
-	"path"
 	"strings"
 	"time"
 
@@ -20,7 +17,6 @@ import (
 )
 
 const (
-	TokenCountFactor     = 1.1
 	RateLimitRetries     = 3
 	FallbackWaitDuration = 20 * time.Second
 )
@@ -53,7 +49,6 @@ type Querier[C models.StreamCompleter] struct {
 	lookbackCWD           string
 	hasPrinted            bool
 	Model                 C
-	tokenWarnLimit        int
 	toolOutputRuneLimit   int
 	rateLimitLastAmTokens int
 
@@ -80,12 +75,17 @@ type Querier[C models.StreamCompleter] struct {
 	maxToolCalls *int
 	amToolCalls  int
 
+	// stoploss is the token stoploss policy carried from the user config; the
+	// stoploss controller consumes it in the session runner (Phase 3).
+	stoploss *Stoploss
+
 	costManager       CostManager
 	costMgrRdyChan    <-chan struct{}
 	costMgrErrChan    <-chan error
 	callUsageRecorder CallUsageRecorder
 	skillLoader       SkillLoader
 	baseTools         map[string]pub_models.LLMTool
+	registeredTools   map[string]struct{}
 }
 
 func (q *Querier[C]) SuppressCompletionNotification() bool {
@@ -103,48 +103,10 @@ type LoadedSkillRuntime struct {
 	UserVisibleBody string
 	Description     string
 	Warnings        []string
+	EnabledTools    []string
 	ActiveTools     map[string]pub_models.LLMTool
 	ActivationErr   string
 	RawArgs         string
-}
-
-func (q *Querier[C]) tokenLengthWarning() error {
-	amTokens := q.countTokens()
-	if q.tokenWarnLimit > 0 && amTokens > q.tokenWarnLimit {
-		ancli.PrintWarn(
-			fmt.Sprintf(
-				"You're about to send: ~%v tokens to the model, which may amount to: ~$%.3f (using $3 /1 million tokens). This limit may be changed in: '%v'. Do you wish to continue? [yY]: ",
-				amTokens,
-				// Average rate at 25-06 at $3/1M tokens
-				float64(amTokens)*(float64(3)/float64(1000000)),
-				path.Join(q.configDir, "textConfig.json"),
-			),
-		)
-		reader := bufio.NewReader(os.Stdin)
-		userInput, err := reader.ReadString('\n')
-		if err != nil {
-			return fmt.Errorf("failed to read user input: %w", err)
-		}
-		switch userInput {
-		case "y\n", "Y\n":
-			// Continue on y or Y
-		default:
-			return errors.New("Querier.tokenLengthWarning: query canceled due to token amount check")
-		}
-	}
-	return nil
-}
-
-// countTokens by simply counting the amount of strings which are delimited by whitespace
-// and multiply by some factor. This factor is somewhat arbritrary, and adjusted to be good enough
-// for all the different models. Each model has its own idea of what a 'token' is, and since this
-// check is done before the corpus reaches llm we don't know how many tokens they consider it to be
-func (q *Querier[C]) countTokens() int {
-	ret := 0
-	for _, msg := range q.chat.Messages {
-		ret += len(strings.Split(msg.Content, " "))
-	}
-	return int(float64(ret) * TokenCountFactor)
 }
 
 func (q *Querier[C]) postProcessOutput(newSysMsg pub_models.Message) {
@@ -305,6 +267,7 @@ func (q *Querier[C]) Query(ctx context.Context) error {
 		recorder:     q.callUsageRecorder,
 		toolExecutor: toolExecutor[C]{querier: q},
 		finalizer:    sessionFinalizer[C]{querier: q},
+		stoploss:     q.newStoploss(),
 	}
 	err := runner.Run(ctx, session)
 	q.chat = session.Chat

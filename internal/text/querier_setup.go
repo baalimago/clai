@@ -196,7 +196,7 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	// is registered, so every freetext execution in this run is covered (D6).
 	// Unconditional: the default empty list keeps behavior permissive (D4).
 	pkgtools.SetCmdBanList(userConf.CmdBan)
-	setupTooling(ctx, modelConf, userConf)
+	setupTooling(ctx, modelConf, &userConf)
 
 	err = modelConf.Setup()
 	if err != nil {
@@ -235,12 +235,13 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	querier.dirReplyMode = userConf.DirReplyMode
 	querier.useLookback = userConf.UseLookback
 	querier.lookbackCWD = userConf.LookbackCWD
-	querier.tokenWarnLimit = userConf.TokenWarnLimit
 	querier.toolOutputRuneLimit = userConf.ToolOutputRuneLimit
 	querier.maxToolCalls = userConf.MaxToolCalls
+	querier.stoploss = userConf.Stoploss
 	querier.out = userConf.Out
 	querier.skillLoader = userConf.SkillLoader
 	querier.baseTools = userConf.BaseTools
+	querier.registeredTools = userConf.RegisteredTools
 
 	// Propagate response format to the model if it supports it
 	if userConf.ResponseFormat != nil {

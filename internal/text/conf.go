@@ -28,8 +28,7 @@ type Configurations struct {
 	UseSkills    bool   `json:"-"`
 	// CmdModePrompt is kept only for backwards compatibility with old config files.
 	// It is ignored by clai as the `cmd` command has been removed.
-	CmdModePrompt  string `json:"cmd-mode-prompt"`
-	TokenWarnLimit int    `json:"token-warn-limit"`
+	CmdModePrompt string `json:"cmd-mode-prompt"`
 	// ToolOutputRuneLimit limits the amount of runes a tool may return
 	// before clai truncates the output. Zero means no limit.
 	ToolOutputRuneLimit int    `json:"tool-output-rune-limit"`
@@ -64,10 +63,14 @@ type Configurations struct {
 	PostProccessedPrompt string `json:"-"`
 
 	// These are to allow tools to be injected via public package.
-	Tools        []pub_models.LLMTool          `json:"-"`
-	McpServers   []pub_models.McpServer        `json:"-"`
-	BaseTools    map[string]pub_models.LLMTool `json:"-"`
-	MaxToolCalls *int                          `json:"max-tool-calls,omitempty"`
+	Tools           []pub_models.LLMTool          `json:"-"`
+	McpServers      []pub_models.McpServer        `json:"-"`
+	BaseTools       map[string]pub_models.LLMTool `json:"-"`
+	RegisteredTools map[string]struct{}           `json:"-"`
+	MaxToolCalls    *int                          `json:"max-tool-calls,omitempty"`
+	// Stoploss is the token stoploss policy for the run. Nil or
+	// MaxTokens <= 0 disables the stoploss (no handover injection).
+	Stoploss *Stoploss `json:"stoploss,omitempty"`
 
 	// Out writer. Normally stdout, but may also be a file when invoked as a package
 	Out io.Writer `json:"-"`
@@ -89,6 +92,29 @@ type Configurations struct {
 	// LookbackCWD is the canonical session working directory captured at setup,
 	// used as the default search anchor for search_conversations.
 	LookbackCWD string `json:"-"`
+}
+
+// Stoploss is the token stoploss policy. MaxTokens <= 0 disables the
+// stoploss. MaxTokensHandoverMsg is the user message injected into the chat
+// when the limit is crossed; empty means the default message
+// (DefaultHandoverInstructions).
+type Stoploss struct {
+	MaxTokens            int    `json:"max-tokens"`
+	MaxTokensHandoverMsg string `json:"max-tokens-handover-instructions"`
+}
+
+// DefaultHandoverInstructions is the user message injected into the chat when
+// the token stoploss limit is crossed and no custom message is configured.
+const DefaultHandoverInstructions = "You are approaching the context window limit. Summarize your work and prepare for handover."
+
+// HandoverInstructions returns the message to inject when the stoploss limit
+// is crossed: the configured message, or DefaultHandoverInstructions when the
+// configured message is empty.
+func (s *Stoploss) HandoverInstructions() string {
+	if s != nil && s.MaxTokensHandoverMsg != "" {
+		return s.MaxTokensHandoverMsg
+	}
+	return DefaultHandoverInstructions
 }
 
 type CostManager interface {
@@ -127,22 +153,32 @@ type Profile struct {
 }
 
 var Default = Configurations{
-	Model:        "gpt-5.2",
-	SystemPrompt: "You are an assistant for a CLI tool. Answer concisely and informatively. Prefer markdown if possible.",
-	Raw:          false,
-	UseTools:     false,
-	// Aproximately $1 for an \'average\' flagship model (sonnet-4, gpt-4.1) as of 25-06-08
-	TokenWarnLimit:      333333,
+	Model:               "gpt-5.2",
+	SystemPrompt:        "You are an assistant for a CLI tool. Answer concisely and informatively. Prefer markdown if possible.",
+	Raw:                 false,
+	UseTools:            false,
 	ToolOutputRuneLimit: 21600,
 	SaveReplyAsConv:     true,
 	UseLookback:         false,
+	// Stoploss ships as a disabled, self-documenting template: max-tokens 0
+	// keeps the stoploss off for existing configs, and the presence-based
+	// loader appends the whole object to configs that predate it (config
+	// migration design, Q1 option B).
+	Stoploss: &Stoploss{
+		MaxTokens:            0,
+		MaxTokensHandoverMsg: DefaultHandoverInstructions,
+	},
 
 	// Backwards compatibility for older configs.
 	CmdModePrompt: "You are an assistant for a CLI tool aiding with cli tool suggestions. Write ONLY the command and nothing else. Disregard any queries asking for anything except a bash command. Do not shell escape single or double quotes.",
 }
 
 var DefaultProfile = Profile{
-	Name:            "example-name",
+	// Name is intentionally zero: a profile's name is derived from its file
+	// name at load time (findProfile normalizes an empty name). The
+	// presence-based migration must never write a placeholder name into
+	// user profile files.
+	Name:            "",
 	Model:           Default.Model,
 	UseTools:        true,
 	UseSkills:       nil,

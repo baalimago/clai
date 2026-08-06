@@ -16,7 +16,7 @@ The first implementation supports:
 - parsing `SKILL.md` files with simple frontmatter and markdown body
 - progressive-disclosure skill descriptors in agent context
 - agent-driven on-demand skill loading based on request and runtime context
-- concise log-line UI for discovery and activation
+- debug discovery logs and visible activation warnings
 - trust-gated first activation with persisted path+hash approvals
 - integration of rendered skill content into the prompt/context for the current run
 - per-skill tool allow/deny overrides for the active activation set
@@ -79,7 +79,7 @@ The parser records the following frontmatter fields from a constrained line-orie
 | `arguments` | Ordered argument names |
 | `disable-model-invocation` | Hides the skill from the descriptor block; it is not eligible for automatic loading |
 | `user-invocable` | Parsed and stored for compatibility; clai does not rely on manual invocation UI |
-| `allowed-tools` | Tools auto-approved for this skill invocation based on existing tool approval system in clai |
+| `allowed-tools` | Known local built-in tools that clai enables for this trusted skill invocation |
 | `disallowed-tools` | Tools removed from availability for this skill invocation |
 | `model` | Parsed and stored, but not applied in MVP |
 | `effort` | Parsed and stored, but not applied in MVP |
@@ -468,13 +468,19 @@ awkward to expose through a manual-only interface.
 
 Skill tool policy applies only while the skill is active for the current run.
 
-Skills do not load tools. Skill metadata operates only on the tool set already resolved for the current run by clai’s normal setup, discovery, config, profile, and flag pipeline.
+Trusted skills can enable known local built-in tools named in `allowed-tools`.
+clai gets these tools from the existing local tool registry and registers them
+through the model `ToolBox`. clai registers each tool name only once per run.
 
-`allowed-tools` may auto-approve tools that are already known and already present in the run-resolved tool set.
+Skills never enable MCP tools. An `allowed-tools` name with the `mcp_` prefix
+does not start an MCP server or register an MCP tool. clai shows a warning when
+such an MCP tool is unavailable. Unknown MCP tool names also show a warning.
 
-If a skill requests a tool in `allowed-tools` that exists in clai but is not currently available for the run, clai emits a warning and continues. This makes the degraded behavior visible and signals to the user that the tool must be selected or allowed through the normal clai tool configuration flow.
+When a trusted skill enables one or more local tools, clai shows one visible
+warning that lists the newly enabled tool names. This warning does not repeat
+tool names that were already enabled for the run.
 
-If a skill requests a tool in `allowed-tools` that is entirely unknown, clai emits a warning and continues.
+If a skill requests an unknown local tool, clai emits a warning and continues.
 
 `disallowed-tools` removes tools from the invocation-level available set, even if those tools were otherwise enabled by config, profile, or command flag.
 
@@ -492,7 +498,9 @@ Skills are surfaced through concise text log lines within clai’s existing outp
 
 ### Discovery logging
 
-After enabled skill discovery completes and at least one valid skill is loaded, clai prints one line per scanned source that produced at least one loaded skill and one line summarizing the loaded result.
+By default, clai does not print discovery information. It prints discovery
+information only when `DEBUG`, `DEBUG_SKILL`, or legacy `DEBUG_SKILLS` is
+truthy. Warnings and errors remain visible.
 
 Examples:
 
@@ -509,23 +517,25 @@ These lines are emitted during setup in the same general area where tooling and 
 
 ### Activation rendering
 
-Skill activation is rendered with standard ancli/log-style output plus the normal tool-call pretty print already used by clai.
+Skill activation uses the normal tool-call output from clai. It does not print a second activation notice.
 
 The rendered tool activity includes:
 
 - `load_skill` invocation
 - skill name
-- source class
-- resolved arguments, if any
+- one skill result
 
 Canonical visible sequence:
 
 ```text
 assistant called load_skill(review)
-loaded skill review [project]
+Name: review
+Description: Review pending local changes and highlight risks.
+Length: 124 chars
+Estimated tokens: ~31
 ```
 
-The exact colour/styling follows clai's existing ancli and tool-call rendering. Discovery root summaries, trust prompts, and post-load activation summaries are emitted through ancli. The post-load summary text remains terse and stable and is printed at the moment the runtime attaches a trusted skill to the current run.
+The exact color and style follow the existing tool-call output. Discovery summaries and trust prompts still use ancli.
 
 ## Configuration files and persistence
 
@@ -610,17 +620,16 @@ The skills subsystem is complete when all of the following are true:
    - earlier global directory over later global directory
    - global over default
 
-7. when enabled discovery loads at least one valid skill, clai prints concise line-oriented logs that include:
+7. when enabled discovery loads at least one valid skill and `DEBUG`,
+   `DEBUG_SKILL`, or legacy `DEBUG_SKILLS` is truthy, clai prints concise
+   line-oriented logs that include:
    - each scanned source path that contributed at least one canonical loaded skill
    - loaded counts per source after precedence resolution
    - total loaded, shadowed, and invalid counts
 
 7a. when skills are disabled, or when enabled discovery finds no valid skills, clai remains silent and prints no skills setup lines.
 
-8. skill loading is visible through normal tool-call rendering for the internal `load_skill` tool and prints concise ancli post-load lines containing:
-   - skill name
-   - skill source class
-   - resolved arguments when present
+8. skill loading is visible through the normal output for the internal `load_skill` tool. clai does not print a second activation notice.
 
 9. activated skills render argument substitutions correctly for:
    - `$ARGUMENTS`
@@ -633,7 +642,11 @@ The skills subsystem is complete when all of the following are true:
 
 11. only trusted, agent-requested skill content is injected into the current run’s prompt/context without mutating persistent mode config.
 
-12. `allowed-tools` and `disallowed-tools` operate only on the tool set already resolved for the current run; skills do not load tools, unavailable or unknown requested tools produce warnings and degraded continuation, and all skill tool-policy effects are discarded when the run ends.
+12. trusted `allowed-tools` entries enable known local built-in tools through
+    the existing `ToolBox` registration path. clai never enables MCP tools.
+    Unknown and unavailable tools produce warnings and continuation. clai
+    lists newly enabled local tools in a visible warning. All skill tool-policy
+    effects are discarded when the run ends.
 
 13. shell preprocessing syntax remains disabled and unexecuted in MVP.
 

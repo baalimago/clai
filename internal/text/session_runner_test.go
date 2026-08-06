@@ -72,6 +72,48 @@ func (f *countingFinalizer) Finalize(session *QuerySession) {
 	session.Finalized = true
 }
 
+func Test_sessionRunner_Run_OversizedFirstQueryNoTokenPrecheck(t *testing.T) {
+	// Sunset contract (worklog 2026-08-04-token-stoploss, Phase 1): an
+	// oversized first query must be sent to the model as-is — no
+	// token-length pre-check, no interactive y/N prompt, no stdin read.
+	model := &MockQuerier{}
+	var receivedChat pub_models.Chat
+	model.streamFn = func(_ context.Context, chat pub_models.Chat) (chan models.CompletionEvent, error) {
+		receivedChat = chat
+		out := make(chan models.CompletionEvent, 2)
+		out <- "understood"
+		close(out)
+		return out, nil
+	}
+
+	oversizedPrompt := strings.Repeat("word ", 50000)
+	q := &Querier[*MockQuerier]{
+		out:   &strings.Builder{},
+		Model: model,
+	}
+	session := &QuerySession{Chat: pub_models.Chat{
+		ID: "chat-oversized",
+		Messages: []pub_models.Message{
+			{Role: "user", Content: oversizedPrompt},
+		},
+	}}
+	runner := sessionRunner[*MockQuerier]{
+		querier:      q,
+		finalizer:    &countingFinalizer{},
+		toolExecutor: toolExecutor[*MockQuerier]{querier: q},
+	}
+
+	if err := runner.Run(context.Background(), session); err != nil {
+		t.Fatalf("Run returned err: %v", err)
+	}
+	if session.FinalAssistantText != "understood" {
+		t.Fatalf("expected final assistant text %q, got %q", "understood", session.FinalAssistantText)
+	}
+	if len(receivedChat.Messages) != 1 || receivedChat.Messages[0].Content != oversizedPrompt {
+		t.Fatal("expected oversized first query to reach the model as-is")
+	}
+}
+
 func Test_sessionRunner_Run_SingleReplyRecordsCompletedCall(t *testing.T) {
 	model := &MockQuerier{}
 	model.streamFn = func(_ context.Context, _ pub_models.Chat) (chan models.CompletionEvent, error) {

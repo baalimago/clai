@@ -141,6 +141,39 @@ func TestConfigurations_ProfileOverrides_CmdBanCascade(t *testing.T) {
 	}
 }
 
+// TestFindProfile_NameLessProfileStaysNameLess pins that the migration never
+// writes the placeholder default name into user profile files: a profile's
+// name is derived from its file name at load time (findProfile normalizes an
+// empty name), so name-less profiles must stay name-less on disk.
+func TestFindProfile_NameLessProfileStaysNameLess(t *testing.T) {
+	confDir := t.TempDir()
+	t.Setenv("CLAI_CONFIG_DIR", confDir)
+
+	profilePath := filepath.Join(confDir, "profiles")
+	if err := os.MkdirAll(profilePath, 0o755); err != nil {
+		t.Fatalf("MkdirAll(%q): %v", profilePath, err)
+	}
+	profileJSON := `{"model":"test","prompt":"x"}`
+	if err := os.WriteFile(filepath.Join(profilePath, "john.json"), []byte(profileJSON), 0o644); err != nil {
+		t.Fatalf("WriteFile(profile): %v", err)
+	}
+
+	prof, err := findProfile("john")
+	if err != nil {
+		t.Fatalf("findProfile: %v", err)
+	}
+	if prof.Name != "john" {
+		t.Fatalf("expected name normalized to the profile file name, got %q", prof.Name)
+	}
+	updated, err := os.ReadFile(filepath.Join(profilePath, "john.json"))
+	if err != nil {
+		t.Fatalf("ReadFile(profile): %v", err)
+	}
+	if got := string(updated); strings.Contains(got, "example-name") {
+		t.Fatalf("migration must not write the placeholder default name into user profile files, got: %s", got)
+	}
+}
+
 func TestFindProfile_CmdBanPersistsViaJSON(t *testing.T) {
 	confDir := t.TempDir()
 	t.Setenv("CLAI_CONFIG_DIR", confDir)

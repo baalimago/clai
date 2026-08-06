@@ -105,7 +105,7 @@ func Test_e2e_skills_opt_in_enablement_and_precedence(t *testing.T) {
 			args:       "-r -cm mock_test q please tool_load_skill",
 			wantStatus: 0,
 			wantContains: []string{
-				"loaded skill review [default]",
+				"Body",
 			},
 		},
 		{
@@ -139,7 +139,7 @@ func Test_e2e_skills_opt_in_enablement_and_precedence(t *testing.T) {
 			args:       "-r -p skills-on q please tool_load_skill",
 			wantStatus: 0,
 			wantContains: []string{
-				"loaded skill review [default]",
+				"Body",
 			},
 		},
 		{
@@ -154,7 +154,7 @@ func Test_e2e_skills_opt_in_enablement_and_precedence(t *testing.T) {
 			args:       "-r -p skills-off -s=* q please tool_load_skill",
 			wantStatus: 0,
 			wantContains: []string{
-				"loaded skill review [default]",
+				"Body",
 			},
 		},
 		{
@@ -287,14 +287,13 @@ func Test_e2e_skills_discovery_precedence_and_logging(t *testing.T) {
 	if gotStatus != 0 {
 		t.Fatalf("expected success status, got %d, stdout=%q", gotStatus, stdout)
 	}
-	for _, want := range []string{
-		"skills project: " + filepath.Join(repoDir, "nested", "agents", "skills") + " [loaded=1]",
-		"skills: loaded=1 shadowed=4 invalid=1",
-		"loaded skill review [project]",
-	} {
+	for _, want := range []string{"Nested body"} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("expected %q in output, got %q", want, stdout)
 		}
+	}
+	if strings.Contains(stdout, "skills: loaded=") {
+		t.Fatalf("expected discovery information to stay hidden by default, got %q", stdout)
 	}
 }
 
@@ -338,18 +337,17 @@ func Test_e2e_skills_descriptor_activation_and_persistence(t *testing.T) {
 	for _, want := range []string{
 		"Call: 'load_skill'",
 		"Untrusted skill detected!",
-		"Loaded skill",
 		"  Name: review",
-		"  Source: default",
 		"  Description: Review pending changes",
-		"  Length: 4 chars",
-		"  Estimated tokens: ~1",
 		"done after tool for: please tool_load_skill",
-		"Warnings:\n- skill requested unavailable tool \"rg\"\n- skill requested unknown tool \"unknown_tool\"",
+		"Warnings:\n- skill requested unknown tool \"unknown_tool\"\n- skill enabled local tools: rg",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("expected %q in output, got %q", want, stdout)
 		}
+	}
+	if strings.Contains(stdout, "Loaded skill") {
+		t.Fatalf("expected skill tool output without duplicate load notice, got %q", stdout)
 	}
 	for _, notWant := range []string{"ARG:"} {
 		if strings.Contains(stdout, notWant) {
@@ -376,6 +374,45 @@ func Test_e2e_skills_descriptor_activation_and_persistence(t *testing.T) {
 	trustJSON := readStringFile(t, filepath.Join(os.Getenv("CLAI_CACHE_DIR"), "skills_trust.json"))
 	if !strings.Contains(trustJSON, `"hash"`) || !strings.Contains(trustJSON, `"path"`) {
 		t.Fatalf("expected populated trust cache, got %s", trustJSON)
+	}
+}
+
+func Test_e2e_skill_automatically_enables_local_tools(t *testing.T) {
+	oldWd, _ := os.Getwd()
+	t.Cleanup(func() { _ = os.Chdir(oldWd) })
+
+	confDir := setupMainTestConfigDir(t)
+	t.Setenv("CLAI_CACHE_DIR", filepath.Join(t.TempDir(), "cache"))
+	if err := os.Chdir(t.TempDir()); err != nil {
+		t.Fatalf("Chdir: %v", err)
+	}
+	writeSkillFile(t, filepath.Join(confDir, "skills", "review", "SKILL.md"), "---\ndescription: Review pending changes\nallowed-tools: async_cmd,async_cmd_status,async_cmd_logs,async_cmd_await,async_cmd_cancel\n---\nBody")
+	writeSkillsConfigJSON(t, confDir, map[string]any{
+		"enabled":            true,
+		"globalSkillDirs":    []string{},
+		"projectSkillDirs":   []string{},
+		"trust_all_skills":   true,
+		"maxActivatedSkills": 10,
+	})
+
+	var gotStatus int
+	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
+		gotStatus = run(strings.Split("-cm mock_test q please tool_load_skill", " "))
+	})
+	if gotStatus != 0 {
+		t.Fatalf("expected success status, got %d, stdout=%q", gotStatus, stdout)
+	}
+	if strings.Contains(stdout, "skill requested unavailable tool") {
+		t.Fatalf("local tools reported unavailable: %q", stdout)
+	}
+	if !strings.Contains(stdout, "skill enabled local tools: async_cmd, async_cmd_await, async_cmd_cancel, async_cmd_logs, async_cmd_status") {
+		t.Fatalf("expected automatic tool warning, got %q", stdout)
+	}
+	if count := strings.Count(stdout, "Name: review"); count != 1 {
+		t.Fatalf("expected one skill result, got %d in %q", count, stdout)
+	}
+	if strings.Contains(stdout, "Loaded skill") {
+		t.Fatalf("expected no duplicate activation notice, got %q", stdout)
 	}
 }
 
@@ -413,7 +450,7 @@ func Test_e2e_skills_raw_mode_shows_full_output(t *testing.T) {
 	if gotStatus != 0 {
 		t.Fatalf("expected success status, got %d, stdout=%q", gotStatus, stdout)
 	}
-	for _, want := range []string{"Use ", "ARG:raw-value", "loaded skill review [default] args=\"raw-value\""} {
+	for _, want := range []string{"Use ", "ARG:raw-value"} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("expected %q in output, got %q", want, stdout)
 		}
@@ -539,7 +576,6 @@ func Test_e2e_skills_argument_rendering_and_activation_cap(t *testing.T) {
 		`POS1:extra-value`,
 		`NAMED:src/main.go|extra-value`,
 		`LITERAL:!` + "`echo nope`",
-		`loaded skill review [default] args="src/main.go extra-value"`,
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("expected %q in output, got %q", want, stdout)
@@ -584,7 +620,7 @@ func Test_e2e_skills_argument_rendering_and_activation_cap(t *testing.T) {
 		if gotStatus != 0 {
 			t.Fatalf("expected success status with cap error in context, got %d, stdout=%q", gotStatus, capOut)
 		}
-		if !strings.Contains(capOut, "loaded skill two [default]") || !strings.Contains(capOut, "ERROR: skill activation cap exceeded: maxActivatedSkills=1") {
+		if !strings.Contains(capOut, "Two") || !strings.Contains(capOut, "ERROR: skill activation cap exceeded: maxActivatedSkills=1") {
 			t.Fatalf("expected first load plus cap error, got %q", capOut)
 		}
 		chatJSON := readStringFile(t, findSavedConversationFile(t, confDir))

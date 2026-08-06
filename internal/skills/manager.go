@@ -25,11 +25,12 @@ func (m *Manager) LoadSkill(ctx context.Context, name, rawArgs string, baseTools
 		return LoadedSkill{}, err
 	}
 	mergeActivationState(&m.state, skill, req)
-	activeTools, warnings := applyToolPolicy(baseTools, m.state, m.knownToolNames)
+	activeTools, warnings, enabledTools := applyToolPolicy(baseTools, m.localTools, m.state, m.knownToolNames)
 	return LoadedSkill{
 		Skill:        skill,
 		RenderedBody: rendered,
 		Warnings:     warnings,
+		EnabledTools: enabledTools,
 		ActiveTools:  activeTools,
 		RawArgs:      rawArgs,
 	}, nil

@@ -37,6 +37,9 @@ type Options struct {
 	LogLevel       LogLevel
 	LogQueryText   bool
 	KnownToolNames []string
+	// LocalTools contains the registered built-in tools that a trusted skill
+	// can enable. MCP tools never enter this catalog.
+	LocalTools map[string]pub_models.LLMTool
 }
 
 type TrustPrompt struct {
@@ -149,6 +152,7 @@ type LoadedSkill struct {
 	Skill         Skill
 	RenderedBody  string
 	Warnings      []string
+	EnabledTools  []string
 	ActiveTools   map[string]pub_models.LLMTool
 	ActivationErr string
 	RawArgs       string

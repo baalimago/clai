@@ -7,5 +7,5 @@ import (
 )
 
 func debugSkills() bool {
-	return misc.Truthy(os.Getenv("DEBUG")) || misc.Truthy(os.Getenv("DEBUG_SKILLS"))
+	return misc.Truthy(os.Getenv("DEBUG")) || misc.Truthy(os.Getenv("DEBUG_SKILL")) || misc.Truthy(os.Getenv("DEBUG_SKILLS"))
 }

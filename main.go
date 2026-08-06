@@ -34,6 +34,7 @@ Flags:
   -vd, -video-dir string           Set dir for generated videos. Default $HOME/Videos (default %v)
   -vp, -video-prefix string        Set prefix for generated videos. Default 'clai' (default %v)
   -t, -tools string                Set to <tool_a>,<tool_b> for specific tool, or */"" to use all built in or MCP tools. See available tools with 'clai tools' (default %v)
+  -s, -skills string               Enable or disable skills for this run. Use '*' to enable or 'none' to disable.
   -cmd-ban string                  Append comma-separated command bans for this run (e.g. "rm,sudo"). Commands matching a ban are refused before they spawn.
   -g, -glob string                 Set the glob to use for globbing. (default '%v')
   -p, -profile string              Set the profile which should be used. For details, see 'clai help profile'. (default '%v')
@@ -41,6 +42,8 @@ Flags:
   -asc, -append-shell-context str  Append a named shell context from <config-dir>/shellContexts/<name>.json to the final query prompt.
   -rf, -response-format string     Block streaming and print only the final structured response (json_object, json_schema).
   -n, -non-interactive             Disable interactive stdin fallback after macro inputs; auto-exit instead.
+  -mt, -max-tokens int             Set the max context tokens for this run. 0 = unlimited (default is found in %v/textConfig.json)
+  -mtc, -max-tool-calls int        Set the max tool calls for this run. 0 = unlimited (default is found in %v/textConfig.json)
 
 Config dir: %v
 Cache dir:  %v

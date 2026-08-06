@@ -28,6 +28,7 @@ type sessionRunner[C models.StreamCompleter] struct {
 	recorder       CallUsageRecorder
 	toolExecutor   toolExecutor[C]
 	finalizer      sessionFinalizerer
+	stoploss       *stoploss
 	currentRetries int
 }
 
@@ -42,16 +43,15 @@ func (r *sessionRunner[C]) Run(ctx context.Context, session *QuerySession) (runE
 	if r.recorder == nil {
 		r.recorder = noopCallUsageRecorder{}
 	}
+	if r.stoploss == nil {
+		r.stoploss = r.querier.newStoploss()
+	}
 	session.StartedAt = time.Now()
 	defer func() {
 		session.FinishedAt = time.Now()
 		session.Failed = runErr != nil
 		r.finalizer.Finalize(session)
 	}()
-
-	if err := r.querier.tokenLengthWarning(); err != nil {
-		return fmt.Errorf("run token warning: %w", err)
-	}
 
 	for stepIndex := 0; ; {
 		stepStartedAt := time.Now()
@@ -84,6 +84,11 @@ func (r *sessionRunner[C]) Run(ctx context.Context, session *QuerySession) (runE
 					return nil
 				}
 				return fmt.Errorf("execute tool step %d: %w", stepIndex, err)
+			}
+			// Token check AFTER the batch so the chat order stays
+			// [assistant tool-call] [tool results] [handover user msg].
+			if _, err := r.stoploss.CheckContextBudget(ctx, r.querier.Model, session, stepResult.Usage); err != nil {
+				return fmt.Errorf("stoploss check step %d: %w", stepIndex, err)
 			}
 			stepIndex++
 			continue

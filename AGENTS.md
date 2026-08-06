@@ -14,24 +14,27 @@ You're working on a project called "clai".
 - When fixing a bug, validate the issue with a test, then fix the test
 - Keep vendor-specific logic in the vendor package (`internal/vendors/<name>/`). Never add vendor-specific workarounds to generic/shared code like `internal/text/generic/` — the generic layer must remain vendor-agnostic.
 
-## Validation:
+## QA Validation
 
-Before implementing any change, run this to establish the duplication baseline:
+Before signing off on ANY changes, these must all pass:
 
-```bash
-go run github.com/mibk/dupl@latest -t 80 .
-```
+| Tool        | Command                                                  |
+| ----------- | -------------------------------------------------------- |
+| Format      | `go run mvdan.cc/gofumpt@latest -w -l .`                 |
+| Staticcheck | `go run honnef.co/go/tools/cmd/staticcheck@latest ./...` |
+| Lint        | `go vet ./...`                                           |
+| Test        | `go test ./... -race -cover -count=3 -timeout=30s`       |
+| Fix         | `go fix ./...`                                           |
+| Dupl        | `go run github.com/mibk/dupl@latest -t 80 .`             |
 
-When done, run the full QA suite:
+The dupl check is a signal, not a verdict — see the Duplication policy
+below for deciding which clones are acceptable and which need fixing.
 
-```bash
-make qa
-```
+**Important:** `go test ./... -race -count=3 -timeout=30s` MUST pass unedited. The strictness
+is intentional to produce a highly testable, efficient system which follows strict inversion of control.
+Do not modify the timeout, count, or race. Do not add test skips, false-positive tests or any other cheat.
+Instead, start testing early and ensure that test passes for each new modification.
 
-Then re-run dupl to ensure no needless code duplication was added:
+**Important:** For new implementations, 70+% test coverage is a must. 90+% test coverage is preferred.
 
-```bash
-go run github.com/mibk/dupl@latest -t 80 .
-```
-
-ALWAYS TEST WITH TIMEOUT. Otherwise you may deadlock debugging efforts.
+Run `make qa` to run all at once.

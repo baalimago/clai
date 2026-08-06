@@ -261,6 +261,43 @@ func TestAgent_WithOutputTo_propagates(t *testing.T) {
 	}
 }
 
+func TestAgent_WithStoploss(t *testing.T) {
+	a := New(WithStoploss(Stoploss{MaxTokens: 50, MaxTokensHandoverMsg: "m"}))
+	conf := a.asInternalConfig()
+	if conf.Stoploss == nil {
+		t.Fatal("expected Stoploss in internal config")
+	}
+	if conf.Stoploss.MaxTokens != 50 {
+		t.Fatalf("expected MaxTokens 50, got %d", conf.Stoploss.MaxTokens)
+	}
+	if conf.Stoploss.MaxTokensHandoverMsg != "m" {
+		t.Fatalf("expected handover message 'm', got %q", conf.Stoploss.MaxTokensHandoverMsg)
+	}
+}
+
+func TestAgent_WithStoploss_ZeroValueDisabled(t *testing.T) {
+	// A zero-value Stoploss must not create a non-nil internal pointer: the
+	// agent default stays unlimited.
+	a := New(WithStoploss(Stoploss{}))
+	if a.stoploss != (Stoploss{}) {
+		t.Fatalf("expected zero-value stoploss stored, got %+v", a.stoploss)
+	}
+	if conf := a.asInternalConfig(); conf.Stoploss != nil {
+		t.Fatalf("expected nil internal Stoploss for zero-value option, got %+v", conf.Stoploss)
+	}
+}
+
+func TestAgent_WithMaxToolCalls_Zero(t *testing.T) {
+	a := New(WithMaxToolCalls(0))
+	conf := a.asInternalConfig()
+	if conf.MaxToolCalls == nil {
+		t.Fatal("expected non-nil MaxToolCalls")
+	}
+	if *conf.MaxToolCalls != 0 {
+		t.Fatalf("expected 0, got %d", *conf.MaxToolCalls)
+	}
+}
+
 func TestAgent_WithCmdBanList(t *testing.T) {
 	a := New(WithCmdBanList("rm", "sudo"))
 	if !reflect.DeepEqual(a.cmdBan, []string{"rm", "sudo"}) {

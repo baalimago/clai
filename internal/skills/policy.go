@@ -4,16 +4,27 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
-func applyToolPolicy(base map[string]pub_models.LLMTool, state ActivationState, knownToolNames map[string]struct{}) (map[string]pub_models.LLMTool, []string) {
+func applyToolPolicy(base, localTools map[string]pub_models.LLMTool, state ActivationState, knownToolNames map[string]struct{}) (map[string]pub_models.LLMTool, []string, []string) {
 	active := map[string]pub_models.LLMTool{}
 	maps.Copy(active, base)
 	warnings := []string{}
+	enabled := []string{}
 	for name := range state.Allowed {
 		if _, ok := active[name]; ok {
+			continue
+		}
+		if tool, ok := localTools[name]; ok {
+			active[name] = tool
+			enabled = append(enabled, name)
+			continue
+		}
+		if strings.HasPrefix(name, "mcp_") {
+			warnings = append(warnings, fmt.Sprintf("skill requested unavailable MCP tool %q", name))
 			continue
 		}
 		if _, ok := knownToolNames[name]; ok {
@@ -25,8 +36,13 @@ func applyToolPolicy(base map[string]pub_models.LLMTool, state ActivationState, 
 	for name := range state.Disallowed {
 		delete(active, name)
 	}
+	enabled = slices.DeleteFunc(enabled, func(name string) bool {
+		_, exists := active[name]
+		return !exists
+	})
 	slices.Sort(warnings)
-	return active, warnings
+	slices.Sort(enabled)
+	return active, warnings, enabled
 }
 
 func mergeActivationState(state *ActivationState, skill Skill, req ActivationRequest) {

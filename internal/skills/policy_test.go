@@ -13,11 +13,18 @@ func TestApplyToolPolicyMergesActivationState(t *testing.T) {
 		Allowed:    map[string]struct{}{"rg": {}, "ls": {}, "nope": {}},
 		Disallowed: map[string]struct{}{"cat": {}},
 	}
-	active, warnings := applyToolPolicy(base, state, map[string]struct{}{"ls": {}, "rg": {}, "cat": {}})
+	localTools := map[string]pub_models.LLMTool{"ls": staticTool{name: "ls"}}
+	active, warnings, enabled := applyToolPolicy(base, localTools, state, map[string]struct{}{"ls": {}, "rg": {}, "cat": {}})
 	if _, ok := active["cat"]; ok {
 		t.Fatalf("expected cat removed")
 	}
-	if len(warnings) != 2 || !strings.Contains(strings.Join(warnings, "\n"), "unavailable tool") || !strings.Contains(strings.Join(warnings, "\n"), "unknown tool") {
+	if _, ok := active["ls"]; !ok {
+		t.Fatalf("expected known local tool to be enabled")
+	}
+	if len(enabled) != 1 || enabled[0] != "ls" {
+		t.Fatalf("unexpected enabled tools: %#v", enabled)
+	}
+	if len(warnings) != 1 || !strings.Contains(strings.Join(warnings, "\n"), "unknown tool") {
 		t.Fatalf("unexpected warnings: %#v", warnings)
 	}
 }

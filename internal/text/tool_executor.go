@@ -30,34 +30,23 @@ type toolExecutor[C models.StreamCompleter] struct {
 }
 
 func (e toolExecutor[C]) Execute(ctx context.Context, session *QuerySession, call pub_models.Call) error {
-	q := e.querier
-	if q.debug || misc.Truthy(os.Getenv("DEBUG_CALL")) {
-		ancli.PrintOK(fmt.Sprintf("received tool call: %v", debug.IndentedJsonFmt(call)))
-	}
-	decision := q.decideToolCall(session, call)
-	if decision.TreatAsReturnToUser || decision.SkipExecution {
-		session.FinalAssistantText = session.PendingTextString()
-		session.ResetPendingText()
-		return nil
-	}
-	if err := e.finalizeAssistantTextBeforeToolCall(session, call); err != nil {
-		return fmt.Errorf("finalize assistant text before tool call: %w", err)
-	}
-	return e.executeTool(ctx, session, decision.PatchedCall, true)
+	return e.ExecuteBatch(ctx, session, []pub_models.Call{call})
 }
 
 // ExecuteBatch records all calls from one model turn before producing any tool
 // outputs. Responses may emit several function calls in one response; preserving
 // that grouping is required when the full stateless input is replayed.
+//
+// Every call is preflighted against the stoploss controller before any tool
+// side effect runs (R3-02): allowed calls are invoked only after the whole
+// batch has been decided, and one tool result is emitted per call in original
+// order, including refusals that return io.EOF (R2-02).
 func (e toolExecutor[C]) ExecuteBatch(ctx context.Context, session *QuerySession, calls []pub_models.Call) error {
 	if len(calls) == 0 {
 		return nil
 	}
-	if len(calls) == 1 {
-		return e.Execute(ctx, session, calls[0])
-	}
 	q := e.querier
-	patched := make([]pub_models.Call, 0, len(calls))
+	planned := make([]pub_models.Call, 0, len(calls))
 	for _, call := range calls {
 		if q.debug || misc.Truthy(os.Getenv("DEBUG_CALL")) {
 			ancli.PrintOK(fmt.Sprintf("received tool call: %v", debug.IndentedJsonFmt(call)))
@@ -68,44 +57,96 @@ func (e toolExecutor[C]) ExecuteBatch(ctx context.Context, session *QuerySession
 			session.ResetPendingText()
 			continue
 		}
-		patched = append(patched, decision.PatchedCall)
+		planned = append(planned, decision.PatchedCall)
 	}
-	if len(patched) == 0 {
+	if len(planned) == 0 {
 		return nil
 	}
-	if err := e.finalizeAssistantTextBeforeToolCall(session, patched[0]); err != nil {
+	plans := q.newStoploss().PreflightToolCallBudget(session, planned)
+	if err := e.finalizeAssistantTextBeforeToolCall(session, planned[0]); err != nil {
 		return fmt.Errorf("finalize assistant text before tool call: %w", err)
 	}
-	if err := e.emitAssistantToolCalls(session, patched); err != nil {
-		return err
-	}
-	for _, call := range patched {
-		if err := e.executeTool(ctx, session, call, false); err != nil {
+	// load_skill self-emits its assistant tool-call at execution time (the
+	// trust prompt and the load error must precede the call echo, and a
+	// failed load must not leave a dangling assistant call in the chat). To
+	// keep immediate assistant→tool pairing in the model's emission order,
+	// the batch is split into segments at each load_skill call: consecutive
+	// non-skill calls keep the grouped emission, and each load_skill runs as
+	// its own pair (R9-01). A hardStop plan must not end the batch early: the
+	// assistant message already declared every call of the segment, so the
+	// remaining plans must still emit their tool results before io.EOF is
+	// returned, otherwise the persisted transcript carries a dangling
+	// tool_call (R11-01). The io.EOF is therefore deferred until every plan
+	// in the batch has emitted its result.
+	pendingEOF := false
+	for start := 0; start < len(plans); {
+		if plans[start].call.Name == string(pub_models.LoadSkillTool) {
+			if err := e.runPlannedCall(ctx, session, plans[start]); err != nil {
+				return err
+			}
+			if plans[start].hardStop {
+				pendingEOF = true
+			}
+			start++
+			continue
+		}
+		end := start + 1
+		for end < len(plans) && plans[end].call.Name != string(pub_models.LoadSkillTool) {
+			end++
+		}
+		nonSkill := make([]pub_models.Call, 0, end-start)
+		for _, plan := range plans[start:end] {
+			nonSkill = append(nonSkill, plan.call)
+		}
+		if err := e.emitAssistantToolCalls(session, nonSkill); err != nil {
 			return err
 		}
+		for _, plan := range plans[start:end] {
+			if err := e.runPlannedCall(ctx, session, plan); err != nil {
+				return err
+			}
+			if plan.hardStop {
+				pendingEOF = true
+			}
+		}
+		start = end
+	}
+	if pendingEOF {
+		return io.EOF
 	}
 	return nil
 }
 
-func (e toolExecutor[C]) executeTool(ctx context.Context, session *QuerySession, call pub_models.Call, emitAssistant bool) error {
-	if call.Name == string(pub_models.LoadSkillTool) {
-		return e.executeLoadSkill(ctx, session, call, emitAssistant)
-	}
-	if isLookbackTool(call.Name) {
-		return e.executeLookbackTool(session, call, emitAssistant)
-	}
-
-	if emitAssistant {
-		if err := e.emitAssistantToolCall(session, call); err != nil {
-			return err
+// runPlannedCall executes one preflighted tool call and emits its tool result.
+// Refused calls never reach their implementation: the ladder text is emitted
+// as the tool result instead (R2-01). A refused load_skill still emits its
+// assistant tool-call so the exchange stays valid (R2-02).
+func (e toolExecutor[C]) runPlannedCall(ctx context.Context, session *QuerySession, plan toolCallBudgetPlan) error {
+	if !plan.allowed {
+		if plan.call.Name == string(pub_models.LoadSkillTool) {
+			if err := e.emitAssistantToolCall(session, plan.call); err != nil {
+				return err
+			}
 		}
+		return e.emitToolResult(session, plan.call, plan.out)
 	}
-	out := tools.Invoke(ctx, call)
-	out, err := e.applyToolCallBudget(session, out)
-	if err != nil {
-		return err
+	if plan.call.Name == string(pub_models.LoadSkillTool) {
+		return e.executeLoadSkill(ctx, session, plan.call)
 	}
-	return e.emitToolResult(session, call, out)
+	q := e.querier
+	out := ""
+	if isLookbackTool(plan.call.Name) {
+		if !q.useLookback {
+			out = fmt.Sprintf("ERROR: %s requested but lookback is disabled for this run (enable with -lb/-lookback)", plan.call.Name)
+		} else if res, err := e.runLookbackTool(plan.call); err != nil {
+			out = "ERROR: " + err.Error()
+		} else {
+			out = res
+		}
+	} else {
+		out = tools.Invoke(ctx, plan.call)
+	}
+	return e.emitToolResult(session, plan.call, plan.prefix+out)
 }
 
 // emitAssistantToolCall prints the user-facing assistant tool-call turn and
@@ -174,39 +215,7 @@ func (e toolExecutor[C]) emitToolResult(session *QuerySession, call pub_models.C
 	return nil
 }
 
-// applyToolCallBudget enforces -max-tool-calls: within budget it prefixes the
-// remaining-count onto the output, over budget it replaces the output with an
-// escalating warning, and past the final warning it returns io.EOF to hard-stop
-// the run.
-func (e toolExecutor[C]) applyToolCallBudget(session *QuerySession, out string) (string, error) {
-	q := e.querier
-	if q.maxToolCalls == nil {
-		return out, nil
-	}
-	if session.ToolCallsUsed >= *q.maxToolCalls {
-		out = "ERROR: No more tool calls allowed. "
-		persistence := session.ToolCallsUsed - *q.maxToolCalls
-		if persistence > 0 {
-			out += "You will be HARD SHUT DOWN if you persist. "
-		}
-		if persistence > 1 {
-			out += "This is your LAST WARNING. "
-		}
-		if persistence > 2 {
-			return out, io.EOF
-		}
-	} else {
-		outTmp, err := q.prefixToolCallsRemainingWithCount(out, session.ToolCallsUsed)
-		if err != nil {
-			return out, fmt.Errorf("prefix tool calls remaining: %w", err)
-		}
-		out = outTmp
-	}
-	session.ToolCallsUsed++
-	return out, nil
-}
-
-func (e toolExecutor[C]) executeLoadSkill(ctx context.Context, session *QuerySession, call pub_models.Call, emitAssistant bool) error {
+func (e toolExecutor[C]) executeLoadSkill(ctx context.Context, session *QuerySession, call pub_models.Call) error {
 	q := e.querier
 	if q.skillLoader == nil {
 		return fmt.Errorf("load_skill requested but skills are unavailable")
@@ -225,15 +234,34 @@ func (e toolExecutor[C]) executeLoadSkill(ctx context.Context, session *QuerySes
 		return err
 	}
 	if loaded.ActivationErr != "" {
-		if emitAssistant {
-			if err := e.emitAssistantToolCall(session, call); err != nil {
-				return err
-			}
+		if err := e.emitAssistantToolCall(session, call); err != nil {
+			return err
 		}
 		return e.emitToolResult(session, call, "ERROR: "+loaded.ActivationErr)
 	}
 	if len(loaded.ActiveTools) > 0 {
 		q.baseTools = loaded.ActiveTools
+	}
+	if len(loaded.EnabledTools) > 0 {
+		toolBox, ok := any(q.Model).(models.ToolBox)
+		if !ok {
+			return fmt.Errorf("trusted skill enabled tools but the model has no tool box")
+		}
+		for _, name := range loaded.EnabledTools {
+			tool, exists := loaded.ActiveTools[name]
+			if !exists {
+				continue
+			}
+			if q.registeredTools == nil {
+				q.registeredTools = map[string]struct{}{}
+			}
+			if _, registered := q.registeredTools[name]; registered {
+				continue
+			}
+			toolBox.RegisterTool(tool)
+			q.registeredTools[name] = struct{}{}
+		}
+		loaded.Warnings = append(loaded.Warnings, "skill enabled local tools: "+strings.Join(loaded.EnabledTools, ", "))
 	}
 	content := loaded.RenderedBody
 	userVisibleContent := loaded.UserVisibleBody
@@ -250,10 +278,8 @@ func (e toolExecutor[C]) executeLoadSkill(ctx context.Context, session *QuerySes
 			userVisibleContent = body + "\n\n" + userVisibleContent
 		}
 	}
-	if emitAssistant {
-		if err := e.emitAssistantToolCall(session, call); err != nil {
-			return err
-		}
+	if err := e.emitAssistantToolCall(session, call); err != nil {
+		return err
 	}
 	// Skill bodies are persisted and displayed in full (no output limit, no
 	// display shortening): the loaded skill IS the instruction set.
@@ -265,19 +291,6 @@ func (e toolExecutor[C]) executeLoadSkill(ctx context.Context, session *QuerySes
 		if err := utils.AttemptPrettyPrint(q.out, printMsg, "tool", q.Raw); err != nil {
 			return fmt.Errorf("pretty print skill output: %w", err)
 		}
-		summary := fmt.Sprintf("Loaded skill\n  Name: %s\n  Source: %s\nloaded skill %s [%s]", loaded.Name, loaded.SourceClass, loaded.Name, loaded.SourceClass)
-		if desc := strings.TrimSpace(loaded.Description); desc != "" {
-			summary += fmt.Sprintf("\n  Description: %s", desc)
-		}
-		content := strings.TrimSpace(loaded.RenderedBody)
-		length := utf8.RuneCountInString(content)
-		approxTokens := (length + 3) / 4
-		summary += fmt.Sprintf("\n  Length: %d chars\n  Estimated tokens: ~%d", length, approxTokens)
-		if strings.TrimSpace(loaded.RawArgs) != "" {
-			summary += fmt.Sprintf("\n  Arguments: %q", loaded.RawArgs)
-			summary += fmt.Sprintf("\nloaded skill %s [%s] args=%q", loaded.Name, loaded.SourceClass, loaded.RawArgs)
-		}
-		ancli.Noticef("%s", summary)
 	}
 	session.ResetPendingText()
 	return nil
@@ -357,11 +370,4 @@ func (q *Querier[C]) decideToolCall(session *QuerySession, call pub_models.Call)
 	}
 	call.Patch()
 	return ToolDecision{PatchedCall: call}
-}
-
-func (q *Querier[C]) prefixToolCallsRemainingWithCount(out string, used int) (string, error) {
-	if q.maxToolCalls == nil {
-		return "", errors.New("maxToolCalls is not configured")
-	}
-	return fmt.Sprintf("[ Tool calls remaining: %v ] %v", (*q.maxToolCalls - used), out), nil
 }

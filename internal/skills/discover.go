@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
 func Discover(opts Options) (*Manager, error) {
@@ -45,9 +47,6 @@ func Discover(opts Options) (*Manager, error) {
 		invalids = append(invalids, bad...)
 		summary.Loaded = len(found)
 		summary.Invalid = len(bad)
-		if debugSkills() {
-			log.Warnf("skills %s: %s [loaded=%d invalid=%d]", root.class, root.path, summary.Loaded, summary.Invalid)
-		}
 		sources = append(sources, summary)
 	}
 	resolution := resolveCandidates(candidates, invalids, precedence)
@@ -55,7 +54,7 @@ func Discover(opts Options) (*Manager, error) {
 	for _, skill := range resolution.Active {
 		loadedByRoot[skill.SourceRoot]++
 	}
-	if opts.LogQueryText && len(resolution.Active) > 0 {
+	if debugSkills() && len(resolution.Active) > 0 {
 		for _, summary := range sources {
 			if loaded := loadedByRoot[summary.Path]; loaded > 0 {
 				log.Infof("skills %s: %s [loaded=%d]", summary.Class, summary.Path, loaded)
@@ -70,6 +69,7 @@ func Discover(opts Options) (*Manager, error) {
 		cacheDir:       opts.CacheDir,
 		trustPrompter:  opts.TrustPrompter,
 		knownToolNames: toSet(opts.KnownToolNames),
+		localTools:     opts.LocalTools,
 		logger:         log,
 		state: ActivationState{
 			Allowed:    map[string]struct{}{},
@@ -86,6 +86,7 @@ type Manager struct {
 	cacheDir       string
 	trustPrompter  func(context.Context, TrustPrompt) (bool, error)
 	knownToolNames map[string]struct{}
+	localTools     map[string]pub_models.LLMTool
 	state          ActivationState
 	logger         logger
 }

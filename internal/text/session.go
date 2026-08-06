@@ -8,16 +8,19 @@ import (
 )
 
 type QuerySession struct {
-	Chat                pub_models.Chat
-	StartedAt           time.Time
-	FinishedAt          time.Time
-	PendingText         strings.Builder
-	PendingReasoning    strings.Builder
-	FinalAssistantText  string
-	FinalReasoningText  string
-	FinalUsage          *pub_models.Usage
-	CompletedCalls      []CompletedModelCall
-	ToolCallsUsed       int
+	Chat               pub_models.Chat
+	StartedAt          time.Time
+	FinishedAt         time.Time
+	PendingText        strings.Builder
+	PendingReasoning   strings.Builder
+	FinalAssistantText string
+	FinalReasoningText string
+	FinalUsage         *pub_models.Usage
+	CompletedCalls     []CompletedModelCall
+	ToolCallsUsed      int
+	// HandoverRequested is set once the token stoploss has injected the
+	// handover user message. It forces the tool-call refusal ladder.
+	HandoverRequested   bool
 	ShouldSaveReply     bool
 	Raw                 bool
 	Finalized           bool

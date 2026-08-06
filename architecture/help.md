@@ -47,6 +47,8 @@ This is the deep-ish help for profile concepts and usage.
    - config dir + cache dir paths
 3. Prints to stdout.
 
+The general help lists `-s` and `-skills`. Use `*` to enable skills or `none` to disable skills for the current run.
+
 The general help lists both directory-information commands:
 
 - `clai chat dir` keeps the stable v1 output.

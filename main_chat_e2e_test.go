@@ -25,6 +25,7 @@ func runOne(t *testing.T, cwd string, args string) (string, int) {
 			_ = os.Chdir(oldWd)
 		}
 		utils.Live = true
+		utils.ReadonlyConfig = false
 	})
 
 	if chDirErr := os.Chdir(cwd); chDirErr != nil {

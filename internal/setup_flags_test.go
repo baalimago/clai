@@ -248,6 +248,123 @@ func TestSetupFlags(t *testing.T) {
 				UseLookbackSet: true,
 			},
 		},
+		{
+			name:     "Max tokens short flag",
+			args:     []string{"cmd", "-mt", "5000"},
+			defaults: Configurations{},
+			want: Configurations{
+				MaxTokens:    5000,
+				MaxTokensSet: true,
+			},
+		},
+		{
+			name:     "Max tokens long flag",
+			args:     []string{"cmd", "-max-tokens", "5000"},
+			defaults: Configurations{},
+			want: Configurations{
+				MaxTokens:    5000,
+				MaxTokensSet: true,
+			},
+		},
+		{
+			name:     "Max tokens explicit zero is detected as set",
+			args:     []string{"cmd", "-mt=0"},
+			defaults: Configurations{},
+			want: Configurations{
+				MaxTokens:    0,
+				MaxTokensSet: true,
+			},
+		},
+		{
+			name:     "Max tokens both aliases equal",
+			args:     []string{"cmd", "-mt=100", "-max-tokens=100"},
+			defaults: Configurations{},
+			want: Configurations{
+				MaxTokens:    100,
+				MaxTokensSet: true,
+			},
+		},
+		{
+			name:     "Max tokens both aliases equal explicit zero",
+			args:     []string{"cmd", "-mt=0", "-max-tokens=0"},
+			defaults: Configurations{},
+			want: Configurations{
+				MaxTokens:    0,
+				MaxTokensSet: true,
+			},
+		},
+		{
+			name:            "Max tokens conflicting aliases rejected",
+			args:            []string{"cmd", "-mt=0", "-max-tokens=5"},
+			defaults:        Configurations{},
+			wantErrContains: "mutually exclusive",
+		},
+		{
+			name:            "Max tokens non-integer value rejected",
+			args:            []string{"cmd", "-max-tokens=abc"},
+			defaults:        Configurations{},
+			wantErrContains: "invalid value",
+		},
+		{
+			name:     "Max tool calls short flag",
+			args:     []string{"cmd", "-mtc", "2"},
+			defaults: Configurations{},
+			want: Configurations{
+				MaxToolCalls:    2,
+				MaxToolCallsSet: true,
+			},
+		},
+		{
+			name:     "Max tool calls long flag",
+			args:     []string{"cmd", "-max-tool-calls", "2"},
+			defaults: Configurations{},
+			want: Configurations{
+				MaxToolCalls:    2,
+				MaxToolCallsSet: true,
+			},
+		},
+		{
+			name:     "Max tool calls explicit zero is detected as set",
+			args:     []string{"cmd", "-max-tool-calls=0"},
+			defaults: Configurations{},
+			want: Configurations{
+				MaxToolCalls:    0,
+				MaxToolCallsSet: true,
+			},
+		},
+		{
+			name:     "Max tool calls both aliases equal",
+			args:     []string{"cmd", "-mtc=2", "-max-tool-calls=2"},
+			defaults: Configurations{},
+			want: Configurations{
+				MaxToolCalls:    2,
+				MaxToolCallsSet: true,
+			},
+		},
+		{
+			name:     "Max tool calls both aliases equal explicit zero",
+			args:     []string{"cmd", "-mtc=0", "-max-tool-calls=0"},
+			defaults: Configurations{},
+			want: Configurations{
+				MaxToolCalls:    0,
+				MaxToolCallsSet: true,
+			},
+		},
+		{
+			name:            "Max tool calls conflicting aliases rejected",
+			args:            []string{"cmd", "-mtc=1", "-max-tool-calls=2"},
+			defaults:        Configurations{},
+			wantErrContains: "mutually exclusive",
+		},
+		{
+			name:     "No stoploss flags leaves both limits unset",
+			args:     []string{"cmd", "q", "hello"},
+			defaults: Configurations{},
+			want: Configurations{
+				ChatModel: "",
+			},
+			wantPostArgs: []string{"q", "hello"},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -330,6 +447,202 @@ func Test_applyFlagOverridesForTest(t *testing.T) {
 				tc.defaultFlags)
 			testboil.FailTestIfDiff(t, tc.given.StdinReplace,
 				tc.want.StdinReplace)
+		})
+	}
+}
+
+// Test_resolveIntAlias pins the four-state short/long alias resolver for the
+// int limit flags: neither set, exactly one set, both set and equal, both set
+// and conflicting. Explicit zero and explicit values equal to the default must
+// still resolve as set (R5-02).
+func Test_resolveIntAlias(t *testing.T) {
+	testCases := []struct {
+		name       string
+		short      int
+		long       int
+		defaultVal int
+		shortSet   bool
+		longSet    bool
+		wantValue  int
+		wantSet    bool
+		wantErr    bool
+	}{
+		{
+			name:       "neither alias set uses default and stays unset",
+			long:       7,
+			defaultVal: 3,
+			wantValue:  3,
+			wantSet:    false,
+		},
+		{
+			name:      "short alias only",
+			short:     5,
+			shortSet:  true,
+			wantValue: 5,
+			wantSet:   true,
+		},
+		{
+			name:      "long alias only",
+			long:      6,
+			longSet:   true,
+			wantValue: 6,
+			wantSet:   true,
+		},
+		{
+			name:      "short alias explicit zero",
+			short:     0,
+			shortSet:  true,
+			wantValue: 0,
+			wantSet:   true,
+		},
+		{
+			name:      "long alias explicit zero",
+			long:      0,
+			longSet:   true,
+			wantValue: 0,
+			wantSet:   true,
+		},
+		{
+			name:      "both aliases set and equal",
+			short:     4,
+			long:      4,
+			shortSet:  true,
+			longSet:   true,
+			wantValue: 4,
+			wantSet:   true,
+		},
+		{
+			name:      "both aliases set and equal explicit zero",
+			short:     0,
+			long:      0,
+			shortSet:  true,
+			longSet:   true,
+			wantValue: 0,
+			wantSet:   true,
+		},
+		{
+			name:     "both aliases set and conflicting",
+			short:    1,
+			long:     2,
+			shortSet: true,
+			longSet:  true,
+			wantErr:  true,
+		},
+		{
+			name:     "both aliases set and conflicting with zero",
+			short:    0,
+			long:     5,
+			shortSet: true,
+			longSet:  true,
+			wantErr:  true,
+		},
+		{
+			name:       "explicit value equal to default is still set",
+			short:      3,
+			defaultVal: 3,
+			shortSet:   true,
+			wantValue:  3,
+			wantSet:    true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			gotValue, gotSet, err := resolveIntAlias(tc.short, tc.long, tc.defaultVal, tc.shortSet, tc.longSet)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got value %d set %v", gotValue, gotSet)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			testboil.FailTestIfDiff(t, gotValue, tc.wantValue)
+			testboil.FailTestIfDiff(t, gotSet, tc.wantSet)
+		})
+	}
+}
+
+// Test_applyFlagOverridesForText_Stoploss pins the flag > file override
+// cascade for both stoploss limits: flag beats file, explicit zero disables a
+// file limit, and an omitted flag leaves the file value (and nil Stoploss)
+// untouched (Phase 4 acceptance criterion 2).
+func Test_applyFlagOverridesForText_Stoploss(t *testing.T) {
+	intPtr := func(v int) *int { return &v }
+	testCases := []struct {
+		desc         string
+		given        text.Configurations
+		flagSet      Configurations
+		defaultFlags Configurations
+		want         text.Configurations
+	}{
+		{
+			desc:    "max-tokens flag creates the stoploss object",
+			given:   text.Configurations{},
+			flagSet: Configurations{MaxTokens: 5000, MaxTokensSet: true},
+			want:    text.Configurations{Stoploss: &text.Stoploss{MaxTokens: 5000}},
+		},
+		{
+			desc: "max-tokens flag overrides file limit and keeps the configured message",
+			given: text.Configurations{
+				Stoploss: &text.Stoploss{MaxTokens: 100, MaxTokensHandoverMsg: "wrap up"},
+			},
+			flagSet: Configurations{MaxTokens: 5000, MaxTokensSet: true},
+			want: text.Configurations{
+				Stoploss: &text.Stoploss{MaxTokens: 5000, MaxTokensHandoverMsg: "wrap up"},
+			},
+		},
+		{
+			desc: "explicit zero max-tokens disables a file limit",
+			given: text.Configurations{
+				Stoploss: &text.Stoploss{MaxTokens: 100, MaxTokensHandoverMsg: "wrap up"},
+			},
+			flagSet: Configurations{MaxTokens: 0, MaxTokensSet: true},
+			want: text.Configurations{
+				Stoploss: &text.Stoploss{MaxTokens: 0, MaxTokensHandoverMsg: "wrap up"},
+			},
+		},
+		{
+			desc: "omitted max-tokens flag leaves the file stoploss untouched",
+			given: text.Configurations{
+				Stoploss: &text.Stoploss{MaxTokens: 100, MaxTokensHandoverMsg: "wrap up"},
+			},
+			flagSet: Configurations{},
+			want: text.Configurations{
+				Stoploss: &text.Stoploss{MaxTokens: 100, MaxTokensHandoverMsg: "wrap up"},
+			},
+		},
+		{
+			desc:    "omitted max-tokens flag leaves nil stoploss untouched",
+			given:   text.Configurations{},
+			flagSet: Configurations{},
+			want:    text.Configurations{},
+		},
+		{
+			desc:    "max-tool-calls flag overrides file limit",
+			given:   text.Configurations{MaxToolCalls: intPtr(5)},
+			flagSet: Configurations{MaxToolCalls: 2, MaxToolCallsSet: true},
+			want:    text.Configurations{MaxToolCalls: intPtr(2)},
+		},
+		{
+			desc:    "explicit zero max-tool-calls disables a file limit",
+			given:   text.Configurations{MaxToolCalls: intPtr(5)},
+			flagSet: Configurations{MaxToolCalls: 0, MaxToolCallsSet: true},
+			want:    text.Configurations{MaxToolCalls: intPtr(0)},
+		},
+		{
+			desc:    "omitted max-tool-calls flag leaves the file limit untouched",
+			given:   text.Configurations{MaxToolCalls: intPtr(5)},
+			flagSet: Configurations{},
+			want:    text.Configurations{MaxToolCalls: intPtr(5)},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			applyFlagOverridesForText(&tc.given, tc.flagSet, tc.defaultFlags)
+			testboil.FailTestIfDiff(t, debug.IndentedJsonFmt(tc.given), debug.IndentedJsonFmt(tc.want))
 		})
 	}
 }

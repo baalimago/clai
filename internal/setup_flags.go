@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -46,9 +47,21 @@ type Configurations struct {
 	// UseLookbackSet is true when -lb/-lookback was explicitly passed, so an
 	// explicit -lb=false can override profile/file-enabled lookback.
 	UseLookbackSet bool
-	Glob           string
-	Profile        string
-	ProfilePath    string
+	// MaxTokens is the -mt/-max-tokens value. Meaningful only when
+	// MaxTokensSet is true.
+	MaxTokens int
+	// MaxTokensSet is true when -mt/-max-tokens was explicitly passed, so an
+	// explicit 0 can override a file-configured stoploss.max-tokens.
+	MaxTokensSet bool
+	// MaxToolCalls is the -mtc/-max-tool-calls value. Meaningful only when
+	// MaxToolCallsSet is true.
+	MaxToolCalls int
+	// MaxToolCallsSet is true when -mtc/-max-tool-calls was explicitly passed,
+	// so an explicit 0 can override a file-configured max-tool-calls.
+	MaxToolCallsSet bool
+	Glob            string
+	Profile         string
+	ProfilePath     string
 	// ShellContext is the selected shell context name (ASC).
 	ShellContext string
 	// ResponseFormatPath is a path to a JSON file describing the OpenAI response_format.
@@ -129,6 +142,11 @@ func parseFlags(defaults Configurations, args []string) (Configurations, []strin
 	useLookbackShort := fs.Bool("lb", defaults.UseLookback, "Enable conversation lookback (recent-conversations memory + search/inspect/read tools).")
 	useLookbackLong := fs.Bool("lookback", defaults.UseLookback, "Enable conversation lookback (recent-conversations memory + search/inspect/read tools).")
 
+	maxTokensShort := fs.Int("mt", defaults.MaxTokens, "Set the max context tokens for this run. 0 = unlimited. Overrides stoploss.max-tokens in textConfig.json.")
+	maxTokensLong := fs.Int("max-tokens", defaults.MaxTokens, "Set the max context tokens for this run. 0 = unlimited. Overrides stoploss.max-tokens in textConfig.json.")
+	maxToolCallsShort := fs.Int("mtc", defaults.MaxToolCalls, "Set the max tool calls for this run. 0 = unlimited. Overrides max-tool-calls in textConfig.json.")
+	maxToolCallsLong := fs.Int("max-tool-calls", defaults.MaxToolCalls, "Set the max tool calls for this run. 0 = unlimited. Overrides max-tool-calls in textConfig.json.")
+
 	nonInteractiveShort := fs.Bool("n", defaults.NonInteractive, "Disable interactive stdin fallback after macro inputs; instead auto-exit with trailing quits.")
 	nonInteractiveLong := fs.Bool("non-interactive", defaults.NonInteractive, "Disable interactive stdin fallback after macro inputs; instead auto-exit with trailing quits.")
 
@@ -157,9 +175,22 @@ func parseFlags(defaults Configurations, args []string) (Configurations, []strin
 	exitWithFlagError(err, "s", "skills")
 	useLookback := *useLookbackShort || *useLookbackLong
 	useLookbackSet := false
+	mtSet := false
+	maxTokensSet := false
+	mtcSet := false
+	maxToolCallsSet := false
 	fs.Visit(func(f *flag.Flag) {
-		if f.Name == "lb" || f.Name == "lookback" {
+		switch f.Name {
+		case "lb", "lookback":
 			useLookbackSet = true
+		case "mt":
+			mtSet = true
+		case "max-tokens":
+			maxTokensSet = true
+		case "mtc":
+			mtcSet = true
+		case "max-tool-calls":
+			maxToolCallsSet = true
 		}
 	})
 	profile, err := utils.ReturnNonDefault(*pShort, *pLong, defaults.Profile)
@@ -176,6 +207,15 @@ func parseFlags(defaults Configurations, args []string) (Configurations, []strin
 	exitWithFlagError(err, "asc", "add-shell-context")
 	responseFormatPath, err := utils.ReturnNonDefault(*rfShort, *rfLong, defaults.ResponseFormatPath)
 	exitWithFlagError(err, "rf", "response-format")
+
+	maxTokens, maxTokensSet, err := resolveIntAlias(*maxTokensShort, *maxTokensLong, defaults.MaxTokens, mtSet, maxTokensSet)
+	if err != nil {
+		return Configurations{}, []string{}, fmt.Errorf("flags: 'mt' and 'max-tokens' are mutually exclusive, err: %w", err)
+	}
+	maxToolCalls, maxToolCallsSet, err := resolveIntAlias(*maxToolCallsShort, *maxToolCallsLong, defaults.MaxToolCalls, mtcSet, maxToolCallsSet)
+	if err != nil {
+		return Configurations{}, []string{}, fmt.Errorf("flags: 'mtc' and 'max-tool-calls' are mutually exclusive, err: %w", err)
+	}
 
 	replyMode := *replyShort || *replyLong
 	printRaw := *printRawShort || *printRawLong
@@ -202,6 +242,10 @@ func parseFlags(defaults Configurations, args []string) (Configurations, []strin
 		CmdBan:             *cmdBan,
 		UseLookback:        useLookback,
 		UseLookbackSet:     useLookbackSet,
+		MaxTokens:          maxTokens,
+		MaxTokensSet:       maxTokensSet,
+		MaxToolCalls:       maxToolCalls,
+		MaxToolCallsSet:    maxToolCallsSet,
 		Glob:               glob,
 		ExpectReplace:      *expectReplace,
 		Profile:            profile,
@@ -247,6 +291,35 @@ func applyFlagOverridesForText(tConf *text.Configurations, flagSet, defaultFlags
 	if flagSet.ShellContext != defaultFlags.ShellContext {
 		tConf.ShellContext = flagSet.ShellContext
 	}
+	if flagSet.MaxTokensSet {
+		if tConf.Stoploss == nil {
+			tConf.Stoploss = &text.Stoploss{}
+		}
+		tConf.Stoploss.MaxTokens = flagSet.MaxTokens
+	}
+	if flagSet.MaxToolCallsSet {
+		tConf.MaxToolCalls = &flagSet.MaxToolCalls
+	}
+}
+
+// resolveIntAlias resolves a short/long integer flag pair from explicit
+// visitation rather than comparison with parser defaults, so an explicit value
+// equal to the default (including zero) is still recognized as set (R5-02).
+// Rules: neither alias set -> default, unset; exactly one set -> that value;
+// both set and equal -> that value; both set and different -> the existing
+// mutual-exclusion error. The resolved set flag is true when at least one
+// alias of the pair was explicitly passed.
+func resolveIntAlias(short, long, defaultVal int, shortSet, longSet bool) (int, bool, error) {
+	if !shortSet && !longSet {
+		return defaultVal, false, nil
+	}
+	if shortSet && longSet && short != long {
+		return 0, false, errors.New("values are mutually exclusive")
+	}
+	if shortSet {
+		return short, true, nil
+	}
+	return long, true, nil
 }
 
 func applyProfileOverridesForText(tConf *text.Configurations, flagSet, defaultFlags Configurations) {

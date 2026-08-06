@@ -90,8 +90,11 @@ func Test_goldenFile_PROFILES_list_prints_summary_for_valid_profiles_and_skips_i
 	// Note: getFirstSentence includes the newline terminator when splitting on \n.
 	testboil.AssertStringContains(t, stdout, "First sentence prompt: First line only\n\n---\n")
 
-	if strings.Contains(stdout, "broken") {
-		t.Fatalf("output must not include invalid profile file name; got output: %q", stdout)
+	// The united config migration warns about (and skips) the malformed
+	// profile, but the list itself must never render a Name block for it.
+	testboil.AssertStringContains(t, stdout, "failed to upgrade profile broken.json")
+	if strings.Contains(stdout, "Name: broken") {
+		t.Fatalf("output must not list invalid profile file; got output: %q", stdout)
 	}
 }
 

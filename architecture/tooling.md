@@ -119,6 +119,20 @@ Execution steps:
    - MCP executor (RPC to server)
 5. Capture stdout/stderr (where applicable), structure the result, and return it to the model.
 
+### Tool budgets
+
+The stoploss controller (`internal/text/stoploss.go`) owns both run budgets and
+preflights a complete model tool batch before any side effect runs.
+
+- `max-tool-calls` caps the number of tool calls per run with the escalating
+  refusal ladder. `max-tool-calls: 0` (or nil) means **unlimited**.
+- `stoploss.max-tokens` is the token stoploss: after the crossing step's tool
+  batch, clai injects the handover user message; every subsequent tool call is
+  refused before its implementation runs.
+
+A refused call never reaches its executor: the tool result carries the refusal
+text instead of tool output.
+
 Tool execution should be:
 
 - bounded (context-aware cancellation)
