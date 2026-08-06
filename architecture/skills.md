@@ -16,7 +16,7 @@ The first implementation supports:
 - parsing `SKILL.md` files with simple frontmatter and markdown body
 - progressive-disclosure skill descriptors in agent context
 - agent-driven on-demand skill loading based on request and runtime context
-- concise log-line UI for discovery and activation
+- debug discovery logs and visible activation warnings
 - trust-gated first activation with persisted path+hash approvals
 - integration of rendered skill content into the prompt/context for the current run
 - per-skill tool allow/deny overrides for the active activation set
@@ -498,7 +498,9 @@ Skills are surfaced through concise text log lines within clai’s existing outp
 
 ### Discovery logging
 
-After enabled skill discovery completes and at least one valid skill is loaded, clai prints one line per scanned source that produced at least one loaded skill and one line summarizing the loaded result.
+By default, clai does not print discovery information. It prints discovery
+information only when `DEBUG`, `DEBUG_SKILL`, or legacy `DEBUG_SKILLS` is
+truthy. Warnings and errors remain visible.
 
 Examples:
 
@@ -515,23 +517,25 @@ These lines are emitted during setup in the same general area where tooling and 
 
 ### Activation rendering
 
-Skill activation is rendered with standard ancli/log-style output plus the normal tool-call pretty print already used by clai.
+Skill activation uses the normal tool-call output from clai. It does not print a second activation notice.
 
 The rendered tool activity includes:
 
 - `load_skill` invocation
 - skill name
-- source class
-- resolved arguments, if any
+- one skill result
 
 Canonical visible sequence:
 
 ```text
 assistant called load_skill(review)
-loaded skill review [project]
+Name: review
+Description: Review pending local changes and highlight risks.
+Length: 124 chars
+Estimated tokens: ~31
 ```
 
-The exact colour/styling follows clai's existing ancli and tool-call rendering. Discovery root summaries, trust prompts, and post-load activation summaries are emitted through ancli. The post-load summary text remains terse and stable and is printed at the moment the runtime attaches a trusted skill to the current run.
+The exact color and style follow the existing tool-call output. Discovery summaries and trust prompts still use ancli.
 
 ## Configuration files and persistence
 
@@ -616,17 +620,16 @@ The skills subsystem is complete when all of the following are true:
    - earlier global directory over later global directory
    - global over default
 
-7. when enabled discovery loads at least one valid skill, clai prints concise line-oriented logs that include:
+7. when enabled discovery loads at least one valid skill and `DEBUG`,
+   `DEBUG_SKILL`, or legacy `DEBUG_SKILLS` is truthy, clai prints concise
+   line-oriented logs that include:
    - each scanned source path that contributed at least one canonical loaded skill
    - loaded counts per source after precedence resolution
    - total loaded, shadowed, and invalid counts
 
 7a. when skills are disabled, or when enabled discovery finds no valid skills, clai remains silent and prints no skills setup lines.
 
-8. skill loading is visible through normal tool-call rendering for the internal `load_skill` tool and prints concise ancli post-load lines containing:
-   - skill name
-   - skill source class
-   - resolved arguments when present
+8. skill loading is visible through the normal output for the internal `load_skill` tool. clai does not print a second activation notice.
 
 9. activated skills render argument substitutions correctly for:
    - `$ARGUMENTS`

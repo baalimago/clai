@@ -47,9 +47,6 @@ func Discover(opts Options) (*Manager, error) {
 		invalids = append(invalids, bad...)
 		summary.Loaded = len(found)
 		summary.Invalid = len(bad)
-		if debugSkills() {
-			log.Warnf("skills %s: %s [loaded=%d invalid=%d]", root.class, root.path, summary.Loaded, summary.Invalid)
-		}
 		sources = append(sources, summary)
 	}
 	resolution := resolveCandidates(candidates, invalids, precedence)
@@ -57,7 +54,7 @@ func Discover(opts Options) (*Manager, error) {
 	for _, skill := range resolution.Active {
 		loadedByRoot[skill.SourceRoot]++
 	}
-	if opts.LogQueryText && len(resolution.Active) > 0 {
+	if debugSkills() && len(resolution.Active) > 0 {
 		for _, summary := range sources {
 			if loaded := loadedByRoot[summary.Path]; loaded > 0 {
 				log.Infof("skills %s: %s [loaded=%d]", summary.Class, summary.Path, loaded)
