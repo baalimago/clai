@@ -34,7 +34,7 @@ func TestPrintChatObfuscated_NO_COLOR_disablesAllColor(t *testing.T) {
 	}}
 
 	var b strings.Builder
-	if err := printChatObfuscated(&b, ch, false); err != nil {
+	if err := printChatObfuscated(&b, ch, false, 80); err != nil {
 		t.Fatalf("printChatObfuscated: %v", err)
 	}
 	got := b.String()
@@ -64,7 +64,7 @@ func TestPrintChatObfuscated_coloriziesPrefix(t *testing.T) {
 	ch := pub_models.Chat{Messages: msgs}
 
 	var b strings.Builder
-	if err := printChatObfuscated(&b, ch, false); err != nil {
+	if err := printChatObfuscated(&b, ch, false, 80); err != nil {
 		t.Fatalf("printChatObfuscated: %v", err)
 	}
 	got := b.String()
@@ -228,7 +228,7 @@ func TestPrintChatObfuscated_RendersToolCallTurns(t *testing.T) {
 	}
 
 	var b strings.Builder
-	if err := printChatObfuscated(&b, chat, true); err != nil {
+	if err := printChatObfuscated(&b, chat, true, 80); err != nil {
 		t.Fatalf("printChatObfuscated: %v", err)
 	}
 	if !strings.Contains(b.String(), "Call: 'ls'") {
@@ -259,7 +259,7 @@ func TestPrintChatObfuscated_RendersReasoningContentInOldMessages(t *testing.T) 
 	}
 
 	var b strings.Builder
-	if err := printChatObfuscated(&b, pub_models.Chat{ID: "c3", Messages: msgs}, true); err != nil {
+	if err := printChatObfuscated(&b, pub_models.Chat{ID: "c3", Messages: msgs}, true, 80); err != nil {
 		t.Fatalf("printChatObfuscated: %v", err)
 	}
 	got := b.String()
@@ -295,7 +295,7 @@ func TestPrintChatObfuscated_NewFormat_LongChat(t *testing.T) {
 	msgs[19] = pub_models.Message{Role: "assistant", Content: "LAST_MSG_FULL"}
 
 	var b strings.Builder
-	if err := printChatObfuscated(&b, pub_models.Chat{ID: "c-long", Messages: msgs}, true); err != nil {
+	if err := printChatObfuscated(&b, pub_models.Chat{ID: "c-long", Messages: msgs}, true, 80); err != nil {
 		t.Fatalf("printChatObfuscated: %v", err)
 	}
 	got := b.String()
@@ -347,7 +347,7 @@ func TestPrintChatObfuscated_NewFormat_ShortChat(t *testing.T) {
 	}
 
 	var b strings.Builder
-	if err := printChatObfuscated(&b, pub_models.Chat{ID: "c-short", Messages: msgs}, true); err != nil {
+	if err := printChatObfuscated(&b, pub_models.Chat{ID: "c-short", Messages: msgs}, true, 80); err != nil {
 		t.Fatalf("printChatObfuscated: %v", err)
 	}
 	got := b.String()

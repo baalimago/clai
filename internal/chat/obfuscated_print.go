@@ -63,7 +63,10 @@ const (
 	// Need at least: 1 (first user) + headTruncated + bridgeSample + tailTruncated + 1 (last) = 11
 )
 
-func printChatObfuscated(w io.Writer, ch pub_models.Chat, raw bool) error {
+// printChatObfuscated writes a heavily obfuscated preview of a chat to w.
+// width is the session's resolved terminal width: every truncation in this
+// render uses it, so one operation renders with one dimension set.
+func printChatObfuscated(w io.Writer, ch pub_models.Chat, raw bool, width int) error {
 	msgs := ch.Messages
 	msgCount := len(msgs)
 	if msgCount == 0 {
@@ -123,12 +126,9 @@ func printChatObfuscated(w io.Writer, ch pub_models.Chat, raw bool) error {
 			prefix := table.Colorize(utils.TableTheme().Primary, fmt.Sprintf("[#%-3d r: ", i)) +
 				table.Colorize(utils.RoleColor(m.Role), fmt.Sprintf("%-9s", m.Role)) +
 				table.Colorize(utils.TableTheme().Primary, fmt.Sprintf(" l: %5d]: ", lenRunes))
-			trunc, err := table.WidthAppropriateStringTruncColored(
-				messageDisplayText(m), prefix, "", utils.TableTheme().Breadtext, 5,
+			trunc := table.WidthAppropriateStringTruncColoredWithWidth(
+				messageDisplayText(m), prefix, "", utils.TableTheme().Breadtext, 5, width,
 			)
-			if err != nil {
-				return fmt.Errorf("truncate bridge preview: %w", err)
-			}
 			if _, err := fmt.Fprintln(w, trunc); err != nil {
 				return fmt.Errorf("write bridge line: %w", err)
 			}

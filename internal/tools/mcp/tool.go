@@ -9,6 +9,7 @@ import (
 	"os"
 	"sync"
 
+	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
@@ -89,7 +90,10 @@ func (m *mcpTool) call(ctx context.Context, input pub_models.Input) (string, err
 
 			if misc.Truthy(os.Getenv("DEBUG_MCP_TOOL")) {
 				rawS, _ := raw.MarshalJSON()
-				shortened, _ := table.WidthAppropriateStringTrunc(string(rawS), "", 10)
+				// Debug output goes to stdout via ancli, so the snapshot is bound
+				// to stdout's fd; a non-terminal stdout yields the deterministic
+				// fallback width.
+				shortened := table.WidthAppropriateStringTruncWithWidth(string(rawS), "", 10, utils.SessionDimensions(os.Stdout).Width)
 				ancli.Okf("mcp_server client received: '%s'", shortened)
 			}
 			var resp Response

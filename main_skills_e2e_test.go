@@ -38,7 +38,7 @@ func Test_e2e_skills_bootstrap_creates_config_and_default_dir(t *testing.T) {
 	if gotStatus != 0 {
 		t.Fatalf("expected success status, got %d, stdout=%q", gotStatus, stdout)
 	}
-	if !strings.HasSuffix(stdout, "bootstrap\n\a") {
+	if !strings.HasSuffix(stdout, "bootstrap\n") {
 		t.Fatalf("unexpected bootstrap output: %q", stdout)
 	}
 	if _, err := os.Stat(filepath.Join(confDir, "skills")); err != nil {
@@ -405,11 +405,12 @@ func Test_e2e_skill_automatically_enables_local_tools(t *testing.T) {
 	if strings.Contains(stdout, "skill requested unavailable tool") {
 		t.Fatalf("local tools reported unavailable: %q", stdout)
 	}
-	if !strings.Contains(stdout, "skill enabled local tools: async_cmd, async_cmd_await, async_cmd_cancel, async_cmd_logs, async_cmd_status") {
+	compactStdout := strings.ReplaceAll(stdout, "\n  ", "")
+	if !strings.Contains(compactStdout, "skill enabled local tools: async_cmd, async_cmd_await, async_cmd_cancel, async_cmd_logs, async_cmd_status") {
 		t.Fatalf("expected automatic tool warning, got %q", stdout)
 	}
-	if count := strings.Count(stdout, "Name: review"); count != 1 {
-		t.Fatalf("expected one skill result, got %d in %q", count, stdout)
+	if count := strings.Count(stdout, "Body"); count != 1 {
+		t.Fatalf("expected one complete raw skill result, got %d in %q", count, stdout)
 	}
 	if strings.Contains(stdout, "Loaded skill") {
 		t.Fatalf("expected no duplicate activation notice, got %q", stdout)

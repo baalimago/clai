@@ -38,6 +38,10 @@ All colour fields are raw ANSI escape sequences represented as JSON strings.
 | `roleReasoning` | Colour for `reasoning` role labels (thinking/chain-of-thought). |
 | `roleOther` | Fallback colour for any other/unknown role. |
 | `notificationBell` | Whether clai should emit terminal BEL (`\a`) after successful task completion. |
+| `toolOutputRows` | Maximum terminal rows for each non-raw tool result. Default: `6`. |
+| `rollingOutput` | Nested configuration for the shared rolling activity viewport. |
+| `rollingOutput.enabled` | Use the shared rolling activity viewport. Default: `true`. |
+| `rollingOutput.windowCellHeight` | Maximum terminal cells (rows) for the shared non-raw reasoning and tool activity viewport. Default: `30`. |
 
 Defaults are chosen to match the existing `AttemptPrettyPrint` role palette (system=blue, user=cyan, tool=magenta, reasoning=warm-gray).
 
@@ -53,9 +57,27 @@ Example:
   "roleTool": "\u001b[35m",
   "roleReasoning": "\u001b[38;2;180;170;150m",
   "roleOther": "\u001b[34m",
-  "notificationBell": true
+  "notificationBell": true,
+  "toolOutputRows": 6,
+  "rollingOutput": {
+    "enabled": true,
+    "windowCellHeight": 30
+  }
 }
 ```
+
+Existing theme files get `toolOutputRows: 6` when clai loads them. Set a
+positive value to change the display limit.
+
+Existing theme files get the `rollingOutput` block with defaults when clai
+loads them. If `rollingOutput.enabled` is `false`, reasoning uses the plain
+non-rolling thinking format. Tool activity keeps the new header and result
+format, but clai appends each block without cursor redraws. Set
+`rollingOutput.windowCellHeight` to a positive value to change the rolling
+viewport size. The obsolete `reasoningOutputRows`, `activityOutputRows`, and
+flat `rollingOutput` keys are ignored. The earlier kebab-case keys
+`rolling-output` and `window-cell-height` are migrated to the camelCase
+spelling on load, keeping their values.
 
 `notificationBell` is intended for terminal/tmux attention behavior. Depending on terminal and tmux configuration, BEL may produce an audible bell, visual flash, or other attention marker.
 
@@ -86,9 +108,11 @@ Behaviour:
 
 ### 2) Obfuscated chat printing
 
-Function: `internal/chat.printChatObfuscated(w, chat, raw)`
+Function: `internal/chat.printChatObfuscated(w, chat, raw, width)`
 
 For older messages (all but the last 6 messages), it prints one-line summaries.
+The `width` argument is the session's resolved terminal width; every truncation
+in this render uses it, so one operation renders with one dimension set.
 
 - The bracket prefix such as:
 
@@ -115,9 +139,67 @@ Implementation:
 - `main.go:triggerCompletionNotification()`
 - `internal/utils.NotificationBellEnabled()`
 
-Raw `chat dir` and `chat dirv2` output does not include BEL. Model output with `-rf` or `-response-format` also excludes BEL.
+Raw `chat dir` and `chat dirv2` output does not include BEL. Redirected model
+output and model output with `-rf` or `-response-format` also exclude BEL.
 
 Structured output blocks all intermediate display output. These rules keep the JSON valid for tools such as `jq`.
+
+### 5) Tool activity
+
+Non-raw tool activity does not use glow. Each execution is one visually
+separate block. The block starts with a primary-colour header such as
+`▸ filesystem.list_directory  path=/work`, then has an indented result preview,
+then one blank line. Built-in names stay unchanged. MCP names drop `mcp_` and
+display as `server.tool`. Input keys are sorted, so headers are deterministic.
+
+clai wraps the result preview for the terminal width and shows no more than
+`toolOutputRows` terminal rows. At the default limit, clai shows the first
+three rows, an omitted-row marker, and the last two rows. Error results have a
+magenta `✗` marker. The full bounded result stays in the chat history and model
+context. Assistant and tool role labels are not printed for these blocks.
+
+Async lifecycle results are display summaries only. Start, status, await, and
+cancel results show concise status, ID, and exit data. Log results show status
+and decoded stdout/stderr preview text instead of a JSON envelope. Raw,
+structured, and debug output keep their existing behaviour.
+
+### 6) Streamed reasoning and assistant prose
+
+Normal streaming shows reasoning, assistant prose, and tool activity in one
+rolling viewport. Reasoning starts with the warm-hue `∴ thinking` header.
+Assistant prose that streams while the window is open (for example a short
+preamble before a tool call) is added as its own block with an `assistant`
+header; it is never re-printed outside the window. Its indented body is
+neutral, like a reasoning or tool result body. The viewport uses no more
+than `rollingOutput.windowCellHeight` terminal cells in total. Each tool
+preview remains limited by `toolOutputRows`. Long text wraps by terminal
+display-cell width, including wide Unicode characters. When the viewport is
+full, each new row removes the oldest visible row and redraws the same
+region.
+
+The viewport stores logical activity blocks, not wrapped rows. Each block
+keeps its complete sanitized content; colours and indentation are derived
+again at each rewrap. When the terminal dimensions change, clai rewraps
+every retained block at the new width and redraws the window in one frame.
+The effective window height is `min(windowCellHeight, terminal height)`.
+A terminal-height grow can bring retained content back into view, bounded
+by retention, not by the row cap.
+
+A terminal resize (`SIGWINCH`, for example a tmux pane resize) re-queries
+the terminal size through the shared dimensions viewer, rewraps every
+retained block at the new width, and redraws the window in one frame. The
+resize is consumed in the serialized session loop, never in the signal
+callback, so a redraw can never race a streamed token or tool write. Resize
+bursts coalesce; a failed re-query keeps the last valid size. A resize that
+arrives before the first reasoning or tool event updates the session
+snapshot, so the first render already uses the new dimensions. Raw,
+structured, debug, and redirected output never start the resize watcher.
+
+The complete reasoning stays in the session, model context, and saved chat.
+clai removes terminal control sequences only from the display copy. Raw,
+structured, debug, and redirected stdout do not use this viewport. Redirected
+stdout is identical to raw output. When activity ends, the final viewport
+stays visible and the final answer starts below it.
 
 ## Customization
 

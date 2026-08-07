@@ -17,6 +17,7 @@ import (
 	"github.com/baalimago/clai/internal/models"
 	inttools "github.com/baalimago/clai/internal/tools"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
+	"github.com/baalimago/go_away_boilerplate/pkg/dimensions"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
@@ -126,6 +127,70 @@ func Test_Querier_TextQuery_SystemPrompt(t *testing.T) {
 			t.Fatalf("expected user message, got %q", capturedChat.Messages[0].Role)
 		}
 	})
+}
+
+func Test_Querier_Query_DebugRedirectedOutputPrintsFinalAssistantAnswer(t *testing.T) {
+	var printed strings.Builder
+	q := &Querier[*MockQuerier]{
+		debug:            true,
+		out:              &printed,
+		outputModeKnown:  true,
+		outputIsTerminal: false,
+		Model: &MockQuerier{
+			streamFn: func(context.Context, pub_models.Chat) (chan models.CompletionEvent, error) {
+				out := make(chan models.CompletionEvent, 1)
+				out <- "final answer"
+				close(out)
+				return out, nil
+			},
+		},
+	}
+
+	if err := q.Query(context.Background()); err != nil {
+		t.Fatalf("Query() error = %v", err)
+	}
+	if got, want := printed.String(), "\nfinal answer\n"; got != want {
+		t.Fatalf("redirected debug output = %q, want %q", got, want)
+	}
+}
+
+func Test_Querier_SuppressCompletionNotification(t *testing.T) {
+	tests := []struct {
+		name string
+		q    Querier[*MockQuerier]
+		want bool
+	}{
+		{
+			name: "terminal output",
+			q: Querier[*MockQuerier]{
+				outputModeKnown:  true,
+				outputIsTerminal: true,
+			},
+		},
+		{
+			name: "redirected output",
+			q: Querier[*MockQuerier]{
+				outputModeKnown:  true,
+				outputIsTerminal: false,
+			},
+			want: true,
+		},
+		{
+			name: "structured output",
+			q: Querier[*MockQuerier]{
+				structuredOutput: true,
+			},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.q.SuppressCompletionNotification(); got != tt.want {
+				t.Fatalf("SuppressCompletionNotification() = %t, want %t", got, tt.want)
+			}
+		})
+	}
 }
 
 func (s stubTool) Call(pub_models.Input) (string, error) {
@@ -385,7 +450,7 @@ func Test_Querier_eventHandling(t *testing.T) {
 			},
 			{
 				desc: "it should call test function when asked to",
-				q:    Querier[*MockQuerier]{out: &strings.Builder{}},
+				q:    Querier[*MockQuerier]{out: &strings.Builder{}, dims: dimensions.Dimensions{Width: 80, Height: 24}},
 				run: func(t *testing.T, q *Querier[*MockQuerier]) string {
 					t.Helper()
 					call := pub_models.Call{
@@ -397,7 +462,7 @@ func Test_Querier_eventHandling(t *testing.T) {
 					if err := q.doToolCallLogic(context.Background(), call); err != nil {
 						t.Fatalf("doToolCallLogic returned err: %v", err)
 					}
-					return "Call: 'test', inputs: [ 'testKey': 'testVal' ]"
+					return "▸ test  testKey=testVal"
 				},
 			},
 		}

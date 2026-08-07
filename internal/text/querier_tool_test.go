@@ -16,6 +16,7 @@ import (
 	"github.com/baalimago/clai/internal/models"
 	internaltools "github.com/baalimago/clai/internal/tools"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
+	"github.com/baalimago/go_away_boilerplate/pkg/dimensions"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
@@ -177,10 +178,10 @@ func Test_toolExecutor_Execute_EmptyNonAsyncToolOutputBecomesDescriptiveMessage(
 	}
 }
 
-func Test_toolExecutor_Execute_LargeToolOutputStoresTruncatedTranscriptButShortensPrettyPrint(t *testing.T) {
+func Test_toolExecutor_Execute_LargeToolOutputStoresTranscriptButCompactsDisplay(t *testing.T) {
 	internaltools.Init()
 	var printed bytes.Buffer
-	q := Querier[*MockQuerier]{out: &printed, toolOutputRuneLimit: 10000}
+	q := Querier[*MockQuerier]{out: &printed, toolOutputRuneLimit: 10000, dims: dimensions.Dimensions{Width: 80, Height: 24}}
 	session := &QuerySession{}
 	dir := t.TempDir()
 	for i := range 20 {
@@ -196,8 +197,45 @@ func Test_toolExecutor_Execute_LargeToolOutputStoresTruncatedTranscriptButShorte
 		t.Fatalf("Execute() error = %v", err)
 	}
 	printedStr := printed.String()
-	if !strings.Contains(printedStr, "...[and ") {
-		t.Fatalf("expected pretty print to shorten tool output, got %q", printedStr)
+	if !strings.Contains(printedStr, "terminal rows omitted") {
+		t.Fatalf("expected compact tool output marker, got %q", printedStr)
+	}
+	if got := session.Chat.Messages[len(session.Chat.Messages)-1].Content; !strings.Contains(got, "file-19-with-long-name.txt") {
+		t.Fatalf("expected complete bounded output in transcript, got %q", got)
+	}
+}
+
+func Test_toolExecutor_EmitToolResult_CompactsMCPOutputAndRetainsTranscript(t *testing.T) {
+	t.Setenv("NO_COLOR", "true")
+	var printed bytes.Buffer
+	q := Querier[*MockQuerier]{out: &printed, dims: dimensions.Dimensions{Width: 80, Height: 24}}
+	session := &QuerySession{}
+	out := "mcp_result\n" + strings.Repeat("a long result row\n", 20)
+	call := pub_models.Call{ID: "call-1", Name: "mcp_server_tool"}
+
+	if err := (toolExecutor[*MockQuerier]{querier: &q}).emitToolResult(session, call, out); err != nil {
+		t.Fatalf("emitToolResult() error = %v", err)
+	}
+	if got := printed.String(); !strings.Contains(got, "terminal rows omitted") {
+		t.Fatalf("expected MCP output to be compacted, got %q", got)
+	}
+	if got := session.Chat.Messages[0].Content; got != out {
+		t.Fatalf("expected full bounded MCP result in transcript, got %q", got)
+	}
+}
+
+func Test_toolExecutor_EmitToolResult_RawDisplayKeepsCompleteResult(t *testing.T) {
+	var printed bytes.Buffer
+	q := Querier[*MockQuerier]{Raw: true, out: &printed, toolOutputRuneLimit: 4}
+	session := &QuerySession{}
+	result := "complete tool result"
+	call := pub_models.Call{ID: "call-1", Name: "test"}
+
+	if err := (toolExecutor[*MockQuerier]{querier: &q}).emitToolResult(session, call, result); err != nil {
+		t.Fatalf("emitToolResult() error = %v", err)
+	}
+	if got := printed.String(); !strings.Contains(got, result) {
+		t.Fatalf("raw display must keep complete result, got %q", got)
 	}
 }
 
@@ -222,7 +260,7 @@ func Test_toolExecutor_ExecuteLoadSkill_PrintsSummary(t *testing.T) {
 func Test_toolExecutor_ExecuteLoadSkill_TruncatesUserVisibleOutputUnlessRaw(t *testing.T) {
 	t.Run("non_raw", func(t *testing.T) {
 		var out bytes.Buffer
-		q := Querier[*MockQuerier]{out: &out, skillLoader: fakeSkillLoader{
+		q := Querier[*MockQuerier]{out: &out, dims: dimensions.Dimensions{Width: 80, Height: 24}, skillLoader: fakeSkillLoader{
 			loaded: LoadedSkillRuntime{
 				Name:         "review",
 				SourceClass:  "default",

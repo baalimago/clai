@@ -16,6 +16,7 @@ import (
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
+	"github.com/baalimago/go_away_boilerplate/pkg/dimensions"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
@@ -74,6 +75,11 @@ type ChatHandler struct {
 
 	out   io.Writer
 	input io.Reader
+	// dims is the one terminal-dimensions snapshot of this chat command
+	// invocation, bound to the handler's output writer. It is resolved once in
+	// New and used by every width-aware render path of the handler. Tests
+	// inject a snapshot to stay ambient-independent.
+	dims dimensions.Dimensions
 }
 
 func (q *ChatHandler) Query(ctx context.Context) error {
@@ -163,7 +169,7 @@ func (cq *ChatHandler) findChatByID(potentialChatIdx string) (pub_models.Chat, e
 func (cq *ChatHandler) printChat(chat pub_models.Chat) error {
 	// New default behavior: fast, heavily obfuscated preview.
 	// This avoids expensive glow rendering and avoids printing message bodies.
-	if err := printChatObfuscated(cq.out, chat, cq.raw); err != nil {
+	if err := printChatObfuscated(cq.out, chat, cq.raw, cq.dims.Width); err != nil {
 		return fmt.Errorf("print obfuscated chat: %w", err)
 	}
 	return nil
@@ -312,6 +318,7 @@ func New(q models.ChatQuerier,
 		config:   conf,
 		raw:      raw,
 		out:      out,
+		dims:     utils.SessionDimensions(out),
 	}
 
 	// Macro mode: extra positional args after "chat list" become table inputs.

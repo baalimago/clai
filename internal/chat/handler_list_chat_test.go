@@ -15,6 +15,7 @@ import (
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/internal/vendors"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
+	"github.com/baalimago/go_away_boilerplate/pkg/dimensions"
 )
 
 // chdirToTemp switches the working directory to a fresh temp dir for the duration
@@ -304,7 +305,7 @@ func TestMessagePickerRow_ShowsAssistantContent(t *testing.T) {
 			{Name: "cat", Inputs: &pub_models.Input{"file": "main.go"}},
 		},
 	}
-	row, err := messagePickerRow(2, toolTurn)
+	row, err := messagePickerRow(2, toolTurn, 80)
 	if err != nil {
 		t.Fatalf("messagePickerRow: %v", err)
 	}
@@ -313,7 +314,7 @@ func TestMessagePickerRow_ShowsAssistantContent(t *testing.T) {
 	}
 
 	textTurn := pub_models.Message{Role: "assistant", Content: "the answer is 42"}
-	row, err = messagePickerRow(3, textTurn)
+	row, err = messagePickerRow(3, textTurn, 80)
 	if err != nil {
 		t.Fatalf("messagePickerRow: %v", err)
 	}
@@ -610,15 +611,6 @@ func TestListChats_NarrowWidthShowsCostAndPrompt(t *testing.T) {
 			t.Fatalf("restore TTY: %v", err)
 		}
 	})
-	oldColumns := os.Getenv("COLUMNS")
-	if err := os.Setenv("COLUMNS", "100"); err != nil {
-		t.Fatalf("set COLUMNS: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := os.Setenv("COLUMNS", oldColumns); err != nil {
-			t.Fatalf("restore COLUMNS: %v", err)
-		}
-	})
 
 	paginator, err := NewChatIndexPaginator(convDir)
 	if err != nil {
@@ -626,7 +618,9 @@ func TestListChats_NarrowWidthShowsCostAndPrompt(t *testing.T) {
 	}
 
 	var out strings.Builder
-	cq := &ChatHandler{confDir: confDir, convDir: convDir, out: &out}
+	// The narrow table is selected by the session snapshot width, not by the
+	// ambient COLUMNS variable (the ioctl is authoritative; R2-02).
+	cq := &ChatHandler{confDir: confDir, convDir: convDir, out: &out, dims: dimensions.Dimensions{Width: 100}}
 	err = cq.listChats(context.Background(), paginator, "")
 	if err == nil {
 		t.Fatal("listChats() error = nil, want error from empty selection input")

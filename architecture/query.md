@@ -94,6 +94,9 @@ loop (`internal/text/session_runner.go`). Each model step:
    - `error` → propagated
    - `models.StopEvent` → cancels context
    - `models.NoopEvent` → ignored
+   - `dimensions.Dimensions` (resize, rolling terminal sessions only) →
+     refreshes the session snapshot, resizes the rolling viewport, and
+     redraws it in one frame before further output
 3. **Tool batch** (when the step produced tool calls): the stoploss controller
    preflights the whole batch against both run budgets before any tool runs
    (`internal/text/tool_executor.go`). Refused calls never reach their

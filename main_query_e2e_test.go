@@ -28,7 +28,7 @@ func Test_goldenFile_QUERY_stdin_and_token_replacement(t *testing.T) {
 			name:     "stdin_only_becomes_prompt",
 			stdin:    "from-stdin",
 			args:     "-r -cm test q",
-			wantOut:  "from-stdin\n\a",
+			wantOut:  "from-stdin\n",
 			wantCode: 0,
 		},
 		{
@@ -36,7 +36,7 @@ func Test_goldenFile_QUERY_stdin_and_token_replacement(t *testing.T) {
 			stdin: "X",
 			args:  "-r -cm test q hello {} world",
 			// Note: current Prompt() semantics append stdin after args as well.
-			wantOut:  "hello X world X\n\a",
+			wantOut:  "hello X world X\n",
 			wantCode: 0,
 		},
 		{
@@ -44,7 +44,7 @@ func Test_goldenFile_QUERY_stdin_and_token_replacement(t *testing.T) {
 			stdin: "Y",
 			args:  "-r -cm test -I __ q hello __ world",
 			// Note: replacement does not currently occur for custom token, stdin is appended.
-			wantOut:  "hello __ world Y\n\a",
+			wantOut:  "hello __ world Y\n",
 			wantCode: 0,
 		},
 	}
@@ -111,12 +111,12 @@ func Test_goldenFile_QUERY_shell_context_is_in_system_prompt_not_user_message(t 
 		gotStatusCode = run(strings.Split("-r -cm test -add-shell-context minimal q hello", " "))
 	})
 
-	want := "hello\n\a"
+	want := "hello\n"
 	testboil.FailTestIfDiff(t, gotStatusCode, 0)
 	testboil.FailTestIfDiff(t, gotStdout, want)
 }
 
-func Test_goldenFile_QUERY_raw_output_ends_with_newline_before_bell(t *testing.T) {
+func Test_goldenFile_QUERY_redirected_raw_output_ends_with_newline(t *testing.T) {
 	_ = setupMainTestConfigDir(t)
 
 	oldArgs := os.Args
@@ -128,7 +128,7 @@ func Test_goldenFile_QUERY_raw_output_ends_with_newline_before_bell(t *testing.T
 	})
 
 	testboil.FailTestIfDiff(t, gotStatus, 0)
-	testboil.FailTestIfDiff(t, stdout, "hello\n\a")
+	testboil.FailTestIfDiff(t, stdout, "hello\n")
 }
 
 func Test_goldenFile_QUERY_shell_context_flag_keeps_user_message_output_clean(t *testing.T) {
@@ -156,7 +156,7 @@ func Test_goldenFile_QUERY_shell_context_flag_keeps_user_message_output_clean(t 
 		gotStatusCode = run(strings.Split("-r -cm test -add-shell-context minimal q hello", " "))
 	})
 
-	want := "hello\n\a"
+	want := "hello\n"
 	testboil.FailTestIfDiff(t, gotStatusCode, 0)
 	testboil.FailTestIfDiff(t, gotStdout, want)
 }

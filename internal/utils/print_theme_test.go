@@ -127,11 +127,13 @@ func TestAttemptPrettyPrint_SkipsGlowForCapturedWriters(t *testing.T) {
 }
 
 // TestAttemptPrettyPrint_UsesGlowForTerminalWriters proves the glow renderer
-// still receives the width-aware args when the destination is a terminal
-// (character device), and that the version probe answers the fake glow.
+// receives the width-aware args when the destination is a character device and
+// the version probe answers the fake glow. /dev/null is a character device but
+// not a terminal, so its TIOCGWINSZ read fails and the deterministic fallback
+// width (80) drives the args: the ioctl is authoritative and COLUMNS plays no
+// role (R2-02).
 func TestAttemptPrettyPrint_UsesGlowForTerminalWriters(t *testing.T) {
 	t.Setenv("NO_COLOR", "")
-	t.Setenv("COLUMNS", "100")
 
 	argsPath := filepath.Join(t.TempDir(), "glow-args.txt")
 	glowPath := filepath.Join(t.TempDir(), "glow")
@@ -155,8 +157,44 @@ func TestAttemptPrettyPrint_UsesGlowForTerminalWriters(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read fake glow args: %v", err)
 	}
-	if got, want := strings.TrimSpace(string(gotArgsBytes)), "-w 95"; got != want {
+	if got, want := strings.TrimSpace(string(gotArgsBytes)), "-w 75"; got != want {
 		t.Fatalf("unexpected glow args\nwant: %q\ngot:  %q", want, got)
+	}
+}
+
+// TestAttemptPrettyPrint_GlowFailureSurfacesError pins the phase-3 error
+// contract for the width-aware glow collaborator: when the glow subprocess
+// fails after answering the version probe, AttemptPrettyPrint returns the
+// error instead of emitting malformed output. The caller (chat print paths)
+// aborts on this error.
+func TestAttemptPrettyPrint_GlowFailureSurfacesError(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+
+	glowPath := filepath.Join(t.TempDir(), "glow")
+	if err := os.WriteFile(glowPath, []byte(`#!/bin/sh
+if [ "$1" = "--version" ]; then
+	echo "glow test"
+	exit 0
+fi
+exit 3
+`), 0o755); err != nil {
+		t.Fatalf("write failing fake glow: %v", err)
+	}
+	t.Setenv("PATH", filepath.Dir(glowPath))
+
+	devNull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatalf("open %s: %v", os.DevNull, err)
+	}
+	defer devNull.Close()
+
+	msg := pub_models.Message{Role: "assistant", Content: "hello markdown"}
+	err = AttemptPrettyPrint(devNull, msg, "alice", false)
+	if err == nil {
+		t.Fatal("expected glow failure to surface as an error")
+	}
+	if !strings.Contains(err.Error(), "run glow") {
+		t.Fatalf("expected the glow error to be wrapped, got: %v", err)
 	}
 }
 

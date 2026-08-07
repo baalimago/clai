@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
+	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
 
@@ -52,10 +54,10 @@ func SubCmd(ctx context.Context, args []string) error {
 			aliasSuffix = " (alias: " + strings.Join(aliasesOfTool, ", ") + ")"
 		}
 		prefix := fmt.Sprintf("- %s%s: ", name, aliasSuffix)
-		maybeShortenedDesc, err := table.WidthAppropriateStringTrunc(spec.Description, prefix, 5)
-		if err != nil {
-			return fmt.Errorf("failed to truncate descriptoin: :%v", err)
-		}
+		// The listing writes to stdout, so it resolves one snapshot bound to
+		// stdout's fd (R2-02): a non-terminal stdout yields the deterministic
+		// fallback width.
+		maybeShortenedDesc := table.WidthAppropriateStringTruncWithWidth(spec.Description, prefix, 5, utils.SessionDimensions(os.Stdout).Width)
 		fmt.Println(maybeShortenedDesc)
 	}
 	fmt.Println("\nRun 'clai tools <tool-name>' for more details.")

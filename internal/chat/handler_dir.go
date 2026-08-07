@@ -95,12 +95,8 @@ func aggregateQueryPriceInfo(queries []pub_models.QueryCost) (chatDirPriceInfo, 
 	return price, totalCost
 }
 
-func (cdi chatDirInfo) initialPrompt() string {
-	truncPrompt, err := table.WidthAppropriateStringTrunc(cdi.initialMessage, "", 30)
-	if err != nil {
-		return "failed to get initial prompt"
-	}
-	return truncPrompt
+func (cdi chatDirInfo) initialPrompt(width int) string {
+	return table.WidthAppropriateStringTruncWithWidth(cdi.initialMessage, "", 30, width)
 }
 
 const prettyDirInfoFormat = `scope: %v
@@ -156,7 +152,7 @@ func (cq *ChatHandler) dirInfo() error {
 		cq.out, prettyDirInfoFormat,
 		info.Scope,
 		info.ChatID,
-		info.initialPrompt(),
+		info.initialPrompt(cq.dims.Width),
 		profileOutput(info.Profile),
 		repliesOutput(info.RepliesByRole),
 		info.costString(),
@@ -191,7 +187,7 @@ func (cq *ChatHandler) dirInfoV2() error {
 		cq.out, prettyDirInfoV2Format,
 		info.Scope,
 		info.ChatID,
-		legacy.initialPrompt(),
+		legacy.initialPrompt(cq.dims.Width),
 		profileOutput(info.Profile),
 		repliesOutput(info.RepliesByRole),
 		legacy.costString(),

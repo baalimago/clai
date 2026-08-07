@@ -176,9 +176,11 @@ func (e toolExecutor[C]) emitAssistantToolCalls(session *QuerySession, calls []p
 			modelSafe.ReasoningItems = call.ReasoningItems
 		}
 		if !q.debug && !q.structuredOutput {
-			display := pub_models.Message{Role: "assistant", Content: call.PrettyPrint(), ToolCalls: []pub_models.Call{call}, ReasoningContent: call.ReasoningContent}
-			if err := utils.AttemptPrettyPrint(q.out, display, q.username, q.Raw); err != nil {
-				return fmt.Errorf("pretty print assistant tool call: %w", err)
+			if q.rawDisplay() {
+				display := pub_models.Message{Role: "assistant", Content: call.PrettyPrint(), ToolCalls: []pub_models.Call{call}, ReasoningContent: call.ReasoningContent}
+				if err := utils.AttemptPrettyPrint(q.out, display, q.username, q.rawDisplay()); err != nil {
+					return fmt.Errorf("pretty print raw assistant tool call: %w", err)
+				}
 			}
 		}
 	}
@@ -190,9 +192,11 @@ func (e toolExecutor[C]) emitAssistantToolCalls(session *QuerySession, calls []p
 // it, and resets pending text — the shared tail of every tool-call exchange.
 func (e toolExecutor[C]) emitToolResult(session *QuerySession, call pub_models.Call, out string) error {
 	q := e.querier
+	displayOut := out
 	out = limitToolOutput(out, q.toolOutputRuneLimit)
 	if out == "" {
 		out = fmt.Sprintf("<NO-OUTPUT> tool %s completed successfully but produced no stdout/stderr.", call.Name)
+		displayOut = out
 	}
 	outMsg := pub_models.Message{
 		Role:       "tool",
@@ -201,13 +205,15 @@ func (e toolExecutor[C]) emitToolResult(session *QuerySession, call pub_models.C
 	}
 	session.Chat.Messages = append(session.Chat.Messages, outMsg)
 	if !q.structuredOutput {
-		if q.Raw {
-			if err := utils.AttemptPrettyPrint(q.out, outMsg, "tool", q.Raw); err != nil {
+		if q.rawDisplay() {
+			printMsg := outMsg
+			printMsg.Content = displayOut
+			if err := utils.AttemptPrettyPrint(q.out, printMsg, "tool", q.rawDisplay()); err != nil {
 				return fmt.Errorf("pretty print raw tool output: %w", err)
 			}
 		} else if !q.debug {
-			if err := utils.AttemptPrettyPrint(q.out, utils.PrepareDisplayMessage(outMsg), "tool", q.Raw); err != nil {
-				return fmt.Errorf("pretty print tool output: %w", err)
+			if err := q.appendToolActivity(call, outMsg.Content); err != nil {
+				return fmt.Errorf("print tool output: %w", err)
 			}
 		}
 	}
@@ -268,7 +274,7 @@ func (e toolExecutor[C]) executeLoadSkill(ctx context.Context, session *QuerySes
 	if strings.TrimSpace(userVisibleContent) == "" {
 		userVisibleContent = loaded.RenderedBody
 	}
-	if !q.Raw {
+	if !q.rawDisplay() {
 		userVisibleContent = formatSkillOutputForDisplay(loaded)
 	}
 	if len(loaded.Warnings) > 0 {
@@ -288,11 +294,29 @@ func (e toolExecutor[C]) executeLoadSkill(ctx context.Context, session *QuerySes
 	if !q.debug && !q.structuredOutput {
 		printMsg := outMsg
 		printMsg.Content = userVisibleContent
-		if err := utils.AttemptPrettyPrint(q.out, printMsg, "tool", q.Raw); err != nil {
-			return fmt.Errorf("pretty print skill output: %w", err)
+		if q.rawDisplay() {
+			if err := utils.AttemptPrettyPrint(q.out, printMsg, "tool", q.rawDisplay()); err != nil {
+				return fmt.Errorf("pretty print raw skill output: %w", err)
+			}
+		} else if err := q.appendToolActivity(call, printMsg.Content); err != nil {
+			return fmt.Errorf("print skill output: %w", err)
 		}
 	}
 	session.ResetPendingText()
+	return nil
+}
+
+func (q *Querier[C]) appendToolActivity(call pub_models.Call, content string) error {
+	if !utils.RollingOutputEnabled() {
+		if err := utils.PrintToolActivity(q.out, call, content, q.dims.Width, utils.ToolOutputRows()); err != nil {
+			return fmt.Errorf("print tool activity: %w", err)
+		}
+		return nil
+	}
+	q.ensureActivityViewport().AppendTool(call, utils.SummarizeAsyncToolResult(call.Name, content), utils.ToolOutputRows())
+	if err := q.activityViewport.Render(q.out); err != nil {
+		return fmt.Errorf("render activity viewport: %w", err)
+	}
 	return nil
 }
 
@@ -318,9 +342,24 @@ func (e toolExecutor[C]) finalizeAssistantTextBeforeToolCall(session *QuerySessi
 		return nil
 	}
 	q := e.querier
-	if !q.Raw && !q.structuredOutput && q.termWidth > 0 {
-		utils.UpdateMessageTerminalMetadata(pending, &session.Line, &session.LineCount, q.termWidth)
-		if err := table.ClearTermTo(q.out, session.LineCount-1); err != nil {
+	if q.usesActivityViewport() {
+		return e.finalizeAssistantTextRolling(session, pending, call)
+	}
+	return e.finalizeAssistantTextPlain(session, pending, call)
+}
+
+// finalizeAssistantTextPlain finalizes assistant prose for non-rolling
+// display: the streamed text is cleared and re-printed as one proper message
+// above the upcoming tool activity. Echoed tool-call text is dropped.
+func (e toolExecutor[C]) finalizeAssistantTextPlain(session *QuerySession, pending string, call pub_models.Call) error {
+	q := e.querier
+	if !q.rawDisplay() && !q.structuredOutput && q.dims.Width > 0 {
+		utils.UpdateMessageTerminalMetadata(pending, &session.Line, &session.LineCount, q.dims.Width)
+		rowsToClear := session.LineCount - 1
+		if q.activityViewport != nil {
+			rowsToClear += q.activityViewport.DetachRenderedRegion()
+		}
+		if err := table.ClearTermTo(q.out, rowsToClear); err != nil {
 			return fmt.Errorf("clear streamed assistant text before tool call: %w", err)
 		}
 	}
@@ -340,16 +379,65 @@ func (e toolExecutor[C]) finalizeAssistantTextBeforeToolCall(session *QuerySessi
 		Role:    "assistant",
 		Content: pending,
 	})
-	if !q.Raw && !q.structuredOutput {
-		if q.termWidth > 0 {
-			utils.UpdateMessageTerminalMetadata(displayMsg.Content, &q.line, &q.lineCount, q.termWidth)
+	if !q.rawDisplay() && !q.structuredOutput {
+		if q.dims.Width > 0 {
+			utils.UpdateMessageTerminalMetadata(displayMsg.Content, &q.line, &q.lineCount, q.dims.Width)
 		} else {
 			fmt.Fprintln(q.out)
 		}
-		utils.AttemptPrettyPrint(q.out, displayMsg, q.username, q.Raw)
+		utils.AttemptPrettyPrint(q.out, displayMsg, q.username, q.rawDisplay())
 	}
 	session.Line = q.line
 	session.LineCount = q.lineCount
+	return nil
+}
+
+// finalizeAssistantTextRolling finalizes assistant prose while the rolling
+// window is active. The prose already lives inside the window (or is moved
+// into it), so nothing is re-printed outside the window. Echoed tool-call text
+// is dropped from the window and the transcript.
+func (e toolExecutor[C]) finalizeAssistantTextRolling(session *QuerySession, pending string, call pub_models.Call) error {
+	q := e.querier
+	q.ensureActivityViewport()
+	if isEchoedToolCallText(pending, call) {
+		// The model echoed its own tool call as prose. Remove it from the
+		// window when it was streamed there, or clear the direct print when
+		// the window did not exist yet.
+		if q.activityViewport.RemoveTextBlock() > 0 {
+			if err := q.activityViewport.Render(q.out); err != nil {
+				return fmt.Errorf("render activity viewport after dropping echoed tool call: %w", err)
+			}
+		} else if q.dims.Width > 0 {
+			utils.UpdateMessageTerminalMetadata(pending, &session.Line, &session.LineCount, q.dims.Width)
+			if err := table.ClearTermTo(q.out, session.LineCount-1); err != nil {
+				return fmt.Errorf("clear echoed tool call text: %w", err)
+			}
+		}
+		session.ResetPendingText()
+		q.fullMsg = ""
+		q.line = ""
+		q.lineCount = 0
+		return nil
+	}
+	if !q.activityViewport.TextBlockActive() {
+		// The prose was streamed before any activity created the window. Move
+		// it inside the window instead of leaving it outside it.
+		if q.dims.Width > 0 {
+			utils.UpdateMessageTerminalMetadata(pending, &session.Line, &session.LineCount, q.dims.Width)
+			if err := table.ClearTermTo(q.out, session.LineCount-1); err != nil {
+				return fmt.Errorf("clear streamed assistant text before tool call: %w", err)
+			}
+		}
+		q.activityViewport.AppendText(pending)
+		if err := q.activityViewport.Render(q.out); err != nil {
+			return fmt.Errorf("render activity viewport: %w", err)
+		}
+	}
+	session.ResetPendingText()
+	session.FinalAssistantText = pending
+	q.fullMsg = pending
+	q.line = ""
+	q.lineCount = 0
 	return nil
 }
 

@@ -2,22 +2,21 @@ package photo
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
-	"github.com/baalimago/go_away_boilerplate/pkg/table"
+	"github.com/baalimago/clai/internal/utils"
 )
 
 func StartAnimation() func() {
 	t0 := time.Now()
 	ticker := time.NewTicker(time.Second / 60)
 	stop := make(chan struct{})
-	termWidth, err := table.TermWidth()
-	if err != nil {
-		ancli.PrintWarn(fmt.Sprintf("failed to get terminal size: %v\n", err))
-		termWidth = 100
-	}
+	// The animation clears the current row with spaces, so it needs the width
+	// of the file it actually writes to: stdout. A non-terminal stdout yields
+	// the deterministic fallback width.
+	termWidth := utils.SessionDimensions(os.Stdout).Width
 	go func() {
 		for {
 			select {
