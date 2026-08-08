@@ -15,7 +15,7 @@ func TestHandleServerRegistersTool(t *testing.T) {
 	ctx := t.Context()
 
 	srv := pub_models.McpServer{Command: "go", Args: []string{"run", "./testserver"}}
-	in, out, err := Client(ctx, srv)
+	in, out, err := Client(ctx, srv, nil)
 	if err != nil {
 		t.Fatalf("client: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestManager(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	srv := pub_models.McpServer{Command: "go", Args: []string{"run", "./testserver"}}
-	in, out, err := Client(ctx, srv)
+	in, out, err := Client(ctx, srv, nil)
 	if err != nil {
 		t.Fatalf("client: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestMcpTool_CallWithContext_CancelBeforeSend(t *testing.T) {
 	// Use a live context for Client and handleServer
 	srvCtx := context.Background()
 	srv := pub_models.McpServer{Command: "go", Args: []string{"run", "./testserver"}}
-	in, out, err := Client(srvCtx, srv)
+	in, out, err := Client(srvCtx, srv, nil)
 	if err != nil {
 		t.Fatalf("client: %v", err)
 	}

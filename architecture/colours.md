@@ -163,6 +163,21 @@ cancel results show concise status, ID, and exit data. Log results show status
 and decoded stdout/stderr preview text instead of a JSON envelope. Raw,
 structured, and debug output keep their existing behaviour.
 
+MCP server stderr output follows the session display mode. In a rolling-output
+session, server stderr lines appear in the shared viewport as bounded blocks
+with a secondary-colour header such as `▸ mcp.filesystem log`, one block per
+server per drain, limited to the same body budget as tool results. Lines that
+match the error keyword set (`error`, `fatal`, `panic`, `fail`, `exception`,
+`denied`, `refused`, `unable`, `cannot`, `could not`, `warn`, `timeout`,
+`unreachable`, case-insensitive) get a magenta `✗` marker. Error lines and the
+10-line stderr tail of an unexpectedly terminated server are elevated outside
+the window: the window region clears, the styled error block prints into the
+scrollback, and the window redraws below it, so the error is never evicted.
+Server logs never enter the chat history or model context. In plain non-rolling
+and debug sessions the lines print directly as before; in raw, structured, and
+redirected-output sessions normal lines are suppressed and only error lines
+print, on stderr, so stdout stays clean.
+
 ### 6) Streamed reasoning and assistant prose
 
 Normal streaming shows reasoning, assistant prose, and tool activity in one

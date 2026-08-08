@@ -68,6 +68,10 @@ type Querier[C models.StreamCompleter] struct {
 	reasoningBuf     strings.Builder
 	reasoningActive  bool
 	activityViewport *utils.ActivityViewport
+	// mcpSink buffers MCP server stderr lines for the rolling window. It is
+	// created in NewQuerier before the MCP clients spawn and drained on the
+	// serialized session loop.
+	mcpSink *mcpLogSink
 	// finalAnswerPopPending marks that the trailing assistant-prose block was
 	// removed from the viewport state at stream end. The window redraws (and
 	// the answer prints below it) only when the finalizer prints the answer,
@@ -256,6 +260,75 @@ func (q *Querier[C]) ensureActivityViewport() *utils.ActivityViewport {
 		q.activityViewport = utils.NewActivityViewport(q.dims.Width, utils.RollingOutputWindowCellHeight(), q.dims.Height)
 	}
 	return q.activityViewport
+}
+
+// drainMcpLogs moves buffered MCP server stderr lines into the rolling window.
+// Normal lines coalesce per server into one bounded block; error lines and
+// exit tails elevate below the window so they stay in the scrollback. It runs
+// on the serialized session loop, the only place the viewport mutates, and is
+// a cheap no-op when nothing is buffered.
+func (q *Querier[C]) drainMcpLogs() error {
+	if q.mcpSink == nil {
+		return nil
+	}
+	entries := q.mcpSink.Drain()
+	if len(entries) == 0 {
+		return nil
+	}
+	w := q.out
+	if w == nil {
+		w = os.Stdout
+	}
+	normal := make(map[string]*strings.Builder)
+	var normalOrder []string
+	for _, entry := range entries {
+		if entry.isError {
+			lines := entry.lines
+			if !entry.exit {
+				lines = []string{entry.line}
+			}
+			if err := q.elevateMcpError(w, entry.server, lines); err != nil {
+				return err
+			}
+			continue
+		}
+		builder, ok := normal[entry.server]
+		if !ok {
+			builder = &strings.Builder{}
+			normal[entry.server] = builder
+			normalOrder = append(normalOrder, entry.server)
+		}
+		builder.WriteString(entry.line)
+		builder.WriteString("\n")
+	}
+	for _, server := range normalOrder {
+		q.ensureActivityViewport().AppendMcpLogBlock(server, normal[server].String(), utils.ToolOutputRows())
+	}
+	if len(normal) > 0 {
+		return q.activityViewport.Render(w)
+	}
+	return nil
+}
+
+// elevateMcpError moves an MCP server error block out of the rolling window
+// into the scrollback. The window region is cleared, the styled error block
+// prints below it, and the window redraws underneath, so the error is never
+// evicted. When no window exists yet, the block prints directly and the first
+// window frame renders below it.
+func (q *Querier[C]) elevateMcpError(w io.Writer, server string, lines []string) error {
+	if q.activityViewport == nil {
+		return utils.PrintMcpErrorBlock(w, server, lines, q.dims.Width)
+	}
+	rows := q.activityViewport.DetachRenderedRegion()
+	if rows > 0 {
+		if err := table.ClearTermTo(w, rows); err != nil {
+			return fmt.Errorf("clear window region before elevating mcp error: %w", err)
+		}
+	}
+	if err := utils.PrintMcpErrorBlock(w, server, lines, q.dims.Width); err != nil {
+		return fmt.Errorf("print elevated mcp error: %w", err)
+	}
+	return q.activityViewport.Render(w)
 }
 
 // startResizeWatcher starts one dimensions watcher for terminal

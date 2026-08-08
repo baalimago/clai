@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 )
 
@@ -13,6 +14,30 @@ type Request struct {
 }
 
 func main() {
+	if os.Getenv("TEST_SERVER_CRASH_TAIL") != "" {
+		fmt.Fprintln(os.Stderr, "worker stopped")
+		fmt.Fprintln(os.Stderr, "signal received")
+		return
+	}
+	if os.Getenv("TEST_SERVER_UNCONSUMED_STDOUT") != "" {
+		// One valid JSON line nobody will consume, then a keyword-free crash
+		// tail, then exit. The client's stdout reader blocks delivering the
+		// line; exit detection must not depend on that reader finishing.
+		fmt.Fprintln(os.Stdout, `{"jsonrpc":"2.0","method":"notifications/message","params":{}}`)
+		fmt.Fprintln(os.Stderr, "worker stopped")
+		return
+	}
+	if os.Getenv("TEST_SERVER_STDERR") != "" {
+		fmt.Fprintln(os.Stderr, "stderr line one")
+		fmt.Fprintln(os.Stderr, "stderr line two: an error occurred")
+	}
+	if os.Getenv("TEST_SERVER_CLOSE_STDERR") != "" {
+		fmt.Fprintln(os.Stderr, "stderr line one")
+		os.Stderr.Close()
+	}
+	if os.Getenv("TEST_SERVER_EXIT") != "" {
+		return
+	}
 	dec := json.NewDecoder(os.Stdin)
 	enc := json.NewEncoder(os.Stdout)
 	for {

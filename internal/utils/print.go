@@ -383,6 +383,7 @@ const (
 	blockReasoning blockKind = iota
 	blockText
 	blockTool
+	blockMcpLog
 )
 
 // activityBlock is one logical activity unit. Content is the sanitized source
@@ -393,6 +394,8 @@ type activityBlock struct {
 	content string
 	// call is the tool-call metadata used to render the tool header.
 	call pub_models.Call
+	// server is the MCP server name used to render a server-log header.
+	server string
 	// toolBodyRows is the body compaction budget of tool blocks.
 	toolBodyRows int
 	rows         []activityRow
@@ -519,6 +522,27 @@ func (v *ActivityViewport) AppendTool(call pub_models.Call, content string, maxR
 	v.rewrap()
 }
 
+// AppendMcpLogBlock adds one compacted server-log block to the viewport. The
+// block carries the same body budget as a tool block; lines that match the
+// MCP log error heuristic are styled as errors inside the block.
+func (v *ActivityViewport) AppendMcpLogBlock(server, content string, maxRows int) {
+	if v == nil {
+		return
+	}
+	v.FinishText()
+	v.FinishReasoning()
+	block := &activityBlock{
+		kind:         blockMcpLog,
+		content:      boundContent(sanitizeTerminalText(content)),
+		server:       server,
+		toolBodyRows: maxRows,
+	}
+	v.blocks = append(v.blocks, block)
+	block.rows = v.wrapBlock(block)
+	v.evict()
+	v.rewrap()
+}
+
 // evict drops the oldest finished blocks once the retained history exceeds
 // maxActivityBlocks. The open coalescing blocks always survive; finished
 // blocks keep their logical content until this policy evicts them.
@@ -565,6 +589,17 @@ func (v *ActivityViewport) wrapBlock(block *activityBlock) []activityRow {
 				color = TableTheme().Secondary
 			}
 			if strings.HasPrefix(row, "ERROR:") {
+				row = truncateTerminalRow("✗ "+row, max(v.width-2, 1))
+				color = RoleColor("tool")
+			}
+			rows = append(rows, activityRow{content: "  " + row, color: color})
+		}
+		return append(rows, activityRow{})
+	case blockMcpLog:
+		rows := []activityRow{{content: truncateTerminalRow(mcpLogBlockHeader(block.server), v.width), color: TableTheme().Secondary}}
+		for _, row := range compactTerminalRows(block.content, max(v.width-2, 1), block.toolBodyRows) {
+			color := ""
+			if IsMcpLogErrorLine(row) {
 				row = truncateTerminalRow("✗ "+row, max(v.width-2, 1))
 				color = RoleColor("tool")
 			}
@@ -770,6 +805,65 @@ func (v *ActivityViewport) DetachRenderedRegion() int {
 
 func isToolError(content string) bool {
 	return strings.Contains(content, "ERROR:")
+}
+
+// mcpLogErrorKeywords is the comprehensive severity keyword set for MCP server
+// stderr lines. A match marks the line as an error: the line is styled with a
+// ✗ marker in the rolling window and is elevated outside the window. The set is
+// deliberately broad (warn included) so real server problems are never missed.
+var mcpLogErrorKeywords = []string{
+	"error", "fatal", "panic", "fail", "exception", "denied",
+	"refused", "unable", "cannot", "could not", "warn", "timeout", "unreachable",
+}
+
+// IsMcpLogErrorLine reports whether an MCP server stderr line looks like an
+// error. The match is case-insensitive substring matching against
+// mcpLogErrorKeywords.
+func IsMcpLogErrorLine(line string) bool {
+	lower := strings.ToLower(line)
+	for _, keyword := range mcpLogErrorKeywords {
+		if strings.Contains(lower, keyword) {
+			return true
+		}
+	}
+	return false
+}
+
+// mcpLogBlockHeader renders the rolling-window header for one MCP server log
+// block, following the server.tool display convention of tool activity.
+func mcpLogBlockHeader(server string) string {
+	return "▸ mcp." + sanitizeTerminalRow(server) + " log"
+}
+
+// PrintMcpErrorBlock prints one elevated MCP server error block below the
+// rolling window. The block is display-only: it never enters the chat history
+// or model context. Non-error lines keep their plain body style; error lines
+// get the magenta ✗ marker used for tool errors.
+func PrintMcpErrorBlock(w io.Writer, server string, lines []string, termWidth int) error {
+	if w == nil {
+		w = os.Stdout
+	}
+	header := truncateTerminalRow(mcpLogBlockHeader(server), max(termWidth, 1))
+	if _, err := fmt.Fprintln(w, table.Colorize(TableTheme().Secondary, header)); err != nil {
+		return fmt.Errorf("write mcp error block header: %w", err)
+	}
+	contentWidth := max(termWidth-2, 1)
+	for _, line := range lines {
+		line = sanitizeTerminalRow(line)
+		line = truncateTerminalRow(line, contentWidth)
+		if IsMcpLogErrorLine(line) {
+			line = "✗ " + line
+			if _, err := fmt.Fprintln(w, "  "+table.Colorize(RoleColor("tool"), line)); err != nil {
+				return fmt.Errorf("write mcp error block line: %w", err)
+			}
+			continue
+		}
+		if _, err := fmt.Fprintln(w, "  "+line); err != nil {
+			return fmt.Errorf("write mcp error block line: %w", err)
+		}
+	}
+	_, err := fmt.Fprintln(w)
+	return err
 }
 
 // SummarizeAsyncToolResult returns the concise interactive representation of

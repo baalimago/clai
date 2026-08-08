@@ -92,7 +92,9 @@ func findConfiguredMcpServers(filePaths []string) ([]pub_models.McpServer, error
 // Each file inside the directory should contain a single MCP server configuration.
 // Every server is started and its tools registered with a prefix of the filename.
 // If the directory is missing, an error is returned.
-func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configurations) error {
+// sink receives every server's stderr lines; on setup failure the buffered
+// error lines are flushed to stderr so the failure reason stays visible.
+func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configurations, sink mcp.ServerLogSink) error {
 	if _, err := os.Stat(mcpServersDir); os.IsNotExist(err) {
 		return fmt.Errorf("MCP servers directory not found at %s. If you want MCP server support, create one using 'clai setup' and select option 3", mcpServersDir)
 	}
@@ -129,7 +131,7 @@ func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configu
 		// No context leak here as it's a child of the root context, which will cascade the cancel
 		// for all other code paths
 		clientContext, clientContextCancel := context.WithCancel(ctx)
-		inputChan, outputChan, err := mcp.Client(clientContext, mcpServer)
+		inputChan, outputChan, err := mcp.Client(clientContext, mcpServer, sink)
 		if err != nil {
 			ancli.Warnf("failed to setup: '%v', err: %v\n", mcpServer.Name, err)
 			toolWg.Done()
@@ -153,6 +155,7 @@ func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configu
 	select {
 	case err := <-statusChan:
 		if err != nil {
+			flushMcpSetupErrors(sink)
 			return fmt.Errorf("MCP client manager failed: %w", err)
 		}
 		return nil
@@ -161,7 +164,31 @@ func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configu
 	}
 }
 
-func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, userConf *Configurations) {
+// flushMcpSetupErrors prints buffered MCP server error lines to stderr when
+// MCP setup fails before the session loop exists to drain the rolling sink.
+func flushMcpSetupErrors(sink mcp.ServerLogSink) {
+	type drainingSink interface {
+		Drain() []mcpLogEntry
+	}
+	drainer, ok := sink.(drainingSink)
+	if !ok {
+		return
+	}
+	for _, entry := range drainer.Drain() {
+		if !entry.isError {
+			continue
+		}
+		if entry.exit {
+			for _, line := range entry.lines {
+				ancli.Errf("mcp_%v: %v\n", entry.server, line)
+			}
+			continue
+		}
+		ancli.Errf("mcp_%v: %v\n", entry.server, entry.line)
+	}
+}
+
+func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, userConf *Configurations, sink mcp.ServerLogSink) {
 	toolBox, ok := any(modelConf).(models.ToolBox)
 	if !ok {
 		return
@@ -181,7 +208,7 @@ func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, us
 		return
 	}
 	tools.Init()
-	err := setupMcpManager(ctx, path.Join(userConf.ConfigDir, "mcpServers"), *userConf)
+	err := setupMcpManager(ctx, path.Join(userConf.ConfigDir, "mcpServers"), *userConf, sink)
 	if misc.Truthy(os.Getenv("DEBUG")) {
 		ancli.Okf("Registering tools on querier of type: %T\n", modelConf)
 	}

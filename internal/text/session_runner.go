@@ -59,6 +59,14 @@ func (r *sessionRunner[C]) Run(ctx context.Context, session *QuerySession) (runE
 		session.Failed = runErr != nil
 		r.finalizer.Finalize(session)
 	}()
+	// Final MCP log flush before the finalizer prints the answer: deferred
+	// functions run LIFO, so buffered server errors elevate below the window
+	// and above the answer text.
+	defer func() {
+		if err := r.querier.drainMcpLogs(); err != nil {
+			ancli.Warnf("failed to flush mcp server logs: %v", err)
+		}
+	}()
 
 	for stepIndex := 0; ; {
 		stepStartedAt := time.Now()
@@ -180,8 +188,20 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 		return ModelStepResult{}, fmt.Errorf("stream completions: %w", err)
 	}
 
+	// mcpNotify wakes the serialized loop when the MCP sink buffers an error
+	// entry. It is nil (select case disabled) when no MCP sink exists.
+	var mcpNotify <-chan struct{}
+	if q.mcpSink != nil {
+		mcpNotify = q.mcpSink.Notify()
+	}
+
 	var result ModelStepResult
 	for {
+		// Drain buffered MCP server logs before this event renders, so the log
+		// block joins the same frame as the reasoning or tool activity.
+		if err := q.drainMcpLogs(); err != nil {
+			return ModelStepResult{}, fmt.Errorf("drain mcp logs: %w", err)
+		}
 		select {
 		case completion, ok := <-completionsChan:
 			if !ok {
@@ -284,6 +304,13 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 			if err := r.applyResize(d); err != nil {
 				return ModelStepResult{}, err
 			}
+		case <-mcpNotify:
+			// An MCP server wrote an error while the stream was waiting.
+			// Drain it now so the elevated block renders live instead of
+			// waiting for the next session event.
+			if err := q.drainMcpLogs(); err != nil {
+				return ModelStepResult{}, fmt.Errorf("drain mcp logs: %w", err)
+			}
 		case <-ctx.Done():
 			q.closeReasoningIfOpen(session)
 			result.StopRequested = true
@@ -309,6 +336,9 @@ func (r *sessionRunner[C]) applyResize(d dimensions.Dimensions) error {
 	q := r.querier
 	q.dims = d
 	if q.activityViewport != nil {
+		if err := q.drainMcpLogs(); err != nil {
+			return fmt.Errorf("drain mcp logs after resize: %w", err)
+		}
 		q.activityViewport.Resize(d.Width, d.Height)
 		if err := q.activityViewport.Render(q.out); err != nil {
 			return fmt.Errorf("render activity viewport after resize: %w", err)

@@ -1,7 +1,11 @@
 package text
 
 import (
+	"fmt"
+	"io"
+	"os"
 	"slices"
+	"strings"
 	"testing"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -96,4 +100,60 @@ func Test_uniqueToolsDeduplicatesAliasesBySpecificationName(t *testing.T) {
 	if got[0].Specification().Name != "async_cmd" || got[1].Specification().Name != "cat" {
 		t.Fatalf("unexpected tools after deduplication: %q, %q", got[0].Specification().Name, got[1].Specification().Name)
 	}
+}
+
+// captureStderr redirects os.Stderr for the duration of fn and returns
+// everything fn wrote to it. The package runs its tests sequentially, so the
+// global swap cannot race another test.
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	old := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("stderr pipe: %v", err)
+	}
+	os.Stderr = w
+	defer func() { os.Stderr = old }()
+	fn()
+	w.Close()
+	out, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("read stderr: %v", err)
+	}
+	return string(out)
+}
+
+func Test_flushMcpSetupErrors_PrintsOnlyErrorsAndExitTails(t *testing.T) {
+	sink := newMcpLogSink(mcpLogRolling)
+	// Eleven normal lines: the first four are evicted from the retained tail
+	// (cap 10), so they stay queued as plain entries and must be skipped.
+	for i := range 11 {
+		sink.AppendServerLog("fs", fmt.Sprintf("n%d", i))
+	}
+	sink.AppendServerLog("fs", "fatal: boom")
+	sink.AppendServerLog("fs", "tail one")
+	sink.AppendServerLog("fs", "tail two")
+	sink.ServerExited("fs")
+
+	got := captureStderr(t, func() { flushMcpSetupErrors(sink) })
+
+	for _, want := range []string{"mcp_fs: fatal: boom", "mcp_fs: n4\n", "mcp_fs: tail one", "mcp_fs: tail two"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("flushMcpSetupErrors output missing %q; got: %q", want, got)
+		}
+	}
+	for _, absent := range []string{"mcp_fs: n0\n", "mcp_fs: n1\n", "mcp_fs: n2\n", "mcp_fs: n3\n"} {
+		if strings.Contains(got, absent) {
+			t.Errorf("plain queued line was flushed as an error: %q in %q", absent, got)
+		}
+	}
+	if rest := sink.Drain(); rest != nil {
+		t.Errorf("flushMcpSetupErrors left buffered entries behind: %v", rest)
+	}
+}
+
+func Test_flushMcpSetupErrors_NonDrainingSinkIsANoop(t *testing.T) {
+	// A nil sink fails the drainer type assertion: the flush must stay silent
+	// instead of panicking.
+	flushMcpSetupErrors(nil)
 }

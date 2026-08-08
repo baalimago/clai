@@ -195,7 +195,29 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	// is registered, so every freetext execution in this run is covered (D6).
 	// Unconditional: the default empty list keeps behavior permissive (D4).
 	pkgtools.SetCmdBanList(userConf.CmdBan)
-	setupTooling(ctx, modelConf, &userConf)
+	querier.Raw = userConf.Raw
+	output := userConf.Out
+	if output == nil {
+		output = os.Stdout
+	}
+	querier.outputModeKnown = true
+	querier.outputIsTerminal = utils.IsTerminalWriter(output)
+	querier.structuredOutput = userConf.ResponseFormat != nil
+	querier.shouldSaveReply = !userConf.ChatMode && userConf.SaveReplyAsConv
+	querier.replyMode = userConf.ReplyMode
+	querier.dirReplyMode = userConf.DirReplyMode
+	querier.useLookback = userConf.UseLookback
+	querier.lookbackCWD = userConf.LookbackCWD
+	querier.toolOutputRuneLimit = userConf.ToolOutputRuneLimit
+	querier.maxToolCalls = userConf.MaxToolCalls
+	querier.stoploss = userConf.Stoploss
+	querier.out = output
+	// MCP server stderr lines follow the same display policy as the session:
+	// rolling output buffers them into the window, raw/structured output keeps
+	// only errors (on stderr, so stdout stays clean), and any other mode keeps
+	// the legacy direct print.
+	querier.mcpSink = newMcpLogSink(mcpLogModeFor(querier.debug, querier.outputIsTerminal, querier.Raw, querier.structuredOutput, utils.RollingOutputEnabled()))
+	setupTooling(ctx, modelConf, &userConf, querier.mcpSink)
 
 	err = modelConf.Setup()
 	if err != nil {
@@ -219,23 +241,6 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	traceChatf("new querier chat attached chat_id=%q messages=%d system_prompt_len=%d", querier.chat.ID, len(querier.chat.Messages), len(querier.systemPrompt))
 	// Ensure profile selection is persisted in globalScope/saved conversations.
 	querier.chat.Profile = userConf.UseProfile
-	querier.Raw = userConf.Raw
-	output := userConf.Out
-	if output == nil {
-		output = os.Stdout
-	}
-	querier.outputModeKnown = true
-	querier.outputIsTerminal = utils.IsTerminalWriter(output)
-	querier.structuredOutput = userConf.ResponseFormat != nil
-	querier.shouldSaveReply = !userConf.ChatMode && userConf.SaveReplyAsConv
-	querier.replyMode = userConf.ReplyMode
-	querier.dirReplyMode = userConf.DirReplyMode
-	querier.useLookback = userConf.UseLookback
-	querier.lookbackCWD = userConf.LookbackCWD
-	querier.toolOutputRuneLimit = userConf.ToolOutputRuneLimit
-	querier.maxToolCalls = userConf.MaxToolCalls
-	querier.stoploss = userConf.Stoploss
-	querier.out = output
 	// One dimensions snapshot per interactive output session, bound to the
 	// writer's fd: the observed size matches the file clai actually writes to
 	// (R2-02). A non-terminal writer or a failed read yields the deterministic

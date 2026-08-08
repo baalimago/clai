@@ -313,6 +313,9 @@ func (q *Querier[C]) appendToolActivity(call pub_models.Call, content string) er
 		}
 		return nil
 	}
+	if err := q.drainMcpLogs(); err != nil {
+		return fmt.Errorf("drain mcp logs before tool activity: %w", err)
+	}
 	q.ensureActivityViewport().AppendTool(call, utils.SummarizeAsyncToolResult(call.Name, content), utils.ToolOutputRows())
 	if err := q.activityViewport.Render(q.out); err != nil {
 		return fmt.Errorf("render activity viewport: %w", err)

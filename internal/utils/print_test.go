@@ -18,6 +18,98 @@ type errorWriter struct{ err error }
 
 func (w errorWriter) Write([]byte) (int, error) { return 0, w.err }
 
+func TestIsMcpLogErrorLine(t *testing.T) {
+	errorLines := []string{
+		"fatal: boom",
+		"PANIC",
+		"an exception occurred",
+		"connection refused",
+		"unable to connect",
+		"could not open file",
+		"timeout exceeded",
+		"unreachable host",
+		"permission denied",
+		"WARN: slow request",
+		"error: x",
+	}
+	for _, line := range errorLines {
+		if !IsMcpLogErrorLine(line) {
+			t.Errorf("IsMcpLogErrorLine(%q) = false, want true", line)
+		}
+	}
+	normalLines := []string{
+		"server started",
+		"listening on :8080",
+		"request handled in 12ms",
+		"INFO: ready",
+		"read 42 rows",
+	}
+	for _, line := range normalLines {
+		if IsMcpLogErrorLine(line) {
+			t.Errorf("IsMcpLogErrorLine(%q) = true, want false", line)
+		}
+	}
+}
+
+func TestActivityViewport_AppendMcpLogBlock(t *testing.T) {
+	viewport := NewActivityViewport(40, 30, 30)
+	viewport.AppendMcpLogBlock("filesystem", "server started\nWARN: slow request\nerror: boom", 6)
+	rows := viewport.Rows()
+	if len(rows) == 0 {
+		t.Fatal("AppendMcpLogBlock produced no rows")
+	}
+	if got := rows[0]; got != "▸ mcp.filesystem log" {
+		t.Fatalf("header row = %q, want %q", got, "▸ mcp.filesystem log")
+	}
+	joined := strings.Join(rows, "\n")
+	for _, want := range []string{"server started", "✗ WARN: slow request", "✗ error: boom"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("rows missing %q; got:\n%s", want, joined)
+		}
+	}
+}
+
+func TestActivityViewport_AppendMcpLogBlock_CompactsAndEvicts(t *testing.T) {
+	viewport := NewActivityViewport(20, 6, 6)
+	long := strings.Repeat("l", 60)
+	viewport.AppendMcpLogBlock("fs", long+"\n"+long+"\n"+long, 3)
+	rows := viewport.Rows()
+	if len(rows) > 6 {
+		t.Fatalf("block exceeds window height: %d rows", len(rows))
+	}
+	for range 20 {
+		viewport.AppendMcpLogBlock("fs", "noise line", 3)
+	}
+	if got := viewport.Rows(); got == nil {
+		t.Fatal("viewport rows nil after eviction")
+	}
+}
+
+func TestPrintMcpErrorBlock(t *testing.T) {
+	var out bytes.Buffer
+	err := PrintMcpErrorBlock(&out, "filesystem", []string{"server started", "error: boom"}, 80)
+	if err != nil {
+		t.Fatalf("PrintMcpErrorBlock: %v", err)
+	}
+	got := out.String()
+	for _, want := range []string{"▸ mcp.filesystem log", "server started", "✗ error: boom"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output missing %q; got:\n%s", want, got)
+		}
+	}
+}
+
+func TestPrintMcpErrorBlock_WriterErrorSurfaces(t *testing.T) {
+	want := errors.New("disk full")
+	err := PrintMcpErrorBlock(errorWriter{err: want}, "filesystem", []string{"error: boom"}, 80)
+	if err == nil {
+		t.Fatal("expected the writer error to surface")
+	}
+	if !errors.Is(err, want) {
+		t.Fatalf("expected the writer error to be wrapped, got: %v", err)
+	}
+}
+
 func TestPrintToolActivity_WriterErrorSurfaces(t *testing.T) {
 	want := errors.New("disk full")
 	err := PrintToolActivity(errorWriter{err: want}, pub_models.Call{Name: "ls"}, "output", 80, 3)
