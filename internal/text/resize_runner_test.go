@@ -233,8 +233,10 @@ func Test_sessionRunner_Run_ResizeBeforeViewportCreationUsesNewDimensions(t *tes
 	done := make(chan error, 1)
 	go func() { done <- runner.Run(context.Background(), session) }()
 
-	// The stream emits nothing until the resize is consumed: the select's only
-	// ready case is the resize event, so the ordering is deterministic.
+	// The resize and the reasoning event can both be ready when the select
+	// evaluates; the runner drains every buffered resize before rendering any
+	// completion event (R2-03), so whichever case the select picks, the first
+	// render uses width 40 and the 80-column row never appears.
 	resizeEvents <- dimensions.Dimensions{Width: 40, Height: 10}
 	close(start)
 	waitFor(t, 2*time.Second, func() bool {
@@ -255,6 +257,50 @@ func Test_sessionRunner_Run_ResizeBeforeViewportCreationUsesNewDimensions(t *tes
 	if !strings.Contains(output, "done") {
 		t.Fatalf("expected final answer after the resize, got:\n%s", output)
 	}
+}
+
+// Test_sessionRunner_drainPendingResizesAppliesEveryBufferedEvent proves the
+// drain helper: every buffered resize is applied in order and the channel
+// converges empty on the latest dimensions; a closed channel nils the source
+// so the main select stops watching it.
+func Test_sessionRunner_drainPendingResizesAppliesEveryBufferedEvent(t *testing.T) {
+	t.Run("applies buffered resizes in order", func(t *testing.T) {
+		resizeEvents := make(chan dimensions.Dimensions, 4)
+		resizeEvents <- dimensions.Dimensions{Width: 60, Height: 10}
+		resizeEvents <- dimensions.Dimensions{Width: 40, Height: 10}
+		q := &Querier[*MockQuerier]{
+			dims:  dimensions.Dimensions{Width: 80, Height: 10},
+			Model: &MockQuerier{},
+		}
+		runner := sessionRunner[*MockQuerier]{querier: q, resizeEvents: resizeEvents}
+		if err := runner.drainPendingResizes(); err != nil {
+			t.Fatalf("drainPendingResizes: %v", err)
+		}
+		if q.dims != (dimensions.Dimensions{Width: 40, Height: 10}) {
+			t.Fatalf("q.dims = %+v, want latest {40 10}", q.dims)
+		}
+		if len(resizeEvents) != 0 {
+			t.Fatalf("resizeEvents has %d unconsumed events, want 0", len(resizeEvents))
+		}
+	})
+	t.Run("closed channel nils the source", func(t *testing.T) {
+		resizeEvents := make(chan dimensions.Dimensions, 1)
+		close(resizeEvents)
+		q := &Querier[*MockQuerier]{
+			dims:  dimensions.Dimensions{Width: 80, Height: 10},
+			Model: &MockQuerier{},
+		}
+		runner := sessionRunner[*MockQuerier]{querier: q, resizeEvents: resizeEvents}
+		if err := runner.drainPendingResizes(); err != nil {
+			t.Fatalf("drainPendingResizes: %v", err)
+		}
+		if runner.resizeEvents != nil {
+			t.Fatal("expected closed resizeEvents channel to be nil'd")
+		}
+		if q.dims != (dimensions.Dimensions{Width: 80, Height: 10}) {
+			t.Fatalf("q.dims changed on closed channel: %+v", q.dims)
+		}
+	})
 }
 
 // Test_sessionRunner_Run_ResizeKeepsToolTransitionAndFinalAnswerValid proves

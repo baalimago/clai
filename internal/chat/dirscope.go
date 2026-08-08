@@ -160,6 +160,8 @@ func saveDirScope(confDir, dir, chatID string) error {
 	binding.History = upsertScopedHistory(binding.History, chatID, now)
 	binding.Updated = now
 
+	debugDirscopef("saving binding for %q: chat_id=%s history=%d", canonical, chatID, len(binding.History))
+
 	return persistDirScope(confDir, binding)
 }
 

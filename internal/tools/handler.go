@@ -3,13 +3,12 @@ package tools
 import (
 	"context"
 	"fmt"
-	"os"
 
+	"github.com/baalimago/clai/internal/debugflags"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/clai/pkg/tools"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
-	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
 type contextualTool interface {
@@ -78,7 +77,7 @@ func Invoke(ctx context.Context, call pub_models.Call) string {
 	if !exists {
 		return "ERROR: unknown tool call: " + call.Name
 	}
-	if misc.Truthy(os.Getenv("DEBUG_CALL")) {
+	if debugflags.Enabled("CALL") {
 		ancli.Noticef("Invoke call: %v", debug.IndentedJsonFmt(call))
 	}
 	inp := pub_models.Input{}

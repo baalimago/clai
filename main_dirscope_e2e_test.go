@@ -377,3 +377,41 @@ func Test_e2e_dirscope_lookback_on_tools_work(t *testing.T) {
 		t.Fatalf("expected out-of-range error tool result, got %q", combined)
 	}
 }
+
+// Covers the DEBUG_LOOKBACK gate on the setup notice: with seeded history and
+// -lb the notice prints only when DEBUG_LOOKBACK (or plain DEBUG) is truthy.
+func Test_e2e_dirscope_lookback_notice_debug_gated(t *testing.T) {
+	oldArgs := os.Args
+	t.Cleanup(func() { os.Args = oldArgs })
+	setupMainTestConfigDir(t)
+	t.Setenv("CLAI_CACHE_DIR", filepath.Join(t.TempDir(), "cache"))
+	chdirTemp(t)
+
+	if status := run(strings.Split("-r -cm mock_test q seed history", " ")); status != 0 {
+		t.Fatalf("seed status %d", status)
+	}
+
+	t.Run("silent without debug flag", func(t *testing.T) {
+		t.Setenv("DEBUG", "")
+		t.Setenv("DEBUG_LOOKBACK", "")
+		stdout, stderr := captureStdoutStderr(t, func() {
+			_ = run(strings.Split("-r -lb -cm mock_test q second query", " "))
+		})
+		combined := stdout + stderr
+		if strings.Contains(combined, "lookback:") {
+			t.Fatalf("expected no lookback notice without DEBUG_LOOKBACK, got %q", combined)
+		}
+	})
+
+	t.Run("prints with DEBUG_LOOKBACK", func(t *testing.T) {
+		t.Setenv("DEBUG", "")
+		t.Setenv("DEBUG_LOOKBACK", "1")
+		stdout, stderr := captureStdoutStderr(t, func() {
+			_ = run(strings.Split("-r -lb -cm mock_test q third query", " "))
+		})
+		combined := stdout + stderr
+		if !strings.Contains(combined, "lookback: surfaced") {
+			t.Fatalf("expected lookback notice with DEBUG_LOOKBACK, got %q", combined)
+		}
+	})
+}

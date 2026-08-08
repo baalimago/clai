@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/baalimago/clai/internal/debugflags"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -154,7 +155,7 @@ func (q *Querier[C]) postProcessOutput(newSysMsg pub_models.Message) {
 	if q.dims.Width > 0 {
 		utils.UpdateMessageTerminalMetadata(newSysMsg.Content, &q.line, &q.lineCount, q.dims.Width)
 		// Write the details of q to the file determined by the environment variable DEBUG_OUTPUT_FILE
-		if debugOutputFile := os.Getenv("DEBUG_OUTPUT_FILE"); debugOutputFile != "" {
+		if debugOutputFile := debugflags.OutputFile(); debugOutputFile != "" {
 			file, err := os.Create(debugOutputFile)
 			if err != nil {
 				ancli.PrintErr(fmt.Sprintf("failed to create debug output file: %v\n", err))

@@ -499,8 +499,8 @@ Skills are surfaced through concise text log lines within clai’s existing outp
 ### Discovery logging
 
 By default, clai does not print discovery information. It prints discovery
-information only when `DEBUG`, `DEBUG_SKILL`, or legacy `DEBUG_SKILLS` is
-truthy. Warnings and errors remain visible.
+information only when `DEBUG` or `DEBUG_SKILLS` is truthy. Warnings and errors
+remain visible.
 
 Examples:
 
@@ -620,8 +620,8 @@ The skills subsystem is complete when all of the following are true:
    - earlier global directory over later global directory
    - global over default
 
-7. when enabled discovery loads at least one valid skill and `DEBUG`,
-   `DEBUG_SKILL`, or legacy `DEBUG_SKILLS` is truthy, clai prints concise
+7. when enabled discovery loads at least one valid skill and `DEBUG` or
+   `DEBUG_SKILLS` is truthy, clai prints concise
    line-oriented logs that include:
    - each scanned source path that contributed at least one canonical loaded skill
    - loaded counts per source after precedence resolution

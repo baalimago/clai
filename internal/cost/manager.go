@@ -8,9 +8,9 @@ import (
 	"os"
 	"time"
 
+	"github.com/baalimago/clai/internal/debugflags"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
-	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
 type ModelCatalogFetcher interface {
@@ -32,7 +32,7 @@ type Session interface {
 }
 
 func NewManager(fetcher ModelCatalogFetcher, model, configPath string) Manager {
-	debug := misc.Truthy(os.Getenv("DEBUG")) || misc.Truthy(os.Getenv("DEBUG_COST_MANAGER"))
+	debug := debugflags.Enabled("COST_MANAGER")
 	if debug {
 		ancli.Noticef("setting up cost manager\n")
 	}

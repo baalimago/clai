@@ -323,9 +323,34 @@ If you need to follow configuration in code, start here:
 
 ## Common debugging tips
 
-- Set `DEBUG=1` to print some config snapshots during setup.
-- `DEBUG_PROFILES=1` prints tooling glob selection during setup.
-- Most “why isn’t my flag working?” issues are precedence/cascade issues; trace:
+Every feature-scoped debug switch follows one scheme, resolved in
+`internal/debugflags`: plain `DEBUG=1` enables all of the switches below,
+`DEBUG_<SUBSYSTEM>=1` enables one.
+
+| Env var | Effect |
+|---|---|
+| `DEBUG=1` | Global; enables every subsystem below plus config snapshots during setup |
+| `DEBUG_CHAT=1` | `[DEBUG_CHAT]` trace lines in chat and text flows |
+| `DEBUG_DIRSCOPE=1` | `[DEBUG_DIRSCOPE]` binding/history/search internals |
+| `DEBUG_LOOKBACK=1` | Lookback setup notices |
+| `DEBUG_SKILLS=1` | Skill discovery and activation logging |
+| `DEBUG_PROFILES=1` | Tooling glob selection during setup |
+| `DEBUG_CALL=1` | Tool call payloads |
+| `DEBUG_MCP_TOOL=1` | MCP tool request/response details |
+| `DEBUG_TOOLS_REGISTRY_SET=1` | Tool registry set operations |
+| `DEBUG_TEXT_QUERIER=1` | Querier setup internals |
+| `DEBUG_COST_MANAGER=1` | Cost manager internals |
+| `DEBUG_STOPLOSS=1` | Stoploss budget decisions |
+| `DEBUG_CPU=1` | CPU profiling to `cpu_profile.prof` |
+| `DEBUG_REPLY_MODE=1` | Chat save-path diagnostics |
+| `DEBUG_VERBOSE=1` | Additional verbose request diagnostics |
+| `DEBUG_CLAUDIFIED_MSGS=1` | Anthropic message transformation diagnostics |
+
+`DEBUG_OUTPUT_FILE` selects a debug trace file. Per-vendor stream debug uses `<VENDOR>_DEBUG` or `DEBUG_<VENDOR>` env vars
+(e.g. `OPENAI_DEBUG`, `DEBUG_MISTRAL`, `OLLAMA_DEBUG`), also activated by
+plain `DEBUG=1`.
+
+Most “why isn’t my flag working?” issues are precedence/cascade issues; trace:
   1. mode config loaded
   2. early flag overrides
   3. profile overrides

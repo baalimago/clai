@@ -321,9 +321,10 @@ the directory has recorded history. The predicate mechanism is generic.
 ## UI and logging
 
 Recording, origin stamping, and search are silent except for terse tool-activity lines. When the lookback is
-enabled and the directory has history, setup emits a single notice
-(`lookback: surfaced N recent conversation(s) for this directory`). Tool activity renders through the standard
-tool-call pretty-print:
+enabled, setup emits notices (`lookback: surfaced N recent conversation(s) for this directory`, or the
+enabled-but-no-history variant) only when `DEBUG_LOOKBACK=1` or plain `DEBUG=1` is set, and never in
+structured-response mode. Binding/history/search internals are traceable with `DEBUG_DIRSCOPE=1`. Tool
+activity renders through the standard tool-call pretty-print:
 
 ```text
 assistant called search_conversations('oauth refresh', directory: '.')

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/baalimago/clai/internal/chat"
+	"github.com/baalimago/clai/internal/debugflags"
 	"github.com/baalimago/clai/internal/glob"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/photo"
@@ -148,7 +149,7 @@ func setupToolConfig(tConf *text.Configurations, flagSet Configurations) {
 		validTools := make([]string, 0, len(tConf.RequestedToolGlobs))
 
 		for _, p := range tConf.RequestedToolGlobs {
-			if misc.Truthy(os.Getenv("DEBUG_PROFILES")) {
+			if debugflags.Enabled("PROFILES") {
 				ancli.Noticef("found: '%v' in RequestedToolGlobs", p)
 			}
 			p = strings.TrimSpace(p)
@@ -369,6 +370,10 @@ func setupLookback(confDir string, tConf *text.Configurations, flagSet Configura
 		return nil
 	}
 
+	// Setup notices are debug-only chatter: they print when DEBUG_LOOKBACK (or
+	// plain DEBUG) is truthy, and never in structured-response mode.
+	debugLookback := debugflags.Enabled("LOOKBACK")
+
 	// Tool registration is decoupled from local history: whenever lookback is
 	// enabled the search/inspect/read tools are registered (so the agent can search
 	// OTHER directories even from a dir with no recorded history). The passive
@@ -379,10 +384,10 @@ func setupLookback(confDir string, tConf *text.Configurations, flagSet Configura
 	}
 	if desc.HasHistory {
 		tConf.LookbackDescriptor = desc.Block
-		if tConf.ResponseFormat == nil {
+		if debugLookback && tConf.ResponseFormat == nil {
 			ancli.Noticef("lookback: surfaced %d recent conversation(s) for this directory\n", desc.Shown)
 		}
-	} else if tConf.ResponseFormat == nil {
+	} else if debugLookback && tConf.ResponseFormat == nil {
 		ancli.Noticef("lookback: enabled (no recorded history in this directory yet; search other paths with search_conversations)\n")
 	}
 	return nil

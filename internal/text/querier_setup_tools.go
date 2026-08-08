@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/baalimago/clai/internal/debugflags"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/tools/mcp"
@@ -33,7 +34,7 @@ func filterMcpServersByProfile(mcpServerPaths []string, userConf Configurations)
 	for _, file := range mcpServerPaths {
 		serverName := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
 
-		if misc.Truthy(os.Getenv("DEBUG_PROFILES")) {
+		if debugflags.Enabled("PROFILES") {
 			ancli.Noticef("checking out: %v...", file)
 		}
 	INNER:
@@ -41,14 +42,14 @@ func filterMcpServersByProfile(mcpServerPaths []string, userConf Configurations)
 			toolSplit := strings.Split(tool, "_")
 			// It can't have mcp prefix
 			if len(toolSplit) < 2 {
-				if misc.Truthy(os.Getenv("DEBUG_PROFILES")) {
+				if debugflags.Enabled("PROFILES") {
 					ancli.Noticef("SKIP: no mcp prefix, wrong length of split")
 				}
 				continue
 			}
 			// Its not a mcp server nor tool
 			if toolSplit[0] != "mcp" {
-				if misc.Truthy(os.Getenv("DEBUG_PROFILES")) {
+				if debugflags.Enabled("PROFILES") {
 					ancli.Noticef("SKIP: no mcp prefix")
 				}
 				continue

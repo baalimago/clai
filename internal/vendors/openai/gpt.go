@@ -6,10 +6,10 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/baalimago/clai/internal/debugflags"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/text/generic"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
-	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
 var GptDefault = ChatGPT{
@@ -49,7 +49,7 @@ func (g *ChatGPT) Setup() error {
 		return fmt.Errorf("openai: missing OPENAI_API_KEY")
 	}
 	g.apiKey = apiKey
-	g.debug = misc.Truthy(os.Getenv("DEBUG_OPENAI"))
+	g.debug = debugflags.EnabledEnv("DEBUG_OPENAI")
 	if g.Model == "" {
 		g.Model = GptDefault.Model
 	}

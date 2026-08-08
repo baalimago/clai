@@ -6,8 +6,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/baalimago/clai/internal/debugflags"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
-	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
 func (s *StreamCompleter) Setup(apiKeyEnv, url, debugEnv string) error {
@@ -19,7 +19,7 @@ func (s *StreamCompleter) Setup(apiKeyEnv, url, debugEnv string) error {
 	s.apiKey = apiKey
 	s.URL = url
 
-	if misc.Truthy(os.Getenv("DEBUG")) || misc.Truthy(os.Getenv(debugEnv)) {
+	if debugflags.EnabledEnv(debugEnv) {
 		s.debug = true
 	}
 

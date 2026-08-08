@@ -5,17 +5,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"unicode/utf8"
 
+	"github.com/baalimago/clai/internal/debugflags"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
-	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
 
@@ -48,7 +47,7 @@ func (e toolExecutor[C]) ExecuteBatch(ctx context.Context, session *QuerySession
 	q := e.querier
 	planned := make([]pub_models.Call, 0, len(calls))
 	for _, call := range calls {
-		if q.debug || misc.Truthy(os.Getenv("DEBUG_CALL")) {
+		if q.debug || debugflags.Enabled("CALL") {
 			ancli.PrintOK(fmt.Sprintf("received tool call: %v", debug.IndentedJsonFmt(call)))
 		}
 		decision := q.decideToolCall(session, call)

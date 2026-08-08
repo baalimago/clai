@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/baalimago/clai/internal/debugflags"
 	"github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
@@ -89,7 +90,7 @@ func (r *registry) Set(name string, t models.LLMTool) {
 	if strings.Contains(name, "printEnv") || strings.Contains(name, "get-env") {
 		ancli.Warnf("found env printing tool, skipping for security's sake. Tool name: '%v'", name)
 	}
-	if r.debug || misc.Truthy(os.Getenv("DEBUG_TOOLS_REGISTRY_SET")) {
+	if r.debug || debugflags.Enabled("TOOLS_REGISTRY_SET") {
 		ancli.Okf("adding tool too registry, name: %v\n", t.Specification().Name)
 	}
 	r.tools[name] = t

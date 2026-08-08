@@ -94,6 +94,7 @@ func (s *bruteForceSearcher) Search(req SearchRequest) (SearchResult, error) {
 	result := SearchResult{Directory: dir, Page: page, PageSize: pageSize}
 
 	tokens := tokenizeQuery(req.Query)
+	debugDirscopef("search %q in %q: tokens=%v", req.Query, dir, tokens)
 
 	convDir := conversationsDir(s.confDir)
 	rows, err := readChatIndex(convDir)
@@ -106,6 +107,7 @@ func (s *bruteForceSearcher) Search(req SearchRequest) (SearchResult, error) {
 	// ConversationSearcher interface lets an index-backed scan replace this if a
 	// corpus ever outgrows linear scanning (see architecture/dirscope.md).
 	matches := make([]SearchResultRow, 0)
+	scanned := 0
 	for _, row := range rows {
 		// globalScope is a transient pointer to the most recent conversation; it
 		// would double-count the real conversation it mirrors.
@@ -115,6 +117,7 @@ func (s *bruteForceSearcher) Search(req SearchRequest) (SearchResult, error) {
 		if !originMatches(row.OriginDir, dir, req.Subtree) {
 			continue
 		}
+		scanned++
 		raw, err := os.ReadFile(conversationPath(s.confDir, row.ID))
 		if err != nil {
 			continue // a vanished/locked file is simply not a match
@@ -154,6 +157,7 @@ func (s *bruteForceSearcher) Search(req SearchRequest) (SearchResult, error) {
 	})
 
 	result.TotalMatches = len(matches)
+	debugDirscopef("search %q: %d match(es) from %d candidate(s)", req.Query, len(matches), scanned)
 	start := page * pageSize
 	// start < 0 guards an int overflow from a hostile/huge page value (page*pageSize
 	// can wrap negative), which would otherwise panic on the slice below.

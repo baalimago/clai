@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/baalimago/clai/internal/debugflags"
 	"github.com/baalimago/clai/internal/models"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
@@ -93,15 +94,18 @@ func (s *stoploss) preflightToolCall(session *QuerySession, call pub_models.Call
 		return toolCallBudgetPlan{call: call, allowed: true}
 	}
 	used := session.ToolCallsUsed
+	debugStoplossf("tool call %q: budget=%d used=%d", call.Name, budget, used)
 	if used >= budget {
 		refusal, hardStop := ladderText(used - budget)
 		plan := toolCallBudgetPlan{call: call, out: refusal, hardStop: hardStop}
+		debugStoplossf("tool call %q refused (persistence %d, hardStop %v)", call.Name, used-budget, hardStop)
 		if !hardStop {
 			session.ToolCallsUsed = used + 1
 		}
 		return plan
 	}
 	session.ToolCallsUsed = used + 1
+	debugStoplossf("tool call %q allowed, %d remaining", call.Name, budget-used-1)
 	return toolCallBudgetPlan{
 		call:    call,
 		allowed: true,
@@ -129,6 +133,7 @@ func (s *stoploss) CheckContextBudget(ctx context.Context, model models.StreamCo
 		if !ok {
 			// Neither the vendor usage nor an estimate is available: skip the
 			// check for this step.
+			debugStoplossf("no vendor usage and no input token counter; skipping check")
 			return false, nil
 		}
 		counted, err := counter.CountInputTokens(ctx, session.Chat)
@@ -136,10 +141,13 @@ func (s *stoploss) CheckContextBudget(ctx context.Context, model models.StreamCo
 			return false, err
 		}
 		footprint = counted
+		debugStoplossf("vendor usage unavailable; counted %d input tokens", footprint)
 	}
 	if footprint <= 0 || footprint < s.maxTokens {
+		debugStoplossf("footprint %d below max-tokens %d; no handover", footprint, s.maxTokens)
 		return false, nil
 	}
+	debugStoplossf("footprint %d reached max-tokens %d; injecting handover", footprint, s.maxTokens)
 	session.HandoverRequested = true
 	session.Chat.Messages = append(session.Chat.Messages, pub_models.Message{
 		Role:    "user",
@@ -159,4 +167,14 @@ func usageFootprint(usage *pub_models.Usage) int {
 		return usage.PromptTokens + usage.CompletionTokens
 	}
 	return usage.TotalTokens
+}
+
+// debugStoplossf prints stoploss internals when DEBUG_STOPLOSS (or plain
+// DEBUG) is truthy. The human-facing handover notice stays an unconditional
+// warning; this is the opt-in detail layer for budget decisions.
+func debugStoplossf(format string, args ...any) {
+	if !debugflags.Enabled("STOPLOSS") {
+		return
+	}
+	ancli.Noticef("[DEBUG_STOPLOSS] "+format+"\n", args...)
 }

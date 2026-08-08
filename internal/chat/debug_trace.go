@@ -2,14 +2,13 @@ package chat
 
 import (
 	"fmt"
-	"os"
 
+	"github.com/baalimago/clai/internal/debugflags"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
-	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
 func debugChatEnabled() bool {
-	return misc.Truthy(os.Getenv("DEBUG_CHAT")) || misc.Truthy(os.Getenv("DEBUG"))
+	return debugflags.Enabled("CHAT")
 }
 
 func traceChatf(format string, args ...any) {
@@ -17,4 +16,14 @@ func traceChatf(format string, args ...any) {
 		return
 	}
 	ancli.PrintOK(fmt.Sprintf("[DEBUG_CHAT] "+format+"\n", args...))
+}
+
+// debugDirscopef prints dirscope internals when DEBUG_DIRSCOPE (or plain
+// DEBUG) is truthy. Recording and search stay silent by default; this is the
+// opt-in detail layer for binding/history/search behaviour.
+func debugDirscopef(format string, args ...any) {
+	if !debugflags.Enabled("DIRSCOPE") {
+		return
+	}
+	ancli.PrintOK(fmt.Sprintf("[DEBUG_DIRSCOPE] "+format+"\n", args...))
 }

@@ -1,12 +1,14 @@
 package internal
 
 import (
+	"io"
 	"os"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/baalimago/clai/internal/text"
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
@@ -412,6 +414,90 @@ func Test_setupLookback_ExplicitDisableOverridesProfile(t *testing.T) {
 	if tConf.LookbackCWD == "" {
 		t.Fatal("expected LookbackCWD to be captured even when lookback is disabled")
 	}
+}
+
+// captureStdout redirects stdout for the duration of fn and returns what was
+// written, so notice gating can be asserted without touching the process output.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	orig := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("create stdout pipe: %v", err)
+	}
+	os.Stdout = w
+	readDone := make(chan string, 1)
+	go func() {
+		b, _ := io.ReadAll(r)
+		readDone <- string(b)
+	}()
+	fn()
+	if err := w.Close(); err != nil {
+		t.Fatalf("close stdout writer: %v", err)
+	}
+	os.Stdout = orig
+	return <-readDone
+}
+
+// Test_setupLookback_NoticeDebugGated pins the debug gate on the lookback setup
+// notices: they print only when DEBUG_LOOKBACK (or plain DEBUG) is truthy, and
+// never in structured-response mode. This covers the enabled-but-no-history
+// branch; the with-history branch is covered by
+// Test_e2e_dirscope_lookback_notice_debug_gated.
+func Test_setupLookback_NoticeDebugGated(t *testing.T) {
+	t.Run("silent without debug flag", func(t *testing.T) {
+		t.Setenv("DEBUG", "")
+		t.Setenv("DEBUG_LOOKBACK", "")
+		out := captureStdout(t, func() {
+			tConf := text.Configurations{UseLookback: true}
+			flagSet := Configurations{UseLookbackSet: true, UseLookback: true}
+			if err := setupLookback(t.TempDir(), &tConf, flagSet); err != nil {
+				t.Fatalf("setupLookback: %v", err)
+			}
+		})
+		if strings.Contains(out, "lookback:") {
+			t.Fatalf("expected no lookback notice without DEBUG_LOOKBACK, got %q", out)
+		}
+	})
+	t.Run("prints when any debug flag is set", func(t *testing.T) {
+		for _, tt := range []struct {
+			name string
+			env  map[string]string
+		}{
+			{name: "DEBUG_LOOKBACK", env: map[string]string{"DEBUG": "", "DEBUG_LOOKBACK": "1"}},
+			{name: "plain DEBUG", env: map[string]string{"DEBUG": "1", "DEBUG_LOOKBACK": ""}},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				for k, v := range tt.env {
+					t.Setenv(k, v)
+				}
+				out := captureStdout(t, func() {
+					tConf := text.Configurations{UseLookback: true}
+					flagSet := Configurations{UseLookbackSet: true, UseLookback: true}
+					if err := setupLookback(t.TempDir(), &tConf, flagSet); err != nil {
+						t.Fatalf("setupLookback: %v", err)
+					}
+				})
+				if !strings.Contains(out, "lookback: enabled (no recorded history") {
+					t.Fatalf("expected no-history lookback notice with %s, got %q", tt.name, out)
+				}
+			})
+		}
+	})
+	t.Run("silent in structured-response mode", func(t *testing.T) {
+		t.Setenv("DEBUG", "1")
+		t.Setenv("DEBUG_LOOKBACK", "1")
+		out := captureStdout(t, func() {
+			tConf := text.Configurations{UseLookback: true, ResponseFormat: &pub_models.ResponseFormat{}}
+			flagSet := Configurations{UseLookbackSet: true, UseLookback: true}
+			if err := setupLookback(t.TempDir(), &tConf, flagSet); err != nil {
+				t.Fatalf("setupLookback: %v", err)
+			}
+		})
+		if strings.Contains(out, "lookback:") {
+			t.Fatalf("expected no lookback notice in structured-response mode, got %q", out)
+		}
+	})
 }
 
 func Test_applyFlagOverridesForTest(t *testing.T) {

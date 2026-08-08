@@ -214,6 +214,14 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 				result.Usage = q.currentTokenUsage()
 				return result, nil
 			}
+			// A resize that arrived before this event must win over the render:
+			// the select may observe the resize and the event as simultaneously
+			// ready and pick either, so drain every buffered resize before any
+			// event renders. This keeps the first frame (and every later frame)
+			// at the freshest dimensions; a stale-width row never appears.
+			if err := r.drainPendingResizes(); err != nil {
+				return ModelStepResult{}, err
+			}
 			switch cast := completion.(type) {
 			case pub_models.Call:
 				if q.reasoningActive && cast.ReasoningContent == "" {
@@ -345,6 +353,29 @@ func (r *sessionRunner[C]) applyResize(d dimensions.Dimensions) error {
 		}
 	}
 	return nil
+}
+
+// drainPendingResizes applies every resize event buffered before the next
+// completion event is rendered. The select may observe a resize and an event
+// as simultaneously ready and pick either; draining here makes the resize
+// that arrived first always win, so a frame never renders at a stale width
+// (R2-03). It is a no-op for an empty channel; a closed channel nils the
+// source so the main select stops watching it.
+func (r *sessionRunner[C]) drainPendingResizes() error {
+	for {
+		select {
+		case d, ok := <-r.resizeEvents:
+			if !ok {
+				r.resizeEvents = nil
+				return nil
+			}
+			if err := r.applyResize(d); err != nil {
+				return fmt.Errorf("drain resize: %w", err)
+			}
+		default:
+			return nil
+		}
+	}
 }
 
 func (r *sessionRunner[C]) modelName() string {

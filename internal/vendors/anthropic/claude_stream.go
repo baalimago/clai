@@ -9,16 +9,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/baalimago/clai/internal/debugflags"
 	"github.com/baalimago/clai/internal/models"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
-	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
 const heuristicTokenCountFactor = 1.1
@@ -222,7 +221,7 @@ func (c *Claude) constructRequest(ctx context.Context, chat pub_models.Chat) (*h
 	msgCopy := make([]pub_models.Message, len(chat.Messages))
 	copy(msgCopy, chat.Messages)
 	claudifiedMsgs := claudifyMessages(msgCopy)
-	if misc.Truthy(os.Getenv("DEBUG_CLAUDIFIED_MSGS")) {
+	if debugflags.Enabled("CLAUDIFIED_MSGS") {
 		ancli.PrintOK(
 			fmt.Sprintf(
 				"claudified messages: %+v\n",
@@ -256,7 +255,7 @@ func (c *Claude) constructRequest(ctx context.Context, chat pub_models.Chat) (*h
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-api-key", c.apiKey)
 	req.Header.Set("anthropic-version", c.AnthropicVersion)
-	if c.debug && misc.Truthy(os.Getenv("DEBUG_VERBOSE")) {
+	if c.debug && debugflags.Enabled("VERBOSE") {
 		ancli.PrintOK(fmt.Sprintf("Request: %+v\n", req))
 	}
 	return req, nil

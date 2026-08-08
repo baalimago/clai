@@ -9,11 +9,11 @@ import (
 	"os"
 	"sync"
 
+	"github.com/baalimago/clai/internal/debugflags"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
-	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
 
@@ -61,7 +61,7 @@ func (m *mcpTool) call(ctx context.Context, input pub_models.Input) (string, err
 			"arguments": nonNullableInp,
 		},
 	}
-	if misc.Truthy(os.Getenv("DEBUG_CALL")) {
+	if debugflags.Enabled("CALL") {
 		ancli.Noticef("mcpTool.Call req: %v", debug.IndentedJsonFmt(req))
 	}
 
@@ -80,7 +80,7 @@ func (m *mcpTool) call(ctx context.Context, input pub_models.Input) (string, err
 			raw, open := msg.(json.RawMessage)
 			if !open {
 				if err, ok := msg.(error); ok {
-					if misc.Truthy(os.Getenv("DEBUG_MCP_TOOL")) {
+					if debugflags.Enabled("MCP_TOOL") {
 						ancli.Okf("mcp_server closed outputChan msg: '%s', err: %v", msg, err)
 					}
 					return "", err
@@ -88,7 +88,7 @@ func (m *mcpTool) call(ctx context.Context, input pub_models.Input) (string, err
 				return "", errors.New("output channel unexpectedly closed")
 			}
 
-			if misc.Truthy(os.Getenv("DEBUG_MCP_TOOL")) {
+			if debugflags.Enabled("MCP_TOOL") {
 				rawS, _ := raw.MarshalJSON()
 				// Debug output goes to stdout via ancli, so the snapshot is bound
 				// to stdout's fd; a non-terminal stdout yields the deterministic
@@ -105,7 +105,7 @@ func (m *mcpTool) call(ctx context.Context, input pub_models.Input) (string, err
 				continue
 			}
 			if resp.Error != nil {
-				if misc.Truthy(os.Getenv("DEBUG_MCP_TOOL")) {
+				if debugflags.Enabled("MCP_TOOL") {
 					ancli.Okf("Now returning response.Error: '%v'", resp.Error)
 				}
 				return "", errors.New(resp.Error.Message)
@@ -118,7 +118,7 @@ func (m *mcpTool) call(ctx context.Context, input pub_models.Input) (string, err
 				IsError bool `json:"isError"`
 			}
 			if err := json.Unmarshal(resp.Result, &result); err != nil {
-				if misc.Truthy(os.Getenv("DEBUG_MCP_TOOL")) {
+				if debugflags.Enabled("MCP_TOOL") {
 					ancli.Okf("Now returning result error: '%v'", err)
 				}
 				return "", fmt.Errorf("decode result: %w", err)
@@ -130,12 +130,12 @@ func (m *mcpTool) call(ctx context.Context, input pub_models.Input) (string, err
 				}
 			}
 			if result.IsError {
-				if misc.Truthy(os.Getenv("DEBUG_MCP_TOOL")) {
+				if debugflags.Enabled("MCP_TOOL") {
 					ancli.Okf("Now returning result as error: '%v'", buf.String())
 				}
 				return "", errors.New(buf.String())
 			}
-			if misc.Truthy(os.Getenv("DEBUG_MCP_TOOL")) {
+			if debugflags.Enabled("MCP_TOOL") {
 				ancli.Okf("Now returning: '%v'", buf.String())
 			}
 			return buf.String(), nil

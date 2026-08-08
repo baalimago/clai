@@ -6,13 +6,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 
 	"github.com/baalimago/clai/internal/cost"
+	"github.com/baalimago/clai/internal/debugflags"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
-	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
 const modelsEndpoint = "https://openrouter.ai/api/v1/models"
@@ -23,7 +22,7 @@ type OpenRouterModelCatalog struct {
 }
 
 func NewModelCatalog(apiKey string) (OpenRouterModelCatalog, error) {
-	debug := misc.Truthy(os.Getenv("DEBUG")) || misc.Truthy(os.Getenv("DEBUG_OPENROUTER_MODEL_CATALOG"))
+	debug := debugflags.Enabled("OPENROUTER_MODEL_CATALOG")
 	if debug {
 		ancli.Noticef("setting up openrouter model catalog with api key: %v...(redacted)\n", apiKey[:5])
 	}

@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/baalimago/clai/internal/cost"
+	"github.com/baalimago/clai/internal/debugflags"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/text/generic"
 	"github.com/baalimago/clai/internal/utils"
@@ -178,7 +179,7 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	configPath := path.Join(claiConfDir, fmt.Sprintf("%v_%v_%v.json", vendor, model, noFrontslashModelVersion))
 	traceChatf("new querier model config path=%q", configPath)
 	querier := Querier[C]{}
-	if misc.Truthy(os.Getenv("DEBUG")) || misc.Truthy(os.Getenv("TEXT_QUERIER_DEBUG")) {
+	if debugflags.Enabled("TEXT_QUERIER") {
 		querier.debug = true
 	}
 	querier.configDir = claiConfDir

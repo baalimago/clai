@@ -1,11 +1,7 @@
 package skills
 
-import (
-	"os"
-
-	"github.com/baalimago/go_away_boilerplate/pkg/misc"
-)
+import "github.com/baalimago/clai/internal/debugflags"
 
 func debugSkills() bool {
-	return misc.Truthy(os.Getenv("DEBUG")) || misc.Truthy(os.Getenv("DEBUG_SKILL")) || misc.Truthy(os.Getenv("DEBUG_SKILLS"))
+	return debugflags.Enabled("SKILLS")
 }

@@ -56,7 +56,7 @@ func TestDiscoverPrecedenceAndDescriptor(t *testing.T) {
 }
 
 func TestDiscover_LogsPostResolutionRootCounts(t *testing.T) {
-	t.Setenv("DEBUG_SKILL", "true")
+	t.Setenv("DEBUG_SKILLS", "true")
 	cfgDir := t.TempDir()
 	cacheDir := t.TempDir()
 	cwd := filepath.Join(t.TempDir(), "repo", "nested")

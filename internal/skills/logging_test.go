@@ -27,7 +27,7 @@ func TestParseLogLevel(t *testing.T) {
 }
 
 func TestDebugSkills(t *testing.T) {
-	for _, env := range []string{"DEBUG", "DEBUG_SKILL", "DEBUG_SKILLS"} {
+	for _, env := range []string{"DEBUG", "DEBUG_SKILLS"} {
 		t.Run(env, func(t *testing.T) {
 			t.Setenv(env, "true")
 			if !debugSkills() {

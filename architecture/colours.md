@@ -205,10 +205,12 @@ the terminal size through the shared dimensions viewer, rewraps every
 retained block at the new width, and redraws the window in one frame. The
 resize is consumed in the serialized session loop, never in the signal
 callback, so a redraw can never race a streamed token or tool write. Resize
-bursts coalesce; a failed re-query keeps the last valid size. A resize that
-arrives before the first reasoning or tool event updates the session
-snapshot, so the first render already uses the new dimensions. Raw,
-structured, debug, and redirected output never start the resize watcher.
+bursts coalesce; a failed re-query keeps the last valid size. The session
+loop drains every buffered resize before rendering the next event, so a
+resize that arrived before the event always wins: the first render (and
+every later render) uses the freshest dimensions and a stale-width row
+never appears. Raw, structured, debug, and redirected output never start
+the resize watcher.
 
 The complete reasoning stays in the session, model context, and saved chat.
 clai removes terminal control sequences only from the display copy. Raw,

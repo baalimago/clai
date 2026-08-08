@@ -9,9 +9,9 @@ import (
 	"os"
 	"os/exec"
 
+	"github.com/baalimago/clai/internal/debugflags"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
-	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
 // 2Mib, some mcp servers sends very large messages
@@ -105,7 +105,7 @@ func Client(ctx context.Context, mcpConfig pub_models.McpServer, sink ServerLogS
 				scanner.Bytes(), &raw,
 			); err != nil {
 
-				if misc.Truthy(os.Getenv("DEBUG_MCP_TOOL")) {
+				if debugflags.Enabled("MCP_TOOL") {
 					ancli.Warnf(
 						"mcp_server: '%v' got decode error: %v",
 						mcpConfig.Name, err,

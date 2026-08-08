@@ -8,15 +8,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 
+	"github.com/baalimago/clai/internal/debugflags"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/tools"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
-	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
 var dataPrefix = []byte("data: ")
@@ -155,7 +154,7 @@ func (s *StreamCompleter) handleStreamChunk(token []byte) models.CompletionEvent
 	var chunk chatCompletionChunk
 	err := json.Unmarshal(token, &chunk)
 	if err != nil {
-		if misc.Truthy(os.Getenv("DEBUG")) {
+		if debugflags.Enabled("CHAT") {
 			// Expect some failing unmarshalls, which seems to be fine
 			ancli.PrintWarn(fmt.Sprintf("failed to unmarshal token: %s, err: %v\n", token, err))
 			return models.NoopEvent{}

@@ -8,6 +8,7 @@ import (
 	"runtime/pprof"
 
 	"github.com/baalimago/clai/internal"
+	"github.com/baalimago/clai/internal/debugflags"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
@@ -146,7 +147,7 @@ func run(args []string) int {
 
 func main() {
 	ancli.SetupSlog()
-	if misc.Truthy(os.Getenv("DEBUG_CPU")) {
+	if debugflags.Enabled("CPU") {
 		f, err := os.Create("cpu_profile.prof")
 		ok := true
 		if err != nil {

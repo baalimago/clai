@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/baalimago/clai/internal/debugflags"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
-	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
 func (c *Claude) Setup() error {
@@ -16,7 +16,7 @@ func (c *Claude) Setup() error {
 	}
 	c.client = &http.Client{}
 	c.apiKey = apiKey
-	if misc.Truthy(os.Getenv("DEBUG")) || misc.Truthy(os.Getenv("ANTHROPIC_DEBUG")) {
+	if debugflags.EnabledEnv("ANTHROPIC_DEBUG") {
 		c.debug = true
 	}
 	return nil

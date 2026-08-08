@@ -6,9 +6,9 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/baalimago/clai/internal/debugflags"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
-	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
 func FromPath(path string) (pub_models.Chat, error) {
@@ -52,7 +52,7 @@ func Save(saveAt string, chat pub_models.Chat) error {
 	}
 	b = append(b, '\n')
 	fileName := conversationPathFromDir(saveAt, chat.ID)
-	if misc.Truthy(os.Getenv("DEBUG")) && misc.Truthy(os.Getenv("DEBUG_VERBOSE")) || misc.Truthy(os.Getenv("DEBUG_REPLY_MODE")) {
+	if debugflags.Enabled("VERBOSE") || debugflags.Enabled("REPLY_MODE") {
 		ancli.PrintOK(fmt.Sprintf("saving chat to: '%v'", fileName))
 	}
 	traceChatf("saving chat file path=%q chat_id=%q messages=%d", fileName, chat.ID, len(chat.Messages))
