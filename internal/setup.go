@@ -482,6 +482,7 @@ func printHelp(usage string, args []string) {
 		cfgDir,
 		cfgDir,
 		cfgDir,
+		cfgDir,
 		cacheDir,
 	)
 }
@@ -537,17 +538,18 @@ func Setup(ctx context.Context, usage string, allArgs []string) (models.Querier,
 	// United config migration: upgrade every mode config before any command
 	// runs, so each command sees the current schema (config migration
 	// design, Q5). Broken configs downgrade to warnings, same policy as
-	// LoadTheme above. The setup wizard's TUI erases pre-wizard stdout when
-	// it redraws (go_away_boilerplate/pkg/table ClearTermTo), so for SETUP
-	// the announcements are deferred until after the wizard exits.
-	var deferredUpgradeAnnouncements []string
+	// LoadTheme above. For SETUP the announcements are printed just before
+	// the wizard starts; the SETUP branch pads the block with a blank
+	// separator line that absorbs the wizard's one-line clear overshoot
+	// (table ClearTermTo clears upTo+1 lines).
+	var setupUpgradeAnnouncements []string
 	announceUpgrade := func(configFileName string, added []string) {
 		if len(added) == 0 {
 			return
 		}
 		msg := utils.ConfigUpgradeMessage(configFileName, added)
 		if mode == SETUP {
-			deferredUpgradeAnnouncements = append(deferredUpgradeAnnouncements, msg)
+			setupUpgradeAnnouncements = append(setupUpgradeAnnouncements, msg)
 			return
 		}
 		ancli.PrintOK(msg + "\n")
@@ -667,14 +669,21 @@ func Setup(ctx context.Context, usage string, allArgs []string) (models.Querier,
 	case VERSION:
 		return printVersion()
 	case SETUP:
-		err := setup.InitCmd()
-		// Announce upgrades after the wizard: its TUI erases pre-wizard
-		// stdout, so printing before it would lose the message (config
-		// migration design, Q5). Printed even on exit, which InitCmd reports
+		// Announce upgrades before the wizard starts, so the user sees what
+		// the united migration changed while the configs were upgraded. The
+		// wizard's TUI redraws by clearing its own frame plus one line above
+		// the header (table ClearTermTo clears upTo+1 lines), so the
+		// announcement block ends with a blank separator line that absorbs
+		// that overshoot; without it the first redraw would wipe the
+		// announcement. Printed even when InitCmd fails, which reports exit
 		// as table.ErrUserInitiatedExit.
-		for _, msg := range deferredUpgradeAnnouncements {
+		for _, msg := range setupUpgradeAnnouncements {
 			ancli.PrintOK(msg + "\n")
 		}
+		if len(setupUpgradeAnnouncements) > 0 {
+			fmt.Println()
+		}
+		err := setup.InitCmd()
 		if err != nil {
 			return nil, fmt.Errorf("failed to run setup: %w", err)
 		}

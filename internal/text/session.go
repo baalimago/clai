@@ -18,8 +18,15 @@ type QuerySession struct {
 	FinalUsage         *pub_models.Usage
 	CompletedCalls     []CompletedModelCall
 	ToolCallsUsed      int
+	// PostHandoverToolCallsUsed counts tool calls made after the token
+	// stoploss handover fired. It is the phase counter for the
+	// max-tool-calls-after-handover wrap-up budget: the handover starts a
+	// fresh allowance that pre-handover consumption never eats into.
+	PostHandoverToolCallsUsed int
 	// HandoverRequested is set once the token stoploss has injected the
-	// handover user message. It forces the tool-call refusal ladder.
+	// handover user message. It switches the tool-budget phase: the
+	// wrap-up allowance (max-tool-calls-after-handover) replaces the
+	// pre-handover max-tool-calls budget.
 	HandoverRequested   bool
 	ShouldSaveReply     bool
 	Raw                 bool

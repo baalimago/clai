@@ -59,9 +59,16 @@ type Configurations struct {
 	// MaxToolCallsSet is true when -mtc/-max-tool-calls was explicitly passed,
 	// so an explicit 0 can override a file-configured max-tool-calls.
 	MaxToolCallsSet bool
-	Glob            string
-	Profile         string
-	ProfilePath     string
+	// MaxToolCallsAfterHandover is the -max-tool-calls-after-handover value.
+	// Meaningful only when MaxToolCallsAfterHandoverSet is true.
+	MaxToolCallsAfterHandover int
+	// MaxToolCallsAfterHandoverSet is true when
+	// -max-tool-calls-after-handover was explicitly passed, so an explicit 0
+	// can override a file-configured stoploss.max-tool-calls-after-handover.
+	MaxToolCallsAfterHandoverSet bool
+	Glob                         string
+	Profile                      string
+	ProfilePath                  string
 	// ShellContext is the selected shell context name (ASC).
 	ShellContext string
 	// ResponseFormatPath is a path to a JSON file describing the OpenAI response_format.
@@ -146,6 +153,7 @@ func parseFlags(defaults Configurations, args []string) (Configurations, []strin
 	maxTokensLong := fs.Int("max-tokens", defaults.MaxTokens, "Set the max context tokens for this run. 0 = unlimited. Overrides stoploss.max-tokens in textConfig.json.")
 	maxToolCallsShort := fs.Int("mtc", defaults.MaxToolCalls, "Set the max tool calls for this run. 0 = unlimited. Overrides max-tool-calls in textConfig.json.")
 	maxToolCallsLong := fs.Int("max-tool-calls", defaults.MaxToolCalls, "Set the max tool calls for this run. 0 = unlimited. Overrides max-tool-calls in textConfig.json.")
+	maxToolCallsAfterHandover := fs.Int("max-tool-calls-after-handover", defaults.MaxToolCallsAfterHandover, "Set the max tool calls for the post-handover phase of this run. 0 = unlimited. Overrides stoploss.max-tool-calls-after-handover in textConfig.json.")
 
 	nonInteractiveShort := fs.Bool("n", defaults.NonInteractive, "Disable interactive stdin fallback after macro inputs; instead auto-exit with trailing quits.")
 	nonInteractiveLong := fs.Bool("non-interactive", defaults.NonInteractive, "Disable interactive stdin fallback after macro inputs; instead auto-exit with trailing quits.")
@@ -179,6 +187,7 @@ func parseFlags(defaults Configurations, args []string) (Configurations, []strin
 	maxTokensSet := false
 	mtcSet := false
 	maxToolCallsSet := false
+	maxToolCallsAfterHandoverSet := false
 	fs.Visit(func(f *flag.Flag) {
 		switch f.Name {
 		case "lb", "lookback":
@@ -191,6 +200,8 @@ func parseFlags(defaults Configurations, args []string) (Configurations, []strin
 			mtcSet = true
 		case "max-tool-calls":
 			maxToolCallsSet = true
+		case "max-tool-calls-after-handover":
+			maxToolCallsAfterHandoverSet = true
 		}
 	})
 	profile, err := utils.ReturnNonDefault(*pShort, *pLong, defaults.Profile)
@@ -226,33 +237,35 @@ func parseFlags(defaults Configurations, args []string) (Configurations, []strin
 	}
 
 	newConf := Configurations{
-		ChatModel:          chatModel,
-		PhotoModel:         photoModel,
-		PhotoDir:           pictureDir,
-		PhotoPrefix:        picturePrefix,
-		VideoModel:         videoModel,
-		VideoDir:           videoDir,
-		VideoPrefix:        videoPrefix,
-		StdinReplace:       stdinReplace,
-		PrintRaw:           printRaw,
-		ReplyMode:          replyMode,
-		DirReplyMode:       dirReplyMode,
-		UseTools:           useTools,
-		UseSkills:          useSkills,
-		CmdBan:             *cmdBan,
-		UseLookback:        useLookback,
-		UseLookbackSet:     useLookbackSet,
-		MaxTokens:          maxTokens,
-		MaxTokensSet:       maxTokensSet,
-		MaxToolCalls:       maxToolCalls,
-		MaxToolCallsSet:    maxToolCallsSet,
-		Glob:               glob,
-		ExpectReplace:      *expectReplace,
-		Profile:            profile,
-		ProfilePath:        profilePath,
-		ShellContext:       shellContext,
-		ResponseFormatPath: responseFormatPath,
-		NonInteractive:     *nonInteractiveShort || *nonInteractiveLong,
+		ChatModel:                    chatModel,
+		PhotoModel:                   photoModel,
+		PhotoDir:                     pictureDir,
+		PhotoPrefix:                  picturePrefix,
+		VideoModel:                   videoModel,
+		VideoDir:                     videoDir,
+		VideoPrefix:                  videoPrefix,
+		StdinReplace:                 stdinReplace,
+		PrintRaw:                     printRaw,
+		ReplyMode:                    replyMode,
+		DirReplyMode:                 dirReplyMode,
+		UseTools:                     useTools,
+		UseSkills:                    useSkills,
+		CmdBan:                       *cmdBan,
+		UseLookback:                  useLookback,
+		UseLookbackSet:               useLookbackSet,
+		MaxTokens:                    maxTokens,
+		MaxTokensSet:                 maxTokensSet,
+		MaxToolCalls:                 maxToolCalls,
+		MaxToolCallsSet:              maxToolCallsSet,
+		MaxToolCallsAfterHandover:    *maxToolCallsAfterHandover,
+		MaxToolCallsAfterHandoverSet: maxToolCallsAfterHandoverSet,
+		Glob:                         glob,
+		ExpectReplace:                *expectReplace,
+		Profile:                      profile,
+		ProfilePath:                  profilePath,
+		ShellContext:                 shellContext,
+		ResponseFormatPath:           responseFormatPath,
+		NonInteractive:               *nonInteractiveShort || *nonInteractiveLong,
 	}
 
 	return newConf, postParseArgs, nil
@@ -299,6 +312,12 @@ func applyFlagOverridesForText(tConf *text.Configurations, flagSet, defaultFlags
 	}
 	if flagSet.MaxToolCallsSet {
 		tConf.MaxToolCalls = &flagSet.MaxToolCalls
+	}
+	if flagSet.MaxToolCallsAfterHandoverSet {
+		if tConf.Stoploss == nil {
+			tConf.Stoploss = &text.Stoploss{}
+		}
+		tConf.Stoploss.MaxToolCallsAfterHandover = flagSet.MaxToolCallsAfterHandover
 	}
 }
 

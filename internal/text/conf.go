@@ -97,10 +97,15 @@ type Configurations struct {
 // Stoploss is the token stoploss policy. MaxTokens <= 0 disables the
 // stoploss. MaxTokensHandoverMsg is the user message injected into the chat
 // when the limit is crossed; empty means the default message
-// (DefaultHandoverInstructions).
+// (DefaultHandoverInstructions). MaxToolCallsAfterHandover is the wrap-up
+// tool-call budget for the post-handover phase: <= 0 (or absent) means
+// unlimited tool calls after the handover fires. It carries migrate:"true"
+// so the presence-based config migration surfaces it in upgraded files as an
+// explicit 0 (and never omitempty, or the rewrite would drop the zero).
 type Stoploss struct {
-	MaxTokens            int    `json:"max-tokens"`
-	MaxTokensHandoverMsg string `json:"max-tokens-handover-instructions"`
+	MaxTokens                 int    `json:"max-tokens"`
+	MaxTokensHandoverMsg      string `json:"max-tokens-handover-instructions"`
+	MaxToolCallsAfterHandover int    `json:"max-tool-calls-after-handover" migrate:"true"`
 }
 
 // DefaultHandoverInstructions is the user message injected into the chat when

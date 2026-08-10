@@ -359,6 +359,30 @@ func TestSetupFlags(t *testing.T) {
 			wantErrContains: "mutually exclusive",
 		},
 		{
+			name:     "Max tool calls after handover flag",
+			args:     []string{"cmd", "-max-tool-calls-after-handover", "3"},
+			defaults: Configurations{},
+			want: Configurations{
+				MaxToolCallsAfterHandover:    3,
+				MaxToolCallsAfterHandoverSet: true,
+			},
+		},
+		{
+			name:     "Max tool calls after handover explicit zero is detected as set",
+			args:     []string{"cmd", "-max-tool-calls-after-handover=0"},
+			defaults: Configurations{},
+			want: Configurations{
+				MaxToolCallsAfterHandover:    0,
+				MaxToolCallsAfterHandoverSet: true,
+			},
+		},
+		{
+			name:            "Max tool calls after handover non-integer value rejected",
+			args:            []string{"cmd", "-max-tool-calls-after-handover=abc"},
+			defaults:        Configurations{},
+			wantErrContains: "invalid value",
+		},
+		{
 			name:     "No stoploss flags leaves both limits unset",
 			args:     []string{"cmd", "q", "hello"},
 			defaults: Configurations{},
@@ -722,6 +746,42 @@ func Test_applyFlagOverridesForText_Stoploss(t *testing.T) {
 			given:   text.Configurations{MaxToolCalls: intPtr(5)},
 			flagSet: Configurations{},
 			want:    text.Configurations{MaxToolCalls: intPtr(5)},
+		},
+		{
+			desc:    "max-tool-calls-after-handover flag creates the stoploss object",
+			given:   text.Configurations{},
+			flagSet: Configurations{MaxToolCallsAfterHandover: 3, MaxToolCallsAfterHandoverSet: true},
+			want:    text.Configurations{Stoploss: &text.Stoploss{MaxToolCallsAfterHandover: 3}},
+		},
+		{
+			desc: "max-tool-calls-after-handover flag overrides the file value and keeps the rest",
+			given: text.Configurations{
+				Stoploss: &text.Stoploss{MaxTokens: 100, MaxTokensHandoverMsg: "wrap up", MaxToolCallsAfterHandover: 5},
+			},
+			flagSet: Configurations{MaxToolCallsAfterHandover: 2, MaxToolCallsAfterHandoverSet: true},
+			want: text.Configurations{
+				Stoploss: &text.Stoploss{MaxTokens: 100, MaxTokensHandoverMsg: "wrap up", MaxToolCallsAfterHandover: 2},
+			},
+		},
+		{
+			desc: "explicit zero max-tool-calls-after-handover disables a file budget",
+			given: text.Configurations{
+				Stoploss: &text.Stoploss{MaxToolCallsAfterHandover: 5},
+			},
+			flagSet: Configurations{MaxToolCallsAfterHandover: 0, MaxToolCallsAfterHandoverSet: true},
+			want: text.Configurations{
+				Stoploss: &text.Stoploss{MaxToolCallsAfterHandover: 0},
+			},
+		},
+		{
+			desc: "omitted max-tool-calls-after-handover flag leaves the file value untouched",
+			given: text.Configurations{
+				Stoploss: &text.Stoploss{MaxTokens: 100, MaxToolCallsAfterHandover: 5},
+			},
+			flagSet: Configurations{},
+			want: text.Configurations{
+				Stoploss: &text.Stoploss{MaxTokens: 100, MaxToolCallsAfterHandover: 5},
+			},
 		},
 	}
 

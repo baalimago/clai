@@ -126,13 +126,12 @@ func Test_e2e_stoploss_handover_injection_and_summary(t *testing.T) {
 	assertValidToolExchangesE2E(t, chat.Messages)
 }
 
-// Test_e2e_stoploss_post_handover_refusal_visible proves the post-handover
-// refusal ladder through the real CLI: the handover message contains real
-// tool tokens, every post-handover tool call is refused BEFORE its
-// implementation runs (the tool result carries the ladder text, not tool
-// output), and the run still ends with a final assistant summary and exit 0
-// (phase 6 case 2).
-func Test_e2e_stoploss_post_handover_refusal_visible(t *testing.T) {
+// Test_e2e_stoploss_post_handover_tools_execute_by_default proves the new
+// default through the real CLI: the handover message contains real tool
+// tokens and every post-handover tool call EXECUTES with visible output — the
+// agent can summarize context into a file after the stoploss fires — and the
+// run still ends with a final assistant summary and exit 0.
+func Test_e2e_stoploss_post_handover_tools_execute_by_default(t *testing.T) {
 	confDir := setupMainTestConfigDir(t)
 	writeStoplossTextConfig(t, confDir, map[string]any{
 		"stoploss": map[string]any{
@@ -154,6 +153,57 @@ func Test_e2e_stoploss_post_handover_refusal_visible(t *testing.T) {
 		t.Fatalf("expected the handover user message, transcript: %+v", chat.Messages)
 	}
 
+	executed := 0
+	for i := handoverIdx + 1; i < len(chat.Messages); i++ {
+		m := chat.Messages[i]
+		if m.Role != "tool" {
+			continue
+		}
+		if strings.HasPrefix(m.Content, "ERROR: No more tool calls allowed") {
+			t.Fatalf("post-handover tools must not be refused by default, got %q", m.Content)
+		}
+		executed++
+	}
+	if executed == 0 {
+		t.Fatalf("expected at least one post-handover tool execution, transcript: %+v", chat.Messages)
+	}
+
+	last := chat.Messages[len(chat.Messages)-1]
+	if last.Role != "assistant" || last.Content == "" {
+		t.Fatalf("expected the final summary as the last assistant message, got %+v", last)
+	}
+	assertValidToolExchangesE2E(t, chat.Messages)
+}
+
+// Test_e2e_stoploss_post_handover_budget_refuses_after_budget proves the
+// bounded wrap-up through the real CLI: with max-tool-calls-after-handover 1
+// the first post-handover tool executes with real output and the next is
+// refused BEFORE its implementation runs (the tool result carries the ladder
+// text), and the run exits 0.
+func Test_e2e_stoploss_post_handover_budget_refuses_after_budget(t *testing.T) {
+	confDir := setupMainTestConfigDir(t)
+	writeStoplossTextConfig(t, confDir, map[string]any{
+		"stoploss": map[string]any{
+			"max-tokens":                       5,
+			"max-tokens-handover-instructions": "tool_ls tool_cat tool_rg tool_git",
+			"max-tool-calls-after-handover":    1,
+		},
+	})
+
+	status, stdout, stderr := runStoplossE2E(t, "-r", "-cm", "test", "q", "run", "tool_ls")
+	if status != 0 {
+		t.Fatalf("expected exit 0, got %d stdout=%q stderr=%q", status, stdout, stderr)
+	}
+
+	chat := loadSavedStoplossChat(t, confDir)
+	handoverIdx := indexOfMessage(chat.Messages, func(m pub_models.Message) bool {
+		return m.Role == "user" && m.Content == "tool_ls tool_cat tool_rg tool_git"
+	})
+	if handoverIdx == -1 {
+		t.Fatalf("expected the handover user message, transcript: %+v", chat.Messages)
+	}
+
+	executed := 0
 	refusals := 0
 	for i := handoverIdx + 1; i < len(chat.Messages); i++ {
 		m := chat.Messages[i]
@@ -164,10 +214,13 @@ func Test_e2e_stoploss_post_handover_refusal_visible(t *testing.T) {
 			refusals++
 			continue
 		}
-		t.Fatalf("post-handover tool result must carry only refusal text (side effect must not run), got %q", m.Content)
+		executed++
+	}
+	if executed != 1 {
+		t.Fatalf("expected exactly one post-handover execution past the budget, got %d, transcript: %+v", executed, chat.Messages)
 	}
 	if refusals == 0 {
-		t.Fatalf("expected at least one post-handover refusal, transcript: %+v", chat.Messages)
+		t.Fatalf("expected at least one post-handover refusal past the budget, transcript: %+v", chat.Messages)
 	}
 
 	last := chat.Messages[len(chat.Messages)-1]

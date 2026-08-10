@@ -127,8 +127,11 @@ preflights a complete model tool batch before any side effect runs.
 - `max-tool-calls` caps the number of tool calls per run with the escalating
   refusal ladder. `max-tool-calls: 0` (or nil) means **unlimited**.
 - `stoploss.max-tokens` is the token stoploss: after the crossing step's tool
-  batch, clai injects the handover user message; every subsequent tool call is
-  refused before its implementation runs.
+  batch, clai injects the handover user message. The handover starts a fresh
+  wrap-up phase: post-handover tool calls are counted against
+  `stoploss.max-tool-calls-after-handover` (absent or 0 = **unlimited**, the
+  default), never against the pre-handover `max-tool-calls` consumption. Once
+  the wrap-up allowance is exhausted, the refusal ladder applies.
 
 A refused call never reaches its executor: the tool result carries the refusal
 text instead of tool output.

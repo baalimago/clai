@@ -262,7 +262,7 @@ func TestAgent_WithOutputTo_propagates(t *testing.T) {
 }
 
 func TestAgent_WithStoploss(t *testing.T) {
-	a := New(WithStoploss(Stoploss{MaxTokens: 50, MaxTokensHandoverMsg: "m"}))
+	a := New(WithStoploss(Stoploss{MaxTokens: 50, MaxTokensHandoverMsg: "m", MaxToolCallsAfterHandover: 3}))
 	conf := a.asInternalConfig()
 	if conf.Stoploss == nil {
 		t.Fatal("expected Stoploss in internal config")
@@ -272,6 +272,9 @@ func TestAgent_WithStoploss(t *testing.T) {
 	}
 	if conf.Stoploss.MaxTokensHandoverMsg != "m" {
 		t.Fatalf("expected handover message 'm', got %q", conf.Stoploss.MaxTokensHandoverMsg)
+	}
+	if conf.Stoploss.MaxToolCallsAfterHandover != 3 {
+		t.Fatalf("expected MaxToolCallsAfterHandover 3, got %d", conf.Stoploss.MaxToolCallsAfterHandover)
 	}
 }
 

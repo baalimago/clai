@@ -272,7 +272,7 @@ func Test_stoploss_PreflightToolCallBudget(t *testing.T) {
 		}
 	})
 
-	t.Run("handover forces refusal for every call", func(t *testing.T) {
+	t.Run("default (no post-handover budget) allows every call", func(t *testing.T) {
 		ctrl := &stoploss{}
 		session := &QuerySession{HandoverRequested: true}
 
@@ -280,14 +280,97 @@ func Test_stoploss_PreflightToolCallBudget(t *testing.T) {
 			{ID: "a", Name: "cmd"},
 			{ID: "b", Name: string(pub_models.LoadSkillTool)},
 		})
-		if plans[0].allowed || plans[1].allowed {
-			t.Fatalf("expected both calls refused after handover, got %+v / %+v", plans[0], plans[1])
+		for _, p := range plans {
+			if !p.allowed || p.prefix != "" || p.hardStop || p.out != "" {
+				t.Fatalf("expected unlimited post-handover call allowed, got %+v", p)
+			}
 		}
-		if !strings.Contains(plans[0].out, "No more tool calls allowed") {
-			t.Fatalf("expected plain refusal first, got %q", plans[0].out)
+		if session.PostHandoverToolCallsUsed != 0 {
+			t.Fatalf("expected no slots reserved post-handover, got %d", session.PostHandoverToolCallsUsed)
 		}
-		if !strings.Contains(plans[1].out, "HARD SHUT DOWN") {
-			t.Fatalf("expected escalated refusal second, got %q", plans[1].out)
+	})
+
+	t.Run("post-handover budget is a fresh allowance", func(t *testing.T) {
+		maxCalls := 1
+		ctrl := &stoploss{maxToolCalls: &maxCalls, maxToolCallsAfterHandover: 2}
+		// The pre-handover budget is exhausted; the wrap-up allowance must not
+		// be eaten by pre-handover consumption.
+		session := &QuerySession{ToolCallsUsed: 1, HandoverRequested: true}
+
+		plans := ctrl.PreflightToolCallBudget(session, []pub_models.Call{{ID: "a"}, {ID: "b"}})
+		if !plans[0].allowed || plans[0].prefix != "[ Tool calls remaining: 2 ] " {
+			t.Fatalf("expected first post-handover call allowed with a fresh budget, got %+v", plans[0])
+		}
+		if !plans[1].allowed || plans[1].prefix != "[ Tool calls remaining: 1 ] " {
+			t.Fatalf("expected second post-handover call allowed, got %+v", plans[1])
+		}
+		if session.PostHandoverToolCallsUsed != 2 {
+			t.Fatalf("expected post-handover slots on the fresh counter, got %d", session.PostHandoverToolCallsUsed)
+		}
+		if session.ToolCallsUsed != 1 {
+			t.Fatalf("expected the pre-handover counter untouched, got %d", session.ToolCallsUsed)
+		}
+	})
+
+	t.Run("post-handover budget escalates the ladder when exhausted", func(t *testing.T) {
+		ctrl := &stoploss{maxToolCallsAfterHandover: 1}
+		session := &QuerySession{HandoverRequested: true}
+
+		plans := ctrl.PreflightToolCallBudget(session, []pub_models.Call{{ID: "a"}, {ID: "b"}, {ID: "c"}, {ID: "d"}, {ID: "e"}})
+		if !plans[0].allowed {
+			t.Fatalf("expected the first post-handover call within budget, got %+v", plans[0])
+		}
+		if plans[1].allowed || plans[1].out != "ERROR: No more tool calls allowed. " {
+			t.Fatalf("expected plain refusal for the first over-budget call, got %+v", plans[1])
+		}
+		if plans[2].allowed || !strings.Contains(plans[2].out, "HARD SHUT DOWN") {
+			t.Fatalf("expected hard-shutdown warning, got %+v", plans[2])
+		}
+		if plans[3].allowed || !strings.Contains(plans[3].out, "LAST WARNING") || plans[3].hardStop {
+			t.Fatalf("expected last warning without hard stop, got %+v", plans[3])
+		}
+		if plans[4].allowed || !strings.Contains(plans[4].out, "LAST WARNING") || !plans[4].hardStop {
+			t.Fatalf("expected last-warning hard stop, got %+v", plans[4])
+		}
+		if session.PostHandoverToolCallsUsed != 4 {
+			t.Fatalf("expected no slot reserved for the io.EOF refusal, got %d", session.PostHandoverToolCallsUsed)
+		}
+	})
+
+	t.Run("zero post-handover budget means unlimited", func(t *testing.T) {
+		ctrl := &stoploss{maxToolCallsAfterHandover: 0}
+		session := &QuerySession{HandoverRequested: true}
+
+		plans := ctrl.PreflightToolCallBudget(session, []pub_models.Call{{ID: "a"}})
+		if !plans[0].allowed || plans[0].prefix != "" {
+			t.Fatalf("expected 0 post-handover limit to behave as unlimited, got %+v", plans[0])
+		}
+	})
+
+	t.Run("load_skill allowed post-handover while budget has room, refused when exhausted", func(t *testing.T) {
+		ctrl := &stoploss{maxToolCallsAfterHandover: 1}
+		session := &QuerySession{HandoverRequested: true}
+
+		skill := pub_models.Call{ID: "s", Name: string(pub_models.LoadSkillTool)}
+		cmd := pub_models.Call{ID: "c", Name: "cmd"}
+
+		first := ctrl.PreflightToolCallBudget(session, []pub_models.Call{skill})[0]
+		if !first.allowed || first.prefix != "" {
+			t.Fatalf("expected post-handover load_skill allowed without a prefix, got %+v", first)
+		}
+		cmdPlan := ctrl.PreflightToolCallBudget(session, []pub_models.Call{cmd})[0]
+		if !cmdPlan.allowed {
+			t.Fatalf("expected the cmd call to consume the budget, got %+v", cmdPlan)
+		}
+		refused := ctrl.PreflightToolCallBudget(session, []pub_models.Call{skill})[0]
+		if refused.allowed || !strings.Contains(refused.out, "No more tool calls allowed") {
+			t.Fatalf("expected load_skill refused once the post-handover budget is exhausted, got %+v", refused)
+		}
+		// The plain refusal (persistence 0) still reserves a ladder slot, so
+		// the counter moves past the exhausted budget; load_skill itself never
+		// reserves a slot.
+		if session.PostHandoverToolCallsUsed != 2 {
+			t.Fatalf("expected the refusal slot on the post-handover counter, got %d", session.PostHandoverToolCallsUsed)
 		}
 	})
 
@@ -302,6 +385,17 @@ func Test_stoploss_PreflightToolCallBudget(t *testing.T) {
 		}
 		if session.ToolCallsUsed != 0 {
 			t.Fatalf("expected load_skill to reserve no slot, got %d", session.ToolCallsUsed)
+		}
+	})
+
+	t.Run("pre-handover load_skill exemption survives budget exhaustion", func(t *testing.T) {
+		maxCalls := 1
+		ctrl := &stoploss{maxToolCalls: &maxCalls}
+		session := &QuerySession{ToolCallsUsed: 1} // budget exhausted pre-handover
+
+		plan := ctrl.PreflightToolCallBudget(session, []pub_models.Call{{ID: "s", Name: string(pub_models.LoadSkillTool)}})[0]
+		if !plan.allowed {
+			t.Fatalf("expected pre-handover load_skill exempt even when the budget is exhausted, got %+v", plan)
 		}
 	})
 }

@@ -79,10 +79,15 @@ func WithConfigDir(cfgDir string) Option {
 // Stoploss configures the token stoploss policy for an agent run. MaxTokens
 // <= 0 disables the stoploss. MaxTokensHandoverMsg is the user message
 // injected into the chat when the limit is crossed; empty means the default
-// message (text.DefaultHandoverInstructions).
+// message (text.DefaultHandoverInstructions). MaxToolCallsAfterHandover is
+// the wrap-up tool-call budget for the post-handover phase: <= 0 means
+// unlimited tool calls after the handover fires. It is inert without
+// MaxTokens > 0: the internal config drops the whole Stoploss object
+// otherwise, so the agent stays unlimited.
 type Stoploss struct {
-	MaxTokens            int
-	MaxTokensHandoverMsg string
+	MaxTokens                 int
+	MaxTokensHandoverMsg      string
+	MaxToolCallsAfterHandover int
 }
 
 // WithStoploss configures the token stoploss policy for the agent. A
@@ -182,8 +187,9 @@ func (a *Agent) asInternalConfig() text.Configurations {
 	// agent default stays unlimited (MaxTokens <= 0 disables the stoploss).
 	if a.stoploss.MaxTokens > 0 {
 		conf.Stoploss = &text.Stoploss{
-			MaxTokens:            a.stoploss.MaxTokens,
-			MaxTokensHandoverMsg: a.stoploss.MaxTokensHandoverMsg,
+			MaxTokens:                 a.stoploss.MaxTokens,
+			MaxTokensHandoverMsg:      a.stoploss.MaxTokensHandoverMsg,
+			MaxToolCallsAfterHandover: a.stoploss.MaxToolCallsAfterHandover,
 		}
 	}
 	return conf
