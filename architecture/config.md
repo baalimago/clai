@@ -51,7 +51,7 @@ They contain settings that are broadly applicable to that “mode” (text vs im
 - system prompt
 - tool use selection defaults
 - tool-call budget (`max-tool-calls`; nil or 0 = unlimited)
-- token stoploss policy (`stoploss`: `max-tokens` + `max-tokens-handover-instructions`)
+- token stoploss policy (`stoploss`: `max-tokens` + `max-tokens-handover-instructions` + `max-tool-calls-after-handover`; absent or 0 = unlimited post-handover tools)
 - globbing selection (via `-g` flag which then modifies prompt building)
 
 The pre-query interactive token-count warning prompt is **sunset**: a legacy
@@ -77,7 +77,10 @@ remain, but are idempotent after the united migration.
 - optionally running a migration callback
 - **upgrading the file in place**: keys absent from the on-disk JSON are filled
   from the non-zero defaults (recursively into nested objects) and the file is
-  rewritten. Keys already present are never touched, even when their value is
+  rewritten. Fields tagged `migrate:"true"` are filled even when their default
+  is the zero value, so new feature knobs whose natural default is 0 (e.g.
+  `stoploss.max-tool-calls-after-handover`, 0 = unlimited) surface in upgraded
+  configs. Keys already present are never touched, even when their value is
   the zero value — the file is the user’s source of truth. When a
   pre-existing file is upgraded, clai announces the added fields, e.g.
   `added new field(s) to textConfig.json: stoploss`. This is what appends the
@@ -86,10 +89,14 @@ remain, but are idempotent after the united migration.
 
 `LoadConfigFromFileCollect` is the same loader without the stdout
 announcement: it returns the added field paths instead. `internal.Setup` uses
-it for the united migration and defers the announcement until after the
-interactive setup wizard exits — the wizard’s TUI erases pre-wizard stdout
-when it redraws (`go_away_boilerplate/pkg/table` `ClearTermTo`), so printing
-before it would lose the message. All other commands announce immediately.
+it for the united migration and prints the announcements just before the
+interactive setup wizard starts. The wizard's TUI redraws by clearing its own
+frame plus one line above the header (`go_away_boilerplate/pkg/table`
+`ClearTermTo` clears `upTo+1` lines), so the announcement block ends with a
+blank separator line that absorbs the overshoot; without it the first redraw
+would wipe the announcement. Deep multi-table navigation can still scroll it
+off (each `Run()` exit consumes one line). All other commands announce
+immediately.
 
 Raw (machine-readable) runs — `-r`/`-raw` — are read-only: `internal.Setup`
 sets `utils.ReadonlyConfig` before any load, and the loaders fill missing

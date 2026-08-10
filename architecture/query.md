@@ -102,15 +102,20 @@ loop (`internal/text/session_runner.go`). Each model step:
    (`internal/text/tool_executor.go`). Refused calls never reach their
    implementation; their tool result carries the escalation text.
 4. **Stoploss check** (after the tool batch, so the chat order stays
-   `[assistant tool-call] [tool results] [handover user msg]`): the latest
-   request footprint (`prompt_tokens + completion_tokens`, else
-   `total_tokens`, else the model's `InputTokenCounter` estimate) is compared
-   to `stoploss.max-tokens`. On the first crossing clai appends the handover
-   user message (`stoploss.max-tokens-handover-instructions`, default
-   `DefaultHandoverInstructions`), prints a notice, and marks the session
-   handover-requested. Every later tool call runs the refusal ladder until
-   the run ends cleanly (`io.EOF`). A step that ends with a plain reply ends
-   the run without a handover — there is nothing to hand over.
+    `[assistant tool-call] [tool results] [handover user msg]`): the latest
+    request footprint (`prompt_tokens + completion_tokens`, else
+    `total_tokens`, else the model's `InputTokenCounter` estimate) is compared
+    to `stoploss.max-tokens`. On the first crossing clai appends the handover
+    user message (`stoploss.max-tokens-handover-instructions`, default
+    `DefaultHandoverInstructions`), prints a notice, and marks the session
+    handover-requested. The handover starts the wrap-up phase: post-handover
+    tool calls are counted against `stoploss.max-tool-calls-after-handover`
+    (absent or 0 = unlimited, the default) with a fresh counter, so the agent
+    can keep working — e.g. summarizing context into a file — until it
+    produces a plain reply. Only when a configured wrap-up allowance is
+    exhausted do later tool calls run the refusal ladder until the run ends
+    cleanly (`io.EOF`). A step that ends with a plain reply ends the run
+    without a handover — there is nothing to hand over.
 5. **Post-processing** (`postProcess()`):
    - Appends assistant message to chat
    - Saves conversation via `SaveAsPreviousQuery()` (unless in chat mode)
@@ -126,9 +131,10 @@ When a model step returns one or more `pub_models.Call` events, the
 `toolExecutor` (`internal/text/tool_executor.go`) processes them as one batch:
 
 1. Every call is preflighted against the stoploss controller before any tool
-   side effect runs. Within the `max-tool-calls` budget a call is allowed and
-   its result carries the remaining-count prefix; over budget (or after a
-   handover) the call is refused and never invoked.
+    side effect runs. Within the phase budget (`max-tool-calls` before a
+    handover, `stoploss.max-tool-calls-after-handover` after it) a call is
+    allowed and its result carries the remaining-count prefix; over budget the
+    call is refused and never invoked.
 2. The transcript keeps immediate assistant→tool pairing in the model's
    emission order. `load_skill` self-emits its assistant tool-call at
    execution time (the trust prompt and load errors precede the call echo, and
@@ -148,8 +154,10 @@ When a model step returns one or more `pub_models.Call` events, the
 Tool call limits (`max-tool-calls` in config) enforce a soft cap with
 escalating warnings. `max-tool-calls: 0` (or nil) means **unlimited** — no
 budget prefix, no warnings. After a stoploss handover the effective budget is
-0, so every tool call is refused by the same escalation ladder until the run
-ends cleanly.
+`stoploss.max-tool-calls-after-handover` with a fresh counter: absent or 0
+means unlimited post-handover tool calls (the default), and a positive value
+bounds the wrap-up phase, after which the same escalation ladder applies until
+the run ends cleanly.
 
 ## Directory Scope Binding
 

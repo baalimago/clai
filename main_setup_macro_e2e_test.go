@@ -3,15 +3,24 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
+
+// stripANSI removes ANSI SGR escape sequences so assertions can match plain
+// text regardless of colorization.
+func stripANSI(s string) string {
+	return ansiSGR.ReplaceAllString(s, "")
+}
+
+var ansiSGR = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
 // Test_e2e_setup_migrates_mode_configs_and_announces proves that `clai s`
 // preloads the mode configs through LoadConfigFromFile: an existing
 // textConfig.json that predates the stoploss schema is upgraded in place and
 // the added fields are announced, so the wizard previews the current schema.
-func Test_e2e_setup_migrates_mode_configs_and_announces(t *testing.T) {
+func Test_e2e_setup_migrates_mode_configs_and_announces_before_wizard(t *testing.T) {
 	confDir := setupMainTestConfigDir(t)
 	// Downgrade textConfig.json to the pre-stoploss schema.
 	writeJSONFileAny(t, filepath.Join(confDir, "textConfig.json"), map[string]any{
@@ -25,13 +34,17 @@ func Test_e2e_setup_migrates_mode_configs_and_announces(t *testing.T) {
 	if !strings.Contains(stdout, "added new field(s) to textConfig.json:") {
 		t.Fatalf("expected the config upgrade announcement, got:\n%s", stdout)
 	}
-	// The wizard's TUI erases pre-wizard stdout when it redraws (table
-	// ClearTermTo overshoots by one line), so the upgrade announcement is
-	// deferred until after the wizard exits. Pin that it appears after the
-	// wizard header rather than before it.
+	// The wizard's TUI redraws by clearing its own frame plus one line above
+	// the header (table ClearTermTo clears upTo+1 lines), so the announcement
+	// block ends with a blank separator line that absorbs that overshoot and
+	// the announcement survives interactive redraws. Pin that the announcement
+	// appears before the wizard header with the blank line between them.
 	annIdx := strings.Index(stdout, "added new field(s) to textConfig.json:")
-	if annIdx < 0 || strings.Index(stdout, "Setup categories") > annIdx {
-		t.Fatalf("expected the announcement after the wizard exited, got:\n%s", stdout)
+	if annIdx < 0 || annIdx > strings.Index(stdout, "Setup categories") {
+		t.Fatalf("expected the announcement before the wizard started, got:\n%s", stdout)
+	}
+	if !strings.Contains(stripANSI(stdout[annIdx:]), "\n\nSetup categories") {
+		t.Fatalf("expected a blank separator line between the announcement and the wizard, got:\n%s", stdout)
 	}
 	regenerated, err := os.ReadFile(filepath.Join(confDir, "textConfig.json"))
 	if err != nil {
@@ -42,12 +55,13 @@ func Test_e2e_setup_migrates_mode_configs_and_announces(t *testing.T) {
 	}
 }
 
-// Test_e2e_setup_migrates_profiles_and_announces_after_wizard proves the
+// Test_e2e_setup_migrates_profiles_and_announces_before_wizard proves the
 // united config migration covers profiles during setup too: a profile that
 // predates the current schema is upgraded before the wizard runs, and its
-// announcement is deferred until after the wizard exits (its TUI erases
-// pre-wizard stdout).
-func Test_e2e_setup_migrates_profiles_and_announces_after_wizard(t *testing.T) {
+// announcement is printed before the wizard starts (the announcement block's
+// trailing blank line absorbs the TUI's one-line clear overshoot, so the
+// announcement survives redraws).
+func Test_e2e_setup_migrates_profiles_and_announces_before_wizard(t *testing.T) {
 	confDir := setupMainTestConfigDir(t)
 	writeJSONFileAny(t, filepath.Join(confDir, "profiles", "john.json"), map[string]any{
 		"name":  "john",
@@ -62,8 +76,8 @@ func Test_e2e_setup_migrates_profiles_and_announces_after_wizard(t *testing.T) {
 	if annIdx < 0 {
 		t.Fatalf("expected the profile upgrade announcement, got:\n%s", stdout)
 	}
-	if strings.Index(stdout, "Setup categories") > annIdx {
-		t.Fatalf("expected the profile announcement after the wizard exited, got:\n%s", stdout)
+	if annIdx > strings.Index(stdout, "Setup categories") {
+		t.Fatalf("expected the profile announcement before the wizard started, got:\n%s", stdout)
 	}
 	regenerated, err := os.ReadFile(filepath.Join(confDir, "profiles", "john.json"))
 	if err != nil {

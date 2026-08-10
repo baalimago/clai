@@ -11,13 +11,16 @@ import (
 )
 
 // stoploss owns both run budgets: the token stoploss (max-tokens + handover
-// injection) and the tool-call budget (max-tool-calls). It composes them so
-// that once a handover has been requested, further tool calls are treated as
-// over-budget and run the existing refusal ladder.
+// injection) and the tool-call budgets. It composes them so that the handover
+// starts a fresh wrap-up phase: post-handover tool calls are counted against
+// maxToolCallsAfterHandover (nil or <= 0 means unlimited), never against the
+// pre-handover maxToolCalls consumption. Once the wrap-up allowance is
+// exhausted, further tool calls run the existing refusal ladder.
 type stoploss struct {
-	maxTokens            int    // <= 0 disables the token stoploss
-	maxToolCalls         *int   // nil or <= 0 means no tool-call limit
-	maxTokensHandoverMsg string // effective handover message, resolved once at construction
+	maxTokens                 int    // <= 0 disables the token stoploss
+	maxToolCalls              *int   // pre-handover tool-call budget; nil or <= 0 means no limit
+	maxToolCallsAfterHandover int    // post-handover wrap-up budget; <= 0 means unlimited
+	maxTokensHandoverMsg      string // effective handover message, resolved once at construction
 }
 
 // newStoploss builds the controller from the querier's configured policies.
@@ -29,21 +32,44 @@ func (q *Querier[C]) newStoploss() *stoploss {
 	if q.stoploss != nil {
 		ctrl.maxTokens = q.stoploss.MaxTokens
 		ctrl.maxTokensHandoverMsg = q.stoploss.HandoverInstructions()
+		ctrl.maxToolCallsAfterHandover = q.stoploss.MaxToolCallsAfterHandover
 	}
 	return ctrl
 }
 
-// effectiveBudget returns the tool-call budget in effect for the session: 0
-// after a handover (every tool call is over budget), the configured positive
-// limit, or -1 when unlimited.
+// effectiveBudget returns the tool-call budget in effect for the session
+// phase: the wrap-up allowance (max-tool-calls-after-handover) after a
+// handover, the configured positive max-tool-calls limit before it, or -1
+// when unlimited.
 func (s *stoploss) effectiveBudget(session *QuerySession) int {
 	if session.HandoverRequested {
-		return 0
+		if s.maxToolCallsAfterHandover > 0 {
+			return s.maxToolCallsAfterHandover
+		}
+		return -1
 	}
 	if s.maxToolCalls != nil && *s.maxToolCalls > 0 {
 		return *s.maxToolCalls
 	}
 	return -1
+}
+
+// effectiveUsed returns the tool-call counter of the session phase: the
+// post-handover counter after a handover, the pre-handover counter before it.
+func (s *stoploss) effectiveUsed(session *QuerySession) int {
+	if session.HandoverRequested {
+		return session.PostHandoverToolCallsUsed
+	}
+	return session.ToolCallsUsed
+}
+
+// incUsed reserves one budget slot on the phase-appropriate counter.
+func (s *stoploss) incUsed(session *QuerySession) {
+	if session.HandoverRequested {
+		session.PostHandoverToolCallsUsed++
+		return
+	}
+	session.ToolCallsUsed++
 }
 
 // ladderText builds the escalating refusal for an over-budget tool call at the
@@ -83,9 +109,9 @@ func (s *stoploss) PreflightToolCallBudget(session *QuerySession, calls []pub_mo
 }
 
 func (s *stoploss) preflightToolCall(session *QuerySession, call pub_models.Call) toolCallBudgetPlan {
-	// load_skill is exempt from the positive max-tool-calls budget, but never
-	// from the post-handover refusal: no tool, including load_skill, executes
-	// after handover.
+	// load_skill is exempt from the positive pre-handover budget, but never
+	// from an exhausted-budget refusal in either phase: no tool, including
+	// load_skill, executes once the phase budget is exhausted.
 	if call.Name == string(pub_models.LoadSkillTool) && !session.HandoverRequested {
 		return toolCallBudgetPlan{call: call, allowed: true}
 	}
@@ -93,18 +119,23 @@ func (s *stoploss) preflightToolCall(session *QuerySession, call pub_models.Call
 	if budget < 0 {
 		return toolCallBudgetPlan{call: call, allowed: true}
 	}
-	used := session.ToolCallsUsed
+	used := s.effectiveUsed(session)
 	debugStoplossf("tool call %q: budget=%d used=%d", call.Name, budget, used)
 	if used >= budget {
 		refusal, hardStop := ladderText(used - budget)
 		plan := toolCallBudgetPlan{call: call, out: refusal, hardStop: hardStop}
 		debugStoplossf("tool call %q refused (persistence %d, hardStop %v)", call.Name, used-budget, hardStop)
 		if !hardStop {
-			session.ToolCallsUsed = used + 1
+			s.incUsed(session)
 		}
 		return plan
 	}
-	session.ToolCallsUsed = used + 1
+	if call.Name == string(pub_models.LoadSkillTool) {
+		// Post-handover load_skill rides free of the wrap-up allowance while
+		// it has room: allowed, no slot reserved.
+		return toolCallBudgetPlan{call: call, allowed: true}
+	}
+	s.incUsed(session)
 	debugStoplossf("tool call %q allowed, %d remaining", call.Name, budget-used-1)
 	return toolCallBudgetPlan{
 		call:    call,

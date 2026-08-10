@@ -127,12 +127,12 @@ func Test_sessionRunner_Run_StoplossCrossingInjectsHandoverAfterToolResults(t *t
 	}
 }
 
-// Test_sessionRunner_Run_PostHandoverToolRefusedBeforeInvocation pins
-// acceptance criterion 4 and R2-01 (ordinary tools): after handover a tool
-// call is refused before its side effect runs, the tool result carries the
-// ladder warning, the agent then produces the summary, and the run ends
-// cleanly.
-func Test_sessionRunner_Run_PostHandoverToolRefusedBeforeInvocation(t *testing.T) {
+// Test_sessionRunner_Run_PostHandoverToolExecutesByDefault pins the
+// post-handover tool budget contract: with no max-tool-calls-after-handover
+// configured (the default), a tool call after the handover fires EXECUTES —
+// the agent can summarize context into a file — and the run ends with the
+// summary.
+func Test_sessionRunner_Run_PostHandoverToolExecutesByDefault(t *testing.T) {
 	inttools.WithTestRegistry(t, func() {
 		invocations := 0
 		inttools.Registry.Set("stoploss_probe", countingStubTool{name: "stoploss_probe", calls: &invocations, output: "probe side effect"})
@@ -164,29 +164,30 @@ func Test_sessionRunner_Run_PostHandoverToolRefusedBeforeInvocation(t *testing.T
 		if err := runner.Run(context.Background(), session); err != nil {
 			t.Fatalf("Run: %v", err)
 		}
-		if invocations != 1 {
-			t.Fatalf("expected only the pre-handover crossing tool to run, got %d invocations", invocations)
+		if invocations != 2 {
+			t.Fatalf("expected both the crossing and the post-handover tool to run, got %d invocations", invocations)
 		}
 		if session.FinalAssistantText != "done" {
 			t.Fatalf("expected summary as final assistant text, got %q", session.FinalAssistantText)
 		}
-		// user, crossing pair, handover, refusal pair
+		// user, crossing pair, handover, post-handover pair
 		if len(session.Chat.Messages) != 6 {
-			t.Fatalf("expected user + crossing pair + handover + refusal pair, got %d messages", len(session.Chat.Messages))
+			t.Fatalf("expected user + crossing pair + handover + post-handover pair, got %d messages", len(session.Chat.Messages))
 		}
-		refusal := session.Chat.Messages[5]
-		if refusal.Role != "tool" || !strings.Contains(refusal.Content, "No more tool calls allowed") {
-			t.Fatalf("expected refusal ladder text in the post-handover tool result, got %+v", refusal)
+		last := session.Chat.Messages[5]
+		if last.Role != "tool" || !strings.Contains(last.Content, "probe side effect") {
+			t.Fatalf("expected the post-handover tool result to carry real output, got %+v", last)
 		}
 		assertValidToolExchanges(t, session.Chat.Messages)
 	})
 }
 
-// Test_sessionRunner_Run_PostHandoverPersistenceEndsCleanly pins acceptance
-// criterion 5 and R2-02: persisting past the final warning returns io.EOF,
-// Run returns nil, and the transcript still contains a valid assistant/tool
-// exchange for every refused call.
-func Test_sessionRunner_Run_PostHandoverPersistenceEndsCleanly(t *testing.T) {
+// Test_sessionRunner_Run_PostHandoverBudgetExhaustionEndsCleanly pins the
+// bounded wrap-up contract: with max-tool-calls-after-handover 1 the agent
+// gets exactly one post-handover execution, persisting past the final warning
+// returns io.EOF, Run returns nil, and the transcript still contains a valid
+// assistant/tool exchange for every call.
+func Test_sessionRunner_Run_PostHandoverBudgetExhaustionEndsCleanly(t *testing.T) {
 	inttools.WithTestRegistry(t, func() {
 		invocations := 0
 		inttools.Registry.Set("stoploss_probe", countingStubTool{name: "stoploss_probe", calls: &invocations, output: "probe side effect"})
@@ -205,7 +206,7 @@ func Test_sessionRunner_Run_PostHandoverPersistenceEndsCleanly(t *testing.T) {
 		q := &Querier[*MockQuerier]{
 			out:      &strings.Builder{},
 			Model:    model,
-			stoploss: &Stoploss{MaxTokens: 100, MaxTokensHandoverMsg: "wrap up"},
+			stoploss: &Stoploss{MaxTokens: 100, MaxTokensHandoverMsg: "wrap up", MaxToolCallsAfterHandover: 1},
 		}
 		session := &QuerySession{Chat: pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "hello"}}}}
 		runner := newStoplossRunner(q)
@@ -213,32 +214,32 @@ func Test_sessionRunner_Run_PostHandoverPersistenceEndsCleanly(t *testing.T) {
 		if err := runner.Run(context.Background(), session); err != nil {
 			t.Fatalf("expected clean end past the final warning, got %v", err)
 		}
-		if invocations != 1 {
-			t.Fatalf("expected only the crossing tool to run, got %d invocations", invocations)
+		// crossing (1) + post-handover allowed (1) + plain refusal + HARD SHUT
+		// DOWN + LAST WARNING + io.EOF = 6 model steps.
+		if callCount != 6 {
+			t.Fatalf("expected 6 model steps, got %d", callCount)
+		}
+		if invocations != 2 {
+			t.Fatalf("expected the crossing and the first post-handover call to run, got %d invocations", invocations)
 		}
 		if !session.HandoverRequested {
 			t.Fatal("expected handover requested")
 		}
-		// 1 crossing step + 4 refused post-handover steps (warn, HARD SHUT
-		// DOWN, LAST WARNING, io.EOF).
-		if callCount != 5 {
-			t.Fatalf("expected 5 model steps, got %d", callCount)
-		}
-		// user + crossing pair + handover + 4 refusal pairs
-		if len(session.Chat.Messages) != 12 {
-			t.Fatalf("expected 12 messages, got %d", len(session.Chat.Messages))
+		// user + crossing pair + handover + 5 post-handover pairs
+		if len(session.Chat.Messages) != 14 {
+			t.Fatalf("expected 14 messages, got %d", len(session.Chat.Messages))
 		}
 		assertValidToolExchanges(t, session.Chat.Messages)
-		if last := session.Chat.Messages[11]; last.Role != "tool" || !strings.Contains(last.Content, "LAST WARNING") {
+		if last := session.Chat.Messages[13]; last.Role != "tool" || !strings.Contains(last.Content, "LAST WARNING") {
 			t.Fatalf("expected the final refusal to carry the last-warning text, got %+v", last)
 		}
 	})
 }
 
-// Test_sessionRunner_Run_PostHandoverLoadSkillRefusedBeforeLoading pins R2-01
-// (load_skill): a post-handover load_skill call is refused before the skill
-// loader runs.
-func Test_sessionRunner_Run_PostHandoverLoadSkillRefusedBeforeLoading(t *testing.T) {
+// Test_sessionRunner_Run_PostHandoverLoadSkillLoadsByDefault pins R2-01
+// (load_skill) under the new default: without a post-handover budget a
+// post-handover load_skill call loads normally.
+func Test_sessionRunner_Run_PostHandoverLoadSkillLoadsByDefault(t *testing.T) {
 	loads := 0
 	model := &MockQuerier{}
 	callCount := 0
@@ -271,13 +272,68 @@ func Test_sessionRunner_Run_PostHandoverLoadSkillRefusedBeforeLoading(t *testing
 	if err := runner.Run(context.Background(), session); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if loads != 0 {
-		t.Fatalf("load_skill must not load after handover, got %d loads", loads)
+	if loads != 1 {
+		t.Fatalf("expected load_skill to load after handover by default, got %d loads", loads)
 	}
-	refusal := session.Chat.Messages[5]
-	if refusal.Role != "tool" || !strings.Contains(refusal.Content, "No more tool calls allowed") {
-		t.Fatalf("expected refusal ladder text for load_skill, got %+v", refusal)
+	last := session.Chat.Messages[len(session.Chat.Messages)-1]
+	if last.Role != "tool" || !strings.Contains(last.Content, "loaded skill body") {
+		t.Fatalf("expected the skill body as the post-handover tool result, got %+v", last)
 	}
+}
+
+// Test_sessionRunner_Run_PostHandoverLoadSkillRefusedWhenBudgetExhausted pins
+// that once the post-handover budget is exhausted, load_skill is refused
+// before the skill loader runs.
+func Test_sessionRunner_Run_PostHandoverLoadSkillRefusedWhenBudgetExhausted(t *testing.T) {
+	loads := 0
+	model := &MockQuerier{}
+	callCount := 0
+	model.streamFn = func(_ context.Context, _ pub_models.Chat) (chan models.CompletionEvent, error) {
+		callCount++
+		out := make(chan models.CompletionEvent, 2)
+		model.usage = &pub_models.Usage{PromptTokens: 60, CompletionTokens: 60}
+		switch callCount {
+		case 1, 2:
+			out <- pub_models.Call{ID: fmt.Sprintf("call-%d", callCount), Name: "stoploss_probe", Inputs: &pub_models.Input{}}
+		case 3:
+			inputs := pub_models.Input{"skill": "test"}
+			out <- pub_models.Call{ID: "call-3", Name: string(pub_models.LoadSkillTool), Inputs: &inputs}
+		default:
+			out <- "done"
+		}
+		close(out)
+		return out, nil
+	}
+
+	inttools.WithTestRegistry(t, func() {
+		invocations := 0
+		inttools.Registry.Set("stoploss_probe", countingStubTool{name: "stoploss_probe", calls: &invocations, output: "probe side effect"})
+
+		q := &Querier[*MockQuerier]{
+			out:         &strings.Builder{},
+			Model:       model,
+			stoploss:    &Stoploss{MaxTokens: 100, MaxTokensHandoverMsg: "wrap up", MaxToolCallsAfterHandover: 1},
+			skillLoader: countingSkillLoader{loads: &loads},
+		}
+		session := &QuerySession{Chat: pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "hello"}}}}
+		runner := newStoplossRunner(q)
+
+		if err := runner.Run(context.Background(), session); err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+		// Crossing probe + post-handover probe consume the wrap-up budget; the
+		// load_skill on step 3 is refused before loading.
+		if invocations != 2 {
+			t.Fatalf("expected the two probes to run, got %d invocations", invocations)
+		}
+		if loads != 0 {
+			t.Fatalf("load_skill must not load once the post-handover budget is exhausted, got %d loads", loads)
+		}
+		last := session.Chat.Messages[len(session.Chat.Messages)-1]
+		if last.Role != "tool" || !strings.Contains(last.Content, "No more tool calls allowed") {
+			t.Fatalf("expected refusal ladder text for load_skill, got %+v", last)
+		}
+	})
 }
 
 // Test_sessionRunner_Run_PreHandoverLoadSkillLoads is the positive control for
@@ -317,16 +373,39 @@ func Test_sessionRunner_Run_PreHandoverLoadSkillLoads(t *testing.T) {
 	}
 }
 
-// Test_toolExecutor_PostHandoverLookbackRefusedWithoutExecution pins R2-01
-// (lookback tools): after handover the lookback dispatch never runs; the tool
-// result carries the ladder text.
-func Test_toolExecutor_PostHandoverLookbackRefusedWithoutExecution(t *testing.T) {
+// Test_toolExecutor_PostHandoverLookbackExecutesByDefault pins the lookback
+// tools under the new default: after handover the lookback dispatch runs and
+// the tool result carries real output.
+func Test_toolExecutor_PostHandoverLookbackExecutesByDefault(t *testing.T) {
 	q := &Querier[*MockQuerier]{
 		out:         &strings.Builder{},
 		useLookback: true,
 		configDir:   t.TempDir(),
 	}
 	session := &QuerySession{HandoverRequested: true, Chat: pub_models.Chat{}}
+	call := pub_models.Call{ID: "lb-1", Name: string(pub_models.SearchConversationsTool), Inputs: &pub_models.Input{}}
+
+	err := toolExecutor[*MockQuerier]{querier: q}.ExecuteBatch(context.Background(), session, []pub_models.Call{call})
+	if err != nil {
+		t.Fatalf("ExecuteBatch: %v", err)
+	}
+	last := session.Chat.Messages[len(session.Chat.Messages)-1]
+	if last.Role != "tool" || strings.Contains(last.Content, "No more tool calls allowed") {
+		t.Fatalf("expected the lookback tool to run after handover by default, got %+v", last)
+	}
+}
+
+// Test_toolExecutor_PostHandoverLookbackRefusedWhenBudgetExhausted pins that
+// once the post-handover budget is exhausted, the lookback dispatch never
+// runs; the tool result carries the ladder text.
+func Test_toolExecutor_PostHandoverLookbackRefusedWhenBudgetExhausted(t *testing.T) {
+	q := &Querier[*MockQuerier]{
+		out:         &strings.Builder{},
+		useLookback: true,
+		configDir:   t.TempDir(),
+		stoploss:    &Stoploss{MaxToolCallsAfterHandover: 1},
+	}
+	session := &QuerySession{HandoverRequested: true, PostHandoverToolCallsUsed: 1, Chat: pub_models.Chat{}}
 	call := pub_models.Call{ID: "lb-1", Name: string(pub_models.SearchConversationsTool), Inputs: &pub_models.Input{}}
 
 	err := toolExecutor[*MockQuerier]{querier: q}.ExecuteBatch(context.Background(), session, []pub_models.Call{call})
@@ -398,10 +477,10 @@ func Test_toolExecutor_ExecuteBatch_RefusedCallHasNoSideEffect(t *testing.T) {
 	})
 }
 
-// Test_toolExecutor_ExecuteBatch_PostHandoverBatchRefusesAllCalls pins the
-// R3-02 example: a post-handover batch must not run any call, including the
-// first one, before every call in the batch has been decided.
-func Test_toolExecutor_ExecuteBatch_PostHandoverBatchRefusesAllCalls(t *testing.T) {
+// Test_toolExecutor_ExecuteBatch_PostHandoverBatchExecutesByDefault pins the
+// R3-02 example under the new default: a post-handover batch runs every call
+// when no max-tool-calls-after-handover is configured.
+func Test_toolExecutor_ExecuteBatch_PostHandoverBatchExecutesByDefault(t *testing.T) {
 	inttools.WithTestRegistry(t, func() {
 		cmdCalls := 0
 		otherCalls := 0
@@ -419,17 +498,55 @@ func Test_toolExecutor_ExecuteBatch_PostHandoverBatchRefusesAllCalls(t *testing.
 		if err != nil {
 			t.Fatalf("ExecuteBatch: %v", err)
 		}
-		if cmdCalls != 0 || otherCalls != 0 {
-			t.Fatalf("no post-handover side effect may run, got cmd=%d other=%d", cmdCalls, otherCalls)
+		if cmdCalls != 1 || otherCalls != 1 {
+			t.Fatalf("expected both post-handover tools to run by default, got cmd=%d other=%d", cmdCalls, otherCalls)
 		}
 		if len(session.Chat.Messages) != 3 {
-			t.Fatalf("expected assistant tool-calls + 2 refusal results, got %d messages", len(session.Chat.Messages))
+			t.Fatalf("expected assistant tool-calls + 2 tool results, got %d messages", len(session.Chat.Messages))
 		}
-		if !strings.Contains(session.Chat.Messages[1].Content, "No more tool calls allowed") {
-			t.Fatalf("expected plain refusal for the first call, got %q", session.Chat.Messages[1].Content)
+		if !strings.Contains(session.Chat.Messages[1].Content, "cmd side effect") {
+			t.Fatalf("expected real cmd output, got %q", session.Chat.Messages[1].Content)
 		}
-		if !strings.Contains(session.Chat.Messages[2].Content, "HARD SHUT DOWN") {
-			t.Fatalf("expected escalated refusal for the second call, got %q", session.Chat.Messages[2].Content)
+		if !strings.Contains(session.Chat.Messages[2].Content, "other side effect") {
+			t.Fatalf("expected real other output, got %q", session.Chat.Messages[2].Content)
+		}
+		assertValidToolExchanges(t, session.Chat.Messages)
+	})
+}
+
+// Test_toolExecutor_ExecuteBatch_PostHandoverBatchRefusesAfterBudget pins the
+// bounded wrap-up: with max-tool-calls-after-handover 1 the first call of a
+// post-handover batch executes and the second is refused before invocation,
+// with one tool result per declared call.
+func Test_toolExecutor_ExecuteBatch_PostHandoverBatchRefusesAfterBudget(t *testing.T) {
+	inttools.WithTestRegistry(t, func() {
+		cmdCalls := 0
+		otherCalls := 0
+		inttools.Registry.Set("probe_cmd", countingStubTool{name: "probe_cmd", calls: &cmdCalls, output: "cmd side effect"})
+		inttools.Registry.Set("probe_other", countingStubTool{name: "probe_other", calls: &otherCalls, output: "other side effect"})
+
+		q := &Querier[*MockQuerier]{out: &strings.Builder{}, stoploss: &Stoploss{MaxToolCallsAfterHandover: 1}}
+		session := &QuerySession{HandoverRequested: true, Chat: pub_models.Chat{}}
+		executor := toolExecutor[*MockQuerier]{querier: q}
+
+		err := executor.ExecuteBatch(context.Background(), session, []pub_models.Call{
+			{ID: "cmd", Name: "probe_cmd", Inputs: &pub_models.Input{}},
+			{ID: "other", Name: "probe_other", Inputs: &pub_models.Input{}},
+		})
+		if err != nil {
+			t.Fatalf("ExecuteBatch: %v", err)
+		}
+		if cmdCalls != 1 || otherCalls != 0 {
+			t.Fatalf("expected only the within-budget post-handover tool to run, got cmd=%d other=%d", cmdCalls, otherCalls)
+		}
+		if len(session.Chat.Messages) != 3 {
+			t.Fatalf("expected assistant tool-calls + 2 tool results, got %d messages", len(session.Chat.Messages))
+		}
+		if !strings.Contains(session.Chat.Messages[1].Content, "cmd side effect") {
+			t.Fatalf("expected the first post-handover call to execute, got %q", session.Chat.Messages[1].Content)
+		}
+		if !strings.Contains(session.Chat.Messages[2].Content, "No more tool calls allowed") {
+			t.Fatalf("expected refusal ladder text on the second call, got %q", session.Chat.Messages[2].Content)
 		}
 		assertValidToolExchanges(t, session.Chat.Messages)
 	})
@@ -559,11 +676,11 @@ func Test_toolExecutor_ExecuteBatch_MixedBatchLoadSkillMiddle(t *testing.T) {
 	})
 }
 
-// Test_toolExecutor_ExecuteBatch_PostHandoverMixedBatchRefusesWithPairing pins
-// R9-01 for the refused path: a post-handover [cmd, load_skill] batch keeps
-// immediate pairing — the cmd refusal pair, then the load_skill refusal pair —
-// with the ladder escalating in emission order.
-func Test_toolExecutor_ExecuteBatch_PostHandoverMixedBatchRefusesWithPairing(t *testing.T) {
+// Test_toolExecutor_ExecuteBatch_PostHandoverMixedBatchExecutesWithPairing pins
+// R9-01 under the new default: a post-handover [cmd, load_skill] batch keeps
+// immediate pairing — the cmd pair first, then the load_skill pair — with
+// both tools running.
+func Test_toolExecutor_ExecuteBatch_PostHandoverMixedBatchExecutesWithPairing(t *testing.T) {
 	inttools.WithTestRegistry(t, func() {
 		cmdCalls := 0
 		loads := 0
@@ -579,8 +696,40 @@ func Test_toolExecutor_ExecuteBatch_PostHandoverMixedBatchRefusesWithPairing(t *
 		if err != nil {
 			t.Fatalf("ExecuteBatch: %v", err)
 		}
+		if cmdCalls != 1 || loads != 1 {
+			t.Fatalf("expected both tools to run after handover by default, got cmd=%d loads=%d", cmdCalls, loads)
+		}
+		if len(session.Chat.Messages) != 4 {
+			t.Fatalf("expected 2 assistant tool-call turns + 2 tool results, got %d messages", len(session.Chat.Messages))
+		}
+		assertValidToolExchanges(t, session.Chat.Messages)
+	})
+}
+
+// Test_toolExecutor_ExecuteBatch_PostHandoverMixedBatchRefusesWithPairing pins
+// R9-01 for the refused path: once the post-handover budget is exhausted, a
+// [cmd, load_skill] batch keeps immediate pairing — the cmd refusal pair, then
+// the load_skill refusal pair — with the ladder escalating in emission order
+// and no side effect running.
+func Test_toolExecutor_ExecuteBatch_PostHandoverMixedBatchRefusesWithPairing(t *testing.T) {
+	inttools.WithTestRegistry(t, func() {
+		cmdCalls := 0
+		loads := 0
+		q := mixedBatchQuerier(t, &cmdCalls, &loads)
+		q.stoploss = &Stoploss{MaxToolCallsAfterHandover: 1}
+		session := &QuerySession{HandoverRequested: true, PostHandoverToolCallsUsed: 1, Chat: pub_models.Chat{}}
+		executor := toolExecutor[*MockQuerier]{querier: q}
+
+		inputs := pub_models.Input{"skill": "test"}
+		err := executor.ExecuteBatch(context.Background(), session, []pub_models.Call{
+			{ID: "cmd-1", Name: "mixed_probe", Inputs: &pub_models.Input{}},
+			{ID: "skill-1", Name: string(pub_models.LoadSkillTool), Inputs: &inputs},
+		})
+		if err != nil {
+			t.Fatalf("ExecuteBatch: %v", err)
+		}
 		if cmdCalls != 0 || loads != 0 {
-			t.Fatalf("no post-handover side effect may run, got cmd=%d loads=%d", cmdCalls, loads)
+			t.Fatalf("no post-handover side effect may run past the budget, got cmd=%d loads=%d", cmdCalls, loads)
 		}
 		if len(session.Chat.Messages) != 4 {
 			t.Fatalf("expected 2 refusal pairs, got %d messages", len(session.Chat.Messages))
@@ -602,11 +751,11 @@ func Test_toolExecutor_ExecuteBatch_PostHandoverMixedBatchRefusesWithPairing(t *
 // returned; otherwise the persisted transcript contains a dangling tool_call
 // that a follow-up replay request cannot send to the vendor.
 func Test_toolExecutor_ExecuteBatch_HardStopMidBatchEmitsAllResults(t *testing.T) {
-	q := &Querier[*MockQuerier]{out: &strings.Builder{}}
+	q := &Querier[*MockQuerier]{out: &strings.Builder{}, stoploss: &Stoploss{MaxToolCallsAfterHandover: 1}}
 	session := &QuerySession{HandoverRequested: true, Chat: pub_models.Chat{}}
 	executor := toolExecutor[*MockQuerier]{querier: q}
 
-	// Post-handover budget is 0, so the ladder persists on the 4th call and
+	// Post-handover budget is 1, so the ladder persists on the 4th call and
 	// hardStops on the 5th: the hardStop plan is the last one. Use six calls
 	// so the hardStop lands mid-batch (calls 4 and 5 are hardStop, call 6
 	// follows the first hardStop).
@@ -626,12 +775,11 @@ func Test_toolExecutor_ExecuteBatch_HardStopMidBatchEmitsAllResults(t *testing.T
 	assertValidToolExchanges(t, session.Chat.Messages)
 }
 
-// Test_toolExecutor_ExecuteBatch_PostHandoverMixedBatchLoadSkillFirstRefusesWithPairing
-// pins R9-01 for the refused path with load_skill leading: a post-handover
-// [load_skill, cmd] batch keeps immediate pairing — the load_skill refusal
-// pair first, then the cmd refusal pair — with the ladder escalating in
-// emission order.
-func Test_toolExecutor_ExecuteBatch_PostHandoverMixedBatchLoadSkillFirstRefusesWithPairing(t *testing.T) {
+// Test_toolExecutor_ExecuteBatch_PostHandoverMixedBatchLoadSkillFirstExecutesWithPairing
+// pins R9-01 under the new default with load_skill leading: a post-handover
+// [load_skill, cmd] batch keeps immediate pairing — the load_skill pair first,
+// then the cmd pair — with both tools running.
+func Test_toolExecutor_ExecuteBatch_PostHandoverMixedBatchLoadSkillFirstExecutesWithPairing(t *testing.T) {
 	inttools.WithTestRegistry(t, func() {
 		cmdCalls := 0
 		loads := 0
@@ -647,8 +795,43 @@ func Test_toolExecutor_ExecuteBatch_PostHandoverMixedBatchLoadSkillFirstRefusesW
 		if err != nil {
 			t.Fatalf("ExecuteBatch: %v", err)
 		}
+		if cmdCalls != 1 || loads != 1 {
+			t.Fatalf("expected both tools to run after handover by default, got cmd=%d loads=%d", cmdCalls, loads)
+		}
+		if len(session.Chat.Messages) != 4 {
+			t.Fatalf("expected 2 assistant tool-call turns + 2 tool results, got %d messages", len(session.Chat.Messages))
+		}
+		assertValidToolExchanges(t, session.Chat.Messages)
+		if got := session.Chat.Messages[0].ToolCalls[0].Name; got != string(pub_models.LoadSkillTool) {
+			t.Fatalf("expected the load_skill pair first, got %q", got)
+		}
+	})
+}
+
+// Test_toolExecutor_ExecuteBatch_PostHandoverMixedBatchLoadSkillFirstRefusesWithPairing
+// pins R9-01 for the refused path with load_skill leading: once the
+// post-handover budget is exhausted, a [load_skill, cmd] batch keeps immediate
+// pairing — the load_skill refusal pair first, then the cmd refusal pair —
+// with the ladder escalating in emission order.
+func Test_toolExecutor_ExecuteBatch_PostHandoverMixedBatchLoadSkillFirstRefusesWithPairing(t *testing.T) {
+	inttools.WithTestRegistry(t, func() {
+		cmdCalls := 0
+		loads := 0
+		q := mixedBatchQuerier(t, &cmdCalls, &loads)
+		q.stoploss = &Stoploss{MaxToolCallsAfterHandover: 1}
+		session := &QuerySession{HandoverRequested: true, PostHandoverToolCallsUsed: 1, Chat: pub_models.Chat{}}
+		executor := toolExecutor[*MockQuerier]{querier: q}
+
+		inputs := pub_models.Input{"skill": "test"}
+		err := executor.ExecuteBatch(context.Background(), session, []pub_models.Call{
+			{ID: "skill-1", Name: string(pub_models.LoadSkillTool), Inputs: &inputs},
+			{ID: "cmd-1", Name: "mixed_probe", Inputs: &pub_models.Input{}},
+		})
+		if err != nil {
+			t.Fatalf("ExecuteBatch: %v", err)
+		}
 		if cmdCalls != 0 || loads != 0 {
-			t.Fatalf("no post-handover side effect may run, got cmd=%d loads=%d", cmdCalls, loads)
+			t.Fatalf("no post-handover side effect may run past the budget, got cmd=%d loads=%d", cmdCalls, loads)
 		}
 		if len(session.Chat.Messages) != 4 {
 			t.Fatalf("expected 2 refusal pairs, got %d messages", len(session.Chat.Messages))

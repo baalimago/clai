@@ -275,6 +275,98 @@ func Test_fillMissingFromDefaults(t *testing.T) {
 	})
 }
 
+// migrateZeroFixture distinguishes migrate-tagged fields (surfaced by the
+// migration even at a zero default) from plain zero-default fields (skipped,
+// status quo) and non-zero defaults (standard fill).
+type migrateZeroFixture struct {
+	Tagged   int    `json:"tagged" migrate:"true"`
+	Untagged int    `json:"untagged"`
+	Active   string `json:"active"`
+}
+
+func Test_fillMissingFromDefaults_MigrateTag(t *testing.T) {
+	defaults := &migrateZeroFixture{Active: "on"}
+	loadFixture := func(jsonStr string) (*migrateZeroFixture, map[string]json.RawMessage) {
+		var loaded migrateZeroFixture
+		if err := json.Unmarshal([]byte(jsonStr), &loaded); err != nil {
+			t.Fatalf("Unmarshal: %v", err)
+		}
+		var present map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(jsonStr), &present); err != nil {
+			t.Fatalf("Unmarshal present: %v", err)
+		}
+		return &loaded, present
+	}
+
+	t.Run("migrate-tagged zero-default fields are filled when absent", func(t *testing.T) {
+		loaded, present := loadFixture(`{"active":"user"}`)
+		added := fillMissingFromDefaults(loaded, defaults, present, "")
+		got := strings.Join(added, ",")
+		if !strings.Contains(got, "tagged") {
+			t.Fatalf("expected the migrate-tagged field added, got %q", got)
+		}
+		if strings.Contains(got, "untagged") {
+			t.Fatalf("untagged zero-default field must stay skipped, got %q", got)
+		}
+		if loaded.Tagged != 0 {
+			t.Fatalf("expected the migrate-tagged field at its zero default, got %d", loaded.Tagged)
+		}
+	})
+
+	t.Run("migrate-tagged fields present in the file are never touched", func(t *testing.T) {
+		loaded, present := loadFixture(`{"tagged":7,"active":"user"}`)
+		added := fillMissingFromDefaults(loaded, defaults, present, "")
+		if strings.Contains(strings.Join(added, ","), "tagged") {
+			t.Fatalf("present migrate-tagged field must not be re-added, got %v", added)
+		}
+		if loaded.Tagged != 7 {
+			t.Fatalf("present value must survive, got %d", loaded.Tagged)
+		}
+	})
+
+	t.Run("migrate-tagged zero fills surface through LoadConfigFromFile once", func(t *testing.T) {
+		dir := t.TempDir()
+		configPath := filepath.Join(dir, "app.json")
+		if err := os.WriteFile(configPath, []byte(`{"active":"user"}`), 0o644); err != nil {
+			t.Fatalf("WriteFile: %v", err)
+		}
+		conf, added, err := LoadConfigFromFileCollect(dir, "app.json", nil, defaults)
+		if err != nil {
+			t.Fatalf("LoadConfigFromFileCollect: %v", err)
+		}
+		got := strings.Join(added, ",")
+		if !strings.Contains(got, "tagged") || strings.Contains(got, "untagged") {
+			t.Fatalf("expected only the migrate-tagged field added, got %v", added)
+		}
+		if conf.Tagged != 0 || conf.Untagged != 0 || conf.Active != "user" {
+			t.Fatalf("unexpected merge result: %+v", conf)
+		}
+		regenerated, err := os.ReadFile(configPath)
+		if err != nil {
+			t.Fatalf("ReadFile: %v", err)
+		}
+		if !strings.Contains(string(regenerated), `"tagged": 0`) {
+			t.Fatalf("expected the zero default materialized in the file:\n%s", regenerated)
+		}
+		// Idempotent: a second load adds nothing and does not rewrite.
+		before := string(regenerated)
+		_, added, err = LoadConfigFromFileCollect(dir, "app.json", nil, defaults)
+		if err != nil {
+			t.Fatalf("second LoadConfigFromFileCollect: %v", err)
+		}
+		if len(added) != 0 {
+			t.Fatalf("expected the second load to be silent, got %v", added)
+		}
+		after, err := os.ReadFile(configPath)
+		if err != nil {
+			t.Fatalf("ReadFile(after): %v", err)
+		}
+		if string(after) != before {
+			t.Fatalf("second load must not rewrite the file:\n%s", after)
+		}
+	})
+}
+
 func TestLoadConfigFromFile_AppendsMissingFieldsAndAnnounces(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "app.json")

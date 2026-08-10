@@ -199,9 +199,11 @@ func LoadConfigFromFile[T any](
 // announcement. It returns the JSON paths of every field it added to a
 // pre-existing file, e.g. "stoploss" or
 // "stoploss.max-tokens-handover-instructions"; an empty list means the file
-// needed no upgrade (or was freshly created). Callers whose own output would
-// overwrite the announcement (e.g. the interactive setup wizard, whose TUI
-// erases pre-wizard stdout) use this to announce after their output is done.
+// needed no upgrade (or was freshly created). Callers that must control
+// when the announcement is printed (e.g. the interactive setup wizard,
+// which prints it just before its TUI starts and pads the block with a
+// blank separator line that absorbs the wizard's one-line clear overshoot)
+// use this to announce at the right time.
 func LoadConfigFromFileCollect[T any](
 	configDirPath,
 	configFileName string,
@@ -302,11 +304,16 @@ func loadConfigFromFile[T any](
 }
 
 // fillMissingFromDefaults fills fields of loaded that are absent from the
-// on-disk config (per present) using non-zero defaults from dflt. A key that
-// is present in the file is never touched, even when its value is the zero
+// on-disk config (per present) using defaults from dflt. A key that is
+// present in the file is never touched, even when its value is the zero
 // value: the file is the user's source of truth (Q4). Nested JSON objects are
 // recursed into so missing subfields of a present object are also filled (Q3).
-// It returns the JSON paths of every field it filled, e.g. "stoploss" or
+// Fields tagged `migrate:"true"` are filled even when their default is the
+// zero value, so new feature knobs whose natural default is 0 (e.g.
+// stoploss.max-tool-calls-after-handover, 0 = unlimited) surface in upgraded
+// configs; such fields must not carry the `omitempty` json option, or the
+// marshaled rewrite would drop the filled zero again. It returns the JSON
+// paths of every field it filled, e.g. "stoploss" or
 // "stoploss.max-tokens-handover-instructions".
 func fillMissingFromDefaults(loaded, dflt any, present map[string]json.RawMessage, prefix string) []string {
 	added := []string{}
@@ -358,7 +365,7 @@ func fillMissingFromDefaults(loaded, dflt any, present map[string]json.RawMessag
 			continue
 		}
 		dvf := dv.Field(i)
-		if dvf.IsZero() {
+		if dvf.IsZero() && sf.Tag.Get("migrate") != "true" {
 			continue
 		}
 		lv.Field(i).Set(cloneDefaultValue(dvf))

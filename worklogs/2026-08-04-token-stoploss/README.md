@@ -11,13 +11,16 @@
 | 5   | [Setup wizard](./phase-5-setup-wizard.md)                       | Complete | Verify + pin interactive editing of the `stoploss` object (existing `editMap`); no production changes needed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | 6   | [Integration & e2e](./phase-6-integration-e2e.md)               | Complete | Mock-vendor e2e for handover flow + refusal ladder, legacy config compat, docs                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | 7   | [Quality gates](./phase-7-quality-gates.md)                     | Reopened (review 13) | Final gate sweep on the finished branch; reopened by review 10 (R10-01: the mandated `-race -count=3` gate timed out in `internal/text`) and fixed in the fix round: glow now spawns only for terminal output (D25) — the exact gate passes in 7 s; reopened by review 13 (R13-01: `-rf` structured-output runs announce config upgrades on stdout, corrupting machine output; R13-03: stale dupl baseline claim; R13-04: theme announcement not deferred in setup) — fix round pending, see Review 13                                                                                                                                                                                                                                                                                                                                                                                           |
+| 8   | [Post-handover tool budget](./phase-8-post-handover-tool-budget.md) | Complete | Tooling is not cut off after the stoploss handover: post-handover tool calls count against a fresh wrap-up allowance (`stoploss.max-tool-calls-after-handover`; absent or 0 = unlimited, the new default); the refusal ladder applies only past a configured allowance; `load_skill` loads post-handover by default and is refused only when the allowance is exhausted |
 
 Phase order: Phase 1 (token-warn-limit sunset) is independent and runs first
 — it removes the dead pre-query machinery before any new config lands.
 Phases 2–5 build the feature; Phase 3 depends on Phase 2 (config fields and
 semantics), Phases 4 and 5 depend on Phase 2 and may run in parallel with
 Phase 3; Phase 6 depends on Phases 2–5 and runs before Phase 7; Phase 7 is
-the final quality-gate sweep and always runs last.
+the final quality-gate sweep and always runs last. Phase 8 (post-handover
+tool budget) landed after Phase 7's signoff as a user-requested feature
+extension and is Complete.
 
 ## Motivation
 
@@ -76,31 +79,38 @@ sensible "disable the limit for this run" override. The escalation ladder
 WARNING → `io.EOF`) is unchanged.
 
 **Unified `stoploss` controller in code.** Both budgets are enforced by one
-controller so they compose. After handover, every subsequent tool call,
-including `load_skill` and lookback tools, enters the existing refusal ladder
-before the tool's side effect runs. The call and refusal remain a valid
-assistant/tool exchange. Persisting past the final warning hard-stops the run
-with `io.EOF` (clean end, `sessionRunner.Run` returns nil). The refusal ladder
-is not removed or weakened.
+controller so they compose. The handover starts a fresh wrap-up phase:
+post-handover tool calls are counted against
+`stoploss.max-tool-calls-after-handover` (absent or 0 = unlimited, the
+default) with their own counter, never against the pre-handover
+`max-tool-calls` consumption. Only once a configured wrap-up allowance is
+exhausted does every subsequent tool call, including `load_skill` and
+lookback tools, enter the existing refusal ladder before the tool's side
+effect runs. The call and refusal remain a valid assistant/tool exchange.
+Persisting past the final warning hard-stops the run with `io.EOF` (clean
+end, `sessionRunner.Run` returns nil). The refusal ladder is not removed or
+weakened.
 
 **Handover injection ordering.** The handover message is appended to the chat
 AFTER the crossing step's tool batch executes, so the chat keeps valid
 ordering: `[assistant tool-call] → [tool results] → [handover user msg]`.
 Injection only ever happens on a tool-call step (the loop only continues when
 there are tool calls); a step that ends with a plain reply ends the run
-without injection — there is nothing to hand over. The agent gets exactly one
-unconstrained post-handover step. If that step, or a later refusal-ladder
-follow-up step, ends with tool calls, every call is refused before invocation.
+without injection — there is nothing to hand over. The agent keeps tool access
+during the wrap-up phase: post-handover steps run their tool calls against the
+fresh allowance (unlimited by default). Only once a configured allowance is
+exhausted does a follow-up step's every call get refused before invocation.
 The refusal ladder may produce the HARD SHUT DOWN and LAST WARNING follow-up
 steps; after persistence past the final warning, the run ends with `io.EOF`.
 
-**Preflight before side effects.** A post-handover refusal must be decided
-before any tool implementation, skill loader, lookback reader, or command
-runner is invoked. The refusal path must still append the assistant tool-call
-and a tool-result message (including the ladder text), so every refused call
-remains a valid exchange. The controller therefore needs a preflight/reservation
-operation (or equivalent decision object); applying the ladder only to the
-output returned by an already-invoked tool is not sufficient.
+**Preflight before side effects.** A phase-budget refusal (pre- or
+post-handover) must be decided before any tool implementation, skill loader,
+lookback reader, or command runner is invoked. The refusal path must still
+append the assistant tool-call and a tool-result message (including the ladder
+text), so every refused call remains a valid exchange. The controller
+therefore needs a preflight/reservation operation (or equivalent decision
+object); applying the ladder only to the output returned by an already-invoked
+tool is not sufficient.
 
 **One emission path, one ladder, one message resolution.** The transcript
 must keep the model's emission order with immediate assistant→tool pairing
@@ -118,9 +128,9 @@ or are suppressed entirely; the raw-mode gate must not key on `PrintRaw`
 alone (R13-01).
 
 **Config scope.** `textConfig.json` + CLI flags (`-max-tokens`,
-`-max-tool-calls`) + `pkg/agent` options (`WithStoploss`,
-`WithMaxToolCalls`). No profile key, no setup-wizard-only surface. The
-instructions message is configurable in `textConfig.json` and via
+`-max-tool-calls`, `-max-tool-calls-after-handover`) + `pkg/agent` options
+(`WithStoploss`, `WithMaxToolCalls`). No profile key, no setup-wizard-only
+surface. The instructions message is configurable in `textConfig.json` and via
 `WithStoploss`, but is NOT a CLI flag.
 
 **Sunset `token-warn-limit` (Phase 1).** Remove `TokenWarnLimit` from
@@ -177,6 +187,7 @@ refusal. A refused call has no tool output; its result contains the ladder text.
 | D24 | Fix round: `ExecuteBatch` splits the batch into segments at each `load_skill` call — consecutive non-skill calls share one grouped assistant turn, each `load_skill` runs as its own assistant→tool pair in batch order; `ApplyToolCallBudget` is deleted (single ladder); `newStoploss` resolves the handover message once via `Stoploss.HandoverInstructions()` (single resolution site) | R9-01: load_skill's self-emission (D17) makes grouped up-front emission unsound for mixed batches; segmenting preserves the model's emission order with immediate assistant→tool pairing while keeping the single-type replay grouping. R9-02/R9-03: the review's "one emission, one ladder, one resolution" consolidation (2026-08-04, worker session 8)                                                          |
 | D25 | `AttemptPrettyPrint` spawns `glow` only when the destination writer is a character device (`isTerminalWriter`, the `prompt.go` stdin heuristic) AND the renderer is installed (`glowAvailable`, `sync.OnceValue` probe); captured output and machines without glow share the plain ANSI fallback; the glow width math is the pure `glowRenderArgs`                                         | R10-01: glow is an interactive terminal renderer — spawning it per message into pipes/files/test buffers (every `internal/text` feature test) added ~63 ms × 2 subprocesses per emission and blew the mandated `-race -count=3` 30 s package budget, a load-dependent flake. Terminal-only gating makes the gate reproducible and keeps the interactive glow path intact (2026-08-05, worker session 2)            |
 | D26 | `ExecuteBatch` defers `io.EOF` until every plan of the batch has emitted its tool result (a `pendingEOF` flag set at each hardStop plan; the run still ends cleanly on the deferred return) — no mid-batch hardStop may skip the remaining plans, because the assistant message already declared them and a dangling tool_call breaks the persisted transcript for replay                  | R11-01: the first hardStop plan of a post-handover batch returned `io.EOF` immediately and skipped the later plans of the same assistant turn (reproduced: 5 declared calls, 4 results). Side-effect-safe because `preflightToolCall` freezes `ToolCallsUsed` on a hardStop refusal, so later plans are already decided; an exempt `load_skill` runs per the atomic batch decision (2026-08-05, worker session 10) |
+| D27 | Post-handover tool budget: `stoploss.max-tool-calls-after-handover` (absent or 0 = unlimited, the new default); a positive value is a FRESH wrap-up allowance with its own session counter (`PostHandoverToolCallsUsed`) that pre-handover `max-tool-calls` consumption never eats into; the refusal ladder applies only past the allowance; `load_skill` loads post-handover by default and is refused only when the allowance is exhausted | Phase 8 Q1 option C: cutting tooling off at the handover (the D2/Q2:B behavior) leaves the agent unable to summarize context into a file exactly when it must; the opt-in bound keeps an operator safety valve; D2's post-handover refusal is superseded for the default case (2026-08-09, worker session 11) |
 
 ## Rejected alternatives
 
@@ -190,6 +201,7 @@ refusal. A refused call has no tool output; its result contains the ladder text.
 | Absorb `max-tool-calls` into the `stoploss` object                 | Requires migrating an existing flat key; the user chose to keep the tool message system as is (Q5: A)                               |
 | No CLI flags; textConfig + agent API only                          | Operators need a per-run override without editing config files (user decision, Q6 revision)                                         |
 | Profile key for the stoploss                                       | No use case; parity with `max-tool-calls` which has no profile key (D8)                                                             |
+| Refuse every post-handover tool call via the ladder (D2/Q2:B)       | Phase 8 Q1 option C: the agent must keep tooling to summarize context into a file after the handover fires; the ladder stays as the bound past a configured wrap-up allowance instead of cutting tools off entirely (2026-08-09)                                                                    |
 
 ## Out of scope
 
@@ -976,13 +988,13 @@ happen to load them (`clai tools`, `clai profiles`, `clai confdir`,
 per-mode loads remain but are idempotent. Broken configs downgrade to a
 warning so setup stays the repair path (same policy as `LoadTheme`).
 `LoadConfigFromFileCollect` (new) returns the added field paths without
-printing; `internal.Setup` defers the announcement until after the interactive
-setup wizard exits, because the wizard's TUI erases pre-wizard stdout when it
-redraws (`go_away_boilerplate/pkg/table` `ClearTermTo` overshoots by one
-line), which silently swallowed the pre-wizard announcement whenever the user
-navigated past the first screen. All other commands announce immediately.
-Pinned by `Test_e2e_setup_migrates_mode_configs_and_announces` (announcement
-must appear after the wizard exits) and
+printing; `internal.Setup` prints the announcements just before the interactive
+setup wizard starts, padding the block with a blank separator line that
+absorbs the wizard's one-line clear overshoot (`go_away_boilerplate/pkg/table`
+`ClearTermTo` clears `upTo+1` lines). All other commands announce
+immediately. Pinned by
+`Test_e2e_setup_migrates_mode_configs_and_announces_before_wizard`
+(announcement must appear before the wizard starts) and
 `Test_e2e_confdir_migrates_mode_configs` (a non-setup command upgrades and
 announces a downgraded config).
 
@@ -1024,7 +1036,7 @@ name as before. Pinned by `TestFindProfile_NameLessProfileStaysNameLess`,
 `Test_e2e_confdir_migrates_profiles`,
 `Test_e2e_confdir_migrates_profiles_skips_broken_and_non_json_files`,
 `Test_e2e_raw_run_does_not_migrate_profiles`,
-`Test_e2e_setup_migrates_profiles_and_announces_after_wizard`, and the
+`Test_e2e_setup_migrates_profiles_and_announces_before_wizard`, and the
 updated `Test_goldenFile_PROFILES_list_prints_summary_for_valid_profiles_and_skips_invalid`
 (which now also pins the broken-profile warning).
 
@@ -1072,8 +1084,10 @@ Empirical probes (built binary, sandbox `CLAI_CONFIG_DIR`):
 - `clai -n -cm test s 0 0 q` with a theme.json missing `roleReasoning` /
   `tableItems` prints the theme upgrade announcement BEFORE the wizard
   header (line 1 of the capture) while the mode-config announcements are
-  correctly deferred until after the wizard exits — R13-04 (Low): the
-  deferral design covers mode configs + profiles but not `LoadTheme`.
+  printed just before the wizard starts — R13-04 (Low): the announcement
+  design covers mode configs + profiles but not `LoadTheme`; both now print
+  before the wizard (the announcement block ends with a blank separator line
+  that absorbs the wizard's one-line clear overshoot).
 
 Trace audit (read the code, not the notes):
 
@@ -1099,8 +1113,10 @@ Trace audit (read the code, not the notes):
   runs fill in memory without rewriting or announcing; the united migration
   covers mode configs and every `profiles/*.json` before dispatch, with
   broken files downgraded to warnings; the `DefaultProfile.Name` zero-value
-  fix keeps name-less profiles name-less on disk; setup defers mode-config
-  and profile announcements until after the wizard exits.
+  fix keeps name-less profiles name-less on disk; setup prints mode-config
+  and profile announcements just before the wizard starts (the block ends
+  with a blank separator line that absorbs the wizard's one-line clear
+  overshoot, so pre-wizard stdout survives).
 - Verified good — the `-r` precmd scenario that motivated the raw-mode fix:
   `clai -r chat dirv2` neither rewrites the configs nor pollutes machine
   output (pinned by `Test_e2e_raw_run_does_not_migrate_configs`).
@@ -1122,3 +1138,70 @@ gate (`utils.ReadonlyConfig = postFlagConf.PrintRaw ||
 postFlagConf.ResponseFormatPath != ""`, or route announcements to stderr,
 with a `-rf` + migration e2e pin) together with the R13-02/03/04 updates,
 then re-run the gates in this entry.
+
+### 2026-08-09 — Phase 8 implemented (imago + clai, worker session 11)
+
+Phase 8 (post-handover tool budget) is Complete. Design interview Q1
+concluded option C: tooling must not be cut off after the stoploss fires —
+the agent often needs to write a summary file during the wrap-up phase.
+New `stoploss.max-tool-calls-after-handover` config key: absent or 0 =
+unlimited post-handover tool calls (the new default); a positive value
+bounds the wrap-up phase with a fresh counter.
+
+- Controller (`internal/text/stoploss.go`): phase-aware `effectiveBudget` /
+  `effectiveUsed` / `incUsed` — the wrap-up allowance never eats pre-handover
+  `max-tool-calls` consumption; `load_skill` loads post-handover by default
+  and is refused only when the allowance is exhausted (D27).
+- Session (`internal/text/session.go`): `PostHandoverToolCallsUsed` phase
+  counter; `HandoverRequested` now switches the budget phase instead of
+  forcing refusal.
+- CLI flag `-max-tool-calls-after-handover` (explicit 0 disables a file
+  budget), agent API field on `WithStoploss`, usage text, and the
+  architecture docs (`query.md`, `tooling.md`, `config.md`).
+
+Tests first: the rewritten and new tests were red against the old
+handover-forces-refusal behavior and green after. The old post-handover
+refusal tests were rewritten to the new semantics rather than deleted:
+refusal-pairing (R9-01) and deferred-`io.EOF` (R11-01) invariants stay
+pinned via a seeded budget. The help e2e now asserts the new flag line and
+the bounded-budget e2e pins exactly one post-handover execution past the
+allowance. Gates: `go test ./... -count=1` ✓ all packages; `go vet ./...`
+✓; the mandated full sweep (gofumpt, staticcheck, `go test ./... -race
+-cover -count=3 -timeout=30s`, `go fix`, dupl) passes on the finished
+branch.
+
+Follow-up (same session): the config migration gains a per-field opt-in
+`migrate:"true"` tag (`internal/utils/config.go` `fillMissingFromDefaults`):
+fields tagged with it are filled even when their default is the zero value,
+so new feature knobs whose natural default is 0 surface in upgraded configs.
+`MaxToolCallsAfterHandover` carries the tag and drops `omitempty`, so a
+pre-existing `stoploss` object gains `"max-tool-calls-after-handover": 0`
+once with the standard announcement (0 = unlimited, same as absent; second
+load silent; raw/`-r` runs stay read-only). Pinned by
+`Test_fillMissingFromDefaults_MigrateTag`,
+`TestConfigurations_StoplossMaxToolCallsAfterHandoverAbsentGetsMaterialized`,
+and the updated marshal tests. Docs: `architecture/config.md` migration
+section and the phase-8 doc updated.
+
+Follow-up (same session): the setup wizard now prints the upgrade
+announcements BEFORE it starts instead of after it exits. The wizard's TUI
+redraws by clearing its own frame plus one line above the header
+(`go_away_boilerplate/pkg/table` `ClearTermTo` clears `upTo+1` lines — the
+overshoot was verified empirically against the pinned library v1.33.9; earlier
+reasoning claimed the wizard never touches lines above its header, which the
+PTY check disproved), so the announcement block ends with a blank separator
+line that absorbs the overshoot; without it the first redraw wipes the
+announcement. Verified empirically in a PTY: with the announcement printed
+before `setup.InitCmd()`, it survives multi-step navigation (category select →
+config list → preview → back → quit) and ends up directly above the wizard on
+the final screen; deep navigation can still scroll it off (each `Run()` exit
+consumes one line). The mode-config and profile announcements therefore appear
+before the wizard, so the user sees what the united migration changed before
+interacting. Pinned by
+`Test_e2e_setup_migrates_mode_configs_and_announces_before_wizard` and
+`Test_e2e_setup_migrates_profiles_and_announces_before_wizard` (renamed from
+`..._after_wizard`), which assert the announcement precedes the
+`Setup categories` header in macro mode, and by
+`Test_e2e_setup_announcement_survives_interactive_wizard` (Linux PTY e2e),
+which asserts the announcement survives an immediate-quit session on a real
+terminal.

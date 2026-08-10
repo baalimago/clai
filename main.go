@@ -26,25 +26,26 @@ Prerequisites:
 Usage: clai [flags] <command>
 
 Flags:
-  -re, -reply bool                 Set to true to reply to the previous query, meaning that it will be used as context for your next query. (default %v)
-  -r, -raw bool                    Set to true to print raw output (no animation, no glow). (default %v)
-  -cm, -chat-model string          Set the chat model to use. (default is found in %v/textConfig.json)
-  -pm, -photo-model string         Set the image model to use. (default is found in %v/photoConfig.json)
-  -pd, -photo-dir string           Set the directory to store the generated pictures. (default is found in %v/photoConfig.json)
-  -pp, -photo-prefix string        Set the prefix for the generated pictures. (default is found in %v/photoConfig.json)
-  -vd, -video-dir string           Set dir for generated videos. Default $HOME/Videos (default %v)
-  -vp, -video-prefix string        Set prefix for generated videos. Default 'clai' (default %v)
-  -t, -tools string                Set to <tool_a>,<tool_b> for specific tool, or */"" to use all built in or MCP tools. See available tools with 'clai tools' (default %v)
-  -s, -skills string               Enable or disable skills for this run. Use '*' to enable or 'none' to disable.
-  -cmd-ban string                  Append comma-separated command bans for this run (e.g. "rm,sudo"). Commands matching a ban are refused before they spawn.
-  -g, -glob string                 Set the glob to use for globbing. (default '%v')
-  -p, -profile string              Set the profile which should be used. For details, see 'clai help profile'. (default '%v')
-  -prp, profile-path string        Set the path to a profile file to use instead of -p/-profile.
-  -asc, -append-shell-context str  Append a named shell context from <config-dir>/shellContexts/<name>.json to the final query prompt.
-  -rf, -response-format string     Block streaming and print only the final structured response (json_object, json_schema).
-  -n, -non-interactive             Disable interactive stdin fallback after macro inputs; auto-exit instead.
-  -mt, -max-tokens int             Set the max context tokens for this run. 0 = unlimited (default is found in %v/textConfig.json)
-  -mtc, -max-tool-calls int        Set the max tool calls for this run. 0 = unlimited (default is found in %v/textConfig.json)
+  -re, -reply bool                    Set to true to reply to the previous query, meaning that it will be used as context for your next query. (default %v)
+  -r, -raw bool                       Set to true to print raw output (no animation, no glow). (default %v)
+  -cm, -chat-model string             Set the chat model to use. (default is found in %v/textConfig.json)
+  -pm, -photo-model string            Set the image model to use. (default is found in %v/photoConfig.json)
+  -pd, -photo-dir string              Set the directory to store the generated pictures. (default is found in %v/photoConfig.json)
+  -pp, -photo-prefix string           Set the prefix for the generated pictures. (default is found in %v/photoConfig.json)
+  -vd, -video-dir string              Set dir for generated videos. Default $HOME/Videos (default %v)
+  -vp, -video-prefix string           Set prefix for generated videos. Default 'clai' (default %v)
+  -t, -tools string                   Set to <tool_a>,<tool_b> for specific tool, or */"" to use all built in or MCP tools. See available tools with 'clai tools' (default %v)
+  -s, -skills string                  Enable or disable skills for this run. Use '*' to enable or 'none' to disable.
+  -cmd-ban string                     Append comma-separated command bans for this run (e.g. "rm,sudo"). Commands matching a ban are refused before they spawn.
+  -g, -glob string                    Set the glob to use for globbing. (default '%v')
+  -p, -profile string                 Set the profile which should be used. For details, see 'clai help profile'. (default '%v')
+  -prp, profile-path string           Set the path to a profile file to use instead of -p/-profile.
+  -asc, -append-shell-context str     Append a named shell context from <config-dir>/shellContexts/<name>.json to the final query prompt.
+  -rf, -response-format string        Block streaming and print only the final structured response (json_object, json_schema).
+  -n, -non-interactive                Disable interactive stdin fallback after macro inputs; auto-exit instead.
+  -mt, -max-tokens int                Set the max context tokens for this run. 0 = unlimited (default is found in %v/textConfig.json)
+  -mtc, -max-tool-calls int           Set the max tool calls for this run. 0 = unlimited (default is found in %v/textConfig.json)
+  -max-tool-calls-after-handover int  Set the max tool calls for the post-handover phase of this run. 0 = unlimited (default is found in %v/textConfig.json)
 
 Config dir: %v
 Cache dir:  %v
