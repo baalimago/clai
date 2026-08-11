@@ -24,6 +24,9 @@ type McpServer struct {
 	Args    []string          `json:"args"`
 	Env     map[string]string `json:"env"`
 	EnvFile string            `json:"envfile,omitempty"`
+	// TimeoutSeconds bounds a single tool call. 0 means unbounded: the call
+	// waits for the server or for the caller's context, whichever comes first.
+	TimeoutSeconds int `json:"timeout_seconds,omitempty"`
 }
 
 // ToolName is an enum-like type for available tools.

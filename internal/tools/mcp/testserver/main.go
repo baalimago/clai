@@ -72,6 +72,14 @@ func main() {
 								},
 							},
 						},
+						{
+							"name":        "hang",
+							"description": "never responds, simulating a wedged server",
+							"inputSchema": map[string]any{
+								"type":       "object",
+								"properties": map[string]any{},
+							},
+						},
 					},
 				},
 			})
@@ -81,6 +89,11 @@ func main() {
 				Arguments map[string]any `json:"arguments"`
 			}
 			json.Unmarshal(req.Params, &p)
+			if p.Name == "hang" {
+				// Simulate a wedged server (e.g. a browser navigation that
+				// never completes): swallow the request and answer nothing.
+				continue
+			}
 			text, _ := p.Arguments["text"].(string)
 			result := map[string]any{
 				"content": []map[string]any{{"type": "text", "text": text}},

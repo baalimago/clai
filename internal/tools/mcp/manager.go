@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/baalimago/clai/internal/tools"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -116,6 +117,7 @@ func handleServer(ctx context.Context, ev ControlEvent, readyChan chan struct{})
 			spec:       spec,
 			inputChan:  ev.InputChan,
 			outputChan: ev.OutputChan,
+			timeout:    time.Duration(ev.Server.TimeoutSeconds) * time.Second,
 		}
 		tools.Registry.Set(spec.Name, mt)
 	}
