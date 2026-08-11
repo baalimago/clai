@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/baalimago/clai/internal/debugflags"
 	"github.com/baalimago/clai/internal/utils"
@@ -23,6 +24,8 @@ type mcpTool struct {
 	spec       pub_models.Specification
 	inputChan  chan<- any
 	outputChan <-chan any
+	// timeout bounds one tool call; 0 disables the bound (caller ctx only).
+	timeout time.Duration
 
 	mu  sync.Mutex
 	seq int
@@ -47,6 +50,14 @@ func (m *mcpTool) Call(input pub_models.Input) (string, error) {
 }
 
 func (m *mcpTool) call(ctx context.Context, input pub_models.Input) (string, error) {
+	if m.timeout > 0 {
+		// Bound the call with the server's own timeout so a hung server fails
+		// the call even when the caller's context has no deadline. The receive
+		// loop's ctx.Done case is the exit this timeout arms.
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, m.timeout)
+		defer cancel()
+	}
 	nonNullableInp := make(map[string]any)
 	if len(input) != 0 {
 		nonNullableInp = input

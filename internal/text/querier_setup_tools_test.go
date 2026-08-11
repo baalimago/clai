@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -121,6 +122,32 @@ func captureStderr(t *testing.T, fn func()) string {
 		t.Fatalf("read stderr: %v", err)
 	}
 	return string(out)
+}
+
+func Test_findConfiguredMcpServers_ParsesTimeoutSeconds(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "playwright.json")
+	if err := os.WriteFile(path, []byte(`{
+		"command": "npm",
+		"args": ["exec", "@playwright/mcp"],
+		"timeout_seconds": 300
+	}`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	servers, err := findConfiguredMcpServers([]string{path})
+	if err != nil {
+		t.Fatalf("findConfiguredMcpServers: %v", err)
+	}
+	if len(servers) != 1 {
+		t.Fatalf("expected 1 server, got %d", len(servers))
+	}
+	if servers[0].TimeoutSeconds != 300 {
+		t.Errorf("TimeoutSeconds = %d, want 300", servers[0].TimeoutSeconds)
+	}
+	if servers[0].Name != "playwright" {
+		t.Errorf("Name = %q, want playwright (derived from filename)", servers[0].Name)
+	}
 }
 
 func Test_flushMcpSetupErrors_PrintsOnlyErrorsAndExitTails(t *testing.T) {

@@ -167,6 +167,7 @@ Each JSON file describes one MCP server. The exact schema is defined by the proj
 - how to start/connect to the server (e.g. command + args, or URL)
 - environment variables
 - optional allow/deny lists of tools
+- an optional per-call timeout (`timeout_seconds`): bounds a single tool call so a hung server cannot block an agent forever. `0` or absent means unbounded (the caller's context is the only bound).
 
 ### Lifecycle
 
