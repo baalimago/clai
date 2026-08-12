@@ -212,6 +212,8 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	querier.toolOutputRuneLimit = userConf.ToolOutputRuneLimit
 	querier.maxToolCalls = userConf.MaxToolCalls
 	querier.stoploss = userConf.Stoploss
+	querier.callUsageRecorder = userConf.UsageRecorder
+	querier.toolCallRecorder = userConf.ToolCallRecorder
 	querier.out = output
 	// MCP server stderr lines follow the same display policy as the session:
 	// rolling output buffers them into the window, raw/structured output keeps

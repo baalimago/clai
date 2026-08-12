@@ -29,6 +29,12 @@ type Agent struct {
 	stoploss       Stoploss
 	responseFormat *models.ResponseFormat
 
+	// usageRecorder receives one CompletedModelCall per model step of every
+	// query; toolCallRecorder receives one ToolCall per tool invocation. Nil
+	// keeps clai's noop paths (worklog 26-08-11-clai-prometheus-metrics).
+	usageRecorder    models.CallUsageRecorder
+	toolCallRecorder models.ToolCallRecorder
+
 	querierCreator func(ctx context.Context, conf text.Configurations) (priv_models.Querier, error)
 
 	out io.Writer
@@ -160,6 +166,26 @@ func WithCmdBanList(entries ...string) Option {
 	}
 }
 
+// WithUsageRecorder registers a CallUsageRecorder that receives one
+// CompletedModelCall per model step of every query. Nil (the default)
+// keeps clai's noop path: no recording, no behavior change. A Record error
+// is logged by the session runner and never aborts the run.
+func WithUsageRecorder(rec models.CallUsageRecorder) Option {
+	return func(a *Agent) {
+		a.usageRecorder = rec
+	}
+}
+
+// WithToolCallRecorder registers a ToolCallRecorder that receives one
+// ToolCall per tool invocation of every query. Nil (the default) keeps
+// the noop path. A RecordToolCall error is logged and never aborts the
+// run.
+func WithToolCallRecorder(rec models.ToolCallRecorder) Option {
+	return func(a *Agent) {
+		a.toolCallRecorder = rec
+	}
+}
+
 // WithResponseFormat configures structured output for the agent.
 // Supports "json_object" and "json_schema" types.
 func WithResponseFormat(rf models.ResponseFormat) Option {
@@ -181,6 +207,8 @@ func (a *Agent) asInternalConfig() text.Configurations {
 		RequestedToolGlobs: a.toolGlobs,
 		CmdBan:             a.cmdBan,
 		ResponseFormat:     a.responseFormat,
+		UsageRecorder:      a.usageRecorder,
+		ToolCallRecorder:   a.toolCallRecorder,
 		Out:                a.out,
 	}
 	// A zero-value Stoploss must not create a non-nil internal pointer: the
