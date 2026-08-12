@@ -20,6 +20,14 @@ import (
 
 var dataPrefix = []byte("data: ")
 
+// maxReasoningContent caps the reasoning text accumulated on the completer
+// between stream resets (StreamCompletions clears it). A looping model can
+// stream reasoning tokens forever; without the cap the O(n²) string
+// concatenation here balloons the heap until the process OOMs (kinoview
+// production incident, 2026-08-11). Keeping the tail preserves the reasoning
+// context that rides along with tool calls.
+const maxReasoningContent = 1 << 20 // 1 MiB
+
 // StreamCompletions taking the messages as prompt conversation. Returns the messages from the chat model.
 func (s *StreamCompleter) StreamCompletions(ctx context.Context, chat pub_models.Chat) (chan models.CompletionEvent, error) {
 	s.reasoningContent = ""
@@ -197,6 +205,9 @@ func (s *StreamCompleter) handleStreamChunk(token []byte) models.CompletionEvent
 func (s *StreamCompleter) handleChoice(choice Choice) models.CompletionEvent {
 	if choice.Delta.ReasoningContent != "" {
 		s.reasoningContent += choice.Delta.ReasoningContent
+		if len(s.reasoningContent) > maxReasoningContent {
+			s.reasoningContent = s.reasoningContent[len(s.reasoningContent)-maxReasoningContent:]
+		}
 	}
 	// If there is no tools call, just handle it as a strings. This works for most cases
 	if len(choice.Delta.ToolCalls) == 0 {

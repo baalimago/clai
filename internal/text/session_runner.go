@@ -277,7 +277,7 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 						fmt.Fprint(w, table.Colorize(utils.RoleColor("reasoning"), cast.Content))
 					}
 				}
-				q.reasoningBuf.WriteString(cast.Content)
+				q.appendReasoning(cast.Content)
 			case models.StopEvent:
 				q.closeReasoningIfOpen(session)
 				result.AssistantText = session.PendingTextString()

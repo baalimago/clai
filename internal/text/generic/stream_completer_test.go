@@ -130,6 +130,28 @@ func TestHandleStreamChunk_ReasoningContentIsTracked(t *testing.T) {
 	}
 }
 
+// TestHandleStreamChunk_ReasoningContentIsCapped verifies the OOM guard for
+// the completer's reasoning accumulator: an endless reasoning stream (a
+// looping model) must not grow reasoningContent without bound. The accumulator
+// keeps only the last maxReasoningContent bytes — the tail — preserving
+// tool-call context while bounding memory. Regression for the kinoview
+// production OOM of 2026-08-11 (2.53 GB heap from O(n²) string
+// concatenation).
+func TestHandleStreamChunk_ReasoningContentIsCapped(t *testing.T) {
+	s := &StreamCompleter{}
+	chunk := []byte(`data: {"choices":[{"delta":{"reasoning_content":"` + strings.Repeat("a", 4096) + `"}}]}` + "\n")
+
+	for range 1024 {
+		s.handleStreamChunk(chunk)
+	}
+	if len(s.reasoningContent) != maxReasoningContent {
+		t.Fatalf("reasoningContent length %d, want cap %d", len(s.reasoningContent), maxReasoningContent)
+	}
+	if !strings.HasSuffix(s.reasoningContent, strings.Repeat("a", 4096)) {
+		t.Fatal("expected reasoningContent to keep the tail (last chunk)")
+	}
+}
+
 func TestCreateRequest_BodyAndHeaders(t *testing.T) {
 	fpen, ppen, temp, top, max := 0.25, 0.75, 0.5, 0.9, 123
 	choice := "auto"
