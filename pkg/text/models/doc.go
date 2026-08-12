@@ -15,6 +15,9 @@
 //     with Model Context Protocol (MCP) style schemas.
 //   - McpServer: describes an MCP server that can be registered and
 //     used by the underlying text engine.
+//   - CallUsageRecorder, CompletedModelCall, ToolCallRecorder, ToolCall:
+//     telemetry seams observed by the session runner per model step and
+//     per tool invocation (worklog 26-08-11-clai-prometheus-metrics).
 //
 // These types are designed to be serializable (where appropriate) and
 // safe to pass across package boundaries without leaking internal

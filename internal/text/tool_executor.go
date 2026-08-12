@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/baalimago/clai/internal/debugflags"
@@ -143,9 +144,39 @@ func (e toolExecutor[C]) runPlannedCall(ctx context.Context, session *QuerySessi
 			out = res
 		}
 	} else {
+		startedAt := time.Now()
 		out = tools.Invoke(ctx, plan.call)
+		e.recordToolCall(ctx, plan.call.Name, startedAt, out)
 	}
 	return e.emitToolResult(session, plan.call, plan.prefix+out)
+}
+
+// recordToolCall reports one executed tool invocation to the configured
+// recorder. A nil recorder keeps the noop path; a recorder error is logged
+// and never propagated — telemetry must not break the agent loop.
+func (e toolExecutor[C]) recordToolCall(ctx context.Context, name string, startedAt time.Time, out string) {
+	rec := e.querier.toolCallRecorder
+	if rec == nil {
+		return
+	}
+	if err := rec.RecordToolCall(ctx, ToolCall{
+		Name:       name,
+		StartedAt:  startedAt,
+		FinishedAt: time.Now(),
+		Err:        toolCallError(out),
+	}); err != nil {
+		ancli.Warnf("failed to record tool call: %v", err)
+	}
+}
+
+// toolCallError derives a tool failure from its output string. tools.Invoke
+// folds errors into the output using the "ERROR: " convention, so the
+// recorder observes failures without changing Invoke's signature.
+func toolCallError(out string) error {
+	if strings.HasPrefix(out, "ERROR: ") {
+		return errors.New(out)
+	}
+	return nil
 }
 
 // emitAssistantToolCall prints the user-facing assistant tool-call turn and

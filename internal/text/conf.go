@@ -72,6 +72,16 @@ type Configurations struct {
 	// MaxTokens <= 0 disables the stoploss (no handover injection).
 	Stoploss *Stoploss `json:"stoploss,omitempty"`
 
+	// UsageRecorder receives one CompletedModelCall per model step of a
+	// session (worklog 26-08-11-clai-prometheus-metrics). Nil keeps the
+	// noop path; a Record error is logged by the session runner and never
+	// aborts the run.
+	UsageRecorder pub_models.CallUsageRecorder `json:"-"`
+	// ToolCallRecorder receives one ToolCall per tool invocation. Nil
+	// keeps the noop path; a RecordToolCall error is logged and never
+	// aborts the run.
+	ToolCallRecorder pub_models.ToolCallRecorder `json:"-"`
+
 	// Out writer. Normally stdout, but may also be a file when invoked as a package
 	Out io.Writer `json:"-"`
 

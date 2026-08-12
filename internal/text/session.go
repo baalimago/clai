@@ -39,17 +39,6 @@ type QuerySession struct {
 	LineCount           int
 }
 
-type CompletedModelCall struct {
-	StepIndex      int
-	Model          string
-	StartedAt      time.Time
-	FinishedAt     time.Time
-	Usage          *pub_models.Usage
-	EndedWithTool  bool
-	EndedWithReply bool
-	EndedWithStop  bool
-}
-
 func (s *QuerySession) PendingTextString() string {
 	return s.PendingText.String()
 }

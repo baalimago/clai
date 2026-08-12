@@ -108,9 +108,12 @@ type Querier[C models.StreamCompleter] struct {
 	costMgrRdyChan    <-chan struct{}
 	costMgrErrChan    <-chan error
 	callUsageRecorder CallUsageRecorder
-	skillLoader       SkillLoader
-	baseTools         map[string]pub_models.LLMTool
-	registeredTools   map[string]struct{}
+	// toolCallRecorder receives one ToolCall per tool invocation of the
+	// session. Nil keeps the noop path (worklog 26-08-11-clai-prometheus-metrics).
+	toolCallRecorder ToolCallRecorder
+	skillLoader      SkillLoader
+	baseTools        map[string]pub_models.LLMTool
+	registeredTools  map[string]struct{}
 }
 
 func (q *Querier[C]) SuppressCompletionNotification() bool {
