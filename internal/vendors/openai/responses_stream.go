@@ -94,7 +94,7 @@ func (st *toolCallState) appendArgs(delta string) error {
 
 // emitCall sends the normalized tool call. Preceding reasoning items ride on the
 // Call so the assistant message can persist them for stateless continuity.
-func (st *toolCallState) emitCall(out chan<- models.CompletionEvent, reasoning []pub_models.ReasoningItem) error {
+func (st *toolCallState) emitCall(done <-chan struct{}, out chan<- models.CompletionEvent, reasoning []pub_models.ReasoningItem) error {
 	if st.callEmitted {
 		return nil
 	}
@@ -136,14 +136,14 @@ func (st *toolCallState) emitCall(out chan<- models.CompletionEvent, reasoning [
 	}
 	userFunc.Arguments = argsStr
 
-	out <- pub_models.Call{
+	emitResponses(done, out, pub_models.Call{
 		ID:             st.callID,
 		Name:           st.toolName,
 		Inputs:         &input,
 		Type:           "function",
 		Function:       userFunc,
 		ReasoningItems: reasoning,
-	}
+	})
 	st.callEmitted = true
 	st.reset()
 	return nil
@@ -237,6 +237,7 @@ func (s *responsesStreamer) readResponsesStream(ctx context.Context, body io.Rea
 
 	br := bufio.NewReader(body)
 	tracker := newToolCallTracker()
+	done := ctx.Done()
 
 	for {
 		if ctx.Err() != nil {
@@ -246,30 +247,49 @@ func (s *responsesStreamer) readResponsesStream(ctx context.Context, body io.Rea
 		line, err := br.ReadBytes('\n')
 		if err != nil {
 			if err != io.EOF {
-				out <- fmt.Errorf("openai responses: read stream line: %w", err)
+				if !emitResponses(done, out, fmt.Errorf("openai responses: read stream line: %w", err)) {
+					return
+				}
 			}
 			return
 		}
 
 		evt, ok, err := s.parseStreamLine(line)
 		if err != nil {
-			out <- fmt.Errorf("openai responses: parse stream event: %w", err)
+			if !emitResponses(done, out, fmt.Errorf("openai responses: parse stream event: %w", err)) {
+				return
+			}
 			return
 		}
 		if !ok {
 			continue
 		}
 
-		done, err := handleResponsesStreamEvent(out, tracker, evt, s.usageSetter)
+		doneFlag, err := handleResponsesStreamEvent(done, out, tracker, evt, s.usageSetter)
 		if err != nil {
-			out <- fmt.Errorf("openai responses: handle event %q: %w", evt.Type, err)
+			if !emitResponses(done, out, fmt.Errorf("openai responses: handle event %q: %w", evt.Type, err)) {
+				return
+			}
 			return
 		}
-		if done {
+		if doneFlag {
 			// Terminal event handled; stop reading so a trailing [DONE] (or any
 			// further frames) cannot trigger a second, blocking StopEvent send.
 			return
 		}
+	}
+}
+
+// emitResponses sends evt to out unless the stream context was cancelled
+// first, reporting whether the send succeeded. A consumer that returned on a
+// terminal event or on ctx cancellation must not strand the producer on an
+// unbuffered send (goroutine leak class, fixed 2026-08-12).
+func emitResponses(done <-chan struct{}, out chan<- models.CompletionEvent, evt models.CompletionEvent) bool {
+	select {
+	case out <- evt:
+		return true
+	case <-done:
+		return false
 	}
 }
 
@@ -288,29 +308,29 @@ func (s *responsesStreamer) parseStreamLine(line []byte) (responsesStreamEvent, 
 // handleResponsesStreamEvent processes a single stream event, writing normalized
 // events to out. It returns done=true once a terminal event (response.completed or
 // a mapped [DONE]) has been handled so the reader can stop.
-func handleResponsesStreamEvent(out chan<- models.CompletionEvent, tracker *toolCallTracker, evt responsesStreamEvent, usageSetter func(*pub_models.Usage) error) (bool, error) {
+func handleResponsesStreamEvent(done <-chan struct{}, out chan<- models.CompletionEvent, tracker *toolCallTracker, evt responsesStreamEvent, usageSetter func(*pub_models.Usage) error) (bool, error) {
 	switch evt.Type {
 	case "response.output_text.delta":
-		return false, emitTextDelta(out, evt.Delta)
+		return false, emitTextDelta(done, out, evt.Delta)
 
 	case "response.reasoning_summary_text.delta", "response.reasoning_text.delta":
-		return false, emitReasoningDelta(out, evt.Delta)
+		return false, emitReasoningDelta(done, out, evt.Delta)
 
 	case "response.created", "response.in_progress":
-		out <- models.NoopEvent{}
+		emitResponses(done, out, models.NoopEvent{})
 		return false, nil
 
 	case "response.output_item.added":
-		return false, handleOutputItemAdded(out, tracker, evt)
+		return false, handleOutputItemAdded(done, out, tracker, evt)
 
 	case "response.output_item.done":
-		return false, handleOutputItemDone(out, tracker, evt)
+		return false, handleOutputItemDone(done, out, tracker, evt)
 
 	case "response.function_call_arguments.delta":
-		return false, handleFunctionCallArgumentsDelta(out, tracker, evt)
+		return false, handleFunctionCallArgumentsDelta(done, out, tracker, evt)
 
 	case "response.function_call_arguments.done":
-		return false, handleFunctionCallArgumentsDone(out, tracker, evt)
+		return false, handleFunctionCallArgumentsDone(done, out, tracker, evt)
 
 	case "response.completed", "response.incomplete":
 		// response.incomplete is emitted instead of response.completed when the
@@ -319,7 +339,7 @@ func handleResponsesStreamEvent(out chan<- models.CompletionEvent, tracker *tool
 		if err := maybeSetUsage(evt, usageSetter); err != nil {
 			return false, fmt.Errorf("set usage: %w", err)
 		}
-		out <- models.StopEvent{}
+		emitResponses(done, out, models.StopEvent{})
 		return true, nil
 
 	case "response.failed":
@@ -348,7 +368,7 @@ func handleResponsesStreamEvent(out chan<- models.CompletionEvent, tracker *tool
 		return false, fmt.Errorf("%s", msg)
 
 	default:
-		out <- models.NoopEvent{}
+		emitResponses(done, out, models.NoopEvent{})
 		return false, nil
 	}
 }
@@ -390,39 +410,39 @@ func mapUsage(u *responsesUsage) *pub_models.Usage {
 	return out
 }
 
-func emitTextDelta(out chan<- models.CompletionEvent, delta string) error {
+func emitTextDelta(done <-chan struct{}, out chan<- models.CompletionEvent, delta string) error {
 	if delta != "" {
-		out <- delta
+		emitResponses(done, out, delta)
 		return nil
 	}
-	out <- models.NoopEvent{}
+	emitResponses(done, out, models.NoopEvent{})
 	return nil
 }
 
-func emitReasoningDelta(out chan<- models.CompletionEvent, delta string) error {
+func emitReasoningDelta(done <-chan struct{}, out chan<- models.CompletionEvent, delta string) error {
 	if delta != "" {
-		out <- models.ReasoningEvent{Content: delta}
+		emitResponses(done, out, models.ReasoningEvent{Content: delta})
 		return nil
 	}
-	out <- models.NoopEvent{}
+	emitResponses(done, out, models.NoopEvent{})
 	return nil
 }
 
-func handleOutputItemAdded(out chan<- models.CompletionEvent, tracker *toolCallTracker, evt responsesStreamEvent) error {
+func handleOutputItemAdded(done <-chan struct{}, out chan<- models.CompletionEvent, tracker *toolCallTracker, evt responsesStreamEvent) error {
 	item := evt.Item
 	if item == nil || item.Type != "function_call" {
-		out <- models.NoopEvent{}
+		emitResponses(done, out, models.NoopEvent{})
 		return nil
 	}
 
 	tracker.state(evt.callKey()).beginFromItem(item)
-	out <- models.NoopEvent{}
+	emitResponses(done, out, models.NoopEvent{})
 	return nil
 }
 
-func handleFunctionCallArgumentsDelta(out chan<- models.CompletionEvent, tracker *toolCallTracker, evt responsesStreamEvent) error {
+func handleFunctionCallArgumentsDelta(done <-chan struct{}, out chan<- models.CompletionEvent, tracker *toolCallTracker, evt responsesStreamEvent) error {
 	if evt.Delta == "" {
-		out <- models.NoopEvent{}
+		emitResponses(done, out, models.NoopEvent{})
 		return nil
 	}
 
@@ -432,9 +452,9 @@ func handleFunctionCallArgumentsDelta(out chan<- models.CompletionEvent, tracker
 	return nil
 }
 
-func handleFunctionCallArgumentsDone(out chan<- models.CompletionEvent, tracker *toolCallTracker, evt responsesStreamEvent) error {
+func handleFunctionCallArgumentsDone(done <-chan struct{}, out chan<- models.CompletionEvent, tracker *toolCallTracker, evt responsesStreamEvent) error {
 	key := evt.callKey()
-	if err := tracker.state(key).emitCall(out, tracker.reasoningItems); err != nil {
+	if err := tracker.state(key).emitCall(done, out, tracker.reasoningItems); err != nil {
 		return err
 	}
 	tracker.drop(key)
@@ -444,17 +464,17 @@ func handleFunctionCallArgumentsDone(out chan<- models.CompletionEvent, tracker 
 // handleOutputItemDone captures completed reasoning items (their id and sealed
 // encrypted_content) so they can be replayed on the next turn. Non-reasoning items
 // are a no-op here.
-func handleOutputItemDone(out chan<- models.CompletionEvent, tracker *toolCallTracker, evt responsesStreamEvent) error {
+func handleOutputItemDone(done <-chan struct{}, out chan<- models.CompletionEvent, tracker *toolCallTracker, evt responsesStreamEvent) error {
 	item := evt.Item
 	if item == nil || item.Type != "reasoning" {
-		out <- models.NoopEvent{}
+		emitResponses(done, out, models.NoopEvent{})
 		return nil
 	}
 	// A reasoning item with no encrypted_content is unusable for stateless replay
 	// (store=false requires it; without it, replay would omit the field and 400).
 	// Skip it rather than persist a dead item.
 	if item.EncryptedContent == "" {
-		out <- models.NoopEvent{}
+		emitResponses(done, out, models.NoopEvent{})
 		return nil
 	}
 	ri := pub_models.ReasoningItem{ID: item.ID, EncryptedContent: item.EncryptedContent}
@@ -464,7 +484,7 @@ func handleOutputItemDone(out chan<- models.CompletionEvent, tracker *toolCallTr
 		}
 	}
 	tracker.reasoningItems = append(tracker.reasoningItems, ri)
-	out <- models.NoopEvent{}
+	emitResponses(done, out, models.NoopEvent{})
 	return nil
 }
 

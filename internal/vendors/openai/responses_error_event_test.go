@@ -19,7 +19,7 @@ func TestHandleResponsesStreamEvent_TopLevelErrorSurfacesMessage(t *testing.T) {
 	out := make(chan models.CompletionEvent, 1)
 	tracker := newToolCallTracker()
 
-	done, err := handleResponsesStreamEvent(out, tracker, responsesStreamEvent{
+	done, err := handleResponsesStreamEvent(nil, out, tracker, responsesStreamEvent{
 		Type:    "error",
 		Code:    "server_error",
 		Message: "boom",
@@ -89,7 +89,7 @@ func TestToolCallState_EmitCall_EmptyArgsDefaultsToEmptyObject(t *testing.T) {
 		st.toolName = "pwd"
 
 		out := make(chan models.CompletionEvent, 1)
-		if err := st.emitCall(out, nil); err != nil {
+		if err := st.emitCall(nil, out, nil); err != nil {
 			t.Fatalf("emitCall: %v", err)
 		}
 		ev := <-out

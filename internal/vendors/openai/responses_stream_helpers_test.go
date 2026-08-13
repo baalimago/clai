@@ -78,7 +78,7 @@ func TestToolCallState_EmitCall_UnregisteredToolStillEmits(t *testing.T) {
 		}
 
 		out := make(chan models.CompletionEvent, 1)
-		if err := st.emitCall(out, nil); err != nil {
+		if err := st.emitCall(nil, out, nil); err != nil {
 			t.Fatalf("emitCall must tolerate an unregistered tool, got error: %v", err)
 		}
 
@@ -116,7 +116,7 @@ func TestToolCallState_EmitCall_InvalidJSONArgs(t *testing.T) {
 		}
 
 		out := make(chan models.CompletionEvent, 1)
-		err := st.emitCall(out, nil)
+		err := st.emitCall(nil, out, nil)
 		if err == nil {
 			t.Fatalf("expected error")
 		}
@@ -132,7 +132,7 @@ func TestHandleResponsesStreamEvent_FailedReturnsErrorMessage(t *testing.T) {
 	out := make(chan models.CompletionEvent, 1)
 	tracker := newToolCallTracker()
 
-	done, err := handleResponsesStreamEvent(out, tracker, responsesStreamEvent{Type: "response.failed", Error: &responsesStreamErrBody{Message: "boom"}}, nil)
+	done, err := handleResponsesStreamEvent(nil, out, tracker, responsesStreamEvent{Type: "response.failed", Error: &responsesStreamErrBody{Message: "boom"}}, nil)
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -156,7 +156,7 @@ func TestHandleResponsesStreamEvent_FailedReadsNestedResponseError(t *testing.T)
 		Type:     "response.failed",
 		Response: &responsesResponse{Error: &responsesStreamErrBody{Message: "nested boom", Code: "rate_limit_exceeded"}},
 	}
-	done, err := handleResponsesStreamEvent(out, tracker, evt, nil)
+	done, err := handleResponsesStreamEvent(nil, out, tracker, evt, nil)
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -174,7 +174,7 @@ func TestHandleResponsesStreamEvent_CompletedReportsDone(t *testing.T) {
 	out := make(chan models.CompletionEvent, 1)
 	tracker := newToolCallTracker()
 
-	done, err := handleResponsesStreamEvent(out, tracker, responsesStreamEvent{Type: "response.completed"}, nil)
+	done, err := handleResponsesStreamEvent(nil, out, tracker, responsesStreamEvent{Type: "response.completed"}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -202,7 +202,7 @@ func TestHandleResponsesStreamEvent_IncompleteReportsDoneAndUsage(t *testing.T) 
 		Response: &responsesResponse{Usage: &responsesUsage{InputTokens: 10, OutputTokens: 20, TotalTokens: 30}},
 	}
 
-	done, err := handleResponsesStreamEvent(out, tracker, evt, usageSetter)
+	done, err := handleResponsesStreamEvent(nil, out, tracker, evt, usageSetter)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

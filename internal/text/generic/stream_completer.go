@@ -128,14 +128,29 @@ func (s *StreamCompleter) handleStreamResponse(ctx context.Context, res *http.Re
 			token, err := br.ReadBytes('\n')
 			if err != nil {
 				if err != io.EOF {
-					outChan <- fmt.Errorf("failed to read line: %w", err)
+					select {
+					case outChan <- fmt.Errorf("failed to read line: %w", err):
+					case <-ctx.Done():
+					}
 				}
 				return
 			}
 			if s.debug {
 				ancli.Okf("received data from model, len: '%v', content: '%s'", len(token), token)
 			}
-			outChan <- s.handleStreamChunk(token)
+			evt := s.handleStreamChunk(token)
+			select {
+			case outChan <- evt:
+			case <-ctx.Done():
+				return
+			}
+			if _, ok := evt.(models.StopEvent); ok {
+				// Terminal event: the session runner returns on StopEvent and never
+				// reads the channel again. Stop here so a trailing blank line or a
+				// second [DONE] cannot block forever on the abandoned channel
+				// (production goroutine leak, 2026-08-12).
+				return
+			}
 		}
 	}()
 

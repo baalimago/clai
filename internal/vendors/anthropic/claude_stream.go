@@ -89,17 +89,28 @@ func (c *Claude) handleStreamResponse(ctx context.Context, resp *http.Response) 
 			if err != nil {
 				if errors.Is(err, io.EOF) {
 					if token != "" {
-						c.handleFullResponse(token, outChan)
+						c.handleFullResponse(ctx, token, outChan)
 					} else {
-						outChan <- err
+						if !emitClaude(ctx, outChan, err) {
+							return
+						}
 					}
+					// Terminal: a clean EOF must not emit a second, unconsumed error.
+					// The consumer returns on io.EOF and never reads the channel
+					// again; the follow-up send would block forever on the
+					// abandoned channel (goroutine leak, fixed 2026-08-12).
+					return
 				}
-				outChan <- models.CompletionEvent(fmt.Errorf("failed to read line: %w", err))
+				if !emitClaude(ctx, outChan, models.CompletionEvent(fmt.Errorf("failed to read line: %w", err))) {
+					return
+				}
 				return
 			}
 			token = strings.TrimSpace(token)
 			if ctx.Err() != nil {
-				outChan <- models.CompletionEvent(errors.New("context cancelled"))
+				if !emitClaude(ctx, outChan, models.CompletionEvent(errors.New("context cancelled"))) {
+					return
+				}
 				return
 			}
 			if token == "" {
@@ -113,7 +124,9 @@ func (c *Claude) handleStreamResponse(ctx context.Context, resp *http.Response) 
 					ancli.Okf("new bit: %v, full message: '%v'\n--\n", cast, c.debugFullStreamMsg)
 				}
 			}
-			outChan <- processed
+			if !emitClaude(ctx, outChan, processed) {
+				return
+			}
 			asErr, isErr := processed.(error)
 			_, isFunctionCall := processed.(pub_models.Call)
 			if isErr && errors.Is(asErr, io.EOF) ||
@@ -129,22 +142,35 @@ func (c *Claude) handleStreamResponse(ctx context.Context, resp *http.Response) 
 	return outChan, nil
 }
 
-func (c *Claude) handleFullResponse(token string, outChan chan models.CompletionEvent) {
+// emitClaude sends evt to outChan unless the stream context was cancelled
+// first, reporting whether the send succeeded. A consumer that returned on a
+// terminal event or on ctx cancellation must not strand the producer on an
+// unbuffered send.
+func emitClaude(ctx context.Context, outChan chan models.CompletionEvent, evt models.CompletionEvent) bool {
+	select {
+	case outChan <- evt:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+func (c *Claude) handleFullResponse(ctx context.Context, token string, outChan chan models.CompletionEvent) {
 	var rspBody ClaudeResponse
 	err := json.Unmarshal([]byte(token), &rspBody)
 	if err != nil {
-		outChan <- models.CompletionEvent(fmt.Errorf("failed to unmarshal response: %w, resp body as string: %v", err, token))
+		emitClaude(ctx, outChan, models.CompletionEvent(fmt.Errorf("failed to unmarshal response: %w, resp body as string: %v", err, token)))
 		return
 	}
 	for _, content := range rspBody.Content {
 		switch content.Type {
 		case "text":
-			outChan <- content.Text
+			emitClaude(ctx, outChan, content.Text)
 		case "tool_use":
-			outChan <- pub_models.Call{
+			emitClaude(ctx, outChan, pub_models.Call{
 				Name:   content.Name,
 				Inputs: content.Input,
-			}
+			})
 		}
 	}
 }
