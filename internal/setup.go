@@ -128,6 +128,28 @@ func getCmdFromArgs(args []string) (Mode, error) {
 	}
 }
 
+// chatSubCommand returns the chat subcommand from post-flag args such as
+// ["chat", "list"] or ["c", "dirv2"]. It returns "" when the args do not
+// carry one.
+func chatSubCommand(args []string) string {
+	if len(args) < 2 {
+		return ""
+	}
+	return args[1]
+}
+
+// isReadOnlyChatSubCommand reports whether a chat subcommand only reads
+// conversation state. These commands must not create or mutate config files,
+// so they can run against a read-only config directory.
+func isReadOnlyChatSubCommand(subCmd string) bool {
+	switch subCmd {
+	case "list", "l", "dir", "dirv2", "help", "h":
+		return true
+	default:
+		return false
+	}
+}
+
 // setupToolConfig by matching configuration in flagSet with tConf to ensure that tools
 // are propperly enabled
 func setupToolConfig(tConf *text.Configurations, flagSet Configurations) {
@@ -510,11 +532,6 @@ func Setup(ctx context.Context, usage string, allArgs []string) (models.Querier,
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse flags: %w", err)
 	}
-	// Raw (machine-readable) runs must not mutate the user's configs: the
-	// loaders fill missing fields in memory but leave the files untouched.
-	// Set before LoadTheme below so theme.json is covered too (config
-	// migration design, Q5).
-	utils.ReadonlyConfig = postFlagConf.PrintRaw
 	if len(postFlagArgs) == 0 {
 		return nil, fmt.Errorf("no command provided")
 	}
@@ -523,6 +540,16 @@ func Setup(ctx context.Context, usage string, allArgs []string) (models.Querier,
 	if err != nil {
 		return nil, err
 	}
+
+	// Raw (machine-readable) runs must not mutate the user's configs: the
+	// loaders fill missing fields in memory but leave the files untouched.
+	// Set before LoadTheme below so theme.json is covered too (config
+	// migration design, Q5).
+	utils.ReadonlyConfig = postFlagConf.PrintRaw
+
+	// Read-only chat subcommands must not even create config files, so they can
+	// run against a read-only filesystem or a missing config dir.
+	utils.NoCreateConfig = mode == CHAT && isReadOnlyChatSubCommand(chatSubCommand(postFlagArgs))
 
 	claiConfDir, err := utils.GetClaiConfigDir()
 	if err != nil {
@@ -606,6 +633,14 @@ func Setup(ctx context.Context, usage string, allArgs []string) (models.Querier,
 
 	switch mode {
 	case CHAT, QUERY, GLOB:
+		if mode == CHAT && isReadOnlyChatSubCommand(chatSubCommand(postFlagArgs)) {
+			q, err := newReadOnlyChatHandler(ctx, claiConfDir, postFlagConf, postFlagArgs)
+			if err != nil {
+				return nil, err
+			}
+			return q, nil
+		}
+
 		// Directory reply mode continues the directory-scoped conversation
 		// in place. We set ReplyMode so system prompt is skipped, and load
 		// the dirscope context directly in setupTextQuerierWithConf.
@@ -710,6 +745,19 @@ func Setup(ctx context.Context, usage string, allArgs []string) (models.Querier,
 	default:
 		return nil, fmt.Errorf("unknown mode: %v", mode)
 	}
+}
+
+// newReadOnlyChatHandler builds a chat handler for read-only subcommands
+// (list, dir, dirv2, help). It deliberately passes no model querier because
+// those subcommands only read conversation state, so no config files or model
+// configs are created or loaded as a side effect.
+func newReadOnlyChatHandler(_ context.Context, confDir string, flagSet Configurations, args []string) (models.Querier, error) {
+	chatArgs := strings.Join(args[1:], " ")
+	h, err := chat.New(nil, confDir, chatArgs, nil, chat.NotCyclicalImport{}, flagSet.PrintRaw, os.Stdout, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create read-only chat handler: %w", err)
+	}
+	return h, nil
 }
 
 type skillRuntimeAdapter struct{ mgr *skills.Manager }

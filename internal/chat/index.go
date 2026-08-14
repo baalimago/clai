@@ -8,6 +8,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
@@ -183,6 +184,10 @@ func readChatIndex(convDir string) ([]chatIndexRow, error) {
 func rebuildChatIndex(convDir string, fromVersion int, reason string) ([]chatIndexRow, error) {
 	files, err := os.ReadDir(convDir)
 	if err != nil {
+		if os.IsNotExist(err) {
+			// No conversations dir yet: there is nothing to index.
+			return []chatIndexRow{}, nil
+		}
 		return nil, fmt.Errorf("failed to list conversations for index rebuild: %w", err)
 	}
 	total := 0
@@ -192,11 +197,17 @@ func rebuildChatIndex(convDir string, fromVersion int, reason string) ([]chatInd
 		}
 	}
 
-	// Build the header line: explain why we're rebuilding.
-	if fromVersion == 0 {
-		fmt.Fprintf(os.Stderr, "Building cache index v%d (%s):\n", chatIndexVersion, reason)
-	} else {
-		fmt.Fprintf(os.Stderr, "Rebuilding cache index %s:\n", reason)
+	// Build the header line: explain why we're rebuilding. In read-only
+	// mode the cache cannot be persisted, so the rebuild is a silent
+	// in-memory scan for listing and no "Building cache index" chatter or
+	// persist attempt is produced.
+	readonly := utils.NoCreateConfig
+	if !readonly {
+		if fromVersion == 0 {
+			fmt.Fprintf(os.Stderr, "Building cache index v%d (%s):\n", chatIndexVersion, reason)
+		} else {
+			fmt.Fprintf(os.Stderr, "Rebuilding cache index %s:\n", reason)
+		}
 	}
 
 	rows := make([]chatIndexRow, 0, total)
@@ -224,7 +235,7 @@ func rebuildChatIndex(convDir string, fromVersion int, reason string) ([]chatInd
 		}
 		rows = append(rows, chatIndexRowFromChat(chat))
 		processed++
-		if processed%batchSize == 0 || processed == total {
+		if !readonly && (processed%batchSize == 0 || processed == total) {
 			elapsed := time.Since(batchStart)
 			itemsPerSec := float64(batchSize) / elapsed.Seconds()
 			remaining := total - processed
@@ -236,11 +247,16 @@ func rebuildChatIndex(convDir string, fromVersion int, reason string) ([]chatInd
 			batchStart = time.Now()
 		}
 	}
-	if total > 0 {
+	if !readonly && total > 0 {
 		fmt.Fprint(os.Stderr, "\n")
 	}
-	if err := writeChatIndex(convDir, rows); err != nil {
-		return nil, fmt.Errorf("failed to persist rebuilt chat index: %w", err)
+	if !readonly {
+		if err := writeChatIndex(convDir, rows); err != nil {
+			// The cache is an optimization; listing must still work from the
+			// in-memory rebuild when the filesystem is read-only.
+			table.ClearLine(os.Stderr)
+			fmt.Fprintf(os.Stderr, "warning: failed to persist chat index cache: %v\n", err)
+		}
 	}
 	return rows, nil
 }

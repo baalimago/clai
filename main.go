@@ -96,18 +96,6 @@ func triggerCompletionNotification(completed any) {
 }
 
 func run(args []string) int {
-	configDirPath, err := utils.GetClaiConfigDir()
-	if err != nil {
-		ancli.Errf("failed to find config dir path: %v", err)
-		return 1
-	}
-
-	err = utils.CreateConfigDir(configDirPath)
-	if err != nil {
-		ancli.Errf("failed to find config dir path: %v", err)
-		return 1
-	}
-
 	ctx, cancel := context.WithCancel(context.Background())
 	// Build in cancel into the context to allow it to be called downstream
 	// Anti-pattern? Not sure, honestly, needed here to cleanly stop

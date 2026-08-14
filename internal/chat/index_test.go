@@ -4,10 +4,13 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
+	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
 // TestRebuildChatIndex_ComputesGroupKey verifies that rebuilding the index
@@ -377,6 +380,50 @@ func TestNewChatIndexPaginator_RebuildsFromExistingChatFiles(t *testing.T) {
 	}
 	if page[0].ID != "new" || page[1].ID != "old" {
 		t.Fatalf("page IDs = [%s %s], want [new old]", page[0].ID, page[1].ID)
+	}
+}
+
+// TestReadChatIndex_ReadonlySilentAndNoPersist pins the read-only listing
+// contract at the index layer: when utils.NoCreateConfig is set, a missing
+// cache still rebuilds in memory (so listing works) but must not print the
+// "Building cache index" progress chatter and must not attempt to persist the
+// cache file.
+func TestReadChatIndex_ReadonlySilentAndNoPersist(t *testing.T) {
+	tmp := t.TempDir()
+	ch := pub_models.Chat{
+		ID:       "a",
+		Created:  time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		Messages: []pub_models.Message{{Role: "user", Content: "hello"}},
+	}
+	b, err := json.Marshal(ch)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmp, "a.json"), b, 0o644); err != nil {
+		t.Fatalf("write chat file: %v", err)
+	}
+
+	utils.NoCreateConfig = true
+	t.Cleanup(func() { utils.NoCreateConfig = false })
+
+	var rows []chatIndexRow
+	stderr := testboil.CaptureStderr(t, func(t *testing.T) {
+		rows, err = readChatIndex(tmp)
+	})
+	if err != nil {
+		t.Fatalf("readChatIndex: %v", err)
+	}
+	if len(rows) != 1 || rows[0].ID != "a" {
+		t.Fatalf("expected 1 row for chat a, got %+v", rows)
+	}
+	if strings.Contains(stderr, "Building cache index") {
+		t.Fatalf("read-only rebuild must not print progress header, stderr: %q", stderr)
+	}
+	if strings.Contains(stderr, "failed to persist chat index cache") {
+		t.Fatalf("read-only rebuild must not attempt persist, stderr: %q", stderr)
+	}
+	if _, statErr := os.Stat(chatIndexPath(tmp)); !os.IsNotExist(statErr) {
+		t.Fatalf("read-only rebuild must not write chat_index.cache, stat err=%v", statErr)
 	}
 }
 

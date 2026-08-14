@@ -368,6 +368,10 @@ func readJSONBaseNames(dir string) ([]string, error) {
 func discoverModelHistory(configDir string) ([]string, error) {
 	entries, err := os.ReadDir(configDir)
 	if err != nil {
+		if os.IsNotExist(err) {
+			// No config dir yet: there is no model history to offer.
+			return nil, nil
+		}
 		return nil, fmt.Errorf("read config dir %q: %w", configDir, err)
 	}
 

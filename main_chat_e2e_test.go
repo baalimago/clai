@@ -26,6 +26,7 @@ func runOne(t *testing.T, cwd string, args string) (string, int) {
 		}
 		utils.Live = true
 		utils.ReadonlyConfig = false
+		utils.NoCreateConfig = false
 	})
 
 	if chDirErr := os.Chdir(cwd); chDirErr != nil {

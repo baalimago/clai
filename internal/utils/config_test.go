@@ -452,6 +452,44 @@ func TestLoadConfigFromFile_ReadonlyDoesNotRewriteOrAnnounce(t *testing.T) {
 	}
 }
 
+func TestLoadConfigFromFile_NoCreateReturnsDefaultsWithoutCreating(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "app.json")
+	dflt := &migrationFixture{
+		Model:  "gpt-5.2",
+		Limit:  21600,
+		Nested: &migrationNest{A: 1, B: "b"},
+	}
+
+	NoCreateConfig = true
+	t.Cleanup(func() { NoCreateConfig = false })
+
+	migrationRan := false
+	var conf migrationFixture
+	var err error
+	conf, err = LoadConfigFromFile(dir, "app.json", func(string) error {
+		migrationRan = true
+		return nil
+	}, dflt)
+	if err != nil {
+		t.Fatalf("LoadConfigFromFile: %v", err)
+	}
+	if conf.Model != dflt.Model || conf.Limit != dflt.Limit {
+		t.Fatalf("expected defaults in memory, got %+v", conf)
+	}
+	if migrationRan {
+		t.Fatal("migration callback must not run when config creation is disabled")
+	}
+	if _, statErr := os.Stat(configPath); !os.IsNotExist(statErr) {
+		t.Fatalf("expected no config file created, stat err=%v", statErr)
+	}
+	for _, sub := range ConfigDirPaths() {
+		if _, statErr := os.Stat(filepath.Join(dir, sub)); !os.IsNotExist(statErr) {
+			t.Fatalf("expected no config subdir %q created, stat err=%v", sub, statErr)
+		}
+	}
+}
+
 func TestLoadConfigFromFile_FreshCreationIsSilent(t *testing.T) {
 	dir := t.TempDir()
 	dflt := &migrationFixture{

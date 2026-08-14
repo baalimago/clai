@@ -107,6 +107,17 @@ configs before their own commands run, and from corrupting machine output
 with the human announcement. The migration then happens on the next
 interactive (non-raw) run, where the announcement is visible.
 
+Read-only chat subcommands — `chat list`, `chat dir`, `chat dirv2`, and
+`chat help` — go further: `internal.Setup` sets `utils.NoCreateConfig` before
+any load, so no config dir, default config file, migration callback, or model
+querier is produced as a side effect. This lets those commands run against a
+read-only filesystem or a config dir that does not exist yet; a missing config
+file simply yields the in-memory defaults. The conversation index cache is
+treated as an optimization: when `utils.NoCreateConfig` is set, a missing
+cache is rebuilt in memory for listing, but the rebuild is silent (no
+"Building cache index" progress chatter) and the persist attempt is skipped,
+so a read-only mount produces no stderr noise and no failed write.
+
 ### 2) Model-specific vendor configs
 
 These are JSON files created per *vendor+model*.

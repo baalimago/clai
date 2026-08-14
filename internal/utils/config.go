@@ -185,6 +185,12 @@ func runMigrationCallback(migrationCb func(string) error, configDirPath string) 
 // silently migrating the configs before the user's own commands run.
 var ReadonlyConfig bool
 
+// NoCreateConfig is stronger than ReadonlyConfig: it also suppresses config
+// dir and default config file creation, migration callbacks, and the resulting
+// reads. Set for read-only chat subcommands so `clai chat list` can run
+// against a read-only filesystem or a config dir that does not exist yet.
+var NoCreateConfig bool
+
 func LoadConfigFromFile[T any](
 	configDirPath,
 	configFileName string,
@@ -230,13 +236,51 @@ func loadConfigFromFile[T any](
 		ancli.PrintOK(fmt.Sprintf("attempting to load file: %v%v\n", configDirPath, configFileName))
 	}
 
+	configPath := path.Join(configDirPath, configFileName)
+
+	// NoCreateConfig makes the whole load read-only: no config dir, default
+	// file, migration, or upgrade rewrite may be produced as a side effect.
+	// A missing file yields the in-memory defaults instead of an error, so
+	// read-only commands work on a read-only filesystem or against a config
+	// dir that does not exist yet.
+	if NoCreateConfig {
+		fileBytes, err := os.ReadFile(configPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				conf, cloneErr := cloneConfigDefault(dflt)
+				if cloneErr != nil {
+					var nilVal T
+					return nilVal, nil, fmt.Errorf("clone default config '%v': %w", configFileName, cloneErr)
+				}
+				return conf, nil, nil
+			}
+			var nilVal T
+			return nilVal, nil, fmt.Errorf("failed to read config '%v', error: %v", configFileName, err)
+		}
+
+		var conf T
+		if err := json.Unmarshal(fileBytes, &conf); err != nil {
+			return conf, nil, fmt.Errorf("failed to unmarshal config '%v', error: %v", configFileName, err)
+		}
+
+		var present map[string]json.RawMessage
+		if err := json.Unmarshal(fileBytes, &present); err != nil {
+			return conf, nil, fmt.Errorf("failed to parse config '%v' keys, error: %v", configFileName, err)
+		}
+		_ = fillMissingFromDefaults(&conf, dflt, present, "")
+
+		if misc.Truthy(os.Getenv("DEBUG")) {
+			ancli.PrintOK(fmt.Sprintf("found config (read-only): %v\n", debug.IndentedJsonFmt(conf)))
+		}
+		return conf, nil, nil
+	}
+
 	err := CreateConfigDir(configDirPath)
 	if err != nil {
 		var nilVal T
 		return nilVal, nil, err
 	}
 
-	configPath := path.Join(configDirPath, configFileName)
 	_, statErr := os.Stat(configPath)
 	existedBefore := statErr == nil
 
@@ -301,6 +345,24 @@ func loadConfigFromFile[T any](
 		ancli.PrintOK(fmt.Sprintf("found config: %v\n", debug.IndentedJsonFmt(conf)))
 	}
 	return conf, added, nil
+}
+
+// cloneConfigDefault deep-copies a config default via JSON so a read-only load
+// of a missing file returns a value that can be mutated by callers without
+// aliasing the package-level default.
+func cloneConfigDefault[T any](dflt *T) (T, error) {
+	var conf T
+	if dflt == nil {
+		return conf, nil
+	}
+	b, err := json.Marshal(dflt)
+	if err != nil {
+		return conf, err
+	}
+	if err := json.Unmarshal(b, &conf); err != nil {
+		return conf, err
+	}
+	return conf, nil
 }
 
 // fillMissingFromDefaults fills fields of loaded that are absent from the

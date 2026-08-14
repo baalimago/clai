@@ -294,6 +294,30 @@ func TestCompletionEngineComplete_FlagShortcuts(t *testing.T) {
 	}
 }
 
+func TestLoadCompletionData_NoConfigDir(t *testing.T) {
+	t.Parallel()
+
+	// A missing config dir must not break shell completion; the model
+	// history, profiles, and shell contexts are simply empty. This guards
+	// the regression where removing the unconditional config-dir creation
+	// from main.run made `clai __complete` fail on a fresh machine.
+	confDir := filepath.Join(t.TempDir(), "missing", ".clai")
+
+	data, err := loadCompletionData(confDir)
+	if err != nil {
+		t.Fatalf("loadCompletionData: %v", err)
+	}
+	if data.Models != nil {
+		t.Fatalf("models: got %v want nil", data.Models)
+	}
+	if data.Profiles != nil {
+		t.Fatalf("profiles: got %v want nil", data.Profiles)
+	}
+	if data.ShellContexts != nil {
+		t.Fatalf("shell contexts: got %v want nil", data.ShellContexts)
+	}
+}
+
 func TestLoadCompletionData_ModelsFromConfigHistory(t *testing.T) {
 	t.Parallel()
 

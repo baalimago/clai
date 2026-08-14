@@ -692,3 +692,26 @@ func formatTwoDigit(i int) string {
 	}
 	return string(rune('0'+i/10)) + string(rune('0'+i%10))
 }
+
+// Test_e2e_chat_list_does_not_create_config_dir pins the read-only contract for
+// `clai chat list`: a list run must never create the config dir or any default
+// config documents, so it can be pointed at a read-only filesystem.
+func Test_e2e_chat_list_does_not_create_config_dir(t *testing.T) {
+	base := t.TempDir()
+	confDir := filepath.Join(base, "missing", ".clai")
+	t.Setenv("CLAI_CONFIG_DIR", confDir)
+	t.Setenv("HOME", t.TempDir())
+
+	workDir := t.TempDir()
+	stdout, status := runOne(t, workDir, "-n -cm test c l 0")
+	if status != 0 {
+		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
+	}
+	if !strings.Contains(stdout, "selection out of range") {
+		t.Fatalf("expected empty-list notice, got:\n%s", stdout)
+	}
+
+	if _, err := os.Stat(confDir); !os.IsNotExist(err) {
+		t.Fatalf("expected config dir %q to not exist after chat list, stat err=%v", confDir, err)
+	}
+}
