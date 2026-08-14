@@ -8,7 +8,7 @@ on:
 
 jobs:
   call-workflow:
-    uses: baalimago/simple-go-pipeline/.github/workflows/validate.yml@0f3e945a5090
+    uses: baalimago/simple-go-pipeline/.github/workflows/validate.yml@0f3e945a5090f3b1bc4dfa5bf8a19db616c0a992
     with:
       go-version: "1.26"
       staticcheck-version: "latest"
