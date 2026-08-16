@@ -213,7 +213,7 @@ func Test_toolExecutor_EmitToolResult_CompactsMCPOutputAndRetainsTranscript(t *t
 	out := "mcp_result\n" + strings.Repeat("a long result row\n", 20)
 	call := pub_models.Call{ID: "call-1", Name: "mcp_server_tool"}
 
-	if err := (toolExecutor[*MockQuerier]{querier: &q}).emitToolResult(session, call, out); err != nil {
+	if err := (toolExecutor[*MockQuerier]{querier: &q}).emitToolResult(context.Background(), session, call, out); err != nil {
 		t.Fatalf("emitToolResult() error = %v", err)
 	}
 	if got := printed.String(); !strings.Contains(got, "terminal rows omitted") {
@@ -231,7 +231,7 @@ func Test_toolExecutor_EmitToolResult_RawDisplayKeepsCompleteResult(t *testing.T
 	result := "complete tool result"
 	call := pub_models.Call{ID: "call-1", Name: "test"}
 
-	if err := (toolExecutor[*MockQuerier]{querier: &q}).emitToolResult(session, call, result); err != nil {
+	if err := (toolExecutor[*MockQuerier]{querier: &q}).emitToolResult(context.Background(), session, call, result); err != nil {
 		t.Fatalf("emitToolResult() error = %v", err)
 	}
 	if got := printed.String(); !strings.Contains(got, result) {

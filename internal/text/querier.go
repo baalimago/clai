@@ -90,6 +90,11 @@ type Querier[C models.StreamCompleter] struct {
 	// Output of the querier. This is used mostly when Querier is invoked as an agent
 	out io.Writer
 
+	// agentSettings carries the agent-only runtime settings (slog logger,
+	// level, rune cap, recorder hooks) into the querier. nil (the CLI and
+	// pkg/text paths) keeps every channel disabled.
+	agentSettings *AgentSettings
+
 	// isLikelyGemini3Preview is set to true if it's likely that the current underlying model
 	// is the gemini 3 preview which suffers from an issue where it insists on crashing if there
 	// is no "though_signature" within extra content, while also sending requests which lack "though_signature"
@@ -137,7 +142,11 @@ type LoadedSkillRuntime struct {
 	RawArgs         string
 }
 
-func (q *Querier[C]) postProcessOutput(newSysMsg pub_models.Message) {
+func (q *Querier[C]) postProcessOutput(ctx context.Context, newSysMsg pub_models.Message) {
+	// Agent logging is unconditional: the final answer record fires before any
+	// display branch so raw, structured, rolling, and terminal paths all emit
+	// it (worklog 2026-08-15-agent-slog-output, Phase 3).
+	q.logMessage(ctx, "final_answer", newSysMsg.Content, "")
 	// The token should already have been printed while streamed
 	if q.rawDisplay() {
 		if q.debug {
@@ -206,7 +215,7 @@ func (q *Querier[C]) postProcess() {
 		Line:               q.line,
 		LineCount:          q.lineCount,
 	}
-	sessionFinalizer[C]{querier: q}.Finalize(session)
+	sessionFinalizer[C]{querier: q}.Finalize(context.Background(), session)
 	q.chat = session.Chat
 	q.fullMsg = session.FinalAssistantText
 	q.line = session.Line
@@ -385,11 +394,17 @@ func (q *Querier[C]) rawDisplay() bool {
 
 // closeReasoningIfOpen finishes the display viewport and persists the complete
 // source reasoning separately from assistant text.
-func (q *Querier[C]) closeReasoningIfOpen(session *QuerySession) {
+func (q *Querier[C]) closeReasoningIfOpen(ctx context.Context, session *QuerySession) {
 	if !q.reasoningActive {
 		return
 	}
 	q.reasoningActive = false
+	// One reasoning record per block, not per token: the complete buffer is
+	// captured before any branch resets it. An empty buffer (a spurious close)
+	// emits no record.
+	if reasoning := q.reasoningBuf.String(); reasoning != "" {
+		q.logMessage(ctx, "reasoning", reasoning, "")
+	}
 	if q.usesActivityViewport() {
 		session.PendingReasoning.WriteString(q.reasoningBuf.String())
 		q.fullMsg = session.PendingTextString()

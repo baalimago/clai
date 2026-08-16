@@ -212,8 +212,15 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	querier.toolOutputRuneLimit = userConf.ToolOutputRuneLimit
 	querier.maxToolCalls = userConf.MaxToolCalls
 	querier.stoploss = userConf.Stoploss
-	querier.callUsageRecorder = userConf.UsageRecorder
-	querier.toolCallRecorder = userConf.ToolCallRecorder
+	// Agent-only runtime settings (slog logger, level, rune cap, recorder
+	// hooks) ride one pointer (worklog 2026-08-15-agent-slog-output, D7). nil (the CLI and pkg/text paths) keeps
+	// every channel disabled; the loose Configurations recorder fields no
+	// longer exist.
+	if userConf.AgentSettings != nil {
+		querier.callUsageRecorder = userConf.AgentSettings.UsageRecorder
+		querier.toolCallRecorder = userConf.AgentSettings.ToolCallRecorder
+		querier.agentSettings = userConf.AgentSettings
+	}
 	querier.out = output
 	// MCP server stderr lines follow the same display policy as the session:
 	// rolling output buffers them into the window, raw/structured output keeps

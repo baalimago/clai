@@ -40,7 +40,7 @@ type sessionRunner[C models.StreamCompleter] struct {
 }
 
 type sessionFinalizerer interface {
-	Finalize(*QuerySession)
+	Finalize(context.Context, *QuerySession)
 }
 
 func (r *sessionRunner[C]) Run(ctx context.Context, session *QuerySession) (runErr error) {
@@ -57,7 +57,7 @@ func (r *sessionRunner[C]) Run(ctx context.Context, session *QuerySession) (runE
 	defer func() {
 		session.FinishedAt = time.Now()
 		session.Failed = runErr != nil
-		r.finalizer.Finalize(session)
+		r.finalizer.Finalize(ctx, session)
 	}()
 	// Final MCP log flush before the finalizer prints the answer: deferred
 	// functions run LIFO, so buffered server errors elevate below the window
@@ -205,7 +205,7 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 		select {
 		case completion, ok := <-completionsChan:
 			if !ok {
-				q.closeReasoningIfOpen(session)
+				q.closeReasoningIfOpen(ctx, session)
 				if len(result.ToolCalls) == 0 {
 					q.prepareFinalAnswerPop()
 				}
@@ -227,16 +227,16 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 				if q.reasoningActive && cast.ReasoningContent == "" {
 					cast.ReasoningContent = q.reasoningBuf.String()
 				}
-				q.closeReasoningIfOpen(session)
+				q.closeReasoningIfOpen(ctx, session)
 				result.ToolCalls = append(result.ToolCalls, cast)
 			case string:
-				q.closeReasoningIfOpen(session)
+				q.closeReasoningIfOpen(ctx, session)
 				if err := q.handleTokenForSession(session, cast); err != nil {
 					return ModelStepResult{}, err
 				}
 			case error:
 				if errors.Is(cast, context.Canceled) || errors.Is(cast, io.EOF) {
-					q.closeReasoningIfOpen(session)
+					q.closeReasoningIfOpen(ctx, session)
 					result.EndedNormally = true
 					result.AssistantText = session.PendingTextString()
 					result.Usage = q.currentTokenUsage()
@@ -279,7 +279,7 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 				}
 				q.appendReasoning(cast.Content)
 			case models.StopEvent:
-				q.closeReasoningIfOpen(session)
+				q.closeReasoningIfOpen(ctx, session)
 				result.AssistantText = session.PendingTextString()
 				result.Usage = q.currentTokenUsage()
 				if len(result.ToolCalls) > 0 {
@@ -320,7 +320,7 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 				return ModelStepResult{}, fmt.Errorf("drain mcp logs: %w", err)
 			}
 		case <-ctx.Done():
-			q.closeReasoningIfOpen(session)
+			q.closeReasoningIfOpen(ctx, session)
 			result.StopRequested = true
 			result.AssistantText = session.PendingTextString()
 			result.Usage = q.currentTokenUsage()

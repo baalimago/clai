@@ -3,6 +3,8 @@ package text
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"log/slog"
 	"os"
 	"path"
 	"strings"
@@ -167,5 +169,89 @@ func Test_Querier_NewQuerier_dimsBoundToOutputWriter(t *testing.T) {
 	}
 	if q.out == nil {
 		t.Fatal("querier output writer must be set")
+	}
+}
+
+// recordingToolCallRecorder is a fake ToolCallRecorder that records every
+// invocation. It pairs with recordingCallUsageRecorder (session_runner_test.go)
+// for the AgentSettings plumbing tests.
+type recordingToolCallRecorder struct {
+	calls []ToolCall
+}
+
+func (r *recordingToolCallRecorder) RecordToolCall(_ context.Context, call ToolCall) error {
+	r.calls = append(r.calls, call)
+	return nil
+}
+
+// TestNewQuerier_AgentSettings proves NewQuerier copies the whole AgentSettings
+// pointer and sources both recorder hooks from it (worklog 2026-08-15-agent-slog-output, D7). A nil AgentSettings
+// (the CLI and pkg/text paths) keeps the querier recorders nil and logging
+// disabled.
+func TestNewQuerier_AgentSettings(t *testing.T) {
+	// Avoid races with the cost manager error logger goroutine in NewQuerier.
+	t.Setenv("CLAI_DISABLE_COST_ERR_LOG_GOROUTINE", "1")
+
+	model := "mock"
+	tmpDir := t.TempDir()
+	confDir := path.Join(tmpDir, ".clai")
+	if err := os.Mkdir(confDir, os.FileMode(0o755)); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	saved, err := json.Marshal(MockQuerier{Somefield: "somevalue"})
+	if err != nil {
+		t.Fatalf("marshal mock: %v", err)
+	}
+	if err := os.WriteFile(path.Join(confDir, "mock_mock_mock.json"), saved, os.FileMode(0o755)); err != nil {
+		t.Fatalf("write mock config: %v", err)
+	}
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	usageRec := &recordingCallUsageRecorder{}
+	toolRec := &recordingToolCallRecorder{}
+	agentSettings := &AgentSettings{
+		Logger:           logger,
+		Level:            slog.LevelWarn,
+		RuneLimit:        42,
+		UsageRecorder:    usageRec,
+		ToolCallRecorder: toolRec,
+	}
+	conf := Configurations{
+		Model:         model,
+		ConfigDir:     confDir,
+		Out:           &strings.Builder{},
+		AgentSettings: agentSettings,
+	}
+	q, err := NewQuerier(context.Background(), conf, &MockQuerier{})
+	if err != nil {
+		t.Fatalf("NewQuerier: %v", err)
+	}
+	if q.agentSettings != agentSettings {
+		t.Fatalf("agentSettings: got %v, want the configured pointer", q.agentSettings)
+	}
+	if q.callUsageRecorder != usageRec {
+		t.Fatalf("callUsageRecorder: got %v, want the AgentSettings recorder", q.callUsageRecorder)
+	}
+	if q.toolCallRecorder != toolRec {
+		t.Fatalf("toolCallRecorder: got %v, want the AgentSettings recorder", q.toolCallRecorder)
+	}
+
+	// A nil AgentSettings keeps every channel disabled.
+	plain, err := NewQuerier(context.Background(), Configurations{
+		Model:     model,
+		ConfigDir: confDir,
+		Out:       &strings.Builder{},
+	}, &MockQuerier{})
+	if err != nil {
+		t.Fatalf("NewQuerier (nil AgentSettings): %v", err)
+	}
+	if plain.agentSettings != nil {
+		t.Fatalf("expected nil agentSettings, got %v", plain.agentSettings)
+	}
+	if plain.callUsageRecorder != nil {
+		t.Fatalf("expected nil callUsageRecorder, got %v", plain.callUsageRecorder)
+	}
+	if plain.toolCallRecorder != nil {
+		t.Fatalf("expected nil toolCallRecorder, got %v", plain.toolCallRecorder)
 	}
 }

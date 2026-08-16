@@ -63,7 +63,7 @@ func (e toolExecutor[C]) ExecuteBatch(ctx context.Context, session *QuerySession
 		return nil
 	}
 	plans := q.newStoploss().PreflightToolCallBudget(session, planned)
-	if err := e.finalizeAssistantTextBeforeToolCall(session, planned[0]); err != nil {
+	if err := e.finalizeAssistantTextBeforeToolCall(ctx, session, planned[0]); err != nil {
 		return fmt.Errorf("finalize assistant text before tool call: %w", err)
 	}
 	// load_skill self-emits its assistant tool-call at execution time (the
@@ -98,7 +98,7 @@ func (e toolExecutor[C]) ExecuteBatch(ctx context.Context, session *QuerySession
 		for _, plan := range plans[start:end] {
 			nonSkill = append(nonSkill, plan.call)
 		}
-		if err := e.emitAssistantToolCalls(session, nonSkill); err != nil {
+		if err := e.emitAssistantToolCalls(ctx, session, nonSkill); err != nil {
 			return err
 		}
 		for _, plan := range plans[start:end] {
@@ -124,11 +124,11 @@ func (e toolExecutor[C]) ExecuteBatch(ctx context.Context, session *QuerySession
 func (e toolExecutor[C]) runPlannedCall(ctx context.Context, session *QuerySession, plan toolCallBudgetPlan) error {
 	if !plan.allowed {
 		if plan.call.Name == string(pub_models.LoadSkillTool) {
-			if err := e.emitAssistantToolCall(session, plan.call); err != nil {
+			if err := e.emitAssistantToolCall(ctx, session, plan.call); err != nil {
 				return err
 			}
 		}
-		return e.emitToolResult(session, plan.call, plan.out)
+		return e.emitToolResult(ctx, session, plan.call, plan.out)
 	}
 	if plan.call.Name == string(pub_models.LoadSkillTool) {
 		return e.executeLoadSkill(ctx, session, plan.call)
@@ -148,7 +148,7 @@ func (e toolExecutor[C]) runPlannedCall(ctx context.Context, session *QuerySessi
 		out = tools.Invoke(ctx, plan.call)
 		e.recordToolCall(ctx, plan.call.Name, startedAt, out)
 	}
-	return e.emitToolResult(session, plan.call, plan.prefix+out)
+	return e.emitToolResult(ctx, session, plan.call, plan.prefix+out)
 }
 
 // recordToolCall reports one executed tool invocation to the configured
@@ -183,11 +183,11 @@ func toolCallError(out string) error {
 // appends the model-safe version to the chat history. The model-safe message
 // omits the PrettyPrint content so the model does not learn the "Call: ..."
 // text format, which causes hallucinations.
-func (e toolExecutor[C]) emitAssistantToolCall(session *QuerySession, call pub_models.Call) error {
-	return e.emitAssistantToolCalls(session, []pub_models.Call{call})
+func (e toolExecutor[C]) emitAssistantToolCall(ctx context.Context, session *QuerySession, call pub_models.Call) error {
+	return e.emitAssistantToolCalls(ctx, session, []pub_models.Call{call})
 }
 
-func (e toolExecutor[C]) emitAssistantToolCalls(session *QuerySession, calls []pub_models.Call) error {
+func (e toolExecutor[C]) emitAssistantToolCalls(ctx context.Context, session *QuerySession, calls []pub_models.Call) error {
 	q := e.querier
 	if len(calls) == 0 {
 		return nil
@@ -197,6 +197,10 @@ func (e toolExecutor[C]) emitAssistantToolCalls(session *QuerySession, calls []p
 		ToolCalls: calls,
 	}
 	for _, call := range calls {
+		// One tool_call record per declared call (worklog 2026-08-15-agent-slog-output, Phase 3). The model-safe
+		// message carries the raw call; the log carries the human-facing
+		// PrettyPrint text and the tool name.
+		q.logMessage(ctx, "tool_call", call.PrettyPrint(), call.Name)
 		if modelSafe.ReasoningContent == "" {
 			modelSafe.ReasoningContent = call.ReasoningContent
 		}
@@ -220,7 +224,7 @@ func (e toolExecutor[C]) emitAssistantToolCalls(session *QuerySession, calls []p
 
 // emitToolResult bounds the output, appends it as the tool-result turn, prints
 // it, and resets pending text — the shared tail of every tool-call exchange.
-func (e toolExecutor[C]) emitToolResult(session *QuerySession, call pub_models.Call, out string) error {
+func (e toolExecutor[C]) emitToolResult(ctx context.Context, session *QuerySession, call pub_models.Call, out string) error {
 	q := e.querier
 	displayOut := out
 	out = limitToolOutput(out, q.toolOutputRuneLimit)
@@ -228,6 +232,9 @@ func (e toolExecutor[C]) emitToolResult(session *QuerySession, call pub_models.C
 		out = fmt.Sprintf("<NO-OUTPUT> tool %s completed successfully but produced no stdout/stderr.", call.Name)
 		displayOut = out
 	}
+	// One tool_result record per emitted result; the display body (bounded,
+	// not the transcript copy) is what a human saw (worklog 2026-08-15-agent-slog-output, Phase 3).
+	q.logMessage(ctx, "tool_result", displayOut, call.Name)
 	outMsg := pub_models.Message{
 		Role:       "tool",
 		Content:    out,
@@ -270,10 +277,10 @@ func (e toolExecutor[C]) executeLoadSkill(ctx context.Context, session *QuerySes
 		return err
 	}
 	if loaded.ActivationErr != "" {
-		if err := e.emitAssistantToolCall(session, call); err != nil {
+		if err := e.emitAssistantToolCall(ctx, session, call); err != nil {
 			return err
 		}
-		return e.emitToolResult(session, call, "ERROR: "+loaded.ActivationErr)
+		return e.emitToolResult(ctx, session, call, "ERROR: "+loaded.ActivationErr)
 	}
 	if len(loaded.ActiveTools) > 0 {
 		q.baseTools = loaded.ActiveTools
@@ -314,7 +321,10 @@ func (e toolExecutor[C]) executeLoadSkill(ctx context.Context, session *QuerySes
 			userVisibleContent = body + "\n\n" + userVisibleContent
 		}
 	}
-	if err := e.emitAssistantToolCall(session, call); err != nil {
+	// The load_skill result record carries the final display body, after the
+	// warnings are folded in (worklog 2026-08-15-agent-slog-output, Phase 3).
+	q.logMessage(ctx, "tool_result", userVisibleContent, string(pub_models.LoadSkillTool))
+	if err := e.emitAssistantToolCall(ctx, session, call); err != nil {
 		return err
 	}
 	// Skill bodies are persisted and displayed in full (no output limit, no
@@ -366,7 +376,7 @@ func formatSkillOutputForDisplay(loaded LoadedSkillRuntime) string {
 	)
 }
 
-func (e toolExecutor[C]) finalizeAssistantTextBeforeToolCall(session *QuerySession, call pub_models.Call) error {
+func (e toolExecutor[C]) finalizeAssistantTextBeforeToolCall(ctx context.Context, session *QuerySession, call pub_models.Call) error {
 	if session == nil {
 		return errors.New("session is nil")
 	}
@@ -376,15 +386,15 @@ func (e toolExecutor[C]) finalizeAssistantTextBeforeToolCall(session *QuerySessi
 	}
 	q := e.querier
 	if q.usesActivityViewport() {
-		return e.finalizeAssistantTextRolling(session, pending, call)
+		return e.finalizeAssistantTextRolling(ctx, session, pending, call)
 	}
-	return e.finalizeAssistantTextPlain(session, pending, call)
+	return e.finalizeAssistantTextPlain(ctx, session, pending, call)
 }
 
 // finalizeAssistantTextPlain finalizes assistant prose for non-rolling
 // display: the streamed text is cleared and re-printed as one proper message
 // above the upcoming tool activity. Echoed tool-call text is dropped.
-func (e toolExecutor[C]) finalizeAssistantTextPlain(session *QuerySession, pending string, call pub_models.Call) error {
+func (e toolExecutor[C]) finalizeAssistantTextPlain(ctx context.Context, session *QuerySession, pending string, call pub_models.Call) error {
 	q := e.querier
 	if !q.rawDisplay() && !q.structuredOutput && q.dims.Width > 0 {
 		utils.UpdateMessageTerminalMetadata(pending, &session.Line, &session.LineCount, q.dims.Width)
@@ -403,6 +413,8 @@ func (e toolExecutor[C]) finalizeAssistantTextPlain(session *QuerySession, pendi
 		q.lineCount = 0
 		return nil
 	}
+	// Finalized, non-echoed prose is one completed assistant message (worklog 2026-08-15-agent-slog-output, Phase 3).
+	q.logMessage(ctx, "assistant", pending, "")
 	session.ResetPendingText()
 	session.FinalAssistantText = pending
 	q.fullMsg = pending
@@ -429,7 +441,7 @@ func (e toolExecutor[C]) finalizeAssistantTextPlain(session *QuerySession, pendi
 // window is active. The prose already lives inside the window (or is moved
 // into it), so nothing is re-printed outside the window. Echoed tool-call text
 // is dropped from the window and the transcript.
-func (e toolExecutor[C]) finalizeAssistantTextRolling(session *QuerySession, pending string, call pub_models.Call) error {
+func (e toolExecutor[C]) finalizeAssistantTextRolling(ctx context.Context, session *QuerySession, pending string, call pub_models.Call) error {
 	q := e.querier
 	q.ensureActivityViewport()
 	if isEchoedToolCallText(pending, call) {
@@ -452,6 +464,8 @@ func (e toolExecutor[C]) finalizeAssistantTextRolling(session *QuerySession, pen
 		q.lineCount = 0
 		return nil
 	}
+	// Finalized, non-echoed prose is one completed assistant message (worklog 2026-08-15-agent-slog-output, Phase 3).
+	q.logMessage(ctx, "assistant", pending, "")
 	if !q.activityViewport.TextBlockActive() {
 		// The prose was streamed before any activity created the window. Move
 		// it inside the window instead of leaving it outside it.
