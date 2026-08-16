@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -168,7 +167,6 @@ func TestAgentCmdBan_SingleAgentRefusal(t *testing.T) {
 		WithModel("mock_test"),
 		WithToolGlobs("cmd"),
 		WithCmdBanList("touch"),
-		WithOutputTo(io.Discard),
 	)
 
 	chat := queryCmdBanAgent(t, &a, "please tool_cmd")
@@ -191,12 +189,10 @@ func TestAgentCmdBan_SequentialPerRunIsolation(t *testing.T) {
 		WithModel("mock_test"),
 		WithToolGlobs("cmd"),
 		WithCmdBanList("touch"),
-		WithOutputTo(io.Discard),
 	)
 	permissive := newCmdBanAgent(t,
 		WithModel("mock_test"),
 		WithToolGlobs("cmd"),
-		WithOutputTo(io.Discard),
 	)
 
 	// Run 1: the banned agent refuses `touch <marker1>`.
@@ -260,13 +256,11 @@ func TestAgentCmdBan_ConcurrentDistinctLists(t *testing.T) {
 		WithModel("mock_test"),
 		WithToolGlobs("cmd"),
 		WithCmdBanList("touch"),
-		WithOutputTo(io.Discard),
 	)
 	rmAgent := newCmdBanAgent(t,
 		WithModel("mock_test"),
 		WithToolGlobs("async_cmd"),
 		WithCmdBanList("rm"),
-		WithOutputTo(io.Discard),
 	)
 
 	const iterations = 3
@@ -350,13 +344,11 @@ func TestAgentCmdBan_ConcurrentPermissiveAndBanned(t *testing.T) {
 	permissive := newCmdBanAgent(t,
 		WithModel("mock_test"),
 		WithToolGlobs("cmd"),
-		WithOutputTo(io.Discard),
 	)
 	banned := newCmdBanAgent(t,
 		WithModel("mock_test"),
 		WithToolGlobs("async_cmd"),
 		WithCmdBanList("touch"),
-		WithOutputTo(io.Discard),
 	)
 
 	ctx := context.Background()

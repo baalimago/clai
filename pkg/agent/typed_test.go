@@ -3,6 +3,8 @@ package agent
 import (
 	"context"
 	"fmt"
+	"io"
+	"log/slog"
 	"testing"
 
 	"github.com/baalimago/clai/pkg/text/models"
@@ -452,6 +454,51 @@ func TestTypedMetadataQuerier_Query(t *testing.T) {
 			t.Errorf("expected CostUSD=0.002, got %f", meta.CostUSD)
 		}
 	})
+}
+
+// TestTypedQuerier_WithLogger_propagates proves NewTyped and NewTypedMetadata
+// forward the three slog options into the wrapped agent's internal config:
+// the logger itself, the level, and the rune cap ride AgentSettings (worklog 2026-08-15-agent-slog-output, D7).
+func TestTypedQuerier_WithLogger_propagates(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	tq := NewTyped[struct{}](
+		WithLogger(logger),
+		WithSlogLevel(slog.LevelWarn),
+		WithSlogRuneLimit(7),
+	)
+	conf := tq.agent.asInternalConfig()
+	if conf.AgentSettings == nil {
+		t.Fatal("expected AgentSettings in internal config")
+	}
+	if conf.AgentSettings.Logger != logger {
+		t.Errorf("NewTyped did not forward the logger, got %v", conf.AgentSettings.Logger)
+	}
+	if conf.AgentSettings.Level != slog.LevelWarn {
+		t.Errorf("NewTyped did not forward the level, got %v", conf.AgentSettings.Level)
+	}
+	if conf.AgentSettings.RuneLimit != 7 {
+		t.Errorf("NewTyped did not forward the rune limit, got %d", conf.AgentSettings.RuneLimit)
+	}
+
+	tmq := NewTypedMetadata[struct{}](
+		WithLogger(logger),
+		WithSlogLevel(slog.LevelError),
+		WithSlogRuneLimit(9),
+	)
+	conf = tmq.agent.asInternalConfig()
+	if conf.AgentSettings == nil {
+		t.Fatal("expected AgentSettings in internal config")
+	}
+	if conf.AgentSettings.Logger != logger {
+		t.Errorf("NewTypedMetadata did not forward the logger, got %v", conf.AgentSettings.Logger)
+	}
+	if conf.AgentSettings.Level != slog.LevelError {
+		t.Errorf("NewTypedMetadata did not forward the level, got %v", conf.AgentSettings.Level)
+	}
+	if conf.AgentSettings.RuneLimit != 9 {
+		t.Errorf("NewTypedMetadata did not forward the rune limit, got %d", conf.AgentSettings.RuneLimit)
+	}
 }
 
 // stubChatQuerier returns a predefined chat, or an error if err is set.

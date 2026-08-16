@@ -1,6 +1,7 @@
 package text
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -74,7 +75,7 @@ func mostRecentCompletedUsage(completed []CompletedModelCall, final *pub_models.
 	return final
 }
 
-func (f sessionFinalizer[C]) Finalize(session *QuerySession) {
+func (f sessionFinalizer[C]) Finalize(ctx context.Context, session *QuerySession) {
 	if session == nil || session.Finalized {
 		return
 	}
@@ -154,10 +155,17 @@ func (f sessionFinalizer[C]) Finalize(session *QuerySession) {
 		return
 	}
 	if q.structuredOutput {
+		// The final-answer record fires before the structured display too:
+		// postProcessOutput's display branches are skipped on this path, but
+		// the agent-logging contract is unconditional (worklog
+		// 2026-08-15-agent-slog-output, Phase 3). The typed-agent path is
+		// always structured, so a missing record here would leave every
+		// embedded log without the run's final answer.
+		q.logMessage(ctx, "final_answer", stripThinkingBlocks(session.FinalAssistantText), "")
 		fmt.Fprintln(q.out, stripThinkingBlocks(session.FinalAssistantText))
 		return
 	}
-	q.postProcessOutput(pub_models.Message{
+	q.postProcessOutput(ctx, pub_models.Message{
 		Role:    "assistant",
 		Content: session.FinalAssistantText,
 	})

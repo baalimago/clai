@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"errors"
-	"io"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -77,7 +76,6 @@ func TestAgent_WithUsageRecorder(t *testing.T) {
 	a := newCmdBanAgent(t,
 		WithModel("mock_test"),
 		WithUsageRecorder(rec),
-		WithOutputTo(io.Discard),
 	)
 
 	queryCmdBanAgent(t, &a, "please reply")
@@ -124,7 +122,6 @@ func TestAgent_WithToolCallRecorder(t *testing.T) {
 		WithToolGlobs("ls"),
 		WithUsageRecorder(usageRec),
 		WithToolCallRecorder(toolRec),
-		WithOutputTo(io.Discard),
 	)
 
 	queryCmdBanAgent(t, &a, "please tool_ls")
@@ -176,7 +173,6 @@ func TestAgent_WithToolCallRecorder_Error(t *testing.T) {
 		WithToolGlobs("cmd"),
 		WithCmdBanList("touch"),
 		WithToolCallRecorder(toolRec),
-		WithOutputTo(io.Discard),
 	)
 
 	chat := queryCmdBanAgent(t, &a, "please tool_cmd")
@@ -215,7 +211,6 @@ func TestAgent_RecorderErrorAbsorption(t *testing.T) {
 		WithToolGlobs("ls"),
 		WithUsageRecorder(usageRec),
 		WithToolCallRecorder(toolRec),
-		WithOutputTo(io.Discard),
 	)
 
 	// A recorder error must not surface from Setup or Query.
@@ -237,29 +232,31 @@ func TestAgent_NoRecorder_Noop(t *testing.T) {
 	a := newCmdBanAgent(t,
 		WithModel("mock_test"),
 		WithToolGlobs("ls"),
-		WithOutputTo(io.Discard),
 	)
 
 	queryCmdBanAgent(t, &a, "please tool_ls")
 }
 
 // TestAgent_RecorderOptions_PropagateToInternalConfig proves both recorder
-// options reach text.Configurations via asInternalConfig, and that the
+// options reach text.Configurations via AgentSettings (worklog 2026-08-15-agent-slog-output, D7), and that the
 // defaults stay nil.
 func TestAgent_RecorderOptions_PropagateToInternalConfig(t *testing.T) {
 	usageRec := &recordingUsageRecorder{}
 	toolRec := &recordingToolRecorder{}
 	a := New(WithUsageRecorder(usageRec), WithToolCallRecorder(toolRec))
 	conf := a.asInternalConfig()
-	if conf.UsageRecorder != usageRec {
-		t.Fatalf("expected UsageRecorder to propagate, got %v", conf.UsageRecorder)
+	if conf.AgentSettings == nil {
+		t.Fatal("expected AgentSettings in internal config")
 	}
-	if conf.ToolCallRecorder != toolRec {
-		t.Fatalf("expected ToolCallRecorder to propagate, got %v", conf.ToolCallRecorder)
+	if conf.AgentSettings.UsageRecorder != usageRec {
+		t.Fatalf("expected AgentSettings.UsageRecorder to propagate, got %v", conf.AgentSettings.UsageRecorder)
+	}
+	if conf.AgentSettings.ToolCallRecorder != toolRec {
+		t.Fatalf("expected AgentSettings.ToolCallRecorder to propagate, got %v", conf.AgentSettings.ToolCallRecorder)
 	}
 
 	plain := New()
-	if plain.asInternalConfig().UsageRecorder != nil || plain.asInternalConfig().ToolCallRecorder != nil {
+	if plain.asInternalConfig().AgentSettings.UsageRecorder != nil || plain.asInternalConfig().AgentSettings.ToolCallRecorder != nil {
 		t.Fatal("expected nil recorders in the internal config by default")
 	}
 }

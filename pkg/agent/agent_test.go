@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"os"
 	"path"
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 
@@ -81,6 +81,40 @@ func TestNew(t *testing.T) {
 		a := New()
 		if a.model == "changed" {
 			t.Errorf("global state was mutated, model is still 'changed'")
+		}
+	})
+
+	t.Run("it should default the slog channel", func(t *testing.T) {
+		// The slog channel is disabled by default (nil logger); the level
+		// and rune cap ship enabled so a caller attaching only a logger gets
+		// Debug-level, 200-rune records (worklog 2026-08-15-agent-slog-output, D2, D3).
+		a := New()
+		if a.logger != nil {
+			t.Errorf("expected nil logger by default, got %v", a.logger)
+		}
+		if a.slogLevel != slog.LevelDebug {
+			t.Errorf("expected default slog level Debug, got %v", a.slogLevel)
+		}
+		if a.slogRuneLimit != 200 {
+			t.Errorf("expected default slog rune limit 200, got %d", a.slogRuneLimit)
+		}
+	})
+
+	t.Run("it should apply the slog options", func(t *testing.T) {
+		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+		a := New(
+			WithLogger(logger),
+			WithSlogLevel(slog.LevelWarn),
+			WithSlogRuneLimit(5),
+		)
+		if a.logger != logger {
+			t.Errorf("expected logger to be applied, got %v", a.logger)
+		}
+		if a.slogLevel != slog.LevelWarn {
+			t.Errorf("expected slog level Warn, got %v", a.slogLevel)
+		}
+		if a.slogRuneLimit != 5 {
+			t.Errorf("expected slog rune limit 5, got %d", a.slogRuneLimit)
 		}
 	})
 }
@@ -157,33 +191,10 @@ func TestAgent_Setup(t *testing.T) {
 	})
 }
 
-func TestAgent_Setup_receives_Out_in_config(t *testing.T) {
-	// When WithOutputTo is used, the custom writer must reach
-	// the querierCreator via Configurations.Out.
-	custom := new(stringsBuilderWriter)
-	var capturedOut io.Writer
-
-	a := New(WithOutputTo(custom))
-	a.cfgDir = t.TempDir()
-	a.querierCreator = func(ctx context.Context, conf text.Configurations) (priv_models.Querier, error) {
-		capturedOut = conf.Out
-		return &mockChatQuerier{}, nil
-	}
-
-	err := a.Setup(context.Background())
-	if err != nil {
-		t.Fatalf("Setup failed: %v", err)
-	}
-
-	if capturedOut != custom {
-		t.Errorf("expected Configurations.Out to be the custom writer, got %v", capturedOut)
-	}
-}
-
-func TestAgent_Setup_receives_stdout_when_no_WithOutputTo(t *testing.T) {
-	// The defaultConf sets out: os.Stdout. Verify that when no
-	// WithOutputTo is passed, the querierCreator receives os.Stdout
-	// (not nil), preserving backward compatibility.
+func TestAgent_Setup_receives_io_Discard(t *testing.T) {
+	// Library mode is silent on stdout (worklog 2026-08-15-agent-slog-output, D4): regardless of options, the
+	// querierCreator must receive Configurations.Out == io.Discard so
+	// embedded use never writes raw terminal output.
 	var capturedOut io.Writer
 
 	a := New()
@@ -198,8 +209,8 @@ func TestAgent_Setup_receives_stdout_when_no_WithOutputTo(t *testing.T) {
 		t.Fatalf("Setup failed: %v", err)
 	}
 
-	if capturedOut != os.Stdout {
-		t.Errorf("expected Configurations.Out to be os.Stdout by default, got %v", capturedOut)
+	if capturedOut != io.Discard {
+		t.Errorf("expected Configurations.Out to be io.Discard, got %v", capturedOut)
 	}
 }
 
@@ -242,22 +253,73 @@ func TestAgent_asInternalConfig(t *testing.T) {
 	if !conf.SaveReplyAsConv {
 		t.Error("expected SaveReplyAsConv to be true")
 	}
-	// Verify Out is os.Stdout by default (the Agent's defaultConf sets out: os.Stdout).
-	// This preserves backward-compatible behavior: with no WithOutputTo,
-	// output goes to stdout.
-	if conf.Out != os.Stdout {
-		t.Errorf("expected Out to be os.Stdout by default, got %v", conf.Out)
+	// Verify Out is io.Discard: library mode is silent on stdout and the
+	// slog logger is the sole embedded output channel (worklog 2026-08-15-agent-slog-output, D4).
+	if conf.Out != io.Discard {
+		t.Errorf("expected Out to be io.Discard, got %v", conf.Out)
 	}
 }
 
-func TestAgent_WithOutputTo_propagates(t *testing.T) {
-	// Verify that WithOutputTo propagates the custom writer to
-	// the internal Configurations so the querier can use it.
-	custom := new(stringsBuilderWriter)
-	a := New(WithOutputTo(custom))
+func TestAgent_WithLogger_propagates(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	a := New(WithLogger(logger))
 	conf := a.asInternalConfig()
-	if conf.Out != custom {
-		t.Errorf("expected Out to be the custom writer, got %v", conf.Out)
+	if conf.AgentSettings == nil {
+		t.Fatal("expected AgentSettings in internal config")
+	}
+	if conf.AgentSettings.Logger != logger {
+		t.Errorf("expected AgentSettings.Logger to be the attached logger, got %v", conf.AgentSettings.Logger)
+	}
+}
+
+func TestAgent_WithSlogLevel_propagates(t *testing.T) {
+	a := New(WithSlogLevel(slog.LevelWarn))
+	conf := a.asInternalConfig()
+	if conf.AgentSettings == nil {
+		t.Fatal("expected AgentSettings in internal config")
+	}
+	if conf.AgentSettings.Level != slog.LevelWarn {
+		t.Errorf("expected AgentSettings.Level Warn, got %v", conf.AgentSettings.Level)
+	}
+}
+
+func TestAgent_WithSlogRuneLimit_propagates(t *testing.T) {
+	a := New(WithSlogRuneLimit(42))
+	conf := a.asInternalConfig()
+	if conf.AgentSettings == nil {
+		t.Fatal("expected AgentSettings in internal config")
+	}
+	if conf.AgentSettings.RuneLimit != 42 {
+		t.Errorf("expected AgentSettings.RuneLimit 42, got %d", conf.AgentSettings.RuneLimit)
+	}
+}
+
+func TestAgent_WithLogger_nil_disables(t *testing.T) {
+	// WithLogger(nil) must leave the channel disabled: the grouped pointer
+	// still exists, but Logger stays nil (the error coverage contract).
+	a := New(WithLogger(nil))
+	conf := a.asInternalConfig()
+	if conf.AgentSettings == nil {
+		t.Fatal("expected AgentSettings in internal config")
+	}
+	if conf.AgentSettings.Logger != nil {
+		t.Errorf("expected nil AgentSettings.Logger, got %v", conf.AgentSettings.Logger)
+	}
+}
+
+func TestAgent_WithSlogRuneLimit_nonpositive_carried(t *testing.T) {
+	// WithSlogRuneLimit(0) and negative values are carried verbatim;
+	// worklog 2026-08-15-agent-slog-output D5 makes truncation treat <= 0 as
+	// no cap (the querier side, Phase 2).
+	for _, n := range []int{0, -7} {
+		a := New(WithSlogRuneLimit(n))
+		conf := a.asInternalConfig()
+		if conf.AgentSettings == nil {
+			t.Fatal("expected AgentSettings in internal config")
+		}
+		if conf.AgentSettings.RuneLimit != n {
+			t.Errorf("expected AgentSettings.RuneLimit %d, got %d", n, conf.AgentSettings.RuneLimit)
+		}
 	}
 }
 
@@ -324,28 +386,6 @@ func TestAgent_WithCmdBanList_PropagatesToInternalConfig(t *testing.T) {
 	plain := New()
 	if plain.asInternalConfig().CmdBan != nil {
 		t.Fatalf("expected nil CmdBan in internal config by default")
-	}
-}
-
-// stringsBuilderWriter is a minimal io.Writer backed by a strings.Builder for tests.
-type stringsBuilderWriter struct{ strings.Builder }
-
-func (w *stringsBuilderWriter) Write(p []byte) (int, error) {
-	return w.Builder.Write(p)
-}
-
-func (w *stringsBuilderWriter) String() string { return w.Builder.String() }
-
-func TestTypedQuerier_WithOutputTo_suppresses_stdout(t *testing.T) {
-	// A TypedQuerier with WithOutputTo(customWriter) must route its
-	// agent's output to that writer, never to os.Stdout.
-	custom := new(stringsBuilderWriter)
-	tq := NewTyped[struct{}](
-		WithOutputTo(custom),
-	).agent
-	conf := tq.asInternalConfig()
-	if conf.Out != custom {
-		t.Errorf("TypedQuerier did not propagate Out to internal config: got %v", conf.Out)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -72,15 +73,11 @@ type Configurations struct {
 	// MaxTokens <= 0 disables the stoploss (no handover injection).
 	Stoploss *Stoploss `json:"stoploss,omitempty"`
 
-	// UsageRecorder receives one CompletedModelCall per model step of a
-	// session (worklog 26-08-11-clai-prometheus-metrics). Nil keeps the
-	// noop path; a Record error is logged by the session runner and never
-	// aborts the run.
-	UsageRecorder pub_models.CallUsageRecorder `json:"-"`
-	// ToolCallRecorder receives one ToolCall per tool invocation. Nil
-	// keeps the noop path; a RecordToolCall error is logged and never
-	// aborts the run.
-	ToolCallRecorder pub_models.ToolCallRecorder `json:"-"`
+	// AgentSettings carries agent-only runtime settings (slog logger, level,
+	// rune cap, recorder hooks) from pkg/agent into the querier. json:"-"
+	// keeps it out of textConfig.json and the presence-based config merge
+	// (worklog 2026-08-15-agent-slog-output, D7).
+	AgentSettings *AgentSettings `json:"-"`
 
 	// Out writer. Normally stdout, but may also be a file when invoked as a package
 	Out io.Writer `json:"-"`
@@ -102,6 +99,17 @@ type Configurations struct {
 	// LookbackCWD is the canonical session working directory captured at setup,
 	// used as the default search anchor for search_conversations.
 	LookbackCWD string `json:"-"`
+}
+
+// AgentSettings carries agent-only runtime settings into the querier. It is
+// never serialized to textConfig.json; a nil Logger or recorder disables that
+// channel (worklog 2026-08-15-agent-slog-output, D7).
+type AgentSettings struct {
+	Logger           *slog.Logger
+	Level            slog.Level
+	RuneLimit        int
+	UsageRecorder    pub_models.CallUsageRecorder
+	ToolCallRecorder pub_models.ToolCallRecorder
 }
 
 // Stoploss is the token stoploss policy. MaxTokens <= 0 disables the

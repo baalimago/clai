@@ -66,7 +66,7 @@ type countingFinalizer struct {
 	last  *QuerySession
 }
 
-func (f *countingFinalizer) Finalize(session *QuerySession) {
+func (f *countingFinalizer) Finalize(_ context.Context, session *QuerySession) {
 	f.count++
 	f.last = session
 	if session == nil || session.Finalized {
@@ -821,7 +821,7 @@ func Test_toolExecutor_FinalizeAssistantTextBeforeToolCall_PreservesAssistantPro
 	session := &QuerySession{}
 	session.AppendPendingText("I will check that for you.")
 
-	err := toolExecutor[*MockQuerier]{querier: q}.finalizeAssistantTextBeforeToolCall(session, call)
+	err := toolExecutor[*MockQuerier]{querier: q}.finalizeAssistantTextBeforeToolCall(context.Background(), session, call)
 	if err != nil {
 		t.Fatalf("finalizeAssistantTextBeforeToolCall returned err: %v", err)
 	}
@@ -863,7 +863,7 @@ func Test_toolExecutor_FinalizeAssistantTextBeforeToolCall_DropsWhitespaceEquiva
 	session := &QuerySession{}
 	session.AppendPendingText(echoed)
 
-	err := toolExecutor[*MockQuerier]{querier: q}.finalizeAssistantTextBeforeToolCall(session, call)
+	err := toolExecutor[*MockQuerier]{querier: q}.finalizeAssistantTextBeforeToolCall(context.Background(), session, call)
 	if err != nil {
 		t.Fatalf("finalizeAssistantTextBeforeToolCall returned err: %v", err)
 	}

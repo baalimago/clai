@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path"
 	"strings"
@@ -35,9 +36,22 @@ type Agent struct {
 	usageRecorder    models.CallUsageRecorder
 	toolCallRecorder models.ToolCallRecorder
 
-	querierCreator func(ctx context.Context, conf text.Configurations) (priv_models.Querier, error)
+	// logger receives one slog record per completed message (assistant,
+	// reasoning, tool_call, tool_result, final_answer), truncated to
+	// slogRuneLimit runes. Nil (the default) disables the channel. Library
+	// mode stays silent on stdout regardless: asInternalConfig hardcodes
+	// Out to io.Discard, so the logger is the sole embedded output channel
+	// (worklog 2026-08-15-agent-slog-output, D4).
+	logger *slog.Logger
+	// slogLevel is the single caller-set level for every logged message; the
+	// kind attribute is how a caller filters finer (worklog 2026-08-15-agent-slog-output, D3). Default Debug.
+	slogLevel slog.Level
+	// slogRuneLimit caps every logged text to this many runes via a rune-safe
+	// head/tail split around the single-rune marker "…"; <= 0 means no cap
+	// (worklog 2026-08-15-agent-slog-output, D2, D5). Default 200.
+	slogRuneLimit int
 
-	out io.Writer
+	querierCreator func(ctx context.Context, conf text.Configurations) (priv_models.Querier, error)
 
 	querier priv_models.ChatQuerier
 }
@@ -54,7 +68,8 @@ var defaultConf = Agent{
 	tools:          make([]models.LLMTool, 0),
 	mcpServers:     make([]models.McpServer, 0),
 	querierCreator: internal.CreateTextQuerier,
-	out:            os.Stdout,
+	slogLevel:      slog.LevelDebug,
+	slogRuneLimit:  200,
 }
 
 type Option func(*Agent)
@@ -137,9 +152,33 @@ func WithMcpServers(mcpServers []models.McpServer) Option {
 	}
 }
 
-func WithOutputTo(out io.Writer) Option {
+// WithLogger attaches a *slog.Logger to the agent. The logger receives one
+// record per completed message (assistant, reasoning, tool_call,
+// tool_result, final_answer), truncated to WithSlogRuneLimit runes. nil (the
+// default) disables the channel. Library mode stays silent on stdout
+// regardless of this option: the querier's terminal display is discarded and
+// the logger is the sole embedded output channel.
+func WithLogger(l *slog.Logger) Option {
 	return func(a *Agent) {
-		a.out = out
+		a.logger = l
+	}
+}
+
+// WithSlogLevel sets the single level used for every logged message. The
+// default is slog.LevelDebug; the message kind is carried as the "kind"
+// attribute so callers can filter finer without per-kind levels.
+func WithSlogLevel(level slog.Level) Option {
+	return func(a *Agent) {
+		a.slogLevel = level
+	}
+}
+
+// WithSlogRuneLimit caps every logged message text to n runes with a rune-safe
+// head/tail split around the single-rune marker "…". The default is 200; a
+// value <= 0 disables the cap (the full text is logged unchanged).
+func WithSlogRuneLimit(n int) Option {
+	return func(a *Agent) {
+		a.slogRuneLimit = n
 	}
 }
 
@@ -207,9 +246,20 @@ func (a *Agent) asInternalConfig() text.Configurations {
 		RequestedToolGlobs: a.toolGlobs,
 		CmdBan:             a.cmdBan,
 		ResponseFormat:     a.responseFormat,
-		UsageRecorder:      a.usageRecorder,
-		ToolCallRecorder:   a.toolCallRecorder,
-		Out:                a.out,
+		// Library mode is silent on stdout: embedded use never writes raw
+		// terminal output. The slog logger (AgentSettings) is the sole
+		// embedded output channel (worklog 2026-08-15-agent-slog-output, D4).
+		Out: io.Discard,
+	}
+	// Agent-only settings ride one pointer (worklog 2026-08-15-agent-slog-output, D7): the slog logger, its level,
+	// the rune cap, and both recorder hooks. NewQuerier reads the recorders
+	// from this pointer; Configurations carries no loose recorder fields.
+	conf.AgentSettings = &text.AgentSettings{
+		Logger:           a.logger,
+		Level:            a.slogLevel,
+		RuneLimit:        a.slogRuneLimit,
+		UsageRecorder:    a.usageRecorder,
+		ToolCallRecorder: a.toolCallRecorder,
 	}
 	// A zero-value Stoploss must not create a non-nil internal pointer: the
 	// agent default stays unlimited (MaxTokens <= 0 disables the stoploss).
