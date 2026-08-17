@@ -167,7 +167,7 @@ func TestExecuteLoadSkill_LogsToolResult(t *testing.T) {
 	}
 	q := Querier[*MockQuerier]{
 		out:           &strings.Builder{},
-		skillLoader:   fakeSkillLoader{loaded: loaded},
+		tooling:       tooling{skillLoader: fakeSkillLoader{loaded: loaded}},
 		agentSettings: &AgentSettings{Logger: slog.New(h)},
 	}
 	session := &QuerySession{}

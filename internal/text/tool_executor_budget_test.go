@@ -32,7 +32,7 @@ func Test_applyToolCallBudget(t *testing.T) {
 
 	t.Run("within budget prefixes remaining count and increments", func(t *testing.T) {
 		maxCalls := 3
-		q := &Querier[*MockQuerier]{maxToolCalls: &maxCalls}
+		q := &Querier[*MockQuerier]{tooling: tooling{maxCalls: &maxCalls}}
 		ctrl := q.newStoploss()
 		session := &QuerySession{}
 
@@ -47,7 +47,7 @@ func Test_applyToolCallBudget(t *testing.T) {
 
 	t.Run("zero budget means unlimited", func(t *testing.T) {
 		zero := 0
-		q := &Querier[*MockQuerier]{maxToolCalls: &zero}
+		q := &Querier[*MockQuerier]{tooling: tooling{maxCalls: &zero}}
 		ctrl := q.newStoploss()
 		session := &QuerySession{}
 
@@ -62,7 +62,7 @@ func Test_applyToolCallBudget(t *testing.T) {
 
 	t.Run("over budget escalates and hard stops past the final warning", func(t *testing.T) {
 		maxCalls := 1
-		q := &Querier[*MockQuerier]{maxToolCalls: &maxCalls}
+		q := &Querier[*MockQuerier]{tooling: tooling{maxCalls: &maxCalls}}
 		ctrl := q.newStoploss()
 		session := &QuerySession{ToolCallsUsed: 1}
 

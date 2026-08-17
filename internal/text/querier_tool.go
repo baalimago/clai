@@ -61,10 +61,10 @@ func (q *Querier[C]) doToolCallLogic(ctx context.Context, call pub_models.Call) 
 		Chat:            q.chat,
 		ShouldSaveReply: q.shouldSaveReply,
 		Raw:             q.rawDisplay(),
-		ToolCallsUsed:   q.amToolCalls,
+		ToolCallsUsed:   q.tooling.calls,
 	}
 	err := toolExecutor[C]{querier: q}.Execute(ctx, session, call)
 	q.chat = session.Chat
-	q.amToolCalls = session.ToolCallsUsed
+	q.tooling.calls = session.ToolCallsUsed
 	return err
 }

@@ -209,8 +209,8 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	querier.dirReplyMode = userConf.DirReplyMode
 	querier.useLookback = userConf.UseLookback
 	querier.lookbackCWD = userConf.LookbackCWD
-	querier.toolOutputRuneLimit = userConf.ToolOutputRuneLimit
-	querier.maxToolCalls = userConf.MaxToolCalls
+	querier.tooling.outputRuneLimit = userConf.ToolOutputRuneLimit
+	querier.tooling.maxCalls = userConf.MaxToolCalls
 	querier.stoploss = userConf.Stoploss
 	// Agent-only runtime settings (slog logger, level, rune cap, recorder
 	// hooks) ride one pointer (worklog 2026-08-15-agent-slog-output, D7). nil (the CLI and pkg/text paths) keeps
@@ -218,7 +218,7 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	// longer exist.
 	if userConf.AgentSettings != nil {
 		querier.callUsageRecorder = userConf.AgentSettings.UsageRecorder
-		querier.toolCallRecorder = userConf.AgentSettings.ToolCallRecorder
+		querier.tooling.callRecorder = userConf.AgentSettings.ToolCallRecorder
 		querier.agentSettings = userConf.AgentSettings
 	}
 	querier.out = output
@@ -257,9 +257,10 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	// dimensions.Fallback, so no width-aware path ever queries the terminal
 	// again.
 	querier.dims = utils.SessionDimensions(output)
-	querier.skillLoader = userConf.SkillLoader
-	querier.baseTools = userConf.BaseTools
-	querier.registeredTools = userConf.RegisteredTools
+	querier.tooling.skillLoader = userConf.SkillLoader
+	querier.tooling.base = userConf.BaseTools
+	querier.tooling.run = userConf.BaseTools
+	querier.tooling.registered = userConf.RegisteredTools
 
 	// Propagate response format to the model if it supports it
 	if userConf.ResponseFormat != nil {

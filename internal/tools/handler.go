@@ -71,9 +71,28 @@ func registerLocalTools() {
 	Registry.Set(tools.Date.Specification().Name, tools.Date)
 }
 
-// Invoke the call, and gather both error and output in the same string
+// Invoke the call, and gather both error and output in the same string.
+// It resolves against the process-global Registry and exists for the CLI
+// tool listing path and tests; agent runs dispatch through InvokeWith so
+// their per-run tool instances are used.
 func Invoke(ctx context.Context, call pub_models.Call) string {
-	t, exists := Registry.Get(call.Name)
+	return InvokeWith(ctx, call, nil)
+}
+
+// InvokeWith resolves the call against toolset first, falling back to the
+// global Registry. toolset is the per-run tool table owned by one agent
+// run; resolving it before the process-global registry keeps stateful tools
+// (MCP tools, WithTools instances) scoped to the agent that registered them
+// instead of whatever instance another concurrent Setup wrote last.
+func InvokeWith(ctx context.Context, call pub_models.Call, toolset map[string]pub_models.LLMTool) string {
+	var t pub_models.LLMTool
+	var exists bool
+	if toolset != nil {
+		t, exists = toolset[call.Name]
+	}
+	if !exists {
+		t, exists = Registry.Get(call.Name)
+	}
 	if !exists {
 		return "ERROR: unknown tool call: " + call.Name
 	}

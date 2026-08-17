@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/baalimago/clai/internal/models"
@@ -23,7 +24,7 @@ import (
 func Test_maxToolCalls(t *testing.T) {
 	amToolCalls := 3
 	q := Querier[mockCompleter]{
-		maxToolCalls: &amToolCalls,
+		tooling: tooling{maxCalls: &amToolCalls},
 	}
 
 	getLastMsgStr := func(m []pub_models.Message) string {
@@ -128,7 +129,7 @@ func Test_toolExecutor_NormalizesEmptyToolOutput(t *testing.T) {
 	session := &QuerySession{}
 	call := pub_models.Call{ID: "call-1"}
 
-	out := limitToolOutput("", q.toolOutputRuneLimit)
+	out := limitToolOutput("", q.tooling.outputRuneLimit)
 	if out != "" {
 		t.Fatalf("expected empty output before normalization, got %q", out)
 	}
@@ -181,7 +182,7 @@ func Test_toolExecutor_Execute_EmptyNonAsyncToolOutputBecomesDescriptiveMessage(
 func Test_toolExecutor_Execute_LargeToolOutputStoresTranscriptButCompactsDisplay(t *testing.T) {
 	internaltools.Init()
 	var printed bytes.Buffer
-	q := Querier[*MockQuerier]{out: &printed, toolOutputRuneLimit: 10000, dims: dimensions.Dimensions{Width: 80, Height: 24}}
+	q := Querier[*MockQuerier]{out: &printed, tooling: tooling{outputRuneLimit: 10000}, dims: dimensions.Dimensions{Width: 80, Height: 24}}
 	session := &QuerySession{}
 	dir := t.TempDir()
 	for i := range 20 {
@@ -226,7 +227,7 @@ func Test_toolExecutor_EmitToolResult_CompactsMCPOutputAndRetainsTranscript(t *t
 
 func Test_toolExecutor_EmitToolResult_RawDisplayKeepsCompleteResult(t *testing.T) {
 	var printed bytes.Buffer
-	q := Querier[*MockQuerier]{Raw: true, out: &printed, toolOutputRuneLimit: 4}
+	q := Querier[*MockQuerier]{Raw: true, out: &printed, tooling: tooling{outputRuneLimit: 4}}
 	session := &QuerySession{}
 	result := "complete tool result"
 	call := pub_models.Call{ID: "call-1", Name: "test"}
@@ -241,13 +242,13 @@ func Test_toolExecutor_EmitToolResult_RawDisplayKeepsCompleteResult(t *testing.T
 
 func Test_toolExecutor_ExecuteLoadSkill_PrintsSummary(t *testing.T) {
 	var out bytes.Buffer
-	q := Querier[*MockQuerier]{out: &out, skillLoader: fakeSkillLoader{
+	q := Querier[*MockQuerier]{out: &out, tooling: tooling{skillLoader: fakeSkillLoader{
 		loaded: LoadedSkillRuntime{
 			Name:         "review",
 			SourceClass:  "project",
 			RenderedBody: "skill body",
 		},
-	}}
+	}}}
 	session := &QuerySession{}
 	inputs := pub_models.Input{"skill": "review"}
 	call := pub_models.Call{ID: "call-1", Name: "load_skill", Inputs: &inputs}
@@ -260,14 +261,14 @@ func Test_toolExecutor_ExecuteLoadSkill_PrintsSummary(t *testing.T) {
 func Test_toolExecutor_ExecuteLoadSkill_TruncatesUserVisibleOutputUnlessRaw(t *testing.T) {
 	t.Run("non_raw", func(t *testing.T) {
 		var out bytes.Buffer
-		q := Querier[*MockQuerier]{out: &out, dims: dimensions.Dimensions{Width: 80, Height: 24}, skillLoader: fakeSkillLoader{
+		q := Querier[*MockQuerier]{out: &out, dims: dimensions.Dimensions{Width: 80, Height: 24}, tooling: tooling{skillLoader: fakeSkillLoader{
 			loaded: LoadedSkillRuntime{
 				Name:         "review",
 				SourceClass:  "default",
 				RenderedBody: "full skill body\nwith details",
 				Description:  "concise",
 			},
-		}}
+		}}}
 		session := &QuerySession{}
 		inputs := pub_models.Input{"skill": "review"}
 		call := pub_models.Call{ID: "call-1", Name: "load_skill", Inputs: &inputs}
@@ -293,13 +294,13 @@ func Test_toolExecutor_ExecuteLoadSkill_TruncatesUserVisibleOutputUnlessRaw(t *t
 
 	t.Run("raw", func(t *testing.T) {
 		var out bytes.Buffer
-		q := Querier[*MockQuerier]{out: &out, Raw: true, skillLoader: fakeSkillLoader{
+		q := Querier[*MockQuerier]{out: &out, Raw: true, tooling: tooling{skillLoader: fakeSkillLoader{
 			loaded: LoadedSkillRuntime{
 				Name:         "review",
 				SourceClass:  "default",
 				RenderedBody: "## Title\nDescription: concise\nBody line",
 			},
-		}}
+		}}}
 		session := &QuerySession{}
 		inputs := pub_models.Input{"skill": "review"}
 		call := pub_models.Call{ID: "call-1", Name: "load_skill", Inputs: &inputs}
@@ -314,9 +315,9 @@ func Test_toolExecutor_ExecuteLoadSkill_TruncatesUserVisibleOutputUnlessRaw(t *t
 }
 
 func Test_toolExecutor_ExecuteLoadSkill_ActivationCapAppendsError(t *testing.T) {
-	q := Querier[*MockQuerier]{skillLoader: fakeSkillLoader{
+	q := Querier[*MockQuerier]{tooling: tooling{skillLoader: fakeSkillLoader{
 		loaded: LoadedSkillRuntime{ActivationErr: "skill activation cap exceeded: maxActivatedSkills=1"},
-	}}
+	}}}
 	session := &QuerySession{}
 	inputs := pub_models.Input{"skill": "review"}
 	call := pub_models.Call{ID: "call-1", Name: "load_skill", Inputs: &inputs}
@@ -332,16 +333,18 @@ func Test_toolExecutor_ExecuteLoadSkill_ActivationCapAppendsError(t *testing.T) 
 func Test_toolExecutor_ExecuteLoadSkill_RegistersNewlyEnabledLocalToolsOnce(t *testing.T) {
 	model := &toolRegisteringCompleter{}
 	q := Querier[*toolRegisteringCompleter]{
-		Model:           model,
-		registeredTools: map[string]struct{}{"load_skill": {}},
-		skillLoader: fakeSkillLoader{loaded: LoadedSkillRuntime{
-			Name:         "review",
-			RenderedBody: "Body",
-			EnabledTools: []string{"rg", "rg"},
-			ActiveTools: map[string]pub_models.LLMTool{
-				"rg": setupToolsTestTool{name: "rg"},
-			},
-		}},
+		Model: model,
+		tooling: tooling{
+			registered: map[string]struct{}{"load_skill": {}},
+			skillLoader: fakeSkillLoader{loaded: LoadedSkillRuntime{
+				Name:         "review",
+				RenderedBody: "Body",
+				EnabledTools: []string{"rg", "rg"},
+				ActiveTools: map[string]pub_models.LLMTool{
+					"rg": setupToolsTestTool{name: "rg"},
+				},
+			}},
+		},
 	}
 	session := &QuerySession{}
 	inputs := pub_models.Input{"skill": "review"}
@@ -373,6 +376,61 @@ func (*toolRegisteringCompleter) StreamCompletions(context.Context, pub_models.C
 
 func (c *toolRegisteringCompleter) RegisterTool(tool pub_models.LLMTool) {
 	c.registered = append(c.registered, tool.Specification().Name)
+}
+
+type instanceRecordingTool struct {
+	name string
+	id   string
+	mu   sync.Mutex
+	last string
+}
+
+func (t *instanceRecordingTool) Call(pub_models.Input) (string, error) {
+	t.mu.Lock()
+	t.last = t.id
+	t.mu.Unlock()
+	return t.id, nil
+}
+
+func (t *instanceRecordingTool) Specification() pub_models.Specification {
+	return pub_models.Specification{Name: t.name}
+}
+
+func (t *instanceRecordingTool) calledID() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.last
+}
+
+// Test_toolExecutor_DispatchUsesPerRunToolTable pins the per-run tool dispatch:
+// two queriers that each own a same-named stateful tool must each call their own
+// instance, never the last instance written to the process-global registry.
+func Test_toolExecutor_DispatchUsesPerRunToolTable(t *testing.T) {
+	internaltools.WithTestRegistry(t, func() {
+		toolA := &instanceRecordingTool{name: "submit_meeting", id: "A"}
+		toolB := &instanceRecordingTool{name: "submit_meeting", id: "B"}
+		// Simulate the last-writer-wins global registry: another agent's
+		// instance is what the process-global registry resolves to.
+		internaltools.Registry.Set("submit_meeting", toolB)
+
+		qA := Querier[*MockQuerier]{out: io.Discard, tooling: tooling{run: map[string]pub_models.LLMTool{"submit_meeting": toolA}}}
+		qB := Querier[*MockQuerier]{out: io.Discard, tooling: tooling{run: map[string]pub_models.LLMTool{"submit_meeting": toolB}}}
+		call := pub_models.Call{ID: "c1", Name: "submit_meeting", Inputs: &pub_models.Input{}}
+
+		if err := (toolExecutor[*MockQuerier]{querier: &qA}).Execute(context.Background(), &QuerySession{}, call); err != nil {
+			t.Fatalf("qA execute: %v", err)
+		}
+		if err := (toolExecutor[*MockQuerier]{querier: &qB}).Execute(context.Background(), &QuerySession{}, call); err != nil {
+			t.Fatalf("qB execute: %v", err)
+		}
+
+		if got := toolA.calledID(); got != "A" {
+			t.Fatalf("qA dispatched to the wrong instance: want A, got %q", got)
+		}
+		if got := toolB.calledID(); got != "B" {
+			t.Fatalf("qB dispatched to the wrong instance: want B, got %q", got)
+		}
+	})
 }
 
 func tempPathFromMaterializedOutput(t *testing.T, got string) string {

@@ -27,9 +27,7 @@ func startTestServer(t *testing.T) (chan<- any, <-chan any) {
 // registered *mcpTool for the named remote tool.
 func registerTestTools(t *testing.T, srv pub_models.McpServer, remoteTool string) *mcpTool {
 	t.Helper()
-	orig := tools.Registry
-	tools.Registry = tools.NewRegistry()
-	t.Cleanup(func() { tools.Registry = orig })
+	reg := tools.NewRegistry()
 
 	in, out, err := Client(t.Context(), srv, nil)
 	if err != nil {
@@ -37,10 +35,10 @@ func registerTestTools(t *testing.T, srv pub_models.McpServer, remoteTool string
 	}
 	ev := ControlEvent{ServerName: "echo", Server: srv, InputChan: in, OutputChan: out}
 	readyChan := make(chan struct{}, 1)
-	if serveErr := handleServer(t.Context(), ev, readyChan); serveErr != nil {
+	if serveErr := handleServer(t.Context(), ev, readyChan, reg); serveErr != nil {
 		t.Fatalf("handleServer: %v", serveErr)
 	}
-	tool, ok := tools.Registry.Get("mcp_echo_" + remoteTool)
+	tool, ok := reg.Get("mcp_echo_" + remoteTool)
 	if !ok {
 		t.Fatalf("tool mcp_echo_%s not registered", remoteTool)
 	}

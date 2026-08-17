@@ -62,10 +62,10 @@ func (e toolExecutor[C]) runLookbackTool(call pub_models.Call) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		if q.toolOutputRuneLimit > 0 && utf8.RuneCountInString(content) > q.toolOutputRuneLimit {
+		if q.tooling.outputRuneLimit > 0 && utf8.RuneCountInString(content) > q.tooling.outputRuneLimit {
 			return fmt.Sprintf(
 				"message is %d runes, exceeding the %d-rune tool-output limit. Read it directly from the conversation file: %s",
-				utf8.RuneCountInString(content), q.toolOutputRuneLimit, path,
+				utf8.RuneCountInString(content), q.tooling.outputRuneLimit, path,
 			), nil
 		}
 		return content, nil

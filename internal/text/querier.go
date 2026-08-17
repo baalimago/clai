@@ -65,7 +65,7 @@ type Querier[C models.StreamCompleter] struct {
 	lookbackCWD           string
 	hasPrinted            bool
 	Model                 C
-	toolOutputRuneLimit   int
+	tooling               tooling
 	rateLimitLastAmTokens int
 
 	// systemPrompt is the configured system prompt, injected into every
@@ -102,9 +102,6 @@ type Querier[C models.StreamCompleter] struct {
 	// Maybe one day this hack can be removed.
 	isLikelyGemini3Preview bool
 
-	maxToolCalls *int
-	amToolCalls  int
-
 	// stoploss is the token stoploss policy carried from the user config; the
 	// stoploss controller consumes it in the session runner (Phase 3).
 	stoploss *Stoploss
@@ -113,12 +110,6 @@ type Querier[C models.StreamCompleter] struct {
 	costMgrRdyChan    <-chan struct{}
 	costMgrErrChan    <-chan error
 	callUsageRecorder CallUsageRecorder
-	// toolCallRecorder receives one ToolCall per tool invocation of the
-	// session. Nil keeps the noop path (worklog 26-08-11-clai-prometheus-metrics).
-	toolCallRecorder ToolCallRecorder
-	skillLoader      SkillLoader
-	baseTools        map[string]pub_models.LLMTool
-	registeredTools  map[string]struct{}
 }
 
 func (q *Querier[C]) SuppressCompletionNotification() bool {
@@ -511,7 +502,7 @@ func (q *Querier[C]) Query(ctx context.Context) error {
 	q.line = session.Line
 	q.lineCount = session.LineCount
 	q.hasPrinted = session.Finalized
-	q.amToolCalls = session.ToolCallsUsed
+	q.tooling.calls = session.ToolCallsUsed
 	q.isLikelyGemini3Preview = session.LikelyGeminiPreview
 	// The final answer pop is consumed by the finalizer's postProcessOutput
 	// inside Run; it must not leak into the next query.

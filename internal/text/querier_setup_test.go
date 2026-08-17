@@ -232,8 +232,8 @@ func TestNewQuerier_AgentSettings(t *testing.T) {
 	if q.callUsageRecorder != usageRec {
 		t.Fatalf("callUsageRecorder: got %v, want the AgentSettings recorder", q.callUsageRecorder)
 	}
-	if q.toolCallRecorder != toolRec {
-		t.Fatalf("toolCallRecorder: got %v, want the AgentSettings recorder", q.toolCallRecorder)
+	if q.tooling.callRecorder != toolRec {
+		t.Fatalf("toolCallRecorder: got %v, want the AgentSettings recorder", q.tooling.callRecorder)
 	}
 
 	// A nil AgentSettings keeps every channel disabled.
@@ -251,7 +251,7 @@ func TestNewQuerier_AgentSettings(t *testing.T) {
 	if plain.callUsageRecorder != nil {
 		t.Fatalf("expected nil callUsageRecorder, got %v", plain.callUsageRecorder)
 	}
-	if plain.toolCallRecorder != nil {
-		t.Fatalf("expected nil toolCallRecorder, got %v", plain.toolCallRecorder)
+	if plain.tooling.callRecorder != nil {
+		t.Fatalf("expected nil toolCallRecorder, got %v", plain.tooling.callRecorder)
 	}
 }

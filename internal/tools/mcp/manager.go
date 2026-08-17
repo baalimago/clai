@@ -7,13 +7,19 @@ import (
 	"sync"
 	"time"
 
-	"github.com/baalimago/clai/internal/tools"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
-// Manager registers MCP servers and their tools.
-func Manager(ctx context.Context, controlChannel <-chan ControlEvent, statusChan chan<- error, allToolsWg *sync.WaitGroup) {
+// ToolRegistrar receives the MCP tools discovered for one server. The
+// concrete registry is supplied by the caller so each agent run owns its
+// tool set instead of writing into the process-global tools registry.
+type ToolRegistrar interface {
+	Set(name string, t pub_models.LLMTool)
+}
+
+// Manager registers MCP servers and their tools into registrar.
+func Manager(ctx context.Context, controlChannel <-chan ControlEvent, statusChan chan<- error, allToolsWg *sync.WaitGroup, registrar ToolRegistrar) {
 	var wg sync.WaitGroup
 	readyChan := make(chan struct{}, 1)
 	defer close(readyChan)
@@ -23,7 +29,7 @@ func Manager(ctx context.Context, controlChannel <-chan ControlEvent, statusChan
 			wg.Add(1)
 			go func(e ControlEvent) {
 				defer wg.Done()
-				if err := handleServer(ctx, e, readyChan); err != nil {
+				if err := handleServer(ctx, e, readyChan, registrar); err != nil {
 					statusChan <- err
 				}
 			}(ev)
@@ -37,7 +43,7 @@ func Manager(ctx context.Context, controlChannel <-chan ControlEvent, statusChan
 	}
 }
 
-func handleServer(ctx context.Context, ev ControlEvent, readyChan chan struct{}) error {
+func handleServer(ctx context.Context, ev ControlEvent, readyChan chan struct{}, registrar ToolRegistrar) error {
 	// Only cancel the client context on failure; on success the client
 	// must remain alive to serve tool calls.  Cleanup happens when the
 	// parent Manager context is cancelled.
@@ -119,7 +125,7 @@ func handleServer(ctx context.Context, ev ControlEvent, readyChan chan struct{})
 			outputChan: ev.OutputChan,
 			timeout:    time.Duration(ev.Server.TimeoutSeconds) * time.Second,
 		}
-		tools.Registry.Set(spec.Name, mt)
+		registrar.Set(spec.Name, mt)
 	}
 	initOk = true
 	return nil

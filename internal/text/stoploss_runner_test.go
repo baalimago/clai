@@ -261,10 +261,10 @@ func Test_sessionRunner_Run_PostHandoverLoadSkillLoadsByDefault(t *testing.T) {
 	}
 
 	q := &Querier[*MockQuerier]{
-		out:         &strings.Builder{},
-		Model:       model,
-		stoploss:    &Stoploss{MaxTokens: 100, MaxTokensHandoverMsg: "wrap up"},
-		skillLoader: countingSkillLoader{loads: &loads},
+		out:      &strings.Builder{},
+		Model:    model,
+		stoploss: &Stoploss{MaxTokens: 100, MaxTokensHandoverMsg: "wrap up"},
+		tooling:  tooling{skillLoader: countingSkillLoader{loads: &loads}},
 	}
 	session := &QuerySession{Chat: pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "hello"}}}}
 	runner := newStoplossRunner(q)
@@ -310,10 +310,10 @@ func Test_sessionRunner_Run_PostHandoverLoadSkillRefusedWhenBudgetExhausted(t *t
 		inttools.Registry.Set("stoploss_probe", countingStubTool{name: "stoploss_probe", calls: &invocations, output: "probe side effect"})
 
 		q := &Querier[*MockQuerier]{
-			out:         &strings.Builder{},
-			Model:       model,
-			stoploss:    &Stoploss{MaxTokens: 100, MaxTokensHandoverMsg: "wrap up", MaxToolCallsAfterHandover: 1},
-			skillLoader: countingSkillLoader{loads: &loads},
+			out:      &strings.Builder{},
+			Model:    model,
+			stoploss: &Stoploss{MaxTokens: 100, MaxTokensHandoverMsg: "wrap up", MaxToolCallsAfterHandover: 1},
+			tooling:  tooling{skillLoader: countingSkillLoader{loads: &loads}},
 		}
 		session := &QuerySession{Chat: pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "hello"}}}}
 		runner := newStoplossRunner(q)
@@ -357,10 +357,10 @@ func Test_sessionRunner_Run_PreHandoverLoadSkillLoads(t *testing.T) {
 	}
 
 	q := &Querier[*MockQuerier]{
-		out:         &strings.Builder{},
-		Model:       model,
-		stoploss:    &Stoploss{MaxTokens: 100, MaxTokensHandoverMsg: "wrap up"},
-		skillLoader: countingSkillLoader{loads: &loads},
+		out:      &strings.Builder{},
+		Model:    model,
+		stoploss: &Stoploss{MaxTokens: 100, MaxTokensHandoverMsg: "wrap up"},
+		tooling:  tooling{skillLoader: countingSkillLoader{loads: &loads}},
 	}
 	session := &QuerySession{Chat: pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "hello"}}}}
 	runner := newStoplossRunner(q)
@@ -451,7 +451,7 @@ func Test_toolExecutor_ExecuteBatch_RefusedCallHasNoSideEffect(t *testing.T) {
 		inttools.Registry.Set("refused_probe", countingStubTool{name: "refused_probe", calls: &refusedCalls, output: "must not run"})
 
 		maxCalls := 1
-		q := &Querier[*MockQuerier]{out: &strings.Builder{}, maxToolCalls: &maxCalls}
+		q := &Querier[*MockQuerier]{out: &strings.Builder{}, tooling: tooling{maxCalls: &maxCalls}}
 		session := &QuerySession{Chat: pub_models.Chat{}}
 		executor := toolExecutor[*MockQuerier]{querier: q}
 
@@ -558,8 +558,8 @@ func mixedBatchQuerier(t *testing.T, cmdCalls, loads *int) *Querier[*MockQuerier
 	t.Helper()
 	inttools.Registry.Set("mixed_probe", countingStubTool{name: "mixed_probe", calls: cmdCalls, output: "cmd output"})
 	return &Querier[*MockQuerier]{
-		out:         &strings.Builder{},
-		skillLoader: countingSkillLoader{loads: loads},
+		out:     &strings.Builder{},
+		tooling: tooling{skillLoader: countingSkillLoader{loads: loads}},
 	}
 }
 

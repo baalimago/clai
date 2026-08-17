@@ -145,7 +145,7 @@ func (e toolExecutor[C]) runPlannedCall(ctx context.Context, session *QuerySessi
 		}
 	} else {
 		startedAt := time.Now()
-		out = tools.Invoke(ctx, plan.call)
+		out = tools.InvokeWith(ctx, plan.call, q.tooling.run)
 		e.recordToolCall(ctx, plan.call.Name, startedAt, out)
 	}
 	return e.emitToolResult(ctx, session, plan.call, plan.prefix+out)
@@ -155,7 +155,7 @@ func (e toolExecutor[C]) runPlannedCall(ctx context.Context, session *QuerySessi
 // recorder. A nil recorder keeps the noop path; a recorder error is logged
 // and never propagated — telemetry must not break the agent loop.
 func (e toolExecutor[C]) recordToolCall(ctx context.Context, name string, startedAt time.Time, out string) {
-	rec := e.querier.toolCallRecorder
+	rec := e.querier.tooling.callRecorder
 	if rec == nil {
 		return
 	}
@@ -227,7 +227,7 @@ func (e toolExecutor[C]) emitAssistantToolCalls(ctx context.Context, session *Qu
 func (e toolExecutor[C]) emitToolResult(ctx context.Context, session *QuerySession, call pub_models.Call, out string) error {
 	q := e.querier
 	displayOut := out
-	out = limitToolOutput(out, q.toolOutputRuneLimit)
+	out = limitToolOutput(out, q.tooling.outputRuneLimit)
 	if out == "" {
 		out = fmt.Sprintf("<NO-OUTPUT> tool %s completed successfully but produced no stdout/stderr.", call.Name)
 		displayOut = out
@@ -260,7 +260,7 @@ func (e toolExecutor[C]) emitToolResult(ctx context.Context, session *QuerySessi
 
 func (e toolExecutor[C]) executeLoadSkill(ctx context.Context, session *QuerySession, call pub_models.Call) error {
 	q := e.querier
-	if q.skillLoader == nil {
+	if q.tooling.skillLoader == nil {
 		return fmt.Errorf("load_skill requested but skills are unavailable")
 	}
 	var skillName, rawArgs string
@@ -272,7 +272,7 @@ func (e toolExecutor[C]) executeLoadSkill(ctx context.Context, session *QuerySes
 			rawArgs = v
 		}
 	}
-	loaded, err := q.skillLoader.LoadSkill(ctx, skillName, rawArgs, q.baseTools)
+	loaded, err := q.tooling.skillLoader.LoadSkill(ctx, skillName, rawArgs, q.tooling.base)
 	if err != nil {
 		return err
 	}
@@ -283,7 +283,7 @@ func (e toolExecutor[C]) executeLoadSkill(ctx context.Context, session *QuerySes
 		return e.emitToolResult(ctx, session, call, "ERROR: "+loaded.ActivationErr)
 	}
 	if len(loaded.ActiveTools) > 0 {
-		q.baseTools = loaded.ActiveTools
+		q.tooling.base = loaded.ActiveTools
 	}
 	if len(loaded.EnabledTools) > 0 {
 		toolBox, ok := any(q.Model).(models.ToolBox)
@@ -295,14 +295,14 @@ func (e toolExecutor[C]) executeLoadSkill(ctx context.Context, session *QuerySes
 			if !exists {
 				continue
 			}
-			if q.registeredTools == nil {
-				q.registeredTools = map[string]struct{}{}
+			if q.tooling.registered == nil {
+				q.tooling.registered = map[string]struct{}{}
 			}
-			if _, registered := q.registeredTools[name]; registered {
+			if _, registered := q.tooling.registered[name]; registered {
 				continue
 			}
 			toolBox.RegisterTool(tool)
-			q.registeredTools[name] = struct{}{}
+			q.tooling.registered[name] = struct{}{}
 		}
 		loaded.Warnings = append(loaded.Warnings, "skill enabled local tools: "+strings.Join(loaded.EnabledTools, ", "))
 	}

@@ -28,7 +28,7 @@ type stoploss struct {
 // (configured message, else DefaultHandoverInstructions), so the controller
 // has exactly one message-resolution site (R9-03).
 func (q *Querier[C]) newStoploss() *stoploss {
-	ctrl := &stoploss{maxToolCalls: q.maxToolCalls}
+	ctrl := &stoploss{maxToolCalls: q.tooling.maxCalls}
 	if q.stoploss != nil {
 		ctrl.maxTokens = q.stoploss.MaxTokens
 		ctrl.maxTokensHandoverMsg = q.stoploss.HandoverInstructions()

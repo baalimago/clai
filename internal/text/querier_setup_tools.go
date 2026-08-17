@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -95,14 +96,14 @@ func findConfiguredMcpServers(filePaths []string) ([]pub_models.McpServer, error
 // If the directory is missing, an error is returned.
 // sink receives every server's stderr lines; on setup failure the buffered
 // error lines are flushed to stderr so the failure reason stays visible.
-func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configurations, sink mcp.ServerLogSink) error {
+func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configurations, sink mcp.ServerLogSink) (map[string]pub_models.LLMTool, error) {
 	if _, err := os.Stat(mcpServersDir); os.IsNotExist(err) {
-		return fmt.Errorf("MCP servers directory not found at %s. If you want MCP server support, create one using 'clai setup' and select option 3", mcpServersDir)
+		return nil, fmt.Errorf("MCP servers directory not found at %s. If you want MCP server support, create one using 'clai setup' and select option 3", mcpServersDir)
 	}
 
 	files, err := filepath.Glob(filepath.Join(mcpServersDir, "*.json"))
 	if err != nil {
-		return fmt.Errorf("failed to list mcp server configs: %w", err)
+		return nil, fmt.Errorf("failed to list mcp server configs: %w", err)
 	}
 
 	// Filter MCP servers based on profile tools
@@ -115,18 +116,23 @@ func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configu
 	}
 	if len(mcpServers) == 0 {
 		if err != nil {
-			return fmt.Errorf("failed to find mcpServers: %w", err)
+			return nil, fmt.Errorf("failed to find mcpServers: %w", err)
 		}
 		// Nothing to do, no need to start mcp.Manager etc, just return
-		return nil
+		return map[string]pub_models.LLMTool{}, nil
 	}
+
+	// Per-run registry: MCP tools discovered below are scoped to this run's
+	// querier. They must never be written into the process-global tools
+	// registry, whose entries are overwritten by every concurrent Setup.
+	runReg := tools.NewRegistry()
 
 	controlChannel := make(chan mcp.ControlEvent)
 	statusChan := make(chan error, 1)
 
 	toolWg := sync.WaitGroup{}
 	toolWg.Add(len(mcpServers))
-	go mcp.Manager(ctx, controlChannel, statusChan, &toolWg)
+	go mcp.Manager(ctx, controlChannel, statusChan, &toolWg, runReg)
 
 	for _, mcpServer := range mcpServers {
 		// No context leak here as it's a child of the root context, which will cascade the cancel
@@ -157,11 +163,11 @@ func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configu
 	case err := <-statusChan:
 		if err != nil {
 			flushMcpSetupErrors(sink)
-			return fmt.Errorf("MCP client manager failed: %w", err)
+			return nil, fmt.Errorf("MCP client manager failed: %w", err)
 		}
-		return nil
+		return runReg.All(), nil
 	case <-ctx.Done():
-		return ctx.Err()
+		return nil, ctx.Err()
 	}
 }
 
@@ -209,7 +215,7 @@ func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, us
 		return
 	}
 	tools.Init()
-	err := setupMcpManager(ctx, path.Join(userConf.ConfigDir, "mcpServers"), *userConf, sink)
+	mcpTools, err := setupMcpManager(ctx, path.Join(userConf.ConfigDir, "mcpServers"), *userConf, sink)
 	if misc.Truthy(os.Getenv("DEBUG")) {
 		ancli.Okf("Registering tools on querier of type: %T\n", modelConf)
 	}
@@ -217,31 +223,39 @@ func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, us
 		ancli.Warnf("failed to add mcp tools: %v", err)
 		return
 	}
-	// If usetools and no specific tools chocen, assume all are valid
+
+	// available is this run's selectable tool catalog: the static local tools
+	// plus the MCP tools this run started. Dynamic tools (MCP and WithTools)
+	// are never written into the process-global registry, so concurrent Setups
+	// cannot overwrite each other's instances.
+	available := tools.Registry.All()
+	maps.Copy(available, mcpTools)
+
+	// If usetools and no specific tools chosen, assume all are valid
 	if len(userConf.RequestedToolGlobs) == 0 && len(userConf.Tools) == 0 {
-		allTools := make([]pub_models.LLMTool, 0, len(tools.Registry.All()))
-		for _, tool := range tools.Registry.All() {
+		allTools := make([]pub_models.LLMTool, 0, len(available))
+		for _, tool := range available {
 			allTools = append(allTools, tool)
 		}
 		for _, tool := range uniqueTools(allTools) {
 			registerTool(toolBox, userConf, tool)
 		}
 		if userConf.BaseTools == nil {
-			userConf.BaseTools = tools.Registry.All()
+			userConf.BaseTools = available
 		}
 		return
 	}
 	toAdd := make([]pub_models.LLMTool, 0)
 	for _, t := range userConf.RequestedToolGlobs {
 		if strings.Contains(t, "*") {
-			matchingTools := tools.Registry.WildcardGet(t)
+			matchingTools := matchingTools(available, t)
 			if len(matchingTools) == 0 {
 				ancli.Warnf("attempted to find tools using wildcard search: '%v', found none\n", t)
 			}
 			toAdd = append(toAdd, matchingTools...)
 			continue
 		}
-		tool, exists := tools.Registry.Get(t)
+		tool, exists := available[t]
 		if !exists {
 			ancli.Warnf("attempted to find tool: '%v', which doesn't exist, skipping\n", t)
 			continue
@@ -269,7 +283,6 @@ func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, us
 		if _, exists := registeredNames[t.Specification().Name]; exists {
 			continue
 		}
-		tools.Registry.Set(t.Specification().Name, t)
 		registerTool(toolBox, userConf, t)
 		if userConf.BaseTools == nil {
 			userConf.BaseTools = map[string]pub_models.LLMTool{}
@@ -277,6 +290,19 @@ func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, us
 		userConf.BaseTools[t.Specification().Name] = t
 		registeredNames[t.Specification().Name] = struct{}{}
 	}
+}
+
+// matchingTools returns every tool in available whose name matches pattern.
+// It mirrors tools.Registry.WildcardGet over a caller-owned map so tool
+// selection reads the per-run catalog instead of the process-global registry.
+func matchingTools(available map[string]pub_models.LLMTool, pattern string) []pub_models.LLMTool {
+	var matches []pub_models.LLMTool
+	for name, tool := range available {
+		if tools.WildcardMatch(pattern, name) {
+			matches = append(matches, tool)
+		}
+	}
+	return matches
 }
 
 func registerTool(toolBox models.ToolBox, userConf *Configurations, tool pub_models.LLMTool) {

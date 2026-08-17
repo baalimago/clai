@@ -20,19 +20,20 @@ func TestHandleServerRegistersTool(t *testing.T) {
 		t.Fatalf("client: %v", err)
 	}
 
-	orig := tools.Registry
-	tools.Registry = tools.NewRegistry()
-	defer func() { tools.Registry = orig }()
+	reg := tools.NewRegistry()
 
 	ev := ControlEvent{ServerName: "echo", Server: srv, InputChan: in, OutputChan: out}
 	readyChan := make(chan struct{}, 1)
-	if serveErr := handleServer(ctx, ev, readyChan); serveErr != nil {
+	if serveErr := handleServer(ctx, ev, readyChan, reg); serveErr != nil {
 		t.Fatalf("handleServer: %v", serveErr)
 	}
 
-	tool, ok := tools.Registry.Get("mcp_echo_echo")
+	tool, ok := reg.Get("mcp_echo_echo")
 	if !ok {
 		t.Fatal("tool not registered")
+	}
+	if _, leaked := tools.Registry.Get("mcp_echo_echo"); leaked {
+		t.Fatal("MCP tool leaked into the process-global registry")
 	}
 	res, err := tool.Call(pub_models.Input{"text": "hello"})
 	if err != nil {
@@ -56,21 +57,19 @@ func TestManager(t *testing.T) {
 		t.Fatalf("client: %v", err)
 	}
 
-	orig := tools.Registry
-	tools.Registry = tools.NewRegistry()
-	defer func() { tools.Registry = orig }()
+	reg := tools.NewRegistry()
 
 	controlCh := make(chan ControlEvent)
 	statusCh := make(chan error, 1)
 	var wg sync.WaitGroup
 	wg.Add(1)
-	go Manager(ctx, controlCh, statusCh, &wg)
+	go Manager(ctx, controlCh, statusCh, &wg, reg)
 
 	controlCh <- ControlEvent{ServerName: "echo", Server: srv, InputChan: in, OutputChan: out}
 
 	var ok bool
 	for range 20 {
-		_, ok = tools.Registry.Get("mcp_echo_echo")
+		_, ok = reg.Get("mcp_echo_echo")
 		if ok {
 			break
 		}
@@ -96,15 +95,13 @@ func TestMcpTool_CallWithContext_CancelBeforeSend(t *testing.T) {
 		t.Fatalf("client: %v", err)
 	}
 
-	orig := tools.Registry
-	tools.Registry = tools.NewRegistry()
-	defer func() { tools.Registry = orig }()
+	reg := tools.NewRegistry()
 
 	ev := ControlEvent{ServerName: "echo", Server: srv, InputChan: in, OutputChan: out}
 	readyChan := make(chan struct{}, 1)
-	_ = handleServer(srvCtx, ev, readyChan)
+	_ = handleServer(srvCtx, ev, readyChan, reg)
 
-	tool, ok := tools.Registry.Get("mcp_echo_echo")
+	tool, ok := reg.Get("mcp_echo_echo")
 	if !ok {
 		t.Fatal("tool not registered")
 	}
