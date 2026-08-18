@@ -6,7 +6,7 @@ on:
       - "v[0-9]+.[0-9]+.[0-9]+*"
 jobs:
   call-workflow:
-    uses: baalimago/simple-go-pipeline/.github/workflows/release.yml@0f3e945a5090f3b1bc4dfa5bf8a19db616c0a992
+    uses: baalimago/simple-go-pipeline/.github/workflows/release.yml@4db15db8a791280dfac87dfc23a7f6464ad86e4d
     with:
       project-name: clai
       branch: main
