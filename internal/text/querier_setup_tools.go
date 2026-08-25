@@ -162,36 +162,20 @@ func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configu
 	select {
 	case err := <-statusChan:
 		if err != nil {
-			flushMcpSetupErrors(sink)
 			return nil, fmt.Errorf("MCP client manager failed: %w", err)
 		}
+		notifyMcpSetupSucceeded(sink)
 		return runReg.All(), nil
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
 }
 
-// flushMcpSetupErrors prints buffered MCP server error lines to stderr when
-// MCP setup fails before the session loop exists to drain the rolling sink.
-func flushMcpSetupErrors(sink mcp.ServerLogSink) {
-	type drainingSink interface {
-		Drain() []mcpLogEntry
-	}
-	drainer, ok := sink.(drainingSink)
-	if !ok {
-		return
-	}
-	for _, entry := range drainer.Drain() {
-		if !entry.isError {
-			continue
-		}
-		if entry.exit {
-			for _, line := range entry.lines {
-				ancli.Errf("mcp_%v: %v\n", entry.server, line)
-			}
-			continue
-		}
-		ancli.Errf("mcp_%v: %v\n", entry.server, entry.line)
+// notifyMcpSetupSucceeded tells a draining sink that MCP setup completed, so
+// the pre-session auth window can be cleared in place.
+func notifyMcpSetupSucceeded(sink mcp.ServerLogSink) {
+	if s, ok := sink.(interface{ setupSucceeded() }); ok {
+		s.setupSucceeded()
 	}
 }
 

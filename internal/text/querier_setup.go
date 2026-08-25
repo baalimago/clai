@@ -290,9 +290,7 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 		return modelVersion
 	})
 	rdyChan, errChan := costManager.Start(ctx)
-	querier.costMgrRdyChan = rdyChan
-	querier.costMgrErrChan = errChan
-	querier.costManager = costManager
+	querier.costEnricher = newCostEnricher(costManager, rdyChan)
 	// IMPORTANT: avoid spawning a goroutine that writes to stdout/stderr in tests.
 	// Some tests capture stdout by swapping the global os.Stdout which will race
 	// with concurrent writers under -race.

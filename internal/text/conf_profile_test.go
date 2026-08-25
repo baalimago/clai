@@ -196,3 +196,19 @@ func TestFindProfile_CmdBanPersistsViaJSON(t *testing.T) {
 		t.Fatalf("expected CmdBan %v, got %v", want, prof.CmdBan)
 	}
 }
+
+func Test_findProfileByPath_LoadsProfileFile(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "reviewer.json")
+	if err := os.WriteFile(p, []byte(`{"name":"reviewer","model":"gpt-x","use_tools":true}`), 0o644); err != nil {
+		t.Fatalf("write profile: %v", err)
+	}
+
+	got, err := findProfileByPath(p)
+	if err != nil {
+		t.Fatalf("findProfileByPath: %v", err)
+	}
+	if got.Name != "reviewer" || got.Model != "gpt-x" || !got.UseTools {
+		t.Errorf("loaded profile = %+v, want reviewer/gpt-x/tools-on", got)
+	}
+}

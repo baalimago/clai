@@ -31,9 +31,14 @@ const mcpLogQueueCap = 256
 // elevated error block when a server terminates unexpectedly.
 const mcpLogExitTailLines = 10
 
-// mcpLogEntry is one buffered stderr line. An exit entry carries the flushed
-// tail of a terminated server and is always classified as an error so it
-// elevates out of the rolling window.
+// mcpLogAuthFollowLines is the number of lines elevated after an auth prompt,
+// so payloads like URLs and device codes on the following lines stay visible.
+const mcpLogAuthFollowLines = 3
+
+// mcpLogEntry is one buffered stderr line. isError marks entries that elevate
+// out of the rolling window: errors, auth prompts and their follow window. An
+// exit entry carries the flushed tail of a terminated server and always
+// elevates.
 type mcpLogEntry struct {
 	server  string
 	line    string
@@ -48,22 +53,35 @@ type mcpLogEntry struct {
 // session loop when an error entry is buffered, so elevated errors render
 // live instead of waiting for the next session event.
 type mcpLogSink struct {
-	mu     sync.Mutex
-	mode   mcpLogMode
-	notice func(server, line string)
-	errOut io.Writer
-	queue  []mcpLogEntry
-	tails  map[string][]string
-	notify chan struct{}
+	mu         sync.Mutex
+	mode       mcpLogMode
+	notice     func(server, line string)
+	errOut     io.Writer
+	termWidth  func() int
+	queue      []mcpLogEntry
+	tails      map[string][]string
+	authFollow map[string]int
+	notify     chan struct{}
+	// attached marks the serialized session loop as running. Before that (MCP
+	// setup may block on the very auth prompt a server just wrote), rolling
+	// mode renders every stderr line live into per-server startup windows
+	// instead of queueing it for a drain that would never come.
+	attached   bool
+	startup    *mcpStartupWindows
+	termHeight func() int
 }
 
 func newMcpLogSink(mode mcpLogMode) *mcpLogSink {
 	return &mcpLogSink{
-		mode:   mode,
-		notice: func(server, line string) { ancli.Noticef("mcp_%v: %v\n", server, line) },
-		errOut: os.Stderr,
-		tails:  make(map[string][]string),
-		notify: make(chan struct{}, 1),
+		mode:       mode,
+		notice:     func(server, line string) { ancli.Noticef("mcp_%v: %v\n", server, line) },
+		errOut:     os.Stderr,
+		termWidth:  func() int { return utils.SessionDimensions(os.Stderr).Width },
+		termHeight: func() int { return utils.SessionDimensions(os.Stderr).Height },
+		tails:      make(map[string][]string),
+		authFollow: make(map[string]int),
+		startup:    newMcpStartupWindows(),
+		notify:     make(chan struct{}, 1),
 	}
 }
 
@@ -85,30 +103,68 @@ func mcpLogModeFor(debug, outputIsTerminal, raw, structured, rollingEnabled bool
 }
 
 // AppendServerLog receives one non-empty stderr line from an MCP server
-// process. Rolling mode queues the line for the session loop; direct modes
-// print or drop it immediately. Every mode retains the bounded termination
-// tail so ServerExited can flush the crash reason.
+// process. During startup, rolling mode renders the line live into the
+// server's startup window; once the windows are cleared or the session loop
+// attaches, lines queue for the session loop instead. Direct modes print or
+// drop immediately. Queued error lines and auth prompts elevate; an auth
+// prompt also opens a short follow window elevating payload-shaped lines
+// (URLs, user codes), since the actionable payload often arrives on its own
+// line. Every mode retains the bounded termination tail so ServerExited can
+// flush the crash reason.
 func (s *mcpLogSink) AppendServerLog(server, line string) {
 	isErr := utils.IsMcpLogErrorLine(line)
+	isAuth := utils.IsMcpLogAuthLine(line)
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	followPayload := s.authFollow[server] > 0 && utils.IsMcpLogAuthPayloadLine(line)
+	elevate := isErr || isAuth || followPayload
+	if s.authFollow[server] > 0 {
+		s.authFollow[server]--
+	}
+	if isAuth {
+		s.authFollow[server] = mcpLogAuthFollowLines
+	}
 	switch s.mode {
 	case mcpLogPlainDirect:
 		s.notice(server, line)
 		return
 	case mcpLogRawStructured:
 		s.retainTailLocked(server, line)
-		if isErr {
+		if elevate {
 			fmt.Fprintf(s.errOut, "mcp_%v: %v\n", server, line)
 		}
 		return
 	}
 	s.retainTailLocked(server, line)
-	s.queue = append(s.queue, mcpLogEntry{server: server, line: line, isError: isErr})
+	if !s.attached && !s.startup.cleared {
+		s.startup.appendLine(server, line, isAuth || followPayload)
+		s.startup.render(s.errOut, s.termWidth(), s.termHeight())
+		return
+	}
+	s.queue = append(s.queue, mcpLogEntry{server: server, line: line, isError: elevate})
 	s.dropOldestNonErrorLocked()
-	if isErr {
+	if elevate {
 		s.signalLocked()
 	}
+}
+
+// attach marks the serialized session loop as running: from now on elevated
+// lines queue for live elevation out of the rolling window instead of
+// printing directly to stderr.
+func (s *mcpLogSink) attach() {
+	s.mu.Lock()
+	s.attached = true
+	s.mu.Unlock()
+}
+
+// setupSucceeded reports that every MCP server finished setup: any pending
+// auth flow completed, so the startup windows are cleared in place and later
+// lines queue for the session loop. Setup failures and hangs never reach
+// this, keeping each server's last lines visible.
+func (s *mcpLogSink) setupSucceeded() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.startup.clear(s.errOut)
 }
 
 // ServerExited reports an unexpected server termination. Rolling mode appends
@@ -126,6 +182,11 @@ func (s *mcpLogSink) ServerExited(server string) {
 	}
 	switch s.mode {
 	case mcpLogRolling:
+		if !s.attached && !s.startup.cleared {
+			// The startup window already shows this server's trailing lines;
+			// a failed setup leaves them visible as the crash reason.
+			return
+		}
 		s.queue = append(s.queue, mcpLogEntry{server: server, exit: true, lines: tail, isError: true})
 		s.dropOldestNonErrorLocked()
 		s.signalLocked()

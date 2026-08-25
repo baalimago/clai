@@ -1,8 +1,8 @@
 package text
 
 import (
+	"bytes"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -103,27 +103,6 @@ func Test_uniqueToolsDeduplicatesAliasesBySpecificationName(t *testing.T) {
 	}
 }
 
-// captureStderr redirects os.Stderr for the duration of fn and returns
-// everything fn wrote to it. The package runs its tests sequentially, so the
-// global swap cannot race another test.
-func captureStderr(t *testing.T, fn func()) string {
-	t.Helper()
-	old := os.Stderr
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("stderr pipe: %v", err)
-	}
-	os.Stderr = w
-	defer func() { os.Stderr = old }()
-	fn()
-	w.Close()
-	out, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatalf("read stderr: %v", err)
-	}
-	return string(out)
-}
-
 func Test_findConfiguredMcpServers_ParsesTimeoutSeconds(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "playwright.json")
@@ -150,10 +129,16 @@ func Test_findConfiguredMcpServers_ParsesTimeoutSeconds(t *testing.T) {
 	}
 }
 
-func Test_flushMcpSetupErrors_PrintsOnlyErrorsAndExitTails(t *testing.T) {
+// Test_setupPhase_LogsRenderLiveInStartupWindow pins the pre-session
+// contract: the startup window shows each server's trailing log lines live,
+// so a setup failure (or a setup blocked on an auth flow) never hides the
+// reason.
+func Test_setupPhase_LogsRenderLiveInStartupWindow(t *testing.T) {
+	var errOut bytes.Buffer
 	sink := newMcpLogSink(mcpLogRolling)
-	// Eleven normal lines: the first four are evicted from the retained tail
-	// (cap 10), so they stay queued as plain entries and must be skipped.
+	sink.errOut = &errOut
+	sink.termWidth = func() int { return 80 }
+	sink.termHeight = func() int { return 40 }
 	for i := range 11 {
 		sink.AppendServerLog("fs", fmt.Sprintf("n%d", i))
 	}
@@ -162,25 +147,156 @@ func Test_flushMcpSetupErrors_PrintsOnlyErrorsAndExitTails(t *testing.T) {
 	sink.AppendServerLog("fs", "tail two")
 	sink.ServerExited("fs")
 
-	got := captureStderr(t, func() { flushMcpSetupErrors(sink) })
-
-	for _, want := range []string{"mcp_fs: fatal: boom", "mcp_fs: n4\n", "mcp_fs: tail one", "mcp_fs: tail two"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("flushMcpSetupErrors output missing %q; got: %q", want, got)
+	frame := errOut.String()
+	if i := strings.LastIndex(frame, "\x1b[J"); i >= 0 {
+		frame = frame[i+len("\x1b[J"):]
+	}
+	for _, want := range []string{"▸ mcp.fs log", "✗ fatal: boom", "tail one", "tail two"} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("startup window missing %q; frame: %q", want, frame)
 		}
 	}
-	for _, absent := range []string{"mcp_fs: n0\n", "mcp_fs: n1\n", "mcp_fs: n2\n", "mcp_fs: n3\n"} {
-		if strings.Contains(got, absent) {
-			t.Errorf("plain queued line was flushed as an error: %q in %q", absent, got)
+	for _, absent := range []string{"n0\n", "n1\n", "n2\n", "n3\n"} {
+		if strings.Contains(frame, absent) {
+			t.Errorf("line past the window tail bound shown: %q in %q", absent, frame)
 		}
 	}
-	if rest := sink.Drain(); rest != nil {
-		t.Errorf("flushMcpSetupErrors left buffered entries behind: %v", rest)
+	if entries := sink.Drain(); entries != nil {
+		t.Errorf("startup window lines also queued: %+v", entries)
 	}
 }
 
-func Test_flushMcpSetupErrors_NonDrainingSinkIsANoop(t *testing.T) {
-	// A nil sink fails the drainer type assertion: the flush must stay silent
-	// instead of panicking.
-	flushMcpSetupErrors(nil)
+// recordingSuccessSink observes the setup-success notification without any
+// rendering machinery.
+type recordingSuccessSink struct{ succeeded bool }
+
+func (r *recordingSuccessSink) AppendServerLog(string, string) {}
+func (r *recordingSuccessSink) ServerExited(string)            {}
+func (r *recordingSuccessSink) setupSucceeded()                { r.succeeded = true }
+
+// Test_setupMcpManager_RegistersToolsAndNotifiesSuccess drives the full
+// startup path against the real testserver subprocess: tools register under
+// the mcp_<server>_<tool> prefix and the sink learns that setup succeeded.
+func Test_setupMcpManager_RegistersToolsAndNotifiesSuccess(t *testing.T) {
+	dir := t.TempDir()
+	conf := []byte(`{"command":"go","args":["run","../tools/mcp/testserver"]}`)
+	if err := os.WriteFile(filepath.Join(dir, "echo.json"), conf, 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	sink := &recordingSuccessSink{}
+
+	got, err := setupMcpManager(t.Context(), dir, Configurations{}, sink)
+	if err != nil {
+		t.Fatalf("setupMcpManager: %v", err)
+	}
+	for _, want := range []string{"mcp_echo_echo", "mcp_echo_hang"} {
+		if _, ok := got[want]; !ok {
+			t.Errorf("registered tools missing %q; got: %v", want, got)
+		}
+	}
+	if !sink.succeeded {
+		t.Error("sink never notified of setup success")
+	}
+}
+
+func Test_setupMcpManager_SuccessClearsStartupWindows(t *testing.T) {
+	dir := t.TempDir()
+	conf := []byte(`{"command":"go","args":["run","../tools/mcp/testserver"],"env":{"TEST_SERVER_STDERR":"1"}}`)
+	if err := os.WriteFile(filepath.Join(dir, "echo.json"), conf, 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	var errOut bytes.Buffer
+	sink := newMcpLogSink(mcpLogRolling)
+	sink.errOut = &errOut
+	sink.termWidth = func() int { return 120 }
+	sink.termHeight = func() int { return 40 }
+
+	if _, err := setupMcpManager(t.Context(), dir, Configurations{}, sink); err != nil {
+		t.Fatalf("setupMcpManager: %v", err)
+	}
+	if !sink.startup.cleared {
+		t.Error("startup windows not cleared after successful setup")
+	}
+}
+
+func Test_setupMcpManager_MissingDirErrors(t *testing.T) {
+	_, err := setupMcpManager(t.Context(), "/nonexistent/mcp/servers/dir", Configurations{}, &recordingSuccessSink{})
+	if err == nil || !strings.Contains(err.Error(), "MCP servers directory not found") {
+		t.Fatalf("err = %v, want missing-directory error", err)
+	}
+}
+
+func Test_setupMcpManager_EmptyDirIsANoop(t *testing.T) {
+	sink := &recordingSuccessSink{}
+	got, err := setupMcpManager(t.Context(), t.TempDir(), Configurations{}, sink)
+	if err != nil {
+		t.Fatalf("setupMcpManager: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("empty dir registered tools: %v", got)
+	}
+	if sink.succeeded {
+		t.Error("sink notified of success although no manager ran")
+	}
+}
+
+func Test_setupMcpManager_SpawnFailureSkipsServer(t *testing.T) {
+	dir := t.TempDir()
+	conf := []byte(`{"command":"/nonexistent-binary-xyz","args":[]}`)
+	if err := os.WriteFile(filepath.Join(dir, "broken.json"), conf, 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	sink := &recordingSuccessSink{}
+
+	got, err := setupMcpManager(t.Context(), dir, Configurations{}, sink)
+	if err != nil {
+		t.Fatalf("setupMcpManager: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("broken server registered tools: %v", got)
+	}
+	if !sink.succeeded {
+		t.Error("setup with only skipped servers must still report success")
+	}
+}
+
+func Test_matchingTools(t *testing.T) {
+	available := map[string]pub_models.LLMTool{
+		"mcp_notion_search": setupToolsTestTool{name: "mcp_notion_search"},
+		"mcp_notion_fetch":  setupToolsTestTool{name: "mcp_notion_fetch"},
+		"cat":               setupToolsTestTool{name: "cat"},
+	}
+	if got := matchingTools(available, "mcp_notion_*"); len(got) != 2 {
+		t.Errorf("wildcard matched %d tools, want 2", len(got))
+	}
+	if got := matchingTools(available, "cat"); len(got) != 1 {
+		t.Errorf("exact match found %d tools, want 1", len(got))
+	}
+	if got := matchingTools(available, "mcp_linear_*"); got != nil {
+		t.Errorf("non-matching pattern returned %v, want none", got)
+	}
+}
+
+// recordingToolBox counts tool registrations.
+type recordingToolBox struct{ registered []string }
+
+func (r *recordingToolBox) RegisterTool(tool pub_models.LLMTool) {
+	r.registered = append(r.registered, tool.Specification().Name)
+}
+
+func Test_registerTool_DeduplicatesByName(t *testing.T) {
+	box := &recordingToolBox{}
+	conf := &Configurations{}
+	tool := setupToolsTestTool{name: "cat"}
+
+	registerTool(box, conf, tool)
+	registerTool(box, conf, tool)
+	registerTool(box, conf, setupToolsTestTool{name: "ls"})
+
+	if !slices.Equal(box.registered, []string{"cat", "ls"}) {
+		t.Errorf("registered = %v, want [cat ls]", box.registered)
+	}
+	if _, ok := conf.RegisteredTools["cat"]; !ok {
+		t.Error("registration not tracked in RegisteredTools")
+	}
 }

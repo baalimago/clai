@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 )
 
@@ -14,6 +15,14 @@ type Request struct {
 }
 
 func main() {
+	if os.Getenv("TEST_SERVER_AUTH_HANG") != "" {
+		// Print an OAuth prompt, then wait for an authorization that never
+		// comes: stay alive without answering any request.
+		fmt.Fprintln(os.Stderr, "Please authorize this client by visiting:")
+		fmt.Fprintln(os.Stderr, "https://example.com/authorize?client_id=test")
+		io.Copy(io.Discard, os.Stdin)
+		return
+	}
 	if os.Getenv("TEST_SERVER_CRASH_TAIL") != "" {
 		fmt.Fprintln(os.Stderr, "worker stopped")
 		fmt.Fprintln(os.Stderr, "signal received")

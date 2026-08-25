@@ -106,9 +106,9 @@ type Querier[C models.StreamCompleter] struct {
 	// stoploss controller consumes it in the session runner (Phase 3).
 	stoploss *Stoploss
 
-	costManager       CostManager
-	costMgrRdyChan    <-chan struct{}
-	costMgrErrChan    <-chan error
+	// costEnricher waits for the model price catalog and stamps cost
+	// estimates onto the chat at finalization.
+	costEnricher      costEnricher
 	callUsageRecorder CallUsageRecorder
 }
 
