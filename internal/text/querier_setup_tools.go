@@ -128,11 +128,10 @@ func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configu
 	runReg := tools.NewRegistry()
 
 	controlChannel := make(chan mcp.ControlEvent)
-	statusChan := make(chan error, 1)
 
 	toolWg := sync.WaitGroup{}
 	toolWg.Add(len(mcpServers))
-	go mcp.Manager(ctx, controlChannel, statusChan, &toolWg, runReg)
+	go mcp.Manager(ctx, controlChannel, &toolWg, runReg)
 
 	for _, mcpServer := range mcpServers {
 		// No context leak here as it's a child of the root context, which will cascade the cancel
@@ -154,16 +153,15 @@ func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configu
 			Cancel:     clientContextCancel,
 		}
 	}
+
+	done := make(chan struct{})
 	go func() {
 		toolWg.Wait()
-		statusChan <- nil
+		close(done)
 	}()
 
 	select {
-	case err := <-statusChan:
-		if err != nil {
-			return nil, fmt.Errorf("MCP client manager failed: %w", err)
-		}
+	case <-done:
 		notifyMcpSetupSucceeded(sink)
 		return runReg.All(), nil
 	case <-ctx.Done():

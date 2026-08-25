@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
@@ -14,6 +15,9 @@ type ControlEvent struct {
 	InputChan  chan<- any
 	OutputChan <-chan any
 	Cancel     context.CancelFunc
+	// StartupTimeout bounds the initialize+tools/list handshake for this
+	// server. Zero means the package default (mcpStartupTimeout).
+	StartupTimeout time.Duration
 }
 
 // Request represents a JSON-RPC request.

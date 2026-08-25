@@ -34,8 +34,7 @@ func registerTestTools(t *testing.T, srv pub_models.McpServer, remoteTool string
 		t.Fatalf("client: %v", err)
 	}
 	ev := ControlEvent{ServerName: "echo", Server: srv, InputChan: in, OutputChan: out}
-	readyChan := make(chan struct{}, 1)
-	if serveErr := handleServer(t.Context(), ev, readyChan, reg); serveErr != nil {
+	if serveErr := handleServer(t.Context(), ev, reg); serveErr != nil {
 		t.Fatalf("handleServer: %v", serveErr)
 	}
 	tool, ok := reg.Get("mcp_echo_" + remoteTool)

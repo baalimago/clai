@@ -18,32 +18,42 @@ type ToolRegistrar interface {
 	Set(name string, t pub_models.LLMTool)
 }
 
-// Manager registers MCP servers and their tools into registrar.
-func Manager(ctx context.Context, controlChannel <-chan ControlEvent, statusChan chan<- error, allToolsWg *sync.WaitGroup, registrar ToolRegistrar) {
+// mcpStartupTimeout bounds one server's initialize+tools/list handshake so a
+// slow or hung server cannot block the setup of every other MCP tool. A
+// ControlEvent.StartupTimeout overrides it per server.
+const mcpStartupTimeout = 30 * time.Second
+
+// Manager registers MCP servers and their tools into registrar. A server that
+// fails its handshake is logged and skipped; it never fails the other servers.
+func Manager(ctx context.Context, controlChannel <-chan ControlEvent, allToolsWg *sync.WaitGroup, registrar ToolRegistrar) {
 	var wg sync.WaitGroup
-	readyChan := make(chan struct{}, 1)
-	defer close(readyChan)
 	for {
 		select {
 		case ev := <-controlChannel:
 			wg.Add(1)
 			go func(e ControlEvent) {
 				defer wg.Done()
-				if err := handleServer(ctx, e, readyChan, registrar); err != nil {
-					statusChan <- err
+				defer allToolsWg.Done()
+				if err := handleServer(ctx, e, registrar); err != nil {
+					ancli.Warnf("failed to setup mcp server '%v': %v\n", e.ServerName, err)
 				}
 			}(ev)
-		case <-readyChan:
-			allToolsWg.Done()
 		case <-ctx.Done():
 			wg.Wait()
-			statusChan <- nil
 			return
 		}
 	}
 }
 
-func handleServer(ctx context.Context, ev ControlEvent, readyChan chan struct{}, registrar ToolRegistrar) error {
+func handleServer(ctx context.Context, ev ControlEvent, registrar ToolRegistrar) error {
+	// Bound the handshake so a hung server cannot stall the whole setup.
+	timeout := ev.StartupTimeout
+	if timeout <= 0 {
+		timeout = mcpStartupTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
 	// Only cancel the client context on failure; on success the client
 	// must remain alive to serve tool calls.  Cleanup happens when the
 	// parent Manager context is cancelled.
@@ -52,9 +62,6 @@ func handleServer(ctx context.Context, ev ControlEvent, readyChan chan struct{},
 		if !initOk && ev.Cancel != nil {
 			ev.Cancel()
 		}
-	}()
-	defer func() {
-		readyChan <- struct{}{}
 	}()
 	// Initialize
 	initReq := Request{

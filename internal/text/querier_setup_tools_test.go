@@ -260,6 +260,33 @@ func Test_setupMcpManager_SpawnFailureSkipsServer(t *testing.T) {
 	}
 }
 
+// Test_setupMcpManager_HandshakeFailureKeepsOtherTools pins the core fix: one
+// MCP server that starts but fails its initialize/tools-list handshake must be
+// skipped without dropping the tools of every other server.
+func Test_setupMcpManager_HandshakeFailureKeepsOtherTools(t *testing.T) {
+	dir := t.TempDir()
+	good := []byte(`{"command":"go","args":["run","../tools/mcp/testserver"]}`)
+	if err := os.WriteFile(filepath.Join(dir, "echo.json"), good, 0o644); err != nil {
+		t.Fatalf("write good config: %v", err)
+	}
+	broken := []byte(`{"command":"go","args":["run","../tools/mcp/testserver"],"env":{"TEST_SERVER_EXIT":"1"}}`)
+	if err := os.WriteFile(filepath.Join(dir, "broken.json"), broken, 0o644); err != nil {
+		t.Fatalf("write broken config: %v", err)
+	}
+	sink := &recordingSuccessSink{}
+
+	got, err := setupMcpManager(t.Context(), dir, Configurations{}, sink)
+	if err != nil {
+		t.Fatalf("setupMcpManager: %v", err)
+	}
+	if _, ok := got["mcp_echo_echo"]; !ok {
+		t.Errorf("good server's tools not registered; got: %v", got)
+	}
+	if _, ok := got["mcp_broken_echo"]; ok {
+		t.Error("broken server's tools must not be registered")
+	}
+}
+
 func Test_matchingTools(t *testing.T) {
 	available := map[string]pub_models.LLMTool{
 		"mcp_notion_search": setupToolsTestTool{name: "mcp_notion_search"},

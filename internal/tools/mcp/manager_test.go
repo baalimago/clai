@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -23,8 +24,7 @@ func TestHandleServerRegistersTool(t *testing.T) {
 	reg := tools.NewRegistry()
 
 	ev := ControlEvent{ServerName: "echo", Server: srv, InputChan: in, OutputChan: out}
-	readyChan := make(chan struct{}, 1)
-	if serveErr := handleServer(ctx, ev, readyChan, reg); serveErr != nil {
+	if serveErr := handleServer(ctx, ev, reg); serveErr != nil {
 		t.Fatalf("handleServer: %v", serveErr)
 	}
 
@@ -63,6 +63,42 @@ func TestSendRequest_ReturnsErrorOnClosedOutput(t *testing.T) {
 	}
 }
 
+func TestHandleServer_TimesOutHungServer(t *testing.T) {
+	srv := pub_models.McpServer{
+		Command: "go",
+		Args:    []string{"run", "./testserver"},
+		Env:     map[string]string{"TEST_SERVER_AUTH_HANG": "1"},
+	}
+	in, out, err := Client(t.Context(), srv, nil)
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+
+	reg := tools.NewRegistry()
+	ev := ControlEvent{
+		ServerName:     "oauth",
+		Server:         srv,
+		InputChan:      in,
+		OutputChan:     out,
+		StartupTimeout: 50 * time.Millisecond,
+	}
+
+	start := time.Now()
+	serveErr := handleServer(t.Context(), ev, reg)
+	if serveErr == nil {
+		t.Fatal("handleServer returned nil for a hung server, want timeout error")
+	}
+	if !errors.Is(serveErr, context.DeadlineExceeded) {
+		t.Fatalf("expected DeadlineExceeded, got: %v", serveErr)
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("timeout did not fire promptly: elapsed %v", elapsed)
+	}
+	if _, ok := reg.Get("mcp_oauth_echo"); ok {
+		t.Fatal("hung server registered tools")
+	}
+}
+
 func TestManager(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -75,10 +111,9 @@ func TestManager(t *testing.T) {
 	reg := tools.NewRegistry()
 
 	controlCh := make(chan ControlEvent)
-	statusCh := make(chan error, 1)
 	var wg sync.WaitGroup
 	wg.Add(1)
-	go Manager(ctx, controlCh, statusCh, &wg, reg)
+	go Manager(ctx, controlCh, &wg, reg)
 
 	controlCh <- ControlEvent{ServerName: "echo", Server: srv, InputChan: in, OutputChan: out}
 
@@ -96,8 +131,52 @@ func TestManager(t *testing.T) {
 
 	cancel()
 	wg.Wait()
-	if err := <-statusCh; err != nil {
-		t.Fatalf("manager error: %v", err)
+}
+
+// TestManager_SkipsFailingServer pins the non-fatal error contract: a server
+// whose handshake fails is skipped while a healthy server still registers.
+func TestManager_SkipsFailingServer(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	goodSrv := pub_models.McpServer{Command: "go", Args: []string{"run", "./testserver"}}
+	goodIn, goodOut, err := Client(ctx, goodSrv, nil)
+	if err != nil {
+		t.Fatalf("good client: %v", err)
+	}
+	brokenSrv := pub_models.McpServer{
+		Command: "go",
+		Args:    []string{"run", "./testserver"},
+		Env:     map[string]string{"TEST_SERVER_EXIT": "1"},
+	}
+	brokenIn, brokenOut, err := Client(ctx, brokenSrv, nil)
+	if err != nil {
+		t.Fatalf("broken client: %v", err)
+	}
+
+	reg := tools.NewRegistry()
+	controlCh := make(chan ControlEvent)
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go Manager(ctx, controlCh, &wg, reg)
+
+	controlCh <- ControlEvent{ServerName: "broken", Server: brokenSrv, InputChan: brokenIn, OutputChan: brokenOut}
+	controlCh <- ControlEvent{ServerName: "echo", Server: goodSrv, InputChan: goodIn, OutputChan: goodOut}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, ok := reg.Get("mcp_echo_echo"); ok {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("good server's tools never registered")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	wg.Wait()
+
+	if _, ok := reg.Get("mcp_broken_echo"); ok {
+		t.Error("broken server's tools must not be registered")
 	}
 }
 
@@ -113,8 +192,7 @@ func TestMcpTool_CallWithContext_CancelBeforeSend(t *testing.T) {
 	reg := tools.NewRegistry()
 
 	ev := ControlEvent{ServerName: "echo", Server: srv, InputChan: in, OutputChan: out}
-	readyChan := make(chan struct{}, 1)
-	_ = handleServer(srvCtx, ev, readyChan, reg)
+	_ = handleServer(srvCtx, ev, reg)
 
 	tool, ok := reg.Get("mcp_echo_echo")
 	if !ok {
