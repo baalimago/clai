@@ -48,6 +48,21 @@ func TestHandleServerRegistersTool(t *testing.T) {
 	}
 }
 
+func TestSendRequest_ReturnsErrorOnClosedOutput(t *testing.T) {
+	ctx := context.Background()
+	in := make(chan any, 1)
+	out := make(chan any)
+	close(out)
+
+	_, err := sendRequest(ctx, in, out, Request{JSONRPC: "2.0", ID: 1, Method: "initialize"})
+	if err == nil {
+		t.Fatal("expected an error when the output channel is closed")
+	}
+	if !strings.Contains(err.Error(), "connection closed") {
+		t.Fatalf("expected a connection-closed error, got: %v", err)
+	}
+}
+
 func TestManager(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

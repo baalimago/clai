@@ -68,24 +68,7 @@ func Client(ctx context.Context, mcpConfig pub_models.McpServer, sink ServerLogS
 	in := make(chan any)
 	out := make(chan any)
 
-	go func() {
-		enc := json.NewEncoder(stdin)
-		for {
-			select {
-			case msg, ok := <-in:
-				if !ok {
-					return
-				}
-				err := enc.Encode(msg)
-				if err != nil {
-					ancli.Errf("client: %v, got error when encoding message: '%v', error: %v", mcpConfig.Name, msg, err)
-				}
-
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
+	go writeEncoded(ctx, mcpConfig.Name, in, json.NewEncoder(stdin))
 
 	// waitDone closes once the process is reaped. The stdout reader selects on
 	// it so a send can never stay blocked past process death, and the exit
@@ -194,4 +177,29 @@ func Client(ctx context.Context, mcpConfig pub_models.McpServer, sink ServerLogS
 	}()
 
 	return in, out, nil
+}
+
+func writeEncoded(ctx context.Context, name string, in <-chan any, enc *json.Encoder) {
+	for {
+		select {
+		case msg, ok := <-in:
+			if !ok {
+				return
+			}
+			encodeMessage(ctx, name, msg, enc, ancli.Errf)
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func encodeMessage(ctx context.Context, name string, msg any, enc *json.Encoder, logf func(string, ...any)) {
+	if ctx.Err() != nil {
+		return
+	}
+	if err := enc.Encode(msg); err != nil {
+		if ctx.Err() == nil {
+			logf("client: %v, got error when encoding message: '%v', error: %v", name, msg, err)
+		}
+	}
 }

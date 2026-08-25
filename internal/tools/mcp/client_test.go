@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -33,6 +34,63 @@ func (r *recordingSink) snapshot() (lines []string, exited []string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return append([]string(nil), r.lines...), append([]string(nil), r.exited...)
+}
+
+type countingWriter struct {
+	n int
+}
+
+func (w *countingWriter) Write(p []byte) (int, error) {
+	w.n++
+	return len(p), nil
+}
+
+type blockingErrWriter struct {
+	started chan struct{}
+	unblock chan struct{}
+}
+
+func (w *blockingErrWriter) Write([]byte) (int, error) {
+	select {
+	case w.started <- struct{}{}:
+	default:
+	}
+	<-w.unblock
+	return 0, errors.New("write |1: file already closed")
+}
+
+func TestEncodeMessage_SkipsWhenContextCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	var w countingWriter
+	encodeMessage(ctx, "test", Request{JSONRPC: "2.0", ID: 1, Method: "initialize"}, json.NewEncoder(&w), func(string, ...any) {})
+
+	if w.n != 0 {
+		t.Fatalf("encodeMessage encoded %d messages after cancellation", w.n)
+	}
+}
+
+func TestEncodeMessage_SuppressesEncodeErrorAfterCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	w := &blockingErrWriter{started: make(chan struct{}, 1), unblock: make(chan struct{})}
+
+	var logs int
+	logf := func(string, ...any) { logs++ }
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		encodeMessage(ctx, "test", Request{JSONRPC: "2.0", ID: 1, Method: "initialize"}, json.NewEncoder(w), logf)
+	}()
+
+	<-w.started
+	cancel()
+	close(w.unblock)
+	<-done
+
+	if logs != 0 {
+		t.Fatalf("encodeMessage logged %d encode errors after cancellation", logs)
+	}
 }
 
 func TestClient(t *testing.T) {

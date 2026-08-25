@@ -141,8 +141,7 @@ func sendRequest(ctx context.Context, in chan<- any, out <-chan any, req Request
 		select {
 		case msg, ok := <-out:
 			if !ok {
-				ancli.Errf("channel closed")
-				return Response{}, nil
+				return Response{}, fmt.Errorf("mcp: connection closed")
 			}
 			raw, ok := msg.(json.RawMessage)
 			if !ok {
