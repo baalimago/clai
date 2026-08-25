@@ -597,14 +597,7 @@ func (v *ActivityViewport) wrapBlock(block *activityBlock) []activityRow {
 		return append(rows, activityRow{})
 	case blockMcpLog:
 		rows := []activityRow{{content: truncateTerminalRow(mcpLogBlockHeader(block.server), v.width), color: TableTheme().Secondary}}
-		for _, row := range compactTerminalRows(block.content, max(v.width-2, 1), block.toolBodyRows) {
-			color := ""
-			if IsMcpLogErrorLine(row) {
-				row = truncateTerminalRow("✗ "+row, max(v.width-2, 1))
-				color = RoleColor("tool")
-			}
-			rows = append(rows, activityRow{content: "  " + row, color: color})
-		}
+		rows = append(rows, mcpLogBodyRows(block.content, max(v.width-2, 1), block.toolBodyRows)...)
 		return append(rows, activityRow{})
 	}
 	return nil
@@ -816,17 +809,116 @@ var mcpLogErrorKeywords = []string{
 	"refused", "unable", "cannot", "could not", "warn", "timeout", "unreachable",
 }
 
+// mcpLogAuthKeywords marks MCP server stderr lines that ask the user to act
+// on an auth flow. Auth prompts elevate like errors: a suppressed prompt
+// leaves the server waiting on an auth flow the user never sees. The set is
+// deliberately imperative ("please authorize", "not logged in") so OAuth
+// machinery status chatter ("Discovering OAuth server configuration",
+// "Initializing auth coordination") stays quiet.
+var mcpLogAuthKeywords = []string{
+	"please authorize", "please authenticate", "please visit",
+	"please sign in", "please log in", "please login",
+	"to authenticate", "to authorize",
+	"sign in to", "sign in at", "log in to", "log in at", "login required",
+	"not authenticated", "not logged in", "unauthenticated",
+	"no credentials", "credentials expired", "session expired",
+	"missing api key", "invalid api key",
+	"token expired", "token has expired",
+	"enter the code", "enter code", "one-time code",
+	"device code", "verification code",
+	"401", "403", "unauthorized", "forbidden",
+}
+
+// mcpLogAuthURLMarkers are URL path fragments that mark a line carrying an
+// auth flow URL the user must visit. Matched only on lines containing "://",
+// so prose mentioning oauth stays unmatched.
+var mcpLogAuthURLMarkers = []string{
+	"/auth", "/login", "/oauth", "/device", "/activate",
+	"/signin", "/sign-in", "/verify",
+}
+
 // IsMcpLogErrorLine reports whether an MCP server stderr line looks like an
 // error. The match is case-insensitive substring matching against
 // mcpLogErrorKeywords.
 func IsMcpLogErrorLine(line string) bool {
+	return matchesAnyKeyword(line, mcpLogErrorKeywords)
+}
+
+// IsMcpLogAuthLine reports whether an MCP server stderr line asks the user to
+// act on an auth flow: an imperative prompt, an auth failure, or a URL whose
+// path looks like an auth endpoint.
+func IsMcpLogAuthLine(line string) bool {
+	if matchesAnyKeyword(line, mcpLogAuthKeywords) {
+		return true
+	}
+	return strings.Contains(line, "://") && matchesAnyKeyword(line, mcpLogAuthURLMarkers)
+}
+
+// IsMcpLogAuthPayloadLine reports whether a line following an auth prompt
+// carries its actionable payload: any URL, or a short uppercase user code like
+// "ABCD-1234". Everything else after a prompt is machinery chatter.
+func IsMcpLogAuthPayloadLine(line string) bool {
+	if strings.Contains(line, "://") {
+		return true
+	}
+	line = strings.TrimSpace(line)
+	if len(line) < 4 || len(line) > 16 {
+		return false
+	}
+	digitOrUpper := false
+	for _, r := range line {
+		switch {
+		case r >= 'A' && r <= 'Z' || r >= '0' && r <= '9':
+			digitOrUpper = true
+		case r == '-':
+		default:
+			return false
+		}
+	}
+	return digitOrUpper
+}
+
+func matchesAnyKeyword(line string, keywords []string) bool {
 	lower := strings.ToLower(line)
-	for _, keyword := range mcpLogErrorKeywords {
+	for _, keyword := range keywords {
 		if strings.Contains(lower, keyword) {
 			return true
 		}
 	}
 	return false
+}
+
+// mcpLogBodyRows wraps MCP log content into styled body rows: auth
+// prompts get the » marker in the user-role color, errors the magenta ✗
+// marker, other lines stay plain. Markers are prepended before wrapping and
+// rows wrap instead of truncating, so payloads like OAuth URLs keep every
+// character. maxRows > 0 compacts the middle rows like compactTerminalRows.
+// Auth wins over error so lines like "401 Unauthorized" read as an action
+// prompt rather than a failure to ignore.
+func mcpLogBodyRows(content string, width, maxRows int) []activityRow {
+	var rows []activityRow
+	for line := range strings.SplitSeq(content, "\n") {
+		marker, color := "", ""
+		switch {
+		case IsMcpLogAuthLine(line):
+			marker, color = "» ", RoleColor("user")
+		case IsMcpLogErrorLine(line):
+			marker, color = "✗ ", RoleColor("tool")
+		}
+		for _, row := range terminalRows(marker+line, width) {
+			rows = append(rows, activityRow{content: "  " + row, color: color})
+		}
+	}
+	if maxRows <= 0 || len(rows) <= maxRows {
+		return rows
+	}
+	head := maxRows / 2
+	tail := maxRows - head - 1
+	marker := fmt.Sprintf("  ... [%d terminal rows omitted] ...", len(rows)-head-tail)
+	compacted := make([]activityRow, 0, maxRows)
+	compacted = append(compacted, rows[:head]...)
+	compacted = append(compacted, activityRow{content: marker})
+	return append(compacted, rows[len(rows)-tail:]...)
 }
 
 // mcpLogBlockHeader renders the rolling-window header for one MCP server log
@@ -835,31 +927,40 @@ func mcpLogBlockHeader(server string) string {
 	return "▸ mcp." + sanitizeTerminalRow(server) + " log"
 }
 
+// PrintMcpLogHeader prints the rolling-window style block header for one MCP
+// server's log lines.
+func PrintMcpLogHeader(w io.Writer, server string, termWidth int) error {
+	header := truncateTerminalRow(mcpLogBlockHeader(server), max(termWidth, 1))
+	if _, err := fmt.Fprintln(w, table.Colorize(TableTheme().Secondary, header)); err != nil {
+		return fmt.Errorf("write mcp log block header: %w", err)
+	}
+	return nil
+}
+
+// PrintMcpLogLine prints one styled MCP log line under a block header,
+// following the mcpLogBodyRows styling and wrapping rules.
+func PrintMcpLogLine(w io.Writer, line string, termWidth int) error {
+	for _, row := range mcpLogBodyRows(sanitizeTerminalRow(line), max(termWidth-2, 1), 0) {
+		if _, err := fmt.Fprintln(w, table.Colorize(row.color, row.content)); err != nil {
+			return fmt.Errorf("write mcp log block line: %w", err)
+		}
+	}
+	return nil
+}
+
 // PrintMcpErrorBlock prints one elevated MCP server error block below the
 // rolling window. The block is display-only: it never enters the chat history
-// or model context. Non-error lines keep their plain body style; error lines
-// get the magenta ✗ marker used for tool errors.
+// or model context.
 func PrintMcpErrorBlock(w io.Writer, server string, lines []string, termWidth int) error {
 	if w == nil {
 		w = os.Stdout
 	}
-	header := truncateTerminalRow(mcpLogBlockHeader(server), max(termWidth, 1))
-	if _, err := fmt.Fprintln(w, table.Colorize(TableTheme().Secondary, header)); err != nil {
-		return fmt.Errorf("write mcp error block header: %w", err)
+	if err := PrintMcpLogHeader(w, server, termWidth); err != nil {
+		return err
 	}
-	contentWidth := max(termWidth-2, 1)
 	for _, line := range lines {
-		line = sanitizeTerminalRow(line)
-		line = truncateTerminalRow(line, contentWidth)
-		if IsMcpLogErrorLine(line) {
-			line = "✗ " + line
-			if _, err := fmt.Fprintln(w, "  "+table.Colorize(RoleColor("tool"), line)); err != nil {
-				return fmt.Errorf("write mcp error block line: %w", err)
-			}
-			continue
-		}
-		if _, err := fmt.Fprintln(w, "  "+line); err != nil {
-			return fmt.Errorf("write mcp error block line: %w", err)
+		if err := PrintMcpLogLine(w, line, termWidth); err != nil {
+			return err
 		}
 	}
 	_, err := fmt.Fprintln(w)

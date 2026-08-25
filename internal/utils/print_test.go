@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -51,6 +52,124 @@ func TestIsMcpLogErrorLine(t *testing.T) {
 	}
 }
 
+func TestIsMcpLogAuthLine(t *testing.T) {
+	authLines := []string{
+		"Please visit https://github.com/login/device and enter code ABCD-1234",
+		"[115] Please authorize this client by visiting:",
+		"https://mcp.notion.com/authorize?response_type=code&client_id=abc",
+		"Not authenticated. Run 'wrangler login' first",
+		"Your OAuth token has expired",
+		"401 Unauthorized",
+		"HTTP 403 Forbidden",
+		"missing API key",
+		"no credentials found",
+		"Sign in to continue",
+		"enter the verification code shown in your browser",
+	}
+	for _, line := range authLines {
+		if !IsMcpLogAuthLine(line) {
+			t.Errorf("IsMcpLogAuthLine(%q) = false, want true", line)
+		}
+	}
+	// OAuth machinery status chatter must stay quiet: only prompts that need
+	// the user's action elevate.
+	nonAuthLines := []string{
+		"server started",
+		"listening on :8080",
+		"request handled in 12ms",
+		"INFO: ready",
+		"error: boom",
+		"timeout exceeded",
+		"[108] Discovering OAuth server configuration...",
+		"[115] Discovered authorization server: https://mcp.notion.com",
+		"[115] Connecting to remote server: https://mcp.notion.com/mcp",
+		"[115] Using transport strategy: http-first",
+		"[115] Authentication required. Initializing auth...",
+		"[115] Initializing auth coordination on-demand",
+		"[115] OAuth callback server running at http://127.0.0.1:9553",
+		"[115] Creating lockfile for server cb42d1a06ae8 with process 115 on port 9553",
+		"[115] Authentication required. Waiting for authorization...",
+		"[115] Browser opened automatically.",
+	}
+	for _, line := range nonAuthLines {
+		if IsMcpLogAuthLine(line) {
+			t.Errorf("IsMcpLogAuthLine(%q) = true, want false", line)
+		}
+	}
+}
+
+func TestIsMcpLogAuthPayloadLine(t *testing.T) {
+	payloadLines := []string{
+		"https://mcp.notion.com/authorize?response_type=code",
+		"http://example.com/anything",
+		"ABCD-1234",
+		"WDJB-MJHT",
+	}
+	for _, line := range payloadLines {
+		if !IsMcpLogAuthPayloadLine(line) {
+			t.Errorf("IsMcpLogAuthPayloadLine(%q) = false, want true", line)
+		}
+	}
+	nonPayloadLines := []string{
+		"Browser opened automatically.",
+		"Creating lockfile for server cb42d1a06ae8 with process 115 on port 9553",
+		"[115]",
+		"code line two",
+		"",
+	}
+	for _, line := range nonPayloadLines {
+		if IsMcpLogAuthPayloadLine(line) {
+			t.Errorf("IsMcpLogAuthPayloadLine(%q) = true, want false", line)
+		}
+	}
+}
+
+func TestPrintMcpErrorBlock_AuthLines(t *testing.T) {
+	var out bytes.Buffer
+	err := PrintMcpErrorBlock(&out, "github", []string{"To use this server, please sign in:", "https://example.com/device"}, 80)
+	if err != nil {
+		t.Fatalf("PrintMcpErrorBlock: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "» To use this server, please sign in:") {
+		t.Errorf("auth line missing » marker; got:\n%s", got)
+	}
+	if !strings.Contains(got, "https://example.com/device") {
+		t.Errorf("auth payload line missing; got:\n%s", got)
+	}
+	if strings.Contains(got, "✗") {
+		t.Errorf("auth line styled as error; got:\n%s", got)
+	}
+}
+
+func TestPrintMcpErrorBlock_WrapsLongAuthURL(t *testing.T) {
+	var out bytes.Buffer
+	url := "https://mcp.notion.com/authorize?response_type=code&code_challenge=" + strings.Repeat("x", 200) + "&state=end-of-url"
+	err := PrintMcpErrorBlock(&out, "notion", []string{"Please authorize this client by visiting:", url}, 80)
+	if err != nil {
+		t.Fatalf("PrintMcpErrorBlock: %v", err)
+	}
+	// Rows are indented, colorized and wrapped; strip decoration and rejoin to
+	// verify the URL survived without truncation.
+	stripped := regexp.MustCompile("\x1b\\[[0-9;]*m").ReplaceAllString(out.String(), "")
+	joined := strings.ReplaceAll(strings.ReplaceAll(stripped, "\n", ""), " ", "")
+	if !strings.Contains(joined, "&state=end-of-url") {
+		t.Errorf("URL tail truncated; got:\n%s", out.String())
+	}
+	if strings.Contains(stripped, "…") {
+		t.Errorf("elevated block truncated a line; got:\n%s", out.String())
+	}
+}
+
+func TestActivityViewport_AppendMcpLogBlock_AuthMarker(t *testing.T) {
+	viewport := NewActivityViewport(60, 30, 30)
+	viewport.AppendMcpLogBlock("github", "server started\nNot logged in. Run 'gh auth login'", 6)
+	joined := strings.Join(viewport.Rows(), "\n")
+	if !strings.Contains(joined, "» Not logged in. Run 'gh auth login'") {
+		t.Errorf("rows missing auth marker; got:\n%s", joined)
+	}
+}
+
 func TestActivityViewport_AppendMcpLogBlock(t *testing.T) {
 	viewport := NewActivityViewport(40, 30, 30)
 	viewport.AppendMcpLogBlock("filesystem", "server started\nWARN: slow request\nerror: boom", 6)
@@ -66,6 +185,20 @@ func TestActivityViewport_AppendMcpLogBlock(t *testing.T) {
 		if !strings.Contains(joined, want) {
 			t.Errorf("rows missing %q; got:\n%s", want, joined)
 		}
+	}
+}
+
+func TestActivityViewport_McpLogBlockWrapsLongAuthURL(t *testing.T) {
+	v := NewActivityViewport(40, 30, 30)
+	url := "https://example.com/authorize?code=" + strings.Repeat("x", 80) + "ENDOFURL"
+	v.AppendMcpLogBlock("notion", url, 8)
+	joined := strings.Join(v.Rows(), "\n")
+	stripped := strings.NewReplacer("\n", "", " ", "", "»", "").Replace(joined)
+	if !strings.Contains(stripped, "ENDOFURL") {
+		t.Errorf("URL tail lost in window; rows:\n%s", joined)
+	}
+	if strings.Contains(joined, "…") {
+		t.Errorf("auth URL truncated in window; rows:\n%s", joined)
 	}
 }
 

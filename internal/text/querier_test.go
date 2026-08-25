@@ -826,8 +826,7 @@ func Test_Querier_postProcess_OnlyOuterCallEnrichesChat(t *testing.T) {
 		shouldSaveReply: true,
 		configDir:       tmpConfigDir,
 		callStackLevel:  2,
-		costManager:     costMgr,
-		costMgrRdyChan:  ready,
+		costEnricher:    newCostEnricher(costMgr, ready),
 		chat: pub_models.Chat{
 			ID: "globalScope",
 			Messages: []pub_models.Message{
@@ -882,8 +881,7 @@ func Test_Querier_postProcess_enriches_before_save_when_cost_manager_ready(t *te
 	q := Querier[*MockQuerier]{
 		configDir:       tmpConfigDir,
 		shouldSaveReply: true,
-		costManager:     costMgr,
-		costMgrRdyChan:  ready,
+		costEnricher:    newCostEnricher(costMgr, ready),
 		chat: pub_models.Chat{
 			ID: "globalScope",
 			Messages: []pub_models.Message{
@@ -949,8 +947,7 @@ func Test_Querier_postProcess_preserves_runtime_model_name_in_saved_query_cost(t
 	q := Querier[*MockQuerier]{
 		configDir:       tmpConfigDir,
 		shouldSaveReply: true,
-		costManager:     costMgr,
-		costMgrRdyChan:  ready,
+		costEnricher:    newCostEnricher(costMgr, ready),
 		Model: &MockQuerier{
 			modelName: "runtime-model-b",
 		},
@@ -1014,8 +1011,7 @@ func Test_Querier_postProcess_enriches_before_save_for_nested_tool_root_query(t 
 		configDir:       tmpConfigDir,
 		shouldSaveReply: true,
 		callStackLevel:  2,
-		costManager:     costMgr,
-		costMgrRdyChan:  ready,
+		costEnricher:    newCostEnricher(costMgr, ready),
 		chat: pub_models.Chat{
 			ID: "globalScope",
 			Messages: []pub_models.Message{
@@ -1078,8 +1074,7 @@ func Test_Querier_postProcess_SkipsCostEnrichIfManagerNotReady(t *testing.T) {
 		out:             &strings.Builder{},
 		shouldSaveReply: true,
 		configDir:       tmpConfigDir,
-		costManager:     costMgr,
-		costMgrRdyChan:  ready,
+		costEnricher:    newCostEnricher(costMgr, ready),
 		chat: pub_models.Chat{
 			ID: "globalScope",
 			Messages: []pub_models.Message{
@@ -1121,8 +1116,7 @@ func Test_Querier_postProcess_StillSavesWhenCostEnrichFails(t *testing.T) {
 		out:             &strings.Builder{},
 		shouldSaveReply: true,
 		configDir:       tmpConfigDir,
-		costManager:     costMgr,
-		costMgrRdyChan:  ready,
+		costEnricher:    newCostEnricher(costMgr, ready),
 		chat: pub_models.Chat{
 			ID: "globalScope",
 			Messages: []pub_models.Message{
@@ -1188,7 +1182,7 @@ func Test_Querier_Query_ToolCallRecursion_PreservesConversationMessages(t *testi
 		out:             &strings.Builder{},
 		shouldSaveReply: true,
 		configDir:       tmpConfigDir,
-		costMgrRdyChan:  makeClosedChan(),
+		costEnricher:    newCostEnricher(nil, makeClosedChan()),
 		chat: pub_models.Chat{
 			ID: "globalScope",
 			Messages: []pub_models.Message{
@@ -1290,8 +1284,7 @@ func Test_Querier_Query_ToolCallRecursion_UsesFinalAssistantTurnTokenUsageForCos
 		out:             &strings.Builder{},
 		shouldSaveReply: true,
 		configDir:       tmpConfigDir,
-		costManager:     costMgr,
-		costMgrRdyChan:  makeClosedChan(),
+		costEnricher:    newCostEnricher(costMgr, makeClosedChan()),
 		chat: pub_models.Chat{
 			ID: "globalScope",
 			Messages: []pub_models.Message{
@@ -1376,8 +1369,7 @@ func Test_Querier_Query_ToolCallRecursion_AccumulatesNestedTokenUsageForCostEnri
 		out:             &strings.Builder{},
 		shouldSaveReply: true,
 		configDir:       tmpConfigDir,
-		costManager:     costMgr,
-		costMgrRdyChan:  makeClosedChan(),
+		costEnricher:    newCostEnricher(costMgr, makeClosedChan()),
 		chat: pub_models.Chat{
 			ID: "globalScope",
 			Messages: []pub_models.Message{
@@ -1462,8 +1454,7 @@ func Test_Querier_Query_ToolCallRecursion_CostEnrichmentUsesFinalAssistantTurnTo
 		out:             &strings.Builder{},
 		shouldSaveReply: true,
 		configDir:       tmpConfigDir,
-		costManager:     costMgr,
-		costMgrRdyChan:  makeClosedChan(),
+		costEnricher:    newCostEnricher(costMgr, makeClosedChan()),
 		chat: pub_models.Chat{
 			ID: "globalScope",
 			Messages: []pub_models.Message{
@@ -1545,8 +1536,7 @@ func Test_Querier_Query_ToolCallSession_PreservesFinalReplyRoleAndFinalUsage(t *
 		out:             &strings.Builder{},
 		shouldSaveReply: true,
 		configDir:       tmpConfigDir,
-		costManager:     costMgr,
-		costMgrRdyChan:  makeClosedChan(),
+		costEnricher:    newCostEnricher(costMgr, makeClosedChan()),
 		chat: pub_models.Chat{
 			ID:       "globalScope",
 			Messages: []pub_models.Message{{Role: "user", Content: "hello there"}},
@@ -1660,4 +1650,12 @@ func Test_ChatQuerier(t *testing.T) {
 		},
 	}
 	models.ChatQuerier_Test(t, &q)
+}
+
+func Test_SetChatID(t *testing.T) {
+	q := &Querier[*MockQuerier]{}
+	q.SetChatID("chat-42")
+	if q.chat.ID != "chat-42" {
+		t.Errorf("chat ID = %q, want chat-42", q.chat.ID)
+	}
 }

@@ -1028,3 +1028,45 @@ func Test_sessionRunner_Run_DrainsAndExecutesParallelToolCallsAsOneTurn(t *testi
 		t.Fatalf("expected the first result before the second call, got:\n%s", output)
 	}
 }
+
+func Test_sleepContext(t *testing.T) {
+	if err := sleepContext(t.Context(), 0); err != nil {
+		t.Errorf("zero duration errored: %v", err)
+	}
+	if err := sleepContext(t.Context(), -time.Second); err != nil {
+		t.Errorf("negative duration errored: %v", err)
+	}
+	if err := sleepContext(t.Context(), time.Millisecond); err != nil {
+		t.Errorf("short sleep errored: %v", err)
+	}
+	cancelled, cancel := context.WithCancel(t.Context())
+	cancel()
+	if err := sleepContext(cancelled, time.Minute); err == nil {
+		t.Error("cancelled context did not interrupt the sleep")
+	}
+}
+
+// Test_waitForRateLimitReset_FallbackPath covers models without an input
+// token counter: the runner sleeps until ResetAt plus slack, which is
+// immediate for a reset time in the past.
+func Test_waitForRateLimitReset_FallbackPath(t *testing.T) {
+	r := sessionRunner[*MockQuerier]{querier: &Querier[*MockQuerier]{Model: &MockQuerier{}}}
+	err := r.waitForRateLimitReset(t.Context(), pub_models.Chat{}, models.ErrRateLimit{
+		ResetAt: time.Now().Add(-time.Minute),
+	})
+	if err != nil {
+		t.Fatalf("waitForRateLimitReset: %v", err)
+	}
+}
+
+func Test_waitForRateLimitReset_FallbackHonorsCancel(t *testing.T) {
+	cancelled, cancel := context.WithCancel(t.Context())
+	cancel()
+	r := sessionRunner[*MockQuerier]{querier: &Querier[*MockQuerier]{Model: &MockQuerier{}}}
+	err := r.waitForRateLimitReset(cancelled, pub_models.Chat{}, models.ErrRateLimit{
+		ResetAt: time.Now().Add(time.Hour),
+	})
+	if err == nil {
+		t.Fatal("cancelled context did not interrupt the rate limit wait")
+	}
+}

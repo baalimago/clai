@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/baalimago/clai/internal/chat"
 	"github.com/baalimago/clai/internal/models"
@@ -101,31 +100,7 @@ func (f sessionFinalizer[C]) Finalize(ctx context.Context, session *QuerySession
 	q.chat = session.Chat
 
 	if session.ShouldSaveReply {
-		if q.costManager != nil {
-			timeoutdur := 200 * time.Millisecond
-			timeout := time.NewTimer(timeoutdur)
-			defer func() {
-				if !timeout.Stop() {
-					select {
-					case <-timeout.C:
-					default:
-					}
-				}
-			}()
-			select {
-			case <-timeout.C:
-				ancli.Warnf("skippng wait for cost manager model price fetch after: %v", timeoutdur)
-				goto costMgrDone
-			case <-q.costMgrRdyChan:
-			}
-			enrichedChat, err := q.costManager.Enrich(session.Chat)
-			if err != nil {
-				ancli.PrintErr(fmt.Sprintf("failed to enrich chat with cost estimate: %v\n", err))
-			} else {
-				session.Chat = enrichedChat
-			}
-		}
-	costMgrDone:
+		session.Chat = q.costEnricher.enrich(session.Chat)
 		// Origin stamping is always-on and forward-only: stamp the canonical CWD on
 		// first persist, preserve it on every later write (including replies).
 		if originErr := chat.EnsureOriginDir(q.configDir, &session.Chat); originErr != nil {

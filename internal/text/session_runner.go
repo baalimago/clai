@@ -53,6 +53,11 @@ func (r *sessionRunner[C]) Run(ctx context.Context, session *QuerySession) (runE
 	if r.stoploss == nil {
 		r.stoploss = r.querier.newStoploss()
 	}
+	if r.querier.mcpSink != nil {
+		// The session loop drains the sink from here on; stop the pre-loop
+		// direct printing of elevated MCP lines.
+		r.querier.mcpSink.attach()
+	}
 	session.StartedAt = time.Now()
 	defer func() {
 		session.FinishedAt = time.Now()
