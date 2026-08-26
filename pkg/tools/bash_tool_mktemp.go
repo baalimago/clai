@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
@@ -38,7 +39,11 @@ func (m MktempTool) CallWithContext(ctx context.Context, _ pub_models.Input) (st
 		return "", fmt.Errorf("mktemp requires a cancellable context")
 	}
 
-	directory, err := os.MkdirTemp("", "clai-*")
+	temporaryRoot := filepath.Join(os.TempDir(), "clai")
+	if err := os.MkdirAll(temporaryRoot, 0o700); err != nil {
+		return "", fmt.Errorf("create temporary root: %w", err)
+	}
+	directory, err := os.MkdirTemp(temporaryRoot, "")
 	if err != nil {
 		return "", fmt.Errorf("create temporary directory: %w", err)
 	}

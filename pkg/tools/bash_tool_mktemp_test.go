@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
-	"strings"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -18,8 +18,9 @@ func TestMktempTool_CallWithContext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Mktemp.CallWithContext(): %v", err)
 	}
-	if !strings.HasPrefix(directory, os.TempDir()+string(os.PathSeparator)) {
-		t.Fatalf("temporary directory %q is outside %q", directory, os.TempDir())
+	wantParent := filepath.Join(os.TempDir(), "clai")
+	if filepath.Dir(directory) != wantParent {
+		t.Fatalf("temporary directory parent = %q, want %q", filepath.Dir(directory), wantParent)
 	}
 	info, err := os.Stat(directory)
 	if err != nil {
