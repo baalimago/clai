@@ -144,6 +144,22 @@ clai video "A slow pan across a terminal showing streaming output"
 
 See: [`photo.md`](./architecture/photo.md), [`video.md`](./architecture/video.md), [`config.md`](./architecture/config.md).
 
+## Audio transcription
+
+```bash
+clai audio transcribe meeting.wav
+clai -af text a t meeting.wav
+cat meeting.wav | clai a t -
+
+clai a t meeting.wav | clai q "Summarize these meeting notes: {}"
+```
+
+- Transcripts render locally as `vtt` (default), `srt`, `text`, or `json`; stdout carries only the transcript, so it pipes cleanly.
+- Files over 25 MB are split via ffmpeg and stitched back with adjusted timestamps.
+- The `audio_transcribe` built-in tool exposes the same engine to agents: `clai -t "*" q "Transcribe meeting.wav and summarize it"`.
+
+See: [`audio.md`](./architecture/audio.md).
+
 ## Streaming: one normalized event loop
 
 - All vendors map their streaming responses to a small set of normalized events:

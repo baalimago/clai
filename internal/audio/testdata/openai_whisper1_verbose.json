@@ -1,0 +1,32 @@
+{
+  "task": "transcribe",
+  "language": "english",
+  "duration": 9.04,
+  "text": "Hello and welcome to the meeting. Let's get started with the agenda.",
+  "segments": [
+    {
+      "id": 0,
+      "seek": 0,
+      "start": 0.0,
+      "end": 5.28,
+      "text": " Hello and welcome to the meeting.",
+      "tokens": [50364, 2425, 293, 2928, 281, 264, 3440, 13, 50628],
+      "temperature": 0.0,
+      "avg_logprob": -0.2861,
+      "compression_ratio": 1.2363,
+      "no_speech_prob": 0.0101
+    },
+    {
+      "id": 1,
+      "seek": 0,
+      "start": 5.28,
+      "end": 9.04,
+      "text": " Let's get started with the agenda.",
+      "tokens": [50628, 961, 311, 483, 1409, 365, 264, 9832, 13, 50816],
+      "temperature": 0.0,
+      "avg_logprob": -0.2861,
+      "compression_ratio": 1.2363,
+      "no_speech_prob": 0.0101
+    }
+  ]
+}

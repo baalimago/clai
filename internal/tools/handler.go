@@ -51,6 +51,7 @@ func registerLocalTools() {
 	Registry.Set(tools.LineCount.Specification().Name, tools.LineCount)
 	Registry.Set(tools.Git.Specification().Name, tools.Git)
 	Registry.Set(tools.FFProbe.Specification().Name, tools.FFProbe)
+	Registry.Set(tools.AudioTranscribe.Specification().Name, tools.AudioTranscribe)
 	Registry.Set(tools.Date.Specification().Name, tools.Date)
 	Registry.Set(tools.Pwd.Specification().Name, tools.Pwd)
 	Registry.Set(tools.ClaiHelp.Specification().Name, tools.ClaiHelp)

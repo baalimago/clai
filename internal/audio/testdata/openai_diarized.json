@@ -1,0 +1,23 @@
+{
+  "task": "transcribe",
+  "duration": 12.5,
+  "text": "Hi Bob, how are you? I'm doing great, thanks Alice.",
+  "segments": [
+    {
+      "id": "seg_001",
+      "type": "transcript.text.segment",
+      "start": 0.0,
+      "end": 4.9,
+      "text": "Hi Bob, how are you?",
+      "speaker": "A"
+    },
+    {
+      "id": "seg_002",
+      "type": "transcript.text.segment",
+      "start": 5.1,
+      "end": 12.5,
+      "text": "I'm doing great, thanks Alice.",
+      "speaker": "B"
+    }
+  ]
+}

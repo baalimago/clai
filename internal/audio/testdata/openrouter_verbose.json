@@ -1,0 +1,19 @@
+{
+  "task": "transcribe",
+  "language": "en",
+  "duration": 3.84,
+  "text": "Testing OpenRouter transcription.",
+  "segments": [
+    {
+      "id": 0,
+      "seek": 0,
+      "start": 0.0,
+      "end": 3.84,
+      "text": " Testing OpenRouter transcription.",
+      "temperature": 0.0,
+      "avg_logprob": -0.31,
+      "compression_ratio": 1.0,
+      "no_speech_prob": 0.02
+    }
+  ]
+}

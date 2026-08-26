@@ -706,7 +706,7 @@ func selectFromList(items []string, header, prompt string) (string, error) {
 
 // getAvailableModels discovers model configurations from the clai config directory.
 func getAvailableModels(claiConfigDir string) ([]string, error) {
-	cfgs, err := getConfigs(filepath.Join(claiConfigDir, "*.json"), []string{"textConfig", "photoConfig", "videoConfig"})
+	cfgs, err := getConfigs(filepath.Join(claiConfigDir, "*.json"), []string{"textConfig", "photoConfig", "videoConfig", "audioConfig"})
 	if err != nil {
 		return nil, err
 	}

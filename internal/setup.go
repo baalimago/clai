@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/baalimago/clai/internal/audio"
 	"github.com/baalimago/clai/internal/chat"
 	"github.com/baalimago/clai/internal/debugflags"
 	"github.com/baalimago/clai/internal/glob"
@@ -42,6 +43,7 @@ const (
 	GLOB
 	PHOTO
 	VIDEO
+	AUDIO
 	VERSION
 	SETUP
 	REPLAY
@@ -96,6 +98,8 @@ func getCmdFromArgs(args []string) (Mode, error) {
 		return PHOTO, nil
 	case "video", "v":
 		return VIDEO, nil
+	case "audio", "a":
+		return AUDIO, nil
 	case "chat", "c":
 		return CHAT, nil
 	case "query", "q":
@@ -498,6 +502,9 @@ func printHelp(usage string, args []string) {
 		cfgDir,
 		defaultFlags.VideoDir,
 		defaultFlags.VideoPrefix,
+		cfgDir,
+		cfgDir,
+		cfgDir,
 		defaultFlags.UseTools,
 		defaultFlags.Glob,
 		defaultFlags.Profile,
@@ -596,6 +603,11 @@ func Setup(ctx context.Context, usage string, allArgs []string) (models.Querier,
 	} else {
 		announceUpgrade("videoConfig.json", added)
 	}
+	if _, added, err := utils.LoadConfigFromFileCollect(claiConfDir, "audioConfig.json", nil, &audio.Default); err != nil {
+		ancli.Warnf("failed to upgrade audioConfig.json: %v\n", err)
+	} else {
+		announceUpgrade("audioConfig.json", added)
+	}
 
 	// Profiles are upgraded the same way: every profiles/*.json is migrated
 	// against DefaultProfile before dispatch, so all profiles carry the
@@ -674,6 +686,8 @@ func Setup(ctx context.Context, usage string, allArgs []string) (models.Querier,
 			return nil, fmt.Errorf("failed to create video querier: %v", err)
 		}
 		return vq, nil
+	case AUDIO:
+		return handleAudio(ctx, claiConfDir, postFlagConf, postFlagArgs)
 	case PHOTO:
 		pConf, err := utils.LoadConfigFromFile(claiConfDir, "photoConfig.json", migrateOldPhotoConfig, &photo.DEFAULT)
 		if err != nil {
