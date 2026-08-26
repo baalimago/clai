@@ -34,6 +34,9 @@ Flags:
   -pp, -photo-prefix string           Set the prefix for the generated pictures. (default is found in %v/photoConfig.json)
   -vd, -video-dir string              Set dir for generated videos. Default $HOME/Videos (default %v)
   -vp, -video-prefix string           Set prefix for generated videos. Default 'clai' (default %v)
+  -am, -audio-model string            Set the audio transcription model. (default is found in %v/audioConfig.json)
+  -af, -audio-format string           Set the transcript output format (vtt|srt|text|json). (default is found in %v/audioConfig.json)
+  -parallelism int                    Set max parallel transcription requests for split audio files. (default is found in %v/audioConfig.json)
   -t, -tools string                   Set to <tool_a>,<tool_b> for specific tool, or */"" to use all built in or MCP tools. See available tools with 'clai tools' (default %v)
   -s, -skills string                  Enable or disable skills for this run. Use '*' to enable or 'none' to disable.
   -cmd-ban string                     Append comma-separated command bans for this run (e.g. "rm,sudo"). Commands matching a ban are refused before they spawn.
@@ -58,6 +61,7 @@ Commands:
   q|query <text>                Query the chat model with the given text
   p|photo <text>                Ask the photo model for a picture with the given prompt
   v|video <text>                Ask the video model for a video with the given prompt
+  a|audio  t|transcribe <file>    Transcribe an audio file to text. Use '-' to read audio from stdin.
   re|replay                     Replay the most recent message.
   t|tools [tool name]           List available tools, both mcp and built-in. Or show details for a specific tool.
 
@@ -76,6 +80,7 @@ Examples:
   - clai -asc minimal q "what changed in this repo?"
   - clai -pm dall-e-2 photo A cat in space
   - docker logs example | clai -I LOG q "Find errors in these logs: LOG"
+  - clai a t meeting.wav | clai q "Summarize these meeting notes: {}"
   - clai c list
   - clai -r c dirv2
   - clai c help

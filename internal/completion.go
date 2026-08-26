@@ -55,6 +55,8 @@ type completionFlagSpec struct {
 }
 
 var completionCommands = []string{
+	"a",
+	"audio",
 	"c",
 	"chat",
 	"completion",
@@ -95,6 +97,11 @@ var completionChatSubcommands = []string{"continue", "delete", "dir", "dirv2", "
 var completionGlobalFlags = []completionFlagSpec{
 	{Name: "-I", TakesValue: true},
 	{Name: "-add-shell-context", TakesValue: true, ValueSource: "shell-context"},
+	{Name: "-af", TakesValue: true},
+	{Name: "-am", TakesValue: true},
+	{Name: "-audio-format", TakesValue: true},
+	{Name: "-audio-model", TakesValue: true},
+	{Name: "-parallelism", TakesValue: true},
 	{Name: "-asc", TakesValue: true, ValueSource: "shell-context"},
 	{Name: "-chat-model", TakesValue: true, ValueSource: "model"},
 	{Name: "-cm", TakesValue: true, ValueSource: "model"},

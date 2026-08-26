@@ -46,15 +46,15 @@ func TestCompletionEngineComplete(t *testing.T) {
 			{
 				name:        "top level after trailing space lists commands and flags",
 				line:        []string{"clai", ""},
-				wantValues:  []string{"c", "chat", "completion", "confdir", "g", "glob", "h", "help", "p", "photo", "profiles", "q", "query", "re", "replay", "s", "setup", "t", "tools", "v", "version", "video", "-I", "-add-shell-context", "-asc", "-chat-model", "-cm", "-dir-reply", "-dre", "-g", "-glob", "-i", "-p", "-pd", "-photo-dir", "-photo-model", "-photo-prefix", "-pm", "-pp", "-profile", "-profile-path", "-prp", "-r", "-raw", "-re", "-replace", "-reply", "-t", "-tools", "-vd", "-video-dir", "-video-model", "-video-prefix", "-vm", "-vp"},
-				wantKinds:   repeatKind(completionResultKindPlain, 55),
+				wantValues:  []string{"a", "audio", "c", "chat", "completion", "confdir", "g", "glob", "h", "help", "p", "photo", "profiles", "q", "query", "re", "replay", "s", "setup", "t", "tools", "v", "version", "video", "-I", "-add-shell-context", "-af", "-am", "-asc", "-audio-format", "-audio-model", "-chat-model", "-cm", "-dir-reply", "-dre", "-g", "-glob", "-i", "-p", "-parallelism", "-pd", "-photo-dir", "-photo-model", "-photo-prefix", "-pm", "-pp", "-profile", "-profile-path", "-prp", "-r", "-raw", "-re", "-replace", "-reply", "-t", "-tools", "-vd", "-video-dir", "-video-model", "-video-prefix", "-vm", "-vp"},
+				wantKinds:   repeatKind(completionResultKindPlain, 62),
 				wantReplace: "",
 			},
 			{
 				name:        "dash completes global flags",
 				line:        []string{"clai", "-"},
-				wantValues:  []string{"-I", "-add-shell-context", "-asc", "-chat-model", "-cm", "-dir-reply", "-dre", "-g", "-glob", "-i", "-p", "-pd", "-photo-dir", "-photo-model", "-photo-prefix", "-pm", "-pp", "-profile", "-profile-path", "-prp", "-r", "-raw", "-re", "-replace", "-reply", "-t", "-tools", "-vd", "-video-dir", "-video-model", "-video-prefix", "-vm", "-vp"},
-				wantKinds:   repeatKind(completionResultKindPlain, 33),
+				wantValues:  []string{"-I", "-add-shell-context", "-af", "-am", "-asc", "-audio-format", "-audio-model", "-chat-model", "-cm", "-dir-reply", "-dre", "-g", "-glob", "-i", "-p", "-parallelism", "-pd", "-photo-dir", "-photo-model", "-photo-prefix", "-pm", "-pp", "-profile", "-profile-path", "-prp", "-r", "-raw", "-re", "-replace", "-reply", "-t", "-tools", "-vd", "-video-dir", "-video-model", "-video-prefix", "-vm", "-vp"},
+				wantKinds:   repeatKind(completionResultKindPlain, 38),
 				wantReplace: "-",
 			},
 			{

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/baalimago/clai/internal/audio"
 	"github.com/baalimago/clai/internal/photo"
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/internal/utils"
@@ -14,15 +15,22 @@ import (
 )
 
 type Configurations struct {
-	ChatModel     string
-	PhotoModel    string
-	PhotoDir      string
-	PhotoPrefix   string
-	PhotoOutput   string
-	VideoModel    string
-	VideoDir      string
-	VideoPrefix   string
-	VideoOutput   string
+	ChatModel   string
+	PhotoModel  string
+	PhotoDir    string
+	PhotoPrefix string
+	PhotoOutput string
+	VideoModel  string
+	VideoDir    string
+	VideoPrefix string
+	VideoOutput string
+	AudioModel  string
+	// AudioFormat is the -af/-audio-format transcript output format
+	// (vtt|srt|text|json); validated in CreateAudioQuerier.
+	AudioFormat string
+	// Parallelism is the -parallelism max concurrent transcription requests
+	// for split audio files. 0 = no override.
+	Parallelism   int
 	StdinReplace  string
 	ExpectReplace bool
 	PrintRaw      bool
@@ -110,6 +118,14 @@ func parseFlags(defaults Configurations, args []string) (Configurations, []strin
 
 	vpShort := fs.String("vp", defaults.VideoPrefix, "Set prefix for generated videos. Default 'clai'")
 	vpLong := fs.String("video-prefix", defaults.VideoPrefix, "Set prefix for generated videos. Default 'clai'")
+
+	amShort := fs.String("am", defaults.AudioModel, "Set the audio transcription model. Mutually exclusive with audio-model.")
+	amLong := fs.String("audio-model", defaults.AudioModel, "Set the audio transcription model. Mutually exclusive with am.")
+
+	afShort := fs.String("af", defaults.AudioFormat, "Set the transcript output format: vtt|srt|text|json. Mutually exclusive with audio-format.")
+	afLong := fs.String("audio-format", defaults.AudioFormat, "Set the transcript output format: vtt|srt|text|json. Mutually exclusive with af.")
+
+	parallelism := fs.Int("parallelism", defaults.Parallelism, "Set max parallel transcription requests for split audio files.")
 
 	gShort := fs.String("g", defaults.Glob, "Use globbing from query or chat. This flag will deprecate glob mode in a future release.")
 	gLong := fs.String("glob", defaults.Glob, "Use globbing from query or chat. This flag will deprecate glob mode in a future release.")
@@ -214,6 +230,10 @@ func parseFlags(defaults Configurations, args []string) (Configurations, []strin
 	exitWithFlagError(err, "vd", "video-dir")
 	videoPrefix, err := utils.ReturnNonDefault(*vpShort, *vpLong, defaults.VideoPrefix)
 	exitWithFlagError(err, "vp", "video-prefix")
+	audioModel, err := utils.ReturnNonDefault(*amShort, *amLong, defaults.AudioModel)
+	exitWithFlagError(err, "am", "audio-model")
+	audioFormat, err := utils.ReturnNonDefault(*afShort, *afLong, defaults.AudioFormat)
+	exitWithFlagError(err, "af", "audio-format")
 	shellContext, err := utils.ReturnNonDefault(*ascShort, *ascLong, defaults.ShellContext)
 	exitWithFlagError(err, "asc", "add-shell-context")
 	responseFormatPath, err := utils.ReturnNonDefault(*rfShort, *rfLong, defaults.ResponseFormatPath)
@@ -244,6 +264,9 @@ func parseFlags(defaults Configurations, args []string) (Configurations, []strin
 		VideoModel:                   videoModel,
 		VideoDir:                     videoDir,
 		VideoPrefix:                  videoPrefix,
+		AudioModel:                   audioModel,
+		AudioFormat:                  audioFormat,
+		Parallelism:                  *parallelism,
 		StdinReplace:                 stdinReplace,
 		PrintRaw:                     printRaw,
 		ReplyMode:                    replyMode,
@@ -392,6 +415,18 @@ func applyFlagOverridesForVideo(vConf *video.Configurations, flagSet, defaultFla
 	}
 	if flagSet.VideoOutput != defaultFlags.VideoOutput && flagSet.VideoOutput != "" {
 		vConf.Output.Type = video.OutputType(flagSet.VideoOutput)
+	}
+}
+
+func applyFlagOverridesForAudio(aConf *audio.Configurations, flagSet, defaultFlags Configurations) {
+	if flagSet.AudioModel != defaultFlags.AudioModel {
+		aConf.Transcribe.Model = flagSet.AudioModel
+	}
+	if flagSet.AudioFormat != defaultFlags.AudioFormat {
+		aConf.Transcribe.OutputFormat = flagSet.AudioFormat
+	}
+	if flagSet.Parallelism != defaultFlags.Parallelism {
+		aConf.Transcribe.Parallelism = flagSet.Parallelism
 	}
 }
 

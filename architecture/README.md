@@ -21,6 +21,7 @@ This directory contains short design notes for key parts of **clai**. Each file 
 - **[dre.md](./dre.md)** — `clai dre`: prints the last message from the directory-bound conversation for the current working directory.
 - **[photo.md](./photo.md)** — `clai photo`: image generation flow, prompt formatting, vendor routing, and output modes (local/url).
 - **[video.md](./video.md)** — `clai video`: video generation (OpenAI Sora), optional image-to-video prompt parsing, and output modes.
+- **[audio.md](./audio.md)** — `clai audio transcribe`: audio transcription (OpenAI/OpenRouter), local vtt/srt/text/json rendering, ffmpeg split for large files, and the `audio_transcribe` tool bridge.
 - **[tools.md](./tools.md)** — `clai tools` inspection UI: list tools and print JSON schema for one tool.
 - **[profiles.md](./profiles.md)** — `clai profiles`: lists profile JSONs and prints a small summary; profiles are applied via `-p` flags (see CONFIG).
 - **[setup.md](./setup.md)** — `clai setup` interactive wizard for editing mode configs, vendor model files, profiles, and MCP server configs.

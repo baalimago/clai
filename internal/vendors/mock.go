@@ -184,6 +184,12 @@ func inputsForTool(toolName string) pub_models.Input {
 			}
 		}
 		return input
+	case "audio_transcribe":
+		input := pub_models.Input{"file_path": os.Getenv("CLAI_MOCK_AUDIO_TRANSCRIBE_FILE")}
+		if format := os.Getenv("CLAI_MOCK_AUDIO_TRANSCRIBE_FORMAT"); format != "" {
+			input["output_format"] = format
+		}
+		return input
 	case "cmd":
 		return pub_models.Input{"command": envOr("CLAI_MOCK_CMD_COMMAND", `printf mocked-cmd`)}
 	case "freetext_command": // legacy alias of cmd

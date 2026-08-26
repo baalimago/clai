@@ -190,7 +190,7 @@ func InitCmd() error {
 		{
 			name: "model files",
 			load: func(dir string) ([]config, error) {
-				return getConfigs(filepath.Join(dir, "*.json"), []string{"textConfig", "photoConfig", "videoConfig"})
+				return getConfigs(filepath.Join(dir, "*.json"), []string{"textConfig", "photoConfig", "videoConfig", "audioConfig"})
 			},
 			itemSelectActions: nil,
 			itemActions:       []action{conf, del, copyAction, confWithEditor},
