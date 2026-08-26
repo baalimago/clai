@@ -4,8 +4,9 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
+
+	"github.com/baalimago/clai/internal/utils"
 )
 
 func loadEnvFile(envFile string) (map[string]string, error) {
@@ -13,7 +14,7 @@ func loadEnvFile(envFile string) (map[string]string, error) {
 	if envFile == "" {
 		return nil, nil
 	}
-	resolved, err := expandUserPath(envFile)
+	resolved, err := utils.ExpandUserPath(envFile)
 	if err != nil {
 		return nil, err
 	}
@@ -26,24 +27,6 @@ func loadEnvFile(envFile string) (map[string]string, error) {
 		return nil, fmt.Errorf("parse envfile %q: %w", resolved, err)
 	}
 	return parsed, nil
-}
-
-func expandUserPath(p string) (string, error) {
-	if p == "" || p[0] != '~' {
-		return p, nil
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("resolve home dir: %w", err)
-	}
-	if p == "~" {
-		return home, nil
-	}
-	if strings.HasPrefix(p, "~/") {
-		return filepath.Join(home, p[2:]), nil
-	}
-	// Don't attempt to expand ~user paths.
-	return p, nil
 }
 
 func parseEnvFileContent(content string) (map[string]string, error) {

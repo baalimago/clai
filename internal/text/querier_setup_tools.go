@@ -16,6 +16,7 @@ import (
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/tools/mcp"
+	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
@@ -80,8 +81,16 @@ func findConfiguredMcpServers(filePaths []string) ([]pub_models.McpServer, error
 			errs = append(errs, fmt.Errorf("failed to unmarshal: '%s', error: %v", file, unmarshalErr))
 			continue
 		}
-		if mcpServer.EnvFile != "" && !filepath.IsAbs(mcpServer.EnvFile) {
-			mcpServer.EnvFile = filepath.Join(filepath.Dir(file), mcpServer.EnvFile)
+		if mcpServer.EnvFile != "" {
+			expanded, expandErr := utils.ExpandUserPath(mcpServer.EnvFile)
+			if expandErr != nil {
+				errs = append(errs, fmt.Errorf("failed to expand envfile %q in %q: %w", mcpServer.EnvFile, file, expandErr))
+				continue
+			}
+			if !filepath.IsAbs(expanded) {
+				expanded = filepath.Join(filepath.Dir(file), expanded)
+			}
+			mcpServer.EnvFile = expanded
 		}
 		serverName := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
 		mcpServer.Name = serverName

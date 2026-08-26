@@ -327,3 +327,39 @@ func Test_registerTool_DeduplicatesByName(t *testing.T) {
 		t.Error("registration not tracked in RegisteredTools")
 	}
 }
+
+func Test_findConfiguredMcpServers_EnvFileHomeResolution(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	confDir := t.TempDir()
+
+	tests := []struct {
+		name    string
+		envfile string
+		want    string
+	}{
+		{name: "tilde resolves to home", envfile: "~/.envfile", want: filepath.Join(home, ".envfile")},
+		{name: "HOME var resolves to home", envfile: "$HOME/.envfile", want: filepath.Join(home, ".envfile")},
+		{name: "relative joins config dir", envfile: ".envfile", want: filepath.Join(confDir, ".envfile")},
+		{name: "absolute untouched", envfile: "/etc/clai/.envfile", want: "/etc/clai/.envfile"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(confDir, "srv.json")
+			cfg := fmt.Sprintf(`{"command":"echo","envfile":%q}`, tt.envfile)
+			if err := os.WriteFile(path, []byte(cfg), 0o644); err != nil {
+				t.Fatalf("write config: %v", err)
+			}
+			servers, err := findConfiguredMcpServers([]string{path})
+			if err != nil {
+				t.Fatalf("findConfiguredMcpServers: %v", err)
+			}
+			if len(servers) != 1 {
+				t.Fatalf("expected 1 server, got %d", len(servers))
+			}
+			if servers[0].EnvFile != tt.want {
+				t.Fatalf("EnvFile = %q, want %q", servers[0].EnvFile, tt.want)
+			}
+		})
+	}
+}

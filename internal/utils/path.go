@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"path/filepath"
+	"strings"
 )
 
 // GetClaiConfigDir returns the path to the clai configuration directory.
@@ -18,6 +20,27 @@ func GetClaiConfigDir() (string, error) {
 		return "", fmt.Errorf("failed to get user config directory: %w", err)
 	}
 	return path.Join(cfg, ".clai"), nil
+}
+
+// ExpandUserPath expands environment variables ($VAR or ${VAR}) and a
+// leading tilde in p. Unset variables expand to the empty string, matching
+// shell semantics. Paths like ~user are returned unchanged.
+func ExpandUserPath(p string) (string, error) {
+	p = os.ExpandEnv(p)
+	if p == "" || p[0] != '~' {
+		return p, nil
+	}
+	if p != "~" && !strings.HasPrefix(p, "~/") {
+		return p, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve home dir: %w", err)
+	}
+	if p == "~" {
+		return home, nil
+	}
+	return filepath.Join(home, p[2:]), nil
 }
 
 // GetClaiCacheDir returns the path to the clai cache directory.

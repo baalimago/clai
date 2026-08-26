@@ -92,8 +92,15 @@ func (c *Configurations) ProfileOverrides() error {
 	mcpServers := make([]models.McpServer, 0)
 	for name, m := range profile.McpServers {
 		m.Name = name
-		if m.EnvFile != "" && profileDir != "" && !filepath.IsAbs(m.EnvFile) {
-			m.EnvFile = filepath.Join(profileDir, m.EnvFile)
+		if m.EnvFile != "" {
+			expanded, expandErr := utils.ExpandUserPath(m.EnvFile)
+			if expandErr != nil {
+				return fmt.Errorf("failed to expand envfile path %q: %w", m.EnvFile, expandErr)
+			}
+			if profileDir != "" && !filepath.IsAbs(expanded) {
+				expanded = filepath.Join(profileDir, expanded)
+			}
+			m.EnvFile = expanded
 		}
 		c.RequestedToolGlobs = append(c.RequestedToolGlobs, fmt.Sprintf("mcp_%v*", name))
 		mcpServers = append(mcpServers, m)

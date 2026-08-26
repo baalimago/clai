@@ -1,6 +1,7 @@
 package text
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -210,5 +211,49 @@ func Test_findProfileByPath_LoadsProfileFile(t *testing.T) {
 	}
 	if got.Name != "reviewer" || got.Model != "gpt-x" || !got.UseTools {
 		t.Errorf("loaded profile = %+v, want reviewer/gpt-x/tools-on", got)
+	}
+}
+
+func TestConfigurations_ProfileOverrides_EnvFileHomeResolution(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	confDir := t.TempDir()
+	t.Setenv("CLAI_CONFIG_DIR", confDir)
+
+	profileDir := filepath.Join(confDir, "profiles")
+	if err := os.MkdirAll(profileDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(%q): %v", profileDir, err)
+	}
+
+	tests := []struct {
+		name    string
+		envfile string
+		want    string
+	}{
+		{name: "tilde resolves to home", envfile: "~/.envfile", want: filepath.Join(home, ".envfile")},
+		{name: "HOME var resolves to home", envfile: "$HOME/.envfile", want: filepath.Join(home, ".envfile")},
+		{name: "relative joins profile dir", envfile: ".envfile", want: filepath.Join(profileDir, ".envfile")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			profileJSON := fmt.Sprintf(
+				`{"name":"gopher","model":"test","mcp_servers":{"srv":{"command":"echo","envfile":%q}}}`,
+				tt.envfile)
+			if err := os.WriteFile(filepath.Join(profileDir, "gopher.json"), []byte(profileJSON), 0o644); err != nil {
+				t.Fatalf("WriteFile(profile): %v", err)
+			}
+
+			conf := Default
+			conf.UseProfile = "gopher"
+			if err := conf.ProfileOverrides(); err != nil {
+				t.Fatalf("ProfileOverrides: %v", err)
+			}
+			if len(conf.McpServers) != 1 {
+				t.Fatalf("expected 1 mcp server, got %d", len(conf.McpServers))
+			}
+			if conf.McpServers[0].EnvFile != tt.want {
+				t.Fatalf("EnvFile = %q, want %q", conf.McpServers[0].EnvFile, tt.want)
+			}
+		})
 	}
 }
