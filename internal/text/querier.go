@@ -24,9 +24,8 @@ const (
 
 	// maxReasoningBuf caps the reasoning text accumulated per stream. A
 	// looping model can stream reasoning tokens forever; without the cap the
-	// strings.Builder here grows unboundedly (O(n) per append, doubling the
-	// backing array) until the process OOMs (kinoview production incident,
-	// 2026-08-11: 2.53 GB heap). Keeping the tail preserves the reasoning
+	// accumulator grows unboundedly until the process OOMs (kinoview production
+	// incident, 2026-08-11: 2.53 GB heap). Keeping the tail preserves the reasoning
 	// context that matters for tool calls and the final answer.
 	maxReasoningBuf = 1 << 20 // 1 MiB
 )
@@ -74,7 +73,7 @@ type Querier[C models.StreamCompleter] struct {
 
 	// reasoningBuf preserves source reasoning for the session and model. The
 	// activity viewport is a separate, bounded terminal-only copy.
-	reasoningBuf     strings.Builder
+	reasoningBuf     tailBuffer
 	reasoningActive  bool
 	activityViewport *utils.ActivityViewport
 	// mcpSink buffers MCP server stderr lines for the rolling window. It is
@@ -256,18 +255,11 @@ func (q *Querier[C]) handleTokenForSession(session *QuerySession, token string) 
 	return nil
 }
 
-// appendReasoning accumulates one reasoning token into reasoningBuf, keeping
-// only the last maxReasoningBuf bytes. An endless reasoning stream (a looping
-// model) otherwise grows the builder without bound — O(n) per append with
-// doubling backing arrays — until the process OOMs. The tail is what survives
-// into tool calls and the final answer.
+// appendReasoning accumulates one reasoning token into reasoningBuf. The
+// bounded circular buffer keeps the newest maxReasoningBuf bytes without
+// repeatedly copying the full retained tail.
 func (q *Querier[C]) appendReasoning(content string) {
 	q.reasoningBuf.WriteString(content)
-	if q.reasoningBuf.Len() > maxReasoningBuf {
-		tail := q.reasoningBuf.String()
-		q.reasoningBuf.Reset()
-		q.reasoningBuf.WriteString(tail[len(tail)-maxReasoningBuf:])
-	}
 }
 
 func (q *Querier[C]) usesActivityViewport() bool {
