@@ -93,7 +93,7 @@ func TestInitRegistersApplyPatch(t *testing.T) {
 	if _, ok := Registry.Get("apply_patch"); !ok {
 		t.Fatalf("expected apply_patch to be registered")
 	}
-	for _, name := range []string{"cmd", "freetext_command", "async_cmd", "async_cmd_run", "async_cmd_status", "async_cmd_logs", "async_cmd_await", "async_cmd_cancel"} {
+	for _, name := range []string{"cmd", "freetext_command", "async_cmd", "async_cmd_run", "async_cmd_status", "async_cmd_logs", "async_cmd_await", "async_cmd_cancel", "mktemp"} {
 		if _, ok := Registry.Get(name); !ok {
 			t.Fatalf("expected %s to be registered", name)
 		}

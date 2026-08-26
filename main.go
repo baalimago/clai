@@ -97,6 +97,7 @@ func triggerCompletionNotification(completed any) {
 
 func run(args []string) int {
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	// Build in cancel into the context to allow it to be called downstream
 	// Anti-pattern? Not sure, honestly, needed here to cleanly stop
 	// clai in case of nested tool calls. Could've been solved by proper structure

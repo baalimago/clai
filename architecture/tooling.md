@@ -53,6 +53,12 @@ Built-in tools typically run locally (e.g., execute a Go command, search files, 
 - produce deterministic/structured output
 - return errors with context (`fmt.Errorf("<context>: %w", err)`) so failures are explainable
 
+The `mktemp` built-in creates a private directory under the operating system's
+temporary directory and removes it when the calling context is canceled. The
+cleanup lives inside the tool itself, so the CLI and `pkg` agents get identical
+behavior: whoever cancels the query context triggers removal, with no extra
+wiring at the call site.
+
 ### MCP tools
 
 MCP tools are discovered from configured MCP servers (see [MCP servers](#mcp-servers)). During tooling initialization:

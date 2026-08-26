@@ -136,8 +136,7 @@ func TestManager(t *testing.T) {
 // TestManager_SkipsFailingServer pins the non-fatal error contract: a server
 // whose handshake fails is skipped while a healthy server still registers.
 func TestManager_SkipsFailingServer(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	goodSrv := pub_models.McpServer{Command: "go", Args: []string{"run", "./testserver"}}
 	goodIn, goodOut, err := Client(ctx, goodSrv, nil)
