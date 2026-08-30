@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/baalimago/clai/internal/video"
+	video "github.com/baalimago/clai/internal/video/generic"
 )
 
 func TestNewVideoQuerierRequiresAPIKey(t *testing.T) {

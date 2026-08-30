@@ -4,6 +4,7 @@ This directory contains short design notes for key parts of **clai**. Each file 
 
 ## Core concepts
 
+- **[cmd-dispatch.md](./cmd-dispatch.md)** — Command dispatch and the flag system: the `cmd.Run` command map, the `claiCommand` adapter, per-command flag groups and short/long alias values, `Subcommander` trees (chat/audio/tools/profiles), clean-exit sentinels, and the completion hook wiring.
 - **[config.md](./config.md)** — Where config lives (config/cache dirs), what files exist (mode configs, vendor model configs, profiles, conversations), and the override cascade (defaults → file → profiles → flags).
 - **[chat.md](./chat.md)** — Conversation storage format, global previous-query (`globalScope.json`), directory-scoped reply bindings, the OpenAI reasoning-item sidecar (`conversations/reasoning/<chatid>/`), and the `clai chat continue` flow.
 - **[continue-from-claudex.md](./continue-from-claudex.md)** — Auto-discover and continue conversations from external AI tools (Claude Desktop/Code, Codex, Pi, Cursor, …) directly from `clai chat list`. Foreign conversations are inspected on-the-fly and cloned to native clai chats on continue, with a shared `source` field that also enables chat forking.
@@ -25,7 +26,7 @@ This directory contains short design notes for key parts of **clai**. Each file 
 - **[tools.md](./tools.md)** — `clai tools` inspection UI: list tools and print JSON schema for one tool.
 - **[profiles.md](./profiles.md)** — `clai profiles`: lists profile JSONs and prints a small summary; profiles are applied via `-p` flags (see CONFIG).
 - **[setup.md](./setup.md)** — `clai setup` interactive wizard for editing mode configs, vendor model files, profiles, and MCP server configs.
-- **[help.md](./help.md)** — `clai help` command: prints usage template plus special handling for `help profile`.
+- **[help.md](./help.md)** — the help system: dispatcher usage on bare `clai`, per-command `-h` (Help() + flags + examples + sub tables), profile docs in `clai profiles -h`.
 - **[version.md](./version.md)** — `clai version`: prints build/module version information and exits.
 
 ## UI / output

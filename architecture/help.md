@@ -1,61 +1,44 @@
-# Help Command Architecture
+# Help System Architecture
 
-Command: `clai help` (aliases: `h`)
+There is no `help` command. Help has two surfaces, both derived from the
+command map — nothing is hand-maintained:
 
-The **help** command prints the usage string (defined in `main.go`) rendered with a few runtime defaults, plus some special-case help for `profile`.
+1. **Bare `clai` (and unknown commands)** print the dispatcher usage:
+   prerequisites, the generated sorted command table, a per-command `-h`
+   pointer, config/cache dirs and examples. Exit code 1 (no command ran).
+2. **`clai <command> -h`** (any level: `clai q -h`, `clai chat -h`,
+   `clai chat list -h`) prints that command's `Help()` text — description
+   plus an Examples block — followed by its flagset-derived flag list and,
+   for a `Subcommander`, its subcommand table.
 
-This is intentionally separate from `-h` flag behavior; `clai -h` is discouraged and replaced by a dummy flag message.
-
-## Entry Flow
+## Entry flow
 
 ```text
-main.go:run()
-  → internal.Setup(ctx, usage, args)
-    → parseFlags()
-    → getCmdFromArgs() → HELP
-    → printHelp(usage, allArgs)
-  → exit (utils.ErrUserInitiatedExit)
+bare clai / unknown command
+  → cmd.Run → ErrNoArgs / ArgNotFoundError
+    → printUsage: usage template %v ← generated command table
+      (config/cache dirs interpolated in main.run before cmd.Run)
+
+clai <command> -h
+  → the command's flagset returns flag.ErrHelp
+    → cmd printHelp → helpText(command)
+        = command.Help()            # description + Examples (internal/<domain>/cmd.go)
+        + "Flags:" PrintDefaults    # claiCommand.Help(), flagset-derived
+        + subcommand table          # upstream, for Subcommanders
 ```
 
-## Key Files
+The flagset's own output is silenced upstream (`parseFlagset` →
+`io.Discard`), so stdlib's "Usage of x:" dump never duplicates the help.
+
+## Key files
 
 | File | Purpose |
 |------|---------|
-| `main.go` | Defines the `usage` template string |
-| `internal/setup.go` | HELP dispatch and `printHelp()` implementation |
-| `internal/utils/config.go` | `GetClaiConfigDir`, `GetClaiCacheDir` used to fill in template |
+| `main.go` | `usageTemplate` + dir interpolation in `run()` |
+| `internal/<domain>/cmd.go` | per-command help strings with Examples; `internal.Command.Help()` appends the flag list |
+| `go_away_boilerplate/pkg/cmd` | `-h` routing, sub-table composition, sorted command table |
 
-## Behavior
+## Profile documentation
 
-### `clai help profile` (special case)
-
-`printHelp()` checks:
-
-- if `len(args) > 1 && (args[1] == "profile" || args[1] == "p")`
-
-Then it prints `internal.ProfileHelp` and returns.
-
-This is the deep-ish help for profile concepts and usage.
-
-### General help (`clai help`)
-
-`printHelp()`:
-
-1. Resolves config and cache directories (best effort).
-2. Calls `fmt.Printf(usage, ...)` to fill in defaults like:
-   - default `-re`, `-r`, `-t`, `-g`, `-p` values
-   - config dir + cache dir paths
-3. Prints to stdout.
-
-The general help lists `-s` and `-skills`. Use `*` to enable skills or `none` to disable skills for the current run.
-
-The general help lists both directory-information commands:
-
-- `clai chat dir` keeps the stable v1 output.
-- `clai chat dirv2` provides total and recent token usage.
-
-`clai chat help` lists the same commands and includes raw-mode examples.
-
-## Exit behavior
-
-Returns `utils.ErrUserInitiatedExit`, so the process exits with code 0.
+The old `clai help profile` doc (`internal.ProfileHelp`) lives in
+`clai profiles -h`.

@@ -10,4 +10,4 @@ jobs:
     with:
       project-name: clai
       branch: main
-      version-var: "github.com/baalimago/clai/internal.BuildVersion"
+      version-var: "github.com/baalimago/clai/internal/version.BuildVersion"

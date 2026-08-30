@@ -13,21 +13,18 @@ These are *display* commands; they don’t call any LLM vendor.
 
 ```text
 main.go:run()
-  → internal.Setup(ctx, usage, args)
-    → parseFlags()
-    → getCmdFromArgs() → REPLAY
-    → chat.Replay(postFlagConf.PrintRaw, false)
+  → cmd.Run(...)                  # go_away_boilerplate/pkg/cmd dispatch
+    → replay command Run (internal/chat/cmd.go)
+      → chat.Replay(conf.PrintRaw, false)
 ```
 
 ### `clai dre`
 
 ```text
 main.go:run()
-  → internal.Setup(ctx, usage, args)
-    → parseFlags()
-    → getCmdFromArgs() → DIRSCOPED_REPLAY
-    → setupDRE() → returns dreQuerier
-  → querier.Query(ctx)
+  → cmd.Run(...)                  # go_away_boilerplate/pkg/cmd dispatch
+    → dir-replay command Setup → dreQuerier (internal/chat/cmd.go)
+    → adapter Run → querier.Query(ctx)
     → chat.Replay(raw, true)
 ```
 
@@ -38,7 +35,7 @@ main.go:run()
 | File | Purpose |
 |------|---------|
 | `internal/setup.go` | Dispatches REPLAY and DIRSCOPED_REPLAY modes |
-| `internal/dre.go` | Implements `dreQuerier` and `setupDRE` |
+| `internal/chat/cmd.go` | replay + dir-replay commands and `dreQuerier` |
 | `internal/chat/replay.go` | Implements `chat.Replay(raw, dirScoped)` |
 | `internal/chat/dirscope.go` | Directory binding resolution needed for dir-scoped replay |
 | `internal/chat/reply.go` | Stores/loads `globalScope.json` |

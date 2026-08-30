@@ -27,7 +27,7 @@ func Test_e2e_setup_migrates_mode_configs_and_announces_before_wizard(t *testing
 		"model": "test",
 	})
 
-	stdout, status := runOne(t, confDir, "-n -cm test s 0 0 q")
+	stdout, status := runOne(t, confDir, "-n s 0 0 q")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -68,7 +68,7 @@ func Test_e2e_setup_migrates_profiles_and_announces_before_wizard(t *testing.T) 
 		"model": "test",
 	})
 
-	stdout, status := runOne(t, confDir, "-n -cm test s 0 0 q")
+	stdout, status := runOne(t, confDir, "-n s 0 0 q")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -98,7 +98,7 @@ func Test_e2e_setup_macro_select_category_quit(t *testing.T) {
 	confDir := setupMainTestConfigDir(t)
 
 	// 0=select category 0 (general config) → config list shown → trailing q exits
-	stdout, status := runOne(t, confDir, "-n -r -cm test s 0")
+	stdout, status := runOne(t, confDir, "-n s 0")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -115,7 +115,7 @@ func Test_e2e_setup_macro_select_config_and_back(t *testing.T) {
 	confDir := setupMainTestConfigDir(t)
 
 	// 0=category 0 (general config) → 0=config item → preview → b=back to list → trailing q exits
-	stdout, status := runOne(t, confDir, "-n -r -cm test s 0 0 b")
+	stdout, status := runOne(t, confDir, "-n s 0 0 b")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -136,7 +136,7 @@ func Test_e2e_setup_macro_select_config_and_quit(t *testing.T) {
 	confDir := setupMainTestConfigDir(t)
 
 	// 0=category 0 (general config) → 0=config item → preview → q=quit
-	stdout, status := runOne(t, confDir, "-n -r -cm test s 0 0 q")
+	stdout, status := runOne(t, confDir, "-n s 0 0 q")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}

@@ -51,6 +51,56 @@ func Test_e2e_audio_transcribe_tool_returns_transcript(t *testing.T) {
 	}
 }
 
+// Test_e2e_audio_transcribe_tool_flag_overrides pins that a normal query can
+// configure the media tools it calls: -am picks the transcription model
+// (audioConfig.json names a different one) and -af forces the transcript
+// format over the tool call's own choice.
+func Test_e2e_audio_transcribe_tool_flag_overrides(t *testing.T) {
+	t.Run("-am overrides the configured model", func(t *testing.T) {
+		confDir := setupMainTestConfigDir(t)
+		audioFile := writeE2EAudioFile(t)
+		t.Setenv("CLAI_MOCK_AUDIO_TRANSCRIBE_FILE", audioFile)
+		t.Setenv("OPENAI_API_KEY", "")
+
+		// The file names an OpenAI model that would need a key; the flag
+		// routes to the mock instead.
+		status, stdout, stderr := runAudioTool(t, confDir, "whisper-1",
+			"-r -cm mock_test -am test -t=audio_transcribe q tool_audio_transcribe")
+
+		if status != 0 {
+			t.Fatalf("expected success, got %d stdout=%q stderr=%q", status, stdout, stderr)
+		}
+		testboil.AssertStringContains(t, stdout+stderr, "mock transcription")
+	})
+
+	t.Run("-af overrides the tool's transcript format", func(t *testing.T) {
+		confDir := setupMainTestConfigDir(t)
+		audioFile := writeE2EAudioFile(t)
+		t.Setenv("CLAI_MOCK_AUDIO_TRANSCRIBE_FILE", audioFile)
+
+		status, stdout, stderr := runAudioTool(t, confDir, "test",
+			"-r -cm mock_test -am test -af json -t=audio_transcribe q tool_audio_transcribe")
+
+		if status != 0 {
+			t.Fatalf("expected success, got %d stdout=%q stderr=%q", status, stdout, stderr)
+		}
+		combined := stdout + stderr
+		testboil.AssertStringContains(t, combined, `"start":`)
+		if strings.Contains(combined, "WEBVTT") {
+			t.Errorf("expected json transcript, got VTT: %q", combined)
+		}
+	})
+
+	t.Run("an unknown -af value fails the run immediately", func(t *testing.T) {
+		confDir := setupMainTestConfigDir(t)
+		status, _, stderr := runAudioTool(t, confDir, "test",
+			"-r -cm mock_test -af yaml -t=audio_transcribe q tool_audio_transcribe")
+
+		testboil.FailTestIfDiff(t, status, 1)
+		testboil.AssertStringContains(t, stderr, "yaml")
+	})
+}
+
 func Test_e2e_audio_transcribe_tool_vtt_format(t *testing.T) {
 	confDir := setupMainTestConfigDir(t)
 	audioFile := writeE2EAudioFile(t)

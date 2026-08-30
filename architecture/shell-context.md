@@ -236,10 +236,10 @@ If template parsing or execution fails:
 ## Configuration + wiring points (code-level)
 
 ### Flag parsing
-- `internal/setup_flags.go`:
+- `internal/flags.go`:
   - add string flags `-asc` and `-add-shell-context`
   - they are mutually exclusive (same short/long behavior as other flags)
-  - store result in `internal.Configurations.ShellContext` (string)
+  - store result in the query-text flag group (`QueryTextFlags.ShellContext`)
 
 ### Text configuration
 - `internal/text.Configurations`:

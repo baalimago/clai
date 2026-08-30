@@ -12,7 +12,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
@@ -55,14 +54,7 @@ const (
 	editMessageTblFormat = "%-6v| %-10v| %-7v| %v"
 )
 
-type NotCyclicalImport struct {
-	UseTools   bool
-	UseProfile string
-	Model      string
-}
-
 type ChatHandler struct {
-	q        models.ChatQuerier
 	debug    bool
 	username string
 	subCmd   string
@@ -70,8 +62,10 @@ type ChatHandler struct {
 	prompt   string
 	confDir  string
 	convDir  string
-	config   NotCyclicalImport
-	raw      bool
+	// profile is the -p override. Continuing a chat stamps it onto the
+	// conversation so later -dre queries keep using it.
+	profile string
+	raw     bool
 
 	out   io.Writer
 	input io.Reader
@@ -235,10 +229,10 @@ func (cq *ChatHandler) cont(ctx context.Context) error {
 	// If the conversation has a profile associated with it, prefer that when continuing.
 	// This makes `chat continue <id-or-index>` use the profile last used for that chat.
 	if chat.Profile != "" {
-		cq.config.UseProfile = chat.Profile
-	} else if cq.config.UseProfile != "" {
+		cq.profile = chat.Profile
+	} else if cq.profile != "" {
 		// If no profile stored yet, stamp it so it persists going forward.
-		chat.Profile = cq.config.UseProfile
+		chat.Profile = cq.profile
 	}
 
 	if cq.prompt != "" {
@@ -279,28 +273,21 @@ func (cq *ChatHandler) getByID(ID string) (pub_models.Chat, error) {
 	return FromPath(conversationPathFromDir(cq.convDir, ID))
 }
 
-func New(q models.ChatQuerier,
-	confDir,
-	args string,
-	preMessages []pub_models.Message,
-	conf NotCyclicalImport,
-	raw bool,
-	out io.Writer,
-	chatQuerierCosts []pub_models.QueryCost,
-) (*ChatHandler, error) {
+// New builds the chat handler. args is the dispatched "<verb> <rest...>"
+// string: the verb selects the action, the rest is the chat id or index.
+// The handler holds no model querier — every chat subcommand reads stored
+// transcripts and writes conversation state, so none of them query a
+// vendor.
+func New(confDir, args, profile string, raw bool, out io.Writer) (*ChatHandler, error) {
+	if confDir == "" {
+		return nil, errors.New("chat handler requires a config dir")
+	}
 	username := "user"
 	debug := misc.Truthy(os.Getenv("DEBUG"))
 	argsArr := strings.Split(args, " ")
 	subCmd := argsArr[0]
-	currentUser, err := user.Current()
-	if err == nil {
+	if currentUser, err := user.Current(); err == nil {
 		username = currentUser.Username
-	}
-
-	subPrompt := strings.Join(argsArr[1:], " ")
-	claiDir, err := utils.GetClaiConfigDir()
-	if err != nil {
-		return nil, err
 	}
 
 	if out == nil {
@@ -308,14 +295,13 @@ func New(q models.ChatQuerier,
 	}
 
 	ch := &ChatHandler{
-		q:        q,
 		username: username,
 		debug:    debug,
 		subCmd:   subCmd,
-		prompt:   subPrompt,
-		confDir:  claiDir,
-		convDir:  conversationsDir(claiDir),
-		config:   conf,
+		prompt:   strings.Join(argsArr[1:], " "),
+		confDir:  confDir,
+		convDir:  conversationsDir(confDir),
+		profile:  profile,
 		raw:      raw,
 		out:      out,
 		dims:     utils.SessionDimensions(out),

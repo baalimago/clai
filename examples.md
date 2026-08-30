@@ -23,12 +23,14 @@ See: [`config.md`](./architecture/config.md).
 clai query "Explain the design"
 clai -re query "Now give the trade-offs"
 clai -dre query "Apply it to this repo"
+clai query -- -why does this fail
 ```
 
 - `query` saves reply context to `<clai-config>/conversations/globalScope.json`.
 - Non-reply queries also bind CWD → chat ID (dir-scope).
 - `-re` loads `globalScope.json` as context.
 - `-dre` first copies the directory-bound chat into `globalScope.json`, then uses normal `-re` plumbing.
+- A prompt whose first word starts with `-` is parsed as a flag; pass it after `--`.
 
 See: [`query.md`](./architecture/query.md), [`chat.md`](./architecture/chat.md), [`dre.md`](./architecture/dre.md).
 
@@ -148,10 +150,12 @@ See: [`photo.md`](./architecture/photo.md), [`video.md`](./architecture/video.md
 
 ```bash
 clai audio transcribe meeting.wav
-clai -af text a t meeting.wav
+clai a t -af text meeting.wav
 cat meeting.wav | clai a t -
 
 clai a t meeting.wav | clai q "Summarize these meeting notes: {}"
+# let the agent transcribe, picking the model + format the tool uses:
+clai -am gpt-4o-transcribe-diarize -af json -t audio_transcribe q "Who said what in meeting.wav?"
 ```
 
 - Transcripts render locally as `vtt` (default), `srt`, `text`, or `json`; stdout carries only the transcript, so it pipes cleanly.

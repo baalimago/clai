@@ -13,12 +13,3 @@ func TestValidateOutputType(t *testing.T) {
 		t.Error("expected error for invalid output type")
 	}
 }
-
-func TestFunimation(t *testing.T) {
-	if funimation(0) != "🕛" {
-		t.Errorf("unexpected image for 0")
-	}
-	if funimation(43478260) != "🕧" {
-		t.Errorf("unexpected image for step")
-	}
-}

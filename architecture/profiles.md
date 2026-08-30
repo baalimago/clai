@@ -10,17 +10,16 @@ Profiles themselves are used primarily via the `-p/-profile` and `-prp/-profile-
 
 ```text
 main.go:run()
-  → internal.Setup(ctx, usage, args)
-    → parseFlags()
-    → getCmdFromArgs() → PROFILES
-    → profiles.SubCmd(ctx, allArgs)
+  → cmd.Run(...)                  # go_away_boilerplate/pkg/cmd dispatch
+    → profiles command Run (internal/profiles/cmd.go)
+      → profiles.List()
 ```
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
-| `internal/setup.go` | Dispatches PROFILES mode |
+| `internal/profiles/cmd.go` | profiles command + `list` sub (see [cmd-dispatch.md](./cmd-dispatch.md)) |
 | `internal/profiles/cmd.go` | Implements `clai profiles` command |
 | `internal/utils/config_dir.go` (or similar) | `GetClaiConfigDir()` |
 | `internal/utils/json.go` (or similar) | `ReadAndUnmarshal()` helper |

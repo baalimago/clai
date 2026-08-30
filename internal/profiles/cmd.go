@@ -2,46 +2,19 @@ package profiles
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/baalimago/clai/internal"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
-	"github.com/baalimago/go_away_boilerplate/pkg/table"
+	"github.com/baalimago/go_away_boilerplate/pkg/cmd"
 )
 
-// SubCmd handles `clai profiles` sub-commands.
-//
-// Usage:
-//
-//	clai profiles           # list configured profiles
-//	clai profiles list
-//
-// Additional sub-commands can be added later (e.g. show, delete, etc.).
-func SubCmd(ctx context.Context, args []string) error {
-	_ = ctx // currently unused; kept for future expansion
-
-	// We expect args[0] to be "profiles".
-	fs := flag.NewFlagSet("profiles", flag.ContinueOnError)
-	fs.SetOutput(nil) // silence default usage output; we handle errors ourselves
-
-	if err := fs.Parse(args[1:]); err != nil {
-		return fmt.Errorf("failed to parse profiles flags: %w", err)
-	}
-
-	rest := fs.Args()
-	if len(rest) == 0 || rest[0] == "list" {
-		return runProfilesList()
-	}
-
-	return fmt.Errorf("unknown profiles subcommand: %q", rest[0])
-}
-
-// runProfilesList lists all static profiles from <UserConfigDir>/.clai/profiles.
-func runProfilesList() error {
+// List prints all static profiles from <UserConfigDir>/.clai/profiles.
+func List() error {
 	configDir, err := utils.GetClaiConfigDir()
 	if err != nil {
 		return fmt.Errorf("failed to get clai config dir: %w", err)
@@ -50,7 +23,7 @@ func runProfilesList() error {
 	profilesDir := filepath.Join(configDir, "profiles")
 	if _, err := os.Stat(profilesDir); os.IsNotExist(err) {
 		ancli.Warnf("no profiles directory found at %s\n", profilesDir)
-		return table.ErrUserInitiatedExit
+		return nil
 	}
 
 	files, err := os.ReadDir(profilesDir)
@@ -60,7 +33,7 @@ func runProfilesList() error {
 
 	if len(files) == 0 {
 		ancli.Warnf("no profiles found in %s\n", profilesDir)
-		return table.ErrUserInitiatedExit
+		return nil
 	}
 
 	// local view of the on-disk profile; we only need a subset of fields here
@@ -105,7 +78,7 @@ func runProfilesList() error {
 		ancli.Warnf("no valid profiles found in %s\n", profilesDir)
 	}
 
-	return table.ErrUserInitiatedExit
+	return nil
 }
 
 // getFirstSentence returns the first sentence / line of a prompt, used for summaries.
@@ -130,4 +103,52 @@ func getFirstSentence(s string) string {
 		return s[:minIdx+1]
 	}
 	return s
+}
+
+// Help explains what profiles are; surfaced in 'clai profiles -h' and
+// re-exported by package internal for the e2e suite.
+const Help = `Profiles overwrite certain model configurations. The intent of profiles
+is to reduce usage for repetitive flags and to persist and tweak specific LLM agents.
+For instance, you may create a \'gopher\' profile with a prompt that explains the agent is
+a programming helper and then specify which tools it may use.
+
+Use this profile by passing the \'-p/-profile\' flag. Example:
+
+1. clai setup -> 2 -> follow the setup wizard (create \'gopher\' profile)
+2. clai -p gopher -g internal/thing/handler.go q write tests for this file`
+
+// Command builds the profiles command tree.
+func Command() *internal.Command {
+	c := &internal.Command{
+		Name: "profiles",
+		Desc: "List configured profiles",
+		HelpText: "profiles [list]. Lists the profiles under <config-dir>/profiles.\n\n" +
+			Help + `
+
+Examples:
+  clai profiles
+  clai -p gopher q refactor this file`,
+	}
+	nonInteractive := &internal.NonInteractiveFlag{}
+	c.Register = nonInteractive.Register
+	c.NonInteractive = nonInteractive
+	c.OnRun = func(_ context.Context, c *internal.Command) error {
+		if args := c.Args(); len(args) > 1 {
+			return fmt.Errorf("unknown profiles subcommand: %q", args[1])
+		}
+		return List()
+	}
+	profilesList := &internal.Command{
+		Name: "list",
+		Desc: "List configured profiles",
+		HelpText: `profiles list. Lists the profiles under <config-dir>/profiles.
+
+Examples:
+  clai profiles list`,
+	}
+	profilesList.OnRun = func(_ context.Context, _ *internal.Command) error {
+		return List()
+	}
+	c.Subs = map[string]cmd.Command{"list": profilesList}
+	return c
 }

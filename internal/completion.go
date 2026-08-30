@@ -1,40 +1,16 @@
 package internal
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strings"
+	"sync"
 
-	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/utils"
-	"github.com/baalimago/go_away_boilerplate/pkg/table"
+	"github.com/baalimago/go_away_boilerplate/pkg/cmd"
 )
-
-type completionResultKind string
-
-const (
-	completionResultKindPlain completionResultKind = "plain"
-	completionResultKindFile  completionResultKind = "file"
-	completionResultKindDir   completionResultKind = "dir"
-)
-
-type completionItem struct {
-	Value string
-	Kind  completionResultKind
-}
-
-type completionRequest struct {
-	Args []string
-}
-
-type completionResponse struct {
-	ReplaceToken string
-	Items        []completionItem
-}
 
 type completionData struct {
 	Profiles      []string
@@ -42,262 +18,91 @@ type completionData struct {
 	Models        []string
 }
 
-type completionEngine struct {
+// CompletionSources lazily loads the config-dir-derived completion values,
+// memoized per instance (one per command constructor in production).
+// Loading happens only inside a hook call, keeping Flagset()/Subcommands()
+// pure; a load failure yields no suggestions for that source, never an
+// error — a broken completion must not disturb the shell. ToolNames is
+// injected by the command package (clicmd must not import the tool
+// registry); nil means no -t/-tools value completion.
+type CompletionSources struct {
+	ToolNames func() []string
+
+	once sync.Once
 	data completionData
 }
 
-type completionFlagSpec struct {
-	Name        string
-	TakesValue  bool
-	ValueKind   completionResultKind
-	ValueSource string
-	CommaSplit  bool
+func (s *CompletionSources) get() completionData {
+	s.once.Do(func() {
+		confDir, err := utils.GetClaiConfigDir()
+		if err != nil {
+			return
+		}
+		data, err := loadCompletionData(confDir)
+		if err != nil {
+			return
+		}
+		s.data = data
+	})
+	return s.data
 }
 
-var completionCommands = []string{
-	"a",
-	"audio",
-	"c",
-	"chat",
-	"completion",
-	"confdir",
-	"g",
-	"glob",
-	"h",
-	"help",
-	"p",
-	"photo",
-	"profiles",
-	"q",
-	"query",
-	"re",
-	"replay",
-	"s",
-	"setup",
-	"t",
-	"tools",
-	"version",
-	"v",
-	"video",
+// TextFlagValues completes flag values for the text commands (query, chat).
+func (s *CompletionSources) TextFlagValues(flagName, partial string) []cmd.CompletionItem {
+	switch flagName {
+	case "cm", "chat-model":
+		return PlainItems(partial, s.get().Models)
+	case "p", "profile":
+		return PlainItems(partial, s.get().Profiles)
+	case "asc", "add-shell-context":
+		return PlainItems(partial, s.get().ShellContexts)
+	case "t", "tools":
+		if s.ToolNames == nil {
+			return nil
+		}
+		return toolValueItems(partial, s.ToolNames())
+	case "prp", "profile-path":
+		return []cmd.CompletionItem{{Value: "__files__", Kind: cmd.CompletionKindFile}}
+	}
+	return nil
 }
 
-var completionPromptCommands = map[string]struct{}{
-	"query": {},
-	"q":     {},
-	"photo": {},
-	"p":     {},
-	"video": {},
-	"v":     {},
-	"glob":  {},
-	"g":     {},
+// MediaFlagValues completes flag values for photo and video.
+func MediaFlagValues(flagName, _ string) []cmd.CompletionItem {
+	switch flagName {
+	case "pd", "photo-dir", "vd", "video-dir":
+		return []cmd.CompletionItem{{Value: "__dirs__", Kind: cmd.CompletionKindDir}}
+	}
+	return nil
 }
 
-var completionChatSubcommands = []string{"continue", "delete", "dir", "dirv2", "help", "list"}
-
-var completionGlobalFlags = []completionFlagSpec{
-	{Name: "-I", TakesValue: true},
-	{Name: "-add-shell-context", TakesValue: true, ValueSource: "shell-context"},
-	{Name: "-af", TakesValue: true},
-	{Name: "-am", TakesValue: true},
-	{Name: "-audio-format", TakesValue: true},
-	{Name: "-audio-model", TakesValue: true},
-	{Name: "-parallelism", TakesValue: true},
-	{Name: "-asc", TakesValue: true, ValueSource: "shell-context"},
-	{Name: "-chat-model", TakesValue: true, ValueSource: "model"},
-	{Name: "-cm", TakesValue: true, ValueSource: "model"},
-	{Name: "-dir-reply"},
-	{Name: "-dre"},
-	{Name: "-g", TakesValue: true},
-	{Name: "-glob", TakesValue: true},
-	{Name: "-i"},
-	{Name: "-p", TakesValue: true, ValueSource: "profile"},
-	{Name: "-pd", TakesValue: true, ValueKind: completionResultKindDir},
-	{Name: "-photo-dir", TakesValue: true, ValueKind: completionResultKindDir},
-	{Name: "-photo-model", TakesValue: true},
-	{Name: "-photo-prefix", TakesValue: true},
-	{Name: "-pm", TakesValue: true},
-	{Name: "-pp", TakesValue: true},
-	{Name: "-prp", TakesValue: true, ValueKind: completionResultKindFile},
-	{Name: "-profile", TakesValue: true, ValueSource: "profile"},
-	{Name: "-profile-path", TakesValue: true, ValueKind: completionResultKindFile},
-	{Name: "-r"},
-	{Name: "-raw"},
-	{Name: "-re"},
-	{Name: "-replace", TakesValue: true},
-	{Name: "-reply"},
-	{Name: "-t", TakesValue: true, ValueSource: "tool", CommaSplit: true},
-	{Name: "-tools", TakesValue: true, ValueSource: "tool", CommaSplit: true},
-	{Name: "-vd", TakesValue: true, ValueKind: completionResultKindDir},
-	{Name: "-video-dir", TakesValue: true, ValueKind: completionResultKindDir},
-	{Name: "-video-model", TakesValue: true},
-	{Name: "-video-prefix", TakesValue: true},
-	{Name: "-vm", TakesValue: true},
-	{Name: "-vp", TakesValue: true},
+// SuppressArgs stops positional completion once prompt text begins.
+func SuppressArgs([]string, string) []cmd.CompletionItem {
+	return []cmd.CompletionItem{}
 }
 
-func newCompletionEngine(data completionData) completionEngine {
-	return completionEngine{data: data}
-}
-
-func (e completionEngine) Complete(req completionRequest) completionResponse {
-	if len(req.Args) == 0 {
-		return completionResponse{}
+// toolValueItems completes -t/-tools values with comma-split multi-value
+// support: completion continues after the last comma, keeping the prefix.
+func toolValueItems(partial string, names []string) []cmd.CompletionItem {
+	lastComma := strings.LastIndex(partial, ",")
+	if lastComma == -1 {
+		return PlainItems(partial, names)
 	}
-
-	args := req.Args
-	if args[0] == "clai" {
-		args = args[1:]
-	}
-	if len(args) == 0 {
-		return completionResponse{Items: appendCommandAndFlags("", nil)}
-	}
-
-	current := args[len(args)-1]
-	prev := ""
-	if len(args) > 1 {
-		prev = args[len(args)-2]
-	}
-
-	if flagSpec, ok := completionFlagByName(prev); ok && flagSpec.TakesValue {
-		return e.completeFlagValue(flagSpec, current)
-	}
-
-	for _, arg := range args[:len(args)-1] {
-		if _, ok := completionPromptCommands[arg]; ok {
-			return completionResponse{ReplaceToken: current}
-		}
-	}
-
-	if len(args) >= 2 && args[0] == "chat" {
-		return completionResponse{
-			ReplaceToken: current,
-			Items:        filterPlain(current, completionChatSubcommands),
-		}
-	}
-	if len(args) >= 2 && args[0] == "tools" {
-		return completionResponse{
-			ReplaceToken: current,
-			Items:        filterPlain(current, e.toolNames()),
-		}
-	}
-
-	if len(args) == 1 {
-		if strings.HasPrefix(current, "-") {
-			return completionResponse{
-				ReplaceToken: current,
-				Items:        filterFlags(current),
-			}
-		}
-		return completionResponse{
-			ReplaceToken: current,
-			Items:        appendCommandAndFlags(current, nil),
-		}
-	}
-
-	if strings.HasPrefix(current, "-") {
-		return completionResponse{
-			ReplaceToken: current,
-			Items:        filterFlags(current),
-		}
-	}
-
-	return completionResponse{ReplaceToken: current}
-}
-
-func (e completionEngine) completeFlagValue(flagSpec completionFlagSpec, current string) completionResponse {
-	switch {
-	case flagSpec.ValueKind == completionResultKindFile:
-		return completionResponse{
-			ReplaceToken: current,
-			Items: []completionItem{{
-				Value: "__files__",
-				Kind:  completionResultKindFile,
-			}},
-		}
-	case flagSpec.ValueKind == completionResultKindDir:
-		return completionResponse{
-			ReplaceToken: current,
-			Items: []completionItem{{
-				Value: "__dirs__",
-				Kind:  completionResultKindDir,
-			}},
-		}
-	case flagSpec.ValueSource == "tool":
-		return completionResponse{
-			ReplaceToken: current,
-			Items:        e.completeToolValue(current, flagSpec.CommaSplit),
-		}
-	case flagSpec.ValueSource == "profile":
-		return completionResponse{
-			ReplaceToken: current,
-			Items:        filterPlain(current, e.data.Profiles),
-		}
-	case flagSpec.ValueSource == "model":
-		return completionResponse{
-			ReplaceToken: current,
-			Items:        filterPlain(current, e.data.Models),
-		}
-	case flagSpec.ValueSource == "shell-context":
-		return completionResponse{
-			ReplaceToken: current,
-			Items:        filterPlain(current, e.data.ShellContexts),
-		}
-	default:
-		return completionResponse{ReplaceToken: current}
-	}
-}
-
-func (e completionEngine) completeToolValue(current string, commaSplit bool) []completionItem {
-	toolNames := e.toolNames()
-	if !commaSplit || !strings.Contains(current, ",") {
-		return filterPlain(current, toolNames)
-	}
-
-	lastComma := strings.LastIndex(current, ",")
-	prefix := current[:lastComma+1]
-	partial := current[lastComma+1:]
-	matches := filterValues(partial, toolNames)
-	items := make([]completionItem, 0, len(matches))
-	for _, match := range matches {
-		items = append(items, completionItem{
-			Value: prefix + match,
-			Kind:  completionResultKindPlain,
-		})
+	prefix := partial[:lastComma+1]
+	items := PlainItems(partial[lastComma+1:], names)
+	for i := range items {
+		items[i].Value = prefix + items[i].Value
 	}
 	return items
 }
 
-func (e completionEngine) toolNames() []string {
-	all := tools.Registry.All()
-	out := make([]string, 0, len(all))
-	for name := range all {
-		out = append(out, name)
-	}
-	sort.Strings(out)
-	return out
-}
-
-func appendCommandAndFlags(prefix string, items []completionItem) []completionItem {
-	combined := make([]completionItem, 0, len(completionCommands)+len(completionGlobalFlags)+len(items))
-	combined = append(combined, items...)
-	combined = append(combined, filterPlain(prefix, completionCommands)...)
-	combined = append(combined, filterFlags(prefix)...)
-	return combined
-}
-
-func filterFlags(prefix string) []completionItem {
-	values := make([]string, 0, len(completionGlobalFlags))
-	for _, spec := range completionGlobalFlags {
-		values = append(values, spec.Name)
-	}
-	return filterPlain(prefix, values)
-}
-
-func filterPlain(prefix string, options []string) []completionItem {
+// PlainItems filters options on the prefix and wraps the sorted matches as
+// plain completion items.
+func PlainItems(prefix string, options []string) []cmd.CompletionItem {
 	matches := filterValues(prefix, options)
-	items := make([]completionItem, 0, len(matches))
+	items := make([]cmd.CompletionItem, 0, len(matches))
 	for _, match := range matches {
-		items = append(items, completionItem{Value: match, Kind: completionResultKindPlain})
+		items = append(items, cmd.CompletionItem{Value: match, Kind: cmd.CompletionKindPlain})
 	}
 	return items
 }
@@ -311,15 +116,6 @@ func filterValues(prefix string, options []string) []string {
 	}
 	sort.Strings(matches)
 	return matches
-}
-
-func completionFlagByName(name string) (completionFlagSpec, bool) {
-	for _, spec := range completionGlobalFlags {
-		if spec.Name == name {
-			return spec, true
-		}
-	}
-	return completionFlagSpec{}, false
 }
 
 func loadCompletionData(configDir string) (completionData, error) {
@@ -445,104 +241,4 @@ func modelFromConfigFilename(base string) (string, bool) {
 	default:
 		return "", false
 	}
-}
-
-func handleCompletionCommand(ctx context.Context, args []string) error {
-	if len(args) < 2 {
-		return fmt.Errorf("select shell for completion command: %w", table.ErrUserInitiatedExit)
-	}
-
-	switch args[1] {
-	case "bash":
-		fmt.Print(bashCompletionScript())
-		return table.ErrUserInitiatedExit
-	case "zsh":
-		fmt.Print(zshCompletionScript())
-		return table.ErrUserInitiatedExit
-	default:
-		return fmt.Errorf("unsupported completion shell %q", args[1])
-	}
-}
-
-func handleHiddenCompletion(ctx context.Context, args []string) error {
-	_ = ctx
-	configDir, err := utils.GetClaiConfigDir()
-	if err != nil {
-		return fmt.Errorf("resolve config dir for completion: %w", err)
-	}
-
-	data, err := loadCompletionData(configDir)
-	if err != nil {
-		return fmt.Errorf("load completion data: %w", err)
-	}
-	tools.Init()
-
-	engine := newCompletionEngine(data)
-	resp := engine.Complete(completionRequest{Args: args[1:]})
-	for _, item := range resp.Items {
-		fmt.Printf("%s\t%s\n", item.Value, item.Kind)
-	}
-	return table.ErrUserInitiatedExit
-}
-
-func bashCompletionScript() string {
-	return `#!/usr/bin/env bash
-_clai_completion() {
-  local IFS=$'\n'
-  COMPREPLY=()
-  local out
-  out=$(clai __complete "${COMP_WORDS[@]}")
-  local line value kind
-  while IFS=$'\t' read -r value kind; do
-    [[ -z "$value" ]] && continue
-    case "$kind" in
-      file)
-        COMPREPLY+=( $(compgen -f -- "${COMP_WORDS[COMP_CWORD]}") )
-        ;;
-      dir)
-        COMPREPLY+=( $(compgen -d -- "${COMP_WORDS[COMP_CWORD]}") )
-        ;;
-      *)
-        COMPREPLY+=( "$value" )
-        ;;
-    esac
-  done <<< "$out"
-}
-complete -F _clai_completion clai
-`
-}
-
-func zshCompletionScript() string {
-	return `#compdef clai
-_clai_completion() {
-  local -a lines
-  lines=("${(@f)$(clai __complete "${words[@]}")}")
-  local line value kind
-  for line in "${lines[@]}"; do
-    value="${line%%$'\t'*}"
-    kind="${line#*$'\t'}"
-    case "$kind" in
-      file)
-        _files
-        return
-        ;;
-      dir)
-        _files -/
-        return
-        ;;
-      *)
-        compadd -- "$value"
-        ;;
-    esac
-  done
-}
-compdef _clai_completion clai
-`
-}
-
-func hasEarlyCompletionCommand(args []string) bool {
-	if len(args) == 0 {
-		return false
-	}
-	return slices.Contains([]string{"completion", "__complete"}, args[0])
 }

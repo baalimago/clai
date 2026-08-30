@@ -8,26 +8,29 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/baalimago/clai/internal"
 	"github.com/baalimago/clai/internal/utils"
+	"github.com/baalimago/go_away_boilerplate/pkg/cmd"
 	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
 
-func SubCmd(ctx context.Context, args []string) error {
-	if len(args) > 1 {
-		toolName := args[1]
-		tool, exists := Registry.Get(toolName)
-		if !exists {
-			return fmt.Errorf("tool '%s' not found", toolName)
-		}
-		spec := tool.Specification()
-		jsonSpec, err := json.MarshalIndent(spec, "", "  ")
-		if err != nil {
-			return fmt.Errorf("failed to marshal tool specification: %w", err)
-		}
-		fmt.Printf("%s\n", string(jsonSpec))
-		return table.ErrUserInitiatedExit
+// Detail prints the specification of one tool.
+func Detail(toolName string) error {
+	tool, exists := Registry.Get(toolName)
+	if !exists {
+		return fmt.Errorf("tool '%s' not found", toolName)
 	}
+	spec := tool.Specification()
+	jsonSpec, err := json.MarshalIndent(spec, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal tool specification: %w", err)
+	}
+	fmt.Printf("%s\n", string(jsonSpec))
+	return nil
+}
 
+// List prints every available tool with its aliases and description.
+func List() error {
 	tls := Registry.All()
 	aliases := Registry.Aliases()
 	var toolNames []string
@@ -61,5 +64,47 @@ func SubCmd(ctx context.Context, args []string) error {
 		fmt.Println(maybeShortenedDesc)
 	}
 	fmt.Println("\nRun 'clai tools <tool-name>' for more details.")
-	return table.ErrUserInitiatedExit
+	return nil
+}
+
+// Command builds the tools command tree.
+func Command() *internal.Command {
+	nonInteractive := &internal.NonInteractiveFlag{}
+	c := &internal.Command{
+		Name:           "tools",
+		Desc:           "List available tools, or show details for a specific tool",
+		HelpText:       "tools [tool name]. Lists mcp and built-in tools, or one tool's specification.",
+		Register:       nonInteractive.Register,
+		NonInteractive: nonInteractive,
+		CompleteArgsFn: toolNameArgs,
+	}
+	c.OnRun = func(_ context.Context, c *internal.Command) error {
+		Init()
+		if args := c.Args(); len(args) > 1 {
+			return Detail(args[1])
+		}
+		return List()
+	}
+	toolsList := &internal.Command{
+		Name: "list",
+		Desc: "List available tools, both mcp and built-in",
+		HelpText: `tools list. Lists every available tool.
+
+Examples:
+  clai tools list`,
+	}
+	toolsList.OnRun = func(_ context.Context, _ *internal.Command) error {
+		Init()
+		return List()
+	}
+	c.Subs = map[string]cmd.Command{"list": toolsList}
+	return c
+}
+
+// toolNameArgs completes the tools command's detail-view positional.
+func toolNameArgs(args []string, partial string) []cmd.CompletionItem {
+	if len(args) > 0 {
+		return []cmd.CompletionItem{}
+	}
+	return internal.PlainItems(partial, Names())
 }

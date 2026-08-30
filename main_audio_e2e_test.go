@@ -48,7 +48,7 @@ func Test_goldenFile_AUDIO_transcribe_vtt(t *testing.T) {
 	confDir := setupMainTestConfigDir(t)
 	audioFile := writeE2EAudioFile(t)
 
-	status, stdout, _ := runAudio(t, "-am test audio transcribe "+audioFile)
+	status, stdout, _ := runAudio(t, "audio transcribe -am test "+audioFile)
 
 	testboil.FailTestIfDiff(t, status, 0)
 	testboil.FailTestIfDiff(t, stdout, wantMockVTT)
@@ -61,7 +61,7 @@ func Test_goldenFile_AUDIO_alias_and_text_format(t *testing.T) {
 	_ = setupMainTestConfigDir(t)
 	audioFile := writeE2EAudioFile(t)
 
-	status, stdout, _ := runAudio(t, "-am test -af text a t "+audioFile)
+	status, stdout, _ := runAudio(t, "a t -am test -af text "+audioFile)
 
 	testboil.FailTestIfDiff(t, status, 0)
 	testboil.FailTestIfDiff(t, stdout, wantMockText)
@@ -88,7 +88,7 @@ func Test_goldenFile_AUDIO_stdin_dash(t *testing.T) {
 	os.Stdin = r
 	t.Cleanup(func() { _ = r.Close() })
 
-	status, stdout, _ := runAudio(t, "-am test -af text a t -")
+	status, stdout, _ := runAudio(t, "a t -am test -af text -")
 
 	testboil.FailTestIfDiff(t, status, 0)
 	testboil.FailTestIfDiff(t, stdout, wantMockText)
@@ -112,11 +112,31 @@ func Test_goldenFile_AUDIO_stdin_unrecognized_format(t *testing.T) {
 	os.Stdin = r
 	t.Cleanup(func() { _ = r.Close() })
 
-	status, stdout, stderr := runAudio(t, "-am test -af text a t -")
+	status, stdout, stderr := runAudio(t, "a t -am test -af text -")
 
 	testboil.FailTestIfDiff(t, status, 1)
 	testboil.FailTestIfDiff(t, stdout, "")
 	testboil.AssertStringContains(t, stderr, "wav")
+}
+
+// Test_goldenFile_AUDIO_raw_flag_at_verb_level pins that -r is accepted at
+// the verb level, where D11 says a flag must be placed: the transcribe sub
+// shares the parent's raw group, so both placements must work.
+func Test_goldenFile_AUDIO_raw_flag_at_verb_level(t *testing.T) {
+	for _, args := range []string{"a t -r -am test -af text ", "-r a t -am test -af text "} {
+		t.Run(strings.TrimSpace(args), func(t *testing.T) {
+			_ = setupMainTestConfigDir(t)
+			audioFile := writeE2EAudioFile(t)
+
+			status, stdout, stderr := runAudio(t, args+audioFile)
+
+			testboil.FailTestIfDiff(t, status, 0)
+			testboil.FailTestIfDiff(t, stdout, wantMockText)
+			if strings.Contains(stderr, "not defined") {
+				t.Fatalf("expected -r to be defined at this level, got: %q", stderr)
+			}
+		})
+	}
 }
 
 func Test_goldenFile_AUDIO_namespace_help(t *testing.T) {
@@ -145,7 +165,7 @@ func Test_goldenFile_AUDIO_missing_input_file(t *testing.T) {
 	_ = setupMainTestConfigDir(t)
 	missing := filepath.Join(t.TempDir(), "nope.wav")
 
-	status, _, stderr := runAudio(t, "-am test a t "+missing)
+	status, _, stderr := runAudio(t, "a t -am test "+missing)
 
 	testboil.FailTestIfDiff(t, status, 1)
 	testboil.AssertStringContains(t, stderr, "nope.wav")
@@ -155,7 +175,7 @@ func Test_goldenFile_AUDIO_invalid_format_flag(t *testing.T) {
 	_ = setupMainTestConfigDir(t)
 	audioFile := writeE2EAudioFile(t)
 
-	status, _, stderr := runAudio(t, "-am test -af yaml a t "+audioFile)
+	status, _, stderr := runAudio(t, "a t -am test -af yaml "+audioFile)
 
 	testboil.FailTestIfDiff(t, status, 1)
 	testboil.AssertStringContains(t, stderr, "vtt")
@@ -166,7 +186,7 @@ func Test_goldenFile_AUDIO_unroutable_model(t *testing.T) {
 	_ = setupMainTestConfigDir(t)
 	audioFile := writeE2EAudioFile(t)
 
-	status, _, stderr := runAudio(t, "-am mystery9000 a t "+audioFile)
+	status, _, stderr := runAudio(t, "a t -am mystery9000 "+audioFile)
 
 	testboil.FailTestIfDiff(t, status, 1)
 	testboil.AssertStringContains(t, stderr, "or:")
@@ -178,7 +198,7 @@ func Test_goldenFile_AUDIO_missing_api_key(t *testing.T) {
 	audioFile := writeE2EAudioFile(t)
 	t.Setenv("OPENAI_API_KEY", "")
 
-	status, _, stderr := runAudio(t, "-am whisper-1 a t "+audioFile)
+	status, _, stderr := runAudio(t, "a t -am whisper-1 "+audioFile)
 
 	testboil.FailTestIfDiff(t, status, 1)
 	testboil.AssertStringContains(t, stderr, "OPENAI_API_KEY")
@@ -195,12 +215,12 @@ func Test_goldenFile_AUDIO_config_cascade(t *testing.T) {
 
 	t.Run("file beats default", func(t *testing.T) {
 		// -am test routes to mock; format text comes from the file (default vtt)
-		status, stdout, _ := runAudio(t, "-am test a t "+audioFile)
+		status, stdout, _ := runAudio(t, "a t -am test "+audioFile)
 		testboil.FailTestIfDiff(t, status, 0)
 		testboil.FailTestIfDiff(t, stdout, wantMockText)
 	})
 	t.Run("flag beats file", func(t *testing.T) {
-		status, stdout, _ := runAudio(t, "-am test -af json a t "+audioFile)
+		status, stdout, _ := runAudio(t, "a t -am test -af json "+audioFile)
 		testboil.FailTestIfDiff(t, status, 0)
 		testboil.AssertStringContains(t, stdout, `"start":`)
 		if strings.Contains(stdout, "WEBVTT") {
@@ -216,7 +236,7 @@ func Test_goldenFile_AUDIO_corrupt_config(t *testing.T) {
 		t.Fatalf("WriteFile(audioConfig.json): %v", err)
 	}
 
-	status, _, stderr := runAudio(t, "-am test a t "+audioFile)
+	status, _, stderr := runAudio(t, "a t -am test "+audioFile)
 
 	testboil.FailTestIfDiff(t, status, 1)
 	testboil.AssertStringContains(t, stderr, "audioConfig.json")
@@ -225,10 +245,15 @@ func Test_goldenFile_AUDIO_corrupt_config(t *testing.T) {
 func Test_goldenFile_AUDIO_help_includes_audio(t *testing.T) {
 	_ = setupMainTestConfigDir(t)
 
-	status, stdout, _ := runAudio(t, "help")
+	var status int
+	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
+		status = run(nil)
+	})
+	testboil.FailTestIfDiff(t, status, 1)
+	testboil.AssertStringContains(t, stdout, "audio|a")
 
+	status, stdout, _ = runAudio(t, "audio -h")
 	testboil.FailTestIfDiff(t, status, 0)
-	testboil.AssertStringContains(t, stdout, "a|audio")
 	testboil.AssertStringContains(t, stdout, "-am")
 	testboil.AssertStringContains(t, stdout, "-af")
 	testboil.AssertStringContains(t, stdout, "-parallelism")

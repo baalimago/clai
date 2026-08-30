@@ -11,8 +11,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/baalimago/clai/internal/audio"
 )
 
 func writeTestAudioFile(t *testing.T, content []byte) string {
@@ -121,7 +119,7 @@ func TestTranscribe_VerboseJSON(t *testing.T) {
 	if string(rec.fileBytes) != string(audioContent) {
 		t.Errorf("file content mismatch, got: %q", rec.fileBytes)
 	}
-	want := []audio.Segment{
+	want := []Segment{
 		{Start: 0, End: 5280 * time.Millisecond, Text: "Hello and welcome to the meeting."},
 		{Start: 5280 * time.Millisecond, End: 9040 * time.Millisecond, Text: "Let's get started with the agenda."},
 	}

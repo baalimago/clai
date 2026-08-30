@@ -3,6 +3,7 @@ package tools
 import (
 	"maps"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 
@@ -124,6 +125,20 @@ func (r *registry) All() map[string]models.LLMTool {
 	cp := make(map[string]models.LLMTool, len(r.tools))
 	maps.Copy(cp, r.tools)
 	return cp
+}
+
+// Names returns every registered tool name, aliases included, sorted. It
+// initializes the registry first, so completion hooks and setup tables get
+// the same list from one place.
+func Names() []string {
+	Init()
+	all := Registry.All()
+	names := make([]string, 0, len(all))
+	for name := range all {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // Reset removes all registered tools. Primarily used for tests.

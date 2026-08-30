@@ -10,18 +10,17 @@ The **tools** command is an *inspection/UI* command. It does **not** enable tool
 
 ```text
 main.go:run()
-  → internal.Setup(ctx, usage, args)
-    → parseFlags()
-    → getCmdFromArgs() → TOOLS
-    → tools.Init()
-    → tools.SubCmd(ctx, allArgs)
+  → cmd.Run(...)                  # go_away_boilerplate/pkg/cmd dispatch
+    → tools command Run (internal/tools/cmd.go)
+      → tools.Init()
+      → tools.List() or tools.Detail(name)
 ```
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
-| `internal/setup.go` | Dispatches TOOLS mode and calls `tools.Init()` then `tools.SubCmd()` |
+| `internal/tools/cmd.go` | tools command + `list` sub; calls `tools.Init()` then `List`/`Detail` (see [cmd-dispatch.md](./cmd-dispatch.md)) |
 | `internal/tools/init.go` (and friends) | Initializes the tool registry (built-in tools + MCP tools, if configured) |
 | `internal/tools/cmd.go` | Implements `clai tools` CLI behavior |
 | `internal/tools/registry.go` | Tool registry: `Get`, `All`, wildcard selection |
@@ -31,7 +30,7 @@ main.go:run()
 
 ### `clai tools`
 
-`internal/tools/cmd.go:SubCmd`:
+`internal/tools/cmd.go` (`List`/`Detail`):
 
 1. Loads all registered tools via `Registry.All()`.
 2. Loads the alias map via `Registry.Aliases()` and removes alias names from
@@ -52,7 +51,7 @@ main.go:run()
    Run 'clai tools <tool-name>' for more details.
    ```
 
-Returns `utils.ErrUserInitiatedExit` so the top-level `main.run()` exits with code 0.
+Returns nil so the process exits with code 0.
 
 ### `clai tools <tool-name>`
 
@@ -96,4 +95,4 @@ The CLI *selection* logic for `-t/-tools` lives in `internal/setup.go:setupToolC
 ## Error handling and exit codes
 
 - Listing tools is considered a user-driven info command: it returns `utils.ErrUserInitiatedExit`.
-- Unknown tool name is a real error from `tools.SubCmd` and propagates to `main` => non-zero exit.
+- Unknown tool name is a real error from `tools.Detail` and propagates to `cmd.Run` => non-zero exit.

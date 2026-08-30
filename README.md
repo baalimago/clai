@@ -30,10 +30,11 @@ go install github.com/baalimago/clai@latest
 Then run:
 
 ```bash
-clai help | clai query Please give a concise explanation of clai
+clai | clai query Please give a concise explanation of clai
 ```
 
-Either look at `clai help` or the [examples](./EXAMPLES.md) for how to use `clai`.
+Either run bare `clai` (or `clai <command> -h`) or look at the [examples](./EXAMPLES.md) for how to use `clai`.
+Prompt text starting with `-` is read as a flag, so pass it after `--`: `clai q -- -why does this fail`.
 If you have time, you can also check out [this blogpost](https://lorentz.app/blog-item.html?id=clai) for a slightly more structured introduction on how to use Clai efficiently.
 
 Install [Glow](https://github.com/charmbracelet/glow) for formatted markdown output when querying text responses.

@@ -1,0 +1,22 @@
+{
+  "shell": "",
+  "timeout_ms": 250,
+  "timed_out_value": "",
+  "error_value": "",
+  "template": "cwd: {{.cwd}}\ndate: {{.date}}\nuser: {{.user}}\n{{if .hostname}}hostname: {{.hostname}}\n{{end}}{{if .shell}}shell: {{.shell}}\n{{end}}{{if .python_venv}}python env: {{.python_venv}}\n{{end}}{{if .k8s_context}}k8s context: {{.k8s_context}}\n{{end}}{{if .go_version}}go version: {{.go_version}}\n{{end}}{{if .git_branch}}git branch: {{.git_branch}}\n{{end}}{{if .git_status_short}}git dirty: {{.git_status_short}}\n{{end}}{{if .docker_context}}docker context: {{.docker_context}}\n{{end}}{{if .tmux_session}}tmux session: {{.tmux_session}}\n{{end}}{{if .ssh_connection}}ssh: {{.ssh_connection}}\n{{end}}",
+  "vars": {
+    "cwd": "pwd",
+    "date": "date '+%Y-%m-%d %H:%M:%S %Z'",
+    "docker_context": "docker context show 2\u003e/dev/null",
+    "git_branch": "git branch --show-current 2\u003e/dev/null",
+    "git_status_short": "git status --short 2\u003e/dev/null | wc -l | tr -d ' ' | awk '{if ($1 != 0) print $1 \" changes\"}'",
+    "go_version": "go version 2\u003e/dev/null | awk '{print $3}'",
+    "hostname": "(hostname 2\u003e/dev/null || uname -n 2\u003e/dev/null) | head -n 1",
+    "k8s_context": "kubectl config current-context 2\u003e/dev/null",
+    "python_venv": "if [ -n \"$VIRTUAL_ENV\" ]; then basename \"$VIRTUAL_ENV\"; elif [ -n \"$CONDA_DEFAULT_ENV\" ]; then printf \"%s\" \"$CONDA_DEFAULT_ENV\"; fi",
+    "shell": "printf \"%s\" \"${SHELL##*/}\"",
+    "ssh_connection": "printf \"%s\" \"$SSH_CONNECTION\"",
+    "tmux_session": "if [ -n \"$TMUX\" ]; then tmux display-message -p '#S' 2\u003e/dev/null; fi",
+    "user": "id -un"
+  }
+}

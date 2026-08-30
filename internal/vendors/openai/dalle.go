@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/baalimago/clai/internal/models"
-	"github.com/baalimago/clai/internal/photo"
+	photo "github.com/baalimago/clai/internal/photo/generic"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"

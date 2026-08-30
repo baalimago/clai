@@ -77,7 +77,7 @@ func Test_e2e_COST_nested_tool_call_queries_visible_in_chat_dir_json(t *testing.
 	}
 
 	prompt := "hello first tool_pwd now second tool_pwd different tool tool_ls a third tool tool_cat note how cat isnt included here so it shouldnt try to call the tool"
-	queryOut, status := runOne(t, "-r -cm test -t pwd,ls q "+prompt)
+	queryOut, status := runOne(t, "-cm test -r -t pwd,ls q "+prompt)
 	testboil.FailTestIfDiff(t, status, 0)
 	testboil.AssertStringContains(t, queryOut, "Call: 'pwd'")
 	testboil.AssertStringContains(t, queryOut, "Call: 'ls'")
@@ -87,7 +87,7 @@ func Test_e2e_COST_nested_tool_call_queries_visible_in_chat_dir_json(t *testing.
 		t.Fatalf("expected cat tool call to be skipped, output=%q", queryOut)
 	}
 
-	dirOut, status := runOne(t, "-r -cm test chat dir")
+	dirOut, status := runOne(t, "-r chat dir")
 	testboil.FailTestIfDiff(t, status, 0)
 
 	type chatDirInfo struct {

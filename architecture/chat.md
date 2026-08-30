@@ -284,13 +284,19 @@ In short:
 - `clai chat continue ...` is a convenient way to bind CWD → an existing conversation
 - each non-reply query also records the chat into the directory's history (see `dirscope.md`)
 
-## Model interaction surface
+## No model interaction
 
-The chat handler does not call vendor APIs directly. It depends on:
+The chat handler holds no querier and calls no vendor. Every subcommand
+reads stored transcripts and writes conversation state: `continue` prints a
+chat and binds CWD to it, `delete` unlinks it, `list`/`dir`/`dirv2` render.
+Turns are taken with `clai -dre query ...` afterwards.
 
-- `internal/models.ChatQuerier` with `TextQuery(ctx, chat) (Chat, error)`
-
-Different queriers/vendors implement this (see `internal/text/*` and `internal/vendors/*`). The handler treats it as a black box that may append assistant responses, run tool calls, and/or transform the transcript.
+Consequently the chat tree needs no API key, no model config and no tool
+setup, and registers only the flags it reads: `-r`, `-n` and `-p` (which
+stamps the profile onto the continued conversation, steering later `-dre`
+queries). It used to construct a full text querier through
+`text.SetupQuerier` and discard it, which made `clai c c 0` fail without a
+vendor key and put the whole agent flag group on `clai c -h`.
 
 ## Caveats
 

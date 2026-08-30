@@ -309,9 +309,9 @@ func (cq *ChatHandler) actOnChat(chat pub_models.Chat, groupKey string) error {
 		return table.ErrUserInitiatedExit
 	case "":
 		if chat.Profile != "" {
-			cq.config.UseProfile = chat.Profile
-		} else if cq.config.UseProfile != "" {
-			chat.Profile = cq.config.UseProfile
+			cq.profile = chat.Profile
+		} else if cq.profile != "" {
+			chat.Profile = cq.profile
 		}
 		if err := cq.printChat(chat); err != nil {
 			return fmt.Errorf("failed to print chat: %w", err)

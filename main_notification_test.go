@@ -102,25 +102,6 @@ func Test_run_redirected_completed_query_suppresses_bell(t *testing.T) {
 	testboil.FailTestIfDiff(t, gotStdout, "hello\n")
 }
 
-type notificationTestCompletion struct {
-	suppress bool
-}
-
-func (c notificationTestCompletion) SuppressCompletionNotification() bool {
-	return c.suppress
-}
-
-func Test_triggerCompletionNotification_emits_bell_when_completion_does_not_suppress_it(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
-	writeNotificationTestPriceFiles(t, confDir)
-
-	gotStdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		triggerCompletionNotification(notificationTestCompletion{})
-	})
-
-	testboil.FailTestIfDiff(t, gotStdout, "\a")
-}
-
 // Test_run_false_notification_bell_setting_stays_disabled pins the
 // presence-based merge (Q4): a present notificationBell: false in theme.json
 // is the user's choice and survives the load, so the run emits no bell. The

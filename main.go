@@ -2,78 +2,94 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"io"
 	"os"
 	"runtime/pprof"
+	"strings"
 
 	"github.com/baalimago/clai/internal"
+	"github.com/baalimago/clai/internal/audio"
+	"github.com/baalimago/clai/internal/chat"
+	"github.com/baalimago/clai/internal/confdir"
 	"github.com/baalimago/clai/internal/debugflags"
+	"github.com/baalimago/clai/internal/photo"
+	"github.com/baalimago/clai/internal/profiles"
+	"github.com/baalimago/clai/internal/setup"
+	"github.com/baalimago/clai/internal/text"
+	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/utils"
+	"github.com/baalimago/clai/internal/version"
+	"github.com/baalimago/clai/internal/video"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
-	"github.com/baalimago/go_away_boilerplate/pkg/misc"
+	"github.com/baalimago/go_away_boilerplate/pkg/cmd"
 	"github.com/baalimago/go_away_boilerplate/pkg/shutdown"
-	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
 
-const usage = `clai - (c)ommand (l)ine (a)rtificial (i)ntelligence
+// commands is the composition root: every command lives in its domain
+// package and receives its cross-package collaborators here — config prep
+// and the old-config migrations live in internal/setup, which the domain
+// packages cannot import (setup imports them). See
+// architecture/cmd-dispatch.md.
+func commands() map[string]cmd.Command {
+	configPrep := func() (string, error) {
+		confDir, _, err := setup.ConfigRunPrep(false)
+		return confDir, err
+	}
+	// Media-tool flags reach the domains owning those tools: an agent run
+	// may call audio_transcribe, so -am/-af configure it for the run.
+	applyMediaOverrides := func(f internal.MediaToolFlags) error {
+		return audio.SetTranscribeOverrides(f.AudioModel.Value(), f.AudioFormat.Value())
+	}
+	return map[string]cmd.Command{
+		"query|q": text.QueryCommand(text.QueryCommandDeps{
+			ConfigPrep:          configPrep,
+			TrustInput:          func() io.Reader { return setup.Input },
+			ApplyMediaOverrides: applyMediaOverrides,
+		}),
+		"chat|c": chat.Command(chat.CommandDeps{ConfigPrep: configPrep}),
+		"photo|p": photo.Command(photo.CommandDeps{
+			ConfigPrep: configPrep,
+			LoadConfig: setup.LoadPhotoConfig,
+		}),
+		"video|v": video.Command(video.CommandDeps{
+			ConfigPrep: configPrep,
+		}),
+		"audio|a": audio.Command(audio.CommandDeps{
+			ConfigPrep: configPrep,
+		}),
+		"setup|s":        setup.Command(),
+		"version":        version.Command(),
+		"replay|re":      chat.ReplayCommand(),
+		"dir-replay|dre": chat.DirscopeReplayCommand(),
+		"tools|t":        tools.Command(),
+		"profiles":       profiles.Command(),
+		"confdir":        confdir.Command(),
+	}
+}
+
+// usageTemplate is the dispatcher usage, printed on bare clai and unknown
+// commands: cmd.Run renders the generated command table into the single %v;
+// run() interpolates CONFIG_DIR/CACHE_DIR beforehand. Per-command help
+// (flags, examples, subcommands) lives on each command's -h — see
+// each domain package's cmd.go and architecture/cmd-dispatch.md.
+const usageTemplate = `clai - (c)ommand (l)ine (a)rtificial (i)ntelligence
 
 Prerequisites:
   - Set the environment variable to your API key according to the vendor you seek to use
   - (Optional) Set the NO_COLOR environment variable to disable ansi color output
   - (Optional) Install glow - https://github.com/charmbracelet/glow for formatted markdown output
 
-Usage: clai [flags] <command>
-
-Flags:
-  -re, -reply bool                    Set to true to reply to the previous query, meaning that it will be used as context for your next query. (default %v)
-  -r, -raw bool                       Set to true to print raw output (no animation, no glow). (default %v)
-  -cm, -chat-model string             Set the chat model to use. (default is found in %v/textConfig.json)
-  -pm, -photo-model string            Set the image model to use. (default is found in %v/photoConfig.json)
-  -pd, -photo-dir string              Set the directory to store the generated pictures. (default is found in %v/photoConfig.json)
-  -pp, -photo-prefix string           Set the prefix for the generated pictures. (default is found in %v/photoConfig.json)
-  -vd, -video-dir string              Set dir for generated videos. Default $HOME/Videos (default %v)
-  -vp, -video-prefix string           Set prefix for generated videos. Default 'clai' (default %v)
-  -am, -audio-model string            Set the audio transcription model. (default is found in %v/audioConfig.json)
-  -af, -audio-format string           Set the transcript output format (vtt|srt|text|json). (default is found in %v/audioConfig.json)
-  -parallelism int                    Set max parallel transcription requests for split audio files. (default is found in %v/audioConfig.json)
-  -t, -tools string                   Set to <tool_a>,<tool_b> for specific tool, or */"" to use all built in or MCP tools. See available tools with 'clai tools' (default %v)
-  -s, -skills string                  Enable or disable skills for this run. Use '*' to enable or 'none' to disable.
-  -cmd-ban string                     Append comma-separated command bans for this run (e.g. "rm,sudo"). Commands matching a ban are refused before they spawn.
-  -g, -glob string                    Set the glob to use for globbing. (default '%v')
-  -p, -profile string                 Set the profile which should be used. For details, see 'clai help profile'. (default '%v')
-  -prp, profile-path string           Set the path to a profile file to use instead of -p/-profile.
-  -asc, -append-shell-context str     Append a named shell context from <config-dir>/shellContexts/<name>.json to the final query prompt.
-  -rf, -response-format string        Block streaming and print only the final structured response (json_object, json_schema).
-  -n, -non-interactive                Disable interactive stdin fallback after macro inputs; auto-exit instead.
-  -mt, -max-tokens int                Set the max context tokens for this run. 0 = unlimited (default is found in %v/textConfig.json)
-  -mtc, -max-tool-calls int           Set the max tool calls for this run. 0 = unlimited (default is found in %v/textConfig.json)
-  -max-tool-calls-after-handover int  Set the max tool calls for the post-handover phase of this run. 0 = unlimited (default is found in %v/textConfig.json)
-
-Config dir: %v
-Cache dir:  %v
+Usage: clai [command flags] <command> [command flags] [args]
 
 Commands:
-  h|help                        Display this help message
-  s|setup                       Setup the configuration files
-  completion <bash|zsh>         Print shell completion script
-  confdir [subpath ...]        Print clai config dir or a registered config subpath
-  q|query <text>                Query the chat model with the given text
-  p|photo <text>                Ask the photo model for a picture with the given prompt
-  v|video <text>                Ask the video model for a video with the given prompt
-  a|audio  t|transcribe <file>    Transcribe an audio file to text. Use '-' to read audio from stdin.
-  re|replay                     Replay the most recent message.
-  t|tools [tool name]           List available tools, both mcp and built-in. Or show details for a specific tool.
+%v
+Run 'clai <command> -h' for a command's flags, examples and subcommands.
 
-  c|chat   c|continue  <chatID>   Continue an existing chat with the given chat ID or index.
-  c|chat   d|delete    <chatID>   Delete the chat with the given chat ID or index.
-  c|chat   l|list                 List all existing chats.
-  c|chat   dir                    Show directory chat info with the stable v1 output.
-  c|chat   dirv2                  Show directory chat info with total and recent token usage.
-  c|chat   h|help                 Display detailed help for chat subcommands.
+Config dir: CONFIG_DIR
+Cache dir:  CACHE_DIR
 
 Examples:
-  - clai h | clai query generate some examples for this usage string: 
   - clai confdir
   - clai -t website_text query "What'\''\'''s the weather like in Tokyo? Use website_text to fetch data"
   - clai -glob "*.txt" query Please summarize these documents: 
@@ -84,21 +100,8 @@ Examples:
   - clai c list
   - clai -r c dirv2
   - clai c help
+  - clai q -- -why does this fail   # '--' escapes a prompt starting with '-'
 `
-
-type completionNotificationSuppressor interface {
-	SuppressCompletionNotification() bool
-}
-
-func triggerCompletionNotification(completed any) {
-	if suppressor, ok := completed.(completionNotificationSuppressor); ok && suppressor.SuppressCompletionNotification() {
-		return
-	}
-	if !utils.NotificationBellEnabled() {
-		return
-	}
-	fmt.Fprint(os.Stdout, "\a")
-}
 
 func run(args []string) int {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -108,36 +111,11 @@ func run(args []string) int {
 	// clai in case of nested tool calls. Could've been solved by proper structure
 	// but who has time for proper structure?
 	ctx = context.WithValue(ctx, utils.ContextCancelKey, cancel)
-	querier, err := internal.Setup(ctx, usage, args)
-	if err != nil {
-		if errors.Is(err, table.ErrUserInitiatedExit) {
-			if misc.Truthy(os.Getenv("DEBUG")) {
-				ancli.Okf("Seems like you wanted out. Byebye!\n")
-			}
-			return 0
-		}
-		ancli.PrintErr(fmt.Sprintf("failed to setup: %v\n", err))
-		return 1
-	}
 	go func() { shutdown.Monitor(cancel) }()
-	err = querier.Query(ctx)
-	if err != nil {
-		if errors.Is(err, table.ErrUserInitiatedExit) {
-			if misc.Truthy(os.Getenv("DEBUG")) {
-				ancli.Okf("Seems like you wanted out. Byebye!\n")
-			}
-			return 0
-		} else {
-			ancli.PrintErr(fmt.Sprintf("failed to run: %v\n", err))
-			return 1
-		}
-	}
-	cancel()
-	triggerCompletionNotification(querier)
-	if misc.Truthy(os.Getenv("DEBUG")) {
-		ancli.PrintOK("things seems to have worked out. Bye bye! 🚀\n")
-	}
-	return 0
+	cfgDir, _ := utils.GetClaiConfigDir()
+	cacheDir, _ := utils.GetClaiCacheDir()
+	usage := strings.NewReplacer("CONFIG_DIR", cfgDir, "CACHE_DIR", cacheDir).Replace(usageTemplate)
+	return cmd.Run(ctx, append([]string{"clai"}, args...), commands(), usage)
 }
 
 func main() {

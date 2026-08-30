@@ -12,10 +12,9 @@ to read audio bytes from stdin.
 
 ```
 main.go:run()
-  → internal.Setup(ctx, usage, args)
-    → parseFlags()                     # extract CLI flags
-    → getCmdFromArgs()                 # returns AUDIO mode
-    → handleAudio()                    # verb dispatch (transcribe|help)
+  → cmd.Run(...)                       # go_away_boilerplate/pkg/cmd dispatch
+    → audio → transcribe subcommand (Subcommander tree, internal/audio/cmd.go)
+      → setupAudioTranscribeQuerier()
       → resolveAudioInput()           # positional file, or '-' → stdin temp file
                                       # (container sniffed → real extension, see sniff.go)
       → LoadConfigFromFile("audioConfig.json")
@@ -28,8 +27,8 @@ main.go:run()
 
 | File | Purpose |
 |------|---------|
-| `internal/setup.go` | `Setup()` AUDIO case — dispatches to `handleAudio` |
-| `internal/setup_audio.go` | Verb dispatch, namespace help, stdin `-` input resolution |
+| `internal/audio/cmd.go` | audio Subcommander tree — transcribe|help verbs (see [cmd-dispatch.md](./cmd-dispatch.md)) |
+| `internal/audio/setup_transcribe.go` | Transcribe-querier setup, stdin `-` input resolution |
 | `internal/audio/audio.go` | `Segment` model, `verbose_json`/`diarized_json` parsing, `vtt|srt|text|json` rendering, `Offset` |
 | `internal/audio/split.go` | `Splitter`: 25 MB size gate, ffmpeg chunking, bounded-parallel transcription, offset stitching |
 | `internal/audio/sniff.go` | `DetectExtension`: container magic → file extension (vendors and ffmpeg infer format from filenames) |
@@ -37,7 +36,7 @@ main.go:run()
 | `internal/audio/generic/transcriber.go` | Generic OpenAI-protocol multipart transcription client |
 | `internal/vendors/openai/transcribe.go` | OpenAI vendor struct (`OPENAI_API_KEY`, api.openai.com) |
 | `internal/vendors/openrouter/transcribe.go` | OpenRouter vendor struct (`OPENROUTER_API_KEY`, `or:` prefix trim, extra headers) |
-| `internal/create_queriers.go` | `CreateAudioQuerier()`/`createAudioSplitter()` — model → vendor routing |
+| `internal/audio/create_querier.go` | `audio.CreateQuerier()`/`createSplitter()` — model → vendor routing; audio_transcribe tool-bridge init |
 | `pkg/tools/audio_tool_transcribe.go` | `audio_transcribe` built-in tool (thin adapter, injected engine) |
 
 ## Configuration
@@ -75,7 +74,7 @@ Precedence is the standard cascade: flags > file > defaults (see
 
 ## Vendor Routing
 
-`CreateAudioQuerier()` in `internal/create_queriers.go` routes explicitly:
+`audio.CreateQuerier()` in `internal/audio/create_querier.go` routes explicitly:
 
 | Model Pattern | Vendor |
 |---------------|--------|
@@ -117,10 +116,21 @@ to an engine function injected by the clai runtime. The tool layer contains no
 transcription logic. Select it with `-t audio_transcribe` or `-t "*"`; inspect
 it with `clai tools audio_transcribe`.
 
+The engine loads `audioConfig.json` itself, so the model does **not** come
+from the calling command's config. A query or chat can still configure the
+tool for the run with `-am`/`-af`, which
+`audio.SetTranscribeOverrides` layers on top (model overrides the file;
+format overrides the tool call's own `output_format`, since an explicit
+user choice outranks the model's per-call pick). An invalid `-af` fails at
+setup, not mid-conversation. Without the flags the tool keeps using the
+config file and its per-call format.
+
 ## Example
 
 ```bash
 clai a t meeting.wav | clai -p meetingnotes q "File these meeting notes: {}"
 # or agentically:
 clai -t "*" q "Transcribe meeting.wav and file the meeting notes"
+# picking the transcription model the tool uses for this run:
+clai -am gpt-4o-transcribe-diarize -af json -t audio_transcribe q "Summarize meeting.wav"
 ```

@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/baalimago/clai/internal/audio/generic"
+
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
@@ -256,7 +258,7 @@ func (s *Splitter) transcribePool(ctx context.Context, chunks []string, segmentT
 				cancel()
 				return
 			}
-			results[i] = Offset(segs, secondsToDuration(float64(i)*segmentTime))
+			results[i] = Offset(segs, generic.SecondsToDuration(float64(i)*segmentTime))
 			s.chunkDone(statusMu, fmt.Sprintf("chunk %v/%v transcribed", i+1, len(chunks)))
 		}(i, chunk)
 	}

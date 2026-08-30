@@ -73,7 +73,7 @@ func Test_e2e_chat_list_foreign_clone_and_dedup(t *testing.T) {
 
 	// First run: select row 0, then continue ("c") to clone. Trailing "q"s from -n
 	// exit the list loop after clone.
-	stdout, status := runOne(t, confDir, "-n -r -cm test c l 0 c")
+	stdout, status := runOne(t, confDir, "-n -r c l 0 c")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -82,7 +82,7 @@ func Test_e2e_chat_list_foreign_clone_and_dedup(t *testing.T) {
 	}
 
 	// Second run: the foreign row should be deduped. Select row 0, then "q" exits.
-	stdout2, status2 := runOne(t, confDir, "-n -r -cm test c l 0")
+	stdout2, status2 := runOne(t, confDir, "-n -r c l 0")
 	if status2 != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status2, stdout2)
 	}
@@ -131,7 +131,7 @@ func Test_e2e_chat_list_edit_message_picker_reopens(t *testing.T) {
 	// n=next page, 10=select conv-01, e=edit, n=next picker page,
 	// d=mistype (triggers "invalid selection" notice), 11=edit msg 11,
 	// b=back to list (still page 1), trailing q exits.
-	stdout, status := runOne(t, confDir, "-n -r -cm test c l n 10 e n d 11 b")
+	stdout, status := runOne(t, confDir, "-n -r c l n 10 e n d 11 b")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -180,7 +180,7 @@ func Test_e2e_chat_list_delete_message_picker_reopens(t *testing.T) {
 
 	// n=next page, 10=select conv-01, d=delete, n=next picker page,
 	// 11=delete msg 11, b=back to list, trailing q exits.
-	stdout, status := runOne(t, confDir, "-n -r -cm test c l n 10 d n 11 b")
+	stdout, status := runOne(t, confDir, "-n -r c l n 10 d n 11 b")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -219,7 +219,7 @@ func Test_e2e_chat_list_foreign_back_to_list(t *testing.T) {
 	}
 
 	// 0=select foreign row, b=back to list, trailing q exits.
-	stdout, status := runOne(t, confDir, "-n -r -cm test c l 0 b")
+	stdout, status := runOne(t, confDir, "-n -r c l 0 b")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -252,7 +252,7 @@ func Test_e2e_chat_list_foreign_quit(t *testing.T) {
 	}
 
 	// 0=select foreign row, trailing q exits from actOnForeignChat.
-	stdout, status := runOne(t, confDir, "-n -r -cm test c l 0")
+	stdout, status := runOne(t, confDir, "-n -r c l 0")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -283,7 +283,7 @@ func Test_e2e_chat_list_macro_empty(t *testing.T) {
 	confDir := setupMainTestConfigDir(t)
 	t.Setenv("HOME", t.TempDir())
 
-	stdout, status := runOne(t, confDir, "-n -r -cm test c l 0")
+	stdout, status := runOne(t, confDir, "-n -r c l 0")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -305,7 +305,7 @@ func Test_e2e_chat_list_macro_out_of_range(t *testing.T) {
 		msgUser("hello"), msgAsst("hi"),
 	))
 
-	stdout, status := runOne(t, confDir, "-n -r -cm test c l 999")
+	stdout, status := runOne(t, confDir, "-n -r c l 999")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -327,7 +327,7 @@ func Test_e2e_chat_list_macro_continue(t *testing.T) {
 		msgUser("test prompt"), msgAsst("test reply"),
 	))
 
-	stdout, status := runOne(t, confDir, "-n -r -cm test c l 0")
+	stdout, status := runOne(t, confDir, "-n -r c l 0")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -349,7 +349,7 @@ func Test_e2e_chat_list_macro_back_to_list(t *testing.T) {
 		msgUser("test prompt"), msgAsst("test reply"),
 	))
 
-	stdout, status := runOne(t, confDir, "-n -r -cm test c l 0 b")
+	stdout, status := runOne(t, confDir, "-n -r c l 0 b")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -384,7 +384,7 @@ func Test_e2e_chat_list_macro_delete_messages(t *testing.T) {
 		msgs...,
 	))
 
-	stdout, status := runOne(t, confDir, "-n -r -cm test c l 0 d 0:5")
+	stdout, status := runOne(t, confDir, "-n -r c l 0 d 0:5")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -417,7 +417,7 @@ func Test_e2e_chat_list_macro_delete_no_messages(t *testing.T) {
 		msgUser("prompt"), msgAsst("reply"),
 	))
 
-	stdout, status := runOne(t, confDir, "-n -r -cm test c l 0 d")
+	stdout, status := runOne(t, confDir, "-n -r c l 0 d")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -459,7 +459,7 @@ func Test_e2e_chat_list_macro_edit_message(t *testing.T) {
 		msgs...,
 	))
 
-	stdout, status := runOne(t, confDir, "-n -r -cm test c l 0 e 5")
+	stdout, status := runOne(t, confDir, "-n -r c l 0 e 5")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -555,7 +555,7 @@ func Test_e2e_chat_list_macro_group_drill_and_back(t *testing.T) {
 	// 0=select group row → drill into group view
 	// 0=select member chat-a → actOnChat
 	// b=back to group view → trailing q exits
-	stdout, status := runOne(t, confDir, "-n -r -cm test c l 0 0 b")
+	stdout, status := runOne(t, confDir, "-n -r c l 0 0 b")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -597,7 +597,7 @@ func Test_e2e_chat_list_macro_group_back_without_select(t *testing.T) {
 
 	// 0=select group row → drill into group view
 	// b=back → return to top-level list → trailing q exits
-	stdout, status := runOne(t, confDir, "-n -r -cm test c l 0 b")
+	stdout, status := runOne(t, confDir, "-n -r c l 0 b")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -643,7 +643,7 @@ func Test_e2e_chat_list_macro_dir_filter_toggle(t *testing.T) {
 
 	// d=toggle dir filter ON (shows only bound-chat)
 	// d=toggle dir filter OFF (shows both) → trailing q exits
-	stdout, status := runOne(t, workDir, "-n -r -cm test c l d d")
+	stdout, status := runOne(t, workDir, "-n -r c l d d")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -673,7 +673,7 @@ func Test_e2e_chat_list_macro_dir_filter_empty(t *testing.T) {
 	// No chats seeded — empty conv dir (except for the index/globalScope).
 
 	// d=toggle dir filter ON → empty view → trailing q exits
-	stdout, status := runOne(t, workDir, "-n -r -cm test c l d")
+	stdout, status := runOne(t, workDir, "-n -r c l d")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -703,7 +703,7 @@ func Test_e2e_chat_list_does_not_create_config_dir(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
 	workDir := t.TempDir()
-	stdout, status := runOne(t, workDir, "-n -cm test c l 0")
+	stdout, status := runOne(t, workDir, "-n c l 0")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
