@@ -499,16 +499,3 @@ func cloneDefaultValue(v reflect.Value) reflect.Value {
 		return v
 	}
 }
-
-func ReturnNonDefault[T comparable](a, b, defaultVal T) (T, error) {
-	if a != defaultVal && b != defaultVal {
-		return defaultVal, fmt.Errorf("values are mutually exclusive")
-	}
-	if a != defaultVal {
-		return a, nil
-	}
-	if b != defaultVal {
-		return b, nil
-	}
-	return defaultVal, nil
-}

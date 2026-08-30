@@ -10,7 +10,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/baalimago/clai/internal"
+	// Blank import: internal/audio's init wires the audio_transcribe
+	// tool engine (mode-as-tool bridge) for library consumers of pkg/agent.
+	_ "github.com/baalimago/clai/internal/audio"
 	"github.com/baalimago/clai/internal/chat"
 	priv_models "github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/text"
@@ -67,7 +69,7 @@ var defaultConf = Agent{
 	prompt:         "Uh-oh. Something is not quite right. Please ask the user to overlook his agentic setup, and to update the prompt.",
 	tools:          make([]models.LLMTool, 0),
 	mcpServers:     make([]models.McpServer, 0),
-	querierCreator: internal.CreateTextQuerier,
+	querierCreator: text.CreateQuerier,
 	slogLevel:      slog.LevelDebug,
 	slogRuneLimit:  200,
 }

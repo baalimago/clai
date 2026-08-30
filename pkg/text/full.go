@@ -6,7 +6,9 @@ import (
 	"os"
 	"path"
 
-	"github.com/baalimago/clai/internal"
+	// Blank import: internal/audio's init wires the audio_transcribe
+	// tool engine (mode-as-tool bridge) for library consumers.
+	_ "github.com/baalimago/clai/internal/audio"
 	priv_models "github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/pkg/text/models"
@@ -70,7 +72,7 @@ func (pq *publicQuerier) Setup(ctx context.Context) error {
 	if _, err := os.Stat(mcpServersDir); os.IsNotExist(err) {
 		os.Mkdir(conversationsDir, 0o755)
 	}
-	querier, err := internal.CreateTextQuerier(ctx, pq.conf)
+	querier, err := text.CreateQuerier(ctx, pq.conf)
 	if err != nil {
 		return fmt.Errorf("publicQuerier.Setup failed to CreateTextQuerier: %v", err)
 	}

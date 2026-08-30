@@ -3,26 +3,24 @@ package video
 import (
 	"fmt"
 	"os"
+
+	"github.com/baalimago/clai/internal/video/generic"
 )
 
-type Configurations struct {
-	Model string `json:"model"`
-	// Format of the prompt, will place prompt at '%v'
-	PromptFormat string `json:"prompt-format"`
-	Output       Output `json:"output"`
-	Raw          bool   `json:"raw"`
-	StdinReplace string `json:"-"`
-	ReplyMode    bool   `json:"-"`
-	Prompt       string `json:"-"`
+// The configuration types are defined in video/generic so the vendor
+// clients can import them without importing this package (which would
+// cycle: this package composes vendors).
+type (
+	Configurations = generic.Configurations
+	Output         = generic.Output
+	OutputType     = generic.OutputType
+)
 
-	PromptImageB64 string `json:"-"`
-}
-
-type Output struct {
-	Type   OutputType `json:"type"`
-	Dir    string     `json:"dir"`
-	Prefix string     `json:"prefix"`
-}
+const (
+	LOCAL = generic.LOCAL
+	URL   = generic.URL
+	UNSET = generic.UNSET
+)
 
 var Default = Configurations{
 	Model:        "sora-2",
@@ -33,14 +31,6 @@ var Default = Configurations{
 		Prefix: "clai",
 	},
 }
-
-type OutputType string
-
-const (
-	LOCAL OutputType = "local"
-	URL   OutputType = "url"
-	UNSET OutputType = "unset"
-)
 
 func ValidateOutputType(outputType OutputType) error {
 	switch outputType {

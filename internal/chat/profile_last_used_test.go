@@ -26,9 +26,7 @@ func TestContinueUsesLastProfileFromChatFile(t *testing.T) {
 
 	h := &ChatHandler{
 		convDir: tmp,
-		config: NotCyclicalImport{
-			UseProfile: "default",
-		},
+		profile: "default",
 	}
 
 	h.prompt = "mychat"
@@ -39,12 +37,12 @@ func TestContinueUsesLastProfileFromChatFile(t *testing.T) {
 
 	// mirror the logic in cont(): prefer stored profile.
 	if loaded.Profile != "" {
-		h.config.UseProfile = loaded.Profile
-	} else if h.config.UseProfile != "" {
-		loaded.Profile = h.config.UseProfile
+		h.profile = loaded.Profile
+	} else if h.profile != "" {
+		loaded.Profile = h.profile
 	}
 
-	if h.config.UseProfile != "gopher" {
-		t.Fatalf("expected handler to adopt chat profile, got %q", h.config.UseProfile)
+	if h.profile != "gopher" {
+		t.Fatalf("expected handler to adopt chat profile, got %q", h.profile)
 	}
 }

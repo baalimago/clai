@@ -2,29 +2,27 @@
 
 Command: `clai version`
 
-The **version** command prints build/version information and exits. It is implemented as a special-case in `internal.Setup()`.
+The **version** command prints build/version information and exits. It lives in `internal/version/cmd.go`.
 
 ## Entry Flow
 
 ```text
 main.go:run()
-  → internal.Setup(ctx, usage, args)
-    → parseFlags()
-    → getCmdFromArgs() → VERSION
-    → printVersion()
-  → exit (utils.ErrUserInitiatedExit)
+  → cmd.Run(...)                     # go_away_boilerplate/pkg/cmd dispatch
+    → version command Run (internal/version/cmd.go)
+      → printVersion()
+  → exit 0
 ```
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
-| `internal/setup.go` | Dispatches VERSION mode |
-| `internal/version.go` | Implements `printVersion()` |
+| `internal/version/cmd.go` | Implements the command and `version.Print()` |
 
 ## Output
 
-`internal/version.go:printVersion()` prints:
+`internal/version.Print()` prints:
 
 1. If linker-injected build variables are present:
    - `version: <BuildVersion>`
@@ -42,4 +40,4 @@ main.go:run()
 
 ## Exit behavior
 
-Returns `utils.ErrUserInitiatedExit` so the top-level runner exits with code 0.
+Returns nil on success, so the top-level runner exits with code 0.

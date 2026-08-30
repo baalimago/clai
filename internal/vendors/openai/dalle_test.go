@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/baalimago/clai/internal/photo"
+	photo "github.com/baalimago/clai/internal/photo/generic"
 )
 
 type roundTripperFunc func(*http.Request) (*http.Response, error)

@@ -8,25 +8,26 @@ The **query** command is the primary way to send a one-shot text prompt to an LL
 
 ```
 main.go:run()
-  → internal.Setup(ctx, usage, args)
-    → parseFlags()           # extract CLI flags
-    → getCmdFromArgs()       # returns QUERY mode
-    → setupTextQuerier()     # build the Querier
-  → querier.Query(ctx)      # execute the query
+  → cmd.Run(...)                       # go_away_boilerplate/pkg/cmd dispatch
+    → query command Setup (internal/text/cmd.go)
+      → resolves the query flag groups into Configurations
+      → setupTextQuerierWithConf()     # build the Querier
+    → adapter Run → querier.Query(ctx) # execute the query
 ```
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
-| `internal/setup.go` | `Setup()` dispatches to `setupTextQuerier()` for QUERY mode |
-| `internal/setup_flags.go` | `parseFlags()` extracts all CLI flags into `Configurations` |
+| `internal/text/cmd.go` | query command definition; dispatch via `cmd.Run` (see [cmd-dispatch.md](./cmd-dispatch.md)) |
+| `internal/setup.go` | `setupTextQuerierWithConf()` builds the text querier |
+| `internal/flags.go` | flag primitives + shared groups (`TextFlags` feeds `text.SetupQuerier`) |
 | `internal/text/conf.go` | `text.Configurations` struct + `SetupInitialChat()` |
 | `internal/text/querier_setup.go` | `NewQuerier()` — vendor routing, model config file creation |
 | `internal/text/querier.go` | `Querier.Query()` — streaming loop, token handling, post-processing |
 | `internal/text/querier_tool.go` | Tool call handling during query execution |
 | `internal/utils/prompt.go` | `Prompt()` — stdin/args merging and `{}` replacement |
-| `internal/create_queriers.go` | `CreateTextQuerier()` — vendor selection by model name |
+| `internal/text/create_querier.go` | `text.CreateQuerier()` — vendor selection by model name |
 | `internal/chat/reply.go` | `SaveAsPreviousQuery()` — persists result for `-re` replies |
 | `internal/chat/chat.go` | `HashIDFromPrompt()` — generates chat IDs |
 
@@ -64,7 +65,7 @@ See `CONFIG.md` for full details.
 
 ## Vendor Routing
 
-`CreateTextQuerier()` in `internal/create_queriers.go` routes by model name substring:
+`text.CreateQuerier()` in `internal/text/create_querier.go` routes by model name substring:
 
 | Pattern | Vendor |
 |---------|--------|

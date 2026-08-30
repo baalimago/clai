@@ -1,7 +1,6 @@
 package chat
 
 import (
-	"context"
 	"io"
 	"path/filepath"
 	"strings"
@@ -74,14 +73,6 @@ func TestPrintChatObfuscated_coloriziesPrefix(t *testing.T) {
 	}
 }
 
-type stubChatQuerier struct{}
-
-func (stubChatQuerier) Query(ctx context.Context) error { return nil }
-
-func (stubChatQuerier) TextQuery(ctx context.Context, ch pub_models.Chat) (pub_models.Chat, error) {
-	return ch, nil
-}
-
 func TestChatContinue_printsObfuscatedSummary_withPaddingAndPreview(t *testing.T) {
 	confDir := t.TempDir()
 	if err := utils.CreateConfigDir(confDir); err != nil {
@@ -110,7 +101,6 @@ func TestChatContinue_printsObfuscatedSummary_withPaddingAndPreview(t *testing.T
 	}
 
 	cq := &ChatHandler{
-		q:       stubChatQuerier{},
 		subCmd:  "continue",
 		prompt:  "0",
 		confDir: confDir,
@@ -168,7 +158,6 @@ func TestChatContinue_highMessageCount_obfuscatesOldMessages_andPrettyPrintsLast
 	}
 
 	cq := &ChatHandler{
-		q:       stubChatQuerier{},
 		subCmd:  "continue",
 		prompt:  "0",
 		confDir: confDir,

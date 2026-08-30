@@ -3,24 +3,24 @@ package photo
 import (
 	"fmt"
 	"os"
+
+	"github.com/baalimago/clai/internal/photo/generic"
 )
 
-type Configurations struct {
-	Model string `json:"model"`
-	// Format of the prompt, will place prompt at '%v'
-	PromptFormat string `json:"prompt-format"`
-	Output       Output `json:"output"`
-	Raw          bool   `json:"raw"`
-	StdinReplace string `json:"-"`
-	ReplyMode    bool   `json:"-"`
-	Prompt       string `json:"-"`
-}
+// The configuration types are defined in photo/generic so the vendor
+// clients can import them without importing this package (which would
+// cycle: this package composes vendors).
+type (
+	Configurations = generic.Configurations
+	Output         = generic.Output
+	OutputType     = generic.OutputType
+)
 
-type Output struct {
-	Type   OutputType `json:"type"`
-	Dir    string     `json:"dir"`
-	Prefix string     `json:"prefix"`
-}
+const (
+	LOCAL = generic.LOCAL
+	URL   = generic.URL
+	UNSET = generic.UNSET
+)
 
 var DEFAULT = Configurations{
 	Model:        "gpt-image-1",
@@ -31,14 +31,6 @@ var DEFAULT = Configurations{
 		Prefix: "clai",
 	},
 }
-
-type OutputType string
-
-const (
-	LOCAL OutputType = "local"
-	URL   OutputType = "url"
-	UNSET OutputType = "unset"
-)
 
 // ValidateOutputType is kind of dumb. Why did I add this..?
 func ValidateOutputType(outputType OutputType) error {

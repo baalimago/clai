@@ -372,7 +372,7 @@ func TestActOnChat_enter_continues(t *testing.T) {
 	_ = os.Setenv("TTY", fifoPath)
 	defer func() { _ = os.Setenv("TTY", oldTTY) }()
 
-	cq := &ChatHandler{q: nil, confDir: confDir, convDir: convDir, out: io.Discard}
+	cq := &ChatHandler{confDir: confDir, convDir: convDir, out: io.Discard}
 	if err := cq.actOnChat(ch, ""); err != nil {
 		if !errors.Is(err, errExitList) {
 			t.Fatalf("actOnChat: %v", err)

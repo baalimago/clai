@@ -2,7 +2,6 @@ package tools
 
 import (
 	"bytes"
-	"context"
 	"os"
 	"strings"
 	"testing"
@@ -42,10 +41,10 @@ func TestSubCmd_ListsAliasUnderCanonicalTool(t *testing.T) {
 
 		var err error
 		got := captureSubCmdOut(t, func() {
-			err = SubCmd(context.Background(), []string{"tools"})
+			err = List()
 		})
-		if err == nil {
-			t.Fatal("expected ErrUserInitiatedExit from SubCmd")
+		if err != nil {
+			t.Fatalf("expected nil from SubCmd, got: %v", err)
 		}
 		if !strings.Contains(got, "- canon (alias: old-name): ") {
 			t.Fatalf("expected canonical entry with alias annotation, got:\n%s", got)
@@ -67,10 +66,10 @@ func TestSubCmd_DetailResolvesAlias(t *testing.T) {
 
 		var err error
 		got := captureSubCmdOut(t, func() {
-			err = SubCmd(context.Background(), []string{"tools", "old-name"})
+			err = Detail("old-name")
 		})
-		if err == nil {
-			t.Fatal("expected ErrUserInitiatedExit from SubCmd")
+		if err != nil {
+			t.Fatalf("expected nil from SubCmd, got: %v", err)
 		}
 		if !strings.Contains(got, `"name": "canon"`) {
 			t.Fatalf("expected detail to resolve alias to canonical spec, got:\n%s", got)

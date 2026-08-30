@@ -1,19 +1,11 @@
 package chat
 
 import (
-	"context"
 	"testing"
 	"time"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
-
-type mockChatQuerier struct{}
-
-func (mockChatQuerier) Query(ctx context.Context) error { return nil }
-func (mockChatQuerier) TextQuery(ctx context.Context, c pub_models.Chat) (pub_models.Chat, error) {
-	return c, nil
-}
 
 func TestChatHandlerListAndFind(t *testing.T) {
 	tmp := t.TempDir()
@@ -26,7 +18,7 @@ func TestChatHandlerListAndFind(t *testing.T) {
 			t.Fatalf("save: %v", err)
 		}
 	}
-	h := &ChatHandler{convDir: tmp, q: mockChatQuerier{}}
+	h := &ChatHandler{convDir: tmp}
 	got, err := h.list()
 	if err != nil {
 		t.Fatalf("list err: %v", err)

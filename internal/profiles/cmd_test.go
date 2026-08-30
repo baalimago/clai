@@ -2,7 +2,6 @@ package profiles
 
 import (
 	"bytes"
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -38,13 +37,13 @@ func TestRunProfilesList_NoProfilesDir(t *testing.T) {
 		close(done)
 	}()
 
-	err = runProfilesList()
+	err = List()
 	w.Close()
 	os.Stdout = origStdout
 	<-done
 
-	if err == nil {
-		t.Fatalf("expected user initiated exit error, got nil")
+	if err != nil {
+		t.Fatalf("expected nil error, got: %v", err)
 	}
 
 	if !bytes.Contains(buf.Bytes(), []byte("no profiles directory")) {
@@ -77,13 +76,13 @@ func TestRunProfilesList_EmptyProfilesDir(t *testing.T) {
 		close(done)
 	}()
 
-	err := runProfilesList()
+	err := List()
 	w.Close()
 	os.Stdout = origStdout
 	<-done
 
-	if err == nil {
-		t.Fatalf("expected user initiated exit error, got nil")
+	if err != nil {
+		t.Fatalf("expected nil error, got: %v", err)
 	}
 
 	if !bytes.Contains(buf.Bytes(), []byte("no profiles found")) {
@@ -91,21 +90,9 @@ func TestRunProfilesList_EmptyProfilesDir(t *testing.T) {
 	}
 }
 
-func TestSubCmd_DefaultToList(t *testing.T) {
-	ctx := context.Background()
-
-	err := SubCmd(ctx, []string{"profiles"})
-	if err == nil {
-		t.Fatalf("expected user initiated exit error, got nil")
-	}
-}
-
-func TestSubCmd_UnknownSubcommand(t *testing.T) {
-	ctx := context.Background()
-
-	err := SubCmd(ctx, []string{"profiles", "unknown"})
-	if err == nil {
-		t.Fatalf("expected error for unknown subcommand, got nil")
+func TestList_Succeeds(t *testing.T) {
+	if err := List(); err != nil {
+		t.Fatalf("expected nil error, got: %v", err)
 	}
 }
 

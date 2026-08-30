@@ -8,13 +8,12 @@ The **video** command generates videos using AI models (currently OpenAI Sora) f
 
 ```
 main.go:run()
-  → internal.Setup(ctx, usage, args)
-    → parseFlags()                     # extract CLI flags
-    → getCmdFromArgs()                 # returns VIDEO mode
+  → cmd.Run(...)                       # go_away_boilerplate/pkg/cmd dispatch
+    → video command Setup (internal/video/cmd.go)
     → LoadConfigFromFile("videoConfig.json")
     → applyFlagOverridesForVideo()
     → vConf.SetupPrompts()             # build prompt from args/stdin/reply
-    → CreateVideoQuerier(vConf)         # vendor-specific querier
+    → video.CreateQuerier(vConf)        # vendor-specific querier
   → querier.Query(ctx)                # execute the video generation
 ```
 
@@ -22,11 +21,11 @@ main.go:run()
 
 | File | Purpose |
 |------|---------|
-| `internal/setup.go` | `Setup()` VIDEO case — loads config, creates querier |
+| `internal/video/cmd.go` | video command — loads config, applies overrides, wires the injected querier factory (see [cmd-dispatch.md](./cmd-dispatch.md)) |
 | `internal/video/conf.go` | `Configurations` struct, `Default`, `OutputType` enum |
 | `internal/video/prompt.go` | `SetupPrompts()` — prompt assembly with reply/stdin/image support |
 | `internal/video/store.go` | `SaveVideo()` — decodes base64 and writes to disk |
-| `internal/create_queriers.go` | `CreateVideoQuerier()` — routes to OpenAI Sora |
+| `internal/video/create_querier.go` | `video.CreateQuerier()` — routes to OpenAI Sora |
 | `internal/vendors/openai/sora.go` | OpenAI Sora video querier implementation |
 
 ## Configuration
@@ -78,7 +77,7 @@ main.go:run()
 
 ## Vendor Routing
 
-`CreateVideoQuerier()` in `internal/create_queriers.go`:
+`video.CreateQuerier()` in `internal/video/create_querier.go`:
 
 | Model Pattern | Vendor |
 |---------------|--------|

@@ -64,34 +64,31 @@ func Test_goldenFile_CONFDIR_unknown_subpath_errors(t *testing.T) {
 	}
 }
 
-func Test_goldenFile_HELP_mentions_confdir_command(t *testing.T) {
-	oldArgs := os.Args
-	t.Cleanup(func() {
-		os.Args = oldArgs
-	})
-
+func Test_goldenFile_usage_mentions_confdir_command(t *testing.T) {
 	_ = setupMainTestConfigDir(t)
 
 	var gotStatus int
 	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		gotStatus = run(strings.Split("help", " "))
+		gotStatus = run(nil)
 	})
 
-	testboil.FailTestIfDiff(t, gotStatus, 0)
-	testboil.AssertStringContains(t, stdout, "confdir [subpath ...]        Print clai config dir or a registered config subpath")
+	testboil.FailTestIfDiff(t, gotStatus, 1)
+	testboil.AssertStringContains(t, stdout, "confdir")
+	testboil.AssertStringContains(t, stdout, "Print clai config dir or a registered config subpath")
 }
 
-// Test_e2e_confdir_migrates_mode_configs proves the united config migration:
-// every command upgrades the mode configs before dispatch, so a downgraded
-// textConfig.json is repaired and announced even by commands that never load
-// the mode configs themselves (config migration design, Q5).
-func Test_e2e_confdir_migrates_mode_configs(t *testing.T) {
+// Test_e2e_query_migrates_mode_configs proves the united config migration:
+// every config-touching command upgrades the mode configs before running, so
+// a downgraded textConfig.json is repaired and announced even by commands
+// that never load the other mode configs themselves (config migration
+// design, Q5; scoped to config-touching commands by the cmd/flag refactor).
+func Test_e2e_query_migrates_mode_configs(t *testing.T) {
 	confDir := setupMainTestConfigDir(t)
 	writeJSONFileAny(t, filepath.Join(confDir, "textConfig.json"), map[string]any{
 		"model": "test",
 	})
 
-	stdout, status := runOne(t, confDir, "confdir")
+	stdout, status := runOne(t, confDir, "-cm test q hello")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -119,7 +116,7 @@ func Test_e2e_raw_run_does_not_migrate_configs(t *testing.T) {
 		"model": "test",
 	})
 
-	stdout, status := runOne(t, confDir, "-r confdir")
+	stdout, status := runOne(t, confDir, "-r -cm test q hello")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -135,18 +132,18 @@ func Test_e2e_raw_run_does_not_migrate_configs(t *testing.T) {
 	}
 }
 
-// Test_e2e_confdir_migrates_profiles proves the united config migration also
+// Test_e2e_query_migrates_profiles proves the united config migration also
 // covers every profiles/*.json: a profile that predates the current schema is
 // upgraded in place and announced even when it is never selected via
 // -p/-profile-path (config migration design, Q5 extension).
-func Test_e2e_confdir_migrates_profiles(t *testing.T) {
+func Test_e2e_query_migrates_profiles(t *testing.T) {
 	confDir := setupMainTestConfigDir(t)
 	writeJSONFileAny(t, filepath.Join(confDir, "profiles", "john.json"), map[string]any{
 		"name":  "john",
 		"model": "test",
 	})
 
-	stdout, status := runOne(t, confDir, "confdir")
+	stdout, status := runOne(t, confDir, "-cm test q hello")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -174,7 +171,7 @@ func Test_e2e_raw_run_does_not_migrate_profiles(t *testing.T) {
 		"model": "test",
 	})
 
-	stdout, status := runOne(t, confDir, "-r confdir")
+	stdout, status := runOne(t, confDir, "-r -cm test q hello")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -190,11 +187,11 @@ func Test_e2e_raw_run_does_not_migrate_profiles(t *testing.T) {
 	}
 }
 
-// Test_e2e_confdir_migrates_profiles_skips_broken_and_non_json_files pins the
+// Test_e2e_query_migrates_profiles_skips_broken_and_non_json_files pins the
 // broken-profile policy: a malformed profile warns and is skipped (same policy
 // as the mode configs), non-JSON files are never touched, and one broken file
 // does not block the migration of the others.
-func Test_e2e_confdir_migrates_profiles_skips_broken_and_non_json_files(t *testing.T) {
+func Test_e2e_query_migrates_profiles_skips_broken_and_non_json_files(t *testing.T) {
 	confDir := setupMainTestConfigDir(t)
 	writeJSONFileAny(t, filepath.Join(confDir, "profiles", "john.json"), map[string]any{
 		"name":  "john",
@@ -207,7 +204,7 @@ func Test_e2e_confdir_migrates_profiles_skips_broken_and_non_json_files(t *testi
 		t.Fatalf("WriteFile(notes.txt): %v", err)
 	}
 
-	stdout, status := runOne(t, confDir, "confdir")
+	stdout, status := runOne(t, confDir, "-cm test q hello")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -219,5 +216,30 @@ func Test_e2e_confdir_migrates_profiles_skips_broken_and_non_json_files(t *testi
 	}
 	if strings.Contains(stdout, "notes.txt") {
 		t.Fatalf("non-JSON files must not be migrated or announced, got:\n%s", stdout)
+	}
+}
+
+// Test_e2e_confdir_is_side_effect_free pins the cmd/flag-refactor invariant:
+// confdir never loads themes nor runs the united config migration, so shell
+// completion helpers and scripts can call it without touching any config.
+func Test_e2e_confdir_is_side_effect_free(t *testing.T) {
+	confDir := setupMainTestConfigDir(t)
+	writeJSONFileAny(t, filepath.Join(confDir, "textConfig.json"), map[string]any{
+		"model": "test",
+	})
+
+	stdout, status := runOne(t, confDir, "confdir")
+	if status != 0 {
+		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
+	}
+	if strings.Contains(stdout, "added new field(s)") {
+		t.Fatalf("confdir must not migrate configs, got:\n%s", stdout)
+	}
+	regenerated, err := os.ReadFile(filepath.Join(confDir, "textConfig.json"))
+	if err != nil {
+		t.Fatalf("ReadFile(textConfig.json): %v", err)
+	}
+	if strings.Contains(string(regenerated), `"stoploss"`) {
+		t.Fatalf("confdir must not migrate textConfig.json:\n%s", regenerated)
 	}
 }

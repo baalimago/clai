@@ -8,13 +8,12 @@ The **photo** command generates images using AI models (DALL-E, Gemini image gen
 
 ```
 main.go:run()
-  → internal.Setup(ctx, usage, args)
-    → parseFlags()                    # extract CLI flags
-    → getCmdFromArgs()                # returns PHOTO mode
+  → cmd.Run(...)                      # go_away_boilerplate/pkg/cmd dispatch
+    → photo command Setup (internal/photo/cmd.go)
     → LoadConfigFromFile("photoConfig.json")
     → applyFlagOverridesForPhoto()
     → pConf.SetupPrompts()            # build prompt from args/stdin/reply
-    → CreatePhotoQuerier(pConf)        # vendor-specific querier
+    → photo.CreateQuerier(pConf)       # vendor-specific querier
   → querier.Query(ctx)               # execute the photo generation
 ```
 
@@ -22,11 +21,11 @@ main.go:run()
 
 | File | Purpose |
 |------|---------|
-| `internal/setup.go` | `Setup()` PHOTO case — loads config, creates querier |
+| `internal/photo/cmd.go` | photo command — loads config, applies overrides, wires the injected querier factory (see [cmd-dispatch.md](./cmd-dispatch.md)) |
 | `internal/photo/conf.go` | `Configurations` struct, `DEFAULT`, `OutputType` enum |
 | `internal/photo/prompt.go` | `SetupPrompts()` — prompt assembly with reply/stdin support |
 | `internal/photo/store.go` | `SaveImage()` — decodes base64 and writes to disk |
-| `internal/create_queriers.go` | `CreatePhotoQuerier()` — routes to OpenAI or Gemini |
+| `internal/photo/create_querier.go` | `photo.CreateQuerier()` — routes to OpenAI or Gemini |
 | `internal/vendors/openai/dalle.go` | OpenAI DALL-E photo querier implementation |
 | `internal/vendors/gemini/image.go` | Gemini photo querier implementation |
 
@@ -76,7 +75,7 @@ main.go:run()
 
 ## Vendor Routing
 
-`CreatePhotoQuerier()` in `internal/create_queriers.go`:
+`photo.CreateQuerier()` in `internal/photo/create_querier.go`:
 
 | Model Pattern | Vendor |
 |---------------|--------|

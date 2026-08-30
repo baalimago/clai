@@ -15,19 +15,18 @@ It is intentionally a “manual editing UI” rather than a declarative config g
 
 ```text
 main.go:run()
-  → internal.Setup(ctx, usage, args)
-    → parseFlags()
-    → getCmdFromArgs() → SETUP
-    → setup.SubCmd()
+  → cmd.Run(...)                  # go_away_boilerplate/pkg/cmd dispatch
+    → setup command (internal/setup/cmd.go)
+      → setup.InitCmd()
 ```
 
-`internal.Setup` treats this as a user-initiated command and returns `utils.ErrUserInitiatedExit` after the wizard completes.
+Quitting the wizard bubbles `table.ErrUserInitiatedExit`, which `cmd.Run` treats as a clean exit 0; wizard completion returns nil.
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
-| `internal/setup.go` | Dispatch to `setup.SubCmd()` |
+| `internal/setup/cmd.go` | setup command definition (see [cmd-dispatch.md](./cmd-dispatch.md)) |
 | `internal/setup/setup.go` | Main interactive wizard flow and top menu |
 | `internal/setup/setup_actions.go` | The concrete actions (configure, delete, create new, editor-based edits) |
 | `internal/setup/mcp_parser.go` | Parses pasted MCP server JSON (Model Context Protocol configuration) |

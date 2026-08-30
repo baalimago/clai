@@ -14,7 +14,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/baalimago/clai/internal/audio"
 	"github.com/baalimago/clai/internal/debugflags"
 )
 
@@ -57,7 +56,7 @@ func (t *Transcriber) responseFormat() string {
 	return formatVerboseJSON
 }
 
-func (t *Transcriber) Transcribe(ctx context.Context, filePath string) ([]audio.Segment, error) {
+func (t *Transcriber) Transcribe(ctx context.Context, filePath string) ([]Segment, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open audio file: %w", err)
@@ -69,9 +68,9 @@ func (t *Transcriber) Transcribe(ctx context.Context, filePath string) ([]audio.
 		return nil, err
 	}
 	if respFormat == formatDiarizedJSON {
-		return audio.ParseDiarizedJSON(body)
+		return ParseDiarizedJSON(body)
 	}
-	return audio.ParseVerboseJSON(body)
+	return ParseVerboseJSON(body)
 }
 
 func (t *Transcriber) post(ctx context.Context, file *os.File, respFormat string) ([]byte, error) {

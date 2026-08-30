@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/baalimago/clai/internal/photo"
+	photo "github.com/baalimago/clai/internal/photo/generic"
 )
 
 func TestGetFirstB64BlobOK(t *testing.T) {

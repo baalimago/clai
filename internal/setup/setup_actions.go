@@ -478,7 +478,7 @@ func getToolsValue(v any) ([]string, error) {
 	}
 
 	currentlySelected := parseCurrentTools(sArr)
-	names := sortedToolNames()
+	names := tools.Names()
 	doneAction, allAction, clearAction := toolSelectionActions()
 
 	fmt.Print(colorPrimary("Tooling configuration\n"))
@@ -524,18 +524,6 @@ func parseCurrentTools(sArr []any) map[string]bool {
 		}
 	}
 	return selected
-}
-
-// sortedToolNames returns all registered tool names in alphabetical order.
-func sortedToolNames() []string {
-	tools.Init()
-	allTools := tools.Registry.All()
-	names := make([]string, 0, len(allTools))
-	for name := range allTools {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
 }
 
 // toolSelectionActions returns the three sentinel actions for the tools selection table.

@@ -12,11 +12,9 @@ This is the directory-scoped analog of `clai replay` / `clai re`.
 
 ```text
 main.go:run()
-  → internal.Setup(ctx, usage, args)
-    → parseFlags()
-    → getCmdFromArgs() → DIRSCOPED_REPLAY
-    → setupDRE(...) → dreQuerier
-  → dreQuerier.Query(ctx)
+  → cmd.Run(...)                  # go_away_boilerplate/pkg/cmd dispatch
+    → dir-replay command Setup → dreQuerier (internal/chat/cmd.go)
+    → adapter Run → dreQuerier.Query(ctx)
     → chat.Replay(raw, true)
 ```
 
@@ -24,8 +22,8 @@ main.go:run()
 
 | File | Purpose |
 |------|---------|
-| `internal/setup.go` | Dispatches DIRSCOPED_REPLAY mode |
-| `internal/dre.go` | Implements the `dre` command querier (`dreQuerier`) |
+| `internal/chat/cmd.go` | dir-replay command definition (see [cmd-dispatch.md](./cmd-dispatch.md)) |
+| `internal/chat/cmd.go` | Implements the `dre` command and its querier (`dreQuerier`) |
 | `internal/chat/replay.go` | `Replay(raw, dirScoped)` + `replayDirScoped` |
 | `internal/chat/dirscope.go` | Directory binding storage + lookup (`LoadDirScope`) |
 | `architecture/dirscope.md` | Authoritative spec for the binding record, history recording, and lookback |
@@ -59,5 +57,5 @@ Stored reasoning remains in the conversation file.
 
 ## Error handling / exit codes
 
-- On success, `dre` prints and returns nil; `internal.Setup` does not force exit (it returns a querier), so normal exit code is 0.
+- On success, `dre` prints and returns nil; normal exit code is 0.
 - Missing binding or missing conversation file returns an error and results in non-zero exit.

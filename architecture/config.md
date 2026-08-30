@@ -24,7 +24,7 @@ On startup, `main.run()` ensures the config dir exists:
 
 - `utils.CreateConfigDir(configDirPath)`
 
-The config dir is also printed in `clai help` (see `main.go` usage template).
+The config dir is also printed in the bare-`clai` usage (see `main.go` usage template).
 
 ## Config file types
 
@@ -59,7 +59,7 @@ config key for it is ignored if present in old configs (encoding/json drops
 unknown keys, so no migration is needed), and the stoploss replaces it as the
 context guard.
 
-Mode configs are migrated from a united place: `internal.Setup` upgrades all
+Mode configs are migrated from a united place: `migrateConfigs` (run via `configRunPrep` in every config-touching command) upgrades all
 three files before mode dispatch, so every command sees the current schema
 (completion commands bypass this deliberately):
 
@@ -67,7 +67,7 @@ three files before mode dispatch, so every command sees the current schema
 - `utils.LoadConfigFromFileCollect(confDir, "photoConfig.json", migrateOldPhotoConfig, &photo.DEFAULT)`
 - `utils.LoadConfigFromFileCollect(confDir, "videoConfig.json", nil, &video.Default)`
 
-The per-mode loads inside `internal.setupTextQuerierWithConf` / `internal.Setup`
+The per-mode loads inside `internal.setupTextQuerierWithConf` / the command adapters
 remain, but are idempotent after the united migration.
 
 `LoadConfigFromFile` is responsible for:
@@ -88,7 +88,7 @@ remain, but are idempotent after the united migration.
   message) to configs that predate the feature.
 
 `LoadConfigFromFileCollect` is the same loader without the stdout
-announcement: it returns the added field paths instead. `internal.Setup` uses
+announcement: it returns the added field paths instead. `migrateConfigs` uses
 it for the united migration and prints the announcements just before the
 interactive setup wizard starts. The wizard's TUI redraws by clearing its own
 frame plus one line above the header (`go_away_boilerplate/pkg/table`
@@ -98,7 +98,7 @@ would wipe the announcement. Deep multi-table navigation can still scroll it
 off (each `Run()` exit consumes one line). All other commands announce
 immediately.
 
-Raw (machine-readable) runs — `-r`/`-raw` — are read-only: `internal.Setup`
+Raw (machine-readable) runs — `-r`/`-raw` — are read-only: the command adapter
 sets `utils.ReadonlyConfig` before any load, and the loaders fill missing
 fields in memory but never rewrite the config files and never print upgrade
 announcements. This keeps shell hooks and scripts that call clai (e.g. a zsh
@@ -108,7 +108,7 @@ with the human announcement. The migration then happens on the next
 interactive (non-raw) run, where the announcement is visible.
 
 Read-only chat subcommands — `chat list`, `chat dir`, `chat dirv2`, and
-`chat help` — go further: `internal.Setup` sets `utils.NoCreateConfig` before
+`chat help` — go further: the read-only chat subcommands set `utils.NoCreateConfig` before
 any load, so no config dir, default config file, migration callback, or model
 querier is produced as a side effect. This lets those commands run against a
 read-only filesystem or a config dir that does not exist yet; a missing config
@@ -133,7 +133,7 @@ Example (illustrative):
 - `openai_gpt_gpt-4.1.json`
 - `anthropic_chat_claude-sonnet-4-20250514.json`
 
-Creation/loading typically occurs during querier creation (`CreateTextQuerier`, `CreatePhotoQuerier`, etc.) and is vendor-specific.
+Creation/loading typically occurs during querier creation (`text.CreateQuerier`, `photo.CreateQuerier`, etc.) and is vendor-specific.
 
 **Important characteristic**:
 
@@ -172,7 +172,7 @@ They aren’t traditional config, but they influence prompt assembly (`-re`, `-d
 
 ## The override cascade (text/query/chat/cmd)
 
-Text-like commands are configured in `internal/setup.go:setupTextQuerierWithConf`.
+Text-like commands are configured in `internal/text/setup_querier.go:SetupQuerier`.
 
 The effective precedence is:
 
@@ -194,12 +194,12 @@ text.Default
   → finalize tool selection (flags + profiles + defaults)
   → re-apply “late” overrides (some flags override profile, e.g., -cm)
   → build InitialChat (including reply context)
-  → CreateTextQuerier(...) loads vendor model config and produces runtime Model
+  → text.CreateQuerier(...) loads vendor model config and produces runtime Model
 ```
 
 ### Where flags apply
 
-Flags are parsed in `internal/setup_flags.go:parseFlags` into `internal.Configurations`.
+Flags are alias-aware primitives (`internal/flags.go`): shared groups live in package `internal`, domain-specific flags in their domain packages; override cascades read `Explicit()`/`Changed()` directly — there is no central configurations bag.
 
 For **text** the important override functions are:
 
@@ -223,7 +223,7 @@ Tool usage is controlled by:
 - `text.Configurations.RequestedToolGlobs` (names or wildcards)
 - profiles can also set tool behavior
 
-`internal/setup.go:setupToolConfig` is the bridge between:
+`internal/text/setup_querier.go:setupToolConfig` is the bridge between:
 
 - CLI’s `UseTools` string
 - text configuration’s `UseTools` + `RequestedToolGlobs`
@@ -299,7 +299,7 @@ loading the directory binding’s conversation directly.
 - Load `photoConfig.json` (with default `photo.DEFAULT`)
 - Apply flag overrides: model, output dir/prefix/type, reply and stdin replacement
 - Build prompt via `photo.Configurations.SetupPrompts()`
-- Create vendor querier via `CreatePhotoQuerier(pConf)`
+- Create vendor querier via `photo.CreateQuerier(pConf)`
 
 See `PHOTO.md`.
 
@@ -326,17 +326,18 @@ See `SETUP.md`.
 
 If you need to follow configuration in code, start here:
 
-- `internal/setup_flags.go`
+- `internal/flags.go`
   - CLI flags → internal struct
   - applies overrides into mode configs
-- `internal/setup.go`
+- `internal/text/setup_querier.go`
+- `internal/setup/config_lifecycle.go`
   - command dispatch
   - text setup (`setupTextQuerierWithConf`) and special cases (`-dre`)
 - `internal/utils/config.go` + `internal/utils/json.go`
   - `LoadConfigFromFile`, `CreateFile`, etc.
 - `internal/text/conf.go`
   - text defaults, initial chat setup, reply/glob integration
-- `internal/create_queriers.go`
+- `internal/<domain>/create_querier.go`
   - model name → vendor querier routing
 
 ## Common debugging tips

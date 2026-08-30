@@ -1,104 +1,78 @@
 package main
 
 import (
-	"os"
 	"strings"
 	"testing"
 
-	"github.com/baalimago/clai/internal"
+	"github.com/baalimago/clai/internal/profiles"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
-func Test_goldenFile_HELP_prints_usage(t *testing.T) {
-	oldArgs := os.Args
-	t.Cleanup(func() {
-		os.Args = oldArgs
-	})
-
+// Test_goldenFile_usage_on_no_args pins the dispatcher usage: bare clai
+// prints the full usage — prerequisites, the generated command table, the
+// per-command -h pointer, config/cache dirs and examples — and exits 1.
+// The help command is gone; per-command help lives on -h.
+func Test_goldenFile_usage_on_no_args(t *testing.T) {
 	confDir := setupMainTestConfigDir(t)
 
 	var gotStatusCode int
 	gotStdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		gotStatusCode = run(strings.Split("help", " "))
+		gotStatusCode = run(nil)
 	})
 
-	testboil.FailTestIfDiff(t, gotStatusCode, 0)
-	if gotStdout == "" {
-		t.Fatal("expected help output to be non-empty")
-	}
-	// The usage string is large; check for a few stable snippets and that config dir was interpolated.
+	testboil.FailTestIfDiff(t, gotStatusCode, 1)
 	testboil.AssertStringContains(t, gotStdout, "Usage:")
-	testboil.AssertStringContains(t, gotStdout, "-s, -skills string")
-	testboil.AssertStringContains(t, gotStdout, "-asc, -append-shell-context str")
-	testboil.AssertStringContains(t, gotStdout, "-mt, -max-tokens int")
-	testboil.AssertStringContains(t, gotStdout, "-mtc, -max-tool-calls int")
-	testboil.AssertStringContains(t, gotStdout, "-max-tool-calls-after-handover int")
+	for _, command := range []string{
+		"query|q", "chat|c", "photo|p", "video|v", "audio|a",
+		"setup|s", "version", "replay|re", "dir-replay|dre",
+		"tools|t", "profiles", "confdir", "completion",
+	} {
+		testboil.AssertStringContains(t, gotStdout, command)
+	}
+	for _, forbidden := range []string{"__complete", "help|h", "glob|g"} {
+		if strings.Contains(gotStdout, forbidden) {
+			t.Fatalf("usage must not list %q, got:\n%s", forbidden, gotStdout)
+		}
+	}
+	testboil.AssertStringContains(t, gotStdout, "clai <command> -h")
 	testboil.AssertStringContains(t, gotStdout, "clai -asc minimal q \"what changed in this repo?\"")
 	testboil.AssertStringContains(t, gotStdout, confDir)
-	assertFlagDescriptionsAligned(t, gotStdout)
 }
 
-// assertFlagDescriptionsAligned fails when the flag descriptions in the usage
-// text do not all start at the same column. Keeping the column aligned is a
-// manual padding exercise today; this guard turns a misalignment into a test
-// failure instead of a silent cosmetic regression. The structured replacement
-// (generating the flag block from a table of {flag, type, description}) is a
-// future upgrade.
-func assertFlagDescriptionsAligned(t *testing.T, usageOut string) {
-	t.Helper()
-	var descCol int
-	for line := range strings.SplitSeq(usageOut, "\n") {
-		if !strings.HasPrefix(line, "  -") {
-			continue
-		}
-		// The description is the text after the first run of 2+ spaces that
-		// follows the flag spec.
-		rest := line[2:]
-		runStart := -1
-		for i := 0; i+1 < len(rest); i++ {
-			if rest[i] == ' ' && rest[i+1] == ' ' {
-				runStart = i
-				break
+// Test_goldenFile_help_command_removed pins that the old help command is an
+// unknown command now: it errors and falls back to the usage listing.
+func Test_goldenFile_help_command_removed(t *testing.T) {
+	_ = setupMainTestConfigDir(t)
+
+	for _, args := range []string{"help", "h"} {
+		t.Run(args, func(t *testing.T) {
+			var gotStatusCode int
+			var gotStdout string
+			gotStderr := testboil.CaptureStderr(t, func(t *testing.T) {
+				gotStdout = testboil.CaptureStdout(t, func(t *testing.T) {
+					gotStatusCode = run([]string{args})
+				})
+			})
+			testboil.FailTestIfDiff(t, gotStatusCode, 1)
+			if !strings.Contains(gotStderr, args) {
+				t.Fatalf("expected error naming %q, got: %q", args, gotStderr)
 			}
-		}
-		if runStart < 0 {
-			continue
-		}
-		j := runStart
-		for j < len(rest) && rest[j] == ' ' {
-			j++
-		}
-		if j == len(rest) {
-			continue
-		}
-		col := 2 + j
-		if descCol == 0 {
-			descCol = col
-			continue
-		}
-		if col != descCol {
-			t.Fatalf("flag description column mismatch: %q starts at column %d, want %d", line, col+1, descCol+1)
-		}
-	}
-	if descCol == 0 {
-		t.Fatal("expected at least one flag line in the usage output")
+			testboil.AssertStringContains(t, gotStdout, "query|q")
+		})
 	}
 }
 
-func Test_goldenFile_HELP_profile_prints_profile_help(t *testing.T) {
-	oldArgs := os.Args
-	t.Cleanup(func() {
-		os.Args = oldArgs
-	})
-
+// Test_goldenFile_profiles_help_carries_profile_docs pins the new home of
+// ProfileHelp: 'clai profiles -h'.
+func Test_goldenFile_profiles_help_carries_profile_docs(t *testing.T) {
 	_ = setupMainTestConfigDir(t)
 
 	var gotStatusCode int
 	gotStdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		gotStatusCode = run(strings.Split("help profile", " "))
+		gotStatusCode = run([]string{"profiles", "-h"})
 	})
 
 	testboil.FailTestIfDiff(t, gotStatusCode, 0)
-	want := internal.ProfileHelp + "\n"
-	testboil.FailTestIfDiff(t, gotStdout, want)
+	testboil.AssertStringContains(t, gotStdout, profiles.Help)
+	testboil.AssertStringContains(t, gotStdout, "Examples:")
 }

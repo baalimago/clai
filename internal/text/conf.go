@@ -42,7 +42,6 @@ type Configurations struct {
 	// forks a fresh promoted id and must not record), -dre continues the bound
 	// conversation in place, so it DOES upsert the directory history (see finalizer).
 	DirReplyMode        bool            `json:"-"`
-	ChatMode            bool            `json:"-"`
 	Glob                string          `json:"-"`
 	InitialChat         pub_models.Chat `json:"-"`
 	UseProfile          string          `json:"-"`
@@ -238,7 +237,7 @@ func (c *Configurations) setupSystemPrompt() {
 // SetupInitialChat by doing all sorts of organically grown stuff. Don\'t touch this
 // code too closely. Something will break, most likely.
 func (c *Configurations) SetupInitialChat(args []string) error {
-	traceChatf("setup initial chat start reply_mode=%t chat_mode=%t glob=%q args=%q", c.ReplyMode, c.ChatMode, c.Glob, strings.Join(args, " "))
+	traceChatf("setup initial chat start reply_mode=%t glob=%q args=%q", c.ReplyMode, c.Glob, strings.Join(args, " "))
 	if c.Glob != "" && c.ReplyMode {
 		ancli.PrintWarn("Using glob + reply modes together might yield strange results. The globalScope will be appended after the glob messages.\n")
 	}
@@ -294,16 +293,13 @@ func (c *Configurations) SetupInitialChat(args []string) error {
 	prompt = strings.TrimRight(prompt, " \t\r\n")
 	traceChatf("setup initial chat prompt ready prompt_len=%d", len(prompt))
 
-	// If chatmode, the initial message will be handled by the chat querier
-	if !c.ChatMode {
-		traceChatf("setup initial chat converting prompt to message parts")
-		imgMsg, err := chat.PromptToImageMessage(prompt)
-		if err != nil {
-			return fmt.Errorf("failed to convert prompt to imageMessage: %w", err)
-		}
-		c.InitialChat.Messages = append(c.InitialChat.Messages, imgMsg...)
-		traceChatf("setup initial chat appended prompt messages=%d total_messages=%d", len(imgMsg), len(c.InitialChat.Messages))
+	traceChatf("setup initial chat converting prompt to message parts")
+	imgMsg, err := chat.PromptToImageMessage(prompt)
+	if err != nil {
+		return fmt.Errorf("failed to convert prompt to imageMessage: %w", err)
 	}
+	c.InitialChat.Messages = append(c.InitialChat.Messages, imgMsg...)
+	traceChatf("setup initial chat appended prompt messages=%d total_messages=%d", len(imgMsg), len(c.InitialChat.Messages))
 
 	if misc.Truthy(os.Getenv("DEBUG")) {
 		ancli.PrintOK(fmt.Sprintf("InitialPrompt: %v\n", debug.IndentedJsonFmt(c.InitialChat)))

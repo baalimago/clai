@@ -58,8 +58,14 @@ func splitArgsForTest(args string) []string {
 }
 
 func TestMainHelpDocumentsChatDirV2(t *testing.T) {
-	if !strings.Contains(usage, "chat   dirv2") {
-		t.Fatalf("main help does not document chat dirv2")
+	_ = setupMainTestConfigDir(t)
+	var status int
+	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
+		status = run([]string{"chat", "-h"})
+	})
+	testboil.FailTestIfDiff(t, status, 0)
+	if !strings.Contains(stdout, "dirv2") {
+		t.Fatalf("chat help does not document dirv2, got:\n%s", stdout)
 	}
 }
 
@@ -77,7 +83,7 @@ func Test_chat_dir_does_not_print_skills_logs_without_text_query(t *testing.T) {
 	})
 
 	for _, subcommand := range []string{"dir", "dirv2"} {
-		stdout, status := runOne(t, workDir, "-r -cm test chat "+subcommand)
+		stdout, status := runOne(t, workDir, "-r chat "+subcommand)
 		if status != 0 {
 			t.Fatalf("expected zero status for chat %s, got %d stdout=%q", subcommand, status, stdout)
 		}
@@ -130,16 +136,16 @@ func Test_goldenFile_CHAT_DIRSCOPED(t *testing.T) {
 		return got
 	}
 
-	_, status := runOne(t, bar, "-r -cm test chat dir")
+	_, status := runOne(t, bar, "-r chat dir")
 	if status != 0 {
 		t.Fatalf("expected zero status for 'chat dir' when empty, got %v", status)
 	}
 
-	out, status := runOne(t, bar, "-r -cm test q hello")
+	out, status := runOne(t, bar, "-cm test -r q hello")
 	testboil.FailTestIfDiff(t, status, 0)
 	testboil.FailTestIfDiff(t, out, "hello\n")
 
-	out, status = runOne(t, bar, "-r -cm test chat dir")
+	out, status = runOne(t, bar, "-r chat dir")
 	testboil.FailTestIfDiff(t, status, 0)
 	barInfo := parseChatDir(t, out)
 	if barInfo.Scope != "dir" {
@@ -167,11 +173,11 @@ func Test_goldenFile_CHAT_DIRSCOPED(t *testing.T) {
 		t.Fatalf("expected non-zero status for 'dre' without binding")
 	}
 
-	out, status = runOne(t, baz, "-r -cm test q baz")
+	out, status = runOne(t, baz, "-cm test -r q baz")
 	testboil.FailTestIfDiff(t, status, 0)
 	testboil.FailTestIfDiff(t, out, "baz\n")
 
-	out, status = runOne(t, baz, "-r -cm test chat dir")
+	out, status = runOne(t, baz, "-r chat dir")
 	testboil.FailTestIfDiff(t, status, 0)
 	bazInfo := parseChatDir(t, out)
 	if bazInfo.Scope != "dir" {
@@ -199,7 +205,7 @@ func Test_goldenFile_CHAT_DIRSCOPED(t *testing.T) {
 	testboil.FailTestIfDiff(t, status, 0)
 	testboil.AssertStringContains(t, out, "baz")
 
-	out, status = runOne(t, baz, "-r -cm test -re -dre q hello3")
+	out, status = runOne(t, baz, "-cm test -r -re -dre q hello3")
 	testboil.FailTestIfDiff(t, status, 0)
 	testboil.FailTestIfDiff(t, out, "hello3\n")
 
@@ -325,7 +331,7 @@ func Test_goldenFile_CHAT_CONTINUE_obfuscated_preview(t *testing.T) {
 		_ = os.Chdir(oldWd)
 	})
 
-	out, status := runOne(t, confDir, "-r -cm test c c 0")
+	out, status := runOne(t, confDir, "-r c c 0")
 	if status != 0 {
 		t.Fatalf("expected status code 0, got %v. stdout=%q", status, out)
 	}
@@ -350,6 +356,45 @@ func Test_goldenFile_CHAT_CONTINUE_obfuscated_preview(t *testing.T) {
 	}
 }
 
+// Test_e2e_chat_continue_needs_no_model pins that the chat tree runs no
+// model. Continuing a chat prints a stored transcript and writes the
+// directory binding; it constructed (and then discarded) a full text
+// querier, which made the command fail without a vendor API key.
+func Test_e2e_chat_continue_needs_no_model(t *testing.T) {
+	confDir := t.TempDir()
+	if err := utils.CreateConfigDir(confDir); err != nil {
+		t.Fatalf("CreateConfigDir: %v", err)
+	}
+	t.Setenv("HOME", confDir)
+	t.Setenv("CLAI_CONFIG_DIR", confDir)
+	for _, key := range []string{"OPENAI_API_KEY", "ANTHROPIC_API_KEY", "OPENROUTER_API_KEY"} {
+		t.Setenv(key, "")
+	}
+
+	conv := models.Chat{
+		Created:  time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
+		ID:       "keyless-chat",
+		Messages: []models.Message{{Role: "user", Content: "hello"}, {Role: "assistant", Content: "world"}},
+	}
+	if err := chat.Save(filepath.Join(confDir, "conversations"), conv); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	out, status := runOne(t, confDir, "-r c c 0")
+	if status != 0 {
+		t.Fatalf("expected status code 0, got %v. stdout=%q", status, out)
+	}
+	testboil.AssertStringContains(t, out, "world")
+
+	chatID, err := chat.LoadDirScopeChatID(confDir)
+	if err != nil {
+		t.Fatalf("LoadDirScopeChatID: %v", err)
+	}
+	if chatID != conv.ID {
+		t.Fatalf("expected dirscope chat id %q got %q", conv.ID, chatID)
+	}
+}
+
 func Test_e2e_same_prompt_twice_creates_two_separate_chats(t *testing.T) {
 	confDir := setupMainTestConfigDir(t)
 	oldWd, err := os.Getwd()
@@ -361,10 +406,10 @@ func Test_e2e_same_prompt_twice_creates_two_separate_chats(t *testing.T) {
 	})
 
 	prompt := "please keep these as separate chats"
-	_, status := runOne(t, confDir, "-r -cm test q "+prompt)
+	_, status := runOne(t, confDir, "-cm test -r q "+prompt)
 	testboil.FailTestIfDiff(t, status, 0)
 
-	_, status = runOne(t, confDir, "-r -cm test q "+prompt)
+	_, status = runOne(t, confDir, "-cm test -r q "+prompt)
 	testboil.FailTestIfDiff(t, status, 0)
 
 	entries, err := os.ReadDir(filepath.Join(confDir, "conversations"))
@@ -399,7 +444,7 @@ func Test_e2e_newly_saved_conversation_has_created_timestamp(t *testing.T) {
 		_ = os.Chdir(oldWd)
 	})
 
-	_, status := runOne(t, confDir, "-r -cm test q verify created timestamp persists")
+	_, status := runOne(t, confDir, "-cm test -r q verify created timestamp persists")
 	testboil.FailTestIfDiff(t, status, 0)
 
 	entries, err := os.ReadDir(filepath.Join(confDir, "conversations"))
@@ -473,11 +518,11 @@ func Test_e2e_dre_queries_continue_directory_scoped_conversation(t *testing.T) {
 		return got
 	}
 
-	out, status := runOne(t, workDir, "-r -cm test q I like blue")
+	out, status := runOne(t, workDir, "-cm test -r q I like blue")
 	testboil.FailTestIfDiff(t, status, 0)
 	testboil.FailTestIfDiff(t, out, "I like blue\n")
 
-	out, status = runOne(t, workDir, "-r -cm test chat dir")
+	out, status = runOne(t, workDir, "-r chat dir")
 	testboil.FailTestIfDiff(t, status, 0)
 	initialDirInfo := parseChatDir(t, out)
 	if initialDirInfo.ChatID == "" {
@@ -510,7 +555,7 @@ func Test_e2e_dre_queries_continue_directory_scoped_conversation(t *testing.T) {
 		})
 	}
 
-	out, status = runOne(t, workDir, "-r -cm test chat dir")
+	out, status = runOne(t, workDir, "-r chat dir")
 	testboil.FailTestIfDiff(t, status, 0)
 	finalDirInfo := parseChatDir(t, out)
 	if finalDirInfo.ChatID != initialDirInfo.ChatID {
@@ -596,7 +641,7 @@ func Test_e2e_dre_setup_keeps_bound_chat_id(t *testing.T) {
 		t.Fatalf("Chdir(%q): %v", workDir, err)
 	}
 
-	_, status := runOne(t, workDir, "-r -cm test q initial prompt")
+	_, status := runOne(t, workDir, "-cm test -r q initial prompt")
 	testboil.FailTestIfDiff(t, status, 0)
 
 	initialChatID, err := chat.LoadDirScopeChatID(confDir)
@@ -607,7 +652,7 @@ func Test_e2e_dre_setup_keeps_bound_chat_id(t *testing.T) {
 		t.Fatalf("expected initial dirscope chat id to be non-empty")
 	}
 
-	_, status = runOne(t, workDir, "-r -cm test -dre q follow-up prompt")
+	_, status = runOne(t, workDir, "-cm test -r -dre q follow-up prompt")
 	testboil.FailTestIfDiff(t, status, 0)
 
 	finalChatID, err := chat.LoadDirScopeChatID(confDir)
@@ -642,7 +687,7 @@ func Test_e2e_dre_profile_swap_does_not_create_new_conversation(t *testing.T) {
 		t.Fatalf("MkdirAll(%q): %v", workDir, err)
 	}
 
-	out, status := runOne(t, workDir, "-r -cm test q seed prompt")
+	out, status := runOne(t, workDir, "-cm test -r q seed prompt")
 	testboil.FailTestIfDiff(t, status, 0)
 	testboil.FailTestIfDiff(t, out, "seed prompt\n")
 

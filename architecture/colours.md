@@ -19,7 +19,7 @@ On startup, clai ensures a theme file exists and loads it.
 
 - Path: `<clai-config-dir>/theme.json`
 - Loader: `internal/utils.LoadTheme(configDir)`
-- Startup hook: `internal.Setup(...)` calls `utils.LoadTheme(claiConfDir)` early.
+- Startup hook: `internal.PrepTheme` calls `utils.LoadTheme(claiConfDir)` early. Config-touching commands reach it through `setup.ConfigRunPrep` (injected from `main.go`); `replay`, `dir-replay` and the read-only chat subs call it directly, since they render themed output without migrating configs.
 
 The file is automatically created with defaults if missing.
 
