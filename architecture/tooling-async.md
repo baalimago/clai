@@ -187,6 +187,12 @@ The session owns every async command.
 
 When the parent clai process context is cancelled, interrupted, or completed, all async commands started in that session must begin cleanup. Async commands must not outlive the session that created them.
 
+This also applies when an agent returns its final response. Returning ends the
+owning session and cancels all commands that are still running. Therefore, an
+agent that needs a command's result must call `async_cmd_await` and remain in
+the same session until the command reaches a terminal state. It must not return
+an intermediate final response with the intent to inspect the command later.
+
 Completed async commands remain inspectable until the owning session ends. In v1:
 
 - terminal async command metadata remains in memory until session teardown
