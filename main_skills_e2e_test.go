@@ -314,7 +314,7 @@ func Test_e2e_skills_descriptor_activation_and_persistence(t *testing.T) {
 		t.Fatalf("Chdir(%q): %v", repoDir, err)
 	}
 
-	writeSkillFile(t, filepath.Join(confDir, "skills", "review", "SKILL.md"), "---\ndescription: Review pending changes\nallowed-tools: rg,unknown_tool\ndisallowed-tools: ls\n---\nBody")
+	writeSkillFile(t, filepath.Join(confDir, "skills", "review", "SKILL.md"), "---\ndescription: Review pending changes\nallowed-tools: apply_patch,unknown_tool\ndisallowed-tools: write_file\n---\nBody")
 	writeSkillFile(t, filepath.Join(confDir, "skills", "hidden", "SKILL.md"), "---\ndescription: hidden\ndisable-model-invocation: true\n---\nHidden body")
 	writeSkillsConfigJSON(t, confDir, map[string]any{
 		"enabled":            true,
@@ -340,7 +340,7 @@ func Test_e2e_skills_descriptor_activation_and_persistence(t *testing.T) {
 		"  Name: review",
 		"  Description: Review pending changes",
 		"done after tool for: please tool_load_skill",
-		"Warnings:\n- skill requested unknown tool \"unknown_tool\"\n- skill enabled local tools: rg",
+		"Warnings:\n- skill requested unknown tool \"unknown_tool\"\n- skill enabled local tools: apply_patch",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("expected %q in output, got %q", want, stdout)

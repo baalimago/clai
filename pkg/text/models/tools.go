@@ -38,6 +38,8 @@ const (
 	FindTool               ToolName = "find"
 	FileTypeTool           ToolName = "file_type"
 	LSTool                 ToolName = "ls"
+	CpTool                 ToolName = "cp"
+	RsyncTool              ToolName = "rsync"
 	MktempTool             ToolName = "mktemp"
 	WebsiteTextTool        ToolName = "website_text"
 	RipGrepTool            ToolName = "rg"
