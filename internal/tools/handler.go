@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"os/exec"
 
 	"github.com/baalimago/clai/internal/debugflags"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -23,54 +24,79 @@ var Registry = NewRegistry()
 // to call concurrently; the registration happens exactly once and every caller
 // blocks until it has completed.
 func Init() {
-	Registry.initOnce.Do(registerLocalTools)
+	Registry.initOnce.Do(func() {
+		registerLocalTools(Registry, exec.LookPath)
+	})
 }
 
-// registerLocalTools adds every locally available LLM tool to the global
-// Registry. Only called via Init, which guarantees single execution.
-func registerLocalTools() {
-	Registry.Set(tools.FileTree.Specification().Name, tools.FileTree)
-	Registry.Set(tools.Cat.Specification().Name, tools.Cat)
-	Registry.Set(tools.Find.Specification().Name, tools.Find)
-	Registry.Set(tools.FileType.Specification().Name, tools.FileType)
-	Registry.Set(tools.LS.Specification().Name, tools.LS)
-	Registry.Set(tools.Mkdir.Specification().Name, tools.Mkdir)
-	Registry.Set(tools.Mktemp.Specification().Name, tools.Mktemp)
-	Registry.Set(tools.WebsiteText.Specification().Name, tools.WebsiteText)
-	Registry.Set(tools.RipGrep.Specification().Name, tools.RipGrep)
-	Registry.Set(tools.Go.Specification().Name, tools.Go)
-	Registry.Set(tools.WriteFile.Specification().Name, tools.WriteFile)
-	Registry.Set(tools.ApplyPatch.Specification().Name, tools.ApplyPatch)
-	Registry.Set(tools.Cmd.Specification().Name, tools.Cmd)
-	// Legacy production alias: freetext_command predates the cmd name and is
-	// the same freetext shell tool. It stays resolvable and selectable, and
-	// the clai tools listing groups it under cmd.
-	Registry.SetAlias("freetext_command", tools.Cmd.Specification().Name, tools.Cmd)
-	Registry.Set(tools.Sed.Specification().Name, tools.Sed)
-	Registry.Set(tools.RowsBetween.Specification().Name, tools.RowsBetween)
-	Registry.Set(tools.LineCount.Specification().Name, tools.LineCount)
-	Registry.Set(tools.Git.Specification().Name, tools.Git)
-	Registry.Set(tools.FFProbe.Specification().Name, tools.FFProbe)
-	Registry.Set(tools.AudioTranscribe.Specification().Name, tools.AudioTranscribe)
-	Registry.Set(tools.Date.Specification().Name, tools.Date)
-	Registry.Set(tools.Pwd.Specification().Name, tools.Pwd)
-	Registry.Set(tools.ClaiHelp.Specification().Name, tools.ClaiHelp)
-	Registry.Set(tools.ClaiRun.Specification().Name, tools.ClaiRun)
-	Registry.Set(tools.ClaiCheck.Specification().Name, tools.ClaiCheck)
-	Registry.Set(tools.ClaiResult.Specification().Name, tools.ClaiResult)
-	Registry.Set(tools.ClaiWaitForWorkers.Specification().Name, tools.ClaiWaitForWorkers)
-	Registry.Set(tools.AsyncCmdRun.Specification().Name, tools.AsyncCmdRun)
+type executableLookup func(string) (string, error)
+
+type executableTool struct {
+	executable string
+	tool       pub_models.LLMTool
+}
+
+// registerLocalTools adds native tools and executable-backed tools available
+// in PATH. lookup is injected so availability behavior is deterministic in tests.
+func registerLocalTools(reg *registry, lookup executableLookup) {
+	nativeTools := []pub_models.LLMTool{
+		tools.Mkdir,
+		tools.Mktemp,
+		tools.WebsiteText,
+		tools.WriteFile,
+		tools.ApplyPatch,
+		tools.Sed,
+		tools.RowsBetween,
+		tools.LineCount,
+		tools.AudioTranscribe,
+		tools.ClaiCheck,
+		tools.ClaiResult,
+		tools.ClaiWaitForWorkers,
+		tools.AsyncCmdRun,
+		tools.AsyncCmdStatus,
+		tools.AsyncCmdLogs,
+		tools.AsyncCmdAwait,
+		tools.AsyncCmdCancel,
+		tools.LoadSkill,
+	}
+	for _, tool := range nativeTools {
+		reg.Set(tool.Specification().Name, tool)
+	}
+
+	executableTools := []executableTool{
+		{"tree", tools.FileTree},
+		{"cat", tools.Cat},
+		{"find", tools.Find},
+		{"file", tools.FileType},
+		{"ls", tools.LS},
+		{"cp", tools.Cp},
+		{"rsync", tools.Rsync},
+		{"rg", tools.RipGrep},
+		{"go", tools.Go},
+		{"sh", tools.Cmd},
+		{"git", tools.Git},
+		{"ffprobe", tools.FFProbe},
+		{"date", tools.Date},
+		{"pwd", tools.Pwd},
+		{tools.ClaiBinaryPath, tools.ClaiHelp},
+		{tools.ClaiBinaryPath, tools.ClaiRun},
+	}
+	for _, candidate := range executableTools {
+		if _, err := lookup(candidate.executable); err != nil {
+			continue
+		}
+		reg.Set(candidate.tool.Specification().Name, candidate.tool)
+	}
+
+	// Legacy production alias: freetext_command predates the cmd name.
+	if _, ok := reg.Get(tools.Cmd.Specification().Name); ok {
+		reg.SetAlias("freetext_command", tools.Cmd.Specification().Name, tools.Cmd)
+	}
 	// Legacy production alias: async_cmd_run predates the async_cmd rename.
 	// Existing callers, tool-glob selections, and mock-vendor traffic keep
 	// working; async_cmd is the canonical name and the clai tools listing
 	// groups the alias under it.
-	Registry.SetAlias("async_cmd_run", tools.AsyncCmdRun.Specification().Name, tools.AsyncCmdRun)
-	Registry.Set(tools.AsyncCmdStatus.Specification().Name, tools.AsyncCmdStatus)
-	Registry.Set(tools.AsyncCmdLogs.Specification().Name, tools.AsyncCmdLogs)
-	Registry.Set(tools.AsyncCmdAwait.Specification().Name, tools.AsyncCmdAwait)
-	Registry.Set(tools.AsyncCmdCancel.Specification().Name, tools.AsyncCmdCancel)
-	Registry.Set(tools.LoadSkill.Specification().Name, tools.LoadSkill)
-	Registry.Set(tools.Date.Specification().Name, tools.Date)
+	reg.SetAlias("async_cmd_run", tools.AsyncCmdRun.Specification().Name, tools.AsyncCmdRun)
 }
 
 // Invoke the call, and gather both error and output in the same string.

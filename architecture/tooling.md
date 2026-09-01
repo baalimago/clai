@@ -47,6 +47,19 @@ Built-ins are registered during tooling initialization. Conceptually:
   - a **JSON schema** for parameters
   - an **executor** (Go code) that runs the tool and returns a structured result
 
+Built-ins backed by a fixed external executable are registered only when that
+executable resolves through `exec.LookPath`. Therefore, unavailable tools are
+absent from both `clai tools` and the schemas sent to a model. Dynamic command
+tools such as `async_cmd` remain available because their executable is supplied
+at call time. `audio_transcribe` also remains available because `ffmpeg` and
+`ffprobe` are needed only when an input must be split.
+
+The `cp` built-in copies files and directories recursively through the system
+`cp` executable. It preserves metadata and symbolic links by default; callers
+can disable preservation. The `rsync` built-in uses archive and partial-transfer
+modes. Remote paths are rejected unless `allow_remote` is explicitly true, and
+destructive destination cleanup requires the separate `delete` option.
+
 Built-in tools typically run locally (e.g., execute a Go command, search files, read file contents) and must:
 
 - validate arguments

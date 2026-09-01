@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"os/exec"
 	"slices"
 	"sync"
 	"testing"
@@ -96,6 +97,27 @@ func TestInitRegistersApplyPatch(t *testing.T) {
 	for _, name := range []string{"cmd", "freetext_command", "async_cmd", "async_cmd_run", "async_cmd_status", "async_cmd_logs", "async_cmd_await", "async_cmd_cancel", "mktemp"} {
 		if _, ok := Registry.Get(name); !ok {
 			t.Fatalf("expected %s to be registered", name)
+		}
+	}
+}
+
+func TestRegisterLocalToolsOmitsUnavailableExecutables(t *testing.T) {
+	r := NewRegistry()
+	registerLocalTools(r, func(name string) (string, error) {
+		if name == "rsync" || name == "rg" || name == "sh" {
+			return "", exec.ErrNotFound
+		}
+		return "/bin/" + name, nil
+	})
+
+	for _, name := range []string{"rsync", "rg", "cmd", "freetext_command"} {
+		if _, ok := r.Get(name); ok {
+			t.Fatalf("expected unavailable tool %q to be omitted", name)
+		}
+	}
+	for _, name := range []string{"cp", "cat", "apply_patch", "async_cmd"} {
+		if _, ok := r.Get(name); !ok {
+			t.Fatalf("expected available tool %q to be registered", name)
 		}
 	}
 }

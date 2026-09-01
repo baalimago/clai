@@ -32,7 +32,7 @@ main.go:run()
 
 `internal/tools/cmd.go` (`List`/`Detail`):
 
-1. Loads all registered tools via `Registry.All()`.
+1. Loads all registered and locally executable tools via `Registry.All()`.
 2. Loads the alias map via `Registry.Aliases()` and removes alias names from
    the listing.
 3. Sorts the remaining (canonical) tool names.
@@ -72,6 +72,7 @@ Also returns `utils.ErrUserInitiatedExit`.
 Conceptually, Init is responsible for:
 
 - registering built-in tools (filesystem, `go test`, `rg`, etc.)
+- omitting fixed-executable built-ins whose command is not available in `PATH`
 - reading MCP server configs under `<clai-config>/mcpServers/*.json` and adding `mcp_...` tools (via an MCP client integration)
 
 ### Aliases
