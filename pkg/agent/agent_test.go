@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -189,6 +190,30 @@ func TestAgent_Setup(t *testing.T) {
 			t.Fatal("expected error, got nil")
 		}
 	})
+}
+
+// Test_PkgAgent_SetupWrapsCause pins the phase-8 tier-A repair: Agent.Setup
+// wraps the querier-creation cause with %w, so errors.Is reaches it through
+// the public surface instead of the message text (worklog
+// 2026-09-05-error-propagation, phase 8).
+func Test_PkgAgent_SetupWrapsCause(t *testing.T) {
+	cause := errors.New("creation failed")
+	a := New()
+	a.cfgDir = t.TempDir()
+	a.querierCreator = func(_ context.Context, _ text.Configurations) (priv_models.Querier, error) {
+		return nil, cause
+	}
+
+	err := a.Setup(context.Background())
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, cause) {
+		t.Fatalf("err = %v, want errors.Is(err, cause) through the wrap", err)
+	}
+	if !strings.Contains(err.Error(), "publicQuerier.Setup failed to CreateTextQuerier") {
+		t.Errorf("err = %v, want the public-surface context preserved", err)
+	}
 }
 
 func TestAgent_Setup_receives_io_Discard(t *testing.T) {

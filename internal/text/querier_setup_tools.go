@@ -17,6 +17,7 @@ import (
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/tools/mcp"
 	"github.com/baalimago/clai/internal/utils"
+	"github.com/baalimago/clai/pkg/claierr"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
@@ -78,7 +79,7 @@ func findConfiguredMcpServers(filePaths []string) ([]pub_models.McpServer, error
 		}
 		var mcpServer pub_models.McpServer
 		if unmarshalErr := json.Unmarshal(data, &mcpServer); unmarshalErr != nil {
-			errs = append(errs, fmt.Errorf("failed to unmarshal: '%s', error: %v", file, unmarshalErr))
+			errs = append(errs, fmt.Errorf("failed to unmarshal: '%s', error: %w", file, unmarshalErr))
 			continue
 		}
 		if mcpServer.EnvFile != "" {
@@ -105,6 +106,13 @@ func findConfiguredMcpServers(filePaths []string) ([]pub_models.McpServer, error
 // If the directory is missing, an error is returned.
 // sink receives every server's stderr lines; on setup failure the buffered
 // error lines are flushed to stderr so the failure reason stays visible.
+//
+// A server discovered from the config directory is ambient: a startup failure
+// keeps today's warn-and-degrade. A server in userConf.McpServers is explicit
+// when the run is agent-driven (AgentSettings.StrictMcpStartup); its failures
+// are collected while the in-setup wait runs and joined into a typed error on
+// return, so a caller whose task depends on the server can see that it is
+// absent (worklog 2026-09-05-error-propagation, D13).
 func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configurations, sink mcp.ServerLogSink) (map[string]pub_models.LLMTool, error) {
 	if _, err := os.Stat(mcpServersDir); os.IsNotExist(err) {
 		return nil, fmt.Errorf("MCP servers directory not found at %s. If you want MCP server support, create one using 'clai setup' and select option 3", mcpServersDir)
@@ -118,6 +126,12 @@ func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configu
 	// Filter MCP servers based on profile tools
 	filteredFiles := filterMcpServersByProfile(files, userConf)
 	mcpServers, err := findConfiguredMcpServers(filteredFiles)
+	explicit := userConf.AgentSettings != nil && userConf.AgentSettings.StrictMcpStartup
+	// The config-dir servers are ambient; the userConf.McpServers tail is
+	// explicit exactly when the run is agent-driven. Profile-sourced servers
+	// ride the CLI path and stay ambient (D13: only WithMcpServers is
+	// load-bearing).
+	explicitTail := len(mcpServers)
 	mcpServers = append(mcpServers, userConf.McpServers...)
 
 	if misc.Truthy(os.Getenv("DEBUG")) {
@@ -137,18 +151,27 @@ func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configu
 	runReg := tools.NewRegistry()
 
 	controlChannel := make(chan mcp.ControlEvent)
+	// Buffered per server: a failure report is sent before its server's
+	// WaitGroup Done, so once the wait below returns every report is already
+	// in the channel.
+	startupFailures := make(chan mcp.StartupFailure, len(mcpServers))
 
 	toolWg := sync.WaitGroup{}
 	toolWg.Add(len(mcpServers))
-	go mcp.Manager(ctx, controlChannel, &toolWg, runReg)
+	go mcp.Manager(ctx, controlChannel, &toolWg, runReg, startupFailures)
 
-	for _, mcpServer := range mcpServers {
+	explicitFailures := make([]error, 0)
+	for i, mcpServer := range mcpServers {
 		// No context leak here as it's a child of the root context, which will cascade the cancel
 		// for all other code paths
 		clientContext, clientContextCancel := context.WithCancel(ctx)
 		inputChan, outputChan, err := mcp.Client(clientContext, mcpServer, sink)
 		if err != nil {
-			ancli.Warnf("failed to setup: '%v', err: %v\n", mcpServer.Name, err)
+			if explicit && i >= explicitTail {
+				explicitFailures = append(explicitFailures, claierr.NewMcpServerStartup(mcpServer.Name, "spawn", err))
+			} else {
+				ancli.Warnf("failed to setup: '%v', err: %v\n", mcpServer.Name, err)
+			}
 			toolWg.Done()
 			clientContextCancel()
 			continue
@@ -171,11 +194,35 @@ func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configu
 
 	select {
 	case <-done:
-		notifyMcpSetupSucceeded(sink)
-		return runReg.All(), nil
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
+	close(startupFailures)
+	for f := range startupFailures {
+		if explicit && f.ServerName != "" && isExplicitServer(f.ServerName, userConf.McpServers) {
+			explicitFailures = append(explicitFailures, f.Err)
+			continue
+		}
+		ancli.Warnf("failed to setup mcp server '%v': %v\n", f.ServerName, f.Err)
+	}
+	if len(explicitFailures) > 0 {
+		return runReg.All(), errors.Join(explicitFailures...)
+	}
+	notifyMcpSetupSucceeded(sink)
+	return runReg.All(), nil
+}
+
+// isExplicitServer reports whether name is one of the explicitly requested
+// servers. Handshake-failure reports carry only the server name, so the
+// lookup is by name; two servers sharing a name already collide in the
+// mcp_<name>_<tool> registration prefix, so a duplicate is not a new case.
+func isExplicitServer(name string, servers []pub_models.McpServer) bool {
+	for _, s := range servers {
+		if s.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 // notifyMcpSetupSucceeded tells a draining sink that MCP setup completed, so
@@ -186,10 +233,10 @@ func notifyMcpSetupSucceeded(sink mcp.ServerLogSink) {
 	}
 }
 
-func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, userConf *Configurations, sink mcp.ServerLogSink) {
+func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, userConf *Configurations, sink mcp.ServerLogSink) error {
 	toolBox, ok := any(modelConf).(models.ToolBox)
 	if !ok {
-		return
+		return nil
 	}
 	if userConf.UseSkills {
 		registerTool(toolBox, userConf, pkgtools.LoadSkill)
@@ -203,7 +250,7 @@ func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, us
 		registerTool(toolBox, userConf, pkgtools.ReadMessage)
 	}
 	if !userConf.UseTools {
-		return
+		return nil
 	}
 	tools.Init()
 	mcpTools, err := setupMcpManager(ctx, path.Join(userConf.ConfigDir, "mcpServers"), *userConf, sink)
@@ -211,8 +258,15 @@ func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, us
 		ancli.Okf("Registering tools on querier of type: %T\n", modelConf)
 	}
 	if err != nil {
+		if errors.Is(err, claierr.ErrMcpServerStartup) {
+			// D13: an explicitly requested server failed to start, so the setup
+			// fails rather than silently running without the requested tools.
+			return fmt.Errorf("failed to start explicitly requested MCP servers: %w", err)
+		}
+		// Ambient and environment failures keep the legacy degrade: a missing
+		// or broken config-dir server is not by itself terminal.
 		ancli.Warnf("failed to add mcp tools: %v", err)
-		return
+		return nil
 	}
 
 	// available is this run's selectable tool catalog: the static local tools
@@ -234,7 +288,7 @@ func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, us
 		if userConf.BaseTools == nil {
 			userConf.BaseTools = available
 		}
-		return
+		return nil
 	}
 	toAdd := make([]pub_models.LLMTool, 0)
 	for _, t := range userConf.RequestedToolGlobs {
@@ -281,6 +335,7 @@ func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, us
 		userConf.BaseTools[t.Specification().Name] = t
 		registeredNames[t.Specification().Name] = struct{}{}
 	}
+	return nil
 }
 
 // matchingTools returns every tool in available whose name matches pattern.

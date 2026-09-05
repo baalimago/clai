@@ -64,7 +64,7 @@ var defaultDalle = DallE{
 func NewPhotoQuerier(pConf photo.Configurations) (models.Querier, error) {
 	claiConfDir, err := utils.GetClaiConfigDir()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get config dir: %v", err)
+		return nil, fmt.Errorf("failed to get config dir: %w", err)
 	}
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {

@@ -2,6 +2,7 @@ package text
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
@@ -361,5 +363,117 @@ func Test_findConfiguredMcpServers_EnvFileHomeResolution(t *testing.T) {
 				t.Fatalf("EnvFile = %q, want %q", servers[0].EnvFile, tt.want)
 			}
 		})
+	}
+}
+
+// startupErrorNames collects the server name of every
+// *claierr.McpServerStartupError in err's chain. errors.Join exposes no
+// iteration API, so the walk descends the stdlib unwrap contract directly.
+func startupErrorNames(err error) []string {
+	var names []string
+	var visit func(error)
+	visit = func(e error) {
+		if e == nil {
+			return
+		}
+		if startup, ok := e.(*claierr.McpServerStartupError); ok {
+			names = append(names, startup.ServerName)
+			return
+		}
+		if multi, ok := e.(interface{ Unwrap() []error }); ok {
+			for _, sub := range multi.Unwrap() {
+				visit(sub)
+			}
+			return
+		}
+		visit(errors.Unwrap(e))
+	}
+	visit(err)
+	return names
+}
+
+// Test_setupMcpManager_ExplicitSpawnFailuresJoinedTyped pins the D13 split:
+// with AgentSettings.StrictMcpStartup an explicitly requested server whose
+// process cannot spawn fails setup with a typed, joined error naming every
+// failed server — never a warn-and-degrade (worklog
+// 2026-09-05-error-propagation, D13).
+func Test_setupMcpManager_ExplicitSpawnFailuresJoinedTyped(t *testing.T) {
+	conf := Configurations{
+		AgentSettings: &AgentSettings{StrictMcpStartup: true},
+		McpServers: []pub_models.McpServer{
+			{Name: "explicit-a", Command: "/nonexistent-clai-test-binary-a"},
+			{Name: "explicit-b", Command: "/nonexistent-clai-test-binary-b"},
+		},
+	}
+
+	got, err := setupMcpManager(t.Context(), t.TempDir(), conf, &recordingSuccessSink{})
+	if err == nil {
+		t.Fatal("expected a typed error for the failed explicit servers, got nil")
+	}
+	if !errors.Is(err, claierr.ErrMcpServerStartup) {
+		t.Errorf("err = %v, want errors.Is(err, claierr.ErrMcpServerStartup)", err)
+	}
+	if names := startupErrorNames(err); !slices.Equal(names, []string{"explicit-a", "explicit-b"}) {
+		t.Errorf("startup errors name %v, want [explicit-a explicit-b]", names)
+	}
+	if len(got) != 0 {
+		t.Errorf("failed servers registered tools: %v", got)
+	}
+}
+
+// Test_setupMcpManager_ExplicitHandshakeFailureTyped pins the Manager report
+// channel: in strict mode an explicit server that spawns but fails its
+// initialize handshake surfaces as a typed error naming the server, not a
+// warn-and-skip (worklog 2026-09-05-error-propagation, D13).
+func Test_setupMcpManager_ExplicitHandshakeFailureTyped(t *testing.T) {
+	conf := Configurations{
+		AgentSettings: &AgentSettings{StrictMcpStartup: true},
+		McpServers: []pub_models.McpServer{{
+			Name:    "explicit-handshake",
+			Command: "go",
+			Args:    []string{"run", "../tools/mcp/testserver"},
+			Env:     map[string]string{"TEST_SERVER_EXIT": "1"},
+		}},
+	}
+
+	_, err := setupMcpManager(t.Context(), t.TempDir(), conf, &recordingSuccessSink{})
+	if err == nil {
+		t.Fatal("expected a typed error for the failed explicit handshake, got nil")
+	}
+	if !errors.Is(err, claierr.ErrMcpServerStartup) {
+		t.Fatalf("err = %v, want errors.Is(err, claierr.ErrMcpServerStartup)", err)
+	}
+	var startup *claierr.McpServerStartupError
+	if !errors.As(err, &startup) {
+		t.Fatalf("err = %v, want errors.As to yield *claierr.McpServerStartupError", err)
+	}
+	if startup.ServerName != "explicit-handshake" {
+		t.Errorf("server name = %q, want explicit-handshake", startup.ServerName)
+	}
+	if startup.Stage == "" {
+		t.Error("startup error must carry the failing handshake stage")
+	}
+}
+
+// Test_setupMcpManager_StrictModeKeepsAmbientDegrade pins D13's asymmetry:
+// StrictMcpStartup governs only the servers named in userConf.McpServers. A
+// broken config-dir server still warn-degrades in a strict run, so a stale
+// json beside an agent never bricks its Setup (worklog
+// 2026-09-05-error-propagation, D13).
+func Test_setupMcpManager_StrictModeKeepsAmbientDegrade(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "broken.json"), []byte(`{"command":"/nonexistent-clai-test-binary","args":[]}`), 0o644); err != nil {
+		t.Fatalf("write broken config: %v", err)
+	}
+	conf := Configurations{
+		AgentSettings: &AgentSettings{StrictMcpStartup: true},
+	}
+
+	got, err := setupMcpManager(t.Context(), dir, conf, &recordingSuccessSink{})
+	if err != nil {
+		t.Fatalf("a broken ambient server must not fail a strict setup: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("broken ambient server registered tools: %v", got)
 	}
 }

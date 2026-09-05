@@ -168,8 +168,14 @@ func (s *Splitter) probeDuration(ctx context.Context, filePath string) (float64,
 		return 0, fmt.Errorf("ffprobe failed on %v: %w, stderr: %v", filePath, err, tail(stderr))
 	}
 	duration, err := strconv.ParseFloat(strings.TrimSpace(stdout), 64)
-	if err != nil || duration <= 0 {
-		return 0, fmt.Errorf("failed to parse ffprobe duration %q for %v: %v", strings.TrimSpace(stdout), filePath, err)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse ffprobe duration %q for %v: %w", strings.TrimSpace(stdout), filePath, err)
+	}
+	if duration <= 0 {
+		// A well-formed but non-positive duration is not a parse failure: name
+		// it directly instead of rendering "error: <nil>" (worklog
+		// 2026-09-05-error-propagation, phase 8, D6).
+		return 0, fmt.Errorf("ffprobe reported non-positive duration %v for %v", duration, filePath)
 	}
 	return duration, nil
 }

@@ -2,12 +2,14 @@ package openai
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"net/http"
 	"testing"
 
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/tools"
+	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -38,7 +40,7 @@ func TestParseResponsesLine_IgnoresNonDataLines(t *testing.T) {
 	}
 }
 
-func TestValidateResponsesHTTPResponse_Non200IncludesBody(t *testing.T) {
+func TestValidateResponsesHTTPResponse_Non200IsTypedWithBodyFacts(t *testing.T) {
 	t.Parallel()
 
 	res := &http.Response{
@@ -51,8 +53,17 @@ func TestValidateResponsesHTTPResponse_Non200IncludesBody(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error")
 	}
-	if got := err.Error(); got == "" || !containsAll(got, []string{"400", "nope"}) {
-		t.Fatalf("expected status+body in error, got %q", got)
+	// Typed since phase 5 (worklog 2026-09-05-error-propagation): a 400 with
+	// no vendor meaning degrades to the catch-all, status and body as facts.
+	if !errors.Is(err, claierr.ErrUnexpectedProviderResponse) {
+		t.Fatalf("expected ErrUnexpectedProviderResponse, got: %v", err)
+	}
+	var apiErr claierr.APIErrorer
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected facts, got: %T %v", err, err)
+	}
+	if apiErr.API().StatusCode != http.StatusBadRequest || apiErr.API().Body != "nope" {
+		t.Fatalf("facts mismatch: %+v", apiErr.API())
 	}
 }
 
@@ -126,35 +137,47 @@ func TestToolCallState_EmitCall_InvalidJSONArgs(t *testing.T) {
 	})
 }
 
-func TestHandleResponsesStreamEvent_FailedReturnsErrorMessage(t *testing.T) {
+func TestHandleResponsesStreamEvent_FailedReturnsTypedError(t *testing.T) {
 	t.Parallel()
 
 	out := make(chan models.CompletionEvent, 1)
 	tracker := newToolCallTracker()
 
-	done, err := handleResponsesStreamEvent(nil, out, tracker, responsesStreamEvent{Type: "response.failed", Error: &responsesStreamErrBody{Message: "boom"}}, nil)
+	raw := []byte(`{"type":"response.failed","error":{"message":"boom"}}`)
+	done, err := handleResponsesStreamEvent(nil, out, tracker, responsesStreamEvent{Type: "response.failed", Error: &responsesStreamErrBody{Message: "boom"}, raw: raw}, nil)
 	if err == nil {
 		t.Fatalf("expected error")
 	}
 	if done {
 		t.Fatalf("failed event should not report done")
 	}
-	if err.Error() != "boom" {
-		t.Fatalf("expected error %q got %q", "boom", err.Error())
+	// Unrecognized failure: typed catch-all, frame as facts (phase 5).
+	if !errors.Is(err, claierr.ErrUnexpectedProviderResponse) {
+		t.Fatalf("expected ErrUnexpectedProviderResponse, got: %v", err)
+	}
+	var apiErr claierr.APIErrorer
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected facts, got: %T %v", err, err)
+	}
+	if !bytes.Contains([]byte(apiErr.API().Body), []byte("boom")) {
+		t.Fatalf("expected message in facts, got %+v", apiErr.API())
 	}
 }
 
-func TestHandleResponsesStreamEvent_FailedReadsNestedResponseError(t *testing.T) {
+func TestHandleResponsesStreamEvent_FailedDecodesNestedResponseError(t *testing.T) {
 	t.Parallel()
 
 	out := make(chan models.CompletionEvent, 1)
 	tracker := newToolCallTracker()
 
-	// response.failed carries the actionable error nested under response.error, not
-	// at the top level; the generic "response failed" must not shadow it.
+	// response.failed carries the actionable error nested under
+	// response.error; the decoder must read that nested shape, so a quota
+	// exhaustion reported this way still speaks the vocabulary.
+	raw := []byte(`{"type":"response.failed","response":{"error":{"message":"nested quota out","code":"insufficient_quota"}}}`)
 	evt := responsesStreamEvent{
 		Type:     "response.failed",
-		Response: &responsesResponse{Error: &responsesStreamErrBody{Message: "nested boom", Code: "rate_limit_exceeded"}},
+		Response: &responsesResponse{Error: &responsesStreamErrBody{Message: "nested quota out", Code: "insufficient_quota"}},
+		raw:      raw,
 	}
 	done, err := handleResponsesStreamEvent(nil, out, tracker, evt, nil)
 	if err == nil {
@@ -163,8 +186,8 @@ func TestHandleResponsesStreamEvent_FailedReadsNestedResponseError(t *testing.T)
 	if done {
 		t.Fatalf("failed event should not report done")
 	}
-	if err.Error() != "nested boom" {
-		t.Fatalf("expected nested error message, got %q", err.Error())
+	if !errors.Is(err, claierr.ErrLikelyInsufficientCredits) {
+		t.Fatalf("expected ErrLikelyInsufficientCredits from the nested shape, got: %v", err)
 	}
 }
 

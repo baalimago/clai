@@ -13,6 +13,7 @@ import (
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/text/generic"
 	"github.com/baalimago/clai/internal/tools"
+	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
@@ -204,7 +205,7 @@ func (s *responsesStreamer) stream(ctx context.Context, chat pub_models.Chat) (c
 
 	res, err := s.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("openai responses: do request: %w", err)
+		return nil, claierr.NewTransport(err)
 	}
 
 	if err := validateResponsesHTTPResponse(res); err != nil {
@@ -224,9 +225,12 @@ func validateResponsesHTTPResponse(res *http.Response) error {
 
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
-		return fmt.Errorf("read error body: %w", err)
+		return claierr.NewTransport(err)
 	}
-	return fmt.Errorf("unexpected status code %v, body: %s", res.Status, string(body))
+	// The shared decode chain (worklog 2026-09-05-error-propagation, D11):
+	// the openai decoder speaks first, the status baseline covers the rest,
+	// and an unmapped status degrades typed — never a formatted string.
+	return generic.ResponseError(res.StatusCode, body, decodeError)
 }
 
 func (s *responsesStreamer) readResponsesStream(ctx context.Context, body io.ReadCloser, out chan models.CompletionEvent) {
@@ -247,7 +251,7 @@ func (s *responsesStreamer) readResponsesStream(ctx context.Context, body io.Rea
 		line, err := br.ReadBytes('\n')
 		if err != nil {
 			if err != io.EOF {
-				if !emitResponses(done, out, fmt.Errorf("openai responses: read stream line: %w", err)) {
+				if !emitResponses(done, out, claierr.NewTransport(err)) {
 					return
 				}
 			}
@@ -342,30 +346,16 @@ func handleResponsesStreamEvent(done <-chan struct{}, out chan<- models.Completi
 		emitResponses(done, out, models.StopEvent{})
 		return true, nil
 
-	case "response.failed":
-		// The actionable API error is nested under response.error; the top-level
-		// Error is only a compatibility fallback.
-		msg := "response failed"
-		switch {
-		case evt.Response != nil && evt.Response.Error != nil && evt.Response.Error.Message != "":
-			msg = evt.Response.Error.Message
-		case evt.Error != nil && evt.Error.Message != "":
-			msg = evt.Error.Message
-		}
-		return false, fmt.Errorf("%s", msg)
-
-	case "error", "response.error":
-		// Terminal top-level stream error. Its detail is carried at the top level
-		// (message/code), unlike response.failed which nests it under Error. Surface
-		// it as an error so the consumer aborts instead of ending on a silent EOF.
-		msg := "openai responses stream error"
-		switch {
-		case evt.Message != "":
-			msg = evt.Message
-		case evt.Error != nil && evt.Error.Message != "":
-			msg = evt.Error.Message
-		}
-		return false, fmt.Errorf("%s", msg)
+	case "response.failed", "error", "response.error":
+		// Terminal failure events (names verified against the current
+		// Responses streaming-events reference, D9 — citations in the phase 5
+		// Implementation notes). The raw event rides the shared decode chain
+		// at http.StatusOK, so the channel carries a vocabulary error and the
+		// consumer aborts instead of ending on a silent EOF: the openai
+		// decoder speaks first (D11), and an unrecognized failure degrades to
+		// claierr.ErrUnexpectedProviderResponse with the frame as facts —
+		// never a bare formatted string.
+		return false, generic.ResponseError(http.StatusOK, evt.raw, decodeError)
 
 	default:
 		emitResponses(done, out, models.NoopEvent{})
@@ -732,5 +722,6 @@ func parseResponsesLine(line []byte) (responsesStreamEvent, bool, error) {
 	if evt.Type == "" {
 		return responsesStreamEvent{}, false, nil
 	}
+	evt.raw = payload
 	return evt, true, nil
 }

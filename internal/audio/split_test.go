@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -426,4 +427,49 @@ func TestExecRunner(t *testing.T) {
 			t.Error("expected error, got nil")
 		}
 	})
+}
+
+// TestSplitter_NonPositiveDuration_DistinctFromParseError pins the phase-8 D6
+// repair: a well-formed but non-positive ffprobe duration is named directly
+// instead of falling into the parse-failure branch and rendering
+// "error: <nil>" (worklog 2026-09-05-error-propagation, phase 8).
+func TestSplitter_NonPositiveDuration_DistinctFromParseError(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		stdout  string
+		want    string
+		notWant string
+	}{
+		{name: "non-positive duration is its own error", stdout: "0", want: "non-positive duration", notWant: "failed to parse ffprobe duration"},
+		{name: "parse failure stays a parse error", stdout: "not-a-number", want: "failed to parse ffprobe duration", notWant: "non-positive duration"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			s := NewSplitter(&fakeTranscriber{}, &fakeRunner{defaultDur: tt.stdout})
+			_, err := s.probeDuration(t.Context(), "input.wav")
+			if err == nil {
+				t.Fatal("expected an error, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("err = %q, want it to contain %q", err, tt.want)
+			}
+			if tt.notWant != "" && strings.Contains(err.Error(), tt.notWant) {
+				t.Errorf("err = %q, must not contain %q", err, tt.notWant)
+			}
+			if strings.Contains(err.Error(), "<nil>") {
+				t.Errorf("err = %q renders a nil cause", err)
+			}
+		})
+	}
+}
+
+func TestSplitter_ParseDurationFailureWrapsCause(t *testing.T) {
+	s := NewSplitter(&fakeTranscriber{}, &fakeRunner{defaultDur: "not-a-number"})
+	_, err := s.probeDuration(t.Context(), "input.wav")
+	if err == nil {
+		t.Fatal("expected an error, got nil")
+	}
+	var numErr *strconv.NumError
+	if !errors.As(err, &numErr) {
+		t.Errorf("err = %v, want the *strconv.NumError cause reachable", err)
+	}
 }

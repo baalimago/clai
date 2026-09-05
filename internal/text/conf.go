@@ -109,6 +109,12 @@ type AgentSettings struct {
 	RuneLimit        int
 	UsageRecorder    pub_models.CallUsageRecorder
 	ToolCallRecorder pub_models.ToolCallRecorder
+	// StrictMcpStartup marks the servers in Configurations.McpServers as
+	// explicitly requested and load-bearing: a startup failure fails the whole
+	// setup with a typed error instead of warn-and-degrade. pkg/agent sets it
+	// when WithMcpServers was used; the CLI path never sets it (worklog
+	// 2026-09-05-error-propagation, D13).
+	StrictMcpStartup bool
 }
 
 // Stoploss is the token stoploss policy. MaxTokens <= 0 disables the

@@ -15,12 +15,22 @@ import (
 
 	"github.com/baalimago/clai/internal/debugflags"
 	"github.com/baalimago/clai/internal/models"
+	"github.com/baalimago/clai/internal/text/generic"
+	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 )
 
 const heuristicTokenCountFactor = 1.1
+
+// decodeAnthropicError is anthropic's vendor decoder seat on the shared
+// decode chain. It is nil until wire evidence for a body-decoded anthropic
+// meaning exists (worklog 2026-09-05-error-propagation, D9): the live probe
+// recorded no anthropic error body, so the status baseline stands alone.
+// The 429 branch above does not go through it — its facts live in response
+// headers, not the body.
+var decodeAnthropicError func(status int, body []byte) error
 
 func (c *Claude) StreamCompletions(ctx context.Context, chat pub_models.Chat) (chan models.CompletionEvent, error) {
 	req, err := c.constructRequest(ctx, chat)
@@ -36,7 +46,7 @@ func (c *Claude) StreamCompletions(ctx context.Context, chat pub_models.Chat) (c
 func (c *Claude) stream(ctx context.Context, req *http.Request) (chan models.CompletionEvent, error) {
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to do request: %w", err)
+		return nil, claierr.NewTransport(err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -63,9 +73,20 @@ func (c *Claude) stream(ctx context.Context, req *http.Request) (chan models.Com
 				remaining = 0
 			}
 
-			return nil, models.NewRateLimitError(resetAt, limit, remaining)
+			// The header facts anthropic alone provides, built through the
+			// claierr constructor directly (worklog 2026-09-05-error-propagation,
+			// phase 5, D15).
+			return nil, claierr.NewRateLimited(
+				&claierr.APIError{StatusCode: resp.StatusCode, Body: string(body)},
+				resetAt,
+				remaining,
+				limit,
+			)
 		}
-		return nil, fmt.Errorf("failed to execute request: %v, body: %v", resp.Status, string(body))
+		// Every other non-OK rides the shared decode chain instead of the old
+		// flattened formatted string. decodeAnthropicError is nil until wire
+		// evidence exists (D9), so the status baseline speaks.
+		return nil, generic.ResponseError(resp.StatusCode, body, decodeAnthropicError)
 	}
 
 	outChan, err := c.handleStreamResponse(ctx, resp)
@@ -101,16 +122,18 @@ func (c *Claude) handleStreamResponse(ctx context.Context, resp *http.Response) 
 					// abandoned channel (goroutine leak, fixed 2026-08-12).
 					return
 				}
-				if !emitClaude(ctx, outChan, models.CompletionEvent(fmt.Errorf("failed to read line: %w", err))) {
+				if !emitClaude(ctx, outChan, models.CompletionEvent(claierr.NewTransport(err))) {
 					return
 				}
 				return
 			}
 			token = strings.TrimSpace(token)
 			if ctx.Err() != nil {
-				if !emitClaude(ctx, outChan, models.CompletionEvent(errors.New("context cancelled"))) {
-					return
-				}
+				// On cancellation the session runner's <-ctx.Done() case (or the
+				// channel close) ends the step normally; there is no need to emit an
+				// error — and errors.New("context cancelled") would surface as a
+				// terminal error because it does not satisfy context.Canceled
+				// (worklog 2026-09-05-error-propagation, review 4, R4-02).
 				return
 			}
 			if token == "" {
@@ -127,14 +150,17 @@ func (c *Claude) handleStreamResponse(ctx context.Context, resp *http.Response) 
 			if !emitClaude(ctx, outChan, processed) {
 				return
 			}
-			asErr, isErr := processed.(error)
+			_, isErr := processed.(error)
 			_, isFunctionCall := processed.(pub_models.Call)
-			if isErr && errors.Is(asErr, io.EOF) ||
+			if isErr ||
 				// On function call, we want to return. Nothing more of value coming from
 				// the specific request, conversation is continued in a new request
 				isFunctionCall {
-				// On EOF, we dont want to continue. The model keeps outputting jibberish and doesn't
-				// close the stream on its own. I think this additional data is failsafes or similar
+				// On any channel error the session runner ends the step and never
+				// reads the channel again, so stop here exactly as for io.EOF/StopEvent —
+				// otherwise the producer blocks on its next send and holds the response
+				// body open until cancellation (worklog 2026-09-05-error-propagation,
+				// review 4, R4-01).
 				return
 			}
 		}
@@ -324,7 +350,7 @@ func (c *Claude) CountInputTokens(ctx context.Context, chat pub_models.Chat) (in
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return 0, fmt.Errorf("failed to execute request: %w", err)
+		return 0, claierr.NewTransport(err)
 	}
 	defer resp.Body.Close()
 

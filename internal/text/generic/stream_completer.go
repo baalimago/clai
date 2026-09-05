@@ -13,6 +13,7 @@ import (
 	"github.com/baalimago/clai/internal/debugflags"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/tools"
+	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
@@ -42,11 +43,11 @@ func (s *StreamCompleter) StreamCompletions(ctx context.Context, chat pub_models
 	}
 	res, err := s.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to execute request: %w", err)
+		return nil, claierr.NewTransport(err)
 	}
 	if res.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(res.Body)
-		return nil, fmt.Errorf("unexpected status code: %v, body: %v", res.Status, string(body))
+		return nil, ResponseError(res.StatusCode, body, s.DecodeError)
 	}
 	if s.debug {
 		ancli.Noticef("now attepmting to handle response")
@@ -129,7 +130,7 @@ func (s *StreamCompleter) handleStreamResponse(ctx context.Context, res *http.Re
 			if err != nil {
 				if err != io.EOF {
 					select {
-					case outChan <- fmt.Errorf("failed to read line: %w", err):
+					case outChan <- claierr.NewTransport(err):
 					case <-ctx.Done():
 					}
 				}
@@ -144,11 +145,20 @@ func (s *StreamCompleter) handleStreamResponse(ctx context.Context, res *http.Re
 			case <-ctx.Done():
 				return
 			}
-			if _, ok := evt.(models.StopEvent); ok {
+			switch evt.(type) {
+			case models.StopEvent:
 				// Terminal event: the session runner returns on StopEvent and never
 				// reads the channel again. Stop here so a trailing blank line or a
 				// second [DONE] cannot block forever on the abandoned channel
 				// (production goroutine leak, 2026-08-12).
+				return
+			case error:
+				// A chunk-handler error is terminal too: the session runner ends
+				// the step on every channel error (its io.EOF and context.Canceled
+				// branches return as well) and never reads the channel again. Stop
+				// here so a provider that streams [DONE] after an error frame
+				// cannot block forever on the abandoned channel (worklog
+				// 2026-09-05-error-propagation, review 3, R3-01).
 				return
 			}
 		}
@@ -180,8 +190,18 @@ func (s *StreamCompleter) handleStreamChunk(token []byte) models.CompletionEvent
 		if debugflags.Enabled("CHAT") {
 			// Expect some failing unmarshalls, which seems to be fine
 			ancli.PrintWarn(fmt.Sprintf("failed to unmarshal token: %s, err: %v\n", token, err))
-			return models.NoopEvent{}
 		}
+		return models.NoopEvent{}
+	}
+
+	// An error frame at HTTP 200 (the OpenAI-compat {"error": …} envelope)
+	// is a terminal provider state, never a NoopEvent. The whole raw frame
+	// goes through the same decode chain as a non-OK body; the OK status
+	// tells a caring decoder the payload arrived as a frame. A JSON null is
+	// no envelope. This branch must precede the choices check — an error
+	// frame has no choices.
+	if len(chunk.Error) > 0 && string(chunk.Error) != "null" {
+		return ResponseError(http.StatusOK, token, s.DecodeError)
 	}
 
 	if chunk.Usage != nil {

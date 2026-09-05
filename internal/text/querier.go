@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/baalimago/clai/internal/debugflags"
 	"github.com/baalimago/clai/internal/models"
@@ -19,9 +18,6 @@ import (
 )
 
 const (
-	RateLimitRetries     = 3
-	FallbackWaitDuration = 20 * time.Second
-
 	// maxReasoningBuf caps the reasoning text accumulated per stream. A
 	// looping model can stream reasoning tokens forever; without the cap the
 	// accumulator grows unboundedly until the process OOMs (kinoview production
@@ -61,11 +57,10 @@ type Querier[C models.StreamCompleter] struct {
 	useLookback bool
 	// lookbackCWD is the canonical session working directory, the default anchor
 	// for search_conversations.
-	lookbackCWD           string
-	hasPrinted            bool
-	Model                 C
-	tooling               tooling
-	rateLimitLastAmTokens int
+	lookbackCWD string
+	hasPrinted  bool
+	Model       C
+	tooling     tooling
 
 	// systemPrompt is the configured system prompt, injected into every
 	// TextQuery call that does not already carry a system message.
@@ -205,7 +200,9 @@ func (q *Querier[C]) postProcess() {
 		Line:               q.line,
 		LineCount:          q.lineCount,
 	}
-	sessionFinalizer[C]{querier: q}.Finalize(context.Background(), session)
+	// Legacy display-only finalize path (tests): the runner's Run joins the
+	// persist error into its returned error instead (S8).
+	_ = sessionFinalizer[C]{querier: q}.Finalize(context.Background(), session)
 	q.chat = session.Chat
 	q.fullMsg = session.FinalAssistantText
 	q.line = session.Line

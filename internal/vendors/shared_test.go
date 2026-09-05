@@ -1,10 +1,127 @@
-package vendors
+package vendors_test
 
 import (
+	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/baalimago/clai/internal/vendors"
+	"github.com/baalimago/clai/internal/vendors/deepseek"
+	"github.com/baalimago/clai/internal/vendors/openai"
+	"github.com/baalimago/clai/internal/vendors/openrouter"
+	"github.com/baalimago/clai/internal/vendors/xai"
+	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
+
+// Test_AllVendors_InsufficientCredits_OneMatcher pins the worklog's first
+// definition-of-success item (2026-09-05-error-propagation): a consumer
+// writes errors.Is(err, claierr.ErrLikelyInsufficientCredits) ONCE and it
+// matches every vendor's spelling of an empty account — deepseek's 402,
+// openrouter's 402, xai's 403, openai's 429+insufficient_quota — with no
+// per-vendor matching knowledge. Each scenario drives the vendor's real
+// completer against its checked-in fixture (D14 reconstructions, see each
+// vendor's testdata/README.md).
+func Test_AllVendors_InsufficientCredits_OneMatcher(t *testing.T) {
+	chat := pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "hi"}}}
+	serve := func(t *testing.T, status int, fixturePath string) *httptest.Server {
+		t.Helper()
+		body, err := os.ReadFile(filepath.FromSlash(fixturePath))
+		if err != nil {
+			t.Fatalf("read fixture %v: %v", fixturePath, err)
+		}
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(status)
+			_, _ = w.Write(body)
+		}))
+		t.Cleanup(srv.Close)
+		return srv
+	}
+
+	cases := []struct {
+		name    string
+		fixture string
+		status  int
+		run     func(t *testing.T, url string) error
+	}{
+		{
+			name:    "openai 429 insufficient_quota",
+			fixture: "openai/testdata/insufficient_quota_429.json",
+			status:  http.StatusTooManyRequests,
+			run: func(t *testing.T, url string) error {
+				t.Setenv("OPENAI_API_KEY", "test-key")
+				g := &openai.ChatGPT{Model: "gpt-4.1-mini", URL: url + "/v1/chat/completions"}
+				if err := g.Setup(); err != nil {
+					t.Fatalf("setup: %v", err)
+				}
+				_, err := g.StreamCompletions(context.Background(), chat)
+				return err
+			},
+		},
+		{
+			name:    "deepseek 402 insufficient balance",
+			fixture: "deepseek/testdata/insufficient_balance_402.json",
+			status:  http.StatusPaymentRequired,
+			run: func(t *testing.T, url string) error {
+				t.Setenv("DEEPSEEK_API_KEY", "test-key")
+				v := deepseek.Default
+				if err := v.Setup(); err != nil {
+					t.Fatalf("setup: %v", err)
+				}
+				v.StreamCompleter.URL = url
+				_, err := v.StreamCompletions(context.Background(), chat)
+				return err
+			},
+		},
+		{
+			name:    "xai 403 drained credits",
+			fixture: "xai/testdata/drained_credits_403.json",
+			status:  http.StatusForbidden,
+			run: func(t *testing.T, url string) error {
+				t.Setenv("XAI_API_KEY", "test-key")
+				v := xai.Default
+				if err := v.Setup(); err != nil {
+					t.Fatalf("setup: %v", err)
+				}
+				v.StreamCompleter.URL = url
+				_, err := v.StreamCompletions(context.Background(), chat)
+				return err
+			},
+		},
+		{
+			name:    "openrouter 402 credits exhausted",
+			fixture: "openrouter/testdata/credits_402.json",
+			status:  http.StatusPaymentRequired,
+			run: func(t *testing.T, url string) error {
+				t.Setenv("OPENROUTER_API_KEY", "test-key")
+				o := openrouter.Default
+				if err := o.Setup(); err != nil {
+					t.Fatalf("setup: %v", err)
+				}
+				o.StreamCompleter.URL = url
+				_, err := o.StreamCompletions(context.Background(), chat)
+				return err
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := serve(t, tc.status, tc.fixture)
+			err := tc.run(t, srv.URL)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			// The single matcher — the whole point.
+			if !errors.Is(err, claierr.ErrLikelyInsufficientCredits) {
+				t.Fatalf("the one matcher missed %v's spelling: %v", tc.name, err)
+			}
+		})
+	}
+}
 
 // TestNormalizeToolCallSequence_AdjacentMerge verifies two consecutive
 // tool-call-only assistant messages are merged into one.
@@ -13,7 +130,7 @@ func TestNormalizeToolCallSequence_AdjacentMerge(t *testing.T) {
 		{Role: "assistant", ToolCalls: []pub_models.Call{{ID: "A", Function: pub_models.Specification{Name: "read"}}}},
 		{Role: "assistant", ToolCalls: []pub_models.Call{{ID: "B", Function: pub_models.Specification{Name: "write"}}}},
 	}
-	got := NormalizeToolCallSequence(msgs)
+	got := vendors.NormalizeToolCallSequence(msgs)
 	if len(got) != 1 {
 		t.Fatalf("expected 1 merged message, got %d", len(got))
 	}
@@ -42,7 +159,7 @@ func TestNormalizeToolCallSequence_InterleavedMerge(t *testing.T) {
 		{Role: "tool", ToolCallID: "B", Content: "result-B"},
 		{Role: "tool", ToolCallID: "C", Content: "result-C"},
 	}
-	got := NormalizeToolCallSequence(msgs)
+	got := vendors.NormalizeToolCallSequence(msgs)
 	// Expected: assistant[A,B,C], tool:A, tool:B, tool:C
 	if len(got) != 4 {
 		t.Fatalf("expected 4 messages, got %d", len(got))
@@ -70,7 +187,7 @@ func TestNormalizeToolCallSequence_NoMergeWhenTextSeparates(t *testing.T) {
 		{Role: "assistant", Content: "hello"},
 		{Role: "assistant", ToolCalls: []pub_models.Call{{ID: "B", Function: pub_models.Specification{Name: "f"}}}},
 	}
-	got := NormalizeToolCallSequence(msgs)
+	got := vendors.NormalizeToolCallSequence(msgs)
 	if len(got) != 3 {
 		t.Fatalf("expected 3 messages, got %d", len(got))
 	}
@@ -87,11 +204,11 @@ func TestNormalizeToolCallSequence_NoMergeWhenTextSeparates(t *testing.T) {
 
 // TestNormalizeToolCallSequence_EmptyInput returns empty output.
 func TestNormalizeToolCallSequence_EmptyInput(t *testing.T) {
-	got := NormalizeToolCallSequence(nil)
+	got := vendors.NormalizeToolCallSequence(nil)
 	if got != nil {
 		t.Fatalf("expected nil, got %v", got)
 	}
-	got = NormalizeToolCallSequence([]pub_models.Message{})
+	got = vendors.NormalizeToolCallSequence([]pub_models.Message{})
 	if len(got) != 0 {
 		t.Fatalf("expected empty, got %d", len(got))
 	}
@@ -103,7 +220,7 @@ func TestNormalizeToolCallSequence_SingleElementNoOp(t *testing.T) {
 	msgs := []pub_models.Message{
 		{Role: "user", Content: "hi"},
 	}
-	got := NormalizeToolCallSequence(msgs)
+	got := vendors.NormalizeToolCallSequence(msgs)
 	if len(got) != 1 {
 		t.Fatalf("expected 1 msg, got %d", len(got))
 	}
@@ -119,7 +236,7 @@ func TestNormalizeToolCallSequence_ReasoningPreservedDuringMerge(t *testing.T) {
 		{Role: "assistant", ReasoningContent: "think A", ToolCalls: []pub_models.Call{{ID: "A", Function: pub_models.Specification{Name: "f"}}}},
 		{Role: "assistant", ReasoningContent: "think B", ToolCalls: []pub_models.Call{{ID: "B", Function: pub_models.Specification{Name: "f"}}}},
 	}
-	got := NormalizeToolCallSequence(msgs)
+	got := vendors.NormalizeToolCallSequence(msgs)
 	if len(got) != 1 {
 		t.Fatalf("expected 1 msg, got %d", len(got))
 	}
@@ -136,7 +253,7 @@ func TestNormalizeToolCallSequence_TextFollowedByToolCallOnlyNoMerge(t *testing.
 		{Role: "assistant", Content: "some text reply"},
 		{Role: "assistant", ToolCalls: []pub_models.Call{{ID: "T1", Function: pub_models.Specification{Name: "f"}}}},
 	}
-	got := NormalizeToolCallSequence(msgs)
+	got := vendors.NormalizeToolCallSequence(msgs)
 	if len(got) != 2 {
 		t.Fatalf("expected 2 messages (no merge), got %d", len(got))
 	}
@@ -160,7 +277,7 @@ func TestNormalizeToolCallSequence_ReasoningPreservedDuringInterleavedMerge(t *t
 		{Role: "tool", ToolCallID: "B", Content: "result-B"},
 		{Role: "tool", ToolCallID: "C", Content: "result-C"},
 	}
-	got := NormalizeToolCallSequence(msgs)
+	got := vendors.NormalizeToolCallSequence(msgs)
 	if len(got) != 4 {
 		t.Fatalf("expected 4 messages, got %d", len(got))
 	}

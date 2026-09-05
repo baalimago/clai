@@ -144,7 +144,7 @@ func SetupQuerier(ctx context.Context, confDir string, tf internal.TextFlags, ar
 	}
 	err = tConf.ProfileOverrides()
 	if err != nil {
-		return nil, nil, fmt.Errorf("profile override failure: %v", err)
+		return nil, nil, fmt.Errorf("profile override failure: %w", err)
 	}
 
 	setupToolConfig(&tConf, tf.AgentText.UseTools.Value())
@@ -219,7 +219,7 @@ func SetupQuerier(ctx context.Context, confDir string, tf internal.TextFlags, ar
 
 	err = tConf.SetupInitialChat(args)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to setup prompt: %v", err)
+		return nil, nil, fmt.Errorf("failed to setup prompt: %w", err)
 	}
 
 	cq, err := CreateQuerier(ctx, tConf)
@@ -228,7 +228,7 @@ func SetupQuerier(ctx context.Context, confDir string, tf internal.TextFlags, ar
 		ancli.PrintOK(fmt.Sprintf("querier post text querier create: %+v\n", tConf))
 	}
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create text querier: %v", err)
+		return nil, nil, fmt.Errorf("failed to create text querier: %w", err)
 	}
 	return cq, &tConf, nil
 }

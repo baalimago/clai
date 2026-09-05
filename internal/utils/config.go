@@ -255,17 +255,17 @@ func loadConfigFromFile[T any](
 				return conf, nil, nil
 			}
 			var nilVal T
-			return nilVal, nil, fmt.Errorf("failed to read config '%v', error: %v", configFileName, err)
+			return nilVal, nil, fmt.Errorf("failed to read config '%v', error: %w", configFileName, err)
 		}
 
 		var conf T
 		if err := json.Unmarshal(fileBytes, &conf); err != nil {
-			return conf, nil, fmt.Errorf("failed to unmarshal config '%v', error: %v", configFileName, err)
+			return conf, nil, fmt.Errorf("failed to unmarshal config '%v', error: %w", configFileName, err)
 		}
 
 		var present map[string]json.RawMessage
 		if err := json.Unmarshal(fileBytes, &present); err != nil {
-			return conf, nil, fmt.Errorf("failed to parse config '%v' keys, error: %v", configFileName, err)
+			return conf, nil, fmt.Errorf("failed to parse config '%v' keys, error: %w", configFileName, err)
 		}
 		_ = fillMissingFromDefaults(&conf, dflt, present, "")
 
@@ -299,13 +299,13 @@ func loadConfigFromFile[T any](
 	fileBytes, err := os.ReadFile(configPath)
 	if err != nil {
 		var nilVal T
-		return nilVal, nil, fmt.Errorf("failed to read config '%v', error: %v", configFileName, err)
+		return nilVal, nil, fmt.Errorf("failed to read config '%v', error: %w", configFileName, err)
 	}
 
 	var conf T
 	err = json.Unmarshal(fileBytes, &conf)
 	if err != nil {
-		return conf, nil, fmt.Errorf("failed to unmarshal config '%v', error: %v", configFileName, err)
+		return conf, nil, fmt.Errorf("failed to unmarshal config '%v', error: %w", configFileName, err)
 	}
 
 	// Presence-based upgrade: fields absent from the on-disk config are filled
@@ -314,7 +314,7 @@ func loadConfigFromFile[T any](
 	// of truth (config migration design, Q4).
 	var present map[string]json.RawMessage
 	if err := json.Unmarshal(fileBytes, &present); err != nil {
-		return conf, nil, fmt.Errorf("failed to parse config '%v' keys, error: %v", configFileName, err)
+		return conf, nil, fmt.Errorf("failed to parse config '%v' keys, error: %w", configFileName, err)
 	}
 	added := fillMissingFromDefaults(&conf, dflt, present, "")
 

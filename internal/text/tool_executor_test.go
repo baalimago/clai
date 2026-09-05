@@ -22,12 +22,17 @@ func Test_toolCallError(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := toolCallError(tt.out)
+			err := toolCallError("bash", tt.out)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("toolCallError(%q) = %v, wantErr %v", tt.out, err, tt.wantErr)
 			}
-			if err != nil && !strings.Contains(err.Error(), "command exploded") {
-				t.Errorf("error lost the tool output: %v", err)
+			if err != nil {
+				if !strings.Contains(err.Error(), "command exploded") {
+					t.Errorf("error lost the tool output: %v", err)
+				}
+				if !strings.Contains(err.Error(), `"bash"`) {
+					t.Errorf("error does not name the tool call: %v", err)
+				}
 			}
 		})
 	}

@@ -232,7 +232,9 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	// only errors (on stderr, so stdout stays clean), and any other mode keeps
 	// the legacy direct print.
 	querier.mcpSink = newMcpLogSink(mcpLogModeFor(querier.debug, querier.outputIsTerminal, querier.Raw, querier.structuredOutput, utils.RollingOutputEnabled()))
-	setupTooling(ctx, modelConf, &userConf, querier.mcpSink)
+	if err := setupTooling(ctx, modelConf, &userConf, querier.mcpSink); err != nil {
+		return Querier[C]{}, err
+	}
 
 	err = modelConf.Setup()
 	if err != nil {
@@ -280,7 +282,11 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 		if openrouterAPIKey != "" {
 			openrouterCatalogFetcher, err := openrouter.NewModelCatalog(openrouterAPIKey)
 			if err != nil {
-				ancli.Warnf("found OPENROUTER_API_KEY but failed to init catalog fether: %v", err)
+				// Cost accounting is ambient capability, not something the caller
+				// named; a catalog that fails to init degrades the run's price
+				// enrichment, never the run itself (worklog
+				// 2026-09-05-error-propagation, S9).
+				ancli.Warnf("found OPENROUTER_API_KEY but failed to init catalog fetcher: %v", err)
 			}
 			fetcher = openrouterCatalogFetcher
 		}

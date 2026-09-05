@@ -2,6 +2,8 @@ package utils
 
 import (
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -507,4 +509,52 @@ func TestLoadConfigFromFile_CallbackCreatedFileDoesNotAnnounce(t *testing.T) {
 	if !strings.Contains(string(regenerated), `"limit": 21600`) {
 		t.Fatalf("expected the merged file persisted:\n%s", regenerated)
 	}
+}
+
+// Test_ConfigLoad_CausePreserved pins the phase-8 tier-C repair: the six
+// config-load sites wrap their cause with %w, so a malformed file surfaces
+// its *json.SyntaxError and an unreadable file surfaces its *fs.PathError at
+// the caller instead of the cause being formatted away (worklog
+// 2026-09-05-error-propagation, phase 8).
+func Test_ConfigLoad_CausePreserved(t *testing.T) {
+	type cfg struct {
+		Model string `json:"model"`
+	}
+
+	t.Run("malformed json surfaces the syntax error", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "textConfig.json"), []byte(`{"model": `), 0o644); err != nil {
+			t.Fatalf("write config: %v", err)
+		}
+		_, err := LoadConfigFromFile(dir, "textConfig.json", nil, &cfg{})
+		if err == nil {
+			t.Fatal("expected an error, got nil")
+		}
+		var synErr *json.SyntaxError
+		if !errors.As(err, &synErr) {
+			t.Errorf("err = %v, want the *json.SyntaxError cause reachable", err)
+		}
+	})
+
+	t.Run("unreadable config surfaces the read cause", func(t *testing.T) {
+		if os.Geteuid() == 0 {
+			t.Skip("permission bits do not block root")
+		}
+		dir := t.TempDir()
+		configPath := filepath.Join(dir, "textConfig.json")
+		if err := os.WriteFile(configPath, []byte(`{"model": "gpt-5.2"}`), 0o644); err != nil {
+			t.Fatalf("write config: %v", err)
+		}
+		if err := os.Chmod(configPath, 0); err != nil {
+			t.Fatalf("chmod: %v", err)
+		}
+		_, err := LoadConfigFromFile(dir, "textConfig.json", nil, &cfg{})
+		if err == nil {
+			t.Fatal("expected an error, got nil")
+		}
+		var pathErr *fs.PathError
+		if !errors.As(err, &pathErr) {
+			t.Errorf("err = %v, want the read *fs.PathError cause reachable", err)
+		}
+	})
 }

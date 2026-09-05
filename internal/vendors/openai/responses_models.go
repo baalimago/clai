@@ -151,6 +151,12 @@ type responsesStreamEvent struct {
 	// event (distinct from response.failed, whose detail is nested under Error).
 	Message string `json:"message,omitempty"`
 	Code    string `json:"code,omitempty"`
+
+	// raw is the undecoded event payload, kept so terminal failure events can
+	// ride the shared decode chain (generic.ResponseError at http.StatusOK)
+	// with the full frame as facts. Set by parseResponsesLine; nil on
+	// synthesized events such as the [DONE] mapping.
+	raw []byte
 }
 
 type responsesStreamErrBody struct {

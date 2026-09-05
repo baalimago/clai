@@ -39,7 +39,7 @@ func Prompt(stdinReplace string, args []string) (string, error) {
 
 	inputData, err := io.ReadAll(os.Stdin)
 	if err != nil {
-		return "", fmt.Errorf("failed to read stdin: %v", err)
+		return "", fmt.Errorf("failed to read stdin: %w", err)
 	}
 	pipeIn := string(inputData)
 	// Add the pipeIn to the args if there are no args

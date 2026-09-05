@@ -16,7 +16,7 @@ import (
 func PrepTheme() (string, error) {
 	claiConfDir, err := utils.GetClaiConfigDir()
 	if err != nil {
-		return "", fmt.Errorf("failed to find config dir: %v", err)
+		return "", fmt.Errorf("failed to find config dir: %w", err)
 	}
 	if err := utils.LoadTheme(claiConfDir); err != nil {
 		ancli.Warnf("failed to load theme, using defaults: %v\n", err)

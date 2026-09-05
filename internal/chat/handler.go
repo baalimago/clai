@@ -54,6 +54,12 @@ const (
 	editMessageTblFormat = "%-6v| %-10v| %-7v| %v"
 )
 
+// errListChats marks a chat-listing failure that is a real filesystem or
+// permissions problem, distinct from "no chat found". It is package-internal:
+// chat-listing state is not a provider meaning, so it does not join
+// pkg/claierr (worklog 2026-09-05-error-propagation, phase 8).
+var errListChats = errors.New("failed to list chats")
+
 type ChatHandler struct {
 	debug    bool
 	username string
@@ -132,7 +138,7 @@ func (cq *ChatHandler) findChatByID(potentialChatIdx string) (pub_models.Chat, e
 		if len(rows) == 0 {
 			chats, listErr := cq.list()
 			if listErr != nil {
-				return pub_models.Chat{}, fmt.Errorf("failed to list chats: %w", listErr)
+				return pub_models.Chat{}, fmt.Errorf("%w: %w", errListChats, listErr)
 			}
 			if chatIdx < 0 || chatIdx >= len(chats) {
 				return pub_models.Chat{}, fmt.Errorf("chat index out of range")
@@ -216,7 +222,7 @@ func (cq *ChatHandler) cont(ctx context.Context) error {
 	if err != nil {
 		// If listing of chats failed, propagate error. This indicates a real filesystem or
 		// permissions issue that should not be treated as "not found".
-		if strings.Contains(err.Error(), "failed to list chats") {
+		if errors.Is(err, errListChats) {
 			return fmt.Errorf("failed to get chat: %w", err)
 		}
 

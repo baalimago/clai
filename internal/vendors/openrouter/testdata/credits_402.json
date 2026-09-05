@@ -1,0 +1,10 @@
+{
+  "error": {
+    "message": "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 0. To increase, visit https://openrouter.ai/settings/credits and upgrade to a paid account",
+    "code": 402,
+    "metadata": {
+      "limit_source": "openrouter_credits",
+      "provider_name": null
+    }
+  }
+}

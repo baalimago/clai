@@ -153,7 +153,9 @@ func (e toolExecutor[C]) runPlannedCall(ctx context.Context, session *QuerySessi
 
 // recordToolCall reports one executed tool invocation to the configured
 // recorder. A nil recorder keeps the noop path; a recorder error is logged
-// and never propagated — telemetry must not break the agent loop.
+// and never propagated — telemetry must not break the agent loop. The
+// consumer owns the recorder and observes its own failures (worklog
+// 2026-09-05-error-propagation, S11: never-abort contract).
 func (e toolExecutor[C]) recordToolCall(ctx context.Context, name string, startedAt time.Time, out string) {
 	rec := e.querier.tooling.callRecorder
 	if rec == nil {
@@ -163,18 +165,21 @@ func (e toolExecutor[C]) recordToolCall(ctx context.Context, name string, starte
 		Name:       name,
 		StartedAt:  startedAt,
 		FinishedAt: time.Now(),
-		Err:        toolCallError(out),
+		Err:        toolCallError(name, out),
 	}); err != nil {
 		ancli.Warnf("failed to record tool call: %v", err)
 	}
 }
 
-// toolCallError derives a tool failure from its output string. tools.Invoke
-// folds errors into the output using the "ERROR: " convention, so the
-// recorder observes failures without changing Invoke's signature.
-func toolCallError(out string) error {
-	if strings.HasPrefix(out, "ERROR: ") {
-		return errors.New(out)
+// toolCallError derives a tool failure from its output string, naming the
+// tool that failed. tools.Invoke folds errors into the output using the
+// "ERROR: " convention, so the recorder observes failures without changing
+// Invoke's signature. The tool name keeps the recorded error readable when
+// recorders aggregate calls across tools (worklog
+// 2026-09-05-error-propagation, phase 8, E5).
+func toolCallError(name, out string) error {
+	if after, ok := strings.CutPrefix(out, "ERROR: "); ok {
+		return fmt.Errorf("tool %q failed: %s", name, after)
 	}
 	return nil
 }

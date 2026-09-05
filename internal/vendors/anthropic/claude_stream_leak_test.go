@@ -124,3 +124,63 @@ func TestClaudeStream_ClosesOnCtxCancelMidSend(t *testing.T) {
 	}
 	_ = pw.Close()
 }
+
+// TestClaudeStream_StopsAfterNonEOFErrorSend is the R4-01 regression guard:
+// a malformed event line makes handleToken return an error that is not io.EOF,
+// which is emitted on the channel. The runner treats every channel error that
+// is not io.EOF/context.Canceled as terminal and never reads the channel again,
+// so the producer must stop right after the send exactly as it does for io.EOF
+// and function calls — otherwise it keeps reading (or blocks on its next send)
+// and holds the response body open until cancellation.
+func TestClaudeStream_StopsAfterNonEOFErrorSend(t *testing.T) {
+	pr, pw := io.Pipe()
+	res := &http.Response{StatusCode: http.StatusOK, Body: pr}
+	c := &Claude{}
+	out, err := c.handleStreamResponse(context.Background(), res)
+	if err != nil {
+		t.Fatalf("handleStreamResponse err: %v", err)
+	}
+
+	release := make(chan struct{})
+	go func() {
+		bw := bufio.NewWriter(pw)
+		// A line that is not "event: <type>" makes handleToken return a
+		// non-io.EOF error. The connection then stays open: the leak only shows
+		// when the producer must stop on its own rather than on a read error.
+		fmt.Fprintf(bw, "malformed-line\n")
+		bw.Flush()
+		<-release
+	}()
+	defer close(release)
+	defer pw.Close()
+
+	// Consumer mirrors the session runner: read the error event, return without
+	// reading again.
+	select {
+	case ev, ok := <-out:
+		if !ok {
+			t.Fatal("channel closed before the error event arrived")
+		}
+		asErr, isErr := ev.(error)
+		if !isErr {
+			t.Fatalf("expected an error event, got: %T %v", ev, ev)
+		}
+		if errors.Is(asErr, io.EOF) {
+			t.Fatalf("expected a non-EOF error, got io.EOF")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for the error event")
+	}
+
+	// The producer must terminate after the terminal error send and close the
+	// channel. Pre-fix it keeps reading (blocking on the still-open pipe) and
+	// the channel stays open.
+	select {
+	case ev, ok := <-out:
+		if ok {
+			t.Fatalf("expected channel close after the error event, got event: %T", ev)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("channel not closed after the error event: producer goroutine leaked")
+	}
+}

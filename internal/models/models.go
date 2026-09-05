@@ -2,8 +2,6 @@ package models
 
 import (
 	"context"
-	"fmt"
-	"time"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
@@ -44,6 +42,23 @@ type ToolBox interface {
 	RegisterTool(pub_models.LLMTool)
 }
 
+// CompletionEvent is the value type carried on a vendor's completions
+// channel. It is deliberately left as any — changing it would be a breaking
+// change across every producer loop for no gain, since the runner's existing
+// %w wrap already preserves a typed error end to end.
+//
+// Channel contract (worklog 2026-09-05-error-propagation, D8):
+//   - An error value on the channel is terminal: the runner ends the step and
+//     returns it, unless it satisfies errors.Is(err, io.EOF) or
+//     errors.Is(err, context.Canceled), which end the step normally.
+//   - A producer that detects a provider error state mid-stream must send a
+//     vocabulary error, never a NoopEvent.
+//   - A producer that sends a terminal error must stop reading right after the
+//     send, on every producer loop: the runner ends the step on every channel
+//     error and never reads the channel again, so a producer that continued
+//     would block on its next send (worklog 2026-09-05-error-propagation, D18).
+//   - The runner wraps the terminal error with %w and must not flatten it, so
+//     errors.Is/errors.As keep matching the vocabulary through the wrap.
 type CompletionEvent any
 
 type NoopEvent struct{}
@@ -56,21 +71,3 @@ type ReasoningEvent struct {
 }
 
 type StopEvent struct{}
-
-type ErrRateLimit struct {
-	ResetAt         time.Time
-	TokensRemaining int
-	MaxInputTokens  int
-}
-
-func (erl *ErrRateLimit) Error() string {
-	return fmt.Sprintf("reset at: '%v', input tokens used at time of rate limit: '%v'", erl.ResetAt, erl.TokensRemaining)
-}
-
-func NewRateLimitError(resetAt time.Time, maxInputTokens int, tokensRemaining int) error {
-	return &ErrRateLimit{
-		ResetAt:         resetAt,
-		MaxInputTokens:  maxInputTokens,
-		TokensRemaining: tokensRemaining,
-	}
-}

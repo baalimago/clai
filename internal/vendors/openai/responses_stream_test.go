@@ -3,6 +3,7 @@ package openai
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/tools"
+	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -250,11 +252,17 @@ func TestResponsesStreamer_Non200Response(t *testing.T) {
 	if !strings.Contains(err.Error(), "openai responses") {
 		t.Fatalf("expected context prefix, got %v", err)
 	}
-	if !strings.Contains(err.Error(), "400") {
-		t.Fatalf("expected status, got %v", err)
+	// Typed since phase 5 (worklog 2026-09-05-error-propagation): status and
+	// body travel as facts on the vocabulary error, not as wording.
+	if !errors.Is(err, claierr.ErrUnexpectedProviderResponse) {
+		t.Fatalf("expected ErrUnexpectedProviderResponse, got: %v", err)
 	}
-	if !strings.Contains(err.Error(), "nope") {
-		t.Fatalf("expected body, got %v", err)
+	var apiErr claierr.APIErrorer
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected facts, got: %T %v", err, err)
+	}
+	if apiErr.API().StatusCode != http.StatusBadRequest || apiErr.API().Body != "nope" {
+		t.Fatalf("facts mismatch: %+v", apiErr.API())
 	}
 }
 
