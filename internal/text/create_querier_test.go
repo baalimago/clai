@@ -105,7 +105,7 @@ func TestSelectTextQuerier_AllVendors(t *testing.T) {
 		},
 		{
 			name:  "novita-pref",
-			model: "novita:gryphe/mythomax-l2-13b",
+			model: "novita:orgx/fixture-model",
 			env:   nil,
 		},
 	}

@@ -30,23 +30,23 @@ func TestVendorType_OpenRouter(t *testing.T) {
 }
 
 func TestVendorType_Berget(t *testing.T) {
-	vendor, model, modelVersion, err := vendorType("berget:zai-org/GLM-4.7-FP8")
+	vendor, model, modelVersion, err := vendorType("berget:orgx/fixture-model")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if vendor != "berget" {
 		t.Fatalf("vendor mismatch: got %q want %q", vendor, "berget")
 	}
-	if model != "zai-org" {
-		t.Fatalf("model mismatch: got %q want %q", model, "zai-org")
+	if model != "orgx" {
+		t.Fatalf("model mismatch: got %q want %q", model, "orgx")
 	}
-	if modelVersion != "GLM-4.7-FP8" {
-		t.Fatalf("modelVersion mismatch: got %q want %q", modelVersion, "GLM-4.7-FP8")
+	if modelVersion != "fixture-model" {
+		t.Fatalf("modelVersion mismatch: got %q want %q", modelVersion, "fixture-model")
 	}
 }
 
 func TestVendorType_Berget_NoOrg(t *testing.T) {
-	vendor, model, modelVersion, err := vendorType("berget:gemma-4-31B-it")
+	vendor, model, modelVersion, err := vendorType("berget:fixture-model")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -56,32 +56,40 @@ func TestVendorType_Berget_NoOrg(t *testing.T) {
 	if model != "berget" {
 		t.Fatalf("model mismatch: got %q want %q", model, "berget")
 	}
-	if modelVersion != "gemma-4-31B-it" {
-		t.Fatalf("modelVersion mismatch: got %q want %q", modelVersion, "gemma-4-31B-it")
+	if modelVersion != "fixture-model" {
+		t.Fatalf("modelVersion mismatch: got %q want %q", modelVersion, "fixture-model")
 	}
 }
 
+// Model ids in these tables are synthetic on purpose. vendorType and
+// CanonicalModelString parse a naming *shape* (bare, org-qualified,
+// prefixed) and never consult a provider catalogue, so a real model id here
+// would rot the moment a vendor retires it and would wrongly suggest that
+// the parser or the package defaults are pinned to it. Keep them fictional.
+//
+// One constraint: vendorType routes anything containing "test" to the mock
+// vendor, so fixture names use "fixture" instead.
 func TestCanonicalModelString_RoundTrip(t *testing.T) {
 	tests := []struct {
 		name  string
 		model string
 	}{
-		{"openai gpt", "gpt-5.2"},
-		{"anthropic claude", "claude-sonnet-4"},
-		{"openrouter", "or:gpt-4.1"},
-		{"openrouter with slash", "or:openai/gpt-5.2"},
-		{"berget with org", "berget:zai-org/GLM-4.7-FP8"},
-		{"berget without org", "berget:gemma-4-31B-it"},
-		{"ollama with prefix", "ollama:llama3"},
+		{"openai gpt", "gpt-fixture"},
+		{"anthropic claude", "claude-fixture"},
+		{"openrouter", "or:fixture-model"},
+		{"openrouter with slash", "or:orgx/fixture-model"},
+		{"berget with org", "berget:orgx/fixture-model"},
+		{"berget without org", "berget:fixture-model"},
+		{"ollama with prefix", "ollama:fixture-model"},
 		{"ollama bare", "ollama"},
-		{"novita with org", "novita:gryphe/some-model"},
+		{"novita with org", "novita:orgx/fixture-model"},
 		{"novita bare", "novita"},
-		{"huggingface", "hf:model:provider"},
-		{"deepseek", "deepseek-chat"},
-		{"mistral", "mistral-large"},
-		{"gemini", "gemini-2.0-flash"},
-		{"grok", "grok-3"},
-		{"mercury", "mercury-coder"},
+		{"huggingface", "hf:fixture-model:providerx"},
+		{"deepseek", "deepseek-fixture"},
+		{"mistral", "mistral-fixture"},
+		{"gemini", "gemini-fixture"},
+		{"grok", "grok-fixture"},
+		{"mercury", "mercury-fixture"},
 		{"mock", "mock"},
 	}
 
@@ -113,16 +121,16 @@ func TestCanonicalModelString_FromConfigFilename(t *testing.T) {
 		vendor, family, modelVersion string
 		want                         string
 	}{
-		{"openai", "gpt", "gpt-4.1", "gpt-4.1"},
-		{"anthropic", "claude", "sonnet-4", "sonnet-4"},
-		{"openrouter", "chat", "gpt-4.1", "or:gpt-4.1"},
-		{"berget", "zai-org", "GLM-4.7-FP8", "berget:zai-org/GLM-4.7-FP8"},
-		{"berget", "berget", "gemma-4-31B-it", "berget:gemma-4-31B-it"},
-		{"ollama", "llama3", "ollama:llama3", "ollama:llama3"},
-		{"ollama", "llama3", "ollama", "ollama"},
-		{"novita", "gryphe", "some-model", "novita:gryphe/some-model"},
+		{"openai", "gpt", "gpt-fixture", "gpt-fixture"},
+		{"anthropic", "claude", "claude-fixture", "claude-fixture"},
+		{"openrouter", "chat", "fixture-model", "or:fixture-model"},
+		{"berget", "orgx", "fixture-model", "berget:orgx/fixture-model"},
+		{"berget", "berget", "fixture-model", "berget:fixture-model"},
+		{"ollama", "fixture-model", "ollama:fixture-model", "ollama:fixture-model"},
+		{"ollama", "fixture-model", "ollama", "ollama"},
+		{"novita", "orgx", "fixture-model", "novita:orgx/fixture-model"},
 		{"novita", "", "novita", "novita"},
-		{"hf", "provider", "model", "hf:model:provider"},
+		{"hf", "providerx", "fixture-model", "hf:fixture-model:providerx"},
 	}
 
 	for _, tt := range tests {

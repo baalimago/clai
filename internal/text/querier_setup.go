@@ -56,7 +56,12 @@ func CanonicalModelString(vendor, family, modelVersion string) string {
 }
 
 func vendorType(fromModel string) (string, string, string, error) {
-	if strings.Contains(fromModel, "test") {
+	// Prefix, not Contains: the mock vendor must be selected deliberately.
+	// A Contains match captured every model whose name merely holds "test",
+	// which includes the whole "-latest" convention — "mistral-large-latest"
+	// (mistral's own default), "gpt-4o-latest" and friends silently resolved
+	// to the mock and returned fabricated output with no error.
+	if strings.HasPrefix(fromModel, "test") {
 		return "mock", "test", fromModel, nil
 	}
 	if after, ok := strings.CutPrefix(fromModel, "or:"); ok {
