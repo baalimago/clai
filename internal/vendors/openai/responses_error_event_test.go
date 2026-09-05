@@ -2,6 +2,7 @@ package openai
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -10,19 +11,22 @@ import (
 
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/tools"
+	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
-func TestHandleResponsesStreamEvent_TopLevelErrorSurfacesMessage(t *testing.T) {
+func TestHandleResponsesStreamEvent_TopLevelErrorSurfacesTyped(t *testing.T) {
 	t.Parallel()
 
 	out := make(chan models.CompletionEvent, 1)
 	tracker := newToolCallTracker()
 
+	raw := []byte(`{"type":"error","code":"server_error","message":"boom"}`)
 	done, err := handleResponsesStreamEvent(nil, out, tracker, responsesStreamEvent{
 		Type:    "error",
 		Code:    "server_error",
 		Message: "boom",
+		raw:     raw,
 	}, nil)
 	if err == nil {
 		t.Fatalf("expected error")
@@ -30,8 +34,18 @@ func TestHandleResponsesStreamEvent_TopLevelErrorSurfacesMessage(t *testing.T) {
 	if done {
 		t.Fatalf("error event should not report done")
 	}
-	if err.Error() != "boom" {
-		t.Fatalf("error: got %q want %q", err.Error(), "boom")
+	// The event is unrecognized by the openai decoder, so it degrades to the
+	// typed catch-all with the whole frame as facts (worklog
+	// 2026-09-05-error-propagation, phase 5).
+	if !errors.Is(err, claierr.ErrUnexpectedProviderResponse) {
+		t.Fatalf("expected ErrUnexpectedProviderResponse, got: %v", err)
+	}
+	var apiErr claierr.APIErrorer
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected facts, got: %T %v", err, err)
+	}
+	if apiErr.API().StatusCode != http.StatusOK || !strings.Contains(apiErr.API().Body, "boom") {
+		t.Fatalf("frame facts mismatch: %+v", apiErr.API())
 	}
 }
 
@@ -67,8 +81,17 @@ func TestResponsesStreamer_TopLevelErrorEventSurfaced(t *testing.T) {
 	if gotErr == nil {
 		t.Fatalf("expected the stream error to be surfaced")
 	}
-	if !strings.Contains(gotErr.Error(), "upstream exploded") {
-		t.Fatalf("expected API message in error, got %v", gotErr)
+	// Typed since phase 5 (worklog 2026-09-05-error-propagation): the frame
+	// rides the decode chain, so the message travels as facts, not wording.
+	if !errors.Is(gotErr, claierr.ErrUnexpectedProviderResponse) {
+		t.Fatalf("expected ErrUnexpectedProviderResponse, got: %v", gotErr)
+	}
+	var apiErr claierr.APIErrorer
+	if !errors.As(gotErr, &apiErr) {
+		t.Fatalf("expected facts, got: %T %v", gotErr, gotErr)
+	}
+	if !strings.Contains(apiErr.API().Body, "upstream exploded") {
+		t.Fatalf("expected API message in facts, got %+v", apiErr.API())
 	}
 	if gotStop {
 		t.Fatalf("a failed stream must not also emit a StopEvent")

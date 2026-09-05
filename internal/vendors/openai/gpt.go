@@ -136,6 +136,9 @@ func (g *ChatGPT) StreamCompletions(ctx context.Context, chat pub_models.Chat) (
 	if err := sc.Setup("OPENAI_API_KEY", g.URL, "DEBUG_OPENAI"); err != nil {
 		return nil, fmt.Errorf("openai chat: setup stream completer: %w", err)
 	}
+	// Vendor decoder for both decode points (non-OK body and error frame at
+	// HTTP 200), per worklog 2026-09-05-error-propagation D11/D12.
+	sc.DecodeError = decodeError
 	g.streamCompleter = sc
 	g.streamCompleter.Model = g.Model
 	g.streamCompleter.MaxTokens = g.MaxTokens

@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"sync"
@@ -113,7 +114,7 @@ func TestManager(t *testing.T) {
 	controlCh := make(chan ControlEvent)
 	var wg sync.WaitGroup
 	wg.Add(1)
-	go Manager(ctx, controlCh, &wg, reg)
+	go Manager(ctx, controlCh, &wg, reg, nil)
 
 	controlCh <- ControlEvent{ServerName: "echo", Server: srv, InputChan: in, OutputChan: out}
 
@@ -157,7 +158,7 @@ func TestManager_SkipsFailingServer(t *testing.T) {
 	controlCh := make(chan ControlEvent)
 	var wg sync.WaitGroup
 	wg.Add(2)
-	go Manager(ctx, controlCh, &wg, reg)
+	go Manager(ctx, controlCh, &wg, reg, nil)
 
 	controlCh <- ControlEvent{ServerName: "broken", Server: brokenSrv, InputChan: brokenIn, OutputChan: brokenOut}
 	controlCh <- ControlEvent{ServerName: "echo", Server: goodSrv, InputChan: goodIn, OutputChan: goodOut}
@@ -176,6 +177,37 @@ func TestManager_SkipsFailingServer(t *testing.T) {
 
 	if _, ok := reg.Get("mcp_broken_echo"); ok {
 		t.Error("broken server's tools must not be registered")
+	}
+}
+
+// Test_McpManager_MalformedResponse_ErrorToRequester pins the S5-S6 repair:
+// a frame that cannot be parsed as a JSON-RPC response is delivered to the
+// waiting request as an error, never logged and dropped (worklog
+// 2026-09-05-error-propagation, phase 8).
+func Test_McpManager_MalformedResponse_ErrorToRequester(t *testing.T) {
+	ctx := t.Context()
+	tests := []struct {
+		name string
+		msg  any
+		want string
+	}{
+		{name: "non-JSON message", msg: "plain string", want: "non-JSON message"},
+		{name: "malformed raw response", msg: json.RawMessage(`{"jsonrpc":"2.0"`), want: "malformed response"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			in := make(chan any, 1)
+			out := make(chan any, 1)
+			out <- tt.msg
+
+			_, err := sendRequest(ctx, in, out, Request{JSONRPC: "2.0", ID: 1, Method: "initialize"})
+			if err == nil {
+				t.Fatal("expected an error, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("err = %v, want it to contain %q", err, tt.want)
+			}
+		})
 	}
 }
 

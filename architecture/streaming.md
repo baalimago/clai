@@ -139,7 +139,7 @@ Streaming can fail mid-response (network, vendor errors, invalid event frames). 
 
 - Vendor parser errors are surfaced as `error` events or as an error returned from `StreamCompletions`.
 - The consumer loop stops immediately on error.
-- Higher-level logic (as described in `QUERY.md`) may retry on rate limit errors.
+- Rate limits are terminal and never retried inside clai: they surface typed (`claierr.ErrRateLimited`, with `ResetAt` facts) and retry policy belongs to the caller ([errors.md](./errors.md)).
 
 ## How This Relates to QUERY.md
 

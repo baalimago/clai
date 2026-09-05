@@ -74,12 +74,17 @@ func mostRecentCompletedUsage(completed []CompletedModelCall, final *pub_models.
 	return final
 }
 
-func (f sessionFinalizer[C]) Finalize(ctx context.Context, session *QuerySession) {
+func (f sessionFinalizer[C]) Finalize(ctx context.Context, session *QuerySession) error {
 	if session == nil || session.Finalized {
-		return
+		return nil
 	}
 	session.Finalized = true
 	q := f.querier
+	// persistErr carries a failed reply persist out of the display branches
+	// below: a later -re/-dre would otherwise silently read stale state, so
+	// the caller must hear about it (worklog 2026-09-05-error-propagation,
+	// S8). The runner joins it into the run's returned error.
+	var persistErr error
 
 	if q.debug {
 		ancli.Noticef("post process querier: %+v", q)
@@ -107,9 +112,8 @@ func (f sessionFinalizer[C]) Finalize(ctx context.Context, session *QuerySession
 			ancli.Warnf("failed to stamp origin directory: %v\n", originErr)
 		}
 		q.chat = session.Chat
-		err := chat.SaveAsPreviousQuery(q.configDir, session.Chat)
-		if err != nil {
-			ancli.PrintErr(fmt.Sprintf("failed to save previous query: %v\n", err))
+		if err := chat.SaveAsPreviousQuery(q.configDir, session.Chat); err != nil {
+			persistErr = fmt.Errorf("failed to save previous query: %w", err)
 		}
 		// History recording is always-on for non-reply queries. A plain -re forks a
 		// fresh promoted id, so recording it would pollute the history with
@@ -127,7 +131,7 @@ func (f sessionFinalizer[C]) Finalize(ctx context.Context, session *QuerySession
 		ancli.PrintOK(fmt.Sprintf("Querier.postProcess:\n%v\n", debug.IndentedJsonFmt(q)))
 	}
 	if session.FinalAssistantText == "" || session.Failed {
-		return
+		return persistErr
 	}
 	if q.structuredOutput {
 		// The final-answer record fires before the structured display too:
@@ -138,10 +142,11 @@ func (f sessionFinalizer[C]) Finalize(ctx context.Context, session *QuerySession
 		// embedded log without the run's final answer.
 		q.logMessage(ctx, "final_answer", stripThinkingBlocks(session.FinalAssistantText), "")
 		fmt.Fprintln(q.out, stripThinkingBlocks(session.FinalAssistantText))
-		return
+		return persistErr
 	}
 	q.postProcessOutput(ctx, pub_models.Message{
 		Role:    "assistant",
 		Content: session.FinalAssistantText,
 	})
+	return persistErr
 }

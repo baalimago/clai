@@ -262,6 +262,10 @@ func (a *Agent) asInternalConfig() text.Configurations {
 		RuneLimit:        a.slogRuneLimit,
 		UsageRecorder:    a.usageRecorder,
 		ToolCallRecorder: a.toolCallRecorder,
+		// Servers registered via WithMcpServers are load-bearing: a startup
+		// failure fails Setup instead of degrading (worklog
+		// 2026-09-05-error-propagation, D13).
+		StrictMcpStartup: len(a.mcpServers) > 0,
 	}
 	// A zero-value Stoploss must not create a non-nil internal pointer: the
 	// agent default stays unlimited (MaxTokens <= 0 disables the stoploss).
@@ -295,7 +299,7 @@ func (a *Agent) Setup(ctx context.Context) error {
 
 	querier, err := a.querierCreator(ctx, a.asInternalConfig())
 	if err != nil {
-		return fmt.Errorf("publicQuerier.Setup failed to CreateTextQuerier: %v", err)
+		return fmt.Errorf("publicQuerier.Setup failed to CreateTextQuerier: %w", err)
 	}
 	tq, isChatQuerier := querier.(priv_models.ChatQuerier)
 	if !isChatQuerier {

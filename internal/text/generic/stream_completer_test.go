@@ -16,6 +16,7 @@ import (
 
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/tools"
+	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -35,8 +36,11 @@ func TestStreamCompletions_DoError(t *testing.T) {
 	})}, apiKey: "k", URL: "http://example.invalid"}
 
 	ch, err := s.StreamCompletions(context.Background(), pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "x"}}})
-	if err == nil || !strings.Contains(err.Error(), "failed to execute request") {
-		t.Fatalf("expected execute request error, got: %v, ch=%v", err, ch)
+	if err == nil || !errors.Is(err, claierr.ErrTransport) {
+		t.Fatalf("expected ErrTransport for failed client.Do, got: %v, ch=%v", err, ch)
+	}
+	if !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("expected cause in message, got: %v", err)
 	}
 }
 
@@ -60,8 +64,8 @@ func TestStreamCompletions_Non200_And_CleanDoesNotMutateOriginal(t *testing.T) {
 	s.URL = ts.URL
 
 	ch, err := s.StreamCompletions(context.Background(), orig)
-	if err == nil || !strings.Contains(err.Error(), "unexpected status code") {
-		t.Fatalf("expected non-200 error, got: %v, ch=%v", err, ch)
+	if err == nil || !errors.Is(err, claierr.ErrProviderUnavailable) {
+		t.Fatalf("expected ErrProviderUnavailable for non-200, got: %v, ch=%v", err, ch)
 	}
 	if !invoked {
 		t.Fatalf("expected Clean to be invoked")

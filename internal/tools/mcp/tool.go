@@ -109,8 +109,11 @@ func (m *mcpTool) call(ctx context.Context, input pub_models.Input) (string, err
 			}
 			var resp Response
 			if err := json.Unmarshal(raw, &resp); err != nil {
-				ancli.Errf("mcpTool: '%v' failed to unmarshal: '%v'", m.remoteName, err)
-				continue
+				// A frame that cannot be parsed as a JSON-RPC response is an error
+				// result for this call, never a logged-and-dropped frame: dropping it
+				// would leave the request waiting until its context expires
+				// (worklog 2026-09-05-error-propagation, S7).
+				return "", fmt.Errorf("mcp tool %q: malformed response: %w", m.remoteName, err)
 			}
 			if resp.ID != id {
 				continue
@@ -119,7 +122,7 @@ func (m *mcpTool) call(ctx context.Context, input pub_models.Input) (string, err
 				if debugflags.Enabled("MCP_TOOL") {
 					ancli.Okf("Now returning response.Error: '%v'", resp.Error)
 				}
-				return "", errors.New(resp.Error.Message)
+				return "", fmt.Errorf("mcp tool %q: JSON-RPC error %d: %s", m.remoteName, resp.Error.Code, resp.Error.Message)
 			}
 			var result struct {
 				Content []struct {
@@ -144,7 +147,7 @@ func (m *mcpTool) call(ctx context.Context, input pub_models.Input) (string, err
 				if debugflags.Enabled("MCP_TOOL") {
 					ancli.Okf("Now returning result as error: '%v'", buf.String())
 				}
-				return "", errors.New(buf.String())
+				return "", fmt.Errorf("mcp tool %q returned an error result: %s", m.remoteName, buf.String())
 			}
 			if debugflags.Enabled("MCP_TOOL") {
 				ancli.Okf("Now returning: '%v'", buf.String())

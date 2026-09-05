@@ -74,7 +74,7 @@ func (pq *publicQuerier) Setup(ctx context.Context) error {
 	}
 	querier, err := text.CreateQuerier(ctx, pq.conf)
 	if err != nil {
-		return fmt.Errorf("publicQuerier.Setup failed to CreateTextQuerier: %v", err)
+		return fmt.Errorf("publicQuerier.Setup failed to CreateTextQuerier: %w", err)
 	}
 	tq, isChatQuerier := querier.(priv_models.ChatQuerier)
 	if !isChatQuerier {
@@ -89,7 +89,7 @@ func (pq *publicQuerier) Setup(ctx context.Context) error {
 func (pq *publicQuerier) Query(ctx context.Context, inpChat models.Chat) (models.Chat, error) {
 	err := pq.Setup(ctx)
 	if err != nil {
-		return models.Chat{}, fmt.Errorf("pq.Query failed to Setup clone: %v", err)
+		return models.Chat{}, fmt.Errorf("pq.Query failed to Setup clone: %w", err)
 	}
 	return pq.querier.TextQuery(ctx, inpChat)
 }

@@ -63,7 +63,7 @@ func clean(msg []pub_models.Message) []pub_models.Message {
 			msg[i-1].Content += "\n" + msg[i].Content
 			nMsg, err := utils.DeleteRange(msg, i, i)
 			if err != nil {
-				ancli.Errf("failed to delete range. No error management here... Not great. Why error here? Stop please...: %v", err)
+				ancli.Warnf("failed to merge consecutive assistant messages: %v", err)
 			}
 			msg = nMsg
 			i--

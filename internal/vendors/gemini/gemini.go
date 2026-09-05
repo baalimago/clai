@@ -9,7 +9,7 @@ import (
 )
 
 var Default = Gemini{
-	Model:       "gemini-2.5-flash",
+	Model:       "gemini-3.6-flash",
 	Temperature: 1.0,
 	TopP:        1.0,
 	URL:         ChatURL,

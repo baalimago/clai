@@ -16,6 +16,7 @@ import (
 	"github.com/baalimago/clai/internal/chat"
 	"github.com/baalimago/clai/internal/models"
 	inttools "github.com/baalimago/clai/internal/tools"
+	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/dimensions"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
@@ -769,8 +770,9 @@ func Test_Querier_SavesConversation_WhenStreamSetupFailsDueToRateLimitTokenCount
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if !strings.Contains(err.Error(), "count input tokens: mock token count failure") {
-		t.Fatalf("expected token count error, got: %v", err)
+	var rateLimitErr *claierr.RateLimitedError
+	if !errors.As(err, &rateLimitErr) {
+		t.Fatalf("expected error to match *claierr.RateLimitedError via errors.As, got: %v", err)
 	}
 
 	// Even though stream setup failed, we should persist globalScope in reply mode.
@@ -1637,10 +1639,7 @@ func (q *MockQuerierRateLimitTokenCountFail) StreamCompletions(
 	context.Context,
 	pub_models.Chat,
 ) (chan models.CompletionEvent, error) {
-	return nil, &models.ErrRateLimit{
-		ResetAt:         time.Now().Add(time.Millisecond),
-		TokensRemaining: 0,
-	}
+	return nil, claierr.NewRateLimited(nil, time.Now().Add(time.Millisecond), 0, 0)
 }
 
 func Test_ChatQuerier(t *testing.T) {

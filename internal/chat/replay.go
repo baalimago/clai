@@ -19,7 +19,7 @@ func Replay(raw bool, dirScoped bool) error {
 
 	prevReply, err := LoadPrevQuery("")
 	if err != nil {
-		return fmt.Errorf("failed to load previous reply: %v", err)
+		return fmt.Errorf("failed to load previous reply: %w", err)
 	}
 	amMessages := len(prevReply.Messages)
 	if amMessages == 0 {

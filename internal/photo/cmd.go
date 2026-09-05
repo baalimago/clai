@@ -71,14 +71,14 @@ Examples:
 			ancli.PrintOK(fmt.Sprintf("photoConfig post override: %+v\n", pConf))
 		}
 		if err := pConf.SetupPrompts(c.Args()); err != nil {
-			return fmt.Errorf("failed to setup prompt: %v", err)
+			return fmt.Errorf("failed to setup prompt: %w", err)
 		}
 		pq, err := CreateQuerier(pConf)
 		if misc.Truthy(os.Getenv("DEBUG")) {
 			ancli.PrintOK(fmt.Sprintf("photo querier: %+v\n", imagodebug.IndentedJsonFmt(pq)))
 		}
 		if err != nil {
-			return fmt.Errorf("failed to create photo querier: %v", err)
+			return fmt.Errorf("failed to create photo querier: %w", err)
 		}
 		c.SetQuerier(pq)
 		return nil

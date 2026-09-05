@@ -1,6 +1,7 @@
 package generic
 
 import (
+	"encoding/json"
 	"net/http"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -20,10 +21,16 @@ type StreamCompleter struct {
 	ReasoningEffort string                                          `json:"-"`
 	ToolChoice      *string                                         `json:"-"`
 	Clean           func([]pub_models.Message) []pub_models.Message `json:"-"`
-	URL             string
-	ExtraHeaders    map[string]string `json:"-"`
-	tools           []ToolSuper
-	toolsCallName   string
+	// DecodeError is set by the vendor that embeds the completer. It
+	// decodes a provider error payload into shared claierr values: the body
+	// of a non-OK response, or an error frame received mid-stream (status
+	// is then http.StatusOK). A nil field, or a nil return, means "no
+	// vendor knowledge" and the baseline (or the catch-all) stands alone.
+	DecodeError   func(status int, body []byte) error `json:"-"`
+	URL           string
+	ExtraHeaders  map[string]string `json:"-"`
+	tools         []ToolSuper
+	toolsCallName string
 	// Argument string exists since the arguments for function calls is streamed token by token... yeah... great idea
 	toolsCallArgsString string
 	toolsCallID         string
@@ -69,6 +76,10 @@ type chatCompletionChunk struct {
 	SystemFingerprint string            `json:"system_fingerprint"`
 	Choices           []Choice          `json:"choices"`
 	Usage             *pub_models.Usage `json:"usage,omitempty"`
+	// Error captures the OpenAI-compat {"error": …} envelope raw. Presence
+	// is the trigger for the frame decode point; the contents are never
+	// parsed here — that is vendor knowledge (DecodeError).
+	Error json.RawMessage `json:"error,omitempty"`
 }
 
 type Choice struct {

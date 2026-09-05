@@ -56,7 +56,12 @@ func CanonicalModelString(vendor, family, modelVersion string) string {
 }
 
 func vendorType(fromModel string) (string, string, string, error) {
-	if strings.Contains(fromModel, "test") {
+	// Prefix, not Contains: the mock vendor must be selected deliberately.
+	// A Contains match captured every model whose name merely holds "test",
+	// which includes the whole "-latest" convention — "mistral-large-latest"
+	// (mistral's own default), "gpt-4o-latest" and friends silently resolved
+	// to the mock and returned fabricated output with no error.
+	if strings.HasPrefix(fromModel, "test") {
 		return "mock", "test", fromModel, nil
 	}
 	if after, ok := strings.CutPrefix(fromModel, "or:"); ok {
@@ -227,7 +232,9 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	// only errors (on stderr, so stdout stays clean), and any other mode keeps
 	// the legacy direct print.
 	querier.mcpSink = newMcpLogSink(mcpLogModeFor(querier.debug, querier.outputIsTerminal, querier.Raw, querier.structuredOutput, utils.RollingOutputEnabled()))
-	setupTooling(ctx, modelConf, &userConf, querier.mcpSink)
+	if err := setupTooling(ctx, modelConf, &userConf, querier.mcpSink); err != nil {
+		return Querier[C]{}, err
+	}
 
 	err = modelConf.Setup()
 	if err != nil {
@@ -275,7 +282,11 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 		if openrouterAPIKey != "" {
 			openrouterCatalogFetcher, err := openrouter.NewModelCatalog(openrouterAPIKey)
 			if err != nil {
-				ancli.Warnf("found OPENROUTER_API_KEY but failed to init catalog fether: %v", err)
+				// Cost accounting is ambient capability, not something the caller
+				// named; a catalog that fails to init degrades the run's price
+				// enrichment, never the run itself (worklog
+				// 2026-09-05-error-propagation, S9).
+				ancli.Warnf("found OPENROUTER_API_KEY but failed to init catalog fetcher: %v", err)
 			}
 			fetcher = openrouterCatalogFetcher
 		}

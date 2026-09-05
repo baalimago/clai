@@ -60,11 +60,11 @@ Examples:
 		}
 		ApplyFlagOverrides(&vConf, &f)
 		if err := vConf.SetupPrompts(c.Args()); err != nil {
-			return fmt.Errorf("failed to setup prompt: %v", err)
+			return fmt.Errorf("failed to setup prompt: %w", err)
 		}
 		vq, err := CreateQuerier(vConf)
 		if err != nil {
-			return fmt.Errorf("failed to create video querier: %v", err)
+			return fmt.Errorf("failed to create video querier: %w", err)
 		}
 		c.SetQuerier(vq)
 		return nil

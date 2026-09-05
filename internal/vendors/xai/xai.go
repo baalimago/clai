@@ -36,6 +36,9 @@ func (g *XAI) Setup() error {
 	if err != nil {
 		return fmt.Errorf("failed to setup stream completer: %w", err)
 	}
+	// Vendor decoder for both decode points (non-OK body and error frame at
+	// HTTP 200), per worklog 2026-09-05-error-propagation D11/D12.
+	g.StreamCompleter.DecodeError = decodeError
 	g.StreamCompleter.Model = g.Model
 	g.StreamCompleter.MaxTokens = g.MaxTokens
 	g.StreamCompleter.Temperature = &g.Temperature

@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
@@ -24,8 +25,12 @@ type ToolRegistrar interface {
 const mcpStartupTimeout = 30 * time.Second
 
 // Manager registers MCP servers and their tools into registrar. A server that
-// fails its handshake is logged and skipped; it never fails the other servers.
-func Manager(ctx context.Context, controlChannel <-chan ControlEvent, allToolsWg *sync.WaitGroup, registrar ToolRegistrar) {
+// fails its handshake is skipped; it never fails the other servers. When
+// startupFailures is non-nil, each failed handshake is reported on it (before
+// the server's allToolsWg.Done, so a Wait on that group implies every report
+// was sent) and no warning is printed; a nil channel keeps the legacy
+// warn-and-skip behaviour (worklog 2026-09-05-error-propagation, D13).
+func Manager(ctx context.Context, controlChannel <-chan ControlEvent, allToolsWg *sync.WaitGroup, registrar ToolRegistrar, startupFailures chan<- StartupFailure) {
 	var wg sync.WaitGroup
 	for {
 		select {
@@ -35,6 +40,10 @@ func Manager(ctx context.Context, controlChannel <-chan ControlEvent, allToolsWg
 				defer wg.Done()
 				defer allToolsWg.Done()
 				if err := handleServer(ctx, e, registrar); err != nil {
+					if startupFailures != nil {
+						startupFailures <- StartupFailure{ServerName: e.ServerName, Err: err}
+						return
+					}
 					ancli.Warnf("failed to setup mcp server '%v': %v\n", e.ServerName, err)
 				}
 			}(ev)
@@ -79,10 +88,10 @@ func handleServer(ctx context.Context, ev ControlEvent, registrar ToolRegistrar)
 	}
 	resp, err := sendRequest(ctx, ev.InputChan, ev.OutputChan, initReq)
 	if err != nil {
-		return fmt.Errorf("initialize err: %w", err)
+		return claierr.NewMcpServerStartup(ev.ServerName, "initialize", err)
 	}
 	if resp.Error != nil {
-		return fmt.Errorf("initialize responded with err: %s", resp.Error.Message)
+		return claierr.NewMcpServerStartup(ev.ServerName, "initialize", fmt.Errorf("JSON-RPC error %d: %s", resp.Error.Code, resp.Error.Message))
 	}
 
 	// Send initialized notification
@@ -100,16 +109,16 @@ func handleServer(ctx context.Context, ev ControlEvent, registrar ToolRegistrar)
 	}
 	resp, err = sendRequest(ctx, ev.InputChan, ev.OutputChan, listReq)
 	if err != nil {
-		return fmt.Errorf("tools/list err: %w", err)
+		return claierr.NewMcpServerStartup(ev.ServerName, "tools/list", err)
 	}
 	if resp.Error != nil {
-		return fmt.Errorf("tools/list resp.Error: %s", resp.Error.Message)
+		return claierr.NewMcpServerStartup(ev.ServerName, "tools/list", fmt.Errorf("JSON-RPC error %d: %s", resp.Error.Code, resp.Error.Message))
 	}
 	var listRes struct {
 		Tools []Tool `json:"tools"`
 	}
 	if err := json.Unmarshal(resp.Result, &listRes); err != nil {
-		return fmt.Errorf("decode list result: %w", err)
+		return claierr.NewMcpServerStartup(ev.ServerName, "tools/list", fmt.Errorf("decode list result: %w", err))
 	}
 
 	for _, t := range listRes.Tools {
@@ -138,6 +147,11 @@ func handleServer(ctx context.Context, ev ControlEvent, registrar ToolRegistrar)
 	return nil
 }
 
+// sendRequest delivers one request on in and waits for the response with the
+// matching id on out. A frame that cannot be parsed as a JSON-RPC response is
+// delivered to the waiting request as an error rather than being logged and
+// dropped: silently skipping it would leave the requester waiting until its
+// context expires (worklog 2026-09-05-error-propagation, S5-S6).
 func sendRequest(ctx context.Context, in chan<- any, out <-chan any, req Request) (Response, error) {
 	select {
 	case in <- req:
@@ -152,13 +166,11 @@ func sendRequest(ctx context.Context, in chan<- any, out <-chan any, req Request
 			}
 			raw, ok := msg.(json.RawMessage)
 			if !ok {
-				ancli.Errf("failed to parse json.RawMessage, message: '%v'", msg)
-				continue
+				return Response{}, fmt.Errorf("mcp: server sent a non-JSON message while waiting for response to %s", req.Method)
 			}
 			var resp Response
 			if err := json.Unmarshal(raw, &resp); err != nil {
-				ancli.Errf("failed to unmarshal to Response, error: '%v'", msg)
-				continue
+				return Response{}, fmt.Errorf("mcp: malformed response to %s: %w", req.Method, err)
 			}
 			if resp.ID == req.ID {
 				return resp, nil

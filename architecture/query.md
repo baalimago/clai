@@ -124,7 +124,7 @@ loop (`internal/text/session_runner.go`). Each model step:
 
 ### Rate Limit Handling
 
-If `StreamCompletions` returns `ErrRateLimit`, the querier sleeps until the reset time and retries (up to 3 times). If the model implements `InputTokenCounter`, it uses adaptive backoff.
+A rate limit surfaces as a typed, terminal error on the step: the runner returns it on the first call, unretried (`claierr.ErrRateLimited` via `errors.Is`, facts such as `ResetAt` via `errors.As`). clai itself never sleeps or retries a throttled call — retry policy belongs to the caller, which has the context to choose it (worklog `2026-09-05-error-propagation`, phase 3; [errors.md](./errors.md)). `InputTokenCounter` remains in use only for the token stoploss budget, not for backoff.
 
 ## Tool Calls
 

@@ -8,6 +8,15 @@ import (
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
+// StartupFailure reports one server whose initialize/tools-list handshake
+// failed. The Manager skips the server either way; whether the failure is
+// fatal for the caller's setup is the caller's decision (worklog
+// 2026-09-05-error-propagation, D13).
+type StartupFailure struct {
+	ServerName string
+	Err        error
+}
+
 // ControlEvent instructs the Manager to register a new MCP server.
 type ControlEvent struct {
 	ServerName string

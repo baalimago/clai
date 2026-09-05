@@ -9,7 +9,7 @@ import (
 )
 
 var Default = Inception{
-	Model: "murcury",
+	Model: "mercury",
 	URL:   ChatURL,
 }
 

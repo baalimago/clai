@@ -1,0 +1,13 @@
+{
+  "type": "response.failed",
+  "sequence_number": 1,
+  "response": {
+    "id": "resp_fixture",
+    "object": "response",
+    "status": "failed",
+    "error": {
+      "code": "server_error",
+      "message": "The model failed to generate a response."
+    }
+  }
+}

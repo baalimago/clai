@@ -3,6 +3,8 @@ package text
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +13,7 @@ import (
 
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/utils"
+	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/dimensions"
 )
@@ -66,13 +69,14 @@ type countingFinalizer struct {
 	last  *QuerySession
 }
 
-func (f *countingFinalizer) Finalize(_ context.Context, session *QuerySession) {
+func (f *countingFinalizer) Finalize(_ context.Context, session *QuerySession) error {
 	f.count++
 	f.last = session
 	if session == nil || session.Finalized {
-		return
+		return nil
 	}
 	session.Finalized = true
+	return nil
 }
 
 func Test_sessionRunner_Run_OversizedFirstQueryNoTokenPrecheck(t *testing.T) {
@@ -879,48 +883,156 @@ func Test_toolExecutor_FinalizeAssistantTextBeforeToolCall_DropsWhitespaceEquiva
 	}
 }
 
-func Test_sessionRunner_Run_RateLimitRetryIsIterative(t *testing.T) {
+// Test_sessionRunner_Run_RateLimitSurfacesOnFirstCall pins the removal of the
+// retry loop (worklog 2026-09-05-error-propagation, phase 3, D3): a rate
+// limit surfaces to the caller typed and unretried. ResetAt lies far in the
+// future, so any surviving sleep-until-reset path would blow the suite
+// timeout instead of passing silently.
+func Test_sessionRunner_Run_RateLimitSurfacesOnFirstCall(t *testing.T) {
 	model := &MockQuerier{}
 	callCount := 0
-	rateLimitReset := time.Now().Add(-11 * time.Second)
 	model.streamFn = func(_ context.Context, _ pub_models.Chat) (chan models.CompletionEvent, error) {
 		callCount++
-		if callCount == 1 {
-			return nil, &models.ErrRateLimit{ResetAt: rateLimitReset}
-		}
-		model.usage = &pub_models.Usage{TotalTokens: 9}
-		out := make(chan models.CompletionEvent, 1)
-		out <- "after retry"
-		close(out)
-		return out, nil
+		return nil, claierr.NewRateLimited(nil, time.Now().Add(time.Hour), 0, 0)
 	}
 
 	q := &Querier[*MockQuerier]{out: &strings.Builder{}, Model: model}
 	session := &QuerySession{Chat: pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "hi"}}}}
-	recorder := &recordingCallUsageRecorder{}
-	finalizer := &countingFinalizer{}
 	runner := sessionRunner[*MockQuerier]{
 		querier:      q,
-		recorder:     recorder,
-		finalizer:    finalizer,
+		recorder:     &recordingCallUsageRecorder{},
+		finalizer:    &countingFinalizer{},
 		toolExecutor: toolExecutor[*MockQuerier]{querier: q},
 	}
 
 	err := runner.Run(context.Background(), session)
-	if err != nil {
-		t.Fatalf("Run returned err: %v", err)
+	if err == nil {
+		t.Fatal("expected rate limit error, got nil")
 	}
-	if callCount != 2 {
-		t.Fatalf("expected exactly 2 stream attempts, got %d", callCount)
+	var rateLimitErr *claierr.RateLimitedError
+	if !errors.As(err, &rateLimitErr) {
+		t.Fatalf("expected error to match *claierr.RateLimitedError via errors.As, got: %v", err)
 	}
-	if len(recorder.calls) != 1 {
-		t.Fatalf("expected only completed retry step to be recorded, got %d", len(recorder.calls))
+	if callCount != 1 {
+		t.Fatalf("expected exactly 1 stream attempt, got %d", callCount)
 	}
-	if session.FinalAssistantText != "after retry" {
-		t.Fatalf("expected final assistant text after retry, got %q", session.FinalAssistantText)
+}
+
+// Test_Runner_ChannelError_TerminalTypedSurvives pins the channel contract
+// (worklog 2026-09-05-error-propagation, phase 6, D8): an error value on the
+// completions channel is terminal, the runner ends the step on it without
+// consuming further events, and its %w wrap preserves the vocabulary — both
+// the sentinel (errors.Is) and the concrete type (errors.As) survive to the
+// caller.
+func Test_Runner_ChannelError_TerminalTypedSurvives(t *testing.T) {
+	model := &MockQuerier{}
+	typed := claierr.NewInsufficientCredits(&claierr.APIError{
+		StatusCode:   402,
+		ProviderCode: "insufficient_quota",
+		Body:         `{"error":{"code":"insufficient_quota"}}`,
+	})
+	var events chan models.CompletionEvent
+	model.streamFn = func(_ context.Context, _ pub_models.Chat) (chan models.CompletionEvent, error) {
+		events = make(chan models.CompletionEvent, 2)
+		events <- typed
+		events <- "after-error"
+		close(events)
+		return events, nil
 	}
-	if finalizer.count != 1 {
-		t.Fatalf("expected finalizer once, got %d", finalizer.count)
+
+	q := &Querier[*MockQuerier]{out: &strings.Builder{}, Model: model}
+	session := &QuerySession{Chat: pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "hello"}}}}
+	runner := sessionRunner[*MockQuerier]{
+		querier:      q,
+		recorder:     &recordingCallUsageRecorder{},
+		finalizer:    &countingFinalizer{},
+		toolExecutor: toolExecutor[*MockQuerier]{querier: q},
+	}
+
+	err := runner.Run(context.Background(), session)
+	if err == nil {
+		t.Fatal("expected the channel error to be terminal, got nil")
+	}
+	if !errors.Is(err, claierr.ErrLikelyInsufficientCredits) {
+		t.Fatalf("expected errors.Is to find the sentinel through the runner's wrap, got: %v", err)
+	}
+	var creditsErr *claierr.InsufficientCreditsError
+	if !errors.As(err, &creditsErr) {
+		t.Fatalf("expected errors.As to find *claierr.InsufficientCreditsError through the runner's wrap, got: %v", err)
+	}
+	if creditsErr.ProviderCode != "insufficient_quota" {
+		t.Fatalf("expected the response facts to survive intact, got %+v", creditsErr.APIError)
+	}
+	// The step ends on the error event: the event queued behind it must
+	// still be sitting in the channel, unconsumed.
+	select {
+	case leftover, ok := <-events:
+		if !ok || leftover != "after-error" {
+			t.Fatalf("expected the post-error event to remain unconsumed, got (%v, ok=%t)", leftover, ok)
+		}
+	default:
+		t.Fatal("expected the post-error event to remain buffered, but the channel was drained")
+	}
+	if session.FinalAssistantText == "after-error" {
+		t.Fatalf("post-error event must not reach the session, got final text %q", session.FinalAssistantText)
+	}
+}
+
+// Test_Runner_ChannelEOFCanceled_NormalEnd pins the two non-terminal channel
+// errors (worklog 2026-09-05-error-propagation, phase 6, D8): io.EOF and any
+// error satisfying errors.Is(err, context.Canceled) end the step normally —
+// nil error to the caller, accumulated text preserved.
+func Test_Runner_ChannelEOFCanceled_NormalEnd(t *testing.T) {
+	testCases := []struct {
+		name     string
+		chanErr  error
+		wantText string
+	}{
+		{
+			name:     "io.EOF",
+			chanErr:  io.EOF,
+			wantText: "accumulated before eof",
+		},
+		{
+			name:     "wrapped context.Canceled",
+			chanErr:  fmt.Errorf("stream torn down: %w", context.Canceled),
+			wantText: "accumulated before cancel",
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			model := &MockQuerier{}
+			model.streamFn = func(_ context.Context, _ pub_models.Chat) (chan models.CompletionEvent, error) {
+				out := make(chan models.CompletionEvent, 2)
+				out <- tc.wantText
+				out <- tc.chanErr
+				close(out)
+				return out, nil
+			}
+
+			q := &Querier[*MockQuerier]{out: &strings.Builder{}, Model: model}
+			session := &QuerySession{Chat: pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "hello"}}}}
+			finalizer := &countingFinalizer{}
+			runner := sessionRunner[*MockQuerier]{
+				querier:      q,
+				recorder:     &recordingCallUsageRecorder{},
+				finalizer:    finalizer,
+				toolExecutor: toolExecutor[*MockQuerier]{querier: q},
+			}
+
+			if err := runner.Run(context.Background(), session); err != nil {
+				t.Fatalf("expected %s to end the step normally, got err: %v", tc.name, err)
+			}
+			if session.FinalAssistantText != tc.wantText {
+				t.Fatalf("expected accumulated text %q preserved, got %q", tc.wantText, session.FinalAssistantText)
+			}
+			if session.Failed {
+				t.Fatal("expected the session not to be marked failed on a normal end")
+			}
+			if finalizer.count != 1 {
+				t.Fatalf("expected finalizer once, got %d", finalizer.count)
+			}
+		})
 	}
 }
 
@@ -1026,47 +1138,5 @@ func Test_sessionRunner_Run_DrainsAndExecutesParallelToolCallsAsOneTurn(t *testi
 	firstResult := strings.Index(output[firstCall:], "✗ ERROR:")
 	if firstResult == -1 || firstCall+firstResult > secondCall {
 		t.Fatalf("expected the first result before the second call, got:\n%s", output)
-	}
-}
-
-func Test_sleepContext(t *testing.T) {
-	if err := sleepContext(t.Context(), 0); err != nil {
-		t.Errorf("zero duration errored: %v", err)
-	}
-	if err := sleepContext(t.Context(), -time.Second); err != nil {
-		t.Errorf("negative duration errored: %v", err)
-	}
-	if err := sleepContext(t.Context(), time.Millisecond); err != nil {
-		t.Errorf("short sleep errored: %v", err)
-	}
-	cancelled, cancel := context.WithCancel(t.Context())
-	cancel()
-	if err := sleepContext(cancelled, time.Minute); err == nil {
-		t.Error("cancelled context did not interrupt the sleep")
-	}
-}
-
-// Test_waitForRateLimitReset_FallbackPath covers models without an input
-// token counter: the runner sleeps until ResetAt plus slack, which is
-// immediate for a reset time in the past.
-func Test_waitForRateLimitReset_FallbackPath(t *testing.T) {
-	r := sessionRunner[*MockQuerier]{querier: &Querier[*MockQuerier]{Model: &MockQuerier{}}}
-	err := r.waitForRateLimitReset(t.Context(), pub_models.Chat{}, models.ErrRateLimit{
-		ResetAt: time.Now().Add(-time.Minute),
-	})
-	if err != nil {
-		t.Fatalf("waitForRateLimitReset: %v", err)
-	}
-}
-
-func Test_waitForRateLimitReset_FallbackHonorsCancel(t *testing.T) {
-	cancelled, cancel := context.WithCancel(t.Context())
-	cancel()
-	r := sessionRunner[*MockQuerier]{querier: &Querier[*MockQuerier]{Model: &MockQuerier{}}}
-	err := r.waitForRateLimitReset(cancelled, pub_models.Chat{}, models.ErrRateLimit{
-		ResetAt: time.Now().Add(time.Hour),
-	})
-	if err == nil {
-		t.Fatal("cancelled context did not interrupt the rate limit wait")
 	}
 }

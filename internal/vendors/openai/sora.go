@@ -51,7 +51,7 @@ var defaultSora = Sora{
 func NewVideoQuerier(vConf video.Configurations) (models.Querier, error) {
 	claiConfDir, err := utils.GetClaiConfigDir()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get config dir: %v", err)
+		return nil, fmt.Errorf("failed to get config dir: %w", err)
 	}
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {
@@ -197,6 +197,13 @@ func (q *Sora) poll(ctx context.Context, id string) error {
 			}
 
 			if job.Status == "failed" || job.Status == "cancelled" {
+				// job.Error is any: it may carry an error value, an object or a
+				// string. Wrap with %w only when it is an error so the chain stays
+				// typed; otherwise preserve the raw content (worklog
+				// 2026-09-05-error-propagation, phase 8, B7).
+				if err, ok := job.Error.(error); ok {
+					return fmt.Errorf("video generation %s: %w", job.Status, err)
+				}
 				return fmt.Errorf("video generation %s: %v", job.Status, job.Error)
 			}
 

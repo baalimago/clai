@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -158,6 +159,32 @@ func TestMcpTool_CallWithContext_SuccessWithTimeout(t *testing.T) {
 	}
 	if res != "hello" {
 		t.Errorf("unexpected response %q", res)
+	}
+}
+
+// Test_McpTool_UnmarshalFailure_ErrorResult pins the S7 repair: a tool
+// response that cannot be parsed as a JSON-RPC response returns an error
+// result for the waiting call instead of an empty success (worklog
+// 2026-09-05-error-propagation, phase 8).
+func Test_McpTool_UnmarshalFailure_ErrorResult(t *testing.T) {
+	in := make(chan any, 1)
+	out := make(chan any, 1)
+	out <- json.RawMessage(`{"jsonrpc":"2.0","id":1,"result":`)
+	mt := &mcpTool{
+		remoteName: "echo",
+		inputChan:  in,
+		outputChan: out,
+	}
+
+	_, err := mt.CallWithContext(t.Context(), pub_models.Input{"text": "hello"})
+	if err == nil {
+		t.Fatal("expected an error result, got nil")
+	}
+	if !strings.Contains(err.Error(), "malformed response") {
+		t.Errorf("err = %v, want it to name the malformed response", err)
+	}
+	if !strings.Contains(err.Error(), "echo") {
+		t.Errorf("err = %v, want it to name the tool", err)
 	}
 }
 
