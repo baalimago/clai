@@ -13,7 +13,9 @@ This directory contains short design notes for key parts of **clai**. Each file 
 - **[streaming.md](./streaming.md)** — How vendor streaming is normalized into a common event stream and consumed by the querier (text deltas, tool calls, stop events, errors).
 - **[openai-responses.md](./openai-responses.md)** — OpenAI text routing: the Responses API (`/v1/responses`) is the default on the canonical OpenAI host, with an explicit `/chat/completions` opt-out, a conservative legacy default for custom proxy hosts, and a codex-only redirect; covers feature parity (reasoning effort + `summary` streaming, stateless reasoning continuity via `include`/encrypted-reasoning replay, image `input_image`, structured output via `text.format`, parallel tool-call keying, sampling rules with model-id normalization, `store:false`) and stream termination.
 - **[tooling.md](./tooling.md)** — Tool registry + allow-list selection (`-t/-tools`), tool-call execution loop, and MCP server integration.
+- **[tooling-async.md](./tooling-async.md)** — Addendum to tooling.md: session-bound async command runtime for long-running subprocesses — the `async_cmd` tool family (spawn/status/logs/await/cancel, with `async_cmd_run` as a legacy alias), an in-memory registry plus on-disk stdout/stderr logs, a typed monotonic status lifecycle, and graceful-then-force cleanup of all child processes on session end.
 - **[skills.md](./skills.md)** — Skill discovery, parsing, precedence, rendering, activation logging, and invocation-scoped tool policy.
+- **[shell-context.md](./shell-context.md)** — Auto-append shell context (`-asc/-add-shell-context <name>`): named JSON definitions in `<configDir>/shellContexts/` mapping template vars to shell commands (per-var timeouts, error/timeout placeholders), rendered via Go `text/template` and injected best-effort into the system prompt; selectable per profile and editable in `clai setup`.
 
 ## Command docs
 
@@ -23,7 +25,7 @@ This directory contains short design notes for key parts of **clai**. Each file 
 - **[photo.md](./photo.md)** — `clai photo`: image generation flow, prompt formatting, vendor routing, and output modes (local/url).
 - **[video.md](./video.md)** — `clai video`: video generation (OpenAI Sora), optional image-to-video prompt parsing, and output modes.
 - **[audio.md](./audio.md)** — `clai audio transcribe`: audio transcription (OpenAI/OpenRouter), local vtt/srt/text/json rendering, ffmpeg split for large files, and the `audio_transcribe` tool bridge.
-- **[tools.md](./tools.md)** — `clai tools` inspection UI: list tools and print JSON schema for one tool.
+- **[tools-command.md](./tools-command.md)** — `clai tools` inspection UI: list tools and print JSON schema for one tool.
 - **[profiles.md](./profiles.md)** — `clai profiles`: lists profile JSONs and prints a small summary; profiles are applied via `-p` flags (see CONFIG).
 - **[setup.md](./setup.md)** — `clai setup` interactive wizard for editing mode configs, vendor model files, profiles, and MCP server configs.
 - **[help.md](./help.md)** — the help system: dispatcher usage on bare `clai`, per-command `-h` (Help() + flags + examples + sub tables), profile docs in `clai profiles -h`.
