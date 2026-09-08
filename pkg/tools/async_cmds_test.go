@@ -317,3 +317,19 @@ func TestAsyncCmdRun_FailedStartDoesNotRegisterOrLeakLogs(t *testing.T) {
 		t.Fatalf("expected no leaked log files in isolated dir, got %d: %v", len(leaked), leaked)
 	}
 }
+
+func TestAsyncCmdSpecifications_WarnThatCommandsMustBeAwaitedInSession(t *testing.T) {
+	runDescription := strings.ToLower(AsyncCmdRun.Specification().Description)
+	for _, required := range []string{"session", "await", "cancel"} {
+		if !strings.Contains(runDescription, required) {
+			t.Errorf("async_cmd description must mention %q lifecycle constraint, got %q", required, runDescription)
+		}
+	}
+
+	awaitDescription := strings.ToLower(AsyncCmdAwait.Specification().Description)
+	for _, required := range []string{"session", "await", "cancel"} {
+		if !strings.Contains(awaitDescription, required) {
+			t.Errorf("async_cmd_await description must mention %q lifecycle constraint, got %q", required, awaitDescription)
+		}
+	}
+}

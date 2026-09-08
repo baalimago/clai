@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestMockTranscriber(t *testing.T) {
@@ -87,4 +88,38 @@ func TestTranscribeQuerier_Query(t *testing.T) {
 			t.Error("expected completion notification suppression")
 		}
 	})
+}
+
+func TestConfigZeroMeansDefault(t *testing.T) {
+	b, err := ResolveBudgets(TranscribeConfig{Model: "whisper-1"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if b.MaxRequestBytes != 25<<20 || b.MaxRequestDuration != 1400*time.Second || b.MaxSpeakers != 8 {
+		t.Errorf("unexpected defaults: %+v", b)
+	}
+	if Default.Transcribe.MaxRequestBytes != 25<<20 || Default.Transcribe.MaxRequestSeconds != 1400 || Default.Transcribe.MaxSpeakers != 8 {
+		t.Errorf("Default must carry the README defaults for config migration: %+v", Default.Transcribe)
+	}
+	custom, err := ResolveBudgets(TranscribeConfig{MaxRequestBytes: 1 << 20, MaxRequestSeconds: 600, MaxSpeakers: 3})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if custom.MaxRequestBytes != 1<<20 || custom.MaxRequestDuration != 600*time.Second || custom.MaxSpeakers != 3 {
+		t.Errorf("unexpected custom budgets: %+v", custom)
+	}
+}
+
+func TestConfigRejectsNegativeBudgets(t *testing.T) {
+	cases := map[string]TranscribeConfig{
+		"max-request-bytes":   {MaxRequestBytes: -1},
+		"max-request-seconds": {MaxRequestSeconds: -1},
+		"max-speakers":        {MaxSpeakers: -1},
+	}
+	for field, conf := range cases {
+		_, err := ResolveBudgets(conf)
+		if err == nil || !strings.Contains(err.Error(), field) {
+			t.Errorf("expected error naming %q, got %v", field, err)
+		}
+	}
 }

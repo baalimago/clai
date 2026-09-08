@@ -149,3 +149,6 @@ func truncate(b []byte, limit int) string {
 	}
 	return string(b[:limit]) + "…"
 }
+
+// Endpoint reports the request URL; the calibration cache keys on it.
+func (t *Transcriber) Endpoint() string { return t.URL }

@@ -14,6 +14,49 @@ type TranscribeConfig struct {
 	Model        string `json:"model"`
 	OutputFormat string `json:"output-format"`
 	Parallelism  int    `json:"parallelism"`
+	// Request budgets for calibrated diarization; zero means the default,
+	// negative is a load-time error (see architecture/audio.md)
+	MaxRequestBytes   int64 `json:"max-request-bytes"`
+	MaxRequestSeconds int   `json:"max-request-seconds"`
+	MaxSpeakers       int   `json:"max-speakers"`
+	// StrictSpeakers turns unresolved material speaker labels into an error
+	// instead of unknown-N output
+	StrictSpeakers bool `json:"strict-speakers"`
+}
+
+// Budgets are the resolved request limits every calibrated request is
+// checked against before upload.
+type Budgets struct {
+	MaxRequestBytes    int64
+	MaxRequestDuration time.Duration
+	MaxSpeakers        int
+}
+
+// ResolveBudgets applies the zero-means-default, negative-is-error rule.
+func ResolveBudgets(c TranscribeConfig) (Budgets, error) {
+	b := Budgets{
+		MaxRequestBytes:    Default.Transcribe.MaxRequestBytes,
+		MaxRequestDuration: time.Duration(Default.Transcribe.MaxRequestSeconds) * time.Second,
+		MaxSpeakers:        Default.Transcribe.MaxSpeakers,
+	}
+	switch {
+	case c.MaxRequestBytes < 0:
+		return Budgets{}, fmt.Errorf("transcribe.max-request-bytes must not be negative, got: %v", c.MaxRequestBytes)
+	case c.MaxRequestSeconds < 0:
+		return Budgets{}, fmt.Errorf("transcribe.max-request-seconds must not be negative, got: %v", c.MaxRequestSeconds)
+	case c.MaxSpeakers < 0:
+		return Budgets{}, fmt.Errorf("transcribe.max-speakers must not be negative, got: %v", c.MaxSpeakers)
+	}
+	if c.MaxRequestBytes > 0 {
+		b.MaxRequestBytes = c.MaxRequestBytes
+	}
+	if c.MaxRequestSeconds > 0 {
+		b.MaxRequestDuration = time.Duration(c.MaxRequestSeconds) * time.Second
+	}
+	if c.MaxSpeakers > 0 {
+		b.MaxSpeakers = c.MaxSpeakers
+	}
+	return b, nil
 }
 
 // Configurations is the audioConfig.json schema.
@@ -23,9 +66,12 @@ type Configurations struct {
 
 var Default = Configurations{
 	Transcribe: TranscribeConfig{
-		Model:        "whisper-1",
-		OutputFormat: string(FormatVTT),
-		Parallelism:  3,
+		Model:             "whisper-1",
+		OutputFormat:      string(FormatVTT),
+		Parallelism:       3,
+		MaxRequestBytes:   MaxRequestBytes,
+		MaxRequestSeconds: 1400,
+		MaxSpeakers:       8,
 	},
 }
 

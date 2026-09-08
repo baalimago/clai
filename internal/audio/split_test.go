@@ -112,6 +112,10 @@ func (f *fakeRunner) Run(ctx context.Context, name string, args ...string) (stri
 			return "", f.ffmpegOut, f.ffmpegErr
 		}
 		pattern := args[len(args)-1]
+		if !strings.Contains(pattern, "%") {
+			// not a segment split (e.g. a silencedetect pass): nothing to write
+			return "", "", nil
+		}
 		f.mu.Lock()
 		f.chunkDir = filepath.Dir(pattern)
 		f.mu.Unlock()
@@ -276,15 +280,18 @@ func TestSplitter_ChunkFailureCancelsSiblings(t *testing.T) {
 	}
 }
 
-func TestSplitter_DiarizeWarning(t *testing.T) {
-	splitter, _, _, statusOut, input := newOversizedSplitter(t)
-	splitter.Model = "gpt-4o-transcribe-diarize"
-
-	if _, err := splitter.Transcribe(context.Background(), input); err != nil {
+func TestSplitter_DiarizeRoutesToCalibration(t *testing.T) {
+	// Oversized diarized files no longer take the plain split path
+	p := &voiceProvider{truth: smallMeeting()}
+	s, status, input := newCalibratedSplitter(t, p, smallBudgetConf("gpt-4o-transcribe-diarize"))
+	if _, err := s.Transcribe(context.Background(), input); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(statusOut.String(), "speaker labels") {
-		t.Errorf("expected speaker-label drift warning, got: %q", statusOut.String())
+	if !strings.Contains(status.String(), "▸ calibrated diarization") || strings.Contains(status.String(), "labels may drift") {
+		t.Errorf("expected the calibration path, got:\n%v", status.String())
+	}
+	if p.requests() == 0 {
+		t.Error("expected calibrated requests")
 	}
 }
 
@@ -429,10 +436,45 @@ func TestExecRunner(t *testing.T) {
 	})
 }
 
-// TestSplitter_NonPositiveDuration_DistinctFromParseError pins the phase-8 D6
-// repair: a well-formed but non-positive ffprobe duration is named directly
-// instead of falling into the parse-failure branch and rendering
-// "error: <nil>" (worklog 2026-09-05-error-propagation, phase 8).
+// TestSplitterPreservesExistingPaths guards the pre-calibration behavior:
+// sub-limit files pass straight through and oversized non-diarized files
+// take the ffmpeg segment path, regardless of the new budget fields.
+func TestSplitterPreservesExistingPaths(t *testing.T) {
+	t.Run("sub-limit passes through", func(t *testing.T) {
+		trans := &fakeTranscriber{}
+		runner := &fakeRunner{}
+		splitter := NewSplitter(trans, runner)
+		splitter.StatusOut = &bytes.Buffer{}
+		input := sparseFile(t, 1<<20)
+		if _, err := splitter.Transcribe(context.Background(), input); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if runner.callCount() != 0 || trans.callCount() != 1 {
+			t.Errorf("expected direct transcription, got runner %v trans %v", runner.calls, trans.calls)
+		}
+	})
+	t.Run("oversized non-diarized splits into segments", func(t *testing.T) {
+		splitter, trans, runner, _, input := newOversizedSplitter(t)
+		splitter.Model = "whisper-1"
+		got, err := splitter.Transcribe(context.Background(), input)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(got) != 3 || trans.callCount() != 3 {
+			t.Errorf("expected 3 chunk transcriptions, got %v segments, %v calls", len(got), trans.callCount())
+		}
+		segmentCalls := 0
+		for _, c := range runner.calls {
+			if c[0] == "ffmpeg" && strings.Contains(strings.Join(c, " "), "-f segment") {
+				segmentCalls++
+			}
+		}
+		if segmentCalls != 1 {
+			t.Errorf("expected one segment split call, got %v", runner.calls)
+		}
+	})
+}
+
 func TestSplitter_NonPositiveDuration_DistinctFromParseError(t *testing.T) {
 	for _, tt := range []struct {
 		name    string

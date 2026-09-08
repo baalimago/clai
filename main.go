@@ -56,7 +56,7 @@ func commands() map[string]cmd.Command {
 			ConfigPrep: configPrep,
 		}),
 		"audio|a": audio.Command(audio.CommandDeps{
-			ConfigPrep: configPrep,
+			ConfigPrep: func() (string, []string, error) { return setup.ConfigRunPrep(true) },
 		}),
 		"setup|s":        setup.Command(),
 		"version":        version.Command(),
@@ -97,6 +97,7 @@ Examples:
   - clai -pm dall-e-2 photo A cat in space
   - docker logs example | clai -I LOG q "Find errors in these logs: LOG"
   - clai a t meeting.wav | clai q "Summarize these meeting notes: {}"
+  - clai a t -am gpt-4o-transcribe-diarize -strict-speakers long-meeting.wav
   - clai c list
   - clai -r c dirv2
   - clai c help

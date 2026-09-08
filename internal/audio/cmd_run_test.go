@@ -11,7 +11,7 @@ import (
 
 func Test_Command_tree(t *testing.T) {
 	deps := CommandDeps{
-		ConfigPrep: func() (string, error) { return t.TempDir(), nil },
+		ConfigPrep: func() (string, []string, error) { return t.TempDir(), nil, nil },
 	}
 	c := Command(deps)
 	if c.Describe() == "" || !strings.Contains(c.Help(), "t|transcribe") {

@@ -22,7 +22,10 @@ func setupTranscribeQuerier(confDir string, f *Flags, args []string) (models.Que
 		cleanup()
 		return nil, fmt.Errorf("failed to load configs: %w", err)
 	}
-	ApplyFlagOverrides(&aConf, f)
+	if err := ApplyFlagOverrides(&aConf, f); err != nil {
+		cleanup()
+		return nil, err
+	}
 	q, err := CreateQuerier(aConf, filePath, cleanup)
 	if err != nil {
 		cleanup()

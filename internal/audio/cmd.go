@@ -21,6 +21,10 @@ Transcribe flags (placed after the verb):
   -am, -audio-model     Set the transcription model (default in audioConfig.json)
   -af, -audio-format    Set the transcript output format: vtt|srt|text|json
   -parallelism          Max parallel requests when a large file is split into chunks
+  -max-request-bytes    Per-request upload cap in bytes for split files (default 25 MiB)
+  -max-request-seconds  Per-request audio cap for calibrated diarization (default 1400)
+  -max-speakers         Registry cap for calibrated diarization (default 8)
+  -strict-speakers      Fail instead of rendering unknown-N for unresolved speakers
 
 Examples:
   clai audio transcribe meeting.wav
@@ -28,17 +32,22 @@ Examples:
   cat meeting.wav | clai a t -
 `
 
-// CommandDeps are the composition-root collaborators: config prep lives
-// in internal/setup, which audio cannot import (setup imports audio).
+// CommandDeps are the composition-root collaborators from internal/setup.
+// ConfigPrep defers upgrade announcements: transcribe's stdout is the
+// transcript (architecture/config.md).
 type CommandDeps struct {
-	ConfigPrep func() (confDir string, err error)
+	ConfigPrep func() (confDir string, announcements []string, err error)
 }
 
 // Flags is the audio transcribe flag surface.
 type Flags struct {
-	Model       internal.StringFlag
-	Format      internal.StringFlag
-	Parallelism internal.IntFlag
+	Model             internal.StringFlag
+	Format            internal.StringFlag
+	Parallelism       internal.IntFlag
+	MaxRequestBytes   internal.IntFlag
+	MaxRequestSeconds internal.IntFlag
+	MaxSpeakers       internal.IntFlag
+	StrictSpeakers    internal.BoolFlag
 }
 
 // Register binds the audio flag surface onto fs.
@@ -46,6 +55,10 @@ func (f *Flags) Register(fs *flag.FlagSet) {
 	f.Model.Register(fs, "Set the audio transcription model.", "am", "audio-model")
 	f.Format.Register(fs, "Set the transcript output format: vtt|srt|text|json.", "af", "audio-format")
 	f.Parallelism.Register(fs, "Set max parallel transcription requests for split audio files.", "parallelism")
+	f.MaxRequestBytes.Register(fs, "Set the per-request upload cap in bytes for split audio files.", "max-request-bytes")
+	f.MaxRequestSeconds.Register(fs, "Set the per-request audio duration cap in seconds for calibrated diarization.", "max-request-seconds")
+	f.MaxSpeakers.Register(fs, "Set the maximum number of speaker identities for calibrated diarization.", "max-speakers")
+	f.StrictSpeakers.Register(fs, "Fail instead of rendering unknown-N when a material speaker cannot be resolved.", "strict-speakers")
 }
 
 // Command builds the audio command tree.
@@ -84,9 +97,12 @@ Examples:
 		Raw: raw,
 	}
 	transcribe.OnSetup = func(_ context.Context, tc *internal.Command) error {
-		confDir, err := deps.ConfigPrep()
+		confDir, announcements, err := deps.ConfigPrep()
 		if err != nil {
 			return err
+		}
+		for _, msg := range announcements {
+			fmt.Fprintln(os.Stderr, msg)
 		}
 		q, err := setupTranscribeQuerier(confDir, f, tc.Args()[1:])
 		if err != nil {
@@ -113,8 +129,9 @@ Examples:
 }
 
 // ApplyFlagOverrides applies the CLI flag values onto the file-loaded
-// configuration (flags > file > default).
-func ApplyFlagOverrides(aConf *Configurations, f *Flags) {
+// configuration (flags > file > default). A negative budget flag is an
+// error naming the flag and its field.
+func ApplyFlagOverrides(aConf *Configurations, f *Flags) error {
 	if f.Model.Changed() {
 		aConf.Transcribe.Model = f.Model.Value()
 	}
@@ -124,4 +141,25 @@ func ApplyFlagOverrides(aConf *Configurations, f *Flags) {
 	if f.Parallelism.Changed() {
 		aConf.Transcribe.Parallelism = f.Parallelism.Value()
 	}
+	for _, b := range []struct {
+		flag  *internal.IntFlag
+		name  string
+		apply func(int)
+	}{
+		{&f.MaxRequestBytes, "max-request-bytes", func(v int) { aConf.Transcribe.MaxRequestBytes = int64(v) }},
+		{&f.MaxRequestSeconds, "max-request-seconds", func(v int) { aConf.Transcribe.MaxRequestSeconds = v }},
+		{&f.MaxSpeakers, "max-speakers", func(v int) { aConf.Transcribe.MaxSpeakers = v }},
+	} {
+		if !b.flag.Changed() {
+			continue
+		}
+		if b.flag.Value() < 0 {
+			return fmt.Errorf("flag -%v: transcribe.%v must not be negative, got %v", b.name, b.name, b.flag.Value())
+		}
+		b.apply(b.flag.Value())
+	}
+	if f.StrictSpeakers.Changed() {
+		aConf.Transcribe.StrictSpeakers = f.StrictSpeakers.Value()
+	}
+	return nil
 }

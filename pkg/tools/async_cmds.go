@@ -495,7 +495,7 @@ func (t *asyncCmdRunTool) CallWithContext(ctx context.Context, input pub_models.
 func (t *asyncCmdRunTool) Specification() pub_models.Specification {
 	return pub_models.Specification{
 		Name:        "async_cmd",
-		Description: "Start a subprocess asynchronously without waiting for completion. Executes the command directly, not through an implicit shell. Some commands are refused by configured policy and must not be retried.",
+		Description: "Start a session-owned subprocess asynchronously. Ending the session cancels every running async command, so await it before responding unless cancellation is intended. Executes directly without an implicit shell. Some commands are refused by configured policy and must not be retried.",
 		Inputs: &pub_models.InputSchema{
 			Type:     "object",
 			Required: []string{"command"},
@@ -602,7 +602,7 @@ func (t *asyncCmdAwaitTool) CallWithContext(ctx context.Context, input pub_model
 func (t *asyncCmdAwaitTool) Specification() pub_models.Specification {
 	return pub_models.Specification{
 		Name:        "async_cmd_await",
-		Description: "Wait for one or more explicit async command IDs to reach terminal state.",
+		Description: "Await explicit async command IDs before ending the session; session end cancels commands that are still running.",
 		Inputs: &pub_models.InputSchema{
 			Type:     "object",
 			Required: []string{"async_cmd_ids", "timeout_seconds"},
