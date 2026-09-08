@@ -229,6 +229,23 @@ func Test_goldenFile_AUDIO_config_cascade(t *testing.T) {
 	})
 }
 
+func Test_goldenFile_AUDIO_config_upgrade_notice_stays_off_stdout(t *testing.T) {
+	confDir := setupMainTestConfigDir(t)
+	audioFile := writeE2EAudioFile(t)
+	// A pre-upgrade file lacks the budget fields; the transcript is stdout
+	fileConf := `{"transcribe": {"model": "or:some/model", "output-format": "text"}}`
+	if err := os.WriteFile(filepath.Join(confDir, "audioConfig.json"), []byte(fileConf), 0o644); err != nil {
+		t.Fatalf("WriteFile(audioConfig.json): %v", err)
+	}
+
+	status, stdout, stderr := runAudio(t, "a t -am test "+audioFile)
+
+	testboil.FailTestIfDiff(t, status, 0)
+	testboil.FailTestIfDiff(t, stdout, wantMockText)
+	testboil.AssertStringContains(t, stderr, "added new field(s) to audioConfig.json")
+	testboil.AssertStringContains(t, stderr, "transcribe.max-request-bytes")
+}
+
 func Test_goldenFile_AUDIO_corrupt_config(t *testing.T) {
 	confDir := setupMainTestConfigDir(t)
 	audioFile := writeE2EAudioFile(t)

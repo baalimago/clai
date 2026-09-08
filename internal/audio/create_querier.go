@@ -39,8 +39,15 @@ func createSplitter(conf Configurations) (*Splitter, error) {
 	default:
 		return nil, fmt.Errorf("failed to find audio transcriber for model: '%v', supported routes: 'or:' prefix (OpenRouter), model containing 'whisper' or 'transcribe' (OpenAI), 'test'/'mock_test' (mock)", model)
 	}
+	budgets, err := ResolveBudgets(conf.Transcribe)
+	if err != nil {
+		return nil, err
+	}
 	splitter := NewSplitter(transcriber, ExecRunner{})
 	splitter.Model = model
+	splitter.Budgets = budgets
+	splitter.MaxBytes = budgets.MaxRequestBytes
+	splitter.Strict = conf.Transcribe.StrictSpeakers
 	if conf.Transcribe.Parallelism > 0 {
 		splitter.Parallelism = conf.Transcribe.Parallelism
 	}

@@ -95,8 +95,9 @@ frame plus one line above the header (`go_away_boilerplate/pkg/table`
 `ClearTermTo` clears `upTo+1` lines), so the announcement block ends with a
 blank separator line that absorbs the overshoot; without it the first redraw
 would wipe the announcement. Deep multi-table navigation can still scroll it
-off (each `Run()` exit consumes one line). All other commands announce
-immediately.
+off (each `Run()` exit consumes one line). `audio transcribe` also defers:
+its stdout is the transcript, so the announcements go to stderr before the
+querier is built. All other commands announce immediately.
 
 Raw (machine-readable) runs — `-r`/`-raw` — are read-only: the command adapter
 sets `utils.ReadonlyConfig` before any load, and the loaders fill missing

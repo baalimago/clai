@@ -14,7 +14,9 @@ func TestApplyFlagOverridesForAudio(t *testing.T) {
 	}
 	t.Run("default flags leave file values", func(t *testing.T) {
 		conf := fileConf
-		ApplyFlagOverrides(&conf, &Flags{})
+		if err := ApplyFlagOverrides(&conf, &Flags{}); err != nil {
+			t.Fatal(err)
+		}
 		if conf != fileConf {
 			t.Errorf("expected file config untouched, got: %+v", conf)
 		}
@@ -30,7 +32,9 @@ func TestApplyFlagOverridesForAudio(t *testing.T) {
 				t.Fatalf("Set(%q): %v", sv.val, err)
 			}
 		}
-		ApplyFlagOverrides(&conf, f)
+		if err := ApplyFlagOverrides(&conf, f); err != nil {
+			t.Fatal(err)
+		}
 		if conf.Transcribe.Model != "from-flag" {
 			t.Errorf("expected flag model, got: %v", conf.Transcribe.Model)
 		}

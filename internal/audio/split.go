@@ -11,18 +11,19 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/baalimago/clai/internal/audio/generic"
-
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
+	"github.com/baalimago/clai/internal/utils"
 )
 
 const (
-	// MaxRequestBytes is the vendor single-request size cap (OpenAI: 25 MB)
-	MaxRequestBytes  = 25 << 20
-	targetChunkBytes = 20 << 20
-	ffprobeBin       = "ffprobe"
-	ffmpegBin        = "ffmpeg"
+	// MaxRequestBytes is the default per-request upload cap (OpenAI: 25 MB)
+	MaxRequestBytes = 25 << 20
+	// nonDiarizedChunkRatio sizes plain split chunks against the byte cap
+	nonDiarizedChunkRatio = 0.8
+	ffprobeBin            = "ffprobe"
+	ffmpegBin             = "ffmpeg"
 )
 
 type Transcriber interface {
@@ -62,6 +63,13 @@ type Splitter struct {
 	MaxBytes    int64
 	Model       string
 	StatusOut   io.Writer
+	// Calibrated diarization (oversized files with a diarize model)
+	Budgets Budgets
+	Strict  bool
+	// RequestTranscriber overrides the file-based Transcriber for
+	// calibrated requests; nil adapts Transcriber
+	RequestTranscriber  RequestTranscriber
+	MaxRequestsPerChunk int
 }
 
 func NewSplitter(transcriber Transcriber, runner CommandRunner) *Splitter {
@@ -86,62 +94,70 @@ func (s *Splitter) Transcribe(ctx context.Context, filePath string) ([]Segment, 
 	if info.Size() <= maxBytes {
 		return s.Transcriber.Transcribe(ctx, filePath)
 	}
+	if strings.Contains(s.Model, "diarize") {
+		return s.calibrate(ctx, filePath, info.Size(), maxBytes)
+	}
 	return s.splitTranscribeStitch(ctx, filePath, info.Size(), maxBytes)
 }
 
-// status writes a line to StatusOut (stderr in production), keeping stdout
-// reserved for the rendered transcript
-func (s *Splitter) status(mu *sync.Mutex, msg string) {
-	out := s.StatusOut
-	if out == nil {
-		out = os.Stderr
+// calibrate routes an oversized diarized file through the coordinator.
+func (s *Splitter) calibrate(ctx context.Context, filePath string, size, maxBytes int64) ([]Segment, error) {
+	if err := s.requireBinaries(filePath, maxBytes); err != nil {
+		return nil, err
 	}
-	mu.Lock()
-	defer mu.Unlock()
-	fmt.Fprintln(out, msg)
+	budgets := s.Budgets
+	if budgets.MaxRequestBytes == 0 {
+		b, err := ResolveBudgets(Default.Transcribe)
+		if err != nil {
+			return nil, err
+		}
+		budgets = b
+	}
+	budgets.MaxRequestBytes = maxBytes
+	rt := s.RequestTranscriber
+	if rt == nil {
+		rt = FileTranscriber{s.Transcriber}
+	}
+	endpoint := ""
+	if e, ok := s.Transcriber.(interface{ Endpoint() string }); ok {
+		endpoint = e.Endpoint()
+	}
+	c := &Coordinator{
+		Runner:              s.Runner,
+		Budgets:             budgets,
+		Transcriber:         rt,
+		Parallelism:         s.Parallelism,
+		Strict:              s.Strict,
+		MaxRequestsPerChunk: s.MaxRequestsPerChunk,
+		Model:               s.Model,
+		Endpoint:            endpoint,
+		Options:             "diarized_json",
+		StatusOut:           s.StatusOut,
+	}
+	return c.Run(ctx, filePath)
 }
 
-func (s *Splitter) notice(mu *sync.Mutex, msg string) {
-	if ancli.UseColor {
-		msg = ancli.ColoredMessage(ancli.CYAN, msg)
+func (s *Splitter) requireBinaries(filePath string, maxBytes int64) error {
+	for _, bin := range []string{ffmpegBin, ffprobeBin} {
+		if _, err := s.Runner.LookPath(bin); err != nil {
+			return fmt.Errorf("'%v' is required to transcribe files over %.0f MB, but it wasn't found: %w. Install it, or split the file manually: 'ffmpeg -i %v -f segment -segment_time 600 -c copy chunk_%%03d%v'",
+				bin, toMB(maxBytes), err, filePath, filepath.Ext(filePath))
+		}
 	}
-	s.status(mu, msg)
-}
-
-func (s *Splitter) warn(mu *sync.Mutex, msg string) {
-	if ancli.UseColor {
-		msg = ancli.ColoredMessage(ancli.YELLOW, msg)
-	}
-	s.status(mu, msg)
-}
-
-func (s *Splitter) chunkDone(mu *sync.Mutex, msg string) {
-	if ancli.UseColor {
-		msg = ancli.ColoredMessage(ancli.GREEN, msg)
-	}
-	s.status(mu, msg)
+	return nil
 }
 
 func (s *Splitter) splitTranscribeStitch(ctx context.Context, filePath string, size, maxBytes int64) ([]Segment, error) {
-	var statusMu sync.Mutex
-	for _, bin := range []string{ffmpegBin, ffprobeBin} {
-		if _, err := s.Runner.LookPath(bin); err != nil {
-			return nil, fmt.Errorf("'%v' is required to transcribe files over %.0f MB, but it wasn't found: %w. Install it, or split the file manually: 'ffmpeg -i %v -f segment -segment_time 600 -c copy chunk_%%03d%v'",
-				bin, toMB(maxBytes), err, filePath, filepath.Ext(filePath))
-		}
+	if err := s.requireBinaries(filePath, maxBytes); err != nil {
+		return nil, err
 	}
 	duration, err := s.probeDuration(ctx, filePath)
 	if err != nil {
 		return nil, err
 	}
+	targetChunkBytes := int64(float64(maxBytes) * nonDiarizedChunkRatio)
 	numChunks := int(math.Ceil(float64(size) / float64(targetChunkBytes)))
 	segmentTime := duration / float64(numChunks)
-	s.notice(&statusMu, fmt.Sprintf("%v is %.1f MB (> %.0f MB limit) → splitting via ffmpeg: %v chunks × ~%.1f min",
-		filePath, toMB(size), toMB(maxBytes), numChunks, segmentTime/60))
-	if strings.Contains(s.Model, "diarize") {
-		s.warn(&statusMu, "diarization speaker labels are per-request: chunk 1's 'A' may not be chunk 2's 'A', labels may drift across chunks")
-	}
-
 	tempDir, err := os.MkdirTemp("", "clai-audio-split-*")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create chunk temp dir: %w", err)
@@ -151,12 +167,23 @@ func (s *Splitter) splitTranscribeStitch(ctx context.Context, filePath string, s
 	if err != nil {
 		return nil, err
 	}
-	s.verifyChunkOffsets(ctx, chunks, segmentTime, &statusMu)
-	return s.transcribePool(ctx, chunks, segmentTime, &statusMu)
+	spans := make([]SourceInterval, len(chunks))
+	for i := range chunks {
+		spans[i] = SourceInterval{Start: time.Duration(float64(i) * segmentTime * float64(time.Second)), End: time.Duration(float64(i+1) * segmentTime * float64(time.Second))}
+	}
+	board := newProgressBoard(s.StatusOut, utils.IsTerminalWriter(s.StatusOut), fmt.Sprintf("splitting via ffmpeg  %v  %.1f MB > %.0f MB limit  %v chunks × %.1f min  %v workers",
+		filepath.Base(filePath), toMB(size), toMB(maxBytes), numChunks, segmentTime/60, s.workers()), spans)
+	s.verifyChunkOffsets(ctx, chunks, segmentTime, board)
+	return s.transcribePool(ctx, chunks, segmentTime, board)
 }
 
 func (s *Splitter) probeDuration(ctx context.Context, filePath string) (float64, error) {
-	stdout, stderr, err := s.Runner.Run(ctx, ffprobeBin,
+	return probeDuration(ctx, s.Runner, filePath)
+}
+
+// probeDuration returns the container duration in seconds via ffprobe.
+func probeDuration(ctx context.Context, runner CommandRunner, filePath string) (float64, error) {
+	stdout, stderr, err := runner.Run(ctx, ffprobeBin,
 		"-v", "error",
 		"-show_entries", "format=duration",
 		"-of", "default=noprint_wrappers=1:nokey=1",
@@ -207,13 +234,14 @@ func (s *Splitter) split(ctx context.Context, filePath, tempDir string, segmentT
 
 // verifyChunkOffsets best-effort compares the planned i×segmentTime starts
 // against ffprobe-measured chunk durations, warning once on drift > 1 s
-func (s *Splitter) verifyChunkOffsets(ctx context.Context, chunks []string, segmentTime float64, statusMu *sync.Mutex) {
+func (s *Splitter) verifyChunkOffsets(ctx context.Context, chunks []string, segmentTime float64, board *progressBoard) {
 	measuredStart := 0.0
 	for i, chunk := range chunks {
 		planned := float64(i) * segmentTime
 		if diff := math.Abs(measuredStart - planned); diff > 1 {
-			s.warn(statusMu, fmt.Sprintf("chunk %v timestamp drift: planned start %.1f s, measured %.1f s (%.1f s drift), stitched timestamps may be off",
-				i, planned, measuredStart, diff))
+			board.update(i, func(r *boardRow) {
+				r.mark, r.state = markWarn, fmt.Sprintf("timestamp drift %.1f s, stitched timestamps may be off", diff)
+			})
 			return
 		}
 		stdout, _, err := s.Runner.Run(ctx, ffprobeBin,
@@ -232,13 +260,23 @@ func (s *Splitter) verifyChunkOffsets(ctx context.Context, chunks []string, segm
 	}
 }
 
-func (s *Splitter) transcribePool(ctx context.Context, chunks []string, segmentTime float64, statusMu *sync.Mutex) ([]Segment, error) {
+func (s *Splitter) workers() int {
+	if s.Parallelism <= 0 {
+		return 3
+	}
+	return s.Parallelism
+}
+
+func (s *Splitter) transcribePool(ctx context.Context, chunks []string, segmentTime float64, board *progressBoard) ([]Segment, error) {
 	poolCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	parallelism := s.Parallelism
-	if parallelism <= 0 {
-		parallelism = 3
-	}
+	go board.animate(poolCtx)
+	started := time.Now()
+	board.setPhase(fmt.Sprintf("transcribing · %v chunks · %v workers", len(chunks), s.workers()))
+	board.setFooterFunc(func(rows []boardRow) string {
+		return fmt.Sprintf("in flight %v · %v elapsed", inFlight(rows), time.Since(started).Round(time.Second))
+	})
+	parallelism := s.workers()
 	sem := make(chan struct{}, parallelism)
 	results := make([][]Segment, len(chunks))
 	var wg sync.WaitGroup
@@ -254,8 +292,10 @@ func (s *Splitter) transcribePool(ctx context.Context, chunks []string, segmentT
 				return
 			}
 			defer func() { <-sem }()
+			board.update(i, func(r *boardRow) { r.active, r.state, r.started = true, "transcribing", time.Now() })
 			segs, err := s.Transcriber.Transcribe(poolCtx, chunk)
 			if err != nil {
+				board.update(i, func(r *boardRow) { r.active, r.mark, r.state = false, markWarn, "request failed" })
 				errMu.Lock()
 				if firstErr == nil {
 					firstErr = fmt.Errorf("failed to transcribe chunk %v/%v: %w", i+1, len(chunks), err)
@@ -265,10 +305,17 @@ func (s *Splitter) transcribePool(ctx context.Context, chunks []string, segmentT
 				return
 			}
 			results[i] = Offset(segs, generic.SecondsToDuration(float64(i)*segmentTime))
-			s.chunkDone(statusMu, fmt.Sprintf("chunk %v/%v transcribed", i+1, len(chunks)))
+			board.update(i, func(r *boardRow) {
+				r.active, r.elapsed, r.state = false, time.Since(r.started), fmt.Sprintf("transcribed · %v segments", len(segs))
+				if r.mark != markWarn {
+					r.mark = markDone
+				}
+			})
 		}(i, chunk)
 	}
 	wg.Wait()
+	board.setPhase("stitching")
+	board.finish(fmt.Sprintf("%v chunks · %v elapsed", len(chunks), time.Since(started).Round(time.Second)))
 	if firstErr != nil {
 		return nil, firstErr
 	}

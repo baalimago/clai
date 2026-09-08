@@ -13,6 +13,9 @@ import (
 
 func setupMainTestConfigDir(t *testing.T) string {
 	t.Helper()
+	// A developer's key would make every query run fetch the live OpenRouter
+	// catalog; keyless CI never pays that, so neither should local runs.
+	t.Setenv("OPENROUTER_API_KEY", "")
 
 	confDir := t.TempDir()
 	required := []string{
