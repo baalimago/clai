@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/baalimago/clai/pkg/text/models"
-	pkgtools "github.com/baalimago/clai/pkg/tools"
 )
 
 // recordingUsageRecorder is a thread-safe fake CallUsageRecorder. err, when
@@ -162,7 +161,6 @@ func TestAgent_WithToolCallRecorder(t *testing.T) {
 // carries the derived error, and the run still completes normally.
 func TestAgent_WithToolCallRecorder_Error(t *testing.T) {
 	t.Setenv("CLAI_DISABLE_COST_ERR_LOG_GOROUTINE", "1")
-	t.Cleanup(pkgtools.ResetCmdBanListForTests)
 
 	marker := filepath.Join(t.TempDir(), "banned-marker")
 	t.Setenv("CLAI_MOCK_CMD_COMMAND", "touch "+marker)

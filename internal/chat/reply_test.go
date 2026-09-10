@@ -109,3 +109,82 @@ func TestSaveAsPreviousQuery_DoesNotCreateDuplicateConversationForExistingChat(t
 		t.Fatalf("expected persisted conversation %q, got %q", "existing-chat.json", conversationFiles[0])
 	}
 }
+
+func labelledChat(id string, msgs ...pub_models.Message) pub_models.Chat {
+	return pub_models.Chat{
+		ID:        id,
+		Created:   time.Date(2026, 9, 9, 8, 0, 0, 0, time.UTC),
+		Title:     "T",
+		Summary:   "S",
+		SummaryAt: time.Date(2026, 9, 9, 9, 0, 0, 0, time.UTC),
+		Messages:  msgs,
+	}
+}
+
+func assertLabelled(t *testing.T, got pub_models.Chat, want pub_models.Chat) {
+	t.Helper()
+	if got.Title != want.Title || got.Summary != want.Summary || !got.SummaryAt.Equal(want.SummaryAt) {
+		t.Fatalf("label fields lost: got title=%q summary=%q at=%v, want title=%q summary=%q at=%v",
+			got.Title, got.Summary, got.SummaryAt, want.Title, want.Summary, want.SummaryAt)
+	}
+}
+
+func TestSave_roundTripsTitleSummary(t *testing.T) {
+	convDir := t.TempDir()
+	want := labelledChat("labelled", pub_models.Message{Role: "user", Content: "hi"})
+	if err := Save(convDir, want); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, err := FromPath(filepath.Join(convDir, "labelled.json"))
+	if err != nil {
+		t.Fatalf("FromPath: %v", err)
+	}
+	assertLabelled(t, got, want)
+}
+
+func TestSaveAsPreviousQuery_mirrorCarriesFields(t *testing.T) {
+	confDir := t.TempDir()
+	want := labelledChat("source", pub_models.Message{Role: "user", Content: "hi"}, pub_models.Message{Role: "assistant", Content: "yo"})
+	if err := SaveAsPreviousQuery(confDir, want); err != nil {
+		t.Fatalf("SaveAsPreviousQuery: %v", err)
+	}
+	mirror, err := LoadPrevQuery(confDir)
+	if err != nil {
+		t.Fatalf("LoadPrevQuery: %v", err)
+	}
+	if mirror.ID != globalScopeChatID {
+		t.Fatalf("mirror id = %q", mirror.ID)
+	}
+	assertLabelled(t, mirror, want)
+}
+
+func TestSaveAsPreviousQuery_promotionCarriesFields(t *testing.T) {
+	confDir := t.TempDir()
+	want := labelledChat("",
+		pub_models.Message{Role: "system", Content: "sys"},
+		pub_models.Message{Role: "user", Content: "hi"},
+		pub_models.Message{Role: "assistant", Content: "yo"},
+	)
+	if err := SaveAsPreviousQuery(confDir, want); err != nil {
+		t.Fatalf("SaveAsPreviousQuery: %v", err)
+	}
+	entries, err := os.ReadDir(filepath.Join(confDir, "conversations"))
+	if err != nil {
+		t.Fatalf("ReadDir: %v", err)
+	}
+	promoted := 0
+	for _, entry := range entries {
+		if entry.IsDir() || entry.Name() == "globalScope.json" || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		got, err := FromPath(filepath.Join(confDir, "conversations", entry.Name()))
+		if err != nil {
+			t.Fatalf("FromPath(%q): %v", entry.Name(), err)
+		}
+		assertLabelled(t, got, want)
+		promoted++
+	}
+	if promoted != 1 {
+		t.Fatalf("expected exactly one promoted conversation, got %d", promoted)
+	}
+}

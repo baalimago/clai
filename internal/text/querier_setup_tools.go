@@ -103,7 +103,9 @@ func findConfiguredMcpServers(filePaths []string) ([]pub_models.McpServer, error
 // setupMcpManager loads MCP server configurations from a directory.
 // Each file inside the directory should contain a single MCP server configuration.
 // Every server is started and its tools registered with a prefix of the filename.
-// If the directory is missing, an error is returned.
+// If the directory is missing, an error is returned. With
+// userConf.SkipAmbientMcpServers the directory is never read and only
+// userConf.McpServers reach the manager (D18).
 // sink receives every server's stderr lines; on setup failure the buffered
 // error lines are flushed to stderr so the failure reason stays visible.
 //
@@ -114,13 +116,16 @@ func findConfiguredMcpServers(filePaths []string) ([]pub_models.McpServer, error
 // return, so a caller whose task depends on the server can see that it is
 // absent (worklog 2026-09-05-error-propagation, D13).
 func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configurations, sink mcp.ServerLogSink) (map[string]pub_models.LLMTool, error) {
-	if _, err := os.Stat(mcpServersDir); os.IsNotExist(err) {
-		return nil, fmt.Errorf("MCP servers directory not found at %s. If you want MCP server support, create one using 'clai setup' and select option 3", mcpServersDir)
-	}
-
-	files, err := filepath.Glob(filepath.Join(mcpServersDir, "*.json"))
-	if err != nil {
-		return nil, fmt.Errorf("failed to list mcp server configs: %w", err)
+	var files []string
+	if !userConf.SkipAmbientMcpServers {
+		if _, err := os.Stat(mcpServersDir); os.IsNotExist(err) {
+			return nil, fmt.Errorf("MCP servers directory not found at %s. If you want MCP server support, create one using 'clai setup' and select option 3", mcpServersDir)
+		}
+		var err error
+		files, err = filepath.Glob(filepath.Join(mcpServersDir, "*.json"))
+		if err != nil {
+			return nil, fmt.Errorf("failed to list mcp server configs: %w", err)
+		}
 	}
 
 	// Filter MCP servers based on profile tools

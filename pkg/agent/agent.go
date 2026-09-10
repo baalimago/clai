@@ -198,9 +198,10 @@ func WithToolGlobs(globs ...string) Option {
 // are refused before spawn and the refusal names the matched entry. The
 // default is empty, which keeps all tools fully permissive.
 //
-// The policy is carried through each query context, so agents with distinct
-// lists can run concurrently in one process. Direct tool calls outside an
-// agent query use the package-level fallback policy.
+// The policy is carried on each tool-call context of the agent's own
+// querier, so agents with distinct lists can run concurrently in one process.
+// There is no package-level policy: a tool called outside an agent query is
+// permissive.
 func WithCmdBanList(entries ...string) Option {
 	return func(a *Agent) {
 		a.cmdBan = entries

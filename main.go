@@ -16,6 +16,7 @@ import (
 	"github.com/baalimago/clai/internal/photo"
 	"github.com/baalimago/clai/internal/profiles"
 	"github.com/baalimago/clai/internal/setup"
+	"github.com/baalimago/clai/internal/summary"
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/utils"
@@ -31,6 +32,13 @@ import (
 // and the old-config migrations live in internal/setup, which the domain
 // packages cannot import (setup imports them). See
 // architecture/cmd-dispatch.md.
+// newSummarizer is the real conversation summarizer constructor handed to
+// the query and chat trees. The root test binary replaces it with a
+// refusing one in TestMain, so no test builds the real summarizer unless
+// its fixture restores this value (worklog
+// 2026-09-09-conversation-summaries, D32).
+var newSummarizer = summary.NewAgentSummarizer
+
 func commands() map[string]cmd.Command {
 	configPrep := func() (string, error) {
 		confDir, _, err := setup.ConfigRunPrep(false)
@@ -46,8 +54,13 @@ func commands() map[string]cmd.Command {
 			ConfigPrep:          configPrep,
 			TrustInput:          func() io.Reader { return setup.Input },
 			ApplyMediaOverrides: applyMediaOverrides,
+			NewSummarizer:       newSummarizer,
 		}),
-		"chat|c": chat.Command(chat.CommandDeps{ConfigPrep: configPrep}),
+		"chat|c": chat.Command(chat.CommandDeps{
+			ConfigPrep:    configPrep,
+			NewSummarizer: newSummarizer,
+			ParseSince:    summary.ParseSince,
+		}),
 		"photo|p": photo.Command(photo.CommandDeps{
 			ConfigPrep: configPrep,
 			LoadConfig: setup.LoadPhotoConfig,
@@ -100,6 +113,7 @@ Examples:
   - clai a t -am gpt-4o-transcribe-diarize -strict-speakers long-meeting.wav
   - clai c list
   - clai -r c dirv2
+  - clai c summarize 7d   # label last week's conversations with a title and summary
   - clai c help
   - clai q -- -why does this fail   # '--' escapes a prompt starting with '-'
 `

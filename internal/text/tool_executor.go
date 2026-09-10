@@ -14,6 +14,7 @@ import (
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
+	pkgtools "github.com/baalimago/clai/pkg/tools"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 	"github.com/baalimago/go_away_boilerplate/pkg/table"
@@ -145,7 +146,7 @@ func (e toolExecutor[C]) runPlannedCall(ctx context.Context, session *QuerySessi
 		}
 	} else {
 		startedAt := time.Now()
-		out = tools.InvokeWith(ctx, plan.call, q.tooling.run)
+		out = tools.InvokeWith(pkgtools.WithCmdBanContext(ctx, q.cmdBan), plan.call, q.tooling.run)
 		e.recordToolCall(ctx, plan.call.Name, startedAt, out)
 	}
 	return e.emitToolResult(ctx, session, plan.call, plan.prefix+out)

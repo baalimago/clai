@@ -5,8 +5,8 @@ import "sync"
 // transcribeOverride holds run-scoped configuration for the
 // audio_transcribe tool, so a normal query or chat can pick the
 // transcription model its tools use (the tool engine otherwise reads
-// audioConfig.json). Same pattern as pkgtools.SetCmdBanList: CLI flags
-// configure the tool runtime for the duration of the run.
+// audioConfig.json). CLI flags configure the tool runtime for the
+// duration of the run.
 var (
 	transcribeOverrideMu sync.RWMutex
 	transcribeOverride   struct {

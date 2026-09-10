@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baalimago/clai/internal/board"
+
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
@@ -550,9 +552,27 @@ func TestCoordinatorLiveBoardReadsStatesSafely(t *testing.T) {
 	c, asm, _ := newCoordinator(p)
 	c.forceLive = true
 	c.NewAssembler = func(CommandRunner, Budgets, string, time.Duration) (RequestAssembler, error) {
-		return &slowAssembler{RequestAssembler: asm, delay: 3 * boardTick}, nil
+		return &slowAssembler{RequestAssembler: asm, delay: 3 * board.TickInterval}, nil
 	}
 	if _, err := c.Run(context.Background(), "meeting.wav"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCoordinatorLiveErrorExitKeepsFooter(t *testing.T) {
+	plainStatus(t)
+	p := &voiceProvider{truth: sixVoiceMeeting(), err: errors.New("status 500")}
+	c, _, status := newCoordinator(p)
+	c.forceLive = true
+	if _, err := c.Run(context.Background(), "meeting.wav"); err == nil {
+		t.Fatal("expected the transcriber error")
+	}
+	out := status.String()
+	last := strings.LastIndex(out, "▸ calibrated diarization")
+	if last < 0 {
+		t.Fatalf("no live frame in:\n%q", out)
+	}
+	if final := out[last:]; !strings.Contains(final, "in flight") {
+		t.Errorf("the error-exit frame must keep the last live footer:\n%q", final)
 	}
 }

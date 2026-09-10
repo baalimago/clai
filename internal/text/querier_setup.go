@@ -17,7 +17,6 @@ import (
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/internal/vendors/openrouter"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
-	pkgtools "github.com/baalimago/clai/pkg/tools"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
@@ -155,7 +154,9 @@ func setupConfigFile[C models.StreamCompleter](configPath string, userConf Confi
 				return modelConf, fmt.Errorf("failed to marshal default model: %v, error: %w", dfault, retErr)
 			}
 
-			err = os.WriteFile(configPath, data, os.FileMode(0o644))
+			// Atomic: concurrent in-process queriers of one model race on
+			// this file (D31).
+			err = utils.WriteFileAtomic(configPath, data, os.FileMode(0o644))
 			if err != nil {
 				return modelConf, fmt.Errorf("failed to write default model: %v, error: %w", dfault, err)
 			}
@@ -197,10 +198,7 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	if querier.debug {
 		ancli.PrintOK(fmt.Sprintf("userConf: %v\n", debug.IndentedJsonFmt(userConf)))
 	}
-	// Inject the per-run command ban list at the spawn point before any tool
-	// is registered, so every freetext execution in this run is covered (D6).
-	// Unconditional: the default empty list keeps behavior permissive (D4).
-	pkgtools.SetCmdBanList(userConf.CmdBan)
+	querier.cmdBan = append([]string(nil), userConf.CmdBan...)
 	querier.Raw = userConf.Raw
 	output := userConf.Out
 	if output == nil {
@@ -217,6 +215,13 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	querier.tooling.outputRuneLimit = userConf.ToolOutputRuneLimit
 	querier.tooling.maxCalls = userConf.MaxToolCalls
 	querier.stoploss = userConf.Stoploss
+	querier.runModel = userConf.Model
+	querier.summarizeConversations = userConf.SummarizeConversations
+	querier.summaryModel = userConf.SummaryModel
+	querier.summaryJoinTimeout = userConf.SummaryJoinTimeout
+	if querier.summaryJoinTimeout <= 0 {
+		querier.summaryJoinTimeout = defaultSummaryJoinTimeout
+	}
 	// Agent-only runtime settings (slog logger, level, rune cap, recorder
 	// hooks) ride one pointer (worklog 2026-08-15-agent-slog-output, D7). nil (the CLI and pkg/text paths) keeps
 	// every channel disabled; the loose Configurations recorder fields no
@@ -231,7 +236,12 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	// rolling output buffers them into the window, raw/structured output keeps
 	// only errors (on stderr, so stdout stays clean), and any other mode keeps
 	// the legacy direct print.
-	querier.mcpSink = newMcpLogSink(mcpLogModeFor(querier.debug, querier.outputIsTerminal, querier.Raw, querier.structuredOutput, utils.RollingOutputEnabled()))
+	mcpMode := mcpLogModeFor(querier.debug, querier.outputIsTerminal, querier.Raw, querier.structuredOutput, utils.RollingOutputEnabled())
+	if userConf.ErrOut != nil {
+		querier.mcpSink = newMcpLogSinkTo(mcpMode, userConf.ErrOut)
+	} else {
+		querier.mcpSink = newMcpLogSink(mcpMode)
+	}
 	if err := setupTooling(ctx, modelConf, &userConf, querier.mcpSink); err != nil {
 		return Querier[C]{}, err
 	}
@@ -276,6 +286,10 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 		}
 	}
 
+	costWarnf := ancli.Warnf
+	if userConf.CostWarnf != nil {
+		costWarnf = userConf.CostWarnf
+	}
 	var fetcher cost.ModelCatalogFetcher
 	if fetcher == nil {
 		openrouterAPIKey := os.Getenv("OPENROUTER_API_KEY")
@@ -286,12 +300,15 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 				// named; a catalog that fails to init degrades the run's price
 				// enrichment, never the run itself (worklog
 				// 2026-09-05-error-propagation, S9).
-				ancli.Warnf("found OPENROUTER_API_KEY but failed to init catalog fetcher: %v", err)
+				costWarnf("found OPENROUTER_API_KEY but failed to init catalog fetcher: %v", err)
 			}
 			fetcher = openrouterCatalogFetcher
 		}
 	}
 	costManager := new(cost.NewManager(fetcher, modelVersion, configPath))
+	if userConf.CostWarnf != nil {
+		costManager.SetWarnf(costWarnf)
+	}
 	costManager.SetModelResolver(func(_ pub_models.Chat) string {
 		if modelNamer, ok := any(modelConf).(ModelNamer); ok {
 			if modelName := strings.TrimSpace(modelNamer.ModelName()); modelName != "" {
@@ -302,6 +319,9 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	})
 	rdyChan, errChan := costManager.Start(ctx)
 	querier.costEnricher = newCostEnricher(costManager, rdyChan)
+	if userConf.CostWarnf != nil {
+		querier.costEnricher.warnf = costWarnf
+	}
 	// IMPORTANT: avoid spawning a goroutine that writes to stdout/stderr in tests.
 	// Some tests capture stdout by swapping the global os.Stdout which will race
 	// with concurrent writers under -race.
@@ -315,7 +335,7 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 					if !open {
 						return
 					}
-					ancli.Warnf("cost manager error: %v", err)
+					costWarnf("cost manager error: %v", err)
 				}
 			}
 		}()

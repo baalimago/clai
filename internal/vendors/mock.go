@@ -3,10 +3,12 @@ package vendors
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/baalimago/clai/internal/models"
@@ -17,6 +19,9 @@ var toolTokenPattern = regexp.MustCompile(`\btool_([a-zA-Z0-9_]+)\b`)
 
 // Mock is a StreamCompleter that streams a fixed, mocked response.
 type Mock struct {
+	// mu guards usage: the streaming goroutine writes it while a cancelled
+	// runner may read it on its ctx.Done() path.
+	mu           sync.Mutex
 	usage        *pub_models.Usage
 	allowedTools map[string]struct{}
 }
@@ -26,7 +31,15 @@ func (m *Mock) Setup() error {
 }
 
 func (m *Mock) TokenUsage() *pub_models.Usage {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	return m.usage
+}
+
+func (m *Mock) setUsage(u *pub_models.Usage) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.usage = u
 }
 
 func (m *Mock) RegisterTool(tool pub_models.LLMTool) {
@@ -43,16 +56,16 @@ func (m *Mock) StreamCompletions(ctx context.Context, chat pub_models.Chat) (cha
 
 		uMsg, _, err := chat.LastOfRole("user")
 		if err != nil {
-			m.usage = mockUsageForPrompt("")
+			m.setUsage(mockUsageForPrompt(""))
 			ch <- ""
 			ch <- models.StopEvent{}
 			return
 		}
 
-		nextTool, ok := nextToolCall(chat, m.allowedTools)
+		nextTool, ordinal, ok := nextToolCall(chat, m.allowedTools)
 		if ok {
-			inputs := inputsForTool(nextTool)
-			m.usage = mockUsageForPrompt(uMsg.Content)
+			inputs := inputsForTool(nextTool, ordinal)
+			m.setUsage(mockUsageForPrompt(uMsg.Content))
 			ch <- pub_models.Call{
 				ID:     "mock-call-" + nextTool,
 				Name:   nextTool,
@@ -62,7 +75,7 @@ func (m *Mock) StreamCompletions(ctx context.Context, chat pub_models.Chat) (cha
 			return
 		}
 
-		m.usage = mockUsageForPrompt(uMsg.Content)
+		m.setUsage(mockUsageForPrompt(uMsg.Content))
 		if hasToolMessage(chat.Messages) {
 			ch <- finalMockResponse(uMsg.Content)
 			ch <- models.StopEvent{}
@@ -101,18 +114,20 @@ func finalMockResponse(prompt string) string {
 	return fmt.Sprintf("done after tool for: %s", prompt)
 }
 
-func nextToolCall(chat pub_models.Chat, allowedTools map[string]struct{}) (string, bool) {
+// nextToolCall returns the next unconsumed scripted tool and its ordinal, the
+// number of prior calls of that tool in the chat's assistant messages.
+func nextToolCall(chat pub_models.Chat, allowedTools map[string]struct{}) (string, int, bool) {
 	userMsg, _, err := chat.LastOfRole("user")
 	if err != nil {
-		return "", false
+		return "", 0, false
 	}
 
 	allMatches := toolTokenPattern.FindAllStringSubmatch(userMsg.Content, -1)
 	if len(allMatches) == 0 {
-		return "", false
+		return "", 0, false
 	}
 
-	executedCounts := map[string]int{}
+	priorCalls := map[string]int{}
 	for _, msg := range chat.Messages {
 		if msg.Role != "assistant" {
 			continue
@@ -121,10 +136,11 @@ func nextToolCall(chat pub_models.Chat, allowedTools map[string]struct{}) (strin
 			if call.Name == "" {
 				continue
 			}
-			executedCounts[call.Name]++
+			priorCalls[call.Name]++
 		}
 	}
 
+	remaining := maps.Clone(priorCalls)
 	for _, match := range allMatches {
 		if len(match) != 2 {
 			continue
@@ -135,18 +151,25 @@ func nextToolCall(chat pub_models.Chat, allowedTools map[string]struct{}) (strin
 				continue
 			}
 		}
-		if executedCounts[toolName] > 0 {
-			executedCounts[toolName]--
+		if remaining[toolName] > 0 {
+			remaining[toolName]--
 			continue
 		}
-		return toolName, true
+		return toolName, priorCalls[toolName], true
 	}
 
-	return "", false
+	return "", 0, false
 }
 
-func inputsForTool(toolName string) pub_models.Input {
+// inputsForTool scripts the inputs of one tool call; ordinal is the number
+// of prior calls of that tool and only the sequenced cases read it.
+func inputsForTool(toolName string, ordinal int) pub_models.Input {
 	switch toolName {
+	case "submit_summary":
+		return pub_models.Input{
+			"title":   mockSequenceEntry("CLAI_MOCK_SUMMARY_TITLES", "Mock title", ordinal),
+			"summary": mockSequenceEntry("CLAI_MOCK_SUMMARY_SUMMARIES", "Mock summary.", ordinal),
+		}
 	case "ls":
 		return pub_models.Input{"directory": "."}
 	case "load_skill":
@@ -228,6 +251,20 @@ func inputsForTool(toolName string) pub_models.Input {
 	default:
 		return pub_models.Input{}
 	}
+}
+
+// mockSequenceEntry returns the nth |-separated entry of the env variable;
+// the last entry repeats, and the fallback applies when the variable is unset.
+func mockSequenceEntry(key, fallback string, n int) string {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return fallback
+	}
+	entries := strings.Split(raw, "|")
+	if n >= len(entries) {
+		n = len(entries) - 1
+	}
+	return entries[n]
 }
 
 func envOr(key, fallback string) string {

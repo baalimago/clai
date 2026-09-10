@@ -13,6 +13,7 @@ import (
 	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
+	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
 type setupToolsTestTool struct{ name string }
@@ -475,5 +476,169 @@ func Test_setupMcpManager_StrictModeKeepsAmbientDegrade(t *testing.T) {
 	}
 	if len(got) != 0 {
 		t.Errorf("broken ambient server registered tools: %v", got)
+	}
+}
+
+// toolBoxCompleter is a StreamCompleter that records tool registrations, so
+// setupTooling can be driven without a vendor.
+type toolBoxCompleter struct {
+	mockCompleter
+	registered []string
+}
+
+func (c *toolBoxCompleter) RegisterTool(tool pub_models.LLMTool) {
+	c.registered = append(c.registered, tool.Specification().Name)
+}
+
+// writeAmbientMarkerServer writes an mcpServers config whose process creates
+// marker when it spawns, so an ambient start is observable on disk.
+func writeAmbientMarkerServer(t *testing.T, mcpDir string) string {
+	t.Helper()
+	if err := os.MkdirAll(mcpDir, 0o755); err != nil {
+		t.Fatalf("mkdir mcpServers: %v", err)
+	}
+	marker := filepath.Join(t.TempDir(), "ambient-spawned")
+	conf := fmt.Sprintf(`{"command":"sh","args":["-c","touch %s"]}`, marker)
+	if err := os.WriteFile(filepath.Join(mcpDir, "ambient.json"), []byte(conf), 0o644); err != nil {
+		t.Fatalf("write ambient config: %v", err)
+	}
+	return marker
+}
+
+func assertMarkerAbsent(t *testing.T, marker string) {
+	t.Helper()
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("expected no spawn, marker stat: %v", err)
+	}
+}
+
+// TestSetupMcpManager_skipAmbient_startsNoConfigDirServer pins D18: with the
+// flag set, no server from <configDir>/mcpServers is spawned and no warning
+// is emitted; without it the same directory spawns the server (control).
+func TestSetupMcpManager_skipAmbient_startsNoConfigDirServer(t *testing.T) {
+	mcpDir := filepath.Join(t.TempDir(), "mcpServers")
+	marker := writeAmbientMarkerServer(t, mcpDir)
+	sink := &recordingSuccessSink{}
+
+	var got map[string]pub_models.LLMTool
+	var err error
+	stderr := testboil.CaptureStderr(t, func(t *testing.T) {
+		got, err = setupMcpManager(t.Context(), mcpDir, Configurations{SkipAmbientMcpServers: true}, sink)
+	})
+	if err != nil {
+		t.Fatalf("setupMcpManager: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("ambient server registered tools: %v", got)
+	}
+	assertMarkerAbsent(t, marker)
+	if sink.succeeded {
+		t.Error("manager ran although no server was requested")
+	}
+	if strings.Contains(stderr, "failed to setup") {
+		t.Errorf("unexpected setup warning on stderr: %q", stderr)
+	}
+
+	t.Run("control: flag off spawns the ambient server", func(t *testing.T) {
+		testboil.CaptureStderr(t, func(t *testing.T) {
+			if _, err := setupMcpManager(t.Context(), mcpDir, Configurations{}, &recordingSuccessSink{}); err != nil {
+				t.Fatalf("setupMcpManager: %v", err)
+			}
+		})
+		if _, err := os.Stat(marker); err != nil {
+			t.Fatalf("ambient server must spawn without the flag: %v", err)
+		}
+	})
+}
+
+// TestSetupMcpManager_skipAmbient_keepsExplicitServers pins the second half
+// of D18: userConf.McpServers still start under the flag and keep their
+// posture, so a strict explicit spawn failure is still the typed error.
+func TestSetupMcpManager_skipAmbient_keepsExplicitServers(t *testing.T) {
+	mcpDir := filepath.Join(t.TempDir(), "mcpServers")
+	marker := writeAmbientMarkerServer(t, mcpDir)
+
+	t.Run("explicit server starts", func(t *testing.T) {
+		conf := Configurations{
+			SkipAmbientMcpServers: true,
+			McpServers:            []pub_models.McpServer{{Name: "echo", Command: "go", Args: []string{"run", "../tools/mcp/testserver"}}},
+		}
+		sink := &recordingSuccessSink{}
+		got, err := setupMcpManager(t.Context(), mcpDir, conf, sink)
+		if err != nil {
+			t.Fatalf("setupMcpManager: %v", err)
+		}
+		if _, ok := got["mcp_echo_echo"]; !ok {
+			t.Errorf("explicit server's tools missing; got: %v", got)
+		}
+		if !sink.succeeded {
+			t.Error("sink never notified of setup success")
+		}
+		assertMarkerAbsent(t, marker)
+	})
+
+	t.Run("strict explicit spawn failure stays typed", func(t *testing.T) {
+		conf := Configurations{
+			SkipAmbientMcpServers: true,
+			McpServers:            []pub_models.McpServer{{Name: "broken", Command: "/nonexistent-binary-xyz"}},
+			AgentSettings:         &AgentSettings{StrictMcpStartup: true},
+		}
+		_, err := setupMcpManager(t.Context(), mcpDir, conf, &recordingSuccessSink{})
+		if !errors.Is(err, claierr.ErrMcpServerStartup) {
+			t.Fatalf("err = %v, want ErrMcpServerStartup", err)
+		}
+		if names := startupErrorNames(err); !slices.Equal(names, []string{"broken"}) {
+			t.Errorf("failed servers = %v, want [broken]", names)
+		}
+		assertMarkerAbsent(t, marker)
+	})
+}
+
+// TestSetupMcpManager_skipAmbient_toleratesMissingDir pins that a one-off
+// querier must not depend on the mcpServers directory existing.
+func TestSetupMcpManager_skipAmbient_toleratesMissingDir(t *testing.T) {
+	sink := &recordingSuccessSink{}
+	got, err := setupMcpManager(t.Context(), "/nonexistent/mcp/servers/dir", Configurations{SkipAmbientMcpServers: true}, sink)
+	if err != nil {
+		t.Fatalf("setupMcpManager: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("missing dir registered tools: %v", got)
+	}
+	if sink.succeeded {
+		t.Error("sink notified of success although no manager ran")
+	}
+}
+
+// TestSetupTooling_injectedToolsRegisterWithoutWarning pins that
+// Configurations.Tools registers exactly the injected tools and, unlike an
+// unknown name in RequestedToolGlobs, never warns on stderr.
+func TestSetupTooling_injectedToolsRegisterWithoutWarning(t *testing.T) {
+	confDir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(confDir, "mcpServers"), 0o755); err != nil {
+		t.Fatalf("mkdir mcpServers: %v", err)
+	}
+	completer := &toolBoxCompleter{}
+	conf := &Configurations{
+		UseTools:  true,
+		ConfigDir: confDir,
+		Tools:     []pub_models.LLMTool{setupToolsTestTool{name: "injected"}},
+	}
+
+	var err error
+	stderr := testboil.CaptureStderr(t, func(t *testing.T) {
+		err = setupTooling(t.Context(), completer, conf, &recordingSuccessSink{})
+	})
+	if err != nil {
+		t.Fatalf("setupTooling: %v", err)
+	}
+	if !slices.Equal(completer.registered, []string{"injected"}) {
+		t.Errorf("registered = %v, want [injected]", completer.registered)
+	}
+	if _, ok := conf.BaseTools["injected"]; !ok || len(conf.BaseTools) != 1 {
+		t.Errorf("BaseTools = %v, want only the injected tool", conf.BaseTools)
+	}
+	if strings.TrimSpace(stderr) != "" {
+		t.Errorf("injected tools must register silently, stderr: %q", stderr)
 	}
 }

@@ -130,3 +130,29 @@ func Test_flagValueHooks(t *testing.T) {
 		}
 	})
 }
+
+// TestCompletion_summaryModelFlag pins that -sm/--summary-model complete
+// from the same model history as -cm (worklog
+// 2026-09-09-conversation-summaries, phase 4).
+func TestCompletion_summaryModelFlag(t *testing.T) {
+	confDir := t.TempDir()
+	for _, name := range []string{"openai_gpt_gpt-5.2.json", "anthropic_claude_claude-3-7-sonnet.json"} {
+		if err := os.WriteFile(filepath.Join(confDir, name), []byte("{}"), 0o644); err != nil {
+			t.Fatalf("WriteFile(%q): %v", name, err)
+		}
+	}
+	t.Setenv("CLAI_CONFIG_DIR", confDir)
+	s := &CompletionSources{}
+	want := s.TextFlagValues("cm", "")
+	if len(want) != 2 {
+		t.Fatalf("cm completion = %v, want two models", want)
+	}
+	for _, name := range []string{"sm", "summary-model"} {
+		if got := s.TextFlagValues(name, ""); !reflect.DeepEqual(got, want) {
+			t.Fatalf("%s completion = %v, want %v", name, got, want)
+		}
+	}
+	if got := s.TextFlagValues("sm", "cl"); len(got) != 1 || got[0].Value != "claude-3-7-sonnet" {
+		t.Fatalf("sm prefix completion = %v, want the claude model", got)
+	}
+}

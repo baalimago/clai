@@ -29,6 +29,8 @@ type chatDirInfo struct {
 	CostUSD              float64           `json:"cost_usd,omitempty"`
 	Cost                 string            `json:"cost,omitempty"`
 	Price                chatDirPriceInfo  `json:"price"`
+	Title                string            `json:"title,omitempty"`
+	Summary              string            `json:"summary,omitempty"`
 	initialMessage       string            `json:"-"`
 	recentUsage          *pub_models.Usage `json:"-"`
 	totalUsage           *pub_models.Usage `json:"-"`
@@ -44,6 +46,8 @@ type chatDirInfoV2 struct {
 	RepliesByRole       map[string]int      `json:"replies_by_role"`
 	TokenUsage          chatDirTokenUsageV2 `json:"token_usage"`
 	CostUSD             float64             `json:"cost_usd"`
+	Title               string              `json:"title,omitempty"`
+	Summary             string              `json:"summary,omitempty"`
 	initialMessage      string              `json:"-"`
 }
 
@@ -101,7 +105,7 @@ func (cdi chatDirInfo) initialPrompt(width int) string {
 
 const prettyDirInfoFormat = `scope: %v
 chat id: %v
-prompt: %v%v
+prompt: %v%v%v
 replies by role:
 %v
 total cost: %v
@@ -118,7 +122,7 @@ price details:
 
 const prettyDirInfoV2Format = `scope: %v
 chat id: %v
-prompt: %v%v
+prompt: %v%v%v
 replies by role:
 %v
 total cost: %v
@@ -153,6 +157,7 @@ func (cq *ChatHandler) dirInfo() error {
 		info.Scope,
 		info.ChatID,
 		info.initialPrompt(cq.dims.Width),
+		labelOutput(info.Title, info.Summary),
 		profileOutput(info.Profile),
 		repliesOutput(info.RepliesByRole),
 		info.costString(),
@@ -188,6 +193,7 @@ func (cq *ChatHandler) dirInfoV2() error {
 		info.Scope,
 		info.ChatID,
 		legacy.initialPrompt(cq.dims.Width),
+		labelOutput(info.Title, info.Summary),
 		profileOutput(info.Profile),
 		repliesOutput(info.RepliesByRole),
 		legacy.costString(),
@@ -199,6 +205,17 @@ func (cq *ChatHandler) dirInfoV2() error {
 		abbrevTokens(info.TokenUsage.Recent.Output),
 	)
 	return nil
+}
+
+func labelOutput(title, summary string) string {
+	out := ""
+	if title != "" {
+		out += fmt.Sprintf("\ntitle: %v", title)
+	}
+	if summary != "" {
+		out += fmt.Sprintf("\nsummary: %v", summary)
+	}
+	return out
 }
 
 func profileOutput(profile string) string {
@@ -238,6 +255,8 @@ func newChatDirInfoV2(info chatDirInfo) chatDirInfoV2 {
 			Total:  tokenCountV2(info.totalUsage),
 		},
 		CostUSD:        info.CostUSD,
+		Title:          info.Title,
+		Summary:        info.Summary,
 		initialMessage: info.initialMessage,
 	}
 }
@@ -326,6 +345,8 @@ func (cq *ChatHandler) infoFromChat(scope, chatID string, c pub_models.Chat) cha
 		ChatID:        chatID,
 		Profile:       c.Profile,
 		RepliesByRole: repliesByRole,
+		Title:         c.Title,
+		Summary:       c.Summary,
 	}
 
 	if c.TokenUsage != nil {

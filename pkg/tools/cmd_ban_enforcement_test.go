@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -30,49 +31,10 @@ func assertCmdBanRefusal(t *testing.T, err error, entry string) {
 	}
 }
 
-func TestCmdBanEnforcement_SetAndReset(t *testing.T) {
-	ResetCmdBanListForTests()
-	t.Cleanup(ResetCmdBanListForTests)
-
-	if err := validateCmdNotBanned("rm -rf /", nil); err != nil {
-		t.Fatalf("default state must be permissive, got %v", err)
-	}
-	SetCmdBanList([]string{"rm"})
-	if err := validateCmdNotBanned("rm -rf /", nil); err == nil {
-		t.Fatal("expected ban after SetCmdBanList")
-	}
-	ResetCmdBanListForTests()
-	if err := validateCmdNotBanned("rm -rf /", nil); err != nil {
-		t.Fatalf("reset must restore permissive default, got %v", err)
-	}
-}
-
-func TestCmdBanEnforcement_SetterSnapshotsInput(t *testing.T) {
-	ResetCmdBanListForTests()
-	t.Cleanup(ResetCmdBanListForTests)
-
-	entries := []string{"rm"}
-	SetCmdBanList(entries)
-	// Caller mutation after the setter returns must not leak into the active
-	// list: the setter owns an immutable snapshot of its input (README
-	// "Ban-list ownership", review 6 R6-02).
-	entries[0] = "sudo"
-
-	assertCmdBanRefusal(t, validateCmdNotBanned("rm -rf /", nil), "rm")
-	if err := validateCmdNotBanned("sudo apt update", nil); err != nil {
-		t.Fatalf("caller mutation after SetCmdBanList leaked into the snapshot: %v", err)
-	}
-}
-
-func TestCmdBanEnforcement_ContextPolicyOverridesGlobalPolicy(t *testing.T) {
-	SetCmdBanList([]string{"rm"})
-	t.Cleanup(ResetCmdBanListForTests)
-
-	ctx := WithCmdBanContext(t.Context(), []string{"touch"})
-	assertCmdBanRefusal(t, validateCmdNotBannedWithContext(ctx, "touch marker", nil), "touch")
-	if err := validateCmdNotBannedWithContext(ctx, "rm -rf marker", nil); err != nil {
-		t.Fatalf("context policy should replace global policy, got %v", err)
-	}
+// banCtx installs entries as the policy of a fresh test context.
+func banCtx(t *testing.T, entries ...string) context.Context {
+	t.Helper()
+	return WithCmdBanContext(t.Context(), entries)
 }
 
 func TestCmdBanEnforcement_ValidateCmdNotBanned(t *testing.T) {
@@ -96,51 +58,70 @@ func TestCmdBanEnforcement_ValidateCmdNotBanned(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			SetCmdBanList(tt.entries)
-			t.Cleanup(ResetCmdBanListForTests)
-			err := validateCmdNotBanned(tt.command, tt.args)
+			err := validateCmdNotBannedWithContext(banCtx(t, tt.entries...), tt.command, tt.args)
 			if tt.wantErr {
 				assertCmdBanRefusal(t, err, tt.want)
 				return
 			}
 			if err != nil {
-				t.Fatalf("validateCmdNotBanned(%q, %v) = %v, want nil", tt.command, tt.args, err)
+				t.Fatalf("validateCmdNotBannedWithContext(%q, %v) = %v, want nil", tt.command, tt.args, err)
 			}
 		})
+	}
+}
+
+// TestCmdBanEnforcement_NoPolicyPermissive pins the D29 default: a context
+// that carries no policy, and the context-free Call entry point, enforce
+// nothing.
+func TestCmdBanEnforcement_NoPolicyPermissive(t *testing.T) {
+	if err := validateCmdNotBannedWithContext(context.Background(), "rm -rf /", nil); err != nil {
+		t.Fatalf("context without policy must be permissive, got %v", err)
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("test requires a POSIX shell")
+	}
+	for name, call := range map[string]func(pub_models.Input) (string, error){
+		"Cmd.Call":            Cmd.Call,
+		"Cmd.CallWithContext": func(in pub_models.Input) (string, error) { return Cmd.CallWithContext(t.Context(), in) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			out, err := call(pub_models.Input{"command": "echo hi"})
+			if err != nil {
+				t.Fatalf("no policy must be permissive: %v", err)
+			}
+			if !strings.Contains(out, "hi") {
+				t.Fatalf("expected output 'hi', got %q", out)
+			}
+		})
+	}
+}
+
+// TestCmdBanEnforcement_ContextPolicySnapshotsInput pins the ownership rule:
+// the policy is copied at WithCmdBanContext, so a caller mutating its slice
+// afterwards never alters the installed policy.
+func TestCmdBanEnforcement_ContextPolicySnapshotsInput(t *testing.T) {
+	entries := []string{"rm"}
+	ctx := WithCmdBanContext(t.Context(), entries)
+	entries[0] = "sudo"
+
+	assertCmdBanRefusal(t, validateCmdNotBannedWithContext(ctx, "rm -rf /", nil), "rm")
+	if err := validateCmdNotBannedWithContext(ctx, "sudo apt update", nil); err != nil {
+		t.Fatalf("caller mutation after WithCmdBanContext leaked into the policy: %v", err)
 	}
 }
 
 func TestCmdBanEnforcement_FreetextRefusesBannedBeforeSpawn(t *testing.T) {
 	marker := filepath.Join(t.TempDir(), "marker-dir")
-	tests := []struct {
-		name string
-		call func(pub_models.Input) (string, error)
-	}{
-		{"Cmd.Call", func(in pub_models.Input) (string, error) { return Cmd.Call(in) }},
-		{"Cmd.CallWithContext", func(in pub_models.Input) (string, error) { return Cmd.CallWithContext(t.Context(), in) }},
-		{"Cmd.Call", func(in pub_models.Input) (string, error) { return Cmd.Call(in) }},
-		{"Cmd.CallWithContext", func(in pub_models.Input) (string, error) { return Cmd.CallWithContext(t.Context(), in) }},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			SetCmdBanList([]string{"rm"})
-			t.Cleanup(ResetCmdBanListForTests)
-
-			_, err := tt.call(pub_models.Input{"command": "rm -rf " + marker})
-			assertCmdBanRefusal(t, err, "rm")
-			if _, statErr := os.Stat(marker); !os.IsNotExist(statErr) {
-				t.Fatalf("banned command must never spawn, marker exists: %v", statErr)
-			}
-		})
+	_, err := Cmd.CallWithContext(banCtx(t, "rm"), pub_models.Input{"command": "rm -rf " + marker})
+	assertCmdBanRefusal(t, err, "rm")
+	if _, statErr := os.Stat(marker); !os.IsNotExist(statErr) {
+		t.Fatalf("banned command must never spawn, marker exists: %v", statErr)
 	}
 }
 
 func TestCmdBanEnforcement_FreetextQuotedBypassBanned(t *testing.T) {
-	SetCmdBanList([]string{"rm"})
-	t.Cleanup(ResetCmdBanListForTests)
-
 	marker := filepath.Join(t.TempDir(), "marker-dir")
-	_, err := Cmd.Call(pub_models.Input{"command": "sh -c \"rm -rf " + marker + "\""})
+	_, err := Cmd.CallWithContext(banCtx(t, "rm"), pub_models.Input{"command": "sh -c \"rm -rf " + marker + "\""})
 	assertCmdBanRefusal(t, err, "rm")
 	if _, statErr := os.Stat(marker); !os.IsNotExist(statErr) {
 		t.Fatalf("banned command must never spawn, marker exists: %v", statErr)
@@ -163,10 +144,7 @@ func TestCmdBanEnforcement_AsyncRefusesBannedBeforeSpawn(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			SetCmdBanList(tt.entries)
-			t.Cleanup(ResetCmdBanListForTests)
-
-			_, err := AsyncCmdRun.Call(pub_models.Input{
+			_, err := AsyncCmdRun.CallWithContext(banCtx(t, tt.entries...), pub_models.Input{
 				"command": tt.command,
 				"args":    anySlice(tt.args),
 				"cwd":     t.TempDir(), // harmless even if the ban check regressed
@@ -184,10 +162,8 @@ func TestCmdBanEnforcement_AsyncNonContiguousAllowed(t *testing.T) {
 		t.Skip("test requires a POSIX shell")
 	}
 	ResetAsyncCmdManagerForTests()
-	SetCmdBanList([]string{"git commit"})
-	t.Cleanup(ResetCmdBanListForTests)
 
-	out, err := AsyncCmdRun.Call(pub_models.Input{
+	out, err := AsyncCmdRun.CallWithContext(banCtx(t, "git commit"), pub_models.Input{
 		"command": "sh",
 		"args":    []any{"-c", "true"},
 		"cwd":     t.TempDir(),
@@ -204,10 +180,7 @@ func TestCmdBanEnforcement_AllowedPasses(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("test requires a POSIX shell")
 	}
-	SetCmdBanList([]string{"rm"})
-	t.Cleanup(ResetCmdBanListForTests)
-
-	out, err := Cmd.Call(pub_models.Input{"command": "echo hi"})
+	out, err := Cmd.CallWithContext(banCtx(t, "rm"), pub_models.Input{"command": "echo hi"})
 	if err != nil {
 		t.Fatalf("allowed command refused: %v", err)
 	}
@@ -216,27 +189,8 @@ func TestCmdBanEnforcement_AllowedPasses(t *testing.T) {
 	}
 }
 
-func TestCmdBanEnforcement_DefaultPermissive(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("test requires a POSIX shell")
-	}
-	ResetCmdBanListForTests()
-	t.Cleanup(ResetCmdBanListForTests)
-
-	out, err := Cmd.Call(pub_models.Input{"command": "echo hi"})
-	if err != nil {
-		t.Fatalf("default state must be permissive: %v", err)
-	}
-	if !strings.Contains(out, "hi") {
-		t.Fatalf("expected output 'hi', got %q", out)
-	}
-}
-
 func TestCmdBanEnforcement_EmptyCommandErrorUnchanged(t *testing.T) {
-	SetCmdBanList([]string{"rm"})
-	t.Cleanup(ResetCmdBanListForTests)
-
-	_, err := Cmd.Call(pub_models.Input{"command": ""})
+	_, err := Cmd.CallWithContext(banCtx(t, "rm"), pub_models.Input{"command": ""})
 	if err == nil {
 		t.Fatal("expected empty-command error")
 	}
@@ -254,8 +208,6 @@ func TestCmdBanEnforcement_DescriptionsMentionRefusal(t *testing.T) {
 		desc string
 	}{
 		{"cmd", Cmd.Specification().Description},
-		{"cmd", Cmd.Specification().Description},
-		{"freetext_command", Cmd.Specification().Description},
 		{"async_cmd", AsyncCmdRun.Specification().Description},
 	} {
 		if !strings.Contains(tc.desc, "refused by configured policy") {

@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/baalimago/clai/internal/board"
 	"github.com/baalimago/clai/internal/utils"
 )
 
@@ -104,7 +105,7 @@ type Coordinator struct {
 	totalsMu sync.Mutex
 	cache    *requestCache
 	registry *SpeakerRegistry
-	board    *progressBoard
+	board    *board.Board
 	// forceLive renders the board as on a terminal (tests)
 	forceLive bool
 	eta       *etaModel
@@ -160,16 +161,16 @@ func (c *Coordinator) Run(ctx context.Context, filePath string) ([]Segment, erro
 
 	c.spans = spans
 	c.eta = newEtaModel(c.workers(), c.limit(), plan.PrefixReserve)
-	c.board.setFooterFunc(func(rows []boardRow) string {
+	c.board.SetFooterFunc(func(rows []board.Row) string {
 		c.totalsMu.Lock()
 		t := c.totals
 		c.totalsMu.Unlock()
 		typical, worst := c.eta.estimate(c.etaChunks(rows), time.Now())
 		return fmt.Sprintf("%v · %v elapsed · requests %v/≤%v · in flight %v · speakers %v · unknown %v · uploaded %v",
-			etaText(typical, worst), shortDuration(time.Since(c.started)), t.Requests, c.limit()*c.cores, inFlight(rows),
+			etaText(typical, worst), shortDuration(time.Since(c.started)), t.Requests, c.limit()*c.cores, board.InFlight(rows),
 			len(registry.Snapshot().Speakers), unknownSoFar(rows).Round(time.Second), shortDuration(t.Uploaded))
 	})
-	c.board.setPhase(fmt.Sprintf("bootstrap · core 1 of %v · uncalibrated pass then calibrated pass", len(plan.Cores)))
+	c.board.SetPhase(fmt.Sprintf("bootstrap · core 1 of %v · uncalibrated pass then calibrated pass", len(plan.Cores)))
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	states := make([]*chunkState, len(plan.Cores))
@@ -177,11 +178,11 @@ func (c *Coordinator) Run(ctx context.Context, filePath string) ([]Segment, erro
 		states[i] = &chunkState{index: i, core: SourceInterval{Start: core.Start, End: core.End}}
 	}
 	c.states = states
-	go c.board.animate(runCtx)
+	go c.board.Animate(runCtx)
 	results := make([]chunkResult, len(plan.Cores))
 	defer func() {
 		// Leave the board readable on every exit path
-		c.board.finish(c.board.footer)
+		c.board.Finish(c.board.Footer())
 	}()
 	// Bootstrap on the first core, sequentially
 	first, err := c.bootstrap(runCtx, assembler, registry, states[0])
@@ -191,7 +192,7 @@ func (c *Coordinator) Run(ctx context.Context, filePath string) ([]Segment, erro
 	results[0] = first
 	c.chunkDone(states[0], first, len(registry.Snapshot().Speakers))
 	if len(states) > 1 {
-		c.board.setPhase(fmt.Sprintf("calibrating · cores 2–%v · %v workers · discovery runs one chunk at a time", len(states), c.workers()))
+		c.board.SetPhase(fmt.Sprintf("calibrating · cores 2–%v · %v workers · discovery runs one chunk at a time", len(states), c.workers()))
 	}
 
 	// Workers pull chunks in source order so scheduling is deterministic
@@ -231,11 +232,11 @@ func (c *Coordinator) Run(ctx context.Context, filePath string) ([]Segment, erro
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	c.board.setPhase("stitching · relabeling cores, numbering unknown speech")
+	c.board.SetPhase("stitching · relabeling cores, numbering unknown speech")
 	if c.Strict {
 		for i, r := range results {
 			if unresolved := r.mapping.MaterialUnmapped(); len(unresolved) > 0 {
-				c.board.setPhase(fmt.Sprintf("failed · strict-speakers · chunk %v has unresolved labels", i+1))
+				c.board.SetPhase(fmt.Sprintf("failed · strict-speakers · chunk %v has unresolved labels", i+1))
 				return nil, &UnresolvedError{Chunk: i, Interval: states[i].core, Labels: unresolved, Rejected: r.rejected, Attempts: r.attempts, Requests: states[i].consumed}
 			}
 		}
@@ -253,8 +254,8 @@ func (c *Coordinator) Run(ctx context.Context, filePath string) ([]Segment, erro
 	c.totalsMu.Unlock()
 	footer := fmt.Sprintf("requests %v/≤%v · retries %v · cache hits %v · uploaded %v · speakers %v · unknown %v · %v elapsed",
 		t.Requests, c.limit()*c.cores, t.Retries, t.CacheHits, t.Uploaded.Round(time.Second), len(registry.Snapshot().Speakers), t.Unknown.Round(time.Second), time.Since(c.started).Round(time.Second))
-	c.board.setPhase(fmt.Sprintf("done · %v segments · %v elapsed", len(segs), time.Since(c.started).Round(time.Second)))
-	c.board.finish(footer, detail...)
+	c.board.SetPhase(fmt.Sprintf("done · %v segments · %v elapsed", len(segs), time.Since(c.started).Round(time.Second)))
+	c.board.Finish(footer, detail...)
 	return segs, nil
 }
 
@@ -299,23 +300,23 @@ func (c *Coordinator) requestFor(assembler RequestAssembler, st *chunkState) Req
 		c.totalsMu.Unlock()
 		purpose := requestPurpose(st, samples)
 		consumed := st.consumed
-		c.board.update(st.index, func(r *boardRow) {
-			if r.started.IsZero() {
-				r.started = time.Now()
+		c.board.Update(st.index, func(r *board.Row) {
+			if r.Started.IsZero() {
+				r.Started = time.Now()
 			}
-			r.active, r.state = true, fmt.Sprintf("%v · %v", purpose, m.Duration.Round(time.Second))
-			r.req = fmt.Sprintf("%v/%v", consumed, c.limit())
+			r.Active, r.Cells[colState] = true, fmt.Sprintf("%v · %v", purpose, m.Duration.Round(time.Second))
+			r.Cells[colReq] = fmt.Sprintf("%v/%v", consumed, c.limit())
 		})
 		_ = n
 		c.eta.started(st.index, m.Duration, time.Now())
 		segs, err := c.Transcriber.TranscribeRequest(ctx, m)
 		c.eta.completed(st.index, time.Now())
 		if err != nil {
-			c.board.update(st.index, func(r *boardRow) { r.active, r.mark, r.state = false, markWarn, "request failed" })
+			c.board.Update(st.index, func(r *board.Row) { r.Active, r.Mark, r.Cells[colState] = false, board.MarkWarn, "request failed" })
 			return nil, nil, fmt.Errorf("chunk %v request %v (%v with %v samples): %w", st.index+1, st.consumed, m.Duration.Round(time.Second), len(samples), err)
 		}
-		c.board.update(st.index, func(r *boardRow) {
-			r.state = purpose + " · mapping"
+		c.board.Update(st.index, func(r *board.Row) {
+			r.Cells[colState] = purpose + " · mapping"
 		})
 		c.cache.put(key, segs)
 		return m, segs, nil
@@ -366,18 +367,18 @@ func (c *Coordinator) chunkDone(st *chunkState, res chunkResult, speakers int) {
 	for _, u := range m.Unmapped {
 		unknown += u.Speech
 	}
-	c.board.update(st.index, func(r *boardRow) {
-		r.active = false
-		r.elapsed = time.Since(r.started)
-		r.req = fmt.Sprintf("%v/%v", st.consumed, c.limit())
-		r.verified = fmt.Sprintf("%v/%v", mapped, samples)
-		r.unresolved = fmt.Sprint(unresolved)
-		r.unknown = unknown.Round(time.Second).String()
+	c.board.Update(st.index, func(r *board.Row) {
+		r.Active = false
+		r.Elapsed = time.Since(r.Started)
+		r.Cells[colReq] = fmt.Sprintf("%v/%v", st.consumed, c.limit())
+		r.Cells[colVerified] = fmt.Sprintf("%v/%v", mapped, samples)
+		r.Cells[colUnresolved] = fmt.Sprint(unresolved)
+		r.Cells[colUnknown] = unknown.Round(time.Second).String()
 		if unresolved > 0 {
-			r.mark, r.state = markWarn, fmt.Sprintf("%v unresolved · %v speakers", unresolved, speakers)
+			r.Mark, r.Cells[colState] = board.MarkWarn, fmt.Sprintf("%v unresolved · %v speakers", unresolved, speakers)
 			return
 		}
-		r.mark, r.state = markDone, fmt.Sprintf("calibrated · %v speakers", speakers)
+		r.Mark, r.Cells[colState] = board.MarkDone, fmt.Sprintf("calibrated · %v speakers", speakers)
 	})
 }
 
@@ -451,7 +452,7 @@ func (c *Coordinator) countRetry(st *chunkState) {
 
 // etaChunks derives per-chunk progress for the estimator from a row
 // snapshot (never touches the board, which is locked by the caller).
-func (c *Coordinator) etaChunks(rows []boardRow) []etaChunk {
+func (c *Coordinator) etaChunks(rows []board.Row) []etaChunk {
 	out := make([]etaChunk, len(c.states))
 	for i, st := range c.states {
 		st.mu.Lock()
@@ -459,8 +460,8 @@ func (c *Coordinator) etaChunks(rows []boardRow) []etaChunk {
 		st.mu.Unlock()
 		out[i] = etaChunk{core: st.core.End - st.core.Start, consumed: consumed}
 		if i < len(rows) {
-			out[i].active = rows[i].active
-			out[i].done = !rows[i].active && (rows[i].mark == markDone || rows[i].mark == markWarn)
+			out[i].active = rows[i].Active
+			out[i].done = !rows[i].Active && (rows[i].Mark == board.MarkDone || rows[i].Mark == board.MarkWarn)
 		}
 	}
 	return out

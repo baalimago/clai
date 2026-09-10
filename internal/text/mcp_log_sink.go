@@ -72,12 +72,19 @@ type mcpLogSink struct {
 }
 
 func newMcpLogSink(mode mcpLogMode) *mcpLogSink {
+	return newMcpLogSinkTo(mode, os.Stderr)
+}
+
+// newMcpLogSinkTo builds a sink that writes to errOut instead of the process
+// stderr, so a querier whose output is discarded never touches the global
+// stream (phase 8 gate finding, R2-09).
+func newMcpLogSinkTo(mode mcpLogMode, errOut io.Writer) *mcpLogSink {
 	return &mcpLogSink{
 		mode:       mode,
 		notice:     func(server, line string) { ancli.Noticef("mcp_%v: %v\n", server, line) },
-		errOut:     os.Stderr,
-		termWidth:  func() int { return utils.SessionDimensions(os.Stderr).Width },
-		termHeight: func() int { return utils.SessionDimensions(os.Stderr).Height },
+		errOut:     errOut,
+		termWidth:  func() int { return utils.SessionDimensions(errOut).Width },
+		termHeight: func() int { return utils.SessionDimensions(errOut).Height },
 		tails:      make(map[string][]string),
 		authFollow: make(map[string]int),
 		startup:    newMcpStartupWindows(),

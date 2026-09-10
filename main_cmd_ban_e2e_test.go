@@ -44,8 +44,6 @@ func Test_e2e_cmd_ban_flag_path(t *testing.T) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
 	_ = setupMainTestConfigDir(t)
-	pkgtools.ResetCmdBanListForTests()
-	t.Cleanup(pkgtools.ResetCmdBanListForTests)
 
 	marker := filepath.Join(t.TempDir(), "flag-banned-marker")
 	t.Setenv("CLAI_MOCK_CMD_COMMAND", "touch "+marker)
@@ -60,8 +58,6 @@ func Test_e2e_cmd_ban_config_file_path(t *testing.T) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
 	confDir := setupMainTestConfigDir(t)
-	pkgtools.ResetCmdBanListForTests()
-	t.Cleanup(pkgtools.ResetCmdBanListForTests)
 
 	writeJSONFileAny(t, filepath.Join(confDir, "textConfig.json"), map[string]any{"cmd-ban": []string{"touch"}})
 
@@ -105,8 +101,6 @@ func Test_e2e_cmd_ban_profile_path(t *testing.T) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
 	confDir := setupMainTestConfigDir(t)
-	pkgtools.ResetCmdBanListForTests()
-	t.Cleanup(pkgtools.ResetCmdBanListForTests)
 
 	writeJSONFileAny(t, filepath.Join(confDir, "profiles", "ban.json"), map[string]any{
 		"name":    "ban",
@@ -158,8 +152,6 @@ func Test_e2e_cmd_ban_profile_merges_onto_file_base(t *testing.T) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
 	confDir := setupMainTestConfigDir(t)
-	pkgtools.ResetCmdBanListForTests()
-	t.Cleanup(pkgtools.ResetCmdBanListForTests)
 
 	writeJSONFileAny(t, filepath.Join(confDir, "textConfig.json"), map[string]any{"cmd-ban": []string{"touch"}})
 	writeJSONFileAny(t, filepath.Join(confDir, "profiles", "ban.json"), map[string]any{
@@ -188,8 +180,6 @@ func Test_e2e_cmd_ban_quoted_bypass_refused(t *testing.T) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
 	_ = setupMainTestConfigDir(t)
-	pkgtools.ResetCmdBanListForTests()
-	t.Cleanup(pkgtools.ResetCmdBanListForTests)
 
 	t.Setenv("CLAI_MOCK_CMD_COMMAND", "sh -c 'git commit -m x'")
 
@@ -204,8 +194,6 @@ func Test_e2e_cmd_ban_async_no_spawn(t *testing.T) {
 	t.Cleanup(func() { os.Args = oldArgs })
 	_ = setupMainTestConfigDir(t)
 	pkgtools.ResetAsyncCmdManagerForTests()
-	pkgtools.ResetCmdBanListForTests()
-	t.Cleanup(pkgtools.ResetCmdBanListForTests)
 
 	t.Setenv("CLAI_MOCK_ASYNC_CMD_RUN_COMMAND", "sh")
 
@@ -221,8 +209,6 @@ func Test_e2e_cmd_ban_permissive_default(t *testing.T) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
 	_ = setupMainTestConfigDir(t)
-	pkgtools.ResetCmdBanListForTests()
-	t.Cleanup(pkgtools.ResetCmdBanListForTests)
 
 	t.Setenv("CLAI_MOCK_CMD_COMMAND", "printf ok")
 

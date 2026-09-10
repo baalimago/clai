@@ -9,6 +9,7 @@ This directory contains short design notes for key parts of **clai**. Each file 
 - **[chat.md](./chat.md)** — Conversation storage format, global previous-query (`globalScope.json`), directory-scoped reply bindings, the OpenAI reasoning-item sidecar (`conversations/reasoning/<chatid>/`), and the `clai chat continue` flow.
 - **[continue-from-claudex.md](./continue-from-claudex.md)** — Auto-discover and continue conversations from external AI tools (Claude Desktop/Code, Codex, Pi, Cursor, …) directly from `clai chat list`. Foreign conversations are inspected on-the-fly and cloned to native clai chats on continue, with a shared `source` field that also enables chat forking.
 - **[chat-groups.md](./chat-groups.md)** — Entry-message clustering in `clai chat list`: conversations with the same first user message are collapsed into `[group:N]` rows; selecting a group expands it to show member conversations. Uses a content-derived `GroupKey` (hex SHA-256) that parallels the `Source`/`SourceID` identity pattern. Zero changes to `SelectFromTable`.
+- **[summaries.md](./summaries.md)** — Model-generated conversation labels: `title`/`summary`/`summary_at` on `Chat` and the index row, the `submit_summary` validate-and-retry tool, the isolated one-off summarizer querier (no persistence, no ambient MCP, own cancel key), in-flight generation on the query path (display → join → persist, silent failure, `DEBUG_SUMMARY`), the `clai chat summarize <window>` batch command (index-filtered window, worker pool, single index write), the model ladder, and the display precedence on every surface.
 - **[dirscope.md](./dirscope.md)** — Directory bindings, per-directory conversation history, origin-directory stamping, and conversation search: the `sha256`-keyed `version: 2` binding record (`abs_path`, timestamped `history`), always-on recording + `origin_dir` stamping, in-place `version: 1 → 2` upgrade, the opt-in (`-lb/-lookback`) lookback (recent-conversations descriptor + directory-anchored `search_conversations`, plus `inspect_conversation` / `read_message` for granular reads, brute-force with a documented index threshold), and the `[d]ir` toggle filter in `clai chat list`.
 - **[streaming.md](./streaming.md)** — How vendor streaming is normalized into a common event stream and consumed by the querier (text deltas, tool calls, stop events, errors).
 - **[errors.md](./errors.md)** — Typed terminal errors across the module boundary: the shared `pkg/claierr` sentinel/type vocabulary, vendor-first wire decoding (`generic.ResponseError`), the channel contract, and the explicit/ambient MCP `Setup` split.
@@ -34,6 +35,7 @@ This directory contains short design notes for key parts of **clai**. Each file 
 
 ## UI / output
 
+- **[board.md](./board.md)** — The shared parallel-work progress table (`internal/board`): ▸ title, phase, marked rows with live elapsed, footer, log-above; used by audio transcribe and `chat summarize`.
 - **[colours.md](./colours.md)** — ANSI theming via `<clai-config>/theme.json` and `NO_COLOR` disable behavior; where colour is applied (pretty print, tables, obfuscated previews).
 
 ## Reading order suggestions
@@ -41,4 +43,4 @@ This directory contains short design notes for key parts of **clai**. Each file 
 - If you’re new: start with **config.md → query.md → chat.md**.
 - If you’re working on tool calls: **tooling.md → query.md → streaming.md**.
 - If you’re debugging reply context: **chat.md → replay.md → dre.md**.
-- If you’re working on chat listing / grouping: **chat.md → continue-from-claudex.md → chat-groups.md → dirscope.md**.
+- If you’re working on chat listing / grouping: **chat.md → continue-from-claudex.md → chat-groups.md → dirscope.md → summaries.md**.

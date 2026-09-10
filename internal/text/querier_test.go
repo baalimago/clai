@@ -834,6 +834,7 @@ func Test_Querier_postProcess_OnlyOuterCallEnrichesChat(t *testing.T) {
 			Messages: []pub_models.Message{
 				{Role: "user", Content: "hello"},
 			},
+			TokenUsage: &pub_models.Usage{TotalTokens: 1},
 		},
 		fullMsg: "outer response",
 	}
@@ -1083,6 +1084,7 @@ func Test_Querier_postProcess_SkipsCostEnrichIfManagerNotReady(t *testing.T) {
 				{Role: "system", Content: "sys"},
 				{Role: "user", Content: "hello"},
 			},
+			TokenUsage: &pub_models.Usage{TotalTokens: 1},
 		},
 		fullMsg: "answer",
 	}

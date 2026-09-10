@@ -7,7 +7,10 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math/rand/v2"
 	"os"
+	"path/filepath"
+	"strconv"
 
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
@@ -81,4 +84,49 @@ func ReadAndUnmarshal[T any](filePath string, config *T) error {
 	}
 
 	return nil
+}
+
+// WriteFileAtomic writes data to path through a temp file in the same
+// directory and a rename, so a concurrent reader sees the old file or the
+// new file, never a prefix (worklog 2026-09-09-conversation-summaries, D31).
+func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
+	tmp, err := createExclusiveTemp(path, perm)
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer func() { _ = os.Remove(tmpName) }()
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("write temp file %q: %w", tmpName, err)
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("sync temp file %q: %w", tmpName, err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close temp file %q: %w", tmpName, err)
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		return fmt.Errorf("rename %q to %q: %w", tmpName, path, err)
+	}
+	return nil
+}
+
+// createExclusiveTemp opens a fresh <base>-<rand>.tmp beside path with perm
+// under the umask, like os.WriteFile.
+func createExclusiveTemp(path string, perm os.FileMode) (*os.File, error) {
+	dir, base := filepath.Dir(path), filepath.Base(path)
+	for range 10000 {
+		name := filepath.Join(dir, base+"-"+strconv.FormatUint(rand.Uint64(), 36)+".tmp")
+		f, err := os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, perm)
+		if errors.Is(err, fs.ErrExist) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("create temp file in %q: %w", dir, err)
+		}
+		return f, nil
+	}
+	return nil, fmt.Errorf("create temp file in %q: %w", dir, fs.ErrExist)
 }
