@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/baalimago/clai/internal/debugflags"
+	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
@@ -24,6 +25,7 @@ type Manager struct {
 	modelResolver  func(pub_models.Chat) string
 	configFilePath string
 	price          *ModelPriceScheme
+	warnf          func(format string, a ...any)
 }
 
 type Session interface {
@@ -55,6 +57,15 @@ func (m *Manager) SetModelResolver(resolver func(pub_models.Chat) string) {
 	m.modelResolver = resolver
 }
 
+// SetWarnf routes the manager's warnings through warnf instead of the
+// process streams.
+func (m *Manager) SetWarnf(warnf func(format string, a ...any)) {
+	if warnf == nil {
+		return
+	}
+	m.warnf = warnf
+}
+
 var errCacheMiss = errors.New("cache miss")
 
 // storePriceScheme by updating the price field in m.configFilePath while keeping all other field as is
@@ -84,7 +95,7 @@ func (m *Manager) storePriceScheme(price ModelPriceScheme) error {
 	if err != nil {
 		return fmt.Errorf("marshal updated price config file %q: %w", m.configFilePath, err)
 	}
-	if err := os.WriteFile(m.configFilePath, updatedBytes, 0o644); err != nil {
+	if err := utils.WriteFileAtomic(m.configFilePath, updatedBytes, 0o644); err != nil {
 		return fmt.Errorf("write updated price config file %q: %w", m.configFilePath, err)
 	}
 
@@ -155,7 +166,11 @@ func (m *Manager) resolveModelPrice(ctx context.Context) (ModelPriceScheme, erro
 
 	err = m.storePriceScheme(price)
 	if err != nil {
-		ancli.Errf("failed to store price scheme: %v", err)
+		if m.warnf != nil {
+			m.warnf("failed to store price scheme: %v", err)
+		} else {
+			ancli.Errf("failed to store price scheme: %v", err)
+		}
 	}
 	return price, nil
 }
@@ -205,7 +220,11 @@ func (m *Manager) Enrich(chat pub_models.Chat) (pub_models.Chat, error) {
 	}
 	_, idx, err := chat.LastOfRole("user")
 	if err != nil {
-		ancli.Warnf("failed to find user role: %v", err)
+		if m.warnf != nil {
+			m.warnf("failed to find user role: %v", err)
+		} else {
+			ancli.Warnf("failed to find user role: %v", err)
+		}
 		idx = -1
 	}
 

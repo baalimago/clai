@@ -3,6 +3,7 @@ package models
 import (
 	"encoding/json"
 	"math"
+	"strings"
 	"testing"
 	"time"
 )
@@ -295,5 +296,64 @@ func TestMessageString(t *testing.T) {
 	if msg.String() != "content text" {
 		t.Errorf("expected 'content text', got %q",
 			msg.String())
+	}
+}
+
+// TestQueryCost_purposeRoundTrip pins the QueryCost.Purpose contract: the key
+// is omitted for cost-manager rows and round-trips for summarizer rows.
+func TestQueryCost_purposeRoundTrip(t *testing.T) {
+	plain, err := json.Marshal(QueryCost{Model: "m"})
+	if err != nil {
+		t.Fatalf("marshal plain row: %v", err)
+	}
+	if strings.Contains(string(plain), `"purpose"`) {
+		t.Fatalf("empty purpose must be omitted, got %s", plain)
+	}
+
+	b, err := json.Marshal(QueryCost{Model: "m", Purpose: "summary"})
+	if err != nil {
+		t.Fatalf("marshal summary row: %v", err)
+	}
+	if !strings.Contains(string(b), `"purpose":"summary"`) {
+		t.Fatalf("purpose not serialized, got %s", b)
+	}
+	var got QueryCost
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("unmarshal summary row: %v", err)
+	}
+	if got.Purpose != "summary" {
+		t.Fatalf("purpose = %q, want summary", got.Purpose)
+	}
+}
+
+func TestChat_titleSummaryRoundTrip(t *testing.T) {
+	at := time.Date(2026, 9, 9, 10, 0, 0, 0, time.UTC)
+	b, err := json.Marshal(Chat{ID: "c", Title: "T", Summary: "S", SummaryAt: at})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	for _, want := range []string{`"title":"T"`, `"summary":"S"`, `"summary_at":"2026-09-09T10:00:00Z"`} {
+		if !strings.Contains(string(b), want) {
+			t.Fatalf("missing %s in %s", want, b)
+		}
+	}
+	var got Chat
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got.Title != "T" || got.Summary != "S" || !got.SummaryAt.Equal(at) {
+		t.Fatalf("round trip mismatch: %+v", got)
+	}
+}
+
+func TestChat_summaryAtOmittedWhenZero(t *testing.T) {
+	b, err := json.Marshal(Chat{ID: "c"})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	for _, key := range []string{`"title"`, `"summary"`, `"summary_at"`} {
+		if strings.Contains(string(b), key) {
+			t.Fatalf("zero %s must be omitted, got %s", key, b)
+		}
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -616,6 +617,10 @@ func Test_e2e_chat_list_macro_group_back_without_select(t *testing.T) {
 // Test 16: Dir filter toggle — on then off
 // ============================================================
 
+// dirToggleState matches the [d] toggle's state words across the three
+// renders of the d-d macro, whichever label tier the width selects.
+var dirToggleState = regexp.MustCompile(`(?s)\[d\][^,]*: ?off.*\[d\][^,]*: ?on.*\[d\][^,]*: ?off`)
+
 func Test_e2e_chat_list_macro_dir_filter_toggle(t *testing.T) {
 	confDir := setupMainTestConfigDir(t)
 	t.Setenv("HOME", t.TempDir())
@@ -648,9 +653,13 @@ func Test_e2e_chat_list_macro_dir_filter_toggle(t *testing.T) {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
 
-	// The [d]ir action label should appear in each of the three table renders.
-	if n := strings.Count(stdout, "[d]irscoped"); n != 3 {
-		t.Fatalf("expected [d]irscoped 3 times (one per table render), got %d:\n%s", n, stdout)
+	// The [d]ir toggle appears in each of the three table renders with its
+	// state word; the label tier follows the terminal width (review 3, R3-02).
+	if n := strings.Count(stdout, "[d]"); n != 3 {
+		t.Fatalf("expected the [d] toggle 3 times (one per table render), got %d:\n%s", n, stdout)
+	}
+	if !dirToggleState.MatchString(stdout) {
+		t.Fatalf("expected the toggle to read off, then on, then off:\n%s", stdout)
 	}
 	// After the d toggle cycle (on→off), the full list should show 2 rows.
 	// The "Index" header appears once per table render → 3 renders total.
@@ -678,10 +687,10 @@ func Test_e2e_chat_list_macro_dir_filter_empty(t *testing.T) {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
 
-	// The [d]irscoped action should appear.
+	// The [d]ir toggle should be offered.
 	// The output should show zero conversations (empty list after filtering).
-	if !strings.Contains(stdout, "[d]irscoped") {
-		t.Fatalf("expected [d]irscoped action label, got:\n%s", stdout)
+	if !strings.Contains(stdout, "[d]") {
+		t.Fatalf("expected the [d] toggle label, got:\n%s", stdout)
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"io"
 
 	"github.com/baalimago/clai/internal"
+	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/tools"
 )
 
@@ -31,6 +32,10 @@ type QueryCommandDeps struct {
 	// ApplyMediaOverrides hands the media-tool flags to the domains owning
 	// those tools (internal/audio today), which text must not import.
 	ApplyMediaOverrides func(internal.MediaToolFlags) error
+	// NewSummarizer builds the in-flight conversation summarizer; nil or a
+	// constructor error attaches nothing (worklog
+	// 2026-09-09-conversation-summaries, D26).
+	NewSummarizer func(confDir string) (models.Summarizer, error)
 }
 
 // QueryCommand builds the query command.
@@ -78,10 +83,33 @@ func QueryCommand(deps QueryCommandDeps) *internal.Command {
 				return fmt.Errorf("apply dir reply chat id: %w", err)
 			}
 		}
+		if tConf.SummarizeConversations {
+			attachSummarizer(confDir, deps.NewSummarizer, q)
+		}
 		c.SetQuerier(q)
 		return nil
 	}
 	return c
+}
+
+// attachSummarizer hands the constructed summarizer to the querier through
+// its setter; a failure is traced and never reaches the run. The caller
+// skips it when summarize-conversations is off, so an opted-out run never
+// loads the summarizer's config.
+func attachSummarizer(confDir string, newSummarizer func(string) (models.Summarizer, error), q models.Querier) {
+	if newSummarizer == nil {
+		return
+	}
+	setter, ok := q.(interface{ SetSummarizer(models.Summarizer) })
+	if !ok {
+		return
+	}
+	s, err := newSummarizer(confDir)
+	if err != nil {
+		traceSummaryf("summarizer unavailable, continuing without: %v", err)
+		return
+	}
+	setter.SetSummarizer(s)
 }
 
 // ApplyFlagOverrides applies the CLI flag values onto the file-loaded
@@ -119,6 +147,12 @@ func ApplyFlagOverrides(tConf *Configurations, tf internal.TextFlags) {
 	}
 	if tf.QueryText.ShellContext.Changed() {
 		tConf.ShellContext = tf.QueryText.ShellContext.Value()
+	}
+	if tf.QueryText.Summarize.Explicit() {
+		tConf.SummarizeConversations = tf.QueryText.Summarize.Value()
+	}
+	if tf.QueryText.SummaryModel.Changed() {
+		tConf.SummaryModel = tf.QueryText.SummaryModel.Value()
 	}
 	if tf.AgentText.MaxTokens.Explicit() {
 		if tConf.Stoploss == nil {

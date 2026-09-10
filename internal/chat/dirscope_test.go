@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/baalimago/clai/internal/utils"
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
@@ -82,4 +83,32 @@ func Test_UpdateDirScopeFromCWD_updatesBinding(t *testing.T) {
 	if ds.ChatID != chatID {
 		t.Fatalf("expected chatID %q got %q", chatID, ds.ChatID)
 	}
+}
+
+func TestLoadDirScopedContext_keepsFields(t *testing.T) {
+	confDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(confDir, "conversations", "dirs"), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	want := labelledChat("bound", pub_models.Message{Role: "user", Content: "hi"})
+	if err := Save(filepath.Join(confDir, "conversations"), want); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	wd := t.TempDir()
+	if err := saveDirScope(confDir, wd, want.ID); err != nil {
+		t.Fatalf("saveDirScope: %v", err)
+	}
+	oldWd, _ := os.Getwd()
+	t.Cleanup(func() { _ = os.Chdir(oldWd) })
+	if err := os.Chdir(wd); err != nil {
+		t.Fatalf("Chdir: %v", err)
+	}
+	got, err := LoadDirScopedContext(confDir)
+	if err != nil {
+		t.Fatalf("LoadDirScopedContext: %v", err)
+	}
+	if got.ID != want.ID {
+		t.Fatalf("id = %q, want %q", got.ID, want.ID)
+	}
+	assertLabelled(t, got, want)
 }

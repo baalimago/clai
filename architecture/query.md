@@ -117,10 +117,21 @@ loop (`internal/text/session_runner.go`). Each model step:
     exhausted do later tool calls run the refusal ladder until the run ends
     cleanly (`io.EOF`). A step that ends with a plain reply ends the run
     without a handover — there is nothing to hand over.
-5. **Post-processing** (`postProcess()`):
-   - Appends assistant message to chat
-   - Saves conversation via `SaveAsPreviousQuery()` (unless in chat mode)
+5. **Post-processing** (`sessionFinalizer.Finalize`, `internal/text/finalizer.go`):
+   - Appends assistant message to chat; enriches cost whenever usage is present
    - Pretty-prints final output (via glow when the destination is a terminal, unless `-r`/`--raw`)
+   - Joins the in-flight conversation summarizer, launched alongside the
+     main call on a new conversation's first persist, for at most
+     a fixed join bound (5 s, `Configurations.SummaryJoinTimeout`, not a
+     config key or flag) and stamps `title`/`summary` on a result
+   - Saves conversation via `SaveAsPreviousQuery()` (unless in chat mode)
+
+   The order on the success path is **display → join → persist**, so the
+   answer is never delayed by the summary wait and the file, index and
+   `globalScope.json` mirror are written once. A failed, empty or
+   interrupted run abandons the summarizer and persists without joining;
+   no summarizer failure reaches the answer, exit status or persistence.
+   See `architecture/summaries.md`.
 
 ### Rate Limit Handling
 

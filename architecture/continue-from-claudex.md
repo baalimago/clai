@@ -309,6 +309,8 @@ The flow is extended:
 
    **Rule:** foreign rows are never removed by dirscope filtering; dirscope filtering is strictly a _native-row filter_.
 
+   The user hides external conversations explicitly with the `[f]oreign convs` table action instead (offered only when a source produced rows; a second press shows them again). It drops foreign rows before grouping, so a group whose only other member was foreign collapses to its native member.
+
    **Required behavioral constraint:** if the current list contains **zero** native rows after filtering but foreign rows exist, the UI must still show those foreign rows (i.e. filter acts like `keep if foreign || (native && inDirscope)`).
 
    Acceptance note: add a test ensuring that enabling the dirscope filter does not hide foreign rows.
@@ -326,14 +328,14 @@ The `source` column is added to both table formats.
 
 ```text
 %-6s| %-9s | %-20s| %-12s | %-6s | %v
-Index | Source    | Created             | Model        | Cost   | Prompt
+Index | Source    | Created             | Model        | Cost   | About
 ```
 
 **Wide** (width > 120):
 
 ```text
 %-6s| %-9s | %-20s| %-8v | %-15s | %-18s | %-8s | %-6s | %v
-Index | Source    | Created             | Messages | Profile         | Model              | Cost            | Tokens  | Prompt
+Index | Source    | Created             | Messages | Profile         | Model              | Cost            | Tokens  | About
 ```
 
 **Implementation note:** today `handler_list_chat.go` uses `chatIndexRow` directly for selection rows and `dirFilterAction` assumes the concrete type `chatIndexRow`. The integration MUST introduce a UI row type and update `dirFilterAction.Filter` to handle that type (and only filter native rows). This change is required for correctness and testability.

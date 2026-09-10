@@ -6,12 +6,10 @@ import (
 	"time"
 
 	"github.com/baalimago/clai/pkg/text/models"
-	pkgtools "github.com/baalimago/clai/pkg/tools"
 )
 
 // Query the agent, taking Chat and returning mutaded Chat
 func (a *Agent) Query(ctx context.Context, chat models.Chat) (models.Chat, error) {
-	ctx = pkgtools.WithCmdBanContext(ctx, a.cmdBan)
 	c, err := a.querier.TextQuery(ctx, chat)
 	if err != nil {
 		return models.Chat{}, fmt.Errorf("Agent.TextQuery: %w", err)

@@ -11,7 +11,9 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
@@ -32,6 +34,7 @@ Commands:
   l|list                          List all existing chats.
   dir                             Show legacy chat info for CWD (stable v1 output).
   dirv2                           Show chat info with total and recent token usage.
+  s|summarize <window>            Generate a title and summary for conversations updated since the window (7d, 12h, 2026-09-01).
 
 The chatID is the 5 first words of the prompt joined by underscores. Easiest
 way to get the chatID is to list all chats with 'clai chat list'. You may also select
@@ -47,6 +50,7 @@ Examples:
   - clai chat delete my_chat_id
   - clai chat dir
   - clai -r chat dirv2
+  - clai chat summarize 7d
 `
 
 const (
@@ -73,13 +77,25 @@ type ChatHandler struct {
 	profile string
 	raw     bool
 
-	out   io.Writer
-	input io.Reader
+	out    io.Writer
+	input  io.Reader
+	errOut io.Writer
 	// dims is the one terminal-dimensions snapshot of this chat command
 	// invocation, bound to the handler's output writer. It is resolved once in
 	// New and used by every width-aware render path of the handler. Tests
 	// inject a snapshot to stay ambient-independent.
 	dims dimensions.Dimensions
+
+	// summarizer, summarizeOptions and upsertIndexBatch are set only for the
+	// summarize verb; a nil upsertIndexBatch means UpsertChatIndexBatch.
+	summarizer       models.Summarizer
+	summarizeOptions summarizeOptions
+	// forceLive draws the summarize board as on a terminal; boardWidth
+	// fixes its width and now its clock (tests).
+	forceLive        bool
+	boardWidth       int
+	now              func() time.Time
+	upsertIndexBatch func(convDir string, chats []pub_models.Chat) error
 }
 
 func (q *ChatHandler) Query(ctx context.Context) error {
@@ -103,6 +119,8 @@ func (cq *ChatHandler) actOnSubCmd(ctx context.Context) error {
 		return cq.deleteFromPrompt()
 	case "query", "q":
 		return errors.New("not yet implemented")
+	case "summarize", "s":
+		return cq.handleSummarize(ctx)
 	case "dir", "dirv2":
 		var err error
 		if cq.subCmd == "dirv2" {
@@ -310,6 +328,7 @@ func New(confDir, args, profile string, raw bool, out io.Writer) (*ChatHandler, 
 		profile:  profile,
 		raw:      raw,
 		out:      out,
+		errOut:   os.Stderr,
 		dims:     utils.SessionDimensions(out),
 	}
 

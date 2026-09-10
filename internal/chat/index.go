@@ -3,6 +3,7 @@ package chat
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"path"
 	"slices"
@@ -47,6 +48,18 @@ type chatIndexRow struct {
 	OriginDir string `json:"origin_dir,omitempty"`
 	// GroupKey mirrors Chat.GroupKey; see Chat.GroupKey for semantics.
 	GroupKey string `json:"group_key,omitempty"`
+	Title    string `json:"title,omitempty"`
+	Summary  string `json:"summary,omitempty"`
+	// Updated is stamped at upsert, or from the file mtime on rebuild. Rows
+	// cached before the field existed decode as zero; see effectiveUpdated.
+	Updated time.Time `json:"updated,omitzero"`
+}
+
+func (r chatIndexRow) effectiveUpdated() time.Time {
+	if r.Updated.IsZero() {
+		return r.Created
+	}
+	return r.Updated
 }
 
 type ChatIndexPaginator struct {
@@ -109,6 +122,8 @@ func chatIndexRowFromChat(chat pub_models.Chat) chatIndexRow {
 		TotalCostUSD: chat.TotalCostUSD(),
 		OriginDir:    chat.OriginDir,
 		GroupKey:     chat.GroupKey,
+		Title:        chat.Title,
+		Summary:      chat.Summary,
 	}
 	if len(chat.Queries) > 0 {
 		row.TotalTokens = aggregateQueryTotalTokens(chat.Queries)
@@ -117,7 +132,7 @@ func chatIndexRowFromChat(chat pub_models.Chat) chatIndexRow {
 		row.TotalTokens = chat.TokenUsage.TotalTokens
 	}
 	for i := len(chat.Queries) - 1; i >= 0; i-- {
-		if chat.Queries[i].Model == "" {
+		if chat.Queries[i].Model == "" || chat.Queries[i].Purpose != "" {
 			continue
 		}
 		row.Model = chat.Queries[i].Model
@@ -233,7 +248,9 @@ func rebuildChatIndex(convDir string, fromVersion int, reason string) ([]chatInd
 		if chat.GroupKey == "" {
 			chat.GroupKey = ComputeGroupKey(chat)
 		}
-		rows = append(rows, chatIndexRowFromChat(chat))
+		row := chatIndexRowFromChat(chat)
+		row.Updated = entryModTime(file)
+		rows = append(rows, row)
 		processed++
 		if !readonly && (processed%batchSize == 0 || processed == total) {
 			elapsed := time.Since(batchStart)
@@ -261,6 +278,14 @@ func rebuildChatIndex(convDir string, fromVersion int, reason string) ([]chatInd
 	return rows, nil
 }
 
+func entryModTime(entry fs.DirEntry) time.Time {
+	info, err := entry.Info()
+	if err != nil {
+		return time.Time{}
+	}
+	return info.ModTime().UTC()
+}
+
 func writeChatIndex(convDir string, rows []chatIndexRow) error {
 	if SkipIndex {
 		return nil
@@ -273,7 +298,7 @@ func writeChatIndex(convDir string, rows []chatIndexRow) error {
 	if err != nil {
 		return fmt.Errorf("failed to encode chat index JSON: %w", err)
 	}
-	if err := os.WriteFile(chatIndexPath(convDir), b, 0o644); err != nil {
+	if err := utils.WriteFileAtomic(chatIndexPath(convDir), b, 0o644); err != nil {
 		return fmt.Errorf("failed to write chat index: %w", err)
 	}
 	return nil
@@ -287,22 +312,43 @@ func upsertChatIndex(convDir string, chat pub_models.Chat) error {
 	if err != nil {
 		return fmt.Errorf("failed to read chat index for upsert: %w", err)
 	}
-	row := chatIndexRowFromChat(chat)
-	replaced := false
-	for i := range rows {
-		if rows[i].ID == chat.ID {
-			rows[i] = row
-			replaced = true
-			break
-		}
+	rows = upsertIndexRow(rows, chat, time.Now().UTC())
+	if err := writeChatIndex(convDir, rows); err != nil {
+		return fmt.Errorf("failed to persist chat index: %w", err)
 	}
-	if !replaced {
-		rows = append(rows, row)
+	return nil
+}
+
+// UpsertChatIndexBatch upserts every chat's row with one read and one
+// write, so a batch of index-free saves rewrites the cache once (D24).
+func UpsertChatIndexBatch(convDir string, chats []pub_models.Chat) error {
+	if SkipIndex || len(chats) == 0 {
+		return nil
+	}
+	rows, err := readChatIndex(convDir)
+	if err != nil {
+		return fmt.Errorf("failed to read chat index for batch upsert: %w", err)
+	}
+	now := time.Now().UTC()
+	for _, chat := range chats {
+		rows = upsertIndexRow(rows, chat, now)
 	}
 	if err := writeChatIndex(convDir, rows); err != nil {
 		return fmt.Errorf("failed to persist chat index: %w", err)
 	}
 	return nil
+}
+
+func upsertIndexRow(rows []chatIndexRow, chat pub_models.Chat, updated time.Time) []chatIndexRow {
+	row := chatIndexRowFromChat(chat)
+	row.Updated = updated
+	for i := range rows {
+		if rows[i].ID == chat.ID {
+			rows[i] = row
+			return rows
+		}
+	}
+	return append(rows, row)
 }
 
 func NewChatIndexPaginator(convDir string) (*ChatIndexPaginator, error) {

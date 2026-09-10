@@ -122,3 +122,64 @@ func TestConfigurations_SetupInitialChat_ReplyModeKeepsPreviousQueryMessages(t *
 		t.Fatalf("expected first reply message content %q, got %q", prev.Messages[0].Content, conf.InitialChat.Messages[0].Content)
 	}
 }
+
+func TestSetupInitialChat_replyAdoptsFields(t *testing.T) {
+	at := time.Date(2026, 9, 9, 9, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name       string
+		mirrorID   string
+		labelled   bool
+		wantAdopts bool
+	}{
+		{name: "mirror carries fields", mirrorID: "globalScope", labelled: true, wantAdopts: true},
+		{name: "pre-feature mirror lacks fields", mirrorID: "globalScope"},
+		{name: "hand-edited id adopts fields the same way", mirrorID: "hand-edited", labelled: true, wantAdopts: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			confDir := t.TempDir()
+			convDir := filepath.Join(confDir, "conversations")
+			if err := os.MkdirAll(convDir, 0o755); err != nil {
+				t.Fatalf("MkdirAll: %v", err)
+			}
+			mirror := pub_models.Chat{
+				Created:  time.Now(),
+				ID:       tc.mirrorID,
+				Messages: []pub_models.Message{{Role: "user", Content: "before"}, {Role: "assistant", Content: "after"}},
+			}
+			if tc.labelled {
+				mirror.Title, mirror.Summary, mirror.SummaryAt = "T", "S", at
+			}
+			b, err := json.Marshal(mirror)
+			if err != nil {
+				t.Fatalf("Marshal: %v", err)
+			}
+			if err := os.WriteFile(filepath.Join(convDir, "globalScope.json"), b, 0o644); err != nil {
+				t.Fatalf("WriteFile: %v", err)
+			}
+
+			conf := Default
+			conf.ConfigDir = confDir
+			conf.ReplyMode = true
+			if err := conf.SetupInitialChat([]string{"q", "more"}); err != nil {
+				t.Fatalf("SetupInitialChat: %v", err)
+			}
+
+			// LoadGlobalScope normalizes the mirror id to globalScope, so the
+			// reply always forks under a fresh id whatever the file says.
+			got := conf.InitialChat
+			if got.ID == "" || got.ID == tc.mirrorID {
+				t.Fatalf("expected a fresh fork id, got %q", got.ID)
+			}
+			if tc.wantAdopts {
+				if got.Title != "T" || got.Summary != "S" || !got.SummaryAt.Equal(at) {
+					t.Fatalf("expected fields adopted from the mirror, got title=%q summary=%q at=%v", got.Title, got.Summary, got.SummaryAt)
+				}
+				return
+			}
+			if got.Title != "" || got.Summary != "" || !got.SummaryAt.IsZero() {
+				t.Fatalf("expected an unlabelled fork, got title=%q summary=%q at=%v", got.Title, got.Summary, got.SummaryAt)
+			}
+		})
+	}
+}

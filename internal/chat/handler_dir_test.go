@@ -12,6 +12,7 @@ import (
 
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
+	"github.com/baalimago/go_away_boilerplate/pkg/dimensions"
 )
 
 func TestChatHelpDocumentsDirV2(t *testing.T) {
@@ -786,4 +787,96 @@ func TestChatRecentUsagePrecedence(t *testing.T) {
 			t.Fatalf("recent query fallback mismatch: got %+v", got)
 		}
 	})
+}
+
+// bindDirChat saves c and binds the test's working directory to it.
+func bindDirChat(t *testing.T, c pub_models.Chat) *ChatHandler {
+	t.Helper()
+	cq, _ := newTestHandler(t)
+	cq.dims = dimensions.Dimensions{Width: 200}
+	chdirToTemp(t)
+	if err := Save(cq.convDir, c); err != nil {
+		t.Fatalf("Save(%q): %v", c.ID, err)
+	}
+	if err := cq.SaveDirScope("", c.ID); err != nil {
+		t.Fatalf("SaveDirScope: %v", err)
+	}
+	return cq
+}
+
+func labelledDirChat(id string, title, summary string) pub_models.Chat {
+	return pub_models.Chat{
+		ID:       id,
+		Title:    title,
+		Summary:  summary,
+		Created:  time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
+		Messages: []pub_models.Message{{Role: "user", Content: "dir prompt"}, {Role: "assistant", Content: "ok"}},
+	}
+}
+
+// assertDirInfoLabel checks the raw JSON and the pretty output of one dir
+// info verb for the labelled and the unlabelled forms.
+func assertDirInfoLabel(t *testing.T, cq *ChatHandler, verb func() error, labelled bool) map[string]any {
+	t.Helper()
+	var out bytes.Buffer
+	cq.out = &out
+	cq.raw = true
+	if err := verb(); err != nil {
+		t.Fatalf("raw: %v", err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(out.Bytes(), &raw); err != nil {
+		t.Fatalf("unmarshal: %v, out=%q", err, out.String())
+	}
+	out.Reset()
+	cq.raw = false
+	if err := verb(); err != nil {
+		t.Fatalf("pretty: %v", err)
+	}
+	pretty := out.String()
+	if !labelled {
+		if _, ok := raw["title"]; ok {
+			t.Fatalf("unlabelled JSON must omit title: %+v", raw)
+		}
+		if _, ok := raw["summary"]; ok {
+			t.Fatalf("unlabelled JSON must omit summary: %+v", raw)
+		}
+		if strings.Contains(pretty, "title:") || strings.Contains(pretty, "summary:") {
+			t.Fatalf("unlabelled pretty output must carry no label lines: %q", pretty)
+		}
+		return raw
+	}
+	if raw["title"] != "Fix auth" || raw["summary"] != "Token refresh fixed." {
+		t.Fatalf("expected title and summary in JSON, got %+v", raw)
+	}
+	want := "prompt: dir prompt\ntitle: Fix auth\nsummary: Token refresh fixed.\n"
+	if !strings.Contains(pretty, want) {
+		t.Fatalf("expected %q after the prompt line, got: %q", want, pretty)
+	}
+	return raw
+}
+
+func TestDirInfo_titleSummary(t *testing.T) {
+	cq := bindDirChat(t, labelledDirChat("bound", "Fix auth", "Token refresh fixed."))
+	raw := assertDirInfoLabel(t, cq, cq.dirInfo, true)
+	if _, ok := raw["version"]; ok {
+		t.Fatalf("v1 JSON must carry no version: %+v", raw)
+	}
+
+	cq = bindDirChat(t, labelledDirChat("plain", "", ""))
+	assertDirInfoLabel(t, cq, cq.dirInfo, false)
+}
+
+func TestDirInfoV2_titleSummary(t *testing.T) {
+	cq := bindDirChat(t, labelledDirChat("bound", "Fix auth", "Token refresh fixed."))
+	raw := assertDirInfoLabel(t, cq, cq.dirInfoV2, true)
+	if raw["version"] != float64(2) {
+		t.Fatalf("v2 version must stay 2, got %+v", raw)
+	}
+
+	cq = bindDirChat(t, labelledDirChat("plain", "", ""))
+	raw = assertDirInfoLabel(t, cq, cq.dirInfoV2, false)
+	if raw["version"] != float64(2) {
+		t.Fatalf("v2 version must stay 2, got %+v", raw)
+	}
 }

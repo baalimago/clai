@@ -2,10 +2,12 @@ package chat
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/baalimago/clai/internal"
 	"github.com/baalimago/clai/internal/models"
@@ -18,6 +20,10 @@ import (
 // (setup imports the domain packages), so main.go injects it.
 type CommandDeps struct {
 	ConfigPrep func() (confDir string, err error)
+	// NewSummarizer and ParseSince serve chat summarize only; the chat tree
+	// cannot import internal/summary, and no other verb touches a model.
+	NewSummarizer func(confDir string) (models.Summarizer, error)
+	ParseSince    func(s string, now time.Time) (time.Time, error)
 }
 
 // Command builds the chat command tree.
@@ -30,14 +36,15 @@ func Command(deps CommandDeps) *internal.Command {
 	cf := &internal.ChatFlags{}
 	c := &internal.Command{
 		Name: "chat",
-		Desc: "Manage chats: continue|delete|list|dir|dirv2|help",
+		Desc: "Manage chats: continue|delete|list|dir|dirv2|summarize|help",
 		HelpText: `chat <subcommand> [args]. Manages stored conversations. Run
 'clai chat help' for detailed subcommand docs.
 
 Examples:
   clai c l          # list chats
   clai c c 0        # continue the most recent chat
-  clai -r c dirv2   # raw directory-scoped chat info`,
+  clai -r c dirv2   # raw directory-scoped chat info
+  clai c s 7d          # label the last week's conversations`,
 		Register:            cf.Register,
 		Raw:                 &cf.Raw,
 		NonInteractive:      &cf.NonInteractive,
@@ -52,6 +59,11 @@ Examples:
 	rawMacro := func(fs *flag.FlagSet) {
 		cf.Raw.Register(fs)
 		cf.NonInteractive.Register(fs)
+	}
+	sf := internal.NewSummarizeFlags()
+	withSummarize := func(fs *flag.FlagSet) {
+		cf.Register(fs)
+		sf.Register(fs)
 	}
 	c.Subs = map[string]cmd.Command{
 		"continue|c": chatSub(sources, cf, "continue", "Continue an existing chat with the given chat ID or index",
@@ -69,6 +81,9 @@ Examples:
 		"dirv2": chatSub(sources, cf, "dirv2", "Show directory chat info with total and recent token usage",
 			"  clai -r c dirv2",
 			rawOnly, readOnlySetup),
+		"summarize|s": chatSub(sources, cf, "summarize", "Generate a title and summary for conversations updated since a window (a duration such as 7d, an RFC 3339 timestamp or a YYYY-MM-DD date)",
+			"  clai c s 7d\n  clai c summarize -y -workers 8 2026-09-01\n  clai -r c summarize -force 12h",
+			withSummarize, summarizeSetup(deps, cf, &sf)),
 		"help|h": chatSub(sources, cf, "help", "Display detailed help for chat subcommands",
 			"", nil, readOnlySetup),
 	}
@@ -110,6 +125,57 @@ func fullChatSetup(deps CommandDeps, cf *internal.ChatFlags) func(ctx context.Co
 			return err
 		}
 		return setChatQuerier(c, confDir, cf)
+	}
+}
+
+const summarizeWindowUsage = "chat summarize <window>: the window is required (a duration such as 7d, an RFC 3339 timestamp or a YYYY-MM-DD date)"
+
+// summarizeSetup is the config-touching path of the summarize verb: it
+// parses the positional window, builds the summarizer and attaches both to
+// the handler. It is distinct from fullChatSetup because setChatQuerier
+// sees neither the summarize flags nor the summarizer.
+func summarizeSetup(deps CommandDeps, cf *internal.ChatFlags, sf *internal.SummarizeFlags) func(ctx context.Context, c *internal.Command) error {
+	return func(_ context.Context, c *internal.Command) error {
+		confDir, err := deps.ConfigPrep()
+		if err != nil {
+			return err
+		}
+		// c.Args() is ["chat", "summarize", <window>...] after chatSub's SetArgs.
+		rest := c.Args()[2:]
+		if len(rest) != 1 || strings.TrimSpace(rest[0]) == "" {
+			for _, arg := range rest {
+				if strings.HasPrefix(arg, "-") {
+					return fmt.Errorf("%s; flags go before the window, as in `clai chat summarize -y 7d` (got %q after it)", summarizeWindowUsage, arg)
+				}
+			}
+			return errors.New(summarizeWindowUsage)
+		}
+		if workers := sf.Workers.Value(); workers < 1 {
+			return fmt.Errorf("chat summarize: -workers must be at least 1, got %d", workers)
+		}
+		window := rest[0]
+		since, err := deps.ParseSince(window, time.Now())
+		if err != nil {
+			return fmt.Errorf("chat summarize: window %q: %w", window, err)
+		}
+		summarizer, err := deps.NewSummarizer(confDir)
+		if err != nil {
+			return fmt.Errorf("chat summarize: create summarizer: %w", err)
+		}
+		h, err := New(confDir, "summarize", cf.Profile.Value(), cf.Raw.Value(), os.Stdout)
+		if err != nil {
+			return fmt.Errorf("create chat handler: %w", err)
+		}
+		h.summarizer = summarizer
+		h.summarizeOptions = summarizeOptions{
+			since:   since,
+			force:   sf.Force.Value(),
+			yes:     sf.Yes.Value(),
+			workers: sf.Workers.Value(),
+			model:   sf.SummaryModel.Value(),
+		}
+		c.SetQuerier(h)
+		return nil
 	}
 }
 

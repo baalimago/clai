@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/baalimago/clai/internal/audio/generic"
+	"github.com/baalimago/clai/internal/board"
 	"github.com/baalimago/clai/internal/utils"
 )
 
@@ -171,10 +172,10 @@ func (s *Splitter) splitTranscribeStitch(ctx context.Context, filePath string, s
 	for i := range chunks {
 		spans[i] = SourceInterval{Start: time.Duration(float64(i) * segmentTime * float64(time.Second)), End: time.Duration(float64(i+1) * segmentTime * float64(time.Second))}
 	}
-	board := newProgressBoard(s.StatusOut, utils.IsTerminalWriter(s.StatusOut), fmt.Sprintf("splitting via ffmpeg  %v  %.1f MB > %.0f MB limit  %v chunks × %.1f min  %v workers",
+	b := newProgressBoard(s.StatusOut, utils.IsTerminalWriter(s.StatusOut), fmt.Sprintf("splitting via ffmpeg  %v  %.1f MB > %.0f MB limit  %v chunks × %.1f min  %v workers",
 		filepath.Base(filePath), toMB(size), toMB(maxBytes), numChunks, segmentTime/60, s.workers()), spans)
-	s.verifyChunkOffsets(ctx, chunks, segmentTime, board)
-	return s.transcribePool(ctx, chunks, segmentTime, board)
+	s.verifyChunkOffsets(ctx, chunks, segmentTime, b)
+	return s.transcribePool(ctx, chunks, segmentTime, b)
 }
 
 func (s *Splitter) probeDuration(ctx context.Context, filePath string) (float64, error) {
@@ -234,13 +235,13 @@ func (s *Splitter) split(ctx context.Context, filePath, tempDir string, segmentT
 
 // verifyChunkOffsets best-effort compares the planned i×segmentTime starts
 // against ffprobe-measured chunk durations, warning once on drift > 1 s
-func (s *Splitter) verifyChunkOffsets(ctx context.Context, chunks []string, segmentTime float64, board *progressBoard) {
+func (s *Splitter) verifyChunkOffsets(ctx context.Context, chunks []string, segmentTime float64, b *board.Board) {
 	measuredStart := 0.0
 	for i, chunk := range chunks {
 		planned := float64(i) * segmentTime
 		if diff := math.Abs(measuredStart - planned); diff > 1 {
-			board.update(i, func(r *boardRow) {
-				r.mark, r.state = markWarn, fmt.Sprintf("timestamp drift %.1f s, stitched timestamps may be off", diff)
+			b.Update(i, func(r *board.Row) {
+				r.Mark, r.Cells[colState] = board.MarkWarn, fmt.Sprintf("timestamp drift %.1f s, stitched timestamps may be off", diff)
 			})
 			return
 		}
@@ -267,14 +268,14 @@ func (s *Splitter) workers() int {
 	return s.Parallelism
 }
 
-func (s *Splitter) transcribePool(ctx context.Context, chunks []string, segmentTime float64, board *progressBoard) ([]Segment, error) {
+func (s *Splitter) transcribePool(ctx context.Context, chunks []string, segmentTime float64, b *board.Board) ([]Segment, error) {
 	poolCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	go board.animate(poolCtx)
+	go b.Animate(poolCtx)
 	started := time.Now()
-	board.setPhase(fmt.Sprintf("transcribing · %v chunks · %v workers", len(chunks), s.workers()))
-	board.setFooterFunc(func(rows []boardRow) string {
-		return fmt.Sprintf("in flight %v · %v elapsed", inFlight(rows), time.Since(started).Round(time.Second))
+	b.SetPhase(fmt.Sprintf("transcribing · %v chunks · %v workers", len(chunks), s.workers()))
+	b.SetFooterFunc(func(rows []board.Row) string {
+		return fmt.Sprintf("in flight %v · %v elapsed", board.InFlight(rows), time.Since(started).Round(time.Second))
 	})
 	parallelism := s.workers()
 	sem := make(chan struct{}, parallelism)
@@ -292,10 +293,10 @@ func (s *Splitter) transcribePool(ctx context.Context, chunks []string, segmentT
 				return
 			}
 			defer func() { <-sem }()
-			board.update(i, func(r *boardRow) { r.active, r.state, r.started = true, "transcribing", time.Now() })
+			b.Update(i, func(r *board.Row) { r.Active, r.Cells[colState], r.Started = true, "transcribing", time.Now() })
 			segs, err := s.Transcriber.Transcribe(poolCtx, chunk)
 			if err != nil {
-				board.update(i, func(r *boardRow) { r.active, r.mark, r.state = false, markWarn, "request failed" })
+				b.Update(i, func(r *board.Row) { r.Active, r.Mark, r.Cells[colState] = false, board.MarkWarn, "request failed" })
 				errMu.Lock()
 				if firstErr == nil {
 					firstErr = fmt.Errorf("failed to transcribe chunk %v/%v: %w", i+1, len(chunks), err)
@@ -305,17 +306,17 @@ func (s *Splitter) transcribePool(ctx context.Context, chunks []string, segmentT
 				return
 			}
 			results[i] = Offset(segs, generic.SecondsToDuration(float64(i)*segmentTime))
-			board.update(i, func(r *boardRow) {
-				r.active, r.elapsed, r.state = false, time.Since(r.started), fmt.Sprintf("transcribed · %v segments", len(segs))
-				if r.mark != markWarn {
-					r.mark = markDone
+			b.Update(i, func(r *board.Row) {
+				r.Active, r.Elapsed, r.Cells[colState] = false, time.Since(r.Started), fmt.Sprintf("transcribed · %v segments", len(segs))
+				if r.Mark != board.MarkWarn {
+					r.Mark = board.MarkDone
 				}
 			})
 		}(i, chunk)
 	}
 	wg.Wait()
-	board.setPhase("stitching")
-	board.finish(fmt.Sprintf("%v chunks · %v elapsed", len(chunks), time.Since(started).Round(time.Second)))
+	b.SetPhase("stitching")
+	b.Finish(fmt.Sprintf("%v chunks · %v elapsed", len(chunks), time.Since(started).Round(time.Second)))
 	if firstErr != nil {
 		return nil, firstErr
 	}

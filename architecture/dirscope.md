@@ -162,7 +162,7 @@ Surfaced only when the lookback is enabled. Precedence: CLI `-lb`/`-lookback` (b
 ### Descriptor block (passive, dir-scoped memory)
 
 When the lookback is enabled and the **CWD** binding has history, clai injects a compact block into the system
-prompt, deriving each one-line summary and message count from the chat index — never inlining a transcript.
+prompt, deriving each one-line label and message count from the chat index — never inlining a transcript.
 The header carries statistics: total recorded conversations, how many are shown, and aggregate message count.
 
 ```text
@@ -171,10 +171,15 @@ Call `search_conversations` to find more (by keyword, here or in another path), 
 to list a conversation's messages, and `read_message` to read one.
 
 <recent_conversations>
-  <conversation id="ab12" last_scoped="2d" messages="8">fixing the auth signing bug...</conversation>
+  <conversation id="ab12" last_scoped="2d" messages="8">Fix auth signing: Asked why signed requests failed. Found the clock skew and fixed the window.</conversation>
   <conversation id="9fd3" last_scoped="5d" messages="14">k8s deploy debugging...</conversation>
 </recent_conversations>
 ```
+
+The element text is `lookbackLabel(row)` (`internal/chat/dirscope_lookback.go`): a labelled conversation
+renders `title: summary` (the title alone when the summary is empty); an unlabelled one, as the second row
+above, renders the first `lookbackPreviewRunes` (80) runes of its first user message — the pre-feature
+behaviour. Labels come from the index row's `title`/`summary`; see `architecture/summaries.md`.
 
 The block shows the most recent `LookbackInjectCount` (default 5) entries from the CWD binding's `history`.
 The descriptor remains **strictly dir-scoped to the CWD** — it is the passive "what was I just doing here"

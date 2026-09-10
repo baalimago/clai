@@ -28,6 +28,7 @@ main.go:run()
 | File                                        | Purpose                                                                                               |
 | ------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | `internal/audio/cmd.go`                     | audio Subcommander tree — transcribe\|help verbs (see [cmd-dispatch.md](./cmd-dispatch.md))           |
+| `internal/audio/board.go`                   | Adapter over the shared progress table ([board.md](./board.md)): diarization columns, `unknownSoFar` |
 | `internal/audio/setup_transcribe.go`        | Transcribe-querier setup, stdin `-` input resolution                                                  |
 | `internal/audio/audio.go`                   | `Segment` model, JSON parsing, `vtt\|srt\|text\|json` rendering, `Offset`                            |
 | `internal/audio/split.go`                   | `Splitter`: byte-cap gate, plain ffmpeg chunking for non-diarized models, calibration routing for diarized ones |

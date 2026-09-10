@@ -5,6 +5,10 @@ import (
 	"strings"
 )
 
+// lookbackPreviewRunes is the head of the first user message an unlabelled
+// history entry renders as.
+const lookbackPreviewRunes = 80
+
 // LookbackDescriptor is the result of building the passive, CWD-scoped
 // recent-conversations memory block.
 type LookbackDescriptor struct {
@@ -66,7 +70,7 @@ func BuildLookbackDescriptor(confDir, dir string, injectCount int) (LookbackDesc
 	sb.WriteString("<recent_conversations>\n")
 	for _, sc := range scope.History[:shown] {
 		row := byID[sc.ChatID]
-		summary := previewOf(row.FirstUserMessage, 80)
+		summary := lookbackLabel(row)
 		fmt.Fprintf(&sb, "  <conversation id=%q last_scoped=%q messages=%q>%s</conversation>\n",
 			sc.ChatID, humanizeAge(sc.LastScoped), fmt.Sprintf("%d", row.MessageCount), summary)
 	}
@@ -97,4 +101,17 @@ func DirHistoryChatIDs(confDir, dir string) map[string]struct{} {
 		ids[sc.ChatID] = struct{}{}
 	}
 	return ids
+}
+
+// lookbackLabel is a history entry's element text: `title: summary` when the
+// row has a title (the title alone when the summary is empty), else the
+// lookbackPreviewRunes head of the first user message.
+func lookbackLabel(row chatIndexRow) string {
+	if row.Title == "" {
+		return previewOf(row.FirstUserMessage, lookbackPreviewRunes)
+	}
+	if row.Summary == "" {
+		return row.Title
+	}
+	return row.Title + ": " + row.Summary
 }

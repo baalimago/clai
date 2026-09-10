@@ -53,6 +53,11 @@ They contain settings that are broadly applicable to that “mode” (text vs im
 - tool-call budget (`max-tool-calls`; nil or 0 = unlimited)
 - token stoploss policy (`stoploss`: `max-tokens` + `max-tokens-handover-instructions` + `max-tool-calls-after-handover`; absent or 0 = unlimited post-handover tools)
 - globbing selection (via `-g` flag which then modifies prompt building)
+- conversation labelling (`summarize-conversations`, default `true`: launch the
+  in-flight title/summary generator on a new conversation's first persist;
+  `summary-model`, default `""` and `migrate:"true"` so upgraded files show the
+  key: the summarizer's model, empty = the ladder `-sm` → this key → the
+  conversation's last model → `model`). See `architecture/summaries.md`.
 
 The pre-query interactive token-count warning prompt is **sunset**: a legacy
 config key for it is ignored if present in old configs (encoding/json drops
@@ -198,6 +203,13 @@ text.Default
   → text.CreateQuerier(...) loads vendor model config and produces runtime Model
 ```
 
+The vendor model config (`<vendor>_<model>_<version>.json`) is created on
+first use and rewritten when the cost manager stores a fetched price; both
+writes go through `utils.WriteFileAtomic` (temp file plus rename), because
+several queriers of one model can be built concurrently in one process
+(`chat summarize -workers N`, the in-flight summarizer) and a reader must
+never see a torn file (worklog 2026-09-09-conversation-summaries, D31).
+
 ### Where flags apply
 
 Flags are alias-aware primitives (`internal/flags.go`): shared groups live in package `internal`, domain-specific flags in their domain packages; override cascades read `Explicit()`/`Changed()` directly — there is no central configurations bag.
@@ -214,6 +226,11 @@ Key behaviors:
 - `-dre` is handled before text setup by flagging reply mode and letting
   `setupTextQuerierWithConf` load the directory-scoped head directly into
   `InitialChat` (via `chat.LoadDirScopedContext`).
+- `-summarize` (bool) overrides `summarize-conversations` for the run only
+  when given explicitly (`Explicit()`), so `-summarize=false` opts a single
+  query out; `-sm`/`-summary-model` overrides `summary-model` and completes
+  from the model history like `-cm`. The same `-sm` exists on
+  `chat summarize`, where it is the first rung of the ladder.
 
 ### Tool selection configuration
 
@@ -252,9 +269,11 @@ source's bans.
 - agent API: `WithCmdBanList(...)` (see `pkg/agent`)
 
 A command matching any entry is refused before it spawns; the refusal names
-the matched entry and does not abort the run. See `architecture/tooling.md`
-(Security, "Command ban list") for the matching semantics and documented
-limits.
+the matched entry and does not abort the run. The effective list is per
+run: it rides that run's tool-call context and there is no process-wide
+default, so a second querier in the same process never alters it. See
+`architecture/tooling.md` (Security, "Command ban list") for the matching
+semantics and documented limits.
 
 ### Skills enablement configuration
 
@@ -361,12 +380,13 @@ Every feature-scoped debug switch follows one scheme, resolved in
 | `DEBUG_TEXT_QUERIER=1` | Querier setup internals |
 | `DEBUG_COST_MANAGER=1` | Cost manager internals |
 | `DEBUG_STOPLOSS=1` | Stoploss budget decisions |
+| `DEBUG_SUMMARY=1` | `[DEBUG_SUMMARY]` in-flight conversation summary launch, apply, failure and abandon lines (failures are otherwise silent) |
 | `DEBUG_CPU=1` | CPU profiling to `cpu_profile.prof` |
 | `DEBUG_REPLY_MODE=1` | Chat save-path diagnostics |
 | `DEBUG_VERBOSE=1` | Additional verbose request diagnostics |
 | `DEBUG_CLAUDIFIED_MSGS=1` | Anthropic message transformation diagnostics |
 
-`DEBUG_OUTPUT_FILE` selects a debug trace file. Per-vendor stream debug uses `<VENDOR>_DEBUG` or `DEBUG_<VENDOR>` env vars
+`CLAI_SUMMARIZER=off` disables the conversation summarizer for the process (see `summaries.md`). `DEBUG_OUTPUT_FILE` selects a debug trace file. Per-vendor stream debug uses `<VENDOR>_DEBUG` or `DEBUG_<VENDOR>` env vars
 (e.g. `OPENAI_DEBUG`, `DEBUG_MISTRAL`, `OLLAMA_DEBUG`), also activated by
 plain `DEBUG=1`.
 

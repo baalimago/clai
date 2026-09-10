@@ -74,7 +74,13 @@ func setupMainTestConfigDir(t *testing.T) string {
 		}
 	}
 
-	if err := utils.CreateFile(filepath.Join(confDir, "textConfig.json"), &text.Default); err != nil {
+	// The shared fixture runs with the in-flight summarizer off so the
+	// pre-existing e2e rows cost what they cost on main; the summary rows
+	// opt in through setupSummaryE2E (worklog
+	// 2026-09-09-conversation-summaries, phase 8 notes).
+	textConf := text.Default
+	textConf.SummarizeConversations = false
+	if err := utils.CreateFile(filepath.Join(confDir, "textConfig.json"), &textConf); err != nil {
 		t.Fatalf("CreateFile(textConfig.json): %v", err)
 	}
 	if err := utils.CreateFile(filepath.Join(confDir, "skills.json"), &skills.Config{
@@ -90,4 +96,14 @@ func setupMainTestConfigDir(t *testing.T) string {
 	t.Setenv("CLAI_CONFIG_DIR", confDir)
 
 	return confDir
+}
+
+// blankDebugAndVendorKeys keeps a fixture host-insensitive: no debug
+// chatter on the captured streams and no developer key that could select a
+// paid vendor.
+func blankDebugAndVendorKeys(t *testing.T) {
+	t.Helper()
+	for _, key := range []string{"DEBUG", "DEBUG_SUMMARY", "DEBUG_CHAT", "DEBUG_STOPLOSS", "OPENROUTER_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"} {
+		t.Setenv(key, "")
+	}
 }

@@ -80,11 +80,6 @@ func (f sessionFinalizer[C]) Finalize(ctx context.Context, session *QuerySession
 	}
 	session.Finalized = true
 	q := f.querier
-	// persistErr carries a failed reply persist out of the display branches
-	// below: a later -re/-dre would otherwise silently read stale state, so
-	// the caller must hear about it (worklog 2026-09-05-error-propagation,
-	// S8). The runner joins it into the run's returned error.
-	var persistErr error
 
 	if q.debug {
 		ancli.Noticef("post process querier: %+v", q)
@@ -102,10 +97,52 @@ func (f sessionFinalizer[C]) Finalize(ctx context.Context, session *QuerySession
 	}
 	session.Chat.TokenUsage = accumulateCompletedUsage(session.CompletedCalls, session.FinalUsage)
 	session.Chat.RecentTokenUsage = mostRecentCompletedUsage(session.CompletedCalls, session.FinalUsage)
+	// Cost enrichment is gated on usage, not on persistence: a non-persisting
+	// querier still accounts for its run (worklog
+	// 2026-09-09-conversation-summaries, D19).
+	if session.Chat.TokenUsage != nil {
+		session.Chat = q.costEnricher.enrich(session.Chat)
+	}
 	q.chat = session.Chat
 
+	// A failed or empty run persists at once; an interrupt (root cancelled
+	// without a StopEvent) abandons the summary before the display so no
+	// join can delay the persist (D21).
+	if session.FinalAssistantText == "" || session.Failed {
+		q.abandonSummary()
+		return f.persist(session)
+	}
+	if ctx.Err() != nil && !session.SawStopEvent {
+		q.abandonSummary()
+	}
+	if q.structuredOutput {
+		// The final-answer record fires before the structured display too:
+		// postProcessOutput's display branches are skipped on this path, but
+		// the agent-logging contract is unconditional (worklog
+		// 2026-08-15-agent-slog-output, Phase 3). The typed-agent path is
+		// always structured, so a missing record here would leave every
+		// embedded log without the run's final answer.
+		q.logMessage(ctx, "final_answer", stripThinkingBlocks(session.FinalAssistantText), "")
+		fmt.Fprintln(q.out, stripThinkingBlocks(session.FinalAssistantText))
+	} else {
+		q.postProcessOutput(ctx, pub_models.Message{
+			Role:    "assistant",
+			Content: session.FinalAssistantText,
+		})
+	}
+	q.joinSummary(&session.Chat)
+	q.chat = session.Chat
+	return f.persist(session)
+}
+
+// persist writes the reply, records the directory binding and returns the
+// persist error: a later -re/-dre would otherwise silently read stale state,
+// so the caller must hear about it (worklog 2026-09-05-error-propagation,
+// S8). The runner joins it into the run's returned error.
+func (f sessionFinalizer[C]) persist(session *QuerySession) error {
+	q := f.querier
+	var persistErr error
 	if session.ShouldSaveReply {
-		session.Chat = q.costEnricher.enrich(session.Chat)
 		// Origin stamping is always-on and forward-only: stamp the canonical CWD on
 		// first persist, preserve it on every later write (including replies).
 		if originErr := chat.EnsureOriginDir(q.configDir, &session.Chat); originErr != nil {
@@ -126,27 +163,8 @@ func (f sessionFinalizer[C]) Finalize(ctx context.Context, session *QuerySession
 			}
 		}
 	}
-
 	if q.debug {
 		ancli.PrintOK(fmt.Sprintf("Querier.postProcess:\n%v\n", debug.IndentedJsonFmt(q)))
 	}
-	if session.FinalAssistantText == "" || session.Failed {
-		return persistErr
-	}
-	if q.structuredOutput {
-		// The final-answer record fires before the structured display too:
-		// postProcessOutput's display branches are skipped on this path, but
-		// the agent-logging contract is unconditional (worklog
-		// 2026-08-15-agent-slog-output, Phase 3). The typed-agent path is
-		// always structured, so a missing record here would leave every
-		// embedded log without the run's final answer.
-		q.logMessage(ctx, "final_answer", stripThinkingBlocks(session.FinalAssistantText), "")
-		fmt.Fprintln(q.out, stripThinkingBlocks(session.FinalAssistantText))
-		return persistErr
-	}
-	q.postProcessOutput(ctx, pub_models.Message{
-		Role:    "assistant",
-		Content: session.FinalAssistantText,
-	})
 	return persistErr
 }

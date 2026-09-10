@@ -17,6 +17,7 @@ func TestEnabled(t *testing.T) {
 		{name: "feature flag enables its subsystem", env: map[string]string{"DEBUG_LOOKBACK": "1"}, subsystem: "LOOKBACK", want: true},
 		{name: "subsystem name is case-insensitive", env: map[string]string{"DEBUG_LOOKBACK": "1"}, subsystem: "lookback", want: true},
 		{name: "feature flag does not leak to other subsystems", env: map[string]string{"DEBUG_LOOKBACK": "1"}, subsystem: "CHAT", want: false},
+		{name: "summary switch enables its subsystem", env: map[string]string{"DEBUG_SUMMARY": "1"}, subsystem: "SUMMARY", want: true},
 		{name: "falsy values stay disabled", env: map[string]string{"DEBUG_LOOKBACK": "false"}, subsystem: "LOOKBACK", want: false},
 		{name: "plain DEBUG wins over a falsy feature flag", env: map[string]string{"DEBUG": "true", "DEBUG_LOOKBACK": "false"}, subsystem: "LOOKBACK", want: true},
 	}

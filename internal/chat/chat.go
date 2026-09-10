@@ -42,6 +42,16 @@ func FromPath(path string) (pub_models.Chat, error) {
 }
 
 func Save(saveAt string, chat pub_models.Chat) error {
+	return save(saveAt, chat, true)
+}
+
+// SaveWithoutIndex persists the conversation and its sidecar but leaves the
+// chat index to a batch writer (UpsertChatIndexBatch).
+func SaveWithoutIndex(saveAt string, chat pub_models.Chat) error {
+	return save(saveAt, chat, false)
+}
+
+func save(saveAt string, chat pub_models.Chat, index bool) error {
 	// Stamp GroupKey once on first persist (never overwritten).
 	if chat.GroupKey == "" {
 		chat.GroupKey = ComputeGroupKey(chat)
@@ -59,8 +69,10 @@ func Save(saveAt string, chat pub_models.Chat) error {
 	if err := os.WriteFile(fileName, b, 0o644); err != nil {
 		return fmt.Errorf("failed to write chat file: %w", err)
 	}
-	if err := upsertChatIndex(saveAt, chat); err != nil {
-		return fmt.Errorf("failed to update chat index: %w", err)
+	if index {
+		if err := upsertChatIndex(saveAt, chat); err != nil {
+			return fmt.Errorf("failed to update chat index: %w", err)
+		}
 	}
 	// Best-effort: persist out-of-band reasoning items. The conversation is already
 	// saved; a sidecar failure only costs reasoning continuity, not the chat.

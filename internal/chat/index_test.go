@@ -535,3 +535,265 @@ func TestSkipIndex_SaveSkipsIndex(t *testing.T) {
 		t.Fatal("chat_index.cache should not exist when SkipIndex is true")
 	}
 }
+
+// TestChatIndexRowFromChat_modelSkipsSummaryRows pins D19: a summarizer row
+// appended last never becomes the row's model, while token aggregates keep
+// summing every row.
+func TestChatIndexRowFromChat_modelSkipsSummaryRows(t *testing.T) {
+	ch := pub_models.Chat{
+		ID:       "summary_rows",
+		Created:  time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
+		Messages: []pub_models.Message{{Role: "user", Content: "hello"}},
+		Queries: []pub_models.QueryCost{
+			{Model: "main-model", Usage: pub_models.Usage{TotalTokens: 10}},
+			{Model: "summary-model", Purpose: "summary", Usage: pub_models.Usage{TotalTokens: 5}},
+		},
+	}
+
+	got := chatIndexRowFromChat(ch)
+	if got.Model != "main-model" {
+		t.Fatalf("row Model = %q, want main-model", got.Model)
+	}
+	if got.TotalTokens != 15 {
+		t.Fatalf("row TotalTokens = %d, want 15", got.TotalTokens)
+	}
+
+	onlySummary := pub_models.Chat{
+		ID:      "only_summary",
+		Queries: []pub_models.QueryCost{{Model: "summary-model", Purpose: "summary"}},
+	}
+	if got := chatIndexRowFromChat(onlySummary); got.Model != "" {
+		t.Fatalf("row Model = %q, want empty when only summary rows exist", got.Model)
+	}
+}
+
+func TestChatIndex_mirrorsTitleSummary(t *testing.T) {
+	row := chatIndexRowFromChat(pub_models.Chat{ID: "c", Title: "T", Summary: "S"})
+	if row.Title != "T" || row.Summary != "S" {
+		t.Fatalf("expected title/summary mirrored, got %+v", row)
+	}
+}
+
+func TestReadChatIndex_legacyRowsZeroUpdated(t *testing.T) {
+	tmp := t.TempDir()
+	created := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	legacy := `{"version":2,"rows":[{"id":"old","created":"2026-01-02T03:04:05Z","message_count":1}]}`
+	if err := os.WriteFile(chatIndexPath(tmp), []byte(legacy), 0o644); err != nil {
+		t.Fatalf("write cache: %v", err)
+	}
+	rows, err := readChatIndex(tmp)
+	if err != nil {
+		t.Fatalf("readChatIndex: %v", err)
+	}
+	if len(rows) != 1 || rows[0].ID != "old" {
+		t.Fatalf("expected the legacy row untouched, got %+v", rows)
+	}
+	if !rows[0].Updated.IsZero() {
+		t.Fatalf("legacy row must decode with zero Updated, got %v", rows[0].Updated)
+	}
+	if !rows[0].effectiveUpdated().Equal(created) {
+		t.Fatalf("effectiveUpdated = %v, want created %v", rows[0].effectiveUpdated(), created)
+	}
+}
+
+func TestUpsertChatIndex_stampsUpdated(t *testing.T) {
+	tmp := t.TempDir()
+	before := time.Now().UTC()
+	chat := pub_models.Chat{ID: "c", Created: before.Add(-time.Hour), Messages: []pub_models.Message{{Role: "user", Content: "hi"}}}
+	if err := upsertChatIndex(tmp, chat); err != nil {
+		t.Fatalf("upsertChatIndex: %v", err)
+	}
+	rows, err := readChatIndex(tmp)
+	if err != nil {
+		t.Fatalf("readChatIndex: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected one row, got %+v", rows)
+	}
+	if rows[0].Updated.Before(before) || rows[0].Updated.After(time.Now()) {
+		t.Fatalf("expected Updated stamped at upsert, got %v (before %v)", rows[0].Updated, before)
+	}
+	if rows[0].Updated.Location() != time.UTC {
+		t.Fatalf("expected UTC stamp, got %v", rows[0].Updated.Location())
+	}
+}
+
+type failingDirEntry struct{ os.DirEntry }
+
+func (failingDirEntry) Info() (os.FileInfo, error) { return nil, os.ErrNotExist }
+
+func TestRebuildChatIndex_updatedFromModTime(t *testing.T) {
+	tmp := t.TempDir()
+	want := map[string]time.Time{
+		"a": time.Date(2026, 2, 3, 4, 5, 6, 0, time.UTC),
+		"b": time.Date(2025, 12, 31, 23, 59, 58, 0, time.UTC),
+	}
+	for id, mtime := range want {
+		c := pub_models.Chat{ID: id, Created: time.Now(), Messages: []pub_models.Message{{Role: "user", Content: id}}}
+		b, err := json.Marshal(c)
+		if err != nil {
+			t.Fatalf("marshal: %v", err)
+		}
+		p := filepath.Join(tmp, id+".json")
+		if err := os.WriteFile(p, b, 0o644); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		if err := os.Chtimes(p, mtime, mtime); err != nil {
+			t.Fatalf("chtimes: %v", err)
+		}
+	}
+	rows, err := rebuildChatIndex(tmp, 0, "test")
+	if err != nil {
+		t.Fatalf("rebuildChatIndex: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("expected two rows, got %+v", rows)
+	}
+	for _, row := range rows {
+		if !row.Updated.Equal(want[row.ID]) {
+			t.Fatalf("row %q Updated = %v, want mtime %v", row.ID, row.Updated, want[row.ID])
+		}
+	}
+	if got := entryModTime(failingDirEntry{}); !got.IsZero() {
+		t.Fatalf("unstat-able entry must yield zero Updated, got %v", got)
+	}
+}
+
+func TestChatIndexRow_effectiveUpdated(t *testing.T) {
+	created := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	updated := created.Add(time.Hour)
+	if got := (chatIndexRow{Created: created}).effectiveUpdated(); !got.Equal(created) {
+		t.Fatalf("zero Updated must fall back to Created, got %v", got)
+	}
+	if got := (chatIndexRow{Created: created, Updated: updated}).effectiveUpdated(); !got.Equal(updated) {
+		t.Fatalf("set Updated must win, got %v", got)
+	}
+}
+
+func TestSaveWithoutIndex(t *testing.T) {
+	tmp := t.TempDir()
+	if err := writeChatIndex(tmp, nil); err != nil {
+		t.Fatalf("writeChatIndex: %v", err)
+	}
+	indexBefore, err := os.ReadFile(chatIndexPath(tmp))
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	chat := pub_models.Chat{ID: "c", Messages: []pub_models.Message{{Role: "user", Content: "hi"}}}
+	if err := SaveWithoutIndex(tmp, chat); err != nil {
+		t.Fatalf("SaveWithoutIndex: %v", err)
+	}
+	got, err := FromPath(filepath.Join(tmp, "c.json"))
+	if err != nil {
+		t.Fatalf("FromPath: %v", err)
+	}
+	if got.GroupKey == "" {
+		t.Fatal("SaveWithoutIndex must stamp GroupKey like Save")
+	}
+	indexAfter, err := os.ReadFile(chatIndexPath(tmp))
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(indexAfter) != string(indexBefore) {
+		t.Fatalf("SaveWithoutIndex must leave the index untouched, got %s", indexAfter)
+	}
+}
+
+func TestUpsertChatIndexBatch(t *testing.T) {
+	tmp := t.TempDir()
+	created := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	existing := pub_models.Chat{ID: "existing", Created: created, Messages: []pub_models.Message{{Role: "user", Content: "old"}}}
+	if err := Save(tmp, existing); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if err := Save(tmp, pub_models.Chat{ID: "untouched", Created: created}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	before := time.Now().UTC()
+	existing.Title, existing.Summary = "T", "S"
+	fresh := pub_models.Chat{ID: "fresh", Created: created, Title: "F"}
+	if err := UpsertChatIndexBatch(tmp, []pub_models.Chat{existing, fresh}); err != nil {
+		t.Fatalf("UpsertChatIndexBatch: %v", err)
+	}
+	rows, err := readChatIndex(tmp)
+	if err != nil {
+		t.Fatalf("readChatIndex: %v", err)
+	}
+	byID := map[string]chatIndexRow{}
+	for _, row := range rows {
+		byID[row.ID] = row
+	}
+	if len(byID) != 3 {
+		t.Fatalf("expected three rows, got %+v", rows)
+	}
+	if byID["existing"].Title != "T" || byID["existing"].Summary != "S" || byID["fresh"].Title != "F" {
+		t.Fatalf("labels not upserted: %+v", byID)
+	}
+	for _, id := range []string{"existing", "fresh"} {
+		if byID[id].Updated.Before(before) {
+			t.Fatalf("row %q must be stamped Updated at the batch upsert, got %v", id, byID[id].Updated)
+		}
+	}
+	if byID["untouched"].Updated.After(before) {
+		t.Fatalf("untouched row must keep its stamp, got %v", byID["untouched"].Updated)
+	}
+
+	t.Run("empty batch writes nothing", func(t *testing.T) {
+		indexBefore, err := os.ReadFile(chatIndexPath(tmp))
+		if err != nil {
+			t.Fatalf("ReadFile: %v", err)
+		}
+		if err := UpsertChatIndexBatch(tmp, nil); err != nil {
+			t.Fatalf("UpsertChatIndexBatch(nil): %v", err)
+		}
+		indexAfter, err := os.ReadFile(chatIndexPath(tmp))
+		if err != nil {
+			t.Fatalf("ReadFile: %v", err)
+		}
+		if string(indexAfter) != string(indexBefore) {
+			t.Fatal("empty batch must not rewrite the index")
+		}
+	})
+
+	t.Run("skip index", func(t *testing.T) {
+		old := SkipIndex
+		t.Cleanup(func() { SkipIndex = old })
+		SkipIndex = true
+		if err := UpsertChatIndexBatch(t.TempDir(), []pub_models.Chat{fresh}); err != nil {
+			t.Fatalf("UpsertChatIndexBatch with SkipIndex: %v", err)
+		}
+	})
+}
+
+// TestWriteChatIndex_atomic pins R3-10: the cache is replaced by rename, so
+// no temp file remains beside it and the content reads back intact.
+func TestWriteChatIndex_atomic(t *testing.T) {
+	dir := t.TempDir()
+	rows := []chatIndexRow{{ID: "a", FirstUserMessage: "hello", Created: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)}}
+	if err := writeChatIndex(dir, rows); err != nil {
+		t.Fatalf("writeChatIndex: %v", err)
+	}
+	// A rename over a read-only cache succeeds; an in-place truncate would not.
+	if err := os.Chmod(chatIndexPath(dir), 0o444); err != nil {
+		t.Fatalf("Chmod: %v", err)
+	}
+	if err := writeChatIndex(dir, rows); err != nil {
+		t.Fatalf("second writeChatIndex: %v", err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("ReadDir: %v", err)
+	}
+	for _, e := range entries {
+		if e.Name() != chatIndexFileName {
+			t.Fatalf("unexpected file %q next to the cache", e.Name())
+		}
+	}
+	got, err := readChatIndex(dir)
+	if err != nil {
+		t.Fatalf("readChatIndex: %v", err)
+	}
+	if len(got) != 1 || got[0].ID != "a" || got[0].FirstUserMessage != "hello" {
+		t.Fatalf("rows = %+v, want the written row", got)
+	}
+}

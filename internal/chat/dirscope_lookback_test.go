@@ -392,3 +392,59 @@ func TestBuildLookbackDescriptor_StatsAndCap(t *testing.T) {
 		t.Fatalf("expected empty descriptor for dir without history, got %+v", desc)
 	}
 }
+
+func seedLabelledChat(t *testing.T, confDir, id, title, summary string, first string) {
+	t.Helper()
+	c := pub_models.Chat{ID: id, Title: title, Summary: summary, Messages: []pub_models.Message{msg("user", first), msg("assistant", "a")}}
+	if err := Save(conversationsDir(confDir), c); err != nil {
+		t.Fatalf("Save(%q): %v", id, err)
+	}
+}
+
+func TestBuildLookbackDescriptor_titleSummary(t *testing.T) {
+	cq, confDir := newTestHandler(t)
+	dir := t.TempDir()
+	seedLabelledChat(t, confDir, "full", "Fix auth", "Token refresh fixed.", "full first message")
+	seedLabelledChat(t, confDir, "partial", "Only title", "", "partial first message")
+	for _, id := range []string{"full", "partial"} {
+		if err := cq.SaveDirScope(dir, id); err != nil {
+			t.Fatalf("SaveDirScope(%q): %v", id, err)
+		}
+	}
+
+	desc, err := BuildLookbackDescriptor(confDir, dir, 5)
+	if err != nil {
+		t.Fatalf("BuildLookbackDescriptor: %v", err)
+	}
+	if !strings.Contains(desc.Block, ">Fix auth: Token refresh fixed.</conversation>") {
+		t.Fatalf("expected the title: summary element, got %q", desc.Block)
+	}
+	if !strings.Contains(desc.Block, ">Only title</conversation>") {
+		t.Fatalf("expected the title alone for an empty summary, got %q", desc.Block)
+	}
+	if strings.Contains(desc.Block, "first message") {
+		t.Fatalf("labelled rows must not render the first message, got %q", desc.Block)
+	}
+}
+
+func TestBuildLookbackDescriptor_fallback(t *testing.T) {
+	cq, confDir := newTestHandler(t)
+	dir := t.TempDir()
+	long := strings.Repeat("0123456789", 9)
+	seedLabelledChat(t, confDir, "plain", "", "", long)
+	if err := cq.SaveDirScope(dir, "plain"); err != nil {
+		t.Fatalf("SaveDirScope: %v", err)
+	}
+
+	desc, err := BuildLookbackDescriptor(confDir, dir, 5)
+	if err != nil {
+		t.Fatalf("BuildLookbackDescriptor: %v", err)
+	}
+	want := ">" + long[:lookbackPreviewRunes] + "…</conversation>"
+	if !strings.Contains(desc.Block, want) {
+		t.Fatalf("expected the %d-rune head of the first message, got %q", lookbackPreviewRunes, desc.Block)
+	}
+	if strings.Contains(desc.Block, ">: ") {
+		t.Fatalf("unlabelled row must not render an empty title prefix, got %q", desc.Block)
+	}
+}

@@ -189,11 +189,22 @@ Each JSON file describes one MCP server. The exact schema is defined by the proj
 - optional allow/deny lists of tools
 - an optional per-call timeout (`timeout_seconds`): bounds a single tool call so a hung server cannot block an agent forever. `0` or absent means unbounded (the caller's context is the only bound).
 
+Discovery of this directory is ambient: every configured server starts whenever
+`UseTools` is on and no tool glob narrows the set. A querier built with
+`text.Configurations.SkipAmbientMcpServers` (a `json:"-"` field, default
+`false`) opts out of that discovery while explicit `McpServers` still start;
+the one-tool conversation summarizer (`architecture/summaries.md`) is the
+in-tree consumer. See the lifecycle below.
+
 ### Lifecycle
 
 MCP server lifecycle is:
 
-1. **Load configuration** from `mcpServers/*.json`.
+1. **Load configuration** from `mcpServers/*.json`. A run built with
+   `Configurations.SkipAmbientMcpServers` skips this discovery entirely (the
+   directory need not exist); servers passed in `Configurations.McpServers`
+   still start with their explicit or ambient posture (worklog
+   2026-09-09-conversation-summaries, D18).
 2. **Start/connect** to the MCP server.
 3. **Discover tools** exposed by that server.
 4. **Register tools** with namespacing to avoid collisions.
@@ -279,6 +290,19 @@ Enforcement happens at the spawn point in `pkg/tools`. A banned command is
 never spawned: the tool returns an error naming the matched entry and stating
 the rule, the model sees it as a normal tool result, and the run continues —
 a refusal never aborts the run (D14).
+
+The policy is carried only on the tool-call context (worklog
+2026-09-09-conversation-summaries, D29). `NewQuerier` keeps
+`Configurations.CmdBan` on the querier, and the tool executor attaches it
+with `pkgtools.WithCmdBanContext` at its single invoke site, so every
+`CallWithContext` of `cmd` and `async_cmd` in that run sees that run's list
+and nothing else. There is no package-level ban state: constructing a second
+querier in the same process (a `pkg/agent` run, the summarizer) never alters
+another run's policy. A context without a policy is permissive, and so is
+the context-free `Call` entry point — enforcement requires
+`CallWithContext`, which is what the executor uses. `WithCmdBanContext`
+copies its input slice, so a caller mutating the list afterwards does not
+change the installed policy.
 
 Documented matching limits (literal-text matching):
 

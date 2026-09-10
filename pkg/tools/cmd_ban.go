@@ -4,61 +4,29 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"sync"
 )
 
 type cmdBanContextKey struct{}
 
-// cmdBanList is the active per-run command ban list. It is guarded by
-// cmdBanMu: SetCmdBanList / ResetCmdBanListForTests take the write lock and
-// validateCmdNotBanned takes the read lock, so concurrent pkg/agent runs with
-// distinct ban lists never observe a torn slice (worklog
-// 2026-08-02-cmd-ban-list, phase 2, R2-01).
-var (
-	cmdBanList []string
-	cmdBanMu   sync.RWMutex
-)
-
-// SetCmdBanList replaces the active command ban list with an immutable
-// snapshot of entries. The default is empty, which keeps all tools fully
-// permissive. The caller's slice is copied at the setter boundary, so
-// mutating it after this function returns never alters the active list or
-// races a concurrent spawn check (README "Ban-list ownership", R6-02).
-func SetCmdBanList(entries []string) {
-	cmdBanMu.Lock()
-	defer cmdBanMu.Unlock()
-	cmdBanList = append([]string(nil), entries...)
-}
-
 // WithCmdBanContext attaches an immutable command ban policy to a tool-call
-// context. This lets embedded agents enforce distinct policies concurrently;
-// callers that do not provide a policy continue to use the process default.
+// context. The policy is the only ban state there is: every run carries its
+// own list on its tool-call context, so distinct policies can run
+// concurrently in one process and constructing a querier never alters
+// another run's policy (worklog 2026-09-09-conversation-summaries, D29).
+// The caller's slice is copied here, so mutating it afterwards never alters
+// the installed policy. A context without a policy is permissive.
 func WithCmdBanContext(ctx context.Context, entries []string) context.Context {
 	return context.WithValue(ctx, cmdBanContextKey{}, append([]string(nil), entries...))
 }
 
-// ResetCmdBanListForTests restores the empty default ban list for test
-// isolation (mirrors ResetAsyncCmdManagerForTests).
-func ResetCmdBanListForTests() {
-	SetCmdBanList(nil)
-}
-
-// validateCmdNotBanned refuses a command that matches any ban entry. For
-// shell execution (args == nil) command is the raw freetext string; for
-// direct execution each element of [command] + args is tokenized with the
-// same rules as freetext, so sh -c 'git commit' (command=sh, args=[-c, git
-// commit]) is caught by entry git commit. Returns nil when not banned.
-func validateCmdNotBanned(command string, args []string) error {
-	return validateCmdNotBannedWithContext(context.Background(), command, args)
-}
-
+// validateCmdNotBannedWithContext refuses a command that matches any entry
+// of the policy carried by ctx. For shell execution (args == nil) command is
+// the raw freetext string; for direct execution each element of [command] +
+// args is tokenized with the same rules as freetext, so sh -c 'git commit'
+// (command=sh, args=[-c, git commit]) is caught by entry git commit. Returns
+// nil when not banned or when ctx carries no policy.
 func validateCmdNotBannedWithContext(ctx context.Context, command string, args []string) error {
-	entries, hasContextPolicy := ctx.Value(cmdBanContextKey{}).([]string)
-	cmdBanMu.RLock()
-	defer cmdBanMu.RUnlock()
-	if !hasContextPolicy {
-		entries = cmdBanList
-	}
+	entries, _ := ctx.Value(cmdBanContextKey{}).([]string)
 	if len(entries) == 0 {
 		return nil
 	}

@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -137,6 +138,110 @@ var errExitList = errors.New("exit list")
 // an in-table predicate over the already-collapsed rows.
 var errToggleDirFilter = errors.New("toggle dir filter")
 
+// errToggleForeign is the [f]oreign convs action's signal to re-derive the
+// view with external conversations hidden or shown.
+var errToggleForeign = errors.New("toggle foreign conversations")
+
+// toggleLabel renders a table toggle with its state in words, and bold plus
+// underline while it sits in the non-default position. The table colours
+// the whole prompt line, so the emphasis is switched off with the
+// attribute-specific resets rather than a full reset.
+func toggleLabel(base, sep, active, inactive string, on bool) string {
+	if !on {
+		return base + sep + inactive
+	}
+	label := base + sep + active
+	if !ancli.UseColor {
+		return label
+	}
+	return "\x1b[1;4m" + label + "\x1b[22;24m"
+}
+
+// toggleTier is one width class of the [d] and [f] labels; the state word
+// always follows the separator.
+type toggleTier struct {
+	dir, foreign, sep string
+}
+
+// toggleTiers runs from the widest labels to the tersest.
+var toggleTiers = []toggleTier{
+	{dir: "[d]irscoped convs", foreign: "[f]oreign convs", sep: ": "},
+	{dir: "[d]ir", foreign: "[f]oreign", sep: ": "},
+	{dir: "[d]", foreign: "[f]", sep: ":"},
+}
+
+// listPromptMargin is left free after the prompt for the typed selection.
+const listPromptMargin = 4
+
+// listPromptWidth is the visible width of the prompt line the table prints
+// for tier, composed as table.promptLine does with the base actions, a
+// two-digit page counter reserved and the longest state word of each
+// offered toggle, so the tier holds across toggles.
+func listPromptWidth(tier toggleTier, hasDir, hasForeign bool, backLabel string) int {
+	if backLabel == "" {
+		backLabel = "[b]ack"
+	}
+	parts := []string{"select"}
+	if hasDir {
+		parts = append(parts, tier.dir+tier.sep+"off")
+	}
+	if hasForeign {
+		parts = append(parts, tier.foreign+tier.sep+"hidden")
+	}
+	parts = append(parts, "[p]rev", "[n]ext", backLabel, "[q]uit", "[/] filter", "page 99/99")
+	return visibleWidth("(" + strings.Join(parts, ", ") + "): ")
+}
+
+// listPromptTier picks the widest tier whose prompt fits width with the
+// margin, the tersest when none does, and the widest when width is unknown.
+func listPromptTier(width int, hasDir, hasForeign bool, backLabel string) toggleTier {
+	if width <= 0 {
+		return toggleTiers[0]
+	}
+	for _, tier := range toggleTiers {
+		if listPromptWidth(tier, hasDir, hasForeign, backLabel)+listPromptMargin <= width {
+			return tier
+		}
+	}
+	return toggleTiers[len(toggleTiers)-1]
+}
+
+// visibleWidth counts the runes of s outside CSI escape sequences.
+func visibleWidth(s string) int {
+	width, state := 0, 0
+	for _, r := range s {
+		switch state {
+		case 1:
+			if r == '[' {
+				state = 2
+			} else {
+				state = 0
+			}
+		case 2:
+			if r >= 0x40 && r <= 0x7e {
+				state = 0
+			}
+		default:
+			if r == 0x1b {
+				state = 1
+			} else {
+				width++
+			}
+		}
+	}
+	return width
+}
+
+// hasForeignRows reports whether any source produced a row.
+func hasForeignRows(rows []chatListRow) bool {
+	for _, r := range rows {
+		if r.Kind == chatRowForeign {
+			return true
+		}
+	}
+	return false
+}
+
 type chatListRow struct {
 	Kind    chatRowKind
 	Created time.Time
@@ -158,6 +263,8 @@ type chatListRow struct {
 	TotalTokens      int
 	TotalCostUSD     float64
 	FirstUserMessage string
+	Title            string
+	Summary          string
 	// GroupKey is set for all rows; group rows distinguish by Kind == chatRowGroup.
 	GroupKey string
 	// GroupMemberCount is populated only for group rows (Kind == chatRowGroup).
@@ -260,6 +367,8 @@ func (cq *ChatHandler) buildChatListRows(ctx context.Context, paginator *ChatInd
 			TotalTokens:      r.TotalTokens,
 			TotalCostUSD:     r.TotalCostUSD,
 			FirstUserMessage: r.FirstUserMessage,
+			Title:            r.Title,
+			Summary:          r.Summary,
 			GroupKey:         r.GroupKey,
 		})
 	}
@@ -298,7 +407,7 @@ func (cq *ChatHandler) actOnChat(chat pub_models.Chat, groupKey string) error {
 	case "D", "d":
 		return cq.handleDeleteMessages(chat)
 	case "B", "b":
-		clearErr := table.ClearTermTo(cq.out, chatInfoPrintHeight)
+		clearErr := table.ClearTermTo(cq.out, chatInfoHeight(chat))
 		if clearErr != nil {
 			return fmt.Errorf("failed to clear term: %w", clearErr)
 		}
@@ -331,7 +440,7 @@ func (cq *ChatHandler) actOnChat(chat pub_models.Chat, groupKey string) error {
 // can be studied and reworked in one sitting. Backing out returns to the chat
 // list, which also keeps its page.
 func (cq *ChatHandler) handleEditMessages(chat pub_models.Chat) error {
-	clearErr := table.ClearTermTo(cq.out, chatInfoPrintHeight)
+	clearErr := table.ClearTermTo(cq.out, chatInfoHeight(chat))
 	if clearErr != nil {
 		return fmt.Errorf("failed to clear term: %w", clearErr)
 	}
@@ -344,7 +453,7 @@ func (cq *ChatHandler) handleEditMessages(chat pub_models.Chat) error {
 // handleDeleteMessages is a peek + delete, symmetric with handleEditMessages:
 // the message picker stays open across deletions, reopening on the same page.
 func (cq *ChatHandler) handleDeleteMessages(chat pub_models.Chat) error {
-	clearErr := table.ClearTermTo(cq.out, chatInfoPrintHeight)
+	clearErr := table.ClearTermTo(cq.out, chatInfoHeight(chat))
 	if clearErr != nil {
 		return fmt.Errorf("failed to clear term: %w", clearErr)
 	}
@@ -487,6 +596,8 @@ func buildGroupRow(rows []chatListRow, members []int, groupKey string) chatListR
 		TotalTokens:      totalTokens,
 		TotalCostUSD:     totalCost,
 		FirstUserMessage: newest.FirstUserMessage,
+		Title:            newest.Title,
+		Summary:          newest.Summary,
 		GroupKey:         groupKey,
 		GroupMemberCount: len(members),
 	}
@@ -570,14 +681,20 @@ type preparedRows struct {
 // dir-scopes the view; member rows are filtered BEFORE group collapsing, so
 // group rows, their aggregates, and group drill-downs only ever count
 // dir-scoped members.
-func prepareListRows(allRows []chatListRow, byName map[string]vendors.SourceReader, groupKey string, inDir func(chatListRow) bool) preparedRows {
+// showForeign false drops the foreign rows before grouping, so the [f]
+// toggle hides external conversations entirely.
+func prepareListRows(allRows []chatListRow, byName map[string]vendors.SourceReader, groupKey string, inDir func(chatListRow) bool, showForeign bool) preparedRows {
 	rows := allRows
-	if inDir != nil {
+	if inDir != nil || !showForeign {
 		rows = make([]chatListRow, 0, len(allRows))
 		for _, r := range allRows {
-			if inDir(r) {
-				rows = append(rows, r)
+			if !showForeign && r.Kind == chatRowForeign {
+				continue
 			}
+			if inDir != nil && !inDir(r) {
+				continue
+			}
+			rows = append(rows, r)
 		}
 	}
 	if groupKey != "" {
@@ -598,6 +715,10 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 	}
 	inDir, _, hasDirFilter := cq.dirScopeRowPredicate()
 	dirFilterOn := false
+	// External conversations show by default; [f] hides them for the
+	// rest of the list session. The button is offered only when a source
+	// produced rows.
+	foreignOn, hasForeign := true, hasForeignRows(allRows)
 	// The table page survives peek/edit round-trips so a user studying a
 	// conversation lands back where they left off. The main list and the
 	// group view page independently.
@@ -607,15 +728,28 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 		if dirFilterOn {
 			scope = inDir
 		}
-		pr := prepareListRows(allRows, byName, groupKey, scope)
+		pr := prepareListRows(allRows, byName, groupKey, scope, foreignOn)
 
+		backLabel := ""
+		if groupKey != "" {
+			backLabel = "[b]ack to list"
+		}
+		tier := listPromptTier(cq.dims.Width, hasDirFilter, hasForeign, backLabel)
 		tableActions := []table.TableAction{}
 		if hasDirFilter {
 			tableActions = append(tableActions, table.TableAction{
-				Format: "[d]irscoped convs",
+				Format: toggleLabel(tier.dir, tier.sep, "on", "off", dirFilterOn),
 				Short:  "d",
 				Long:   "dir",
 				Action: func() error { return errToggleDirFilter },
+			})
+		}
+		if hasForeign {
+			tableActions = append(tableActions, table.TableAction{
+				Format: toggleLabel(tier.foreign, tier.sep, "hidden", "shown", !foreignOn),
+				Short:  "f",
+				Long:   "foreign",
+				Action: func() error { return errToggleForeign },
 			})
 		}
 
@@ -632,16 +766,11 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 		}
 
 		tblFmt := fmt.Sprintf("%%-%ds| %%-15s | %%-20s| %%-18s | %%-8s | %%v", maxIdxLen)
-		headArgs := []any{"Index", "Source", "Created", "Model", "Cost", "Prompt"}
+		headArgs := []any{"Index", "Source", "Created", "Model", "Cost", "About"}
 		isWide := cq.dims.Width > 120
 		if isWide {
 			tblFmt = fmt.Sprintf("%%-%ds| %%-15s | %%-20s| %%-8v | %%-15s | %%-18s | %%-8s | %%-6s | %%v", maxIdxLen)
-			headArgs = []any{"Index", "Source", "Created", "Messages", "Profile", "Model", "Cost", "Tokens", "Prompt"}
-		}
-
-		backLabel := ""
-		if groupKey != "" {
-			backLabel = "[b]ack to list"
+			headArgs = []any{"Index", "Source", "Created", "Messages", "Profile", "Model", "Cost", "Tokens", "About"}
 		}
 
 		startPage := listPage
@@ -666,6 +795,7 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 				} else {
 					profile = "N/A"
 				}
+				label := labelFor(item.Title, item.FirstUserMessage)
 				if isWide {
 					prefix := fmt.Sprintf(
 						tblFmt,
@@ -679,8 +809,7 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 						tokenStr,
 						"",
 					)
-					withSummary := table.WidthAppropriateStringTruncWithWidth(item.FirstUserMessage, prefix, 15, cq.dims.Width)
-					return withSummary, nil
+					return table.WidthAppropriateStringTruncWithWidth(label, prefix, 15, cq.dims.Width), nil
 				}
 
 				prefix := fmt.Sprintf(
@@ -692,8 +821,7 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 					costStr,
 					"",
 				)
-				withSummary := table.WidthAppropriateStringTruncWithWidth(item.FirstUserMessage, prefix, 15, cq.dims.Width)
-				return withSummary, nil
+				return table.WidthAppropriateStringTruncWithWidth(label, prefix, 15, cq.dims.Width), nil
 			},
 		).
 			WithHeader(fmt.Sprintf(tblFmt, headArgs...)).
@@ -720,6 +848,11 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 			if errors.Is(err, errToggleDirFilter) {
 				dirFilterOn = !dirFilterOn
 				// The scoped and unscoped views paginate differently.
+				listPage, groupPage = 0, 0
+				continue
+			}
+			if errors.Is(err, errToggleForeign) {
+				foreignOn = !foreignOn
 				listPage, groupPage = 0, 0
 				continue
 			}
@@ -831,11 +964,6 @@ func (cq *ChatHandler) printChatInfoCommon(w io.Writer, chat pub_models.Chat, gr
 	for _, m := range chat.Messages {
 		messageTypeCounter[m.Role]++
 	}
-	firstMessages := ""
-	if uMsg, err := chat.FirstUserMessage(); err == nil {
-		firstMessages = uMsg.Content
-	}
-	summary := table.WidthAppropriateStringTruncWithWidth(firstMessages, "summary: \"", 10, cq.dims.Width)
 
 	header := table.Colorize(utils.TableTheme().Primary, "=== Chat info ===")
 	fileKey := table.Colorize(utils.TableTheme().Primary, "file path:")
@@ -898,7 +1026,7 @@ func (cq *ChatHandler) printChatInfoCommon(w io.Writer, chat pub_models.Chat, gr
 	if _, err := fmt.Fprintf(w, "\t%s %s'%v'\n\n", assistantRole, table.Colorize(bread, ""), messageTypeCounter["assistant"]); err != nil {
 		return fmt.Errorf("write assistant replies: %w", err)
 	}
-	if _, err := fmt.Fprintf(w, "%s\n\n", table.Colorize(bread, summary+"\"")); err != nil {
+	if _, err := fmt.Fprintf(w, "%s\n\n", table.Colorize(bread, cq.chatInfoLabel(chat))); err != nil {
 		return fmt.Errorf("write summary: %w", err)
 	}
 	backLabel := "go [b]ack to list"
@@ -915,6 +1043,32 @@ func (cq *ChatHandler) printChatInfoCommon(w io.Writer, chat pub_models.Chat, gr
 		return fmt.Errorf("write choices: %w", err)
 	}
 	return nil
+}
+
+// chatInfoLabel renders the info view's label block: `title:` and `summary:`
+// lines for a labelled chat, else the quoted first-message line.
+func (cq *ChatHandler) chatInfoLabel(chat pub_models.Chat) string {
+	if chat.Title == "" {
+		first := ""
+		if uMsg, err := chat.FirstUserMessage(); err == nil {
+			first = uMsg.Content
+		}
+		return table.WidthAppropriateStringTruncWithWidth(first, "summary: \"", 10, cq.dims.Width) + "\""
+	}
+	out := table.WidthAppropriateStringTruncWithWidth(chat.Title, "title: ", 10, cq.dims.Width)
+	if chat.Summary != "" {
+		out += "\n" + table.WidthAppropriateStringTruncWithWidth(chat.Summary, "summary: ", 10, cq.dims.Width)
+	}
+	return out
+}
+
+// chatInfoHeight is the line count printChatInfo wrote for chat, which a
+// labelled summary extends by one line.
+func chatInfoHeight(chat pub_models.Chat) int {
+	if chat.Title != "" && chat.Summary != "" {
+		return chatInfoPrintHeight + 1
+	}
+	return chatInfoPrintHeight
 }
 
 func (cq *ChatHandler) printChatInfo(w io.Writer, chat pub_models.Chat, groupKey string) error {

@@ -7,14 +7,17 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"syscall"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/internal/vendors"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
+	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/dimensions"
 )
 
@@ -111,7 +114,7 @@ func TestPrepareListRows_DirScopedGroups(t *testing.T) {
 		{Kind: chatRowNative, ChatID: "also-unbound", GroupKey: "gk-out"},
 	}
 
-	pr := prepareListRows(allRows, nil, "", inDir)
+	pr := prepareListRows(allRows, nil, "", inDir, true)
 	if len(pr.rows) != 1 {
 		t.Fatalf("expected exactly one row (the collapsed gk-in group), got %d: %+v", len(pr.rows), pr.rows)
 	}
@@ -127,7 +130,7 @@ func TestPrepareListRows_DirScopedGroups(t *testing.T) {
 	}
 
 	// Drill-down into the group under the filter lists only dir-scoped members.
-	pr = prepareListRows(allRows, nil, "gk-in", inDir)
+	pr = prepareListRows(allRows, nil, "gk-in", inDir, true)
 	if len(pr.rows) != 2 {
 		t.Fatalf("expected 2 dir-scoped members in group view, got %d: %+v", len(pr.rows), pr.rows)
 	}
@@ -139,11 +142,123 @@ func TestPrepareListRows_DirScopedGroups(t *testing.T) {
 
 	// Without the filter the view is unchanged: the same group collapses over
 	// all three members.
-	pr = prepareListRows(allRows, nil, "", nil)
+	pr = prepareListRows(allRows, nil, "", nil, true)
 	for _, r := range pr.rows {
 		if r.Kind == chatRowGroup && r.GroupKey == "gk-in" && r.GroupMemberCount != 3 {
 			t.Fatalf("unfiltered group should count all members, got %d", r.GroupMemberCount)
 		}
+	}
+}
+
+// TestPrepareListRows_ForeignToggle pins the [f] view: with foreign rows
+// hidden the view holds native rows and groups only; shown, the foreign
+// rows are back and the dir filter still never removes them.
+func TestPrepareListRows_ForeignToggle(t *testing.T) {
+	allRows := []chatListRow{
+		{Kind: chatRowNative, ChatID: "n1", GroupKey: "gk-a"},
+		{Kind: chatRowForeign, Source: "pi", SourceID: "p1", GroupKey: "gk-b"},
+		{Kind: chatRowForeign, Source: "claude-code", SourceID: "c1", GroupKey: "gk-c"},
+		{Kind: chatRowNative, ChatID: "n2", GroupKey: "gk-c"},
+	}
+	hidden := prepareListRows(allRows, nil, "", nil, false)
+	for _, r := range hidden.rows {
+		if r.Kind == chatRowForeign {
+			t.Fatalf("foreign row leaked into the hidden view: %+v", r)
+		}
+		if r.Kind == chatRowGroup {
+			t.Fatalf("a group must not survive on one native member once its foreign member is hidden: %+v", r)
+		}
+	}
+	if len(hidden.rows) != 2 {
+		t.Fatalf("hidden view = %+v, want the two native rows", hidden.rows)
+	}
+	shown := prepareListRows(allRows, nil, "", nil, true)
+	foreign := 0
+	for _, r := range shown.rows {
+		if r.Kind == chatRowForeign {
+			foreign++
+		}
+	}
+	if foreign != 1 || len(shown.rows) != 3 {
+		t.Fatalf("shown view = %+v, want n1, the pi row and the gk-c group", shown.rows)
+	}
+	if !hasForeignRows(allRows) || hasForeignRows(hidden.rows) {
+		t.Fatal("hasForeignRows must report the presence of foreign rows")
+	}
+}
+
+// TestListChats_ForeignToggleThroughListChats drives the [f] button through
+// the real table: the action renders only when a source produced rows,
+// pressing it hides the foreign rows, pressing it again shows them.
+func TestListChats_ForeignToggleThroughListChats(t *testing.T) {
+	cq, confDir := newTestHandler(t)
+	convDir := conversationsDir(confDir)
+	chdirToTemp(t)
+	if err := Save(convDir, pub_models.Chat{ID: "native", Created: time.Date(2026, 1, 2, 3, 4, 6, 0, time.UTC), Messages: []pub_models.Message{{Role: "user", Content: "native prompt"}}}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	reader := stubSourceReader{name: "test-source", rows: []vendors.SourceRow{{
+		Source: "test-source", SourceID: "ext-1", FirstUserMessage: "foreign prompt", FullFirstUserMessage: "foreign prompt",
+		Created: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
+	}}}
+	t.Cleanup(useTestSourceReaders([]vendors.SourceReader{reader}))
+
+	cq.input = strings.NewReader("f\nf\n")
+	paginator, err := NewChatIndexPaginator(convDir)
+	if err != nil {
+		t.Fatalf("NewChatIndexPaginator: %v", err)
+	}
+	var out strings.Builder
+	cq.out = &out
+	if err := cq.listChats(context.Background(), paginator, ""); err == nil {
+		t.Fatal("expected listChats to surface the scripted stop error")
+	}
+	got := out.String()
+	if n := strings.Count(got, "[f]oreign convs: shown"); n != 2 {
+		t.Fatalf("expected the shown label in the first and third render, got %d:\n%s", n, got)
+	}
+	if n := strings.Count(got, "[f]oreign convs: hidden"); n != 1 {
+		t.Fatalf("expected the hidden label in the second render, got %d:\n%s", n, got)
+	}
+	// The foreign row (03:04:05) shows in the first and third render only;
+	// the native row (03:04:06) in all three.
+	if n := strings.Count(got, "03:04:05"); n != 2 {
+		t.Fatalf("expected the foreign row twice (before and after the hide), got %d:\n%s", n, got)
+	}
+	if n := strings.Count(got, "03:04:06"); n != 3 {
+		t.Fatalf("expected the native row in all three renders, got %d:\n%s", n, got)
+	}
+
+	// Without any foreign row the button is not offered.
+	t.Cleanup(useTestSourceReaders(nil))
+	cq.input = strings.NewReader("")
+	out.Reset()
+	paginator, err = NewChatIndexPaginator(convDir)
+	if err != nil {
+		t.Fatalf("NewChatIndexPaginator: %v", err)
+	}
+	_ = cq.listChats(context.Background(), paginator, "")
+	if strings.Contains(out.String(), "[f]oreign") {
+		t.Fatalf("the [f] button must not render without foreign rows:\n%s", out.String())
+	}
+}
+
+// TestToggleLabel pins the state rendering: words always, bold plus
+// underline only in the non-default position and only with colour on,
+// closed with attribute resets so the prompt's own colour survives.
+func TestToggleLabel(t *testing.T) {
+	prev := ancli.UseColor
+	t.Cleanup(func() { ancli.UseColor = prev })
+	ancli.UseColor = true
+	if got := toggleLabel("[f]oreign convs", ": ", "hidden", "shown", false); got != "[f]oreign convs: shown" {
+		t.Fatalf("default position must be plain, got %q", got)
+	}
+	if got := toggleLabel("[f]oreign convs", ": ", "hidden", "shown", true); got != "\x1b[1;4m[f]oreign convs: hidden\x1b[22;24m" {
+		t.Fatalf("active position must be bold and underlined without a full reset, got %q", got)
+	}
+	ancli.UseColor = false
+	if got := toggleLabel("[d]", ":", "on", "off", true); got != "[d]:on" {
+		t.Fatalf("without colour the words carry the state alone, got %q", got)
 	}
 }
 
@@ -186,8 +301,11 @@ func TestListChats_DirFilterTogglesThroughListChats(t *testing.T) {
 	}
 
 	got := out.String()
-	if !strings.Contains(got, "[d]irscoped convs") {
-		t.Fatalf("expected the [d]irscoped convs button rendered in the table, got: %q", got)
+	if n := strings.Count(got, "[d]irscoped convs: off"); n != 2 {
+		t.Fatalf("expected the off label in the first and third render, got %d in: %q", n, got)
+	}
+	if n := strings.Count(got, "[d]irscoped convs: on"); n != 1 {
+		t.Fatalf("expected the on label in the filtered render, got %d in: %q", n, got)
 	}
 	// The unbound chat (timestamp 03:04:05) should appear twice — in the
 	// first render (before filter) and third render (after filter toggled off).
@@ -581,7 +699,7 @@ func TestListChats_IncludesModelColumnAndValue(t *testing.T) {
 	}
 }
 
-func TestListChats_NarrowWidthShowsCostAndPrompt(t *testing.T) {
+func TestListChats_NarrowWidthShowsCostAndAbout(t *testing.T) {
 	confDir := t.TempDir()
 	if err := utils.CreateConfigDir(confDir); err != nil {
 		t.Fatalf("CreateConfigDir: %v", err)
@@ -636,8 +754,8 @@ func TestListChats_NarrowWidthShowsCostAndPrompt(t *testing.T) {
 	if !strings.Contains(got, "Cost") {
 		t.Fatalf("expected narrow table to include Cost, got: %q", got)
 	}
-	if !strings.Contains(got, "Prompt") {
-		t.Fatalf("expected narrow table to include Prompt, got: %q", got)
+	if !strings.Contains(got, "About") || strings.Contains(got, "Prompt") {
+		t.Fatalf("expected narrow table header About (never Prompt), got: %q", got)
 	}
 }
 
@@ -923,4 +1041,324 @@ func useTestSourceReaders(readers []vendors.SourceReader) func() {
 	orig := allSourceReaders
 	allSourceReaders = func() []vendors.SourceReader { return readers }
 	return func() { allSourceReaders = orig }
+}
+
+// listOutput renders one listChats session against the handler's index with
+// the scripted input and returns what the table wrote. The scripted input
+// always ends in EOF, so listChats surfaces the stop error by design.
+func listOutput(t *testing.T, cq *ChatHandler, input string) string {
+	t.Helper()
+	restoreReaders := useTestSourceReaders(nil)
+	t.Cleanup(restoreReaders)
+	paginator, err := NewChatIndexPaginator(cq.convDir)
+	if err != nil {
+		t.Fatalf("NewChatIndexPaginator: %v", err)
+	}
+	var out strings.Builder
+	cq.out = &out
+	cq.input = strings.NewReader(input)
+	if err := cq.listChats(context.Background(), paginator, ""); err == nil {
+		t.Fatal("expected listChats to surface the scripted stop error")
+	}
+	return out.String()
+}
+
+func saveAll(t *testing.T, convDir string, chats ...pub_models.Chat) {
+	t.Helper()
+	for _, c := range chats {
+		if err := Save(convDir, c); err != nil {
+			t.Fatalf("Save(%q): %v", c.ID, err)
+		}
+	}
+}
+
+func TestListChats_rowShowsTitle(t *testing.T) {
+	cq, confDir := newTestHandler(t)
+	convDir := conversationsDir(confDir)
+	cq.dims = dimensions.Dimensions{Width: 200}
+	wideTitle := strings.Repeat("wide title ", 12)
+	saveAll(t, convDir,
+		pub_models.Chat{ID: "labelled", Title: "Fix auth", Summary: "Token refresh fixed.", Created: time.Date(2026, 1, 3, 0, 0, 0, 0, time.UTC), Messages: []pub_models.Message{{Role: "user", Content: "labelled prompt"}}},
+		pub_models.Chat{ID: "plain", Created: time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC), Messages: []pub_models.Message{{Role: "user", Content: "plain prompt"}}},
+		pub_models.Chat{ID: "wide", Title: wideTitle, Created: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Messages: []pub_models.Message{{Role: "user", Content: "wide prompt"}}},
+	)
+
+	got := listOutput(t, cq, "")
+	if !strings.Contains(got, "Fix auth") || strings.Contains(got, "labelled prompt") {
+		t.Fatalf("expected the title in place of the first message, got: %q", got)
+	}
+	if !strings.Contains(got, "plain prompt") {
+		t.Fatalf("expected the unlabelled row to show its first message, got: %q", got)
+	}
+	if strings.Contains(got, wideTitle) || !strings.Contains(got, "wide title") || !strings.Contains(got, " ... ") {
+		t.Fatalf("expected the wide title truncated through the existing infix, got: %q", got)
+	}
+
+	// A cache written before the feature carries no title fields: the row
+	// falls back to the first message.
+	rows, err := readChatIndex(convDir)
+	if err != nil {
+		t.Fatalf("readChatIndex: %v", err)
+	}
+	for i := range rows {
+		rows[i].Title, rows[i].Summary = "", ""
+	}
+	if err := writeChatIndex(convDir, rows); err != nil {
+		t.Fatalf("writeChatIndex: %v", err)
+	}
+	got = listOutput(t, cq, "")
+	if strings.Contains(got, "Fix auth") || !strings.Contains(got, "labelled prompt") {
+		t.Fatalf("expected the pre-feature row to fall back to the first message, got: %q", got)
+	}
+}
+
+func TestListChats_groupRowShowsNewestTitle(t *testing.T) {
+	cq, confDir := newTestHandler(t)
+	convDir := conversationsDir(confDir)
+	cq.dims = dimensions.Dimensions{Width: 200}
+	saveAll(t, convDir,
+		pub_models.Chat{ID: "older", Title: "Old title", Created: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Messages: []pub_models.Message{{Role: "user", Content: "shared prompt"}}},
+		pub_models.Chat{ID: "newer", Title: "Fix auth", Created: time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC), Messages: []pub_models.Message{{Role: "user", Content: "shared prompt"}}},
+	)
+
+	got := listOutput(t, cq, "")
+	if !strings.Contains(got, "[group:2]") {
+		t.Fatalf("expected one collapsed group row, got: %q", got)
+	}
+	if !strings.Contains(got, "Fix auth") || strings.Contains(got, "Old title") || strings.Contains(got, "shared prompt") {
+		t.Fatalf("expected the group row labelled by its newest member's title, got: %q", got)
+	}
+}
+
+func TestListChats_filterMatchesTitle(t *testing.T) {
+	cq, confDir := newTestHandler(t)
+	convDir := conversationsDir(confDir)
+	cq.dims = dimensions.Dimensions{Width: 200}
+	saveAll(t, convDir,
+		pub_models.Chat{ID: "labelled", Title: "Fix auth", Created: time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC), Messages: []pub_models.Message{{Role: "user", Content: "labelled prompt"}}},
+		pub_models.Chat{ID: "plain", Created: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Messages: []pub_models.Message{{Role: "user", Content: "unrelated prompt"}}},
+	)
+
+	got := listOutput(t, cq, "/fix auth\n")
+	if !strings.Contains(got, `filter: "fix auth"`) {
+		t.Fatalf("expected the substring filter applied, got: %q", got)
+	}
+	// The unfiltered render shows both rows; the filtered render keeps only
+	// the row whose rendered title matches.
+	if n := strings.Count(got, "unrelated prompt"); n != 1 {
+		t.Fatalf("expected the unrelated row only in the unfiltered render, got %d in: %q", n, got)
+	}
+	if n := strings.Count(got, "Fix auth"); n < 2 {
+		t.Fatalf("expected the titled row in both renders, got %d in: %q", n, got)
+	}
+}
+
+func TestChatInfo_titleSummaryLines(t *testing.T) {
+	confDir := t.TempDir()
+	if err := utils.CreateConfigDir(confDir); err != nil {
+		t.Fatalf("CreateConfigDir: %v", err)
+	}
+	t.Setenv("CLAI_CONFIG_DIR", confDir)
+	base := pub_models.Chat{
+		ID:       "labelled",
+		Created:  time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
+		Messages: []pub_models.Message{{Role: "user", Content: "labelled prompt"}},
+	}
+
+	full := base
+	full.Title, full.Summary = "Fix auth", "Token refresh fixed."
+	var out strings.Builder
+	cq := &ChatHandler{out: &out, dims: dimensions.Dimensions{Width: 200}}
+	if err := cq.printChatInfo(&out, full, ""); err != nil {
+		t.Fatalf("printChatInfo(full): %v", err)
+	}
+	got := out.String()
+	for _, want := range []string{"title:", "Fix auth", "summary:", "Token refresh fixed."} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected %q in the labelled info view, got: %q", want, got)
+		}
+	}
+	if strings.Contains(got, `summary: "`) || strings.Contains(got, "labelled prompt") {
+		t.Fatalf("labelled info view must not fall back to the first message, got: %q", got)
+	}
+	if strings.Index(got, "title:") > strings.Index(got, "summary:") {
+		t.Fatalf("expected the title line before the summary line, got: %q", got)
+	}
+
+	partial := base
+	partial.Title = "Fix auth"
+	out.Reset()
+	if err := cq.printChatInfo(&out, partial, ""); err != nil {
+		t.Fatalf("printChatInfo(partial): %v", err)
+	}
+	got = out.String()
+	if !strings.Contains(got, "title:") || !strings.Contains(got, "Fix auth") {
+		t.Fatalf("expected the title with an empty summary, got: %q", got)
+	}
+	if strings.Contains(got, "summary:") {
+		t.Fatalf("expected no summary line for an empty summary, got: %q", got)
+	}
+}
+
+func TestChatInfo_unlabelledUnchanged(t *testing.T) {
+	confDir := t.TempDir()
+	if err := utils.CreateConfigDir(confDir); err != nil {
+		t.Fatalf("CreateConfigDir: %v", err)
+	}
+	t.Setenv("CLAI_CONFIG_DIR", confDir)
+	plain := pub_models.Chat{
+		ID:       "plain",
+		Created:  time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
+		Messages: []pub_models.Message{{Role: "user", Content: "plain prompt"}},
+	}
+
+	var out strings.Builder
+	cq := &ChatHandler{out: &out, dims: dimensions.Dimensions{Width: 200}}
+	if err := cq.printChatInfo(&out, plain, ""); err != nil {
+		t.Fatalf("printChatInfo: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, `summary: "plain prompt"`) {
+		t.Fatalf("expected today's quoted first-message line, got: %q", got)
+	}
+	if strings.Contains(got, "title:") {
+		t.Fatalf("unlabelled info view must not show a title line, got: %q", got)
+	}
+}
+
+func TestChatInfoHeight_labelledSummaryAddsOneLine(t *testing.T) {
+	plain := pub_models.Chat{Title: "Fix auth"}
+	if got := chatInfoHeight(plain); got != chatInfoPrintHeight {
+		t.Fatalf("title alone: height %d, want %d", got, chatInfoPrintHeight)
+	}
+	full := pub_models.Chat{Title: "Fix auth", Summary: "Token refresh fixed."}
+	if got := chatInfoHeight(full); got != chatInfoPrintHeight+1 {
+		t.Fatalf("title and summary: height %d, want %d", got, chatInfoPrintHeight+1)
+	}
+}
+
+// promptLine returns the last line the table printed, with escape sequences
+// stripped, so the width oracle is independent of the production counter.
+func promptLine(t *testing.T, out string) string {
+	t.Helper()
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	line := lines[len(lines)-1]
+	if !strings.Contains(line, "(select") {
+		t.Fatalf("last line is not the prompt: %q", line)
+	}
+	return regexp.MustCompile(`\x1b\[[0-9;]*m`).ReplaceAllString(line, "")
+}
+
+// TestListChats_PromptFitsWidth renders through the real table with a
+// dirscope binding and a foreign row: at eighty columns the prompt stays on
+// one physical line with both state words present; at 140 the long labels
+// are used.
+func TestListChats_PromptFitsWidth(t *testing.T) {
+	cq, confDir := newTestHandler(t)
+	convDir := conversationsDir(confDir)
+	wd := chdirToTemp(t)
+	if err := Save(convDir, pub_models.Chat{ID: "native", Created: time.Date(2026, 1, 2, 3, 4, 6, 0, time.UTC), Messages: []pub_models.Message{{Role: "user", Content: "native prompt"}}}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	reader := stubSourceReader{name: "test-source", rows: []vendors.SourceRow{{
+		Source: "test-source", SourceID: "ext-1", FirstUserMessage: "foreign prompt", FullFirstUserMessage: "foreign prompt",
+		Created: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
+	}}}
+	t.Cleanup(useTestSourceReaders([]vendors.SourceReader{reader}))
+	if err := cq.SaveDirScope(wd, "native"); err != nil {
+		t.Fatalf("SaveDirScope: %v", err)
+	}
+	render := func(t *testing.T, width int, keys string) string {
+		t.Helper()
+		cq.dims = dimensions.Dimensions{Width: width}
+		cq.input = strings.NewReader(keys)
+		paginator, err := NewChatIndexPaginator(convDir)
+		if err != nil {
+			t.Fatalf("NewChatIndexPaginator: %v", err)
+		}
+		var out strings.Builder
+		cq.out = &out
+		_ = cq.listChats(context.Background(), paginator, "")
+		return out.String()
+	}
+
+	t.Run("eighty columns", func(t *testing.T) {
+		got := render(t, 80, "")
+		line := promptLine(t, got)
+		if n := utf8.RuneCountInString(line); n >= 80 {
+			t.Fatalf("prompt is %d columns wide at 80, wraps:\n%s", n, line)
+		}
+		for _, want := range []string{"[d]", "off", "[f]", "shown", "[/] filter"} {
+			if !strings.Contains(line, want) {
+				t.Fatalf("prompt lacks %q:\n%s", want, line)
+			}
+		}
+		if strings.Contains(line, "[d]irscoped convs") || strings.Contains(line, "[f]oreign convs") {
+			t.Fatalf("long labels must not be used at 80 columns:\n%s", line)
+		}
+		// Toggling keeps the same tier so the prompt never jitters.
+		toggled := render(t, 80, "d\nf\n")
+		for _, want := range []string{"[d]:on", "[f]:hidden"} {
+			if !strings.Contains(toggled, want) {
+				t.Fatalf("toggled prompt lacks %q:\n%s", want, toggled)
+			}
+		}
+	})
+	t.Run("one hundred and forty columns", func(t *testing.T) {
+		line := promptLine(t, render(t, 140, ""))
+		for _, want := range []string{"[d]irscoped convs: off", "[f]oreign convs: shown"} {
+			if !strings.Contains(line, want) {
+				t.Fatalf("prompt lacks the long label %q:\n%s", want, line)
+			}
+		}
+	})
+	t.Run("unknown width keeps the long labels", func(t *testing.T) {
+		line := promptLine(t, render(t, 0, ""))
+		if !strings.Contains(line, "[d]irscoped convs: off") {
+			t.Fatalf("width zero must not shorten the labels:\n%s", line)
+		}
+	})
+}
+
+// TestListPromptTier pins the width counter and the tier thresholds: the
+// counter replicates the table's prompt composition with a two-digit page
+// counter reserved, escape sequences excluded, and the longest state word
+// of each toggle; the choice leaves listPromptMargin columns for the
+// typed selection and falls to the terse tier when nothing fits.
+func TestListPromptTier(t *testing.T) {
+	long, compact, terse := toggleTiers[0], toggleTiers[1], toggleTiers[2]
+	prev := ancli.UseColor
+	t.Cleanup(func() { ancli.UseColor = prev })
+	ancli.UseColor = true
+	// "(select, [d]irscoped convs: off, [f]oreign convs: hidden, [p]rev,
+	// [n]ext, [b]ack, [q]uit, [/] filter, page 99/99): "
+	if got := listPromptWidth(long, true, true, ""); got != 115 {
+		t.Fatalf("long tier width = %d, want 115", got)
+	}
+	if got := listPromptWidth(compact, true, true, ""); got != 97 {
+		t.Fatalf("compact tier width = %d, want 97", got)
+	}
+	if got := listPromptWidth(terse, true, true, ""); got != 87 {
+		t.Fatalf("terse tier width = %d, want 87", got)
+	}
+	if got := listPromptWidth(long, true, false, "[b]ack to list"); got != 115-25+8 {
+		t.Fatalf("dir-only group view width = %d, want %d", got, 115-25+8)
+	}
+	if got := visibleWidth("\x1b[1;4m[d]:on\x1b[22;24m"); got != 6 {
+		t.Fatalf("visibleWidth ignores escapes, got %d", got)
+	}
+	for _, tc := range []struct {
+		width int
+		want  toggleTier
+	}{
+		{0, long}, {140, long}, {119, long}, {118, compact}, {101, compact}, {100, terse}, {80, terse}, {40, terse},
+	} {
+		if got := listPromptTier(tc.width, true, true, ""); got != tc.want {
+			t.Fatalf("width %d: tier = %+v, want %+v", tc.width, got, tc.want)
+		}
+	}
+	// Without the foreign toggle the long labels fit sooner.
+	if got := listPromptTier(100, true, false, ""); got != long {
+		t.Fatalf("dir-only at 100 columns: tier = %+v, want long", got)
+	}
 }

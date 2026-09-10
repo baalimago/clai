@@ -97,7 +97,8 @@ capture them — there is no central flag bag. Groups compose per command:
 | agent text | `-cm`, `-t`, `-cmd-ban`, `-lb`, `-mt`, `-mtc`, `-max-tool-calls-after-handover`, `-g`, `-p`, `-prp`, `-n` (+ long forms) | query |
 | media tools | `-am`, `-af` (+ long forms) — configure the media tools an agent run may call | query |
 | chat | `-r`, `-n`, `-p` (+ long forms) | chat (+ subs) |
-| query-only | `-dre`, `-s`, `-rf`, `-asc` (+ long forms) | query |
+| query-only | `-dre`, `-s`, `-rf`, `-asc`, `-summarize`, `-sm` (+ long forms) | query |
+| summarize | positional `<window>`; `-force`, `-y`, `-workers`, `-sm` (+ long forms) — `SummarizeFlags`, registered on the sub only | chat **summarize** (sub-level) |
 | photo | `-pm`, `-pd`, `-pp` (+ long forms) | photo |
 | video | `-vm`, `-vd`, `-vp` (+ long forms) | video |
 | audio | `-am`, `-af`, `-parallelism` (+ `-r`) | audio **transcribe** (sub-level) |
@@ -161,11 +162,15 @@ hint lists every owner. On one path the shallowest owner takes the flag.
 
 ## Subcommander trees
 
-- `chat` → `continue|c`, `delete|d`, `list|l`, `dir`, `dirv2`, `help|h`.
+- `chat` → `continue|c`, `delete|d`, `list|l`, `dir`, `dirv2`,
+  `summarize|s`, `help|h`.
   Subcommands share the tree's flag values (parent and subs register
   subsets of one shared `ChatFlags`), so `clai chat -r list` and
   `clai chat list -r` both work. `list`/`dir`/`dirv2`/
-  `help` are structurally read-only (`utils.NoCreateConfig`). Unmatched
+  `help` are structurally read-only (`utils.NoCreateConfig`). `summarize`
+  registers the `SummarizeFlags` group on its own level and has a
+  dedicated setup (`summarizeSetup`) that parses the positional window and builds the
+  injected summarizer; no other verb touches a model. Unmatched
   positionals stay with the parent and reach `chat.New` unchanged.
 - `audio` → `transcribe|t`, `help|h`; the parent errors with the namespace
   help when the verb is missing or unknown.
@@ -177,7 +182,7 @@ hint lists every owner. On one path the shallowest owner takes the flag.
 
 `setup.ConfigRunPrep` (config dir + theme + united config migration),
 injected from `main.go`, runs only in config-touching commands: query, chat
-(continue/delete), photo, video, audio(transcribe), setup.
+(continue/delete/summarize), photo, video, audio(transcribe), setup.
 
 Commands that render content without reading a mode config call
 `internal.PrepTheme` instead (config dir + theme, no migration): `replay`,
@@ -202,7 +207,7 @@ bash/zsh scripts are generic. clai plugs in value sources via hooks in
 is injected by the command packages, since package `internal` must not import the
 tool registry):
 
-- `-cm` → model history, `-p` → profiles (query, chat and every chat sub),
+- `-cm` and `-sm` → model history, `-p` → profiles (query, chat and every chat sub),
   `-asc` → shell contexts, `-t` → tool names (comma-split, from
   `tools.Names`), `-prp` → file kind;
 - `-pd`/`-vd` → dir kind (photo/video);

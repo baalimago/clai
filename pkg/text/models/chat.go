@@ -28,8 +28,13 @@ type Chat struct {
 	// text content. Empty when no user message exists, the first message is
 	// image-only, or the chat predates this feature. Stamped once on first
 	// persist; never rewritten.
-	GroupKey string    `json:"group_key,omitempty"`
-	Messages []Message `json:"messages"`
+	GroupKey string `json:"group_key,omitempty"`
+	// Title and Summary are model-generated labels; SummaryAt is provenance
+	// only (when they were generated), never a staleness index.
+	Title     string    `json:"title,omitempty"`
+	Summary   string    `json:"summary,omitempty"`
+	SummaryAt time.Time `json:"summary_at,omitzero"`
+	Messages  []Message `json:"messages"`
 	// TokenUsage is the billable usage accumulated across all model calls in
 	// the latest session. RecentTokenUsage is only the final model call, which
 	// is the closest persisted gauge of the next request's context size.
@@ -46,6 +51,10 @@ type QueryCost struct {
 	MessageTrigger int    `json:"current_index"`
 	Model          string `json:"model,omitempty"`
 	Usage          Usage  `json:"usage"`
+	// Purpose is empty for the conversation's own model calls and "summary"
+	// for rows a summarizer contributed; index model resolution skips the
+	// latter (worklog 2026-09-09-conversation-summaries, D19).
+	Purpose string `json:"purpose,omitempty"`
 }
 
 func (c Chat) TotalTokens() string {

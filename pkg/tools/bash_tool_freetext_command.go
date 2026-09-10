@@ -48,6 +48,10 @@ var Cmd = FreetextCmdTool{
 	},
 }
 
+// Call is the context-free entry point and enforces no command ban policy:
+// the policy lives only on a tool-call context (WithCmdBanContext), so
+// enforcement requires CallWithContext. The tool executor always uses the
+// latter.
 func (r FreetextCmdTool) Call(input pub_models.Input) (string, error) {
 	freetextCmd, ok := input["command"].(string)
 	if !ok {
@@ -55,9 +59,6 @@ func (r FreetextCmdTool) Call(input pub_models.Input) (string, error) {
 	}
 	if freetextCmd == "" {
 		return "", fmt.Errorf("validate command input: command must not be empty")
-	}
-	if err := validateCmdNotBannedWithContext(context.Background(), freetextCmd, nil); err != nil {
-		return "", fmt.Errorf("run freetext command %q: %w", freetextCmd, err)
 	}
 
 	timeout, err := parseOptionalCmdTimeout(input["timeout_seconds"])

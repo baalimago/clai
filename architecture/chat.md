@@ -51,6 +51,12 @@ type Chat struct {
     // chats or conversations without a user message.
     GroupKey string `json:"group_key,omitempty"`
 
+    // Title and Summary are model-generated labels (see summaries.md);
+    // SummaryAt is provenance only, never a staleness index.
+    Title     string    `json:"title,omitempty"`
+    Summary   string    `json:"summary,omitempty"`
+    SummaryAt time.Time `json:"summary_at,omitzero"`
+
     Messages         []Message   `json:"messages"`
     TokenUsage       *Usage      `json:"usage,omitempty"`
     RecentTokenUsage *Usage      `json:"recent_usage,omitempty"`
@@ -65,7 +71,8 @@ Notes:
 - `Messages` is an ordered transcript.
 - `TokenUsage` contains the billable usage for all model calls in the latest session.
 - `RecentTokenUsage` contains only the final model call. This value estimates the context size of the next request.
-- `Queries` contains the usage and cost for each recorded session.
+- `Queries` contains the usage and cost for each recorded session. Rows with `purpose: "summary"` belong to the summarizer, not to the conversation's own model calls.
+- `Title`/`Summary`/`SummaryAt` are generated once, in flight on the first persist or in batch by `clai chat summarize`; every surface falls back to the first user message when `Title` is empty. See `architecture/summaries.md`.
 
 ### `pkg/text/models.Message`
 
@@ -175,9 +182,13 @@ Both commands show information for the conversation that is bound to the current
     "recent": {"uncached_input": 1200, "cached_input": 8000, "output": 300, "total": 9500},
     "total": {"uncached_input": 2400, "cached_input": 15000, "output": 600, "total": 18000}
   },
-  "cost_usd": 0.12
+  "cost_usd": 0.12,
+  "title": "Fix auth token refresh",
+  "summary": "Asked why refresh tokens expired early. Found the clock skew and fixed the signing window."
 }
 ```
+
+`title` and `summary` are present only when the conversation has been labelled (`omitempty`, no `version` bump); the v1 `chat dir -r` record carries the same two optional keys, and both pretty outputs add `title:` / `summary:` lines after `prompt:`.
 
 The token fields have these meanings:
 
@@ -235,6 +246,10 @@ In `internal/chat/handler.go:cont`:
 - If the loaded chat already has `chat.Profile != ""`, it overrides the runtime handler config so continuation uses that profile.
 - Otherwise, if a `--profile` was provided (wired into `UseProfile`), the handler stamps it into `chat.Profile` so future continuations persist it.
 
+### `chat summarize` (label existing conversations)
+
+`clai chat summarize <window>` (alias `clai c s`) generates a title and summary for every native conversation updated inside the window that has none yet (`-force` regenerates), after a confirmation naming the count and a token estimate (`-y` skips it; required with `-n`). It is the only chat subcommand that talks to a model: the summarizer is a lazy constructor injected from `main.go` and invoked by this verb alone. Workers write conversation files through `SaveWithoutIndex`; the coordinator rewrites the index once. Details in `architecture/summaries.md`.
+
 ### `chat list` / inspect / edit / delete
 
 `clai chat list` exists for discovering chats and doing transcript operations.
@@ -242,7 +257,8 @@ In `internal/chat/handler.go:cont`:
 Implementation: `internal/chat/handler_list_chat.go`:
 
 - `list()` reads every JSON file in `<convDir>`, unmarshals to `Chat`, sorts by `Created` desc.
-- `listChats()` uses `utils.SelectFromTable` to show a selection table.
+- `listChats()` uses `utils.SelectFromTable` to show a selection table; each row shows `labelFor(title, firstUserMessage)` — the title when the chat is labelled, else the first user message.
+- Table toggles, each re-deriving the in-memory view without a new discovery pass: `[d]irscoped convs` (offered when the working directory has bindings; native rows only, foreign rows never hidden by it) and `[f]oreign convs` (offered when a source reader produced rows; hides or shows every external conversation, groups collapse over the remaining members). Each label carries its state in words (`[d]irscoped convs: off|on`, `[f]oreign convs: shown|hidden`) and is bold and underlined while in the non-default position (colour on); both default to off/shown and last for the list session. The labels come in three tiers chosen per render so the prompt line fits the terminal: long (`[d]irscoped convs: off`, `[f]oreign convs: shown`), compact (`[d]ir: off`, `[f]oreign: shown`) and terse (`[d]:off`, `[f]:shown`). `listPromptTier` replicates the table's prompt composition (`select`, the toggles, `[p]rev`, `[n]ext`, `[b]ack`, `[q]uit`, `[/] filter`, a reserved `page 99/99`), measures it with the longest state word and a four-column typing margin, and takes the first tier that fits; an unknown width keeps the long tier. With both toggles the long tier needs 119 columns and the compact tier 101; below that the terse tier is used. Residual: the table library never measures or clears a wrapped prompt line (`selectNumbers` clears `amPrinted+1` lines), so below about 91 columns a paginated list still wraps the terse prompt and drifts one line per keypress — a pre-feature limitation (the one-toggle prompt with a page counter already measured 82) that a fix in the table package would close.
 
 After selecting a chat, `actOnChat()` prints a details view and offers actions:
 
@@ -269,6 +285,8 @@ Implemented in `internal/chat/reply.go`.
 
 This preserves one-off queries and optionally promotes richer exchanges into normal conversations.
 
+The mirror is built by **explicit field copy**, so a field added to `Chat` must be copied there (and into the promotion copy) or it is lost on reply. `title`, `summary` and `summary_at` are mirrored. Because the mirror carries `ID: globalScope`, a plain `-re` **forks**: `SetupInitialChat` (`internal/text/conf.go`) adopts `Created`, `Messages`, `Queries` and — when its own chat has no summary — the three label fields from the mirror, generates a fresh id, and the finalizer writes a new conversation file next to the untouched parent. The fork therefore inherits its parent's label and the in-flight summarizer does not run for it. `-dre` continues the bound conversation in place from the full file and needs no adoption.
+
 ### LoadPrevQuery
 
 Loads `globalScope.json` (printing a warning if absent).
@@ -289,12 +307,15 @@ In short:
 The chat handler holds no querier and calls no vendor. Every subcommand
 reads stored transcripts and writes conversation state: `continue` prints a
 chat and binds CWD to it, `delete` unlinks it, `list`/`dir`/`dirv2` render.
-Turns are taken with `clai -dre query ...` afterwards.
+Turns are taken with `clai -dre query ...` afterwards. The one exception is
+`summarize`, which receives a lazily constructed summarizer by injection
+(`CommandDeps.NewSummarizer`) and is the only verb that invokes it.
 
 Consequently the chat tree needs no API key, no model config and no tool
 setup, and registers only the flags it reads: `-r`, `-n` and `-p` (which
 stamps the profile onto the continued conversation, steering later `-dre`
-queries). It used to construct a full text querier through
+queries); `summarize` takes the window as its positional argument and adds its own `-force`, `-y`, `-workers`
+and `-sm` on its level only. It used to construct a full text querier through
 `text.SetupQuerier` and discard it, which made `clai c c 0` fail without a
 vendor key and put the whole agent flag group on `clai c -h`.
 

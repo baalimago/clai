@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/baalimago/clai/internal/debugflags"
 	"github.com/baalimago/clai/internal/models"
@@ -58,9 +59,12 @@ type Querier[C models.StreamCompleter] struct {
 	// lookbackCWD is the canonical session working directory, the default anchor
 	// for search_conversations.
 	lookbackCWD string
-	hasPrinted  bool
-	Model       C
-	tooling     tooling
+	// cmdBan is this run's command ban policy, attached to every tool-call
+	// context by the executor (D29). No package-level ban state exists.
+	cmdBan     []string
+	hasPrinted bool
+	Model      C
+	tooling    tooling
 
 	// systemPrompt is the configured system prompt, injected into every
 	// TextQuery call that does not already carry a system message.
@@ -104,6 +108,20 @@ type Querier[C models.StreamCompleter] struct {
 	// estimates onto the chat at finalization.
 	costEnricher      costEnricher
 	callUsageRecorder CallUsageRecorder
+
+	// runModel is the configured model name, the last rung of the summary
+	// model ladder on the query path (D22).
+	runModel string
+	// summarizer is attached by the query command; nil means no in-flight
+	// label (pkg/agent, tests, the summarizer's own querier).
+	summarizer             models.Summarizer
+	summarizeConversations bool
+	summaryModel           string
+	summaryJoinTimeout     time.Duration
+	// summaryInterrupt lets the join give up early; nil wires SIGINT/SIGTERM
+	// at launch time.
+	summaryInterrupt <-chan struct{}
+	summaryRun       *summaryRun
 }
 
 func (q *Querier[C]) SuppressCompletionNotification() bool {
@@ -485,6 +503,7 @@ func (q *Querier[C]) Query(ctx context.Context) error {
 		stoploss:     q.newStoploss(),
 		resizeEvents: resizeEvents,
 	}
+	q.launchSummary(ctx)
 	err := runner.Run(ctx, session)
 	q.chat = session.Chat
 	q.fullMsg = session.FinalAssistantText
@@ -537,4 +556,9 @@ func (q *Querier[C]) TextQuery(ctx context.Context, chat pub_models.Chat) (pub_m
 
 func (q *Querier[C]) SetChatID(chatID string) {
 	q.chat.ID = chatID
+}
+
+// SetSummarizer attaches the in-flight conversation summarizer.
+func (q *Querier[C]) SetSummarizer(s models.Summarizer) {
+	q.summarizer = s
 }

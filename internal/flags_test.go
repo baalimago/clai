@@ -243,6 +243,7 @@ func Test_textFlagsRegistration(t *testing.T) {
 		"mt", "max-tokens", "mtc", "max-tool-calls", "max-tool-calls-after-handover",
 		"g", "glob", "p", "profile", "prp", "profile-path", "n", "non-interactive",
 		"dre", "dir-reply", "s", "skills", "rf", "response-format", "asc", "add-shell-context",
+		"summarize", "sm", "summary-model",
 	} {
 		if fs.Lookup(name) == nil {
 			t.Fatalf("flag %q missing from the text surface", name)
@@ -273,5 +274,35 @@ func Test_chatFlagsRegistration(t *testing.T) {
 		if fs.Lookup(name) != nil {
 			t.Fatalf("flag %q does nothing on chat and must not be registered", name)
 		}
+	}
+}
+
+// TestSummarizeFlags_register pins the chat summarize surface: the batch
+// flags register under their short and long names with the documented
+// defaults; the window is positional, so no flag carries it.
+func TestSummarizeFlags_register(t *testing.T) {
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	sf := NewSummarizeFlags()
+	sf.Register(fs)
+	for _, name := range []string{"force", "y", "yes", "workers", "sm", "summary-model"} {
+		if fs.Lookup(name) == nil {
+			t.Fatalf("flag %q missing from the summarize surface", name)
+		}
+	}
+	if fs.Lookup("since") != nil {
+		t.Fatal("the window is positional; -since must not exist")
+	}
+	if sf.Force.Value() || sf.Yes.Value() || sf.SummaryModel.Value() != "" {
+		t.Fatalf("unexpected defaults: %+v", sf)
+	}
+	if sf.Workers.Value() != 4 {
+		t.Fatalf("workers default = %d, want 4", sf.Workers.Value())
+	}
+	if err := fs.Parse([]string{"-force", "-yes", "-workers", "2", "--summary-model", "test"}); err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if !sf.Force.Value() || !sf.Yes.Value() || sf.Workers.Value() != 2 || sf.SummaryModel.Value() != "test" {
+		t.Fatalf("parsed values: %+v", sf)
 	}
 }

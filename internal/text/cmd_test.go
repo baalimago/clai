@@ -154,3 +154,52 @@ func Test_ApplyFlagOverrides_Stoploss(t *testing.T) {
 		})
 	}
 }
+
+// TestApplyFlagOverrides_summary pins the summary flag cascade: -summarize
+// applies on Explicit in both directions, -sm applies on Changed, and an
+// omitted flag leaves the file value (worklog
+// 2026-09-09-conversation-summaries, phase 4).
+func TestApplyFlagOverrides_summary(t *testing.T) {
+	testCases := []struct {
+		desc  string
+		given Configurations
+		mods  func(tf *internal.TextFlags)
+		want  Configurations
+	}{
+		{
+			desc:  "-summarize=false over a true config",
+			given: Configurations{SummarizeConversations: true},
+			mods:  func(tf *internal.TextFlags) { mustSet(t, &tf.QueryText.Summarize, "false") },
+			want:  Configurations{SummarizeConversations: false},
+		},
+		{
+			desc:  "-summarize over a false config",
+			given: Configurations{SummarizeConversations: false},
+			mods:  func(tf *internal.TextFlags) { mustSet(t, &tf.QueryText.Summarize, "true") },
+			want:  Configurations{SummarizeConversations: true},
+		},
+		{
+			desc:  "omitted -summarize keeps the file value",
+			given: Configurations{SummarizeConversations: true},
+			want:  Configurations{SummarizeConversations: true},
+		},
+		{
+			desc:  "-sm overrides the file summary-model",
+			given: Configurations{SummaryModel: "from-file"},
+			mods:  func(tf *internal.TextFlags) { mustSet(t, &tf.QueryText.SummaryModel, "from-flag") },
+			want:  Configurations{SummaryModel: "from-flag"},
+		},
+		{
+			desc:  "omitted -sm keeps the file summary-model",
+			given: Configurations{SummaryModel: "from-file"},
+			want:  Configurations{SummaryModel: "from-file"},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			given := tc.given
+			ApplyFlagOverrides(&given, tfWith(t, tc.mods))
+			testboil.FailTestIfDiff(t, debug.IndentedJsonFmt(given), debug.IndentedJsonFmt(tc.want))
+		})
+	}
+}

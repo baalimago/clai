@@ -55,6 +55,26 @@ type Configurations struct {
 	// purely additive: textConfig.json + profile cmd-ban + flag -cmd-ban +
 	// agent API; no source removes another source's bans.
 	CmdBan []string `json:"cmd-ban"`
+	// SummarizeConversations launches the in-flight conversation summarizer
+	// on a conversation's first persist (worklog
+	// 2026-09-09-conversation-summaries, D12).
+	SummarizeConversations bool `json:"summarize-conversations"`
+	// SummaryModel is the model the conversation summarizer uses; empty means
+	// the resolution ladder (D22). The migrate tag surfaces the empty key in
+	// upgraded files, so it must never carry omitempty.
+	SummaryModel string `json:"summary-model" migrate:"true"`
+	// SummaryJoinTimeout bounds the finalizer's wait for the in-flight
+	// summary; zero means defaultSummaryJoinTimeout.
+	SummaryJoinTimeout time.Duration `json:"-"`
+	// CostWarnf receives the cost manager's and the cost enricher's
+	// warnings; nil keeps ancli.Warnf. A querier whose output is discarded
+	// routes them to its own trace (worklog
+	// 2026-09-09-conversation-summaries, R2-03).
+	CostWarnf func(format string, a ...any) `json:"-"`
+	// ErrOut replaces the process stderr for the querier's MCP log sink; nil
+	// keeps os.Stderr. A querier that may outlive its caller (the abandoned
+	// in-flight summarizer) must never read the global stream (R2-09).
+	ErrOut io.Writer `json:"-"`
 	// ShellContext is a context definition name for ASC (auto-append shell context).
 	// When non-empty, clai will load <configDir>/shellContexts/<name>.json and insert
 	// the rendered template block into the system prompt instead of the user prompt.
@@ -63,11 +83,15 @@ type Configurations struct {
 	PostProccessedPrompt string `json:"-"`
 
 	// These are to allow tools to be injected via public package.
-	Tools           []pub_models.LLMTool          `json:"-"`
-	McpServers      []pub_models.McpServer        `json:"-"`
-	BaseTools       map[string]pub_models.LLMTool `json:"-"`
-	RegisteredTools map[string]struct{}           `json:"-"`
-	MaxToolCalls    *int                          `json:"max-tool-calls,omitempty"`
+	Tools      []pub_models.LLMTool   `json:"-"`
+	McpServers []pub_models.McpServer `json:"-"`
+	// SkipAmbientMcpServers skips discovery of <configDir>/mcpServers/*.json;
+	// servers passed in McpServers still start and keep their explicit or
+	// ambient posture (worklog 2026-09-09-conversation-summaries, D18).
+	SkipAmbientMcpServers bool                          `json:"-"`
+	BaseTools             map[string]pub_models.LLMTool `json:"-"`
+	RegisteredTools       map[string]struct{}           `json:"-"`
+	MaxToolCalls          *int                          `json:"max-tool-calls,omitempty"`
 	// Stoploss is the token stoploss policy for the run. Nil or
 	// MaxTokens <= 0 disables the stoploss (no handover injection).
 	Stoploss *Stoploss `json:"stoploss,omitempty"`
@@ -181,13 +205,14 @@ type Profile struct {
 }
 
 var Default = Configurations{
-	Model:               "gpt-5.2",
-	SystemPrompt:        "You are an assistant for a CLI tool. Answer concisely and informatively. Prefer markdown if possible.",
-	Raw:                 false,
-	UseTools:            false,
-	ToolOutputRuneLimit: 21600,
-	SaveReplyAsConv:     true,
-	UseLookback:         false,
+	Model:                  "gpt-5.2",
+	SystemPrompt:           "You are an assistant for a CLI tool. Answer concisely and informatively. Prefer markdown if possible.",
+	Raw:                    false,
+	UseTools:               false,
+	ToolOutputRuneLimit:    21600,
+	SaveReplyAsConv:        true,
+	UseLookback:            false,
+	SummarizeConversations: true,
 	// Stoploss ships as a disabled, self-documenting template: max-tokens 0
 	// keeps the stoploss off for existing configs, and the presence-based
 	// loader appends the whole object to configs that predate it (config
@@ -283,6 +308,10 @@ func (c *Configurations) SetupInitialChat(args []string) error {
 			if c.InitialChat.Created.IsZero() && !iP.Created.IsZero() {
 				c.InitialChat.Created = iP.Created
 				traceChatf("setup initial chat adopted previous query created=%q", c.InitialChat.Created.Format(time.RFC3339Nano))
+			}
+			if c.InitialChat.Summary == "" && iP.Summary != "" {
+				c.InitialChat.Title, c.InitialChat.Summary, c.InitialChat.SummaryAt = iP.Title, iP.Summary, iP.SummaryAt
+				traceChatf("setup initial chat adopted previous query title=%q summary_at=%q", iP.Title, iP.SummaryAt.Format(time.RFC3339Nano))
 			}
 			traceChatf("setup initial chat loaded previous query chat_id=%q messages=%d, queries=%d", iP.ID, len(iP.Messages), len(iP.Queries))
 			c.InitialChat.Messages = append(c.InitialChat.Messages, iP.Messages...)

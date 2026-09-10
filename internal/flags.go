@@ -84,6 +84,11 @@ type IntFlag struct {
 	set bool
 }
 
+// NewIntFlag returns an int flag whose zero reading is def.
+func NewIntFlag(def int) IntFlag {
+	return IntFlag{val: def, def: def}
+}
+
 func (f *IntFlag) String() string { return strconv.Itoa(f.val) }
 
 func (f *IntFlag) Set(v string) error {
@@ -287,6 +292,29 @@ func (g *ChatFlags) Register(fs *flag.FlagSet) {
 	g.Profile.Register(fs, profileFlagDesc, "p", "profile")
 }
 
+// SummarizeFlags is the chat summarize surface: regeneration, confirmation,
+// concurrency and the summarizer model. The window is the verb's positional
+// argument. It registers on the summarize sub only, next to the tree's
+// shared -r, -n and -p.
+type SummarizeFlags struct {
+	Force        BoolFlag
+	Yes          BoolFlag
+	Workers      IntFlag
+	SummaryModel StringFlag
+}
+
+// NewSummarizeFlags seeds the worker-pool default.
+func NewSummarizeFlags() SummarizeFlags {
+	return SummarizeFlags{Workers: NewIntFlag(4)}
+}
+
+func (g *SummarizeFlags) Register(fs *flag.FlagSet) {
+	g.Force.Register(fs, "Regenerate the title and summary of conversations that already have one.", "force")
+	g.Yes.Register(fs, "Skip the confirmation prompt.", "y", "yes")
+	g.Workers.Register(fs, "Number of conversations summarized concurrently.", "workers")
+	g.SummaryModel.Register(fs, "Set the model the conversation summarizer uses. Overrides summary-model in textConfig.json.", "sm", "summary-model")
+}
+
 // QueryTextFlags holds the query-only flags: reply modes, skills,
 // structured responses and prompt shell context — none of which apply to
 // chat sessions.
@@ -295,6 +323,8 @@ type QueryTextFlags struct {
 	UseSkills      StringFlag
 	ResponseFormat StringFlag
 	ShellContext   StringFlag
+	Summarize      BoolFlag
+	SummaryModel   StringFlag
 }
 
 func (g *QueryTextFlags) Register(fs *flag.FlagSet) {
@@ -302,6 +332,8 @@ func (g *QueryTextFlags) Register(fs *flag.FlagSet) {
 	g.UseSkills.Register(fs, "Enable skills. Use '*' to enable or 'none' to disable for the current run.", "s", "skills")
 	g.ResponseFormat.Register(fs, "Block streaming and print only the final structured response.", "rf", "response-format")
 	g.ShellContext.Register(fs, "Auto-append shell context by name.", "asc", "add-shell-context")
+	g.Summarize.Register(fs, "Generate a title and summary for a new conversation alongside the query. Overrides summarize-conversations in textConfig.json.", "summarize")
+	g.SummaryModel.Register(fs, "Set the model the conversation summarizer uses. Overrides summary-model in textConfig.json.", "sm", "summary-model")
 }
 
 // TextFlags composes the four text-path groups: the parameter type for

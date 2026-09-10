@@ -7,10 +7,16 @@ import (
 	"log/slog"
 	"os"
 	"path"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/baalimago/clai/internal/vendors"
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/dimensions"
+	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
 func TestVendorType_OpenRouter(t *testing.T) {
@@ -262,4 +268,89 @@ func TestNewQuerier_AgentSettings(t *testing.T) {
 	if plain.tooling.callRecorder != nil {
 		t.Fatalf("expected nil toolCallRecorder, got %v", plain.tooling.callRecorder)
 	}
+}
+
+// TestNewQuerier_oneOffQuerier_isSideEffectFree is the integration proof for
+// a summarizer-shaped querier (D18, D19, D23): built with the mock vendor,
+// SkipAmbientMcpServers and one injected tool it registers exactly that
+// tool, spawns no config-dir server, and a non-persisting TextQuery returns
+// a cost row while writing nothing under the config dir.
+func TestNewQuerier_oneOffQuerier_isSideEffectFree(t *testing.T) {
+	t.Setenv("CLAI_DISABLE_COST_ERR_LOG_GOROUTINE", "1")
+	confDir := t.TempDir()
+	marker := writeAmbientMarkerServer(t, filepath.Join(confDir, "mcpServers"))
+	writeMockPriceFile(t, confDir)
+	conf := Configurations{
+		Model:                 "test",
+		ConfigDir:             confDir,
+		UseTools:              true,
+		Tools:                 []pub_models.LLMTool{setupToolsTestTool{name: "injected"}},
+		SkipAmbientMcpServers: true,
+		SaveReplyAsConv:       false,
+		Raw:                   true,
+		Out:                   &strings.Builder{},
+	}
+
+	var q Querier[*vendors.Mock]
+	var err error
+	stderr := testboil.CaptureStderr(t, func(t *testing.T) {
+		q, err = NewQuerier(t.Context(), conf, &vendors.Mock{})
+	})
+	if err != nil {
+		t.Fatalf("NewQuerier: %v", err)
+	}
+	if _, ok := q.tooling.registered["injected"]; !ok || len(q.tooling.registered) != 1 {
+		t.Fatalf("registered tools = %v, want only the injected tool", q.tooling.registered)
+	}
+	assertMarkerAbsent(t, marker)
+	if strings.Contains(stderr, "failed to setup") {
+		t.Fatalf("ambient server must not be started, stderr: %q", stderr)
+	}
+
+	chat, err := q.TextQuery(t.Context(), pub_models.Chat{ID: "one-off", Messages: []pub_models.Message{{Role: "user", Content: "summarize this conversation"}}})
+	if err != nil {
+		t.Fatalf("TextQuery: %v", err)
+	}
+	if len(chat.Queries) != 1 {
+		t.Fatalf("Queries = %+v, want exactly one row", chat.Queries)
+	}
+	if row := chat.Queries[0]; row.Usage.TotalTokens == 0 || row.CostUSD <= 0 {
+		t.Fatalf("Queries[0] = %+v, want usage and cost", row)
+	}
+	want := []string{"/mcpServers/ambient.json", "/mock_test_test.json"}
+	if got := configDirEntries(t, confDir); !slices.Equal(got, want) {
+		t.Fatalf("config dir entries = %v, want only the fixtures %v", got, want)
+	}
+}
+
+// TestNewQuerier_summaryDefaults pins that NewQuerier copies the two summary
+// config fields and defaults a zero join timeout to the README value.
+func TestNewQuerier_summaryDefaults(t *testing.T) {
+	t.Setenv("CLAI_DISABLE_COST_ERR_LOG_GOROUTINE", "1")
+	t.Run("zero join timeout takes the default", func(t *testing.T) {
+		conf := Configurations{Model: "mock", ConfigDir: t.TempDir(), SummarizeConversations: true, SummaryModel: "summary-model"}
+		q, err := NewQuerier(t.Context(), conf, &MockQuerier{})
+		if err != nil {
+			t.Fatalf("NewQuerier: %v", err)
+		}
+		if !q.summarizeConversations || q.summaryModel != "summary-model" || q.runModel != "mock" {
+			t.Fatalf("copied summarize=%t model=%q run=%q", q.summarizeConversations, q.summaryModel, q.runModel)
+		}
+		if q.summaryJoinTimeout != defaultSummaryJoinTimeout || defaultSummaryJoinTimeout != 5*time.Second {
+			t.Fatalf("join timeout = %v, want the 5s default", q.summaryJoinTimeout)
+		}
+		if q.summarizer != nil || q.summaryRun != nil {
+			t.Fatal("NewQuerier must attach no summarizer")
+		}
+	})
+	t.Run("explicit join timeout is copied", func(t *testing.T) {
+		conf := Configurations{Model: "mock", ConfigDir: t.TempDir(), SummaryJoinTimeout: 7 * time.Millisecond}
+		q, err := NewQuerier(t.Context(), conf, &MockQuerier{})
+		if err != nil {
+			t.Fatalf("NewQuerier: %v", err)
+		}
+		if q.summaryJoinTimeout != 7*time.Millisecond || q.summarizeConversations {
+			t.Fatalf("join timeout = %v summarize=%t", q.summaryJoinTimeout, q.summarizeConversations)
+		}
+	})
 }

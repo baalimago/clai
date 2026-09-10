@@ -158,7 +158,6 @@ func assertMarkerPresent(t *testing.T, path string) {
 // marker is never created, and the run completes normally (D7, D14).
 func TestAgentCmdBan_SingleAgentRefusal(t *testing.T) {
 	t.Setenv("CLAI_DISABLE_COST_ERR_LOG_GOROUTINE", "1")
-	t.Cleanup(pkgtools.ResetCmdBanListForTests)
 
 	marker := filepath.Join(t.TempDir(), "banned-marker")
 	t.Setenv("CLAI_MOCK_CMD_COMMAND", "touch "+marker)
@@ -175,12 +174,11 @@ func TestAgentCmdBan_SingleAgentRefusal(t *testing.T) {
 	assertMarkerAbsent(t, marker)
 }
 
-// TestAgentCmdBan_SequentialPerRunIsolation proves each run's NewQuerier
-// setter (Phase 3) replaces the previous run's list: a permissive run does not
-// inherit a ban, and a banned run does not leak into the next.
+// TestAgentCmdBan_SequentialPerRunIsolation proves each run carries only
+// its own querier's list (D29): a permissive run does not inherit a ban, and
+// a banned run does not leak into the next.
 func TestAgentCmdBan_SequentialPerRunIsolation(t *testing.T) {
 	t.Setenv("CLAI_DISABLE_COST_ERR_LOG_GOROUTINE", "1")
-	t.Cleanup(pkgtools.ResetCmdBanListForTests)
 
 	marker1 := filepath.Join(t.TempDir(), "banned-marker")
 	marker2 := filepath.Join(t.TempDir(), "permissive-marker")
@@ -215,33 +213,27 @@ func TestAgentCmdBan_SequentialPerRunIsolation(t *testing.T) {
 	assertMarkerAbsent(t, marker1)
 }
 
-// TestAgentCmdBan_ConcurrentDistinctLists is the enforcement test for cmdBanMu
-// (R2-01): two agents with distinct ban lists run Setup+Query concurrently so
-// spawn-path reads genuinely overlap the other run's SetCmdBanList write. The
-// race detector must stay clean, every refusal must name the observer's own
-// entry, and no command may ever spawn.
+// TestAgentCmdBan_ConcurrentDistinctLists proves the per-run policy (D29):
+// two agents with distinct ban lists run Setup+Query concurrently, each
+// executor attaches its own querier's list to its tool-call context, so the
+// race detector stays clean, every refusal names the observer's own entry,
+// and no command ever spawns.
 //
-// Design notes (recorded in phase-5-pkg-agent-e2e.md):
+// Design notes:
 //   - The two agents use different tools (cmd vs async_cmd) because the
 //     mock fabricates freetext inputs from one process-global env var
 //     (CLAI_MOCK_CMD_COMMAND), so two concurrent cmd agents could not carry
 //     different commands.
-//   - Markers live under a non-existent directory: under the package-global
-//     list design (D6) a concurrent query may observe the other agent's list
-//     (the mutex prevents data races, not logical cross-talk), so a
-//     cross-talked execution must fail harmlessly and create nothing.
+//   - Markers live under a non-existent directory so that a policy regression
+//     (a cross-talked or permissive execution) fails harmlessly and creates
+//     nothing.
 //   - A refusal for agent X implies X's own list was active when its command
-//     was validated (each command's tokens match only its own entry), so
-//     "every refusal names the observer's own entry" holds deterministically.
-//   - At least one refusal is guaranteed: the agent performing the final
-//     SetCmdBanList write reads its own list at its next spawn-path check (no
-//     further writes can intervene).
+//     was validated (each command's tokens match only its own entry).
 func TestAgentCmdBan_ConcurrentDistinctLists(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("test spawns POSIX binaries (rm) via async_cmd")
 	}
 	t.Setenv("CLAI_DISABLE_COST_ERR_LOG_GOROUTINE", "1")
-	t.Cleanup(pkgtools.ResetCmdBanListForTests)
 	t.Cleanup(pkgtools.ResetAsyncCmdManagerForTests)
 
 	nowhere := filepath.Join(t.TempDir(), "does-not-exist")
@@ -317,22 +309,19 @@ func TestAgentCmdBan_ConcurrentDistinctLists(t *testing.T) {
 
 // TestAgentCmdBan_ConcurrentPermissiveAndBanned proves concurrent permissive +
 // banned runs behave independently: the permissive run executes and creates
-// its marker while the banned run refuses every iteration.
+// its marker while the banned run refuses every iteration, each on its own
+// tool-call context (D29).
 //
-// Design notes (recorded in phase-5-pkg-agent-e2e.md):
-//   - The permissive agent uses `printf ok > <marker>` instead of a literal
-//     `touch`: under the package-global list (D6) its concurrent queries may
-//     observe the banned agent's list, which would refuse a literal `touch`.
-//     The permissive command creates the marker without matching any entry.
+// Design notes:
+//   - The permissive agent uses `printf ok > <marker>` rather than a literal
+//     `touch`, so a policy regression that leaked the banned agent's list
+//     into the permissive run would show as a refusal of a command that no
+//     entry should match.
 //   - The banned agent runs on async_cmd (`touch <marker>`) and the
 //     permissive agent on cmd so each agent's mock input comes from its own
-//     env var. Only the banned agent writes the global list during the
-//     concurrent phase (the permissive agent sets it once, before the phase),
-//     so the banned agent's queries deterministically observe ["touch"] and
-//     are refused every iteration.
+//     env var.
 func TestAgentCmdBan_ConcurrentPermissiveAndBanned(t *testing.T) {
 	t.Setenv("CLAI_DISABLE_COST_ERR_LOG_GOROUTINE", "1")
-	t.Cleanup(pkgtools.ResetCmdBanListForTests)
 
 	permissiveMarker := filepath.Join(t.TempDir(), "permissive-marker")
 	bannedMarker := filepath.Join(t.TempDir(), "banned-marker")
@@ -352,8 +341,6 @@ func TestAgentCmdBan_ConcurrentPermissiveAndBanned(t *testing.T) {
 	)
 
 	ctx := context.Background()
-	// The permissive agent sets the empty list once, before the concurrent
-	// phase; during the phase only the banned agent writes the global list.
 	if err := permissive.Setup(ctx); err != nil {
 		t.Fatalf("permissive Agent.Setup: %v", err)
 	}
