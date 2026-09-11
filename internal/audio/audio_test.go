@@ -241,13 +241,13 @@ Let's get started with the agenda.
 			name:   "json with speakers",
 			segs:   diarizedSegs,
 			format: FormatJSON,
-			want:   `[{"start":0,"end":5.28,"speaker":"A","text":"Hello and welcome to the meeting."},{"start":5.28,"end":9.04,"speaker":"B","text":"Let's get started with the agenda."}]`,
+			want:   "[\n  {\n    \"start\": 0,\n    \"end\": 5.28,\n    \"speaker\": \"A\",\n    \"text\": \"Hello and welcome to the meeting.\"\n  },\n  {\n    \"start\": 5.28,\n    \"end\": 9.04,\n    \"speaker\": \"B\",\n    \"text\": \"Let's get started with the agenda.\"\n  }\n]\n",
 		},
 		{
 			name:   "json without speakers",
 			segs:   plainSegs,
 			format: FormatJSON,
-			want:   `[{"start":0,"end":5.28,"text":"Hello and welcome to the meeting."},{"start":5.28,"end":9.04,"text":"Let's get started with the agenda."}]`,
+			want:   "[\n  {\n    \"start\": 0,\n    \"end\": 5.28,\n    \"text\": \"Hello and welcome to the meeting.\"\n  },\n  {\n    \"start\": 5.28,\n    \"end\": 9.04,\n    \"text\": \"Let's get started with the agenda.\"\n  }\n]\n",
 		},
 	}
 	for _, tc := range testCases {
@@ -268,7 +268,7 @@ func TestRenderJSON_FloatSecondsContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(got, `"end":5.28`) {
+	if !strings.Contains(got, `"end": 5.28`) {
 		t.Errorf("expected float seconds 5.28 in output, got: %v", got)
 	}
 	if strings.Contains(got, "speaker") {
@@ -287,7 +287,7 @@ func TestRenderEmpty(t *testing.T) {
 		{FormatVTT, "WEBVTT\n"},
 		{FormatSRT, ""},
 		{FormatText, ""},
-		{FormatJSON, "[]"},
+		{FormatJSON, "[]\n"},
 	}
 	for _, tc := range testCases {
 		t.Run(string(tc.format), func(t *testing.T) {

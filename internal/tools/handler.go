@@ -66,6 +66,9 @@ func registerLocalTools(reg *registry, lookup executableLookup) {
 	executableTools := []executableTool{
 		{"tree", tools.FileTree},
 		{"cat", tools.Cat},
+		{"head", tools.Head},
+		{"tail", tools.Tail},
+		{"jq", tools.JQ},
 		{"find", tools.Find},
 		{"file", tools.FileType},
 		{"ls", tools.LS},

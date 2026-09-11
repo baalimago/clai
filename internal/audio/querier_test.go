@@ -58,6 +58,9 @@ func TestTranscribeQuerier_Query(t *testing.T) {
 		if !strings.HasSuffix(got, "]\n") {
 			t.Errorf("expected newline-terminated json, got: %q", got)
 		}
+		if !strings.Contains(got, "\n  {\n    \"start\"") {
+			t.Errorf("expected indented, newline-formatted json, got: %q", got)
+		}
 	})
 	t.Run("cleanup runs after query", func(t *testing.T) {
 		q, _ := newQuerier(t, FormatText)

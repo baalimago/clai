@@ -35,6 +35,9 @@ type ToolName string
 const (
 	FileTreeTool           ToolName = "file_tree"
 	CatTool                ToolName = "cat"
+	HeadTool               ToolName = "head"
+	TailTool               ToolName = "tail"
+	JQTool                 ToolName = "jq"
 	FindTool               ToolName = "find"
 	FileTypeTool           ToolName = "file_type"
 	LSTool                 ToolName = "ls"

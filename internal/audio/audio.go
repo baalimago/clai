@@ -129,11 +129,14 @@ func renderJSON(segs []Segment) (string, error) {
 			Text:    s.Text,
 		})
 	}
-	b, err := json.Marshal(dtos)
+	// Keep JSON human- and agent-readable. In particular, meeting workflows
+	// commonly inspect long diarized transcripts with jq; a single-line array
+	// can exceed line-oriented tool limits before it can be parsed.
+	b, err := json.MarshalIndent(dtos, "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal segments to json: %w", err)
 	}
-	return string(b), nil
+	return string(b) + "\n", nil
 }
 
 func formatTimestamp(d time.Duration, millisSeparator string) string {

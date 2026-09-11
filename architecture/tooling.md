@@ -60,6 +60,13 @@ can disable preservation. The `rsync` built-in uses archive and partial-transfer
 modes. Remote paths are rejected unless `allow_remote` is explicitly true, and
 destructive destination cleanup requires the separate `delete` option.
 
+The `jq`, `head`, and `tail` built-ins are thin wrappers around their system
+executables and are registered only when those executables are available.
+`jq` accepts a normal jq filter and exposes the commonly needed `-c`, `-r`,
+`-s`, `-S`, and `-e` flags. `head` and `tail` expose mutually exclusive line
+(`-n`) and byte (`-c`) counts; blocking tail follow mode is intentionally not
+available.
+
 Built-in tools typically run locally (e.g., execute a Go command, search files, read file contents) and must:
 
 - validate arguments

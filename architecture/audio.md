@@ -107,7 +107,9 @@ supports: `diarized_json` when the model name contains `diarize`, else
 (OpenRouter rejects them); those are local renderings from the shared
 `Segment` model. Speaker labels render as WebVTT voice tags (`<v A>`), SRT/text
 `A: ` prefixes, and a `speaker` field in `json` output (float-second
-timestamps).
+timestamps). JSON output is indented with one segment object per block and a
+trailing newline so large transcripts remain usable with `jq`, `head`, `tail`,
+and line-oriented inspection tools.
 
 ## Large Files: Split and Stitch
 

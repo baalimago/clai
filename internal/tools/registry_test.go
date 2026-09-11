@@ -94,7 +94,15 @@ func TestInitRegistersApplyPatch(t *testing.T) {
 	if _, ok := Registry.Get("apply_patch"); !ok {
 		t.Fatalf("expected apply_patch to be registered")
 	}
-	for _, name := range []string{"cmd", "freetext_command", "async_cmd", "async_cmd_run", "async_cmd_status", "async_cmd_logs", "async_cmd_await", "async_cmd_cancel", "mktemp"} {
+	names := []string{"cmd", "freetext_command", "async_cmd", "async_cmd_run", "async_cmd_status", "async_cmd_logs", "async_cmd_await", "async_cmd_cancel", "mktemp"}
+	for _, executable := range []string{"jq", "head", "tail"} {
+		if _, err := exec.LookPath(executable); err != nil {
+			t.Logf("%s is not installed, skipping its registration check", executable)
+			continue
+		}
+		names = append(names, executable)
+	}
+	for _, name := range names {
 		if _, ok := Registry.Get(name); !ok {
 			t.Fatalf("expected %s to be registered", name)
 		}
@@ -104,13 +112,13 @@ func TestInitRegistersApplyPatch(t *testing.T) {
 func TestRegisterLocalToolsOmitsUnavailableExecutables(t *testing.T) {
 	r := NewRegistry()
 	registerLocalTools(r, func(name string) (string, error) {
-		if name == "rsync" || name == "rg" || name == "sh" {
+		if name == "rsync" || name == "rg" || name == "sh" || name == "jq" || name == "head" || name == "tail" {
 			return "", exec.ErrNotFound
 		}
 		return "/bin/" + name, nil
 	})
 
-	for _, name := range []string{"rsync", "rg", "cmd", "freetext_command"} {
+	for _, name := range []string{"rsync", "rg", "cmd", "freetext_command", "jq", "head", "tail"} {
 		if _, ok := r.Get(name); ok {
 			t.Fatalf("expected unavailable tool %q to be omitted", name)
 		}

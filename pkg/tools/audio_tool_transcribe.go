@@ -12,7 +12,7 @@ var audioTranscribeFormats = []string{"text", "vtt", "srt", "json"}
 
 var AudioTranscribe = AudioTranscribeTool{
 	Name:        "audio_transcribe",
-	Description: "Transcribe a local audio file to text. Returns the transcript; timestamps and speaker labels are included for output formats that carry them. Default output_format is 'text'.",
+	Description: "Transcribe a local audio file to text. Returns the transcript; timestamps and speaker labels are included for output formats that carry them. JSON is pretty-printed with one segment object per indented block for jq and other line-oriented inspection. Default output_format is 'text'.",
 	Inputs: &pub_models.InputSchema{
 		Type: "object",
 		Properties: map[string]pub_models.ParameterObject{
@@ -22,7 +22,7 @@ var AudioTranscribe = AudioTranscribeTool{
 			},
 			"output_format": {
 				Type:        "string",
-				Description: "Transcript output format. Default is 'text'.",
+				Description: "Transcript output format. JSON is newline-formatted for jq parsing. Default is 'text'.",
 				Enum:        &audioTranscribeFormats,
 			},
 		},
