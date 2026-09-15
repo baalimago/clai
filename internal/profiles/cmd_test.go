@@ -154,3 +154,38 @@ func TestGetFirstSentence(t *testing.T) {
 		})
 	}
 }
+
+func TestRunProfilesList_RehydratesLegacyEscapedPrompt(t *testing.T) {
+	claiDir := filepath.Join(t.TempDir(), ".clai")
+	profilesDir := filepath.Join(claiDir, "profiles")
+	if err := os.MkdirAll(profilesDir, 0o755); err != nil {
+		t.Fatalf("failed to create profiles dir: %v", err)
+	}
+	legacy := `{"name":"legacy","model":"m","prompt":"First line\\nSecond line"}`
+	if err := os.WriteFile(filepath.Join(profilesDir, "legacy.json"), []byte(legacy), 0o644); err != nil {
+		t.Fatalf("failed to write profile: %v", err)
+	}
+	t.Setenv("CLAI_CONFIG_DIR", claiDir)
+
+	var buf bytes.Buffer
+	origStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+	done := make(chan struct{})
+	go func() {
+		var out bytes.Buffer
+		_, _ = out.ReadFrom(r)
+		buf.Write(out.Bytes())
+		close(done)
+	}()
+	err := List()
+	w.Close()
+	os.Stdout = origStdout
+	<-done
+	if err != nil {
+		t.Fatalf("expected nil error, got: %v", err)
+	}
+	if !bytes.Contains(buf.Bytes(), []byte("First sentence prompt: First line\n")) {
+		t.Fatalf("legacy escaped prompt not rehydrated in listing:\n%s", buf.String())
+	}
+}

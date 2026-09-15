@@ -76,7 +76,7 @@ func TestPromptEdit_Success(t *testing.T) {
 		}
 	})
 	got := readPrompt(t, cfg.filePath)
-	want := "L1\\nL2\\tY"
+	want := "L1\nL2\tY"
 	testboil.FailTestIfDiff(t, got, want)
 	if !strings.Contains(out, "updated field \"prompt\"") {
 		t.Fatalf("stdout missing update marker: %q", out)
@@ -184,11 +184,11 @@ func TestPromptEdit_LargePrompt(t *testing.T) {
 		t.Fatalf("actionReconfigurePromptWithEditor(%q): %v", cfg.filePath, err)
 	}
 	got := readPrompt(t, cfg.filePath)
-	want := "A\\nB\\tC\\nD\\tE"
+	want := "A\nB\tC\nD\tE"
 	testboil.FailTestIfDiff(t, got, want)
 }
 
-func TestPromptEdit_NoOpEditor(t *testing.T) {
+func TestPromptEdit_NoBodyEditorKeepsValue(t *testing.T) {
 	dir := t.TempDir()
 	cfg := makeProfile(t, dir, "orig\\nval")
 	ed := makeEditorScript(t, dir, "", 0)
@@ -197,8 +197,8 @@ func TestPromptEdit_NoOpEditor(t *testing.T) {
 		t.Fatalf("actionReconfigurePromptWithEditor(%q): %v", cfg.filePath, err)
 	}
 	got := readPrompt(t, cfg.filePath)
-	if got != "orig\\nval" {
-		t.Fatalf("expected unchanged prompt, got %q", got)
+	if got != "orig\nval" {
+		t.Fatalf("expected value to survive an empty editor body, got %q", got)
 	}
 }
 
@@ -234,7 +234,7 @@ func TestPromptEdit_JSONStability(t *testing.T) {
 	if err := json.Unmarshal(b2, &m); err != nil {
 		t.Fatalf("unmarshal updated profile %q: %v", fp, err)
 	}
-	want := "R\\nS"
+	want := "R\nS"
 	got, ok := m["prompt"].(string)
 	if !ok {
 		t.Fatalf("prompt type = %T, want string", m["prompt"])
@@ -253,5 +253,20 @@ func TestPromptEdit_EmptyBoundary(t *testing.T) {
 	got := readPrompt(t, cfg.filePath)
 	if got != "" {
 		t.Fatalf("expected empty prompt, got %q", got)
+	}
+}
+
+func TestPromptEdit_KeepsQuotedEscapeInHandWrittenPrompt(t *testing.T) {
+	dir := t.TempDir()
+	orig := "line1\nUse the escape \\n for newlines"
+	cfg := makeProfile(t, dir, orig)
+	ed := makeEditorScript(t, dir, "", 0)
+	t.Setenv("EDITOR", ed)
+	if err := actionReconfigurePromptWithEditor(cfg); err != nil {
+		t.Fatalf("actionReconfigurePromptWithEditor(%q): %v", cfg.filePath, err)
+	}
+	got := readPrompt(t, cfg.filePath)
+	if got != orig {
+		t.Fatalf("hand written prompt mutated by the editor round trip:\nwant: %q\n got: %q", orig, got)
 	}
 }

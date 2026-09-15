@@ -296,7 +296,7 @@ func TestActionReconfigureStringFieldWithEditor_PreservesNonEditedFields_TableDr
 				"use_tools":     true,
 			},
 			editTo:    "new\nctx\tZ",
-			wantField: "new\\nctx\\tZ",
+			wantField: "new\nctx\tZ",
 			wantOthers: map[string]any{
 				"prompt":    "keep\\nme",
 				"model":     "m",

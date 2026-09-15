@@ -12,6 +12,8 @@ import (
 	"strings"
 	"text/template"
 	"time"
+
+	"github.com/baalimago/clai/internal/utils"
 )
 
 type ShellContextDefinition struct {
@@ -48,6 +50,12 @@ func (d *ShellContextDefinition) withDefaults() ShellContextDefinition {
 	return out
 }
 
+// LoadShellContextDefinition reads <configDir>/shellContexts/<name>.json.
+//
+// Templates written by older setup editors carry literal "\n" sequences
+// (architecture/shell-context.md, "Newline encoding"): rehydrate them here so
+// both encodings render identically. Var commands are never rehydrated, since a
+// shell command may legitimately contain literal backslash escapes.
 func LoadShellContextDefinition(configDir, name string) (ShellContextDefinition, error) {
 	p := filepath.Join(configDir, "shellContexts", name+".json")
 	b, err := os.ReadFile(p)
@@ -58,6 +66,7 @@ func LoadShellContextDefinition(configDir, name string) (ShellContextDefinition,
 	if err := json.Unmarshal(b, &def); err != nil {
 		return ShellContextDefinition{}, fmt.Errorf("unmarshal shell context definition %q: %w", p, err)
 	}
+	def.Template = utils.UnescapeConfigString(def.Template)
 	return def.withDefaults(), nil
 }
 

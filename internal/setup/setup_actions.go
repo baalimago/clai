@@ -134,8 +134,23 @@ func actionReconfigure(cfg config) error {
 	return interractiveReconfigure(cfg, b)
 }
 
-func unescapeEditWithEditor(toEdit string) (string, error) {
-	unescapedStr := utils.UnescapeEditorString(toEdit)
+// isShellContextTemplate reports whether the field is the template of a shell
+// context definition. That field loads through the unconditional
+// utils.UnescapeConfigString, every other string field through the guarded
+// utils.RehydrateEscapedConfigString (architecture/config.md, "String encoding
+// in edited values"). The editor mirrors the loader so an open-and-save never
+// changes a value the loader would have left alone.
+func isShellContextTemplate(cfg config, fieldName string) bool {
+	return fieldName == "template" && filepath.Base(filepath.Dir(cfg.filePath)) == "shellContexts"
+}
+
+func unescapeEditWithEditor(toEdit string, unguarded bool) (string, error) {
+	var unescapedStr string
+	if unguarded {
+		unescapedStr = utils.UnescapeConfigString(toEdit)
+	} else {
+		unescapedStr = utils.RehydrateEscapedConfigString(toEdit)
+	}
 	tmp, err := os.CreateTemp("", "unescapeEdit_*")
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp file: %w", err)
@@ -164,25 +179,22 @@ func unescapeEditWithEditor(toEdit string) (string, error) {
 		return "", fmt.Errorf("failed to read edited file: %w", err)
 	}
 
-	unescapedStr = string(b)
-	unescapedStr = strings.TrimSuffix(unescapedStr, "\r\n")
-	unescapedStr = strings.TrimSuffix(unescapedStr, "\n")
-
-	escapedStr := utils.EscapeEditorString(unescapedStr)
-	return escapedStr, nil
+	// The edited value is the config value itself: json.Marshal performs the
+	// only escaping that is allowed to happen (architecture/shell-context.md,
+	// "Newline encoding").
+	editedStr := string(b)
+	editedStr = strings.TrimSuffix(editedStr, "\r\n")
+	editedStr = strings.TrimSuffix(editedStr, "\n")
+	return editedStr, nil
 }
 
 func validateEditedStringField(cfg config, fieldName, rawEditedValue string) error {
-	if fieldName != "template" {
-		return nil
-	}
-
-	if filepath.Base(filepath.Dir(cfg.filePath)) != "shellContexts" {
+	if !isShellContextTemplate(cfg, fieldName) {
 		return nil
 	}
 
 	def := text.ShellContextDefinition{
-		Template: utils.UnescapeEditorString(rawEditedValue),
+		Template: utils.UnescapeConfigString(rawEditedValue),
 	}
 	renderer := text.ShellContextRenderer{}
 	_, err := renderer.Render(context.Background(), cfg.name, def)
@@ -223,7 +235,7 @@ func actionReconfigureStringFieldWithEditor(cfg config, fieldName string) error 
 		return fmt.Errorf("field %q in %s is not a string, got %T", fieldName, cfg.filePath, rawValue)
 	}
 
-	editedValue, err := unescapeEditWithEditor(stringValue)
+	editedValue, err := unescapeEditWithEditor(stringValue, isShellContextTemplate(cfg, fieldName))
 	if err != nil {
 		return fmt.Errorf("failed to edit field %q with editor: %w", fieldName, err)
 	}

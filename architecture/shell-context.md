@@ -210,6 +210,21 @@ To prevent prompt bloat and unsafe output sizes:
 
 ---
 
+## Newline encoding
+
+JSON is the only escaping layer. The canonical on-disk form uses real JSON
+escapes: file bytes `\n` decode to a real newline in the Go string.
+
+The `template` field also accepts the legacy form. Versions of the `clai setup`
+string-field editor re-escaped newlines before marshaling, so their files carry
+literal `\n` sequences (file bytes `\\n`). `LoadShellContextDefinition`
+rehydrates those with `utils.UnescapeConfigString`, so both forms render the
+same. This applies to `template` only: `vars` commands may legitimately contain
+literal backslash escapes and are never rehydrated.
+
+The editor no longer re-escapes on save. Saving a legacy escaped file once
+rewrites it into the canonical form, so the legacy tolerance ages out.
+
 ## Template rendering
 
 Use Go `text/template` to render the configured `template` using a data object:

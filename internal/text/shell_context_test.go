@@ -105,6 +105,33 @@ func TestAppendShellContextIfConfigured_preserves_trailing_newline_separation(t 
 	}
 }
 
+func TestAppendShellContextIfConfigured_rehydrates_legacy_escaped_template(t *testing.T) {
+	ctxDir := t.TempDir()
+	if err := os.MkdirAll(ctxDir+"/shellContexts", 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	def := `{
+	  "shell": "/bin/sh",
+	  "template": "cwd: {{.cwd}}\\nhost: {{.host}}\\n",
+	  "vars": {
+	    "cwd": "printf '/tmp/project'",
+	    "host": "printf 'box'"
+	  }
+	}`
+	if err := os.WriteFile(ctxDir+"/shellContexts/minimal.json", []byte(def), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	got, err := AppendShellContextIfConfigured(context.Background(), ctxDir, "minimal", "SYSTEM", ShellContextRenderer{})
+	if err != nil {
+		t.Fatalf("AppendShellContextIfConfigured: %v", err)
+	}
+	want := "<shell context>\ncwd: /tmp/project\nhost: box\n</shell context>\nSYSTEM"
+	if got != want {
+		t.Fatalf("unexpected prompt:\nwant:\n%q\n got:\n%q", want, got)
+	}
+}
+
 func TestShellContext_DefaultTemplate_separates_conditional_fields_with_single_lines(t *testing.T) {
 	def, err := loadDefaultShellContextDefinitionForTest(t)
 	if err != nil {
@@ -178,13 +205,13 @@ func loadDefaultShellContextDefinitionForTest(t *testing.T) (ShellContextDefinit
 	return LoadShellContextDefinition(configDir, "default")
 }
 
-func TestLoadShellContextDefinition_preserves_literal_template_backslash_sequences(t *testing.T) {
+func TestLoadShellContextDefinition_rehydrates_legacy_escaped_template(t *testing.T) {
 	configDir := t.TempDir()
 	if err := os.MkdirAll(configDir+"/shellContexts", 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
 	if err := os.WriteFile(configDir+"/shellContexts/default.json", []byte(`{
-	  "template": "a\\nb\\n",
+	  "template": "a\\nb\\tZ\\n",
 	  "vars": {}
 	}`), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -194,8 +221,29 @@ func TestLoadShellContextDefinition_preserves_literal_template_backslash_sequenc
 	if err != nil {
 		t.Fatalf("LoadShellContextDefinition: %v", err)
 	}
-	if got.Template != `a\nb\n` {
-		t.Fatalf("template unexpectedly transformed: %q", got.Template)
+	if want := "a\nb\tZ\n"; got.Template != want {
+		t.Fatalf("legacy escaped template not rehydrated:\nwant: %q\n got: %q", want, got.Template)
+	}
+}
+
+func TestLoadShellContextDefinition_keeps_canonical_template(t *testing.T) {
+	configDir := t.TempDir()
+	if err := os.MkdirAll(configDir+"/shellContexts", 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(configDir+"/shellContexts/default.json", []byte(`{
+	  "template": "a\nb\n",
+	  "vars": {}
+	}`), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	got, err := LoadShellContextDefinition(configDir, "default")
+	if err != nil {
+		t.Fatalf("LoadShellContextDefinition: %v", err)
+	}
+	if want := "a\nb\n"; got.Template != want {
+		t.Fatalf("canonical template mutated:\nwant: %q\n got: %q", want, got.Template)
 	}
 }
 

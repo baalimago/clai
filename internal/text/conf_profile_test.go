@@ -39,6 +39,52 @@ func TestFindProfile_OmittedUseSkillsStaysNil(t *testing.T) {
 	}
 }
 
+func TestFindProfile_rehydrates_legacy_escaped_prompt(t *testing.T) {
+	confDir := t.TempDir()
+	t.Setenv("CLAI_CONFIG_DIR", confDir)
+
+	profilePath := filepath.Join(confDir, "profiles")
+	if err := os.MkdirAll(profilePath, 0o755); err != nil {
+		t.Fatalf("MkdirAll(%q): %v", profilePath, err)
+	}
+	profileJSON := `{"name":"legacy","model":"test","prompt":"Rules:\\n\\t* stay short\\n\\nBe concise"}`
+	if err := os.WriteFile(filepath.Join(profilePath, "legacy.json"), []byte(profileJSON), 0o644); err != nil {
+		t.Fatalf("WriteFile(profile): %v", err)
+	}
+
+	prof, err := findProfile("legacy")
+	if err != nil {
+		t.Fatalf("findProfile: %v", err)
+	}
+	want := "Rules:\n\t* stay short\n\nBe concise"
+	if prof.Prompt != want {
+		t.Fatalf("prompt not rehydrated:\nwant: %q\n got: %q", want, prof.Prompt)
+	}
+}
+
+func TestFindProfile_keeps_prompt_that_already_has_real_newlines(t *testing.T) {
+	confDir := t.TempDir()
+	t.Setenv("CLAI_CONFIG_DIR", confDir)
+
+	profilePath := filepath.Join(confDir, "profiles")
+	if err := os.MkdirAll(profilePath, 0o755); err != nil {
+		t.Fatalf("MkdirAll(%q): %v", profilePath, err)
+	}
+	profileJSON := `{"name":"mixed","model":"test","prompt":"line1\nline2 \\n kept"}`
+	if err := os.WriteFile(filepath.Join(profilePath, "mixed.json"), []byte(profileJSON), 0o644); err != nil {
+		t.Fatalf("WriteFile(profile): %v", err)
+	}
+
+	prof, err := findProfile("mixed")
+	if err != nil {
+		t.Fatalf("findProfile: %v", err)
+	}
+	want := "line1\nline2 \\n kept"
+	if prof.Prompt != want {
+		t.Fatalf("hand written prompt mutated:\nwant: %q\n got: %q", want, prof.Prompt)
+	}
+}
+
 func TestConfigurations_ProfileOverrides_DefaultProfileKeepsSaveReplyAsConvEnabled(t *testing.T) {
 	confDir := t.TempDir()
 	t.Setenv("CLAI_CONFIG_DIR", confDir)

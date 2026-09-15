@@ -58,6 +58,10 @@ func List() error {
 			continue
 		}
 
+		// Mirror text.loadProfile: legacy files carry literal "\n" in the
+		// prompt (architecture/config.md, "String encoding in edited values").
+		p.Prompt = utils.RehydrateEscapedConfigString(p.Prompt)
+
 		// Backwards compatible: if Name is empty, derive from filename (without .json).
 		if strings.TrimSpace(p.Name) == "" {
 			base := filepath.Base(f.Name())

@@ -342,6 +342,26 @@ It uses globbing under the config dir to find relevant files and offers actions:
 
 See `SETUP.md`.
 
+### String encoding in edited values
+
+Values edited through the string-field editor (`$EDITOR`) are stored as plain
+JSON strings: `json.Marshal` performs the only escaping. Earlier editors (up to
+commit `696b522`) escaped newlines and tabs before marshaling, so their values
+carry literal `\n` and `\t` characters.
+
+Corrupted profile prompts are cleaned up on load by
+`utils.RehydrateEscapedConfigString`, both in `text.loadProfile` and in the
+`clai profiles` listing. The guard only fires when the value holds no real
+newline and no real tab, so a hand-written prompt that quotes `\n` or `\t` as
+text is never changed. The shell context template uses the unconditional
+`utils.UnescapeConfigString` instead (architecture/shell-context.md, "Newline
+encoding").
+
+The editor mirrors the loader on read: the shell context `template` is opened
+through the unconditional unescape, every other string field through the
+guarded one. An open-and-save therefore never changes a value the loader would
+have left alone.
+
 ## Implementation index
 
 If you need to follow configuration in code, start here:

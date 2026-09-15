@@ -33,7 +33,12 @@ func findProfileByPath(p string) (Profile, error) {
 func loadProfile(profilePath string) (Profile, error) {
 	dir := filepath.Dir(profilePath)
 	name := filepath.Base(profilePath)
-	return utils.LoadConfigFromFile(dir, name, nil, &DefaultProfile)
+	p, err := utils.LoadConfigFromFile(dir, name, nil, &DefaultProfile)
+	if err != nil {
+		return p, err
+	}
+	p.Prompt = utils.RehydrateEscapedConfigString(p.Prompt)
+	return p, nil
 }
 
 func (c *Configurations) ProfileOverrides() error {
