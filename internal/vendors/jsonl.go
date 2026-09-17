@@ -2,6 +2,7 @@ package vendors
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -21,13 +22,9 @@ import (
 // line scanning, FS-injectable file opening, and the vendor-agnostic parts of
 // message-block mapping. Vendors keep only their schema-specific logic.
 
-const (
-	// DiscoverMaxLines bounds how many lines discovery-time scans read per file.
-	DiscoverMaxLines = 200
-	// ReadMaxToken bounds scanner tokens when reading full sessions; JSONL
-	// lines can be huge (pasted-image user messages).
-	ReadMaxToken = 10 << 20
-)
+// ReadMaxToken bounds scanner tokens; JSONL lines can be huge (pasted-image
+// user messages). A line larger than it truncates the file's scan.
+const ReadMaxToken = 10 << 20
 
 // OpenAbs opens absPath through fsys, defaulting to the host root filesystem.
 // The FS indirection exists for tests; production readers leave it nil.
@@ -45,6 +42,22 @@ func OpenAbs(fsys fs.FS, absPath string) (io.ReadCloser, error) {
 		return rc, nil
 	}
 	return io.NopCloser(f), nil
+}
+
+// StatAbs stats absPath through fsys, defaulting to the host root filesystem.
+// fs.Stat falls back to opening the file when fsys does not implement
+// fs.StatFS, which defeats a never-opened assertion; test filesystems must
+// implement it (jsonltest.CountingFS does).
+func StatAbs(fsys fs.FS, absPath string) (fs.FileInfo, error) {
+	if fsys == nil {
+		fsys = os.DirFS("/")
+	}
+	p := strings.TrimPrefix(absPath, string(filepath.Separator))
+	fi, err := fs.Stat(fsys, p)
+	if err != nil {
+		return nil, fmt.Errorf("stat %q: %w", absPath, err)
+	}
+	return fi, nil
 }
 
 // errStopWalk terminates a walk early without surfacing an error.
@@ -96,32 +109,24 @@ func WalkJSONLFiles(ctx context.Context, root string, skipDirs []string, visit f
 }
 
 // ScanJSONLLines feeds each non-empty, JSON-object line of r to fn, skipping
-// unparsable lines. fn returns false to stop. maxLines bounds the scan when
-// positive; maxToken bounds the scanner buffer. The scanner error (e.g. a
-// line exceeding maxToken) is returned so callers can decide whether a
-// truncated scan matters.
-func ScanJSONLLines(r io.Reader, maxToken, maxLines int, fn func(env map[string]any) bool) error {
-	s := bufio.NewScanner(r)
-	s.Buffer(make([]byte, 0, 64<<10), maxToken)
-	lines := 0
-	for s.Scan() {
-		lines++
-		if maxLines > 0 && lines > maxLines {
-			return nil
-		}
-		line := strings.TrimSpace(s.Text())
-		if line == "" {
-			continue
-		}
+// unparsable lines. fn returns false to stop; maxToken bounds the scanner
+// buffer. The scanner error is returned so callers can decide whether a
+// truncated scan matters; the token bound is the one error it explains (D29),
+// because a silently shortened conversation is worse than a failure.
+func ScanJSONLLines(r io.Reader, maxToken int, fn func(env map[string]any) bool) error {
+	err := scanJSONLRawLines(r, maxToken, func(line []byte) bool {
 		var env map[string]any
-		if err := json.Unmarshal([]byte(line), &env); err != nil {
-			continue
+		if err := json.Unmarshal(line, &env); err != nil {
+			return true
 		}
-		if !fn(env) {
-			return nil
-		}
+		return fn(env)
+	})
+	// %w is load-bearing: discovery's cacheability gate is
+	// errors.Is(err, bufio.ErrTooLong) (D28).
+	if errors.Is(err, bufio.ErrTooLong) {
+		return fmt.Errorf("a line exceeds the %d byte line bound, so this conversation cannot be read in full: %w", maxToken, err)
 	}
-	return s.Err()
+	return err
 }
 
 // HomeRelativeRoot returns override when set, else $HOME joined with parts,
@@ -158,6 +163,41 @@ func TextBlocksContent(c any) string {
 		}
 		if t, _ := m["text"].(string); t != "" {
 			texts = append(texts, t)
+		}
+	}
+	return strings.Join(texts, "\n")
+}
+
+// RawTextBlocksContent is TextBlocksContent over an undecoded JSON value.
+// Decoding element by element keeps the tolerance of the decoded form: one
+// unreadable block drops that block, not the whole body.
+func RawTextBlocksContent(raw json.RawMessage) string {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 {
+		return ""
+	}
+	if raw[0] == '"' {
+		var s string
+		if err := json.Unmarshal(raw, &s); err != nil {
+			return ""
+		}
+		return s
+	}
+	var blocks []json.RawMessage
+	if err := json.Unmarshal(raw, &blocks); err != nil {
+		return ""
+	}
+	texts := make([]string, 0, len(blocks))
+	for _, b := range blocks {
+		var block struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		}
+		if err := json.Unmarshal(b, &block); err != nil {
+			continue
+		}
+		if block.Type == "text" && block.Text != "" {
+			texts = append(texts, block.Text)
 		}
 	}
 	return strings.Join(texts, "\n")

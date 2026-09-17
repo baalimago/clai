@@ -1,7 +1,9 @@
 package pi
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -18,8 +20,9 @@ import (
 // thinking_level_change. The session id lives only on the "session" line;
 // messages carry role user/assistant/toolResult.
 //
-// This reader is intentionally conservative: discovery is bounded and skips
-// rows with missing SourceID.
+// This reader is intentionally conservative: discovery skips rows with
+// missing SourceID. Its cost is bounded by the foreign index, not by a line
+// cap: a cache hit costs one stat and opens nothing.
 //
 // FS is injectable for tests; if nil, the host root filesystem is used. The
 // host-path logic (HOME expansion, walking) stays outside the FS — it is only
@@ -36,99 +39,102 @@ type SourceReader struct {
 }
 
 func (r SourceReader) Source() string {
-	return "pi"
+	return sourceName
 }
+
+const sourceName = "pi"
 
 var toolCallKeys = vendors.ToolCallBlockKeys{Type: "toolCall", Args: "arguments"}
 
-func (r SourceReader) Discover(ctx context.Context) ([]vendors.SourceRow, error) {
-	rows := []vendors.SourceRow{}
-	err := vendors.WalkJSONLFiles(ctx, r.sessionsRoot(), nil, func(p string) bool {
-		if row, ok := r.discoverOne(p); ok {
-			rows = append(rows, row)
-		}
-		return false
-	})
-	if err != nil {
-		return nil, fmt.Errorf("discover pi sessions: %w", err)
-	}
-	return rows, nil
+// schema is this vendor's whole contribution: one line's meaning, and a root.
+type schema struct {
+	root string
 }
 
-func (r SourceReader) discoverOne(absPath string) (vendors.SourceRow, bool) {
-	f, err := vendors.OpenAbs(r.FS, absPath)
-	if err != nil {
-		return vendors.SourceRow{}, false
-	}
-	defer f.Close()
-
-	row := vendors.SourceRow{Source: r.Source(), RawPath: absPath}
-	// Discovery is best effort: a scan error just yields sparser metadata.
-	_ = vendors.ScanJSONLLines(f, vendors.ReadMaxToken, vendors.DiscoverMaxLines, func(env map[string]any) bool {
-		topType, _ := env["type"].(string)
-		switch topType {
-		case "session":
-			if row.SourceID == "" {
-				if sid, _ := env["id"].(string); sid != "" {
-					row.SourceID = sid
-				}
-			}
-			if row.Cwd == "" {
-				if v, _ := env["cwd"].(string); v != "" {
-					row.Cwd = v
-				}
-			}
-			if row.Created.IsZero() {
-				if ts, _ := env["timestamp"].(string); ts != "" {
-					if t, err := time.Parse(time.RFC3339Nano, ts); err == nil {
-						row.Created = t
-					}
-				}
-			}
-		case "message":
-			msg, _ := env["message"].(map[string]any)
-			if msg == nil {
-				return true
-			}
-			role, _ := msg["role"].(string)
-			switch role {
-			case "user":
-				row.MessageCount++
-				if row.FirstUserMessage == "" {
-					full := vendors.TextBlocksContent(msg["content"])
-					row.FirstUserMessage = vendors.TruncateOneLine(full, 100)
-					row.FullFirstUserMessage = full
-				}
-			case "assistant":
-				row.MessageCount++
-				if row.Model == "" {
-					if m, _ := msg["model"].(string); m != "" {
-						row.Model = m
-					}
-				}
-			case "toolResult":
-				row.MessageCount++
-			}
-		}
-		return true
-	})
-
-	if row.SourceID == "" {
-		return vendors.SourceRow{}, false
-	}
-	if row.Created.IsZero() {
-		if st, err := os.Stat(absPath); err == nil {
-			row.Created = st.ModTime()
-		}
-	}
-	if row.FirstUserMessage == "" {
-		row.FirstUserMessage = "(no preview)"
-	}
-	return row, true
+func (r SourceReader) schema() schema {
+	return schema{root: r.sessionsRoot()}
 }
 
-func (r SourceReader) Read(ctx context.Context, sourceID string) (pub_models.Chat, error) {
-	absPath, err := r.findSessionFile(ctx, sourceID)
+func (s schema) SourceName() string { return sourceName }
+
+func (s schema) Root() string { return s.root }
+
+func (s schema) SkipDirs() []string { return nil }
+
+// discoverLine is the typed view of one pi line; the nested message stays raw
+// until its role is known.
+type discoverLine struct {
+	Type      string          `json:"type"`
+	ID        string          `json:"id"`
+	Cwd       string          `json:"cwd"`
+	Timestamp string          `json:"timestamp"`
+	Message   json.RawMessage `json:"message"`
+}
+
+type discoverMessage struct {
+	Role    string          `json:"role"`
+	Model   string          `json:"model"`
+	Content json.RawMessage `json:"content"`
+}
+
+// contributingTypes are the only two Fields reads: identity on a session line,
+// every count on a message line. TestSchemaConformance_pi keeps that honest.
+var contributingTypes = [][]byte{
+	[]byte(`"session"`),
+	[]byte(`"message"`),
+}
+
+// MayContribute is sound only for canonically spelled keys and values, which
+// no test can enforce because Fields decodes case-insensitively (D26).
+func (s schema) MayContribute(line []byte) bool {
+	for _, marker := range contributingTypes {
+		if bytes.Contains(line, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+// Fields reports what one pi line contributes. Identity, cwd and timestamp
+// live only on the "session" line; a toolResult counts as a message.
+func (s schema) Fields(line []byte) vendors.LineFields {
+	var env discoverLine
+	// A decode error leaves every field zero; a type error still fills the rest.
+	_ = json.Unmarshal(line, &env)
+	f := vendors.LineFields{}
+	switch env.Type {
+	case "session":
+		f.SessionID, f.Cwd = env.ID, env.Cwd
+		if env.Timestamp != "" {
+			if t, err := time.Parse(time.RFC3339Nano, env.Timestamp); err == nil {
+				f.Timestamp = t
+			}
+		}
+	case "message":
+		var msg discoverMessage
+		if err := json.Unmarshal(env.Message, &msg); err != nil {
+			return f
+		}
+		switch msg.Role {
+		case "user":
+			f.Role = vendors.LineRoleUser
+			f.UserText = vendors.RawTextBlocksContent(msg.Content)
+		case "assistant":
+			f.Role = vendors.LineRoleAssistant
+			f.Model = msg.Model
+		case "toolResult":
+			f.Role = vendors.LineRoleTool
+		}
+	}
+	return f
+}
+
+func (r SourceReader) Discover(ctx context.Context, cache vendors.SourceCache) ([]vendors.SourceRow, error) {
+	return vendors.DiscoverJSONL(ctx, r.schema(), r.FS, cache)
+}
+
+func (r SourceReader) Read(ctx context.Context, cache vendors.SourceCache, sourceID string) (pub_models.Chat, error) {
+	absPath, err := vendors.FindJSONLSession(ctx, r.schema(), r.FS, cache, sourceID)
 	if err != nil {
 		return pub_models.Chat{}, err
 	}
@@ -142,7 +148,7 @@ func (r SourceReader) Read(ctx context.Context, sourceID string) (pub_models.Cha
 	created := time.Time{}
 	cwd := ""
 	sessionFound := false
-	err = vendors.ScanJSONLLines(f, vendors.ReadMaxToken, 0, func(env map[string]any) bool {
+	err = vendors.ScanJSONLLines(f, vendors.ReadMaxToken, func(env map[string]any) bool {
 		topType, _ := env["type"].(string)
 		switch topType {
 		case "session":
@@ -206,50 +212,8 @@ func (r SourceReader) Read(ctx context.Context, sourceID string) (pub_models.Cha
 	return chat, nil
 }
 
-func (r SourceReader) findSessionFile(ctx context.Context, sourceID string) (string, error) {
-	root := r.sessionsRoot()
-	if root == "" {
-		return "", fmt.Errorf("pi sessions root not configured")
-	}
-	var found string
-	err := vendors.WalkJSONLFiles(ctx, root, nil, func(p string) bool {
-		if r.fileHasSessionID(p, sourceID) {
-			found = p
-			return true
-		}
-		return false
-	})
-	if err != nil {
-		return "", fmt.Errorf("find pi session: %w", err)
-	}
-	if found == "" {
-		return "", fmt.Errorf("pi session %q not found", sourceID)
-	}
-	return found, nil
-}
-
 func (r SourceReader) sessionsRoot() string {
 	return vendors.HomeRelativeRoot(r.Root, ".pi", "agent", "sessions")
-}
-
-func (r SourceReader) fileHasSessionID(absPath, want string) bool {
-	f, err := vendors.OpenAbs(r.FS, absPath)
-	if err != nil {
-		return false
-	}
-	defer f.Close()
-
-	found := false
-	_ = vendors.ScanJSONLLines(f, vendors.ReadMaxToken, vendors.DiscoverMaxLines, func(env map[string]any) bool {
-		if typ, _ := env["type"].(string); typ == "session" {
-			// The session id lives only on the "session" line: match or bail.
-			sid, _ := env["id"].(string)
-			found = sid == want
-			return false
-		}
-		return true
-	})
-	return found
 }
 
 func mapPiUserMessage(msg map[string]any) []pub_models.Message {

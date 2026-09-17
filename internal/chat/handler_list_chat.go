@@ -307,10 +307,49 @@ func sourceDedupKey(source, sourceID string) string {
 	return source + "\x00" + sourceID
 }
 
+// sourcePersister is the half of the foreign cache the list path owns; the
+// cache seam itself knows nothing about persistence.
+type sourcePersister interface{ Persist() error }
+
+// persistForeignCache writes the foreign index back through the
+// non-constructing accessor, so it never builds an index no verb asked for.
+func (cq *ChatHandler) persistForeignCache() error {
+	p, ok := cq.resolvedForeignCache().(sourcePersister)
+	if !ok {
+		return nil
+	}
+	return p.Persist()
+}
+
+// announceForeignCacheFailure reports a failed cache write at most once, and
+// never on a raw run: that may be a shell-prompt hook or a script parsing this
+// output (architecture/config.md). The gate is utils.ReadonlyConfig and not
+// utils.NoCreateConfig, which `list` sets unconditionally (D25).
+func (cq *ChatHandler) announceForeignCacheFailure(err error) {
+	if err == nil || utils.ReadonlyConfig {
+		return
+	}
+	cq.foreignWarnOnce.Do(func() {
+		out := cq.errOut
+		if out == nil {
+			out = os.Stderr
+		}
+		fmt.Fprintf(out, "warning: %v\n", err)
+	})
+}
+
+func (cq *ChatHandler) readForeignChat(ctx context.Context, reader vendors.SourceReader, sourceID string) (pub_models.Chat, error) {
+	return reader.Read(ctx, cq.foreignCacheOrNil(), sourceID)
+}
+
 func (cq *ChatHandler) foreignChatRows(ctx context.Context, readers []vendors.SourceReader, existing map[string]struct{}) ([]chatListRow, error) {
+	// One index serves every reader, and one write happens after the last of
+	// them. A failed write never fails the listing: the cache is derived.
+	cache := cq.foreignCacheOrNil()
+	defer func() { cq.announceForeignCacheFailure(cq.persistForeignCache()) }()
 	rows := []chatListRow{}
 	for _, r := range readers {
-		found, err := r.Discover(ctx)
+		found, err := r.Discover(ctx, cache)
 		if err != nil {
 			if misc.Truthy(os.Getenv("DEBUG")) {
 				ancli.Noticef("skipping source %s: %v\n", r.Source(), err)
@@ -899,7 +938,7 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 		if !ok {
 			return fmt.Errorf("unknown source reader %q", sel.Source)
 		}
-		foreign, err := reader.Read(ctx, sel.SourceID)
+		foreign, err := cq.readForeignChat(ctx, reader, sel.SourceID)
 		if err != nil {
 			return fmt.Errorf("failed to read %s session %q: %w", sel.Source, sel.SourceID, err)
 		}

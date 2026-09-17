@@ -11,10 +11,12 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/utils"
+	"github.com/baalimago/clai/internal/vendors"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/dimensions"
@@ -96,6 +98,42 @@ type ChatHandler struct {
 	boardWidth       int
 	now              func() time.Time
 	upsertIndexBatch func(convDir string, chats []pub_models.Chat) error
+
+	// foreignCache must stay a nil interface when there is none: a typed nil
+	// would pass discovery's "always scan" guard. Tests assign it directly.
+	foreignCache vendors.SourceCache
+	// newForeignCache builds it lazily and at most once (D27): only list and
+	// continue read the cache, while dir and dirv2 are shell-prompt hot paths.
+	newForeignCache  func() vendors.SourceCache
+	foreignCacheOnce sync.Once
+	foreignCacheMu   sync.Mutex
+	foreignWarnOnce  sync.Once
+}
+
+// foreignCacheOrNil resolves the index on first consultation. A construction
+// that fails leaves a nil interface, read as "always scan" (D27).
+func (cq *ChatHandler) foreignCacheOrNil() vendors.SourceCache {
+	cq.foreignCacheOnce.Do(func() {
+		if cq.newForeignCache == nil {
+			return
+		}
+		if cache := cq.newForeignCache(); cache != nil {
+			cq.foreignCacheMu.Lock()
+			cq.foreignCache = cache
+			cq.foreignCacheMu.Unlock()
+		}
+	})
+	return cq.resolvedForeignCache()
+}
+
+// resolvedForeignCache returns the already-resolved index, or nil. It never
+// constructs one, so a caller that only cleans up does not undo D27. It takes
+// the lock because sync.Once's happens-before only reaches a goroutine that
+// calls Do, and a deferred persist may run on another one (R3-02).
+func (cq *ChatHandler) resolvedForeignCache() vendors.SourceCache {
+	cq.foreignCacheMu.Lock()
+	defer cq.foreignCacheMu.Unlock()
+	return cq.foreignCache
 }
 
 func (q *ChatHandler) Query(ctx context.Context) error {

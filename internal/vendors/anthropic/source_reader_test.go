@@ -1,19 +1,24 @@
 package anthropic
 
 import (
+	"bufio"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/baalimago/clai/internal/vendors"
 )
 
 func TestSourceReader_Discover_NoDirs(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
 	r := SourceReader{FS: os.DirFS("/")}
-	rows, err := r.Discover(context.Background())
+	rows, err := r.Discover(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}
@@ -40,7 +45,7 @@ func TestSourceReader_Read_MappingToolUseAndToolResult(t *testing.T) {
 	}
 
 	r := SourceReader{FS: os.DirFS("/")}
-	chat, err := r.Read(context.Background(), "s1")
+	chat, err := r.Read(context.Background(), nil, "s1")
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
@@ -107,7 +112,7 @@ func TestSourceReader_Discover_DeduceMetadata(t *testing.T) {
 	}
 
 	r := SourceReader{FS: os.DirFS("/")}
-	rows, err := r.Discover(context.Background())
+	rows, err := r.Discover(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("discover: %v", err)
 	}
@@ -166,7 +171,7 @@ func TestSourceReader_Read_LongLine(t *testing.T) {
 	}
 
 	r := SourceReader{FS: os.DirFS("/")}
-	chat, err := r.Read(context.Background(), "big")
+	chat, err := r.Read(context.Background(), nil, "big")
 	if err != nil {
 		t.Fatalf("Read with long line: %v", err)
 	}
@@ -199,7 +204,7 @@ func TestSourceReader_Discover_LongLine(t *testing.T) {
 	}
 
 	r := SourceReader{FS: os.DirFS("/")}
-	rows, err := r.Discover(context.Background())
+	rows, err := r.Discover(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("Discover with long line: %v", err)
 	}
@@ -235,7 +240,7 @@ func TestSourceReader_SkipsSubagentTranscripts(t *testing.T) {
 	}
 
 	r := SourceReader{FS: os.DirFS("/")}
-	rows, err := r.Discover(context.Background())
+	rows, err := r.Discover(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("discover: %v", err)
 	}
@@ -246,7 +251,7 @@ func TestSourceReader_SkipsSubagentTranscripts(t *testing.T) {
 		t.Fatalf("expected main session preview, got %q", rows[0].FirstUserMessage)
 	}
 
-	chat, err := r.Read(context.Background(), "s1")
+	chat, err := r.Read(context.Background(), nil, "s1")
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
@@ -275,7 +280,7 @@ func TestSourceReader_Read_BlockArrayContent(t *testing.T) {
 	}
 
 	r := SourceReader{FS: os.DirFS("/")}
-	chat, err := r.Read(context.Background(), "s1")
+	chat, err := r.Read(context.Background(), nil, "s1")
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
@@ -321,7 +326,7 @@ func TestDiscover_FullFirstUserMessage_Populated(t *testing.T) {
 	}
 
 	r := SourceReader{FS: os.DirFS("/")}
-	rows, err := r.Discover(context.Background())
+	rows, err := r.Discover(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("discover: %v", err)
 	}
@@ -335,5 +340,38 @@ func TestDiscover_FullFirstUserMessage_Populated(t *testing.T) {
 	// FullFirstUserMessage should contain the complete text.
 	if rows[0].FullFirstUserMessage != longMsg.String() {
 		t.Fatalf("FullFirstUserMessage mismatch: len=%d, want len=%d", len(rows[0].FullFirstUserMessage), len(longMsg.String()))
+	}
+}
+
+// TestSourceReaderRead_tokenBoundErrorIsIntelligible covers D29's user-facing
+// half for Claude Code. Discovery caches an oversized-line row as a fact about
+// the file (D28), so the row is listed and stays listed; continuing it lands on
+// the same sentinel. Read must fail rather than hand a silently shortened
+// conversation to a model, and the failure must say why.
+func TestSourceReaderRead_tokenBoundErrorIsIntelligible(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	projDir := filepath.Join(os.Getenv("HOME"), ".claude", "projects", "p1")
+	if err := os.MkdirAll(projDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	p := filepath.Join(projDir, "huge.jsonl")
+	jsonl := `{"type":"user","timestamp":"2026-01-01T00:00:00Z","sessionId":"big","cwd":"/work","message":{"content":"hi"}}` + "\n" +
+		`{"type":"assistant","timestamp":"2026-01-01T00:00:01Z","sessionId":"big","message":{"content":[{"type":"text","text":"` +
+		strings.Repeat("x", vendors.ReadMaxToken) + `"}]}}` + "\n"
+	if err := os.WriteFile(p, []byte(jsonl), 0o644); err != nil {
+		t.Fatalf("write jsonl: %v", err)
+	}
+
+	chat, err := SourceReader{}.Read(context.Background(), nil, "big")
+	if err == nil {
+		t.Fatalf("Read returned %d messages; a truncated conversation must never reach a model", len(chat.Messages))
+	}
+	if !errors.Is(err, bufio.ErrTooLong) {
+		t.Fatalf("error %q lost the scanner sentinel", err)
+	}
+	for _, want := range []string{"line", "exceeds", strconv.Itoa(vendors.ReadMaxToken), "huge.jsonl"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not name %q", err, want)
+		}
 	}
 }

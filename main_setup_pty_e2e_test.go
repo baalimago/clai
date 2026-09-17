@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
@@ -148,7 +149,9 @@ func runSetupOnPTY(t *testing.T, confDir, keystrokes string) (transcript, screen
 	defer master.Close()
 
 	cmd := exec.Command(os.Args[0], "-test.run=TestSetupPTYHelper")
-	cmd.Env = append(os.Environ(), "CLAI_CONFIG_DIR="+confDir, setupPTYHelperEnv+"=1")
+	// Unset so the child resolves /dev/tty, which Setctty makes its own pty.
+	env := slices.DeleteFunc(os.Environ(), func(kv string) bool { return strings.HasPrefix(kv, "TTY=") })
+	cmd.Env = append(env, "CLAI_CONFIG_DIR="+confDir, setupPTYHelperEnv+"=1")
 	cmd.Stdin = slave
 	cmd.Stdout = slave
 	cmd.Stderr = slave

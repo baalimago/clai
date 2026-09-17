@@ -124,6 +124,24 @@ cache is rebuilt in memory for listing, but the rebuild is silent (no
 "Building cache index" progress chatter) and the persist attempt is skipped,
 so a read-only mount produces no stderr noise and no failed write.
 
+The **foreign** conversation index (`foreign_index.cache`) follows the flag's
+scope rather than this rule. `utils.NoCreateConfig` is scoped to the config
+directory, and that cache lives in the clai *cache* directory, so the write is
+still attempted under the flag — otherwise `chat list`, which sets the flag
+unconditionally, would rescan every foreign session file forever, since unlike
+the native index it has no save path to write it. Only `chat.SkipIndex`
+suppresses its I/O.
+
+Whether a failed write is *announced* is a separate question, and it follows
+`utils.ReadonlyConfig`, not `utils.NoCreateConfig`. A raw run — the shell hook,
+the script, the machine-readable listing — sees nothing on stderr, which is the
+promise this section makes. An interactive listing warns once, because
+`readOnlyChatSetup` sets `utils.NoCreateConfig` for *every* listing: gating the
+warning on it would mean a user whose cache directory is unwritable rescans the
+whole foreign corpus on every listing with no way to learn why, while the same
+fault under `chat continue` announced itself. See
+`architecture/continue-from-claudex.md`.
+
 ### 2) Model-specific vendor configs
 
 These are JSON files created per *vendor+model*.

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -16,6 +17,9 @@ import (
 
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/internal/vendors"
+	"github.com/baalimago/clai/internal/vendors/anthropic"
+	"github.com/baalimago/clai/internal/vendors/jsonltest"
+	"github.com/baalimago/clai/internal/vendors/pi"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/dimensions"
@@ -897,18 +901,27 @@ func TestSave_StampsGroupKeyOnFirstPersist(t *testing.T) {
 	}
 }
 
-// stubSourceReader implements vendors.SourceReader for tests.
+// stubSourceReader implements vendors.SourceReader for tests. seen records
+// the cache each method was handed, so a test can prove one cache reached
+// every reader.
 type stubSourceReader struct {
 	name string
 	rows []vendors.SourceRow
+	seen *[]vendors.SourceCache
 }
 
 func (s stubSourceReader) Source() string { return s.name }
-func (s stubSourceReader) Discover(ctx context.Context) ([]vendors.SourceRow, error) {
+func (s stubSourceReader) Discover(ctx context.Context, cache vendors.SourceCache) ([]vendors.SourceRow, error) {
+	if s.seen != nil {
+		*s.seen = append(*s.seen, cache)
+	}
 	return s.rows, nil
 }
 
-func (s stubSourceReader) Read(ctx context.Context, sourceID string) (pub_models.Chat, error) {
+func (s stubSourceReader) Read(ctx context.Context, cache vendors.SourceCache, sourceID string) (pub_models.Chat, error) {
+	if s.seen != nil {
+		*s.seen = append(*s.seen, cache)
+	}
 	return pub_models.Chat{}, nil
 }
 
@@ -1360,5 +1373,210 @@ func TestListPromptTier(t *testing.T) {
 	// Without the foreign toggle the long labels fit sooner.
 	if got := listPromptTier(100, true, false, ""); got != long {
 		t.Fatalf("dir-only at 100 columns: tier = %+v, want long", got)
+	}
+}
+
+// --- foreign cache wiring ---------------------------------------------------
+
+// countingForeignCache delegates to a real index and counts how often the
+// list path persisted it, which is how "one write per invocation" is
+// observed without guessing at file timestamps.
+type countingForeignCache struct {
+	inner    *ForeignIndex
+	persists int
+}
+
+func (c *countingForeignCache) Lookup(absPath string, info fs.FileInfo) (vendors.SourceRow, bool) {
+	return c.inner.Lookup(absPath, info)
+}
+
+func (c *countingForeignCache) Store(absPath string, info fs.FileInfo, row vendors.SourceRow) {
+	c.inner.Store(absPath, info, row)
+}
+
+func (c *countingForeignCache) Locate(source, sourceID string) (string, bool) {
+	return c.inner.Locate(source, sourceID)
+}
+
+func (c *countingForeignCache) Persist() error {
+	c.persists++
+	return c.inner.Persist()
+}
+
+// TestForeignChatRows_singleCacheWrite: one cache serves every reader of an
+// invocation and is written exactly once, after the last one — whatever the
+// number of readers.
+func TestForeignChatRows_singleCacheWrite(t *testing.T) {
+	claudeRoot := filepath.Join(t.TempDir(), "projects")
+	piRoot := filepath.Join(t.TempDir(), "sessions")
+	jsonltest.WriteCorpus(t, claudeRoot, smallCorpus(jsonltest.ShapeClaude))
+	jsonltest.WriteCorpus(t, piRoot, smallCorpus(jsonltest.ShapePi))
+	cacheDir := t.TempDir()
+
+	idx := newForeignIndexT(t, cacheDir)
+	counting := &countingForeignCache{inner: idx}
+	cq, _ := newTestHandler(t)
+	cq.foreignCache = counting
+
+	readers := []vendors.SourceReader{
+		anthropic.SourceReader{Root: claudeRoot},
+		pi.SourceReader{Root: piRoot},
+	}
+	rows, err := cq.foreignChatRows(context.Background(), readers, map[string]struct{}{})
+	if err != nil {
+		t.Fatalf("foreignChatRows: %v", err)
+	}
+	if len(rows) == 0 {
+		t.Fatal("no rows; the corpora did not reach the readers")
+	}
+	if counting.persists != 1 {
+		t.Fatalf("cache persisted %d times for %d readers, want 1", counting.persists, len(readers))
+	}
+
+	// The single write carries both sources, so it happened after the last
+	// reader rather than after the first.
+	sources := map[string]bool{}
+	for _, row := range readForeignCacheFile(t, cacheDir).Rows {
+		sources[row.Row.Source] = true
+	}
+	for _, want := range []string{"claude-code", "pi"} {
+		if !sources[want] {
+			t.Errorf("the persisted cache holds no %q row", want)
+		}
+	}
+}
+
+// TestForeignChat_continueUsesCachedPath: continuing a foreign conversation
+// resolves its file through the index. Only the session file itself is
+// opened — no other file is touched to find it.
+func TestForeignChat_continueUsesCachedPath(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "projects")
+	corpus := jsonltest.WriteCorpus(t, root, smallCorpus(jsonltest.ShapeClaude))
+	cacheDir := t.TempDir()
+
+	warm := newForeignIndexT(t, cacheDir)
+	reader := anthropic.SourceReader{Root: root}
+	rows, err := reader.Discover(context.Background(), warm)
+	if err != nil {
+		t.Fatalf("warming Discover: %v", err)
+	}
+	if len(rows) == 0 {
+		t.Fatal("no rows; the corpus did not reach the reader")
+	}
+	persistT(t, warm)
+
+	// Pick the longest session, so the conversation read back is substantial.
+	want := rows[0]
+	for _, row := range rows {
+		if row.MessageCount > want.MessageCount {
+			want = row
+		}
+	}
+
+	idx := newForeignIndexT(t, cacheDir)
+	fsys, counts := jsonltest.CountingFS("/")
+	cq, _ := newTestHandler(t)
+	cq.foreignCache = idx
+
+	chat, err := cq.readForeignChat(context.Background(),
+		anthropic.SourceReader{Root: root, FS: fsys}, want.SourceID)
+	if err != nil {
+		t.Fatalf("readForeignChat: %v", err)
+	}
+	if chat.SourceID != want.SourceID {
+		t.Fatalf("SourceID = %q, want %q", chat.SourceID, want.SourceID)
+	}
+	if len(chat.Messages) < 2 {
+		t.Fatalf("conversation has %d messages, want the session's content", len(chat.Messages))
+	}
+
+	rel := strings.TrimPrefix(want.RawPath, "/")
+	if n := counts.TotalOpens(); n != 1 {
+		t.Fatalf("continuing opened %d files, want only the session itself: %v", n, counts.OpenedPaths())
+	}
+	if n := counts.Opens(rel); n != 1 {
+		t.Fatalf("the session file was opened %d times, want 1", n)
+	}
+	if n := counts.TotalStats(); n != 1 {
+		t.Fatalf("continuing stat'ed %d times, want one confirming stat", n)
+	}
+	if len(corpus.Files) < 2 {
+		t.Fatal("the fixture must hold more than one file for the walk to be worth avoiding")
+	}
+}
+
+// TestChatHandler_persistForeignCacheDoesNotConstruct pins the property
+// persistForeignCache's doc comment used to merely assert (R3-02). A handler
+// that resolved nothing persists nothing and asks the factory for nothing:
+// D27 exists so that a verb which never consults the index never builds one,
+// and a persist that resolved the factory would undo that for every verb that
+// defers one.
+func TestChatHandler_persistForeignCacheDoesNotConstruct(t *testing.T) {
+	idx := newForeignIndexT(t, t.TempDir())
+	counting := &countingForeignCache{inner: idx}
+	constructions := 0
+	cq, _ := newTestHandler(t)
+	cq.newForeignCache = func() vendors.SourceCache {
+		constructions++
+		return counting
+	}
+
+	if err := cq.persistForeignCache(); err != nil {
+		t.Fatalf("persisting an unresolved cache: %v", err)
+	}
+
+	if constructions != 0 {
+		t.Fatalf("persisting constructed %d indexes, want 0", constructions)
+	}
+	if counting.persists != 0 {
+		t.Fatalf("an unresolved cache was persisted %d times", counting.persists)
+	}
+
+	// Once a verb has consulted it, the same call does persist it: the
+	// accessor reads the resolved value, it does not suppress the write.
+	if got := cq.foreignCacheOrNil(); got != counting {
+		t.Fatalf("the consultation resolved %#v, want the counting cache", got)
+	}
+	if err := cq.persistForeignCache(); err != nil {
+		t.Fatalf("persistForeignCache: %v", err)
+	}
+	if constructions != 1 || counting.persists != 1 {
+		t.Fatalf("after one consultation: %d constructions, %d persists, want 1 and 1", constructions, counting.persists)
+	}
+}
+
+// TestChatHandler_persistForeignCacheRacesResolution is the same finding's
+// other half, and it is the one that fails loudly: reading the resolved field
+// without the guard the resolver writes it under is a data race the current
+// call graph only hides. It is safe today because the single call site is a
+// defer on the goroutine that just resolved the cache — a contract nothing
+// pins, and one a deferred persist at a higher level would break silently.
+func TestChatHandler_persistForeignCacheRacesResolution(t *testing.T) {
+	idx := newForeignIndexT(t, t.TempDir())
+	counting := &countingForeignCache{inner: idx}
+	cq, _ := newTestHandler(t)
+	cq.newForeignCache = func() vendors.SourceCache { return counting }
+
+	start := make(chan struct{})
+	done := make(chan struct{}, 2)
+	go func() {
+		<-start
+		cq.foreignCacheOrNil()
+		done <- struct{}{}
+	}()
+	go func() {
+		<-start
+		_ = cq.persistForeignCache()
+		done <- struct{}{}
+	}()
+	close(start)
+	<-done
+	<-done
+
+	if got := cq.foreignCacheOrNil(); got != counting {
+		t.Fatalf("the cache resolved to %#v, want the counting cache", got)
+	}
+	if counting.persists > 1 {
+		t.Fatalf("the cache was persisted %d times, want at most 1", counting.persists)
 	}
 }
