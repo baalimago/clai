@@ -844,6 +844,9 @@ func refusingSummarizer(string) (models.Summarizer, error) {
 
 func TestMain(m *testing.M) {
 	newSummarizer = refusingSummarizer
+	if os.Getenv(setupPTYHelperEnv) == "" {
+		_ = os.Setenv("TTY", "/dev/null")
+	}
 	os.Exit(m.Run())
 }
 

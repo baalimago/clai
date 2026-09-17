@@ -1,9 +1,12 @@
 package pi
 
 import (
+	"bufio"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -15,7 +18,7 @@ func TestSourceReader_Discover_NoDirs(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
 	r := SourceReader{FS: os.DirFS("/")}
-	rows, err := r.Discover(context.Background())
+	rows, err := r.Discover(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}
@@ -43,7 +46,7 @@ func TestSourceReader_Read_MappingToolCallAndToolResult(t *testing.T) {
 	}
 
 	r := SourceReader{FS: os.DirFS("/")}
-	chat, err := r.Read(context.Background(), "s1")
+	chat, err := r.Read(context.Background(), nil, "s1")
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
@@ -117,7 +120,7 @@ func TestSourceReader_Discover_DeduceMetadata(t *testing.T) {
 	}
 
 	r := SourceReader{FS: os.DirFS("/")}
-	rows, err := r.Discover(context.Background())
+	rows, err := r.Discover(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("discover: %v", err)
 	}
@@ -171,7 +174,7 @@ func TestSourceReader_Discover_FullFirstUserMessage_Populated(t *testing.T) {
 	}
 
 	r := SourceReader{FS: os.DirFS("/")}
-	rows, err := r.Discover(context.Background())
+	rows, err := r.Discover(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("discover: %v", err)
 	}
@@ -209,7 +212,7 @@ func TestSourceReader_Read_LongLine(t *testing.T) {
 	}
 
 	r := SourceReader{FS: os.DirFS("/")}
-	chat, err := r.Read(context.Background(), "big")
+	chat, err := r.Read(context.Background(), nil, "big")
 	if err != nil {
 		t.Fatalf("Read with long line: %v", err)
 	}
@@ -241,7 +244,7 @@ func TestSourceReader_Discover_LongLine(t *testing.T) {
 	}
 
 	r := SourceReader{FS: os.DirFS("/")}
-	rows, err := r.Discover(context.Background())
+	rows, err := r.Discover(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("Discover with long line: %v", err)
 	}
@@ -273,7 +276,7 @@ func TestSourceReader_MessageCount_IncludesToolResults(t *testing.T) {
 	}
 
 	r := SourceReader{FS: os.DirFS("/")}
-	rows, err := r.Discover(context.Background())
+	rows, err := r.Discover(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("discover: %v", err)
 	}
@@ -309,7 +312,7 @@ func TestSourceReader_Read_SystemMessageIncludesCwd(t *testing.T) {
 	}
 
 	r := SourceReader{FS: os.DirFS("/")}
-	chat, err := r.Read(context.Background(), "s1")
+	chat, err := r.Read(context.Background(), nil, "s1")
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
@@ -335,7 +338,7 @@ func TestSourceReader_Read_MissingCwd_NoCrash(t *testing.T) {
 	}
 
 	r := SourceReader{FS: os.DirFS("/")}
-	chat, err := r.Read(context.Background(), "s1")
+	chat, err := r.Read(context.Background(), nil, "s1")
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
@@ -362,7 +365,7 @@ func TestSourceReader_Read_SkipsLinesBeforeSession(t *testing.T) {
 	}
 
 	r := SourceReader{FS: os.DirFS("/")}
-	chat, err := r.Read(context.Background(), "s1")
+	chat, err := r.Read(context.Background(), nil, "s1")
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
@@ -388,7 +391,7 @@ func TestSourceReader_Discover_SkipsFileWithoutSessionID(t *testing.T) {
 	}
 
 	r := SourceReader{FS: os.DirFS("/")}
-	rows, err := r.Discover(context.Background())
+	rows, err := r.Discover(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("discover: %v", err)
 	}
@@ -419,7 +422,7 @@ func TestSourceReader_Discover_MultipleSessions(t *testing.T) {
 	writeSession("s2", "2026-01-02T00:00:00Z", "second")
 
 	r := SourceReader{FS: os.DirFS("/")}
-	rows, err := r.Discover(context.Background())
+	rows, err := r.Discover(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("discover: %v", err)
 	}
@@ -444,7 +447,7 @@ func TestSourceReader_Discover_TimestampWithNanos(t *testing.T) {
 	}
 
 	r := SourceReader{FS: os.DirFS("/")}
-	rows, err := r.Discover(context.Background())
+	rows, err := r.Discover(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("discover: %v", err)
 	}
@@ -509,5 +512,38 @@ func TestMapPiAssistantMessage_ToolCallArgumentsMarshal(t *testing.T) {
 	}
 	if call.Function.Arguments != `{"path":"/etc/hosts"}` {
 		t.Fatalf("expected marshalled args, got %q", call.Function.Arguments)
+	}
+}
+
+// TestPiSourceReaderRead_tokenBoundErrorIsIntelligible is D29's user-facing
+// half for pi: the generic wrap reaches both vendors through their own
+// unchanged "scan jsonl" wrap, so neither vendor package carries the message.
+func TestPiSourceReaderRead_tokenBoundErrorIsIntelligible(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	sessDir := filepath.Join(home, ".pi", "agent", "sessions", "--test--")
+	if err := os.MkdirAll(sessDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	p := filepath.Join(sessDir, "2026-01-01T00-00-00Z_huge.jsonl")
+	jsonl := `{"type":"session","version":3,"id":"big","timestamp":"2026-01-01T00:00:00Z","cwd":"/work"}` + "\n" +
+		`{"type":"message","message":{"role":"user","content":[{"type":"text","text":"hi"}],"timestamp":1}}` + "\n" +
+		`{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"` +
+		strings.Repeat("x", vendors.ReadMaxToken) + `"}]}}` + "\n"
+	if err := os.WriteFile(p, []byte(jsonl), 0o644); err != nil {
+		t.Fatalf("write jsonl: %v", err)
+	}
+
+	chat, err := SourceReader{}.Read(context.Background(), nil, "big")
+	if err == nil {
+		t.Fatalf("Read returned %d messages; a truncated conversation must never reach a model", len(chat.Messages))
+	}
+	if !errors.Is(err, bufio.ErrTooLong) {
+		t.Fatalf("error %q lost the scanner sentinel", err)
+	}
+	for _, want := range []string{"line", "exceeds", strconv.Itoa(vendors.ReadMaxToken), "huge.jsonl"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not name %q", err, want)
+		}
 	}
 }

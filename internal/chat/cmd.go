@@ -12,6 +12,7 @@ import (
 	"github.com/baalimago/clai/internal"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/utils"
+	"github.com/baalimago/clai/internal/vendors"
 	"github.com/baalimago/go_away_boilerplate/pkg/cmd"
 )
 
@@ -24,6 +25,10 @@ type CommandDeps struct {
 	// cannot import internal/summary, and no other verb touches a model.
 	NewSummarizer func(confDir string) (models.Summarizer, error)
 	ParseSince    func(s string, now time.Time) (time.Time, error)
+	// ForeignCache is a factory so that only a verb consulting the cache pays
+	// for decoding it (R1-02, D27). It must return a nil interface and never a
+	// nil pointer: discovery reads nil as "always scan".
+	ForeignCache func() vendors.SourceCache
 }
 
 // Command builds the chat command tree.
@@ -53,7 +58,7 @@ Examples:
 	// An unmatched or absent positional stays with the parent, which keeps
 	// today's chat.New behavior (unknown-subcommand error, chat usage).
 	fullSetup := fullChatSetup(deps, cf)
-	readOnlySetup := readOnlyChatSetup(cf)
+	readOnlySetup := readOnlyChatSetup(deps, cf)
 	c.OnSetup = fullSetup
 	rawOnly := func(fs *flag.FlagSet) { cf.Raw.Register(fs) }
 	rawMacro := func(fs *flag.FlagSet) {
@@ -124,7 +129,7 @@ func fullChatSetup(deps CommandDeps, cf *internal.ChatFlags) func(ctx context.Co
 		if err != nil {
 			return err
 		}
-		return setChatQuerier(c, confDir, cf)
+		return setChatQuerier(c, confDir, cf, deps.ForeignCache)
 	}
 }
 
@@ -185,26 +190,37 @@ func summarizeSetup(deps CommandDeps, cf *internal.ChatFlags, sf *internal.Summa
 // so they prep the theme only — the migration pass ConfigPrep would run is
 // a guaranteed no-op under NoCreateConfig, and these run on shell-prompt
 // hot paths.
-func readOnlyChatSetup(cf *internal.ChatFlags) func(ctx context.Context, c *internal.Command) error {
+func readOnlyChatSetup(deps CommandDeps, cf *internal.ChatFlags) func(ctx context.Context, c *internal.Command) error {
 	return func(_ context.Context, c *internal.Command) error {
 		utils.NoCreateConfig = true
 		confDir, err := internal.PrepTheme()
 		if err != nil {
 			return err
 		}
-		return setChatQuerier(c, confDir, cf)
+		return setChatQuerier(c, confDir, cf, deps.ForeignCache)
 	}
 }
 
 // setChatQuerier builds the handler both chat paths run. The dispatcher
 // hands over ["chat", verb, args...]; the handler wants "<verb> <args...>".
-func setChatQuerier(c *internal.Command, confDir string, cf *internal.ChatFlags) error {
-	h, err := New(confDir, strings.Join(c.Args()[1:], " "), cf.Profile.Value(), cf.Raw.Value(), os.Stdout)
+func setChatQuerier(c *internal.Command, confDir string, cf *internal.ChatFlags, newForeignCache func() vendors.SourceCache) error {
+	h, err := newChatQuerier(confDir, c.Args(), cf, newForeignCache)
 	if err != nil {
-		return fmt.Errorf("create chat handler: %w", err)
+		return err
 	}
 	c.SetQuerier(h)
 	return nil
+}
+
+// newChatQuerier is setChatQuerier without the command adapter, so the handler
+// is observable. It carries the factory over without invoking it (D27).
+func newChatQuerier(confDir string, args []string, cf *internal.ChatFlags, newForeignCache func() vendors.SourceCache) (*ChatHandler, error) {
+	h, err := New(confDir, strings.Join(args[1:], " "), cf.Profile.Value(), cf.Raw.Value(), os.Stdout)
+	if err != nil {
+		return nil, fmt.Errorf("create chat handler: %w", err)
+	}
+	h.newForeignCache = newForeignCache
+	return h, nil
 }
 
 // ReplayCommand builds the replay command: print the previous reply again.

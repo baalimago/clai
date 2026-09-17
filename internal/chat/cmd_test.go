@@ -13,6 +13,9 @@ import (
 	"github.com/baalimago/clai/internal"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/utils"
+	"github.com/baalimago/clai/internal/vendors"
+	"github.com/baalimago/clai/internal/vendors/anthropic"
+	"github.com/baalimago/clai/internal/vendors/jsonltest"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
@@ -346,4 +349,369 @@ func TestChatCommand_summarizeSub(t *testing.T) {
 			t.Fatalf("err = %v, want the wrapped constructor error", err)
 		}
 	})
+}
+
+// --- foreign cache wiring (phase 5) -----------------------------------------
+
+// countingCacheFactory is a CommandDeps.ForeignCache that records how often
+// the command tree asked for an index.
+func countingCacheFactory(cache vendors.SourceCache) (func() vendors.SourceCache, *int) {
+	calls := 0
+	return func() vendors.SourceCache {
+		calls++
+		return cache
+	}, &calls
+}
+
+// chatTreeDeps builds a tree whose config prep never touches a real config
+// directory.
+func chatTreeDeps(t *testing.T, factory func() vendors.SourceCache) CommandDeps {
+	t.Helper()
+	confDir := t.TempDir()
+	return CommandDeps{
+		ConfigPrep:   func() (string, error) { return confDir, nil },
+		ForeignCache: factory,
+	}
+}
+
+// TestChatCommand_cacheFactoryRunsOncePerVerb: building the tree asks for no
+// index, building a handler asks for none either — the factory is resolved
+// where the cache is consulted (D27) — and a verb that does consult it asks
+// for exactly one. Summarize builds its own handler and lists nothing, so it
+// asks for none. The verbs that never consult the cache are asserted by
+// TestChatCommand_onlyConsultingVerbsConstructTheIndex.
+func TestChatCommand_cacheFactoryRunsOncePerVerb(t *testing.T) {
+	for _, verb := range []string{"continue|c", "list|l"} {
+		t.Run(verb, func(t *testing.T) {
+			restoreFlags(t)
+			factory, calls := countingCacheFactory(nil)
+			c := Command(chatTreeDeps(t, factory))
+			if *calls != 0 {
+				t.Fatalf("building the chat tree asked for %d indexes, want 0", *calls)
+			}
+			sub := c.Subcommands()[verb].(*internal.Command)
+			if err := sub.Flagset().Parse(nil); err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			if err := sub.Setup(context.Background()); err != nil {
+				t.Fatalf("Setup: %v", err)
+			}
+			if *calls != 0 {
+				t.Fatalf("the %q verb asked for %d indexes before consulting the cache, want 0", verb, *calls)
+			}
+		})
+
+		t.Run(verb+" run to completion", func(t *testing.T) {
+			if calls := runChatVerbCounting(t, verb, []string{"-n", "-r", "q"}); calls != 1 {
+				t.Fatalf("the %q verb asked for %d indexes, want exactly 1", verb, calls)
+			}
+		})
+	}
+
+	t.Run("summarize|s", func(t *testing.T) {
+		restoreFlags(t)
+		factory, calls := countingCacheFactory(nil)
+		deps := chatTreeDeps(t, factory)
+		deps.NewSummarizer = func(string) (models.Summarizer, error) { return nil, errors.New("no summarizer") }
+		deps.ParseSince = func(string, time.Time) (time.Time, error) { return time.Time{}, nil }
+		c := Command(deps)
+		sub := c.Subcommands()["summarize|s"].(*internal.Command)
+		if err := sub.Flagset().Parse([]string{"7d"}); err != nil {
+			t.Fatalf("Parse: %v", err)
+		}
+		_ = sub.Setup(context.Background())
+		if *calls != 0 {
+			t.Fatalf("summarize asked for %d indexes; it lists nothing", *calls)
+		}
+	})
+}
+
+// TestChatCommand_failedFactoryLeavesCacheNil: a factory that could not build
+// an index yields a nil interface, the handler's field stays unset, and the
+// listing falls back to scanning. An interface holding a nil pointer is not
+// nil, and discovery would not read it as "always scan". Under D27 the
+// factory is not invoked until a verb consults the cache, so the field is
+// unset before that too.
+func TestChatCommand_failedFactoryLeavesCacheNil(t *testing.T) {
+	restoreFlags(t)
+	factory, calls := countingCacheFactory(nil)
+	h, err := newChatQuerier(t.TempDir(), []string{"chat", "list"}, &internal.ChatFlags{}, factory)
+	if err != nil {
+		t.Fatalf("newChatQuerier: %v", err)
+	}
+	if h.foreignCache != nil {
+		t.Fatalf("building the handler left %#v on it, want a nil interface", h.foreignCache)
+	}
+	if got := h.foreignCacheOrNil(); got != nil {
+		t.Fatalf("a failed factory resolved to %#v, want a nil interface", got)
+	}
+	if *calls != 1 {
+		t.Fatalf("the consultation ran the factory %d times, want exactly 1", *calls)
+	}
+	if h.foreignCache != nil {
+		t.Fatalf("a failed factory left %#v on the handler, want a nil interface", h.foreignCache)
+	}
+
+	// A composition root that produced no factory at all is the same case.
+	noFactory, err := newChatQuerier(t.TempDir(), []string{"chat", "list"}, &internal.ChatFlags{}, nil)
+	if err != nil {
+		t.Fatalf("newChatQuerier without a factory: %v", err)
+	}
+	if got := noFactory.foreignCacheOrNil(); got != nil {
+		t.Fatalf("a missing factory resolved to %#v, want a nil interface", got)
+	}
+}
+
+// restoreFlags puts the process-wide config flags back after a test that
+// drives a real verb through Command.Setup, which sets them.
+func restoreFlags(t *testing.T) {
+	t.Helper()
+	noCreate, readonly, live := utils.NoCreateConfig, utils.ReadonlyConfig, utils.Live
+	t.Cleanup(func() {
+		utils.NoCreateConfig, utils.ReadonlyConfig, utils.Live = noCreate, readonly, live
+	})
+}
+
+// runListVerb drives the real `chat list` verb to completion against an
+// isolated config dir and a generated corpus, with the given flags. It
+// returns what the verb wrote to stderr, which is where the handler announces
+// a foreign cache it could not write.
+func runListVerb(t *testing.T, args []string) string {
+	t.Helper()
+	restoreFlags(t)
+	confDir := t.TempDir()
+	if err := utils.CreateConfigDir(confDir); err != nil {
+		t.Fatalf("CreateConfigDir: %v", err)
+	}
+	t.Setenv("CLAI_CONFIG_DIR", confDir)
+
+	root := filepath.Join(t.TempDir(), "projects")
+	jsonltest.WriteCorpus(t, root, smallCorpus(jsonltest.ShapeClaude))
+	t.Cleanup(useTestSourceReaders([]vendors.SourceReader{anthropic.SourceReader{Root: root}}))
+
+	// A cache directory whose parent is a file can never be made, so the
+	// persist at the end of the listing fails however the machine is set up.
+	blocked := filepath.Join(t.TempDir(), "not-a-dir")
+	if err := os.WriteFile(blocked, []byte("occupied"), 0o644); err != nil {
+		t.Fatalf("write %q: %v", blocked, err)
+	}
+	factory := func() vendors.SourceCache {
+		idx, err := NewForeignIndex(filepath.Join(blocked, "clai"))
+		if err != nil {
+			t.Errorf("NewForeignIndex: %v", err)
+			return nil
+		}
+		return idx
+	}
+
+	c := Command(CommandDeps{
+		ConfigPrep:   func() (string, error) { return confDir, nil },
+		ForeignCache: factory,
+	})
+	sub := c.Subcommands()["list|l"].(*internal.Command)
+	if err := sub.Flagset().Parse(args); err != nil {
+		t.Fatalf("Parse(%v): %v", args, err)
+	}
+	ctx := context.Background()
+	stderr := ""
+	testboil.CaptureStdout(t, func(t *testing.T) {
+		stderr = testboil.CaptureStderr(t, func(t *testing.T) {
+			if err := sub.Setup(ctx); err != nil {
+				t.Errorf("Setup: %v", err)
+				return
+			}
+			if err := sub.Run(ctx); err != nil {
+				t.Errorf("Run: %v", err)
+			}
+		})
+	})
+	return stderr
+}
+
+// TestChatList_unwritableCacheWarnsThroughTheVerb: `clai chat list` sets
+// utils.NoCreateConfig unconditionally, so gating the warning on that flag
+// made it unreachable for the one verb the cache exists for — the user
+// rescanned the whole foreign corpus on every listing with no way to learn
+// why (R1-03, D25). Driven through the real verb, because it is the verb
+// that sets the flag.
+func TestChatList_unwritableCacheWarnsThroughTheVerb(t *testing.T) {
+	got := runListVerb(t, []string{"q"})
+	if n := strings.Count(got, "warning:"); n != 1 {
+		t.Fatalf("an interactive listing printed %d warnings, want exactly 1: %q", n, got)
+	}
+}
+
+// TestChatList_rawVerbStaysSilent: the same fault under -r, which is what a
+// shell prompt hook or a script uses. utils.ReadonlyConfig marks it, and it
+// must see nothing on stderr.
+func TestChatList_rawVerbStaysSilent(t *testing.T) {
+	got := runListVerb(t, []string{"-r", "-n", "q"})
+	if got != "" {
+		t.Fatalf("a raw listing surfaced %q; a shell-prompt hook must stay quiet", got)
+	}
+}
+
+// --- review two: the index is built only by a verb that reads it (D27) ------
+
+// runChatVerbCounting drives one real chat verb to completion against an
+// isolated config dir and a generated corpus, and reports how many times that
+// verb asked the composition root for a foreign index. A verb may legitimately
+// fail — `delete` with no such chat does — and must still construct nothing.
+func runChatVerbCounting(t *testing.T, verb string, args []string) int {
+	t.Helper()
+	restoreFlags(t)
+	confDir := t.TempDir()
+	if err := utils.CreateConfigDir(confDir); err != nil {
+		t.Fatalf("CreateConfigDir: %v", err)
+	}
+	t.Setenv("CLAI_CONFIG_DIR", confDir)
+
+	root := filepath.Join(t.TempDir(), "projects")
+	jsonltest.WriteCorpus(t, root, smallCorpus(jsonltest.ShapeClaude))
+	t.Cleanup(useTestSourceReaders([]vendors.SourceReader{anthropic.SourceReader{Root: root}}))
+
+	// A populated cache directory, so a construction is a real read and
+	// decode of a cache file rather than a no-op.
+	cacheDir := t.TempDir()
+	warm := newForeignIndexT(t, cacheDir)
+	if _, err := (anthropic.SourceReader{Root: root}).Discover(context.Background(), warm); err != nil {
+		t.Fatalf("warming Discover: %v", err)
+	}
+	persistT(t, warm)
+
+	calls := 0
+	factory := func() vendors.SourceCache {
+		calls++
+		idx, err := NewForeignIndex(cacheDir)
+		if err != nil {
+			t.Errorf("NewForeignIndex: %v", err)
+			return nil
+		}
+		return idx
+	}
+	c := Command(CommandDeps{
+		ConfigPrep:   func() (string, error) { return confDir, nil },
+		ForeignCache: factory,
+	})
+	sub := c.Subcommands()[verb].(*internal.Command)
+	if err := sub.Flagset().Parse(args); err != nil {
+		t.Fatalf("Parse(%v): %v", args, err)
+	}
+	ctx := context.Background()
+	testboil.CaptureStdout(t, func(t *testing.T) {
+		if err := sub.Setup(ctx); err != nil {
+			t.Errorf("Setup: %v", err)
+			return
+		}
+		_ = sub.Run(ctx)
+	})
+	return calls
+}
+
+// TestChatCommand_onlyConsultingVerbsConstructTheIndex: readOnlyChatSetup
+// serves shell-prompt hot paths, so `clai -r c dirv2` in a precmd hook used to
+// decode a corpus-sized index on every prompt render. Only a verb that
+// actually reads the cache may build it (R2-03, D27).
+func TestChatCommand_onlyConsultingVerbsConstructTheIndex(t *testing.T) {
+	for _, tc := range []struct {
+		verb string
+		args []string
+	}{
+		{"help|h", nil},
+		{"dir", []string{"-r"}},
+		{"dirv2", []string{"-r"}},
+		{"delete|d", []string{"-r", "-n", "no-such-chat"}},
+	} {
+		t.Run(tc.verb, func(t *testing.T) {
+			if calls := runChatVerbCounting(t, tc.verb, tc.args); calls != 0 {
+				t.Fatalf("the %q verb constructed the foreign index %d times; it never consults it", tc.verb, calls)
+			}
+		})
+	}
+
+	t.Run("list|l", func(t *testing.T) {
+		if calls := runChatVerbCounting(t, "list|l", []string{"-r", "-n", "q"}); calls != 1 {
+			t.Fatalf("the listing constructed the foreign index %d times, want exactly 1", calls)
+		}
+	})
+}
+
+// TestChatCommand_lazyFactoryRunsAtMostOnce: the lazy resolution is guarded,
+// so however many times the consuming code asks — a listing that repaginates,
+// a continue that falls back to the list — exactly one index is built and
+// every asker gets the same one.
+func TestChatCommand_lazyFactoryRunsAtMostOnce(t *testing.T) {
+	restoreFlags(t)
+	cacheDir := t.TempDir()
+	built := 0
+	factory := func() vendors.SourceCache {
+		built++
+		idx := newForeignIndexT(t, cacheDir)
+		return idx
+	}
+	h, err := newChatQuerier(t.TempDir(), []string{"chat", "list"}, &internal.ChatFlags{}, factory)
+	if err != nil {
+		t.Fatalf("newChatQuerier: %v", err)
+	}
+	if built != 0 {
+		t.Fatalf("building the handler constructed %d indexes; only a consulting verb may (D27)", built)
+	}
+
+	root := filepath.Join(t.TempDir(), "projects")
+	jsonltest.WriteCorpus(t, root, smallCorpus(jsonltest.ShapeClaude))
+	readers := []vendors.SourceReader{anthropic.SourceReader{Root: root}}
+	first, err := h.foreignChatRows(context.Background(), readers, map[string]struct{}{})
+	if err != nil {
+		t.Fatalf("first foreignChatRows: %v", err)
+	}
+	after := h.foreignCache
+	second, err := h.foreignChatRows(context.Background(), readers, map[string]struct{}{})
+	if err != nil {
+		t.Fatalf("second foreignChatRows: %v", err)
+	}
+	if built != 1 {
+		t.Fatalf("two consultations constructed %d indexes, want exactly 1", built)
+	}
+	if h.foreignCache != after {
+		t.Fatal("the second consultation replaced the index the first one built")
+	}
+	if len(first) == 0 || len(second) != len(first) {
+		t.Fatalf("the warm consultation returned %d rows against %d cold", len(second), len(first))
+	}
+}
+
+// TestChatCommand_lazyFactoryFailureLeavesCacheUnset: a lazy construction
+// that fails is remembered, not retried. Without the once-guard a listing
+// whose index cannot be built would pay the failing construction again on
+// every consultation, and the field must stay a nil interface throughout so
+// discovery keeps scanning.
+func TestChatCommand_lazyFactoryFailureLeavesCacheUnset(t *testing.T) {
+	restoreFlags(t)
+	factory, calls := countingCacheFactory(nil)
+	h, err := newChatQuerier(t.TempDir(), []string{"chat", "list"}, &internal.ChatFlags{}, factory)
+	if err != nil {
+		t.Fatalf("newChatQuerier: %v", err)
+	}
+	if *calls != 0 {
+		t.Fatalf("building the handler asked for %d indexes, want 0 (D27)", *calls)
+	}
+
+	root := filepath.Join(t.TempDir(), "projects")
+	jsonltest.WriteCorpus(t, root, smallCorpus(jsonltest.ShapeClaude))
+	readers := []vendors.SourceReader{anthropic.SourceReader{Root: root}}
+	for i := range 3 {
+		rows, err := h.foreignChatRows(context.Background(), readers, map[string]struct{}{})
+		if err != nil {
+			t.Fatalf("consultation %d: foreignChatRows: %v", i, err)
+		}
+		if len(rows) == 0 {
+			t.Fatalf("consultation %d: the listing did not fall back to scanning", i)
+		}
+		if h.foreignCache != nil {
+			t.Fatalf("consultation %d: a failed construction left %#v on the handler", i, h.foreignCache)
+		}
+	}
+	if *calls != 1 {
+		t.Fatalf("three consultations retried the failing construction %d times, want exactly 1", *calls)
+	}
 }

@@ -2,6 +2,7 @@ package vendors
 
 import (
 	"context"
+	"io/fs"
 	"time"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -23,8 +24,8 @@ import (
 // conversations participate in grouping identically to native conversations.
 // Use FirstUserMessage for display; use FullFirstUserMessage for hashing/grouping.
 //
-// MessageCount may be approximate during discovery.
-// Exact counts are available after Read() parses the full conversation.
+// MessageCount is exact: discovery reads the file to EOF on a cache miss, and
+// Read() offers no later refinement.
 //
 // Cwd is the working directory the session was started from, best-effort;
 // empty when the source does not record one. Used by the chat list's [d]ir
@@ -54,10 +55,30 @@ type SourceRow struct {
 	Cwd                  string
 }
 
+// SourceCache is a pull-validated index of what discovery last found: every
+// entry is keyed by the fs.FileInfo taken before the file was read, and is
+// current only while that (size, mod time) pair holds. A nil cache means
+// "always scan"; a typed nil is not nil and would skip that branch, so
+// constructors return an error rather than an unusable value. Implementations
+// must be safe for concurrent use.
+type SourceCache interface {
+	// Lookup answers only while info still matches the pair the row was
+	// stored under, and marks that row in use for this run.
+	Lookup(absPath string, info fs.FileInfo) (SourceRow, bool)
+	// Store marks the row in use. A zero row is a valid entry: it records
+	// that absPath yields nothing.
+	Store(absPath string, info fs.FileInfo, row SourceRow)
+	// Locate answers from cached state alone, so the caller must validate it
+	// with Lookup. Two files may carry one identity; the tie-break is
+	// filepath.WalkDir's segment-by-segment order, not the smallest path.
+	Locate(source, sourceID string) (absPath string, ok bool)
+}
+
 // SourceReader discovers and reads conversations from an external tool.
 //
-// Discover MUST be read-only and fast (no full body parsing).
-// Read MUST be self-contained (not depend on Discover state).
+// Discover MUST be read-only; its cost is bounded by the cache, not by a line
+// cap. Read MUST be self-contained (not depend on Discover state). Both take
+// the cache: Discover builds the rows, Read resolves an identifier to a file.
 //
 // Implementations must never write back to the external source.
 //
@@ -65,6 +86,6 @@ type SourceRow struct {
 // Duplicate Source() names are not allowed.
 type SourceReader interface {
 	Source() string
-	Discover(ctx context.Context) ([]SourceRow, error)
-	Read(ctx context.Context, sourceID string) (pub_models.Chat, error)
+	Discover(ctx context.Context, cache SourceCache) ([]SourceRow, error)
+	Read(ctx context.Context, cache SourceCache, sourceID string) (pub_models.Chat, error)
 }

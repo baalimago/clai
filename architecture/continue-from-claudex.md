@@ -122,29 +122,169 @@ type SourceReader interface {
     Source() string
 
     // Discover returns lightweight descriptors for all importable
-    // conversations. Must be read-only and fast — no full-body reads.
-    Discover(ctx context.Context) ([]SourceRow, error)
+    // conversations. Must be read-only. A file that still matches its
+    // cached row costs one stat; a changed file is scanned to EOF.
+    Discover(ctx context.Context, cache SourceCache) ([]SourceRow, error)
 
     // Read converts one conversation into a full clai Chat. Called only
     // when the user inspects or continues a foreign conversation.
-    Read(ctx context.Context, sourceID string) (pub_models.Chat, error)
+    Read(ctx context.Context, cache SourceCache, sourceID string) (pub_models.Chat, error)
 }
 
 // NOTE: internal/vendors/source.go must import "time" (and "context").
 ```
 
+Both methods take a `vendors.SourceCache` because clai does not own the files
+a foreign tool writes: it cannot be told a session changed, it can only pull.
+A cache entry is keyed by the `fs.FileInfo` taken *before* the file was read,
+and is current only while that `(size, mod time)` pair still holds. A nil
+cache means "always scan" and is always correct, only slower. The
+implementation is `chat.ForeignIndex`, which persists to
+`foreign_index.cache` in the clai cache directory — derived state, deletable
+at any moment with no effect beyond timing.
+
+#### An error is not a fact about the file
+
+A row may only be **cached**, or **pruned**, on something the filesystem
+actually reported about the file's *content* — "the scan completed and found
+nothing", "the file does not exist". "I could not open it", "I could not read
+it to the end" and "I could not stat it" are facts about *this run*. They must
+never be written into a cache that outlives it.
+
+The distinction is exactly the derived-cache promise. A fact about the content
+stays true until the content changes, and `(size, mod time)` detects that
+change. A fact about the run is invisible to that pair — a permission denial, a
+descriptor exhaustion, a mount that blipped, a read that failed on the wire
+change neither size nor mod time — so a row written from one can never be
+invalidated, and the cache stops being derived. At that point deleting
+`foreign_index.cache` changes rows rather than timing.
+
+Applied: a scan that could not start is not a scan that found nothing, a scan
+that could not be read to its end is not a scan that found what it managed to
+read, and a stat that failed is not a file that is gone.
+
+**A content-determined bound is a fact about the file; a transport error is
+not a fact about the file.** The rule's test is not "did an error occur" but
+"would a cache-less rescan of the same bytes reach the same answer, and does
+`(size, mod time)` invalidate it when the bytes change". A line longer than `vendors.ReadMaxToken`
+ends its file's scan every run, in the same place, for the same bytes, and any
+edit that removes the oversized line changes the file's size or mod time — so
+`bufio.ErrTooLong` **is** a fact about the content and its truncated row stays
+cacheable. Every other scanner error is a fact about this run alone, so
+`discoverJSONLFile` skips the write for it. A blanket "any scan error skips the
+cache" would be wrong in the other direction: it would silently revert the
+oversized-line behaviour, with no test failing.
+
+Because a truncated row is cached at its undercount and `ReadMaxToken` is a
+compile-time constant that is not part of the cache key, changing that constant
+requires a `foreignIndexVersion` bump — nothing else would invalidate the rows
+it truncated.
+
+### Push versus pull
+
+Native and foreign conversations reach the chat list under opposite contracts,
+and every rule in this section follows from that one difference.
+
+|                                  | Native conversations                 | Foreign conversations                             |
+| -------------------------------- | ------------------------------------ | ------------------------------------------------- |
+| Who writes the source of truth   | clai                                 | Claude Code, pi                                   |
+| How the index learns of a change | `upsertChatIndex` at save — **push** | nobody notifies clai — **pull**                   |
+| Cost of knowing a row is current | zero; clai was the writer            | one `stat` per file                               |
+| What invalidates a row           | nothing; the writer maintains it     | `size` or mod time differs from the cached pair   |
+| What a lost cache costs          | a full rebuild over every chat       | a full rescan; recoverable, never a data loss     |
+
+clai owns the native write path, so `chat_index.cache` is **pushed**: a row is
+upserted at save time and is current because clai was the writer. clai is only
+a spectator to the files Claude Code and pi write whenever they like, so
+`foreign_index.cache` is **pulled**: a row is current only while the
+`(size, mod time)` pair it was stored under still holds. That pair is taken
+*before* the file is read, never after — a foreign corpus can grow while it is
+being scanned, and a stat taken afterwards would key a row to bytes that were
+never read.
+
+`chat_index.cache` is a durable record. `foreign_index.cache` is a **derived
+cache**: it may be deleted at any moment with no effect beyond timing, and a
+missing, unreadable, corrupt or version-stale file simply falls through to a
+full scan. The two never share a file, so a corrupt foreign row cannot trigger
+a rebuild across the native corpus. Only `chat.SkipIndex` suppresses foreign
+index I/O; `utils.NoCreateConfig` does not, because that flag is scoped to the
+config directory while this cache lives in the cache directory — under it the
+write is still attempted and a failure degrades in silence, with no stderr
+noise (see `architecture/config.md`).
+
+#### Cost budget
+
+| Situation                              | Cost                                                                         |
+| -------------------------------------- | ---------------------------------------------------------------------------- |
+| Listing over an unchanged corpus       | one `stat` per session file plus one cache decode; it **opens no session file** |
+| A file whose size or mod time changed  | that one file is scanned to EOF, by a pool of `min(8, NumCPU())` workers     |
+| A file that yields no session identity | cached as such, and not rescanned until it changes                           |
+| No cache at all                        | a full scan of every file — the pre-index behaviour, still correct           |
+
+`TestDiscoverJSONL_cacheHitOpensNothing` is the standing proof of the first
+row: it discovers a corpus through a counting filesystem and asserts zero opens
+on the second pass. `TestForeignIndex_unchangedCorpusSurvivesSecondRun` proves
+the cache survives between invocations, and
+`TestDiscoverJSONL_cacheAgnosticResults` proves the cache is derived — a nil
+cache and a warm cache produce identical rows.
+
 ### Shared JSONL skeleton
 
 The filesystem/scanner boilerplate common to every JSONL-backed source lives
 in `internal/vendors/jsonl.go`: `WalkJSONLFiles` (tolerant `*.jsonl` walking
-with skip-dirs, e.g. Claude's `subagents/`), `ScanJSONLLines` (bounded
-line-by-line JSON scanning), `OpenAbs` (FS-injectable file opening),
-`HomeRelativeRoot`, `TextBlocksContent` (string-or-text-block content
-flattening), and `MapAssistantBlocks` (assistant text/thinking/tool-call block
-mapping, parameterized by `ToolCallBlockKeys` for vendor key names). A new
-source implements only its schema: line-shape recognition in `discoverOne`,
-session-id matching, and user/tool-result mapping. See
-`internal/vendors/anthropic/source_reader.go` and
+with skip-dirs, e.g. Claude's `subagents/`), `ScanJSONLLines` (line-by-line
+JSON scanning, bounded only by the scanner token size), `OpenAbs` and `StatAbs` (FS-injectable file
+opening and stat), `HomeRelativeRoot`, `TextBlocksContent` (string-or-text-block
+content flattening), and `MapAssistantBlocks` (assistant text/thinking/tool-call
+block mapping, parameterized by `ToolCallBlockKeys` for vendor key names).
+
+The discovery algorithm itself lives in `internal/vendors/jsonl_discover.go`:
+`DiscoverJSONL` walks, scans and aggregates one `SourceRow` per file, and
+`FindJSONLSession` resolves a session id back to the file that holds it —
+from the cache when it names the file and one stat confirms it, otherwise by
+walking and stopping at the first line that establishes a file's identity. Both are driven
+by `vendors.JSONLSchema` (`internal/vendors/schema.go`), whose only data method
+is `Fields(line []byte) LineFields`: a schema never sees a path, handle, reader
+or line number, so it cannot decide how much of a file is read.
+
+#### Implementing a new JSONL source
+
+A new source implements `vendors.JSONLSchema` — `SourceName`, `Root`,
+`SkipDirs` and `Fields(line []byte) LineFields` — plus its own full-body `Read`
+mapping. Nothing else is required, and nothing else is allowed: vendor code
+**never opens files**, never walks a directory and never counts lines, because
+a schema is handed one line at a time and the generic layer alone decides how
+many lines there are. That is what keeps the cost rule in code rather than in
+prose, which is how the previous rule was lost.
+
+A schema may also implement `vendors.LinePrefilter`
+(`MayContribute(line []byte) bool`), which lets the scan skip decoding lines
+that cannot contribute. Not implementing it is always correct, only slower.
+Implementing it too narrowly is not: it silently undercounts. Every implementor
+therefore runs `jsonltest.RunSchemaConformance` over its own fixture lines,
+which fails on exactly that mistake **when the fixture corpus can witness it**:
+the suite asserts `MayContribute` for every fixture line whose `Fields` is
+non-zero, so it catches a filter that would hide a line the corpus actually
+holds. It does not police the marker set itself — a marker that every fixture
+line carries alongside another can be dropped without the suite noticing — so a
+fixture corpus needs a line per marker for the suite to have that resolution.
+
+`MayContribute` searches literal key spellings while `Fields` decodes with
+`encoding/json`, which matches struct tags case-insensitively and accepts
+escaped characters inside a key. A source is in contract while its JSON keys
+are canonically spelled — the exact bytes the prefilter looks for — and a
+source that varies its spelling is out of it and would undercount in silence.
+That is judged a vendor format change rather than a hazard to engineer around:
+write the prefilter against the spellings the source actually emits, and add a
+fixture line for each marker.
+
+`LineFields` is a **closed set**. A field enters it only when the chat list
+gains a capability that consumes the field eagerly — sorting, dedup, group
+collapse or the dirscope filter — because every listed row is fully populated
+before page one is drawn. `TestLineFields_closedSet` reflects over the struct
+and fails until the set is changed deliberately.
+
+See `internal/vendors/anthropic/source_reader.go` and
 `internal/vendors/pi/source_reader.go` as references.
 
 ### Registration
@@ -156,7 +296,8 @@ Each vendor package that supports conversation reading exposes a constructor or 
 func allSourceReaders() []vendors.SourceReader {
 	return []vendors.SourceReader{
 		anthropic.SourceReader{}, // claude-code
-		// future: codex.SourceReader{}, pi.SourceReader{}, ...
+		pi.SourceReader{},        // pi
+		// future: codex.SourceReader{}, cursor.SourceReader{}, ...
 	}
 }
 
@@ -192,7 +333,7 @@ No registry, no init-side-effects, no global mutable state.
 
 ### Rules
 
-- **`Discover` is read-only and fast** — it reads only headers/first-lines/timestamps from source files. No full conversation parsing. It must not mutate anything.
+- **`Discover` is read-only and index-backed** — a file whose `(size, mod time)` pair still matches its cached row is never opened at all; a file that misses the cache is scanned to EOF so its `MessageCount` is right. It must not mutate anything. The cost rule is in [Push versus pull](#push-versus-pull).
 - **`Read` is self-contained** — it receives a `sourceID` and returns a complete `Chat`. It does not depend on prior `Discover` state.
 - **Message mapping is vendor-defined** — each `Read` implementation decides how to map its native format into `pub_models.Message`. No middleware.
 - **Tool calls are best-effort** — if the source format has tool uses and results, map them to `Message.ToolCalls` and `Message.Role == "tool"` with `ToolCallID`. Lossy mapping is acceptable; the goal is contextual continuity, not replay. (Current Claude reader: assistant `tool_use` blocks become `ToolCalls`; user `tool_result` blocks become separate `tool` messages.)
@@ -210,12 +351,12 @@ Scans:
 
 1. `~/.claude/projects/` — each subdirectory is a project; each `*.jsonl` inside is a conversation.
 
-For each `.jsonl` file, reads a **bounded prefix** (scan up to _K lines_; current implementation: **K=200**) to extract:
+For each `.jsonl` file whose `(size, mtime)` pair misses the foreign index, reads the **whole file** to extract:
 
 - `SourceID` = `sessionId` from the first valid JSON line that contains it (typically `type: "user"`).
 - `Created` = `timestamp` from the first valid JSON line that contains it (falls back to file mtime).
 - `FirstUserMessage` = content of the first line with `type: "user"` and a string `message.content`, truncated to ~100 characters.
-- `MessageCount` = **approximate** line count of `user` + `assistant` types (cheap, no JSON parse of every line needed — simple line-scan). Exact counts happen during `Read`.
+- `MessageCount` = count of `user` + `assistant` lines. **The count is exact from discovery onward**, with one pre-existing caveat: the list shows the same number `Read` would produce, and there is no later refinement, but a line longer than `vendors.ReadMaxToken` ends the scan of its whole file, so anything after it is uncounted — and because the result of that scan is cached, the undercount is now persisted rather than recomputed each run. Both `Discover` and `Read` truncate at the same bound, so they still agree with each other. The scan reads to EOF, and a schema's optional `MayContribute` byte prefilter decides which lines are worth decoding, so exactness costs decoding rather than reading. Misses are scanned by a bounded worker pool; hits cost one `stat`.
 - `RawPath` = absolute path.
 
 Session metadata is cross-referenced: the `local_*.json` files in `claude-code-sessions/` carry a `title` field. If found, `title` replaces `FirstUserMessage` in the preview column (the full `FirstUserMessage` is still available for fallback).
@@ -423,9 +564,11 @@ This adds one map build per `clai chat list` call. The index is already loaded i
 
 ## Configuration and persistence
 
-No new config files. No new cache files. The `Source` and `SourceID` fields are plain JSON on the existing `Chat` struct and `chat_index.cache`. The source reader list is compiled-in.
+No new config files. The `Source` and `SourceID` fields are plain JSON on the existing `Chat` struct and `chat_index.cache`. The source reader list is compiled-in.
 
-Foreign conversations are never persisted until the user explicitly clones them. The source files (JSONL, etc.) are read directly each time.
+One derived cache file is added: `foreign_index.cache` in the clai **cache** directory (`utils.GetClaiCacheDir()`), holding one `(size, mod time)`-validated `SourceRow` per session file. It is not config and not a record — see [Push versus pull](#push-versus-pull) — and deleting it costs a rescan and nothing else.
+
+Foreign *conversations* are still never persisted until the user explicitly clones them: the cache holds only the list-row descriptor, never message bodies. A source file is opened only when its cached row does not validate.
 
 ## Acceptance criteria
 
@@ -491,14 +634,20 @@ If clai does not have a suitable helper, implement `NewChatID()` using stdlib on
 
 ## Future sources
 
-Each future source adds one file in its vendor package and one line to `allSourceReaders()`:
+Each further source adds one file in its vendor package and one line to `allSourceReaders()`:
 
-| Source     | Vendor package                   | Storage format                  |
-| ---------- | -------------------------------- | ------------------------------- |
-| Codex      | `internal/vendors/openai/`       | JSON or SQLite from `~/.codex/` |
-| Pi         | `internal/vendors/pi/` (new)     | Web API or browser export       |
-| Cursor     | `internal/vendors/cursor/` (new) | SQLite or workspace storage     |
-| Gemini CLI | `internal/vendors/gemini/`       | Local session files             |
+| Source     | Vendor package                   | Storage format                                          | Status          |
+| ---------- | -------------------------------- | ------------------------------------------------------- | --------------- |
+| Claude Code | `internal/vendors/anthropic/`   | local JSONL under `~/.claude/projects/`                 | **implemented** |
+| Pi         | `internal/vendors/pi/`           | local JSONL under `~/.pi/agent/sessions/`               | **implemented** |
+| Codex      | `internal/vendors/openai/`       | JSON or SQLite from `~/.codex/`                         | future          |
+| Cursor     | `internal/vendors/cursor/` (new) | SQLite or workspace storage                             | future          |
+| Gemini CLI | `internal/vendors/gemini/`       | local session files                                     | future          |
+
+A JSONL-backed source is a schema and nothing more — see
+[Implementing a new JSONL source](#implementing-a-new-jsonl-source). A source
+that is not line-oriented (SQLite, an API) implements `SourceReader` directly;
+it is deliberately not forced through the line abstraction.
 
 ### Source reader evaluation guideline
 

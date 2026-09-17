@@ -1,7 +1,9 @@
 package anthropic
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -20,8 +22,9 @@ import (
 // parent's sessionId ("isSidechain": true) — they are never sessions themselves,
 // so both the directory and sidechain lines are skipped everywhere.
 //
-// This reader is intentionally conservative: discovery is bounded and skips
-// rows with missing SourceID.
+// This reader is intentionally conservative: discovery skips rows with
+// missing SourceID. Its cost is bounded by the foreign index, not by a line
+// cap: a cache hit costs one stat and opens nothing.
 //
 // FS is injectable for tests; if nil, the host root filesystem is used. The
 // host-path logic (HOME expansion, walking) stays outside the FS — it is only
@@ -38,100 +41,103 @@ type SourceReader struct {
 }
 
 func (r SourceReader) Source() string {
-	return "claude-code"
+	return sourceName
 }
+
+const sourceName = "claude-code"
 
 var toolCallKeys = vendors.ToolCallBlockKeys{Type: "tool_use", Args: "input"}
 
 // skipDirs holds directory names never containing sessions of their own.
 var skipDirs = []string{"subagents"}
 
-func (r SourceReader) Discover(ctx context.Context) ([]vendors.SourceRow, error) {
-	rows := []vendors.SourceRow{}
-	err := vendors.WalkJSONLFiles(ctx, r.projectsRoot(), skipDirs, func(p string) bool {
-		if row, ok := r.discoverOne(p); ok {
-			rows = append(rows, row)
-		}
-		return false
-	})
-	if err != nil {
-		return nil, fmt.Errorf("discover claude sessions: %w", err)
-	}
-	return rows, nil
+// schema is this vendor's whole contribution: one line's meaning, and a root.
+type schema struct {
+	root string
 }
 
-func (r SourceReader) discoverOne(absPath string) (vendors.SourceRow, bool) {
-	f, err := vendors.OpenAbs(r.FS, absPath)
-	if err != nil {
-		return vendors.SourceRow{}, false
-	}
-	defer f.Close()
+func (r SourceReader) schema() schema {
+	return schema{root: r.projectsRoot()}
+}
 
-	row := vendors.SourceRow{Source: r.Source(), RawPath: absPath}
-	// Discovery is best effort: a scan error just yields sparser metadata.
-	_ = vendors.ScanJSONLLines(f, vendors.ReadMaxToken, vendors.DiscoverMaxLines, func(env map[string]any) bool {
-		if isSidechain(env) {
+func (s schema) SourceName() string { return sourceName }
+
+func (s schema) Root() string { return s.root }
+
+func (s schema) SkipDirs() []string { return skipDirs }
+
+// discoverLine keeps its nested values raw, so a line whose "message" is not
+// an object still contributes its identity, as the decoded form did.
+type discoverLine struct {
+	Type        string          `json:"type"`
+	SessionID   string          `json:"sessionId"`
+	Cwd         string          `json:"cwd"`
+	Timestamp   string          `json:"timestamp"`
+	IsSidechain bool            `json:"isSidechain"`
+	Message     json.RawMessage `json:"message"`
+}
+
+type discoverMessage struct {
+	Model   string          `json:"model"`
+	Content json.RawMessage `json:"content"`
+}
+
+// contributingMarkers gate the decode. Over-inclusive only costs a decode;
+// TestSchemaConformance_anthropic guards against under-inclusive.
+var contributingMarkers = [][]byte{
+	[]byte(`"sessionId"`),
+	[]byte(`"cwd"`),
+	[]byte(`"timestamp"`),
+	[]byte(`"isSidechain"`),
+	[]byte(`"user"`),
+	[]byte(`"assistant"`),
+}
+
+// MayContribute is sound only for canonically spelled JSON keys, which no test
+// can enforce because Fields decodes case-insensitively (D26).
+func (s schema) MayContribute(line []byte) bool {
+	for _, marker := range contributingMarkers {
+		if bytes.Contains(line, marker) {
 			return true
 		}
-		if row.SourceID == "" {
-			if sid, _ := env["sessionId"].(string); sid != "" {
-				row.SourceID = sid
-			}
-		}
-		if row.Cwd == "" {
-			if v, _ := env["cwd"].(string); v != "" {
-				row.Cwd = v
-			}
-		}
-		if row.Created.IsZero() {
-			if ts, _ := env["timestamp"].(string); ts != "" {
-				if t, err := time.Parse(time.RFC3339, ts); err == nil {
-					row.Created = t
-				}
-			}
-		}
-		typ, _ := env["type"].(string)
-		switch typ {
-		case "user":
-			row.MessageCount++
-			if row.FirstUserMessage == "" {
-				row.FirstUserMessage, row.FullFirstUserMessage = extractUserContentStrings(env)
-			}
-		case "assistant":
-			row.MessageCount++
-			if row.Model == "" {
-				if msg, _ := env["message"].(map[string]any); msg != nil {
-					if m, _ := msg["model"].(string); m != "" {
-						row.Model = m
-					}
-				}
-			}
-		}
-		return true
-	})
-	if row.SourceID == "" {
-		return vendors.SourceRow{}, false
 	}
-	if row.Created.IsZero() {
-		if st, err := os.Stat(absPath); err == nil {
-			row.Created = st.ModTime()
-		}
-	}
-	if row.FirstUserMessage == "" {
-		row.FirstUserMessage = "(no preview)"
-	}
-	return row, true
+	return false
 }
 
-func extractUserContentStrings(env map[string]any) (string, string) {
-	msg, _ := env["message"].(map[string]any)
-	if msg == nil {
-		return "", ""
+// Fields reports what one Claude Code line contributes. Sidechain (subagent)
+// lines carry the parent's sessionId but contribute nothing at all.
+func (s schema) Fields(line []byte) vendors.LineFields {
+	var env discoverLine
+	// A decode error leaves every field zero; a type error still fills the rest.
+	_ = json.Unmarshal(line, &env)
+	if env.IsSidechain {
+		return vendors.LineFields{Role: vendors.LineRoleSkip}
 	}
+	f := vendors.LineFields{SessionID: env.SessionID, Cwd: env.Cwd}
+	if env.Timestamp != "" {
+		if t, err := time.Parse(time.RFC3339, env.Timestamp); err == nil {
+			f.Timestamp = t
+		}
+	}
+	if env.Type != "user" && env.Type != "assistant" {
+		return f
+	}
+	var msg discoverMessage
+	_ = json.Unmarshal(env.Message, &msg)
+	if env.Type == "assistant" {
+		f.Role = vendors.LineRoleAssistant
+		f.Model = msg.Model
+		return f
+	}
+	f.Role = vendors.LineRoleUser
 	// Block-array user content previews only its text blocks — tool_result
 	// blocks are machine output, not the user's words.
-	s := vendors.TextBlocksContent(msg["content"])
-	return vendors.TruncateOneLine(s, 100), s
+	f.UserText = vendors.RawTextBlocksContent(msg.Content)
+	return f
+}
+
+func (r SourceReader) Discover(ctx context.Context, cache vendors.SourceCache) ([]vendors.SourceRow, error) {
+	return vendors.DiscoverJSONL(ctx, r.schema(), r.FS, cache)
 }
 
 func isSidechain(env map[string]any) bool {
@@ -139,8 +145,8 @@ func isSidechain(env map[string]any) bool {
 	return sc
 }
 
-func (r SourceReader) Read(ctx context.Context, sourceID string) (pub_models.Chat, error) {
-	absPath, err := r.findSessionFile(ctx, sourceID)
+func (r SourceReader) Read(ctx context.Context, cache vendors.SourceCache, sourceID string) (pub_models.Chat, error) {
+	absPath, err := vendors.FindJSONLSession(ctx, r.schema(), r.FS, cache, sourceID)
 	if err != nil {
 		return pub_models.Chat{}, err
 	}
@@ -153,7 +159,7 @@ func (r SourceReader) Read(ctx context.Context, sourceID string) (pub_models.Cha
 	msgs := make([]pub_models.Message, 0, 128)
 	created := time.Time{}
 	cwd := ""
-	err = vendors.ScanJSONLLines(f, vendors.ReadMaxToken, 0, func(env map[string]any) bool {
+	err = vendors.ScanJSONLLines(f, vendors.ReadMaxToken, func(env map[string]any) bool {
 		if sid, _ := env["sessionId"].(string); sid != "" && sid != sourceID {
 			return true
 		}
@@ -212,51 +218,8 @@ func (r SourceReader) Read(ctx context.Context, sourceID string) (pub_models.Cha
 	return chat, nil
 }
 
-func (r SourceReader) findSessionFile(ctx context.Context, sourceID string) (string, error) {
-	root := r.projectsRoot()
-	if root == "" {
-		return "", fmt.Errorf("claude projects root not configured")
-	}
-	var found string
-	err := vendors.WalkJSONLFiles(ctx, root, skipDirs, func(p string) bool {
-		if r.fileHasSessionID(p, sourceID) {
-			found = p
-			return true
-		}
-		return false
-	})
-	if err != nil {
-		return "", fmt.Errorf("find claude session: %w", err)
-	}
-	if found == "" {
-		return "", fmt.Errorf("claude session %q not found", sourceID)
-	}
-	return found, nil
-}
-
 func (r SourceReader) projectsRoot() string {
 	return vendors.HomeRelativeRoot(r.Root, ".claude", "projects")
-}
-
-func (r SourceReader) fileHasSessionID(absPath, want string) bool {
-	f, err := vendors.OpenAbs(r.FS, absPath)
-	if err != nil {
-		return false
-	}
-	defer f.Close()
-
-	found := false
-	_ = vendors.ScanJSONLLines(f, vendors.ReadMaxToken, vendors.DiscoverMaxLines, func(env map[string]any) bool {
-		if isSidechain(env) {
-			return true
-		}
-		if sid, _ := env["sessionId"].(string); sid == want {
-			found = true
-			return false
-		}
-		return true
-	})
-	return found
 }
 
 func mapUserMessage(env map[string]any) []pub_models.Message {
