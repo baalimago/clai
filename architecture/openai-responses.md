@@ -92,7 +92,7 @@ generic (Chat Completions) path:
   Completions, the Responses API places the `name`/`schema`/`strict` fields directly on
   the format object rather than under `json_schema`.
 - **Sampling.** `temperature`/`top_p` are forwarded only for non-reasoning models
-  (reasoning models — gpt-5.x, o-series, codex — reject them; see `isReasoningModel`,
+  (reasoning models — gpt-5 and later, o-series, codex — reject them; see `isReasoningModel`,
   which excludes the non-reasoning `gpt-5-chat-*` variant). `isReasoningModel` first
   normalizes the model ID (`normalizeModelID`) so provider-qualified (`openai/o3-mini`)
   and fine-tuned (`ft:o3-mini:org::id`) names classify correctly. `max_output_tokens` is

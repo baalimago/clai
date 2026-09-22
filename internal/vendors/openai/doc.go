@@ -26,7 +26,7 @@
 //
 // Sampling parameters:
 //   - Responses forwards temperature/top_p only for non-reasoning models, since
-//     reasoning models (gpt-5.x except gpt-5-chat, o-series, codex) reject them.
+//     reasoning models (gpt-5 and later except gpt-5-chat, o-series, codex) reject them.
 //     max_output_tokens is forwarded when set. frequency/presence penalties are not part
 //     of the Responses API and are therefore only applied on the Chat Completions path.
 //

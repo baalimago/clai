@@ -133,6 +133,14 @@ func TestIsReasoningModel(t *testing.T) {
 		"gpt-4.1-mini":      false,
 		"gpt-4o":            false,
 		"gpt-4-turbo":       false,
+		// Reasoning behaviour started at gpt-5, so every later family is reasoning
+		// too. A fixed gpt-5 prefix missed gpt-6 and forwarded top_p, which those
+		// models reject with an opaque HTTP 400.
+		"gpt-6-sol":   true,
+		"gpt-6-luna":  true,
+		"gpt-5.6-sol": true,
+		"gpt-7":       true,
+		"gpt-4.5":     false,
 		// Provider-qualified and fine-tuned names must normalize before matching,
 		// otherwise the HasPrefix(o-series) checks miss them and sampling params are
 		// wrongly forwarded (the model then rejects the request).
@@ -141,6 +149,7 @@ func TestIsReasoningModel(t *testing.T) {
 		"openai/gpt-5.2":             true,
 		"openai/gpt-5-chat-latest":   false,
 		"openai/gpt-4.1-mini":        false,
+		"openai/gpt-6-sol":           true,
 		"ft:o3-mini:acme::abc123":    true,
 		"ft:o4-mini:acme::abc123":    true,
 		"ft:gpt-4o-mini:acme::abc":   false,

@@ -133,22 +133,39 @@ func normalizeModelID(model string) string {
 }
 
 // isReasoningModel reports whether the model is a reasoning model. Reasoning models
-// (gpt-5.x, the o-series, codex) reject sampling parameters such as temperature and
-// top_p, so those are omitted from Responses requests for them.
+// (gpt-5 and later, the o-series, codex) reject sampling parameters such as
+// temperature and top_p, so those are omitted from Responses requests for them.
 func isReasoningModel(model string) bool {
 	m := normalizeModelID(model)
 	switch {
 	case strings.Contains(m, "gpt-5-chat"):
 		// gpt-5-chat-latest is a non-reasoning chat model that accepts sampling
-		// params, despite matching the general gpt-5 rule below.
+		// params, despite matching the general gpt-5-and-later rule below.
 		return false
-	case strings.Contains(m, "gpt-5"):
-		return true
 	case isCodexModel(m):
+		return true
+	case isGPT5OrLater(m):
 		return true
 	case strings.HasPrefix(m, "o1"), strings.HasPrefix(m, "o3"), strings.HasPrefix(m, "o4"):
 		return true
 	default:
 		return false
 	}
+}
+
+// isGPT5OrLater reports whether the normalized model id names a gpt-<major>
+// family with major >= 5. Reasoning behaviour started at gpt-5, so the numeric
+// rule covers every later family (gpt-6, ...) without a new case per release. A
+// missing marker or a non-numeric major (o3-mini, gpt-4.1) does not match.
+func isGPT5OrLater(m string) bool {
+	rest, ok := strings.CutPrefix(m, "gpt-")
+	if !ok {
+		return false
+	}
+	major, digits := 0, 0
+	for digits < len(rest) && rest[digits] >= '0' && rest[digits] <= '9' {
+		major = major*10 + int(rest[digits]-'0')
+		digits++
+	}
+	return digits > 0 && major >= 5
 }
