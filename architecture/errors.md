@@ -15,7 +15,13 @@ thing. The CLI is deliberately out of scope: upstream `cmd.Run` prints
 `err.Error()` and collapses every failure to exit 1 before clai can map it
 (worklog `2026-09-05-error-propagation`, D17). Wording improvements a CLI
 user sees are a byproduct of the vocabulary's `Error()` strings, not a
-contract.
+contract. That byproduct still has to name what the provider said: every
+`Error()` renders the meaning, the status, the provider code, and then the
+decoder-extracted `Message` — or, when no decoder spoke, a one-line excerpt of
+the raw body (capped at 240 runes). Before this, an openai `error` frame at
+HTTP 200 whose billing signal sat in `error.type` rather than `error.code`
+rendered as `unexpected provider response, status: 200` and nothing else
+(2026-09-28).
 
 The motivating consumer is sakfråga's LLM spend breaker: it must distinguish
 "the account is empty" from "the API is pushing back". It used to match
@@ -102,6 +108,7 @@ facts once:
 type APIError struct {
     StatusCode   int    // what the provider actually said
     ProviderCode string // e.g. "insufficient_quota", "rate_limit_exceeded"
+    Message      string // the provider's human-readable explanation, when a decoder extracted one
     Body         string
 }
 

@@ -314,6 +314,19 @@ func Test_OpenAIResponses_ErrorEvent_TypedOnChannel(t *testing.T) {
 		}
 	})
 
+	t.Run("live credit_balance_exhausted frame names the cause on the channel", func(t *testing.T) {
+		err := streamEvents(t, compactJSON(t, fixture(t, "responses_error_event_credit_balance_exhausted.json")))
+		if !errors.Is(err, claierr.ErrLikelyInsufficientCredits) {
+			t.Fatalf("expected ErrLikelyInsufficientCredits, got: %v", err)
+		}
+		if errors.Is(err, claierr.ErrUnexpectedProviderResponse) {
+			t.Fatalf("billing frame must not degrade to the catch-all: %v", err)
+		}
+		if got := err.Error(); !strings.Contains(got, "You have no credits remaining") {
+			t.Fatalf("channel error must name the provider message, got: %q", got)
+		}
+	})
+
 	t.Run("response.failed with unrecognized code degrades typed", func(t *testing.T) {
 		err := streamEvents(t, compactJSON(t, fixture(t, "responses_failed_event_server_error.json")))
 		if !errors.Is(err, claierr.ErrUnexpectedProviderResponse) {
@@ -327,4 +340,69 @@ func Test_OpenAIResponses_ErrorEvent_TypedOnChannel(t *testing.T) {
 			t.Fatalf("frame facts mismatch: %+v", apiErr.API())
 		}
 	})
+}
+
+func Test_OpenAIDecode_InsufficientQuotaOnTypeOrCode(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name     string
+		body     []byte
+		wantCode string
+	}{
+		{"envelope: type insufficient_quota, code credit_balance_exhausted", fixture(t, "responses_error_event_credit_balance_exhausted.json"), "credit_balance_exhausted"},
+		{"envelope: code insufficient_quota", []byte(`{"error":{"message":"m","type":"billing","code":"insufficient_quota"}}`), "insufficient_quota"},
+		{"envelope: type insufficient_quota, no code", []byte(`{"error":{"message":"m","type":"insufficient_quota","code":null}}`), "insufficient_quota"},
+		{"top-level stream event: code insufficient_quota", []byte(`{"type":"error","code":"insufficient_quota","message":"m"}`), "insufficient_quota"},
+		{"response.failed: code credit_balance_exhausted", []byte(`{"type":"response.failed","response":{"error":{"code":"credit_balance_exhausted","message":"m"}}}`), "credit_balance_exhausted"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := decodeError(http.StatusOK, tc.body)
+			if !errors.Is(err, claierr.ErrLikelyInsufficientCredits) {
+				t.Fatalf("expected ErrLikelyInsufficientCredits, got: %v", err)
+			}
+			if errors.Is(err, claierr.ErrRateLimited) {
+				t.Fatalf("a 200 frame carries no throttling evidence, got: %v", err)
+			}
+			var facts claierr.APIErrorer
+			if !errors.As(err, &facts) {
+				t.Fatalf("expected facts, got: %T %v", err, err)
+			}
+			if facts.API().ProviderCode != tc.wantCode {
+				t.Fatalf("provider code: want %q, got %q", tc.wantCode, facts.API().ProviderCode)
+			}
+			if facts.API().Message != "m" && !strings.Contains(facts.API().Message, "no credits remaining") {
+				t.Fatalf("provider message not carried as a fact: %+v", facts.API())
+			}
+		})
+	}
+}
+
+func Test_OpenAIDecode_ErrorStringNamesTheProviderMessage(t *testing.T) {
+	t.Parallel()
+	err := decodeError(http.StatusOK, fixture(t, "responses_error_event_credit_balance_exhausted.json"))
+	if err == nil {
+		t.Fatal("expected a typed error")
+	}
+	got := err.Error()
+	for _, want := range []string{"likely insufficient credits", "credit_balance_exhausted", "You have no credits remaining"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("Error() = %q, missing %q", got, want)
+		}
+	}
+}
+
+func Test_OpenAIDecode_StillSilentOnNonBillingEnvelopes(t *testing.T) {
+	t.Parallel()
+	cases := []string{
+		`{"error":{"message":"Unsupported parameter","type":"invalid_request_error","param":"top_p","code":null}}`,
+		`{"type":"error","error":{"type":"server_error","code":"server_error","message":"boom"}}`,
+		`{"type":"response.failed","response":{"error":{"code":"server_error","message":"boom"}}}`,
+	}
+	for _, body := range cases {
+		if err := decodeError(http.StatusOK, []byte(body)); err != nil {
+			t.Fatalf("expected nil for %s, got: %v", body, err)
+		}
+	}
 }

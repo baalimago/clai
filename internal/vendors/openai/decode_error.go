@@ -23,20 +23,15 @@ import (
 //   - the top-level {"type": "error", code, message} Responses stream event;
 //   - the {"type": "response.failed", "response": {"error": {code, message}}}
 //     Responses stream event.
-//
-// Recognized signal: insufficient_quota. On a 429 the payload means BOTH
-// rate-limited and likely-out-of-credits, so the decoder states the complete
-// meaning set itself (the D11 obligation) with one shared facts allocation.
-// Arriving on any other status — http.StatusOK marks a mid-stream frame —
-// there is no throttling evidence, so it means insufficient credits alone.
 func decodeError(status int, body []byte) error {
-	code := providerErrorCode(body)
-	if code != "insufficient_quota" {
+	facts := parseProviderError(body)
+	if !facts.insufficientQuota() {
 		return nil
 	}
 	api := &claierr.APIError{
 		StatusCode:   status,
-		ProviderCode: code,
+		ProviderCode: facts.code(),
+		Message:      facts.Message,
 		Body:         string(body),
 	}
 	if status == http.StatusTooManyRequests {
@@ -48,41 +43,43 @@ func decodeError(status int, body []byte) error {
 	return claierr.NewInsufficientCredits(api)
 }
 
-// providerErrorCode extracts openai's machine-readable error code from any
-// of the wire shapes above, preferring code over type (the error-codes guide
-// notes billing errors may carry insufficient_quota as the broader type).
-// Unparseable or shape-less payloads yield "" — the decoder stays silent.
-func providerErrorCode(body []byte) string {
+type providerError struct {
+	Type    string `json:"type"`
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+func (p providerError) code() string {
+	if p.Code != "" {
+		return p.Code
+	}
+	return p.Type
+}
+
+func (p providerError) insufficientQuota() bool {
+	return p.Type == "insufficient_quota" ||
+		p.Code == "insufficient_quota" ||
+		p.Code == "credit_balance_exhausted"
+}
+
+func parseProviderError(body []byte) providerError {
 	var probe struct {
-		Error *struct {
-			Type string `json:"type"`
-			Code string `json:"code"`
-		} `json:"error"`
+		Error    *providerError `json:"error"`
 		Response *struct {
-			Error *struct {
-				Type string `json:"type"`
-				Code string `json:"code"`
-			} `json:"error"`
+			Error *providerError `json:"error"`
 		} `json:"response"`
-		Type string `json:"type"`
-		Code string `json:"code"`
+		providerError
 	}
 	if err := json.Unmarshal(body, &probe); err != nil {
-		return ""
+		return providerError{}
 	}
 	switch {
 	case probe.Error != nil:
-		if probe.Error.Code != "" {
-			return probe.Error.Code
-		}
-		return probe.Error.Type
+		return *probe.Error
 	case probe.Response != nil && probe.Response.Error != nil:
-		if probe.Response.Error.Code != "" {
-			return probe.Response.Error.Code
-		}
-		return probe.Response.Error.Type
+		return *probe.Response.Error
 	case probe.Type == "error" || probe.Type == "response.error":
-		return probe.Code
+		return providerError{Code: probe.Code, Message: probe.Message}
 	}
-	return ""
+	return providerError{}
 }

@@ -14,3 +14,9 @@ drain the openai account, so no live openai error body exists.
   Responses stream event, reconstructed from the Responses
   streaming-events API reference (its documented example code is
   `server_error`).
+- `responses_error_event_credit_balance_exhausted.json` — a **live
+  capture** (2026-09-28, `DEBUG_OPENAI=1 clai -cm gpt-6-luna q ...`): the
+  `error` stream event at HTTP 200 on an empty credit balance. Note the
+  nested `error` envelope with `insufficient_quota` as the *type* and
+  `credit_balance_exhausted` as the *code*, unlike the two reconstructions
+  above.

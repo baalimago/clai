@@ -3,6 +3,7 @@ package claierr_test
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -237,6 +238,51 @@ func Test_Claierr_TransportAndMcpUnwrapSentinelAndCause(t *testing.T) {
 		}
 		if mcpErr.ServerName != "fixture-server" || mcpErr.Stage != "handshake" {
 			t.Fatalf("unexpected fields: %#v", mcpErr)
+		}
+	})
+}
+
+func Test_Claierr_ErrorStringCarriesWhatTheProviderSaid(t *testing.T) {
+	t.Run("message wins over body", func(t *testing.T) {
+		err := claierr.NewInsufficientCredits(&claierr.APIError{
+			StatusCode:   200,
+			ProviderCode: "credit_balance_exhausted",
+			Message:      "You have no credits remaining.",
+			Body:         `{"error":{"message":"You have no credits remaining."}}`,
+		})
+		got := err.Error()
+		if !strings.Contains(got, "message: You have no credits remaining.") {
+			t.Fatalf("Error() = %q, message missing", got)
+		}
+		if strings.Contains(got, "body:") {
+			t.Fatalf("Error() = %q, body must not be quoted when a message is present", got)
+		}
+	})
+	t.Run("body excerpt when no message", func(t *testing.T) {
+		body := "{\n  \"type\": \"error\",\n  \"detail\":   \"boom\"\n}"
+		got := claierr.NewUnexpectedProviderResponse(200, []byte(body)).Error()
+		want := `body: { "type": "error", "detail": "boom" }`
+		if !strings.Contains(got, want) {
+			t.Fatalf("Error() = %q, want excerpt %q", got, want)
+		}
+		if strings.Contains(got, "\n") {
+			t.Fatalf("Error() = %q, excerpt must be single-line", got)
+		}
+	})
+	t.Run("long body is capped", func(t *testing.T) {
+		body := strings.Repeat("x", 2000)
+		got := claierr.NewUnexpectedProviderResponse(500, []byte(body)).Error()
+		if len(got) > 400 {
+			t.Fatalf("Error() length %d, excerpt not capped: %q", len(got), got[:80])
+		}
+		if !strings.Contains(got, "…") {
+			t.Fatalf("Error() = %q, capped excerpt must mark the cut", got[:80])
+		}
+	})
+	t.Run("empty body adds nothing", func(t *testing.T) {
+		got := claierr.NewUnexpectedProviderResponse(500, nil).Error()
+		if got != "unexpected provider response, status: 500" {
+			t.Fatalf("Error() = %q", got)
 		}
 	})
 }

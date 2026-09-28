@@ -24,7 +24,9 @@ package claierr
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // The sentinels: one per meaning, for errors.Is.
@@ -48,8 +50,11 @@ var (
 type APIError struct {
 	StatusCode   int    // what the provider actually said
 	ProviderCode string // e.g. "insufficient_quota", "rate_limit_exceeded"
+	Message      string // the provider's human-readable explanation, when a decoder extracted one
 	Body         string
 }
+
+const bodyExcerptLimit = 240
 
 // API returns the facts. Defined on *APIError so every embedding type
 // satisfies APIErrorer by promotion.
@@ -67,7 +72,22 @@ func (a *APIError) describe(meaning string) string {
 	if a.ProviderCode != "" {
 		meaning = fmt.Sprintf("%v, provider code: %v", meaning, a.ProviderCode)
 	}
+	switch {
+	case a.Message != "":
+		meaning = fmt.Sprintf("%v, message: %v", meaning, a.Message)
+	case strings.TrimSpace(a.Body) != "":
+		meaning = fmt.Sprintf("%v, body: %v", meaning, bodyExcerpt(a.Body))
+	}
 	return meaning
+}
+
+func bodyExcerpt(body string) string {
+	excerpt := strings.Join(strings.Fields(body), " ")
+	if utf8.RuneCountInString(excerpt) <= bodyExcerptLimit {
+		return excerpt
+	}
+	runes := []rune(excerpt)
+	return string(runes[:bodyExcerptLimit]) + "…"
 }
 
 // orZero enforces the never-nil invariant: a constructor handed a nil
