@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -46,8 +47,16 @@ func (s *StreamCompleter) StreamCompletions(ctx context.Context, chat pub_models
 		return nil, claierr.NewTransport(err)
 	}
 	if res.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(res.Body)
-		return nil, ResponseError(res.StatusCode, body, s.DecodeError)
+		body, readErr := io.ReadAll(res.Body)
+		closeErr := res.Body.Close()
+		responseErr := ResponseError(res.StatusCode, body, s.DecodeError)
+		if readErr != nil {
+			responseErr = errors.Join(responseErr, fmt.Errorf("read provider error response body: %w", readErr))
+		}
+		if closeErr != nil {
+			responseErr = errors.Join(responseErr, fmt.Errorf("close provider error response body: %w", closeErr))
+		}
+		return nil, responseErr
 	}
 	if s.debug {
 		ancli.Noticef("now attepmting to handle response")

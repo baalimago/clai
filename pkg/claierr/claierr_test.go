@@ -30,6 +30,7 @@ func vocabularyRows() []struct {
 		{"provider_unavailable", claierr.NewProviderUnavailable(api), claierr.ErrProviderUnavailable},
 		{"transport", claierr.NewTransport(errors.New("connection refused")), claierr.ErrTransport},
 		{"unexpected_provider_response", claierr.NewUnexpectedProviderResponse(418, []byte("teapot")), claierr.ErrUnexpectedProviderResponse},
+		{"unexpected_provider_response_with_api", claierr.NewUnexpectedProviderResponseWithAPI(api), claierr.ErrUnexpectedProviderResponse},
 		{"context_length_exceeded", claierr.NewContextLengthExceeded(api), claierr.ErrContextLengthExceeded},
 		{"content_filtered", claierr.NewContentFiltered(api), claierr.ErrContentFiltered},
 		{"mcp_server_startup", claierr.NewMcpServerStartup("fixture-server", "handshake", errors.New("boom")), claierr.ErrMcpServerStartup},
@@ -76,6 +77,7 @@ func Test_Claierr_ConstructorsNeverNilFacts(t *testing.T) {
 		{"rate_limited", claierr.NewRateLimited(nil, time.Time{}, 0, 0)},
 		{"provider_unavailable", claierr.NewProviderUnavailable(nil)},
 		{"unexpected_provider_response", claierr.NewUnexpectedProviderResponse(0, nil)},
+		{"unexpected_provider_response_with_api", claierr.NewUnexpectedProviderResponseWithAPI(nil)},
 		{"context_length_exceeded", claierr.NewContextLengthExceeded(nil)},
 		{"content_filtered", claierr.NewContentFiltered(nil)},
 	}
@@ -168,6 +170,14 @@ func Test_Claierr_APIErrorerExposesFacts(t *testing.T) {
 		if facts.API().StatusCode != 418 || facts.API().Body != "teapot" {
 			t.Fatalf("unexpected facts: %#v", facts.API())
 		}
+		decoded := &claierr.APIError{StatusCode: 400, ProviderCode: "invalid_request_error", Message: "unsupported model", Body: `{"error":{}}`}
+		errWithAPI := claierr.NewUnexpectedProviderResponseWithAPI(decoded)
+		if !errors.As(fmt.Errorf("context: %w", errWithAPI), &facts) {
+			t.Fatal("expected decoded UnexpectedProviderResponseError to expose API facts")
+		}
+		if facts.API() != decoded || !strings.Contains(errWithAPI.Error(), "message: unsupported model") {
+			t.Fatalf("decoded error facts were not retained: %#v, %v", facts.API(), errWithAPI)
+		}
 	})
 	noFacts := []struct {
 		name string
@@ -258,25 +268,19 @@ func Test_Claierr_ErrorStringCarriesWhatTheProviderSaid(t *testing.T) {
 			t.Fatalf("Error() = %q, body must not be quoted when a message is present", got)
 		}
 	})
-	t.Run("body excerpt when no message", func(t *testing.T) {
+	t.Run("full body when no message", func(t *testing.T) {
 		body := "{\n  \"type\": \"error\",\n  \"detail\":   \"boom\"\n}"
 		got := claierr.NewUnexpectedProviderResponse(200, []byte(body)).Error()
-		want := `body: { "type": "error", "detail": "boom" }`
+		want := "body: " + body
 		if !strings.Contains(got, want) {
-			t.Fatalf("Error() = %q, want excerpt %q", got, want)
-		}
-		if strings.Contains(got, "\n") {
-			t.Fatalf("Error() = %q, excerpt must be single-line", got)
+			t.Fatalf("Error() = %q, want full body %q", got, want)
 		}
 	})
-	t.Run("long body is capped", func(t *testing.T) {
+	t.Run("long body is not truncated", func(t *testing.T) {
 		body := strings.Repeat("x", 2000)
 		got := claierr.NewUnexpectedProviderResponse(500, []byte(body)).Error()
-		if len(got) > 400 {
-			t.Fatalf("Error() length %d, excerpt not capped: %q", len(got), got[:80])
-		}
-		if !strings.Contains(got, "…") {
-			t.Fatalf("Error() = %q, capped excerpt must mark the cut", got[:80])
+		if !strings.Contains(got, "body: "+body) {
+			t.Fatalf("Error() omitted part of the provider body (length %d)", len(got))
 		}
 	})
 	t.Run("empty body adds nothing", func(t *testing.T) {

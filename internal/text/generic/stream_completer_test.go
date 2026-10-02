@@ -30,6 +30,27 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
+type failingReadCloser struct {
+	data     []byte
+	err      error
+	closeErr error
+	closed   bool
+}
+
+func (r *failingReadCloser) Read(p []byte) (int, error) {
+	if len(r.data) > 0 {
+		n := copy(p, r.data)
+		r.data = r.data[n:]
+		return n, r.err
+	}
+	return 0, io.EOF
+}
+
+func (r *failingReadCloser) Close() error {
+	r.closed = true
+	return r.closeErr
+}
+
 func TestStreamCompletions_DoError(t *testing.T) {
 	s := &StreamCompleter{client: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		return nil, errors.New("boom")
@@ -72,6 +93,52 @@ func TestStreamCompletions_Non200_And_CleanDoesNotMutateOriginal(t *testing.T) {
 	}
 	if got := orig.Messages[0].Content; got != "orig" {
 		t.Fatalf("original chat mutated, got: %q", got)
+	}
+}
+
+func TestStreamCompletions_NonOKResponseReadErrorIsPropagated(t *testing.T) {
+	readErr := errors.New("provider response connection reset")
+	body := &failingReadCloser{data: []byte(`{"error":{"message":"invalid request"}}`), err: readErr}
+	s := &StreamCompleter{
+		client: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: http.StatusBadRequest, Body: body}, nil
+		})},
+		apiKey: "k",
+		URL:    "http://example.invalid",
+	}
+
+	_, err := s.StreamCompletions(context.Background(), pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "x"}}})
+	if err == nil {
+		t.Fatal("expected provider response error")
+	}
+	if !errors.Is(err, claierr.ErrUnexpectedProviderResponse) {
+		t.Errorf("expected unexpected provider response classification, got: %v", err)
+	}
+	if !errors.Is(err, readErr) {
+		t.Errorf("expected response body read failure to be propagated, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "invalid request") {
+		t.Errorf("expected partial provider body in error, got: %v", err)
+	}
+	if !body.closed {
+		t.Error("expected provider response body to be closed")
+	}
+}
+
+func TestStreamCompletions_NonOKResponseCloseErrorIsPropagated(t *testing.T) {
+	closeErr := errors.New("response body close failed")
+	body := &failingReadCloser{data: []byte("provider detail"), closeErr: closeErr}
+	s := &StreamCompleter{
+		client: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: http.StatusBadRequest, Body: body}, nil
+		})},
+		apiKey: "k",
+		URL:    "http://example.invalid",
+	}
+
+	_, err := s.StreamCompletions(context.Background(), pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "x"}}})
+	if !errors.Is(err, closeErr) {
+		t.Fatalf("expected response body close failure to be propagated, got: %v", err)
 	}
 }
 

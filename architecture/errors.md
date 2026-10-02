@@ -17,11 +17,11 @@ thing. The CLI is deliberately out of scope: upstream `cmd.Run` prints
 user sees are a byproduct of the vocabulary's `Error()` strings, not a
 contract. That byproduct still has to name what the provider said: every
 `Error()` renders the meaning, the status, the provider code, and then the
-decoder-extracted `Message` — or, when no decoder spoke, a one-line excerpt of
-the raw body (capped at 240 runes). Before this, an openai `error` frame at
-HTTP 200 whose billing signal sat in `error.type` rather than `error.code`
-rendered as `unexpected provider response, status: 200` and nothing else
-(2026-09-28).
+decoder-extracted `Message` — or, when no decoder spoke, the full raw body.
+The body is trimmed at its outer whitespace but is not truncated. Before
+this, an openai `error` frame at HTTP 200 whose billing signal sat in
+`error.type` rather than `error.code` rendered as
+`unexpected provider response, status: 200` and nothing else (2026-09-28).
 
 The motivating consumer is sakfråga's LLM spend breaker: it must distinguish
 "the account is empty" from "the API is pushing back". It used to match
@@ -133,7 +133,7 @@ constructors substitute a zero-valued `APIError` for nil input).
 | `ErrRateLimited` | `RateLimitedError` | `NewRateLimited(api, resetAt, tokensRemaining, maxInputTokens)` | `ResetAt`, `TokensRemaining`, `MaxInputTokens` |
 | `ErrProviderUnavailable` | `ProviderUnavailableError` | `NewProviderUnavailable(api)` | — |
 | `ErrTransport` | `TransportError` | `NewTransport(cause)` | no `APIError`; wraps the cause |
-| `ErrUnexpectedProviderResponse` | `UnexpectedProviderResponseError` | `NewUnexpectedProviderResponse(statusCode, body)` | — |
+| `ErrUnexpectedProviderResponse` | `UnexpectedProviderResponseError` | `NewUnexpectedProviderResponse(statusCode, body)` or `NewUnexpectedProviderResponseWithAPI(api)` for vendor-decoded facts | — |
 | `ErrContextLengthExceeded` | `ContextLengthExceededError` | `NewContextLengthExceeded(api)` | — |
 | `ErrContentFiltered` | `ContentFilteredError` | `NewContentFiltered(api)` | — |
 | `ErrMcpServerStartup` | `McpServerStartupError` | `NewMcpServerStartup(serverName, stage, cause)` | no `APIError`; `ServerName`, `Stage`, `Cause` |

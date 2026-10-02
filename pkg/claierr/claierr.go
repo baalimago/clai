@@ -26,7 +26,6 @@ import (
 	"fmt"
 	"strings"
 	"time"
-	"unicode/utf8"
 )
 
 // The sentinels: one per meaning, for errors.Is.
@@ -54,8 +53,6 @@ type APIError struct {
 	Body         string
 }
 
-const bodyExcerptLimit = 240
-
 // API returns the facts. Defined on *APIError so every embedding type
 // satisfies APIErrorer by promotion.
 func (a *APIError) API() *APIError { return a }
@@ -76,18 +73,9 @@ func (a *APIError) describe(meaning string) string {
 	case a.Message != "":
 		meaning = fmt.Sprintf("%v, message: %v", meaning, a.Message)
 	case strings.TrimSpace(a.Body) != "":
-		meaning = fmt.Sprintf("%v, body: %v", meaning, bodyExcerpt(a.Body))
+		meaning = fmt.Sprintf("%v, body: %v", meaning, strings.TrimSpace(a.Body))
 	}
 	return meaning
-}
-
-func bodyExcerpt(body string) string {
-	excerpt := strings.Join(strings.Fields(body), " ")
-	if utf8.RuneCountInString(excerpt) <= bodyExcerptLimit {
-		return excerpt
-	}
-	runes := []rune(excerpt)
-	return string(runes[:bodyExcerptLimit]) + "…"
 }
 
 // orZero enforces the never-nil invariant: a constructor handed a nil
@@ -221,10 +209,16 @@ type UnexpectedProviderResponseError struct{ *APIError }
 // NewUnexpectedProviderResponse builds an UnexpectedProviderResponseError
 // carrying the raw status and body.
 func NewUnexpectedProviderResponse(statusCode int, body []byte) *UnexpectedProviderResponseError {
-	return &UnexpectedProviderResponseError{APIError: &APIError{
+	return NewUnexpectedProviderResponseWithAPI(&APIError{
 		StatusCode: statusCode,
 		Body:       string(body),
-	}}
+	})
+}
+
+// NewUnexpectedProviderResponseWithAPI builds an UnexpectedProviderResponseError
+// from decoded provider facts. A nil api is replaced by a zero-valued APIError.
+func NewUnexpectedProviderResponseWithAPI(api *APIError) *UnexpectedProviderResponseError {
+	return &UnexpectedProviderResponseError{APIError: orZero(api)}
 }
 
 func (e *UnexpectedProviderResponseError) Unwrap() error { return ErrUnexpectedProviderResponse }
