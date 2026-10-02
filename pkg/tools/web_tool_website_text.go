@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"strings"
@@ -18,7 +19,7 @@ type WebsiteTextTool pub_models.Specification
 
 var WebsiteText = WebsiteTextTool{
 	Name:        "website_text",
-	Description: "Get the text content of a website by stripping all non-text tags and trimming whitespace.",
+	Description: "Fetch website content. Return JSON, Markdown, and other text formats unchanged; strip markup from HTML.",
 	Inputs: &pub_models.InputSchema{
 		Type: "object",
 		Properties: map[string]pub_models.ParameterObject{
@@ -61,8 +62,9 @@ func (w WebsiteTextTool) Call(input pub_models.Input) (string, error) {
 		return "", fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("User-Agent", ua)
-	req.Header.Set("Accept",
-		"text/html,application/xhtml+xml;q=0.9,*/*;q=0.8")
+	req.Header.Set("Accept", "text/markdown, application/json;q=0.9, "+
+		"application/*+json;q=0.9, text/html;q=0.8, "+
+		"application/xhtml+xml;q=0.7, text/plain;q=0.6, */*;q=0.1")
 	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
 
 	resp, err := client.Do(req)
@@ -76,11 +78,13 @@ func (w WebsiteTextTool) Call(input pub_models.Input) (string, error) {
 	}
 
 	ctype := resp.Header.Get("Content-Type")
-	if ctype != "" &&
-		!strings.Contains(ctype, "text/html") &&
-		!strings.Contains(ctype, "application/xhtml+xml") &&
-		!strings.Contains(ctype, "text/plain") {
-		return "", fmt.Errorf("unsupported content-type: %s", ctype)
+	mediaType := ""
+	if ctype != "" {
+		var err error
+		mediaType, _, err = mime.ParseMediaType(ctype)
+		if err != nil {
+			return "", fmt.Errorf("unsupported content-type: %s", ctype)
+		}
 	}
 
 	var r io.Reader = resp.Body
@@ -89,6 +93,16 @@ func (w WebsiteTextTool) Call(input pub_models.Input) (string, error) {
 	ur, err := charset.NewReader(r, ctype)
 	if err != nil {
 		ur = r
+	}
+	if ctype != "" && !isWebsiteHTML(mediaType) {
+		if !isWebsiteText(mediaType) {
+			return "", fmt.Errorf("unsupported content-type: %s", ctype)
+		}
+		body, err := io.ReadAll(ur)
+		if err != nil {
+			return "", fmt.Errorf("read response body: %w", err)
+		}
+		return string(body), nil
 	}
 
 	tokenizer := html.NewTokenizer(ur)
@@ -194,6 +208,23 @@ func (w WebsiteTextTool) Call(input pub_models.Input) (string, error) {
 		out = strings.ReplaceAll(out, "\n\n\n", "\n\n")
 	}
 	return out + "\n", nil
+}
+
+func isWebsiteHTML(mediaType string) bool {
+	return mediaType == "text/html" || mediaType == "application/xhtml+xml"
+}
+
+func isWebsiteText(mediaType string) bool {
+	return strings.HasPrefix(mediaType, "text/") ||
+		mediaType == "application/json" ||
+		strings.HasSuffix(mediaType, "+json") ||
+		mediaType == "application/xml" ||
+		strings.HasSuffix(mediaType, "+xml") ||
+		mediaType == "application/yaml" ||
+		mediaType == "application/x-yaml" ||
+		mediaType == "application/toml" ||
+		mediaType == "application/x-ndjson" ||
+		mediaType == "application/ndjson"
 }
 
 func (w WebsiteTextTool) Specification() pub_models.Specification {
