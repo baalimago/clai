@@ -75,6 +75,13 @@ type Configurations struct {
 	// keeps os.Stderr. A querier that may outlive its caller (the abandoned
 	// in-flight summarizer) must never read the global stream (R2-09).
 	ErrOut io.Writer `json:"-"`
+	// TrustInput is the trusted input reader the composition root threads
+	// through setup (the same reader skills.TrustPrompter reads from); the
+	// authorization phase's printed-URL fallback reads a pasted
+	// authorization code from it rather than the process standard input
+	// directly (worklog 2026-10-02-mcp-connection-cost, phase 5). Nil
+	// disables the paste fallback for the run.
+	TrustInput io.Reader `json:"-"`
 	// ShellContext is a context definition name for ASC (auto-append shell context).
 	// When non-empty, clai will load <configDir>/shellContexts/<name>.json and insert
 	// the rendered template block into the system prompt instead of the user prompt.
@@ -122,6 +129,24 @@ type Configurations struct {
 	// LookbackCWD is the canonical session working directory captured at setup,
 	// used as the default search anchor for search_conversations.
 	LookbackCWD string `json:"-"`
+	// OutputIsTerminal decides the auth-timeout parameter's
+	// terminal-dependent default: a mid-run authorization wait is bounded
+	// when the session's output is a terminal, fail-fast otherwise, unless
+	// a server's auth_timeout_seconds overrides it either way (worklog
+	// 2026-10-02-mcp-connection-cost, phase 6, D22). nil means unset:
+	// NewQuerier then derives it from the querier's own terminal check and
+	// assigns it, without overwriting a caller-supplied value (R2-09). A
+	// caller that cannot observe its own terminal-ness (every pkg/agent SDK
+	// consumer, whose writer is always io.Discard) sets this explicitly
+	// through pkg/agent.WithOutputIsTerminal instead of relying on the
+	// writer-derived default.
+	OutputIsTerminal *bool `json:"-"`
+}
+
+// OutputIsTerminalOrDefault resolves OutputIsTerminal: the explicit value
+// when set, false (the conservative, fail-fast posture) when unset.
+func (c Configurations) OutputIsTerminalOrDefault() bool {
+	return c.OutputIsTerminal != nil && *c.OutputIsTerminal
 }
 
 // AgentSettings carries agent-only runtime settings into the querier. It is

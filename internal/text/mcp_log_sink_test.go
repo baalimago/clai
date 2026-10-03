@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -11,6 +13,7 @@ import (
 
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/tools/mcp"
+	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/dimensions"
 )
@@ -280,13 +283,17 @@ func Test_McpSink_AuthPromptSurfacesDuringBlockedStartup(t *testing.T) {
 	sink := newMcpLogSink(mcpLogRolling)
 	sink.errOut = &errOut
 	sink.termWidth = func() int { return 200 }
+	// Startup is pinned for documentation (readiness checklist item nine):
+	// this test drives mcp.NewStdioConn directly, bypassing
+	// effectiveStartupMode entirely, so the field has no effect here, but
+	// the pin keeps this file's spawning tests explicit about posture.
 	srv := pub_models.McpServer{
 		Name:    "oauth",
-		Command: "go",
-		Args:    []string{"run", "../tools/mcp/testserver"},
+		Command: testServerBinary(t),
 		Env:     map[string]string{"TEST_SERVER_AUTH_HANG": "1"},
+		Startup: pub_models.StartupEager,
 	}
-	_, _, err := mcp.Client(t.Context(), srv, sink)
+	_, err := mcp.NewStdioConn(t.Context(), srv, sink)
 	if err != nil {
 		t.Fatalf("client: %v", err)
 	}
@@ -693,17 +700,18 @@ func Test_McpSink_RawStructuredFlushesCrashTailFromServer(t *testing.T) {
 	var errOut lockedBuffer
 	sink := newMcpLogSink(mcpLogRawStructured)
 	sink.errOut = &errOut
+	// Startup pinned per readiness checklist item nine; see the identical
+	// note above Test_McpSink_AuthPromptSurfacesDuringBlockedStartup.
 	srv := pub_models.McpServer{
-		Command: "go",
-		Args:    []string{"run", "../tools/mcp/testserver"},
+		Command: testServerBinary(t),
 		Env:     map[string]string{"TEST_SERVER_CRASH_TAIL": "1"},
+		Startup: pub_models.StartupEager,
 	}
-	in, out, err := mcp.Client(t.Context(), srv, sink)
+	conn, err := mcp.NewStdioConn(t.Context(), srv, sink)
 	if err != nil {
 		t.Fatalf("client: %v", err)
 	}
-	_ = in
-	_ = out
+	_ = conn
 
 	deadline := time.Now().Add(5 * time.Second)
 	for {
@@ -833,5 +841,269 @@ func Test_drainMcpLogs_ExitFlushElevates(t *testing.T) {
 	}
 	if count := strings.Count(got, "line two"); count != 2 {
 		t.Errorf("line two appears %d times, want 2 (window + elevated); got:\n%s", count, got)
+	}
+}
+
+// TestStartupWindowReopensForLazyConnect pins phase 6's central sink
+// mechanism: a server whose authorization wait opens after the pre-session
+// region has already cleared (and the session loop has attached) still
+// renders its prompt pinned above its tail, exactly as during setup.
+func TestStartupWindowReopensForLazyConnect(t *testing.T) {
+	var errOut bytes.Buffer
+	sink := newMcpLogSink(mcpLogRolling)
+	sink.errOut = &errOut
+	sink.termWidth = func() int { return 120 }
+	sink.termHeight = func() int { return 40 }
+	sink.setupSucceeded()
+	sink.attach()
+	errOut.Reset()
+
+	done := sink.AuthPending("linear")
+	sink.AppendServerLog("linear", "Please authorize this client by visiting:")
+	sink.AppendServerLog("linear", "https://mcp.linear.app/authorize?client_id=abc")
+
+	frame := lastStartupFrame(errOut.String())
+	for _, want := range []string{
+		"▸ mcp.linear log",
+		"» Please authorize this client by visiting:",
+		"» https://mcp.linear.app/authorize?client_id=abc",
+	} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("reopened window missing %q; frame: %q", want, frame)
+		}
+	}
+	if entries := sink.Drain(); entries != nil {
+		t.Errorf("reopened window's lines also queued for the session loop: %+v", entries)
+	}
+	done()
+}
+
+// TestSessionLoopDoesNotRenderIntoAuthWindow pins the suspension mechanism,
+// scoped per server (R1-07): while linear's authorization wait window is
+// open, its own lines render straight into the reopened window (never
+// queued), and an unrelated server's lines are drained normally rather than
+// being held hostage by linear's open window. Nothing is lost either way.
+func TestSessionLoopDoesNotRenderIntoAuthWindow(t *testing.T) {
+	var errOut bytes.Buffer
+	sink := newMcpLogSink(mcpLogRolling)
+	sink.errOut = &errOut
+	sink.termWidth = func() int { return 120 }
+	sink.termHeight = func() int { return 40 }
+	sink.setupSucceeded()
+	sink.attach()
+
+	done := sink.AuthPending("linear")
+	sink.AppendServerLog("linear", "an in-window status line")
+	sink.AppendServerLog("other", "an unrelated status line")
+
+	entries := sink.Drain()
+	if len(entries) != 1 || entries[0].server != "other" || entries[0].line != "an unrelated status line" {
+		t.Fatalf("Drain while linear's window was open = %+v, want exactly the unrelated server's entry", entries)
+	}
+	frame := lastStartupFrame(errOut.String())
+	if !strings.Contains(frame, "an in-window status line") {
+		t.Fatalf("linear's own line did not render into its reopened window: %q", frame)
+	}
+
+	done()
+	if rest := sink.Drain(); rest != nil {
+		t.Fatalf("second Drain() = %+v, want nil: nothing was deferred", rest)
+	}
+}
+
+// TestAuthPromptRingsBellWhenEnabled pins the bell contract: a wait rings
+// the bell exactly once, subject to the theme gate, and writes to the
+// sink's own injectable error writer rather than the process standard
+// output.
+func TestAuthPromptRingsBellWhenEnabled(t *testing.T) {
+	t.Run("enabled", func(t *testing.T) {
+		confDir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(confDir, "theme.json"), []byte(`{"notificationBell":true}`), 0o644); err != nil {
+			t.Fatalf("write theme.json: %v", err)
+		}
+		if err := utils.LoadTheme(confDir); err != nil {
+			t.Fatalf("LoadTheme: %v", err)
+		}
+		t.Cleanup(func() {
+			if err := utils.LoadTheme(t.TempDir()); err != nil {
+				t.Errorf("reset theme: %v", err)
+			}
+		})
+
+		var errOut bytes.Buffer
+		sink := newMcpLogSink(mcpLogRolling)
+		sink.errOut = &errOut
+		done := sink.AuthPending("linear")
+		defer done()
+
+		if got := errOut.String(); strings.Count(got, "\a") != 1 {
+			t.Fatalf("bell count = %d, want exactly 1; got %q", strings.Count(got, "\a"), got)
+		}
+	})
+	t.Run("disabled by the theme gate", func(t *testing.T) {
+		confDir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(confDir, "theme.json"), []byte(`{"notificationBell":false}`), 0o644); err != nil {
+			t.Fatalf("write theme.json: %v", err)
+		}
+		if err := utils.LoadTheme(confDir); err != nil {
+			t.Fatalf("LoadTheme: %v", err)
+		}
+		t.Cleanup(func() {
+			if err := utils.LoadTheme(t.TempDir()); err != nil {
+				t.Errorf("reset theme: %v", err)
+			}
+		})
+
+		var errOut bytes.Buffer
+		sink := newMcpLogSink(mcpLogRolling)
+		sink.errOut = &errOut
+		done := sink.AuthPending("linear")
+		defer done()
+
+		if got := errOut.String(); strings.Contains(got, "\a") {
+			t.Fatalf("bell rang despite the theme gate disabling it: %q", got)
+		}
+	})
+}
+
+// TestAuthPromptIsPinnedAboveTail pins the reopened window's own ordering
+// contract: the pinned prompt lines stay above the server's rolling tail,
+// exactly as the pre-session window already guarantees.
+func TestAuthPromptIsPinnedAboveTail(t *testing.T) {
+	var errOut bytes.Buffer
+	sink := newMcpLogSink(mcpLogRolling)
+	sink.errOut = &errOut
+	sink.termWidth = func() int { return 200 }
+	sink.termHeight = func() int { return 40 }
+	sink.setupSucceeded()
+	sink.attach()
+
+	done := sink.AuthPending("linear")
+	defer done()
+	sink.AppendServerLog("linear", "Please authorize this client by visiting:")
+	sink.AppendServerLog("linear", "https://mcp.linear.app/authorize?client_id=abc")
+	for i := range 8 {
+		sink.AppendServerLog("linear", fmt.Sprintf("[chatter] background status %d", i))
+	}
+
+	frame := lastStartupFrame(errOut.String())
+	if !strings.Contains(frame, "chatter] background status 7") {
+		t.Fatalf("most recent tail line missing from frame: %q", frame)
+	}
+	if strings.Index(frame, "» Please authorize") > strings.Index(frame, "background status 7") {
+		t.Errorf("pinned prompt not above the rolling tail; frame: %q", frame)
+	}
+}
+
+// TestDuplicateAuthSignalEmitsOneBell pins that a second AuthPending call
+// for a server whose window is already open rings no second bell and opens
+// no second window: it returns the same close function.
+func TestDuplicateAuthSignalEmitsOneBell(t *testing.T) {
+	var errOut bytes.Buffer
+	sink := newMcpLogSink(mcpLogRolling)
+	sink.errOut = &errOut
+
+	done1 := sink.AuthPending("linear")
+	errOut.Reset()
+	done2 := sink.AuthPending("linear")
+
+	if got := errOut.String(); strings.Contains(got, "\a") {
+		t.Fatalf("duplicate signal rang a second bell: %q", got)
+	}
+	// done1 and done2 must both resolve the same, single window: calling
+	// both must not panic and must leave exactly one close recorded.
+	done1()
+	done2()
+}
+
+// TestAuthWindowWriteFailureDoesNotPanic pins that a failing writer during
+// a reopened window's render is abandoned without panicking, and that the
+// wait itself (the returned done function) still works afterwards.
+func TestAuthWindowWriteFailureDoesNotPanic(t *testing.T) {
+	sink := newMcpLogSink(mcpLogRolling)
+	sink.errOut = failingWriter{}
+	sink.setupSucceeded()
+	sink.attach()
+
+	done := sink.AuthPending("linear")
+	sink.AppendServerLog("linear", "Please authorize this client by visiting:")
+	done()
+}
+
+// TestAuthWindowUsesFallbackWidth pins that a reopened window's render uses
+// the sink's existing deterministic fallback when terminal dimensions are
+// unavailable, matching the pre-session window's own behaviour.
+func TestAuthWindowUsesFallbackWidth(t *testing.T) {
+	var errOut bytes.Buffer
+	sink := newMcpLogSinkTo(mcpLogRolling, &errOut)
+	sink.setupSucceeded()
+	sink.attach()
+
+	done := sink.AuthPending("linear")
+	sink.AppendServerLog("linear", "Please authorize this client by visiting:")
+	done()
+
+	if errOut.Len() == 0 {
+		t.Fatal("expected the fallback-width render to still produce output")
+	}
+}
+
+// TestAuthPromptElevatesWhenOutputIsNotTerminal pins the non-rolling
+// posture: in raw/structured/redirected mode, AuthPending opens no window
+// (nothing in mcpStartupWindows is touched), and the auth line itself
+// elevates through the sink's existing non-rolling behaviour.
+func TestAuthPromptElevatesWhenOutputIsNotTerminal(t *testing.T) {
+	var errOut bytes.Buffer
+	sink := newMcpLogSink(mcpLogRawStructured)
+	sink.errOut = &errOut
+
+	done := sink.AuthPending("linear")
+	sink.AppendServerLog("linear", "Please authorize this client by visiting:")
+	done()
+
+	got := errOut.String()
+	if !strings.Contains(got, "mcp_linear: Please authorize this client by visiting:") {
+		t.Fatalf("auth line did not elevate in raw/structured mode: %q", got)
+	}
+	if strings.Contains(got, "▸ mcp.linear log") {
+		t.Fatalf("a window header rendered in a mode with no window: %q", got)
+	}
+}
+
+// failingWriter always fails, for TestAuthWindowWriteFailureDoesNotPanic.
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) { return 0, fmt.Errorf("boom") }
+
+// TestAuthWindowRespectsPinnedLineCap pins the auth-pinned-line-cap limit
+// row for the reopened window specifically: emitting more prompt lines
+// than mcpStartupPinnedCap retains only the most recent ones, exactly as
+// the pre-session window already guarantees, now proven through the
+// AuthPending-triggered reopen path.
+func TestAuthWindowRespectsPinnedLineCap(t *testing.T) {
+	var errOut bytes.Buffer
+	sink := newMcpLogSink(mcpLogRolling)
+	sink.errOut = &errOut
+	sink.termWidth = func() int { return 200 }
+	sink.termHeight = func() int { return 40 }
+	sink.setupSucceeded()
+	sink.attach()
+
+	done := sink.AuthPending("linear")
+	defer done()
+	for i := range mcpStartupPinnedCap + 3 {
+		sink.AppendServerLog("linear", fmt.Sprintf("Please authorize this client, attempt %d by visiting:", i))
+	}
+
+	frame := lastStartupFrame(errOut.String())
+	if strings.Contains(frame, "attempt 0 by visiting") {
+		t.Errorf("oldest pinned prompt line was not evicted; frame: %q", frame)
+	}
+	last := mcpStartupPinnedCap + 2
+	if !strings.Contains(frame, fmt.Sprintf("attempt %d by visiting", last)) {
+		t.Errorf("most recent pinned prompt line missing; frame: %q", frame)
+	}
+	if count := strings.Count(frame, "by visiting"); count != mcpStartupPinnedCap {
+		t.Errorf("pinned line count = %d, want %d (the cap)", count, mcpStartupPinnedCap)
 	}
 }

@@ -40,6 +40,13 @@ var (
 	ErrContextLengthExceeded      = errors.New("context length exceeded")
 	ErrContentFiltered            = errors.New("content filtered")
 	ErrMcpServerStartup           = errors.New("mcp server startup failed")
+	ErrMcpConnClosed              = errors.New("mcp connection closed")
+	ErrMcpFrameUndecodable        = errors.New("mcp frame could not be parsed as JSON-RPC")
+	ErrMcpAuthChallenge           = errors.New("mcp endpoint demands authorization")
+	ErrMcpTransport               = errors.New("mcp transport failure")
+	ErrMcpHttpStatus              = errors.New("mcp endpoint returned a failing status")
+	ErrMcpUnsupportedContentType  = errors.New("mcp endpoint returned an unsupported content type")
+	ErrMcpRPCError                = errors.New("mcp server returned a JSON-RPC error")
 )
 
 // APIError holds the facts about one provider response, shared by every
@@ -279,4 +286,163 @@ func (e *McpServerStartupError) Unwrap() []error { return []error{ErrMcpServerSt
 
 func (e *McpServerStartupError) Error() string {
 	return fmt.Sprintf("mcp server '%v' failed to start at stage '%v': %v", e.ServerName, e.Stage, e.Cause)
+}
+
+// McpConnClosedError means a call was attempted on an MCP connection that is
+// closed, or was closed while the call was still pending.
+type McpConnClosedError struct {
+	ServerName string
+}
+
+// NewMcpConnClosed builds a McpConnClosedError for the named server.
+func NewMcpConnClosed(serverName string) *McpConnClosedError {
+	return &McpConnClosedError{ServerName: serverName}
+}
+
+func (e *McpConnClosedError) Unwrap() error { return ErrMcpConnClosed }
+
+func (e *McpConnClosedError) Error() string {
+	return fmt.Sprintf("mcp connection to %q is closed", e.ServerName)
+}
+
+// McpFrameUndecodableError means a line received from an MCP server could
+// not be routed to a waiting call: either it cannot be parsed as a
+// JSON-RPC object (invalid JSON, or valid JSON without a jsonrpc member), or
+// it exceeded the per-message read bound before it could be read in full.
+// Every call pending on the connection fails with this error, since the
+// frame carries no usable id.
+type McpFrameUndecodableError struct {
+	ServerName string
+	Cause      error
+}
+
+// NewMcpFrameUndecodable builds a McpFrameUndecodableError for the named
+// server, wrapping the cause.
+func NewMcpFrameUndecodable(serverName string, cause error) *McpFrameUndecodableError {
+	return &McpFrameUndecodableError{ServerName: serverName, Cause: cause}
+}
+
+// Unwrap returns both the sentinel and the cause, so errors.Is matches
+// ErrMcpFrameUndecodable and the underlying reason alike.
+func (e *McpFrameUndecodableError) Unwrap() []error { return []error{ErrMcpFrameUndecodable, e.Cause} }
+
+func (e *McpFrameUndecodableError) Error() string {
+	return fmt.Sprintf("mcp server %q sent a frame that could not be parsed as JSON-RPC: %v", e.ServerName, e.Cause)
+}
+
+// AuthChallengeError reports that an endpoint demands authorization.
+// Challenge is the verbatim WWW-Authenticate header value; ResourceMetadata
+// is the URL parsed out of its resource_metadata parameter, empty when
+// absent. The transport phase returns it; the authorization phase consumes
+// it and parses nothing further (worklog 2026-10-02-mcp-connection-cost,
+// README shared interfaces).
+type AuthChallengeError struct {
+	ServerName       string
+	Challenge        string
+	ResourceMetadata string
+}
+
+// NewAuthChallenge builds an AuthChallengeError for the named server.
+func NewAuthChallenge(serverName, challenge, resourceMetadata string) *AuthChallengeError {
+	return &AuthChallengeError{ServerName: serverName, Challenge: challenge, ResourceMetadata: resourceMetadata}
+}
+
+func (e *AuthChallengeError) Unwrap() error { return ErrMcpAuthChallenge }
+
+func (e *AuthChallengeError) Error() string {
+	return fmt.Sprintf("mcp endpoint %q demands authorization: %v", e.ServerName, e.Challenge)
+}
+
+// BlockedOutsideRun reports that resolving the connection cannot proceed
+// until a human acts, outside the run itself. mcp.Connector's single-flight
+// resolution reads this (via its own outsideRunBlocker interface) to avoid
+// memoising the challenge as a terminal failure, so a later call retries
+// instead of replaying a cached error (worklog 2026-10-02-mcp-connection-cost,
+// phase 6, D20).
+func (e *AuthChallengeError) BlockedOutsideRun() bool { return true }
+
+// McpTransportError means a request to an MCP endpoint never got an answer:
+// a failed dial, TLS handshake or mid-request network failure. It carries
+// no APIError — there is no response to carry facts of.
+type McpTransportError struct {
+	ServerName string
+	Endpoint   string
+	Cause      error
+}
+
+// NewMcpTransport builds a McpTransportError naming the server and the
+// endpoint it could not reach, wrapping the underlying cause.
+func NewMcpTransport(serverName, endpoint string, cause error) *McpTransportError {
+	return &McpTransportError{ServerName: serverName, Endpoint: endpoint, Cause: cause}
+}
+
+func (e *McpTransportError) Unwrap() []error { return []error{ErrMcpTransport, e.Cause} }
+
+func (e *McpTransportError) Error() string {
+	return fmt.Sprintf("mcp server %q: could not reach endpoint %q: %v", e.ServerName, e.Endpoint, e.Cause)
+}
+
+// McpHttpStatusError means an MCP endpoint answered with a status this
+// transport treats as a failure: anything other than a success or an
+// accepted-with-no-body outcome.
+type McpHttpStatusError struct {
+	ServerName string
+	StatusCode int
+	Message    string
+}
+
+// NewMcpHttpStatus builds a McpHttpStatusError carrying the server's status
+// and its response message.
+func NewMcpHttpStatus(serverName string, statusCode int, message string) *McpHttpStatusError {
+	return &McpHttpStatusError{ServerName: serverName, StatusCode: statusCode, Message: message}
+}
+
+func (e *McpHttpStatusError) Unwrap() error { return ErrMcpHttpStatus }
+
+func (e *McpHttpStatusError) Error() string {
+	return fmt.Sprintf("mcp server %q: status %d: %v", e.ServerName, e.StatusCode, e.Message)
+}
+
+// McpUnsupportedContentTypeError means an MCP endpoint's response carried a
+// content type that is neither JSON nor an event stream.
+type McpUnsupportedContentTypeError struct {
+	ServerName  string
+	ContentType string
+}
+
+// NewMcpUnsupportedContentType builds a McpUnsupportedContentTypeError
+// naming the server and the content type it could not handle.
+func NewMcpUnsupportedContentType(serverName, contentType string) *McpUnsupportedContentTypeError {
+	return &McpUnsupportedContentTypeError{ServerName: serverName, ContentType: contentType}
+}
+
+func (e *McpUnsupportedContentTypeError) Unwrap() error { return ErrMcpUnsupportedContentType }
+
+func (e *McpUnsupportedContentTypeError) Error() string {
+	return fmt.Sprintf("mcp server %q: unsupported response content type %q", e.ServerName, e.ContentType)
+}
+
+// McpRPCError reports a JSON-RPC-level error an MCP server returned for a
+// call, carrying its code and message so a caller (the endpoint schema
+// cache's unknown-tool signal) can classify it without parsing the rendered
+// string. Both the stdio and the streamable-HTTP transport build this one
+// type for one meaning (worklog 2026-10-02-mcp-connection-cost, R2-16):
+// previously only the HTTP transport did, so the signal could never fire
+// for a stdio server.
+type McpRPCError struct {
+	ServerName string
+	Code       int
+	Message    string
+}
+
+// NewMcpRPCError builds a McpRPCError for the named server, carrying the
+// JSON-RPC error's code and message.
+func NewMcpRPCError(serverName string, code int, message string) *McpRPCError {
+	return &McpRPCError{ServerName: serverName, Code: code, Message: message}
+}
+
+func (e *McpRPCError) Unwrap() error { return ErrMcpRPCError }
+
+func (e *McpRPCError) Error() string {
+	return fmt.Sprintf("mcp server %q: JSON-RPC error %d: %s", e.ServerName, e.Code, e.Message)
 }

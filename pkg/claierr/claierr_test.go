@@ -250,6 +250,36 @@ func Test_Claierr_TransportAndMcpUnwrapSentinelAndCause(t *testing.T) {
 			t.Fatalf("unexpected fields: %#v", mcpErr)
 		}
 	})
+	t.Run("mcp_rpc_error", func(t *testing.T) {
+		err := claierr.NewMcpRPCError("fixture-server", -32601, "method not found: fixture_tool")
+		if !errors.Is(err, claierr.ErrMcpRPCError) {
+			t.Fatal("expected McpRPCError to match ErrMcpRPCError")
+		}
+		var rpcErr *claierr.McpRPCError
+		if !errors.As(err, &rpcErr) {
+			t.Fatal("expected errors.As to find *McpRPCError")
+		}
+		if rpcErr.ServerName != "fixture-server" || rpcErr.Code != -32601 || rpcErr.Message != "method not found: fixture_tool" {
+			t.Fatalf("unexpected fields: %#v", rpcErr)
+		}
+	})
+}
+
+// Test_Claierr_McpRPCErrorIsOneTypeForBothTransports pins R2-16's corrective
+// action: both the stdio and the streamable-HTTP transport build the same
+// *claierr.McpRPCError for a JSON-RPC-level failure, so a caller classifying
+// on this type (the endpoint schema cache's unknown-tool signal) works
+// identically for either transport instead of only HttpConn's bespoke type.
+func Test_Claierr_McpRPCErrorIsOneTypeForBothTransports(t *testing.T) {
+	stdio := claierr.NewMcpRPCError("stdio-server", -32602, "unknown tool: foo")
+	httpErr := claierr.NewMcpRPCError("http-server", -32602, "unknown tool: foo")
+	var a, b *claierr.McpRPCError
+	if !errors.As(stdio, &a) || !errors.As(httpErr, &b) {
+		t.Fatal("expected errors.As to find *claierr.McpRPCError for both")
+	}
+	if a.Code != b.Code {
+		t.Fatalf("Code mismatch: %d vs %d", a.Code, b.Code)
+	}
 }
 
 func Test_Claierr_ErrorStringCarriesWhatTheProviderSaid(t *testing.T) {
@@ -289,4 +319,26 @@ func Test_Claierr_ErrorStringCarriesWhatTheProviderSaid(t *testing.T) {
 			t.Fatalf("Error() = %q", got)
 		}
 	})
+}
+
+// Test_Claierr_AuthChallengeIsBlockedOutsideRun pins the worklog
+// 2026-10-02-mcp-connection-cost phase 6 contract: AuthChallengeError
+// reports itself as blocked outside the run, so mcp.Connector's single-flight
+// resolution (which type-switches on this exact method name) never memoises
+// it as a terminal failure. Unwrap and the typed fields stay intact.
+func Test_Claierr_AuthChallengeIsBlockedOutsideRun(t *testing.T) {
+	err := claierr.NewAuthChallenge("linear", `Bearer realm="OAuth"`, "https://mcp.linear.app/.well-known/oauth-protected-resource")
+	if !errors.Is(err, claierr.ErrMcpAuthChallenge) {
+		t.Fatal("expected AuthChallengeError to match ErrMcpAuthChallenge")
+	}
+	var blocked interface{ BlockedOutsideRun() bool }
+	if !errors.As(err, &blocked) {
+		t.Fatal("expected errors.As to find a BlockedOutsideRun() implementation")
+	}
+	if !blocked.BlockedOutsideRun() {
+		t.Fatal("AuthChallengeError.BlockedOutsideRun() = false, want true")
+	}
+	if err.ServerName != "linear" || err.ResourceMetadata != "https://mcp.linear.app/.well-known/oauth-protected-resource" {
+		t.Fatalf("unexpected fields: %#v", err)
+	}
 }

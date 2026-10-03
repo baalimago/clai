@@ -4,38 +4,71 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"os"
-	"sync"
 	"time"
 
-	"github.com/baalimago/clai/internal/debugflags"
-	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
-	"github.com/baalimago/go_away_boilerplate/pkg/debug"
-	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
 
 // mcpTool wraps a tool provided by an MCP server and implements tools.LLMTool.
+// It holds a Connector rather than a Conn directly, so the connection behind
+// an eager server (already resolved at setup) and a lazy one (resolved on
+// first use) are called the same way.
 type mcpTool struct {
 	remoteName string
 	spec       pub_models.Specification
-	inputChan  chan<- any
-	outputChan <-chan any
-	// timeout bounds one tool call; 0 disables the bound (caller ctx only).
+	connector  Connector
+	// timeout bounds one tool call, excluding connection resolution; 0
+	// disables the bound (caller ctx only).
 	timeout time.Duration
-
-	mu  sync.Mutex
-	seq int
+	// serverName names the owning server, for ResolveForCall's callers: the
+	// auth-pending signal and the actionable tool result both name the
+	// server, not the remote tool.
+	serverName string
+	// authResolver drives the one action a tool-call site may take once
+	// ResolveForCall reports an authorization challenge; nil for a
+	// command-based server, where the only lever is time (phase 6).
+	authResolver AuthResolver
+	// authTimeout bounds a mid-run authorization wait for this server,
+	// resolved once at registration time per the auth-timeout parameter
+	// (D22); 0 means fail fast with no wait.
+	authTimeout time.Duration
 }
 
-func (m *mcpTool) nextID() int {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.seq++
-	return m.seq
+// resolvedConnector wraps a Conn that is already connected, so a tool
+// registered for an eager server holds a Connector like any other, with no
+// resolution work left to do.
+type resolvedConnector struct{ conn Conn }
+
+func (r resolvedConnector) Conn(context.Context) (Conn, error) { return r.conn, nil }
+
+// NewTool builds an LLMTool for one MCP tool, wired to connector. It is the
+// registration seam RegisterTools uses for both a live handshake's tools and
+// a schema cache hit's cached tool list, which carries no live Conn and so
+// supplies a Connector instead. serverName, authResolver and authTimeout are
+// phase 6's addition: they let the tool-call site (internal/text/tool_executor.go)
+// surface and bound a mid-run authorization wait before tools.InvokeWith
+// folds the typed error into a string. authResolver may be nil.
+func NewTool(connector Connector, remoteName string, spec pub_models.Specification, timeout time.Duration, serverName string, authResolver AuthResolver, authTimeout time.Duration) pub_models.LLMTool {
+	return &mcpTool{
+		remoteName:   remoteName,
+		spec:         spec,
+		connector:    connector,
+		timeout:      timeout,
+		serverName:   serverName,
+		authResolver: authResolver,
+		authTimeout:  authTimeout,
+	}
+}
+
+// ResolveForCall drives the tool's Connector to a terminal outcome or an
+// AuthChallengeError, exposing the typed error and this tool's AuthResolver
+// before tools.InvokeWith would fold the error into a string. The tool-call
+// site uses this to raise and bound a human wait outside connector
+// resolution (D20): ctx governs only this attempt, exactly like Call.
+func (m *mcpTool) ResolveForCall(ctx context.Context) (serverName string, resolver AuthResolver, authTimeout time.Duration, err error) {
+	_, err = m.connector.Conn(ctx)
+	return m.serverName, m.authResolver, m.authTimeout, err
 }
 
 // CallWithContext sends an MCP tool/call request with context-aware channel operations.
@@ -50,10 +83,17 @@ func (m *mcpTool) Call(input pub_models.Input) (string, error) {
 }
 
 func (m *mcpTool) call(ctx context.Context, input pub_models.Input) (string, error) {
+	// Resolution runs under the connector's own run context, excluded from
+	// the per-call timeout: charging process birth against a call budget
+	// would make a lazy first call look like a hung tool.
+	conn, err := m.connector.Conn(ctx)
+	if err != nil {
+		return "", fmt.Errorf("mcp tool %q: %w", m.remoteName, err)
+	}
+
 	if m.timeout > 0 {
 		// Bound the call with the server's own timeout so a hung server fails
-		// the call even when the caller's context has no deadline. The receive
-		// loop's ctx.Done case is the exit this timeout arms.
+		// the call even when the caller's context has no deadline.
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, m.timeout)
 		defer cancel()
@@ -62,101 +102,35 @@ func (m *mcpTool) call(ctx context.Context, input pub_models.Input) (string, err
 	if len(input) != 0 {
 		nonNullableInp = input
 	}
-	id := m.nextID()
-	req := Request{
-		JSONRPC: "2.0",
-		ID:      id,
-		Method:  "tools/call",
-		Params: map[string]any{
-			"name":      m.remoteName,
-			"arguments": nonNullableInp,
-		},
-	}
-	if debugflags.Enabled("CALL") {
-		ancli.Noticef("mcpTool.Call req: %v", debug.IndentedJsonFmt(req))
+
+	raw, err := conn.Call(ctx, "tools/call", map[string]any{
+		"name":      m.remoteName,
+		"arguments": nonNullableInp,
+	})
+	if err != nil {
+		return "", fmt.Errorf("mcp tool %q: %w", m.remoteName, err)
 	}
 
-	select {
-	case m.inputChan <- req:
-	case <-ctx.Done():
-		return "", fmt.Errorf("mcp tool %q cancelled while sending request: %w", m.remoteName, ctx.Err())
+	var result struct {
+		Content []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"content"`
+		IsError bool `json:"isError"`
 	}
-
-	for {
-		select {
-		case msg, ok := <-m.outputChan:
-			if !ok {
-				return "", fmt.Errorf("connection closed")
-			}
-			raw, open := msg.(json.RawMessage)
-			if !open {
-				if err, ok := msg.(error); ok {
-					if debugflags.Enabled("MCP_TOOL") {
-						ancli.Okf("mcp_server closed outputChan msg: '%s', err: %v", msg, err)
-					}
-					return "", err
-				}
-				return "", errors.New("output channel unexpectedly closed")
-			}
-
-			if debugflags.Enabled("MCP_TOOL") {
-				rawS, _ := raw.MarshalJSON()
-				// Debug output goes to stdout via ancli, so the snapshot is bound
-				// to stdout's fd; a non-terminal stdout yields the deterministic
-				// fallback width.
-				shortened := table.WidthAppropriateStringTruncWithWidth(string(rawS), "", 10, utils.SessionDimensions(os.Stdout).Width)
-				ancli.Okf("mcp_server client received: '%s'", shortened)
-			}
-			var resp Response
-			if err := json.Unmarshal(raw, &resp); err != nil {
-				// A frame that cannot be parsed as a JSON-RPC response is an error
-				// result for this call, never a logged-and-dropped frame: dropping it
-				// would leave the request waiting until its context expires
-				// (worklog 2026-09-05-error-propagation, S7).
-				return "", fmt.Errorf("mcp tool %q: malformed response: %w", m.remoteName, err)
-			}
-			if resp.ID != id {
-				continue
-			}
-			if resp.Error != nil {
-				if debugflags.Enabled("MCP_TOOL") {
-					ancli.Okf("Now returning response.Error: '%v'", resp.Error)
-				}
-				return "", fmt.Errorf("mcp tool %q: JSON-RPC error %d: %s", m.remoteName, resp.Error.Code, resp.Error.Message)
-			}
-			var result struct {
-				Content []struct {
-					Type string `json:"type"`
-					Text string `json:"text"`
-				} `json:"content"`
-				IsError bool `json:"isError"`
-			}
-			if err := json.Unmarshal(resp.Result, &result); err != nil {
-				if debugflags.Enabled("MCP_TOOL") {
-					ancli.Okf("Now returning result error: '%v'", err)
-				}
-				return "", fmt.Errorf("decode result: %w", err)
-			}
-			var buf bytes.Buffer
-			for _, c := range result.Content {
-				if c.Type == "text" {
-					buf.WriteString(c.Text)
-				}
-			}
-			if result.IsError {
-				if debugflags.Enabled("MCP_TOOL") {
-					ancli.Okf("Now returning result as error: '%v'", buf.String())
-				}
-				return "", fmt.Errorf("mcp tool %q returned an error result: %s", m.remoteName, buf.String())
-			}
-			if debugflags.Enabled("MCP_TOOL") {
-				ancli.Okf("Now returning: '%v'", buf.String())
-			}
-			return buf.String(), nil
-		case <-ctx.Done():
-			return "", fmt.Errorf("mcp tool %q cancelled while waiting for response: %w", m.remoteName, ctx.Err())
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return "", fmt.Errorf("mcp tool %q: decode result: %w", m.remoteName, err)
+	}
+	var buf bytes.Buffer
+	for _, c := range result.Content {
+		if c.Type == "text" {
+			buf.WriteString(c.Text)
 		}
 	}
+	if result.IsError {
+		return "", fmt.Errorf("mcp tool %q returned an error result: %s", m.remoteName, buf.String())
+	}
+	return buf.String(), nil
 }
 
 func (m *mcpTool) Specification() pub_models.Specification {

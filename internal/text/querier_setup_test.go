@@ -13,6 +13,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baalimago/clai/internal/tools/mcp"
+	"github.com/baalimago/clai/internal/tools/mcp/schemacache"
+	"github.com/baalimago/clai/internal/tools/mcp/serverconfig"
 	"github.com/baalimago/clai/internal/vendors"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/dimensions"
@@ -351,6 +354,98 @@ func TestNewQuerier_summaryDefaults(t *testing.T) {
 		}
 		if q.summaryJoinTimeout != 7*time.Millisecond || q.summarizeConversations {
 			t.Fatalf("join timeout = %v summarize=%t", q.summaryJoinTimeout, q.summarizeConversations)
+		}
+	})
+}
+
+// TestNewQuerierThreadsOutputIsTerminalIntoAuthTimeout pins R1-21/R2-09
+// through the real composition root: NewQuerier's own
+// querier_setup.go:245 assignment, not a hand-built Configurations or a
+// direct newMcpAuthorizer call, is what a registered MCP tool's D22
+// auth-timeout actually sees. The schema cache is pre-warmed so the lazy
+// HTTP tool registers with no live server (no handshake needed): the
+// auth-timeout a cache hit's RegisterTools call stores is computed from
+// outputIsTerminal before any connection is ever attempted, so inspecting
+// it needs no real network dial.
+func TestNewQuerierThreadsOutputIsTerminalIntoAuthTimeout(t *testing.T) {
+	t.Setenv("CLAI_DISABLE_COST_ERR_LOG_GOROUTINE", "1")
+
+	warmServer := func(t *testing.T, confDir string) {
+		t.Helper()
+		cacheDir := t.TempDir()
+		t.Setenv("CLAI_CACHE_DIR", cacheDir)
+
+		mcpDir := filepath.Join(confDir, "mcpServers")
+		if err := os.MkdirAll(mcpDir, 0o755); err != nil {
+			t.Fatalf("mkdir mcpServers: %v", err)
+		}
+		serverFile := filepath.Join(mcpDir, "httpecho.json")
+		if err := os.WriteFile(serverFile, []byte(`{"url":"http://127.0.0.1:1/"}`), 0o644); err != nil {
+			t.Fatalf("write server config: %v", err)
+		}
+		servers, err := serverconfig.FindConfiguredServers([]string{serverFile})
+		if err != nil || len(servers) != 1 {
+			t.Fatalf("FindConfiguredServers: servers=%v err=%v", servers, err)
+		}
+
+		cache, err := schemacache.New(filepath.Join(cacheDir, schemacache.DefaultDirName))
+		if err != nil {
+			t.Fatalf("schemacache.New: %v", err)
+		}
+		identity := schemacache.BuildIdentityWithScopes(servers[0])
+		toolsArray := json.RawMessage(`[{"name":"echo","description":"echo","inputSchema":{"type":"object","properties":{}}}]`)
+		if err := cache.Capture(identity, mcp.ProtocolVersion, json.RawMessage(`{}`), toolsArray); err != nil {
+			t.Fatalf("seed warm cache: %v", err)
+		}
+	}
+
+	t.Run("unset derives false from a non-terminal writer", func(t *testing.T) {
+		confDir := t.TempDir()
+		warmServer(t, confDir)
+		conf := Configurations{Model: "mock", ConfigDir: confDir, Out: &strings.Builder{}, UseTools: true}
+
+		q, err := NewQuerier(t.Context(), conf, &vendors.Mock{})
+		if err != nil {
+			t.Fatalf("NewQuerier: %v", err)
+		}
+		tool, ok := q.tooling.run["mcp_httpecho_echo"]
+		if !ok {
+			t.Fatalf("mcp_httpecho_echo not registered; got: %v", q.tooling.run)
+		}
+		resolver, ok := tool.(mcpConnectionResolver)
+		if !ok {
+			t.Fatalf("registered tool does not implement mcpConnectionResolver")
+		}
+		_, authResolver, authTimeout, _ := resolver.ResolveForCall(t.Context())
+		if authTimeout != 0 {
+			t.Errorf("authTimeout = %v, want 0: NewQuerier's own OutputIsTerminal assignment must reach the non-terminal default here", authTimeout)
+		}
+		if authResolver == nil {
+			t.Error("authResolver = nil, want the HTTP interactive resolver regardless of the terminal default")
+		}
+	})
+
+	t.Run("an explicit value survives the querier's own non-terminal writer", func(t *testing.T) {
+		confDir := t.TempDir()
+		warmServer(t, confDir)
+		terminal := true
+		conf := Configurations{Model: "mock", ConfigDir: confDir, Out: &strings.Builder{}, UseTools: true, OutputIsTerminal: &terminal}
+
+		q, err := NewQuerier(t.Context(), conf, &vendors.Mock{})
+		if err != nil {
+			t.Fatalf("NewQuerier: %v", err)
+		}
+		tool, ok := q.tooling.run["mcp_httpecho_echo"]
+		if !ok {
+			t.Fatalf("mcp_httpecho_echo not registered; got: %v", q.tooling.run)
+		}
+		resolver, ok := tool.(mcpConnectionResolver)
+		if !ok {
+			t.Fatalf("registered tool does not implement mcpConnectionResolver")
+		}
+		_, _, authTimeout, _ := resolver.ResolveForCall(t.Context())
+		if authTimeout == 0 {
+			t.Error("authTimeout = 0, want the terminal-session default: an explicit OutputIsTerminal must not be clobbered by the writer-derived check (R2-09)")
 		}
 	})
 }

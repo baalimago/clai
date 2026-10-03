@@ -2,20 +2,24 @@ package text
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/baalimago/clai/internal/debugflags"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/tools/mcp"
+	"github.com/baalimago/clai/internal/tools/mcp/mcpauth"
+	"github.com/baalimago/clai/internal/tools/mcp/schemacache"
+	"github.com/baalimago/clai/internal/tools/mcp/serverconfig"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/pkg/claierr"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
@@ -69,35 +73,82 @@ func filterMcpServersByProfile(mcpServerPaths []string, userConf Configurations)
 	return filteredFiles
 }
 
-func findConfiguredMcpServers(filePaths []string) ([]pub_models.McpServer, error) {
-	ret := make([]pub_models.McpServer, 0)
-	errs := make([]error, 0)
-	for _, file := range filePaths {
-		data, err := os.ReadFile(file)
-		if err != nil {
-			continue
-		}
-		var mcpServer pub_models.McpServer
-		if unmarshalErr := json.Unmarshal(data, &mcpServer); unmarshalErr != nil {
-			errs = append(errs, fmt.Errorf("failed to unmarshal: '%s', error: %w", file, unmarshalErr))
-			continue
-		}
-		if mcpServer.EnvFile != "" {
-			expanded, expandErr := utils.ExpandUserPath(mcpServer.EnvFile)
-			if expandErr != nil {
-				errs = append(errs, fmt.Errorf("failed to expand envfile %q in %q: %w", mcpServer.EnvFile, file, expandErr))
-				continue
-			}
-			if !filepath.IsAbs(expanded) {
-				expanded = filepath.Join(filepath.Dir(file), expanded)
-			}
-			mcpServer.EnvFile = expanded
-		}
-		serverName := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
-		mcpServer.Name = serverName
-		ret = append(ret, mcpServer)
+// effectiveStartupMode resolves a server's configured startup field to a
+// definite mode. An unrecognised value is rejected unconditionally and
+// always: a value that reached here programmatically (not through
+// pub_models.StartupMode.UnmarshalJSON's own parse-time rejection) is still
+// an error, never a silent eager (R2-15). strictExplicit then overrides
+// unconditionally: a server reached through agent.WithMcpServers while
+// StrictMcpStartup is on always resolves eager, even when its own config
+// says "lazy", because a warm cache would otherwise let setup skip
+// connecting and no strict failure could exist to report (D35, R1-02). The
+// unset default is lazy otherwise (D16, flipped by this phase now that the
+// schema cache can supply a lazy server's tools without connecting).
+func effectiveStartupMode(server pub_models.McpServer, strictExplicit bool) (pub_models.StartupMode, error) {
+	switch server.Startup {
+	case "", pub_models.StartupEager, pub_models.StartupLazy:
+	default:
+		return "", claierr.NewMcpServerStartup(server.Name, "startup-mode",
+			fmt.Errorf("unrecognised startup mode %q: want %q or %q", server.Startup, pub_models.StartupEager, pub_models.StartupLazy))
 	}
-	return ret, errors.Join(errs...)
+	if strictExplicit {
+		return pub_models.StartupEager, nil
+	}
+	if server.Startup == "" {
+		return pub_models.StartupLazy, nil
+	}
+	return server.Startup, nil
+}
+
+// findConfiguredMcpServers delegates to serverconfig.FindConfiguredServers,
+// the parsing primitive phase 7 relocated to its own leaf package so the
+// tools listing's cache-only path (in internal/tools, which cannot import
+// this package without a cycle) resolves a server's identity exactly the
+// same way setup does.
+func findConfiguredMcpServers(filePaths []string) ([]pub_models.McpServer, error) {
+	return serverconfig.FindConfiguredServers(filePaths)
+}
+
+// debugRedactedMcpServer is the DEBUG dump's own shape for one server:
+// args, env values and envfile contents are credential carriers (R1-03's
+// documented `mcp-remote --header "Authorization: Bearer ..."` shape puts
+// a token in args; env values are secrets by the same invariant 6
+// amendment), so the dump prints only their shape — a count, or env's key
+// names, never a value — instead of a verbatim json.Marshal of
+// pub_models.McpServer, which carries them unredacted (R1-10).
+type debugRedactedMcpServer struct {
+	Name           string
+	Command        string
+	Url            string
+	ArgCount       int
+	EnvKeys        []string
+	EnvFileSet     bool
+	Startup        pub_models.StartupMode
+	AuthConfigured bool
+}
+
+// redactMcpServersForDebug builds the DEBUG dump's redacted view of
+// servers, env key names sorted so the dump is deterministic.
+func redactMcpServersForDebug(servers []pub_models.McpServer) []debugRedactedMcpServer {
+	out := make([]debugRedactedMcpServer, len(servers))
+	for i, s := range servers {
+		keys := make([]string, 0, len(s.Env))
+		for k := range s.Env {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		out[i] = debugRedactedMcpServer{
+			Name:           s.Name,
+			Command:        s.Command,
+			Url:            s.Url,
+			ArgCount:       len(s.Args),
+			EnvKeys:        keys,
+			EnvFileSet:     s.EnvFile != "",
+			Startup:        s.Startup,
+			AuthConfigured: s.Auth != nil,
+		}
+	}
+	return out
 }
 
 // setupMcpManager loads MCP server configurations from a directory.
@@ -108,6 +159,13 @@ func findConfiguredMcpServers(filePaths []string) ([]pub_models.McpServer, error
 // userConf.McpServers reach the manager (D18).
 // sink receives every server's stderr lines; on setup failure the buffered
 // error lines are flushed to stderr so the failure reason stays visible.
+// cache backs a lazy-resolved command-based server's tool schemas; nil
+// disables caching for the run (every lookup is a miss) rather than failing
+// setup.
+// authz resolves an endpoint-based server's credential (phase 5); nil keeps
+// every HTTP server unauthenticated exactly as before this phase, so an
+// endpoint demanding authorization fails with claierr.AuthChallengeError
+// rather than being silently skipped.
 //
 // A server discovered from the config directory is ambient: a startup failure
 // keeps today's warn-and-degrade. A server in userConf.McpServers is explicit
@@ -115,7 +173,7 @@ func findConfiguredMcpServers(filePaths []string) ([]pub_models.McpServer, error
 // are collected while the in-setup wait runs and joined into a typed error on
 // return, so a caller whose task depends on the server can see that it is
 // absent (worklog 2026-09-05-error-propagation, D13).
-func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configurations, sink mcp.ServerLogSink) (map[string]pub_models.LLMTool, error) {
+func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configurations, sink mcp.ServerLogSink, cache *schemacache.Cache, authz *mcpauth.Authorizer) (map[string]pub_models.LLMTool, error) {
 	var files []string
 	if !userConf.SkipAmbientMcpServers {
 		if _, err := os.Stat(mcpServersDir); os.IsNotExist(err) {
@@ -132,19 +190,38 @@ func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configu
 	filteredFiles := filterMcpServersByProfile(files, userConf)
 	mcpServers, err := findConfiguredMcpServers(filteredFiles)
 	explicit := userConf.AgentSettings != nil && userConf.AgentSettings.StrictMcpStartup
+	// userConf.McpServers never passed through FindConfiguredServers, so its
+	// own transport XOR was never enforced: both command and url set
+	// silently preferred url, and neither set reached
+	// exec.CommandContext(ctx, "") (D43, R2-07). validExplicit is validated
+	// exactly as a config-directory file is.
+	validExplicit, transportFailures := validateExplicitServers(explicit, userConf.McpServers)
 	// The config-dir servers are ambient; the userConf.McpServers tail is
 	// explicit exactly when the run is agent-driven. Profile-sourced servers
 	// ride the CLI path and stay ambient (D13: only WithMcpServers is
 	// load-bearing).
 	explicitTail := len(mcpServers)
-	mcpServers = append(mcpServers, userConf.McpServers...)
+	mcpServers = append(mcpServers, validExplicit...)
 
 	if misc.Truthy(os.Getenv("DEBUG")) {
-		ancli.Okf("mcpServers: %v", debug.IndentedJsonFmt(mcpServers))
+		ancli.Okf("mcpServers: %v", debug.IndentedJsonFmt(redactMcpServersForDebug(mcpServers)))
+	}
+	// A per-file parse or validation failure must never be silently dropped
+	// just because some other file in the same directory parsed (D44,
+	// R2-06): before this, the joined error from findConfiguredMcpServers
+	// was read only inside the len(mcpServers)==0 branch below, so a single
+	// bad file among several good ones vanished with no message at all. It
+	// is reported unconditionally here and, under strict startup, also
+	// joined into the explicit failures returned to the caller.
+	if err != nil {
+		ancli.Warnf("failed to parse mcp server config(s): %v\n", err)
 	}
 	if len(mcpServers) == 0 {
 		if err != nil {
 			return nil, fmt.Errorf("failed to find mcpServers: %w", err)
+		}
+		if len(transportFailures) > 0 {
+			return map[string]pub_models.LLMTool{}, errors.Join(transportFailures...)
 		}
 		// Nothing to do, no need to start mcp.Manager etc, just return
 		return map[string]pub_models.LLMTool{}, nil
@@ -165,18 +242,75 @@ func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configu
 	toolWg.Add(len(mcpServers))
 	go mcp.Manager(ctx, controlChannel, &toolWg, runReg, startupFailures)
 
-	explicitFailures := make([]error, 0)
+	failures := &failureCollector{errs: append([]error(nil), transportFailures...)}
+	if err != nil && explicit {
+		failures.addExplicit("config-dir", claierr.NewMcpServerStartup("config-dir", "parse", err))
+	}
 	for i, mcpServer := range mcpServers {
+		isExplicitIdx := i >= explicitTail
+		strictExplicit := explicit && isExplicitIdx
+		isHTTP := mcpServer.Url != ""
+
+		mode, modeErr := effectiveStartupMode(mcpServer, strictExplicit)
+		if modeErr != nil {
+			failures.addIfExplicit(explicit, isExplicitIdx, mcpServer.Name, modeErr)
+			toolWg.Done()
+			continue
+		}
+
+		if mode == pub_models.StartupLazy {
+			// Schema-cache-aware path: a hit registers tools with no
+			// transport; a miss connects now and captures the entry (D18).
+			// An endpoint-based server additionally wires cache
+			// invalidation onto its connector (phase 4). Run as its own
+			// goroutine, joined through toolWg exactly as mcp.Manager
+			// already does for an eager server: a miss still connects, and
+			// D18's "exactly as today" means concurrently, not one server
+			// at a time (D39, R2-02).
+			go func(mcpServer pub_models.McpServer, isExplicitIdx, isHTTP bool) {
+				defer toolWg.Done()
+				var err error
+				if isHTTP {
+					err = resolveLazyHttpServerViaCache(ctx, cache, mcpServer, sink, runReg, authz, userConf.OutputIsTerminalOrDefault())
+				} else {
+					err = resolveLazyServerViaCache(ctx, cache, mcpServer, sink, runReg, userConf.OutputIsTerminalOrDefault())
+				}
+				if err != nil {
+					failures.addIfExplicit(explicit, isExplicitIdx, mcpServer.Name, err)
+				}
+			}(mcpServer, isExplicitIdx, isHTTP)
+			continue
+		}
 		// No context leak here as it's a child of the root context, which will cascade the cancel
 		// for all other code paths
 		clientContext, clientContextCancel := context.WithCancel(ctx)
-		inputChan, outputChan, err := mcp.Client(clientContext, mcpServer, sink)
-		if err != nil {
-			if explicit && i >= explicitTail {
-				explicitFailures = append(explicitFailures, claierr.NewMcpServerStartup(mcpServer.Name, "spawn", err))
-			} else {
-				ancli.Warnf("failed to setup: '%v', err: %v\n", mcpServer.Name, err)
+		var conn mcp.Conn
+		var connErr error
+		if isHTTP {
+			// Eager HTTP servers get only the static half of the
+			// credential-precedence chain (auth.token_command,
+			// auth.token_env): the interactive flow needs a challenge from
+			// a real connect attempt, which this path hands straight to
+			// Manager instead of driving itself (phase 5 scope; the lazy
+			// path, the default for an ambient endpoint-based server since
+			// D16/D18, gets the full chain).
+			var decorator mcp.RequestDecorator
+			decorator, connErr = staticHttpDecorator(ctx, mcpServer)
+			var opts []mcp.HttpConnOption
+			if connErr == nil && decorator != nil {
+				opts = append(opts, mcp.WithRequestDecorator(decorator))
 			}
+			if connErr == nil {
+				conn = mcp.NewHttpConn(clientContext, mcpServer, sink, opts...)
+			}
+		} else {
+			conn, connErr = mcp.NewStdioConn(clientContext, mcpServer, sink)
+		}
+		if connErr != nil {
+			// NewStdioConn already returns a typed *claierr.McpServerStartupError
+			// naming the "spawn" stage, so it is propagated as-is rather than
+			// re-wrapped.
+			failures.addIfExplicit(explicit, isExplicitIdx, mcpServer.Name, connErr)
 			toolWg.Done()
 			clientContextCancel()
 			continue
@@ -185,8 +319,7 @@ func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configu
 		controlChannel <- mcp.ControlEvent{
 			ServerName: mcpServer.Name,
 			Server:     mcpServer,
-			InputChan:  inputChan,
-			OutputChan: outputChan,
+			Conn:       conn,
 			Cancel:     clientContextCancel,
 		}
 	}
@@ -205,12 +338,12 @@ func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configu
 	close(startupFailures)
 	for f := range startupFailures {
 		if explicit && f.ServerName != "" && isExplicitServer(f.ServerName, userConf.McpServers) {
-			explicitFailures = append(explicitFailures, f.Err)
+			failures.addExplicit(f.ServerName, f.Err)
 			continue
 		}
 		ancli.Warnf("failed to setup mcp server '%v': %v\n", f.ServerName, f.Err)
 	}
-	if len(explicitFailures) > 0 {
+	if explicitFailures := failures.all(); len(explicitFailures) > 0 {
 		return runReg.All(), errors.Join(explicitFailures...)
 	}
 	notifyMcpSetupSucceeded(sink)
@@ -228,6 +361,185 @@ func isExplicitServer(name string, servers []pub_models.McpServer) bool {
 		}
 	}
 	return false
+}
+
+// failureCollector routes and accumulates server startup failures: an
+// explicit server under strict startup is joined for the caller to return;
+// every other server keeps the legacy warn-and-degrade. The lazy branch
+// resolves concurrently (D39, R2-02), so every write is serialised through
+// mu rather than through the sequential append classifyServerFailure used
+// to make safe for free.
+type failureCollector struct {
+	mu   sync.Mutex
+	errs []error
+}
+
+func (f *failureCollector) addIfExplicit(explicit, isExplicitIdx bool, serverName string, err error) {
+	if explicit && isExplicitIdx {
+		f.addExplicit(serverName, err)
+		return
+	}
+	ancli.Warnf("failed to setup: '%v', err: %v\n", serverName, err)
+}
+
+// addExplicit is the single funnel every explicit server's failure passes
+// through before setupTooling's strict/degrade fork reads it. That fork
+// classifies on claierr.ErrMcpServerStartup alone (errors.Is), so a
+// producer that returns a different typed error class — a credential
+// source failure, a discovery failure, an unresolved auth challenge — must
+// still unwrap to the sentinel here or the explicit failure silently
+// degrades to a warning and Setup returns nil (D42, R2-05). An error that
+// already carries the sentinel is kept as-is so its own stage name
+// survives; only an unwrapped error is given the generic "credential"
+// stage, since every producer reaching this funnel unwrapped today is a
+// credential-resolution failure on the HTTP auth path.
+func (f *failureCollector) addExplicit(serverName string, err error) {
+	if !errors.Is(err, claierr.ErrMcpServerStartup) {
+		err = claierr.NewMcpServerStartup(serverName, "credential", err)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.errs = append(f.errs, err)
+}
+
+func (f *failureCollector) all() []error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.errs
+}
+
+// validateExplicitServers runs serverconfig.ValidateTransport over every
+// server passed through agent.WithMcpServers, exactly as
+// findConfiguredMcpServers already does for a config-directory file (D43,
+// R2-07): without it, a struct with both command and url set silently
+// preferred url, and one with neither set reached
+// exec.CommandContext(ctx, ""). A server that fails validation is routed by
+// the same explicit/ambient posture a startup failure would be and never
+// joins valid, so it never reaches the manager.
+func validateExplicitServers(explicit bool, servers []pub_models.McpServer) (valid []pub_models.McpServer, failures []error) {
+	valid = make([]pub_models.McpServer, 0, len(servers))
+	for _, server := range servers {
+		if err := serverconfig.ValidateTransport(server.Name, server); err != nil {
+			typed := claierr.NewMcpServerStartup(server.Name, "config", err)
+			if explicit {
+				failures = append(failures, typed)
+			} else {
+				ancli.Warnf("failed to setup: '%v', err: %v\n", server.Name, typed)
+			}
+			continue
+		}
+		valid = append(valid, server)
+	}
+	return valid, failures
+}
+
+// resolveLazyServerViaCache is the schema-cache-aware path for a
+// lazy-resolved command-based server. A hit registers its tools wired to an
+// unresolved Connector, so no transport is constructed. A miss connects now
+// — the zero-process outcome is a warm-cache outcome, never a cold one
+// (D18) — registers from the live handshake exactly as a hit would, and
+// captures the entry. A capture failure degrades to a warning: the cache is
+// an optimisation, never a dependency. outputIsTerminal resolves the
+// auth-timeout parameter (phase 6, D22): a stdio tool carries no
+// AuthResolver, since the only lever on a mid-connect prompt is time.
+func resolveLazyServerViaCache(ctx context.Context, cache *schemacache.Cache, server pub_models.McpServer, sink mcp.ServerLogSink, registrar mcp.ToolRegistrar, outputIsTerminal bool) error {
+	identity := schemacache.BuildIdentity(server)
+	timeout := time.Duration(server.TimeoutSeconds) * time.Second
+	authTimeout := resolveAuthTimeout(server, outputIsTerminal)
+
+	if cache != nil {
+		if rec, ok := cache.Lookup(identity); ok {
+			warnIfLauncherOnlyFingerprint(identity, server.Name)
+			connector := mcp.NewConnector(ctx, server, sink, connectorOptsFor(server)...)
+			invalidating := newCacheInvalidatingConnector(ctx, connector, cache, identity, server.Name)
+			return mcp.RegisterTools(rec.Tools, server.Name, invalidating, timeout, registrar, nil, authTimeout)
+		}
+	}
+
+	connCtx, cancel := context.WithCancel(ctx)
+	// Only cancel on failure; on success the connection must stay alive to
+	// serve tool calls for the rest of the run, cleaned up when ctx ends.
+	var connected bool
+	defer func() {
+		if !connected {
+			cancel()
+		}
+	}()
+
+	conn, err := mcp.NewStdioConn(connCtx, server, sink)
+	if err != nil {
+		return err
+	}
+
+	// The connect-bound, not the connection-level handshake bound, wraps
+	// spawn plus handshake here: this is the cache-miss connect, the same
+	// one NewConnector bounds internally, and connect_timeout_seconds must
+	// have an effect on it or a hung endpoint blocks cold setup for the
+	// 30s handshake default regardless of what the server configures
+	// (R1-14).
+	connectCtx, connectCancel := context.WithTimeout(ctx, mcp.ConnectBoundOf(server))
+	serverInfo, toolsArray, err := mcp.Handshake(connectCtx, conn, server.Name)
+	connectCancel()
+	if err != nil {
+		return mcp.ReportAsConnectStage(err, connectCtx, server.Name)
+	}
+
+	registerConn := conn
+	if cache != nil {
+		registerConn = newCacheInvalidatingConn(conn, cache, identity, server.Name)
+	}
+	if err := mcp.RegisterTools(toolsArray, server.Name, mcp.NewResolvedConnector(registerConn), timeout, registrar, nil, authTimeout); err != nil {
+		return err
+	}
+	connected = true
+
+	if cache != nil {
+		if captureErr := cache.Capture(identity, mcp.ProtocolVersion, serverInfo, toolsArray); captureErr != nil {
+			ancli.Warnf("failed to persist mcp schema cache entry for %q: %v\n", server.Name, captureErr)
+		}
+		if watcher, ok := conn.(mcp.NotificationWatcher); ok {
+			go watchForToolsListChanged(connCtx, watcher, cache, identity, server.Name)
+		}
+	}
+	return nil
+}
+
+// warnIfLauncherOnlyFingerprint restores, for a warm-cache hit, the
+// setup-time notice an eager run always gave before this worklog (sign-off
+// review B3): for the dominant "npx -y <package>" shape, only the launcher
+// is locally fingerprinted, so a cache hit here is the operator's only
+// chance this run to learn the advertised tools are a claim carried over
+// from a prior successful handshake, not something this run observed.
+// Printed only for that shape (LauncherOnlyFingerprint), not on every warm
+// hit, so a direct-binary server — whose Executable component already
+// fingerprints the thing that would have changed — stays silent.
+func warnIfLauncherOnlyFingerprint(identity schemacache.Identity, serverName string) {
+	if !identity.LauncherOnlyFingerprint() {
+		return
+	}
+	ancli.Noticef("mcp server '%v' served from schema cache with no handshake this run; only its launcher (%v) is locally fingerprinted, so a change to the server itself may go undetected until the cache expires\n", serverName, identity.Command)
+}
+
+// connectorOptsFor carries a configured connect_timeout_seconds onto the
+// Connector a cache hit constructs. Zero is left alone so the connector
+// keeps its own default rather than a zero-duration bound.
+func connectorOptsFor(server pub_models.McpServer) []mcp.ConnectorOption {
+	if server.ConnectTimeoutSeconds > 0 {
+		return []mcp.ConnectorOption{mcp.WithConnectBound(time.Duration(server.ConnectTimeoutSeconds) * time.Second)}
+	}
+	return nil
+}
+
+// newMcpSchemaCache builds the production schema cache under the clai cache
+// dir. A failure to resolve that directory disables caching for the run
+// (every lookup degrades to a miss) rather than failing setup: the cache is
+// an optimisation, never a dependency.
+func newMcpSchemaCache() (*schemacache.Cache, error) {
+	cacheDir, err := utils.GetClaiCacheDir()
+	if err != nil {
+		return nil, fmt.Errorf("resolve clai cache dir: %w", err)
+	}
+	return schemacache.New(path.Join(cacheDir, schemacache.DefaultDirName))
 }
 
 // notifyMcpSetupSucceeded tells a draining sink that MCP setup completed, so
@@ -258,7 +570,18 @@ func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, us
 		return nil
 	}
 	tools.Init()
-	mcpTools, err := setupMcpManager(ctx, path.Join(userConf.ConfigDir, "mcpServers"), *userConf, sink)
+	cache, cacheErr := newMcpSchemaCache()
+	if cacheErr != nil {
+		ancli.Warnf("mcp schema cache unavailable, every lazy server will connect at setup: %v\n", cacheErr)
+	}
+	authz := newMcpAuthorizer(userConf.ConfigDir, userConf.TrustInput, userConf.OutputIsTerminalOrDefault(), sink)
+	// A credential command is subject to the same command-ban policy a
+	// tool-call context carries, so a banned command cannot be smuggled in
+	// as a credential helper (R1-05): every credential resolution this
+	// setup drives runs under this same ctx, so attaching the policy here
+	// reaches every call site in one place rather than at each producer.
+	mcpCtx := pkgtools.WithCmdBanContext(ctx, userConf.CmdBan)
+	mcpTools, err := setupMcpManager(mcpCtx, path.Join(userConf.ConfigDir, "mcpServers"), *userConf, sink, cache, authz)
 	if misc.Truthy(os.Getenv("DEBUG")) {
 		ancli.Okf("Registering tools on querier of type: %T\n", modelConf)
 	}

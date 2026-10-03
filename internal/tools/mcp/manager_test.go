@@ -4,27 +4,27 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/baalimago/clai/internal/tools"
+	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
-func TestHandleServerRegistersTool(t *testing.T) {
+func TestManagerRegistersToolsThroughConn(t *testing.T) {
 	ctx := t.Context()
 
 	srv := pub_models.McpServer{Command: "go", Args: []string{"run", "./testserver"}}
-	in, out, err := Client(ctx, srv, nil)
+	conn, err := NewStdioConn(ctx, srv, nil)
 	if err != nil {
-		t.Fatalf("client: %v", err)
+		t.Fatalf("NewStdioConn: %v", err)
 	}
 
 	reg := tools.NewRegistry()
 
-	ev := ControlEvent{ServerName: "echo", Server: srv, InputChan: in, OutputChan: out}
+	ev := ControlEvent{ServerName: "echo", Server: srv, Conn: conn}
 	if serveErr := handleServer(ctx, ev, reg); serveErr != nil {
 		t.Fatalf("handleServer: %v", serveErr)
 	}
@@ -49,50 +49,43 @@ func TestHandleServerRegistersTool(t *testing.T) {
 	}
 }
 
-func TestSendRequest_ReturnsErrorOnClosedOutput(t *testing.T) {
-	ctx := context.Background()
-	in := make(chan any, 1)
-	out := make(chan any)
-	close(out)
-
-	_, err := sendRequest(ctx, in, out, Request{JSONRPC: "2.0", ID: 1, Method: "initialize"})
-	if err == nil {
-		t.Fatal("expected an error when the output channel is closed")
-	}
-	if !strings.Contains(err.Error(), "connection closed") {
-		t.Fatalf("expected a connection-closed error, got: %v", err)
-	}
-}
-
-func TestHandleServer_TimesOutHungServer(t *testing.T) {
+// TestConnHandshakeTimeoutReturnsTypedError migrates the retired
+// ControlEvent.StartupTimeout override: the handshake bound now lives on
+// the connection, set here through WithHandshakeBound. It also pins the
+// acceptance criterion that expiry surfaces a typed startup error.
+func TestConnHandshakeTimeoutReturnsTypedError(t *testing.T) {
 	srv := pub_models.McpServer{
 		Command: "go",
 		Args:    []string{"run", "./testserver"},
 		Env:     map[string]string{"TEST_SERVER_AUTH_HANG": "1"},
 	}
-	in, out, err := Client(t.Context(), srv, nil)
+	conn, err := NewStdioConn(t.Context(), srv, nil, WithHandshakeBound(50*time.Millisecond))
 	if err != nil {
-		t.Fatalf("client: %v", err)
+		t.Fatalf("NewStdioConn: %v", err)
 	}
+	t.Cleanup(func() { conn.Close() })
 
 	reg := tools.NewRegistry()
-	ev := ControlEvent{
-		ServerName:     "oauth",
-		Server:         srv,
-		InputChan:      in,
-		OutputChan:     out,
-		StartupTimeout: 50 * time.Millisecond,
-	}
+	ev := ControlEvent{ServerName: "oauth", Server: srv, Conn: conn}
 
 	start := time.Now()
 	serveErr := handleServer(t.Context(), ev, reg)
+	elapsed := time.Since(start)
+
 	if serveErr == nil {
-		t.Fatal("handleServer returned nil for a hung server, want timeout error")
+		t.Fatal("handleServer returned nil for a hung server, want a timeout error")
 	}
 	if !errors.Is(serveErr, context.DeadlineExceeded) {
 		t.Fatalf("expected DeadlineExceeded, got: %v", serveErr)
 	}
-	if elapsed := time.Since(start); elapsed > 2*time.Second {
+	var startupErr *claierr.McpServerStartupError
+	if !errors.As(serveErr, &startupErr) {
+		t.Fatalf("err = %v, want *claierr.McpServerStartupError", serveErr)
+	}
+	if startupErr.Stage != "initialize" {
+		t.Errorf("Stage = %q, want %q", startupErr.Stage, "initialize")
+	}
+	if elapsed > 2*time.Second {
 		t.Fatalf("timeout did not fire promptly: elapsed %v", elapsed)
 	}
 	if _, ok := reg.Get("mcp_oauth_echo"); ok {
@@ -100,13 +93,107 @@ func TestHandleServer_TimesOutHungServer(t *testing.T) {
 	}
 }
 
+// TestConnInitializeRpcErrorIsTypedStartupError pins that a JSON-RPC error
+// answer to initialize surfaces as a typed startup error naming that stage.
+func TestConnInitializeRpcErrorIsTypedStartupError(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	c, dec, w := newPipeConn(t, ctx, nil)
+	enc := json.NewEncoder(w)
+
+	go func() {
+		var r Request
+		dec.Decode(&r)
+		enc.Encode(Response{JSONRPC: "2.0", ID: r.ID, Error: &RPCError{Code: -32000, Message: "boom"}})
+	}()
+
+	reg := tools.NewRegistry()
+	ev := ControlEvent{ServerName: "svc", Server: pub_models.McpServer{Name: "svc"}, Conn: c}
+	serveErr := handleServer(ctx, ev, reg)
+	if serveErr == nil {
+		t.Fatal("expected an error")
+	}
+	var startupErr *claierr.McpServerStartupError
+	if !errors.As(serveErr, &startupErr) {
+		t.Fatalf("err = %v, want *claierr.McpServerStartupError", serveErr)
+	}
+	if startupErr.Stage != "initialize" {
+		t.Errorf("Stage = %q, want %q", startupErr.Stage, "initialize")
+	}
+}
+
+// TestConnToolsListUndecodableResultIsTypedStartupError pins that a
+// tools/list result that cannot be decoded surfaces as a typed startup
+// error naming that stage.
+func TestConnToolsListUndecodableResultIsTypedStartupError(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	c, dec, w := newPipeConn(t, ctx, nil)
+	enc := json.NewEncoder(w)
+
+	go func() {
+		var initReq Request
+		dec.Decode(&initReq)
+		enc.Encode(Response{JSONRPC: "2.0", ID: initReq.ID, Result: json.RawMessage(`{}`)})
+
+		var notif Request
+		dec.Decode(&notif) // notifications/initialized: no id, consumed and ignored
+
+		var listReq Request
+		dec.Decode(&listReq)
+		enc.Encode(Response{JSONRPC: "2.0", ID: listReq.ID, Result: json.RawMessage(`"not-an-object"`)})
+	}()
+
+	reg := tools.NewRegistry()
+	ev := ControlEvent{ServerName: "svc", Server: pub_models.McpServer{Name: "svc"}, Conn: c}
+	serveErr := handleServer(ctx, ev, reg)
+	if serveErr == nil {
+		t.Fatal("expected an error")
+	}
+	var startupErr *claierr.McpServerStartupError
+	if !errors.As(serveErr, &startupErr) {
+		t.Fatalf("err = %v, want *claierr.McpServerStartupError", serveErr)
+	}
+	if startupErr.Stage != "tools/list" {
+		t.Errorf("Stage = %q, want %q", startupErr.Stage, "tools/list")
+	}
+}
+
+// TestConnAdvertisesProtocolVersion pins that handleServer advertises the
+// current protocol-version parameter rather than the retired live value: the
+// fake server rejects any other version, so a successful handshake proves
+// the right one was sent.
+func TestConnAdvertisesProtocolVersion(t *testing.T) {
+	srv := pub_models.McpServer{Name: "echo", Command: "go", Args: []string{"run", "./testserver"}}
+	conn, err := NewStdioConn(t.Context(), srv, nil)
+	if err != nil {
+		t.Fatalf("NewStdioConn: %v", err)
+	}
+	t.Cleanup(func() { conn.Close() })
+
+	reg := tools.NewRegistry()
+	ev := ControlEvent{ServerName: "echo", Server: srv, Conn: conn}
+	if serveErr := handleServer(t.Context(), ev, reg); serveErr != nil {
+		t.Fatalf("handleServer with the current protocol version: %v", serveErr)
+	}
+
+	conn2, err := NewStdioConn(t.Context(), srv, nil)
+	if err != nil {
+		t.Fatalf("NewStdioConn: %v", err)
+	}
+	t.Cleanup(func() { conn2.Close() })
+	if _, err := conn2.Call(t.Context(), "initialize", map[string]any{"protocolVersion": "2025-03-26"}); err == nil {
+		t.Fatal("expected the fake server to reject the retired protocol version")
+	}
+}
+
 func TestManager(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	srv := pub_models.McpServer{Command: "go", Args: []string{"run", "./testserver"}}
-	in, out, err := Client(ctx, srv, nil)
+	conn, err := NewStdioConn(ctx, srv, nil)
 	if err != nil {
-		t.Fatalf("client: %v", err)
+		t.Fatalf("NewStdioConn: %v", err)
 	}
 
 	reg := tools.NewRegistry()
@@ -116,7 +203,7 @@ func TestManager(t *testing.T) {
 	wg.Add(1)
 	go Manager(ctx, controlCh, &wg, reg, nil)
 
-	controlCh <- ControlEvent{ServerName: "echo", Server: srv, InputChan: in, OutputChan: out}
+	controlCh <- ControlEvent{ServerName: "echo", Server: srv, Conn: conn}
 
 	var ok bool
 	for range 20 {
@@ -140,18 +227,19 @@ func TestManager_SkipsFailingServer(t *testing.T) {
 	ctx := t.Context()
 
 	goodSrv := pub_models.McpServer{Command: "go", Args: []string{"run", "./testserver"}}
-	goodIn, goodOut, err := Client(ctx, goodSrv, nil)
+	goodConn, err := NewStdioConn(ctx, goodSrv, nil)
 	if err != nil {
-		t.Fatalf("good client: %v", err)
+		t.Fatalf("good conn: %v", err)
 	}
 	brokenSrv := pub_models.McpServer{
+		Name:    "broken",
 		Command: "go",
 		Args:    []string{"run", "./testserver"},
 		Env:     map[string]string{"TEST_SERVER_EXIT": "1"},
 	}
-	brokenIn, brokenOut, err := Client(ctx, brokenSrv, nil)
+	brokenConn, err := NewStdioConn(ctx, brokenSrv, nil)
 	if err != nil {
-		t.Fatalf("broken client: %v", err)
+		t.Fatalf("broken conn: %v", err)
 	}
 
 	reg := tools.NewRegistry()
@@ -160,8 +248,8 @@ func TestManager_SkipsFailingServer(t *testing.T) {
 	wg.Add(2)
 	go Manager(ctx, controlCh, &wg, reg, nil)
 
-	controlCh <- ControlEvent{ServerName: "broken", Server: brokenSrv, InputChan: brokenIn, OutputChan: brokenOut}
-	controlCh <- ControlEvent{ServerName: "echo", Server: goodSrv, InputChan: goodIn, OutputChan: goodOut}
+	controlCh <- ControlEvent{ServerName: "broken", Server: brokenSrv, Conn: brokenConn}
+	controlCh <- ControlEvent{ServerName: "echo", Server: goodSrv, Conn: goodConn}
 
 	deadline := time.Now().Add(5 * time.Second)
 	for {
@@ -177,67 +265,5 @@ func TestManager_SkipsFailingServer(t *testing.T) {
 
 	if _, ok := reg.Get("mcp_broken_echo"); ok {
 		t.Error("broken server's tools must not be registered")
-	}
-}
-
-// Test_McpManager_MalformedResponse_ErrorToRequester pins the S5-S6 repair:
-// a frame that cannot be parsed as a JSON-RPC response is delivered to the
-// waiting request as an error, never logged and dropped (worklog
-// 2026-09-05-error-propagation, phase 8).
-func Test_McpManager_MalformedResponse_ErrorToRequester(t *testing.T) {
-	ctx := t.Context()
-	tests := []struct {
-		name string
-		msg  any
-		want string
-	}{
-		{name: "non-JSON message", msg: "plain string", want: "non-JSON message"},
-		{name: "malformed raw response", msg: json.RawMessage(`{"jsonrpc":"2.0"`), want: "malformed response"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			in := make(chan any, 1)
-			out := make(chan any, 1)
-			out <- tt.msg
-
-			_, err := sendRequest(ctx, in, out, Request{JSONRPC: "2.0", ID: 1, Method: "initialize"})
-			if err == nil {
-				t.Fatal("expected an error, got nil")
-			}
-			if !strings.Contains(err.Error(), tt.want) {
-				t.Errorf("err = %v, want it to contain %q", err, tt.want)
-			}
-		})
-	}
-}
-
-func TestMcpTool_CallWithContext_CancelBeforeSend(t *testing.T) {
-	// Use a live context for Client and handleServer
-	srvCtx := context.Background()
-	srv := pub_models.McpServer{Command: "go", Args: []string{"run", "./testserver"}}
-	in, out, err := Client(srvCtx, srv, nil)
-	if err != nil {
-		t.Fatalf("client: %v", err)
-	}
-
-	reg := tools.NewRegistry()
-
-	ev := ControlEvent{ServerName: "echo", Server: srv, InputChan: in, OutputChan: out}
-	_ = handleServer(srvCtx, ev, reg)
-
-	tool, ok := reg.Get("mcp_echo_echo")
-	if !ok {
-		t.Fatal("tool not registered")
-	}
-
-	// Now call with an already-cancelled context — should fail immediately on send
-	cancelledCtx, cancel := context.WithCancel(context.Background())
-	cancel()
-	_, err = tool.(*mcpTool).CallWithContext(cancelledCtx, pub_models.Input{"text": "hello"})
-	if err == nil {
-		t.Fatal("expected error for cancelled context, got nil")
-	}
-	if !strings.Contains(err.Error(), "cancelled") {
-		t.Fatalf("expected cancellation error, got: %v", err)
 	}
 }

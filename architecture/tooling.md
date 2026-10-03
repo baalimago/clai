@@ -9,7 +9,8 @@ This document describes **how clai’s tooling system works end-to-end**, includ
 
 > Related docs:
 >
->- `architecture/tools.md` describes the **`clai tools` inspection command**.
+>- `architecture/mcp.md` owns MCP connections: the seam, the demux contract, bounds and lifecycle.
+>- `architecture/tools-command.md` describes the **`clai tools` inspection command**.
 >- `architecture/query.md` describes query/chat runtime behavior.
 >- `architecture/config.md` documents config layout and flags.
 
@@ -82,13 +83,17 @@ wiring at the call site.
 
 ### MCP tools
 
-MCP tools are discovered from configured MCP servers (see [MCP servers](#mcp-servers)). During tooling initialization:
+MCP tools are discovered from configured MCP servers and namespaced as `mcp_<server>_<tool>`, so
+their origin is explicit and they cannot collide with a built-in.
 
-1. clai reads the MCP server configurations.
-2. For each configured server, clai connects (or prepares a client) and fetches tool metadata.
-3. clai registers those tools into the same registry as built-ins.
+They are **not** registered into the process-global registry that holds the built-ins. They live in a
+per-run registry owned by the querier that discovered them, because the global one's entries are
+overwritten by every concurrent `Setup`. One consequence is worth knowing here rather than
+discovering it: `clai tools` cannot read MCP tools from the global registry either, so it has its own
+cache-only source — see [tools-command.md](./tools-command.md).
 
-To avoid name collisions and to make origin explicit, MCP tools are typically namespaced/prefixed (for example with `mcp_...`).
+The connection model, the handshake, the demultiplexing contract and the failure posture are owned
+by **[mcp.md](./mcp.md)**.
 
 Registry aliases are lookup names, not additional model capabilities. When
 tools are selected, clai sends one schema per specification name. This keeps a
@@ -171,83 +176,22 @@ Tool execution should be:
 
 ## MCP servers
 
-MCP (Model Context Protocol) servers let clai use tools implemented outside this repository.
+MCP (Model Context Protocol) servers let clai use tools implemented outside this repository. Each
+server is a provider of tool specifications plus an endpoint that executes calls, and its tools
+become selectable via `-t/-tools` like any other tool.
 
-### What clai uses MCP for
+Everything else about them lives in one place, **[mcp.md](./mcp.md)**: the connection model and why
+a connection is never shared, the JSON-RPC demultiplexing contract, the goroutines per connection,
+the handshake and the bounds that govern it, the `<clai-config>/mcpServers/` configuration layout,
+ambient versus explicit failure posture, and how a server's standard error is surfaced.
 
-clai treats each MCP server as a provider of:
-
-- a set of tool specifications (name/description/JSON schema)
-- a protocol endpoint to execute tool calls
-
-Those tools are imported into the registry and become selectable via `-t/-tools` like any other tool.
-
-### Configuration layout
-
-MCP servers are configured under the clai config directory, conceptually:
-
-- `<clai-config>/mcpServers/*.json`
-
-Each JSON file describes one MCP server. The exact schema is defined by the project’s config code, but typically includes:
-
-- a display/name/ID
-- how to start/connect to the server (e.g. command + args, or URL)
-- environment variables
-- optional allow/deny lists of tools
-- an optional per-call timeout (`timeout_seconds`): bounds a single tool call so a hung server cannot block an agent forever. `0` or absent means unbounded (the caller's context is the only bound).
-
-Discovery of this directory is ambient: every configured server starts whenever
-`UseTools` is on and no tool glob narrows the set. A querier built with
-`text.Configurations.SkipAmbientMcpServers` (a `json:"-"` field, default
-`false`) opts out of that discovery while explicit `McpServers` still start;
-the one-tool conversation summarizer (`architecture/summaries.md`) is the
-in-tree consumer. See the lifecycle below.
-
-### Lifecycle
-
-MCP server lifecycle is:
-
-1. **Load configuration** from `mcpServers/*.json`. A run built with
-   `Configurations.SkipAmbientMcpServers` skips this discovery entirely (the
-   directory need not exist); servers passed in `Configurations.McpServers`
-   still start with their explicit or ambient posture (worklog
-   2026-09-09-conversation-summaries, D18).
-2. **Start/connect** to the MCP server.
-3. **Discover tools** exposed by that server.
-4. **Register tools** with namespacing to avoid collisions.
-5. When the model calls an MCP tool, clai:
-   - serializes arguments
-   - performs an MCP request
-   - returns the MCP response as the tool result
-6. On shutdown/cancel, clai closes client connections and terminates spawned processes.
-
-### Naming and selection
-
-Because MCP servers are external and tool names can overlap with built-ins, MCP-derived tools should be distinguishable.
-
-Practically:
-
-- MCP tools are accepted/validated by name (often with an `mcp_` prefix)
-- `-t=*` includes MCP tools in addition to built-ins
-- `clai tools` will list MCP tools if they are configured and initialized
-
-### Error handling
-
-MCP calls can fail due to:
-
-- server startup/connect errors
-- tool not found on the server
-- invalid arguments
-- server-side execution errors
-- timeouts/cancellation
-
-All such failures should be surfaced as contextual errors (e.g. `fmt.Errorf("call mcp tool %q on server %q: %w", tool, server, err)`).
+A claim stated in two places drifts, so this section deliberately holds no detail of its own.
 
 ## Inspection vs execution
 
 Two related but distinct concepts:
 
-- **Inspection** (`clai tools ...`) lists tools and shows their JSON specs. It does not run a query.
+- **Inspection** (`clai tools ...`) lists built-in tools plus any MCP tool cached from a prior successful run, and shows their JSON specs. It does not run a query and never connects to a server; see [mcp.md](./mcp.md).
 - **Execution** (`clai query` / `clai chat`) uses the allowed-tool list to decide what the model can call.
 
 The inspection command is useful for:

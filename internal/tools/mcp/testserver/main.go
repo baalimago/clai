@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
+	"time"
 )
 
 type Request struct {
@@ -15,6 +17,33 @@ type Request struct {
 }
 
 func main() {
+	// TEST_SERVER_SPAWN_LOG names a file to append one line to on every
+	// invocation, so a caller can count real process births across repeated
+	// setup runs (the schema cache's warm-cache proof) without instrumenting
+	// anything else about this fixture.
+	if logPath := os.Getenv("TEST_SERVER_SPAWN_LOG"); logPath != "" {
+		// Fatal, not best-effort (R2-03 review round 2): a spawn whose log
+		// write fails is indistinguishable from no spawn at all, and "no
+		// spawn" is exactly what every warm-cache test's assertion rests on.
+		// A broken counter must fail loudly here rather than silently prove
+		// the claim it was supposed to disprove.
+		f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "TEST_SERVER_SPAWN_LOG: open %q: %v\n", logPath, err)
+			os.Exit(1)
+		}
+		// A timestamp, not a constant marker: a caller proving two
+		// servers were resolved concurrently rather than one after
+		// another (the setup loop's per-server concurrency, D39) reads
+		// how tightly the recorded births cluster. A caller counting
+		// births, which is every other test using this file, only
+		// counts lines and never looks at the content.
+		fmt.Fprintln(f, time.Now().UnixNano())
+		if err := f.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "TEST_SERVER_SPAWN_LOG: close %q: %v\n", logPath, err)
+			os.Exit(1)
+		}
+	}
 	if os.Getenv("TEST_SERVER_AUTH_HANG") != "" {
 		// Print an OAuth prompt, then wait for an authorization that never
 		// comes: stay alive without answering any request.
@@ -47,6 +76,20 @@ func main() {
 	if os.Getenv("TEST_SERVER_EXIT") != "" {
 		return
 	}
+	if ms := os.Getenv("TEST_SERVER_PRE_HANDSHAKE_DELAY_MS"); ms != "" {
+		if d, err := strconv.Atoi(ms); err == nil {
+			time.Sleep(time.Duration(d) * time.Millisecond)
+		}
+	}
+	// TEST_SERVER_UNKNOWN_TOOL_NAME and TEST_SERVER_LIST_CHANGED_TRIGGER_TOOL
+	// let a test drive the schema cache's two endpoint-agnostic invalidation
+	// signals (R2-16) against a real spawned process, rather than a
+	// hand-built seam: a tool that tools/list advertises but tools/call
+	// answers as unknown, and a tool whose call first emits an unsolicited
+	// notifications/tools/list_changed notification on stdout.
+	unknownToolName := os.Getenv("TEST_SERVER_UNKNOWN_TOOL_NAME")
+	listChangedTriggerTool := os.Getenv("TEST_SERVER_LIST_CHANGED_TRIGGER_TOOL")
+
 	dec := json.NewDecoder(os.Stdin)
 	enc := json.NewEncoder(os.Stdout)
 	for {
@@ -56,41 +99,67 @@ func main() {
 		}
 		switch req.Method {
 		case "initialize":
+			// A missing protocolVersion is accepted leniently, so a raw
+			// request built without it (as several low-level tests do)
+			// still gets a handshake; a present-but-wrong version is
+			// rejected, which is what proves the real client advertises
+			// the current one.
+			var p struct {
+				ProtocolVersion string `json:"protocolVersion"`
+			}
+			json.Unmarshal(req.Params, &p)
+			if p.ProtocolVersion != "" && p.ProtocolVersion != "2025-06-18" {
+				enc.Encode(map[string]any{
+					"jsonrpc": "2.0",
+					"id":      req.ID,
+					"error":   map[string]any{"code": -32602, "message": "unsupported protocol version: " + p.ProtocolVersion},
+				})
+				continue
+			}
 			enc.Encode(map[string]any{
 				"jsonrpc": "2.0",
 				"id":      req.ID,
 				"result":  map[string]any{},
 			})
 		case "tools/list":
-			enc.Encode(map[string]any{
-				"jsonrpc": "2.0",
-				"id":      req.ID,
-				"result": map[string]any{
-					"tools": []map[string]any{
-						{
-							"name":        "echo",
-							"description": "echo text",
-							"inputSchema": map[string]any{
-								"type":     "object",
-								"required": []string{"text"},
-								"properties": map[string]any{
-									"text": map[string]any{
-										"type":        "string",
-										"description": "text to echo",
-									},
-								},
-							},
-						},
-						{
-							"name":        "hang",
-							"description": "never responds, simulating a wedged server",
-							"inputSchema": map[string]any{
-								"type":       "object",
-								"properties": map[string]any{},
+			toolList := []map[string]any{
+				{
+					"name":        "echo",
+					"description": "echo text",
+					"inputSchema": map[string]any{
+						"type":     "object",
+						"required": []string{"text"},
+						"properties": map[string]any{
+							"text": map[string]any{
+								"type":        "string",
+								"description": "text to echo",
 							},
 						},
 					},
 				},
+				{
+					"name":        "hang",
+					"description": "never responds, simulating a wedged server",
+					"inputSchema": map[string]any{
+						"type":       "object",
+						"properties": map[string]any{},
+					},
+				},
+			}
+			for _, extra := range []string{unknownToolName, listChangedTriggerTool} {
+				if extra == "" {
+					continue
+				}
+				toolList = append(toolList, map[string]any{
+					"name":        extra,
+					"description": "test fixture tool",
+					"inputSchema": map[string]any{"type": "object", "properties": map[string]any{}},
+				})
+			}
+			enc.Encode(map[string]any{
+				"jsonrpc": "2.0",
+				"id":      req.ID,
+				"result":  map[string]any{"tools": toolList},
 			})
 		case "tools/call":
 			var p struct {
@@ -102,6 +171,22 @@ func main() {
 				// Simulate a wedged server (e.g. a browser navigation that
 				// never completes): swallow the request and answer nothing.
 				continue
+			}
+			if unknownToolName != "" && p.Name == unknownToolName {
+				enc.Encode(map[string]any{
+					"jsonrpc": "2.0",
+					"id":      req.ID,
+					"error":   map[string]any{"code": -32601, "message": "method not found: " + p.Name},
+				})
+				continue
+			}
+			if listChangedTriggerTool != "" && p.Name == listChangedTriggerTool {
+				// Written before the call's own response, synchronously: this
+				// loop is single-threaded, so the two writes never race.
+				enc.Encode(map[string]any{
+					"jsonrpc": "2.0",
+					"method":  "notifications/tools/list_changed",
+				})
 			}
 			text, _ := p.Arguments["text"].(string)
 			result := map[string]any{

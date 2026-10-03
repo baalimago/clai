@@ -6,6 +6,32 @@ import (
 	"strings"
 )
 
+// StartupMode selects when a configured MCP server's connection is created:
+// at setup time (StartupEager) or deferred to its first tool call
+// (StartupLazy).
+type StartupMode string
+
+const (
+	StartupEager StartupMode = "eager"
+	StartupLazy  StartupMode = "lazy"
+)
+
+// UnmarshalJSON rejects any value other than "eager" or "lazy", so a typo in
+// a server config fails to parse rather than silently defaulting.
+func (m *StartupMode) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	switch StartupMode(s) {
+	case StartupEager, StartupLazy:
+		*m = StartupMode(s)
+		return nil
+	default:
+		return fmt.Errorf("mcp server startup mode %q is invalid: want %q or %q", s, StartupEager, StartupLazy)
+	}
+}
+
 type LLMTool interface {
 	// Call the LLM tool with the given Input. Returns output from the tool or an error
 	// if the call returned an error-like. An error-like is either exit code non-zero or
@@ -19,14 +45,57 @@ type LLMTool interface {
 }
 
 type McpServer struct {
-	Name    string            `json:"name"`
-	Command string            `json:"command"`
-	Args    []string          `json:"args"`
+	Name    string   `json:"name"`
+	Command string   `json:"command"`
+	Args    []string `json:"args"`
+	// Url is the streamable-HTTP endpoint for a remote server. Exactly one
+	// of Command and Url is set; the config loader rejects neither or both.
+	Url     string            `json:"url,omitempty"`
 	Env     map[string]string `json:"env"`
 	EnvFile string            `json:"envfile,omitempty"`
 	// TimeoutSeconds bounds a single tool call. 0 means unbounded: the call
 	// waits for the server or for the caller's context, whichever comes first.
 	TimeoutSeconds int `json:"timeout_seconds,omitempty"`
+	// Startup selects eager (connect during setup) or lazy (connect on first
+	// tool call) startup. Empty means unset; the caller resolves the default.
+	Startup StartupMode `json:"startup,omitempty"`
+	// ConnectTimeoutSeconds bounds spawn plus handshake for a lazily resolved
+	// connection. 0 means the connector's own default.
+	ConnectTimeoutSeconds int `json:"connect_timeout_seconds,omitempty"`
+	// Auth configures how an endpoint-based server's connection is
+	// authorized. Nil means every credential source is unset: the
+	// credential-precedence chain still applies, so an unauthenticated
+	// endpoint connects as before and a challenged one falls straight to
+	// the token store, then the interactive flow (worklog
+	// 2026-10-02-mcp-connection-cost, phase 5).
+	Auth *McpServerAuth `json:"auth,omitempty"`
+	// AuthTimeoutSeconds is the auth-timeout parameter: how long a mid-run
+	// authorization wait may run before the triggering tool call degrades
+	// to an actionable result naming the server and the subcommand that
+	// authorizes it. Nil means unset: the default follows whether the
+	// session's output is a terminal (120 when it is, 0 — fail fast —
+	// otherwise). A pointer so an explicit 0 (always fail fast) is
+	// distinguishable from unset (worklog 2026-10-02-mcp-connection-cost,
+	// phase 6, D22).
+	AuthTimeoutSeconds *int `json:"auth_timeout_seconds,omitempty"`
+}
+
+// McpServerAuth configures an endpoint-based server's credential sources,
+// per the credential-precedence parameter: TokenCommand, then TokenEnv,
+// then the token store (not configured here: it is a cache, not a source),
+// then the interactive OAuth flow. Scopes is the auth.scopes parameter: the
+// scopes requested during the interactive flow, and the component this
+// phase adds to the endpoint-based schema cache identity. Empty means
+// whatever the server advertises.
+type McpServerAuth struct {
+	// TokenCommand is a command whose trimmed standard output is the access
+	// token. Empty means unset.
+	TokenCommand []string `json:"token_command,omitempty"`
+	// TokenEnv names an environment variable, resolved from the process
+	// environment or the configured envfile, whose value is the access
+	// token. Empty means unset.
+	TokenEnv string   `json:"token_env,omitempty"`
+	Scopes   []string `json:"scopes,omitempty"`
 }
 
 // ToolName is an enum-like type for available tools.
@@ -44,6 +113,7 @@ const (
 	CpTool                 ToolName = "cp"
 	RsyncTool              ToolName = "rsync"
 	MktempTool             ToolName = "mktemp"
+	MkdirTool              ToolName = "mkdir"
 	WebsiteTextTool        ToolName = "website_text"
 	RipGrepTool            ToolName = "rg"
 	GoTool                 ToolName = "go"

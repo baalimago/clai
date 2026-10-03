@@ -3,7 +3,6 @@ package mcp
 import (
 	"context"
 	"encoding/json"
-	"time"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
@@ -17,16 +16,14 @@ type StartupFailure struct {
 	Err        error
 }
 
-// ControlEvent instructs the Manager to register a new MCP server.
+// ControlEvent instructs the Manager to register a new MCP server. Conn is
+// already connected; the handshake bound it carries, if any, replaces the
+// retired per-event StartupTimeout override.
 type ControlEvent struct {
 	ServerName string
 	Server     pub_models.McpServer
-	InputChan  chan<- any
-	OutputChan <-chan any
+	Conn       Conn
 	Cancel     context.CancelFunc
-	// StartupTimeout bounds the initialize+tools/list handshake for this
-	// server. Zero means the package default (mcpStartupTimeout).
-	StartupTimeout time.Duration
 }
 
 // Request represents a JSON-RPC request.

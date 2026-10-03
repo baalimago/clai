@@ -9,7 +9,13 @@ import (
 	"github.com/baalimago/clai/internal/utils"
 )
 
-func loadEnvFile(envFile string) (map[string]string, error) {
+// LoadEnvFile parses envFile into a key/value map. Exported so the
+// authorization phase's static-bearer source (internal/tools/mcp/mcpauth)
+// can resolve auth.token_env from the same envfile a server's process
+// spawn already reads, with no second parser (R1-32: this used to be a
+// private loadEnvFile with a one-line exported wrapper giving one function
+// two names).
+func LoadEnvFile(envFile string) (map[string]string, error) {
 	envFile = strings.TrimSpace(envFile)
 	if envFile == "" {
 		return nil, nil

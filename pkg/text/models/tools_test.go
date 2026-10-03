@@ -6,6 +6,60 @@ import (
 	"testing"
 )
 
+// TestStartupModeRejectsUnknownValue pins that an unrecognised startup value
+// fails to parse rather than silently defaulting.
+func TestStartupModeRejectsUnknownValue(t *testing.T) {
+	var srv McpServer
+	err := json.Unmarshal([]byte(`{"command":"echo","startup":"sometimes"}`), &srv)
+	if err == nil {
+		t.Fatal("expected a parse error for an unrecognised startup mode, got nil")
+	}
+	if !strings.Contains(err.Error(), "sometimes") {
+		t.Errorf("err = %v, want it to name the invalid value", err)
+	}
+
+	for _, valid := range []StartupMode{StartupEager, StartupLazy} {
+		var s McpServer
+		data := []byte(`{"command":"echo","startup":"` + string(valid) + `"}`)
+		if err := json.Unmarshal(data, &s); err != nil {
+			t.Fatalf("startup %q: unexpected error: %v", valid, err)
+		}
+		if s.Startup != valid {
+			t.Errorf("Startup = %q, want %q", s.Startup, valid)
+		}
+	}
+}
+
+// TestAuthTimeoutSecondsDistinguishesUnsetFromExplicitZero pins the pointer
+// field's whole reason for being a pointer: an absent auth_timeout_seconds
+// must parse as nil (unset, the terminal-dependent default applies), never
+// as a zero value indistinguishable from an explicit "always fail fast".
+func TestAuthTimeoutSecondsDistinguishesUnsetFromExplicitZero(t *testing.T) {
+	var unset McpServer
+	if err := json.Unmarshal([]byte(`{"command":"echo"}`), &unset); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if unset.AuthTimeoutSeconds != nil {
+		t.Fatalf("AuthTimeoutSeconds = %v, want nil when absent", *unset.AuthTimeoutSeconds)
+	}
+
+	var explicitZero McpServer
+	if err := json.Unmarshal([]byte(`{"command":"echo","auth_timeout_seconds":0}`), &explicitZero); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if explicitZero.AuthTimeoutSeconds == nil || *explicitZero.AuthTimeoutSeconds != 0 {
+		t.Fatalf("AuthTimeoutSeconds = %v, want a non-nil pointer to 0", explicitZero.AuthTimeoutSeconds)
+	}
+
+	var explicitValue McpServer
+	if err := json.Unmarshal([]byte(`{"command":"echo","auth_timeout_seconds":30}`), &explicitValue); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if explicitValue.AuthTimeoutSeconds == nil || *explicitValue.AuthTimeoutSeconds != 30 {
+		t.Fatalf("AuthTimeoutSeconds = %v, want a non-nil pointer to 30", explicitValue.AuthTimeoutSeconds)
+	}
+}
+
 func TestCallPatchAndPretty(t *testing.T) {
 	// empty -> defaults
 	c := Call{}
