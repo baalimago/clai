@@ -1,6 +1,7 @@
 # Command Line Artificial Intelligence
 
 ![Wakatime](https://wakatime.com/badge/user/018cc8d2-3fd9-47ef-81dc-e4ad645d5f34/project/018e07e1-bd22-4077-a213-c16290d3db52.svg)
+[![Go Reference](https://pkg.go.dev/badge/github.com/baalimago/clai.svg)](https://pkg.go.dev/github.com/baalimago/clai)
 
 Test coverage: 81.689% 😍👌
 
@@ -33,7 +34,7 @@ Then run:
 clai | clai query Please give a concise explanation of clai
 ```
 
-Either run bare `clai` (or `clai <command> -h`) or look at the [examples](./EXAMPLES.md) for how to use `clai`.
+Either run bare `clai` (or `clai <command> -h`) or look at the [examples](./examples.md) for how to use `clai`.
 Prompt text starting with `-` is read as a flag, so pass it after `--`: `clai q -- -why does this fail`.
 If you have time, you can also check out [this blogpost](https://lorentz.app/blog-item.html?id=clai) for a slightly more structured introduction on how to use Clai efficiently.
 
@@ -48,12 +49,22 @@ Install [Glow](https://github.com/charmbracelet/glow) for formatted markdown out
 - **[Shell context injection](./architecture/shell-context.md)** - Inject shell context into the system prompt via configurable templates.
 - **[Seamless conversation import](./architecture/continue-from-claudex.md)** - Ran out of session? Continue in clai!
 - **[Agent Skills](./architecture/skills.md)** - Import skills from custom global directories, or project-level `.agents/skills`.
-- **[Profiles](./EXAMPLES.md#profiles--workflow-presets)** - Pre-prompted profiles enabling customized workflows and agents.
-- **[MCP client support](./EXAMPLES.md#mcp-tools-external-tool-servers)** - Add any MCP server you'd like by simply pasting their configuration.
-- **Unix-like** - Clai follows the [unix philosophy](https://en.wikipedia.org/wiki/Unix_philosophy) and works seamlessly with data piped in and out.
+- **[Profiles](./examples.md#profiles-workflow-presets)** - Pre-prompted profiles enabling customized workflows and agents.
+- **[MCP client support](./examples.md#mcp-tools-external-tool-servers)** - Add any MCP server you'd like by pasting their configuration.
+- **Unix-like** - Clai follows the [unix philosophy](https://en.wikipedia.org/wiki/Unix_philosophy) and works with data piped in and out.
 
 All of these features are easily combined and tweaked, empowering users to accomplish very diverse use cases.
-See [examples](./EXAMPLES.md) for additional info.
+See [examples](./examples.md) for additional info.
+
+## Use clai as a Go library
+
+Embed the agent loop in a Go program with `github.com/baalimago/clai/pkg/agent`:
+
+```go
+review, err := agent.NewTyped[Review](agent.WithModel("gpt-5.2")).Query(ctx, chat)
+```
+
+The agent runs silent and returns typed errors. See [pkg/agent](./pkg/agent/README.md) for the option surface, the command ban list and the token stoploss.
 
 ## Supported vendors
 
@@ -68,7 +79,8 @@ See [examples](./EXAMPLES.md) for additional info.
 | HuggingFace | `HF_API_KEY`         | [Text models](https://huggingface.co/docs/inference-endpoints/chat-completions), use prefix `hf:`                                                                  |
 | xAi         | `XAI_API_KEY`        | [Text models](https://docs.x.ai/docs/models)                                                                                                                       |
 | Inception   | `INCEPTION_API_KEY`  | [Text models](https://platform.inceptionlabs.ai/docs#models)                                                                                                       |
-| Ollama      | N/A                  | Use format `ollama:` (defaults to llama3), server defaults to localhost:11434                                                                                      |
+| DeepSeek    | `DEEPSEEK_API_KEY`   | [Text models](https://api-docs.deepseek.com/quick_start/pricing), key is optional, no prefix (defaults to `deepseek-chat`)                                         |
+| Ollama      | `OLLAMA_API_KEY`     | Use format `ollama:` (defaults to llama3), server defaults to localhost:11434                                                                                      |
 
 ---
 

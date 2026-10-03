@@ -118,7 +118,7 @@ clai -t "rg,cat" query "Search for parsing logic and show me the file"
 - `-t` enables tool calling for that _run_; without it, tool calls are disabled.
 - `-t "*"` allows all registered tools.
 
-See: [`tools.md`](./architecture/tools.md), [`tooling.md`](./architecture/tooling.md), [`config.md`](./architecture/config.md).
+See: [`tools-command.md`](./architecture/tools-command.md), [`tooling.md`](./architecture/tooling.md), [`config.md`](./architecture/config.md).
 
 ## MCP tools (external tool servers)
 
