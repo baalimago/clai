@@ -18,6 +18,7 @@ This directory contains short design notes for key parts of **clai**. Each file 
 - **[tooling-async.md](./tooling-async.md)** — Addendum to tooling.md: session-bound async command runtime for long-running subprocesses — the `async_cmd` tool family (spawn/status/logs/await/cancel, with `async_cmd_run` as a legacy alias), an in-memory registry plus on-disk stdout/stderr logs, a typed monotonic status lifecycle, and graceful-then-force cleanup of all child processes on session end.
 - **[skills.md](./skills.md)** — Skill discovery, parsing, precedence, rendering, activation logging, and invocation-scoped tool policy.
 - **[shell-context.md](./shell-context.md)** — Auto-append shell context (`-asc/-add-shell-context <name>`): named JSON definitions in `<configDir>/shellContexts/` mapping template vars to shell commands (per-var timeouts, error/timeout placeholders), rendered via Go `text/template` and injected best-effort into the system prompt; selectable per profile and editable in `clai setup`.
+- **[../pkg/agent/README.md](../pkg/agent/README.md)** — The public Go API for embedding a clai agent: typed responses (`NewTyped`, `NewTypedMetadata`), the `Option` surface, the command ban list and token stoploss, typed provider errors, and the recorders for telemetry.
 
 ## Command docs
 

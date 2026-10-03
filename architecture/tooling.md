@@ -9,7 +9,7 @@ This document describes **how clai’s tooling system works end-to-end**, includ
 
 > Related docs:
 >
->- `architecture/tools.md` describes the **`clai tools` inspection command**.
+>- `architecture/tools-command.md` describes the **`clai tools` inspection command**.
 >- `architecture/query.md` describes query/chat runtime behavior.
 >- `architecture/config.md` documents config layout and flags.
 
