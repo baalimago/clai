@@ -19,6 +19,16 @@ func WithCmdBanContext(ctx context.Context, entries []string) context.Context {
 	return context.WithValue(ctx, cmdBanContextKey{}, append([]string(nil), entries...))
 }
 
+// ValidateCmdNotBanned is the exported form of validateCmdNotBannedWithContext,
+// for a caller outside this package that spawns a command subject to the
+// same ban policy a tool-call context carries (worklog
+// 2026-10-02-mcp-connection-cost, phase 5: a credential command is "subject
+// to the same command-ban policy already carried on the tool-call context,
+// so a banned command cannot be smuggled in as a credential helper").
+func ValidateCmdNotBanned(ctx context.Context, command string, args []string) error {
+	return validateCmdNotBannedWithContext(ctx, command, args)
+}
+
 // validateCmdNotBannedWithContext refuses a command that matches any entry
 // of the policy carried by ctx. For shell execution (args == nil) command is
 // the raw freetext string; for direct execution each element of [command] +

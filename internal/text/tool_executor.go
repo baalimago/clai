@@ -12,7 +12,9 @@ import (
 	"github.com/baalimago/clai/internal/debugflags"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/tools"
+	"github.com/baalimago/clai/internal/tools/mcp"
 	"github.com/baalimago/clai/internal/utils"
+	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	pkgtools "github.com/baalimago/clai/pkg/tools"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
@@ -146,10 +148,127 @@ func (e toolExecutor[C]) runPlannedCall(ctx context.Context, session *QuerySessi
 		}
 	} else {
 		startedAt := time.Now()
-		out = tools.InvokeWith(pkgtools.WithCmdBanContext(ctx, q.cmdBan), plan.call, q.tooling.run)
+		out = e.invokeToolCall(ctx, plan.call)
 		e.recordToolCall(ctx, plan.call.Name, startedAt, out)
 	}
 	return e.emitToolResult(ctx, session, plan.call, plan.prefix+out)
+}
+
+// mcpConnectionResolver is implemented by an MCP tool (internal/tools/mcp's
+// unexported *mcpTool, matched structurally: its ResolveForCall method is
+// public). It exposes the Connector's typed resolution outcome, which
+// tools.InvokeWith would otherwise fold into a string before a mid-run
+// authorization wait could ever be recognised (worklog
+// 2026-10-02-mcp-connection-cost, phase 6).
+type mcpConnectionResolver interface {
+	ResolveForCall(ctx context.Context) (serverName string, resolver mcp.AuthResolver, authTimeout time.Duration, err error)
+}
+
+// invokeToolCall is tools.InvokeWith's call site, extended to surface and
+// bound a mid-run authorization wait (D20, D22) before the generic dispatch
+// folds every error into a string. Only a tool already present in the
+// per-run toolset (q.tooling.run) is ever consulted for this: MCP tools are
+// never written into the process-global registry (querier_setup_tools.go),
+// so a plain map lookup here can never reach a tool whose connection is a
+// model-reachable input rather than a fixed property of the server config
+// (D23 — the wait is raised solely by a component that cannot proceed
+// without a credential, never by a tool or a model request).
+func (e toolExecutor[C]) invokeToolCall(ctx context.Context, call pub_models.Call) string {
+	q := e.querier
+	callCtx := pkgtools.WithCmdBanContext(ctx, q.cmdBan)
+	if resolver, ok := q.tooling.run[call.Name].(mcpConnectionResolver); ok {
+		if out, handled := e.resolveMcpAuthWait(callCtx, resolver); handled {
+			return out
+		}
+	}
+	return tools.InvokeWith(callCtx, call, q.tooling.run)
+}
+
+// resolveMcpAuthWait pre-resolves an MCP tool's connection. handled is false
+// whenever the normal dispatch path should run as usual: a nil error, or an
+// error unrelated to authorization. An authorization challenge is instead
+// resolved here, outside any connector resolution (D20): the auth-pending
+// signal is raised, the wait runs up to the server's resolved auth-timeout
+// bound with nothing else enclosing it, and a successful wait triggers
+// exactly one further resolution with fresh bounds. Every
+// authorization-challenge outcome returns handled true, so the caller never
+// has to re-derive what happened.
+func (e toolExecutor[C]) resolveMcpAuthWait(ctx context.Context, resolver mcpConnectionResolver) (string, bool) {
+	serverName, authResolver, authTimeout, err := resolver.ResolveForCall(ctx)
+	var challenge *claierr.AuthChallengeError
+	if !errors.As(err, &challenge) {
+		return "", false
+	}
+	hasResolver := authResolver != nil
+	if authTimeout <= 0 {
+		return actionableAuthResult(serverName, hasResolver), true
+	}
+
+	var done func()
+	if sink := e.querier.mcpSink; sink != nil {
+		done = sink.AuthPending(serverName)
+	}
+	waitCtx, cancel := context.WithTimeout(ctx, authTimeout)
+	defer cancel()
+
+	var waitErr error
+	if hasResolver {
+		waitErr = authResolver.ResolveChallenge(waitCtx, challenge)
+	} else {
+		// Nothing to drive: the only lever on a command-based server's
+		// prompt is time, and there is no signal to tell the wait apart
+		// from an ordinary expiry (D37): every no-resolver wait ends the
+		// same way a resolver's own timed-out attempt would, with no
+		// retry. waitCtx.Err() is DeadlineExceeded on its own bound firing
+		// and Canceled when ctx ended it first; the ctx.Err() check below
+		// reports cancellation before this is ever read.
+		<-waitCtx.Done()
+		waitErr = waitCtx.Err()
+	}
+	if done != nil {
+		done()
+	}
+
+	if ctx.Err() != nil {
+		return fmt.Sprintf("ERROR: mcp server %q: authorization wait cancelled: %v", serverName, ctx.Err()), true
+	}
+	if errors.Is(waitErr, context.DeadlineExceeded) {
+		// Expired: the actionable result is the whole answer. No further
+		// resolution is attempted — "exactly one further resolution" is
+		// reserved for a wait that actually resolved (D20, D37).
+		return actionableAuthResult(serverName, hasResolver), true
+	}
+	if waitErr != nil {
+		return fmt.Sprintf("ERROR: mcp server %q: authorization failed: %v", serverName, waitErr), true
+	}
+
+	_, _, _, retryErr := resolver.ResolveForCall(ctx)
+	if retryErr != nil {
+		var retryChallenge *claierr.AuthChallengeError
+		if errors.As(retryErr, &retryChallenge) {
+			return actionableAuthResult(serverName, hasResolver), true
+		}
+		return fmt.Sprintf("ERROR: mcp server %q: %v", serverName, retryErr), true
+	}
+	// Resolved: fall through to the normal dispatch path. The Connector is
+	// now memoised, so tools.InvokeWith's own resolution is a cheap replay,
+	// not a second real attempt.
+	return "", false
+}
+
+// actionableAuthResult is the fixed tool-result string a mid-run
+// authorization wait degrades to, reusing the ERROR: convention
+// tools.InvokeWith already produces for a failed call rather than
+// introducing a new tool-result shape. hasResolver distinguishes an
+// endpoint-based server, which "clai mcp auth" can actually authorize,
+// from a command-based one, which the subcommand refuses (R1-08): the
+// advice must not point the operator at a command guaranteed to fail for
+// the transport that reaches this path most often.
+func actionableAuthResult(serverName string, hasResolver bool) string {
+	if hasResolver {
+		return fmt.Sprintf("ERROR: mcp server %q needs authorization; run: clai mcp auth %s", serverName, serverName)
+	}
+	return fmt.Sprintf("ERROR: mcp server %q needs authorization; it is a command-based server prompting on its own stderr output — %q only works for a url-based server", serverName, "clai mcp auth")
 }
 
 // recordToolCall reports one executed tool invocation to the configured

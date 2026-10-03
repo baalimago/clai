@@ -21,7 +21,9 @@ main.go:run()
 | File | Purpose |
 |------|---------|
 | `internal/tools/cmd.go` | tools command + `list` sub; calls `tools.Init()` then `List`/`Detail` (see [cmd-dispatch.md](./cmd-dispatch.md)) |
-| `internal/tools/init.go` (and friends) | Initializes the tool registry (built-in tools + MCP tools, if configured) |
+| `internal/tools/handler.go` | `Init()` and `registerLocalTools`: populates the process-global registry with built-in tools only |
+| `internal/tools/builtin_shadow.go` | The declared MCP-tool-to-built-in mapping behind the shadow marker |
+| `internal/tools/mcp/schemacache` | The cache the listing reads its MCP tools from, without connecting |
 | `internal/tools/cmd.go` | Implements `clai tools` CLI behavior |
 | `internal/tools/registry.go` | Tool registry: `Get`, `All`, wildcard selection |
 | `pkg/text/models/tool.go` (or similar) | Public tool spec types serialized to JSON |
@@ -33,6 +35,14 @@ main.go:run()
 `internal/tools/cmd.go` (`List`/`Detail`):
 
 1. Loads all registered and locally executable tools via `Registry.All()`.
+1a. Loads MCP tools from the schema cache only, never by connecting. For each
+   configured server it builds the cache identity and reads that server's
+   entry; an entry exists only where a handshake previously completed, so an
+   entry is the evidence of a prior successful run. A server with no entry —
+   never run, or whose last run failed — contributes nothing and is omitted
+   rather than flagged, because a tool listing is what a user reads to find
+   out what they can call, not a diagnostic surface. These tools are never
+   written into the process-global `Registry`; see `architecture/mcp.md`.
 2. Loads the alias map via `Registry.Aliases()` and removes alias names from
    the listing.
 3. Sorts the remaining (canonical) tool names.
@@ -43,9 +53,25 @@ main.go:run()
      being listed as duplicate entries
    - attempts to fit descriptions to the width of the session's output writer
      via `utils.SessionDimensions(os.Stdout)` and the explicit-width helper
-     `table.WidthAppropriateStringTruncWithWidth`.
+     `table.WidthAppropriateStringTruncWithWidth`
+   - does **not** annotate individual MCP tools. A per-tool marker was built
+     and removed: its mapping keys on an MCP tool's name, and a name does not
+     establish locality, so the dominant local-launcher-proxying-an-endpoint
+     shape (`npx -y mcp-remote https://…`) had its remote tools marked as
+     covered by local built-ins. The marker reports and never
+     resolves: selection, registration, the schemas sent to a model and
+     execution are all unchanged by it. A built-in counts as available only
+     when the registry actually holds it, so one whose executable is absent
+     produces no marker.
 
-5. Prints an instruction footer:
+5. Prints a single advisory footer naming the in-process built-ins that may
+   already cover something a configured command-based server offers, drawn from
+   the declared mapping in `internal/tools/builtin_shadow.go`, deduplicated, and
+   restricted to built-ins the registry actually holds. It carries the saving —
+   a local server replaced by a built-in is a process removed from every run —
+   with no claim about any specific listed tool.
+
+6. Prints an instruction footer:
 
    ```text
    Run 'clai tools <tool-name>' for more details.
@@ -73,7 +99,10 @@ Conceptually, Init is responsible for:
 
 - registering built-in tools (filesystem, `go test`, `rg`, etc.)
 - omitting fixed-executable built-ins whose command is not available in `PATH`
-- reading MCP server configs under `<clai-config>/mcpServers/*.json` and adding `mcp_...` tools (via an MCP client integration)
+- **not** adding MCP tools. `Init()` populates the process-global registry with built-ins only, by
+  design: MCP tools are scoped to the run that discovered them and must never enter a registry whose
+  entries a concurrent setup would overwrite. The listing reads them from the schema cache instead,
+  as described above and in [mcp.md](./mcp.md)
 
 ### Aliases
 

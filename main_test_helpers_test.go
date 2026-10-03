@@ -2,8 +2,11 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/baalimago/clai/internal/skills"
@@ -94,9 +97,48 @@ func setupMainTestConfigDir(t *testing.T) string {
 	}
 
 	t.Setenv("CLAI_CONFIG_DIR", confDir)
+	// setupTooling resolves the production schema cache through
+	// utils.GetClaiCacheDir; without this, every root e2e test that reaches
+	// it resolves the developer's real cache directory the moment any of
+	// them configures a non-empty mcpServers directory (R2-20).
+	t.Setenv("CLAI_CACHE_DIR", filepath.Join(confDir, "cache"))
 
 	return confDir
 }
+
+// testServerBinary compiles the shared stdio fixture exactly once per test
+// binary run and returns its path, mirroring internal/text's and
+// internal/tools/mcp's own helpers of the same name: a root e2e test's
+// connect bound must never enclose a go run compile, or a cold Go build
+// cache measures the build rather than the code under test (D41, invariant
+// 15; R2-19/R2-01, phase 8).
+func testServerBinary(t *testing.T) string {
+	t.Helper()
+	testServerBinOnce.Do(func() {
+		f, err := os.CreateTemp("", "clai-mcp-testserver-main-*")
+		if err != nil {
+			testServerBinErr = fmt.Errorf("create temp file: %w", err)
+			return
+		}
+		f.Close()
+		cmd := exec.Command("go", "build", "-o", f.Name(), "./internal/tools/mcp/testserver")
+		if out, buildErr := cmd.CombinedOutput(); buildErr != nil {
+			testServerBinErr = fmt.Errorf("go build testserver: %w: %s", buildErr, out)
+			return
+		}
+		testServerBinPath = f.Name()
+	})
+	if testServerBinErr != nil {
+		t.Fatalf("build testserver binary: %v", testServerBinErr)
+	}
+	return testServerBinPath
+}
+
+var (
+	testServerBinOnce sync.Once
+	testServerBinPath string
+	testServerBinErr  error
+)
 
 // blankDebugAndVendorKeys keeps a fixture host-insensitive: no debug
 // chatter on the captured streams and no developer key that could select a

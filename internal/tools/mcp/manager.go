@@ -19,10 +19,24 @@ type ToolRegistrar interface {
 	Set(name string, t pub_models.LLMTool)
 }
 
-// mcpStartupTimeout bounds one server's initialize+tools/list handshake so a
-// slow or hung server cannot block the setup of every other MCP tool. A
-// ControlEvent.StartupTimeout overrides it per server.
-const mcpStartupTimeout = 30 * time.Second
+// handshakeBounder is implemented by a Conn that carries its own handshake
+// bound. It replaces the retired per-event ControlEvent.StartupTimeout: the
+// bound now lives on the connection rather than being restated per call,
+// found through the same feature-detection pattern already used for
+// ServerLogSink's optional setupSucceeded method.
+type handshakeBounder interface {
+	HandshakeBound() time.Duration
+}
+
+// HandshakeBoundOf reports the duration a caller driving conn's handshake
+// itself (the schema cache's miss path, beside Manager's own use) should
+// bound it by.
+func HandshakeBoundOf(conn Conn) time.Duration {
+	if hb, ok := conn.(handshakeBounder); ok {
+		return hb.HandshakeBound()
+	}
+	return mcpHandshakeBound
+}
 
 // Manager registers MCP servers and their tools into registrar. A server that
 // fails its handshake is skipped; it never fails the other servers. When
@@ -54,13 +68,118 @@ func Manager(ctx context.Context, controlChannel <-chan ControlEvent, allToolsWg
 	}
 }
 
+// initializeHandshake performs the initialize call and the
+// notifications/initialized notification, the half of the MCP handshake
+// shared by every caller that brings up a connection: handleServer and
+// Handshake continue on to tools/list, a lazily resolved Connector stops
+// here. The raw initialize result is returned so a caller that must persist
+// it (Handshake, for the schema cache's server_info field) does not issue a
+// second initialize to get it.
+func initializeHandshake(ctx context.Context, conn Conn, serverName string) (json.RawMessage, error) {
+	initParams := map[string]any{
+		"capabilities": map[string]any{},
+		"clientInfo": map[string]string{
+			"name":    "clai",
+			"version": "dev",
+		},
+		"protocolVersion": ProtocolVersion,
+	}
+	raw, err := conn.Call(ctx, "initialize", initParams)
+	if err != nil {
+		return nil, claierr.NewMcpServerStartup(serverName, "initialize", err)
+	}
+	if err := conn.Notify(ctx, "notifications/initialized", map[string]any{}); err != nil {
+		return nil, claierr.NewMcpServerStartup(serverName, "initialize", err)
+	}
+	return raw, nil
+}
+
+// Handshake performs the full connect-time sequence over conn: initialize,
+// the initialized notification, and tools/list. It returns the serverInfo
+// object from the initialize result (an empty object when absent) and the
+// raw tools/list "tools" array, verbatim — the two pieces of the record
+// formats a caller that persists a schema cache entry needs, so it never has
+// to re-derive them from Manager's registration side effect.
+func Handshake(ctx context.Context, conn Conn, serverName string) (serverInfo, toolsArray json.RawMessage, err error) {
+	initRaw, err := initializeHandshake(ctx, conn, serverName)
+	if err != nil {
+		return nil, nil, err
+	}
+	listRaw, err := conn.Call(ctx, "tools/list", nil)
+	if err != nil {
+		return nil, nil, claierr.NewMcpServerStartup(serverName, "tools/list", err)
+	}
+	toolsArray, err = extractToolsArray(listRaw)
+	if err != nil {
+		return nil, nil, claierr.NewMcpServerStartup(serverName, "tools/list", fmt.Errorf("decode list result: %w", err))
+	}
+	return extractServerInfo(initRaw), toolsArray, nil
+}
+
+// extractServerInfo pulls the serverInfo sub-object out of an initialize
+// result, never interpreting its contents. Absent is reported as an empty
+// object rather than nil, so a captured record always carries a parseable
+// value.
+func extractServerInfo(initRaw json.RawMessage) json.RawMessage {
+	var parsed struct {
+		ServerInfo json.RawMessage `json:"serverInfo"`
+	}
+	if err := json.Unmarshal(initRaw, &parsed); err != nil || len(parsed.ServerInfo) == 0 {
+		return json.RawMessage(`{}`)
+	}
+	return parsed.ServerInfo
+}
+
+// extractToolsArray pulls the "tools" array out of a tools/list result.
+func extractToolsArray(listRaw json.RawMessage) (json.RawMessage, error) {
+	var parsed struct {
+		Tools json.RawMessage `json:"tools"`
+	}
+	if err := json.Unmarshal(listRaw, &parsed); err != nil {
+		return nil, err
+	}
+	if len(parsed.Tools) == 0 {
+		return json.RawMessage(`[]`), nil
+	}
+	return parsed.Tools, nil
+}
+
+// RegisterTools parses toolsArray (a tools/list result's "tools" array, as
+// returned by Handshake or read verbatim from a schema cache entry) and
+// registers one LLMTool per entry under mcp_<serverName>_<tool>, each wired
+// to connector. A hit and a miss call this with the same shape, which is
+// what makes them register an identical tool set. authResolver and
+// authTimeout are phase 6's addition, carried onto every tool this call
+// registers unchanged; authResolver may be nil.
+func RegisterTools(toolsArray json.RawMessage, serverName string, connector Connector, timeout time.Duration, registrar ToolRegistrar, authResolver AuthResolver, authTimeout time.Duration) error {
+	var tools []Tool
+	if err := json.Unmarshal(toolsArray, &tools); err != nil {
+		return claierr.NewMcpServerStartup(serverName, "tools/list", fmt.Errorf("decode tools array: %w", err))
+	}
+	for _, t := range tools {
+		t.InputSchema.Patch()
+		toolName := fmt.Sprintf("mcp_%s_%s", serverName, t.Name)
+
+		if !t.InputSchema.IsOk() {
+			ancli.Warnf("tool: '%v' has issues that the LLM will complain about, skipping\n", toolName)
+			continue
+		}
+		spec := pub_models.Specification{
+			Name:        toolName,
+			Description: t.Description,
+			Inputs:      &t.InputSchema,
+		}
+		registrar.Set(spec.Name, NewTool(connector, t.Name, spec, timeout, serverName, authResolver, authTimeout))
+	}
+	return nil
+}
+
+// handleServer performs the initialize/tools-list handshake over ev.Conn and
+// registers every tool it advertises. One id source, owned by the Conn,
+// serves initialize, tools/list and every tool call of this server.
 func handleServer(ctx context.Context, ev ControlEvent, registrar ToolRegistrar) error {
 	// Bound the handshake so a hung server cannot stall the whole setup.
-	timeout := ev.StartupTimeout
-	if timeout <= 0 {
-		timeout = mcpStartupTimeout
-	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+	ctx, cancel := context.WithTimeout(ctx, HandshakeBoundOf(ev.Conn))
 	defer cancel()
 
 	// Only cancel the client context on failure; on success the client
@@ -72,111 +191,21 @@ func handleServer(ctx context.Context, ev ControlEvent, registrar ToolRegistrar)
 			ev.Cancel()
 		}
 	}()
-	// Initialize
-	initReq := Request{
-		JSONRPC: "2.0",
-		ID:      1,
-		Method:  "initialize",
-		Params: map[string]any{
-			"capabilities": map[string]any{},
-			"clientInfo": map[string]string{
-				"name":    "clai",
-				"version": "dev",
-			},
-			"protocolVersion": "2025-03-26",
-		},
-	}
-	resp, err := sendRequest(ctx, ev.InputChan, ev.OutputChan, initReq)
+
+	serverInfo, toolsArray, err := Handshake(ctx, ev.Conn, ev.ServerName)
 	if err != nil {
-		return claierr.NewMcpServerStartup(ev.ServerName, "initialize", err)
+		return err
 	}
-	if resp.Error != nil {
-		return claierr.NewMcpServerStartup(ev.ServerName, "initialize", fmt.Errorf("JSON-RPC error %d: %s", resp.Error.Code, resp.Error.Message))
+	if ev.OnHandshake != nil {
+		ev.OnHandshake(serverInfo, toolsArray)
 	}
-
-	// Send initialized notification
-	ev.InputChan <- map[string]any{
-		"jsonrpc": "2.0",
-		"method":  "notifications/initialized",
-		"params":  map[string]any{},
-	}
-
-	// List tools
-	listReq := Request{
-		JSONRPC: "2.0",
-		ID:      2,
-		Method:  "tools/list",
-	}
-	resp, err = sendRequest(ctx, ev.InputChan, ev.OutputChan, listReq)
-	if err != nil {
-		return claierr.NewMcpServerStartup(ev.ServerName, "tools/list", err)
-	}
-	if resp.Error != nil {
-		return claierr.NewMcpServerStartup(ev.ServerName, "tools/list", fmt.Errorf("JSON-RPC error %d: %s", resp.Error.Code, resp.Error.Message))
-	}
-	var listRes struct {
-		Tools []Tool `json:"tools"`
-	}
-	if err := json.Unmarshal(resp.Result, &listRes); err != nil {
-		return claierr.NewMcpServerStartup(ev.ServerName, "tools/list", fmt.Errorf("decode list result: %w", err))
-	}
-
-	for _, t := range listRes.Tools {
-		t.InputSchema.Patch()
-		toolName := fmt.Sprintf("mcp_%s_%s", ev.ServerName, t.Name)
-
-		if !t.InputSchema.IsOk() {
-			ancli.Warnf("tool: '%v' has issues that the LLM will complain about, skipping\n", toolName)
-			continue
-		}
-		spec := pub_models.Specification{
-			Name:        toolName,
-			Description: t.Description,
-			Inputs:      &t.InputSchema,
-		}
-		mt := &mcpTool{
-			remoteName: t.Name,
-			spec:       spec,
-			inputChan:  ev.InputChan,
-			outputChan: ev.OutputChan,
-			timeout:    time.Duration(ev.Server.TimeoutSeconds) * time.Second,
-		}
-		registrar.Set(spec.Name, mt)
+	// An eager server's connection is already resolved at setup time, so a
+	// later challenge on this same Conn (e.g. an access token revoked
+	// mid-run) is out of this phase's scope: no resolver, no wait. nil, 0
+	// keep that explicit rather than implicit.
+	if err := RegisterTools(toolsArray, ev.ServerName, resolvedConnector{ev.Conn}, time.Duration(ev.Server.TimeoutSeconds)*time.Second, registrar, nil, 0); err != nil {
+		return err
 	}
 	initOk = true
 	return nil
-}
-
-// sendRequest delivers one request on in and waits for the response with the
-// matching id on out. A frame that cannot be parsed as a JSON-RPC response is
-// delivered to the waiting request as an error rather than being logged and
-// dropped: silently skipping it would leave the requester waiting until its
-// context expires (worklog 2026-09-05-error-propagation, S5-S6).
-func sendRequest(ctx context.Context, in chan<- any, out <-chan any, req Request) (Response, error) {
-	select {
-	case in <- req:
-	case <-ctx.Done():
-		return Response{}, ctx.Err()
-	}
-	for {
-		select {
-		case msg, ok := <-out:
-			if !ok {
-				return Response{}, fmt.Errorf("mcp: connection closed")
-			}
-			raw, ok := msg.(json.RawMessage)
-			if !ok {
-				return Response{}, fmt.Errorf("mcp: server sent a non-JSON message while waiting for response to %s", req.Method)
-			}
-			var resp Response
-			if err := json.Unmarshal(raw, &resp); err != nil {
-				return Response{}, fmt.Errorf("mcp: malformed response to %s: %w", req.Method, err)
-			}
-			if resp.ID == req.ID {
-				return resp, nil
-			}
-		case <-ctx.Done():
-			return Response{}, ctx.Err()
-		}
-	}
 }

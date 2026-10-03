@@ -285,6 +285,24 @@ func TestAgent_asInternalConfig(t *testing.T) {
 	}
 }
 
+// TestAgent_WithOutputIsTerminal_propagates pins R2-09: the field is nil
+// (unset) by default, since asInternalConfig's hardcoded io.Discard writer
+// carries no terminal signal of its own, and WithOutputIsTerminal sets it
+// explicitly for an agent that wants D22's bounded mid-run-authorization
+// default instead of the conservative fail-fast one.
+func TestAgent_WithOutputIsTerminal_propagates(t *testing.T) {
+	a := New()
+	if conf := a.asInternalConfig(); conf.OutputIsTerminal != nil {
+		t.Errorf("default OutputIsTerminal = %v, want nil (unset)", *conf.OutputIsTerminal)
+	}
+
+	a = New(WithOutputIsTerminal(true))
+	conf := a.asInternalConfig()
+	if conf.OutputIsTerminal == nil || !*conf.OutputIsTerminal {
+		t.Errorf("OutputIsTerminal after WithOutputIsTerminal(true) = %v, want a pointer to true", conf.OutputIsTerminal)
+	}
+}
+
 func TestAgent_WithLogger_propagates(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	a := New(WithLogger(logger))

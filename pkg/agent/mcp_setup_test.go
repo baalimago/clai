@@ -3,9 +3,11 @@ package agent
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/baalimago/clai/pkg/claierr"
@@ -94,5 +96,97 @@ func Test_AgentSetup_AmbientMcpFailure_Degrades(t *testing.T) {
 	}
 	if len(chat.Messages) == 0 {
 		t.Error("expected the run to proceed and produce messages")
+	}
+}
+
+// Test_AgentSetup_ExplicitMcpCredentialFailure_FailsSetup pins D42/R2-05
+// through the real public surface: an explicit server's credential-source
+// failure must reach the same strict/degrade fork a spawn failure does.
+// Before the fix, *mcpauth.CredentialSourceError never unwrapped to
+// claierr.ErrMcpServerStartup, the only sentinel setupTooling classifies
+// on, so this exact scenario returned Setup() == nil with the server's
+// tools silently absent.
+func Test_AgentSetup_ExplicitMcpCredentialFailure_FailsSetup(t *testing.T) {
+	t.Setenv("CLAI_DISABLE_COST_ERR_LOG_GOROUTINE", "1")
+	a := newCmdBanAgent(t,
+		WithModel("mock_test"),
+		WithMcpServers([]models.McpServer{
+			{
+				Name: "explicit-http-cred",
+				Url:  "http://127.0.0.1:1/mcp",
+				Auth: &models.McpServerAuth{TokenCommand: []string{"/nonexistent-clai-test-binary-cred"}},
+			},
+		}),
+	)
+
+	err := a.Setup(context.Background())
+	if err == nil {
+		t.Fatal("Setup must fail when an explicit server's credential source fails")
+	}
+	if !errors.Is(err, claierr.ErrMcpServerStartup) {
+		t.Fatalf("err = %v, want errors.Is(err, claierr.ErrMcpServerStartup)", err)
+	}
+	names := mcpStartupServerNames(err)
+	if !slices.Contains(names, "explicit-http-cred") {
+		t.Errorf("startup errors name %v, want it to include explicit-http-cred", names)
+	}
+}
+
+// Test_AgentSetup_CmdBanAppliesToMcpCredentialCommand pins R1-05: a
+// credential command is subject to the same command-ban policy a
+// tool-call context carries, so a banned command must never be spawned as
+// a credential helper, including on the public WithMcpServers surface the
+// ban policy's own context attachment did not reach before the fix.
+func Test_AgentSetup_CmdBanAppliesToMcpCredentialCommand(t *testing.T) {
+	t.Setenv("CLAI_DISABLE_COST_ERR_LOG_GOROUTINE", "1")
+	a := newCmdBanAgent(t,
+		WithModel("mock_test"),
+		WithCmdBanList("sh"),
+		WithMcpServers([]models.McpServer{
+			{
+				Name: "explicit-http-banned-cred",
+				Url:  "http://127.0.0.1:1/mcp",
+				Auth: &models.McpServerAuth{TokenCommand: []string{"sh", "-c", "echo token"}},
+			},
+		}),
+	)
+
+	err := a.Setup(context.Background())
+	if err == nil {
+		t.Fatal("Setup must fail: the credential command matches the ban policy and must never run")
+	}
+	if !strings.Contains(err.Error(), "banned by policy") {
+		t.Fatalf("err = %v, want it to name the ban-policy refusal", err)
+	}
+}
+
+// Test_AgentSetup_CmdBanAppliesToAmbientLazyHttpCredentialCommand pins
+// R1-05's other half: an ambient (config-directory) endpoint-based server
+// defaults to lazy (D16/D18), so its credential resolution runs through
+// the connector's own runCtx rather than the eager path's staticHttpDecorator
+// call. Both must carry the ban policy. The command is never spawned,
+// proven the same way mcpauth's own TestCredentialCommandBannedIsNeverSpawned
+// does: a marker file the command would create stays absent.
+func Test_AgentSetup_CmdBanAppliesToAmbientLazyHttpCredentialCommand(t *testing.T) {
+	t.Setenv("CLAI_DISABLE_COST_ERR_LOG_GOROUTINE", "1")
+	markerPath := filepath.Join(t.TempDir(), "marker")
+	a := newCmdBanAgent(t, WithModel("mock_test"), WithCmdBanList("sh"))
+
+	mcpDir := filepath.Join(a.cfgDir, "mcpServers")
+	if err := os.MkdirAll(mcpDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(%q): %v", mcpDir, err)
+	}
+	conf := fmt.Sprintf(`{"url":"http://127.0.0.1:1/mcp","auth":{"token_command":["sh","-c","touch %s"]}}`, markerPath)
+	if err := os.WriteFile(filepath.Join(mcpDir, "ambient-http.json"), []byte(conf), 0o644); err != nil {
+		t.Fatalf("WriteFile(ambient-http.json): %v", err)
+	}
+
+	// Ambient, so a credential failure degrades rather than failing Setup
+	// (D13); the assertion that matters is that the command never ran.
+	if err := a.Setup(context.Background()); err != nil {
+		t.Fatalf("an ambient server's credential failure must not fail Setup: %v", err)
+	}
+	if _, statErr := os.Stat(markerPath); !os.IsNotExist(statErr) {
+		t.Fatal("banned credential command still ran on the ambient lazy path: marker file exists")
 	}
 }

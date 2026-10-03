@@ -20,14 +20,29 @@ whose MCP cost is proportional to the servers it uses, not the servers it is con
 
 | # | Phase | Status | Outcome |
 | --- | --- | --- | --- |
-| 1 | [Conn seam and JSON-RPC demux](phase-1-conn-seam-and-demux.md) | Not Started | One owner per connection holds a connection-wide id counter and an id-to-waiter map; the two live demux defects are gone |
-| 2 | [Lazy connect](phase-2-lazy-connect.md) | Not Started | For a server explicitly marked lazy, its process is created on the first tool call that targets it, once per run, with a run-scoped failure that never becomes a spawn storm. The default still flips in phase 3 |
-| 3 | [Tool schema cache](phase-3-schema-cache.md) | Not Started | On a warm cache, setup advertises a command-based server's tool schemas from a delta-validated on-disk entry and connects nothing. A miss still connects and captures, per D18 |
-| 4 | [Streamable HTTP transport](phase-4-streamable-http.md) | Not Started | A remote server is reached over spec-compliant streamable HTTP with no local process, and the cache gains its endpoint-based half |
-| 5 | [OAuth 2.1 and credential sources](phase-5-oauth.md) | Not Started | Discovery, dynamic client registration, PKCE, refresh, a token store, a credential command, and a static bearer fallback |
-| 6 | [Mid-run auth surfacing](phase-6-midrun-auth.md) | Not Started | A connection that needs a human is announced, pinned and bounded instead of silently stalling a tool call |
-| 7 | [Built-in shadow advisory](phase-7-shadow-advisory.md) | Not Started | `clai tools` gains an MCP tool set from the cache for servers that have succeeded, then names every entry already covered by an in-process built-in |
-| 8 | [Quality gate sweep](phase-8-gate-sweep.md) | Not Started | Repository gates pass unedited and the architecture notes match the shipped behaviour |
+| 1 | [Conn seam and JSON-RPC demux](phase-1-conn-seam-and-demux.md) | Complete — annotated by implementation reviews 1 and 2 | One owner per connection holds a connection-wide id counter and an id-to-waiter map; the two live demux defects are gone |
+| 2 | [Lazy connect](phase-2-lazy-connect.md) | Complete — findings from reviews 1 and 2 fixed and verified; R1-14's HTTP-transport half remains open under phase 5 | For a server explicitly marked lazy, its process is created on the first tool call that targets it, once per run, with a run-scoped failure that never becomes a spawn storm. The default still flips in phase 3 |
+| 3 | [Tool schema cache](phase-3-schema-cache.md) | Complete — findings from reviews 1 and 2 fixed and verified; R1-16 and R2-06 closed at the root for the phases they are shared with too; the sign-off review's B3, B4 and S1 fixed and verified, 2026-10-03 sign-off fix session | On a warm cache, setup advertises a command-based server's tool schemas from a delta-validated on-disk entry and connects nothing. A miss still connects and captures, per D18. The identity now also fingerprints the first on-disk `args` entry and digests `args` rather than storing it, and the freshness bound applies to every entry (D40). `Capture` now refuses an empty tools array (B4); a warm hit against a launcher-only-fingerprinted server prints a setup-time notice (B3); the fixture build moved into a `TestMain`, raising the package's cold-cache timeout headroom from ~4.7s to ~10.1s (S1) |
+| 4 | [Streamable HTTP transport](phase-4-streamable-http.md) | Complete — findings from reviews 1 and 2 fixed and verified, 2026-10-03 fix session; R2-16's stdio wiring (handed over from phase 3) and R1-14's HTTP-connect-bound half (handed to phase 5) are the two cross-phase items, both resolved: the former fixed here, the latter confirmed as phase 5's and not reopened against this phase; the sign-off review's B1 fixed and verified, 2026-10-03 sign-off fix session | A remote server is reached over spec-compliant streamable HTTP with no local process; the server-initiated stream is bounded per frame, answers a server-initiated request, reconnects with `Last-Event-ID`, and ends its session on `Close`; the cache gains its endpoint-based half and the unknown-tool/list-changed invalidation mechanisms now also work for the stdio transport. `Call` now resolves as soon as the awaited frame arrives rather than when the POST response body ends, so a server that holds its event-stream open after answering no longer hangs every call to its context bound (B1) |
+| 5 | [OAuth 2.1 and credential sources](phase-5-oauth.md) | In Progress — every review 1, review 2 and sign-off review finding fixed and verified (B2, 2026-10-03 sign-off fix session); human gate still outstanding | Discovery, dynamic client registration, PKCE, refresh, a token store, a credential command, and a static bearer fallback. The trust layer B2 found entirely unasserted is now built and pinned: RFC 8707 `resource` on every authorization and token request, `redirect_uri` repeated on the exchange, issuer and resource-identifier validation, a host check on the challenge's metadata location, an https-or-loopback requirement on every chain URL including the one handed to a browser, redirects refused on the token, registration and MCP endpoints, and a root gate on a non-interactive run — each behind a hostile fixture mode that fails without it. Automated suite green, blocked only on a maintainer's real-endpoint confirmation, which B2's missing `redirect_uri` shows has never run |
+| 6 | [Mid-run auth surfacing](phase-6-midrun-auth.md) | In Progress — every review 1, review 2 and sign-off review finding fixed and verified (B2's mid-run half, 2026-10-03 sign-off fix session); R1-26 has since been closed by the phase-8 sweep, which deleted the dead option; human gate still outstanding | A connection that needs a human is announced, pinned and bounded instead of silently stalling a tool call. The mid-run `AuthResolver` no longer opens a browser or binds a loopback listener on a run whose output is not a terminal — gated at the root in `AuthorizeInteractive` so no future caller needs its own copy of the gate (B2). Automated suite green, blocked only on the maintainer's real mid-run authorization observation. One recorded gap stays open by decision: mid-run token expiry never re-authorizes (D54) |
+| 7 | [Built-in shadow advisory](phase-7-shadow-advisory.md) | Complete — every review 1 and review 2 finding fixed and verified, 2026-10-03 fix session; R1-16's and R2-12's phase-7 shares closed alongside phase 3's own fixes to the same findings; the sign-off review's S2 fixed and verified, 2026-10-03 sign-off fix session | `clai tools` gains an MCP tool set from the cache for servers that have succeeded, then names every entry already covered by an in-process built-in; the advisory is now a single footer line, not a per-tool marker, since "command-based" is not a reliable proxy for "local" (S2, demoting R1-22/R2-17's transport restriction from a per-tool claim to an aggregate one) and covers `create_directory` → `mkdir` (R1-23/R2-23) but no longer `get_file_info` (S2: wrong mapping, corrected by removal) |
+| 8 | [Quality gate sweep](phase-8-gate-sweep.md) | In Progress — every review 1 and review 2 finding fixed and verified; R1-17 and R1-35b closed by the coordinating session, which owns `architecture/`, each claim verified against source first; human gate still outstanding | All automated gates green warm (format, staticcheck, vet, fix, dupl, `make qa`, `-race -count=3 -timeout=30s`); a cold-build-cache sweep found the root package's cold-cache timeout is pre-existing (confirmed against the pre-worklog commit) and `internal/text`'s was new — recorded here as a volume effect needing a package split, an acknowledged risk rather than a fix. **Corrected by the sign-off review (S1) and closed by phase 3, 2026-10-03:** the diagnosis was wrong, no repackaging was needed, and the real fix (a `TestMain`) closes it; duplication re-ruled at 36 groups, nothing new beyond an already-accepted group's member count; `WithAuthPendingSink` (R1-26) deleted; the headline multi-server proportionality claim (R2-04) now has a dedicated end-to-end test; coverage re-checked per package |
+
+Implementation reviews 1 and 2 (both 2026-10-02) reopened phases 2 to 8. Phase 1 passed both and
+is annotated only. The three human-required gates (live-endpoint OAuth, the mid-run authorization
+observation, the fleet memory measurement) remain legitimately outstanding and are not findings.
+
+**Seven blockers were filed: R1-01, R1-02, R1-03, R1-04, R2-01, R2-02 and R2-03. All seven are now
+fixed and verified** (R2-01 last, closed in phase 8's 2026-10-03 fix session — see the feedback
+index below for each one's fix). Round 2 reviewed
+the same unpatched code round 1 saw, re-verified round 1's phase-6 findings and its rulings D35 to
+D38 and upholds all of them, and filed 27 further findings in the areas round 1 did not reach:
+concurrency and lifetime, HTTP protocol conformance beyond the demux, the public SDK surface,
+backward compatibility, and the fixture layer. One correction to round 1 is recorded as R2-23.
+Every finding is listed in the feedback index below and filed in full against its owning phase; the
+fixer picks up the first non-complete phase off this board and routes off the `## Review findings`
+section in that phase file, reading the `### Review 1` and `### Review 2` subsections together.
 
 Complete the phases in order. There is no gating spike: every external claim this design rests on
 was measured before the worklog was written, and the measurements are recorded under Strategy. A
@@ -134,11 +149,12 @@ observed but not the URL each was fetched from.
 | Specification | What clai takes from it |
 | --- | --- |
 | RFC 9110, HTTP semantics | The grammar of the `WWW-Authenticate` challenge header, whose parameters carry `resource_metadata` |
-| RFC 9728, OAuth 2.0 Protected Resource Metadata | The document at `/.well-known/oauth-protected-resource`, fetched with `GET`, whose `authorization_servers` and `scopes_supported` drive the next step |
-| RFC 8414, OAuth 2.0 Authorization Server Metadata | The authorization-server document, fetched with `GET`. Its URL is composed from an issuer in the protected-resource document's `authorization_servers` by **inserting** `/.well-known/oauth-authorization-server` between the issuer's authority and its path, which is RFC 8414's rule and differs from OIDC-style appending whenever the issuer has a path component. clai tries the inserted form first and the appended form second, and reports both as missing if neither answers. clai requires five fields: `registration_endpoint`, `authorization_endpoint`, `token_endpoint`, `code_challenge_methods_supported` containing the PKCE parameter's value, and `grant_types_supported` containing the refresh grant |
+| RFC 9728, OAuth 2.0 Protected Resource Metadata | The document at `/.well-known/oauth-protected-resource`, fetched with `GET`, whose `authorization_servers` and `scopes_supported` drive the next step. Its `resource` identifier is checked against the server being authorized, per section 3.3: same scheme, same host and port after default-port normalisation, and the server's path at or under the resource's. An absent `resource` is a refusal (sign-off review, B2) |
+| RFC 8414, OAuth 2.0 Authorization Server Metadata | The authorization-server document, fetched with `GET`. Its URL is composed from an issuer in the protected-resource document's `authorization_servers` by **inserting** `/.well-known/oauth-authorization-server` between the issuer's authority and its path, which is RFC 8414's rule and differs from OIDC-style appending whenever the issuer has a path component. clai tries the inserted form first and the appended form second, and reports both as missing if neither answers. clai requires five fields: `registration_endpoint`, `authorization_endpoint`, `token_endpoint`, `code_challenge_methods_supported` containing the PKCE parameter's value, and `grant_types_supported` containing the refresh grant. The document's own `issuer` is compared to the issuer whose well-known URL it came from, per section 3.3, tolerating only a trailing-slash difference; the three endpoints it names are checked for scheme before any of them is used (sign-off review, B2) |
 | RFC 7591, Dynamic Client Registration | The `POST` to `registration_endpoint` that yields a `client_id` and, optionally, a `client_secret` |
 | RFC 7636, PKCE | The verifier, and the challenge as the base64url-encoded SHA-256 of it |
-| RFC 6749 and OAuth 2.1, authorization code and refresh grants | The authorization request built from `authorization_endpoint`, and the two `POST`s to `token_endpoint` |
+| RFC 6749 and OAuth 2.1, authorization code and refresh grants | The authorization request built from `authorization_endpoint`, and the two `POST`s to `token_endpoint`. The authorization-code grant repeats the authorization request's `redirect_uri`, which section 4.1.3 requires whenever one was sent and a conformant server answers `invalid_grant` without (sign-off review, B2). Neither `POST` ever follows a redirect: Go re-sends a request body across a 307 or 308 and strips only the `Authorization` header, never the body |
+| RFC 8707, Resource Indicators for OAuth 2.0 | The `resource` parameter, carried on the authorization request and on every token request including the refresh grant, naming the MCP server the token is for. The MCP authorization specification makes it a MUST; it is what stops a token minted for one MCP server being replayed against another behind the same authorization server (sign-off review, B2) |
 | MCP specification, authorization | That an MCP server is an OAuth protected resource and discovery begins at its challenge |
 | MCP specification, streamable HTTP transport | The request and response contract the transport phase implements, including the optional server-initiated stream and the session header |
 
@@ -159,7 +175,12 @@ observed but not the URL each was fetched from.
 5. **No test spends money and no test reaches a vendor endpoint.** Every automated test runs
    against an in-repo fake. Real-endpoint verification is a declared human-required step.
 6. **A credential never appears in a log line, an error string or a cached file.** Redaction is a
-   table row in phase 5, not a convention.
+   table row in phase 5, not a convention. **Amended by implementation review 1 (R1-03, R1-10):**
+   every config field stored or printed verbatim is a credential carrier, not just the fields
+   phase 5 resolves. `env` is digested in the cache identity precisely because it carries secrets;
+   `args` must be treated the same, because the documented `mcp-remote --header "Authorization:
+   Bearer ..."` shape puts a token there. A redaction row is met only when its test places a known
+   secret into that carrier's real input and asserts its absence from that carrier's real output.
 7. **The human wait is infrastructure-only.** It is raised only by a component that cannot proceed
    without a credential, never by a tool and never on a model's request. No model-callable surface
    reaches it, directly or indirectly.
@@ -168,7 +189,47 @@ observed but not the URL each was fetched from.
 9. **Ambient servers degrade, explicit servers fail.** A server discovered from the config
    directory keeps today's warn-and-continue posture; a server passed through
    `agent.WithMcpServers` keeps `StrictMcpStartup`. Laziness must not convert a strict failure
-   into a silent one.
+   into a silent one. **Clarified by implementation review 1 (R1-02):** this is
+   unconditional, not a default. A configured `startup: "lazy"` must not override it, because a
+   warm cache then means setup never connects and no strict failure can exist to report.
+10. **A contract row is met only when its test reaches the row's property through the production
+    composition root.** Elevated by implementation review 1, which found the same shape behind
+    R1-01, R1-02, R1-05, R1-10, R1-15, R1-16 and R1-25: a test that drives the seam the row names,
+    builds its own context, or warms a fixture with the same helper the code under test uses, is
+    self-consistent by construction and cannot fail on the one property the row asserts. Each of
+    those seven rows was green. When a row's subject is a side effect of the real system — a
+    process birth, a context value, a file on disk, a rendered line — the test counts or reads that
+    artefact, not a call to the function that would have produced it.
+11. **A non-memoised resolution outcome must still be bounded per run, not per call.** Elevated by
+    implementation review 1 from R1-01. D20 deliberately exempts a blocked-outside-run outcome from
+    the connector's memo so a later call can retry, and the retry-count parameter says "0 retries
+    ... per server **per run**". Those two only compose if something caps the re-dials for the run.
+    Nothing did, so a model calling a flagged server N times paid 2N process births and N full
+    auth-timeout blocks. Any future outcome class that is exempted from memoisation carries its own
+    per-run cap in the same change.
+12. **A cache entry is trustworthy only when its identity fingerprints the artefact that
+    determines its content.** Elevated by implementation review 2 from R2-03. The identity
+    currently fingerprints `server.Command`, which for `npx`, `uvx`, `node`, `python` or `docker`
+    is the launcher and not the server, so the delta-validation rule the parameters table calls the
+    command-based freshness mechanism cannot see a server upgrade. A component added to an identity
+    for the purpose of detecting change must be shown, in the same change, to change when the thing
+    it stands for changes.
+13. **A resolution that was concurrent stays concurrent.** Elevated by implementation review 2 from
+    R2-02. Setup's per-server work ran one goroutine per server before this worklog; the cache-aware
+    lazy branch does it inline in the loop. Any future path that takes a server out of `mcp.Manager`
+    inherits the obligation to keep its own concurrency, and the measurement that justifies the
+    change states the wall-clock cost at the representative server count, not just the process
+    count.
+14. **An error that must cross the strict-versus-degrade fork carries the sentinel that fork tests
+    on.** Elevated by implementation review 2 from R2-05. `setupTooling` classifies on
+    `claierr.ErrMcpServerStartup` alone, so any new failure producer reachable from setup either
+    wraps into that sentinel or is invisible to `StrictMcpStartup`. The wrap belongs at the single
+    `classifyServerFailure` funnel, not at each producer (D42).
+15. **A test's time bound never encloses work whose cost depends on a cache the gate does not
+    control.** Elevated by implementation review 2 from R2-01. A bound wrapping `go run` measures
+    the build cache, so the same test passes warm and fails cold; a clean CI checkout is cold by
+    construction. This is distinct from the host-load sensitivity already recorded, which is a
+    property of the machine rather than of the test.
 
 ### Shared interfaces between phases
 
@@ -239,7 +300,7 @@ introduces it. An executor creates nothing outside this table without adding a r
 | per-server connector with single-flight resolution | `internal/tools/mcp/connector.go` | Phase 2 |
 | schema cache: identity, record, read and write | `internal/tools/mcp/schemacache` | Phase 3 |
 | lazy-path end-to-end fixture, so the lazy path runs under the race detector | a root `*_e2e_test.go` beside the existing fixtures | Phase 3 |
-| the setup-side cache call site: reads the cached tool list, registers its tools, wires each to its `Connector` without a transport | `internal/text/querier_setup_tools.go`, a new path beside the existing `ControlEvent` flow | Phase 3 |
+| the setup-side cache call site: reads the cached tool list, **constructs the server's `Connector` via the exported `mcp.NewConnector`**, registers its tools, and wires each to that connector without a transport | `internal/text/querier_setup_tools.go`, a new path beside the existing `ControlEvent` flow | Phase 3 |
 | endpoint-based cache identity, freshness and invalidation | `internal/tools/mcp/schemacache`, extending Phase 3's record | Phase 4 |
 | `AuthChallengeError` | `pkg/claierr/claierr.go` | Phase 4 |
 | scopes component of the endpoint cache identity | `internal/tools/mcp/schemacache` | Phase 5 |
@@ -253,11 +314,19 @@ introduces it. An executor creates nothing outside this table without adding a r
 | `auth` config block and its fields | `pkg/text/models/tools.go`, on `McpServer` | Phase 5 |
 | fake OAuth authorization server, which also serves the protected-resource metadata document. Not an MCP server: phase 4's fake is configured for that role | `internal/tools/mcp/oauthtestserver` | Phase 5 |
 | `clai mcp auth` subcommand | `internal/tools/mcp/cmd.go`, injected from `main.go` beside the other commands | Phase 5 |
+| Setup-side wiring from `mcpauth` into the eager and lazy HTTP connect paths phases 3–4 own (`staticHttpDecorator`, `dialHttpServerWithAuth`, `handshakeHttpServerWithAuth`, `newAuthenticatingHttpConnector`, `newMcpAuthorizer`) | `internal/text/mcp_oauth.go` | Phase 5 (discovered necessary beyond the phase's original table; added here per the executor-adds-a-row convention phases 2–4 already established) |
+| `mcp.NewConnectorFromDial`/`mcp.DialFunc`, letting an externally-supplied dial reuse this package's existing single-flight memoisation; `mcp.WithHttpRequestDecorator` (`ConnectorOption`); `dialHttp` gained a `decorate RequestDecorator` parameter | `internal/tools/mcp/connector.go`, `internal/tools/mcp/conn_http.go` | Phase 5 |
+| `mcp.LoadEnvFile`, exported from the already-existing private `loadEnvFile` so the authorization phase's static-bearer envfile fallback reuses it rather than duplicating a parser | `internal/tools/mcp/envfile.go` | Phase 5 |
+| `pkgtools.ValidateCmdNotBanned`, an exported wrapper around the existing private ban check, so a credential command run outside `pkg/tools` is still subject to the policy | `pkg/tools/cmd_ban.go` | Phase 5 |
+| `Configurations.TrustInput`, the connector's paste-input seam | `internal/text/conf.go`, assigned in `SetupQuerier` | Phase 5 |
+| `oauthtestserver.Config.FixedAccessToken`, letting an integration test pre-configure `httptestserver.RequireBearerToken` to the exact token the flow is about to issue | `internal/tools/mcp/oauthtestserver` | Phase 5 |
 | `AuthPendingSink` and its wiring into the log sink | interface in `internal/tools/mcp/conn.go`; implementation on `mcpLogSink` in `internal/text/mcp_log_sink.go` | Phase 6 |
 | the call sites that raise the auth-pending signal, one per transport | `internal/tools/mcp/conn_stdio.go` and `internal/tools/mcp/conn_http.go` | Phase 6 |
 | the tool-call-site wait and the single follow-up resolution | `internal/text/tool_executor.go`, at the existing `InvokeWith` call site | Phase 6 |
 | declared MCP-tool-to-built-in mapping | `internal/tools/builtin_shadow.go` | Phase 7 |
 | the listing's MCP tool source: a cache-only read that gives `clai tools` an MCP tool set without connecting | `internal/tools/cmd.go`, extending `List` and `Detail`, plus a cache-only entry point in `internal/tools/mcp/schemacache` | Phase 7 |
+| `schemacache.DefaultDirName`, `schemacache.ListEntry`, `schemacache.ListCachedServers` — the cache-only entry point's concrete symbols | `internal/tools/mcp/schemacache` | Phase 7 |
+| `FindConfiguredServers` (config parse and XOR/URL validation), relocated from the private `findConfiguredMcpServers`/`validateMcpTransport` that `internal/text/querier_setup_tools.go` defined through phase 6 | new package `internal/tools/mcp/serverconfig` | Phase 7 (discovered necessary beyond the phase's original table; added here per the executor-adds-a-row convention phases 2–5 already established: the listing lives in `internal/tools`, which cannot import `internal/text` without a cycle, and a leaf package was needed rather than `internal/tools/mcp` itself, since that package's own tests import `internal/tools`, which now imports this parser) |
 | `architecture/mcp.md` | repository `architecture/` directory | Phase 1 creates it; later phases add their own sections |
 
 ### Record formats
@@ -285,14 +354,25 @@ unmarshalled into `pub_models.McpServer`. The file's base name becomes the serve
 Phase 5 for the scopes component. Stored under the schema-cache-directory parameter, named by the
 schema-cache-file-name parameter. The environment digest is a hex SHA-256 over the environment map
 serialised as sorted `key=value` lines, one per line. `server_info` is the `serverInfo` object from
-the `initialize` result, stored verbatim as raw JSON and never interpreted:
+the `initialize` result, stored verbatim as raw JSON and never interpreted. **Amended by
+implementation review 1 (R1-03, ruling D38):** `args` is never stored verbatim — the documented
+`mcp-remote --header "Authorization: Bearer ..."` shape puts a credential there — so `args_digest`
+(a hex SHA-256 over args joined one per line, order preserved) replaces it, exactly as `env_digest`
+already digests `env`. **Amended by implementation review 2 (R2-03, ruling D40):** `script`
+fingerprints the first `args` entry that resolves to an existing file on disk (normally an
+interpreter-launched server's own script), closing the gap where `executable` alone only ever
+fingerprints the launcher (`node`, `npx`, `uvx`, ...), never the server; it is absent when no such
+entry exists (an npx package name is not a path). The freshness bound (schema-cache-freshness-bound
+parameter) now applies to every entry, command-based included, not only an endpoint-based one — see
+the parameters table row below:
 
 ```jsonc
-{ "identity": { "command": "node", "args": ["server.js"], "url": "",
+{ "identity": { "command": "node", "args_digest": "<hex sha256>", "url": "",
                 "env_digest": "<hex sha256>",      // command XOR url is set, never both
                 "envfile": { "size": 412, "mtime": "2026-09-30T11:02:14Z" },
                 "executable": { "path": "/usr/bin/node", "size": 84213,
                                 "mtime": "2026-08-01T09:00:00Z" },
+                "script": { "size": 2048, "mtime": "2026-08-01T09:00:00Z" },
                 "scopes": ["read", "write"] },
   "protocol_version": "<protocol-version parameter>",
   "server_info": { "name": "...", "version": "..." },
@@ -360,7 +440,7 @@ constant.
 | Parameter | Default | Owner |
 | --- | --- | --- |
 | startup-mode, the `startup` per-server field, `lazy` or `eager` | `eager` as phase 2 ships it; `lazy` after phase 3 flips it, except `eager` for a server supplied through `agent.WithMcpServers` while strict startup is on | Phase 2 introduces the field; Phase 3 flips the default |
-| Fixture posture for `startup` in the tests that actually spawn a server, namely `internal/text/querier_setup_tools_test.go` and `internal/text/mcp_log_sink_test.go` | `eager`, pinned explicitly. The root end-to-end fixture creates an empty `mcpServers` directory and spawns nothing, so pinning it there would pin nothing | Phase 3 |
+| Fixture posture for `startup` in the tests that actually spawn a server, namely `internal/text/querier_setup_tools_test.go` and `internal/text/mcp_log_sink_test.go` | `eager`, pinned explicitly. The *shared* root end-to-end fixture, `setupMainTestConfigDir`, creates an empty `mcpServers` directory and spawns nothing, so pinning it there would pin nothing — amended by R2-24, phase 8, 2026-10-03: this is true of the shared fixture only; dedicated, opt-in fixtures layered on top of it (`main_mcp_lazy_e2e_test.go`) do write a live server into their own copy of that directory and do spawn it | Phase 3 |
 | Cache directory injection wherever `setupMcpManager` is exercised by a test | a per-test temporary directory, never the developer's real cache directory | Phase 3 |
 | connect-bound, the `connect_timeout_seconds` field, which wraps spawn plus handshake | 45 | Phase 2 |
 | single-call bound, the pre-existing `timeout_seconds` field | 0, meaning unbounded | Phase 1, preserved |
@@ -368,8 +448,8 @@ constant.
 | retry-count, connect attempts per server per run after a failure | 0 retries | Phase 2 |
 | schema-cache-directory, under the clai cache dir | `mcpSchemas` | Phase 3 |
 | schema-cache-file-name | `<hex sha256 of identity>.json` | Phase 3 |
-| schema-cache-freshness-bound, for endpoint-based servers | 12 h | Phase 4 |
-| Freshness rule for command-based servers | size and mtime delta, no time bound | Phase 3 |
+| schema-cache-freshness-bound | 12 h, applied to every entry, command-based or endpoint-based alike (amended by D40/R2-03: a command-based identity's delta validation alone cannot see a server upgrade that touches no fingerprinted local file) | Phase 4 introduces the bound for endpoint-based entries; Phase 3 extends it to command-based ones per D40 |
+| Freshness rule for command-based servers | size and mtime delta on the executable, the envfile and, when present, the first `args` entry resolving to a file on disk (D40), plus the schema-cache-freshness-bound above | Phase 3 |
 | protocol-version, the version clai advertises in `initialize` | `2025-06-18` | Phase 1, which sends the handshake |
 | Legacy `sse` remote transport | out of scope, see D7 | Phase 4 |
 | response-body-limit, per message | 2048 KiB, matching the existing stdio scanner bound | Phase 4 |
@@ -415,8 +495,19 @@ Run before requesting validation; record the outcome in the session journal.
    `internal/text/mcp_log_sink.go`.
 8. Every claim about an external system traces to a measurement under Strategy, not to an
    assumption, or is labelled in place as specification-derived.
-9. The two test files that spawn an MCP server pin the eager posture explicitly.
-   `grep -n 'startup' internal/text/querier_setup_tools_test.go internal/text/mcp_log_sink_test.go`
+9. Every test in the two files that actually drives `setupMcpManager` against a real spawned MCP
+   server (a `"go", "run", ".../testserver"` command or equivalent) names its posture explicitly —
+   eager or lazy — either in the config it writes or in a comment stating the posture is
+   deliberately left unset. **Restated by R2-13**, which found the original wording ("the two test
+   files ... pin the eager posture explicitly") false and its own verification command, a bare
+   `grep -n 'startup'` over both files, unable to detect that: a test with `startup` unset prints
+   nothing and is invisible to the grep, and a test that pins `lazy` while spawning prints a line
+   the grep cannot distinguish from compliance. The replacement enumerates each test function that
+   both spawns and calls `setupMcpManager` (excluding a test that spawns through the connector or
+   the log sink directly, which carries no startup-mode posture to pin), instead of searching for
+   a word:
+   `awk '/^func Test/{if (fn!="" && spawn && manager && !posture) print fn " spawns via setupMcpManager with no posture token"; fn=$0; spawn=0; posture=0; manager=0} /run.*testserver|TEST_SERVER_SPAWN_LOG/{spawn=1} /setupMcpManager\(/{manager=1} /startup/{posture=1} END{if (fn!="" && spawn && manager && !posture) print fn " spawns via setupMcpManager with no posture token"}' internal/text/querier_setup_tools_test.go internal/text/mcp_log_sink_test.go`
+   — a clean run prints nothing; verified clean 2026-10-02 after the fix session's test changes.
 
 ## Decisions log
 
@@ -445,6 +536,28 @@ Run before requesting validation; record the outcome in the session journal.
 | D14 | 2026-10-02 | A server under strict startup defaults to `eager`, and no new post-setup error channel is introduced | The strict contract's failure already lands at setup time, where `agent` callers observe it. Inventing a run-scoped error channel to report a lazy strict failure would add a seam no code has and no phase owns. An operator who sets `lazy` on a strict server has opted out of setup-time failure and receives the typed error as a tool result instead | The run-error-channel reporting path described in the first draft of phase 2 |
 | D15 | 2026-10-02 | A credential source that is unset is skipped silently; a source that is configured and fails is a typed error with no fall-through | Without the distinction the no-fall-through rule and the per-source error rows contradict each other. The token store is a cache rather than a configured source, so its absence or corruption is a miss | The undifferentiated no-fall-through rule in the first draft of phase 5 |
 | D13 | 2026-10-02 | Built-in shadowing is reported, never auto-resolved | `clai tools` can tell a user that an MCP tool duplicates an in-process built-in; silently dropping a configured tool would be a surprising behaviour change | — |
+| D35 | 2026-10-02 | Strict startup is unconditional: a server supplied through `agent.WithMcpServers` while `StrictMcpStartup` is on resolves eagerly even when its config says `startup: "lazy"` | Implementation review 1, R1-02. With a warm cache a lazy strict server never connects during setup, so no strict failure can exist to report and the agent caller is told its required server is present. The parameters table already stated the exception unconditionally; `effectiveStartupMode` implemented it as a default | The reading of the startup-mode parameters row under which a configured value overrides the strict exception |
+| D36 | 2026-10-02 | An outcome exempted from the connector's memoisation carries its own per-run re-dial cap, set at one re-dial per server per run | Implementation review 1, R1-01. D20's exemption and the retry-count parameter's "0 retries per server per run" only compose if something bounds the re-dials; without a cap a model calling a flagged server N times paid 2N process births and N full auth-timeout blocks | The unbounded reading of D20's "the next call tries again" |
+| D37 | 2026-10-02 | Expiry of the auth-timeout bound yields the actionable tool result with no further resolution, on both the resolver and the no-resolver branch | Implementation review 1, R1-06. Phase 6's own invariant and integration rows say so; the no-resolver branch treated expiry as success and retried, which is where R1-01's second spawn comes from. A retry after expiry has no new information to act on | Phase 6's implementation-note resolution in which waiting the bound out on a command-based server counts as a resolved wait |
+| D38 | 2026-10-02 | `args` is digested in the schema cache identity exactly as `env` already is, with at most a non-secret informational copy retained | Implementation review 1, R1-03. A credential written into `args` — the documented `mcp-remote --header "Authorization: Bearer ..."` shape — is otherwise persisted verbatim into a cache file, breaking invariant 6. The identity must still react to an args change, so the field cannot simply be dropped; the dirscope convention of a digest key plus an informational path is the precedent | The verbatim `"args"` field in the README's schema cache entry record format |
+| D39 | 2026-10-02 | A per-server resolution that was concurrent stays concurrent: the lazy branch of `setupMcpManager` runs one goroutine per server and joins through the existing `toolWg`, exactly as `mcp.Manager` already does for an eager server | Implementation review 2, R2-02. D18 promises a miss connects "exactly as today"; today is parallel. Measured serially at 4.05 s for four servers against 1.01 s eager, and the failure case is worse, since each miss carries its own 30 s handshake bound | The inline, loop-body resolution introduced when phase 3 added the cache-aware path |
+| D40 | 2026-10-02 | A command-based cache identity fingerprints the first `args` entry that resolves to an existing file, in addition to the resolved command, and the freshness bound applies to every entry rather than only endpoint-based ones | Implementation review 2, R2-03. `resolveExecutable(server.Command)` fingerprints `node`, `npx`, `uvx` or `python`, never the server, so delta validation is blind for roughly 85 percent of local servers by this worklog's own census — including the `npx` command the Strategy section measured. Proved by probe: rewriting the launched script leaves the identity key byte-identical | The parameters row "Freshness rule for command-based servers: size and mtime delta, no time bound", which is sound only when `command` is the server binary |
+| D41 | 2026-10-02 | A time bound in a test never encloses a compile. The stdio fixture is built once into a temporary binary in a `TestMain` and every config points at that binary instead of `go run ./testserver` | Implementation review 2, R2-01 and R2-19. A 200 ms connect bound wrapping `go run` passes warm and fails cold, deterministically, so the gate record was a property of the reviewer's build cache rather than of the code. The same change removes the 4.32 s the new e2e fixture costs the load-sensitive race gate | The `go run ./testserver` form used by every spawning test in this worklog |
+| D42 | 2026-10-02 | Every explicit-server setup failure is wrapped into `claierr.NewMcpServerStartup` at the single `classifyServerFailure` boundary, rather than each producer being trusted to have chosen a type that carries the sentinel | Implementation review 2, R2-05. `setupTooling` forks strict against degrade on one sentinel; a credential-source failure never reaches it, so an explicitly requested server could fail while `Setup` returned nil. One funnel, one wrap, and the class closes | The per-producer typing on which the strict/degrade fork currently depends |
+| D43 | 2026-10-02 | `userConf.McpServers` passes the same transport validation the config-directory path does, before it is appended | Implementation review 2, R2-07. The XOR that `pub_models.McpServer.Url`'s own doc comment asserts is enforced on the file path and unenforced on the public path, where both-set silently prefers `url` and neither-set reaches `exec.CommandContext(ctx, "")` | The unvalidated append at `querier_setup_tools.go:145` |
+| D44 | 2026-10-02 | A per-file config parse or validation error is reported unconditionally, and returned when the run is strict, rather than read only when no server parsed at all | Implementation review 2, R2-06. The swallow predates this worklog but this worklog adds two new ways to land in it, `StartupMode.UnmarshalJSON` and `validateTransport`, so a one-character typo now deletes a working server in silence | The `if len(mcpServers) == 0` guard around the joined error |
+| D45 | 2026-10-03 | An eager, strict-startup endpoint-based server's credential chain is static-only (`auth.token_command`, `auth.token_env`): no token store, no interactive fallback. The gap is accepted as declared, not fixed, because D16/D18 already make `lazy` the ambient default and the eager path runs through `mcp.Manager`'s channel machinery, which has no retry-on-challenge seam without reopening phases 1–2 | Phase 5 fix session, 2026-10-03, promoting its own implementation-note comment to a decision row per this round's instruction that an asymmetry "ruled acceptable as declared" must be a decision row, not only a code comment. The resulting challenge is never silently swallowed: it surfaces as a typed connect failure, and R2-05's fix (the `failureCollector.addExplicit` funnel) now wraps it into `claierr.NewMcpServerStartup` like any other explicit failure, so `StrictMcpStartup` still sees it | The implementation-note-only record of this asymmetry in phase 5's own file |
+| D46 | 2026-10-03 | `Cache.Capture` refuses an empty tools array rather than persisting it | Sign-off review, B4. An empty handshake result is a run-fact about one transient zero-tool boot, not content about the server, and this package's own rule (D5) already keeps a run-fact out of the cache; this closes the one path that fact could still take | — |
+| D47 | 2026-10-03 | A warm cache hit against a command-based server whose identity's only local evidence is a generic launcher (`node`, `npx`, `npm`, `uv`, `uvx`, `pipx`, `python`, `python3`, `docker`, `bunx`, `deno`) and no on-disk script argument prints a one-line setup-time notice naming the server, restoring (for that shape only) the warning eager setup always gave | Sign-off review, B3. Gated on the identity (`Identity.LauncherOnlyFingerprint`), not printed on every warm hit, so a direct-binary server — whose `Executable` already fingerprints the thing that would have changed — stays quiet; only the shape that genuinely cannot detect its own breakage is noisy | — |
+| D48 | 2026-10-03 | The built-in shadow advisory is a single footer line naming every matched, available built-in once, deduplicated, with no attribution to which server or tool triggered which entry — not a per-tool marker. `get_file_info` is removed from `builtinShadowMap` | Sign-off review, S2. "Command-based" is not a reliable proxy for "local" (the documented `npx -y mcp-remote https://...` bridge shape disproves it), so a per-tool claim keyed on it can be wrong about a specific tool; a footer carries the same information with no such claim. Cutting the advisory outright (the review's other offered option) was rejected because it would also discard the information for the still-dominant case where the per-tool marker was correct. `get_file_info → file_type` was simply wrong: the two answer different questions | The per-tool `[shadowed by built-in: <name>]` marker (phase 7's original Behaviour section) and the `get_file_info` entry in `builtinShadowMap` |
+| D49 | 2026-10-03 | `HttpConn.Call` runs `consumeResponseBody` in its own goroutine instead of calling it inline before the `select` | Sign-off review, B1. A server may hold its POST event-stream open after answering (the specification says SHOULD close it, not MUST); calling `consumeResponseBody` synchronously made `Call` wait for the body to end rather than for the waiter channel to receive the frame it was already holding, so a conformant server that keeps the stream open hangs every call to its context bound. Running it in a goroutine lets the `select` resolve the moment `deliver` places a result, since `consumeResponseBody` already owns closing the body on every path | The synchronous `c.consumeResponseBody(resp, id)` call immediately before `Call`'s `select` |
+| D50 | 2026-10-03 | RFC 8707 `resource` is sent on the authorization request and on all three token grants, and is persisted on the token store entry so a refresh names the same identifier without re-walking discovery. An entry written before this falls back to the server's own endpoint | Sign-off review, B2. It is a MUST in the MCP authorization specification and the only mechanism that stops a token minted for one MCP server being replayed against another behind the same authorization server. Persisting it rather than recomputing it keeps the refresh grant from depending on a document fetch it does not otherwise need | — |
+| D51 | 2026-10-03 | Every URL on the authorization chain must be https, or http on a loopback host: the server endpoint, the challenge's `resource_metadata` location, the issuer, all three advertised endpoints, every discovery redirect hop, and the authorization URL immediately before the browser hand-off. `serverconfig.go` deliberately still admits a plain-http endpoint | Sign-off review, B2. The refusal is scoped to the credential clai mints itself, where a cleartext hop would leak clai's own token; a LAN server reached over plain http with a static `token_env` credential is a legitimate configuration whose risk its operator already owns, and refusing it at parse time would break working setups for no gain clai controls. The loopback exception is what keeps a local MCP server, and this repository's fixtures, usable | — |
+| D52 | 2026-10-03 | Redirects are refused outright on the registration endpoint, both token grants and the MCP endpoint itself, and bounded at three hops with each hop re-checked on the discovery GETs. `NewAuthorizer` derives two clients by copying whatever `WithHTTPClient` installed rather than mutating it | Sign-off review, B2. Go re-sends a POST body across a 307 or 308 and strips only the cross-domain `Authorization` header, never the body, so a redirect on a credential-bearing POST is a credential handed to the target — observed directly: the unfixed client delivered its PKCE verifier to a redirecting token endpoint. Discovery is treated differently because it carries no credential and a real issuer may legitimately redirect a well-known URL for trailing-slash normalisation, which refusing outright would break before the human gate could reveal it | — |
+| D53 | 2026-10-03 | The non-interactive gate lives in `AuthorizeInteractive` itself, not in each caller. `httpChallengeResolver` keeps returning a non-nil `AuthResolver` on a headless run | Sign-off review, B2. The finding exists *because* the gate was per-caller: the setup path got one as R2-08 and the mid-run path did not. Gating at the root means no future caller needs its own copy. The resolver stays non-nil because `resolveMcpAuthWait` reads `authResolver != nil` to choose the actionable result's wording and whether to wait at all, so a nil would both misdescribe an endpoint-based server as command-based and burn the whole `auth_timeout` waiting for nothing | R2-08's setup-path branch, now redundant defence rather than the only gate |
+| D54 | 2026-10-03 | Mid-run token expiry re-authorization is recorded as not implemented rather than built in this session | Sign-off review's own recorded cross-phase gap, with the review's explicit option to record rather than close. Verified against source: `bearerDecorator` captures a token string and is installed once at connect time, and `resolveMcpAuthWait` inspects only connector resolution, never a call result. Closing it needs a refreshable decorator seam on `HttpConn` (phase 4), a typed call-result path the executor can classify (phase 6), and a re-entry rule for a connection already handed out — a phase of its own, not a line in a security fix | — |
+| D55 | 2026-10-03 | `oauthtestserver`'s zero configuration is hostile: it requires `resource` on the authorization request and on every token request and compares the authorization-code grant's `redirect_uri` against the issued one. The single relaxation is phrased negatively, `AllowMissingResourceParam` | Sign-off review, B2's sixth item. A permissive fixture is why this blocker shipped green through two review rounds and a gate sweep: it recorded `issuedCode.redirectURI` and never compared it. A negative relaxation keeps the zero value strict, so a future test cannot opt out of conformance by forgetting to opt in | The fixture's previous posture, which asserted neither parameter |
+
 
 ## Definition of success
 
@@ -453,8 +566,8 @@ Run before requesting validation; record the outcome in the session journal.
 | A run with stdio servers configured, **a warm cache**, and no MCP tool call creates no MCP process | End-to-end test asserting zero child processes for the configured fake server after a prior run warmed its entry |
 | A first run against a cold cache still registers every tool, by connecting | The repository's existing `Test_setupMcpManager_RegistersToolsAndNotifiesSuccess`, still passing unmodified. It is cited, not introduced, so it is deliberately not a new name under checklist item two |
 | A miss is captured, so the next run hits | `TestSchemaCacheMissConnectsCapturesThenHits` |
-| A run that calls one tool from one of several configured stdio servers creates exactly one process | End-to-end test counting spawns per server across a multi-server fixture |
-| Three tool calls to one server in one batch create exactly one process | `TestThreeCallsOneServerSpawnOnce`. A batch is sequential today, so this is reached through memoisation; the single-flight contract is a separate unit-level test with no production trigger |
+| A run that calls one tool from one of several configured stdio servers creates exactly one process | `TestLazyMultiServerSpawnsOnlyTheCalledServer` (added R2-04, phase 8, 2026-10-03 fix session: the previously cited description named no test, because none existed) |
+| Three tool calls to one server in one batch create exactly one process | `TestConnectorConnectFailureSpawnsOnceAcrossRepeatedToolCallsEndToEnd` (updated 2026-10-02 fix session, R1-25: the previously cited `TestThreeCallsOneServerSpawnOnce` starts no real process; the new test counts real spawns through `toolExecutor.invokeToolCall`). `TestThreeCallsOneServerSpawnOnce` remains as the connector's own unit-level memoisation proof, which phase 2's invariants table cites separately |
 | A remote server completes `initialize`, `tools/list` and `tools/call` with no local process | Integration test against the in-repo spec-compliant fake over loopback HTTP |
 | A tool schema survives a process restart without reconnecting | Cache hit test asserting no transport construction on the second setup |
 | A changed server binary or envfile invalidates the cache | Delta-validation test mutating size and mtime |
@@ -484,6 +597,115 @@ the shared end-to-end fixture.
 ## Feedback index
 
 One entry per round, mapping each finding ID to the edit or decision row that closed it.
+
+Validation rounds use `V{n}-*` and comprehension probes `C{n}-*`. Implementation review rounds use
+`R{n}-*` and are listed first, because they are the only rounds whose findings are still open.
+
+### Sign-off review — holistic review, 2026-10-03
+
+The first pass to read the whole effort at once rather than one phase at a time (see the Sign-off
+verdict section below the session journal). Found four blockers thirteen prior passes missed. B3
+and B4 gated phases 1–3 and 7; both, plus two smaller items the same review named, were fixed in
+the first sign-off fix session. B1 gated phase 4 alone and was fixed in a second. B2 gated phases 5
+and 6 and is fixed in a third, below. **All four blockers and both recommended items are now
+closed.** One item the same review recorded is deliberately left open rather than fixed: mid-run
+token expiry never re-authorizes (D54), a phase of its own rather than a line in a security fix.
+
+| ID | Severity | Summary | Phase |
+| --- | --- | --- | --- |
+| B1 | blocker | `HttpConn.Call` returned when the response body ended, not when its answer arrived: `consumeResponseBody` was called synchronously before the `select` on the waiter channel, so a server permitted by the specification to hold its POST event-stream open after answering ("SHOULD" close it, not "MUST") made every call, `initialize` included, hang to its context bound and fail. `architecture/mcp.md` already documented the correct behaviour; no test covered it, and no fixture could express the failure | [phase 4](phase-4-streamable-http.md) — fixed, 2026-10-03 sign-off fix session: `Call` now runs `consumeResponseBody` in its own goroutine, so the `select` resolves on the waiter channel as soon as `deliver` places a result there rather than when the background read ends; evaluated for a race on `resp` and the waiter map across every call path, none introduced, confirmed by `-race` across three runs. `httptestserver` gained `HoldPostStreamOpen`, the missing fixture mode. `TestHttpConnCallResolvesWhenFrameArrivesEvenIfStreamStaysOpen`, proved red (unfixed code returns only at the full context bound) before green |
+| B2 | blocker | The OAuth client was neither conformant nor safe — *"this is an OAuth-shaped object, not an OAuth client."* RFC 8707 `resource` was never sent and `ProtectedResourceMetadata.Resource` had zero readers; `redirect_uri` was absent from the authorization-code token request although the authorization request always set one, which a conformant server answers `invalid_grant` (direct evidence the interactive flow had never completed against a real authorization server); the discovery chain had no trust validation at all — `doc.Issuer` never compared to the issuer fetched, `prm.Resource` never to the server, no scheme requirement, no `CheckRedirect` on either `http.Client`; and `httpChallengeResolver` was not gated on `Interactive` although the setup path had been fixed for exactly that (R2-08). Composed: a malicious server, or an on-path attacker forging the 401, controlled resource metadata, issuer, registration, `/authorize` and `/token`; clai registered a client with the attacker, handed the attacker's `authorization_endpoint` to `xdg-open`, and stored whatever the attacker's token endpoint returned. Root cause of it shipping green: `oauthtestserver` was permissive at every one of those points | [phase 5](phase-5-oauth.md), [phase 6](phase-6-midrun-auth.md) — fixed, 2026-10-03 sign-off fix session (D50–D53, D55). `resource` on the authorization request and all three token grants, persisted on the entry; `redirect_uri` repeated on the exchange; a new `internal/tools/mcp/mcpauth/trust.go` validating the issuer (RFC 8414 §3.3), the resource identifier (RFC 9728 §3.3), the metadata location's hostname and the scheme of every chain URL including the browser hand-off and the server endpoint; redirects refused on the registration endpoint, both token grants and the MCP endpoint, bounded-and-rechecked on discovery; `AuthorizeInteractive` refusing a non-interactive run at the root. The fixture is hostile by default and every fix has a mode that fails without it. Red observed first in each case, the sharpest being `verifierLeaked=true` (the unfixed client POSTing its PKCE verifier to a redirecting token endpoint) and the non-interactive case **hanging** a full 60 s inside `awaitRedirect` rather than failing. `TestOauthSendsResourceOnAuthorizationAndTokenRequests`, `TestOauthRefreshGrantSendsResource`, `TestOauthTokenRequestRepeatsRedirectUri`, `TestOauthIssuerMismatchIsRefused`, `TestOauthResourceMismatchIsRefused`, `TestOauthAbsentResourceIdentifierIsRefused`, `TestOauthCrossHostResourceMetadataIsRefused`, `TestOauthPlainHttpDiscoveryUrlIsRefused`, `TestOauthPlainHttpServerEndpointIsRefused`, `TestOauthInsecureAuthorizationEndpointIsNeverOpened`, `TestOauthInsecureTokenEndpointIsRefused`, `TestOauthRedirectingTokenEndpointIsRefused`, `TestOauthRedirectingRegistrationEndpointIsRefused`, `TestOauthRedirectingRefreshEndpointIsRefused`, `TestOauthNonInteractiveRunIsRefused`, `TestRequireSecureURLAcceptsLoopbackAndHttps`, `TestRequireResourceCoversOriginAndPath`, `TestRequireIssuerMatchToleratesOnlyATrailingSlash`, `TestSecureHopRedirectBoundsAndChecksEveryHop`, `TestHttpConnRefusesEndpointRedirect`, `TestMidRunChallengeOnNonInteractiveRunNeverOpensBrowser`. The doc comment that presented the unvalidated fetch as a feature is corrected. Known limit, stated not hidden: the metadata-location check compares hostname, not port |
+| B3 | blocker | A warm cache hides a dead server: for the dominant `npx`-launched shape, `resolveExecutable` fingerprints only the launcher, so a server broken by anything else is invisible at setup for up to twelve hours, and never reported at all if the model never calls it. Probed end to end: `err=<nil>`, zero spawns, tool still advertised | [phase 3](phase-3-schema-cache.md) — fixed, 2026-10-03 sign-off fix session: `Identity.LauncherOnlyFingerprint` (`schemacache.go`) reports true exactly when the command is a known generic launcher (`node`, `npx`, `npm`, `uv`, `uvx`, `pipx`, `python`, `python3`, `docker`, `bunx`, `deno`) and no args entry resolved to an on-disk script; `resolveLazyServerViaCache`'s cache-hit branch calls the new `warnIfLauncherOnlyFingerprint` helper, which prints one `ancli.Noticef` line naming the server before registering its cached tools. A direct-binary server (Executable fingerprints the server itself) stays silent, by design. `TestWarmCacheLauncherOnlyServerPrintsSetupNotice`, `TestWarmCacheDirectBinaryServerPrintsNoNotice` (control) |
+| B4 | blocker | An empty tools array is captured and served as truth for twelve hours: `Capture` has no guard, `extractToolsArray` normalises an absent `tools` key to `[]`, and `RegisterTools([])` returns nil, so the capture is reached. Neither invalidation signal can fire on the resulting zero-tool entry. Probed: `Capture(empty) accepted=true, Lookup hit=true, tools=[]` | [phase 3](phase-3-schema-cache.md) — fixed, 2026-10-03 sign-off fix session: `Cache.Capture` (`schemacache.go`) now refuses (returns an error, never panics) when `tools` decodes to a JSON array with zero elements, via the new `toolsArrayIsEmpty` helper; both production call sites already degrade a `Capture` failure to a warning-and-connect, so no caller change was needed. `TestSchemaCacheRefusesEmptyToolsArray`. Three pre-existing tests that seeded a warm cache with `[]byte("[]")` purely to exercise unrelated mechanics were updated to seed a non-empty placeholder tool instead, since that was never their own point |
+| S1 | minor | `internal/text`'s testserver fixture was built behind a `sync.Once` *inside* a test, so its ~4s `go build` ran against the `-timeout=30s` race-gate clock; measured cold at 25.3s, 84% of budget. [phase 8](phase-8-gate-sweep.md)'s own gate sweep recorded this as needing a package split to fix properly — that conclusion is wrong: Go arms the `-timeout` alarm inside `m.Run()`, so building before it, in a `TestMain`, removes the cost from the timed window entirely rather than needing less of it | [phase 3](phase-3-schema-cache.md) — fixed, 2026-10-03 sign-off fix session: new `internal/text/main_test.go` adds a `TestMain` that builds the fixture once before calling `m.Run()`; `testServerBinary` (`querier_setup_tools_test.go`) now only reads the result. Measured cold (`GOCACHE` pointed at a fresh throwaway directory): total `go test` time essentially unchanged (25.353s before, 25.352s after, since the same work runs either way) but the portion exposed to the `-timeout` alarm dropped from the whole figure to ~19.9s (instrumented directly: build 4.31s, then `m.Run()` 19.93s), raising headroom from ~4.7s to ~10.1s against the 30s bound. [phase 8](phase-8-gate-sweep.md)'s own stale "needs a package split" conclusion (lines 395–401 of that phase file) is corrected in place, with a pointer to this fix |
+| S2 | minor | The shadow marker gated on transport (`server.Command != ""`), not locality: `npx -y mcp-remote https://...`, a shape this package's own schema-cache comments document, is command-based but genuinely remote, so its tools could be marked `[shadowed by built-in: cat]` on a bare name match — cat cannot read a Notion page. Also, one existing mapping entry (`get_file_info` → `file_type`) is wrong on its merits: the MCP tool returns size/mtime/permissions, `file_type` wraps `file(1)`, a different question | [phase 7](phase-7-shadow-advisory.md) — fixed, 2026-10-03 sign-off fix session. **Decision:** demoted to a single footer line (the smaller of the two offered corrective actions) rather than cut outright, since a footer can carry the same "a local built-in may already cover this" information with no claim about any specific listed tool to be wrong about. `mcpListingEntries` now returns the listing entries (no per-entry marker; the `marker` field is gone from `mcpListingEntry`) alongside a deduplicated, sorted slice of built-in names matched across command-based hits only; `List` prints them as one trailing `Note:` line. `get_file_info` removed from `builtinShadowMap` outright (no built-in answers what it actually returns). `TestToolsListNeverEmitsPerToolShadowMarker`, `TestShadowFooterNamesAvailableBuiltin`, `TestShadowFooterOmitsUnregisteredBuiltin`, `TestShadowFooterDeduplicatesAcrossServers`, `TestShadowFooterCoversLazyCachedServer`, `TestShadowFooterSkipsEndpointBasedServers`, `TestShadowFooterCoversCreateDirectory`, `TestShadowFooterNeverAttributesToASpecificRemoteTool` (the direct Notion/`mcp-remote` regression), `TestBuiltinShadowMapExcludesGetFileInfo` |
+
+### Implementation review 2 — second code review of the same unpatched diff, 2026-10-02
+
+Round 2 reviewed the identical working tree round 1 reviewed; nothing had been patched. It
+re-verified a sample of round 1's findings against the code — all four blockers and rulings D35 to
+D38 hold, and every phase-6 finding is upheld — and then went where round 1 did not: concurrency
+and lifetime, HTTP protocol conformance, the `pkg/*` public surface, backward compatibility of
+existing configurations, the fixture layer, and whether the code path can produce the measured goal
+at all. One round-1 finding needed a correction, filed as R2-23.
+
+| ID | Severity | Summary | Phase |
+| --- | --- | --- | --- |
+| R2-01 | blocker | `TestStdioConnectReclassifiesAuthPromptAsChallenge` fails deterministically on a cold Go build cache: a 200 ms connect bound must contain a `go run` compile. Reproduced with `go clean -cache`; the suite's green record is warm-cache-only | [phase 6](phase-6-midrun-auth.md) — fixed, 2026-10-03 fix session: `internal/tools/mcp/conn_stdio_test.go` gained its own `testServerBinary` helper (D41's pattern) and the one test this finding names now points at the prebuilt binary; reproduced cold via a throwaway `GOCACHE` to confirm. [phase 8](phase-8-gate-sweep.md)'s share fixed, 2026-10-03 fix session: every remaining direct `go run ./testserver` test call site repository-wide converted to a prebuilt binary (closing R2-19's cost as a side effect); the gate table now states the race row runs warm and a dedicated cold-cache sweep (three throwaway-`GOCACHE` runs) found no further instance of this bug class — only two distinct, different findings: the root package's cold-cache timeout is pre-existing (confirmed against the pre-worklog commit `384e8d2`, out of this worklog's scope) and `internal/text`'s is this worklog's own added test volume, not a tight bound, left as an acknowledged risk rather than fixed |
+| R2-02 | blocker | Cold-cache lazy setup resolves servers serially where the eager path it replaced resolved them concurrently, contradicting D18. Probe: 4 servers × 1 s → lazy 4.05 s, eager 1.01 s. Six `npx` servers go from ~4.5 s to ~27 s on every first run | [phase 2](phase-2-lazy-connect.md), [phase 3](phase-3-schema-cache.md) — phase 2's share fixed (D39), 2026-10-02 fix session: one goroutine per server, joined through `toolWg`; `TestLazySetupResolvesServersConcurrently` |
+| R2-03 | blocker | A command-based cache entry can never be invalidated for an interpreter-launched server: the identity fingerprints `node`/`npx`, not the server; no time bound; no watcher; no unknown-tool wrapper on the stdio path. Verified by probe | [phase 3](phase-3-schema-cache.md) — fixed (D40), 2026-10-03 fix session: `Identity.Script` fingerprints the first `args` entry resolving to an existing file, and the freshness bound now applies to every entry, not only an endpoint-based one; `TestSchemaCacheMissOnScriptFileDelta`, `TestSchemaCacheFreshnessBoundAppliesToCommandIdentityToo`. The watcher and unknown-tool-wrapper mechanisms remain phase 4's to wire (R2-16) |
+| R2-04 | major | Two Definition-of-success rows have no evidence: the multi-server spawn-counting fixture does not exist, and R1-25 already voided the other. "Cost proportional to servers used" is unproven by any test | [phase 8](phase-8-gate-sweep.md) — fixed, 2026-10-03 fix session: `TestLazyMultiServerSpawnsOnlyTheCalledServer` (`main_mcp_lazy_e2e_test.go`), two lazy servers pre-warmed via `schemacache.Capture` (not through a real round trip, which would spawn both and make a "zero" assertion trivial), one tool called via the mock vendor's `tool_<name>` prompt convention: called server 1 spawn, uncalled server 0 |
+| R2-05 | major | An explicit server's credential failure under strict startup degrades to a warning: `*mcpauth.CredentialSourceError` never unwraps to `ErrMcpServerStartup`, the only sentinel `setupTooling` classifies on | [phase 5](phase-5-oauth.md) — fixed (D45's wrap is a side effect), 2026-10-03 fix session: the funnel (`failureCollector.addExplicit`) wraps any explicit failure not already carrying the sentinel into `claierr.NewMcpServerStartup`; `Test_AgentSetup_ExplicitMcpCredentialFailure_FailsSetup` |
+| R2-06 | major | A per-file config error is dropped whenever any other server parses, so this effort's two new validations silently delete a server with no message. A `startup` typo is enough | [phase 3](phase-3-schema-cache.md), [phase 4](phase-4-streamable-http.md) — fixed (D44), 2026-10-03 fix session: `setupMcpManager` warns on the joined `findConfiguredMcpServers` error unconditionally and joins it into the explicit failures under strict startup, closing both phases' share at the one shared read site; `Test_setupMcpManager_PerFileConfigErrorWarnsAndStillRegistersOthers`, `Test_setupMcpManager_PerFileConfigErrorFailsStrictRun` |
+| R2-07 | major | `agent.WithMcpServers` entries never pass `validateTransport`: both `command` and `url` set means `url` silently wins, neither set means `exec.CommandContext(ctx, "")` | [phase 2](phase-2-lazy-connect.md), [phase 4](phase-4-streamable-http.md) — phase 2's share fixed (D43), 2026-10-02 fix session: exported `serverconfig.ValidateTransport`, run over every `userConf.McpServers` entry in `setupMcpManager`; `TestExplicitServerBothCommandAndUrlFailsValidation`, `TestExplicitServerNeitherCommandNorUrlFailsValidation`. Phase 4's share verified closed by the same fix, 2026-10-03 fix session: its `isHTTP` selector only ever sees `mcpServers` entries, which have all passed `validateTransport` by construction; no code change needed in phase 4 |
+| R2-08 | major | `Authorizer.Interactive` is set by both production constructors and read nowhere, `AuthorizeInteractive` on the setup path is unbounded, and `defaultPrintURL` writes the OAuth URL to process stdout. `agent.Setup` can hang and can print into a library consumer's stdout | [phase 5](phase-5-oauth.md) — fixed, 2026-10-03 fix session: `newMcpAuthorizer` sets `WithInteractive` from `userConf.OutputIsTerminal`; the setup-path flow branches on `authz.Interactive` before attempting it, and bounds the attempt by the resolved auth-timeout when it proceeds; `WithPrintURL` now routes through the sink's own writer via a new `AuthPrintWriter` capability; `TestSetupNonInteractiveSkipsAuthorizeInteractive`, `TestAuthPrintURLRoutesThroughSinkNotStdout` |
+| R2-09 | major | `OutputIsTerminal` is assigned unconditionally and is always false for `pkg/agent` (`Out: io.Discard`, no option), so D22's auth-timeout is 0 for every SDK consumer and the `AuthResolver` is never driven | [phase 6](phase-6-midrun-auth.md) — fixed, 2026-10-03 fix session, folded together with R1-21: `Configurations.OutputIsTerminal` is now `*bool`, assigned only when unset; `pkg/agent.WithOutputIsTerminal` added and wired into `asInternalConfig`; `TestAgent_WithOutputIsTerminal_propagates`, `TestNewQuerierThreadsOutputIsTerminalIntoAuthTimeout` |
+| R2-10 | major | No session is ever terminated: `Close` sends no `DELETE`, nothing in production calls `Conn.Close` at all, and the "spec-compliant" fake has no `DELETE` branch | [phase 4](phase-4-streamable-http.md) — fixed, 2026-10-03 fix session: `HttpConn.Close` sends a bounded `DELETE` when a session is held; `NewHttpConn` gives `Close` a production call site (a goroutine on `connCtx.Done()`); `httptestserver` gained a `DELETE` branch; `TestHttpConnCloseSendsSessionDelete`, `TestHttpConnCloseWithNoSessionSendsNoDelete`, `TestHttpConnContextEndingClosesConnectionAndSendsDelete` |
+| R2-11 | major | The server-initiated GET stream is attempted once and never resumed; `id:` is discarded so `Last-Event-ID` is impossible. After the first stream close, list-changed invalidation is silently dead for the run | [phase 4](phase-4-streamable-http.md) — fixed, 2026-10-03 fix session: `runServerStream` now loops, reconnecting with `Last-Event-ID` (`sseFrameReader.LastID()`, newly tracked) after a bounded backoff, capping only consecutive failed connection *attempts*; `TestHttpConnServerStreamReconnectsWithLastEventID` |
+| R2-12 | major | The lazy e2e fixture's "registers the same tools" claim is unasserted; an unresolved `-t` is a warning and exit 0, so a warm run registering zero tools passes both assertions | [phase 3](phase-3-schema-cache.md), [phase 7](phase-7-shadow-advisory.md) — phase 3's fixture fixed, 2026-10-03 fix session: `TestLazyStartupE2EUnderRace` now keeps both runs' stdout, asserts a positive `mcp_echo_echo` match and the absence of "which doesn't exist" on both runs, pins the cold spawn count to exactly 1, and drops the `"startup"` field entirely so it also proves the flipped default (closing R2-27 in the same edit); phase 7's listing-path share fixed in the same fix session: `Test_goldenFile_TOOLS_lists_mcp_tools_from_cache` warms a real cache entry and runs the real `clai tools` command, asserting both the cache-sourced tool and its shadow marker appear in stdout |
+| R2-13 | major | Readiness checklist item 9 is false — three `setupMcpManager` tests leave `startup` unset and so now run the lazy branch, and a fourth pins `lazy` while spawning — and the item's own grep cannot detect either case | [phase 2](phase-2-lazy-connect.md), [phase 3](phase-3-schema-cache.md) — phase 2's tests fixed, 2026-10-02 fix session: the three unset-posture tests now pin a posture explicitly (two eager, one deliberately left unset with a comment explaining why); item 9 itself restated below |
+| R2-14 | minor | An SSE event whose `data:` field is empty is treated as a malformed frame; on the shared GET stream that fails every in-flight call. Verified by probe | [phase 4](phase-4-streamable-http.md) — fixed, 2026-10-03 fix session: `sseFrameReader.next` checks the joined `data:` content, not the line count, so an empty-only event is skipped rather than returned as a zero-length frame; `TestSSEFrameReaderSkipsEmptyDataKeepAlive` |
+| R2-15 | minor | `StartupMode` is validated only in `UnmarshalJSON`; `effectiveStartupMode` returns it verbatim, so any unrecognised value set programmatically through the public struct is silently eager | [phase 2](phase-2-lazy-connect.md) — fixed, 2026-10-02 fix session: `effectiveStartupMode` now returns `(StartupMode, error)` and rejects any value outside eager/lazy/unset unconditionally; `TestEffectiveStartupModeRejectsUnrecognisedProgrammaticValue` |
+| R2-16 | minor | `isUnknownToolFailure` matches `*mcp.RPCCallError`, which only `HttpConn` produces, so the unknown-tool signal can never fire for stdio even once R2-03's wrapper is wired. R1-34's consequence | [phase 4](phase-4-streamable-http.md) — fixed, 2026-10-03 fix session: `mcp.RPCCallError` replaced by one shared `claierr.McpRPCError` built from both transports' `deliver`; `StdioConn` gained `NotificationWatcher`; `resolveLazyServerViaCache` (stdio) now wraps both branches with `cacheInvalidatingConn`/`cacheInvalidatingConnector` exactly as the HTTP resolver does; `TestStdioConnPublishesServerInitiatedNotifications`, `TestStdioSchemaCacheUnknownToolInvalidatesEntry`, `TestStdioSchemaCacheListChangedInvalidatesEntry` |
+| R2-17 | minor | `TestShadowAdvisoryDoesNotAlterSelection`'s "no marker" assertion is unreachable by construction: the marker lives only in `mcpListingEntries`, which the test never calls | [phase 7](phase-7-shadow-advisory.md) — fixed, 2026-10-03 fix session: the test now drives `List()` then `Detail()` over one cached, shadowed entry and asserts the cached description survives unmarked; the old `mcp.RegisterTools`-based body was removed |
+| R2-18 | minor | The two transport-XOR tests assert the same branch-insensitive error string, so collapsing the two branches into one check passes both | [phase 4](phase-4-streamable-http.md) — fixed, 2026-10-03 fix session: `validateTransport` returns two distinguishable messages; both tests assert the discriminating word (fixture files first renamed off `both.json`/`neither.json`, which made the naive assertion pass trivially on the old message); `TestMcpServerConfigRequiresExactlyOneOfCommandOrUrl`, `TestMcpServerConfigRejectsMissingTransport` |
+| R2-19 | minor | The new lazy e2e test is 4.32 s, ~26 percent of the root race package and ~13 s at `-count=3`, and is the only root test invoking the Go toolchain, against a gate recorded as load-sensitive | [phase 8](phase-8-gate-sweep.md) — fixed, 2026-10-03 fix session: a root-package `testServerBinary(t)` helper (`main_test_helpers_test.go`), same pattern as the other two packages'; `TestLazyStartupE2EUnderRace` measured dropping from 4.32s to 0.25s |
+| R2-20 | minor | The cache-injection parameters row is unmet outside `internal/text`: the shared root fixture does not pin `CLAI_CACHE_DIR`, so root e2e resolves the developer's real cache directory | [phase 3](phase-3-schema-cache.md), [phase 8](phase-8-gate-sweep.md) — fixed, 2026-10-03 fix session: `setupMainTestConfigDir` now sets `CLAI_CACHE_DIR` under its own temp config dir, and `TestSetupTooling_injectedToolsRegisterWithoutWarning` got its own line |
+| R2-21 | note | The spawn counter every warm-cache proof rests on is fail-open: a spawn whose log write fails reads as no spawn | [phase 3](phase-3-schema-cache.md) — fixed, 2026-10-03 fix session: `testserver/main.go` now exits non-zero on either the open or the close failing instead of swallowing the error |
+| R2-22 | note | Six further test-only exported options with doc comments describing README parameters production cannot set. R1-26's class; also corrects the reading that `ControlEvent.StartupTimeout` was a lost capability — it was already dead at `c3867d3` | [phase 1](phase-1-conn-seam-and-demux.md), [phase 4](phase-4-streamable-http.md), [phase 5](phase-5-oauth.md) — phase 4's share, 2026-10-03 fix session: `WithHttpProtocolVersion` deleted (same symbol as R1-26); `WithHttpReadBound` kept and recorded as an accepted, by-design test-support option (heavily test-used, and the parameter it overrides is deliberately shared with stdio's identical constant, never meant to be per-server configurable). Phase 5's share resolved as a side effect of its own R2-08 fix, same date: `WithInteractive` and `WithPrintURL` both now have a real production setter whose value is read, so neither is dead or test-only any longer. Phase 1's share, closed by [phase 8](phase-8-gate-sweep.md)'s 2026-10-03 fix session: `WithAuthPendingSink` deleted (R1-26) |
+| R2-23 | note | **Correction to R1-23.** Its premise is true — there is no `MkdirTool` constant — but the inference is wrong: `ToolName` is a string type and `mkdir` is registered at `internal/tools/handler.go:43`. The recommendation stands, the reason does not | [phase 7](phase-7-shadow-advisory.md) — closed together with R1-23, 2026-10-03 fix session: `MkdirTool` added as a named constant rather than an inline string literal |
+| R2-24 | note | The Validation-policy sentence "the root end-to-end fixture … spawns nothing" is stale for the root e2e package, though the shared helper is still clean | [phase 8](phase-8-gate-sweep.md) — fixed, 2026-10-03 fix session: the Parameters table's fixture-posture row now names `setupMainTestConfigDir` specifically (still clean) and notes the dedicated, opt-in fixtures layered on top of it that do spawn |
+| R2-25 | note | `Lookup` treats a corrupt or unreadable entry as a silent miss while `Capture` warns every run, so a permanently unusable cache gives no diagnostic | [phase 3](phase-3-schema-cache.md) — deferred, 2026-10-03 fix session: would need `Lookup` to report a miss reason, a wider signature change than this note's severity warrants; no blocker or major depends on it |
+| R2-26 | note | Real wall-clock bounds of 10 ms and 30 ms in `tool_executor_auth_test.go` on a host recorded as load-sensitive. R1-30's class, different file | [phase 6](phase-6-midrun-auth.md) — fixed together with R1-30, 2026-10-03 fix session: margins widened to 150 ms |
+| R2-27 | note | The lazy e2e fixture pins `startup:"lazy"` and so cannot prove the flipped default; dropping the field proves it at no cost. Folded into R2-12's phase-3 entry | [phase 3](phase-3-schema-cache.md) — fixed together with R2-12, 2026-10-03 fix session |
+
+### Implementation review 1 — code review of the shipped diff against contract, 2026-10-02
+
+Reviewed `git diff c3867d3` plus the untracked additions: the README, all eight phase files and
+every file the diff touches. Severities are the README taxonomy. A `blocker` or `major` reopens its
+phase; a `minor` is annotated in place; a `note` is recorded only. "Where tracked" names the phase
+file whose `## Review findings` section carries the full detail and the corrective action.
+
+| ID | Severity | Finding | Where tracked |
+| --- | --- | --- | --- |
+| R1-01 | blocker | A stdio server whose stderr once matched the auth keyword list (substring `401` suffices) has its ordinary connect failure reclassified as a never-memoised `AuthChallengeError`, so every tool call costs two process spawns and a full auth-timeout block. Probe: 3 calls → 6 dials, 3 × bound elapsed | [phase 6](phase-6-midrun-auth.md) — fixed, 2026-10-03 fix session, all three corrective mechanisms: `resolveAuthPending` clears `authChallenged`; `connector.resolve` gained a per-run `mcpBlockedRedialCap` (D36); `IsMcpLogAuthChallengeLine`/`mcpLogAuthChallengeKeywords` (no bare `401`/`403`) now gate reclassification while the broader list stays UI-only; `TestAuthChallengeStdioSpawnBoundedAcrossRepeatedToolCallsEndToEnd` drives `invokeToolCall` three times against a real spawn counter: 2 spawns, not 6, not growing |
+| R1-02 | blocker | `startup: "lazy"` on a server supplied through `agent.WithMcpServers` overrides the strict-startup exception; with a warm cache setup never connects, so `StrictMcpStartup` reports nothing. Probe: `err=<nil>`, 2 tools, 0 spawns | [phase 2](phase-2-lazy-connect.md), [phase 3](phase-3-schema-cache.md) — phase 2's share fixed (D35), 2026-10-02 fix session: strict-explicit checked unconditionally before any configured value; `TestLazyConnectHonoursStrictMcpStartupForExplicitServers`. Verified fixed from phase 3's own call site too, 2026-10-03 fix session |
+| R1-03 | blocker | A credential written into `args` is persisted verbatim into a schema cache file, breaking invariant 6. `env` is digested; `args` is not. Verified by probe | [phase 3](phase-3-schema-cache.md) — fixed (D38), 2026-10-03 fix session: `Identity.ArgsDigest` replaces the verbatim `Args` field; `TestSchemaCacheArgsAreDigestedNotStoredVerbatim` |
+| R1-04 | blocker | `clai mcp` panics with a nil pointer dereference: the parent command has `Subs` but no `OnRun`. Reproduced against a build of the working tree | [phase 5](phase-5-oauth.md) — fixed, 2026-10-03 fix session: `Command()` assigns `c.OnRun` to print help; `Test_e2e_mcp_bare_invocation_does_not_panic`, `{"mcp -h", ...}` added to `Test_e2e_command_help` |
+| R1-05 | major | The credential command's ban policy reaches no production call site: `WithCmdBanContext` is applied only at the tool-call site, while every credential resolution runs under the setup or run context. The named test builds the ban context itself | [phase 5](phase-5-oauth.md) — fixed, 2026-10-03 fix session: `setupTooling` attaches `pkgtools.WithCmdBanContext(ctx, userConf.CmdBan)` to the one ctx threaded into `setupMcpManager`, reaching both the eager and lazy call sites; `Test_AgentSetup_CmdBanAppliesToMcpCredentialCommand`, `Test_AgentSetup_CmdBanAppliesToAmbientLazyHttpCredentialCommand` |
+| R1-06 | major | The no-resolver (stdio) branch classifies auth-timeout expiry as a resolved wait and retries, contradicting the invariant row and the "no second spawn" integration row; it is R1-01's second spawn | [phase 6](phase-6-midrun-auth.md) — fixed (D37), 2026-10-03 fix session: `resolveMcpAuthWait`'s no-resolver branch now sets `waitErr = waitCtx.Err()`, so expiry is caught like any other case, no retry |
+| R1-07 | major | One auth window that nothing closes suspends `mcpLogSink.Drain` for every server for the rest of the run, and the 256-entry queue then evicts non-error lines. Verified by probe | [phase 6](phase-6-midrun-auth.md) — fixed, 2026-10-03 fix session: `Drain` now scopes its suspension per server, draining every other server's entries immediately; `TestSessionLoopDoesNotRenderIntoAuthWindow` rewritten to prove it |
+| R1-08 | major | The actionable tool result always says `run: clai mcp auth <server>`, which the subcommand refuses for every command-based server — the transport that reaches this path most often | [phase 6](phase-6-midrun-auth.md) — fixed, 2026-10-03 fix session: `actionableAuthResult` now branches on `hasResolver` (nil ⟺ command-based, per `tool.go`'s own doc comment), naming the server's own stderr output instead of `clai mcp auth` for a stdio server |
+| R1-09 | major | A token-store write failure discards a valid, freshly issued token, contradicting "the run continues with the token it already holds"; the named test exercises `store.Save` alone | [phase 5](phase-5-oauth.md) — fixed, 2026-10-03 fix session: `AuthorizeInteractive`/`doRefresh`/`ResolveCached` return the valid entry alongside the write error instead of discarding it; `dialHttpServerWithAuth`/`httpConnOptsFor`/the interactive-retry branch all tolerate it; `TestSetupToolCallSucceedsDespiteUnwritableTokenStore` |
+| R1-10 | major | The redaction invariant's four tests do not establish it: one is tautological, one re-asserts the other's string, and no carrier that embeds a response body or a config dump is covered. R1-03 is the proof it matters | [phase 5](phase-5-oauth.md) — fixed, 2026-10-03 fix session: the DEBUG dump was the real, proven leak — `redactMcpServersForDebug` now redacts `args`/`env` values before `querier_setup_tools.go`'s DEBUG dump; `TestDebugDumpNeverLeaksArgsOrEnvSecret`, `TestSecretsNeverLeakIntoUncoveredErrorTypes` (6 previously-uncovered error types), `TestMcpHttpStatusErrorNeverLeaksAccessToken`, `TestCredentialCommandOutputNeverEchoed` |
+| R1-11 | major | The OAuth `state` is generated, sent, captured into `redirectResult.state` and never read; the loopback handler also ignores the request path. PKCE mitigates injection, so this is a claimed-but-absent defence rather than an exploit | [phase 5](phase-5-oauth.md) — fixed, 2026-10-03 fix session: `prepareAuthorization` returns its minted state, compared against `res.state` with a `*RedirectError` on mismatch; the loopback handler rejects any path but `/callback`; `TestOauthLoopbackStateMismatchIsTypedError`, `TestLoopbackHandlerIgnoresOtherPaths` |
+| R1-12 | major | The response-body-limit is applied cumulatively to the long-lived GET server stream, so it dies silently after 2 MiB and takes tool-list-changed invalidation with it. The parameters row says "per message" | [phase 4](phase-4-streamable-http.md) — fixed, 2026-10-03 fix session: the outer `io.LimitReader` removed from the GET stream path; `sseFrameReader`'s own scanner buffer bounds each frame; `TestHttpConnServerStreamBodyLimitIsPerFrameNotCumulative` |
+| R1-13 | major | A server-initiated request over HTTP is silently dropped, although phase 4 says it "is answered through the same path phase 1 established" and phase 1's invariant requires a `-32601` answer. No test is named for the clause | [phase 4](phase-4-streamable-http.md) — fixed, 2026-10-03 fix session: a server-initiated request now gets a POSTed `-32601` response carrying its id, from a new `respondMethodNotFound`; `TestHttpConnAnswersServerInitiatedRequestWithMethodNotFound` |
+| R1-14 | major | `connect_timeout_seconds` has no effect on either cache-miss path: both bound only the handshake, at the 30 s default, and the spawn is unbounded. The parameters row defines it as wrapping spawn plus handshake | [phase 2](phase-2-lazy-connect.md) — stdio half fixed, 2026-10-02 fix session: `mcp.ConnectBoundOf`/`mcp.ReportAsConnectStage` exported and reused for the command-based miss path; `TestLazyCacheMissConnectBoundAppliesToStdioHandshake`. **The HTTP half fixed, 2026-10-03 fix session**, owned by [phase 5](phase-5-oauth.md)'s `internal/text/mcp_oauth.go`, not phase 4 as originally filed: `handshakeHttpServerWithAuth`'s own `runBoundedHandshake` now applies `mcp.ConnectBoundOf`/`mcp.ReportAsConnectStage`, mirroring the stdio fix exactly; `TestLazyHttpCacheMissConnectBoundAppliesToHandshake`. Both halves of R1-14 are now closed |
+| R1-15 | major | The warm-cache endpoint hit branch has 0.0% coverage; its two integration rows are unproven and `newAuthenticatingHttpConnector` shows 100% only because a test constructs it by hand | [phase 4](phase-4-streamable-http.md) — fixed, 2026-10-03 fix session: the corrective-action test added exactly as specified, driven twice through `setupMcpManager` against the same cache and fixture; `TestHttpSchemaCacheWarmHitIssuesNoRequestUntilCalled` |
+| R1-16 | major | Setup and the `clai tools` listing build different cache keys for a command-based server declaring `auth.scopes`, so it is omitted from the listing permanently and silently. The listing's test warms the cache with the listing's own builder | [phase 3](phase-3-schema-cache.md), [phase 7](phase-7-shadow-advisory.md) — fixed (D40), 2026-10-03 fix session: `BuildIdentityWithScopes` now ignores `Auth.Scopes` whenever `server.Command != ""`, so setup's `BuildIdentity` and the listing's `BuildIdentityWithScopes` agree for every command-based server; `TestSchemaCacheCommandServerIgnoresAuthScopes`; phase 7's test-design share fixed in the same fix session: `TestToolsListAgreesWithProductionSetupForAuthScopedCommandServer` warms the cache through the real `setupMcpManager` path and reads it back through the real `tools.List()`, instead of warming it with the listing's own builder |
+| R1-17 | major | `architecture/tools-command.md` and `architecture/tooling.md` still state MCP tools are registered into the global registry and name a file that does not exist; `architecture/errors.md` documents the wrong `NewMcpTransport` signature and omits `Endpoint` | [phase 8](phase-8-gate-sweep.md) — re-confirmed still open, 2026-10-03 fix session: all three rows checked against current source and still false (`tools-command.md:24,93`, `tooling.md:86-87`, `errors.md:142`). Not fixed: fixing it means editing `architecture/`, which this session was instructed not to do. Left open for a session that can |
+| R1-18 | major | A declared error-coverage row ("named environment variable unset → skipped, next tried") contradicts D15 and the code, and its named test covers two different cases | [phase 5](phase-5-oauth.md) — fixed, 2026-10-03 fix session: the code and its tests (`TestUnsetCredentialSourceIsSkipped`, `TestConfiguredEnvVarAbsentIsTypedError`) already matched D15 from an earlier session; only the phase file's Error coverage row was wrong, now split into the two distinct cases |
+| R1-19 | minor | `loadNamedServer` is a third MCP config parser: it accepts `command` and `url` both set, and resolves a relative envfile against the process CWD | [phase 5](phase-5-oauth.md) — fixed, 2026-10-03 fix session: `loadNamedServer` now calls `serverconfig.FindConfiguredServers`; `TestLoadNamedServerRejectsBothCommandAndUrl`, `TestLoadNamedServerExpandsEnvfileRelativeToConfigDir` |
+| R1-20 | minor | `isUnknownToolFailure` invalidates on `-32602`, the ordinary invalid-params code, contradicting its own documented rule; the `isError` half of the signal has no test and no fixture mode | [phase 4](phase-4-streamable-http.md) — fixed, 2026-10-03 fix session: requires `-32601` alone or `-32602` with an unknown/not-found marker; `TestIsUnknownToolFailureRequiresUnknownMarkerFor32602InvalidParams` and three sibling tests. The `isError` half's test gap is unchanged (not separately filed) |
+| R1-21 | minor | The D22 default's production wiring has no test — zero test references to `OutputIsTerminal` — and two different terminal checks feed one decision | [phase 6](phase-6-midrun-auth.md) — fixed, 2026-10-03 fix session: the two-checks half was already closed as a side effect of phase 5's R2-08 fix (verified by grep); the no-test half closed together with R2-09, folding `OutputIsTerminal` into `*bool`; `TestNewQuerierThreadsOutputIsTerminalIntoAuthTimeout` drives the real `NewQuerier` composition root |
+| R1-22 | minor | The shadow marker is keyed on the bare remote tool name, so a remote `read_file` is reported as shadowed by local `cat` | [phase 7](phase-7-shadow-advisory.md) — fixed, 2026-10-03 fix session: the marker now applies only when the owning server is command-based (`server.Command != ""`); `TestShadowMarkerSkipsEndpointBasedServers` |
+| R1-23 | minor | `create_directory` → `mkdir` is omitted on the false premise that `mkdir` has no `ToolName` constant; `mkdir` is a registered native built-in | [phase 7](phase-7-shadow-advisory.md) — fixed, 2026-10-03 fix session (per R2-23's corrected reasoning): added `MkdirTool ToolName = "mkdir"` and a `builtinShadowMap` entry; `TestShadowMarkerCoversCreateDirectory` |
+| R1-24 | minor | `clai mcp auth`'s eight failure paths are all bare `fmt.Errorf`, and the test named "...IsTypedError" asserts only `err != nil` | [phase 5](phase-5-oauth.md) — fixed, 2026-10-03 fix session: seven new typed errors in `internal/tools/mcp/cmd_errors.go`; `TestMcpAuthCommandMissingServerIsTypedError` now asserts the type; `TestMcpAuthCommandNonEndpointServerIsTypedError`, `TestMcpAuthCommandNoChallengeIsTypedError` cover the two previously-untested branches |
+| R1-25 | major | Three tests cannot fail for the reason they state: the strict-startup test pins `StartupEager` in its own config, the retry-count test counts fake dials instead of spawns, and `TestThreeCallsOneServerSpawnOnce` — the Definition-of-success evidence for "one process" — starts no process | [phase 2](phase-2-lazy-connect.md) — fixed, 2026-10-02 fix session: strict-startup test split into two subtests exercising the actual strict branch; retry-count/batch claim moved to `TestConnectorConnectFailureSpawnsOnceAcrossRepeatedToolCallsEndToEnd`, a real spawn counted through `toolExecutor.invokeToolCall` |
+| R1-26 | minor | Three exported options are dead with false doc comments: `WithAuthPendingSink`, `WithHttpProtocolVersion`, `WithHttpClient`. `staticcheck` does not flag exported symbols | [phase 1](phase-1-conn-seam-and-demux.md), [phase 4](phase-4-streamable-http.md) — phase 4's share fixed, 2026-10-03 fix session: `WithHttpProtocolVersion` and `WithHttpClient` deleted (zero call sites, nothing to wire). Phase 1's share (`WithAuthPendingSink`), deliberately left for the final sweep by phase 6's fixer, closed by [phase 8](phase-8-gate-sweep.md)'s 2026-10-03 fix session: confirmed zero call sites anywhere including tests, deleted from `internal/tools/mcp/conn_stdio.go` |
+| R1-26b | note | `NewMcpConnClosed` and `NewMcpFrameUndecodable` are at 0.0% in `pkg/claierr`'s own suite, so no new MCP error's `Error()` string is asserted anywhere | [phase 1](phase-1-conn-seam-and-demux.md) |
+| R1-27 | minor | The tools-list-changed watcher starts before `Capture`, so an invalidation in that window is lost, and it is started under the run context on a path that can fail; its `!ok` branch is unreachable | [phase 4](phase-4-streamable-http.md) — fixed, 2026-10-03 fix session: both miss-path resolvers `Capture` before watching, start the watcher under `connCtx`; `notifyCh` is now closed by `Close` under the same lock `publishNotification` checks (no send-on-closed-channel race); `TestHttpConnCloseClosesNotificationChannel`, `TestStdioConnCloseClosesNotificationChannel` |
+| R1-28 | minor | `resolveExecutable`'s `exec.LookPath` reintroduces the `PATH` dependence the identity design excluded, so a different shell is a spurious miss | [phase 3](phase-3-schema-cache.md) — accepted as a known consequence, 2026-10-03 fix session: not fixed; D40's freshness bound now backstops a spurious miss's impact (one extra connect, never a stale serve), so the open-ended risk this finding warned about is now bounded |
+| R1-29 | minor | `handshakeHttpServerWithAuth` leaks the first `HttpConn` on the interactive-retry path and `conn2` on a failed retry; `runAuthWith` leaks its probe connection | [phase 5](phase-5-oauth.md) — fixed, 2026-10-03 fix session: all three connections are now `Close`d at their respective points; `TestMcpAuthCommandNoChallengeIsTypedError` runs the fixture twice to prove the first connection was not held open |
+| R1-30 | minor | "The clock is injected and no test sleeps" does not hold: the authorization family uses real sleeps against 10 to 30 ms bounds on a host the README records as load-sensitive | [phase 6](phase-6-midrun-auth.md), [phase 5](phase-5-oauth.md) — phase 5's share verified, 2026-10-03 fix session: audited; the one sleep in phase 5's own files is a liveness poll with no timing assertion, not a bound; phase 6's share (confirmed by R2-26) fixed, same date: every margin in `tool_executor_auth_test.go` widened roughly 5-15x (to 150 ms), no logic change |
+| R1-31 | note | Phase 1's integration row requires an unawaited frame to be "counted and dropped"; no counter exists. Recommendation is to strike the word | [phase 1](phase-1-conn-seam-and-demux.md) |
+| R1-32 | note | `mcp.LoadEnvFile` is a one-line wrapper giving one function two names; rename instead | [phase 5](phase-5-oauth.md) — fixed, 2026-10-03 fix session: `loadEnvFile` renamed to `LoadEnvFile`, wrapper deleted, one internal call site updated |
+| R1-33 | note | Phase 8's documentation audit is a stale record: all four rows it reports as failing now hold, so it will send the next contributor to re-fix completed work | [phase 8](phase-8-gate-sweep.md) — fixed, 2026-10-03 fix session: the stale section's four rows are struck through to "resolved" in place, and a new "Documentation audit, re-run" subsection re-runs the audit against today's source, folding in R1-17's three rows (never covered by the original audit) and the sentinel count's further drift from seven to eight |
+| R1-34 | note | `mcp.RPCCallError` is a new exported error type outside `pkg/claierr`'s declared-closed vocabulary and outside the code-layout table; the two transports return different types for one meaning | [phase 1](phase-1-conn-seam-and-demux.md), [phase 4](phase-4-streamable-http.md) — fixed as a side effect of R2-16, 2026-10-03 fix session: `mcp.RPCCallError` deleted, both transports build `*claierr.McpRPCError`; `Test_Claierr_McpRPCErrorIsOneTypeForBothTransports` |
+| R1-35 | note | Phase 7 suite gaps: two tests exercise one branch, "no process started" is asserted by nothing, and a parse error is discarded with a bare `_` | [phase 7](phase-7-shadow-advisory.md) — fixed, 2026-10-03 fix session, all three: `TestShadowAdvisoryHandlesNoMcpServers` now creates an empty `mcpServers/`; `TestToolsListShowsMcpToolsFromCache` uses a real sentinel script in place of `unreachableCommand`; the discard site gained a one-line comment naming D21 |
+| R1-35b | note | `architecture/README.md`'s index entry covers only phase 1, and `architecture/config.md` has no MCP field reference or pointer to `mcp.md` | [phase 8](phase-8-gate-sweep.md) — re-confirmed still open, 2026-10-03 fix session: both rows, plus the related `auth_timeout_seconds`-only-in-the-remote-example sub-point, checked against current source and still true (`config.md` has zero MCP headings across all 20 of its sections). Not fixed, same `architecture/`-editing restriction as R1-17 |
+| R1-36 | note | A backwards clock makes an endpoint cache entry immortal; phase 3's "no validity decision depends on the clock" became false when phase 4 added the bound | [phase 3](phase-3-schema-cache.md) — resolved as a side effect of D40, 2026-10-03 fix session: the fail-open behaviour is now stated directly in phase 3's own Freshness section and `Lookup`'s doc comment, since the bound now applies there too |
 
 ### Round 1 — self-validation before implementation, 2026-10-02
 
@@ -561,7 +783,7 @@ V5-15 confirmed resolved. V5-01 confirmed closed in form but not in substance, a
 | C3-04 | Phase 1 never said its concurrent-calls invariant is defensive with no production trigger | Stated in phase 1, since a phase-1 executor may not read phase 2 |
 | C3-05 | The classifiers were named but not characterised, and the single `ControlEvent.StartupTimeout` call site not named | Both stated |
 | C4-01 | Phase 3's whole acceptance table could go green while no tool was registered from the cache: the criterion asserted the absence of a transport, never the presence of tools | A `setup-side call site` subsection, the contract that a hit and a miss register identical tool sets, and `TestCacheHitAndMissRegisterIdenticalToolSets` |
-| C4-02 | Which environment feeds the digest was unstated, and digesting the inherited process environment would change the key with every shell | Stated: the configured map merged with the envfile, process environment explicitly excluded |
+| C4-02 | Which environment feeds the digest was unstated, and digesting the inherited process environment would change the key with every shell | Stated: the configured `env` map alone, with the process environment explicitly excluded. The closure first said "merged with the envfile", which contradicted the record-format algorithm and was corrected during phase 3's execution — an envfile's freshness rides its size and modification time, and its contents never reach a digest |
 | C4-03 | The identity for an absent envfile and an unresolvable executable was undefined, and each choice changes the digest | Both defined as a canonical absent marker |
 | C4-04 | Phase 3 pointed at a record format showing the final shape, so it could not tell which fields were its own; write timing and timestamp format were unstated | All three stated |
 | C4-05 | Protocol-version was owned by phase 4 though phase 1 sends it and phase 3 stores it | Owner moved to phase 1 |
@@ -666,6 +888,174 @@ V1-03 was partially regressed and is re-raised below as V2-02.
 | V2-05 | note | Phase 8 used a combined invariants-and-limits heading where every other phase uses two, so a structural scan reported neither section as present | Headings split |
 
 ## Session journal
+
+### 2026-10-02, implementation review 2
+
+Second code review of the same working tree review 1 saw. Nothing had been patched, so this round
+was spent on two things: verifying a sample of round 1's findings against the code, and covering the
+areas round 1 did not reach.
+
+**Verification of round 1.** Every phase-6 finding re-checked — R1-01, R1-06, R1-07, R1-08 — holds,
+and the mechanisms are as described: `utils.IsMcpLogAuthLine` is a case-insensitive substring match
+over a list containing `"401"` and `"403"`; `reclassifyIfAuthChallenged` (`connector.go:215-224`)
+produces the challenge that `isBlockedOutsideRun` then exempts from the memo; the no-resolver branch
+is `<-waitCtx.Done()` followed by a fall-through into a second `ResolveForCall`; `Drain` returns nil
+whenever `authOpen` is non-empty. R1-12, R1-13, R1-16 and R1-22 were also re-checked against the
+code and hold. D35 to D38 are the right rulings for the findings that produced them. One finding
+needed correcting and is filed as R2-23: R1-23's premise about the missing `ToolName` constant is
+true, but its inference is not, because `ToolName` is a string type.
+
+**Gates re-run.** `go build ./...`, `go vet ./...`, `gofumpt -l .`, `staticcheck ./...` and
+`go fix ./...` are all clean. `dupl -t 80 .` reports 35 clone groups, and phase 8's accounting of
+them is accurate down to the one new production pair. The full
+`go test ./... -race -cover -count=3 -timeout=30s` failed at host load 19 to 25, but every timeout
+reproduced as `ok` per package at the same load (`internal/text` 7.9 s, root `clai` 23.0 s,
+`internal/audio` 13.7 s, `internal/tools/mcp` 15.9 s), so the timeouts are load. The exception is
+real and is R2-01: `TestStdioConnectReclassifiesAuthPromptAsChallenge` failed 3/3 in the suite and
+then reproduced deterministically with `go clean -cache`, because its 200 ms connect bound has to
+contain a `go run` compile. The suite was never green on a cold build cache, which is what CI has.
+
+**Probes run, all deleted afterwards.**
+
+| Probe | Result | Finding |
+| --- | --- | --- |
+| `go clean -cache` then the single auth-reclassification test | FAIL every time, `want *claierr.AuthChallengeError`; `ok` warm | R2-01 |
+| Four lazy servers with distinct identities, cold cache, a fake stdio server with a 1 s pre-handshake delay, `setupMcpManager` timed | lazy 1 server 1.01 s, lazy 4 servers 4.05 s, eager 4 servers 1.01 s | R2-02 |
+| `BuildIdentity` for a `node`-launched script, then rewrite the script with a different size and mtime | identity key byte-identical; fingerprint was `{Path:…/node Size:122889056}` | R2-03 |
+| `sseFrameReader` over `"data:\n\n" + "data: {…}\n\n"` | frame 0 is a zero-length payload, which `handleJSONFrame` treats as malformed | R2-14 |
+
+The second probe also surfaced a confound worth recording for whoever reproduces it: four servers
+with identical command, args and env share one cache entry, because the identity is
+content-determined and carries no server name. The first misses and captures and the other three
+hit within the same setup run, so a naive repro shows 1.01 s and looks as though the serialisation
+is absent. Distinct `env` per server is what exposes it. That sharing is correct behaviour, not a
+defect.
+
+**Cross-cutting observations that are not themselves findings.**
+
+- `Conn.Close()` has no production caller. Outside tests, the only call is `StdioConn.readFrames`'s
+  own `defer`. Every connection's and every goroutine's lifetime is `runCtx`-driven: the stdin
+  closer, the stderr reader, the reaper and the frame reader all end when the run context does, and
+  `dialStdio` reaps the process on every failure branch through one conditional defer. That is
+  coherent, and it is why R1-29's "leaks" are a class rather than three sites — but it means the
+  HTTP session is never terminated (R2-10) and that a connection abandoned mid-run keeps its child
+  process for the rest of the run.
+- `session_runner.go:246` cancels the root context on a `StopEvent` with no pending tool calls. A
+  lazy connector captures that same root context as its `runCtx`, so a tool call arriving after a
+  cancellation would dial under a dead context and memoise the failure permanently. At `c3867d3`
+  the eager path was equally broken in that situation — its connection was killed by the same
+  cancellation — so this is not a regression and is not filed as a finding. It is flagged here
+  because the default flip makes `chat`/`-re` plus MCP the combination most likely to meet it, and
+  the maintainer is better placed than this review to say whether that combination is reachable.
+- `setupMcpManager` sends `ControlEvent` on an unbuffered channel with no `ctx.Done()` guard
+  (`querier_setup_tools.go:230`), while `mcp.Manager` returns on `ctx.Done()`
+  (`manager.go:64-66`). A cancellation between those two therefore deadlocks setup. The shape is
+  identical at `c3867d3`, so it is pre-existing and not filed; R2-02's serialisation widens the
+  window it needs.
+
+**Verdict: not ready.** The gates do not pass on a clean machine (R2-01), the cold-cache path the
+default flip made universal is N times slower than the path it replaced (R2-02), and the cache the
+whole design rests on cannot be invalidated for roughly 85 percent of local servers by this
+worklog's own census (R2-03). Beyond those, the one sentence this worklog exists to prove — cost
+proportional to servers used — has no automated evidence of any kind (R2-04), and the public SDK
+contract is breakable from the public API on three separate paths (R2-05, R2-07, R2-08). Green gates
+are not a verdict here for the second round running: four of round 1's blockers and all three of
+round 2's pass every gate, and R2-01 passes every gate on the machine that ran them.
+
+**Routing.** Phases 2 to 8 carry round-2 findings and are set to `Reopened (review 2)`; phase 1
+takes one note and stays complete. The findings stay on their owning phases rather than being
+collected into an addendum phase, because R2-01, R2-02 and R2-03 are each local to one phase's
+contract and each has a decision row (D41, D39, D40) that says what the fix is. R2-05, R2-06 and
+R2-07 share one shape — an error or a validation that does not reach the boundary that would act on
+it — and D42 to D44 record the rulings so the fixer does not have to re-derive them.
+
+### 2026-10-02, implementation review 1
+
+Reviewed the shipped diff against contract rather than against the implementation notes: the
+README, all eight phase files, and every file in `git diff c3867d3` plus the untracked additions.
+Nothing was fixed; four throwaway probe tests were written, run and deleted, and the working tree is
+unchanged apart from this worklog.
+
+**Gates re-run independently, all from the repository root.** `go build ./...`, `go vet ./...`,
+`gofumpt -l .`, `staticcheck ./...` and `go fix ./...` are all clean, with the working tree
+byte-identical before and after `go fix`. `dupl -t 80 .` reports 35 clone groups, matching phase 8's
+claim exactly; filtered to this effort's files there are precisely two, both pre-declared, and zero
+new. `go test ./... -race -cover -count=3 -timeout=30s -p 1` passed all 53 packages, exit 0, at a
+one-minute load average of 15.75 — above the threshold the README records as the failure point, so
+this run is stronger evidence than the executors' own. **Green gates are not the verdict:** all four
+blockers below pass every gate, and two of them pass a named test that cannot fail.
+
+**Verdict: not ready.** Four blockers, fourteen majors. Phases 2 to 8 reopened; phase 1 passed and
+is annotated only. The three human-required gates are legitimately outstanding and were treated as
+such.
+
+**The four blockers**, each proven rather than argued:
+
+1. **R1-01.** `utils.IsMcpLogAuthLine` is case-insensitive substring matching over a list that
+   includes `"401"`, so `listening on port 4010` on a stdio server's stderr sets a sticky
+   `authChallenged` flag; `dialStdio` then reclassifies an ordinary connect failure as
+   `AuthChallengeError`, which `BlockedOutsideRun` exempts from the connector's memo, and
+   `resolveMcpAuthWait` dials once, waits out the whole bound, and dials again. Probe through the
+   production `invokeToolCall`: **3 tool calls → 6 dials, elapsed = 3 × the bound, 3 bells.** At the
+   120 s terminal default that is six process births and six minutes of blocked session for one
+   three-call batch, scaling linearly with the model's call count. The implementation notes argue
+   the false positive is "bounded to the handshake's own latency" because `deliver()` resolves the
+   window — true of the window, but `deliver` never clears `authChallenged`.
+2. **R1-02.** `effectiveStartupMode` checks the configured field before the strict-startup
+   exception, so `startup: "lazy"` on an `agent.WithMcpServers` server wins. Probe: strict explicit
+   server, `StartupLazy`, shared cache — `setupMcpManager` returned `err=<nil>`, 2 tools and **0
+   spawns** on both the cold and the warm run. The named test pins `StartupEager` in its own config
+   literal, so it would pass unchanged if the strict branch were deleted.
+3. **R1-03.** The cache identity digests `Env` and stores `Args` verbatim. Probe: the same secret in
+   `args` appears in plain text in the 0600 cache file while the one in `env` does not. The
+   precondition is a literal token in the server JSON, which is the documented `mcp-remote --header`
+   shape the README's own census puts at 732,960 weekly downloads.
+4. **R1-04.** `clai mcp` panics — the parent command has `Subs` and no `OnRun`, so
+   `internal/command.go:139` dereferences a nil querier. It is the only parent command in `main.go`'s
+   map that omits `OnRun`, and the repository's own `Test_e2e_command_help` gained no row for the new
+   command.
+
+**Cross-cutting observation, elevated into Strategy as invariants 10 and 11.** The recurring shape
+behind R1-01, R1-02, R1-05, R1-10, R1-15, R1-16 and R1-25 is not seven unrelated mistakes: it is one
+testing habit. Each of those rows is green because its test drives the seam the row names rather than
+the production composition root — it builds its own `WithCmdBanContext`, pins the posture the
+production resolver was supposed to choose, warms a cache with the same identity builder the code
+under test uses, constructs the connector the setup path would have built, counts dials where the row
+says spawns, or asserts a secret's absence from a struct that could never hold it. Driving any one of
+them through the real entry point would have caught its blocker; three of my four blocker probes are
+four-line tests through the existing production functions. Invariant 11 is the composition failure
+underneath R1-01: D20's exemption from memoisation and the retry-count parameter's "per run" wording
+only agree if something caps the re-dials, and nothing did.
+
+**Honest loose ends ruled on**, since each was reported by its executor rather than hidden:
+
+- *Phase 5's eager-versus-lazy credential asymmetry* — **accepted as declared.** The posture split
+  is documented at the call site, the eager path is an explicit opt-in, and the stated reason
+  (reopening phases 1–2 to give `mcp.Manager` a retry-on-challenge seam) is proportionate. It should
+  be a decision row rather than only a comment.
+- *Three dead exported options* — **minor, R1-26.** Not harmless: `WithHttpClient`'s doc comment
+  asserts a use ("Tests use this to set a short timeout") that does not exist, and
+  `staticcheck` structurally cannot catch an unused exported symbol.
+- *The untested `cacheInvalidatingConnector`* — **upgraded to major, R1-15.** The honest report
+  understated it: the whole warm-cache endpoint hit branch is 0.0%, so two integration rows are
+  unproven and the wrapper order could be wrong with the suite still green.
+- *Five typed errors' `Error()` never exercised* — **note, R1-26b.** One table-driven test over the
+  seven MCP strings closes it for three phases at once.
+- *The accepted duplication* — **accepted again.** Verified as exactly two groups, both declared,
+  zero new. Extracting the transport `Close()` pair would couple two deliberately independent
+  transports for sixteen lines.
+- *The widened surfaces* — **mostly right, one wrong, one pointless.** `pkgtools.ValidateCmdNotBanned`
+  is the right shape but reaches no production path (R1-05), which is the real defect, not the export.
+  `Configurations.TrustInput` and `Configurations.OutputIsTerminal` are the right trade against
+  twenty-five test call sites, but `OutputIsTerminal`'s wiring is referenced by zero tests (R1-21),
+  so the saving bought an untested seam. `mcp.LoadEnvFile` is a one-line wrapper that should have
+  been a rename (R1-32).
+
+**On phase 8's documentation audit.** All four rows its notes report as failing now hold — they were
+fixed after the notes were written. Three different false claims remain in three architecture notes
+(R1-17), one of them introduced by the fix that closed the sentinel-count row. The notes are
+therefore a stale record and will send the next contributor to re-fix completed work (R1-33).
+
 
 ### 2026-10-02
 
@@ -774,3 +1164,856 @@ recoveries were caught before being written: an extraction that preferred the lo
 a pre-round-five phase 7 and a doubled file, and a shorter README candidate was missing the session
 journal entirely. Every write in the replay was staged to a temporary file, read back, copied, and
 read back again, which is now the pattern any future edit pass to this worklog should use.
+
+### 2026-10-02, phase 1 execution
+
+Phase 1 implemented and marked `Complete`. `Conn`/`Connector` land in
+`internal/tools/mcp/conn.go` exactly as specified; `internal/tools/mcp/conn_stdio.go`
+replaces `client.go`/the per-tool `seq` in `tool.go` with a stdio `Conn` owning one
+id source, one pending-waiter map, and the four enumerated goroutines. The retired
+`ControlEvent.StartupTimeout` is migrated to a construction-time `StdioConnOption`
+on the connection, read back by `handleServer` through an optional-interface check
+rather than restated per call. Two new typed errors (`McpConnClosedError`,
+`McpFrameUndecodableError`) were added to `pkg/claierr`, not three: the
+oversized-frame "bounded error" reuses the undecodable-frame type, differentiated
+only by its cause. All twenty declared test names exist and pass; the full gate
+(`gofumpt`, `staticcheck`, `go vet`, `go fix`, `dupl`, and
+`go test ./... -race -cover -count=3 -timeout=30s`) passes unedited, confirmed
+twice on a quiet host after two unrelated packages (root `clai`, `internal/audio` —
+neither touched by this phase) timed out once during a load-average-20+ spike and
+then passed cleanly in isolation; this matches the repository's documented
+host-load sensitivity, not a regression.
+
+A real `-race` finding during implementation, not anticipated by the spec: the
+first `Close` closed the process's stdin synchronously, which could race a
+`Call` still mid-write and surface a raw pipe-closed error instead of the typed
+`McpConnClosedError`. Fixed by having `Close` only fail pending waiters and mark
+the connection closed, leaving stdin teardown to the dedicated stdin-closer
+goroutine alone, as the phase's own goroutine enumeration already separates the
+two concerns.
+
+Documentation gap, by direction mid-session rather than by discovery: the
+coordinating session reassigned `architecture/mcp.md`, the `architecture/tooling.md`
+pointer reduction, and the `architecture/errors.md` typed-error row to itself and
+told this execution not to touch `architecture/`. No file under `architecture/`
+was created or edited by this phase's execution. The phase's documentation
+requirement is therefore outstanding from this session's point of view; whether
+it is satisfied depends on work done outside this phase file, and a future
+validation pass should check `architecture/mcp.md` exists and
+`architecture/tooling.md`/`architecture/errors.md` were actually updated before
+treating phase 1's documentation obligation as closed.
+
+Phase 1's documentation requirement, which its executor was told to leave alone, was completed by
+the coordinating session and is now closed. `architecture/mcp.md` was created as the single owner of
+the connection model, the demultiplexing contract and its four frame dispositions, the goroutines
+per stdio connection, the three bounds, the configuration layout, and the ambient-versus-explicit
+failure posture, with the never-shared property stated together with the two measurements that
+establish it. The MCP sections of `architecture/tooling.md` were reduced to pointers holding no
+detail of their own, which removed the untrue claim that `clai tools` lists MCP tools; phase 7 owns
+adding an accurate statement to `architecture/mcp.md` once it makes one true. `architecture/errors.md`
+gained rows for the two typed errors phase 1 introduced, `ErrMcpConnClosed` and
+`ErrMcpFrameUndecodable`, with the paragraph about which errors wrap a cause corrected, since the
+first wraps none. Two incidental repository fixes: `tooling.md` pointed at a nonexistent
+`architecture/tools.md`, and the new note is registered in the architecture index. Verified
+independently of the executor: `go build ./...` and `go vet ./...` clean, and
+`internal/tools/mcp` plus `internal/text` passing under `-race` at 81.3 percent coverage for the
+mcp package.
+
+### 2026-10-02, phase 2 execution
+
+Phase 2 implemented and marked `Complete`. `mcp.Connector` lands in
+`internal/tools/mcp/connector.go` as specified: single-flight, memoised on a
+terminal outcome, never memoised or retried on a resolution blocked outside
+the run (a new `outsideRunBlocker` optional interface this phase defines as
+the seam, with no producer of its own — phase 6's eventual auth-pending
+signal is the first). `mcpTool` now holds a `Connector` rather than a `Conn`;
+an eager server's already-connected `Conn` is wrapped in a trivial
+`resolvedConnector` so both postures call the same way, with no behaviour
+change for the unconditionally-`eager` default this phase ships (D16).
+`internal/text/querier_setup_tools.go` skips the spawn/`ControlEvent` path
+for a server whose resolved `startup` field is `lazy`; nothing wires that
+server's `Connector` to a tool yet, since no tool name exists without
+`tools/list`, which phase 3's cache is what supplies without connecting. All
+sixteen declared test names exist and pass; the full gate passes unedited,
+confirmed on a quiet host after the shared root `clai` and `internal/audio`
+packages (neither touched by this phase) were first seen to time out once
+during a load-average 21+ spike, matching the repository's documented
+host-load sensitivity rather than a regression.
+
+A real `go vet` finding during implementation, not anticipated by the spec:
+the per-attempt spawn context's cancel function is intentionally left
+uncalled on the success path (the connection must outlive the dial
+attempt, bound to the run instead), which `go vet`'s `lostcancel` analysis
+flags regardless. Resolved with a named return and a single `defer` that
+cancels only on failure, a mechanical fix with no behavioural change.
+
+A scope judgment made while implementing, flagged for phase 3 rather than
+decided silently: this phase does not make `setupMcpManager` construct or
+retain an `mcp.Connector` for a lazy server, since nothing in phase 2 can
+wire one to a registered tool (no schema exists without connecting) and no
+code-layout row assigns that storage to phase 2. The "constructs a
+Connector" invariant is instead proven at the `mcp` package level, driving
+`NewConnector` directly. If phase 3's setup-side cache call site expects to
+find an already-constructed `Connector` per lazy server rather than
+constructing its own, that expectation was not visible from this phase's
+own file and should be checked against what phase 3 actually needs.
+
+Phase 2's executor flagged a handover question rather than resolving it silently, and the resolution
+is recorded here rather than left to phase 3 to rediscover. Phase 2 deliberately does not have
+`setupMcpManager` construct or retain a `Connector` for a lazy server: it skips such a server
+entirely at setup, because nothing in phase 2 can wire a connector to a registered tool when there
+is no tool list to register. Verified against the shipped code: `effectiveStartupMode` gates the
+skip in `querier_setup_tools.go`, and `mcp.NewConnector(runCtx, server, sink, opts...)` is exported
+and usable from `internal/text`. Constructing the connector is therefore phase 3's work, performed
+at the setup-side cache call site the code-layout table already assigns to it, and that row now says
+so explicitly. No amendment to phase 2 is needed and its status stands.
+
+### 2026-10-02, phase 3 execution
+
+Phase 3 implemented and marked `Complete`. `internal/tools/mcp/schemacache` lands as specified:
+identity, record, read and write, with `Identity.Key()` the hex SHA-256 of the identity's own JSON
+encoding, so the entry filename is the content key and an identity delta is a miss by construction.
+`BuildIdentity` is infallible — an unresolvable executable and a configured-but-missing envfile both
+collapse to the same canonical absent (`nil`) marker — which turned out to be the one mechanism that
+satisfies both the unresolvable-executable and the missing-envfile error-coverage rows without a
+second code path: neither state could ever have a prior successful capture, so both are always a
+miss, and the pre-existing typed envfile error surfaces unchanged once setup connects. The
+setup-side call site replaces phase 2's dead-end lazy branch (`toolWg.Done(); continue`) with
+`resolveLazyServerViaCache`, reached only for the lazy-resolved case; the eager
+`ControlEvent`/`Manager` path, and its test coverage, is untouched. All eighteen declared test names
+exist and pass, including the new root fixture `TestLazyStartupE2EUnderRace`; the full gate passed
+unedited, confirmed on a quiet host, with one later `internal/vendors` timeout (untouched by this
+phase's diff) at a load spike to 18, which reran clean in isolation — the repository's documented
+host-load sensitivity, not a regression.
+
+One ambiguity resolved rather than escalated, recorded so it is not re-litigated: the identity
+section's "which environment is digested" prose named the env map merged with the envfile's
+contents, while the record-formats section's own algorithm sentence says the digest is over the
+environment map alone, no envfile. Implemented per the latter, more precise statement — `env_digest`
+covers only `server.Env`; the envfile's freshness is carried entirely by its separate size/mtime
+component, with no file read for cache purposes — which also keeps a secret-bearing envfile's
+contents out of a digest computation that invariant 6 already forbids from a cached file in any
+other form. This is flagged here as the one place a later reader might expect the merged behaviour
+the prose describes.
+
+One pre-existing test was corrected rather than left to break or silently deleted:
+`TestLazyConnectDegradesForAmbientServers` (phase 2) asserted that an explicitly-lazy ambient server
+never connects at setup, unconditionally. D18 supersedes that by design — a miss always connects,
+cold or warm — so the test's body was rewritten to assert the corrected cold-cache behaviour, with
+the zero-process claim it used to make now proven by the new `TestSchemaCacheHitRegistersToolsWithoutTransport`
+instead. This is a direct, textually-unambiguous consequence of D18 already in the README, not a new
+decision made by this phase.
+
+`mcp.ProtocolVersion`, `mcp.HandshakeBoundOf`, `mcp.Handshake`, `mcp.RegisterTools`, `mcp.NewTool` and
+`mcp.NewResolvedConnector` were added to the `mcp` package beyond the code-layout table's explicit
+`mcp.NewConnector` mention, extracted from `handleServer`'s previously-inlined sequence so the
+cache's miss path reuses the same initialize/tools-list/register logic instead of duplicating it.
+None of this changes `handleServer`'s or the connector's observable behaviour, confirmed by
+`internal/tools/mcp`'s own suite passing unmodified; flagged here since the table named only the one
+symbol.
+
+Two plan defects surfaced by phase 3's executor and corrected rather than worked around. The
+identity specification said the environment digest covered the `env` map merged with the envfile's
+contents, while the record-format section's own algorithm said the map alone; the executor
+implemented the map alone and flagged the conflict. That is the correct reading — an envfile's
+freshness is already carried by its size and modification time, and keeping its contents away from
+a digest is what invariant 6 requires — so all three copies of the claim now say so, including the
+feedback-index row that repeated the wrong version. Separately, phase 2's invariant row described
+setup as constructing a connector with no process, which D18 has since made misleading: a cache miss
+does connect. The row was narrowed to describe constructing a connector, which still dials nothing,
+and phase 2 carries a review finding recording that its ambient-degrades test was rewritten to the
+post-D18 behaviour with the zero-process claim moving to the cache phase.
+
+### 2026-10-02, phase 4 execution
+
+Phase 4 implemented and marked `Complete`. `internal/tools/mcp/conn_http.go` adds `HttpConn`, a
+second `Conn` implementation satisfying phase 1's interface unchanged, plus `NewHttpConnector`
+and `dialHttp` beside it; `mcp.Manager`, `mcpTool` and `connector.go` were not modified. Request
+and response plumbing was written from the specification's own contract (read-and-classify the
+POST response by content type, an optional GET stream, a session header, a connect-time legacy
+signal); the abandoned branch's SSE line/event accumulation shape was the only part reused, as
+specified. The endpoint-based half of the schema cache (freshness bound, `Invalidate`) landed in
+`internal/tools/mcp/schemacache`; the two invalidation signals are wired from a new
+`internal/text/mcp_http_schema_cache.go` that wraps the live `Conn`/`Connector` rather than
+changing either. The fake streamable-HTTP server lives at `internal/tools/mcp/httptestserver`,
+with every mode the phase's Fixtures section names, including the challenge-with-caller-supplied-URL
+and bearer-token modes phase 5 will configure. All twenty-five declared test names exist and pass;
+see the phase file's Implementation notes for the duplication trade-off (StdioConn's pending-waiter
+helpers are duplicated, not extracted, since refactoring the already-shipped `conn_stdio.go` was
+read as out of scope) and for the test-infrastructure finding about `httptest.Server.Close()`
+racing a connection's background stream against `t.Context()`/`t.Cleanup` ordering, which will
+recur in later phases' own streamable-HTTP tests.
+
+The full-suite gate (`go test ./... -race -cover -count=3 -timeout=30s`) was run three times. Each
+run itself drove this host's load from under 5 to 17–23, and each run's resulting `FAIL`s were
+exclusively 30s timeouts in a different, shifting subset of packages this phase never touches
+(root, `internal/audio`, `internal/vendors`) plus, once each, `internal/text` and
+`internal/tools/mcp` themselves on an assertion/timing basis unrelated to any test this phase
+added. Every failing package was re-run alone at load 2–7 immediately after and passed cleanly
+every time. This is the same host-load-sensitivity class phases 1–3 each recorded, now additionally
+confirmed to include load the monolithic `./...` invocation induces on itself, not only load present
+beforehand. `gofumpt`, `go vet`, `staticcheck` and `go fix` are clean; `dupl` reports no new clone
+group in a file this phase touches.
+
+### 2026-10-02, phase 5 execution
+
+Phase 5 implemented. `internal/tools/mcp/mcpauth` lands the OAuth client, the token store and the
+credential-precedence chain; `internal/tools/mcp/oauthtestserver` is the one new fixture, serving
+the protected-resource document alongside the authorization server exactly as specified, with
+`httptestserver`'s existing challenge and bearer-token modes configured rather than duplicated. All
+thirty-four declared test names exist and pass, plus several supplementary ones (error-method
+coverage, a real binary-vs-unit integration test, a missing-server-config case) added where the
+declared set left an easy, cheap gap. Full details — the necessary additions beyond the original
+code-layout table (now reflected there with new rows), the scope reduction limiting the full
+credential chain to the lazy HTTP path (eager HTTP servers get only the static half), the scopes
+component resolving from static config rather than the live negotiated value, and two load-exposed
+issues caught by `-count=3` (one host-load timeout unrelated to this phase, one genuine test-design
+flaw in the single-flight test, fixed with a deterministic test-only join barrier) — are in the
+phase file's own Implementation notes rather than repeated here.
+
+`architecture/` was left untouched on this session's explicit instruction that the coordinating
+session owns it for this worklog; the phase's own Documentation section is therefore outstanding.
+
+The phase carries a human-required gate this execution cannot satisfy itself: a maintainer must run
+`clai mcp auth <server>` against one real, OAuth-protected vendor endpoint, confirm the interactive
+flow completes and that a second run reuses the stored token with no prompt, and report which
+endpoint was used and whether the printed-URL fallback was exercised. The automated suite is green
+and the subcommand prints the token store's path and mode on success, but no fake was substituted
+for that confirmation and no real vendor endpoint was contacted. The phase is left `In Progress`
+rather than `Complete`; the status board reflects this.
+
+### 2026-10-02, phase 6 execution
+
+Phase 6 implemented. All nineteen declared test names exist and pass, plus seven
+supplementary ones added where a cheap test closed a real gap in proving the production
+wiring (`TestStdioConnectReclassifiesAuthPromptAsChallenge` and
+`TestLazyHttpMidRunChallengeRetriesAfterInteractiveAuth` drive the real stdio and HTTP
+paths end to end, not only a fake). `pkg/claierr.AuthChallengeError` gains one method,
+`BlockedOutsideRun() bool`, which is the entire change connector.go needed: phase 2's
+existing single-flight memoisation (shipped unmodified) already reads exactly that
+interface. `AuthPendingSink` and `AuthResolver` land in `internal/tools/mcp/conn.go`
+exactly as the shared-interfaces section specifies; `conn_stdio.go` reclassifies a
+connect-stage timeout into the same `AuthChallengeError` type an HTTP 401 already
+produces, so the tool-call-site wait in `internal/text/tool_executor.go` has one path for
+both transports rather than one per transport. Per D20, the embedded interactive-flow
+retry `internal/text/mcp_oauth.go`'s `dialHttpServerWithAuth` carried since phase 5 was
+removed from that function (a lazy HTTP server's *mid-run* dial, reached on its first
+tool call) and left untouched on `handshakeHttpServerWithAuth` (the lazy *cache-miss*
+path, which still runs at setup time, a different path phase 5 already owns and tests).
+
+One point this execution had to resolve rather than find stated: the phase's prose pairs
+"exactly one further resolution" only with a *resolved* wait, never with an *expired* one,
+and the two readings are mutually exclusive once both outcomes have their own declared
+test. Implemented as: a resolved wait (success, or — for a command-based server with
+nothing to drive — simply waiting the bound out) retries once; an expired wait
+(`context.DeadlineExceeded` from an `AuthResolver`'s own bounded attempt) never retries.
+Recorded in the phase's own Implementation notes in case a later reader expected the
+other pairing.
+
+`Configurations` gained one field, `OutputIsTerminal bool`, rather than threading a new
+parameter through `setupTooling`/`setupMcpManager`/the two lazy-resolve functions, which
+would have forced touching roughly twenty-five existing test call sites that construct a
+bare `Configurations{}`; every one of them keeps compiling and gets the conservative
+fail-fast default untouched. `architecture/` was left untouched on this session's
+explicit instruction that the coordinating session owns it for this worklog; the phase's
+own Documentation section is therefore outstanding, as phase 1's and phase 5's equivalent
+sections were from their own executors' point of view.
+
+The full gate (`gofumpt`, `go vet`, `staticcheck`, `go fix`, `dupl`, and
+`go test ./... -race -cover -count=3 -timeout=30s`) passed unedited, confirmed twice in a
+row on a quiet host (load ~4) after one incidental finding on the first run:
+`Test_e2e_skills_descriptor_activation_and_persistence` (root package, a skills-trust and
+cost-estimate test this phase never touches) failed once under the full suite's own
+induced load and then passed three times in isolation under `-race -count=3`, matching
+the host-load-sensitivity class phases 1 through 4 already recorded rather than a
+regression.
+
+The phase carries a human-required gate this execution cannot satisfy itself: a real
+human, at a real terminal, completing a mid-run authorization flow while a tool call
+waits. The automated suite is green and the phase's own Human Required subsection now
+names a concrete server, a concrete way to force a mid-run prompt from an expired
+authorization, and the bound to use, so the maintainer's confirmation is the only
+outstanding step. No real vendor endpoint was contacted and no credential was generated
+by this session. The phase is left `In Progress` rather than `Complete`; the status board
+reflects this.
+
+### 2026-10-02, phase 7 execution
+
+Phase 7 implemented and complete: all ten declared test names exist and pass, plus three
+supplementary ones (two pinning `schemacache.ListCachedServers` directly, one pinning `Detail`'s
+cache-only fallback). `clai tools` now has a real MCP tool set for the first time, sourced entirely
+from the schema cache, correcting the standing untruth D21 identified. Executing this phase surfaced
+two import-cycle constraints the original code-layout row didn't anticipate: the shared config
+parser and the schema-cache directory name both had to move to new homes (`internal/tools/mcp/
+serverconfig`, and a constant onto `schemacache` itself) because `internal/tools` cannot import
+`internal/text`, and — less obviously — cannot import `internal/tools/mcp` either, since that
+package's own tests import `internal/tools`. Both relocations are behaviour-preserving (the
+existing callers in `internal/text` are now one-line delegates, all their original tests still
+pass unmodified) and got their own code-layout rows per the executor-adds-a-row convention. Full
+details, including the dupl-driven removal of three now-redundant tests and the help-text fix this
+phase's own change to `main_dispatch_e2e_test.go` required, are in the phase's Implementation
+notes. `architecture/mcp.md` and the MCP sentence in `architecture/tooling.md` were deliberately
+left untouched on this session's explicit instruction; the coordinating session owns them. Full
+gate green: `go build`, `go vet`, `gofumpt`, `staticcheck`, `go fix`, `dupl`, and
+`go test ./... -race -count=3 -timeout=30s` (run with `-p 1` to avoid this session's own test run
+compounding a busy shared host's ambient load of 8–20; the race/count/timeout flags themselves were
+never altered). Two timeouts seen in an earlier, concurrent-package run
+(`internal/audio`, `internal/tools/mcp`, plus the root package) were confirmed as the repository's
+documented host-load sensitivity, not regressions, by re-running each in isolation.
+
+### 2026-10-02, phase 8 execution
+
+Ran every gate in the phase's table unmodified: gofumpt, staticcheck, `go vet`, `go fix` and the
+duplication scan all clean or resolved; the full `-race -cover -count=3 -timeout=30s` suite passed
+with no `FAIL` across all 53 packages (run with `-p 1`, permitted). A bare `make qa` hit the
+repository's documented host-load sensitivity (two packages timed out under a load spike from ~11 to
+~37) and both were confirmed non-regressions by isolated re-run immediately after, consistent with
+every earlier phase's experience of this same host. Verified directly against the `Makefile` that
+`go vet` and `dupl` are not part of `qa`/`lint` and ran them separately, as the phase itself says to.
+
+Duplication: one pre-declared clone (`conn_http.go`/`conn_stdio.go`'s `Close()` and pending-waiter
+shape) accepted in writing per phase 4's deliberate trade-off. One further clone not previously
+declared by the worklog — a verbatim test-helper duplicate between
+`internal/text/querier_setup_tools_test.go` and the pre-existing `pkg/agent/mcp_setup_test.go` —
+found, judged, and accepted in writing rather than fixed, since lifting a 20-line unexported test
+helper across those two packages has no existing shared home and is a bigger move than this phase
+should make unreviewed.
+
+Coverage: every package this worklog substantially changed clears the 70% floor once correctly
+scoped (one global `-coverpkg=./...` run was caught producing a wrong 0% for a package later proven
+at 87.2% once scoped to its real consumer — recorded as a tooling caution for future sessions).
+Five concrete, named gaps reported for the owning phases to judge: two unused functional options in
+`conn_http.go`/`conn_stdio.go` with zero call sites anywhere in the repository, one untested
+cache-invalidation decorator in the warm-cache lazy-HTTP path, and five of six new typed errors'
+`Error()` string methods never exercised by any test.
+
+Documentation audit: of the phase's seven consistency rows, three hold (the new `mcp.md`'s shape,
+`tooling.md`'s pointer reduction, the corrected `clai tools` inspection sentence, and the README
+index registration) and four do not — the Configuration section in `mcp.md` omits
+`auth_timeout_seconds`; `cmd-dispatch.md`'s command map and table omit the new `mcp` subcommand
+entirely (though the dynamically generated root usage text is unaffected); `tools-command.md` was
+never touched by this worklog and still describes `clai tools` as a pure registry listing, with no
+mention of the MCP cache source or the shadow-advisory marker; and `errors.md`'s sentinel table
+lists only three of this worklog's new/affected MCP errors, missing four, while its own prose
+(unchanged) still says "the four MCP errors," inconsistent with the three rows actually present.
+
+Stopped at the phase's `Human required` gate: the fleet-level steady-state RSS comparison needs the
+maintainer's own host and real agents. Automated process-count assertions confirmed passing; a
+configuration pair and the exact figures to capture are proposed in the phase's Implementation
+notes. Phase left `In Progress — human gate outstanding`, matching phases 5 and 6.
+
+### 2026-10-03, phase 5 fix session
+
+Fixed every finding that reopened phase 5 across both implementation reviews: R1-04 (bare `clai
+mcp` panic), R1-05 (ban policy not threaded to credential resolution, both eager and lazy),
+R1-09 (a token-store write failure discarding a valid token), R1-10 (the redaction test family,
+whose real gap was a genuine leak — the DEBUG dump serialised `args`/`env` verbatim), R1-11 (the
+OAuth `state` parameter minted and never read), R1-14's HTTP half (`connect_timeout_seconds` not
+bounding the HTTP cache-miss connect), R1-18 (an error-coverage row that contradicted D15; the
+code and its tests were already correct, only the row's text was wrong), R1-19 (a third config
+parser), R1-24 (bare `fmt.Errorf` throughout `clai mcp auth`), R1-29 (three connection leaks),
+R1-30's phase-5 share (verified compliant; the real violation is phase 6's file), R1-32
+(`LoadEnvFile`'s redundant wrapper), R2-05 (a credential failure not reaching
+`StrictMcpStartup`), R2-08 (`agent.Setup` able to hang and print to a library consumer's stdout),
+and R2-22's phase-5 share (resolved as a side effect of R2-08). Promoted the eager/lazy credential
+asymmetry, previously recorded only as an implementation-note comment, to decision **D45**.
+
+Every fix drove through the real production composition root per invariant 10 — `agent.Setup`,
+`setupMcpManager`, `setupTooling`, the real `clai mcp` command dispatch — rather than a hand-built
+seam; the R2-08 hang-proof in particular was verified red-before-green (removing the `Interactive`
+gate alone reproduces a real loopback-redirect timeout). Full gate run clean:
+`go build ./...`, `go vet ./...`, `gofumpt -l .` (no output), `staticcheck ./...` (no output),
+`go fix ./...` (no changes), `dupl -t 80 .` (35 clone groups; the one group beyond phase 8's
+already-declared 34 is the same pre-existing `querier_setup_tools_test.go`/`pkg/agent/mcp_setup_test.go`
+test-helper duplicate phase 8 already found, judged and accepted in writing — only its line numbers
+moved), and `go test ./... -race -cover -count=3 -timeout=30s` (all packages passed; host load
+~3 throughout, well under the documented load-8 threshold).
+
+The phase's own `Human required` real-endpoint gate is untouched and still outstanding — not this
+session's to satisfy. Phase left `In Progress — human gate outstanding`, matching phases 6 and 8's
+own posture.
+
+### 2026-10-03, phase 6 fix session
+
+Fixed every finding that reopened phase 6 across both implementation reviews: R1-01 (the dominant
+finding — a stdio connect failure reclassified into a never-memoised `AuthChallengeError` on a
+bare `401`/`403` substring, costing two process spawns and a full auth-timeout block per tool call,
+unbounded across calls), R1-06/D37 (the no-resolver branch's expiry misclassified as a resolved
+wait, the exact mechanism of R1-01's second spawn), R1-07 (one auth window globally suspending
+`mcpLogSink.Drain` for every server), R1-08 (the actionable result naming `clai mcp auth`, which
+refuses every stdio server), R1-21 and R2-09 (folded into one fix: `OutputIsTerminal`'s production
+wiring untested and unconditionally overwritten, and unreachable for any `pkg/agent` SDK consumer),
+R2-01 (a 200 ms connect bound enclosing a `go run` compile, reproduced cold), and R1-30/R2-26
+(folded into one fix: real wall-clock margins too tight for this host's documented load
+sensitivity). R1-26 is owned by phase 1 and was not re-litigated here; it stays open there.
+
+R1-01 was fixed with all three of the finding's corrective mechanisms together, per this task's own
+instruction that the keyword-list tightening alone is insufficient: the sticky `authChallenged`
+flag is now cleared on every definitive answer (`resolveAuthPending`, called from both `deliver`
+and `Close`), the connector now caps blocked-outside-run re-dials at one per server per run (D36,
+`connector.go`'s new `mcpBlockedRedialCap`), and reclassification now requires the stricter
+`IsMcpLogAuthChallengeLine` classifier rather than the broader UI-only one. Every fix drove through
+the real production composition root per invariant 10: `toolExecutor.invokeToolCall` against a real
+spawned `TEST_SERVER_AUTH_HANG` process and a real spawn-log counter for R1-01
+(`TestAuthChallengeStdioSpawnBoundedAcrossRepeatedToolCallsEndToEnd`), and the real `NewQuerier` →
+`querier_setup.go` → `setupTooling` → `setupMcpManager` chain with a pre-warmed schema cache for
+R1-21/R2-09 (`TestNewQuerierThreadsOutputIsTerminalIntoAuthTimeout`), rather than a hand-built
+`Configurations` or a direct `newMcpAuthorizer`/`setupMcpManager` call that would have bypassed the
+exact line under test.
+
+Full gate run clean: `go build ./...`, `go vet ./...`, `gofumpt -l .` (one file needed realigning,
+applied with `-w`, then clean), `staticcheck ./...` (no output), `go fix ./...` (no changes),
+`dupl -t 80 .` (36 clone groups; the one group beyond the prior 35 is this session's own
+`testServerBinary` helper, copied into `internal/tools/mcp/conn_stdio_test.go` from the
+pre-existing `internal/text/querier_setup_tools_test.go` original — accepted in writing as the same
+class of test-only fixture-build duplication phase 8's gate-sweep session already recorded, not
+extracted into a shared package for 20 lines reused once more in a different test binary), and
+`go test ./... -race -cover -count=3 -timeout=30s` (all packages passed; host load ~2-3 throughout).
+R2-01's fix was additionally verified cold: `GOCACHE=<fresh empty dir> go test
+./internal/tools/mcp/ -run TestStdioConnectReclassifiesAuthPromptAsChallenge -race -count=1`
+compiled for 4.48 s and still passed, reproducing the exact R2-01 scenario and confirming the fix
+rather than merely the absence of the old failure.
+
+The phase's own `Human required` real mid-run authorization gate is untouched and still
+outstanding — not this session's to satisfy. Phase left `In Progress — human gate outstanding`,
+matching phases 5 and 8's own posture. `architecture/mcp.md`'s "When a human is needed mid-run"
+section is now stale on two counts — read, not edited, by direction (the coordinating session owns
+`architecture/`): it describes the authorization-failure exemption as unconditional, where D36 now
+caps it at one re-dial per server per run; and it describes the actionable result as always naming
+the authorizing command, where R1-08 now makes that true only for an endpoint-based server.
+
+### 2026-10-03, phase 7 fix session
+
+Fixed every finding that reopened phase 7: R1-16 (phase-7's test-design share — the root cause was
+already fixed at the root by phase 3's D40, verified by reading rather than re-fixed here), R1-22
+and its R2-17 restatement (the marker was keyed on the bare remote name with no reference to
+transport, so a remote `read_file` was reported as shadowed by local `cat`), R1-23 and its R2-23
+correction (`create_directory` → `mkdir` omitted on a true premise but a false inference), R1-35's
+three suite gaps (two tests exercising one branch, an unasserted "no process started" invariant,
+and an uncommented bare `_`), R2-12's phase-7 share (no e2e evidence for the cache-sourced tool set
+or the marker above the unit level), and R2-17 (an unreachable assertion in
+`TestShadowAdvisoryDoesNotAlterSelection`).
+
+The marker now carries a transport check: `mcpListingEntries` (`internal/tools/cmd.go`) builds a
+server-name-to-config map from the already-parsed configured servers and only calls
+`shadowingBuiltin` when the owning server's `Command != ""`, closing the remote-`read_file`
+misreport without touching the declared mapping itself. `create_directory` → `mkdir` needed one
+new named constant, `pub_models.MkdirTool`, added beside its neighbours rather than an inline
+string literal, per R2-23's own recommendation.
+
+R1-16's phase-7 share and R2-12's phase-7 share were both, at root, the same class of defect the
+README's dominant cross-phase invariant names: a test proving a fix must go through the real
+production composition root on both sides of the seam it is proving, not a hand-built one.
+`TestToolsListAgreesWithProductionSetupForAuthScopedCommandServer` (new,
+`internal/text/mcp_listing_identity_test.go`) warms a command-based server's cache entry through
+the real `setupMcpManager` → `resolveLazyServerViaCache` path — the same path a real run takes —
+then reads it back through the real `tools.List()`, instead of warming the cache with the
+listing's own `BuildIdentityWithScopes` call as `captureListingCacheEntry` still does for the
+phase's other, legitimate unit tests of listing behaviour. Verified this test can actually fail:
+temporarily reverting D40's `server.Command == ""` guard in `schemacache.go` to unconditional made
+it fail, restoring the guard made it pass again.
+`Test_goldenFile_TOOLS_lists_mcp_tools_from_cache` (new, `main_tools_e2e_test.go`) closes R2-12's
+phase-7 half the same way: it writes a real `mcpServers/fs.json` under the e2e fixture's
+`CLAI_CONFIG_DIR`, warms one real cache entry under its `CLAI_CACHE_DIR`, runs the real `clai
+tools` command through `run()`, and asserts both the cache-sourced tool and its
+`[shadowed by built-in: write_file]` marker appear in stdout — the first e2e evidence this
+listing's cache-only source and its marker exist above the unit level.
+
+R2-17's `TestShadowAdvisoryDoesNotAlterSelection` was rewritten to drive the real `List()` then the
+real `Detail()` over one cached, shadowed entry, asserting the listing line is marked and the
+`Detail` JSON's description survives exactly and unmarked; its predecessor drove `mcp.RegisterTools`
+directly, which has no reference to the shadow map and could not fail for the reason the test
+claimed to pin. `TestToolsDetailShowsMcpToolFromCache` and the removed test's `listingFakeConn`
+double were folded into the rewrite rather than kept as a near-duplicate.
+
+Full gate run clean: `go build ./...`, `go vet ./...`, `gofumpt -l .` (no files listed),
+`staticcheck ./...` (no output), `go fix ./...` (no changes), `dupl -t 80 .` (36 pre-existing clone
+groups, none touching this session's files), and `go test ./... -race -count=3 -timeout=30s -p 1`
+(every package `ok`). Coverage of this session's touched packages, from the targeted `-cover` run:
+`internal/tools` 81.3%, `internal/text` 85.3%, `pkg/text/models` 85.3%, root package 94.6%.
+
+Phase returned to `Complete` on the status board; no architecture file was read or edited, per this
+session's explicit instruction. `architecture/mcp.md`'s "The tool listing" section and
+`architecture/tools-command.md`'s marker description are both now stale on one point: the marker's
+scope is restricted to command-based servers (R1-22/R2-17), which neither file is known to state
+either way without being read.
+
+### 2026-10-03, phase 8 fix session (final gate re-sweep)
+
+Picked up phase 8, `Reopened (review 2)`, as the last non-complete phase on the board. Fixed every
+finding that reopened it except two, which cannot be fixed without editing `architecture/` (out of
+this session's explicit instructions): R2-01 (phase 8's gate-row share), R2-04, R2-19, R2-20 and
+R2-22 (re-confirmed closed), R2-24, R1-33, and the R1-04 cross-reference. Left open: R1-17 (major)
+and R1-35b (note), both re-confirmed still true against today's source. Full detail, including the
+gate commands, the cold-build-cache investigation and its baseline comparison, the duplication
+re-ruling, the re-run documentation audit, and the coverage re-check, is in
+[phase 8](phase-8-gate-sweep.md)'s own "Fix session, 2026-10-03" and "Documentation audit, re-run"
+subsections, not restated here.
+
+Three things worth a cross-session note. First, the cold-build-cache investigation (action item 2
+of this session's brief) found two *different* findings, not one: the root package's cold-cache
+timeout predates this worklog entirely (proven by running the identical command against this
+branch's own base commit, `384e8d2`, extracted via `git archive` into a scratch directory — no
+checkout, no commit, nothing touched in this working tree), while `internal/text`'s is new but is
+this worklog's sheer added test volume compiling cold, not a tight bound wrapping a `go run` (the
+one suspicious case found, `TestConnHandshakeTimeoutReturnsTypedError`'s 50ms `WithHandshakeBound`
+in `internal/tools/mcp/manager_test.go`, was audited and confirmed safe: it is a response-wait
+deadline, not a spawn-bound, so it fires on schedule regardless of compile time, and it passed
+every cold-cache run including the one that reproduced the two real timeouts). Every direct `go
+run ./testserver` test call site repository-wide now points at a prebuilt binary; `internal/text`'s
+remaining cold-cache margin is a volume problem a future repackaging could address, not something
+this phase's charter covers.
+
+Second, the `mcp_http_config_test.go` self-duplicate the dupl re-run surfaced is not a new,
+undeclared finding: this session briefly merged its two XOR tests into one table-driven test
+(matching `serverconfig`'s own sibling convention), then reverted on discovering phase 4's own
+2026-10-03 fix session had already considered and explicitly declined exactly that merge, in
+writing, for a stated reason (test-name traceability). The worklog's rule against re-litigating a
+phase's recorded decision applies here even though phase 4 is `Complete` and the decision lives in
+its own phase file rather than the README's decisions log.
+
+Third, `WithAuthPendingSink` (R1-26) is deleted, closing the one finding other phases deliberately
+left for this final sweep (phase 6's fixer named it explicitly when declining to reach into phase
+1's scope).
+
+Status board and feedback index updated in this session. Phase 8 stays `In Progress`: the
+fleet-memory human gate is still outstanding, and R1-17/R1-35b are confirmed still open and require
+`architecture/` edits this session does not make.
+
+Patch pass complete. All sixty-five findings from both implementation reviews are closed. Phases 1,
+2, 3, 4 and 7 are `Complete`; phases 5, 6 and 8 are `In Progress` on their human gates alone, with
+no code or documentation finding outstanding against any of them.
+
+The coordinating session closed the two findings phase 8 correctly declined, R1-17 and R1-35b, since
+both needed `architecture/` edits that phase was scoped out of. Each claim was verified against
+source before editing: `tools-command.md` named `internal/tools/init.go`, which does not exist;
+`tooling.md` still said MCP tools enter the same registry as built-ins, which the per-run registry
+rule made false; and `errors.md` documented `NewMcpTransport` without its `endpoint` parameter. The
+same session also widened the architecture index entry, gave `config.md` an MCP section that points
+at `mcp.md` rather than duplicating it, and showed `auth_timeout_seconds` on the local-server example
+since it bounds a stdio server's stderr prompt equally.
+
+Two risks are recorded rather than fixed, both judged out of a patch pass's charter. The root package
+times out on a cold Go build cache, which the phase-8 sweep confirmed is pre-existing by extracting
+the base commit and reproducing it there. `internal/text` also times out cold, and that one is new:
+it is this effort's own test volume rather than a tight bound, every direct `go run` call site having
+been converted to a prebuilt binary. Warm CI is unaffected at twenty-one seconds, and fixing it
+properly means splitting the package.
+
+### 2026-10-03, sign-off fix session (B3, B4, S1, S2)
+
+Picked up the two blockers and two smaller items the holistic sign-off review (below) filed against
+phases 1–3 and 7, per the coordinating session's explicit instruction to fix exactly these four and
+no others (phases 4, 5 and 6 stay held on B1/B2, untouched). Read the Sign-off verdict section first
+as the authority for what to fix; filed the work as a new "Review 3"/"sign-off" round against phase
+3 (B3, B4, S1) and phase 7 (S2), following how reviews 1 and 2 were recorded in each phase file.
+
+Each fix was proved red (a failing test against a reverted copy of the production change) before
+green, per CLAUDE.md. **B4:** `Cache.Capture` (`internal/tools/mcp/schemacache/schemacache.go`) now
+refuses an empty tools array; `TestSchemaCacheRefusesEmptyToolsArray`. **B3:**
+`Identity.LauncherOnlyFingerprint` gates a new setup-time notice on the cache-hit path in
+`resolveLazyServerViaCache` (`internal/text/querier_setup_tools.go`);
+`TestWarmCacheLauncherOnlyServerPrintsSetupNotice` plus a direct-binary control that must stay
+silent. **S1:** `internal/text/main_test.go` adds a `TestMain` that builds the shared stdio fixture
+before `m.Run()`, correcting `phase-8-gate-sweep.md`'s own stale "needs a package split"
+conclusion in place; verified cold with an instrumented, temporary timestamp print (removed before
+finishing): the portion of the run exposed to the `-timeout` alarm dropped from ~25.3s to ~19.9s,
+headroom rising from ~4.7s to ~10.1s against the 30s bound. **S2:** the per-tool shadow marker is
+demoted to a single footer line (`internal/tools/cmd.go`'s `mcpListingEntries`/`List`), and
+`get_file_info` is removed from `builtinShadowMap` as a wrong mapping on its own merits; direct
+regression test for the review's own Notion/`mcp-remote` probe,
+`TestShadowFooterNeverAttributesToASpecificRemoteTool`.
+
+One dupl clone group this session's own new tests introduced (near-identical setup-plus-assertion
+bodies across `mcp_listing_test.go`) was extracted into two shared helpers before the final dupl
+run, per the repository's own rule that duplicated code is abstracted; the full-repo clone count
+stayed at the pre-existing 36. Three pre-existing schema-cache tests that seeded a warm cache with
+an empty tools array purely to exercise unrelated mechanics (identity comparison, freshness,
+invalidation) were updated to seed a one-element placeholder instead, since B4's new guard would
+otherwise reject their seeding step for a reason unrelated to what each was testing.
+
+Full gate run clean: `go build ./...`, `go vet ./...`, `gofumpt -l .` (no files listed),
+`staticcheck ./...` (no output), `go fix ./...` (no changes), `dupl -t 80 .` (36 clone groups,
+matching the pre-existing baseline), and `go test ./... -race -cover -count=3 -timeout=30s -p 1`
+(every package `ok`, host load 0.9–2.1 throughout this session).
+
+`architecture/mcp.md` and `architecture/tools-command.md` were not read or edited, per standing
+instruction; both are now additionally stale on S2's footer shape, on top of the pre-existing
+staleness phase 7's own 2026-10-03 fix session already recorded about the transport restriction —
+flagged here for the coordinating session, which owns `architecture/`.
+
+Status board, Decisions log (D46–D48) and Feedback index (new Sign-off review section) updated in
+this session. Phases 1, 2, 3 and 7 move from "approved subject to two fixes" to fully approved; the
+Sign-off verdict section's top line and Conditions paragraph are amended in place with a closure
+note rather than rewritten, so the verdict's own historical finding stays legible. Phases 4, 5 and 6
+remain held, unaffected.
+
+### 2026-10-03, sign-off fix session (B1)
+
+Picked up B1, the sole blocker holding phase 4, per the coordinating session's explicit instruction
+to fix exactly this one finding (phases 5 and 6 stay held on B2 and their own conditions,
+untouched). Read the Sign-off verdict section first as the authority for what to fix; filed the
+work as a new "Review 3"/"sign-off" round against phase 4, following how reviews 1 and 2 were
+recorded there and how the prior sign-off session recorded B3/B4 against phase 3 and S2 against
+phase 7.
+
+**B1:** `HttpConn.Call` (`internal/tools/mcp/conn_http.go`) called `consumeResponseBody`
+synchronously, before the `select` on the waiter channel, so a server permitted by the
+specification to hold its POST event-stream open after answering ("SHOULD" close it, not "MUST")
+made every call hang to its context bound and fail, even though the answer had arrived from the
+start. Proved red first: `TestHttpConnCallResolvesWhenFrameArrivesEvenIfStreamStaysOpen`
+(`internal/tools/mcp/conn_http_test.go`) against a server fixture flushing its result frame and
+then holding the stream open failed with `context deadline exceeded` at the full 1 s bound. Fixed
+by running `consumeResponseBody` in its own goroutine, so the `select` resolves on the waiter
+channel as soon as `deliver` places a result there, instead of waiting for the background read to
+end; evaluated against every path through `Call` (plain JSON, event-stream, `initialize`'s
+`captureSession`/`streamOnce`, and the `ctx.Done()` branch) for a race on `resp` or the waiter map —
+none introduced, confirmed by `-race` across three runs. The same test now passes in well under the
+context bound.
+
+`httptestserver` gained `HoldPostStreamOpen` (`internal/tools/mcp/httptestserver/httptestserver.go`):
+flushes the SSE result frame, then blocks (bounded at 2 s, `HangForever`'s own pattern) instead of
+returning, the fixture mode the review named as missing from the tree — no prior test could express
+"answer, then hold the stream open."
+
+Full gate run clean: `go build ./...`, `go vet ./...`, `gofumpt -l .` (no files listed),
+`staticcheck ./...` (no output), `go fix ./...` (no changes), `dupl -t 80 .` (36 clone groups,
+matching the pre-existing baseline, no new group from this session's files), and `go test ./... -race
+-cover -count=3 -timeout=30s -p 1` (every package `ok`, host load 2.27 at start).
+
+`architecture/mcp.md` was read, not edited: its transport section already states the behaviour this
+fix restores ("an event-stream body is parsed for frames until the awaited id arrives"), and it
+reads true again now that the code matches it.
+
+Status board, Decisions log (D49), Feedback index (Sign-off review section, B1 row) and the
+Sign-off verdict section updated in this session. Phase 4 moves from "held" to fully approved.
+Phases 5 and 6 remain held on B2 and their own conditions, unaffected.
+
+### 2026-10-03, sign-off fix session (worklog-work, B2 — the last blocker)
+
+`worklog-work`'s "Fixing findings" path again, for the one blocker still open: B2, which held
+phases 5 and 6 together. B1, B3, B4 and both recommended items were already closed by the two
+earlier sign-off fix sessions and were untouched here. Read the Sign-off verdict section as the
+authority, then the README, `phase-5-oauth.md` and `phase-6-midrun-auth.md`; filed the work as
+"Review 3"/sign-off rounds against both phases, following how phases 3, 4 and 7 recorded theirs.
+
+**Order of work, which mattered.** The fixture was made hostile *first*, before a line of
+production code changed, because B2's own diagnosis is that a permissive fixture is why the blocker
+shipped green. That ordering produced the red evidence as a by-product rather than as an extra step:
+making `oauthtestserver` require `resource` and compare `redirect_uri` failed eleven existing tests
+immediately, which is item 1 and item 2 proved red in one run. The remaining four items were probed
+individually before being fixed, and every probe's output is quoted in phase 5's implementation
+notes. The two worth repeating here: a redirecting token endpoint received the unfixed client's PKCE
+verifier (`sinkHits=1 verifierLeaked=true`), and the non-interactive case did not fail but **hung**,
+running out a full 60 s bound inside `awaitRedirect` with a loopback listener accepting on a port
+nothing would ever connect to — which is precisely the harm the review described a `pkg/agent`
+consumer suffering.
+
+**What was built.** One new file, `internal/tools/mcp/mcpauth/trust.go`, holding every trust check
+and both redirect policies, plus six new typed errors in `errors.go` and a `Cause`/`Unwrap` pair on
+three existing ones so a redirect refusal is recoverable through the stage's own error instead of
+being flattened into a string. `resource` threaded through all three token grants and persisted on
+`TokenEntry`; `redirect_uri` carried out of `authorizeViaFlow` on a new `authorizationFlow` struct,
+with `exchangeCode`'s eight positional parameters collapsed into a `codeExchange` struct in the same
+edit rather than growing to ten. `NewHttpConn` gained a `CheckRedirect`. `AuthorizeInteractive`
+gained the root interactivity gate. Decisions D50 to D55 record the calls made while fixing,
+including the two deliberate non-fixes (hostname-not-port on the metadata check; `serverconfig.go`
+still admitting plain http) and the one deliberate non-closure (D54, mid-run re-authorization).
+
+**Gates, all unedited.** `go build ./...`, `go vet ./...`, `gofumpt -l .` (no files listed),
+`staticcheck ./...` (no output), `go fix ./...` (no changes), `dupl -t 80 .` (36 clone groups,
+matching the baseline — the ~700 new lines of fixture, trust and test code added no group), and
+`go test ./... -race -cover -count=3 -timeout=30s` (every package `ok`, host load 2.79 at start,
+root package 23.5 s against the 30 s bound). `internal/tools/mcp/mcpauth` coverage rose to 85.8%.
+
+`architecture/` was not touched, per the standing instruction. What it needs is enumerated in this
+session's report: the Authorization section currently understates what clai validates (it describes
+discovery and the five required fields but names no trust check), the external-specifications list
+there has no RFC 8707 row, and the "Not yet implemented" list needs D54.
+
+Status board (rows 5 and 6), external-specifications table, Decisions log (D50–D55), Feedback index
+(Sign-off review section, new B2 row and a rewritten lead-in) and the Sign-off verdict section all
+updated in this session. **No phase is held on a review finding any more.** Phases 5, 6 and 8 stay
+In Progress on their three human-required gates, which were never findings — with one new, uncomfortable
+observation recorded in the verdict: B2's missing `redirect_uri` is positive evidence that phase 5's
+real-endpoint gate has never run, since a conformant server answers `invalid_grant` to that request.
+
+## Sign-off verdict, 2026-10-03
+
+**Not signed off as one unit. Phases 1, 2, 3 and 7 are approved subject to two fixes. Phases 4, 5
+and 6 are held.** — **Superseded by the closure updates below: all four blockers and both
+recommended items are now fixed and verified, so no phase is held on a review finding any more.
+What remains is the three human-required gates, which were never findings.**
+
+**Closure update, 2026-10-03 (sign-off fix session).** Both conditions for the approved phases are
+met: B4 (`Capture` now refuses an empty tools array) and B3 (a warm launcher-only-fingerprinted hit
+now prints a setup-time notice) are fixed and verified, filed against phase 3 as B3/B4 under the
+Sign-off review entry in the Feedback index below. Both recommended items are also closed: the
+shadow marker is demoted to a single footer line (S2, phase 7) rather than cut, and the
+`internal/text` testserver build moved into a `TestMain` (S1, phase 3), closing — by correcting,
+not by repackaging — the stale "needs a package split" conclusion `phase-8-gate-sweep.md` had
+recorded for it. Phases 1, 2, 3 and 7 are therefore fully approved, not merely conditionally.
+Phases 4, 5 and 6 remain held: B1, B2 and the held-phase conditions below are untouched by this
+session.
+
+**Closure update, 2026-10-03 (sign-off fix session, B1).** Phase 4's one condition is met: B1
+(`Call` now resolves as soon as the awaited frame arrives, instead of when the POST response body
+ends) is fixed and verified, filed against phase 4 as B1 under the Sign-off review entry in the
+Feedback index below, with the fixture gap (a mode that flushes a response frame and then holds
+the stream open) closed in the same session. Phase 4 is therefore fully approved, not held.
+Phases 5 and 6 remain held: B2 and the held-phase conditions below are untouched by this session.
+
+**Closure update, 2026-10-03 (sign-off fix session, B2).** The last blocker is closed. Every one of
+B2's six items is fixed and verified, filed against phase 5 (and, for the mid-run gate, phase 6) as
+B2 under the Sign-off review entry in the Feedback index, with decisions D50 to D53 and D55
+recording the calls made while fixing. In order: RFC 8707 `resource` is sent on the authorization
+request and on all three token grants and is persisted on the token store entry; the
+authorization-code grant repeats the authorization request's `redirect_uri`; a new
+`internal/tools/mcp/mcpauth/trust.go` validates the issuer (RFC 8414 §3.3), the resource identifier
+(RFC 9728 §3.3), the challenge's metadata location against the server's own hostname, and the
+scheme of every URL on the chain — the server endpoint, the issuer, all three advertised endpoints,
+every discovery redirect hop, and the authorization URL immediately before the browser hand-off;
+redirects are refused outright on the registration endpoint, both token grants and the MCP endpoint
+itself, and bounded at three re-checked hops on discovery; and `AuthorizeInteractive` refuses a
+non-interactive run at the root, so the mid-run `AuthResolver` inherits the gate the setup path got
+as R2-08 instead of needing a second copy of it.
+
+The fixture was the root cause and is fixed as such: `oauthtestserver`'s zero configuration now
+requires `resource` on both request kinds and compares the exchange's `redirect_uri` against the
+issued one, with the single relaxation phrased negatively so the strict posture is the default
+(D55). Every fix has a fixture mode that makes its absence fail, and every red state was observed
+before the fix rather than reasoned about: the issuer-mismatch and resource-mismatch fixtures both
+reached dynamic client registration against the unfixed client (`registrations=1` — the review's own
+"clai registers a client with the attacker"); the redirecting token endpoint received the PKCE
+verifier (`sinkHits=1 verifierLeaked=true`); the two insecure-URL cases both issued their request
+(`roundtrips=1`); the missing `redirect_uri` showed as `exchange redirect_uri seen=""` against an
+authorization request that had sent one; and the non-interactive case did not fail at all but
+**hung**, running out a full 60 s bound inside `awaitRedirect` with a loopback listener accepting on
+a port nothing would ever connect to. The doc comment that presented the unvalidated fetch as a
+feature is corrected to say what is actually checked.
+
+Two things are deliberately left rather than fixed, both stated instead of hidden. The
+metadata-location check compares hostname, not port, because a resource server may front its
+metadata elsewhere on the same host and this repository's own composed fixtures do; the attack the
+review composed is cross-host, so it is closed, and a same-host different-port variant is not.
+`serverconfig.go` still admits a plain-http endpoint (D51): the refusal is scoped to the credential
+clai mints itself, and a LAN server with a static `token_env` credential is a legitimate
+configuration whose risk its operator already owns.
+
+**Mid-run token expiry re-authorization is recorded, not closed (D54),** taking the option this
+review itself offered. Verified against source first: `bearerDecorator` captures a token *string*
+and is installed once on the `HttpConn` at connect time, and `resolveMcpAuthWait` inspects only
+`resolver.ResolveForCall` — a connector resolution — never a call result, so a 401 on a later
+`tools/call` is folded into a string by `tools.InvokeWith` while a valid refresh token sits unused.
+Closing it needs a refreshable decorator seam on `HttpConn` (phase 4's surface), a typed
+call-result path the executor can classify (phase 6's), and a re-entry rule for a connection
+already handed out: a phase of its own, not a line in a security fix. It is named in both phase
+files and in the cross-phase gap record below, and belongs in `architecture/mcp.md`'s "Not yet
+implemented" list.
+
+**One finding of this fix session, worth keeping next to the review's own process finding:** B2's
+missing `redirect_uri` is positive evidence that phase 5's human-required real-endpoint
+confirmation has never run. A conformant authorization server answers `invalid_grant` to that
+request, so the flow cannot have completed against one. The gate was outstanding and honestly
+recorded as outstanding — but its absence was also the only thing hiding this bug, and a worklog
+that treats a human gate as "pending" rather than as "this claim is unverified" will keep producing
+this shape of defect.
+
+A final unbounded holistic review — the first pass to read the whole effort at once rather than one
+phase at a time — found four blockers that thirteen prior passes missed. The coordinating session
+verified each against source before accepting it:
+
+| ID | Blocker | Verified |
+| --- | --- | --- |
+| B1 | `HttpConn.Call` returns when the response *body ends*, not when its answer arrives: `consumeResponseBody` is called synchronously at `conn_http.go:185` before the `select`. A server that holds its POST event-stream open — which the specification permits, saying SHOULD not MUST — makes every call, `initialize` included, hang to its bound and fail, killing the whole lazy HTTP path at 45 s. `architecture/mcp.md` documents the correct behaviour; no test covers it | Read at `conn_http.go:172-196` |
+| B2 | The OAuth client is neither conformant nor safe: `resource` (RFC 8707) is never sent and `ProtectedResourceMetadata.Resource` has no readers; `redirect_uri` is absent from the authorization-code token request although the authorization request sets one, which a conformant server answers `invalid_grant`; and the discovery chain has no trust validation — `doc.Issuer` is never compared to the issuer fetched, `prm.Resource` never to the server, no scheme requirement, and no `CheckRedirect` on either client | `exchangeCode`'s form read directly; `grep '"resource"'` matches only a struct tag |
+| B3 | A warm cache hides a dead server. For the dominant `npx`-launched shape only the launcher is fingerprinted, so a server broken by anything other than its launcher changing is invisible at setup for up to twelve hours, and never reported at all if the model does not call it. Probed end to end: `err=<nil>`, zero spawns, tool still advertised | Probe through real `setupMcpManager` |
+| B4 | An empty tools array is captured and served as truth for twelve hours. `Capture` has no guard, so a server booting into a transient zero-tool state latches zero tools; neither invalidation signal can fire, because one needs a tool to call and the other needs a connection a cache hit never dials | Probe: capture accepted, lookup hit, `tools=[]` |
+
+The separability that makes the split cheap: `url` and `McpServerAuth` did not exist at `c3867d3`,
+so the HTTP transport and the OAuth client are greenfield. Holding them harms no existing user and
+benefits none, because nobody is using them yet. The measured win lives entirely in phases 1 to 3.
+
+**Conditions for the approved phases:** guard `Capture` against an empty tools array; restore a
+setup-time notice when a warm-cache server's launcher is not fingerprintable, naming the server and
+the fact that it was served without a handshake. Also recommended: cut or demote the per-tool shadow
+marker, which is wrong for the dominant stdio-proxy shape, and move the testserver build into a
+`TestMain` — the review measured that the recorded `internal/text` cold-cache risk is a `go build`
+running inside the test clock, not package size, so it is cheaply closable rather than merely
+recordable. **All four met, 2026-10-03 (see the Closure update above).**
+
+**Conditions for the held phases:** B1 plus a fixture that holds its stream open; and for OAuth, send
+`resource` and `redirect_uri`, validate the issuer and the resource, require `https` for discovery
+and for any URL handed to a browser, refuse redirects on the token and registration endpoints, gate
+`httpChallengeResolver` on `Interactive`, and make the OAuth fixture hostile so each of those has a
+test that can fail. **Phase 4's condition (B1) met, 2026-10-03 (see the Closure update above);
+phase 4 is fully approved. Every OAuth condition met too, 2026-10-03 (see the B2 Closure update
+above); phases 5 and 6 are no longer held on a review finding, and are In Progress only on their
+own human-required gates.**
+
+**Recorded cross-phase gap, owned by nobody until now — now owned, and recorded as not implemented
+(D54, 2026-10-03):** mid-run token expiry never re-authorizes.
+`bearerDecorator` captures a token string at connect time, and the executor's auth wait inspects only
+connector resolution, never a call result — so a valid refresh token sits unused while the model is
+told authorization is required. Phase 5 built refresh, phase 6 built surfacing, and the two meet only
+at connect time. This belongs in `architecture/mcp.md`'s "Not yet implemented" list.
+
+**Process finding worth keeping.** Thirteen passes audited the implementation against this worklog's
+own frame, and all four blockers live in the frame itself: a doc comment presenting an unvalidated
+fetch as a feature, a cache contract treating a run-fact as content, a claim that a bug class was
+eliminated when the compile had merely moved, and an invariant stated in `architecture/mcp.md` that
+no test checks. A future round should be pointed at the invariants rather than at the phases.
+
+## Sign-off, 2026-10-03 — approved
+
+**Signed off. The feature is approved to ship as one unit.** The qualified non-approval recorded in
+the verdict section above is superseded: every one of its four blockers is closed, each behind a test
+that fails without the fix, and the conditions it set on both the approved and the held phases are
+met.
+
+| Blocker | Closed by |
+| --- | --- |
+| B1 — `Call` returned when the response body ended rather than when its answer arrived, so a server that holds its POST stream open (which the specification permits) hung every call to its bound | The body read moved off the synchronous path, every path through `Call` re-checked for races under `-race`, and a fixture mode added that flushes a frame then holds the stream open — the mode whose absence is why this passed two reviews and a gate sweep |
+| B2 — the OAuth client was neither conformant nor safe: no `resource`, no `redirect_uri` on the token request, no issuer or resource validation, no scheme requirement, no redirect refusal, and an ungated interactive flow | All six items fixed, with the fixture made hostile **before** any production change so the red evidence fell out as a by-product. The sharpest: unfixed, the client POSTed its PKCE verifier to a redirecting token endpoint — `sinkHits=1 verifierLeaked=true` |
+| B3 — a warm cache hid a dead server for the dominant launcher-launched shape | A setup-time notice gated on the identity, so only the shape that genuinely cannot detect its own breakage is noisy |
+| B4 — an empty tools array was captured and served as truth for the full freshness bound | `Capture` refuses an empty array; it is a run-fact, not content |
+
+Gates, run by the coordinating session at host load 1.25, flags unaltered: `gofumpt` clean,
+`staticcheck` clean, `go vet` clean, `go build` clean, and
+`go test ./... -race -cover -count=3 -timeout=30s` green across every package with zero failures.
+Coverage on everything this effort touched clears the floor: `mcpauth` 85.9 percent, `serverconfig`
+86.5, `internal/text` 85.3, `schemacache` 82.9, `internal/tools/mcp` 81.9, `internal/tools` 81.6,
+`pkg/agent` 94.2.
+
+Three items are approved **as recorded gaps, not as oversights**, each named in
+`architecture/mcp.md` so a reader meets them before being surprised by them: mid-run token expiry
+does not re-authorize (D54); the interactive credential chain is wired into the lazy endpoint path
+and not the eager one (D45); and the metadata-location check compares hostname rather than port, so
+a same-host different-port variant is out of its reach.
+
+Three human gates remain and are the maintainer's: a live-endpoint OAuth confirmation, a real mid-run
+authorization observation, and the fleet memory comparison. **Run the OAuth one first.** The missing
+`redirect_uri` that B2 fixed is positive evidence that gate has never run, since a conformant server
+answers `invalid_grant` to a token request without it — which is the sharpest lesson of this effort:
+a worklog that records a human gate as "pending" rather than as "this claim is unverified" will keep
+producing exactly this shape of defect.
+
+## Journal, 2026-10-04 — the launcher package supersedes the B3 notice
+
+The B3 fix shipped in the 2026-10-03 sign-off session is superseded, and its two identifiers are gone
+from the tree: `Identity.LauncherOnlyFingerprint` and `warnIfLauncherOnlyFingerprint` no longer
+exist. B3's rows above and its phase-3 entries are historical and are left as written.
+
+B3's fix was a warning grounded in a name list: it reported true when the command was one of a small
+set of known generic launchers and no arg resolved to an on-disk script, then printed a setup-time
+notice on a warm hit. The new `internal/tools/mcp/launcher` package replaces the heuristic with a
+classification. `Resolve` reads local evidence only, never starting anything, and returns `Exact`,
+`Pinned`, `Unpinned`, or `Unresolvable`. The identity now carries a `LauncherFingerprint` built from
+that outcome, so an `Unpinned` spec fingerprints the manifest the launcher installed rather than only
+the launcher binary, and a command line that resolves no further than a generic launcher is
+`Unresolvable`, which makes the server connect during setup instead of trusting a cached tool list.
+The name list is gone, so D47 and B3's notice are retired rather than carried forward.
+
+The same package closes the shadow gap the notice never addressed: `resolveNpx` refuses the `_npx`
+fingerprint when npx would run a local or global bin first, so a fingerprint is never taken from a
+tree npx will not run.

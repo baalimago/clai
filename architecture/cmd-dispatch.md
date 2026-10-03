@@ -26,7 +26,7 @@ main.go:run(args)
 `main.go` is the composition root: `commands()` builds the
 `map[string]cmd.Command` with the keys `query|q`, `chat|c`, `photo|p`,
 `video|v`, `audio|a`, `setup|s`, `version`, `replay|re`, `dir-replay|dre`,
-`tools|t`, `profiles`, `confdir`. The `completion` command and the hidden
+`tools|t`, `mcp`, `profiles`, `confdir`. The `completion` command and the hidden
 `__complete` protocol are auto-registered by `cmd.Run` (upstream). There is
 no `help` command: bare `clai` prints the full usage, and every command's
 `-h` prints its Help() text with examples, flags and subcommands (see
@@ -42,6 +42,7 @@ Each command lives in its domain package and exposes a
 | photo / video / audio | `internal/photo` / `video` / `audio` |
 | setup | `internal/setup` |
 | tools / profiles | `internal/tools` / `internal/profiles` |
+| mcp | `internal/tools/mcp` — `mcp auth <server>` runs the OAuth flow for one server and writes its token store entry; no model call, spends nothing |
 | version / confdir | `internal/version` / `internal/confdir` |
 
 Every factory lives in its domain package: `text.SetupQuerier`/

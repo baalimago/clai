@@ -286,6 +286,27 @@ func Test_e2e_usage_examples_parse(t *testing.T) {
 	}
 }
 
+// Test_e2e_mcp_bare_invocation_does_not_panic pins R1-04: "mcp" is a parent
+// command with Subs ("auth") but no default action of its own. Before the
+// fix it carried no OnRun, so internal.Command.Run fell through to
+// c.querier.Query on a command that has no querier, and bare "clai mcp"
+// panicked with a nil pointer dereference. Every other parent-with-Subs
+// command in main.go's map assigns exactly one OnRun; this proves the
+// class cannot return silently by driving the real composition root
+// instead of calling mcp.Command() directly.
+func Test_e2e_mcp_bare_invocation_does_not_panic(t *testing.T) {
+	_ = setupMainTestConfigDir(t)
+
+	var status int
+	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
+		status = run([]string{"mcp"})
+	})
+	testboil.FailTestIfDiff(t, status, 0)
+	if !strings.Contains(stdout, "Authorize a configured endpoint-based server interactively") {
+		t.Fatalf("expected bare 'mcp' to print its help, got: %q", stdout)
+	}
+}
+
 // Test_e2e_command_help proves -h on any command prints that command's
 // Help() and exits 0.
 func Test_e2e_command_help(t *testing.T) {
@@ -304,7 +325,8 @@ func Test_e2e_command_help(t *testing.T) {
 		{"version -h", "dependency versions"},
 		{"replay -h", "previous reply"},
 		{"dre -h", "conversation bound to the"},
-		{"tools -h", "mcp and built-in tools"},
+		{"tools -h", "MCP tool cached from a prior successful run"},
+		{"mcp -h", "Authorize a configured endpoint-based server interactively"},
 		{"profiles -h", "profiles under"},
 		{"confdir -h", "registered subpath"},
 		{"completion -h", "source <(clai completion bash)"},

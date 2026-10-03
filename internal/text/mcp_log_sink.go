@@ -69,6 +69,12 @@ type mcpLogSink struct {
 	attached   bool
 	startup    *mcpStartupWindows
 	termHeight func() int
+	// authOpen tracks, per server, the close function returned by a
+	// currently open authorization wait (phase 6): presence is "open". A
+	// duplicate AuthPending for an already-open server returns the same
+	// close function rather than opening a second window or ringing the
+	// bell again.
+	authOpen map[string]func()
 }
 
 func newMcpLogSink(mode mcpLogMode) *mcpLogSink {
@@ -89,6 +95,7 @@ func newMcpLogSinkTo(mode mcpLogMode, errOut io.Writer) *mcpLogSink {
 		authFollow: make(map[string]int),
 		startup:    newMcpStartupWindows(),
 		notify:     make(chan struct{}, 1),
+		authOpen:   make(map[string]func()),
 	}
 }
 
@@ -143,7 +150,7 @@ func (s *mcpLogSink) AppendServerLog(server, line string) {
 		return
 	}
 	s.retainTailLocked(server, line)
-	if !s.attached && !s.startup.cleared {
+	if (!s.attached && !s.startup.cleared) || s.startup.isReopened(server) {
 		s.startup.appendLine(server, line, isAuth || followPayload)
 		s.startup.render(s.errOut, s.termWidth(), s.termHeight())
 		return
@@ -163,6 +170,14 @@ func (s *mcpLogSink) attach() {
 	s.attached = true
 	s.mu.Unlock()
 }
+
+// AuthPrintWriter exposes the sink's own injectable writer, so the
+// authorization phase's printed-URL fallback writes through it instead of
+// the process's raw stdout (R2-08): a library consumer must never have
+// output written to its real stdout, and errOut is already whatever this
+// run was configured with (the process stderr by default, userConf.ErrOut
+// otherwise).
+func (s *mcpLogSink) AuthPrintWriter() io.Writer { return s.errOut }
 
 // setupSucceeded reports that every MCP server finished setup: any pending
 // auth flow completed, so the startup windows are cleared in place and later
@@ -255,15 +270,74 @@ func (s *mcpLogSink) dropOldestNonErrorLocked() {
 	s.queue = kept
 }
 
-// Drain returns and clears all buffered entries. It is called from the
-// serialized session loop only.
+// Drain returns and clears buffered entries. It is called from the
+// serialized session loop only. A server whose authorization wait window is
+// open (phase 6) never has its own lines queued in the first place (they
+// render straight into the reopened window instead); Drain still scopes its
+// suspension per server rather than globally (R1-07), so an unrelated
+// server's lines are never held hostage by one server's open window. An
+// entry whose server somehow still has an open window is deferred rather
+// than dropped — the next Drain after that window closes returns it.
 func (s *mcpLogSink) Drain() []mcpLogEntry {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if len(s.queue) == 0 {
 		return nil
 	}
-	entries := s.queue
-	s.queue = nil
-	return entries
+	if len(s.authOpen) == 0 {
+		entries := s.queue
+		s.queue = nil
+		return entries
+	}
+	var drained, deferred []mcpLogEntry
+	for _, e := range s.queue {
+		if _, open := s.authOpen[e.server]; open {
+			deferred = append(deferred, e)
+			continue
+		}
+		drained = append(drained, e)
+	}
+	s.queue = deferred
+	return drained
+}
+
+// AuthPending implements mcp.AuthPendingSink. A duplicate call for a server
+// whose window is already open returns the same close function: no second
+// bell, no second window. The bell is subject to the theme gate and always
+// considered, even in a mode with no window to open, so a headless-looking
+// but still-terminal session is not silently left unnotified.
+func (s *mcpLogSink) AuthPending(server string) (done func()) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if existing, open := s.authOpen[server]; open {
+		return existing
+	}
+	s.ringBellLocked()
+	if s.mode == mcpLogRolling {
+		s.startup.reopen(server)
+		s.startup.render(s.errOut, s.termWidth(), s.termHeight())
+	}
+	var closeOnce sync.Once
+	doneFn := func() {
+		closeOnce.Do(func() {
+			s.mu.Lock()
+			defer s.mu.Unlock()
+			delete(s.authOpen, server)
+			if s.mode == mcpLogRolling {
+				s.startup.closeReopened(server, s.errOut, s.termWidth(), s.termHeight())
+			}
+		})
+	}
+	s.authOpen[server] = doneFn
+	return doneFn
+}
+
+// ringBellLocked emits the terminal bell once, subject to the theme gate,
+// to the sink's own injectable error writer — never the process standard
+// output (the existing newMcpLogSinkTo contract this phase reuses).
+func (s *mcpLogSink) ringBellLocked() {
+	if !utils.NotificationBellEnabled() {
+		return
+	}
+	fmt.Fprint(s.errOut, "\a")
 }
