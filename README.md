@@ -64,7 +64,7 @@ Embed the agent loop in a Go program with `github.com/baalimago/clai/pkg/agent`:
 review, err := agent.NewTyped[Review](agent.WithModel("gpt-5.2")).Query(ctx, chat)
 ```
 
-The agent runs silent and returns typed errors. See [pkg/agent](./pkg/agent/README.md) for the option surface, the command ban list and the token stoploss.
+The agent runs silent and returns typed errors. See [pkg/agent](./pkg/agent/README.md) for the option surface, the command ban list and the token stoploss, and [pkg/tools](./pkg/tools/README.md) for the tool catalog.
 
 ## Supported vendors
 

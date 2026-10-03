@@ -19,6 +19,7 @@ This directory contains short design notes for key parts of **clai**. Each file 
 - **[skills.md](./skills.md)** — Skill discovery, parsing, precedence, rendering, activation logging, and invocation-scoped tool policy.
 - **[shell-context.md](./shell-context.md)** — Auto-append shell context (`-asc/-add-shell-context <name>`): named JSON definitions in `<configDir>/shellContexts/` mapping template vars to shell commands (per-var timeouts, error/timeout placeholders), rendered via Go `text/template` and injected best-effort into the system prompt; selectable per profile and editable in `clai setup`.
 - **[../pkg/agent/README.md](../pkg/agent/README.md)** — The public Go API for embedding a clai agent: typed responses (`NewTyped`, `NewTypedMetadata`), the `Option` surface, the command ban list and token stoploss, typed provider errors, and the recorders for telemetry.
+- **[../pkg/tools/README.md](../pkg/tools/README.md)** — The public tool catalog: one table mapping every tool name the model sees to the Go value you pass to `WithTools`, plus the async command lifecycle, the command ban list, and how to write a custom `LLMTool`.
 
 ## Command docs
 
