@@ -40,6 +40,18 @@ If you have time, you can also check out [this blogpost](https://lorentz.app/blo
 
 Install [Glow](https://github.com/charmbracelet/glow) for formatted markdown output when querying text responses.
 
+## Use clai as a Go library
+
+Embed the agent loop in a Go program with `github.com/baalimago/clai/pkg/agent`:
+
+```go
+// Supports strucutred output via types
+// Support all things the CLI does
+review, err := agent.NewTyped[Review](agent.WithModel("gpt-5.2")).Query(ctx, chat)
+```
+
+The agent runs silent and returns typed errors. See [pkg/agent](./pkg/agent/README.md) for the option surface, the command ban list and the token stoploss, and [pkg/tools](./pkg/tools/README.md) for the tool catalog.
+
 ## Features
 
 <div align="center">
@@ -55,16 +67,6 @@ Install [Glow](https://github.com/charmbracelet/glow) for formatted markdown out
 
 All of these features are easily combined and tweaked, empowering users to accomplish very diverse use cases.
 See [examples](./examples.md) for additional info.
-
-## Use clai as a Go library
-
-Embed the agent loop in a Go program with `github.com/baalimago/clai/pkg/agent`:
-
-```go
-review, err := agent.NewTyped[Review](agent.WithModel("gpt-5.2")).Query(ctx, chat)
-```
-
-The agent runs silent and returns typed errors. See [pkg/agent](./pkg/agent/README.md) for the option surface, the command ban list and the token stoploss, and [pkg/tools](./pkg/tools/README.md) for the tool catalog.
 
 ## Supported vendors
 
