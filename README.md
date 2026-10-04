@@ -1,7 +1,7 @@
 # Command Line Artificial Intelligence
 
 ![Wakatime](https://wakatime.com/badge/user/018cc8d2-3fd9-47ef-81dc-e4ad645d5f34/project/018e07e1-bd22-4077-a213-c16290d3db52.svg)
-[![Go Reference](https://pkg.go.dev/badge/github.com/baalimago/clai.svg)](https://pkg.go.dev/github.com/baalimago/clai)
+[![Go Reference](https://pkg.go.dev/badge/github.com/baalimago/clai.svg)](https://pkg.go.dev/github.com/baalimago/clai/pkg/agent)
 
 Test coverage: 79.174% 😌👏
 
@@ -50,7 +50,7 @@ Embed the agent loop in a Go program with `github.com/baalimago/clai/pkg/agent`:
 review, err := agent.NewTyped[Review](agent.WithModel("gpt-5.2")).Query(ctx, chat)
 ```
 
-The agent runs silent and returns typed errors. See [pkg/agent](./pkg/agent/README.md) for the option surface, the command ban list and the token stoploss, and [pkg/tools](./pkg/tools/README.md) for the tool catalog.
+The agent runs silent and returns typed errors. See [pkg/agent](https://pkg.go.dev/github.com/baalimago/clai/pkg/agent) for the option surface, the command ban list and the token stoploss, and [pkg/tools](https://pkg.go.dev/github.com/baalimago/clai/pkg/tools) for the tool catalog.
 
 ## Features
 
