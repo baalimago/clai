@@ -14,7 +14,7 @@ import (
 
 // CommandDeps are the composition-root collaborators: config loading (with
 // the old-config migration) lives in internal/setup, which photo cannot
-// import (setup imports photo), so main.go injects it.
+// import (setup imports photo), so internal/cli injects it.
 type CommandDeps struct {
 	ConfigPrep func() (confDir string, err error)
 	LoadConfig func(confDir string) (Configurations, error)

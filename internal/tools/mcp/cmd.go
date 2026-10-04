@@ -24,7 +24,7 @@ import (
 const mcpServersSubdir = "mcpServers"
 
 // Command builds the mcp command tree. Its only subcommand today is auth
-// (phase 5); it lives in this domain package and is injected from main.go,
+// (phase 5); it lives in this domain package and is injected from internal/cli,
 // matching the placement convention internal/tools/cmd.go sets.
 func Command() *internal.Command {
 	c := &internal.Command{

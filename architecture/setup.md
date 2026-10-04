@@ -14,7 +14,7 @@ It is intentionally a “manual editing UI” rather than a declarative config g
 ## Entry Flow
 
 ```text
-main.go:run()
+internal/cli:Run()
   → cmd.Run(...)                  # go_away_boilerplate/pkg/cmd dispatch
     → setup command (internal/setup/cmd.go)
       → setup.InitCmd()

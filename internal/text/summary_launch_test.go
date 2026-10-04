@@ -385,7 +385,7 @@ func (h *hookWriter) Write(p []byte) (int, error) {
 }
 
 // TestQuery_stopEventDoesNotCancelSummary runs the real mock vendor on a
-// root context shaped like main.go's: its StopEvent cancels the root, and
+// root context shaped like internal/cli.Run's: its StopEvent cancels the root, and
 // the blocking fake is still running when the finalizer prints the answer
 // and starts the join.
 func TestQuery_stopEventDoesNotCancelSummary(t *testing.T) {

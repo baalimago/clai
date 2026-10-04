@@ -4,13 +4,13 @@ clai's dispatch is built on `go_away_boilerplate/pkg/cmd`: a command map, an
 arity-aware argument scanner, optional `Subcommander` nesting, and a built-in
 shell-completion engine. clai contributes one generic adapter type
 (package `internal` at the internal root) plus a scope table of per-command flag groups; each
-command is defined in its domain package and wired in `main.go`.
+command is defined in its domain package and wired in `internal/cli`.
 
 ## Entry flow
 
 ```text
-main.go:run(args)
-  → cmd.Run(ctx, ["clai", args...], commands(), usage)   # map built in main.go
+internal/cli:Run(args)
+  → cmd.Run(ctx, ["clai", args...], Commands(deps), usage)   # map built in internal/cli
     → arity-aware scan finds the command token (flags may precede it)
     → the command's own flagset parses the remaining args
     → Subcommander descent: first positional matching a subcommand key
@@ -21,9 +21,16 @@ main.go:run(args)
 `shutdown.Monitor` starts before `cmd.Run`; the cancel func rides the ctx
 (`utils.ContextCancelKey`) so nested tool calls can stop the run.
 
-## The command map (`main.go`) and command homes
+`Run` rewrites one special first-argument flag before dispatch:
+`--version` (and its single-dash spelling, which Go flag syntax treats
+alike) becomes the `version` command, so `clai --version` and
+`clai version` are one path (see [version.md](./version.md)). The rewrite is
+first-argument only: a `--version` typed elsewhere is still an undefined
+flag at that level.
 
-`main.go` is the composition root: `commands()` builds the
+## The command map (`internal/cli`) and command homes
+
+`internal/cli` is the composition root: `Commands()` builds the
 `map[string]cmd.Command` with the keys `query|q`, `chat|c`, `photo|p`,
 `video|v`, `audio|a`, `setup|s`, `version`, `replay|re`, `dir-replay|dre`,
 `tools|t`, `mcp`, `profiles`, `confdir`. The `completion` command and the hidden
@@ -55,7 +62,7 @@ prompt setup, image saving, transcript parsing) — so vendors never import
 a domain root package. `setup.ConfigRunPrep` (theme + united config
 migration) and the old-config migrations live in `internal/setup`, which
 imports the domain packages and is therefore injected into their commands
-from `main.go`. Package `internal` at the root is the shared leaf every
+from `internal/cli`. Package `internal` at the root is the shared leaf every
 subpackage depends on — organizational machinery only: the
 `internal.Command` adapter holding
 
@@ -182,7 +189,7 @@ hint lists every owner. On one path the shallowest owner takes the flag.
 ## Config prep and sentinels
 
 `setup.ConfigRunPrep` (config dir + theme + united config migration),
-injected from `main.go`, runs only in config-touching commands: query, chat
+injected from `internal/cli`, runs only in config-touching commands: query, chat
 (continue/delete/summarize), photo, video, audio(transcribe), setup.
 
 Commands that render content without reading a mode config call
@@ -222,7 +229,8 @@ Data loads lazily inside the hook call (memoized per process);
 
 | File | Purpose |
 |------|---------|
-| `main.go` | `usageTemplate`, `run()`, and `commands()` — the composition root wiring deps into each domain package's `Command()` |
+| `internal/cli/cli.go` | `Deps`, `Commands()` and `Run()`/`RunProfiled()` — the composition root wiring deps into each domain package's `Command()` |
+| `main.go` | the process entry: `cli.RunProfiled(os.Args[1:], cli.DefaultDeps())` |
 | `internal/` (root package) | `internal.Command` adapter, flag primitives + shared groups, `PrepTheme`, completion data loaders + hooks |
 | `internal/<domain>/cmd.go` | each command's definition (help text, flag groups, setup/run) |
 | `internal/text/setup_querier.go` | `text.SetupQuerier`: config load, cascades, glob/tool/skill/lookback setup |

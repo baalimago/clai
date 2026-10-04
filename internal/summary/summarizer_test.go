@@ -31,7 +31,7 @@ func quietEnv(t *testing.T) {
 	}
 }
 
-// seedConfigDir mirrors the root package's setupMainTestConfigDir: the
+// seedConfigDir mirrors the e2e package's setupMainTestConfigDir: the
 // required directories, a theme, the mock price files, textConfig.json from
 // text.Default with the mock as the ladder floor, and a skills config.
 func seedConfigDir(t *testing.T) string {

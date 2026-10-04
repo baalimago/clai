@@ -12,7 +12,7 @@ These are *display* commands; they don’t call any LLM vendor.
 ### `clai replay`
 
 ```text
-main.go:run()
+internal/cli:Run()
   → cmd.Run(...)                  # go_away_boilerplate/pkg/cmd dispatch
     → replay command Run (internal/chat/cmd.go)
       → chat.Replay(conf.PrintRaw, false)
@@ -21,7 +21,7 @@ main.go:run()
 ### `clai dre`
 
 ```text
-main.go:run()
+internal/cli:Run()
   → cmd.Run(...)                  # go_away_boilerplate/pkg/cmd dispatch
     → dir-replay command Setup → dreQuerier (internal/chat/cmd.go)
     → adapter Run → querier.Query(ctx)

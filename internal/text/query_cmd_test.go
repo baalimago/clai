@@ -151,7 +151,7 @@ func TestQueryCommand_newSummarizerError(t *testing.T) {
 
 // TestQueryCommand_summarizerNotBuiltWhenOff pins that an opted-out run
 // never constructs the summarizer, while -summarize over a false config
-// does (phase 8 notes: the root e2e suite's margin under make qa).
+// does (phase 8 notes: the e2e suite's margin under make qa).
 func TestQueryCommand_summarizerNotBuiltWhenOff(t *testing.T) {
 	t.Setenv("CLAI_DISABLE_COST_ERR_LOG_GOROUTINE", "1")
 	t.Setenv("OPENROUTER_API_KEY", "")

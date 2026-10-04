@@ -80,7 +80,7 @@ func (s Summary) ApplyTo(c *pub_models.Chat)
 
 Nothing under `internal/text` or `internal/chat` imports
 `internal/summary`. The production implementation,
-`summary.NewAgentSummarizer(confDir)`, is injected from `main.go` as a lazy
+`summary.NewAgentSummarizer(confDir)`, is injected from `internal/cli` as a lazy
 constructor through `text.QueryCommandDeps.NewSummarizer` (query path) and
 `chat.CommandDeps.NewSummarizer` plus `chat.CommandDeps.ParseSince` (batch
 path, D7). The `chat` tree keeps its no-model invariant: only
@@ -162,7 +162,7 @@ a second vendor.
 
 The session runner cancels the cancel func stored under
 `utils.ContextCancelKey` on every normal completion (`StopEvent`), and
-`main.go` stores the **root** cancel func there. A summarizer sharing the
+`internal/cli.Run` stores the **root** cancel func there. A summarizer sharing the
 run context would be cancelled the moment the main call finished, and its
 own `StopEvent` would cancel the main call. `Summarize` therefore runs its
 querier on `context.WithCancel(caller ctx)` with that child's cancel stored
@@ -335,9 +335,9 @@ are pre-existing and shared with the main run; they are not silenced.
 - The `chat` tree needs no API key; only `chat summarize` builds a
   summarizer.
 - The test suite never builds the real summarizer through the CLI unless
-  a fixture opts in: `main.go` wires it through the package variable
-  `newSummarizer`, and the root test binary's `TestMain` replaces it with
-  a refusing constructor that only `setupSummaryE2E` restores. No
+  a fixture opts in: `internal/cli` wires it through `Deps.NewSummarizer`,
+  and the e2e test binary's `TestMain` replaces it with a refusing
+  constructor that only `setupSummaryE2E` restores. No
   production code knows about tests. `CLAI_SUMMARIZER=off` disables the
   summarizer for any process.
 - The summarizer never persists a conversation, never writes
@@ -361,7 +361,7 @@ loop via the mock vendor's `CLAI_MOCK_SUMMARY_TITLES` /
 `CLAI_MOCK_SUMMARY_SUMMARIES` sequences, context ownership, ladder,
 `ParseSince`), `internal/text` (`TestFinalize_join`, `TestSummaryContext_isolation`,
 `TestQuery_launchConditions`), `internal/chat` (`TestHandleSummarize_*`,
-surface tests), and the root `main_summary_e2e_test.go` suites through the
+surface tests), and the `e2e/summary_e2e_test.go` suites through the
 mock vendor (`-cm test`).
 
 ## Out of scope

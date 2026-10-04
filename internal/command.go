@@ -2,7 +2,7 @@
 // bridge between go_away_boilerplate/pkg/cmd dispatch and clai's
 // per-command flag groups. It sits at the internal root because every
 // subpackage depends on it: domain packages (text, chat, photo, ...)
-// define their commands with it, and the composition root (main.go)
+// define their commands with it, and the composition root (internal/cli)
 // injects config-prep and querier factories. It is a leaf — it must
 // never import a domain package.
 package internal

@@ -11,7 +11,7 @@ to read audio bytes from stdin.
 ## Entry Flow
 
 ```
-main.go:run()
+internal/cli:Run()
   → cmd.Run(...)                       # go_away_boilerplate/pkg/cmd dispatch
     → audio → transcribe subcommand (Subcommander tree, internal/audio/cmd.go)
       → setupAudioTranscribeQuerier()

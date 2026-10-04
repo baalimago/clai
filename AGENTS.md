@@ -4,7 +4,8 @@ You're working on a project called "clai".
 
 ## Always read:
 
-- ./main.go - This contains usage which gives a functional overview
+- ./internal/cli/cli.go - This contains usage which gives a functional overview
+- ./e2e - These are the end-to-end tests; they drive the CLI in-process through `cli.Run`
 - ./go.mod - This shows which libraries are used, do not add additional third party libraries
 - ./architecture - This is a directory with many files explaining the architecture of sub-features. Read the document regarding the feature you wish to know more about.
 

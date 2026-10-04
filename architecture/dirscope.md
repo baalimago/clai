@@ -387,7 +387,7 @@ read message ab12[7]
 
 ## E2E test expectations
 
-E2E tests (`main_dirscope_e2e_test.go`) use the `mock` vendor with scripted tool calls and a temporary
+E2E tests (`e2e/dirscope_e2e_test.go`) use the `mock` vendor with scripted tool calls and a temporary
 `CLAI_CONFIG_DIR`. The suite asserts:
 
 1. **Recording is unconditional** — two sequential non-reply queries in one temp directory produce a

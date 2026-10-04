@@ -68,7 +68,7 @@ func readCatalogRows(path string) (map[string]string, error) {
 		return nil, err
 	}
 	rows := make(map[string]string)
-	for _, line := range strings.Split(string(b), "\n") {
+	for line := range strings.SplitSeq(string(b), "\n") {
 		cells := strings.Split(line, "|")
 		if len(cells) < 4 {
 			continue

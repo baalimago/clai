@@ -19,7 +19,7 @@ import (
 // content without touching the mode configs (replay, dir-replay, the
 // read-only chat subcommands) call internal.PrepTheme directly instead;
 // completion, __complete, confdir and version stay fully side-effect-free.
-// main.go injects it into the commands that need it; the setup command
+// internal/cli injects it into the commands that need it; the setup command
 // calls it directly.
 func ConfigRunPrep(deferAnnouncements bool) (string, []string, error) {
 	claiConfDir, err := internal.PrepTheme()
@@ -32,7 +32,7 @@ func ConfigRunPrep(deferAnnouncements bool) (string, []string, error) {
 }
 
 // LoadPhotoConfig loads the photo configuration with the old-config
-// migration applied; injected into the photo command by main.go.
+// migration applied; injected into the photo command by internal/cli.
 func LoadPhotoConfig(confDir string) (photo.Configurations, error) {
 	return utils.LoadConfigFromFile(confDir, "photoConfig.json", migrateOldPhotoConfig, &photo.DEFAULT)
 }

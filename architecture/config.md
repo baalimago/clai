@@ -20,11 +20,11 @@ A clai install uses two primary directories:
   <os.UserCacheDir()>/ .clai
   ```
 
-On startup, `main.run()` ensures the config dir exists:
+On startup, `internal/cli.Run()` ensures the config dir exists:
 
 - `utils.CreateConfigDir(configDirPath)`
 
-The config dir is also printed in the bare-`clai` usage (see `main.go` usage template).
+The config dir is also printed in the bare-`clai` usage (see the usage template in `internal/cli`).
 
 ## Config file types
 

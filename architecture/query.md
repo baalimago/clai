@@ -7,7 +7,7 @@ The **query** command is the primary way to send a one-shot text prompt to an LL
 ## Entry Flow
 
 ```
-main.go:run()
+internal/cli:Run()
   → cmd.Run(...)                       # go_away_boilerplate/pkg/cmd dispatch
     → query command Setup (internal/text/cmd.go)
       → resolves the query flag groups into Configurations

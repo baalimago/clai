@@ -248,7 +248,7 @@ In `internal/chat/handler.go:cont`:
 
 ### `chat summarize` (label existing conversations)
 
-`clai chat summarize <window>` (alias `clai c s`) generates a title and summary for every native conversation updated inside the window that has none yet (`-force` regenerates), after a confirmation naming the count and a token estimate (`-y` skips it; required with `-n`). It is the only chat subcommand that talks to a model: the summarizer is a lazy constructor injected from `main.go` and invoked by this verb alone. Workers write conversation files through `SaveWithoutIndex`; the coordinator rewrites the index once. Details in `architecture/summaries.md`.
+`clai chat summarize <window>` (alias `clai c s`) generates a title and summary for every native conversation updated inside the window that has none yet (`-force` regenerates), after a confirmation naming the count and a token estimate (`-y` skips it; required with `-n`). It is the only chat subcommand that talks to a model: the summarizer is a lazy constructor injected from `internal/cli` and invoked by this verb alone. Workers write conversation files through `SaveWithoutIndex`; the coordinator rewrites the index once. Details in `architecture/summaries.md`.
 
 ### `chat list` / inspect / edit / delete
 

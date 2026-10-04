@@ -34,7 +34,7 @@ The flagset's own output is silenced upstream (`parseFlagset` →
 
 | File | Purpose |
 |------|---------|
-| `main.go` | `usageTemplate` + dir interpolation in `run()` |
+| `internal/cli` | `usageTemplate` + dir interpolation in `Run()` |
 | `internal/<domain>/cmd.go` | per-command help strings with Examples; `internal.Command.Help()` appends the flag list |
 | `go_away_boilerplate/pkg/cmd` | `-h` routing, sub-table composition, sorted command table |
 

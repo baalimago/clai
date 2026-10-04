@@ -7,7 +7,7 @@ The **video** command generates videos using AI models (currently OpenAI Sora) f
 ## Entry Flow
 
 ```
-main.go:run()
+internal/cli:Run()
   → cmd.Run(...)                       # go_away_boilerplate/pkg/cmd dispatch
     → video command Setup (internal/video/cmd.go)
     → LoadConfigFromFile("videoConfig.json")

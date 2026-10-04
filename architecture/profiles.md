@@ -9,7 +9,7 @@ Profiles themselves are used primarily via the `-p/-profile` and `-prp/-profile-
 ## Entry Flow
 
 ```text
-main.go:run()
+internal/cli:Run()
   → cmd.Run(...)                  # go_away_boilerplate/pkg/cmd dispatch
     → profiles command Run (internal/profiles/cmd.go)
       → profiles.List()

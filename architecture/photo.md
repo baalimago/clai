@@ -7,7 +7,7 @@ The **photo** command generates images using AI models (DALL-E, Gemini image gen
 ## Entry Flow
 
 ```
-main.go:run()
+internal/cli:Run()
   → cmd.Run(...)                      # go_away_boilerplate/pkg/cmd dispatch
     → photo command Setup (internal/photo/cmd.go)
     → LoadConfigFromFile("photoConfig.json")

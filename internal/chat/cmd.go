@@ -18,7 +18,7 @@ import (
 
 // CommandDeps are the composition-root collaborators the chat command
 // needs: config prep lives in internal/setup, which chat cannot import
-// (setup imports the domain packages), so main.go injects it.
+// (setup imports the domain packages), so internal/cli injects it.
 type CommandDeps struct {
 	ConfigPrep func() (confDir string, err error)
 	// NewSummarizer and ParseSince serve chat summarize only; the chat tree

@@ -1,13 +1,20 @@
 # Version Command Architecture
 
-Command: `clai version`
+Command: `clai version`. Special flag: `clai --version`.
 
 The **version** command prints build/version information and exits. It lives in `internal/version/cmd.go`.
+
+`clai --version` (also the single-dash `-version`, which Go flag syntax
+treats alike) is a special first-argument flag. `internal/cli.Run` rewrites
+it to the `version` command before dispatch, so both spellings take one path
+and print identical output. The flag is recognized only as the first
+argument; `clai q --version` stays an undefined query flag.
 
 ## Entry Flow
 
 ```text
-main.go:run()
+internal/cli:Run()
+  → versionFlagAsCommand(args)       # "--version" → "version"
   → cmd.Run(...)                     # go_away_boilerplate/pkg/cmd dispatch
     → version command Run (internal/version/cmd.go)
       → printVersion()

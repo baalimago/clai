@@ -19,7 +19,7 @@ On startup, clai ensures a theme file exists and loads it.
 
 - Path: `<clai-config-dir>/theme.json`
 - Loader: `internal/utils.LoadTheme(configDir)`
-- Startup hook: `internal.PrepTheme` calls `utils.LoadTheme(claiConfDir)` early. Config-touching commands reach it through `setup.ConfigRunPrep` (injected from `main.go`); `replay`, `dir-replay` and the read-only chat subs call it directly, since they render themed output without migrating configs.
+- Startup hook: `internal.PrepTheme` calls `utils.LoadTheme(claiConfDir)` early. Config-touching commands reach it through `setup.ConfigRunPrep` (injected from `internal/cli`); `replay`, `dir-replay` and the read-only chat subs call it directly, since they render themed output without migrating configs.
 
 The file is automatically created with defaults if missing.
 
@@ -85,7 +85,7 @@ Missing keys in an existing `theme.json` are filled from the defaults when the f
 
 ## Disabling colour: `NO_COLOR`
 
-clai follows the common `NO_COLOR` convention (see also `main.go` usage text).
+clai follows the common `NO_COLOR` convention (see also the `usageTemplate` in `internal/cli`).
 
 - Implementation: `internal/utils.NoColor()` (truthy check of `NO_COLOR`).
 - All theme colour application should go through `internal/utils.Colorize(color, s)`.
@@ -136,7 +136,7 @@ All colouring is applied via `utils.Colorize(...)`, so it automatically respects
 After a successful task/query completes, clai may emit terminal BEL depending on `theme.notificationBell`.
 
 Implementation:
-- `main.go:triggerCompletionNotification()`
+- `internal/command.go:triggerCompletionNotification()`
 - `internal/utils.NotificationBellEnabled()`
 
 Raw `chat dir` and `chat dirv2` output does not include BEL. Redirected model

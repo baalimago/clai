@@ -9,7 +9,7 @@ The **tools** command is an *inspection/UI* command. It does **not** enable tool
 ## Entry Flow
 
 ```text
-main.go:run()
+internal/cli:Run()
   → cmd.Run(...)                  # go_away_boilerplate/pkg/cmd dispatch
     → tools command Run (internal/tools/cmd.go)
       → tools.Init()

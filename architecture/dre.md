@@ -11,7 +11,7 @@ This is the directory-scoped analog of `clai replay` / `clai re`.
 ## Entry Flow
 
 ```text
-main.go:run()
+internal/cli:Run()
   → cmd.Run(...)                  # go_away_boilerplate/pkg/cmd dispatch
     → dir-replay command Setup → dreQuerier (internal/chat/cmd.go)
     → adapter Run → dreQuerier.Query(ctx)
