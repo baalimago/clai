@@ -137,10 +137,21 @@ constructors substitute a zero-valued `APIError` for nil input).
 | `ErrContextLengthExceeded` | `ContextLengthExceededError` | `NewContextLengthExceeded(api)` | — |
 | `ErrContentFiltered` | `ContentFilteredError` | `NewContentFiltered(api)` | — |
 | `ErrMcpServerStartup` | `McpServerStartupError` | `NewMcpServerStartup(serverName, stage, cause)` | no `APIError`; `ServerName`, `Stage`, `Cause` |
+| `ErrMcpConnClosed` | `McpConnClosedError` | `NewMcpConnClosed(serverName)` | no `APIError`; `ServerName`. Fails every caller still waiting when a connection closes, so a pending call ends with a stated reason rather than at its own deadline |
+| `ErrMcpAuthChallenge` | `AuthChallengeError` | `NewAuthChallenge(serverName, challenge, resourceMetadata)` | no `APIError`; `ServerName`, `Challenge` (the verbatim `WWW-Authenticate` value), `ResourceMetadata`. Reports that an endpoint demands authorization. It also answers `BlockedOutsideRun() true`, which is what stops the connector memoising it as a terminal run failure, so the server can be retried once the human has authorized |
+| `ErrMcpTransport` | `McpTransportError` | `NewMcpTransport(serverName, endpoint, cause)` | no `APIError`; `ServerName`, `Endpoint`, `Cause`. The endpoint could not be reached at all |
+| `ErrMcpHttpStatus` | `McpHttpStatusError` | `NewMcpHttpStatus(serverName, statusCode, message)` | no `APIError`; `ServerName`, `StatusCode`, `Message`. A non-success, non-accepted status |
+| `ErrMcpUnsupportedContentType` | `McpUnsupportedContentTypeError` | `NewMcpUnsupportedContentType(serverName, contentType)` | no `APIError`; `ServerName`, `ContentType`. Neither JSON nor an event stream |
+| `ErrMcpRPCError` | `McpRPCError` | `NewMcpRPCError(serverName, code, message)` | no `APIError`; `ServerName`, `Code`, `Message`. A JSON-RPC error returned by the server, shared by both transports so a consumer matches one sentinel regardless of how the server was reached |
+| `ErrMcpFrameUndecodable` | `McpFrameUndecodableError` | `NewMcpFrameUndecodable(serverName, cause)` | no `APIError`; `ServerName`, `Cause`. A frame carrying no usable id cannot be attributed to one caller, so it fails every pending caller on that connection; also carries the oversized-frame case through `Cause` |
 
-`ErrTransport` and `ErrMcpServerStartup` carry no `APIError` — no provider
-response is involved — and their `Unwrap` returns a slice, so `errors.Is`
-matches the sentinel and the underlying cause alike:
+The eight MCP errors and `ErrTransport` carry no `APIError`, since no provider
+response is involved. Those that wrap a cause — `ErrTransport`,
+`ErrMcpServerStartup`, `ErrMcpFrameUndecodable` and `ErrMcpTransport` — return a
+slice from `Unwrap`, so `errors.Is` matches the sentinel and the underlying
+cause alike. `ErrMcpConnClosed`, `ErrMcpAuthChallenge`, `ErrMcpHttpStatus`,
+`ErrMcpUnsupportedContentType` and `ErrMcpRPCError` have no cause to wrap and
+return their sentinel alone:
 
 ```go
 func (e *TransportError) Unwrap() []error { return []error{ErrTransport, e.Cause} }

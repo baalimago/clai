@@ -45,9 +45,9 @@ func TestLoadEnvFile_HomeResolution(t *testing.T) {
 
 	for _, in := range []string{"~/.envfile", "$HOME/.envfile", "${HOME}/.envfile"} {
 		t.Run(in, func(t *testing.T) {
-			env, err := loadEnvFile(in)
+			env, err := LoadEnvFile(in)
 			if err != nil {
-				t.Fatalf("loadEnvFile(%q): %v", in, err)
+				t.Fatalf("LoadEnvFile(%q): %v", in, err)
 			}
 			if env["FOO"] != "bar" {
 				t.Fatalf("expected FOO=bar, got %q", env["FOO"])

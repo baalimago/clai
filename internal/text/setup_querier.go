@@ -110,6 +110,7 @@ func SetupQuerier(ctx context.Context, confDir string, tf internal.TextFlags, ar
 	// The flagset is first used to find chatModel and potentially setup a new configuration file from some default
 	tConf, err := utils.LoadConfigFromFile(confDir, "textConfig.json", MigrateOldChatConfig, &Default)
 	tConf.ConfigDir = confDir
+	tConf.TrustInput = trustInput
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to load configs: %w", err)
 	}

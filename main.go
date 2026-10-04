@@ -19,6 +19,7 @@ import (
 	"github.com/baalimago/clai/internal/summary"
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/internal/tools"
+	"github.com/baalimago/clai/internal/tools/mcp"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/internal/version"
 	"github.com/baalimago/clai/internal/video"
@@ -111,6 +112,7 @@ func commands() map[string]cmd.Command {
 		"replay|re":      chat.ReplayCommand(),
 		"dir-replay|dre": chat.DirscopeReplayCommand(),
 		"tools|t":        tools.Command(),
+		"mcp":            mcp.Command(),
 		"profiles":       profiles.Command(),
 		"confdir":        confdir.Command(),
 	}

@@ -38,6 +38,14 @@ type Agent struct {
 	usageRecorder    models.CallUsageRecorder
 	toolCallRecorder models.ToolCallRecorder
 
+	// outputIsTerminal feeds Configurations.OutputIsTerminal, which decides
+	// D22's mid-run-authorization default (worklog
+	// 2026-10-02-mcp-connection-cost, phase 6, R2-09). nil (the default)
+	// leaves it unset, which resolves to the conservative fail-fast
+	// posture: asInternalConfig hardcodes Out to io.Discard, so the
+	// querier's own terminal check can never be true for this agent.
+	outputIsTerminal *bool
+
 	// logger receives one slog record per completed message (assistant,
 	// reasoning, tool_call, tool_result, final_answer), truncated to
 	// slogRuneLimit runes. Nil (the default) disables the channel. Library
@@ -236,6 +244,18 @@ func WithResponseFormat(rf models.ResponseFormat) Option {
 	}
 }
 
+// WithOutputIsTerminal tells the agent whether a human is attending this
+// run, which decides D22's mid-run-authorization default: bounded when
+// true, fail-fast when false (worklog 2026-10-02-mcp-connection-cost,
+// phase 6, R2-09). Library mode's writer is always io.Discard, which
+// carries no terminal signal of its own, so an agent that wants anything
+// other than the conservative fail-fast default must set this explicitly.
+func WithOutputIsTerminal(interactive bool) Option {
+	return func(a *Agent) {
+		a.outputIsTerminal = &interactive
+	}
+}
+
 func (a *Agent) asInternalConfig() text.Configurations {
 	conf := text.Configurations{
 		Model:              a.model,
@@ -253,6 +273,10 @@ func (a *Agent) asInternalConfig() text.Configurations {
 		// terminal output. The slog logger (AgentSettings) is the sole
 		// embedded output channel (worklog 2026-08-15-agent-slog-output, D4).
 		Out: io.Discard,
+		// nil unless WithOutputIsTerminal was used; NewQuerier then derives
+		// the conservative fail-fast default from Out above rather than
+		// overwriting an explicit value (R2-09).
+		OutputIsTerminal: a.outputIsTerminal,
 	}
 	// Agent-only settings ride one pointer (worklog 2026-08-15-agent-slog-output, D7): the slog logger, its level,
 	// the rune cap, and both recorder hooks. NewQuerier reads the recorders

@@ -26,6 +26,11 @@ type mcpStartupWindows struct {
 	tail      map[string][]string
 	drawnRows int
 	cleared   bool
+	// reopened overrides cleared for one server at a time: a mid-run
+	// authorization wait (phase 6) reopens the window for its server even
+	// after the pre-session region has already cleared, so the prompt
+	// still renders pinned above a bounded tail exactly as during setup.
+	reopened map[string]bool
 }
 
 func newMcpStartupWindows() *mcpStartupWindows {
@@ -33,6 +38,40 @@ func newMcpStartupWindows() *mcpStartupWindows {
 		pinned: make(map[string][]string),
 		tail:   make(map[string][]string),
 	}
+}
+
+// reopen marks server as reopened: appendLine and render accept lines for it
+// even though cleared is true. A server already reopened is a no-op.
+func (w *mcpStartupWindows) reopen(server string) {
+	if w.reopened == nil {
+		w.reopened = make(map[string]bool)
+	}
+	w.reopened[server] = true
+}
+
+// isReopened reports whether server's window is open under the phase 6
+// mid-run mechanism, independent of cleared.
+func (w *mcpStartupWindows) isReopened(server string) bool {
+	return w.reopened != nil && w.reopened[server]
+}
+
+// closeReopened ends server's mid-run window: it stops accepting lines for
+// that server, drops its pinned and tail state and its order entry, and
+// redraws the shared region without it so its rows disappear in place
+// rather than lingering until the next unrelated line redraws everything.
+func (w *mcpStartupWindows) closeReopened(server string, out io.Writer, width, height int) {
+	if w.reopened != nil {
+		delete(w.reopened, server)
+	}
+	delete(w.pinned, server)
+	delete(w.tail, server)
+	for i, s := range w.order {
+		if s == server {
+			w.order = append(w.order[:i], w.order[i+1:]...)
+			break
+		}
+	}
+	w.render(out, width, height)
 }
 
 // appendLine records one line in its server's window: pinned lines survive

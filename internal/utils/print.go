@@ -809,13 +809,14 @@ var mcpLogErrorKeywords = []string{
 	"refused", "unable", "cannot", "could not", "warn", "timeout", "unreachable",
 }
 
-// mcpLogAuthKeywords marks MCP server stderr lines that ask the user to act
-// on an auth flow. Auth prompts elevate like errors: a suppressed prompt
-// leaves the server waiting on an auth flow the user never sees. The set is
-// deliberately imperative ("please authorize", "not logged in") so OAuth
-// machinery status chatter ("Discovering OAuth server configuration",
-// "Initializing auth coordination") stays quiet.
-var mcpLogAuthKeywords = []string{
+// mcpLogAuthChallengeKeywords are the high-confidence subset of
+// mcpLogAuthKeywords: imperative prompts and named credential failures that
+// are not substrings of unrelated text. A bare "401"/"403" is deliberately
+// excluded here (mcpLogAuthKeywords only): those numeric fragments collide
+// with ordinary text (a port number, a line count) far too easily to
+// justify reclassifying a connect failure's error type, which is the one
+// use IsMcpLogAuthChallengeLine serves.
+var mcpLogAuthChallengeKeywords = []string{
 	"please authorize", "please authenticate", "please visit",
 	"please sign in", "please log in", "please login",
 	"to authenticate", "to authorize",
@@ -826,8 +827,19 @@ var mcpLogAuthKeywords = []string{
 	"token expired", "token has expired",
 	"enter the code", "enter code", "one-time code",
 	"device code", "verification code",
-	"401", "403", "unauthorized", "forbidden",
+	"unauthorized", "forbidden",
 }
+
+// mcpLogAuthKeywords marks MCP server stderr lines that ask the user to act
+// on an auth flow. Auth prompts elevate like errors: a suppressed prompt
+// leaves the server waiting on an auth flow the user never sees. The set is
+// deliberately imperative ("please authorize", "not logged in") so OAuth
+// machinery status chatter ("Discovering OAuth server configuration",
+// "Initializing auth coordination") stays quiet. It is broader than
+// mcpLogAuthChallengeKeywords (it also matches bare "401"/"403"), which is
+// fine for deciding whether to render a pre-emptive prompt window, but too
+// loose for reclassifying a connect failure's error type (R1-01).
+var mcpLogAuthKeywords = append(append([]string{}, mcpLogAuthChallengeKeywords...), "401", "403")
 
 // mcpLogAuthURLMarkers are URL path fragments that mark a line carrying an
 // auth flow URL the user must visit. Matched only on lines containing "://",
@@ -849,6 +861,18 @@ func IsMcpLogErrorLine(line string) bool {
 // path looks like an auth endpoint.
 func IsMcpLogAuthLine(line string) bool {
 	if matchesAnyKeyword(line, mcpLogAuthKeywords) {
+		return true
+	}
+	return strings.Contains(line, "://") && matchesAnyKeyword(line, mcpLogAuthURLMarkers)
+}
+
+// IsMcpLogAuthChallengeLine reports whether a line is a high-confidence
+// authorization prompt, fit for reclassifying a connect failure's error
+// type rather than only for opening a pre-emptive prompt window. See
+// IsMcpLogAuthLine's doc comment for why a bare "401"/"403" is not enough
+// here (R1-01).
+func IsMcpLogAuthChallengeLine(line string) bool {
+	if matchesAnyKeyword(line, mcpLogAuthChallengeKeywords) {
 		return true
 	}
 	return strings.Contains(line, "://") && matchesAnyKeyword(line, mcpLogAuthURLMarkers)

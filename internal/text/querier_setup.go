@@ -242,6 +242,14 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	} else {
 		querier.mcpSink = newMcpLogSink(mcpMode)
 	}
+	if userConf.OutputIsTerminal == nil {
+		// Only when unset (R2-09): a caller that already set this
+		// explicitly (pkg/agent.WithOutputIsTerminal) must not have its
+		// value clobbered by the querier's own writer-derived check, which
+		// is always false for a library consumer's io.Discard writer.
+		terminal := querier.outputIsTerminal
+		userConf.OutputIsTerminal = &terminal
+	}
 	if err := setupTooling(ctx, modelConf, &userConf, querier.mcpSink); err != nil {
 		return Querier[C]{}, err
 	}
