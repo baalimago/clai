@@ -3,6 +3,8 @@ package internal
 import (
 	"flag"
 	"strconv"
+
+	"github.com/baalimago/clai/internal/quantity"
 )
 
 // StringFlag, BoolFlag and IntFlag are alias-aware flag values: one value
@@ -78,6 +80,9 @@ func (f *BoolFlag) Value() bool    { return f.val }
 func (f *BoolFlag) Explicit() bool { return f.set }
 func (f *BoolFlag) Changed() bool  { return f.val != f.def }
 
+// IntFlag is an alias-aware int value. The value may be written with a scale
+// ("300k", "1.5M", "2Mi", "3e5"); the notation is documented by
+// intFlagScaleHint and parsed by internal/quantity.
 type IntFlag struct {
 	val int
 	def int
@@ -92,18 +97,22 @@ func NewIntFlag(def int) IntFlag {
 func (f *IntFlag) String() string { return strconv.Itoa(f.val) }
 
 func (f *IntFlag) Set(v string) error {
-	parsed, err := strconv.Atoi(v)
+	parsed, err := quantity.Parse(v)
 	if err != nil {
 		return err
 	}
-	f.val = parsed
+	f.val = parsed.Int()
 	f.set = true
 	return nil
 }
 
+// intFlagScaleHint is appended to every int flag description, so the accepted
+// notation is documented wherever an int flag is offered.
+const intFlagScaleHint = " Accepts scaled values: 300k, 1.5M, 3e5 (Ki/Mi/Gi/Ti are 1024-based)."
+
 func (f *IntFlag) Register(fs *flag.FlagSet, desc string, names ...string) {
 	for _, name := range names {
-		fs.Var(f, name, desc)
+		fs.Var(f, name, desc+intFlagScaleHint)
 	}
 }
 

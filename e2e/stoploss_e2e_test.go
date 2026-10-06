@@ -126,6 +126,38 @@ func Test_e2e_stoploss_handover_injection_and_summary(t *testing.T) {
 	assertValidToolExchangesE2E(t, chat.Messages)
 }
 
+// Test_e2e_stoploss_flag_accepts_scaled_tokens proves the scaled int syntax
+// through the real CLI: -mt=1k is 1000, so the file limit of 5 it overrides
+// never crosses on a usage of 6 and the run takes the ordinary path.
+func Test_e2e_stoploss_flag_accepts_scaled_tokens(t *testing.T) {
+	confDir := setupMainTestConfigDir(t)
+	writeStoplossTextConfig(t, confDir, map[string]any{
+		"stoploss": map[string]any{
+			"max-tokens":                       5,
+			"max-tokens-handover-instructions": "wrap up now",
+		},
+	})
+
+	status, stdout, stderr := runStoplossE2E(t, "-r", "-cm", "test", "-mt=1k", "q", "run", "tool_ls")
+	if status != 0 {
+		t.Fatalf("expected exit 0, got %d stdout=%q stderr=%q", status, stdout, stderr)
+	}
+	if strings.Contains(stdout+stderr, "stoploss: context usage") {
+		t.Fatalf("1k must not cross on a usage of 6, got %q", stdout+stderr)
+	}
+
+	chat := loadSavedStoplossChat(t, confDir)
+	if idx := indexOfMessage(chat.Messages, func(m pub_models.Message) bool {
+		return m.Role == "user" && m.Content == "wrap up now"
+	}); idx != -1 {
+		t.Fatalf("expected no handover message under the scaled limit, transcript: %+v", chat.Messages)
+	}
+	last := chat.Messages[len(chat.Messages)-1]
+	if last.Role != "assistant" || last.Content != "done after tool for: run tool_ls" {
+		t.Fatalf("expected the ordinary final reply, got %+v", last)
+	}
+}
+
 // Test_e2e_stoploss_post_handover_tools_execute_by_default proves the new
 // default through the real CLI: the handover message contains real tool
 // tokens and every post-handover tool call EXECUTES with visible output — the

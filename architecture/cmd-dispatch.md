@@ -77,7 +77,7 @@ subpackage depends on — organizational machinery only: the
   engine reads them off the deepest resolved command, so a sub owning value
   flags carries the hooks too.
 
-Package `internal` imports only `utils`, `models` and upstream
+Package `internal` imports only `utils`, `models`, `quantity` and upstream
 `pkg/cmd`; it must never import a domain package.
 
 ## Flag scoping
@@ -88,6 +88,11 @@ long alias register against the same value ("last one parsed wins", no
 mutual-exclusion machinery), each value carries its own default, and
 `Explicit()`/`Changed()` drive the override cascades — `Changed()`
 preserves the historic flag-equal-to-its-default-is-ignored semantics.
+Every `IntFlag` also accepts a scaled spelling: SI prefixes (`300k`,
+`1.5M`), IEC binary prefixes (`2Mi`) and scientific exponents (`3e5`) are
+parsed exactly into an `int` by `internal/quantity` (no float rounding),
+and `IntFlag.Register` appends the notation to each description, so the
+help text teaches it.
 Cross-command groups (`RawFlag`, `ReplyStdinFlags`, `NonInteractiveFlag`,
 `AgentTextFlags`, `QueryTextFlags`, composed as `TextFlags` for
 `text.SetupQuerier`) live in package `internal`. Photo and video share the
@@ -232,6 +237,7 @@ Data loads lazily inside the hook call (memoized per process);
 | `internal/cli/cli.go` | `Deps`, `Commands()` and `Run()`/`RunProfiled()` — the composition root wiring deps into each domain package's `Command()` |
 | `main.go` | the process entry: `cli.RunProfiled(os.Args[1:], cli.DefaultDeps())` |
 | `internal/` (root package) | `internal.Command` adapter, flag primitives + shared groups, `PrepTheme`, completion data loaders + hooks |
+| `internal/quantity/` | scaled int parsing (`300k`, `1.5M`, `2Mi`, `3e5`) shared by every `IntFlag`; imports nothing |
 | `internal/<domain>/cmd.go` | each command's definition (help text, flag groups, setup/run) |
 | `internal/text/setup_querier.go` | `text.SetupQuerier`: config load, cascades, glob/tool/skill/lookback setup |
 | `internal/setup/config_lifecycle.go` | `setup.ConfigRunPrep`, united config migration |

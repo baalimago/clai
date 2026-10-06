@@ -56,6 +56,12 @@ func Test_ApplyFlagOverrides_Stoploss(t *testing.T) {
 			want:  Configurations{Stoploss: &Stoploss{MaxTokens: 5000}},
 		},
 		{
+			desc:  "max-tokens flag accepts a scaled value",
+			given: Configurations{},
+			mods:  func(tf *internal.TextFlags) { mustSet(t, &tf.AgentText.MaxTokens, "300k") },
+			want:  Configurations{Stoploss: &Stoploss{MaxTokens: 300000}},
+		},
+		{
 			desc: "max-tokens flag overrides file limit and keeps the configured message",
 			given: Configurations{
 				Stoploss: &Stoploss{MaxTokens: 100, MaxTokensHandoverMsg: "wrap up"},

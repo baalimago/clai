@@ -86,6 +86,62 @@ func Test_aliasValues(t *testing.T) {
 	})
 }
 
+// Test_intFlagScales pins that every int flag accepts a scaled spelling
+// through the flag parser and that the notation reaches the flag help.
+func Test_intFlagScales(t *testing.T) {
+	t.Run("scaled values parse to their exact int", func(t *testing.T) {
+		testCases := []struct {
+			in   string
+			want int
+		}{
+			{"300000", 300000},
+			{"300k", 300000},
+			{"300K", 300000},
+			{"1.5M", 1500000},
+			{"2Mi", 2097152},
+			{"3e5", 300000},
+			{"-1k", -1000},
+			{"0", 0},
+		}
+		for _, tc := range testCases {
+			g, _ := parseAgentText(t, "-mt", tc.in)
+			if g.MaxTokens.Value() != tc.want || !g.MaxTokens.Explicit() {
+				t.Fatalf("-mt %q: got val=%d explicit=%v, want %d/set", tc.in, g.MaxTokens.Value(), g.MaxTokens.Explicit(), tc.want)
+			}
+		}
+	})
+	t.Run("unknown suffix teaches the notation", func(t *testing.T) {
+		fs := flag.NewFlagSet("test", flag.ContinueOnError)
+		fs.SetOutput(io.Discard)
+		g := &AgentTextFlags{}
+		g.Register(fs)
+		err := fs.Parse([]string{"-mt=500m"})
+		if err == nil {
+			t.Fatal("expected an error for the milli suffix")
+		}
+		for _, want := range []string{"invalid value", `"500m"`, "k, M, G, T", "3e5"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Fatalf("error %q must contain %q", err, want)
+			}
+		}
+	})
+	t.Run("help documents the notation on every int flag", func(t *testing.T) {
+		fs := flag.NewFlagSet("test", flag.ContinueOnError)
+		fs.SetOutput(io.Discard)
+		g := &AgentTextFlags{}
+		g.Register(fs)
+		for _, name := range []string{"mt", "max-tokens", "mtc", "max-tool-calls", "max-tool-calls-after-handover"} {
+			f := fs.Lookup(name)
+			if f == nil {
+				t.Fatalf("flag %q not registered", name)
+			}
+			if !strings.Contains(f.Usage, "300k") {
+				t.Fatalf("flag %q usage %q must document the scaled syntax", name, f.Usage)
+			}
+		}
+	})
+}
+
 // Test_changedSemantics pins the override-cascade contract: a flag equal
 // to its default reads as unchanged (so config files win), preserving the
 // historical defaults-comparison behavior, while Explicit still records
