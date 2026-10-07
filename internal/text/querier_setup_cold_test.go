@@ -132,6 +132,43 @@ func mockChatWithUsage() pub_models.Chat {
 	}
 }
 
+func TestCostReadinessWaitsForDiagnosticDelivery(t *testing.T) {
+	t.Setenv("OPENROUTER_API_KEY", "")
+	t.Setenv("CLAI_DISABLE_COST_ERR_LOG_GOROUTINE", "")
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "mock_test_test.json"), []byte(`{}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+	finish := func() { once.Do(func() { close(release) }) }
+	t.Cleanup(finish)
+	q, err := NewQuerier(t.Context(), Configurations{
+		Model: "test", ConfigDir: dir, Out: io.Discard, SkipAmbientMcpServers: true,
+		CostWarnf: func(string, ...any) { close(entered); <-release },
+	}, &vendors.Mock{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("cost diagnostic was dropped")
+	}
+	select {
+	case <-q.costEnricher.ready:
+		t.Fatal("cost readiness closed while diagnostics were still in flight")
+	default:
+	}
+	finish()
+	select {
+	case <-q.costEnricher.ready:
+	case <-time.After(time.Second):
+		t.Fatal("cost readiness did not close after diagnostic delivery")
+	}
+}
+
 // TestNewQuerier_costManagerErrorUsesCostWarnf pins that the cost manager's
 // asynchronous error log also goes through CostWarnf, so a discarded-output
 // querier never interleaves a warning into the host's stdout (R2-03).
@@ -148,10 +185,6 @@ func TestNewQuerier_costManagerErrorUsesCostWarnf(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 	got := make(chan string, 4)
-	// The manager's error send is non-blocking, so the message is dropped
-	// when the log goroutine is not yet waiting; the contract under test is
-	// that whatever arrives goes through CostWarnf and nothing reaches
-	// stdout.
 	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
 		if _, err := NewQuerier(t.Context(), Configurations{
 			Model: "test", ConfigDir: confDir, SkipAmbientMcpServers: true, Raw: true, Out: &strings.Builder{},
@@ -164,7 +197,8 @@ func TestNewQuerier_costManagerErrorUsesCostWarnf(t *testing.T) {
 			if !strings.Contains(msg, "cost manager error") || !strings.Contains(msg, "missing model catalog fetcher") {
 				t.Fatalf("CostWarnf got %q, want the manager's fetcher error", msg)
 			}
-		case <-time.After(200 * time.Millisecond):
+		case <-time.After(time.Second):
+			t.Fatal("cost manager error never reached CostWarnf")
 		}
 	})
 	if stdout != "" {

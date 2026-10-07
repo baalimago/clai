@@ -176,7 +176,7 @@ func (m *Manager) resolveModelPrice(ctx context.Context) (ModelPriceScheme, erro
 }
 
 func (m *Manager) Start(ctx context.Context) (<-chan struct{}, <-chan error) {
-	errCh := make(chan error)
+	errCh := make(chan error, 1)
 	readyCh := make(chan struct{})
 	go func() {
 		defer close(errCh)
@@ -187,10 +187,7 @@ func (m *Manager) Start(ctx context.Context) (<-chan struct{}, <-chan error) {
 		}
 		price, err := m.resolveModelPrice(ctx)
 		if err != nil {
-			select {
-			case errCh <- err:
-			default:
-			}
+			errCh <- err
 			return
 		}
 		m.price = &price

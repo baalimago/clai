@@ -326,28 +326,21 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 		return modelVersion
 	})
 	rdyChan, errChan := costManager.Start(ctx)
-	querier.costEnricher = newCostEnricher(costManager, rdyChan)
+	costDone := make(chan struct{})
+	querier.costEnricher = newCostEnricher(costManager, costDone)
 	if userConf.CostWarnf != nil {
 		querier.costEnricher.warnf = costWarnf
 	}
-	// IMPORTANT: avoid spawning a goroutine that writes to stdout/stderr in tests.
-	// Some tests capture stdout by swapping the global os.Stdout which will race
-	// with concurrent writers under -race.
-	if !misc.Truthy(os.Getenv("CLAI_DISABLE_COST_ERR_LOG_GOROUTINE")) {
-		go func() {
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case err, open := <-errChan:
-					if !open {
-						return
-					}
-					costWarnf("cost manager error: %v", err)
-				}
+	logCostErrors := !misc.Truthy(os.Getenv("CLAI_DISABLE_COST_ERR_LOG_GOROUTINE"))
+	go func() {
+		defer close(costDone)
+		for err := range errChan {
+			if logCostErrors && ctx.Err() == nil {
+				costWarnf("cost manager error: %v", err)
 			}
-		}()
-	}
+		}
+		<-rdyChan
+	}()
 
 	return querier, nil
 }

@@ -12,7 +12,6 @@ import (
 
 	"github.com/baalimago/clai/internal/models"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
-	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
 func Test_StreamCompletions(t *testing.T) {
@@ -266,12 +265,14 @@ OUTER:
 
 func Test_context(t *testing.T) {
 	testDone := make(chan struct{})
+	requestReceived := make(chan struct{})
 	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(requestReceived)
 		<-testDone
 	}))
 	t.Cleanup(func() {
-		testServer.Close()
 		close(testDone)
+		testServer.Close()
 	})
 
 	// Use the test server's URL as the backend URL in your code
@@ -283,13 +284,33 @@ func Test_context(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	testboil.ReturnsOnContextCancel(t, func(ctx context.Context) {
-		c.StreamCompletions(ctx, pub_models.Chat{
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	streamDone := make(chan error, 1)
+	timeout := time.After(time.Second)
+	go func() {
+		_, err := c.StreamCompletions(ctx, pub_models.Chat{
 			ID: "test",
 			Messages: []pub_models.Message{
 				{Role: "system", Content: "test"},
 				{Role: "user", Content: "test"},
 			},
 		})
-	}, time.Second)
+		streamDone <- err
+	}()
+	select {
+	case <-requestReceived:
+	case <-timeout:
+		t.Fatal("request did not reach handler")
+	}
+	cancel()
+	select {
+	case err := <-streamDone:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected context cancellation, got: %v", err)
+		}
+	case <-timeout:
+		t.Fatal("stream did not return after context cancellation")
+	}
 }

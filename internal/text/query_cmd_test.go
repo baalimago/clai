@@ -16,6 +16,7 @@ import (
 func Test_QueryCommand(t *testing.T) {
 	t.Run("wires prep and the real querier path with the mock vendor", func(t *testing.T) {
 		confDir := t.TempDir()
+		writeMockPriceFile(t, confDir)
 		t.Setenv("CLAI_CONFIG_DIR", confDir)
 		t.Setenv("HOME", t.TempDir())
 		deps := QueryCommandDeps{
@@ -33,7 +34,7 @@ func Test_QueryCommand(t *testing.T) {
 		if err := c.Flagset().Parse([]string{"-cm", "test", "hello", "there"}); err != nil {
 			t.Fatalf("Parse: %v", err)
 		}
-		if err := c.Setup(context.Background()); err != nil {
+		if err := c.Setup(t.Context()); err != nil {
 			t.Fatalf("Setup: %v", err)
 		}
 	})

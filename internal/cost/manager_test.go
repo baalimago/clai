@@ -5,11 +5,26 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
+
+func TestManagerStartRetainsErrorUntilReceiverIsReady(t *testing.T) {
+	manager := Manager{configFilePath: filepath.Join(t.TempDir(), "missing.json")}
+	ready, errs := manager.Start(t.Context())
+	select {
+	case <-ready:
+	case <-time.After(time.Second):
+		t.Fatal("cost worker did not finish without an error receiver")
+	}
+	err, open := <-errs
+	if !open || err == nil || !strings.Contains(err.Error(), "failed to find latest usable") {
+		t.Fatalf("error channel lost the result: open=%t err=%v", open, err)
+	}
+}
 
 func TestManagerSeekCached(t *testing.T) {
 	t.Run("returns cached price", func(t *testing.T) {
