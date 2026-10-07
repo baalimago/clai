@@ -47,7 +47,7 @@ func LoadGlobalScope(confDir string) (pub_models.Chat, error) {
 		if err := os.MkdirAll(convDir, 0o755); err != nil {
 			return pub_models.Chat{}, fmt.Errorf("ensure conversations dir: %w", err)
 		}
-		if err := os.WriteFile(newPath, b, 0o644); err != nil {
+		if err := utils.WriteFileAtomic(newPath, b, 0o644); err != nil {
 			return pub_models.Chat{}, fmt.Errorf("write migrated global chat %q: %w", newPath, err)
 		}
 		if err := os.Remove(oldPath); err != nil {

@@ -146,7 +146,7 @@ func createDefaultShellContextFile(configPath, name string, def shellContextDefa
 		return fmt.Errorf("marshal shell context file %q: %w", shellContextPath, err)
 	}
 	b = append(b, byte('\n'))
-	if err := os.WriteFile(shellContextPath, b, 0o644); err != nil {
+	if err := WriteFileAtomic(shellContextPath, b, 0o644); err != nil {
 		return fmt.Errorf("write shell context file %q: %w", shellContextPath, err)
 	}
 	return nil

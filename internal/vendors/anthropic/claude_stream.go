@@ -288,10 +288,12 @@ func (c *Claude) constructRequest(ctx context.Context, chat pub_models.Chat) (*h
 		MaxTokens:     c.MaxTokens,
 		Stream:        true,
 		System:        sysMsg.Content,
-		Temperature:   c.Temperature,
 		TopP:          c.TopP,
 		TopK:          c.TopK,
 		StopSequences: c.StopSequences,
+	}
+	if !c.omitsTemperature() {
+		reqData.Temperature = c.Temperature
 	}
 	if len(c.tools) > 0 {
 		reqData.Tools = c.tools

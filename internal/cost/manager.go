@@ -223,7 +223,7 @@ func (m *Manager) Enrich(chat pub_models.Chat) (pub_models.Chat, error) {
 		if m.warnf != nil {
 			m.warnf("failed to find user role: %v", err)
 		} else {
-			ancli.Warnf("failed to find user role: %v", err)
+			ancli.Errf("failed to find user role: %v", err)
 		}
 		idx = -1
 	}

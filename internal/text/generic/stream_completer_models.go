@@ -129,18 +129,18 @@ type JSONSchemaSpec struct {
 }
 
 type req struct {
-	Model             string               `json:"model,omitempty"`
-	ResponseFormat    ResponseFormat       `json:"response_format"`
-	Messages          []pub_models.Message `json:"messages,omitempty"`
-	Stream            bool                 `json:"stream,omitempty"`
-	StreamOptions     map[string]any       `json:"stream_options"`
-	FrequencyPenalty  *float64             `json:"frequency_penalty,omitempty"`
-	MaxTokens         *int                 `json:"max_tokens,omitempty"`
-	PresencePenalty   *float64             `json:"presence_penalty,omitempty"`
-	Temperature       *float64             `json:"temperature,omitempty"`
-	TopP              *float64             `json:"top_p,omitempty"`
-	ReasoningEffort   string               `json:"reasoning_effort,omitempty"`
-	ToolChoice        *string              `json:"tool_choice,omitempty"`
-	Tools             []ToolSuper          `json:"tools,omitempty"`
-	ParalellToolCalls bool                 `json:"parallel_tools_call,omitempty"`
+	Model             string         `json:"model,omitempty"`
+	ResponseFormat    ResponseFormat `json:"response_format"`
+	Messages          []wireMessage  `json:"messages,omitempty"`
+	Stream            bool           `json:"stream,omitempty"`
+	StreamOptions     map[string]any `json:"stream_options"`
+	FrequencyPenalty  *float64       `json:"frequency_penalty,omitempty"`
+	MaxTokens         *int           `json:"max_tokens,omitempty"`
+	PresencePenalty   *float64       `json:"presence_penalty,omitempty"`
+	Temperature       *float64       `json:"temperature,omitempty"`
+	TopP              *float64       `json:"top_p,omitempty"`
+	ReasoningEffort   string         `json:"reasoning_effort,omitempty"`
+	ToolChoice        *string        `json:"tool_choice,omitempty"`
+	Tools             []ToolSuper    `json:"tools,omitempty"`
+	ParalellToolCalls bool           `json:"parallel_tools_call,omitempty"`
 }

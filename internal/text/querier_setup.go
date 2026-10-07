@@ -294,7 +294,7 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 		}
 	}
 
-	costWarnf := ancli.Warnf
+	costWarnf := ancli.Errf
 	if userConf.CostWarnf != nil {
 		costWarnf = userConf.CostWarnf
 	}

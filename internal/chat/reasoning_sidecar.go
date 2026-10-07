@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -56,7 +57,7 @@ func saveReasoningSidecars(convDir string, chat pub_models.Chat) error {
 		}
 		b = append(b, '\n')
 		f := reasoningFileFromConvDir(convDir, chat.ID, key)
-		if err := os.WriteFile(f, b, 0o644); err != nil {
+		if err := utils.WriteFileAtomic(f, b, 0o644); err != nil {
 			return fmt.Errorf("write reasoning sidecar %q: %w", f, err)
 		}
 	}

@@ -10,7 +10,7 @@ import (
 )
 
 var Default = Berget{
-	Model:       "gemma-4-31B-it",
+	Model:       "google/gemma-4-31B-it",
 	Temperature: 0.7,
 	TopP:        1.0,
 	URL:         ChatURL,
