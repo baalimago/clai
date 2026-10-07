@@ -5,6 +5,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+
+	"github.com/baalimago/clai/internal/utils"
 )
 
 type rawConfig struct {
@@ -65,7 +67,7 @@ func writeJSONFile(path string, value any) error {
 		return err
 	}
 	b = append(b, '\n')
-	return os.WriteFile(path, b, 0o644)
+	return utils.WriteFileAtomic(path, b, 0o644)
 }
 
 func readJSON(path string, dst any) error {

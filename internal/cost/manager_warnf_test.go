@@ -78,15 +78,18 @@ func TestManager_SetWarnf(t *testing.T) {
 			t.Fatalf("seam got %q, want the store error", got)
 		}
 	})
-	t.Run("user-role warning without the seam is a warning on stdout", func(t *testing.T) {
+	t.Run("user-role warning without the seam is a diagnostic on stderr", func(t *testing.T) {
 		mgr := Manager{model: "m", price: &price}
 		var err error
 		stdout, stderr := captureStreams(t, func() { _, err = mgr.Enrich(noUserRoleChat()) })
 		if err != nil {
 			t.Fatalf("Enrich: %v", err)
 		}
-		if stderr != "" || !strings.Contains(stdout, "failed to find user role") {
-			t.Fatalf("stdout = %q, stderr = %q, want the role warning on stdout only", stdout, stderr)
+		if stdout != "" {
+			t.Fatalf("stdout = %q, want empty: the payload stream must stay clean", stdout)
+		}
+		if !strings.Contains(stderr, "failed to find user role") {
+			t.Fatalf("stderr = %q, want the role diagnostic", stderr)
 		}
 	})
 	t.Run("user-role warning with the seam is silent and reaches the seam", func(t *testing.T) {

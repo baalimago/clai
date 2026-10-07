@@ -92,18 +92,24 @@ func TestNewCostEnricher_defaultWarnf(t *testing.T) {
 		}
 		return q
 	}
-	// ancli.Warnf prints warnings on stdout (PrintWarn), so the default is
-	// observed there.
-	t.Run("nil keeps the default and warns through ancli", func(t *testing.T) {
+	// Cost diagnostics are stderr-only: the answer travels on stdout, so a price
+	// miss must never enter the payload stream.
+	t.Run("nil keeps the default and warns on stderr", func(t *testing.T) {
 		q := build(t, nil)
 		if q.costEnricher.warnf == nil {
-			t.Fatal("warnf must default to ancli.Warnf")
+			t.Fatal("warnf must default to ancli.Errf")
 		}
+		var stderr string
 		stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-			q.costEnricher.enrich(mockChatWithUsage())
+			stderr = testboil.CaptureStderr(t, func(t *testing.T) {
+				q.costEnricher.enrich(mockChatWithUsage())
+			})
 		})
-		if !strings.Contains(stdout, "failed to enrich chat with cost estimate") {
-			t.Fatalf("stdout = %q, want the enrich warning", stdout)
+		if stdout != "" {
+			t.Fatalf("stdout = %q, want empty: the payload stream must stay clean", stdout)
+		}
+		if !strings.Contains(stderr, "failed to enrich chat with cost estimate") {
+			t.Fatalf("stderr = %q, want the enrich warning", stderr)
 		}
 	})
 	t.Run("injected func receives the warning", func(t *testing.T) {
