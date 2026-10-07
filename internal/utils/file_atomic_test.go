@@ -91,3 +91,24 @@ func TestWriteFileAtomic_errorLeavesOldFile(t *testing.T) {
 		}
 	})
 }
+
+// TestWriteFileAtomic_keepsExistingPerm mirrors os.WriteFile: the perm argument
+// applies only on create. A rewrite of an executable config keeps 0755, which the
+// setup editor relies on.
+func TestWriteFileAtomic_keepsExistingPerm(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "profile.json")
+	if err := os.WriteFile(path, []byte("{}"), 0o755); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if err := WriteFileAtomic(path, []byte(`{"a":1}`), 0o644); err != nil {
+		t.Fatalf("WriteFileAtomic: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o755 {
+		t.Errorf("perm = %o, want 0755", got)
+	}
+}

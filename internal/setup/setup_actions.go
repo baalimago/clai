@@ -362,7 +362,7 @@ func actionCopy(cfg config) (config, error) {
 		return config{}, fmt.Errorf("read source file: %w", readErr)
 	}
 
-	if writeErr := os.WriteFile(newPath, srcBytes, 0o644); writeErr != nil {
+	if writeErr := utils.WriteFileAtomic(newPath, srcBytes, 0o644); writeErr != nil {
 		return config{}, fmt.Errorf("write copy: %w", writeErr)
 	}
 
@@ -468,7 +468,7 @@ func writeConfig(filePath string, jzon map[string]any) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal new config: %w", err)
 	}
-	if err := os.WriteFile(filePath, newB, 0o644); err != nil {
+	if err := utils.WriteFileAtomic(filePath, newB, 0o644); err != nil {
 		return fmt.Errorf("failed to write config at %q: %w", filePath, err)
 	}
 	return nil

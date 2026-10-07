@@ -176,6 +176,8 @@ func (m *Manager) resolveModelPrice(ctx context.Context) (ModelPriceScheme, erro
 }
 
 func (m *Manager) Start(ctx context.Context) (<-chan struct{}, <-chan error) {
+	// Buffered, so a resolve failure is never dropped when the consumer has
+	// not yet parked on the error channel (it reads it in its own goroutine).
 	errCh := make(chan error, 1)
 	readyCh := make(chan struct{})
 	go func() {
@@ -220,7 +222,7 @@ func (m *Manager) Enrich(chat pub_models.Chat) (pub_models.Chat, error) {
 		if m.warnf != nil {
 			m.warnf("failed to find user role: %v", err)
 		} else {
-			ancli.Warnf("failed to find user role: %v", err)
+			ancli.Errf("failed to find user role: %v", err)
 		}
 		idx = -1
 	}

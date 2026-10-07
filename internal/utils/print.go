@@ -215,7 +215,15 @@ func ShortenedOutput(out string, maxShortenedNewlines int) string {
 		return fmt.Sprintf("%v\n...[and %v more %v]", firstTokensStr, amLeft, abbreviationType)
 	}
 	if amRunes > maxRunes {
-		return fmt.Sprintf("%v\n...[and %v more runes]", out[:maxRunes], amRunes-maxRunes)
+		end, runes := len(out), 0
+		for i := range out {
+			if runes == maxRunes {
+				end = i
+				break
+			}
+			runes++
+		}
+		return fmt.Sprintf("%v\n...[and %v more runes]", out[:end], amRunes-maxRunes)
 	}
 	return fmt.Sprintf("%v\n...[and %v more %v]", firstTokensStr, amLeft, abbreviationType)
 }

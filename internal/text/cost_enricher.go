@@ -24,7 +24,7 @@ func newCostEnricher(manager CostManager, ready <-chan struct{}) costEnricher {
 		manager: manager,
 		ready:   ready,
 		waitFor: 200 * time.Millisecond,
-		warnf:   ancli.Warnf,
+		warnf:   ancli.Errf,
 	}
 }
 

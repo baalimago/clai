@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/baalimago/clai/internal/debugflags"
+	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
@@ -66,7 +67,7 @@ func save(saveAt string, chat pub_models.Chat, index bool) error {
 		ancli.PrintOK(fmt.Sprintf("saving chat to: '%v'", fileName))
 	}
 	traceChatf("saving chat file path=%q chat_id=%q messages=%d", fileName, chat.ID, len(chat.Messages))
-	if err := os.WriteFile(fileName, b, 0o644); err != nil {
+	if err := utils.WriteFileAtomic(fileName, b, 0o644); err != nil {
 		return fmt.Errorf("failed to write chat file: %w", err)
 	}
 	if index {

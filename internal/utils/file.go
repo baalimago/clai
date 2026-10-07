@@ -16,17 +16,12 @@ import (
 )
 
 func CreateFile[T any](path string, toCreate *T) error {
-	file, err := os.Create(path)
-	if err != nil {
-		return fmt.Errorf("failed to create config file: %w", err)
-	}
-	defer file.Close()
 	b, err := json.MarshalIndent(toCreate, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
-	if _, err := file.Write(b); err != nil {
-		return fmt.Errorf("failed to write config: %w", err)
+	if err := WriteFileAtomic(path, b, 0o644); err != nil {
+		return fmt.Errorf("failed to create config file: %w", err)
 	}
 	return nil
 }
@@ -40,11 +35,11 @@ func SaveBase64File(prefix, dir, b64JSON, extension string) (string, error) {
 	}
 	fileName := fmt.Sprintf("%v_%v.%v", prefix, RandomPrefix(), extension)
 	outFile := fmt.Sprintf("%v/%v", dir, fileName)
-	err = os.WriteFile(outFile, data, 0o644)
+	err = WriteFileAtomic(outFile, data, 0o644)
 	if err != nil {
 		ancli.PrintWarn(fmt.Sprintf("failed to write file: '%v', attempting tmp file...\n", err))
 		outFile = fmt.Sprintf("/tmp/%v", fileName)
-		err = os.WriteFile(outFile, data, 0o644)
+		err = WriteFileAtomic(outFile, data, 0o644)
 		if err != nil {
 			return "", fmt.Errorf("failed to write file: %w", err)
 		}
@@ -57,8 +52,7 @@ func WriteFile[T any](path string, toWrite *T) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal file: %w", err)
 	}
-	err = os.WriteFile(path, fileBytes, 0o644)
-	if err != nil {
+	if err := WriteFileAtomic(path, fileBytes, 0o644); err != nil {
 		return fmt.Errorf("failed to write file: %w", err)
 	}
 	return nil
@@ -89,7 +83,11 @@ func ReadAndUnmarshal[T any](filePath string, config *T) error {
 // WriteFileAtomic writes data to path through a temp file in the same
 // directory and a rename, so a concurrent reader sees the old file or the
 // new file, never a prefix (worklog 2026-09-09-conversation-summaries, D31).
+// An existing file keeps its permission bits, like os.WriteFile.
 func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
+	if info, err := os.Stat(path); err == nil {
+		perm = info.Mode().Perm()
+	}
 	tmp, err := createExclusiveTemp(path, perm)
 	if err != nil {
 		return err

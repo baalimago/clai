@@ -809,9 +809,9 @@ func Test_e2e_chat_summarize_cold_model_config(t *testing.T) {
 }
 
 // Phase 8 integration row three: with no price in the model config and no
-// catalog key, the in-flight summarizer adds no warning of its own. ancli
-// prints warnings on stdout, so the main run's single enrich warning is the
-// only one there and stderr stays empty (R2-03).
+// catalog key, the in-flight summarizer adds no warning of its own. Cost
+// diagnostics are stderr-only, because the answer travels on stdout, so the main
+// run's single enrich warning is the only one there.
 func Test_e2e_query_labels_in_flight_cold_price(t *testing.T) {
 	confDir := setupSummaryE2E(t)
 	if err := os.WriteFile(filepath.Join(confDir, "mock_test_test.json"), []byte(`{}`), 0o644); err != nil {
@@ -823,11 +823,11 @@ func Test_e2e_query_labels_in_flight_cold_price(t *testing.T) {
 	if !strings.Contains(stdout, "hello tool_submit_summary") {
 		t.Fatalf("stdout = %q, want the echoed answer", stdout)
 	}
-	if n := strings.Count(stdout, "failed to enrich chat with cost estimate"); n != 1 {
-		t.Fatalf("stdout = %q, want exactly the main run's one enrich warning, got %d", stdout, n)
+	if strings.Contains(stdout, "failed to enrich chat with cost estimate") {
+		t.Fatalf("stdout = %q, want no cost diagnostic in the payload stream", stdout)
 	}
-	if stderr != "" {
-		t.Fatalf("stderr = %q, want empty", stderr)
+	if n := strings.Count(stderr, "failed to enrich chat with cost estimate"); n != 1 {
+		t.Fatalf("stderr = %q, want exactly the main run's one enrich warning, got %d", stderr, n)
 	}
 	got := onlyConversation(t, confDir)
 	if got.Title != "Mock title" {

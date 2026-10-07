@@ -74,6 +74,10 @@ func (s *StreamCompleter) createRequest(ctx context.Context, chat pub_models.Cha
 	if s.ResponseFormat != nil {
 		respFmt = *s.ResponseFormat
 	}
+	wireMsgs, err := toWireMessages(chat.Messages)
+	if err != nil {
+		return nil, fmt.Errorf("project messages to wire shape: %w", err)
+	}
 	reqData := req{
 		Model:            s.Model,
 		FrequencyPenalty: s.FrequencyPenalty,
@@ -83,7 +87,7 @@ func (s *StreamCompleter) createRequest(ctx context.Context, chat pub_models.Cha
 		TopP:             s.TopP,
 		ReasoningEffort:  s.ReasoningEffort,
 		ResponseFormat:   respFmt,
-		Messages:         chat.Messages,
+		Messages:         wireMsgs,
 		Stream:           true,
 		StreamOptions: map[string]any{
 			"include_usage": true,

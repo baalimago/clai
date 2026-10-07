@@ -3,11 +3,23 @@ package anthropic
 import (
 	"maps"
 	"net/http"
+	"strconv"
 	"strings"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
+// Claude is the Anthropic text model configuration.
+//
+// Sampling rule: models of major version 5 and above reject `temperature`
+// (HTTP 400), so it is omitted for them; older models get the configured value.
+// The major version is the first dash-separated token of the model id that is
+// a 1-2 digit number (e.g. claude-sonnet-5-5 -> 5, claude-3-5-sonnet -> 3);
+// 8-digit date suffixes are not versions. An id with no parseable version also
+// omits it, since the parameter is optional but a rejected one fails the request.
+//
+// This is a version rule and not a model list because a list goes stale at the
+// vendor's next release and silently brings the 400 back (as gpt-6 did for OpenAI).
 type Claude struct {
 	Model              string                     `json:"model"`
 	MaxTokens          int                        `json:"max_tokens"`
@@ -32,13 +44,42 @@ type Claude struct {
 }
 
 var Default = Claude{
-	Model:            "claude-sonnet-4",
+	Model:            "claude-sonnet-5-5",
 	URL:              ClaudeURL,
 	AnthropicVersion: "2023-06-01",
 	AnthropicBeta:    "",
 	Temperature:      0.5,
 	MaxTokens:        8192,
 	StopSequences:    make([]string, 0),
+}
+
+const temperatureRejectedFromMajor = 5
+
+func (c *Claude) omitsTemperature() bool {
+	major, ok := claudeMajorVersion(c.Model)
+	return !ok || major >= temperatureRejectedFromMajor
+}
+
+func claudeMajorVersion(model string) (int, bool) {
+	m := strings.ToLower(strings.TrimSpace(model))
+	if idx := strings.LastIndexByte(m, '/'); idx >= 0 {
+		m = m[idx+1:]
+	}
+	for tok := range strings.SplitSeq(m, "-") {
+		digits := 0
+		for digits < len(tok) && tok[digits] >= '0' && tok[digits] <= '9' {
+			digits++
+		}
+		if digits == 0 || digits > 2 || (digits < len(tok) && tok[digits] != '.') {
+			continue
+		}
+		major, err := strconv.Atoi(tok[:digits])
+		if err != nil {
+			continue
+		}
+		return major, true
+	}
+	return 0, false
 }
 
 type claudeReq struct {
