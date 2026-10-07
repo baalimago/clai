@@ -1,4 +1,4 @@
-package agent
+package agent_test
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/baalimago/clai/pkg/agent"
 	"github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -20,7 +21,7 @@ type Review struct {
 // Example_queryTypedReview runs a typed query against the built-in mock
 // vendor, which echoes the last user message as its reply. The example needs
 // no API key and no network, so the test suite executes it on every run.
-func Example_queryTypedReview() {
+func ExampleNewTyped_queryTypedReview() {
 	// The agent owns its config directory: WithConfigDir appends "clai"
 	// unless the path already ends with it, and NewQuerier reads and writes
 	// <vendor>_<model>_<version>.json there. Seeding that file with a price
@@ -54,10 +55,10 @@ func Example_queryTypedReview() {
 		return
 	}
 
-	querier := NewTyped[Review](
-		WithModel("mock_test"),
-		WithPrompt("You review pull requests."),
-		WithConfigDir(root),
+	querier := agent.NewTyped[Review](
+		agent.WithModel("mock_test"),
+		agent.WithPrompt("You review pull requests."),
+		agent.WithConfigDir(root),
 	)
 	ctx := context.Background()
 	if err := querier.Setup(ctx); err != nil {
