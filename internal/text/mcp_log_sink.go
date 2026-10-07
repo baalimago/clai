@@ -1,6 +1,7 @@
 package text
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -171,13 +172,38 @@ func (s *mcpLogSink) attach() {
 	s.mu.Unlock()
 }
 
-// AuthPrintWriter exposes the sink's own injectable writer, so the
-// authorization phase's printed-URL fallback writes through it instead of
-// the process's raw stdout (R2-08): a library consumer must never have
-// output written to its real stdout, and errOut is already whatever this
-// run was configured with (the process stderr by default, userConf.ErrOut
-// otherwise).
-func (s *mcpLogSink) AuthPrintWriter() io.Writer { return s.errOut }
+// AuthPrintWriter keeps authorization output in scrollback above any startup
+// windows, synchronized with other diagnostics and routed to the run's writer.
+func (s *mcpLogSink) AuthPrintWriter() io.Writer { return mcpAuthOutput{s} }
+
+type mcpAuthOutput struct{ sink *mcpLogSink }
+
+func (w mcpAuthOutput) Write(message []byte) (int, error) {
+	s := w.sink
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var frame bytes.Buffer
+	if s.startup.drawnRows > 0 {
+		fmt.Fprintf(&frame, "\x1b[%dA\r\x1b[J", s.startup.drawnRows)
+	}
+	prefixBytes := frame.Len()
+	frame.Write(message)
+	n, err := s.errOut.Write(frame.Bytes())
+	written := max(0, min(len(message), n-prefixBytes))
+	if err != nil {
+		return written, err
+	}
+	if n != frame.Len() {
+		return written, io.ErrShortWrite
+	}
+	s.startup.drawnRows = 0
+	if len(s.startup.order) > 0 {
+		if err := s.startup.render(s.errOut, s.termWidth(), s.termHeight()); err != nil {
+			return written, err
+		}
+	}
+	return written, nil
+}
 
 // setupSucceeded reports that every MCP server finished setup: any pending
 // auth flow completed, so the startup windows are cleared in place and later

@@ -60,7 +60,3 @@ func TestOptionsApply(t *testing.T) {
 		t.Error("WithInteractive did not set Interactive")
 	}
 }
-
-func TestDefaultPrintURLDoesNotPanic(t *testing.T) {
-	defaultPrintURL()("https://example.invalid/authorize")
-}

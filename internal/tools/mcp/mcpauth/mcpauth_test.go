@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -26,6 +27,98 @@ func newTestAuthorizer(t *testing.T, opts ...Option) (*Authorizer, *TokenStore) 
 	// review, B2), which TestOauthNonInteractiveRunIsRefused pins.
 	base := append([]Option{WithBrowserOpener(oauthtestserver.NewAutoFollowOpener()), WithEnvFileLoader(testEnvFileLoader), WithInteractive(true)}, opts...)
 	return NewAuthorizer(store, base...), store
+}
+
+type checkingOpener func(string) error
+
+func (f checkingOpener) Open(url string) error { return f(url) }
+
+func TestInteractiveAuthReportsProgressBeforeWaiting(t *testing.T) {
+	as := oauthtestserver.New()
+	defer as.Close()
+	var messages []string
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	authz, _ := newTestAuthorizer(t,
+		WithProgress(func(message string) error { messages = append(messages, message); return nil }),
+		WithBrowserOpener(checkingOpener(func(authURL string) error {
+			output := strings.Join(messages, "\n")
+			if !strings.Contains(output, authURL) || !strings.Contains(output, "open this URL manually") {
+				t.Errorf("before browser launch: %q, want manual authorization link", output)
+			}
+			cancel()
+			return nil
+		})),
+	)
+	_, err := authz.AuthorizeInteractive(ctx, testServer(as.URL), &claierr.AuthChallengeError{
+		ServerName: "srv", ResourceMetadata: as.ProtectedResourceURL(),
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("AuthorizeInteractive: %v, want context canceled", err)
+	}
+	output := strings.Join(messages, "\n")
+	for _, stage := range []string{"Discovering", "Registering", "Waiting for browser authorization"} {
+		if !strings.Contains(output, stage) {
+			t.Errorf("progress %q lacks %q", output, stage)
+		}
+	}
+}
+
+func TestInteractiveAuthProgressDoesNotExposeCredentials(t *testing.T) {
+	as := oauthtestserver.New()
+	defer as.Close()
+	as.Configure(func(c *oauthtestserver.Config) { c.IssueClientSecret = true })
+	var messages []string
+	authz, store := newTestAuthorizer(t, WithProgress(func(message string) error {
+		messages = append(messages, message)
+		return nil
+	}))
+	_, err := authz.AuthorizeInteractive(t.Context(), testServer(as.URL), &claierr.AuthChallengeError{
+		ServerName: "srv", ResourceMetadata: as.ProtectedResourceURL(),
+	})
+	if err != nil {
+		t.Fatalf("AuthorizeInteractive: %v", err)
+	}
+	entry, ok := store.Load("srv")
+	if !ok {
+		t.Fatal("token not stored")
+	}
+	output := strings.Join(messages, "\n")
+	for _, stage := range []string{"Exchanging", "Saving"} {
+		if !strings.Contains(output, stage) {
+			t.Errorf("progress %q lacks %q", output, stage)
+		}
+	}
+	assertNoSecret(t, "progress", output, []string{entry.AccessToken, entry.RefreshToken, entry.ClientSecret})
+}
+
+func TestInteractiveAuthReturnsProgressErrors(t *testing.T) {
+	for _, stage := range []string{"Discovering", "Registering an OAuth client for the browser", "Attempting", "Waiting for browser", "Exchanging", "Saving", "Browser authorization could not start", "Open this URL to authorize", "Waiting for you to paste"} {
+		t.Run(stage, func(t *testing.T) {
+			as := oauthtestserver.New()
+			defer as.Close()
+			want := errors.New("closed output")
+			buf := newPipeBuffer()
+			captureCode := capturingPrintURL(t, buf)
+			opener := BrowserOpener(oauthtestserver.NewAutoFollowOpener())
+			if stage == "Browser authorization could not start" || stage == "Open this URL to authorize" || stage == "Waiting for you to paste" {
+				opener = oauthtestserver.FailingOpener{}
+			}
+			authz, _ := newTestAuthorizer(t,
+				WithBrowserOpener(opener), WithPasteInput(buf),
+				WithProgress(func(message string) error {
+					if strings.HasPrefix(message, stage) {
+						return want
+					}
+					return captureCode(message)
+				}),
+			)
+			_, err := authz.AuthorizeInteractive(t.Context(), testServer(as.URL), &claierr.AuthChallengeError{ServerName: "srv", ResourceMetadata: as.ProtectedResourceURL()})
+			if !errors.Is(err, want) {
+				t.Fatalf("got %v, want progress error %v", err, want)
+			}
+		})
+	}
 }
 
 func TestOauthDiscoversProtectedResourceMetadataFromChallenge(t *testing.T) {
@@ -313,10 +406,14 @@ func TestLoopbackHandlerIgnoresOtherPaths(t *testing.T) {
 // pastes back the resulting code. Writing the extracted code into buf
 // before returning means a subsequent read from buf (the paste input)
 // never blocks.
-func capturingPrintURL(t *testing.T, buf *pipeBuffer) func(string) {
+func capturingPrintURL(t *testing.T, buf *pipeBuffer) func(string) error {
 	t.Helper()
 	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	return func(authURL string) {
+	return func(message string) error {
+		if !strings.HasPrefix(message, "Open this URL to authorize clai, then paste the resulting code:\n") {
+			return nil
+		}
+		_, authURL, _ := strings.Cut(message, "\n")
 		resp, err := client.Get(authURL)
 		if err != nil {
 			t.Fatalf("drive printed authorization url: %v", err)
@@ -328,6 +425,7 @@ func capturingPrintURL(t *testing.T, buf *pipeBuffer) func(string) {
 			t.Fatalf("printed-url redirect carried no code: %q", loc)
 		}
 		buf.writeLine(code)
+		return nil
 	}
 }
 
@@ -339,7 +437,7 @@ func TestLoopbackRedirectFallsBackToPasteFlow(t *testing.T) {
 		authz := NewAuthorizer(NewTokenStore(t.TempDir()),
 			WithBrowserOpener(oauthtestserver.FailingOpener{}),
 			WithPasteInput(buf),
-			WithPrintURL(capturingPrintURL(t, buf)),
+			WithProgress(capturingPrintURL(t, buf)),
 			WithInteractive(true),
 		)
 		challenge := &claierr.AuthChallengeError{ServerName: "srv", ResourceMetadata: as.ProtectedResourceURL()}
@@ -366,7 +464,7 @@ func TestLoopbackRedirectFallsBackToPasteFlow(t *testing.T) {
 		authz := NewAuthorizer(NewTokenStore(t.TempDir()),
 			WithBrowserOpener(oauthtestserver.NewAutoFollowOpener()),
 			WithPasteInput(buf),
-			WithPrintURL(capturingPrintURL(t, buf)),
+			WithProgress(capturingPrintURL(t, buf)),
 			WithLoopback(DefaultLoopbackHost, port),
 			WithInteractive(true),
 		)

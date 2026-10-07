@@ -67,10 +67,3 @@ func awaitRedirect(ctx context.Context, ln net.Listener) (redirectResult, error)
 		return redirectResult{}, ctx.Err()
 	}
 }
-
-// defaultPrintURL is the fallback a.printURL uses when PrintURL is nil.
-func defaultPrintURL() func(string) {
-	return func(u string) {
-		fmt.Printf("Open this URL to authorize clai, then paste the resulting code:\n%s\n", u)
-	}
-}

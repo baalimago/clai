@@ -44,7 +44,7 @@ type Authorizer struct {
 	strictclient    *http.Client
 	clock           func() time.Time
 	opener          BrowserOpener
-	printURLFn      func(string)
+	progressFn      func(string) error
 	loadEnvFile     EnvFileLoader
 
 	// PasteInput is the trusted input reader the repository already
@@ -98,9 +98,10 @@ func WithPasteInput(r io.Reader) Option {
 	return func(a *Authorizer) { a.PasteInput = r }
 }
 
-// WithPrintURL overrides how the printed-URL fallback presents the
-// authorization URL to the operator. Default prints to standard output.
-func WithPrintURL(fn func(string)) Option { return func(a *Authorizer) { a.printURLFn = fn } }
+// WithProgress receives interactive authorization stages and the manual
+// authorization URL. It never receives tokens, codes or client secrets.
+// Without a callback, progress reporting is disabled.
+func WithProgress(fn func(string) error) Option { return func(a *Authorizer) { a.progressFn = fn } }
 
 // WithLoopback overrides the loopback-host and loopback-port parameters.
 func WithLoopback(host string, port int) Option {
@@ -156,11 +157,11 @@ func (a *Authorizer) loopbackHost() string { return a.loopbackHostV }
 
 func (a *Authorizer) loopbackPort() int { return a.loopbackPortV }
 
-func (a *Authorizer) printURL() func(string) {
-	if a.printURLFn != nil {
-		return a.printURLFn
+func (a *Authorizer) reportProgress(message string) error {
+	if a.progressFn != nil {
+		return a.progressFn(message)
 	}
-	return defaultPrintURL()
+	return nil
 }
 
 // bearerDecorator attaches token as a bearer Authorization header to every
@@ -246,6 +247,9 @@ func (a *Authorizer) AuthorizeInteractive(ctx context.Context, server pub_models
 	if err := requireMetadataFromServerHost(server.Name, challenge.ResourceMetadata, server.Url); err != nil {
 		return nil, err
 	}
+	if err := a.reportProgress("Discovering MCP authorization metadata..."); err != nil {
+		return nil, err
+	}
 	prm, err := discoverProtectedResource(ctx, a.httpClient(), server.Name, challenge.ResourceMetadata)
 	if err != nil {
 		return nil, err
@@ -271,6 +275,9 @@ func (a *Authorizer) AuthorizeInteractive(ctx context.Context, server pub_models
 		return nil, &RedirectError{ServerName: server.Name, Reason: "no authorization code returned"}
 	}
 
+	if err := a.reportProgress("Exchanging the authorization code for a token..."); err != nil {
+		return nil, err
+	}
 	entry, err := a.exchangeCode(ctx, server, codeExchange{
 		asMeta:      asMeta,
 		reg:         flow.reg,
@@ -282,6 +289,9 @@ func (a *Authorizer) AuthorizeInteractive(ctx context.Context, server pub_models
 		scopes:      scopes,
 	})
 	if err != nil {
+		return nil, err
+	}
+	if err := a.reportProgress("Saving the authorization token..."); err != nil {
 		return nil, err
 	}
 	if saveErr := a.store.Save(server.Name, entry); saveErr != nil {
@@ -325,12 +335,21 @@ func (a *Authorizer) authorizeViaFlow(ctx context.Context, server pub_models.Mcp
 
 	ln, bindErr := listenLoopback(a.loopbackHost(), a.loopbackPort())
 	if bindErr == nil {
+		defer ln.Close()
 		redirectURI := fmt.Sprintf("http://%s/callback", ln.Addr().String())
+		if err := a.reportProgress("Registering an OAuth client for the browser callback..."); err != nil {
+			return authorizationFlow{}, err
+		}
 		authURL, verifier2, state2, reg2, prepErr := a.prepareAuthorization(ctx, server, asMeta, scopeStr, redirectURI, resource)
 		if prepErr == nil {
+			if err := a.reportProgress("Attempting to open your browser. If nothing opens, open this URL manually:\n" + authURL); err != nil {
+				return authorizationFlow{}, err
+			}
 			if openErr := a.browserOpener().Open(authURL); openErr == nil {
+				if err := a.reportProgress("Waiting for browser authorization and the local callback. Complete authorization in your browser; press Ctrl-C to cancel."); err != nil {
+					return authorizationFlow{}, err
+				}
 				res, waitErr := awaitRedirect(ctx, ln)
-				ln.Close()
 				if waitErr != nil {
 					return authorizationFlow{}, fmt.Errorf("mcpauth: await loopback redirect: %w", waitErr)
 				}
@@ -360,11 +379,19 @@ func (a *Authorizer) authorizeViaFlow(ctx context.Context, server pub_models.Mcp
 	// code directly, so there is no redirect request for a third party to
 	// forge.
 	const oobRedirectURI = "urn:ietf:wg:oauth:2.0:oob"
+	if err := a.reportProgress("Browser authorization could not start. Registering an OAuth client for manual code entry..."); err != nil {
+		return authorizationFlow{}, err
+	}
 	authURL, verifier2, _, reg2, prepErr := a.prepareAuthorization(ctx, server, asMeta, scopeStr, oobRedirectURI, resource)
 	if prepErr != nil {
 		return authorizationFlow{}, prepErr
 	}
-	a.printURL()(authURL)
+	if err := a.reportProgress("Open this URL to authorize clai, then paste the resulting code:\n" + authURL); err != nil {
+		return authorizationFlow{}, err
+	}
+	if err := a.reportProgress("Waiting for you to paste the authorization code; press Ctrl-C to cancel."); err != nil {
+		return authorizationFlow{}, err
+	}
 	line, readErr := readPastedLine(a.PasteInput)
 	if readErr != nil {
 		return authorizationFlow{}, fmt.Errorf("mcpauth: read pasted authorization code: %w", readErr)

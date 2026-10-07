@@ -3,7 +3,6 @@ package text
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"path"
@@ -56,31 +55,16 @@ func httpChallengeResolver(authz *mcpauth.Authorizer, server pub_models.McpServe
 	})
 }
 
-// newMcpAuthorizer builds the production mcpauth.Authorizer for a run: its
-// token store lives under the clai config dir (token-store-directory
-// parameter), the printed-URL fallback reads from trustInput and writes
-// through sink's own injectable writer rather than the process's raw
-// stdout (R2-08), and interactivity is outputIsTerminal, the one terminal
-// signal D22's own auth-timeout bound already resolves
-// (userConf.OutputIsTerminal) — not a second, independently-derived check
-// of the real process stdout, which stayed true (and so interactive) for
-// any host process a library consumer happened to run inside of
-// regardless of how its own output was configured. A nil result (confDir
-// empty) disables interactive and stored authorization for the run,
-// matching the schema cache's own degrade-to-disabled posture: every HTTP
-// server falls back to a static credential source or connects
-// unauthenticated.
+// Interactivity follows the run's configured terminal signal, not the host
+// process stdout. An empty config directory disables stored authorization.
 func newMcpAuthorizer(confDir string, trustInput io.Reader, outputIsTerminal bool, sink mcp.ServerLogSink) *mcpauth.Authorizer {
 	if confDir == "" {
 		return nil
 	}
 	store := mcpauth.NewTokenStore(path.Join(confDir, mcpauth.TokenStoreDirName))
-	return mcpauth.NewAuthorizer(store,
-		mcpauth.WithPasteInput(trustInput),
-		mcpauth.WithInteractive(outputIsTerminal),
-		mcpauth.WithEnvFileLoader(mcp.LoadEnvFile),
-		mcpauth.WithPrintURL(authPrintURLFor(sink)),
-	)
+	return mcp.NewAuthorizer(mcp.AuthorizerConfig{
+		Store: store, Input: trustInput, Output: authOutputFor(sink), Interactive: outputIsTerminal,
+	})
 }
 
 // authPrintWriter is implemented by a ServerLogSink that also exposes the
@@ -91,20 +75,12 @@ type authPrintWriter interface {
 	AuthPrintWriter() io.Writer
 }
 
-// authPrintURLFor builds the printed-URL fallback's presentation function
-// routed through sink's own writer when sink exposes one (R2-08); nil
-// leaves the Authorizer's own default (process stdout) in place, which
-// only an interactive, terminal-attached run ever reaches, per
-// WithInteractive above.
-func authPrintURLFor(sink mcp.ServerLogSink) func(string) {
+func authOutputFor(sink mcp.ServerLogSink) io.Writer {
 	w, ok := sink.(authPrintWriter)
 	if !ok || w.AuthPrintWriter() == nil {
-		return nil
+		return io.Discard
 	}
-	writer := w.AuthPrintWriter()
-	return func(u string) {
-		fmt.Fprintf(writer, "Open this URL to authorize clai, then paste the resulting code:\n%s\n", u)
-	}
+	return w.AuthPrintWriter()
 }
 
 // staticHttpDecorator resolves only the static half of the

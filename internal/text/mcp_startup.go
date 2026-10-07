@@ -101,17 +101,17 @@ func (w *mcpStartupWindows) appendLine(server, line string, pin bool) {
 // render redraws the whole region in place. The frame is capped to the
 // terminal height so the in-place clear can never run past the top of the
 // screen.
-func (w *mcpStartupWindows) render(out io.Writer, width, height int) {
+func (w *mcpStartupWindows) render(out io.Writer, width, height int) error {
 	width = max(width, 1)
 	var frame bytes.Buffer
 	for _, server := range w.order {
 		if err := utils.PrintMcpLogHeader(&frame, server, width); err != nil {
-			return
+			return err
 		}
 		for _, section := range [][]string{w.pinned[server], w.tail[server]} {
 			for _, line := range section {
 				if err := utils.PrintMcpLogLine(&frame, line, width); err != nil {
-					return
+					return err
 				}
 			}
 		}
@@ -128,9 +128,10 @@ func (w *mcpStartupWindows) render(out io.Writer, width, height int) {
 		fmt.Fprintln(&buf, row)
 	}
 	if _, err := out.Write(buf.Bytes()); err != nil {
-		return
+		return err
 	}
 	w.drawnRows = len(rows)
+	return nil
 }
 
 // clear wipes the drawn region in place and retires the windows: appendLine

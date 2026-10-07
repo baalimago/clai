@@ -197,6 +197,19 @@ Authorization applies to endpoint-based servers. A challenged endpoint returns
 `resource_metadata` URL parsed out of it; everything downstream consumes that error and parses
 nothing further.
 
+All CLI entrypoints construct authorization through `mcp.NewAuthorizer`.
+This constructor installs the same credential loader, progress callback, and
+theme renderer for explicit authorization and query runs.
+
+`mcpauth.Authorizer` reports all browser and manual-code stages through one
+callback. It prints nothing directly. A callback write failure stops
+authorization and returns an error.
+
+Query runs route these messages through the configured diagnostic writer,
+never model stdout. The writer preserves messages in scrollback and redraws
+startup windows below them. Headless runs refuse interactive authorization
+before any message or browser action.
+
 clai implements the published specifications rather than a bespoke scheme, built on the standard
 library with no OAuth dependency: RFC 9110 for the challenge grammar, RFC 9728 for protected-resource
 metadata, RFC 8414 for authorization-server metadata, RFC 7591 for dynamic client registration,

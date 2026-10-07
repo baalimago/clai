@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -54,6 +55,54 @@ func lastStartupFrame(s string) string {
 	}
 	return s
 }
+
+func TestAuthOutputDoesNotBecomePartOfTheRedrawnStartupWindow(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	var output bytes.Buffer
+	sink := newMcpLogSinkTo(mcpLogRolling, &output)
+	sink.termWidth = func() int { return 120 }
+	sink.termHeight = func() int { return 40 }
+	sink.AppendServerLog("notion", "started")
+	initialRows := sink.startup.drawnRows
+	start := output.Len()
+	url := "https://example.invalid/authorize?state=test"
+	if err := mcp.WriteAuthMessage(sink.AuthPrintWriter(), "Open this URL manually:\n"+url); err != nil {
+		t.Fatal(err)
+	}
+	frame := output.String()[start:]
+	if !strings.HasPrefix(frame, fmt.Sprintf("\x1b[%dA\r\x1b[J▸ mcp.auth", initialRows)) || !strings.Contains(frame, url) || !strings.Contains(frame, "▸ mcp.notion log") {
+		t.Fatalf("auth output must clear the region, print the URL, then restore the window: %q", frame)
+	}
+	if sink.startup.drawnRows != initialRows {
+		t.Fatalf("authorization rows entered the erasable region: %d, want %d", sink.startup.drawnRows, initialRows)
+	}
+}
+
+func TestAuthOutputReturnsWriteFailures(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		out    io.Writer
+		redraw bool
+	}{
+		{"output failure", failingWriter{}, false},
+		{"short write", shortAuthWriter{}, false},
+		{"redraw failure", &failAfterWriter{failOn: 2}, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			sink := newMcpLogSinkTo(mcpLogRolling, test.out)
+			if test.redraw {
+				sink.startup.appendLine("notion", "started", false)
+			}
+			if _, err := sink.AuthPrintWriter().Write([]byte("authorize\n")); err == nil {
+				t.Fatal("authorization writer discarded the output error")
+			}
+		})
+	}
+}
+
+type shortAuthWriter struct{}
+
+func (shortAuthWriter) Write(p []byte) (int, error) { return len(p) - 1, nil }
 
 func TestMcpLogSink_StartupWindowShowsAllServerLines(t *testing.T) {
 	var errOut bytes.Buffer

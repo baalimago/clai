@@ -12,7 +12,6 @@ import (
 	"github.com/baalimago/clai/internal"
 	"github.com/baalimago/clai/internal/tools/mcp/mcpauth"
 	"github.com/baalimago/clai/internal/tools/mcp/serverconfig"
-	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/cmd"
@@ -72,16 +71,12 @@ Examples:
 // token store entry. trustInput feeds the printed-URL fallback's pasted
 // authorization code when the loopback redirect cannot complete.
 func RunAuth(ctx context.Context, serverName string, trustInput io.Reader) error {
-	confDir, err := utils.GetClaiConfigDir()
+	confDir, err := internal.PrepTheme()
 	if err != nil {
 		return &McpAuthConfigDirError{Cause: err}
 	}
 	store := mcpauth.NewTokenStore(path.Join(confDir, mcpauth.TokenStoreDirName))
-	authz := mcpauth.NewAuthorizer(store,
-		mcpauth.WithPasteInput(trustInput),
-		mcpauth.WithInteractive(true),
-		mcpauth.WithEnvFileLoader(LoadEnvFile),
-	)
+	authz := NewAuthorizer(AuthorizerConfig{Store: store, Input: trustInput, Output: os.Stdout, Interactive: true})
 	return runAuthWith(ctx, serverName, confDir, authz)
 }
 
@@ -98,6 +93,9 @@ func runAuthWith(ctx context.Context, serverName, confDir string, authz *mcpauth
 		return &McpAuthNotEndpointBasedError{Name: serverName}
 	}
 
+	if err := WriteAuthMessage(os.Stdout, fmt.Sprintf("Connecting to MCP server %q at %s...", serverName, server.Url)); err != nil {
+		return err
+	}
 	connector := NewHttpConnector(ctx, server, nil)
 	probe, connErr := connector.Conn(ctx)
 	if connErr == nil {
@@ -115,8 +113,7 @@ func runAuthWith(ctx context.Context, serverName, confDir string, authz *mcpauth
 	}
 
 	store := mcpauth.NewTokenStore(path.Join(confDir, mcpauth.TokenStoreDirName))
-	fmt.Printf("Authorized %q. Token stored at %s (mode %#o).\n", serverName, store.Path(serverName), mcpauth.TokenStoreFileMode)
-	return nil
+	return WriteAuthMessage(os.Stdout, fmt.Sprintf("Authorized %q. Token stored at %s (mode %#o).", serverName, store.Path(serverName), mcpauth.TokenStoreFileMode))
 }
 
 // loadNamedServer reads and validates the named server's config file

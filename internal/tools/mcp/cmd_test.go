@@ -1,10 +1,12 @@
 package mcp
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/baalimago/clai/internal/tools/mcp/httptestserver"
@@ -47,10 +49,9 @@ func TestMcpAuthCommandWritesTokenStore(t *testing.T) {
 	writeNamedServerConfig(t, confDir, "httpecho", hs.URL)
 
 	store := mcpauth.NewTokenStore(filepath.Join(confDir, mcpauth.TokenStoreDirName))
-	authz := mcpauth.NewAuthorizer(store,
-		mcpauth.WithBrowserOpener(oauthtestserver.NewAutoFollowOpener()),
-		mcpauth.WithInteractive(true),
-	)
+	var output bytes.Buffer
+	authz := NewAuthorizer(AuthorizerConfig{Store: store, Output: &output, Interactive: true})
+	mcpauth.WithBrowserOpener(oauthtestserver.NewAutoFollowOpener())(authz)
 
 	// No cancel-before-Close ordering is needed here (unlike the
 	// transport phase's streaming tests): runAuthWith's only connect
@@ -60,6 +61,11 @@ func TestMcpAuthCommandWritesTokenStore(t *testing.T) {
 	ctx := t.Context()
 	if err := runAuthWith(ctx, "httpecho", confDir, authz); err != nil {
 		t.Fatalf("runAuthWith: %v", err)
+	}
+	for _, stage := range []string{"▸ mcp.auth", "Discovering", "Registering", "open this URL manually", "Waiting for browser authorization", "Exchanging", "Saving"} {
+		if !strings.Contains(output.String(), stage) {
+			t.Errorf("explicit auth output lacks %q: %q", stage, output.String())
+		}
 	}
 
 	entry, ok := store.Load("httpecho")

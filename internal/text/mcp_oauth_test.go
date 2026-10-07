@@ -39,7 +39,7 @@ func TestNonTerminalSessionDefaultsToFailFast(t *testing.T) {
 }
 
 // fakeAuthPrintWriterSink implements both mcp.ServerLogSink and the
-// authPrintWriter capability mcpLogSink exposes, so authPrintURLFor can be
+// authPrintWriter capability mcpLogSink exposes, so authOutputFor can be
 // tested without the real sink's buffering/rolling-output machinery.
 type fakeAuthPrintWriterSink struct {
 	buf bytes.Buffer
@@ -49,32 +49,21 @@ func (f *fakeAuthPrintWriterSink) AppendServerLog(string, string) {}
 func (f *fakeAuthPrintWriterSink) ServerExited(string)            {}
 func (f *fakeAuthPrintWriterSink) AuthPrintWriter() io.Writer     { return &f.buf }
 
-// TestAuthPrintURLRoutesThroughSinkNotStdout pins R2-08's third fact: the
-// printed-URL fallback must write through the sink's own injectable writer
-// rather than the process's raw stdout, which a library consumer's own
-// output must never be written to.
-func TestAuthPrintURLRoutesThroughSinkNotStdout(t *testing.T) {
+func TestAuthOutputRoutesThroughSinkNotStdout(t *testing.T) {
 	sink := &fakeAuthPrintWriterSink{}
-	printURL := authPrintURLFor(sink)
-	if printURL == nil {
-		t.Fatal("authPrintURLFor returned nil for a sink implementing AuthPrintWriter")
+	if _, err := io.WriteString(authOutputFor(sink), "https://example.invalid/authorize?state=x"); err != nil {
+		t.Fatal(err)
 	}
-	printURL("https://example.invalid/authorize?state=x")
 	if got := sink.buf.String(); !strings.Contains(got, "https://example.invalid/authorize?state=x") {
 		t.Errorf("sink captured %q, want it to contain the authorization URL", got)
 	}
 }
 
-// TestAuthPrintURLFallsBackToDefaultForAPlainSink pins the other half: a
-// sink with no AuthPrintWriter capability (or none at all) leaves the
-// Authorizer's own default in place rather than panicking or silently
-// dropping the URL — defaultPrintURL's own test already pins where that
-// default writes to.
-func TestAuthPrintURLFallsBackToDefaultForAPlainSink(t *testing.T) {
-	if got := authPrintURLFor(nil); got != nil {
-		t.Error("authPrintURLFor(nil) is non-nil, want nil so the Authorizer keeps its own default")
+func TestAuthOutputWithoutConfiguredWriterNeverUsesProcessStreams(t *testing.T) {
+	if got := authOutputFor(nil); got != io.Discard {
+		t.Error("authOutputFor(nil) must discard output")
 	}
-	if got := authPrintURLFor(&recordingSuccessSink{}); got != nil {
-		t.Error("authPrintURLFor(plain sink) is non-nil, want nil so the Authorizer keeps its own default")
+	if got := authOutputFor(&recordingSuccessSink{}); got != io.Discard {
+		t.Error("authOutputFor(plain sink) must discard output")
 	}
 }
