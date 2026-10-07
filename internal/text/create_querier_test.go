@@ -10,6 +10,7 @@ import (
 	"github.com/baalimago/clai/internal/vendors/gemini"
 	"github.com/baalimago/clai/internal/vendors/huggingface"
 	"github.com/baalimago/clai/internal/vendors/inception"
+	"github.com/baalimago/clai/internal/vendors/jev"
 	"github.com/baalimago/clai/internal/vendors/mistral"
 	"github.com/baalimago/clai/internal/vendors/novita"
 	"github.com/baalimago/clai/internal/vendors/ollama"
@@ -86,6 +87,12 @@ func TestSelectTextQuerier_AllVendors(t *testing.T) {
 			defaults: deepseek.Default,
 			model:    "deepseek-chat",
 			env:      nil,
+		},
+		{
+			name:     "jev",
+			defaults: jev.Default,
+			model:    "jev-latest",
+			env:      map[string]string{"TYPESAFE_API_KEY": "k"},
 		},
 		{
 			name:     "inception",

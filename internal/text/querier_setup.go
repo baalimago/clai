@@ -77,6 +77,9 @@ func vendorType(fromModel string) (string, string, string, error) {
 		}
 		return "berget", vendor, modelVersion, nil
 	}
+	if strings.HasPrefix(fromModel, "jev-") {
+		return "jev", "jev", fromModel, nil
+	}
 	if strings.Contains(fromModel, "gpt") {
 		return "openai", "gpt", fromModel, nil
 	}
