@@ -1,10 +1,13 @@
 package text
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/baalimago/go_away_boilerplate/pkg/dimensions"
 
@@ -39,6 +42,56 @@ func Test_toolCallError(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+type toolCallRecorderFunc func(context.Context, ToolCall) error
+
+type toolCallRecorderContextKey struct{}
+
+func (f toolCallRecorderFunc) RecordToolCall(ctx context.Context, call ToolCall) error {
+	return f(ctx, call)
+}
+
+func TestRecordToolCall_ReportsFailuresAndKeepsRecorderErrorsSoft(t *testing.T) {
+	startedAt := time.Now().Add(-time.Second)
+	ctx := context.WithValue(t.Context(), toolCallRecorderContextKey{}, "trace")
+	var recorded ToolCall
+	calls := 0
+	q := &Querier[*MockQuerier]{
+		tooling: tooling{callRecorder: toolCallRecorderFunc(func(gotCtx context.Context, call ToolCall) error {
+			calls++
+			if gotCtx != ctx {
+				t.Errorf("recorder context = %v, want injected context", gotCtx)
+			}
+			recorded = call
+			return errors.New("telemetry unavailable")
+		})},
+	}
+	e := toolExecutor[*MockQuerier]{querier: q}
+	e.recordToolCall(ctx, "bash", startedAt, "ERROR: command failed")
+
+	if calls != 1 {
+		t.Fatalf("recorder calls = %d, want 1", calls)
+	}
+	if recorded.Name != "bash" || recorded.StartedAt != startedAt {
+		t.Fatalf("recorded call identity/timing = %+v", recorded)
+	}
+	if recorded.FinishedAt.Before(startedAt) {
+		t.Fatalf("recorded finish time %v precedes start %v", recorded.FinishedAt, startedAt)
+	}
+	if recorded.Err == nil || recorded.Err.Error() != `tool "bash" failed: command failed` {
+		t.Fatalf("recorded error = %v, want named command failure", recorded.Err)
+	}
+
+	q.tooling.callRecorder = toolCallRecorderFunc(func(_ context.Context, call ToolCall) error {
+		calls++
+		recorded = call
+		return nil
+	})
+	e.recordToolCall(ctx, "cat", startedAt, "file contents")
+	if recorded.Err != nil {
+		t.Fatalf("successful output recorded an error: %v", recorded.Err)
 	}
 }
 

@@ -13,3 +13,7 @@ jobs:
       go-version: "1.26"
       staticcheck-version: "latest"
       gofumpt-version: latest
+      # awesome-go quotes one aggregate over a single -coverpkg profile, not the
+      # unweighted per-package mean that percentaverage prints.
+      test-command: "go test -race -coverpkg ./... -coverprofile /tmp/cover.out ./..."
+      coverage-command: "go tool cover -func /tmp/cover.out | tail -1 | grep -oE '[0-9]+\\.[0-9]+'"
