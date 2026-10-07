@@ -809,11 +809,14 @@ func Test_e2e_chat_summarize_cold_model_config(t *testing.T) {
 }
 
 // Phase 8 integration row three: with no price in the model config and no
-// catalog key, the in-flight summarizer adds no warning of its own. Cost
-// diagnostics are stderr-only, because the answer travels on stdout, so the main
-// run's single enrich warning is the only one there.
+// catalog key, the enrich failure is a debug-only trace, so it stays off both
+// streams unless DEBUG_COST_MANAGER asks for it. With the flag on, the main
+// run's single enrich warning is the only one there: the in-flight
+// summarizer's discarded querier routes its own cost warnings to the
+// DEBUG_SUMMARY trace.
 func Test_e2e_query_labels_in_flight_cold_price(t *testing.T) {
 	confDir := setupSummaryE2E(t)
+	t.Setenv("DEBUG_COST_MANAGER", "1")
 	if err := os.WriteFile(filepath.Join(confDir, "mock_test_test.json"), []byte(`{}`), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}

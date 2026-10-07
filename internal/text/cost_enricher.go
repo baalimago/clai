@@ -3,6 +3,7 @@ package text
 import (
 	"time"
 
+	"github.com/baalimago/clai/internal/debugflags"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
@@ -45,7 +46,10 @@ func (c costEnricher) enrich(chat pub_models.Chat) pub_models.Chat {
 	}
 	enriched, err := c.manager.Enrich(chat)
 	if err != nil {
-		c.warnf("failed to enrich chat with cost estimate: %v\n", err)
+		// A missing price is a normal condition, so it is a debug-only trace.
+		if debugflags.Enabled("COST_MANAGER") {
+			c.warnf("failed to enrich chat with cost estimate: %v\n", err)
+		}
 		return chat
 	}
 	return enriched

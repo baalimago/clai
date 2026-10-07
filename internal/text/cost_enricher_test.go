@@ -79,15 +79,35 @@ func Test_costEnricher_EnrichErrorKeepsChat(t *testing.T) {
 	}}
 	ready := make(chan struct{})
 	close(ready)
-	enricher := newCostEnricher(manager, ready)
-	var warned strings.Builder
-	enricher.warnf = func(format string, a ...any) { fmt.Fprintf(&warned, format, a...) }
 
-	got := enricher.enrich(pub_models.Chat{ID: "chat"})
-	if got.ID != "chat" {
-		t.Errorf("failed enrichment must return the original chat; got: %+v", got)
-	}
-	if !strings.Contains(warned.String(), "catalog is haunted") {
-		t.Errorf("enrich error not warned about; got: %q", warned.String())
-	}
+	t.Run("debug flag reports the failure", func(t *testing.T) {
+		t.Setenv("DEBUG_COST_MANAGER", "1")
+		enricher := newCostEnricher(manager, ready)
+		var warned strings.Builder
+		enricher.warnf = func(format string, a ...any) { fmt.Fprintf(&warned, format, a...) }
+
+		got := enricher.enrich(pub_models.Chat{ID: "chat"})
+		if got.ID != "chat" {
+			t.Errorf("failed enrichment must return the original chat; got: %+v", got)
+		}
+		if !strings.Contains(warned.String(), "catalog is haunted") {
+			t.Errorf("enrich error not warned about; got: %q", warned.String())
+		}
+	})
+
+	t.Run("without the debug flag the failure is silent", func(t *testing.T) {
+		t.Setenv("DEBUG", "")
+		t.Setenv("DEBUG_COST_MANAGER", "")
+		enricher := newCostEnricher(manager, ready)
+		var warned strings.Builder
+		enricher.warnf = func(format string, a ...any) { fmt.Fprintf(&warned, format, a...) }
+
+		got := enricher.enrich(pub_models.Chat{ID: "chat"})
+		if got.ID != "chat" {
+			t.Errorf("failed enrichment must return the original chat; got: %+v", got)
+		}
+		if warned.String() != "" {
+			t.Errorf("enrich failure must be debug-only; got: %q", warned.String())
+		}
+	})
 }

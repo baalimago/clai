@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -163,6 +164,10 @@ func TestManagerStart(t *testing.T) {
 		if !errors.Is(err, wantErr) {
 			t.Fatalf("Start err = %v, want the fetch failure", err)
 		}
+		var debugErr DebugError
+		if !errors.As(err, &debugErr) {
+			t.Fatalf("Start err = %T, want a DebugError", err)
+		}
 	})
 
 	t.Run("a missing fetcher on a cache miss is an error", func(t *testing.T) {
@@ -177,4 +182,19 @@ type failingFetcher struct{ err error }
 
 func (f failingFetcher) FetchModel(context.Context, string) (ModelPriceScheme, error) {
 	return ModelPriceScheme{}, f.err
+}
+
+func TestDebugError(t *testing.T) {
+	cause := errors.New("catalog down")
+	wrapped := NewDebugError(fmt.Errorf("failed to fetch model: %w", cause))
+	if got := wrapped.Error(); !strings.Contains(got, "failed to fetch model") {
+		t.Fatalf("Error() = %q, want the wrapped message", got)
+	}
+	if !errors.Is(wrapped, cause) {
+		t.Fatal("DebugError must unwrap to its cause")
+	}
+	var debugErr DebugError
+	if !errors.As(wrapped, &debugErr) {
+		t.Fatal("errors.As must find a DebugError")
+	}
 }
