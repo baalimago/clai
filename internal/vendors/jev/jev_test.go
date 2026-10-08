@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -147,6 +148,49 @@ func TestStreamCompletionsRequiresQuestionSchema(t *testing.T) {
 	}
 }
 
+func TestQuestionSchemaErrorsTeachTheFormat(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		format *generic.ResponseFormat
+	}{
+		{name: "missing format"},
+		{name: "wrong format type", format: &generic.ResponseFormat{Type: "json_object"}},
+		{name: "missing schema", format: &generic.ResponseFormat{Type: "json_schema"}},
+		{name: "empty questions", format: &generic.ResponseFormat{Type: "json_schema", JSONSchema: &generic.JSONSchemaSpec{Schema: map[string]any{}}}},
+		{name: "question missing instructions", format: formatWith(map[string]any{"q": map[string]any{"type": "noul"}})},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := questionsFromResponseFormat(tc.format)
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if !strings.Contains(err.Error(), QuestionsFormatExample) {
+				t.Fatalf("error %q must embed the questions format example", err)
+			}
+		})
+	}
+}
+
+func TestHandleErrorEnrichesResponseFormatFailuresOnly(t *testing.T) {
+	for _, sentinel := range []error{generic.ErrResponseFormatNotJSON, generic.ErrResponseFormatShape} {
+		t.Run(sentinel.Error(), func(t *testing.T) {
+			original := fmt.Errorf("load failed: %w", sentinel)
+			got := (&Jev{}).HandleError(original)
+			if !errors.Is(got, sentinel) {
+				t.Fatalf("HandleError() = %v, want it to wrap %v", got, sentinel)
+			}
+			if !strings.Contains(got.Error(), QuestionsFormatExample) {
+				t.Fatalf("HandleError() = %v, want questions example", got)
+			}
+		})
+	}
+
+	original := errors.New("unrelated failure")
+	if got := (&Jev{}).HandleError(original); got != original {
+		t.Fatalf("HandleError() = %v, want original error unchanged", got)
+	}
+}
+
 func TestNoulQuestionMayOmitCriteria(t *testing.T) {
 	questions, err := questionsFromResponseFormat(formatWith(map[string]any{
 		"q": map[string]any{"type": "noul", "instructions": "Is this urgent?"},
@@ -249,6 +293,109 @@ func TestStreamCompletionsPreservesContextError(t *testing.T) {
 		t.Fatalf("error = %v, want context.Canceled", err)
 	}
 }
+
+func TestSetupFillsDefaults(t *testing.T) {
+	t.Setenv("TYPESAFE_API_KEY", "test-key")
+	v := Jev{}
+	if err := v.Setup(); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	if v.Model != "jev-latest" || v.URL != SystemOneURL || v.client == nil {
+		t.Fatalf("defaults = model %q, url %q, client %v", v.Model, v.URL, v.client)
+	}
+}
+
+func TestStreamCompletionsRejectsInvalidURL(t *testing.T) {
+	t.Setenv("TYPESAFE_API_KEY", "key")
+	v := Default
+	if err := v.Setup(); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	v.URL = "://bad"
+	v.SetResponseFormat(formatWith(map[string]any{"q": map[string]any{"type": "noul", "instructions": "Question?"}}))
+	_, err := v.StreamCompletions(context.Background(), pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "hello"}}})
+	if err == nil || !strings.Contains(err.Error(), "create request") {
+		t.Fatalf("error = %v, want create request failure", err)
+	}
+}
+
+func TestStreamCompletionsFailsWhenContextEndsBeforeDelivery(t *testing.T) {
+	t.Setenv("TYPESAFE_API_KEY", "key")
+	v := Default
+	if err := v.Setup(); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	// The transport ignores the context, so the response still arrives; the
+	// vendor must then refuse delivery on the already-ended context.
+	v.client = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return okResponse(io.NopCloser(strings.NewReader(validAnswer))), nil
+	})}
+	v.SetResponseFormat(formatWith(map[string]any{"q": map[string]any{"type": "noul", "instructions": "Question?"}}))
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := v.StreamCompletions(ctx, pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "hello"}}})
+	if !errors.Is(err, context.Canceled) || !strings.Contains(err.Error(), "before response delivery") {
+		t.Fatalf("error = %v, want context.Canceled before response delivery", err)
+	}
+}
+
+func TestStreamCompletionsReturnsBodyReadAndCloseErrors(t *testing.T) {
+	t.Setenv("TYPESAFE_API_KEY", "key")
+	for _, tc := range []struct {
+		name string
+		body io.ReadCloser
+		want string
+	}{
+		{
+			name: "read failure",
+			body: readCloserFunc{reader: errReader{}, close: func() error { return nil }},
+			want: "jev: read response: read boom",
+		},
+		{
+			name: "close failure",
+			body: readCloserFunc{reader: strings.NewReader(validAnswer), close: func() error { return errors.New("close boom") }},
+			want: "jev: close response: close boom",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			v := Default
+			if err := v.Setup(); err != nil {
+				t.Fatalf("Setup: %v", err)
+			}
+			v.client = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+				return okResponse(tc.body), nil
+			})}
+			v.SetResponseFormat(formatWith(map[string]any{"q": map[string]any{"type": "noul", "instructions": "Question?"}}))
+			_, err := v.StreamCompletions(context.Background(), pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "hello"}}})
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error = %v, want substring %q", err, tc.want)
+			}
+		})
+	}
+}
+
+const validAnswer = `{"model":"jev-1.13.0","answers":{"q":{"type":"noul","noul":0.9}},"usage":{"input_tokens":2,"output_tokens":1}}`
+
+func okResponse(body io.ReadCloser) *http.Response {
+	return &http.Response{StatusCode: http.StatusOK, Body: body, Header: make(http.Header)}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+type readCloserFunc struct {
+	reader io.Reader
+	close  func() error
+}
+
+func (r readCloserFunc) Read(p []byte) (int, error) { return r.reader.Read(p) }
+
+func (r readCloserFunc) Close() error { return r.close() }
+
+type errReader struct{}
+
+func (errReader) Read([]byte) (int, error) { return 0, errors.New("read boom") }
 
 func formatWith(questions map[string]any) *generic.ResponseFormat {
 	return &generic.ResponseFormat{Type: "json_schema", JSONSchema: &generic.JSONSchemaSpec{Schema: questions}}

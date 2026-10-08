@@ -125,6 +125,9 @@ func SetupQuerier(ctx context.Context, confDir string, tf internal.TextFlags, ar
 	// Load response format from file if specified
 	if responseFormatPath := tf.QueryText.ResponseFormat.Value(); responseFormatPath != "" {
 		if err := tConf.LoadResponseFormat(responseFormatPath); err != nil {
+			if handler := vendorErrorHandler(tConf.Model); handler != nil {
+				err = handler.HandleError(err)
+			}
 			return nil, nil, fmt.Errorf("response format: %w", err)
 		}
 		structuredOutput = true

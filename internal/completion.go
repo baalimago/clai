@@ -214,6 +214,8 @@ func modelFromConfigFilename(base string) (string, bool) {
 		return strings.TrimPrefix(base, "deepseek_deepseek_"), true
 	case strings.HasPrefix(base, "inception_mercury_"):
 		return strings.TrimPrefix(base, "inception_mercury_"), true
+	case strings.HasPrefix(base, "typesafe_jev_"):
+		return strings.TrimPrefix(base, "typesafe_jev_"), true
 	case strings.HasPrefix(base, "xai_grok_"):
 		return strings.TrimPrefix(base, "xai_grok_"), true
 	case strings.HasPrefix(base, "mistral_mistral_"):
