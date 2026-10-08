@@ -2,6 +2,7 @@ package text
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baalimago/clai/internal/cost"
 	"github.com/baalimago/clai/internal/vendors"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/dimensions"
@@ -69,8 +71,10 @@ func TestSetupConfigFile_concurrentCold(t *testing.T) {
 	}
 }
 
-// TestNewCostEnricher_defaultWarnf pins the CostWarnf seam: nil keeps the
-// ancli default, a func receives the enricher's warnings (R2-03).
+// TestNewCostEnricher_defaultWarnf pins the CostWarnf seam and the debug gate:
+// an enrich failure is a normal condition, so it is reported only under
+// DEBUG_COST_MANAGER. A nil seam keeps ancli.Errf, an injected func receives
+// the warning.
 func TestNewCostEnricher_defaultWarnf(t *testing.T) {
 	t.Setenv("CLAI_DISABLE_COST_ERR_LOG_GOROUTINE", "1")
 	t.Setenv("OPENROUTER_API_KEY", "")
@@ -94,7 +98,22 @@ func TestNewCostEnricher_defaultWarnf(t *testing.T) {
 	}
 	// Cost diagnostics are stderr-only: the answer travels on stdout, so a price
 	// miss must never enter the payload stream.
+	t.Run("silent without the debug flag", func(t *testing.T) {
+		t.Setenv("DEBUG", "")
+		t.Setenv("DEBUG_COST_MANAGER", "")
+		q := build(t, nil)
+		var stderr string
+		stdout := testboil.CaptureStdout(t, func(t *testing.T) {
+			stderr = testboil.CaptureStderr(t, func(t *testing.T) {
+				q.costEnricher.enrich(mockChatWithUsage())
+			})
+		})
+		if stdout != "" || stderr != "" {
+			t.Fatalf("stdout = %q, stderr = %q, want both empty: a price miss is debug-only", stdout, stderr)
+		}
+	})
 	t.Run("nil keeps the default and warns on stderr", func(t *testing.T) {
+		t.Setenv("DEBUG_COST_MANAGER", "1")
 		q := build(t, nil)
 		if q.costEnricher.warnf == nil {
 			t.Fatal("warnf must default to ancli.Errf")
@@ -105,14 +124,15 @@ func TestNewCostEnricher_defaultWarnf(t *testing.T) {
 				q.costEnricher.enrich(mockChatWithUsage())
 			})
 		})
-		if stdout != "" {
-			t.Fatalf("stdout = %q, want empty: the payload stream must stay clean", stdout)
+		if strings.Contains(stdout, "failed to enrich chat with cost estimate") {
+			t.Fatalf("stdout = %q, want the enrich warning off the payload stream", stdout)
 		}
 		if !strings.Contains(stderr, "failed to enrich chat with cost estimate") {
 			t.Fatalf("stderr = %q, want the enrich warning", stderr)
 		}
 	})
 	t.Run("injected func receives the warning", func(t *testing.T) {
+		t.Setenv("DEBUG_COST_MANAGER", "1")
 		var got []string
 		q := build(t, func(format string, a ...any) { got = append(got, format) })
 		var stderr string
@@ -121,8 +141,8 @@ func TestNewCostEnricher_defaultWarnf(t *testing.T) {
 				q.costEnricher.enrich(mockChatWithUsage())
 			})
 		})
-		if stdout != "" || stderr != "" {
-			t.Fatalf("stdout = %q, stderr = %q, want both empty", stdout, stderr)
+		if strings.Contains(stdout+stderr, "failed to enrich chat with cost estimate") {
+			t.Fatalf("enrich warning must route through the seam, stdout = %q, stderr = %q", stdout, stderr)
 		}
 		if len(got) != 1 || !strings.Contains(got[0], "failed to enrich") {
 			t.Fatalf("injected warnf got %q, want the enrich warning", got)
@@ -312,6 +332,32 @@ func TestNewQuerier_costWarnfRoutesManagerWarnings(t *testing.T) {
 			}
 		default:
 			t.Fatal("CostWarnf never received the manager's warning")
+		}
+	})
+}
+
+// TestShouldReportCostError pins the manager-error triage: a priced-catalog
+// failure (DebugError) is a normal cold condition, so it is reported only
+// under the cost debug flag, while every other error stays a warning.
+func TestShouldReportCostError(t *testing.T) {
+	t.Run("debug error is silent without the flag", func(t *testing.T) {
+		t.Setenv("DEBUG", "")
+		t.Setenv("DEBUG_COST_MANAGER", "")
+		if shouldReportCostError(cost.NewDebugError(errors.New("failed to fetch model"))) {
+			t.Fatal("DebugError must be debug-only")
+		}
+	})
+	t.Run("debug error is reported under the flag", func(t *testing.T) {
+		t.Setenv("DEBUG_COST_MANAGER", "1")
+		if !shouldReportCostError(cost.NewDebugError(errors.New("failed to fetch model"))) {
+			t.Fatal("DebugError must be reported under DEBUG_COST_MANAGER")
+		}
+	})
+	t.Run("other errors stay warnings", func(t *testing.T) {
+		t.Setenv("DEBUG", "")
+		t.Setenv("DEBUG_COST_MANAGER", "")
+		if !shouldReportCostError(errors.New("missing model catalog fetcher")) {
+			t.Fatal("an ordinary cost failure must stay a warning")
 		}
 	})
 }

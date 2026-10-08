@@ -2,6 +2,8 @@ package text
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -422,13 +424,69 @@ func responseFormatFromGeneric(gf *generic.ResponseFormat) *pub_models.ResponseF
 	return rf
 }
 
+// responseFormatExample is appended to every rejected -rf load so the user has
+// a concrete file to copy instead of a prose-only rejection. A vendor whose own
+// schema differs can append its guidance through generic.ErrorHandler.
+const responseFormatExample = `A response format file is JSON and looks like:
+{
+  "type": "json_schema",
+  "json_schema": {
+    "name": "my_schema",
+    "schema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  }
+}`
+
 // LoadResponseFormat loads a response_format JSON file from disk and sets it
-// on the configuration. The file must follow the OpenAI response_format schema.
+// on the configuration. The file must follow the response_format shape.
+// This layer is vendor-agnostic: when a vendor can explain a rejection better
+// it does so through generic.ErrorHandler (see the -rf call site).
 func (c *Configurations) LoadResponseFormat(path string) error {
 	var gf generic.ResponseFormat
 	if err := utils.ReadAndUnmarshal(path, &gf); err != nil {
-		return fmt.Errorf("failed to load response format from %q: %w", path, err)
+		return fmt.Errorf("failed to load response format from %q: %w\n%s", path, classifyResponseFormatUnmarshal(err), responseFormatExample)
+	}
+	if err := validateResponseFormatShape(&gf); err != nil {
+		return fmt.Errorf("failed to load response format from %q: %w\n%s", path, err, responseFormatExample)
 	}
 	c.ResponseFormat = responseFormatFromGeneric(&gf)
 	return nil
+}
+
+// classifyResponseFormatUnmarshal names the two ways a JSON decode of an -rf
+// file fails: malformed JSON (generic.ErrResponseFormatNotJSON) versus valid
+// JSON whose fields have the wrong JSON type (generic.ErrResponseFormatShape).
+// Every other error (missing file, unreadable path) is returned untouched.
+func classifyResponseFormatUnmarshal(err error) error {
+	var syntaxErr *json.SyntaxError
+	if errors.As(err, &syntaxErr) {
+		return fmt.Errorf("%w: %w", generic.ErrResponseFormatNotJSON, err)
+	}
+	var typeErr *json.UnmarshalTypeError
+	if errors.As(err, &typeErr) {
+		return fmt.Errorf("%w: %w", generic.ErrResponseFormatShape, err)
+	}
+	return err
+}
+
+// validateResponseFormatShape rejects a parsed -rf file that is not a usable
+// response_format: an unknown or missing type, or a "json_schema" type without
+// its "json_schema" object.
+func validateResponseFormatShape(gf *generic.ResponseFormat) error {
+	switch gf.Type {
+	case "text", "json_object":
+		return nil
+	case "json_schema":
+		if gf.JSONSchema == nil {
+			return fmt.Errorf("%w: type \"json_schema\" requires a \"json_schema\" object", generic.ErrResponseFormatShape)
+		}
+		return nil
+	case "":
+		return fmt.Errorf("%w: missing top-level \"type\"", generic.ErrResponseFormatShape)
+	default:
+		return fmt.Errorf("%w: unsupported top-level \"type\" %q, want \"json_object\" or \"json_schema\"", generic.ErrResponseFormatShape, gf.Type)
+	}
 }

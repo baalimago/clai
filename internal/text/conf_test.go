@@ -1,6 +1,7 @@
 package text
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -129,18 +130,56 @@ func TestLoadResponseFormat_FileNotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
+	if errors.Is(err, generic.ErrResponseFormatNotJSON) || errors.Is(err, generic.ErrResponseFormatShape) {
+		t.Fatalf("a missing file must not be reported as a bad response format: %v", err)
+	}
 }
 
-func TestLoadResponseFormat_InvalidJSON(t *testing.T) {
+func TestLoadResponseFormat_NotJSON(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "rf.json")
-	if err := os.WriteFile(path, []byte(`not json`), 0o644); err != nil {
+	path := filepath.Join(dir, "examples.md")
+	// Pointing -rf at a markdown file is the mistake the error must name.
+	if err := os.WriteFile(path, []byte("# Examples\n\nsome prose\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	var c Configurations
 	err := c.LoadResponseFormat(path)
-	if err == nil {
-		t.Fatal("expected error")
+	if !errors.Is(err, generic.ErrResponseFormatNotJSON) {
+		t.Fatalf("error = %v, want generic.ErrResponseFormatNotJSON", err)
+	}
+	if !strings.Contains(err.Error(), "must be JSON") {
+		t.Fatalf("error = %v, want it to say the file must be JSON", err)
+	}
+	if !strings.Contains(err.Error(), responseFormatExample) {
+		t.Fatalf("error = %v, want it to embed the response format example", err)
+	}
+}
+
+func TestLoadResponseFormat_WrongShape(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		content string
+	}{
+		{name: "empty object", content: `{}`},
+		{name: "unsupported type", content: `{"type":"yaml"}`},
+		{name: "json_schema without object", content: `{"type":"json_schema"}`},
+		{name: "type wrong JSON kind", content: `{"type":5}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "rf.json")
+			if err := os.WriteFile(path, []byte(tc.content), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			var c Configurations
+			err := c.LoadResponseFormat(path)
+			if !errors.Is(err, generic.ErrResponseFormatShape) {
+				t.Fatalf("error = %v, want generic.ErrResponseFormatShape", err)
+			}
+			if !strings.Contains(err.Error(), responseFormatExample) {
+				t.Fatalf("error = %v, want it to embed the response format example", err)
+			}
+		})
 	}
 }
 

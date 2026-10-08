@@ -339,7 +339,7 @@ type QueryTextFlags struct {
 func (g *QueryTextFlags) Register(fs *flag.FlagSet) {
 	g.DirReply.Register(fs, "Set to true to reply to the previous directory-scoped conversation (bound to the current working directory).", "dre", "dir-reply")
 	g.UseSkills.Register(fs, "Enable skills. Use '*' to enable or 'none' to disable for the current run.", "s", "skills")
-	g.ResponseFormat.Register(fs, "Block streaming and print only the final structured response.", "rf", "response-format")
+	g.ResponseFormat.Register(fs, "Block streaming and print only the final structured response. Value is the path to a JSON response_format file.", "rf", "response-format")
 	g.ShellContext.Register(fs, "Auto-append shell context by name.", "asc", "add-shell-context")
 	g.Summarize.Register(fs, "Generate a title and summary for a new conversation alongside the query. Overrides summarize-conversations in textConfig.json.", "summarize")
 	g.SummaryModel.Register(fs, "Set the model the conversation summarizer uses. Overrides summary-model in textConfig.json.", "sm", "summary-model")

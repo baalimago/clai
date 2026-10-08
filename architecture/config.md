@@ -416,7 +416,7 @@ Every feature-scoped debug switch follows one scheme, resolved in
 | `DEBUG_MCP_TOOL=1` | MCP tool request/response details |
 | `DEBUG_TOOLS_REGISTRY_SET=1` | Tool registry set operations |
 | `DEBUG_TEXT_QUERIER=1` | Querier setup internals |
-| `DEBUG_COST_MANAGER=1` | Cost manager internals |
+| `DEBUG_COST_MANAGER=1` | Cost manager internals plus the normally-silent price-fetch and enrichment-failure traces |
 | `DEBUG_STOPLOSS=1` | Stoploss budget decisions |
 | `DEBUG_SUMMARY=1` | `[DEBUG_SUMMARY]` in-flight conversation summary launch, apply, failure and abandon lines (failures are otherwise silent) |
 | `DEBUG_CPU=1` | CPU profiling to `cpu_profile.prof` |

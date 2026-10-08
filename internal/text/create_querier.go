@@ -14,6 +14,7 @@ import (
 	"github.com/baalimago/clai/internal/vendors/gemini"
 	"github.com/baalimago/clai/internal/vendors/huggingface"
 	"github.com/baalimago/clai/internal/vendors/inception"
+	"github.com/baalimago/clai/internal/vendors/jev"
 	"github.com/baalimago/clai/internal/vendors/mistral"
 	"github.com/baalimago/clai/internal/vendors/novita"
 	"github.com/baalimago/clai/internal/vendors/ollama"
@@ -65,6 +66,18 @@ func selectTextQuerier(ctx context.Context, conf Configurations) (models.Querier
 	if strings.HasPrefix(conf.Model, "or:") {
 		found = true
 		defaultCpy := openrouter.Default
+		defaultCpy.Model = conf.Model
+		qTmp, err := NewQuerier(ctx, conf, &defaultCpy)
+		if err != nil {
+			return nil, found, fmt.Errorf("failed to create text querier: %w", err)
+		}
+		q = &qTmp
+		return q, found, nil
+	}
+
+	if strings.HasPrefix(conf.Model, "jev-") {
+		found = true
+		defaultCpy := jev.Default
 		defaultCpy.Model = conf.Model
 		qTmp, err := NewQuerier(ctx, conf, &defaultCpy)
 		if err != nil {

@@ -68,6 +68,19 @@ func (m *Manager) SetWarnf(warnf func(format string, a ...any)) {
 
 var errCacheMiss = errors.New("cache miss")
 
+// DebugError marks a cost failure that is a normal condition rather than a
+// user-facing fault, such as a price catalog that cannot serve the model. A
+// consumer reports it only when the cost debug flag is set, so a cold price
+// fetch stays quiet on every run.
+type DebugError struct{ err error }
+
+// NewDebugError wraps err as a DebugError.
+func NewDebugError(err error) DebugError { return DebugError{err: err} }
+
+func (e DebugError) Error() string { return e.err.Error() }
+
+func (e DebugError) Unwrap() error { return e.err }
+
 // storePriceScheme by updating the price field in m.configFilePath while keeping all other field as is
 func (m *Manager) storePriceScheme(price ModelPriceScheme) error {
 	m.price = &price
@@ -161,7 +174,7 @@ func (m *Manager) resolveModelPrice(ctx context.Context) (ModelPriceScheme, erro
 	}
 	price, err := m.fetcher.FetchModel(ctx, m.model)
 	if err != nil {
-		return ModelPriceScheme{}, fmt.Errorf("failed to fetch model: %w", err)
+		return ModelPriceScheme{}, NewDebugError(fmt.Errorf("failed to fetch model: %w", err))
 	}
 
 	err = m.storePriceScheme(price)

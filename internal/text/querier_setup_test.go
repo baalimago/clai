@@ -95,6 +95,7 @@ func TestCanonicalModelString_RoundTrip(t *testing.T) {
 		{"novita bare", "novita"},
 		{"huggingface", "hf:fixture-model:providerx"},
 		{"deepseek", "deepseek-fixture"},
+		{"jev", "jev-latest"},
 		{"mistral", "mistral-fixture"},
 		{"gemini", "gemini-fixture"},
 		{"grok", "grok-fixture"},

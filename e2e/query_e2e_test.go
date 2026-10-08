@@ -160,3 +160,36 @@ func Test_goldenFile_QUERY_shell_context_flag_keeps_user_message_output_clean(t 
 	testboil.FailTestIfDiff(t, gotStatusCode, 0)
 	testboil.FailTestIfDiff(t, gotStdout, want)
 }
+
+func Test_query_rejectsNonJSONResponseFormat(t *testing.T) {
+	mdPath := filepath.Join(moduleRoot(t), "examples.md")
+	for _, tc := range []struct {
+		model        string
+		wantJevGuide bool
+	}{
+		{model: "jev-latest", wantJevGuide: true},
+		{model: "gpt-5.2"},
+	} {
+		t.Run(tc.model, func(t *testing.T) {
+			setupMainTestConfigDir(t)
+
+			var gotStatusCode int
+			stderr := testboil.CaptureStderr(t, func(t *testing.T) {
+				_ = testboil.CaptureStdout(t, func(t *testing.T) {
+					gotStatusCode = run([]string{"-cm", tc.model, "-rf", mdPath, "q", "heyo"})
+				})
+			})
+
+			testboil.FailTestIfDiff(t, gotStatusCode, 1)
+			for _, want := range []string{"response format", "must be JSON", "A response format file is JSON and looks like:"} {
+				if !strings.Contains(stderr, want) {
+					t.Fatalf("stderr = %q, want it to contain %q", stderr, want)
+				}
+			}
+			jevGuide := strings.Contains(stderr, `"noul"`)
+			if jevGuide != tc.wantJevGuide {
+				t.Fatalf("stderr includes Jev questions guide=%t, want %t:\n%s", jevGuide, tc.wantJevGuide, stderr)
+			}
+		})
+	}
+}

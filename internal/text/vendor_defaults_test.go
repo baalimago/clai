@@ -8,6 +8,7 @@ import (
 	"github.com/baalimago/clai/internal/vendors/deepseek"
 	"github.com/baalimago/clai/internal/vendors/gemini"
 	"github.com/baalimago/clai/internal/vendors/inception"
+	"github.com/baalimago/clai/internal/vendors/jev"
 	"github.com/baalimago/clai/internal/vendors/mistral"
 	"github.com/baalimago/clai/internal/vendors/novita"
 	"github.com/baalimago/clai/internal/vendors/ollama"
@@ -42,6 +43,7 @@ func Test_vendorDefaultModelsRoute(t *testing.T) {
 		{"inception", "", inception.Default.Model},
 		{"mistral", "", mistral.Default.Model},
 		{"openai", "", openai.GptDefault.Model},
+		{"typesafe", "", jev.Default.Model},
 		{"xai", "", xai.Default.Model},
 		{"berget", "berget:", berget.Default.Model},
 		{"novita", "novita:", novita.Default.Model},

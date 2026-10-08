@@ -77,6 +77,9 @@ func vendorType(fromModel string) (string, string, string, error) {
 		}
 		return "berget", vendor, modelVersion, nil
 	}
+	if strings.HasPrefix(fromModel, "jev-") {
+		return "typesafe", "jev", fromModel, nil
+	}
 	if strings.Contains(fromModel, "gpt") {
 		return "openai", "gpt", fromModel, nil
 	}
@@ -335,7 +338,7 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	go func() {
 		defer close(costDone)
 		for err := range errChan {
-			if logCostErrors && ctx.Err() == nil {
+			if logCostErrors && ctx.Err() == nil && shouldReportCostError(err) {
 				costWarnf("cost manager error: %v", err)
 			}
 		}
@@ -343,4 +346,15 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	}()
 
 	return querier, nil
+}
+
+// shouldReportCostError reports whether a cost manager error is worth a warning.
+// A DebugError is a normal cold-catalog condition, so it surfaces only under
+// the cost debug flag.
+func shouldReportCostError(err error) bool {
+	var debugErr cost.DebugError
+	if errors.As(err, &debugErr) {
+		return debugflags.Enabled("COST_MANAGER")
+	}
+	return true
 }
