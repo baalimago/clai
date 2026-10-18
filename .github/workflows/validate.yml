@@ -17,3 +17,18 @@ jobs:
       # unweighted per-package mean that percentaverage prints.
       test-command: "go test -race -coverpkg ./... -coverprofile /tmp/cover.out ./..."
       coverage-command: "go tool cover -func /tmp/cover.out | tail -1 | grep -oE '[0-9]+\\.[0-9]+'"
+
+  flake:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+      # The build catches a stale vendorHash, which is what breaks on a go.mod
+      # change. The test suite runs in call-workflow; the flake sets doCheck.
+      # macos-latest is arm64, so this pair proves x86_64-linux and
+      # aarch64-darwin. The two aarch64-linux outputs stay unproven.
+      - run: nix build .#clai

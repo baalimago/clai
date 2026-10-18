@@ -28,6 +28,12 @@ You can also install via go:
 go install github.com/baalimago/clai@latest
 ```
 
+Or run it from the Nix flake without installing (flakes must be enabled):
+
+```bash
+nix run github:baalimago/clai
+```
+
 Then run:
 
 ```bash
