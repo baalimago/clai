@@ -1,0 +1,10 @@
+{
+ "ItemTable": {
+  "rows": 2,
+  "sha256": "9c7336f9d098b58d3bba848e3e5221481ee447c44671c41ffe558538f11de775"
+ },
+ "cursorDiskKV": {
+  "rows": 253,
+  "sha256": "bcac93eaffc307235f968dfa597ce556b3ff96fe71b3a294f4839aed301b8d3b"
+ }
+}

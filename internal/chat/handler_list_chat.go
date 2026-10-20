@@ -17,6 +17,8 @@ import (
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/internal/vendors"
 	"github.com/baalimago/clai/internal/vendors/anthropic"
+	"github.com/baalimago/clai/internal/vendors/codex"
+	"github.com/baalimago/clai/internal/vendors/cursor"
 	"github.com/baalimago/clai/internal/vendors/pi"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
@@ -285,6 +287,8 @@ var allSourceReaders = func() []vendors.SourceReader {
 	return []vendors.SourceReader{
 		anthropic.SourceReader{},
 		pi.SourceReader{},
+		cursor.SourceReader{},
+		codex.SourceReader{},
 	}
 }
 

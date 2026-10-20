@@ -59,14 +59,46 @@ func DiscoverJSONL(ctx context.Context, schema JSONLSchema, fsys fs.FS, cache So
 
 func walkJSONLPaths(ctx context.Context, schema JSONLSchema) ([]string, error) {
 	paths := []string{}
-	err := WalkJSONLFiles(ctx, schema.Root(), schema.SkipDirs(), func(absPath string) bool {
-		paths = append(paths, absPath)
-		return false
-	})
-	if err != nil {
-		return nil, err
+	seen := map[string]struct{}{}
+	for _, root := range schemaRoots(schema) {
+		err := WalkJSONLFiles(ctx, root, schema.SkipDirs(), func(absPath string) bool {
+			if _, ok := seen[absPath]; ok {
+				return false
+			}
+			seen[absPath] = struct{}{}
+			paths = append(paths, absPath)
+			return false
+		})
+		if err != nil {
+			return nil, err
+		}
 	}
 	return paths, nil
+}
+
+// schemaRoots is the source's walk order: every root a multi-root schema
+// declares, else the single root. Empty entries are not roots.
+func schemaRoots(schema JSONLSchema) []string {
+	if multi, ok := schema.(JSONLRoots); ok {
+		return compactRoots(multi.Roots())
+	}
+	return compactRoots([]string{schema.Root()})
+}
+
+func compactRoots(roots []string) []string {
+	out := make([]string, 0, len(roots))
+	seen := map[string]struct{}{}
+	for _, root := range roots {
+		if root == "" {
+			continue
+		}
+		if _, ok := seen[root]; ok {
+			continue
+		}
+		seen[root] = struct{}{}
+		out = append(out, root)
+	}
+	return out
 }
 
 func scanJSONLFileSlots(ctx context.Context, schema JSONLSchema, fsys fs.FS, cache SourceCache, paths []string, slots []discoverSlot) {
@@ -137,7 +169,7 @@ func scanJSONLFileRow(schema JSONLSchema, fsys fs.FS, absPath string, info fs.Fi
 	row := SourceRow{Source: schema.SourceName(), RawPath: absPath}
 	// No prefilter means every line is decoded: correct, and slower (D18).
 	prefilter, _ := schema.(LinePrefilter)
-	scanErr := scanJSONLRawLines(f, ReadMaxToken, func(line []byte) bool {
+	scanErr := scanJSONLRawLines(f, ReadMaxToken, schemaGate(schema), func(line []byte) bool {
 		if prefilter != nil && !prefilter.MayContribute(line) {
 			return true
 		}
@@ -192,13 +224,26 @@ func FindJSONLSession(ctx context.Context, schema JSONLSchema, fsys fs.FS, cache
 	if sourceID == "" {
 		return "", fmt.Errorf("find %v session: empty session id", schema.SourceName())
 	}
-	root := schema.Root()
-	if root == "" {
+	roots := schemaRoots(schema)
+	if len(roots) == 0 {
 		return "", fmt.Errorf("%v root not configured", schema.SourceName())
 	}
 	if p, ok := cachedSessionPath(schema, fsys, cache, sourceID); ok {
 		return p, nil
 	}
+	for _, root := range roots {
+		found, err := findJSONLSessionInRoot(ctx, schema, fsys, root, sourceID)
+		if err != nil {
+			return "", fmt.Errorf("find %v session: %w", schema.SourceName(), err)
+		}
+		if found != "" {
+			return found, nil
+		}
+	}
+	return "", fmt.Errorf("%v session %q not found", schema.SourceName(), sourceID)
+}
+
+func findJSONLSessionInRoot(ctx context.Context, schema JSONLSchema, fsys fs.FS, root, sourceID string) (string, error) {
 	var found string
 	var readErr error
 	err := WalkJSONLFiles(ctx, root, schema.SkipDirs(), func(absPath string) bool {
@@ -215,15 +260,9 @@ func FindJSONLSession(ctx context.Context, schema JSONLSchema, fsys fs.FS, cache
 		return false
 	})
 	if err != nil {
-		return "", fmt.Errorf("find %v session: %w", schema.SourceName(), err)
+		return "", err
 	}
-	if readErr != nil {
-		return "", fmt.Errorf("find %v session: %w", schema.SourceName(), readErr)
-	}
-	if found == "" {
-		return "", fmt.Errorf("%v session %q not found", schema.SourceName(), sourceID)
-	}
-	return found, nil
+	return found, readErr
 }
 
 // cachedSessionPath never writes: an identity is not a discovered row.
@@ -257,7 +296,7 @@ func jsonlFileIdentity(schema JSONLSchema, fsys fs.FS, absPath string) (string, 
 	defer f.Close()
 
 	identity := ""
-	scanErr := scanJSONLRawLines(f, ReadMaxToken, func(line []byte) bool {
+	scanErr := scanJSONLRawLines(f, ReadMaxToken, schemaGate(schema), func(line []byte) bool {
 		lf := schema.Fields(line)
 		if lf.Role == LineRoleSkip || lf.SessionID == "" {
 			return true
@@ -271,15 +310,32 @@ func jsonlFileIdentity(schema JSONLSchema, fsys fs.FS, absPath string) (string, 
 	return "", scanErr
 }
 
+// schemaGate is the source's whole-file decision, when it has one.
+func schemaGate(schema JSONLSchema) func([]byte) bool {
+	if gate, ok := schema.(JSONLFileGate); ok {
+		return gate.AcceptFirstLine
+	}
+	return nil
+}
+
 // The raw line is valid only until fn returns, and fn returns false to stop.
-// The scanner error is returned so callers can judge a truncated scan.
-func scanJSONLRawLines(r io.Reader, maxToken int, fn func(line []byte) bool) error {
+// gate sees the first non-empty line once; false ends the scan without error,
+// so the file is cached as yielding nothing. The scanner error is returned so
+// callers can judge a truncated scan.
+func scanJSONLRawLines(r io.Reader, maxToken int, gate func([]byte) bool, fn func(line []byte) bool) error {
 	s := bufio.NewScanner(r)
 	s.Buffer(make([]byte, 0, 64<<10), maxToken)
+	first := true
 	for s.Scan() {
 		line := bytes.TrimSpace(s.Bytes())
 		if len(line) == 0 {
 			continue
+		}
+		if first {
+			first = false
+			if gate != nil && !gate(line) {
+				return nil
+			}
 		}
 		if !fn(line) {
 			return nil

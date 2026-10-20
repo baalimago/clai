@@ -38,6 +38,10 @@ type SourceReader struct {
 	//
 	// This exists primarily for tests; production code should leave it empty.
 	Root string
+	// DesktopRoot is the absolute directory that contains Claude Desktop's
+	// claude-code-sessions tree. If empty, defaults to the platform config
+	// directory. It exists primarily for tests.
+	DesktopRoot string
 }
 
 func (r SourceReader) Source() string {
@@ -137,7 +141,12 @@ func (s schema) Fields(line []byte) vendors.LineFields {
 }
 
 func (r SourceReader) Discover(ctx context.Context, cache vendors.SourceCache) ([]vendors.SourceRow, error) {
-	return vendors.DiscoverJSONL(ctx, r.schema(), r.FS, cache)
+	rows, err := vendors.DiscoverJSONL(ctx, r.schema(), r.FS, cache)
+	if err != nil {
+		return nil, err
+	}
+	r.enrichDesktopMetadata(rows)
+	return rows, nil
 }
 
 func isSidechain(env map[string]any) bool {

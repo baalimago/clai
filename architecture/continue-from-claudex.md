@@ -232,8 +232,9 @@ cache and a warm cache produce identical rows.
 
 The filesystem/scanner boilerplate common to every JSONL-backed source lives
 in `internal/vendors/jsonl.go`: `WalkJSONLFiles` (tolerant `*.jsonl` walking
-with skip-dirs, e.g. Claude's `subagents/`), `ScanJSONLLines` (line-by-line
-JSON scanning, bounded only by the scanner token size), `OpenAbs` and `StatAbs` (FS-injectable file
+with skip-dirs, e.g. Claude's `subagents/`), `ScanJSONLLines` and
+`ScanJSONLRecords` (line-by-line JSON scanning, map-shaped or typed, bounded
+only by the scanner token size), `OpenAbs` and `StatAbs` (FS-injectable file
 opening and stat), `HomeRelativeRoot`, `TextBlocksContent` (string-or-text-block
 content flattening), and `MapAssistantBlocks` (assistant text/thinking/tool-call
 block mapping, parameterized by `ToolCallBlockKeys` for vendor key names).
@@ -256,6 +257,19 @@ mapping. Nothing else is required, and nothing else is allowed: vendor code
 a schema is handed one line at a time and the generic layer alone decides how
 many lines there are. That is what keeps the cost rule in code rather than in
 prose, which is how the previous rule was lost.
+
+A schema may also implement `vendors.JSONLRoots` (`Roots() []string`) when a
+source keeps sessions under more than one directory, such as Codex's live and
+archived rollouts. The generic layer walks the roots in declared order, removes
+empty and duplicate entries, and searches every root in `FindJSONLSession`.
+A single-root schema needs neither method nor change.
+
+A schema may also implement `vendors.JSONLFileGate`
+(`AcceptFirstLine(line []byte) bool`) when the first line decides whether a
+file is a session at all. The gate runs once per opened file, before any line
+can contribute. A rejected file yields no row and no identity: later lines
+cannot claim a session the first line disowned. Discovery caches the rejection
+under the file's `(size, mtime)`, and `FindJSONLSession` applies the same gate.
 
 A schema may also implement `vendors.LinePrefilter`
 (`MayContribute(line []byte) bool`), which lets the scan skip decoding lines
@@ -295,9 +309,10 @@ Each vendor package that supports conversation reading exposes a constructor or 
 // In internal/chat/handler_list_chat.go (conceptual)
 func allSourceReaders() []vendors.SourceReader {
 	return []vendors.SourceReader{
-		anthropic.SourceReader{}, // claude-code
+		anthropic.SourceReader{}, // claude-code (+ Claude Desktop metadata)
 		pi.SourceReader{},        // pi
-		// future: codex.SourceReader{}, cursor.SourceReader{}, ...
+		cursor.SourceReader{},    // cursor
+		codex.SourceReader{},     // codex
 	}
 }
 
@@ -359,7 +374,7 @@ For each `.jsonl` file whose `(size, mtime)` pair misses the foreign index, read
 - `MessageCount` = count of `user` + `assistant` lines. **The count is exact from discovery onward**, with one pre-existing caveat: the list shows the same number `Read` would produce, and there is no later refinement, but a line longer than `vendors.ReadMaxToken` ends the scan of its whole file, so anything after it is uncounted — and because the result of that scan is cached, the undercount is now persisted rather than recomputed each run. Both `Discover` and `Read` truncate at the same bound, so they still agree with each other. The scan reads to EOF, and a schema's optional `MayContribute` byte prefilter decides which lines are worth decoding, so exactness costs decoding rather than reading. Misses are scanned by a bounded worker pool; hits cost one `stat`.
 - `RawPath` = absolute path.
 
-Session metadata is cross-referenced: the `local_*.json` files in `claude-code-sessions/` carry a `title` field. If found, `title` replaces `FirstUserMessage` in the preview column (the full `FirstUserMessage` is still available for fallback).
+Session metadata is cross-referenced: the `local_*.json` files in `claude-code-sessions/` carry a `title` field. If found, `title` replaces `FirstUserMessage` in the preview column (the full `FirstUserMessage` is still available for fallback). The same file fills `model`, `cwd` and `createdAt` when the transcript does not carry them. The desktop tree is resolved through `os.UserConfigDir()` plus `Claude/claude-code-sessions`, so Linux (`~/.config`), macOS (`~/Library/Application Support`) and Windows (`%AppData%`) share one code path.
 
 ### Read (`Read`)
 
@@ -391,6 +406,114 @@ The `cwd` comes from the first `user` message's `cwd` field.
 ### Profile
 
 `Read` does not set `chat.Profile`. The clone starts with no profile; the user's `-p` flag or the continue flow stamps it later.
+
+## Cursor source reader
+
+Location: `internal/vendors/cursor/source_reader.go` and
+`internal/vendors/cursor/cli.go`; the file reader it uses is
+`internal/sqlitepage`.
+
+Implements `vendors.SourceReader` with `Source() == "cursor"`.
+
+### Storage
+
+Cursor has two stores. The IDE keeps every composer chat in one SQLite file.
+The CLI keeps one SQLite file per chat.
+
+| Path | Content |
+| --- | --- |
+| `os.UserConfigDir()/Cursor/User/globalStorage/state.vscdb` | `ItemTable` and `cursorDiskKV` |
+| `cursorDiskKV` key `composerData:<composerId>` | chat metadata, including `fullConversationHeadersOnly` |
+| `cursorDiskKV` key `bubbleId:<deviceId>:<bubbleId>` | one JSON message |
+| `~/.cursor/chats/<workspace>/<chat>/store.db` | `blobs` and `meta` |
+| `~/.cursor/chats/<workspace>/<chat>/meta.json` | title, working directory and creation time |
+
+`composerData` carries the title (`text` or `name`), `createdAt` (Unix ms),
+`modelConfig.modelName`, `gitWorktree.worktreePath`, and the ordered message
+headers. A chat without headers names no transcript and is skipped. When the
+composer document has no preview text, discovery reads the first user bubble
+for that chat. `bubbleId` carries `type` (1 user, 2 assistant), `text`, an
+optional Lexical `richText` tree, thinking blocks, and `toolFormerData`.
+
+The CLI `meta` table key `0` holds hex-encoded JSON with `latestRootBlobId`,
+`name`, `createdAt`, and an optional `subagentInfo`. The root blob is a
+protobuf message whose repeated field 1 is the ordered list of 32-byte message
+blob ids. Each message blob is JSON with a `role` and `content`. A chat with
+`subagentInfo` is a child agent, not a user conversation, and is skipped.
+
+### Rules
+
+- A missing database is absence, not an error.
+- A non-empty `-wal` sidecar is an error: Cursor keeps recent writes in the
+  log, and `internal/sqlitepage` refuses to return a stale view. The reader
+  reports the error only when no storage produced a row; a failed IDE store
+  does not hide CLI chats, and a failed CLI store does not hide IDE chats.
+- The foreign cache is per file, but one `state.vscdb` holds every chat, so
+  the cache cannot represent this source. Discovery scans both stores. The
+  reader never writes to either store.
+- CLI rows use the source id `cli:<chatId>`; IDE rows keep the bare composer
+  id. `Read` dispatches on the prefix.
+- Message mapping is lossy by design: text and `richText` become content,
+  thinking becomes `reasoning_content`, and `toolFormerData` becomes a
+  readable `[tool call: name(args)]` line in the assistant content. Tool
+  calls are not emitted as structured `ToolCalls`, because Cursor does not
+  expose the matching tool results in a shape this reader can pair reliably;
+  an unpaired structured call would make a later provider request invalid.
+  The CLI store uses the same rule: tool calls become text and tool results
+  are dropped, because their payloads are machine output.
+
+## Codex source reader
+
+Location: `internal/vendors/codex/codex_source.go`. The package is separate
+from `internal/vendors/openai` because the API vendor imports the chat
+package, which would close an import cycle.
+
+Implements `vendors.SourceReader` with `Source() == "codex"` and the optional
+`vendors.JSONLRoots` upgrade.
+
+### Storage
+
+Codex writes one rollout per conversation. Both roots hold the same format:
+
+| Path | Content |
+| --- | --- |
+| `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` | live conversations |
+| `~/.codex/archived_sessions/rollout-*.jsonl` | archived conversations |
+
+Each line is an envelope with a `type` and a `payload`.
+
+| Envelope type | Discovery contributes | Read maps to |
+| --- | --- | --- |
+| `session_meta` | `SourceID`, `cwd`, creation time | system preamble context |
+| `turn_context` | model | nothing |
+| `response_item` `message` role `user` | user text, unless it is injected context | `{role: "user"}` |
+| `response_item` `message` role `assistant` | message count | `{role: "assistant"}` |
+| `response_item` `reasoning` | nothing | attached to the next assistant message as `reasoning_content` |
+| `response_item` `function_call` / `custom_tool_call` | message count | `{role: "assistant", tool_calls}` |
+| `response_item` `function_call_output` / `custom_tool_call_output` | message count | `{role: "tool", tool_call_id}` |
+| `event_msg` | nothing | nothing |
+
+### Rules
+
+- A rollout whose `thread_source` is `subagent`, or that carries a
+  `parent_thread_id`, is a child agent. Discovery skips it. A line-level skip is
+  not enough: the child file also contains a copy of the parent `session_meta`,
+  and that copy would otherwise claim the parent id. The reader therefore
+  rejects the whole file from its first line (`vendors.JSONLFileGate`). Without
+  this rule one parent session brings many child transcripts with it.
+- Codex injects context as extra user messages: environment, AGENTS.md,
+  recommended plugins, skills and compaction history. These are whole messages
+  whose text starts with a known wrapper. They are not prompts, so discovery
+  and `Read` drop them before they can become the preview.
+- `function_call.arguments` is already a JSON string and is kept as stored.
+  `custom_tool_call.input` is free-form text, so `Read` JSON-encodes it. The
+  call stays syntactically valid without pretending the input is an object.
+- Tool calls are sequential in every observed rollout. The reader therefore
+  does not run `NormalizeToolCallSequence`, so the discovery count stays exactly
+  equal to the number of messages `Read` returns.
+- `reasoning.summary` can be an array of summary parts or a plain string. The
+  field accepts both shapes. The encrypted reasoning body cannot be replayed
+  and is dropped; an old rollout without `event_msg` lines still reads.
 
 ## Chat list integration
 
@@ -640,8 +763,8 @@ Each further source adds one file in its vendor package and one line to `allSour
 | ---------- | -------------------------------- | ------------------------------------------------------- | --------------- |
 | Claude Code | `internal/vendors/anthropic/`   | local JSONL under `~/.claude/projects/`                 | **implemented** |
 | Pi         | `internal/vendors/pi/`           | local JSONL under `~/.pi/agent/sessions/`               | **implemented** |
-| Codex      | `internal/vendors/openai/`       | JSON or SQLite from `~/.codex/`                         | future          |
-| Cursor     | `internal/vendors/cursor/` (new) | SQLite or workspace storage                             | future          |
+| Codex      | `internal/vendors/codex/`        | JSONL under `~/.codex/sessions/` and `archived_sessions/` | **implemented** |
+| Cursor     | `internal/vendors/cursor/`       | SQLite: IDE `state.vscdb` and CLI `store.db`             | **implemented** |
 | Gemini CLI | `internal/vendors/gemini/`       | local session files                                     | future          |
 
 A JSONL-backed source is a schema and nothing more — see

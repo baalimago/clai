@@ -167,6 +167,22 @@ func newStubSchema(root string) *stubSchema {
 	return &stubSchema{root: root}
 }
 
+// multiRootSchema adds the optional JSONLRoots upgrade to the stub.
+type multiRootSchema struct {
+	*stubSchema
+	roots []string
+}
+
+func (s multiRootSchema) Roots() []string { return s.roots }
+
+// gatedSchema adds the optional JSONLFileGate upgrade to the stub.
+type gatedSchema struct {
+	*stubSchema
+	reject func([]byte) bool
+}
+
+func (s gatedSchema) AcceptFirstLine(line []byte) bool { return !s.reject(line) }
+
 func (s *stubSchema) SourceName() string { return "stub" }
 func (s *stubSchema) Root() string       { return s.root }
 func (s *stubSchema) SkipDirs() []string { return s.skip }
@@ -413,6 +429,85 @@ func TestDiscoverJSONL_missingRootYieldsNoRows(t *testing.T) {
 		if len(rows) != 0 {
 			t.Fatalf("root %q: got %d rows, want none", root, len(rows))
 		}
+	}
+}
+
+// TestDiscoverJSONL_multiRootSchemaWalksEveryRoot covers the optional
+// JSONLRoots upgrade: a source with live and archived sessions reports both
+// directories in declared order, and never visits a path twice.
+func TestDiscoverJSONL_multiRootSchemaWalksEveryRoot(t *testing.T) {
+	live := t.TempDir()
+	archived := t.TempDir()
+	writeStubSession(t, live, "live.jsonl", stubLine{SessionID: "live", Role: "user", Text: "from live"}.String())
+	writeStubSession(t, archived, "archived.jsonl", stubLine{SessionID: "archived", Role: "user", Text: "from archive"}.String())
+
+	schema := multiRootSchema{stubSchema: newStubSchema(live), roots: []string{live, "", archived, archived}}
+	rows, err := vendors.DiscoverJSONL(context.Background(), schema, nil, nil)
+	if err != nil {
+		t.Fatalf("DiscoverJSONL: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("got %d rows, want 2: %+v", len(rows), rows)
+	}
+	if rows[0].SourceID != "live" || rows[1].SourceID != "archived" {
+		t.Fatalf("rows = %q, %q; want live, archived (declared root order)", rows[0].SourceID, rows[1].SourceID)
+	}
+}
+
+// TestFindJSONLSession_multiRootSchemaSearchesEveryRoot checks that Read finds
+// a session that discovery reported from the second root.
+func TestFindJSONLSession_multiRootSchemaSearchesEveryRoot(t *testing.T) {
+	live := t.TempDir()
+	archived := t.TempDir()
+	writeStubSession(t, archived, "archived.jsonl", stubLine{SessionID: "archived", Role: "user", Text: "from archive"}.String())
+
+	schema := multiRootSchema{stubSchema: newStubSchema(live), roots: []string{live, archived}}
+	path, err := vendors.FindJSONLSession(context.Background(), schema, nil, nil, "archived")
+	if err != nil {
+		t.Fatalf("FindJSONLSession: %v", err)
+	}
+	if path != filepath.Join(archived, "archived.jsonl") {
+		t.Fatalf("path = %q, want the archived file", path)
+	}
+	if _, err := vendors.FindJSONLSession(context.Background(), schema, nil, nil, "absent"); err == nil {
+		t.Fatal("FindJSONLSession found an id no root holds")
+	}
+}
+
+// TestDiscoverJSONL_fileGateDropsWholeFile proves the gate runs before any
+// line can contribute: a rejected first line hides an identity that appears
+// later in the file, so a child transcript cannot claim a parent session.
+func TestDiscoverJSONL_fileGateDropsWholeFile(t *testing.T) {
+	root := t.TempDir()
+	writeStubSession(t, root, "child.jsonl",
+		"",
+		`{"gate":"skip"}`,
+		stubLine{SessionID: "copied-parent", Role: "user", Text: "leaked"}.String(),
+	)
+	writeStubSession(t, root, "parent.jsonl",
+		`{"gate":"keep"}`,
+		stubLine{SessionID: "parent", Role: "user", Text: "real"}.String(),
+	)
+	schema := gatedSchema{
+		stubSchema: newStubSchema(root),
+		reject: func(line []byte) bool {
+			return strings.Contains(string(line), `"gate":"skip"`)
+		},
+	}
+	rows, err := vendors.DiscoverJSONL(context.Background(), schema, nil, nil)
+	if err != nil {
+		t.Fatalf("DiscoverJSONL: %v", err)
+	}
+	if len(rows) != 1 || rows[0].SourceID != "parent" {
+		t.Fatalf("rows = %+v, want only the parent session", rows)
+	}
+	if _, err := vendors.FindJSONLSession(context.Background(), schema, nil, nil, "copied-parent"); err == nil {
+		t.Fatal("FindJSONLSession resolved an identity from a gated file")
+	}
+	if path, err := vendors.FindJSONLSession(context.Background(), schema, nil, nil, "parent"); err != nil {
+		t.Fatalf("FindJSONLSession(parent): %v", err)
+	} else if path != filepath.Join(root, "parent.jsonl") {
+		t.Fatalf("FindJSONLSession(parent) = %q", path)
 	}
 }
 

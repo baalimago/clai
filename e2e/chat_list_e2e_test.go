@@ -92,6 +92,99 @@ func Test_e2e_chat_list_foreign_clone_and_dedup(t *testing.T) {
 	}
 }
 
+// Test_e2e_chat_list_cursor_clone verifies that the Cursor source reader is
+// wired into the list: a state.vscdb fixture under the isolated config dir
+// produces a foreign row, and selecting it clones the transcript.
+func Test_e2e_chat_list_cursor_clone(t *testing.T) {
+	confDir := setupMainTestConfigDir(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+
+	src, err := os.ReadFile(filepath.Join(moduleRoot(t), "internal", "vendors", "cursor", "testdata", "state.vscdb"))
+	if err != nil {
+		t.Fatalf("read cursor fixture: %v", err)
+	}
+	dbPath := filepath.Join(home, ".config", "Cursor", "User", "globalStorage", "state.vscdb")
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
+		t.Fatalf("mkdir cursor storage: %v", err)
+	}
+	if err := os.WriteFile(dbPath, src, 0o600); err != nil {
+		t.Fatalf("write cursor database: %v", err)
+	}
+
+	stdout, status := runOne(t, confDir, "-n -r c l 0 c")
+	if status != 0 {
+		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
+	}
+	if !strings.Contains(stdout, "cloned cursor session composer-no-preview") {
+		t.Fatalf("expected a cursor clone notice, got:\n%s", stdout)
+	}
+}
+
+// Test_e2e_chat_list_cursor_cli_clone verifies the Cursor CLI store path: a
+// chat under ~/.cursor/chats produces a foreign row and clones.
+func Test_e2e_chat_list_cursor_cli_clone(t *testing.T) {
+	confDir := setupMainTestConfigDir(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+
+	src := filepath.Join(moduleRoot(t), "internal", "vendors", "cursor", "testdata", "cli", "workspace-a", "chat-cli-1")
+	dst := filepath.Join(home, ".cursor", "chats", "workspace-a", "chat-cli-1")
+	if err := os.MkdirAll(dst, 0o755); err != nil {
+		t.Fatalf("mkdir cursor cli chat: %v", err)
+	}
+	for _, name := range []string{"store.db", "meta.json"} {
+		b, err := os.ReadFile(filepath.Join(src, name))
+		if err != nil {
+			t.Fatalf("read cursor cli fixture %s: %v", name, err)
+		}
+		if err := os.WriteFile(filepath.Join(dst, name), b, 0o600); err != nil {
+			t.Fatalf("write cursor cli fixture %s: %v", name, err)
+		}
+	}
+
+	stdout, status := runOne(t, confDir, "-n -r c l 0 c")
+	if status != 0 {
+		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
+	}
+	if !strings.Contains(stdout, "cloned cursor session cli:chat-cli-1") {
+		t.Fatalf("expected a cursor cli clone notice, got:\n%s", stdout)
+	}
+}
+
+// Test_e2e_chat_list_codex_clone verifies that the Codex source reader is
+// wired into the list: a rollout under ~/.codex/sessions produces a foreign
+// row, and selecting it clones the transcript.
+func Test_e2e_chat_list_codex_clone(t *testing.T) {
+	confDir := setupMainTestConfigDir(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+
+	jsonl := "" +
+		`{"type":"session_meta","payload":{"session_id":"cdx-1","cwd":"/work","timestamp":"2026-01-01T00:00:00Z","thread_source":"user"}}` + "\n" +
+		`{"type":"turn_context","payload":{"model":"gpt-5.2-codex"}}` + "\n" +
+		`{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"hello codex"}]}}` + "\n" +
+		`{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"hello human"}]}}` + "\n"
+	p := filepath.Join(home, ".codex", "sessions", "2026", "01", "01", "rollout-cdx-1.jsonl")
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatalf("mkdir codex sessions: %v", err)
+	}
+	if err := os.WriteFile(p, []byte(jsonl), 0o600); err != nil {
+		t.Fatalf("write codex session: %v", err)
+	}
+
+	stdout, status := runOne(t, confDir, "-n -r c l 0 c")
+	if status != 0 {
+		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
+	}
+	if !strings.Contains(stdout, "cloned codex session cdx-1") {
+		t.Fatalf("expected a codex clone notice, got:\n%s", stdout)
+	}
+}
+
 // Test_e2e_chat_list_edit_message_picker_reopens drives the full peek+edit flow:
 // page forward in list, open chat, page forward in picker, mistype → notice,
 // edit message → picker reopens same page → back → list same page → quit.
