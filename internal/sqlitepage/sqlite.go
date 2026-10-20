@@ -1,6 +1,7 @@
 package sqlitepage
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -17,15 +18,19 @@ type DB struct {
 	pageSize int
 	usable   int
 	encoding uint32
+	// overlay holds the pages a replayed write-ahead log supersedes.
+	overlay map[uint32][]byte
+	// pages is the committed page count a replayed log declares, or zero
+	// when no log was read. Pages beyond it are not part of this snapshot.
+	pages uint32
 }
 
-// Open opens path for reading. It refuses a non-empty -wal sidecar because
-// replaying the write-ahead log is outside this reader, and a read without it
-// would silently return a stale snapshot.
+// Open opens path for reading. A non-empty -wal sidecar is replayed onto the
+// file pages, so a database with a live writer reads as a best-effort
+// snapshot: a checkpoint that lands between Open and a later page read can
+// still leave the two sources at different commits. A log this reader cannot
+// parse is refused: a read without it would silently return a stale snapshot.
 func Open(path string) (*DB, error) {
-	if fi, err := os.Stat(path + "-wal"); err == nil && fi.Size() > 0 {
-		return nil, fmt.Errorf("%w: %s", ErrWALPresent, path+"-wal")
-	}
 	if fi, err := os.Stat(path); err != nil {
 		return nil, fmt.Errorf("stat %q: %w", path, err)
 	} else if fi.IsDir() {
@@ -57,7 +62,14 @@ func Open(path string) (*DB, error) {
 	if enc < 1 || enc > 3 {
 		enc = 1
 	}
-	return &DB{f: f, pageSize: ps, usable: ps - reserved, encoding: enc}, nil
+	db := &DB{f: f, pageSize: ps, usable: ps - reserved, encoding: enc}
+	if fi, err := os.Stat(path + "-wal"); err == nil && fi.Size() > 0 {
+		if err := db.applyWAL(path + "-wal"); err != nil {
+			f.Close()
+			return nil, err
+		}
+	}
+	return db, nil
 }
 
 func (db *DB) Close() error { return db.f.Close() }
@@ -68,6 +80,12 @@ func (db *DB) PageSize() int { return db.pageSize }
 func (db *DB) readPage(pgno uint32) ([]byte, error) {
 	if pgno == 0 {
 		return nil, fmt.Errorf("%w: page 0", ErrCorrupt)
+	}
+	if db.pages > 0 && pgno > db.pages {
+		return nil, fmt.Errorf("%w: page %d past committed size %d", ErrCorrupt, pgno, db.pages)
+	}
+	if page, ok := db.overlay[pgno]; ok {
+		return bytes.Clone(page), nil
 	}
 	buf := make([]byte, db.pageSize)
 	if _, err := db.f.ReadAt(buf, int64(pgno-1)*int64(db.pageSize)); err != nil {
@@ -84,6 +102,8 @@ type Table struct {
 	db   *DB
 	Name string
 	Root uint32
+	// SQL is the stored CREATE TABLE statement, verbatim.
+	SQL string
 }
 
 // Table resolves name from sqlite_master. A missing table and a WITHOUT ROWID
@@ -107,7 +127,7 @@ func (db *DB) Table(name string) (*Table, error) {
 		if vals[4].Text != "" && strings.Contains(strings.ToUpper(vals[4].Text), "WITHOUT ROWID") {
 			return fmt.Errorf("%w: table %q is WITHOUT ROWID", ErrUnsupported, name)
 		}
-		found = &Table{db: db, Name: name, Root: uint32(vals[3].Int)}
+		found = &Table{db: db, Name: name, Root: uint32(vals[3].Int), SQL: vals[4].Text}
 		return nil
 	})
 	if err != nil {
@@ -117,6 +137,78 @@ func (db *DB) Table(name string) (*Table, error) {
 		return nil, fmt.Errorf("%w: table %q not found", ErrUnsupported, name)
 	}
 	return found, nil
+}
+
+// Columns returns the table's column names in declaration order. A source
+// reader uses it to prove that a positional read still addresses the columns
+// it was written for, instead of trusting the column count.
+func (t *Table) Columns() ([]string, error) {
+	cols, err := parseColumns(t.SQL)
+	if err != nil {
+		return nil, fmt.Errorf("columns of %q: %w", t.Name, err)
+	}
+	return cols, nil
+}
+
+func parseColumns(sql string) ([]string, error) {
+	_, after, ok := strings.Cut(sql, "(")
+	if !ok {
+		return nil, fmt.Errorf("%w: table definition without a column list", ErrUnsupported)
+	}
+	defs := splitTopLevel(after)
+	cols := make([]string, 0, len(defs))
+	for _, def := range defs {
+		name := strings.Fields(def)
+		if len(name) == 0 {
+			continue
+		}
+		switch strings.ToUpper(name[0]) {
+		case "CONSTRAINT", "PRIMARY", "UNIQUE", "CHECK", "FOREIGN":
+			continue
+		}
+		cols = append(cols, unquoteIdentifier(name[0]))
+	}
+	if len(cols) == 0 {
+		return nil, fmt.Errorf("%w: table definition without columns", ErrUnsupported)
+	}
+	return cols, nil
+}
+
+// splitTopLevel splits a column list at depth-one commas and stops at the
+// parenthesis that closes it.
+func splitTopLevel(body string) []string {
+	defs := []string{}
+	depth := 0
+	start := 0
+	for i := 0; i < len(body); i++ {
+		switch body[i] {
+		case '(':
+			depth++
+		case ')':
+			if depth == 0 {
+				return append(defs, body[start:i])
+			}
+			depth--
+		case ',':
+			if depth == 0 {
+				defs = append(defs, body[start:i])
+				start = i + 1
+			}
+		}
+	}
+	return append(defs, body[start:])
+}
+
+func unquoteIdentifier(s string) string {
+	if len(s) >= 2 {
+		switch {
+		case s[0] == '"' && s[len(s)-1] == '"',
+			s[0] == '`' && s[len(s)-1] == '`',
+			s[0] == '[' && s[len(s)-1] == ']':
+			return s[1 : len(s)-1]
+		}
+	}
+	return s
 }
 
 // Rows walks the table b-tree in rowid order and calls fn once per row.

@@ -9,7 +9,9 @@ changes, and keep the tests in step with the data.
 """
 
 import os
+import shutil
 import sqlite3
+import tempfile
 
 here = os.path.dirname(os.path.abspath(__file__))
 
@@ -57,8 +59,31 @@ c.execute("insert into t values('日本語 text')")
 c.commit()
 c.close()
 
-# wal.db: a non-empty -wal sidecar must make Open refuse the stale file.
+# wal.db: committed rows that live only in the write-ahead log, plus the
+# shm sidecar SQLite leaves beside a live log. Two frames follow the
+# checkpoint, so a test can prove that a damaged frame stops the replay at
+# the previous commit.
+tmp = tempfile.mkdtemp()
+src = os.path.join(tmp, "wal.db")
+c = sqlite3.connect(src)
+c.execute("pragma journal_mode=wal")
+c.execute("pragma wal_autocheckpoint=0")
+c.execute("create table t(k text)")
+c.execute("insert into t values('checkpointed')")
+c.commit()
+c.execute("pragma wal_checkpoint(truncate)")
+c.execute("insert into t values('wal-one')")
+c.commit()
+c.execute("insert into t values('wal-two')")
+c.commit()
 p = fresh("wal.db")
+for suffix in ("", "-wal"):
+    shutil.copyfile(src + suffix, p + suffix)
+c.close()
+shutil.rmtree(tmp)
+
+# badwal.db: a sidecar this reader cannot parse must make Open refuse the file.
+p = fresh("badwal.db")
 c = sqlite3.connect(p)
 c.execute("create table t(k text)")
 c.execute("insert into t values('x')")

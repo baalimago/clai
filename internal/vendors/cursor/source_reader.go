@@ -7,9 +7,9 @@
 // field is read best-effort: a missing field drops that field, never the
 // conversation.
 //
-// The reader never writes to the database. It refuses a non-empty -wal
-// sidecar, because replaying the write-ahead log is outside the page reader
-// and a read without it would silently return stale history.
+// The reader never writes to the database. A write-ahead log is replayed by
+// internal/sqlitepage; a log the page reader cannot parse is refused, because a
+// read without it would silently return stale history.
 package cursor
 
 import (
@@ -269,14 +269,11 @@ func (r SourceReader) open() (*sqlitepage.DB, error) {
 	if p == "" {
 		return nil, errNoDatabase
 	}
-	if _, err := os.Stat(p); err != nil {
+	db, err := sqlitepage.Open(p)
+	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, fmt.Errorf("%w: %s", errNoDatabase, p)
 		}
-		return nil, fmt.Errorf("stat cursor database %q: %w", p, err)
-	}
-	db, err := sqlitepage.Open(p)
-	if err != nil {
 		return nil, fmt.Errorf("open cursor database %q: %w", p, err)
 	}
 	return db, nil

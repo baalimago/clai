@@ -1,6 +1,7 @@
 package sqlitepage
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"math"
@@ -169,10 +170,338 @@ func TestUTF16Text(t *testing.T) {
 	}
 }
 
-func TestWALRefused(t *testing.T) {
-	_, err := Open(filepath.Join("testdata", "wal.db"))
+func TestWALReplay(t *testing.T) {
+	db := openDB(t, "wal.db")
+	_, rows := collect(t, db, "t")
+	var got []string
+	for _, r := range rows {
+		got = append(got, r[0].Text)
+	}
+	want := []string{"checkpointed", "wal-one", "wal-two"}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("rows = %v, want %v", got, want)
+	}
+}
+
+func TestWALMalformedRefused(t *testing.T) {
+	_, err := Open(filepath.Join("testdata", "badwal.db"))
 	if !errors.Is(err, ErrWALPresent) {
 		t.Fatalf("want ErrWALPresent, got %v", err)
+	}
+}
+
+func TestWALTornTailKeepsCommittedFrames(t *testing.T) {
+	dir := copyWALFixture(t)
+	truncateFile(t, filepath.Join(dir, "wal.db-wal"), walHeaderSize+walFrameSize+4096)
+	db, err := Open(filepath.Join(dir, "wal.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer db.Close()
+	if got := tableTexts(t, db, "t"); fmt.Sprint(got) != fmt.Sprint([]string{"checkpointed", "wal-one"}) {
+		t.Fatalf("rows = %v, want the first commit only", got)
+	}
+}
+
+func TestWALTamperedFrameKeepsEarlierCommit(t *testing.T) {
+	dir := copyWALFixture(t)
+	p := filepath.Join(dir, "wal.db-wal")
+	b, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Byte 900 of the second frame's page data: inside the first commit's
+	// page range, so the checksum of frame two no longer matches.
+	b[walHeaderSize+walFrameSize+4096+walFrameSize+900] ^= 0xff
+	if err := os.WriteFile(p, b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	db, err := Open(filepath.Join(dir, "wal.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer db.Close()
+	if got := tableTexts(t, db, "t"); fmt.Sprint(got) != fmt.Sprint([]string{"checkpointed", "wal-one"}) {
+		t.Fatalf("rows = %v, want the earlier commit", got)
+	}
+}
+
+func TestWALBadHeaderRefused(t *testing.T) {
+	tests := []struct {
+		name  string
+		off   int
+		value []byte
+	}{
+		{"magic", 0, []byte{0, 0, 0, 0}},
+		{"version", 4, []byte{0, 0, 0, 1}},
+		{"page size", 8, []byte{0, 0, 0x20, 0}},
+		{"checksum", 24, []byte{0, 0, 0, 0}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := copyWALFixture(t)
+			p := filepath.Join(dir, "wal.db-wal")
+			b, err := os.ReadFile(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			copy(b[tc.off:], tc.value)
+			if err := os.WriteFile(p, b, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Open(filepath.Join(dir, "wal.db")); !errors.Is(err, ErrWALPresent) {
+				t.Fatalf("want ErrWALPresent, got %v", err)
+			}
+		})
+	}
+}
+
+func copyWALFixture(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	for _, suffix := range []string{"", "-wal"} {
+		b, err := os.ReadFile(filepath.Join("testdata", "wal.db"+suffix))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "wal.db"+suffix), b, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
+
+func truncateFile(t *testing.T, path string, size int64) {
+	t.Helper()
+	if err := os.Truncate(path, size); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func tableTexts(t *testing.T, db *DB, table string) []string {
+	t.Helper()
+	_, rows := collect(t, db, table)
+	out := make([]string, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, r[0].Text)
+	}
+	return out
+}
+
+// walFixtureFrame is one frame read back from a fixture log.
+type walFixtureFrame struct {
+	pgno   uint32
+	commit uint32
+	page   []byte
+}
+
+func readWALFixture(t *testing.T) (uint32, uint32, []walFixtureFrame) {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join("testdata", "wal.db-wal"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	salt1 := binary.BigEndian.Uint32(b[16:20])
+	salt2 := binary.BigEndian.Uint32(b[20:24])
+	pages := make([]walFixtureFrame, 0, (len(b)-walHeaderSize)/(walFrameSize+4096))
+	for off := walHeaderSize; off+walFrameSize+4096 <= len(b); off += walFrameSize + 4096 {
+		pages = append(pages, walFixtureFrame{
+			pgno:   binary.BigEndian.Uint32(b[off : off+4]),
+			commit: binary.BigEndian.Uint32(b[off+4 : off+8]),
+			page:   append([]byte(nil), b[off+walFrameSize:off+walFrameSize+4096]...),
+		})
+	}
+	return salt1, salt2, pages
+}
+
+// writeWALFixture writes a log with the given magic, salts and frames, so a
+// test can produce shapes a real writer rarely leaves behind.
+func writeWALFixture(t *testing.T, path string, magic, salt1, salt2 uint32, frames []walFixtureFrame) {
+	t.Helper()
+	bigEndian := magic&1 == 1
+	hdr := make([]byte, walHeaderSize)
+	binary.BigEndian.PutUint32(hdr[0:4], magic)
+	binary.BigEndian.PutUint32(hdr[4:8], walVersion)
+	binary.BigEndian.PutUint32(hdr[8:12], 4096)
+	binary.BigEndian.PutUint32(hdr[16:20], salt1)
+	binary.BigEndian.PutUint32(hdr[20:24], salt2)
+	s1, s2 := walChecksum(hdr[:24], 0, 0, bigEndian)
+	binary.BigEndian.PutUint32(hdr[24:28], s1)
+	binary.BigEndian.PutUint32(hdr[28:32], s2)
+	out := append([]byte(nil), hdr...)
+	for _, f := range frames {
+		frame := make([]byte, walFrameSize)
+		binary.BigEndian.PutUint32(frame[0:4], f.pgno)
+		binary.BigEndian.PutUint32(frame[4:8], f.commit)
+		binary.BigEndian.PutUint32(frame[8:12], salt1)
+		binary.BigEndian.PutUint32(frame[12:16], salt2)
+		fs1, fs2 := walChecksum(frame[:8], s1, s2, bigEndian)
+		fs1, fs2 = walChecksum(f.page, fs1, fs2, bigEndian)
+		binary.BigEndian.PutUint32(frame[16:20], fs1)
+		binary.BigEndian.PutUint32(frame[20:24], fs2)
+		s1, s2 = fs1, fs2
+		out = append(out, frame...)
+		out = append(out, f.page...)
+	}
+	if err := os.WriteFile(path, out, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func openFixtureWithFrames(t *testing.T, frames []walFixtureFrame) *DB {
+	t.Helper()
+	dir := copyWALFixture(t)
+	salt1, salt2, _ := readWALFixture(t)
+	writeWALFixture(t, filepath.Join(dir, "wal.db-wal"), 0x377f0682, salt1, salt2, frames)
+	db, err := Open(filepath.Join(dir, "wal.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+	return db
+}
+
+func TestWALBigEndianChecksum(t *testing.T) {
+	dir := copyWALFixture(t)
+	salt1, salt2, frames := readWALFixture(t)
+	writeWALFixture(t, filepath.Join(dir, "wal.db-wal"), 0x377f0683, salt1, salt2, frames)
+	db, err := Open(filepath.Join(dir, "wal.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer db.Close()
+	if got := tableTexts(t, db, "t"); len(got) != 3 {
+		t.Fatalf("rows = %v, want all three", got)
+	}
+}
+
+func TestWALUncommittedTailIgnored(t *testing.T) {
+	_, _, frames := readWALFixture(t)
+	tail := walFixtureFrame{pgno: 2, commit: 0, page: make([]byte, 4096)}
+	db := openFixtureWithFrames(t, append(frames, tail))
+	if got := tableTexts(t, db, "t"); len(got) != 3 {
+		t.Fatalf("rows = %v, want the committed three", got)
+	}
+}
+
+func TestWALSaltMismatchStops(t *testing.T) {
+	salt1, salt2, frames := readWALFixture(t)
+	dir := copyWALFixture(t)
+	p := filepath.Join(dir, "wal.db-wal")
+	writeWALFixture(t, p, 0x377f0682, salt1, salt2, frames)
+	b, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A frame from another log generation: the salts no longer match, so its
+	// zeroed page must never reach the overlay.
+	frame := make([]byte, walFrameSize+4096)
+	binary.BigEndian.PutUint32(frame[0:4], 2)
+	binary.BigEndian.PutUint32(frame[4:8], 2)
+	binary.BigEndian.PutUint32(frame[8:12], salt1+1)
+	binary.BigEndian.PutUint32(frame[12:16], salt2)
+	if err := os.WriteFile(p, append(b, frame...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	db, err := Open(filepath.Join(dir, "wal.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer db.Close()
+	if got := tableTexts(t, db, "t"); len(got) != 3 {
+		t.Fatalf("rows = %v, want the committed three", got)
+	}
+}
+
+func TestWALPageZeroStops(t *testing.T) {
+	_, _, frames := readWALFixture(t)
+	zero := walFixtureFrame{pgno: 0, commit: 2, page: make([]byte, 4096)}
+	db := openFixtureWithFrames(t, append(frames, zero))
+	if got := tableTexts(t, db, "t"); len(got) != 3 {
+		t.Fatalf("rows = %v, want the committed three", got)
+	}
+}
+
+// TestWALCommitSizeLimitsPages proves that a log declaring a smaller database
+// hides the surviving pages of the file instead of serving them as if they
+// were part of this snapshot.
+func TestWALCommitSizeLimitsPages(t *testing.T) {
+	_, _, frames := readWALFixture(t)
+	first := frames[0]
+	first.commit = 1
+	db := openFixtureWithFrames(t, []walFixtureFrame{first})
+	tbl, err := db.Table("t")
+	if err != nil {
+		t.Fatalf("table: %v", err)
+	}
+	if err := tbl.Rows(func(int64, []Value) error { return nil }); !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("want ErrCorrupt reading past the committed size, got %v", err)
+	}
+}
+
+func TestWALReadErrorIsReported(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "db.db")
+	b, err := os.ReadFile(filepath.Join("testdata", "basic.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(p+"-wal", 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(p); err == nil {
+		t.Fatal("want an error for a log that cannot be read")
+	}
+}
+
+func TestTableColumns(t *testing.T) {
+	db := openDB(t, "basic.db")
+	tbl, err := db.Table("kv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cols, err := tbl.Columns()
+	if err != nil {
+		t.Fatalf("Columns: %v", err)
+	}
+	if fmt.Sprint(cols) != fmt.Sprint([]string{"key", "value"}) {
+		t.Fatalf("columns = %v", cols)
+	}
+	if tbl.SQL == "" {
+		t.Fatal("SQL is empty")
+	}
+}
+
+func TestParseColumns(t *testing.T) {
+	tests := []struct {
+		name string
+		sql  string
+		want []string
+	}{
+		{"quoted", "CREATE TABLE `t` (`a` text, `b` integer)", []string{"a", "b"}},
+		{"constraint skipped", "CREATE TABLE t (a text, CONSTRAINT fk FOREIGN KEY (a) REFERENCES p(b), PRIMARY KEY (a))", []string{"a"}},
+		{"nested parens", "CREATE TABLE t (a text check (a in ('x','y')), b int)", []string{"a", "b"}},
+		{"no type", "CREATE TABLE t (a, b)", []string{"a", "b"}},
+		{"brackets", "CREATE TABLE t ([a] text)", []string{"a"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := parseColumns(tc.sql)
+			if err != nil {
+				t.Fatalf("parseColumns: %v", err)
+			}
+			if fmt.Sprint(got) != fmt.Sprint(tc.want) {
+				t.Fatalf("columns = %v, want %v", got, tc.want)
+			}
+		})
+	}
+	for _, sql := range []string{"", "CREATE TABLE t", "CREATE TABLE t ()"} {
+		if _, err := parseColumns(sql); !errors.Is(err, ErrUnsupported) {
+			t.Fatalf("parseColumns(%q) = %v, want ErrUnsupported", sql, err)
+		}
 	}
 }
 

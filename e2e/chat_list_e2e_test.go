@@ -185,6 +185,36 @@ func Test_e2e_chat_list_codex_clone(t *testing.T) {
 	}
 }
 
+// Test_e2e_chat_list_opencode_clone verifies that the opencode source reader is
+// wired into the list: a database under the isolated data dir produces a
+// foreign row, and selecting it clones the transcript.
+func Test_e2e_chat_list_opencode_clone(t *testing.T) {
+	confDir := setupMainTestConfigDir(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
+
+	src, err := os.ReadFile(filepath.Join(moduleRoot(t), "internal", "vendors", "opencode", "testdata", "opencode.db"))
+	if err != nil {
+		t.Fatalf("read opencode fixture: %v", err)
+	}
+	dbPath := filepath.Join(home, ".local", "share", "opencode", "opencode.db")
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
+		t.Fatalf("mkdir opencode data: %v", err)
+	}
+	if err := os.WriteFile(dbPath, src, 0o600); err != nil {
+		t.Fatalf("write opencode database: %v", err)
+	}
+
+	stdout, status := runOne(t, confDir, "-n -r c l 0 c")
+	if status != 0 {
+		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
+	}
+	if !strings.Contains(stdout, "cloned opencode session ses_main") {
+		t.Fatalf("expected an opencode clone notice, got:\n%s", stdout)
+	}
+}
+
 // Test_e2e_chat_list_edit_message_picker_reopens drives the full peek+edit flow:
 // page forward in list, open chat, page forward in picker, mistype → notice,
 // edit message → picker reopens same page → back → list same page → quit.

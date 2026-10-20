@@ -444,10 +444,11 @@ blob ids. Each message blob is JSON with a `role` and `content`. A chat with
 ### Rules
 
 - A missing database is absence, not an error.
-- A non-empty `-wal` sidecar is an error: Cursor keeps recent writes in the
-  log, and `internal/sqlitepage` refuses to return a stale view. The reader
-  reports the error only when no storage produced a row; a failed IDE store
-  does not hide CLI chats, and a failed CLI store does not hide IDE chats.
+- A `-wal` sidecar is replayed by `internal/sqlitepage`, so a running Cursor
+  still reads as the committed state. A log the page reader cannot parse is
+  refused instead of read stale. The reader reports the error only when no
+  storage produced a row; a failed IDE store does not hide CLI chats, and a
+  failed CLI store does not hide IDE chats.
 - The foreign cache is per file, but one `state.vscdb` holds every chat, so
   the cache cannot represent this source. Discovery scans both stores. The
   reader never writes to either store.
@@ -514,6 +515,67 @@ Each line is an envelope with a `type` and a `payload`.
 - `reasoning.summary` can be an array of summary parts or a plain string. The
   field accepts both shapes. The encrypted reasoning body cannot be replayed
   and is dropped; an old rollout without `event_msg` lines still reads.
+
+## opencode source reader
+
+Location: `internal/vendors/opencode/source_reader.go`; the file reader it uses
+is `internal/sqlitepage`.
+
+Implements `vendors.SourceReader` with `Source() == "opencode"`.
+
+### Storage
+
+opencode keeps one database for the whole machine. The directory follows the
+XDG data home on every platform, Windows included.
+
+| Path | Content |
+| --- | --- |
+| `$XDG_DATA_HOME/opencode/opencode.db`, else `~/.local/share/opencode/opencode.db` | the whole store |
+| table `session_v2` | `id`, `parent_id`, `directory`, `title`, `model`, `time_created` |
+| table `session_message` | `session_id`, `type`, `seq`, and `data`, one JSON message |
+
+A channel build writes `opencode-<channel>.db` instead, and the environment
+variable `OPENCODE_DB` points opencode at another file. This reader reads the
+plain name under the data home only; both overrides are out of scope.
+
+`session_message.type` is a closed tag. Only three values carry conversation:
+
+| Type | Discovery contributes | Read maps to |
+| --- | --- | --- |
+| `user` | prompt text, count | `{role: "user"}` |
+| `assistant` part `text` | count | message content |
+| `assistant` part `reasoning` | nothing | `reasoning_content` |
+| `assistant` part `tool`, `completed` or `error` | count | a tool call plus a `{role: "tool"}` result |
+| `assistant` part `tool`, `streaming` or `running` | count | a `[tool call: name(args)]` text line |
+| `compaction`, `shell`, `system`, `synthetic`, `skill`, `idle`, and the switching tags | nothing | nothing |
+
+### Rules
+
+- Both tables are addressed by column position. Every read first resolves the
+table's declared column names from `sqlite_master` and fails with
+`sqlitepage.ErrUnsupported` when a position names a different column, or when
+the column is absent. Drizzle migrations only append, so this guard is exact; a
+width-only guard would silently misread a table after a rebuild reorders it.
+- A missing database is absence, not an error. A file that is not a database is
+an error.
+- A prompt preview follows `seq`, not the rowid scan order.
+- The tool result sits in the same part as the call, so the call and its result
+  are paired by construction and survive replay. This is why opencode can emit
+  structured `ToolCalls` where Cursor cannot. A part that has not settled has no
+  result, so it becomes text instead of an unpaired call.
+- A session with a non-empty `parent_id` is a subagent. Discovery skips it, and
+  `Read` refuses it.
+- A session with no conversation message is skipped: no prompt and no assistant
+  text means there is nothing to clone.
+- The count is exact: one per `user` message, one per mapped assistant message,
+  and one per settled tool part. Discovery and `Read` share the same mapping
+  function, so the list and the clone cannot drift.
+- The foreign cache is per file, but one database holds every session, so the
+  cache cannot represent this source. Discovery scans the database instead.
+- The database runs in WAL mode and `opencode serve` stays alive while the
+  application is open, so the log usually holds the newest writes.
+  `internal/sqlitepage` replays the committed frames, which is the difference
+  between a complete transcript and one that silently ends a few turns early.
 
 ## Chat list integration
 
@@ -765,6 +827,7 @@ Each further source adds one file in its vendor package and one line to `allSour
 | Pi         | `internal/vendors/pi/`           | local JSONL under `~/.pi/agent/sessions/`               | **implemented** |
 | Codex      | `internal/vendors/codex/`        | JSONL under `~/.codex/sessions/` and `archived_sessions/` | **implemented** |
 | Cursor     | `internal/vendors/cursor/`       | SQLite: IDE `state.vscdb` and CLI `store.db`             | **implemented** |
+| opencode   | `internal/vendors/opencode/`     | SQLite: `opencode.db` under the XDG data home            | **implemented** |
 | Gemini CLI | `internal/vendors/gemini/`       | local session files                                     | future          |
 
 A JSONL-backed source is a schema and nothing more — see
