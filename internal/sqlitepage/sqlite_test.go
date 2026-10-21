@@ -475,6 +475,35 @@ func TestTableColumns(t *testing.T) {
 	}
 }
 
+func TestTableWithColumns(t *testing.T) {
+	db := openDB(t, "basic.db")
+	tbl, err := db.TableWithColumns("kv", map[int]string{0: "key", 1: "value"})
+	if err != nil {
+		t.Fatalf("TableWithColumns: %v", err)
+	}
+	if tbl.Name != "kv" {
+		t.Fatalf("table = %q", tbl.Name)
+	}
+	if _, err := db.TableWithColumns("kv", map[int]string{0: "key", 1: "other"}); !errors.Is(err, ErrUnsupported) {
+		t.Fatalf("renamed column = %v, want ErrUnsupported", err)
+	}
+	if _, err := db.TableWithColumns("kv", map[int]string{2: "value"}); !errors.Is(err, ErrUnsupported) {
+		t.Fatalf("absent column = %v, want ErrUnsupported", err)
+	}
+	if _, err := db.TableWithColumns("absent", map[int]string{0: "key"}); !errors.Is(err, ErrUnsupported) {
+		t.Fatalf("missing table = %v, want ErrUnsupported", err)
+	}
+}
+
+func TestCheckColumns(t *testing.T) {
+	if err := CheckColumns("kv", []string{"key", "value"}, map[int]string{0: "key", 1: "value"}); err != nil {
+		t.Fatalf("matching columns: %v", err)
+	}
+	if err := CheckColumns("kv", []string{"key", "value"}, map[int]string{1: "key"}); !errors.Is(err, ErrUnsupported) {
+		t.Fatalf("reordered columns = %v, want ErrUnsupported", err)
+	}
+}
+
 func TestParseColumns(t *testing.T) {
 	tests := []struct {
 		name string
@@ -526,6 +555,7 @@ func TestOpenBadHeaderFields(t *testing.T) {
 		want   error
 	}{
 		{"page size", func(b []byte) { b[16], b[17] = 0x03, 0x00 }, ErrCorrupt},
+		{"reserved space", func(b []byte) { b[16], b[17], b[20] = 0x02, 0x00, 0xf0 }, ErrCorrupt},
 		{"encoding", func(b []byte) { b[56], b[57], b[58], b[59] = 0, 0, 0, 0 }, nil},
 	}
 	for _, tc := range cases {
@@ -733,6 +763,21 @@ func TestDecodeValueReservedSerial(t *testing.T) {
 	}
 	if _, _, err := db.decodeValue(15, nil); !errors.Is(err, ErrCorrupt) {
 		t.Fatalf("short text: want ErrCorrupt, got %v", err)
+	}
+	if _, _, err := db.decodeValue(-1, []byte("x")); !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("negative serial: want ErrCorrupt, got %v", err)
+	}
+	if _, _, err := db.decodeValue(math.MaxInt64, []byte("x")); !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("overflow serial: want ErrCorrupt, got %v", err)
+	}
+}
+
+func TestReadTableCellOversizedPayload(t *testing.T) {
+	db := openDB(t, "basic.db")
+	// 9-byte varint for a payload length past maxPayloadSize.
+	cell := []byte{0x81, 0x80, 0x80, 0x80, 0x80, 0x00, 0x01}
+	if _, _, err := db.readTableCell(cell, 0); !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("oversized payload: want ErrCorrupt, got %v", err)
 	}
 }
 

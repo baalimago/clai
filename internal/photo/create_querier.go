@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/baalimago/clai/internal/models"
-	"github.com/baalimago/clai/internal/vendors/gemini"
+	geminiimage "github.com/baalimago/clai/internal/vendors/gemini/image"
 	"github.com/baalimago/clai/internal/vendors/openai"
 )
 
@@ -31,7 +31,7 @@ func CreateQuerier(conf Configurations) (models.Querier, error) {
 	}
 
 	if strings.Contains(conf.Model, "gemini") {
-		q, err := gemini.NewPhotoQuerier(conf)
+		q, err := geminiimage.NewPhotoQuerier(conf)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create gemini photo querier: %w", err)
 		}

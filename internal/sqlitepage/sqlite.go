@@ -58,11 +58,16 @@ func Open(path string) (*DB, error) {
 		return nil, fmt.Errorf("%w: page size %d", ErrCorrupt, ps)
 	}
 	reserved := int(hdr[20])
+	usable := ps - reserved
+	if usable < 480 {
+		f.Close()
+		return nil, fmt.Errorf("%w: usable page size %d", ErrCorrupt, usable)
+	}
 	enc := binary.BigEndian.Uint32(hdr[56:60])
 	if enc < 1 || enc > 3 {
 		enc = 1
 	}
-	db := &DB{f: f, pageSize: ps, usable: ps - reserved, encoding: enc}
+	db := &DB{f: f, pageSize: ps, usable: usable, encoding: enc}
 	if fi, err := os.Stat(path + "-wal"); err == nil && fi.Size() > 0 {
 		if err := db.applyWAL(path + "-wal"); err != nil {
 			f.Close()
@@ -148,6 +153,39 @@ func (t *Table) Columns() ([]string, error) {
 		return nil, fmt.Errorf("columns of %q: %w", t.Name, err)
 	}
 	return cols, nil
+}
+
+// TableWithColumns resolves name and proves that the positions a caller
+// addresses still name the columns it was written for. See CheckColumns. A
+// missing table returns ErrUnsupported, the same as Table.
+func (db *DB) TableWithColumns(name string, want map[int]string) (*Table, error) {
+	tbl, err := db.Table(name)
+	if err != nil {
+		return nil, err
+	}
+	cols, err := tbl.Columns()
+	if err != nil {
+		return nil, err
+	}
+	if err := CheckColumns(name, cols, want); err != nil {
+		return nil, err
+	}
+	return tbl, nil
+}
+
+// CheckColumns proves that every position in want names the column a caller
+// expects. A rebuilt table appends or reorders columns, so a mismatch must
+// fail here instead of misreading a value.
+func CheckColumns(name string, cols []string, want map[int]string) error {
+	for i, wantName := range want {
+		if i >= len(cols) {
+			return fmt.Errorf("%w: %s column %d is absent, want %q", ErrUnsupported, name, i, wantName)
+		}
+		if cols[i] != wantName {
+			return fmt.Errorf("%w: %s column %d is %q, want %q", ErrUnsupported, name, i, cols[i], wantName)
+		}
+	}
+	return nil
 }
 
 func parseColumns(sql string) ([]string, error) {

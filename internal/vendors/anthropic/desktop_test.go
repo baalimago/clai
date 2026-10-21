@@ -100,6 +100,17 @@ func TestDesktopMetadataEnrichesDiscovery(t *testing.T) {
 	if s2.Cwd != "/desktop-cwd-2" {
 		t.Fatalf("cwd fill = %q", s2.Cwd)
 	}
+
+	chat, err := r.Read(context.Background(), nil, "s2")
+	if err != nil {
+		t.Fatalf("Read(s2): %v", err)
+	}
+	if want := "Continued from Claude Code session s2 (originally at /desktop-cwd-2)."; chat.Messages[0].Content != want {
+		t.Fatalf("Read preamble = %q, want %q", chat.Messages[0].Content, want)
+	}
+	if want := time.Date(2026, 2, 3, 4, 5, 6, 0, time.UTC); !chat.Created.Equal(want) {
+		t.Fatalf("Read created = %v, want %v", chat.Created, want)
+	}
 }
 
 func TestEnrichDesktopMetadataFillsCreated(t *testing.T) {

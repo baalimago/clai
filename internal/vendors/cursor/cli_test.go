@@ -58,8 +58,8 @@ func TestDiscoverCLI(t *testing.T) {
 	if got.FullFirstUserMessage != "Review the CLI reader" {
 		t.Fatalf("full preview = %q", got.FullFirstUserMessage)
 	}
-	if got.MessageCount != 6 {
-		t.Fatalf("message count = %d", got.MessageCount)
+	if got.MessageCount != 3 {
+		t.Fatalf("message count = %d, want 3 (matching Read minus system preamble)", got.MessageCount)
 	}
 	if got.Model != "" {
 		t.Fatalf("model = %q", got.Model)
@@ -82,8 +82,8 @@ func TestDiscoverAggregatesGUIAndCLI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
-	if len(rows) != 5 {
-		t.Fatalf("want 5 rows (4 IDE + 1 CLI), got %d", len(rows))
+	if len(rows) != 4 {
+		t.Fatalf("want 4 rows (3 IDE + 1 CLI), got %d", len(rows))
 	}
 	ids := map[string]bool{}
 	for _, row := range rows {
@@ -209,8 +209,8 @@ func TestDiscoverCLIErrorDoesNotHideGUI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a failed CLI storage must not hide the IDE rows: %v", err)
 	}
-	if len(rows) != 4 {
-		t.Fatalf("want 4 IDE rows, got %d", len(rows))
+	if len(rows) != 3 {
+		t.Fatalf("want 3 IDE rows, got %d", len(rows))
 	}
 }
 

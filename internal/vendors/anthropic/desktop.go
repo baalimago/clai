@@ -78,6 +78,12 @@ func (r SourceReader) enrichDesktopMetadata(rows []vendors.SourceRow) {
 	}
 }
 
+func (r SourceReader) desktopSession(sourceID string) (desktopMetadata, bool) {
+	bySession := desktopSessions(r.desktopRoot())
+	meta, ok := bySession[sourceID]
+	return meta, ok
+}
+
 func (r SourceReader) desktopRoot() string {
 	if r.DesktopRoot != "" {
 		return r.DesktopRoot

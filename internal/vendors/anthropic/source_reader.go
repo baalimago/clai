@@ -207,6 +207,17 @@ func (r SourceReader) Read(ctx context.Context, cache vendors.SourceCache, sourc
 	// pattern into the strict sequential format APIs require.
 	msgs = vendors.NormalizeToolCallSequence(msgs)
 
+	if cwd == "" || created.IsZero() {
+		if meta, ok := r.desktopSession(sourceID); ok {
+			if cwd == "" {
+				cwd = meta.Cwd
+			}
+			if created.IsZero() {
+				created = meta.CreatedAt.Time
+			}
+		}
+	}
+
 	sys := pub_models.Message{Role: "system", Content: fmt.Sprintf("Continued from Claude Code session %s", sourceID)}
 	if cwd != "" {
 		sys.Content = fmt.Sprintf("Continued from Claude Code session %s (originally at %s).", sourceID, cwd)

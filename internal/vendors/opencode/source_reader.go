@@ -258,35 +258,12 @@ func (r SourceReader) sessionMessages(ctx context.Context, db *sqlitepage.DB, so
 	return msgs, nil
 }
 
-// tableFor resolves a table and proves that the positions this reader uses
-// still name the columns it was written for. A drizzle rebuild appends columns,
-// so a reordered table must fail here instead of misreading a column.
-func tableFor(db *sqlitepage.DB, name string, want map[int]string) (*sqlitepage.Table, error) {
-	tbl, err := db.Table(name)
-	if err != nil {
-		return nil, err
-	}
-	cols, err := tbl.Columns()
-	if err != nil {
-		return nil, err
-	}
-	for i, wantName := range want {
-		if i >= len(cols) {
-			return nil, fmt.Errorf("%w: %s column %d is absent, want %q", sqlitepage.ErrUnsupported, name, i, wantName)
-		}
-		if cols[i] != wantName {
-			return nil, fmt.Errorf("%w: %s column %d is %q, want %q", sqlitepage.ErrUnsupported, name, i, cols[i], wantName)
-		}
-	}
-	return tbl, nil
-}
-
 func messageTableFor(db *sqlitepage.DB) (*sqlitepage.Table, error) {
-	return tableFor(db, messageTable, messageColumns)
+	return db.TableWithColumns(messageTable, messageColumns)
 }
 
 func sessionTableFor(db *sqlitepage.DB) (*sqlitepage.Table, error) {
-	return tableFor(db, sessionTable, sessionColumns)
+	return db.TableWithColumns(sessionTable, sessionColumns)
 }
 
 func findSession(ctx context.Context, db *sqlitepage.DB, sourceID string) (sessionRow, error) {
@@ -510,14 +487,17 @@ func (r messageRow) assistantMessages() []pub_models.Message {
 			texts = append(texts, fmt.Sprintf("[tool call: %s(%s)]", p.Name, p.arguments()))
 		}
 	}
-	if len(texts) == 0 && len(reasoning) == 0 && len(calls) == 0 {
-		return nil
-	}
 	head := pub_models.Message{
 		Role:             "assistant",
 		Content:          strings.Join(texts, "\n"),
 		ReasoningContent: strings.Join(reasoning, "\n"),
 		ToolCalls:        calls,
+	}
+	if head.Content == "" && len(head.ToolCalls) == 0 {
+		if head.ReasoningContent == "" {
+			return nil
+		}
+		head.Content = "[thinking] " + head.ReasoningContent
 	}
 	return append([]pub_models.Message{head}, results...)
 }

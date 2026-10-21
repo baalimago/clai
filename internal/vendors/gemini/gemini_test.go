@@ -1,6 +1,10 @@
 package gemini
 
-import "testing"
+import (
+	"testing"
+
+	pub_models "github.com/baalimago/clai/pkg/text/models"
+)
 
 func TestSetupConfigMapping(t *testing.T) {
 	v := Default
@@ -40,5 +44,21 @@ func TestSetupSetsDefaultEnvWhenMissing(t *testing.T) {
 	}
 	if got := v.StreamCompleter; got.Model == "" {
 		t.Fatalf("expected setup to have initialized model and env fallback; model empty implies setup not run correctly")
+	}
+}
+
+func TestRegisterTool(t *testing.T) {
+	v := Default
+	v.RegisterTool(mockGeminiTool{})
+}
+
+type mockGeminiTool struct{}
+
+func (mockGeminiTool) Call(pub_models.Input) (string, error) { return "ok", nil }
+func (mockGeminiTool) Specification() pub_models.Specification {
+	return pub_models.Specification{
+		Name:        "test",
+		Description: "a test tool",
+		Inputs:      &pub_models.InputSchema{Type: "object"},
 	}
 }

@@ -215,6 +215,95 @@ func Test_e2e_chat_list_opencode_clone(t *testing.T) {
 	}
 }
 
+// Test_e2e_chat_list_gemini_clone verifies that the Gemini CLI source reader
+// is wired into the list: a session log under ~/.gemini/tmp produces a foreign
+// row, and selecting it clones the transcript.
+func Test_e2e_chat_list_gemini_clone(t *testing.T) {
+	confDir := setupMainTestConfigDir(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("SANDBOX", "")
+
+	jsonl := "" +
+		`{"sessionId":"gem-1","projectHash":"p1","startTime":"2026-01-01T00:00:00Z","kind":"main"}` + "\n" +
+		`{"id":"m1","timestamp":"2026-01-01T00:00:01Z","type":"user","content":[{"text":"hello gemini"}]}` + "\n" +
+		`{"id":"m2","timestamp":"2026-01-01T00:00:02Z","type":"gemini","content":[{"text":"hello human"}]}` + "\n"
+	slug := filepath.Join(home, ".gemini", "tmp", "proj-slug")
+	if err := os.MkdirAll(filepath.Join(slug, "chats"), 0o755); err != nil {
+		t.Fatalf("mkdir gemini chats: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(slug, "chats", "session-gem-1.jsonl"), []byte(jsonl), 0o600); err != nil {
+		t.Fatalf("write gemini session: %v", err)
+	}
+
+	stdout, status := runOne(t, confDir, "-n -r c l 0 c")
+	if status != 0 {
+		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
+	}
+	if !strings.Contains(stdout, "cloned gemini session gem-1") {
+		t.Fatalf("expected a gemini clone notice, got:\n%s", stdout)
+	}
+}
+
+// Test_e2e_chat_list_qwen_clone verifies that the Qwen Code source reader is
+// wired into the list: a record log under ~/.qwen/projects produces a foreign
+// row, and selecting it clones the transcript.
+func Test_e2e_chat_list_qwen_clone(t *testing.T) {
+	confDir := setupMainTestConfigDir(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("QWEN_RUNTIME_DIR", "")
+	t.Setenv("QWEN_HOME", "")
+
+	jsonl := "" +
+		`{"uuid":"u1","parentUuid":null,"sessionId":"qwen-1","timestamp":"2026-01-01T00:00:00Z","type":"user","cwd":"/work","message":{"role":"user","parts":[{"text":"hello qwen"}]}}` + "\n" +
+		`{"uuid":"u2","parentUuid":"u1","sessionId":"qwen-1","timestamp":"2026-01-01T00:00:01Z","type":"assistant","cwd":"/work","model":"qwen3","message":{"role":"assistant","parts":[{"text":"hello human"}]}}` + "\n"
+	chats := filepath.Join(home, ".qwen", "projects", "work", "chats")
+	if err := os.MkdirAll(chats, 0o755); err != nil {
+		t.Fatalf("mkdir qwen chats: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(chats, "qwen-1.jsonl"), []byte(jsonl), 0o600); err != nil {
+		t.Fatalf("write qwen session: %v", err)
+	}
+
+	stdout, status := runOne(t, confDir, "-n -r c l 0 c")
+	if status != 0 {
+		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
+	}
+	if !strings.Contains(stdout, "cloned qwen session qwen-1") {
+		t.Fatalf("expected a qwen clone notice, got:\n%s", stdout)
+	}
+}
+
+// Test_e2e_chat_list_antigravity_clone verifies that the Antigravity source
+// reader is wired into the list: a conversation database under ~/.gemini
+// produces a foreign row, and selecting it clones the transcript.
+func Test_e2e_chat_list_antigravity_clone(t *testing.T) {
+	confDir := setupMainTestConfigDir(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	src, err := os.ReadFile(filepath.Join(moduleRoot(t), "internal", "vendors", "antigravity", "testdata", "store", "antigravity", "conversations", "main.db"))
+	if err != nil {
+		t.Fatalf("read antigravity fixture: %v", err)
+	}
+	dbPath := filepath.Join(home, ".gemini", "antigravity", "conversations", "main.db")
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
+		t.Fatalf("mkdir antigravity store: %v", err)
+	}
+	if err := os.WriteFile(dbPath, src, 0o600); err != nil {
+		t.Fatalf("write antigravity database: %v", err)
+	}
+
+	stdout, status := runOne(t, confDir, "-n -r c l 0 c")
+	if status != 0 {
+		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
+	}
+	if !strings.Contains(stdout, "cloned antigravity session main") {
+		t.Fatalf("expected an antigravity clone notice, got:\n%s", stdout)
+	}
+}
+
 // Test_e2e_chat_list_edit_message_picker_reopens drives the full peek+edit flow:
 // page forward in list, open chat, page forward in picker, mistype → notice,
 // edit message → picker reopens same page → back → list same page → quit.

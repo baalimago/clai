@@ -64,21 +64,21 @@ func (db *DB) decodeValue(st int64, body []byte) (Value, int, error) {
 		return Value{Kind: Integer, Int: 0}, 0, nil
 	case st == 9:
 		return Value{Kind: Integer, Int: 1}, 0, nil
-	case st == 10 || st == 11:
-		return Value{}, 0, fmt.Errorf("%w: reserved serial type %d", ErrCorrupt, st)
+	case st < 0 || st == 10 || st == 11:
+		return Value{}, 0, fmt.Errorf("%w: invalid serial type %d", ErrCorrupt, st)
 	}
-	if st >= 12 && st%2 == 0 {
-		size := int((st - 12) / 2)
-		if len(body) < size {
+	if st%2 == 0 {
+		size := (st - 12) / 2
+		if size > int64(len(body)) {
 			return Value{}, 0, fmt.Errorf("%w: short blob body", ErrCorrupt)
 		}
-		return Value{Kind: Blob, Blob: body[:size]}, size, nil
+		return Value{Kind: Blob, Blob: body[:int(size)]}, int(size), nil
 	}
-	size := int((st - 13) / 2)
-	if len(body) < size {
+	size := (st - 13) / 2
+	if size > int64(len(body)) {
 		return Value{}, 0, fmt.Errorf("%w: short text body", ErrCorrupt)
 	}
-	return Value{Kind: Text, Text: db.decodeText(body[:size])}, size, nil
+	return Value{Kind: Text, Text: db.decodeText(body[:int(size)])}, int(size), nil
 }
 
 func (db *DB) decodeText(b []byte) string {

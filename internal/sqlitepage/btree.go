@@ -53,6 +53,10 @@ func (h pageHeader) cellOffset(page []byte, i int) (int, error) {
 	return off, nil
 }
 
+// maxPayloadSize bounds a single cell payload to 256 MiB, well below SQLite's
+// 1 GiB limit and safe from int overflow on 32-bit platforms.
+const maxPayloadSize = 256 << 20
+
 func (db *DB) readTableCell(page []byte, off int) (int64, []byte, error) {
 	if off < 0 || off >= len(page) {
 		return 0, nil, fmt.Errorf("%w: cell offset %d", ErrCorrupt, off)
@@ -67,8 +71,8 @@ func (db *DB) readTableCell(page []byte, off int) (int64, []byte, error) {
 		return 0, nil, err
 	}
 	off += n
-	if payloadLen < 0 {
-		return 0, nil, fmt.Errorf("%w: negative payload length", ErrCorrupt)
+	if payloadLen < 0 || payloadLen > maxPayloadSize {
+		return 0, nil, fmt.Errorf("%w: invalid payload length %d", ErrCorrupt, payloadLen)
 	}
 	payload, err := db.readPayload(page, off, int(payloadLen))
 	if err != nil {

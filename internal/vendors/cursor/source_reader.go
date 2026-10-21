@@ -121,6 +121,9 @@ func (r SourceReader) discoverGUI(ctx context.Context) ([]vendors.SourceRow, err
 
 	rows := make([]vendors.SourceRow, 0, len(chats))
 	for _, c := range chats {
+		if c.MessageCount == 0 {
+			continue
+		}
 		preview := c.preview()
 		rows = append(rows, vendors.SourceRow{
 			Source:               sourceName,
@@ -128,7 +131,7 @@ func (r SourceReader) discoverGUI(ctx context.Context) ([]vendors.SourceRow, err
 			Created:              c.created(),
 			FirstUserMessage:     vendors.TruncateOneLine(preview, previewRunes),
 			FullFirstUserMessage: preview,
-			MessageCount:         len(c.Headers),
+			MessageCount:         c.MessageCount,
 			Model:                c.model(),
 			RawPath:              r.databasePath(),
 			Cwd:                  c.cwd(),
@@ -137,20 +140,22 @@ func (r SourceReader) discoverGUI(ctx context.Context) ([]vendors.SourceRow, err
 	return rows, nil
 }
 
-// fillFallbacks reads the first bubble only for chats that lack preview text
-// or a working directory. Both fields live on that bubble in stores that do
-// not fill composerData.gitWorktree. The second scan stops as soon as every
-// wanted bubble is found.
+// fillFallbacks counts the mapped messages of each chat and fills missing
+// preview text and working directory from the first user bubble. The second
+// scan stops as soon as every wanted bubble is found.
 func (r SourceReader) fillFallbacks(ctx context.Context, tbl *sqlitepage.Table, chats []composer) error {
-	wanted := map[string][]int{}
+	type target struct {
+		chat int
+		head bool
+	}
+	wanted := map[string][]target{}
 	for i := range chats {
-		if chats[i].Headers[0].BubbleID == "" {
-			continue
+		for j, h := range chats[i].Headers {
+			if h.BubbleID == "" {
+				continue
+			}
+			wanted[h.BubbleID] = append(wanted[h.BubbleID], target{chat: i, head: j == 0})
 		}
-		if chats[i].preview() != "" && chats[i].cwd() != "" {
-			continue
-		}
-		wanted[chats[i].Headers[0].BubbleID] = append(wanted[chats[i].Headers[0].BubbleID], i)
 	}
 	if len(wanted) == 0 {
 		return nil
@@ -165,17 +170,23 @@ func (r SourceReader) fillFallbacks(ctx context.Context, tbl *sqlitepage.Table, 
 			return nil
 		}
 		id := keySuffix(key)
-		indexes, ok := wanted[id]
+		targets, ok := wanted[id]
 		if !ok {
 			return nil
 		}
 		b := parseBubble(value)
-		for _, i := range indexes {
-			if chats[i].cwd() == "" {
-				chats[i].FallbackCwd = b.WorkspaceProjectDir
+		_, hasMessage := b.message()
+		for _, t := range targets {
+			if hasMessage {
+				chats[t.chat].MessageCount++
 			}
-			if chats[i].preview() == "" && b.Type == 1 {
-				chats[i].FallbackPreview = b.text()
+			if t.head {
+				if chats[t.chat].cwd() == "" {
+					chats[t.chat].FallbackCwd = b.WorkspaceProjectDir
+				}
+				if chats[t.chat].preview() == "" && b.Type == 1 {
+					chats[t.chat].FallbackPreview = b.text()
+				}
 			}
 		}
 		delete(wanted, id)
@@ -296,6 +307,7 @@ type composer struct {
 	Text            string `json:"text"`
 	FallbackPreview string `json:"-"`
 	FallbackCwd     string `json:"-"`
+	MessageCount    int    `json:"-"`
 	CreatedAt       int64  `json:"createdAt"`
 	ModelConfig     struct {
 		ModelName string `json:"modelName"`

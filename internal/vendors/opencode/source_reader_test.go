@@ -242,6 +242,24 @@ func TestRowGuards(t *testing.T) {
 	}
 }
 
+func TestAssistantMessagesReasoningOnly(t *testing.T) {
+	row := messageRow{
+		session: "ses_1",
+		kind:    "assistant",
+		data:    []byte(`{"content":[{"type":"reasoning","text":"deep thought"}]}`),
+	}
+	msgs := row.conversation()
+	if len(msgs) != 1 {
+		t.Fatalf("got %d messages, want 1", len(msgs))
+	}
+	if msgs[0].Content != "[thinking] deep thought" {
+		t.Fatalf("content = %q, want [thinking] deep thought", msgs[0].Content)
+	}
+	if msgs[0].ReasoningContent != "deep thought" {
+		t.Fatalf("reasoning = %q, want deep thought", msgs[0].ReasoningContent)
+	}
+}
+
 // TestReadParts covers the parts that must fold, skip, or render as text: an
 // empty text part and an unknown type contribute nothing, and a tool that has
 // not settled or has no id becomes a text line instead of an unpaired call.

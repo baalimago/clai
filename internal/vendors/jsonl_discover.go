@@ -285,6 +285,77 @@ func cachedSessionPath(schema JSONLSchema, fsys fs.FS, cache SourceCache, source
 	return absPath, true
 }
 
+// WalkSessionRows walks sessions via walk and collects the rows returned by
+// discoverFile.
+func WalkSessionRows(
+	ctx context.Context,
+	source string,
+	cache SourceCache,
+	walk func(context.Context, func(absPath string) bool) error,
+	discoverFile func(SourceCache, string) (SourceRow, bool),
+) ([]SourceRow, error) {
+	rows := []SourceRow{}
+	err := walk(ctx, func(absPath string) bool {
+		if row, ok := discoverFile(cache, absPath); ok {
+			rows = append(rows, row)
+		}
+		return false
+	})
+	if err != nil {
+		return nil, fmt.Errorf("discover %s sessions: %w", source, err)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("discover %s sessions: %w", source, err)
+	}
+	return rows, nil
+}
+
+// FindSessionFile resolves sourceID to its session file through cache when
+// warm, and otherwise calls walk until fileID returns sourceID.
+func FindSessionFile(
+	ctx context.Context,
+	source string,
+	fsys fs.FS,
+	cache SourceCache,
+	sourceID string,
+	walk func(context.Context, func(absPath string) bool) error,
+	fileID func(absPath string) (string, error),
+) (string, error) {
+	if cache != nil {
+		if absPath, ok := cache.Locate(source, sourceID); ok && absPath != "" {
+			if info, err := StatAbs(fsys, absPath); err == nil {
+				if row, ok := cache.Lookup(absPath, info); ok && row.SourceID == sourceID {
+					return absPath, nil
+				}
+			}
+		}
+	}
+	var found string
+	var readErr error
+	err := walk(ctx, func(absPath string) bool {
+		id, err := fileID(absPath)
+		if err != nil {
+			readErr = fmt.Errorf("read %q: %w", absPath, err)
+			return true
+		}
+		if id == sourceID {
+			found = absPath
+			return true
+		}
+		return false
+	})
+	if err != nil {
+		return "", fmt.Errorf("find %s session: %w", source, err)
+	}
+	if readErr != nil {
+		return "", readErr
+	}
+	if found == "" {
+		return "", fmt.Errorf("%s session %q not found", source, sourceID)
+	}
+	return found, nil
+}
+
 // A non-nil error means the file could not be read as far as its identity
 // line; ("", nil) means it was, and names no session. A refused open stays a
 // skip, as the walk has always tolerated (D17).

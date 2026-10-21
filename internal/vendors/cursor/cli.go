@@ -119,19 +119,12 @@ func readCLIRow(ctx context.Context, dir string) (vendors.SourceRow, error) {
 		return vendors.SourceRow{}, errNoCLIConversation
 	}
 
-	preview := ""
-	for _, id := range ids {
-		if err := ctx.Err(); err != nil {
-			return vendors.SourceRow{}, err
-		}
-		blob := parseCLIBlob(blobs[id])
-		if blob.Role != "user" {
-			continue
-		}
-		if text := cleanCLIUserText(blob.text()); text != "" {
-			preview = text
-			break
-		}
+	msgs, preview, err := mapCLIBlobs(ctx, ids, blobs)
+	if err != nil {
+		return vendors.SourceRow{}, err
+	}
+	if len(msgs) == 0 {
+		return vendors.SourceRow{}, errNoCLIConversation
 	}
 	title := strings.TrimSpace(fileMeta.Title)
 	if title == "" {
@@ -155,7 +148,7 @@ func readCLIRow(ctx context.Context, dir string) (vendors.SourceRow, error) {
 		Created:              created,
 		FirstUserMessage:     vendors.TruncateOneLine(title, previewRunes),
 		FullFirstUserMessage: preview,
-		MessageCount:         len(ids),
+		MessageCount:         len(msgs),
 		Model:                storeMeta.model(),
 		RawPath:              dbPath,
 		Cwd:                  fileMeta.Cwd,
@@ -186,23 +179,9 @@ func (r SourceReader) readCLI(ctx context.Context, chatID string) (pub_models.Ch
 		return pub_models.Chat{}, fmt.Errorf("read cursor cli chat %q: %w", chatID, err)
 	}
 
-	msgs := make([]pub_models.Message, 0, len(ids))
-	for _, id := range ids {
-		if err := ctx.Err(); err != nil {
-			return pub_models.Chat{}, err
-		}
-		blob := parseCLIBlob(blobs[id])
-		switch blob.Role {
-		case "user":
-			text := cleanCLIUserText(blob.text())
-			if text != "" {
-				msgs = append(msgs, pub_models.Message{Role: "user", Content: text})
-			}
-		case "assistant":
-			if msg, ok := blob.message(); ok {
-				msgs = append(msgs, msg)
-			}
-		}
+	msgs, _, err := mapCLIBlobs(ctx, ids, blobs)
+	if err != nil {
+		return pub_models.Chat{}, err
 	}
 
 	created := fileMeta.created()
@@ -224,6 +203,32 @@ func (r SourceReader) readCLI(ctx context.Context, chatID string) (pub_models.Ch
 		SourceID: cliSourcePrefix + chatID,
 		Messages: append([]pub_models.Message{{Role: "system", Content: sys}}, msgs...),
 	}, nil
+}
+
+func mapCLIBlobs(ctx context.Context, ids []string, blobs map[string][]byte) ([]pub_models.Message, string, error) {
+	msgs := make([]pub_models.Message, 0, len(ids))
+	preview := ""
+	for _, id := range ids {
+		if err := ctx.Err(); err != nil {
+			return nil, "", err
+		}
+		blob := parseCLIBlob(blobs[id])
+		switch blob.Role {
+		case "user":
+			text := cleanCLIUserText(blob.text())
+			if text != "" {
+				if preview == "" {
+					preview = text
+				}
+				msgs = append(msgs, pub_models.Message{Role: "user", Content: text})
+			}
+		case "assistant":
+			if msg, ok := blob.message(); ok {
+				msgs = append(msgs, msg)
+			}
+		}
+	}
+	return msgs, preview, nil
 }
 
 func (r SourceReader) cliChatDir(chatID string) (string, error) {

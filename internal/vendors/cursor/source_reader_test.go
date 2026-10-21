@@ -35,15 +35,18 @@ func TestDiscover(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
-	if len(rows) != 4 {
-		t.Fatalf("want 4 rows, got %d: %+v", len(rows), rows)
-	}
 	byID := map[string]vendors.SourceRow{}
 	for _, r := range rows {
 		byID[r.SourceID] = r
 	}
 	if _, ok := byID["composer-empty-headers"]; ok {
 		t.Fatal("a composer without headers must not be listed")
+	}
+	if _, ok := byID["composer-missing-bubble"]; ok {
+		t.Fatal("a composer whose bubbles produce no messages must not be listed")
+	}
+	if len(rows) != 3 {
+		t.Fatalf("want 3 rows, got %d: %+v", len(rows), rows)
 	}
 	got := byID["composer-1"]
 	if got.Source != "cursor" {
@@ -75,6 +78,15 @@ func TestDiscover(t *testing.T) {
 	}
 	if got := byID["composer-2"]; got.Model != "" || got.Cwd != "/home/dev/flaky" {
 		t.Fatalf("missing model and bubble cwd: %+v", got)
+	}
+	for _, row := range rows {
+		chat, err := testReader(t).Read(context.Background(), nil, row.SourceID)
+		if err != nil {
+			t.Fatalf("Read(%q): %v", row.SourceID, err)
+		}
+		if got := len(chat.Messages) - 1; got != row.MessageCount {
+			t.Fatalf("%s: Read has %d messages, row says %d", row.SourceID, got, row.MessageCount)
+		}
 	}
 }
 
