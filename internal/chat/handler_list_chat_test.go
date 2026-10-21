@@ -990,6 +990,34 @@ func TestForeignChatRows_GroupKeyFromFullFirstUserMessage(t *testing.T) {
 	}
 }
 
+// TestForeignChatRows_DuplicateIdentityKeptOnce verifies that two files which
+// claim one source identity never produce two rows, and that the first row in
+// walk order wins, matching ForeignIndex.Locate's tie-break.
+func TestForeignChatRows_DuplicateIdentityKeptOnce(t *testing.T) {
+	cq, _ := newTestHandler(t)
+	reader := stubSourceReader{
+		name: "test-source",
+		rows: []vendors.SourceRow{
+			{Source: "test-source", SourceID: "dup", FirstUserMessage: "first", FullFirstUserMessage: "first"},
+			{Source: "test-source", SourceID: "dup", FirstUserMessage: "second", FullFirstUserMessage: "second"},
+			{Source: "test-source", SourceID: "other", FirstUserMessage: "other", FullFirstUserMessage: "other"},
+		},
+	}
+	rows, err := cq.foreignChatRows(context.Background(), []vendors.SourceReader{reader}, map[string]struct{}{})
+	if err != nil {
+		t.Fatalf("foreignChatRows: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("rows = %d, want 2: %#v", len(rows), rows)
+	}
+	if rows[0].SourceID != "dup" || rows[0].FirstUserMessage != "first" {
+		t.Fatalf("first row = %#v, want the walk-first duplicate", rows[0])
+	}
+	if rows[1].SourceID != "other" {
+		t.Fatalf("second row = %#v", rows[1])
+	}
+}
+
 // TestListChats_GroupKeyZeroMembers_RendersGroupIndicator covers issue #3:
 // when a group view expands to zero members (groupKey != "" but no rows
 // match), the prompt bar must still indicate the group context with the

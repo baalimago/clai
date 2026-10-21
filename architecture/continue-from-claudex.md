@@ -232,8 +232,9 @@ cache and a warm cache produce identical rows.
 
 The filesystem/scanner boilerplate common to every JSONL-backed source lives
 in `internal/vendors/jsonl.go`: `WalkJSONLFiles` (tolerant `*.jsonl` walking
-with skip-dirs, e.g. Claude's `subagents/`), `ScanJSONLLines` (line-by-line
-JSON scanning, bounded only by the scanner token size), `OpenAbs` and `StatAbs` (FS-injectable file
+with skip-dirs, e.g. Claude's `subagents/`), `ScanJSONLLines` and
+`ScanJSONLRecords` (line-by-line JSON scanning, map-shaped or typed, bounded
+only by the scanner token size), `OpenAbs` and `StatAbs` (FS-injectable file
 opening and stat), `HomeRelativeRoot`, `TextBlocksContent` (string-or-text-block
 content flattening), and `MapAssistantBlocks` (assistant text/thinking/tool-call
 block mapping, parameterized by `ToolCallBlockKeys` for vendor key names).
@@ -256,6 +257,19 @@ mapping. Nothing else is required, and nothing else is allowed: vendor code
 a schema is handed one line at a time and the generic layer alone decides how
 many lines there are. That is what keeps the cost rule in code rather than in
 prose, which is how the previous rule was lost.
+
+A schema may also implement `vendors.JSONLRoots` (`Roots() []string`) when a
+source keeps sessions under more than one directory, such as Codex's live and
+archived rollouts. The generic layer walks the roots in declared order, removes
+empty and duplicate entries, and searches every root in `FindJSONLSession`.
+A single-root schema needs neither method nor change.
+
+A schema may also implement `vendors.JSONLFileGate`
+(`AcceptFirstLine(line []byte) bool`) when the first line decides whether a
+file is a session at all. The gate runs once per opened file, before any line
+can contribute. A rejected file yields no row and no identity: later lines
+cannot claim a session the first line disowned. Discovery caches the rejection
+under the file's `(size, mtime)`, and `FindJSONLSession` applies the same gate.
 
 A schema may also implement `vendors.LinePrefilter`
 (`MayContribute(line []byte) bool`), which lets the scan skip decoding lines
@@ -295,9 +309,14 @@ Each vendor package that supports conversation reading exposes a constructor or 
 // In internal/chat/handler_list_chat.go (conceptual)
 func allSourceReaders() []vendors.SourceReader {
 	return []vendors.SourceReader{
-		anthropic.SourceReader{}, // claude-code
+		anthropic.SourceReader{}, // claude-code (+ Claude Desktop metadata)
 		pi.SourceReader{},        // pi
-		// future: codex.SourceReader{}, cursor.SourceReader{}, ...
+		cursor.SourceReader{},    // cursor
+		codex.SourceReader{},     // codex
+		opencode.SourceReader{},  // opencode
+		gemini.SourceReader{},    // gemini CLI
+		qwen.SourceReader{},      // Qwen Code
+		antigravity.SourceReader{}, // Antigravity IDE and CLI
 	}
 }
 
@@ -359,7 +378,7 @@ For each `.jsonl` file whose `(size, mtime)` pair misses the foreign index, read
 - `MessageCount` = count of `user` + `assistant` lines. **The count is exact from discovery onward**, with one pre-existing caveat: the list shows the same number `Read` would produce, and there is no later refinement, but a line longer than `vendors.ReadMaxToken` ends the scan of its whole file, so anything after it is uncounted — and because the result of that scan is cached, the undercount is now persisted rather than recomputed each run. Both `Discover` and `Read` truncate at the same bound, so they still agree with each other. The scan reads to EOF, and a schema's optional `MayContribute` byte prefilter decides which lines are worth decoding, so exactness costs decoding rather than reading. Misses are scanned by a bounded worker pool; hits cost one `stat`.
 - `RawPath` = absolute path.
 
-Session metadata is cross-referenced: the `local_*.json` files in `claude-code-sessions/` carry a `title` field. If found, `title` replaces `FirstUserMessage` in the preview column (the full `FirstUserMessage` is still available for fallback).
+Session metadata is cross-referenced: the `local_*.json` files in `claude-code-sessions/` carry a `title` field. If found, `title` replaces `FirstUserMessage` in the preview column (the full `FirstUserMessage` is still available for fallback). The same file fills `model`, `cwd` and `createdAt` when the transcript does not carry them. The desktop tree is resolved through `os.UserConfigDir()` plus `Claude/claude-code-sessions`, so Linux (`~/.config`), macOS (`~/Library/Application Support`) and Windows (`%AppData%`) share one code path.
 
 ### Read (`Read`)
 
@@ -391,6 +410,339 @@ The `cwd` comes from the first `user` message's `cwd` field.
 ### Profile
 
 `Read` does not set `chat.Profile`. The clone starts with no profile; the user's `-p` flag or the continue flow stamps it later.
+
+## Cursor source reader
+
+Location: `internal/vendors/cursor/source_reader.go` and
+`internal/vendors/cursor/cli.go`; the file reader it uses is
+`internal/sqlitepage`.
+
+Implements `vendors.SourceReader` with `Source() == "cursor"`.
+
+### Storage
+
+Cursor has two stores. The IDE keeps every composer chat in one SQLite file.
+The CLI keeps one SQLite file per chat.
+
+| Path | Content |
+| --- | --- |
+| `os.UserConfigDir()/Cursor/User/globalStorage/state.vscdb` | `ItemTable` and `cursorDiskKV` |
+| `cursorDiskKV` key `composerData:<composerId>` | chat metadata, including `fullConversationHeadersOnly` |
+| `cursorDiskKV` key `bubbleId:<deviceId>:<bubbleId>` | one JSON message |
+| `~/.cursor/chats/<workspace>/<chat>/store.db` | `blobs` and `meta` |
+| `~/.cursor/chats/<workspace>/<chat>/meta.json` | title, working directory and creation time |
+
+`composerData` carries the title (`text` or `name`), `createdAt` (Unix ms),
+`modelConfig.modelName`, `gitWorktree.worktreePath`, and the ordered message
+headers. A chat without headers names no transcript and is skipped. When the
+composer document has no preview text, discovery reads the first user bubble
+for that chat. `bubbleId` carries `type` (1 user, 2 assistant), `text`, an
+optional Lexical `richText` tree, thinking blocks, and `toolFormerData`.
+
+The CLI `meta` table key `0` holds hex-encoded JSON with `latestRootBlobId`,
+`name`, `createdAt`, and an optional `subagentInfo`. The root blob is a
+protobuf message whose repeated field 1 is the ordered list of 32-byte message
+blob ids. Each message blob is JSON with a `role` and `content`. A chat with
+`subagentInfo` is a child agent, not a user conversation, and is skipped.
+
+### Rules
+
+- A missing database is absence, not an error.
+- A `-wal` sidecar is replayed by `internal/sqlitepage`, so a running Cursor
+  still reads as the committed state. A log the page reader cannot parse is
+  refused instead of read stale. The reader reports the error only when no
+  storage produced a row; a failed IDE store does not hide CLI chats, and a
+  failed CLI store does not hide IDE chats.
+- The foreign cache is per file, but one `state.vscdb` holds every chat, so
+  the cache cannot represent this source. Discovery scans both stores. The
+  reader never writes to either store.
+- CLI rows use the source id `cli:<chatId>`; IDE rows keep the bare composer
+  id. `Read` dispatches on the prefix.
+- Message mapping is lossy by design: text and `richText` become content,
+  thinking becomes `reasoning_content`, and `toolFormerData` becomes a
+  readable `[tool call: name(args)]` line in the assistant content. Tool
+  calls are not emitted as structured `ToolCalls`, because Cursor does not
+  expose the matching tool results in a shape this reader can pair reliably;
+  an unpaired structured call would make a later provider request invalid.
+  The CLI store uses the same rule: tool calls become text and tool results
+  are dropped, because their payloads are machine output.
+
+## Codex source reader
+
+Location: `internal/vendors/codex/codex_source.go`. The package is separate
+from `internal/vendors/openai` because the API vendor imports the chat
+package, which would close an import cycle.
+
+Implements `vendors.SourceReader` with `Source() == "codex"` and the optional
+`vendors.JSONLRoots` upgrade.
+
+### Storage
+
+Codex writes one rollout per conversation. Both roots hold the same format:
+
+| Path | Content |
+| --- | --- |
+| `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` | live conversations |
+| `~/.codex/archived_sessions/rollout-*.jsonl` | archived conversations |
+
+Each line is an envelope with a `type` and a `payload`.
+
+| Envelope type | Discovery contributes | Read maps to |
+| --- | --- | --- |
+| `session_meta` | `SourceID`, `cwd`, creation time | system preamble context |
+| `turn_context` | model | nothing |
+| `response_item` `message` role `user` | user text, unless it is injected context | `{role: "user"}` |
+| `response_item` `message` role `assistant` | message count | `{role: "assistant"}` |
+| `response_item` `reasoning` | nothing | attached to the next assistant message as `reasoning_content` |
+| `response_item` `function_call` / `custom_tool_call` | message count | `{role: "assistant", tool_calls}` |
+| `response_item` `function_call_output` / `custom_tool_call_output` | message count | `{role: "tool", tool_call_id}` |
+| `event_msg` | nothing | nothing |
+
+### Rules
+
+- A rollout whose `thread_source` is `subagent`, or that carries a
+  `parent_thread_id`, is a child agent. Discovery skips it. A line-level skip is
+  not enough: the child file also contains a copy of the parent `session_meta`,
+  and that copy would otherwise claim the parent id. The reader therefore
+  rejects the whole file from its first line (`vendors.JSONLFileGate`). Without
+  this rule one parent session brings many child transcripts with it.
+- Codex injects context as extra user messages: environment, AGENTS.md,
+  recommended plugins, skills and compaction history. These are whole messages
+  whose text starts with a known wrapper. They are not prompts, so discovery
+  and `Read` drop them before they can become the preview.
+- `function_call.arguments` is already a JSON string and is kept as stored.
+  `custom_tool_call.input` is free-form text, so `Read` JSON-encodes it. The
+  call stays syntactically valid without pretending the input is an object.
+- Tool calls are sequential in every observed rollout. The reader therefore
+  does not run `NormalizeToolCallSequence`, so the discovery count stays exactly
+  equal to the number of messages `Read` returns.
+- `reasoning.summary` can be an array of summary parts or a plain string. The
+  field accepts both shapes. The encrypted reasoning body cannot be replayed
+  and is dropped; an old rollout without `event_msg` lines still reads.
+
+## opencode source reader
+
+Location: `internal/vendors/opencode/source_reader.go`; the file reader it uses
+is `internal/sqlitepage`.
+
+Implements `vendors.SourceReader` with `Source() == "opencode"`.
+
+### Storage
+
+opencode keeps one database for the whole machine. The directory follows the
+XDG data home on every platform, Windows included.
+
+| Path | Content |
+| --- | --- |
+| `$XDG_DATA_HOME/opencode/opencode.db`, else `~/.local/share/opencode/opencode.db` | the whole store |
+| table `session_v2` | `id`, `parent_id`, `directory`, `title`, `model`, `time_created` |
+| table `session_message` | `session_id`, `type`, `seq`, and `data`, one JSON message |
+
+A channel build writes `opencode-<channel>.db` instead, and the environment
+variable `OPENCODE_DB` points opencode at another file. This reader reads the
+plain name under the data home only; both overrides are out of scope.
+
+`session_message.type` is a closed tag. Only three values carry conversation:
+
+| Type | Discovery contributes | Read maps to |
+| --- | --- | --- |
+| `user` | prompt text, count | `{role: "user"}` |
+| `assistant` part `text` | count | message content |
+| `assistant` part `reasoning` | nothing | `reasoning_content` |
+| `assistant` part `tool`, `completed` or `error` | count | a tool call plus a `{role: "tool"}` result |
+| `assistant` part `tool`, `streaming` or `running` | count | a `[tool call: name(args)]` text line |
+| `compaction`, `shell`, `system`, `synthetic`, `skill`, `idle`, and the switching tags | nothing | nothing |
+
+### Rules
+
+- Both tables are addressed by column position. Every read first resolves the
+table's declared column names from `sqlite_master` and fails with
+`sqlitepage.ErrUnsupported` when a position names a different column, or when
+the column is absent. Drizzle migrations only append, so this guard is exact; a
+width-only guard would silently misread a table after a rebuild reorders it.
+- A missing database is absence, not an error. A file that is not a database is
+an error.
+- A prompt preview follows `seq`, not the rowid scan order.
+- The tool result sits in the same part as the call, so the call and its result
+  are paired by construction and survive replay. This is why opencode can emit
+  structured `ToolCalls` where Cursor cannot. A part that has not settled has no
+  result, so it becomes text instead of an unpaired call.
+- A session with a non-empty `parent_id` is a subagent. Discovery skips it, and
+  `Read` refuses it.
+- A session with no conversation message is skipped: no prompt and no assistant
+  text means there is nothing to clone.
+- The count is exact: one per `user` message, one per mapped assistant message,
+  and one per settled tool part. Discovery and `Read` share the same mapping
+  function, so the list and the clone cannot drift.
+- The foreign cache is per file, but one database holds every session, so the
+  cache cannot represent this source. Discovery scans the database instead.
+- The database runs in WAL mode and `opencode serve` stays alive while the
+  application is open, so the log usually holds the newest writes.
+  `internal/sqlitepage` replays the committed frames, which is the difference
+  between a complete transcript and one that silently ends a few turns early.
+
+## Gemini CLI source reader
+
+Location: `internal/vendors/gemini/source_reader.go`. The Gemini photo querier
+lives in the `image` sub-package, so the vendor package stays a leaf and
+`internal/chat` can import it.
+
+Implements `vendors.SourceReader` with `Source() == "gemini"`.
+
+### Storage
+
+| Path | Content |
+| --- | --- |
+| `~/.gemini/tmp/<project-slug>/chats/session-*.jsonl` | append-only session log |
+| `~/.cache/.gemini/tmp/...` | the same layout, when `SANDBOX=sandbox-exec` |
+| `<project-slug>/.project_root` | absolute project root, read as `Cwd` |
+| `<project-slug>/chats/*.json` | legacy whole-session document |
+
+One session file holds one conversation. `SourceID` is the record `sessionId`.
+
+| Record | Discovery contributes | Read maps to |
+| --- | --- | --- |
+| metadata (`sessionId`, `startTime`, `summary`, `kind`) | id, creation time, preview | nothing |
+| message `type: user` | prompt text, count | `{role: "user"}` |
+| message `type: gemini` | count | assistant text, `reasoning_content`, tool calls |
+| `$set` | the fields it carries; `messages` replaces the history | the new state |
+| `$patch` | nothing | content update, tool result, `removeIds`, `orderIds` |
+| `$rewindTo` | nothing | drops the named record and every record after it |
+| `kind: subagent` | nothing | never a row; `Read` refuses it |
+
+### Rules
+
+- The file is a log of patches, not a list of messages. Discovery and `Read`
+  apply every record in file order, and then map the final state. A scan of the
+  message records alone returns rewound and superseded content.
+- A result patch carries no status, so a non-null `result` is the signal that a
+  tool call settled. A settled call becomes a structured call plus its
+  `{role: "tool"}` result. A call without a result, an id or a name becomes one
+  `[tool call: name(args)]` text line, because an unpaired structured call makes
+  a later provider request invalid.
+- A user prompt that starts with `/`, `?`, `<session_context>` or
+  `<hook_context>`, or that holds no text, is not a prompt. It never becomes the
+  preview and never becomes a message.
+- The preview is `summary` when present, else the first prompt.
+- `Cwd` comes from `<project-slug>/.project_root`. A missing file leaves it
+  empty.
+- The count is exact: discovery and `Read` share one replay and one mapper, so
+  the row and the clone cannot drift.
+- The reader never writes to the store, and it tolerates a partially written
+  last record.
+
+## Qwen Code source reader
+
+Location: `internal/vendors/qwen/source_reader.go`.
+
+Implements `vendors.SourceReader` with `Source() == "qwen"`.
+
+### Storage
+
+Qwen Code writes one record log per session:
+
+| Path | Content |
+| --- | --- |
+| `<runtime-base>/projects/<sanitized-cwd>/chats/<sessionId>.jsonl` | one conversation |
+| `QWEN_RUNTIME_DIR` | first runtime base |
+| `QWEN_HOME` | second runtime base |
+| `~/.qwen` | last runtime base |
+
+`SourceID` is the record `sessionId`.
+
+| Record | Discovery contributes | Read maps to |
+| --- | --- | --- |
+| `user` | prompt text, count | `{role: "user"}` |
+| `assistant` | model, count | text, `reasoning_content`, tool calls |
+| `tool_result` | count | `{role: "tool"}` |
+| `system` `custom_title` | preview | nothing |
+| `system` compression, and every other system subtype | nothing | nothing |
+| `session_artifact_*`, `session_sources_snapshot`, `managed_session_*` | nothing | not a conversation record |
+| `isSidechain` | nothing | not a conversation record |
+
+### Rules
+
+- The active transcript is one chain, not the file. The reader takes the last
+  conversation record as the leaf and follows `parentUuid` to the root. A
+  file-order scan returns abandoned branches.
+- Records that share a `uuid` are fragments of one message. They are joined in
+  file order, and the newest timestamp wins.
+- Artifact and managed-session records are excluded before the leaf is chosen. A
+  sidechain record is excluded the same way, so a trailing subagent record
+  cannot become the leaf.
+- A compression `system` record stays in the chain and maps to no message. The
+  clone therefore holds the full pre-compression history.
+- `custom_title` is the preview. The first prompt is the fallback.
+- A user record is not always the raw prompt. `systemPayload.displayText` wins
+  when a hook context or a prompt-submit context part is present, and the
+  prompt-submit context part is stripped otherwise. `agent_mention` and
+  `agent_message` records are not prompts.
+- A `tool_result` is paired with its call by id. An assistant call without a
+  matching result becomes one `[tool call: name(args)]` text line.
+- `Created` is the first record timestamp, `Cwd` the first record `cwd`, and
+  `Model` the last assistant model, from the record or from
+  `executionContext.modelId`.
+- A file that names more than one `sessionId` is an error: the identity is
+  ambiguous and the reader refuses to guess.
+- The count is exact: discovery and `Read` share one chain and one mapper. The
+  reader never writes to the store.
+
+## Antigravity source reader
+
+Location: `internal/vendors/antigravity/source_reader.go`.
+
+Implements `vendors.SourceReader` with `Source() == "antigravity"`.
+
+### Storage
+
+Antigravity writes one SQLite database per conversation:
+
+| Path | Content |
+| --- | --- |
+| `~/.gemini/antigravity/conversations/<cascade-id>.db` | the IDE's conversations |
+| `~/.gemini/antigravity-cli/conversations/<cascade-id>.db` | the CLI's conversations |
+
+The reader scans both roots in that order. `SourceID` is the database filename
+stem. If both roots hold the same identity, the first root wins, matching the
+walk order `SourceCache.Locate` uses.
+
+Each database has a `steps` table. One row is one step, and `step_payload` is a
+protobuf message:
+
+| Step type | Meaning | Read maps to |
+| --- | --- | --- |
+| 14 | user input | `{role: "user"}` |
+| 15 | model turn | text, `reasoning_content`, tool calls |
+| 132 | tool result | `{role: "tool"}` |
+| 17, 101, unknown | error or task notification | nothing |
+
+Payload fields used by the reader:
+
+| Field | Meaning |
+| --- | --- |
+| `5.1` | step timestamp |
+| `19.2` | user display text; `19.3` parts are joined when it is absent |
+| `20.1`, `20.8` | assistant text; `20.3` is thinking |
+| `20.7` | one tool call: `1` id, `2` name, `3` JSON arguments |
+| `5.4.1` | call id on a tool-result step |
+| `140.2.1` | tool result text |
+| `trajectory_metadata_blob` field `1.1` | workspace `file://` URI, used for `Cwd` |
+
+### Rules
+
+- A tool call with a result becomes a structured `Call` and one
+  `{role: "tool"}` message. A call without a result, id or name becomes one
+  `[tool call: name(args)]` text line.
+- The reader proves the `steps` and `trajectory_metadata_blob` column positions
+  before reading a row. A reordered table is refused, not misread.
+- A missing store root yields no rows. A database that cannot be read is skipped
+  and not cached. A valid database with no mapped messages is cached as a zero
+  row.
+- The cache key combines the database and its `-wal` sidecar, so a row cannot
+  survive a change that only reached the log.
+- `Created` is the first step timestamp, else the file modification time.
+- The count is exact: discovery and `Read` share one step mapper. The reader
+  never writes to the store.
 
 ## Chat list integration
 
@@ -636,18 +988,29 @@ If clai does not have a suitable helper, implement `NewChatID()` using stdlib on
 
 Each further source adds one file in its vendor package and one line to `allSourceReaders()`:
 
-| Source     | Vendor package                   | Storage format                                          | Status          |
-| ---------- | -------------------------------- | ------------------------------------------------------- | --------------- |
-| Claude Code | `internal/vendors/anthropic/`   | local JSONL under `~/.claude/projects/`                 | **implemented** |
-| Pi         | `internal/vendors/pi/`           | local JSONL under `~/.pi/agent/sessions/`               | **implemented** |
-| Codex      | `internal/vendors/openai/`       | JSON or SQLite from `~/.codex/`                         | future          |
-| Cursor     | `internal/vendors/cursor/` (new) | SQLite or workspace storage                             | future          |
-| Gemini CLI | `internal/vendors/gemini/`       | local session files                                     | future          |
+| Source      | Vendor package                   | Storage format                                           | Status          |
+| ----------- | -------------------------------- | -------------------------------------------------------- | --------------- |
+| Claude Code | `internal/vendors/anthropic/`    | local JSONL under `~/.claude/projects/`                  | **implemented** |
+| Pi          | `internal/vendors/pi/`           | local JSONL under `~/.pi/agent/sessions/`                | **implemented** |
+| Codex       | `internal/vendors/codex/`        | JSONL under `~/.codex/sessions/` and `archived_sessions/` | **implemented** |
+| Cursor      | `internal/vendors/cursor/`       | SQLite: IDE `state.vscdb` and CLI `store.db`             | **implemented** |
+| opencode    | `internal/vendors/opencode/`     | SQLite: `opencode.db` under the XDG data home            | **implemented** |
+| Gemini CLI  | `internal/vendors/gemini/`       | JSONL patch log under `~/.gemini/tmp/<slug>/chats/`      | **implemented** |
+| Qwen Code   | `internal/vendors/qwen/`         | JSONL record chain under `<runtime-base>/projects/`      | **implemented** |
+| Antigravity | `internal/vendors/antigravity/`  | SQLite: one trajectory database per conversation under `~/.gemini/antigravity{,-cli}/conversations/` | **implemented** |
 
 A JSONL-backed source is a schema and nothing more — see
 [Implementing a new JSONL source](#implementing-a-new-jsonl-source). A source
 that is not line-oriented (SQLite, an API) implements `SourceReader` directly;
 it is deliberately not forced through the line abstraction.
+
+Gemini CLI and Qwen Code are the replay exception. Both read JSONL through the
+shared scan helper, yet both implement `SourceReader` directly, because one
+line is not one row: Gemini patches earlier messages and rewinds them, and Qwen
+joins fragments into a `parentUuid` chain. The schema abstraction discovers by
+counting lines, which would report the wrong count for both. Discovery and
+`Read` share one whole-file pass instead, and the per-file cache keeps the row
+exact.
 
 ### Source reader evaluation guideline
 

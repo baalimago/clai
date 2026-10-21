@@ -114,12 +114,19 @@ func WalkJSONLFiles(ctx context.Context, root string, skipDirs []string, visit f
 // truncated scan matters; the token bound is the one error it explains (D29),
 // because a silently shortened conversation is worse than a failure.
 func ScanJSONLLines(r io.Reader, maxToken int, fn func(env map[string]any) bool) error {
-	err := scanJSONLRawLines(r, maxToken, func(line []byte) bool {
-		var env map[string]any
-		if err := json.Unmarshal(line, &env); err != nil {
+	return ScanJSONLRecords(r, maxToken, fn)
+}
+
+// ScanJSONLRecords is ScanJSONLLines for a caller with a typed line shape.
+// A line that does not decode into T is skipped, matching the tolerance of the
+// map-shaped scan.
+func ScanJSONLRecords[T any](r io.Reader, maxToken int, fn func(rec T) bool) error {
+	err := scanJSONLRawLines(r, maxToken, nil, func(line []byte) bool {
+		var rec T
+		if err := json.Unmarshal(line, &rec); err != nil {
 			return true
 		}
-		return fn(env)
+		return fn(rec)
 	})
 	// %w is load-bearing: discovery's cacheability gate is
 	// errors.Is(err, bufio.ErrTooLong) (D28).

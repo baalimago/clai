@@ -27,7 +27,7 @@ internal/cli:Run()
 | `internal/photo/store.go` | `SaveImage()` — decodes base64 and writes to disk |
 | `internal/photo/create_querier.go` | `photo.CreateQuerier()` — routes to OpenAI or Gemini |
 | `internal/vendors/openai/dalle.go` | OpenAI DALL-E photo querier implementation |
-| `internal/vendors/gemini/image.go` | Gemini photo querier implementation |
+| `internal/vendors/gemini/image/image.go` | Gemini photo querier implementation |
 
 ## Configuration
 
@@ -80,7 +80,7 @@ internal/cli:Run()
 | Model Pattern | Vendor |
 |---------------|--------|
 | contains `dall-e` or `gpt` | OpenAI (`openai.NewPhotoQuerier`) |
-| contains `gemini` | Google (`gemini.NewPhotoQuerier`) |
+| contains `gemini` | Google (`geminiimage.NewPhotoQuerier`) |
 
 ## Output
 

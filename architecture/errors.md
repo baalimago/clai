@@ -367,7 +367,7 @@ ride the CLI path and stay ambient.
   errors: they are clai bugs, not provider states, and a consumer has no
   distinct action for them.
 - **Non-text boundaries** (`openai/dalle.go`, `openai/sora.go`,
-  `gemini/image.go`, `openrouter/catalog_fetcher.go`) do not decode into the
+  `gemini/image/image.go`, `openrouter/catalog_fetcher.go`) do not decode into the
   vocabulary — their chain-breaking `%v` sites are repaired, their error
   wording is not a contract.
 - **Recorder and cost-accounting failures** never abort the run: they are

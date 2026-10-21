@@ -44,6 +44,21 @@ type JSONLSchema interface {
 	Fields(line []byte) LineFields
 }
 
+// JSONLRoots is an optional upgrade of JSONLSchema for a source that stores
+// sessions under more than one directory, such as live and archived logs.
+// Roots are walked in order, with empty entries and duplicates removed.
+type JSONLRoots interface {
+	Roots() []string
+}
+
+// JSONLFileGate is an optional upgrade of JSONLSchema for a source whose first
+// line decides whether a file is a session at all. AcceptFirstLine is called
+// once per opened file, with its first non-empty line. A false answer drops the
+// whole file: later lines cannot contribute identity or a row.
+type JSONLFileGate interface {
+	AcceptFirstLine(line []byte) bool
+}
+
 // LinePrefilter is an optional upgrade of JSONLSchema that skips decoding
 // lines which cannot contribute. Not implementing it is always correct, only
 // slower; implementing it wrongly silently undercounts, so a vendor that does

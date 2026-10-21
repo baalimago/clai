@@ -17,7 +17,13 @@ import (
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/internal/vendors"
 	"github.com/baalimago/clai/internal/vendors/anthropic"
+	"github.com/baalimago/clai/internal/vendors/antigravity"
+	"github.com/baalimago/clai/internal/vendors/codex"
+	"github.com/baalimago/clai/internal/vendors/cursor"
+	"github.com/baalimago/clai/internal/vendors/gemini"
+	"github.com/baalimago/clai/internal/vendors/opencode"
 	"github.com/baalimago/clai/internal/vendors/pi"
+	"github.com/baalimago/clai/internal/vendors/qwen"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
@@ -285,6 +291,12 @@ var allSourceReaders = func() []vendors.SourceReader {
 	return []vendors.SourceReader{
 		anthropic.SourceReader{},
 		pi.SourceReader{},
+		cursor.SourceReader{},
+		codex.SourceReader{},
+		opencode.SourceReader{},
+		gemini.SourceReader{},
+		qwen.SourceReader{},
+		antigravity.SourceReader{},
 	}
 }
 
@@ -347,6 +359,12 @@ func (cq *ChatHandler) foreignChatRows(ctx context.Context, readers []vendors.So
 	// them. A failed write never fails the listing: the cache is derived.
 	cache := cq.foreignCacheOrNil()
 	defer func() { cq.announceForeignCacheFailure(cq.persistForeignCache()) }()
+	// One identity, one row: two files may claim the same source id, and the
+	// walk-first row wins, the same tie-break ForeignIndex.Locate uses.
+	shown := make(map[string]struct{}, len(existing))
+	for k := range existing {
+		shown[k] = struct{}{}
+	}
 	rows := []chatListRow{}
 	for _, r := range readers {
 		found, err := r.Discover(ctx, cache)
@@ -361,9 +379,10 @@ func (cq *ChatHandler) foreignChatRows(ctx context.Context, readers []vendors.So
 				continue
 			}
 			k := sourceDedupKey(fr.Source, fr.SourceID)
-			if _, ok := existing[k]; ok {
+			if _, ok := shown[k]; ok {
 				continue
 			}
+			shown[k] = struct{}{}
 			rows = append(rows, chatListRow{
 				Kind:             chatRowForeign,
 				Created:          fr.Created,
