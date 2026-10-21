@@ -22,10 +22,10 @@ type tooling struct {
 	// base is the tool catalog handed to SkillLoader as the selectable set; a
 	// trusted skill replaces it with its active tools.
 	base map[string]pub_models.LLMTool
-	// run is the per-run tool dispatch table. It is populated once at
-	// NewQuerier and never mutated; dispatch resolves here instead of the
-	// process-global registry so concurrent agents cannot overwrite each
-	// other's tool instances.
+	// run is the per-run tool dispatch table. NewQuerier populates it from the
+	// selected tools and RegisterExtraTool may add entries between queries;
+	// dispatch resolves here instead of the process-global registry so
+	// concurrent agents cannot overwrite each other's tool instances.
 	run map[string]pub_models.LLMTool
 	// registered records which tool names have been registered on the model
 	// tool box so a skill enabling an already-registered tool does not

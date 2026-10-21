@@ -362,3 +362,26 @@ func TestSummarizeFlags_register(t *testing.T) {
 		t.Fatalf("parsed values: %+v", sf)
 	}
 }
+
+// Test_loopFlagsRegistration pins the loop surface: the iteration bound and
+// verification gate, with both iteration-bound spellings on one value.
+func Test_loopFlagsRegistration(t *testing.T) {
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	lf := NewLoopFlags()
+	lf.Register(fs)
+	for _, name := range []string{"mi", "max-iterations", "check"} {
+		if fs.Lookup(name) == nil {
+			t.Fatalf("flag %q missing from the loop surface", name)
+		}
+	}
+	if lf.MaxIterations.Value() != 10 || lf.Check.Value() != "" {
+		t.Fatalf("unexpected defaults: %+v", lf)
+	}
+	if err := fs.Parse([]string{"-mi", "3", "-check", "go test ./..."}); err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if lf.MaxIterations.Value() != 3 || lf.Check.Value() != "go test ./..." {
+		t.Fatalf("parsed values: %+v", lf)
+	}
+}

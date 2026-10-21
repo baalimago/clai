@@ -170,6 +170,11 @@ func inputsForTool(toolName string, ordinal int) pub_models.Input {
 			"title":   mockSequenceEntry("CLAI_MOCK_SUMMARY_TITLES", "Mock title", ordinal),
 			"summary": mockSequenceEntry("CLAI_MOCK_SUMMARY_SUMMARIES", "Mock summary.", ordinal),
 		}
+	case "complete_task":
+		return pub_models.Input{
+			"status":  envOr("CLAI_MOCK_COMPLETE_TASK_STATUS", "achieved"),
+			"summary": envOr("CLAI_MOCK_COMPLETE_TASK_SUMMARY", "Mock loop summary."),
+		}
 	case "ls":
 		return pub_models.Input{"directory": "."}
 	case "load_skill":

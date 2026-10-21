@@ -81,11 +81,11 @@ func (s Summary) ApplyTo(c *pub_models.Chat)
 Nothing under `internal/text` or `internal/chat` imports
 `internal/summary`. The production implementation,
 `summary.NewAgentSummarizer(confDir)`, is injected from `internal/cli` as a lazy
-constructor through `text.QueryCommandDeps.NewSummarizer` (query path) and
-`chat.CommandDeps.NewSummarizer` plus `chat.CommandDeps.ParseSince` (batch
-path, D7). The `chat` tree keeps its no-model invariant: only
-`chat summarize` invokes the constructor, so `chat list`, `dir`, `dirv2` and
-`continue` still need no API key.
+constructor through `text.QueryCommandDeps.NewSummarizer` (query and loop
+path) and `chat.CommandDeps.NewSummarizer` plus
+`chat.CommandDeps.ParseSince` (batch path, D7). The `chat` tree keeps its
+no-model invariant: only `chat summarize` invokes the constructor, so
+`chat list`, `dir`, `dirv2` and `continue` still need no API key.
 
 ## The summarizer querier
 
@@ -215,9 +215,9 @@ runs concurrently with the main call (D8).
 model error, validation exhaustion, timeout, panic, interrupt — fails,
 delays beyond the join bound, or alters the answer, the exit status or the
 persistence of the main query. Every failure is dropped silently (D25);
-`DEBUG_SUMMARY=1` traces launch, apply, failure and abandon lines. The
-query command's `OnSetup` attaches the summarizer through
-`Querier.SetSummarizer`; a constructor error attaches nothing and the query
+`DEBUG_SUMMARY=1` traces launch, apply, failure and abandon lines. The query
+and loop commands' shared setup attaches the summarizer through
+`Querier.SetSummarizer`; a constructor error attaches nothing and the run
 proceeds.
 
 ### Replies and forks (D20, D28)
@@ -233,7 +233,7 @@ from the full file and keeps its label in place. Both paths append their
 own cost row; neither adds a second `purpose: "summary"` row.
 
 An opted-out run (`summarize-conversations: false` without `-summarize`)
-constructs no summarizer at all: the query command skips
+constructs no summarizer at all: the query and loop commands skip
 `NewAgentSummarizer`, so no second `textConfig.json` load happens.
 `clai chat continue` runs in the `chat` tree, which attaches no
 summarizer, so a pre-feature conversation continued there stays
