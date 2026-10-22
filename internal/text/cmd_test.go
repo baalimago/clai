@@ -1,6 +1,7 @@
 package text
 
 import (
+	"context"
 	"testing"
 
 	"github.com/baalimago/clai/internal"
@@ -25,6 +26,28 @@ func mustSet(t *testing.T, v interface{ Set(string) error }, val string) {
 		t.Fatalf("Set(%q): %v", val, err)
 	}
 }
+
+func Test_newLoopRunner_rejectsQuerierWithoutLoopSupport(t *testing.T) {
+	_, err := newLoopRunner(queryOnlyQuerier{}, NewCompletionRecorder(""), LoopConfig{})
+	if err == nil {
+		t.Fatal("want an error for a querier without RegisterExtraTool")
+	}
+	testboil.AssertStringContains(t, err.Error(), "text.queryOnlyQuerier")
+}
+
+func TestLoopCommand_registersTextAndLoopFlags(t *testing.T) {
+	c := LoopCommand(QueryCommandDeps{})
+	fs := c.Flagset()
+	for _, name := range []string{"r", "cm", "t", "dre", "mi", "max-iterations", "check"} {
+		if fs.Lookup(name) == nil {
+			t.Fatalf("flag %q missing from the loop command", name)
+		}
+	}
+}
+
+type queryOnlyQuerier struct{}
+
+func (queryOnlyQuerier) Query(context.Context) error { return nil }
 
 func Test_ApplyFlagOverrides_stdin(t *testing.T) {
 	t.Run("it should set stdinput config if flagged and default is empty", func(t *testing.T) {

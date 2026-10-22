@@ -34,6 +34,19 @@ clai query -- -why does this fail
 
 See: [`query.md`](./architecture/query.md), [`chat.md`](./architecture/chat.md), [`dre.md`](./architecture/dre.md).
 
+## Loop until the goal is verified
+
+```bash
+clai loop -check 'go test ./...' fix the failing build
+clai l -mi 3 -check ./verify.sh make the linter clean
+```
+
+- Each iteration is a fresh session. The previous iteration's final reply becomes its handover.
+- The agent calls `complete_task` when it is done. With `-check`, an achieved call is accepted only when the command exits 0.
+- `-mi` / `-max-iterations` bounds the run (default 10, `0` = unlimited). A blocked task or an exhausted bound exits 1.
+
+See: [`query.md`](./architecture/query.md#loop-command).
+
 ## Blocking structured output
 
 Use the included review schema to produce JSON that you can send directly to `jq`:

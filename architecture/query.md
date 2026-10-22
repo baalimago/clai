@@ -19,7 +19,9 @@ internal/cli:Run()
 
 | File | Purpose |
 |------|---------|
-| `internal/text/cmd.go` | query command definition; dispatch via `cmd.Run` (see [cmd-dispatch.md](./cmd-dispatch.md)) |
+| `internal/text/cmd.go` | query and loop command definitions; dispatch via `cmd.Run` (see [cmd-dispatch.md](./cmd-dispatch.md)) |
+| `internal/text/loop.go` | `LoopRunner` — per-iteration context isolation, handover chats, iteration bound |
+| `internal/text/loop_tool.go` | `complete_task` tool: submission validation and the `-check` verification gate |
 | `internal/setup.go` | `setupTextQuerierWithConf()` builds the text querier |
 | `internal/flags.go` | flag primitives + shared groups (`TextFlags` feeds `text.SetupQuerier`) |
 | `internal/text/conf.go` | `text.Configurations` struct + `SetupInitialChat()` |
@@ -30,6 +32,36 @@ internal/cli:Run()
 | `internal/text/create_querier.go` | `text.CreateQuerier()` — vendor selection by model name |
 | `internal/chat/reply.go` | `SaveAsPreviousQuery()` — persists result for `-re` replies |
 | `internal/chat/chat.go` | `HashIDFromPrompt()` — generates chat IDs |
+
+## Loop Command
+
+Command: `clai [flags] loop <text>` (alias: `l`)
+
+`loop` runs the same config, prompt and summarizer composition as `query`
+and then hands the resulting querier to `text.LoopRunner`. One run owns
+multiple `ChatQuerier.TextQuery` iterations. Each iteration is a fresh chat
+session equipped with the `complete_task` tool; an iteration that ends without
+an accepted completion passes its final assistant reply to the next iteration
+as handover.
+
+| Flag | Purpose |
+| --- | --- |
+| `-mi` / `-max-iterations` | Iteration bound. Default 10; `0` means unlimited; a negative value is rejected before the first model call. |
+| `-check` | Shell command run through `sh -c` when `complete_task` reports `achieved`. A non-zero exit rejects the submission and the loop continues. |
+
+The loop exits 0 only after `complete_task` reports `achieved`; when `-check`
+is set, the verification command must also exit 0. A `blocked` submission
+exits 1 with the reported summary; an exhausted bound exits 1 with
+`-max-iterations`. Every iteration after the first keeps the seed chat through
+its first `user` message, so all persisted iterations share one `GroupKey` in
+`clai chat list`. Every iteration also inherits the seed chat's profile, so a
+loop run with `-p` persists the same profile on each iteration. A `StopEvent`
+inside one iteration cancels only that iteration's child context, never the
+outer loop.
+
+Flags are the shared `TextFlags` groups plus `LoopFlags`; loop settings live
+in no configuration file. See `internal/text/loop.go` and
+`internal/text/cmd.go`.
 
 ## Configuration Cascade
 

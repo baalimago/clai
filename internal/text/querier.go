@@ -112,8 +112,9 @@ type Querier[C models.StreamCompleter] struct {
 	// runModel is the configured model name, the last rung of the summary
 	// model ladder on the query path (D22).
 	runModel string
-	// summarizer is attached by the query command; nil means no in-flight
-	// label (pkg/agent, tests, the summarizer's own querier).
+	// summarizer is attached by the text commands (query and loop); nil
+	// means no in-flight label (pkg/agent, tests, the summarizer's own
+	// querier).
 	summarizer             models.Summarizer
 	summarizeConversations bool
 	summaryModel           string

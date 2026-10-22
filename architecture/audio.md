@@ -373,8 +373,8 @@ transcription logic. Select it with `-t audio_transcribe` or `-t "*"`; inspect
 it with `clai tools audio_transcribe`.
 
 The engine loads `audioConfig.json` itself, so the model does **not** come
-from the calling command's config. A query or chat can still configure the
-tool for the run with `-am`/`-af`, which
+from the calling command's config. A query, loop or chat can still configure
+the tool for the run with `-am`/`-af`, which
 `audio.SetTranscribeOverrides` layers on top (model overrides the file;
 format overrides the tool call's own `output_format`, since an explicit
 user choice outranks the model's per-call pick). An invalid `-af` fails at

@@ -237,8 +237,8 @@ func (f *MediaFlags) Apply(c MediaConfig) {
 
 // MediaToolFlags configures the media tools an agent run may call. The
 // media commands own the same flag names one level down for their own
-// runs; here they configure the tools, so a normal query or chat can pick
-// the model its transcriptions use. Video and photo join when tools for
+// runs; here they configure the tools, so a normal query, loop or chat can
+// pick the model its transcriptions use. Video and photo join when tools for
 // them exist — a flag that silently does nothing is worse than no flag.
 type MediaToolFlags struct {
 	AudioModel  StringFlag
@@ -251,8 +251,8 @@ func (g *MediaToolFlags) Register(fs *flag.FlagSet) {
 }
 
 // AgentTextFlags is the model/agent group shared by every text-querier
-// command (query, chat and chat continue): model selection, tool and limit
-// configuration, profiles.
+// command (query, loop, chat and chat continue): model selection, tool and
+// limit configuration, profiles.
 type AgentTextFlags struct {
 	ChatModel                 StringFlag
 	UseTools                  StringFlag
@@ -324,7 +324,7 @@ func (g *SummarizeFlags) Register(fs *flag.FlagSet) {
 	g.SummaryModel.Register(fs, "Set the model the conversation summarizer uses. Overrides summary-model in textConfig.json.", "sm", "summary-model")
 }
 
-// QueryTextFlags holds the query-only flags: reply modes, skills,
+// QueryTextFlags holds the text-query path flags: reply modes, skills,
 // structured responses and prompt shell context — none of which apply to
 // chat sessions.
 type QueryTextFlags struct {
@@ -345,9 +345,26 @@ func (g *QueryTextFlags) Register(fs *flag.FlagSet) {
 	g.SummaryModel.Register(fs, "Set the model the conversation summarizer uses. Overrides summary-model in textConfig.json.", "sm", "summary-model")
 }
 
+// LoopFlags is the loop command's iteration and verification surface.
+type LoopFlags struct {
+	MaxIterations IntFlag
+	Check         StringFlag
+}
+
+// NewLoopFlags seeds the loop defaults.
+func NewLoopFlags() LoopFlags {
+	return LoopFlags{MaxIterations: NewIntFlag(10), Check: NewStringFlag("")}
+}
+
+func (g *LoopFlags) Register(fs *flag.FlagSet) {
+	g.MaxIterations.Register(fs, "Set the maximum number of loop iterations. 0 = unlimited.", "mi", "max-iterations")
+	g.Check.Register(fs, "Set a shell command that must exit 0 before an achieved complete_task call is accepted.", "check")
+}
+
 // TextFlags composes the four text-path groups: the parameter type for
-// text.SetupQuerier. Query registers all four; chat registers Raw and
-// AgentText, leaving the others zero-valued (behavior-identical to unset).
+// text.SetupQuerier. Query and loop register all four; chat registers Raw
+// and AgentText, leaving the others zero-valued (behavior-identical to
+// unset).
 type TextFlags struct {
 	Raw        RawFlag
 	ReplyStdin ReplyStdinFlags

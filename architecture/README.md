@@ -24,7 +24,7 @@ This directory contains short design notes for key parts of **clai**. Each file 
 
 ## Command docs
 
-- **[query.md](./query.md)** — Primary `clai query` command: flag/config application, prompt assembly (stdin + `{}` replacement), tool-call recursion, and persistence.
+- **[query.md](./query.md)** — Primary `clai query` command and the `clai loop` sibling: flag/config application, prompt assembly (stdin + `{}` replacement), tool-call recursion, persistence, and loop iterations with the `complete_task` gate.
 - **[replay.md](./replay.md)** — `clai replay` / `clai re` (global) and relationship to dir-scoped replay.
 - **[dre.md](./dre.md)** — `clai dre`: prints the last message from the directory-bound conversation for the current working directory.
 - **[photo.md](./photo.md)** — `clai photo`: image generation flow, prompt formatting, vendor routing, and output modes (local/url).

@@ -110,6 +110,12 @@ func Commands(deps Deps) map[string]cmd.Command {
 			ApplyMediaOverrides: applyMediaOverrides,
 			NewSummarizer:       deps.NewSummarizer,
 		}),
+		"loop|l": text.LoopCommand(text.QueryCommandDeps{
+			ConfigPrep:          configPrep,
+			TrustInput:          func() io.Reader { return setup.Input },
+			ApplyMediaOverrides: applyMediaOverrides,
+			NewSummarizer:       deps.NewSummarizer,
+		}),
 		"chat|c": chat.Command(chat.CommandDeps{
 			ConfigPrep:    configPrep,
 			NewSummarizer: deps.NewSummarizer,
