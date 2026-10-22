@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/e2e/e2etest"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
@@ -34,11 +35,11 @@ func writeNotificationTestPriceFiles(t *testing.T, confDir string) {
 func Test_run_structured_output_prints_only_response(t *testing.T) {
 	for _, rawFlag := range []string{"", "-r"} {
 		t.Run("raw="+rawFlag, func(t *testing.T) {
-			confDir := setupMainTestConfigDir(t)
+			confDir := e2etest.SetupMainTestConfigDir(t)
 			writeNotificationTestPriceFiles(t, confDir)
-			writeSkillFile(t, filepath.Join(confDir, "skills", "review", "SKILL.md"), "---\ndescription: review\n---\nBody")
-			writeSkillsConfigJSON(t, confDir, map[string]any{"enabled": true})
-			responseFormatPath := filepath.Join(moduleRoot(t), "examples", "response-format-review.json")
+			e2etest.WriteSkillFile(t, filepath.Join(confDir, "skills", "review", "SKILL.md"), "---\ndescription: review\n---\nBody")
+			e2etest.WriteSkillsConfigJSON(t, confDir, map[string]any{"enabled": true})
+			responseFormatPath := filepath.Join(e2etest.ModuleRoot(t), "examples", "response-format-review.json")
 
 			args := []string{"-cm", "test", "-lb", "-rf", responseFormatPath, "q", "hello"}
 			if rawFlag != "" {
@@ -46,7 +47,7 @@ func Test_run_structured_output_prints_only_response(t *testing.T) {
 			}
 			var gotStatusCode int
 			gotStdout := testboil.CaptureStdout(t, func(t *testing.T) {
-				gotStatusCode = run(args)
+				gotStatusCode = harness.Run(args)
 			})
 
 			testboil.FailTestIfDiff(t, gotStatusCode, 0)
@@ -95,7 +96,7 @@ func Test_run_redirected_completed_query_suppresses_bell(t *testing.T) {
 
 	var gotStatusCode int
 	gotStdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		gotStatusCode = run(strings.Split("-r -cm test q hello", " "))
+		gotStatusCode = harness.Run(strings.Split("-r -cm test q hello", " "))
 	})
 
 	testboil.FailTestIfDiff(t, gotStatusCode, 0)
@@ -147,7 +148,7 @@ func Test_run_false_notification_bell_setting_stays_disabled(t *testing.T) {
 
 	var gotStatusCode int
 	gotStdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		gotStatusCode = run(strings.Split("-r -cm test q hello", " "))
+		gotStatusCode = harness.Run(strings.Split("-r -cm test q hello", " "))
 	})
 
 	testboil.FailTestIfDiff(t, gotStatusCode, 0)
@@ -193,7 +194,7 @@ func Test_run_appends_notification_bell_true_to_existing_theme_json(t *testing.T
 
 	var gotStatusCode int
 	_ = testboil.CaptureStdout(t, func(t *testing.T) {
-		gotStatusCode = run(strings.Split("-r -cm test q hello", " "))
+		gotStatusCode = harness.Run(strings.Split("-r -cm test q hello", " "))
 	})
 
 	testboil.FailTestIfDiff(t, gotStatusCode, 0)

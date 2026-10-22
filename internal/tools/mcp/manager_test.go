@@ -16,7 +16,7 @@ import (
 func TestManagerRegistersToolsThroughConn(t *testing.T) {
 	ctx := t.Context()
 
-	srv := pub_models.McpServer{Command: "go", Args: []string{"run", "./testserver"}}
+	srv := pub_models.McpServer{Command: testServerBinary(t)}
 	conn, err := NewStdioConn(ctx, srv, nil)
 	if err != nil {
 		t.Fatalf("NewStdioConn: %v", err)
@@ -55,8 +55,7 @@ func TestManagerRegistersToolsThroughConn(t *testing.T) {
 // acceptance criterion that expiry surfaces a typed startup error.
 func TestConnHandshakeTimeoutReturnsTypedError(t *testing.T) {
 	srv := pub_models.McpServer{
-		Command: "go",
-		Args:    []string{"run", "./testserver"},
+		Command: testServerBinary(t),
 		Env:     map[string]string{"TEST_SERVER_AUTH_HANG": "1"},
 	}
 	conn, err := NewStdioConn(t.Context(), srv, nil, WithHandshakeBound(50*time.Millisecond))
@@ -164,7 +163,7 @@ func TestConnToolsListUndecodableResultIsTypedStartupError(t *testing.T) {
 // fake server rejects any other version, so a successful handshake proves
 // the right one was sent.
 func TestConnAdvertisesProtocolVersion(t *testing.T) {
-	srv := pub_models.McpServer{Name: "echo", Command: "go", Args: []string{"run", "./testserver"}}
+	srv := pub_models.McpServer{Name: "echo", Command: testServerBinary(t)}
 	conn, err := NewStdioConn(t.Context(), srv, nil)
 	if err != nil {
 		t.Fatalf("NewStdioConn: %v", err)
@@ -190,7 +189,7 @@ func TestConnAdvertisesProtocolVersion(t *testing.T) {
 func TestManager(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	srv := pub_models.McpServer{Command: "go", Args: []string{"run", "./testserver"}}
+	srv := pub_models.McpServer{Command: testServerBinary(t)}
 	conn, err := NewStdioConn(ctx, srv, nil)
 	if err != nil {
 		t.Fatalf("NewStdioConn: %v", err)
@@ -226,15 +225,14 @@ func TestManager(t *testing.T) {
 func TestManager_SkipsFailingServer(t *testing.T) {
 	ctx := t.Context()
 
-	goodSrv := pub_models.McpServer{Command: "go", Args: []string{"run", "./testserver"}}
+	goodSrv := pub_models.McpServer{Command: testServerBinary(t)}
 	goodConn, err := NewStdioConn(ctx, goodSrv, nil)
 	if err != nil {
 		t.Fatalf("good conn: %v", err)
 	}
 	brokenSrv := pub_models.McpServer{
 		Name:    "broken",
-		Command: "go",
-		Args:    []string{"run", "./testserver"},
+		Command: testServerBinary(t),
 		Env:     map[string]string{"TEST_SERVER_EXIT": "1"},
 	}
 	brokenConn, err := NewStdioConn(ctx, brokenSrv, nil)

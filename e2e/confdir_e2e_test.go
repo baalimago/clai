@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/e2e/e2etest"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
@@ -15,11 +16,11 @@ func Test_goldenFile_CONFDIR_prints_config_dir(t *testing.T) {
 		os.Args = oldArgs
 	})
 
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 
 	var gotStatus int
 	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		gotStatus = run(strings.Split("confdir", " "))
+		gotStatus = harness.Run(strings.Split("confdir", " "))
 	})
 
 	testboil.FailTestIfDiff(t, gotStatus, 0)
@@ -32,11 +33,11 @@ func Test_goldenFile_CONFDIR_prints_registered_subdir(t *testing.T) {
 		os.Args = oldArgs
 	})
 
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 
 	var gotStatus int
 	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		gotStatus = run(strings.Split("confdir mcpServers", " "))
+		gotStatus = harness.Run(strings.Split("confdir mcpServers", " "))
 	})
 
 	testboil.FailTestIfDiff(t, gotStatus, 0)
@@ -49,11 +50,11 @@ func Test_goldenFile_CONFDIR_unknown_subpath_errors(t *testing.T) {
 		os.Args = oldArgs
 	})
 
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 
 	var gotStatus int
 	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		gotStatus = run(strings.Split("confdir definitely-not-a-real-path", " "))
+		gotStatus = harness.Run(strings.Split("confdir definitely-not-a-real-path", " "))
 	})
 
 	if gotStatus == 0 {
@@ -65,11 +66,11 @@ func Test_goldenFile_CONFDIR_unknown_subpath_errors(t *testing.T) {
 }
 
 func Test_goldenFile_usage_mentions_confdir_command(t *testing.T) {
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 
 	var gotStatus int
 	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		gotStatus = run(nil)
+		gotStatus = harness.Run(nil)
 	})
 
 	testboil.FailTestIfDiff(t, gotStatus, 1)
@@ -83,12 +84,12 @@ func Test_goldenFile_usage_mentions_confdir_command(t *testing.T) {
 // that never load the other mode configs themselves (config migration
 // design, Q5; scoped to config-touching commands by the cmd/flag refactor).
 func Test_e2e_query_migrates_mode_configs(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
-	writeJSONFileAny(t, filepath.Join(confDir, "textConfig.json"), map[string]any{
+	confDir := e2etest.SetupMainTestConfigDir(t)
+	e2etest.WriteJSONFileAny(t, filepath.Join(confDir, "textConfig.json"), map[string]any{
 		"model": "test",
 	})
 
-	stdout, status := runOne(t, confDir, "-cm test q hello")
+	stdout, status := harness.RunOne(t, confDir, "-cm test q hello")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -111,12 +112,12 @@ func Test_e2e_query_migrates_mode_configs(t *testing.T) {
 // `clai -r chat dirv2` (run by a zsh precmd) from silently migrating the
 // user's configs before their own commands run.
 func Test_e2e_raw_run_does_not_migrate_configs(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
-	writeJSONFileAny(t, filepath.Join(confDir, "textConfig.json"), map[string]any{
+	confDir := e2etest.SetupMainTestConfigDir(t)
+	e2etest.WriteJSONFileAny(t, filepath.Join(confDir, "textConfig.json"), map[string]any{
 		"model": "test",
 	})
 
-	stdout, status := runOne(t, confDir, "-r -cm test q hello")
+	stdout, status := harness.RunOne(t, confDir, "-r -cm test q hello")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -137,13 +138,13 @@ func Test_e2e_raw_run_does_not_migrate_configs(t *testing.T) {
 // upgraded in place and announced even when it is never selected via
 // -p/-profile-path (config migration design, Q5 extension).
 func Test_e2e_query_migrates_profiles(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
-	writeJSONFileAny(t, filepath.Join(confDir, "profiles", "john.json"), map[string]any{
+	confDir := e2etest.SetupMainTestConfigDir(t)
+	e2etest.WriteJSONFileAny(t, filepath.Join(confDir, "profiles", "john.json"), map[string]any{
 		"name":  "john",
 		"model": "test",
 	})
 
-	stdout, status := runOne(t, confDir, "-cm test q hello")
+	stdout, status := harness.RunOne(t, confDir, "-cm test q hello")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -165,13 +166,13 @@ func Test_e2e_query_migrates_profiles(t *testing.T) {
 // profiles: a raw (machine-readable) run fills missing profile fields in
 // memory but never rewrites profiles/*.json and never announces.
 func Test_e2e_raw_run_does_not_migrate_profiles(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
-	writeJSONFileAny(t, filepath.Join(confDir, "profiles", "john.json"), map[string]any{
+	confDir := e2etest.SetupMainTestConfigDir(t)
+	e2etest.WriteJSONFileAny(t, filepath.Join(confDir, "profiles", "john.json"), map[string]any{
 		"name":  "john",
 		"model": "test",
 	})
 
-	stdout, status := runOne(t, confDir, "-r -cm test q hello")
+	stdout, status := harness.RunOne(t, confDir, "-r -cm test q hello")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -192,8 +193,8 @@ func Test_e2e_raw_run_does_not_migrate_profiles(t *testing.T) {
 // as the mode configs), non-JSON files are never touched, and one broken file
 // does not block the migration of the others.
 func Test_e2e_query_migrates_profiles_skips_broken_and_non_json_files(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
-	writeJSONFileAny(t, filepath.Join(confDir, "profiles", "john.json"), map[string]any{
+	confDir := e2etest.SetupMainTestConfigDir(t)
+	e2etest.WriteJSONFileAny(t, filepath.Join(confDir, "profiles", "john.json"), map[string]any{
 		"name":  "john",
 		"model": "test",
 	})
@@ -204,7 +205,7 @@ func Test_e2e_query_migrates_profiles_skips_broken_and_non_json_files(t *testing
 		t.Fatalf("WriteFile(notes.txt): %v", err)
 	}
 
-	stdout, status := runOne(t, confDir, "-cm test q hello")
+	stdout, status := harness.RunOne(t, confDir, "-cm test q hello")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -223,12 +224,12 @@ func Test_e2e_query_migrates_profiles_skips_broken_and_non_json_files(t *testing
 // confdir never loads themes nor runs the united config migration, so shell
 // completion helpers and scripts can call it without touching any config.
 func Test_e2e_confdir_is_side_effect_free(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
-	writeJSONFileAny(t, filepath.Join(confDir, "textConfig.json"), map[string]any{
+	confDir := e2etest.SetupMainTestConfigDir(t)
+	e2etest.WriteJSONFileAny(t, filepath.Join(confDir, "textConfig.json"), map[string]any{
 		"model": "test",
 	})
 
-	stdout, status := runOne(t, confDir, "confdir")
+	stdout, status := harness.RunOne(t, confDir, "confdir")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}

@@ -1,16 +1,15 @@
-package e2e
+package conversation
 
 import (
 	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/baalimago/clai/e2e/e2etest"
 	"github.com/baalimago/clai/internal/chat"
-	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/summary"
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/internal/utils"
@@ -55,7 +54,7 @@ func readIndexRows(t *testing.T, confDir string) map[string]summaryIndexRow {
 	var cache struct {
 		Rows []summaryIndexRow `json:"rows"`
 	}
-	raw := readStringFile(t, filepath.Join(confDir, "conversations", "chat_index.cache"))
+	raw := e2etest.ReadStringFile(t, filepath.Join(confDir, "conversations", "chat_index.cache"))
 	if err := json.Unmarshal([]byte(raw), &cache); err != nil {
 		t.Fatalf("Unmarshal(chat_index.cache): %v", err)
 	}
@@ -68,7 +67,7 @@ func readIndexRows(t *testing.T, confDir string) map[string]summaryIndexRow {
 
 func runQuery(t *testing.T, args string) {
 	t.Helper()
-	if status := run(strings.Split(args, " ")); status != 0 {
+	if status := harness.Run(strings.Split(args, " ")); status != 0 {
 		t.Fatalf("%q: status %d", args, status)
 	}
 }
@@ -78,22 +77,22 @@ func runQuery(t *testing.T, args string) {
 func Test_e2e_reply_preserves_title_summary(t *testing.T) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	t.Setenv("CLAI_CACHE_DIR", filepath.Join(t.TempDir(), "cache"))
-	chdirTemp(t)
+	e2etest.ChdirTemp(t)
 	convDir := filepath.Join(confDir, "conversations")
 
-	seed := labelChat(makeConv("seed-chat", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), msgUser("seed query"), msgAsst("seed answer")))
-	seedConv(t, convDir, seed)
+	seed := labelChat(e2etest.MakeConv("seed-chat", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), e2etest.MsgUser("seed query"), e2etest.MsgAsst("seed answer")))
+	e2etest.SeedConv(t, convDir, seed)
 	mirror := seed
 	mirror.ID = "globalScope"
-	seedConv(t, convDir, mirror)
+	e2etest.SeedConv(t, convDir, mirror)
 	seedPath := filepath.Join(convDir, "seed-chat.json")
-	seedBefore := readStringFile(t, seedPath)
+	seedBefore := e2etest.ReadStringFile(t, seedPath)
 
 	runQuery(t, "-r -re -cm test q more")
 
-	if got := readStringFile(t, seedPath); got != seedBefore {
+	if got := e2etest.ReadStringFile(t, seedPath); got != seedBefore {
 		t.Fatalf("seed file modified by -re:\n%s", got)
 	}
 	convs := conversationFiles(t, confDir)
@@ -132,9 +131,9 @@ func Test_e2e_reply_preserves_title_summary(t *testing.T) {
 func Test_e2e_dirreply_preserves_title_summary(t *testing.T) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	t.Setenv("CLAI_CACHE_DIR", filepath.Join(t.TempDir(), "cache"))
-	chdirTemp(t)
+	e2etest.ChdirTemp(t)
 	convDir := filepath.Join(confDir, "conversations")
 
 	runQuery(t, "-r -cm test q seed query")
@@ -142,7 +141,7 @@ func Test_e2e_dirreply_preserves_title_summary(t *testing.T) {
 	if len(convs) != 1 {
 		t.Fatalf("expected one seeded conversation, got %v", convs)
 	}
-	seedConv(t, convDir, labelChat(loadConv(t, convs[0])))
+	e2etest.SeedConv(t, convDir, labelChat(loadConv(t, convs[0])))
 	before := readOnlyBinding(t, confDir)
 
 	runQuery(t, "-r -dre -cm test q follow up")
@@ -169,7 +168,7 @@ func Test_e2e_dirreply_preserves_title_summary(t *testing.T) {
 func Test_e2e_chat_list_rebuild_mirrors_title(t *testing.T) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	t.Setenv("CLAI_CACHE_DIR", filepath.Join(t.TempDir(), "cache"))
 	t.Setenv("HOME", t.TempDir())
 	convDir := filepath.Join(confDir, "conversations")
@@ -179,8 +178,8 @@ func Test_e2e_chat_list_rebuild_mirrors_title(t *testing.T) {
 		"labelled": time.Date(2026, 3, 4, 5, 6, 7, 0, time.UTC),
 		"plain":    time.Date(2026, 2, 3, 4, 5, 6, 0, time.UTC),
 	}
-	seedConv(t, convDir, labelChat(makeConv("labelled", time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC), msgUser("labelled"), msgAsst("ok"))))
-	seedConv(t, convDir, makeConv("plain", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), msgUser("plain"), msgAsst("ok")))
+	e2etest.SeedConv(t, convDir, labelChat(e2etest.MakeConv("labelled", time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC), e2etest.MsgUser("labelled"), e2etest.MsgAsst("ok"))))
+	e2etest.SeedConv(t, convDir, e2etest.MakeConv("plain", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), e2etest.MsgUser("plain"), e2etest.MsgAsst("ok")))
 	for id, mtime := range mtimes {
 		if err := os.Chtimes(filepath.Join(convDir, id+".json"), mtime, mtime); err != nil {
 			t.Fatalf("Chtimes(%q): %v", id, err)
@@ -190,7 +189,7 @@ func Test_e2e_chat_list_rebuild_mirrors_title(t *testing.T) {
 		t.Fatalf("Remove(chat_index.cache): %v", err)
 	}
 
-	stdout, status := runOne(t, confDir, "-n -r c l q")
+	stdout, status := harness.RunOne(t, confDir, "-n -r c l q")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -222,13 +221,13 @@ func Test_e2e_chat_list_rebuild_mirrors_title(t *testing.T) {
 	}
 }
 
-// runQueryCaptured runs the CLI once through run(), capturing stdout and
+// runQueryCaptured runs the CLI once through harness.Run(), capturing stdout and
 // stderr, and asserts a zero exit status.
 func runQueryCaptured(t *testing.T, args string) (string, string) {
 	t.Helper()
 	var status int
-	stdout, stderr := captureStdoutStderr(t, func() {
-		status = run(strings.Split(args, " "))
+	stdout, stderr := e2etest.CaptureStdoutStderr(t, func() {
+		status = harness.Run(strings.Split(args, " "))
 	})
 	if status != 0 {
 		t.Fatalf("%q: status %d stdout=%q stderr=%q", args, status, stdout, stderr)
@@ -259,7 +258,7 @@ func setupSummaryE2E(t *testing.T) string {
 	t.Helper()
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	// The ladder's floor is the mock, so a row that omits -sm never
 	// resolves to a paid vendor (R3-05).
 	textConf := text.Default
@@ -268,19 +267,19 @@ func setupSummaryE2E(t *testing.T) string {
 		t.Fatalf("CreateFile(textConfig.json): %v", err)
 	}
 	t.Setenv("CLAI_CACHE_DIR", filepath.Join(t.TempDir(), "cache"))
-	blankDebugAndVendorKeys(t)
+	e2etest.BlankDebugAndVendorKeys(t)
 	t.Setenv(summary.EnvSummarizer, "")
 	// TestMain swaps the real constructor for a refusing one; the summary
 	// rows are the only opt-in.
-	newSummarizer = summary.NewAgentSummarizer
-	t.Cleanup(func() { newSummarizer = refusingSummarizer })
+	harness.Deps.NewSummarizer = summary.NewAgentSummarizer
+	t.Cleanup(func() { harness.Deps.NewSummarizer = e2etest.RefusingSummarizer })
 	// A current, empty index keeps the pre-existing "Building cache index"
 	// chatter off stderr so the rows' empty-stderr oracle is exact.
 	cachePath := filepath.Join(confDir, "conversations", "chat_index.cache")
 	if err := os.WriteFile(cachePath, []byte(`{"version":2,"rows":[]}`), 0o644); err != nil {
 		t.Fatalf("WriteFile(chat_index.cache): %v", err)
 	}
-	chdirTemp(t)
+	e2etest.ChdirTemp(t)
 	return confDir
 }
 
@@ -416,13 +415,13 @@ func Test_e2e_query_summary_keeps_cmd_ban(t *testing.T) {
 	}
 }
 
-// runStatusCaptured runs the CLI once through run(), returning stdout,
+// runStatusCaptured runs the CLI once through harness.Run(), returning stdout,
 // stderr and the exit status.
 func runStatusCaptured(t *testing.T, args string) (string, string, int) {
 	t.Helper()
 	var status int
-	stdout, stderr := captureStdoutStderr(t, func() {
-		status = run(strings.Split(args, " "))
+	stdout, stderr := e2etest.CaptureStdoutStderr(t, func() {
+		status = harness.Run(strings.Split(args, " "))
 	})
 	return stdout, stderr, status
 }
@@ -431,7 +430,7 @@ func runStatusCaptured(t *testing.T, args string) (string, string, int) {
 // scripts the mock's submit_summary call.
 func seedSummarizable(t *testing.T, convDir, id string, created time.Time) {
 	t.Helper()
-	seedConv(t, convDir, makeConv(id, created, msgUser("question "+id+" tool_submit_summary"), msgAsst("answer "+id)))
+	e2etest.SeedConv(t, convDir, e2etest.MakeConv(id, created, e2etest.MsgUser("question "+id+" tool_submit_summary"), e2etest.MsgAsst("answer "+id)))
 }
 
 func assertMockLabel(t *testing.T, got pub_models.Chat) {
@@ -463,7 +462,7 @@ func Test_e2e_chat_summarize_window(t *testing.T) {
 	if err := os.Remove(filepath.Join(convDir, "chat_index.cache")); err != nil {
 		t.Fatalf("Remove(chat_index.cache): %v", err)
 	}
-	olderBefore := readStringFile(t, olderPath)
+	olderBefore := e2etest.ReadStringFile(t, olderPath)
 
 	stdout, stderr, status := runStatusCaptured(t, "c summarize -y -sm test 7d")
 
@@ -479,7 +478,7 @@ func Test_e2e_chat_summarize_window(t *testing.T) {
 	if strings.Contains(stdout, "older") {
 		t.Fatalf("stdout %q must not list the row outside the window", stdout)
 	}
-	if got := readStringFile(t, olderPath); got != olderBefore {
+	if got := e2etest.ReadStringFile(t, olderPath); got != olderBefore {
 		t.Fatalf("older file modified:\n%s", got)
 	}
 	rows := readIndexRows(t, confDir)
@@ -508,14 +507,14 @@ func Test_e2e_chat_summarize_idempotent_and_force(t *testing.T) {
 	}
 	first := loadConv(t, pathA)
 	assertMockLabel(t, first)
-	fileBefore, cacheBefore := readStringFile(t, pathA), readStringFile(t, cachePath)
+	fileBefore, cacheBefore := e2etest.ReadStringFile(t, pathA), e2etest.ReadStringFile(t, cachePath)
 
 	stdout, _, status := runStatusCaptured(t, "c summarize -y -sm test 7d")
 
 	if status != 0 || !strings.Contains(stdout, "0 conversations") {
 		t.Fatalf("rerun status %d stdout %q, want the zero notice", status, stdout)
 	}
-	if readStringFile(t, pathA) != fileBefore || readStringFile(t, cachePath) != cacheBefore {
+	if e2etest.ReadStringFile(t, pathA) != fileBefore || e2etest.ReadStringFile(t, cachePath) != cacheBefore {
 		t.Fatal("rerun must rewrite neither the file nor the index")
 	}
 
@@ -528,7 +527,7 @@ func Test_e2e_chat_summarize_idempotent_and_force(t *testing.T) {
 	if !forced.SummaryAt.After(first.SummaryAt) {
 		t.Fatalf("summary_at %v must be newer than %v after -force", forced.SummaryAt, first.SummaryAt)
 	}
-	if readStringFile(t, cachePath) == cacheBefore {
+	if e2etest.ReadStringFile(t, cachePath) == cacheBefore {
 		t.Fatal("-force must rewrite the index")
 	}
 }
@@ -559,14 +558,14 @@ func Test_e2e_chat_summarize_noninteractive_needs_yes(t *testing.T) {
 	convDir := filepath.Join(confDir, "conversations")
 	seedSummarizable(t, convDir, "inside", time.Now().Add(-time.Hour))
 	path := filepath.Join(convDir, "inside.json")
-	before := readStringFile(t, path)
+	before := e2etest.ReadStringFile(t, path)
 
 	_, stderr, status := runStatusCaptured(t, "-n c summarize 7d")
 
 	if status == 0 || !strings.Contains(stderr, "-y") {
 		t.Fatalf("status %d stderr %q, want a non-zero status naming -y", status, stderr)
 	}
-	if readStringFile(t, path) != before {
+	if e2etest.ReadStringFile(t, path) != before {
 		t.Fatal("no file may be touched without confirmation")
 	}
 }
@@ -582,7 +581,7 @@ func Test_e2e_chat_summarize_vendor_error_leaves_list_working(t *testing.T) {
 	seedSummarizable(t, convDir, "inside", time.Now().Add(-time.Hour))
 	path := filepath.Join(convDir, "inside.json")
 	cachePath := filepath.Join(convDir, "chat_index.cache")
-	fileBefore, cacheBefore := readStringFile(t, path), readStringFile(t, cachePath)
+	fileBefore, cacheBefore := e2etest.ReadStringFile(t, path), e2etest.ReadStringFile(t, cachePath)
 
 	stdout, _, status := runStatusCaptured(t, "c summarize -y -sm gpt-does-not-exist 7d")
 
@@ -592,7 +591,7 @@ func Test_e2e_chat_summarize_vendor_error_leaves_list_working(t *testing.T) {
 	if !strings.Contains(stdout, "inside: ERROR") || !strings.Contains(stdout, "1 failed") {
 		t.Fatalf("stdout %q, want the error line and the totals", stdout)
 	}
-	if readStringFile(t, path) != fileBefore || readStringFile(t, cachePath) != cacheBefore {
+	if e2etest.ReadStringFile(t, path) != fileBefore || e2etest.ReadStringFile(t, cachePath) != cacheBefore {
 		t.Fatal("a failed job must touch neither the file nor the index")
 	}
 	if _, err := os.Stat(filepath.Join(convDir, "globalScope.json")); !os.IsNotExist(err) {
@@ -602,7 +601,7 @@ func Test_e2e_chat_summarize_vendor_error_leaves_list_working(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Getwd: %v", err)
 	}
-	if listOut, listStatus := runOne(t, cwd, "-n -r c l q"); listStatus != 0 || !strings.Contains(listOut, "| clai ") {
+	if listOut, listStatus := harness.RunOne(t, cwd, "-n -r c l q"); listStatus != 0 || !strings.Contains(listOut, "| clai ") {
 		t.Fatalf("chat list status %d stdout %q, want the seeded native row", listStatus, listOut)
 	}
 }
@@ -640,13 +639,13 @@ func seedBoundLabelled(t *testing.T) (confDir, cwd string) {
 		t.Fatalf("Getwd: %v", err)
 	}
 	runQuery(t, "-r -cm test q seed query")
-	seedConv(t, filepath.Join(confDir, "conversations"), fixAuthChat(onlyConversation(t, confDir)))
+	e2etest.SeedConv(t, filepath.Join(confDir, "conversations"), fixAuthChat(onlyConversation(t, confDir)))
 	return confDir, cwd
 }
 
 func dirInfoJSON(t *testing.T, cwd, args string) map[string]any {
 	t.Helper()
-	stdout, status := runOne(t, cwd, args)
+	stdout, status := harness.RunOne(t, cwd, args)
 	if status != 0 {
 		t.Fatalf("%q: status %d stdout=%q", args, status, stdout)
 	}
@@ -665,15 +664,15 @@ func dirInfoJSON(t *testing.T, cwd, args string) map[string]any {
 func Test_e2e_chat_list_shows_title(t *testing.T) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	t.Setenv("CLAI_CACHE_DIR", filepath.Join(t.TempDir(), "cache"))
 	t.Setenv("HOME", t.TempDir())
 	wideFallback(t)
 	convDir := filepath.Join(confDir, "conversations")
-	seedConv(t, convDir, fixAuthChat(makeConv("labelled", time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC), msgUser("labelled prompt"), msgAsst("ok"))))
-	seedConv(t, convDir, makeConv("plain", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), msgUser("plain prompt"), msgAsst("ok")))
+	e2etest.SeedConv(t, convDir, fixAuthChat(e2etest.MakeConv("labelled", time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC), e2etest.MsgUser("labelled prompt"), e2etest.MsgAsst("ok"))))
+	e2etest.SeedConv(t, convDir, e2etest.MakeConv("plain", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), e2etest.MsgUser("plain prompt"), e2etest.MsgAsst("ok")))
 
-	stdout, status := runOne(t, confDir, "-n -r c l q")
+	stdout, status := harness.RunOne(t, confDir, "-n -r c l q")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -717,7 +716,7 @@ func Test_e2e_lookback_block_title_summary(t *testing.T) {
 		t.Fatalf("expected the unlabelled history entry rendered as its first-message head, got:\n%s", got)
 	}
 
-	seedConv(t, convDir, fixAuthChat(seed))
+	e2etest.SeedConv(t, convDir, fixAuthChat(seed))
 	runQuery(t, "-r -cm test -lb -t ls q hello")
 
 	got := newestSystemMessage(t, confDir, seed.ID)
@@ -751,13 +750,13 @@ func newestSystemMessage(t *testing.T, confDir, seedID string) string {
 func Test_e2e_chat_info_title_summary(t *testing.T) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	t.Setenv("CLAI_CACHE_DIR", filepath.Join(t.TempDir(), "cache"))
 	t.Setenv("HOME", t.TempDir())
 	convDir := filepath.Join(confDir, "conversations")
-	seedConv(t, convDir, fixAuthChat(makeConv("labelled", time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC), msgUser("labelled prompt"), msgAsst("ok"))))
+	e2etest.SeedConv(t, convDir, fixAuthChat(e2etest.MakeConv("labelled", time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC), e2etest.MsgUser("labelled prompt"), e2etest.MsgAsst("ok"))))
 
-	stdout, status := runOne(t, confDir, "-n -r c l 0 q")
+	stdout, status := harness.RunOne(t, confDir, "-n -r c l 0 q")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -838,21 +837,6 @@ func Test_e2e_query_labels_in_flight_cold_price(t *testing.T) {
 	}
 }
 
-// refusingSummarizer is what every e2e test gets from internal/cli's wiring
-// unless setupSummaryE2E restores the real constructor: running the test
-// suite must never trigger a summarization that costs money (D32).
-func refusingSummarizer(string) (models.Summarizer, error) {
-	return nil, errors.New("real summarizer is off in the test binary; opt in through setupSummaryE2E")
-}
-
-func TestMain(m *testing.M) {
-	newSummarizer = refusingSummarizer
-	if os.Getenv(setupPTYHelperEnv) == "" {
-		_ = os.Setenv("TTY", "/dev/null")
-	}
-	os.Exit(m.Run())
-}
-
 // Phase 8 guard rows: without the fixture's opt-in a test process never
 // builds the real summarizer (the query stays unlabelled, chat summarize
 // refuses and touches no file), and CLAI_SUMMARIZER=off refuses in the same
@@ -863,7 +847,7 @@ func Test_e2e_summarizer_guard(t *testing.T) {
 		apply func(t *testing.T)
 		want  string
 	}{
-		{name: "test binary default", apply: func(t *testing.T) { newSummarizer = refusingSummarizer }, want: "off in the test binary"},
+		{name: "test binary default", apply: func(t *testing.T) { harness.Deps.NewSummarizer = e2etest.RefusingSummarizer }, want: "off in the test binary"},
 		{name: "CLAI_SUMMARIZER=off", apply: func(t *testing.T) { t.Setenv(summary.EnvSummarizer, "off") }, want: summary.EnvSummarizer},
 	}
 	for _, mode := range modes {
@@ -883,12 +867,12 @@ func Test_e2e_summarizer_guard(t *testing.T) {
 			mode.apply(t)
 			convDir := filepath.Join(confDir, "conversations")
 			seedSummarizable(t, convDir, "guarded", time.Now().Add(-time.Hour))
-			before := readStringFile(t, filepath.Join(convDir, "guarded.json"))
+			before := e2etest.ReadStringFile(t, filepath.Join(convDir, "guarded.json"))
 			stdout, stderr, status := runStatusCaptured(t, "c summarize -y -sm test 7d")
 			if status == 0 || !strings.Contains(stdout+stderr, mode.want) {
 				t.Fatalf("status %d stdout=%q stderr=%q, want a refusal naming %q", status, stdout, stderr, mode.want)
 			}
-			if got := readStringFile(t, filepath.Join(convDir, "guarded.json")); got != before {
+			if got := e2etest.ReadStringFile(t, filepath.Join(convDir, "guarded.json")); got != before {
 				t.Fatalf("conversation modified by a refused run:\n%s", got)
 			}
 		})

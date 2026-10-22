@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/e2e/e2etest"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
@@ -21,7 +22,7 @@ func Test_e2e_COST_nested_tool_call_queries_visible_in_chat_dir_json(t *testing.
 		_ = os.Chdir(oldWd)
 	})
 
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	t.Setenv("OPENROUTER_API_KEY", "")
 	workDir := t.TempDir()
 	if err := os.Chdir(workDir); err != nil {
@@ -71,7 +72,7 @@ func Test_e2e_COST_nested_tool_call_queries_visible_in_chat_dir_json(t *testing.
 
 		var status int
 		stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-			status = run(strings.Split(args, " "))
+			status = harness.Run(strings.Split(args, " "))
 		})
 		return stdout, status
 	}

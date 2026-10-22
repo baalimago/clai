@@ -1,4 +1,4 @@
-package e2e
+package tooling
 
 import (
 	"os"
@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/e2e/e2etest"
 	pkgtools "github.com/baalimago/clai/pkg/tools"
 )
 
@@ -15,12 +16,12 @@ import (
 func Test_e2e_sync_cmd_basic(t *testing.T) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 	t.Setenv("CLAI_MOCK_CMD_COMMAND", `printf "sync-ok"`)
 
 	var gotStatus int
-	stdout, stderr := captureStdoutStderr(t, func() {
-		gotStatus = run(strings.Split("-r -cm mock_test -t=cmd q tool_cmd", " "))
+	stdout, stderr := e2etest.CaptureStdoutStderr(t, func() {
+		gotStatus = harness.Run(strings.Split("-r -cm mock_test -t=cmd q tool_cmd", " "))
 	})
 	if gotStatus != 0 {
 		t.Fatalf("expected success, got %d stdout=%q stderr=%q", gotStatus, stdout, stderr)
@@ -35,14 +36,14 @@ func Test_e2e_sync_cmd_basic(t *testing.T) {
 func Test_e2e_sync_cmd_freetext(t *testing.T) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 	t.Setenv("CLAI_MOCK_CMD_COMMAND", `printf "freetext-ok"`)
 
 	// cmd and its legacy alias freetext_command share the same mock env var;
 	// the tool is invoked under its canonical name cmd.
 	var gotStatus int
-	stdout, stderr := captureStdoutStderr(t, func() {
-		gotStatus = run(strings.Split("-r -cm mock_test -t=cmd q tool_cmd", " "))
+	stdout, stderr := e2etest.CaptureStdoutStderr(t, func() {
+		gotStatus = harness.Run(strings.Split("-r -cm mock_test -t=cmd q tool_cmd", " "))
 	})
 	if gotStatus != 0 {
 		t.Fatalf("expected success, got %d stdout=%q stderr=%q", gotStatus, stdout, stderr)
@@ -59,7 +60,7 @@ func Test_e2e_sync_cmd_freetext(t *testing.T) {
 func Test_e2e_async_await_timeout(t *testing.T) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 	pkgtools.ResetAsyncCmdManagerForTests()
 
 	asyncCmdFile := filepath.Join(t.TempDir(), "async_cmd_id.txt")
@@ -71,8 +72,8 @@ func Test_e2e_async_await_timeout(t *testing.T) {
 	t.Setenv("CLAI_MOCK_ASYNC_CMD_AWAIT_TIMEOUT_SECONDS", "0.2")
 
 	var gotStatus int
-	stdout, stderr := captureStdoutStderr(t, func() {
-		gotStatus = run(strings.Split("-r -cm mock_test -t=async_cmd,async_cmd_await q tool_async_cmd tool_async_cmd_await", " "))
+	stdout, stderr := e2etest.CaptureStdoutStderr(t, func() {
+		gotStatus = harness.Run(strings.Split("-r -cm mock_test -t=async_cmd,async_cmd_await q tool_async_cmd tool_async_cmd_await", " "))
 	})
 	if gotStatus != 0 {
 		t.Fatalf("expected success, got %d stdout=%q stderr=%q", gotStatus, stdout, stderr)
@@ -87,7 +88,7 @@ func Test_e2e_async_await_timeout(t *testing.T) {
 func Test_e2e_async_long_running_logs(t *testing.T) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 	pkgtools.ResetAsyncCmdManagerForTests()
 
 	asyncCmdFile := filepath.Join(t.TempDir(), "async_cmd_id.txt")
@@ -98,8 +99,8 @@ func Test_e2e_async_long_running_logs(t *testing.T) {
 	t.Setenv("CLAI_MOCK_ASYNC_CMD_AWAIT_TIMEOUT_SECONDS", "3")
 
 	var gotStatus int
-	stdout, stderr := captureStdoutStderr(t, func() {
-		gotStatus = run(strings.Split("-r -cm mock_test -t=async_cmd,async_cmd_logs,async_cmd_await,async_cmd_logs q tool_async_cmd tool_async_cmd_logs tool_async_cmd_await tool_async_cmd_logs", " "))
+	stdout, stderr := e2etest.CaptureStdoutStderr(t, func() {
+		gotStatus = harness.Run(strings.Split("-r -cm mock_test -t=async_cmd,async_cmd_logs,async_cmd_await,async_cmd_logs q tool_async_cmd tool_async_cmd_logs tool_async_cmd_await tool_async_cmd_logs", " "))
 	})
 	if gotStatus != 0 {
 		t.Fatalf("expected success, got %d stdout=%q stderr=%q", gotStatus, stdout, stderr)
@@ -117,7 +118,7 @@ func Test_e2e_async_long_running_logs(t *testing.T) {
 func Test_e2e_async_cancel_then_status(t *testing.T) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 	pkgtools.ResetAsyncCmdManagerForTests()
 
 	asyncCmdFile := filepath.Join(t.TempDir(), "async_cmd_id.txt")
@@ -127,8 +128,8 @@ func Test_e2e_async_cancel_then_status(t *testing.T) {
 	t.Setenv("CLAI_MOCK_ASYNC_CMD_ID_FILE", asyncCmdFile)
 
 	var gotStatus int
-	stdout, stderr := captureStdoutStderr(t, func() {
-		gotStatus = run(strings.Split("-r -cm mock_test -t=async_cmd,async_cmd_cancel,async_cmd_status q tool_async_cmd tool_async_cmd_cancel tool_async_cmd_status", " "))
+	stdout, stderr := e2etest.CaptureStdoutStderr(t, func() {
+		gotStatus = harness.Run(strings.Split("-r -cm mock_test -t=async_cmd,async_cmd_cancel,async_cmd_status q tool_async_cmd tool_async_cmd_cancel tool_async_cmd_status", " "))
 	})
 	if gotStatus != 0 {
 		t.Fatalf("expected success, got %d stdout=%q stderr=%q", gotStatus, stdout, stderr)
@@ -143,7 +144,7 @@ func Test_e2e_async_cancel_then_status(t *testing.T) {
 func Test_e2e_async_failed_command(t *testing.T) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 	pkgtools.ResetAsyncCmdManagerForTests()
 
 	asyncCmdFile := filepath.Join(t.TempDir(), "async_cmd_id.txt")
@@ -154,8 +155,8 @@ func Test_e2e_async_failed_command(t *testing.T) {
 	t.Setenv("CLAI_MOCK_ASYNC_CMD_AWAIT_TIMEOUT_SECONDS", "3")
 
 	var gotStatus int
-	stdout, stderr := captureStdoutStderr(t, func() {
-		gotStatus = run(strings.Split("-r -cm mock_test -t=async_cmd,async_cmd_await,async_cmd_status q tool_async_cmd tool_async_cmd_await tool_async_cmd_status", " "))
+	stdout, stderr := e2etest.CaptureStdoutStderr(t, func() {
+		gotStatus = harness.Run(strings.Split("-r -cm mock_test -t=async_cmd,async_cmd_await,async_cmd_status q tool_async_cmd tool_async_cmd_await tool_async_cmd_status", " "))
 	})
 	if gotStatus != 0 {
 		t.Fatalf("expected success, got %d stdout=%q stderr=%q", gotStatus, stdout, stderr)
@@ -172,7 +173,7 @@ func Test_e2e_async_failed_command(t *testing.T) {
 func Test_e2e_sync_plus_async(t *testing.T) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 	pkgtools.ResetAsyncCmdManagerForTests()
 
 	asyncCmdFile := filepath.Join(t.TempDir(), "async_cmd_id.txt")
@@ -184,8 +185,8 @@ func Test_e2e_sync_plus_async(t *testing.T) {
 	t.Setenv("CLAI_MOCK_ASYNC_CMD_AWAIT_TIMEOUT_SECONDS", "3")
 
 	var gotStatus int
-	stdout, stderr := captureStdoutStderr(t, func() {
-		gotStatus = run(strings.Split("-r -cm mock_test -t=cmd,async_cmd,async_cmd_await,async_cmd_logs q tool_cmd tool_async_cmd tool_async_cmd_await tool_async_cmd_logs", " "))
+	stdout, stderr := e2etest.CaptureStdoutStderr(t, func() {
+		gotStatus = harness.Run(strings.Split("-r -cm mock_test -t=cmd,async_cmd,async_cmd_await,async_cmd_logs q tool_cmd tool_async_cmd tool_async_cmd_await tool_async_cmd_logs", " "))
 	})
 	if gotStatus != 0 {
 		t.Fatalf("expected success, got %d stdout=%q stderr=%q", gotStatus, stdout, stderr)
@@ -211,7 +212,7 @@ func Test_e2e_sync_plus_async(t *testing.T) {
 func Test_e2e_wildcard_all_tools(t *testing.T) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 	pkgtools.ResetAsyncCmdManagerForTests()
 
 	asyncCmdFile := filepath.Join(t.TempDir(), "async_cmd_id.txt")
@@ -223,8 +224,8 @@ func Test_e2e_wildcard_all_tools(t *testing.T) {
 	t.Setenv("CLAI_MOCK_ASYNC_CMD_AWAIT_TIMEOUT_SECONDS", "3")
 
 	var gotStatus int
-	stdout, stderr := captureStdoutStderr(t, func() {
-		gotStatus = run(strings.Split("-r -cm mock_test -t=* q tool_cmd tool_async_cmd tool_async_cmd_await tool_async_cmd_logs", " "))
+	stdout, stderr := e2etest.CaptureStdoutStderr(t, func() {
+		gotStatus = harness.Run(strings.Split("-r -cm mock_test -t=* q tool_cmd tool_async_cmd tool_async_cmd_await tool_async_cmd_logs", " "))
 	})
 	if gotStatus != 0 {
 		t.Fatalf("expected success, got %d stdout=%q stderr=%q", gotStatus, stdout, stderr)
@@ -245,7 +246,7 @@ func Test_e2e_wildcard_all_tools(t *testing.T) {
 func Test_e2e_async_status_live(t *testing.T) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 	pkgtools.ResetAsyncCmdManagerForTests()
 
 	asyncCmdFile := filepath.Join(t.TempDir(), "async_cmd_id.txt")
@@ -255,8 +256,8 @@ func Test_e2e_async_status_live(t *testing.T) {
 	t.Setenv("CLAI_MOCK_ASYNC_CMD_ID_FILE", asyncCmdFile)
 
 	var gotStatus int
-	stdout, stderr := captureStdoutStderr(t, func() {
-		gotStatus = run(strings.Split("-r -cm mock_test -t=async_cmd,async_cmd_status,async_cmd_await q tool_async_cmd tool_async_cmd_status tool_async_cmd_await", " "))
+	stdout, stderr := e2etest.CaptureStdoutStderr(t, func() {
+		gotStatus = harness.Run(strings.Split("-r -cm mock_test -t=async_cmd,async_cmd_status,async_cmd_await q tool_async_cmd tool_async_cmd_status tool_async_cmd_await", " "))
 	})
 	if gotStatus != 0 {
 		t.Fatalf("expected success, got %d stdout=%q stderr=%q", gotStatus, stdout, stderr)

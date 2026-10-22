@@ -1,4 +1,4 @@
-package e2e
+package tooling
 
 import (
 	"encoding/json"
@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/e2e/e2etest"
 	"github.com/baalimago/clai/internal/tools/mcp/schemacache"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
@@ -19,11 +20,11 @@ func Test_goldenFile_TOOLS_lists_tools_and_footer(t *testing.T) {
 		os.Args = oldArgs
 	})
 
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 
 	var gotStatus int
 	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		gotStatus = run(strings.Split("tools", " "))
+		gotStatus = harness.Run(strings.Split("tools", " "))
 	})
 
 	testboil.FailTestIfDiff(t, gotStatus, 0)
@@ -47,7 +48,7 @@ func Test_goldenFile_TOOLS_lists_mcp_tools_from_cache(t *testing.T) {
 		os.Args = oldArgs
 	})
 
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 
 	server := pub_models.McpServer{Name: "fs", Command: "/definitely-not-a-real-binary-clai-main-e2e"}
 	mcpConfig := fmt.Sprintf(`{"command":%q}`, server.Command)
@@ -71,7 +72,7 @@ func Test_goldenFile_TOOLS_lists_mcp_tools_from_cache(t *testing.T) {
 
 	var gotStatus int
 	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		gotStatus = run(strings.Split("tools", " "))
+		gotStatus = harness.Run(strings.Split("tools", " "))
 	})
 
 	testboil.FailTestIfDiff(t, gotStatus, 0)
@@ -85,11 +86,11 @@ func Test_goldenFile_TOOLS_unknown_tool_errors(t *testing.T) {
 		os.Args = oldArgs
 	})
 
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 
 	var gotStatus int
 	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		gotStatus = run(strings.Split("tools definitely_not_a_tool", " "))
+		gotStatus = harness.Run(strings.Split("tools definitely_not_a_tool", " "))
 	})
 
 	if gotStatus == 0 {

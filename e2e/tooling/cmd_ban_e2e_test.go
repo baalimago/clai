@@ -1,4 +1,4 @@
-package e2e
+package tooling
 
 import (
 	"os"
@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/e2e/e2etest"
 	pkgtools "github.com/baalimago/clai/pkg/tools"
 )
 
@@ -18,8 +19,8 @@ import (
 func assertCmdBanE2E(t *testing.T, args []string, entry, marker string) {
 	t.Helper()
 	var gotStatus int
-	stdout, stderr := captureStdoutStderr(t, func() {
-		gotStatus = run(args)
+	stdout, stderr := e2etest.CaptureStdoutStderr(t, func() {
+		gotStatus = harness.Run(args)
 	})
 	combined := stdout + stderr
 	if gotStatus != 0 {
@@ -43,7 +44,7 @@ func assertCmdBanE2E(t *testing.T, args []string, entry, marker string) {
 func Test_e2e_cmd_ban_flag_path(t *testing.T) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 
 	marker := filepath.Join(t.TempDir(), "flag-banned-marker")
 	t.Setenv("CLAI_MOCK_CMD_COMMAND", "touch "+marker)
@@ -57,9 +58,9 @@ func Test_e2e_cmd_ban_flag_path(t *testing.T) {
 func Test_e2e_cmd_ban_config_file_path(t *testing.T) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 
-	writeJSONFileAny(t, filepath.Join(confDir, "textConfig.json"), map[string]any{"cmd-ban": []string{"touch"}})
+	e2etest.WriteJSONFileAny(t, filepath.Join(confDir, "textConfig.json"), map[string]any{"cmd-ban": []string{"touch"}})
 
 	marker := filepath.Join(t.TempDir(), "config-banned-marker")
 	t.Setenv("CLAI_MOCK_CMD_COMMAND", "touch "+marker)
@@ -100,9 +101,9 @@ func initGitRepo(t *testing.T) string {
 func Test_e2e_cmd_ban_profile_path(t *testing.T) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 
-	writeJSONFileAny(t, filepath.Join(confDir, "profiles", "ban.json"), map[string]any{
+	e2etest.WriteJSONFileAny(t, filepath.Join(confDir, "profiles", "ban.json"), map[string]any{
 		"name":    "ban",
 		"model":   "mock_test",
 		"cmd-ban": []string{"git commit"},
@@ -129,8 +130,8 @@ func Test_e2e_cmd_ban_profile_path(t *testing.T) {
 		t.Setenv("CLAI_MOCK_CMD_COMMAND", "git log")
 
 		var gotStatus int
-		stdout, stderr := captureStdoutStderr(t, func() {
-			gotStatus = run([]string{"-r", "-cm", "mock_test", "-t=cmd", "-p", "ban", "q", "tool_cmd"})
+		stdout, stderr := e2etest.CaptureStdoutStderr(t, func() {
+			gotStatus = harness.Run([]string{"-r", "-cm", "mock_test", "-t=cmd", "-p", "ban", "q", "tool_cmd"})
 		})
 		combined := stdout + stderr
 		if gotStatus != 0 {
@@ -151,10 +152,10 @@ func Test_e2e_cmd_ban_profile_path(t *testing.T) {
 func Test_e2e_cmd_ban_profile_merges_onto_file_base(t *testing.T) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 
-	writeJSONFileAny(t, filepath.Join(confDir, "textConfig.json"), map[string]any{"cmd-ban": []string{"touch"}})
-	writeJSONFileAny(t, filepath.Join(confDir, "profiles", "ban.json"), map[string]any{
+	e2etest.WriteJSONFileAny(t, filepath.Join(confDir, "textConfig.json"), map[string]any{"cmd-ban": []string{"touch"}})
+	e2etest.WriteJSONFileAny(t, filepath.Join(confDir, "profiles", "ban.json"), map[string]any{
 		"name":    "ban",
 		"model":   "mock_test",
 		"cmd-ban": []string{"git commit"},
@@ -179,7 +180,7 @@ func Test_e2e_cmd_ban_profile_merges_onto_file_base(t *testing.T) {
 func Test_e2e_cmd_ban_quoted_bypass_refused(t *testing.T) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 
 	t.Setenv("CLAI_MOCK_CMD_COMMAND", "sh -c 'git commit -m x'")
 
@@ -192,7 +193,7 @@ func Test_e2e_cmd_ban_quoted_bypass_refused(t *testing.T) {
 func Test_e2e_cmd_ban_async_no_spawn(t *testing.T) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 	pkgtools.ResetAsyncCmdManagerForTests()
 
 	t.Setenv("CLAI_MOCK_ASYNC_CMD_RUN_COMMAND", "sh")
@@ -208,13 +209,13 @@ func Test_e2e_cmd_ban_async_no_spawn(t *testing.T) {
 func Test_e2e_cmd_ban_permissive_default(t *testing.T) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 
 	t.Setenv("CLAI_MOCK_CMD_COMMAND", "printf ok")
 
 	var gotStatus int
-	stdout, stderr := captureStdoutStderr(t, func() {
-		gotStatus = run([]string{"-r", "-cm", "mock_test", "-t=cmd", "q", "tool_cmd"})
+	stdout, stderr := e2etest.CaptureStdoutStderr(t, func() {
+		gotStatus = harness.Run([]string{"-r", "-cm", "mock_test", "-t=cmd", "q", "tool_cmd"})
 	})
 	combined := stdout + stderr
 	if gotStatus != 0 {

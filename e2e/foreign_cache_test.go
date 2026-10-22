@@ -3,6 +3,7 @@ package e2e
 import (
 	"testing"
 
+	"github.com/baalimago/clai/e2e/e2etest"
 	"github.com/baalimago/clai/internal/vendors"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
@@ -12,9 +13,9 @@ import (
 func countForeignIndexBuilds(t *testing.T) *int {
 	t.Helper()
 	built := 0
-	previous := foreignCache
-	t.Cleanup(func() { foreignCache = previous })
-	foreignCache = func() vendors.SourceCache {
+	previous := harness.Deps.ForeignCache
+	t.Cleanup(func() { harness.Deps.ForeignCache = previous })
+	harness.Deps.ForeignCache = func() vendors.SourceCache {
 		built++
 		return previous()
 	}
@@ -35,11 +36,11 @@ func TestCommands_buildConstructsNoForeignIndex(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("CLAI_CACHE_DIR", t.TempDir())
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 	built := countForeignIndexBuilds(t)
 
-	if m := commands(); len(m) == 0 {
-		t.Fatal("commands() built no commands")
+	if m := harness.Commands(); len(m) == 0 {
+		t.Fatal("harness.Commands() built no commands")
 	}
 	if *built != 0 {
 		t.Fatalf("building the command map constructed the foreign index %d times, want 0", *built)
@@ -47,7 +48,7 @@ func TestCommands_buildConstructsNoForeignIndex(t *testing.T) {
 
 	var status int
 	testboil.CaptureStdout(t, func(t *testing.T) {
-		status = run([]string{"version"})
+		status = harness.Run([]string{"version"})
 	})
 	testboil.FailTestIfDiff(t, status, 0)
 	if *built != 0 {
@@ -63,7 +64,7 @@ func TestCommands_buildConstructsNoForeignIndex(t *testing.T) {
 		{"-n", "-r", "chat", "delete", "no-such-chat"},
 	} {
 		testboil.CaptureStdout(t, func(t *testing.T) {
-			_ = run(argv)
+			_ = harness.Run(argv)
 		})
 		if *built != 0 {
 			t.Fatalf("%v constructed the foreign index %d times; it never consults the cache", argv, *built)
@@ -71,7 +72,7 @@ func TestCommands_buildConstructsNoForeignIndex(t *testing.T) {
 	}
 
 	testboil.CaptureStdout(t, func(t *testing.T) {
-		status = run([]string{"-n", "-r", "chat", "list", "q"})
+		status = harness.Run([]string{"-n", "-r", "chat", "list", "q"})
 	})
 	testboil.FailTestIfDiff(t, status, 0)
 	if *built != 1 {

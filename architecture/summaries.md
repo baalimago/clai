@@ -336,10 +336,10 @@ are pre-existing and shared with the main run; they are not silenced.
   summarizer.
 - The test suite never builds the real summarizer through the CLI unless
   a fixture opts in: `internal/cli` wires it through `Deps.NewSummarizer`,
-  and the e2e test binary's `TestMain` replaces it with a refusing
-  constructor that only `setupSummaryE2E` restores. No
-  production code knows about tests. `CLAI_SUMMARIZER=off` disables the
-  summarizer for any process.
+  and every e2e test binary's `TestMain` (one per package under `e2e/`)
+  replaces it with a refusing constructor that only `setupSummaryE2E`
+  restores. No production code knows about tests. `CLAI_SUMMARIZER=off`
+  disables the summarizer for any process.
 - The summarizer never persists a conversation, never writes
   `globalScope.json`, never touches a dirscope binding, never sets
   `chat.SkipIndex`, starts no ambient MCP server, calls exactly one tool,
@@ -361,7 +361,7 @@ loop via the mock vendor's `CLAI_MOCK_SUMMARY_TITLES` /
 `CLAI_MOCK_SUMMARY_SUMMARIES` sequences, context ownership, ladder,
 `ParseSince`), `internal/text` (`TestFinalize_join`, `TestSummaryContext_isolation`,
 `TestQuery_launchConditions`), `internal/chat` (`TestHandleSummarize_*`,
-surface tests), and the `e2e/summary_e2e_test.go` suites through the
+surface tests), and the `e2e/conversation/summary_e2e_test.go` suites through the
 mock vendor (`-cm test`).
 
 ## Out of scope

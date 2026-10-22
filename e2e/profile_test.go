@@ -8,6 +8,8 @@ import (
 	"runtime/pprof"
 	"strings"
 	"testing"
+
+	"github.com/baalimago/clai/e2e/e2etest"
 )
 
 // setupProfileTest isolates a profiling run: its own working directory (the
@@ -17,10 +19,10 @@ func setupProfileTest(t *testing.T) string {
 	t.Helper()
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 	t.Setenv("CLAI_CACHE_DIR", filepath.Join(t.TempDir(), "cache"))
-	blankDebugAndVendorKeys(t)
-	return chdirTemp(t)
+	e2etest.BlankDebugAndVendorKeys(t)
+	return e2etest.ChdirTemp(t)
 }
 
 func TestRunProfiled_writesParseableProfile(t *testing.T) {
@@ -28,8 +30,8 @@ func TestRunProfiled_writesParseableProfile(t *testing.T) {
 	t.Setenv("DEBUG_CPU", "1")
 
 	var status int
-	_, stderr := captureStdoutStderr(t, func() {
-		status = runProfiled([]string{"version"})
+	_, stderr := e2etest.CaptureStdoutStderr(t, func() {
+		status = harness.RunProfiled([]string{"version"})
 	})
 	if status != 0 {
 		t.Fatalf("status = %d stderr = %q, want 0", status, stderr)
@@ -68,11 +70,11 @@ func TestRunProfiled_exitCodeUnchanged(t *testing.T) {
 			setupProfileTest(t)
 
 			var plain int
-			plainOut, _ := captureStdoutStderr(t, func() { plain = run(tc.args) })
+			plainOut, _ := e2etest.CaptureStdoutStderr(t, func() { plain = harness.Run(tc.args) })
 
 			t.Setenv("DEBUG_CPU", "1")
 			var profiled int
-			profiledOut, _ := captureStdoutStderr(t, func() { profiled = runProfiled(tc.args) })
+			profiledOut, _ := e2etest.CaptureStdoutStderr(t, func() { profiled = harness.RunProfiled(tc.args) })
 
 			if plain != tc.want || profiled != tc.want {
 				t.Fatalf("status plain = %d profiled = %d, want %d", plain, profiled, tc.want)
@@ -88,8 +90,8 @@ func TestRunProfiled_disabledWritesNothing(t *testing.T) {
 	wd := setupProfileTest(t)
 
 	var status int
-	_, stderr := captureStdoutStderr(t, func() {
-		status = runProfiled([]string{"version"})
+	_, stderr := e2etest.CaptureStdoutStderr(t, func() {
+		status = harness.RunProfiled([]string{"version"})
 	})
 	if status != 0 {
 		t.Fatalf("status = %d stderr = %q, want 0", status, stderr)
@@ -113,8 +115,8 @@ func TestRunProfiled_createFailureStillRuns(t *testing.T) {
 	}
 
 	var status int
-	stdout, stderr := captureStdoutStderr(t, func() {
-		status = runProfiled([]string{"version"})
+	stdout, stderr := e2etest.CaptureStdoutStderr(t, func() {
+		status = harness.RunProfiled([]string{"version"})
 	})
 	if status != 0 {
 		t.Fatalf("status = %d, want 0: a profiling failure must not stop the command", status)
@@ -143,8 +145,8 @@ func TestRunProfiled_startFailureStillRuns(t *testing.T) {
 	defer pprof.StopCPUProfile()
 
 	var status int
-	stdout, stderr := captureStdoutStderr(t, func() {
-		status = runProfiled([]string{"version"})
+	stdout, stderr := e2etest.CaptureStdoutStderr(t, func() {
+		status = harness.RunProfiled([]string{"version"})
 	})
 	if status != 0 {
 		t.Fatalf("status = %d, want 0: a profiling failure must not stop the command", status)

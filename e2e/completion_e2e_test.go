@@ -1,52 +1,43 @@
 package e2e
 
 import (
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
-	"sync"
 	"testing"
 
+	"github.com/baalimago/clai/e2e/e2etest"
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
-var builtClai struct {
-	once sync.Once
-	dir  string
-	err  error
-}
-
-// builtClaiDir builds the clai binary once per test process (repeated
-// -count runs share it) and returns the directory holding it.
-func builtClaiDir(t *testing.T) string {
+// claiBinDir returns a directory whose clai is this test binary, which
+// TestMain runs as the CLI while cliModeEnv is set, so a row that needs a
+// fresh clai process never waits on a go build.
+func claiBinDir(t *testing.T) string {
 	t.Helper()
-	builtClai.once.Do(func() {
-		dir, err := os.MkdirTemp("", "clai-e2e-bin")
-		if err != nil {
-			builtClai.err = err
-			return
-		}
-		builtClai.dir = dir
-		out, err := exec.Command("go", "build", "-o", filepath.Join(dir, "clai"), "github.com/baalimago/clai").CombinedOutput()
-		if err != nil {
-			builtClai.err = fmt.Errorf("go build: %w\n%s", err, out)
-		}
-	})
-	if builtClai.err != nil {
-		t.Fatal(builtClai.err)
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable: %v", err)
 	}
-	return builtClai.dir
+	dir := t.TempDir()
+	if err := os.Symlink(self, filepath.Join(dir, "clai")); err != nil {
+		t.Fatalf("Symlink: %v", err)
+	}
+	t.Setenv(cliModeEnv, "1")
+	// A -race child otherwise idles 1s in its exit hook; a -cover one warns without a dir.
+	t.Setenv("GORACE", strings.TrimSpace(os.Getenv("GORACE")+" atexit_sleep_ms=0"))
+	t.Setenv("GOCOVERDIR", t.TempDir())
+	return dir
 }
 
 func completeE2E(t *testing.T, words ...string) (int, string) {
 	t.Helper()
 	var status int
 	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		status = run(append([]string{"__complete", "clai"}, words...))
+		status = harness.Run(append([]string{"__complete", "clai"}, words...))
 	})
 	return status, stdout
 }
@@ -72,11 +63,11 @@ func assertContainsLines(t *testing.T, lines []string, want ...string) {
 }
 
 func TestCompletionCommandBashPrintsWrapper(t *testing.T) {
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 
 	var gotStatus int
 	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		gotStatus = run(strings.Split("completion bash", " "))
+		gotStatus = harness.Run(strings.Split("completion bash", " "))
 	})
 
 	testboil.FailTestIfDiff(t, gotStatus, 0)
@@ -85,11 +76,11 @@ func TestCompletionCommandBashPrintsWrapper(t *testing.T) {
 }
 
 func TestCompletionCommandZshPrintsWrapper(t *testing.T) {
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 
 	var gotStatus int
 	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		gotStatus = run(strings.Split("completion zsh", " "))
+		gotStatus = harness.Run(strings.Split("completion zsh", " "))
 	})
 
 	testboil.FailTestIfDiff(t, gotStatus, 0)
@@ -98,12 +89,12 @@ func TestCompletionCommandZshPrintsWrapper(t *testing.T) {
 }
 
 func Test_e2e_complete_engine(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
-	writeJSONFileAny(t, filepath.Join(confDir, "profiles", "gopher.json"), map[string]any{
+	confDir := e2etest.SetupMainTestConfigDir(t)
+	e2etest.WriteJSONFileAny(t, filepath.Join(confDir, "profiles", "gopher.json"), map[string]any{
 		"name": "gopher",
 	})
-	writeJSONFileAny(t, filepath.Join(confDir, "anthropic_claude_sonnet-x.json"), map[string]any{})
-	writeJSONFileAny(t, filepath.Join(confDir, "shellContexts", "minimal.json"), map[string]any{})
+	e2etest.WriteJSONFileAny(t, filepath.Join(confDir, "anthropic_claude_sonnet-x.json"), map[string]any{})
+	e2etest.WriteJSONFileAny(t, filepath.Join(confDir, "shellContexts", "minimal.json"), map[string]any{})
 
 	t.Run("top-level commands", func(t *testing.T) {
 		lines := completeLinesE2E(t, "")
@@ -221,7 +212,7 @@ func Test_e2e_complete_no_config_dir(t *testing.T) {
 // Test_e2e_complete_tool_init_is_lazy proves tools.Init runs only when a
 // tool-value hook actually fires.
 func Test_e2e_complete_tool_init_is_lazy(t *testing.T) {
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 
 	tools.WithTestRegistry(t, func() {
 		status, _ := completeE2E(t, "q", "-")
@@ -244,9 +235,9 @@ func Test_e2e_completion_script_drives_bash(t *testing.T) {
 	if _, err := exec.LookPath("bash"); err != nil {
 		t.Skip("bash not installed; script-driven completion not checked")
 	}
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 
-	binDir := builtClaiDir(t)
+	binDir := claiBinDir(t)
 
 	script := `set -e
 export PATH="` + binDir + `:$PATH"

@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/baalimago/clai/e2e/e2etest"
 )
 
 // stripANSI removes ANSI SGR escape sequences so assertions can match plain
@@ -21,13 +23,13 @@ var ansiSGR = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 // textConfig.json that predates the stoploss schema is upgraded in place and
 // the added fields are announced, so the wizard previews the current schema.
 func Test_e2e_setup_migrates_mode_configs_and_announces_before_wizard(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	// Downgrade textConfig.json to the pre-stoploss schema.
-	writeJSONFileAny(t, filepath.Join(confDir, "textConfig.json"), map[string]any{
+	e2etest.WriteJSONFileAny(t, filepath.Join(confDir, "textConfig.json"), map[string]any{
 		"model": "test",
 	})
 
-	stdout, status := runOne(t, confDir, "-n s 0 0 q")
+	stdout, status := harness.RunOne(t, confDir, "-n s 0 0 q")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -62,13 +64,13 @@ func Test_e2e_setup_migrates_mode_configs_and_announces_before_wizard(t *testing
 // trailing blank line absorbs the TUI's one-line clear overshoot, so the
 // announcement survives redraws).
 func Test_e2e_setup_migrates_profiles_and_announces_before_wizard(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
-	writeJSONFileAny(t, filepath.Join(confDir, "profiles", "john.json"), map[string]any{
+	confDir := e2etest.SetupMainTestConfigDir(t)
+	e2etest.WriteJSONFileAny(t, filepath.Join(confDir, "profiles", "john.json"), map[string]any{
 		"name":  "john",
 		"model": "test",
 	})
 
-	stdout, status := runOne(t, confDir, "-n s 0 0 q")
+	stdout, status := harness.RunOne(t, confDir, "-n s 0 0 q")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -95,10 +97,10 @@ func Test_e2e_setup_migrates_profiles_and_announces_before_wizard(t *testing.T) 
 // Test_e2e_setup_macro_select_category_quit verifies that selecting a setup
 // category via macro input and then auto-quitting works correctly.
 func Test_e2e_setup_macro_select_category_quit(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 
 	// 0=select category 0 (general config) → config list shown → trailing q exits
-	stdout, status := runOne(t, confDir, "-n s 0")
+	stdout, status := harness.RunOne(t, confDir, "-n s 0")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -112,10 +114,10 @@ func Test_e2e_setup_macro_select_category_quit(t *testing.T) {
 // Test_e2e_setup_macro_select_config_and_back verifies selecting a category,
 // picking a config item, previewing, then backing out to the config list.
 func Test_e2e_setup_macro_select_config_and_back(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 
 	// 0=category 0 (general config) → 0=config item → preview → b=back to list → trailing q exits
-	stdout, status := runOne(t, confDir, "-n s 0 0 b")
+	stdout, status := harness.RunOne(t, confDir, "-n s 0 0 b")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -133,10 +135,10 @@ func Test_e2e_setup_macro_select_config_and_back(t *testing.T) {
 // Test_e2e_setup_macro_select_config_and_quit verifies selecting a category
 // and config item, then quitting from the preview action prompt.
 func Test_e2e_setup_macro_select_config_and_quit(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 
 	// 0=category 0 (general config) → 0=config item → preview → q=quit
-	stdout, status := runOne(t, confDir, "-n s 0 0 q")
+	stdout, status := harness.RunOne(t, confDir, "-n s 0 0 q")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}

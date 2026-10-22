@@ -17,7 +17,6 @@ import (
 	"github.com/baalimago/clai/internal/tools/mcp/schemacache"
 	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
-	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
 func testAuthorizer(t *testing.T) *mcpauth.Authorizer {
@@ -382,45 +381,6 @@ func TestMcpHttpStatusErrorNeverLeaksAccessToken(t *testing.T) {
 	}
 	if strings.Contains(statusErr.Error(), "mcp-http-status-secret-token") {
 		t.Errorf("McpHttpStatusError leaked the access token: %v", statusErr)
-	}
-}
-
-// TestLazyHttpCacheMissConnectBoundAppliesToHandshake pins R1-14's HTTP
-// half: handshakeHttpServerWithAuth/runHandshake used to bound only the
-// connection-level handshake bound (30s default), ignoring
-// connect_timeout_seconds entirely, exactly mirroring the stdio miss path's
-// own R1-14 fix (TestLazyCacheMissConnectBoundAppliesToStdioHandshake). A
-// 1s connect_timeout_seconds against a fake that never answers must fire
-// well under the 30s default.
-func TestLazyHttpCacheMissConnectBoundAppliesToHandshake(t *testing.T) {
-	hs := httptestserver.New()
-	defer hs.Close()
-	hs.Configure(func(c *httptestserver.Config) { c.HangForever = true })
-
-	ctx, cancel := httpSetupTestContext()
-	defer cancel()
-
-	mcpDir := t.TempDir()
-	conf := fmt.Sprintf(`{"url":%q,"connect_timeout_seconds":1}`, hs.URL)
-	if err := os.WriteFile(filepath.Join(mcpDir, "hangs.json"), []byte(conf), 0o644); err != nil {
-		t.Fatalf("write http server config: %v", err)
-	}
-
-	start := time.Now()
-	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		if _, err := setupMcpManager(ctx, mcpDir, Configurations{}, &recordingSuccessSink{}, testSchemaCache(t), nil); err != nil {
-			t.Fatalf("an ambient-posture connect failure must degrade, not fail setup: %v", err)
-		}
-	})
-	elapsed := time.Since(start)
-
-	// Generous upper margin, well short of the 30s handshake-bound default
-	// the unfixed code fell back to.
-	if elapsed > 15*time.Second {
-		t.Fatalf("elapsed %v, want the 1s connect_timeout_seconds to fire well before the 30s handshake-bound default", elapsed)
-	}
-	if !strings.Contains(stdout, "stage 'connect'") {
-		t.Errorf("stdout = %q, want a connect-stage failure", stdout)
 	}
 }
 

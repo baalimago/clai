@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/e2e/e2etest"
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
@@ -18,7 +19,7 @@ func Test_goldenFile_CONFIG_flag_defaults_do_not_override_mode_config(t *testing
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
 
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 
 	// Write a textConfig.json that sets the model to "test".
 	cfg := text.Default
@@ -34,7 +35,7 @@ func Test_goldenFile_CONFIG_flag_defaults_do_not_override_mode_config(t *testing
 	var gotStatus int
 	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
 		// Intentionally do not pass -cm; the config file should decide the model.
-		gotStatus = run(strings.Split("-r q hello", " "))
+		gotStatus = harness.Run(strings.Split("-r q hello", " "))
 	})
 
 	testboil.FailTestIfDiff(t, gotStatus, 0)

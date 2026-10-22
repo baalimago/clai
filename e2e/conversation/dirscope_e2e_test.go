@@ -1,4 +1,4 @@
-package e2e
+package conversation
 
 import (
 	"encoding/json"
@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/baalimago/clai/e2e/e2etest"
 )
 
 // dirScopeFile mirrors the on-disk binding for assertions (test-local).
@@ -23,21 +25,6 @@ type dirScopeFile struct {
 	Updated time.Time `json:"updated"`
 }
 
-func chdirTemp(t *testing.T) string {
-	t.Helper()
-	repoDir := t.TempDir()
-	oldWd, _ := os.Getwd()
-	t.Cleanup(func() { _ = os.Chdir(oldWd) })
-	if err := os.Chdir(repoDir); err != nil {
-		t.Fatalf("Chdir(%q): %v", repoDir, err)
-	}
-	canon, err := filepath.EvalSymlinks(repoDir)
-	if err != nil {
-		canon = repoDir
-	}
-	return filepath.Clean(canon)
-}
-
 func readOnlyBinding(t *testing.T, confDir string) dirScopeFile {
 	t.Helper()
 	matches, err := filepath.Glob(filepath.Join(confDir, "conversations", "dirs", "*.json"))
@@ -48,7 +35,7 @@ func readOnlyBinding(t *testing.T, confDir string) dirScopeFile {
 		t.Fatalf("expected exactly one binding file, got %d: %v", len(matches), matches)
 	}
 	var ds dirScopeFile
-	if err := json.Unmarshal([]byte(readStringFile(t, matches[0])), &ds); err != nil {
+	if err := json.Unmarshal([]byte(e2etest.ReadStringFile(t, matches[0])), &ds); err != nil {
 		t.Fatalf("Unmarshal(binding): %v", err)
 	}
 	return ds
@@ -75,14 +62,14 @@ func conversationFiles(t *testing.T, confDir string) []string {
 func Test_e2e_dirscope_recording_is_unconditional(t *testing.T) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	t.Setenv("CLAI_CACHE_DIR", filepath.Join(t.TempDir(), "cache"))
-	canonWd := chdirTemp(t)
+	canonWd := e2etest.ChdirTemp(t)
 
-	if status := run(strings.Split("-r -cm mock_test q first query", " ")); status != 0 {
+	if status := harness.Run(strings.Split("-r -cm mock_test q first query", " ")); status != 0 {
 		t.Fatalf("first query status %d", status)
 	}
-	if status := run(strings.Split("-r -cm mock_test q second query", " ")); status != 0 {
+	if status := harness.Run(strings.Split("-r -cm mock_test q second query", " ")); status != 0 {
 		t.Fatalf("second query status %d", status)
 	}
 
@@ -108,11 +95,11 @@ func Test_e2e_dirscope_recording_is_unconditional(t *testing.T) {
 func Test_e2e_dirscope_reply_does_not_record(t *testing.T) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	t.Setenv("CLAI_CACHE_DIR", filepath.Join(t.TempDir(), "cache"))
-	chdirTemp(t)
+	e2etest.ChdirTemp(t)
 
-	if status := run(strings.Split("-r -cm mock_test q seed query", " ")); status != 0 {
+	if status := harness.Run(strings.Split("-r -cm mock_test q seed query", " ")); status != 0 {
 		t.Fatalf("seed query status %d", status)
 	}
 	before := readOnlyBinding(t, confDir)
@@ -120,7 +107,7 @@ func Test_e2e_dirscope_reply_does_not_record(t *testing.T) {
 		t.Fatalf("expected 1 history entry after seed, got %d", len(before.History))
 	}
 
-	if status := run(strings.Split("-r -re -cm mock_test q reply query", " ")); status != 0 {
+	if status := harness.Run(strings.Split("-r -re -cm mock_test q reply query", " ")); status != 0 {
 		t.Fatalf("reply query status %d", status)
 	}
 	after := readOnlyBinding(t, confDir)
@@ -135,11 +122,11 @@ func Test_e2e_dirscope_reply_does_not_record(t *testing.T) {
 func Test_e2e_dirscope_dre_records_in_place(t *testing.T) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	t.Setenv("CLAI_CACHE_DIR", filepath.Join(t.TempDir(), "cache"))
-	chdirTemp(t)
+	e2etest.ChdirTemp(t)
 
-	if status := run(strings.Split("-r -cm mock_test q seed conversation here", " ")); status != 0 {
+	if status := harness.Run(strings.Split("-r -cm mock_test q seed conversation here", " ")); status != 0 {
 		t.Fatalf("seed query status %d", status)
 	}
 	before := readOnlyBinding(t, confDir)
@@ -149,7 +136,7 @@ func Test_e2e_dirscope_dre_records_in_place(t *testing.T) {
 	seedID := before.ChatID
 	convsBefore := conversationFiles(t, confDir)
 
-	if status := run(strings.Split("-r -dre -cm mock_test q follow up turn", " ")); status != 0 {
+	if status := harness.Run(strings.Split("-r -dre -cm mock_test q follow up turn", " ")); status != 0 {
 		t.Fatalf("dre query status %d", status)
 	}
 	after := readOnlyBinding(t, confDir)
@@ -176,12 +163,12 @@ func Test_e2e_dirscope_dre_records_in_place(t *testing.T) {
 func Test_e2e_dirscope_v1_upgrades_in_place(t *testing.T) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	t.Setenv("CLAI_CACHE_DIR", filepath.Join(t.TempDir(), "cache"))
-	chdirTemp(t)
+	e2etest.ChdirTemp(t)
 
 	// Seed a binding, then downgrade it on disk to a version 1 record.
-	if status := run(strings.Split("-r -cm mock_test q seed", " ")); status != 0 {
+	if status := harness.Run(strings.Split("-r -cm mock_test q seed", " ")); status != 0 {
 		t.Fatalf("seed status %d", status)
 	}
 	matches, _ := filepath.Glob(filepath.Join(confDir, "conversations", "dirs", "*.json"))
@@ -195,7 +182,7 @@ func Test_e2e_dirscope_v1_upgrades_in_place(t *testing.T) {
 		t.Fatalf("downgrade write: %v", err)
 	}
 
-	if status := run(strings.Split("-r -cm mock_test q next", " ")); status != 0 {
+	if status := harness.Run(strings.Split("-r -cm mock_test q next", " ")); status != 0 {
 		t.Fatalf("next status %d", status)
 	}
 
@@ -217,31 +204,31 @@ func Test_e2e_dirscope_v1_upgrades_in_place(t *testing.T) {
 func Test_e2e_dirscope_origin_stamping(t *testing.T) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	t.Setenv("CLAI_CACHE_DIR", filepath.Join(t.TempDir(), "cache"))
-	canonWd := chdirTemp(t)
+	canonWd := e2etest.ChdirTemp(t)
 
-	if status := run(strings.Split("-r -cm mock_test q origin query", " ")); status != 0 {
+	if status := harness.Run(strings.Split("-r -cm mock_test q origin query", " ")); status != 0 {
 		t.Fatalf("query status %d", status)
 	}
 	convs := conversationFiles(t, confDir)
 	if len(convs) != 1 {
 		t.Fatalf("expected one conversation, got %v", convs)
 	}
-	convBefore := readStringFile(t, convs[0])
+	convBefore := e2etest.ReadStringFile(t, convs[0])
 	if !strings.Contains(convBefore, `"origin_dir": "`+canonWd+`"`) {
 		t.Fatalf("expected origin_dir %q stamped, got %s", canonWd, convBefore)
 	}
-	index := readStringFile(t, filepath.Join(confDir, "conversations", "chat_index.cache"))
+	index := e2etest.ReadStringFile(t, filepath.Join(confDir, "conversations", "chat_index.cache"))
 	if !strings.Contains(index, `"origin_dir":"`+canonWd+`"`) {
 		t.Fatalf("expected origin_dir mirrored to index, got %s", index)
 	}
 
 	// A reply must not change the original conversation's origin_dir.
-	if status := run(strings.Split("-r -re -cm mock_test q reply", " ")); status != 0 {
+	if status := harness.Run(strings.Split("-r -re -cm mock_test q reply", " ")); status != 0 {
 		t.Fatalf("reply status %d", status)
 	}
-	convAfter := readStringFile(t, convs[0])
+	convAfter := e2etest.ReadStringFile(t, convs[0])
 	if !strings.Contains(convAfter, `"origin_dir": "`+canonWd+`"`) {
 		t.Fatalf("expected origin_dir preserved after reply, got %s", convAfter)
 	}
@@ -251,24 +238,24 @@ func Test_e2e_dirscope_origin_stamping(t *testing.T) {
 func Test_e2e_dirscope_lookback_off_by_default(t *testing.T) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	t.Setenv("CLAI_CACHE_DIR", filepath.Join(t.TempDir(), "cache"))
-	chdirTemp(t)
+	e2etest.ChdirTemp(t)
 
-	if status := run(strings.Split("-r -cm mock_test q seed history", " ")); status != 0 {
+	if status := harness.Run(strings.Split("-r -cm mock_test q seed history", " ")); status != 0 {
 		t.Fatalf("seed status %d", status)
 	}
 	// History is recorded, but without -lb the tool is not registered, so the mock
 	// can not call it and no descriptor is injected.
-	stdout, stderr := captureStdoutStderr(t, func() {
-		_ = run(strings.Split("-r -cm mock_test q please tool_search_conversations", " "))
+	stdout, stderr := e2etest.CaptureStdoutStderr(t, func() {
+		_ = harness.Run(strings.Split("-r -cm mock_test q please tool_search_conversations", " "))
 	})
 	combined := stdout + stderr
 	if strings.Contains(combined, "match(es) in") {
 		t.Fatalf("expected no search output without -lb, got %q", combined)
 	}
 	for _, conv := range conversationFiles(t, confDir) {
-		if strings.Contains(readStringFile(t, conv), "recent_conversations") {
+		if strings.Contains(e2etest.ReadStringFile(t, conv), "recent_conversations") {
 			t.Fatalf("expected no descriptor block without -lb in %s", conv)
 		}
 	}
@@ -280,14 +267,14 @@ func Test_e2e_dirscope_lookback_off_by_default(t *testing.T) {
 func Test_e2e_dirscope_lookback_tools_without_local_history(t *testing.T) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	t.Setenv("CLAI_CACHE_DIR", filepath.Join(t.TempDir(), "cache"))
-	chdirTemp(t)
+	e2etest.ChdirTemp(t)
 
 	// Fresh directory: no prior query, so the CWD binding has no history.
 	t.Setenv("CLAI_MOCK_SEARCH_QUERY", "anything")
-	stdout, stderr := captureStdoutStderr(t, func() {
-		_ = run(strings.Split("-r -lb -cm mock_test q please tool_search_conversations", " "))
+	stdout, stderr := e2etest.CaptureStdoutStderr(t, func() {
+		_ = harness.Run(strings.Split("-r -lb -cm mock_test q please tool_search_conversations", " "))
 	})
 	combined := stdout + stderr
 	// Tool is registered and dispatched (header present), even with zero matches.
@@ -296,7 +283,7 @@ func Test_e2e_dirscope_lookback_tools_without_local_history(t *testing.T) {
 	}
 	// No descriptor block, since there is no local history.
 	for _, conv := range conversationFiles(t, confDir) {
-		if strings.Contains(readStringFile(t, conv), "recent_conversations") {
+		if strings.Contains(e2etest.ReadStringFile(t, conv), "recent_conversations") {
 			t.Fatalf("expected no descriptor block without local history in %s", conv)
 		}
 	}
@@ -307,12 +294,12 @@ func Test_e2e_dirscope_lookback_tools_without_local_history(t *testing.T) {
 func Test_e2e_dirscope_lookback_on_tools_work(t *testing.T) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	t.Setenv("CLAI_CACHE_DIR", filepath.Join(t.TempDir(), "cache"))
-	chdirTemp(t)
+	e2etest.ChdirTemp(t)
 
 	// Seed a conversation with a distinctive keyword.
-	if status := run(strings.Split("-r -cm mock_test q oauthrefreshtoken seed", " ")); status != 0 {
+	if status := harness.Run(strings.Split("-r -cm mock_test q oauthrefreshtoken seed", " ")); status != 0 {
 		t.Fatalf("seed status %d", status)
 	}
 	seedConvs := conversationFiles(t, confDir)
@@ -323,8 +310,8 @@ func Test_e2e_dirscope_lookback_on_tools_work(t *testing.T) {
 
 	// search_conversations finds the seeded conversation and the descriptor is injected.
 	t.Setenv("CLAI_MOCK_SEARCH_QUERY", "oauthrefreshtoken")
-	stdout, stderr := captureStdoutStderr(t, func() {
-		_ = run(strings.Split("-r -lb -cm mock_test q please tool_search_conversations", " "))
+	stdout, stderr := e2etest.CaptureStdoutStderr(t, func() {
+		_ = harness.Run(strings.Split("-r -lb -cm mock_test q please tool_search_conversations", " "))
 	})
 	combined := stdout + stderr
 	if !strings.Contains(combined, "match(es) in") {
@@ -336,7 +323,7 @@ func Test_e2e_dirscope_lookback_on_tools_work(t *testing.T) {
 	// Descriptor injected into the new conversation's system prompt.
 	var foundDescriptor bool
 	for _, conv := range conversationFiles(t, confDir) {
-		if strings.Contains(readStringFile(t, conv), "recent_conversations") {
+		if strings.Contains(e2etest.ReadStringFile(t, conv), "recent_conversations") {
 			foundDescriptor = true
 		}
 	}
@@ -346,8 +333,8 @@ func Test_e2e_dirscope_lookback_on_tools_work(t *testing.T) {
 
 	// inspect_conversation lists the seeded conversation's messages.
 	t.Setenv("CLAI_MOCK_INSPECT_CHAT_ID", seedID)
-	stdout, stderr = captureStdoutStderr(t, func() {
-		_ = run(strings.Split("-r -lb -cm mock_test q please tool_inspect_conversation", " "))
+	stdout, stderr = e2etest.CaptureStdoutStderr(t, func() {
+		_ = harness.Run(strings.Split("-r -lb -cm mock_test q please tool_inspect_conversation", " "))
 	})
 	combined = stdout + stderr
 	if !strings.Contains(combined, "Conversation "+seedID+":") || !strings.Contains(combined, "index=0 role=system") {
@@ -357,8 +344,8 @@ func Test_e2e_dirscope_lookback_on_tools_work(t *testing.T) {
 	// read_message returns a single message's role-tagged content.
 	t.Setenv("CLAI_MOCK_READ_CHAT_ID", seedID)
 	t.Setenv("CLAI_MOCK_READ_INDEX", "1")
-	stdout, stderr = captureStdoutStderr(t, func() {
-		_ = run(strings.Split("-r -lb -cm mock_test q please tool_read_message", " "))
+	stdout, stderr = e2etest.CaptureStdoutStderr(t, func() {
+		_ = harness.Run(strings.Split("-r -lb -cm mock_test q please tool_read_message", " "))
 	})
 	combined = stdout + stderr
 	if !strings.Contains(combined, "[user]") || !strings.Contains(combined, "oauthrefreshtoken") {
@@ -367,8 +354,8 @@ func Test_e2e_dirscope_lookback_on_tools_work(t *testing.T) {
 
 	// An out-of-range index returns an error tool result and the run continues.
 	t.Setenv("CLAI_MOCK_READ_INDEX", "999")
-	stdout, stderr = captureStdoutStderr(t, func() {
-		if status := run(strings.Split("-r -lb -cm mock_test q please tool_read_message", " ")); status != 0 {
+	stdout, stderr = e2etest.CaptureStdoutStderr(t, func() {
+		if status := harness.Run(strings.Split("-r -lb -cm mock_test q please tool_read_message", " ")); status != 0 {
 			t.Fatalf("expected run to continue on out-of-range, status nonzero")
 		}
 	})
@@ -383,19 +370,19 @@ func Test_e2e_dirscope_lookback_on_tools_work(t *testing.T) {
 func Test_e2e_dirscope_lookback_notice_debug_gated(t *testing.T) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
-	setupMainTestConfigDir(t)
+	e2etest.SetupMainTestConfigDir(t)
 	t.Setenv("CLAI_CACHE_DIR", filepath.Join(t.TempDir(), "cache"))
-	chdirTemp(t)
+	e2etest.ChdirTemp(t)
 
-	if status := run(strings.Split("-r -cm mock_test q seed history", " ")); status != 0 {
+	if status := harness.Run(strings.Split("-r -cm mock_test q seed history", " ")); status != 0 {
 		t.Fatalf("seed status %d", status)
 	}
 
 	t.Run("silent without debug flag", func(t *testing.T) {
 		t.Setenv("DEBUG", "")
 		t.Setenv("DEBUG_LOOKBACK", "")
-		stdout, stderr := captureStdoutStderr(t, func() {
-			_ = run(strings.Split("-r -lb -cm mock_test q second query", " "))
+		stdout, stderr := e2etest.CaptureStdoutStderr(t, func() {
+			_ = harness.Run(strings.Split("-r -lb -cm mock_test q second query", " "))
 		})
 		combined := stdout + stderr
 		if strings.Contains(combined, "lookback:") {
@@ -406,8 +393,8 @@ func Test_e2e_dirscope_lookback_notice_debug_gated(t *testing.T) {
 	t.Run("prints with DEBUG_LOOKBACK", func(t *testing.T) {
 		t.Setenv("DEBUG", "")
 		t.Setenv("DEBUG_LOOKBACK", "1")
-		stdout, stderr := captureStdoutStderr(t, func() {
-			_ = run(strings.Split("-r -lb -cm mock_test q third query", " "))
+		stdout, stderr := e2etest.CaptureStdoutStderr(t, func() {
+			_ = harness.Run(strings.Split("-r -lb -cm mock_test q third query", " "))
 		})
 		combined := stdout + stderr
 		if !strings.Contains(combined, "lookback: surfaced") {

@@ -1,4 +1,4 @@
-package e2e
+package tooling
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baalimago/clai/e2e/e2etest"
 	pkgtools "github.com/baalimago/clai/pkg/tools"
 )
 
@@ -16,7 +17,7 @@ func Test_e2e_tooling_async_basic_spawn_await_and_logs(t *testing.T) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
 
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 	pkgtools.ResetAsyncCmdManagerForTests()
 
 	asyncCmdFile := filepath.Join(t.TempDir(), "async_cmd_id.txt")
@@ -27,8 +28,8 @@ func Test_e2e_tooling_async_basic_spawn_await_and_logs(t *testing.T) {
 	t.Setenv("CLAI_MOCK_ASYNC_CMD_AWAIT_TIMEOUT_SECONDS", "2")
 
 	var gotStatus int
-	stdout, stderr := captureStdoutStderr(t, func() {
-		gotStatus = run(strings.Split("-r -cm mock_test -t=async_cmd,async_cmd_await,async_cmd_logs q tool_async_cmd tool_async_cmd_await tool_async_cmd_logs", " "))
+	stdout, stderr := e2etest.CaptureStdoutStderr(t, func() {
+		gotStatus = harness.Run(strings.Split("-r -cm mock_test -t=async_cmd,async_cmd_await,async_cmd_logs q tool_async_cmd tool_async_cmd_await tool_async_cmd_logs", " "))
 	})
 	if gotStatus != 0 {
 		t.Fatalf("expected success, got %d stdout=%q stderr=%q", gotStatus, stdout, stderr)
@@ -49,7 +50,7 @@ func Test_e2e_tooling_async_live_logs_and_cancel(t *testing.T) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
 
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 	pkgtools.ResetAsyncCmdManagerForTests()
 
 	asyncCmdFile := filepath.Join(t.TempDir(), "async_cmd_id.txt")
@@ -60,8 +61,8 @@ func Test_e2e_tooling_async_live_logs_and_cancel(t *testing.T) {
 	t.Setenv("CLAI_MOCK_ASYNC_CMD_LOGS_DELAY_MS", "350")
 
 	var gotStatus int
-	stdout, stderr := captureStdoutStderr(t, func() {
-		gotStatus = run(strings.Split("-r -cm mock_test -t=async_cmd,async_cmd_logs,async_cmd_cancel,async_cmd_status q tool_async_cmd tool_async_cmd_logs tool_async_cmd_cancel tool_async_cmd_status", " "))
+	stdout, stderr := e2etest.CaptureStdoutStderr(t, func() {
+		gotStatus = harness.Run(strings.Split("-r -cm mock_test -t=async_cmd,async_cmd_logs,async_cmd_cancel,async_cmd_status q tool_async_cmd tool_async_cmd_logs tool_async_cmd_cancel tool_async_cmd_status", " "))
 	})
 	if gotStatus != 0 {
 		t.Fatalf("expected success, got %d stdout=%q stderr=%q", gotStatus, stdout, stderr)
@@ -79,7 +80,7 @@ func Test_e2e_tooling_wildcard_cmd_allows_cmd_and_async_cmd_tools(t *testing.T) 
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
 
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 	pkgtools.ResetAsyncCmdManagerForTests()
 
 	asyncCmdFile := filepath.Join(t.TempDir(), "async_cmd_id.txt")
@@ -91,8 +92,8 @@ func Test_e2e_tooling_wildcard_cmd_allows_cmd_and_async_cmd_tools(t *testing.T) 
 	t.Setenv("CLAI_MOCK_ASYNC_CMD_AWAIT_TIMEOUT_SECONDS", "2")
 
 	var gotStatus int
-	stdout, stderr := captureStdoutStderr(t, func() {
-		gotStatus = run(strings.Split("-r -cm mock_test -t=*cmd* q tool_cmd tool_async_cmd tool_async_cmd_await tool_async_cmd_logs", " "))
+	stdout, stderr := e2etest.CaptureStdoutStderr(t, func() {
+		gotStatus = harness.Run(strings.Split("-r -cm mock_test -t=*cmd* q tool_cmd tool_async_cmd tool_async_cmd_await tool_async_cmd_logs", " "))
 	})
 	if gotStatus != 0 {
 		t.Fatalf("expected success, got %d stdout=%q stderr=%q", gotStatus, stdout, stderr)
@@ -116,14 +117,14 @@ func Test_e2e_tooling_async_unknown_async_cmd_ids_fail_deterministically(t *test
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
 
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 	pkgtools.ResetAsyncCmdManagerForTests()
 
 	t.Setenv("CLAI_MOCK_ASYNC_CMD_STATUS_ASYNC_CMD_ID", "async_cmd_missing")
 
 	var gotStatus int
-	stdout, stderr := captureStdoutStderr(t, func() {
-		gotStatus = run(strings.Split("-r -cm mock_test -t=async_cmd_status q tool_async_cmd_status", " "))
+	stdout, stderr := e2etest.CaptureStdoutStderr(t, func() {
+		gotStatus = harness.Run(strings.Split("-r -cm mock_test -t=async_cmd_status q tool_async_cmd_status", " "))
 	})
 	if gotStatus != 0 {
 		t.Fatalf("expected query success with tool error surfaced in transcript, got %d stdout=%q stderr=%q", gotStatus, stdout, stderr)

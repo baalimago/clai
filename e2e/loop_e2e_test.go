@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/e2e/e2etest"
 	"github.com/baalimago/clai/internal/chat"
 	"github.com/baalimago/clai/internal/text"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -75,7 +76,7 @@ func toolResultFor(t *testing.T, conv pub_models.Chat, toolName string) (string,
 }
 
 func Test_e2e_loop_persists_selected_profile(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	profileName := "loop-profile"
 	profile := text.Profile{
 		Name:            profileName,
@@ -92,7 +93,7 @@ func Test_e2e_loop_persists_selected_profile(t *testing.T) {
 		t.Fatalf("WriteFile(profile): %v", err)
 	}
 
-	_, status := runOne(t, confDir, "-r -cm test -p "+profileName+" -check "+writeFailOnceCheck(t)+" l run tool_complete_task")
+	_, status := harness.RunOne(t, confDir, "-r -cm test -p "+profileName+" -check "+writeFailOnceCheck(t)+" l run tool_complete_task")
 	testboil.FailTestIfDiff(t, status, 0)
 
 	convs := loadLoopConversations(t, confDir)
@@ -107,11 +108,11 @@ func Test_e2e_loop_persists_selected_profile(t *testing.T) {
 }
 
 func Test_e2e_loop_achieves_goal(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	t.Setenv("CLAI_MOCK_COMPLETE_TASK_STATUS", "achieved")
 	t.Setenv("CLAI_MOCK_COMPLETE_TASK_SUMMARY", "The goal is achieved.")
 
-	stdout, status := runOne(t, confDir, "-r -cm test l run tool_complete_task")
+	stdout, status := harness.RunOne(t, confDir, "-r -cm test l run tool_complete_task")
 	testboil.FailTestIfDiff(t, status, 0)
 
 	convs := loadLoopConversations(t, confDir)
@@ -134,8 +135,8 @@ func Test_e2e_loop_completion_tool_is_additive(t *testing.T) {
 
 	for _, selection := range []string{"-t *", "-t ls"} {
 		t.Run(selection, func(t *testing.T) {
-			confDir := setupMainTestConfigDir(t)
-			_, status := runOne(t, confDir, "-r -cm test "+selection+" l run tool_complete_task")
+			confDir := e2etest.SetupMainTestConfigDir(t)
+			_, status := harness.RunOne(t, confDir, "-r -cm test "+selection+" l run tool_complete_task")
 			testboil.FailTestIfDiff(t, status, 0)
 
 			convs := loadLoopConversations(t, confDir)
@@ -152,12 +153,12 @@ func Test_e2e_loop_completion_tool_is_additive(t *testing.T) {
 }
 
 func Test_e2e_loop_handover_and_check_gate_groups_chats(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	t.Setenv("CLAI_MOCK_COMPLETE_TASK_STATUS", "achieved")
 	t.Setenv("CLAI_MOCK_COMPLETE_TASK_SUMMARY", "The goal is verified.")
 	checkScript := writeFailOnceCheck(t)
 
-	_, status := runOne(t, confDir, "-r -cm test -check "+checkScript+" l run tool_complete_task")
+	_, status := harness.RunOne(t, confDir, "-r -cm test -check "+checkScript+" l run tool_complete_task")
 	testboil.FailTestIfDiff(t, status, 0)
 
 	convs := loadLoopConversations(t, confDir)
@@ -221,14 +222,14 @@ func Test_e2e_loop_blocked_and_max_iterations(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			confDir := setupMainTestConfigDir(t)
+			confDir := e2etest.SetupMainTestConfigDir(t)
 			for key, value := range tc.env {
 				t.Setenv(key, value)
 			}
 
 			var status int
 			stderr := testboil.CaptureStderr(t, func(t *testing.T) {
-				_, status = runOne(t, confDir, tc.args)
+				_, status = harness.RunOne(t, confDir, tc.args)
 			})
 			testboil.FailTestIfDiff(t, status, 1)
 			testboil.AssertStringContains(t, stderr, tc.wantErr)
@@ -241,9 +242,9 @@ func Test_e2e_loop_blocked_and_max_iterations(t *testing.T) {
 }
 
 func Test_e2e_loop_help_and_dispatch(t *testing.T) {
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 
-	if _, ok := commands()["loop|l"]; !ok {
+	if _, ok := harness.Commands()["loop|l"]; !ok {
 		t.Fatal("cli.Commands misses the loop|l key")
 	}
 
@@ -251,7 +252,7 @@ func Test_e2e_loop_help_and_dispatch(t *testing.T) {
 		t.Run(args, func(t *testing.T) {
 			var status int
 			stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-				status = run(strings.Split(args, " "))
+				status = harness.Run(strings.Split(args, " "))
 			})
 			testboil.FailTestIfDiff(t, status, 0)
 			for _, want := range []string{"loop <text>", "-cm", "-t", "-mi", "-max-iterations", "-check"} {
@@ -261,7 +262,7 @@ func Test_e2e_loop_help_and_dispatch(t *testing.T) {
 	}
 
 	usage := testboil.CaptureStdout(t, func(t *testing.T) {
-		run(nil)
+		harness.Run(nil)
 	})
 	testboil.AssertStringContains(t, usage, "loop|l")
 }

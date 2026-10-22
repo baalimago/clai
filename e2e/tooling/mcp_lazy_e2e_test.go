@@ -1,4 +1,4 @@
-package e2e
+package tooling
 
 import (
 	"bytes"
@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/e2e/e2etest"
 	"github.com/baalimago/clai/internal/tools/mcp"
 	"github.com/baalimago/clai/internal/tools/mcp/schemacache"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -48,7 +49,7 @@ func TestLazyStartupE2EUnderRace(t *testing.T) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
 
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	// DEBUG makes setupTooling print each tool name it finds in -t, which is
 	// the only production-printed, positive evidence that a registered tool
 	// is present (R2-12) short of actually invoking it — invoking it would
@@ -66,8 +67,8 @@ func TestLazyStartupE2EUnderRace(t *testing.T) {
 	queryArgs := strings.Split("-r -cm mock_test -t=mcp_echo_echo q hello", " ")
 
 	var coldStatus int
-	coldStdout, coldStderr := captureStdoutStderr(t, func() {
-		coldStatus = run(queryArgs)
+	coldStdout, coldStderr := e2etest.CaptureStdoutStderr(t, func() {
+		coldStatus = harness.Run(queryArgs)
 	})
 	if coldStatus != 0 {
 		t.Fatalf("cold run: status %d, stderr=%q", coldStatus, coldStderr)
@@ -81,8 +82,8 @@ func TestLazyStartupE2EUnderRace(t *testing.T) {
 	}
 
 	var warmStatus int
-	warmStdout, warmStderr := captureStdoutStderr(t, func() {
-		warmStatus = run(queryArgs)
+	warmStdout, warmStderr := e2etest.CaptureStdoutStderr(t, func() {
+		warmStatus = harness.Run(queryArgs)
 	})
 	if warmStatus != 0 {
 		t.Fatalf("warm run: status %d, stderr=%q", warmStatus, warmStderr)
@@ -120,7 +121,7 @@ func TestLazyMultiServerSpawnsOnlyTheCalledServer(t *testing.T) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
 
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	bin := testServerBinary(t)
 	mcpDir := filepath.Join(confDir, "mcpServers")
 
@@ -164,8 +165,8 @@ func TestLazyMultiServerSpawnsOnlyTheCalledServer(t *testing.T) {
 
 	queryArgs := strings.Split("-r -cm mock_test -t=mcp_servera_echo,mcp_serverb_echo q please tool_mcp_servera_echo", " ")
 	var status int
-	stdout, stderr := captureStdoutStderr(t, func() {
-		status = run(queryArgs)
+	stdout, stderr := e2etest.CaptureStdoutStderr(t, func() {
+		status = harness.Run(queryArgs)
 	})
 	if status != 0 {
 		t.Fatalf("run: status %d, stdout=%q, stderr=%q", status, stdout, stderr)

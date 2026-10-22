@@ -33,6 +33,17 @@ type Sora struct {
 	debug          bool
 	apiKey         string
 	promptImageB64 string
+	// pollEvery overrides soraPollInterval; tests shorten it.
+	pollEvery time.Duration
+}
+
+const soraPollInterval = 2 * time.Second
+
+func (q *Sora) pollInterval() time.Duration {
+	if q.pollEvery > 0 {
+		return q.pollEvery
+	}
+	return soraPollInterval
 }
 
 type VideoJob struct {
@@ -160,7 +171,7 @@ func (q *Sora) createRequest(ctx context.Context) (*http.Request, error) {
 }
 
 func (q *Sora) poll(ctx context.Context, id string) error {
-	ticker := time.NewTicker(2 * time.Second)
+	ticker := time.NewTicker(q.pollInterval())
 	defer ticker.Stop()
 
 	for {

@@ -908,6 +908,7 @@ func spawnTimestamps(t *testing.T, path string) []time.Time {
 // regardless of it. Using a pre-built binary instead of "go run" keeps a
 // cold Go build cache from affecting either case (D41).
 func TestLazySetupResolvesServersConcurrently(t *testing.T) {
+	t.Parallel()
 	bin := testServerBinary(t)
 	const (
 		n     = 4
@@ -999,6 +1000,7 @@ func TestConnectorConnectFailureSpawnsOnceAcrossRepeatedToolCallsEndToEnd(t *tes
 // one re-dial, so the third call spawns nothing and replays the memoised
 // challenge.
 func TestAuthChallengeStdioSpawnBoundedAcrossRepeatedToolCallsEndToEnd(t *testing.T) {
+	t.Parallel()
 	bin := testServerBinary(t)
 	spawnLog := filepath.Join(t.TempDir(), "spawns.log")
 	srv := pub_models.McpServer{

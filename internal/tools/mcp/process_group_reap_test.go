@@ -34,8 +34,16 @@ func TestStdioConnReapKillsGrandchildOnSelfExit(t *testing.T) {
 
 	awaitProcessGone(t, pid)
 
-	if _, exited := sink.snapshot(); len(exited) == 0 {
-		t.Error("an unexpected exit while the run context is alive must be reported")
+	// The report follows the sweep: it waits for the stderr reader to drain.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, exited := sink.snapshot(); len(exited) > 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("an unexpected exit while the run context is alive must be reported")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
@@ -44,7 +52,8 @@ func awaitGrandchildPid(t *testing.T, pidFile string) int {
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		raw, err := os.ReadFile(pidFile)
-		if err == nil {
+		// os.WriteFile creates the file before it writes the pid.
+		if err == nil && strings.TrimSpace(string(raw)) != "" {
 			pid, convErr := strconv.Atoi(strings.TrimSpace(string(raw)))
 			if convErr != nil {
 				t.Fatalf("grandchild pid %q: %v", raw, convErr)

@@ -1,4 +1,4 @@
-package e2e
+package conversation
 
 import (
 	"crypto/sha256"
@@ -11,57 +11,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baalimago/clai/e2e/e2etest"
 	"github.com/baalimago/clai/internal/chat"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
-func runOne(t *testing.T, cwd string, args string) (string, int) {
-	t.Helper()
-	oldWd, wdErr := os.Getwd()
-	t.Cleanup(func() {
-		if wdErr == nil {
-			_ = os.Chdir(oldWd)
-		}
-		utils.Live = true
-		utils.ReadonlyConfig = false
-		utils.NoCreateConfig = false
-	})
-
-	if chDirErr := os.Chdir(cwd); chDirErr != nil {
-		t.Fatalf("Chdir(%q): %v", cwd, chDirErr)
-	}
-
-	// Split args on spaces, treating "" as an explicit empty argument (shell-style).
-	parsed := splitArgsForTest(args)
-
-	var status int
-	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		status = run(parsed)
-	})
-	return stdout, status
-}
-
-// splitArgsForTest splits on spaces, converting empty-quote tokens into empty strings.
-func splitArgsForTest(args string) []string {
-	parts := strings.Split(args, " ")
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		if p == `""` || p == `''` {
-			out = append(out, "")
-		} else {
-			out = append(out, p)
-		}
-	}
-	return out
-}
-
 func TestMainHelpDocumentsChatDirV2(t *testing.T) {
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 	var status int
 	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		status = run([]string{"chat", "-h"})
+		status = harness.Run([]string{"chat", "-h"})
 	})
 	testboil.FailTestIfDiff(t, status, 0)
 	if !strings.Contains(stdout, "dirv2") {
@@ -70,20 +31,20 @@ func TestMainHelpDocumentsChatDirV2(t *testing.T) {
 }
 
 func Test_chat_dir_does_not_print_skills_logs_without_text_query(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	oldWd, _ := os.Getwd()
 	workDir := t.TempDir()
 	t.Cleanup(func() { _ = os.Chdir(oldWd) })
 	if err := os.Chdir(workDir); err != nil {
 		t.Fatalf("Chdir(%q): %v", workDir, err)
 	}
-	writeSkillFile(t, filepath.Join(confDir, "skills", "review", "SKILL.md"), "---\ndescription: review\n---\nBody")
-	writeSkillsConfigJSON(t, confDir, map[string]any{
+	e2etest.WriteSkillFile(t, filepath.Join(confDir, "skills", "review", "SKILL.md"), "---\ndescription: review\n---\nBody")
+	e2etest.WriteSkillsConfigJSON(t, confDir, map[string]any{
 		"enabled": true,
 	})
 
 	for _, subcommand := range []string{"dir", "dirv2"} {
-		stdout, status := runOne(t, workDir, "-r chat "+subcommand)
+		stdout, status := harness.RunOne(t, workDir, "-r chat "+subcommand)
 		if status != 0 {
 			t.Fatalf("expected zero status for chat %s, got %d stdout=%q", subcommand, status, stdout)
 		}
@@ -112,7 +73,7 @@ func Test_goldenFile_CHAT_DIRSCOPED(t *testing.T) {
 		_ = os.Chdir(oldWd)
 	})
 
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	projRoot := t.TempDir()
 	bar := filepath.Join(projRoot, "bar")
 	baz := filepath.Join(bar, "baz")
@@ -136,16 +97,16 @@ func Test_goldenFile_CHAT_DIRSCOPED(t *testing.T) {
 		return got
 	}
 
-	_, status := runOne(t, bar, "-r chat dir")
+	_, status := harness.RunOne(t, bar, "-r chat dir")
 	if status != 0 {
 		t.Fatalf("expected zero status for 'chat dir' when empty, got %v", status)
 	}
 
-	out, status := runOne(t, bar, "-cm test -r q hello")
+	out, status := harness.RunOne(t, bar, "-cm test -r q hello")
 	testboil.FailTestIfDiff(t, status, 0)
 	testboil.FailTestIfDiff(t, out, "hello\n")
 
-	out, status = runOne(t, bar, "-r chat dir")
+	out, status = harness.RunOne(t, bar, "-r chat dir")
 	testboil.FailTestIfDiff(t, status, 0)
 	barInfo := parseChatDir(t, out)
 	if barInfo.Scope != "dir" {
@@ -164,20 +125,20 @@ func Test_goldenFile_CHAT_DIRSCOPED(t *testing.T) {
 		t.Fatalf("expected non-negative tokens_total, got %d", barInfo.TokensTotal)
 	}
 
-	out, status = runOne(t, bar, "-r re")
+	out, status = harness.RunOne(t, bar, "-r re")
 	testboil.FailTestIfDiff(t, status, 0)
 	testboil.AssertStringContains(t, out, "hello")
 
-	_, status = runOne(t, baz, "-r dre")
+	_, status = harness.RunOne(t, baz, "-r dre")
 	if status == 0 {
 		t.Fatalf("expected non-zero status for 'dre' without binding")
 	}
 
-	out, status = runOne(t, baz, "-cm test -r q baz")
+	out, status = harness.RunOne(t, baz, "-cm test -r q baz")
 	testboil.FailTestIfDiff(t, status, 0)
 	testboil.FailTestIfDiff(t, out, "baz\n")
 
-	out, status = runOne(t, baz, "-r chat dir")
+	out, status = harness.RunOne(t, baz, "-r chat dir")
 	testboil.FailTestIfDiff(t, status, 0)
 	bazInfo := parseChatDir(t, out)
 	if bazInfo.Scope != "dir" {
@@ -193,19 +154,19 @@ func Test_goldenFile_CHAT_DIRSCOPED(t *testing.T) {
 		t.Fatalf("expected at least 1 user message, got %v", bazInfo.RepliesByRole)
 	}
 
-	out, status = runOne(t, baz, "-r dre")
+	out, status = harness.RunOne(t, baz, "-r dre")
 	testboil.FailTestIfDiff(t, status, 0)
 	testboil.AssertStringContains(t, out, "baz")
 
-	out, status = runOne(t, bar, "-r dre")
+	out, status = harness.RunOne(t, bar, "-r dre")
 	testboil.FailTestIfDiff(t, status, 0)
 	testboil.AssertStringContains(t, out, "hello")
 
-	out, status = runOne(t, bar, "-r re")
+	out, status = harness.RunOne(t, bar, "-r re")
 	testboil.FailTestIfDiff(t, status, 0)
 	testboil.AssertStringContains(t, out, "baz")
 
-	out, status = runOne(t, baz, "-cm test -r -re -dre q hello3")
+	out, status = harness.RunOne(t, baz, "-cm test -r -re -dre q hello3")
 	testboil.FailTestIfDiff(t, status, 0)
 	testboil.FailTestIfDiff(t, out, "hello3\n")
 
@@ -331,7 +292,7 @@ func Test_goldenFile_CHAT_CONTINUE_obfuscated_preview(t *testing.T) {
 		_ = os.Chdir(oldWd)
 	})
 
-	out, status := runOne(t, confDir, "-r c c 0")
+	out, status := harness.RunOne(t, confDir, "-r c c 0")
 	if status != 0 {
 		t.Fatalf("expected status code 0, got %v. stdout=%q", status, out)
 	}
@@ -380,7 +341,7 @@ func Test_e2e_chat_continue_needs_no_model(t *testing.T) {
 		t.Fatalf("Save: %v", err)
 	}
 
-	out, status := runOne(t, confDir, "-r c c 0")
+	out, status := harness.RunOne(t, confDir, "-r c c 0")
 	if status != 0 {
 		t.Fatalf("expected status code 0, got %v. stdout=%q", status, out)
 	}
@@ -396,7 +357,7 @@ func Test_e2e_chat_continue_needs_no_model(t *testing.T) {
 }
 
 func Test_e2e_same_prompt_twice_creates_two_separate_chats(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	oldWd, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("Getwd: %v", err)
@@ -406,10 +367,10 @@ func Test_e2e_same_prompt_twice_creates_two_separate_chats(t *testing.T) {
 	})
 
 	prompt := "please keep these as separate chats"
-	_, status := runOne(t, confDir, "-cm test -r q "+prompt)
+	_, status := harness.RunOne(t, confDir, "-cm test -r q "+prompt)
 	testboil.FailTestIfDiff(t, status, 0)
 
-	_, status = runOne(t, confDir, "-cm test -r q "+prompt)
+	_, status = harness.RunOne(t, confDir, "-cm test -r q "+prompt)
 	testboil.FailTestIfDiff(t, status, 0)
 
 	entries, err := os.ReadDir(filepath.Join(confDir, "conversations"))
@@ -435,7 +396,7 @@ func Test_e2e_same_prompt_twice_creates_two_separate_chats(t *testing.T) {
 }
 
 func Test_e2e_newly_saved_conversation_has_created_timestamp(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	oldWd, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("Getwd: %v", err)
@@ -444,7 +405,7 @@ func Test_e2e_newly_saved_conversation_has_created_timestamp(t *testing.T) {
 		_ = os.Chdir(oldWd)
 	})
 
-	_, status := runOne(t, confDir, "-cm test -r q verify created timestamp persists")
+	_, status := harness.RunOne(t, confDir, "-cm test -r q verify created timestamp persists")
 	testboil.FailTestIfDiff(t, status, 0)
 
 	entries, err := os.ReadDir(filepath.Join(confDir, "conversations"))
@@ -483,7 +444,7 @@ func Test_e2e_newly_saved_conversation_has_created_timestamp(t *testing.T) {
 }
 
 func Test_e2e_dre_queries_continue_directory_scoped_conversation(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 
 	oldWd, err := os.Getwd()
 	if err != nil {
@@ -518,11 +479,11 @@ func Test_e2e_dre_queries_continue_directory_scoped_conversation(t *testing.T) {
 		return got
 	}
 
-	out, status := runOne(t, workDir, "-cm test -r q I like blue")
+	out, status := harness.RunOne(t, workDir, "-cm test -r q I like blue")
 	testboil.FailTestIfDiff(t, status, 0)
 	testboil.FailTestIfDiff(t, out, "I like blue\n")
 
-	out, status = runOne(t, workDir, "-r chat dir")
+	out, status = harness.RunOne(t, workDir, "-r chat dir")
 	testboil.FailTestIfDiff(t, status, 0)
 	initialDirInfo := parseChatDir(t, out)
 	if initialDirInfo.ChatID == "" {
@@ -550,12 +511,12 @@ func Test_e2e_dre_queries_continue_directory_scoped_conversation(t *testing.T) {
 		{name: "third dre reply", args: "-r -cm test -dre q I like tacos"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, status := runOne(t, workDir, tc.args)
+			_, status := harness.RunOne(t, workDir, tc.args)
 			testboil.FailTestIfDiff(t, status, 0)
 		})
 	}
 
-	out, status = runOne(t, workDir, "-r chat dir")
+	out, status = harness.RunOne(t, workDir, "-r chat dir")
 	testboil.FailTestIfDiff(t, status, 0)
 	finalDirInfo := parseChatDir(t, out)
 	if finalDirInfo.ChatID != initialDirInfo.ChatID {
@@ -623,7 +584,7 @@ func Test_e2e_dre_queries_continue_directory_scoped_conversation(t *testing.T) {
 }
 
 func Test_e2e_dre_setup_keeps_bound_chat_id(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 
 	oldWd, err := os.Getwd()
 	if err != nil {
@@ -641,7 +602,7 @@ func Test_e2e_dre_setup_keeps_bound_chat_id(t *testing.T) {
 		t.Fatalf("Chdir(%q): %v", workDir, err)
 	}
 
-	_, status := runOne(t, workDir, "-cm test -r q initial prompt")
+	_, status := harness.RunOne(t, workDir, "-cm test -r q initial prompt")
 	testboil.FailTestIfDiff(t, status, 0)
 
 	initialChatID, err := chat.LoadDirScopeChatID(confDir)
@@ -652,7 +613,7 @@ func Test_e2e_dre_setup_keeps_bound_chat_id(t *testing.T) {
 		t.Fatalf("expected initial dirscope chat id to be non-empty")
 	}
 
-	_, status = runOne(t, workDir, "-cm test -r -dre q follow-up prompt")
+	_, status = harness.RunOne(t, workDir, "-cm test -r -dre q follow-up prompt")
 	testboil.FailTestIfDiff(t, status, 0)
 
 	finalChatID, err := chat.LoadDirScopeChatID(confDir)
@@ -665,7 +626,7 @@ func Test_e2e_dre_setup_keeps_bound_chat_id(t *testing.T) {
 }
 
 func Test_e2e_dre_profile_swap_does_not_create_new_conversation(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	for _, name := range []string{"first", "second", "third"} {
 		profilePath := filepath.Join(confDir, "profiles", name+".json")
 		profileContent := `{"name":"` + name + `","model":"test"}`
@@ -687,7 +648,7 @@ func Test_e2e_dre_profile_swap_does_not_create_new_conversation(t *testing.T) {
 		t.Fatalf("MkdirAll(%q): %v", workDir, err)
 	}
 
-	out, status := runOne(t, workDir, "-cm test -r q seed prompt")
+	out, status := harness.RunOne(t, workDir, "-cm test -r q seed prompt")
 	testboil.FailTestIfDiff(t, status, 0)
 	testboil.FailTestIfDiff(t, out, "seed prompt\n")
 
@@ -707,7 +668,7 @@ func Test_e2e_dre_profile_swap_does_not_create_new_conversation(t *testing.T) {
 		{name: "swap to third profile", args: "-r -cm test -p third -dre q follow-up two"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			out, status := runOne(t, workDir, tc.args)
+			out, status := harness.RunOne(t, workDir, tc.args)
 			testboil.FailTestIfDiff(t, status, 0)
 			testboil.AssertStringContains(t, out, "\n")
 

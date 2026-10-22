@@ -428,6 +428,8 @@ func (s *Server) handlePost(w http.ResponseWriter, r *http.Request) {
 		// closes the underlying connection (a Transport implementation
 		// detail this fixture must not depend on), the handler still
 		// returns on its own so the server itself can shut down cleanly.
+		// net/http only watches for a client hang-up once the body is drained.
+		_, _ = io.Copy(io.Discard, r.Body)
 		select {
 		case <-r.Context().Done():
 		case <-time.After(2 * time.Second):

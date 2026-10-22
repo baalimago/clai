@@ -212,7 +212,8 @@ func TestHandleStreamChunk_ReasoningContentIsCapped(t *testing.T) {
 	s := &StreamCompleter{}
 	chunk := []byte(`data: {"choices":[{"delta":{"reasoning_content":"` + strings.Repeat("a", 4096) + `"}}]}` + "\n")
 
-	for range 1024 {
+	// 64 chunks past the cap: each one past it must trigger the truncation.
+	for range maxReasoningContent/4096 + 64 {
 		s.handleStreamChunk(chunk)
 	}
 	if len(s.reasoningContent) != maxReasoningContent {

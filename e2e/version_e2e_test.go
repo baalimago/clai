@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/e2e/e2etest"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
@@ -14,11 +15,11 @@ func Test_goldenFile_VERSION_prints_version_and_exits_0(t *testing.T) {
 		os.Args = oldArgs
 	})
 
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 
 	var gotStatusCode int
 	gotStdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		gotStatusCode = run(strings.Split("version", " "))
+		gotStatusCode = harness.Run(strings.Split("version", " "))
 	})
 
 	testboil.FailTestIfDiff(t, gotStatusCode, 0)
@@ -32,14 +33,14 @@ func Test_goldenFile_VERSION_prints_version_and_exits_0(t *testing.T) {
 // Test_goldenFile_VERSION_FLAG_prints_version_and_exits_0 pins the special
 // first-argument flag: 'clai --version' is the same as 'clai version'.
 func Test_goldenFile_VERSION_FLAG_prints_version_and_exits_0(t *testing.T) {
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 
 	flagStdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		status := run([]string{"--version"})
+		status := harness.Run([]string{"--version"})
 		testboil.FailTestIfDiff(t, status, 0)
 	})
 	commandStdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		status := run([]string{"version"})
+		status := harness.Run([]string{"version"})
 		testboil.FailTestIfDiff(t, status, 0)
 	})
 
