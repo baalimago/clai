@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/baalimago/clai/internal/models"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -26,7 +27,17 @@ type StreamCompleter struct {
 	// of a non-OK response, or an error frame received mid-stream (status
 	// is then http.StatusOK). A nil field, or a nil return, means "no
 	// vendor knowledge" and the baseline (or the catch-all) stands alone.
-	DecodeError   func(status int, body []byte) error `json:"-"`
+	DecodeError func(status int, body []byte) error `json:"-"`
+	// Vendor and Images are set by the embedding vendor's Setup. Every request
+	// is checked against Images and encoded by it (models.ImageEncoder).
+	Vendor string                   `json:"-"`
+	Images models.ImageCapabilities `json:"-"`
+	// OutputModalities is the request's modalities field; nil omits it.
+	OutputModalities []string `json:"-"`
+	// DecodeChunk is set by a vendor whose stream carries more than the shared
+	// chunk shape. It sees each data payload before the shared decoder; its events
+	// are sent first, and its error is terminal.
+	DecodeChunk   func(payload []byte) ([]models.CompletionEvent, error) `json:"-"`
 	URL           string
 	ExtraHeaders  map[string]string `json:"-"`
 	tools         []ToolSuper
@@ -35,7 +46,7 @@ type StreamCompleter struct {
 	toolsCallArgsString string
 	toolsCallID         string
 	extraContent        map[string]any
-	reasoningContent    string
+	reasoningContent    []byte
 	client              *http.Client
 	apiKey              string
 	debug               bool
@@ -143,4 +154,5 @@ type req struct {
 	ToolChoice        *string        `json:"tool_choice,omitempty"`
 	Tools             []ToolSuper    `json:"tools,omitempty"`
 	ParalellToolCalls bool           `json:"parallel_tools_call,omitempty"`
+	Modalities        []string       `json:"modalities,omitempty"`
 }

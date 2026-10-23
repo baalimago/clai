@@ -30,7 +30,7 @@ func NormalizeToolCallSequence(msgs []pub_models.Message) []pub_models.Message {
 			if msgs[j].Role == "assistant" && msgs[j].Content != "" {
 				break
 			}
-			if msgs[j].Role == "user" && msgs[j].Content != "" {
+			if msgs[j].Role == "user" && HasContent(msgs[j]) {
 				break
 			}
 			if IsToolCallOnlyAssistant(msgs[j]) {

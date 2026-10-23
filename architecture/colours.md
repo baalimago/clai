@@ -218,6 +218,22 @@ structured, debug, and redirected stdout do not use this viewport. Redirected
 stdout is identical to raw output. When activity ends, the final viewport
 stays visible and the final answer starts below it.
 
+### 7) Generated images
+
+`internal/present` shows each generated image as one line, or as two rows inside the tool block
+of the tool that generated it (`Presenter.Rows`, the URL on its own row). On a terminal
+with colour on, the line is `▸ [<rebus>] image <handle> · <details> → file://<absolute path>`.
+The `▸` marker uses the theme's primary colour, as the progress board does, and the details
+(model, size and ratio, file size, time) the secondary colour. The
+URL is percent-encoded, uses the `roleTool` colour, and is also an OSC 8
+hyperlink to itself, so a terminal opens the file on click whether it detects
+plain-text URLs or supports OSC 8; the tool-block rows are coloured and linked
+the same way. When stdout is not a terminal, when `NO_COLOR` is set, or in raw
+mode, an own line is the bare absolute path with no escape codes, so
+`| xargs xdg-open` works; with `NO_COLOR` on a terminal the tool-block rows stay,
+as plain text. clai never draws an image inline.
+The opener that `auto-open-images` starts is described in `config.md`.
+
 ## Customization
 
 To customize colours, edit:

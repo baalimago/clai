@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/baalimago/clai/internal/asset"
 	"github.com/baalimago/clai/internal/debugflags"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -42,24 +43,38 @@ func FromPath(path string) (pub_models.Chat, error) {
 	return chat, nil
 }
 
+// Save stores chat's pending images under <saveAt>/assets, then writes it (Persister Save.5).
 func Save(saveAt string, chat pub_models.Chat) error {
-	return save(saveAt, chat, true)
+	_, err := saveChat(saveAt, convAssetStore(saveAt), chat, withIndex)
+	return err
 }
 
 // SaveWithoutIndex persists the conversation and its sidecar but leaves the
 // chat index to a batch writer (UpsertChatIndexBatch).
 func SaveWithoutIndex(saveAt string, chat pub_models.Chat) error {
-	return save(saveAt, chat, false)
+	_, err := saveChat(saveAt, convAssetStore(saveAt), chat, withoutIndex)
+	return err
 }
 
-func save(saveAt string, chat pub_models.Chat, index bool) error {
+type indexMode int
+
+const (
+	withIndex indexMode = iota
+	withoutIndex
+)
+
+func saveChat(saveAt string, store asset.AssetStorer, chat pub_models.Chat, index indexMode) (pub_models.Chat, error) {
+	chat, err := storePendingImages(store, chat)
+	if err != nil {
+		return pub_models.Chat{}, err
+	}
 	// Stamp GroupKey once on first persist (never overwritten).
 	if chat.GroupKey == "" {
 		chat.GroupKey = ComputeGroupKey(chat)
 	}
 	b, err := json.MarshalIndent(chat, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to encode JSON: %w", err)
+		return pub_models.Chat{}, fmt.Errorf("failed to encode JSON: %w", err)
 	}
 	b = append(b, '\n')
 	fileName := conversationPathFromDir(saveAt, chat.ID)
@@ -68,11 +83,11 @@ func save(saveAt string, chat pub_models.Chat, index bool) error {
 	}
 	traceChatf("saving chat file path=%q chat_id=%q messages=%d", fileName, chat.ID, len(chat.Messages))
 	if err := utils.WriteFileAtomic(fileName, b, 0o644); err != nil {
-		return fmt.Errorf("failed to write chat file: %w", err)
+		return pub_models.Chat{}, fmt.Errorf("failed to write chat file: %w", err)
 	}
-	if index {
+	if index == withIndex {
 		if err := upsertChatIndex(saveAt, chat); err != nil {
-			return fmt.Errorf("failed to update chat index: %w", err)
+			return pub_models.Chat{}, fmt.Errorf("failed to update chat index: %w", err)
 		}
 	}
 	// Best-effort: persist out-of-band reasoning items. The conversation is already
@@ -80,5 +95,5 @@ func save(saveAt string, chat pub_models.Chat, index bool) error {
 	if err := saveReasoningSidecars(saveAt, chat); err != nil {
 		ancli.Warnf("failed to save reasoning sidecar for chat %q: %v", chat.ID, err)
 	}
-	return nil
+	return chat, nil
 }

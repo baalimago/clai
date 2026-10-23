@@ -2,6 +2,8 @@ package vendors
 
 import (
 	"context"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/baalimago/clai/internal/models"
@@ -90,4 +92,69 @@ func TestMock_submitSummarySequence(t *testing.T) {
 			t.Fatalf("ls inputs = %v", got)
 		}
 	})
+}
+
+func mockStream(t *testing.T, m *Mock, chat pub_models.Chat) []models.CompletionEvent {
+	t.Helper()
+	ch, err := m.StreamCompletions(context.Background(), chat)
+	if err != nil {
+		t.Fatalf("StreamCompletions: %v", err)
+	}
+	var events []models.CompletionEvent
+	for ev := range ch {
+		events = append(events, ev)
+	}
+	return events
+}
+
+// Proves M1.
+func TestMockEcho_Describes(t *testing.T) {
+	img := pub_models.ImagePart{MIME: "image/png", Origin: pub_models.OriginUser, Data: []byte("png bytes")}
+	h, err := img.Handle()
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg := pub_models.Message{Role: "user", Parts: []pub_models.Part{img, pub_models.TextPart{Text: "what is this?"}}}
+	events := mockStream(t, &Mock{}, pub_models.Chat{Messages: []pub_models.Message{msg}})
+	echo, ok := events[0].(string)
+	if !ok || echo != msg.Describe() || !strings.Contains(echo, "[image "+h+"]") {
+		t.Fatalf("echo = %#v, want %q", events[0], msg.Describe())
+	}
+}
+
+// Proves M2.
+func TestMockToolInputs_Images(t *testing.T) {
+	img := pub_models.ImagePart{MIME: "image/png", Origin: pub_models.OriginUser, Data: []byte("png bytes")}
+	user := pub_models.Message{Role: "user", Parts: []pub_models.Part{
+		pub_models.TextPart{Text: "tool_generate_image then tool_view_image"}, img,
+	}}
+	callOf := func(events []models.CompletionEvent) pub_models.Call {
+		t.Helper()
+		call, ok := events[0].(pub_models.Call)
+		if !ok {
+			t.Fatalf("first event = %#v, want a tool call", events[0])
+		}
+		return call
+	}
+
+	gen := callOf(mockStream(t, &Mock{}, pub_models.Chat{Messages: []pub_models.Message{user}}))
+	if gen.Name != "generate_image" || !reflect.DeepEqual(*gen.Inputs, pub_models.Input{"prompt": "mock image"}) {
+		t.Fatalf("generate_image call = %s %v, want {\"prompt\":\"mock image\"}", gen.Name, *gen.Inputs)
+	}
+
+	t.Setenv("CLAI_MOCK_IMAGE_PROMPT", "a fox")
+	if got := inputsForTool("generate_image", 0); got["prompt"] != "a fox" {
+		t.Fatalf("prompt = %v, want the env override", got["prompt"])
+	}
+
+	t.Setenv("CLAI_MOCK_VIEW_IMAGE_PATH", "/tmp/cat.png")
+	chat := pub_models.Chat{Messages: []pub_models.Message{
+		user,
+		{Role: "assistant", ToolCalls: []pub_models.Call{gen}},
+		{Role: "tool", ToolCallID: gen.ID, Content: "generated"},
+	}}
+	view := callOf(mockStream(t, &Mock{}, chat))
+	if view.Name != "view_image" || !reflect.DeepEqual(*view.Inputs, pub_models.Input{"path": "/tmp/cat.png"}) {
+		t.Fatalf("view_image call = %s %v, want {\"path\":\"/tmp/cat.png\"}", view.Name, *view.Inputs)
+	}
 }

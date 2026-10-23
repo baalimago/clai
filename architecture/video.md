@@ -23,7 +23,7 @@ internal/cli:Run()
 |------|---------|
 | `internal/video/cmd.go` | video command — loads config, applies overrides, wires the injected querier factory (see [cmd-dispatch.md](./cmd-dispatch.md)) |
 | `internal/video/conf.go` | `Configurations` struct, `Default`, `OutputType` enum |
-| `internal/video/prompt.go` | `SetupPrompts()` — prompt assembly with reply/stdin/image support |
+| `internal/video/generic/prompt.go` | `SetupPrompts()` — prompt assembly with reply context and the input image from `-img` or stdin |
 | `internal/video/store.go` | `SaveVideo()` — decodes base64 and writes to disk |
 | `internal/video/create_querier.go` | `video.CreateQuerier()` — routes to OpenAI Sora |
 | `internal/vendors/openai/sora.go` | OpenAI Sora video querier implementation |
@@ -63,17 +63,26 @@ internal/cli:Run()
 | `-vp` / `-video-prefix` | `output.prefix` |
 | `-re` / `-reply` | Enables reply mode |
 | `-I` / `-replace` | Stdin replacement token |
+| `-img` / `-image` | The input image the video starts from: a path or a glob, `~` allowed (not a config field) |
 
 ## Prompt Assembly
 
 `Configurations.SetupPrompts()` in `internal/video/prompt.go`:
 
-1. If **reply mode** (`-re`): loads `globalScope.json`, serializes messages as JSON context, prepends to prompt
-2. Calls `utils.Prompt(stdinReplace, args)` to build user prompt from CLI args + stdin
-3. Runs `chat.PromptToImageMessage(prompt)` to detect base64-encoded images in the prompt
-   - If an image is found: sets `PromptImageB64` for image-to-video generation
-   - Text portion becomes the prompt
-4. If no image: applies `PromptFormat` to the prompt text
+1. If **reply mode** (`-re`): loads `globalScope.json`, serializes its messages as JSON context and
+   prepends it to the prompt. Every image in that copy is its `[image <handle>]` text
+   (`chat.ImagesDescribed`), so a text-only context is byte-identical to what it was before images.
+2. Runs `imageinput.ImageCollector.Collect` (see [query.md](./query.md#image-input-collection)) over
+   the `-img` values, stdin and the args. Stdin that is wholly an image, raw or base64, is the input
+   image; any other stdin is prompt text exactly as `utils.Prompt` builds it. Base64 inside the
+   prompt text stays text.
+3. With one input image: `PromptImageB64` carries it for image-to-video generation, and the prompt
+   is the text alone, with no reply context and no `PromptFormat`. More than one image fails with
+   `generic.ErrOneInputImage`.
+4. With no image: applies `PromptFormat` to the prompt text.
+
+`Configurations.Client` (from `video.CommandDeps.Client`) replaces the vendor's HTTP client; nil
+keeps it, and only tests set it.
 
 ## Vendor Routing
 

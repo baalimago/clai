@@ -120,10 +120,11 @@ type APIErrorer interface{ API() *APIError }
 ### The names
 
 `go doc ./pkg/claierr` is the register; this table restates it so the doc
-cannot silently drift. Every sentinel and type ships with a constructor;
-values are built through constructors, never struct literals — the embedded
-`*APIError` must never be nil, or reading a promoted field panics (the
-constructors substitute a zero-valued `APIError` for nil input).
+cannot silently drift. Every sentinel and type ships with a constructor,
+except `ImageUnsupportedError`, which embeds no `*APIError`; values are built
+through constructors, never struct literals — the embedded `*APIError` must
+never be nil, or reading a promoted field panics (the constructors substitute
+a zero-valued `APIError` for nil input).
 
 | Sentinel | Type | Constructor | Facts beyond `*APIError` |
 | --- | --- | --- | --- |
@@ -144,9 +145,10 @@ constructors substitute a zero-valued `APIError` for nil input).
 | `ErrMcpUnsupportedContentType` | `McpUnsupportedContentTypeError` | `NewMcpUnsupportedContentType(serverName, contentType)` | no `APIError`; `ServerName`, `ContentType`. Neither JSON nor an event stream |
 | `ErrMcpRPCError` | `McpRPCError` | `NewMcpRPCError(serverName, code, message)` | no `APIError`; `ServerName`, `Code`, `Message`. A JSON-RPC error returned by the server, shared by both transports so a consumer matches one sentinel regardless of how the server was reached |
 | `ErrMcpFrameUndecodable` | `McpFrameUndecodableError` | `NewMcpFrameUndecodable(serverName, cause)` | no `APIError`; `ServerName`, `Cause`. A frame carrying no usable id cannot be attributed to one caller, so it fails every pending caller on that connection; also carries the oversized-frame case through `Cause` |
+| `ErrImageUnsupported` | `ImageUnsupportedError` | none; built as a struct literal by `models.CheckImageParts` | no `APIError`; `Vendor`, `Model`, `Reason`. The route cannot take an image the chat holds, found before any request is sent ([streaming.md](./streaming.md#image-content)) |
 
-The eight MCP errors and `ErrTransport` carry no `APIError`, since no provider
-response is involved. Those that wrap a cause — `ErrTransport`,
+The eight MCP errors, `ErrImageUnsupported` and `ErrTransport` carry no
+`APIError`, since no provider response is involved. Those that wrap a cause — `ErrTransport`,
 `ErrMcpServerStartup`, `ErrMcpFrameUndecodable` and `ErrMcpTransport` — return a
 slice from `Unwrap`, so `errors.Is` matches the sentinel and the underlying
 cause alike. `ErrMcpConnClosed`, `ErrMcpAuthChallenge`, `ErrMcpHttpStatus`,
@@ -269,6 +271,15 @@ answers 403 for a drained account, so its decoder returns
 guess never fires. A naive `errors.Join(baseline, decode(...))` could not
 express that: Join adds meanings and cannot retract one.
 
+The image generation endpoints ([photo.md](./photo.md#image-generators))
+run the same chain with one wider decoder per vendor, `decodeImageError`: it
+asks the vendor's `decodeError` first, then maps a content-policy refusal to
+`ErrContentFiltered` (OpenAI `moderation_blocked` and
+`content_policy_violation`; an OpenRouter body whose `error.metadata.reasons`
+is set). Gemini refuses at HTTP 200 with a `promptFeedback.blockReason` or a
+safety `finishReason`, so its generator returns
+`errors.Join(imagegen.ErrNoImage, ContentFilteredError)`.
+
 ### The status baseline
 
 What the HTTP status alone suggests, therefore safe in the generic layer:
@@ -366,10 +377,9 @@ ride the CLI path and stay ambient.
 - **Request-construction and marshalling failures** stay plain wrapped
   errors: they are clai bugs, not provider states, and a consumer has no
   distinct action for them.
-- **Non-text boundaries** (`openai/dalle.go`, `openai/sora.go`,
-  `gemini/image/image.go`, `openrouter/catalog_fetcher.go`) do not decode into the
-  vocabulary — their chain-breaking `%v` sites are repaired, their error
-  wording is not a contract.
+- **Non-text boundaries** (`openai/sora.go`, `openrouter/catalog_fetcher.go`)
+  do not decode into the vocabulary — their chain-breaking `%v` sites are
+  repaired, their error wording is not a contract.
 - **Recorder and cost-accounting failures** never abort the run: they are
   ambient capability, the consumer owns the recorder and observes its own
   failures.

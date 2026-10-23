@@ -3,6 +3,7 @@ package models
 import (
 	"encoding/json"
 	"math"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -98,40 +99,28 @@ func TestMessageJSON(t *testing.T) {
 	if decodedSimple.Role != simpleMsg.Role || decodedSimple.Content != simpleMsg.Content {
 		t.Errorf("simple message roundtrip mismatch. got: %+v, want: %+v", decodedSimple, simpleMsg)
 	}
-	if len(decodedSimple.ContentParts) != 0 {
-		t.Errorf("expected nil/empty ContentParts, got %v", decodedSimple.ContentParts)
+	if len(decodedSimple.Parts) != 0 {
+		t.Errorf("expected nil/empty Parts, got %v", decodedSimple.Parts)
 	}
 
-	// Test round-trip with ContentParts
-	partsMsg := Message{
-		Role: "user",
-		ContentParts: []ImageOrTextInput{
-			{Type: "text", Text: "describe this image"},
-			{Type: "image_url", ImageB64: &ImageURL{URL: "http://example.com/img.png", Detail: "high"}},
-		},
-	}
-	data, err = json.Marshal(partsMsg)
-	if err != nil {
-		t.Fatalf("failed to marshal parts message: %v", err)
-	}
+	// A legacy content array decodes into Parts.
+	data = []byte(`{"content":[{"text":"describe this image","type":"text"},{"type":"image_url","image_url":{"url":"data:image/png;base64,` + onePixelPNG + `","detail":"high"}}],"role":"user"}`)
 	var decodedParts Message
 	if err := json.Unmarshal(data, &decodedParts); err != nil {
 		t.Fatalf("failed to unmarshal parts message: %v", err)
 	}
-	if decodedParts.Role != partsMsg.Role {
-		t.Errorf("parts message role mismatch. got: %v, want: %v", decodedParts.Role, partsMsg.Role)
+	if decodedParts.Role != "user" {
+		t.Errorf("parts message role mismatch. got: %v, want: user", decodedParts.Role)
 	}
 	if decodedParts.Content != "" {
-		t.Errorf("expected empty Content, got %q", decodedParts.Content)
+		t.Errorf("expected only Parts, got Content %q", decodedParts.Content)
 	}
-	if len(decodedParts.ContentParts) != 2 {
-		t.Fatalf("expected 2 content parts, got %d", len(decodedParts.ContentParts))
+	want := []Part{
+		TextPart{Text: "describe this image"},
+		ImagePart{Origin: OriginUser, MIME: "image/png", Data: pngBytes(t)},
 	}
-	if decodedParts.ContentParts[0].Text != "describe this image" {
-		t.Errorf("expected text part match, got %v", decodedParts.ContentParts[0])
-	}
-	if decodedParts.ContentParts[1].ImageB64.URL != "http://example.com/img.png" {
-		t.Errorf("expected image url match, got %v", decodedParts.ContentParts[1].ImageB64)
+	if !reflect.DeepEqual(decodedParts.Parts, want) {
+		t.Fatalf("Parts mismatch:\nwant: %#v\n got: %#v", want, decodedParts.Parts)
 	}
 }
 
@@ -193,8 +182,8 @@ func TestMessageJSONPreservesMultiLineSystemContentAsString(t *testing.T) {
 	if decoded.Content != msg.Content {
 		t.Fatalf("roundtrip content mismatch:\nwant: %q\n got: %q", msg.Content, decoded.Content)
 	}
-	if len(decoded.ContentParts) != 0 {
-		t.Fatalf("expected no content parts, got %d", len(decoded.ContentParts))
+	if len(decoded.Parts) != 0 {
+		t.Fatalf("expected no content parts, got %d", len(decoded.Parts))
 	}
 }
 
@@ -237,44 +226,33 @@ func TestMessageString(t *testing.T) {
 			msg.String())
 	}
 
-	// Test with ContentParts text
+	// Test with Parts text
 	msg = Message{
-		Role: "user",
-		ContentParts: []ImageOrTextInput{
-			{Type: "text", Text: "from parts"},
-		},
+		Role:  "user",
+		Parts: []Part{TextPart{Text: "from parts"}},
 	}
 	if msg.String() != "from parts" {
 		t.Errorf("expected 'from parts', got %q",
 			msg.String())
 	}
 
-	// Test with mixed ContentParts (text first)
+	// Test with image only in Parts
 	msg = Message{
-		Role: "user",
-		ContentParts: []ImageOrTextInput{
-			{Type: "image_url", ImageB64: &ImageURL{
-				URL: "http://example.com/img.png",
-			}},
-			{Type: "text", Text: "second text"},
-		},
-	}
-	if msg.String() != "second text" {
-		t.Errorf("expected 'second text', got %q",
-			msg.String())
-	}
-
-	// Test with image only in ContentParts
-	msg = Message{
-		Role: "user",
-		ContentParts: []ImageOrTextInput{
-			{Type: "image_url", ImageB64: &ImageURL{
-				URL: "http://example.com/img.png",
-			}},
-		},
+		Role:  "user",
+		Parts: []Part{ImagePart{Asset: "abcdef.png"}},
 	}
 	if msg.String() != "" {
 		t.Errorf("expected empty string, got %q",
+			msg.String())
+	}
+
+	// Test with decoded Parts (image first)
+	msg = Message{
+		Role:  "user",
+		Parts: []Part{ImagePart{Asset: "abcdef.png"}, TextPart{Text: "from decoded parts"}},
+	}
+	if msg.String() != "from decoded parts" {
+		t.Errorf("expected 'from decoded parts', got %q",
 			msg.String())
 	}
 
@@ -285,13 +263,11 @@ func TestMessageString(t *testing.T) {
 			msg.String())
 	}
 
-	// Test Content takes precedence over ContentParts
+	// Test Content takes precedence over Parts
 	msg = Message{
 		Role:    "user",
 		Content: "content text",
-		ContentParts: []ImageOrTextInput{
-			{Type: "text", Text: "parts text"},
-		},
+		Parts:   []Part{TextPart{Text: "parts text"}},
 	}
 	if msg.String() != "content text" {
 		t.Errorf("expected 'content text', got %q",

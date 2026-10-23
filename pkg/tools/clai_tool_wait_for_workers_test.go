@@ -10,6 +10,7 @@ import (
 
 // TestClaiWaitForWorkers_NoWorkers ensures that the tool behaves when there are no workers.
 func TestClaiWaitForWorkers_NoWorkers(t *testing.T) {
+	resetClaiRuns(t)
 	tool := &claiWaitForWorkersTool{}
 
 	out, err := tool.Call(map[string]any{"timeout_seconds": 1})
@@ -23,6 +24,7 @@ func TestClaiWaitForWorkers_NoWorkers(t *testing.T) {
 
 // TestClaiWaitForWorkers_WaitsAndAggregates simulates a small number of workers and verifies aggregation.
 func TestClaiWaitForWorkers_WaitsAndAggregates(t *testing.T) {
+	resetClaiRuns(t)
 	// Setup fake workers
 	claiRunsMu.Lock()
 	claiRuns = map[string]*claiProcess{
@@ -60,6 +62,7 @@ func TestClaiWaitForWorkers_WaitsAndAggregates(t *testing.T) {
 
 // TestClaiWaitForWorkers_Timeout ensures that a timeout results in an error and sends interrupts.
 func TestClaiWaitForWorkers_Timeout(t *testing.T) {
+	resetClaiRuns(t)
 	cmd := exec.Command("sleep", "10")
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}

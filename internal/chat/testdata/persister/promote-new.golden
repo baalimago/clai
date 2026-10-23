@@ -1,0 +1,192 @@
+== <promoted>.json
+{
+  "created": "<now>",
+  "id": "<promoted>",
+  "profile": "coder",
+  "origin_dir": "/work",
+  "group_key": "12998c017066eb0d2a70b94e6ed3192985855ce390f321bbdb832022888bd251",
+  "title": "Greeting",
+  "summary": "A greeting and its answer.",
+  "summary_at": "2026-01-02T04:04:05Z",
+  "messages": [
+    {
+      "content": "You are helpful.",
+      "role": "system"
+    },
+    {
+      "content": "hello there",
+      "role": "user"
+    },
+    {
+      "content": "general kenobi",
+      "role": "assistant"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 11,
+    "completion_tokens": 7,
+    "total_tokens": 18,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "recent_usage": {
+    "prompt_tokens": 11,
+    "completion_tokens": 7,
+    "total_tokens": 18,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "queries": [
+    {
+      "created_at": "2026-01-02T03:04:05Z",
+      "cost_usd": 0.25,
+      "current_index": 1,
+      "model": "gpt-test",
+      "usage": {
+        "prompt_tokens": 11,
+        "completion_tokens": 7,
+        "total_tokens": 18,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      }
+    }
+  ]
+}
+
+== chat_index.cache
+{
+  "version": 2,
+  "rows": [
+    {
+      "id": "<promoted>",
+      "created": "0001-01-01T00:00:00Z",
+      "profile": "coder",
+      "model": "gpt-test",
+      "message_count": 3,
+      "total_tokens": 18,
+      "total_cost_usd": 0.25,
+      "first_user_message": "hello there",
+      "origin_dir": "/work",
+      "group_key": "12998c017066eb0d2a70b94e6ed3192985855ce390f321bbdb832022888bd251",
+      "title": "Greeting",
+      "summary": "A greeting and its answer."
+    },
+    {
+      "id": "globalScope",
+      "created": "0001-01-01T00:00:00Z",
+      "profile": "coder",
+      "model": "gpt-test",
+      "message_count": 3,
+      "total_tokens": 18,
+      "total_cost_usd": 0.25,
+      "first_user_message": "hello there",
+      "origin_dir": "/work",
+      "group_key": "12998c017066eb0d2a70b94e6ed3192985855ce390f321bbdb832022888bd251",
+      "title": "Greeting",
+      "summary": "A greeting and its answer."
+    }
+  ]
+}
+== globalScope.json
+{
+  "created": "<now>",
+  "id": "globalScope",
+  "profile": "coder",
+  "origin_dir": "/work",
+  "group_key": "12998c017066eb0d2a70b94e6ed3192985855ce390f321bbdb832022888bd251",
+  "title": "Greeting",
+  "summary": "A greeting and its answer.",
+  "summary_at": "2026-01-02T04:04:05Z",
+  "messages": [
+    {
+      "content": "You are helpful.",
+      "role": "system"
+    },
+    {
+      "content": "hello there",
+      "role": "user"
+    },
+    {
+      "content": "general kenobi",
+      "role": "assistant"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 11,
+    "completion_tokens": 7,
+    "total_tokens": 18,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "recent_usage": {
+    "prompt_tokens": 11,
+    "completion_tokens": 7,
+    "total_tokens": 18,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "queries": [
+    {
+      "created_at": "2026-01-02T03:04:05Z",
+      "cost_usd": 0.25,
+      "current_index": 1,
+      "model": "gpt-test",
+      "usage": {
+        "prompt_tokens": 11,
+        "completion_tokens": 7,
+        "total_tokens": 18,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      }
+    }
+  ]
+}
+

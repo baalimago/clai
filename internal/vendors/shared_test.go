@@ -285,3 +285,23 @@ func TestNormalizeToolCallSequence_ReasoningPreservedDuringInterleavedMerge(t *t
 		t.Fatalf("expected joined reasoning, got %q", got[0].ReasoningContent)
 	}
 }
+
+// Proves E8: an image-only user message ends the first sequence, whose call B
+// is still unresolved, so the later tool call is not merged back into it.
+func TestNormalizeToolCallSequence_ImageOnlyUser(t *testing.T) {
+	img := pub_models.ImagePart{MIME: "image/png", Origin: pub_models.OriginUser, Data: []byte("png")}
+	msgs := []pub_models.Message{
+		{Role: "assistant", ToolCalls: []pub_models.Call{{ID: "A"}, {ID: "B"}}},
+		{Role: "tool", ToolCallID: "A", Content: "result-A"},
+		{Role: "user", Parts: []pub_models.Part{img}},
+		{Role: "assistant", ToolCalls: []pub_models.Call{{ID: "C"}}},
+		{Role: "tool", ToolCallID: "C", Content: "result-C"},
+	}
+	got := vendors.NormalizeToolCallSequence(msgs)
+	if len(got) != 5 {
+		t.Fatalf("expected the two sequences kept apart (5 messages), got %d", len(got))
+	}
+	if len(got[0].ToolCalls) != 2 || len(got[3].ToolCalls) != 1 || got[3].ToolCalls[0].ID != "C" {
+		t.Fatalf("tool calls were merged across the image-only user message: %+v", got)
+	}
+}

@@ -86,6 +86,30 @@ type SourceCache interface {
 // Duplicate Source() names are not allowed.
 type SourceReader interface {
 	Source() string
+	// Discover (added clauses):
+	//  1. A row whose first user message is image-only gets that message's
+	//     Message.Describe() as FirstUserMessage and FullFirstUserMessage, for
+	//     example "[image 3f9a1c]".
+	//  2. A cache hit whose row has an empty FirstUserMessage while its MessageCount is
+	//     above zero is not trusted: the reader re-reads that file and stores the fresh
+	//     row, so rows cached with an empty preview for an image-only first message
+	//     heal on the next Discover.
 	Discover(ctx context.Context, cache SourceCache) ([]SourceRow, error)
+	// Read (added clauses):
+	//  1. A user message's image block becomes a pending
+	//     ImagePart{Origin: user, MIME, Data} at its position among the message's
+	//     text parts. The message then carries Parts.
+	//      - Claude Code: {"type":"image","source":{"type":"base64","media_type":M,"data":B}}
+	//      - Pi (pi-ai ImageContent): {"type":"image","data":B,"mimeType":M}
+	//  2. A tool result's image block becomes a pending ImagePart{Origin: tool} in the
+	//     "tool" message's Parts, in source order with its text parts.
+	//  3. An image-only user message is kept. Before this phase it was dropped.
+	//  4. An image block that cannot be imported becomes TextPart
+	//     "[image not imported: <reason>]" at its position, and Read does not fail.
+	//     The reasons are: "url source" (not inline base64), "bad base64",
+	//     "not an image" (asset.Sniff fails), and "mime mismatch" (the sniffed type
+	//     differs from the declared one).
+	//  5. A message with no image block is mapped exactly as before (I10).
+	//  6. Read holds no asset store and never writes one (I6).
 	Read(ctx context.Context, cache SourceCache, sourceID string) (pub_models.Chat, error)
 }

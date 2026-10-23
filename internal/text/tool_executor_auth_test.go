@@ -77,6 +77,7 @@ func newAuthExecutor(toolName string, tool pub_models.LLMTool) (toolExecutor[*Mo
 // apart from an ordinary expiry, so it never retries, while the resolver
 // case retries once and succeeds.
 func TestAuthPendingSignalRaisedByHttpAndStdio(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name         string
 		authResolver mcp.AuthResolver
@@ -150,6 +151,7 @@ func TestAuthTimeoutZeroFailsFast(t *testing.T) {
 // never resolves within its bound ends with the actionable result and no
 // further resolution attempt.
 func TestAuthTimeoutExpiryReturnsActionableToolResult(t *testing.T) {
+	t.Parallel()
 	var calls int32
 	blocksForever := mcp.AuthResolverFunc(func(ctx context.Context, _ *claierr.AuthChallengeError) error {
 		<-ctx.Done()
@@ -251,6 +253,7 @@ func TestAuthWaitCancelledClosesWindowAndReaps(t *testing.T) {
 // finishes, which would be impossible if any enclosing bound were engaged
 // during the wait.
 func TestAuthWaitOutlivesEnclosingBounds(t *testing.T) {
+	t.Parallel()
 	const shrunkConnectBound = 150 * time.Millisecond
 	var calls int32
 	dial := func(ctx context.Context) (mcp.Conn, error) {
@@ -288,6 +291,7 @@ func TestAuthWaitOutlivesEnclosingBounds(t *testing.T) {
 // call timeout, yet the eventual tools/call against the now-resolved
 // connection still completes inside that tiny bound.
 func TestAuthWaitExcludedFromCallTimeout(t *testing.T) {
+	t.Parallel()
 	var calls int32
 	slow := mcp.AuthResolverFunc(func(context.Context, *claierr.AuthChallengeError) error {
 		time.Sleep(80 * time.Millisecond)
@@ -308,6 +312,7 @@ func TestAuthWaitExcludedFromCallTimeout(t *testing.T) {
 // actionable result consumes only the one tool-call slot already reserved
 // for the triggering call, never a second.
 func TestExpiredAuthWaitConsumesNoExtraToolCallSlot(t *testing.T) {
+	t.Parallel()
 	var calls int32
 	blocksForever := mcp.AuthResolverFunc(func(ctx context.Context, _ *claierr.AuthChallengeError) error {
 		<-ctx.Done()

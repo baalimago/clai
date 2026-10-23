@@ -37,6 +37,48 @@ type QuerySession struct {
 	LikelyGeminiPreview bool
 	Line                string
 	LineCount           int
+	// stepImages are the generated images not yet attached to an assistant message.
+	stepImages []stepImage
+	// rowEndedAt is the PendingText length when the display last ended its open row.
+	rowEndedAt int
+	// finalTextShown marks FinalAssistantText as shown already, before a tool call.
+	finalTextShown bool
+}
+
+type stepImage struct {
+	at    int // byte offset in the step's thinking-stripped text
+	image pub_models.ImagePart
+}
+
+func (s *QuerySession) addStepImage(img pub_models.ImagePart) {
+	s.stepImages = append(s.stepImages, stepImage{at: len(stripThinkingBlocks(s.PendingText.String())), image: img})
+}
+
+func (s *QuerySession) hasStepImages() bool { return len(s.stepImages) > 0 }
+
+func (s *QuerySession) takeStepImages() []stepImage {
+	images := s.stepImages
+	s.stepImages = nil
+	return images
+}
+
+// withStepImages splits text at each image's offset, so text and images keep their
+// arrival order (Run.4).
+func withStepImages(text string, images []stepImage) []pub_models.Part {
+	parts := make([]pub_models.Part, 0, 2*len(images)+1)
+	from := 0
+	for _, img := range images {
+		at := min(max(img.at, from), len(text))
+		if at > from {
+			parts = append(parts, pub_models.TextPart{Text: text[from:at]})
+		}
+		parts = append(parts, img.image)
+		from = at
+	}
+	if from < len(text) {
+		parts = append(parts, pub_models.TextPart{Text: text[from:]})
+	}
+	return parts
 }
 
 func (s *QuerySession) PendingTextString() string {
@@ -46,7 +88,17 @@ func (s *QuerySession) PendingTextString() string {
 func (s *QuerySession) ResetPendingText() {
 	s.PendingText.Reset()
 	s.PendingReasoning.Reset()
+	s.rowEndedAt = 0
+	s.Line, s.LineCount = "", 0
 }
+
+// lineOpen reports whether streamed text left the display mid-row.
+func (s *QuerySession) lineOpen() bool {
+	n := s.PendingText.Len()
+	return n > 0 && n != s.rowEndedAt && !strings.HasSuffix(s.PendingText.String(), "\n")
+}
+
+func (s *QuerySession) endRow() { s.rowEndedAt = s.PendingText.Len() }
 
 func (s *QuerySession) AppendPendingText(token string) {
 	s.PendingText.WriteString(token)

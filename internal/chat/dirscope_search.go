@@ -211,7 +211,7 @@ func searchableContent(chat pub_models.Chat) (content, firstUser string) {
 		if i == 0 && msg.Role == "system" {
 			continue // skip the configured system prompt / injected descriptor blocks
 		}
-		body := msg.String()
+		body := msg.Describe()
 		if body == "" {
 			continue
 		}
@@ -410,7 +410,7 @@ func InspectConversation(confDir, chatID string, page, pageSize int, role, match
 	}
 	rows := make([]inspectRow, 0, len(chat.Messages))
 	for i, msg := range chat.Messages {
-		body := msg.String()
+		body := msg.Describe()
 		if lowerRole != "" && strings.ToLower(msg.Role) != lowerRole {
 			continue
 		}
@@ -469,7 +469,7 @@ func ReadMessage(confDir, chatID string, messageIndex int) (content, path string
 		return "", path, fmt.Errorf("message_index %d out of range: conversation %q has %d message(s)", messageIndex, chatID, len(chat.Messages))
 	}
 	msg := chat.Messages[messageIndex]
-	return fmt.Sprintf("[%s]\n%s", msg.Role, msg.String()), path, nil
+	return fmt.Sprintf("[%s]\n%s", msg.Role, msg.Describe()), path, nil
 }
 
 // validateChatID rejects ids that could escape the conversations directory —

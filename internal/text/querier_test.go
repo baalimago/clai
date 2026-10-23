@@ -1055,6 +1055,7 @@ func Test_Querier_postProcess_enriches_before_save_for_nested_tool_root_query(t 
 }
 
 func Test_Querier_postProcess_SkipsCostEnrichIfManagerNotReady(t *testing.T) {
+	t.Parallel()
 	tmpConfigDir := path.Join(t.TempDir(), ".clai")
 	if err := os.MkdirAll(
 		path.Join(tmpConfigDir, "conversations"),

@@ -114,7 +114,7 @@ func TestCreateRequest_WireDoesNotMutateMessages(t *testing.T) {
 func TestCreateRequest_WireKeepsMessageContent(t *testing.T) {
 	msgs := []pub_models.Message{
 		{Role: "user", Content: "plain"},
-		{Role: "user", ContentParts: []pub_models.ImageOrTextInput{{Type: "text", Text: "parts"}}},
+		{Role: "user", Parts: []pub_models.Part{pub_models.TextPart{Text: "parts"}}},
 		{Role: "assistant", ReasoningContent: "why", Content: "ok"},
 	}
 	body := requestBody(t, msgs)
@@ -122,7 +122,7 @@ func TestCreateRequest_WireKeepsMessageContent(t *testing.T) {
 	if wire[0].(map[string]any)["content"] != "plain" {
 		t.Fatalf("plain content lost: %v", wire[0])
 	}
-	if _, ok := wire[1].(map[string]any)["content"].([]any); !ok {
+	if wire[1].(map[string]any)["content"] != "parts" {
 		t.Fatalf("content parts lost: %v", wire[1])
 	}
 	if wire[2].(map[string]any)["reasoning_content"] != "why" {

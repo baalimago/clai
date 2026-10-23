@@ -7,6 +7,7 @@ import (
 	"io"
 
 	"github.com/baalimago/clai/internal"
+	"github.com/baalimago/clai/internal/imagegen"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/tools"
 )
@@ -36,6 +37,12 @@ type QueryCommandDeps struct {
 	// constructor error attaches nothing (worklog
 	// 2026-09-09-conversation-summaries, D26).
 	NewSummarizer func(confDir string) (models.Summarizer, error)
+	// NewImageGenerator builds the generator behind generate_image; nil fails a
+	// run that registers the tool with ErrNoImageGenerator.
+	NewImageGenerator imagegen.NewGeneratorFunc
+	// PhotoModel returns photoConfig.json's model, which route.ImageModelFor and -pm
+	// may override; it is read only when generate_image is selected.
+	PhotoModel func(confDir string) (string, error)
 }
 
 // QueryCommand builds the query command.
@@ -113,6 +120,9 @@ func setupTextQuerier(ctx context.Context, c *internal.Command, tf internal.Text
 	}
 	if tConf.SummarizeConversations {
 		attachSummarizer(confDir, deps.NewSummarizer, q)
+	}
+	if err := attachImageTurn(confDir, tConf, tf, deps, q); err != nil {
+		return nil, nil, err
 	}
 	return q, tConf, nil
 }
@@ -226,6 +236,10 @@ func ApplyFlagOverrides(tConf *Configurations, tf internal.TextFlags) {
 	}
 	if tf.QueryText.SummaryModel.Changed() {
 		tConf.SummaryModel = tf.QueryText.SummaryModel.Value()
+	}
+	tConf.ImageInputs = tf.QueryText.Images.Value()
+	if tf.QueryText.OpenImages.Value() {
+		tConf.AutoOpenImages = true
 	}
 	if tf.AgentText.MaxTokens.Explicit() {
 		if tConf.Stoploss == nil {

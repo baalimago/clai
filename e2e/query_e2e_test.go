@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/e2e/e2etest"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
@@ -54,7 +55,7 @@ func Test_goldenFile_QUERY_stdin_and_token_replacement(t *testing.T) {
 			oldArgs := os.Args
 			t.Cleanup(func() { os.Args = oldArgs })
 
-			_ = setupMainTestConfigDir(t)
+			_ = e2etest.SetupMainTestConfigDir(t)
 
 			// Feed stdin to the process. This also triggers is-piped logic in utils.Prompt.
 			r, w, err := os.Pipe()
@@ -78,7 +79,7 @@ func Test_goldenFile_QUERY_stdin_and_token_replacement(t *testing.T) {
 
 			var gotStatus int
 			stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-				gotStatus = run(strings.Split(tc.args, " "))
+				gotStatus = harness.Run(strings.Split(tc.args, " "))
 			})
 			testboil.FailTestIfDiff(t, gotStatus, tc.wantCode)
 			testboil.FailTestIfDiff(t, stdout, tc.wantOut)
@@ -90,7 +91,7 @@ func Test_goldenFile_QUERY_shell_context_is_in_system_prompt_not_user_message(t 
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
 
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 
 	ctxJSON := `{
   "shell": "/bin/sh",
@@ -108,7 +109,7 @@ func Test_goldenFile_QUERY_shell_context_is_in_system_prompt_not_user_message(t 
 
 	var gotStatusCode int
 	gotStdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		gotStatusCode = run(strings.Split("-r -cm test -add-shell-context minimal q hello", " "))
+		gotStatusCode = harness.Run(strings.Split("-r -cm test -add-shell-context minimal q hello", " "))
 	})
 
 	want := "hello\n"
@@ -117,14 +118,14 @@ func Test_goldenFile_QUERY_shell_context_is_in_system_prompt_not_user_message(t 
 }
 
 func Test_goldenFile_QUERY_redirected_raw_output_ends_with_newline(t *testing.T) {
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
 
 	var gotStatus int
 	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		gotStatus = run(strings.Split("-r -cm test q hello", " "))
+		gotStatus = harness.Run(strings.Split("-r -cm test q hello", " "))
 	})
 
 	testboil.FailTestIfDiff(t, gotStatus, 0)
@@ -135,7 +136,7 @@ func Test_goldenFile_QUERY_shell_context_flag_keeps_user_message_output_clean(t 
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
 
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 
 	ctxJSON := `{
   "shell": "/bin/sh",
@@ -153,7 +154,7 @@ func Test_goldenFile_QUERY_shell_context_flag_keeps_user_message_output_clean(t 
 
 	var gotStatusCode int
 	gotStdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		gotStatusCode = run(strings.Split("-r -cm test -add-shell-context minimal q hello", " "))
+		gotStatusCode = harness.Run(strings.Split("-r -cm test -add-shell-context minimal q hello", " "))
 	})
 
 	want := "hello\n"
@@ -162,7 +163,7 @@ func Test_goldenFile_QUERY_shell_context_flag_keeps_user_message_output_clean(t 
 }
 
 func Test_query_rejectsNonJSONResponseFormat(t *testing.T) {
-	mdPath := filepath.Join(moduleRoot(t), "examples.md")
+	mdPath := filepath.Join(e2etest.ModuleRoot(t), "examples.md")
 	for _, tc := range []struct {
 		model        string
 		wantJevGuide bool
@@ -171,12 +172,12 @@ func Test_query_rejectsNonJSONResponseFormat(t *testing.T) {
 		{model: "gpt-5.2"},
 	} {
 		t.Run(tc.model, func(t *testing.T) {
-			setupMainTestConfigDir(t)
+			e2etest.SetupMainTestConfigDir(t)
 
 			var gotStatusCode int
 			stderr := testboil.CaptureStderr(t, func(t *testing.T) {
 				_ = testboil.CaptureStdout(t, func(t *testing.T) {
-					gotStatusCode = run([]string{"-cm", tc.model, "-rf", mdPath, "q", "heyo"})
+					gotStatusCode = harness.Run([]string{"-cm", tc.model, "-rf", mdPath, "q", "heyo"})
 				})
 			})
 

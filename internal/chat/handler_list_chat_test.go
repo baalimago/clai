@@ -1267,17 +1267,6 @@ func TestChatInfo_unlabelledUnchanged(t *testing.T) {
 	}
 }
 
-func TestChatInfoHeight_labelledSummaryAddsOneLine(t *testing.T) {
-	plain := pub_models.Chat{Title: "Fix auth"}
-	if got := chatInfoHeight(plain); got != chatInfoPrintHeight {
-		t.Fatalf("title alone: height %d, want %d", got, chatInfoPrintHeight)
-	}
-	full := pub_models.Chat{Title: "Fix auth", Summary: "Token refresh fixed."}
-	if got := chatInfoHeight(full); got != chatInfoPrintHeight+1 {
-		t.Fatalf("title and summary: height %d, want %d", got, chatInfoPrintHeight+1)
-	}
-}
-
 // promptLine returns the last line the table printed, with escape sequences
 // stripped, so the width oracle is independent of the production counter.
 func promptLine(t *testing.T, out string) string {

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/e2e/e2etest"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -19,8 +20,8 @@ func runStoplossE2E(t *testing.T, args ...string) (int, string, string) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
 	var status int
-	stdout, stderr := captureStdoutStderr(t, func() {
-		status = run(args)
+	stdout, stderr := e2etest.CaptureStdoutStderr(t, func() {
+		status = harness.Run(args)
 	})
 	return status, stdout, stderr
 }
@@ -29,7 +30,7 @@ func runStoplossE2E(t *testing.T, args ...string) (int, string, string) {
 // finalizer (the promoted chat with the generated ID, not globalScope.json).
 func loadSavedStoplossChat(t *testing.T, confDir string) pub_models.Chat {
 	t.Helper()
-	b := readStringFile(t, findSavedConversationFile(t, confDir))
+	b := e2etest.ReadStringFile(t, e2etest.FindSavedConversationFile(t, confDir))
 	var chat pub_models.Chat
 	if err := json.Unmarshal([]byte(b), &chat); err != nil {
 		t.Fatalf("Unmarshal(saved conversation): %v", err)
@@ -76,7 +77,7 @@ func writeStoplossTextConfig(t *testing.T, confDir string, extra map[string]any)
 		"use-tools": true,
 	}
 	maps.Copy(cfg, extra)
-	writeJSONFileAny(t, filepath.Join(confDir, "textConfig.json"), cfg)
+	e2etest.WriteJSONFileAny(t, filepath.Join(confDir, "textConfig.json"), cfg)
 }
 
 // Test_e2e_stoploss_handover_injection_and_summary proves the crossing flow
@@ -85,7 +86,7 @@ func writeStoplossTextConfig(t *testing.T, confDir string, extra map[string]any)
 // tool result, the mock then produces the summary, and the run exits 0 with
 // the stoploss notice printed (phase 6 case 1).
 func Test_e2e_stoploss_handover_injection_and_summary(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	writeStoplossTextConfig(t, confDir, map[string]any{
 		"stoploss": map[string]any{
 			"max-tokens":                       5,
@@ -130,7 +131,7 @@ func Test_e2e_stoploss_handover_injection_and_summary(t *testing.T) {
 // through the real CLI: -mt=1k is 1000, so the file limit of 5 it overrides
 // never crosses on a usage of 6 and the run takes the ordinary path.
 func Test_e2e_stoploss_flag_accepts_scaled_tokens(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	writeStoplossTextConfig(t, confDir, map[string]any{
 		"stoploss": map[string]any{
 			"max-tokens":                       5,
@@ -164,7 +165,7 @@ func Test_e2e_stoploss_flag_accepts_scaled_tokens(t *testing.T) {
 // agent can summarize context into a file after the stoploss fires — and the
 // run still ends with a final assistant summary and exit 0.
 func Test_e2e_stoploss_post_handover_tools_execute_by_default(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	writeStoplossTextConfig(t, confDir, map[string]any{
 		"stoploss": map[string]any{
 			"max-tokens":                       5,
@@ -213,7 +214,7 @@ func Test_e2e_stoploss_post_handover_tools_execute_by_default(t *testing.T) {
 // refused BEFORE its implementation runs (the tool result carries the ladder
 // text), and the run exits 0.
 func Test_e2e_stoploss_post_handover_budget_refuses_after_budget(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	writeStoplossTextConfig(t, confDir, map[string]any{
 		"stoploss": map[string]any{
 			"max-tokens":                       5,
@@ -267,7 +268,7 @@ func Test_e2e_stoploss_post_handover_budget_refuses_after_budget(t *testing.T) {
 // (remaining-count prefix on its result), the second call is refused before
 // its implementation runs, and the run exits 0 (phase 6 case 3, R3-04).
 func Test_e2e_stoploss_max_tool_calls_still_enforced(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	writeStoplossTextConfig(t, confDir, map[string]any{"max-tool-calls": 1})
 
 	status, stdout, stderr := runStoplossE2E(t, "-r", "-cm", "test", "q", "run", "tool_ls", "tool_cat")
@@ -302,7 +303,7 @@ func Test_e2e_stoploss_max_tool_calls_still_enforced(t *testing.T) {
 // through the real CLI: max-tool-calls 0 means no limit, both tools execute
 // with visible outputs, and no refusal text appears anywhere (phase 6 case 4).
 func Test_e2e_stoploss_max_tool_calls_zero_is_unlimited(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	writeStoplossTextConfig(t, confDir, map[string]any{"max-tool-calls": 0})
 
 	cwd, err := os.Getwd()
@@ -347,8 +348,8 @@ func Test_e2e_stoploss_max_tool_calls_zero_is_unlimited(t *testing.T) {
 // through the real CLI: a config still carrying the old key loads, runs to
 // completion, and never blocks on stdin (phase 6 case 5, R8-03).
 func Test_e2e_stoploss_legacy_config_compat(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
-	writeJSONFileAny(t, filepath.Join(confDir, "textConfig.json"), map[string]any{
+	confDir := e2etest.SetupMainTestConfigDir(t)
+	e2etest.WriteJSONFileAny(t, filepath.Join(confDir, "textConfig.json"), map[string]any{
 		"model":            "test",
 		"token-warn-limit": 333333,
 	})
@@ -371,7 +372,7 @@ func Test_e2e_stoploss_legacy_config_compat(t *testing.T) {
 // for this run (phase 6 case 6).
 func Test_e2e_stoploss_flag_overrides_file(t *testing.T) {
 	t.Run("max-tokens flag overrides file limit", func(t *testing.T) {
-		confDir := setupMainTestConfigDir(t)
+		confDir := e2etest.SetupMainTestConfigDir(t)
 		writeStoplossTextConfig(t, confDir, map[string]any{
 			"stoploss": map[string]any{
 				"max-tokens":                       100000,
@@ -396,7 +397,7 @@ func Test_e2e_stoploss_flag_overrides_file(t *testing.T) {
 	})
 
 	t.Run("max-tool-calls flag overrides file limit", func(t *testing.T) {
-		confDir := setupMainTestConfigDir(t)
+		confDir := e2etest.SetupMainTestConfigDir(t)
 		writeStoplossTextConfig(t, confDir, map[string]any{"max-tool-calls": 5})
 
 		status, stdout, stderr := runStoplossE2E(t, "-r", "-cm", "test", "-max-tool-calls=1", "q", "run", "tool_ls", "tool_cat")

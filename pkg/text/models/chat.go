@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -25,9 +26,9 @@ type Chat struct {
 	// before origin stamping existed (forward-only).
 	OriginDir string `json:"origin_dir,omitempty"`
 	// GroupKey is the hex-encoded SHA-256 of the first user message's canonical
-	// text content. Empty when no user message exists, the first message is
-	// image-only, or the chat predates this feature. Stamped once on first
-	// persist; never rewritten.
+	// text content; a Parts message hashes its parts' Describe(), so an image-only
+	// one has a key. Empty when no user message exists or the chat predates this
+	// feature. Stamped once on first persist; never rewritten.
 	GroupKey string `json:"group_key,omitempty"`
 	// Title and Summary are model-generated labels; SummaryAt is provenance
 	// only (when they were generated), never a staleness index.
@@ -97,29 +98,6 @@ type CompletionTokensDetails struct {
 	RejectedPredictionTokens int `json:"rejected_prediction_tokens"`
 }
 
-type ImageURL struct {
-	URL    string `json:"url"`
-	Detail string `json:"detail"`
-	// RawB64 is here for the vendors who does not encode
-	// their mimetype and data into the "URL" field
-	RawB64   string `json:"-"`
-	MIMEType string `json:"-"`
-}
-
-type ImageOrTextInputTypes string
-
-const (
-	Image ImageOrTextInputTypes = "image_url"
-)
-
-type ImageOrTextInput struct {
-	Text string `json:"text,omitempty"`
-	Type string `json:"type,omitempty"`
-	// This is openai's billion dollar API design
-	// The "image_url" here may be b64 string
-	ImageB64 *ImageURL `json:"image_url,omitempty"`
-}
-
 // ReasoningItem is an opaque reasoning output item from the OpenAI Responses API.
 // EncryptedContent is sealed by OpenAI: it cannot be read locally and is only
 // meaningful when replayed to the OpenAI Responses API for a reasoning model. It is
@@ -140,15 +118,34 @@ type Message struct {
 	// turn. They are stored out-of-band and keyed by the first persisted tool-call
 	// ID, so the conversation JSON stays human-readable and portable.
 	ReasoningItems []ReasoningItem `json:"-"`
-	// Content and ContentParts is like this since
-	// making Message generic would cause changes in 70+ places.
-	//
-	// This way we can use ContentParts (ImageInput) without
-	// updating all places
-	Content      string             `json:"-"`
-	ContentParts []ImageOrTextInput `json:"-"`
+	Content        string          `json:"-"`
+	Parts          []Part          `json:"-"`
 }
 
+// Describe returns the message as text: Content when Parts is empty, otherwise
+// the Describe of every part joined by "\n".
+func (m Message) Describe() string {
+	if len(m.Parts) == 0 {
+		return m.Content
+	}
+	out := make([]string, 0, len(m.Parts))
+	for _, p := range m.Parts {
+		if p == nil {
+			continue
+		}
+		out = append(out, p.Describe())
+	}
+	return strings.Join(out, "\n")
+}
+
+// MarshalJSON
+//  1. A message with empty Parts writes "content" as the Content string,
+//     byte-identical to the pre-worklog encoding (I10).
+//  2. Non-empty Parts write "content" as an array, in order, of
+//     {"type":"text","text":<Text>} and
+//     {"type":"image","asset":<Asset>,"mime":<MIME>,"origin":<Origin>}.
+//  3. A pending ImagePart (Data set, Asset empty) fails with ErrPendingImage, so no
+//     image bytes reach disk (C1, I5).
 func (m Message) MarshalJSON() ([]byte, error) {
 	obj := map[string]any{
 		"role": m.Role,
@@ -167,14 +164,27 @@ func (m Message) MarshalJSON() ([]byte, error) {
 	if m.ReasoningContent != "" {
 		obj["reasoning_content"] = m.ReasoningContent
 	}
-	if len(m.ContentParts) > 0 {
-		obj["content"] = m.ContentParts
-	} else {
+	if len(m.Parts) == 0 {
 		obj["content"] = m.Content
+		return json.Marshal(obj)
 	}
+	parts, err := encodeParts(m.Parts)
+	if err != nil {
+		return nil, err
+	}
+	obj["content"] = parts
 	return json.Marshal(obj)
 }
 
+// UnmarshalJSON
+//  1. A string "content" sets Content and leaves Parts nil.
+//  2. An array of "text" and "image" elements sets Parts: a "text" element becomes a
+//     TextPart, and an "image" element becomes a stored ImagePart.
+//  3. A legacy element {"type":"image_url","image_url":{"url":"data:<m>;base64,<b>"}}
+//     becomes a pending ImagePart{Origin: user, MIME: <m>, Data: decoded <b>} at its
+//     position (C2, I5). A url that is not a base64 data URL, or base64 that does not
+//     decode, fails with ErrLegacyImageURL, wrapped with the element index.
+//  4. An element of any other type fails with ErrUnknownPartType, naming the type.
 func (m *Message) UnmarshalJSON(data []byte) error {
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -203,11 +213,15 @@ func (m *Message) UnmarshalJSON(data []byte) error {
 	if v, ok := raw["content"]; ok {
 		t := bytes.TrimSpace(v)
 		if len(t) > 0 && t[0] == '[' {
-			var arr []ImageOrTextInput
+			var arr []partJSON
 			if err := json.Unmarshal(v, &arr); err != nil {
 				return err
 			}
-			m.ContentParts = arr
+			parts, err := decodeParts(arr)
+			if err != nil {
+				return err
+			}
+			m.Parts = parts
 			m.Content = ""
 		} else {
 			var s string
@@ -215,7 +229,7 @@ func (m *Message) UnmarshalJSON(data []byte) error {
 				return err
 			}
 			m.Content = s
-			m.ContentParts = nil
+			m.Parts = nil
 		}
 	}
 	return nil
@@ -225,9 +239,9 @@ func (m *Message) String() string {
 	if m.Content != "" {
 		return m.Content
 	}
-	for _, cp := range m.ContentParts {
-		if cp.Text != "" {
-			return cp.Text
+	for _, p := range m.Parts {
+		if tp, ok := p.(TextPart); ok && tp.Text != "" {
+			return tp.Text
 		}
 	}
 	return ""

@@ -3,26 +3,22 @@ package e2e
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
+	"github.com/baalimago/clai/e2e/e2etest"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
-
-var captureStdoutStderrMu sync.Mutex
 
 // Covers AC1, AC17.
 func Test_e2e_skills_bootstrap_creates_config_and_default_dir(t *testing.T) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
 
-	confDir := setupMainTestConfigDir(t)
-	writeSkillFile(t, filepath.Join(confDir, "skills", "bootstrap", "SKILL.md"), "---\ndescription: bootstrap\n---\nBody")
+	confDir := e2etest.SetupMainTestConfigDir(t)
+	e2etest.WriteSkillFile(t, filepath.Join(confDir, "skills", "bootstrap", "SKILL.md"), "---\ndescription: bootstrap\n---\nBody")
 	repoDir := t.TempDir()
 	oldWd, _ := os.Getwd()
 	t.Cleanup(func() { _ = os.Chdir(oldWd) })
@@ -32,7 +28,7 @@ func Test_e2e_skills_bootstrap_creates_config_and_default_dir(t *testing.T) {
 
 	var gotStatus int
 	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		gotStatus = run(strings.Split("-r -cm test q bootstrap", " "))
+		gotStatus = harness.Run(strings.Split("-r -cm test q bootstrap", " "))
 	})
 	if gotStatus != 0 {
 		t.Fatalf("expected success status, got %d, stdout=%q", gotStatus, stdout)
@@ -60,7 +56,7 @@ func Test_e2e_skills_bootstrap_creates_config_and_default_dir(t *testing.T) {
 	if cfg["projectSkillDirs"] == nil {
 		t.Fatalf("expected projectSkillDirs defaults, got %s", string(cfgBytes))
 	}
-	readme, err := os.ReadFile(filepath.Join(moduleRoot(t), "architecture", "README.md"))
+	readme, err := os.ReadFile(filepath.Join(e2etest.ModuleRoot(t), "architecture", "README.md"))
 	if err != nil {
 		t.Fatalf("ReadFile(architecture/README.md): %v", err)
 	}
@@ -193,18 +189,18 @@ func Test_e2e_skills_opt_in_enablement_and_precedence(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cacheDir := filepath.Join(t.TempDir(), "cache")
 			t.Setenv("CLAI_CACHE_DIR", cacheDir)
-			confDir := setupMainTestConfigDir(t)
+			confDir := e2etest.SetupMainTestConfigDir(t)
 			_ = os.Remove(filepath.Join(cacheDir, "skills_trust.json"))
 			repoDir := t.TempDir()
 			if err := os.Chdir(repoDir); err != nil {
 				t.Fatalf("Chdir(%q): %v", repoDir, err)
 			}
-			writeSkillFile(t, filepath.Join(confDir, "skills", "review", "SKILL.md"), "---\ndescription: Review pending changes\n---\nBody")
+			e2etest.WriteSkillFile(t, filepath.Join(confDir, "skills", "review", "SKILL.md"), "---\ndescription: Review pending changes\n---\nBody")
 			enabled := false
 			if tt.name == "skills_json_enables_skills" || tt.name == "profile_disable_overrides_enabled_skills_json" {
 				enabled = true
 			}
-			writeSkillsConfigJSON(t, confDir, map[string]any{
+			e2etest.WriteSkillsConfigJSON(t, confDir, map[string]any{
 				"enabled":            enabled,
 				"globalSkillDirs":    []string{},
 				"projectSkillDirs":   []string{"./agents/skills", ".claude/skills"},
@@ -216,12 +212,12 @@ func Test_e2e_skills_opt_in_enablement_and_precedence(t *testing.T) {
 				if err := os.MkdirAll(profilesDir, 0o755); err != nil {
 					t.Fatalf("MkdirAll(%q): %v", profilesDir, err)
 				}
-				writeJSONFileAny(t, filepath.Join(profilesDir, fmt.Sprintf("%s.json", tt.profileName)), tt.profile)
+				e2etest.WriteJSONFileAny(t, filepath.Join(profilesDir, fmt.Sprintf("%s.json", tt.profileName)), tt.profile)
 			}
 
 			var gotStatus int
-			stdout, stderr := captureStdoutStderr(t, func() {
-				gotStatus = run(strings.Split(tt.args, " "))
+			stdout, stderr := e2etest.CaptureStdoutStderr(t, func() {
+				gotStatus = harness.Run(strings.Split(tt.args, " "))
 			})
 			if gotStatus != tt.wantStatus {
 				t.Fatalf("expected status %d, got %d, stdout=%q stderr=%q", tt.wantStatus, gotStatus, stdout, stderr)
@@ -250,7 +246,7 @@ func Test_e2e_skills_discovery_precedence_and_logging(t *testing.T) {
 		_ = os.Chdir(oldWd)
 	})
 
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	t.Setenv("CLAI_CACHE_DIR", filepath.Join(t.TempDir(), "cache"))
 	_ = os.Remove(filepath.Join(os.Getenv("CLAI_CACHE_DIR"), "skills_trust.json"))
 	globalOne := filepath.Join(t.TempDir(), "global-one")
@@ -262,13 +258,13 @@ func Test_e2e_skills_discovery_precedence_and_logging(t *testing.T) {
 			t.Fatalf("MkdirAll(%q): %v", dir, err)
 		}
 	}
-	writeSkillFile(t, filepath.Join(confDir, "skills", "review", "SKILL.md"), "---\ndescription: default review\n---\nDefault body")
-	writeSkillFile(t, filepath.Join(globalTwo, "review", "SKILL.md"), "---\ndescription: later global review\n---\nGlobal two body")
-	writeSkillFile(t, filepath.Join(globalOne, "review", "SKILL.md"), "---\ndescription: earlier global review\n---\nGlobal one body")
-	writeSkillFile(t, filepath.Join(repoDir, "agents", "skills", "review", "SKILL.md"), "---\ndescription: repo review\n---\nRepo body")
-	writeSkillFile(t, filepath.Join(repoDir, "nested", "agents", "skills", "review", "SKILL.md"), "---\ndescription: nested review\n---\nNested body")
-	writeSkillFile(t, filepath.Join(repoDir, "agents", "skills", "broken", "SKILL.md"), "---\ndescription broken\n---\nBody")
-	writeSkillsConfigJSON(t, confDir, map[string]any{
+	e2etest.WriteSkillFile(t, filepath.Join(confDir, "skills", "review", "SKILL.md"), "---\ndescription: default review\n---\nDefault body")
+	e2etest.WriteSkillFile(t, filepath.Join(globalTwo, "review", "SKILL.md"), "---\ndescription: later global review\n---\nGlobal two body")
+	e2etest.WriteSkillFile(t, filepath.Join(globalOne, "review", "SKILL.md"), "---\ndescription: earlier global review\n---\nGlobal one body")
+	e2etest.WriteSkillFile(t, filepath.Join(repoDir, "agents", "skills", "review", "SKILL.md"), "---\ndescription: repo review\n---\nRepo body")
+	e2etest.WriteSkillFile(t, filepath.Join(repoDir, "nested", "agents", "skills", "review", "SKILL.md"), "---\ndescription: nested review\n---\nNested body")
+	e2etest.WriteSkillFile(t, filepath.Join(repoDir, "agents", "skills", "broken", "SKILL.md"), "---\ndescription broken\n---\nBody")
+	e2etest.WriteSkillsConfigJSON(t, confDir, map[string]any{
 		"enabled":            true,
 		"globalSkillDirs":    []string{globalOne, globalTwo},
 		"projectSkillDirs":   []string{"./agents/skills"},
@@ -281,7 +277,7 @@ func Test_e2e_skills_discovery_precedence_and_logging(t *testing.T) {
 	}
 	var gotStatus int
 	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		gotStatus = run(strings.Split("-r -cm mock_test q please tool_load_skill", " "))
+		gotStatus = harness.Run(strings.Split("-r -cm mock_test q please tool_load_skill", " "))
 	})
 	if gotStatus != 0 {
 		t.Fatalf("expected success status, got %d, stdout=%q", gotStatus, stdout)
@@ -305,7 +301,7 @@ func Test_e2e_skills_descriptor_activation_and_persistence(t *testing.T) {
 		_ = os.Chdir(oldWd)
 	})
 
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	t.Setenv("CLAI_CACHE_DIR", filepath.Join(t.TempDir(), "cache"))
 	_ = os.Remove(filepath.Join(os.Getenv("CLAI_CACHE_DIR"), "skills_trust.json"))
 	repoDir := t.TempDir()
@@ -313,9 +309,9 @@ func Test_e2e_skills_descriptor_activation_and_persistence(t *testing.T) {
 		t.Fatalf("Chdir(%q): %v", repoDir, err)
 	}
 
-	writeSkillFile(t, filepath.Join(confDir, "skills", "review", "SKILL.md"), "---\ndescription: Review pending changes\nallowed-tools: apply_patch,unknown_tool\ndisallowed-tools: write_file\n---\nBody")
-	writeSkillFile(t, filepath.Join(confDir, "skills", "hidden", "SKILL.md"), "---\ndescription: hidden\ndisable-model-invocation: true\n---\nHidden body")
-	writeSkillsConfigJSON(t, confDir, map[string]any{
+	e2etest.WriteSkillFile(t, filepath.Join(confDir, "skills", "review", "SKILL.md"), "---\ndescription: Review pending changes\nallowed-tools: apply_patch,unknown_tool\ndisallowed-tools: write_file\n---\nBody")
+	e2etest.WriteSkillFile(t, filepath.Join(confDir, "skills", "hidden", "SKILL.md"), "---\ndescription: hidden\ndisable-model-invocation: true\n---\nHidden body")
+	e2etest.WriteSkillsConfigJSON(t, confDir, map[string]any{
 		"enabled":            true,
 		"globalSkillDirs":    []string{},
 		"projectSkillDirs":   []string{"./agents/skills", ".claude/skills"},
@@ -328,7 +324,7 @@ func Test_e2e_skills_descriptor_activation_and_persistence(t *testing.T) {
 
 	var gotStatus int
 	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		gotStatus = run(strings.Split("-r -cm mock_test q please tool_load_skill", " "))
+		gotStatus = harness.Run(strings.Split("-r -cm mock_test q please tool_load_skill", " "))
 	})
 	if gotStatus != 0 {
 		t.Fatalf("expected success status, got %d, stdout=%q", gotStatus, stdout)
@@ -359,8 +355,8 @@ func Test_e2e_skills_descriptor_activation_and_persistence(t *testing.T) {
 		}
 	}
 
-	savedConversation := findSavedConversationFile(t, confDir)
-	chatJSON := readStringFile(t, savedConversation)
+	savedConversation := e2etest.FindSavedConversationFile(t, confDir)
+	chatJSON := e2etest.ReadStringFile(t, savedConversation)
 	if !strings.Contains(chatJSON, `\u003cavailable_skills\u003e`) || !strings.Contains(chatJSON, `\u003cname\u003ereview\u003c/name\u003e`) || !strings.Contains(chatJSON, `\u003cdescription\u003eReview pending changes\u003c/description\u003e`) {
 		t.Fatalf("expected descriptor block in persisted conversation, got %s", chatJSON)
 	}
@@ -370,7 +366,7 @@ func Test_e2e_skills_descriptor_activation_and_persistence(t *testing.T) {
 	if !strings.Contains(chatJSON, `"name": "load_skill"`) || !strings.Contains(chatJSON, `Body`) {
 		t.Fatalf("expected loaded skill transcript in conversation, got %s", chatJSON)
 	}
-	trustJSON := readStringFile(t, filepath.Join(os.Getenv("CLAI_CACHE_DIR"), "skills_trust.json"))
+	trustJSON := e2etest.ReadStringFile(t, filepath.Join(os.Getenv("CLAI_CACHE_DIR"), "skills_trust.json"))
 	if !strings.Contains(trustJSON, `"hash"`) || !strings.Contains(trustJSON, `"path"`) {
 		t.Fatalf("expected populated trust cache, got %s", trustJSON)
 	}
@@ -380,13 +376,13 @@ func Test_e2e_skill_automatically_enables_local_tools(t *testing.T) {
 	oldWd, _ := os.Getwd()
 	t.Cleanup(func() { _ = os.Chdir(oldWd) })
 
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	t.Setenv("CLAI_CACHE_DIR", filepath.Join(t.TempDir(), "cache"))
 	if err := os.Chdir(t.TempDir()); err != nil {
 		t.Fatalf("Chdir: %v", err)
 	}
-	writeSkillFile(t, filepath.Join(confDir, "skills", "review", "SKILL.md"), "---\ndescription: Review pending changes\nallowed-tools: async_cmd,async_cmd_status,async_cmd_logs,async_cmd_await,async_cmd_cancel\n---\nBody")
-	writeSkillsConfigJSON(t, confDir, map[string]any{
+	e2etest.WriteSkillFile(t, filepath.Join(confDir, "skills", "review", "SKILL.md"), "---\ndescription: Review pending changes\nallowed-tools: async_cmd,async_cmd_status,async_cmd_logs,async_cmd_await,async_cmd_cancel\n---\nBody")
+	e2etest.WriteSkillsConfigJSON(t, confDir, map[string]any{
 		"enabled":            true,
 		"globalSkillDirs":    []string{},
 		"projectSkillDirs":   []string{},
@@ -396,7 +392,7 @@ func Test_e2e_skill_automatically_enables_local_tools(t *testing.T) {
 
 	var gotStatus int
 	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		gotStatus = run(strings.Split("-cm mock_test q please tool_load_skill", " "))
+		gotStatus = harness.Run(strings.Split("-cm mock_test q please tool_load_skill", " "))
 	})
 	if gotStatus != 0 {
 		t.Fatalf("expected success status, got %d, stdout=%q", gotStatus, stdout)
@@ -424,14 +420,14 @@ func Test_e2e_skills_raw_mode_shows_full_output(t *testing.T) {
 		_ = os.Chdir(oldWd)
 	})
 
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	t.Setenv("CLAI_CACHE_DIR", filepath.Join(t.TempDir(), "cache"))
 	repoDir := t.TempDir()
 	if err := os.Chdir(repoDir); err != nil {
 		t.Fatalf("Chdir(%q): %v", repoDir, err)
 	}
-	writeSkillFile(t, filepath.Join(confDir, "skills", "review", "SKILL.md"), "---\ndescription: Review pending changes\n---\n# Review\nDescription: Review pending changes\nUse ${CLAUDE_SKILL_DIR}\nARG:$ARGUMENTS")
-	writeSkillsConfigJSON(t, confDir, map[string]any{
+	e2etest.WriteSkillFile(t, filepath.Join(confDir, "skills", "review", "SKILL.md"), "---\ndescription: Review pending changes\n---\n# Review\nDescription: Review pending changes\nUse ${CLAUDE_SKILL_DIR}\nARG:$ARGUMENTS")
+	e2etest.WriteSkillsConfigJSON(t, confDir, map[string]any{
 		"enabled":            true,
 		"globalSkillDirs":    []string{},
 		"projectSkillDirs":   []string{"./agents/skills", ".claude/skills"},
@@ -445,7 +441,7 @@ func Test_e2e_skills_raw_mode_shows_full_output(t *testing.T) {
 
 	var gotStatus int
 	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		gotStatus = run(strings.Split("-r -raw -cm mock_test q please tool_load_skill", " "))
+		gotStatus = harness.Run(strings.Split("-r -raw -cm mock_test q please tool_load_skill", " "))
 	})
 	if gotStatus != 0 {
 		t.Fatalf("expected success status, got %d, stdout=%q", gotStatus, stdout)
@@ -466,7 +462,7 @@ func Test_e2e_skills_trust_reprompt_hash_invalidation_and_trust_all(t *testing.T
 		_ = os.Chdir(oldWd)
 	})
 
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	t.Setenv("CLAI_CACHE_DIR", filepath.Join(t.TempDir(), "cache"))
 	_ = os.Remove(filepath.Join(os.Getenv("CLAI_CACHE_DIR"), "skills_trust.json"))
 	repoDir := t.TempDir()
@@ -474,8 +470,8 @@ func Test_e2e_skills_trust_reprompt_hash_invalidation_and_trust_all(t *testing.T
 		t.Fatalf("Chdir(%q): %v", repoDir, err)
 	}
 	skillPath := filepath.Join(confDir, "skills", "review", "SKILL.md")
-	writeSkillFile(t, skillPath, "---\ndescription: review trust\n---\nBody v1")
-	writeSkillsConfigJSON(t, confDir, map[string]any{
+	e2etest.WriteSkillFile(t, skillPath, "---\ndescription: review trust\n---\nBody v1")
+	e2etest.WriteSkillsConfigJSON(t, confDir, map[string]any{
 		"enabled":            true,
 		"globalSkillDirs":    []string{},
 		"projectSkillDirs":   []string{"./agents/skills", ".claude/skills"},
@@ -488,7 +484,7 @@ func Test_e2e_skills_trust_reprompt_hash_invalidation_and_trust_all(t *testing.T
 	runPrompt := func() string {
 		var gotStatus int
 		stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-			gotStatus = run(strings.Split("-r -cm mock_test q please tool_load_skill", " "))
+			gotStatus = harness.Run(strings.Split("-r -cm mock_test q please tool_load_skill", " "))
 		})
 		if gotStatus != 0 {
 			t.Fatalf("expected success status, got %d, stdout=%q", gotStatus, stdout)
@@ -504,7 +500,7 @@ func Test_e2e_skills_trust_reprompt_hash_invalidation_and_trust_all(t *testing.T
 	if strings.Contains(second, "Untrusted skill detected!") {
 		t.Fatalf("expected cached trust to skip prompt, got %q", second)
 	}
-	writeSkillFile(t, skillPath, "---\ndescription: review trust\n---\nBody v2")
+	e2etest.WriteSkillFile(t, skillPath, "---\ndescription: review trust\n---\nBody v2")
 	third := runPrompt()
 	if !strings.Contains(third, "Untrusted skill detected!") {
 		t.Fatalf("expected hash change to re-prompt, got %q", third)
@@ -514,7 +510,7 @@ func Test_e2e_skills_trust_reprompt_hash_invalidation_and_trust_all(t *testing.T
 	if err := os.Remove(cachePath); err != nil && !os.IsNotExist(err) {
 		t.Fatalf("Remove(%q): %v", cachePath, err)
 	}
-	writeSkillsConfigJSON(t, confDir, map[string]any{
+	e2etest.WriteSkillsConfigJSON(t, confDir, map[string]any{
 		"enabled":            true,
 		"globalSkillDirs":    []string{},
 		"projectSkillDirs":   []string{"./agents/skills", ".claude/skills"},
@@ -525,7 +521,7 @@ func Test_e2e_skills_trust_reprompt_hash_invalidation_and_trust_all(t *testing.T
 	if strings.Contains(fourth, "Untrusted skill detected!") {
 		t.Fatalf("expected trust_all_skills to suppress prompt, got %q", fourth)
 	}
-	trustJSON := readStringFile(t, cachePath)
+	trustJSON := e2etest.ReadStringFile(t, cachePath)
 	if !strings.Contains(trustJSON, `"path"`) || !strings.Contains(trustJSON, `"hash"`) {
 		t.Fatalf("expected trust cache to be written in trust-all mode, got %s", trustJSON)
 	}
@@ -542,7 +538,7 @@ func Test_e2e_skills_argument_rendering_and_activation_cap(t *testing.T) {
 		_ = os.Unsetenv("CLAI_MOCK_LOAD_SKILL_NAME")
 	})
 
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	t.Setenv("CLAI_CACHE_DIR", filepath.Join(t.TempDir(), "cache"))
 	_ = os.Remove(filepath.Join(os.Getenv("CLAI_CACHE_DIR"), "skills_trust.json"))
 	repoDir := t.TempDir()
@@ -552,8 +548,8 @@ func Test_e2e_skills_argument_rendering_and_activation_cap(t *testing.T) {
 	restoreInput := useReadUserInputForTests(func() (string, error) { return "y", nil })
 	t.Cleanup(restoreInput)
 
-	writeSkillFile(t, filepath.Join(confDir, "skills", "review", "SKILL.md"), "---\ndescription: render review\narguments: [target,extra]\n---\nALL:$ARGUMENTS\nIDX0:$ARGUMENTS[0]\nPOS0:$0\nPOS1:$1\nNAMED:$target|$extra\nDIR:${CLAUDE_SKILL_DIR}\nLITERAL:!`echo nope`")
-	writeSkillsConfigJSON(t, confDir, map[string]any{
+	e2etest.WriteSkillFile(t, filepath.Join(confDir, "skills", "review", "SKILL.md"), "---\ndescription: render review\narguments: [target,extra]\n---\nALL:$ARGUMENTS\nIDX0:$ARGUMENTS[0]\nPOS0:$0\nPOS1:$1\nNAMED:$target|$extra\nDIR:${CLAUDE_SKILL_DIR}\nLITERAL:!`echo nope`")
+	e2etest.WriteSkillsConfigJSON(t, confDir, map[string]any{
 		"enabled":            true,
 		"globalSkillDirs":    []string{},
 		"projectSkillDirs":   []string{"./agents/skills", ".claude/skills"},
@@ -564,7 +560,7 @@ func Test_e2e_skills_argument_rendering_and_activation_cap(t *testing.T) {
 
 	var gotStatus int
 	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		gotStatus = run(strings.Split("-r -cm mock_test q please tool_load_skill", " "))
+		gotStatus = harness.Run(strings.Split("-r -cm mock_test q please tool_load_skill", " "))
 	})
 	if gotStatus != 0 {
 		t.Fatalf("expected success status, got %d, stdout=%q", gotStatus, stdout)
@@ -582,9 +578,9 @@ func Test_e2e_skills_argument_rendering_and_activation_cap(t *testing.T) {
 		}
 	}
 
-	writeSkillFile(t, filepath.Join(confDir, "skills", "review", "SKILL.md"), "---\ndescription: missing args\n---\nNeed $2")
-	errStdout, errStderr := captureStdoutStderr(t, func() {
-		gotStatus = run(strings.Split("-r -cm mock_test q please tool_load_skill", " "))
+	e2etest.WriteSkillFile(t, filepath.Join(confDir, "skills", "review", "SKILL.md"), "---\ndescription: missing args\n---\nNeed $2")
+	errStdout, errStderr := e2etest.CaptureStdoutStderr(t, func() {
+		gotStatus = harness.Run(strings.Split("-r -cm mock_test q please tool_load_skill", " "))
 	})
 	errOut := errStdout + errStderr
 	if gotStatus != 0 {
@@ -595,16 +591,16 @@ func Test_e2e_skills_argument_rendering_and_activation_cap(t *testing.T) {
 	}
 
 	t.Run("activation_cap", func(t *testing.T) {
-		confDir := setupMainTestConfigDir(t)
+		confDir := e2etest.SetupMainTestConfigDir(t)
 		t.Setenv("CLAI_CACHE_DIR", filepath.Join(t.TempDir(), "cache"))
 		_ = os.Remove(filepath.Join(os.Getenv("CLAI_CACHE_DIR"), "skills_trust.json"))
 		repoDir := t.TempDir()
 		if err := os.Chdir(repoDir); err != nil {
 			t.Fatalf("Chdir(%q): %v", repoDir, err)
 		}
-		writeSkillFile(t, filepath.Join(confDir, "skills", "one", "SKILL.md"), "---\ndescription: one\n---\nOne")
-		writeSkillFile(t, filepath.Join(confDir, "skills", "two", "SKILL.md"), "---\ndescription: two\n---\nTwo")
-		writeSkillsConfigJSON(t, confDir, map[string]any{
+		e2etest.WriteSkillFile(t, filepath.Join(confDir, "skills", "one", "SKILL.md"), "---\ndescription: one\n---\nOne")
+		e2etest.WriteSkillFile(t, filepath.Join(confDir, "skills", "two", "SKILL.md"), "---\ndescription: two\n---\nTwo")
+		e2etest.WriteSkillsConfigJSON(t, confDir, map[string]any{
 			"enabled":            true,
 			"globalSkillDirs":    []string{},
 			"projectSkillDirs":   []string{"./agents/skills", ".claude/skills"},
@@ -615,7 +611,7 @@ func Test_e2e_skills_argument_rendering_and_activation_cap(t *testing.T) {
 		t.Setenv("CLAI_MOCK_LOAD_SKILL_NAME", "two")
 		var gotStatus int
 		capOut := testboil.CaptureStdout(t, func(t *testing.T) {
-			gotStatus = run(strings.Split("-r -cm mock_test q please tool_load_skill tool_load_skill", " "))
+			gotStatus = harness.Run(strings.Split("-r -cm mock_test q please tool_load_skill tool_load_skill", " "))
 		})
 		if gotStatus != 0 {
 			t.Fatalf("expected success status with cap error in context, got %d, stdout=%q", gotStatus, capOut)
@@ -623,115 +619,9 @@ func Test_e2e_skills_argument_rendering_and_activation_cap(t *testing.T) {
 		if !strings.Contains(capOut, "Two") || !strings.Contains(capOut, "ERROR: skill activation cap exceeded: maxActivatedSkills=1") {
 			t.Fatalf("expected first load plus cap error, got %q", capOut)
 		}
-		chatJSON := readStringFile(t, findSavedConversationFile(t, confDir))
+		chatJSON := e2etest.ReadStringFile(t, e2etest.FindSavedConversationFile(t, confDir))
 		if !strings.Contains(chatJSON, `ERROR: skill activation cap exceeded`) || !strings.Contains(chatJSON, `"skill": "two"`) {
 			t.Fatalf("expected cap error persisted in conversation, got %s", chatJSON)
 		}
 	})
-}
-
-func writeSkillFile(t *testing.T, path, content string) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatalf("MkdirAll(%q): %v", filepath.Dir(path), err)
-	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatalf("WriteFile(%q): %v", path, err)
-	}
-}
-
-func writeSkillsConfigJSON(t *testing.T, confDir string, cfg map[string]any) {
-	t.Helper()
-	writeJSONFileAny(t, filepath.Join(confDir, "skills.json"), cfg)
-}
-
-func writeJSONFileAny(t *testing.T, path string, value any) {
-	t.Helper()
-	b, err := json.MarshalIndent(value, "", "  ")
-	if err != nil {
-		t.Fatalf("Marshal(%q): %v", path, err)
-	}
-	b = append(b, '\n')
-	if err := os.WriteFile(path, b, 0o644); err != nil {
-		t.Fatalf("WriteFile(%q): %v", path, err)
-	}
-}
-
-func findSavedConversationFile(t *testing.T, confDir string) string {
-	t.Helper()
-	entries, err := os.ReadDir(filepath.Join(confDir, "conversations"))
-	if err != nil {
-		t.Fatalf("ReadDir(conversations): %v", err)
-	}
-	for _, entry := range entries {
-		if entry.IsDir() || entry.Name() == "globalScope.json" || entry.Name() == "seed.json" {
-			continue
-		}
-		return filepath.Join(confDir, "conversations", entry.Name())
-	}
-	t.Fatalf("expected a saved conversation file")
-	return ""
-}
-
-func readStringFile(t *testing.T, path string) string {
-	t.Helper()
-	b, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("ReadFile(%q): %v", path, err)
-	}
-	return string(b)
-}
-
-func captureStdoutStderr(t *testing.T, fn func()) (string, string) {
-	t.Helper()
-
-	// Serialize capture across all tests that use this helper.
-	captureStdoutStderrMu.Lock()
-	defer captureStdoutStderrMu.Unlock()
-
-	// Hold ancli mutexes while swapping os.Stdout/os.Stderr to avoid
-	// racing with background goroutines that write via ancli.PrintErr etc.
-	ancli.OutMu.Lock()
-	ancli.ErrMut.Lock()
-	oldOut, oldErr := os.Stdout, os.Stderr
-	outR, outW, err := os.Pipe()
-	if err != nil {
-		ancli.ErrMut.Unlock()
-		ancli.OutMu.Unlock()
-		t.Fatalf("Pipe(stdout): %v", err)
-	}
-	errR, errW, err := os.Pipe()
-	if err != nil {
-		ancli.ErrMut.Unlock()
-		ancli.OutMu.Unlock()
-		t.Fatalf("Pipe(stderr): %v", err)
-	}
-	os.Stdout = outW
-	os.Stderr = errW
-	ancli.ErrMut.Unlock()
-	ancli.OutMu.Unlock()
-
-	doneOut := make(chan string, 1)
-	doneErr := make(chan string, 1)
-	go func() {
-		b, _ := io.ReadAll(outR)
-		doneOut <- string(b)
-	}()
-	go func() {
-		b, _ := io.ReadAll(errR)
-		doneErr <- string(b)
-	}()
-	fn()
-	_ = outW.Close()
-	_ = errW.Close()
-
-	// Restore under the ancli mutexes.
-	ancli.OutMu.Lock()
-	ancli.ErrMut.Lock()
-	os.Stdout = oldOut
-	os.Stderr = oldErr
-	ancli.ErrMut.Unlock()
-	ancli.OutMu.Unlock()
-
-	return <-doneOut, <-doneErr
 }

@@ -89,7 +89,7 @@ func exportedToolNames() map[string]struct{} {
 		ApplyPatch, AudioTranscribe, Cat, ClaiCheck, ClaiHelp, ClaiResult, ClaiRun,
 		ClaiWaitForWorkers, Cmd, Cp, Date, FFProbe, FileTree, FileType, Find, Git,
 		Go, Head, JQ, LineCount, LoadSkill, LS, Mkdir, Mktemp, Pwd, RipGrep,
-		RowsBetween, Rsync, Sed, Tail, WebsiteText, WriteFile,
+		RowsBetween, Rsync, Sed, Tail, ViewImage, WebsiteText, WriteFile,
 		AsyncCmdRun, AsyncCmdStatus, AsyncCmdLogs, AsyncCmdAwait, AsyncCmdCancel,
 	}
 	out := make(map[string]struct{}, len(all))

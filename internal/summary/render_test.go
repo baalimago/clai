@@ -9,22 +9,27 @@ import (
 )
 
 func TestRenderTranscript_selectsMessages(t *testing.T) {
+	pending := pub_models.ImagePart{MIME: "image/png", Origin: pub_models.OriginUser, Data: []byte("AAAA")}
+	handle, err := pending.Handle()
+	if err != nil {
+		t.Fatalf("handle: %v", err)
+	}
 	chat := pub_models.Chat{Messages: []pub_models.Message{
 		{Role: "system", Content: "SYSTEM"},
 		{Role: "user", Content: "first question"},
 		{Role: "assistant", Content: "early answer"},
 		{Role: "assistant", ToolCalls: []pub_models.Call{{Name: "ls"}}},
 		{Role: "tool", Content: "TOOL OUTPUT"},
-		{Role: "user", ContentParts: []pub_models.ImageOrTextInput{
-			{Type: "text", Text: "part one"},
-			{Type: "image_url", ImageB64: &pub_models.ImageURL{URL: "data:image/png;base64,AAAA"}},
-			{Type: "text", Text: "part two"},
+		{Role: "user", Parts: []pub_models.Part{
+			pub_models.TextPart{Text: "part one"},
+			pending,
+			pub_models.TextPart{Text: "part two"},
 		}},
 		{Role: "assistant", Content: "final answer"},
 	}}
 	got := renderTranscript(chat)
 	body := transcriptBody(t, got)
-	want := "user: first question\nuser: part one part two\nassistant: final answer"
+	want := "user: first question\nuser: part one\n[image " + handle + "]\npart two\nassistant: final answer"
 	if body != want {
 		t.Fatalf("body = %q, want %q", body, want)
 	}

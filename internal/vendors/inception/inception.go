@@ -3,6 +3,7 @@ package inception
 import (
 	"fmt"
 
+	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/text/generic"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -36,9 +37,16 @@ func (g *Inception) Setup() error {
 	g.StreamCompleter.Temperature = &g.Temperature
 	toolChoice := "auto"
 	g.ToolChoice = &toolChoice
+	g.StreamCompleter.Vendor = "inception"
+	g.StreamCompleter.Images = g.ImageCapabilities()
 	return nil
 }
 
 func (g *Inception) RegisterTool(tool pub_models.LLMTool) {
 	g.InternalRegisterTool(tool)
+}
+
+// ImageCapabilities is the inception row of Local fact P5-1 (worklog 2026-10-21-image-support).
+func (g *Inception) ImageCapabilities() models.ImageCapabilities {
+	return models.ImageCapabilities{Input: models.ImageInputNone, ToolResult: models.ToolResultFallback}
 }

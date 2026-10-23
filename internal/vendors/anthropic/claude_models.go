@@ -66,6 +66,24 @@ type TextContentBlock struct {
 	Text string `json:"text"`
 }
 
+// ToolResultPartsBlock is a tool_result whose content is text and image blocks.
+type ToolResultPartsBlock struct {
+	Type      string `json:"type"`
+	Content   []any  `json:"content"`
+	ToolUseID string `json:"tool_use_id"`
+}
+
+type ImageContentBlock struct {
+	Type   string      `json:"type"`
+	Source ImageSource `json:"source"`
+}
+
+type ImageSource struct {
+	Type      string `json:"type"`
+	MediaType string `json:"media_type"`
+	Data      string `json:"data"`
+}
+
 type Root struct {
 	Type         string              `json:"type"`
 	Index        int                 `json:"index"`

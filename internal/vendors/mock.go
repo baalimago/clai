@@ -18,6 +18,13 @@ import (
 var toolTokenPattern = regexp.MustCompile(`\btool_([a-zA-Z0-9_]+)\b`)
 
 // Mock is a StreamCompleter that streams a fixed, mocked response.
+//
+//	M1. Its echo of the last user message is that message's Message.Describe(), so
+//	    an image shows as "[image <handle>]".
+//	M2. A tool_generate_image token calls generate_image with
+//	    {"prompt": $CLAI_MOCK_IMAGE_PROMPT or "mock image"}, and a tool_view_image
+//	    token calls view_image with {"path": $CLAI_MOCK_VIEW_IMAGE_PATH}, following
+//	    the existing per-tool input script.
 type Mock struct {
 	// mu guards usage: the streaming goroutine writes it while a cancelled
 	// runner may read it on its ctx.Done() path.
@@ -49,7 +56,18 @@ func (m *Mock) RegisterTool(tool pub_models.LLMTool) {
 	m.allowedTools[tool.Specification().Name] = struct{}{}
 }
 
+func (m *Mock) ImageCapabilities() models.ImageCapabilities {
+	return models.ImageCapabilities{
+		Input:      models.ImageInputInline,
+		ToolResult: models.ToolResultNative,
+		MIMEs:      []string{"image/png", "image/jpeg", "image/gif", "image/webp"},
+	}
+}
+
 func (m *Mock) StreamCompletions(ctx context.Context, chat pub_models.Chat) (chan models.CompletionEvent, error) {
+	if err := models.CheckImageParts(m.ImageCapabilities(), "mock", "mock", chat.Messages); err != nil {
+		return nil, err
+	}
 	ch := make(chan models.CompletionEvent, 2)
 	go func() {
 		defer close(ch)
@@ -62,10 +80,11 @@ func (m *Mock) StreamCompletions(ctx context.Context, chat pub_models.Chat) (cha
 			return
 		}
 
+		prompt := uMsg.Describe()
 		nextTool, ordinal, ok := nextToolCall(chat, m.allowedTools)
 		if ok {
 			inputs := inputsForTool(nextTool, ordinal)
-			m.setUsage(mockUsageForPrompt(uMsg.Content))
+			m.setUsage(mockUsageForPrompt(prompt))
 			ch <- pub_models.Call{
 				ID:     "mock-call-" + nextTool,
 				Name:   nextTool,
@@ -75,14 +94,14 @@ func (m *Mock) StreamCompletions(ctx context.Context, chat pub_models.Chat) (cha
 			return
 		}
 
-		m.setUsage(mockUsageForPrompt(uMsg.Content))
+		m.setUsage(mockUsageForPrompt(prompt))
 		if hasToolMessage(chat.Messages) {
-			ch <- finalMockResponse(uMsg.Content)
+			ch <- finalMockResponse(prompt)
 			ch <- models.StopEvent{}
 			return
 		}
 
-		ch <- uMsg.Content
+		ch <- prompt
 		ch <- models.StopEvent{}
 	}()
 	return ch, nil
@@ -122,7 +141,7 @@ func nextToolCall(chat pub_models.Chat, allowedTools map[string]struct{}) (strin
 		return "", 0, false
 	}
 
-	allMatches := toolTokenPattern.FindAllStringSubmatch(userMsg.Content, -1)
+	allMatches := toolTokenPattern.FindAllStringSubmatch(userMsg.Describe(), -1)
 	if len(allMatches) == 0 {
 		return "", 0, false
 	}
@@ -177,6 +196,10 @@ func inputsForTool(toolName string, ordinal int) pub_models.Input {
 		}
 	case "ls":
 		return pub_models.Input{"directory": "."}
+	case "generate_image":
+		return pub_models.Input{"prompt": envOr("CLAI_MOCK_IMAGE_PROMPT", "mock image")}
+	case "view_image":
+		return pub_models.Input{"path": os.Getenv("CLAI_MOCK_VIEW_IMAGE_PATH")}
 	case "load_skill":
 		input := pub_models.Input{"skill": "review"}
 		if prompt := os.Getenv("CLAI_MOCK_LOAD_SKILL_NAME"); prompt != "" {

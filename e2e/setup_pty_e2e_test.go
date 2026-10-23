@@ -14,23 +14,21 @@ import (
 	"testing"
 	"time"
 	"unsafe"
-)
 
-// setupPTYHelperEnv gates the child entrypoint of the interactive setup PTY
-// e2e test (see TestSetupPTYHelper).
-const setupPTYHelperEnv = "CLAI_SETUP_PTY_HELPER"
+	"github.com/baalimago/clai/e2e/e2etest"
+)
 
 // TestSetupPTYHelper is the child entrypoint of
 // Test_e2e_setup_announcement_survives_interactive_wizard. The parent spawns
-// this test binary on a pseudo-terminal with setupPTYHelperEnv set; the
+// this test binary on a pseudo-terminal with e2etest.SetupPTYHelperEnv set; the
 // helper then runs the real CLI setup path (united config migration +
 // wizard) on that terminal, exactly like a user would. Without the env it is
 // a no-op, so the regular test suite never enters the wizard.
 func TestSetupPTYHelper(t *testing.T) {
-	if os.Getenv(setupPTYHelperEnv) != "1" {
+	if os.Getenv(e2etest.SetupPTYHelperEnv) != "1" {
 		return
 	}
-	os.Exit(run([]string{"s"}))
+	os.Exit(harness.Run([]string{"s"}))
 }
 
 // openPTY allocates a Linux pseudo-terminal pair and returns the master and
@@ -151,7 +149,9 @@ func runSetupOnPTY(t *testing.T, confDir, keystrokes string) (transcript, screen
 	cmd := exec.Command(os.Args[0], "-test.run=TestSetupPTYHelper")
 	// Unset so the child resolves /dev/tty, which Setctty makes its own pty.
 	env := slices.DeleteFunc(os.Environ(), func(kv string) bool { return strings.HasPrefix(kv, "TTY=") })
-	cmd.Env = append(env, "CLAI_CONFIG_DIR="+confDir, setupPTYHelperEnv+"=1")
+	// A -race child otherwise idles 1s in its exit hook (atexit_sleep_ms).
+	gorace := strings.TrimSpace(os.Getenv("GORACE") + " atexit_sleep_ms=0")
+	cmd.Env = append(env, "CLAI_CONFIG_DIR="+confDir, e2etest.SetupPTYHelperEnv+"=1", "GORACE="+gorace)
 	cmd.Stdin = slave
 	cmd.Stdout = slave
 	cmd.Stderr = slave
@@ -205,10 +205,10 @@ func Test_e2e_setup_announcement_survives_interactive_wizard(t *testing.T) {
 	// announce.
 	newConfDir := func(t *testing.T) string {
 		t.Helper()
-		confDir := setupMainTestConfigDir(t)
+		confDir := e2etest.SetupMainTestConfigDir(t)
 		// Downgrade textConfig.json to the pre-stoploss schema so the united
 		// migration fires and prints the announcement.
-		writeJSONFileAny(t, filepath.Join(confDir, "textConfig.json"), map[string]any{
+		e2etest.WriteJSONFileAny(t, filepath.Join(confDir, "textConfig.json"), map[string]any{
 			"model": "test",
 		})
 		return confDir

@@ -238,6 +238,11 @@ only by the scanner token size), `OpenAbs` and `StatAbs` (FS-injectable file
 opening and stat), `HomeRelativeRoot`, `TextBlocksContent` (string-or-text-block
 content flattening), and `MapAssistantBlocks` (assistant text/thinking/tool-call
 block mapping, parameterized by `ToolCallBlockKeys` for vendor key names).
+Image import lives in `internal/vendors/source_images.go`: `ContentMessage`
+maps text and image blocks to one message (parts when an image block is
+present, the text-only mapping otherwise), and `RawUserPreview` is the
+discovery preview of a user line. Both take an `ImageBlockFunc`, the vendor's
+reader of its own `{"type":"image"}` block shape.
 
 The discovery algorithm itself lives in `internal/vendors/jsonl_discover.go`:
 `DiscoverJSONL` walks, scans and aggregates one `SourceRow` per file, and
@@ -357,6 +362,7 @@ No registry, no init-side-effects, no global mutable state.
 - **Message mapping is vendor-defined** — each `Read` implementation decides how to map its native format into `pub_models.Message`. No middleware.
 - **Tool calls are best-effort** — if the source format has tool uses and results, map them to `Message.ToolCalls` and `Message.Role == "tool"` with `ToolCallID`. Lossy mapping is acceptable; the goal is contextual continuity, not replay. (Current Claude reader: assistant `tool_use` blocks become `ToolCalls`; user `tool_result` blocks become separate `tool` messages.)
 - **Vendor packages own their conversation format knowledge** — the Claude JSONL format belongs in `internal/vendors/anthropic/`, not in `internal/chat/`.
+- **Images are imported as pending parts** (Claude Code and Pi) — an inline base64 image block in a user message or a tool result becomes a pending `ImagePart` (origin `user` or `tool`) at its position among the message's text parts, and the message carries `Parts` instead of `Content`. An image-only user message is kept. A block that cannot be imported becomes the text part `[image not imported: <reason>]`, where the reason is `url source`, `bad base64`, `not an image` (`asset.Sniff` fails) or `mime mismatch`; `Read` still succeeds and never fetches a URL. `Read` holds no asset store: the bytes are stored only when the continued conversation is saved, and the clone's save writes them to `conversations/assets/` and refs only to its JSON. A message with no image block maps exactly as before.
 
 ## Claude Desktop / Claude Code source reader
 
@@ -374,7 +380,7 @@ For each `.jsonl` file whose `(size, mtime)` pair misses the foreign index, read
 
 - `SourceID` = `sessionId` from the first valid JSON line that contains it (typically `type: "user"`).
 - `Created` = `timestamp` from the first valid JSON line that contains it (falls back to file mtime).
-- `FirstUserMessage` = content of the first line with `type: "user"` and a string `message.content`, truncated to ~100 characters.
+- `FirstUserMessage` = text of the first `type: "user"` line that has any, truncated to ~100 characters. An image-only user message previews as its `Message.Describe()`, e.g. `[image 3f9a1c]`; a tool result's image never previews. A cached row with an empty preview and a non-zero message count is not trusted: the file is re-read and the fresh row stored. Rows cached before image previews (`foreignIndexVersion` 1) previewed an image-first session by its next user text; version 2 discards them, so every such session is re-read once.
 - `MessageCount` = count of `user` + `assistant` lines. **The count is exact from discovery onward**, with one pre-existing caveat: the list shows the same number `Read` would produce, and there is no later refinement, but a line longer than `vendors.ReadMaxToken` ends the scan of its whole file, so anything after it is uncounted — and because the result of that scan is cached, the undercount is now persisted rather than recomputed each run. Both `Discover` and `Read` truncate at the same bound, so they still agree with each other. The scan reads to EOF, and a schema's optional `MayContribute` byte prefilter decides which lines are worth decoding, so exactness costs decoding rather than reading. Misses are scanned by a bounded worker pool; hits cost one `stat`.
 - `RawPath` = absolute path.
 
@@ -388,6 +394,8 @@ Parses the entire JSONL file, mapping each line to a clai `Message`:
 | ----------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | `user`            | `message.content` is a string                                        | `{role: "user", content: "<string>"}`                                                                      |
 | `user`            | `message.content` is `[{type: "tool_result", tool_use_id, content}]` | `{role: "tool", content: "<content>", tool_call_id: "<tool_use_id>"}`                                      |
+| `user`            | `message.content` has `{type: "image", source: {type: "base64", media_type, data}}` | `{role: "user", parts: [text…, pending image (origin user)…]}` in block order                |
+| `user`            | a `tool_result`'s `content` has an image block                       | `{role: "tool", parts: [text…, pending image (origin tool)…], tool_call_id}`                               |
 | `assistant`       | `message.content` has `{type: "text", text}`                         | `{role: "assistant", content: "<text>"}`                                                                   |
 | `assistant`       | `message.content` has `{type: "thinking", thinking}`                 | Text goes to `reasoning_content`. If no text block follows, prepended to `content` as `[thinking] <text>`. |
 | `assistant`       | `message.content` has `{type: "tool_use", id, name, input}`          | `{role: "assistant", tool_calls: [{id, function: {name, arguments}}]}`                                     |
@@ -583,9 +591,7 @@ an error.
 
 ## Gemini CLI source reader
 
-Location: `internal/vendors/gemini/source_reader.go`. The Gemini photo querier
-lives in the `image` sub-package, so the vendor package stays a leaf and
-`internal/chat` can import it.
+Location: `internal/vendors/gemini/source_reader.go`.
 
 Implements `vendors.SourceReader` with `Source() == "gemini"`.
 

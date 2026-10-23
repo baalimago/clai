@@ -28,7 +28,9 @@ internal/cli:Run()
 | `internal/text/querier_setup.go` | `NewQuerier()` — vendor routing, model config file creation |
 | `internal/text/querier.go` | `Querier.Query()` — streaming loop, token handling, post-processing |
 | `internal/text/querier_tool.go` | Tool call handling during query execution |
-| `internal/utils/prompt.go` | `Prompt()` — stdin/args merging and `{}` replacement |
+| `internal/utils/prompt.go` | `Prompt()` — stdin/args merging and `{}` replacement; `PromptFrom()` takes stdin as a reader |
+| `internal/imageinput/collect.go` | `ImageCollector` — `-img`, `-g` and stdin into pending images, glob messages and the prompt |
+| `internal/text/query_images.go` | the query command's `ImageTurn`: asset store, normalizer, presenter, persister and `generate_image` setup (see [images.md](./images.md)) |
 | `internal/text/create_querier.go` | `text.CreateQuerier()` — vendor selection by model name |
 | `internal/chat/reply.go` | `SaveAsPreviousQuery()` — persists result for `-re` replies |
 | `internal/chat/chat.go` | `HashIDFromPrompt()` — generates chat IDs |
@@ -80,12 +82,17 @@ See `CONFIG.md` for full details.
 `text.Configurations.SetupInitialChat(args)` in `internal/text/conf.go`:
 
 1. If **not reply mode**: creates initial chat with system prompt message
-2. If **glob mode** (`-g` flag): reads matching files into messages via `glob.CreateChat()`
-3. If **reply mode** (`-re`): loads `globalScope.json` and prepends those messages
-4. Calls `utils.Prompt(stdinReplace, args)` to build the user prompt from CLI args + stdin
-5. Runs `chat.PromptToImageMessage(prompt)` to detect and extract base64-encoded images
-6. Appends the user message to `InitialChat.Messages`
-7. Generates chat ID via `HashIDFromPrompt(prompt)`
+2. Collects the inputs with `imageinput.ImageCollector.Collect` (see
+   [Image input collection](#image-input-collection)): the `-img` images, the `-g` matches and
+   stdin, plus the prompt text that `utils.Prompt` would build from the args and stdin
+3. If **glob mode** (`-g` flag): the collected text-file messages are framed by
+   `glob.FramedChat` between the glob system message and the `#####` user message, exactly as
+   before; matches that are images go to the prompt message instead
+4. If **reply mode** (`-re`): loads `globalScope.json` through `chat.Persister.Load` and prepends
+   those messages; a stored image stays a ref and a legacy inline image arrives as a pending part
+5. Appends the user message: `Content` with the prompt when no image was collected, otherwise
+   `Parts` holding the images in collection order followed by the prompt text
+6. Generates the chat ID
 
 ### Stdin Handling
 
@@ -94,6 +101,43 @@ See `CONFIG.md` for full details.
 - If pipe detected and no args: stdin becomes the prompt
 - If pipe detected and args present: replaces `{}` (or custom `-I` token) in args with stdin content
 - If no pipe: joins args as the prompt
+- With no args and no pipe it fails with `utils.ErrNoPrompt`
+
+`Prompt()` decides whether stdin is piped and delegates to `PromptFrom(stdinReplace, args, stdin)`,
+where a nil reader means a terminal. Stdin that is wholly an image is attached instead (see below).
+
+### Image flags
+
+| Flag | Purpose |
+| --- | --- |
+| `-img` / `-image <path\|glob>` | Attach images; repeatable, in order. |
+| `-open` | Open each generated image; same as `textConfig.json` `auto-open-images`. |
+| `-pm` / `-photo-model <model>` | The model behind `generate_image` for this run; overrides `photoConfig.json` `model` and the chat vendor's default. |
+
+`-pm` belongs to the agent group's media-tool flags beside `-am`/`-af`, so `query` and `loop`
+parse it. `-t generate_image` is a known selection: it never warns or disables tools, and the
+turn registers the tool itself. `-t '*'` selects `view_image` and `generate_image` with every
+other tool. See [images.md](./images.md) for the whole image path.
+
+### Image input collection
+
+`imageinput.ImageCollector.Collect` (`internal/imageinput/collect.go`) gathers a command's inputs
+into pending user images (`pub_models.ImagePart`, not yet stored) plus the prompt text:
+
+- **`-img` values**, in flag order: `~` is expanded, then the glob, and matches are taken in lexical
+  order. The MIME type is sniffed from the bytes, never taken from the extension. A value that matches
+  nothing fails with `*imageinput.NoMatchError`, a non-image with `asset.ErrNotImage`, and a file over
+  20 MiB with `*asset.ImageTooLargeError` before it is read (`asset.ReadLocalImage`).
+- **`-g` matches** that sniff as images become images, and an image over 20 MiB fails with
+  `*asset.ImageTooLargeError` once read. Every other match, whatever its size, becomes the same file
+  message as before (`glob.FileMessage`), without the system and `#####` framing.
+- **Stdin** that is an image, raw or as canonical base64 once trimmed, becomes one image, and the
+  prompt is built from the args alone. An image over 20 MiB fails with `*asset.ImageTooLargeError`.
+  Any other stdin goes through `PromptFrom` unchanged, so text prompts are byte-for-byte what
+  `Prompt()` builds. The collector never extracts base64 from inside prompt text.
+
+Images come back in the order `-img`, `-g`, stdin. Collect never writes to the asset store; the turn
+stores pending images when a model step begins.
 
 ## Vendor Routing
 
@@ -120,10 +164,14 @@ Each vendor has a default config struct (e.g., `openai.GptDefault`). A model-spe
 `Querier.Query()` in `internal/text/querier.go` delegates to the `sessionRunner`
 loop (`internal/text/session_runner.go`). Each model step:
 
-1. **StreamCompletions**: calls `Model.StreamCompletions(ctx, chat)` → returns `chan CompletionEvent`
+1. **StreamCompletions**: calls `Model.StreamCompletions(ctx, chat)` → returns `chan CompletionEvent`.
+   The chat it sends is the session chat prepared for images (see [Images in a turn](#images-in-a-turn)).
 2. **Event loop**: reads from channel, dispatching:
    - `string` → appends to `fullMsg`, prints to stdout (streaming output)
    - `pub_models.Call` → collected for the step's tool batch (see below)
+   - `models.ImageProgressEvent` → starts the image progress row (`ImageTurn.Progress`);
+     every other event but `NoopEvent` stops it first
+   - `models.ImageEvent` → stored, presented and kept for the step's assistant message
    - `error` → propagated
    - `models.StopEvent` → cancels context
    - `models.NoopEvent` → ignored
@@ -151,12 +199,15 @@ loop (`internal/text/session_runner.go`). Each model step:
     without a handover — there is nothing to hand over.
 5. **Post-processing** (`sessionFinalizer.Finalize`, `internal/text/finalizer.go`):
    - Appends assistant message to chat; enriches cost whenever usage is present
-   - Pretty-prints final output (via glow when the destination is a terminal, unless `-r`/`--raw`)
+   - Pretty-prints final output (via glow when the destination is a terminal, unless `-r`/`--raw`).
+     When the last step wrote no text, the prose shown before its tool calls stays as it is and
+     is not printed again (`QuerySession.finalTextShown`).
    - Joins the in-flight conversation summarizer, launched alongside the
      main call on a new conversation's first persist, for at most
      a fixed join bound (5 s, `Configurations.SummaryJoinTimeout`, not a
      config key or flag) and stamps `title`/`summary` on a result
-   - Saves conversation via `SaveAsPreviousQuery()` (unless in chat mode)
+   - Saves conversation via the turn's `chat.Persister.Promote` (unless in chat mode),
+     which writes what `SaveAsPreviousQuery()` writes
 
    The order on the success path is **display → join → persist**, so the
    answer is never delayed by the summary wait and the file, index and
@@ -164,6 +215,45 @@ loop (`internal/text/session_runner.go`). Each model step:
    interrupted run abandons the summarizer and persists without joining;
    no summarizer failure reaches the answer, exit status or persistence.
    See `architecture/summaries.md`.
+
+### Images in a turn
+
+`text.Configurations.ImageTurn` (`internal/text/turn.go`) wires the turn's image
+children: the asset store, the `imagenorm.Normalizer`, the `present.Presenter`, the
+`chat.Persister`, a stderr writer, and the image-generation setup with its injected
+`imagegen.NewGeneratorFunc`. When it is nil, as `pkg/agent` and `pkg/text` build it, the
+runner uses a default for the config dir: the disk store under `conversations/assets/`,
+a presenter on the querier's output that never opens a viewer, and no generation.
+
+The `query` and `loop` commands build their own (`internal/text/query_images.go`, set through
+`Querier.setImageTurn`): the presenter opens images when `-open` or `auto-open-images` is set,
+with `present.NewCommandOpener(image-opener)`; generation is requested when an entry of `-t`,
+or of the profile's tools, matches `generate_image` as any tool pattern does, with the model
+from `-pm`, else `route.ImageModelFor(chat vendor, photoConfig.json model)`; and the generator
+constructor is `cli.Deps.NewImageGenerator`
+(`route.NewGenerator` in production, a refusing constructor in every e2e `TestMain`).
+
+- **Step start.** Every pending image in the chat is stored, so each handle the model
+  sees resolves (for example in `generate_image`'s `input_images`). The chat is then
+  normalized for the route's `ImageCapabilities`, and that copy is what
+  `StreamCompletions`, and the stoploss's `CountInputTokens`, receive. Labels, notes and
+  synthetic messages exist only in the copy, never on disk.
+- **Image-output models.** An `ImageEvent` (from an OpenRouter image model) is stored, then
+  presented as one line on its own row, as it arrives. The final assistant message holds its text and images as `Parts`, in
+  arrival order; a step that ends in tool calls attaches its images to the assistant
+  tool-call message. A text-only step still persists `Content`.
+- **Tool results.** A `PartsCaller` result that holds an image is persisted as `Parts`;
+  the images the tool generated are presented, with the call's `rebus` when it is one to
+  three emoji, and a tool's own images (MCP, `view_image`) are not. Every other result is
+  the `tools.InvokeWith` string, as before.
+- **Generation.** When `generate_image` is requested, the turn registers the tool for every
+  completer that takes tools; a vendor's built-in image output is never enabled. With
+  structured output (`-rf`) generated images are stored but not presented.
+- **Failures.** A generated image that cannot be stored makes its tool result an `ERROR`
+  text; the batch's other calls still run and record their results, then the turn fails.
+  An image stored before a later failure keeps its file, its line and its part in the
+  failed-run persist. A viewer that fails to
+  open is one notice on stderr and never fails the turn.
 
 ### Rate Limit Handling
 
@@ -194,6 +284,14 @@ When a model step returns one or more `pub_models.Call` events, the
    `toolOutputRuneLimit` truncation is applied to the result.
 4. The runner continues the loop with the updated chat (the model sees the
    tool output and continues).
+
+A Gemini 3 preview call without a thought signature is handed back to the user
+unrun. When every call of a step is handed back, the runner decides it before
+the batch: the step ends the turn as a step that answers does (no further
+request; its prose and reasoning are the answer, or the answer shown before
+stays), and a step with no answer at all fails the turn with
+`*text.HandedBackError`. In a batch that also runs a call, only the unsigned
+calls are dropped.
 
 Tool call limits (`max-tool-calls` in config) enforce a soft cap with
 escalating warnings. `max-tool-calls: 0` (or nil) means **unlimited** — no

@@ -160,9 +160,10 @@ Each conversation carries a **GroupKey** — the hex-encoded SHA-256 of the firs
 **canonical text content**. The hash is computed as:
 
 1. If `msg.Content` (the plain string field) is non-empty, hash `msg.Content` as raw UTF-8 bytes.
-2. Otherwise, concatenate the `.Text` fields of `msg.ContentParts` in order and hash that
-   concatenation.
-3. If the resulting string is empty (image-only message, or no user message at all), the GroupKey
+2. Otherwise, concatenate the `Describe()` of `msg.Parts` in order, with no separator, and hash
+   that. An image describes as `[image <handle>]`, so an image-only message gets a key, the same
+   whether its image is pending or stored.
+3. If the resulting string is empty (an empty message, or no user message at all), the GroupKey
    is the empty string `""` — the conversation never participates in grouping.
 
 The canonical byte sequence uses **raw UTF-8 bytes with no Unicode normalisation, no whitespace
@@ -181,7 +182,7 @@ today.
 
 `HashIDFromPrompt` (in `chat.go`) also hashes the first user message to produce a chat ID. GroupKey
 uses a different hash function (SHA-256 producing a 64-char hex digest vs the shorter chat ID) and a
-more explicit canonicalization (Content vs ContentParts rules). These are deliberately separate: chat
+more explicit canonicalization (Content vs Parts rules). These are deliberately separate: chat
 IDs must remain stable for file naming; GroupKey is a content-affinity key. Do not derive one from
 the other.
 
@@ -220,7 +221,7 @@ type Chat struct {
     // ... existing fields ...
     // GroupKey is the hex-encoded SHA-256 of the first user message's canonical
     // text content (see §Group identity). Empty when no user message exists,
-    // the first message is image-only, or the chat predates this feature.
+    // the first message is empty, or the chat predates this feature.
     // Stamped once on first persist; never rewritten.
     GroupKey string `json:"group_key,omitempty"`
 }
@@ -431,6 +432,16 @@ clai is a single-user CLI tool.
   visible rows. The prompt line indicates the active filter. Pressing the toggle key or `[b]`
   restores visibility.
 
+### Foreign first messages that hold images
+
+A foreign row's GroupKey hashes the reader's `FullFirstUserMessage`. For a first message that holds
+an image, that text is not yet the canonical text its clone hashes: a text-and-image message keys
+on its text alone, and an image-only message with several images joins their labels with `"\n"`,
+while the clone concatenates the `Describe()` of every part with no separator. Such a foreign row
+and its clone (or a native chat with the same opening) do not group. A text-only first message and
+a single-image first message group as described above. The resolution is open as design andon A08
+of `worklogs/2026-10-21-image-support/`.
+
 ### Prompt preview collision
 
 Two conversations with different first user messages that truncate to the same prompt preview
@@ -440,9 +451,10 @@ limitation of width-constrained previews, not specific to grouping.
 
 ## Acceptance criteria
 
-1. **GroupKey computation** — a conversation with a first user message containing text gets a
-   GroupKey equal to the lowercase hex-encoded SHA-256 of the canonical text (see §Group identity).
-   Conversations with no user message or an image-only first message have an empty GroupKey.
+1. **GroupKey computation** — a conversation with a first user message containing text or images
+   gets a GroupKey equal to the lowercase hex-encoded SHA-256 of the canonical text (see §Group
+   identity); an image counts as its `[image <handle>]` label. Conversations with no user message,
+   or an empty one, have an empty GroupKey.
 
 2. **Index round-trip** — a conversation saved with a GroupKey is read back from the index with
    the same GroupKey. Index caches from before this feature (without the field) decode without error
@@ -561,9 +573,9 @@ E2E tests use a temporary configuration directory with seeded conversation fixtu
 11. **GroupKey persistence across restart** — create a conversation, quit clai, restart, run
     `clai chat list`, verify GroupKey is preserved and grouping still works.
 
-12. **Image-only first message ungrouped** — a conversation whose first user message is image-only
-    (Content empty, ContentParts all images) has an empty GroupKey and appears as an ungrouped row,
-    never collapsing with other image-only conversations.
+12. **Image-only first message groups by image** — a conversation whose first user message is
+    image-only gets the GroupKey of its `[image <handle>]` labels, so conversations that open with
+    the same image collapse into one group, and the row's preview is that label.
 
 ## Future: group filter actions in the prompt bar
 

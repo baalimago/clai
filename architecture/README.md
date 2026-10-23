@@ -14,6 +14,7 @@ This directory contains short design notes for key parts of **clai**. Each file 
 - **[streaming.md](./streaming.md)** — How vendor streaming is normalized into a common event stream and consumed by the querier (text deltas, tool calls, stop events, errors).
 - **[errors.md](./errors.md)** — Typed terminal errors across the module boundary: the shared `pkg/claierr` sentinel/type vocabulary, vendor-first wire decoding (`generic.ResponseError`), the channel contract, and the explicit/ambient MCP `Setup` split.
 - **[openai-responses.md](./openai-responses.md)** — OpenAI text routing: the Responses API (`/v1/responses`) is the default on the canonical OpenAI host, with an explicit `/chat/completions` opt-out, a conservative legacy default for custom proxy hosts, and a codex-only redirect; covers feature parity (reasoning effort + `summary` streaming, stateless reasoning continuity via `include`/encrypted-reasoning replay, image `input_image`, structured output via `text.format`, parallel tool-call keying, sampling rules with model-id normalization, `store:false`) and stream termination.
+- **[images.md](./images.md)** — Images on every querier, both ways: `-img`/`-g`/stdin attachment, per-route capabilities and normalization, the `generate_image` tool with its rebus and progress row, image-output models, the content-addressed asset store (`conversations/assets/`) with refs-only conversations and the delete sweep, the presented line and opener, placeholders on text surfaces, the config keys, and the refusing generator that keeps tests free.
 - **[tooling.md](./tooling.md)** — Tool registry + allow-list selection (`-t/-tools`), tool-call execution loop, and how MCP tools enter the registry.
 - **[mcp.md](./mcp.md)** — Everything about MCP connections: the `Conn`/`Connector` seam and why a connection is never shared (a second `initialize` silently re-negotiates the session, and a server may take its authorization boundary from the client's `roots`); the JSON-RPC demultiplexing contract and the four dispositions of an inbound frame; the goroutines per stdio connection; both transports, stdio and streamable HTTP; OAuth 2.1 authorization with its credential-source precedence and what is secret; the tool-schema cache and why a miss still connects; the mid-run human wait and why it is infrastructure-only; lazy versus eager startup; the cache-only tool listing and its built-in shadow marker; `<clai-config>/mcpServers/` layout; and ambient-degrades versus explicit-fails startup posture.
 - **[tooling-async.md](./tooling-async.md)** — Addendum to tooling.md: session-bound async command runtime for long-running subprocesses — the `async_cmd` tool family (spawn/status/logs/await/cancel, with `async_cmd_run` as a legacy alias), an in-memory registry plus on-disk stdout/stderr logs, a typed monotonic status lifecycle, and graceful-then-force cleanup of all child processes on session end.
@@ -27,8 +28,8 @@ This directory contains short design notes for key parts of **clai**. Each file 
 - **[query.md](./query.md)** — Primary `clai query` command and the `clai loop` sibling: flag/config application, prompt assembly (stdin + `{}` replacement), tool-call recursion, persistence, and loop iterations with the `complete_task` gate.
 - **[replay.md](./replay.md)** — `clai replay` / `clai re` (global) and relationship to dir-scoped replay.
 - **[dre.md](./dre.md)** — `clai dre`: prints the last message from the directory-bound conversation for the current working directory.
-- **[photo.md](./photo.md)** — `clai photo`: image generation flow, prompt formatting, vendor routing, and output modes (local/url).
-- **[video.md](./video.md)** — `clai video`: video generation (OpenAI Sora), optional image-to-video prompt parsing, and output modes.
+- **[photo.md](./photo.md)** — `clai photo`: image generation from a prompt and input images, reply-mode editing, the image generators, and the presented output.
+- **[video.md](./video.md)** — `clai video`: video generation (OpenAI Sora), the optional input image from `-img` or stdin, and output modes.
 - **[audio.md](./audio.md)** — `clai audio transcribe`: audio transcription (OpenAI/OpenRouter), local vtt/srt/text/json rendering, ffmpeg split for large files, and the `audio_transcribe` tool bridge.
 - **[tools-command.md](./tools-command.md)** — `clai tools` inspection UI: list tools and print JSON schema for one tool.
 - **[profiles.md](./profiles.md)** — `clai profiles`: lists profile JSONs and prints a small summary; profiles are applied via `-p` flags (see CONFIG).
@@ -39,7 +40,7 @@ This directory contains short design notes for key parts of **clai**. Each file 
 ## UI / output
 
 - **[board.md](./board.md)** — The shared parallel-work progress table (`internal/board`): ▸ title, phase, marked rows with live elapsed, footer, log-above; used by audio transcribe and `chat summarize`.
-- **[colours.md](./colours.md)** — ANSI theming via `<clai-config>/theme.json` and `NO_COLOR` disable behavior; where colour is applied (pretty print, tables, obfuscated previews).
+- **[colours.md](./colours.md)** — ANSI theming via `<clai-config>/theme.json` and `NO_COLOR` disable behavior; where colour is applied (pretty print, tables, obfuscated previews, generated-image lines with their OSC 8 file links).
 
 ## Reading order suggestions
 

@@ -1,7 +1,9 @@
 package utils
 
 import (
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -51,5 +53,45 @@ func TestExpandUserPath_EnvVarHoldingTilde(t *testing.T) {
 	want := filepath.Join(home, "env")
 	if got != want {
 		t.Fatalf("ExpandUserPath = %q, want %q", got, want)
+	}
+}
+
+func TestAbsHomePath(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "leading tilde slash", in: "~/cat.png", want: filepath.Join(home, "cat.png")},
+		{name: "cleaned", in: "~/a/../cat.png", want: filepath.Join(home, "cat.png")},
+		{name: "only the leading tilde", in: "~/a~b/~/c.png", want: filepath.Join(home, "a~b", "~", "c.png")},
+		{name: "inner tilde kept", in: "a/~/c.png", want: filepath.Join(cwd, "a", "~", "c.png")},
+		{name: "bare tilde kept", in: "~", want: filepath.Join(cwd, "~")},
+		{name: "tilde user kept", in: "~user/c.png", want: filepath.Join(cwd, "~user", "c.png")},
+		{name: "relative", in: "c.png", want: filepath.Join(cwd, "c.png")},
+		{name: "absolute", in: "/etc/c.png", want: "/etc/c.png"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := AbsHomePath(tt.in)
+			if err != nil || got != tt.want {
+				t.Fatalf("AbsHomePath(%q) = %q, %v; want %q", tt.in, got, err, tt.want)
+			}
+		})
+	}
+
+	t.Setenv("HOME", "")
+	if got, err := AbsHomePath("c.png"); err != nil || got != filepath.Join(cwd, "c.png") {
+		t.Fatalf("without a home, AbsHomePath(%q) = %q, %v; want no home lookup", "c.png", got, err)
+	}
+	_, err = AbsHomePath("~/cat.png")
+	if err == nil || !strings.HasPrefix(err.Error(), "failed to get home dir: ") {
+		t.Fatalf("without a home, AbsHomePath = %v, want the ReplaceTildeWithHome error", err)
 	}
 }

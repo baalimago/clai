@@ -6,12 +6,14 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/baalimago/clai/internal/vendors"
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
 func TestSourceReader_Discover_NoDirs(t *testing.T) {
@@ -476,6 +478,7 @@ func TestPiUserContent_MultipleTextBlocks(t *testing.T) {
 	}
 }
 
+// An image-only user message is kept (Read.3); a url image leaves a note (Read.4).
 func TestPiUserContent_NoTextBlocks(t *testing.T) {
 	msg := map[string]any{
 		"content": []any{
@@ -485,8 +488,12 @@ func TestPiUserContent_NoTextBlocks(t *testing.T) {
 	if got := vendors.TextBlocksContent(msg["content"]); got != "" {
 		t.Fatalf("expected empty content, got %q", got)
 	}
-	if got := mapPiUserMessage(msg); got != nil {
-		t.Fatalf("expected no user message for text-free content, got %+v", got)
+	want := []pub_models.Message{{Role: "user", Parts: []pub_models.Part{pub_models.TextPart{Text: "[image not imported: url source]"}}}}
+	if got := mapPiUserMessage(msg); !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %+v, want the image-only message kept with its note", got)
+	}
+	if got := mapPiUserMessage(map[string]any{"content": []any{}}); got != nil {
+		t.Fatalf("expected no user message for empty content, got %+v", got)
 	}
 }
 

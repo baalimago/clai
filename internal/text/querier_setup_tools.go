@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/baalimago/clai/internal/debugflags"
+	imagegentool "github.com/baalimago/clai/internal/imagegen/tool"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/tools/mcp"
@@ -636,9 +637,12 @@ func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, us
 	}
 	toAdd := make([]pub_models.LLMTool, 0)
 	for _, t := range userConf.RequestedToolGlobs {
+		if t == imagegentool.Name {
+			continue
+		}
 		if strings.Contains(t, "*") {
 			matchingTools := matchingTools(available, t)
-			if len(matchingTools) == 0 {
+			if len(matchingTools) == 0 && !selectsGenerateImage(t) {
 				ancli.Warnf("attempted to find tools using wildcard search: '%v', found none\n", t)
 			}
 			toAdd = append(toAdd, matchingTools...)

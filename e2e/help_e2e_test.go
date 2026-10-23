@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/e2e/e2etest"
 	"github.com/baalimago/clai/internal/profiles"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
@@ -13,11 +14,11 @@ import (
 // per-command -h pointer, config/cache dirs and examples — and exits 1.
 // The help command is gone; per-command help lives on -h.
 func Test_goldenFile_usage_on_no_args(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 
 	var gotStatusCode int
 	gotStdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		gotStatusCode = run(nil)
+		gotStatusCode = harness.Run(nil)
 	})
 
 	testboil.FailTestIfDiff(t, gotStatusCode, 1)
@@ -42,7 +43,7 @@ func Test_goldenFile_usage_on_no_args(t *testing.T) {
 // Test_goldenFile_help_command_removed pins that the old help command is an
 // unknown command now: it errors and falls back to the usage listing.
 func Test_goldenFile_help_command_removed(t *testing.T) {
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 
 	for _, args := range []string{"help", "h"} {
 		t.Run(args, func(t *testing.T) {
@@ -50,7 +51,7 @@ func Test_goldenFile_help_command_removed(t *testing.T) {
 			var gotStdout string
 			gotStderr := testboil.CaptureStderr(t, func(t *testing.T) {
 				gotStdout = testboil.CaptureStdout(t, func(t *testing.T) {
-					gotStatusCode = run([]string{args})
+					gotStatusCode = harness.Run([]string{args})
 				})
 			})
 			testboil.FailTestIfDiff(t, gotStatusCode, 1)
@@ -65,11 +66,11 @@ func Test_goldenFile_help_command_removed(t *testing.T) {
 // Test_goldenFile_profiles_help_carries_profile_docs pins the new home of
 // ProfileHelp: 'clai profiles -h'.
 func Test_goldenFile_profiles_help_carries_profile_docs(t *testing.T) {
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 
 	var gotStatusCode int
 	gotStdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		gotStatusCode = run([]string{"profiles", "-h"})
+		gotStatusCode = harness.Run([]string{"profiles", "-h"})
 	})
 
 	testboil.FailTestIfDiff(t, gotStatusCode, 0)

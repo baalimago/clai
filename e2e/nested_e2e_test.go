@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/e2e/e2etest"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
@@ -13,16 +14,16 @@ import (
 // nested chat list resolve to the same subcommand, without any config
 // writes.
 func Test_e2e_chat_list_alias_equivalence(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	t.Setenv("HOME", t.TempDir())
 	writeNotificationTestPriceFiles(t, confDir)
-	if status := run(strings.Split("-cm test -r q seed for listing", " ")); status != 0 {
+	if status := harness.Run(strings.Split("-cm test -r q seed for listing", " ")); status != 0 {
 		t.Fatal("failed to seed conversation")
 	}
 
 	var outputs []string
 	for _, args := range []string{"-n -r c l 0 b", "-n -r chat list 0 b"} {
-		stdout, status := runOne(t, confDir, args)
+		stdout, status := harness.RunOne(t, confDir, args)
 		if status != 0 {
 			t.Fatalf("%q: expected zero status, got %d. stdout=%q", args, status, stdout)
 		}
@@ -35,7 +36,7 @@ func Test_e2e_chat_list_alias_equivalence(t *testing.T) {
 // are structurally read-only: listing against a chmod-read-only config dir
 // succeeds without writes.
 func Test_e2e_chat_list_on_readonly_config_dir(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	t.Setenv("HOME", t.TempDir())
 	var restore []string
 	err := filepath.Walk(confDir, func(path string, info os.FileInfo, err error) error {
@@ -54,7 +55,7 @@ func Test_e2e_chat_list_on_readonly_config_dir(t *testing.T) {
 		}
 	})
 
-	stdout, status := runOne(t, t.TempDir(), "-n c l 0")
+	stdout, status := harness.RunOne(t, t.TempDir(), "-n c l 0")
 	if status != 0 {
 		t.Fatalf("expected zero status against read-only config dir, got %d. stdout=%q", status, stdout)
 	}
@@ -76,14 +77,14 @@ func Test_e2e_sub_flag_before_command_is_forwarded(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			_ = setupMainTestConfigDir(t)
-			audioFile := writeE2EAudioFile(t)
+			_ = e2etest.SetupMainTestConfigDir(t)
+			audioFile := e2etest.WriteAudioFile(t)
 
 			var status int
 			var stdout string
 			stderr := testboil.CaptureStderr(t, func(t *testing.T) {
 				stdout = testboil.CaptureStdout(t, func(t *testing.T) {
-					status = run(strings.Split(tc.args+audioFile, " "))
+					status = harness.Run(strings.Split(tc.args+audioFile, " "))
 				})
 			})
 
@@ -101,9 +102,9 @@ func Test_e2e_sub_flag_before_command_is_forwarded(t *testing.T) {
 // parent instead of failing. 'chat help' registers no flags of its own; -p
 // lives on the chat parent.
 func Test_e2e_parent_flag_after_sub_is_forwarded(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 
-	stdout, status := runOne(t, confDir, "chat help -p gopher")
+	stdout, status := harness.RunOne(t, confDir, "chat help -p gopher")
 	if status != 0 {
 		t.Fatalf("expected the forwarded parent flag to be accepted, got status %v: %q", status, stdout)
 	}
@@ -132,12 +133,12 @@ func Test_e2e_off_path_flag_still_hints(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			_ = setupMainTestConfigDir(t)
+			_ = e2etest.SetupMainTestConfigDir(t)
 
 			var status int
 			stderr := testboil.CaptureStderr(t, func(t *testing.T) {
 				_ = testboil.CaptureStdout(t, func(t *testing.T) {
-					status = run(strings.Split(tc.args, " "))
+					status = harness.Run(strings.Split(tc.args, " "))
 				})
 			})
 
@@ -154,12 +155,12 @@ func Test_e2e_off_path_flag_still_hints(t *testing.T) {
 // Test_e2e_nested_help pins per-level help: the parent lists its sub table,
 // the sub prints its own help.
 func Test_e2e_nested_help(t *testing.T) {
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 
 	t.Run("chat -h lists sub table", func(t *testing.T) {
 		var status int
 		stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-			status = run([]string{"chat", "-h"})
+			status = harness.Run([]string{"chat", "-h"})
 		})
 		testboil.FailTestIfDiff(t, status, 0)
 		for _, want := range []string{"continue|c", "delete|d", "list|l", "dir", "dirv2"} {
@@ -172,7 +173,7 @@ func Test_e2e_nested_help(t *testing.T) {
 	t.Run("chat list -h shows list help", func(t *testing.T) {
 		var status int
 		stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-			status = run([]string{"chat", "list", "-h"})
+			status = harness.Run([]string{"chat", "list", "-h"})
 		})
 		testboil.FailTestIfDiff(t, status, 0)
 		if !strings.Contains(stdout, "List all existing chats") {
@@ -188,14 +189,14 @@ func Test_e2e_nested_help(t *testing.T) {
 // positional stays with the chat parent and yields today's chat handler
 // error, not a dispatcher ArgNotFoundError.
 func Test_e2e_unknown_chat_sub_falls_through(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	writeNotificationTestPriceFiles(t, confDir)
 
 	var status int
 	var stdout string
 	stderr := testboil.CaptureStderr(t, func(t *testing.T) {
 		stdout = testboil.CaptureStdout(t, func(t *testing.T) {
-			status = run(strings.Split("-r chat banana", " "))
+			status = harness.Run(strings.Split("-r chat banana", " "))
 		})
 	})
 	testboil.FailTestIfDiff(t, status, 1)

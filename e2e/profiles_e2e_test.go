@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/e2e/e2etest"
 	"github.com/baalimago/clai/internal/chat"
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/pkg/text/models"
@@ -73,7 +74,7 @@ func Test_goldenFile_PROFILES_list_prints_summary_for_valid_profiles_and_skips_i
 
 	var gotStatus int
 	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		gotStatus = run(strings.Split("profiles", " "))
+		gotStatus = harness.Run(strings.Split("profiles", " "))
 	})
 
 	testboil.FailTestIfDiff(t, gotStatus, 0)
@@ -121,7 +122,7 @@ func Test_goldenFile_PROFILES_list_warns_when_no_profiles_found(t *testing.T) {
 
 	var gotStatus int
 	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		gotStatus = run(strings.Split("profiles", " "))
+		gotStatus = harness.Run(strings.Split("profiles", " "))
 	})
 
 	// profiles list exits via ErrUserInitiatedExit which main.run maps to status code 0.
@@ -147,7 +148,7 @@ func Test_goldenFile_profile2_is_applied_to_conversations(t *testing.T) {
 		os.Args = oldArgs
 	})
 
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 
 	profileName := "2"
 	profilePath := filepath.Join(confDir, "profiles", fmt.Sprintf("%s.json", profileName))
@@ -170,7 +171,7 @@ func Test_goldenFile_profile2_is_applied_to_conversations(t *testing.T) {
 
 	var gotStatus int
 	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		gotStatus = run(strings.Split("-r -cm test -p 2 q hello", " "))
+		gotStatus = harness.Run(strings.Split("-r -cm test -p 2 q hello", " "))
 	})
 	testboil.FailTestIfDiff(t, gotStatus, 0)
 	testboil.AssertStringContains(t, stdout, "hello\n")

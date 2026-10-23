@@ -121,9 +121,13 @@ The selection process:
 
 Common patterns:
 
-- `-t=*` means **all tools** are allowed.
+- `-t=*` means **all tools** are allowed, `view_image` and `generate_image` included.
 - `-t=a,b,c` means only those tools are allowed.
 - If the final allow-list is empty, tool calling is disabled for that run.
+- `generate_image` is not in the registry: the turn registers it (see below). Selection
+  treats the name as known, so `-t generate_image` alone keeps tools enabled and prints no
+  unknown-tool warning, and registry setup skips it silently. Selecting it costs nothing until
+  the model calls it: the generator is built on the first call.
 
 ### Enforcement points
 
@@ -150,6 +154,51 @@ Execution steps:
    - built-in executor (local)
    - MCP executor (RPC to server)
 5. Capture stdout/stderr (where applicable), structure the result, and return it to the model.
+
+### Image results
+
+A tool whose result can hold images implements `models.PartsCaller` (`pkg/text/models/tools.go`).
+`CallParts` returns its result as text and image parts, in order, and every image has origin `tool`, or `generated` when the tool generated it (`generate_image`).
+`Call` returns the string form of the same result: the `Describe()` of every part joined by `"\n"`,
+so each image reads `[image <handle>]`. Wherever only a string can travel, such a tool behaves as a
+text tool. An error from `CallParts` is returned unchanged by `Call`.
+
+Three tools implement it. MCP tools map a result's image content to images (see
+[mcp.md](./mcp.md#tool-results)). `view_image` (`pkg/tools/view_image.go`), a registered native
+tool (`internal/tools/handler.go`), returns a local png,
+jpeg, gif or webp file as the text `image <handle> from <absolute path>` and a pending image. It
+resolves the path with `utils.AbsHomePath`, which expands a leading `~/` only and which
+`generate_image` shares. It then reads the file through `asset.ReadLocalImage`, the one local image
+reader that `generate_image` and the input collector share: it refuses a file over 20 MiB
+(`asset.LargestLocalImage`) with `ImageTooLargeError` before reading it, and bytes that are not an
+image with `ErrNotImage`. `view_image` never writes to the asset store.
+
+`generate_image` (`internal/imagegen/tool`) generates or edits images through the injected
+`imagegen.NewGeneratorFunc` (see [photo.md](./photo.md#image-generators)), which it calls once, on
+its first call. Its arguments are `prompt` and `rebus` (both required), `input_images` and `size`
+(`auto`, `1024x1024`, `1536x1024` or `1024x1536`). `rebus` asks for three emoji that summarise the
+image; the tool ignores it, and the turn shows it on the image line (`imagegen/tool.Rebus` accepts
+one to three emoji; anything else is left off, and never fails the call). An `input_images` entry of six lowercase hex digits is a
+handle, resolved in the asset store; any other entry is a local file read under the same rules as
+`view_image`. Each generated image is stored in the asset store before the tool returns, as the
+text `generated image <handle> saved at <absolute path>` (plus `revised prompt: <p>` when the
+backend revised it) and a stored image with origin `generated`. A failed generation stores nothing
+and returns the error wrapped with `generate_image:`; a missing prompt is `ErrPromptRequired` and an
+unknown size `*InvalidSizeError`.
+
+In a query turn, the tool executor keeps a `PartsCaller` result that holds an image as the tool
+message's `Parts`, and presents only the images with origin `generated`: on a terminal, as
+`Presenter.Rows` inside a tool block that stays on screen (after the rolling window's rows, which
+stay in place; never compacted or cut), in place of the image label and `generate_image`'s
+`SavedText` line; in raw or debug mode as a line of their own. A result without an
+image, or a failed call, is the same string `tools.InvokeWith` gives, error folding included (see
+[query.md](./query.md#images-in-a-turn)). The turn registers `generate_image` itself whenever it is
+requested, on every vendor whose completer takes tools (a `models.ToolBox`); a model without
+tools runs without it, as it runs without every tool. On the CLI it is requested by any `-t` entry or profile tool that
+matches it (`generate_image`, `*_image`, `*`), its model is `-pm`, else `route.ImageModelFor` the
+chat vendor and `photoConfig.json`'s `model`, and its generator constructor is
+`cli.Deps.NewImageGenerator`; every
+e2e `TestMain` injects one that refuses, so no test pays for an image (see [images.md](./images.md)).
 
 ### Tool budgets
 

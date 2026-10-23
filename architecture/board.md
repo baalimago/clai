@@ -67,3 +67,19 @@ The audio adapter (`internal/audio/board.go`) keeps the diarization column
 indices and `unknownSoFar`; `chat summarize` keeps its plain and `-r`
 output for pipes and `-n` and draws the board only on an interactive
 terminal, logging `✓ <id>  <title>` / `✗ <id>  <error>` above it.
+
+## One-line status (`board.Status`)
+
+For one unit of work with no table, `NewStatus(out, live, title)` draws a
+single row in the board's look: `▸ <title>` in the primary colour, the
+spinner and the elapsed time (`ElapsedText`), redrawn every `TickInterval`
+and truncated to the terminal width. `Start` draws it over the cursor's
+row and keeps the first start time when called again; `Stop` waits for the
+animation to end, erases the row and leaves the cursor at its start, so
+the caller's next line takes its place. It never writes a newline. A
+status that is not live writes nothing, and a nil status is a no-op.
+
+| Consumer | Title | Shown |
+|---|---|---|
+| `clai photo` (`internal/photo/query.go`) | `generating image` | while `ImageGenerator.Generate` runs, on a terminal stdout without `-raw` |
+| query turn (`internal/text/turn_images.go`, `ImageTurn.Progress`) | `generating image` | from a `models.ImageProgressEvent` until the next other event, and while the `generate_image` tool generates; see [images.md](./images.md#getting-images-back) |

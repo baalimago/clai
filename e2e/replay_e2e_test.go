@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/e2e/e2etest"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
@@ -69,14 +70,14 @@ func Test_e2e_replay_loads_theme(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			// Built before chdir: the build runs in the current directory.
-			bin := filepath.Join(builtClaiDir(t), "clai")
+			bin := filepath.Join(claiBinDir(t), "clai")
 			t.Setenv("NO_COLOR", "")
-			confDir := setupMainTestConfigDir(t)
+			confDir := e2etest.SetupMainTestConfigDir(t)
 			t.Setenv("CLAI_CACHE_DIR", filepath.Join(t.TempDir(), "cache"))
-			chdirTemp(t)
+			e2etest.ChdirTemp(t)
 			writeReplayTheme(t, confDir, false)
 
-			if status := run(strings.Split("-r -cm mock_test q hello", " ")); status != 0 {
+			if status := harness.Run(strings.Split("-r -cm mock_test q hello", " ")); status != 0 {
 				t.Fatalf("seed query status %d", status)
 			}
 
@@ -98,13 +99,13 @@ func Test_e2e_dirscope_replay_honors_notification_bell(t *testing.T) {
 		{name: "bell enabled in theme", bell: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			bin := filepath.Join(builtClaiDir(t), "clai")
-			confDir := setupMainTestConfigDir(t)
+			bin := filepath.Join(claiBinDir(t), "clai")
+			confDir := e2etest.SetupMainTestConfigDir(t)
 			t.Setenv("CLAI_CACHE_DIR", filepath.Join(t.TempDir(), "cache"))
-			chdirTemp(t)
+			e2etest.ChdirTemp(t)
 			writeReplayTheme(t, confDir, tc.bell)
 
-			if status := run(strings.Split("-r -cm mock_test q hello", " ")); status != 0 {
+			if status := harness.Run(strings.Split("-r -cm mock_test q hello", " ")); status != 0 {
 				t.Fatalf("seed query status %d", status)
 			}
 

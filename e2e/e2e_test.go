@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/e2e/e2etest"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
@@ -49,13 +50,13 @@ func Test_goldenFile_calibration(t *testing.T) {
 				os.Args = oldArgs
 			})
 
-			_ = setupMainTestConfigDir(t)
+			_ = e2etest.SetupMainTestConfigDir(t)
 			for k, v := range tc.givenEnvs {
 				t.Setenv(k, v)
 			}
 			var gotStatusCode int
 			gotStdout := testboil.CaptureStdout(t, func(t *testing.T) {
-				gotStatusCode = run(strings.Split(tc.givenArgs, " "))
+				gotStatusCode = harness.Run(strings.Split(tc.givenArgs, " "))
 			})
 
 			testboil.FailTestIfDiff(t, gotStatusCode, tc.wantStatusCode)

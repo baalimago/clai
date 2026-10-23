@@ -357,6 +357,10 @@ func (b *Board) phaseLine() string {
 }
 
 func (b *Board) color(c, s string) string {
+	return colorize(c, s)
+}
+
+func colorize(c, s string) string {
 	if !ancli.UseColor || c == "" {
 		return s
 	}

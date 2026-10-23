@@ -11,6 +11,7 @@ import (
 	"github.com/baalimago/clai/internal/chat"
 	"github.com/baalimago/clai/internal/debugflags"
 	"github.com/baalimago/clai/internal/glob"
+	imagegentool "github.com/baalimago/clai/internal/imagegen/tool"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/skills"
 	"github.com/baalimago/clai/internal/tools"
@@ -53,7 +54,14 @@ func setupToolConfig(tConf *Configurations, useTools string) {
 
 			if p == "*" {
 				tConf.RequestedToolGlobs = nil
+				tConf.explicitAllTools = true
 				return
+			}
+
+			// generate_image is registered by the turn, not the registry (Gen.1–3).
+			selectsGen := selectsGenerateImage(p)
+			if selectsGen {
+				validTools = append(validTools, imagegentool.Name)
 			}
 
 			// MCP tools: accept any name starting with "mcp_"
@@ -64,11 +72,10 @@ func setupToolConfig(tConf *Configurations, useTools string) {
 
 			// Local tools: must exist in the registry
 			wCardTools := tools.Registry.WildcardGet(p)
-			if len(wCardTools) > 0 {
-				for _, t := range wCardTools {
-					validTools = append(validTools, t.Specification().Name)
-				}
-			} else {
+			for _, t := range wCardTools {
+				validTools = append(validTools, t.Specification().Name)
+			}
+			if len(wCardTools) == 0 && !selectsGen {
 				ancli.Warnf("attempted to select unknown tool '%s' via -t/-tools, skipping\n", p)
 			}
 		}

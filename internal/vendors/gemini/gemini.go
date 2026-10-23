@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/text/generic"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
@@ -41,9 +42,20 @@ func (g *Gemini) Setup() error {
 	g.StreamCompleter.TopP = &g.TopP
 	toolChoice := "auto"
 	g.ToolChoice = &toolChoice
+	g.StreamCompleter.Vendor = "gemini"
+	g.StreamCompleter.Images = g.ImageCapabilities()
 	return nil
 }
 
 func (g *Gemini) RegisterTool(tool pub_models.LLMTool) {
 	g.InternalRegisterTool(tool)
+}
+
+// ImageCapabilities is the gemini row of Local fact P5-1 (worklog 2026-10-21-image-support).
+func (g *Gemini) ImageCapabilities() models.ImageCapabilities {
+	return models.ImageCapabilities{
+		Input:      models.ImageInputInline,
+		ToolResult: models.ToolResultFallback,
+		MIMEs:      []string{"image/png", "image/jpeg", "image/webp"},
+	}
 }

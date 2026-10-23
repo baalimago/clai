@@ -5,11 +5,9 @@ import (
 	"os"
 
 	"github.com/baalimago/clai/internal/photo/generic"
+	"github.com/baalimago/clai/internal/vendors/openai"
 )
 
-// The configuration types are defined in photo/generic so the vendor
-// clients can import them without importing this package (which would
-// cycle: this package composes vendors).
 type (
 	Configurations = generic.Configurations
 	Output         = generic.Output
@@ -23,7 +21,7 @@ const (
 )
 
 var DEFAULT = Configurations{
-	Model:        "gpt-image-1",
+	Model:        openai.DefaultImageModel,
 	PromptFormat: "I NEED to test how the tool works with extremely simple prompts. DO NOT add any detail, just use it AS-IS: '%v'",
 	Output: Output{
 		Type:   UNSET,

@@ -17,8 +17,9 @@
 //   - Responses streaming is parsed directly and emits the same normalized events.
 //
 // Image input:
-//   - Both paths accept image ContentParts. Responses maps them to input_image content
-//     (image_url is a plain data-URL string, unlike the Chat Completions object form).
+//   - Both paths accept a message's image Parts. Responses maps each ImagePart to
+//     input_image content (image_url is a plain data-URL string, unlike the Chat
+//     Completions object form).
 //
 // Structured output:
 //   - Both paths honor the configured response format. Chat Completions sends

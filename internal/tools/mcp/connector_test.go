@@ -222,8 +222,7 @@ func TestConnectTimeoutIsSeparateFromCallTimeout(t *testing.T) {
 func TestConnectBoundExpiryReturnsTypedStartupError(t *testing.T) {
 	srv := pub_models.McpServer{
 		Name:    "hang",
-		Command: "go",
-		Args:    []string{"run", "./testserver"},
+		Command: testServerBinary(t),
 		Env:     map[string]string{"TEST_SERVER_AUTH_HANG": "1"},
 	}
 	c := NewConnector(t.Context(), srv, nil, WithConnectBound(100*time.Millisecond))
@@ -252,7 +251,7 @@ func TestConnectBoundExpiryReturnsTypedStartupError(t *testing.T) {
 // typed closed error instead of hanging.
 func TestConnectorCloseReleasesProcessOnRunEnd(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	srv := pub_models.McpServer{Name: "echo", Command: "go", Args: []string{"run", "./testserver"}}
+	srv := pub_models.McpServer{Name: "echo", Command: testServerBinary(t)}
 	c := NewConnector(ctx, srv, nil)
 
 	conn, err := c.Conn(ctx)
@@ -283,7 +282,7 @@ func TestConnectorCloseReleasesProcessOnRunEnd(t *testing.T) {
 // tool result, with no new spawn (the connector stays memoised).
 func TestConnectorCallAfterRunEndIsClosedError(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	srv := pub_models.McpServer{Name: "echo", Command: "go", Args: []string{"run", "./testserver"}}
+	srv := pub_models.McpServer{Name: "echo", Command: testServerBinary(t)}
 	c := NewConnector(ctx, srv, nil)
 	if _, err := c.Conn(ctx); err != nil {
 		t.Fatalf("Conn: %v", err)
@@ -348,8 +347,7 @@ func TestConnectorCancelDuringResolutionReapsProcess(t *testing.T) {
 	sink := &recordingSink{}
 	srv := pub_models.McpServer{
 		Name:    "hang",
-		Command: "go",
-		Args:    []string{"run", "./testserver"},
+		Command: testServerBinary(t),
 		Env:     map[string]string{"TEST_SERVER_AUTH_HANG": "1"},
 	}
 	c := NewConnector(runCtx, srv, sink, WithConnectBound(10*time.Second))

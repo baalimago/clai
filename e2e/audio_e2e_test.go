@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/e2e/e2etest"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
@@ -21,34 +22,11 @@ of an audio file
 	wantMockText = "mock transcription\nof an audio file\n"
 )
 
-func writeE2EAudioFile(t *testing.T) string {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), "f.wav")
-	if err := os.WriteFile(path, []byte("RIFF-fake-wav"), 0o644); err != nil {
-		t.Fatalf("WriteFile(audio): %v", err)
-	}
-	return path
-}
-
-func runAudio(t *testing.T, args string) (int, string, string) {
-	t.Helper()
-	oldArgs := os.Args
-	t.Cleanup(func() { os.Args = oldArgs })
-	var status int
-	var stdout string
-	stderr := testboil.CaptureStderr(t, func(t *testing.T) {
-		stdout = testboil.CaptureStdout(t, func(t *testing.T) {
-			status = run(strings.Split(args, " "))
-		})
-	})
-	return status, stdout, stderr
-}
-
 func Test_goldenFile_AUDIO_transcribe_vtt(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
-	audioFile := writeE2EAudioFile(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
+	audioFile := e2etest.WriteAudioFile(t)
 
-	status, stdout, _ := runAudio(t, "audio transcribe -am test "+audioFile)
+	status, stdout, _ := harness.RunAudio(t, "audio transcribe -am test "+audioFile)
 
 	testboil.FailTestIfDiff(t, status, 0)
 	testboil.FailTestIfDiff(t, stdout, wantMockVTT)
@@ -58,10 +36,10 @@ func Test_goldenFile_AUDIO_transcribe_vtt(t *testing.T) {
 }
 
 func Test_goldenFile_AUDIO_alias_and_text_format(t *testing.T) {
-	_ = setupMainTestConfigDir(t)
-	audioFile := writeE2EAudioFile(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
+	audioFile := e2etest.WriteAudioFile(t)
 
-	status, stdout, _ := runAudio(t, "a t -am test -af text "+audioFile)
+	status, stdout, _ := harness.RunAudio(t, "a t -am test -af text "+audioFile)
 
 	testboil.FailTestIfDiff(t, status, 0)
 	testboil.FailTestIfDiff(t, stdout, wantMockText)
@@ -71,7 +49,7 @@ func Test_goldenFile_AUDIO_alias_and_text_format(t *testing.T) {
 }
 
 func Test_goldenFile_AUDIO_stdin_dash(t *testing.T) {
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 
 	r, w, err := os.Pipe()
 	if err != nil {
@@ -88,14 +66,14 @@ func Test_goldenFile_AUDIO_stdin_dash(t *testing.T) {
 	os.Stdin = r
 	t.Cleanup(func() { _ = r.Close() })
 
-	status, stdout, _ := runAudio(t, "a t -am test -af text -")
+	status, stdout, _ := harness.RunAudio(t, "a t -am test -af text -")
 
 	testboil.FailTestIfDiff(t, status, 0)
 	testboil.FailTestIfDiff(t, stdout, wantMockText)
 }
 
 func Test_goldenFile_AUDIO_stdin_unrecognized_format(t *testing.T) {
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 
 	r, w, err := os.Pipe()
 	if err != nil {
@@ -112,7 +90,7 @@ func Test_goldenFile_AUDIO_stdin_unrecognized_format(t *testing.T) {
 	os.Stdin = r
 	t.Cleanup(func() { _ = r.Close() })
 
-	status, stdout, stderr := runAudio(t, "a t -am test -af text -")
+	status, stdout, stderr := harness.RunAudio(t, "a t -am test -af text -")
 
 	testboil.FailTestIfDiff(t, status, 1)
 	testboil.FailTestIfDiff(t, stdout, "")
@@ -125,10 +103,10 @@ func Test_goldenFile_AUDIO_stdin_unrecognized_format(t *testing.T) {
 func Test_goldenFile_AUDIO_raw_flag_at_verb_level(t *testing.T) {
 	for _, args := range []string{"a t -r -am test -af text ", "-r a t -am test -af text "} {
 		t.Run(strings.TrimSpace(args), func(t *testing.T) {
-			_ = setupMainTestConfigDir(t)
-			audioFile := writeE2EAudioFile(t)
+			_ = e2etest.SetupMainTestConfigDir(t)
+			audioFile := e2etest.WriteAudioFile(t)
 
-			status, stdout, stderr := runAudio(t, args+audioFile)
+			status, stdout, stderr := harness.RunAudio(t, args+audioFile)
 
 			testboil.FailTestIfDiff(t, status, 0)
 			testboil.FailTestIfDiff(t, stdout, wantMockText)
@@ -141,41 +119,41 @@ func Test_goldenFile_AUDIO_raw_flag_at_verb_level(t *testing.T) {
 
 func Test_goldenFile_AUDIO_namespace_help(t *testing.T) {
 	t.Run("no verb errors with help on stderr", func(t *testing.T) {
-		_ = setupMainTestConfigDir(t)
-		status, stdout, stderr := runAudio(t, "audio")
+		_ = e2etest.SetupMainTestConfigDir(t)
+		status, stdout, stderr := harness.RunAudio(t, "audio")
 		testboil.FailTestIfDiff(t, status, 1)
 		testboil.AssertStringContains(t, stderr, "transcribe")
 		testboil.FailTestIfDiff(t, stdout, "")
 	})
 	t.Run("unknown verb errors with help on stderr", func(t *testing.T) {
-		_ = setupMainTestConfigDir(t)
-		status, _, stderr := runAudio(t, "audio fly")
+		_ = e2etest.SetupMainTestConfigDir(t)
+		status, _, stderr := harness.RunAudio(t, "audio fly")
 		testboil.FailTestIfDiff(t, status, 1)
 		testboil.AssertStringContains(t, stderr, "transcribe")
 	})
 	t.Run("help verb lists verbs and exits 0", func(t *testing.T) {
-		_ = setupMainTestConfigDir(t)
-		status, stdout, _ := runAudio(t, "audio help")
+		_ = e2etest.SetupMainTestConfigDir(t)
+		status, stdout, _ := harness.RunAudio(t, "audio help")
 		testboil.FailTestIfDiff(t, status, 0)
 		testboil.AssertStringContains(t, stdout, "transcribe")
 	})
 }
 
 func Test_goldenFile_AUDIO_missing_input_file(t *testing.T) {
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 	missing := filepath.Join(t.TempDir(), "nope.wav")
 
-	status, _, stderr := runAudio(t, "a t -am test "+missing)
+	status, _, stderr := harness.RunAudio(t, "a t -am test "+missing)
 
 	testboil.FailTestIfDiff(t, status, 1)
 	testboil.AssertStringContains(t, stderr, "nope.wav")
 }
 
 func Test_goldenFile_AUDIO_invalid_format_flag(t *testing.T) {
-	_ = setupMainTestConfigDir(t)
-	audioFile := writeE2EAudioFile(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
+	audioFile := e2etest.WriteAudioFile(t)
 
-	status, _, stderr := runAudio(t, "a t -am test -af yaml "+audioFile)
+	status, _, stderr := harness.RunAudio(t, "a t -am test -af yaml "+audioFile)
 
 	testboil.FailTestIfDiff(t, status, 1)
 	testboil.AssertStringContains(t, stderr, "vtt")
@@ -183,10 +161,10 @@ func Test_goldenFile_AUDIO_invalid_format_flag(t *testing.T) {
 }
 
 func Test_goldenFile_AUDIO_unroutable_model(t *testing.T) {
-	_ = setupMainTestConfigDir(t)
-	audioFile := writeE2EAudioFile(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
+	audioFile := e2etest.WriteAudioFile(t)
 
-	status, _, stderr := runAudio(t, "a t -am mystery9000 "+audioFile)
+	status, _, stderr := harness.RunAudio(t, "a t -am mystery9000 "+audioFile)
 
 	testboil.FailTestIfDiff(t, status, 1)
 	testboil.AssertStringContains(t, stderr, "or:")
@@ -194,19 +172,19 @@ func Test_goldenFile_AUDIO_unroutable_model(t *testing.T) {
 }
 
 func Test_goldenFile_AUDIO_missing_api_key(t *testing.T) {
-	_ = setupMainTestConfigDir(t)
-	audioFile := writeE2EAudioFile(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
+	audioFile := e2etest.WriteAudioFile(t)
 	t.Setenv("OPENAI_API_KEY", "")
 
-	status, _, stderr := runAudio(t, "a t -am whisper-1 "+audioFile)
+	status, _, stderr := harness.RunAudio(t, "a t -am whisper-1 "+audioFile)
 
 	testboil.FailTestIfDiff(t, status, 1)
 	testboil.AssertStringContains(t, stderr, "OPENAI_API_KEY")
 }
 
 func Test_goldenFile_AUDIO_config_cascade(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
-	audioFile := writeE2EAudioFile(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
+	audioFile := e2etest.WriteAudioFile(t)
 	// File sets text format and an unroutable model; both should apply over defaults
 	fileConf := `{"transcribe": {"model": "or:some/model", "output-format": "text", "parallelism": 2}}`
 	if err := os.WriteFile(filepath.Join(confDir, "audioConfig.json"), []byte(fileConf), 0o644); err != nil {
@@ -215,12 +193,12 @@ func Test_goldenFile_AUDIO_config_cascade(t *testing.T) {
 
 	t.Run("file beats default", func(t *testing.T) {
 		// -am test routes to mock; format text comes from the file (default vtt)
-		status, stdout, _ := runAudio(t, "a t -am test "+audioFile)
+		status, stdout, _ := harness.RunAudio(t, "a t -am test "+audioFile)
 		testboil.FailTestIfDiff(t, status, 0)
 		testboil.FailTestIfDiff(t, stdout, wantMockText)
 	})
 	t.Run("flag beats file", func(t *testing.T) {
-		status, stdout, _ := runAudio(t, "a t -am test -af json "+audioFile)
+		status, stdout, _ := harness.RunAudio(t, "a t -am test -af json "+audioFile)
 		testboil.FailTestIfDiff(t, status, 0)
 		testboil.AssertStringContains(t, stdout, `"start":`)
 		if strings.Contains(stdout, "WEBVTT") {
@@ -230,15 +208,15 @@ func Test_goldenFile_AUDIO_config_cascade(t *testing.T) {
 }
 
 func Test_goldenFile_AUDIO_config_upgrade_notice_stays_off_stdout(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
-	audioFile := writeE2EAudioFile(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
+	audioFile := e2etest.WriteAudioFile(t)
 	// A pre-upgrade file lacks the budget fields; the transcript is stdout
 	fileConf := `{"transcribe": {"model": "or:some/model", "output-format": "text"}}`
 	if err := os.WriteFile(filepath.Join(confDir, "audioConfig.json"), []byte(fileConf), 0o644); err != nil {
 		t.Fatalf("WriteFile(audioConfig.json): %v", err)
 	}
 
-	status, stdout, stderr := runAudio(t, "a t -am test "+audioFile)
+	status, stdout, stderr := harness.RunAudio(t, "a t -am test "+audioFile)
 
 	testboil.FailTestIfDiff(t, status, 0)
 	testboil.FailTestIfDiff(t, stdout, wantMockText)
@@ -247,29 +225,29 @@ func Test_goldenFile_AUDIO_config_upgrade_notice_stays_off_stdout(t *testing.T) 
 }
 
 func Test_goldenFile_AUDIO_corrupt_config(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
-	audioFile := writeE2EAudioFile(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
+	audioFile := e2etest.WriteAudioFile(t)
 	if err := os.WriteFile(filepath.Join(confDir, "audioConfig.json"), []byte("{broken"), 0o644); err != nil {
 		t.Fatalf("WriteFile(audioConfig.json): %v", err)
 	}
 
-	status, _, stderr := runAudio(t, "a t -am test "+audioFile)
+	status, _, stderr := harness.RunAudio(t, "a t -am test "+audioFile)
 
 	testboil.FailTestIfDiff(t, status, 1)
 	testboil.AssertStringContains(t, stderr, "audioConfig.json")
 }
 
 func Test_goldenFile_AUDIO_help_includes_audio(t *testing.T) {
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 
 	var status int
 	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		status = run(nil)
+		status = harness.Run(nil)
 	})
 	testboil.FailTestIfDiff(t, status, 1)
 	testboil.AssertStringContains(t, stdout, "audio|a")
 
-	status, stdout, _ = runAudio(t, "audio -h")
+	status, stdout, _ = harness.RunAudio(t, "audio -h")
 	testboil.FailTestIfDiff(t, status, 0)
 	testboil.AssertStringContains(t, stdout, "-am")
 	testboil.AssertStringContains(t, stdout, "-af")

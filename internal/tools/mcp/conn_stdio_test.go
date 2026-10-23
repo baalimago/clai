@@ -6,8 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"os/exec"
 	"strings"
 	"sync"
 	"testing"
@@ -17,40 +15,19 @@ import (
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
-// testServerBinary compiles the shared stdio fixture exactly once per test
-// binary run and returns its path. A timing-sensitive test must never
-// enclose a go run compile, or its bound would measure the Go build cache
-// rather than the code under test (D41, invariant 15, R2-01): on a cold
-// cache, "go run ./testserver" inside a 200ms connect bound fails every
-// time, deterministically, because the bound expires before the compile
-// even finishes.
+// testServerBinary returns the shared stdio fixture TestMain built. A
+// timing-sensitive test must never enclose a go run compile, or its bound
+// would measure the Go build cache rather than the code under test (D41,
+// invariant 15, R2-01): on a cold cache, "go run ./testserver" inside a
+// 200ms connect bound fails every time, deterministically, because the
+// bound expires before the compile even finishes.
 func testServerBinary(t *testing.T) string {
 	t.Helper()
-	testServerBinOnce.Do(func() {
-		f, err := os.CreateTemp("", "clai-mcp-testserver-*")
-		if err != nil {
-			testServerBinErr = fmt.Errorf("create temp file: %w", err)
-			return
-		}
-		f.Close()
-		cmd := exec.Command("go", "build", "-o", f.Name(), "./testserver")
-		if out, buildErr := cmd.CombinedOutput(); buildErr != nil {
-			testServerBinErr = fmt.Errorf("go build testserver: %w: %s", buildErr, out)
-			return
-		}
-		testServerBinPath = f.Name()
-	})
 	if testServerBinErr != nil {
 		t.Fatalf("build testserver binary: %v", testServerBinErr)
 	}
 	return testServerBinPath
 }
-
-var (
-	testServerBinOnce sync.Once
-	testServerBinPath string
-	testServerBinErr  error
-)
 
 // recordingSink collects stderr lines and exit notifications for assertions.
 // It also implements AuthPendingSink (phase 6), recording every AuthPending
@@ -561,7 +538,7 @@ func TestStdioConnSpawnFailureReturnsTypedStartupError(t *testing.T) {
 // through Call actually reaches the spawned process's stdin and that its
 // response comes back over stdout, end to end.
 func TestStdioConnEncodesRequestsToProcessStdin(t *testing.T) {
-	srv := pub_models.McpServer{Name: "echo", Command: "go", Args: []string{"run", "./testserver"}}
+	srv := pub_models.McpServer{Name: "echo", Command: testServerBinary(t)}
 	conn, err := NewStdioConn(t.Context(), srv, nil)
 	if err != nil {
 		t.Fatalf("NewStdioConn: %v", err)
@@ -582,7 +559,7 @@ func TestStdioConnEncodesRequestsToProcessStdin(t *testing.T) {
 // but stalls a specific call expires once the caller's own bounded context
 // does, rather than waiting forever.
 func TestStdioConnSingleCallBoundExpires(t *testing.T) {
-	srv := pub_models.McpServer{Name: "echo", Command: "go", Args: []string{"run", "./testserver"}}
+	srv := pub_models.McpServer{Name: "echo", Command: testServerBinary(t)}
 	conn, err := NewStdioConn(t.Context(), srv, nil)
 	if err != nil {
 		t.Fatalf("NewStdioConn: %v", err)
@@ -614,8 +591,7 @@ func TestStdioConnStderrStillFeedsSink(t *testing.T) {
 	sink := &recordingSink{}
 	srv := pub_models.McpServer{
 		Name:    "echo",
-		Command: "go",
-		Args:    []string{"run", "./testserver"},
+		Command: testServerBinary(t),
 		Env:     map[string]string{"TEST_SERVER_STDERR": "1"},
 	}
 	conn, err := NewStdioConn(t.Context(), srv, sink)
@@ -655,8 +631,7 @@ func TestStdioConn_ServerExitNotifiesSinkOnCrash(t *testing.T) {
 	sink := &recordingSink{}
 	srv := pub_models.McpServer{
 		Name:    "echo",
-		Command: "go",
-		Args:    []string{"run", "./testserver"},
+		Command: testServerBinary(t),
 		Env:     map[string]string{"TEST_SERVER_STDERR": "1", "TEST_SERVER_EXIT": "1"},
 	}
 	if _, err := NewStdioConn(t.Context(), srv, sink); err != nil {
@@ -682,8 +657,7 @@ func TestStdioConn_ServerExitNotSignaledOnNormalTeardown(t *testing.T) {
 	sink := &recordingSink{}
 	srv := pub_models.McpServer{
 		Name:    "echo",
-		Command: "go",
-		Args:    []string{"run", "./testserver"},
+		Command: testServerBinary(t),
 		Env:     map[string]string{"TEST_SERVER_STDERR": "1"},
 	}
 	conn, err := NewStdioConn(ctx, srv, sink)

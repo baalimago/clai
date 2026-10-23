@@ -46,6 +46,9 @@ func (r *sessionRunner[C]) Run(ctx context.Context, session *QuerySession) (runE
 	if session == nil {
 		return errors.New("run session: session is nil")
 	}
+	if err := r.querier.imageWiring().check(); err != nil {
+		return fmt.Errorf("run session: %w", err)
+	}
 	if r.recorder == nil {
 		r.recorder = noopCallUsageRecorder{}
 	}
@@ -78,14 +81,24 @@ func (r *sessionRunner[C]) Run(ctx context.Context, session *QuerySession) (runE
 		}
 	}()
 
+	if err := r.querier.setupImageGeneration(); err != nil {
+		return fmt.Errorf("set up image generation: %w", err)
+	}
+
 	for stepIndex := 0; ; {
 		stepStartedAt := time.Now()
 		stepResult, err := r.executeModelStep(ctx, session)
 		if err != nil {
-			if session.PendingTextString() != "" && session.FinalAssistantText == "" {
+			if (session.PendingTextString() != "" && session.FinalAssistantText == "") || session.hasStepImages() {
 				session.FlushPendingTextToFinal()
 			}
 			return fmt.Errorf("run step %d: %w", stepIndex, err)
+		}
+		handedBack := r.querier.handedBackCalls(session, stepResult.ToolCalls)
+		if len(handedBack) > 0 {
+			r.querier.prepareFinalAnswerPop()
+			stepResult.ToolCalls = nil
+			stepResult.EndedNormally = true
 		}
 
 		completedCall := CompletedModelCall{
@@ -115,18 +128,22 @@ func (r *sessionRunner[C]) Run(ctx context.Context, session *QuerySession) (runE
 			}
 			// Token check AFTER the batch so the chat order stays
 			// [assistant tool-call] [tool results] [handover user msg].
-			if _, err := r.stoploss.CheckContextBudget(ctx, r.querier.Model, session, stepResult.Usage); err != nil {
+			if _, err := r.stoploss.CheckContextBudget(ctx, r.querier.budgetModel(), session, stepResult.Usage); err != nil {
 				return fmt.Errorf("stoploss check step %d: %w", stepIndex, err)
 			}
 			stepIndex++
 			continue
 		}
 
-		if stepResult.AssistantText != "" {
+		if stepResult.AssistantText != "" || session.hasStepImages() {
 			session.FinalAssistantText = stepResult.AssistantText
+			session.finalTextShown = false
 			session.FinalReasoningText = session.PendingReasoning.String()
 		}
 		session.FinalUsage = stepResult.Usage
+		if len(handedBack) > 0 && session.FinalAssistantText == "" && !session.hasStepImages() {
+			return &HandedBackError{Calls: handedBack}
+		}
 		if stepResult.StopRequested || stepResult.EndedNormally {
 			return nil
 		}
@@ -139,11 +156,17 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 	traceChatf("query start chat_id=%q messages=%d raw=%t should_save_reply=%t", session.Chat.ID, len(session.Chat.Messages), q.Raw, session.ShouldSaveReply)
 	traceChatf("query sending chat to stream completions chat_id=%q messages=%d", session.Chat.ID, len(session.Chat.Messages))
 	session.ResetPendingText()
+	q.imageProgressSince = time.Time{}
 
-	completionsChan, err := q.Model.StreamCompletions(ctx, session.Chat)
+	chatForModel, err := q.chatForModel(session)
+	if err != nil {
+		return ModelStepResult{}, err
+	}
+	completionsChan, err := q.Model.StreamCompletions(ctx, chatForModel)
 	if err != nil {
 		return ModelStepResult{}, fmt.Errorf("stream completions: %w", err)
 	}
+	defer q.stopImageProgress()
 
 	// mcpNotify wakes the serialized loop when the MCP sink buffers an error
 	// entry. It is nil (select case disabled) when no MCP sink exists.
@@ -161,6 +184,24 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 		}
 		select {
 		case completion, ok := <-completionsChan:
+			switch cast := completion.(type) {
+			case models.ImageProgressEvent:
+				if err := q.startImageProgress(session); err != nil {
+					return ModelStepResult{}, err
+				}
+				continue
+			case models.NoopEvent:
+			case nil:
+				if !ok {
+					q.stopImageProgress()
+				}
+			case string:
+				if cast != "" {
+					q.stopImageProgress()
+				}
+			default:
+				q.stopImageProgress()
+			}
 			if !ok {
 				q.closeReasoningIfOpen(ctx, session)
 				if len(result.ToolCalls) == 0 {
@@ -194,6 +235,9 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 			case error:
 				if errors.Is(cast, context.Canceled) || errors.Is(cast, io.EOF) {
 					q.closeReasoningIfOpen(ctx, session)
+					if len(result.ToolCalls) == 0 {
+						q.prepareFinalAnswerPop()
+					}
 					result.EndedNormally = true
 					result.AssistantText = session.PendingTextString()
 					result.Usage = q.currentTokenUsage()
@@ -201,6 +245,11 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 				}
 				return ModelStepResult{}, fmt.Errorf("completion stream error: %w", cast)
 			case models.NoopEvent:
+			case models.ImageEvent:
+				q.closeReasoningIfOpen(ctx, session)
+				if err := q.receiveImage(session, cast); err != nil {
+					return ModelStepResult{}, err
+				}
 			case models.ReasoningEvent:
 				if !q.reasoningActive {
 					if q.usesActivityViewport() {
@@ -277,6 +326,7 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 				return ModelStepResult{}, fmt.Errorf("drain mcp logs: %w", err)
 			}
 		case <-ctx.Done():
+			q.stopImageProgress()
 			q.closeReasoningIfOpen(ctx, session)
 			result.StopRequested = true
 			result.AssistantText = session.PendingTextString()
@@ -301,6 +351,7 @@ func (r *sessionRunner[C]) applyResize(d dimensions.Dimensions) error {
 	q := r.querier
 	q.dims = d
 	if q.activityViewport != nil {
+		q.stopImageProgress()
 		if err := q.drainMcpLogs(); err != nil {
 			return fmt.Errorf("drain mcp logs after resize: %w", err)
 		}
@@ -336,9 +387,5 @@ func (r *sessionRunner[C]) drainPendingResizes() error {
 }
 
 func (r *sessionRunner[C]) modelName() string {
-	namer, ok := any(r.querier.Model).(ModelNamer)
-	if !ok {
-		return ""
-	}
-	return namer.ModelName()
+	return r.querier.modelName()
 }

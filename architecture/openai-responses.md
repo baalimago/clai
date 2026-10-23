@@ -76,10 +76,18 @@ generic (Chat Completions) path:
   unadvertised/hallucinated name then degrades to a recoverable `ERROR: unknown tool call`
   tool result the model can recover from, rather than killing the run. (The earlier
   Responses-only hard-fail here was the sole vendor divergence.)
-- **Image input.** Message `ContentParts` carrying an image are mapped to the Responses
-  `input_image` content type (`{type:"input_image", image_url:"<data-uri>"}`) — note the
-  Responses `image_url` is a plain data-URL **string**, unlike the Chat Completions object
-  form. Text parts map to `input_text`. This mirrors the vision support of the generic path.
+- **Image input.** A message's `Parts` map in order: a `TextPart` to `input_text`
+  (`output_text` on an assistant message) and an `ImagePart` to
+  `{type:"input_image", image_url:"<data-uri>"}` — note the Responses `image_url` is a plain
+  data-URL **string**, unlike the Chat Completions object form. A `tool` message with
+  `Parts` sends `function_call_output.output` as that array, so tool images travel natively
+  on this route (`ImageCapabilities` reports `ToolResultNative`; the Chat Completions
+  opt-out reports `ToolResultFallback`). Image refusals are checked before any request, as
+  [streaming.md](./streaming.md#image-content) describes. On the CLI the images come from
+  `-img`, `-g` and stdin, or from a tool (see [images.md](./images.md)).
+- **Image output.** clai never declares the built-in `image_generation` tool. A model on this
+  route generates images through clai's `generate_image` tool, like every other vendor (see
+  [images.md](./images.md#getting-images-back)).
 - **Reasoning.** For reasoning models the request opts in with
   `reasoning:{summary:"auto", effort:<cfg>}` — the `summary` is what makes the API stream
   `response.reasoning_summary_text.delta`, which is surfaced as `models.ReasoningEvent`
@@ -143,6 +151,6 @@ context on the first stop).
 | --------------------------------------------- | -------------------------------------------------------------------------------- |
 | `internal/vendors/openai/stream_selection.go` | `selectOpenAIURL`, endpoint resolution, `isReasoningModel`/`isCodexModel`, `normalizeModelID` |
 | `internal/vendors/openai/gpt.go`              | `ChatGPT` model: setup, tool mapping, dispatch to responses vs generic           |
-| `internal/vendors/openai/responses_stream.go` | Responses request build + SSE parsing + event normalization + reasoning capture/replay |
+| `internal/vendors/openai/responses_stream.go` | Responses request build + SSE parsing + event normalization + reasoning capture/replay + generated images |
 | `internal/vendors/openai/responses_models.go` | Responses request/response wire types                                            |
 | `internal/chat/reasoning_sidecar.go`          | Out-of-band persistence of reasoning items, keyed by persisted tool-call ID |

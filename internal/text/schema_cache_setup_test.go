@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/baalimago/clai/internal/tools/mcp"
+	"github.com/baalimago/clai/internal/tools/mcp/httptestserver"
 	"github.com/baalimago/clai/internal/tools/mcp/launcher"
 	"github.com/baalimago/clai/internal/tools/mcp/schemacache"
 	"github.com/baalimago/clai/internal/tools/mcp/serverconfig"
@@ -279,18 +280,29 @@ func TestSchemaCacheMissingEnvfileIsTypedError(t *testing.T) {
 	}
 }
 
-// TestLazyCacheMissConnectBoundAppliesToStdioHandshake pins R1-14: the
-// schema cache's cache-miss path bound only the connection-level handshake
-// bound (30s default), ignoring connect_timeout_seconds entirely, so a
-// server that spawns but never answers initialize blocked cold setup for
-// 30s regardless of what the server configured. A 1s connect_timeout_seconds
-// against a fake that never answers must fire in well under the 30s
-// default.
-func TestLazyCacheMissConnectBoundAppliesToStdioHandshake(t *testing.T) {
+// TestLazyCacheMissConnectBound pins R1-14 for both transports: each
+// cache-miss path bound only the connection-level handshake (30s default)
+// and ignored connect_timeout_seconds, so a server that never answers
+// initialize blocked cold setup for 30s. One setup holds a hanging stdio and
+// a hanging HTTP server, each with a 1s connect_timeout_seconds, and resolves
+// them concurrently (D39); both must fail at the connect stage well before
+// the default.
+func TestLazyCacheMissConnectBound(t *testing.T) {
+	hs := httptestserver.New()
+	defer hs.Close()
+	hs.Configure(func(c *httptestserver.Config) { c.HangForever = true })
+
+	ctx, cancel := httpSetupTestContext()
+	defer cancel()
+
+	mcpDir := t.TempDir()
+	httpConf := fmt.Sprintf(`{"url":%q,"connect_timeout_seconds":1}`, hs.URL)
+	if err := os.WriteFile(filepath.Join(mcpDir, "hangs-http.json"), []byte(httpConf), 0o644); err != nil {
+		t.Fatalf("write http server config: %v", err)
+	}
 	conf := Configurations{
-		SkipAmbientMcpServers: true,
 		McpServers: []pub_models.McpServer{{
-			Name:                  "hangs",
+			Name:                  "hangs-stdio",
 			Command:               testServerBinary(t),
 			Env:                   map[string]string{"TEST_SERVER_AUTH_HANG": "1"},
 			Startup:               pub_models.StartupLazy,
@@ -300,21 +312,25 @@ func TestLazyCacheMissConnectBoundAppliesToStdioHandshake(t *testing.T) {
 
 	start := time.Now()
 	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		if _, err := setupMcpManager(t.Context(), t.TempDir(), conf, &recordingSuccessSink{}, testSchemaCache(t), nil); err != nil {
+		if _, err := setupMcpManager(ctx, mcpDir, conf, &recordingSuccessSink{}, testSchemaCache(t), nil); err != nil {
 			t.Fatalf("an ambient-posture connect failure must degrade, not fail setup: %v", err)
 		}
 	})
 	elapsed := time.Since(start)
 
-	// Generous margin above the 1s connect_timeout_seconds, far short of the
-	// 30s handshake-bound default the unfixed code fell back to. The fixture
-	// now spawns a prebuilt binary (D41, invariant 15), so no compile-time
-	// variance is in play at all; the margin stays generous for host load.
+	// Generous margin for host load, far short of the 30s default.
 	if elapsed > 15*time.Second {
 		t.Fatalf("elapsed %v, want the 1s connect_timeout_seconds to fire well before the 30s handshake-bound default", elapsed)
 	}
-	if !strings.Contains(stdout, "stage 'connect'") {
-		t.Errorf("stdout = %q, want a connect-stage failure", stdout)
+	for _, tc := range []struct{ name, server string }{
+		{"LazyCacheMissConnectBoundAppliesToStdioHandshake", "hangs-stdio"},
+		{"LazyHttpCacheMissConnectBoundAppliesToHandshake", "hangs-http"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if want := "'" + tc.server + "' failed to start at stage 'connect'"; !strings.Contains(stdout, want) {
+				t.Errorf("stdout = %q, want %q", stdout, want)
+			}
+		})
 	}
 }
 

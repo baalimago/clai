@@ -31,7 +31,7 @@ func (f *fakeConn) Close() error { return nil }
 // Conn. t.Context() tears the process down at test end via its ctx.
 func startTestServerConn(t *testing.T) Conn {
 	t.Helper()
-	srv := pub_models.McpServer{Command: "go", Args: []string{"run", "./testserver"}}
+	srv := pub_models.McpServer{Command: testServerBinary(t)}
 	conn, err := NewStdioConn(t.Context(), srv, nil)
 	if err != nil {
 		t.Fatalf("NewStdioConn: %v", err)
@@ -187,8 +187,7 @@ func Test_McpTool_DecodeResultFailure_ErrorResult(t *testing.T) {
 // TimeoutSeconds config must reach the registered mcpTool.
 func TestHandleServer_CarriesMcpServerTimeout(t *testing.T) {
 	srv := pub_models.McpServer{
-		Command:        "go",
-		Args:           []string{"run", "./testserver"},
+		Command:        testServerBinary(t),
 		TimeoutSeconds: 7,
 	}
 	mt := registerTestTools(t, srv, "echo")

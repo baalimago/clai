@@ -908,6 +908,7 @@ func spawnTimestamps(t *testing.T, path string) []time.Time {
 // regardless of it. Using a pre-built binary instead of "go run" keeps a
 // cold Go build cache from affecting either case (D41).
 func TestLazySetupResolvesServersConcurrently(t *testing.T) {
+	t.Parallel()
 	bin := testServerBinary(t)
 	const (
 		n     = 4
@@ -999,6 +1000,7 @@ func TestConnectorConnectFailureSpawnsOnceAcrossRepeatedToolCallsEndToEnd(t *tes
 // one re-dial, so the third call spawns nothing and replays the memoised
 // challenge.
 func TestAuthChallengeStdioSpawnBoundedAcrossRepeatedToolCallsEndToEnd(t *testing.T) {
+	t.Parallel()
 	bin := testServerBinary(t)
 	spawnLog := filepath.Join(t.TempDir(), "spawns.log")
 	srv := pub_models.McpServer{
@@ -1064,5 +1066,28 @@ func TestDebugDumpNeverLeaksArgsOrEnvSecret(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "leaky") {
 		t.Error("DEBUG dump dropped the server name, which is not secret")
+	}
+}
+
+// A tool pattern that matches only generate_image selects it without the
+// "found none" warning: the turn registers that tool, not the registry.
+func TestSetupTooling_generateImagePatternDoesNotWarn(t *testing.T) {
+	confDir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(confDir, "mcpServers"), 0o755); err != nil {
+		t.Fatalf("mkdir mcpServers: %v", err)
+	}
+	t.Setenv("CLAI_CACHE_DIR", filepath.Join(t.TempDir(), "cache"))
+	completer := &toolBoxCompleter{}
+	conf := &Configurations{UseTools: true, ConfigDir: confDir, RequestedToolGlobs: []string{"gen*", "generate_image"}}
+
+	var err error
+	stdout, stderr := captureStdoutStderrText(t, func() {
+		err = setupTooling(t.Context(), completer, conf, &recordingSuccessSink{})
+	})
+	if err != nil {
+		t.Fatalf("setupTooling: %v", err)
+	}
+	if out := stdout + stderr; strings.Contains(out, "found none") || strings.Contains(out, "doesn't exist") {
+		t.Errorf("a generate_image selection warned: %q", out)
 	}
 }

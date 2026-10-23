@@ -1,6 +1,7 @@
 package audio
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -64,11 +65,11 @@ func (r *scriptedRunner) Run(ctx context.Context, name string, args ...string) (
 		n := samplesOf(time.Duration((end - start) * float64(time.Second)))
 		// Content depends on the source interval so distinct requests hash
 		// differently, as real audio would
-		pattern := []byte(m[1] + ":" + m[2])
-		buf := make([]byte, n*2)
-		for i := range buf {
-			buf[i] = pattern[i%len(pattern)] ^ r.fill
+		period := []byte(m[1] + ":" + m[2])
+		for i := range period {
+			period[i] ^= r.fill
 		}
+		buf := bytes.Repeat(period, int(n)*2/len(period)+1)[:n*2]
 		return "", "", os.WriteFile(args[len(args)-1], buf, 0o600)
 	case strings.Contains(joined, "libmp3lame"):
 		size := r.encodedBytes

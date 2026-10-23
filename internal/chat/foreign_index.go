@@ -21,7 +21,8 @@ import (
 const foreignIndexFileName = "foreign_index.cache"
 
 // foreignIndexVersion discards every row of any other version, older or newer.
-const foreignIndexVersion = 1
+// Version 1 rows predate image previews.
+const foreignIndexVersion = 2
 
 type foreignIndexCache struct {
 	Version int               `json:"version"`

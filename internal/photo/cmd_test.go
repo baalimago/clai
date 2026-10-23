@@ -2,9 +2,12 @@ package photo
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"strings"
 	"testing"
+
+	"github.com/baalimago/go_away_boilerplate/pkg/cmd"
 )
 
 func Test_Command(t *testing.T) {
@@ -23,7 +26,7 @@ func Test_Command(t *testing.T) {
 	if c.Describe() == "" || !strings.Contains(c.Help(), "photo <text>") {
 		t.Fatalf("describe/help incomplete: %q / %q", c.Describe(), c.Help())
 	}
-	for _, name := range []string{"pm", "photo-model", "pd", "pp", "r", "re", "I"} {
+	for _, name := range []string{"pm", "photo-model", "pd", "pp", "r", "re", "I", "img", "image", "open"} {
 		if c.Flagset().Lookup(name) == nil {
 			t.Fatalf("expected flag %q registered", name)
 		}
@@ -31,11 +34,18 @@ func Test_Command(t *testing.T) {
 	if err := c.Flagset().Parse([]string{"-pm", "dall-e-2", "a", "cat"}); err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	if err := c.Setup(context.Background()); err != nil {
-		t.Fatalf("Setup: %v", err)
+	// Config loading alone is not enough: the image dependencies are required (P14-3).
+	if err := c.Setup(context.Background()); !errors.Is(err, ErrPhotoUnconfigured) {
+		t.Fatalf("Setup: got %v, want ErrPhotoUnconfigured", err)
 	}
-	if gotConfDir != "/stub/conf" {
-		t.Fatalf("LoadConfig conf dir: got %q", gotConfDir)
+	if gotConfDir != "" {
+		t.Fatalf("LoadConfig ran before the dependency check (conf dir %q)", gotConfDir)
+	}
+	if items := c.CompleteFlagValue("img", ""); len(items) != 1 || items[0].Kind != cmd.CompletionKindFile {
+		t.Fatalf("-img completion = %+v, want files", items)
+	}
+	if items := c.CompleteFlagValue("pd", ""); len(items) != 1 || items[0].Kind != cmd.CompletionKindDir {
+		t.Fatalf("-pd completion = %+v, want dirs", items)
 	}
 }
 

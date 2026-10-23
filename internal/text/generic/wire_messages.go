@@ -1,9 +1,11 @@
 package generic
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 
+	"github.com/baalimago/clai/internal/models"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -29,7 +31,28 @@ type wireFunction struct {
 	Arguments string `json:"arguments"`
 }
 
-func toWireMessages(msgs []pub_models.Message) ([]wireMessage, error) {
+type wireTextPart struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+type wireImagePart struct {
+	Type     string       `json:"type"`
+	ImageURL wireImageURL `json:"image_url"`
+}
+
+type wireImageURL struct {
+	URL string `json:"url"`
+}
+
+// ImageDataURL encodes an image as the base64 data URL that chat-completions
+// style routes carry it in.
+func ImageDataURL(p pub_models.ImagePart) string {
+	return "data:" + p.MIME + ";base64," + base64.StdEncoding.EncodeToString(p.Data)
+}
+
+// toWireMessages expects msgs to have passed models.CheckImageParts against caps.
+func toWireMessages(msgs []pub_models.Message, caps models.ImageCapabilities) ([]wireMessage, error) {
 	out := make([]wireMessage, len(msgs))
 	for i, m := range msgs {
 		wm := wireMessage{
@@ -37,9 +60,12 @@ func toWireMessages(msgs []pub_models.Message) ([]wireMessage, error) {
 			ToolCallID:       m.ToolCallID,
 			ReasoningContent: m.ReasoningContent,
 		}
-		if len(m.ContentParts) > 0 {
-			wm.Content = m.ContentParts
-		} else {
+		switch {
+		case len(m.Parts) > 0 && partsAsArray(m.Role, caps):
+			wm.Content = toWireParts(m.Parts)
+		case len(m.Parts) > 0:
+			wm.Content = m.Describe()
+		default:
 			wm.Content = m.Content
 		}
 		if len(m.ToolCalls) > 0 {
@@ -87,4 +113,29 @@ func toWireToolCall(c pub_models.Call) (wireToolCall, error) {
 		Function: wireFunction{Name: name, Arguments: args},
 		Extra:    c.ExtraContent,
 	}, nil
+}
+
+// partsAsArray is false where no image may travel; text then goes as a plain string.
+func partsAsArray(role string, caps models.ImageCapabilities) bool {
+	switch {
+	case caps.Input == models.ImageInputNone, role == "assistant":
+		return false
+	case role == "tool":
+		return caps.ToolResult == models.ToolResultNative
+	default:
+		return true
+	}
+}
+
+func toWireParts(parts []pub_models.Part) []any {
+	out := make([]any, 0, len(parts))
+	for _, p := range parts {
+		switch part := p.(type) {
+		case pub_models.TextPart:
+			out = append(out, wireTextPart{Type: "text", Text: part.Text})
+		case pub_models.ImagePart:
+			out = append(out, wireImagePart{Type: "image_url", ImageURL: wireImageURL{URL: ImageDataURL(part)}})
+		}
+	}
+	return out
 }

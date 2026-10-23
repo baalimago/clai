@@ -285,7 +285,7 @@ func LoadDirScopedContext(confDir string) (pub_models.Chat, error) {
 	}
 
 	convPath := conversationPath(confDir, scope.ChatID)
-	c, err := FromPath(convPath)
+	c, err := loadConversation(confDir, convPath)
 	if err != nil {
 		return pub_models.Chat{}, fmt.Errorf("load conversation for chat_id %q: %w", scope.ChatID, err)
 	}

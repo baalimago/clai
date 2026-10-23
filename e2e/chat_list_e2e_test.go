@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baalimago/clai/e2e/e2etest"
 	"github.com/baalimago/clai/internal/chat"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
@@ -23,29 +24,6 @@ import (
 
 // -- helpers ---------------------------------------------------------------
 
-func seedConv(t *testing.T, convDir string, c pub_models.Chat) {
-	t.Helper()
-	if err := chat.Save(convDir, c); err != nil {
-		t.Fatalf("Save(%q): %v", c.ID, err)
-	}
-}
-
-func makeConv(id string, created time.Time, msgs ...pub_models.Message) pub_models.Chat {
-	return pub_models.Chat{
-		ID:       id,
-		Created:  created,
-		Messages: msgs,
-	}
-}
-
-func msgUser(content string) pub_models.Message {
-	return pub_models.Message{Role: "user", Content: content}
-}
-
-func msgAsst(content string) pub_models.Message {
-	return pub_models.Message{Role: "assistant", Content: content}
-}
-
 // ============================================================
 // Tests 1–5: Foreign-chat and complex picker flows
 // ============================================================
@@ -54,7 +32,7 @@ func msgAsst(content string) pub_models.Message {
 // (Claude) chat row and continuing clones it, and that subsequent list runs
 // suppress the foreign row (dedup).
 func Test_e2e_chat_list_foreign_clone_and_dedup(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -74,7 +52,7 @@ func Test_e2e_chat_list_foreign_clone_and_dedup(t *testing.T) {
 
 	// First run: select row 0, then continue ("c") to clone. Trailing "q"s from -n
 	// exit the list loop after clone.
-	stdout, status := runOne(t, confDir, "-n -r c l 0 c")
+	stdout, status := harness.RunOne(t, confDir, "-n -r c l 0 c")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -83,7 +61,7 @@ func Test_e2e_chat_list_foreign_clone_and_dedup(t *testing.T) {
 	}
 
 	// Second run: the foreign row should be deduped. Select row 0, then "q" exits.
-	stdout2, status2 := runOne(t, confDir, "-n -r c l 0")
+	stdout2, status2 := harness.RunOne(t, confDir, "-n -r c l 0")
 	if status2 != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status2, stdout2)
 	}
@@ -96,12 +74,12 @@ func Test_e2e_chat_list_foreign_clone_and_dedup(t *testing.T) {
 // wired into the list: a state.vscdb fixture under the isolated config dir
 // produces a foreign row, and selecting it clones the transcript.
 func Test_e2e_chat_list_cursor_clone(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 
-	src, err := os.ReadFile(filepath.Join(moduleRoot(t), "internal", "vendors", "cursor", "testdata", "state.vscdb"))
+	src, err := os.ReadFile(filepath.Join(e2etest.ModuleRoot(t), "internal", "vendors", "cursor", "testdata", "state.vscdb"))
 	if err != nil {
 		t.Fatalf("read cursor fixture: %v", err)
 	}
@@ -113,7 +91,7 @@ func Test_e2e_chat_list_cursor_clone(t *testing.T) {
 		t.Fatalf("write cursor database: %v", err)
 	}
 
-	stdout, status := runOne(t, confDir, "-n -r c l 0 c")
+	stdout, status := harness.RunOne(t, confDir, "-n -r c l 0 c")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -125,12 +103,12 @@ func Test_e2e_chat_list_cursor_clone(t *testing.T) {
 // Test_e2e_chat_list_cursor_cli_clone verifies the Cursor CLI store path: a
 // chat under ~/.cursor/chats produces a foreign row and clones.
 func Test_e2e_chat_list_cursor_cli_clone(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 
-	src := filepath.Join(moduleRoot(t), "internal", "vendors", "cursor", "testdata", "cli", "workspace-a", "chat-cli-1")
+	src := filepath.Join(e2etest.ModuleRoot(t), "internal", "vendors", "cursor", "testdata", "cli", "workspace-a", "chat-cli-1")
 	dst := filepath.Join(home, ".cursor", "chats", "workspace-a", "chat-cli-1")
 	if err := os.MkdirAll(dst, 0o755); err != nil {
 		t.Fatalf("mkdir cursor cli chat: %v", err)
@@ -145,7 +123,7 @@ func Test_e2e_chat_list_cursor_cli_clone(t *testing.T) {
 		}
 	}
 
-	stdout, status := runOne(t, confDir, "-n -r c l 0 c")
+	stdout, status := harness.RunOne(t, confDir, "-n -r c l 0 c")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -158,7 +136,7 @@ func Test_e2e_chat_list_cursor_cli_clone(t *testing.T) {
 // wired into the list: a rollout under ~/.codex/sessions produces a foreign
 // row, and selecting it clones the transcript.
 func Test_e2e_chat_list_codex_clone(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
@@ -176,7 +154,7 @@ func Test_e2e_chat_list_codex_clone(t *testing.T) {
 		t.Fatalf("write codex session: %v", err)
 	}
 
-	stdout, status := runOne(t, confDir, "-n -r c l 0 c")
+	stdout, status := harness.RunOne(t, confDir, "-n -r c l 0 c")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -189,12 +167,12 @@ func Test_e2e_chat_list_codex_clone(t *testing.T) {
 // wired into the list: a database under the isolated data dir produces a
 // foreign row, and selecting it clones the transcript.
 func Test_e2e_chat_list_opencode_clone(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
 
-	src, err := os.ReadFile(filepath.Join(moduleRoot(t), "internal", "vendors", "opencode", "testdata", "opencode.db"))
+	src, err := os.ReadFile(filepath.Join(e2etest.ModuleRoot(t), "internal", "vendors", "opencode", "testdata", "opencode.db"))
 	if err != nil {
 		t.Fatalf("read opencode fixture: %v", err)
 	}
@@ -206,7 +184,7 @@ func Test_e2e_chat_list_opencode_clone(t *testing.T) {
 		t.Fatalf("write opencode database: %v", err)
 	}
 
-	stdout, status := runOne(t, confDir, "-n -r c l 0 c")
+	stdout, status := harness.RunOne(t, confDir, "-n -r c l 0 c")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -219,7 +197,7 @@ func Test_e2e_chat_list_opencode_clone(t *testing.T) {
 // is wired into the list: a session log under ~/.gemini/tmp produces a foreign
 // row, and selecting it clones the transcript.
 func Test_e2e_chat_list_gemini_clone(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("SANDBOX", "")
@@ -236,7 +214,7 @@ func Test_e2e_chat_list_gemini_clone(t *testing.T) {
 		t.Fatalf("write gemini session: %v", err)
 	}
 
-	stdout, status := runOne(t, confDir, "-n -r c l 0 c")
+	stdout, status := harness.RunOne(t, confDir, "-n -r c l 0 c")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -249,7 +227,7 @@ func Test_e2e_chat_list_gemini_clone(t *testing.T) {
 // wired into the list: a record log under ~/.qwen/projects produces a foreign
 // row, and selecting it clones the transcript.
 func Test_e2e_chat_list_qwen_clone(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("QWEN_RUNTIME_DIR", "")
@@ -266,7 +244,7 @@ func Test_e2e_chat_list_qwen_clone(t *testing.T) {
 		t.Fatalf("write qwen session: %v", err)
 	}
 
-	stdout, status := runOne(t, confDir, "-n -r c l 0 c")
+	stdout, status := harness.RunOne(t, confDir, "-n -r c l 0 c")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -279,11 +257,11 @@ func Test_e2e_chat_list_qwen_clone(t *testing.T) {
 // reader is wired into the list: a conversation database under ~/.gemini
 // produces a foreign row, and selecting it clones the transcript.
 func Test_e2e_chat_list_antigravity_clone(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	src, err := os.ReadFile(filepath.Join(moduleRoot(t), "internal", "vendors", "antigravity", "testdata", "store", "antigravity", "conversations", "main.db"))
+	src, err := os.ReadFile(filepath.Join(e2etest.ModuleRoot(t), "internal", "vendors", "antigravity", "testdata", "store", "antigravity", "conversations", "main.db"))
 	if err != nil {
 		t.Fatalf("read antigravity fixture: %v", err)
 	}
@@ -295,7 +273,7 @@ func Test_e2e_chat_list_antigravity_clone(t *testing.T) {
 		t.Fatalf("write antigravity database: %v", err)
 	}
 
-	stdout, status := runOne(t, confDir, "-n -r c l 0 c")
+	stdout, status := harness.RunOne(t, confDir, "-n -r c l 0 c")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -308,7 +286,7 @@ func Test_e2e_chat_list_antigravity_clone(t *testing.T) {
 // page forward in list, open chat, page forward in picker, mistype → notice,
 // edit message → picker reopens same page → back → list same page → quit.
 func Test_e2e_chat_list_edit_message_picker_reopens(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	t.Setenv("HOME", t.TempDir())
 
 	// Fake $EDITOR: overwrite whatever file it is given.
@@ -325,16 +303,16 @@ func Test_e2e_chat_list_edit_message_picker_reopens(t *testing.T) {
 	// Each chat must have a unique first user message to avoid grouping.
 	for i := range 12 {
 		msgs := []pub_models.Message{
-			msgUser("unique prompt " + formatTwoDigit(i)),
-			msgAsst("reply"),
+			e2etest.MsgUser("unique prompt " + formatTwoDigit(i)),
+			e2etest.MsgAsst("reply"),
 		}
 		if i == 1 {
 			msgs = msgs[:1]
 			for range 11 {
-				msgs = append(msgs, msgAsst("reply"))
+				msgs = append(msgs, e2etest.MsgAsst("reply"))
 			}
 		}
-		seedConv(t, convDir, makeConv(
+		e2etest.SeedConv(t, convDir, e2etest.MakeConv(
 			"conv-"+formatTwoDigit(i),
 			base.Add(time.Duration(i)*time.Minute),
 			msgs...,
@@ -344,7 +322,7 @@ func Test_e2e_chat_list_edit_message_picker_reopens(t *testing.T) {
 	// n=next page, 10=select conv-01, e=edit, n=next picker page,
 	// d=mistype (triggers "invalid selection" notice), 11=edit msg 11,
 	// b=back to list (still page 1), trailing q exits.
-	stdout, status := runOne(t, confDir, "-n -r c l n 10 e n d 11 b")
+	stdout, status := harness.RunOne(t, confDir, "-n -r c l n 10 e n d 11 b")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -371,20 +349,20 @@ func Test_e2e_chat_list_edit_message_picker_reopens(t *testing.T) {
 // Test_e2e_chat_list_delete_message_picker_reopens is the delete mirror:
 // picker stays open across deletions on the same page.
 func Test_e2e_chat_list_delete_message_picker_reopens(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	t.Setenv("HOME", t.TempDir())
 
 	convDir := filepath.Join(confDir, "conversations")
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	for i := range 12 {
-		msgs := []pub_models.Message{msgUser("unique prompt " + formatTwoDigit(i)), msgAsst("reply")}
+		msgs := []pub_models.Message{e2etest.MsgUser("unique prompt " + formatTwoDigit(i)), e2etest.MsgAsst("reply")}
 		if i == 1 {
 			msgs = msgs[:1]
 			for range 11 {
-				msgs = append(msgs, msgAsst("reply"))
+				msgs = append(msgs, e2etest.MsgAsst("reply"))
 			}
 		}
-		seedConv(t, convDir, makeConv(
+		e2etest.SeedConv(t, convDir, e2etest.MakeConv(
 			"conv-"+formatTwoDigit(i),
 			base.Add(time.Duration(i)*time.Minute),
 			msgs...,
@@ -393,7 +371,7 @@ func Test_e2e_chat_list_delete_message_picker_reopens(t *testing.T) {
 
 	// n=next page, 10=select conv-01, d=delete, n=next picker page,
 	// 11=delete msg 11, b=back to list, trailing q exits.
-	stdout, status := runOne(t, confDir, "-n -r c l n 10 d n 11 b")
+	stdout, status := harness.RunOne(t, confDir, "-n -r c l n 10 d n 11 b")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -414,7 +392,7 @@ func Test_e2e_chat_list_delete_message_picker_reopens(t *testing.T) {
 // Test_e2e_chat_list_foreign_back_to_list verifies that pressing "b" at
 // a foreign chat's action prompt returns to the list loop.
 func Test_e2e_chat_list_foreign_back_to_list(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -432,7 +410,7 @@ func Test_e2e_chat_list_foreign_back_to_list(t *testing.T) {
 	}
 
 	// 0=select foreign row, b=back to list, trailing q exits.
-	stdout, status := runOne(t, confDir, "-n -r c l 0 b")
+	stdout, status := harness.RunOne(t, confDir, "-n -r c l 0 b")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -447,7 +425,7 @@ func Test_e2e_chat_list_foreign_back_to_list(t *testing.T) {
 // Test_e2e_chat_list_foreign_quit verifies that pressing "q" at a foreign chat's
 // action prompt exits cleanly without cloning.
 func Test_e2e_chat_list_foreign_quit(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -465,7 +443,7 @@ func Test_e2e_chat_list_foreign_quit(t *testing.T) {
 	}
 
 	// 0=select foreign row, trailing q exits from actOnForeignChat.
-	stdout, status := runOne(t, confDir, "-n -r c l 0")
+	stdout, status := harness.RunOne(t, confDir, "-n -r c l 0")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -493,10 +471,10 @@ func Test_e2e_chat_list_foreign_quit(t *testing.T) {
 // Test_e2e_chat_list_macro_empty covers: empty conversation dir, macro selects
 // row 0 → "selection out of range" notice → trailing "q" exits cleanly.
 func Test_e2e_chat_list_macro_empty(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	t.Setenv("HOME", t.TempDir())
 
-	stdout, status := runOne(t, confDir, "-n -r c l 0")
+	stdout, status := harness.RunOne(t, confDir, "-n -r c l 0")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -508,17 +486,17 @@ func Test_e2e_chat_list_macro_empty(t *testing.T) {
 // Test_e2e_chat_list_macro_out_of_range covers: one chat seeded, macro selects
 // index 999, table shows invalid-selection notice, trailing "q" exits cleanly.
 func Test_e2e_chat_list_macro_out_of_range(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	t.Setenv("HOME", t.TempDir())
 
 	convDir := filepath.Join(confDir, "conversations")
-	seedConv(t, convDir, makeConv(
+	e2etest.SeedConv(t, convDir, e2etest.MakeConv(
 		"only-chat",
 		time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
-		msgUser("hello"), msgAsst("hi"),
+		e2etest.MsgUser("hello"), e2etest.MsgAsst("hi"),
 	))
 
-	stdout, status := runOne(t, confDir, "-n -r c l 999")
+	stdout, status := harness.RunOne(t, confDir, "-n -r c l 999")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -530,17 +508,17 @@ func Test_e2e_chat_list_macro_out_of_range(t *testing.T) {
 // Test_e2e_chat_list_macro_continue covers: select chat 0, actOnChat reads
 // trailing "q" → ErrUserInitiatedExit → listChats catches → clean exit.
 func Test_e2e_chat_list_macro_continue(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	t.Setenv("HOME", t.TempDir())
 
 	convDir := filepath.Join(confDir, "conversations")
-	seedConv(t, convDir, makeConv(
+	e2etest.SeedConv(t, convDir, e2etest.MakeConv(
 		"chat-0",
 		time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
-		msgUser("test prompt"), msgAsst("test reply"),
+		e2etest.MsgUser("test prompt"), e2etest.MsgAsst("test reply"),
 	))
 
-	stdout, status := runOne(t, confDir, "-n -r c l 0")
+	stdout, status := harness.RunOne(t, confDir, "-n -r c l 0")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -552,17 +530,17 @@ func Test_e2e_chat_list_macro_continue(t *testing.T) {
 // Test_e2e_chat_list_macro_back_to_list covers: select chat 0, press "b" (back),
 // returns to list loop, trailing "q" exits cleanly.
 func Test_e2e_chat_list_macro_back_to_list(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	t.Setenv("HOME", t.TempDir())
 
 	convDir := filepath.Join(confDir, "conversations")
-	seedConv(t, convDir, makeConv(
+	e2etest.SeedConv(t, convDir, e2etest.MakeConv(
 		"chat-0",
 		time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
-		msgUser("test prompt"), msgAsst("test reply"),
+		e2etest.MsgUser("test prompt"), e2etest.MsgAsst("test reply"),
 	))
 
-	stdout, status := runOne(t, confDir, "-n -r c l 0 b")
+	stdout, status := harness.RunOne(t, confDir, "-n -r c l 0 b")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -578,26 +556,26 @@ func Test_e2e_chat_list_macro_back_to_list(t *testing.T) {
 // Test_e2e_chat_list_macro_delete_messages covers: select chat 0, "d" to delete,
 // "0:5" range deletes messages 0-5, trailing "q" exits picker then list.
 func Test_e2e_chat_list_macro_delete_messages(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	t.Setenv("HOME", t.TempDir())
 
 	convDir := filepath.Join(confDir, "conversations")
 	msgs := []pub_models.Message{
-		msgUser("prompt"),
-		msgAsst("r0"),
-		msgAsst("r1"),
-		msgAsst("r2"),
-		msgAsst("r3"),
-		msgAsst("r4"),
-		msgAsst("r5"),
+		e2etest.MsgUser("prompt"),
+		e2etest.MsgAsst("r0"),
+		e2etest.MsgAsst("r1"),
+		e2etest.MsgAsst("r2"),
+		e2etest.MsgAsst("r3"),
+		e2etest.MsgAsst("r4"),
+		e2etest.MsgAsst("r5"),
 	}
-	seedConv(t, convDir, makeConv(
+	e2etest.SeedConv(t, convDir, e2etest.MakeConv(
 		"chat-0",
 		time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 		msgs...,
 	))
 
-	stdout, status := runOne(t, confDir, "-n -r c l 0 d 0:5")
+	stdout, status := harness.RunOne(t, confDir, "-n -r c l 0 d 0:5")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -620,17 +598,17 @@ func Test_e2e_chat_list_macro_delete_messages(t *testing.T) {
 // Test_e2e_chat_list_macro_delete_no_messages covers: select chat 0, "d" to open
 // picker, trailing "q" exits picker without deletion, then exits list.
 func Test_e2e_chat_list_macro_delete_no_messages(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	t.Setenv("HOME", t.TempDir())
 
 	convDir := filepath.Join(confDir, "conversations")
-	seedConv(t, convDir, makeConv(
+	e2etest.SeedConv(t, convDir, e2etest.MakeConv(
 		"chat-0",
 		time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
-		msgUser("prompt"), msgAsst("reply"),
+		e2etest.MsgUser("prompt"), e2etest.MsgAsst("reply"),
 	))
 
-	stdout, status := runOne(t, confDir, "-n -r c l 0 d")
+	stdout, status := harness.RunOne(t, confDir, "-n -r c l 0 d")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -647,7 +625,7 @@ func Test_e2e_chat_list_macro_delete_no_messages(t *testing.T) {
 // Test_e2e_chat_list_macro_edit_message covers: select chat 0, "e" to edit,
 // "5" selects message 5, editor runs, trailing "q" exits picker then list.
 func Test_e2e_chat_list_macro_edit_message(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	t.Setenv("HOME", t.TempDir())
 
 	editorScript := filepath.Join(t.TempDir(), "fake-editor.sh")
@@ -658,21 +636,21 @@ func Test_e2e_chat_list_macro_edit_message(t *testing.T) {
 
 	convDir := filepath.Join(confDir, "conversations")
 	msgs := []pub_models.Message{
-		msgUser("prompt"),
-		msgAsst("reply"),
-		msgAsst("reply"),
-		msgAsst("reply"),
-		msgAsst("reply"),
-		msgAsst("reply"),
-		msgAsst("reply"),
+		e2etest.MsgUser("prompt"),
+		e2etest.MsgAsst("reply"),
+		e2etest.MsgAsst("reply"),
+		e2etest.MsgAsst("reply"),
+		e2etest.MsgAsst("reply"),
+		e2etest.MsgAsst("reply"),
+		e2etest.MsgAsst("reply"),
 	}
-	seedConv(t, convDir, makeConv(
+	e2etest.SeedConv(t, convDir, e2etest.MakeConv(
 		"chat-0",
 		time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 		msgs...,
 	))
 
-	stdout, status := runOne(t, confDir, "-n -r c l 0 e 5")
+	stdout, status := harness.RunOne(t, confDir, "-n -r c l 0 e 5")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -742,33 +720,33 @@ func writeDirScopeBinding(t *testing.T, confDir, cwd, chatID string) {
 // ============================================================
 
 func Test_e2e_chat_list_macro_group_drill_and_back(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	t.Setenv("HOME", t.TempDir())
 
 	convDir := filepath.Join(confDir, "conversations")
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	// Two chats with the same first user message → they form a group.
-	seedConv(t, convDir, makeConv(
+	e2etest.SeedConv(t, convDir, e2etest.MakeConv(
 		"chat-a",
 		base.Add(1*time.Minute),
-		msgUser("fix the auth bug"), msgAsst("reply a"),
+		e2etest.MsgUser("fix the auth bug"), e2etest.MsgAsst("reply a"),
 	))
-	seedConv(t, convDir, makeConv(
+	e2etest.SeedConv(t, convDir, e2etest.MakeConv(
 		"chat-b",
 		base.Add(2*time.Minute),
-		msgUser("fix the auth bug"), msgAsst("reply b"),
+		e2etest.MsgUser("fix the auth bug"), e2etest.MsgAsst("reply b"),
 	))
 	// Also seed an unrelated chat to ensure group row is the only collapsed one.
-	seedConv(t, convDir, makeConv(
+	e2etest.SeedConv(t, convDir, e2etest.MakeConv(
 		"chat-unrelated",
 		base,
-		msgUser("refactor database"), msgAsst("reply"),
+		e2etest.MsgUser("refactor database"), e2etest.MsgAsst("reply"),
 	))
 
 	// 0=select group row → drill into group view
 	// 0=select member chat-a → actOnChat
 	// b=back to group view → trailing q exits
-	stdout, status := runOne(t, confDir, "-n -r c l 0 0 b")
+	stdout, status := harness.RunOne(t, confDir, "-n -r c l 0 0 b")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -792,25 +770,25 @@ func Test_e2e_chat_list_macro_group_drill_and_back(t *testing.T) {
 // ============================================================
 
 func Test_e2e_chat_list_macro_group_back_without_select(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	t.Setenv("HOME", t.TempDir())
 
 	convDir := filepath.Join(confDir, "conversations")
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	seedConv(t, convDir, makeConv(
+	e2etest.SeedConv(t, convDir, e2etest.MakeConv(
 		"chat-a",
 		base.Add(1*time.Minute),
-		msgUser("fix the auth bug"), msgAsst("reply a"),
+		e2etest.MsgUser("fix the auth bug"), e2etest.MsgAsst("reply a"),
 	))
-	seedConv(t, convDir, makeConv(
+	e2etest.SeedConv(t, convDir, e2etest.MakeConv(
 		"chat-b",
 		base.Add(2*time.Minute),
-		msgUser("fix the auth bug"), msgAsst("reply b"),
+		e2etest.MsgUser("fix the auth bug"), e2etest.MsgAsst("reply b"),
 	))
 
 	// 0=select group row → drill into group view
 	// b=back → return to top-level list → trailing q exits
-	stdout, status := runOne(t, confDir, "-n -r c l 0 b")
+	stdout, status := harness.RunOne(t, confDir, "-n -r c l 0 b")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -834,7 +812,7 @@ func Test_e2e_chat_list_macro_group_back_without_select(t *testing.T) {
 var dirToggleState = regexp.MustCompile(`(?s)\[d\][^,]*: ?off.*\[d\][^,]*: ?on.*\[d\][^,]*: ?off`)
 
 func Test_e2e_chat_list_macro_dir_filter_toggle(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	t.Setenv("HOME", t.TempDir())
 
 	// Work in a temp dir so the dirscope predicate can bind.
@@ -843,16 +821,16 @@ func Test_e2e_chat_list_macro_dir_filter_toggle(t *testing.T) {
 	convDir := filepath.Join(confDir, "conversations")
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	// Chat bound to CWD via dirscope binding.
-	seedConv(t, convDir, makeConv(
+	e2etest.SeedConv(t, convDir, e2etest.MakeConv(
 		"bound-chat",
 		base.Add(1*time.Minute),
-		msgUser("in this directory"), msgAsst("yes"),
+		e2etest.MsgUser("in this directory"), e2etest.MsgAsst("yes"),
 	))
 	// Chat not bound — will be hidden when dir filter is on.
-	seedConv(t, convDir, makeConv(
+	e2etest.SeedConv(t, convDir, e2etest.MakeConv(
 		"unbound-chat",
 		base,
-		msgUser("elsewhere"), msgAsst("no"),
+		e2etest.MsgUser("elsewhere"), e2etest.MsgAsst("no"),
 	))
 
 	// Create dirscope binding for the workDir → bound-chat.
@@ -860,7 +838,7 @@ func Test_e2e_chat_list_macro_dir_filter_toggle(t *testing.T) {
 
 	// d=toggle dir filter ON (shows only bound-chat)
 	// d=toggle dir filter OFF (shows both) → trailing q exits
-	stdout, status := runOne(t, workDir, "-n -r c l d d")
+	stdout, status := harness.RunOne(t, workDir, "-n -r c l d d")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -885,7 +863,7 @@ func Test_e2e_chat_list_macro_dir_filter_toggle(t *testing.T) {
 // ============================================================
 
 func Test_e2e_chat_list_macro_dir_filter_empty(t *testing.T) {
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 	t.Setenv("HOME", t.TempDir())
 
 	// Work in a temp dir with no dirscope bindings.
@@ -894,7 +872,7 @@ func Test_e2e_chat_list_macro_dir_filter_empty(t *testing.T) {
 	// No chats seeded — empty conv dir (except for the index/globalScope).
 
 	// d=toggle dir filter ON → empty view → trailing q exits
-	stdout, status := runOne(t, workDir, "-n -r c l d")
+	stdout, status := harness.RunOne(t, workDir, "-n -r c l d")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -924,7 +902,7 @@ func Test_e2e_chat_list_does_not_create_config_dir(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
 	workDir := t.TempDir()
-	stdout, status := runOne(t, workDir, "-n c l 0")
+	stdout, status := harness.RunOne(t, workDir, "-n c l 0")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}

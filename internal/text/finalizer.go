@@ -88,12 +88,17 @@ func (f sessionFinalizer[C]) Finalize(ctx context.Context, session *QuerySession
 		fmt.Fprintln(q.out)
 	}
 
-	if session.FinalAssistantText != "" {
-		session.Chat.Messages = append(session.Chat.Messages, pub_models.Message{
+	if images := session.takeStepImages(); session.FinalAssistantText != "" || len(images) > 0 {
+		answer := pub_models.Message{
 			Role:             "assistant",
 			Content:          stripThinkingBlocks(session.FinalAssistantText),
 			ReasoningContent: session.FinalReasoningText,
-		})
+		}
+		if len(images) > 0 {
+			answer.Parts = withStepImages(answer.Content, images)
+			answer.Content = ""
+		}
+		session.Chat.Messages = append(session.Chat.Messages, answer)
 	}
 	session.Chat.TokenUsage = accumulateCompletedUsage(session.CompletedCalls, session.FinalUsage)
 	session.Chat.RecentTokenUsage = mostRecentCompletedUsage(session.CompletedCalls, session.FinalUsage)
@@ -124,6 +129,8 @@ func (f sessionFinalizer[C]) Finalize(ctx context.Context, session *QuerySession
 		// embedded log without the run's final answer.
 		q.logMessage(ctx, "final_answer", stripThinkingBlocks(session.FinalAssistantText), "")
 		fmt.Fprintln(q.out, stripThinkingBlocks(session.FinalAssistantText))
+	} else if session.finalTextShown {
+		q.logMessage(ctx, "final_answer", session.FinalAssistantText, "")
 	} else {
 		q.postProcessOutput(ctx, pub_models.Message{
 			Role:    "assistant",
@@ -149,7 +156,7 @@ func (f sessionFinalizer[C]) persist(session *QuerySession) error {
 			ancli.Warnf("failed to stamp origin directory: %v\n", originErr)
 		}
 		q.chat = session.Chat
-		if err := chat.SaveAsPreviousQuery(q.configDir, session.Chat); err != nil {
+		if err := q.imageWiring().Persister.Promote(session.Chat); err != nil {
 			persistErr = fmt.Errorf("failed to save previous query: %w", err)
 		}
 		// History recording is always-on for non-reply queries. A plain -re forks a

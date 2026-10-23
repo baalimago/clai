@@ -775,6 +775,7 @@ func Test_McpSink_RawStructuredFlushesCrashTailFromServer(t *testing.T) {
 }
 
 func TestMcpLogSink_ConcurrentAppendAndDrain(t *testing.T) {
+	t.Parallel()
 	sink := newMcpLogSink(mcpLogRolling)
 	var wg sync.WaitGroup
 	for i := range 4 {

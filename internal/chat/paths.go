@@ -22,7 +22,8 @@ func conversationPathFromDir(convDir, chatID string) string {
 	return filepath.Join(convDir, conversationFileName(chatID))
 }
 
-func globalScopePath(confDir string) string {
+// GlobalScopePath is the previous query's conversation file under confDir.
+func GlobalScopePath(confDir string) string {
 	return filepath.Join(conversationsDir(confDir), globalScopeFile)
 }
 
@@ -32,6 +33,15 @@ func prevQueryPath(confDir string) string {
 
 func dirscopeRoot(confDir string) string {
 	return filepath.Join(conversationsDir(confDir), "dirs")
+}
+
+// AssetsDir is the README asset directory under confDir.
+func AssetsDir(confDir string) string {
+	return assetsDirFromConvDir(conversationsDir(confDir))
+}
+
+func assetsDirFromConvDir(convDir string) string {
+	return filepath.Join(convDir, "assets")
 }
 
 // reasoningDirFromConvDir is the per-chat sidecar directory holding opaque OpenAI

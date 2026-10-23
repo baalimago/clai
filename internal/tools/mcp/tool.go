@@ -1,12 +1,14 @@
 package mcp
 
 import (
-	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
+	"github.com/baalimago/clai/internal/asset"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -71,24 +73,31 @@ func (m *mcpTool) ResolveForCall(ctx context.Context) (serverName string, resolv
 	return m.serverName, m.authResolver, m.authTimeout, err
 }
 
+var _ pub_models.PartsCaller = (*mcpTool)(nil)
+
 // CallWithContext sends an MCP tool/call request with context-aware channel operations.
 // If ctx is cancelled before the response arrives, the call is aborted.
 func (m *mcpTool) CallWithContext(ctx context.Context, input pub_models.Input) (string, error) {
-	return m.call(ctx, input)
+	parts, err := m.CallParts(ctx, input)
+	if err != nil {
+		return "", err
+	}
+	return pub_models.Message{Parts: parts}.Describe(), nil
 }
 
 // Call delegates to CallWithContext using context.Background for backwards compatibility.
 func (m *mcpTool) Call(input pub_models.Input) (string, error) {
-	return m.call(context.Background(), input)
+	return m.CallWithContext(context.Background(), input)
 }
 
-func (m *mcpTool) call(ctx context.Context, input pub_models.Input) (string, error) {
+// CallParts maps runs of text items to TextParts and image items to pending ImageParts (CallParts.M1–M3).
+func (m *mcpTool) CallParts(ctx context.Context, input pub_models.Input) ([]pub_models.Part, error) {
 	// Resolution runs under the connector's own run context, excluded from
 	// the per-call timeout: charging process birth against a call budget
 	// would make a lazy first call look like a hung tool.
 	conn, err := m.connector.Conn(ctx)
 	if err != nil {
-		return "", fmt.Errorf("mcp tool %q: %w", m.remoteName, err)
+		return nil, fmt.Errorf("mcp tool %q: %w", m.remoteName, err)
 	}
 
 	if m.timeout > 0 {
@@ -108,29 +117,79 @@ func (m *mcpTool) call(ctx context.Context, input pub_models.Input) (string, err
 		"arguments": nonNullableInp,
 	})
 	if err != nil {
-		return "", fmt.Errorf("mcp tool %q: %w", m.remoteName, err)
+		return nil, fmt.Errorf("mcp tool %q: %w", m.remoteName, err)
 	}
 
 	var result struct {
-		Content []struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
-		} `json:"content"`
-		IsError bool `json:"isError"`
+		Content []contentItem `json:"content"`
+		IsError bool          `json:"isError"`
 	}
 	if err := json.Unmarshal(raw, &result); err != nil {
-		return "", fmt.Errorf("mcp tool %q: decode result: %w", m.remoteName, err)
-	}
-	var buf bytes.Buffer
-	for _, c := range result.Content {
-		if c.Type == "text" {
-			buf.WriteString(c.Text)
-		}
+		return nil, fmt.Errorf("mcp tool %q: decode result: %w", m.remoteName, err)
 	}
 	if result.IsError {
-		return "", fmt.Errorf("mcp tool %q returned an error result: %s", m.remoteName, buf.String())
+		var text strings.Builder
+		for _, c := range result.Content {
+			if c.Type == "text" {
+				text.WriteString(c.Text)
+			}
+		}
+		return nil, fmt.Errorf("mcp tool %q returned an error result: %s", m.remoteName, text.String())
 	}
-	return buf.String(), nil
+	return contentParts(result.Content), nil
+}
+
+// contentParts merges each run of text items into one TextPart, so a text-only
+// result reads as their concatenation, as it did before images were read.
+func contentParts(items []contentItem) []pub_models.Part {
+	parts := make([]pub_models.Part, 0, len(items))
+	var run strings.Builder
+	inRun := false
+	endRun := func() {
+		if inRun {
+			parts = append(parts, pub_models.TextPart{Text: run.String()})
+			run.Reset()
+			inRun = false
+		}
+	}
+	for _, c := range items {
+		switch c.Type {
+		case "text":
+			run.WriteString(c.Text)
+			inRun = true
+		case "image":
+			endRun()
+			parts = append(parts, c.imagePart())
+		}
+	}
+	endRun()
+	return parts
+}
+
+type contentItem struct {
+	Type     string `json:"type"`
+	Text     string `json:"text"`
+	Data     string `json:"data"`
+	MimeType string `json:"mimeType"`
+}
+
+func (c contentItem) imagePart() pub_models.Part {
+	data, err := base64.StdEncoding.DecodeString(c.Data)
+	if err != nil {
+		return droppedImage(fmt.Errorf("corrupt base64: %w", err))
+	}
+	sniffed, err := asset.Sniff(data)
+	if err != nil {
+		return droppedImage(err)
+	}
+	if sniffed != c.MimeType {
+		return droppedImage(&asset.MIMEMismatchError{Declared: c.MimeType, Sniffed: sniffed})
+	}
+	return pub_models.ImagePart{Origin: pub_models.OriginTool, MIME: sniffed, Data: data}
+}
+
+func droppedImage(reason error) pub_models.TextPart {
+	return pub_models.TextPart{Text: "[image dropped: " + reason.Error() + "]"}
 }
 
 func (m *mcpTool) Specification() pub_models.Specification {

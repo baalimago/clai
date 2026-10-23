@@ -33,6 +33,8 @@ Across vendors, clai reduces streaming to a small set of event shapes (as descri
 - `pub_models.Call`: a tool/function call request (name + JSON args)
 - `models.StopEvent`: signals the model has finished this turn
 - `models.NoopEvent`: keepalive / ignored
+- `models.ImageEvent`: one final image the model generated (see [Image output](#image-output))
+- `models.ImageProgressEvent`: an image is being generated and has not arrived yet
 - `error`: any streaming/parsing/network error
 
 The consumer reads until it sees a terminal condition (stop event, channel close, or an error).
@@ -91,6 +93,75 @@ This generic layer is specifically designed so that streaming works the same way
 - Anything else becomes `models.NoopEvent` or an `error`
 
 This means the rest of the app (query/chat/tool recursion) can be implemented once.
+
+## Image content
+
+A message holds plain `Content` or an ordered list of `Parts` (`TextPart`, `ImagePart`).
+Every text querier is a `models.ImageEncoder` (`internal/models/images.go`): it declares
+`ImageCapabilities()` — whether its route takes images at all, whether a `tool` message may
+carry them (`ToolResultNative`) or they must be relocated (`ToolResultFallback`), and which
+MIME types it accepts. The value is constant per configured completer and readable before
+`Setup`; each vendor's row lives in its own package.
+
+Before any request, `models.CheckImageParts` refuses, with `*claierr.ImageUnsupportedError`
+naming the vendor, model and reason: an image on a route that takes none, an image in an
+assistant message, a tool image on a fallback route, and a MIME type the route does not
+accept. An `ImagePart` without bytes fails with `models.ErrImageNotLoaded`. Base64 is
+produced only while the request body is built:
+
+| Route | User image | Tool result with `Parts` |
+| --- | --- | --- |
+| Generic chat-completions (`toWireMessages`) | `{"type":"image_url","image_url":{"url":"data:<mime>;base64,…"}}` beside `{"type":"text"}` | content array on a native route; text only, as a string, on a fallback route |
+| OpenAI Responses | `input_image` with a data-URL string | `function_call_output.output` array |
+| Anthropic (`claudifyMessages`) | `{"type":"image","source":{"type":"base64",…}}` beside text blocks | `tool_result.content` array |
+
+On the generic route, `Parts` that can carry no image (an assistant message, a fallback
+tool message, any message on a route without image input) travel as one string, the
+message's `Describe()`. A message without `Parts` is encoded exactly as before images
+existed. The mock vendor echoes `Describe()`, so an image shows as `[image <handle>]`.
+
+The vendor-neutral `imagenorm.Normalizer` (`internal/imagenorm`) shapes a chat for these
+checks from the route's `ImageCapabilities` alone. It loads every stored image through
+`asset.ImageLoader` and puts the label `[image <handle>]` directly before each image. An
+assistant image, and a tool image on a fallback route, is replaced in place by a note
+(`[image <handle> generated, attached below]` or `[image <handle> attached below]`). It
+travels in one synthetic user message, headed `[images from the previous turn]`, after the
+assistant message and every tool message that follows it. On a route without image input,
+a user image fails with `*claierr.ImageUnsupportedError`, and every tool or generated image
+is replaced in place by its `[image <handle>]` text and sent without bytes, as the tool's
+string form. A MIME type the route does not accept fails with
+`*claierr.ImageUnsupportedError`. The query turn fills in the vendor and the model the
+normalizer leaves empty. A text-only chat comes back unchanged, and the input chat is never
+mutated.
+
+## Image output
+
+A chat model whose output is images answers with them in the stream. Each final image
+reaches the channel as one `models.ImageEvent` (`internal/models/image_output.go`) before
+`StopEvent`: a pending generated `ImagePart` holding the decoded bytes, never base64. Such a
+stream starts with one `models.ImageProgressEvent`. The session runner stores and presents
+each image as it arrives (see [query.md](./query.md#images-in-a-turn)).
+`generic.GeneratedImage` decodes the base64 and sniffs the MIME type; a type that
+disagrees with the declared one is a terminal `*asset.MIMEMismatchError`, and base64
+that does not decode is a terminal `*claierr.UnexpectedProviderResponseError`. Continuity
+blobs never become events.
+
+| Route | Source of the image | Request |
+| --- | --- | --- |
+| OpenRouter | each `choices[].delta.images[]` data URL | `"modalities":["image","text"]` whenever the catalog lists `image` among the model's output modalities |
+
+No other route returns images in the stream: clai never enables a vendor's built-in image
+tool, so models generate images through clai's `generate_image` tool (see
+[images.md](./images.md#getting-images-back)).
+
+The generic completer stays shape-agnostic: a vendor whose chunks carry more than the
+shared shape sets `StreamCompleter.DecodeChunk`, which sees each data payload first.
+Its events are sent before the chunk's own event and its error is terminal. OpenRouter
+uses it for `delta.images`; `OutputModalities` sets the request's `modalities` field.
+OpenRouter's catalog answer comes from `GET <base>/api/v1/models`, where `<base>` is the
+chat URL without `/api/v1/chat/completions`. It runs once per completer, lazily, and is
+cached per model under the clai cache dir; a failed lookup leaves the request exactly as
+it was.
 
 ## Streaming Loop Responsibilities
 

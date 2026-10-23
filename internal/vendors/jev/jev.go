@@ -97,8 +97,16 @@ func (j *Jev) TokenUsage() *pub_models.Usage {
 	return j.usage
 }
 
+// ImageCapabilities is the jev row of Local fact P5-1 (worklog 2026-10-21-image-support).
+func (j *Jev) ImageCapabilities() models.ImageCapabilities {
+	return models.ImageCapabilities{Input: models.ImageInputNone, ToolResult: models.ToolResultFallback}
+}
+
 func (j *Jev) StreamCompletions(ctx context.Context, chat pub_models.Chat) (chan models.CompletionEvent, error) {
 	j.usage = nil
+	if err := models.CheckImageParts(j.ImageCapabilities(), "jev", j.Model, chat.Messages); err != nil {
+		return nil, err
+	}
 	questions, err := questionsFromResponseFormat(j.responseFormat)
 	if err != nil {
 		return nil, err
@@ -226,26 +234,12 @@ func questionsFormatError(reason string) error {
 
 func stateFromChat(chat pub_models.Chat) (any, error) {
 	state := make([]string, 0, len(chat.Messages))
-	for i, message := range chat.Messages {
+	for _, message := range chat.Messages {
 		if message.Role != "user" {
 			continue
 		}
-		if len(message.ContentParts) == 0 {
-			if strings.TrimSpace(message.Content) != "" {
-				state = append(state, message.Content)
-			}
-			continue
-		}
-		var text strings.Builder
-		for _, part := range message.ContentParts {
-			if part.Type == "text" {
-				text.WriteString(part.Text)
-				continue
-			}
-			return nil, fmt.Errorf("jev: user message %d contains unsupported non-text content", i)
-		}
-		if strings.TrimSpace(text.String()) != "" {
-			state = append(state, text.String())
+		if text := message.Describe(); strings.TrimSpace(text) != "" {
+			state = append(state, text)
 		}
 	}
 	if len(state) == 0 {

@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -184,6 +185,13 @@ func WriteCorpus(tb testing.TB, root string, opts CorpusOptions) Corpus {
 // WriteCorpusErr is deterministic for a given seed: two calls produce
 // byte-identical files and identical facts.
 func WriteCorpusErr(root string, opts CorpusOptions) (Corpus, error) {
+	return writeCorpus(root, opts, cachedSession)
+}
+
+// sessionFunc yields one session's lines and its fact, with Path and Kind unset.
+type sessionFunc func(opts CorpusOptions, i int, kind Kind) ([][]byte, SessionFact, error)
+
+func writeCorpus(root string, opts CorpusOptions, session sessionFunc) (Corpus, error) {
 	if opts.Shape != ShapeClaude && opts.Shape != ShapePi {
 		return Corpus{}, fmt.Errorf("jsonltest: CorpusOptions.Shape must be ShapeClaude or ShapePi, got %v", opts.Shape)
 	}
@@ -207,14 +215,13 @@ func WriteCorpusErr(root string, opts CorpusOptions) (Corpus, error) {
 			return Corpus{}, fmt.Errorf("jsonltest: create project dir %q: %w", dir, err)
 		}
 		path := filepath.Join(dir, fmt.Sprintf("session-%04d.jsonl", i))
-		lines, err := buildSession(opts, i, kind)
+		lines, fact, err := session(opts, i, kind)
 		if err != nil {
 			return Corpus{}, err
 		}
 		if err := writeLines(path, lines, kind != KindNoTrailingNewline); err != nil {
 			return Corpus{}, err
 		}
-		fact := factsFrom(opts.Shape, lines)
 		fact.Path, fact.Kind = path, kind
 		c.Sessions = append(c.Sessions, fact)
 	}
@@ -225,6 +232,43 @@ func WriteCorpusErr(root string, opts CorpusOptions) (Corpus, error) {
 		c.Files = append(c.Files, f.Path)
 	}
 	return c, nil
+}
+
+type sessionKey struct {
+	shape    Shape
+	lines, i int
+	seed     int64
+	kind     Kind
+}
+
+type generatedSession struct {
+	lines [][]byte
+	fact  SessionFact
+}
+
+// sessions memoizes generation, a pure function of its key that costs more
+// under -race than the discovery a corpus feeds. Entries are never mutated.
+var sessions sync.Map
+
+func cachedSession(opts CorpusOptions, i int, kind Kind) ([][]byte, SessionFact, error) {
+	key := sessionKey{shape: opts.Shape, lines: opts.LinesPerSession, i: i, seed: opts.Seed, kind: kind}
+	if s, ok := sessions.Load(key); ok {
+		return s.(generatedSession).lines, s.(generatedSession).fact, nil
+	}
+	lines, fact, err := generateSession(opts, i, kind)
+	if err != nil {
+		return nil, SessionFact{}, err
+	}
+	sessions.Store(key, generatedSession{lines: lines, fact: fact})
+	return lines, fact, nil
+}
+
+func generateSession(opts CorpusOptions, i int, kind Kind) ([][]byte, SessionFact, error) {
+	lines, err := buildSession(opts, i, kind)
+	if err != nil {
+		return nil, SessionFact{}, err
+	}
+	return lines, factsFrom(opts.Shape, lines), nil
 }
 
 func writeLines(path string, lines [][]byte, trailingNewline bool) error {

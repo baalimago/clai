@@ -4,13 +4,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/e2e/e2etest"
 	"github.com/baalimago/clai/internal/setup"
 	"github.com/baalimago/go_away_boilerplate/pkg/table"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
 func Test_run_setup_returns_success_on_user_exit(t *testing.T) {
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 
 	restoreInput := useReadUserInputForTests(func() (string, error) {
 		return "", table.ErrUserInitiatedExit
@@ -19,7 +20,7 @@ func Test_run_setup_returns_success_on_user_exit(t *testing.T) {
 
 	var gotStatus int
 	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		gotStatus = run([]string{"setup"})
+		gotStatus = harness.Run([]string{"setup"})
 	})
 
 	testboil.FailTestIfDiff(t, gotStatus, 0)
@@ -29,7 +30,7 @@ func Test_run_setup_returns_success_on_user_exit(t *testing.T) {
 }
 
 func Test_setup_initcmd_user_exit_is_not_an_error_regression(t *testing.T) {
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 
 	restoreInput := useReadUserInputForTests(func() (string, error) {
 		return "", table.ErrUserInitiatedExit
@@ -46,7 +47,7 @@ func Test_setup_initcmd_user_exit_is_not_an_error_regression(t *testing.T) {
 }
 
 func Test_run_setup_shell_context_ufe_back_does_not_duplicate_back_hotkey(t *testing.T) {
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 
 	inputs := []string{"4", "0", "ufe", "b", "b"}
 	inputIdx := 0
@@ -62,7 +63,7 @@ func Test_run_setup_shell_context_ufe_back_does_not_duplicate_back_hotkey(t *tes
 
 	var gotStatus int
 	stderr := testboil.CaptureStderr(t, func(t *testing.T) {
-		gotStatus = run([]string{"setup"})
+		gotStatus = harness.Run([]string{"setup"})
 	})
 
 	if gotStatus != 0 {

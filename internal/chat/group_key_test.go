@@ -25,12 +25,12 @@ func TestComputeGroupKey_plainContent(t *testing.T) {
 	}
 }
 
-func TestComputeGroupKey_contentParts(t *testing.T) {
+func TestComputeGroupKey_parts(t *testing.T) {
 	chat := pub_models.Chat{
 		Messages: []pub_models.Message{
-			{Role: "user", ContentParts: []pub_models.ImageOrTextInput{
-				{Text: "hello"},
-				{Text: "world"},
+			{Role: "user", Parts: []pub_models.Part{
+				pub_models.TextPart{Text: "hello"},
+				pub_models.TextPart{Text: "world"},
 			}},
 		},
 	}
@@ -62,12 +62,10 @@ func TestComputeGroupKey_empty(t *testing.T) {
 		t.Fatalf("expected empty GroupKey, got %q", got)
 	}
 
-	// Image-only: ContentParts with no Text
+	// Parts with no text
 	chat3 := pub_models.Chat{
 		Messages: []pub_models.Message{
-			{Role: "user", ContentParts: []pub_models.ImageOrTextInput{
-				{Type: "image_url"},
-			}},
+			{Role: "user", Parts: []pub_models.Part{pub_models.TextPart{}}},
 		},
 	}
 	if got := ComputeGroupKey(chat3); got != "" {

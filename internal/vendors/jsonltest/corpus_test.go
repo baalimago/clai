@@ -23,7 +23,11 @@ func TestWriteCorpus_deterministicForSeed(t *testing.T) {
 		t.Run(shape.String(), func(t *testing.T) {
 			opts := testOptions(shape)
 			a := WriteCorpus(t, filepath.Join(t.TempDir(), "corpus"), opts)
-			b := WriteCorpus(t, filepath.Join(t.TempDir(), "corpus"), opts)
+			// A fresh generation, bypassing the memo a may have come from.
+			b, err := writeCorpus(filepath.Join(t.TempDir(), "corpus"), opts, generateSession)
+			if err != nil {
+				t.Fatalf("writeCorpus: %v", err)
+			}
 
 			relA, relB := relPaths(t, a), relPaths(t, b)
 			if len(relA) == 0 {

@@ -139,7 +139,7 @@ func discoverJSONLFile(schema JSONLSchema, fsys fs.FS, cache SourceCache, absPat
 	info, statErr := StatAbs(fsys, absPath)
 	cacheable := cache != nil && statErr == nil
 	if cacheable {
-		if row, ok := cache.Lookup(absPath, info); ok {
+		if row, ok := cache.Lookup(absPath, info); ok && !previewStale(row) {
 			// A cached zero row is the record that this file yields nothing.
 			return row, row.SourceID != ""
 		}
@@ -155,6 +155,11 @@ func discoverJSONLFile(schema JSONLSchema, fsys fs.FS, cache SourceCache, absPat
 		cache.Store(absPath, info, row)
 	}
 	return row, ok
+}
+
+// previewStale marks a cached row with no preview for a session that has messages.
+func previewStale(row SourceRow) bool {
+	return row.FirstUserMessage == "" && row.MessageCount > 0
 }
 
 // A non-nil error means the scan did not reach EOF; (SourceRow{}, false, nil)

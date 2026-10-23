@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/baalimago/clai/internal/vendors"
@@ -134,9 +133,9 @@ func (s schema) Fields(line []byte) vendors.LineFields {
 		return f
 	}
 	f.Role = vendors.LineRoleUser
-	// Block-array user content previews only its text blocks — tool_result
-	// blocks are machine output, not the user's words.
-	f.UserText = vendors.RawTextBlocksContent(msg.Content)
+	// Block-array user content previews only its text and image blocks —
+	// tool_result blocks are machine output, not the user's words.
+	f.UserText = vendors.RawUserPreview(msg.Content, imageBlock)
 	return f
 }
 
@@ -248,7 +247,7 @@ func mapUserMessage(env map[string]any) []pub_models.Message {
 		return nil
 	}
 	c := msg["content"]
-	// user message can be string OR array of blocks (text and/or tool_result)
+	// user message can be string OR array of blocks (text, image and/or tool_result)
 	if s, ok := c.(string); ok {
 		return []pub_models.Message{{Role: "user", Content: s}}
 	}
@@ -257,24 +256,30 @@ func mapUserMessage(env map[string]any) []pub_models.Message {
 		return nil
 	}
 	out := make([]pub_models.Message, 0, len(arr))
-	texts := make([]string, 0, 1)
 	for _, v := range arr {
 		m, ok := v.(map[string]any)
 		if !ok {
 			continue
 		}
-		switch typ, _ := m["type"].(string); typ {
-		case "tool_result":
-			toolID, _ := m["tool_use_id"].(string)
-			out = append(out, pub_models.Message{Role: "tool", ToolCallID: toolID, Content: vendors.TextBlocksContent(m["content"])})
-		case "text":
-			if t, _ := m["text"].(string); t != "" {
-				texts = append(texts, t)
-			}
+		if typ, _ := m["type"].(string); typ == "tool_result" {
+			tool := vendors.ContentMessage("tool", m["content"], pub_models.OriginTool, imageBlock)
+			tool.ToolCallID, _ = m["tool_use_id"].(string)
+			out = append(out, tool)
 		}
 	}
-	if len(texts) > 0 {
-		out = append(out, pub_models.Message{Role: "user", Content: strings.Join(texts, "\n")})
+	if user := vendors.ContentMessage("user", arr, pub_models.OriginUser, imageBlock); vendors.HasContent(user) {
+		out = append(out, user)
 	}
 	return out
+}
+
+// imageBlock reads {"type":"image","source":{"type":"base64","media_type":M,"data":B}}.
+func imageBlock(block map[string]any) vendors.ImageBlock {
+	src, _ := block["source"].(map[string]any)
+	mime, _ := src["media_type"].(string)
+	if typ, _ := src["type"].(string); typ != "base64" {
+		return vendors.ImageBlock{Source: vendors.ImageSourceRemote, MIME: mime}
+	}
+	data, _ := src["data"].(string)
+	return vendors.ImageBlock{Source: vendors.ImageSourceInline, MIME: mime, Base64: data}
 }

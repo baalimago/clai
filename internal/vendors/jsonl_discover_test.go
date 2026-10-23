@@ -148,6 +148,18 @@ func (l stubLine) String() string {
 	return string(b)
 }
 
+var oversizedLines sync.Map
+
+// oversizedLine is an assistant line one byte beyond the token bound; built
+// once per session id, since marshalling 10 MiB under -race is the cost.
+func oversizedLine(sessionID string) string {
+	if l, ok := oversizedLines.Load(sessionID); ok {
+		return l.(string)
+	}
+	l, _ := oversizedLines.LoadOrStore(sessionID, stubLine{SessionID: sessionID, Role: "assistant", Text: strings.Repeat("x", vendors.ReadMaxToken+1)}.String())
+	return l.(string)
+}
+
 // stubSchema is a JSONLSchema whose line meaning a test dictates. It records
 // every line it was asked about, which is how "read no further" is proven.
 type stubSchema struct {
@@ -811,7 +823,7 @@ func TestDiscoverJSONL_malformedLineSkipped(t *testing.T) {
 // scanner token bound but still returns what the file already yielded.
 func TestDiscoverJSONL_oversizedLineTruncatesScan(t *testing.T) {
 	root := t.TempDir()
-	huge := stubLine{SessionID: "s1", Role: "assistant", Text: strings.Repeat("x", vendors.ReadMaxToken+1)}.String()
+	huge := oversizedLine("s1")
 	writeStubSession(t, root, "s.jsonl",
 		stubLine{SessionID: "s1", Role: "user", Text: "before the giant"}.String(),
 		huge,
@@ -1574,7 +1586,7 @@ func TestDiscoverJSONL_parallelOversizedLineIsolated(t *testing.T) {
 	files := writeStubCorpus(t, root, 8)
 	huge := writeStubSession(t, root, "zz-huge.jsonl",
 		stubLine{SessionID: "huge", Role: "user", Text: "before the giant"}.String(),
-		stubLine{SessionID: "huge", Role: "assistant", Text: strings.Repeat("x", vendors.ReadMaxToken+1)}.String(),
+		oversizedLine("huge"),
 		stubLine{SessionID: "huge", Role: "assistant", Model: "never-read"}.String(),
 	)
 	withDiscoverWorkers(t, 4)
@@ -2018,7 +2030,7 @@ func TestDiscoverJSONL_cacheAgnosticWithReadFailingFile(t *testing.T) {
 // a blanket "any scan error skips Store" would silently revert this.
 func TestDiscoverJSONL_oversizedLineRowStaysCacheable(t *testing.T) {
 	root := t.TempDir()
-	huge := stubLine{SessionID: "s1", Role: "assistant", Text: strings.Repeat("x", vendors.ReadMaxToken+1)}.String()
+	huge := oversizedLine("s1")
 	p := writeStubSession(t, root, "s.jsonl",
 		stubLine{SessionID: "s1", Role: "user", Text: "before the giant"}.String(),
 		huge,

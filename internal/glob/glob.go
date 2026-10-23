@@ -1,6 +1,7 @@
 package glob
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -43,11 +44,16 @@ func CreateChat(glob, systemPrompt string) (pub_models.Chat, error) {
 	if err != nil {
 		return pub_models.Chat{}, fmt.Errorf("failed to parse glob string: '%v', err: %w", glob, err)
 	}
+	return FramedChat(glob, fileMessages), nil
+}
 
+// FramedChat is the glob chat for pattern: fileMessages between the glob system
+// message and the "#####" user message.
+func FramedChat(pattern string, fileMessages []pub_models.Message) pub_models.Chat {
 	return pub_models.Chat{
-		ID:       fmt.Sprintf("glob_%v", glob),
+		ID:       fmt.Sprintf("glob_%v", pattern),
 		Messages: constructGlobMessages(fileMessages),
-	}, nil
+	}
 }
 
 func constructGlobMessages(globMessages []pub_models.Message) []pub_models.Message {
@@ -64,13 +70,35 @@ func constructGlobMessages(globMessages []pub_models.Message) []pub_models.Messa
 	return ret
 }
 
+// ErrNoFiles is the glob path's error for a pattern that matches nothing.
+var ErrNoFiles = errors.New("no files found")
+
+// File is one file a glob matched, with its contents.
+type File struct {
+	Name string
+	Data []byte
+}
+
 func parseGlob(glob string) ([]pub_models.Message, error) {
+	files, err := ReadFiles(glob)
+	if err != nil {
+		return nil, err
+	}
+	ret := make([]pub_models.Message, 0, len(files))
+	for _, f := range files {
+		ret = append(ret, FileMessage(f))
+	}
+	return ret, nil
+}
+
+// ReadFiles returns the files glob matches, in match order. A match that cannot be
+// read, such as a directory, is skipped with a warning.
+func ReadFiles(glob string) ([]File, error) {
 	glob, err := utils.ReplaceTildeWithHome(glob)
 	if err != nil {
 		return nil, fmt.Errorf("parseGlob, ReplaceTildeWithHome: %w", err)
 	}
 	files, err := filepath.Glob(glob)
-	ret := make([]pub_models.Message, 0, len(files))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse glob: %w", err)
 	}
@@ -79,19 +107,25 @@ func parseGlob(glob string) ([]pub_models.Message, error) {
 	}
 
 	if len(files) == 0 {
-		return nil, fmt.Errorf("no files found")
+		return nil, ErrNoFiles
 	}
 
+	ret := make([]File, 0, len(files))
 	for _, file := range files {
 		data, err := os.ReadFile(file)
 		if err != nil {
 			ancli.PrintWarn(fmt.Sprintf("failed to read file: %v\n", err))
 			continue
 		}
-		ret = append(ret, pub_models.Message{
-			Role:    "user",
-			Content: fmt.Sprintf("{\"fileName\": \"%v\", \"data\": \"%v\"}", file, string(data)),
-		})
+		ret = append(ret, File{Name: file, Data: data})
 	}
 	return ret, nil
+}
+
+// FileMessage is the user message that carries one matched file.
+func FileMessage(f File) pub_models.Message {
+	return pub_models.Message{
+		Role:    "user",
+		Content: fmt.Sprintf("{\"fileName\": \"%v\", \"data\": \"%v\"}", f.Name, string(f.Data)),
+	}
 }

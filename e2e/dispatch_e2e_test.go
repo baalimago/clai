@@ -6,13 +6,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/e2e/e2etest"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
 // Test_e2e_flags_after_command proves the cmd.Run dispatch parses flags
 // placed after the command identically to flags placed before it.
 func Test_e2e_flags_after_command(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	writeNotificationTestPriceFiles(t, confDir)
 
 	for _, args := range []string{
@@ -20,7 +21,7 @@ func Test_e2e_flags_after_command(t *testing.T) {
 		"q -r -cm test hello there",
 	} {
 		t.Run(args, func(t *testing.T) {
-			stdout, status := runOne(t, confDir, args)
+			stdout, status := harness.RunOne(t, confDir, args)
 			testboil.FailTestIfDiff(t, status, 0)
 			testboil.FailTestIfDiff(t, stdout, "hello there\n")
 		})
@@ -32,25 +33,25 @@ func Test_e2e_flags_after_command(t *testing.T) {
 // regression R-b), so the escape is the documented way through and must be
 // discoverable from both the usage and the query help.
 func Test_e2e_dash_leading_prompt_escape(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	writeNotificationTestPriceFiles(t, confDir)
 
 	t.Run("-- passes a dash-leading prompt through", func(t *testing.T) {
-		stdout, status := runOne(t, confDir, "-r -cm test q -- -what is this")
+		stdout, status := harness.RunOne(t, confDir, "-r -cm test q -- -what is this")
 		testboil.FailTestIfDiff(t, status, 0)
 		testboil.FailTestIfDiff(t, stdout, "-what is this\n")
 	})
 
 	t.Run("usage documents the escape", func(t *testing.T) {
 		stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-			run(nil)
+			harness.Run(nil)
 		})
 		testboil.AssertStringContains(t, stdout, "clai q -- -")
 	})
 
 	t.Run("query help documents the escape", func(t *testing.T) {
 		stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-			run([]string{"q", "-h"})
+			harness.Run([]string{"q", "-h"})
 		})
 		testboil.AssertStringContains(t, stdout, "clai q -- -")
 	})
@@ -60,12 +61,12 @@ func Test_e2e_dash_leading_prompt_escape(t *testing.T) {
 // a different top-level command: without it the error blames the flag's
 // value ("'/tmp' is not a valid argument"), which reads as nonsense.
 func Test_e2e_other_command_flag_hints_owner(t *testing.T) {
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 
 	var status int
 	stderr := testboil.CaptureStderr(t, func(t *testing.T) {
 		_ = testboil.CaptureStdout(t, func(t *testing.T) {
-			status = run(strings.Split("q -pd /tmp hello", " "))
+			status = harness.Run(strings.Split("q -pd /tmp hello", " "))
 		})
 	})
 
@@ -78,13 +79,13 @@ func Test_e2e_other_command_flag_hints_owner(t *testing.T) {
 }
 
 func Test_e2e_unknown_command_errors_with_usage(t *testing.T) {
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 
 	var status int
 	var stdout string
 	stderr := testboil.CaptureStderr(t, func(t *testing.T) {
 		stdout = testboil.CaptureStdout(t, func(t *testing.T) {
-			status = run([]string{"bogus"})
+			status = harness.Run([]string{"bogus"})
 		})
 	})
 
@@ -101,7 +102,7 @@ func Test_e2e_unknown_command_errors_with_usage(t *testing.T) {
 // its g alias) is gone: both are unknown commands now. Globbing lives on
 // the -g/-glob flag only.
 func Test_e2e_glob_command_removed(t *testing.T) {
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 
 	for _, name := range []string{"glob", "g"} {
 		t.Run(name, func(t *testing.T) {
@@ -109,7 +110,7 @@ func Test_e2e_glob_command_removed(t *testing.T) {
 			var stdout string
 			stderr := testboil.CaptureStderr(t, func(t *testing.T) {
 				stdout = testboil.CaptureStdout(t, func(t *testing.T) {
-					status = run([]string{name, "*.go", "hi"})
+					status = harness.Run([]string{name, "*.go", "hi"})
 				})
 			})
 
@@ -128,12 +129,12 @@ func Test_e2e_glob_command_removed(t *testing.T) {
 // path never runs config migrations, keeping shell completion fast and
 // write-free.
 func Test_e2e_hidden_completion_is_side_effect_free(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
-	writeJSONFileAny(t, filepath.Join(confDir, "textConfig.json"), map[string]any{
+	confDir := e2etest.SetupMainTestConfigDir(t)
+	e2etest.WriteJSONFileAny(t, filepath.Join(confDir, "textConfig.json"), map[string]any{
 		"model": "test",
 	})
 
-	stdout, status := runOne(t, confDir, "__complete clai q")
+	stdout, status := harness.RunOne(t, confDir, "__complete clai q")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
@@ -150,12 +151,12 @@ func Test_e2e_hidden_completion_is_side_effect_free(t *testing.T) {
 // accepts its own flags (before or after the command token), rejects flags
 // it doesn't own, and both alias forms share one value (last one wins).
 func Test_e2e_flag_scoping(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	t.Setenv("HOME", t.TempDir())
 	writeNotificationTestPriceFiles(t, confDir)
 
 	t.Run("both aliases, last one wins", func(t *testing.T) {
-		stdout, status := runOne(t, confDir, "-r -cm bogus_model -chat-model test q hello")
+		stdout, status := harness.RunOne(t, confDir, "-r -cm bogus_model -chat-model test q hello")
 		testboil.FailTestIfDiff(t, status, 0)
 		testboil.FailTestIfDiff(t, stdout, "hello\n")
 	})
@@ -166,14 +167,14 @@ func Test_e2e_flag_scoping(t *testing.T) {
 		wantErr string
 	}{
 		{"unowned flag rejected", "photo -cm x hi", "flag provided but not defined: -cm"},
-		{"unowned flag pre-command rejected", "-pm x q hi", "flag provided but not defined: -pm"},
+		{"unowned flag pre-command rejected", "-pd x q hi", "flag provided but not defined: -pd"},
 		{"invalid int value names the flag", "q -mt abc hi", "invalid value \"abc\" for flag -mt"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var status int
 			stderr := testboil.CaptureStderr(t, func(t *testing.T) {
 				_ = testboil.CaptureStdout(t, func(t *testing.T) {
-					status = run(strings.Split(tc.args, " "))
+					status = harness.Run(strings.Split(tc.args, " "))
 				})
 			})
 			testboil.FailTestIfDiff(t, status, 1)
@@ -191,7 +192,7 @@ func Test_e2e_flag_scoping(t *testing.T) {
 		var stdout string
 		stderr := testboil.CaptureStderr(t, func(t *testing.T) {
 			stdout = testboil.CaptureStdout(t, func(t *testing.T) {
-				status = run([]string{"chat", "-h"})
+				status = harness.Run([]string{"chat", "-h"})
 			})
 		})
 		testboil.FailTestIfDiff(t, status, 0)
@@ -212,7 +213,7 @@ func Test_e2e_flag_scoping(t *testing.T) {
 	t.Run("chat sub lists and parses its own flags at its level", func(t *testing.T) {
 		var status int
 		stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-			status = run([]string{"chat", "list", "-h"})
+			status = harness.Run([]string{"chat", "list", "-h"})
 		})
 		testboil.FailTestIfDiff(t, status, 0)
 		for _, want := range []string{"-r", "-n"} {
@@ -224,7 +225,7 @@ func Test_e2e_flag_scoping(t *testing.T) {
 			t.Fatalf("list help must not list -cm, got: %q", stdout)
 		}
 
-		listStdout, listStatus := runOne(t, confDir, "-n chat list -r q")
+		listStdout, listStatus := harness.RunOne(t, confDir, "-n chat list -r q")
 		if listStatus != 0 {
 			t.Fatalf("sub-level -r should parse, got status %d, stdout=%q", listStatus, listStdout)
 		}
@@ -233,10 +234,10 @@ func Test_e2e_flag_scoping(t *testing.T) {
 	t.Run("per-command help lists own flags only", func(t *testing.T) {
 		var status int
 		stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-			status = run([]string{"photo", "-h"})
+			status = harness.Run([]string{"photo", "-h"})
 		})
 		testboil.FailTestIfDiff(t, status, 0)
-		for _, want := range []string{"-pm", "-photo-dir", "-re", "-raw"} {
+		for _, want := range []string{"-pm", "-photo-dir", "-re", "-raw", "-img", "-open"} {
 			if !strings.Contains(stdout, want) {
 				t.Fatalf("expected photo help to list %q, got: %q", want, stdout)
 			}
@@ -254,7 +255,7 @@ func Test_e2e_flag_scoping(t *testing.T) {
 // die with a flag-definition or unknown-command error (later failures such
 // as missing API keys are fine — the examples use real models).
 func Test_e2e_usage_examples_parse(t *testing.T) {
-	confDir := setupMainTestConfigDir(t)
+	confDir := e2etest.SetupMainTestConfigDir(t)
 	t.Setenv("HOME", t.TempDir())
 	writeNotificationTestPriceFiles(t, confDir)
 
@@ -274,7 +275,7 @@ func Test_e2e_usage_examples_parse(t *testing.T) {
 		t.Run(args, func(t *testing.T) {
 			var stdout string
 			stderr := testboil.CaptureStderr(t, func(t *testing.T) {
-				stdout, _ = runOne(t, confDir, args)
+				stdout, _ = harness.RunOne(t, confDir, args)
 			})
 			combined := stdout + stderr
 			for _, fatal := range []string{"flag provided but not defined", "is not a valid argument"} {
@@ -295,11 +296,11 @@ func Test_e2e_usage_examples_parse(t *testing.T) {
 // class cannot return silently by driving the real composition root
 // instead of calling mcp.Command() directly.
 func Test_e2e_mcp_bare_invocation_does_not_panic(t *testing.T) {
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 
 	var status int
 	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		status = run([]string{"mcp"})
+		status = harness.Run([]string{"mcp"})
 	})
 	testboil.FailTestIfDiff(t, status, 0)
 	if !strings.Contains(stdout, "Authorize a configured endpoint-based server interactively") {
@@ -310,7 +311,7 @@ func Test_e2e_mcp_bare_invocation_does_not_panic(t *testing.T) {
 // Test_e2e_command_help proves -h on any command prints that command's
 // Help() and exits 0.
 func Test_e2e_command_help(t *testing.T) {
-	_ = setupMainTestConfigDir(t)
+	_ = e2etest.SetupMainTestConfigDir(t)
 
 	for _, tc := range []struct {
 		args     string
@@ -335,7 +336,7 @@ func Test_e2e_command_help(t *testing.T) {
 		t.Run(tc.args, func(t *testing.T) {
 			var status int
 			stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-				status = run(strings.Split(tc.args, " "))
+				status = harness.Run(strings.Split(tc.args, " "))
 			})
 			testboil.FailTestIfDiff(t, status, 0)
 			if !strings.Contains(stdout, tc.wantHelp) {

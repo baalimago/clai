@@ -1,7 +1,5 @@
-// Package generic holds photo's vendor-shared surface — the configuration
-// types, image saving and the progress animation — below the vendor
-// clients, so both vendors and internal/photo can import it (same layering
-// as text with pkg/text/models).
+// Package generic holds photo's configuration types, its -re reply context
+// and the progress animation.
 package generic
 
 type Configurations struct {
@@ -10,6 +8,10 @@ type Configurations struct {
 	PromptFormat string `json:"prompt-format"`
 	Output       Output `json:"output"`
 	Raw          bool   `json:"raw"`
+	// AutoOpenImages opens each saved image with ImageOpener, as -open does.
+	AutoOpenImages bool `json:"auto-open-images" migrate:"true"`
+	// ImageOpener is the viewer command; "" means the platform default.
+	ImageOpener  string `json:"image-opener" migrate:"true"`
 	StdinReplace string `json:"-"`
 	ReplyMode    bool   `json:"-"`
 	Prompt       string `json:"-"`

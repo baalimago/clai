@@ -17,6 +17,12 @@ import (
 	video "github.com/baalimago/clai/internal/video/generic"
 )
 
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func newTestClient(fn roundTripperFunc) *http.Client { return &http.Client{Transport: fn} }
+
 func TestNewVideoQuerierRequiresAPIKey(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "")
 	_, err := NewVideoQuerier(video.Configurations{Model: "sora-2", Output: video.Output{Type: video.URL}})
@@ -153,7 +159,8 @@ func TestSoraDownloadWritesFileToOutputDir(t *testing.T) {
 
 func TestSoraPollCompleted(t *testing.T) {
 	q := &Sora{
-		apiKey: "key",
+		apiKey:    "key",
+		pollEvery: time.Millisecond,
 		client: newTestClient(func(r *http.Request) (*http.Response, error) {
 			job := VideoJob{ID: "id", Status: "completed", Progress: 100}
 			b, _ := json.Marshal(job)
@@ -174,12 +181,13 @@ func TestSoraQuerySuccessFlow(t *testing.T) {
 	payload := []byte("mp4")
 
 	q := &Sora{
-		Model:   "sora-2",
-		Size:    "720x1280",
-		Seconds: "4",
-		Prompt:  "p",
-		apiKey:  "key",
-		Output:  video.Output{Type: video.LOCAL, Dir: dir, Prefix: "pref"},
+		Model:     "sora-2",
+		Size:      "720x1280",
+		Seconds:   "4",
+		Prompt:    "p",
+		apiKey:    "key",
+		Output:    video.Output{Type: video.LOCAL, Dir: dir, Prefix: "pref"},
+		pollEvery: time.Millisecond,
 		client: newTestClient(func(r *http.Request) (*http.Response, error) {
 			calls++
 			switch {
@@ -211,5 +219,14 @@ func TestSoraQuerySuccessFlow(t *testing.T) {
 	entries, _ := os.ReadDir(dir)
 	if len(entries) != 1 {
 		t.Fatalf("expected 1 output file, got %d", len(entries))
+	}
+}
+
+func TestSoraPollIntervalDefaultsToProductionCadence(t *testing.T) {
+	if got := (&Sora{}).pollInterval(); got != 2*time.Second {
+		t.Fatalf("default poll interval = %v, want 2s", got)
+	}
+	if got := (&Sora{pollEvery: time.Millisecond}).pollInterval(); got != time.Millisecond {
+		t.Fatalf("overridden poll interval = %v, want 1ms", got)
 	}
 }
