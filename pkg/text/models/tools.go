@@ -1,8 +1,11 @@
 package models
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 )
 
@@ -42,6 +45,19 @@ type LLMTool interface {
 	// by text queriers to send to their respective
 	// models
 	Specification() Specification
+}
+
+// PartsCaller is an LLMTool whose result may contain images.
+type PartsCaller interface {
+	LLMTool
+	// CallParts runs the tool and returns its result as parts.
+	//  1. Text comes back as TextParts, in order. Images come back as ImageParts
+	//     with Origin tool, or generated when the tool generated the image, either
+	//     pending or stored.
+	//  2. Call(in) returns the string form of CallParts(in): the Describe() of every
+	//     part, joined by "\n" (TL1).
+	//  3. An error from CallParts is returned unchanged by Call.
+	CallParts(ctx context.Context, in Input) ([]Part, error)
 }
 
 type McpServer struct {
@@ -182,22 +198,16 @@ func (c *Call) Patch() {
 // PrettyPrint the call, showing name and what input params is used
 // on a concise way
 func (c Call) PrettyPrint() string {
-	var paramStr strings.Builder
-	i := 0
 	var inp Input
 	if c.Inputs != nil {
 		inp = *c.Inputs
 	}
-	lenInp := len(inp)
-	for flag, val := range inp {
-		fmt.Fprintf(&paramStr, "'%v': '%v'", flag, val)
-		if i < lenInp-1 {
-			paramStr.WriteString(",")
-		}
-		i++
+	params := make([]string, 0, len(inp))
+	for _, flag := range slices.Sorted(maps.Keys(inp)) {
+		params = append(params, fmt.Sprintf("'%v': '%v'", flag, inp[flag]))
 	}
-
-	return fmt.Sprintf("Call: '%s', inputs: [ %s ]", c.Name, paramStr.String())
+	paramStr := strings.Join(params, ",")
+	return fmt.Sprintf("Call: '%s', inputs: [ %s ]", c.Name, paramStr)
 }
 
 func (c Call) JSON() string {

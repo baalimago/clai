@@ -1,0 +1,747 @@
+[
+  {
+    "source_id": "pi-session-0000",
+    "chat": {
+      "created": "2023-11-14T23:13:20Z",
+      "id": "",
+      "source": "pi",
+      "source_id": "pi-session-0000",
+      "messages": [
+        {
+          "content": "Continued from Pi session pi-session-0000 (originally at /home/fixture/proj-00).",
+          "role": "system"
+        },
+        {
+          "content": "user turn 1 bravo mike mike delta november lima",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 2 hotel echo foxtrot november",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 3 golf alpha mike bravo charlie",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 4 delta delta india kilo bravo",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 5 juliet november charlie india bravo",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 6 alpha bravo bravo hotel kilo echo",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 7 india charlie echo india",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 8 charlie mike november foxtrot",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 9 lima golf india mike delta",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 10 mike juliet lima hotel",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 11 charlie alpha lima echo",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 12 foxtrot lima hotel hotel foxtrot",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 13 november india alpha india charlie",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 14 juliet bravo echo lima hotel delta",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 15 golf mike foxtrot charlie kilo india",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 16 delta golf india delta",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 17 charlie mike charlie november alpha",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 18 foxtrot echo charlie mike",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 19 golf india alpha juliet",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 20 lima foxtrot november mike bravo",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 21 november foxtrot golf bravo hotel bravo",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 22 november hotel november india",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 23 alpha alpha hotel alpha charlie alpha",
+          "role": "user"
+        }
+      ]
+    }
+  },
+  {
+    "source_id": "pi-session-0004",
+    "chat": {
+      "created": "2023-11-15T03:13:20Z",
+      "id": "",
+      "source": "pi",
+      "source_id": "pi-session-0004",
+      "messages": [
+        {
+          "content": "Continued from Pi session pi-session-0004 (originally at /home/fixture/proj-00).",
+          "role": "system"
+        },
+        {
+          "content": "user turn 1 lima mike delta delta november",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 2 foxtrot bravo alpha echo echo lima",
+          "role": "assistant"
+        },
+        {
+          "content": "tool-result output 3",
+          "role": "tool",
+          "tool_call_id": "tool-0003"
+        },
+        {
+          "content": "assistant turn 4 lima delta alpha foxtrot",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 5 golf india juliet mike",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 6 hotel mike golf echo hotel echo",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 7 charlie lima alpha lima lima hotel",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 8 golf golf hotel kilo echo",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 9 delta echo delta hotel",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 10 hotel echo golf india",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 11 november delta juliet echo",
+          "role": "user"
+        }
+      ]
+    }
+  },
+  {
+    "source_id": "pi-session-0008",
+    "chat": {
+      "created": "2023-11-15T07:13:20Z",
+      "id": "",
+      "source": "pi",
+      "source_id": "pi-session-0008",
+      "messages": [
+        {
+          "content": "Continued from Pi session pi-session-0008 (originally at /home/fixture/proj-00).",
+          "role": "system"
+        },
+        {
+          "content": "user turn 1 november delta echo charlie alpha golf",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 2 mike lima charlie kilo lima",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 3 delta mike delta foxtrot alpha delta",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 4 lima kilo india india",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 5 november golf november foxtrot",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 6 delta alpha echo kilo november bravo",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 7 hotel november delta november bravo kilo",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 8 november india charlie alpha charlie",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 9 charlie kilo charlie lima echo charlie",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 10 lima india mike lima bravo alpha",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 11 echo kilo hotel golf alpha",
+          "role": "user"
+        }
+      ]
+    }
+  },
+  {
+    "source_id": "pi-session-0012",
+    "chat": {
+      "created": "2023-11-15T11:13:20Z",
+      "id": "",
+      "source": "pi",
+      "source_id": "pi-session-0012",
+      "messages": [
+        {
+          "content": "Continued from Pi session pi-session-0012 (originally at /home/fixture/proj-00).",
+          "role": "system"
+        },
+        {
+          "content": "user turn 1 echo hotel charlie foxtrot",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 2 kilo hotel mike mike november",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 3 charlie hotel india mike",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 4 juliet november delta charlie india",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 5 mike golf delta alpha",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 6 golf bravo juliet kilo echo juliet",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 7 charlie hotel mike hotel",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 8 echo delta echo golf india foxtrot",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 9 alpha hotel echo delta india",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 10 foxtrot bravo lima november foxtrot echo",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 11 lima delta foxtrot golf echo kilo",
+          "role": "user"
+        }
+      ]
+    }
+  },
+  {
+    "source_id": "pi-session-0001",
+    "chat": {
+      "created": "2023-11-15T00:13:20Z",
+      "id": "",
+      "source": "pi",
+      "source_id": "pi-session-0001",
+      "messages": [
+        {
+          "content": "Continued from Pi session pi-session-0001 (originally at /home/fixture/proj-01).",
+          "role": "system"
+        },
+        {
+          "content": "user turn 1 india kilo lima delta alpha golf",
+          "role": "user"
+        },
+        {
+          "content": "see the log line {\"type\":\"user\",\"message\":{\"role\":\"user\"}} above",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 3 bravo charlie juliet golf november",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 4 foxtrot kilo kilo hotel",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 5 echo alpha india charlie",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 6 echo juliet kilo lima",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 7 golf india juliet hotel alpha india",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 8 juliet bravo foxtrot mike lima foxtrot",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 9 alpha india foxtrot november hotel mike",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 10 lima mike juliet echo bravo india",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 11 lima november golf hotel foxtrot kilo",
+          "role": "user"
+        }
+      ]
+    }
+  },
+  {
+    "source_id": "pi-session-0005",
+    "chat": {
+      "created": "2023-11-15T04:13:20Z",
+      "id": "",
+      "source": "pi",
+      "source_id": "pi-session-0005",
+      "messages": [
+        {
+          "content": "Continued from Pi session pi-session-0005 (originally at /home/fixture/proj-01).",
+          "role": "system"
+        },
+        {
+          "content": "assistant turn 2 juliet kilo alpha kilo delta golf",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 3 echo lima lima mike echo november",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 4 charlie lima golf alpha mike",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 5 alpha lima echo november",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 6 alpha hotel golf lima hotel",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 7 bravo november kilo mike kilo",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 8 india juliet delta mike alpha november",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 9 foxtrot juliet bravo kilo bravo",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 10 bravo hotel mike alpha bravo delta",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 11 alpha hotel delta hotel lima",
+          "role": "user"
+        }
+      ]
+    }
+  },
+  {
+    "source_id": "pi-session-0009",
+    "chat": {
+      "created": "2023-11-15T08:13:21Z",
+      "id": "",
+      "source": "pi",
+      "source_id": "pi-session-0009",
+      "messages": [
+        {
+          "content": "Continued from Pi session pi-session-0009 (originally at /home/fixture/proj-01).",
+          "role": "system"
+        },
+        {
+          "content": "assistant turn 2 golf echo mike juliet alpha",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 3 hotel kilo november november",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 4 juliet juliet charlie bravo echo lima",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 5 juliet hotel golf bravo",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 6 lima november mike november juliet",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 7 lima alpha golf alpha",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 8 india bravo foxtrot kilo",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 9 delta delta alpha echo",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 10 juliet mike charlie foxtrot bravo",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 11 foxtrot hotel charlie echo echo",
+          "role": "user"
+        }
+      ]
+    }
+  },
+  {
+    "source_id": "pi-session-0013",
+    "chat": {
+      "created": "2023-11-15T12:13:20Z",
+      "id": "",
+      "source": "pi",
+      "source_id": "pi-session-0013",
+      "messages": [
+        {
+          "content": "Continued from Pi session pi-session-0013 (originally at /home/fixture/proj-01).",
+          "role": "system"
+        },
+        {
+          "content": "user turn 1 lima alpha juliet foxtrot hotel delta",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 2 india golf bravo hotel echo",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 3 charlie india alpha foxtrot",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 4 india mike alpha hotel",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 5 foxtrot kilo lima golf hotel",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 6 mike india hotel india india november",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 7 alpha golf india delta golf charlie",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 8 mike alpha delta india",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 9 golf november kilo echo mike echo",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 10 kilo golf alpha golf mike",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 11 india lima charlie foxtrot",
+          "role": "user"
+        }
+      ]
+    }
+  },
+  {
+    "source_id": "pi-session-0002",
+    "chat": {
+      "created": "2023-11-15T01:13:20Z",
+      "id": "",
+      "source": "pi",
+      "source_id": "pi-session-0002",
+      "messages": [
+        {
+          "content": "Continued from Pi session pi-session-0002 (originally at /home/fixture/proj-02).",
+          "role": "system"
+        },
+        {
+          "content": "user turn 1 juliet november november hotel bravo",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 2 mike mike mike bravo november alpha",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 3 foxtrot delta mike delta mike",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 4 hotel juliet foxtrot mike foxtrot",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 5 india echo charlie alpha mike",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 6 golf golf charlie alpha november india",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 7 kilo kilo juliet delta foxtrot",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 8 juliet november hotel india foxtrot hotel",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 9 india lima golf india hotel bravo",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 10 echo kilo golf hotel india",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 11 mike bravo juliet lima charlie",
+          "role": "user"
+        }
+      ]
+    }
+  },
+  {
+    "source_id": "pi-session-0010",
+    "chat": {
+      "created": "2023-11-15T09:13:20Z",
+      "id": "",
+      "source": "pi",
+      "source_id": "pi-session-0010",
+      "messages": [
+        {
+          "content": "Continued from Pi session pi-session-0010 (originally at /home/fixture/proj-02).",
+          "role": "system"
+        },
+        {
+          "content": "user turn 1 mike india echo juliet lima juliet",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 2 november foxtrot delta foxtrot golf delta",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 3 foxtrot india lima lima november",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 4 golf lima mike lima alpha kilo",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 5 echo charlie delta lima",
+          "role": "user"
+        },
+        {
+          "content": "user turn 7 india juliet delta hotel foxtrot golf",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 8 lima bravo echo november",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 9 india delta bravo charlie lima",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 10 charlie india echo mike hotel foxtrot",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 11 foxtrot foxtrot golf hotel alpha",
+          "role": "user"
+        }
+      ]
+    }
+  },
+  {
+    "source_id": "pi-session-0003",
+    "chat": {
+      "created": "2023-11-15T02:13:20Z",
+      "id": "",
+      "source": "pi",
+      "source_id": "pi-session-0003",
+      "messages": [
+        {
+          "content": "Continued from Pi session pi-session-0003 (originally at /home/fixture/proj-03).",
+          "role": "system"
+        },
+        {
+          "content": "user turn 1 delta bravo charlie november",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 2 lima hotel india india foxtrot kilo",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 3 juliet golf india november charlie",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 4 mike kilo charlie hotel juliet",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 5 november echo golf india bravo",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 6 charlie delta juliet india",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 7 golf bravo golf foxtrot kilo",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 8 lima alpha foxtrot november",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 9 mike lima kilo delta november charlie",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 10 alpha india november hotel november",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 11 alpha india echo lima november juliet",
+          "role": "user"
+        }
+      ]
+    }
+  },
+  {
+    "source_id": "pi-session-0011",
+    "chat": {
+      "created": "2023-11-15T10:13:20Z",
+      "id": "",
+      "source": "pi",
+      "source_id": "pi-session-0011",
+      "messages": [
+        {
+          "content": "Continued from Pi session pi-session-0011 (originally at /home/fixture/proj-03).",
+          "role": "system"
+        },
+        {
+          "content": "user turn 1 golf bravo lima hotel",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 2 golf kilo charlie india",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 3 mike golf juliet india juliet delta",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 4 charlie mike juliet bravo",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 5 india golf bravo golf charlie november",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 6 hotel hotel alpha echo",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 7 hotel november delta juliet mike",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 8 lima bravo delta alpha foxtrot",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 9 india kilo india november",
+          "role": "user"
+        },
+        {
+          "content": "assistant turn 10 golf bravo bravo juliet echo lima",
+          "role": "assistant"
+        },
+        {
+          "content": "user turn 11 alpha india mike alpha",
+          "role": "user"
+        }
+      ]
+    }
+  }
+]

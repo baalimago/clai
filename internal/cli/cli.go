@@ -18,8 +18,12 @@ import (
 	"github.com/baalimago/clai/internal/chat"
 	"github.com/baalimago/clai/internal/confdir"
 	"github.com/baalimago/clai/internal/debugflags"
+	"github.com/baalimago/clai/internal/imagegen"
+	"github.com/baalimago/clai/internal/imagegen/route"
+	"github.com/baalimago/clai/internal/imageinput"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/photo"
+	"github.com/baalimago/clai/internal/present"
 	"github.com/baalimago/clai/internal/profiles"
 	"github.com/baalimago/clai/internal/setup"
 	"github.com/baalimago/clai/internal/summary"
@@ -60,6 +64,8 @@ Examples:
   - clai -glob "*.txt" query Please summarize these documents: 
   - clai -asc minimal q "what changed in this repo?"
   - clai -pm dall-e-2 photo A cat in space
+  - clai -img screenshot.png q "What is wrong in this dialog?"
+  - clai -t generate_image q "Draw a fox in the snow"
   - docker logs example | clai -I LOG q "Find errors in these logs: LOG"
   - clai a t meeting.wav | clai q "Summarize these meeting notes: {}"
   - clai a t -am gpt-4o-transcribe-diarize -strict-speakers long-meeting.wav
@@ -74,19 +80,21 @@ Examples:
 const CPUProfileFileName = "cpu_profile.prof"
 
 // Deps carries the collaborators the entry point injects into the command
-// table. Tests substitute the summarizer and foreign-cache factories through
-// it, so neither package holds mutable state.
+// table. Tests substitute the summarizer, foreign-cache and image-generator
+// factories through it, so none of those packages holds mutable state.
 type Deps struct {
-	NewSummarizer func(confDir string) (models.Summarizer, error)
-	ForeignCache  func() vendors.SourceCache
+	NewSummarizer     func(confDir string) (models.Summarizer, error)
+	ForeignCache      func() vendors.SourceCache
+	NewImageGenerator imagegen.NewGeneratorFunc
 }
 
-// DefaultDeps returns the production collaborators: the real summarizer and
-// the real foreign conversation index.
+// DefaultDeps returns the production collaborators: the real summarizer, the
+// real foreign conversation index and the real image generators.
 func DefaultDeps() Deps {
 	return Deps{
-		NewSummarizer: summary.NewAgentSummarizer,
-		ForeignCache:  chat.DefaultForeignCache,
+		NewSummarizer:     summary.NewAgentSummarizer,
+		ForeignCache:      chat.DefaultForeignCache,
+		NewImageGenerator: route.NewGenerator,
 	}
 }
 
@@ -103,19 +111,17 @@ func Commands(deps Deps) map[string]cmd.Command {
 	applyMediaOverrides := func(f internal.MediaToolFlags) error {
 		return audio.SetTranscribeOverrides(f.AudioModel.Value(), f.AudioFormat.Value())
 	}
+	queryDeps := text.QueryCommandDeps{
+		ConfigPrep:          configPrep,
+		TrustInput:          func() io.Reader { return setup.Input },
+		ApplyMediaOverrides: applyMediaOverrides,
+		NewSummarizer:       deps.NewSummarizer,
+		NewImageGenerator:   deps.NewImageGenerator,
+		PhotoModel:          photoModel,
+	}
 	return map[string]cmd.Command{
-		"query|q": text.QueryCommand(text.QueryCommandDeps{
-			ConfigPrep:          configPrep,
-			TrustInput:          func() io.Reader { return setup.Input },
-			ApplyMediaOverrides: applyMediaOverrides,
-			NewSummarizer:       deps.NewSummarizer,
-		}),
-		"loop|l": text.LoopCommand(text.QueryCommandDeps{
-			ConfigPrep:          configPrep,
-			TrustInput:          func() io.Reader { return setup.Input },
-			ApplyMediaOverrides: applyMediaOverrides,
-			NewSummarizer:       deps.NewSummarizer,
-		}),
+		"query|q": text.QueryCommand(queryDeps),
+		"loop|l":  text.LoopCommand(queryDeps),
 		"chat|c": chat.Command(chat.CommandDeps{
 			ConfigPrep:    configPrep,
 			NewSummarizer: deps.NewSummarizer,
@@ -123,8 +129,13 @@ func Commands(deps Deps) map[string]cmd.Command {
 			ForeignCache:  deps.ForeignCache,
 		}),
 		"photo|p": photo.Command(photo.CommandDeps{
-			ConfigPrep: configPrep,
-			LoadConfig: setup.LoadPhotoConfig,
+			ConfigPrep:    configPrep,
+			LoadConfig:    setup.LoadPhotoConfig,
+			NewGenerator:  deps.NewImageGenerator,
+			Collector:     imageinput.New(),
+			NewPresenter:  present.New,
+			NewOpener:     present.NewCommandOpener,
+			PreviousImage: photo.PreviousQueryImage,
 		}),
 		"video|v": video.Command(video.CommandDeps{
 			ConfigPrep: configPrep,
@@ -141,6 +152,15 @@ func Commands(deps Deps) map[string]cmd.Command {
 		"profiles":       profiles.Command(),
 		"confdir":        confdir.Command(),
 	}
+}
+
+// photoModel is photoConfig.json's model, read when generate_image is selected.
+func photoModel(confDir string) (string, error) {
+	conf, err := setup.LoadPhotoConfig(confDir)
+	if err != nil {
+		return "", err
+	}
+	return conf.Model, nil
 }
 
 // versionFlagAsCommand rewrites the special first-argument version flag

@@ -3,6 +3,7 @@ package chat
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io/fs"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -970,4 +972,48 @@ func TestDefaultForeignCache_failureYieldsNilInterface(t *testing.T) {
 			t.Fatalf("an unresolvable cache dir yielded %#v, want a nil interface", cache)
 		}
 	})
+}
+
+// TestForeignIndex_healsRowsOfThePreImageReader: the reader before image
+// previews cached an image-first session under its next user text. The
+// version bump discards that row, so the next Discover re-reads the file
+// and previews the image (phase 3 AC6).
+func TestForeignIndex_healsRowsOfThePreImageReader(t *testing.T) {
+	img := testPNG(t, 14)
+	root := filepath.Join(t.TempDir(), "projects")
+	session := strings.Join([]string{
+		`{"type":"user","sessionId":"shot","cwd":"/work","timestamp":"2026-01-01T00:00:00Z","message":{"role":"user","content":[` +
+			`{"type":"image","source":{"type":"base64","media_type":"image/png","data":"` + base64.StdEncoding.EncodeToString(img) + `"}}]}}`,
+		`{"type":"assistant","sessionId":"shot","timestamp":"2026-01-01T00:00:01Z","message":{"role":"assistant","content":[{"type":"text","text":"a red pixel"}]}}`,
+		`{"type":"user","sessionId":"shot","timestamp":"2026-01-01T00:00:02Z","message":{"role":"user","content":"what is in it?"}}`,
+	}, "\n") + "\n"
+	src, info := touchFile(t, filepath.Join(root, "proj"), "shot.jsonl", session)
+	modTime, err := json.Marshal(info.ModTime())
+	if err != nil {
+		t.Fatal(err)
+	}
+	pathJSON, err := json.Marshal(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	writeRawCache(t, dir, []byte(`{"version":1,"rows":[{"path":`+string(pathJSON)+`,"size":`+strconv.FormatInt(info.Size(), 10)+
+		`,"mod_time":`+string(modTime)+`,"row":{"Source":"claude-code","SourceID":"shot","Created":"2026-01-01T00:00:00Z",`+
+		`"FirstUserMessage":"what is in it?","FullFirstUserMessage":"what is in it?","MessageCount":3,"Model":"",`+
+		`"RawPath":`+string(pathJSON)+`,"Cwd":"/work"}}]}`))
+
+	idx := newForeignIndexT(t, dir)
+	rows, err := anthropic.SourceReader{Root: root}.Discover(context.Background(), idx)
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	want := "[image " + pngRef(img)[:6] + "]"
+	if len(rows) != 1 || rows[0].FirstUserMessage != want {
+		t.Fatalf("rows = %+v, want one row previewing %s", rows, want)
+	}
+	persistT(t, idx)
+	cache := readForeignCacheFile(t, dir)
+	if cache.Version != foreignIndexVersion || len(cache.Rows) != 1 || cache.Rows[0].Row.FirstUserMessage != want {
+		t.Fatalf("persisted cache = %+v, want the healed row at version %d", cache, foreignIndexVersion)
+	}
 }

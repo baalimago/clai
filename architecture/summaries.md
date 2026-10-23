@@ -316,7 +316,7 @@ label.
 | Surface | Labelled | Unlabelled |
 |---|---|---|
 | `chat list` row, group row (newest member's label) | `title` through the existing width truncation; the `/` filter matches it | first user message |
-| chat info view | `title: …` and, when present, `summary: …` (both width-truncated; the screen clear height grows by the extra line) | `summary: "<first message>"` |
+| chat info view | `title: …` and, when present, `summary: …` (both width-truncated; the screen clear measures the rows the view took) | `summary: "<first message>"` |
 | `chat dir` / `dirv2` (`-r`) | `title` / `summary` JSON keys (`omitempty`); pretty output adds `title:` / `summary:` lines after `prompt:` | keys absent; `version` unchanged (D6) |
 | lookback `<recent_conversations>` element | `title: summary` (the title alone when the summary is empty) | the first 80 runes of the first user message |
 

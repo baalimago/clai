@@ -216,20 +216,13 @@ func TestStreamCompletionsRequiresUserState(t *testing.T) {
 	}
 }
 
-func TestStateFromChatTextPartsAndRejectsImages(t *testing.T) {
+func TestStateFromChatTextParts(t *testing.T) {
 	state, err := stateFromChat(pub_models.Chat{Messages: []pub_models.Message{{
-		Role:         "user",
-		ContentParts: []pub_models.ImageOrTextInput{{Type: "text", Text: "ticket text"}},
+		Role:  "user",
+		Parts: []pub_models.Part{pub_models.TextPart{Text: "ticket text"}},
 	}}})
 	if err != nil || state != "ticket text" {
 		t.Fatalf("stateFromChat text parts = %#v, %v", state, err)
-	}
-	_, err = stateFromChat(pub_models.Chat{Messages: []pub_models.Message{{
-		Role:         "user",
-		ContentParts: []pub_models.ImageOrTextInput{{Type: string(pub_models.Image)}},
-	}}})
-	if err == nil || !strings.Contains(err.Error(), "unsupported non-text content") {
-		t.Fatalf("image error = %v", err)
 	}
 	_, err = stateFromChat(pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "  "}}})
 	if err == nil || !strings.Contains(err.Error(), "non-empty user message") {

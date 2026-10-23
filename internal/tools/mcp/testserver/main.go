@@ -227,7 +227,7 @@ func main() {
 			}
 			text, _ := p.Arguments["text"].(string)
 			result := map[string]any{
-				"content": []map[string]any{{"type": "text", "text": text}},
+				"content": echoContent(text, p.Arguments["images"]),
 				"isError": false,
 			}
 			if text == "error" {
@@ -249,4 +249,19 @@ func main() {
 			})
 		}
 	}
+}
+
+// echoContent echoes text, then one image content item per {data, mimeType}
+// entry of the images argument.
+func echoContent(text string, images any) []map[string]any {
+	content := []map[string]any{{"type": "text", "text": text}}
+	list, _ := images.([]any)
+	for _, entry := range list {
+		img, ok := entry.(map[string]any)
+		if !ok {
+			continue
+		}
+		content = append(content, map[string]any{"type": "image", "data": img["data"], "mimeType": img["mimeType"]})
+	}
+	return content
 }

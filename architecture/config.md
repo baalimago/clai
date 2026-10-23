@@ -142,6 +142,11 @@ whole foreign corpus on every listing with no way to learn why, while the same
 fault under `chat continue` announced itself. See
 `architecture/continue-from-claudex.md`.
 
+The OpenRouter completer caches each model's output modalities in
+`<cache>/openrouter-modalities/<sha256 of the model id>.json`, a JSON array such as
+`["image","text"]`. An entry never expires; delete it to refetch. A failed fetch is
+never cached, and an unusable cache directory only makes every lookup fetch.
+
 ### 2) Model-specific vendor configs
 
 These are JSON files created per *vendor+model*.
@@ -157,7 +162,7 @@ Example (illustrative):
 - `openai_gpt_gpt-4.1.json`
 - `anthropic_chat_claude-sonnet-4-20250514.json`
 
-Creation/loading typically occurs during querier creation (`text.CreateQuerier`, `photo.CreateQuerier`, etc.) and is vendor-specific.
+Creation/loading typically occurs during querier or generator creation (`text.CreateQuerier`, the OpenAI image generator, etc.) and is vendor-specific.
 
 **Important characteristic**:
 
@@ -267,7 +272,9 @@ Tool usage is controlled by:
 Notable rules:
 
 - if `-t` is provided at all (even a list), it is interpreted as intent to enable tooling.
-- `-t=*` clears requested list (meaning “allow all”).
+- `-t=*` clears requested list (meaning “allow all”), and also requests `generate_image`.
+- `generate_image` is a known name even though the registry does not hold it; the turn
+  registers it (see `architecture/images.md`).
 - unknown tools are skipped with warnings.
 - if nothing valid remains, tooling is disabled for that run.
 - MCP tools are not validated against the local registry; names prefixed with `mcp_` are allowed.
@@ -330,20 +337,51 @@ flags > profile > textConfig > default(false)
 `-re` continues to use `globalScope.json`. `-dre` bypasses it entirely,
 loading the directory binding’s conversation directly.
 
+### Image configuration
+
+`textConfig.json` and `photoConfig.json` each carry two image keys:
+
+| Key | Default | Flag | Meaning |
+| --- | --- | --- | --- |
+| `auto-open-images` | `false` | `-open` | Open each generated image. |
+| `image-opener` | `""` | — | The viewer program; see below. |
+
+The model behind `generate_image` is `-pm/-photo-model`; otherwise `photoConfig.json`'s
+`model`, unless the chat model's vendor (OpenAI, Gemini, OpenRouter) has its own image backend
+and that model routes to another backend or to none, in which case that vendor's default image
+model is used (see [images.md](./images.md#getting-images-back)). The keys reach existing configs through the upgrade above (the two
+zero-valued ones carry `migrate:"true"`), and none of them changes what an existing setup
+does: images are only attached, generated or opened when a flag or a key asks for it.
+
+`auto-open-images` (default `false`; `-open` turns it on for one run) opens
+each generated image after its line is printed, and only when stdout is a
+terminal. `image-opener` (default `""`) names the program. Empty means
+`xdg-open` on Linux and `open` on macOS; on any other platform it must be set.
+clai runs it as exactly `[image-opener, <path>]` with no shell, so the value is
+one executable name or path, without arguments. clai waits for it to exit.
+`xdg-open` and `open` return once the viewer is launched, but a viewer binary
+named directly (for example `feh`) holds the run until the viewer closes. A
+missing or failing opener is a notice and never fails the run. Implementation:
+`internal/present` (`NewCommandOpener`); the printed line is described in
+`colours.md`.
+
 ## Non-text config flows
 
 ### Photo
 
 - Load `photoConfig.json` (with default `photo.DEFAULT`)
-- Apply flag overrides: model, output dir/prefix/type, reply and stdin replacement
-- Build prompt via `photo.Configurations.SetupPrompts()`
-- Create vendor querier via `photo.CreateQuerier(pConf)`
+- Apply flag overrides: model, output dir/prefix, reply and stdin replacement
+- Refuse `output.type` `"url"` with `*photo.URLOutputRemovedError`
+- Build the generator through the injected `imagegen.NewGeneratorFunc`, with the config
+  dir for per-model defaults
+- `auto-open-images` and `image-opener` configure the presenter
 
-See `PHOTO.md`.
+See [photo.md](./photo.md).
 
 ### Video
 
-Same pattern with `videoConfig.json` + `video.Configurations.SetupPrompts()`.
+Same pattern with `videoConfig.json` + `video.Configurations.SetupPrompts()`; `-img` names the
+input image, which no config key holds.
 
 See `VIDEO.md`.
 

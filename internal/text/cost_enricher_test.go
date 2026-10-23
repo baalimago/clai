@@ -52,6 +52,27 @@ func Test_costEnricher_EnrichesWhenReady(t *testing.T) {
 	}
 }
 
+// A catalog that is already ready must win even when the wait bound has
+// elapsed by the time enrich selects, as it does on a descheduled goroutine.
+func Test_costEnricher_ReadyCatalogBeatsAnExpiredBound(t *testing.T) {
+	manager := &fakeCostManager{enrichFn: func(chat pub_models.Chat) (pub_models.Chat, error) {
+		chat.Queries = append(chat.Queries, pub_models.QueryCost{CostUSD: 0.42})
+		return chat, nil
+	}}
+	ready := make(chan struct{})
+	close(ready)
+	enricher := newCostEnricher(manager, ready)
+	enricher.waitFor = time.Nanosecond
+	var warned strings.Builder
+	enricher.warnf = func(format string, a ...any) { fmt.Fprintf(&warned, format, a...) }
+
+	for i := range 200 {
+		if got := enricher.enrich(pub_models.Chat{ID: "chat"}); len(got.Queries) != 1 {
+			t.Fatalf("run %d: ready catalog skipped, Queries = %+v, warnings %q", i, got.Queries, warned.String())
+		}
+	}
+}
+
 func Test_costEnricher_ReadinessTimeoutKeepsChat(t *testing.T) {
 	manager := &fakeCostManager{enrichFn: func(chat pub_models.Chat) (pub_models.Chat, error) {
 		return chat, nil

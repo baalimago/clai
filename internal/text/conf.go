@@ -14,6 +14,7 @@ import (
 	"github.com/baalimago/clai/internal/chat"
 	"github.com/baalimago/clai/internal/chatid"
 	"github.com/baalimago/clai/internal/glob"
+	"github.com/baalimago/clai/internal/imageinput"
 	"github.com/baalimago/clai/internal/text/generic"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -50,6 +51,8 @@ type Configurations struct {
 	ProfilePath         string          `json:"-"`
 	ProfileUseSkillsSet bool            `json:"-"`
 	RequestedToolGlobs  []string        `json:"-"`
+	// explicitAllTools records a '*' entry that setupToolConfig folded into nil globs.
+	explicitAllTools bool
 	// CmdBan is the per-run command ban list for the freetext command tools
 	// (cmd, async_cmd; legacy aliases freetext_command, async_cmd_run).
 	// Commands matching an entry are
@@ -65,6 +68,12 @@ type Configurations struct {
 	// the resolution ladder (D22). The migrate tag surfaces the empty key in
 	// upgraded files, so it must never carry omitempty.
 	SummaryModel string `json:"summary-model" migrate:"true"`
+	// AutoOpenImages opens each generated image with ImageOpener, as -open does.
+	AutoOpenImages bool `json:"auto-open-images" migrate:"true"`
+	// ImageOpener is the viewer command; "" means the platform default.
+	ImageOpener string `json:"image-opener" migrate:"true"`
+	// ImageInputs are the -img values in flag order.
+	ImageInputs []string `json:"-"`
 	// SummaryJoinTimeout bounds the finalizer's wait for the in-flight
 	// summary; zero means defaultSummaryJoinTimeout.
 	SummaryJoinTimeout time.Duration `json:"-"`
@@ -113,6 +122,9 @@ type Configurations struct {
 
 	// Out writer. Normally stdout, but may also be a file when invoked as a package
 	Out io.Writer `json:"-"`
+
+	// ImageTurn is the turn's image wiring; nil means the default for ConfigDir.
+	ImageTurn *ImageTurn `json:"-"`
 
 	// ResponseFormat configures structured output (json_object, json_schema).
 	// When nil, no response_format is sent (defaults to text).
@@ -303,12 +315,13 @@ func (c *Configurations) SetupInitialChat(args []string) error {
 	if !c.ReplyMode {
 		c.setupSystemPrompt()
 	}
+	collected, err := c.collectInputs(args)
+	if err != nil {
+		return err
+	}
 	if c.Glob != "" {
 		traceChatf("setup initial chat creating glob chat glob=%q", c.Glob)
-		globChat, err := glob.CreateChat(c.Glob, c.SystemPrompt)
-		if err != nil {
-			return fmt.Errorf("failed to get glob chat: %w", err)
-		}
+		globChat := glob.FramedChat(c.Glob, collected.GlobMessages)
 		if misc.Truthy(os.Getenv("DEBUG")) {
 			ancli.PrintOK(fmt.Sprintf("glob messages: %v", globChat.Messages))
 		}
@@ -347,21 +360,10 @@ func (c *Configurations) SetupInitialChat(args []string) error {
 		}
 	}
 
-	traceChatf("setup initial chat building prompt stdin_replace=%q", c.StdinReplace)
-	prompt, err := utils.Prompt(c.StdinReplace, args)
-	if err != nil {
-		return fmt.Errorf("failed to setup prompt: %w", err)
-	}
-	prompt = strings.TrimRight(prompt, " \t\r\n")
-	traceChatf("setup initial chat prompt ready prompt_len=%d", len(prompt))
-
-	traceChatf("setup initial chat converting prompt to message parts")
-	imgMsg, err := chat.PromptToImageMessage(prompt)
-	if err != nil {
-		return fmt.Errorf("failed to convert prompt to imageMessage: %w", err)
-	}
-	c.InitialChat.Messages = append(c.InitialChat.Messages, imgMsg...)
-	traceChatf("setup initial chat appended prompt messages=%d total_messages=%d", len(imgMsg), len(c.InitialChat.Messages))
+	prompt := strings.TrimRight(collected.Prompt, " \t\r\n")
+	traceChatf("setup initial chat prompt ready prompt_len=%d images=%d", len(prompt), len(collected.Images))
+	c.InitialChat.Messages = append(c.InitialChat.Messages, userPromptMessage(prompt, collected.Images))
+	traceChatf("setup initial chat appended prompt total_messages=%d", len(c.InitialChat.Messages))
 
 	if misc.Truthy(os.Getenv("DEBUG")) {
 		ancli.PrintOK(fmt.Sprintf("InitialPrompt: %v\n", debug.IndentedJsonFmt(c.InitialChat)))
@@ -381,6 +383,40 @@ func (c *Configurations) SetupInitialChat(args []string) error {
 	}
 	traceChatf("setup initial chat done chat_id=%q total_messages=%d", c.InitialChat.ID, len(c.InitialChat.Messages))
 	return nil
+}
+
+// collectInputs gathers the -img images, the -g matches and stdin with the prompt text.
+func (c *Configurations) collectInputs(args []string) (imageinput.Collected, error) {
+	traceChatf("setup initial chat collecting inputs images=%d glob=%q stdin_replace=%q", len(c.ImageInputs), c.Glob, c.StdinReplace)
+	stdin, err := utils.PipedStdin()
+	if err != nil {
+		return imageinput.Collected{}, fmt.Errorf("failed to setup prompt: %w", err)
+	}
+	collected, err := imageinput.New().Collect(imageinput.CollectRequest{
+		Images:       c.ImageInputs,
+		Glob:         c.Glob,
+		Stdin:        stdin,
+		Args:         args,
+		StdinReplace: c.StdinReplace,
+	})
+	if err != nil {
+		return imageinput.Collected{}, fmt.Errorf("failed to setup prompt: %w", err)
+	}
+	return collected, nil
+}
+
+// userPromptMessage is the user message of query.1: Content when there is no image
+// (I10), otherwise Parts with the images followed by the prompt text.
+func userPromptMessage(prompt string, images []pub_models.ImagePart) pub_models.Message {
+	if len(images) == 0 {
+		return pub_models.Message{Role: "user", Content: prompt}
+	}
+	parts := make([]pub_models.Part, 0, len(images)+1)
+	for _, img := range images {
+		parts = append(parts, img)
+	}
+	parts = append(parts, pub_models.TextPart{Text: prompt})
+	return pub_models.Message{Role: "user", Parts: parts}
 }
 
 // toGenericResponseFormat converts the public ResponseFormat to the internal type

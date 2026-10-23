@@ -8,11 +8,10 @@ import (
 )
 
 func TestBuildProducesAnExecutable(t *testing.T) {
-	path, err := Build()
+	path, err := builtServer()
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
-	t.Cleanup(func() { _ = os.Remove(path) })
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatalf("Stat(%q): %v", path, err)

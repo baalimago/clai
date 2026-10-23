@@ -58,6 +58,7 @@ func registerLocalTools(reg *registry, lookup executableLookup) {
 		tools.AsyncCmdAwait,
 		tools.AsyncCmdCancel,
 		tools.LoadSkill,
+		tools.ViewImage,
 	}
 	for _, tool := range nativeTools {
 		reg.Set(tool.Specification().Name, tool)

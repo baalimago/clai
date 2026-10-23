@@ -21,20 +21,22 @@ func messageDisplayText(m pub_models.Message) string {
 	if m.ReasoningContent != "" {
 		parts = append(parts, "[thinking]\n"+m.ReasoningContent+"\n[/thinking]")
 	}
-	if s := m.String(); s != "" {
+	if s := m.Describe(); s != "" {
 		parts = append(parts, s)
 	}
 	if len(parts) > 0 {
 		return strings.Join(parts, "\n")
 	}
-	if len(m.ToolCalls) > 0 {
-		tcParts := make([]string, 0, len(m.ToolCalls))
-		for _, c := range m.ToolCalls {
-			tcParts = append(tcParts, c.PrettyPrint())
-		}
-		return strings.Join(tcParts, "\n")
+	return toolCallsText(m)
+}
+
+// toolCallsText is a tool-call turn's calls, one per line.
+func toolCallsText(m pub_models.Message) string {
+	calls := make([]string, 0, len(m.ToolCalls))
+	for _, c := range m.ToolCalls {
+		calls = append(calls, c.PrettyPrint())
 	}
-	return ""
+	return strings.Join(calls, "\n")
 }
 
 func messageContentLen(m pub_models.Message) int {
@@ -46,7 +48,6 @@ func printTruncatedMessage(w io.Writer, m pub_models.Message, i int, section str
 	disp := messageDisplayText(m)
 	disp = utils.ShortenedOutput(disp, 3)
 	m.Content = disp
-	m.ContentParts = nil
 	m.ReasoningContent = ""
 	fmt.Fprintf(w, "%s ", table.Colorize(utils.TableTheme().Primary, fmt.Sprintf("[#%-3d]", i)))
 	if err := utils.AttemptPrettyPrint(w, m, "user", raw); err != nil {
@@ -98,7 +99,6 @@ func printChatObfuscated(w io.Writer, ch pub_models.Chat, raw bool, width int) e
 	m0 := msgs[firstUserIdx]
 	disp0 := messageDisplayText(m0)
 	m0.Content = disp0
-	m0.ContentParts = nil
 	m0.ReasoningContent = ""
 	fmt.Fprintf(w, "%s ", table.Colorize(utils.TableTheme().Primary, fmt.Sprintf("[#%-3d]", firstUserIdx)))
 	if err := utils.AttemptPrettyPrint(w, m0, "user", raw); err != nil {
@@ -162,7 +162,6 @@ func printChatObfuscated(w io.Writer, ch pub_models.Chat, raw bool, width int) e
 	last := msgs[msgCount-1]
 	dispLast := messageDisplayText(last)
 	last.Content = dispLast
-	last.ContentParts = nil
 	last.ReasoningContent = ""
 	fmt.Fprintf(w, "%s ", table.Colorize(utils.TableTheme().Primary, fmt.Sprintf("[#%-3d]", msgCount-1)))
 	if err := utils.AttemptPrettyPrint(w, last, "user", raw); err != nil {

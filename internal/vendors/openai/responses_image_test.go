@@ -15,9 +15,9 @@ func TestResponsesMapper_ImageContentPart_MapsToInputImage(t *testing.T) {
 	const dataURL = "data:image/png;base64,AAAA"
 	msg := pub_models.Message{
 		Role: "user",
-		ContentParts: []pub_models.ImageOrTextInput{
-			{Type: "image_url", ImageB64: &pub_models.ImageURL{URL: dataURL, Detail: "auto"}},
-			{Type: "text", Text: "describe this"},
+		Parts: []pub_models.Part{
+			pub_models.ImagePart{Origin: pub_models.OriginUser, MIME: "image/png", Data: []byte{0, 0, 0}},
+			pub_models.TextPart{Text: "describe this"},
 		},
 	}
 
@@ -33,9 +33,6 @@ func TestResponsesMapper_ImageContentPart_MapsToInputImage(t *testing.T) {
 	}
 	if parts[0].ImageURL != dataURL {
 		t.Fatalf("part[0] image_url: got %q want %q", parts[0].ImageURL, dataURL)
-	}
-	if parts[0].Detail != "auto" {
-		t.Fatalf("part[0] detail: got %q want auto", parts[0].Detail)
 	}
 	b, err := json.Marshal(parts[0])
 	if err != nil {
@@ -60,10 +57,8 @@ func TestResponsesMapper_ImageMessage_ThroughInputItems(t *testing.T) {
 	t.Parallel()
 
 	chat := pub_models.Chat{Messages: []pub_models.Message{{
-		Role: "user",
-		ContentParts: []pub_models.ImageOrTextInput{
-			{Type: "image_url", ImageB64: &pub_models.ImageURL{URL: "data:image/jpeg;base64,ZZZZ"}},
-		},
+		Role:  "user",
+		Parts: []pub_models.Part{pub_models.ImagePart{Origin: pub_models.OriginUser, MIME: "image/jpeg", Data: []byte{0, 0, 0}}},
 	}}}
 
 	items, err := mapChatToResponsesInput(chat, false)
@@ -79,21 +74,7 @@ func TestResponsesMapper_ImageMessage_ThroughInputItems(t *testing.T) {
 	if len(items[0].Content) != 1 || items[0].Content[0].Type != "input_image" {
 		t.Fatalf("content: got %#v", items[0].Content)
 	}
-	if items[0].Content[0].ImageURL != "data:image/jpeg;base64,ZZZZ" {
+	if items[0].Content[0].ImageURL != "data:image/jpeg;base64,AAAA" {
 		t.Fatalf("image_url: got %q", items[0].Content[0].ImageURL)
-	}
-}
-
-// TestResponsesMapper_UnsupportedContentPart_StillErrors keeps the guard for a part
-// that is neither text nor image (e.g. a future modality) explicit.
-func TestResponsesMapper_UnsupportedContentPart_StillErrors(t *testing.T) {
-	t.Parallel()
-
-	msg := pub_models.Message{
-		Role:         "user",
-		ContentParts: []pub_models.ImageOrTextInput{{Type: "audio"}},
-	}
-	if _, err := mapMessageToResponsesContent(msg); err == nil {
-		t.Fatalf("expected error for unsupported content part")
 	}
 }

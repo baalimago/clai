@@ -446,3 +446,18 @@ func (e *McpRPCError) Unwrap() error { return ErrMcpRPCError }
 func (e *McpRPCError) Error() string {
 	return fmt.Sprintf("mcp server %q: JSON-RPC error %d: %s", e.ServerName, e.Code, e.Message)
 }
+
+var ErrImageUnsupported = errors.New("image not supported by this route")
+
+// ImageUnsupportedError.1: Error names Vendor, Model and Reason; Unwrap returns ErrImageUnsupported.
+type ImageUnsupportedError struct {
+	Vendor string
+	Model  string
+	Reason string // "route accepts no images" | "mime <m> not accepted (image <h>)" | "image in assistant turn" | "image in tool result"
+}
+
+func (e *ImageUnsupportedError) Error() string {
+	return fmt.Sprintf("image not supported by vendor %q, model %q: %v", e.Vendor, e.Model, e.Reason)
+}
+
+func (e *ImageUnsupportedError) Unwrap() error { return ErrImageUnsupported } // ErrImageUnsupported

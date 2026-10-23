@@ -1068,3 +1068,26 @@ func TestDebugDumpNeverLeaksArgsOrEnvSecret(t *testing.T) {
 		t.Error("DEBUG dump dropped the server name, which is not secret")
 	}
 }
+
+// A tool pattern that matches only generate_image selects it without the
+// "found none" warning: the turn registers that tool, not the registry.
+func TestSetupTooling_generateImagePatternDoesNotWarn(t *testing.T) {
+	confDir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(confDir, "mcpServers"), 0o755); err != nil {
+		t.Fatalf("mkdir mcpServers: %v", err)
+	}
+	t.Setenv("CLAI_CACHE_DIR", filepath.Join(t.TempDir(), "cache"))
+	completer := &toolBoxCompleter{}
+	conf := &Configurations{UseTools: true, ConfigDir: confDir, RequestedToolGlobs: []string{"gen*", "generate_image"}}
+
+	var err error
+	stdout, stderr := captureStdoutStderrText(t, func() {
+		err = setupTooling(t.Context(), completer, conf, &recordingSuccessSink{})
+	})
+	if err != nil {
+		t.Fatalf("setupTooling: %v", err)
+	}
+	if out := stdout + stderr; strings.Contains(out, "found none") || strings.Contains(out, "doesn't exist") {
+		t.Errorf("a generate_image selection warned: %q", out)
+	}
+}

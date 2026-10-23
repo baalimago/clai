@@ -1,0 +1,3 @@
+Call: 'ls', inputs: [  ]
+a.txt
+One file: a.txt

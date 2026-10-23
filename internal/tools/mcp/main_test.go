@@ -4,6 +4,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/baalimago/clai/internal/testenv"
 	"github.com/baalimago/clai/internal/tools/mcp/testserverbin"
 )
 
@@ -14,6 +15,7 @@ var (
 )
 
 func TestMain(m *testing.M) {
+	testenv.LimitProcs()
 	testServerBinPath, testServerBinErr = testserverbin.Build()
 	code := m.Run()
 	if testServerBinPath != "" {

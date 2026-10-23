@@ -219,6 +219,7 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	querier.tooling.maxCalls = userConf.MaxToolCalls
 	querier.stoploss = userConf.Stoploss
 	querier.runModel = userConf.Model
+	querier.vendor, querier.modelVersion = vendor, modelVersion
 	querier.summarizeConversations = userConf.SummarizeConversations
 	querier.summaryModel = userConf.SummaryModel
 	querier.summaryJoinTimeout = userConf.SummaryJoinTimeout
@@ -235,6 +236,7 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 		querier.agentSettings = userConf.AgentSettings
 	}
 	querier.out = output
+	querier.imageTurn = userConf.ImageTurn
 	// MCP server stderr lines follow the same display policy as the session:
 	// rolling output buffers them into the window, raw/structured output keeps
 	// only errors (on stderr, so stdout stays clean), and any other mode keeps

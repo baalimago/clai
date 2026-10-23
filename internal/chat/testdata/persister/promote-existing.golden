@@ -1,0 +1,118 @@
+== chat_index.cache
+{
+  "version": 2,
+  "rows": [
+    {
+      "id": "globalScope",
+      "created": "0001-01-01T00:00:00Z",
+      "message_count": 4,
+      "first_user_message": "list the files",
+      "group_key": "3cecba01356b133b5c310d645a557cecfd5b1951259fa55bf19b7dc94200c9c6"
+    },
+    {
+      "id": "text-tools",
+      "created": "2026-01-02T03:05:05Z",
+      "message_count": 4,
+      "first_user_message": "list the files",
+      "group_key": "3cecba01356b133b5c310d645a557cecfd5b1951259fa55bf19b7dc94200c9c6"
+    }
+  ]
+}
+== globalScope.json
+{
+  "created": "<now>",
+  "id": "globalScope",
+  "group_key": "3cecba01356b133b5c310d645a557cecfd5b1951259fa55bf19b7dc94200c9c6",
+  "messages": [
+    {
+      "content": "list the files",
+      "role": "user"
+    },
+    {
+      "content": "",
+      "reasoning_content": "I should call ls.",
+      "role": "assistant",
+      "tool_calls": [
+        {
+          "id": "call_1",
+          "name": "ls",
+          "type": "function",
+          "function": {
+            "name": "ls",
+            "arguments": "{\"dir\":\".\"}"
+          }
+        }
+      ]
+    },
+    {
+      "content": "a.txt\nb.txt",
+      "role": "tool",
+      "tool_call_id": "call_1"
+    },
+    {
+      "content": "Two files.",
+      "role": "assistant"
+    }
+  ]
+}
+
+== reasoning/globalScope/call_1.json
+[
+  {
+    "id": "rs_1",
+    "encrypted_content": "sealed",
+    "summary": [
+      "plan"
+    ]
+  }
+]
+
+== reasoning/text-tools/call_1.json
+[
+  {
+    "id": "rs_1",
+    "encrypted_content": "sealed",
+    "summary": [
+      "plan"
+    ]
+  }
+]
+
+== text-tools.json
+{
+  "created": "2026-01-02T03:05:05Z",
+  "id": "text-tools",
+  "group_key": "3cecba01356b133b5c310d645a557cecfd5b1951259fa55bf19b7dc94200c9c6",
+  "messages": [
+    {
+      "content": "list the files",
+      "role": "user"
+    },
+    {
+      "content": "",
+      "reasoning_content": "I should call ls.",
+      "role": "assistant",
+      "tool_calls": [
+        {
+          "id": "call_1",
+          "name": "ls",
+          "type": "function",
+          "function": {
+            "name": "ls",
+            "arguments": "{\"dir\":\".\"}"
+          }
+        }
+      ]
+    },
+    {
+      "content": "a.txt\nb.txt",
+      "role": "tool",
+      "tool_call_id": "call_1"
+    },
+    {
+      "content": "Two files.",
+      "role": "assistant"
+    }
+  ]
+}
+

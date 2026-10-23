@@ -1,6 +1,7 @@
 package huggingface
 
 import (
+	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/text/generic"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
@@ -42,9 +43,20 @@ func (h *HuggingFaceChat) Setup() error {
 
 	toolChoice := "auto"
 	h.StreamCompleter.ToolChoice = &toolChoice
+	h.StreamCompleter.Vendor = "huggingface"
+	h.StreamCompleter.Images = h.ImageCapabilities()
 	return nil
 }
 
 func (h *HuggingFaceChat) RegisterTool(tool pub_models.LLMTool) {
 	h.InternalRegisterTool(tool)
+}
+
+// ImageCapabilities is the huggingface row of Local fact P5-1 (worklog 2026-10-21-image-support).
+func (h *HuggingFaceChat) ImageCapabilities() models.ImageCapabilities {
+	return models.ImageCapabilities{
+		Input:      models.ImageInputInline,
+		ToolResult: models.ToolResultFallback,
+		MIMEs:      []string{"image/png", "image/jpeg", "image/webp"},
+	}
 }

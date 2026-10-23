@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/baalimago/clai/internal/debugflags"
@@ -32,7 +33,7 @@ const maxReasoningContent = 1 << 20 // 1 MiB
 
 // StreamCompletions taking the messages as prompt conversation. Returns the messages from the chat model.
 func (s *StreamCompleter) StreamCompletions(ctx context.Context, chat pub_models.Chat) (chan models.CompletionEvent, error) {
-	s.reasoningContent = ""
+	s.reasoningContent = s.reasoningContent[:0]
 	if s.Clean != nil {
 		cpy := make([]pub_models.Message, len(chat.Messages))
 		copy(cpy, chat.Messages)
@@ -74,7 +75,10 @@ func (s *StreamCompleter) createRequest(ctx context.Context, chat pub_models.Cha
 	if s.ResponseFormat != nil {
 		respFmt = *s.ResponseFormat
 	}
-	wireMsgs, err := toWireMessages(chat.Messages)
+	if err := models.CheckImageParts(s.Images, s.Vendor, s.Model, chat.Messages); err != nil {
+		return nil, err
+	}
+	wireMsgs, err := toWireMessages(chat.Messages, s.Images)
 	if err != nil {
 		return nil, fmt.Errorf("project messages to wire shape: %w", err)
 	}
@@ -94,6 +98,7 @@ func (s *StreamCompleter) createRequest(ctx context.Context, chat pub_models.Cha
 		},
 		// No support for this yet since it's limited usecase and high complexity
 		ParalellToolCalls: false,
+		Modalities:        s.OutputModalities,
 	}
 	if s.debug {
 		ancli.PrintOK(fmt.Sprintf("streamcompleter api key: %v...\n", s.apiKey[:5]))
@@ -135,6 +140,13 @@ func (s *StreamCompleter) handleStreamResponse(ctx context.Context, res *http.Re
 			res.Body.Close()
 			close(outChan)
 		}()
+		if slices.Contains(s.OutputModalities, "image") {
+			select {
+			case outChan <- models.ImageProgressEvent{}:
+			case <-ctx.Done():
+				return
+			}
+		}
 		for {
 			if ctx.Err() != nil {
 				return
@@ -152,26 +164,7 @@ func (s *StreamCompleter) handleStreamResponse(ctx context.Context, res *http.Re
 			if s.debug {
 				ancli.Okf("received data from model, len: '%v', content: '%s'", len(token), token)
 			}
-			evt := s.handleStreamChunk(token)
-			select {
-			case outChan <- evt:
-			case <-ctx.Done():
-				return
-			}
-			switch evt.(type) {
-			case models.StopEvent:
-				// Terminal event: the session runner returns on StopEvent and never
-				// reads the channel again. Stop here so a trailing blank line or a
-				// second [DONE] cannot block forever on the abandoned channel
-				// (production goroutine leak, 2026-08-12).
-				return
-			case error:
-				// A chunk-handler error is terminal too: the session runner ends
-				// the step on every channel error (its io.EOF and context.Canceled
-				// branches return as well) and never reads the channel again. Stop
-				// here so a provider that streams [DONE] after an error frame
-				// cannot block forever on the abandoned channel (worklog
-				// 2026-09-05-error-propagation, review 3, R3-01).
+			if s.forwardChunk(ctx, outChan, token) == streamEnded {
 				return
 			}
 		}
@@ -180,9 +173,61 @@ func (s *StreamCompleter) handleStreamResponse(ctx context.Context, res *http.Re
 	return outChan, nil
 }
 
+type streamProgress int
+
+const (
+	streamContinues streamProgress = iota
+	streamEnded
+)
+
+// forwardChunk sends the events of one stream line: the vendor's DecodeChunk events
+// first, then the shared decoder's event.
+func (s *StreamCompleter) forwardChunk(ctx context.Context, out chan<- models.CompletionEvent, token []byte) streamProgress {
+	events, err := s.vendorEvents(token)
+	if err != nil {
+		events = []models.CompletionEvent{err}
+	} else {
+		events = append(events, s.handleStreamChunk(token))
+	}
+	for _, evt := range events {
+		select {
+		case out <- evt:
+		case <-ctx.Done():
+			return streamEnded
+		}
+		switch evt.(type) {
+		case models.StopEvent:
+			// Terminal event: the session runner returns on StopEvent and never
+			// reads the channel again. Stop here so a trailing blank line or a
+			// second [DONE] cannot block forever on the abandoned channel
+			// (production goroutine leak, 2026-08-12).
+			return streamEnded
+		case error:
+			// A chunk-handler error is terminal too: the session runner ends
+			// the step on every channel error (its io.EOF and context.Canceled
+			// branches return as well) and never reads the channel again. Stop
+			// here so a provider that streams [DONE] after an error frame
+			// cannot block forever on the abandoned channel (worklog
+			// 2026-09-05-error-propagation, review 3, R3-01).
+			return streamEnded
+		}
+	}
+	return streamContinues
+}
+
+func (s *StreamCompleter) vendorEvents(token []byte) ([]models.CompletionEvent, error) {
+	if s.DecodeChunk == nil {
+		return nil, nil
+	}
+	return s.DecodeChunk(chunkPayload(token))
+}
+
+func chunkPayload(token []byte) []byte {
+	return bytes.TrimSpace(bytes.TrimPrefix(token, dataPrefix))
+}
+
 func (s *StreamCompleter) handleStreamChunk(token []byte) models.CompletionEvent {
-	token = bytes.TrimPrefix(token, dataPrefix)
-	token = bytes.TrimSpace(token)
+	token = chunkPayload(token)
 	if string(token) == "[DONE]" {
 		if s.debug {
 			ancli.Okf("sending StopEvent due to [DONE]")
@@ -252,10 +297,7 @@ func (s *StreamCompleter) handleStreamChunk(token []byte) models.CompletionEvent
 
 func (s *StreamCompleter) handleChoice(choice Choice) models.CompletionEvent {
 	if choice.Delta.ReasoningContent != "" {
-		s.reasoningContent += choice.Delta.ReasoningContent
-		if len(s.reasoningContent) > maxReasoningContent {
-			s.reasoningContent = s.reasoningContent[len(s.reasoningContent)-maxReasoningContent:]
-		}
+		s.appendReasoning(choice.Delta.ReasoningContent)
 	}
 	// If there is no tools call, just handle it as a strings. This works for most cases
 	if len(choice.Delta.ToolCalls) == 0 {
@@ -321,8 +363,25 @@ func (s *StreamCompleter) doToolsCall() models.CompletionEvent {
 		Type:             "function",
 		Function:         userFunc,
 		ExtraContent:     s.extraContent,
-		ReasoningContent: s.reasoningContent,
+		ReasoningContent: s.reasoning(),
 	}
+}
+
+// appendReasoning trims back to the tail only past twice the cap, so a stream of
+// small deltas costs amortized O(1) per byte instead of a full copy each.
+func (s *StreamCompleter) appendReasoning(delta string) {
+	s.reasoningContent = append(s.reasoningContent, delta...)
+	if len(s.reasoningContent) > 2*maxReasoningContent {
+		s.reasoningContent = append(s.reasoningContent[:0], s.reasoningContent[len(s.reasoningContent)-maxReasoningContent:]...)
+	}
+}
+
+func (s *StreamCompleter) reasoning() string {
+	tail := s.reasoningContent
+	if len(tail) > maxReasoningContent {
+		tail = tail[len(tail)-maxReasoningContent:]
+	}
+	return string(tail)
 }
 
 // heuristicTokenCountFactor is used to approximate token usage when
@@ -333,7 +392,7 @@ const heuristicTokenCountFactor = 1.1
 func (s *StreamCompleter) CountInputTokens(ctx context.Context, chat pub_models.Chat) (int, error) {
 	var count int
 	for _, m := range chat.Messages {
-		count += len(strings.Split(m.Content, " "))
+		count += len(strings.Split(m.Describe(), " "))
 	}
 	return int(float64(count) * heuristicTokenCountFactor), nil
 }

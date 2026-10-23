@@ -1,0 +1,30 @@
+{
+  "created": "2025-06-01T10:00:00Z",
+  "id": "legacy-image",
+  "messages": [
+    {
+      "content": "You are helpful.",
+      "role": "system"
+    },
+    {
+      "content": [
+        {
+          "type": "image_url",
+          "image_url": {
+            "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+            "detail": "auto"
+          }
+        },
+        {
+          "text": "what is in <IMG_0>?",
+          "type": "text"
+        }
+      ],
+      "role": "user"
+    },
+    {
+      "content": "A single red pixel.",
+      "role": "assistant"
+    }
+  ]
+}

@@ -127,7 +127,7 @@ func Test_handleToolCall_GeminiLogic(t *testing.T) {
 		}
 	})
 
-	t.Run("tool executor should preserve streamed text as final assistant text when Gemini returns to user", func(t *testing.T) {
+	t.Run("tool executor runs nothing when every call is handed back", func(t *testing.T) {
 		q := &Querier[*MockQuerier]{}
 		session := &QuerySession{
 			LikelyGeminiPreview: true,
@@ -138,11 +138,8 @@ func Test_handleToolCall_GeminiLogic(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Execute returned err: %v", err)
 		}
-		if session.FinalAssistantText != "partial answer" {
-			t.Fatalf("expected final assistant text to be preserved, got %q", session.FinalAssistantText)
-		}
-		if got := session.PendingTextString(); got != "" {
-			t.Fatalf("expected pending text to be cleared, got %q", got)
+		if len(session.Chat.Messages) != 0 || session.PendingTextString() != "partial answer" {
+			t.Fatalf("messages %d, pending %q: want nothing run and the text left to the runner", len(session.Chat.Messages), session.PendingTextString())
 		}
 	})
 

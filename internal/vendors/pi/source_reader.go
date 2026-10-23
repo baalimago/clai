@@ -118,7 +118,7 @@ func (s schema) Fields(line []byte) vendors.LineFields {
 		switch msg.Role {
 		case "user":
 			f.Role = vendors.LineRoleUser
-			f.UserText = vendors.RawTextBlocksContent(msg.Content)
+			f.UserText = vendors.RawUserPreview(msg.Content, imageBlock)
 		case "assistant":
 			f.Role = vendors.LineRoleAssistant
 			f.Model = msg.Model
@@ -217,18 +217,25 @@ func (r SourceReader) sessionsRoot() string {
 }
 
 func mapPiUserMessage(msg map[string]any) []pub_models.Message {
-	content := vendors.TextBlocksContent(msg["content"])
-	if content == "" {
+	user := vendors.ContentMessage("user", msg["content"], pub_models.OriginUser, imageBlock)
+	if !vendors.HasContent(user) {
 		return nil
 	}
-	return []pub_models.Message{{Role: "user", Content: content}}
+	return []pub_models.Message{user}
 }
 
 func mapPiToolResultMessage(msg map[string]any) pub_models.Message {
-	toolCallID, _ := msg["toolCallId"].(string)
-	return pub_models.Message{
-		Role:       "tool",
-		ToolCallID: toolCallID,
-		Content:    vendors.TextBlocksContent(msg["content"]),
+	tool := vendors.ContentMessage("tool", msg["content"], pub_models.OriginTool, imageBlock)
+	tool.ToolCallID, _ = msg["toolCallId"].(string)
+	return tool
+}
+
+// imageBlock reads pi-ai's ImageContent {"type":"image","data":B,"mimeType":M}.
+func imageBlock(block map[string]any) vendors.ImageBlock {
+	mime, _ := block["mimeType"].(string)
+	data, ok := block["data"].(string)
+	if !ok {
+		return vendors.ImageBlock{Source: vendors.ImageSourceRemote, MIME: mime}
 	}
+	return vendors.ImageBlock{Source: vendors.ImageSourceInline, MIME: mime, Base64: data}
 }

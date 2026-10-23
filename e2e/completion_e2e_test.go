@@ -110,10 +110,11 @@ func Test_e2e_complete_engine(t *testing.T) {
 	t.Run("per-command flags", func(t *testing.T) {
 		lines := completeLinesE2E(t, "q", "-")
 		assertContainsLines(t, lines, "-cm\tplain", "-t\tplain", "-mt\tplain")
-		// -am/-af are query flags now (they configure the audio_transcribe
-		// tool); -pm and -parallelism stay owned by other levels.
-		assertContainsLines(t, lines, "-am\tplain", "-af\tplain")
-		for _, forbidden := range []string{"-pm\tplain", "-parallelism\tplain"} {
+		// -am/-af/-pm are query flags now (they configure the audio_transcribe
+		// and generate_image tools); -parallelism stays owned by another level.
+		assertContainsLines(t, lines, "-am\tplain", "-af\tplain", "-pm\tplain")
+		assertContainsLines(t, lines, "-img\tplain", "-open\tplain")
+		for _, forbidden := range []string{"-parallelism\tplain", "-image-generation\tplain"} {
 			for _, l := range lines {
 				if l == forbidden {
 					t.Fatalf("forbidden %q in %v", forbidden, lines)

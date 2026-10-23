@@ -36,16 +36,7 @@ func renderTranscript(chat pub_models.Chat) string {
 }
 
 func messageText(msg pub_models.Message) string {
-	if msg.Content != "" {
-		return msg.Content
-	}
-	var parts []string
-	for _, part := range msg.ContentParts {
-		if part.Text != "" {
-			parts = append(parts, part.Text)
-		}
-	}
-	return strings.Join(parts, " ")
+	return msg.Describe()
 }
 
 func capRunes(s string, max int) string {

@@ -167,7 +167,7 @@ func Test_e2e_flag_scoping(t *testing.T) {
 		wantErr string
 	}{
 		{"unowned flag rejected", "photo -cm x hi", "flag provided but not defined: -cm"},
-		{"unowned flag pre-command rejected", "-pm x q hi", "flag provided but not defined: -pm"},
+		{"unowned flag pre-command rejected", "-pd x q hi", "flag provided but not defined: -pd"},
 		{"invalid int value names the flag", "q -mt abc hi", "invalid value \"abc\" for flag -mt"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -237,7 +237,7 @@ func Test_e2e_flag_scoping(t *testing.T) {
 			status = harness.Run([]string{"photo", "-h"})
 		})
 		testboil.FailTestIfDiff(t, status, 0)
-		for _, want := range []string{"-pm", "-photo-dir", "-re", "-raw"} {
+		for _, want := range []string{"-pm", "-photo-dir", "-re", "-raw", "-img", "-open"} {
 			if !strings.Contains(stdout, want) {
 				t.Fatalf("expected photo help to list %q, got: %q", want, stdout)
 			}

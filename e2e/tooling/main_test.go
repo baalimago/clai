@@ -13,6 +13,7 @@ var harness = e2etest.NewHarness()
 
 func TestMain(m *testing.M) {
 	harness.Deps.NewSummarizer = e2etest.RefusingSummarizer
+	harness.Deps.NewImageGenerator = e2etest.RefusingImageGenerator
 	e2etest.DetachTTY()
 	testServerBinPath, testServerBinErr = testserverbin.Build()
 	code := m.Run()

@@ -145,19 +145,29 @@ clai -t "mcp_linear*" query "List open incidents assigned to me"
 
 See: [`tooling.md`](./architecture/tooling.md), [`setup.md`](./architecture/setup.md).
 
-## Multimodal: photo + video
+## Multimodal: images, photo + video
 
 ```bash
+clai -img screenshot.png q "What is wrong in this dialog?"
+cat diagram.png | clai q "Describe this diagram"
+clai -g 'docs/*' q "Summarize these notes and figures"
+clai -t generate_image -open q "Draw a fox in the snow"
+clai -re -t generate_image q "Make it night"
+
 clai photo "A minimal architecture diagram"
 clai -re photo "Now simplify it further"
+clai photo -img sketch.png -open "Make it a watercolour"
 
 clai video "A slow pan across a terminal showing streaming output"
+clai video -img still.png "Make the waves roll"
 ```
 
+- `-img` attaches images to any model that reads them; a model that cannot fails before any request. Stdin that is wholly an image is attached too.
+- `generate_image` is clai's own tool on every vendor. It uses the chat vendor's image backend when it has one (OpenAI, Gemini, OpenRouter), otherwise the `photoConfig.json` model; `-pm` overrides both. Images are saved under `<clai-config>/conversations/assets/`. On a terminal each shows in the tool's block as two rows, `▸ [rebus] image <handle> · <details>` and its `file://` URL; piped, each is its bare path.
 - `photo`/`video` have separate mode configs: `photoConfig.json`, `videoConfig.json`.
-- Output can be saved locally or printed as a URL, depending on config.
+- `photo` saves each image under `output.dir` and prints its path; `-img` adds input images, and `-re` also sends the previous query's latest image.
 
-See: [`photo.md`](./architecture/photo.md), [`video.md`](./architecture/video.md), [`config.md`](./architecture/config.md).
+See: [`images.md`](./architecture/images.md), [`photo.md`](./architecture/photo.md), [`video.md`](./architecture/video.md), [`config.md`](./architecture/config.md).
 
 ## Audio transcription
 

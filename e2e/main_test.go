@@ -16,6 +16,7 @@ var harness = e2etest.NewHarness()
 
 func TestMain(m *testing.M) {
 	harness.Deps.NewSummarizer = e2etest.RefusingSummarizer
+	harness.Deps.NewImageGenerator = e2etest.RefusingImageGenerator
 	if os.Getenv(cliModeEnv) == "1" {
 		// main.go's body, with this binary's collaborators.
 		ancli.SetupSlog()

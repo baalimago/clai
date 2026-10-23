@@ -139,7 +139,7 @@ func chatIndexRowFromChat(chat pub_models.Chat) chatIndexRow {
 		break
 	}
 	if msg, err := chat.FirstUserMessage(); err == nil {
-		row.FirstUserMessage = msg.Content
+		row.FirstUserMessage = msg.Describe()
 	}
 	return row
 }

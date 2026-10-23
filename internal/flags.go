@@ -2,7 +2,9 @@ package internal
 
 import (
 	"flag"
+	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/baalimago/clai/internal/quantity"
 )
@@ -119,6 +121,28 @@ func (f *IntFlag) Register(fs *flag.FlagSet, desc string, names ...string) {
 func (f *IntFlag) Value() int     { return f.val }
 func (f *IntFlag) Explicit() bool { return f.set }
 func (f *IntFlag) Changed() bool  { return f.val != f.def }
+
+// StringsFlag is a repeatable string flag: every value is kept, in flag order,
+// and every registered name appends to the same list.
+type StringsFlag struct {
+	vals []string
+}
+
+func (f *StringsFlag) String() string { return strings.Join(f.vals, ",") }
+
+func (f *StringsFlag) Set(v string) error {
+	f.vals = append(f.vals, v)
+	return nil
+}
+
+func (f *StringsFlag) Register(fs *flag.FlagSet, desc string, names ...string) {
+	for _, name := range names {
+		fs.Var(f, name, desc)
+	}
+}
+
+// Value returns a copy of the values in flag order; nil when the flag was not passed.
+func (f *StringsFlag) Value() []string { return slices.Clone(f.vals) }
 
 // RawFlag is the "common" group: raw output for every command that prints
 // querier or conversation content.
@@ -238,16 +262,19 @@ func (f *MediaFlags) Apply(c MediaConfig) {
 // MediaToolFlags configures the media tools an agent run may call. The
 // media commands own the same flag names one level down for their own
 // runs; here they configure the tools, so a normal query, loop or chat can
-// pick the model its transcriptions use. Video and photo join when tools for
-// them exist — a flag that silently does nothing is worse than no flag.
+// pick the model its transcriptions use, and the model behind generate_image.
+// Video joins when a tool for it exists — a flag that silently does nothing is
+// worse than no flag.
 type MediaToolFlags struct {
 	AudioModel  StringFlag
 	AudioFormat StringFlag
+	PhotoModel  StringFlag
 }
 
 func (g *MediaToolFlags) Register(fs *flag.FlagSet) {
 	g.AudioModel.Register(fs, "Set the model the audio_transcribe tool uses for this run. Overrides audioConfig.json.", "am", "audio-model")
 	g.AudioFormat.Register(fs, "Set the transcript format the audio_transcribe tool returns: vtt|srt|text|json. Overrides the tool's own choice.", "af", "audio-format")
+	g.PhotoModel.Register(fs, "Set the image model the generate_image tool uses for this run. Overrides photoConfig.json.", "pm", "photo-model")
 }
 
 // AgentTextFlags is the model/agent group shared by every text-querier
@@ -334,9 +361,13 @@ type QueryTextFlags struct {
 	ShellContext   StringFlag
 	Summarize      BoolFlag
 	SummaryModel   StringFlag
+	Images         StringsFlag
+	OpenImages     BoolFlag
 }
 
 func (g *QueryTextFlags) Register(fs *flag.FlagSet) {
+	g.Images.Register(fs, "Attach an image to the prompt: a path or a glob, '~' allowed. Repeatable.", "img", "image")
+	g.OpenImages.Register(fs, "Open each generated image with the image-opener of textConfig.json. Same as its auto-open-images.", "open")
 	g.DirReply.Register(fs, "Set to true to reply to the previous directory-scoped conversation (bound to the current working directory).", "dre", "dir-reply")
 	g.UseSkills.Register(fs, "Enable skills. Use '*' to enable or 'none' to disable for the current run.", "s", "skills")
 	g.ResponseFormat.Register(fs, "Block streaming and print only the final structured response. Value is the path to a JSON response_format file.", "rf", "response-format")

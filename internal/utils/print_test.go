@@ -1402,3 +1402,78 @@ func TestActivityViewportResize(t *testing.T) {
 		}
 	})
 }
+
+// PrintToolBlock prints rows whole, past the width and the row limit, after the
+// content; empty content with rows prints no content row.
+func TestPrintToolBlock(t *testing.T) {
+	long := "→ file:///" + strings.Repeat("a", 120) + ".png"
+	var out bytes.Buffer
+	if err := PrintToolBlock(&out, pub_models.Call{Name: "draw"}, "", []string{"▸ image abc123", long, "▸ image def456", long}, 40, 2); err != nil {
+		t.Fatalf("PrintToolBlock: %v", err)
+	}
+	lines := strings.Split(strings.TrimSuffix(out.String(), "\n"), "\n")
+	if len(lines) != 6 || lines[1] != "  ▸ image abc123" || lines[2] != "  "+long || lines[4] != "  "+long || lines[5] != "" {
+		t.Fatalf("lines = %q, want the header, four whole rows and a blank line", lines)
+	}
+	out.Reset()
+	if err := PrintToolBlock(&out, pub_models.Call{Name: "draw"}, "revised prompt: x", []string{"row"}, 80, 3); err != nil {
+		t.Fatalf("PrintToolBlock: %v", err)
+	}
+	if !strings.Contains(out.String(), "  revised prompt: x\n  row\n\n") {
+		t.Fatalf("output %q: want the content row, then the row", out.String())
+	}
+}
+
+// PrintToolActivity with empty content still prints one empty content row.
+func TestPrintToolActivity_EmptyContentRow(t *testing.T) {
+	var out bytes.Buffer
+	if err := PrintToolActivity(&out, pub_models.Call{Name: "noop"}, "", 80, 3); err != nil {
+		t.Fatalf("PrintToolActivity: %v", err)
+	}
+	if lines := strings.Split(out.String(), "\n"); len(lines) != 4 || strings.TrimSpace(lines[1]) != "" {
+		t.Fatalf("output %q: want the header, an empty content row and a blank line", out.String())
+	}
+}
+
+// TerminalRows counts each line's wrapped rows in cells, without escape sequences.
+func TestTerminalRows(t *testing.T) {
+	for _, tc := range []struct {
+		text  string
+		width int
+		want  int
+	}{
+		{"", 80, 1},
+		{"abc", 80, 1},
+		{"abc\n", 80, 2},
+		{strings.Repeat("a", 80), 80, 1},
+		{strings.Repeat("a", 81), 80, 2},
+		{"\x1b[31m" + strings.Repeat("a", 80) + "\x1b[0m", 80, 1},
+		{strings.Repeat("🐱", 41), 80, 2},
+		{"one\ntwo", 0, 2},
+		{"\tmost recent: 12.345K", 25, 2},
+		{"ab\tc", 9, 1},
+		{"ab\tcd", 9, 2},
+		{"aa🐱🐱", 3, 3},
+		{"abcdefghi\tX", 10, 1},
+		{"🐱", 1, 1},
+		{strings.Repeat("a", 80) + "\u0085", 80, 1},
+		{"abcdefghij\rxy", 10, 1},
+	} {
+		if got := TerminalRows(tc.text, tc.width); got != tc.want {
+			t.Errorf("TerminalRows(%q, %d) = %d, want %d", tc.text, tc.width, got, tc.want)
+		}
+	}
+}
+
+func TestSanitizeTerminalText(t *testing.T) {
+	in := "a\x1b[31mb\x1b[0m\u009b31mc\u009d0;x\u0007d\te\r\nf\x7f"
+	if got, want := SanitizeTerminalText(in), "ab31mc0;xd e\nf"; got != want {
+		t.Fatalf("SanitizeTerminalText(%q) = %q, want %q", in, got, want)
+	}
+}
+
+func TestSanitizeTerminalRow(t *testing.T) {
+	if got, want := SanitizeTerminalRow(" 50%\rfetching\r\nnext\tx\x1b[1A "), "50% fetching next x"; got != want {
+		t.Fatalf("SanitizeTerminalRow = %q, want %q", got, want)
+	}
+}

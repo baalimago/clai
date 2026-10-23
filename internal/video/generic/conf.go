@@ -3,6 +3,8 @@
 // (same layering as text with pkg/text/models).
 package generic
 
+import "net/http"
+
 type Configurations struct {
 	Model string `json:"model"`
 	// Format of the prompt, will place prompt at '%v'
@@ -14,6 +16,10 @@ type Configurations struct {
 	Prompt       string `json:"-"`
 
 	PromptImageB64 string `json:"-"`
+	// Images are the -img values in flag order.
+	Images []string `json:"-"`
+	// Client sends the vendor requests; nil means the vendor's own client.
+	Client *http.Client `json:"-"`
 }
 
 type Output struct {

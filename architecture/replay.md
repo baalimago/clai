@@ -47,9 +47,14 @@ internal/cli:Run()
 
 `chat.Replay(raw=false, dirScoped=false)`:
 
-1. Loads `<clai-config>/conversations/globalScope.json` via `LoadPrevQuery("")`.
+1. Loads `<clai-config>/conversations/globalScope.json` via `LoadPrevQuery`, which reads it
+   through `chat.Persister.Load`.
 2. Selects the last message in the transcript.
-3. Pretty prints it via `utils.AttemptPrettyPrint(..., raw)`.
+3. Renders its parts one per line: text as is, a stored image as
+   `[image <handle>] <absolute asset path>`, a pending legacy image as
+   `[image <handle>] (not stored yet)`. A stored image whose file is gone fails with
+   `asset.ErrAssetNotFound`. A text-only message prints exactly as before.
+4. Pretty prints it via `utils.AttemptPrettyPrint(..., raw)`.
 
 If `globalScope.json` is missing, `LoadPrevQuery` prints a warning (`no previous query found`) and returns an empty chat.
 
@@ -60,8 +65,9 @@ If `globalScope.json` is missing, `LoadPrevQuery` prints a warning (`no previous
 1. Resolves config dir.
 2. Loads the directory binding (from `conversations/dirs/` metadata) via `ChatHandler.LoadDirScope("")`.
 3. If no binding exists: returns error `no directory-scoped conversation bound to current directory`.
-4. Loads the bound conversation JSON `<clai-config>/conversations/<chatID>.json`.
-5. Pretty prints the last message.
+4. Loads the bound conversation JSON `<clai-config>/conversations/<chatID>.json` through
+   `chat.Persister.Load`.
+5. Pretty prints the last message, with its images rendered as in global replay.
 
 ## Raw vs pretty output
 

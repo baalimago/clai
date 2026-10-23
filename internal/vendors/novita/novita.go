@@ -1,6 +1,7 @@
 package novita
 
 import (
+	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/text/generic"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
@@ -26,9 +27,23 @@ type Novita struct {
 const ChatURL = "https://api.novita.ai/openai/v1/chat/completions"
 
 func (g *Novita) Setup() error {
-	return g.StreamCompleter.SetupOpenAICompatible(g.Model, "NOVITA_API_KEY", "novita", ChatURL, "NOVITA_DEBUG", "novita:", g.FrequencyPenalty, g.Temperature, g.TopP, g.MaxTokens)
+	if err := g.StreamCompleter.SetupOpenAICompatible(g.Model, "NOVITA_API_KEY", "novita", ChatURL, "NOVITA_DEBUG", "novita:", g.FrequencyPenalty, g.Temperature, g.TopP, g.MaxTokens); err != nil {
+		return err
+	}
+	g.StreamCompleter.Vendor = "novita"
+	g.StreamCompleter.Images = g.ImageCapabilities()
+	return nil
 }
 
 func (g *Novita) RegisterTool(tool pub_models.LLMTool) {
 	g.InternalRegisterTool(tool)
+}
+
+// ImageCapabilities is the novita row of Local fact P5-1 (worklog 2026-10-21-image-support).
+func (g *Novita) ImageCapabilities() models.ImageCapabilities {
+	return models.ImageCapabilities{
+		Input:      models.ImageInputInline,
+		ToolResult: models.ToolResultNative,
+		MIMEs:      []string{"image/png", "image/jpeg", "image/webp"},
+	}
 }

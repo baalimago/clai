@@ -12,6 +12,8 @@ import (
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
+const vendorName = "openai"
+
 var GptDefault = ChatGPT{
 	Model:       "gpt-4.1-mini",
 	Temperature: 1.0,
@@ -59,6 +61,27 @@ func (g *ChatGPT) Setup() error {
 	return nil
 }
 
+func (g *ChatGPT) model() string {
+	if g.Model == "" {
+		return GptDefault.Model
+	}
+	return g.Model
+}
+
+// ImageCapabilities is the OpenAI row of Local fact P5-1 for the route the model
+// and URL select.
+func (g *ChatGPT) ImageCapabilities() models.ImageCapabilities {
+	toolResult := models.ToolResultFallback
+	if resolveUseResponses(g.model(), g.URL) {
+		toolResult = models.ToolResultNative
+	}
+	return models.ImageCapabilities{
+		Input:      models.ImageInputInline,
+		ToolResult: toolResult,
+		MIMEs:      []string{"image/png", "image/jpeg", "image/gif", "image/webp"},
+	}
+}
+
 func (g *ChatGPT) RegisterTool(tool pub_models.LLMTool) {
 	g.tools = append(g.tools, tool)
 }
@@ -103,6 +126,10 @@ func (g *ChatGPT) StreamCompletions(ctx context.Context, chat pub_models.Chat) (
 	// Setup already normalized g.URL and g.useResponses; re-resolve to stay correct
 	// even if the model was changed after Setup.
 	g.URL, g.useResponses = selectOpenAIURL(g.Model, g.URL)
+	images := g.ImageCapabilities()
+	if err := models.CheckImageParts(images, vendorName, g.Model, chat.Messages); err != nil {
+		return nil, err
+	}
 
 	if g.useResponses {
 		s := &responsesStreamer{
@@ -139,6 +166,8 @@ func (g *ChatGPT) StreamCompletions(ctx context.Context, chat pub_models.Chat) (
 	// Vendor decoder for both decode points (non-OK body and error frame at
 	// HTTP 200), per worklog 2026-09-05-error-propagation D11/D12.
 	sc.DecodeError = decodeError
+	sc.Vendor = vendorName
+	sc.Images = images
 	g.streamCompleter = sc
 	g.streamCompleter.Model = g.Model
 	g.streamCompleter.MaxTokens = g.MaxTokens

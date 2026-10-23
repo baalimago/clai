@@ -4,6 +4,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/baalimago/clai/internal/testenv"
 	"github.com/baalimago/clai/internal/tools/mcp/testserverbin"
 )
 
@@ -24,6 +25,7 @@ var (
 // "needs a package split" conclusion wrong — building here instead raises
 // headroom from ~4.7s to ~8.7s at no structural cost).
 func TestMain(m *testing.M) {
+	testenv.LimitProcs()
 	// A developer's key would make every querier setup fetch the live OpenRouter catalog.
 	_ = os.Unsetenv("OPENROUTER_API_KEY")
 	testServerBinPath, testServerBinErr = testserverbin.Build()

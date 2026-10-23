@@ -319,20 +319,22 @@ func (cq *ChatHandler) deleteFromPrompt() error {
 	if err != nil {
 		return fmt.Errorf("failed to get chat to delete: %w", err)
 	}
-	err = os.Remove(conversationPathFromDir(cq.convDir, c.ID))
+	_, err = convPersister(cq.convDir).Delete(c.ID)
+	var sidecar *sidecarNotRemovedError
+	var sweep *SweepFailedError
+	if errors.As(err, &sidecar) && !errors.As(err, &sweep) {
+		ancli.Warnf("failed to remove reasoning sidecar for chat %q: %v", c.ID, sidecar.Cause)
+		err = nil
+	}
 	if err != nil {
 		return fmt.Errorf("failed to delete chat: %w", err)
-	}
-	// Best-effort GC of the chat's reasoning sidecar directory.
-	if err := removeReasoningSidecars(cq.convDir, c.ID); err != nil {
-		ancli.Warnf("failed to remove reasoning sidecar for chat %q: %v", c.ID, err)
 	}
 	ancli.PrintOK(fmt.Sprintf("deleted chat '%v'\n", c.ID))
 	return nil
 }
 
 func (cq *ChatHandler) getByID(ID string) (pub_models.Chat, error) {
-	return FromPath(conversationPathFromDir(cq.convDir, ID))
+	return convPersister(cq.convDir).Load(conversationPathFromDir(cq.convDir, ID))
 }
 
 // New builds the chat handler. args is the dispatched "<verb> <rest...>"

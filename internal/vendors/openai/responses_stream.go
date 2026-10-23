@@ -581,11 +581,14 @@ func mapMessageToResponsesInputItems(msg pub_models.Message, includeReasoning bo
 		if msg.ToolCallID == "" {
 			return nil, fmt.Errorf("map tool message: missing tool_call_id")
 		}
+		var output any = msg.Content
+		if len(msg.Parts) > 0 {
+			output = responsesParts(msg.Parts, "input_text")
+		}
 		return []responsesInputItem{{
 			Type:   "function_call_output",
 			CallID: normalizeResponsesCallID(msg.ToolCallID),
-			// Responses expects `output` to be a string.
-			Output: msg.Content,
+			Output: output,
 		}}, nil
 
 	case "assistant":
@@ -638,7 +641,14 @@ func mapMessageToResponsesInputItems(msg pub_models.Message, includeReasoning bo
 			})
 		}
 
-		if msg.Content != "" {
+		switch {
+		case len(msg.Parts) > 0:
+			out = append(out, responsesInputItem{
+				Type:    "message",
+				Role:    "assistant",
+				Content: responsesParts(msg.Parts, "output_text"),
+			})
+		case msg.Content != "":
 			out = append(out, responsesInputItem{
 				Type: "message",
 				Role: "assistant",
@@ -669,32 +679,24 @@ func mapMessageToResponsesInputItems(msg pub_models.Message, includeReasoning bo
 func mapMessageToResponsesContent(msg pub_models.Message) ([]responsesInputContent, error) {
 	const textType = "input_text"
 
-	if len(msg.ContentParts) == 0 {
-		return []responsesInputContent{{Type: textType, Text: msg.Content}}, nil
+	if len(msg.Parts) > 0 {
+		return responsesParts(msg.Parts, textType), nil
 	}
+	return []responsesInputContent{{Type: textType, Text: msg.Content}}, nil
+}
 
-	out := make([]responsesInputContent, 0, len(msg.ContentParts))
-	for _, cp := range msg.ContentParts {
-		// Image part: the Responses API takes a plain data-URL string on image_url,
-		// mirroring the vision support of the Chat Completions path.
-		if cp.ImageB64 != nil {
-			out = append(out, responsesInputContent{
-				Type:     "input_image",
-				ImageURL: cp.ImageB64.URL,
-				Detail:   cp.ImageB64.Detail,
-			})
-			continue
+// responsesParts expects parts to have passed models.CheckImageParts.
+func responsesParts(parts []pub_models.Part, textType string) []responsesInputContent {
+	out := make([]responsesInputContent, 0, len(parts))
+	for _, p := range parts {
+		switch part := p.(type) {
+		case pub_models.TextPart:
+			out = append(out, responsesInputContent{Type: textType, Text: part.Text})
+		case pub_models.ImagePart:
+			out = append(out, responsesInputContent{Type: "input_image", ImageURL: generic.ImageDataURL(part)})
 		}
-		if cp.Text != "" {
-			out = append(out, responsesInputContent{Type: textType, Text: cp.Text})
-			continue
-		}
-		return nil, fmt.Errorf("unsupported content part: type=%q", cp.Type)
 	}
-	if len(out) == 0 {
-		return []responsesInputContent{{Type: textType, Text: ""}}, nil
-	}
-	return out, nil
+	return out
 }
 
 func parseResponsesLine(line []byte) (responsesStreamEvent, bool, error) {

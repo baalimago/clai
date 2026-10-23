@@ -45,6 +45,7 @@ The tool name is what the model sees. The Go identifier is what you pass to `Wit
 | `rsync` | `Rsync` | Sync files or directories, with archive and partial-transfer modes. |
 | `sed` | `Sed` | Regex substitution on a file, optionally within a line range. |
 | `tail` | `Tail` | Display the last part of a file. |
+| `view_image` | `ViewImage` | Return a local png, jpeg, gif or webp file as an image the model can see. |
 | `website_text` | `WebsiteText` | Fetch a URL as text; markup is stripped from HTML. |
 | `write_file` | `WriteFile` | Write content to a file, creating or overwriting it. |
 
@@ -87,6 +88,8 @@ var Ping = PingTool{
 func (p PingTool) Specification() models.Specification { return models.Specification(p) }
 func (p PingTool) Call(models.Input) (string, error)     { return "pong", nil }
 ```
+
+A tool whose result can hold images also implements `models.PartsCaller`. Its `CallParts` returns text and image parts in order, and its `Call` returns the same result as text, with `[image <handle>]` in place of each image. `view_image` and MCP tools are both of this kind.
 
 The CLI inspects any tool in this shape. Run `clai tools` to list the registered set and `clai tools <name>` to print one JSON schema.
 

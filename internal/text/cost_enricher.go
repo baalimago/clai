@@ -36,13 +36,9 @@ func (c costEnricher) enrich(chat pub_models.Chat) pub_models.Chat {
 	if c.manager == nil {
 		return chat
 	}
-	timeout := time.NewTimer(c.waitFor)
-	defer timeout.Stop()
-	select {
-	case <-timeout.C:
+	if !c.awaitReady() {
 		c.warnf("skipping wait for cost manager model price fetch after: %v\n", c.waitFor)
 		return chat
-	case <-c.ready:
 	}
 	enriched, err := c.manager.Enrich(chat)
 	if err != nil {
@@ -53,4 +49,22 @@ func (c costEnricher) enrich(chat pub_models.Chat) pub_models.Chat {
 		return chat
 	}
 	return enriched
+}
+
+// awaitReady checks readiness before arming the bound: a select over an
+// already-closed ready and an expired timer picks either at random.
+func (c costEnricher) awaitReady() bool {
+	select {
+	case <-c.ready:
+		return true
+	default:
+	}
+	timeout := time.NewTimer(c.waitFor)
+	defer timeout.Stop()
+	select {
+	case <-c.ready:
+		return true
+	case <-timeout.C:
+		return false
+	}
 }

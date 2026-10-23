@@ -5,15 +5,25 @@ import (
 	"os"
 	"time"
 
+	"github.com/baalimago/clai/internal/asset"
 	"github.com/baalimago/clai/internal/chatid"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
 // SaveAsPreviousQuery saves the global-scoped chat at
-// <claiConfDir>/conversations/globalScope.json with ID globalScope.
+// <claiConfDir>/conversations/globalScope.json with ID globalScope, storing its
+// pending images first (Persister Save.5).
 //
 // Name kept for backwards compatibility.
 func SaveAsPreviousQuery(claiConfDir string, chat pub_models.Chat) error {
+	return promote(claiConfDir, convAssetStore(conversationsDir(claiConfDir)), chat)
+}
+
+func promote(claiConfDir string, store asset.AssetStorer, chat pub_models.Chat) error {
+	chat, err := storePendingImages(store, chat)
+	if err != nil {
+		return err
+	}
 	traceChatf("save previous query start conf_dir=%q chat_id=%q messages=%d profile=%q", claiConfDir, chat.ID, len(chat.Messages), chat.Profile)
 	sourceChat := chat
 	convPath := conversationsDir(claiConfDir)
@@ -62,19 +72,18 @@ func SaveAsPreviousQuery(claiConfDir string, chat pub_models.Chat) error {
 			Queries:          chat.Queries,
 		}
 		traceChatf("save previous query conversation path=%q conv_id=%q", convPath, convChat.ID)
-		err = Save(convPath, convChat)
-		if err != nil {
+		if _, err := saveChat(convPath, store, convChat, withIndex); err != nil {
 			return fmt.Errorf("failed to save previous query as new conversation: %w", err)
 		}
 	}
 
-	traceChatf("save previous query global scope path=%q", globalScopePath(claiConfDir))
-	if err := Save(conversationsDir(claiConfDir), globalScopeChat); err != nil {
+	traceChatf("save previous query global scope path=%q", GlobalScopePath(claiConfDir))
+	if _, err := saveChat(convPath, store, globalScopeChat, withIndex); err != nil {
 		return fmt.Errorf("save global scope chat: %w", err)
 	}
 	if sourceChat.ID != "" && sourceChat.ID != globalScopeChatID {
 		traceChatf("save previous query update source conversation path=%q chat_id=%q", convPath, sourceChat.ID)
-		if err := Save(convPath, sourceChat); err != nil {
+		if _, err := saveChat(convPath, store, sourceChat, withIndex); err != nil {
 			return fmt.Errorf("save source conversation chat: %w", err)
 		}
 	}

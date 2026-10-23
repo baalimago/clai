@@ -1,11 +1,13 @@
 package anthropic
 
 import (
+	"encoding/base64"
 	"maps"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"github.com/baalimago/clai/internal/models"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -54,6 +56,25 @@ var Default = Claude{
 }
 
 const temperatureRejectedFromMajor = 5
+
+// ImageCapabilities is the anthropic row of Local fact P5-1 (worklog 2026-10-21-image-support).
+func (c *Claude) ImageCapabilities() models.ImageCapabilities {
+	return models.ImageCapabilities{
+		Input:      models.ImageInputInline,
+		ToolResult: models.ToolResultNative,
+		MIMEs:      []string{"image/png", "image/jpeg", "image/gif", "image/webp"},
+	}
+}
+
+// claudeMessages checks the chat's images, then converts its messages.
+func (c *Claude) claudeMessages(chat pub_models.Chat) ([]ClaudeConvMessage, error) {
+	if err := models.CheckImageParts(c.ImageCapabilities(), "anthropic", c.Model, chat.Messages); err != nil {
+		return nil, err
+	}
+	msgCopy := make([]pub_models.Message, len(chat.Messages))
+	copy(msgCopy, chat.Messages)
+	return claudifyMessages(msgCopy), nil
+}
 
 func (c *Claude) omitsTemperature() bool {
 	major, ok := claudeMajorVersion(c.Model)
@@ -116,44 +137,71 @@ func claudifyMessages(msgs []pub_models.Message) []ClaudeConvMessage {
 			role = "assistant"
 		}
 
-		var contentBlock any
+		var blocks []any
 
-		if len(msg.ToolCalls) > 0 {
+		switch {
+		case len(msg.ToolCalls) > 0:
 			toolCallMsg := msg.ToolCalls[0]
 			tmp := make(map[string]any)
 			if toolCallMsg.Inputs != nil {
 				tmp = make(map[string]any)
 				maps.Copy(tmp, *toolCallMsg.Inputs)
 			}
-			contentBlock = ToolUseContentBlock{
+			blocks = []any{ToolUseContentBlock{
 				Type:  "tool_use",
 				ID:    toolCallMsg.ID,
 				Name:  toolCallMsg.Name,
 				Input: &tmp,
-			}
-		} else if msg.Role == "tool" {
+			}}
+		case msg.Role == "tool" && len(msg.Parts) > 0:
 			role = "user"
-			contentBlock = ToolResultContentBlock{
+			blocks = []any{ToolResultPartsBlock{
+				Type:      "tool_result",
+				ToolUseID: msg.ToolCallID,
+				Content:   claudeParts(msg.Parts),
+			}}
+		case msg.Role == "tool":
+			role = "user"
+			blocks = []any{ToolResultContentBlock{
 				Type:      "tool_result",
 				ToolUseID: msg.ToolCallID,
 				Content:   msg.Content,
-			}
-		} else {
-			contentBlock = TextContentBlock{
+			}}
+		case len(msg.Parts) > 0:
+			blocks = claudeParts(msg.Parts)
+		default:
+			blocks = []any{TextContentBlock{
 				Type: "text",
 				Text: strings.TrimSpace(msg.Content),
-			}
+			}}
 		}
 
 		if len(ret) > 0 && ret[len(ret)-1].Role == role {
-			ret[len(ret)-1].Content = append(ret[len(ret)-1].Content, contentBlock)
+			ret[len(ret)-1].Content = append(ret[len(ret)-1].Content, blocks...)
 		} else {
 			ret = append(ret, ClaudeConvMessage{
 				Role:    role,
-				Content: []any{contentBlock},
+				Content: blocks,
 			})
 		}
 	}
 
 	return ret
+}
+
+// claudeParts expects parts to have passed models.CheckImageParts.
+func claudeParts(parts []pub_models.Part) []any {
+	out := make([]any, 0, len(parts))
+	for _, p := range parts {
+		switch part := p.(type) {
+		case pub_models.TextPart:
+			out = append(out, TextContentBlock{Type: "text", Text: strings.TrimSpace(part.Text)})
+		case pub_models.ImagePart:
+			out = append(out, ImageContentBlock{
+				Type:   "image",
+				Source: ImageSource{Type: "base64", MediaType: part.MIME, Data: base64.StdEncoding.EncodeToString(part.Data)},
+			})
+		}
+	}
+	return out
 }

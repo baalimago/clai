@@ -136,6 +136,23 @@ Registered MCP tools are scoped to the run that discovered them. They are **neve
 process-global tool registry, because that registry's entries would be overwritten by every
 concurrent `Setup` — see the comment at `internal/text/querier_setup_tools.go`.
 
+## Tool results
+
+A `tools/call` result is mapped to parts (`models.PartsCaller`, see
+[tooling.md](./tooling.md#image-results)), item by item and in order:
+
+| Content item | Part |
+| --- | --- |
+| a run of adjacent `{"type":"text","text":T}` items | one `TextPart` holding their texts concatenated |
+| `{"type":"image","data":B,"mimeType":M}` | pending `ImagePart{Origin: tool, MIME: M}` holding the decoded bytes |
+| an image whose base64 is corrupt, whose bytes are not an image, or whose sniffed type is not `M` | `TextPart` `[image dropped: <reason>]`; the call still succeeds |
+| any other type | nothing |
+
+The string form joins the parts with `"\n"`. Text items are concatenated without a separator, so a
+text-only result reads exactly as it did before images were read. A result with `isError: true`
+fails the call with `mcp tool "<tool>" returned an error result: <text>`, where `<text>` is its text
+items concatenated and its images are ignored, as before images were read.
+
 ## Transports
 
 Two `Conn` implementations, chosen at parse time from the server's config and never guessed at

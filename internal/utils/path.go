@@ -43,6 +43,19 @@ func ExpandUserPath(p string) (string, error) {
 	return filepath.Join(home, p[2:]), nil
 }
 
+// AbsHomePath returns p as an absolute path, with a leading "~/" expanded to the home
+// directory. Unlike ReplaceTildeWithHome, it keeps every other "~".
+func AbsHomePath(p string) (string, error) {
+	if rest, ok := strings.CutPrefix(p, "~/"); ok {
+		home, err := ReplaceTildeWithHome("~/")
+		if err != nil {
+			return "", err
+		}
+		p = filepath.Join(home, rest)
+	}
+	return filepath.Abs(p)
+}
+
 // GetClaiCacheDir returns the path to the clai cache directory.
 // The directory is located inside the user's cache directory
 // as <UserCacheDir>/clai, unless overridden by CLAI_CACHE_DIR.

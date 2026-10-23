@@ -86,7 +86,6 @@ func TestCallPatchAndPretty(t *testing.T) {
 	if !strings.Contains(pp, "Call: 'ls'") {
 		t.Errorf("PrettyPrint expected to contain name 'ls', got %q", pp)
 	}
-	// Since map iteration is random, we check if keys exist in the string
 	if !strings.Contains(pp, "'path': 'a'") {
 		t.Errorf("PrettyPrint expected to contain path input, got %q", pp)
 	}
@@ -369,5 +368,15 @@ func TestParameterObjectCompositionKeywords(t *testing.T) {
 		t.Error("expected array schema to have items defined")
 	} else if p4.OneOf[1].Items.Type != "string" {
 		t.Errorf("expected array items to be string, got %q", p4.OneOf[1].Items.Type)
+	}
+}
+
+func TestCallPrettyPrint_sortsInputs(t *testing.T) {
+	c := Call{Name: "f", Inputs: &Input{"h": 8, "b": 2, "g": 7, "a": 1, "e": 5, "c": 3, "f": 6, "d": 4}}
+	want := "Call: 'f', inputs: [ 'a': '1','b': '2','c': '3','d': '4','e': '5','f': '6','g': '7','h': '8' ]"
+	for range 20 {
+		if got := c.PrettyPrint(); got != want {
+			t.Fatalf("PrettyPrint = %q, want %q", got, want)
+		}
 	}
 }

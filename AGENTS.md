@@ -53,4 +53,16 @@ Instead, start testing early and ensure that test passes for each new modificati
 
 **Important:** For new implementations, 70+% test coverage is a must. 90+% test coverage is preferred.
 
+**Test binaries and GOMAXPROCS:** `go test ./...` runs about one race test binary per core at
+once. When every binary uses full GOMAXPROCS, the runtimes oversubscribe the host: on 2026-10-22,
+230 of the gate's 470 CPU-seconds went to scheduler spin and GC pauses, and `e2e` timed out. A
+package whose tests take 5 s or more inside the gate starts its `TestMain` with
+`testenv.LimitProcs()`, or is just `func TestMain(m *testing.M) { testenv.Main(m) }`
+(`internal/testenv`). Race detection is unaffected.
+
+**Tests never read the developer's files:** a package whose code falls back to the user's home,
+config or cache directory uses `testenv.MainInHome(m)` or calls `testenv.IsolateHome()` in its
+`TestMain`. On 2026-10-22, `internal/chat` timed out only on the maintainer's machine because a
+test parsed every real Claude Desktop session file 99 times.
+
 Run `make qa` to run all at once.

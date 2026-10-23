@@ -35,25 +35,7 @@ func UpdateMessageTerminalMetadata(msg string, line *string, lineCount *int, ter
 	}
 
 	newlineSplit := strings.Split(*line+msg, "\n")
-	*lineCount = 0
-
-	for _, segment := range newlineSplit {
-		if len(segment) == 0 {
-			*lineCount++
-			continue
-		}
-
-		runeCount := utf8.RuneCountInString(segment)
-		fullLines := runeCount / termWidth
-		if runeCount%termWidth > 0 {
-			fullLines++
-		}
-		*lineCount += fullLines
-	}
-
-	if *lineCount == 0 {
-		*lineCount = 1
-	}
+	*lineCount = TerminalRows(*line+msg, termWidth)
 
 	lastSegment := newlineSplit[len(newlineSplit)-1]
 	if len(lastSegment) > termWidth {
@@ -231,6 +213,14 @@ func ShortenedOutput(out string, maxShortenedNewlines int) string {
 // PrintToolActivity prints one non-raw tool execution as a header and its result.
 // The model transcript remains independent from this display-only representation.
 func PrintToolActivity(w io.Writer, call pub_models.Call, content string, termWidth, maxRows int) error {
+	return PrintToolBlock(w, call, content, nil, termWidth, maxRows)
+}
+
+// PrintToolBlock prints a tool block as PrintToolActivity does, then rows as they are,
+// indented but never compacted, cut or sanitized, so the terminal wraps them; callers
+// pass only text they produced or sanitized. Empty content with rows prints no content
+// row.
+func PrintToolBlock(w io.Writer, call pub_models.Call, content string, rows []string, termWidth, maxRows int) error {
 	if w == nil {
 		w = os.Stdout
 	}
@@ -238,8 +228,23 @@ func PrintToolActivity(w io.Writer, call pub_models.Call, content string, termWi
 	if _, err := fmt.Fprintln(w, table.Colorize(TableTheme().Primary, header)); err != nil {
 		return fmt.Errorf("write tool activity header: %w", err)
 	}
+	if content != "" || len(rows) == 0 {
+		if err := printToolContent(w, call, content, termWidth, maxRows); err != nil {
+			return err
+		}
+	}
+	for _, row := range rows {
+		if _, err := fmt.Fprintf(w, "  %s\n", row); err != nil {
+			return fmt.Errorf("write tool block row: %w", err)
+		}
+	}
+	_, err := fmt.Fprintln(w)
+	return err
+}
+
+func printToolContent(w io.Writer, call pub_models.Call, content string, termWidth, maxRows int) error {
 	content = SummarizeAsyncToolResult(call.Name, content)
-	content = sanitizeTerminalText(content)
+	content = SanitizeTerminalText(content)
 	contentWidth := max(termWidth-2, 1)
 	rows := compactTerminalRows(content, contentWidth, maxRows)
 	for i, row := range rows {
@@ -255,16 +260,15 @@ func PrintToolActivity(w io.Writer, call pub_models.Call, content string, termWi
 			return fmt.Errorf("write tool output: %w", err)
 		}
 	}
-	_, err := fmt.Fprintln(w)
-	return err
+	return nil
 }
 
 func toolActivityHeader(call pub_models.Call) string {
 	var header strings.Builder
 	header.WriteString("▸ ")
-	header.WriteString(sanitizeTerminalRow(displayToolName(call.Name)))
+	header.WriteString(SanitizeTerminalRow(displayToolName(call.Name)))
 	for _, key := range sortedInputKeys(call.Inputs) {
-		fmt.Fprintf(&header, "  %s=%s", sanitizeTerminalRow(key), sanitizeTerminalRow(displayInputValue((*call.Inputs)[key])))
+		fmt.Fprintf(&header, "  %s=%s", SanitizeTerminalRow(key), SanitizeTerminalRow(displayInputValue((*call.Inputs)[key])))
 	}
 	return strings.TrimSpace(header.String())
 }
@@ -295,7 +299,7 @@ func sortedInputKeys(inputs *pub_models.Input) []string {
 
 func displayInputValue(value any) string {
 	if text, ok := value.(string); ok {
-		return strings.Join(strings.Fields(sanitizeTerminalText(text)), " ")
+		return strings.Join(strings.Fields(SanitizeTerminalText(text)), " ")
 	}
 	encoded, err := json.Marshal(value)
 	if err != nil {
@@ -304,7 +308,52 @@ func displayInputValue(value any) string {
 	return string(encoded)
 }
 
-func sanitizeTerminalText(text string) string {
+// TerminalRows is how many terminal rows text takes at width once each line wraps;
+// escape sequences take no cells and a tab moves to the next tab stop. A width of zero
+// or less wraps nothing.
+func TerminalRows(text string, width int) int {
+	rows := 0
+	for line := range strings.SplitSeq(text, "\n") {
+		rows += lineRows(line, width)
+	}
+	return rows
+}
+
+// tabStop is the column interval of a terminal's tab stops.
+const tabStop = 8
+
+// wraps reports whether a rune cells wide, written at col, starts the next row.
+func wraps(col, cells, width int) bool { return col > 0 && col+cells > width }
+
+// lineRows is how many rows a terminal width columns wide draws line in; a tab
+// stops at the last column, and a wide rune that does not fit starts the next row.
+func lineRows(line string, width int) int {
+	rows, col := 1, 0
+	for _, r := range ansiOSCPattern.ReplaceAllString(ansiEscapePattern.ReplaceAllString(line, ""), "") {
+		switch {
+		case r == '\t':
+			col = (col/tabStop + 1) * tabStop
+			if width > 0 {
+				col = min(col, width-1)
+			}
+		case r == '\r':
+			col = 0
+		case unicode.IsControl(r):
+		default:
+			w := terminalRuneWidth(r)
+			if width > 0 && wraps(col, w, width) {
+				rows++
+				col = 0
+			}
+			col += w
+		}
+	}
+	return rows
+}
+
+// SanitizeTerminalText removes escape sequences and control characters from text
+// that will be written to a terminal; newlines stay and a tab becomes a space.
+func SanitizeTerminalText(text string) string {
 	text = ansiEscapePattern.ReplaceAllString(text, "")
 	text = ansiOSCPattern.ReplaceAllString(text, "")
 	text = strings.Map(func(r rune) rune {
@@ -316,7 +365,7 @@ func sanitizeTerminalText(text string) string {
 		case '\r':
 			return -1
 		}
-		if r < ' ' || r == 0x7f {
+		if unicode.IsControl(r) {
 			return -1
 		}
 		return r
@@ -324,15 +373,14 @@ func sanitizeTerminalText(text string) string {
 	return text
 }
 
-// sanitizeTerminalRow makes untrusted text safe for a single terminal row.
-func sanitizeTerminalRow(text string) string {
+// SanitizeTerminalRow makes untrusted text safe for a single terminal row.
+func SanitizeTerminalRow(text string) string {
 	return strings.TrimSpace(strings.Map(func(r rune) rune {
-		switch r {
-		case '\n', '\r', '\t':
+		if r == '\n' {
 			return ' '
 		}
 		return r
-	}, sanitizeTerminalText(text)))
+	}, SanitizeTerminalText(strings.NewReplacer("\r\n", "\n", "\r", " ").Replace(text))))
 }
 
 // ActivityViewport keeps a bounded, display-only view of streamed reasoning,
@@ -461,7 +509,7 @@ func (v *ActivityViewport) appendCoalescing(active **activityBlock, kind blockKi
 		v.blocks = append(v.blocks, *active)
 		v.evict()
 	}
-	(*active).content = boundContent((*active).content + sanitizeTerminalText(content))
+	(*active).content = boundContent((*active).content + SanitizeTerminalText(content))
 	(*active).rows = v.wrapBlock(*active)
 	v.rewrap()
 }
@@ -520,7 +568,7 @@ func (v *ActivityViewport) AppendTool(call pub_models.Call, content string, maxR
 	v.FinishReasoning()
 	block := &activityBlock{
 		kind:         blockTool,
-		content:      boundContent(sanitizeTerminalText(content)),
+		content:      boundContent(SanitizeTerminalText(content)),
 		call:         call,
 		toolBodyRows: maxRows,
 	}
@@ -541,7 +589,7 @@ func (v *ActivityViewport) AppendMcpLogBlock(server, content string, maxRows int
 	v.FinishReasoning()
 	block := &activityBlock{
 		kind:         blockMcpLog,
-		content:      boundContent(sanitizeTerminalText(content)),
+		content:      boundContent(SanitizeTerminalText(content)),
 		server:       server,
 		toolBodyRows: maxRows,
 	}
@@ -956,7 +1004,7 @@ func mcpLogBodyRows(content string, width, maxRows int) []activityRow {
 // mcpLogBlockHeader renders the rolling-window header for one MCP server log
 // block, following the server.tool display convention of tool activity.
 func mcpLogBlockHeader(server string) string {
-	return "▸ mcp." + sanitizeTerminalRow(server) + " log"
+	return "▸ mcp." + SanitizeTerminalRow(server) + " log"
 }
 
 // PrintMcpLogHeader prints the rolling-window style block header for one MCP
@@ -972,7 +1020,7 @@ func PrintMcpLogHeader(w io.Writer, server string, termWidth int) error {
 // PrintMcpLogLine prints one styled MCP log line under a block header,
 // following the mcpLogBodyRows styling and wrapping rules.
 func PrintMcpLogLine(w io.Writer, line string, termWidth int) error {
-	for _, row := range mcpLogBodyRows(sanitizeTerminalRow(line), max(termWidth-2, 1), 0) {
+	for _, row := range mcpLogBodyRows(SanitizeTerminalRow(line), max(termWidth-2, 1), 0) {
 		if _, err := fmt.Fprintln(w, table.Colorize(row.color, row.content)); err != nil {
 			return fmt.Errorf("write mcp log block line: %w", err)
 		}
@@ -1095,7 +1143,7 @@ func terminalRows(content string, width int) []string {
 				r = '…'
 				cellWidth = 1
 			}
-			if rowWidth > 0 && rowWidth+cellWidth > width {
+			if wraps(rowWidth, cellWidth, width) {
 				rows = append(rows, row.String())
 				row.Reset()
 				rowWidth = 0

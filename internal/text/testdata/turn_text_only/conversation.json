@@ -1,0 +1,71 @@
+{
+  "created":"<created>",
+  "id": "<id>",
+  "origin_dir":"<origin>",
+  "group_key": "3cecba01356b133b5c310d645a557cecfd5b1951259fa55bf19b7dc94200c9c6",
+  "messages": [
+    {
+      "content": "You are terse.",
+      "role": "system"
+    },
+    {
+      "content": "list the files",
+      "role": "user"
+    },
+    {
+      "content": "",
+      "role": "assistant",
+      "tool_calls": [
+        {
+          "id": "toolu_1",
+          "name": "ls",
+          "type": "function",
+          "inputs": null,
+          "function": {
+            "name": "ls",
+            "arguments": "{\"id\":\"toolu_1\",\"name\":\"ls\",\"type\":\"function\",\"inputs\":null,\"function\":{\"name\":\"ls\"}}"
+          }
+        }
+      ]
+    },
+    {
+      "content": "a.txt",
+      "role": "tool",
+      "tool_call_id": "toolu_1"
+    },
+    {
+      "content": "One file: a.txt",
+      "role": "assistant"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 14,
+    "completion_tokens": 0,
+    "total_tokens": 14,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "recent_usage": {
+    "prompt_tokens": 8,
+    "completion_tokens": 0,
+    "total_tokens": 8,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  }
+}

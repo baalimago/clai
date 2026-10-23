@@ -31,7 +31,8 @@ type TopProvider struct {
 }
 
 type Architecture struct {
-	Modality     string `json:"modality"`
-	Tokenizer    string `json:"tokenizer"`
-	InstructType string `json:"instruct_type"`
+	Modality         string   `json:"modality"`
+	OutputModalities []string `json:"output_modalities"`
+	Tokenizer        string   `json:"tokenizer"`
+	InstructType     string   `json:"instruct_type"`
 }

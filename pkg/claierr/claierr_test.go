@@ -342,3 +342,24 @@ func Test_Claierr_AuthChallengeIsBlockedOutsideRun(t *testing.T) {
 		t.Fatalf("unexpected fields: %#v", err)
 	}
 }
+
+// Proves ImageUnsupportedError.1.
+func TestImageUnsupportedError(t *testing.T) {
+	err := error(&claierr.ImageUnsupportedError{Vendor: "xai", Model: "grok-4", Reason: "mime image/gif not accepted (image ab12cd)"})
+	wrapped := fmt.Errorf("stream: %w", err)
+	if !errors.Is(wrapped, claierr.ErrImageUnsupported) {
+		t.Fatal("expected ErrImageUnsupported to match through a wrap")
+	}
+	var iu *claierr.ImageUnsupportedError
+	if !errors.As(wrapped, &iu) || iu.Vendor != "xai" {
+		t.Fatalf("expected errors.As to find the vendor, got %#v", iu)
+	}
+	for _, want := range []string{"xai", "grok-4", "mime image/gif not accepted (image ab12cd)"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("Error() = %q, want it to name %q", err.Error(), want)
+		}
+	}
+	if errors.Is(err, claierr.ErrModelNotFound) {
+		t.Fatal("ImageUnsupportedError must not match another meaning")
+	}
+}

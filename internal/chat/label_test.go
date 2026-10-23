@@ -9,6 +9,7 @@ func TestLabelFor(t *testing.T) {
 		{"title wins", "Fix auth", "please fix the auth bug", "Fix auth"},
 		{"empty title falls back to the first message", "", "please fix the auth bug", "please fix the auth bug"},
 		{"both empty", "", "", ""},
+		{"one terminal row", "", "added\x1b[1A\x1b[2K\rprogress\n50%", "added progress 50%"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

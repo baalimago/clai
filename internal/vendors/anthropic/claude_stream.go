@@ -270,9 +270,10 @@ func (c *Claude) stringFromDeltaToken(deltaToken string) (Delta, error) {
 func (c *Claude) constructRequest(ctx context.Context, chat pub_models.Chat) (*http.Request, error) {
 	// ignored for now as error is not used
 	sysMsg, _ := chat.FirstSystemMessage()
-	msgCopy := make([]pub_models.Message, len(chat.Messages))
-	copy(msgCopy, chat.Messages)
-	claudifiedMsgs := claudifyMessages(msgCopy)
+	claudifiedMsgs, err := c.claudeMessages(chat)
+	if err != nil {
+		return nil, err
+	}
 	if debugflags.Enabled("CLAUDIFIED_MSGS") {
 		ancli.PrintOK(
 			fmt.Sprintf(
@@ -287,7 +288,7 @@ func (c *Claude) constructRequest(ctx context.Context, chat pub_models.Chat) (*h
 		Messages:      claudifiedMsgs,
 		MaxTokens:     c.MaxTokens,
 		Stream:        true,
-		System:        sysMsg.Content,
+		System:        sysMsg.Describe(),
 		TopP:          c.TopP,
 		TopK:          c.TopK,
 		StopSequences: c.StopSequences,
@@ -316,9 +317,10 @@ func (c *Claude) constructRequest(ctx context.Context, chat pub_models.Chat) (*h
 }
 
 func (c *Claude) CountInputTokens(ctx context.Context, chat pub_models.Chat) (int, error) {
-	msgCopy := make([]pub_models.Message, len(chat.Messages))
-	copy(msgCopy, chat.Messages)
-	claudifiedMsgs := claudifyMessages(msgCopy)
+	claudifiedMsgs, err := c.claudeMessages(chat)
+	if err != nil {
+		return 0, err
+	}
 
 	reqData := claudeReq{
 		Model:    c.Model,
@@ -335,7 +337,7 @@ func (c *Claude) CountInputTokens(ctx context.Context, chat pub_models.Chat) (in
 		// In tests or when using a custom URL, fall back to heuristic counting
 		var count int
 		for _, m := range chat.Messages {
-			count += len(strings.Split(m.Content, " "))
+			count += len(strings.Split(m.Describe(), " "))
 		}
 		heuristic := int(float64(count) * heuristicTokenCountFactor)
 		c.amInputTokens = heuristic

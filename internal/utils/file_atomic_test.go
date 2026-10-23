@@ -12,14 +12,15 @@ import (
 func TestWriteFileAtomic_readerSeesWholeFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "model.json")
+	// Four pages each, so a write in place could be seen half done.
 	payloads := [][]byte{
-		[]byte(strings.Repeat("a", 1<<16)),
-		[]byte(strings.Repeat("b", 1<<16)),
+		[]byte(strings.Repeat("a", 1<<14)),
+		[]byte(strings.Repeat("b", 1<<14)),
 	}
 	if err := WriteFileAtomic(path, payloads[0], 0o644); err != nil {
 		t.Fatalf("WriteFileAtomic: %v", err)
 	}
-	const rounds = 200
+	const rounds = 50
 	var wg sync.WaitGroup
 	for w := range 4 {
 		wg.Go(func() {

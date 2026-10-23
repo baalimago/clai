@@ -34,7 +34,7 @@ func LoadGlobalScope(confDir string) (pub_models.Chat, error) {
 	}
 
 	convDir := conversationsDir(confDir)
-	newPath := globalScopePath(confDir)
+	newPath := GlobalScopePath(confDir)
 	oldPath := prevQueryPath(confDir)
 	traceChatf("load global scope paths conv_dir=%q new_path=%q old_path=%q", convDir, newPath, oldPath)
 
@@ -57,7 +57,7 @@ func LoadGlobalScope(confDir string) (pub_models.Chat, error) {
 		return pub_models.Chat{}, fmt.Errorf("stat legacy global chat %q: %w", oldPath, err)
 	}
 
-	c, err := FromPath(newPath)
+	c, err := loadConversation(confDir, newPath)
 	traceChatf("global scope msgs: %v, queries: %v", len(c.Messages), len(c.Queries))
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {

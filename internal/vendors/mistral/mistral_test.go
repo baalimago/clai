@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 
 	"github.com/baalimago/clai/internal/text/generic"
@@ -133,5 +134,36 @@ func (mockTool) Specification() pub_models.Specification {
 		Name:        "test",
 		Description: "a test tool",
 		Inputs:      &pub_models.InputSchema{Type: "object"},
+	}
+}
+
+// Proves E7.
+func TestMistralClean_KeepsParts(t *testing.T) {
+	img := pub_models.ImagePart{Asset: "ab12cd.png", MIME: "image/png", Origin: pub_models.OriginGenerated}
+	msgs := []pub_models.Message{
+		{Role: "user", Content: "draw"},
+		{Role: "assistant", Content: "first"},
+		{Role: "assistant", Parts: []pub_models.Part{pub_models.TextPart{Text: "second"}, img}},
+		{Role: "assistant", Content: "third"},
+	}
+	cleaned := clean(append([]pub_models.Message(nil), msgs...))
+	if len(cleaned) != 2 {
+		t.Fatalf("expected the assistants merged into one, got %d messages", len(cleaned))
+	}
+	want := []pub_models.Part{
+		pub_models.TextPart{Text: "first"},
+		pub_models.TextPart{Text: "second"},
+		img,
+		pub_models.TextPart{Text: "third"},
+	}
+	got := cleaned[1]
+	if got.Content != "" || len(got.Parts) != len(want) {
+		t.Fatalf("merged message = %+v, want parts %+v", got, want)
+	}
+	if !reflect.DeepEqual(got.Parts, want) {
+		t.Fatalf("parts = %#v, want %#v", got.Parts, want)
+	}
+	if len(msgs[2].Parts) != 2 {
+		t.Fatalf("clean must not grow the caller's parts, got %d", len(msgs[2].Parts))
 	}
 }

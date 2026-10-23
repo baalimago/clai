@@ -80,8 +80,19 @@ Messages support both plain text and multimodal “content parts”.
 
 Key behaviors:
 
-- JSON field `content` is **either** a string **or** an array of `{type,text,image_url}` parts.
-- Internally this is represented by `Content` and `ContentParts` with custom marshal/unmarshal.
+- JSON field `content` is **either** a string **or** an array of parts. A text-only message
+  keeps the string form, byte for byte.
+- `Parts` is the closed set of typed parts (`pkg/text/models/parts.go`): `TextPart` and
+  `ImagePart`. They encode as `{"type":"text","text":…}` and
+  `{"type":"image","asset":"<sha256-hex>.<ext>","mime":…,"origin":"user|tool|generated"}`.
+  An image is referenced by asset, never by bytes: marshalling a pending image (bytes, no
+  asset) fails with `ErrPendingImage`.
+- `ImagePart.Handle()` is the first 6 hex digits of the image's SHA-256, equal for the pending
+  and the stored form. `Message.Describe()` renders a message as text, an image as
+  `[image <handle>]`.
+- Legacy arrays (`{"type":"image_url","image_url":{"url":"data:<mime>;base64,…"}}`) decode into
+  pending `ImagePart`s with origin `user`; a non-data or corrupt URL fails with
+  `ErrLegacyImageURL`, and any other part type with `ErrUnknownPartType`.
 - OpenAI's opaque reasoning items (`ReasoningItems`) are held in memory and persisted **out
   of band**, never inlined, so the conversation JSON stays human-readable and portable.
 
@@ -96,6 +107,60 @@ Chats are stored as JSON files in:
 - `<clai-config>/conversations/<chatID>.json`
 
 The config directory creation ensures `conversations/` exists (see `internal/utils/config.go`).
+
+#### Image assets (`internal/asset`)
+
+Image bytes live in a content-addressed store, `asset.NewStore(dir)`, meant for
+`<clai-config>/conversations/assets/`; a conversation holds only the file name, its *ref*,
+`<sha256-hex>.<ext>`. The extension comes from the MIME type (`png`, `jpg`, `gif`, `webp`;
+nothing else is an image), and `asset.Sniff` must agree with the declared type. `Put` is
+idempotent, never rewrites an existing file, and writes through a temp file and a rename, so a
+failed write leaves nothing under the ref; the directory appears on the first `Put`. `Load`
+re-hashes the bytes and fails with `ErrAssetCorrupt` on a mismatch. `Resolve` maps a 6-hex-digit
+handle to the one ref it prefixes, or fails with `ErrUnknownHandle` or `*AmbiguousHandleError`.
+`Sweep(live)` removes every ref-named file not in `live` and leaves other files alone.
+`assettest.NewMemory()` is an in-memory implementation that passes the same contract suite.
+
+#### Conversation persister (`internal/chat/persister.go`)
+
+`chat.NewPersister(confDir, store)` ties conversations to the asset store, and no conversation
+reaches disk with a pending image:
+
+- `Save` stores every pending `ImagePart` with `Put` first, then writes the chat with refs only
+  and returns it as written. When `Put` fails, nothing is written. A chat with no image is
+  written exactly as before, and no `assets/` directory appears.
+- `Promote` writes the files `SaveAsPreviousQuery` writes (below). It stores the images once, so
+  every copy references the same asset files.
+- `Load` reads a conversation. A legacy inline image becomes a pending part, whose bytes must
+  sniff as the declared type (`asset.ErrNotImage` or `*asset.MIMEMismatchError`, naming the path
+  and message index). The file is rewritten as refs only on its next save.
+- `Delete` removes the conversation and its reasoning sidecar, then sweeps every asset that no
+  remaining `conversations/*.json` file references, `globalScope.json` included. A missing id is
+  `ErrChatNotFound`. A failed sweep, or a conversation file it cannot decode, is
+  `*SweepFailedError`, and the sweep then removes nothing. A sidecar that cannot be removed does
+  not stop the delete or the sweep: it is a typed, non-fatal error returned after the sweep, and
+  `clai chat delete` prints it as a warning, as before images were stored.
+
+The free writers `Save`, `SaveWithoutIndex` and `SaveAsPreviousQuery` behave the same over
+`asset.NewStore(<conversations>/assets)`.
+
+Every reader of a conversation the user continues goes through `Load`: `-re`
+(`LoadPrevQuery`), `-dre` (`LoadDirScopedContext`), `chat continue`, `chat delete` and replay.
+Cloning a foreign conversation on continue writes it with `Save`, and `chat delete` is
+`Delete`, so it sweeps the assets only that conversation referenced. `chat.AssetsDir(confDir)`
+and `chat.GlobalScopePath(confDir)` name the asset directory and `globalScope.json` for other
+packages; `photo.PreviousQueryImage` reads the last image of the previous query through them.
+
+#### Images on text surfaces
+
+A surface that shows only text renders an image as its `Message.Describe()` label,
+`[image <handle>]`: the `chat list` index preview and the selected row's `summary:` line, the
+`chat continue` preview, the lookback tools (`search_conversations`, `inspect_conversation`,
+`read_message`) and the summarizer's transcript. Replay prints more: a stored image as
+`[image <handle>] <absolute asset path>`, and a pending legacy one as
+`[image <handle>] (not stored yet)` (see [replay.md](./replay.md)). The message editor offers only
+the text parts of a parts message, joined by newlines; on save the edited text replaces the first
+text part, the other text parts are dropped, and every image keeps its place.
 
 #### Reasoning sidecar (OpenAI Responses)
 
@@ -119,7 +184,10 @@ failure never blocks saving or loading the conversation itself); deleting a chat
 Implemented in `internal/chat/chat.go`:
 
 - `FromPath(path string) (models.Chat, error)` reads JSON into a `pkg/text/models.Chat`.
-- `Save(saveAt string, chat Chat) error` writes JSON to `path.Join(saveAt, chat.ID+".json")`.
+- `Save(saveAt string, chat Chat) error` stores the chat's pending images under
+  `<saveAt>/assets/`, then writes JSON to `path.Join(saveAt, chat.ID+".json")`.
+- The index row's first user message is that message's `Describe()`, so an image-only message
+  previews as `[image <handle>]`.
 
 ### Chat IDs
 
@@ -260,9 +328,24 @@ Implementation: `internal/chat/handler_list_chat.go`:
 - `listChats()` uses `utils.SelectFromTable` to show a selection table; each row shows `labelFor(title, firstUserMessage)` — the title when the chat is labelled, else the first user message.
 - Table toggles, each re-deriving the in-memory view without a new discovery pass: `[d]irscoped convs` (offered when the working directory has bindings; native rows only, foreign rows never hidden by it) and `[f]oreign convs` (offered when a source reader produced rows; hides or shows every external conversation, groups collapse over the remaining members). Each label carries its state in words (`[d]irscoped convs: off|on`, `[f]oreign convs: shown|hidden`) and is bold and underlined while in the non-default position (colour on); both default to off/shown and last for the list session. The labels come in three tiers chosen per render so the prompt line fits the terminal: long (`[d]irscoped convs: off`, `[f]oreign convs: shown`), compact (`[d]ir: off`, `[f]oreign: shown`) and terse (`[d]:off`, `[f]:shown`). `listPromptTier` replicates the table's prompt composition (`select`, the toggles, `[p]rev`, `[n]ext`, `[b]ack`, `[q]uit`, `[/] filter`, a reserved `page 99/99`), measures it with the longest state word and a four-column typing margin, and takes the first tier that fits; an unknown width keeps the long tier. With both toggles the long tier needs 119 columns and the compact tier 101; below that the terse tier is used. Residual: the table library never measures or clears a wrapped prompt line (`selectNumbers` clears `amPrinted+1` lines), so below about 91 columns a paginated list still wraps the terse prompt and drifts one line per keypress — a pre-feature limitation (the one-toggle prompt with a page counter already measured 82) that a fix in the table package would close.
 
-After selecting a chat, `actOnChat()` prints a details view and offers actions:
+After selecting a chat, `actOnChat()` prints a details view and offers actions. The view is
+rendered first. Going [b]ack, or into the edit or delete picker, clears it by the terminal rows it
+took at the current width, counted rune by rune as a terminal wraps them (`utils.TerminalRows`), so
+the lines above it stay; the other choices leave it on screen. The label lines (title, summary or
+first message) are sanitized to one row first, so escape sequences and line breaks in stored text
+cannot skew the count. Emoji widths are where terminals disagree: one that draws a ZWJ or
+skin-tone sequence as one glyph uses fewer rows than counted, and the clear can reach a line
+above; one that draws a VS16 emoji (❤️) two cells wide can use more, and leave part of the view.
 
-- edit messages (via `$EDITOR`)
+- edit messages (via `$EDITOR`; images stay in place, see above). A message opened and saved
+  unchanged is not written again; the newline an editor adds at the end and CRLF line ends do not
+  count as changes, and a saved edit drops the newline the editor added. A tool-call turn, whose
+  stored text is empty, opens with its calls (`Call.PrettyPrint`, inputs sorted by name; the picker
+  shows them too unless the turn holds reasoning); changing that text is refused with a warning,
+  since tool calls cannot be edited as text. A blank edit removes the message's text but keeps its
+  images and tool calls; one that would leave the message empty is refused with a warning, since
+  vendors reject empty messages. The warning points to `[d]elete`, or, for a tool result, to
+  replacing its text, since deleting it would leave its call without a result.
 - delete messages
 - save as `globalScope.json`
 
@@ -284,6 +367,8 @@ Implemented in `internal/chat/reply.go`.
 - additionally (when `len(msgs) > 2`): saves a *new conversation file* derived from the first user message using `HashIDFromPrompt(firstUserMsg.Content)`
 
 This preserves one-off queries and optionally promotes richer exchanges into normal conversations.
+Pending images are stored once before any file is written, so every copy references the same
+asset files.
 
 The mirror is built by **explicit field copy**, so a field added to `Chat` must be copied there (and into the promotion copy) or it is lost on reply. `title`, `summary` and `summary_at` are mirrored. Because the mirror carries `ID: globalScope`, a plain `-re` **forks**: `SetupInitialChat` (`internal/text/conf.go`) adopts `Created`, `Messages`, `Queries` and — when its own chat has no summary — the three label fields from the mirror, generates a fresh id, and the finalizer writes a new conversation file next to the untouched parent. The fork therefore inherits its parent's label and the in-flight summarizer does not run for it. `-dre` continues the bound conversation in place from the full file and needs no adoption.
 
@@ -306,7 +391,8 @@ In short:
 
 The chat handler holds no querier and calls no vendor. Every subcommand
 reads stored transcripts and writes conversation state: `continue` prints a
-chat and binds CWD to it, `delete` unlinks it, `list`/`dir`/`dirv2` render.
+chat and binds CWD to it, `delete` unlinks it and sweeps its unreferenced assets,
+`list`/`dir`/`dirv2` render.
 Turns are taken with `clai -dre query ...` afterwards. The one exception is
 `summarize`, which receives a lazily constructed summarizer by injection
 (`CommandDeps.NewSummarizer`) and is the only verb that invokes it.

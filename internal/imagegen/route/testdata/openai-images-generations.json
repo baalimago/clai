@@ -1,0 +1,27 @@
+{
+ "created": 1792590514,
+ "background": "opaque",
+ "data": [
+  {
+   "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAS0lEQVR42u3PQQkAAAgAsetfWiP4FgYrsKZeS0BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEDgsqnc8OJg6Ln3AAAAAElFTkSuQmCC",
+   "generation_id": "8a74cf46-7755-41d0-83a6-85c28b65b727"
+  }
+ ],
+ "output_format": "png",
+ "quality": "low",
+ "safety_identifier": null,
+ "size": "1024x1024",
+ "usage": {
+  "input_tokens": 16,
+  "input_tokens_details": {
+   "image_tokens": 0,
+   "text_tokens": 16
+  },
+  "output_tokens": 272,
+  "output_tokens_details": {
+   "image_tokens": 272,
+   "text_tokens": 0
+  },
+  "total_tokens": 288
+ }
+}

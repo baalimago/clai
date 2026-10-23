@@ -325,20 +325,15 @@ func TestMapMessageToResponsesContent(t *testing.T) {
 		t.Fatalf("plain = %#v, %v", plain, err)
 	}
 
-	img := &pub_models.ImageURL{URL: "data:image/png;base64,AAAA", Detail: "low"}
-	parts, err := mapMessageToResponsesContent(pub_models.Message{ContentParts: []pub_models.ImageOrTextInput{
-		{ImageB64: img},
-		{Text: "caption"},
+	parts, err := mapMessageToResponsesContent(pub_models.Message{Parts: []pub_models.Part{
+		pub_models.ImagePart{Origin: pub_models.OriginUser, MIME: "image/png", Data: []byte{0, 0, 0}},
+		pub_models.TextPart{Text: "caption"},
 	}})
 	if err != nil {
 		t.Fatalf("content parts: %v", err)
 	}
 	if len(parts) != 2 || parts[0].Type != "input_image" || parts[1].Text != "caption" {
 		t.Fatalf("parts = %#v", parts)
-	}
-
-	if _, err := mapMessageToResponsesContent(pub_models.Message{ContentParts: []pub_models.ImageOrTextInput{{Type: "weird"}}}); err == nil {
-		t.Fatal("expected an error for an unsupported content part")
 	}
 }
 

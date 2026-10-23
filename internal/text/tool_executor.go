@@ -11,6 +11,7 @@ import (
 
 	"github.com/baalimago/clai/internal/debugflags"
 	"github.com/baalimago/clai/internal/models"
+	"github.com/baalimago/clai/internal/present"
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/tools/mcp"
 	"github.com/baalimago/clai/internal/utils"
@@ -56,8 +57,6 @@ func (e toolExecutor[C]) ExecuteBatch(ctx context.Context, session *QuerySession
 		}
 		decision := q.decideToolCall(session, call)
 		if decision.TreatAsReturnToUser || decision.SkipExecution {
-			session.FinalAssistantText = session.PendingTextString()
-			session.ResetPendingText()
 			continue
 		}
 		planned = append(planned, decision.PatchedCall)
@@ -82,10 +81,12 @@ func (e toolExecutor[C]) ExecuteBatch(ctx context.Context, session *QuerySession
 	// tool_call (R11-01). The io.EOF is therefore deferred until every plan
 	// in the batch has emitted its result.
 	pendingEOF := false
+	var displayErrs []error
+	fail := func(err error) error { return errors.Join(append(displayErrs, err)...) }
 	for start := 0; start < len(plans); {
 		if plans[start].call.Name == string(pub_models.LoadSkillTool) {
 			if err := e.runPlannedCall(ctx, session, plans[start]); err != nil {
-				return err
+				return fail(err)
 			}
 			if plans[start].hardStop {
 				pendingEOF = true
@@ -102,17 +103,24 @@ func (e toolExecutor[C]) ExecuteBatch(ctx context.Context, session *QuerySession
 			nonSkill = append(nonSkill, plan.call)
 		}
 		if err := e.emitAssistantToolCalls(ctx, session, nonSkill); err != nil {
-			return err
+			return fail(err)
 		}
 		for _, plan := range plans[start:end] {
 			if err := e.runPlannedCall(ctx, session, plan); err != nil {
-				return err
+				var imageErr *toolImageError
+				if !errors.As(err, &imageErr) {
+					return fail(err)
+				}
+				displayErrs = append(displayErrs, err)
 			}
 			if plan.hardStop {
 				pendingEOF = true
 			}
 		}
 		start = end
+	}
+	if len(displayErrs) > 0 {
+		return errors.Join(displayErrs...)
 	}
 	if pendingEOF {
 		return io.EOF
@@ -125,6 +133,7 @@ func (e toolExecutor[C]) ExecuteBatch(ctx context.Context, session *QuerySession
 // as the tool result instead (R2-01). A refused load_skill still emits its
 // assistant tool-call so the exchange stays valid (R2-02).
 func (e toolExecutor[C]) runPlannedCall(ctx context.Context, session *QuerySession, plan toolCallBudgetPlan) error {
+	defer func() { clear(e.querier.imageDetails) }()
 	if !plan.allowed {
 		if plan.call.Name == string(pub_models.LoadSkillTool) {
 			if err := e.emitAssistantToolCall(ctx, session, plan.call); err != nil {
@@ -138,6 +147,7 @@ func (e toolExecutor[C]) runPlannedCall(ctx context.Context, session *QuerySessi
 	}
 	q := e.querier
 	out := ""
+	var parts []pub_models.Part
 	if isLookbackTool(plan.call.Name) {
 		if !q.useLookback {
 			out = fmt.Sprintf("ERROR: %s requested but lookback is disabled for this run (enable with -lb/-lookback)", plan.call.Name)
@@ -148,8 +158,11 @@ func (e toolExecutor[C]) runPlannedCall(ctx context.Context, session *QuerySessi
 		}
 	} else {
 		startedAt := time.Now()
-		out = e.invokeToolCall(ctx, plan.call)
+		out, parts = e.invokeToolCallParts(ctx, plan.call)
 		e.recordToolCall(ctx, plan.call.Name, startedAt, out)
+	}
+	if parts != nil {
+		return e.emitToolResultParts(ctx, session, plan.call, plan.prefix, out, parts)
 	}
 	return e.emitToolResult(ctx, session, plan.call, plan.prefix+out)
 }
@@ -174,14 +187,43 @@ type mcpConnectionResolver interface {
 // (D23 — the wait is raised solely by a component that cannot proceed
 // without a credential, never by a tool or a model request).
 func (e toolExecutor[C]) invokeToolCall(ctx context.Context, call pub_models.Call) string {
+	out, _ := e.invokeToolCallParts(ctx, call)
+	return out
+}
+
+// invokeToolCallParts is invokeToolCall that also returns a PartsCaller's parts when
+// they hold an image (Run.5). The string is always today's tools.InvokeWith output.
+func (e toolExecutor[C]) invokeToolCallParts(ctx context.Context, call pub_models.Call) (string, []pub_models.Part) {
 	q := e.querier
 	callCtx := pkgtools.WithCmdBanContext(ctx, q.cmdBan)
 	if resolver, ok := q.tooling.run[call.Name].(mcpConnectionResolver); ok {
 		if out, handled := e.resolveMcpAuthWait(callCtx, resolver); handled {
-			return out
+			return out, nil
 		}
 	}
-	return tools.InvokeWith(callCtx, call, q.tooling.run)
+	caller, ok := e.partsCaller(call.Name)
+	if !ok {
+		return tools.InvokeWith(callCtx, call, q.tooling.run), nil
+	}
+	capture := &partsCapture{PartsCaller: caller}
+	out := tools.InvokeWith(callCtx, call, map[string]pub_models.LLMTool{call.Name: capture})
+	if !holdsImage(capture.parts) {
+		return out, nil
+	}
+	return out, capture.parts
+}
+
+// partsCaller resolves name as tools.InvokeWith does: the run's toolset, then the registry.
+func (e toolExecutor[C]) partsCaller(name string) (pub_models.PartsCaller, bool) {
+	tool, ok := e.querier.tooling.run[name]
+	if !ok {
+		tool, ok = tools.Registry.Get(name)
+	}
+	if !ok {
+		return nil, false
+	}
+	caller, ok := tool.(pub_models.PartsCaller)
+	return caller, ok
 }
 
 // resolveMcpAuthWait pre-resolves an MCP tool's connection. handled is false
@@ -321,6 +363,9 @@ func (e toolExecutor[C]) emitAssistantToolCalls(ctx context.Context, session *Qu
 		Role:      "assistant",
 		ToolCalls: calls,
 	}
+	if images := session.takeStepImages(); len(images) > 0 {
+		modelSafe.Parts = withStepImages("", images)
+	}
 	for _, call := range calls {
 		// One tool_call record per declared call (worklog 2026-08-15-agent-slog-output, Phase 3). The model-safe
 		// message carries the raw call; the log carries the human-facing
@@ -357,30 +402,115 @@ func (e toolExecutor[C]) emitToolResult(ctx context.Context, session *QuerySessi
 		out = fmt.Sprintf("<NO-OUTPUT> tool %s completed successfully but produced no stdout/stderr.", call.Name)
 		displayOut = out
 	}
-	// One tool_result record per emitted result; the display body (bounded,
-	// not the transcript copy) is what a human saw (worklog 2026-08-15-agent-slog-output, Phase 3).
-	q.logMessage(ctx, "tool_result", displayOut, call.Name)
-	outMsg := pub_models.Message{
-		Role:       "tool",
-		Content:    out,
-		ToolCallID: call.ID,
+	return e.appendToolResult(ctx, session, call, pub_models.Message{Role: "tool", Content: out, ToolCallID: call.ID}, displayOut, out)
+}
+
+// emitToolResultParts appends a tool result that holds an image as Parts, then
+// presents the images the tool generated (Run.5, I7).
+func (e toolExecutor[C]) emitToolResultParts(ctx context.Context, session *QuerySession, call pub_models.Call, prefix, out string, parts []pub_models.Part) error {
+	q := e.querier
+	limit := q.tooling.outputRuneLimit
+	kept := make([]pub_models.Part, 0, len(parts)+1)
+	if prefix != "" {
+		kept = append(kept, pub_models.TextPart{Text: prefix})
 	}
-	session.Chat.Messages = append(session.Chat.Messages, outMsg)
+	// display is parts with the stored images and the tool's text unbounded.
+	display := make([]pub_models.Part, 0, len(parts))
+	var generated []pub_models.ImagePart
+	for _, p := range parts {
+		switch part := p.(type) {
+		case pub_models.TextPart:
+			kept = append(kept, pub_models.TextPart{Text: limitToolOutput(part.Text, limit)})
+			display = append(display, part)
+		case pub_models.ImagePart:
+			if part.Origin == pub_models.OriginGenerated && part.Asset == "" {
+				stored, err := storeImage(q.imageWiring().Store, part)
+				if err != nil {
+					storeErr := fmt.Errorf("store image: %w", err)
+					if emitErr := e.emitToolResult(ctx, session, call, prefix+"ERROR: "+storeErr.Error()); emitErr != nil {
+						return emitErr
+					}
+					return &toolImageError{tool: call.Name, err: storeErr}
+				}
+				part = stored
+			}
+			if part.Origin == pub_models.OriginGenerated {
+				generated = append(generated, part)
+			}
+			kept = append(kept, part)
+			display = append(display, part)
+		default:
+			kept = append(kept, p)
+			display = append(display, p)
+		}
+	}
+	msg := pub_models.Message{Role: "tool", Parts: kept, ToolCallID: call.ID}
+	rebus := callRebus(call)
+	if len(generated) == 0 || q.rawDisplay() || q.debug || q.structuredOutput {
+		if err := e.appendToolResult(ctx, session, call, msg, prefix+out, limitToolOutput(prefix+out, limit)); err != nil {
+			return err
+		}
+		for _, img := range generated {
+			if err := q.presentImage(img, rebus, q.takeImageDetails(img), false); err != nil {
+				return &toolImageError{tool: call.Name, err: err}
+			}
+		}
+		return nil
+	}
+	e.recordToolResult(ctx, session, call, msg, prefix+out)
+	shown := make([]present.Shown, 0, len(generated))
+	for _, img := range generated {
+		s, err := q.shownFor(img, rebus, q.takeImageDetails(img))
+		if err != nil {
+			return &toolImageError{tool: call.Name, err: err}
+		}
+		shown = append(shown, s)
+	}
+	if err := q.printImageToolBlock(call, prefix, display, shown); err != nil {
+		return &toolImageError{tool: call.Name, err: err}
+	}
+	return nil
+}
+
+// toolImageError is a failure with a tool's images after its result is in the chat, so
+// the rest of the batch still runs (Run.5).
+type toolImageError struct {
+	tool string
+	err  error
+}
+
+func (e *toolImageError) Error() string {
+	return fmt.Sprintf("images generated by %s: %v", e.tool, e.err)
+}
+
+func (e *toolImageError) Unwrap() error { return e.err }
+
+// appendToolResult appends outMsg as the tool-result turn and shows it: displayOut
+// is what a raw display prints, shown what the activity display shows.
+func (e toolExecutor[C]) appendToolResult(ctx context.Context, session *QuerySession, call pub_models.Call, outMsg pub_models.Message, displayOut, shown string) error {
+	q := e.querier
+	e.recordToolResult(ctx, session, call, outMsg, displayOut)
 	if !q.structuredOutput {
 		if q.rawDisplay() {
-			printMsg := outMsg
-			printMsg.Content = displayOut
+			printMsg := pub_models.Message{Role: outMsg.Role, Content: displayOut, ToolCallID: outMsg.ToolCallID}
 			if err := utils.AttemptPrettyPrint(q.out, printMsg, "tool", q.rawDisplay()); err != nil {
 				return fmt.Errorf("pretty print raw tool output: %w", err)
 			}
 		} else if !q.debug {
-			if err := q.appendToolActivity(call, outMsg.Content); err != nil {
+			if err := q.appendToolActivity(call, shown); err != nil {
 				return fmt.Errorf("print tool output: %w", err)
 			}
 		}
 	}
 	session.ResetPendingText()
 	return nil
+}
+
+// recordToolResult logs a tool result and appends it to the chat.
+func (e toolExecutor[C]) recordToolResult(ctx context.Context, session *QuerySession, call pub_models.Call, outMsg pub_models.Message, displayOut string) {
+	// One tool_result record per emitted result (worklog 2026-08-15-agent-slog-output, Phase 3).
+	e.querier.logMessage(ctx, "tool_result", displayOut, call.Name)
+	session.Chat.Messages = append(session.Chat.Messages, outMsg)
 }
 
 func (e toolExecutor[C]) executeLoadSkill(ctx context.Context, session *QuerySession, call pub_models.Call) error {
@@ -476,6 +606,7 @@ func (q *Querier[C]) appendToolActivity(call pub_models.Call, content string) er
 		if err := utils.PrintToolActivity(q.out, call, content, q.dims.Width, utils.ToolOutputRows()); err != nil {
 			return fmt.Errorf("print tool activity: %w", err)
 		}
+		q.line, q.lineCount = "", 0
 		return nil
 	}
 	if err := q.drainMcpLogs(); err != nil {
@@ -521,7 +652,7 @@ func (e toolExecutor[C]) finalizeAssistantTextBeforeToolCall(ctx context.Context
 // above the upcoming tool activity. Echoed tool-call text is dropped.
 func (e toolExecutor[C]) finalizeAssistantTextPlain(ctx context.Context, session *QuerySession, pending string, call pub_models.Call) error {
 	q := e.querier
-	if !q.rawDisplay() && !q.structuredOutput && q.dims.Width > 0 {
+	if !q.rawDisplay() && !q.structuredOutput && !q.debug && q.dims.Width > 0 {
 		utils.UpdateMessageTerminalMetadata(pending, &session.Line, &session.LineCount, q.dims.Width)
 		rowsToClear := session.LineCount - 1
 		if q.activityViewport != nil {
@@ -542,6 +673,7 @@ func (e toolExecutor[C]) finalizeAssistantTextPlain(ctx context.Context, session
 	q.logMessage(ctx, "assistant", pending, "")
 	session.ResetPendingText()
 	session.FinalAssistantText = pending
+	session.finalTextShown = !q.structuredOutput && (!q.debug || !q.rawDisplay())
 	q.fullMsg = pending
 	q.line = ""
 	q.lineCount = 0
@@ -607,6 +739,7 @@ func (e toolExecutor[C]) finalizeAssistantTextRolling(ctx context.Context, sessi
 	}
 	session.ResetPendingText()
 	session.FinalAssistantText = pending
+	session.finalTextShown = true
 	q.fullMsg = pending
 	q.line = ""
 	q.lineCount = 0
@@ -615,6 +748,28 @@ func (e toolExecutor[C]) finalizeAssistantTextRolling(ctx context.Context, sessi
 
 func isEchoedToolCallText(pending string, call pub_models.Call) bool {
 	return strings.TrimSpace(pending) == strings.TrimSpace(call.PrettyPrint())
+}
+
+// HandedBackError is a step that handed every tool call back unrun and left no answer.
+type HandedBackError struct {
+	Calls []string
+}
+
+func (e *HandedBackError) Error() string {
+	return fmt.Sprintf("the model handed back its tool calls (%s) without an answer; they were not run", strings.Join(e.Calls, ", "))
+}
+
+// handedBackCalls are the names of calls, when every one of them is handed back unrun.
+func (q *Querier[C]) handedBackCalls(session *QuerySession, calls []pub_models.Call) []string {
+	names := make([]string, 0, len(calls))
+	for _, call := range calls {
+		decision := q.decideToolCall(session, call)
+		if !decision.TreatAsReturnToUser && !decision.SkipExecution {
+			return nil
+		}
+		names = append(names, call.Name)
+	}
+	return names
 }
 
 func (q *Querier[C]) decideToolCall(session *QuerySession, call pub_models.Call) ToolDecision {

@@ -17,6 +17,12 @@ import (
 	video "github.com/baalimago/clai/internal/video/generic"
 )
 
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func newTestClient(fn roundTripperFunc) *http.Client { return &http.Client{Transport: fn} }
+
 func TestNewVideoQuerierRequiresAPIKey(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "")
 	_, err := NewVideoQuerier(video.Configurations{Model: "sora-2", Output: video.Output{Type: video.URL}})

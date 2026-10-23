@@ -46,10 +46,12 @@ Bindings are created/updated primarily by:
 
 Once `chatID` is resolved:
 
-1. Load `<configDir>/conversations/<chatID>.json`.
+1. Load `<configDir>/conversations/<chatID>.json` through `chat.Persister.Load`.
 2. Select the last message in the transcript.
 3. If raw mode is active, remove `ReasoningContent` from the display copy.
-4. Print via `utils.AttemptPrettyPrint(..., raw)`.
+4. Render each image as `[image <handle>] <absolute asset path>`, or
+   `[image <handle>] (not stored yet)` for a legacy one (see [replay.md](./replay.md)).
+5. Print via `utils.AttemptPrettyPrint(..., raw)`.
 
 `clai -r dre` prints only the final message content. It does not print reasoning or the completion notification bell.
 

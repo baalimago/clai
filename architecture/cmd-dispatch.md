@@ -54,12 +54,17 @@ Each command lives in its domain package and exposes a
 | version / confdir | `internal/version` / `internal/confdir` |
 
 Every factory lives in its domain package: `text.SetupQuerier`/
-`text.CreateQuerier` (query composition), `photo.CreateQuerier`,
-`video.CreateQuerier`, and audio's transcribe setup + `audio_transcribe`
-tool-bridge init. This works because the vendor-shared surface of each
+`text.CreateQuerier` (query composition), photo's run on the injected
+`imagegen.NewGeneratorFunc`, `video.CreateQuerier`, and audio's transcribe setup + `audio_transcribe`
+tool-bridge init. `cli.Deps` carries the three collaborators a test must be able to refuse:
+`NewSummarizer`, `ForeignCache` and `NewImageGenerator` (`route.NewGenerator` in
+`DefaultDeps`). `Commands` hands `NewImageGenerator` to `query`/`loop` (behind `generate_image`)
+and to `photo`, together with photo's collector (`imageinput.New()`), presenter
+(`present.New`), opener (`present.NewCommandOpener`) and previous image
+(`photo.PreviousQueryImage`). This works because the vendor-shared surface of each
 domain sits **below** the vendors — `pkg/text/models` for text,
-`photo/generic`, `video/generic` and `audio/generic` for the rest (types,
-prompt setup, image saving, transcript parsing) — so vendors never import
+`internal/imagegen` for images, `video/generic` and `audio/generic` for the
+rest (types, prompt setup, transcript parsing) — so vendors never import
 a domain root package. `setup.ConfigRunPrep` (theme + united config
 migration) and the old-config migrations live in `internal/setup`, which
 imports the domain packages and is therefore injected into their commands
@@ -98,9 +103,11 @@ Cross-command groups (`RawFlag`, `ReplyStdinFlags`, `NonInteractiveFlag`,
 `AgentTextFlags`, `QueryTextFlags`, composed as `TextFlags` for
 `text.SetupQuerier`) live in package `internal`. Photo and video share the
 parameterized `MediaFlags` group (`MediaFlagSpec` names the medium's flags
-and dir default; `Apply(MediaConfig)` runs the shared override cascade), so
-`photo.Flags`/`video.Flags` are aliases of it; audio owns its own `Flags`
-struct. Each
+and dir default; `Apply(MediaConfig)` runs the shared override cascade).
+`video.Flags` embeds it and adds video's `-img`; `photo.Flags` embeds it and
+adds photo's own `-img` and `-open`; audio owns its own `Flags` struct. A
+repeatable flag such as `-img` is a `StringsFlag`, which keeps every value in
+flag order. Each
 command constructs its flag structs in `Command(deps)` and its closures
 capture them — there is no central flag bag. Groups compose per command:
 
@@ -109,13 +116,13 @@ capture them — there is no central flag bag. Groups compose per command:
 | raw | `-r/-raw` | query, loop, chat (+ subs except help), photo, video, audio, replay, dre |
 | reply/stdin | `-re/-reply`, `-I/-replace`, `-i` | query, loop, photo, video |
 | agent text | `-cm`, `-t`, `-cmd-ban`, `-lb`, `-mt`, `-mtc`, `-max-tool-calls-after-handover`, `-g`, `-p`, `-prp`, `-n` (+ long forms) | query, loop |
-| media tools | `-am`, `-af` (+ long forms) — configure the media tools an agent run may call | query, loop |
+| media tools | `-am`, `-af`, `-pm` (+ long forms) — configure the media tools an agent run may call (`-pm` is the model behind `generate_image`) | query, loop |
 | chat | `-r`, `-n`, `-p` (+ long forms) | chat (+ subs) |
-| query text | `-dre`, `-s`, `-rf`, `-asc`, `-summarize`, `-sm` (+ long forms) | query, loop |
+| query text | `-dre`, `-s`, `-rf`, `-asc`, `-summarize`, `-sm`, `-img`, `-open` (+ long forms) | query, loop |
 | loop | `-mi/-max-iterations`, `-check` — iteration bound and verification gate | loop |
 | summarize | positional `<window>`; `-force`, `-y`, `-workers`, `-sm` (+ long forms) — `SummarizeFlags`, registered on the sub only | chat **summarize** (sub-level) |
-| photo | `-pm`, `-pd`, `-pp` (+ long forms) | photo |
-| video | `-vm`, `-vd`, `-vp` (+ long forms) | video |
+| photo | `-pm`, `-pd`, `-pp`, `-img`, `-open` (+ long forms) | photo |
+| video | `-vm`, `-vd`, `-vp`, `-img` (+ long forms) | video |
 | audio | `-am`, `-af`, `-parallelism` (+ `-r`) | audio **transcribe** (sub-level) |
 | non-interactive | `-n/-non-interactive` | setup, tools, profiles, chat (+ subs), query and loop (in agent text) |
 

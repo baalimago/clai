@@ -40,6 +40,11 @@ func (c OpenRouterModelCatalog) liveFetchModels(
 	if err != nil {
 		return nil, fmt.Errorf("fetch openrouter models: %w", err)
 	}
+	return decodeCatalog(resp)
+}
+
+// decodeCatalog reads and closes a GET /api/v1/models response.
+func decodeCatalog(resp *http.Response) ([]Model, error) {
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)

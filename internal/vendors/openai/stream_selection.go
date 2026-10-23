@@ -169,3 +169,13 @@ func isGPT5OrLater(m string) bool {
 	}
 	return digits > 0 && major >= 5
 }
+
+// isOpenAIImageModel matches the README parameter "OpenAI image model names".
+func isOpenAIImageModel(model string) bool {
+	for _, prefix := range []string{"gpt-image-", "dall-e-", "chatgpt-image-"} {
+		if strings.HasPrefix(model, prefix) {
+			return true
+		}
+	}
+	return false
+}

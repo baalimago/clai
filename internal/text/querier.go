@@ -10,6 +10,7 @@ import (
 
 	"github.com/baalimago/clai/internal/debugflags"
 	"github.com/baalimago/clai/internal/models"
+	"github.com/baalimago/clai/internal/present"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
@@ -88,6 +89,14 @@ type Querier[C models.StreamCompleter] struct {
 	// Output of the querier. This is used mostly when Querier is invoked as an agent
 	out io.Writer
 
+	// imageTurn is the turn's image wiring; nil means the default for configDir.
+	imageTurn            *ImageTurn
+	defaultImageProgress ImageProgress
+	// imageProgressSince is when the step's first ImageProgressEvent arrived.
+	imageProgressSince time.Time
+	// imageDetails holds what generate_image recorded per image handle until shown.
+	imageDetails map[string]present.Details
+
 	// agentSettings carries the agent-only runtime settings (slog logger,
 	// level, rune cap, recorder hooks) into the querier. nil (the CLI and
 	// pkg/text paths) keeps every channel disabled.
@@ -112,6 +121,9 @@ type Querier[C models.StreamCompleter] struct {
 	// runModel is the configured model name, the last rung of the summary
 	// model ladder on the query path (D22).
 	runModel string
+	// vendor and modelVersion name the route vendorType resolved.
+	vendor       string
+	modelVersion string
 	// summarizer is attached by the text commands (query and loop); nil
 	// means no in-flight label (pkg/agent, tests, the summarizer's own
 	// querier).
@@ -201,7 +213,9 @@ func (q *Querier[C]) postProcessOutput(ctx context.Context, newSysMsg pub_models
 				}
 			}
 		}
-		table.ClearTermTo(q.out, q.lineCount-1)
+		if !q.debug {
+			table.ClearTermTo(q.out, q.lineCount-1)
+		}
 	} else {
 		fmt.Println()
 	}
@@ -309,6 +323,7 @@ func (q *Querier[C]) drainMcpLogs() error {
 	if len(entries) == 0 {
 		return nil
 	}
+	q.stopImageProgress()
 	w := q.out
 	if w == nil {
 		w = os.Stdout
@@ -562,4 +577,9 @@ func (q *Querier[C]) SetChatID(chatID string) {
 // SetSummarizer attaches the in-flight conversation summarizer.
 func (q *Querier[C]) SetSummarizer(s models.Summarizer) {
 	q.summarizer = s
+}
+
+// setImageTurn replaces the turn's image wiring; nil restores the default for the config dir.
+func (q *Querier[C]) setImageTurn(t *ImageTurn) {
+	q.imageTurn = t
 }

@@ -60,6 +60,34 @@ The ban list applies to the freetext command tools (`cmd`, `async_cmd`). A refus
 
 `Stoploss` is spend control. When a run crosses `MaxTokens`, the agent injects `MaxTokensHandoverMsg` into the chat and lets the model wrap up. `MaxToolCallsAfterHandover` bounds the tool calls in that wrap-up phase; `<= 0` means unlimited.
 
+## Images
+
+A message carries images as `Parts`: `models.TextPart` and `models.ImagePart`. Put the bytes of a
+new image in `Data` with its `MIME` (`image/png`, `image/jpeg`, `image/gif` or `image/webp`) and
+`Origin: models.OriginUser`:
+
+```go
+msg := models.Message{Role: "user", Parts: []models.Part{
+	models.ImagePart{MIME: "image/png", Origin: models.OriginUser, Data: png},
+	models.TextPart{Text: "What is in this picture?"},
+}}
+```
+
+When a model step begins, the agent stores each such image under
+`<config dir>/conversations/assets/` and the chat then refers to it by `Asset`. A model that cannot
+read images fails the run with `*claierr.ImageUnsupportedError` before any request. Images that a
+tool returns (MCP, `tools.ViewImage`) or that the model generates come back as `ImagePart`s with
+an `Asset`. A text-only message keeps using `Content`, unchanged. See
+[`architecture/images.md`](../../architecture/images.md).
+
+**Migration.** The legacy `models.ImageOrTextInput` and `models.ImageURL` types, the
+`models.ImageOrTextInputTypes` type with its `models.Image` constant, and the
+`Message.ContentParts` field that held them, are removed. Replace an
+`ImageOrTextInput{Type: "image_url", ImageB64: &models.ImageURL{...}}` with
+`models.ImagePart{MIME: <mime>, Origin: models.OriginUser, Data: <decoded bytes>}`, a text entry
+with `models.TextPart{Text: ...}`, and `ContentParts` with `Parts`. Conversations saved in the old
+inline shape still load, and are rewritten with asset refs on their next save.
+
 ## Errors
 
 `Setup` and `Query` return errors, and provider failures arrive as typed errors from [`pkg/claierr`](../claierr). Match them with `errors.Is` or `errors.As`:

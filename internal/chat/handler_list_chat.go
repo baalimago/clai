@@ -30,8 +30,6 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
 
-const chatInfoPrintHeight = 19
-
 // abbrevTokens renders a token count with a compact SI-style suffix:
 //   - 0         -> "0"
 //   - 42        -> "0.042K"
@@ -452,20 +450,22 @@ func (cq *ChatHandler) buildChatListRows(ctx context.Context, paginator *ChatInd
 }
 
 func (cq *ChatHandler) actOnChat(chat pub_models.Chat, groupKey string) error {
-	if err := cq.printChatInfo(cq.out, chat, groupKey); err != nil {
+	view, err := cq.showChatInfo(func(w io.Writer) error { return cq.printChatInfo(w, chat, groupKey) })
+	if err != nil {
 		return fmt.Errorf("failed to printChatInfo: %w", err)
 	}
 	choice, err := table.ReadUserInputFrom(cq.input)
 	if err != nil {
 		return fmt.Errorf("failed to read user input: %w", err)
 	}
+	drawn := utils.TerminalRows(view+choice, cq.dims.Width)
 	switch choice {
 	case "E", "e":
-		return cq.handleEditMessages(chat)
+		return cq.handleEditMessages(chat, drawn)
 	case "D", "d":
-		return cq.handleDeleteMessages(chat)
+		return cq.handleDeleteMessages(chat, drawn)
 	case "B", "b":
-		clearErr := table.ClearTermTo(cq.out, chatInfoHeight(chat))
+		clearErr := table.ClearTermTo(cq.out, drawn)
 		if clearErr != nil {
 			return fmt.Errorf("failed to clear term: %w", clearErr)
 		}
@@ -497,8 +497,8 @@ func (cq *ChatHandler) actOnChat(chat pub_models.Chat, groupKey string) error {
 // edits, reopening on the page each selection was made from, so a conversation
 // can be studied and reworked in one sitting. Backing out returns to the chat
 // list, which also keeps its page.
-func (cq *ChatHandler) handleEditMessages(chat pub_models.Chat) error {
-	clearErr := table.ClearTermTo(cq.out, chatInfoHeight(chat))
+func (cq *ChatHandler) handleEditMessages(chat pub_models.Chat, infoRows int) error {
+	clearErr := table.ClearTermTo(cq.out, infoRows)
 	if clearErr != nil {
 		return fmt.Errorf("failed to clear term: %w", clearErr)
 	}
@@ -510,8 +510,8 @@ func (cq *ChatHandler) handleEditMessages(chat pub_models.Chat) error {
 
 // handleDeleteMessages is a peek + delete, symmetric with handleEditMessages:
 // the message picker stays open across deletions, reopening on the same page.
-func (cq *ChatHandler) handleDeleteMessages(chat pub_models.Chat) error {
-	clearErr := table.ClearTermTo(cq.out, chatInfoHeight(chat))
+func (cq *ChatHandler) handleDeleteMessages(chat pub_models.Chat, infoRows int) error {
+	clearErr := table.ClearTermTo(cq.out, infoRows)
 	if clearErr != nil {
 		return fmt.Errorf("failed to clear term: %w", clearErr)
 	}
@@ -975,7 +975,8 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 }
 
 func (cq *ChatHandler) actOnForeignChat(chat pub_models.Chat, reader vendors.SourceReader, groupKey string) error {
-	if err := cq.printChatInfoForeign(cq.out, chat, groupKey); err != nil {
+	view, err := cq.showChatInfo(func(w io.Writer) error { return cq.printChatInfoForeign(w, chat, groupKey) })
+	if err != nil {
 		return fmt.Errorf("failed to printChatInfoForeign: %w", err)
 	}
 	choice, err := table.ReadUserInputFrom(cq.input)
@@ -992,7 +993,7 @@ func (cq *ChatHandler) actOnForeignChat(chat pub_models.Chat, reader vendors.Sou
 		ancli.Noticef("chat %s is now replyable with flag \"clai -dre query <prompt>\"\n", cloned.ID)
 		return errExitList
 	case "B", "b":
-		clearErr := table.ClearTermTo(cq.out, chatInfoPrintHeight)
+		clearErr := table.ClearTermTo(cq.out, utils.TerminalRows(view+choice, cq.dims.Width))
 		if clearErr != nil {
 			return fmt.Errorf("failed to clear term: %w", clearErr)
 		}
@@ -1109,24 +1110,28 @@ func (cq *ChatHandler) chatInfoLabel(chat pub_models.Chat) string {
 	if chat.Title == "" {
 		first := ""
 		if uMsg, err := chat.FirstUserMessage(); err == nil {
-			first = uMsg.Content
+			first = utils.SanitizeTerminalRow(uMsg.Describe())
 		}
 		return table.WidthAppropriateStringTruncWithWidth(first, "summary: \"", 10, cq.dims.Width) + "\""
 	}
-	out := table.WidthAppropriateStringTruncWithWidth(chat.Title, "title: ", 10, cq.dims.Width)
+	out := table.WidthAppropriateStringTruncWithWidth(utils.SanitizeTerminalRow(chat.Title), "title: ", 10, cq.dims.Width)
 	if chat.Summary != "" {
-		out += "\n" + table.WidthAppropriateStringTruncWithWidth(chat.Summary, "summary: ", 10, cq.dims.Width)
+		out += "\n" + table.WidthAppropriateStringTruncWithWidth(utils.SanitizeTerminalRow(chat.Summary), "summary: ", 10, cq.dims.Width)
 	}
 	return out
 }
 
-// chatInfoHeight is the line count printChatInfo wrote for chat, which a
-// labelled summary extends by one line.
-func chatInfoHeight(chat pub_models.Chat) int {
-	if chat.Title != "" && chat.Summary != "" {
-		return chatInfoPrintHeight + 1
+// showChatInfo prints the info view render writes and returns it, so the caller can
+// clear exactly the rows it took.
+func (cq *ChatHandler) showChatInfo(render func(io.Writer) error) (string, error) {
+	var view strings.Builder
+	if err := render(&view); err != nil {
+		return "", err
 	}
-	return chatInfoPrintHeight
+	if _, err := io.WriteString(cq.out, view.String()); err != nil {
+		return "", fmt.Errorf("write chat info: %w", err)
+	}
+	return view.String(), nil
 }
 
 func (cq *ChatHandler) printChatInfo(w io.Writer, chat pub_models.Chat, groupKey string) error {
@@ -1146,7 +1151,7 @@ func (cq *ChatHandler) cloneForeignChat(foreign pub_models.Chat) (pub_models.Cha
 	// Preserve Created as discovered/read. Do not stamp wall clock here.
 	// Save stamps GroupKey and upserts the index itself; a second upsert with
 	// the pre-stamp copy would wipe the group_key from the index row.
-	if err := Save(cq.convDir, cloned); err != nil {
+	if _, err := convPersister(cq.convDir).Save(cloned); err != nil {
 		return pub_models.Chat{}, fmt.Errorf("failed to save cloned chat: %w", err)
 	}
 	if err := cq.UpdateDirScopeFromCWD(cloned.ID); err != nil {
@@ -1197,13 +1202,115 @@ func editorEditString(toEdit string) (string, error) {
 func messagePickerRow(i int, t pub_models.Message, width int) (string, error) {
 	disp := messageDisplayText(t)
 	prefix := fmt.Sprintf(editMessageTblFormat, i, t.Role, utf8.RuneCountInString(disp), "")
-	return table.WidthAppropriateStringTruncWithWidth(disp, prefix, 25, width), nil
+	return table.WidthAppropriateStringTruncWithWidth(utils.SanitizeTerminalRow(disp), prefix, 25, width), nil
 }
 
 // messageEditorText returns only persisted text. Display-only reconstructions
 // of tool calls and reasoning must not be written back into message Content.
+// A parts message offers its text parts, joined by newlines; its images are
+// not editable (query.8).
 func messageEditorText(m pub_models.Message) string {
-	return m.Content
+	if len(m.Parts) == 0 {
+		return m.Content
+	}
+	var texts []string
+	for _, p := range m.Parts {
+		if t, ok := p.(pub_models.TextPart); ok {
+			texts = append(texts, t.Text)
+		}
+	}
+	return strings.Join(texts, "\n")
+}
+
+// withEditedText writes edited back into m. A parts message keeps every image
+// in place; the edited text takes the place of its first text part and the
+// other text parts are dropped, or it follows the images when there was none.
+// Blank text leaves m with no text.
+func withEditedText(m pub_models.Message, edited string) pub_models.Message {
+	blank := strings.TrimSpace(edited) == ""
+	if blank {
+		edited = ""
+	}
+	if len(m.Parts) == 0 {
+		m.Content = edited
+		return m
+	}
+	text := []pub_models.Part{pub_models.TextPart{Text: edited}}
+	if blank {
+		text = nil
+	}
+	parts := make([]pub_models.Part, 0, len(m.Parts)+1)
+	for _, p := range m.Parts {
+		if _, ok := p.(pub_models.TextPart); !ok {
+			parts = append(parts, p)
+			continue
+		}
+		parts = append(parts, text...)
+		text = nil
+	}
+	m.Parts = append(parts, text...)
+	return m
+}
+
+func lfLines(s string) string { return strings.ReplaceAll(s, "\r\n", "\n") }
+
+// editorComparable is s without what editors change on their own: CRLF line ends,
+// blanks at the end of a line, and the final newline.
+func editorComparable(s string) string {
+	lines := strings.Split(lfLines(s), "\n")
+	for i, l := range lines {
+		lines[i] = strings.TrimRight(l, " \t")
+	}
+	return strings.TrimSuffix(strings.Join(lines, "\n"), "\n")
+}
+
+// editOutcome is what an editor round trip does to a message.
+type editOutcome int
+
+const (
+	editUnchanged editOutcome = iota
+	editSaved
+	editRefusedCalls
+	editRefusedEmpty
+)
+
+// emptyEditHint is what to do instead of emptying a message of role.
+func emptyEditHint(role string) string {
+	if role == "tool" {
+		return "replace its text instead, since its tool call needs a result"
+	}
+	return "use [d]elete to remove it"
+}
+
+// editorShown is the text a message opens with in the editor.
+func editorShown(m pub_models.Message) string {
+	if shown := messageEditorText(m); strings.TrimSpace(shown) != "" || len(m.ToolCalls) == 0 {
+		return shown
+	}
+	return toolCallsText(m)
+}
+
+// applyEdit is m with the editor's text: line ends as LF, without the final newline
+// the editor added. A buffer equal to what was shown, apart from what editors change on
+// their own, leaves m unchanged; so does an edit of a calls-only turn or one that would
+// leave m empty.
+func applyEdit(m pub_models.Message, edited string) (pub_models.Message, editOutcome) {
+	shown := editorShown(m)
+	edited = lfLines(edited)
+	if editorComparable(edited) == editorComparable(shown) {
+		return m, editUnchanged
+	}
+	if strings.TrimSpace(messageEditorText(m)) == "" && len(m.ToolCalls) > 0 {
+		return m, editRefusedCalls
+	}
+	if !strings.HasSuffix(shown, "\n") {
+		edited = strings.TrimSuffix(edited, "\n")
+	}
+	updated := withEditedText(m, edited)
+	if updated.Content == "" && len(updated.Parts) == 0 && len(updated.ToolCalls) == 0 {
+		return m, editRefusedEmpty
+	}
+	return updated, editSaved
 }
 
 // selectMessagesAt shows the conversation's message picker opened at startPage
@@ -1284,13 +1391,22 @@ func (cq *ChatHandler) editMessageInChat(chat pub_models.Chat) error {
 			continue
 		}
 		selectedNumber := selectedNumbers[0]
-		selectedMessage := chat.Messages[selectedNumber]
-		editedString, err := editorEditString(messageEditorText(selectedMessage))
+		editedString, err := editorEditString(editorShown(chat.Messages[selectedNumber]))
 		if err != nil {
 			return fmt.Errorf("failed to escapeEdit string: %w", err)
 		}
-		selectedMessage.Content = editedString
-		chat.Messages[selectedNumber] = selectedMessage
+		updated, outcome := applyEdit(chat.Messages[selectedNumber], editedString)
+		switch outcome {
+		case editUnchanged:
+			continue
+		case editRefusedCalls:
+			ancli.Warnf("message %d holds tool calls, which cannot be edited as text; it is unchanged\n", selectedNumber)
+			continue
+		case editRefusedEmpty:
+			ancli.Warnf("message %d would be left empty; it is unchanged, %s\n", selectedNumber, emptyEditHint(chat.Messages[selectedNumber].Role))
+			continue
+		}
+		chat.Messages[selectedNumber] = updated
 		if err := Save(cq.convDir, chat); err != nil {
 			return fmt.Errorf("failed to save chat: %w", err)
 		}

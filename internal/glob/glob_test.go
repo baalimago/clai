@@ -1,9 +1,12 @@
 package glob
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
+	"reflect"
 	"testing"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -129,5 +132,37 @@ func TestConstructGlobMessages(t *testing.T) {
 	expectedUserMsg := "#####"
 	if messages[len(messages)-1].Content != expectedUserMsg {
 		t.Errorf("Expected user message: %s, got: %s", expectedUserMsg, messages[len(messages)-1].Content)
+	}
+}
+
+func TestReadFiles_SkipsUnreadableMatches(t *testing.T) {
+	dir := t.TempDir()
+	a := filepath.Join(dir, "a.txt")
+	if err := os.WriteFile(a, []byte("A"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	files, err := ReadFiles(filepath.Join(dir, "*"))
+	if err != nil {
+		t.Fatalf("ReadFiles: %v", err)
+	}
+	if want := []File{{Name: a, Data: []byte("A")}}; !reflect.DeepEqual(files, want) {
+		t.Fatalf("ReadFiles = %+v, want %+v", files, want)
+	}
+}
+
+func TestReadFiles_NoFiles(t *testing.T) {
+	if _, err := ReadFiles(filepath.Join(t.TempDir(), "*.none")); !errors.Is(err, ErrNoFiles) {
+		t.Fatalf("ReadFiles error = %v, want ErrNoFiles", err)
+	}
+}
+
+func TestFileMessage(t *testing.T) {
+	got := FileMessage(File{Name: "file1.go", Data: []byte("package main")})
+	want := pub_models.Message{Role: "user", Content: "{\"fileName\": \"file1.go\", \"data\": \"package main\"}"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("FileMessage = %+v, want %+v", got, want)
 	}
 }

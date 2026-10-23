@@ -186,8 +186,8 @@ func TestHandleStreamChunk_ReasoningContentIsTracked(t *testing.T) {
 	if rev.Content != "I should inspect." {
 		t.Fatalf("expected reasoning event content, got %q", rev.Content)
 	}
-	if s.reasoningContent != "I should inspect." {
-		t.Fatalf("expected reasoning content captured, got %q", s.reasoningContent)
+	if got := s.reasoning(); got != "I should inspect." {
+		t.Fatalf("expected reasoning content captured, got %q", got)
 	}
 
 	tools.Init()
@@ -216,11 +216,31 @@ func TestHandleStreamChunk_ReasoningContentIsCapped(t *testing.T) {
 	for range maxReasoningContent/4096 + 64 {
 		s.handleStreamChunk(chunk)
 	}
-	if len(s.reasoningContent) != maxReasoningContent {
-		t.Fatalf("reasoningContent length %d, want cap %d", len(s.reasoningContent), maxReasoningContent)
+	if got := s.reasoning(); len(got) != maxReasoningContent {
+		t.Fatalf("reasoning length %d, want cap %d", len(got), maxReasoningContent)
 	}
-	if !strings.HasSuffix(s.reasoningContent, strings.Repeat("a", 4096)) {
-		t.Fatal("expected reasoningContent to keep the tail (last chunk)")
+	if !strings.HasSuffix(s.reasoning(), strings.Repeat("a", 4096)) {
+		t.Fatal("expected reasoning to keep the tail (last chunk)")
+	}
+	if len(s.reasoningContent) > 2*maxReasoningContent {
+		t.Fatalf("accumulator holds %d bytes, want at most twice the cap", len(s.reasoningContent))
+	}
+}
+
+// Appending must stay linear: the accumulator trims back to the tail only when
+// it passes twice the cap, and the tail survives every trim.
+func TestAppendReasoning_keepsTheTailAcrossTrims(t *testing.T) {
+	s := &StreamCompleter{}
+	for _, b := range []byte("xyz") {
+		s.appendReasoning(strings.Repeat(string(b), maxReasoningContent))
+		if len(s.reasoningContent) > 2*maxReasoningContent {
+			t.Fatalf("accumulator holds %d bytes, want at most twice the cap", len(s.reasoningContent))
+		}
+	}
+	s.appendReasoning("tail")
+	got := s.reasoning()
+	if len(got) != maxReasoningContent || !strings.HasSuffix(got, "zzz"+"tail") || strings.Contains(got, "y") {
+		t.Fatalf("reasoning = %d bytes ending %q, want the last %d bytes ending in z...tail", len(got), got[len(got)-8:], maxReasoningContent)
 	}
 }
 

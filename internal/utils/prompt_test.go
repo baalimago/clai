@@ -1,8 +1,12 @@
 package utils
 
 import (
+	"errors"
+	"io"
 	"os"
+	"strings"
 	"testing"
+	"testing/iotest"
 )
 
 func TestPrompt(t *testing.T) {
@@ -129,5 +133,63 @@ func TestPrompt_FileRedirect(t *testing.T) {
 	// With no stdinReplace token, stdin is appended after args.
 	if prompt != "prefix file content here" {
 		t.Errorf("Expected 'prefix file content here', got: %q", prompt)
+	}
+}
+
+func TestPromptFrom_NoArgsIsNoPrompt(t *testing.T) {
+	for _, stdin := range []io.Reader{nil, strings.NewReader("piped")} {
+		_, err := PromptFrom("", nil, stdin)
+		if !errors.Is(err, ErrNoPrompt) {
+			t.Fatalf("PromptFrom(no args, stdin %v) error = %v, want ErrNoPrompt", stdin != nil, err)
+		}
+	}
+}
+
+func TestPromptFrom_ReadError(t *testing.T) {
+	boom := errors.New("boom")
+	_, err := PromptFrom("", []string{"cmd", "x"}, iotest.ErrReader(boom))
+	if !errors.Is(err, boom) {
+		t.Fatalf("PromptFrom error = %v, want the read error", err)
+	}
+}
+
+func TestPrompt_StdinStatErrorIsReturned(t *testing.T) {
+	oldStdin := os.Stdin
+	t.Cleanup(func() { os.Stdin = oldStdin })
+	f, err := os.CreateTemp(t.TempDir(), "stdin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	os.Stdin = f
+	if _, err := Prompt("", []string{"cmd", "x"}); !errors.Is(err, os.ErrClosed) {
+		t.Fatalf("Prompt error = %v, want the stdin stat error", err)
+	}
+}
+
+func TestPipedStdin(t *testing.T) {
+	oldStdin := os.Stdin
+	t.Cleanup(func() { os.Stdin = oldStdin })
+
+	devNull, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = devNull.Close() })
+	os.Stdin = devNull
+	if in, err := PipedStdin(); err != nil || in != nil {
+		t.Fatalf("PipedStdin() on a character device = %v, %v; want nil, nil", in, err)
+	}
+
+	file, err := os.CreateTemp(t.TempDir(), "stdin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = file.Close() })
+	os.Stdin = file
+	if in, err := PipedStdin(); err != nil || in != io.Reader(file) {
+		t.Fatalf("PipedStdin() on a file = %v, %v; want the file", in, err)
 	}
 }

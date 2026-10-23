@@ -209,12 +209,12 @@ func TestHandleEditAndDeleteMessages(t *testing.T) {
 	}
 
 	cq.input = utils.NewMacroReader([]string{"b"})
-	if err := cq.handleDeleteMessages(chat); err != nil {
+	if err := cq.handleDeleteMessages(chat, 19); err != nil {
 		t.Fatalf("handleDeleteMessages: %v", err)
 	}
 
 	cq.input = utils.NewMacroReader([]string{"b"})
-	if err := cq.handleEditMessages(chat); err != nil {
+	if err := cq.handleEditMessages(chat, 19); err != nil {
 		t.Fatalf("handleEditMessages: %v", err)
 	}
 }

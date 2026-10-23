@@ -61,7 +61,7 @@ func (s *CompletionSources) TextFlagValues(flagName, partial string) []cmd.Compl
 			return nil
 		}
 		return toolValueItems(partial, s.ToolNames())
-	case "prp", "profile-path":
+	case "prp", "profile-path", "img", "image":
 		return []cmd.CompletionItem{{Value: "__files__", Kind: cmd.CompletionKindFile}}
 	}
 	return nil
@@ -72,6 +72,8 @@ func MediaFlagValues(flagName, _ string) []cmd.CompletionItem {
 	switch flagName {
 	case "pd", "photo-dir", "vd", "video-dir":
 		return []cmd.CompletionItem{{Value: "__dirs__", Kind: cmd.CompletionKindDir}}
+	case "img", "image":
+		return []cmd.CompletionItem{{Value: "__files__", Kind: cmd.CompletionKindFile}}
 	}
 	return nil
 }

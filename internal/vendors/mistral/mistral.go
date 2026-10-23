@@ -38,6 +38,7 @@ func clean(msg []pub_models.Message) []pub_models.Message {
 		if m.Role == "assistant" {
 			if len(m.ToolCalls) > 0 {
 				m.Content = ""
+				m.Parts = nil
 			}
 			for j, tc := range m.ToolCalls {
 				tc.Name = ""
@@ -60,7 +61,7 @@ func clean(msg []pub_models.Message) []pub_models.Message {
 	// Merge consequtive assistant messages
 	for i := 1; i < len(msg); i++ {
 		if msg[i].Role == "assistant" && msg[i-1].Role == "assistant" {
-			msg[i-1].Content += "\n" + msg[i].Content
+			msg[i-1] = mergeAssistant(msg[i-1], msg[i])
 			nMsg, err := utils.DeleteRange(msg, i, i)
 			if err != nil {
 				ancli.Warnf("failed to merge consecutive assistant messages: %v", err)
@@ -71,6 +72,25 @@ func clean(msg []pub_models.Message) []pub_models.Message {
 	}
 
 	return msg
+}
+
+func mergeAssistant(a, b pub_models.Message) pub_models.Message {
+	if len(a.Parts) == 0 && len(b.Parts) == 0 {
+		a.Content += "\n" + b.Content
+		return a
+	}
+	parts := make([]pub_models.Part, 0, len(a.Parts)+len(b.Parts)+2)
+	parts = append(parts, asParts(a)...)
+	a.Parts = append(parts, asParts(b)...)
+	a.Content = ""
+	return a
+}
+
+func asParts(m pub_models.Message) []pub_models.Part {
+	if len(m.Parts) > 0 {
+		return m.Parts
+	}
+	return []pub_models.Part{pub_models.TextPart{Text: m.Content}}
 }
 
 func (m *Mistral) Setup() error {
@@ -86,6 +106,8 @@ func (m *Mistral) Setup() error {
 	m.ToolChoice = &toolChoice
 	m.Clean = clean
 
+	m.StreamCompleter.Vendor = "mistral"
+	m.StreamCompleter.Images = m.ImageCapabilities()
 	return nil
 }
 
@@ -103,4 +125,13 @@ func (m *Mistral) StreamCompletions(ctx context.Context, chat pub_models.Chat) (
 
 func (m *Mistral) RegisterTool(tool pub_models.LLMTool) {
 	m.InternalRegisterTool(tool)
+}
+
+// ImageCapabilities is the mistral row of Local fact P5-1 (worklog 2026-10-21-image-support).
+func (m *Mistral) ImageCapabilities() models.ImageCapabilities {
+	return models.ImageCapabilities{
+		Input:      models.ImageInputInline,
+		ToolResult: models.ToolResultNative,
+		MIMEs:      []string{"image/png", "image/jpeg", "image/gif", "image/webp"},
+	}
 }
