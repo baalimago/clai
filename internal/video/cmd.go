@@ -32,13 +32,15 @@ func (f *Flags) Register(fs *flag.FlagSet) {
 	f.Images.Register(fs, "Add the input image the video starts from: a path or a glob, '~' allowed.", "img", "image")
 }
 
-// NewFlags seeds the video flag defaults.
+// NewFlags seeds the video flag defaults. Its dir default is absolute, so an
+// explicit -vd ~/Videos stays distinct from it and still overrides
+// videoConfig.json; Default is the real default.
 func NewFlags() Flags {
 	return Flags{MediaFlags: internal.NewMediaFlags(internal.MediaFlagSpec{
 		ModelNames:  []string{"vm", "video-model"},
 		ModelDesc:   "Set the video model.",
 		DirNames:    []string{"vd", "video-dir"},
-		DirDesc:     "Set dir for generated videos. Default $HOME/Videos",
+		DirDesc:     "Set dir for generated videos, with a leading ~ and $VAR expanded. Default is ~/Videos",
 		DirDefault:  path.Join(os.Getenv("HOME"), "Videos"),
 		PrefixNames: []string{"vp", "video-prefix"},
 		PrefixDesc:  "Set prefix for generated videos. Default 'clai'",
@@ -72,7 +74,9 @@ Examples:
 		if err != nil {
 			return fmt.Errorf("failed to load configs: %w", err)
 		}
-		ApplyFlagOverrides(&vConf, &f)
+		if err := ApplyFlagOverrides(&vConf, &f); err != nil {
+			return err
+		}
 		vConf.Client = deps.Client
 		if err := vConf.SetupPrompts(c.Args()); err != nil {
 			return fmt.Errorf("failed to setup prompt: %w", err)
@@ -89,13 +93,16 @@ Examples:
 
 // ApplyFlagOverrides applies the CLI flag values onto the file-loaded
 // configuration (flags > file > default).
-func ApplyFlagOverrides(vConf *Configurations, f *Flags) {
-	f.Apply(internal.MediaConfig{
+func ApplyFlagOverrides(vConf *Configurations, f *Flags) error {
+	if err := f.Apply(internal.MediaConfig{
 		Model:        &vConf.Model,
 		ReplyMode:    &vConf.ReplyMode,
 		StdinReplace: &vConf.StdinReplace,
 		OutputDir:    &vConf.Output.Dir,
 		OutputPrefix: &vConf.Output.Prefix,
-	})
+	}); err != nil {
+		return err
+	}
 	vConf.Images = f.Images.Value()
+	return nil
 }

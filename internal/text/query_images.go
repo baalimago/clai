@@ -2,6 +2,7 @@ package text
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"slices"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	imagegentool "github.com/baalimago/clai/internal/imagegen/tool"
 	"github.com/baalimago/clai/internal/imagenorm"
 	"github.com/baalimago/clai/internal/models"
+	"github.com/baalimago/clai/internal/photo"
 	"github.com/baalimago/clai/internal/present"
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/utils"
@@ -39,9 +41,9 @@ func attachImageTurn(confDir string, tConf *Configurations, tf internal.TextFlag
 }
 
 func newImageTurn(confDir string, tConf *Configurations, tf internal.TextFlags, deps QueryCommandDeps, vendor route.ChatVendor) (*ImageTurn, error) {
-	gen, err := imageGenSetup(confDir, tConf, tf, deps, vendor)
+	pConf, err := loadPhotoConfig(confDir, deps)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("load photoConfig.json for the image turn: %w", err)
 	}
 	out := tConf.Out
 	if out == nil {
@@ -50,48 +52,57 @@ func newImageTurn(confDir string, tConf *Configurations, tf internal.TextFlags, 
 	terminal := utils.IsTerminalWriter(out)
 	store := asset.NewStore(chat.AssetsDir(confDir))
 	return &ImageTurn{
-		Store:      store,
-		Normalizer: imagenorm.New(store),
-		Presenter: present.New(present.Options{
-			Out:      out,
-			Terminal: terminal,
-			Color:    terminal && !table.NoColor() && !tConf.Raw,
-			AutoOpen: tConf.AutoOpenImages,
-			Opener:   present.NewCommandOpener(tConf.ImageOpener),
-		}),
+		Store:        store,
+		Normalizer:   imagenorm.New(store),
+		Presenter:    present.New(imagePresenterOptions(out, terminal, tConf, tf, pConf)),
 		Persister:    chat.NewPersister(confDir, store),
 		Stderr:       os.Stderr,
-		Generation:   gen,
+		Generation:   imageGenSetup(confDir, pConf, tConf, tf, vendor),
 		NewGenerator: deps.NewImageGenerator,
 		Progress:     board.NewStatus(out, terminal, imageProgressTitle),
 	}, nil
 }
 
+// loadPhotoConfig reads photoConfig.json through the injected loader. A nil
+// loader reads no file: the model falls back to the chat vendor's default and
+// the presenter to no auto-open and the platform opener.
+func loadPhotoConfig(confDir string, deps QueryCommandDeps) (photo.Configurations, error) {
+	if deps.PhotoConfig == nil {
+		return photo.Configurations{}, nil
+	}
+	return deps.PhotoConfig(confDir)
+}
+
+// imagePresenterOptions is the query surface's presenter setup:
+// photoConfig.json supplies the opener and the auto-open policy, and -open
+// turns auto-open on for one run.
+func imagePresenterOptions(out io.Writer, terminal bool, tConf *Configurations, tf internal.TextFlags, pConf photo.Configurations) present.Options {
+	return present.Options{
+		Out:      out,
+		Terminal: terminal,
+		Color:    terminal && !table.NoColor() && !tConf.Raw,
+		AutoOpen: tf.QueryText.OpenImages.Value() || pConf.AutoOpenImages,
+		Opener:   present.NewCommandOpener(pConf.ImageOpener),
+	}
+}
+
 // imageGenSetup resolves the generate_image model only when the run selects the tool
 // (query.2): -pm, else route.ImageModelFor the chat vendor and the photoConfig model.
 // An implicit all-tools run (use-tools with no list) does not select it.
-func imageGenSetup(confDir string, tConf *Configurations, tf internal.TextFlags, deps QueryCommandDeps, vendor route.ChatVendor) (ImageGenSetup, error) {
+func imageGenSetup(confDir string, pConf photo.Configurations, tConf *Configurations, tf internal.TextFlags, vendor route.ChatVendor) ImageGenSetup {
 	gen := ImageGenSetup{
 		Requested: selectsGenerateImage(strings.Split(tf.AgentText.UseTools.Value(), ",")...) ||
 			(tConf.UseTools && (tConf.explicitAllTools || selectsGenerateImage(tConf.RequestedToolGlobs...))),
 		Config: imagegen.GeneratorConfig{ConfigDir: confDir},
 	}
 	if !gen.Requested {
-		return gen, nil
+		return gen
 	}
 	if gen.Config.Model = tf.AgentText.MediaTools.PhotoModel.Value(); gen.Config.Model != "" {
-		return gen, nil
+		return gen
 	}
-	photoModel := ""
-	if deps.PhotoModel != nil {
-		model, err := deps.PhotoModel(confDir)
-		if err != nil {
-			return ImageGenSetup{}, fmt.Errorf("load the generate_image model: %w", err)
-		}
-		photoModel = model
-	}
-	gen.Config.Model = route.ImageModelFor(vendor, photoModel)
-	return gen, nil
+	gen.Config.Model = route.ImageModelFor(vendor, pConf.Model)
+	return gen
 }
 
 // selectsGenerateImage reports whether a tool selection entry matches generate_image

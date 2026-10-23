@@ -67,6 +67,10 @@ func NewAgentSummarizer(confDir string) (models.Summarizer, error) {
 }
 
 func (a *agentSummarizer) Summarize(ctx context.Context, req models.SummaryRequest) (models.Summary, error) {
+	prompt, render, err := summaryPlan(req.Kind)
+	if err != nil {
+		return models.Summary{}, err
+	}
 	model, err := resolveModel(req.Model, a.summaryModel, req.Chat, a.configModel)
 	if err != nil {
 		return models.Summary{}, err
@@ -85,9 +89,9 @@ func (a *agentSummarizer) Summarize(ctx context.Context, req models.SummaryReque
 	maxCalls := MaxToolCalls
 	conf := text.Configurations{
 		Model:                 model,
-		SystemPrompt:          systemPrompt,
+		SystemPrompt:          prompt,
 		UseTools:              true,
-		Tools:                 []pub_models.LLMTool{newSubmitSummaryTool(holder)},
+		Tools:                 []pub_models.LLMTool{newSubmitSummaryTool(holder, req.Kind)},
 		SkipAmbientMcpServers: true,
 		SaveReplyAsConv:       false,
 		MaxToolCalls:          &maxCalls,
@@ -102,7 +106,7 @@ func (a *agentSummarizer) Summarize(ctx context.Context, req models.SummaryReque
 	if err != nil {
 		return models.Summary{}, fmt.Errorf("summarizer querier for model %q: %w", model, err)
 	}
-	chat, err := cq.TextQuery(runCtx, pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: renderTranscript(req.Chat)}}})
+	chat, err := cq.TextQuery(runCtx, pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: render(req.Chat)}}})
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return models.Summary{}, fmt.Errorf("summarize: %w", ctxErr)
 	}
@@ -123,6 +127,22 @@ func (a *agentSummarizer) Summarize(ctx context.Context, req models.SummaryReque
 		Queries:     summaryQueries(chat.Queries, model, usage.total()),
 		GeneratedAt: time.Now().UTC(),
 	}, nil
+}
+
+// summaryPlan returns the system prompt and transcript renderer for a kind.
+// An unknown kind is a caller error, never a silent fallback to a different
+// label.
+func summaryPlan(kind models.SummaryKind) (string, func(pub_models.Chat) string, error) {
+	switch kind {
+	case models.SummaryKindConversation:
+		return systemPrompt, renderTranscript, nil
+	case models.SummaryKindLoopPhase:
+		return loopPhaseSystemPrompt(), renderLoopPhaseTranscript, nil
+	case models.SummaryKindLoopPlan:
+		return loopPlanSystemPrompt(), renderLoopPlanTranscript, nil
+	default:
+		return "", nil, fmt.Errorf("summarize: unknown summary kind %d", kind)
+	}
 }
 
 // traceCostWarnf keeps the summarizer querier's cost warnings off the

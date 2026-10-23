@@ -45,7 +45,17 @@ func (q *Querier[C]) launchSummary(ctx context.Context) {
 	if model == "" {
 		model = q.runModel
 	}
-	req := models.SummaryRequest{Chat: q.chat, Model: model}
+	kind := models.SummaryKindConversation
+	if q.loopProgress != nil {
+		// Iteration 1 has no handover: its summary is the approach the loop
+		// intends to take toward the goal. Later iterations summarise the
+		// progression the previous handover reports.
+		kind = models.SummaryKindLoopPhase
+		if q.loopProgress.Iteration == 1 {
+			kind = models.SummaryKindLoopPlan
+		}
+	}
+	req := models.SummaryRequest{Chat: q.chat, Model: model, Kind: kind}
 	req.Chat.Messages = slices.Clone(q.chat.Messages)
 	// WithoutCancel keeps values, so the run's cancel func is masked (D17).
 	summaryCtx, cancel := context.WithCancel(context.WithValue(context.WithoutCancel(ctx), utils.ContextCancelKey, nil))
@@ -95,39 +105,111 @@ func (q *Querier[C]) abandonSummary() {
 		return
 	}
 	q.summaryRun = nil
+	q.summaryReady = nil
 	run.cancel()
 	run.release()
 }
 
+// summaryResultChannel returns the in-flight summarizer's result channel, or
+// nil to disable the session loop's select case: no run is in flight, or its
+// result was already taken.
+func (q *Querier[C]) summaryResultChannel() <-chan summaryResult {
+	if q.summaryRun == nil || q.summaryReady != nil {
+		return nil
+	}
+	return q.summaryRun.result
+}
+
+// awaitSummaryResult takes the summarizer's result on the session loop. A loop
+// iteration rewrites its pinned header with the summary as soon as it lands, so
+// the header moves from the placeholder to the iteration's progress while it
+// still streams. A summary that lands before the first frame is kept on the
+// progress state, so that frame is born with it. The join takes the same result
+// instead of waiting for it. A failed or empty summary reveals the fallback
+// phase, so the header never keeps the placeholder.
+func (q *Querier[C]) awaitSummaryResult(res summaryResult) error {
+	q.summaryReady = &res
+	if q.loopProgress == nil {
+		return nil
+	}
+	phase := q.loopProgress.Phase
+	if res.err == nil {
+		if landed := loopProgressLine(res.summary.Summary); landed != "" {
+			phase = landed
+		}
+	}
+	return q.showLoopPhase(phase)
+}
+
+// applySummary stamps a summarizer result onto chat unless it failed, was
+// empty, or carries no title.
+func applySummary(res summaryResult, chat *pub_models.Chat) {
+	if res.err != nil {
+		traceSummaryf("in-flight summary failed chat_id=%q: %v", chat.ID, res.err)
+		return
+	}
+	if res.summary.Summary == "" {
+		traceSummaryf("in-flight summary empty chat_id=%q", chat.ID)
+		return
+	}
+	res.summary.ApplyTo(chat)
+	traceSummaryf("in-flight summary applied chat_id=%q title=%q", chat.ID, res.summary.Title)
+}
+
+// summaryWait classifies how a bounded wait for the in-flight summarizer ended.
+type summaryWait uint8
+
+const (
+	// summaryWaitResult means the summarizer answered within the join bound.
+	summaryWaitResult summaryWait = iota
+	summaryWaitTimeout
+	summaryWaitInterrupt
+)
+
+// summaryJoinBound resolves the configured join bound for this querier.
+func (q *Querier[C]) summaryJoinBound() time.Duration {
+	if q.summaryJoinTimeout > 0 {
+		return q.summaryJoinTimeout
+	}
+	return defaultSummaryJoinTimeout
+}
+
+// waitForSummary waits for the in-flight summarizer for at most the join bound
+// or until the interrupt channel closes. The caller owns the result handling and
+// the run's release, so a summary is taken exactly once.
+func (q *Querier[C]) waitForSummary(run *summaryRun) (summaryResult, summaryWait) {
+	timer := time.NewTimer(q.summaryJoinBound())
+	defer timer.Stop()
+	select {
+	case res := <-run.result:
+		return res, summaryWaitResult
+	case <-timer.C:
+		return summaryResult{}, summaryWaitTimeout
+	case <-run.interrupt:
+		return summaryResult{}, summaryWaitInterrupt
+	}
+}
+
 // joinSummary waits for the in-flight result for at most the join bound or
-// until the interrupt channel closes, then stamps the label onto the chat.
+// until the interrupt channel closes, then stamps the label onto the chat. A
+// result the session loop already took is applied without waiting.
 func (q *Querier[C]) joinSummary(chat *pub_models.Chat) {
 	run := q.summaryRun
 	if run == nil {
 		return
 	}
 	defer q.abandonSummary()
-	timeout := q.summaryJoinTimeout
-	if timeout <= 0 {
-		timeout = defaultSummaryJoinTimeout
+	if q.summaryReady != nil {
+		applySummary(*q.summaryReady, chat)
+		return
 	}
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
-	select {
-	case res := <-run.result:
-		if res.err != nil {
-			traceSummaryf("in-flight summary failed chat_id=%q: %v", chat.ID, res.err)
-			return
-		}
-		if res.summary.Summary == "" {
-			traceSummaryf("in-flight summary empty chat_id=%q", chat.ID)
-			return
-		}
-		res.summary.ApplyTo(chat)
-		traceSummaryf("in-flight summary applied chat_id=%q title=%q", chat.ID, res.summary.Title)
-	case <-timer.C:
-		traceSummaryf("in-flight summary abandoned after %v chat_id=%q", timeout, chat.ID)
-	case <-run.interrupt:
+	res, wait := q.waitForSummary(run)
+	switch wait {
+	case summaryWaitResult:
+		applySummary(res, chat)
+	case summaryWaitTimeout:
+		traceSummaryf("in-flight summary abandoned after %v chat_id=%q", q.summaryJoinBound(), chat.ID)
+	case summaryWaitInterrupt:
 		traceSummaryf("in-flight summary abandoned on interrupt chat_id=%q", chat.ID)
 	}
 }

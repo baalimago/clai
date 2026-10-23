@@ -82,6 +82,7 @@ func Test_run_redirected_completed_query_suppresses_bell(t *testing.T) {
   "notificationBell": true,
   "tableItems": 10,
   "toolOutputRows": 6,
+  "loopTitle": "",
   "rollingOutput": {
     "enabled": true,
     "windowCellHeight": 30
@@ -134,6 +135,7 @@ func Test_run_false_notification_bell_setting_stays_disabled(t *testing.T) {
   "notificationBell": false,
   "tableItems": 10,
   "toolOutputRows": 6,
+  "loopTitle": "",
   "rollingOutput": {
     "enabled": true,
     "windowCellHeight": 30

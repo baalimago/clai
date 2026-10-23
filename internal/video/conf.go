@@ -2,7 +2,6 @@ package video
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/baalimago/clai/internal/video/generic"
 )
@@ -27,7 +26,7 @@ var Default = Configurations{
 	PromptFormat: "%v",
 	Output: Output{
 		Type:   UNSET,
-		Dir:    fmt.Sprintf("%v/Videos", os.Getenv("HOME")),
+		Dir:    "~/Videos",
 		Prefix: "clai",
 	},
 }

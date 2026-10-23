@@ -31,10 +31,12 @@ flag at that level.
 ## The command map (`internal/cli`) and command homes
 
 `internal/cli` is the composition root: `Commands()` builds the
-`map[string]cmd.Command` with the keys `query|q`, `loop|l`, `chat|c`,
-`photo|p`, `video|v`, `audio|a`, `setup|s`, `version`, `replay|re`,
-`dir-replay|dre`, `tools|t`, `mcp`, `profiles`, `confdir`. The `completion`
-command and the hidden `__complete` protocol are auto-registered by
+`map[string]cmd.Command` with the keys `query|q`, `chat|c`, `photo|p`,
+`video|v`, `audio|a`, `setup|s`, `version`, `replay|re`, `dir-replay|dre`,
+`tools|t`, `mcp`, `profiles`, `confdir`. Loop mode is not a command: it is
+the `-l`/`-loop` flag of `query` (see [query.md](./query.md#loop-mode)).
+The `completion` command and the hidden `__complete` protocol are
+auto-registered by
 `cmd.Run` (upstream). There is no `help` command: bare `clai` prints the
 full usage, and every command's `-h` prints its Help() text with examples,
 flags and subcommands (see [help.md](./help.md)).
@@ -44,8 +46,7 @@ Each command lives in its domain package and exposes a
 
 | Command | Package |
 |---|---|
-| query | `internal/text` |
-| loop | `internal/text` |
+| query (plain and `-l` loop mode) | `internal/text` |
 | chat, replay, dre | `internal/chat` |
 | photo / video / audio | `internal/photo` / `video` / `audio` |
 | setup | `internal/setup` |
@@ -58,7 +59,7 @@ Every factory lives in its domain package: `text.SetupQuerier`/
 `imagegen.NewGeneratorFunc`, `video.CreateQuerier`, and audio's transcribe setup + `audio_transcribe`
 tool-bridge init. `cli.Deps` carries the three collaborators a test must be able to refuse:
 `NewSummarizer`, `ForeignCache` and `NewImageGenerator` (`route.NewGenerator` in
-`DefaultDeps`). `Commands` hands `NewImageGenerator` to `query`/`loop` (behind `generate_image`)
+`DefaultDeps`). `Commands` hands `NewImageGenerator` to `query` (in plain and loop mode, behind `generate_image`)
 and to `photo`, together with photo's collector (`imageinput.New()`), presenter
 (`present.New`), opener (`present.NewCommandOpener`) and previous image
 (`photo.PreviousQueryImage`). This works because the vendor-shared surface of each
@@ -113,18 +114,18 @@ capture them — there is no central flag bag. Groups compose per command:
 
 | Group | Flags | Commands |
 |---|---|---|
-| raw | `-r/-raw` | query, loop, chat (+ subs except help), photo, video, audio, replay, dre |
-| reply/stdin | `-re/-reply`, `-I/-replace`, `-i` | query, loop, photo, video |
-| agent text | `-cm`, `-t`, `-cmd-ban`, `-lb`, `-mt`, `-mtc`, `-max-tool-calls-after-handover`, `-g`, `-p`, `-prp`, `-n` (+ long forms) | query, loop |
-| media tools | `-am`, `-af`, `-pm` (+ long forms) — configure the media tools an agent run may call (`-pm` is the model behind `generate_image`) | query, loop |
+| raw | `-r/-raw` | query (plain and loop mode), chat (+ subs except help), photo, video, audio, replay, dre |
+| reply/stdin | `-re/-reply`, `-I/-replace`, `-i` | query (plain and loop mode), photo, video |
+| agent text | `-cm`, `-t`, `-cmd-ban`, `-lb`, `-mt`, `-mtc`, `-max-tool-calls-after-handover`, `-g`, `-p`, `-prp`, `-n` (+ long forms) | query (plain and loop mode) |
+| media tools | `-am`, `-af`, `-pm` (+ long forms) — configure the media tools an agent run may call (`-pm` is the model behind `generate_image`) | query (plain and loop mode) |
 | chat | `-r`, `-n`, `-p` (+ long forms) | chat (+ subs) |
-| query text | `-dre`, `-s`, `-rf`, `-asc`, `-summarize`, `-sm`, `-img`, `-open` (+ long forms) | query, loop |
-| loop | `-mi/-max-iterations`, `-check` — iteration bound and verification gate | loop |
+| query text | `-dre`, `-s`, `-rf`, `-asc`, `-summarize`, `-sm`, `-img`, `-open` (+ long forms) | query (plain and loop mode) |
+| loop | `-l/-loop` mode switch; `-mi/-max-iterations` iteration bound and `-check` verification gate (both require `-l`) | query |
 | summarize | positional `<window>`; `-force`, `-y`, `-workers`, `-sm` (+ long forms) — `SummarizeFlags`, registered on the sub only | chat **summarize** (sub-level) |
 | photo | `-pm`, `-pd`, `-pp`, `-img`, `-open` (+ long forms) | photo |
 | video | `-vm`, `-vd`, `-vp`, `-img` (+ long forms) | video |
 | audio | `-am`, `-af`, `-parallelism` (+ `-r`) | audio **transcribe** (sub-level) |
-| non-interactive | `-n/-non-interactive` | setup, tools, profiles, chat (+ subs), query and loop (in agent text) |
+| non-interactive | `-n/-non-interactive` | setup, tools, profiles, chat (+ subs), query (in agent text) |
 
 Each nesting level is an independent flag namespace, but **placement is a
 convenience, not a rule**: a flag written at the wrong level of the resolved
@@ -203,9 +204,9 @@ hint lists every owner. On one path the shallowest owner takes the flag.
 ## Config prep and sentinels
 
 `setup.ConfigRunPrep` (config dir + theme + united config migration),
-injected from `internal/cli`, runs only in config-touching commands: query,
-loop, chat (continue/delete/summarize), photo, video, audio(transcribe),
-setup.
+injected from `internal/cli`, runs only in config-touching commands: query
+(plain and loop mode), chat (continue/delete/summarize), photo, video,
+audio(transcribe), setup.
 
 Commands that render content without reading a mode config call
 `internal.PrepTheme` instead (config dir + theme, no migration): `replay`,
@@ -230,7 +231,7 @@ bash/zsh scripts are generic. clai plugs in value sources via hooks in
 is injected by the command packages, since package `internal` must not import the
 tool registry):
 
-- `-cm` and `-sm` → model history, `-p` → profiles (query, loop, chat and every chat sub),
+- `-cm` and `-sm` → model history, `-p` → profiles (query and every chat sub),
   `-asc` → shell contexts, `-t` → tool names (comma-split, from
   `tools.Names`), `-prp` → file kind;
 - `-pd`/`-vd` → dir kind (photo/video);

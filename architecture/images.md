@@ -39,7 +39,7 @@ clai re | dre                         an image prints as "[image <handle>] <asse
 clai chat list | continue | delete    previews show "[image <handle>]"; delete sweeps assets
 ```
 
-`loop` takes the query flags too. Each generated image is shown once on stdout. A native image
+Loop mode (`-l`) takes the same flags. Each generated image is shown once on stdout. A native image
 (from an image-output chat model) and a `clai photo` image get a line of their own; on a colour
 terminal:
 
@@ -161,12 +161,13 @@ image. The message editor edits only the text of a message and keeps its images 
 
 | Key | File | Default | Flag |
 | --- | --- | --- | --- |
-| `auto-open-images` | `textConfig.json`, `photoConfig.json` | `false` | `-open` |
-| `image-opener` | `textConfig.json`, `photoConfig.json` | `""`: `xdg-open` on Linux, `open` on macOS | — |
+| `auto-open-images` | `photoConfig.json` | `false` | `-open` |
+| `image-opener` | `photoConfig.json` | `""`: `xdg-open` on Linux, `open` on macOS | — |
 | `model` | `photoConfig.json` | `gpt-image-2.5-flare`; `generate_image` prefers the chat vendor's backend (above) | `-pm` |
 
-The keys reach existing configs through the usual config upgrade. No default changes what an
-existing setup does. See [config.md](./config.md#image-configuration).
+Every command that shows an image, `clai photo` and `clai q` alike, reads these keys from
+`photoConfig.json`. The keys reach existing configs through the usual config upgrade. No default
+changes what an existing setup does. See [config.md](./config.md#image-configuration).
 
 ## Tests never spend money
 

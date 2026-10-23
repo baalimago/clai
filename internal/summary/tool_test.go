@@ -5,6 +5,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	"github.com/baalimago/clai/internal/models"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -29,7 +30,7 @@ func TestSubmitSummary_validation(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			holder := &submission{}
-			tool := newSubmitSummaryTool(holder)
+			tool := newSubmitSummaryTool(holder, models.SummaryKindConversation)
 			out, err := tool.Call(tc.input)
 			if err == nil {
 				t.Fatalf("Call(%v) = %q, want error %q", tc.input, out, tc.want)
@@ -46,7 +47,7 @@ func TestSubmitSummary_validation(t *testing.T) {
 
 func TestSubmitSummary_storesLastValid(t *testing.T) {
 	holder := &submission{}
-	tool := newSubmitSummaryTool(holder)
+	tool := newSubmitSummaryTool(holder, models.SummaryKindConversation)
 	out, err := tool.Call(pub_models.Input{"title": "  Fix   the\tbuild ", "summary": " It broke.\n\nNow it   works. "})
 	if err != nil {
 		t.Fatalf("Call: %v", err)
@@ -83,5 +84,23 @@ func TestSubmitSummary_storesLastValid(t *testing.T) {
 	}
 	if !strings.Contains(spec.Description, "60") || !strings.Contains(spec.Description, "240") {
 		t.Fatalf("description must state both limits by value: %q", spec.Description)
+	}
+}
+
+func TestSubmitSummary_loopPhaseUsesTheShortHeaderBound(t *testing.T) {
+	holder := &submission{}
+	tool := newSubmitSummaryTool(holder, models.SummaryKindLoopPhase)
+
+	long := strings.Repeat("p", LoopPhaseSummaryMaxRunes)
+	if _, err := tool.Call(pub_models.Input{"title": "Progress", "summary": long}); err != nil {
+		t.Fatalf("Call at loop-phase limit: %v", err)
+	}
+	if _, err := tool.Call(pub_models.Input{"title": "Progress", "summary": long + "x"}); err == nil || !strings.Contains(err.Error(), "at most 120 runes") {
+		t.Fatalf("Call over loop-phase limit error = %v, want the loop-phase bound", err)
+	}
+
+	spec := tool.Specification()
+	if !strings.Contains(spec.Description, "120") || !strings.Contains(spec.Inputs.Properties["summary"].Description, "One short line") {
+		t.Fatalf("loop-phase spec = %+v, want the short bound and one-line wording", spec)
 	}
 }

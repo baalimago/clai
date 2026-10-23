@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -44,7 +45,7 @@ func seedConfigDir(t *testing.T) string {
 			t.Fatalf("MkdirAll(%q): %v", dir, err)
 		}
 	}
-	theme := `{"primary":"","secondary":"","breadtext":"","roleSystem":"","roleUser":"","roleTool":"","roleReasoning":"","roleOther":"","notificationBell":true,"tableItems":10,"toolOutputRows":6,"rollingOutput":{"enabled":true,"windowCellHeight":30}}`
+	theme := `{"primary":"","secondary":"","breadtext":"","roleSystem":"","roleUser":"","roleTool":"","roleReasoning":"","roleOther":"","notificationBell":true,"tableItems":10,"toolOutputRows":6,"loopTitle":"","rollingOutput":{"enabled":true,"windowCellHeight":30}}`
 	if err := os.WriteFile(filepath.Join(confDir, "theme.json"), []byte(theme), 0o644); err != nil {
 		t.Fatalf("WriteFile(theme.json): %v", err)
 	}
@@ -153,6 +154,7 @@ type submittingQuerier struct {
 	err   error
 	block bool
 	seen  chan struct{}
+	conf  text.Configurations
 }
 
 func (s *submittingQuerier) Query(ctx context.Context) error {
@@ -176,6 +178,7 @@ func (s *submittingQuerier) TextQuery(ctx context.Context, _ pub_models.Chat) (p
 func installSubmittingQuerier(s *agentSummarizer, sq *submittingQuerier) {
 	s.newQuerier = func(_ context.Context, conf text.Configurations) (models.ChatQuerier, error) {
 		sq.tool = conf.Tools[0]
+		sq.conf = conf
 		return sq, nil
 	}
 }
@@ -251,6 +254,63 @@ func TestAgentSummarizer_submitsThroughMock(t *testing.T) {
 	}
 	if got.GeneratedAt.IsZero() || got.GeneratedAt.Location() != time.UTC {
 		t.Fatalf("GeneratedAt = %v, want a UTC stamp", got.GeneratedAt)
+	}
+}
+
+func TestSummaryPlan(t *testing.T) {
+	prompt, render, err := summaryPlan(models.SummaryKindConversation)
+	if err != nil || prompt != systemPrompt || render == nil {
+		t.Fatalf("conversation plan = (%q, nil=%t, %v), want the conversation prompt", prompt, render == nil, err)
+	}
+	prompt, render, err = summaryPlan(models.SummaryKindLoopPhase)
+	if err != nil || prompt != loopPhaseSystemPrompt() || render == nil {
+		t.Fatalf("loop-phase plan = (%q, nil=%t, %v), want the loop-phase prompt", prompt, render == nil, err)
+	}
+	prompt, render, err = summaryPlan(models.SummaryKindLoopPlan)
+	if err != nil || prompt != loopPlanSystemPrompt() || render == nil {
+		t.Fatalf("loop-plan plan = (%q, nil=%t, %v), want the loop-plan prompt", prompt, render == nil, err)
+	}
+	if _, _, err := summaryPlan(models.SummaryKind(200)); err == nil || !strings.Contains(err.Error(), "unknown summary kind") {
+		t.Fatalf("unknown-kind error = %v, want a typed rejection", err)
+	}
+}
+
+func TestAgentSummarizer_loopPhaseUsesProgressionPromptAndLimit(t *testing.T) {
+	confDir := seedConfigDir(t)
+	s := newTestSummarizer(t, confDir)
+	sq := &submittingQuerier{input: pub_models.Input{
+		"title":   "Progress",
+		"summary": strings.Repeat("s", LoopPhaseSummaryMaxRunes),
+	}}
+	installSubmittingQuerier(s, sq)
+
+	req := mockRequest(1)
+	req.Kind = models.SummaryKindLoopPhase
+	if _, err := s.Summarize(context.Background(), req); err != nil {
+		t.Fatalf("Summarize: %v", err)
+	}
+	if !strings.Contains(sq.conf.SystemPrompt, "goal-driven loop") {
+		t.Fatalf("system prompt = %q, want the loop-phase prompt", sq.conf.SystemPrompt)
+	}
+	if !strings.Contains(sq.tool.Specification().Description, strconv.Itoa(LoopPhaseSummaryMaxRunes)) {
+		t.Fatalf("tool spec = %q, want the loop-phase summary limit", sq.tool.Specification().Description)
+	}
+}
+
+func TestAgentSummarizer_unknownKindFailsBeforeTheModel(t *testing.T) {
+	confDir := seedConfigDir(t)
+	s := newTestSummarizer(t, confDir)
+	sq := &submittingQuerier{input: pub_models.Input{"title": "T", "summary": "S"}}
+	installSubmittingQuerier(s, sq)
+
+	req := mockRequest(1)
+	req.Kind = models.SummaryKind(200)
+	_, err := s.Summarize(context.Background(), req)
+	if err == nil || !strings.Contains(err.Error(), "unknown summary kind 200") {
+		t.Fatalf("err = %v, want the unknown-kind rejection", err)
+	}
+	if sq.conf.SystemPrompt != "" {
+		t.Fatal("an unknown kind must not build a querier")
 	}
 }
 

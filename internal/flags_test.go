@@ -1,8 +1,10 @@
 package internal
 
 import (
+	"errors"
 	"flag"
 	"io"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -268,18 +270,100 @@ func Test_mediaFlagsApply(t *testing.T) {
 			}
 
 			got := fileValues
-			f.Apply(MediaConfig{
+			if err := f.Apply(MediaConfig{
 				Model:        &got.model,
 				ReplyMode:    &got.replyMode,
 				StdinReplace: &got.stdinReplace,
 				OutputDir:    &got.dir,
 				OutputPrefix: &got.prefix,
-			})
+			}); err != nil {
+				t.Fatalf("Apply(%v): %v", tc.args, err)
+			}
 
 			if got != tc.want {
 				t.Fatalf("got %+v, want %+v", got, tc.want)
 			}
 		})
+	}
+}
+
+// Test_mediaFlagsApplyExpandsOutputDir pins the output dir as a user path: a
+// leading ~ and $VAR expand whether the value came from the file or the flag.
+func Test_mediaFlagsApplyExpandsOutputDir(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	spec := MediaFlagSpec{DirNames: []string{"xd"}, DirDefault: "/default"}
+	testCases := []struct {
+		desc, file, flagValue, want string
+	}{
+		{desc: "file value with ~", file: "~/Pictures", want: filepath.Join(home, "Pictures")},
+		{desc: "file value with a bare ~", file: "~", want: home},
+		{desc: "file value with $VAR", file: "$HOME/Pictures", want: filepath.Join(home, "Pictures")},
+		{desc: "flag with ~ beats the file value", file: "/file", flagValue: "~/Videos", want: filepath.Join(home, "Videos")},
+		{desc: "flag with $VAR wins", file: "/file", flagValue: "$HOME/Videos", want: filepath.Join(home, "Videos")},
+		{desc: "plain absolute path is unchanged", file: "/file", want: "/file"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			fs := flag.NewFlagSet("test", flag.ContinueOnError)
+			fs.SetOutput(io.Discard)
+			f := NewMediaFlags(spec)
+			f.Register(fs)
+			var args []string
+			if tc.flagValue != "" {
+				args = []string{"-xd", tc.flagValue}
+			}
+			if err := fs.Parse(args); err != nil {
+				t.Fatalf("Parse(%v): %v", args, err)
+			}
+
+			dir := tc.file
+			var model, stdinReplace, prefix string
+			var replyMode bool
+			if err := f.Apply(MediaConfig{
+				Model:        &model,
+				ReplyMode:    &replyMode,
+				StdinReplace: &stdinReplace,
+				OutputDir:    &dir,
+				OutputPrefix: &prefix,
+			}); err != nil {
+				t.Fatalf("Apply: %v", err)
+			}
+			if dir != tc.want {
+				t.Fatalf("output dir = %q, want %q", dir, tc.want)
+			}
+		})
+	}
+}
+
+// Test_mediaFlagsApplyWithoutHome proves an unresolvable ~ is an error, not a
+// literal path.
+func Test_mediaFlagsApplyWithoutHome(t *testing.T) {
+	t.Setenv("HOME", "")
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	f := NewMediaFlags(MediaFlagSpec{DirNames: []string{"xd"}, DirDefault: "/default"})
+	f.Register(fs)
+
+	dir := "~/Pictures"
+	var model, stdinReplace, prefix string
+	var replyMode bool
+	err := f.Apply(MediaConfig{
+		Model:        &model,
+		ReplyMode:    &replyMode,
+		StdinReplace: &stdinReplace,
+		OutputDir:    &dir,
+		OutputPrefix: &prefix,
+	})
+	if err == nil {
+		t.Fatalf("Apply with an unset HOME = %q, want an error", dir)
+	}
+	if !strings.Contains(err.Error(), "output dir") {
+		t.Fatalf("error = %v, want it to name the output dir", err)
+	}
+	if dir != "~/Pictures" {
+		t.Fatalf("output dir = %q after a failed Apply, want it unchanged", dir)
 	}
 }
 
@@ -363,25 +447,64 @@ func TestSummarizeFlags_register(t *testing.T) {
 	}
 }
 
-// Test_loopFlagsRegistration pins the loop surface: the iteration bound and
-// verification gate, with both iteration-bound spellings on one value.
+// Test_loopFlagsRegistration pins the loop surface: the mode flag, the
+// iteration bound and the verification gate, with both spellings of each
+// alias pair on one value.
 func Test_loopFlagsRegistration(t *testing.T) {
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	lf := NewLoopFlags()
 	lf.Register(fs)
-	for _, name := range []string{"mi", "max-iterations", "check"} {
+	for _, name := range []string{"l", "loop", "mi", "max-iterations", "check"} {
 		if fs.Lookup(name) == nil {
 			t.Fatalf("flag %q missing from the loop surface", name)
 		}
 	}
-	if lf.MaxIterations.Value() != 10 || lf.Check.Value() != "" {
+	if lf.Loop.Value() || lf.MaxIterations.Value() != 10 || lf.Check.Value() != "" {
 		t.Fatalf("unexpected defaults: %+v", lf)
 	}
-	if err := fs.Parse([]string{"-mi", "3", "-check", "go test ./..."}); err != nil {
+	if err := fs.Parse([]string{"-l", "-mi", "3", "-check", "go test ./..."}); err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	if lf.MaxIterations.Value() != 3 || lf.Check.Value() != "go test ./..." {
+	if !lf.Loop.Value() || lf.MaxIterations.Value() != 3 || lf.Check.Value() != "go test ./..." {
 		t.Fatalf("parsed values: %+v", lf)
+	}
+	if err := lf.Validate(); err != nil {
+		t.Fatalf("Validate with -l: %v", err)
+	}
+}
+
+// Test_loopFlagsValidate pins that a loop-only flag without -l is an error
+// rather than a flag that silently configures nothing.
+func Test_loopFlagsValidate(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "plain query", args: nil},
+		{name: "explicit false", args: []string{"-l=false"}},
+		{name: "iterations without -l", args: []string{"-mi", "3"}, want: "-max-iterations requires -l"},
+		{name: "check without -l", args: []string{"-check", "true"}, want: "-check requires -l"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fs := flag.NewFlagSet("test", flag.ContinueOnError)
+			fs.SetOutput(io.Discard)
+			lf := NewLoopFlags()
+			lf.Register(fs)
+			if err := fs.Parse(tc.args); err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			err := lf.Validate()
+			if tc.want == "" {
+				if err != nil {
+					t.Fatalf("Validate(%v) = %v, want nil", tc.args, err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.want) || !errors.Is(err, ErrLoopFlagWithoutMode) {
+				t.Fatalf("Validate(%v) = %v, want %q matching ErrLoopFlagWithoutMode", tc.args, err, tc.want)
+			}
+		})
 	}
 }

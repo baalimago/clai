@@ -598,7 +598,7 @@ func TestActivityViewport(t *testing.T) {
 		viewport.AppendTool(pub_models.Call{Name: "ls", Inputs: &inputs}, "first\nsecond", 6)
 
 		got := viewport.Rows()
-		want := []string{"  one two", "▸ ls  path=/tmp", "  first", "  second", ""}
+		want := []string{"▸ ls  path=/tmp", "  first", "  second", ""}
 		if strings.Join(got, "\n") != strings.Join(want, "\n") {
 			t.Fatalf("Rows() = %q, want %q", got, want)
 		}
@@ -981,14 +981,14 @@ func TestActivityViewportResize(t *testing.T) {
 
 		viewport.Resize(40, 5)
 
-		if got := len(viewport.Rows()); got != 5 {
-			t.Fatalf("Rows() after shrink = %d, want effective height 5", got)
+		if got := len(viewport.Rows()); got != 4 {
+			t.Fatalf("Rows() after shrink = %d, want effective height 4", got)
 		}
 		var redraw strings.Builder
 		if err := viewport.Render(&redraw); err != nil {
 			t.Fatalf("Render() after shrink: %v", err)
 		}
-		if !strings.Contains(redraw.String(), "\x1b[10A\r\x1b[J") {
+		if !strings.Contains(redraw.String(), "\x1b[9A\r\x1b[J") {
 			t.Fatalf("expected full-frame clear of the old window, got %q", redraw.String())
 		}
 		for _, gone := range []string{"∴ thinking", "  line one"} {
@@ -1004,11 +1004,11 @@ func TestActivityViewportResize(t *testing.T) {
 		viewport.Resize(40, 5)
 		viewport.AppendReasoning("one\ntwo\nthree\nfour\nfive\nsix\nseven\neight")
 		rows := viewport.Rows()
-		if len(rows) != 5 {
-			t.Fatalf("Rows() at height 5 = %d rows, want 5", len(rows))
+		if len(rows) != 4 {
+			t.Fatalf("Rows() at effective height 4 = %d rows, want 4", len(rows))
 		}
 		if strings.Contains(strings.Join(rows, "\n"), "  three") {
-			t.Fatalf("middle rows must be dropped at height 5: %q", rows)
+			t.Fatalf("middle rows must be dropped at effective height 4: %q", rows)
 		}
 		viewport.Resize(40, 10)
 		got := strings.Join(viewport.Rows(), "\n")
@@ -1023,12 +1023,12 @@ func TestActivityViewportResize(t *testing.T) {
 	t.Run("unchanged dimensions leave the viewport clean", func(t *testing.T) {
 		t.Setenv("NO_COLOR", "true")
 		var first strings.Builder
-		viewport := NewActivityViewport(40, 8, 8)
+		viewport := NewActivityViewport(40, 7, 8)
 		viewport.AppendReasoning("first")
 		if err := viewport.Render(&first); err != nil {
 			t.Fatalf("Render(): %v", err)
 		}
-		viewport.Resize(40, 20) // effective height stays min(8, 20) = 8
+		viewport.Resize(40, 20) // effective height stays min(7, 19) = 7
 		var after strings.Builder
 		if err := viewport.Render(&after); err != nil {
 			t.Fatalf("Render() after a no-op Resize: %v", err)
@@ -1166,8 +1166,8 @@ func TestActivityViewportResize(t *testing.T) {
 			t.Fatalf("Render(): %v", err)
 		}
 		viewport.Resize(40, 3)
-		if got := len(viewport.Rows()); got != 3 {
-			t.Fatalf("Rows() after shrink = %d, want effective height 3", got)
+		if got := len(viewport.Rows()); got != 2 {
+			t.Fatalf("Rows() after shrink = %d, want effective height 2", got)
 		}
 		var redraw strings.Builder
 		if err := viewport.Render(&redraw); err != nil {
@@ -1302,8 +1302,8 @@ func TestActivityViewportResize(t *testing.T) {
 			t.Fatalf("Rows() = %d rows, want the cap 10", got)
 		}
 		viewport.Resize(80, 4)
-		if got := len(viewport.Rows()); got != 4 {
-			t.Fatalf("Rows() = %d rows, want terminal height 4", got)
+		if got := len(viewport.Rows()); got != 3 {
+			t.Fatalf("Rows() = %d rows, want terminal frame height 3", got)
 		}
 		viewport.Resize(80, 0)
 		if got := len(viewport.Rows()); got != 1 {
@@ -1314,14 +1314,14 @@ func TestActivityViewportResize(t *testing.T) {
 	t.Run("initial height binds the terminal height at creation", func(t *testing.T) {
 		viewport := NewActivityViewport(40, 30, 5)
 		viewport.AppendReasoning("one\ntwo\nthree\nfour\nfive\nsix\nseven\neight")
-		if got := len(viewport.Rows()); got != 5 {
-			t.Fatalf("Rows() = %d rows, want the terminal height 5 bound at creation", got)
+		if got := len(viewport.Rows()); got != 4 {
+			t.Fatalf("Rows() = %d rows, want the terminal frame height 4 bound at creation", got)
 		}
-		// The min(cap, terminal height) binding stays live: growing the
+		// The min(cap, terminal frame height) binding stays live: growing the
 		// terminal reveals retained content without any prior Resize.
 		viewport.Resize(40, 8)
-		if got := len(viewport.Rows()); got != 8 {
-			t.Fatalf("Rows() after terminal grow = %d rows, want 8", got)
+		if got := len(viewport.Rows()); got != 7 {
+			t.Fatalf("Rows() after terminal grow = %d rows, want 7", got)
 		}
 	})
 

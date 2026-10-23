@@ -127,6 +127,36 @@ func Test_e2e_stoploss_handover_injection_and_summary(t *testing.T) {
 	assertValidToolExchangesE2E(t, chat.Messages)
 }
 
+// Test_e2e_stoploss_loop_crossing_is_silent proves that a loop iteration
+// reaches the token stoploss without printing the notice: the crossing is the
+// loop's normal handover mechanism. The handover message still lands in the
+// iteration chat.
+func Test_e2e_stoploss_loop_crossing_is_silent(t *testing.T) {
+	confDir := e2etest.SetupMainTestConfigDir(t)
+	t.Setenv("CLAI_MOCK_COMPLETE_TASK_STATUS", "achieved")
+	writeStoplossTextConfig(t, confDir, map[string]any{
+		"stoploss": map[string]any{
+			"max-tokens":                       5,
+			"max-tokens-handover-instructions": "wrap up now",
+		},
+	})
+
+	status, stdout, stderr := runStoplossE2E(t, "-r", "-cm", "test", "-l", "q", "run", "tool_complete_task")
+	if status != 0 {
+		t.Fatalf("expected exit 0, got %d stdout=%q stderr=%q", status, stdout, stderr)
+	}
+	if strings.Contains(stdout+stderr, "stoploss: context usage") {
+		t.Fatalf("a loop iteration must not print the stoploss notice, got %q", stdout+stderr)
+	}
+
+	chat := loadSavedStoplossChat(t, confDir)
+	if idx := indexOfMessage(chat.Messages, func(m pub_models.Message) bool {
+		return m.Role == "user" && m.Content == "wrap up now"
+	}); idx == -1 {
+		t.Fatalf("expected the crossing handover in the iteration chat, transcript: %+v", chat.Messages)
+	}
+}
+
 // Test_e2e_stoploss_flag_accepts_scaled_tokens proves the scaled int syntax
 // through the real CLI: -mt=1k is 1000, so the file limit of 5 it overrides
 // never crosses on a usage of 6 and the run takes the ordinary path.

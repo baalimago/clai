@@ -2,6 +2,8 @@ package text
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/baalimago/clai/internal"
@@ -35,13 +37,34 @@ func Test_newLoopRunner_rejectsQuerierWithoutLoopSupport(t *testing.T) {
 	testboil.AssertStringContains(t, err.Error(), "text.queryOnlyQuerier")
 }
 
-func TestLoopCommand_registersTextAndLoopFlags(t *testing.T) {
-	c := LoopCommand(QueryCommandDeps{})
+func TestQueryCommand_registersTextAndLoopFlags(t *testing.T) {
+	c := QueryCommand(QueryCommandDeps{})
 	fs := c.Flagset()
-	for _, name := range []string{"r", "cm", "t", "dre", "mi", "max-iterations", "check"} {
+	for _, name := range []string{"r", "cm", "t", "dre", "l", "loop", "mi", "max-iterations", "check"} {
 		if fs.Lookup(name) == nil {
-			t.Fatalf("flag %q missing from the loop command", name)
+			t.Fatalf("flag %q missing from the query command", name)
 		}
+	}
+}
+
+// TestQueryCommand_loopFlagsRequireLoopMode pins the command boundary of
+// LoopFlags.Validate: a loop-only flag without -l fails setup before any
+// querier is built.
+func TestQueryCommand_loopFlagsRequireLoopMode(t *testing.T) {
+	for _, args := range [][]string{
+		{"-mi", "3", "hello"},
+		{"-check", "true", "hello"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			c := QueryCommand(QueryCommandDeps{})
+			if err := c.Flagset().Parse(args); err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			err := c.Setup(context.Background())
+			if !errors.Is(err, internal.ErrLoopFlagWithoutMode) {
+				t.Fatalf("Setup(%v) = %v, want ErrLoopFlagWithoutMode", args, err)
+			}
+		})
 	}
 }
 

@@ -165,6 +165,36 @@ func TestDefaultTheme_RollingOutputDefaults(t *testing.T) {
 	}
 }
 
+func TestDefaultTheme_HasDistinctLoopTitleColor(t *testing.T) {
+	th := defaultTheme()
+	if th.LoopTitle == "" {
+		t.Fatal("defaultTheme().LoopTitle is empty, want an accent colour")
+	}
+	if th.LoopTitle == th.Primary {
+		t.Fatal("defaultTheme().LoopTitle equals Primary, want a distinct accent")
+	}
+}
+
+func TestLoadTheme_AppendsLoopTitleDefaultForExistingThemeWithoutField(t *testing.T) {
+	confDir := t.TempDir()
+	themePath := filepath.Join(confDir, "theme.json")
+	if err := os.WriteFile(themePath, []byte(`{"notificationBell": true, "tableItems": 10}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(%q): %v", themePath, err)
+	}
+
+	if err := LoadTheme(confDir); err != nil {
+		t.Fatalf("LoadTheme(%q): %v", confDir, err)
+	}
+	if got, want := LoopTitleColor(), defaultTheme().LoopTitle; got != want {
+		t.Fatalf("LoopTitleColor() = %q, want %q", got, want)
+	}
+	themeBytes, err := os.ReadFile(themePath)
+	if err != nil {
+		t.Fatalf("ReadFile(%q): %v", themePath, err)
+	}
+	testboil.AssertStringContains(t, string(themeBytes), `"loopTitle"`)
+}
+
 func TestLoadTheme_AppendsToolOutputRowsDefaultForExistingThemeWithoutField(t *testing.T) {
 	assertLoadThemeAppendsRowsDefault(
 		t,

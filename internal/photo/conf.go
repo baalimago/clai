@@ -2,7 +2,6 @@ package photo
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/baalimago/clai/internal/photo/generic"
 	"github.com/baalimago/clai/internal/vendors/openai"
@@ -25,7 +24,7 @@ var DEFAULT = Configurations{
 	PromptFormat: "I NEED to test how the tool works with extremely simple prompts. DO NOT add any detail, just use it AS-IS: '%v'",
 	Output: Output{
 		Type:   UNSET,
-		Dir:    fmt.Sprintf("%v/Pictures", os.Getenv("HOME")),
+		Dir:    "~/Pictures",
 		Prefix: "clai",
 	},
 }

@@ -89,6 +89,28 @@ func Test_stoploss_CheckContextBudget(t *testing.T) {
 		}
 	})
 
+	t.Run("loop iteration suppresses the handover notice", func(t *testing.T) {
+		q := &Querier[*MockQuerier]{stoploss: &Stoploss{MaxTokens: 100}}
+		q.SetLoopProgress(LoopProgress{Iteration: 1, MaxIterations: 2})
+		ctrl := q.newStoploss()
+		session := &QuerySession{Chat: pub_models.Chat{}}
+
+		var injected bool
+		out := testboil.CaptureStdout(t, func(t *testing.T) {
+			var err error
+			injected, err = ctrl.CheckContextBudget(context.Background(), noopModel, session, &pub_models.Usage{PromptTokens: 120})
+			if err != nil {
+				t.Fatalf("CheckContextBudget: %v", err)
+			}
+		})
+		if !injected || !session.HandoverRequested || len(session.Chat.Messages) != 1 {
+			t.Fatalf("expected the handover injection in loop mode, got injected=%t handover=%t messages=%d", injected, session.HandoverRequested, len(session.Chat.Messages))
+		}
+		if strings.Contains(out, "stoploss: context usage") {
+			t.Fatalf("a loop iteration expects the crossing, got notice %q", out)
+		}
+	})
+
 	t.Run("total-tokens fallback when prompt and completion are zero", func(t *testing.T) {
 		q := &Querier[*MockQuerier]{stoploss: &Stoploss{MaxTokens: 100}}
 		ctrl := q.newStoploss()

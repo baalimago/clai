@@ -68,6 +68,7 @@ The agent runs silent and returns typed errors. See [pkg/agent](https://pkg.go.d
 - **[Seamless conversation import](./architecture/continue-from-claudex.md)** - Ran out of session? Continue in clai!
 - **[Agent Skills](./architecture/skills.md)** - Import skills from custom global directories, or project-level `.agents/skills`.
 - **[Profiles](./examples.md#profiles-workflow-presets)** - Pre-prompted profiles enabling customized workflows and agents.
+- **[Loop until verified](./examples.md#loop-until-the-goal-is-verified)** - Add `-l` to a query and clai iterates toward the goal, accepting completion only when `-check` passes.
 - **[MCP client support](./examples.md#mcp-tools-external-tool-servers)** - Add any MCP server you'd like by pasting their configuration.
 - **[Images, both ways](./architecture/images.md)** - Attach images with `-img`, a glob or stdin to any model, and get images back through the `generate_image` tool, or from an image-output model.
 - **Unix-like** - Clai follows the [unix philosophy](https://en.wikipedia.org/wiki/Unix_philosophy) and works with data piped in and out.

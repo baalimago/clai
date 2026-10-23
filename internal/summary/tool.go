@@ -15,8 +15,12 @@ const (
 	ToolName        = "submit_summary"
 	TitleMaxRunes   = 60
 	SummaryMaxRunes = 240
-	InputMaxRunes   = models.SummaryInputRunes
-	MaxToolCalls    = 4
+	// LoopPhaseSummaryMaxRunes bounds the loop phase to one short line: it
+	// shares a header row with the iteration marker and must not restate the
+	// goal.
+	LoopPhaseSummaryMaxRunes = models.LoopPhaseSummaryRunes
+	InputMaxRunes            = models.SummaryInputRunes
+	MaxToolCalls             = 4
 )
 
 // submission holds the last valid result of one Summarize call.
@@ -40,11 +44,26 @@ func (s *submission) get() (string, string, bool) {
 }
 
 type submitSummaryTool struct {
-	holder *submission
+	holder      *submission
+	summaryMax  int
+	summaryHelp string
 }
 
-func newSubmitSummaryTool(holder *submission) submitSummaryTool {
-	return submitSummaryTool{holder: holder}
+func newSubmitSummaryTool(holder *submission, kind models.SummaryKind) submitSummaryTool {
+	tool := submitSummaryTool{
+		holder:      holder,
+		summaryMax:  SummaryMaxRunes,
+		summaryHelp: "Two sentences: what was asked and, when visible, the outcome.",
+	}
+	if kind == models.SummaryKindLoopPhase {
+		tool.summaryMax = LoopPhaseSummaryMaxRunes
+		tool.summaryHelp = "One short line naming what the previous iteration achieved and what remains toward the goal, without restating the goal."
+	}
+	if kind == models.SummaryKindLoopPlan {
+		tool.summaryMax = LoopPhaseSummaryMaxRunes
+		tool.summaryHelp = "One short line naming the approach the loop will take toward the goal, without restating the goal."
+	}
+	return tool
 }
 
 func (t submitSummaryTool) Call(input pub_models.Input) (string, error) {
@@ -52,7 +71,7 @@ func (t submitSummaryTool) Call(input pub_models.Input) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	summary, err := validateField(input, "summary", SummaryMaxRunes, false)
+	summary, err := validateField(input, "summary", t.summaryMax, false)
 	if err != nil {
 		return "", err
 	}
@@ -64,7 +83,7 @@ func (t submitSummaryTool) Specification() pub_models.Specification {
 	return pub_models.Specification{
 		Name: ToolName,
 		Description: fmt.Sprintf("Submit the label of the conversation. title: one line, at most %d runes. summary: at most %d runes. Call it exactly once; on a rejection, correct the named field and call again.",
-			TitleMaxRunes, SummaryMaxRunes),
+			TitleMaxRunes, t.summaryMax),
 		Inputs: &pub_models.InputSchema{
 			Type:     "object",
 			Required: []string{"title", "summary"},
@@ -75,7 +94,7 @@ func (t submitSummaryTool) Specification() pub_models.Specification {
 				},
 				"summary": {
 					Type:        "string",
-					Description: fmt.Sprintf("Two sentences: what was asked and, when visible, the outcome. At most %d runes.", SummaryMaxRunes),
+					Description: fmt.Sprintf("%s At most %d runes.", t.summaryHelp, t.summaryMax),
 				},
 			},
 		},

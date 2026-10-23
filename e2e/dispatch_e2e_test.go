@@ -318,7 +318,6 @@ func Test_e2e_command_help(t *testing.T) {
 		wantHelp string
 	}{
 		{"q -h", "query <text>"},
-		{"l -h", "loop <text>"},
 		{"chat -h", "clai chat help"},
 		{"audio -h", "t|transcribe <file>"},
 		{"photo -h", "photo <text>"},

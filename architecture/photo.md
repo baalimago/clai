@@ -72,14 +72,15 @@ only a test that opts in swaps in a fake. A missing image dependency fails with
 | `model` | Image model; see the routing table under [Image generators](#image-generators) |
 | `prompt-format` | Go format string; `%v` is replaced with the user prompt |
 | `output.type` | `"local"` or `"unset"`: both save to `output.dir`. `"url"` was removed and fails with `*URLOutputRemovedError`; any other value fails too |
-| `output.dir` | Directory for saved images (default: `$HOME/Pictures`) |
+| `output.dir` | Directory for saved images (default: `~/Pictures`). clai expands a leading `~` and each `$VAR`, in the file and on `-pd`. With `HOME` set, `~/Pictures` and `$HOME/Pictures` are the same |
 | `output.prefix` | Filename prefix (default: `clai`) |
 | `raw` | Turns the progress row off, like `-raw` |
 | `auto-open-images` | Open each saved image, like `-open` (default `false`) |
 | `image-opener` | The viewer command; `""` is `xdg-open` on Linux and `open` on macOS |
 
-The two image fields default to zero values, so an existing `photoConfig.json` is not
-rewritten to add them.
+The two image fields carry `migrate:"true"`, so the config upgrade adds them to an
+existing `photoConfig.json`. Every command that shows an image reads them from this
+file, `clai q` included.
 
 ### Flags
 

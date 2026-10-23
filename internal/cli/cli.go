@@ -63,6 +63,7 @@ Examples:
   - clai -t website_text query "What'\''\'''s the weather like in Tokyo? Use website_text to fetch data"
   - clai -glob "*.txt" query Please summarize these documents: 
   - clai -asc minimal q "what changed in this repo?"
+  - clai -l q "refactor the auth package and make the tests pass"
   - clai -pm dall-e-2 photo A cat in space
   - clai -img screenshot.png q "What is wrong in this dialog?"
   - clai -t generate_image q "Draw a fox in the snow"
@@ -117,11 +118,10 @@ func Commands(deps Deps) map[string]cmd.Command {
 		ApplyMediaOverrides: applyMediaOverrides,
 		NewSummarizer:       deps.NewSummarizer,
 		NewImageGenerator:   deps.NewImageGenerator,
-		PhotoModel:          photoModel,
+		PhotoConfig:         setup.LoadPhotoConfig,
 	}
 	return map[string]cmd.Command{
 		"query|q": text.QueryCommand(queryDeps),
-		"loop|l":  text.LoopCommand(queryDeps),
 		"chat|c": chat.Command(chat.CommandDeps{
 			ConfigPrep:    configPrep,
 			NewSummarizer: deps.NewSummarizer,
@@ -152,15 +152,6 @@ func Commands(deps Deps) map[string]cmd.Command {
 		"profiles":       profiles.Command(),
 		"confdir":        confdir.Command(),
 	}
-}
-
-// photoModel is photoConfig.json's model, read when generate_image is selected.
-func photoModel(confDir string) (string, error) {
-	conf, err := setup.LoadPhotoConfig(confDir)
-	if err != nil {
-		return "", err
-	}
-	return conf.Model, nil
 }
 
 // versionFlagAsCommand rewrites the special first-argument version flag

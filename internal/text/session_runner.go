@@ -80,6 +80,19 @@ func (r *sessionRunner[C]) Run(ctx context.Context, session *QuerySession) (runE
 			ancli.Warnf("failed to flush mcp server logs: %v", err)
 		}
 	}()
+	// The finalizer writes below the window (cost, cache, and chat-index
+	// progress), so the window must collapse while the cursor still belongs to
+	// it. The common stream-end paths collapse already; this defer covers every
+	// other exit, including the vendor's EOF and cancellation events, and runs
+	// before the drain and the finalizer. It is idempotent.
+	defer func() {
+		if r.querier.loopProgress == nil {
+			return
+		}
+		if err := r.querier.settleLoopHeader(); err != nil {
+			runErr = errors.Join(runErr, err)
+		}
+	}()
 
 	if err := r.querier.setupImageGeneration(); err != nil {
 		return fmt.Errorf("set up image generation: %w", err)
@@ -114,9 +127,13 @@ func (r *sessionRunner[C]) Run(ctx context.Context, session *QuerySession) (runE
 		session.CompletedCalls = append(session.CompletedCalls, completedCall)
 		// Consumer-supplied usage recorders never abort the run: the consumer
 		// owns the recorder and observes its own failures (worklog
-		// 2026-09-05-error-propagation, S10 never-abort contract).
+		// 2026-09-05-error-propagation, S10 never-abort contract). The report
+		// still aborts: a warning that cannot reach the terminal is a display
+		// failure, not a recorder failure.
 		if err := r.recorder.Record(ctx, completedCall); err != nil {
-			ancli.Warnf("failed to record completed model call: %v", err)
+			if warnErr := r.querier.warnf("failed to record completed model call: %v", err); warnErr != nil {
+				return fmt.Errorf("report recorder failure: %w", warnErr)
+			}
 		}
 
 		if len(stepResult.ToolCalls) > 0 {
@@ -205,7 +222,9 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 			if !ok {
 				q.closeReasoningIfOpen(ctx, session)
 				if len(result.ToolCalls) == 0 {
-					q.prepareFinalAnswerPop()
+					if err := q.prepareFinalAnswerPop(); err != nil {
+						return ModelStepResult{}, err
+					}
 				}
 				result.EndedNormally = len(result.ToolCalls) == 0
 				result.AssistantText = session.PendingTextString()
@@ -291,7 +310,9 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 				if len(result.ToolCalls) > 0 {
 					return result, nil
 				}
-				q.prepareFinalAnswerPop()
+				if err := q.prepareFinalAnswerPop(); err != nil {
+					return ModelStepResult{}, err
+				}
 				contextCancel := ctx.Value(utils.ContextCancelKey)
 				castContextCancel, ok := contextCancel.(context.CancelFunc)
 				if ok {
@@ -325,13 +346,22 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 			if err := q.drainMcpLogs(); err != nil {
 				return ModelStepResult{}, fmt.Errorf("drain mcp logs: %w", err)
 			}
+		case res := <-r.querier.summaryResultChannel():
+			// The chat-list label landed while the iteration streams: take it
+			// now so a loop row can show it and the finalizer's join does not
+			// wait for a result that already exists.
+			if err := r.querier.awaitSummaryResult(res); err != nil {
+				return ModelStepResult{}, fmt.Errorf("apply in-flight summary: %w", err)
+			}
 		case <-ctx.Done():
 			q.stopImageProgress()
 			q.closeReasoningIfOpen(ctx, session)
 			result.StopRequested = true
 			result.AssistantText = session.PendingTextString()
 			result.Usage = q.currentTokenUsage()
-			q.prepareFinalAnswerPop()
+			if err := q.prepareFinalAnswerPop(); err != nil {
+				return ModelStepResult{}, err
+			}
 			return result, nil
 		}
 	}

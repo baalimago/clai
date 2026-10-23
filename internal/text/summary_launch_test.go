@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -548,4 +549,195 @@ func TestTraceSummaryf_stderr(t *testing.T) {
 			t.Fatalf("stdout = %q, stderr = %q, want silence", stdout, stderr)
 		}
 	})
+}
+
+// TestSummaryResultChannel pins the session loop's exchange with the join: a
+// taken result disables the select case and the join applies it without
+// waiting.
+func TestSummaryResultChannel(t *testing.T) {
+	t.Setenv("DEBUG_SUMMARY", "")
+
+	t.Run("no run in flight", func(t *testing.T) {
+		q := launchQuerier(t, nil, newChat("no-run"))
+		if ch := q.summaryResultChannel(); ch != nil {
+			t.Fatalf("summaryResultChannel() = %v, want a disabled case", ch)
+		}
+	})
+
+	t.Run("taken result is applied by the join without waiting", func(t *testing.T) {
+		fake := instantSummarizer()
+		q := launchQuerier(t, fake, newChat("early-result"))
+		q.launchSummary(t.Context())
+		t.Cleanup(q.abandonSummary)
+		waitClosed(t, fake.done, "summarizer completion")
+
+		ch := q.summaryResultChannel()
+		if ch == nil {
+			t.Fatal("summaryResultChannel() = nil, want the in-flight result channel")
+		}
+		if err := q.awaitSummaryResult(<-ch); err != nil {
+			t.Fatalf("awaitSummaryResult: %v", err)
+		}
+		if q.summaryResultChannel() != nil {
+			t.Fatal("a taken result must disable the session loop case")
+		}
+
+		q.summaryJoinTimeout = time.Nanosecond
+		chat := newChat("early-result")
+		q.joinSummary(&chat)
+		assertLabelled(t, chat)
+		if q.summaryRun != nil {
+			t.Fatal("the join must release the run")
+		}
+	})
+}
+
+func TestAwaitSummaryResult(t *testing.T) {
+	t.Run("a failed summary keeps the phase untouched", func(t *testing.T) {
+		var printed strings.Builder
+		q := rollingLoopQuerier(t, &printed)
+		q.SetLoopProgress(LoopProgress{Iteration: 2, MaxIterations: 2, Phase: "prior phase"})
+		q.ensureActivityViewport()
+		before := printed.Len()
+
+		if err := q.awaitSummaryResult(summaryResult{err: errors.New("boom")}); err != nil {
+			t.Fatalf("awaitSummaryResult: %v", err)
+		}
+		if printed.Len() != before {
+			t.Fatalf("a failed summary must not render, got %q", printed.String()[before:])
+		}
+		if q.loopProgress.Phase != "prior phase" {
+			t.Fatalf("phase = %q, want it untouched", q.loopProgress.Phase)
+		}
+	})
+
+	t.Run("an unchanged phase renders nothing", func(t *testing.T) {
+		var printed strings.Builder
+		q := rollingLoopQuerier(t, &printed)
+		q.SetLoopProgress(LoopProgress{Iteration: 2, MaxIterations: 2, Phase: "S"})
+		q.ensureActivityViewport()
+		before := printed.Len()
+
+		if err := q.awaitSummaryResult(summaryResult{summary: fakeSummary()}); err != nil {
+			t.Fatalf("awaitSummaryResult: %v", err)
+		}
+		if printed.Len() != before {
+			t.Fatalf("an unchanged phase must not render, got %q", printed.String()[before:])
+		}
+	})
+
+	t.Run("a phase that lands before the first frame is kept", func(t *testing.T) {
+		var printed strings.Builder
+		q := rollingLoopQuerier(t, &printed)
+		q.SetLoopProgress(LoopProgress{Iteration: 2, MaxIterations: 2, Phase: "prior phase"})
+
+		if err := q.awaitSummaryResult(summaryResult{summary: fakeSummary()}); err != nil {
+			t.Fatalf("awaitSummaryResult: %v", err)
+		}
+		if printed.Len() != 0 {
+			t.Fatalf("a phase without a window must not render, got %q", printed.String())
+		}
+		if q.loopProgress.Phase != "S" {
+			t.Fatalf("phase = %q, want the landed loop-phase summary", q.loopProgress.Phase)
+		}
+
+		q.ensureActivityViewport()
+		want := []string{"▸ loop 2/2 - S"}
+		if rows := q.activityViewport.Rows(); !slices.Equal(rows, want) {
+			t.Fatalf("first frame rows = %q, want %q", rows, want)
+		}
+	})
+
+	t.Run("iteration 1 shows the plan summary as progress", func(t *testing.T) {
+		var printed strings.Builder
+		q := rollingLoopQuerier(t, &printed)
+		q.SetLoopProgress(LoopProgress{Iteration: 1, MaxIterations: 2})
+
+		if err := q.awaitSummaryResult(summaryResult{summary: fakeSummary()}); err != nil {
+			t.Fatalf("awaitSummaryResult: %v", err)
+		}
+		if q.loopProgress.Phase != "S" {
+			t.Fatalf("phase = %q, want the plan summary", q.loopProgress.Phase)
+		}
+		q.ensureActivityViewport()
+		want := []string{"▸ loop 1/2 - S"}
+		if rows := q.activityViewport.Rows(); !slices.Equal(rows, want) {
+			t.Fatalf("first frame rows = %q, want %q", rows, want)
+		}
+	})
+
+	t.Run("a failed summary reveals the fallback phase", func(t *testing.T) {
+		var printed strings.Builder
+		q := rollingLoopQuerier(t, &printed)
+		q.summarizer = instantSummarizer()
+		q.summarizeConversations = true
+		q.shouldSaveReply = true
+		q.SetLoopProgress(LoopProgress{Iteration: 2, MaxIterations: 2, Phase: "prior phase"})
+		q.markLoopPhasePending()
+		q.ensureActivityViewport()
+		if err := q.activityViewport.RenderPinned(&printed); err != nil {
+			t.Fatalf("RenderPinned: %v", err)
+		}
+		if !q.loopProgress.PhasePending {
+			t.Fatal("a launched loop-phase summary must start pending")
+		}
+
+		if err := q.awaitSummaryResult(summaryResult{err: errors.New("boom")}); err != nil {
+			t.Fatalf("awaitSummaryResult: %v", err)
+		}
+		if q.loopProgress.PhasePending {
+			t.Fatal("a failed summary must not leave the header pending")
+		}
+		want := []string{"▸ loop 2/2 - prior phase"}
+		if rows := q.activityViewport.Rows(); !slices.Equal(rows, want) {
+			t.Fatalf("rows = %q, want the fallback phase revealed %q", rows, want)
+		}
+	})
+
+	t.Run("a rewritten header failure propagates", func(t *testing.T) {
+		var printed strings.Builder
+		q := rollingLoopQuerier(t, &printed)
+		q.SetLoopProgress(LoopProgress{Iteration: 2, MaxIterations: 2, Phase: "prior phase"})
+		q.ensureActivityViewport()
+		q.activityViewport.AppendReasoning("inspect the repository")
+		if err := q.activityViewport.Render(&printed); err != nil {
+			t.Fatalf("Render: %v", err)
+		}
+		q.out = failingWriter{}
+
+		err := q.awaitSummaryResult(summaryResult{summary: fakeSummary()})
+		if err == nil || !strings.Contains(err.Error(), "render loop phase") {
+			t.Fatalf("awaitSummaryResult error = %v, want the render failure", err)
+		}
+	})
+}
+
+// TestLaunchSummary_SelectsTheLoopKind pins the summarizer instruction set per
+// loop iteration: iteration 1 plans from the prompt, later iterations describe
+// the progression, and a plain query labels the conversation.
+func TestLaunchSummary_SelectsTheLoopKind(t *testing.T) {
+	cases := []struct {
+		name     string
+		progress *LoopProgress
+		want     models.SummaryKind
+	}{
+		{name: "plain query", want: models.SummaryKindConversation},
+		{name: "first loop iteration", progress: &LoopProgress{Iteration: 1, MaxIterations: 2}, want: models.SummaryKindLoopPlan},
+		{name: "later loop iteration", progress: &LoopProgress{Iteration: 2, MaxIterations: 2}, want: models.SummaryKindLoopPhase},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := instantSummarizer()
+			q := launchQuerier(t, fake, newChat(tc.name))
+			if tc.progress != nil {
+				q.SetLoopProgress(*tc.progress)
+			}
+			q.launchSummary(t.Context())
+			t.Cleanup(q.abandonSummary)
+			waitClosed(t, fake.done, "summarizer completion")
+			if got := fake.firstCall().Kind; got != tc.want {
+				t.Fatalf("SummaryRequest.Kind = %d, want %d", got, tc.want)
+			}
+		})
+	}
 }

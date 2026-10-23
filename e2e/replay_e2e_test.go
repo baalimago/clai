@@ -31,6 +31,7 @@ func writeReplayTheme(t *testing.T, confDir string, bell bool) {
 		"notificationBell": bell,
 		"tableItems":       10,
 		"toolOutputRows":   6,
+		"loopTitle":        themeRoleColor,
 	}
 	b, err := json.Marshal(theme)
 	if err != nil {

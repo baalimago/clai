@@ -47,7 +47,7 @@ func (s *CompletionSources) get() completionData {
 	return s.data
 }
 
-// TextFlagValues completes flag values for the text commands (query, loop, chat).
+// TextFlagValues completes flag values for the text commands (query, chat).
 func (s *CompletionSources) TextFlagValues(flagName, partial string) []cmd.CompletionItem {
 	switch flagName {
 	case "cm", "chat-model", "sm", "summary-model":

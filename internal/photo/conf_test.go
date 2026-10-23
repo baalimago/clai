@@ -24,3 +24,11 @@ func TestDefaultModelIsOpenAIDefault(t *testing.T) {
 		t.Fatalf("DEFAULT.Model = %q, want openai.DefaultImageModel %q", DEFAULT.Model, openai.DefaultImageModel)
 	}
 }
+
+// The default output dir is a user path, so it expands at load time instead of
+// capturing the home directory at package init (see internal.MediaFlags.Apply).
+func TestDefaultOutputDirExpandsAtLoad(t *testing.T) {
+	if DEFAULT.Output.Dir != "~/Pictures" {
+		t.Fatalf("DEFAULT.Output.Dir = %q, want ~/Pictures", DEFAULT.Output.Dir)
+	}
+}

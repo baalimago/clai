@@ -520,7 +520,7 @@ func Test_sessionRunner_Run_ProseStreamedBeforeFirstActivityMovesIntoWindow(t *t
 	}
 }
 
-func Test_sessionRunner_Run_FinalAnswerPrintsBelowRollingWindow(t *testing.T) {
+func Test_sessionRunner_Run_FinalAnswerReplacesRollingWindow(t *testing.T) {
 	t.Setenv("NO_COLOR", "true")
 	confDir := withEmptyClaiConfigDir(t)
 	if err := utils.LoadTheme(confDir); err != nil {
@@ -556,20 +556,26 @@ func Test_sessionRunner_Run_FinalAnswerPrintsBelowRollingWindow(t *testing.T) {
 		t.Fatalf("Run returned err: %v", err)
 	}
 	raw := printed.String()
-	// The answer block is the trailing two rows of the window. The pop is a
-	// pure shrink: the unchanged window above stays on screen and the pop
-	// clears only the removed rows, immediately followed by the answer print
-	// (one terminal transition, Option A).
-	popSeq := "\x1b[2A\r\x1b[J"
-	popAt := strings.LastIndex(raw, popSeq)
-	if popAt == -1 {
-		t.Fatalf("expected the pop to clear the two answer rows, got:\n%q", raw)
+	const finalAnswer = "assistant: The answer is done.\n"
+	answerAt := strings.LastIndex(raw, finalAnswer)
+	if answerAt == -1 {
+		t.Fatalf("expected the final answer, got:\n%q", raw)
 	}
-	if windowAt := strings.Index(stripANSIEscapes(raw[:popAt]), "∴ thinking"); windowAt == -1 {
-		t.Fatalf("expected the window to stay on screen above the final answer, got:\n%s", stripANSIEscapes(raw[:popAt]))
+	// The whole window is cleared back to its first row before the answer
+	// prints. ClearTermTo ends every clear run with a line clear, so the
+	// answer must directly follow one.
+	before := raw[:answerAt]
+	if !strings.HasSuffix(before, "\r\x1b[K") {
+		t.Fatalf("expected a window clear immediately before the answer, got:\n%q", before)
 	}
-	if got := stripANSIEscapes(raw[popAt+len(popSeq):]); got != "assistant: The answer is done.\n" {
-		t.Fatalf("expected only the final answer right after the pop redraw, got %q", got)
+	if strippedBefore := stripANSIEscapes(before); !strings.Contains(strippedBefore, "∴ thinking") || !strings.Contains(strippedBefore, "▸ missing_tool") {
+		t.Fatalf("expected the window to be on screen before the clear, got:\n%s", strippedBefore)
+	}
+	if strippedAfter := stripANSIEscapes(raw[answerAt:]); strippedAfter != finalAnswer {
+		t.Fatalf("expected only the final answer after the window clear, got %q", strippedAfter)
+	}
+	if got := strings.Count(stripANSIEscapes(raw), finalAnswer); got != 1 {
+		t.Fatalf("expected the final answer exactly once, got %d in:\n%s", got, stripANSIEscapes(raw))
 	}
 	if session.FinalAssistantText != "The answer is done." {
 		t.Fatalf("expected final assistant text, got %q", session.FinalAssistantText)
@@ -577,10 +583,10 @@ func Test_sessionRunner_Run_FinalAnswerPrintsBelowRollingWindow(t *testing.T) {
 }
 
 func Test_sessionRunner_Run_FinalAnswerStaysInWindowUntilFinalizer(t *testing.T) {
-	// The atomic pop (Option A) removes the answer block from the viewport
-	// state at stream end but defers the redraw to postProcessOutput, which
-	// runs right before the answer prints below. A finalizer that never prints
-	// therefore leaves the answer inside the window in the raw output.
+	// The pop removes the answer block from the viewport state at stream end
+	// but defers the redraw to postProcessOutput, which replaces the whole
+	// window with the answer. A finalizer that never redraws therefore leaves
+	// the answer inside the window in the raw output.
 	t.Setenv("NO_COLOR", "true")
 	confDir := withEmptyClaiConfigDir(t)
 	if err := utils.LoadTheme(confDir); err != nil {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -65,7 +66,9 @@ func TestApplyFlagOverrides(t *testing.T) {
 		t.Fatalf("Parse: %v", err)
 	}
 
-	ApplyFlagOverrides(&conf, &f)
+	if err := ApplyFlagOverrides(&conf, &f); err != nil {
+		t.Fatalf("ApplyFlagOverrides: %v", err)
+	}
 
 	if conf.Model != "from-flag" || conf.Output.Dir != "/flag" || conf.Output.Prefix != "flag-" {
 		t.Errorf("expected flag overrides, got: %+v", conf)
@@ -75,5 +78,27 @@ func TestApplyFlagOverrides(t *testing.T) {
 	}
 	if conf.Output.Type != "local" {
 		t.Errorf("expected untouched file fields to survive, got: %+v", conf)
+	}
+}
+
+// TestApplyFlagOverridesExpandsOutputDir proves the flag cascade resolves the
+// output dir as a user path, so -pd '~/Pictures' is the home directory even
+// when the shell did not expand it.
+func TestApplyFlagOverridesExpandsOutputDir(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	conf := Configurations{Output: Output{Dir: "/file", Type: LOCAL}}
+	fs := flag.NewFlagSet("photo", flag.ContinueOnError)
+	f := NewFlags()
+	f.Register(fs)
+	if err := fs.Parse([]string{"-pd", "~/Pictures"}); err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	if err := ApplyFlagOverrides(&conf, &f); err != nil {
+		t.Fatalf("ApplyFlagOverrides: %v", err)
+	}
+	if want := filepath.Join(home, "Pictures"); conf.Output.Dir != want {
+		t.Fatalf("output dir = %q, want %q", conf.Output.Dir, want)
 	}
 }

@@ -402,7 +402,13 @@ type ActivityViewport struct {
 	maxRows int
 	// height is the effective height: min(configured cap, terminal height).
 	height int
-	blocks []*activityBlock
+	// header is the pinned block above every activity row. Each line is
+	// sanitized to one logical line and wrapped at the window width. The
+	// header is never evicted, trimmed by the height bound, or scrolled out
+	// of the window (worklog 2026-10-21-clai-loop, loop progress).
+	header     []HeaderLine
+	headerRows []activityRow
+	blocks     []*activityBlock
 	// activeReasoning and activeText are the open coalescing blocks. They are
 	// always the last blocks in the history and are never evicted.
 	activeReasoning *activityBlock
@@ -427,6 +433,24 @@ const maxActivityBlocks = 16
 // (mirroring the display policy), so a later rewrap still has the content the
 // policy would show.
 const maxActivityBlockRunes = 64 * 1024
+
+// maxActivityHeaderRows bounds the pinned header block. A long header line
+// wraps over several rows. The bound leaves at least one row for activity
+// whenever the window is taller than one row.
+const maxActivityHeaderRows = 4
+
+// HeaderLine is one logical line of the pinned header, built from coloured
+// spans. The spans are sanitized to one logical line and wrapped together at
+// the window width, so a wrapped row keeps the colour of each of its parts.
+type HeaderLine struct {
+	Spans []HeaderSpan
+}
+
+// HeaderSpan is one coloured run of a header line.
+type HeaderSpan struct {
+	Text  string
+	Color string
+}
 
 // contentTruncationMarker separates the retained head and tail of an
 // over-budget block.
@@ -457,25 +481,158 @@ type activityBlock struct {
 	rows         []activityRow
 }
 
+// activityRow is one physical row of the viewport. A row with one colour keeps
+// it in color; a row that carries several coloured runs keeps them in spans and
+// leaves color empty.
 type activityRow struct {
 	content string
 	color   string
+	spans   []activitySpan
+}
+
+// activitySpan is one coloured run of a row.
+type activitySpan struct {
+	text  string
+	color string
+}
+
+// coloredSpans returns the coloured runs of the row. A single-colour row is one
+// run.
+func (r activityRow) coloredSpans() []activitySpan {
+	if len(r.spans) == 0 {
+		return []activitySpan{{text: r.content, color: r.color}}
+	}
+	return r.spans
+}
+
+// render applies the row's colours.
+func (r activityRow) render() string {
+	if len(r.spans) == 0 {
+		return table.Colorize(r.color, r.content)
+	}
+	var b strings.Builder
+	for _, span := range r.spans {
+		b.WriteString(table.Colorize(span.color, span.text))
+	}
+	return b.String()
+}
+
+// appendSpan appends text to spans, merging it into the last run when the
+// colour matches.
+func appendSpan(spans []activitySpan, text, color string) []activitySpan {
+	if text == "" {
+		return spans
+	}
+	if n := len(spans); n > 0 && spans[n-1].color == color {
+		spans[n-1].text += text
+		return spans
+	}
+	return append(spans, activitySpan{text: text, color: color})
+}
+
+// rowFromSpans builds a row from coloured runs, collapsing a single run to the
+// plain content-and-colour form.
+func rowFromSpans(spans []activitySpan) activityRow {
+	var merged []activitySpan
+	for _, span := range spans {
+		merged = appendSpan(merged, span.text, span.color)
+	}
+	if len(merged) == 1 {
+		return activityRow{content: merged[0].text, color: merged[0].color}
+	}
+	var content strings.Builder
+	for _, span := range merged {
+		content.WriteString(span.text)
+	}
+	return activityRow{content: content.String(), spans: merged}
 }
 
 // NewActivityViewport creates a viewport for all transient model activity.
 // maxRows is the configured rolling-window cap; terminalHeight is the raw
 // terminal height at creation. The effective height is
-// min(maxRows, max(terminalHeight, 1)) from the start, so the viewport never
-// renders taller than the terminal it writes to (R5-01). Resize takes raw
-// terminal dimensions and keeps the same min(cap, terminal height) bound on
-// later dimension changes.
+// min(maxRows, max(terminalHeight-1, 1)) from the start, so the viewport never
+// fills the terminal: a frame that ends on the last row scrolls the screen by
+// the trailing newline, which strands the frame's first row in the scrollback
+// and desyncs the clear. Resize takes raw terminal dimensions and keeps the
+// same bound on later dimension changes.
 func NewActivityViewport(width, maxRows, terminalHeight int) *ActivityViewport {
 	capRows := max(maxRows, 1)
 	return &ActivityViewport{
 		width:   max(width, 1),
 		maxRows: capRows,
-		height:  min(capRows, max(terminalHeight, 1)),
+		height:  min(capRows, terminalFrameHeight(terminalHeight)),
 	}
+}
+
+// terminalFrameHeight returns the tallest frame a terminal of height rows can
+// hold without the frame's trailing newline scrolling the screen.
+func terminalFrameHeight(terminalHeight int) int {
+	return max(terminalHeight-1, 1)
+}
+
+// SetHeader replaces the pinned header block. Every span is sanitized to one
+// logical line and the line is wrapped at the window width. The block is capped
+// at maxActivityHeaderRows and marked with an ellipsis when clipped. An empty
+// slice removes the header.
+func (v *ActivityViewport) SetHeader(lines []HeaderLine) {
+	if v == nil {
+		return
+	}
+	v.header = v.header[:0]
+	for _, line := range lines {
+		spans := sanitizeHeaderSpans(line.Spans)
+		if len(spans) == 0 {
+			continue
+		}
+		v.header = append(v.header, HeaderLine{Spans: spans})
+	}
+	v.rewrap()
+}
+
+// sanitizeHeaderSpans sanitizes a line's spans to one logical line, trims the
+// line edges, and merges runs that share a colour.
+func sanitizeHeaderSpans(spans []HeaderSpan) []HeaderSpan {
+	var runes []rune
+	var colors []string
+	for _, span := range spans {
+		for _, r := range SanitizeTerminalText(span.Text) {
+			if r == '\n' {
+				r = ' '
+			}
+			runes = append(runes, r)
+			colors = append(colors, span.Color)
+		}
+	}
+	start, end := 0, len(runes)
+	for start < end && unicode.IsSpace(runes[start]) {
+		start++
+	}
+	for end > start && unicode.IsSpace(runes[end-1]) {
+		end--
+	}
+	var sanitized []HeaderSpan
+	for i := start; i < end; {
+		j := i + 1
+		for j < end && colors[j] == colors[i] {
+			j++
+		}
+		sanitized = append(sanitized, HeaderSpan{Text: string(runes[i:j]), Color: colors[i]})
+		i = j
+	}
+	return sanitized
+}
+
+// CollapseToHeader removes every retained activity block, leaving only the
+// pinned header block. The next Render clears the block rows in place, so the
+// header stays as the record of the finished activity.
+func (v *ActivityViewport) CollapseToHeader() {
+	if v == nil {
+		return
+	}
+	v.blocks = nil
+	v.activeReasoning = nil
+	v.activeText = nil
+	v.rewrap()
 }
 
 // AppendReasoning adds a reasoning block. The warm colour applies only to its
@@ -540,7 +697,7 @@ func (v *ActivityViewport) RemoveTextBlock() int {
 	if v == nil || v.activeText == nil {
 		return 0
 	}
-	removed := min(len(v.rows), len(v.activeText.rows))
+	removed := min(max(len(v.rows)-len(v.headerRows), 0), len(v.activeText.rows))
 	for i, block := range v.blocks {
 		if block == v.activeText {
 			v.blocks = append(v.blocks[:i], v.blocks[i+1:]...)
@@ -691,18 +848,101 @@ func boundContent(content string) string {
 	return string(runes[:head]) + contentTruncationMarker + string(runes[len(runes)-tail:])
 }
 
-// rewrap rebuilds the visible row cache from the retained blocks. Only the
-// trailing effective-height rows are kept; earlier history stays in the blocks
-// for a later height-grow reappearance.
+// rewrap rebuilds the visible row cache from the retained blocks. The pinned
+// header block always survives; only the body is trimmed to the effective
+// height. Earlier body history stays in the blocks for a later height-grow
+// reappearance.
 func (v *ActivityViewport) rewrap() {
+	v.headerRows = v.wrapHeader()
 	rows := make([]activityRow, 0, v.height)
+	rows = append(rows, v.headerRows...)
+	bodyHeight := max(v.height-len(v.headerRows), 0)
+	body := make([]activityRow, 0, bodyHeight)
 	for _, block := range v.blocks {
-		rows = append(rows, block.rows...)
+		body = append(body, block.rows...)
 	}
-	if len(rows) > v.height {
-		rows = rows[len(rows)-v.height:]
+	if len(body) > bodyHeight {
+		body = body[len(body)-bodyHeight:]
 	}
-	v.rows = rows
+	v.rows = append(rows, body...)
+}
+
+// wrapHeader wraps every header line at the current width and caps the block.
+// The cap reserves one row for activity when the window is taller than one
+// row. A clipped block ends with an ellipsis so the cut is visible.
+func (v *ActivityViewport) wrapHeader() []activityRow {
+	budget := min(maxActivityHeaderRows, max(v.height-1, 1))
+	rows := make([]activityRow, 0, budget)
+	for _, line := range v.header {
+		rows = append(rows, v.wrapHeaderLine(line)...)
+	}
+	if len(rows) > budget {
+		rows = rows[:budget]
+		rows[budget-1] = clipActivityRow(rows[budget-1], v.width, "…")
+	}
+	return rows
+}
+
+// wrapHeaderLine wraps one header line at the window width, keeping the colour
+// of every span across the wrap. The spans of one line share the wrap, so a row
+// can carry the end of one span and the start of the next.
+func (v *ActivityViewport) wrapHeaderLine(line HeaderLine) []activityRow {
+	var rows []activityRow
+	var row []activitySpan
+	rowWidth := 0
+	flush := func() {
+		if len(row) == 0 {
+			return
+		}
+		rows = append(rows, rowFromSpans(row))
+		row = nil
+		rowWidth = 0
+	}
+	for _, span := range line.Spans {
+		for _, r := range span.Text {
+			cellWidth := terminalRuneWidth(r)
+			if cellWidth > v.width {
+				r = '…'
+				cellWidth = 1
+			}
+			if rowWidth > 0 && rowWidth+cellWidth > v.width {
+				flush()
+			}
+			row = appendSpan(row, string(r), span.Color)
+			rowWidth += cellWidth
+		}
+	}
+	flush()
+	return rows
+}
+
+// clipActivityRow truncates row to the width, ending it with marker. Every
+// surviving span keeps its colour; the marker takes the colour of the run it
+// cuts.
+func clipActivityRow(row activityRow, width int, marker string) activityRow {
+	var clipped []activitySpan
+	used := 0
+	markerColor := row.color
+	cut := false
+	for _, span := range row.coloredSpans() {
+		var kept strings.Builder
+		for _, r := range span.text {
+			cellWidth := terminalRuneWidth(r)
+			if used+cellWidth+terminalStringWidth(marker) > width {
+				cut = true
+				break
+			}
+			kept.WriteRune(r)
+			used += cellWidth
+		}
+		markerColor = span.color
+		clipped = appendSpan(clipped, kept.String(), span.color)
+		if cut {
+			break
+		}
+	}
+	clipped = appendSpan(clipped, marker, markerColor)
+	return rowFromSpans(clipped)
 }
 
 // Content returns the sanitized content of the open reasoning block, or ""
@@ -739,7 +979,7 @@ func (v *ActivityViewport) Resize(width, terminalHeight int) {
 		return
 	}
 	width = max(width, 1)
-	height := min(v.maxRows, max(terminalHeight, 1))
+	height := min(v.maxRows, terminalFrameHeight(terminalHeight))
 	if width == v.width && height == v.height {
 		return
 	}
@@ -752,27 +992,112 @@ func (v *ActivityViewport) Resize(width, terminalHeight int) {
 	v.dirty = true
 }
 
-// Render redraws the viewport in its existing terminal region. A dirty
-// viewport (after Resize or a partial write) emits one complete atomic frame:
-// move up the previously drawn rows, clear down, and rewrite the full window.
-// The diff path is used only for normal streaming appends: pure appends print
-// below the previously drawn region without clearing, and a changed tail
-// clears from the first changed row down. The whole update lands in one write,
-// so the terminal never paints an intermediate blank frame. The cursor is left
-// below the viewport so subsequent tool activity or answer text follows it. A
-// partial or failed write leaves the viewport dirty; the next Render retries
-// the full frame.
+// Render redraws the viewport in its existing terminal region. A viewport
+// that holds only the pinned header block is not drawn: the header belongs to
+// live activity, and drawing it alone would leave a stray copy in scrollback
+// when unrelated output moves the cursor before the first body frame.
+// RenderPinned draws that frame explicitly. A dirty viewport (after
+// Resize or a partial write) emits one complete atomic frame: move up the
+// previously drawn rows, clear down, and rewrite the full window. The diff
+// path is used only for normal streaming appends: pure appends print below the
+// previously drawn region without clearing, and a changed tail clears from the
+// first changed row down. The whole update lands in one write, so the terminal
+// never paints an intermediate blank frame. The cursor is left below the
+// viewport so subsequent tool activity or answer text follows it. A partial or
+// failed write leaves the viewport dirty; the next Render retries the full
+// frame.
 func (v *ActivityViewport) Render(w io.Writer) error {
+	return v.render(w, false)
+}
+
+// RenderPinned draws the viewport even when only the pinned header block
+// remains. FinishLoopIteration uses it when an iteration ends without activity:
+// the header is then the iteration's progress record. MCP error elevation uses
+// it to restore the window below the elevated block.
+func (v *ActivityViewport) RenderPinned(w io.Writer) error {
+	return v.render(w, true)
+}
+
+// PrintAbove writes line into the scrollback above the drawn window: the frame
+// is erased, the line printed where the frame started, and the frame redrawn
+// below it. A viewport that has drawn nothing prints the line at the cursor.
+// The frame's cursor bookkeeping survives, so the next clear still lands on the
+// frame's first row. A direct write to the terminal would move the cursor
+// behind that bookkeeping and strand a row on the next clear.
+func (v *ActivityViewport) PrintAbove(w io.Writer, line string) error {
 	if v == nil {
+		return nil
+	}
+	text := SanitizeTerminalRow(line)
+	if text == "" {
 		return nil
 	}
 	if w == nil {
 		w = os.Stdout
 	}
+	var buf bytes.Buffer
+	drawn := v.drawnRows > 0
+	if drawn {
+		fmt.Fprintf(&buf, "\x1b[%dA\r\x1b[J", v.drawnRows)
+	}
+	fmt.Fprintln(&buf, truncateTerminalRow(text, v.width))
+	var rendered []string
+	if drawn {
+		rendered = v.renderedRows()
+		for _, row := range rendered {
+			fmt.Fprintln(&buf, row)
+		}
+	}
+	if err := writeFrame(w, buf.Bytes()); err != nil {
+		v.dirty = true
+		return fmt.Errorf("print above activity viewport: %w", err)
+	}
+	if drawn {
+		v.markDrawn(rendered)
+	}
+	return nil
+}
+
+// renderedRows returns the frame's rows with their colours applied.
+func (v *ActivityViewport) renderedRows() []string {
 	rendered := make([]string, 0, len(v.rows))
 	for _, row := range v.rows {
-		rendered = append(rendered, table.Colorize(row.color, row.content))
+		rendered = append(rendered, row.render())
 	}
+	return rendered
+}
+
+// markDrawn records frame as the region now on screen.
+func (v *ActivityViewport) markDrawn(rendered []string) {
+	v.drawnRows = len(rendered)
+	v.lastRendered = rendered
+	v.dirty = false
+}
+
+// writeFrame writes one frame in a single call and reports a short write as an
+// error, so the caller can retry with a complete frame.
+func writeFrame(w io.Writer, frame []byte) error {
+	n, err := w.Write(frame)
+	if err != nil {
+		return err
+	}
+	if n != len(frame) {
+		return fmt.Errorf("short write (%d of %d bytes)", n, len(frame))
+	}
+	return nil
+}
+
+func (v *ActivityViewport) render(w io.Writer, drawHeaderOnly bool) error {
+	if v == nil {
+		return nil
+	}
+	if !drawHeaderOnly && v.drawnRows == 0 && len(v.rows) == len(v.headerRows) {
+		return nil
+	}
+	if w == nil {
+		w = os.Stdout
+	}
+	rendered := v.renderedRows()
 	var buf bytes.Buffer
 	if v.dirty {
 		if v.drawnRows > 0 {
@@ -807,24 +1132,15 @@ func (v *ActivityViewport) Render(w io.Writer) error {
 		if v.dirty {
 			// The empty frame is complete: nothing was drawn before, nothing
 			// needs clearing, and the viewport is clean again.
-			v.drawnRows = len(rendered)
-			v.lastRendered = rendered
-			v.dirty = false
+			v.markDrawn(rendered)
 		}
 		return nil
 	}
-	n, err := w.Write(buf.Bytes())
-	if err != nil {
+	if err := writeFrame(w, buf.Bytes()); err != nil {
 		v.dirty = true
 		return fmt.Errorf("write activity viewport: %w", err)
 	}
-	if n != buf.Len() {
-		v.dirty = true
-		return fmt.Errorf("write activity viewport: short write (%d of %d bytes)", n, buf.Len())
-	}
-	v.drawnRows = len(rendered)
-	v.lastRendered = rendered
-	v.dirty = false
+	v.markDrawn(rendered)
 	return nil
 }
 

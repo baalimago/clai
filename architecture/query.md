@@ -19,8 +19,9 @@ internal/cli:Run()
 
 | File | Purpose |
 |------|---------|
-| `internal/text/cmd.go` | query and loop command definitions; dispatch via `cmd.Run` (see [cmd-dispatch.md](./cmd-dispatch.md)) |
+| `internal/text/cmd.go` | query command definition and its `-l` loop-mode wiring; dispatch via `cmd.Run` (see [cmd-dispatch.md](./cmd-dispatch.md)) |
 | `internal/text/loop.go` | `LoopRunner` — per-iteration context isolation, handover chats, iteration bound |
+| `internal/text/loop_display.go` | loop progress title and the per-iteration rolling-window rule |
 | `internal/text/loop_tool.go` | `complete_task` tool: submission validation and the `-check` verification gate |
 | `internal/setup.go` | `setupTextQuerierWithConf()` builds the text querier |
 | `internal/flags.go` | flag primitives + shared groups (`TextFlags` feeds `text.SetupQuerier`) |
@@ -35,21 +36,29 @@ internal/cli:Run()
 | `internal/chat/reply.go` | `SaveAsPreviousQuery()` — persists result for `-re` replies |
 | `internal/chat/chat.go` | `HashIDFromPrompt()` — generates chat IDs |
 
-## Loop Command
+## Loop Mode
 
-Command: `clai [flags] loop <text>` (alias: `l`)
+Flag: `-l` / `-loop` on `query`
 
-`loop` runs the same config, prompt and summarizer composition as `query`
-and then hands the resulting querier to `text.LoopRunner`. One run owns
-multiple `ChatQuerier.TextQuery` iterations. Each iteration is a fresh chat
-session equipped with the `complete_task` tool; an iteration that ends without
-an accepted completion passes its final assistant reply to the next iteration
-as handover.
+`clai -l q <text>` runs the same config, prompt and summarizer composition
+as a plain query and then hands the resulting querier to `text.LoopRunner`.
+One run owns multiple `ChatQuerier.TextQuery` iterations. Each iteration is a
+fresh chat session equipped with the `complete_task` tool; an iteration that
+ends without an accepted completion passes its final assistant reply to the
+next iteration as handover.
+
+The flag may be written before or after the command, because the dispatcher
+forwards a flag to the level that defines it. Prepending `-l` therefore lifts
+an existing prompt or shell alias into a loop without changing anything else.
 
 | Flag | Purpose |
 | --- | --- |
-| `-mi` / `-max-iterations` | Iteration bound. Default 10; `0` means unlimited; a negative value is rejected before the first model call. |
-| `-check` | Shell command run through `sh -c` when `complete_task` reports `achieved`. A non-zero exit rejects the submission and the loop continues. |
+| `-l` / `-loop` | Enable loop mode for this query. |
+| `-mi` / `-max-iterations` | Iteration bound. Default 10; `0` means unlimited; a negative value is rejected before the first model call. Requires `-l`. |
+| `-check` | Shell command run through `sh -c` when `complete_task` reports `achieved`. A non-zero exit rejects the submission and the loop continues. Requires `-l`. |
+
+A loop-only flag without `-l` fails setup with a `requires -l` error, so a
+flag that would configure nothing cannot pass silently.
 
 The loop exits 0 only after `complete_task` reports `achieved`; when `-check`
 is set, the verification command must also exit 0. A `blocked` submission
@@ -62,8 +71,42 @@ inside one iteration cancels only that iteration's child context, never the
 outer loop.
 
 Flags are the shared `TextFlags` groups plus `LoopFlags`; loop settings live
-in no configuration file. See `internal/text/loop.go` and
-`internal/text/cmd.go`.
+in no configuration file. See `internal/flags.go`, `internal/text/loop.go`
+and `internal/text/cmd.go`.
+
+The rolling window pins a one-line progress header in loop mode:
+`▸ loop 2/10 - what remains`. The marker and the phase share the row but not
+the colour: the marker uses the `loopTitle` accent and the phase the muted
+activity colour. The goal is not shown: it is the same on every iteration and
+would repeat on every header. Iteration 1 has no handover, so its summary is
+the plan derived from the initial prompt (`SummaryKindLoopPlan`). Later
+iterations start with the previous handover's progression: the first and last
+non-empty handover lines, bounded to 120 runes. While the summarizer runs, the
+row names that work: `▸ loop 2/10 - summarizing…`. When the summary lands, the
+row is rewritten in place; the summary has 120 runes instead of the chat-list
+title's 60. The placeholder appears exactly when a summarizer launches for that
+iteration, decided once the iteration's chat is known: a resumed seed chat that
+already carries a summary launches none and shows no placeholder. Every
+iteration waits for its summary under the same bound the
+finalizer's join uses before it freezes the row, so a slow summarizer still
+reaches the header. A summary that fails or does not land leaves the fallback
+phase, or the bare iteration marker for iteration 1. The header wraps over at
+most four rows and marks a clip with an ellipsis.
+
+Each iteration keeps its header in the scrollback. At stream end the window
+collapses to its header, and the next iteration starts a fresh frame below
+it; rows never overwrite an earlier iteration's progress record. The
+collapsed header is in place before any other output: the settle runs before
+the finalizer's index and cost lines, and on the error and cancellation paths
+as well. A write that lands behind a drawn frame would move the cursor below
+the viewport's bookkeeping and strand rows at the next clear; a notice that
+must reach the user goes above the frame instead
+(`ActivityViewport.PrintAbove`). Intermediate iterations never print an
+answer: the header stays as the compact progress record. The iteration that
+achieves the goal prints its answer below the header; `blocked` and exhausted
+runs leave the header and report through the error instead. Raw, structured,
+debug and redirected output keep the per-iteration prints they had before, and
+show no header. See `internal/text/loop_display.go`.
 
 ## Configuration Cascade
 
@@ -111,11 +154,12 @@ where a nil reader means a terminal. Stdin that is wholly an image is attached i
 | Flag | Purpose |
 | --- | --- |
 | `-img` / `-image <path\|glob>` | Attach images; repeatable, in order. |
-| `-open` | Open each generated image; same as `textConfig.json` `auto-open-images`. |
+| `-open` | Open each generated image; same as `photoConfig.json` `auto-open-images`. |
 | `-pm` / `-photo-model <model>` | The model behind `generate_image` for this run; overrides `photoConfig.json` `model` and the chat vendor's default. |
 
-`-pm` belongs to the agent group's media-tool flags beside `-am`/`-af`, so `query` and `loop`
-parse it. `-t generate_image` is a known selection: it never warns or disables tools, and the
+`-pm` belongs to the agent group's media-tool flags beside `-am`/`-af`, so `query`
+parses it in both plain and loop mode. `-t generate_image` is a known selection: it
+never warns or disables tools, and the
 turn registers the tool itself. `-t '*'` selects `view_image` and `generate_image` with every
 other tool. See [images.md](./images.md) for the whole image path.
 
@@ -188,7 +232,8 @@ loop (`internal/text/session_runner.go`). Each model step:
     `total_tokens`, else the model's `InputTokenCounter` estimate) is compared
     to `stoploss.max-tokens`. On the first crossing clai appends the handover
     user message (`stoploss.max-tokens-handover-instructions`, default
-    `DefaultHandoverInstructions`), prints a notice, and marks the session
+    `DefaultHandoverInstructions`), prints a notice (outside loop mode, where
+    the crossing is expected operation), and marks the session
     handover-requested. The handover starts the wrap-up phase: post-handover
     tool calls are counted against `stoploss.max-tool-calls-after-handover`
     (absent or 0 = unlimited, the default) with a fresh counter, so the agent
@@ -225,9 +270,10 @@ children: the asset store, the `imagenorm.Normalizer`, the `present.Presenter`, 
 runner uses a default for the config dir: the disk store under `conversations/assets/`,
 a presenter on the querier's output that never opens a viewer, and no generation.
 
-The `query` and `loop` commands build their own (`internal/text/query_images.go`, set through
-`Querier.setImageTurn`): the presenter opens images when `-open` or `auto-open-images` is set,
-with `present.NewCommandOpener(image-opener)`; generation is requested when an entry of `-t`,
+The `query` command builds its own (`internal/text/query_images.go`, set through
+`Querier.setImageTurn`): the presenter opens images when `-open` or `photoConfig.json`'s
+`auto-open-images` is set, with `present.NewCommandOpener(photoConfig.json image-opener)`;
+generation is requested when an entry of `-t`,
 or of the profile's tools, matches `generate_image` as any tool pattern does, with the model
 from `-pm`, else `route.ImageModelFor(chat vendor, photoConfig.json model)`; and the generator
 constructor is `cli.Deps.NewImageGenerator`

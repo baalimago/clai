@@ -1,12 +1,15 @@
 package internal
 
 import (
+	"errors"
 	"flag"
+	"fmt"
 	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/baalimago/clai/internal/quantity"
+	"github.com/baalimago/clai/internal/utils"
 )
 
 // StringFlag, BoolFlag and IntFlag are alias-aware flag values: one value
@@ -238,7 +241,9 @@ type MediaConfig struct {
 // Apply writes the flag values onto the configuration, keeping the
 // flags > file > default precedence: -i seeds the placeholder, an explicit
 // -I/-replace overrules it, and a flag equal to its default counts as unset.
-func (f *MediaFlags) Apply(c MediaConfig) {
+// The output dir is then a user path: a leading ~ and $VAR expand wherever
+// the value came from (see utils.ExpandUserPath).
+func (f *MediaFlags) Apply(c MediaConfig) error {
 	if f.ReplyStdin.ExpectReplace.Value() {
 		*c.StdinReplace = f.ReplyStdin.StdinReplace.Value()
 	}
@@ -257,14 +262,20 @@ func (f *MediaFlags) Apply(c MediaConfig) {
 	if f.Dir.Changed() {
 		*c.OutputDir = f.Dir.Value()
 	}
+	expanded, err := utils.ExpandUserPath(*c.OutputDir)
+	if err != nil {
+		return fmt.Errorf("output dir %q: %w", *c.OutputDir, err)
+	}
+	*c.OutputDir = expanded
+	return nil
 }
 
 // MediaToolFlags configures the media tools an agent run may call. The
 // media commands own the same flag names one level down for their own
-// runs; here they configure the tools, so a normal query, loop or chat can
-// pick the model its transcriptions use, and the model behind generate_image.
-// Video joins when a tool for it exists — a flag that silently does nothing is
-// worse than no flag.
+// runs; here they configure the tools, so a normal query (plain or loop mode)
+// or chat can pick the model its transcriptions use, and the model behind
+// generate_image. Video joins when a tool for it exists — a flag that silently
+// does nothing is worse than no flag.
 type MediaToolFlags struct {
 	AudioModel  StringFlag
 	AudioFormat StringFlag
@@ -278,8 +289,8 @@ func (g *MediaToolFlags) Register(fs *flag.FlagSet) {
 }
 
 // AgentTextFlags is the model/agent group shared by every text-querier
-// command (query, loop, chat and chat continue): model selection, tool and
-// limit configuration, profiles.
+// command (query, chat and chat continue): model selection, tool and limit
+// configuration, profiles.
 type AgentTextFlags struct {
 	ChatModel                 StringFlag
 	UseTools                  StringFlag
@@ -367,7 +378,7 @@ type QueryTextFlags struct {
 
 func (g *QueryTextFlags) Register(fs *flag.FlagSet) {
 	g.Images.Register(fs, "Attach an image to the prompt: a path or a glob, '~' allowed. Repeatable.", "img", "image")
-	g.OpenImages.Register(fs, "Open each generated image with the image-opener of textConfig.json. Same as its auto-open-images.", "open")
+	g.OpenImages.Register(fs, "Open each generated image with the image-opener of photoConfig.json. Same as its auto-open-images.", "open")
 	g.DirReply.Register(fs, "Set to true to reply to the previous directory-scoped conversation (bound to the current working directory).", "dre", "dir-reply")
 	g.UseSkills.Register(fs, "Enable skills. Use '*' to enable or 'none' to disable for the current run.", "s", "skills")
 	g.ResponseFormat.Register(fs, "Block streaming and print only the final structured response. Value is the path to a JSON response_format file.", "rf", "response-format")
@@ -376,8 +387,11 @@ func (g *QueryTextFlags) Register(fs *flag.FlagSet) {
 	g.SummaryModel.Register(fs, "Set the model the conversation summarizer uses. Overrides summary-model in textConfig.json.", "sm", "summary-model")
 }
 
-// LoopFlags is the loop command's iteration and verification surface.
+// LoopFlags is the loop-mode surface query carries: -l elevates the query
+// into the autonomous iteration loop, and the remaining flags bound and
+// verify that loop.
 type LoopFlags struct {
+	Loop          BoolFlag
 	MaxIterations IntFlag
 	Check         StringFlag
 }
@@ -388,14 +402,32 @@ func NewLoopFlags() LoopFlags {
 }
 
 func (g *LoopFlags) Register(fs *flag.FlagSet) {
-	g.MaxIterations.Register(fs, "Set the maximum number of loop iterations. 0 = unlimited.", "mi", "max-iterations")
-	g.Check.Register(fs, "Set a shell command that must exit 0 before an achieved complete_task call is accepted.", "check")
+	g.Loop.Register(fs, "Iterate toward the goal until complete_task reports achieved or blocked, or -max-iterations is reached.", "l", "loop")
+	g.MaxIterations.Register(fs, "Set the maximum number of loop iterations. 0 = unlimited. Requires -l.", "mi", "max-iterations")
+	g.Check.Register(fs, "Set a shell command that must exit 0 before an achieved complete_task call is accepted. Requires -l.", "check")
+}
+
+// ErrLoopFlagWithoutMode reports a loop-only flag set without -l; the flag
+// would configure no loop.
+var ErrLoopFlagWithoutMode = errors.New("requires -l (loop mode)")
+
+// Validate reports the loop-only flag that was set without -l.
+func (g *LoopFlags) Validate() error {
+	if g.Loop.Value() {
+		return nil
+	}
+	if g.MaxIterations.Explicit() {
+		return fmt.Errorf("-max-iterations %w", ErrLoopFlagWithoutMode)
+	}
+	if g.Check.Explicit() {
+		return fmt.Errorf("-check %w", ErrLoopFlagWithoutMode)
+	}
+	return nil
 }
 
 // TextFlags composes the four text-path groups: the parameter type for
-// text.SetupQuerier. Query and loop register all four; chat registers Raw
-// and AgentText, leaving the others zero-valued (behavior-identical to
-// unset).
+// text.SetupQuerier. Query registers all four; chat registers Raw and
+// AgentText, leaving the others zero-valued (behavior-identical to unset).
 type TextFlags struct {
 	Raw        RawFlag
 	ReplyStdin ReplyStdinFlags

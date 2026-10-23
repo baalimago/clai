@@ -36,16 +36,22 @@ See: [`query.md`](./architecture/query.md), [`chat.md`](./architecture/chat.md),
 
 ## Loop until the goal is verified
 
+Add `-l` / `-loop` to any query to iterate toward a goal. The dispatcher
+forwards a flag to the command that defines it, so the flag may stand before
+or after `q`; no other command accepts it.
+
 ```bash
-clai loop -check 'go test ./...' fix the failing build
-clai l -mi 3 -check ./verify.sh make the linter clean
+clai -l q 'refactor the auth package and make the tests pass'
+clai -check 'go test ./...' -l q fix the failing build
+clai q -l -mi 3 -check ./verify.sh make the linter clean
 ```
 
 - Each iteration is a fresh session. The previous iteration's final reply becomes its handover.
 - The agent calls `complete_task` when it is done. With `-check`, an achieved call is accepted only when the command exits 0.
 - `-mi` / `-max-iterations` bounds the run (default 10, `0` = unlimited). A blocked task or an exhausted bound exits 1.
+- `-mi` and `-check` require `-l`; without it they fail instead of configuring nothing.
 
-See: [`query.md`](./architecture/query.md#loop-command).
+See: [`query.md`](./architecture/query.md#loop-mode).
 
 ## Blocking structured output
 

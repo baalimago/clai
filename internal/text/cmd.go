@@ -9,6 +9,7 @@ import (
 	"github.com/baalimago/clai/internal"
 	"github.com/baalimago/clai/internal/imagegen"
 	"github.com/baalimago/clai/internal/models"
+	"github.com/baalimago/clai/internal/photo"
 	"github.com/baalimago/clai/internal/tools"
 )
 
@@ -16,17 +17,25 @@ const queryHelp = `query <text>. Queries the chat model; piped stdin is appended
 prompt, or replaces the -I/-i placeholder. A prompt whose first word starts
 with '-' is read as a flag, so pass it after '--'.
 
+Add -l / -loop to iterate fresh sessions toward the goal until complete_task
+reports achieved or blocked, or -max-iterations is reached. An iteration that
+ends without an accepted completion hands its final reply to the next one.
+With -check, an achieved complete_task call is accepted only when that command
+exits 0.
+
 Examples:
   clai q explain the files in this directory
   clai -re q "and how do I fix that?"
   docker logs my-app | clai -I LOG q "find errors in these logs: LOG"
   clai -t '*' q inspect this repo using tools
-  clai q -- -why does this fail`
+  clai q -- -why does this fail
+  clai -l q refactor the auth package and make the tests pass
+  clai -l -check 'go test ./...' q fix the failing build`
 
-// QueryCommandDeps are the composition-root collaborators the query and loop
-// commands need: config prep lives in internal/setup (which imports text, so
-// text cannot call it), and TrustInput hands over the wizard's mutable input
-// reader for skill-trust prompts, read at setup time.
+// QueryCommandDeps are the composition-root collaborators the query command
+// needs in plain and loop mode: config prep lives in internal/setup (which
+// imports text, so text cannot call it), and TrustInput hands over the
+// wizard's mutable input reader for skill-trust prompts, read at setup time.
 type QueryCommandDeps struct {
 	ConfigPrep func() (confDir string, err error)
 	TrustInput func() io.Reader
@@ -40,21 +49,40 @@ type QueryCommandDeps struct {
 	// NewImageGenerator builds the generator behind generate_image; nil fails a
 	// run that registers the tool with ErrNoImageGenerator.
 	NewImageGenerator imagegen.NewGeneratorFunc
-	// PhotoModel returns photoConfig.json's model, which route.ImageModelFor and -pm
-	// may override; it is read only when generate_image is selected.
-	PhotoModel func(confDir string) (string, error)
+	// PhotoConfig returns photoConfig.json, the single source of the image
+	// presenter's auto-open-images and image-opener and of the model that
+	// route.ImageModelFor and -pm may override.
+	PhotoConfig func(confDir string) (photo.Configurations, error)
 }
 
-// QueryCommand builds the query command.
+// QueryCommand builds the query command. With -l the same composition wraps
+// its querier in a LoopRunner, so every existing prompt or alias becomes a
+// loop by prepending the flag.
 func QueryCommand(deps QueryCommandDeps) *internal.Command {
 	tf := internal.NewTextFlags()
-	c := newTextCommand("query", "Query the chat model with the given text", queryHelp, &tf, nil)
+	lf := internal.NewLoopFlags()
+	c := newTextCommand("query", "Query the chat model with the given text; -l iterates toward a goal", queryHelp, &tf, lf.Register)
 	c.OnSetup = func(ctx context.Context, c *internal.Command) error {
-		q, _, err := setupTextQuerier(ctx, c, tf, deps)
+		if err := lf.Validate(); err != nil {
+			return err
+		}
+		q, tConf, err := setupTextQuerier(ctx, c, tf, deps)
 		if err != nil {
 			return err
 		}
-		c.SetQuerier(q)
+		if !lf.Loop.Value() {
+			c.SetQuerier(q)
+			return nil
+		}
+		runner, err := newLoopRunner(q, NewCompletionRecorder(lf.Check.Value()), LoopConfig{
+			SeedChat:      tConf.InitialChat,
+			GoalPrompt:    tConf.PostProccessedPrompt,
+			MaxIterations: lf.MaxIterations.Value(),
+		})
+		if err != nil {
+			return err
+		}
+		c.SetQuerier(runner)
 		return nil
 	}
 	return c
@@ -88,7 +116,7 @@ func newTextCommand(name, desc, helpText string, tf *internal.TextFlags, registe
 }
 
 // setupTextQuerier runs the config, media, prompt and summarizer
-// composition shared by the query and loop commands.
+// composition query uses in plain and loop mode.
 func setupTextQuerier(ctx context.Context, c *internal.Command, tf internal.TextFlags, deps QueryCommandDeps) (models.Querier, *Configurations, error) {
 	confDir, err := deps.ConfigPrep()
 	if err != nil {
@@ -125,43 +153,6 @@ func setupTextQuerier(ctx context.Context, c *internal.Command, tf internal.Text
 		return nil, nil, err
 	}
 	return q, tConf, nil
-}
-
-const loopHelp = `loop <text>. Iterates fresh sessions toward the goal until complete_task
-reports achieved or blocked, or -max-iterations is reached. An iteration that
-ends without an accepted completion hands its final reply to the next one.
-
-When -check is set, an achieved complete_task call is accepted only when that
-command exits 0.
-
-Examples:
-  clai -r l refactor the auth package and make the tests pass
-  clai -cm gpt-5.2 l -check 'go test ./...' fix the failing build
-  clai l -mi 3 -check ./verify.sh make the linter clean`
-
-// LoopCommand builds the loop command: one text querier driven across fresh
-// iterations until the goal is achieved, blocked, or bounded out.
-func LoopCommand(deps QueryCommandDeps) *internal.Command {
-	tf := internal.NewTextFlags()
-	lf := internal.NewLoopFlags()
-	c := newTextCommand("loop", "Iterate the chat model toward a goal until complete_task succeeds", loopHelp, &tf, lf.Register)
-	c.OnSetup = func(ctx context.Context, c *internal.Command) error {
-		q, tConf, err := setupTextQuerier(ctx, c, tf, deps)
-		if err != nil {
-			return err
-		}
-		runner, err := newLoopRunner(q, NewCompletionRecorder(lf.Check.Value()), LoopConfig{
-			SeedChat:      tConf.InitialChat,
-			GoalPrompt:    tConf.PostProccessedPrompt,
-			MaxIterations: lf.MaxIterations.Value(),
-		})
-		if err != nil {
-			return err
-		}
-		c.SetQuerier(runner)
-		return nil
-	}
-	return c
 }
 
 // newLoopRunner adapts the text querier to a LoopQuerier. SetupQuerier returns
@@ -238,9 +229,6 @@ func ApplyFlagOverrides(tConf *Configurations, tf internal.TextFlags) {
 		tConf.SummaryModel = tf.QueryText.SummaryModel.Value()
 	}
 	tConf.ImageInputs = tf.QueryText.Images.Value()
-	if tf.QueryText.OpenImages.Value() {
-		tConf.AutoOpenImages = true
-	}
 	if tf.AgentText.MaxTokens.Explicit() {
 		if tConf.Stoploss == nil {
 			tConf.Stoploss = &Stoploss{}

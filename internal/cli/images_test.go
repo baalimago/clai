@@ -48,22 +48,9 @@ func TestDefaultDeps_buildsRealImageGenerators(t *testing.T) {
 	}
 }
 
-func TestPhotoModel_readsPhotoConfig(t *testing.T) {
-	confDir := t.TempDir()
-	writeJSON(t, filepath.Join(confDir, "photoConfig.json"), map[string]any{"model": "or:google/x-image"})
-	if got, err := photoModel(confDir); err != nil || got != "or:google/x-image" {
-		t.Fatalf("photoModel = %q, %v", got, err)
-	}
-	if err := os.WriteFile(filepath.Join(confDir, "photoConfig.json"), []byte("{"), 0o644); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-	if _, err := photoModel(confDir); err == nil {
-		t.Fatal("a broken photoConfig.json must fail")
-	}
-}
-
-// TestConfig_ImageKeysDefaults is query.9: configs written before this worklog
-// gain the new keys with their README defaults, and nothing else changes.
+// TestConfig_ImageKeysDefaults pins the owner of the image presenter keys: an
+// upgraded photoConfig gains them with their defaults, textConfig does not, and
+// nothing else changes.
 func TestConfig_ImageKeysDefaults(t *testing.T) {
 	confDir := t.TempDir()
 	isolateEnv(t)
@@ -94,9 +81,9 @@ func TestConfig_ImageKeysDefaults(t *testing.T) {
 	}
 
 	text := readJSONKeys(t, filepath.Join(confDir, "textConfig.json"))
-	for key, want := range map[string]any{"auto-open-images": false, "image-opener": ""} {
-		if got, ok := text[key]; !ok || got != want {
-			t.Fatalf("textConfig %q = %v (present %v), want %v", key, got, ok, want)
+	for _, key := range []string{"auto-open-images", "image-opener"} {
+		if _, ok := text[key]; ok {
+			t.Fatalf("textConfig gained %q; the image presenter keys live only in photoConfig.json", key)
 		}
 	}
 	if _, ok := text["image-generation"]; ok {

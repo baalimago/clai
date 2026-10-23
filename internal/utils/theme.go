@@ -35,6 +35,10 @@ type Theme struct {
 	ToolOutputRows int `json:"toolOutputRows"`
 
 	RollingOutput RollingOutputConfig `json:"rollingOutput"`
+
+	// LoopTitle is the accent colour of the iteration marker in the pinned
+	// loop header. It does not colour the phase summary.
+	LoopTitle string `json:"loopTitle"`
 }
 
 // RollingOutputConfig configures the shared rolling activity viewport that
@@ -68,6 +72,8 @@ func defaultTheme() *Theme {
 			Enabled:          true,
 			WindowCellHeight: 30,
 		},
+
+		LoopTitle: "\u001b[38;2;110;170;160m",
 	}
 }
 
@@ -167,6 +173,14 @@ func migrateThemeConfig(configDirPath string) error {
 func ThemeConfigPath(configDirPath string) string {
 	return filepath.Join(configDirPath, "theme.json")
 }
+
+// LoopTitleColor returns the accent colour of the loop iteration marker.
+func LoopTitleColor() string { return globalTheme.LoopTitle }
+
+// LoopPhaseColor returns the muted colour of the phase summary that follows the
+// loop iteration marker on the pinned header row. It shares the activity body
+// colour so the phase never competes with the marker.
+func LoopPhaseColor() string { return globalTheme.Primary }
 
 // RoleColor returns the theme color for a chat role.
 func RoleColor(role string) string {

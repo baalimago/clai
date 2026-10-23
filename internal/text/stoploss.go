@@ -21,6 +21,14 @@ type stoploss struct {
 	maxToolCalls              *int   // pre-handover tool-call budget; nil or <= 0 means no limit
 	maxToolCallsAfterHandover int    // post-handover wrap-up budget; <= 0 means unlimited
 	maxTokensHandoverMsg      string // effective handover message, resolved once at construction
+	// suppressHandoverNotice hides the human-facing notice. A loop iteration
+	// expects the crossing: the loop header reports progress, so the notice is
+	// redundant there. A plain query keeps it.
+	suppressHandoverNotice bool
+	// warn reports the handover notice. The querier injects a writer that keeps
+	// a drawn rolling frame intact; a controller built outside a querier prints
+	// through ancli.
+	warn func(format string, args ...any) error
 }
 
 // newStoploss builds the controller from the querier's configured policies.
@@ -28,7 +36,11 @@ type stoploss struct {
 // (configured message, else DefaultHandoverInstructions), so the controller
 // has exactly one message-resolution site (R9-03).
 func (q *Querier[C]) newStoploss() *stoploss {
-	ctrl := &stoploss{maxToolCalls: q.tooling.maxCalls}
+	ctrl := &stoploss{
+		maxToolCalls:           q.tooling.maxCalls,
+		warn:                   q.warnf,
+		suppressHandoverNotice: q.loopProgress != nil,
+	}
 	if q.stoploss != nil {
 		ctrl.maxTokens = q.stoploss.MaxTokens
 		ctrl.maxTokensHandoverMsg = q.stoploss.HandoverInstructions()
@@ -149,8 +161,9 @@ func (s *stoploss) preflightToolCall(session *QuerySession, call pub_models.Call
 // InputTokenCounter estimate of the current chat when the usage is
 // unavailable (nil or all-zero). On the first crossing of max-tokens it
 // appends the handover user message, sets session.HandoverRequested, and
-// prints a human-facing notice. Later crossings are no-ops. Returns whether
-// the handover message was injected.
+// prints a human-facing notice outside loop mode, where the crossing is
+// expected operation. Later crossings are no-ops. Returns whether the handover
+// message was injected.
 func (s *stoploss) CheckContextBudget(ctx context.Context, model models.StreamCompleter, session *QuerySession, usage *pub_models.Usage) (bool, error) {
 	if s.maxTokens <= 0 {
 		return false, nil
@@ -184,8 +197,22 @@ func (s *stoploss) CheckContextBudget(ctx context.Context, model models.StreamCo
 		Role:    "user",
 		Content: s.maxTokensHandoverMsg,
 	})
-	ancli.Warnf("stoploss: context usage ~%d tokens reached max-tokens (%d); injecting handover instructions", footprint, s.maxTokens)
+	if s.suppressHandoverNotice {
+		return true, nil
+	}
+	if err := s.warnf("stoploss: context usage ~%d tokens reached max-tokens (%d); injecting handover instructions", footprint, s.maxTokens); err != nil {
+		return true, err
+	}
 	return true, nil
+}
+
+// warnf reports the human-facing notice through the injected writer.
+func (s *stoploss) warnf(format string, args ...any) error {
+	if s.warn == nil {
+		ancli.Warnf(format, args...)
+		return nil
+	}
+	return s.warn(format, args...)
 }
 
 // usageFootprint returns the latest request footprint: prompt+completion

@@ -1,6 +1,7 @@
 package summary
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -66,6 +67,71 @@ func TestRenderTranscript_capsInput(t *testing.T) {
 	short := renderTranscript(pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "tiny"}}})
 	if strings.Contains(short, ellipsis) {
 		t.Fatalf("untruncated transcript must carry no marker: %q", short)
+	}
+}
+
+func TestRenderLoopPhaseTranscript_usesGoalAndHandover(t *testing.T) {
+	chat := pub_models.Chat{Messages: []pub_models.Message{
+		{Role: "system", Content: "SYSTEM"},
+		{Role: "user", Content: "ship the feature"},
+		{Role: "assistant", Content: "early answer"},
+		{Role: "user", Content: "Continue working toward the goal: ship the feature"},
+		{Role: "assistant", Content: "Added parsing and tests.\n\nRemaining: docs."},
+	}}
+	got := renderLoopPhaseTranscript(chat)
+	body := transcriptBody(t, got)
+	want := "goal: ship the feature\n\nprevious iteration handover: Added parsing and tests.\n\nRemaining: docs."
+	if body != want {
+		t.Fatalf("body = %q, want %q", body, want)
+	}
+	for _, forbidden := range []string{"SYSTEM", "early answer", "Continue working"} {
+		if strings.Contains(got, forbidden) {
+			t.Fatalf("loop-phase transcript must not contain %q:\n%s", forbidden, got)
+		}
+	}
+	if !strings.Contains(got, "previous iteration achieved") || !strings.Contains(got, strconv.Itoa(LoopPhaseSummaryMaxRunes)) {
+		t.Fatalf("instruction must describe progression and the loop-phase limit:\n%s", got)
+	}
+}
+
+func TestRenderLoopPhaseTranscript_capsGoalWithoutLosingHandover(t *testing.T) {
+	chat := pub_models.Chat{Messages: []pub_models.Message{
+		{Role: "user", Content: "goal " + strings.Repeat("g", loopGoalInputRunes*2)},
+		{Role: "assistant", Content: "achieved X"},
+	}}
+	got := renderLoopPhaseTranscript(chat)
+	if !strings.Contains(got, "previous iteration handover: achieved X") {
+		t.Fatalf("the handover must survive a long goal:\n%s", got)
+	}
+	if n := utf8.RuneCountInString(strings.SplitN(strings.SplitN(got, "goal: ", 2)[1], "\n\nprevious iteration handover", 2)[0]); n > loopGoalInputRunes {
+		t.Fatalf("goal rune count = %d, want at most %d", n, loopGoalInputRunes)
+	}
+}
+
+func TestRenderLoopPhaseTranscript_placeholders(t *testing.T) {
+	body := transcriptBody(t, renderLoopPhaseTranscript(pub_models.Chat{}))
+	if !strings.Contains(body, "goal: (not recorded)") || !strings.Contains(body, "handover: (no previous iteration)") {
+		t.Fatalf("empty chat body = %q, want both placeholders", body)
+	}
+}
+
+func TestRenderLoopPlanTranscript_usesGoalAndAsksForTheApproach(t *testing.T) {
+	chat := pub_models.Chat{Messages: []pub_models.Message{
+		{Role: "system", Content: "SYSTEM"},
+		{Role: "user", Content: "ship the feature"},
+	}}
+	got := renderLoopPlanTranscript(chat)
+	body := transcriptBody(t, got)
+	if want := "goal: ship the feature"; body != want {
+		t.Fatalf("body = %q, want %q", body, want)
+	}
+	for _, forbidden := range []string{"SYSTEM", "previous iteration"} {
+		if strings.Contains(got, forbidden) {
+			t.Fatalf("loop-plan transcript must not contain %q:\n%s", forbidden, got)
+		}
+	}
+	if !strings.Contains(got, "approach") || !strings.Contains(got, strconv.Itoa(LoopPhaseSummaryMaxRunes)) {
+		t.Fatalf("instruction must ask for the approach and name the loop-phase limit:\n%s", got)
 	}
 }
 

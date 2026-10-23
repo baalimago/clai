@@ -355,6 +355,54 @@ Gates on the reviewed tree:
 The strict alarm is the known host-load pattern recorded by the first two
 reviews; no test was skipped or edited.
 
+### Fourth review pass
+
+Reviewed on 2026-10-23 on the loop display tree (worker session
+`clai-loop-review-4`). The display layer added after the third pass
+(`internal/text/loop_display.go`, span-coloured headers, the summarizing
+placeholder) was audited against its call order.
+
+Findings and fixes:
+
+- D11 — The pending placeholder was decided in `SetLoopProgress`, which the
+  runner calls before `iterationChat` builds the iteration's chat. The decision
+  therefore read the previous iteration's chat: a resumed seed that already
+  carried a summary showed `summarizing…` although `shouldLaunchSummary` refuses
+  it, and iteration 2+ launched a summarizer without ever showing the
+  placeholder. `SetLoopProgress` now stores progress unchanged and the new
+  `markLoopPhasePending` copies `shouldLaunchSummary` on the iteration's own
+  chat; `Query` calls it before the first frame, next to `launchSummary`.
+  `TestQuerier_MarkLoopPhasePendingMatchesTheSummaryLaunch` pins the four
+  cases and `TestQuerier_QueryDecidesThePendingPhaseFromTheIterationChat` pins
+  the ordering through `TextQuery` for a fresh iteration and a resumed seed.
+- D12 — The bounded join was written twice: `awaitLoopPhaseBeforeSettle` and
+  `joinSummary` each resolved the bound and selected over result, timer and
+  interrupt. Both now use `waitForSummary`, which returns a typed `summaryWait`,
+  and `summaryJoinBound`. Each caller keeps its own result handling and trace
+  line.
+- D13 — Documentation drift: `architecture/colours.md` still called `loopTitle`
+  the colour of the whole progress row, while the code colours only the
+  iteration marker; `architecture/query.md` now states that the placeholder
+  appears exactly when a summarizer launches for that iteration.
+- D14 — Accepted, not changed: `w := q.out; if w == nil { w = os.Stdout }`
+  repeats eleven times across `internal/text`, and `dupl -t 80` reports no group
+  for it. A loop-only helper would make the package inconsistent, so the
+  pattern waits for one package-wide cleanup.
+
+Gates on the reviewed tree:
+
+| Gate                                                                     | Result                                                                    |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------- |
+| `go run mvdan.cc/gofumpt@latest -w -l .`                                 | passed                                                                    |
+| `go vet ./...`                                                           | passed                                                                    |
+| `go run honnef.co/go/tools/cmd/staticcheck@latest ./...`                 | passed                                                                    |
+| `go fix ./...`                                                           | passed; no working-tree change                                            |
+| `go run github.com/mibk/dupl@latest -t 80 .`                             | passed; no group touches `loop_display.go`, `summary_launch.go` or `loop.go` |
+| `go test ./... -race -count=3 -timeout=30s`                              | passed                                                                    |
+| `go test ./... -race -cover -count=3 -timeout=30s`                       | the 30 s package alarm hit `e2e` and `internal/audio`; no test logic failed |
+| `go test ./e2e/ ./internal/audio/ -race -cover -count=3 -timeout=120s`   | passed: e2e 23.4 s, audio 17.5 s / 88.8%                                   |
+| `go test ./internal/text/ ./internal/utils/ ./internal/summary/ -race -count=3 -timeout=30s` | passed: text 23.5 s, utils 2.0 s, summary 1.4 s |
+
 ## Session journal
 
 - 2026-10-21 · plan · README drafted
@@ -371,3 +419,4 @@ reviews; no test was skipped or edited.
 - 2026-10-21 · review · second holistic review · D3 profile persistence fix (seed stamp in `setupTextQuerier` plus `iterationChat` profile carry), D4 `-mi 0` test, D5 comment drift, D6 `examples.md`; scoped `-count=3` suite, gofumpt, vet, staticcheck, fix and dupl passed; the exact 30 s suite hit the e2e/audio alarms · worker session `clai-loop-review-2`
 - 2026-10-21 · review · third holistic review · D7 `-t *` / `-t ls` F6 e2e test, D8 retry wording for rejected `-check`, D9 D2 iteration-chat test, D10 command-list and flow documentation drift; scoped `-count=3` suite, loop e2e, audio, gofumpt, vet, staticcheck, fix and dupl passed; the exact 30 s suite hit the same e2e/audio alarms · worker session `clai-loop-review-3`
 - 2026-10-22 · validate · V5 Ready · python3 inline tree/section audit: passed; `GO111MODULE=off go build -o /tmp/clai-loop-v5-validation/check /tmp/clai-loop-v5-validation/interfaces.go`: passed; `rg`/`go doc`/source inspection (consumed signatures, clauses, flows, provenance, human requirements): passed; `go test ./internal/text ./internal/cli -race -count=1 -timeout=120s`: passed; `go test ./e2e -run '^Test_e2e_loop' -race -count=1 -timeout=120s`: passed; prior V1-01 resolved · notes: 0
+- 2026-10-23 · review · fourth holistic review · D11 pending placeholder decided on the iteration's own chat in `Query` (two stray-placeholder directions closed), D12 shared `waitForSummary`/`summaryWait`, D13 `loopTitle` and placeholder documentation drift, D14 accepted `q.out` repetition; gofumpt, vet, staticcheck, fix and dupl passed, `go test ./... -race -count=3 -timeout=30s` passed, the `-cover` variant hit the known e2e/audio 30 s alarm and both packages pass at 120 s · worker session `clai-loop-review-4`

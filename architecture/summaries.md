@@ -142,6 +142,26 @@ what makes validate-and-retry work on every vendor without structured
 output; `ResponseFormat` is implemented by two vendors only and is not
 used.
 
+### Loop-phase summaries
+
+`SummaryRequest.Kind` selects the instruction set. Iteration 1 of the
+interactive loop uses `SummaryKindLoopPlan`: its transcript is the goal (first
+user message), and its prompt asks for the approach the loop will take without
+restating the goal. Iteration 2 and later use `SummaryKindLoopPhase`: the
+transcript is the goal and the previous iteration's handover (last assistant
+message), with separate input caps so a long goal cannot push the handover
+out. Its prompt asks what the previous iteration achieved and what remains,
+never a restatement of the goal. Both loop kinds allow 120 runes for `summary`
+instead of 240: the phase shares one header row with the iteration marker, so
+the bound keeps it readable at a typical terminal width. The `title` stays 60
+runes and still labels the iteration's conversation. The loop path uses the
+same in-flight summarizer, so a loop-phase summary costs no extra model call.
+The session loop rewrites the pinned header with the summary as soon as it
+lands. A summary that lands after the stream is taken at settle, under the
+join bound, before the header is frozen into the scrollback; a summary that
+fails or misses the bound leaves the handover fallback, or the bare iteration
+marker for iteration 1.
+
 ### Model ladder (D22)
 
 One ladder, applied wherever a rung is empty:
@@ -192,7 +212,11 @@ Lifecycle (`internal/text/summary_launch.go`, `finalizer.go`):
    recovered into an error. Because the copy is taken before the model
    answers, the in-flight label describes the prompt, never the outcome;
    only the batch path summarizes a finished transcript.
-2. **Stream.** The main call streams as today, unaffected.
+2. **Stream.** The main call streams as today, unaffected. The session
+   loop also watches the result channel, so a result that lands while the
+   run still streams is taken early: on the loop path it rewrites the
+   pinned header with the loop-phase summary, and the finalizer's join
+   then stamps the buffered result without waiting.
 3. **Finalize** (`sessionFinalizer.Finalize`), in this order:
    - a failed or empty run abandons the summarizer and persists at once;
    - an interrupt (root context cancelled without a `StopEvent`) abandons
@@ -216,7 +240,7 @@ model error, validation exhaustion, timeout, panic, interrupt — fails,
 delays beyond the join bound, or alters the answer, the exit status or the
 persistence of the main query. Every failure is dropped silently (D25);
 `DEBUG_SUMMARY=1` traces launch, apply, failure and abandon lines. The query
-and loop commands' shared setup attaches the summarizer through
+command's setup, in plain and loop mode, attaches the summarizer through
 `Querier.SetSummarizer`; a constructor error attaches nothing and the run
 proceeds.
 
@@ -233,7 +257,7 @@ from the full file and keeps its label in place. Both paths append their
 own cost row; neither adds a second `purpose: "summary"` row.
 
 An opted-out run (`summarize-conversations: false` without `-summarize`)
-constructs no summarizer at all: the query and loop commands skip
+constructs no summarizer at all: query, in plain and loop mode, skips
 `NewAgentSummarizer`, so no second `textConfig.json` load happens.
 `clai chat continue` runs in the `chat` tree, which attaches no
 summarizer, so a pre-feature conversation continued there stays

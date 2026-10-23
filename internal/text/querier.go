@@ -76,14 +76,22 @@ type Querier[C models.StreamCompleter] struct {
 	reasoningBuf     tailBuffer
 	reasoningActive  bool
 	activityViewport *utils.ActivityViewport
+	// loopProgress is the display state of the loop iteration the current
+	// TextQuery runs; nil outside a loop and after the iteration finishes.
+	loopProgress *LoopProgress
+	// loopFrameSettled marks that the iteration's pinned header was collapsed
+	// and left in the scrollback. The next iteration starts a fresh frame below
+	// it instead of rewriting it in place.
+	loopFrameSettled bool
 	// mcpSink buffers MCP server stderr lines for the rolling window. It is
 	// created in NewQuerier before the MCP clients spawn and drained on the
 	// serialized session loop.
 	mcpSink *mcpLogSink
 	// finalAnswerPopPending marks that the trailing assistant-prose block was
-	// removed from the viewport state at stream end. The window redraws (and
-	// the answer prints below it) only when the finalizer prints the answer,
-	// so the terminal paints the pop and the reprint as one transition.
+	// removed from the viewport state at stream end. The finalizer clears the
+	// whole drawn window and prints the answer in its place only when it has an
+	// answer, so the terminal paints the clear and the reprint as one
+	// transition.
 	finalAnswerPopPending bool
 
 	// Output of the querier. This is used mostly when Querier is invoked as an agent
@@ -124,7 +132,7 @@ type Querier[C models.StreamCompleter] struct {
 	// vendor and modelVersion name the route vendorType resolved.
 	vendor       string
 	modelVersion string
-	// summarizer is attached by the text commands (query and loop); nil
+	// summarizer is attached by the text query command (plain or loop mode); nil
 	// means no in-flight label (pkg/agent, tests, the summarizer's own
 	// querier).
 	summarizer             models.Summarizer
@@ -135,6 +143,9 @@ type Querier[C models.StreamCompleter] struct {
 	// at launch time.
 	summaryInterrupt <-chan struct{}
 	summaryRun       *summaryRun
+	// summaryReady holds the result the session loop took while the run was
+	// still streaming; the join consumes it instead of waiting.
+	summaryReady *summaryResult
 }
 
 func (q *Querier[C]) SuppressCompletionNotification() bool {
@@ -175,16 +186,22 @@ func (q *Querier[C]) postProcessOutput(ctx context.Context, newSysMsg pub_models
 		return
 	}
 	if q.activityViewport != nil {
-		// Rolling window: the final answer was removed from the window at stream
-		// end. Redraw the window (without the answer) and print the answer below
-		// it back-to-back, so the terminal shows one transition. When no pop is
+		// The loop window collapsed to its pinned header at stream end. The loop
+		// runner prints an achieved answer below that header in
+		// FinishLoopIteration, once it knows the outcome. Nothing prints from
+		// here (worklog 2026-10-21-clai-loop).
+		if q.loopProgress != nil {
+			return
+		}
+		// Rolling window: the final answer replaces the whole window. The answer
+		// block was dropped from the viewport state at stream end, so clear every
+		// drawn row and print the answer where the window started. When no pop is
 		// pending, the assistant text already lives inside the window
 		// (intermediate prose before tool calls) and must never be re-printed.
 		if q.finalAnswerPopPending {
-			if err := q.activityViewport.Render(q.out); err != nil {
-				ancli.Warnf("failed to redraw activity viewport before final answer: %v", err)
+			if err := q.printAnswerInActivityWindow(q.out, newSysMsg, q.Raw); err != nil {
+				ancli.Warnf("failed to print final answer in activity viewport: %v", err)
 			}
-			utils.AttemptPrettyPrint(q.out, newSysMsg, q.username, q.Raw)
 		}
 		return
 	}
@@ -250,8 +267,24 @@ func (q *Querier[C]) resetTransientState() {
 	q.hasPrinted = false
 	q.reasoningBuf.Reset()
 	q.reasoningActive = false
-	q.activityViewport = nil
+	q.loopFrameSettled = false
+	q.resetActivityViewport()
 	q.finalAnswerPopPending = false
+}
+
+// resetActivityViewport starts every query without activity. A loop iteration
+// keeps the viewport but not the previous frame: the previous iteration's
+// header is already in the scrollback, and the next frame is drawn below it.
+func (q *Querier[C]) resetActivityViewport() {
+	if q.loopProgress == nil {
+		q.activityViewport = nil
+		return
+	}
+	if q.activityViewport == nil {
+		return
+	}
+	q.activityViewport.CollapseToHeader()
+	q.activityViewport.SetHeader(q.loopProgress.Header())
 }
 
 func (q *Querier[C]) handleToken(token string) {
@@ -306,6 +339,9 @@ func (q *Querier[C]) usesActivityViewport() bool {
 func (q *Querier[C]) ensureActivityViewport() *utils.ActivityViewport {
 	if q.activityViewport == nil {
 		q.activityViewport = utils.NewActivityViewport(q.dims.Width, utils.RollingOutputWindowCellHeight(), q.dims.Height)
+		if q.loopProgress != nil {
+			q.activityViewport.SetHeader(q.loopProgress.Header())
+		}
 	}
 	return q.activityViewport
 }
@@ -368,16 +404,42 @@ func (q *Querier[C]) elevateMcpError(w io.Writer, server string, lines []string)
 	if q.activityViewport == nil {
 		return utils.PrintMcpErrorBlock(w, server, lines, q.dims.Width)
 	}
-	rows := q.activityViewport.DetachRenderedRegion()
-	if rows > 0 {
-		if err := table.ClearTermTo(w, rows); err != nil {
-			return fmt.Errorf("clear window region before elevating mcp error: %w", err)
-		}
+	if err := q.clearActivityWindow(w); err != nil {
+		return fmt.Errorf("clear window region before elevating mcp error: %w", err)
 	}
 	if err := utils.PrintMcpErrorBlock(w, server, lines, q.dims.Width); err != nil {
 		return fmt.Errorf("print elevated mcp error: %w", err)
 	}
-	return q.activityViewport.Render(w)
+	return q.activityViewport.RenderPinned(w)
+}
+
+// printAnswerInActivityWindow clears the whole drawn activity window and prints
+// answer where the window started. A session without a drawn window prints the
+// answer at the current cursor.
+func (q *Querier[C]) printAnswerInActivityWindow(w io.Writer, answer pub_models.Message, raw bool) error {
+	if err := q.clearActivityWindow(w); err != nil {
+		return err
+	}
+	if err := utils.AttemptPrettyPrint(w, answer, q.username, raw); err != nil {
+		return fmt.Errorf("print answer in activity window: %w", err)
+	}
+	return nil
+}
+
+// clearActivityWindow erases the rolling window's drawn region and leaves the
+// cursor where the window started, so the next write starts there.
+func (q *Querier[C]) clearActivityWindow(w io.Writer) error {
+	if q.activityViewport == nil {
+		return nil
+	}
+	rows := q.activityViewport.DetachRenderedRegion()
+	if rows == 0 {
+		return nil
+	}
+	if err := table.ClearTermTo(w, rows); err != nil {
+		return fmt.Errorf("clear activity window: %w", err)
+	}
+	return nil
 }
 
 // startResizeWatcher starts one dimensions watcher for terminal
@@ -478,17 +540,42 @@ func (q *Querier[C]) currentTokenUsage() *pub_models.Usage {
 	return tokenCounter.TokenUsage()
 }
 
-// prepareFinalAnswerPop removes the trailing assistant-prose block from the
-// rolling window state at stream end without redrawing. The window still shows
-// the answer until postProcessOutput redraws it immediately before the answer
-// prints below, so the terminal paints the transition in one frame.
-func (q *Querier[C]) prepareFinalAnswerPop() {
+// warnf reports a user-facing warning without desyncing a drawn rolling frame.
+// A live frame is erased, the warning printed where the frame started, and the
+// frame redrawn below it; without a frame the warning prints the way ancli
+// prints it.
+func (q *Querier[C]) warnf(format string, args ...any) error {
+	message := fmt.Sprintf(format, args...)
 	if q.activityViewport == nil || !q.usesActivityViewport() {
-		return
+		ancli.Warnf("%s", message)
+		return nil
+	}
+	w := q.out
+	if w == nil {
+		w = os.Stdout
+	}
+	if err := q.activityViewport.PrintAbove(w, "warning: "+message); err != nil {
+		return fmt.Errorf("print warning above activity window: %w", err)
+	}
+	return nil
+}
+
+// prepareFinalAnswerPop removes the trailing assistant-prose block from the
+// rolling window state at stream end without redrawing. In loop mode it settles
+// the pinned header while the cursor still belongs to the window: the loop
+// runner's terminal display step runs after the finalizer's cost and cache
+// output, so a later collapse would move the cursor up over unrelated lines.
+func (q *Querier[C]) prepareFinalAnswerPop() error {
+	if q.activityViewport == nil || !q.usesActivityViewport() {
+		return nil
 	}
 	if q.activityViewport.RemoveTextBlock() > 0 {
 		q.finalAnswerPopPending = true
 	}
+	if q.loopProgress == nil {
+		return nil
+	}
+	return q.settleLoopHeader()
 }
 
 // Query using the underlying model to stream completions and then print the output
@@ -497,6 +584,17 @@ func (q *Querier[C]) Query(ctx context.Context) error {
 	// Catch-all in the csae that stdout isn't set
 	if q.out == nil {
 		q.out = os.Stdout
+	}
+	// A loop iteration pins its header from the first frame, so the window
+	// exists and shows which iteration runs before any activity arrives. The
+	// pending placeholder is decided here, where the iteration's chat is known
+	// and launchSummary makes the same decision.
+	q.markLoopPhasePending()
+	if q.loopProgress != nil && q.usesActivityViewport() {
+		q.ensureActivityViewport()
+		if err := q.activityViewport.RenderPinned(q.out); err != nil {
+			return fmt.Errorf("render loop header: %w", err)
+		}
 	}
 	// One dimensions watcher for terminal rolling-output sessions. It observes
 	// the same file the session writes to; the runner consumes fresh snapshots

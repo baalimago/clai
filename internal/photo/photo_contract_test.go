@@ -706,6 +706,51 @@ func TestPhoto_OnlyInjectedGenerator(t *testing.T) {
 	}
 }
 
+// TestPhoto_OutputDirExpandsHome proves photo.2: output.dir is a user path, so
+// a config-file "~/Pictures" lands in the home's Pictures, and a path whose
+// home cannot resolve fails before any generation.
+func TestPhoto_OutputDirExpandsHome(t *testing.T) {
+	testCases := []struct {
+		desc    string
+		home    string
+		wantErr bool
+	}{
+		{desc: "~ expands to the home", home: t.TempDir()},
+		{desc: "~ without a home is an error", wantErr: true},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Setenv("HOME", tc.home)
+			outDir := filepath.Join(tc.home, "Pictures")
+			if !tc.wantErr {
+				if err := os.MkdirAll(outDir, 0o755); err != nil {
+					t.Fatalf("mkdir output dir: %v", err)
+				}
+			}
+			f := newFixture(t)
+			f.conf.Output.Dir = "~/Pictures"
+
+			o := f.run("a", "fox")
+			if tc.wantErr {
+				if o.err == nil {
+					t.Fatal("photo with an unresolvable ~ succeeded, want an error")
+				}
+				if requests := f.gen.Requests(); len(requests) != 0 {
+					t.Fatalf("generator called %d times before the output dir failed", len(requests))
+				}
+				return
+			}
+			if o.err != nil {
+				t.Fatalf("photo: %v (stderr %q)", o.err, o.stderr)
+			}
+			if files := f.savedFiles(outDir); len(files) != 1 {
+				t.Fatalf("files in %s = %v, want one", outDir, files)
+			}
+		})
+	}
+}
+
 type failingPresenter struct{ err error }
 
 func (p failingPresenter) Present(present.Shown) error { return p.err }

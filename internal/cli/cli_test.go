@@ -21,7 +21,7 @@ func TestCommands_buildsEveryDocumentedKey(t *testing.T) {
 	want := []string{
 		"query|q", "chat|c", "photo|p", "video|v", "audio|a", "setup|s",
 		"version", "replay|re", "dir-replay|dre", "tools|t", "mcp",
-		"profiles", "confdir", "loop|l",
+		"profiles", "confdir",
 	}
 	got := Commands(DefaultDeps())
 	if len(got) != len(want) {

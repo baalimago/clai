@@ -93,7 +93,7 @@ func Test_e2e_loop_persists_selected_profile(t *testing.T) {
 		t.Fatalf("WriteFile(profile): %v", err)
 	}
 
-	_, status := harness.RunOne(t, confDir, "-r -cm test -p "+profileName+" -check "+writeFailOnceCheck(t)+" l run tool_complete_task")
+	_, status := harness.RunOne(t, confDir, "-r -cm test -p "+profileName+" -check "+writeFailOnceCheck(t)+" -l q run tool_complete_task")
 	testboil.FailTestIfDiff(t, status, 0)
 
 	convs := loadLoopConversations(t, confDir)
@@ -112,7 +112,7 @@ func Test_e2e_loop_achieves_goal(t *testing.T) {
 	t.Setenv("CLAI_MOCK_COMPLETE_TASK_STATUS", "achieved")
 	t.Setenv("CLAI_MOCK_COMPLETE_TASK_SUMMARY", "The goal is achieved.")
 
-	stdout, status := harness.RunOne(t, confDir, "-r -cm test l run tool_complete_task")
+	stdout, status := harness.RunOne(t, confDir, "-r -cm test -l q run tool_complete_task")
 	testboil.FailTestIfDiff(t, status, 0)
 
 	convs := loadLoopConversations(t, confDir)
@@ -136,7 +136,7 @@ func Test_e2e_loop_completion_tool_is_additive(t *testing.T) {
 	for _, selection := range []string{"-t *", "-t ls"} {
 		t.Run(selection, func(t *testing.T) {
 			confDir := e2etest.SetupMainTestConfigDir(t)
-			_, status := harness.RunOne(t, confDir, "-r -cm test "+selection+" l run tool_complete_task")
+			_, status := harness.RunOne(t, confDir, "-r -cm test "+selection+" -l q run tool_complete_task")
 			testboil.FailTestIfDiff(t, status, 0)
 
 			convs := loadLoopConversations(t, confDir)
@@ -158,7 +158,7 @@ func Test_e2e_loop_handover_and_check_gate_groups_chats(t *testing.T) {
 	t.Setenv("CLAI_MOCK_COMPLETE_TASK_SUMMARY", "The goal is verified.")
 	checkScript := writeFailOnceCheck(t)
 
-	_, status := harness.RunOne(t, confDir, "-r -cm test -check "+checkScript+" l run tool_complete_task")
+	_, status := harness.RunOne(t, confDir, "-r -cm test -check "+checkScript+" -l q run tool_complete_task")
 	testboil.FailTestIfDiff(t, status, 0)
 
 	convs := loadLoopConversations(t, confDir)
@@ -201,20 +201,20 @@ func Test_e2e_loop_blocked_and_max_iterations(t *testing.T) {
 	}{
 		{
 			name:     "blocked submission",
-			args:     "-r -cm test l run tool_complete_task",
+			args:     "-r -cm test -l q run tool_complete_task",
 			env:      map[string]string{"CLAI_MOCK_COMPLETE_TASK_STATUS": "blocked", "CLAI_MOCK_COMPLETE_TASK_SUMMARY": "Need credentials."},
 			wantErr:  "loop task blocked at iteration 1: Need credentials.",
 			wantConv: 1,
 		},
 		{
 			name:     "max iterations exhausted",
-			args:     "-r -cm test -mi 2 l finish the work",
+			args:     "-r -cm test -mi 2 -l q finish the work",
 			wantErr:  "loop reached the -max-iterations limit (2)",
 			wantConv: 2,
 		},
 		{
 			name:     "negative max iterations",
-			args:     "-r -cm test -mi -1 l finish the work",
+			args:     "-r -cm test -mi -1 -l q finish the work",
 			wantErr:  "-max-iterations",
 			wantConv: 0,
 		},
@@ -241,21 +241,24 @@ func Test_e2e_loop_blocked_and_max_iterations(t *testing.T) {
 	}
 }
 
-func Test_e2e_loop_help_and_dispatch(t *testing.T) {
+// Test_e2e_loop_flag_help_and_dispatch pins that loop mode is the -l/-loop
+// flag of query, not a command: the flag works before the command (the alias
+// uplift path) and after it, and the old loop|l command is gone.
+func Test_e2e_loop_flag_help_and_dispatch(t *testing.T) {
 	_ = e2etest.SetupMainTestConfigDir(t)
 
-	if _, ok := harness.Commands()["loop|l"]; !ok {
-		t.Fatal("cli.Commands misses the loop|l key")
+	if _, ok := harness.Commands()["loop|l"]; ok {
+		t.Fatal("cli.Commands still exposes the loop|l command; loop mode is the -l query flag")
 	}
 
-	for _, args := range []string{"l -h", "loop -h"} {
+	for _, args := range []string{"-l q -h", "q -l -h", "-loop q -h"} {
 		t.Run(args, func(t *testing.T) {
 			var status int
 			stdout := testboil.CaptureStdout(t, func(t *testing.T) {
 				status = harness.Run(strings.Split(args, " "))
 			})
 			testboil.FailTestIfDiff(t, status, 0)
-			for _, want := range []string{"loop <text>", "-cm", "-t", "-mi", "-max-iterations", "-check"} {
+			for _, want := range []string{"query <text>", "-cm", "-t", "-l", "-loop", "-mi", "-max-iterations", "-check"} {
 				testboil.AssertStringContains(t, stdout, want)
 			}
 		})
@@ -264,5 +267,24 @@ func Test_e2e_loop_help_and_dispatch(t *testing.T) {
 	usage := testboil.CaptureStdout(t, func(t *testing.T) {
 		harness.Run(nil)
 	})
-	testboil.AssertStringContains(t, usage, "loop|l")
+	testboil.AssertStringContains(t, usage, "query|q")
+	if strings.Contains(usage, "loop|l") {
+		t.Fatalf("usage still lists loop|l as a command:\n%s", usage)
+	}
+}
+
+// Test_e2e_loop_only_flags_require_loop_mode pins that -mi and -check without
+// -l fail instead of silently configuring nothing.
+func Test_e2e_loop_only_flags_require_loop_mode(t *testing.T) {
+	confDir := e2etest.SetupMainTestConfigDir(t)
+	for _, args := range []string{"-r q -mi 2 hello", "-r q -check true hello"} {
+		t.Run(args, func(t *testing.T) {
+			var status int
+			stderr := testboil.CaptureStderr(t, func(t *testing.T) {
+				_, status = harness.RunOne(t, confDir, args)
+			})
+			testboil.FailTestIfDiff(t, status, 1)
+			testboil.AssertStringContains(t, stderr, "requires -l")
+		})
+	}
 }

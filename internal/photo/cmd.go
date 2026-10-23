@@ -54,13 +54,15 @@ type Flags struct {
 	Open   internal.BoolFlag
 }
 
-// NewFlags seeds the photo flag defaults.
+// NewFlags seeds the photo flag defaults. Its dir default is absolute, so an
+// explicit -pd ~/Pictures stays distinct from it and still overrides
+// photoConfig.json; photo.DEFAULT is the real default.
 func NewFlags() Flags {
 	return Flags{MediaFlags: internal.NewMediaFlags(internal.MediaFlagSpec{
 		ModelNames:  []string{"pm", "photo-model"},
 		ModelDesc:   "Set the image model to use.",
 		DirNames:    []string{"pd", "photo-dir"},
-		DirDesc:     "Set the directory to store the generated pictures. Default is $HOME/Pictures",
+		DirDesc:     "Set the directory to store the generated pictures, with a leading ~ and $VAR expanded. Default is ~/Pictures",
 		DirDefault:  path.Join(os.Getenv("HOME"), "Pictures"),
 		PrefixNames: []string{"pp", "photo-prefix"},
 		PrefixDesc:  "Set the prefix for the generated pictures. Default is 'clai'",
@@ -95,8 +97,9 @@ func (f *Flags) Register(fs *flag.FlagSet) {
 //	         called once with Prompt = Collect(...).Prompt formatted through "prompt-format", as
 //	         today, and Inputs = Collect(...).Images, then the -re image.
 //	photo.2  Each returned image is written to <output.dir>/<prefix>_<random>.<ext>, where
-//	         <ext> comes from the README MIME-to-extension parameter. When output.dir is not
-//	         writable, the image goes to os.TempDir() and stderr names the fallback.
+//	         <ext> comes from the README MIME-to-extension parameter and <output.dir> has a
+//	         leading ~ and $VAR expanded. When output.dir is not writable, the image goes to
+//	         os.TempDir() and stderr names the fallback.
 //	photo.3  Each written file is presented once, through deps.NewPresenter, with Handle = the
 //	         first handle-length hex digits of its sha256, Path = the file and Details =
 //	         present.DetailsOf(its bytes, the photo model, the generation time). The opener is
@@ -180,7 +183,9 @@ func loadConfig(deps CommandDeps, f *Flags, confDir string) (Configurations, err
 	if misc.Truthy(os.Getenv("DEBUG")) {
 		ancli.PrintOK(fmt.Sprintf("photoConfig pre override: %+v\n", pConf))
 	}
-	ApplyFlagOverrides(&pConf, f)
+	if err := ApplyFlagOverrides(&pConf, f); err != nil {
+		return Configurations{}, err
+	}
 	if misc.Truthy(os.Getenv("DEBUG")) {
 		ancli.PrintOK(fmt.Sprintf("photoConfig post override: %+v\n", pConf))
 	}
@@ -195,8 +200,8 @@ func loadConfig(deps CommandDeps, f *Flags, confDir string) (Configurations, err
 
 // ApplyFlagOverrides applies the CLI flag values onto the file-loaded
 // configuration (flags > file > default).
-func ApplyFlagOverrides(pConf *Configurations, f *Flags) {
-	f.Apply(internal.MediaConfig{
+func ApplyFlagOverrides(pConf *Configurations, f *Flags) error {
+	return f.Apply(internal.MediaConfig{
 		Model:        &pConf.Model,
 		ReplyMode:    &pConf.ReplyMode,
 		StdinReplace: &pConf.StdinReplace,

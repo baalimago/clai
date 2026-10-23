@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -14,6 +15,7 @@ import (
 	"github.com/baalimago/clai/internal/imagegen"
 	"github.com/baalimago/clai/internal/imagegen/route"
 	"github.com/baalimago/clai/internal/models"
+	"github.com/baalimago/clai/internal/photo"
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/vendors/gemini"
 	"github.com/baalimago/clai/internal/vendors/openai"
@@ -44,28 +46,34 @@ func TestQueryFlags_Image(t *testing.T) {
 
 	conf := Default
 	ApplyFlagOverrides(&conf, tf)
-	if !slices.Equal(conf.ImageInputs, []string{"a.png", "b/*.png"}) || !conf.AutoOpenImages {
-		t.Fatalf("overrides: inputs=%v open=%v", conf.ImageInputs, conf.AutoOpenImages)
+	if !slices.Equal(conf.ImageInputs, []string{"a.png", "b/*.png"}) {
+		t.Fatalf("overrides: inputs=%v", conf.ImageInputs)
 	}
 
 	plain := Default
 	ApplyFlagOverrides(&plain, parsedQueryFlags(t, "hi"))
-	if plain.ImageInputs != nil || plain.AutoOpenImages {
+	if plain.ImageInputs != nil {
 		t.Fatalf("no image flags must keep the defaults: %+v", plain)
+	}
+}
+
+func TestImagePresenterOptions(t *testing.T) {
+	opts := imagePresenterOptions(io.Discard, false, &Default, parsedQueryFlags(t, "-open", "hi"), photo.Configurations{})
+	if !opts.AutoOpen || opts.Opener == nil {
+		t.Fatalf("-open: AutoOpen=%v Opener=%v, want auto-open with an opener", opts.AutoOpen, opts.Opener)
+	}
+	opts = imagePresenterOptions(io.Discard, false, &Default, parsedQueryFlags(t, "hi"), photo.Configurations{AutoOpenImages: true, ImageOpener: "viewer"})
+	if !opts.AutoOpen || opts.Opener == nil {
+		t.Fatalf("photoConfig auto-open: AutoOpen=%v Opener=%v, want auto-open with an opener", opts.AutoOpen, opts.Opener)
+	}
+	opts = imagePresenterOptions(io.Discard, false, &Default, parsedQueryFlags(t, "hi"), photo.Configurations{})
+	if opts.AutoOpen || opts.Opener == nil {
+		t.Fatalf("defaults: AutoOpen=%v Opener=%v, want no auto-open and the platform opener", opts.AutoOpen, opts.Opener)
 	}
 }
 
 func TestImageGenSetup(t *testing.T) {
 	confDir := t.TempDir()
-	photoModel := func(calls *int, model string, err error) func(string) (string, error) {
-		return func(dir string) (string, error) {
-			*calls++
-			if dir != confDir {
-				t.Fatalf("PhotoModel dir = %q, want %q", dir, confDir)
-			}
-			return model, err
-		}
-	}
 
 	t.Run("the chat vendor's image backend wins over a foreign photo model", func(t *testing.T) {
 		for _, tc := range []struct {
@@ -79,20 +87,19 @@ func TestImageGenSetup(t *testing.T) {
 			{route.Gemini, "gpt-image-1", "or:x", "or:x"},
 		} {
 			conf := Default
-			calls := 0
 			args := []string{"-t", "generate_image", "hi"}
 			if tc.pm != "" {
 				args = append([]string{"-pm", tc.pm}, args...)
 			}
-			gen, err := imageGenSetup(confDir, &conf, parsedQueryFlags(t, args...), QueryCommandDeps{PhotoModel: photoModel(&calls, tc.photo, nil)}, tc.vendor)
-			if err != nil || gen.Config.Model != tc.want {
-				t.Fatalf("vendor %q, photo %q, -pm %q: model = %q, err = %v; want %q", tc.vendor, tc.photo, tc.pm, gen.Config.Model, err, tc.want)
+			gen := imageGenSetup(confDir, photo.Configurations{Model: tc.photo}, &conf, parsedQueryFlags(t, args...), tc.vendor)
+			if gen.Config.Model != tc.want {
+				t.Fatalf("vendor %q, photo %q, -pm %q: model = %q; want %q", tc.vendor, tc.photo, tc.pm, gen.Config.Model, tc.want)
 			}
 		}
 		conf := Default
-		gen, err := imageGenSetup(confDir, &conf, parsedQueryFlags(t, "-t", "generate_image", "hi"), QueryCommandDeps{}, route.OpenAI)
-		if err != nil || gen.Config.Model != openai.DefaultImageModel {
-			t.Fatalf("no PhotoModel: model = %q, err = %v; want the vendor default", gen.Config.Model, err)
+		gen := imageGenSetup(confDir, photo.Configurations{}, &conf, parsedQueryFlags(t, "-t", "generate_image", "hi"), route.OpenAI)
+		if gen.Config.Model != openai.DefaultImageModel {
+			t.Fatalf("no photo model: model = %q; want the vendor default", gen.Config.Model)
 		}
 	})
 
@@ -100,27 +107,15 @@ func TestImageGenSetup(t *testing.T) {
 		conf := Default
 		conf.UseTools, conf.RequestedToolGlobs = true, []string{"*"}
 		setupToolConfig(&conf, "ls")
-		calls := 0
-		gen, err := imageGenSetup(confDir, &conf, parsedQueryFlags(t, "-t", "ls", "hi"), QueryCommandDeps{PhotoModel: photoModel(&calls, "p", nil)}, route.OtherVendor)
-		if err != nil || !gen.Requested {
-			t.Fatalf("profile '*' plus -t ls: Requested = %v, err = %v; want true", gen.Requested, err)
+		gen := imageGenSetup(confDir, photo.Configurations{Model: "p"}, &conf, parsedQueryFlags(t, "-t", "ls", "hi"), route.OtherVendor)
+		if !gen.Requested {
+			t.Fatal("profile '*' plus -t ls must request generate_image")
 		}
 		implicit := Default
 		implicit.UseTools = true
-		gen, err = imageGenSetup(confDir, &implicit, parsedQueryFlags(t, "hi"), QueryCommandDeps{PhotoModel: photoModel(&calls, "p", nil)}, route.OtherVendor)
-		if err != nil || gen.Requested {
-			t.Fatalf("use-tools without a list: Requested = %v, err = %v; want false: generate_image stays opt-in", gen.Requested, err)
-		}
-	})
-
-	t.Run("not selected reads no photo config", func(t *testing.T) {
-		for _, selection := range []string{"ls", "view_image", "*_file", "generate"} {
-			calls := 0
-			conf := Default
-			gen, err := imageGenSetup(confDir, &conf, parsedQueryFlags(t, "-t", selection, "hi"), QueryCommandDeps{PhotoModel: photoModel(&calls, "p", nil)}, route.OtherVendor)
-			if err != nil || gen.Requested || calls != 0 {
-				t.Fatalf("-t %q: gen = %+v, err = %v, calls = %d", selection, gen, err, calls)
-			}
+		gen = imageGenSetup(confDir, photo.Configurations{Model: "p"}, &implicit, parsedQueryFlags(t, "hi"), route.OtherVendor)
+		if gen.Requested {
+			t.Fatal("use-tools without a list must leave generate_image opt-in")
 		}
 	})
 
@@ -137,42 +132,29 @@ func TestImageGenSetup(t *testing.T) {
 		} {
 			conf := Default
 			conf.UseTools, conf.RequestedToolGlobs = tc.useTools, tc.globs
-			calls := 0
-			gen, err := imageGenSetup(confDir, &conf, parsedQueryFlags(t, "hi"), QueryCommandDeps{PhotoModel: photoModel(&calls, "p", nil)}, route.OtherVendor)
-			if err != nil || gen.Requested != tc.want {
-				t.Fatalf("UseTools %v, tools %v: Requested = %v, err = %v; want %v", tc.useTools, tc.globs, gen.Requested, err, tc.want)
+			gen := imageGenSetup(confDir, photo.Configurations{Model: "p"}, &conf, parsedQueryFlags(t, "hi"), route.OtherVendor)
+			if gen.Requested != tc.want {
+				t.Fatalf("UseTools %v, tools %v: Requested = %v; want %v", tc.useTools, tc.globs, gen.Requested, tc.want)
 			}
 		}
 	})
 
 	t.Run("selection takes the photoConfig model", func(t *testing.T) {
 		for _, selection := range []string{"*", "generate_image", "ls, generate_image", "*_image", "gen*", "*image*", "view_image,generate_*"} {
-			calls := 0
 			conf := Default
-			gen, err := imageGenSetup(confDir, &conf, parsedQueryFlags(t, "-t", selection, "hi"), QueryCommandDeps{PhotoModel: photoModel(&calls, "gpt-image-1", nil)}, route.OtherVendor)
+			gen := imageGenSetup(confDir, photo.Configurations{Model: "gpt-image-1"}, &conf, parsedQueryFlags(t, "-t", selection, "hi"), route.OtherVendor)
 			want := imagegen.GeneratorConfig{Model: "gpt-image-1", ConfigDir: confDir}
-			if err != nil || !gen.Requested || gen.Config != want || calls != 1 {
-				t.Fatalf("-t %q: gen = %+v, err = %v, calls = %d", selection, gen, err, calls)
+			if !gen.Requested || gen.Config != want {
+				t.Fatalf("-t %q: gen = %+v; want %+v", selection, gen, want)
 			}
 		}
 	})
 
 	t.Run("-pm overrides photoConfig", func(t *testing.T) {
-		calls := 0
 		conf := Default
-		gen, err := imageGenSetup(confDir, &conf, parsedQueryFlags(t, "-t", "*", "-pm", "or:x", "hi"), QueryCommandDeps{PhotoModel: photoModel(&calls, "p", nil)}, route.OtherVendor)
-		if err != nil || gen.Config.Model != "or:x" || calls != 0 {
-			t.Fatalf("gen = %+v, err = %v, calls = %d", gen, err, calls)
-		}
-	})
-
-	t.Run("photo config failure is returned", func(t *testing.T) {
-		calls := 0
-		boom := errors.New("boom")
-		conf := Default
-		_, err := imageGenSetup(confDir, &conf, parsedQueryFlags(t, "-t", "generate_image", "hi"), QueryCommandDeps{PhotoModel: photoModel(&calls, "", boom)}, route.OtherVendor)
-		if !errors.Is(err, boom) {
-			t.Fatalf("err = %v, want boom", err)
+		gen := imageGenSetup(confDir, photo.Configurations{Model: "p"}, &conf, parsedQueryFlags(t, "-t", "*", "-pm", "or:x", "hi"), route.OtherVendor)
+		if gen.Config.Model != "or:x" {
+			t.Fatalf("model = %q; want -pm's or:x", gen.Config.Model)
 		}
 	})
 }
@@ -207,6 +189,43 @@ func TestNewImageTurn_wiresTheQueryCommand(t *testing.T) {
 	}
 	if path, err := turn.Store.Path(ref); err != nil || path != filepath.Join(confDir, "conversations", "assets", ref) {
 		t.Fatalf("store path = %q, %v; want the README asset directory", path, err)
+	}
+}
+
+func TestNewImageTurn_readsPhotoConfig(t *testing.T) {
+	confDir := t.TempDir()
+	calls := 0
+	deps := QueryCommandDeps{PhotoConfig: func(dir string) (photo.Configurations, error) {
+		calls++
+		if dir != confDir {
+			t.Fatalf("PhotoConfig dir = %q, want %q", dir, confDir)
+		}
+		return photo.Configurations{Model: "photo-model", AutoOpenImages: true, ImageOpener: "viewer"}, nil
+	}}
+	conf := Default
+	conf.Out = &bytes.Buffer{}
+	turn, err := newImageTurn(confDir, &conf, parsedQueryFlags(t, "-t", "generate_image", "hi"), deps, route.OtherVendor)
+	if err != nil {
+		t.Fatalf("newImageTurn: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("PhotoConfig calls = %d, want one load shared by the presenter and the model", calls)
+	}
+	if turn.Generation.Config.Model != "photo-model" {
+		t.Fatalf("model = %q, want photoConfig's", turn.Generation.Config.Model)
+	}
+}
+
+func TestNewImageTurn_photoConfigError(t *testing.T) {
+	boom := errors.New("boom")
+	deps := QueryCommandDeps{PhotoConfig: func(string) (photo.Configurations, error) {
+		return photo.Configurations{}, boom
+	}}
+	conf := Default
+	conf.Out = &bytes.Buffer{}
+	_, err := newImageTurn(t.TempDir(), &conf, parsedQueryFlags(t, "hi"), deps, route.OtherVendor)
+	if !errors.Is(err, boom) {
+		t.Fatalf("err = %v, want boom", err)
 	}
 }
 

@@ -51,7 +51,7 @@ internal/cli:Run()
 | `model` | Model name (currently only `sora-*` supported) |
 | `prompt-format` | Go format string; `%v` is replaced with the user prompt |
 | `output.type` | `"local"` (save to disk), `"url"` (print URL), or `"unset"` |
-| `output.dir` | Directory for saved videos (default: `$HOME/Videos`) |
+| `output.dir` | Directory for saved videos (default: `~/Videos`). clai expands a leading `~` and each `$VAR`, in the file and on `-vd`. With `HOME` set, `~/Videos` and `$HOME/Videos` are the same |
 | `output.prefix` | Filename prefix (default: `clai`) |
 
 ### Flag Overrides

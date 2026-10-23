@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -69,7 +70,9 @@ func TestRecordToolCall_ReportsFailuresAndKeepsRecorderErrorsSoft(t *testing.T) 
 		})},
 	}
 	e := toolExecutor[*MockQuerier]{querier: q}
-	e.recordToolCall(ctx, "bash", startedAt, "ERROR: command failed")
+	if err := e.recordToolCall(ctx, "bash", startedAt, "ERROR: command failed"); err != nil {
+		t.Fatalf("recordToolCall: %v", err)
+	}
 
 	if calls != 1 {
 		t.Fatalf("recorder calls = %d, want 1", calls)
@@ -89,9 +92,71 @@ func TestRecordToolCall_ReportsFailuresAndKeepsRecorderErrorsSoft(t *testing.T) 
 		recorded = call
 		return nil
 	})
-	e.recordToolCall(ctx, "cat", startedAt, "file contents")
+	if err := e.recordToolCall(ctx, "cat", startedAt, "file contents"); err != nil {
+		t.Fatalf("recordToolCall: %v", err)
+	}
 	if recorded.Err != nil {
 		t.Fatalf("successful output recorded an error: %v", recorded.Err)
+	}
+}
+
+// TestRecordToolCall_WarnsAboveTheDrawnFrame pins that a recorder failure raised
+// mid-stream reaches the frame-safe writer: a direct terminal write would move
+// the cursor behind the viewport's bookkeeping and strand a row at the next
+// clear.
+func TestRecordToolCall_WarnsAboveTheDrawnFrame(t *testing.T) {
+	t.Setenv("NO_COLOR", "true")
+	var printed strings.Builder
+	q := rollingLoopQuerier(t, &printed)
+	q.tooling.callRecorder = toolCallRecorderFunc(func(context.Context, ToolCall) error {
+		return errors.New("telemetry unavailable")
+	})
+	q.SetLoopProgress(LoopProgress{Iteration: 1, MaxIterations: 2})
+	q.ensureActivityViewport()
+	q.activityViewport.AppendTool(pub_models.Call{Name: "ls"}, "one", 4)
+	if err := q.activityViewport.Render(&printed); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	e := toolExecutor[*MockQuerier]{querier: q}
+	if err := e.recordToolCall(t.Context(), "bash", time.Now(), "out"); err != nil {
+		t.Fatalf("recordToolCall: %v", err)
+	}
+	if err := q.settleLoopHeader(); err != nil {
+		t.Fatalf("settleLoopHeader: %v", err)
+	}
+
+	screen := nonEmptyScreenRows(printed.String())
+	want := []string{
+		"warning: failed to record tool call: telemetry unavailable",
+		"▸ loop 1/2",
+	}
+	if !slices.Equal(screen, want) {
+		t.Fatalf("screen rows = %q, want the warning above the collapsed header %q", screen, want)
+	}
+}
+
+// TestRecordToolCall_ReturnsTheDisplayFailure pins that a failed warning write
+// surfaces as an error: the caller aborts the run instead of continuing with a
+// desynced frame.
+func TestRecordToolCall_ReturnsTheDisplayFailure(t *testing.T) {
+	t.Setenv("NO_COLOR", "true")
+	var printed strings.Builder
+	q := rollingLoopQuerier(t, &printed)
+	q.tooling.callRecorder = toolCallRecorderFunc(func(context.Context, ToolCall) error {
+		return errors.New("telemetry unavailable")
+	})
+	q.SetLoopProgress(LoopProgress{Iteration: 1, MaxIterations: 2})
+	q.ensureActivityViewport()
+	q.activityViewport.AppendTool(pub_models.Call{Name: "ls"}, "one", 4)
+	if err := q.activityViewport.Render(&printed); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	q.out = &failAfterWriter{failOn: 1}
+
+	e := toolExecutor[*MockQuerier]{querier: q}
+	err := e.recordToolCall(t.Context(), "bash", time.Now(), "out")
+	if err == nil || !strings.Contains(err.Error(), "report tool call recorder failure") {
+		t.Fatalf("recordToolCall error = %v, want the display failure", err)
 	}
 }
 

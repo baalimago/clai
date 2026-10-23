@@ -40,3 +40,11 @@ func TestValidateOutputType(t *testing.T) {
 		})
 	}
 }
+
+// The default output dir is a user path, so it expands at load time instead of
+// capturing the home directory at package init (see internal.MediaFlags.Apply).
+func TestDefaultOutputDirExpandsAtLoad(t *testing.T) {
+	if Default.Output.Dir != "~/Videos" {
+		t.Fatalf("Default.Output.Dir = %q, want ~/Videos", Default.Output.Dir)
+	}
+}

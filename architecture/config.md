@@ -339,19 +339,22 @@ loading the directory binding’s conversation directly.
 
 ### Image configuration
 
-`textConfig.json` and `photoConfig.json` each carry two image keys:
+`photoConfig.json` carries two image presenter keys, and every command that shows
+an image reads them from it, `clai photo` and `clai q` alike:
 
 | Key | Default | Flag | Meaning |
 | --- | --- | --- | --- |
 | `auto-open-images` | `false` | `-open` | Open each generated image. |
 | `image-opener` | `""` | — | The viewer program; see below. |
 
-The model behind `generate_image` is `-pm/-photo-model`; otherwise `photoConfig.json`'s
-`model`, unless the chat model's vendor (OpenAI, Gemini, OpenRouter) has its own image backend
-and that model routes to another backend or to none, in which case that vendor's default image
-model is used (see [images.md](./images.md#getting-images-back)). The keys reach existing configs through the upgrade above (the two
-zero-valued ones carry `migrate:"true"`), and none of them changes what an existing setup
-does: images are only attached, generated or opened when a flag or a key asks for it.
+`textConfig.json` does not carry these keys. The model behind `generate_image` is
+`-pm/-photo-model`; otherwise `photoConfig.json`'s `model`, unless the chat model's vendor
+(OpenAI, Gemini, OpenRouter) has its own image backend and that model routes to another backend
+or to none, in which case that vendor's default image model is used (see
+[images.md](./images.md#getting-images-back)). The keys reach existing photoConfig files through
+the upgrade above (the two zero-valued ones carry `migrate:"true"`), and none of them changes
+what an existing setup does: images are only attached, generated or opened when a flag or a key
+asks for it.
 
 `auto-open-images` (default `false`; `-open` turns it on for one run) opens
 each generated image after its line is printed, and only when stdout is a

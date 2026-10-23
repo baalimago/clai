@@ -159,7 +159,9 @@ func (e toolExecutor[C]) runPlannedCall(ctx context.Context, session *QuerySessi
 	} else {
 		startedAt := time.Now()
 		out, parts = e.invokeToolCallParts(ctx, plan.call)
-		e.recordToolCall(ctx, plan.call.Name, startedAt, out)
+		if err := e.recordToolCall(ctx, plan.call.Name, startedAt, out); err != nil {
+			return err
+		}
 	}
 	if parts != nil {
 		return e.emitToolResultParts(ctx, session, plan.call, plan.prefix, out, parts)
@@ -314,14 +316,16 @@ func actionableAuthResult(serverName string, hasResolver bool) string {
 }
 
 // recordToolCall reports one executed tool invocation to the configured
-// recorder. A nil recorder keeps the noop path; a recorder error is logged
-// and never propagated — telemetry must not break the agent loop. The
-// consumer owns the recorder and observes its own failures (worklog
-// 2026-09-05-error-propagation, S11: never-abort contract).
-func (e toolExecutor[C]) recordToolCall(ctx context.Context, name string, startedAt time.Time, out string) {
+// recorder. A nil recorder keeps the noop path; a recorder error is reported
+// through the frame-safe warning writer and never propagated — telemetry must
+// not break the agent loop. The consumer owns the recorder and observes its own
+// failures (worklog 2026-09-05-error-propagation, S11: never-abort contract).
+// The warning write itself may fail: that is a display failure, and the caller
+// aborts instead of continuing over a desynced frame.
+func (e toolExecutor[C]) recordToolCall(ctx context.Context, name string, startedAt time.Time, out string) error {
 	rec := e.querier.tooling.callRecorder
 	if rec == nil {
-		return
+		return nil
 	}
 	if err := rec.RecordToolCall(ctx, ToolCall{
 		Name:       name,
@@ -329,8 +333,11 @@ func (e toolExecutor[C]) recordToolCall(ctx context.Context, name string, starte
 		FinishedAt: time.Now(),
 		Err:        toolCallError(name, out),
 	}); err != nil {
-		ancli.Warnf("failed to record tool call: %v", err)
+		if warnErr := e.querier.warnf("failed to record tool call: %v", err); warnErr != nil {
+			return fmt.Errorf("report tool call recorder failure: %w", warnErr)
+		}
 	}
+	return nil
 }
 
 // toolCallError derives a tool failure from its output string, naming the

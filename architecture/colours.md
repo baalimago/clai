@@ -42,6 +42,7 @@ All colour fields are raw ANSI escape sequences represented as JSON strings.
 | `rollingOutput` | Nested configuration for the shared rolling activity viewport. |
 | `rollingOutput.enabled` | Use the shared rolling activity viewport. Default: `true`. |
 | `rollingOutput.windowCellHeight` | Maximum terminal cells (rows) for the shared non-raw reasoning and tool activity viewport. Default: `30`. |
+| `loopTitle` | Accent colour of the iteration marker in the pinned loop progress row `▸ loop N/M - what remains`. The phase keeps the muted activity colour. Default: muted teal. |
 
 Defaults are chosen to match the existing `AttemptPrettyPrint` role palette (system=blue, user=cyan, tool=magenta, reasoning=warm-gray).
 
@@ -62,7 +63,8 @@ Example:
   "rollingOutput": {
     "enabled": true,
     "windowCellHeight": 30
-  }
+  },
+  "loopTitle": "\u001b[38;2;110;170;160m"
 }
 ```
 
@@ -196,8 +198,10 @@ The viewport stores logical activity blocks, not wrapped rows. Each block
 keeps its complete sanitized content; colours and indentation are derived
 again at each rewrap. When the terminal dimensions change, clai rewraps
 every retained block at the new width and redraws the window in one frame.
-The effective window height is `min(windowCellHeight, terminal height)`.
-A terminal-height grow can bring retained content back into view, bounded
+The effective window height is `min(windowCellHeight, terminal height - 1)`.
+The frame never fills the terminal: its last row's trailing newline would
+scroll the frame's own top row away and desync the clear. A terminal-height
+grow can bring retained content back into view, bounded
 by retention, not by the row cap.
 
 A terminal resize (`SIGWINCH`, for example a tmux pane resize) re-queries
@@ -215,8 +219,38 @@ the resize watcher.
 The complete reasoning stays in the session, model context, and saved chat.
 clai removes terminal control sequences only from the display copy. Raw,
 structured, debug, and redirected stdout do not use this viewport. Redirected
-stdout is identical to raw output. When activity ends, the final viewport
-stays visible and the final answer starts below it.
+stdout is identical to raw output. When activity ends and the session has a
+final answer, clai clears every drawn viewport row and prints the answer where
+the window started. The answer never lands below a stale window or below a
+mix of coloured activity rows. A session with no final answer keeps its
+viewport visible.
+
+A viewport can carry a pinned header block above its activity blocks. Each
+header line is sanitized to one logical line and wrapped to the window width;
+the block is capped at four rows and a clipped block ends with an ellipsis.
+The header is never evicted or trimmed by the height bound. `clai -l q` uses
+it for progress on one row: `▸ loop 2/10 - what remains`. While the summarizer
+runs the row reads `▸ loop 2/10 - summarizing…`; the landed summary replaces
+it in place. Only the iteration marker uses the `loopTitle` accent; the phase
+that follows uses the muted activity colour. The goal is not repeated. The
+summary states what the previous iteration achieved and what remains; the
+fallback uses the first and last non-empty handover lines until the
+summarizer answers. Iteration 1 has no handover, so its summary is the plan
+derived from the initial prompt, and a failed plan leaves the bare marker.
+A viewport whose only rows are the header is not drawn before the first
+activity, so an early resize cannot strand a copy above startup output.
+
+A notice that must reach the user while the viewport is drawn (the
+context-budget stop-loss warning, for example) prints above the frame: clai
+erases the frame, prints the line, and redraws the frame below it. A direct
+terminal write would move the cursor behind the viewport's bookkeeping and
+strand a row at the next clear.
+
+Each iteration keeps its own header in the scrollback: at stream end the loop
+window collapses to its header, the terminal keeps those rows, and the next
+iteration starts a fresh frame below them. A continuing iteration leaves the
+header as its progress record; an achieved iteration prints its answer below
+it; blocked and exhausted runs leave the header and report through the error.
 
 ### 7) Generated images
 
@@ -241,3 +275,13 @@ To customize colours, edit:
 - `<clai-config-dir>/theme.json`
 
 You can change values to any valid ANSI escape sequence (e.g. 24-bit colours via `\u001b[38;2;R;G;Bm`).
+
+The `loopTitle` accent styles the iteration marker of the pinned loop progress
+row, not the phase summary, which keeps the muted activity colour. These muted
+variants work on dark and light terminals:
+
+| Variant | `loopTitle` |
+| --- | --- |
+| muted teal (default) | `\u001b[38;2;110;170;160m` |
+| soft amber | `\u001b[38;2;190;160;110m` |
+| slate | `\u001b[38;2;150;165;180m` |

@@ -79,6 +79,19 @@ type LoopQuerier interface {
 	// beside every tool already selected, whether -t is unset, a glob, or an
 	// explicit list; it never removes or narrows an existing tool.
 	RegisterExtraTool(tool pub_models.LLMTool)
+
+	// SetLoopProgress records the iteration that the following TextQuery runs,
+	// so the rolling window pins its header from the first activity.
+	SetLoopProgress(progress LoopProgress)
+
+	// FinishLoopIteration applies the rolling-window rule after one iteration.
+	// The window collapsed to its pinned header at stream end. An achieved
+	// outcome prints its answer below that header; a continuing iteration leaves
+	// it as its progress record; blocked and exhausted runs leave it and report
+	// through the error. Without a drawn window the iteration already printed
+	// its answer, so only the progress state is cleared. Calling it without
+	// progress from SetLoopProgress is an error.
+	FinishLoopIteration(outcome LoopOutcome, answer pub_models.Message) error
 }
 
 // RegisterExtraTool adds tool to the querier's dispatch and selectable
@@ -147,12 +160,22 @@ func (r *loopRunner) Query(ctx context.Context) error {
 		return fmt.Errorf("loop: -max-iterations must be zero (unlimited) or positive, got %d", r.cfg.MaxIterations)
 	}
 
-	handover := ""
+	// Iteration 1 has no handover; the summarizer derives its phase from the
+	// initial prompt. Every later iteration inherits what the previous handover
+	// reported, and the loop-phase summarizer may refine it while the iteration
+	// streams.
+	phase := ""
+	var handover string
 	for iteration := 1; ; iteration++ {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		r.recorder.Reset()
+		r.querier.SetLoopProgress(LoopProgress{
+			Iteration:     iteration,
+			MaxIterations: r.cfg.MaxIterations,
+			Phase:         phase,
+		})
 		chat, err := r.iterationChat(iteration, handover)
 		if err != nil {
 			return err
@@ -164,13 +187,18 @@ func (r *loopRunner) Query(ctx context.Context) error {
 			}
 			return fmt.Errorf("loop iteration %d: %w", iteration, err)
 		}
+		answer := pub_models.Message{Role: "assistant", Content: lastAssistantText(result)}
 
 		if submission, ok := r.recorder.Submission(); ok {
 			switch submission.Status {
 			case LoopStatusAchieved:
-				return nil
+				if answer.Content == "" {
+					answer.Content = submission.Summary
+				}
+				return r.finishDisplay(iteration, LoopOutcomeAchieved, answer)
 			case LoopStatusBlocked:
-				return &LoopBlockedError{Iteration: iteration, Summary: submission.Summary}
+				domain := &LoopBlockedError{Iteration: iteration, Summary: submission.Summary}
+				return r.stopWithDisplay(iteration, domain, LoopOutcomeBlocked, answer)
 			default:
 				return fmt.Errorf("loop iteration %d: unsupported recorded status %q", iteration, submission.Status)
 			}
@@ -180,10 +208,34 @@ func (r *loopRunner) Query(ctx context.Context) error {
 			return ctxErr
 		}
 		handover = lastAssistantHandover(result)
+		phase = loopHandoverProgress(handover)
 		if r.cfg.MaxIterations > 0 && iteration >= r.cfg.MaxIterations {
-			return &MaxIterationsError{MaxIterations: r.cfg.MaxIterations, LastHandover: handover}
+			domain := &MaxIterationsError{MaxIterations: r.cfg.MaxIterations, LastHandover: handover}
+			return r.stopWithDisplay(iteration, domain, LoopOutcomeExhausted, answer)
+		}
+		if err := r.finishDisplay(iteration, LoopOutcomeContinue, answer); err != nil {
+			return err
 		}
 	}
+}
+
+// finishDisplay runs the iteration's terminal display step, naming the
+// iteration when it fails.
+func (r *loopRunner) finishDisplay(iteration int, outcome LoopOutcome, answer pub_models.Message) error {
+	if err := r.querier.FinishLoopIteration(outcome, answer); err != nil {
+		return fmt.Errorf("display loop iteration %d: %w", iteration, err)
+	}
+	return nil
+}
+
+// stopWithDisplay returns domain unchanged when the display succeeded, so the
+// terminal result stays type-assertable; a failed display is joined beside it.
+func (r *loopRunner) stopWithDisplay(iteration int, domain error, outcome LoopOutcome, answer pub_models.Message) error {
+	displayErr := r.finishDisplay(iteration, outcome, answer)
+	if displayErr == nil {
+		return domain
+	}
+	return errors.Join(domain, displayErr)
 }
 
 // textQuery isolates one iteration's cancellation: a StopEvent cancels only
@@ -272,14 +324,20 @@ func continuationPrompt(goal string) string {
 }
 
 func lastAssistantHandover(chat pub_models.Chat) string {
+	if content := lastAssistantText(chat); content != "" {
+		return content
+	}
+	return loopHandoverPlaceholder
+}
+
+// lastAssistantText returns the trimmed content of the last assistant message,
+// or "" when the chat has no non-empty assistant reply.
+func lastAssistantText(chat pub_models.Chat) string {
 	for i := len(chat.Messages) - 1; i >= 0; i-- {
 		if chat.Messages[i].Role != "assistant" {
 			continue
 		}
-		if content := strings.TrimSpace(chat.Messages[i].Content); content != "" {
-			return content
-		}
-		return loopHandoverPlaceholder
+		return strings.TrimSpace(chat.Messages[i].Content)
 	}
-	return loopHandoverPlaceholder
+	return ""
 }

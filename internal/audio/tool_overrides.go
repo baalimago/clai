@@ -3,8 +3,8 @@ package audio
 import "sync"
 
 // transcribeOverride holds run-scoped configuration for the
-// audio_transcribe tool, so a normal query, loop or chat can pick the
-// transcription model its tools use (the tool engine otherwise reads
+// audio_transcribe tool, so a normal query (plain or loop mode) or chat can
+// pick the transcription model its tools use (the tool engine otherwise reads
 // audioConfig.json). CLI flags configure the tool runtime for the
 // duration of the run.
 var (

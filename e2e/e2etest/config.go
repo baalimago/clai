@@ -57,6 +57,7 @@ func SetupMainTestConfigDir(t *testing.T) string {
   "notificationBell": true,
   "tableItems": 10,
   "toolOutputRows": 6,
+  "loopTitle": "",
   "rollingOutput": {
     "enabled": true,
     "windowCellHeight": 30

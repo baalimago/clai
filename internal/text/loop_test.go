@@ -16,10 +16,19 @@ import (
 )
 
 type recordingLoopQuerier struct {
-	events []string
-	chats  []pub_models.Chat
-	tools  []pub_models.LLMTool
-	handle func(ctx context.Context, iteration int, chat pub_models.Chat) (pub_models.Chat, error)
+	events    []string
+	chats     []pub_models.Chat
+	tools     []pub_models.LLMTool
+	progress  []LoopProgress
+	finished  []loopDisplayCall
+	finishErr error
+	handle    func(ctx context.Context, iteration int, chat pub_models.Chat) (pub_models.Chat, error)
+}
+
+// loopDisplayCall records one FinishLoopIteration call.
+type loopDisplayCall struct {
+	outcome LoopOutcome
+	answer  pub_models.Message
 }
 
 func (f *recordingLoopQuerier) Query(context.Context) error {
@@ -36,6 +45,17 @@ func (f *recordingLoopQuerier) TextQuery(ctx context.Context, chat pub_models.Ch
 func (f *recordingLoopQuerier) RegisterExtraTool(tool pub_models.LLMTool) {
 	f.tools = append(f.tools, tool)
 	f.events = append(f.events, "register:"+tool.Specification().Name)
+}
+
+func (f *recordingLoopQuerier) SetLoopProgress(progress LoopProgress) {
+	f.progress = append(f.progress, progress)
+	f.events = append(f.events, fmt.Sprintf("progress:%d", progress.Iteration))
+}
+
+func (f *recordingLoopQuerier) FinishLoopIteration(outcome LoopOutcome, answer pub_models.Message) error {
+	f.finished = append(f.finished, loopDisplayCall{outcome: outcome, answer: answer})
+	f.events = append(f.events, fmt.Sprintf("finish:%d", outcome))
+	return f.finishErr
 }
 
 func loopSeedChat() pub_models.Chat {
@@ -368,6 +388,69 @@ func TestLoopRunner_BlockedReturnsTypedError(t *testing.T) {
 	}
 }
 
+func TestLoopRunner_TerminalErrorKeepsDomainType(t *testing.T) {
+	t.Run("blocked returns the typed error", func(t *testing.T) {
+		recorder := NewCompletionRecorder("")
+		fake := &recordingLoopQuerier{handle: func(ctx context.Context, _ int, chat pub_models.Chat) (pub_models.Chat, error) {
+			if _, err := recorder.CallWithContext(ctx, loopInput("blocked", "Need credentials.")); err != nil {
+				return pub_models.Chat{}, err
+			}
+			return chat, nil
+		}}
+		runner := NewLoopRunner(fake, recorder, LoopConfig{SeedChat: loopSeedChat(), MaxIterations: 3})
+
+		err := runner.Query(t.Context())
+		if _, ok := err.(*LoopBlockedError); !ok {
+			t.Fatalf("Query error = %T (%v), want *LoopBlockedError", err, err)
+		}
+	})
+
+	t.Run("exhausted returns the typed error", func(t *testing.T) {
+		fake := &recordingLoopQuerier{handle: func(_ context.Context, _ int, chat pub_models.Chat) (pub_models.Chat, error) {
+			return chat, nil
+		}}
+		runner := NewLoopRunner(fake, NewCompletionRecorder(""), LoopConfig{SeedChat: loopSeedChat(), MaxIterations: 1})
+
+		err := runner.Query(t.Context())
+		if _, ok := err.(*MaxIterationsError); !ok {
+			t.Fatalf("Query error = %T (%v), want *MaxIterationsError", err, err)
+		}
+	})
+
+	terminal := []struct {
+		name          string
+		maxIterations int
+		submit        func(ctx context.Context, recorder CompletionRecorder) error
+	}{
+		{name: "blocked", maxIterations: 3, submit: func(ctx context.Context, recorder CompletionRecorder) error {
+			_, err := recorder.CallWithContext(ctx, loopInput("blocked", "Need credentials."))
+			return err
+		}},
+		{name: "exhausted", maxIterations: 1, submit: func(context.Context, CompletionRecorder) error { return nil }},
+	}
+	for _, tc := range terminal {
+		t.Run("display failure joins and names the iteration/"+tc.name, func(t *testing.T) {
+			displayErr := errors.New("display failed")
+			recorder := NewCompletionRecorder("")
+			fake := &recordingLoopQuerier{
+				finishErr: displayErr,
+				handle: func(ctx context.Context, _ int, _ pub_models.Chat) (pub_models.Chat, error) {
+					return pub_models.Chat{}, tc.submit(ctx, recorder)
+				},
+			}
+			runner := NewLoopRunner(fake, recorder, LoopConfig{SeedChat: loopSeedChat(), MaxIterations: tc.maxIterations})
+
+			err := runner.Query(t.Context())
+			if !errors.Is(err, displayErr) {
+				t.Fatalf("Query error = %v, want the display error", err)
+			}
+			if message := err.Error(); !strings.Contains(message, "loop iteration 1") {
+				t.Fatalf("Query error = %q, want the failed iteration named", message)
+			}
+		})
+	}
+}
+
 func TestLoopRunner_MaxIterationsAndValidation(t *testing.T) {
 	t.Run("negative limit fails before any query", func(t *testing.T) {
 		fake := &recordingLoopQuerier{handle: func(context.Context, int, pub_models.Chat) (pub_models.Chat, error) {
@@ -492,8 +575,8 @@ func TestLoopRunner_RegistersRecorderOnce(t *testing.T) {
 	if got := fake.tools[0].Specification().Name; got != "complete_task" {
 		t.Fatalf("registered tool = %q, want complete_task", got)
 	}
-	if len(fake.events) < 2 || fake.events[0] != "register:complete_task" || fake.events[1] != "query:1" {
-		t.Fatalf("events = %v, want one registration before the first query", fake.events)
+	if len(fake.events) < 3 || fake.events[0] != "register:complete_task" || fake.events[1] != "progress:1" || fake.events[2] != "query:1" {
+		t.Fatalf("events = %v, want one registration and the first progress before the first query", fake.events)
 	}
 	for _, event := range fake.events[1:] {
 		if strings.HasPrefix(event, "register:") {
