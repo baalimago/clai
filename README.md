@@ -61,7 +61,8 @@ The agent runs silent and returns typed errors. See [pkg/agent](https://pkg.go.d
 ## Features
 
 <div align="center">
-  <img src="img/showcase.gif" alt="Showcase">
+  <img src="img/clai-demo.gif" alt="Three aliases, a loop that verifies itself, a generated image read back by the model, a Jev classification, a stored chat, a model swap and a replay">
+  <p>Eleven acts in one shell session, each explained in <a href="./examples.md#showcase">examples</a>.</p>
 </div>
 
 - **[Shell context injection](./architecture/shell-context.md)** - Inject shell context into the system prompt via configurable templates.
@@ -69,6 +70,7 @@ The agent runs silent and returns typed errors. See [pkg/agent](https://pkg.go.d
 - **[Agent Skills](./architecture/skills.md)** - Import skills from custom global directories, or project-level `.agents/skills`.
 - **[Profiles](./examples.md#profiles-workflow-presets)** - Pre-prompted profiles enabling customized workflows and agents.
 - **[Loop until verified](./examples.md#loop-until-the-goal-is-verified)** - Add `-l` to a query and clai iterates toward the goal, accepting completion only when `-check` passes.
+- **[Structured output](./examples.md#blocking-structured-output)** - `-rf` returns JSON instead of prose, from any vendor; Jev answers a fixed set of questions about the data you pipe in.
 - **[MCP client support](./examples.md#mcp-tools-external-tool-servers)** - Add any MCP server you'd like by pasting their configuration.
 - **[Images, both ways](./architecture/images.md)** - Attach images with `-img`, a glob or stdin to any model, and get images back through the `generate_image` tool, or from an image-output model.
 - **Unix-like** - Clai follows the [unix philosophy](https://en.wikipedia.org/wiki/Unix_philosophy) and works with data piped in and out.

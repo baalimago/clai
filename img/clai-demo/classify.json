@@ -1,0 +1,17 @@
+{
+  "type": "json_schema",
+  "json_schema": {
+    "name": "classify",
+    "schema": {
+      "kind": {
+        "type": "choice",
+        "instructions": "What kind of file is this?",
+        "criteria": {
+          "source": "Go source code",
+          "test": "a Go test",
+          "build": "a build or config file"
+        }
+      }
+    }
+  }
+}

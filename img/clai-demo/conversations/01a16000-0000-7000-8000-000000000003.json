@@ -1,0 +1,45 @@
+{
+  "created": "2026-10-23T14:05:00+03:00",
+  "id": "01a16000-0000-7000-8000-000000000003",
+  "origin_dir": "/home/demo/work",
+  "title": "Changelog: retry fix",
+  "summary": "One-line changelog entry for the retry clock fix.",
+  "summary_at": "2026-10-23T14:06:00+03:00",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are an assistant for a CLI tool. Answer concisely and informatively. Prefer markdown if possible."
+    },
+    {
+      "role": "user",
+      "content": "Draft a changelog line for the retry fix."
+    },
+    {
+      "role": "assistant",
+      "content": "- Retry tests now use an injected clock instead of wall-clock sleeps."
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 420,
+    "completion_tokens": 48,
+    "total_tokens": 468
+  },
+  "recent_usage": {
+    "prompt_tokens": 420,
+    "completion_tokens": 48,
+    "total_tokens": 468
+  },
+  "queries": [
+    {
+      "created_at": "2026-10-23T14:05:20+03:00",
+      "cost_usd": 0.0008,
+      "current_index": 1,
+      "model": "gpt-5.2",
+      "usage": {
+        "prompt_tokens": 420,
+        "completion_tokens": 48,
+        "total_tokens": 468
+      }
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "created": "2026-10-23T18:40:00+03:00",
+  "id": "01a16000-0000-7000-8000-000000000001",
+  "origin_dir": "/home/demo/work",
+  "title": "Why is TestRetry flaky?",
+  "summary": "Wall-clock reads and shared subtest state are the first suspects.",
+  "summary_at": "2026-10-23T18:41:00+03:00",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are an assistant for a CLI tool. Answer concisely and informatively. Prefer markdown if possible."
+    },
+    {
+      "role": "user",
+      "content": "TestRetry fails about once in twenty runs. Where should I look first?"
+    },
+    {
+      "role": "assistant",
+      "content": "Check for wall-clock reads before you touch the retry logic: sleeps and time.Now comparisons make the test order-dependent. Also look for shared state between parallel subtests."
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 812,
+    "completion_tokens": 164,
+    "total_tokens": 976
+  },
+  "recent_usage": {
+    "prompt_tokens": 812,
+    "completion_tokens": 164,
+    "total_tokens": 976
+  },
+  "queries": [
+    {
+      "created_at": "2026-10-23T18:40:30+03:00",
+      "cost_usd": 0.0023,
+      "current_index": 1,
+      "model": "gpt-5.2",
+      "usage": {
+        "prompt_tokens": 812,
+        "completion_tokens": 164,
+        "total_tokens": 976
+      }
+    }
+  ]
+}
