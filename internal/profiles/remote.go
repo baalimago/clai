@@ -75,6 +75,9 @@ func (d CommandDeps) Trust(ctx context.Context, target string) error {
 	if err != nil {
 		return err
 	}
+	if err := d.trustSkills(ctx, r, res); err != nil {
+		return err
+	}
 	fmt.Fprintf(d.Out, "%s\nTrusted %s (sha256 %s) in %s\n", res.Summary, res.Target, res.Digest, filepath.Join(confDir, remote.TrustFile))
 	return nil
 }
@@ -116,6 +119,9 @@ func (d CommandDeps) Install(ctx context.Context, target, name string) error {
 	}
 	res, err := r.Resolve(ctx, target, remote.ConsentGiven)
 	if err != nil {
+		return err
+	}
+	if err := d.trustSkills(ctx, r, res); err != nil {
 		return err
 	}
 	if err := writeStamped(path, res); err != nil {
@@ -167,6 +173,9 @@ func (d CommandDeps) updateOne(ctx context.Context, r remote.Resolver, path, nam
 	if err != nil {
 		return err
 	}
+	if err := d.trustSkills(ctx, r, res); err != nil {
+		return err
+	}
 	if res.Digest == t.SHA256 {
 		fmt.Fprintf(d.Out, "%s is up to date with %s\n", name, res.Target)
 		return nil
@@ -175,6 +184,28 @@ func (d CommandDeps) updateOne(ctx context.Context, r remote.Resolver, path, nam
 		return err
 	}
 	fmt.Fprintf(d.Out, "%s\nUpdated %s to %s (sha256 %s)\n", res.Summary, name, res.Target, res.Digest)
+	return nil
+}
+
+// trustSkills fetches and trusts the skills a profile names, so a later
+// run, offline or in cron, finds them cached and trusted. The command
+// that trusts the profile is consent for its skills.
+func (d CommandDeps) trustSkills(ctx context.Context, r remote.Resolver, res remote.Resolved) error {
+	targets := make([]string, 0, len(res.Summary.Skills))
+	for _, t := range res.Summary.Skills {
+		target := t.String()
+		if t.SHA256 != "" {
+			target = t.WithDigest(t.SHA256)
+		}
+		targets = append(targets, target)
+	}
+	skills, err := r.ResolveSkills(ctx, targets, remote.ConsentGiven)
+	if err != nil {
+		return err
+	}
+	for _, s := range skills {
+		fmt.Fprintf(d.Out, "Skill %s from %s (sha256 %s)\n", s.Name, s.Target, s.Digest)
+	}
 	return nil
 }
 

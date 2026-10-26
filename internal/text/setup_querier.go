@@ -113,8 +113,9 @@ func setupCmdBanConfig(tConf *Configurations, cmdBan string) {
 // vendor routing. trustInput is the reader for interactive skill-trust
 // prompts (the composition root passes the wizard's input source; text
 // cannot import setup). resolveRemote turns a cchub:, gh: or https:// -prp
-// target into a local file; nil refuses one.
-func SetupQuerier(ctx context.Context, confDir string, tf internal.TextFlags, args []string, trustInput io.Reader, resolveRemote RemoteProfileResolver) (models.Querier, *Configurations, error) {
+// target into a local file; nil refuses one. resolveSkills fetches the
+// skills a profile names; nil refuses a profile that names any.
+func SetupQuerier(ctx context.Context, confDir string, tf internal.TextFlags, args []string, trustInput io.Reader, resolveRemote RemoteProfileResolver, resolveSkills RemoteSkillsResolver) (models.Querier, *Configurations, error) {
 	// The flagset is first used to find chatModel and potentially setup a new configuration file from some default
 	tConf, err := utils.LoadConfigFromFile(confDir, "textConfig.json", MigrateOldChatConfig, &Default)
 	tConf.ConfigDir = confDir
@@ -179,6 +180,10 @@ func SetupQuerier(ctx context.Context, confDir string, tf internal.TextFlags, ar
 	if err := applyUseSkillsOverride(&tConf, tf.QueryText.UseSkills); err != nil {
 		return nil, nil, err
 	}
+	profileSkillRoots, err := resolveProfileSkills(ctx, &tConf, resolveSkills)
+	if err != nil {
+		return nil, nil, err
+	}
 	if tConf.UseSkills {
 		tools.Init()
 		allTools := tools.Registry.All()
@@ -195,6 +200,7 @@ func SetupQuerier(ctx context.Context, confDir string, tf internal.TextFlags, ar
 			ConfigDir:    confDir,
 			CacheDir:     cacheDir,
 			WorkingDir:   mustGetwd(),
+			ProfileRoots: profileSkillRoots,
 			LogQueryText: logSkillDiscovery,
 			TrustPrompter: func(_ context.Context, prompt skills.TrustPrompt) (bool, error) {
 				ancli.Warnf("%s", formatSkillTrustPrompt(prompt))

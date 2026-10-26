@@ -16,6 +16,8 @@ import (
 
 // PublishRequest is what `clai profiles publish` sends to the Hub.
 type PublishRequest struct {
+	// Kind is "skill" for a skill; empty publishes a profile.
+	Kind    string `json:"kind,omitempty"`
 	Name    string `json:"name"`
 	Body    string `json:"body"`
 	Title   string `json:"title,omitempty"`
@@ -85,11 +87,23 @@ func (d CommandDeps) Publish(ctx context.Context, profile string, opts PublishOp
 	if _, err := remote.Validate(path, body); err != nil {
 		return err
 	}
+	if err := pinnedSkills(body); err != nil {
+		return err
+	}
 	if d.FindSecret != nil {
 		if where, found := d.FindSecret(path, body); found {
 			return fmt.Errorf("%s holds what looks like a credential (%s): move it to an envfile or an environment variable, then publish", path, where)
 		}
 	}
+	return d.send(ctx, confDir, profile, PublishRequest{
+		Name: name, Body: string(body), Title: opts.Title, Summary: opts.Summary, Note: opts.Note, Handle: opts.Handle,
+	}, func(pinned string) string { return "clai -prp " + pinned + " q …" })
+}
+
+// send publishes req and prints its address and use(address), how to use
+// it, pinned by version and hash. arg is what the user typed, for the
+// -handle hint.
+func (d CommandDeps) send(ctx context.Context, confDir, arg string, req PublishRequest, use func(pinned string) string) error {
 	if d.NewHubPublisher == nil {
 		return fmt.Errorf("publishing is not available in this build")
 	}
@@ -97,12 +111,14 @@ func (d CommandDeps) Publish(ctx context.Context, profile string, opts PublishOp
 	if err != nil {
 		return err
 	}
-	res, err := publish(ctx, PublishRequest{
-		Name: name, Body: string(body), Title: opts.Title, Summary: opts.Summary, Note: opts.Note, Handle: opts.Handle,
-	})
+	res, err := publish(ctx, req)
 	var handle *HandleRequiredError
 	if errors.As(err, &handle) {
-		return fmt.Errorf("%w: clai profiles publish %s -handle %s", err, profile, handle.Suggested)
+		sub := "profiles"
+		if req.Kind == "skill" {
+			sub = "skills"
+		}
+		return fmt.Errorf("%w: clai %s publish %s -handle %s", err, sub, arg, handle.Suggested)
 	}
 	if err != nil {
 		return err
@@ -112,7 +128,22 @@ func (d CommandDeps) Publish(ctx context.Context, profile string, opts PublishOp
 	if !res.Created {
 		what = " (a new version)"
 	}
-	fmt.Fprintf(d.Out, "Published %s%s\n  %s\n  clai -prp %s#sha256=%s q …\n", pinned, what, res.URL, pinned, res.SHA256)
+	fmt.Fprintf(d.Out, "Published %s%s\n  %s\n  %s\n", pinned, what, res.URL, use(pinned+"#sha256="+res.SHA256))
+	return nil
+}
+
+// pinnedSkills refuses a skill target that can change after publishing:
+// everyone who trusts this version trusts its skills' bytes too.
+func pinnedSkills(body []byte) error {
+	skills, err := remote.ProfileSkills(body)
+	if err != nil {
+		return err
+	}
+	for _, t := range skills {
+		if !t.Pinned() && t.SHA256 == "" {
+			return fmt.Errorf("skill %s can change after you publish: pin it with @<version> (cchub:), @<ref> (gh:) or #sha256=<hex>", t)
+		}
+	}
 	return nil
 }
 
@@ -127,28 +158,33 @@ Examples:
   clai profiles publish ./bot.json -name trade-bot -handle lorentz`
 
 func publishCommand(deps CommandDeps) *internal.Command {
+	return newPublishCommand("profile", "Publish a profile to the Hub", publishHelp, deps.Publish)
+}
+
+// newPublishCommand builds `publish <what> [flags]` for profiles and skills.
+func newPublishCommand(what, desc, help string, publish func(context.Context, string, PublishOptions) error) *internal.Command {
 	var opts PublishOptions
 	register := func(fs *flag.FlagSet) {
-		fs.StringVar(&opts.Name, "name", "", "the agent's name in its address (default: the profile's file name)")
+		fs.StringVar(&opts.Name, "name", "", "the name in its address (default: the "+what+"'s file or folder name)")
 		fs.StringVar(&opts.Title, "title", "", "the title on the Hub (default: the name; kept on a new version)")
 		fs.StringVar(&opts.Summary, "summary", "", "one line on what it does (kept on a new version)")
 		fs.StringVar(&opts.Note, "note", "", "what changed in this version")
 		fs.StringVar(&opts.Handle, "handle", "", "your handle, needed once on an account without one")
 	}
-	sub := &internal.Command{Name: "publish", Desc: "Publish a profile to the Hub", HelpText: publishHelp, Register: register}
+	sub := &internal.Command{Name: "publish", Desc: desc, HelpText: help, Register: register}
 	sub.OnRun = func(ctx context.Context, c *internal.Command) error {
 		args := c.Args()[1:]
 		if len(args) == 0 {
-			return fmt.Errorf("usage: clai profiles publish <profile> [flags]")
+			return fmt.Errorf("usage: clai %s", strings.SplitN(help, ".", 2)[0])
 		}
-		// Flags may follow the profile, as they do in every example.
+		// Flags may follow the argument, as they do in every example.
 		if err := c.Flagset().Parse(args[1:]); err != nil {
 			return err
 		}
 		if rest := c.Flagset().Args(); len(rest) > 0 {
-			return fmt.Errorf("unexpected argument %q: publish takes one profile", rest[0])
+			return fmt.Errorf("unexpected argument %q: publish takes one %s", rest[0], what)
 		}
-		return deps.Publish(ctx, args[0], opts)
+		return publish(ctx, args[0], opts)
 	}
 	return sub
 }

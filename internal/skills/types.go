@@ -7,6 +7,10 @@ import (
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
+// SourceProfile is the class of a skill the run's profile brought. It
+// outranks every other class: the agent's author chose it by name.
+const SourceProfile = "profile"
+
 const (
 	configFileName = "skills.json"
 	trustFileName  = "skills_trust.json"
@@ -33,6 +37,9 @@ type Options struct {
 	CacheDir       string
 	WorkingDir     string
 	ConfigOverride *Config
+	// ProfileRoots hold the skills the run's profile names, already
+	// fetched and trusted with the profile (architecture/remote-targets.md).
+	ProfileRoots   []string
 	TrustPrompter  func(context.Context, TrustPrompt) (bool, error)
 	LogLevel       LogLevel
 	LogQueryText   bool

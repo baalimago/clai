@@ -164,3 +164,17 @@ func TestPublishCommand_parsesFlagsAfterTheProfile(t *testing.T) {
 		t.Fatalf("sent %+v", hub.got)
 	}
 }
+
+func TestPublish_refusesASkillThatCanChange(t *testing.T) {
+	hub := &fakeHub{resp: Published{Address: "cchub:ada/bot", Version: 1, Created: true}}
+	deps, conf, _ := publishDeps(t, hub)
+	writeProfile(t, conf, "bot", `{"model":"m","skills":["cchub:ada/review@2","gh:ada/kit/triage"]}`)
+	err := deps.Publish(t.Context(), "bot", PublishOptions{})
+	if err == nil || !strings.Contains(err.Error(), "gh:ada/kit/triage") || len(hub.got) != 0 {
+		t.Fatalf("unpinned skill: err = %v, sent %d", err, len(hub.got))
+	}
+	writeProfile(t, conf, "bot", `{"model":"m","skills":["cchub:ada/review@2","gh:ada/kit/triage@v1"]}`)
+	if err := deps.Publish(t.Context(), "bot", PublishOptions{}); err != nil {
+		t.Fatalf("pinned skills: %v", err)
+	}
+}

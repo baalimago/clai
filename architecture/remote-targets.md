@@ -25,6 +25,7 @@ fetched.
 | `internal/remote/validate.go` | `Validate`: the strict check, `ProfileKeys`, `InvalidProfileError` |
 | `internal/remote/fetch.go` | `NewClient`/`CheckRedirect` (https-only redirects, at most 5), the 64 KiB cap, the content-type check |
 | `internal/remote/store.go` | `TrustStore` (`<config>/trust.json`), `Cache` (`<cache>/remote/<sha256>.json` plus `index.json`), `Digest` |
+| `internal/remote/skill.go` | `ParseSkillTarget`, `Resolver.ResolveSkill`/`ResolveSkills`, `ResolvedSkill`, `SkillSummary`, `InvalidSkillError`, `ProfileSkills` |
 | `internal/remote/summary.go` | `Summarize`: what the trust prompt and `profiles trust` show |
 | `internal/remote/env.go` | `CLAI_CLOUD_URL`, `CLAI_CLOUD=off`, `NewResolver` |
 | `internal/text/remote_profile.go` | `resolveRemoteProfilePath` (runs before `ProfileOverrides`), the terminal prompt, `terminalAvailable` |
@@ -32,6 +33,7 @@ fetched.
 | `internal/exitstatus.go` | `ExitCoder`/`ExitStatus`: how exit status 3 survives upstream `cmd.Run` |
 | `internal/cli/cli.go` | `Deps.RemoteClient`, `remoteResolver` (the composition root) |
 | `e2e/remote_targets_e2e_test.go` | The CLI contract against `fakeHub`, a local TLS server with clai.chat's raw routes that also stands in for GitHub and any https host |
+| `e2e/profile_skills_e2e_test.go` | A profile's skills from the hub and GitHub: install, offline run, refusals, and publishing a skill then an agent that uses it |
 | `e2e/remote_targets_pty_e2e_test.go` | The trust question on a real pseudo-terminal, with stdout piped |
 
 ## Flow
@@ -113,6 +115,39 @@ A `gh:` target reads
   - `profiles list` shows the stamp. `text.Profile.Source` reads it, and the
     hub's agent page shows it as "based on".
 
+## Skills
+
+A profile's `"skills"` names skill targets (`ParseSkillTarget`): a
+`cchub:` skill, a `gh:` `SKILL.md` (a path that is not a `.md` file names
+its folder; no path means the repo's root `SKILL.md`) or an `https://`
+URL. Almost every skills marketplace (skills.sh, SkillsMP, Anthropic's
+`anthropics/skills`) lists skills that live in GitHub repos, so `gh:`
+reaches them.
+
+- `Resolver.ResolveSkill` reads the target like a profile (`read` with
+  `skillDoc`: `Accept: text/markdown`, no JSON requirement), caps it at
+  64 KiB, checks it with `skills.CheckSkill` (an `InvalidSkillError`,
+  exit 3, when it has no description), checks `#sha256=`, authorizes it
+  per base and hash in the same `trust.json`, stores it in the cache and
+  lays it out as `<cache>/remote/skills/<sha256>/<name>/SKILL.md`
+  (`Cache.skillRoot`). The name is the frontmatter `name`, or the hub name,
+  or the folder that holds the file. The trust prompt shows
+  `SkillSummary`: the name and description.
+- `Validate` checks `"skills"` is a list of skill targets, and `Summarize`
+  lists them (`Summary.Skills`, marked "not pinned" when they can change).
+- In a run, `text.remoteRun` resolves the profile and then its skills. A
+  yes at the profile's prompt in this run is consent for its skills
+  (`ConsentGiven`); otherwise each untrusted skill asks, or exits 3 where
+  nobody can be asked. A `#sha256=` on the profile pins the profile's
+  bytes, which name the skills but do not hold them, so it is not consent
+  for an unpinned skill.
+- `profiles trust`, `install` and `update` resolve the skills with
+  `ConsentGiven` too (`CommandDeps.trustSkills`), so an installed profile
+  runs offline and in cron with its skills cached and trusted.
+- `profiles publish` refuses a skill that is not pinned by version, ref or
+  hash (`pinnedSkills`): whoever trusts a published version trusts the
+  bytes of its skills too.
+
 ## Gotchas
 
 - `remote.ProfileKeys` must list every JSON key of `text.Profile`.
@@ -125,7 +160,8 @@ A `gh:` target reads
   [profiles.md](profiles.md)); the loader it replaced rewrote a profile to
   add missing fields and created config dirs beside it, which broke the
   hash and filled `<cache>/remote/`. The e2e suite checks the cache holds
-  only hashes and `index.json` after runs that are not `-r`.
+  only hashes and `index.json` after runs that are not `-r`; a profile with
+  skills adds `skills/`.
 - A missing agent or version is a `FetchError` naming the target ("not
   found", exit 1): it is a failed run, not a refusal.
 - Remote fetches always go through `Deps.RemoteClient`. Tests point it at

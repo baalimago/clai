@@ -61,16 +61,16 @@ func (e *FetchError) Error() string {
 	return fmt.Sprintf("%s: fetch %s: HTTP %d", e.Target, e.URL, e.Status)
 }
 
-// fetch reads at most MaxBodyBytes+1 bytes of url. requireJSON refuses a
+// fetch reads at most MaxBodyBytes+1 bytes of url, asking for accept. requireJSON refuses a
 // response whose content type is not application/json or a +json type;
 // raw.githubusercontent.com serves every file as text/plain, so gh:
 // targets skip it and rely on Validate.
-func fetch(ctx context.Context, client Doer, target, url string, requireJSON bool) ([]byte, error) {
+func fetch(ctx context.Context, client Doer, target, url, accept string, requireJSON bool) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build request for %s: %w", url, err)
 	}
-	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Accept", accept)
 	res, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetch %s: %w", url, err)

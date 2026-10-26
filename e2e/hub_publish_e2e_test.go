@@ -16,7 +16,7 @@ import (
 const fakeHubToken = "tok-ada"
 
 // publishFromCLI is clai.chat's POST /api/v1/hub (cloud/site/api.ts in
-// clai-cloud): a write key publishes a profile as its account, the first
+// clai-cloud): a write key publishes a profile, or a skill, as its account, the first
 // time under a new name and as the next version after that.
 func (h *fakeHub) publishFromCLI(w http.ResponseWriter, r *http.Request) {
 	answer := func(status int, body any) {
@@ -28,7 +28,7 @@ func (h *fakeHub) publishFromCLI(w http.ResponseWriter, r *http.Request) {
 		answer(http.StatusUnauthorized, map[string]string{"error": "unauthorized", "message": "Log in again: clai cloud login"})
 		return
 	}
-	var req struct{ Name, Body, Handle, Note string }
+	var req struct{ Kind, Name, Body, Handle, Note string }
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		answer(http.StatusBadRequest, map[string]string{"error": "invalid_request", "message": "Send a JSON object."})
 		return
@@ -42,6 +42,7 @@ func (h *fakeHub) publishFromCLI(w http.ResponseWriter, r *http.Request) {
 	}
 	key := h.handle + "/" + req.Name
 	h.agents[key] = append(h.agents[key], req.Body)
+	h.skills[key] = req.Kind == "skill"
 	n := len(h.agents[key])
 	status := http.StatusOK
 	if n == 1 {

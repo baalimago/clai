@@ -25,12 +25,13 @@ const (
 	ConsentGiven
 )
 
-// TrustPrompt is what the user is shown before trusting a target.
+// TrustPrompt is what the user is shown before trusting a target: a
+// profile's Summary or a skill's SkillSummary.
 type TrustPrompt struct {
 	Target  string
 	Digest  string
 	Page    string
-	Summary Summary
+	Summary fmt.Stringer
 }
 
 // Prompter asks the user whether to trust a target. A nil Prompter means
@@ -125,7 +126,7 @@ func (r Resolver) Resolve(ctx context.Context, raw string, consent Consent) (Res
 	if err != nil {
 		return Resolved{}, err
 	}
-	body, fetched, err := r.read(ctx, t)
+	body, fetched, err := r.read(ctx, t, profileDoc)
 	if err != nil {
 		return Resolved{}, err
 	}
@@ -147,15 +148,27 @@ func (r Resolver) Resolve(ctx context.Context, raw string, consent Consent) (Res
 	if _, err := r.Cache.Store(t.String(), body); err != nil {
 		return Resolved{}, err
 	}
-	if fetched && t.Kind == KindGitHub && t.Ref == "" && r.Note != nil {
-		r.Note(fmt.Sprintf("%s has no @ref, so it follows the default branch. Pin a tag or commit for scheduled runs.", t))
-	}
+	r.noteUnpinned(t, fetched)
 	return Resolved{Target: t, Path: r.Cache.Path(digest), Digest: digest, Body: body, Summary: summary, Fetched: fetched}, nil
 }
 
+func (r Resolver) noteUnpinned(t Target, fetched bool) {
+	if fetched && t.Kind == KindGitHub && t.Ref == "" && r.Note != nil {
+		r.Note(fmt.Sprintf("%s has no @ref, so it follows the default branch. Pin a tag or commit for scheduled runs.", t))
+	}
+}
+
+// docKind is what a target is expected to hold.
+type docKind int
+
+const (
+	profileDoc docKind = iota + 1
+	skillDoc
+)
+
 // read returns cached bytes for a pinned target, a target whose hash is
 // given and cached, or any target while offline; otherwise it fetches.
-func (r Resolver) read(ctx context.Context, t Target) ([]byte, bool, error) {
+func (r Resolver) read(ctx context.Context, t Target, doc docKind) ([]byte, bool, error) {
 	if t.Pinned() || r.Offline {
 		body, digest, err := r.Cache.Lookup(t.String())
 		switch {
@@ -168,14 +181,18 @@ func (r Resolver) read(ctx context.Context, t Target) ([]byte, bool, error) {
 	if r.Offline {
 		return nil, false, &OfflineError{Target: t.String()}
 	}
-	body, err := fetch(ctx, r.Client, t.String(), t.FetchURL(r.HubBase), t.Kind != KindGitHub)
+	accept, requireJSON := "application/json", t.Kind != KindGitHub
+	if doc == skillDoc {
+		accept, requireJSON = "text/markdown, text/plain", false
+	}
+	body, err := fetch(ctx, r.Client, t.String(), t.FetchURL(r.HubBase), accept, requireJSON)
 	if err != nil {
 		return nil, false, err
 	}
 	return body, true, nil
 }
 
-func (r Resolver) authorize(ctx context.Context, t Target, digest string, summary Summary, consent Consent) error {
+func (r Resolver) authorize(ctx context.Context, t Target, digest string, summary fmt.Stringer, consent Consent) error {
 	base := t.Base()
 	trusted, err := r.Trust.Trusted(base, digest)
 	if err != nil {

@@ -117,10 +117,11 @@ func getFirstSentence(s string) string {
 
 // Help explains what profiles are; surfaced in 'clai profiles -h' and
 // re-exported by package internal for the e2e suite.
-const Help = `A profile is a saved agent: a model, a prompt, the tools it may use and the
-MCP servers it may start, kept in <config-dir>/profiles/<name>.json. What a
-profile leaves out comes from your text config. Create or edit one in the
-profiles menu of 'clai setup', or write the JSON yourself.
+const Help = `A profile is a saved agent: a model, a prompt, the tools it may use, the MCP
+servers it may start and the skills it brings (see 'clai skills -h'), kept in
+<config-dir>/profiles/<name>.json. What a profile leaves out comes from your
+text config. Create or edit one in the profiles menu of 'clai setup', or write
+the JSON yourself.
 
 Run one by name with -p, or by file path or remote target with -prp:
   clai -p gopher -g internal/handler.go q write tests for this file

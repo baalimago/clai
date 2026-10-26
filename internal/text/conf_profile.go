@@ -70,8 +70,13 @@ func (c *Configurations) ProfileOverrides() error {
 	c.Model = profile.Model
 	c.SystemPrompt = profile.Prompt
 	c.UseTools = profile.UseTools || (len(profile.McpServers) > 0)
-	if profile.UseSkills != nil {
+	c.ProfileSkills = profile.Skills
+	switch {
+	case profile.UseSkills != nil:
 		c.UseSkills = *profile.UseSkills
+		c.ProfileUseSkillsSet = true
+	case len(profile.Skills) > 0:
+		c.UseSkills = true
 		c.ProfileUseSkillsSet = true
 	}
 	if profile.UseLookback != nil {

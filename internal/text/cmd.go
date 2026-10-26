@@ -144,8 +144,8 @@ func setupTextQuerier(ctx context.Context, c *internal.Command, tf internal.Text
 		trustInput = deps.TrustInput()
 	}
 	interactive := !tf.AgentText.NonInteractive.Value() && terminalAvailable()
-	resolveRemote := remoteProfileResolver(deps.NewRemoteResolver, confDir, trustInput, interactive)
-	q, tConf, err := SetupQuerier(ctx, confDir, tf, c.Args(), trustInput, resolveRemote)
+	remoteTargets := &remoteRun{newResolver: deps.NewRemoteResolver, confDir: confDir, trustInput: trustInput, interactive: interactive}
+	q, tConf, err := SetupQuerier(ctx, confDir, tf, c.Args(), trustInput, remoteTargets.profile, remoteTargets.skills)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -37,6 +37,19 @@ func parseSkill(class, root, dir string) (Skill, *InvalidSkill) {
 	}, nil
 }
 
+// CheckSkill parses a SKILL.md and returns its metadata, or why clai would
+// not load it.
+func CheckSkill(b []byte) (Metadata, error) {
+	parsed, err := parseMarkdownWithFrontmatter(string(b))
+	if err != nil {
+		return Metadata{}, err
+	}
+	if strings.TrimSpace(parsed.Metadata.Description) == "" {
+		return Metadata{}, fmt.Errorf("missing required description")
+	}
+	return parsed.Metadata, nil
+}
+
 func parseMarkdownWithFrontmatter(content string) (ParsedSkill, error) {
 	normalized := strings.ReplaceAll(content, "\r\n", "\n")
 	parsed := ParsedSkill{

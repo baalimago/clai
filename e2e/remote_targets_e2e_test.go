@@ -39,6 +39,8 @@ type fakeHub struct {
 	agents map[string][]string
 	files  map[string]fakeFile
 	hits   map[string]int
+	// skills names the hub entries that are skills, served as Markdown.
+	skills map[string]bool
 	// handle is the account behind fakeHubToken, "" until it picks one.
 	handle string
 }
@@ -69,6 +71,9 @@ func (h *fakeHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		if h.skills[m[1]] {
+			w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+		}
 		_, _ = w.Write([]byte(versions[n-1]))
 		return
 	}
@@ -84,6 +89,13 @@ func (h *fakeHub) publish(agent, body string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.agents[agent] = append(h.agents[agent], body)
+}
+
+func (h *fakeHub) publishSkill(skill, body string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.skills[skill] = true
+	h.agents[skill] = append(h.agents[skill], body)
 }
 
 func (h *fakeHub) serveFile(path, contentType, body string) {
@@ -142,7 +154,7 @@ func setupRemoteE2E(t *testing.T) remoteE2E {
 	env := remoteE2E{confDir: e2etest.SetupMainTestConfigDir(t), cacheDir: filepath.Join(t.TempDir(), "cache")}
 	t.Setenv("CLAI_CACHE_DIR", env.cacheDir)
 	t.Setenv("CLAI_CLOUD", "")
-	env.hub = &fakeHub{agents: map[string][]string{}, files: map[string]fakeFile{}, hits: map[string]int{}}
+	env.hub = &fakeHub{agents: map[string][]string{}, files: map[string]fakeFile{}, hits: map[string]int{}, skills: map[string]bool{}}
 	env.hub.publish("ada/bot", remoteBotV1)
 	env.hub.srv = httptest.NewTLSServer(env.hub)
 	t.Cleanup(env.hub.srv.Close)

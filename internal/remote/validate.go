@@ -18,6 +18,7 @@ const MaxBodyBytes = 64 * 1024
 var ProfileKeys = []string{
 	"name", "model", "use_tools", "use_skills", "tools", "cmd-ban", "prompt",
 	"save-reply-as-conv", "mcp_servers", "shell_context", "use_lookback", "source",
+	"skills",
 }
 
 // InvalidProfileError lists every problem found in a remote profile.
@@ -73,6 +74,11 @@ func Validate(target string, body []byte) (Checked, error) {
 	}
 	if raw, ok := fields["mcp_servers"]; ok {
 		problems = append(problems, serverProblems(raw)...)
+	}
+	if raw, ok := fields["skills"]; ok {
+		if _, err := skillTargets(raw); err != nil {
+			problems = append(problems, err.Error())
+		}
 	}
 	if len(problems) > 0 {
 		return Checked{}, invalid(problems...)

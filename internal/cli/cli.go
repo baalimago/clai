@@ -125,7 +125,7 @@ func remoteResolver(client remote.Doer) text.NewRemoteResolverFunc {
 }
 
 // hubPublisher posts a profile to the Hub with this machine's clai.chat
-// login, for `clai profiles publish`.
+// login, for `clai profiles publish` and `clai skills publish`.
 func hubPublisher(confDir string) (profiles.HubPublisher, error) {
 	creds, err := cloud.LoadCredentials(confDir)
 	if err != nil {
@@ -171,6 +171,15 @@ func commands(deps Deps, setExit func(int)) map[string]cmd.Command {
 		PhotoConfig:         setup.LoadPhotoConfig,
 		NewRemoteResolver:   remoteResolver(deps.RemoteClient),
 	}
+	profileDeps := profiles.CommandDeps{
+		NewResolver:     profiles.NewResolverFunc(remoteResolver(deps.RemoteClient)),
+		ConfigDir:       func() (string, error) { return configPrep() },
+		NewHubPublisher: hubPublisher,
+		FindSecret: func(name string, b []byte) (string, bool) {
+			s, found := sync.FindSecret(name, b)
+			return s.String(), found
+		},
+	}
 	return map[string]cmd.Command{
 		"query|q": text.QueryCommand(queryDeps),
 		"chat|c": chat.Command(chat.CommandDeps{
@@ -200,16 +209,9 @@ func commands(deps Deps, setExit func(int)) map[string]cmd.Command {
 		"dir-replay|dre": chat.DirscopeReplayCommand(),
 		"tools|t":        tools.Command(),
 		"mcp":            mcp.Command(),
-		"profiles": profiles.Command(profiles.CommandDeps{
-			NewResolver:     profiles.NewResolverFunc(remoteResolver(deps.RemoteClient)),
-			ConfigDir:       func() (string, error) { return configPrep() },
-			NewHubPublisher: hubPublisher,
-			FindSecret: func(name string, b []byte) (string, bool) {
-				s, found := sync.FindSecret(name, b)
-				return s.String(), found
-			},
-		}),
-		"confdir": confdir.Command(),
+		"profiles":       profiles.Command(profileDeps),
+		"skills":         profiles.SkillsCommand(profileDeps),
+		"confdir":        confdir.Command(),
 		"cloud": cloudcmd.Command(cloudcmd.Deps{
 			ConfDir: utils.GetClaiConfigDir,
 			SetExit: setExit,

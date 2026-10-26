@@ -22,7 +22,8 @@ internal/cli:Run()
 | File | Purpose |
 |------|---------|
 | `internal/profiles/cmd.go` | profiles command + `list`, `trust`, `install`, `update`, `publish` subs (see [cmd-dispatch.md](./cmd-dispatch.md)) |
-| `internal/profiles/publish.go` | `CommandDeps.Publish`, `publishCommand`; `PublishRequest`, `Published`, `HubPublisher`, `HandleRequiredError` |
+| `internal/profiles/publish.go` | `CommandDeps.Publish`, `send`, `newPublishCommand`, `pinnedSkills`; `PublishRequest`, `Published`, `HubPublisher`, `HandleRequiredError` |
+| `internal/profiles/skills.go` | `clai skills` (`SkillsCommand`, `SkillsHelp`) and `CommandDeps.PublishSkill` |
 | `internal/cli/cli.go` | `hubPublisher`: posts to `/api/v1/hub` with the `clai cloud login` key; the secret check is `sync.FindSecret` |
 | `internal/profiles/remote.go` | `CommandDeps.Trust`, `Install`, `Update` and the `source` stamp |
 | `internal/profiles/cmd.go` | Implements `clai profiles` command |
@@ -61,7 +62,17 @@ address and version, the page URL, and the `-prp` line pinned by the
 returned sha256. Flags may follow the profile: `publishCommand` parses
 what comes after it again. The profiles command's config prep may have
 added default fields to the file first, so the published bytes, and their
-hash, are the upgraded file.
+hash, are the upgraded file. A profile whose `"skills"` holds a target that
+can change (no version, ref or hash) is refused (`pinnedSkills`).
+
+`clai skills publish <skill>` sends a skill the same way, with `kind:
+"skill"`: `<config>/skills/<skill>/SKILL.md`, or a folder holding one, or
+the `SKILL.md` path. It must pass `skills.CheckSkill` and `FindSecret`;
+only `SKILL.md` is sent. The name is `-name`, else the frontmatter `name`
+when it is a Hub name, else the folder's name. Output ends with the
+`"skills"` line to paste into a profile, pinned by the returned hash.
+`clai skills` with no subcommand prints its help, which explains skills and
+the targets a profile's `"skills"` takes.
 
 ### Listing logic
 

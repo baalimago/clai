@@ -24,6 +24,8 @@ type Summary struct {
 	Servers  []Server
 	EnvFiles []string
 	Ignored  []string
+	// Skills are the profile's skill targets, fetched and trusted with it.
+	Skills []Target
 }
 
 var fetchers = map[string]bool{"npx": true, "pnpx": true, "bunx": true, "uvx": true}
@@ -43,7 +45,11 @@ func Summarize(body []byte, checked Checked) (Summary, error) {
 	if err := json.Unmarshal(body, &p); err != nil {
 		return Summary{}, fmt.Errorf("read profile summary: %w", err)
 	}
-	s := Summary{Model: p.Model, Tools: p.Tools, Ignored: checked.Ignored}
+	skills, err := ProfileSkills(body)
+	if err != nil {
+		return Summary{}, err
+	}
+	s := Summary{Model: p.Model, Tools: p.Tools, Ignored: checked.Ignored, Skills: skills}
 	for _, name := range sortedKeys(p.McpServers) {
 		srv := p.McpServers[name]
 		runs := srv.URL
@@ -92,6 +98,17 @@ func (s Summary) String() string {
 	}
 	if len(s.Tools) > 0 {
 		fmt.Fprintf(&b, "  tools: %s\n", strings.Join(s.Tools, ", "))
+	}
+	if len(s.Skills) > 0 {
+		names := make([]string, 0, len(s.Skills))
+		for _, t := range s.Skills {
+			name := t.String()
+			if !t.Pinned() && t.SHA256 == "" {
+				name += " (not pinned)"
+			}
+			names = append(names, name)
+		}
+		fmt.Fprintf(&b, "  skills: %s\n", strings.Join(names, ", "))
 	}
 	if len(s.EnvFiles) > 0 {
 		fmt.Fprintf(&b, "It reads: %s\n", strings.Join(s.EnvFiles, ", "))

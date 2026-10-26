@@ -19,28 +19,74 @@ type RemoteProfileResolver func(ctx context.Context, target string) (string, err
 // nil prompt means nobody can be asked to trust a new target.
 type NewRemoteResolverFunc func(confDir string, prompt remote.Prompter) (remote.Resolver, error)
 
+// RemoteSkillsResolver turns a profile's skill targets into the local
+// roots the skill loader scans.
+type RemoteSkillsResolver func(ctx context.Context, targets []string) ([]string, error)
+
+// remoteRun resolves one run's remote profile and the skills it names. A
+// profile the user just trusted at the prompt carries its skills with it,
+// so they are not asked about one by one.
+type remoteRun struct {
+	newResolver NewRemoteResolverFunc
+	confDir     string
+	trustInput  io.Reader
+	interactive bool
+	consented   bool
+}
+
 // remoteProfileResolver asks in the terminal only when stdin is one and
 // the run is not -ni: a cron job, a pipe or a script never waits on a
 // prompt; an untrusted target fails it with exit 3 instead.
 func remoteProfileResolver(newResolver NewRemoteResolverFunc, confDir string, trustInput io.Reader, interactive bool) RemoteProfileResolver {
-	return func(ctx context.Context, target string) (string, error) {
-		if newResolver == nil {
-			return "", fmt.Errorf("remote profile targets are not available in this build")
-		}
-		var prompt remote.Prompter
-		if interactive {
-			prompt = terminalTrustPrompt(trustInput, os.Stderr)
-		}
-		r, err := newResolver(confDir, prompt)
-		if err != nil {
-			return "", err
-		}
-		res, err := r.Resolve(ctx, target, remote.ConsentAsk)
-		if err != nil {
-			return "", err
-		}
-		return res.Path, nil
+	return (&remoteRun{newResolver: newResolver, confDir: confDir, trustInput: trustInput, interactive: interactive}).profile
+}
+
+func (r *remoteRun) resolver() (remote.Resolver, error) {
+	if r.newResolver == nil {
+		return remote.Resolver{}, fmt.Errorf("remote profile targets are not available in this build")
 	}
+	var prompt remote.Prompter
+	if r.interactive {
+		ask := terminalTrustPrompt(r.trustInput, os.Stderr)
+		prompt = func(ctx context.Context, p remote.TrustPrompt) (bool, error) {
+			ok, err := ask(ctx, p)
+			r.consented = r.consented || ok
+			return ok, err
+		}
+	}
+	return r.newResolver(r.confDir, prompt)
+}
+
+func (r *remoteRun) profile(ctx context.Context, target string) (string, error) {
+	res, err := r.resolver()
+	if err != nil {
+		return "", err
+	}
+	got, err := res.Resolve(ctx, target, remote.ConsentAsk)
+	if err != nil {
+		return "", err
+	}
+	return got.Path, nil
+}
+
+func (r *remoteRun) skills(ctx context.Context, targets []string) ([]string, error) {
+	res, err := r.resolver()
+	if err != nil {
+		return nil, err
+	}
+	consent := remote.ConsentAsk
+	if r.consented {
+		consent = remote.ConsentGiven
+	}
+	resolved, err := res.ResolveSkills(ctx, targets, consent)
+	if err != nil {
+		return nil, err
+	}
+	roots := make([]string, 0, len(resolved))
+	for _, s := range resolved {
+		roots = append(roots, s.Root)
+	}
+	return roots, nil
 }
 
 // terminalAvailable reports whether someone can answer a prompt: stdin is
@@ -89,8 +135,12 @@ func terminalTrustPrompt(input io.Reader, out io.Writer) remote.Prompter {
 // FormatRemoteTrustPrompt renders the question asked before a remote
 // profile runs for the first time.
 func FormatRemoteTrustPrompt(p remote.TrustPrompt) string {
+	summary := ""
+	if p.Summary != nil {
+		summary = p.Summary.String()
+	}
 	return fmt.Sprintf("fetched %s · sha256 %s\n\n%s\nRead it: %s\nTrust %s? [y/N] ",
-		p.Target, p.Digest, p.Summary.String(), p.Page, p.Target)
+		p.Target, p.Digest, summary, p.Page, p.Target)
 }
 
 func resolveRemoteProfilePath(ctx context.Context, tConf *Configurations, resolve RemoteProfileResolver) error {
@@ -106,4 +156,20 @@ func resolveRemoteProfilePath(ctx context.Context, tConf *Configurations, resolv
 	}
 	tConf.ProfilePath = path
 	return nil
+}
+
+// resolveProfileSkills fetches the skills the run's profile names; a run
+// whose skills are off, or whose profile names none, fetches nothing.
+func resolveProfileSkills(ctx context.Context, tConf *Configurations, resolve RemoteSkillsResolver) ([]string, error) {
+	if !tConf.UseSkills || len(tConf.ProfileSkills) == 0 {
+		return nil, nil
+	}
+	if resolve == nil {
+		return nil, fmt.Errorf("profile skills are not available here: %s", strings.Join(tConf.ProfileSkills, ", "))
+	}
+	roots, err := resolve(ctx, tConf.ProfileSkills)
+	if err != nil {
+		return nil, fmt.Errorf("profile %s: %w", tConf.UseProfile, err)
+	}
+	return roots, nil
 }

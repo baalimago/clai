@@ -50,7 +50,9 @@ type Configurations struct {
 	UseProfile          string          `json:"-"`
 	ProfilePath         string          `json:"-"`
 	ProfileUseSkillsSet bool            `json:"-"`
-	RequestedToolGlobs  []string        `json:"-"`
+	// ProfileSkills are the active profile's skill targets.
+	ProfileSkills      []string `json:"-"`
+	RequestedToolGlobs []string `json:"-"`
 	// explicitAllTools records a '*' entry that setupToolConfig folded into nil globs.
 	explicitAllTools bool
 	// CmdBan is the per-run command ban list for the freetext command tools
@@ -233,6 +235,9 @@ type Profile struct {
 	UseTools  bool     `json:"use_tools"`
 	UseSkills *bool    `json:"use_skills,omitempty"`
 	Tools     []string `json:"tools"`
+	// Skills are skill targets (cchub:, gh:, https://) fetched and trusted
+	// with the profile; naming any turns skills on unless use_skills is false.
+	Skills []string `json:"skills,omitempty"`
 	// CmdBan merges onto the file base in ProfileOverrides. An omitted or
 	// explicitly empty list contributes nothing (purely additive cascade,
 	// worklog 2026-08-02-cmd-ban-list R1-04 revision).

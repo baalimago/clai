@@ -221,3 +221,25 @@ func TestRemoteSubcommands_checkTheirArgs(t *testing.T) {
 		}
 	}
 }
+
+func TestInstall_fetchesAndTrustsTheProfilesSkills(t *testing.T) {
+	f := newFixture(t)
+	f.files["/hub/ada/agent/v/1/raw"] = `{"model":"test","skills":["cchub:ada/review@2"]}`
+	f.files["/hub/ada/review/v/2/raw"] = "---\nname: review\ndescription: Review the diff.\n---\nBody"
+	if err := f.deps.Install(t.Context(), "cchub:ada/agent@1", ""); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if !strings.Contains(f.out.String(), "Skill review from cchub:ada/review@2") {
+		t.Fatalf("output %q does not name the skill", f.out.String())
+	}
+	b, err := os.ReadFile(filepath.Join(f.confDir, remote.TrustFile))
+	if err != nil || !strings.Contains(string(b), "cchub:ada/review") {
+		t.Fatalf("trust.json = %s, %v; want the skill trusted with the profile", b, err)
+	}
+
+	delete(f.files, "/hub/ada/review/v/2/raw")
+	f.files["/hub/ada/broken/v/1/raw"] = `{"model":"test","skills":["cchub:ada/review@3"]}`
+	if err := f.deps.Trust(t.Context(), "cchub:ada/broken@1"); err == nil || !strings.Contains(err.Error(), "cchub:ada/review@3") {
+		t.Fatalf("missing skill: err = %v, want it named", err)
+	}
+}

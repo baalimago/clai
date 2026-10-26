@@ -28,6 +28,9 @@ func Discover(opts Options) (*Manager, error) {
 		opts.WorkingDir, _ = os.Getwd()
 	}
 	roots := discoverRoots(opts.WorkingDir, opts.ConfigDir, cfg)
+	for _, root := range opts.ProfileRoots {
+		roots = append(roots, rootSpec{class: SourceProfile, path: root})
+	}
 	precedence := make(precedenceMap, len(roots))
 	for i, root := range roots {
 		if _, exists := precedence[root.path]; !exists {
