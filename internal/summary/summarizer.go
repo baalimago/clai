@@ -49,7 +49,8 @@ func NewAgentSummarizer(confDir string) (models.Summarizer, error) {
 	if err := allowed(); err != nil {
 		return nil, err
 	}
-	conf, added, err := utils.LoadConfigFromFileCollect(confDir, "textConfig.json", text.MigrateOldChatConfig, &text.Default)
+	firstRun := text.FirstRunDefaults(os.Getenv)
+	conf, added, err := utils.LoadConfigFromFileCollect(confDir, "textConfig.json", text.MigrateOldChatConfig, &firstRun)
 	if err != nil {
 		return nil, fmt.Errorf("load text config for summarizer: %w", err)
 	}

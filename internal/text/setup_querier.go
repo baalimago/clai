@@ -117,7 +117,8 @@ func setupCmdBanConfig(tConf *Configurations, cmdBan string) {
 // skills a profile names; nil refuses a profile that names any.
 func SetupQuerier(ctx context.Context, confDir string, tf internal.TextFlags, args []string, trustInput io.Reader, resolveRemote RemoteProfileResolver, resolveSkills RemoteSkillsResolver) (models.Querier, *Configurations, error) {
 	// The flagset is first used to find chatModel and potentially setup a new configuration file from some default
-	tConf, err := utils.LoadConfigFromFile(confDir, "textConfig.json", MigrateOldChatConfig, &Default)
+	firstRun := FirstRunDefaults(os.Getenv)
+	tConf, err := utils.LoadConfigFromFile(confDir, "textConfig.json", MigrateOldChatConfig, &firstRun)
 	tConf.ConfigDir = confDir
 	tConf.TrustInput = trustInput
 	if err != nil {
