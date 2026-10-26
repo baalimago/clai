@@ -14,7 +14,6 @@ import (
 	"sync"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
 var (
@@ -102,10 +101,6 @@ func (t *claiRunTool) Call(input pub_models.Input) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to create temporary output files: %w", err)
 	}
-
-	// Log the temporary file paths for output tracking
-	ancli.Okf("stdout log written to: %s", stdoutFile.Name())
-	ancli.Okf("stderr log written to: %s", stderrFile.Name())
 
 	// Create command with environment configuration
 	cmd := exec.Command(ClaiBinaryPath, argsSplit...)

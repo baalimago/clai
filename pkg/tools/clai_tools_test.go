@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
+
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -326,4 +328,29 @@ func TestInternalOnlyToolsRejectDirectCalls(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestClaiRun_printsNothingToTheTerminal pins that starting a worker writes
+// nothing to the user's terminal: the run id is the tool's whole answer, and
+// the log paths reach the model through clai_wait_for_workers.
+func TestClaiRun_printsNothingToTheTerminal(t *testing.T) {
+	resetClaiRuns(t)
+	stubClaiBinary(t, "echo hi")
+	var runID string
+	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
+		stderr := testboil.CaptureStderr(t, func(t *testing.T) {
+			id, err := ClaiRun.Call(pub_models.Input{"args": "hello world"})
+			if err != nil {
+				t.Fatalf("Call: %v", err)
+			}
+			runID = id
+		})
+		if stderr != "" {
+			t.Errorf("stderr = %q, want nothing", stderr)
+		}
+	})
+	if stdout != "" {
+		t.Errorf("stdout = %q, want nothing", stdout)
+	}
+	awaitRun(t, runID)
 }
