@@ -87,6 +87,7 @@ func TestPullLines(t *testing.T) {
 		}
 	}
 	wantLines(t, pullLines(sync.PullResult{Store: sync.StoreConfig, Commit: 2}, style{}), "▸ config · pulled #2 · up to date")
+	wantLines(t, pullLines(sync.PullResult{Store: sync.StoreConversations}, style{}), "▸ conversations · up to date")
 }
 
 func TestCommitRefusalLines(t *testing.T) {
@@ -106,8 +107,8 @@ func TestAccountLines(t *testing.T) {
 	wantLines(t, loginLines("@lorentz", "clai.chat", style{}),
 		"▸ logged in · @lorentz on clai.chat · nothing syncs until you ask",
 		"  → clai cloud status   what you would commit",
-		"  → clai cloud commit   upload your config",
 		"  → clai cloud pull     bring down your account's config",
+		"  → clai cloud commit   upload your config",
 	)
 	wantLines(t, approveLines(cloud.DeviceCode{UserCode: "BCDF-GHJK", VerificationURIComplete: "https://clai.chat/cli/login#BCDF-GHJK"}, "laptop", style{}),
 		`▸ log in · approve the code BCDF-GHJK for "laptop"`,
@@ -134,4 +135,12 @@ func TestLogAndResolveLines(t *testing.T) {
 	wantLines(t, resolveLines(sync.ResolveResult{Path: "a.json"}, resolvedTheirs, style{}), "▸ a.json · resolved · took your account's copy · yours is in cloud/trash/")
 	wantLines(t, resolveLines(sync.ResolveResult{Path: "a.json"}, resolvedMine, style{}), "▸ a.json · resolved · kept yours", "  → clai cloud commit   share it")
 	wantLines(t, resolveLines(sync.ResolveResult{Path: "a.json"}, resolvedEdited, style{}), "▸ a.json · resolved · kept your edited file", "  → clai cloud commit   share it")
+}
+
+func TestHuman_bytesBelowAKilobyte(t *testing.T) {
+	for n, want := range map[int64]string{0: "0 B", 31: "31 B", 999: "999 B", 1000: "1.0 kB", 1500: "1.5 kB", 3_000_000: "3.0 MB", 2_500_000_000: "2.5 GB"} {
+		if got := human(n); got != want {
+			t.Errorf("human(%d) = %q, want %q", n, got, want)
+		}
+	}
 }

@@ -676,14 +676,17 @@ func orDash(s string) string {
 	return s
 }
 
+// human is a size in SI units with one decimal, and in bytes below 1 kB.
 func human(n int64) string {
 	switch {
 	case n >= 1_000_000_000:
 		return fmt.Sprintf("%.1f GB", float64(n)/1e9)
 	case n >= 1_000_000:
 		return fmt.Sprintf("%.1f MB", float64(n)/1e6)
+	case n >= 1_000:
+		return fmt.Sprintf("%.1f kB", float64(n)/1e3)
 	}
-	return fmt.Sprintf("%.1f kB", float64(n)/1e3)
+	return fmt.Sprintf("%d B", n)
 }
 
 func ago(now, then time.Time) string {

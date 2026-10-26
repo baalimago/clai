@@ -54,19 +54,35 @@ func statusLines(st sync.Status, s style) []string {
 	if st.RemoteError != nil {
 		lines = append(lines, grid("  ", [][]string{{"! " + remoteProblem(st.RemoteError), "only this machine's side is shown"}}, s)...)
 	}
-	if len(st.Conflicts) > 0 {
-		lines = append(lines, conflictLines(st.Conflicts, s)...)
-	}
+	rows := conflictRows(st.Conflicts)
 	if len(st.Changes) <= listLimit {
-		lines = append(lines, changeList(st, s)...)
+		rows = append(append(rows, changeRows(st)...), excludedRows(st.Excluded)...)
+		lines = append(lines, grid("  ", rows, s)...)
 	} else {
+		lines = append(lines, grid("  ", rows, s)...)
 		lines = append(lines, changeGroups(st, s)...)
+		lines = append(lines, grid("  ", excludedRows(st.Excluded), s)...)
 	}
-	lines = append(lines, excludedLines(st.Excluded, s)...)
+	lines = append(lines, excludedNotes(st.Excluded, s)...)
+	lines = append(lines, grid("  ", append(conflictNext(st.Conflicts), pullNext(st)...), s)...)
 	if st.Imports != nil {
 		lines = append(lines, importLines(st.Imports.Conversations, s)...)
 	}
 	return lines
+}
+
+// pullNext suggests a pull when the server is ahead or this machine never
+// pulled the store.
+func pullNext(st sync.Status) [][]string {
+	command := "clai cloud pull " + string(st.Store)
+	switch {
+	case st.Remote != nil && st.Remote.Ahead > 0:
+		n := int(st.Remote.Ahead)
+		return [][]string{next(command, "bring down "+count(n)+" "+plural(n, "commit", "commits"))}
+	case !st.Pulled:
+		return [][]string{next(command, "first pull on this machine")}
+	}
+	return nil
 }
 
 type toolGroup struct {
@@ -169,27 +185,27 @@ func statusDetails(st sync.Status) []string {
 
 var changeMarks = map[sync.ChangeKind]string{sync.Added: "+", sync.Modified: "~", sync.Deleted: "-"}
 
-func changeList(st sync.Status, s style) []string {
+func changeRows(st sync.Status) [][]string {
 	both, uploaded := remoteSets(st)
-	lines := make([]string, 0, len(st.Changes))
+	rows := make([][]string, 0, len(st.Changes))
 	for _, c := range st.Changes {
-		detail := ""
+		var details []string
 		if c.Kind != sync.Deleted {
-			detail = human(c.Size)
+			details = append(details, human(c.Size))
 		}
 		if uploaded[c.Path] {
-			detail = strings.TrimPrefix(detail+" · uploaded, not committed", " · ")
+			details = append(details, "uploaded, not committed")
 		}
 		if both[c.Path] {
-			detail = strings.TrimPrefix(detail+" · also changed on the server", " · ")
+			details = append(details, "also changed on the server")
 		}
-		line := "  " + changeMarks[c.Kind] + " " + c.Path
-		if detail != "" {
-			line += "  " + s.secondary(detail)
+		row := []string{changeMarks[c.Kind] + " " + c.Path}
+		if len(details) > 0 {
+			row = append(row, strings.Join(details, " · "))
 		}
-		lines = append(lines, line)
+		rows = append(rows, row)
 	}
-	return lines
+	return rows
 }
 
 // remoteSets: the changes also made on the server, and the ones whose
@@ -354,7 +370,20 @@ func peek(g group, room int) string {
 	}
 }
 
-func excludedLines(excluded []sync.Excluded, s style) []string {
+// excludedRows are the files left out for holding a secret, one row each.
+func excludedRows(excluded []sync.Excluded) [][]string {
+	var rows [][]string
+	for _, x := range excluded {
+		if x.Kind == sync.ExcludedSecret {
+			rows = append(rows, []string{"✕ " + x.Path, "not synced: holds a secret (" + x.Detail + ")"})
+		}
+	}
+	return rows
+}
+
+// excludedNotes say what to do about a secret, and count the files left
+// out for size or for being imported.
+func excludedNotes(excluded []sync.Excluded, s style) []string {
 	var lines []string
 	secrets, imports := 0, 0
 	var large []string
@@ -362,7 +391,6 @@ func excludedLines(excluded []sync.Excluded, s style) []string {
 		switch x.Kind {
 		case sync.ExcludedSecret:
 			secrets++
-			lines = append(lines, "  not synced, holds a secret: "+x.Path+"  "+s.secondary(x.Detail))
 		case sync.ExcludedTooLarge:
 			large = append(large, x.Path+" (over "+x.Detail+")")
 		case sync.ExcludedImport:
@@ -370,7 +398,7 @@ func excludedLines(excluded []sync.Excluded, s style) []string {
 		}
 	}
 	if secrets > 0 {
-		lines = append(lines, "    "+s.secondary("move the value to an env var or envfile, then commit"))
+		lines = append(lines, "  "+s.secondary("move the value to an env var or envfile, then commit"))
 	}
 	if len(large) > 0 {
 		shown := large[:min(peekItems, len(large))]

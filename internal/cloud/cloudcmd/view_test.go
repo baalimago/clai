@@ -33,20 +33,19 @@ func TestStatusLines_fewChangesAreListed(t *testing.T) {
 		},
 		Remote: &sync.RemoteStatus{Ahead: 2, Both: []string{"theme.json"}, Uploaded: []string{"profiles/coder.json"}},
 	}
-	got := plainLines(statusLines(st, style{}))
-	for _, want := range []string{
+	wantLines(t, statusLines(st, style{}),
 		"▸ config · 2 to commit · 1.5 kB · 1 conflict · server 2 commits ahead · 1 already uploaded · never pulled here",
-		"  C mcpServers/x.json",
-		"  → clai cloud resolve mcpServers/x.json -theirs",
-		"  + profiles/coder.json  1.2 kB · uploaded, not committed",
-		"  ~ theme.json  0.3 kB · also changed on the server",
-		"  not synced, holds a secret: profiles/leak.json  api_key",
-		"    move the value to an env var or envfile, then commit",
-	} {
-		if !strings.Contains(got, want) {
-			t.Errorf("lacks %q:\n%s", want, got)
-		}
-	}
+		"  C mcpServers/x.json     yours is untouched · your account's copy is cloud/theirs/mcpServers/x.json",
+		"  + profiles/coder.json   1.2 kB · uploaded, not committed",
+		"  ~ theme.json            300 B · also changed on the server",
+		"  ✕ profiles/leak.json    not synced: holds a secret (api_key)",
+		"  move the value to an env var or envfile, then commit",
+		"  → clai cloud diff mcpServers/x.json              compare the two",
+		"  → clai cloud resolve mcpServers/x.json -theirs   take your account's copy",
+		"  → clai cloud resolve mcpServers/x.json -mine     keep yours",
+		"  → clai cloud pull config                         bring down 2 commits",
+	)
+	got := plainLines(statusLines(st, style{}))
 	if strings.Contains(got, "share") {
 		t.Errorf("a short list has no table:\n%s", got)
 	}
@@ -183,4 +182,17 @@ func TestStatusLines_previewsOtherTools(t *testing.T) {
 	if got := plainLines(statusLines(st, style{})); !strings.Contains(got, "▸ from other tools · nothing new to export") || strings.Contains(got, "commit -imports") {
 		t.Fatalf("an empty preview:\n%s", got)
 	}
+}
+
+func TestStatusLines_pullHint(t *testing.T) {
+	never := sync.Status{Plan: sync.Plan{Store: sync.StoreConfig}, Remote: &sync.RemoteStatus{}}
+	wantLines(t, statusLines(never, style{}),
+		"▸ config · up to date · never pulled here",
+		"  → clai cloud pull config   first pull on this machine",
+	)
+	ahead := sync.Status{Plan: sync.Plan{Store: sync.StoreConfig, Pulled: true}, Remote: &sync.RemoteStatus{Ahead: 1}}
+	wantLines(t, statusLines(ahead, style{}),
+		"▸ config · nothing to commit · server 1 commit ahead",
+		"  → clai cloud pull config   bring down 1 commit",
+	)
 }

@@ -167,7 +167,7 @@ func TestWhoami(t *testing.T) {
 		t.Fatalf("code %d", code)
 	}
 	mustContain(t, out, "▸ @lorentz", "device a", "write access", "■ config", "■ conversations",
-		"billing: config sync is free (0.0 kB of 1.0 GB)", "conversations need a card on file")
+		"billing: config sync is free (0 B of 1.0 GB)", "conversations need a card on file")
 	_, out = h.run("whoami", "-r")
 	var me cloud.Me
 	if err := json.Unmarshal([]byte(out), &me); err != nil || me.Handle != "lorentz" {
@@ -190,13 +190,13 @@ func TestStatusCommitPullLog(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("status %d", code)
 	}
-	mustContain(t, out, "▸ config · 1 to commit", "+ profiles/coder.json", "holds a secret: profiles/leak.json  api_key", "never pulled here", "1 imported file")
+	mustContain(t, out, "▸ config · 1 to commit", "+ profiles/coder.json", "✕ profiles/leak.json    not synced: holds a secret (api_key)", "never pulled here", "1 imported file")
 
 	code, out = h.run("commit", "-m", "first", "config")
 	if code != 0 {
 		t.Fatalf("commit %d: %s", code, out)
 	}
-	mustContain(t, out, "▸ config · commit #1 · 1 file", "not synced, holds a secret")
+	mustContain(t, out, "▸ config · commit #1 · 1 file", "✕ profiles/leak.json   not synced: holds a secret (api_key)")
 	if got, _ := h.srv.Content("config", "profiles/coder.json"); got == "" {
 		t.Fatal("not on the server")
 	}
@@ -426,6 +426,11 @@ func TestDiff(t *testing.T) {
 	mustContain(t, out, "-one", "+two")
 	_, out = h.run("diff", "profiles/x.json", "-remote")
 	mustContain(t, out, "theirs (the server, same as base)")
+	h.write("profiles/x.json", "one\n")
+	_, out = h.run("diff", "profiles/x.json")
+	if strings.TrimSpace(out) != "▸ profiles/x.json · no changes" {
+		t.Fatalf("unchanged diff:\n%s", out)
+	}
 	if code, _ := h.run("diff", "notes.txt"); code != 1 {
 		t.Fatal("diff of an unsynced path")
 	}
@@ -500,15 +505,15 @@ func TestBillingLine(t *testing.T) {
 		}, "billing: config sync is free (2.0 MB of 1.0 GB); conversations need a card on file, $1 per started GB a month"},
 		{"card, nothing stored", cloud.Me{
 			Usage: cloud.Usage{ConfigLimitBytes: 1_000_000_000, CardOnFile: true},
-		}, "billing: config sync is free (0.0 kB of 1.0 GB); conversations $0 a month at 0.0 kB"},
+		}, "billing: config sync is free (0 B of 1.0 GB); conversations $0 a month at 0 B"},
 		{"card, 1.2 GB", cloud.Me{
 			Usage:  cloud.Usage{ConfigLimitBytes: 1_000_000_000, CardOnFile: true},
 			Stores: map[string]cloud.StoreInfo{"conversations": {Bytes: 1_200_000_000}},
-		}, "billing: config sync is free (0.0 kB of 1.0 GB); conversations $2 a month at 1.2 GB"},
+		}, "billing: config sync is free (0 B of 1.0 GB); conversations $2 a month at 1.2 GB"},
 		{"overdue", cloud.Me{
 			Usage:  cloud.Usage{ConfigLimitBytes: 1_000_000_000, CardOnFile: true, Overdue: true},
 			Stores: map[string]cloud.StoreInfo{"conversations": {Bytes: 1}},
-		}, "billing: config sync is free (0.0 kB of 1.0 GB); conversations $1 a month at 0.0 kB; a payment is overdue, so commits are refused"},
+		}, "billing: config sync is free (0 B of 1.0 GB); conversations $1 a month at 1 B; a payment is overdue, so commits are refused"},
 	}
 	for _, c := range cases {
 		if got := billingLine(c.me); got != c.want {

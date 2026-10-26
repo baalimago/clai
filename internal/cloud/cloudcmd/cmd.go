@@ -243,7 +243,7 @@ func Command(deps Deps) *internal.Command {
 				}
 				return r.logout(ctx)
 			}),
-		"whoami": sub("whoami", "Show the account, this device and storage", "cloud whoami.",
+		"whoami": sub("whoami", "Show the account, this device and storage", "cloud whoami. The account, this device, what each store holds, and billing.",
 			nil, &whoamiRaw, func(ctx context.Context, args []string) error {
 				if err := noArgs("whoami", args); err != nil {
 					return err
@@ -251,7 +251,7 @@ func Command(deps Deps) *internal.Command {
 				return r.whoami(ctx, whoamiRaw.Value())
 			}),
 		"status": sub("status", "Show local changes and what the server has",
-			"cloud status [store]. The local part works offline.",
+			"cloud status [store] [-imports]. What a commit would send or leave out, and what the server has.\nThe local part works offline.",
 			func(fs *flag.FlagSet) {
 				fs.BoolVar(&statusImports, "imports", false, "count conversations imported from other tools as changes")
 			}, &statusRaw, func(ctx context.Context, args []string) error {
@@ -284,7 +284,7 @@ func Command(deps Deps) *internal.Command {
 				fs.BoolVar(&resolveMine, "mine", false, "keep this machine's file")
 				fs.BoolVar(&resolveTheirs, "theirs", false, "take the server's file (yours goes to cloud/trash/)")
 			}, nil, func(_ context.Context, args []string) error { return r.resolve(args, resolveMine, resolveTheirs) }),
-		"log": sub("log", "Show recent commits", "cloud log [store].",
+		"log": sub("log", "Show recent commits", "cloud log [store] [-limit N]. Recent commits, newest first.",
 			func(fs *flag.FlagSet) {
 				fs.IntVar(&logN, "limit", 20, "how many commits per store")
 			}, &logRaw, func(ctx context.Context, args []string) error {

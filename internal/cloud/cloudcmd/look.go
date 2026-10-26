@@ -1,6 +1,7 @@
 package cloudcmd
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 	"time"
@@ -111,23 +112,38 @@ func parseChoice(in string) (choice, bool) {
 }
 
 func conflictLines(paths []string, s style) []string {
-	var lines []string
+	return append(grid("  ", conflictRows(paths), s), grid("  ", conflictNext(paths), s)...)
+}
+
+func conflictRows(paths []string) [][]string {
+	rows := make([][]string, 0, len(paths))
 	for _, p := range paths {
-		lines = append(lines, "  C "+p+gap+s.secondary("yours is untouched · your account's copy is cloud/theirs/"+p))
+		rows = append(rows, []string{"C " + p, "yours is untouched · your account's copy is cloud/theirs/" + p})
+	}
+	return rows
+}
+
+// conflictNext is the three commands that settle a conflict.
+func conflictNext(paths []string) [][]string {
+	if len(paths) == 0 {
+		return nil
 	}
 	target := "<path>"
 	if len(paths) == 1 {
 		target = paths[0]
 	}
-	return append(lines, grid("  ", [][]string{
+	return [][]string{
 		next("clai cloud diff "+target, "compare the two"),
 		next("clai cloud resolve "+target+" -theirs", "take your account's copy"),
 		next("clai cloud resolve "+target+" -mine", "keep yours"),
-	}, s)...)
+	}
 }
 
 func pullLines(res sync.PullResult, s style) []string {
-	parts := []string{fmt.Sprintf("pulled #%d", res.Commit)}
+	var parts []string
+	if res.Commit > 0 {
+		parts = append(parts, fmt.Sprintf("pulled #%d", res.Commit))
+	}
 	for _, n := range []struct {
 		count int
 		word  string
@@ -139,7 +155,7 @@ func pullLines(res sync.PullResult, s style) []string {
 	if n := len(res.Conflicts); n > 0 {
 		parts = append(parts, count(n)+" "+plural(n, "conflict", "conflicts"))
 	}
-	if len(parts) == 1 {
+	if len(parts) <= 1 {
 		parts = append(parts, "up to date")
 	}
 	lines := []string{s.head(string(res.Store), parts...)}
@@ -197,7 +213,8 @@ func commitLines(res sync.CommitResult, s style) []string {
 			parts = append(parts, count(res.Imported)+" imported")
 		}
 	}
-	return append([]string{s.head(string(res.Store), parts...)}, excludedLines(res.Excluded, s)...)
+	lines := append([]string{s.head(string(res.Store), parts...)}, grid("  ", excludedRows(res.Excluded), s)...)
+	return append(lines, excludedNotes(res.Excluded, s)...)
 }
 
 func approveLines(code cloud.DeviceCode, name string, s style) []string {
@@ -211,8 +228,8 @@ func approveLines(code cloud.DeviceCode, name string, s style) []string {
 func loginLines(account, host string, s style) []string {
 	return append([]string{s.head("logged in", account+" on "+host, "nothing syncs until you ask")}, grid("  ", [][]string{
 		next("clai cloud status", "what you would commit"),
-		next("clai cloud commit", "upload your config"),
 		next("clai cloud pull", "bring down your account's config"),
+		next("clai cloud commit", "upload your config"),
 	}, s)...)
 }
 
@@ -227,7 +244,12 @@ func whoamiLines(me cloud.Me, host string, s style) []string {
 	}
 	for _, st := range sync.Stores {
 		info := me.Stores[string(st)]
-		detail := right(count(info.Files), files) + " " + plural(info.Files, "file ", "files") + " · " + right(human(info.Bytes), sizes) + fmt.Sprintf(" · commit #%d", info.Commit)
+		detail := right(count(info.Files), files) + " " + plural(info.Files, "file ", "files") + " · " + right(human(info.Bytes), sizes) + " · "
+		if info.Commit > 0 {
+			detail += fmt.Sprintf("commit #%d", info.Commit)
+		} else {
+			detail += "no commits yet"
+		}
 		lines = append(lines, "  "+s.primary("■")+" "+pad(string(st), names)+"  "+s.secondary(detail))
 	}
 	lines = append(lines, "  "+s.secondary(billingLine(me)))
@@ -271,10 +293,27 @@ func resolveLines(res sync.ResolveResult, how resolution, s style) []string {
 // diffLines heads a file's diff in the shared look and keeps its body as
 // diff prints it, so it still pastes as a patch.
 func diffLines(d sync.FileDiff, s style) []string {
+	if unchanged(d) {
+		return []string{s.head(d.Path, "no changes")}
+	}
 	var details []string
 	if d.Conflict {
 		details = append(details, "conflict")
 	}
 	_, body, _ := strings.Cut(d.Text(), "\n")
 	return append([]string{s.head(d.Path, details...)}, strings.Split(strings.TrimSuffix(body, "\n"), "\n")...)
+}
+
+// unchanged is a diff whose every side holds the same bytes.
+func unchanged(d sync.FileDiff) bool {
+	sides := []sync.Side{d.Mine}
+	if d.Theirs != nil {
+		sides = append(sides, *d.Theirs)
+	}
+	for _, side := range sides {
+		if side.Missing != d.Base.Missing || !bytes.Equal(side.Bytes, d.Base.Bytes) {
+			return false
+		}
+	}
+	return !d.Conflict
 }

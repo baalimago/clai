@@ -37,7 +37,7 @@ for the login).
 | `internal/cloud/sync/resolve.go`, `diff.go`, `status.go`, `merge.go` | `Resolve`, `Diff`, `Status`/`Log`, the conversation merge and fork |
 | `internal/cloud/cloudcmd/` | `Command`: the subcommands and their output; `ExitDecisionNeeded` |
 | `internal/cloud/cloudcmd/errors.go` | `explain`, `UnreachableError`: the short form of a network error and a refused key |
-| `internal/cloud/cloudcmd/view.go` | `statusLines`, `importLines`, `blockedLines`, `style`: the `▸ store · detail` look and the grouped status table |
+| `internal/cloud/cloudcmd/view.go` | `statusLines`, `pullNext`, `excludedRows`, `importLines`, `blockedLines`, `style`: the `▸ store · detail` look and the grouped status table |
 | `internal/cloud/cloudcmd/look.go` | `grid` and the lines of every other command: login, whoami, pull and its first-pull question (`firstPullChoices`, `parseChoice`), conflicts, a refused commit, resolve, log, diff |
 | `internal/cloud/cloudtest/` | An in-memory clai.chat for tests |
 | `internal/chat/imported.go` | `PendingForeign` (the preview), `ExportForeign` (8 at once, manifest checkpointed), `importedReader`, `ReindexPulled` (256 at a time, read 8 at once, with progress) |
@@ -126,8 +126,13 @@ log      GET stores/<s>/log?limit=
   detail` head per store or subject, the marker in the theme's primary
   colour and the details in its secondary one, rows under it, and the page
   to visit or the commands that come next as `→ <target>   why` rows
-  (`grid`). A conflict always names its next three commands: diff, resolve
-  `-theirs`, resolve `-mine`. Colour needs a terminal
+  (`grid`), always after the rows they follow from. A conflict always
+  names its next three commands: diff, resolve `-theirs`, resolve `-mine`.
+  `status` lays its conflict (`C`), change (`+ ~ -`) and secret (`✕`) rows
+  out in one grid, and adds `→ clai cloud pull <store>` when the server is
+  ahead or the store was never pulled here. Sizes are SI with one decimal,
+  and bytes below 1 kB (`31 B`). `diff` of a file that did not change says
+  `no changes`. Colour needs a terminal
   on stdout and colour enabled (`Deps.Color`). `status` lists up to ten
   changes one per line; past that it groups them, as `duls` groups a tree:
   chats, images, reasoning, each imported tool, or a config directory, by
