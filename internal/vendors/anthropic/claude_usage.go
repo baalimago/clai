@@ -2,9 +2,9 @@ package anthropic
 
 import pub_models "github.com/baalimago/clai/pkg/text/models"
 
-// TokenUsage implements models.UsageTokenCounter. Prompt tokens start as the
-// counted input and are replaced by the stream's message_start usage, which
-// includes cache reads and writes; completion tokens come from message_delta.
+// TokenUsage implements models.UsageTokenCounter. Prompt tokens come from the
+// stream's message_start usage, which includes cache reads and writes;
+// completion tokens come from message_delta.
 func (c *Claude) TokenUsage() *pub_models.Usage {
 	if c == nil {
 		return nil

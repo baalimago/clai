@@ -124,3 +124,67 @@ func TestHandleToken_malformedUsageIsAnError(t *testing.T) {
 		}
 	}
 }
+
+type recordingTransport struct {
+	paths []string
+	body  string
+}
+
+func (r *recordingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	r.paths = append(r.paths, req.URL.Path)
+	body := r.body
+	if strings.HasSuffix(req.URL.Path, "/count_tokens") {
+		body = `{"input_tokens":7}`
+	}
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       io.NopCloser(strings.NewReader(body)),
+		Request:    req,
+	}, nil
+}
+
+func drain(t *testing.T, out chan models.CompletionEvent) {
+	t.Helper()
+	for ev := range out {
+		if err, ok := ev.(error); ok && !errors.Is(err, io.EOF) {
+			t.Fatalf("stream error: %v", err)
+		}
+	}
+}
+
+// TestStreamCompletions_skipsTheCountTokensRoundTrip pins that a step costs
+// one request: the stream reports its own input usage.
+func TestStreamCompletions_skipsTheCountTokensRoundTrip(t *testing.T) {
+	stream := sseEvent("message_start", usageMessageStart) +
+		sseEvent("message_delta", `{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":3}}`) +
+		sseEvent("message_stop", `{"type":"message_stop"}`)
+	for name, tc := range map[string]struct {
+		printCount bool
+		wantPaths  []string
+	}{
+		"default":           {wantPaths: []string{"/v1/messages"}},
+		"print-input-count": {printCount: true, wantPaths: []string{"/v1/messages/count_tokens", "/v1/messages"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("ANTHROPIC_API_KEY", "k")
+			c := Claude{URL: "https://api.anthropic.com/v1/messages", PrintInputCount: tc.printCount}
+			if err := c.Setup(); err != nil {
+				t.Fatalf("Setup: %v", err)
+			}
+			rt := &recordingTransport{body: stream}
+			c.client = &http.Client{Transport: rt}
+			out, err := c.StreamCompletions(t.Context(), pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "hi"}}})
+			if err != nil {
+				t.Fatalf("StreamCompletions: %v", err)
+			}
+			drain(t, out)
+			if strings.Join(rt.paths, ",") != strings.Join(tc.wantPaths, ",") {
+				t.Fatalf("requests = %v, want %v", rt.paths, tc.wantPaths)
+			}
+			if u := c.TokenUsage(); u.PromptTokens != 325 || u.CompletionTokens != 3 {
+				t.Fatalf("usage = %+v, want the streamed 325 in, 3 out", u)
+			}
+		})
+	}
+}
