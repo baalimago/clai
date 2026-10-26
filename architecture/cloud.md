@@ -164,6 +164,11 @@ log      GET stores/<s>/log?limit=
 - Replaced local files go to `cloud/trash/<path>.<UTC time>` and are pruned
   after 30 days. Config base copies under `cloud/base/` make `diff` work
   offline; a conversation's base is fetched from the server.
+- **Usage errors** exit 1 with the message and, for a bad flag, that
+  subcommand's help only (`CheckArgs`, `FlagError`); an unknown
+  subcommand is an `UnknownSubcommandError` listing the real ones.
+  `log -limit` takes 1 or more; `login`, `logout` and `whoami` take no
+  arguments.
 - `-r` prints JSON for `whoami`, `status`, `pull`, `commit` and `log`, and
   nothing else on stdout. `commit -r` lists every store it was asked for
   with a `status`: `committed`, `up_to_date`, `behind` (with `behind`, the

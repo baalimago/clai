@@ -264,7 +264,32 @@ func Run(args []string, deps Deps) int {
 	cacheDir, _ := utils.GetClaiCacheDir()
 	usage := strings.NewReplacer("CONFIG_DIR", cfgDir, "CACHE_DIR", cacheDir).Replace(usageTemplate)
 	ctx, exit := internal.WithExitStatus(ctx)
-	return exit.Resolve(cmd.Run(ctx, append([]string{"clai"}, args...), commands(deps, exit.Set), usage))
+	cmds := commands(deps, exit.Set)
+	if err := checkArgs(args, cmds); err != nil {
+		ancli.Errf("%v", err)
+		return 1
+	}
+	return exit.Resolve(cmd.Run(ctx, append([]string{"clai"}, args...), cmds, usage))
+}
+
+// checkArgs lets a command named first vet its own arguments (see
+// internal.Command.CheckArgs); every other command line is left to cmd.Run.
+func checkArgs(args []string, cmds map[string]cmd.Command) error {
+	if len(args) == 0 {
+		return nil
+	}
+	for key, c := range cmds {
+		for name := range strings.SplitSeq(key, "|") {
+			if name != args[0] {
+				continue
+			}
+			if ic, ok := c.(*internal.Command); ok && ic.CheckArgs != nil {
+				return ic.CheckArgs(args[1:])
+			}
+			return nil
+		}
+	}
+	return nil
 }
 
 func startCPUProfile(name string) (func(), error) {

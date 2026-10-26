@@ -6,10 +6,12 @@ package cloudcmd
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/baalimago/clai/internal"
@@ -101,6 +103,56 @@ type UsageError struct{ Msg string }
 
 func (e *UsageError) Error() string { return e.Msg }
 
+// subcommandNames is the order help and errors list the subcommands in.
+var subcommandNames = []string{"login", "logout", "whoami", "status", "diff", "pull", "commit", "resolve", "log"}
+
+// UnknownSubcommandError is `clai cloud <name>` for a name that is not one.
+type UnknownSubcommandError struct{ Name string }
+
+func (e *UnknownSubcommandError) Error() string {
+	return fmt.Sprintf("unknown cloud subcommand %q\nsubcommands: %s\nrun 'clai cloud -h' for help", e.Name, strings.Join(subcommandNames, ", "))
+}
+
+// FlagError is a cloud subcommand's flag that does not parse; Usage is
+// that subcommand's help.
+type FlagError struct {
+	Sub   string
+	Err   error
+	Usage string
+}
+
+func (e *FlagError) Error() string { return fmt.Sprintf("%v\n\n%s", e.Err, e.Usage) }
+func (e *FlagError) Unwrap() error { return e.Err }
+
+// checkArgs vets `clai cloud <args>` on a separate command tree, so the
+// real one is parsed only once, by the dispatcher.
+func checkArgs(deps Deps, args []string) error {
+	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
+		return nil
+	}
+	probe := Command(deps)
+	sub, ok := probe.Subs[args[0]].(*internal.Command)
+	if !ok {
+		return &UnknownSubcommandError{Name: args[0]}
+	}
+	fs := sub.Flagset()
+	fs.SetOutput(io.Discard)
+	if _, err := positionals(fs, args[1:]); err != nil && !errors.Is(err, flag.ErrHelp) {
+		return &FlagError{Sub: args[0], Err: err, Usage: sub.Help()}
+	}
+	return nil
+}
+
+// noArgs refuses positional arguments to a subcommand that takes none.
+func noArgs(name string, args []string) error {
+	if len(args) > 0 {
+		return &UsageError{Msg: fmt.Sprintf("cloud %s takes no arguments, got %q", name, strings.Join(args, " "))}
+	}
+	return nil
+}
+
+const rawDesc = "print JSON instead of text"
+
 const helpText = `cloud <subcommand>. Your clai.chat account, and git-style sync of your
 config and conversations. Nothing syncs on its own: only these commands
 talk to clai.chat, and clai works the same without an account.
@@ -142,9 +194,13 @@ func Command(deps Deps) *internal.Command {
 	r := &runner{deps: deps}
 	c := &internal.Command{Name: "cloud", Desc: "Your clai.chat account and sync (optional)", HelpText: helpText}
 	c.OnRun = func(_ context.Context, c *internal.Command) error {
+		if args := c.Args(); len(args) > 1 {
+			return &UnknownSubcommandError{Name: args[1]}
+		}
 		_, err := fmt.Fprintln(deps.Out, c.Help())
 		return err
 	}
+	c.CheckArgs = func(args []string) error { return checkArgs(deps, args) }
 	sub := func(name, desc, help string, register func(fs *flag.FlagSet), raw *internal.RawFlag, run func(ctx context.Context, args []string) error) *internal.Command {
 		s := &internal.Command{Name: name, Desc: desc, HelpText: help, Raw: raw}
 		s.Register = func(fs *flag.FlagSet) {
@@ -166,7 +222,7 @@ func Command(deps Deps) *internal.Command {
 	}
 
 	var loginURL, loginName string
-	var whoamiRaw, statusRaw, pullRaw, commitRaw, logRaw internal.RawFlag
+	whoamiRaw, statusRaw, pullRaw, commitRaw, logRaw := internal.RawFlag{Desc: rawDesc}, internal.RawFlag{Desc: rawDesc}, internal.RawFlag{Desc: rawDesc}, internal.RawFlag{Desc: rawDesc}, internal.RawFlag{Desc: rawDesc}
 	var statusImports, diffRemote, pullTheirs, pullMine, commitImports, resolveMine, resolveTheirs bool
 	var commitMsg string
 	logN := 20
@@ -176,12 +232,27 @@ func Command(deps Deps) *internal.Command {
 			func(fs *flag.FlagSet) {
 				fs.StringVar(&loginURL, "url", "", "the service to log in to (default "+cloud.DefaultURL+" or CLAI_CLOUD_URL)")
 				fs.StringVar(&loginName, "name", "", "this device's name on the account page (default: the hostname)")
-			}, nil, func(ctx context.Context, _ []string) error { return r.login(ctx, loginURL, loginName) }),
+			}, nil, func(ctx context.Context, args []string) error {
+				if err := noArgs("login", args); err != nil {
+					return err
+				}
+				return r.login(ctx, loginURL, loginName)
+			}),
 		"logout": sub("logout", "Disconnect this machine and forget its key",
 			"cloud logout. Revokes this machine's key and forgets its sync state. Local files stay.",
-			nil, nil, func(ctx context.Context, _ []string) error { return r.logout(ctx) }),
+			nil, nil, func(ctx context.Context, args []string) error {
+				if err := noArgs("logout", args); err != nil {
+					return err
+				}
+				return r.logout(ctx)
+			}),
 		"whoami": sub("whoami", "Show the account, this device and storage", "cloud whoami.",
-			nil, &whoamiRaw, func(ctx context.Context, _ []string) error { return r.whoami(ctx, whoamiRaw.Value()) }),
+			nil, &whoamiRaw, func(ctx context.Context, args []string) error {
+				if err := noArgs("whoami", args); err != nil {
+					return err
+				}
+				return r.whoami(ctx, whoamiRaw.Value())
+			}),
 		"status": sub("status", "Show local changes and what the server has",
 			"cloud status [store]. The local part works offline.",
 			func(fs *flag.FlagSet) {
@@ -219,7 +290,12 @@ func Command(deps Deps) *internal.Command {
 		"log": sub("log", "Show recent commits", "cloud log [store].",
 			func(fs *flag.FlagSet) {
 				fs.IntVar(&logN, "limit", 20, "how many commits per store")
-			}, &logRaw, func(ctx context.Context, args []string) error { return r.log(ctx, args, logN, logRaw.Value()) }),
+			}, &logRaw, func(ctx context.Context, args []string) error {
+				if logN < 1 {
+					return &UsageError{Msg: fmt.Sprintf("-limit must be 1 or more, got %d", logN)}
+				}
+				return r.log(ctx, args, logN, logRaw.Value())
+			}),
 	}
 	return c
 }

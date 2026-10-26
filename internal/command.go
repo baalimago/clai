@@ -48,6 +48,10 @@ type Command struct {
 	OnSetup  func(ctx context.Context, c *Command) error
 	OnRun    func(ctx context.Context, c *Command) error
 	Subs     map[string]cmd.Command
+	// CheckArgs, when set, vets the arguments after the command's name
+	// before dispatch, so the command words its own usage errors instead
+	// of the dispatcher printing the whole usage.
+	CheckArgs func(args []string) error
 
 	// Raw and NonInteractive point at the command's flag groups (nil when
 	// the command doesn't own them) so Setup can derive the session

@@ -79,6 +79,11 @@ subpackage depends on — organizational machinery only: the
 - `OnSetup` — command-specific setup (config load, querier construction),
 - `OnRun` — optional custom run; the default runs `querier.Query` and fires
   the completion bell,
+- `CheckArgs` — optional: `cli.Run` hands it the arguments after the
+  command's name, when that name is the first argument, before `cmd.Run`
+  dispatches; an error is printed alone and exits 1. `cloud` uses it so
+  an unknown subcommand or a bad flag names that subcommand's usage
+  rather than the whole one,
 - `Subs` — the `Subcommander` tree wiring; subs share their parent's values
   by closing over the same flag structs,
 - `CompleteFlagValueFn`/`CompleteArgsFn` — optional completion hooks; the

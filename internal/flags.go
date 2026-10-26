@@ -151,10 +151,17 @@ func (f *StringsFlag) Value() []string { return slices.Clone(f.vals) }
 // querier or conversation content.
 type RawFlag struct {
 	BoolFlag
+	// Desc replaces the flag's description for a command whose raw output
+	// is not rendered text, such as JSON.
+	Desc string
 }
 
 func (g *RawFlag) Register(fs *flag.FlagSet) {
-	g.BoolFlag.Register(fs, "Set to true to print raw output (don't attempt to use 'glow').", "r", "raw")
+	desc := g.Desc
+	if desc == "" {
+		desc = "Set to true to print raw output (don't attempt to use 'glow')."
+	}
+	g.BoolFlag.Register(fs, desc, "r", "raw")
 }
 
 // NonInteractiveFlag disables the interactive-macro fallback.

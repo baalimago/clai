@@ -98,3 +98,29 @@ func Test_e2e_cloud_status_previews_other_tools_and_commit_takes_them(t *testing
 		t.Fatalf("status after the commit:\n%s", stdout)
 	}
 }
+
+// A cloud subcommand's bad flag names that subcommand's usage only, and an
+// unknown subcommand fails instead of printing help.
+func Test_e2e_cloud_usage_errors_stay_with_the_subcommand(t *testing.T) {
+	e2etest.SetupMainTestConfigDir(t)
+	for _, line := range []string{"cloud status -zz", "cloud log -limit abc", "cloud bogus"} {
+		var status int
+		var stdout string
+		stderr := testboil.CaptureStderr(t, func(t *testing.T) {
+			stdout = testboil.CaptureStdout(t, func(t *testing.T) {
+				status = harness.Run(strings.Split(line, " "))
+			})
+		})
+		if status != 1 {
+			t.Errorf("%s: status %d", line, status)
+		}
+		all := stdout + stderr
+		if strings.Contains(all, "unknown error") || strings.Contains(all, "(c)ommand (l)ine") {
+			t.Errorf("%s printed the top-level usage:\n%s", line, all)
+		}
+		want := map[string]string{"cloud status -zz": "cloud status [store]", "cloud log -limit abc": "cloud log [store]", "cloud bogus": `unknown cloud subcommand "bogus"`}[line]
+		if !strings.Contains(stderr, want) {
+			t.Errorf("%s: stderr lacks %q:\n%s", line, want, stderr)
+		}
+	}
+}
