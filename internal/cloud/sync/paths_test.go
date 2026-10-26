@@ -1,4 +1,4 @@
-package cloud
+package sync
 
 import "testing"
 
@@ -42,33 +42,5 @@ func TestAllowed(t *testing.T) {
 	}
 	if _, ok := ParseStore("notes"); ok {
 		t.Fatal("ParseStore accepted notes")
-	}
-}
-
-func TestHoldsSecret(t *testing.T) {
-	cases := []struct {
-		name, body string
-		want       bool
-	}{
-		{"x.json", `{"api_key":"abcdefgh1234"}`, true},
-		{"x.json", `{"headers":{"Authorization":"Bearer abcdefgh1234"}}`, true},
-		{"x.json", `{"list":[{"password":"hunter22hunter"}]}`, true},
-		{"x.json", `{"api_key":"$OPENAI_API_KEY"}`, false},
-		{"x.json", `{"api_key":"env:OPENAI"}`, false},
-		{"x.json", `{"max_tokens":"12345678"}`, false},
-		{"x.json", `{"env":{"GITHUB_TOKEN":"abcdefgh1234"}}`, true},
-		{"x.json", `{"x-api-key":"abcdefgh1234"}`, true},
-		{"x.json", `{"token_endpoint":"https://example.com/token"}`, false},
-		{"x.json", `{"token":"https://example.com/token"}`, false},
-		{"x.json", `{"token_budget":4096}`, false},
-		{"x.json", `{"note":"short"}`, false},
-		{"x.json", `not json`, false},
-		{"SKILL.md", "use sk-abcdefghijklmnopqrstuvwxyz", true},
-		{"SKILL.md", "api_key: abcdefgh1234", false},
-	}
-	for _, c := range cases {
-		if got, _ := holdsSecret(c.name, []byte(c.body)); got != c.want {
-			t.Errorf("holdsSecret(%s, %s) = %v, want %v", c.name, c.body, got, c.want)
-		}
 	}
 }

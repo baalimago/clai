@@ -1,4 +1,4 @@
-package cloud
+package sync
 
 import (
 	"crypto/sha256"
@@ -10,21 +10,15 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
+	"strings"
 )
 
-// Quota is what the server accepts for one store; the client checks the
-// per-file limit before uploading so one oversized file never fails a
-// whole commit.
-type Quota struct {
-	Files    int
-	Bytes    int64
-	FileSize int64
-}
-
-// Quotas mirrors clai-cloud's QUOTAS.
-var Quotas = map[Store]Quota{
-	StoreConfig:        {Files: 2_000, Bytes: 20_000_000, FileSize: 1_000_000},
-	StoreConversations: {Files: 200_000, Bytes: 5_000_000_000, FileSize: 25_000_000},
+// FileLimits is the largest single file each store takes, mirroring
+// clai-cloud's FILE_LIMITS. A larger file is left out of a commit and named.
+var FileLimits = map[Store]int64{
+	StoreConfig:        1_000_000,
+	StoreConversations: 25_000_000,
 }
 
 // LocalFile is one synced file as it is on disk now.
@@ -124,4 +118,20 @@ func hashFile(p string) (string, error) {
 func hashBytes(b []byte) string {
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:])
+}
+
+func humanBytes(n int64) string {
+	switch {
+	case n >= 1_000_000_000:
+		return trimZero(float64(n)/1e9) + " GB"
+	case n >= 1_000_000:
+		return trimZero(float64(n)/1e6) + " MB"
+	case n >= 1_000:
+		return trimZero(float64(n)/1e3) + " kB"
+	}
+	return strconv.FormatInt(n, 10) + " B"
+}
+
+func trimZero(f float64) string {
+	return strings.TrimSuffix(strconv.FormatFloat(f, 'f', 1, 64), ".0")
 }

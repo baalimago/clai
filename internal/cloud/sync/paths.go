@@ -1,4 +1,7 @@
-package cloud
+// Package sync is clai's git-style sync of the config and conversation
+// stores with clai.chat: status, diff, pull, commit, resolve and log. Nothing
+// here runs unless a `clai cloud` command calls it. See architecture/cloud.md.
+package sync
 
 import (
 	"regexp"
@@ -78,6 +81,22 @@ func Allowed(store Store, rel string) bool {
 	}
 	return false
 }
+
+// StoreOf names the store a path belongs to.
+func StoreOf(rel string) (Store, bool) {
+	for _, s := range Stores {
+		if Allowed(s, rel) {
+			return s, true
+		}
+	}
+	return "", false
+}
+
+// importsPrefix holds conversations exported from other tools; a commit
+// leaves them out unless asked with --imports.
+const importsPrefix = "conversations/imported/"
+
+func isImport(rel string) bool { return strings.HasPrefix(rel, importsPrefix) }
 
 // roots are the directories under the config dir a store's scan walks;
 // a top-level file is matched by name.

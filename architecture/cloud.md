@@ -1,134 +1,109 @@
 # Cloud sync: `clai cloud`
 
-clai can keep two stores in sync with clai.chat: a free **config store**
-(profiles, MCP servers, shell contexts, skills, mode configs, theme) and a
-$1/month **conversation store** (conversations, their images, reasoning
-sidecars, and the conversations clai imports from other tools). This doc
-answers: how a machine logs in, which files sync, how a sync avoids
-overwriting another machine's work, and when a sync runs.
+clai can keep two stores on clai.chat: a **config store** (profiles, MCP
+servers, shell contexts, skills, mode configs, theme) and a **conversation
+store** (conversations, their images, reasoning sidecars, and, when asked,
+the conversations clai imports from other tools). Both share one storage
+allowance: 1 GB free, then $1 per GB a month. Sync works like git: nothing
+runs on its own, only `clai cloud` subcommands talk to clai.chat, and clai
+works the same without an account. This doc answers: how a machine logs in,
+which files sync, how pull and commit avoid overwriting another machine's
+work, and what a conflict leaves on disk.
 
 Read this when: changing `internal/cloud`, adding a file to the config dir
 that should (or must not) sync, changing the conversation file layout, or
-touching the foreign readers' export. The server half is
-`cloud/site/{api,sync,devices,billing}.ts` in baalimago/clai-cloud (its
-`architecture/sync.md`).
+touching the foreign readers' export. The server half is in
+baalimago/clai-cloud (`architecture/sync.md`, and `architecture/cli-login.md`
+for the login).
 
 ## Key files
 
 | File | Purpose |
 |---|---|
-| `internal/cloud/cmd.go` | `Command`: `login`, `logout`, `status`, `sync [-background]`, `enable`, `disable` |
-| `internal/cloud/engine.go` | `Engine.Sync`: pull, apply, conflicts, plan, upload, commit |
-| `internal/cloud/client.go` | `Client`: the `/api/v1` calls; `APIError`, `TransportError` |
-| `internal/cloud/paths.go` | `Allowed`: the allowlists, mirrored from the server's `validPath` |
-| `internal/cloud/scan.go` | `scan`: walks a store's dirs and hashes files, skipping unchanged ones by size and mod time; `Quotas` |
-| `internal/cloud/secrets.go` | `holdsSecret`: the credential check that keeps a config file local |
-| `internal/cloud/settings.go`, `state.go` | `<config>/cloud/`: `credentials.json` (0600), `settings.json`, `state/<store>.json` |
-| `internal/cloud/lock.go`, `background.go` | The sync lock and dirty marker, `AutoSync`, `SpawnSelf` |
+| `internal/cloud/client.go` | `Client`: `Do`, `PostJSON`; `APIError` (with `URL` for a page that fixes it), `TransportError`; `StartDevice`, `PollDevice`, `Me`, `RevokeCurrent` |
+| `internal/cloud/login.go` | `LoginFlow.Run`: start, show the code, poll until approved, denied or expired |
+| `internal/cloud/credentials.go` | `<config>/cloud/credentials.json` (0600); `CLAI_CLOUD_TOKEN`, `CLAI_CLOUD_URL` |
+| `internal/cloud/sync/paths.go` | `Store`, `Allowed` (mirrors the server's `validPath`), `StoreOf` |
+| `internal/cloud/sync/scan.go` | `scan`: hashes a store's files, reusing hashes by size and mod time; `FileLimits` |
+| `internal/cloud/sync/secrets.go` | `FindSecret`: the credential check; vectors in `testdata/secrets.vectors.json`, shared with clai-cloud |
+| `internal/cloud/sync/state.go` | `<config>/cloud/state/<store>.json`, `base/`, `theirs/`, `trash/`; `ResetState` |
+| `internal/cloud/sync/plan.go` | `Engine.Plan`: what a commit would send, leave out, or is blocked by |
+| `internal/cloud/sync/pull.go` | `Engine.Pull`, the first pull's question, `Mode` |
+| `internal/cloud/sync/commit.go` | `Engine.Commit`, `BehindError`, `ConflictsOpenError` |
+| `internal/cloud/sync/resolve.go`, `diff.go`, `status.go`, `merge.go` | `Resolve`, `Diff`, `Status`/`Log`, the conversation merge and fork |
+| `internal/cloud/cloudcmd/` | `Command`: the subcommands and their output; `ExitDecisionNeeded` |
+| `internal/cloud/cloudtest/` | An in-memory clai.chat for tests |
 | `internal/chat/imported.go` | `ExportForeign`, `importedReader`, `ReindexPulled` |
-| `internal/cli/cli.go` | Wires the command, the hooks, and the post-command `AutoSync` |
+| `internal/cli/cli.go` | Wires the command, its hooks and the exit-4 seam |
 
 ## Flow
 
 ```text
-clai cloud login
-  POST /api/v1/device/code {name: hostname} → print verification_uri_complete + user code
-  every interval: POST /api/v1/device/token → pending | slow_down (+5 s) | denied | expired | token
-  save <config>/cloud/credentials.json (0600), reset state, sync
+login    POST /cli/v1/start {client} -> user code, approve at /cli/login#CODE
+         POST /cli/v1/token {deviceCode} every interval -> {key, access, expiresAt, endpoint, account}
+         save credentials, forget any sync state. Nothing is pulled or committed.
 
-Engine.Sync(store)                                   (per store, config first)
-  conversations only: Hooks.Export → chat.ExportForeign
-  round ≤ 3:
-    pull:  GET changes?since=cursor (pages) → apply each entry → save state per page
-    push:  scan → plan (changed / deleted vs. state) → POST blobs/missing → PUT blobs
-           → POST commit (≤ 200 per call) → state ← applied revs
-    a conflict in the commit answer → next round
-  conversations only: Hooks.Pulled → chat.ReindexPulled (chat index upsert/remove)
-
-any other command exits 0 → cli.Run → cloud.AutoSync
-  logged in, CLAI_CLOUD not off, a store enabled, last sync older than the interval
-  → touch last-sync → SpawnSelf: `clai cloud sync -background`, detached, output → <cache>/cloud/sync.log
+status   plan (local, offline) + GET stores/<s>/changes?since=cursor (what the server has)
+pull     changes since cursor -> per path:
+           mine unchanged since base          -> take theirs (update, add, delete)
+           same bytes                         -> record the base
+           conversation, both changed         -> longer copy wins, or theirs becomes a fork
+           otherwise, -theirs                 -> mine to cloud/trash/, take theirs
+                      -mine                   -> keep mine, base = theirs (commit sends it)
+                      default                 -> keep mine, theirs to cloud/theirs/<path>: a conflict
+commit   refuse while conflicts are open (exit 4)
+         plan -> missing blobs -> PUT blobs -> POST stores/<s>/commit {message, changes[base_rev]}
+         the server applies all or nothing: one stale base_rev -> BehindError (exit 4)
+resolve  -mine keeps the file as it is; -theirs trashes it and takes cloud/theirs/<path>
+log      GET stores/<s>/log?limit=
 ```
 
 ## Behavior
 
-- **What syncs.** `Allowed` is the only gate, and it must match the
-  server's `validPath`: a path the server refuses fails the whole commit.
-  Config: `textConfig.json`, `photoConfig.json`, `videoConfig.json`,
-  `theme.json`, `skills.json`, `profiles/*.json`, `mcpServers/*.json`,
-  `shellContexts/*.json`, `skills/**`. Conversations:
-  `conversations/<id>.json` (not `globalScope.json` or `prevQuery.json`),
-  `conversations/assets/<sha256>.<ext>`, `conversations/reasoning/<id>/*.json`,
-  `conversations/imported/<source>/<id>.json`. Never: vendor model files,
-  `skills_trust.json`, the MCP token store, `chat_index.cache`, `dirs/`,
-  `cloud/`, and any path segment starting with a dot.
-- **State.** `state/<store>.json` keeps the cursor and, per path, the
-  revision and hash this machine last agreed on with the server. A file is
-  changed locally when its hash differs from that; a commit sends it with
-  `base_rev` = that revision. An entry whose revision is not newer than the
-  state's is this machine's own commit coming back, and is skipped.
-- **Applying a remote entry.** Same bytes: record the revision. Missing
-  here, or unchanged here since the last sync: download (the blob is
-  re-hashed; a mismatch is a `ChecksumError`). Deleted remotely: delete
-  only an unchanged local file; an edit made here survives and the push
-  recreates it. A file deleted here but changed elsewhere comes back.
-- **Conflicts** (both sides changed, or a first sync meets a file that
-  differs):
-  - A conversation where one copy only extends the other keeps the longer
-    one; equal messages keep the server's unless only ours has a title.
-  - A conversation that diverged is kept twice: the server's copy takes
-    the path, and ours is written as a new chat (`NewChatID` shape) with
-    `source: "clai"` and `source_id` set to the original id, the fork
-    marker clai already uses.
-  - Anything else takes the server's copy; ours goes to
-    `<config>/cloud/conflicts/<path>.<UTC timestamp>`.
-- **Credentials stay local.** In the config store, a file with a value
-  shaped like a key (`sk-…`, `ghp_…`, `AKIA…`, a PEM private key), or a
-  JSON field named like one (`*_TOKEN`, `api_key`, `password`,
-  `Authorization`, …) holding a literal value, is skipped and reported.
-  `$VAR`, `env:NAME` and URLs are references, not secrets. The check errs
-  toward skipping.
-- **Size.** A file over the store's per-file limit (1 MB config, 25 MB
-  conversations) is skipped and reported, never sent.
-- **Imported conversations.** `ExportForeign` runs before the conversation
-  store scans. It writes each conversation the foreign readers discover,
-  that no native clone already holds, to
-  `conversations/imported/<source>/<id>.json`; images go to the shared
-  `conversations/assets/`, and the asset sweep counts the exports' refs.
-  `imported/.exported.json` records each export's message count, so an
-  unchanged conversation is not read again. On another machine,
-  `importedReader` (last in the reader list) lists the exports under their
-  original source, so where the tool itself is installed its own reader
-  wins the dedup. `chatListRow.Reader` routes a selected export to it.
-- **Background sync.** `AutoSync` never blocks and never fails the
-  command. It skips the `cloud`, `version`, `confdir`, help and completion
-  commands, a machine with no login, `CLAI_CLOUD=off`, and anything within
-  `min-interval-seconds` (default 60) of the last start. The spawned sync
-  takes `<cache>/cloud/sync.lock`; a sync that finds it held leaves
-  `sync.dirty` and exits, and the holder goes round again (at most three
-  times). A lock older than ten minutes is taken over. The log is
-  truncated past 1 MB.
-- **Login and logout.** A login resets every store's state, so a machine
-  that switches accounts starts from the server. Logout revokes the token
-  (a 401 counts as done), deletes the credentials and the state, and
-  leaves every local file. `CLAI_CLOUD_TOKEN` and `CLAI_CLOUD_URL` stand
-  in for the credentials file, for CI.
-- **Subscription.** A conversation store without a live subscription
-  answers 402; the report prints the server's message and the other store
-  still syncs. A lapsed subscription is readable but not writable.
+- **Login syncs nothing.** It stores the CLI key, the access the browser
+  granted (read or write) and the account, and clears any earlier sync state,
+  since the new login may be another account. `logout` revokes the key on
+  the server first; a key the server already revoked still logs out.
+- **The first pull asks.** Until a store's first pull on this machine, files
+  that exist here and on the account with different bytes and no recorded
+  base are the first pull's question: take the account's (`-theirs`), keep
+  this machine's (`-mine`), or treat each as a conflict. On a terminal the
+  command asks; otherwise it stops with exit 4 and changes nothing.
+- **A conflict never touches the local file.** The server's side is written to
+  `cloud/theirs/<path>` and recorded in the state; commit refuses until
+  `resolve` settles it. `diff` shows base, mine and theirs.
+- **Conversations merge on their own.** When one copy only adds messages to
+  the other, the longer wins. When both added different messages, the
+  server's copy is written as a new chat (`source: "clai"`, `source_id` the
+  original id, title suffixed with the other device's name) and the local file
+  stays.
+- **What a commit leaves out.** A config file in which `FindSecret` finds a
+  literal credential (a key-like field name, or an opaque value under
+  `env`); a file over `FileLimits`; and `conversations/imported/` unless
+  `-imports`, which first runs the `Export` hook. `status` lists all three.
+- **Exit 4** (`ExitDecisionNeeded`) means a decision is needed: conflicts
+  left by a pull, a commit behind the server or blocked by conflicts, or a
+  first pull with nobody to ask. `cmd.Run` maps every error to 1, so the
+  command prints its message, calls `Deps.SetExit(4)` and returns nil;
+  `cli.Run` returns that status.
+- **402 answers** (`card_required` past the free allowance, `payment_overdue`)
+  carry a URL to the Billing and usage page, which commit prints.
+- Replaced local files go to `cloud/trash/<path>.<UTC time>` and are pruned
+  after 30 days. Config base copies under `cloud/base/` make `diff` work
+  offline; a conversation's base is fetched from the server.
+- `-r` prints JSON for `whoami`, `status`, `pull`, `commit` and `log`.
 
 ## Gotchas
 
-- `Allowed` and the server's `validPath` are two copies of one list. Change
-  both, in both repos, in the same release.
-- `settings.json` replaces the default `stores` map instead of merging into
-  it, so `{"stores": {}}` turns every store off.
+- `Allowed` and the server's `validPath` are two copies of one list, and
+  `secrets.vectors.json` is one file in two repos. Change both together.
+- A flag on a `cloud` subcommand must not reuse a global flag's name (`-n`,
+  for instance): the dispatcher would read the global one.
 - The hash cache in the state file trusts size and mod time; a tool that
   rewrites a file with the same size within one mod-time tick is missed
   until its next change.
-- `ExportForeign` keeps going past a conversation it cannot read and
-  returns the joined errors; `Engine.Sync` reports that as a skip, not a
-  failure.
+- An unreadable state file is a `StateError`, never a reset: a reset would
+  make the next pull a first pull and offer to replace every file.
 
 ## Related
 

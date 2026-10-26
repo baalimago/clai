@@ -12,12 +12,12 @@ import (
 	"os"
 	"runtime/pprof"
 	"strings"
-	"time"
 
 	"github.com/baalimago/clai/internal"
 	"github.com/baalimago/clai/internal/audio"
 	"github.com/baalimago/clai/internal/chat"
-	"github.com/baalimago/clai/internal/cloud"
+	"github.com/baalimago/clai/internal/cloud/cloudcmd"
+	"github.com/baalimago/clai/internal/cloud/sync"
 	"github.com/baalimago/clai/internal/confdir"
 	"github.com/baalimago/clai/internal/debugflags"
 	"github.com/baalimago/clai/internal/imagegen"
@@ -89,9 +89,6 @@ type Deps struct {
 	NewSummarizer     func(confDir string) (models.Summarizer, error)
 	ForeignCache      func() vendors.SourceCache
 	NewImageGenerator imagegen.NewGeneratorFunc
-	// SpawnSync starts the background cloud sync after a command; nil
-	// never starts one.
-	SpawnSync cloud.Spawner
 }
 
 // DefaultDeps returns the production collaborators: the real summarizer, the
@@ -101,7 +98,6 @@ func DefaultDeps() Deps {
 		NewSummarizer:     summary.NewAgentSummarizer,
 		ForeignCache:      chat.DefaultForeignCache,
 		NewImageGenerator: route.NewGenerator,
-		SpawnSync:         cloud.SpawnSelf,
 	}
 }
 
@@ -110,6 +106,12 @@ func DefaultDeps() Deps {
 // prep and migrations, which the domain packages cannot import themselves.
 // See architecture/cmd-dispatch.md.
 func Commands(deps Deps) map[string]cmd.Command {
+	return commands(deps, func(int) {})
+}
+
+// commands takes setExit, through which a command asks Run for an exit
+// status other than the 0 or 1 cmd.Run can return.
+func commands(deps Deps, setExit func(int)) map[string]cmd.Command {
 	configPrep := func() (string, error) {
 		confDir, _, err := setup.ConfigRunPrep(false)
 		return confDir, err
@@ -157,10 +159,10 @@ func Commands(deps Deps) map[string]cmd.Command {
 		"mcp":            mcp.Command(),
 		"profiles":       profiles.Command(),
 		"confdir":        confdir.Command(),
-		"cloud": cloud.Command(cloud.CommandDeps{
-			ConfDir:  utils.GetClaiConfigDir,
-			CacheDir: utils.GetClaiCacheDir,
-			Hooks: cloud.Hooks{
+		"cloud": cloudcmd.Command(cloudcmd.Deps{
+			ConfDir: utils.GetClaiConfigDir,
+			SetExit: setExit,
+			Hooks: sync.Hooks{
 				Export: func(ctx context.Context, confDir string) error {
 					var cache vendors.SourceCache
 					if deps.ForeignCache != nil {
@@ -196,11 +198,10 @@ func Run(args []string, deps Deps) int {
 	cfgDir, _ := utils.GetClaiConfigDir()
 	cacheDir, _ := utils.GetClaiCacheDir()
 	usage := strings.NewReplacer("CONFIG_DIR", cfgDir, "CACHE_DIR", cacheDir).Replace(usageTemplate)
-	code := cmd.Run(ctx, append([]string{"clai"}, args...), Commands(deps), usage)
-	// A finished command may have written a synced file; the sync runs
-	// detached and never delays the exit (architecture/cloud.md).
-	if code == 0 && deps.SpawnSync != nil {
-		cloud.AutoSync(cfgDir, cacheDir, args, time.Now(), deps.SpawnSync)
+	exit := 0
+	code := cmd.Run(ctx, append([]string{"clai"}, args...), commands(deps, func(c int) { exit = c }), usage)
+	if code == 0 && exit != 0 {
+		return exit
 	}
 	return code
 }

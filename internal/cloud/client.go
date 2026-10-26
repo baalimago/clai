@@ -1,3 +1,7 @@
+// Package cloud is the clai.chat account client: the base URL, this
+// machine's CLI key, the browser-approved login and who the account is. The
+// sync engine (internal/cloud/sync) builds on it, and only the cloud command
+// imports either. See architecture/cloud.md.
 package cloud
 
 import (
@@ -8,14 +12,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
-	"strconv"
 	"strings"
 	"time"
 )
 
-// DefaultURL is the service clai syncs with unless CLAI_CLOUD_URL or the
-// login's --url says otherwise.
+// DefaultURL is the service clai talks to unless CLAI_CLOUD_URL or the
+// login's -url says otherwise.
 const DefaultURL = "https://clai.chat"
 
 // APIError is any non-2xx answer: the server's {error, message} body plus
@@ -24,21 +26,21 @@ type APIError struct {
 	Status  int
 	Code    string
 	Message string
+	// Missing lists the blobs a commit referenced that the server lacks.
 	Missing []string
+	// URL is a page that fixes the error, such as Billing and usage.
+	URL string
 }
 
 func (e *APIError) Error() string {
 	if e.Message == "" {
 		return fmt.Sprintf("clai.chat answered %d %s", e.Status, e.Code)
 	}
-	return fmt.Sprintf("clai.chat answered %d %s: %s", e.Status, e.Code, e.Message)
+	return e.Message
 }
 
 // Unauthorized is a revoked or unknown token.
 func (e *APIError) Unauthorized() bool { return e.Status == http.StatusUnauthorized }
-
-// SubscriptionRequired is a conversation store with no live subscription.
-func (e *APIError) SubscriptionRequired() bool { return e.Status == http.StatusPaymentRequired }
 
 // TransportError is a request that never got an answer.
 type TransportError struct {
@@ -49,22 +51,31 @@ type TransportError struct {
 func (e *TransportError) Error() string { return fmt.Sprintf("%s: %v", e.Op, e.Cause) }
 func (e *TransportError) Unwrap() error { return e.Cause }
 
-// Client speaks clai.chat's /api/v1.
+// AsAPIError unwraps err to an *APIError.
+func AsAPIError(err error) (*APIError, bool) {
+	var e *APIError
+	ok := errors.As(err, &e)
+	return e, ok
+}
+
+// Client speaks clai.chat's /api/v1 and /cli/v1.
 type Client struct {
 	BaseURL string
 	Token   string
 	HTTP    *http.Client
 }
 
-// NewClient returns a client with a sane timeout; a large blob still fits.
+// NewClient returns a client whose timeout still fits a large blob.
 func NewClient(baseURL, token string) *Client {
 	return &Client{BaseURL: strings.TrimRight(baseURL, "/"), Token: token, HTTP: &http.Client{Timeout: 5 * time.Minute}}
 }
 
-func (c *Client) do(ctx context.Context, method, p string, body io.Reader, contentType string, out any) error {
-	req, err := http.NewRequestWithContext(ctx, method, c.BaseURL+p, body)
+// Do sends one request. A non-nil out that is an io.Writer receives the
+// body as is; any other non-nil out is decoded from JSON.
+func (c *Client) Do(ctx context.Context, method, path string, body io.Reader, contentType string, out any) error {
+	req, err := http.NewRequestWithContext(ctx, method, c.BaseURL+path, body)
 	if err != nil {
-		return &TransportError{Op: method + " " + p, Cause: err}
+		return &TransportError{Op: method + " " + path, Cause: err}
 	}
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
@@ -75,26 +86,35 @@ func (c *Client) do(ctx context.Context, method, p string, body io.Reader, conte
 	req.Header.Set("Accept", "application/json")
 	res, err := c.HTTP.Do(req)
 	if err != nil {
-		return &TransportError{Op: method + " " + p, Cause: err}
+		return &TransportError{Op: method + " " + path, Cause: err}
 	}
 	defer res.Body.Close()
 	if res.StatusCode >= 300 {
 		return decodeAPIError(res)
 	}
-	if out == nil {
+	switch w := out.(type) {
+	case nil:
 		_, _ = io.Copy(io.Discard, res.Body)
 		return nil
-	}
-	if w, ok := out.(io.Writer); ok {
+	case io.Writer:
 		if _, err := io.Copy(w, res.Body); err != nil {
-			return &TransportError{Op: method + " " + p, Cause: err}
+			return &TransportError{Op: method + " " + path, Cause: err}
 		}
 		return nil
 	}
 	if err := json.NewDecoder(res.Body).Decode(out); err != nil {
-		return &TransportError{Op: "decode " + p, Cause: err}
+		return &TransportError{Op: "decode " + path, Cause: err}
 	}
 	return nil
+}
+
+// PostJSON sends in as JSON and decodes the answer into out.
+func (c *Client) PostJSON(ctx context.Context, path string, in, out any) error {
+	b, err := json.Marshal(in)
+	if err != nil {
+		return err
+	}
+	return c.Do(ctx, http.MethodPost, path, bytes.NewReader(b), "application/json", out)
 }
 
 func decodeAPIError(res *http.Response) error {
@@ -102,163 +122,95 @@ func decodeAPIError(res *http.Response) error {
 		Error   string   `json:"error"`
 		Message string   `json:"message"`
 		Missing []string `json:"missing"`
+		URL     string   `json:"url"`
 	}
 	b, _ := io.ReadAll(io.LimitReader(res.Body, 64<<10))
 	if json.Unmarshal(b, &body) != nil || body.Error == "" {
 		body.Error = http.StatusText(res.StatusCode)
 		body.Message = strings.TrimSpace(string(b))
 	}
-	return &APIError{Status: res.StatusCode, Code: body.Error, Message: body.Message, Missing: body.Missing}
+	return &APIError{Status: res.StatusCode, Code: body.Error, Message: body.Message, Missing: body.Missing, URL: body.URL}
 }
 
-func (c *Client) postJSON(ctx context.Context, p string, in, out any) error {
-	b, err := json.Marshal(in)
-	if err != nil {
-		return err
-	}
-	return c.do(ctx, http.MethodPost, p, bytes.NewReader(b), "application/json", out)
-}
-
-// DeviceCode is the answer to the start of a device login.
+// DeviceCode is the answer to the start of a CLI login.
 type DeviceCode struct {
-	DeviceCode              string `json:"device_code"`
-	UserCode                string `json:"user_code"`
-	VerificationURI         string `json:"verification_uri"`
-	VerificationURIComplete string `json:"verification_uri_complete"`
-	ExpiresIn               int    `json:"expires_in"`
+	DeviceCode              string `json:"deviceCode"`
+	UserCode                string `json:"userCode"`
+	VerificationURI         string `json:"verificationUri"`
+	VerificationURIComplete string `json:"verificationUriComplete"`
+	ExpiresIn               int    `json:"expiresIn"`
 	Interval                int    `json:"interval"`
 }
 
+// StartDevice begins a CLI login for a client called name.
 func (c *Client) StartDevice(ctx context.Context, name string) (DeviceCode, error) {
 	var out DeviceCode
-	err := c.postJSON(ctx, "/api/v1/device/code", map[string]string{"name": name}, &out)
+	err := c.PostJSON(ctx, "/cli/v1/start", map[string]string{"client": name}, &out)
 	return out, err
 }
 
-// DeviceToken is a granted login.
+// DeviceToken is an approved login: the account's CLI key.
 type DeviceToken struct {
-	AccessToken string `json:"access_token"`
-	DeviceName  string `json:"device_name"`
+	Key string `json:"key"`
+	// Access is what the approver granted: read or write.
+	Access    string `json:"access"`
+	ExpiresAt string `json:"expiresAt"`
+	// Endpoint is the API origin the key is for.
+	Endpoint string `json:"endpoint"`
+	Account  string `json:"account"`
 }
 
-// PollDevice answers the token, or an *APIError whose Code is one of
+// PollDevice answers the key, or an *APIError whose Code is one of
 // authorization_pending, slow_down, access_denied or expired_token.
 func (c *Client) PollDevice(ctx context.Context, deviceCode string) (DeviceToken, error) {
 	var out DeviceToken
-	err := c.postJSON(ctx, "/api/v1/device/token", map[string]string{"device_code": deviceCode}, &out)
+	err := c.PostJSON(ctx, "/cli/v1/token", map[string]string{"deviceCode": deviceCode}, &out)
 	return out, err
 }
 
 // StoreInfo is one store's line in /me.
 type StoreInfo struct {
-	Readable bool  `json:"readable"`
-	Writable bool  `json:"writable"`
-	Rev      int64 `json:"rev"`
-	Bytes    int64 `json:"bytes"`
-	Files    int   `json:"files"`
+	Rev    int64 `json:"rev"`
+	Commit int64 `json:"commit"`
+	Bytes  int64 `json:"bytes"`
+	Files  int   `json:"files"`
 }
 
-// Me describes the account behind the token.
+// Usage is the account's storage against the free allowance.
+type Usage struct {
+	Bytes     int64 `json:"bytes"`
+	FreeBytes int64 `json:"free_bytes"`
+	// CardOnFile is whether the account may go past the free allowance.
+	CardOnFile bool `json:"card_on_file"`
+	// Overdue is a failed payment past its retries: commits are refused.
+	Overdue bool `json:"overdue"`
+}
+
+// Me describes the account and device behind the token.
 type Me struct {
-	Account       string `json:"account"`
-	Device        string `json:"device"`
-	Conversations struct {
-		Kind     string `json:"kind"`
-		RenewsAt int64  `json:"renews_at"`
-		Until    int64  `json:"until"`
-		DeleteAt int64  `json:"delete_at"`
-	} `json:"conversations"`
-	Billing bool                `json:"billing"`
-	Stores  map[Store]StoreInfo `json:"stores"`
+	Account string               `json:"account"`
+	Handle  string               `json:"handle"`
+	Device  string               `json:"device"`
+	Access  string               `json:"access"`
+	Usage   Usage                `json:"usage"`
+	Stores  map[string]StoreInfo `json:"stores"`
+}
+
+// Name is how the account is shown: its hub handle, else its id.
+func (m Me) Name() string {
+	if m.Handle != "" {
+		return "@" + m.Handle
+	}
+	return m.Account
 }
 
 func (c *Client) Me(ctx context.Context) (Me, error) {
 	var out Me
-	err := c.do(ctx, http.MethodGet, "/api/v1/me", nil, "", &out)
+	err := c.Do(ctx, http.MethodGet, "/api/v1/me", nil, "", &out)
 	return out, err
 }
 
 // RevokeCurrent signs this device out on the server.
 func (c *Client) RevokeCurrent(ctx context.Context) error {
-	return c.do(ctx, http.MethodDelete, "/api/v1/tokens/current", nil, "", nil)
-}
-
-// RemoteEntry is one path's state on the server.
-type RemoteEntry struct {
-	Path    string `json:"path"`
-	SHA256  string `json:"sha256"`
-	Size    int64  `json:"size"`
-	Rev     int64  `json:"rev"`
-	Deleted bool   `json:"deleted"`
-	Device  string `json:"device"`
-}
-
-// ChangesPage is one page of a store's history after a cursor.
-type ChangesPage struct {
-	Entries []RemoteEntry `json:"entries"`
-	Cursor  int64         `json:"cursor"`
-	More    bool          `json:"more"`
-}
-
-func (c *Client) Changes(ctx context.Context, store Store, since int64) (ChangesPage, error) {
-	var out ChangesPage
-	p := "/api/v1/stores/" + url.PathEscape(string(store)) + "/changes?since=" + strconv.FormatInt(since, 10)
-	err := c.do(ctx, http.MethodGet, p, nil, "", &out)
-	return out, err
-}
-
-// Missing returns which of hashes the server does not hold yet.
-func (c *Client) Missing(ctx context.Context, hashes []string) ([]string, error) {
-	var out struct {
-		Missing []string `json:"missing"`
-	}
-	err := c.postJSON(ctx, "/api/v1/blobs/missing", map[string][]string{"hashes": hashes}, &out)
-	return out.Missing, err
-}
-
-func (c *Client) PutBlob(ctx context.Context, sha string, b []byte) error {
-	return c.do(ctx, http.MethodPut, "/api/v1/blobs/"+sha, bytes.NewReader(b), "application/octet-stream", nil)
-}
-
-func (c *Client) GetBlob(ctx context.Context, sha string) ([]byte, error) {
-	var buf bytes.Buffer
-	if err := c.do(ctx, http.MethodGet, "/api/v1/blobs/"+sha, nil, "", &buf); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
-}
-
-// Change is one path in a commit: a new content hash, or a deletion.
-type Change struct {
-	Path    string `json:"path"`
-	BaseRev int64  `json:"base_rev"`
-	SHA256  string `json:"sha256,omitempty"`
-	Size    int64  `json:"size"`
-	Deleted bool   `json:"deleted,omitempty"`
-}
-
-// CommitResult says which changes landed and which lost to another device.
-type CommitResult struct {
-	Rev     int64 `json:"rev"`
-	Applied []struct {
-		Path string `json:"path"`
-		Rev  int64  `json:"rev"`
-	} `json:"applied"`
-	Conflicts []struct {
-		Path    string       `json:"path"`
-		Current *RemoteEntry `json:"current"`
-	} `json:"conflicts"`
-}
-
-func (c *Client) Commit(ctx context.Context, store Store, changes []Change) (CommitResult, error) {
-	var out CommitResult
-	err := c.postJSON(ctx, "/api/v1/stores/"+url.PathEscape(string(store))+"/commit", map[string][]Change{"changes": changes}, &out)
-	return out, err
-}
-
-// IsAPIError unwraps err to an *APIError.
-func IsAPIError(err error) (*APIError, bool) {
-	var e *APIError
-	ok := errors.As(err, &e)
-	return e, ok
+	return c.Do(ctx, http.MethodDelete, "/api/v1/tokens/current", nil, "", nil)
 }

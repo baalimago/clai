@@ -53,7 +53,7 @@ Each command lives in its domain package and exposes a
 | tools / profiles | `internal/tools` / `internal/profiles` |
 | mcp | `internal/tools/mcp` — `mcp auth <server>` runs the OAuth flow for one server and writes its token store entry; no model call, spends nothing |
 | version / confdir | `internal/version` / `internal/confdir` |
-| cloud | `internal/cloud` — login, logout, status, sync, enable, disable; after any other command that exits 0, `Run` may start a detached `cloud sync -background` (see [cloud.md](./cloud.md)) |
+| cloud | `internal/cloud/cloudcmd` — login, logout, whoami, status, diff, pull, commit, resolve, log; nothing syncs unless one of these runs. A command that needs a decision exits 4 through `Deps.SetExit` (see [cloud.md](./cloud.md)) |
 
 Every factory lives in its domain package: `text.SetupQuerier`/
 `text.CreateQuerier` (query composition), photo's run on the injected
