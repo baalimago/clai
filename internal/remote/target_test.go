@@ -88,6 +88,17 @@ func TestParseTarget_refusals(t *testing.T) {
 		"gh:baalimago/repo//x",
 		"gh:baalimago/repo@a..b",
 		"gh:-bad/repo",
+		"gh:anthropics/..@evil",
+		"gh:anthropics/../x.json",
+		"gh:anthropics/.",
+		"gh:anthropics/skills@.",
+		"gh:anthropics/skills@main/./x",
+		"gh:anthropics/skills@/main",
+		"gh:anthropics/skills@main//x",
+		"gh:anthropics/skills@main/",
+		"https://example.com/a/../b.json",
+		"https://example.com/%2e%2e/b.json",
+		"https://example.com/./b.json",
 		"http://example.com/a.json",
 		"https:///a.json",
 		"https://user@example.com/a.json",
@@ -102,6 +113,19 @@ func TestParseTarget_refusals(t *testing.T) {
 				t.Fatalf("error %q does not name the target", err)
 			}
 		})
+	}
+}
+
+func TestParseTarget_dotSegmentsNameTheProblem(t *testing.T) {
+	for in, want := range map[string]string{
+		"gh:anthropics/..@evil":           `a GitHub owner or repo cannot be "." or ".."`,
+		"gh:anthropics/skills@main/./x":   "cannot hold an empty, . or .. segment",
+		"https://example.com/a/../b.json": "an https target's path cannot hold a . or .. segment",
+	} {
+		_, err := ParseTarget(in)
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("ParseTarget(%q) err = %v, want it to say %q", in, err, want)
+		}
 	}
 }
 

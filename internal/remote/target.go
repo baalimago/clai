@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -142,23 +143,39 @@ func parseGitHub(s string) (Target, error) {
 	if len(parts) < 2 || !ghOwner.MatchString(parts[0]) || !ghRepo.MatchString(parts[1]) {
 		return Target{}, fmt.Errorf("a GitHub target is gh:<owner>/<repo>[/<path>][@<ref>]")
 	}
+	// raw.githubusercontent.com resolves a . or .. segment, so either would
+	// fetch from somewhere other than the target reads as.
+	if dotSegment(parts[0]) || dotSegment(parts[1]) {
+		return Target{}, fmt.Errorf(`a GitHub owner or repo cannot be "." or ".."`)
+	}
 	t := Target{Kind: KindGitHub, Owner: parts[0], Repo: parts[1], Path: DefaultGitHubPath}
 	if len(parts) > 2 {
-		p := strings.Join(parts[2:], "/")
-		for _, seg := range parts[2:] {
-			if seg == "" || seg == "." || seg == ".." {
-				return Target{}, fmt.Errorf("the path in a GitHub target cannot hold an empty, . or .. segment")
-			}
+		if hasEmptyOrDotSegment(parts[2:]) {
+			return Target{}, fmt.Errorf("the path in a GitHub target cannot hold an empty, . or .. segment")
 		}
-		t.Path = p
+		t.Path = strings.Join(parts[2:], "/")
 	}
 	if pinned {
 		if !ghRef.MatchString(ref) || strings.Contains(ref, "..") {
 			return Target{}, fmt.Errorf("%q is not a branch, tag or commit", ref)
 		}
+		if hasEmptyOrDotSegment(strings.Split(ref, "/")) {
+			return Target{}, fmt.Errorf("the ref %q cannot hold an empty, . or .. segment", ref)
+		}
 		t.Ref = ref
 	}
 	return t, nil
+}
+
+func dotSegment(seg string) bool { return seg == "." || seg == ".." }
+
+func hasEmptyOrDotSegment(segs []string) bool {
+	for _, seg := range segs {
+		if seg == "" || dotSegment(seg) {
+			return true
+		}
+	}
+	return false
 }
 
 func parseHTTPS(s string) (Target, error) {
@@ -171,6 +188,11 @@ func parseHTTPS(s string) (Target, error) {
 	}
 	if u.Host == "" || u.User != nil {
 		return Target{}, fmt.Errorf("an https target needs a host and no user info")
+	}
+	// A server resolves a . or .. segment, so the target would read as one
+	// path and fetch another.
+	if slices.ContainsFunc(strings.Split(u.Path, "/"), dotSegment) {
+		return Target{}, fmt.Errorf("an https target's path cannot hold a . or .. segment")
 	}
 	return Target{Kind: KindHTTPS, URL: s}, nil
 }
