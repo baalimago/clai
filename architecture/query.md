@@ -136,7 +136,11 @@ the whole run. See `internal/text/run_summary.go`.
 The query command applies configuration in this order (lowest to highest precedence):
 
 1. **Hard-coded defaults** (`text.Default` in `internal/text/conf.go`)
-2. **`textConfig.json`** loaded from config dir
+2. **`textConfig.json`** loaded from config dir. A missing file is created from
+   `text.FirstRunDefaults` (`internal/text/first_run_model.go`): `text.Default`
+   with the model of the first vendor whose API key is set, OpenAI first, so a
+   first query works with whichever key the user exported. An existing file
+   keeps its model.
 3. **Model-specific config** (e.g., `openai_gpt_gpt-5.2.json`)
 4. **Profile overrides** (if `-p`/`-profile` or `-prp`/`-profile-path` is set)
 5. **CLI flags** (e.g., `-cm`, `-r`, `-t`)
@@ -165,7 +169,7 @@ See `CONFIG.md` for full details.
 `utils.Prompt()` in `internal/utils/prompt.go`:
 
 - If pipe detected and no args: stdin becomes the prompt
-- If pipe detected and args present: replaces `{}` (or custom `-I` token) in args with stdin content
+- If pipe detected and args present: with `-i` or `-I <token>`, replaces `{}` (or the `-I` token) in args with stdin content; without either, appends stdin after the args. `-I` alone implies `-i` (`text.ApplyFlagOverrides`).
 - If no pipe: joins args as the prompt
 - With no args and no pipe it fails with `utils.ErrNoPrompt`
 

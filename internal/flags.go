@@ -181,7 +181,7 @@ func NewReplyStdinFlags() ReplyStdinFlags {
 
 func (g *ReplyStdinFlags) Register(fs *flag.FlagSet) {
 	g.Reply.Register(fs, "Set to true to reply to the previous query, meaning that it will be used as context for your next query.", "re", "reply")
-	g.StdinReplace.Register(fs, "Set the string to replace with stdin. (flag syntax borrowed from xargs)", "I", "replace")
+	g.StdinReplace.Register(fs, "Set the string to replace with stdin; implies -i. (flag syntax borrowed from xargs)", "I", "replace")
 	g.ExpectReplace.Register(fs, "Set to true to replace '{}' with stdin. This is overwritten by -I and -replace. (flag syntax borrowed from xargs)", "i")
 }
 

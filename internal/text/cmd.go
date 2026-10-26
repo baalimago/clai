@@ -231,7 +231,7 @@ func attachSummarizer(confDir string, newSummarizer func(string) (models.Summari
 // If there is no check if the flagSet is default, there may be a case where default > file, which breaks
 // the configuration convention flags > file > default
 func ApplyFlagOverrides(tConf *Configurations, tf internal.TextFlags) {
-	if tf.ReplyStdin.ExpectReplace.Value() {
+	if tf.ReplyStdin.ExpectReplace.Value() || tf.ReplyStdin.StdinReplace.Explicit() {
 		tConf.StdinReplace = tf.ReplyStdin.StdinReplace.Value()
 	}
 	if tf.AgentText.ChatModel.Changed() {
