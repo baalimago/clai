@@ -10,7 +10,11 @@ import (
 // scrollback included, with rows that autowrap split joined back.
 func finalScreen(t *testing.T, out string, width int) []string {
 	t.Helper()
-	term := &vttest.Terminal{Width: width}
+	return replayScreen(t, &vttest.Terminal{Width: width}, out)
+}
+
+func replayScreen(t *testing.T, term *vttest.Terminal, out string) []string {
+	t.Helper()
 	term.WriteString(out)
 	if odd := term.Unhandled(); len(odd) > 0 {
 		t.Fatalf("output uses sequences the test terminal does not model: %q", odd)

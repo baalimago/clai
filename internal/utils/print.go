@@ -1581,3 +1581,63 @@ func PrepareDisplayMessage(msg pub_models.Message) pub_models.Message {
 	}
 	return display
 }
+
+// PinWideRunes returns token, streamed after prior on rows width cells wide,
+// so that terminals which draw a wide rune one cell wide still break rows
+// where TerminalRows counts them: each wide rune is followed by a move to the
+// column it ends on, and a rune that starts a new row after a full one is
+// preceded by an explicit row break. Text holding escape sequences passes
+// through unchanged.
+func PinWideRunes(prior, token string, width int) string {
+	if width <= 0 || strings.ContainsRune(token, '\x1b') {
+		return token
+	}
+	last := prior
+	if i := strings.LastIndexByte(prior, '\n'); i >= 0 {
+		last = prior[i+1:]
+	}
+	if strings.ContainsRune(last, '\x1b') {
+		return token
+	}
+	// filledByWide marks a row a wide rune filled: a terminal that drew it
+	// narrow has no pending wrap, so the next rune needs an explicit break.
+	col, filledByWide := 0, false
+	for _, r := range last {
+		col = advanceColumn(col, r, width)
+		filledByWide = col == width && terminalRuneWidth(r) == 2
+	}
+	var b strings.Builder
+	for _, r := range token {
+		wide := terminalRuneWidth(r) == 2
+		printable := r != '\t' && !unicode.IsControl(r)
+		if printable && (filledByWide || (wide && col > 0 && col+2 > width)) {
+			b.WriteString("\r\n")
+			col = 0
+		}
+		b.WriteRune(r)
+		col = advanceColumn(col, r, width)
+		filledByWide = col == width && wide
+		if wide && col < width {
+			fmt.Fprintf(&b, "\x1b[%dG", col+1)
+		}
+	}
+	return b.String()
+}
+
+// advanceColumn is the column after r is written at col, as lineRows counts
+// it; width means the row is full.
+func advanceColumn(col int, r rune, width int) int {
+	switch {
+	case r == '\n' || r == '\r':
+		return 0
+	case r == '\t':
+		return min((col/tabStop+1)*tabStop, width-1)
+	case unicode.IsControl(r):
+		return col
+	}
+	w := terminalRuneWidth(r)
+	if wraps(col, w, width) {
+		col = 0
+	}
+	return col + w
+}

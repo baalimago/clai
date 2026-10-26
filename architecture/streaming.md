@@ -170,6 +170,13 @@ The consumer loop (see `internal/text/querier.go`, and chat equivalents) is resp
 1. **Aggregating assistant text**
    - Each `string` delta is appended to a buffer (e.g. `fullMsg`)
    - Deltas are printed immediately for the interactive streaming experience
+   - On a terminal, deltas go through `utils.PinWideRunes`. Before a tool call, the
+     streamed text is cleared by moving up the rows `utils.TerminalRows` counts, with
+     emoji two cells wide. A terminal on older width tables (xterm.js by default, so
+     asciinema replays) draws emoji one cell wide, its rows break later, and the clear
+     used to climb into the command line above. Pinning moves the cursor to the column
+     clai counted after each wide rune, and breaks the row explicitly where a wide rune
+     fills it or does not fit, so both kinds of terminal break rows where clai counts.
 
 2. **Tool call detection and execution**
    - `pub_models.Call` events are collected until the stream terminates
