@@ -509,9 +509,12 @@ func TestAnthropicCountTokens_Images(t *testing.T) {
 	img := loadProbe(t)
 	i := slices.IndexFunc(encoderCases(), func(c encoderCase) bool { return c.name == "anthropic" })
 	c := encoderCases()[i]
-	// The count request is only sent for an anthropic.com URL; this one routes to the test server.
+	// The count request is only sent for an anthropic.com URL with
+	// print_input_count set; this one routes to the test server.
 	c.aim = func(enc models.ImageEncoder, url string) {
-		enc.(*anthropic.Claude).URL = url + "/api.anthropic.com/v1/messages"
+		claude := enc.(*anthropic.Claude)
+		claude.URL = url + "/api.anthropic.com/v1/messages"
+		claude.PrintInputCount = true
 	}
 	res := exchange(t, c, modelstest.UserImageChat(img.part("image/png")))
 	if res.err != nil {
