@@ -29,6 +29,17 @@ type CommandDeps struct {
 	// for decoding it (R1-02, D27). It must return a nil interface and never a
 	// nil pointer: discovery reads nil as "always scan".
 	ForeignCache func() vendors.SourceCache
+	// SendPrompt sends the prompt `chat continue <chat> <prompt>` carries to
+	// the chat it just bound to the working directory. Nil only previews it.
+	SendPrompt func(ctx context.Context, req DirReplyRequest) error
+}
+
+// DirReplyRequest is one prompt for the conversation bound to the working
+// directory, as `clai -dre query` would send it.
+type DirReplyRequest struct {
+	Prompt  string
+	Profile string
+	Raw     bool
 }
 
 // Command builds the chat command tree.
@@ -129,7 +140,13 @@ func fullChatSetup(deps CommandDeps, cf *internal.ChatFlags) func(ctx context.Co
 		if err != nil {
 			return err
 		}
-		return setChatQuerier(c, confDir, cf, deps.ForeignCache)
+		h, err := newChatQuerier(confDir, c.Args(), cf, deps.ForeignCache)
+		if err != nil {
+			return err
+		}
+		h.sendPrompt = deps.SendPrompt
+		c.SetQuerier(h)
+		return nil
 	}
 }
 
@@ -137,7 +154,7 @@ const summarizeWindowUsage = "chat summarize <window>: the window is required (a
 
 // summarizeSetup is the config-touching path of the summarize verb: it
 // parses the positional window, builds the summarizer and attaches both to
-// the handler. It is distinct from fullChatSetup because setChatQuerier
+// the handler. It is distinct from fullChatSetup because newChatQuerier
 // sees neither the summarize flags nor the summarizer.
 func summarizeSetup(deps CommandDeps, cf *internal.ChatFlags, sf *internal.SummarizeFlags) func(ctx context.Context, c *internal.Command) error {
 	return func(_ context.Context, c *internal.Command) error {
@@ -197,23 +214,19 @@ func readOnlyChatSetup(deps CommandDeps, cf *internal.ChatFlags) func(ctx contex
 		if err != nil {
 			return err
 		}
-		return setChatQuerier(c, confDir, cf, deps.ForeignCache)
+		h, err := newChatQuerier(confDir, c.Args(), cf, deps.ForeignCache)
+		if err != nil {
+			return err
+		}
+		h.sendPrompt = deps.SendPrompt
+		c.SetQuerier(h)
+		return nil
 	}
 }
 
-// setChatQuerier builds the handler both chat paths run. The dispatcher
-// hands over ["chat", verb, args...]; the handler wants "<verb> <args...>".
-func setChatQuerier(c *internal.Command, confDir string, cf *internal.ChatFlags, newForeignCache func() vendors.SourceCache) error {
-	h, err := newChatQuerier(confDir, c.Args(), cf, newForeignCache)
-	if err != nil {
-		return err
-	}
-	c.SetQuerier(h)
-	return nil
-}
-
-// newChatQuerier is setChatQuerier without the command adapter, so the handler
-// is observable. It carries the factory over without invoking it (D27).
+// newChatQuerier builds the handler both chat paths run, without the command
+// adapter so it is observable. The dispatcher hands over ["chat", verb,
+// args...]; the handler wants "<verb> <args...>". It carries the factory over without invoking it (D27).
 func newChatQuerier(confDir string, args []string, cf *internal.ChatFlags, newForeignCache func() vendors.SourceCache) (*ChatHandler, error) {
 	h, err := New(confDir, strings.Join(args[1:], " "), cf.Profile.Value(), cf.Raw.Value(), os.Stdout)
 	if err != nil {

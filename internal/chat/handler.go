@@ -77,6 +77,9 @@ type ChatHandler struct {
 	// conversation so later -dre queries keep using it.
 	profile string
 	raw     bool
+	// sendPrompt sends the prompt of `continue <chat> <prompt>`; nil only
+	// previews it.
+	sendPrompt func(ctx context.Context, req DirReplyRequest) error
 
 	out    io.Writer
 	input  io.Reader
@@ -306,6 +309,12 @@ func (cq *ChatHandler) cont(ctx context.Context) error {
 	// continued using directory-reply mode (-dre).
 	if err := cq.UpdateDirScopeFromCWD(chat.ID); err != nil {
 		return fmt.Errorf("failed to update directory-scoped binding: %w", err)
+	}
+	if cq.prompt != "" && cq.sendPrompt != nil {
+		if err := cq.sendPrompt(ctx, DirReplyRequest{Prompt: cq.prompt, Profile: cq.profile, Raw: cq.raw}); err != nil {
+			return fmt.Errorf("failed to send prompt to chat %s: %w", chat.ID, err)
+		}
+		return nil
 	}
 	ancli.Noticef("chat %s is now replyable with flag \"clai -dre query <prompt>\"\n", chat.ID)
 	return nil
