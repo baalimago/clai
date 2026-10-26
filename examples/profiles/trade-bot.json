@@ -29,6 +29,11 @@
         "-y",
         "@iqai/mcp-polymarket@0.1.0"
       ],
+      "auth": {
+        "required_env": [
+          "POLYMARKET_PRIVATE_KEY"
+        ]
+      },
       "timeout_seconds": 120,
       "startup": "lazy",
       "connect_timeout_seconds": 180

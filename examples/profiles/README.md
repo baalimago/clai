@@ -10,7 +10,10 @@ clai -prp cchub:clai/reviewer q
 
 Every MCP package is pinned to an exact version, and no profile holds a
 secret: each one reads its keys from the environment variables listed
-below. Swap `model` for whichever model you have a key for.
+below. A server declares the ones it needs in `auth.required_env` (or
+`auth.token_env` for a hosted server's token), so clai names any that are
+missing before it starts the server, and the trust prompt of a `-prp`
+profile lists them. Swap `model` for whichever model you have a key for.
 
 | Agent | What it does | Run | Needs |
 | --- | --- | --- | --- |

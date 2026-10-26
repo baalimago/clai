@@ -16,6 +16,15 @@
         "postgres",
         "--stdio"
       ],
+      "auth": {
+        "required_env": [
+          "POSTGRES_HOST",
+          "POSTGRES_PORT",
+          "POSTGRES_DATABASE",
+          "POSTGRES_USER",
+          "POSTGRES_PASSWORD"
+        ]
+      },
       "timeout_seconds": 180,
       "connect_timeout_seconds": 180,
       "startup": "lazy"

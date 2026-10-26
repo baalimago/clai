@@ -15,6 +15,11 @@
         "-y",
         "@sentry/mcp-server@0.42.0"
       ],
+      "auth": {
+        "required_env": [
+          "SENTRY_ACCESS_TOKEN"
+        ]
+      },
       "timeout_seconds": 120,
       "startup": "lazy",
       "connect_timeout_seconds": 180

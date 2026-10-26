@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"slices"
 	"testing"
+
+	"github.com/baalimago/clai/internal/remote"
 )
 
 // pinnedPackage matches an npm package with an exact @version or a PyPI
@@ -32,6 +34,11 @@ func TestExampleProfiles(t *testing.T) {
 			var p Profile
 			if err := json.Unmarshal(raw, &p); err != nil {
 				t.Fatalf("not a profile: %v", err)
+			}
+			// The hub serves these as remote profiles, which are validated
+			// strictly.
+			if _, err := remote.Validate(path, raw); err != nil {
+				t.Fatal(err)
 			}
 			if p.Model == "" || p.Prompt == "" {
 				t.Fatal("profile needs a model and a prompt")
