@@ -371,6 +371,32 @@ func storeOfPrefix(p string) (sync.Store, bool) {
 	return sync.StoreOf(dir + "/x.json")
 }
 
+// commitOutcome is what became of one store in a commit.
+type commitOutcome string
+
+const (
+	commitCommitted commitOutcome = "committed"
+	commitUpToDate  commitOutcome = "up_to_date"
+	commitBehind    commitOutcome = "behind"
+	commitConflicts commitOutcome = "conflicts"
+	commitBilling   commitOutcome = "billing"
+)
+
+// commitReport is one store of commit -r: the engine's result plus what
+// stopped it, if anything.
+type commitReport struct {
+	sync.CommitResult
+	Status    commitOutcome      `json:"status"`
+	Conflicts []string           `json:"conflicts,omitempty"`
+	Behind    []sync.RemoteEntry `json:"behind,omitempty"`
+	Billing   *billingReport     `json:"billing,omitempty"`
+}
+
+type billingReport struct {
+	Reason sync.BillingReason `json:"reason"`
+	URL    string             `json:"url,omitempty"`
+}
+
 func (r *runner) commit(ctx context.Context, args []string, msg string, imports, raw bool) error {
 	which, paths, err := commitTargets(args)
 	if err != nil {
@@ -381,40 +407,55 @@ func (r *runner) commit(ctx context.Context, args []string, msg string, imports,
 		return err
 	}
 	if msg == "" {
-		msg = "from " + orDash(creds.Device)
+		msg = "from " + r.deviceName(creds)
 	}
-	var results []sync.CommitResult
+	var reports []commitReport
 	decision := false
 	for _, s := range which {
 		status := r.track(engine, "committing "+string(s))
 		res, err := engine.Commit(ctx, s, sync.CommitOptions{Message: msg, PlanOptions: sync.PlanOptions{Paths: paths[s], Imports: imports}})
 		status.Stop()
+		res.Store = s
+		if res.Excluded == nil {
+			res.Excluded = []sync.Excluded{}
+		}
+		if res.Changes == nil {
+			res.Changes = []sync.LocalChange{}
+		}
+		report := commitReport{CommitResult: res, Status: commitCommitted}
+		var lines []string
 		var open *sync.ConflictsOpenError
 		var behind *sync.BehindError
 		var blocked *sync.BillingBlockedError
 		switch {
 		case errors.As(err, &blocked) && len(args) == 0:
 			// A plain commit still commits the free config store.
-			r.lines(blockedLines(s, blocked, r.style()))
-			continue
+			report.Status, report.Billing = commitBilling, &billingReport{Reason: blocked.Reason, URL: blocked.URL}
+			decision = decision || blocked.Reason != sync.BillingNotOpen
+			lines = blockedLines(s, blocked, r.style())
 		case errors.As(err, &open):
 			decision = true
-			r.lines(conflictsOpenLines(open, r.style()))
-			continue
+			report.Status, report.Conflicts = commitConflicts, open.Paths
+			lines = conflictsOpenLines(open, r.style())
 		case errors.As(err, &behind):
 			decision = true
-			r.lines(behindLines(behind, r.deps.Now(), r.style()))
-			continue
+			report.Status, report.Behind = commitBehind, behind.Paths
+			lines = behindLines(behind, r.deps.Now(), r.style())
 		case err != nil:
 			return r.commitError(err)
+		default:
+			if res.Files == 0 {
+				report.Status = commitUpToDate
+			}
+			lines = commitLines(res, r.style())
 		}
-		results = append(results, res)
+		reports = append(reports, report)
 		if !raw {
-			r.lines(commitLines(res, r.style()))
+			r.lines(lines)
 		}
 	}
 	if raw {
-		if err := r.json(results); err != nil {
+		if err := r.json(reports); err != nil {
 			return err
 		}
 	}
@@ -422,6 +463,18 @@ func (r *runner) commit(ctx context.Context, args []string, msg string, imports,
 		r.deps.SetExit(ExitDecisionNeeded)
 	}
 	return nil
+}
+
+// deviceName names this machine in a default commit message: the login's
+// device, else the hostname, as with a CLAI_CLOUD_TOKEN.
+func (r *runner) deviceName(creds cloud.Credentials) string {
+	if creds.Device != "" {
+		return creds.Device
+	}
+	if host, err := r.deps.Hostname(); err == nil && host != "" {
+		return host
+	}
+	return "-"
 }
 
 // track shows a status line on a terminal's stderr while engine works,

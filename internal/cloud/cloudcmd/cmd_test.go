@@ -525,7 +525,7 @@ func TestCommit_withoutACardCommitsConfigAndSaysWhyNotConversations(t *testing.T
 	h.write("profiles/a.json", `{"prompt":"a"}`)
 	h.write("conversations/abc.json", `{"messages":[]}`)
 	code, out := h.run("commit")
-	if code != 0 {
+	if code != ExitDecisionNeeded {
 		t.Fatalf("code %d, out %s", code, out)
 	}
 	mustContain(t, out, "▸ config · commit #1", "▸ conversations · not committed · needs a card on file", "  → "+h.srv.URL()+"/account/billing/")

@@ -110,7 +110,9 @@ log      GET stores/<s>/log?limit=
   what `commit -imports` would export (new, or grown since the last
   export), reading and writing no conversation (`Status.Imports`).
 - **Exit 4** (`ExitDecisionNeeded`) means a decision is needed: conflicts
-  left by a pull, a commit behind the server or blocked by conflicts, or a
+  left by a pull, a commit behind the server or blocked by conflicts, a
+  plain commit that committed config but whose conversations billing
+  refused (no card, or overdue; not while billing is not open yet), or a
   first pull with nobody to ask. `cmd.Run` maps every error to 1, so the
   command prints its message, calls `Deps.SetExit(4)` and returns nil;
   `cli.Run` wires `SetExit` to `internal.ExitStatus.Set`, whose `Resolve`
@@ -162,7 +164,13 @@ log      GET stores/<s>/log?limit=
 - Replaced local files go to `cloud/trash/<path>.<UTC time>` and are pruned
   after 30 days. Config base copies under `cloud/base/` make `diff` work
   offline; a conversation's base is fetched from the server.
-- `-r` prints JSON for `whoami`, `status`, `pull`, `commit` and `log`.
+- `-r` prints JSON for `whoami`, `status`, `pull`, `commit` and `log`, and
+  nothing else on stdout. `commit -r` lists every store it was asked for
+  with a `status`: `committed`, `up_to_date`, `behind` (with `behind`, the
+  newer files), `conflicts` (with `conflicts`) or `billing` (with
+  `billing.reason` and `billing.url`).
+- A commit with no `-m` is labelled `from <device>`: the login's device
+  name, else the hostname (a `CLAI_CLOUD_TOKEN` has no device).
 
 ## Gotchas
 
