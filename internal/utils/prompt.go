@@ -104,15 +104,21 @@ func PromptFrom(stdinReplace string, args []string, stdin io.Reader) (string, er
 		args = append(args, "{}")
 	}
 
-	// Replace all occurrence of stdinReplaceSignal with pipeIn
+	// Replace all occurrence of stdinReplaceSignal with pipeIn. A prompt
+	// without the token gets stdin appended, never dropped.
 	if stdinReplace != "" {
 		if debug {
 			ancli.PrintOK(fmt.Sprintf("attempting to replace: '%v' with stdin\n", stdinReplace))
 		}
+		replaced := false
 		for i, arg := range args {
 			if strings.Contains(arg, stdinReplace) {
 				args[i] = strings.ReplaceAll(arg, stdinReplace, pipeIn)
+				replaced = true
 			}
+		}
+		if !replaced {
+			args = append(args, pipeIn)
 		}
 	}
 

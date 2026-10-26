@@ -48,6 +48,14 @@ func Test_goldenFile_QUERY_stdin_and_token_replacement(t *testing.T) {
 			wantOut:  "hello Y world\n",
 			wantCode: 0,
 		},
+		{
+			name:  "stdin_without_its_token_is_appended",
+			stdin: "Y",
+			args:  "-r -cm test -I __ q no token",
+			// Stdin is never dropped: a prompt without the token gets it appended.
+			wantOut:  "no token Y\n",
+			wantCode: 0,
+		},
 	}
 
 	for _, tc := range tcs {
