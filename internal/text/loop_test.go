@@ -22,6 +22,8 @@ type recordingLoopQuerier struct {
 	progress  []LoopProgress
 	finished  []loopDisplayCall
 	finishErr error
+	summaries []LoopSummary
+	reportErr error
 	handle    func(ctx context.Context, iteration int, chat pub_models.Chat) (pub_models.Chat, error)
 }
 
@@ -56,6 +58,11 @@ func (f *recordingLoopQuerier) FinishLoopIteration(outcome LoopOutcome, answer p
 	f.finished = append(f.finished, loopDisplayCall{outcome: outcome, answer: answer})
 	f.events = append(f.events, fmt.Sprintf("finish:%d", outcome))
 	return f.finishErr
+}
+
+func (f *recordingLoopQuerier) ReportLoopSummary(summary LoopSummary) error {
+	f.summaries = append(f.summaries, summary)
+	return f.reportErr
 }
 
 func loopSeedChat() pub_models.Chat {

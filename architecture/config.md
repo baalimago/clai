@@ -58,6 +58,9 @@ They contain settings that are broadly applicable to that “mode” (text vs im
   `summary-model`, default `""` and `migrate:"true"` so upgraded files show the
   key: the summarizer's model, empty = the ladder `-sm` → this key → the
   conversation's last model → `model`). See `architecture/summaries.md`.
+- run summary (`query-summary`, default `false` and `migrate:"true"` so
+  upgraded files show the key: print tokens, cost and tools after a plain
+  query; loop runs always print one). See `architecture/query.md`.
 
 The pre-query interactive token-count warning prompt is **sunset**: a legacy
 config key for it is ignored if present in old configs (encoding/json drops
@@ -233,6 +236,12 @@ several queriers of one model can be built concurrently in one process
 (`chat summarize -workers N`, the in-flight summarizer) and a reader must
 never see a torn file (worklog 2026-09-09-conversation-summaries, D31).
 
+When the catalog answers but has no price for the model (Jev, a local
+model), the cost manager stamps `price_unavailable_at` in the same file and
+skips the lookup for 7 days. Without the stamp, every run of such a model
+paid a catalog round trip, and the finalizer waits up to 200 ms for it. A
+transient fetch failure is not remembered.
+
 ### Where flags apply
 
 Flags are alias-aware primitives (`internal/flags.go`): shared groups live in package `internal`, domain-specific flags in their domain packages; override cascades read `Explicit()`/`Changed()` directly — there is no central configurations bag.
@@ -254,6 +263,8 @@ Key behaviors:
   query out; `-sm`/`-summary-model` overrides `summary-model` and completes
   from the model history like `-cm`. The same `-sm` exists on
   `chat summarize`, where it is the first rung of the ladder.
+- `-qs`/`-query-summary` (bool) overrides `query-summary` for the run only
+  when given explicitly, so `-qs=false` silences a file-enabled summary.
 
 ### Tool selection configuration
 

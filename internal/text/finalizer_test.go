@@ -514,3 +514,52 @@ func TestFinalize_printsAnswerBeforeJoin(t *testing.T) {
 	}
 	assertUnlabelled(t, savedFixtureChat(t, q))
 }
+
+func TestQuerier_summaryJoinBound(t *testing.T) {
+	plain := &Querier[*MockQuerier]{}
+	if got := plain.summaryJoinBound(); got != 0 {
+		t.Fatalf("plain query bound = %v, want 0: labelling is best effort", got)
+	}
+	loop := &Querier[*MockQuerier]{loopProgress: &LoopProgress{Iteration: 1}}
+	if got := loop.summaryJoinBound(); got != loopSummaryJoinTimeout || loopSummaryJoinTimeout != 5*time.Second {
+		t.Fatalf("loop bound = %v, want the 5s loop default", got)
+	}
+	explicit := &Querier[*MockQuerier]{summaryJoinTimeout: 7 * time.Millisecond, loopProgress: &LoopProgress{}}
+	if got := explicit.summaryJoinBound(); got != 7*time.Millisecond {
+		t.Fatalf("explicit bound = %v, want 7ms", got)
+	}
+}
+
+// TestFinalize_plainQueryNeverWaitsForTheLabel pins best-effort labelling: a
+// plain query persists and returns as soon as its answer is shown. A label
+// that has not landed by then is dropped, and one that has is kept.
+func TestFinalize_plainQueryNeverWaitsForTheLabel(t *testing.T) {
+	t.Setenv("DEBUG_SUMMARY", "")
+	t.Setenv("DEBUG", "")
+	t.Run("a slow labeller is dropped", func(t *testing.T) {
+		fake := blockingSummarizer()
+		q, session, _ := joinFixture(t, t.Context(), fake, &fakeCostManager{enrichFn: appendCostRow}, 0)
+		start := time.Now()
+		if err := (sessionFinalizer[*MockQuerier]{querier: q}).Finalize(t.Context(), session); err != nil {
+			t.Fatalf("Finalize: %v", err)
+		}
+		if elapsed := time.Since(start); elapsed > time.Second {
+			t.Fatalf("Finalize took %v, want no wait for the label", elapsed)
+		}
+		waitClosed(t, fake.done, "summarizer cancellation")
+		assertUnlabelled(t, savedFixtureChat(t, q))
+	})
+	t.Run("a label that already landed is kept", func(t *testing.T) {
+		fake := instantSummarizer()
+		q, session, _ := joinFixture(t, t.Context(), fake, &fakeCostManager{enrichFn: appendCostRow}, 0)
+		waitClosed(t, fake.done, "summarizer result")
+		deadline := time.Now().Add(2 * time.Second)
+		for len(q.summaryRun.result) == 0 && time.Now().Before(deadline) {
+			time.Sleep(time.Millisecond)
+		}
+		if err := (sessionFinalizer[*MockQuerier]{querier: q}).Finalize(t.Context(), session); err != nil {
+			t.Fatalf("Finalize: %v", err)
+		}
+		assertLabelled(t, savedFixtureChat(t, q))
+	})
+}

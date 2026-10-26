@@ -46,6 +46,8 @@ type Claude struct {
 	functionJSON       string                     `json:"-"`
 	contentBlockType   string                     `json:"-"`
 	amInputTokens      int                        `json:"-"`
+	amCachedTokens     int                        `json:"-"`
+	amOutputTokens     int                        `json:"-"`
 	responseFormat     *generic.ResponseFormat    `json:"-"`
 }
 

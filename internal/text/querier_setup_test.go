@@ -340,8 +340,8 @@ func TestNewQuerier_summaryDefaults(t *testing.T) {
 		if !q.summarizeConversations || q.summaryModel != "summary-model" || q.runModel != "mock" {
 			t.Fatalf("copied summarize=%t model=%q run=%q", q.summarizeConversations, q.summaryModel, q.runModel)
 		}
-		if q.summaryJoinTimeout != defaultSummaryJoinTimeout || defaultSummaryJoinTimeout != 5*time.Second {
-			t.Fatalf("join timeout = %v, want the 5s default", q.summaryJoinTimeout)
+		if q.summaryJoinTimeout != 0 {
+			t.Fatalf("join timeout = %v, want it unset so summaryJoinBound picks the default", q.summaryJoinTimeout)
 		}
 		if q.summarizer != nil || q.summaryRun != nil {
 			t.Fatal("NewQuerier must attach no summarizer")

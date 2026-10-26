@@ -68,6 +68,18 @@ func (m *Manager) SetWarnf(warnf func(format string, a ...any)) {
 
 var errCacheMiss = errors.New("cache miss")
 
+// ErrModelNotInCatalog reports a catalog that answered but has no price for
+// the model. The manager remembers it for unpricedRecheck so later runs skip
+// the lookup.
+var ErrModelNotInCatalog = errors.New("model not in price catalog")
+
+const (
+	// unpricedKey stamps, in the vendor config, when the catalog last had no
+	// price for its model.
+	unpricedKey     = "price_unavailable_at"
+	unpricedRecheck = 7 * 24 * time.Hour
+)
+
 // ErrNoModelCatalog is returned, wrapped in a DebugError, when a price is not
 // cached and no model catalog is configured to fetch it.
 var ErrNoModelCatalog = errors.New("no model catalog configured")
@@ -91,7 +103,12 @@ func (m *Manager) storePriceScheme(price ModelPriceScheme) error {
 	if m.debug {
 		ancli.Noticef("appending cache entry for: %v, price: %v", m.model, price)
 	}
+	return m.setConfigField("price", price)
+}
 
+// setConfigField sets one top-level field of m.configFilePath, keeping every
+// other field as is.
+func (m *Manager) setConfigField(key string, value any) error {
 	b, err := os.ReadFile(m.configFilePath)
 	if err != nil {
 		return fmt.Errorf("read price config file %q: %w", m.configFilePath, err)
@@ -102,11 +119,11 @@ func (m *Manager) storePriceScheme(price ModelPriceScheme) error {
 		return fmt.Errorf("unmarshal price config file %q: %w", m.configFilePath, err)
 	}
 
-	priceBytes, err := json.Marshal(price)
+	valueBytes, err := json.Marshal(value)
 	if err != nil {
-		return fmt.Errorf("marshal updated price for price config file %q: %w", m.configFilePath, err)
+		return fmt.Errorf("marshal %s for price config file %q: %w", key, m.configFilePath, err)
 	}
-	config["price"] = priceBytes
+	config[key] = valueBytes
 
 	updatedBytes, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
@@ -117,6 +134,31 @@ func (m *Manager) storePriceScheme(price ModelPriceScheme) error {
 	}
 
 	return nil
+}
+
+// checkUnpriced returns ErrModelNotInCatalog when the catalog lacked the
+// model within unpricedRecheck, and nil when it should be asked.
+func (m *Manager) checkUnpriced() error {
+	b, err := os.ReadFile(m.configFilePath)
+	if err != nil {
+		return fmt.Errorf("read price config file %q: %w", m.configFilePath, err)
+	}
+	var config map[string]json.RawMessage
+	if err := json.Unmarshal(b, &config); err != nil {
+		return fmt.Errorf("unmarshal price config file %q: %w", m.configFilePath, err)
+	}
+	raw, ok := config[unpricedKey]
+	if !ok {
+		return nil
+	}
+	var at time.Time
+	if err := json.Unmarshal(raw, &at); err != nil {
+		return fmt.Errorf("decode %s in price config file %q: %w", unpricedKey, m.configFilePath, err)
+	}
+	if time.Since(at) > unpricedRecheck {
+		return nil
+	}
+	return fmt.Errorf("%q, checked %v: %w", m.model, at.Format(time.RFC3339), ErrModelNotInCatalog)
 }
 
 // seekCached by checking the config item for a price item. If field 'price' doesnt exit
@@ -170,6 +212,9 @@ func (m *Manager) resolveModelPrice(ctx context.Context) (ModelPriceScheme, erro
 		return ModelPriceScheme{}, fmt.Errorf("failed to find latest usable: %w", err)
 	}
 
+	if err := m.checkUnpriced(); err != nil {
+		return ModelPriceScheme{}, NewDebugError(err)
+	}
 	if m.debug {
 		ancli.Noticef("fetching model price for: %v", m.model)
 	}
@@ -177,6 +222,11 @@ func (m *Manager) resolveModelPrice(ctx context.Context) (ModelPriceScheme, erro
 		return ModelPriceScheme{}, NewDebugError(fmt.Errorf("resolve model price for %q: %w", m.model, ErrNoModelCatalog))
 	}
 	price, err := m.fetcher.FetchModel(ctx, m.model)
+	if errors.Is(err, ErrModelNotInCatalog) {
+		if storeErr := m.setConfigField(unpricedKey, time.Now().UTC()); storeErr != nil {
+			err = errors.Join(err, storeErr)
+		}
+	}
 	if err != nil {
 		return ModelPriceScheme{}, NewDebugError(fmt.Errorf("failed to fetch model: %w", err))
 	}

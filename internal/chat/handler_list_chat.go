@@ -540,7 +540,7 @@ func (cq *ChatHandler) list() ([]pub_models.Chat, error) {
 		ancli.PrintOK(fmt.Sprintf("found '%v' conversations:\n", len(files)))
 	}
 	for _, dirEntry := range files {
-		if dirEntry.IsDir() || dirEntry.Name() == chatIndexFileName {
+		if dirEntry.IsDir() || isIndexFile(dirEntry.Name()) {
 			continue
 		}
 		p := filepath.Join(cq.convDir, dirEntry.Name())

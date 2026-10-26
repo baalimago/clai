@@ -222,18 +222,23 @@ Lifecycle (`internal/text/summary_launch.go`, `finalizer.go`):
    - an interrupt (root context cancelled without a `StopEvent`) abandons
      the summarizer, then displays the partial answer and persists;
    - otherwise the finalizer **displays** the answer, **joins** the
-     summarizer for at most a fixed join bound (5 s, `Configurations.SummaryJoinTimeout`,
-     `json:"-"`, no config key or flag; also giving up
-     when the interrupt channel closes, which is wired to SIGINT/SIGTERM
-     unless a test injects its own), stamps the result with
-     `Summary.ApplyTo`, and **persists once** — conversation file, index
-     and `globalScope.json` mirror stay consistent (D21).
+     summarizer, stamps the result with `Summary.ApplyTo`, and **persists
+     once** — conversation file, index and `globalScope.json` mirror stay
+     consistent (D21). On a plain query the join never waits: labelling is
+     best effort, so a label that has not landed when the answer is done is
+     dropped, and `clai chat summarize` fills it in later. A loop iteration
+     waits at most 5 s (`loopSummaryJoinTimeout`), because its header shows
+     the phase summary. `Configurations.SummaryJoinTimeout` (`json:"-"`, no
+     config key or flag) overrides both. The wait also gives up when the
+     interrupt channel closes, which is wired to SIGINT/SIGTERM unless a
+     test injects its own.
 4. A summarizer still running after the join is cancelled and forgotten;
    the process exit reaps it.
 
 Display precedes the join so the answer is never delayed by the summary
-wait; a short one-shot query still gets labelled because the summarizer
-runs concurrently with the main call (D8).
+wait, and a plain query never waits after it either: the process exits as
+soon as the answer is persisted. A one-shot query is still often labelled,
+since the summarizer runs concurrently with the main call (D8).
 
 **Isolation (D26).** No summarizer failure of any kind — constructor error,
 model error, validation exhaustion, timeout, panic, interrupt — fails,

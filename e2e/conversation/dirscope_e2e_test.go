@@ -49,7 +49,7 @@ func conversationFiles(t *testing.T, confDir string) []string {
 	}
 	var out []string
 	for _, e := range entries {
-		if e.IsDir() || e.Name() == "globalScope.json" || e.Name() == "chat_index.cache" {
+		if e.IsDir() || e.Name() == "globalScope.json" || strings.HasPrefix(e.Name(), "chat_index.") {
 			continue
 		}
 		out = append(out, filepath.Join(confDir, "conversations", e.Name()))

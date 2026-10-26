@@ -27,6 +27,12 @@ type LoopProgress struct {
 	// running. The header shows a placeholder instead of Phase until it lands,
 	// so the first frame names the work in progress.
 	PhasePending bool
+	// ToolCalls are the tool calls this iteration made so far.
+	ToolCalls []RunToolCall
+	// ShowTools adds a row listing ToolCalls under the marker. It is set once
+	// the iteration ends, when the window collapses to its header and the
+	// tool rows would otherwise vanish.
+	ShowTools bool
 }
 
 // loopSummarizingPlaceholder is the phase shown after the iteration marker
@@ -51,7 +57,11 @@ func (p LoopProgress) Header() []utils.HeaderLine {
 	if phase = loopProgressLine(phase); phase != "" {
 		spans = append(spans, utils.HeaderSpan{Text: loopPhaseSeparator + phase, Color: utils.LoopPhaseColor()})
 	}
-	return []utils.HeaderLine{{Spans: spans}}
+	lines := []utils.HeaderLine{{Spans: spans}}
+	if tools := loopToolsLine(p.ToolCalls); p.ShowTools && tools != "" {
+		lines = append(lines, utils.HeaderLine{Spans: []utils.HeaderSpan{{Text: "↳ " + tools, Color: utils.LoopPhaseColor()}}})
+	}
+	return lines
 }
 
 func (p LoopProgress) iterationLabel() string {
@@ -181,6 +191,7 @@ func (q *Querier[C]) settleLoopHeader() error {
 		// The iteration is over: a summary that has not landed by now never
 		// reaches this header, so the fallback phase takes its place.
 		q.loopProgress.PhasePending = false
+		q.loopProgress.ShowTools = true
 		q.activityViewport.SetHeader(q.loopProgress.Header())
 	}
 	q.activityViewport.CollapseToHeader()

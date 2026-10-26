@@ -2,12 +2,14 @@ package chat
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path"
 	"slices"
 	"time"
+	"unicode/utf8"
 
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -53,6 +55,19 @@ type chatIndexRow struct {
 	// Updated is stamped at upsert, or from the file mtime on rebuild. Rows
 	// cached before the field existed decode as zero; see effectiveUpdated.
 	Updated time.Time `json:"updated,omitzero"`
+}
+
+// indexPreviewRunes caps the first user message an index row keeps. The row
+// only labels a conversation in listings, while every query reads and
+// rewrites the whole index, so a pasted file in a first prompt must not
+// grow it.
+const indexPreviewRunes = 200
+
+func capIndexPreview(msg string) string {
+	if len(msg) <= indexPreviewRunes || utf8.RuneCountInString(msg) <= indexPreviewRunes {
+		return msg
+	}
+	return string([]rune(msg)[:indexPreviewRunes]) + "…"
 }
 
 func (r chatIndexRow) effectiveUpdated() time.Time {
@@ -139,7 +154,7 @@ func chatIndexRowFromChat(chat pub_models.Chat) chatIndexRow {
 		break
 	}
 	if msg, err := chat.FirstUserMessage(); err == nil {
-		row.FirstUserMessage = msg.Describe()
+		row.FirstUserMessage = capIndexPreview(msg.Describe())
 	}
 	return row
 }
@@ -190,10 +205,25 @@ func readChatIndex(convDir string) ([]chatIndexRow, error) {
 		return rows, nil
 	}
 
-	slices.SortFunc(cache.Rows, func(a, b chatIndexRow) int {
+	rows, err := replayIndexJournal(convDir, cache.Rows)
+	if errors.Is(err, errCorruptJournal) {
+		table.ClearLine(os.Stderr)
+		rows, rebuildErr := rebuildChatIndex(convDir, 0, "corrupted journal")
+		if rebuildErr != nil {
+			return nil, fmt.Errorf("failed to rebuild chat index after a corrupt journal: %w", rebuildErr)
+		}
+		return rows, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	for i := range rows {
+		rows[i].FirstUserMessage = capIndexPreview(rows[i].FirstUserMessage)
+	}
+	slices.SortFunc(rows, func(a, b chatIndexRow) int {
 		return b.Created.Compare(a.Created)
 	})
-	return cache.Rows, nil
+	return rows, nil
 }
 
 func rebuildChatIndex(convDir string, fromVersion int, reason string) ([]chatIndexRow, error) {
@@ -207,7 +237,7 @@ func rebuildChatIndex(convDir string, fromVersion int, reason string) ([]chatInd
 	}
 	total := 0
 	for _, f := range files {
-		if !f.IsDir() && f.Name() != chatIndexFileName {
+		if !f.IsDir() && !isIndexFile(f.Name()) {
 			total++
 		}
 	}
@@ -231,7 +261,7 @@ func rebuildChatIndex(convDir string, fromVersion int, reason string) ([]chatInd
 	batchSize := 100
 
 	for _, file := range files {
-		if file.IsDir() || file.Name() == chatIndexFileName {
+		if file.IsDir() || isIndexFile(file.Name()) {
 			continue
 		}
 		chatPath := path.Join(convDir, file.Name())
@@ -268,6 +298,8 @@ func rebuildChatIndex(convDir string, fromVersion int, reason string) ([]chatInd
 		fmt.Fprint(os.Stderr, "\n")
 	}
 	if !readonly {
+		// The rebuild read every conversation, so writeChatIndex drops the
+		// journal with the old cache.
 		if err := writeChatIndex(convDir, rows); err != nil {
 			// The cache is an optimization; listing must still work from the
 			// in-memory rebuild when the filesystem is read-only.
@@ -286,10 +318,19 @@ func entryModTime(entry fs.DirEntry) time.Time {
 	return info.ModTime().UTC()
 }
 
+// writeChatIndex replaces the whole index with rows, dropping the journal
+// they supersede.
 func writeChatIndex(convDir string, rows []chatIndexRow) error {
 	if SkipIndex {
 		return nil
 	}
+	if err := writeChatIndexCache(convDir, rows); err != nil {
+		return err
+	}
+	return removeIndexJournals(convDir)
+}
+
+func writeChatIndexCache(convDir string, rows []chatIndexRow) error {
 	slices.SortFunc(rows, func(a, b chatIndexRow) int {
 		return b.Created.Compare(a.Created)
 	})
@@ -305,45 +346,24 @@ func writeChatIndex(convDir string, rows []chatIndexRow) error {
 }
 
 func upsertChatIndex(convDir string, chat pub_models.Chat) error {
-	if SkipIndex {
-		return nil
-	}
-	rows, err := readChatIndex(convDir)
-	if err != nil {
-		return fmt.Errorf("failed to read chat index for upsert: %w", err)
-	}
-	rows = upsertIndexRow(rows, chat, time.Now().UTC())
-	if err := writeChatIndex(convDir, rows); err != nil {
-		return fmt.Errorf("failed to persist chat index: %w", err)
-	}
-	return nil
+	return UpsertChatIndexBatch(convDir, []pub_models.Chat{chat})
 }
 
-// UpsertChatIndexBatch upserts every chat's row with one read and one
-// write, so a batch of index-free saves rewrites the cache once (D24).
+// UpsertChatIndexBatch records every chat's row in one journal append, so a
+// save never rewrites the whole cache (D24).
 func UpsertChatIndexBatch(convDir string, chats []pub_models.Chat) error {
 	if SkipIndex || len(chats) == 0 {
 		return nil
 	}
-	rows, err := readChatIndex(convDir)
-	if err != nil {
-		return fmt.Errorf("failed to read chat index for batch upsert: %w", err)
-	}
-	now := time.Now().UTC()
-	for _, chat := range chats {
-		rows = upsertIndexRow(rows, chat, now)
-	}
-	if err := writeChatIndex(convDir, rows); err != nil {
+	if err := appendIndexJournal(convDir, chats); err != nil {
 		return fmt.Errorf("failed to persist chat index: %w", err)
 	}
 	return nil
 }
 
-func upsertIndexRow(rows []chatIndexRow, chat pub_models.Chat, updated time.Time) []chatIndexRow {
-	row := chatIndexRowFromChat(chat)
-	row.Updated = updated
+func replaceIndexRow(rows []chatIndexRow, row chatIndexRow) []chatIndexRow {
 	for i := range rows {
-		if rows[i].ID == chat.ID {
+		if rows[i].ID == row.ID {
 			rows[i] = row
 			return rows
 		}

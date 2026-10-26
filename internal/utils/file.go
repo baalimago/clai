@@ -83,6 +83,8 @@ func ReadAndUnmarshal[T any](filePath string, config *T) error {
 // WriteFileAtomic writes data to path through a temp file in the same
 // directory and a rename, so a concurrent reader sees the old file or the
 // new file, never a prefix (worklog 2026-09-09-conversation-summaries, D31).
+// It does not fsync: that guards only against power loss, and cost every
+// query about a millisecond per file.
 // An existing file keeps its permission bits, like os.WriteFile.
 func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
 	if info, err := os.Stat(path); err == nil {
@@ -97,10 +99,6 @@ func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
 	if _, err := tmp.Write(data); err != nil {
 		_ = tmp.Close()
 		return fmt.Errorf("write temp file %q: %w", tmpName, err)
-	}
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("sync temp file %q: %w", tmpName, err)
 	}
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("close temp file %q: %w", tmpName, err)

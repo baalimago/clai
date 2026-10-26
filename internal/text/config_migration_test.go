@@ -102,3 +102,30 @@ func TestTextConfigMigration_addsSummaryKeys(t *testing.T) {
 		t.Fatalf("second load added %v, want nothing", again)
 	}
 }
+
+// TestTextConfigMigration_addsQuerySummary pins that an upgraded file gains
+// an explicit query-summary false, so the opt-in is discoverable.
+func TestTextConfigMigration_addsQuerySummary(t *testing.T) {
+	confDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(confDir, "textConfig.json"), []byte(`{"model":"test"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	conf, added, err := utils.LoadConfigFromFileCollect(confDir, "textConfig.json", MigrateOldChatConfig, &Default)
+	if err != nil {
+		t.Fatalf("LoadConfigFromFileCollect: %v", err)
+	}
+	if !slices.Contains(added, "query-summary") || conf.QuerySummary {
+		t.Fatalf("added = %v, query-summary = %t; want it announced and off", added, conf.QuerySummary)
+	}
+	raw, err := os.ReadFile(filepath.Join(confDir, "textConfig.json"))
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	var present map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &present); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if string(present["query-summary"]) != "false" {
+		t.Fatalf("rewritten file = %s, want query-summary persisted as false", raw)
+	}
+}

@@ -152,3 +152,43 @@ func TestParse_RangeFollowsIntWidth(t *testing.T) {
 		t.Fatalf("Parse(3G) = %d, want 3000000000", got)
 	}
 }
+
+func TestQuantity_SI(t *testing.T) {
+	testCases := []struct {
+		in   Quantity
+		want string
+	}{
+		{0, "0"},
+		{812, "812"},
+		{999, "999"},
+		{1000, "1k"},
+		{1050, "1.05k"},
+		{3118, "3.12k"},
+		{12004, "12k"},
+		{41203, "41.2k"},
+		{412_300, "412k"},
+		{999_499, "999k"},
+		{999_600, "1M"},
+		{1_250_000, "1.25M"},
+		{2_000_000_000, "2G"},
+		{3_100_000_000_000, "3.1T"},
+		{-41203, "-41.2k"},
+	}
+	for _, tc := range testCases {
+		if got := tc.in.SI(); got != tc.want {
+			t.Errorf("Quantity(%d).SI() = %q, want %q", int(tc.in), got, tc.want)
+		}
+	}
+}
+
+func TestQuantity_SIRoundTripsWithinPrecision(t *testing.T) {
+	for _, n := range []Quantity{1, 999, 1234, 56_789, 987_654, 12_345_678} {
+		back, err := Parse(n.SI())
+		if err != nil {
+			t.Fatalf("Parse(%q): %v", n.SI(), err)
+		}
+		if diff := float64(back-n) / float64(n); diff > 0.005 || diff < -0.005 {
+			t.Errorf("Parse(%q) = %d, more than 0.5%% off %d", n.SI(), back, n)
+		}
+	}
+}

@@ -11,3 +11,13 @@ jobs:
       project-name: clai
       branch: main
       version-var: "github.com/baalimago/clai/internal/version.BuildVersion"
+      # clai has no cgo. A native linux build would still link libc
+      # dynamically, which costs every run about 2 ms of loader time.
+      native-build-command: >-
+        CGO_ENABLED=0 GOOS="$TARGET_OS" GOARCH="$TARGET_ARCH"
+        go build -trimpath
+        -ldflags "-s -w -X 'github.com/baalimago/clai/internal/version.BuildVersion=$RELEASE_VERSION'"
+        -o "$TARGET_BINARY" .
+      # Only the runner's own platform can start the binary.
+      smoke-command: >-
+        if [[ "$TARGET_OS/$TARGET_ARCH" == "linux/amd64" ]]; then ./"$TARGET_BINARY" version; fi

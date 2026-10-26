@@ -40,6 +40,7 @@ func (c *Claude) StreamCompletions(ctx context.Context, chat pub_models.Chat) (c
 	if _, err = c.CountInputTokens(ctx, chat); err != nil {
 		return nil, fmt.Errorf("failed to count input tokens: %w", err)
 	}
+	c.amCachedTokens, c.amOutputTokens = 0, 0
 	return c.stream(ctx, req)
 }
 
@@ -105,9 +106,16 @@ func (c *Claude) handleStreamResponse(ctx context.Context, resp *http.Response) 
 			resp.Body.Close()
 			close(outChan)
 		}()
+		// A tool call is held until the message ends: its output usage
+		// arrives in the message_delta after the tool block.
+		var pending *pub_models.Call
 		for {
 			token, err := br.ReadString('\n')
 			if err != nil {
+				if pending != nil {
+					emitClaude(ctx, outChan, *pending)
+					return
+				}
 				if errors.Is(err, io.EOF) {
 					if token != "" {
 						c.handleFullResponse(ctx, token, outChan)
@@ -140,6 +148,17 @@ func (c *Claude) handleStreamResponse(ctx context.Context, resp *http.Response) 
 				continue
 			}
 			processed := c.handleToken(br, token)
+			if pending != nil {
+				if _, ended := processed.(error); ended {
+					emitClaude(ctx, outChan, *pending)
+					return
+				}
+				continue
+			}
+			if call, isCall := processed.(pub_models.Call); isCall {
+				pending = &call
+				continue
+			}
 			if c.debug {
 				switch cast := processed.(type) {
 				case string:
@@ -150,12 +169,7 @@ func (c *Claude) handleStreamResponse(ctx context.Context, resp *http.Response) 
 			if !emitClaude(ctx, outChan, processed) {
 				return
 			}
-			_, isErr := processed.(error)
-			_, isFunctionCall := processed.(pub_models.Call)
-			if isErr ||
-				// On function call, we want to return. Nothing more of value coming from
-				// the specific request, conversation is continued in a new request
-				isFunctionCall {
+			if _, isErr := processed.(error); isErr {
 				// On any channel error the session runner ends the step and never
 				// reads the channel again, so stop here exactly as for io.EOF/StopEvent —
 				// otherwise the producer blocks on its next send and holds the response
@@ -218,6 +232,30 @@ func (c *Claude) handleToken(br *bufio.Reader, token string) models.CompletionEv
 	switch eventType {
 	case "message_stop":
 		return io.EOF
+	case "message_start":
+		var start struct {
+			Message struct {
+				Usage TokenInfo `json:"usage"`
+			} `json:"message"`
+		}
+		if err := readEventData(br, &start); err != nil {
+			return fmt.Errorf("message_start: %w", err)
+		}
+		c.recordStreamUsage(start.Message.Usage)
+		return models.NoopEvent{}
+	case "message_delta":
+		var delta struct {
+			Usage *struct {
+				OutputTokens int `json:"output_tokens"`
+			} `json:"usage"`
+		}
+		if err := readEventData(br, &delta); err != nil {
+			return fmt.Errorf("message_delta: %w", err)
+		}
+		if delta.Usage != nil {
+			c.amOutputTokens = delta.Usage.OutputTokens
+		}
+		return models.NoopEvent{}
 
 	case "content_block_start":
 		c.debugFullStreamMsg = ""
@@ -244,6 +282,17 @@ func (c *Claude) handleToken(br *bufio.Reader, token string) models.CompletionEv
 	// Jump down one line to setup next event
 	br.ReadString('\n')
 	return models.NoopEvent{}
+}
+
+func readEventData(br *bufio.Reader, dst any) error {
+	line, err := br.ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return fmt.Errorf("read event data: %w", err)
+	}
+	if err := json.Unmarshal([]byte(trimDataPrefix(strings.TrimSpace(line))), dst); err != nil {
+		return fmt.Errorf("decode event data: %w", err)
+	}
+	return nil
 }
 
 func trimDataPrefix(data string) string {

@@ -120,7 +120,7 @@ capture them — there is no central flag bag. Groups compose per command:
 | agent text | `-cm`, `-t`, `-cmd-ban`, `-lb`, `-mt`, `-mtc`, `-max-tool-calls-after-handover`, `-g`, `-p`, `-prp`, `-n` (+ long forms) | query (plain and loop mode) |
 | media tools | `-am`, `-af`, `-pm` (+ long forms) — configure the media tools an agent run may call (`-pm` is the model behind `generate_image`) | query (plain and loop mode) |
 | chat | `-r`, `-n`, `-p` (+ long forms) | chat (+ subs) |
-| query text | `-dre`, `-s`, `-rf`, `-asc`, `-summarize`, `-sm`, `-img`, `-open` (+ long forms) | query (plain and loop mode) |
+| query text | `-dre`, `-s`, `-rf`, `-asc`, `-summarize`, `-sm`, `-qs`, `-img`, `-open` (+ long forms) | query (plain and loop mode) |
 | loop | `-l/-loop` mode switch; `-mi/-max-iterations` iteration bound and `-check` verification gate (both require `-l`) | query |
 | summarize | positional `<window>`; `-force`, `-y`, `-workers`, `-sm` (+ long forms) — `SummarizeFlags`, registered on the sub only | chat **summarize** (sub-level) |
 | photo | `-pm`, `-pd`, `-pp`, `-img`, `-open` (+ long forms) | photo |
