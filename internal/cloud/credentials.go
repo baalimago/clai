@@ -25,7 +25,19 @@ type Credentials struct {
 	// Access is read or write, as approved in the browser.
 	Access    string `json:"access,omitempty"`
 	ExpiresAt string `json:"expires_at,omitempty"`
+	// TokenSource is where Token came from; it is never saved.
+	TokenSource TokenSource `json:"-"`
 }
+
+// TokenSource is where a login's key came from.
+type TokenSource int
+
+const (
+	// TokenFromFile is the key `clai cloud login` saved.
+	TokenFromFile TokenSource = iota
+	// TokenFromEnv is CLAI_CLOUD_TOKEN, which overrides the file.
+	TokenFromEnv
+)
 
 // NotLoggedInError is any account call on a machine with no login.
 type NotLoggedInError struct{}
@@ -56,7 +68,7 @@ func LoadCredentials(confDir string) (Credentials, error) {
 		return Credentials{}, err
 	}
 	if t := os.Getenv("CLAI_CLOUD_TOKEN"); t != "" {
-		c.Token = t
+		c.Token, c.TokenSource = t, TokenFromEnv
 	}
 	if u := os.Getenv("CLAI_CLOUD_URL"); u != "" {
 		c.URL = u

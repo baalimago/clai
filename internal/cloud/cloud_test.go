@@ -103,13 +103,13 @@ func TestCredentials_roundTripAndEnv(t *testing.T) {
 		t.Fatalf("mode = %v, %v", info.Mode(), err)
 	}
 	got, err := cloud.LoadCredentials(dir)
-	if err != nil || got != want {
+	if err != nil || got != want || got.TokenSource != cloud.TokenFromFile {
 		t.Fatalf("got %+v, %v", got, err)
 	}
 	t.Setenv("CLAI_CLOUD_TOKEN", "env-token")
 	t.Setenv("CLAI_CLOUD_URL", "https://env")
 	got, _ = cloud.LoadCredentials(dir)
-	if got.Token != "env-token" || got.URL != "https://env" {
+	if got.Token != "env-token" || got.URL != "https://env" || got.TokenSource != cloud.TokenFromEnv {
 		t.Fatalf("env = %+v", got)
 	}
 	if err := cloud.RemoveCredentials(dir); err != nil {

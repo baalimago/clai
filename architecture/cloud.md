@@ -23,7 +23,7 @@ for the login).
 |---|---|
 | `internal/cloud/client.go` | `Client`: `Do`, `PostJSON`; `APIError` (with `URL` for a page that fixes it, and `Suggested`, the handle the Hub offers with `handle_required`), `TransportError`; `StartDevice`, `PollDevice`, `Me`, `RevokeCurrent` |
 | `internal/cloud/login.go` | `LoginFlow.Run`: start, show the code, poll until approved, denied or expired |
-| `internal/cloud/credentials.go` | `<config>/cloud/credentials.json` (0600); `CLAI_CLOUD_TOKEN`, `CLAI_CLOUD_URL` |
+| `internal/cloud/credentials.go` | `<config>/cloud/credentials.json` (0600); `CLAI_CLOUD_TOKEN`, `CLAI_CLOUD_URL`; `TokenSource` |
 | `internal/cloud/sync/paths.go` | `Store`, `Allowed` (mirrors the server's `validPath`), `StoreOf` |
 | `internal/cloud/sync/scan.go` | `scan`: hashes a store's files, reusing hashes by size and mod time; `FileLimits` |
 | `internal/cloud/sync/secrets.go` | `FindSecret`: the credential check; vectors in `testdata/secrets.vectors.json`, shared with clai-cloud |
@@ -36,6 +36,7 @@ for the login).
 | `internal/cloud/sync/pack.go` | `pack`: groups files into requests smallest first, a large file alone, largest request first; used by uploads and downloads |
 | `internal/cloud/sync/resolve.go`, `diff.go`, `status.go`, `merge.go` | `Resolve`, `Diff`, `Status`/`Log`, the conversation merge and fork |
 | `internal/cloud/cloudcmd/` | `Command`: the subcommands and their output; `ExitDecisionNeeded` |
+| `internal/cloud/cloudcmd/errors.go` | `explain`, `UnreachableError`: the short form of a network error and a refused key |
 | `internal/cloud/cloudcmd/view.go` | `statusLines`, `importLines`, `blockedLines`, `style`: the `▸ store · detail` look and the grouped status table |
 | `internal/cloud/cloudcmd/look.go` | `grid` and the lines of every other command: login, whoami, pull and its first-pull question (`firstPullChoices`, `parseChoice`), conflicts, a refused commit, resolve, log, diff |
 | `internal/cloud/cloudtest/` | An in-memory clai.chat for tests |
@@ -164,6 +165,13 @@ log      GET stores/<s>/log?limit=
 - Replaced local files go to `cloud/trash/<path>.<UTC time>` and are pruned
   after 30 days. Config base copies under `cloud/base/` make `diff` work
   offline; a conversation's base is fetched from the server.
+- **Errors say what to do.** `explain` (`cloudcmd/errors.go`) turns a
+  request that never reached the server into an `UnreachableError`,
+  `can't reach <host> (connection refused)` and the like, in every
+  command; `status` shows it as its own `!` row and still lists the local
+  side. A key the server refuses (401) says to log in again, or, when the
+  key came from `CLAI_CLOUD_TOKEN` (`Credentials.TokenSource`), to replace
+  or unset that variable.
 - **Usage errors** exit 1 with the message and, for a bad flag, that
   subcommand's help only (`CheckArgs`, `FlagError`); an unknown
   subcommand is an `UnknownSubcommandError` listing the real ones.

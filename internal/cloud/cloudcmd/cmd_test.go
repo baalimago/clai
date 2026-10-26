@@ -439,7 +439,7 @@ func TestStatus_offlineAndRevoked(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code %d", code)
 	}
-	mustContain(t, out, "+ profiles/x.json", "server not reachable")
+	mustContain(t, out, "+ profiles/x.json", "can't reach")
 	if code, _ := newHarness(t, "revoked").run("status"); code != 1 {
 		t.Fatal("revoked status should fail")
 	}

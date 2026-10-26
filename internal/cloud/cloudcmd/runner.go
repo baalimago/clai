@@ -15,7 +15,11 @@ import (
 	"github.com/baalimago/clai/internal/cloud/sync"
 )
 
-type runner struct{ deps Deps }
+type runner struct {
+	deps Deps
+	// creds is the login session loaded, for explain.
+	creds cloud.Credentials
+}
 
 func (r *runner) printf(format string, a ...any) { fmt.Fprintf(r.deps.Out, format, a...) }
 
@@ -33,18 +37,11 @@ func (r *runner) session() (cloud.Credentials, *sync.Engine, error) {
 		return cloud.Credentials{}, nil, err
 	}
 	creds, err := cloud.LoadCredentials(confDir)
+	r.creds = creds
 	if err != nil {
 		return creds, nil, err
 	}
 	return creds, &sync.Engine{Client: cloud.NewClient(creds.URL, creds.Token), ConfDir: confDir, Hooks: r.deps.Hooks, Now: r.deps.Now}, nil
-}
-
-// explain turns a revoked token into the message that says what to do.
-func explain(err error) error {
-	if apiErr, ok := cloud.AsAPIError(err); ok && apiErr.Unauthorized() {
-		return fmt.Errorf("this device was disconnected from clai.chat (%s). Your local files are unchanged. To connect again: clai cloud login", apiErr.Message)
-	}
-	return err
 }
 
 func (r *runner) login(ctx context.Context, url, name string) error {
@@ -69,7 +66,7 @@ func (r *runner) login(ctx context.Context, url, name string) error {
 	}
 	tok, err := flow.Run(ctx, name)
 	if err != nil {
-		return err
+		return r.explain(err)
 	}
 	creds.Token, creds.Device, creds.Access, creds.ExpiresAt, creds.Account = tok.Key, name, tok.Access, tok.ExpiresAt, tok.Account
 	if tok.Endpoint != "" {
@@ -102,6 +99,7 @@ func (r *runner) logout(ctx context.Context) error {
 		return err
 	}
 	creds, err := cloud.LoadCredentials(confDir)
+	r.creds = creds
 	var notIn *cloud.NotLoggedInError
 	if errors.As(err, &notIn) {
 		r.lines([]string{r.style().head("not logged in")})
@@ -112,7 +110,7 @@ func (r *runner) logout(ctx context.Context) error {
 	}
 	if err := cloud.NewClient(creds.URL, creds.Token).RevokeCurrent(ctx); err != nil {
 		if apiErr, ok := cloud.AsAPIError(err); !ok || !apiErr.Unauthorized() {
-			return fmt.Errorf("revoke the login on %s: %w", hostOf(creds.URL), err)
+			return r.explain(err)
 		}
 	}
 	if err := errors.Join(cloud.RemoveCredentials(confDir), sync.ResetState(confDir)); err != nil {
@@ -129,7 +127,7 @@ func (r *runner) whoami(ctx context.Context, raw bool) error {
 	}
 	me, err := cloud.NewClient(creds.URL, creds.Token).Me(ctx)
 	if err != nil {
-		return explain(err)
+		return r.explain(err)
 	}
 	if raw {
 		return r.json(me)
@@ -184,10 +182,10 @@ func (r *runner) status(ctx context.Context, args []string, imports, raw bool) e
 		st, err := engine.Status(ctx, s, sync.PlanOptions{Imports: imports})
 		status.Stop()
 		if err != nil {
-			return err
+			return r.explain(err)
 		}
 		if apiErr, ok := cloud.AsAPIError(st.RemoteError); ok && apiErr.Unauthorized() {
-			return explain(apiErr)
+			return r.explain(apiErr)
 		}
 		out = append(out, st)
 	}
@@ -235,7 +233,7 @@ func (r *runner) diff(ctx context.Context, args []string, remote bool) error {
 	for _, p := range paths {
 		d, err := engine.Diff(ctx, p, remote)
 		if err != nil {
-			return explain(err)
+			return r.explain(err)
 		}
 		r.lines(diffLines(d, r.style()))
 	}
@@ -290,7 +288,7 @@ func (r *runner) pull(ctx context.Context, args []string, theirs, mine, raw bool
 			continue
 		}
 		if err != nil {
-			return explain(err)
+			return r.explain(err)
 		}
 		results = append(results, res)
 		needsDecision = needsDecision || len(res.Conflicts) > 0
@@ -574,7 +572,7 @@ func remaining(secs float64) string {
 func (r *runner) commitError(err error) error {
 	apiErr, ok := cloud.AsAPIError(err)
 	if !ok {
-		return err
+		return r.explain(err)
 	}
 	switch apiErr.Code {
 	case "card_required", "payment_overdue":
@@ -582,7 +580,7 @@ func (r *runner) commitError(err error) error {
 			return fmt.Errorf("%s: %s", apiErr.Message, apiErr.URL)
 		}
 	}
-	return explain(err)
+	return r.explain(err)
 }
 
 func (r *runner) resolve(args []string, mine, theirs bool) error {
@@ -628,7 +626,7 @@ func (r *runner) log(ctx context.Context, args []string, n int, raw bool) error 
 	for _, s := range which {
 		entries, err := engine.Log(ctx, s, n)
 		if err != nil {
-			return explain(err)
+			return r.explain(err)
 		}
 		all[s] = entries
 	}

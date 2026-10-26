@@ -117,7 +117,7 @@ func TestStatusLines_manyChangesAreGrouped(t *testing.T) {
 func TestStatusLines_unreachableServer(t *testing.T) {
 	st := sync.Status{Plan: sync.Plan{Store: sync.StoreConfig, Pulled: true}, RemoteError: errors.New("dial tcp: refused")}
 	got := plainLines(statusLines(st, style{}))
-	if got != "▸ config · nothing to commit · server not reachable: dial tcp: refused" {
+	if got != "▸ config · nothing to commit\n  ! the server's side is unknown: dial tcp: refused   only this machine's side is shown" {
 		t.Fatalf("got %q", got)
 	}
 }

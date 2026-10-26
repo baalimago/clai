@@ -51,6 +51,9 @@ func (s style) link(indent, target string) string {
 
 func statusLines(st sync.Status, s style) []string {
 	lines := []string{s.head(string(st.Store), statusDetails(st)...)}
+	if st.RemoteError != nil {
+		lines = append(lines, grid("  ", [][]string{{"! " + remoteProblem(st.RemoteError), "only this machine's side is shown"}}, s)...)
+	}
 	if len(st.Conflicts) > 0 {
 		lines = append(lines, conflictLines(st.Conflicts, s)...)
 	}
@@ -146,7 +149,6 @@ func statusDetails(st sync.Status) []string {
 	}
 	switch {
 	case st.RemoteError != nil:
-		parts = append(parts, "server not reachable: "+st.RemoteError.Error())
 	case st.Remote != nil && st.Remote.Ahead > 0:
 		parts = append(parts, fmt.Sprintf("server %d %s ahead", st.Remote.Ahead, plural(int(st.Remote.Ahead), "commit", "commits")))
 	}
@@ -439,4 +441,12 @@ func cut(t string, width int) string {
 		return t
 	}
 	return string(runes[:width-1]) + "…"
+}
+
+// remoteProblem is why status could not ask the server, in a few words.
+func remoteProblem(err error) string {
+	if u, ok := unreachable(err); ok {
+		return u.Error()
+	}
+	return "the server's side is unknown: " + err.Error()
 }
