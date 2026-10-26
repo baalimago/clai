@@ -272,7 +272,13 @@ func setupSummaryE2E(t *testing.T) string {
 	// TestMain swaps the real constructor for a refusing one; the summary
 	// rows are the only opt-in.
 	harness.Deps.NewSummarizer = summary.NewAgentSummarizer
-	t.Cleanup(func() { harness.Deps.NewSummarizer = e2etest.RefusingSummarizer })
+	// Production labelling is best effort and never waits; these rows pin
+	// what a landed label persists, so they give it time to land.
+	harness.Deps.SummaryJoinTimeout = 5 * time.Second
+	t.Cleanup(func() {
+		harness.Deps.NewSummarizer = e2etest.RefusingSummarizer
+		harness.Deps.SummaryJoinTimeout = 0
+	})
 	// A current, empty index keeps the pre-existing "Building cache index"
 	// chatter off stderr so the rows' empty-stderr oracle is exact.
 	cachePath := filepath.Join(confDir, "conversations", "chat_index.cache")

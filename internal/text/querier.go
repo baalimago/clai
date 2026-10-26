@@ -679,6 +679,11 @@ func (q *Querier[C]) SetChatID(chatID string) {
 	q.chat.ID = chatID
 }
 
+// SetSummaryJoinTimeout overrides how long the finalizer waits for the label.
+func (q *Querier[C]) SetSummaryJoinTimeout(d time.Duration) {
+	q.summaryJoinTimeout = d
+}
+
 // SetSummarizer attaches the in-flight conversation summarizer.
 func (q *Querier[C]) SetSummarizer(s models.Summarizer) {
 	q.summarizer = s

@@ -12,6 +12,7 @@ import (
 	"os"
 	"runtime/pprof"
 	"strings"
+	"time"
 
 	"github.com/baalimago/clai/internal"
 	"github.com/baalimago/clai/internal/audio"
@@ -84,9 +85,12 @@ const CPUProfileFileName = "cpu_profile.prof"
 // table. Tests substitute the summarizer, foreign-cache and image-generator
 // factories through it, so none of those packages holds mutable state.
 type Deps struct {
-	NewSummarizer     func(confDir string) (models.Summarizer, error)
-	ForeignCache      func() vendors.SourceCache
-	NewImageGenerator imagegen.NewGeneratorFunc
+	NewSummarizer func(confDir string) (models.Summarizer, error)
+	// SummaryJoinTimeout makes a plain query wait this long for its label;
+	// zero (production) keeps labelling best effort with no wait.
+	SummaryJoinTimeout time.Duration
+	ForeignCache       func() vendors.SourceCache
+	NewImageGenerator  imagegen.NewGeneratorFunc
 }
 
 // DefaultDeps returns the production collaborators: the real summarizer, the
@@ -117,6 +121,7 @@ func Commands(deps Deps) map[string]cmd.Command {
 		TrustInput:          func() io.Reader { return setup.Input },
 		ApplyMediaOverrides: applyMediaOverrides,
 		NewSummarizer:       deps.NewSummarizer,
+		SummaryJoinTimeout:  deps.SummaryJoinTimeout,
 		NewImageGenerator:   deps.NewImageGenerator,
 		PhotoConfig:         setup.LoadPhotoConfig,
 	}

@@ -269,9 +269,10 @@ loop (`internal/text/session_runner.go`). Each model step:
      When the last step wrote no text, the prose shown before its tool calls stays as it is and
      is not printed again (`QuerySession.finalTextShown`).
    - Joins the in-flight conversation summarizer, launched alongside the
-     main call on a new conversation's first persist, for at most
-     a fixed join bound (5 s, `Configurations.SummaryJoinTimeout`, not a
-     config key or flag) and stamps `title`/`summary` on a result
+     main call on a new conversation's first persist, and stamps
+     `title`/`summary` on a result. A plain query takes the result only if it
+     already landed (labelling is best effort); a loop iteration waits at
+     most 5 s (see `architecture/summaries.md`)
    - Saves conversation via the turn's `chat.Persister.Promote` (unless in chat mode),
      which writes what `SaveAsPreviousQuery()` writes
 

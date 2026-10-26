@@ -223,9 +223,6 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	querier.summarizeConversations = userConf.SummarizeConversations
 	querier.summaryModel = userConf.SummaryModel
 	querier.summaryJoinTimeout = userConf.SummaryJoinTimeout
-	if querier.summaryJoinTimeout <= 0 {
-		querier.summaryJoinTimeout = defaultSummaryJoinTimeout
-	}
 	// Agent-only runtime settings (slog logger, level, rune cap, recorder
 	// hooks) ride one pointer (worklog 2026-08-15-agent-slog-output, D7). nil (the CLI and pkg/text paths) keeps
 	// every channel disabled; the loose Configurations recorder fields no

@@ -797,3 +797,53 @@ func TestWriteChatIndex_atomic(t *testing.T) {
 		t.Fatalf("rows = %+v, want the written row", got)
 	}
 }
+
+func TestChatIndexRowFromChat_capsFirstUserMessage(t *testing.T) {
+	long := strings.Repeat("é", indexPreviewRunes+500)
+	row := chatIndexRowFromChat(pub_models.Chat{ID: "c", Messages: []pub_models.Message{{Role: "user", Content: long}}})
+	want := strings.Repeat("é", indexPreviewRunes) + "…"
+	if row.FirstUserMessage != want {
+		t.Fatalf("FirstUserMessage has %d runes, want the first %d plus an ellipsis", len([]rune(row.FirstUserMessage)), indexPreviewRunes)
+	}
+	short := chatIndexRowFromChat(pub_models.Chat{ID: "c", Messages: []pub_models.Message{{Role: "user", Content: "line one\nline two"}}})
+	if short.FirstUserMessage != "line one\nline two" {
+		t.Fatalf("short FirstUserMessage = %q, want it untouched", short.FirstUserMessage)
+	}
+}
+
+// TestUpsertChatIndex_shrinksOversizedRows pins that an index written before
+// the cap is trimmed by the next upsert, so no rebuild is needed for the
+// per-query read and write to get cheap again.
+func TestUpsertChatIndex_shrinksOversizedRows(t *testing.T) {
+	tmp := t.TempDir()
+	huge := strings.Repeat("x", 50_000)
+	rows := make([]chatIndexRow, 20)
+	for i := range rows {
+		rows[i] = chatIndexRow{ID: "old-" + string(rune('a'+i)), Created: time.Now(), MessageCount: 2, FirstUserMessage: huge}
+	}
+	b, err := json.Marshal(chatIndexCache{Version: chatIndexVersion, Rows: rows})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if err := os.WriteFile(chatIndexPath(tmp), b, 0o644); err != nil {
+		t.Fatalf("write cache: %v", err)
+	}
+	chat := pub_models.Chat{ID: "new", Created: time.Now(), Messages: []pub_models.Message{{Role: "user", Content: "hi"}}}
+	if err := upsertChatIndex(tmp, chat); err != nil {
+		t.Fatalf("upsertChatIndex: %v", err)
+	}
+	info, err := os.Stat(chatIndexPath(tmp))
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if limit := int64(21 * (indexPreviewRunes + 300)); info.Size() > limit {
+		t.Fatalf("index is %d bytes after upsert, want at most %d", info.Size(), limit)
+	}
+	got, err := readChatIndex(tmp)
+	if err != nil {
+		t.Fatalf("readChatIndex: %v", err)
+	}
+	if len(got) != 21 {
+		t.Fatalf("rows = %d, want 21", len(got))
+	}
+}

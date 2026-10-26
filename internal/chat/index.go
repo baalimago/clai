@@ -8,6 +8,7 @@ import (
 	"path"
 	"slices"
 	"time"
+	"unicode/utf8"
 
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -53,6 +54,19 @@ type chatIndexRow struct {
 	// Updated is stamped at upsert, or from the file mtime on rebuild. Rows
 	// cached before the field existed decode as zero; see effectiveUpdated.
 	Updated time.Time `json:"updated,omitzero"`
+}
+
+// indexPreviewRunes caps the first user message an index row keeps. The row
+// only labels a conversation in listings, while every query reads and
+// rewrites the whole index, so a pasted file in a first prompt must not
+// grow it.
+const indexPreviewRunes = 200
+
+func capIndexPreview(msg string) string {
+	if utf8.RuneCountInString(msg) <= indexPreviewRunes {
+		return msg
+	}
+	return string([]rune(msg)[:indexPreviewRunes]) + "…"
 }
 
 func (r chatIndexRow) effectiveUpdated() time.Time {
@@ -139,7 +153,7 @@ func chatIndexRowFromChat(chat pub_models.Chat) chatIndexRow {
 		break
 	}
 	if msg, err := chat.FirstUserMessage(); err == nil {
-		row.FirstUserMessage = msg.Describe()
+		row.FirstUserMessage = capIndexPreview(msg.Describe())
 	}
 	return row
 }
@@ -190,6 +204,9 @@ func readChatIndex(convDir string) ([]chatIndexRow, error) {
 		return rows, nil
 	}
 
+	for i := range cache.Rows {
+		cache.Rows[i].FirstUserMessage = capIndexPreview(cache.Rows[i].FirstUserMessage)
+	}
 	slices.SortFunc(cache.Rows, func(a, b chatIndexRow) int {
 		return b.Created.Compare(a.Created)
 	})

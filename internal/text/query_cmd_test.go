@@ -130,13 +130,14 @@ func TestQueryCommand_newSummarizerError(t *testing.T) {
 		}
 	})
 
-	t.Run("constructor result is attached and labels the conversation", func(t *testing.T) {
+	t.Run("constructor result is attached and launched", func(t *testing.T) {
 		t.Setenv("DEBUG_SUMMARY", "")
 		confDir := t.TempDir()
 		var seen string
+		fake := instantSummarizer()
 		_, stderr := runCommand(t, confDir, func(dir string) (models.Summarizer, error) {
 			seen = dir
-			return instantSummarizer(), nil
+			return fake, nil
 		})
 		if seen != confDir {
 			t.Fatalf("constructor got %q, want %q", seen, confDir)
@@ -144,9 +145,9 @@ func TestQueryCommand_newSummarizerError(t *testing.T) {
 		if stderr != "" {
 			t.Fatalf("stderr = %q, want empty", stderr)
 		}
-		if got := savedChat(t, confDir); got.Title != "T" || got.Summary != "S" {
-			t.Fatalf("persisted chat not labelled: title=%q summary=%q", got.Title, got.Summary)
-		}
+		// Labelling is best effort: the run never waits for the label, so
+		// only the launch is certain here. finalizer_test pins the stamping.
+		waitClosed(t, fake.started, "summarizer launch")
 	})
 }
 

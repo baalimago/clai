@@ -14,7 +14,10 @@ import (
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
-const defaultSummaryJoinTimeout = 5 * time.Second
+// loopSummaryJoinTimeout bounds how long a loop iteration waits for its
+// phase summary, which its header shows. A plain query never waits: its label
+// is best effort and kept only when it lands before the answer is done.
+const loopSummaryJoinTimeout = 5 * time.Second
 
 type summaryResult struct {
 	summary models.Summary
@@ -166,18 +169,29 @@ const (
 	summaryWaitInterrupt
 )
 
-// summaryJoinBound resolves the configured join bound for this querier.
+// summaryJoinBound resolves the join bound: the configured one, else the
+// loop default inside a loop, else zero.
 func (q *Querier[C]) summaryJoinBound() time.Duration {
 	if q.summaryJoinTimeout > 0 {
 		return q.summaryJoinTimeout
 	}
-	return defaultSummaryJoinTimeout
+	if q.loopProgress != nil {
+		return loopSummaryJoinTimeout
+	}
+	return 0
 }
 
 // waitForSummary waits for the in-flight summarizer for at most the join bound
 // or until the interrupt channel closes. The caller owns the result handling and
 // the run's release, so a summary is taken exactly once.
 func (q *Querier[C]) waitForSummary(run *summaryRun) (summaryResult, summaryWait) {
+	// A landed result wins over an elapsed bound; with a zero bound the
+	// select below would otherwise pick between them at random.
+	select {
+	case res := <-run.result:
+		return res, summaryWaitResult
+	default:
+	}
 	timer := time.NewTimer(q.summaryJoinBound())
 	defer timer.Stop()
 	select {

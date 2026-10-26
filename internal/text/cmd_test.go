@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/baalimago/clai/internal"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
@@ -277,5 +278,22 @@ func TestEnableQuerySummary_RequiresATextQuerier(t *testing.T) {
 	err := enableQuerySummary(queryOnlyQuerier{})
 	if err == nil || !strings.Contains(err.Error(), "query summary requires a text querier") {
 		t.Fatalf("err = %v, want a typed refusal", err)
+	}
+}
+
+func TestSetSummaryJoinTimeout_RequiresATextQuerier(t *testing.T) {
+	err := setSummaryJoinTimeout(queryOnlyQuerier{}, time.Second)
+	if err == nil || !strings.Contains(err.Error(), "summary join timeout requires a text querier") {
+		t.Fatalf("err = %v, want a typed refusal", err)
+	}
+}
+
+func TestSetSummaryJoinTimeout_SetsTheBound(t *testing.T) {
+	q := &Querier[*MockQuerier]{}
+	if err := setSummaryJoinTimeout(q, 3*time.Second); err != nil {
+		t.Fatalf("setSummaryJoinTimeout: %v", err)
+	}
+	if q.summaryJoinBound() != 3*time.Second {
+		t.Fatalf("bound = %v, want 3s", q.summaryJoinBound())
 	}
 }

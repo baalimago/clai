@@ -75,7 +75,8 @@ type Configurations struct {
 	// ImageInputs are the -img values in flag order.
 	ImageInputs []string `json:"-"`
 	// SummaryJoinTimeout bounds the finalizer's wait for the in-flight
-	// summary; zero means defaultSummaryJoinTimeout.
+	// summary; zero means no wait for a plain query and
+	// loopSummaryJoinTimeout inside a loop.
 	SummaryJoinTimeout time.Duration `json:"-"`
 	// CostWarnf receives the cost manager's and the cost enricher's
 	// warnings; nil keeps ancli.Warnf. A querier whose output is discarded

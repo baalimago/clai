@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/baalimago/clai/internal"
 	"github.com/baalimago/clai/internal/imagegen"
@@ -46,6 +47,9 @@ type QueryCommandDeps struct {
 	// constructor error attaches nothing (worklog
 	// 2026-09-09-conversation-summaries, D26).
 	NewSummarizer func(confDir string) (models.Summarizer, error)
+	// SummaryJoinTimeout makes a plain query wait this long for its label;
+	// zero keeps labelling best effort with no wait.
+	SummaryJoinTimeout time.Duration
 	// NewImageGenerator builds the generator behind generate_image; nil fails a
 	// run that registers the tool with ErrNoImageGenerator.
 	NewImageGenerator imagegen.NewGeneratorFunc
@@ -154,10 +158,24 @@ func setupTextQuerier(ctx context.Context, c *internal.Command, tf internal.Text
 	if tConf.SummarizeConversations {
 		attachSummarizer(confDir, deps.NewSummarizer, q)
 	}
+	if deps.SummaryJoinTimeout > 0 {
+		if err := setSummaryJoinTimeout(q, deps.SummaryJoinTimeout); err != nil {
+			return nil, nil, err
+		}
+	}
 	if err := attachImageTurn(confDir, tConf, tf, deps, q); err != nil {
 		return nil, nil, err
 	}
 	return q, tConf, nil
+}
+
+func setSummaryJoinTimeout(q models.Querier, d time.Duration) error {
+	setter, ok := q.(interface{ SetSummaryJoinTimeout(time.Duration) })
+	if !ok {
+		return fmt.Errorf("summary join timeout requires a text querier, got %T", q)
+	}
+	setter.SetSummaryJoinTimeout(d)
+	return nil
 }
 
 func enableQuerySummary(q models.Querier) error {

@@ -246,6 +246,9 @@ func TestQuery_launchConditions(t *testing.T) {
 				mustSet(t, &tf.QueryText.Summarize, "true")
 			})
 			q.SetSummarizer(f)
+			// A plain query does not wait for its label; give this row the
+			// bound launchQuerier uses so the label check is deterministic.
+			q.summaryJoinTimeout = 5 * time.Second
 			return q
 		}, true},
 		{"ShouldSaveReply false", func(t *testing.T, f *fakeSummarizer) *Querier[*MockQuerier] {
