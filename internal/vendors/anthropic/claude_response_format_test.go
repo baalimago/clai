@@ -1,6 +1,7 @@
 package anthropic
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -82,5 +83,27 @@ func Test_constructRequest_responseFormat(t *testing.T) {
 				t.Fatalf("constructRequest err = %v, want ErrResponseFormatUnsupported", err)
 			}
 		})
+	}
+}
+
+func Test_constructRequest_responseFormatKeepsPropertyOrder(t *testing.T) {
+	var rf generic.ResponseFormat
+	if err := json.Unmarshal([]byte(`{"type":"json_schema","json_schema":{"name":"verdict","schema":{"type":"object","properties":{"ship":{"type":"boolean"},"reason":{"type":"string"}},"required":["ship","reason"],"additionalProperties":false}}}`), &rf); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	c := &Claude{Model: "claude-sonnet-5-5", URL: "http://localhost/v1/messages"}
+	c.SetResponseFormat(&rf)
+	req, err := c.constructRequest(context.Background(), pub_models.Chat{
+		Messages: []pub_models.Message{{Role: "user", Content: "hi"}},
+	})
+	if err != nil {
+		t.Fatalf("constructRequest: %v", err)
+	}
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if ship, reason := bytes.Index(body, []byte(`"ship"`)), bytes.Index(body, []byte(`"reason"`)); ship < 0 || ship > reason {
+		t.Fatalf("request reorders schema properties, want ship before reason:\n%s", body)
 	}
 }

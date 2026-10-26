@@ -2,6 +2,7 @@ package generic
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/baalimago/clai/internal/models"
@@ -132,11 +133,74 @@ type ResponseFormat struct {
 }
 
 // JSONSchemaSpec defines the schema when response_format type is "json_schema".
+//
+// RawSchema holds the schema exactly as it was decoded and takes precedence
+// over Schema when encoding: a Go map loses the declared property order, and
+// models answer in the order the schema lists its properties.
 type JSONSchemaSpec struct {
-	Name        string         `json:"name"`
-	Description string         `json:"description,omitempty"`
-	Strict      bool           `json:"strict,omitempty"`
-	Schema      map[string]any `json:"schema"`
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	Strict      bool            `json:"strict,omitempty"`
+	Schema      map[string]any  `json:"schema"`
+	RawSchema   json.RawMessage `json:"-"`
+}
+
+type jsonSchemaSpecWire struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	Strict      bool            `json:"strict,omitempty"`
+	Schema      json.RawMessage `json:"schema"`
+}
+
+func (j *JSONSchemaSpec) UnmarshalJSON(b []byte) error {
+	var wire jsonSchemaSpecWire
+	if err := json.Unmarshal(b, &wire); err != nil {
+		return err
+	}
+	var schema map[string]any
+	if len(wire.Schema) > 0 {
+		if err := json.Unmarshal(wire.Schema, &schema); err != nil {
+			return err
+		}
+	}
+	*j = JSONSchemaSpec{
+		Name:        wire.Name,
+		Description: wire.Description,
+		Strict:      wire.Strict,
+		Schema:      schema,
+	}
+	if schema != nil {
+		j.RawSchema = wire.Schema
+	}
+	return nil
+}
+
+func (j JSONSchemaSpec) MarshalJSON() ([]byte, error) {
+	wire := jsonSchemaSpecWire{Name: j.Name, Description: j.Description, Strict: j.Strict, Schema: json.RawMessage("null")}
+	if len(j.RawSchema) > 0 || j.Schema != nil {
+		schema, err := j.SchemaJSON()
+		if err != nil {
+			return nil, err
+		}
+		wire.Schema = schema
+	}
+	return json.Marshal(wire)
+}
+
+// SchemaJSON returns the schema encoded in its declared property order when
+// it was decoded from JSON, else the encoded Schema map.
+func (j *JSONSchemaSpec) SchemaJSON() (json.RawMessage, error) {
+	if len(j.RawSchema) > 0 {
+		return j.RawSchema, nil
+	}
+	if j.Schema == nil {
+		return nil, fmt.Errorf("%w: json_schema %q has no schema", ErrResponseFormatShape, j.Name)
+	}
+	b, err := json.Marshal(j.Schema)
+	if err != nil {
+		return nil, fmt.Errorf("encode json_schema %q: %w", j.Name, err)
+	}
+	return b, nil
 }
 
 type req struct {

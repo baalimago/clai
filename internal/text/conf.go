@@ -431,6 +431,7 @@ func toGenericResponseFormat(rf *pub_models.ResponseFormat) *generic.ResponseFor
 			Description: s.Description,
 			Strict:      s.Strict,
 			Schema:      s.Schema,
+			RawSchema:   s.RawSchema,
 		}
 	}
 	return gf
@@ -451,6 +452,7 @@ func responseFormatFromGeneric(gf *generic.ResponseFormat) *pub_models.ResponseF
 			Description: gf.JSONSchema.Description,
 			Strict:      gf.JSONSchema.Strict,
 			Schema:      gf.JSONSchema.Schema,
+			RawSchema:   gf.JSONSchema.RawSchema,
 		}
 	}
 	return rf
