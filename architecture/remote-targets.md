@@ -92,6 +92,15 @@ A `gh:` target reads
   - Each MCP server needs `command` or `url`.
   - A relative `envfile` is refused: the fetched profile has no directory
     for it to be relative to. Use `~/`, `$VAR/` or an absolute path.
+  - `auth`, when present, must be an object. Its `required_env` must be an
+    array of valid variable names (`serverconfig.ValidEnvName`), each listed
+    once and none also a key of that server's `env`, which would shadow the
+    variable the profile says it needs.
+
+  The trust prompt's `It needs:` line names each variable a server reads
+  from the environment, with its server: `auth.required_env`, plus
+  `auth.token_env` when no `auth.token_command` takes precedence over it
+  (`Summary.Needs`).
 
   `cchub:` and `https://` responses must be `application/json` (or
   `+json`). `raw.githubusercontent.com` serves `text/plain`, so `gh:`

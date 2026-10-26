@@ -16,6 +16,12 @@ type Server struct {
 	Unpinned bool
 }
 
+// EnvNeed is one environment variable a server needs.
+type EnvNeed struct {
+	Name   string
+	Server string
+}
+
 // Summary is what a profile asks of the machine that runs it: what the
 // trust prompt and `clai profiles trust` show before anything runs.
 type Summary struct {
@@ -23,7 +29,11 @@ type Summary struct {
 	Tools    []string
 	Servers  []Server
 	EnvFiles []string
-	Ignored  []string
+	// Needs are the variables the servers read from the environment, in
+	// server order: auth.required_env, plus auth.token_env when no
+	// auth.token_command takes precedence over it.
+	Needs   []EnvNeed
+	Ignored []string
 	// Skills are the profile's skill targets, fetched and trusted with it.
 	Skills []Target
 }
@@ -40,6 +50,11 @@ func Summarize(body []byte, checked Checked) (Summary, error) {
 			Args    []string `json:"args"`
 			URL     string   `json:"url"`
 			EnvFile string   `json:"envfile"`
+			Auth    *struct {
+				TokenCommand []string `json:"token_command"`
+				TokenEnv     string   `json:"token_env"`
+				RequiredEnv  []string `json:"required_env"`
+			} `json:"auth"`
 		} `json:"mcp_servers"`
 	}
 	if err := json.Unmarshal(body, &p); err != nil {
@@ -60,8 +75,28 @@ func Summarize(body []byte, checked Checked) (Summary, error) {
 		if srv.EnvFile != "" {
 			s.EnvFiles = append(s.EnvFiles, srv.EnvFile)
 		}
+		if srv.Auth != nil {
+			s.Needs = append(s.Needs, envNeeds(name, srv.Auth.RequiredEnv, srv.Auth.TokenEnv, srv.Auth.TokenCommand)...)
+		}
 	}
 	return s, nil
+}
+
+func envNeeds(server string, required []string, tokenEnv string, tokenCommand []string) []EnvNeed {
+	names := append([]string(nil), required...)
+	if tokenEnv != "" && len(tokenCommand) == 0 {
+		names = append(names, tokenEnv)
+	}
+	var needs []EnvNeed
+	seen := make(map[string]bool, len(names))
+	for _, n := range names {
+		if seen[n] {
+			continue
+		}
+		seen[n] = true
+		needs = append(needs, EnvNeed{Name: n, Server: server})
+	}
+	return needs
 }
 
 func unpinned(command string, args []string) bool {
@@ -112,6 +147,13 @@ func (s Summary) String() string {
 	}
 	if len(s.EnvFiles) > 0 {
 		fmt.Fprintf(&b, "It reads: %s\n", strings.Join(s.EnvFiles, ", "))
+	}
+	if len(s.Needs) > 0 {
+		needs := make([]string, 0, len(s.Needs))
+		for _, n := range s.Needs {
+			needs = append(needs, fmt.Sprintf("%s (%s)", n.Name, n.Server))
+		}
+		fmt.Fprintf(&b, "It needs: %s\n", strings.Join(needs, ", "))
 	}
 	model := s.Model
 	if model == "" {

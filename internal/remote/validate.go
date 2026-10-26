@@ -8,6 +8,8 @@ import (
 	"slices"
 	"sort"
 	"strings"
+
+	"github.com/baalimago/clai/internal/tools/mcp/serverconfig"
 )
 
 // MaxBodyBytes caps a remote profile. The hub refuses a larger body too.
@@ -87,9 +89,11 @@ func Validate(target string, body []byte) (Checked, error) {
 }
 
 type serverView struct {
-	Command string `json:"command"`
-	URL     string `json:"url"`
-	EnvFile string `json:"envfile"`
+	Command string          `json:"command"`
+	URL     string          `json:"url"`
+	EnvFile string          `json:"envfile"`
+	Env     json.RawMessage `json:"env"`
+	Auth    json.RawMessage `json:"auth"`
 }
 
 func serverProblems(raw json.RawMessage) []string {
@@ -111,6 +115,46 @@ func serverProblems(raw json.RawMessage) []string {
 			problems = append(problems, fmt.Sprintf(
 				"mcp_servers.%s.envfile: a relative path has no meaning for a remote profile; use ~/ or an absolute path", name))
 		}
+		if s.Auth != nil {
+			problems = append(problems, authProblems(name, s.Auth, s.Env)...)
+		}
+	}
+	return problems
+}
+
+// authProblems checks a server's auth block. Only required_env is checked
+// inside it: every name valid, listed once, and not also set by the
+// server's own env map, which would shadow the environment it names.
+func authProblems(server string, rawAuth, rawEnv json.RawMessage) []string {
+	var auth map[string]json.RawMessage
+	if err := json.Unmarshal(rawAuth, &auth); err != nil || auth == nil {
+		return []string{fmt.Sprintf("mcp_servers.%s.auth: needs an object", server)}
+	}
+	rawRequired, ok := auth["required_env"]
+	if !ok {
+		return nil
+	}
+	field := fmt.Sprintf("mcp_servers.%s.auth.required_env", server)
+	var required []string
+	if err := json.Unmarshal(rawRequired, &required); err != nil || required == nil {
+		return []string{field + ": needs an array of variable names"}
+	}
+	// env's own shape is not this check's to judge; an unreadable one sets
+	// nothing.
+	var env map[string]json.RawMessage
+	_ = json.Unmarshal(rawEnv, &env)
+	var problems []string
+	seen := make(map[string]bool, len(required))
+	for _, name := range required {
+		switch {
+		case !serverconfig.ValidEnvName(name):
+			problems = append(problems, fmt.Sprintf("%s: %q is not a valid environment variable name", field, name))
+		case seen[name]:
+			problems = append(problems, fmt.Sprintf("%s: %q is listed twice", field, name))
+		case env[name] != nil:
+			problems = append(problems, fmt.Sprintf("%s: %q is also set in mcp_servers.%s.env, so the environment never supplies it", field, name, server))
+		}
+		seen[name] = true
 	}
 	return problems
 }
