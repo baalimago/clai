@@ -74,12 +74,16 @@ func (e *Engine) Commit(ctx context.Context, store Store, opts CommitOptions) (C
 	if len(plan.Changes) == 0 {
 		return res, st.save(e.ConfDir, store)
 	}
-	uploaded, err := e.upload(ctx, plan.Changes)
+	if err := e.checkBilling(ctx, store, plan.Changes); err != nil {
+		return res, err
+	}
+	uploaded, err := e.upload(ctx, store, plan.Changes)
 	if err != nil {
 		return res, err
 	}
 	res.Uploaded = uploaded
 	for start := 0; start < len(plan.Changes); start += commitBatch {
+		e.report(Progress{Store: store, Phase: PhaseCommitting, Done: start, Total: len(plan.Changes)})
 		batch := plan.Changes[start:min(start+commitBatch, len(plan.Changes))]
 		msg := opts.Message
 		if start > 0 {
@@ -146,7 +150,8 @@ func (e *Engine) commitBatch(ctx context.Context, store Store, st *state, msg st
 // upload sends every blob the server is missing. A file that changed since
 // the plan was read stops the commit: committing the new bytes under the
 // old hash would be wrong, and the user should see what they commit.
-func (e *Engine) upload(ctx context.Context, changes []LocalChange) (int, error) {
+func (e *Engine) upload(ctx context.Context, store Store, changes []LocalChange) (int, error) {
+	sizeBySHA := map[string]int64{}
 	pathBySHA := map[string]string{}
 	var hashes []string
 	for _, c := range changes {
@@ -156,33 +161,22 @@ func (e *Engine) upload(ctx context.Context, changes []LocalChange) (int, error)
 		if _, ok := pathBySHA[c.SHA256]; !ok {
 			hashes = append(hashes, c.SHA256)
 			pathBySHA[c.SHA256] = c.Path
+			sizeBySHA[c.SHA256] = c.Size
 		}
 	}
-	uploaded := 0
+	var jobs []uploadJob
 	for start := 0; start < len(hashes); start += missingBatch {
 		missing, err := e.api().missing(ctx, hashes[start:min(start+missingBatch, len(hashes))])
 		if err != nil {
-			return uploaded, err
+			return 0, err
 		}
 		for _, sha := range missing {
-			p, ok := pathBySHA[sha]
-			if !ok {
-				continue
+			if p, ok := pathBySHA[sha]; ok {
+				jobs = append(jobs, uploadJob{sha: sha, path: p, size: sizeBySHA[sha]})
 			}
-			b, err := os.ReadFile(e.abs(p))
-			if err != nil {
-				return uploaded, err
-			}
-			if hashBytes(b) != sha {
-				return uploaded, &ChangedDuringCommitError{Path: p}
-			}
-			if err := e.api().putBlob(ctx, sha, b); err != nil {
-				return uploaded, err
-			}
-			uploaded++
 		}
 	}
-	return uploaded, nil
+	return e.uploadMissing(ctx, store, jobs)
 }
 
 // ChangedDuringCommitError is a file written to while it was being

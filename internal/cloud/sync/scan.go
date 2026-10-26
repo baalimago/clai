@@ -40,8 +40,9 @@ type hashEntry struct {
 var conversationSubdirs = map[string]bool{"assets": true, "reasoning": true, "imported": true}
 
 // scan walks the store's part of confDir and hashes every allowed regular
-// file. hashes is read and refreshed in place.
-func scan(confDir string, store Store, hashes map[string]hashEntry) (map[string]LocalFile, error) {
+// file. hashes is read and refreshed in place; counted, when set, is told
+// how many files were read so far.
+func scan(confDir string, store Store, hashes map[string]hashEntry, counted func(int)) (map[string]LocalFile, error) {
 	out := map[string]LocalFile{}
 	seen := map[string]bool{}
 	for _, root := range roots(store) {
@@ -74,6 +75,9 @@ func scan(confDir string, store Store, hashes map[string]hashEntry) (map[string]
 				return nil
 			}
 			seen[rel] = true
+			if counted != nil {
+				counted(len(seen))
+			}
 			info, err := d.Info()
 			if err != nil {
 				return err

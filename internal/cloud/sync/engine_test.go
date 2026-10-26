@@ -364,7 +364,7 @@ func TestCommit_fileChangedDuringUpload(t *testing.T) {
 	plan, _ := a.plan(StoreConfig, st, PlanOptions{})
 	a.write("profiles/x.json", "2")
 	var changed *ChangedDuringCommitError
-	if _, err := a.upload(context.Background(), plan.Changes); !errors.As(err, &changed) || !strings.Contains(err.Error(), "commit again") {
+	if _, err := a.upload(context.Background(), StoreConfig, plan.Changes); !errors.As(err, &changed) || !strings.Contains(err.Error(), "commit again") {
 		t.Fatalf("err = %v", err)
 	}
 }

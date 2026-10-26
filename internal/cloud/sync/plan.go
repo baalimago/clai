@@ -91,7 +91,7 @@ func (e *Engine) Plan(store Store, opts PlanOptions) (Plan, error) {
 }
 
 func (e *Engine) plan(store Store, st *state, opts PlanOptions) (Plan, error) {
-	local, err := scan(e.ConfDir, store, st.Hashes)
+	local, err := scan(e.ConfDir, store, st.Hashes, e.scanned(store))
 	if err != nil {
 		return Plan{}, err
 	}

@@ -31,6 +31,7 @@ for the login).
 | `internal/cloud/sync/plan.go` | `Engine.Plan`: what a commit would send, leave out, or is blocked by |
 | `internal/cloud/sync/pull.go` | `Engine.Pull`, the first pull's question, `Mode` |
 | `internal/cloud/sync/commit.go` | `Engine.Commit`, `BehindError`, `ConflictsOpenError` |
+| `internal/cloud/sync/progress.go` | `Progress` and `Phase` (reported through `Engine.Progress`), `uploadMissing` (parallel uploads), `checkBilling`, `BillingBlockedError` |
 | `internal/cloud/sync/resolve.go`, `diff.go`, `status.go`, `merge.go` | `Resolve`, `Diff`, `Status`/`Log`, the conversation merge and fork |
 | `internal/cloud/cloudcmd/` | `Command`: the subcommands and their output; `ExitDecisionNeeded` |
 | `internal/cloud/cloudtest/` | An in-memory clai.chat for tests |
@@ -53,7 +54,8 @@ pull     changes since cursor -> per path:
                       -mine                   -> keep mine, base = theirs (commit sends it)
                       default                 -> keep mine, theirs to cloud/theirs/<path>: a conflict
 commit   refuse while conflicts are open (exit 4)
-         plan -> missing blobs -> PUT blobs -> POST stores/<s>/commit {message, changes[base_rev]}
+         plan -> conversations that grow: GET /me, no card or overdue -> BillingBlockedError, nothing uploaded
+         -> missing blobs -> PUT blobs, 6 at a time -> POST stores/<s>/commit {message, changes[base_rev]}
          the server applies all or nothing: one stale base_rev -> BehindError (exit 4)
 resolve  -mine keeps the file as it is; -theirs trashes it and takes cloud/theirs/<path>
 log      GET stores/<s>/log?limit=
@@ -91,7 +93,15 @@ log      GET stores/<s>/log?limit=
   exit 3, replaces a failure instead).
 - **402 answers** (`card_required` for a conversation commit without a card,
   `payment_overdue`)
-  carry a URL to the Billing and usage page, which commit prints.
+  carry a URL to the Billing and usage page, which commit prints. The
+  engine asks `/me` first when a conversation commit would grow the store,
+  so a refused commit uploads nothing (`BillingBlockedError`). A plain
+  `clai cloud commit` then commits the config store and says why the
+  conversations were left out; naming the conversations is an error.
+- **Progress.** Pull and commit report `Progress` (scanning, uploading,
+  committing, downloading) to `Engine.Progress`. `cloudcmd` draws it as a
+  `board.Status` line on stderr, only on a terminal, and stops it before
+  any output or question.
 - Replaced local files go to `cloud/trash/<path>.<UTC time>` and are pruned
   after 30 days. Config base copies under `cloud/base/` make `diff` work
   offline; a conversation's base is fetched from the server.

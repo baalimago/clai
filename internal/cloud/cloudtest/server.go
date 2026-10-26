@@ -60,6 +60,11 @@ type Server struct {
 	PageSize int
 	// Refuse answers every commit with this error, such as card_required.
 	Refuse *Problem
+	// RefuseBlobs answers every blob upload with this error.
+	RefuseBlobs *Problem
+	// CardOnFile and Overdue are the account's billing standing in /me.
+	CardOnFile bool
+	Overdue    bool
 	// PollsLeft answers authorization_pending this many times; Deny refuses
 	// the login; SlowDown answers slow_down once.
 	PollsLeft  int
@@ -97,6 +102,8 @@ func New(t testing.TB) *Server {
 		PageSize: 1000,
 		Requests: map[string]int{},
 		Clock:    1_700_000_000_000,
+		// Most tests commit conversations; billing tests take the card away.
+		CardOnFile: true,
 	}
 	s.srv = httptest.NewServer(http.HandlerFunc(s.serve))
 	t.Cleanup(s.srv.Close)
@@ -219,6 +226,10 @@ func (s *Server) blob(w http.ResponseWriter, r *http.Request, sha string) {
 		return
 	}
 	b, _ := io.ReadAll(r.Body)
+	if s.RefuseBlobs != nil {
+		problem(w, *s.RefuseBlobs)
+		return
+	}
 	if Hash(b) != sha {
 		problem(w, Problem{Status: 400, Code: "mismatch", Message: "bad hash"})
 		return
@@ -244,7 +255,10 @@ func (s *Server) me(w http.ResponseWriter, device string) {
 	}
 	reply(w, 200, map[string]any{
 		"account": "u-12345678", "handle": "lorentz", "device": device, "access": "write",
-		"usage":  map[string]any{"bytes": total, "config_limit_bytes": 1_000_000_000, "card_on_file": false, "overdue": false},
+		"usage": map[string]any{
+			"bytes": total, "config_limit_bytes": 1_000_000_000, "card_on_file": s.CardOnFile, "overdue": s.Overdue,
+			"billing_url": s.srv.URL + "/account/billing/",
+		},
 		"stores": stores,
 	})
 }

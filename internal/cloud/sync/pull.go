@@ -78,7 +78,7 @@ func (e *Engine) Pull(ctx context.Context, store Store, opts PullOptions) (PullR
 	if err != nil {
 		return res, err
 	}
-	local, err := scan(e.ConfDir, store, st.Hashes)
+	local, err := scan(e.ConfDir, store, st.Hashes, e.scanned(store))
 	if err != nil {
 		return res, err
 	}
@@ -99,7 +99,8 @@ func (e *Engine) Pull(ctx context.Context, store Store, opts PullOptions) (PullR
 		}
 	}
 	var applyErr error
-	for _, remote := range entries {
+	for i, remote := range entries {
+		e.report(Progress{Store: store, Phase: PhaseDownloading, Done: i, Total: len(entries)})
 		if !Allowed(store, remote.Path) {
 			continue
 		}
@@ -111,6 +112,7 @@ func (e *Engine) Pull(ctx context.Context, store Store, opts PullOptions) (PullR
 		}
 	}
 	if applyErr == nil {
+		e.report(Progress{Store: store, Phase: PhaseDownloading, Done: len(entries), Total: len(entries)})
 		st.Cursor = cursor
 		st.Pulled = true
 	}

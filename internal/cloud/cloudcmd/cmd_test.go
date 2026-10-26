@@ -159,6 +159,9 @@ func TestLogout_revokedTokenStillLogsOut(t *testing.T) {
 
 func TestWhoami(t *testing.T) {
 	h := newHarness(t, "tok-a")
+	unlock := h.srv.Lock()
+	h.srv.CardOnFile = false
+	unlock()
 	code, out := h.run("whoami")
 	if code != 0 {
 		t.Fatalf("code %d", code)
@@ -511,5 +514,58 @@ func TestBillingLine(t *testing.T) {
 		if got := billingLine(c.me); got != c.want {
 			t.Errorf("%s:\n got %q\nwant %q", c.name, got, c.want)
 		}
+	}
+}
+
+func TestCommit_withoutACardCommitsConfigAndSaysWhyNotConversations(t *testing.T) {
+	h := newHarness(t, "tok-a")
+	unlock := h.srv.Lock()
+	h.srv.CardOnFile = false
+	unlock()
+	h.write("profiles/a.json", `{"prompt":"a"}`)
+	h.write("conversations/abc.json", `{"messages":[]}`)
+	code, out := h.run("commit")
+	if code != 0 {
+		t.Fatalf("code %d, out %s", code, out)
+	}
+	mustContain(t, out, "config commit #1", "conversations  not committed: syncing conversations needs a card on file", "/account/billing/")
+
+	r := &runner{deps: h.deps().withDefaults()}
+	err := r.commit(context.Background(), []string{"conversations"}, "", false, false)
+	if err == nil || !strings.Contains(err.Error(), "/account/billing/") {
+		t.Fatalf("explicit conversations commit err = %v, want the billing link", err)
+	}
+}
+
+func TestProgressText(t *testing.T) {
+	cases := []struct {
+		p    sync.Progress
+		want string
+	}{
+		{sync.Progress{Phase: sync.PhaseScanning, Done: 1204}, "checked 1204 files"},
+		{sync.Progress{Phase: sync.PhaseUploading, Done: 12, Total: 4511, Bytes: 210_000_000, TotalBytes: 1_200_000_000}, "uploaded 12/4511 files · 210.0 MB of 1.2 GB"},
+		{sync.Progress{Phase: sync.PhaseCommitting, Done: 1000, Total: 4511}, "recording the commit"},
+		{sync.Progress{Phase: sync.PhaseDownloading, Done: 3, Total: 9}, "3/9 files"},
+	}
+	for _, c := range cases {
+		if got := progressText(c.p); got != c.want {
+			t.Errorf("progressText(%+v) = %q, want %q", c.p, got, c.want)
+		}
+	}
+}
+
+func TestCommit_drawsProgressOnATerminal(t *testing.T) {
+	h := newHarness(t, "tok-a")
+	h.write("profiles/a.json", `{"prompt":"a"}`)
+	errOut := &bytes.Buffer{}
+	d := h.deps()
+	d.Err = errOut
+	d.ErrIsTerminal = func() bool { return true }
+	code := cmd.Run(context.Background(), []string{"clai", "cloud", "commit"}, map[string]cmd.Command{"cloud": Command(d)}, "usage")
+	if code != 0 {
+		t.Fatalf("code %d", code)
+	}
+	if !strings.Contains(errOut.String(), "committing config") || strings.Contains(h.out.String(), "committing config") {
+		t.Fatalf("progress went to stderr %q / stdout %q; want it on stderr only", errOut.String(), h.out.String())
 	}
 }

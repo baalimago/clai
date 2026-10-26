@@ -15,6 +15,7 @@ import (
 	"github.com/baalimago/clai/internal"
 	"github.com/baalimago/clai/internal/cloud"
 	"github.com/baalimago/clai/internal/cloud/sync"
+	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/cmd"
 )
 
@@ -30,6 +31,9 @@ type Deps struct {
 	Hooks   sync.Hooks
 	Out     io.Writer
 	In      io.Reader
+	// Err takes the progress line, drawn only when ErrIsTerminal.
+	Err           io.Writer
+	ErrIsTerminal func() bool
 	// Interactive is whether a person can answer a prompt on In.
 	Interactive func() bool
 	Now         func() time.Time
@@ -47,6 +51,12 @@ func (d Deps) withDefaults() Deps {
 	}
 	if d.In == nil {
 		d.In = os.Stdin
+	}
+	if d.Err == nil {
+		d.Err = os.Stderr
+	}
+	if d.ErrIsTerminal == nil {
+		d.ErrIsTerminal = func() bool { return utils.IsTerminalWriter(d.Err) }
 	}
 	if d.Interactive == nil {
 		d.Interactive = stdinIsTerminal

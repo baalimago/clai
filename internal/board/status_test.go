@@ -117,3 +117,22 @@ func TestStatus_NilIsSafe(t *testing.T) {
 	s.tick()
 	s.Stop()
 }
+
+func TestStatus_DetailFollowsTheElapsedTime(t *testing.T) {
+	plainStatus(t)
+	out := &bytes.Buffer{}
+	s := fixedStatus(out, true, 3*time.Second)
+	s.Start()
+	defer s.Stop()
+	s.SetDetail("12/40 files")
+	s.tick()
+	if !strings.Contains(out.String(), "3s · 12/40 files") {
+		t.Fatalf("tick drew %q, want the detail after the elapsed time", out.String())
+	}
+	s.SetDetail("")
+	s.tick()
+	last := out.String()[strings.LastIndex(out.String(), "\r"):]
+	if strings.Contains(last, "·") {
+		t.Fatalf("an empty detail still drew %q", last)
+	}
+}

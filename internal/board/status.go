@@ -20,6 +20,7 @@ type Status struct {
 	live    bool
 	width   int
 	title   string
+	detail  string
 	now     func() time.Time
 	started time.Time
 	frame   int
@@ -38,6 +39,17 @@ func NewStatus(out io.Writer, live bool, title string) *Status {
 		s.width = utils.SessionDimensions(out).Width
 	}
 	return s
+}
+
+// SetDetail changes the text drawn after the elapsed time, such as a
+// count of files; it shows from the next frame.
+func (s *Status) SetDetail(detail string) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.detail = detail
 }
 
 // SetClock replaces the clock (tests).
@@ -131,5 +143,8 @@ func (s *Status) tick() {
 func (s *Status) draw() {
 	spinner := string(spinnerFrames[s.frame%len(spinnerFrames)])
 	line := colorize(utils.TableTheme().Primary, "▸ "+s.title) + "  " + spinner + " " + ElapsedText(s.now().Sub(s.started))
+	if s.detail != "" {
+		line += " · " + s.detail
+	}
 	fmt.Fprint(s.out, "\r\x1b[2K"+Truncate(line, s.width))
 }

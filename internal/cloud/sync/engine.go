@@ -30,6 +30,9 @@ type Engine struct {
 	ConfDir string
 	Hooks   Hooks
 	Now     func() time.Time
+	// Progress, when set, is told of each step of a pull or commit. It may
+	// be called from several goroutines at once.
+	Progress func(Progress)
 }
 
 func (e *Engine) api() api { return api{c: e.Client} }

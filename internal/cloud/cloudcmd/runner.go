@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/baalimago/clai/internal/board"
 	"github.com/baalimago/clai/internal/cloud"
 	"github.com/baalimago/clai/internal/cloud/sync"
 )
@@ -317,10 +318,17 @@ func (r *runner) pull(ctx context.Context, args []string, theirs, mine, raw bool
 	needsDecision := false
 	interactive := r.deps.Interactive() && !raw
 	for _, s := range which {
+		status := r.track(engine, "pulling "+string(s))
 		if interactive {
-			opts.Choose = func(f sync.FirstPull) (sync.Mode, error) { return r.chooseFirst(s, f) }
+			opts.Choose = func(f sync.FirstPull) (sync.Mode, error) {
+				// The question needs the terminal row the status draws on.
+				status.Stop()
+				defer status.Start()
+				return r.chooseFirst(s, f)
+			}
 		}
 		res, err := engine.Pull(ctx, s, opts)
+		status.Stop()
 		var first *sync.FirstPullError
 		if errors.As(err, &first) {
 			needsDecision = true
@@ -478,10 +486,17 @@ func (r *runner) commit(ctx context.Context, args []string, msg string, imports,
 	var results []sync.CommitResult
 	decision := false
 	for _, s := range which {
+		status := r.track(engine, "committing "+string(s))
 		res, err := engine.Commit(ctx, s, sync.CommitOptions{Message: msg, PlanOptions: sync.PlanOptions{Paths: paths[s], Imports: imports}})
+		status.Stop()
 		var open *sync.ConflictsOpenError
 		var behind *sync.BehindError
+		var blocked *sync.BillingBlockedError
 		switch {
+		case errors.As(err, &blocked) && len(args) == 0:
+			// A plain commit still commits the free config store.
+			r.printf("%-14s not committed: %v\n", s, blocked)
+			continue
 		case errors.As(err, &open):
 			decision = true
 			r.printf("Not committed. %d %s in %s first:\n", len(open.Paths), plural(len(open.Paths), "conflict needs resolving", "conflicts need resolving"), s)
@@ -510,6 +525,27 @@ func (r *runner) commit(ctx context.Context, args []string, msg string, imports,
 		r.deps.SetExit(ExitDecisionNeeded)
 	}
 	return nil
+}
+
+// track shows a status line on a terminal's stderr while engine works,
+// with what it is doing as the detail. Stop it before printing.
+func (r *runner) track(engine *sync.Engine, title string) *board.Status {
+	status := board.NewStatus(r.deps.Err, r.deps.ErrIsTerminal(), title)
+	engine.Progress = func(p sync.Progress) { status.SetDetail(progressText(p)) }
+	status.Start()
+	return status
+}
+
+func progressText(p sync.Progress) string {
+	switch p.Phase {
+	case sync.PhaseScanning:
+		return fmt.Sprintf("checked %d files", p.Done)
+	case sync.PhaseUploading:
+		return fmt.Sprintf("uploaded %d/%d files · %s of %s", p.Done, p.Total, human(p.Bytes), human(p.TotalBytes))
+	case sync.PhaseCommitting:
+		return "recording the commit"
+	}
+	return fmt.Sprintf("%d/%d files", p.Done, p.Total)
 }
 
 func (r *runner) commitError(err error) error {
