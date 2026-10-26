@@ -344,7 +344,7 @@ func TestPull_firstPull(t *testing.T) {
 		}
 	})
 	t.Run("terminal quits", func(t *testing.T) {
-		for answer, want := range map[string]int{"q\n": 1, "": ExitDecisionNeeded} {
+		for answer, want := range map[string]int{"q\n": ExitDecisionNeeded, "": ExitDecisionNeeded} {
 			h := setup(t)
 			h.tty, h.in = true, answer
 			if code, _ := h.run("pull", "config"); code != want || h.read("profiles/x.json") != "mine" {

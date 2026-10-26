@@ -84,8 +84,11 @@ log      GET stores/<s>/log?limit=
   this machine's (`-mine`), or treat each as a conflict. On a terminal the
   command asks, each answer named by what it keeps and keyed by that word's
   first letter: `[a]` your account's, `[h]` this machine's, `[d]` decide
-  later, `[q]` quit. Otherwise it stops with exit 4, changes nothing and
-  prints the two flags.
+  later, `[q]` quit. Another answer asks again; `q` stops the whole pull
+  with nothing changed and exit 4, since the question is still open.
+  Without a terminal on stdin (a real one: `/dev/null` is a character
+  device but not a terminal, `isTerminal` in `cloudcmd/term_*.go`) it
+  stops with exit 4, changes nothing and prints the two flags.
 - **A conflict never touches the local file.** The server's side is written to
   `cloud/theirs/<path>` and recorded in the state; commit refuses until
   `resolve` settles it. `diff` shows base, mine and theirs.
@@ -114,7 +117,7 @@ log      GET stores/<s>/log?limit=
   left by a pull, a commit behind the server or blocked by conflicts, a
   plain commit that committed config but whose conversations billing
   refused (no card, or overdue; not while billing is not open yet), or a
-  first pull with nobody to ask. `cmd.Run` maps every error to 1, so the
+  first pull with nobody to ask or quit at its question. `cmd.Run` maps every error to 1, so the
   command prints its message, calls `Deps.SetExit(4)` and returns nil;
   `cli.Run` wires `SetExit` to `internal.ExitStatus.Set`, whose `Resolve`
   turns that success into 4 (an `ExitCoder` error, such as remote targets'

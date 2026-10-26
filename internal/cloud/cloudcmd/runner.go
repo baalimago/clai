@@ -262,6 +262,7 @@ func (r *runner) pull(ctx context.Context, args []string, theirs, mine, raw bool
 	var results []sync.PullResult
 	needsDecision := false
 	interactive := r.deps.Interactive() && !raw
+	in := bufio.NewReader(r.deps.In)
 	for _, s := range which {
 		status := r.track(engine, "pulling "+string(s))
 		if interactive {
@@ -269,11 +270,19 @@ func (r *runner) pull(ctx context.Context, args []string, theirs, mine, raw bool
 				// The question needs the terminal row the status draws on.
 				status.Stop()
 				defer status.Start()
-				return r.chooseFirst(s, f)
+				return r.chooseFirst(s, f, in)
 			}
 		}
 		res, err := engine.Pull(ctx, s, opts)
 		status.Stop()
+		var quit *QuitError
+		if errors.As(err, &quit) {
+			// A deliberate stop: the question is still open, and no other
+			// store is pulled behind the user's back.
+			r.printf("  %s\n", r.style().secondary(quit.Error()))
+			r.deps.SetExit(ExitDecisionNeeded)
+			return nil
+		}
 		var first *sync.FirstPullError
 		if errors.As(err, &first) {
 			needsDecision = true
@@ -307,20 +316,27 @@ func (r *runner) pull(ctx context.Context, args []string, theirs, mine, raw bool
 	return nil
 }
 
-// chooseFirst asks a first pull's question on the terminal.
-func (r *runner) chooseFirst(store sync.Store, f sync.FirstPull) (sync.Mode, error) {
+// chooseFirst asks a first pull's question on the terminal, again until
+// the answer is one of the choices.
+func (r *runner) chooseFirst(store sync.Store, f sync.FirstPull, in *bufio.Reader) (sync.Mode, error) {
 	r.lines(firstPullLines(store, f, r.style()))
 	r.lines(firstPullChoices(store, len(f.Differ), r.style()))
-	r.printf("  Keep [a/h/d/q]: ")
-	line, err := bufio.NewReader(r.deps.In).ReadString('\n')
-	if err != nil && line == "" {
-		// Nobody answered, as with no terminal at all.
-		return "", &sync.FirstPullError{First: f}
+	for {
+		r.printf("  Keep [a/h/d/q]: ")
+		line, err := in.ReadString('\n')
+		if err != nil && line == "" {
+			// Nobody answered, as with no terminal at all.
+			r.printf("\n")
+			return "", &sync.FirstPullError{First: f}
+		}
+		switch choice, ok := parseChoice(line); {
+		case ok && choice.quit:
+			return "", &QuitError{}
+		case ok:
+			return choice.mode, nil
+		}
+		r.printf("  %s\n", r.style().secondary("answer a, h, d or q"))
 	}
-	if mode, ok := parseChoice(line); ok {
-		return mode, nil
-	}
-	return "", &QuitError{}
 }
 
 // QuitError is a first pull the user stopped at its question.

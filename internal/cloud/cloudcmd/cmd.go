@@ -23,8 +23,8 @@ import (
 )
 
 // ExitDecisionNeeded is the exit status of a pull or commit that stopped
-// for a decision: conflicts left, a commit behind the server, or a first
-// pull with nobody to ask.
+// for a decision: conflicts left, a commit behind the server or refused
+// conversations for billing, or a first pull nobody answered.
 const ExitDecisionNeeded = 4
 
 // Deps carries what the cloud command needs from the composition root, and
@@ -93,10 +93,7 @@ func (d Deps) withDefaults() Deps {
 	return d
 }
 
-func stdinIsTerminal() bool {
-	info, err := os.Stdin.Stat()
-	return err == nil && info.Mode()&os.ModeCharDevice != 0
-}
+func stdinIsTerminal() bool { return isTerminal(os.Stdin) }
 
 // UsageError is a cloud subcommand given the wrong arguments.
 type UsageError struct{ Msg string }

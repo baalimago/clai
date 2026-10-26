@@ -43,11 +43,16 @@ func TestFirstPullLines_nameEachChoiceByWhatItKeeps(t *testing.T) {
 
 func TestChoice_takesTheLetterOrTheWord(t *testing.T) {
 	for in, want := range map[string]sync.Mode{"a": sync.ModeTheirs, "Account": sync.ModeTheirs, "h": sync.ModeMine, "here": sync.ModeMine, "d": sync.ModeConflicts, " later ": sync.ModeConflicts} {
-		if got, ok := parseChoice(in); !ok || got != want {
-			t.Errorf("%q = %q %v, want %q", in, got, ok, want)
+		if got, ok := parseChoice(in); !ok || got.quit || got.mode != want {
+			t.Errorf("%q = %+v %v, want %q", in, got, ok, want)
 		}
 	}
-	for _, in := range []string{"q", "quit", "", "t", "x"} {
+	for _, in := range []string{"q", "quit", " Q "} {
+		if got, ok := parseChoice(in); !ok || !got.quit {
+			t.Errorf("%q = %+v %v, want quit", in, got, ok)
+		}
+	}
+	for _, in := range []string{"", "t", "x"} {
 		if _, ok := parseChoice(in); ok {
 			t.Errorf("%q was taken as a choice", in)
 		}

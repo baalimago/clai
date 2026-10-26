@@ -90,16 +90,24 @@ func firstPullFlags(store sync.Store, s style) []string {
 	}, s)
 }
 
-func parseChoice(in string) (sync.Mode, bool) {
+// choice is an answer to the first pull's question: a mode, or quit.
+type choice struct {
+	mode sync.Mode
+	quit bool
+}
+
+func parseChoice(in string) (choice, bool) {
 	switch strings.ToLower(strings.TrimSpace(in)) {
 	case "a", "account":
-		return sync.ModeTheirs, true
+		return choice{mode: sync.ModeTheirs}, true
 	case "h", "here":
-		return sync.ModeMine, true
+		return choice{mode: sync.ModeMine}, true
 	case "d", "decide", "later":
-		return sync.ModeConflicts, true
+		return choice{mode: sync.ModeConflicts}, true
+	case "q", "quit":
+		return choice{quit: true}, true
 	}
-	return "", false
+	return choice{}, false
 }
 
 func conflictLines(paths []string, s style) []string {
