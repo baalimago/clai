@@ -101,6 +101,8 @@ type fieldKind int
 const (
 	kindString fieldKind = iota
 	kindStrings
+	kindBool
+	kindStringMap
 )
 
 // decodes reports whether raw decodes as kind. An absent field always does.
@@ -116,6 +118,12 @@ func decodes(raw json.RawMessage, kind fieldKind) bool {
 	case kindStrings:
 		var v []string
 		err = json.Unmarshal(raw, &v)
+	case kindBool:
+		var v bool
+		err = json.Unmarshal(raw, &v)
+	case kindStringMap:
+		var v map[string]string
+		err = json.Unmarshal(raw, &v)
 	}
 	return err == nil
 }
@@ -124,8 +132,13 @@ func decodes(raw json.RawMessage, kind fieldKind) bool {
 // body Validate accepts can always be summarised.
 func topLevelProblems(fields map[string]json.RawMessage) []string {
 	var problems []string
-	if !decodes(fields["model"], kindString) {
-		problems = append(problems, `"model": needs a string`)
+	for _, key := range []string{"model", "prompt"} {
+		if !decodes(fields[key], kindString) {
+			problems = append(problems, fmt.Sprintf("%q: needs a string", key))
+		}
+	}
+	if !decodes(fields["use_tools"], kindBool) {
+		problems = append(problems, `"use_tools": needs true or false`)
 	}
 	if !decodes(fields["tools"], kindStrings) {
 		problems = append(problems, `"tools": needs an array of strings`)
@@ -152,6 +165,9 @@ func serverProblems(raw json.RawMessage) (problems, ignored []string) {
 		}
 		if !decodes(fields["args"], kindStrings) {
 			problems = append(problems, prefix+".args: needs an array of strings")
+		}
+		if !decodes(fields["env"], kindStringMap) {
+			problems = append(problems, prefix+".env: needs an object of string values")
 		}
 		var command, url, envFile string
 		_ = json.Unmarshal(fields["command"], &command)

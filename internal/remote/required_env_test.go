@@ -78,6 +78,10 @@ func TestValidate_rejectsEveryShapeSummarizeCannotRead(t *testing.T) {
 		`{"mcp_servers":{"s":{"url":"https://x.example","auth":{"token_env":5}}}}`,
 		`{"mcp_servers":{"s":{"url":"https://x.example","auth":{"token_command":[1]}}}}`,
 		`{"mcp_servers":{"s":{"url":"https://x.example","auth":{"required_env":{"A":1}}}}}`,
+		`{"use_tools":"yes"}`,
+		`{"prompt":["a"]}`,
+		`{"mcp_servers":{"s":{"command":"x","env":["A=1"]}}}`,
+		`{"mcp_servers":{"s":{"command":"x","env":{"A":1}}}}`,
 	} {
 		checked, err := Validate("t", []byte(body))
 		if err == nil {

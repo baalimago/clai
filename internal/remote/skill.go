@@ -61,8 +61,24 @@ type SkillSummary struct {
 	Description string
 }
 
+// String renders the summary as the trust prompt shows it, printable and
+// with a long description cut short.
 func (s SkillSummary) String() string {
-	return fmt.Sprintf("This skill is instructions the agent may load:\n  %s: %s\n", s.Name, s.Description)
+	var b strings.Builder
+	b.WriteString("This skill is instructions the agent may load:\n")
+	fmt.Fprintf(&b, "  %s:", Printable(s.Name))
+	lines := Preview(s.Description)
+	if len(lines) == 0 {
+		b.WriteString("\n")
+	}
+	for i, line := range lines {
+		if i == 0 {
+			fmt.Fprintf(&b, " %s\n", line)
+			continue
+		}
+		fmt.Fprintf(&b, "    %s\n", line)
+	}
+	return b.String()
 }
 
 // ResolvedSkill is a skill target ready to load: Root holds one directory,

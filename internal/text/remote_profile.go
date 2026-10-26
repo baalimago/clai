@@ -139,8 +139,9 @@ func FormatRemoteTrustPrompt(p remote.TrustPrompt) string {
 	if p.Summary != nil {
 		summary = p.Summary.String()
 	}
+	target := remote.Printable(p.Target)
 	return fmt.Sprintf("fetched %s · sha256 %s\n\n%s\nRead it: %s\nTrust %s? [y/N] ",
-		p.Target, p.Digest, summary, p.Page, p.Target)
+		target, remote.Printable(p.Digest), summary, remote.Printable(p.Page), target)
 }
 
 func resolveRemoteProfilePath(ctx context.Context, tConf *Configurations, resolve RemoteProfileResolver) error {

@@ -14,7 +14,10 @@ https://<host>/<path>                 any URL that answers application/json
 `-p <name>` and `-prp ./file.json` are unchanged. They work offline, need no
 account, and fetch nothing. `IsRemote` matches only the `cchub:`, `gh:`,
 `https://` and `http://` prefixes. Plain `http://` is refused rather than
-fetched.
+fetched. A `.` or `..` is refused as a GitHub owner or repo,
+as a segment of a `gh:` path or ref, and as a segment of an `https://`
+path: the server would resolve it, so the target would read as one
+address and fetch another (`gh:anthropics/..@evil`).
 
 ## Files to read
 
@@ -89,10 +92,11 @@ A `gh:` target reads
   - A key within two edits of a profile key is an error that suggests the
     key (`"promt"` → `"prompt"`). Any other unknown key is listed and
     ignored, as a local profile's would be.
-  - Every field `Summarize` reads has the shape it decodes (`model` and
-    each server's `command`, `url` and `envfile` strings, `tools` and
-    `args` arrays of strings), so a body `Validate` accepts can always be
-    summarised.
+  - Every field `Summarize` reads has the shape it decodes (`model`,
+    `prompt` and each server's `command`, `url` and `envfile` strings,
+    `use_tools` a boolean, `tools` and `args` arrays of strings, each
+    server's `env` an object of strings), so a body `Validate` accepts can
+    always be summarised.
   - Each MCP server needs `command` or `url`.
   - A relative `envfile` is refused: the fetched profile has no directory
     for it to be relative to. Use `~/`, `$VAR/` or an absolute path.
@@ -112,6 +116,44 @@ A `gh:` target reads
   from the environment, with its server: `auth.required_env`, plus
   `auth.token_env` when no `auth.token_command` takes precedence over it
   (`Summary.Needs`).
+- **The trust prompt.** `Summary.String` shows everything the profile
+  makes this machine do or the model read:
+
+  ```text
+  This agent runs on your machine:
+    memory  npx -y @modelcontextprotocol/server-memory@2.0.0
+            env: MEMORY_FILE_PATH=~/.clai/memory.json
+    vault   https://mcp.example.com
+            runs here for a token: vault print token
+    tools: date, mcp_memory*
+  It needs: VAULT_ADDR (vault)
+  Model: gpt-6.1-sol
+  Prompt:
+    You keep the team's notes.
+    … 812 more characters not shown
+  ```
+
+  - Under each server: its `auth.token_command` (`credential.go` runs it
+    with `exec`) and every `env` entry as `KEY=value`. An argument that
+    holds a space or a quote is quoted.
+  - Tools (`Summary.Access`, mirroring `ProfileOverrides`): `use_tools`
+    with no `tools` list and no servers of its own gives the model every
+    built-in tool (shell commands and `write_file` among them) and every
+    MCP server in the user's config, and the prompt says so in those
+    words. A `tools` list is shown as written; a profile with servers is
+    narrowed to their tools plus that list. No `use_tools` and no servers
+    is `no tools, no MCP servers`.
+  - `Prompt:` shows the first `PreviewLines` (6) lines and at most
+    `PreviewChars` (400) characters of the prompt, indented, and says how
+    many characters it left out. A skill's description is shown the same
+    way.
+  - Every string from the fetched bytes (names, command lines, env, model,
+    ignored keys, skill targets, prompt, skill name and description, and
+    the target and page in `FormatRemoteTrustPrompt`) goes through
+    `remote.Printable`: C0 and C1 controls, DEL and bidi formatting
+    characters become visible escapes (`\x1b`, `\u202e`), invalid UTF-8
+    becomes U+FFFD. Only the prompt preview keeps line breaks, as separate
+    indented lines.
 
   `cchub:` and `https://` responses must be `application/json` (or
   `+json`). `raw.githubusercontent.com` serves `text/plain`, so `gh:`

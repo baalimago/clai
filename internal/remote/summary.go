@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 )
 
 // Server is one MCP server a profile starts or reaches.
@@ -14,6 +15,11 @@ type Server struct {
 	// Unpinned marks a package runner (npx, pnpx, bunx, uvx) fetching a
 	// package with no @version: it can change under the profile.
 	Unpinned bool
+	// TokenCommand is the command line a url server runs on this machine
+	// for its token (auth.token_command), or "".
+	TokenCommand string
+	// Env are the server's env entries as KEY=value, sorted by key.
+	Env []string
 }
 
 // EnvNeed is one environment variable a server needs.
@@ -22,10 +28,26 @@ type EnvNeed struct {
 	Server string
 }
 
+// ToolAccess is which tools a profile gives the model.
+type ToolAccess int
+
+const (
+	// ToolsOff: no tools and no MCP servers.
+	ToolsOff ToolAccess = iota
+	// ToolsListed: the profile's tools globs and its own servers' tools.
+	ToolsListed
+	// ToolsEverything: use_tools with no tools list and no servers of its
+	// own, so every built-in tool and every MCP server in the user's
+	// config.
+	ToolsEverything
+)
+
 // Summary is what a profile asks of the machine that runs it: what the
-// trust prompt and `clai profiles trust` show before anything runs.
+// trust prompt and `clai profiles trust` show before anything runs. Its
+// strings are the profile's own; String makes them printable.
 type Summary struct {
 	Model    string
+	Access   ToolAccess
 	Tools    []string
 	Servers  []Server
 	EnvFiles []string
@@ -36,6 +58,8 @@ type Summary struct {
 	Ignored []string
 	// Skills are the profile's skill targets, fetched and trusted with it.
 	Skills []Target
+	// Prompt is the profile's system prompt.
+	Prompt string
 }
 
 var fetchers = map[string]bool{"npx": true, "pnpx": true, "bunx": true, "uvx": true}
@@ -44,12 +68,15 @@ var fetchers = map[string]bool{"npx": true, "pnpx": true, "bunx": true, "uvx": t
 func Summarize(body []byte, checked Checked) (Summary, error) {
 	var p struct {
 		Model      string   `json:"model"`
+		Prompt     string   `json:"prompt"`
+		UseTools   bool     `json:"use_tools"`
 		Tools      []string `json:"tools"`
 		McpServers map[string]struct {
-			Command string   `json:"command"`
-			Args    []string `json:"args"`
-			URL     string   `json:"url"`
-			EnvFile string   `json:"envfile"`
+			Command string            `json:"command"`
+			Args    []string          `json:"args"`
+			URL     string            `json:"url"`
+			EnvFile string            `json:"envfile"`
+			Env     map[string]string `json:"env"`
 			Auth    *struct {
 				TokenCommand []string `json:"token_command"`
 				TokenEnv     string   `json:"token_env"`
@@ -64,22 +91,42 @@ func Summarize(body []byte, checked Checked) (Summary, error) {
 	if err != nil {
 		return Summary{}, err
 	}
-	s := Summary{Model: p.Model, Tools: p.Tools, Ignored: checked.Ignored, Skills: skills}
+	s := Summary{Model: p.Model, Prompt: p.Prompt, Tools: p.Tools, Ignored: checked.Ignored, Skills: skills}
+	s.Access = toolAccess(p.UseTools, len(p.Tools), len(p.McpServers))
 	for _, name := range sortedKeys(p.McpServers) {
 		srv := p.McpServers[name]
 		runs := srv.URL
 		if srv.Command != "" {
-			runs = strings.Join(append([]string{srv.Command}, srv.Args...), " ")
+			runs = commandLine(append([]string{srv.Command}, srv.Args...))
 		}
-		s.Servers = append(s.Servers, Server{Name: name, Runs: runs, Unpinned: unpinned(srv.Command, srv.Args)})
+		server := Server{Name: name, Runs: runs, Unpinned: unpinned(srv.Command, srv.Args)}
+		for _, k := range sortedKeys(srv.Env) {
+			server.Env = append(server.Env, k+"="+srv.Env[k])
+		}
 		if srv.EnvFile != "" {
 			s.EnvFiles = append(s.EnvFiles, srv.EnvFile)
 		}
 		if srv.Auth != nil {
+			if len(srv.Auth.TokenCommand) > 0 {
+				server.TokenCommand = commandLine(srv.Auth.TokenCommand)
+			}
 			s.Needs = append(s.Needs, envNeeds(name, srv.Auth.RequiredEnv, srv.Auth.TokenEnv, srv.Auth.TokenCommand)...)
 		}
+		s.Servers = append(s.Servers, server)
 	}
 	return s, nil
+}
+
+// toolAccess mirrors text.ProfileOverrides: a profile with servers uses
+// tools, and its servers' globs narrow the tools to theirs.
+func toolAccess(useTools bool, tools, servers int) ToolAccess {
+	switch {
+	case !useTools && servers == 0:
+		return ToolsOff
+	case tools == 0 && servers == 0:
+		return ToolsEverything
+	}
+	return ToolsListed
 }
 
 func envNeeds(server string, required []string, tokenEnv string, tokenCommand []string) []EnvNeed {
@@ -113,26 +160,42 @@ func unpinned(command string, args []string) bool {
 	return false
 }
 
-// String renders the summary as the trust prompt shows it.
+// String renders the summary as the trust prompt shows it. Every string
+// from the profile is made printable first.
 func (s Summary) String() string {
 	var b strings.Builder
 	b.WriteString("This agent runs on your machine:\n")
-	if len(s.Servers) == 0 {
-		b.WriteString("  no MCP servers\n")
+	switch {
+	case s.Access == ToolsOff:
+		b.WriteString("  no tools, no MCP servers\n")
+	case s.Access == ToolsEverything:
+		b.WriteString("  all built-in tools, shell commands and file writes included\n")
+		b.WriteString("  all your local MCP servers\n")
+	case len(s.Servers) == 0:
+		b.WriteString("  no MCP servers of its own\n")
 	}
+	names := make([]string, len(s.Servers))
 	width := 0
-	for _, srv := range s.Servers {
-		width = max(width, len(srv.Name))
+	for i, srv := range s.Servers {
+		names[i] = Printable(srv.Name)
+		width = max(width, utf8.RuneCountInString(names[i]))
 	}
-	for _, srv := range s.Servers {
-		fmt.Fprintf(&b, "  %-*s  %s", width, srv.Name, srv.Runs)
+	under := strings.Repeat(" ", width+4)
+	for i, srv := range s.Servers {
+		fmt.Fprintf(&b, "  %s%s  %s", names[i], strings.Repeat(" ", width-utf8.RuneCountInString(names[i])), Printable(srv.Runs))
 		if srv.Unpinned {
 			b.WriteString("  (not pinned)")
 		}
 		b.WriteString("\n")
+		if srv.TokenCommand != "" {
+			fmt.Fprintf(&b, "%sruns here for a token: %s\n", under, srv.TokenCommand)
+		}
+		for _, kv := range srv.Env {
+			fmt.Fprintf(&b, "%senv: %s\n", under, Printable(kv))
+		}
 	}
-	if len(s.Tools) > 0 {
-		fmt.Fprintf(&b, "  tools: %s\n", strings.Join(s.Tools, ", "))
+	if s.Access != ToolsOff && len(s.Tools) > 0 {
+		fmt.Fprintf(&b, "  tools: %s\n", printableList(s.Tools))
 	}
 	if len(s.Skills) > 0 {
 		names := make([]string, 0, len(s.Skills))
@@ -143,25 +206,37 @@ func (s Summary) String() string {
 			}
 			names = append(names, name)
 		}
-		fmt.Fprintf(&b, "  skills: %s\n", strings.Join(names, ", "))
+		fmt.Fprintf(&b, "  skills: %s\n", printableList(names))
 	}
 	if len(s.EnvFiles) > 0 {
-		fmt.Fprintf(&b, "It reads: %s\n", strings.Join(s.EnvFiles, ", "))
+		fmt.Fprintf(&b, "It reads: %s\n", printableList(s.EnvFiles))
 	}
 	if len(s.Needs) > 0 {
 		needs := make([]string, 0, len(s.Needs))
 		for _, n := range s.Needs {
 			needs = append(needs, fmt.Sprintf("%s (%s)", n.Name, n.Server))
 		}
-		fmt.Fprintf(&b, "It needs: %s\n", strings.Join(needs, ", "))
+		fmt.Fprintf(&b, "It needs: %s\n", printableList(needs))
 	}
-	model := s.Model
+	model := Printable(s.Model)
 	if model == "" {
 		model = "your default"
 	}
 	fmt.Fprintf(&b, "Model: %s\n", model)
+	if lines := Preview(s.Prompt); len(lines) == 0 {
+		b.WriteString("Prompt: none\n")
+	} else {
+		b.WriteString("Prompt:\n")
+		for _, l := range lines {
+			fmt.Fprintf(&b, "  %s\n", l)
+		}
+	}
 	if len(s.Ignored) > 0 {
-		fmt.Fprintf(&b, "Not read by clai: %s\n", strings.Join(s.Ignored, ", "))
+		fmt.Fprintf(&b, "Not read by clai: %s\n", printableList(s.Ignored))
 	}
 	return b.String()
+}
+
+func printableList(items []string) string {
+	return Printable(strings.Join(items, ", "))
 }

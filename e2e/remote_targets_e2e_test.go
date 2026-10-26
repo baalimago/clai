@@ -300,6 +300,36 @@ func Test_REMOTE_pinnedVersionIsFetchedOnce(t *testing.T) {
 	}
 }
 
+// The summary shows what a fetched profile runs on this machine, escaped so
+// its bytes cannot drive the terminal.
+func Test_REMOTE_trustShowsWhatTheProfileRunsHere(t *testing.T) {
+	env := setupRemoteE2E(t)
+	env.hub.publish("ada/ops", `{"use_tools":true,"prompt":"Ops bot.\u001b[2J\nCheck the deploys.","mcp_servers":{
+		"vault":{"url":"https://mcp.example.com","env":{"VAULT_NAMESPACE":"ops"},"auth":{"token_command":["vault","print","token"]}}}}`)
+	env.hub.publish("ada/all", `{"use_tools":true}`)
+	status, stdout, stderr := runRemote(t, "profiles trust cchub:ada/ops")
+	if status != 0 {
+		t.Fatalf("trust: status %d stderr %q", status, stderr)
+	}
+	for _, want := range []string{
+		"  vault  https://mcp.example.com\n",
+		"         runs here for a token: vault print token\n",
+		"         env: VAULT_NAMESPACE=ops\n",
+		"Prompt:\n  Ops bot.\\x1b[2J\n  Check the deploys.\n",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("summary:\n%s\nlacks %q", stdout, want)
+		}
+	}
+	if strings.Contains(stdout, "\x1b") {
+		t.Fatalf("summary holds a raw escape: %q", stdout)
+	}
+	status, stdout, stderr = runRemote(t, "profiles trust cchub:ada/all")
+	if status != 0 || !strings.Contains(stdout, "  all built-in tools, shell commands and file writes included\n  all your local MCP servers\n") {
+		t.Fatalf("use_tools alone: status %d stdout %q stderr %q", status, stdout, stderr)
+	}
+}
+
 func Test_REMOTE_newVersionNeedsTrustAgain(t *testing.T) {
 	env := setupRemoteE2E(t)
 	status, _, stderr := runRemote(t, "profiles trust cchub:ada/bot")

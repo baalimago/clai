@@ -100,3 +100,12 @@ func TestRemoteProfileResolver(t *testing.T) {
 		t.Fatalf("prompt text = %q", s)
 	}
 }
+
+func TestFormatRemoteTrustPrompt_escapesControlCharacters(t *testing.T) {
+	got := FormatRemoteTrustPrompt(remote.TrustPrompt{Target: "https://x.example/\u009b2J", Digest: "abc\x1b", Page: "https://x.example/\u202e"})
+	for _, want := range []string{`fetched https://x.example/\u009b2J · sha256 abc\x1b`, `Read it: https://x.example/\u202e`, `Trust https://x.example/\u009b2J? [y/N] `} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("prompt %q lacks %q", got, want)
+		}
+	}
+}
