@@ -57,7 +57,7 @@ func statusLines(st sync.Status, s style) []string {
 	if len(st.Changes) <= listLimit {
 		lines = append(lines, changeList(st, s)...)
 	} else {
-		lines = append(lines, changeGroups(st.Changes, s)...)
+		lines = append(lines, changeGroups(st, s)...)
 	}
 	return append(lines, excludedLines(st.Excluded, s)...)
 }
@@ -85,8 +85,11 @@ func statusDetails(st sync.Status) []string {
 	case st.Remote != nil && st.Remote.Ahead > 0:
 		parts = append(parts, fmt.Sprintf("server %d %s ahead", st.Remote.Ahead, plural(int(st.Remote.Ahead), "commit", "commits")))
 	}
+	if st.Remote != nil && len(st.Remote.Uploaded) > 0 {
+		parts = append(parts, count(len(st.Remote.Uploaded))+" already uploaded")
+	}
 	if st.Remote != nil && len(st.Changes) > listLimit && len(st.Remote.Both) > 0 {
-		parts = append(parts, count(len(st.Remote.Both))+" also changed on the server")
+		parts = append(parts, count(len(st.Remote.Both))+" changed on both sides")
 	}
 	if !st.Pulled {
 		parts = append(parts, "never pulled here")
@@ -100,17 +103,15 @@ func statusDetails(st sync.Status) []string {
 var changeMarks = map[sync.ChangeKind]string{sync.Added: "+", sync.Modified: "~", sync.Deleted: "-"}
 
 func changeList(st sync.Status, s style) []string {
-	both := map[string]bool{}
-	if st.Remote != nil {
-		for _, p := range st.Remote.Both {
-			both[p] = true
-		}
-	}
+	both, uploaded := remoteSets(st)
 	lines := make([]string, 0, len(st.Changes))
 	for _, c := range st.Changes {
 		detail := ""
 		if c.Kind != sync.Deleted {
 			detail = human(c.Size)
+		}
+		if uploaded[c.Path] {
+			detail = strings.TrimPrefix(detail+" · uploaded, not committed", " · ")
 		}
 		if both[c.Path] {
 			detail = strings.TrimPrefix(detail+" · also changed on the server", " · ")
@@ -124,11 +125,28 @@ func changeList(st sync.Status, s style) []string {
 	return lines
 }
 
+// remoteSets: the changes also made on the server, and the ones whose
+// bytes it already holds.
+func remoteSets(st sync.Status) (both, uploaded map[string]bool) {
+	both, uploaded = map[string]bool{}, map[string]bool{}
+	if st.Remote == nil {
+		return both, uploaded
+	}
+	for _, p := range st.Remote.Both {
+		both[p] = true
+	}
+	for _, p := range st.Remote.Uploaded {
+		uploaded[p] = true
+	}
+	return both, uploaded
+}
+
 type group struct {
-	name  string
-	files int
-	bytes int64
-	items []sync.LocalChange
+	name     string
+	files    int
+	uploaded int
+	bytes    int64
+	items    []sync.LocalChange
 }
 
 // groupOf names the part of the store a path belongs to, in the words the
@@ -152,7 +170,7 @@ func groupOf(p string) (name, prefix string) {
 	return "settings", ""
 }
 
-func groupChanges(changes []sync.LocalChange) []group {
+func groupChanges(changes []sync.LocalChange, uploaded map[string]bool) []group {
 	byName := map[string]*group{}
 	var groups []*group
 	for _, c := range changes {
@@ -165,6 +183,9 @@ func groupChanges(changes []sync.LocalChange) []group {
 		}
 		g.files++
 		g.bytes += c.Size
+		if uploaded[c.Path] {
+			g.uploaded++
+		}
 		g.items = append(g.items, c)
 	}
 	out := make([]group, 0, len(groups))
@@ -180,15 +201,16 @@ func groupChanges(changes []sync.LocalChange) []group {
 	rest := group{name: fmt.Sprintf("+%d smaller", len(out)-maxGroups+1)}
 	for _, g := range out[maxGroups-1:] {
 		rest.files += g.files
+		rest.uploaded += g.uploaded
 		rest.bytes += g.bytes
 	}
 	return append(out[:maxGroups-1], rest)
 }
 
-func changeGroups(changes []sync.LocalChange, s style) []string {
+func changeGroups(st sync.Status, s style) []string {
 	var total int64
 	kinds := map[sync.ChangeKind]int{}
-	for _, c := range changes {
+	for _, c := range st.Changes {
 		total += c.Size
 		kinds[c.Kind]++
 	}
@@ -201,35 +223,46 @@ func changeGroups(changes []sync.LocalChange, s style) []string {
 			mix = append(mix, count(kinds[k.kind])+" "+k.word)
 		}
 	}
-	groups := groupChanges(changes)
-	rows := make([][5]string, 0, len(groups))
+	_, uploaded := remoteSets(st)
+	groups := groupChanges(st.Changes, uploaded)
+	header := []string{"group", "files", "uploaded", "size", "share", "largest"}
+	rows := make([][]string, 0, len(groups))
 	for _, g := range groups {
-		rows = append(rows, [5]string{g.name, count(g.files), human(g.bytes), share(g.bytes, total)})
+		rows = append(rows, []string{g.name, count(g.files), count(g.uploaded), human(g.bytes), share(g.bytes, total), ""})
 	}
-	widths := [4]int{len("group"), len("files"), len("size"), len("share")}
-	for _, r := range rows {
+	widths := make([]int, len(header)-1)
+	for _, r := range append([][]string{header}, rows...) {
 		for i := range widths {
 			widths[i] = max(widths[i], utf8.RuneCountInString(r[i]))
 		}
 	}
-	// Two spaces and the box are the row's margin.
-	peekRoom := lineWidth - 4 - widths[0] - widths[1] - widths[2] - widths[3] - 4
+	// Two spaces and the box are the row's margin, and a space follows
+	// every column.
+	peekRoom := lineWidth - 4
+	for _, w := range widths {
+		peekRoom -= w + 1
+	}
 	lines := []string{
 		"  " + s.secondary(strings.Join(mix, " · ")),
-		"    " + s.secondary(columns([5]string{"group", "files", "size", "share", "largest"}, widths, peekRoom)),
+		"    " + s.secondary(columns(header, widths, peekRoom)),
 	}
 	for i, r := range rows {
-		r[4] = peek(groups[i], peekRoom)
+		r[len(r)-1] = peek(groups[i], peekRoom)
 		lines = append(lines, "  "+s.primary("■")+" "+columns(r, widths, peekRoom))
 	}
 	return lines
 }
 
-// columns lays out a row: the name padded, three counts right-aligned and
-// the peek cut to what is left of the line.
-func columns(r [5]string, widths [4]int, peekRoom int) string {
-	line := pad(r[0], widths[0]) + " " + right(r[1], widths[1]) + " " + right(r[2], widths[2]) + " " + right(r[3], widths[3]) + " " + cut(r[4], peekRoom)
-	return strings.TrimRight(line, " ")
+// columns lays out a row: the name padded, the counts right-aligned and
+// the last cell, the peek, cut to what is left of the line.
+func columns(cells []string, widths []int, peekRoom int) string {
+	var line strings.Builder
+	line.WriteString(pad(cells[0], widths[0]))
+	for i := 1; i < len(widths); i++ {
+		line.WriteString(" " + right(cells[i], widths[i]))
+	}
+	line.WriteString(" " + cut(cells[len(cells)-1], peekRoom))
+	return strings.TrimRight(line.String(), " ")
 }
 
 // peek names the largest files of a group, as many as fit in room, and

@@ -39,11 +39,60 @@ type hashEntry struct {
 // store holds; dirs/ (per-directory scope) and anything else stay local.
 var conversationSubdirs = map[string]bool{"assets": true, "reasoning": true, "imported": true}
 
-// scan walks the store's part of confDir and hashes every allowed regular
-// file. hashes is read and refreshed in place; counted, when set, is told
-// how many files were read so far.
-func scan(confDir string, store Store, hashes map[string]hashEntry, counted func(int)) (map[string]LocalFile, error) {
-	out := map[string]LocalFile{}
+type found struct {
+	rel, abs string
+	size     int64
+	modNano  int64
+}
+
+// scan walks the store's part of confDir, then hashes every allowed
+// regular file whose size or mod time moved since the hash in hashes,
+// which it reads and refreshes in place. The walk comes first so the
+// hashing reports against a known total. report, when set, hears both.
+func scan(confDir string, store Store, hashes map[string]hashEntry, report func(Progress)) (map[string]LocalFile, error) {
+	files, err := walk(confDir, store, report)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]LocalFile, len(files))
+	var todo []found
+	hashing := Progress{Phase: PhaseHashing}
+	for _, f := range files {
+		if h, ok := hashes[f.rel]; ok && h.Size == f.size && h.ModNano == f.modNano {
+			out[f.rel] = LocalFile{SHA256: h.SHA256, Size: h.Size}
+			hashing.Reused++
+			continue
+		}
+		todo = append(todo, f)
+		hashing.Total++
+		hashing.TotalBytes += f.size
+	}
+	if report != nil {
+		report(hashing)
+	}
+	for _, f := range todo {
+		sum, err := hashFile(f.abs)
+		if err != nil {
+			return nil, err
+		}
+		hashes[f.rel] = hashEntry{Size: f.size, ModNano: f.modNano, SHA256: sum}
+		out[f.rel] = LocalFile{SHA256: sum, Size: f.size}
+		hashing.Done++
+		hashing.Bytes += f.size
+		if report != nil {
+			report(hashing)
+		}
+	}
+	for rel := range hashes {
+		if _, ok := out[rel]; !ok {
+			delete(hashes, rel)
+		}
+	}
+	return out, nil
+}
+
+func walk(confDir string, store Store, report func(Progress)) ([]found, error) {
+	var files []found
 	seen := map[string]bool{}
 	for _, root := range roots(store) {
 		abs := filepath.Join(confDir, filepath.FromSlash(root))
@@ -75,35 +124,21 @@ func scan(confDir string, store Store, hashes map[string]hashEntry, counted func
 				return nil
 			}
 			seen[rel] = true
-			if counted != nil {
-				counted(len(seen))
-			}
 			info, err := d.Info()
 			if err != nil {
 				return err
 			}
-			if h, ok := hashes[rel]; ok && h.Size == info.Size() && h.ModNano == info.ModTime().UnixNano() {
-				out[rel] = LocalFile{SHA256: h.SHA256, Size: h.Size}
-				return nil
+			files = append(files, found{rel: rel, abs: p, size: info.Size(), modNano: info.ModTime().UnixNano()})
+			if report != nil {
+				report(Progress{Phase: PhaseScanning, Done: len(files)})
 			}
-			sum, err := hashFile(p)
-			if err != nil {
-				return err
-			}
-			hashes[rel] = hashEntry{Size: info.Size(), ModNano: info.ModTime().UnixNano(), SHA256: sum}
-			out[rel] = LocalFile{SHA256: sum, Size: info.Size()}
 			return nil
 		})
 		if err != nil {
 			return nil, fmt.Errorf("scan %s: %w", abs, err)
 		}
 	}
-	for rel := range hashes {
-		if !seen[rel] {
-			delete(hashes, rel)
-		}
-	}
-	return out, nil
+	return files, nil
 }
 
 func hashFile(p string) (string, error) {

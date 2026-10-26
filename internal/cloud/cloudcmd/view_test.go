@@ -31,14 +31,14 @@ func TestStatusLines_fewChangesAreListed(t *testing.T) {
 			Conflicts: []string{"mcpServers/x.json"},
 			Excluded:  []sync.Excluded{{Path: "profiles/leak.json", Kind: sync.ExcludedSecret, Detail: "api_key"}},
 		},
-		Remote: &sync.RemoteStatus{Ahead: 2, Both: []string{"theme.json"}},
+		Remote: &sync.RemoteStatus{Ahead: 2, Both: []string{"theme.json"}, Uploaded: []string{"profiles/coder.json"}},
 	}
 	got := plainLines(statusLines(st, style{}))
 	for _, want := range []string{
-		"▸ config · 2 to commit · 1.5 kB · 1 conflict · server 2 commits ahead · never pulled here",
+		"▸ config · 2 to commit · 1.5 kB · 1 conflict · server 2 commits ahead · 1 already uploaded · never pulled here",
 		"  C mcpServers/x.json",
 		"    → clai cloud resolve mcpServers/x.json -mine|-theirs",
-		"  + profiles/coder.json  1.2 kB",
+		"  + profiles/coder.json  1.2 kB · uploaded, not committed",
 		"  ~ theme.json  0.3 kB · also changed on the server",
 		"  not synced, holds a secret: profiles/leak.json  api_key",
 		"    move the value to an env var or envfile, then commit",
@@ -67,7 +67,7 @@ func manyConversations() sync.Status {
 	}
 	return sync.Status{
 		Plan:   sync.Plan{Store: sync.StoreConversations, Pulled: true, Synced: 12, Changes: changes, Excluded: []sync.Excluded{{Path: "conversations/imported/x/y.json", Kind: sync.ExcludedImport}}},
-		Remote: &sync.RemoteStatus{Both: []string{"conversations/chat-01.json"}},
+		Remote: &sync.RemoteStatus{Both: []string{"conversations/chat-01.json"}, Uploaded: []string{"conversations/chat-00.json", "conversations/chat-01.json", "conversations/chat-02.json"}},
 	}
 }
 
@@ -75,7 +75,8 @@ func TestStatusLines_manyChangesAreGrouped(t *testing.T) {
 	lines := statusLines(manyConversations(), style{})
 	got := plainLines(lines)
 	for _, want := range []string{
-		"▸ conversations · 48 to commit · 5.8 MB · 1 also changed on the server · 12 synced",
+		"▸ conversations · 48 to commit · 5.8 MB · 3 already uploaded · 1 changed on both sides · 12 synced",
+		"uploaded",
 		"  46 new · 1 edited · 1 deleted",
 		"group",
 		"files",

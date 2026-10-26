@@ -186,7 +186,9 @@ func (r *runner) status(ctx context.Context, args []string, imports, raw bool) e
 	}
 	var out []sync.Status
 	for _, s := range which {
+		status := r.track(engine, "checking "+string(s))
 		st, err := engine.Status(ctx, s, sync.PlanOptions{Imports: imports})
+		status.Stop()
 		if err != nil {
 			return err
 		}
@@ -490,7 +492,14 @@ func (r *runner) track(engine *sync.Engine, title string) *board.Status {
 func progressText(p sync.Progress) string {
 	switch p.Phase {
 	case sync.PhaseScanning:
-		return fmt.Sprintf("checked %d files", p.Done)
+		return "found " + count(p.Done) + " " + plural(p.Done, "file", "files")
+	case sync.PhaseExporting:
+		return "exporting conversations from other tools"
+	case sync.PhaseHashing:
+		if p.Total == 0 {
+			return count(p.Reused) + " " + plural(p.Reused, "file", "files") + " unchanged since the last run"
+		}
+		return fmt.Sprintf("reading %s/%s changed files · %s of %s · %s unchanged", count(p.Done), count(p.Total), human(p.Bytes), human(p.TotalBytes), count(p.Reused))
 	case sync.PhaseUploading:
 		return fmt.Sprintf("uploaded %d/%d files · %s of %s", p.Done, p.Total, human(p.Bytes), human(p.TotalBytes))
 	case sync.PhaseCommitting:

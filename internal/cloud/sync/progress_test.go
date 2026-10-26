@@ -150,3 +150,93 @@ func requests(srv *cloudtest.Server, path string) int {
 	defer unlock()
 	return srv.Requests[path]
 }
+
+func TestScan_reportsHashingAgainstAKnownTotal(t *testing.T) {
+	srv := cloudtest.New(t)
+	m := newMachine(t, srv, "tok-a")
+	for i := range 5 {
+		m.write(fmt.Sprintf("profiles/p%d.json", i), fmt.Sprintf(`{"prompt":"%d"}`, i))
+	}
+	var log progressLog
+	m.Progress = log.add
+	if _, err := m.Status(context.Background(), StoreConfig, PlanOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	hashed, n := log.last(PhaseHashing)
+	if n == 0 || hashed.Done != 5 || hashed.Total != 5 || hashed.Bytes != hashed.TotalBytes || hashed.TotalBytes == 0 || hashed.Reused != 0 {
+		t.Fatalf("last hashing event = %+v (%d events)", hashed, n)
+	}
+	found, _ := log.last(PhaseScanning)
+	if found.Done != 5 {
+		t.Fatalf("last scanning event = %+v", found)
+	}
+
+	// The second look reuses every hash: nothing to read again.
+	var again progressLog
+	m.Progress = again.add
+	if _, err := m.Status(context.Background(), StoreConfig, PlanOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if hashed, _ := again.last(PhaseHashing); hashed.Total != 0 || hashed.Reused != 5 {
+		t.Fatalf("second run hashing = %+v, want nothing to hash and 5 reused", hashed)
+	}
+}
+
+func TestCommit_keepsItsHashesWhenRefused(t *testing.T) {
+	srv := cloudtest.New(t)
+	setBilling(srv, false, false)
+	m := newMachine(t, srv, "tok-a")
+	for i := range 4 {
+		m.write(fmt.Sprintf("conversations/c%d.json", i), `{"messages":[]}`)
+	}
+	if _, err := m.Commit(context.Background(), StoreConversations, CommitOptions{Message: "x"}); err == nil {
+		t.Fatal("commit without a card succeeded")
+	}
+	var log progressLog
+	m.Progress = log.add
+	_, _ = m.Commit(context.Background(), StoreConversations, CommitOptions{Message: "x"})
+	if hashed, _ := log.last(PhaseHashing); hashed.Total != 0 || hashed.Reused != 4 {
+		t.Fatalf("second commit hashing = %+v, want every hash reused", hashed)
+	}
+}
+
+func TestStatus_namesWhatIsUploadedButNotCommitted(t *testing.T) {
+	srv := cloudtest.New(t)
+	m := newMachine(t, srv, "tok-a")
+	m.write("profiles/a.json", `{"prompt":"a"}`)
+	m.write("profiles/b.json", `{"prompt":"b"}`)
+	unlock := srv.Lock()
+	srv.Refuse = &cloudtest.Problem{Status: 503, Code: "busy", Message: "try again"}
+	unlock()
+	if _, err := m.Commit(context.Background(), StoreConfig, CommitOptions{Message: "x"}); err == nil {
+		t.Fatal("refused commit succeeded")
+	}
+	unlock = srv.Lock()
+	srv.Refuse = nil
+	unlock()
+	m.write("profiles/c.json", `{"prompt":"c"}`)
+	st, err := m.Status(context.Background(), StoreConfig, PlanOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Remote == nil || strings.Join(st.Remote.Uploaded, ",") != "profiles/a.json,profiles/b.json" {
+		t.Fatalf("uploaded = %+v, want a and b (c was never sent)", st.Remote)
+	}
+}
+
+func TestCommit_saysWhileItExportsOtherTools(t *testing.T) {
+	srv := cloudtest.New(t)
+	m := newMachine(t, srv, "tok-a")
+	var log progressLog
+	m.Progress = log.add
+	exported := false
+	m.Hooks.Export = func(context.Context, string) error {
+		_, n := log.last(PhaseExporting)
+		exported = n == 1
+		return nil
+	}
+	_, _ = m.Commit(context.Background(), StoreConversations, CommitOptions{Message: "x", PlanOptions: PlanOptions{Imports: true}})
+	if !exported {
+		t.Fatal("no exporting event before the export ran")
+	}
+}

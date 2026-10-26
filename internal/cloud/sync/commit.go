@@ -55,6 +55,7 @@ type CommitResult struct {
 func (e *Engine) Commit(ctx context.Context, store Store, opts CommitOptions) (CommitResult, error) {
 	res := CommitResult{Store: store, Excluded: []Excluded{}, Changes: []LocalChange{}}
 	if store == StoreConversations && opts.Imports && e.Hooks.Export != nil {
+		e.report(Progress{Store: store, Phase: PhaseExporting})
 		if err := e.Hooks.Export(ctx, e.ConfDir); err != nil {
 			return res, fmt.Errorf("export imported conversations: %w", err)
 		}
@@ -65,6 +66,11 @@ func (e *Engine) Commit(ctx context.Context, store Store, opts CommitOptions) (C
 	}
 	plan, err := e.plan(store, st, opts.PlanOptions)
 	if err != nil {
+		return res, err
+	}
+	// The hashes are worth keeping whatever happens next: a refused or
+	// interrupted commit must not cost the next one the whole read again.
+	if err := st.save(e.ConfDir, store); err != nil {
 		return res, err
 	}
 	res.Excluded = plan.Excluded

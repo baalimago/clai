@@ -109,10 +109,18 @@ log      GET stores/<s>/log?limit=
   billing link is printed. A plain
   `clai cloud commit` then commits the config store and says why the
   conversations were left out; naming the conversations is an error.
-- **Progress.** Pull and commit report `Progress` (scanning, uploading,
-  committing, downloading) to `Engine.Progress`. `cloudcmd` draws it as a
-  `board.Status` line on stderr, only on a terminal, and stops it before
-  any output or question.
+- **Progress.** Status, pull and commit report `Progress` (exporting,
+  scanning, hashing, uploading, committing, downloading) to
+  `Engine.Progress`. `scan` walks first and hashes second, so hashing
+  reports against a known total and counts the files whose cached hash
+  still holds (`Reused`). `cloudcmd` draws it as a `board.Status` line on
+  stderr, only on a terminal, and stops it before any output or question.
+- **Nothing is done twice.** Commit saves the hash cache right after the
+  plan, before billing, uploads or the commit can fail, so the next run
+  reads only files that moved. Uploads ask the server which blobs it
+  lacks, so an interrupted commit resends only the rest. `status` asks the
+  same question and lists the changes already uploaded but not committed
+  (`RemoteStatus.Uploaded`), per file or per group.
 - Replaced local files go to `cloud/trash/<path>.<UTC time>` and are pruned
   after 30 days. Config base copies under `cloud/base/` make `diff` work
   offline; a conversation's base is fetched from the server.

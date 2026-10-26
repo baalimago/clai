@@ -12,13 +12,18 @@ type Phase string
 
 const (
 	PhaseScanning    Phase = "scanning"
+	PhaseHashing     Phase = "hashing"
+	PhaseExporting   Phase = "exporting"
 	PhaseUploading   Phase = "uploading"
 	PhaseCommitting  Phase = "committing"
 	PhaseDownloading Phase = "downloading"
 )
 
-// Progress is one step forward of a pull or commit. Total and TotalBytes
-// are 0 while the total is unknown, as it is while scanning.
+// Progress is one step forward of a pull, commit or status. Total and
+// TotalBytes are 0 while the total is unknown, as it is while scanning.
+// Hashing counts only the files whose bytes must be read; Reused counts
+// the ones whose hash the last run left and whose size and mod time have
+// not moved.
 type Progress struct {
 	Store      Store
 	Phase      Phase
@@ -26,6 +31,7 @@ type Progress struct {
 	Total      int
 	Bytes      int64
 	TotalBytes int64
+	Reused     int
 }
 
 func (e *Engine) report(p Progress) {
@@ -34,11 +40,14 @@ func (e *Engine) report(p Progress) {
 	}
 }
 
-func (e *Engine) scanned(store Store) func(int) {
+func (e *Engine) scanned(store Store) func(Progress) {
 	if e.Progress == nil {
 		return nil
 	}
-	return func(n int) { e.report(Progress{Store: store, Phase: PhaseScanning, Done: n}) }
+	return func(p Progress) {
+		p.Store = store
+		e.report(p)
+	}
 }
 
 // BillingReason is why the account may not commit conversations now.

@@ -14,6 +14,10 @@ type RemoteStatus struct {
 	// Both lists the paths changed here and there: the next pull's
 	// conflicts, unless they are conversations one side only extended.
 	Both []string `json:"both"`
+	// Uploaded lists the local changes whose bytes the server already
+	// holds, from an upload whose commit never landed: the next commit
+	// sends only the rest.
+	Uploaded []string `json:"uploaded"`
 }
 
 // Status is one store's local plan and, when the server answered, its side.
@@ -49,7 +53,7 @@ func (e *Engine) Status(ctx context.Context, store Store, opts PlanOptions) (Sta
 	for _, c := range plan.Changes {
 		changed[c.Path] = true
 	}
-	remote := &RemoteStatus{Changed: []RemoteEntry{}, Both: []string{}}
+	remote := &RemoteStatus{Changed: []RemoteEntry{}, Both: []string{}, Uploaded: []string{}}
 	commits := map[int64]bool{}
 	for _, r := range entries {
 		if base, ok := st.Entries[r.Path]; ok && base.Rev >= r.Rev {
@@ -65,7 +69,46 @@ func (e *Engine) Status(ctx context.Context, store Store, opts PlanOptions) (Sta
 	}
 	remote.Ahead = int64(len(commits))
 	slices.Sort(remote.Both)
+	uploaded, err := e.uploaded(ctx, plan.Changes)
+	if err != nil {
+		out.RemoteError = err
+		return out, nil
+	}
+	remote.Uploaded = uploaded
 	out.Remote = remote
+	return out, nil
+}
+
+// uploaded asks the server which changes' bytes it already holds.
+func (e *Engine) uploaded(ctx context.Context, changes []LocalChange) ([]string, error) {
+	pathsBySHA := map[string][]string{}
+	var hashes []string
+	for _, c := range changes {
+		if c.Kind == Deleted {
+			continue
+		}
+		if _, ok := pathsBySHA[c.SHA256]; !ok {
+			hashes = append(hashes, c.SHA256)
+		}
+		pathsBySHA[c.SHA256] = append(pathsBySHA[c.SHA256], c.Path)
+	}
+	missing := map[string]bool{}
+	for start := 0; start < len(hashes); start += missingBatch {
+		batch, err := e.api().missing(ctx, hashes[start:min(start+missingBatch, len(hashes))])
+		if err != nil {
+			return nil, err
+		}
+		for _, sha := range batch {
+			missing[sha] = true
+		}
+	}
+	out := []string{}
+	for _, sha := range hashes {
+		if !missing[sha] {
+			out = append(out, pathsBySHA[sha]...)
+		}
+	}
+	slices.Sort(out)
 	return out, nil
 }
 

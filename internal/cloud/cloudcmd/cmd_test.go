@@ -542,7 +542,10 @@ func TestProgressText(t *testing.T) {
 		p    sync.Progress
 		want string
 	}{
-		{sync.Progress{Phase: sync.PhaseScanning, Done: 1204}, "checked 1204 files"},
+		{sync.Progress{Phase: sync.PhaseScanning, Done: 1204}, "found 1.2k files"},
+		{sync.Progress{Phase: sync.PhaseHashing, Done: 120, Total: 300, Bytes: 1_200_000, TotalBytes: 3_000_000, Reused: 3800}, "reading 120/300 changed files · 1.2 MB of 3.0 MB · 3.8k unchanged"},
+		{sync.Progress{Phase: sync.PhaseHashing, Reused: 4100}, "4.1k files unchanged since the last run"},
+		{sync.Progress{Phase: sync.PhaseExporting}, "exporting conversations from other tools"},
 		{sync.Progress{Phase: sync.PhaseUploading, Done: 12, Total: 4511, Bytes: 210_000_000, TotalBytes: 1_200_000_000}, "uploaded 12/4511 files · 210.0 MB of 1.2 GB"},
 		{sync.Progress{Phase: sync.PhaseCommitting, Done: 1000, Total: 4511}, "recording the commit"},
 		{sync.Progress{Phase: sync.PhaseDownloading, Done: 3, Total: 9}, "3/9 files"},
@@ -567,5 +570,21 @@ func TestCommit_drawsProgressOnATerminal(t *testing.T) {
 	}
 	if !strings.Contains(errOut.String(), "committing config") || strings.Contains(h.out.String(), "committing config") {
 		t.Fatalf("progress went to stderr %q / stdout %q; want it on stderr only", errOut.String(), h.out.String())
+	}
+}
+
+func TestStatus_drawsProgressOnATerminal(t *testing.T) {
+	h := newHarness(t, "tok-a")
+	h.write("profiles/a.json", `{"prompt":"a"}`)
+	errOut := &bytes.Buffer{}
+	d := h.deps()
+	d.Err = errOut
+	d.ErrIsTerminal = func() bool { return true }
+	code := cmd.Run(context.Background(), []string{"clai", "cloud", "status"}, map[string]cmd.Command{"cloud": Command(d)}, "usage")
+	if code != 0 {
+		t.Fatalf("code %d", code)
+	}
+	if !strings.Contains(errOut.String(), "checking config") {
+		t.Fatalf("no progress on stderr: %q", errOut.String())
 	}
 }
