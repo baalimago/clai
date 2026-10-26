@@ -53,6 +53,9 @@ type QueryCommandDeps struct {
 	// presenter's auto-open-images and image-opener and of the model that
 	// route.ImageModelFor and -pm may override.
 	PhotoConfig func(confDir string) (photo.Configurations, error)
+	// NewRemoteResolver builds the resolver for -prp hub:, gh: and https://
+	// targets; nil refuses them.
+	NewRemoteResolver NewRemoteResolverFunc
 }
 
 // QueryCommand builds the query command. With -l the same composition wraps
@@ -131,7 +134,9 @@ func setupTextQuerier(ctx context.Context, c *internal.Command, tf internal.Text
 	if deps.TrustInput != nil {
 		trustInput = deps.TrustInput()
 	}
-	q, tConf, err := SetupQuerier(ctx, confDir, tf, c.Args(), trustInput)
+	interactive := !tf.AgentText.NonInteractive.Value() && terminalAvailable()
+	resolveRemote := remoteProfileResolver(deps.NewRemoteResolver, confDir, trustInput, interactive)
+	q, tConf, err := SetupQuerier(ctx, confDir, tf, c.Args(), trustInput, resolveRemote)
 	if err != nil {
 		return nil, nil, err
 	}

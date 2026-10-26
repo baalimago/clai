@@ -207,7 +207,7 @@ The effective precedence is:
 
 1. **Hard-coded defaults** (`text.Default`) – lowest precedence
 2. **Mode config file** (`textConfig.json`)
-3. **Profiles** (`-p/-profile` or `-prp/-profile-path`)
+3. **Profiles** (`-p/-profile` or `-prp/-profile-path`; `-prp` also takes a remote target, see [remote-targets.md](./remote-targets.md))
 4. **Flags** (CLI)
 
 There is also a *model-specific vendor config* layer which is loaded during querier creation.
