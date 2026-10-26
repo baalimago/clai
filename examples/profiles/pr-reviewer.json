@@ -1,6 +1,6 @@
 {
   "description": "Reviews a GitHub pull request and posts the review on the PR, with inline comments. Use: 'clai -prp cchub:clai/pr-reviewer q owner/repo#123'. Built for CI. Needs GITHUB_TOKEN (a token with pull request read and write) and uses GitHub's hosted MCP server.",
-  "model": "gpt-5.2",
+  "model": "gpt-6.1-sol",
   "use_tools": true,
   "save-reply-as-conv": false,
   "tools": [

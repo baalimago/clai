@@ -1,6 +1,6 @@
 {
   "description": "Web researcher that answers a question with a short, sourced brief. Use: 'clai -prp cchub:clai/researcher q \"How do Postgres advisory locks behave across pgbouncer?\"'. Searches with DuckDuckGo, so it needs no search API key. Needs uv (uvx) installed.",
-  "model": "gpt-5.2",
+  "model": "gpt-6.1-sol",
   "use_tools": true,
   "save-reply-as-conv": true,
   "tools": [

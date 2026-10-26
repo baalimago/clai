@@ -1,6 +1,6 @@
 {
   "description": "Hourly smoke test for a website. It walks the key flows in a headless browser, compares with what it saw last time, and reports regressions. Use from cron: 'clai -prp cchub:clai/site-watch q https://example.com \"sign-up, pricing, docs search\"'. Needs Node (npx) and Google Chrome (run 'npx -y @playwright/mcp@0.0.83 install-browser chrome' once if Chrome is not installed). State is kept in ~/.site-watch.jsonl. Running as root (a container or CI), add '--no-sandbox' to the browser args. No keys beyond your model's.",
-  "model": "gpt-5.2",
+  "model": "gpt-6.1-sol",
   "use_tools": true,
   "save-reply-as-conv": false,
   "tools": [

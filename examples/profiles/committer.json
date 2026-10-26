@@ -1,6 +1,6 @@
 {
   "description": "Writes a Conventional Commit message for the staged diff. Use: 'git diff --cached | clai -raw -prp cchub:clai/committer q | git commit -F -'. No tools, no keys beyond your model's.",
-  "model": "gpt-5.2",
+  "model": "gpt-6-luna",
   "use_tools": false,
   "save-reply-as-conv": false,
   "tools": [],
