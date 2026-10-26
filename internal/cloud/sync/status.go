@@ -2,6 +2,7 @@ package sync
 
 import (
 	"context"
+	"fmt"
 	"slices"
 )
 
@@ -27,6 +28,15 @@ type Status struct {
 	// RemoteError is why the server's side is missing, such as being
 	// offline; the local part is still right.
 	RemoteError error `json:"-"`
+	// Imports is what commit --imports would add from other tools; nil
+	// unless status was asked with Imports for conversations.
+	Imports *ImportPreview `json:"imports,omitempty"`
+}
+
+// ImportPreview is the conversations other tools hold that are not yet
+// exported, or whose export is behind.
+type ImportPreview struct {
+	Conversations []PendingImport `json:"conversations"`
 }
 
 // Status reads the local side, then asks the server what it has that this
@@ -44,6 +54,14 @@ func (e *Engine) Status(ctx context.Context, store Store, opts PlanOptions) (Sta
 		return Status{}, err
 	}
 	out := Status{Plan: plan}
+	if store == StoreConversations && opts.Imports && e.Hooks.Pending != nil {
+		e.report(Progress{Store: store, Phase: PhaseDiscovering})
+		pending, err := e.Hooks.Pending(ctx, e.ConfDir)
+		if err != nil {
+			return Status{}, fmt.Errorf("look for conversations in other tools: %w", err)
+		}
+		out.Imports = &ImportPreview{Conversations: pending}
+	}
 	entries, _, err := e.api().allChanges(ctx, store, st.Cursor)
 	if err != nil {
 		out.RemoteError = err

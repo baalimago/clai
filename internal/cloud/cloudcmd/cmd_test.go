@@ -539,20 +539,26 @@ func TestCommit_withoutACardCommitsConfigAndSaysWhyNotConversations(t *testing.T
 
 func TestProgressText(t *testing.T) {
 	cases := []struct {
-		p    sync.Progress
-		want string
+		p       sync.Progress
+		elapsed time.Duration
+		want    string
 	}{
-		{sync.Progress{Phase: sync.PhaseScanning, Done: 1204}, "found 1.2k files"},
-		{sync.Progress{Phase: sync.PhaseHashing, Done: 120, Total: 300, Bytes: 1_200_000, TotalBytes: 3_000_000, Reused: 3800}, "reading 120/300 changed files · 1.2 MB of 3.0 MB · 3.8k unchanged"},
-		{sync.Progress{Phase: sync.PhaseHashing, Reused: 4100}, "4.1k files unchanged since the last run"},
-		{sync.Progress{Phase: sync.PhaseExporting}, "exporting conversations from other tools"},
-		{sync.Progress{Phase: sync.PhaseUploading, Done: 12, Total: 4511, Bytes: 210_000_000, TotalBytes: 1_200_000_000}, "uploaded 12/4511 files · 210.0 MB of 1.2 GB"},
-		{sync.Progress{Phase: sync.PhaseCommitting, Done: 1000, Total: 4511}, "recording the commit"},
-		{sync.Progress{Phase: sync.PhaseDownloading, Done: 3, Total: 9}, "3/9 files"},
+		{sync.Progress{Phase: sync.PhaseScanning, Done: 1204}, 5 * time.Second, "found 1.2k files"},
+		{sync.Progress{Phase: sync.PhaseHashing, Done: 120, Total: 300, Bytes: 1_200_000, TotalBytes: 3_000_000, Reused: 3800}, 0, "reading 120/300 changed files · 1.2 MB of 3.0 MB · 3.8k unchanged"},
+		{sync.Progress{Phase: sync.PhaseHashing, Done: 120, Total: 300, Bytes: 1_200_000, TotalBytes: 3_000_000, Reused: 3800}, 4 * time.Second, "reading 120/300 changed files · 1.2 MB of 3.0 MB · 3.8k unchanged · 300.0 kB/s · 6s left"},
+		{sync.Progress{Phase: sync.PhaseHashing, Reused: 4100}, 0, "4.1k files unchanged since the last run"},
+		{sync.Progress{Phase: sync.PhaseDiscovering}, 0, "looking for conversations in other tools"},
+		{sync.Progress{Phase: sync.PhaseExporting}, 0, "exporting conversations from other tools"},
+		{sync.Progress{Phase: sync.PhaseExporting, Done: 300, Total: 5000}, 10 * time.Second, "exporting from other tools 300/5.0k · 30 files/s · 2m36s left"},
+		{sync.Progress{Phase: sync.PhaseUploading, Done: 12, Total: 4511, Bytes: 210_000_000, TotalBytes: 1_200_000_000}, 0, "uploaded 12/4511 files · 210.0 MB of 1.2 GB"},
+		{sync.Progress{Phase: sync.PhaseUploading, Done: 12, Total: 4511, Bytes: 210_000_000, TotalBytes: 1_200_000_000}, 100 * time.Second, "uploaded 12/4511 files · 210.0 MB of 1.2 GB · 2.1 MB/s · 7m51s left"},
+		{sync.Progress{Phase: sync.PhaseUploading, Done: 12, Total: 4511, Bytes: 210_000_000, TotalBytes: 1_200_000_000}, 3 * time.Hour, "uploaded 12/4511 files · 210.0 MB of 1.2 GB · 19.4 kB/s · 14h08m left"},
+		{sync.Progress{Phase: sync.PhaseCommitting, Done: 1000, Total: 4511}, time.Minute, "recording the commit"},
+		{sync.Progress{Phase: sync.PhaseDownloading, Done: 3, Total: 9}, 0, "3/9 files"},
 	}
 	for _, c := range cases {
-		if got := progressText(c.p); got != c.want {
-			t.Errorf("progressText(%+v) = %q, want %q", c.p, got, c.want)
+		if got := progressText(c.p, c.elapsed); got != c.want {
+			t.Errorf("progressText(%+v, %s) = %q, want %q", c.p, c.elapsed, got, c.want)
 		}
 	}
 }

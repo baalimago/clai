@@ -17,11 +17,35 @@ import (
 // this package never imports internal/chat.
 type Hooks struct {
 	// Export writes the conversations clai can import from other tools
-	// under conversations/imported. Only commit --imports runs it.
-	Export func(ctx context.Context, confDir string) error
+	// under conversations/imported, telling progress how many are written.
+	// Only commit --imports runs it.
+	Export func(ctx context.Context, confDir string, progress func(done, total int)) error
+	// Pending lists what Export would write, reading and writing nothing.
+	// status --imports shows it.
+	Pending func(ctx context.Context, confDir string) ([]PendingImport, error)
 	// Pulled is told which conversation files a pull wrote or removed, so
 	// the chat index can follow.
 	Pulled func(confDir string, written, removed []string) error
+}
+
+// ImportChange is how a conversation in another tool differs from its
+// last export.
+type ImportChange string
+
+const (
+	ImportNew   ImportChange = "new"
+	ImportGrown ImportChange = "grown"
+)
+
+// PendingImport is one conversation in another tool that commit --imports
+// would export and commit.
+type PendingImport struct {
+	Source   string       `json:"source"`
+	ID       string       `json:"id"`
+	Change   ImportChange `json:"change"`
+	Messages int          `json:"messages"`
+	// RawBytes is the size of the tool's own file, 0 when it keeps none.
+	RawBytes int64 `json:"raw_bytes"`
 }
 
 // Engine syncs the stores of one config dir with one account.

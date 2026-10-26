@@ -62,6 +62,11 @@ type Server struct {
 	Refuse *Problem
 	// RefuseBlobs answers every blob upload with this error.
 	RefuseBlobs *Problem
+	// NoBatch answers /api/v1/blobs/batch 404, as a server from before it.
+	NoBatch bool
+	// BatchOutcome, when set, is every batch blob's answer instead of
+	// stored, such as mismatch.
+	BatchOutcome string
 	// CardOnFile and Overdue are the account's billing standing in /me.
 	CardOnFile bool
 	Overdue    bool
@@ -168,6 +173,8 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		delete(s.Tokens, token)
 		s.Revoked = true
 		w.WriteHeader(204)
+	case r.URL.Path == "/api/v1/blobs/batch" && r.Method == http.MethodPost && !s.NoBatch:
+		s.batch(w, r)
 	case r.URL.Path == "/api/v1/blobs/missing":
 		var in struct{ Hashes []string }
 		_ = json.NewDecoder(r.Body).Decode(&in)
@@ -238,6 +245,39 @@ func (s *Server) blob(w http.ResponseWriter, r *http.Request, sha string) {
 	}
 	s.Blobs[sha] = b
 	reply(w, 201, map[string]string{"sha256": sha})
+}
+
+func (s *Server) batch(w http.ResponseWriter, r *http.Request) {
+	if s.RefuseBlobs != nil {
+		problem(w, *s.RefuseBlobs)
+		return
+	}
+	if err := r.ParseMultipartForm(16 << 20); err != nil {
+		problem(w, Problem{Status: 400, Code: "invalid_request", Message: err.Error()})
+		return
+	}
+	results := map[string]string{}
+	for sha, files := range r.MultipartForm.File {
+		f, err := files[0].Open()
+		if err != nil {
+			problem(w, Problem{Status: 400, Code: "invalid_request", Message: err.Error()})
+			return
+		}
+		b, _ := io.ReadAll(f)
+		_ = f.Close()
+		switch {
+		case s.BatchOutcome != "":
+			results[sha] = s.BatchOutcome
+		case Hash(b) != sha:
+			results[sha] = "mismatch"
+		case s.Blobs[sha] != nil:
+			results[sha] = "exists"
+		default:
+			s.Blobs[sha] = b
+			results[sha] = "stored"
+		}
+	}
+	reply(w, 200, map[string]any{"results": results})
 }
 
 func (s *Server) me(w http.ResponseWriter, device string) {

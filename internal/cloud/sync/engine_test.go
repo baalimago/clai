@@ -310,7 +310,7 @@ func TestCommit_importsRunExportAndCount(t *testing.T) {
 	srv := cloudtest.New(t)
 	a := newMachine(t, srv, "tok-a")
 	exported := 0
-	a.Hooks.Export = func(_ context.Context, dir string) error {
+	a.Hooks.Export = func(_ context.Context, dir string, _ func(done, total int)) error {
 		exported++
 		p := filepath.Join(dir, "conversations", "imported", "claude-code", "s1.json")
 		_ = os.MkdirAll(filepath.Dir(p), 0o755)
@@ -323,7 +323,7 @@ func TestCommit_importsRunExportAndCount(t *testing.T) {
 	if err != nil || res.Imported != 1 || exported != 1 {
 		t.Fatalf("commit -imports = %+v, %v", res, err)
 	}
-	a.Hooks.Export = func(context.Context, string) error { return errors.New("boom") }
+	a.Hooks.Export = func(context.Context, string, func(int, int)) error { return errors.New("boom") }
 	if _, err := a.Commit(context.Background(), StoreConversations, CommitOptions{PlanOptions: PlanOptions{Imports: true}}); err == nil || !strings.Contains(err.Error(), "boom") {
 		t.Fatalf("export error: %v", err)
 	}

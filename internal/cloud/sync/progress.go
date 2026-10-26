@@ -1,10 +1,14 @@
 package sync
 
 import (
+	"cmp"
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	stdsync "sync"
+
+	"github.com/baalimago/clai/internal/cloud"
 )
 
 // Phase is the step of a pull or commit a Progress reports.
@@ -14,6 +18,7 @@ const (
 	PhaseScanning    Phase = "scanning"
 	PhaseHashing     Phase = "hashing"
 	PhaseExporting   Phase = "exporting"
+	PhaseDiscovering Phase = "discovering"
 	PhaseUploading   Phase = "uploading"
 	PhaseCommitting  Phase = "committing"
 	PhaseDownloading Phase = "downloading"
@@ -104,39 +109,89 @@ func (e *Engine) checkBilling(ctx context.Context, store Store, changes []LocalC
 	return nil
 }
 
-// uploadWorkers is how many blobs go up at once.
-const uploadWorkers = 6
+const (
+	// uploadWorkers is how many requests go up at once.
+	uploadWorkers = 8
+	// batchBlobMax is the largest file that goes up in a batch; a larger
+	// one goes alone.
+	batchBlobMax = 512 << 10
+	// batchMaxBlobs and batchMaxBytes stay under clai-cloud's
+	// BATCH_MAX_BLOBS and BATCH_MAX_BYTES (8 MiB), with room for the
+	// multipart framing.
+	batchMaxBlobs = 100
+	batchMaxBytes = 6 << 20
+)
 
 type uploadJob struct {
 	sha, path string
 	size      int64
 }
 
-// uploadMissing sends jobs on uploadWorkers goroutines. The first error
-// cancels the rest and is returned.
-func (e *Engine) uploadMissing(ctx context.Context, store Store, jobs []uploadJob) (int, error) {
-	var total int64
+// BlobRefusedError is a file the server would not store, such as bytes
+// that do not hash to their name.
+type BlobRefusedError struct {
+	Path    string
+	Outcome string
+}
+
+func (e *BlobRefusedError) Error() string {
+	return fmt.Sprintf("upload %s: the server answered %s", e.Path, e.Outcome)
+}
+
+// packUploads puts small files into batches and every large one alone.
+func packUploads(jobs []uploadJob) [][]uploadJob {
+	var packs [][]uploadJob
+	var cur []uploadJob
+	var curBytes int64
 	for _, j := range jobs {
-		total += j.size
+		if j.size > batchBlobMax {
+			packs = append(packs, []uploadJob{j})
+			continue
+		}
+		if len(cur) == batchMaxBlobs || curBytes+j.size > batchMaxBytes {
+			packs = append(packs, cur)
+			cur, curBytes = nil, 0
+		}
+		cur = append(cur, j)
+		curBytes += j.size
 	}
+	if len(cur) > 0 {
+		packs = append(packs, cur)
+	}
+	return packs
+}
+
+func packBytes(pack []uploadJob) int64 {
+	var n int64
+	for _, j := range pack {
+		n += j.size
+	}
+	return n
+}
+
+// uploadMissing sends jobs, packed into batches, on uploadWorkers
+// goroutines. The first error cancels the rest and is returned.
+func (e *Engine) uploadMissing(ctx context.Context, store Store, jobs []uploadJob) (int, error) {
+	total := packBytes(jobs)
+	packs := packUploads(jobs)
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	queue := make(chan uploadJob)
+	queue := make(chan []uploadJob)
 	errs := make(chan error, uploadWorkers)
 	var mu stdsync.Mutex
 	done, sent := 0, int64(0)
 	var wg stdsync.WaitGroup
-	for range min(uploadWorkers, len(jobs)) {
+	for range min(uploadWorkers, len(packs)) {
 		wg.Go(func() {
-			for j := range queue {
-				if err := e.uploadOne(ctx, j); err != nil {
+			for pack := range queue {
+				if err := e.uploadPack(ctx, pack); err != nil {
 					errs <- err
 					cancel()
 					return
 				}
 				mu.Lock()
-				done++
-				sent += j.size
+				done += len(pack)
+				sent += packBytes(pack)
 				// Under the lock, so the reports arrive in order.
 				e.report(Progress{Store: store, Phase: PhaseUploading, Done: done, Total: len(jobs), Bytes: sent, TotalBytes: total})
 				mu.Unlock()
@@ -144,9 +199,9 @@ func (e *Engine) uploadMissing(ctx context.Context, store Store, jobs []uploadJo
 		})
 	}
 feed:
-	for _, j := range jobs {
+	for _, p := range packs {
 		select {
-		case queue <- j:
+		case queue <- p:
 		case <-ctx.Done():
 			break feed
 		}
@@ -163,13 +218,46 @@ feed:
 	return done, nil
 }
 
-func (e *Engine) uploadOne(ctx context.Context, j uploadJob) error {
+func (e *Engine) readJob(j uploadJob) (batchBlob, error) {
 	b, err := os.ReadFile(e.abs(j.path))
 	if err != nil {
-		return err
+		return batchBlob{}, err
 	}
 	if hashBytes(b) != j.sha {
-		return &ChangedDuringCommitError{Path: j.path}
+		return batchBlob{}, &ChangedDuringCommitError{Path: j.path}
 	}
-	return e.api().putBlob(ctx, j.sha, b)
+	return batchBlob{sha: j.sha, data: b}, nil
+}
+
+// uploadPack sends a batch in one request, or one by one to a server that
+// has no batch endpoint.
+func (e *Engine) uploadPack(ctx context.Context, pack []uploadJob) error {
+	blobs := make([]batchBlob, 0, len(pack))
+	for _, j := range pack {
+		b, err := e.readJob(j)
+		if err != nil {
+			return err
+		}
+		blobs = append(blobs, b)
+	}
+	if len(blobs) > 1 {
+		results, err := e.api().putBlobs(ctx, blobs)
+		if apiErr, ok := cloud.AsAPIError(err); !ok || apiErr.Status != http.StatusNotFound {
+			if err != nil {
+				return err
+			}
+			for _, j := range pack {
+				if r := results[j.sha]; r != "stored" && r != "exists" {
+					return &BlobRefusedError{Path: j.path, Outcome: cmp.Or(r, "nothing")}
+				}
+			}
+			return nil
+		}
+	}
+	for _, b := range blobs {
+		if err := e.api().putBlob(ctx, b.sha, b.data); err != nil {
+			return err
+		}
+	}
+	return nil
 }

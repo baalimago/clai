@@ -56,7 +56,10 @@ func (e *Engine) Commit(ctx context.Context, store Store, opts CommitOptions) (C
 	res := CommitResult{Store: store, Excluded: []Excluded{}, Changes: []LocalChange{}}
 	if store == StoreConversations && opts.Imports && e.Hooks.Export != nil {
 		e.report(Progress{Store: store, Phase: PhaseExporting})
-		if err := e.Hooks.Export(ctx, e.ConfDir); err != nil {
+		exported := func(done, total int) {
+			e.report(Progress{Store: store, Phase: PhaseExporting, Done: done, Total: total})
+		}
+		if err := e.Hooks.Export(ctx, e.ConfDir, exported); err != nil {
 			return res, fmt.Errorf("export imported conversations: %w", err)
 		}
 	}

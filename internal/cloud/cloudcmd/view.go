@@ -59,7 +59,72 @@ func statusLines(st sync.Status, s style) []string {
 	} else {
 		lines = append(lines, changeGroups(st, s)...)
 	}
-	return append(lines, excludedLines(st.Excluded, s)...)
+	lines = append(lines, excludedLines(st.Excluded, s)...)
+	if st.Imports != nil {
+		lines = append(lines, importLines(st.Imports.Conversations, s)...)
+	}
+	return lines
+}
+
+type toolGroup struct {
+	name                 string
+	conversations, grown int
+	messages             int
+	bytes                int64
+}
+
+// importLines is what commit -imports would add, one row per tool.
+func importLines(pending []sync.PendingImport, s style) []string {
+	if len(pending) == 0 {
+		return []string{s.head("from other tools", "nothing new to export")}
+	}
+	var tools []toolGroup
+	index := map[string]int{}
+	var total toolGroup
+	for _, p := range pending {
+		i, ok := index[p.Source]
+		if !ok {
+			i = len(tools)
+			index[p.Source] = i
+			tools = append(tools, toolGroup{name: p.Source})
+		}
+		for _, g := range []*toolGroup{&tools[i], &total} {
+			g.conversations++
+			g.messages += p.Messages
+			g.bytes += p.RawBytes
+			if p.Change == sync.ImportGrown {
+				g.grown++
+			}
+		}
+	}
+	slices.SortFunc(tools, func(a, b toolGroup) int {
+		return cmp.Or(cmp.Compare(b.conversations, a.conversations), cmp.Compare(a.name, b.name))
+	})
+	header := []string{"tool", "conversations", "new", "grown", "messages", "size", ""}
+	rows := make([][]string, 0, len(tools))
+	for _, g := range tools {
+		rows = append(rows, []string{g.name, count(g.conversations), count(g.conversations - g.grown), count(g.grown), count(g.messages), human(g.bytes), ""})
+	}
+	widths := columnWidths(header, rows)
+	lines := []string{
+		s.head("from other tools", count(total.conversations)+" "+plural(total.conversations, "conversation", "conversations")+" to export", count(total.messages)+" messages", human(total.bytes)+" in their own files"),
+		"    " + s.secondary(columns(header, widths, 0)),
+	}
+	for _, r := range rows {
+		lines = append(lines, "  "+s.primary("■")+" "+columns(r, widths, 0))
+	}
+	return append(lines, s.link("  ", "clai cloud commit -imports"))
+}
+
+// columnWidths is the widest cell of every column but the last.
+func columnWidths(header []string, rows [][]string) []int {
+	widths := make([]int, len(header)-1)
+	for _, r := range append([][]string{header}, rows...) {
+		for i := range widths {
+			widths[i] = max(widths[i], utf8.RuneCountInString(r[i]))
+		}
+	}
+	return widths
 }
 
 func statusDetails(st sync.Status) []string {
@@ -230,12 +295,7 @@ func changeGroups(st sync.Status, s style) []string {
 	for _, g := range groups {
 		rows = append(rows, []string{g.name, count(g.files), count(g.uploaded), human(g.bytes), share(g.bytes, total), ""})
 	}
-	widths := make([]int, len(header)-1)
-	for _, r := range append([][]string{header}, rows...) {
-		for i := range widths {
-			widths[i] = max(widths[i], utf8.RuneCountInString(r[i]))
-		}
-	}
+	widths := columnWidths(header, rows)
 	// Two spaces and the box are the row's margin, and a space follows
 	// every column.
 	peekRoom := lineWidth - 4

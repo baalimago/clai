@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	stdsync "sync"
 	"time"
 
 	"github.com/baalimago/clai/internal/board"
@@ -484,28 +485,77 @@ func (r *runner) commit(ctx context.Context, args []string, msg string, imports,
 // with what it is doing as the detail. Stop it before printing.
 func (r *runner) track(engine *sync.Engine, title string) *board.Status {
 	status := board.NewStatus(r.deps.Err, r.deps.ErrIsTerminal(), title)
-	engine.Progress = func(p sync.Progress) { status.SetDetail(progressText(p)) }
+	var mu stdsync.Mutex
+	var phase sync.Progress
+	var since time.Time
+	engine.Progress = func(p sync.Progress) {
+		mu.Lock()
+		defer mu.Unlock()
+		now := r.deps.Now()
+		if p.Phase != phase.Phase || p.Store != phase.Store {
+			phase, since = p, now
+		}
+		status.SetDetail(progressText(p, now.Sub(since)))
+	}
 	status.Start()
 	return status
 }
 
-func progressText(p sync.Progress) string {
+// paceAfter is how long a phase runs before its pace is worth showing.
+const paceAfter = 2 * time.Second
+
+func progressText(p sync.Progress, elapsed time.Duration) string {
 	switch p.Phase {
 	case sync.PhaseScanning:
 		return "found " + count(p.Done) + " " + plural(p.Done, "file", "files")
+	case sync.PhaseDiscovering:
+		return "looking for conversations in other tools"
 	case sync.PhaseExporting:
-		return "exporting conversations from other tools"
+		if p.Total == 0 {
+			return "exporting conversations from other tools"
+		}
+		return "exporting from other tools " + count(p.Done) + "/" + count(p.Total) + pace(p, elapsed)
 	case sync.PhaseHashing:
 		if p.Total == 0 {
 			return count(p.Reused) + " " + plural(p.Reused, "file", "files") + " unchanged since the last run"
 		}
-		return fmt.Sprintf("reading %s/%s changed files · %s of %s · %s unchanged", count(p.Done), count(p.Total), human(p.Bytes), human(p.TotalBytes), count(p.Reused))
+		return fmt.Sprintf("reading %s/%s changed files · %s of %s · %s unchanged", count(p.Done), count(p.Total), human(p.Bytes), human(p.TotalBytes), count(p.Reused)) + pace(p, elapsed)
 	case sync.PhaseUploading:
-		return fmt.Sprintf("uploaded %d/%d files · %s of %s", p.Done, p.Total, human(p.Bytes), human(p.TotalBytes))
+		return fmt.Sprintf("uploaded %d/%d files · %s of %s", p.Done, p.Total, human(p.Bytes), human(p.TotalBytes)) + pace(p, elapsed)
 	case sync.PhaseCommitting:
 		return "recording the commit"
 	}
 	return fmt.Sprintf("%d/%d files", p.Done, p.Total)
+}
+
+// pace is " · <rate> · <time> left", by bytes when the phase counts them
+// and by files otherwise; empty until the phase has run long enough to tell.
+func pace(p sync.Progress, elapsed time.Duration) string {
+	if elapsed < paceAfter || p.Done == 0 || p.Total == 0 {
+		return ""
+	}
+	secs := elapsed.Seconds()
+	if p.TotalBytes > 0 && p.Bytes > 0 {
+		rate := float64(p.Bytes) / secs
+		return " · " + human(int64(rate)) + "/s · " + remaining(float64(p.TotalBytes-p.Bytes)/rate) + " left"
+	}
+	rate := float64(p.Done) / secs
+	perSec := fmt.Sprintf("%.0f", rate)
+	if rate < 10 {
+		perSec = fmt.Sprintf("%.1f", rate)
+	}
+	return " · " + perSec + " files/s · " + remaining(float64(p.Total-p.Done)/rate) + " left"
+}
+
+func remaining(secs float64) string {
+	d := time.Duration(secs) * time.Second
+	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	case d < time.Hour:
+		return fmt.Sprintf("%dm%02ds", int(d.Minutes()), int(d.Seconds())%60)
+	}
+	return fmt.Sprintf("%dh%02dm", int(d.Hours()), int(d.Minutes())%60)
 }
 
 func (r *runner) commitError(err error) error {

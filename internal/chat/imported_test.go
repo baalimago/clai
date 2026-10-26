@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -19,7 +20,7 @@ type exportReader struct {
 	name  string
 	rows  []vendors.SourceRow
 	chats map[string]pub_models.Chat
-	reads *int
+	reads *atomic.Int64
 }
 
 func (r exportReader) Source() string { return r.name }
@@ -29,7 +30,7 @@ func (r exportReader) Discover(context.Context, vendors.SourceCache) ([]vendors.
 }
 
 func (r exportReader) Read(_ context.Context, _ vendors.SourceCache, id string) (pub_models.Chat, error) {
-	*r.reads++
+	r.reads.Add(1)
 	c, ok := r.chats[id]
 	if !ok {
 		return pub_models.Chat{}, errors.New("gone")
@@ -42,7 +43,7 @@ func TestExportForeignAndImportedReader(t *testing.T) {
 	convDir := conversationsDir(confDir)
 	img := testPNG(t, 7)
 	created := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
-	reads := 0
+	var reads atomic.Int64
 	reader := exportReader{
 		name: "claude-code",
 		rows: []vendors.SourceRow{
@@ -65,7 +66,7 @@ func TestExportForeignAndImportedReader(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := ExportForeign(context.Background(), confDir, nil)
+	err := ExportForeign(context.Background(), confDir, nil, nil)
 	if err == nil {
 		t.Fatal("the broken conversation's error was swallowed")
 	}
@@ -93,10 +94,10 @@ func TestExportForeignAndImportedReader(t *testing.T) {
 	}
 
 	// Unchanged: no second read.
-	before := reads
-	_ = ExportForeign(context.Background(), confDir, nil)
-	if reads != before+1 { // only the broken one is retried
-		t.Fatalf("reads %d → %d", before, reads)
+	before := reads.Load()
+	_ = ExportForeign(context.Background(), confDir, nil, nil)
+	if reads.Load() != before+1 { // only the broken one is retried
+		t.Fatalf("reads %d → %d", before, reads.Load())
 	}
 
 	// On a machine without the tool, the imported reader lists it under

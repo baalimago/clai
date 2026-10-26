@@ -149,3 +149,38 @@ func TestBlockedLines(t *testing.T) {
 		}
 	}
 }
+
+func TestStatusLines_previewsOtherTools(t *testing.T) {
+	var pending []sync.PendingImport
+	for i := range 1200 {
+		change := sync.ImportNew
+		if i%100 == 0 {
+			change = sync.ImportGrown
+		}
+		pending = append(pending, sync.PendingImport{Source: "claude-code", ID: fmt.Sprint(i), Change: change, Messages: 25, RawBytes: 300_000})
+	}
+	pending = append(pending, sync.PendingImport{Source: "codex", ID: "x", Change: sync.ImportNew, Messages: 4, RawBytes: 20_000})
+	st := sync.Status{
+		Plan:    sync.Plan{Store: sync.StoreConversations, Pulled: true, Synced: 12},
+		Remote:  &sync.RemoteStatus{},
+		Imports: &sync.ImportPreview{Conversations: pending},
+	}
+	got := plainLines(statusLines(st, style{}))
+	for _, want := range []string{
+		"▸ conversations · up to date · 12 synced",
+		"▸ from other tools · 1.2k conversations to export · 30.0k messages · 360.0 MB in their own files",
+		"    tool        conversations  new grown messages     size",
+		"  ■ claude-code          1.2k 1.2k    12    30.0k 360.0 MB",
+		"  ■ codex                   1    1     0        4  20.0 kB",
+		"  → clai cloud commit -imports",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("lacks %q:\n%s", want, got)
+		}
+	}
+
+	st.Imports = &sync.ImportPreview{Conversations: []sync.PendingImport{}}
+	if got := plainLines(statusLines(st, style{})); !strings.Contains(got, "▸ from other tools · nothing new to export") || strings.Contains(got, "commit -imports") {
+		t.Fatalf("an empty preview:\n%s", got)
+	}
+}

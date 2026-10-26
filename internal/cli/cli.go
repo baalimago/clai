@@ -216,17 +216,28 @@ func commands(deps Deps, setExit func(int)) map[string]cmd.Command {
 			ConfDir: utils.GetClaiConfigDir,
 			SetExit: setExit,
 			Hooks: sync.Hooks{
-				Export: func(ctx context.Context, confDir string) error {
-					var cache vendors.SourceCache
-					if deps.ForeignCache != nil {
-						cache = deps.ForeignCache()
+				Export: func(ctx context.Context, confDir string, progress func(done, total int)) error {
+					return chat.ExportForeign(ctx, confDir, foreignCache(deps), progress)
+				},
+				Pending: func(ctx context.Context, confDir string) ([]sync.PendingImport, error) {
+					found, err := chat.PendingForeign(ctx, confDir, foreignCache(deps))
+					out := make([]sync.PendingImport, 0, len(found))
+					for _, f := range found {
+						out = append(out, sync.PendingImport{Source: f.Source, ID: f.SourceID, Change: sync.ImportChange(f.Change), Messages: f.Messages, RawBytes: f.RawBytes})
 					}
-					return chat.ExportForeign(ctx, confDir, cache)
+					return out, err
 				},
 				Pulled: chat.ReindexPulled,
 			},
 		}),
 	}
+}
+
+func foreignCache(deps Deps) vendors.SourceCache {
+	if deps.ForeignCache == nil {
+		return nil
+	}
+	return deps.ForeignCache()
 }
 
 // versionFlagAsCommand rewrites the special first-argument version flag

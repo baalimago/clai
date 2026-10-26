@@ -31,12 +31,12 @@ for the login).
 | `internal/cloud/sync/plan.go` | `Engine.Plan`: what a commit would send, leave out, or is blocked by |
 | `internal/cloud/sync/pull.go` | `Engine.Pull`, the first pull's question, `Mode` |
 | `internal/cloud/sync/commit.go` | `Engine.Commit`, `BehindError`, `ConflictsOpenError` |
-| `internal/cloud/sync/progress.go` | `Progress` and `Phase` (reported through `Engine.Progress`), `uploadMissing` (parallel uploads), `checkBilling`, `BillingBlockedError` |
+| `internal/cloud/sync/progress.go` | `Progress` and `Phase` (reported through `Engine.Progress`), `uploadMissing` and `packUploads` (small files batched, 8 requests at once), `BlobRefusedError`, `checkBilling`, `BillingBlockedError` |
 | `internal/cloud/sync/resolve.go`, `diff.go`, `status.go`, `merge.go` | `Resolve`, `Diff`, `Status`/`Log`, the conversation merge and fork |
 | `internal/cloud/cloudcmd/` | `Command`: the subcommands and their output; `ExitDecisionNeeded` |
 | `internal/cloud/cloudcmd/view.go` | `statusLines`, `blockedLines`, `style`: the `▸ store · detail` look and the grouped status table |
 | `internal/cloud/cloudtest/` | An in-memory clai.chat for tests |
-| `internal/chat/imported.go` | `ExportForeign`, `importedReader`, `ReindexPulled` |
+| `internal/chat/imported.go` | `PendingForeign` (the preview), `ExportForeign` (8 at once, manifest checkpointed), `importedReader`, `ReindexPulled` |
 | `internal/cli/cli.go` | Wires the command, its hooks and the exit-4 seam |
 
 ## Flow
@@ -56,7 +56,8 @@ pull     changes since cursor -> per path:
                       default                 -> keep mine, theirs to cloud/theirs/<path>: a conflict
 commit   refuse while conflicts are open (exit 4)
          plan -> conversations that grow: GET /me, no card or overdue -> BillingBlockedError, nothing uploaded
-         -> missing blobs -> PUT blobs, 6 at a time -> POST stores/<s>/commit {message, changes[base_rev]}
+         -> missing blobs -> POST blobs/batch (files up to 512 kB, 100 a request) or PUT blobs/<sha>,
+            8 requests at once -> POST stores/<s>/commit {message, changes[base_rev]}
          the server applies all or nothing: one stale base_rev -> BehindError (exit 4)
 resolve  -mine keeps the file as it is; -theirs trashes it and takes cloud/theirs/<path>
 log      GET stores/<s>/log?limit=
@@ -85,6 +86,9 @@ log      GET stores/<s>/log?limit=
   literal credential (a key-like field name, or an opaque value, not a `~/` or `/` path, under
   `env`); a file over `FileLimits`; and `conversations/imported/` unless
   `-imports`, which first runs the `Export` hook. `status` lists all three.
+  `status -imports` runs the `Pending` hook instead: it lists, per tool,
+  what `commit -imports` would export (new, or grown since the last
+  export), reading and writing no conversation (`Status.Imports`).
 - **Exit 4** (`ExitDecisionNeeded`) means a decision is needed: conflicts
   left by a pull, a commit behind the server or blocked by conflicts, or a
   first pull with nobody to ask. `cmd.Run` maps every error to 1, so the
@@ -109,15 +113,19 @@ log      GET stores/<s>/log?limit=
   billing link is printed. A plain
   `clai cloud commit` then commits the config store and says why the
   conversations were left out; naming the conversations is an error.
-- **Progress.** Status, pull and commit report `Progress` (exporting,
-  scanning, hashing, uploading, committing, downloading) to
+- **Progress.** Status, pull and commit report `Progress` (discovering,
+  exporting, scanning, hashing, uploading, committing, downloading) to
   `Engine.Progress`. `scan` walks first and hashes second, so hashing
   reports against a known total and counts the files whose cached hash
   still holds (`Reused`). `cloudcmd` draws it as a `board.Status` line on
   stderr, only on a terminal, and stops it before any output or question.
+  Once a phase has run 2 seconds the line adds its pace and the time left,
+  by bytes when the phase counts them and by files otherwise.
 - **Nothing is done twice.** Commit saves the hash cache right after the
   plan, before billing, uploads or the commit can fail, so the next run
-  reads only files that moved. Uploads ask the server which blobs it
+  reads only files that moved. The export from other tools writes its
+  manifest every 100 conversations and when stopped, so a killed
+  `commit -imports` re-exports at most the last hundred. Uploads ask the server which blobs it
   lacks, so an interrupted commit resends only the rest. `status` asks the
   same question and lists the changes already uploaded but not committed
   (`RemoteStatus.Uploaded`), per file or per group.

@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,7 +10,9 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
+	stdsync "sync"
 
 	"github.com/baalimago/clai/internal/asset"
 	"github.com/baalimago/clai/internal/utils"
@@ -52,12 +55,56 @@ func importedPath(convDir, source, sourceID string) string {
 	return filepath.Join(importedDir(convDir), source, importedFileName(sourceID))
 }
 
-// ExportForeign writes every conversation the source readers discover and
-// no native clone already holds, skipping the ones whose message count has
-// not moved since the last export. It never fails on one conversation; it
-// returns the first error after trying them all.
-func ExportForeign(ctx context.Context, confDir string, cache vendors.SourceCache) error {
-	convDir := conversationsDir(confDir)
+// ForeignChange is how a conversation in another tool differs from its
+// last export.
+type ForeignChange string
+
+const (
+	ForeignNew ForeignChange = "new"
+	// ForeignGrown is a conversation whose message count moved since it was
+	// last exported.
+	ForeignGrown ForeignChange = "grown"
+)
+
+// ForeignConversation is one conversation another tool holds that
+// ExportForeign would write.
+type ForeignConversation struct {
+	Source   string
+	SourceID string
+	Change   ForeignChange
+	Messages int
+	// RawBytes is the size of the tool's own file, 0 when it keeps none.
+	RawBytes int64
+}
+
+// ExportProgress is told, from one goroutine, how many of the pending
+// exports are written.
+type ExportProgress func(done, total int)
+
+const (
+	// exportCheckpoint is how many exports go between two manifest writes,
+	// so a run that is killed resumes close to where it stopped.
+	exportCheckpoint = 100
+	exportWorkers    = 8
+)
+
+type pendingExport struct {
+	reader vendors.SourceReader
+	row    vendors.SourceRow
+	path   string
+	change ForeignChange
+}
+
+type exportPlan struct {
+	pending      []pendingExport
+	manifest     map[string]int
+	manifestPath string
+}
+
+// planForeign lists what the source readers discover that no native clone
+// holds and whose message count moved since its export. A tool that is not
+// installed discovers nothing.
+func planForeign(ctx context.Context, convDir string, cache vendors.SourceCache) exportPlan {
 	cloned := map[string]bool{}
 	if rows, err := readChatIndex(convDir); err == nil {
 		for _, r := range rows {
@@ -66,14 +113,10 @@ func ExportForeign(ctx context.Context, confDir string, cache vendors.SourceCach
 			}
 		}
 	}
-	manifestPath := filepath.Join(importedDir(convDir), exportManifest)
-	manifest := map[string]int{}
-	if b, err := os.ReadFile(manifestPath); err == nil {
-		_ = json.Unmarshal(b, &manifest)
+	plan := exportPlan{manifest: map[string]int{}, manifestPath: filepath.Join(importedDir(convDir), exportManifest)}
+	if b, err := os.ReadFile(plan.manifestPath); err == nil {
+		_ = json.Unmarshal(b, &plan.manifest)
 	}
-	store := convAssetStore(convDir)
-	var errs []error
-	changed := false
 	for _, r := range allSourceReaders() {
 		rows, err := r.Discover(ctx, cache)
 		if err != nil {
@@ -85,30 +128,130 @@ func ExportForeign(ctx context.Context, confDir string, cache vendors.SourceCach
 				continue
 			}
 			p := importedPath(convDir, row.Source, row.SourceID)
-			if n, ok := manifest[key]; ok && n == row.MessageCount {
+			change := ForeignNew
+			if n, ok := plan.manifest[key]; ok {
 				if _, err := os.Stat(p); err == nil {
-					continue
+					if n == row.MessageCount {
+						continue
+					}
+					change = ForeignGrown
 				}
 			}
-			if err := exportOne(ctx, r, cache, store, row, p); err != nil {
-				errs = append(errs, err)
-				continue
-			}
-			manifest[key] = row.MessageCount
-			changed = true
+			plan.pending = append(plan.pending, pendingExport{reader: r, row: row, path: p, change: change})
 		}
 	}
+	return plan
+}
+
+func persistCache(cache vendors.SourceCache) error {
 	if p, ok := cache.(sourcePersister); ok {
-		errs = append(errs, p.Persist())
+		return p.Persist()
 	}
-	if changed {
-		b, err := json.Marshal(manifest)
-		if err == nil {
-			err = utils.WriteFileAtomic(manifestPath, b, 0o644)
+	return nil
+}
+
+// PendingForeign lists what ExportForeign would write, sorted by tool and
+// id, without reading a conversation or writing an export.
+func PendingForeign(ctx context.Context, confDir string, cache vendors.SourceCache) ([]ForeignConversation, error) {
+	plan := planForeign(ctx, conversationsDir(confDir), cache)
+	out := make([]ForeignConversation, 0, len(plan.pending))
+	for _, p := range plan.pending {
+		fc := ForeignConversation{Source: p.row.Source, SourceID: p.row.SourceID, Change: p.change, Messages: p.row.MessageCount}
+		if p.row.RawPath != "" {
+			if info, err := os.Stat(p.row.RawPath); err == nil {
+				fc.RawBytes = info.Size()
+			}
 		}
-		errs = append(errs, err)
+		out = append(out, fc)
+	}
+	slices.SortFunc(out, func(a, b ForeignConversation) int {
+		return cmp.Or(cmp.Compare(a.Source, b.Source), cmp.Compare(a.SourceID, b.SourceID))
+	})
+	return out, persistCache(cache)
+}
+
+type exportResult struct {
+	job pendingExport
+	err error
+}
+
+// ExportForeign writes every conversation the source readers discover and
+// no native clone already holds, skipping the ones whose message count has
+// not moved since the last export. It reads several at once and records
+// progress as it goes, so a run that stops resumes where it left off. It
+// never fails on one conversation; it returns every error after trying
+// them all.
+func ExportForeign(ctx context.Context, confDir string, cache vendors.SourceCache, progress ExportProgress) error {
+	convDir := conversationsDir(confDir)
+	plan := planForeign(ctx, convDir, cache)
+	total := len(plan.pending)
+	if progress != nil {
+		progress(0, total)
+	}
+	store := convAssetStore(convDir)
+	jobs := make(chan pendingExport)
+	results := make(chan exportResult)
+	var wg stdsync.WaitGroup
+	for range min(exportWorkers, total) {
+		wg.Go(func() {
+			for j := range jobs {
+				results <- exportResult{job: j, err: exportOne(ctx, j.reader, cache, store, j.row, j.path)}
+			}
+		})
+	}
+	go func() {
+		defer close(jobs)
+		for _, j := range plan.pending {
+			select {
+			case jobs <- j:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+	var errs []error
+	done, unsaved := 0, 0
+	for r := range results {
+		done++
+		if r.err != nil {
+			errs = append(errs, r.err)
+		} else {
+			plan.manifest[sourceDedupKey(r.job.row.Source, r.job.row.SourceID)] = r.job.row.MessageCount
+			unsaved++
+		}
+		if done%exportCheckpoint == 0 && unsaved > 0 {
+			if err := saveManifest(plan); err != nil {
+				errs = append(errs, err)
+			}
+			unsaved = 0
+		}
+		if progress != nil {
+			progress(done, total)
+		}
+	}
+	if unsaved > 0 {
+		errs = append(errs, saveManifest(plan))
+	}
+	errs = append(errs, persistCache(cache))
+	if done < total {
+		errs = append(errs, ctx.Err())
 	}
 	return errors.Join(errs...)
+}
+
+func saveManifest(plan exportPlan) error {
+	b, err := json.Marshal(plan.manifest)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(plan.manifestPath), 0o755); err != nil {
+		return err
+	}
+	return utils.WriteFileAtomic(plan.manifestPath, b, 0o644)
 }
 
 func exportOne(ctx context.Context, r vendors.SourceReader, cache vendors.SourceCache, store asset.AssetStorer, row vendors.SourceRow, p string) error {

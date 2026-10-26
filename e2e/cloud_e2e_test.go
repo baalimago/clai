@@ -47,3 +47,54 @@ func Test_e2e_cloud_pull_needing_a_decision_exits_4(t *testing.T) {
 		t.Fatalf("pull -theirs left %q: %s", b, stdout)
 	}
 }
+
+// status -imports previews a conversation another tool holds without
+// exporting it; commit -imports then exports and commits it.
+func Test_e2e_cloud_status_previews_other_tools_and_commit_takes_them(t *testing.T) {
+	confDir := e2etest.SetupMainTestConfigDir(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("CLAI_CACHE_DIR", t.TempDir())
+	srv := cloudtest.New(t)
+	t.Setenv("CLAI_CLOUD_URL", srv.URL())
+	t.Setenv("CLAI_CLOUD_TOKEN", "tok-a")
+	jsonl := "" +
+		`{"type":"session_meta","payload":{"session_id":"cdx-1","cwd":"/work","timestamp":"2026-01-01T00:00:00Z","thread_source":"user"}}` + "\n" +
+		`{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"hello codex"}]}}` + "\n" +
+		`{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"hello human"}]}}` + "\n"
+	p := filepath.Join(home, ".codex", "sessions", "2026", "01", "01", "rollout-cdx-1.jsonl")
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte(jsonl), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	exported := filepath.Join(confDir, "conversations", "imported", "codex", "cdx-1.json")
+
+	var status int
+	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
+		status = harness.Run(strings.Split("cloud status -imports conversations", " "))
+	})
+	testboil.FailTestIfDiff(t, status, 0)
+	if !strings.Contains(stdout, "▸ from other tools · 1 conversation to export") || !strings.Contains(stdout, "■ codex") {
+		t.Fatalf("status -imports:\n%s", stdout)
+	}
+	if _, err := os.Stat(exported); !os.IsNotExist(err) {
+		t.Fatalf("status exported the conversation: %v", err)
+	}
+
+	stdout = testboil.CaptureStdout(t, func(t *testing.T) {
+		status = harness.Run(strings.Split("cloud commit -imports conversations", " "))
+	})
+	testboil.FailTestIfDiff(t, status, 0)
+	if _, err := os.Stat(exported); err != nil {
+		t.Fatalf("commit -imports did not export: %v\n%s", err, stdout)
+	}
+	stdout = testboil.CaptureStdout(t, func(t *testing.T) {
+		status = harness.Run(strings.Split("cloud status -imports conversations", " "))
+	})
+	if !strings.Contains(stdout, "▸ from other tools · nothing new to export") {
+		t.Fatalf("status after the commit:\n%s", stdout)
+	}
+}

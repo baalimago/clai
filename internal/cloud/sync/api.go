@@ -3,6 +3,7 @@ package sync
 import (
 	"bytes"
 	"context"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -84,6 +85,35 @@ func (a api) missing(ctx context.Context, hashes []string) ([]string, error) {
 
 func (a api) putBlob(ctx context.Context, sha string, b []byte) error {
 	return a.c.Do(ctx, http.MethodPut, "/api/v1/blobs/"+sha, bytes.NewReader(b), "application/octet-stream", nil)
+}
+
+type batchBlob struct {
+	sha  string
+	data []byte
+}
+
+// putBlobs sends blobs in one multipart request, each part named by its
+// hash, and returns the server's answer per hash.
+func (a api) putBlobs(ctx context.Context, blobs []batchBlob) (map[string]string, error) {
+	var body bytes.Buffer
+	w := multipart.NewWriter(&body)
+	for _, b := range blobs {
+		part, err := w.CreateFormFile(b.sha, b.sha)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := part.Write(b.data); err != nil {
+			return nil, err
+		}
+	}
+	if err := w.Close(); err != nil {
+		return nil, err
+	}
+	var out struct {
+		Results map[string]string `json:"results"`
+	}
+	err := a.c.Do(ctx, http.MethodPost, "/api/v1/blobs/batch", &body, w.FormDataContentType(), &out)
+	return out.Results, err
 }
 
 func (a api) getBlob(ctx context.Context, sha string) ([]byte, error) {

@@ -54,7 +54,7 @@ func TestCommit_reportsScanUploadAndCommit(t *testing.T) {
 		t.Fatalf("last scan event = %+v (%d events)", scan, scans)
 	}
 	up, ups := log.last(PhaseUploading)
-	if ups < 12 || up.Done != 12 || up.Total != 12 || up.Bytes != up.TotalBytes || up.TotalBytes != res.Bytes {
+	if ups == 0 || up.Done != 12 || up.Total != 12 || up.Bytes != up.TotalBytes || up.TotalBytes != res.Bytes {
 		t.Fatalf("last upload event = %+v (%d events), commit bytes %d", up, ups, res.Bytes)
 	}
 	if _, n := log.last(PhaseCommitting); n == 0 {
@@ -224,19 +224,67 @@ func TestStatus_namesWhatIsUploadedButNotCommitted(t *testing.T) {
 	}
 }
 
-func TestCommit_saysWhileItExportsOtherTools(t *testing.T) {
+func TestCommit_reportsTheExportOfOtherTools(t *testing.T) {
 	srv := cloudtest.New(t)
 	m := newMachine(t, srv, "tok-a")
 	var log progressLog
 	m.Progress = log.add
-	exported := false
-	m.Hooks.Export = func(context.Context, string) error {
-		_, n := log.last(PhaseExporting)
-		exported = n == 1
+	m.Hooks.Export = func(_ context.Context, _ string, progress func(done, total int)) error {
+		progress(0, 3)
+		progress(3, 3)
 		return nil
 	}
 	_, _ = m.Commit(context.Background(), StoreConversations, CommitOptions{Message: "x", PlanOptions: PlanOptions{Imports: true}})
-	if !exported {
-		t.Fatal("no exporting event before the export ran")
+	last, n := log.last(PhaseExporting)
+	if n != 3 || last.Done != 3 || last.Total != 3 || last.Store != StoreConversations {
+		t.Fatalf("last exporting event = %+v (%d events)", last, n)
+	}
+}
+
+func TestStatus_previewsOtherToolsWithoutExporting(t *testing.T) {
+	srv := cloudtest.New(t)
+	m := newMachine(t, srv, "tok-a")
+	var log progressLog
+	m.Progress = log.add
+	asked := 0
+	pending := []PendingImport{
+		{Source: "claude-code", ID: "a", Change: ImportNew, Messages: 4, RawBytes: 900},
+		{Source: "codex", ID: "b", Change: ImportGrown, Messages: 2},
+	}
+	m.Hooks.Pending = func(context.Context, string) ([]PendingImport, error) {
+		asked++
+		return pending, nil
+	}
+	m.Hooks.Export = func(context.Context, string, func(int, int)) error {
+		t.Fatal("status exported")
+		return nil
+	}
+	st, err := m.Status(context.Background(), StoreConversations, PlanOptions{Imports: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Imports == nil || len(st.Imports.Conversations) != 2 || st.Imports.Conversations[0] != pending[0] {
+		t.Fatalf("imports = %+v", st.Imports)
+	}
+	if _, n := log.last(PhaseDiscovering); n != 1 {
+		t.Fatal("no event while looking through other tools")
+	}
+	for _, c := range []struct {
+		store   Store
+		imports bool
+	}{{StoreConversations, false}, {StoreConfig, true}} {
+		st, err := m.Status(context.Background(), c.store, PlanOptions{Imports: c.imports})
+		if err != nil || st.Imports != nil {
+			t.Fatalf("%s imports=%v: %+v %v", c.store, c.imports, st.Imports, err)
+		}
+	}
+	if asked != 1 {
+		t.Fatalf("asked other tools %d times, want once", asked)
+	}
+	m.Hooks.Pending = func(context.Context, string) ([]PendingImport, error) {
+		return nil, errors.New("disk gone")
+	}
+	if _, err := m.Status(context.Background(), StoreConversations, PlanOptions{Imports: true}); err == nil || !strings.Contains(err.Error(), "disk gone") {
+		t.Fatalf("err = %v, want the preview's failure", err)
 	}
 }
