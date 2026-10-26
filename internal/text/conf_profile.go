@@ -31,9 +31,7 @@ func findProfileByPath(p string) (Profile, error) {
 }
 
 func loadProfile(profilePath string) (Profile, error) {
-	dir := filepath.Dir(profilePath)
-	name := filepath.Base(profilePath)
-	p, err := utils.LoadConfigFromFile(dir, name, nil, &DefaultProfile)
+	p, err := utils.ReadConfigFile(profilePath, &DefaultProfile)
 	if err != nil {
 		return p, err
 	}
