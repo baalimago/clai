@@ -34,7 +34,8 @@ for the login).
 | `internal/cloud/sync/progress.go` | `Progress` and `Phase` (reported through `Engine.Progress`), `uploadMissing` and `packUploads` (small files batched, 8 requests at once), `BlobRefusedError`, `checkBilling`, `BillingBlockedError` |
 | `internal/cloud/sync/resolve.go`, `diff.go`, `status.go`, `merge.go` | `Resolve`, `Diff`, `Status`/`Log`, the conversation merge and fork |
 | `internal/cloud/cloudcmd/` | `Command`: the subcommands and their output; `ExitDecisionNeeded` |
-| `internal/cloud/cloudcmd/view.go` | `statusLines`, `blockedLines`, `style`: the `▸ store · detail` look and the grouped status table |
+| `internal/cloud/cloudcmd/view.go` | `statusLines`, `importLines`, `blockedLines`, `style`: the `▸ store · detail` look and the grouped status table |
+| `internal/cloud/cloudcmd/look.go` | `grid` and the lines of every other command: login, whoami, pull and its first-pull question (`firstPullChoices`, `parseChoice`), conflicts, a refused commit, resolve, log, diff |
 | `internal/cloud/cloudtest/` | An in-memory clai.chat for tests |
 | `internal/chat/imported.go` | `PendingForeign` (the preview), `ExportForeign` (8 at once, manifest checkpointed), `importedReader`, `ReindexPulled` |
 | `internal/cli/cli.go` | Wires the command, its hooks and the exit-4 seam |
@@ -73,7 +74,10 @@ log      GET stores/<s>/log?limit=
   that exist here and on the account with different bytes and no recorded
   base are the first pull's question: take the account's (`-theirs`), keep
   this machine's (`-mine`), or treat each as a conflict. On a terminal the
-  command asks; otherwise it stops with exit 4 and changes nothing.
+  command asks, each answer named by what it keeps and keyed by that word's
+  first letter: `[a]` your account's, `[h]` this machine's, `[d]` decide
+  later, `[q]` quit. Otherwise it stops with exit 4, changes nothing and
+  prints the two flags.
 - **A conflict never touches the local file.** The server's side is written to
   `cloud/theirs/<path>` and recorded in the state; commit refuses until
   `resolve` settles it. `diff` shows base, mine and theirs.
@@ -96,9 +100,12 @@ log      GET stores/<s>/log?limit=
   `cli.Run` wires `SetExit` to `internal.ExitStatus.Set`, whose `Resolve`
   turns that success into 4 (an `ExitCoder` error, such as remote targets'
   exit 3, replaces a failure instead).
-- **Output.** Every store gets one `▸ <store> · detail · detail` line, the
-  marker in the theme's primary colour and the details in its secondary one,
-  and a page to visit sits on its own `→ <url>` row. Colour needs a terminal
+- **Output.** Every command answers in one shape: a `▸ <subject> · detail ·
+  detail` head per store or subject, the marker in the theme's primary
+  colour and the details in its secondary one, rows under it, and the page
+  to visit or the commands that come next as `→ <target>   why` rows
+  (`grid`). A conflict always names its next three commands: diff, resolve
+  `-theirs`, resolve `-mine`. Colour needs a terminal
   on stdout and colour enabled (`Deps.Color`). `status` lists up to ten
   changes one per line; past that it groups them, as `duls` groups a tree:
   chats, images, reasoning, each imported tool, or a config directory, by

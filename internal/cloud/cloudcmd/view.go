@@ -51,8 +51,8 @@ func (s style) link(indent, target string) string {
 
 func statusLines(st sync.Status, s style) []string {
 	lines := []string{s.head(string(st.Store), statusDetails(st)...)}
-	for _, p := range st.Conflicts {
-		lines = append(lines, "  C "+p, s.link("    ", "clai cloud resolve "+p+" -mine|-theirs"))
+	if len(st.Conflicts) > 0 {
+		lines = append(lines, conflictLines(st.Conflicts, s)...)
 	}
 	if len(st.Changes) <= listLimit {
 		lines = append(lines, changeList(st, s)...)

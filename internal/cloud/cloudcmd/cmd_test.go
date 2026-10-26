@@ -107,7 +107,7 @@ func TestLogin_savesTheKeyAndSyncsNothing(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code %d: %s", code, out)
 	}
-	mustContain(t, out, "BCDF-GHJK", "/cli/login#", "Logged in as @lorentz", "Nothing is synced")
+	mustContain(t, out, "BCDF-GHJK", "/cli/login#", "▸ logged in · @lorentz", "nothing syncs until you ask")
 	creds, err := cloud.LoadCredentials(h.confDir)
 	if err != nil || creds.Token != "tok-new" || creds.Device != "laptop" || creds.Access != "write" {
 		t.Fatalf("creds = %+v, %v", creds, err)
@@ -131,7 +131,7 @@ func TestLogout(t *testing.T) {
 	if code != 0 || !h.srv.Revoked {
 		t.Fatalf("logout: %d %s", code, out)
 	}
-	mustContain(t, out, "Logged out")
+	mustContain(t, out, "▸ logged out · your local files are unchanged")
 	if _, err := os.Stat(filepath.Join(cloud.Dir(h.confDir), "state")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("sync state kept after logout")
 	}
@@ -139,7 +139,7 @@ func TestLogout(t *testing.T) {
 		t.Fatal("logout touched local files")
 	}
 	_, out = h.run("logout")
-	mustContain(t, out, "Not logged in")
+	mustContain(t, out, "▸ not logged in")
 }
 
 func TestLogout_revokedTokenStillLogsOut(t *testing.T) {
@@ -166,8 +166,8 @@ func TestWhoami(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code %d", code)
 	}
-	mustContain(t, out, "@lorentz", "Device:  a", "Access:  write", "config:", "conversations:",
-		"Billing: config sync is free (0.0 kB of 1.0 GB)", "conversations need a card on file")
+	mustContain(t, out, "▸ @lorentz", "device a", "write access", "■ config", "■ conversations",
+		"billing: config sync is free (0.0 kB of 1.0 GB)", "conversations need a card on file")
 	_, out = h.run("whoami", "-r")
 	var me cloud.Me
 	if err := json.Unmarshal([]byte(out), &me); err != nil || me.Handle != "lorentz" {
@@ -196,7 +196,7 @@ func TestStatusCommitPullLog(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("commit %d: %s", code, out)
 	}
-	mustContain(t, out, "▸ config · commit #1 · 1 file", "not committed, holds a secret")
+	mustContain(t, out, "▸ config · commit #1 · 1 file", "not synced, holds a secret")
 	if got, _ := h.srv.Content("config", "profiles/coder.json"); got == "" {
 		t.Fatal("not on the server")
 	}
@@ -247,7 +247,7 @@ func TestCommit_behindExits4(t *testing.T) {
 	if code != ExitDecisionNeeded {
 		t.Fatalf("code %d: %s", code, out)
 	}
-	mustContain(t, out, "Not committed. The server changed 1 of your config files", "profiles/x.json   #2 \"edit profiles/x.json\", other", "Run clai cloud pull")
+	mustContain(t, out, "▸ config · not committed · your account has 1 newer file", "~ profiles/x.json   #2 \"edit profiles/x.json\" · other", "→ clai cloud pull config")
 }
 
 func TestPull_conflictThenResolve(t *testing.T) {
@@ -260,16 +260,16 @@ func TestPull_conflictThenResolve(t *testing.T) {
 	if code != ExitDecisionNeeded {
 		t.Fatalf("code %d: %s", code, out)
 	}
-	mustContain(t, out, "1 conflict, your file is untouched", "C profiles/x.json", "cloud/theirs/profiles/x.json", "clai cloud resolve")
+	mustContain(t, out, "1 conflict", "C profiles/x.json   yours is untouched", "cloud/theirs/profiles/x.json", "→ clai cloud resolve profiles/x.json -theirs")
 	_, out = h.run("status", "config")
 	mustContain(t, out, "C profiles/x.json")
 	_, out = h.run("diff")
-	mustContain(t, out, "profiles/x.json  conflict", "+mine", "+theirs")
+	mustContain(t, out, "▸ profiles/x.json · conflict", "+mine", "+theirs")
 	code, out = h.run("commit")
 	if code != ExitDecisionNeeded {
 		t.Fatalf("commit with conflict: %d %s", code, out)
 	}
-	mustContain(t, out, "1 conflict needs resolving")
+	mustContain(t, out, "▸ config · not committed · 1 conflict to resolve first")
 	if code, _ := h.run("resolve"); code != 1 {
 		t.Fatal("resolve without a path")
 	}
@@ -280,7 +280,7 @@ func TestPull_conflictThenResolve(t *testing.T) {
 	if code != 0 || h.read("profiles/x.json") != "theirs\n" {
 		t.Fatalf("resolve %d: %s", code, out)
 	}
-	mustContain(t, out, "with the server's file")
+	mustContain(t, out, "took your account's copy")
 	if code, _ := h.run("resolve", "profiles/x.json"); code != 1 {
 		t.Fatal("resolving twice should fail")
 	}
@@ -302,7 +302,7 @@ func TestResolve_mineMessages(t *testing.T) {
 		if code != 0 {
 			t.Fatalf("code %d", code)
 		}
-		mustContain(t, out, "Commit to share it")
+		mustContain(t, out, "→ clai cloud commit")
 	}
 }
 
@@ -319,7 +319,7 @@ func TestPull_firstPull(t *testing.T) {
 		if code != ExitDecisionNeeded || h.read("profiles/x.json") != "mine" {
 			t.Fatalf("code %d: %s", code, out)
 		}
-		mustContain(t, out, "first config pull", "1 differ: profiles/x.json", "No answer: pull again with -theirs or -mine")
+		mustContain(t, out, "▸ config · first pull on this machine", "≠ 1 differs", "profiles/x.json", "not pulled", "→ clai cloud pull config -theirs")
 	})
 	t.Run("flag", func(t *testing.T) {
 		h := setup(t)
@@ -333,14 +333,14 @@ func TestPull_firstPull(t *testing.T) {
 		}
 	})
 	t.Run("terminal answers", func(t *testing.T) {
-		for answer, want := range map[string]string{"m\n": "mine", "t\n": "theirs", "c\n": "mine"} {
+		for answer, want := range map[string]string{"h\n": "mine", "a\n": "theirs", "d\n": "mine"} {
 			h := setup(t)
 			h.tty, h.in = true, answer
 			code, out := h.run("pull", "config")
 			if h.read("profiles/x.json") != want {
 				t.Fatalf("%q: file %q, %d %s", answer, h.read("profiles/x.json"), code, out)
 			}
-			mustContain(t, out, "[t] my account's copy")
+			mustContain(t, out, "[a] your account's", "Keep [a/h/d/q]")
 		}
 	})
 	t.Run("terminal quits", func(t *testing.T) {
@@ -377,7 +377,7 @@ func TestPull_forksAndMerges(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code %d: %s", code, out)
 	}
-	mustContain(t, out, "1 merged", "1 fork: conversations/c1.json", `"hi (other)"`)
+	mustContain(t, out, "1 merged", "⑂ conversations/c1.json", `"hi (other)"`)
 }
 
 func TestCommit_pathsAndErrors(t *testing.T) {
@@ -418,7 +418,7 @@ func TestCommit_pathsAndErrors(t *testing.T) {
 func TestDiff(t *testing.T) {
 	h := newHarness(t, "tok-a")
 	_, out := h.run("diff")
-	mustContain(t, out, "No local changes")
+	mustContain(t, out, "▸ diff · no local changes")
 	h.write("profiles/x.json", "one\n")
 	h.run("commit")
 	h.write("profiles/x.json", "two\n")
@@ -497,18 +497,18 @@ func TestBillingLine(t *testing.T) {
 		{"no card", cloud.Me{
 			Usage:  cloud.Usage{ConfigLimitBytes: 1_000_000_000},
 			Stores: map[string]cloud.StoreInfo{"config": {Bytes: 2_000_000}},
-		}, "Billing: config sync is free (2.0 MB of 1.0 GB); conversations need a card on file, $1 per started GB a month"},
+		}, "billing: config sync is free (2.0 MB of 1.0 GB); conversations need a card on file, $1 per started GB a month"},
 		{"card, nothing stored", cloud.Me{
 			Usage: cloud.Usage{ConfigLimitBytes: 1_000_000_000, CardOnFile: true},
-		}, "Billing: config sync is free (0.0 kB of 1.0 GB); conversations $0 a month at 0.0 kB"},
+		}, "billing: config sync is free (0.0 kB of 1.0 GB); conversations $0 a month at 0.0 kB"},
 		{"card, 1.2 GB", cloud.Me{
 			Usage:  cloud.Usage{ConfigLimitBytes: 1_000_000_000, CardOnFile: true},
 			Stores: map[string]cloud.StoreInfo{"conversations": {Bytes: 1_200_000_000}},
-		}, "Billing: config sync is free (0.0 kB of 1.0 GB); conversations $2 a month at 1.2 GB"},
+		}, "billing: config sync is free (0.0 kB of 1.0 GB); conversations $2 a month at 1.2 GB"},
 		{"overdue", cloud.Me{
 			Usage:  cloud.Usage{ConfigLimitBytes: 1_000_000_000, CardOnFile: true, Overdue: true},
 			Stores: map[string]cloud.StoreInfo{"conversations": {Bytes: 1}},
-		}, "Billing: config sync is free (0.0 kB of 1.0 GB); conversations $1 a month at 0.0 kB; a payment is overdue, so commits are refused"},
+		}, "billing: config sync is free (0.0 kB of 1.0 GB); conversations $1 a month at 0.0 kB; a payment is overdue, so commits are refused"},
 	}
 	for _, c := range cases {
 		if got := billingLine(c.me); got != c.want {

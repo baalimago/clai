@@ -1,0 +1,272 @@
+package cloudcmd
+
+import (
+	"fmt"
+	"strings"
+	"time"
+	"unicode/utf8"
+
+	"github.com/baalimago/clai/internal/cloud"
+	"github.com/baalimago/clai/internal/cloud/sync"
+)
+
+// Every clai cloud command answers in the same shape: a "▸ subject ·
+// detail" head per store or subject, rows under it, and the commands that
+// come next as "→ command   why" rows.
+
+const gap = "   "
+
+// grid lays rows out under indent: every cell but a row's last is padded
+// to its column's width, the first column in plain text and the rest in
+// the secondary colour. A first cell starting with "→ " gets the marker in
+// the primary colour.
+func grid(indent string, rows [][]string, s style) []string {
+	var widths []int
+	for _, r := range rows {
+		for i, c := range r[:len(r)-1] {
+			if i == len(widths) {
+				widths = append(widths, 0)
+			}
+			widths[i] = max(widths[i], utf8.RuneCountInString(c))
+		}
+	}
+	lines := make([]string, 0, len(rows))
+	for _, r := range rows {
+		var line strings.Builder
+		line.WriteString(indent)
+		for i, c := range r {
+			text := c
+			if i < len(r)-1 {
+				text = pad(c, widths[i]) + gap
+			}
+			switch {
+			case i == 0 && strings.HasPrefix(c, "→ "):
+				line.WriteString(s.primary("→") + strings.TrimPrefix(text, "→"))
+			case i == 0:
+				line.WriteString(text)
+			default:
+				line.WriteString(s.secondary(text))
+			}
+		}
+		lines = append(lines, strings.TrimRight(line.String(), " "))
+	}
+	return lines
+}
+
+func next(command, why string) []string { return []string{"→ " + command, why} }
+
+func listed(paths []string, most int) string {
+	if len(paths) <= most {
+		return strings.Join(paths, ", ")
+	}
+	return strings.Join(paths[:most], ", ") + ", +" + count(len(paths)-most) + " more"
+}
+
+func firstPullLines(store sync.Store, f sync.FirstPull, s style) []string {
+	lines := []string{s.head(string(store), "first pull on this machine", count(f.Remote)+" "+plural(f.Remote, "file", "files")+" on your account", count(f.Local)+" here")}
+	return append(lines, grid("  ", [][]string{
+		{"+ " + count(f.OnlyRemote) + " only on your account", "pulled as they are"},
+		{"= " + count(f.Same) + " the same", "nothing to do"},
+		{"≠ " + count(len(f.Differ)) + " " + plural(len(f.Differ), "differs", "differ"), listed(f.Differ, 3)},
+	}, s)...)
+}
+
+// firstPullChoices is the question for the files that differ; each answer
+// is named by what it keeps, and its letter is that word's first.
+func firstPullChoices(store sync.Store, differ int, s style) []string {
+	lines := []string{"  Keep which copy of the " + count(differ) + " " + plural(differ, "file that differs?", "files that differ?")}
+	return append(lines, grid("  ", [][]string{
+		{"[a] your account's", "this machine's goes to cloud/trash/ for 30 days", "same as pull -theirs"},
+		{"[h] this machine's", "commit it later to share it", "same as pull -mine"},
+		{"[d] decide later", "each file becomes a conflict to resolve"},
+		{"[q] quit", "nothing is pulled"},
+	}, s)...)
+}
+
+func firstPullFlags(store sync.Store, s style) []string {
+	return grid("  ", [][]string{
+		next("clai cloud pull "+string(store)+" -theirs", "keep your account's copies"),
+		next("clai cloud pull "+string(store)+" -mine", "keep this machine's copies"),
+	}, s)
+}
+
+func parseChoice(in string) (sync.Mode, bool) {
+	switch strings.ToLower(strings.TrimSpace(in)) {
+	case "a", "account":
+		return sync.ModeTheirs, true
+	case "h", "here":
+		return sync.ModeMine, true
+	case "d", "decide", "later":
+		return sync.ModeConflicts, true
+	}
+	return "", false
+}
+
+func conflictLines(paths []string, s style) []string {
+	var lines []string
+	for _, p := range paths {
+		lines = append(lines, "  C "+p+gap+s.secondary("yours is untouched · your account's copy is cloud/theirs/"+p))
+	}
+	target := "<path>"
+	if len(paths) == 1 {
+		target = paths[0]
+	}
+	return append(lines, grid("  ", [][]string{
+		next("clai cloud diff "+target, "compare the two"),
+		next("clai cloud resolve "+target+" -theirs", "take your account's copy"),
+		next("clai cloud resolve "+target+" -mine", "keep yours"),
+	}, s)...)
+}
+
+func pullLines(res sync.PullResult, s style) []string {
+	parts := []string{fmt.Sprintf("pulled #%d", res.Commit)}
+	for _, n := range []struct {
+		count int
+		word  string
+	}{{res.Added, "added"}, {res.Updated, "updated"}, {res.Removed, "removed"}, {len(res.Trashed), "replaced"}, {len(res.Merged), "merged"}, {len(res.Forks), "forked"}} {
+		if n.count > 0 {
+			parts = append(parts, count(n.count)+" "+n.word)
+		}
+	}
+	if n := len(res.Conflicts); n > 0 {
+		parts = append(parts, count(n)+" "+plural(n, "conflict", "conflicts"))
+	}
+	if len(parts) == 1 {
+		parts = append(parts, "up to date")
+	}
+	lines := []string{s.head(string(res.Store), parts...)}
+	if n := len(res.Merged); n > 0 {
+		lines = append(lines, grid("  ", [][]string{{"~ " + count(n) + " merged", "one copy only added messages to the other"}}, s)...)
+	}
+	var rows [][]string
+	for _, f := range res.Forks {
+		rows = append(rows, []string{"⑂ " + f.Path, fmt.Sprintf("continued on both machines · the other copy is now %q (%s)", f.Title, f.Forked)})
+	}
+	lines = append(lines, grid("  ", rows, s)...)
+	if len(res.Trashed) > 0 {
+		lines = append(lines, "  "+s.secondary("replaced files are kept 30 days in cloud/trash/"))
+	}
+	if len(res.Conflicts) > 0 {
+		lines = append(lines, conflictLines(res.Conflicts, s)...)
+	}
+	return lines
+}
+
+func conflictsOpenLines(e *sync.ConflictsOpenError, s style) []string {
+	n := len(e.Paths)
+	lines := []string{s.head(string(e.Store), "not committed", count(n)+" "+plural(n, "conflict", "conflicts")+" to resolve first")}
+	return append(lines, conflictLines(e.Paths, s)...)
+}
+
+func behindLines(e *sync.BehindError, now time.Time, s style) []string {
+	n := len(e.Paths)
+	lines := []string{s.head(string(e.Store), "not committed", "your account has "+count(n)+" newer "+plural(n, "file", "files"))}
+	rows := make([][]string, 0, n)
+	for _, p := range e.Paths {
+		row := []string{"~ " + p.Path}
+		if p.Commit > 0 {
+			detail := fmt.Sprintf("#%d", p.Commit)
+			if p.Message != "" {
+				detail += fmt.Sprintf(" %q", p.Message)
+			}
+			detail += " · " + orDash(p.Device)
+			if p.UpdatedAt > 0 {
+				detail += " · " + ago(now, time.UnixMilli(p.UpdatedAt))
+			}
+			row = append(row, detail)
+		}
+		rows = append(rows, row)
+	}
+	lines = append(lines, grid("  ", rows, s)...)
+	return append(lines, grid("  ", [][]string{next("clai cloud pull "+string(e.Store), "then commit again")}, s)...)
+}
+
+func commitLines(res sync.CommitResult, s style) []string {
+	parts := []string{"nothing to commit"}
+	if res.Files > 0 {
+		parts = []string{fmt.Sprintf("commit #%d", res.Commit), count(res.Files) + " " + plural(res.Files, "file", "files"), human(res.Bytes)}
+		if res.Imported > 0 {
+			parts = append(parts, count(res.Imported)+" imported")
+		}
+	}
+	return append([]string{s.head(string(res.Store), parts...)}, excludedLines(res.Excluded, s)...)
+}
+
+func approveLines(code cloud.DeviceCode, name string, s style) []string {
+	return []string{
+		s.head("log in", fmt.Sprintf("approve the code %s for %q", code.UserCode, name)),
+		s.link("  ", code.VerificationURIComplete),
+		"  " + s.secondary("waiting for approval (Ctrl-C to stop)"),
+	}
+}
+
+func loginLines(account, host string, s style) []string {
+	return append([]string{s.head("logged in", account+" on "+host, "nothing syncs until you ask")}, grid("  ", [][]string{
+		next("clai cloud status", "what you would commit"),
+		next("clai cloud commit", "upload your config"),
+		next("clai cloud pull", "bring down your account's config"),
+	}, s)...)
+}
+
+func whoamiLines(me cloud.Me, host string, s style) []string {
+	lines := []string{s.head(me.Name(), host, "device "+orDash(me.Device), orDash(me.Access)+" access")}
+	names, files, sizes := 0, 0, 0
+	for _, st := range sync.Stores {
+		info := me.Stores[string(st)]
+		names = max(names, utf8.RuneCountInString(string(st)))
+		files = max(files, utf8.RuneCountInString(count(info.Files)))
+		sizes = max(sizes, utf8.RuneCountInString(human(info.Bytes)))
+	}
+	for _, st := range sync.Stores {
+		info := me.Stores[string(st)]
+		detail := right(count(info.Files), files) + " " + plural(info.Files, "file ", "files") + " · " + right(human(info.Bytes), sizes) + fmt.Sprintf(" · commit #%d", info.Commit)
+		lines = append(lines, "  "+s.primary("■")+" "+pad(string(st), names)+"  "+s.secondary(detail))
+	}
+	lines = append(lines, "  "+s.secondary(billingLine(me)))
+	if !me.Usage.CardOnFile && me.Usage.BillingOpen && me.Usage.BillingURL != "" {
+		lines = append(lines, s.link("  ", me.Usage.BillingURL))
+	}
+	return lines
+}
+
+func logLines(store sync.Store, entries []sync.LogEntry, now time.Time, s style) []string {
+	if len(entries) == 0 {
+		return []string{s.head(string(store), "no commits yet")}
+	}
+	lines := []string{s.head(string(store), count(len(entries))+" "+plural(len(entries), "commit", "commits"))}
+	rows := make([][]string, 0, len(entries))
+	for _, e := range entries {
+		rows = append(rows, []string{fmt.Sprintf("#%d", e.Commit), quoteOr(e.Message), orDash(e.Device) + " · " + count(e.Files) + " " + plural(e.Files, "file", "files") + " · " + ago(now, time.UnixMilli(e.CreatedAt))})
+	}
+	return append(lines, grid("  ", rows, s)...)
+}
+
+// resolution is which copy a resolve kept.
+type resolution int
+
+const (
+	resolvedEdited resolution = iota
+	resolvedMine
+	resolvedTheirs
+)
+
+func resolveLines(res sync.ResolveResult, how resolution, s style) []string {
+	switch how {
+	case resolvedTheirs:
+		return []string{s.head(res.Path, "resolved", "took your account's copy", "yours is in cloud/trash/")}
+	case resolvedMine:
+		return append([]string{s.head(res.Path, "resolved", "kept yours")}, grid("  ", [][]string{next("clai cloud commit", "share it")}, s)...)
+	}
+	return append([]string{s.head(res.Path, "resolved", "kept your edited file")}, grid("  ", [][]string{next("clai cloud commit", "share it")}, s)...)
+}
+
+// diffLines heads a file's diff in the shared look and keeps its body as
+// diff prints it, so it still pastes as a patch.
+func diffLines(d sync.FileDiff, s style) []string {
+	var details []string
+	if d.Conflict {
+		details = append(details, "conflict")
+	}
+	_, body, _ := strings.Cut(d.Text(), "\n")
+	return append([]string{s.head(d.Path, details...)}, strings.Split(strings.TrimSuffix(body, "\n"), "\n")...)
+}

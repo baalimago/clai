@@ -37,7 +37,7 @@ func TestStatusLines_fewChangesAreListed(t *testing.T) {
 	for _, want := range []string{
 		"▸ config · 2 to commit · 1.5 kB · 1 conflict · server 2 commits ahead · 1 already uploaded · never pulled here",
 		"  C mcpServers/x.json",
-		"    → clai cloud resolve mcpServers/x.json -mine|-theirs",
+		"  → clai cloud resolve mcpServers/x.json -theirs",
 		"  + profiles/coder.json  1.2 kB · uploaded, not committed",
 		"  ~ theme.json  0.3 kB · also changed on the server",
 		"  not synced, holds a secret: profiles/leak.json  api_key",

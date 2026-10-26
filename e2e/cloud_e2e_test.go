@@ -32,7 +32,7 @@ func Test_e2e_cloud_pull_needing_a_decision_exits_4(t *testing.T) {
 		status = harness.Run(strings.Split("cloud pull config", " "))
 	})
 	testboil.FailTestIfDiff(t, status, 4)
-	if !strings.Contains(stdout, "1 differ: profiles/x.json") {
+	if !strings.Contains(stdout, "≠ 1 differs") || !strings.Contains(stdout, "profiles/x.json") {
 		t.Fatalf("stdout = %q", stdout)
 	}
 	if b, _ := os.ReadFile(p); string(b) != "mine" {

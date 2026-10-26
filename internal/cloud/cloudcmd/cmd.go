@@ -111,9 +111,12 @@ Account
   whoami                          account, device, storage
 
 Sync
-  status [store]                  local changes, and what the server has
+  status [-imports] [store]       local changes, and what the server has;
+                                  -imports previews other tools' chats
   diff [path...] [-remote]        your changes; -remote for the server's
-  pull [store] [-theirs|-mine]    bring down server changes
+  pull [store] [-theirs|-mine]    bring down server changes; on a clash
+                                  -theirs keeps your account's copy,
+                                  -mine this machine's
   commit [-m msg] [-imports] [store|path...]   upload your changes
   resolve <path> [-mine|-theirs]  settle a conflict
   log [store] [-limit N]          recent commits

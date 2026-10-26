@@ -63,7 +63,7 @@ func (r *runner) login(ctx context.Context, url, name string) error {
 	flow := cloud.LoginFlow{
 		Client: client, Now: r.deps.Now, Sleep: r.deps.Sleep,
 		Show: func(code cloud.DeviceCode) error {
-			r.printf("Open %s\nand approve the code %s for %q.\nWaiting for approval... (Ctrl-C to stop)\n", code.VerificationURIComplete, code.UserCode, name)
+			r.lines(approveLines(code, name, r.style()))
 			return nil
 		},
 	}
@@ -87,8 +87,7 @@ func (r *runner) login(ctx context.Context, url, name string) error {
 	if err := cloud.SaveCredentials(confDir, creds); err != nil {
 		return err
 	}
-	r.printf("\nLogged in as %s on %s.\nNothing is synced until you run one of:\n", orDash(creds.Account), hostOf(creds.URL))
-	r.printf("  clai cloud status     what you would commit\n  clai cloud commit     upload your config\n  clai cloud pull       bring down your account's config\n")
+	r.lines(loginLines(orDash(creds.Account), hostOf(creds.URL), r.style()))
 	return nil
 }
 
@@ -105,7 +104,7 @@ func (r *runner) logout(ctx context.Context) error {
 	creds, err := cloud.LoadCredentials(confDir)
 	var notIn *cloud.NotLoggedInError
 	if errors.As(err, &notIn) {
-		r.printf("Not logged in.\n")
+		r.lines([]string{r.style().head("not logged in")})
 		return nil
 	}
 	if err != nil {
@@ -119,7 +118,7 @@ func (r *runner) logout(ctx context.Context) error {
 	if err := errors.Join(cloud.RemoveCredentials(confDir), sync.ResetState(confDir)); err != nil {
 		return err
 	}
-	r.printf("Logged out. Your local files are unchanged.\n")
+	r.lines([]string{r.style().head("logged out", "your local files are unchanged")})
 	return nil
 }
 
@@ -135,20 +134,14 @@ func (r *runner) whoami(ctx context.Context, raw bool) error {
 	if raw {
 		return r.json(me)
 	}
-	r.printf("Account: %s on %s\nDevice:  %s\n", me.Name(), hostOf(creds.URL), orDash(me.Device))
-	r.printf("Access:  %s\n", orDash(me.Access))
-	for _, s := range sync.Stores {
-		info := me.Stores[string(s)]
-		r.printf("%-14s %d files, %s, commit #%d\n", string(s)+":", info.Files, human(info.Bytes), info.Commit)
-	}
-	r.printf("%s\n", billingLine(me))
+	r.lines(whoamiLines(me, hostOf(creds.URL), r.style()))
 	return nil
 }
 
 const gigabyte = 1_000_000_000
 
 func billingLine(me cloud.Me) string {
-	line := fmt.Sprintf("Billing: config sync is free (%s of %s); ",
+	line := fmt.Sprintf("billing: config sync is free (%s of %s); ",
 		human(me.Stores[string(sync.StoreConfig)].Bytes), human(me.Usage.ConfigLimitBytes))
 	if !me.Usage.CardOnFile {
 		return line + "conversations need a card on file, $1 per started GB a month"
@@ -236,7 +229,7 @@ func (r *runner) diff(ctx context.Context, args []string, remote bool) error {
 		}
 	}
 	if len(paths) == 0 {
-		r.printf("No local changes.\n")
+		r.lines([]string{r.style().head("diff", "no local changes")})
 		return nil
 	}
 	for _, p := range paths {
@@ -244,7 +237,7 @@ func (r *runner) diff(ctx context.Context, args []string, remote bool) error {
 		if err != nil {
 			return explain(err)
 		}
-		r.printf("%s\n", d.Text())
+		r.lines(diffLines(d, r.style()))
 	}
 	return nil
 }
@@ -288,9 +281,10 @@ func (r *runner) pull(ctx context.Context, args []string, theirs, mine, raw bool
 			needsDecision = true
 			if !raw {
 				if opts.Choose == nil {
-					r.printFirst(s, first.First)
+					r.lines(firstPullLines(s, first.First, r.style()))
 				}
-				r.printf("No answer: pull again with -theirs or -mine.\n")
+				r.printf("  %s\n", r.style().secondary("not pulled: no answer, so nothing changed"))
+				r.lines(firstPullFlags(s, r.style()))
 			}
 			results = append(results, res)
 			continue
@@ -301,7 +295,7 @@ func (r *runner) pull(ctx context.Context, args []string, theirs, mine, raw bool
 		results = append(results, res)
 		needsDecision = needsDecision || len(res.Conflicts) > 0
 		if !raw {
-			r.printPull(res)
+			r.lines(pullLines(res, r.style()))
 		}
 	}
 	if raw {
@@ -315,33 +309,18 @@ func (r *runner) pull(ctx context.Context, args []string, theirs, mine, raw bool
 	return nil
 }
 
-func (r *runner) printFirst(store sync.Store, f sync.FirstPull) {
-	r.printf("This is the first %s pull on this machine.\n", store)
-	r.printf("Your account has %d %s files; this machine has %d.\n", f.Remote, store, f.Local)
-	r.printf("  %d are only on the account   will be added\n", f.OnlyRemote)
-	r.printf("  %d are the same              nothing to do\n", f.Same)
-	r.printf("  %d differ: %s\n", len(f.Differ), strings.Join(f.Differ, ", "))
-}
-
 // chooseFirst asks a first pull's question on the terminal.
 func (r *runner) chooseFirst(store sync.Store, f sync.FirstPull) (sync.Mode, error) {
-	r.printFirst(store, f)
-	r.printf("\nFor the %d that differ, use\n", len(f.Differ))
-	r.printf("  [t] my account's copy  (this machine's go to cloud/trash/)\n")
-	r.printf("  [m] this machine's copy (commit it to share it)\n")
-	r.printf("  [c] decide one by one as conflicts\n  [q] quit\nChoice: ")
+	r.lines(firstPullLines(store, f, r.style()))
+	r.lines(firstPullChoices(store, len(f.Differ), r.style()))
+	r.printf("  Keep [a/h/d/q]: ")
 	line, err := bufio.NewReader(r.deps.In).ReadString('\n')
 	if err != nil && line == "" {
 		// Nobody answered, as with no terminal at all.
 		return "", &sync.FirstPullError{First: f}
 	}
-	switch strings.ToLower(strings.TrimSpace(line)) {
-	case "t":
-		return sync.ModeTheirs, nil
-	case "m":
-		return sync.ModeMine, nil
-	case "c":
-		return sync.ModeConflicts, nil
+	if mode, ok := parseChoice(line); ok {
+		return mode, nil
 	}
 	return "", &QuitError{}
 }
@@ -350,39 +329,6 @@ func (r *runner) chooseFirst(store sync.Store, f sync.FirstPull) (sync.Mode, err
 type QuitError struct{}
 
 func (e *QuitError) Error() string { return "stopped: nothing was pulled" }
-
-func (r *runner) printPull(res sync.PullResult) {
-	parts := []string{fmt.Sprintf("pulled #%d", res.Commit)}
-	for _, n := range []struct {
-		count int
-		word  string
-	}{{res.Added, "added"}, {res.Updated, "updated"}, {res.Removed, "removed"}, {len(res.Trashed), "replaced"}} {
-		if n.count > 0 {
-			parts = append(parts, fmt.Sprintf("%d %s", n.count, n.word))
-		}
-	}
-	if len(parts) == 1 {
-		parts = append(parts, "up to date")
-	}
-	r.printf("%s\n", r.style().head(string(res.Store), parts...))
-	if len(res.Merged) > 0 {
-		r.printf("  %d merged: one copy only added messages to the other\n", len(res.Merged))
-	}
-	for _, f := range res.Forks {
-		r.printf("  1 fork: %s was continued on both machines;\n    the other machine's copy is now %q (%s)\n", f.Path, f.Title, f.Forked)
-	}
-	if len(res.Trashed) > 0 {
-		r.printf("  old copies kept 30 days in cloud/trash/\n")
-	}
-	if len(res.Conflicts) == 0 {
-		return
-	}
-	r.printf("%d %s, your %s untouched:\n", len(res.Conflicts), plural(len(res.Conflicts), "conflict", "conflicts"), plural(len(res.Conflicts), "file is", "files are"))
-	for _, p := range res.Conflicts {
-		r.printf("  C %s\n    theirs saved to cloud/theirs/%s\n", p, p)
-	}
-	r.printf("See both:  clai cloud diff <path>\nSettle it: clai cloud resolve <path> --mine|--theirs\n")
-}
 
 // commitTargets splits commit's arguments into stores and paths.
 func commitTargets(args []string) ([]sync.Store, map[sync.Store][]string, error) {
@@ -453,21 +399,18 @@ func (r *runner) commit(ctx context.Context, args []string, msg string, imports,
 			continue
 		case errors.As(err, &open):
 			decision = true
-			r.printf("Not committed. %d %s in %s first:\n", len(open.Paths), plural(len(open.Paths), "conflict needs resolving", "conflicts need resolving"), s)
-			for _, p := range open.Paths {
-				r.printf("  C %s\n", p)
-			}
+			r.lines(conflictsOpenLines(open, r.style()))
 			continue
 		case errors.As(err, &behind):
 			decision = true
-			r.printBehind(behind)
+			r.lines(behindLines(behind, r.deps.Now(), r.style()))
 			continue
 		case err != nil:
 			return r.commitError(err)
 		}
 		results = append(results, res)
 		if !raw {
-			r.printCommit(res)
+			r.lines(commitLines(res, r.style()))
 		}
 	}
 	if raw {
@@ -572,44 +515,6 @@ func (r *runner) commitError(err error) error {
 	return explain(err)
 }
 
-func (r *runner) printBehind(b *sync.BehindError) {
-	r.printf("Not committed. The server changed %d of your %s files\nsince your last pull:\n", len(b.Paths), b.Store)
-	for _, e := range b.Paths {
-		detail := ""
-		if e.Commit > 0 {
-			detail = fmt.Sprintf("   #%d", e.Commit)
-			if e.Message != "" {
-				detail += fmt.Sprintf(" %q", e.Message)
-			}
-			detail += ", " + orDash(e.Device)
-			if e.UpdatedAt > 0 {
-				detail += ", " + ago(r.deps.Now(), time.UnixMilli(e.UpdatedAt))
-			}
-		}
-		r.printf("  %s%s\n", e.Path, detail)
-	}
-	r.printf("Run clai cloud pull, then commit again.\n")
-}
-
-func (r *runner) printCommit(res sync.CommitResult) {
-	parts := []string{"nothing to commit"}
-	if res.Files > 0 {
-		parts = []string{fmt.Sprintf("commit #%d", res.Commit), count(res.Files) + " " + plural(res.Files, "file", "files"), human(res.Bytes)}
-		if res.Imported > 0 {
-			parts = append(parts, count(res.Imported)+" imported")
-		}
-	}
-	r.printf("%s\n", r.style().head(string(res.Store), parts...))
-	for _, x := range res.Excluded {
-		switch x.Kind {
-		case sync.ExcludedSecret:
-			r.printf("  not committed, holds a secret: %s  %s\n", x.Path, x.Detail)
-		case sync.ExcludedTooLarge:
-			r.printf("  not committed, larger than %s: %s\n", x.Detail, x.Path)
-		}
-	}
-}
-
 func (r *runner) resolve(args []string, mine, theirs bool) error {
 	if len(args) != 1 {
 		return &UsageError{Msg: "name one path: clai cloud resolve <path> [-mine|-theirs]"}
@@ -629,14 +534,14 @@ func (r *runner) resolve(args []string, mine, theirs bool) error {
 	if err != nil {
 		return err
 	}
+	kept := resolvedEdited
 	switch {
 	case theirs:
-		r.printf("Resolved %s with the server's file. Yours is in cloud/trash/.\n", res.Path)
+		kept = resolvedTheirs
 	case mine:
-		r.printf("Resolved %s with your file. Commit to share it.\n", res.Path)
-	default:
-		r.printf("Resolved %s with your edited file. Commit to share it.\n", res.Path)
+		kept = resolvedMine
 	}
+	r.lines(resolveLines(res, kept, r.style()))
 	return nil
 }
 
@@ -661,13 +566,7 @@ func (r *runner) log(ctx context.Context, args []string, n int, raw bool) error 
 		return r.json(all)
 	}
 	for _, s := range which {
-		r.printf("%s\n", s)
-		if len(all[s]) == 0 {
-			r.printf("  no commits yet\n")
-		}
-		for _, e := range all[s] {
-			r.printf("  #%-5d %-28s %s · %d %s · %s\n", e.Commit, quoteOr(e.Message), orDash(e.Device), e.Files, plural(e.Files, "file", "files"), ago(r.deps.Now(), time.UnixMilli(e.CreatedAt)))
-		}
+		r.lines(logLines(s, all[s], r.deps.Now(), r.style()))
 	}
 	return nil
 }
