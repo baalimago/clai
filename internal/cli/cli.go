@@ -132,6 +132,7 @@ func Commands(deps Deps) map[string]cmd.Command {
 			NewSummarizer: deps.NewSummarizer,
 			ParseSince:    summary.ParseSince,
 			ForeignCache:  deps.ForeignCache,
+			SendPrompt:    text.DirReplySender(queryDeps),
 		}),
 		"photo|p": photo.Command(photo.CommandDeps{
 			ConfigPrep:    configPrep,

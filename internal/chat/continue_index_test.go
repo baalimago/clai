@@ -3,6 +3,7 @@ package chat
 import (
 	"context"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -29,6 +30,7 @@ func (r readingSourceReader) Read(_ context.Context, _ vendors.SourceCache, sour
 func continueIndexFixture(t *testing.T) *ChatHandler {
 	t.Helper()
 	cq, confDir := newTestHandler(t)
+	cq.out = io.Discard
 	convDir := conversationsDir(confDir)
 	chdirToTemp(t)
 	saveAll(t, convDir,
@@ -83,4 +85,36 @@ func TestDeleteFromPrompt_refusesAForeignRow(t *testing.T) {
 	if err := cq.deleteFromPrompt(context.Background()); !errors.Is(err, ErrForeignRowSelected) {
 		t.Fatalf("err = %v, want ErrForeignRowSelected", err)
 	}
+}
+
+func TestCont_sendsTheTrailingPrompt(t *testing.T) {
+	t.Run("the request carries prompt, profile and raw", func(t *testing.T) {
+		cq := continueIndexFixture(t)
+		cq.prompt, cq.profile, cq.raw = "2 go on", "work", true
+		var got DirReplyRequest
+		cq.sendPrompt = func(_ context.Context, req DirReplyRequest) error { got = req; return nil }
+		if err := cq.cont(context.Background()); err != nil {
+			t.Fatalf("cont: %v", err)
+		}
+		if got != (DirReplyRequest{Prompt: "go on", Profile: "work", Raw: true}) {
+			t.Fatalf("sent %+v", got)
+		}
+	})
+	t.Run("a failed send is returned", func(t *testing.T) {
+		cq := continueIndexFixture(t)
+		cq.prompt = "0 go on"
+		boom := errors.New("boom")
+		cq.sendPrompt = func(context.Context, DirReplyRequest) error { return boom }
+		if err := cq.cont(context.Background()); !errors.Is(err, boom) {
+			t.Fatalf("err = %v, want boom", err)
+		}
+	})
+	t.Run("no prompt sends nothing", func(t *testing.T) {
+		cq := continueIndexFixture(t)
+		cq.prompt = "0"
+		cq.sendPrompt = func(context.Context, DirReplyRequest) error { t.Fatal("sent without a prompt"); return nil }
+		if err := cq.cont(context.Background()); err != nil {
+			t.Fatalf("cont: %v", err)
+		}
+	})
 }
