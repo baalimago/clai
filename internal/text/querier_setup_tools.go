@@ -159,10 +159,16 @@ func redactMcpServersForDebug(servers []pub_models.McpServer) []debugRedactedMcp
 			EnvKeys:        keys,
 			EnvFileSet:     s.EnvFile != "",
 			Startup:        s.Startup,
-			AuthConfigured: s.Auth != nil,
+			AuthConfigured: hasTokenSource(s.Auth),
 		}
 	}
 	return out
+}
+
+// hasTokenSource reports a configured credential source. An auth block may
+// hold only required_env, which configures none.
+func hasTokenSource(auth *pub_models.McpServerAuth) bool {
+	return auth != nil && (len(auth.TokenCommand) > 0 || auth.TokenEnv != "")
 }
 
 // setupMcpManager loads MCP server configurations from a directory.
@@ -318,15 +324,15 @@ func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configu
 				opts = append(opts, mcp.WithRequestDecorator(decorator))
 			}
 			if connErr == nil {
-				conn = mcp.NewHttpConn(clientContext, mcpServer, sink, opts...)
+				conn, connErr = mcp.NewHttpConn(clientContext, mcpServer, sink, opts...)
 			}
 		} else {
 			conn, connErr = mcp.NewStdioConn(clientContext, mcpServer, sink)
 		}
 		if connErr != nil {
-			// NewStdioConn already returns a typed *claierr.McpServerStartupError
-			// naming the "spawn" stage, so it is propagated as-is rather than
-			// re-wrapped.
+			// NewStdioConn and NewHttpConn already return a typed
+			// *claierr.McpServerStartupError naming the "spawn" or "env"
+			// stage, so it is propagated as-is rather than re-wrapped.
 			failures.addIfExplicit(explicit, isExplicitIdx, mcpServer.Name, connErr)
 			toolWg.Done()
 			clientContextCancel()
@@ -426,7 +432,7 @@ func (f *failureCollector) all() []error {
 	return f.errs
 }
 
-// validateExplicitServers runs serverconfig.ValidateTransport over every
+// validateExplicitServers runs serverconfig.Validate over every
 // server passed through agent.WithMcpServers, exactly as
 // findConfiguredMcpServers already does for a config-directory file (D43,
 // R2-07): without it, a struct with both command and url set silently
@@ -437,7 +443,7 @@ func (f *failureCollector) all() []error {
 func validateExplicitServers(explicit bool, servers []pub_models.McpServer) (valid []pub_models.McpServer, failures []error) {
 	valid = make([]pub_models.McpServer, 0, len(servers))
 	for _, server := range servers {
-		if err := serverconfig.ValidateTransport(server.Name, server); err != nil {
+		if err := serverconfig.Validate(server.Name, server); err != nil {
 			typed := claierr.NewMcpServerStartup(server.Name, "config", err)
 			if explicit {
 				failures = append(failures, typed)

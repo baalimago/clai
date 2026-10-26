@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/baalimago/clai/internal/tools/mcp/serverconfig"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/pkg/text/models"
 )
@@ -100,6 +101,9 @@ func (c *Configurations) ProfileOverrides() error {
 	mcpServers := make([]models.McpServer, 0)
 	for name, m := range profile.McpServers {
 		m.Name = name
+		if err := serverconfig.ValidateRequiredEnv(name, m); err != nil {
+			return err
+		}
 		if m.EnvFile != "" {
 			expanded, expandErr := utils.ExpandUserPath(m.EnvFile)
 			if expandErr != nil {

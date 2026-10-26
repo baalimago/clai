@@ -755,7 +755,7 @@ func TestLazyConnectHonoursStrictMcpStartupForExplicitServers(t *testing.T) {
 
 // TestExplicitServerBothCommandAndUrlFailsValidation pins D43/R2-07: a
 // server passed through agent.WithMcpServers never ran
-// serverconfig.ValidateTransport, so a struct with both command and url
+// serverconfig.Validate, so a struct with both command and url
 // silently preferred url. Under strict startup the typed error must come
 // back from Setup instead.
 func TestExplicitServerBothCommandAndUrlFailsValidation(t *testing.T) {

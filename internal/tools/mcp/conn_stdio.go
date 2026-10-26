@@ -10,10 +10,12 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
 
+	"github.com/baalimago/clai/internal/tools/mcp/serverconfig"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -127,6 +129,16 @@ func (c *StdioConn) HandshakeBound() time.Duration { return c.handshakeBound }
 // StdioConn around its stdio pipes. sink receives the server's stderr lines;
 // a nil sink prints them directly.
 func NewStdioConn(ctx context.Context, server pub_models.McpServer, sink ServerLogSink, opts ...StdioConnOption) (Conn, error) {
+	env, err := spawnEnv(server)
+	if err != nil {
+		return nil, claierr.NewMcpServerStartup(server.Name, "spawn", err)
+	}
+	// Every spawn of a command-based server passes here, eager or lazy, so
+	// this is the one place auth.required_env is checked for one.
+	if err := serverconfig.CheckRequiredEnv(server, envLookup(env)); err != nil {
+		return nil, err
+	}
+
 	cmd := exec.CommandContext(ctx, server.Command, server.Args...)
 	// One group per server: a launcher's real process is a descendant.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -137,19 +149,7 @@ func NewStdioConn(ctx context.Context, server pub_models.McpServer, sink ServerL
 		}
 		return killProcessGroup(cmd.Process.Pid)
 	}
-	cmd.Env = os.Environ()
-	if server.EnvFile != "" {
-		envFromFile, err := LoadEnvFile(server.EnvFile)
-		if err != nil {
-			return nil, claierr.NewMcpServerStartup(server.Name, "spawn", err)
-		}
-		for k, v := range envFromFile {
-			cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
-		}
-	}
-	for k, v := range server.Env {
-		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
-	}
+	cmd.Env = env
 
 	pipes, err := openStdioPipes()
 	if err != nil {
@@ -172,6 +172,37 @@ func NewStdioConn(ctx context.Context, server pub_models.McpServer, sink ServerL
 		wait:   func() { reapProcessTree(pgid, server.Name, cmd) },
 	}
 	return newStdioConn(ctx, server.Name, t, sink, opts...), nil
+}
+
+// spawnEnv is the environment a command-based server is spawned with: the
+// process environment, then the envfile, then the env map. A later entry
+// wins, as exec.Cmd resolves a duplicate.
+func spawnEnv(server pub_models.McpServer) ([]string, error) {
+	env := os.Environ()
+	envFromFile, err := LoadEnvFile(server.EnvFile)
+	if err != nil {
+		return nil, err
+	}
+	for k, v := range envFromFile {
+		env = append(env, k+"="+v)
+	}
+	for k, v := range server.Env {
+		env = append(env, k+"="+v)
+	}
+	return env, nil
+}
+
+// envLookup resolves a name in env the way the spawned process sees it:
+// the last entry for a name wins.
+func envLookup(env []string) func(string) string {
+	return func(name string) string {
+		for i := len(env) - 1; i >= 0; i-- {
+			if k, v, ok := strings.Cut(env[i], "="); ok && k == name {
+				return v
+			}
+		}
+		return ""
+	}
 }
 
 // newStdioConn wires a StdioConn around an already-open transport, starting

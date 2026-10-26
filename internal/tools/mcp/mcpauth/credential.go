@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/baalimago/clai/internal/tools/mcp/serverconfig"
 	pkgtools "github.com/baalimago/clai/pkg/tools"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -40,12 +41,19 @@ const stderrCaptureLimit = 4096
 // parameter). ok is false with a nil err when both are unset, so the
 // caller falls through to the token store. A configured source that fails
 // is returned as a typed *CredentialSourceError with no fall-through (D15).
+// An unmet auth.required_env is returned ahead of every source, as
+// serverconfig.CheckRequiredEnv reports it.
 // Exported so a caller that wants only the static half of the chain (no
 // token store, no interactive flow — the eager HTTP path's posture) does
 // not have to construct a full Authorizer to reach it.
 func ResolveStaticCredential(ctx context.Context, server pub_models.McpServer, loadEnvFile EnvFileLoader) (token string, source CredentialSource, ok bool, err error) {
 	if server.Auth == nil {
 		return "", "", false, nil
+	}
+	// Ahead of every source, so token_command is never spawned without the
+	// variables it needs. The process environment is what it inherits.
+	if err := serverconfig.CheckRequiredEnv(server, os.Getenv); err != nil {
+		return "", "", false, err
 	}
 	if len(server.Auth.TokenCommand) > 0 {
 		tok, runErr := runCredentialCommand(ctx, server.Name, server.Auth.TokenCommand)

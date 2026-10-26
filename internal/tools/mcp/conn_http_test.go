@@ -28,7 +28,16 @@ import (
 func newTestHttpConn(t *testing.T, srv *httptestserver.Server, opts ...HttpConnOption) Conn {
 	t.Helper()
 	server := pub_models.McpServer{Name: "fake", Url: srv.URL}
-	return NewHttpConn(context.Background(), server, nil, opts...)
+	return mustNewHttpConn(t, context.Background(), server, opts...)
+}
+
+func mustNewHttpConn(t *testing.T, ctx context.Context, server pub_models.McpServer, opts ...HttpConnOption) Conn {
+	t.Helper()
+	conn, err := NewHttpConn(ctx, server, nil, opts...)
+	if err != nil {
+		t.Fatalf("NewHttpConn: %v", err)
+	}
+	return conn
 }
 
 func mustInitialize(t *testing.T, conn Conn) {
@@ -344,7 +353,7 @@ func TestHttpConnContextEndingClosesConnectionAndSendsDelete(t *testing.T) {
 	runCtx, runCancel := context.WithCancel(context.Background())
 	defer runCancel()
 	server := pub_models.McpServer{Name: "fake", Url: srv.URL}
-	conn := NewHttpConn(runCtx, server, nil)
+	conn := mustNewHttpConn(t, runCtx, server)
 	mustInitialize(t, conn)
 
 	runCancel()
@@ -509,7 +518,7 @@ func TestHttpConnUnreachableEndpointIsTypedTransportError(t *testing.T) {
 	addr := ln.Addr().String()
 	ln.Close() // nothing listens here any more; the connection is refused.
 
-	conn := NewHttpConn(t.Context(), pub_models.McpServer{Name: "unreachable", Url: "http://" + addr}, nil)
+	conn := mustNewHttpConn(t, t.Context(), pub_models.McpServer{Name: "unreachable", Url: "http://" + addr})
 	defer conn.Close()
 
 	_, callErr := conn.Call(t.Context(), "initialize", nil)
@@ -750,7 +759,7 @@ func TestHttpConnRejectsLegacyOnlyEndpoint(t *testing.T) {
 func TestHttpConnDoesNotRetainClientAcrossClose(t *testing.T) {
 	srv := httptestserver.New()
 	defer srv.Close()
-	conn := NewHttpConn(context.Background(), pub_models.McpServer{Name: "x", Url: srv.URL}, nil)
+	conn := mustNewHttpConn(t, context.Background(), pub_models.McpServer{Name: "x", Url: srv.URL})
 	if err := conn.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}

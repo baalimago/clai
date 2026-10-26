@@ -149,7 +149,10 @@ func handshakeHttpServerWithAuth(ctx, connCtx context.Context, authz *mcpauth.Au
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	conn = mcp.NewHttpConn(connCtx, server, sink, opts...)
+	conn, err = mcp.NewHttpConn(connCtx, server, sink, opts...)
+	if err != nil {
+		return nil, nil, nil, err
+	}
 	serverInfo, toolsArray, err = runBoundedHandshake(ctx, conn, server)
 	if err == nil {
 		return conn, serverInfo, toolsArray, nil
@@ -185,7 +188,10 @@ func handshakeHttpServerWithAuth(ctx, connCtx context.Context, authz *mcpauth.Au
 		// rather than swallowed.
 		ancli.Warnf("%v\n", authErr)
 	}
-	conn2 := mcp.NewHttpConn(connCtx, server, sink, mcp.WithRequestDecorator(mcp.RequestDecorator(decorator2)))
+	conn2, err := mcp.NewHttpConn(connCtx, server, sink, mcp.WithRequestDecorator(mcp.RequestDecorator(decorator2)))
+	if err != nil {
+		return nil, nil, nil, err
+	}
 	serverInfo2, toolsArray2, err2 := runBoundedHandshake(ctx, conn2, server)
 	if err2 != nil {
 		conn2.Close() // R1-29: the second attempt's connection on a failed retry.

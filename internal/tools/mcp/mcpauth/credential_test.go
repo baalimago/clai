@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/baalimago/clai/internal/tools/mcp/serverconfig"
 	pkgtools "github.com/baalimago/clai/pkg/tools"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -201,4 +202,30 @@ func TestCredentialSourcePrecedence(t *testing.T) {
 			t.Fatalf("ResolveCached = (ok=%v err=%v), want a typed error with no fall-through to the store", ok, err)
 		}
 	})
+}
+
+// A missing auth.required_env stops the chain before auth.token_command is
+// spawned, so the operator reads which variable to set rather than the
+// helper's own failure for lack of it.
+func TestRequiredEnvMissingStopsBeforeCredentialCommand(t *testing.T) {
+	authz, _ := newTestAuthorizer(t)
+	markerPath := filepath.Join(t.TempDir(), "marker")
+	server := serverWithAuth(&pub_models.McpServerAuth{
+		TokenCommand: []string{"sh", "-c", "touch " + markerPath + "; echo tok"},
+		RequiredEnv:  []string{"CLAI_RE_VAULT_ADDR_UNSET"},
+	})
+
+	_, _, ok, err := authz.ResolveCached(t.Context(), server)
+	var missing *serverconfig.MissingEnvError
+	if ok || !errors.As(err, &missing) {
+		t.Fatalf("ok=%v err=%v, want *serverconfig.MissingEnvError", ok, err)
+	}
+	if _, statErr := os.Stat(markerPath); !os.IsNotExist(statErr) {
+		t.Fatal("token_command ran although a required variable is missing")
+	}
+
+	t.Setenv("CLAI_RE_VAULT_ADDR_UNSET", "https://vault.example")
+	if _, _, ok, err := authz.ResolveCached(t.Context(), server); !ok || err != nil {
+		t.Fatalf("with the variable set: ok=%v err=%v", ok, err)
+	}
 }

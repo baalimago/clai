@@ -303,3 +303,33 @@ func TestConfigurations_ProfileOverrides_EnvFileHomeResolution(t *testing.T) {
 		})
 	}
 }
+
+func TestConfigurations_ProfileOverrides_RejectsInvalidRequiredEnvName(t *testing.T) {
+	t.Setenv("CLAI_CONFIG_DIR", t.TempDir())
+	path := filepath.Join(t.TempDir(), "medic.json")
+	profileJSON := `{"name":"medic","model":"test","mcp_servers":{
+		"sentry":{"command":"npx","auth":{"required_env":["SENTRY-TOKEN"]}}}}`
+	if err := os.WriteFile(path, []byte(profileJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	conf := Default
+	conf.ProfilePath = path
+	err := conf.ProfileOverrides()
+	if err == nil || !strings.Contains(err.Error(), "sentry") || !strings.Contains(err.Error(), `"SENTRY-TOKEN"`) {
+		t.Fatalf("ProfileOverrides = %v, want an error naming the server and the invalid name", err)
+	}
+
+	valid := strings.Replace(profileJSON, "SENTRY-TOKEN", "SENTRY_ACCESS_TOKEN", 1)
+	if err := os.WriteFile(path, []byte(valid), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	conf = Default
+	conf.ProfilePath = path
+	if err := conf.ProfileOverrides(); err != nil {
+		t.Fatalf("ProfileOverrides with a valid name: %v", err)
+	}
+	if got := conf.McpServers[0].Auth.RequiredEnv; len(got) != 1 || got[0] != "SENTRY_ACCESS_TOKEN" {
+		t.Fatalf("RequiredEnv = %v", got)
+	}
+}

@@ -209,7 +209,9 @@ unsupported transport.
 
 ## Authorization
 
-Authorization applies to endpoint-based servers. A challenged endpoint returns
+Authorization applies to endpoint-based servers: every field of a server's `auth` block configures
+it, except `required_env`, which applies to both kinds (see
+[Required environment](#required-environment)). A challenged endpoint returns
 `claierr.AuthChallengeError`, carrying the `WWW-Authenticate` header verbatim and the
 `resource_metadata` URL parsed out of it; everything downstream consumes that error and parses
 nothing further.
@@ -282,7 +284,8 @@ A source is **unset** when its field is absent, and an unset source is skipped s
 **configured** when its field is set, and a configured source that fails is a typed error with **no
 fall-through** — a misconfigured secret manager must not quietly degrade into a browser prompt on a
 headless host. The token store is a **cache** rather than a configured source, so its absence or
-corruption is a miss and the next source is tried.
+corruption is a miss and the next source is tried. An unmet `auth.required_env` stops the chain
+before the first source is tried; see [Required environment](#required-environment).
 
 A credential command runs under the run's context, so cancellation reaps it, and is subject to the
 same command-ban policy that governs the freetext command tools. Its standard output is the token
@@ -291,6 +294,38 @@ only diagnostic an operator gets.
 
 An access token is refreshed before expiry by a margin, and refresh is single-flight per server, so
 a run with several calls in flight performs one refresh rather than one per call.
+
+### Required environment
+
+`auth.required_env` lists the environment variables a server needs, on a command-based or an
+endpoint-based server alike. It lets a profile declare the keys a server reads, so a run fails early
+with a message naming them, the remote-profile trust prompt can list them, and the hub can show them.
+A name must match `^[A-Za-z_][A-Za-z0-9_]*$`; an invalid one is a config error when the server's
+file or profile is loaded (`serverconfig.Validate`, `serverconfig.ValidateRequiredEnv`).
+
+The check is `serverconfig.CheckRequiredEnv`, and it runs before anything is spawned or dialled, for
+an eager and a lazy server alike. A variable that is unset or empty is missing. Every missing name,
+sorted, is reported in a `*serverconfig.MissingEnvError` — names only, never a value — wrapped in a
+`claierr.McpServerStartupError` at the `env` stage:
+
+```text
+mcp server "sentry" needs GITHUB_TOKEN, SENTRY_ACCESS_TOKEN set in the environment
+```
+
+Which environment is checked follows what the server actually sees:
+
+| Server | Checked against | Where |
+| --- | --- | --- |
+| command-based | the environment it is spawned with: the process environment, then the envfile, then the `env` map, a later entry winning | `NewStdioConn`, through `spawnEnv`, the one function that also builds the spawn's environment, so the two cannot drift |
+| endpoint-based | the process environment only, because the one process such a server starts, `token_command`, inherits that and not the envfile | `mcpauth.ResolveStaticCredential`, ahead of every source so `token_command` never runs without its variables, and `NewHttpConn`, which every connection passes |
+
+A missing variable is a run-scoped failure: nothing in the run can set it, so it does not report
+itself blocked outside the run, and a lazily connected server memoises it like any other connect
+failure rather than dialling again on each tool call.
+
+`required_env` configures no credential source. `token_env` is the variable that holds a token and
+is resolved as [Credential sources](#credential-sources) describes; `required_env` only demands
+that variables be present.
 
 ### What is secret
 
@@ -435,8 +470,8 @@ bins before its cache: a bin the working directory's own package declares, a
 global prefix. A spec any of these shadows is `Unresolvable` instead, so the
 fingerprint is never taken from a tree npx will not run.
 
-A resolution is memoised per server per run. A connect failure is marked for the run and not
-retried, so a model repeatedly calling a broken server cannot cause a spawn storm. A resolution
+A resolution is memoised per server per run. A connect failure, including a missing
+`auth.required_env` variable, is marked for the run and not retried, so a model repeatedly calling a broken server cannot cause a spawn storm. A resolution
 blocked on something *outside* the run — a human authorizing a server is the only such case — is
 neither a success nor a failure: it returns its typed error, leaves the memo untouched, and consumes
 no retry, because the blocking condition can change while the run is still going.
@@ -451,6 +486,9 @@ One JSON file per server under `<clai-config>/mcpServers/`, unmarshalled into
 { "command": "node", "args": ["server.js"],
   "env": { "KEY": "value" },
   "envfile": "~/.secrets/server.env",
+  "auth": { "required_env": ["SENTRY_ACCESS_TOKEN"] }, // checked against the
+                                          // spawn's environment: process,
+                                          // envfile, env
   "startup": "lazy",                      // or "eager"
   "timeout_seconds": 0,                   // one tool call; 0 is unbounded
   "connect_timeout_seconds": 45,          // spawn plus handshake
@@ -464,7 +502,22 @@ One JSON file per server under `<clai-config>/mcpServers/`, unmarshalled into
                                           // Unset follows the terminal
   "auth": { "token_command": ["doppler", "secrets", "get", "TOKEN", "--plain"],
             "token_env": "EXAMPLE_MCP_TOKEN",
+            "required_env": ["DOPPLER_TOKEN"], // checked against the process
+                                                // environment, which
+                                                // token_command inherits
             "scopes": ["read", "write"] } }
+```
+
+The same server block is a value of a profile's `mcp_servers`, keyed by the server's name. A remote
+profile (`-prp`) is validated strictly and its trust prompt lists what the servers need; see
+`architecture/remote-targets.md`.
+
+```json
+{ "mcp_servers": {
+    "sentry": { "command": "npx", "args": ["-y", "@sentry/mcp-server@0.42.0"],
+                "auth": { "required_env": ["SENTRY_ACCESS_TOKEN"] } },
+    "github": { "url": "https://api.githubcopilot.com/mcp/",
+                "auth": { "token_env": "GITHUB_TOKEN" } } } }
 ```
 
 Discovery is ambient: every configured server is used whenever tooling is on and no tool glob
@@ -571,7 +624,7 @@ reaches EOF.
 | --- | --- |
 | `internal/tools/mcp` | `Conn`, `Connector`, both transports, the manager, the tool wrapper |
 | `internal/tools/mcp/schemacache` | the tool-schema cache: identity, record, lookup, capture, invalidate, and the listing's cache-only read |
-| `internal/tools/mcp/serverconfig` | the server-config parser and transport validation, a leaf package so the tool listing can use it without an import cycle |
+| `internal/tools/mcp/serverconfig` | the server-config parser, transport and `required_env` validation, the `required_env` check, a leaf package so the tool listing can use it without an import cycle |
 | `internal/tools/mcp/mcpauth` | the OAuth client, the token store, and the credential chain |
 | `internal/tools/mcp/testserver` | fake stdio MCP server, for tests |
 | `internal/tools/mcp/httptestserver` | fake streamable-HTTP MCP server, for tests, including challenge and bearer modes |
