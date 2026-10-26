@@ -573,7 +573,7 @@ func TestActivityViewport(t *testing.T) {
 		viewport.AppendReasoning("the repository")
 
 		got := viewport.Rows()
-		want := []string{"∴ thinking", "  inspect the reposi", "  tory"}
+		want := []string{"∴ thinking", "  inspect the", "  repository"}
 		if strings.Join(got, "\n") != strings.Join(want, "\n") {
 			t.Fatalf("Rows() = %q, want %q", got, want)
 		}
@@ -938,7 +938,7 @@ func TestActivityViewportResize(t *testing.T) {
 		viewport.Resize(10, 10)
 
 		got := strings.Join(viewport.Rows(), "\n")
-		for _, want := range []string{"∴ thinking", "  inspect ", "  director", "  y", "  one two ", "  three"} {
+		for _, want := range []string{"∴ thinking", "  inspect", "  director", "  y", "  one two", "  three"} {
 			if !strings.Contains(got, want) {
 				t.Fatalf("Rows() after narrow resize missing %q: %q", want, got)
 			}
@@ -1068,14 +1068,14 @@ func TestActivityViewportResize(t *testing.T) {
 		viewport := NewActivityViewport(80, 30, 30)
 		viewport.Resize(40, 10)
 		viewport.AppendReasoning("one two three four five six seven eight")
-		want := []string{"∴ thinking", "  one two three four five six seven eigh", "  t"}
+		want := []string{"∴ thinking", "  one two three four five six seven", "  eight"}
 		if got := viewport.Rows(); strings.Join(got, "\n") != strings.Join(want, "\n") {
 			t.Fatalf("Rows() = %q, want %q", got, want)
 		}
 		if err := viewport.Render(&out); err != nil {
 			t.Fatalf("Render(): %v", err)
 		}
-		if !strings.Contains(out.String(), "  t") {
+		if !strings.Contains(out.String(), "  eight") {
 			t.Fatalf("first render must use the resized width, got %q", out.String())
 		}
 	})
@@ -1097,7 +1097,7 @@ func TestActivityViewportResize(t *testing.T) {
 		if !strings.Contains(redraw.String(), "\x1b[2A\r\x1b[J") {
 			t.Fatalf("expected one full frame over the old region, got %q", redraw.String())
 		}
-		if !strings.Contains(redraw.String(), "  t") {
+		if !strings.Contains(redraw.String(), "  eight") {
 			t.Fatalf("expected the last width to win, got %q", redraw.String())
 		}
 		var clean strings.Builder
@@ -1123,7 +1123,7 @@ func TestActivityViewportResize(t *testing.T) {
 		if strings.Count(got, "assistant") != 1 {
 			t.Fatalf("text must coalesce into one block after resize, got %q", got)
 		}
-		if !strings.Contains(got, "  alpha be") || !strings.Contains(got, "  psilon") {
+		if !strings.Contains(got, "  alpha\n") || !strings.Contains(got, "  epsilon") {
 			t.Fatalf("streamed tokens must rewrap and continue at the new width, got %q", got)
 		}
 		if !viewport.TextBlockActive() {
