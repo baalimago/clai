@@ -51,6 +51,9 @@ type Configurations struct {
 	ProfilePath         string          `json:"-"`
 	ProfileUseSkillsSet bool            `json:"-"`
 	RequestedToolGlobs  []string        `json:"-"`
+	// remoteProfile marks a ProfilePath that is a cached remote profile,
+	// which is read without writing to it or beside it.
+	remoteProfile bool
 	// explicitAllTools records a '*' entry that setupToolConfig folded into nil globs.
 	explicitAllTools bool
 	// CmdBan is the per-run command ban list for the freetext command tools

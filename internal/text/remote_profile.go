@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/baalimago/clai/internal/remote"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
 
@@ -30,7 +29,7 @@ func remoteProfileResolver(newResolver NewRemoteResolverFunc, confDir string, tr
 		}
 		var prompt remote.Prompter
 		if interactive {
-			prompt = terminalTrustPrompt(trustInput)
+			prompt = terminalTrustPrompt(trustInput, os.Stderr)
 		}
 		r, err := newResolver(confDir, prompt)
 		if err != nil {
@@ -71,9 +70,13 @@ func isDevNull(fi os.FileInfo) bool {
 	return err == nil && os.SameFile(fi, null)
 }
 
-func terminalTrustPrompt(input io.Reader) remote.Prompter {
+// terminalTrustPrompt asks on out, stderr in production, so a run whose
+// stdout is piped still shows the question and keeps its output clean.
+func terminalTrustPrompt(input io.Reader, out io.Writer) remote.Prompter {
 	return func(_ context.Context, p remote.TrustPrompt) (bool, error) {
-		ancli.Warnf("%s", FormatRemoteTrustPrompt(p))
+		if _, err := fmt.Fprint(out, FormatRemoteTrustPrompt(p)); err != nil {
+			return false, fmt.Errorf("show trust prompt: %w", err)
+		}
 		answer, err := table.ReadUserInputFrom(input)
 		if err != nil {
 			return false, err
@@ -102,5 +105,6 @@ func resolveRemoteProfilePath(ctx context.Context, tConf *Configurations, resolv
 		return fmt.Errorf("profile %s: %w", tConf.ProfilePath, err)
 	}
 	tConf.ProfilePath = path
+	tConf.remoteProfile = true
 	return nil
 }

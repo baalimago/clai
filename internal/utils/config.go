@@ -347,6 +347,27 @@ func loadConfigFromFile[T any](
 	return conf, added, nil
 }
 
+// ReadConfigFile reads the config at path and fills fields absent from it
+// from dflt in memory. Unlike LoadConfigFromFile it creates no directory and
+// never rewrites the file, for configs clai does not own, such as a remote
+// profile kept under its content hash.
+func ReadConfigFile[T any](path string, dflt *T) (T, error) {
+	var conf T
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return conf, fmt.Errorf("read config %s: %w", path, err)
+	}
+	if err := json.Unmarshal(b, &conf); err != nil {
+		return conf, fmt.Errorf("parse config %s: %w", path, err)
+	}
+	var present map[string]json.RawMessage
+	if err := json.Unmarshal(b, &present); err != nil {
+		return conf, fmt.Errorf("parse config %s keys: %w", path, err)
+	}
+	fillMissingFromDefaults(&conf, dflt, present, "")
+	return conf, nil
+}
+
 // cloneConfigDefault deep-copies a config default via JSON so a read-only load
 // of a missing file returns a value that can be mutated by callers without
 // aliasing the package-level default.

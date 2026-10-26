@@ -112,7 +112,7 @@ func remoteResolver(client remote.Doer) text.NewRemoteResolverFunc {
 		if err != nil {
 			return remote.Resolver{}, err
 		}
-		note := func(s string) { ancli.Noticef("%s\n", s) }
+		note := func(s string) { fmt.Fprintf(os.Stderr, "notice: %s\n", s) }
 		return remote.NewResolver(remote.EnvFrom(os.Getenv), confDir, cacheDir, client, prompt, note)
 	}
 }

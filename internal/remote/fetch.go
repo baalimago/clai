@@ -49,12 +49,16 @@ func (e *NotJSONError) ExitCode() int { return ExitRefused }
 
 // FetchError is a non-200 answer.
 type FetchError struct {
+	Target string
 	URL    string
 	Status int
 }
 
 func (e *FetchError) Error() string {
-	return fmt.Sprintf("fetch %s: HTTP %d", e.URL, e.Status)
+	if e.Status == http.StatusNotFound {
+		return fmt.Sprintf("%s: not found (HTTP 404 from %s)", e.Target, e.URL)
+	}
+	return fmt.Sprintf("%s: fetch %s: HTTP %d", e.Target, e.URL, e.Status)
 }
 
 // fetch reads at most MaxBodyBytes+1 bytes of url. requireJSON refuses a
@@ -73,7 +77,7 @@ func fetch(ctx context.Context, client Doer, target, url string, requireJSON boo
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		return nil, &FetchError{URL: url, Status: res.StatusCode}
+		return nil, &FetchError{Target: target, URL: url, Status: res.StatusCode}
 	}
 	if requireJSON && !isJSON(res.Header.Get("Content-Type")) {
 		return nil, &NotJSONError{Target: target, ContentType: res.Header.Get("Content-Type")}

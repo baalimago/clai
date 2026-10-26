@@ -41,6 +41,18 @@ func loadProfile(profilePath string) (Profile, error) {
 	return p, nil
 }
 
+// readRemoteProfile loads a cached remote profile. The file is named by its
+// hash, so the loader's usual upgrade rewrite and config-dir creation would
+// break the cache.
+func readRemoteProfile(path string) (Profile, error) {
+	p, err := utils.ReadConfigFile(path, &DefaultProfile)
+	if err != nil {
+		return p, err
+	}
+	p.Prompt = utils.RehydrateEscapedConfigString(p.Prompt)
+	return p, nil
+}
+
 func (c *Configurations) ProfileOverrides() error {
 	if c.UseProfile == "" && c.ProfilePath == "" {
 		return nil
@@ -51,7 +63,10 @@ func (c *Configurations) ProfileOverrides() error {
 	var profile Profile
 	var err error
 	profileDir := ""
-	if c.ProfilePath != "" {
+	if c.remoteProfile {
+		profile, err = readRemoteProfile(c.ProfilePath)
+		profileDir = filepath.Dir(c.ProfilePath)
+	} else if c.ProfilePath != "" {
 		profile, err = findProfileByPath(c.ProfilePath)
 		profileDir = filepath.Dir(c.ProfilePath)
 	} else {

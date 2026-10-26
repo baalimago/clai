@@ -3,6 +3,7 @@ package text
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -84,11 +85,15 @@ func TestRemoteProfileResolver(t *testing.T) {
 	if gotPrompt != nil {
 		t.Fatal("non-interactive: want no prompter")
 	}
-	no := terminalTrustPrompt(strings.NewReader("\n"))
-	if ok, err := no(t.Context(), remote.TrustPrompt{}); err != nil || ok {
+	var shown strings.Builder
+	no := terminalTrustPrompt(strings.NewReader("\n"), &shown)
+	if ok, err := no(t.Context(), remote.TrustPrompt{Target: "hub:ada/bot"}); err != nil || ok {
 		t.Fatalf("empty answer: %v %v", ok, err)
 	}
-	if _, err := terminalTrustPrompt(strings.NewReader(""))(t.Context(), remote.TrustPrompt{}); err == nil {
+	if !strings.Contains(shown.String(), "Trust hub:ada/bot? [y/N]") {
+		t.Fatalf("prompt shown = %q", shown.String())
+	}
+	if _, err := terminalTrustPrompt(strings.NewReader(""), io.Discard)(t.Context(), remote.TrustPrompt{}); err == nil {
 		t.Fatal("closed input: want error")
 	}
 	if s := FormatRemoteTrustPrompt(remote.TrustPrompt{Target: "hub:ada/bot", Digest: "abc", Page: "https://x/"}); !strings.Contains(s, "Trust hub:ada/bot? [y/N]") || !strings.Contains(s, "Read it: https://x/") {
