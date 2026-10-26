@@ -137,6 +137,7 @@ func (r *sessionRunner[C]) Run(ctx context.Context, session *QuerySession) (runE
 		}
 
 		if len(stepResult.ToolCalls) > 0 {
+			r.querier.launchDeferredSummary(ctx)
 			if err := r.toolExecutor.ExecuteBatch(ctx, session, stepResult.ToolCalls); err != nil {
 				if errors.Is(err, io.EOF) {
 					return nil
