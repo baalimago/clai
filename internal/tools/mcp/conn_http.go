@@ -9,12 +9,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/baalimago/clai/internal/tools/mcp/serverconfig"
+	"github.com/baalimago/clai/internal/tools/mcp/mcpauth"
 	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
@@ -122,12 +121,11 @@ type HttpConn struct {
 //
 // Every connection to an endpoint-based server is built here, so this is
 // where its auth.required_env is checked before anything is sent; the
-// credential chain checks it too, before auth.token_command runs. The
-// check reads clai's own process environment, not the envfile: the only
-// process an endpoint-based server starts is auth.token_command, and that
-// inherits os.Environ() alone.
+// credential chain checks it too, before auth.token_command runs. Both look
+// a variable up where auth.token_env is resolved: the process environment,
+// then the envfile.
 func NewHttpConn(ctx context.Context, server pub_models.McpServer, sink ServerLogSink, opts ...HttpConnOption) (Conn, error) {
-	if err := serverconfig.CheckRequiredEnv(server, os.Getenv); err != nil {
+	if err := mcpauth.CheckEndpointRequiredEnv(server, LoadEnvFile); err != nil {
 		return nil, err
 	}
 	connCtx, cancel := context.WithCancel(ctx)

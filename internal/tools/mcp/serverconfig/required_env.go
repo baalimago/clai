@@ -10,9 +10,9 @@ import (
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
-// requiredEnvStage is the startup stage a failed auth.required_env check
+// RequiredEnvStage is the startup stage a failed auth.required_env check
 // reports, so the explicit-server funnel keeps it rather than renaming it.
-const requiredEnvStage = "env"
+const RequiredEnvStage = "env"
 
 var envName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
@@ -55,11 +55,11 @@ func CheckRequiredEnv(server pub_models.McpServer, lookup func(string) string) e
 		return nil
 	}
 	slices.Sort(missing)
-	return claierr.NewMcpServerStartup(server.Name, requiredEnvStage, &MissingEnvError{ServerName: server.Name, Missing: missing})
+	return claierr.NewMcpServerStartup(server.Name, RequiredEnvStage, &MissingEnvError{ServerName: server.Name, Missing: missing})
 }
 
 // ValidateRequiredEnv rejects an auth.required_env entry that is not a
-// valid variable name, naming every such entry at once. Validate includes
+// valid variable name, naming every such entry by index at once. Validate includes
 // it; it is exported for a loader whose transport rules differ, such as a
 // profile's mcp_servers.
 func ValidateRequiredEnv(identifier string, server pub_models.McpServer) error {
@@ -67,14 +67,15 @@ func ValidateRequiredEnv(identifier string, server pub_models.McpServer) error {
 		return nil
 	}
 	var invalid []string
-	for _, name := range server.Auth.RequiredEnv {
+	for i, name := range server.Auth.RequiredEnv {
 		if !ValidEnvName(name) {
-			invalid = append(invalid, fmt.Sprintf("%q", name))
+			invalid = append(invalid, fmt.Sprintf("auth.required_env[%d]", i))
 		}
 	}
 	if len(invalid) == 0 {
 		return nil
 	}
-	return fmt.Errorf("mcp server config %q: auth.required_env %s: not a valid environment variable name (want letters, digits and underscores, not starting with a digit)",
+	// By index: an entry that is not a name may be a pasted secret.
+	return fmt.Errorf("mcp server config %q: %s: not a valid environment variable name (want letters, digits and underscores, not starting with a digit)",
 		identifier, strings.Join(invalid, ", "))
 }

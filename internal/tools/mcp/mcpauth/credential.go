@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/baalimago/clai/internal/tools/mcp/serverconfig"
+	"github.com/baalimago/clai/pkg/claierr"
 	pkgtools "github.com/baalimago/clai/pkg/tools"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -42,7 +43,7 @@ const stderrCaptureLimit = 4096
 // caller falls through to the token store. A configured source that fails
 // is returned as a typed *CredentialSourceError with no fall-through (D15).
 // An unmet auth.required_env is returned ahead of every source, as
-// serverconfig.CheckRequiredEnv reports it.
+// CheckEndpointRequiredEnv reports it.
 // Exported so a caller that wants only the static half of the chain (no
 // token store, no interactive flow — the eager HTTP path's posture) does
 // not have to construct a full Authorizer to reach it.
@@ -51,8 +52,8 @@ func ResolveStaticCredential(ctx context.Context, server pub_models.McpServer, l
 		return "", "", false, nil
 	}
 	// Ahead of every source, so token_command is never spawned without the
-	// variables it needs. The process environment is what it inherits.
-	if err := serverconfig.CheckRequiredEnv(server, os.Getenv); err != nil {
+	// variables it needs.
+	if err := CheckEndpointRequiredEnv(server, loadEnvFile); err != nil {
 		return "", "", false, err
 	}
 	if len(server.Auth.TokenCommand) > 0 {
@@ -119,17 +120,12 @@ func runCredentialCommand(ctx context.Context, serverName string, argv []string)
 // not.
 func resolveEnvToken(server pub_models.McpServer, loadEnvFile EnvFileLoader) (string, error) {
 	name := server.Auth.TokenEnv
-	if v := os.Getenv(name); v != "" {
-		return v, nil
+	v, err := newEndpointEnv(server, loadEnvFile).lookup(name)
+	if err != nil {
+		return "", &CredentialSourceError{ServerName: server.Name, Source: SourceTokenEnv, Cause: err}
 	}
-	if server.EnvFile != "" && loadEnvFile != nil {
-		env, err := loadEnvFile(server.EnvFile)
-		if err != nil {
-			return "", &CredentialSourceError{ServerName: server.Name, Source: SourceTokenEnv, Cause: err}
-		}
-		if v, ok := env[name]; ok && v != "" {
-			return v, nil
-		}
+	if v != "" {
+		return v, nil
 	}
 	return "", &CredentialSourceError{
 		ServerName: server.Name,
@@ -145,4 +141,57 @@ func boundedTail(s string, limit int) string {
 		return s
 	}
 	return s[len(s)-limit:]
+}
+
+// endpointEnv resolves a variable for an endpoint-based server: the process
+// environment, then the server's envfile, an empty value counting as unset.
+// The envfile is read at most once, and only on a miss in the process
+// environment.
+type endpointEnv struct {
+	server pub_models.McpServer
+	load   EnvFileLoader
+	file   map[string]string
+	read   bool
+	err    error
+}
+
+func newEndpointEnv(server pub_models.McpServer, load EnvFileLoader) *endpointEnv {
+	return &endpointEnv{server: server, load: load}
+}
+
+func (e *endpointEnv) lookup(name string) (string, error) {
+	if v := os.Getenv(name); v != "" {
+		return v, nil
+	}
+	if e.server.EnvFile == "" || e.load == nil {
+		return "", nil
+	}
+	if !e.read {
+		e.file, e.err = e.load(e.server.EnvFile)
+		e.read = true
+	}
+	return e.file[name], e.err
+}
+
+// CheckEndpointRequiredEnv checks an endpoint-based server's
+// auth.required_env where its token_env is resolved: the process
+// environment, then the envfile. An envfile that cannot be read is a
+// startup error at the same "env" stage.
+func CheckEndpointRequiredEnv(server pub_models.McpServer, loadEnvFile EnvFileLoader) error {
+	if server.Auth == nil || len(server.Auth.RequiredEnv) == 0 {
+		return nil
+	}
+	env := newEndpointEnv(server, loadEnvFile)
+	var readErr error
+	err := serverconfig.CheckRequiredEnv(server, func(name string) string {
+		v, err := env.lookup(name)
+		if err != nil {
+			readErr = err
+		}
+		return v
+	})
+	if readErr != nil {
+		return claierr.NewMcpServerStartup(server.Name, serverconfig.RequiredEnvStage, readErr)
+	}
+	return err
 }

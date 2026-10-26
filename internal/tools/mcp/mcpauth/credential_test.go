@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/baalimago/clai/internal/tools/mcp/serverconfig"
+	"github.com/baalimago/clai/pkg/claierr"
 	pkgtools "github.com/baalimago/clai/pkg/tools"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -227,5 +228,63 @@ func TestRequiredEnvMissingStopsBeforeCredentialCommand(t *testing.T) {
 	t.Setenv("CLAI_RE_VAULT_ADDR_UNSET", "https://vault.example")
 	if _, _, ok, err := authz.ResolveCached(t.Context(), server); !ok || err != nil {
 		t.Fatalf("with the variable set: ok=%v err=%v", ok, err)
+	}
+}
+
+// An endpoint-based server's required_env is looked up exactly where
+// token_env is: the process environment, then the envfile. A token kept
+// only in the envfile satisfies both.
+func TestRequiredEnvOfEndpointIsSatisfiedByEnvfile(t *testing.T) {
+	authz, _ := newTestAuthorizer(t)
+	envPath := filepath.Join(t.TempDir(), "gh.env")
+	if err := os.WriteFile(envPath, []byte("CLAI_RE_GH_TOKEN_FILE_ONLY=from-envfile\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	server := pub_models.McpServer{
+		Name:    "github",
+		Url:     "https://example.invalid/mcp",
+		EnvFile: envPath,
+		Auth:    &pub_models.McpServerAuth{TokenEnv: "CLAI_RE_GH_TOKEN_FILE_ONLY", RequiredEnv: []string{"CLAI_RE_GH_TOKEN_FILE_ONLY"}},
+	}
+	dec, source, ok, err := authz.ResolveCached(t.Context(), server)
+	if err != nil || !ok || source != SourceTokenEnv {
+		t.Fatalf("ResolveCached = (ok=%v source=%v err=%v)", ok, source, err)
+	}
+	req, _ := http.NewRequest(http.MethodGet, "http://example.invalid", nil)
+	dec(req)
+	if got := req.Header.Get("Authorization"); got != "Bearer from-envfile" {
+		t.Errorf("Authorization = %q", got)
+	}
+
+	// An empty process value falls through to the envfile, as for token_env.
+	t.Setenv("CLAI_RE_GH_TOKEN_FILE_ONLY", "")
+	if err := CheckEndpointRequiredEnv(server, testEnvFileLoader); err != nil {
+		t.Fatalf("CheckEndpointRequiredEnv with an empty process value: %v", err)
+	}
+
+	server.Auth.RequiredEnv = append(server.Auth.RequiredEnv, "CLAI_RE_NOWHERE")
+	var missing *serverconfig.MissingEnvError
+	if err := CheckEndpointRequiredEnv(server, testEnvFileLoader); !errors.As(err, &missing) || len(missing.Missing) != 1 || missing.Missing[0] != "CLAI_RE_NOWHERE" {
+		t.Fatalf("err = %v, want only CLAI_RE_NOWHERE missing", err)
+	}
+}
+
+func TestCheckEndpointRequiredEnvReportsUnreadableEnvfile(t *testing.T) {
+	server := pub_models.McpServer{
+		Name:    "srv",
+		Url:     "https://example.invalid/mcp",
+		EnvFile: filepath.Join(t.TempDir(), "absent.env"),
+		Auth:    &pub_models.McpServerAuth{RequiredEnv: []string{"CLAI_RE_NOWHERE"}},
+	}
+	err := CheckEndpointRequiredEnv(server, testEnvFileLoader)
+	var startup *claierr.McpServerStartupError
+	var missing *serverconfig.MissingEnvError
+	if !errors.As(err, &startup) || startup.Stage != "env" || errors.As(err, &missing) {
+		t.Fatalf("err = %v, want a startup error at the env stage that is not a missing variable", err)
+	}
+	// Nothing required: the envfile is not read at all.
+	server.Auth.RequiredEnv = nil
+	if err := CheckEndpointRequiredEnv(server, testEnvFileLoader); err != nil {
+		t.Fatalf("no required_env: %v", err)
 	}
 }

@@ -92,6 +92,13 @@ func runAuthWith(ctx context.Context, serverName, confDir string, authz *mcpauth
 	if server.Url == "" {
 		return &McpAuthNotEndpointBasedError{Name: serverName}
 	}
+	if err := mcpauth.CheckEndpointRequiredEnv(server, LoadEnvFile); err != nil {
+		var missing *serverconfig.MissingEnvError
+		if errors.As(err, &missing) {
+			return &McpAuthMissingEnvError{Name: serverName, Missing: missing.Missing, Cause: err}
+		}
+		return &McpAuthConnectError{Name: serverName, Cause: err}
+	}
 
 	if err := WriteAuthMessage(os.Stdout, fmt.Sprintf("Connecting to MCP server %q at %s...", serverName, server.Url)); err != nil {
 		return err

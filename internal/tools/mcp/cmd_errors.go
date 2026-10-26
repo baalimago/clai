@@ -1,6 +1,9 @@
 package mcp
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // McpAuthUsageError means "clai mcp auth" was invoked with no server name.
 type McpAuthUsageError struct{}
@@ -64,6 +67,22 @@ func (e *McpAuthConnectError) Error() string {
 }
 
 func (e *McpAuthConnectError) Unwrap() error { return e.Cause }
+
+// McpAuthMissingEnvError means the named server's auth.required_env lists
+// variables that are unset, so it was refused before any connect: the
+// operator has to set them, not retry the network.
+type McpAuthMissingEnvError struct {
+	Name    string
+	Missing []string
+	Cause   error
+}
+
+func (e *McpAuthMissingEnvError) Error() string {
+	return fmt.Sprintf("mcp auth: server %q needs %s set in the environment or its envfile first (auth.required_env); nothing was sent",
+		e.Name, strings.Join(e.Missing, ", "))
+}
+
+func (e *McpAuthMissingEnvError) Unwrap() error { return e.Cause }
 
 // McpAuthFlowError means the interactive authorization flow itself failed
 // after a challenge was received.

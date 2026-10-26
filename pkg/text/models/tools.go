@@ -118,8 +118,8 @@ type McpServerAuth struct {
 	// RequiredEnv names the environment variables the server needs. A
 	// connection is refused before anything is spawned or dialled while
 	// one is unset or empty: for a command-based server in the environment
-	// its process is spawned with, for an endpoint-based server in clai's
-	// own process environment.
+	// its process is spawned with, for an endpoint-based server where
+	// TokenEnv is resolved (the process environment, then the envfile).
 	RequiredEnv []string `json:"required_env,omitempty"`
 }
 

@@ -316,8 +316,8 @@ func TestConfigurations_ProfileOverrides_RejectsInvalidRequiredEnvName(t *testin
 	conf := Default
 	conf.ProfilePath = path
 	err := conf.ProfileOverrides()
-	if err == nil || !strings.Contains(err.Error(), "sentry") || !strings.Contains(err.Error(), `"SENTRY-TOKEN"`) {
-		t.Fatalf("ProfileOverrides = %v, want an error naming the server and the invalid name", err)
+	if err == nil || !strings.Contains(err.Error(), "sentry") || !strings.Contains(err.Error(), "auth.required_env[0]") || strings.Contains(err.Error(), "SENTRY-TOKEN") {
+		t.Fatalf("ProfileOverrides = %v, want an error naming the server and the entry's index, not its value", err)
 	}
 
 	valid := strings.Replace(profileJSON, "SENTRY-TOKEN", "SENTRY_ACCESS_TOKEN", 1)

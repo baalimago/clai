@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/baalimago/clai/internal/tools"
+	"github.com/baalimago/clai/internal/tools/mcp/mcpauth"
 	"github.com/baalimago/clai/internal/tools/mcp/serverconfig"
 	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -87,5 +88,44 @@ func TestResolveLazyServerViaCache_MissingRequiredEnvBeforeConnecting(t *testing
 	}
 	if n := atomic.LoadInt32(&requests); n != 0 {
 		t.Errorf("endpoint received %d requests, want 0", n)
+	}
+}
+
+// The lazy endpoint connector memoises a missing variable: setting it
+// mid-run does not make a later tool call dial again, and nothing is sent.
+func TestAuthenticatingHttpConnector_MissingRequiredEnvDialsOnce(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		authz func(t *testing.T) *mcpauth.Authorizer
+	}{
+		{"with an authorizer", func(t *testing.T) *mcpauth.Authorizer { return newMcpAuthorizer(t.TempDir(), nil, false, nil) }},
+		{"without an authorizer", func(*testing.T) *mcpauth.Authorizer { return nil }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var requests int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				atomic.AddInt32(&requests, 1)
+				w.WriteHeader(http.StatusInternalServerError)
+			}))
+			defer srv.Close()
+			server := pub_models.McpServer{Name: "lazy-url", Url: srv.URL, Auth: &pub_models.McpServerAuth{RequiredEnv: []string{"CLAI_RE_LAZY_HTTP"}}}
+			connector := newAuthenticatingHttpConnector(t.Context(), tc.authz(t), server, &recordingSuccessSink{})
+
+			var missing *serverconfig.MissingEnvError
+			if _, err := connector.Conn(t.Context()); !errors.As(err, &missing) {
+				t.Fatalf("first call: err = %v, want *serverconfig.MissingEnvError", err)
+			}
+			// Were the connector to dial again, it would now pass the check
+			// and reach the endpoint.
+			t.Setenv("CLAI_RE_LAZY_HTTP", "set-too-late")
+			for i := range 3 {
+				if _, err := connector.Conn(t.Context()); !errors.As(err, &missing) {
+					t.Fatalf("call %d: err = %v, want the memoised *serverconfig.MissingEnvError", i+2, err)
+				}
+			}
+			if n := atomic.LoadInt32(&requests); n != 0 {
+				t.Fatalf("endpoint received %d requests, want 0: the connector dialled again", n)
+			}
+		})
 	}
 }

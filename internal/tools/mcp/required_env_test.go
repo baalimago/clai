@@ -155,9 +155,8 @@ func TestConnectorMemoisesMissingRequiredEnv(t *testing.T) {
 	requireNoFile(t, marker)
 }
 
-// An endpoint-based server is checked against the process environment
-// only: its envfile does not reach auth.token_command, which is what the
-// variables are for.
+// An endpoint-based server is checked where its token_env is resolved: the
+// process environment, then the envfile.
 func TestHttpConnectorRefusesMissingRequiredEnvBeforeConnecting(t *testing.T) {
 	var requests int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -169,10 +168,10 @@ func TestHttpConnectorRefusesMissingRequiredEnvBeforeConnecting(t *testing.T) {
 		Name:    "remote",
 		Url:     srv.URL,
 		EnvFile: writeEnvFile(t, "CLAI_RE_ONLY_IN_FILE=x\n"),
-		Auth:    &pub_models.McpServerAuth{RequiredEnv: []string{"CLAI_RE_ONLY_IN_FILE"}},
+		Auth:    &pub_models.McpServerAuth{RequiredEnv: []string{"CLAI_RE_ONLY_IN_FILE", "CLAI_RE_NOWHERE"}},
 	}
 	_, err := NewHttpConnector(t.Context(), server, nil).Conn(t.Context())
-	requireMissing(t, err, "CLAI_RE_ONLY_IN_FILE")
+	requireMissing(t, err, "CLAI_RE_NOWHERE")
 	if got := atomic.LoadInt32(&requests); got != 0 {
 		t.Fatalf("endpoint received %d requests, want 0", got)
 	}
@@ -180,10 +179,10 @@ func TestHttpConnectorRefusesMissingRequiredEnvBeforeConnecting(t *testing.T) {
 		t.Fatalf("NewHttpConn = %v, %v; want no Conn and an error", conn, err)
 	}
 
-	t.Setenv("CLAI_RE_ONLY_IN_FILE", "x")
+	t.Setenv("CLAI_RE_NOWHERE", "x")
 	conn, err := NewHttpConn(t.Context(), server, nil)
 	if err != nil {
-		t.Fatalf("NewHttpConn with the variable in the process environment: %v", err)
+		t.Fatalf("NewHttpConn with one variable in the envfile and one in the process: %v", err)
 	}
 	conn.Close()
 }

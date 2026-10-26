@@ -30,18 +30,22 @@ func TestValidate_RejectsInvalidRequiredEnvNamesOnBothKinds(t *testing.T) {
 		{Name: "local", Command: "node"},
 		{Name: "remote", Url: "https://mcp.example.com/mcp"},
 	} {
-		server.Auth = &pub_models.McpServerAuth{RequiredEnv: []string{"GOOD", "1BAD", "ALSO-BAD"}}
+		// An invalid entry may be a pasted secret, so it is named by index
+		// and never echoed.
+		server.Auth = &pub_models.McpServerAuth{RequiredEnv: []string{"GOOD", "ghp-s3cr3t", "ALSO-BAD"}}
 		err := Validate(server.Name, server)
 		if err == nil {
 			t.Fatalf("%s: Validate = nil, want an error", server.Name)
 		}
-		for _, want := range []string{server.Name, "auth.required_env", `"1BAD"`, `"ALSO-BAD"`} {
+		for _, want := range []string{server.Name, "auth.required_env[1]", "auth.required_env[2]", "not a valid environment variable name"} {
 			if !strings.Contains(err.Error(), want) {
 				t.Errorf("%s: err %q lacks %q", server.Name, err, want)
 			}
 		}
-		if strings.Contains(err.Error(), `"GOOD"`) {
-			t.Errorf("%s: err %q names a valid variable", server.Name, err)
+		for _, leak := range []string{"ghp-s3cr3t", "ALSO-BAD", "[0]"} {
+			if strings.Contains(err.Error(), leak) {
+				t.Errorf("%s: err %q contains %q", server.Name, err, leak)
+			}
 		}
 
 		server.Auth.RequiredEnv = []string{"GOOD", "_ALSO_GOOD"}
@@ -63,8 +67,8 @@ func TestFindConfiguredServers_RejectsInvalidRequiredEnvName(t *testing.T) {
 	}
 
 	servers, err := FindConfiguredServers([]string{bad, good})
-	if err == nil || !strings.Contains(err.Error(), bad) || !strings.Contains(err.Error(), `"NOT-A-NAME"`) {
-		t.Fatalf("err = %v, want one naming %q and the invalid name", err, bad)
+	if err == nil || !strings.Contains(err.Error(), bad) || !strings.Contains(err.Error(), "auth.required_env[0]") || strings.Contains(err.Error(), "NOT-A-NAME") {
+		t.Fatalf("err = %v, want one naming %q and the invalid entry's index, not its value", err, bad)
 	}
 	if len(servers) != 1 || servers[0].Name != "good" {
 		t.Fatalf("servers = %+v, want only good", servers)

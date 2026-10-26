@@ -200,7 +200,7 @@ clai -t "mcp_linear*" query "List open incidents assigned to me"
 
 - MCP server configs are stored in `<clai-config>/mcpServers/*.json`.
 - MCP tool names are typically `mcp_<server>_<tool>` (and can be globbed).
-- `"auth": {"required_env": ["SENTRY_ACCESS_TOKEN"]}` declares the environment variables a server needs. clai refuses to start the server, naming each one that is unset or empty, before anything is spawned or connected. A local server is checked against the environment it would be spawned with (including its `envfile` and `env`), a `url` server against clai's own environment.
+- `"auth": {"required_env": ["SENTRY_ACCESS_TOKEN"]}` declares the environment variables a server needs. clai refuses to start the server, naming each one that is unset or empty, before anything is spawned or connected. A local server is checked against the environment it would be spawned with (including its `envfile` and `env`), a `url` server against clai's own environment, then its `envfile`, the same places its `token_env` is looked up.
 
 ```json
 { "command": "npx", "args": ["-y", "@sentry/mcp-server@0.42.0"],

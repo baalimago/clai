@@ -301,7 +301,14 @@ a run with several calls in flight performs one refresh rather than one per call
 endpoint-based server alike. It lets a profile declare the keys a server reads, so a run fails early
 with a message naming them, the remote-profile trust prompt can list them, and the hub can show them.
 A name must match `^[A-Za-z_][A-Za-z0-9_]*$`; an invalid one is a config error when the server's
-file or profile is loaded (`serverconfig.Validate`, `serverconfig.ValidateRequiredEnv`).
+file or profile is loaded (`serverconfig.Validate`, `serverconfig.ValidateRequiredEnv`). The error
+names the entry by index, `auth.required_env[2]`, never by value, since a malformed entry may be a
+pasted secret.
+
+Local config is lenient beyond that: a name listed twice, or one that is also a key of the server's
+own `env` map, is accepted (the check simply finds it set or not). Only a remote profile (`-prp`)
+is strict about both, because its trust prompt shows the list to someone deciding whether to run
+it; see `architecture/remote-targets.md`.
 
 The check is `serverconfig.CheckRequiredEnv`, and it runs before anything is spawned or dialled, for
 an eager and a lazy server alike. A variable that is unset or empty is missing. Every missing name,
@@ -317,11 +324,13 @@ Which environment is checked follows what the server actually sees:
 | Server | Checked against | Where |
 | --- | --- | --- |
 | command-based | the environment it is spawned with: the process environment, then the envfile, then the `env` map, a later entry winning | `NewStdioConn`, through `spawnEnv`, the one function that also builds the spawn's environment, so the two cannot drift |
-| endpoint-based | the process environment only, because the one process such a server starts, `token_command`, inherits that and not the envfile | `mcpauth.ResolveStaticCredential`, ahead of every source so `token_command` never runs without its variables, and `NewHttpConn`, which every connection passes |
+| endpoint-based | where `auth.token_env` is resolved: the process environment, then the envfile, an empty value falling through | `mcpauth.CheckEndpointRequiredEnv`, sharing `token_env`'s lookup. It is called by `mcpauth.ResolveStaticCredential`, ahead of every source so `token_command` never runs without its variables, and by `NewHttpConn`, which every connection passes |
 
 A missing variable is a run-scoped failure: nothing in the run can set it, so it does not report
 itself blocked outside the run, and a lazily connected server memoises it like any other connect
-failure rather than dialling again on each tool call.
+failure rather than dialling again on each tool call. `clai mcp auth <server>` checks it before
+its probe connect and refuses with `McpAuthMissingEnvError`, which says to set the variables first
+rather than reading like a failed connection.
 
 `required_env` configures no credential source. `token_env` is the variable that holds a token and
 is resolved as [Credential sources](#credential-sources) describes; `required_env` only demands
@@ -502,9 +511,8 @@ One JSON file per server under `<clai-config>/mcpServers/`, unmarshalled into
                                           // Unset follows the terminal
   "auth": { "token_command": ["doppler", "secrets", "get", "TOKEN", "--plain"],
             "token_env": "EXAMPLE_MCP_TOKEN",
-            "required_env": ["DOPPLER_TOKEN"], // checked against the process
-                                                // environment, which
-                                                // token_command inherits
+            "required_env": ["DOPPLER_TOKEN"], // the process environment,
+                                                // then the envfile
             "scopes": ["read", "write"] } }
 ```
 
