@@ -1,6 +1,7 @@
 package generic
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -13,7 +14,7 @@ import (
 func TestSetupPrompts(t *testing.T) {
 	t.Run("formats positional args into the prompt", func(t *testing.T) {
 		c := Configurations{PromptFormat: "draw: '%v'"}
-		if err := c.SetupPrompts([]string{"photo", "a", "cat"}); err != nil {
+		if err := c.SetupPrompts(context.Background(), []string{"photo", "a", "cat"}); err != nil {
 			t.Fatalf("SetupPrompts: %v", err)
 		}
 		if !strings.Contains(c.Prompt, "draw: 'a cat'") {
@@ -40,7 +41,7 @@ func TestSetupPrompts(t *testing.T) {
 		}
 
 		c := Configurations{PromptFormat: "%v", ReplyMode: true}
-		if err := c.SetupPrompts([]string{"photo", "again"}); err != nil {
+		if err := c.SetupPrompts(context.Background(), []string{"photo", "again"}); err != nil {
 			t.Fatalf("SetupPrompts: %v", err)
 		}
 		if !strings.Contains(c.Prompt, "previous prompt") || !strings.Contains(c.Prompt, "again") {
@@ -51,7 +52,7 @@ func TestSetupPrompts(t *testing.T) {
 	t.Run("reply mode without previous query degrades to a plain prompt", func(t *testing.T) {
 		t.Setenv("CLAI_CONFIG_DIR", t.TempDir())
 		c := Configurations{PromptFormat: "%v", ReplyMode: true}
-		if err := c.SetupPrompts([]string{"photo", "more"}); err != nil {
+		if err := c.SetupPrompts(context.Background(), []string{"photo", "more"}); err != nil {
 			t.Fatalf("SetupPrompts: %v", err)
 		}
 		if !strings.Contains(c.Prompt, "more") {

@@ -1487,9 +1487,7 @@ func wordWrapLine(line string, width int) []string {
 			continue
 		}
 		chunks := cellChunks(word, width)
-		for _, chunk := range chunks[:len(chunks)-1] {
-			rows = append(rows, chunk)
-		}
+		rows = append(rows, chunks[:len(chunks)-1]...)
 		row.Reset()
 		row.WriteString(chunks[len(chunks)-1])
 		used = terminalStringWidth(chunks[len(chunks)-1])

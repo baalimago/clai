@@ -172,6 +172,11 @@ See `CONFIG.md` for full details.
 `Prompt()` decides whether stdin is piped and delegates to `PromptFrom(stdinReplace, args, stdin)`,
 where a nil reader means a terminal. Stdin that is wholly an image is attached instead (see below).
 
+A pipe is read to EOF, so a query run with stdin left as an open pipe nobody writes to (cron, CI,
+a background job) waits for it, as other Unix filters do; `</dev/null` avoids that. The wait ends
+with the run's context: `utils.PipedStdin(ctx)` wraps a pipe so its reads return the context's
+cause, and SIGINT or SIGTERM, which cancel that context, stop clai there.
+
 ### Image flags
 
 | Flag | Purpose |

@@ -65,7 +65,7 @@ Examples:
 		CompleteFlagValueFn: internal.MediaFlagValues,
 		CompleteArgsFn:      internal.SuppressArgs,
 	}
-	c.OnSetup = func(_ context.Context, c *internal.Command) error {
+	c.OnSetup = func(ctx context.Context, c *internal.Command) error {
 		confDir, err := deps.ConfigPrep()
 		if err != nil {
 			return err
@@ -78,7 +78,7 @@ Examples:
 			return err
 		}
 		vConf.Client = deps.Client
-		if err := vConf.SetupPrompts(c.Args()); err != nil {
+		if err := vConf.SetupPrompts(ctx, c.Args()); err != nil {
 			return fmt.Errorf("failed to setup prompt: %w", err)
 		}
 		vq, err := CreateQuerier(vConf)

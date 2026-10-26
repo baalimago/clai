@@ -138,8 +138,8 @@ Examples:
 		CompleteFlagValueFn: internal.MediaFlagValues,
 		CompleteArgsFn:      internal.SuppressArgs,
 	}
-	c.OnSetup = func(_ context.Context, c *internal.Command) error {
-		q, err := newQuery(deps, &f, c.Args())
+	c.OnSetup = func(ctx context.Context, c *internal.Command) error {
+		q, err := newQuery(ctx, deps, &f, c.Args())
 		if err != nil {
 			return err
 		}

@@ -1,6 +1,7 @@
 package text
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -52,7 +53,7 @@ func TestConfigurations_SetupInitialChat_DirReplyModeSkipsGlobalScope(t *testing
 	conf.DirReplyMode = true
 	conf.InitialChat = dirHead
 
-	if err := conf.SetupInitialChat([]string{"q", "new prompt"}); err != nil {
+	if err := conf.SetupInitialChat(context.Background(), []string{"q", "new prompt"}); err != nil {
 		t.Fatalf("SetupInitialChat: %v", err)
 	}
 
@@ -111,7 +112,7 @@ func TestConfigurations_SetupInitialChat_ReplyModeKeepsPreviousQueryMessages(t *
 	conf.ConfigDir = confDir
 	conf.ReplyMode = true
 
-	if err := conf.SetupInitialChat([]string{"q", "new prompt"}); err != nil {
+	if err := conf.SetupInitialChat(context.Background(), []string{"q", "new prompt"}); err != nil {
 		t.Fatalf("SetupInitialChat: %v", err)
 	}
 
@@ -161,7 +162,7 @@ func TestSetupInitialChat_replyAdoptsFields(t *testing.T) {
 			conf := Default
 			conf.ConfigDir = confDir
 			conf.ReplyMode = true
-			if err := conf.SetupInitialChat([]string{"q", "more"}); err != nil {
+			if err := conf.SetupInitialChat(context.Background(), []string{"q", "more"}); err != nil {
 				t.Fatalf("SetupInitialChat: %v", err)
 			}
 
