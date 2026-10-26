@@ -37,10 +37,14 @@ func (c *Claude) StreamCompletions(ctx context.Context, chat pub_models.Chat) (c
 	if err != nil {
 		return nil, fmt.Errorf("failed to construct request: %w", err)
 	}
-	if _, err = c.CountInputTokens(ctx, chat); err != nil {
-		return nil, fmt.Errorf("failed to count input tokens: %w", err)
+	c.amInputTokens, c.amCachedTokens, c.amOutputTokens = 0, 0, 0
+	// The stream reports its own usage; counting first would cost every
+	// step an extra round trip, so it is only done when asked to print.
+	if c.PrintInputCount {
+		if _, err = c.CountInputTokens(ctx, chat); err != nil {
+			return nil, fmt.Errorf("failed to count input tokens: %w", err)
+		}
 	}
-	c.amCachedTokens, c.amOutputTokens = 0, 0
 	return c.stream(ctx, req)
 }
 
