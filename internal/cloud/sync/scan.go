@@ -10,8 +10,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"strconv"
-	"strings"
 )
 
 // FileLimits is the largest single file each store takes, mirroring
@@ -163,18 +161,15 @@ func hashBytes(b []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func humanBytes(n int64) string {
+// HumanBytes is a size as clai cloud prints it: "31 B", "1.5 kB", "3.0 MB".
+func HumanBytes(n int64) string {
 	switch {
 	case n >= 1_000_000_000:
-		return trimZero(float64(n)/1e9) + " GB"
+		return fmt.Sprintf("%.1f GB", float64(n)/1e9)
 	case n >= 1_000_000:
-		return trimZero(float64(n)/1e6) + " MB"
+		return fmt.Sprintf("%.1f MB", float64(n)/1e6)
 	case n >= 1_000:
-		return trimZero(float64(n)/1e3) + " kB"
+		return fmt.Sprintf("%.1f kB", float64(n)/1e3)
 	}
-	return strconv.FormatInt(n, 10) + " B"
-}
-
-func trimZero(f float64) string {
-	return strings.TrimSuffix(strconv.FormatFloat(f, 'f', 1, 64), ".0")
+	return fmt.Sprintf("%d B", n)
 }

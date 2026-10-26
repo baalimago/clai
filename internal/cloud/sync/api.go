@@ -178,7 +178,7 @@ func (a api) fetchBlobs(ctx context.Context, hashes []string) (map[string][]byte
 			return nil, &BundleError{Reason: fmt.Sprintf("bad frame %q", line)}
 		}
 		if read += int64(len(line)) + size; read > bundleMaxBytes {
-			return nil, &BundleError{Reason: fmt.Sprintf("it holds more than %s", humanBytes(bundleMaxBytes))}
+			return nil, &BundleError{Reason: fmt.Sprintf("it holds more than %s", HumanBytes(bundleMaxBytes))}
 		}
 		b := make([]byte, size)
 		if _, err := io.ReadFull(r, b); err != nil {

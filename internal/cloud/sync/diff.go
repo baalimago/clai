@@ -195,6 +195,13 @@ func unifiedHunks(a, b []string, context int) string {
 				bCount++
 			}
 		}
+		// An empty side names the line before it, as diff -u does.
+		if aCount == 0 {
+			aStart--
+		}
+		if bCount == 0 {
+			bStart--
+		}
 		fmt.Fprintf(&out, "@@ -%d,%d +%d,%d @@\n", aStart, aCount, bStart, bCount)
 		for _, op := range ops[start:end] {
 			line := op.text

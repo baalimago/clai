@@ -86,6 +86,10 @@ func TestPullLines(t *testing.T) {
 			t.Errorf("lacks %q:\n%s", want, got)
 		}
 	}
+	linked := strings.Join(pullLines(sync.PullResult{Store: sync.StoreConfig, Commit: 2, Linked: []string{"profiles/p.json"}}, style{}), "\n")
+	if !strings.Contains(linked, "↪ profiles/p.json   left alone: it reaches through a symlink here") {
+		t.Errorf("lacks the linked row:\n%s", linked)
+	}
 	wantLines(t, pullLines(sync.PullResult{Store: sync.StoreConfig, Commit: 2}, style{}), "▸ config · pulled #2 · up to date")
 	wantLines(t, pullLines(sync.PullResult{Store: sync.StoreConversations}, style{}), "▸ conversations · up to date")
 }

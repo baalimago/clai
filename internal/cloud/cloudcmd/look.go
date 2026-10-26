@@ -166,6 +166,9 @@ func pullLines(res sync.PullResult, s style) []string {
 	for _, f := range res.Forks {
 		rows = append(rows, []string{"⑂ " + f.Path, fmt.Sprintf("continued on both machines · the other copy is now %q (%s)", f.Title, f.Forked)})
 	}
+	for _, p := range res.Linked {
+		rows = append(rows, []string{"↪ " + p, "left alone: it reaches through a symlink here"})
+	}
 	lines = append(lines, grid("  ", rows, s)...)
 	if len(res.Trashed) > 0 {
 		lines = append(lines, "  "+s.secondary("replaced files are kept 30 days in cloud/trash/"))

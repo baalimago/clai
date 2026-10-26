@@ -627,6 +627,17 @@ func TestDiff_localRemoteAndChats(t *testing.T) {
 	}
 }
 
+func TestUnifiedHunks_emptySideNamesTheLineBefore(t *testing.T) {
+	out := unifiedHunks(splitLines(Side{Bytes: nil}), splitLines(Side{Bytes: []byte("x\ny\n")}), 3)
+	if !strings.HasPrefix(out, "@@ -0,0 +1,2 @@") {
+		t.Fatalf("out = %q", out)
+	}
+	out = unifiedHunks(splitLines(Side{Bytes: []byte("x\n")}), splitLines(Side{Bytes: nil}), 3)
+	if !strings.HasPrefix(out, "@@ -1,1 +0,0 @@") {
+		t.Fatalf("out = %q", out)
+	}
+}
+
 func TestUnifiedHunks_largeInputsDegrade(t *testing.T) {
 	a := strings.Repeat("a\n", 3000)
 	b := strings.Repeat("b\n", 3000)

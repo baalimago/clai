@@ -124,7 +124,7 @@ func (e *Engine) plan(store Store, st *state, opts PlanOptions) (Plan, error) {
 			continue
 		}
 		if loc.Size > limit {
-			plan.Excluded = append(plan.Excluded, Excluded{Path: p, Kind: ExcludedTooLarge, Detail: humanBytes(limit)})
+			plan.Excluded = append(plan.Excluded, Excluded{Path: p, Kind: ExcludedTooLarge, Detail: HumanBytes(limit)})
 			continue
 		}
 		if store == StoreConfig {
