@@ -118,3 +118,35 @@ func TestLoopRunner_SummaryReportErrorIsJoined(t *testing.T) {
 		t.Fatalf("Query err = %v, want the blocked error joined with the report failure", err)
 	}
 }
+
+// TestLoopRunner_TalliesAFailedIterationsCompletedWork pins that work a
+// failed or cancelled iteration finished still counts toward the run.
+func TestLoopRunner_TalliesAFailedIterationsCompletedWork(t *testing.T) {
+	boom := errors.New("boom")
+	for name, cancelFirst := range map[string]bool{"failure": false, "cancellation": true} {
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			fake := &recordingLoopQuerier{handle: func(_ context.Context, _ int, chat pub_models.Chat) (pub_models.Chat, error) {
+				if cancelFirst {
+					cancel()
+				}
+				return pub_models.Chat{}, &PartialRunError{Chat: iterationWithWork(chat, "go", "ok"), Err: boom}
+			}}
+			runner := NewLoopRunner(fake, NewCompletionRecorder(""), LoopConfig{SeedChat: loopSeedChat(), MaxIterations: 3})
+			if err := runner.Query(ctx); err == nil {
+				t.Fatal("Query returned no error")
+			}
+			if len(fake.summaries) != 1 {
+				t.Fatalf("summaries = %d, want 1", len(fake.summaries))
+			}
+			got := fake.summaries[0]
+			if got.Usage.PromptTokens != 100 || !got.HasCost || got.CostUSD != 0.5 {
+				t.Fatalf("summary = %+v, want the iteration's usage and cost", got)
+			}
+			if want := []RunToolCall{{Name: "go"}}; !slices.Equal(got.ToolCalls, want) {
+				t.Fatalf("tool calls = %+v, want %+v", got.ToolCalls, want)
+			}
+		})
+	}
+}

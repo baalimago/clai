@@ -2,6 +2,7 @@ package chat
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -142,9 +143,102 @@ func TestReadChatIndex_replaysACompactingJournal(t *testing.T) {
 	}
 }
 
+// TestCompactIndexJournal_recoversALeftoverCompactingJournal pins the crash
+// window: a compaction that died after moving the journal aside must not
+// have its rows overwritten by the next compaction's move.
+func TestCompactIndexJournal_recoversALeftoverCompactingJournal(t *testing.T) {
+	tmp := t.TempDir()
+	seedIndexCache(t, tmp, nil)
+	if err := upsertChatIndex(tmp, journalChat("aside", "x")); err != nil {
+		t.Fatalf("upsertChatIndex: %v", err)
+	}
+	if err := os.Rename(chatIndexJournalPath(tmp), chatIndexCompactingPath(tmp)); err != nil {
+		t.Fatalf("Rename: %v", err)
+	}
+	if err := upsertChatIndex(tmp, journalChat("live", "y")); err != nil {
+		t.Fatalf("upsertChatIndex: %v", err)
+	}
+	if err := compactIndexJournal(tmp); err != nil {
+		t.Fatalf("compactIndexJournal: %v", err)
+	}
+	for _, p := range []string{chatIndexCompactingPath(tmp), chatIndexJournalPath(tmp), chatIndexCompactLockPath(tmp)} {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Fatalf("%s left behind: %v", p, err)
+		}
+	}
+	b, err := os.ReadFile(chatIndexPath(tmp))
+	if err != nil {
+		t.Fatalf("read cache: %v", err)
+	}
+	var cache chatIndexCache
+	if err := json.Unmarshal(b, &cache); err != nil {
+		t.Fatalf("decode cache: %v", err)
+	}
+	if len(cache.Rows) != 2 {
+		t.Fatalf("cache rows = %+v, want both the recovered and the live row", cache.Rows)
+	}
+}
+
+func TestCompactIndexJournal_heldLockLeavesTheJournal(t *testing.T) {
+	tmp := t.TempDir()
+	seedIndexCache(t, tmp, nil)
+	if err := upsertChatIndex(tmp, journalChat("live", "y")); err != nil {
+		t.Fatalf("upsertChatIndex: %v", err)
+	}
+	if err := os.WriteFile(chatIndexCompactLockPath(tmp), nil, 0o644); err != nil {
+		t.Fatalf("write lock: %v", err)
+	}
+	if err := compactIndexJournal(tmp); !errors.Is(err, errCompactionHeld) {
+		t.Fatalf("compactIndexJournal = %v, want errCompactionHeld", err)
+	}
+	if _, err := os.Stat(chatIndexJournalPath(tmp)); err != nil {
+		t.Fatalf("journal must stay for the lock holder: %v", err)
+	}
+}
+
+func TestCompactIndexJournal_breaksAStaleLock(t *testing.T) {
+	tmp := t.TempDir()
+	seedIndexCache(t, tmp, nil)
+	if err := upsertChatIndex(tmp, journalChat("live", "y")); err != nil {
+		t.Fatalf("upsertChatIndex: %v", err)
+	}
+	lock := chatIndexCompactLockPath(tmp)
+	if err := os.WriteFile(lock, nil, 0o644); err != nil {
+		t.Fatalf("write lock: %v", err)
+	}
+	old := time.Now().Add(-2 * chatIndexCompactLockStale)
+	if err := os.Chtimes(lock, old, old); err != nil {
+		t.Fatalf("Chtimes: %v", err)
+	}
+	if err := compactIndexJournal(tmp); err != nil {
+		t.Fatalf("compactIndexJournal: %v", err)
+	}
+	if _, err := os.Stat(chatIndexJournalPath(tmp)); !os.IsNotExist(err) {
+		t.Fatalf("journal not compacted: %v", err)
+	}
+}
+
+func TestAppendIndexJournal_heldCompactionLockStillSaves(t *testing.T) {
+	tmp := t.TempDir()
+	seedIndexCache(t, tmp, nil)
+	if err := os.WriteFile(chatIndexCompactLockPath(tmp), nil, 0o644); err != nil {
+		t.Fatalf("write lock: %v", err)
+	}
+	prompt := strings.Repeat("x", indexPreviewRunes)
+	for i := range 2000 {
+		if err := upsertChatIndex(tmp, journalChat(fmt.Sprintf("c%05d", i), prompt)); err != nil {
+			t.Fatalf("upsertChatIndex %d: %v", i, err)
+		}
+	}
+	rows, err := readChatIndex(tmp)
+	if err != nil || len(rows) != 2000 {
+		t.Fatalf("rows = %d, %v; want every save readable", len(rows), err)
+	}
+}
+
 func TestIsIndexFile(t *testing.T) {
 	for name, want := range map[string]bool{
-		chatIndexFileName: true, chatIndexJournalName: true, chatIndexCompactingName: true, "abc.json": false,
+		chatIndexFileName: true, chatIndexJournalName: true, chatIndexCompactingName: true, chatIndexCompactLockName: true, "abc.json": false,
 	} {
 		if got := isIndexFile(name); got != want {
 			t.Fatalf("isIndexFile(%q) = %t, want %t", name, got, want)

@@ -200,7 +200,11 @@ the cache, so a query's index cost does not grow with history. Readers replay
 the journal over the cache, the latest line per id winning. When the journal
 passes 256 KiB, the save that crossed it folds it into the cache: the journal
 is first renamed to `chat_index.journal.compacting`, so a concurrent save
-lands in a fresh journal and is replayed rather than lost. A rebuild, or any
+lands in a fresh journal and is replayed rather than lost. Compactors take
+`chat_index.compact.lock` (created exclusively, broken once it is a minute
+old); a save that finds it held leaves the journal for the holder. A
+compacting journal left by a crashed compactor is folded in before the next
+rename could replace it. A rebuild, or any
 full write of the cache, drops both journals. A journal line that does not
 decode triggers a rebuild, like a corrupt cache. While no cache exists the
 first save writes one directly. A row keeps at most 200 runes of the first

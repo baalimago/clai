@@ -216,6 +216,10 @@ func (r *loopRunner) run(ctx context.Context, summary *LoopSummary) error {
 		summary.Iterations = iteration
 		result, err := r.textQuery(ctx, chat)
 		if err != nil {
+			var partial *PartialRunError
+			if errors.As(err, &partial) {
+				summary.addTurn(chat, partial.Chat)
+			}
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return ctxErr
 			}

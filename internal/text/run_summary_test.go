@@ -168,3 +168,96 @@ func TestQuerier_QuerySummary(t *testing.T) {
 		}
 	})
 }
+
+// TestQuerier_QuerySummaryCountsTheRunsCostAndTools drives the real Query
+// path: the finalizer stores the result chat before the summary is built,
+// so the summary must compare against the chat the run started from.
+func TestQuerier_QuerySummaryCountsTheRunsCostAndTools(t *testing.T) {
+	var printed, errOut strings.Builder
+	q := rollingLoopQuerier(t, &printed)
+	q.Raw = true
+	q.errOut = &errOut
+	q.Model.usage = &pub_models.Usage{PromptTokens: 1200, CompletionTokens: 30, TotalTokens: 1230}
+	q.costEnricher = costEnricher{
+		manager: &fakeCostManager{enrichFn: appendCostRow},
+		ready:   closedReady(),
+		waitFor: time.Millisecond,
+		warnf:   func(string, ...any) {},
+	}
+	calls := 0
+	q.Model.streamFn = func(context.Context, pub_models.Chat) (chan models.CompletionEvent, error) {
+		calls++
+		events := make(chan models.CompletionEvent, 2)
+		if calls == 1 {
+			events <- pub_models.Call{ID: "c1", Name: "missing_tool"}
+		} else {
+			events <- "done"
+			events <- models.StopEvent{}
+		}
+		close(events)
+		return events, nil
+	}
+	q.EnableQuerySummary()
+
+	chat := pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "hello"}}}
+	if _, err := q.TextQuery(t.Context(), chat); err != nil {
+		t.Fatalf("TextQuery: %v", err)
+	}
+	got := errOut.String()
+	for _, want := range []string{"  cost    ~$0.42", "  tools   1 call, 1 failed: missing_tool"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("summary = %q, want it to contain %q", got, want)
+		}
+	}
+}
+
+// TestQuerier_TextQueryErrorCarriesThePartialRun pins that a run which fails
+// or is cancelled after a completed tool step still hands back the finalized
+// chat, so callers can account for the work it did.
+func TestQuerier_TextQueryErrorCarriesThePartialRun(t *testing.T) {
+	for name, cancelSecond := range map[string]bool{"failure": false, "cancellation": true} {
+		t.Run(name, func(t *testing.T) {
+			q := rollingLoopQuerier(t, &strings.Builder{})
+			q.Raw = true
+			q.errOut = &strings.Builder{}
+			q.Model.usage = &pub_models.Usage{PromptTokens: 1200, CompletionTokens: 30, TotalTokens: 1230}
+			q.costEnricher = costEnricher{
+				manager: &fakeCostManager{enrichFn: appendCostRow},
+				ready:   closedReady(),
+				waitFor: time.Millisecond,
+				warnf:   func(string, ...any) {},
+			}
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			calls := 0
+			q.Model.streamFn = func(context.Context, pub_models.Chat) (chan models.CompletionEvent, error) {
+				calls++
+				if calls == 1 {
+					events := make(chan models.CompletionEvent, 1)
+					events <- pub_models.Call{ID: "c1", Name: "missing_tool"}
+					close(events)
+					return events, nil
+				}
+				if cancelSecond {
+					cancel()
+					return nil, ctx.Err()
+				}
+				return nil, errors.New("vendor down")
+			}
+			chat := pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "hello"}}}
+			_, err := q.TextQuery(ctx, chat)
+			var partial *PartialRunError
+			if !errors.As(err, &partial) {
+				t.Fatalf("err = %v, want a *PartialRunError", err)
+			}
+			var tally RunTally
+			tally.addTurn(chat, partial.Chat)
+			if tally.Usage.PromptTokens == 0 || !tally.HasCost {
+				t.Fatalf("tally = %+v, want the completed step's usage and cost", tally)
+			}
+			if want := []RunToolCall{{Name: "missing_tool", Failed: true}}; !slices.Equal(tally.ToolCalls, want) {
+				t.Fatalf("tool calls = %+v, want %+v", tally.ToolCalls, want)
+			}
+		})
+	}
+}

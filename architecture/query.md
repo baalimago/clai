@@ -117,7 +117,9 @@ whatever stopped it (achieved, blocked, exhausted, or stopped by an error or
 cancellation): iterations used, wall time, tokens in/out (with cached input),
 the estimated cost when a price is known, and tool calls per tool with the
 failure count. Only what each iteration added is counted, so a resumed seed
-chat's earlier cost is not. Token counts use SI prefixes with three
+chat's earlier cost is not. An iteration that fails or is cancelled still
+counts the steps it finished: `TextQuery` returns a `*PartialRunError` whose
+`Chat` is what the finalizer kept. Token counts use SI prefixes with three
 significant digits (`41.2k in (12k cached) · 3.12k out`). A terminal session
 prints it below the loop's output; raw, structured and redirected runs print
 it to stderr so stdout stays machine-readable. See

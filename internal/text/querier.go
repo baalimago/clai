@@ -621,10 +621,12 @@ func (q *Querier[C]) Query(ctx context.Context) error {
 		resizeEvents: resizeEvents,
 	}
 	q.launchSummary(ctx)
+	// The finalizer stores the result chat on q while Run is in flight.
+	before := q.chat
 	start := time.Now()
 	err := runner.Run(ctx, session)
 	if q.querySummary && q.loopProgress == nil {
-		err = errors.Join(err, q.reportQuerySummary(start, q.chat, session.Chat, err))
+		err = errors.Join(err, q.reportQuerySummary(start, before, session.Chat, err))
 	}
 	q.chat = session.Chat
 	q.fullMsg = session.FinalAssistantText
@@ -665,7 +667,7 @@ func (q *Querier[C]) TextQuery(ctx context.Context, chat pub_models.Chat) (pub_m
 	// Query will update the chat with the latest system message
 	err := q.Query(ctx)
 	if err != nil {
-		return pub_models.Chat{}, fmt.Errorf("TextQuery: %w", err)
+		return pub_models.Chat{}, &PartialRunError{Chat: q.chat, Err: err}
 	}
 	if q.debug && !q.debugTextQuerierPrinted {
 		q.debugTextQuerierPrinted = true
@@ -673,6 +675,21 @@ func (q *Querier[C]) TextQuery(ctx context.Context, chat pub_models.Chat) (pub_m
 	}
 
 	return q.chat, nil
+}
+
+// PartialRunError is a failed or cancelled TextQuery. Chat holds what the
+// run finalized before it stopped: completed tool results, usage and cost.
+type PartialRunError struct {
+	Chat pub_models.Chat
+	Err  error
+}
+
+func (e *PartialRunError) Error() string {
+	return "TextQuery: " + e.Err.Error()
+}
+
+func (e *PartialRunError) Unwrap() error {
+	return e.Err
 }
 
 func (q *Querier[C]) SetChatID(chatID string) {
