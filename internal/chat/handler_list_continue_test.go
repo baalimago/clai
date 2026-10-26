@@ -51,7 +51,7 @@ func TestChatHandler_findChatByID_prefersExactID(t *testing.T) {
 	}
 
 	cq := &ChatHandler{confDir: confDir, convDir: convDir}
-	got, err := cq.findChatByID(id)
+	got, err := cq.findChatByID(context.Background(), id, foreignClone)
 	if err != nil {
 		t.Fatalf("findChatByID: %v", err)
 	}
@@ -61,7 +61,7 @@ func TestChatHandler_findChatByID_prefersExactID(t *testing.T) {
 
 	// Also ensure cont() lookup path works when given an exact id as the first arg.
 	cq2 := &ChatHandler{confDir: confDir, convDir: convDir, subCmd: "continue", prompt: id, out: os.Stdout}
-	_, err = cq2.findChatByID(id)
+	_, err = cq2.findChatByID(context.Background(), id, foreignClone)
 	if err != nil {
 		t.Fatalf("findChatByID (via cont path): %v", err)
 	}

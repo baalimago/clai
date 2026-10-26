@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -206,14 +207,14 @@ func TestDeleteFromPrompt_sweepsUnreferencedAssets(t *testing.T) {
 	assetPath := filepath.Join(AssetsDir(confDir), pngRef(data))
 
 	cq.prompt = "first"
-	if err := cq.deleteFromPrompt(); err != nil {
+	if err := cq.deleteFromPrompt(context.Background()); err != nil {
 		t.Fatalf("delete first: %v", err)
 	}
 	if _, err := os.Stat(assetPath); err != nil {
 		t.Fatalf("asset still referenced by second must remain: %v", err)
 	}
 	cq.prompt = "second"
-	if err := cq.deleteFromPrompt(); err != nil {
+	if err := cq.deleteFromPrompt(context.Background()); err != nil {
 		t.Fatalf("delete second: %v", err)
 	}
 	if _, err := os.Stat(assetPath); !os.IsNotExist(err) {
@@ -231,7 +232,7 @@ func TestDeleteFromPrompt_sidecarFailureWarns(t *testing.T) {
 
 	cq.prompt = "doomed"
 	var deleteErr error
-	stdout := testboil.CaptureStdout(t, func(*testing.T) { deleteErr = cq.deleteFromPrompt() })
+	stdout := testboil.CaptureStdout(t, func(*testing.T) { deleteErr = cq.deleteFromPrompt(context.Background()) })
 	if deleteErr != nil {
 		t.Fatalf("deleteFromPrompt: %v, want the delete to succeed", deleteErr)
 	}

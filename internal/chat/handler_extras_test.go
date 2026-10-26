@@ -55,7 +55,7 @@ func TestFindChatByID_NumericIndexFallback(t *testing.T) {
 	SkipIndex = true
 	t.Cleanup(func() { SkipIndex = old })
 
-	got, err := cq.findChatByID("0 the rest")
+	got, err := cq.findChatByID(context.Background(), "0 the rest", foreignClone)
 	if err != nil {
 		t.Fatalf("findChatByID: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestFindChatByID_NumericIndexFallback(t *testing.T) {
 		t.Fatalf("prompt = %q, want the reassembled tokens", cq.prompt)
 	}
 
-	if _, err := cq.findChatByID("5"); err == nil {
+	if _, err := cq.findChatByID(context.Background(), "5", foreignClone); err == nil {
 		t.Fatal("expected an out-of-range error")
 	}
 }
@@ -77,7 +77,7 @@ func TestFindChatByID_IndexReadFailure(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 	cq := &ChatHandler{convDir: filepath.Join(blocker, "conversations")}
-	if _, err := cq.findChatByID("0"); err == nil {
+	if _, err := cq.findChatByID(context.Background(), "0", foreignClone); err == nil {
 		t.Fatal("expected an index read failure")
 	}
 }
@@ -88,7 +88,7 @@ func TestFindChatByID_IDLoadFailureIsNotNotFound(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 	cq := &ChatHandler{convDir: filepath.Join(blocker, "conversations")}
-	_, err := cq.findChatByID("some-id")
+	_, err := cq.findChatByID(context.Background(), "some-id", foreignClone)
 	if err == nil || !strings.Contains(err.Error(), `load chat by id "some-id"`) {
 		t.Fatalf("err = %v", err)
 	}
@@ -181,7 +181,7 @@ func TestDeleteFromPrompt(t *testing.T) {
 	}
 	cq.prompt = "doomed"
 	cq.out = io.Discard
-	if err := cq.deleteFromPrompt(); err != nil {
+	if err := cq.deleteFromPrompt(context.Background()); err != nil {
 		t.Fatalf("deleteFromPrompt: %v", err)
 	}
 	if _, err := os.Stat(conversationPathFromDir(convDir, "doomed")); !os.IsNotExist(err) {
@@ -189,7 +189,7 @@ func TestDeleteFromPrompt(t *testing.T) {
 	}
 
 	cq.prompt = "doomed"
-	if err := cq.deleteFromPrompt(); err == nil {
+	if err := cq.deleteFromPrompt(context.Background()); err == nil {
 		t.Fatal("expected an error deleting a missing chat")
 	}
 }

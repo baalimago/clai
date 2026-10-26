@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -207,7 +208,7 @@ func TestFindChatByID_IndexLoadsOnlySelectedChat(t *testing.T) {
 	}
 
 	h := &ChatHandler{convDir: tmp}
-	got, err := h.findChatByID("0 trailing prompt")
+	got, err := h.findChatByID(context.Background(), "0 trailing prompt", foreignClone)
 	if err != nil {
 		t.Fatalf("findChatByID() error = %v", err)
 	}

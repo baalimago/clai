@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"context"
 	"io"
 	"path/filepath"
 	"strings"
@@ -108,7 +109,7 @@ func TestChatContinue_printsObfuscatedSummary_withPaddingAndPreview(t *testing.T
 		out:     io.Discard,
 	}
 
-	ch, err := cq.findChatByID(cq.prompt)
+	ch, err := cq.findChatByID(context.Background(), cq.prompt, foreignClone)
 	if err != nil {
 		t.Fatalf("findChatByID: %v", err)
 	}
@@ -165,7 +166,7 @@ func TestChatContinue_highMessageCount_obfuscatesOldMessages_andPrettyPrintsLast
 		out:     io.Discard,
 	}
 
-	ch, err := cq.findChatByID(cq.prompt)
+	ch, err := cq.findChatByID(context.Background(), cq.prompt, foreignClone)
 	if err != nil {
 		t.Fatalf("findChatByID: %v", err)
 	}
