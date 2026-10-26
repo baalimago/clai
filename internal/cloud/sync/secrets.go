@@ -60,7 +60,7 @@ func secretIn(v any, path string, inEnv bool) (Secret, bool) {
 				field = path + "." + k
 			}
 			if s, ok := val.(string); ok {
-				if (secretName(k) && literal(s, 8)) || (inEnv && literal(s, opaqueEnvMin) && !isPath(s)) {
+				if (secretName(k) && !reference(s)) || (inEnv && literal(s, opaqueEnvMin) && !isPath(s)) {
 					return Secret{Field: field}, true
 				}
 				continue
@@ -103,19 +103,27 @@ func secretName(k string) bool {
 }
 
 // literal: a value at least minLen long with no whitespace that is not a
-// reference to one ("$OPENAI_API_KEY", "${TOKEN}", "env:NAME") or a URL.
+// reference to one.
 func literal(s string, minLen int) bool {
 	s = strings.TrimSpace(s)
+	return len(s) >= minLen && !strings.ContainsAny(s, " \t\n") && !reference(s)
+}
+
+// reference: a blank value, or one that names a credential instead of
+// holding it ("$OPENAI_API_KEY", "${TOKEN}", "env:NAME") or is a URL. Any
+// other value under a secret's name is the secret, however short.
+func reference(s string) bool {
+	s = strings.TrimSpace(s)
 	if b, ok := strings.CutPrefix(s, "Bearer "); ok {
-		s = b
+		s = strings.TrimSpace(b)
 	}
-	if len(s) < minLen || strings.ContainsAny(s, " \t\n") {
-		return false
+	if s == "" {
+		return true
 	}
 	for _, ref := range []string{"$", "env:", "http://", "https://"} {
 		if strings.HasPrefix(s, ref) {
-			return false
+			return true
 		}
 	}
-	return true
+	return false
 }
