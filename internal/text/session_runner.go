@@ -270,6 +270,12 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 					return ModelStepResult{}, err
 				}
 			case models.ReasoningEvent:
+				if cast.Content == "" {
+					// Hidden reasoning (e.g. omitted thinking display) has
+					// nothing to show; opening a wrapper for it prints an
+					// empty [thinking] block.
+					continue
+				}
 				if !q.reasoningActive {
 					if q.usesActivityViewport() {
 						q.ensureActivityViewport()

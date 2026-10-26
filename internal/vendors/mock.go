@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/baalimago/clai/internal/models"
+	"github.com/baalimago/clai/internal/text/generic"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -36,6 +37,10 @@ type Mock struct {
 func (m *Mock) Setup() error {
 	return nil
 }
+
+// SetResponseFormat accepts any response format; the mock's reply does not
+// depend on it.
+func (m *Mock) SetResponseFormat(*generic.ResponseFormat) {}
 
 func (m *Mock) TokenUsage() *pub_models.Usage {
 	m.mu.Lock()

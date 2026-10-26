@@ -299,6 +299,11 @@ func (c *Claude) constructRequest(ctx context.Context, chat pub_models.Chat) (*h
 	if len(c.tools) > 0 {
 		reqData.Tools = c.tools
 	}
+	outCfg, err := c.outputConfig()
+	if err != nil {
+		return nil, err
+	}
+	reqData.OutputConfig = outCfg
 	jsonData, err := json.Marshal(reqData)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal ClaudeReq: %w", err)
