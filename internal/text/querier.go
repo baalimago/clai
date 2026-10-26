@@ -149,6 +149,9 @@ type Querier[C models.StreamCompleter] struct {
 	// summaryReady holds the result the session loop took while the run was
 	// still streaming; the join consumes it instead of waiting.
 	summaryReady *summaryResult
+	// summaryDeferred holds a plain query's label launch until its first
+	// tool step: a one-step answer never waits, so its label never lands.
+	summaryDeferred bool
 }
 
 func (q *Querier[C]) SuppressCompletionNotification() bool {
@@ -620,7 +623,8 @@ func (q *Querier[C]) Query(ctx context.Context) error {
 		stoploss:     q.newStoploss(),
 		resizeEvents: resizeEvents,
 	}
-	q.launchSummary(ctx)
+	q.startSummary(ctx)
+	defer func() { q.summaryDeferred = false }()
 	// The finalizer stores the result chat on q while Run is in flight.
 	before := q.chat
 	start := time.Now()

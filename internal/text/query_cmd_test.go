@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/baalimago/clai/internal/chat"
 	"github.com/baalimago/clai/internal/models"
@@ -70,9 +71,12 @@ func TestQueryCommand_newSummarizerError(t *testing.T) {
 		t.Setenv("HOME", t.TempDir())
 		writeMockPriceFile(t, confDir)
 		seedEmptyChatIndex(t, confDir)
+		// A plain query launches its labeller up front only when it waits
+		// for the label.
 		c := QueryCommand(QueryCommandDeps{
-			ConfigPrep:    func() (string, error) { return confDir, nil },
-			NewSummarizer: newSummarizer,
+			ConfigPrep:         func() (string, error) { return confDir, nil },
+			NewSummarizer:      newSummarizer,
+			SummaryJoinTimeout: 5 * time.Second,
 		})
 		if err := c.Flagset().Parse([]string{"-r", "-cm", "test", "hello", "there"}); err != nil {
 			t.Fatalf("Parse: %v", err)

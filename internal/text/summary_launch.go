@@ -80,6 +80,25 @@ func (q *Querier[C]) launchSummary(ctx context.Context) {
 	q.summaryRun = run
 }
 
+// startSummary launches the summarizer now when its result is waited for,
+// and otherwise defers it to the run's first tool step.
+func (q *Querier[C]) startSummary(ctx context.Context) {
+	if q.loopProgress == nil && q.summaryJoinBound() == 0 {
+		q.abandonSummary()
+		q.summaryDeferred = true
+		return
+	}
+	q.launchSummary(ctx)
+}
+
+func (q *Querier[C]) launchDeferredSummary(ctx context.Context) {
+	if !q.summaryDeferred {
+		return
+	}
+	q.summaryDeferred = false
+	q.launchSummary(ctx)
+}
+
 // signalInterrupt closes the returned channel on SIGINT or SIGTERM until
 // the release func is called.
 func signalInterrupt() (<-chan struct{}, func()) {

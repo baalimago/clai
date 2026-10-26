@@ -3,6 +3,7 @@ package text
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -304,6 +305,7 @@ func TestQuery_summaryModelResolution(t *testing.T) {
 			fake := instantSummarizer()
 			q := newQuerierWithFlags(t, row.conf, row.mods)
 			q.SetSummarizer(fake)
+			q.summaryJoinTimeout = 5 * time.Second
 			if err := q.Query(t.Context()); err != nil {
 				t.Fatalf("Query: %v", err)
 			}
@@ -426,6 +428,7 @@ func TestQuery_stopEventDoesNotCancelSummary(t *testing.T) {
 	}
 	q.SetSummarizer(fake)
 	q.summaryInterrupt = interrupt
+	q.summaryJoinTimeout = 5 * time.Second
 
 	if err := q.Query(root); err != nil {
 		t.Fatalf("Query: %v", err)
@@ -743,4 +746,50 @@ func TestLaunchSummary_SelectsTheLoopKind(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestQuery_plainQueryLabelsOnlyRunsThatContinue pins the cost rule: a plain
+// query never waits for its label, so a one-step answer would only race a
+// second model request it almost always loses. The labeller starts once the
+// run continues past a tool call, when there is time for it to land.
+func TestQuery_plainQueryLabelsOnlyRunsThatContinue(t *testing.T) {
+	t.Setenv("DEBUG_SUMMARY", "")
+	t.Run("one-step answer sends no label request", func(t *testing.T) {
+		fake := instantSummarizer()
+		q := launchQuerier(t, fake, newChat("one-step"))
+		q.summaryJoinTimeout = 0
+		if err := q.Query(t.Context()); err != nil {
+			t.Fatalf("Query: %v", err)
+		}
+		if got := fake.callCount(); got != 0 {
+			t.Fatalf("summarizer calls = %d, want 0", got)
+		}
+	})
+	t.Run("a tool step launches it once", func(t *testing.T) {
+		fake := instantSummarizer()
+		q := launchQuerier(t, fake, newChat("tool-run"))
+		q.summaryJoinTimeout = 0
+		calls := 0
+		q.Model.streamFn = func(context.Context, pub_models.Chat) (chan models.CompletionEvent, error) {
+			calls++
+			out := make(chan models.CompletionEvent, 2)
+			if calls < 3 {
+				out <- pub_models.Call{ID: fmt.Sprintf("c%d", calls), Name: "missing_tool"}
+			} else {
+				out <- "answer"
+				out <- models.StopEvent{}
+			}
+			close(out)
+			return out, nil
+		}
+		if err := q.Query(t.Context()); err != nil {
+			t.Fatalf("Query: %v", err)
+		}
+		if got := fake.callCount(); got != 1 {
+			t.Fatalf("summarizer calls = %d, want exactly 1", got)
+		}
+		if q.summaryRun != nil {
+			t.Fatal("summaryRun must be released after the run")
+		}
+	})
 }
