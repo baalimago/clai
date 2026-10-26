@@ -1,5 +1,7 @@
 package models
 
+import "encoding/json"
+
 // ResponseFormat configures structured output for compatible models.
 // Supported types: "text", "json_object", "json_schema".
 type ResponseFormat struct {
@@ -19,4 +21,8 @@ type JSONSchema struct {
 	Strict bool
 	// Schema is the JSON Schema definition as a map.
 	Schema map[string]any
+	// RawSchema is the JSON Schema definition as encoded JSON. When set it is
+	// sent instead of Schema and keeps the declared property order, which a
+	// map cannot; models tend to answer properties in the order they are listed.
+	RawSchema json.RawMessage
 }

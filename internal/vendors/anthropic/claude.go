@@ -2,6 +2,7 @@ package anthropic
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"maps"
 	"net/http"
@@ -125,8 +126,8 @@ type outputConfig struct {
 }
 
 type outputFormat struct {
-	Type   string         `json:"type"`
-	Schema map[string]any `json:"schema"`
+	Type   string          `json:"type"`
+	Schema json.RawMessage `json:"schema"`
 }
 
 // SetResponseFormat configures structured output. Only json_schema maps onto
@@ -143,10 +144,14 @@ func (c *Claude) outputConfig() (*outputConfig, error) {
 	if rf.Type != "json_schema" {
 		return nil, fmt.Errorf("anthropic: %w: type %q, use \"json_schema\" with a schema", generic.ErrResponseFormatUnsupported, rf.Type)
 	}
-	if rf.JSONSchema == nil || len(rf.JSONSchema.Schema) == 0 {
+	if rf.JSONSchema == nil {
 		return nil, fmt.Errorf("anthropic: %w: json_schema without json_schema.schema", generic.ErrResponseFormatUnsupported)
 	}
-	return &outputConfig{Format: outputFormat{Type: "json_schema", Schema: rf.JSONSchema.Schema}}, nil
+	schema, err := rf.JSONSchema.SchemaJSON()
+	if err != nil {
+		return nil, fmt.Errorf("anthropic: %w: %w", generic.ErrResponseFormatUnsupported, err)
+	}
+	return &outputConfig{Format: outputFormat{Type: "json_schema", Schema: schema}}, nil
 }
 
 // claudifyMessages converts from 'normal' openai chat format into a format which claud prefers
