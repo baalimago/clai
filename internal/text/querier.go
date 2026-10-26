@@ -306,6 +306,7 @@ func (q *Querier[C]) handleTokenForSession(session *QuerySession, token string) 
 	if w == nil {
 		w = os.Stdout
 	}
+	prior := session.PendingTextString()
 	session.AppendPendingText(token)
 	q.fullMsg = session.PendingTextString()
 	if !q.debug && !q.structuredOutput {
@@ -315,6 +316,11 @@ func (q *Querier[C]) handleTokenForSession(session *QuerySession, token string) 
 				return fmt.Errorf("render activity viewport: %w", err)
 			}
 			return nil
+		}
+		if !q.rawDisplay() && q.dims.Width > 0 {
+			// The clear before a tool call counts these rows, so they must
+			// break where TerminalRows says on every terminal.
+			token = utils.PinWideRunes(prior, token, q.dims.Width)
 		}
 		fmt.Fprint(w, token)
 	}

@@ -1,5 +1,5 @@
 // Package vttest is a minimal terminal for tests that check what output leaves on
-// screen: \n, \r, tab stops, CSI nA, CSI J, CSI 2J, CSI K and CSI 2K, SGR and OSC
+// screen: \n, \r, tab stops, CSI nA, CSI nG, CSI J, CSI 2J, CSI K and CSI 2K, SGR and OSC
 // skipped, wide cells, NUL, BEL, DEL and zero-width marks dropped, and autowrap at a
 // width. Any other escape sequence, and one left unfinished, is reported by Unhandled.
 // There is no screen height: every row stays, and CSI A stops at the first row.
@@ -23,14 +23,17 @@ const snapshotCode = "\x1b[999X"
 
 // Terminal replays written output. Width 0 never wraps.
 type Terminal struct {
-	Width     int
-	lines     [][]rune
-	wraps     []bool
-	row, col  int
-	partial   string
-	pending   []rune
-	snapshots [][]string
-	unhandled []string
+	Width int
+	// NarrowEmoji draws emoji one cell wide, as terminals on Unicode 6 width
+	// tables (xterm.js by default) do.
+	NarrowEmoji bool
+	lines       [][]rune
+	wraps       []bool
+	row, col    int
+	partial     string
+	pending     []rune
+	snapshots   [][]string
+	unhandled   []string
 }
 
 // SnapshotCode is written by a test to record the screen at that point.
@@ -162,6 +165,9 @@ func (t *Terminal) step(rs []rune) int {
 
 func (t *Terminal) put(r rune) {
 	w := cells(r)
+	if t.NarrowEmoji && isEmoji(r) {
+		w = 1
+	}
 	if w == 0 {
 		return
 	}
@@ -200,6 +206,11 @@ func (t *Terminal) csi(final rune, params string) {
 	case final == 'm':
 	case final == 'A':
 		t.row, t.col = max(0, t.row-n), min(t.col, col)
+	case final == 'G':
+		t.col = n - 1
+		if t.Width > 0 {
+			t.col = min(t.col, t.Width-1)
+		}
 	case final == 'J' && params == "2":
 		t.line()
 		for i := range t.lines {
@@ -252,8 +263,10 @@ func cells(r rune) int {
 	case width.EastAsianWide, width.EastAsianFullwidth:
 		return 2
 	}
-	if r >= 0x1f300 && r <= 0x1faff {
+	if isEmoji(r) {
 		return 2
 	}
 	return 1
 }
+
+func isEmoji(r rune) bool { return r >= 0x1f300 && r <= 0x1faff }
