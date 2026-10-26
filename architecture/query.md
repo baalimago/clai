@@ -360,6 +360,6 @@ This allows subsequent `-dre` queries from the same directory to continue the co
 ## Output Modes
 
 - **Default (animated)**: tokens stream to stdout character-by-character, then the full message is pretty-printed (via `glow` when the destination is a terminal)
-- **Raw (`-r`)**: tokens stream directly, no post-processing formatting
-- **Structured (`-rf`/`-response-format`)**: blocks streaming and prints only the final structured response, followed by one newline. It suppresses reasoning, tool activity, skill-discovery logs, lookback notices, formatting, and BEL.
+- **Raw (`-r`)**: tokens stream directly, no post-processing formatting. Reasoning with no visible text (e.g. Anthropic's omitted thinking display) prints no `[thinking]` wrapper.
+- **Structured (`-rf`/`-response-format`)**: blocks streaming and prints only the final structured response, followed by one newline. It suppresses reasoning, tool activity, skill-discovery logs, lookback notices, formatting, and BEL. The model must implement `generic.ResponseFormatSetter`; one that does not fails with `generic.ErrResponseFormatUnsupported` instead of silently streaming prose. OpenAI-compatible vendors send `response_format`, Jev reads its questions from `json_schema.schema`, and Anthropic maps `json_schema` onto `output_config.format` (it rejects `json_object`, which it has no equivalent for).
 - **Cmd mode (`cmd` command)**: output is treated as a shell command; user is prompted to execute it

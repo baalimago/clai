@@ -27,6 +27,7 @@ import (
 	"github.com/baalimago/clai/internal/photo"
 	"github.com/baalimago/clai/internal/present"
 	"github.com/baalimago/clai/internal/profiles"
+	"github.com/baalimago/clai/internal/remote"
 	"github.com/baalimago/clai/internal/setup"
 	"github.com/baalimago/clai/internal/summary"
 	"github.com/baalimago/clai/internal/text"
@@ -89,6 +90,9 @@ type Deps struct {
 	NewSummarizer     func(confDir string) (models.Summarizer, error)
 	ForeignCache      func() vendors.SourceCache
 	NewImageGenerator imagegen.NewGeneratorFunc
+	// RemoteClient fetches -prp cchub:, gh: and https:// targets. Tests point
+	// it at a local TLS server.
+	RemoteClient remote.Doer
 }
 
 // DefaultDeps returns the production collaborators: the real summarizer, the
@@ -98,6 +102,20 @@ func DefaultDeps() Deps {
 		NewSummarizer:     summary.NewAgentSummarizer,
 		ForeignCache:      chat.DefaultForeignCache,
 		NewImageGenerator: route.NewGenerator,
+		RemoteClient:      remote.NewClient(),
+	}
+}
+
+// remoteResolver builds the resolver for remote profile targets over the
+// config directory a command prepared and the clai cache directory.
+func remoteResolver(client remote.Doer) text.NewRemoteResolverFunc {
+	return func(confDir string, prompt remote.Prompter) (remote.Resolver, error) {
+		cacheDir, err := utils.GetClaiCacheDir()
+		if err != nil {
+			return remote.Resolver{}, err
+		}
+		note := func(s string) { fmt.Fprintf(os.Stderr, "notice: %s\n", s) }
+		return remote.NewResolver(remote.EnvFrom(os.Getenv), confDir, cacheDir, client, prompt, note)
 	}
 }
 
@@ -127,6 +145,7 @@ func commands(deps Deps, setExit func(int)) map[string]cmd.Command {
 		NewSummarizer:       deps.NewSummarizer,
 		NewImageGenerator:   deps.NewImageGenerator,
 		PhotoConfig:         setup.LoadPhotoConfig,
+		NewRemoteResolver:   remoteResolver(deps.RemoteClient),
 	}
 	return map[string]cmd.Command{
 		"query|q": text.QueryCommand(queryDeps),
@@ -157,8 +176,11 @@ func commands(deps Deps, setExit func(int)) map[string]cmd.Command {
 		"dir-replay|dre": chat.DirscopeReplayCommand(),
 		"tools|t":        tools.Command(),
 		"mcp":            mcp.Command(),
-		"profiles":       profiles.Command(),
-		"confdir":        confdir.Command(),
+		"profiles": profiles.Command(profiles.CommandDeps{
+			NewResolver: profiles.NewResolverFunc(remoteResolver(deps.RemoteClient)),
+			ConfigDir:   func() (string, error) { return configPrep() },
+		}),
+		"confdir": confdir.Command(),
 		"cloud": cloudcmd.Command(cloudcmd.Deps{
 			ConfDir: utils.GetClaiConfigDir,
 			SetExit: setExit,
@@ -198,12 +220,8 @@ func Run(args []string, deps Deps) int {
 	cfgDir, _ := utils.GetClaiConfigDir()
 	cacheDir, _ := utils.GetClaiCacheDir()
 	usage := strings.NewReplacer("CONFIG_DIR", cfgDir, "CACHE_DIR", cacheDir).Replace(usageTemplate)
-	exit := 0
-	code := cmd.Run(ctx, append([]string{"clai"}, args...), commands(deps, func(c int) { exit = c }), usage)
-	if code == 0 && exit != 0 {
-		return exit
-	}
-	return code
+	ctx, exit := internal.WithExitStatus(ctx)
+	return exit.Resolve(cmd.Run(ctx, append([]string{"clai"}, args...), commands(deps, exit.Set), usage))
 }
 
 func startCPUProfile(name string) (func(), error) {

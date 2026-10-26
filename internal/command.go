@@ -127,17 +127,17 @@ func (c *Command) Setup(ctx context.Context) error {
 	utils.NoCreateConfig = false
 	utils.Live = !(c.NonInteractive != nil && c.NonInteractive.Value())
 	if c.OnSetup != nil {
-		return c.OnSetup(ctx, c)
+		return recordExit(ctx, c.OnSetup(ctx, c))
 	}
 	return nil
 }
 
 func (c *Command) Run(ctx context.Context) error {
 	if c.OnRun != nil {
-		return c.OnRun(ctx, c)
+		return recordExit(ctx, c.OnRun(ctx, c))
 	}
 	if err := c.querier.Query(ctx); err != nil {
-		return err
+		return recordExit(ctx, err)
 	}
 	triggerCompletionNotification(c.querier)
 	return nil

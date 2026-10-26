@@ -49,11 +49,11 @@ type responsesText struct {
 }
 
 type responsesTextFormat struct {
-	Type        string         `json:"type"` // "text" | "json_object" | "json_schema"
-	Name        string         `json:"name,omitempty"`
-	Description string         `json:"description,omitempty"`
-	Schema      map[string]any `json:"schema,omitempty"`
-	Strict      bool           `json:"strict,omitempty"`
+	Type        string          `json:"type"` // "text" | "json_object" | "json_schema"
+	Name        string          `json:"name,omitempty"`
+	Description string          `json:"description,omitempty"`
+	Schema      json.RawMessage `json:"schema,omitempty"`
+	Strict      bool            `json:"strict,omitempty"`
 }
 
 // NOTE: For Responses, input[] is a *union* keyed by "type".

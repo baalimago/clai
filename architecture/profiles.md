@@ -1,10 +1,12 @@
 # Profiles Command Architecture
 
-Command: `clai profiles [list]`
+Command: `clai profiles [list|install|update|trust]`
 
-The **profiles** command is a small inspection command that lists the configured profile JSON files under the clai config directory.
+The **profiles** command lists the configured profile JSON files under the clai config directory. It also installs, updates and trusts remote profile targets (`cchub:`, `gh:`, `https://`); [remote-targets.md](./remote-targets.md) covers those.
 
 Profiles themselves are used primarily via the `-p/-profile` and `-prp/-profile-path` flags on text-like commands (`query`, `chat`, `cmd`). Configuration semantics are described in `CONFIG.md`.
+
+Loading a profile (`-p` or `-prp`) is read-only (`utils.ReadConfigFile`): fields missing from the file are filled from `DefaultProfile` in memory, the file is never rewritten, nothing is created beside it, and a missing profile file is an error.
 
 ## Entry Flow
 
@@ -19,7 +21,8 @@ internal/cli:Run()
 
 | File | Purpose |
 |------|---------|
-| `internal/profiles/cmd.go` | profiles command + `list` sub (see [cmd-dispatch.md](./cmd-dispatch.md)) |
+| `internal/profiles/cmd.go` | profiles command + `list`, `trust`, `install`, `update` subs (see [cmd-dispatch.md](./cmd-dispatch.md)) |
+| `internal/profiles/remote.go` | `CommandDeps.Trust`, `Install`, `Update` and the `source` stamp |
 | `internal/profiles/cmd.go` | Implements `clai profiles` command |
 | `internal/utils/config_dir.go` (or similar) | `GetClaiConfigDir()` |
 | `internal/utils/json.go` (or similar) | `ReadAndUnmarshal()` helper |
@@ -32,6 +35,9 @@ Implemented in `internal/profiles/cmd.go`.
 
 - `clai profiles`
 - `clai profiles list`
+- `clai profiles trust <target>`
+- `clai profiles install <target> [name]`
+- `clai profiles update [name]`
 
 Any other subcommand returns an error.
 
@@ -64,6 +70,7 @@ Any other subcommand returns an error.
    - Name
    - Model
    - Tools
+   - Source, when the profile was installed from a remote target
    - First sentence/line from `Prompt`
 
 8. If no valid profiles were found, prints a warning.

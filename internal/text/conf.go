@@ -237,6 +237,14 @@ type Profile struct {
 	McpServers      map[string]pub_models.McpServer `json:"mcp_servers,omitempty"`
 	ShellContext    string                          `json:"shell_context,omitempty"`
 	UseLookback     *bool                           `json:"use_lookback,omitempty"`
+	// Source is the stamp `clai profiles install` writes: the remote target
+	// the profile came from, pinned by hash (architecture/remote-targets.md).
+	Source *ProfileSource `json:"source,omitempty"`
+}
+
+// ProfileSource names the remote target an installed profile came from.
+type ProfileSource struct {
+	Target string `json:"target"`
 }
 
 var Default = Configurations{
@@ -431,6 +439,7 @@ func toGenericResponseFormat(rf *pub_models.ResponseFormat) *generic.ResponseFor
 			Description: s.Description,
 			Strict:      s.Strict,
 			Schema:      s.Schema,
+			RawSchema:   s.RawSchema,
 		}
 	}
 	return gf
@@ -451,6 +460,7 @@ func responseFormatFromGeneric(gf *generic.ResponseFormat) *pub_models.ResponseF
 			Description: gf.JSONSchema.Description,
 			Strict:      gf.JSONSchema.Strict,
 			Schema:      gf.JSONSchema.Schema,
+			RawSchema:   gf.JSONSchema.RawSchema,
 		}
 	}
 	return rf

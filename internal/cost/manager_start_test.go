@@ -170,10 +170,15 @@ func TestManagerStart(t *testing.T) {
 		}
 	})
 
-	t.Run("a missing fetcher on a cache miss is an error", func(t *testing.T) {
+	t.Run("a missing fetcher on a cache miss is a debug error", func(t *testing.T) {
 		m := NewManager(nil, "model", writeConfig(t, map[string]any{}))
-		if err := startAndWait(t, &m); err == nil || !strings.Contains(err.Error(), "missing model catalog fetcher") {
-			t.Fatalf("Start err = %v, want the missing fetcher error", err)
+		err := startAndWait(t, &m)
+		if !errors.Is(err, ErrNoModelCatalog) {
+			t.Fatalf("Start err = %v, want ErrNoModelCatalog", err)
+		}
+		var debugErr DebugError
+		if !errors.As(err, &debugErr) {
+			t.Fatalf("Start err = %T, want a DebugError: no catalog is a normal condition", err)
 		}
 	})
 }

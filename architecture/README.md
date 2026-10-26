@@ -32,7 +32,8 @@ This directory contains short design notes for key parts of **clai**. Each file 
 - **[video.md](./video.md)** — `clai video`: video generation (OpenAI Sora), the optional input image from `-img` or stdin, and output modes.
 - **[audio.md](./audio.md)** — `clai audio transcribe`: audio transcription (OpenAI/OpenRouter), local vtt/srt/text/json rendering, ffmpeg split for large files, and the `audio_transcribe` tool bridge.
 - **[tools-command.md](./tools-command.md)** — `clai tools` inspection UI: list tools and print JSON schema for one tool.
-- **[profiles.md](./profiles.md)** — `clai profiles`: lists profile JSONs and prints a small summary; profiles are applied via `-p` flags (see CONFIG).
+- **[profiles.md](./profiles.md)** — `clai profiles`: lists profile JSONs and prints a small summary, and installs, updates and trusts remote ones; profiles are applied via `-p` flags (see CONFIG).
+- **[remote-targets.md](./remote-targets.md)** — `-prp cchub:/gh:/https://` targets: strict validation, trust per content hash in `<config>/trust.json`, the `<cache>/remote/` cache, `#sha256=` as consent, `CLAI_CLOUD=off`, and exit status 3 for a refused target.
 - **[setup.md](./setup.md)** — `clai setup` interactive wizard for editing mode configs, vendor model files, profiles, and MCP server configs.
 - **[help.md](./help.md)** — the help system: dispatcher usage on bare `clai`, per-command `-h` (Help() + flags + examples + sub tables), profile docs in `clai profiles -h`.
 - **[cloud.md](./cloud.md)** — `clai cloud`: browser-approved login to clai.chat, the config and conversation stores (1 GB free, then $1/GB a month), git-style status, diff, pull, commit, resolve and log, conflicts kept beside the local file in `cloud/theirs/`, conversation merges and forks, the credential check, and the export of imported conversations.
