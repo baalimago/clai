@@ -488,12 +488,16 @@ func (s *responsesStreamer) createRequest(ctx context.Context, chat pub_models.C
 		return nil, fmt.Errorf("map chat to responses input: %w", err)
 	}
 
+	text, err := mapResponseFormat(s.responseFormat)
+	if err != nil {
+		return nil, err
+	}
 	storeFalse := false
 	reqBody := responsesRequest{
 		Model:           s.model,
 		Input:           input,
 		Stream:          true,
-		Text:            mapResponseFormat(s.responseFormat),
+		Text:            text,
 		Temperature:     s.temperature,
 		TopP:            s.topP,
 		MaxOutputTokens: s.maxOutputTokens,
@@ -545,18 +549,22 @@ func (s *responsesStreamer) createRequest(ctx context.Context, chat pub_models.C
 // mapResponseFormat converts the generic response format into the Responses
 // text.format payload. It returns nil for the default (text) format so the field
 // is omitted from the request.
-func mapResponseFormat(rf *generic.ResponseFormat) *responsesText {
+func mapResponseFormat(rf *generic.ResponseFormat) (*responsesText, error) {
 	if rf == nil || rf.Type == "" || rf.Type == "text" {
-		return nil
+		return nil, nil
 	}
 	format := responsesTextFormat{Type: rf.Type}
 	if rf.Type == "json_schema" && rf.JSONSchema != nil {
+		schema, err := rf.JSONSchema.SchemaJSON()
+		if err != nil {
+			return nil, fmt.Errorf("map response format: %w", err)
+		}
 		format.Name = rf.JSONSchema.Name
 		format.Description = rf.JSONSchema.Description
-		format.Schema = rf.JSONSchema.Schema
+		format.Schema = schema
 		format.Strict = rf.JSONSchema.Strict
 	}
-	return &responsesText{Format: format}
+	return &responsesText{Format: format}, nil
 }
 
 func mapChatToResponsesInput(chat pub_models.Chat, includeReasoning bool) ([]responsesInputItem, error) {

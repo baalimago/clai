@@ -123,7 +123,7 @@ Errors still go to standard error.
 
 ```bash
 clai -asc minimal query "Why is this command failing?"
-clai -append-shell-context git query "Summarize the current repo state before answering"
+clai -add-shell-context git query "Summarize the current repo state before answering"
 ```
 
 - Shell contexts live in `<clai-config>/shellContexts/<name>.json`.

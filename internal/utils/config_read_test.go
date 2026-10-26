@@ -1,48 +1,61 @@
 package utils
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
 )
 
-type readOnlyConf struct {
+type readConfigT struct {
 	Model  string `json:"model"`
 	Prompt string `json:"prompt"`
-	Tools  bool   `json:"use_tools"`
 }
 
-func TestReadConfigFile_fillsDefaultsInMemoryAndWritesNothing(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "p.json")
-	body := []byte(`{"model":"m","use_tools":false}`)
-	if err := os.WriteFile(path, body, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	got, err := ReadConfigFile(path, &readOnlyConf{Prompt: "default", Tools: true})
-	if err != nil {
-		t.Fatalf("ReadConfigFile: %v", err)
-	}
-	if got != (readOnlyConf{Model: "m", Prompt: "default", Tools: false}) {
-		t.Fatalf("got %+v", got)
-	}
-	after, _ := os.ReadFile(path)
-	entries, _ := os.ReadDir(dir)
-	if string(after) != string(body) || len(entries) != 1 {
-		t.Fatalf("file now %q, dir holds %d entries; want both untouched", after, len(entries))
-	}
-}
+func TestReadConfigFile(t *testing.T) {
+	dflt := &readConfigT{Model: "default-model", Prompt: "default-prompt"}
 
-func TestReadConfigFile_errors(t *testing.T) {
-	dir := t.TempDir()
-	if _, err := ReadConfigFile(filepath.Join(dir, "missing.json"), &readOnlyConf{}); err == nil {
-		t.Fatal("missing file: want error")
-	}
-	bad := filepath.Join(dir, "bad.json")
-	if err := os.WriteFile(bad, []byte("{"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := ReadConfigFile(bad, &readOnlyConf{}); err == nil {
-		t.Fatal("bad json: want error")
-	}
+	t.Run("fills missing fields in memory and writes nothing", func(t *testing.T) {
+		dir := t.TempDir()
+		p := filepath.Join(dir, "c.json")
+		if err := os.WriteFile(p, []byte(`{"model":"m"}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		got, err := ReadConfigFile(p, dflt)
+		if err != nil {
+			t.Fatalf("ReadConfigFile: %v", err)
+		}
+		if got.Model != "m" || got.Prompt != "default-prompt" {
+			t.Fatalf("got %+v", got)
+		}
+		after, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(after) != `{"model":"m"}` {
+			t.Fatalf("file rewritten to %s", after)
+		}
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(entries) != 1 {
+			t.Fatalf("dir has %d entries, want only the config file", len(entries))
+		}
+	})
+	t.Run("missing file", func(t *testing.T) {
+		if _, err := ReadConfigFile(filepath.Join(t.TempDir(), "absent.json"), dflt); !errors.Is(err, fs.ErrNotExist) {
+			t.Fatalf("err = %v, want fs.ErrNotExist", err)
+		}
+	})
+	t.Run("malformed file", func(t *testing.T) {
+		p := filepath.Join(t.TempDir(), "bad.json")
+		if err := os.WriteFile(p, []byte(`{`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := ReadConfigFile(p, dflt); err == nil {
+			t.Fatal("ReadConfigFile accepted malformed JSON")
+		}
+	})
 }

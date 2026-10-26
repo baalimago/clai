@@ -292,11 +292,12 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	querier.tooling.run = userConf.BaseTools
 	querier.tooling.registered = userConf.RegisteredTools
 
-	// Propagate response format to the model if it supports it
 	if userConf.ResponseFormat != nil {
-		if setter, ok := any(modelConf).(generic.ResponseFormatSetter); ok {
-			setter.SetResponseFormat(toGenericResponseFormat(userConf.ResponseFormat))
+		setter, ok := any(modelConf).(generic.ResponseFormatSetter)
+		if !ok {
+			return Querier[C]{}, fmt.Errorf("model %q: %w: this vendor cannot honour -rf", userConf.Model, generic.ErrResponseFormatUnsupported)
 		}
+		setter.SetResponseFormat(toGenericResponseFormat(userConf.ResponseFormat))
 	}
 
 	costWarnf := ancli.Errf

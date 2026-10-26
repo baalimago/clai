@@ -158,11 +158,15 @@ func mockChatWithUsage() pub_models.Chat {
 	}
 }
 
+// malformedPriceConfig is a model config whose cached price cannot be
+// decoded, which the cost manager reports as a user-facing warning.
+const malformedPriceConfig = `{"price": "not a price scheme"}`
+
 func TestCostReadinessWaitsForDiagnosticDelivery(t *testing.T) {
 	t.Setenv("OPENROUTER_API_KEY", "")
 	t.Setenv("CLAI_DISABLE_COST_ERR_LOG_GOROUTINE", "")
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "mock_test_test.json"), []byte(`{}`), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "mock_test_test.json"), []byte(malformedPriceConfig), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	entered := make(chan struct{})
@@ -205,9 +209,9 @@ func TestNewQuerier_costManagerErrorUsesCostWarnf(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(confDir, "mcpServers"), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	// No price and no fetcher: the manager reports "missing model catalog
-	// fetcher" on its error channel.
-	if err := os.WriteFile(filepath.Join(confDir, "mock_test_test.json"), []byte(`{}`), 0o644); err != nil {
+	// A malformed cached price: the manager reports the unmarshal failure on
+	// its error channel.
+	if err := os.WriteFile(filepath.Join(confDir, "mock_test_test.json"), []byte(malformedPriceConfig), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 	got := make(chan string, 4)
@@ -220,8 +224,8 @@ func TestNewQuerier_costManagerErrorUsesCostWarnf(t *testing.T) {
 		}
 		select {
 		case msg := <-got:
-			if !strings.Contains(msg, "cost manager error") || !strings.Contains(msg, "missing model catalog fetcher") {
-				t.Fatalf("CostWarnf got %q, want the manager's fetcher error", msg)
+			if !strings.Contains(msg, "cost manager error") || !strings.Contains(msg, "unmarshal cached price") {
+				t.Fatalf("CostWarnf got %q, want the manager's price error", msg)
 			}
 		case <-time.After(time.Second):
 			t.Fatal("cost manager error never reached CostWarnf")
@@ -229,6 +233,41 @@ func TestNewQuerier_costManagerErrorUsesCostWarnf(t *testing.T) {
 	})
 	if stdout != "" {
 		t.Fatalf("stdout = %q, want empty: the manager error must not use ancli", stdout)
+	}
+}
+
+// TestNewQuerier_missingCatalogIsSilent pins that a run without
+// OPENROUTER_API_KEY and without a cached price warns about nothing: the
+// price catalog is optional, so its absence is a debug-only condition.
+func TestNewQuerier_missingCatalogIsSilent(t *testing.T) {
+	t.Setenv("CLAI_DISABLE_COST_ERR_LOG_GOROUTINE", "")
+	t.Setenv("OPENROUTER_API_KEY", "")
+	t.Setenv("DEBUG", "")
+	t.Setenv("DEBUG_COST_MANAGER", "")
+	confDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(confDir, "mcpServers"), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(confDir, "mock_test_test.json"), []byte(`{}`), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	got := make(chan string, 4)
+	q, err := NewQuerier(t.Context(), Configurations{
+		Model: "test", ConfigDir: confDir, SkipAmbientMcpServers: true, Raw: true, Out: &strings.Builder{},
+		CostWarnf: func(format string, a ...any) { got <- fmt.Sprintf(format, a...) },
+	}, &vendors.Mock{})
+	if err != nil {
+		t.Fatalf("NewQuerier: %v", err)
+	}
+	select {
+	case <-q.costEnricher.ready:
+	case <-time.After(time.Second):
+		t.Fatal("cost manager never finished")
+	}
+	select {
+	case msg := <-got:
+		t.Fatalf("CostWarnf got %q, want no warning for a missing optional catalog", msg)
+	default:
 	}
 }
 
@@ -356,7 +395,7 @@ func TestShouldReportCostError(t *testing.T) {
 	t.Run("other errors stay warnings", func(t *testing.T) {
 		t.Setenv("DEBUG", "")
 		t.Setenv("DEBUG_COST_MANAGER", "")
-		if !shouldReportCostError(errors.New("missing model catalog fetcher")) {
+		if !shouldReportCostError(errors.New("unmarshal price config file")) {
 			t.Fatal("an ordinary cost failure must stay a warning")
 		}
 	})

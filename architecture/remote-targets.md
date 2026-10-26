@@ -31,7 +31,6 @@ fetched.
 | `internal/profiles/remote.go` | `profiles trust`, `install`, `update`; the `source` stamp |
 | `internal/exitstatus.go` | `ExitCoder`/`ExitStatus`: how exit status 3 survives upstream `cmd.Run` |
 | `internal/cli/cli.go` | `Deps.RemoteClient`, `remoteResolver` (the composition root) |
-| `internal/text/conf_profile.go` | `readRemoteProfile`: loads the cached file through `utils.ReadConfigFile`, which writes nothing |
 | `e2e/remote_targets_e2e_test.go` | The CLI contract against `fakeHub`, a local TLS server with clai.chat's raw routes that also stands in for GitHub and any https host |
 | `e2e/remote_targets_pty_e2e_test.go` | The trust question on a real pseudo-terminal, with stdout piped |
 
@@ -50,8 +49,8 @@ text.SetupQuerier
         else UntrustedError (exit 3)
       → Cache.Store(target, body)
     → ProfilePath = <cache>/remote/<sha256>.json
-  → ProfileOverrides reads it with readRemoteProfile: defaults filled in
-    memory, no upgrade rewrite, no config dirs created beside it
+  → ProfileOverrides reads it like any profile, read-only
+    (utils.ReadConfigFile: defaults filled in memory, nothing written)
 ```
 
 A hub target is read from the hub's raw routes:
@@ -121,13 +120,12 @@ A `gh:` target reads
 - Untrusted bytes are never cached. Only a resolve that passed trust calls
   `Cache.Store`, so a cache hit never skips the trust check. Trust is checked
   again on every resolve anyway.
-- A cached profile is named by its hash, so nothing may write to it. The
-  local loader (`utils.LoadConfigFromFile`) rewrites a profile to add
-  missing fields and creates the config subdirectories beside it; run on
-  the cache, it broke the hash and filled `<cache>/remote/` with
-  `conversations/`, `profiles/` and friends. `readRemoteProfile` exists for
-  that reason, and the e2e suite checks the cache holds only hashes and
-  `index.json` after runs that are not `-r`.
+- A cached profile is named by its hash, so nothing may write to it.
+  Profile loading is read-only (`utils.ReadConfigFile`, see
+  [profiles.md](profiles.md)); the loader it replaced rewrote a profile to
+  add missing fields and created config dirs beside it, which broke the
+  hash and filled `<cache>/remote/`. The e2e suite checks the cache holds
+  only hashes and `index.json` after runs that are not `-r`.
 - A missing agent or version is a `FetchError` naming the target ("not
   found", exit 1): it is a failed run, not a refusal.
 - Remote fetches always go through `Deps.RemoteClient`. Tests point it at

@@ -51,9 +51,6 @@ type Configurations struct {
 	ProfilePath         string          `json:"-"`
 	ProfileUseSkillsSet bool            `json:"-"`
 	RequestedToolGlobs  []string        `json:"-"`
-	// remoteProfile marks a ProfilePath that is a cached remote profile,
-	// which is read without writing to it or beside it.
-	remoteProfile bool
 	// explicitAllTools records a '*' entry that setupToolConfig folded into nil globs.
 	explicitAllTools bool
 	// CmdBan is the per-run command ban list for the freetext command tools
@@ -442,6 +439,7 @@ func toGenericResponseFormat(rf *pub_models.ResponseFormat) *generic.ResponseFor
 			Description: s.Description,
 			Strict:      s.Strict,
 			Schema:      s.Schema,
+			RawSchema:   s.RawSchema,
 		}
 	}
 	return gf
@@ -462,6 +460,7 @@ func responseFormatFromGeneric(gf *generic.ResponseFormat) *pub_models.ResponseF
 			Description: gf.JSONSchema.Description,
 			Strict:      gf.JSONSchema.Strict,
 			Schema:      gf.JSONSchema.Schema,
+			RawSchema:   gf.JSONSchema.RawSchema,
 		}
 	}
 	return rf
