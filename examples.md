@@ -175,6 +175,7 @@ Also see examples:
 
 - [ops](./examples/profiles/ops.json) - This agent can answer any question about your company's systems and customers
 - [tradebot](./examples/profiles/trade-bot.json) - Fully functional polymarket trade bot, defined as json. Swap prompt and model, try it out!
+- [starter agents](./examples/profiles/README.md) - A code reviewer, a commit writer, a web researcher, a PR reviewer, an upgrade scout, a SQL analyst, a site watcher, an issue triager and a Sentry medic, each one JSON file with pinned MCP servers
 
 ## Tools: inspect vs enable
 
