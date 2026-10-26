@@ -117,24 +117,27 @@ func getFirstSentence(s string) string {
 
 // Help explains what profiles are; surfaced in 'clai profiles -h' and
 // re-exported by package internal for the e2e suite.
-const Help = `Profiles overwrite certain model configurations. The intent of profiles
-is to reduce usage for repetitive flags and to persist and tweak specific LLM agents.
-For instance, you may create a \'gopher\' profile with a prompt that explains the agent is
-a programming helper and then specify which tools it may use.
+const Help = `A profile is a saved agent: a model, a prompt, the tools it may use and the
+MCP servers it may start, kept in <config-dir>/profiles/<name>.json. What a
+profile leaves out comes from your text config. Create or edit one in the
+profiles menu of 'clai setup', or write the JSON yourself.
 
-Use this profile by passing the \'-p/-profile\' flag. Example:
-
-1. clai setup -> 2 -> follow the setup wizard (create \'gopher\' profile)
-2. clai -p gopher -g internal/thing/handler.go q write tests for this file`
+Run one by name with -p, or by file path or remote target with -prp:
+  clai -p gopher -g internal/handler.go q write tests for this file
+  clai -prp ./reviewer.json q review the staged diff`
 
 // RemoteHelp explains remote profile targets; surfaced in 'clai profiles -h'.
-const RemoteHelp = `-prp also takes a remote target, fetched over https and kept in the cache:
-  cchub:<handle>/<agent>[@<version>]   an agent on cchub, the clai hub (CLAI_CLOUD_URL, default https://www.clai.chat)
-  gh:<owner>/<repo>[/<path>][@<ref>] agent.json, or <path>, in a GitHub repo
-  https://<host>/<path>              any URL that answers application/json
-A new target runs only once you trust it: in a terminal clai asks; elsewhere it
-exits with status 3. A #sha256=<hex> suffix is consent for exactly those bytes.
-CLAI_CLOUD=off makes targets cache-only.`
+const RemoteHelp = `Remote targets work with -prp, install and trust:
+  cchub:<handle>/<agent>[@<version>]  an agent on the Hub at clai.chat
+  gh:<owner>/<repo>[/<path>][@<ref>]  agent.json, or <path>, in a GitHub repo
+  https://<host>/<path>               any URL that answers with profile JSON
+A target runs only once you trust it: a terminal asks, anything else exits with
+status 3. Append #sha256=<hex> to trust exactly those bytes. Fetched targets
+are cached; CLAI_CLOUD=off runs from the cache only, and CLAI_CLOUD_URL points
+cchub: at another server.
+
+Share your own profile on the Hub with 'clai profiles publish <name>', after
+'clai cloud login'.`
 
 // Command builds the profiles command tree.
 func Command(deps CommandDeps) *internal.Command {
@@ -144,15 +147,16 @@ func Command(deps CommandDeps) *internal.Command {
 	c := &internal.Command{
 		Name: "profiles",
 		Desc: "List, install, update, trust and publish profiles",
-		HelpText: "profiles [list|install|update|trust|publish]. Lists the profiles under <config-dir>/profiles.\n\n" +
+		HelpText: "profiles [list|install|update|trust|publish]. Lists your profiles, or manages\nthem with a subcommand.\n\n" +
 			Help + "\n\n" + RemoteHelp + `
 
 Examples:
   clai profiles
-  clai -p gopher q refactor this file
   clai -prp cchub:lorentz/trade-bot@3 q 'Do your hourly run.'
+  clai profiles trust cchub:lorentz/trade-bot@3
   clai profiles install cchub:lorentz/trade-bot@3
-  clai profiles publish trade-bot`,
+  clai profiles update
+  clai profiles publish trade-bot -note 'tighter stop-loss'`,
 	}
 	nonInteractive := &internal.NonInteractiveFlag{}
 	c.Register = nonInteractive.Register
@@ -200,7 +204,7 @@ Examples:
   clai profiles install gh:baalimago/agents/review.json@v1 reviewer`
 
 const updateHelp = `profiles update [name]. Fetches the newest version of every installed
-profile, or of the one named, and rewrites those that changed. A hub agent
+profile, or of the one named, and rewrites those that changed. A Hub agent
 follows its newest version; other targets re-read the same ref or URL.
 
 Examples:
