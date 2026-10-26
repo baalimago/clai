@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"slices"
+	"sync"
 
 	"github.com/baalimago/clai/internal/debugflags"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -85,8 +87,9 @@ func registerLocalTools(reg *registry, lookup executableLookup) {
 		{tools.ClaiBinaryPath, tools.ClaiHelp},
 		{tools.ClaiBinaryPath, tools.ClaiRun},
 	}
+	available := lookupExecutables(executableTools, lookup)
 	for _, candidate := range executableTools {
-		if _, err := lookup(candidate.executable); err != nil {
+		if !available[candidate.executable] {
 			continue
 		}
 		reg.Set(candidate.tool.Specification().Name, candidate.tool)
@@ -101,6 +104,31 @@ func registerLocalTools(reg *registry, lookup executableLookup) {
 	// working; async_cmd is the canonical name and the clai tools listing
 	// groups the alias under it.
 	reg.SetAlias("async_cmd_run", tools.AsyncCmdRun.Specification().Name, tools.AsyncCmdRun)
+}
+
+// lookupExecutables searches PATH for every distinct executable at once: each
+// search is a stat per PATH entry, and run in sequence they dominate setup.
+func lookupExecutables(candidates []executableTool, lookup executableLookup) map[string]bool {
+	var names []string
+	for _, candidate := range candidates {
+		if !slices.Contains(names, candidate.executable) {
+			names = append(names, candidate.executable)
+		}
+	}
+	found := make([]bool, len(names))
+	var wg sync.WaitGroup
+	for i, name := range names {
+		wg.Go(func() {
+			_, err := lookup(name)
+			found[i] = err == nil
+		})
+	}
+	wg.Wait()
+	available := make(map[string]bool, len(names))
+	for i, name := range names {
+		available[name] = found[i]
+	}
+	return available
 }
 
 // Invoke the call, and gather both error and output in the same string.

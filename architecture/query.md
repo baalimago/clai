@@ -108,6 +108,29 @@ runs leave the header and report through the error instead. Raw, structured,
 debug and redirected output keep the per-iteration prints they had before, and
 show no header. See `internal/text/loop_display.go`.
 
+When an iteration ends, its collapsed header gains a second row listing the
+iteration's tool calls in order, with consecutive repeats folded and failed
+calls (an `ERROR: ` result) marked: `↳ go ✗ · cat ×2 · apply_patch · go`.
+
+Every loop run that started at least one iteration ends with a summary,
+whatever stopped it (achieved, blocked, exhausted, or stopped by an error or
+cancellation): iterations used, wall time, tokens in/out (with cached input),
+the estimated cost when a price is known, and tool calls per tool with the
+failure count. Only what each iteration added is counted, so a resumed seed
+chat's earlier cost is not. An iteration that fails or is cancelled still
+counts the steps it finished: `TextQuery` returns a `*PartialRunError` whose
+`Chat` is what the finalizer kept. Token counts use SI prefixes with three
+significant digits (`41.2k in (12k cached) · 3.12k out`). A terminal session
+prints it below the loop's output; raw, structured and redirected runs print
+it to stderr so stdout stays machine-readable. See
+`internal/text/loop_summary.go`.
+
+A plain query prints the same summary, titled `▸ query done in 4s` (or
+`stopped` when it ended on an error), below its answer when opted in with
+`-qs`/`-query-summary` or `query-summary: true` in `textConfig.json`. It is
+off by default. Loop iterations never print it, since the loop reports for
+the whole run. See `internal/text/run_summary.go`.
+
 ## Configuration Cascade
 
 The query command applies configuration in this order (lowest to highest precedence):
@@ -248,9 +271,10 @@ loop (`internal/text/session_runner.go`). Each model step:
      When the last step wrote no text, the prose shown before its tool calls stays as it is and
      is not printed again (`QuerySession.finalTextShown`).
    - Joins the in-flight conversation summarizer, launched alongside the
-     main call on a new conversation's first persist, for at most
-     a fixed join bound (5 s, `Configurations.SummaryJoinTimeout`, not a
-     config key or flag) and stamps `title`/`summary` on a result
+     main call on a new conversation's first persist, and stamps
+     `title`/`summary` on a result. A plain query takes the result only if it
+     already landed (labelling is best effort); a loop iteration waits at
+     most 5 s (see `architecture/summaries.md`)
    - Saves conversation via the turn's `chat.Persister.Promote` (unless in chat mode),
      which writes what `SaveAsPreviousQuery()` writes
 

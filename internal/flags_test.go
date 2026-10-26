@@ -383,7 +383,7 @@ func Test_textFlagsRegistration(t *testing.T) {
 		"mt", "max-tokens", "mtc", "max-tool-calls", "max-tool-calls-after-handover",
 		"g", "glob", "p", "profile", "prp", "profile-path", "n", "non-interactive",
 		"dre", "dir-reply", "s", "skills", "rf", "response-format", "asc", "add-shell-context",
-		"summarize", "sm", "summary-model",
+		"summarize", "sm", "summary-model", "qs", "query-summary",
 	} {
 		if fs.Lookup(name) == nil {
 			t.Fatalf("flag %q missing from the text surface", name)

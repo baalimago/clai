@@ -94,8 +94,10 @@ func snapshotConvDir(t *testing.T, convDir string, fixtureIDs ...string) string 
 		data := files[name]
 		volatile := name == globalScopeFile || (promoted != "" && name == promoted+".json")
 		switch {
+		case name == chatIndexJournalName || name == chatIndexCompactingName:
+			continue
 		case name == chatIndexFileName:
-			data = normalizedIndex(t, data, fixtureIDs)
+			data = normalizedIndex(t, mergedIndexBytes(t, convDir), fixtureIDs)
 		case volatile:
 			data = snapshotCreatedLine.ReplaceAll(data, []byte(`  "created": "<now>",`))
 		}
@@ -148,4 +150,19 @@ func readGolden(t *testing.T, name string) string {
 		t.Fatalf("read golden %s: %v", name, err)
 	}
 	return string(b)
+}
+
+// mergedIndexBytes encodes the index as readers see it, cache plus journal,
+// in the cache's own format.
+func mergedIndexBytes(t *testing.T, convDir string) []byte {
+	t.Helper()
+	rows, err := readChatIndex(convDir)
+	if err != nil {
+		t.Fatalf("readChatIndex: %v", err)
+	}
+	b, err := json.Marshal(chatIndexCache{Version: chatIndexVersion, Rows: rows})
+	if err != nil {
+		t.Fatalf("marshal index: %v", err)
+	}
+	return b
 }

@@ -223,9 +223,6 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	querier.summarizeConversations = userConf.SummarizeConversations
 	querier.summaryModel = userConf.SummaryModel
 	querier.summaryJoinTimeout = userConf.SummaryJoinTimeout
-	if querier.summaryJoinTimeout <= 0 {
-		querier.summaryJoinTimeout = defaultSummaryJoinTimeout
-	}
 	// Agent-only runtime settings (slog logger, level, rune cap, recorder
 	// hooks) ride one pointer (worklog 2026-08-15-agent-slog-output, D7). nil (the CLI and pkg/text paths) keeps
 	// every channel disabled; the loose Configurations recorder fields no
@@ -242,6 +239,7 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	// only errors (on stderr, so stdout stays clean), and any other mode keeps
 	// the legacy direct print.
 	mcpMode := mcpLogModeFor(querier.debug, querier.outputIsTerminal, querier.Raw, querier.structuredOutput, utils.RollingOutputEnabled())
+	querier.errOut = userConf.ErrOut
 	if userConf.ErrOut != nil {
 		querier.mcpSink = newMcpLogSinkTo(mcpMode, userConf.ErrOut)
 	} else {

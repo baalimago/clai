@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/baalimago/clai/internal/cost"
 )
 
 func TestNewModelCatalog(t *testing.T) {
@@ -51,8 +53,8 @@ func TestFetchModelErrors(t *testing.T) {
 			return []Model{{ID: "other/model"}}, nil
 		}}
 		_, err := cat.FetchModel(context.Background(), "missing/model")
-		if err == nil || !strings.Contains(err.Error(), "model not found") {
-			t.Fatalf("err = %v, want model not found", err)
+		if !errors.Is(err, cost.ErrModelNotInCatalog) {
+			t.Fatalf("err = %v, want cost.ErrModelNotInCatalog", err)
 		}
 	})
 

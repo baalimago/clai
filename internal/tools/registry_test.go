@@ -5,6 +5,7 @@ import (
 	"slices"
 	"sync"
 	"testing"
+	"time"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
@@ -126,6 +127,44 @@ func TestRegisterLocalToolsOmitsUnavailableExecutables(t *testing.T) {
 	for _, name := range []string{"cp", "cat", "apply_patch", "async_cmd"} {
 		if _, ok := r.Get(name); !ok {
 			t.Fatalf("expected available tool %q to be registered", name)
+		}
+	}
+}
+
+// TestRegisterLocalToolsLooksUpExecutablesConcurrently pins the setup cost:
+// each PATH search is a run of stats, so they overlap instead of queueing.
+func TestRegisterLocalToolsLooksUpExecutablesConcurrently(t *testing.T) {
+	const executables = 18
+	var arrived sync.WaitGroup
+	arrived.Add(executables)
+	allArrived := make(chan struct{})
+	go func() { arrived.Wait(); close(allArrived) }()
+	var mu sync.Mutex
+	seen := map[string]int{}
+	r := NewRegistry()
+	registerLocalTools(r, func(name string) (string, error) {
+		mu.Lock()
+		seen[name]++
+		first := seen[name] == 1
+		mu.Unlock()
+		if first {
+			arrived.Done()
+		}
+		select {
+		case <-allArrived:
+			return "/bin/" + name, nil
+		case <-time.After(2 * time.Second):
+			return "", exec.ErrNotFound
+		}
+	})
+	for name, n := range seen {
+		if n != 1 {
+			t.Fatalf("%s looked up %d times, want once", name, n)
+		}
+	}
+	for _, name := range []string{"cat", "rg", "cmd", "freetext_command", "git", "clai_run"} {
+		if _, ok := r.Get(name); !ok {
+			t.Fatalf("expected %q registered once every lookup ran together; seen %v", name, seen)
 		}
 	}
 }

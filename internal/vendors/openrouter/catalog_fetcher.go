@@ -96,7 +96,7 @@ func (c OpenRouterModelCatalog) FetchModel(ctx context.Context, model string) (c
 			InputCachedUSDPerToken: cachedPrompt,
 		}, nil
 	}
-	return cost.ModelPriceScheme{}, fmt.Errorf("find price for model %q: model not found", model)
+	return cost.ModelPriceScheme{}, fmt.Errorf("find price for model %q: %w", model, cost.ErrModelNotInCatalog)
 }
 
 func parseOpenRouterPrice(raw string) (float64, error) {

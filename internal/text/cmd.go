@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/baalimago/clai/internal"
 	"github.com/baalimago/clai/internal/imagegen"
@@ -46,6 +47,9 @@ type QueryCommandDeps struct {
 	// constructor error attaches nothing (worklog
 	// 2026-09-09-conversation-summaries, D26).
 	NewSummarizer func(confDir string) (models.Summarizer, error)
+	// SummaryJoinTimeout makes a plain query wait this long for its label;
+	// zero keeps labelling best effort with no wait.
+	SummaryJoinTimeout time.Duration
 	// NewImageGenerator builds the generator behind generate_image; nil fails a
 	// run that registers the tool with ErrNoImageGenerator.
 	NewImageGenerator imagegen.NewGeneratorFunc
@@ -71,6 +75,11 @@ func QueryCommand(deps QueryCommandDeps) *internal.Command {
 			return err
 		}
 		if !lf.Loop.Value() {
+			if tConf.QuerySummary {
+				if err := enableQuerySummary(q); err != nil {
+					return err
+				}
+			}
 			c.SetQuerier(q)
 			return nil
 		}
@@ -149,10 +158,33 @@ func setupTextQuerier(ctx context.Context, c *internal.Command, tf internal.Text
 	if tConf.SummarizeConversations {
 		attachSummarizer(confDir, deps.NewSummarizer, q)
 	}
+	if deps.SummaryJoinTimeout > 0 {
+		if err := setSummaryJoinTimeout(q, deps.SummaryJoinTimeout); err != nil {
+			return nil, nil, err
+		}
+	}
 	if err := attachImageTurn(confDir, tConf, tf, deps, q); err != nil {
 		return nil, nil, err
 	}
 	return q, tConf, nil
+}
+
+func setSummaryJoinTimeout(q models.Querier, d time.Duration) error {
+	setter, ok := q.(interface{ SetSummaryJoinTimeout(time.Duration) })
+	if !ok {
+		return fmt.Errorf("summary join timeout requires a text querier, got %T", q)
+	}
+	setter.SetSummaryJoinTimeout(d)
+	return nil
+}
+
+func enableQuerySummary(q models.Querier) error {
+	summarizer, ok := q.(interface{ EnableQuerySummary() })
+	if !ok {
+		return fmt.Errorf("query summary requires a text querier, got %T", q)
+	}
+	summarizer.EnableQuerySummary()
+	return nil
 }
 
 // newLoopRunner adapts the text querier to a LoopQuerier. SetupQuerier returns
@@ -224,6 +256,9 @@ func ApplyFlagOverrides(tConf *Configurations, tf internal.TextFlags) {
 	}
 	if tf.QueryText.Summarize.Explicit() {
 		tConf.SummarizeConversations = tf.QueryText.Summarize.Value()
+	}
+	if tf.QueryText.QuerySummary.Explicit() {
+		tConf.QuerySummary = tf.QueryText.QuerySummary.Value()
 	}
 	if tf.QueryText.SummaryModel.Changed() {
 		tConf.SummaryModel = tf.QueryText.SummaryModel.Value()

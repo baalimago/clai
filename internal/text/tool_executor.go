@@ -518,6 +518,9 @@ func (e toolExecutor[C]) recordToolResult(ctx context.Context, session *QuerySes
 	// One tool_result record per emitted result (worklog 2026-08-15-agent-slog-output, Phase 3).
 	e.querier.logMessage(ctx, "tool_result", displayOut, call.Name)
 	session.Chat.Messages = append(session.Chat.Messages, outMsg)
+	if p := e.querier.loopProgress; p != nil {
+		p.ToolCalls = append(p.ToolCalls, newRunToolCall(call.Name, outMsg))
+	}
 }
 
 func (e toolExecutor[C]) executeLoadSkill(ctx context.Context, session *QuerySession, call pub_models.Call) error {
