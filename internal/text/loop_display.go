@@ -28,7 +28,7 @@ type LoopProgress struct {
 	// so the first frame names the work in progress.
 	PhasePending bool
 	// ToolCalls are the tool calls this iteration made so far.
-	ToolCalls []LoopToolCall
+	ToolCalls []RunToolCall
 	// ShowTools adds a row listing ToolCalls under the marker. It is set once
 	// the iteration ends, when the window collapses to its header and the
 	// tool rows would otherwise vanish.

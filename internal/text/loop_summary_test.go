@@ -28,8 +28,8 @@ func toolCallMessages() []pub_models.Message {
 }
 
 func TestLoopToolCalls(t *testing.T) {
-	got := loopToolCalls(toolCallMessages())
-	want := []LoopToolCall{
+	got := runToolCalls(toolCallMessages())
+	want := []RunToolCall{
 		{Name: "go", Failed: true},
 		{Name: "cat"},
 		{Name: "cat"},
@@ -37,19 +37,19 @@ func TestLoopToolCalls(t *testing.T) {
 		{Name: "go"},
 	}
 	if !slices.Equal(got, want) {
-		t.Fatalf("loopToolCalls = %+v, want %+v", got, want)
+		t.Fatalf("runToolCalls = %+v, want %+v", got, want)
 	}
 }
 
 func TestLoopToolCalls_unmatchedResultIsNamedUnknown(t *testing.T) {
-	got := loopToolCalls([]pub_models.Message{{Role: "tool", ToolCallID: "x", Content: "out"}})
-	if want := []LoopToolCall{{Name: "unknown"}}; !slices.Equal(got, want) {
-		t.Fatalf("loopToolCalls = %+v, want %+v", got, want)
+	got := runToolCalls([]pub_models.Message{{Role: "tool", ToolCallID: "x", Content: "out"}})
+	if want := []RunToolCall{{Name: "unknown"}}; !slices.Equal(got, want) {
+		t.Fatalf("runToolCalls = %+v, want %+v", got, want)
 	}
 }
 
 func TestLoopToolsLine(t *testing.T) {
-	if got, want := loopToolsLine(loopToolCalls(toolCallMessages())), "go ✗ · cat ×2 · apply_patch · go"; got != want {
+	if got, want := loopToolsLine(runToolCalls(toolCallMessages())), "go ✗ · cat ×2 · apply_patch · go"; got != want {
 		t.Fatalf("loopToolsLine = %q, want %q", got, want)
 	}
 	if got := loopToolsLine(nil); got != "" {
@@ -58,7 +58,7 @@ func TestLoopToolsLine(t *testing.T) {
 }
 
 func TestLoopProgress_HeaderShowsToolsOnceSettled(t *testing.T) {
-	p := LoopProgress{Iteration: 1, MaxIterations: 3, Phase: "plan", ToolCalls: []LoopToolCall{{Name: "go", Failed: true}, {Name: "cat"}}}
+	p := LoopProgress{Iteration: 1, MaxIterations: 3, Phase: "plan", ToolCalls: []RunToolCall{{Name: "go", Failed: true}, {Name: "cat"}}}
 	if lines := p.Header(); len(lines) != 1 {
 		t.Fatalf("header lines before settle = %d, want 1", len(lines))
 	}
@@ -82,20 +82,11 @@ func TestLoopSummary_Lines(t *testing.T) {
 		Iterations:    3,
 		MaxIterations: 10,
 		Duration:      2*time.Minute + 14*time.Second + 300*time.Millisecond,
-		Usage: pub_models.Usage{
-			PromptTokens:        41203,
-			CompletionTokens:    3118,
-			PromptTokensDetails: pub_models.PromptTokensDetails{CachedTokens: 12004},
-		},
-		CostUSD: 0.1834,
-		HasCost: true,
-		ToolCalls: []LoopToolCall{
-			{Name: "go", Failed: true}, {Name: "cat"}, {Name: "cat"}, {Name: "go"}, {Name: "go"}, {Name: "apply_patch"},
-		},
+		RunTally:      sampleTally(),
 	}
 	want := []string{
 		"▸ loop achieved after 3/10 iterations in 2m14s",
-		"  tokens  41,203 in (12,004 cached) · 3,118 out",
+		"  tokens  41.2k in (12k cached) · 3.12k out",
 		"  cost    ~$0.18",
 		"  tools   6 calls, 1 failed: go ×3 · cat ×2 · apply_patch",
 	}
@@ -128,5 +119,20 @@ func TestLoopEnd_String(t *testing.T) {
 		if got := end.String(); got != want {
 			t.Fatalf("LoopEnd(%d).String() = %q, want %q", end, got, want)
 		}
+	}
+}
+
+func sampleTally() RunTally {
+	return RunTally{
+		Usage: pub_models.Usage{
+			PromptTokens:        41203,
+			CompletionTokens:    3118,
+			PromptTokensDetails: pub_models.PromptTokensDetails{CachedTokens: 12004},
+		},
+		CostUSD: 0.1834,
+		HasCost: true,
+		ToolCalls: []RunToolCall{
+			{Name: "go", Failed: true}, {Name: "cat"}, {Name: "cat"}, {Name: "go"}, {Name: "go"}, {Name: "apply_patch"},
+		},
 	}
 }

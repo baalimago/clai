@@ -117,9 +117,17 @@ whatever stopped it (achieved, blocked, exhausted, or stopped by an error or
 cancellation): iterations used, wall time, tokens in/out (with cached input),
 the estimated cost when a price is known, and tool calls per tool with the
 failure count. Only what each iteration added is counted, so a resumed seed
-chat's earlier cost is not. A terminal session prints it below the loop's
-output; raw, structured and redirected runs print it to stderr so stdout stays
-machine-readable. See `internal/text/loop_summary.go`.
+chat's earlier cost is not. Token counts use SI prefixes with three
+significant digits (`41.2k in (12k cached) · 3.12k out`). A terminal session
+prints it below the loop's output; raw, structured and redirected runs print
+it to stderr so stdout stays machine-readable. See
+`internal/text/loop_summary.go`.
+
+A plain query prints the same summary, titled `▸ query done in 4s` (or
+`stopped` when it ended on an error), below its answer when opted in with
+`-qs`/`-query-summary` or `query-summary: true` in `textConfig.json`. It is
+off by default. Loop iterations never print it, since the loop reports for
+the whole run. See `internal/text/run_summary.go`.
 
 ## Configuration Cascade
 

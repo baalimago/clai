@@ -192,28 +192,6 @@ func loopEndOf(err error) LoopEnd {
 	}
 }
 
-// addIteration folds one finished iteration's usage, cost rows and tool calls
-// into the summary. Only what the iteration added to chat is counted, so a
-// seed chat resumed from an earlier run does not count twice.
-func (s *LoopSummary) addIteration(chat, result pub_models.Chat) {
-	if result.TokenUsage != nil {
-		u := result.TokenUsage
-		s.Usage.PromptTokens += u.PromptTokens
-		s.Usage.CompletionTokens += u.CompletionTokens
-		s.Usage.TotalTokens += u.TotalTokens
-		s.Usage.PromptTokensDetails.CachedTokens += u.PromptTokensDetails.CachedTokens
-	}
-	if len(result.Queries) > len(chat.Queries) {
-		s.HasCost = true
-		for _, q := range result.Queries[len(chat.Queries):] {
-			s.CostUSD += q.CostUSD
-		}
-	}
-	if len(result.Messages) > len(chat.Messages) {
-		s.ToolCalls = append(s.ToolCalls, loopToolCalls(result.Messages[len(chat.Messages):])...)
-	}
-}
-
 func (r *loopRunner) run(ctx context.Context, summary *LoopSummary) error {
 	// Iteration 1 has no handover; the summarizer derives its phase from the
 	// initial prompt. Every later iteration inherits what the previous handover
@@ -243,7 +221,7 @@ func (r *loopRunner) run(ctx context.Context, summary *LoopSummary) error {
 			}
 			return fmt.Errorf("loop iteration %d: %w", iteration, err)
 		}
-		summary.addIteration(chat, result)
+		summary.addTurn(chat, result)
 		answer := pub_models.Message{Role: "assistant", Content: lastAssistantText(result)}
 
 		if submission, ok := r.recorder.Submission(); ok {

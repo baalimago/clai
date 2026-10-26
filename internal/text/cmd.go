@@ -71,6 +71,11 @@ func QueryCommand(deps QueryCommandDeps) *internal.Command {
 			return err
 		}
 		if !lf.Loop.Value() {
+			if tConf.QuerySummary {
+				if err := enableQuerySummary(q); err != nil {
+					return err
+				}
+			}
 			c.SetQuerier(q)
 			return nil
 		}
@@ -155,6 +160,15 @@ func setupTextQuerier(ctx context.Context, c *internal.Command, tf internal.Text
 	return q, tConf, nil
 }
 
+func enableQuerySummary(q models.Querier) error {
+	summarizer, ok := q.(interface{ EnableQuerySummary() })
+	if !ok {
+		return fmt.Errorf("query summary requires a text querier, got %T", q)
+	}
+	summarizer.EnableQuerySummary()
+	return nil
+}
+
 // newLoopRunner adapts the text querier to a LoopQuerier. SetupQuerier returns
 // every vendor branch as *Querier[C]; another implementation is an error, not
 // a silently degraded loop.
@@ -224,6 +238,9 @@ func ApplyFlagOverrides(tConf *Configurations, tf internal.TextFlags) {
 	}
 	if tf.QueryText.Summarize.Explicit() {
 		tConf.SummarizeConversations = tf.QueryText.Summarize.Value()
+	}
+	if tf.QueryText.QuerySummary.Explicit() {
+		tConf.QuerySummary = tf.QueryText.QuerySummary.Value()
 	}
 	if tf.QueryText.SummaryModel.Changed() {
 		tConf.SummaryModel = tf.QueryText.SummaryModel.Value()

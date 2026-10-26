@@ -58,6 +58,9 @@ They contain settings that are broadly applicable to that “mode” (text vs im
   `summary-model`, default `""` and `migrate:"true"` so upgraded files show the
   key: the summarizer's model, empty = the ladder `-sm` → this key → the
   conversation's last model → `model`). See `architecture/summaries.md`.
+- run summary (`query-summary`, default `false` and `migrate:"true"` so
+  upgraded files show the key: print tokens, cost and tools after a plain
+  query; loop runs always print one). See `architecture/query.md`.
 
 The pre-query interactive token-count warning prompt is **sunset**: a legacy
 config key for it is ignored if present in old configs (encoding/json drops
@@ -254,6 +257,8 @@ Key behaviors:
   query out; `-sm`/`-summary-model` overrides `summary-model` and completes
   from the model history like `-cm`. The same `-sm` exists on
   `chat summarize`, where it is the first rung of the ladder.
+- `-qs`/`-query-summary` (bool) overrides `query-summary` for the run only
+  when given explicitly, so `-qs=false` silences a file-enabled summary.
 
 ### Tool selection configuration
 

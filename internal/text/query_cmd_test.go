@@ -159,38 +159,15 @@ func TestQueryCommand_summarizerNotBuiltWhenOff(t *testing.T) {
 	t.Setenv("DEBUG", "")
 	run := func(t *testing.T, args ...string) int {
 		t.Helper()
-		readonly, noCreate, live := utils.ReadonlyConfig, utils.NoCreateConfig, utils.Live
-		t.Cleanup(func() { utils.ReadonlyConfig, utils.NoCreateConfig, utils.Live = readonly, noCreate, live })
-		confDir := t.TempDir()
-		t.Setenv("CLAI_CONFIG_DIR", confDir)
-		t.Setenv("HOME", t.TempDir())
-		writeMockPriceFile(t, confDir)
-		seedEmptyChatIndex(t, confDir)
 		conf := Default
 		conf.SummarizeConversations = false
-		if err := utils.CreateFile(filepath.Join(confDir, "textConfig.json"), &conf); err != nil {
-			t.Fatalf("CreateFile: %v", err)
-		}
 		built := 0
-		c := QueryCommand(QueryCommandDeps{
-			ConfigPrep: func() (string, error) { return confDir, nil },
+		runQueryCommand(t, conf, QueryCommandDeps{
 			NewSummarizer: func(string) (models.Summarizer, error) {
 				built++
 				return instantSummarizer(), nil
 			},
-		})
-		if err := c.Flagset().Parse(append([]string{"-r", "-cm", "test"}, args...)); err != nil {
-			t.Fatalf("Parse: %v", err)
-		}
-		captureStdoutStderrText(t, func() {
-			if err := c.Setup(context.Background()); err != nil {
-				t.Errorf("Setup: %v", err)
-				return
-			}
-			if err := c.Run(context.Background()); err != nil {
-				t.Errorf("Run: %v", err)
-			}
-		})
+		}, args...)
 		return built
 	}
 	if got := run(t, "hello"); got != 0 {
@@ -198,5 +175,74 @@ func TestQueryCommand_summarizerNotBuiltWhenOff(t *testing.T) {
 	}
 	if got := run(t, "-summarize", "hello"); got != 1 {
 		t.Fatalf("summarizer built %d times with -summarize over a false config, want 1", got)
+	}
+}
+
+// runQueryCommand runs "query -r -cm test args..." against a fresh config
+// dir holding conf, filling deps.ConfigPrep, and returns what it printed.
+func runQueryCommand(t *testing.T, conf Configurations, deps QueryCommandDeps, args ...string) (string, string) {
+	t.Helper()
+	readonly, noCreate, live := utils.ReadonlyConfig, utils.NoCreateConfig, utils.Live
+	t.Cleanup(func() { utils.ReadonlyConfig, utils.NoCreateConfig, utils.Live = readonly, noCreate, live })
+	confDir := t.TempDir()
+	t.Setenv("CLAI_CONFIG_DIR", confDir)
+	t.Setenv("HOME", t.TempDir())
+	writeMockPriceFile(t, confDir)
+	seedEmptyChatIndex(t, confDir)
+	if err := utils.CreateFile(filepath.Join(confDir, "textConfig.json"), &conf); err != nil {
+		t.Fatalf("CreateFile: %v", err)
+	}
+	deps.ConfigPrep = func() (string, error) { return confDir, nil }
+	c := QueryCommand(deps)
+	if err := c.Flagset().Parse(append([]string{"-r", "-cm", "test"}, args...)); err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	return captureStdoutStderrText(t, func() {
+		if err := c.Setup(context.Background()); err != nil {
+			t.Errorf("Setup: %v", err)
+			return
+		}
+		if err := c.Run(context.Background()); err != nil {
+			t.Errorf("Run: %v", err)
+		}
+	})
+}
+
+// TestQueryCommand_querySummary pins the opt-in run summary of a plain query:
+// off by default, on through query-summary in textConfig.json or -qs, and
+// -qs=false wins over the file.
+func TestQueryCommand_querySummary(t *testing.T) {
+	t.Setenv("CLAI_DISABLE_COST_ERR_LOG_GOROUTINE", "1")
+	t.Setenv("OPENROUTER_API_KEY", "")
+	t.Setenv("DEBUG", "")
+	run := func(t *testing.T, fromFile bool, args ...string) (string, string) {
+		t.Helper()
+		conf := Default
+		conf.SummarizeConversations = false
+		conf.QuerySummary = fromFile
+		return runQueryCommand(t, conf, QueryCommandDeps{}, args...)
+	}
+	const title = "▸ query done in"
+	for _, tc := range []struct {
+		desc     string
+		fromFile bool
+		args     []string
+		want     bool
+	}{
+		{"off by default", false, []string{"hello"}, false},
+		{"query-summary in textConfig.json", true, []string{"hello"}, true},
+		{"-qs flag", false, []string{"-qs", "hello"}, true},
+		{"-query-summary flag", false, []string{"-query-summary", "hello"}, true},
+		{"-qs=false over the file", true, []string{"-qs=false", "hello"}, false},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			stdout, stderr := run(t, tc.fromFile, tc.args...)
+			if strings.Contains(stdout, title) {
+				t.Fatalf("stdout = %q, -r keeps the summary off stdout", stdout)
+			}
+			if got := strings.Contains(stderr, title); got != tc.want {
+				t.Fatalf("summary on stderr = %t, want %t; stderr=%q", got, tc.want, stderr)
+			}
+		})
 	}
 }

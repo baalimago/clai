@@ -372,6 +372,7 @@ type QueryTextFlags struct {
 	ShellContext   StringFlag
 	Summarize      BoolFlag
 	SummaryModel   StringFlag
+	QuerySummary   BoolFlag
 	Images         StringsFlag
 	OpenImages     BoolFlag
 }
@@ -385,6 +386,7 @@ func (g *QueryTextFlags) Register(fs *flag.FlagSet) {
 	g.ShellContext.Register(fs, "Auto-append shell context by name.", "asc", "add-shell-context")
 	g.Summarize.Register(fs, "Generate a title and summary for a new conversation alongside the query. Overrides summarize-conversations in textConfig.json.", "summarize")
 	g.SummaryModel.Register(fs, "Set the model the conversation summarizer uses. Overrides summary-model in textConfig.json.", "sm", "summary-model")
+	g.QuerySummary.Register(fs, "Print a run summary (tokens, cost, tools) after the answer. Loop runs always print one. Overrides query-summary in textConfig.json.", "qs", "query-summary")
 }
 
 // LoopFlags is the loop-mode surface query carries: -l elevates the query

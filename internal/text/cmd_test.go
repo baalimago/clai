@@ -236,6 +236,23 @@ func TestApplyFlagOverrides_summary(t *testing.T) {
 			want:  Configurations{SummarizeConversations: true},
 		},
 		{
+			desc:  "-qs=false over a true config",
+			given: Configurations{QuerySummary: true},
+			mods:  func(tf *internal.TextFlags) { mustSet(t, &tf.QueryText.QuerySummary, "false") },
+			want:  Configurations{QuerySummary: false},
+		},
+		{
+			desc:  "-qs over a false config",
+			given: Configurations{QuerySummary: false},
+			mods:  func(tf *internal.TextFlags) { mustSet(t, &tf.QueryText.QuerySummary, "true") },
+			want:  Configurations{QuerySummary: true},
+		},
+		{
+			desc:  "omitted -qs keeps the file value",
+			given: Configurations{QuerySummary: true},
+			want:  Configurations{QuerySummary: true},
+		},
+		{
 			desc:  "-sm overrides the file summary-model",
 			given: Configurations{SummaryModel: "from-file"},
 			mods:  func(tf *internal.TextFlags) { mustSet(t, &tf.QueryText.SummaryModel, "from-flag") },
@@ -253,5 +270,12 @@ func TestApplyFlagOverrides_summary(t *testing.T) {
 			ApplyFlagOverrides(&given, tfWith(t, tc.mods))
 			testboil.FailTestIfDiff(t, debug.IndentedJsonFmt(given), debug.IndentedJsonFmt(tc.want))
 		})
+	}
+}
+
+func TestEnableQuerySummary_RequiresATextQuerier(t *testing.T) {
+	err := enableQuerySummary(queryOnlyQuerier{})
+	if err == nil || !strings.Contains(err.Error(), "query summary requires a text querier") {
+		t.Fatalf("err = %v, want a typed refusal", err)
 	}
 }

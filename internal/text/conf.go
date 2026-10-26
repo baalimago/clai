@@ -68,6 +68,10 @@ type Configurations struct {
 	// the resolution ladder (D22). The migrate tag surfaces the empty key in
 	// upgraded files, so it must never carry omitempty.
 	SummaryModel string `json:"summary-model" migrate:"true"`
+	// QuerySummary prints a run summary after a plain query; loop runs
+	// always print one. The migrate tag surfaces the false default in
+	// upgraded files so the opt-in is discoverable.
+	QuerySummary bool `json:"query-summary" migrate:"true"`
 	// ImageInputs are the -img values in flag order.
 	ImageInputs []string `json:"-"`
 	// SummaryJoinTimeout bounds the finalizer's wait for the in-flight

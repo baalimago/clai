@@ -519,7 +519,7 @@ func (e toolExecutor[C]) recordToolResult(ctx context.Context, session *QuerySes
 	e.querier.logMessage(ctx, "tool_result", displayOut, call.Name)
 	session.Chat.Messages = append(session.Chat.Messages, outMsg)
 	if p := e.querier.loopProgress; p != nil {
-		p.ToolCalls = append(p.ToolCalls, newLoopToolCall(call.Name, outMsg))
+		p.ToolCalls = append(p.ToolCalls, newRunToolCall(call.Name, outMsg))
 	}
 }
 

@@ -8,6 +8,7 @@ package quantity
 import (
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"strconv"
 	"strings"
@@ -18,6 +19,50 @@ type Quantity int
 
 // Int returns the number as a plain int.
 func (q Quantity) Int() int { return int(q) }
+
+var siUnits = []string{"k", "M", "G", "T"}
+
+// SI spells the number with an SI prefix and three significant digits, the
+// way Parse reads it back: 41203 is "41.2k", 812 stays "812".
+func (q Quantity) SI() string {
+	sign := ""
+	abs := float64(q)
+	if q < 0 {
+		sign = "-"
+		abs = -abs
+	}
+	if abs < 1000 {
+		return sign + strconv.FormatFloat(abs, 'f', 0, 64)
+	}
+	scale := 1.0
+	var spelled string
+	for i, unit := range siUnits {
+		scale *= 1000
+		mantissa, rounded := threeSignificant(abs / scale)
+		spelled = mantissa + unit
+		if rounded < 1000 || i == len(siUnits)-1 {
+			break
+		}
+	}
+	return sign + spelled
+}
+
+func threeSignificant(v float64) (spelled string, rounded float64) {
+	prec := 0
+	switch {
+	case v < 10:
+		prec = 2
+	case v < 100:
+		prec = 1
+	}
+	pow := math.Pow10(prec)
+	rounded = math.Round(v*pow) / pow
+	spelled = strconv.FormatFloat(rounded, 'f', prec, 64)
+	if strings.Contains(spelled, ".") {
+		spelled = strings.TrimRight(strings.TrimRight(spelled, "0"), ".")
+	}
+	return spelled, rounded
+}
 
 var (
 	// ErrSyntax reports a spelling that is not a number followed by one known

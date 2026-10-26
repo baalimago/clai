@@ -69,7 +69,7 @@ func TestLoopRunner_ReportsSummary(t *testing.T) {
 			if !got.HasCost || got.CostUSD != 1.0 {
 				t.Fatalf("cost = %v (has=%v), want 1.0 without the seed's cost rows", got.CostUSD, got.HasCost)
 			}
-			if want := []LoopToolCall{{Name: "go", Failed: true}, {Name: "cat"}}; !slices.Equal(got.ToolCalls, want) {
+			if want := []RunToolCall{{Name: "go", Failed: true}, {Name: "cat"}}; !slices.Equal(got.ToolCalls, want) {
 				t.Fatalf("tool calls = %+v, want %+v", got.ToolCalls, want)
 			}
 		})

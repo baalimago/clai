@@ -2,6 +2,7 @@ package text
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -137,6 +138,7 @@ type Querier[C models.StreamCompleter] struct {
 	// means no in-flight label (pkg/agent, tests, the summarizer's own
 	// querier).
 	summarizer             models.Summarizer
+	querySummary           bool
 	summarizeConversations bool
 	summaryModel           string
 	summaryJoinTimeout     time.Duration
@@ -619,7 +621,11 @@ func (q *Querier[C]) Query(ctx context.Context) error {
 		resizeEvents: resizeEvents,
 	}
 	q.launchSummary(ctx)
+	start := time.Now()
 	err := runner.Run(ctx, session)
+	if q.querySummary && q.loopProgress == nil {
+		err = errors.Join(err, q.reportQuerySummary(start, q.chat, session.Chat, err))
+	}
 	q.chat = session.Chat
 	q.fullMsg = session.FinalAssistantText
 	q.line = session.Line
