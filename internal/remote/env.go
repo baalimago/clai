@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// DefaultHubBase is the clai cloud origin hub: targets resolve against
+// DefaultHubBase is the clai cloud origin cchub: targets resolve against
 // when CLAI_CLOUD_URL is unset.
 const DefaultHubBase = "https://clai.chat"
 

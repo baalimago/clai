@@ -53,7 +53,7 @@ type QueryCommandDeps struct {
 	// presenter's auto-open-images and image-opener and of the model that
 	// route.ImageModelFor and -pm may override.
 	PhotoConfig func(confDir string) (photo.Configurations, error)
-	// NewRemoteResolver builds the resolver for -prp hub:, gh: and https://
+	// NewRemoteResolver builds the resolver for -prp cchub:, gh: and https://
 	// targets; nil refuses them.
 	NewRemoteResolver NewRemoteResolverFunc
 }

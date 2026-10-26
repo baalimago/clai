@@ -112,7 +112,7 @@ func setupCmdBanConfig(tConf *Configurations, cmdBan string) {
 // profile cascades, glob/tool/skill/lookback setup, prompt construction and
 // vendor routing. trustInput is the reader for interactive skill-trust
 // prompts (the composition root passes the wizard's input source; text
-// cannot import setup). resolveRemote turns a hub:, gh: or https:// -prp
+// cannot import setup). resolveRemote turns a cchub:, gh: or https:// -prp
 // target into a local file; nil refuses one.
 func SetupQuerier(ctx context.Context, confDir string, tf internal.TextFlags, args []string, trustInput io.Reader, resolveRemote RemoteProfileResolver) (models.Querier, *Configurations, error) {
 	// The flagset is first used to find chatModel and potentially setup a new configuration file from some default

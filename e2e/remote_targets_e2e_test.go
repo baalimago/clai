@@ -214,12 +214,12 @@ func (e remoteE2E) savedConversation(t *testing.T) string {
 
 func Test_REMOTE_untrustedTargetExitsThreeWithoutATerminal(t *testing.T) {
 	env := setupRemoteE2E(t)
-	status, stdout, stderr := runRemote(t, "-prp hub:ada/bot q hello")
+	status, stdout, stderr := runRemote(t, "-prp cchub:ada/bot q hello")
 	if status != remote.ExitRefused || stdout != "" {
 		t.Fatalf("status = %d stdout = %q stderr = %q, want 3 and no output", status, stdout, stderr)
 	}
-	pin := "hub:ada/bot#sha256=" + digestOf(remoteBotV1)
-	for _, want := range []string{"no terminal to ask in", "clai profiles trust hub:ada/bot", pin, env.hub.srv.URL + "/hub/ada/bot/"} {
+	pin := "cchub:ada/bot#sha256=" + digestOf(remoteBotV1)
+	for _, want := range []string{"no terminal to ask in", "clai profiles trust cchub:ada/bot", pin, env.hub.srv.URL + "/hub/ada/bot/"} {
 		if !strings.Contains(stderr, want) {
 			t.Fatalf("stderr %q lacks %q", stderr, want)
 		}
@@ -235,7 +235,7 @@ func Test_REMOTE_untrustedTargetExitsThreeWithoutATerminal(t *testing.T) {
 func Test_REMOTE_hashIsConsentThenTrustAndCacheServeIt(t *testing.T) {
 	env := setupRemoteE2E(t)
 	v1 := digestOf(remoteBotV1)
-	status, stdout, stderr := runRemote(t, "-r -prp hub:ada/bot#sha256="+v1+" q hello")
+	status, stdout, stderr := runRemote(t, "-r -prp cchub:ada/bot#sha256="+v1+" q hello")
 	if status != 0 || stdout != "hello\n" {
 		t.Fatalf("pinned run: status %d stdout %q stderr %q", status, stdout, stderr)
 	}
@@ -246,7 +246,7 @@ func Test_REMOTE_hashIsConsentThenTrustAndCacheServeIt(t *testing.T) {
 		t.Fatalf("trust store lacks %s: %s", v1, env.trusted(t))
 	}
 
-	status, _, stderr = runRemote(t, "-prp hub:ada/bot q again")
+	status, _, stderr = runRemote(t, "-prp cchub:ada/bot q again")
 	if status != 0 {
 		t.Fatalf("trusted run: status %d stderr %q", status, stderr)
 	}
@@ -254,12 +254,12 @@ func Test_REMOTE_hashIsConsentThenTrustAndCacheServeIt(t *testing.T) {
 
 	t.Setenv("CLAI_CLOUD", "off")
 	before := env.hub.fetches()
-	status, _, stderr = runRemote(t, "-prp hub:ada/bot q offline")
+	status, _, stderr = runRemote(t, "-prp cchub:ada/bot q offline")
 	if status != 0 || env.hub.fetches() != before {
 		t.Fatalf("offline run: status %d stderr %q fetches %d -> %d", status, stderr, before, env.hub.fetches())
 	}
 	env.assertCacheHolds(t, v1)
-	status, _, stderr = runRemote(t, "-prp hub:ada/other q hi")
+	status, _, stderr = runRemote(t, "-prp cchub:ada/other q hi")
 	if status != remote.ExitRefused || !strings.Contains(stderr, "CLAI_CLOUD=off") {
 		t.Fatalf("offline uncached: status %d stderr %q", status, stderr)
 	}
@@ -269,11 +269,11 @@ func Test_REMOTE_pinnedVersionIsFetchedOnce(t *testing.T) {
 	env := setupRemoteE2E(t)
 	env.hub.publish("ada/bot", remoteBotV2)
 	v1 := digestOf(remoteBotV1)
-	status, _, stderr := runRemote(t, "-r -prp hub:ada/bot@1#sha256="+v1+" q one")
+	status, _, stderr := runRemote(t, "-r -prp cchub:ada/bot@1#sha256="+v1+" q one")
 	if status != 0 {
 		t.Fatalf("pinned @1: status %d stderr %q", status, stderr)
 	}
-	status, _, stderr = runRemote(t, "-r -prp hub:ada/bot@1 q two")
+	status, _, stderr = runRemote(t, "-r -prp cchub:ada/bot@1 q two")
 	if status != 0 || env.hub.hitsOn("/hub/ada/bot/v/1/raw") != 1 {
 		t.Fatalf("cached @1: status %d stderr %q fetches of v1 %d, want 1", status, stderr, env.hub.hitsOn("/hub/ada/bot/v/1/raw"))
 	}
@@ -284,16 +284,16 @@ func Test_REMOTE_pinnedVersionIsFetchedOnce(t *testing.T) {
 
 func Test_REMOTE_newVersionNeedsTrustAgain(t *testing.T) {
 	env := setupRemoteE2E(t)
-	status, _, stderr := runRemote(t, "profiles trust hub:ada/bot")
+	status, _, stderr := runRemote(t, "profiles trust cchub:ada/bot")
 	if status != 0 {
 		t.Fatalf("trust: status %d stderr %q", status, stderr)
 	}
 	env.hub.publish("ada/bot", remoteBotV2)
-	status, stdout, stderr := runRemote(t, "-r -prp hub:ada/bot q hi")
+	status, stdout, stderr := runRemote(t, "-r -prp cchub:ada/bot q hi")
 	if status != remote.ExitRefused || stdout != "" || !strings.Contains(stderr, "changed to a version") {
 		t.Fatalf("changed agent: status %d stdout %q stderr %q, want a refusal naming the change", status, stdout, stderr)
 	}
-	status, _, stderr = runRemote(t, "-r -prp hub:ada/bot#sha256="+digestOf(remoteBotV2)+" q hi")
+	status, _, stderr = runRemote(t, "-r -prp cchub:ada/bot#sha256="+digestOf(remoteBotV2)+" q hi")
 	if status != 0 {
 		t.Fatalf("v2 by hash: status %d stderr %q", status, stderr)
 	}
@@ -302,7 +302,7 @@ func Test_REMOTE_newVersionNeedsTrustAgain(t *testing.T) {
 func Test_REMOTE_wrongHashRunsNothingAndKeepsNothing(t *testing.T) {
 	env := setupRemoteE2E(t)
 	wrong := digestOf("something else")
-	status, stdout, stderr := runRemote(t, "-r -prp hub:ada/bot#sha256="+wrong+" q hi")
+	status, stdout, stderr := runRemote(t, "-r -prp cchub:ada/bot#sha256="+wrong+" q hi")
 	if status != remote.ExitRefused || stdout != "" || !strings.Contains(stderr, "does not match its #sha256=") {
 		t.Fatalf("status %d stdout %q stderr %q", status, stdout, stderr)
 	}
@@ -316,8 +316,8 @@ func Test_REMOTE_wrongHashRunsNothingAndKeepsNothing(t *testing.T) {
 
 func Test_REMOTE_installUpdateAndRunByName(t *testing.T) {
 	env := setupRemoteE2E(t)
-	status, stdout, stderr := runRemote(t, "profiles install hub:ada/bot")
-	if status != 0 || !strings.Contains(stdout, "Installed hub:ada/bot#sha256="+digestOf(remoteBotV1)) {
+	status, stdout, stderr := runRemote(t, "profiles install cchub:ada/bot")
+	if status != 0 || !strings.Contains(stdout, "Installed cchub:ada/bot#sha256="+digestOf(remoteBotV1)) {
 		t.Fatalf("install: status %d stdout %q stderr %q", status, stdout, stderr)
 	}
 	installed := filepath.Join(env.confDir, "profiles", "bot.json")
@@ -331,7 +331,7 @@ func Test_REMOTE_installUpdateAndRunByName(t *testing.T) {
 
 	env.hub.publish("ada/bot", remoteBotV2)
 	status, stdout, stderr = runRemote(t, "profiles update")
-	if status != 0 || !strings.Contains(stdout, "Updated bot to hub:ada/bot") {
+	if status != 0 || !strings.Contains(stdout, "Updated bot to cchub:ada/bot") {
 		t.Fatalf("update: status %d stdout %q stderr %q", status, stdout, stderr)
 	}
 	t.Setenv("CLAI_CLOUD", "off")
@@ -343,7 +343,7 @@ func Test_REMOTE_installUpdateAndRunByName(t *testing.T) {
 		t.Fatalf("the updated profile did not run version 2")
 	}
 	status, stdout, _ = runRemote(t, "profiles")
-	if status != 0 || !strings.Contains(stdout, "Source: hub:ada/bot#sha256="+digestOf(remoteBotV2)) {
+	if status != 0 || !strings.Contains(stdout, "Source: cchub:ada/bot#sha256="+digestOf(remoteBotV2)) {
 		t.Fatalf("list: status %d stdout %q", status, stdout)
 	}
 }
@@ -384,8 +384,8 @@ func Test_REMOTE_refusals(t *testing.T) {
 		status int
 		want   string
 	}{
-		{"hub:ada/missing", 1, "hub:ada/missing: not found"},
-		{"hub:ada/bot@9", 1, "hub:ada/bot@9: not found"},
+		{"cchub:ada/missing", 1, "cchub:ada/missing: not found"},
+		{"cchub:ada/bot@9", 1, "cchub:ada/bot@9: not found"},
 		{base + "/files/page.html", remote.ExitRefused, "not application/json"},
 		{base + "/files/typo.json", remote.ExitRefused, `did you mean "model"`},
 		{base + "/files/envfile.json", remote.ExitRefused, "a relative path has no meaning"},

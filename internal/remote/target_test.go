@@ -18,17 +18,17 @@ func TestParseTarget_valid(t *testing.T) {
 		fetchURL string
 	}{
 		{
-			in:       "hub:lorentz/trade-bot",
+			in:       "cchub:lorentz/trade-bot",
 			want:     Target{Kind: KindHub, Handle: "lorentz", Name: "trade-bot"},
-			str:      "hub:lorentz/trade-bot",
-			base:     "hub:lorentz/trade-bot",
+			str:      "cchub:lorentz/trade-bot",
+			base:     "cchub:lorentz/trade-bot",
 			fetchURL: "https://clai.chat/hub/lorentz/trade-bot/raw",
 		},
 		{
-			in:       "hub:lorentz/trade-bot@3#sha256=" + strings.ToUpper(testDigest),
+			in:       "cchub:lorentz/trade-bot@3#sha256=" + strings.ToUpper(testDigest),
 			want:     Target{Kind: KindHub, Handle: "lorentz", Name: "trade-bot", Version: 3, SHA256: testDigest},
-			str:      "hub:lorentz/trade-bot@3",
-			base:     "hub:lorentz/trade-bot",
+			str:      "cchub:lorentz/trade-bot@3",
+			base:     "cchub:lorentz/trade-bot",
 			pinned:   true,
 			fetchURL: "https://clai.chat/hub/lorentz/trade-bot/v/3/raw",
 		},
@@ -75,14 +75,14 @@ func TestParseTarget_valid(t *testing.T) {
 
 func TestParseTarget_refusals(t *testing.T) {
 	for _, in := range []string{
-		"hub:lorentz",
-		"hub:Lorentz/trade-bot",
-		"hub:l/trade-bot",
-		"hub:lorentz/trade-bot@0",
-		"hub:lorentz/trade-bot@03",
-		"hub:lorentz/trade-bot@latest",
-		"hub:lorentz/trade-bot#sha256=abc",
-		"hub:lorentz/trade-bot#md5=" + testDigest,
+		"cchub:lorentz",
+		"cchub:Lorentz/trade-bot",
+		"cchub:l/trade-bot",
+		"cchub:lorentz/trade-bot@0",
+		"cchub:lorentz/trade-bot@03",
+		"cchub:lorentz/trade-bot@latest",
+		"cchub:lorentz/trade-bot#sha256=abc",
+		"cchub:lorentz/trade-bot#md5=" + testDigest,
 		"gh:baalimago",
 		"gh:baalimago/repo/../x",
 		"gh:baalimago/repo//x",
@@ -106,7 +106,7 @@ func TestParseTarget_refusals(t *testing.T) {
 }
 
 func TestParseTarget_localPathsAreNotRemote(t *testing.T) {
-	for _, in := range []string{"./trade-bot.json", "/abs/hub:x.json", "trade-bot.json", "hubby.json", ""} {
+	for _, in := range []string{"./trade-bot.json", "/abs/cchub:x.json", "trade-bot.json", "hubby.json", ""} {
 		if IsRemote(in) {
 			t.Fatalf("IsRemote(%q) = true, want false", in)
 		}
@@ -120,7 +120,7 @@ func TestTarget_namesAndPages(t *testing.T) {
 	for _, tc := range []struct {
 		in, name, page, unpinned string
 	}{
-		{"hub:lorentz/trade-bot@3", "trade-bot", "https://dev.clai.chat/hub/lorentz/trade-bot/", "hub:lorentz/trade-bot"},
+		{"cchub:lorentz/trade-bot@3", "trade-bot", "https://dev.clai.chat/hub/lorentz/trade-bot/", "cchub:lorentz/trade-bot"},
 		{"gh:baalimago/sakfraga@v5", "sakfraga", "https://github.com/baalimago/sakfraga/blob/v5/agent.json", "gh:baalimago/sakfraga@v5"},
 		{"gh:baalimago/dots/agents/review.json", "review", "https://github.com/baalimago/dots/blob/HEAD/agents/review.json", "gh:baalimago/dots/agents/review.json"},
 		{"https://example.com/agents/ops.json", "ops", "https://example.com/agents/ops.json", "https://example.com/agents/ops.json"},
@@ -134,11 +134,11 @@ func TestTarget_namesAndPages(t *testing.T) {
 			t.Fatalf("%q: name %q page %q unpinned %q", tc.in, got.DefaultName(), got.PageURL("https://dev.clai.chat"), got.Unpinned().String())
 		}
 	}
-	got, _ := ParseTarget("hub:a1/b@2")
-	if w := got.WithDigest(testDigest); w != "hub:a1/b@2#sha256="+testDigest {
+	got, _ := ParseTarget("cchub:a1/b@2")
+	if w := got.WithDigest(testDigest); w != "cchub:a1/b@2#sha256="+testDigest {
 		t.Fatalf("WithDigest = %q", w)
 	}
-	if KindHub.String() != "hub" || KindGitHub.String() != "gh" || KindHTTPS.String() != "https" || Kind(0).String() != "unknown" {
+	if KindHub.String() != "cchub" || KindGitHub.String() != "gh" || KindHTTPS.String() != "https" || Kind(0).String() != "unknown" {
 		t.Fatal("Kind.String")
 	}
 }

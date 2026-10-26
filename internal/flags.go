@@ -316,7 +316,7 @@ func (g *AgentTextFlags) Register(fs *flag.FlagSet) {
 	g.MaxToolCallsAfterHandover.Register(fs, "Set the max tool calls for the post-handover phase of this run. 0 = unlimited. Overrides stoploss.max-tool-calls-after-handover in textConfig.json.", "max-tool-calls-after-handover")
 	g.Glob.Register(fs, "Glob files into the query context, e.g. -g '*.go'.", "g", "glob")
 	g.Profile.Register(fs, profileFlagDesc, "p", "profile")
-	g.ProfilePath.Register(fs, "Set this to the path of a profile file to use, or a remote target: hub:<handle>/<agent>[@n], gh:<owner>/<repo>[/path][@ref] or an https:// URL (see clai profiles -h).", "prp", "profile-path")
+	g.ProfilePath.Register(fs, "Set this to the path of a profile file to use, or a remote target: cchub:<handle>/<agent>[@n], gh:<owner>/<repo>[/path][@ref] or an https:// URL (see clai profiles -h).", "prp", "profile-path")
 	g.NonInteractive.Register(fs)
 	g.MediaTools.Register(fs)
 }

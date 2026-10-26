@@ -1,5 +1,5 @@
 // Package remote resolves the profile targets -prp accepts besides a local
-// file: hub:<handle>/<name>[@n], gh:<owner>/<repo>[/path][@ref] and an
+// file: cchub:<handle>/<name>[@n], gh:<owner>/<repo>[/path][@ref] and an
 // https:// URL, each with an optional #sha256=<hex> suffix. It fetches,
 // validates, caches and trust-checks the profile and hands back a local
 // path the profile loader reads like any other.
@@ -27,7 +27,7 @@ const (
 func (k Kind) String() string {
 	switch k {
 	case KindHub:
-		return "hub"
+		return "cchub"
 	case KindGitHub:
 		return "gh"
 	case KindHTTPS:
@@ -73,7 +73,7 @@ var (
 // IsRemote reports whether a -prp value names a remote target rather than a
 // local file. A local file is never fetched, whatever it is called.
 func IsRemote(s string) bool {
-	return strings.HasPrefix(s, "hub:") || strings.HasPrefix(s, "gh:") ||
+	return strings.HasPrefix(s, "cchub:") || strings.HasPrefix(s, "gh:") ||
 		strings.HasPrefix(s, "https://") || strings.HasPrefix(s, "http://")
 }
 
@@ -89,8 +89,8 @@ func ParseTarget(s string) (Target, error) {
 	}
 	var t Target
 	switch {
-	case strings.HasPrefix(body, "hub:"):
-		t, err = parseHub(strings.TrimPrefix(body, "hub:"))
+	case strings.HasPrefix(body, "cchub:"):
+		t, err = parseHub(strings.TrimPrefix(body, "cchub:"))
 	case strings.HasPrefix(body, "gh:"):
 		t, err = parseGitHub(strings.TrimPrefix(body, "gh:"))
 	default:
@@ -123,7 +123,7 @@ func parseHub(s string) (Target, error) {
 	addr, version, pinned := strings.Cut(s, "@")
 	handle, name, ok := strings.Cut(addr, "/")
 	if !ok || !hubPart.MatchString(handle) || len(handle) > 39 || len(handle) < 2 || !hubPart.MatchString(name) {
-		return Target{}, fmt.Errorf("a hub target is hub:<handle>/<name>[@<version>]")
+		return Target{}, fmt.Errorf("a cchub target is cchub:<handle>/<name>[@<version>]")
 	}
 	t := Target{Kind: KindHub, Handle: handle, Name: name}
 	if pinned {
@@ -193,7 +193,7 @@ func (t Target) Pinned() bool {
 func (t Target) Base() string {
 	switch t.Kind {
 	case KindHub:
-		return fmt.Sprintf("hub:%s/%s", t.Handle, t.Name)
+		return fmt.Sprintf("cchub:%s/%s", t.Handle, t.Name)
 	case KindGitHub:
 		s := fmt.Sprintf("gh:%s/%s", t.Owner, t.Repo)
 		if t.Path != DefaultGitHubPath {
@@ -236,7 +236,7 @@ func (t Target) Unpinned() Target {
 }
 
 // FetchURL is the address the target's bytes are read from. hubBase is
-// the clai cloud origin a hub: target resolves against.
+// the clai cloud origin a cchub: target resolves against.
 func (t Target) FetchURL(hubBase string) string {
 	switch t.Kind {
 	case KindHub:

@@ -129,7 +129,7 @@ Use this profile by passing the \'-p/-profile\' flag. Example:
 
 // RemoteHelp explains remote profile targets; surfaced in 'clai profiles -h'.
 const RemoteHelp = `-prp also takes a remote target, fetched over https and kept in the cache:
-  hub:<handle>/<agent>[@<version>]   an agent on the clai hub (CLAI_CLOUD_URL, default https://clai.chat)
+  cchub:<handle>/<agent>[@<version>]   an agent on cchub, the clai hub (CLAI_CLOUD_URL, default https://clai.chat)
   gh:<owner>/<repo>[/<path>][@<ref>] agent.json, or <path>, in a GitHub repo
   https://<host>/<path>              any URL that answers application/json
 A new target runs only once you trust it: in a terminal clai asks; elsewhere it
@@ -150,8 +150,8 @@ func Command(deps CommandDeps) *internal.Command {
 Examples:
   clai profiles
   clai -p gopher q refactor this file
-  clai -prp hub:lorentz/trade-bot@3 q 'Do your hourly run.'
-  clai profiles install hub:lorentz/trade-bot@3`,
+  clai -prp cchub:lorentz/trade-bot@3 q 'Do your hourly run.'
+  clai profiles install cchub:lorentz/trade-bot@3`,
 	}
 	nonInteractive := &internal.NonInteractiveFlag{}
 	c.Register = nonInteractive.Register
@@ -187,14 +187,14 @@ records its hash in <config-dir>/trust.json (never synced), so -prp runs it
 without asking, in cron and scripts too.
 
 Examples:
-  clai profiles trust hub:lorentz/trade-bot@4`
+  clai profiles trust cchub:lorentz/trade-bot@4`
 
 const installHelp = `profiles install <target> [name]. Fetches a remote target and saves it as
 <config-dir>/profiles/<name>.json with a source stamp, so clai -p <name> runs it
 offline. The name defaults to the agent's, repo's or file's name.
 
 Examples:
-  clai profiles install hub:lorentz/trade-bot@3
+  clai profiles install cchub:lorentz/trade-bot@3
   clai profiles install gh:baalimago/agents/review.json@v1 reviewer`
 
 const updateHelp = `profiles update [name]. Fetches the newest version of every installed

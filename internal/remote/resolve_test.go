@@ -59,7 +59,7 @@ func TestResolve_asksOnceThenRunsFromCache(t *testing.T) {
 		asked = append(asked, p)
 		return true, nil
 	})
-	got, err := r.Resolve(t.Context(), "hub:ada/bot@1", ConsentAsk)
+	got, err := r.Resolve(t.Context(), "cchub:ada/bot@1", ConsentAsk)
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestResolve_asksOnceThenRunsFromCache(t *testing.T) {
 	if err != nil || string(b) != tradeBot {
 		t.Fatalf("cached file = %q, %v", b, err)
 	}
-	if len(asked) != 1 || asked[0].Target != "hub:ada/bot@1" || !strings.HasSuffix(asked[0].Page, "/hub/ada/bot/") {
+	if len(asked) != 1 || asked[0].Target != "cchub:ada/bot@1" || !strings.HasSuffix(asked[0].Page, "/hub/ada/bot/") {
 		t.Fatalf("asked = %+v", asked)
 	}
 	if s := asked[0].Summary.String(); !strings.Contains(s, "poly  pnpx @iqai/mcp-polymarket  (not pinned)") || !strings.Contains(s, "It reads: ~/.secrets.env") {
@@ -78,7 +78,7 @@ func TestResolve_asksOnceThenRunsFromCache(t *testing.T) {
 	}
 
 	r.Prompt = nil
-	again, err := r.Resolve(t.Context(), "hub:ada/bot@1", ConsentAsk)
+	again, err := r.Resolve(t.Context(), "cchub:ada/bot@1", ConsentAsk)
 	if err != nil {
 		t.Fatalf("second Resolve: %v", err)
 	}
@@ -90,12 +90,12 @@ func TestResolve_asksOnceThenRunsFromCache(t *testing.T) {
 func TestResolve_refusesUntrustedWithoutATerminal(t *testing.T) {
 	h := newHub(t, map[string]string{"/hub/ada/bot/raw": tradeBot})
 	r := testResolver(t, h, nil)
-	_, err := r.Resolve(t.Context(), "hub:ada/bot", ConsentAsk)
+	_, err := r.Resolve(t.Context(), "cchub:ada/bot", ConsentAsk)
 	var untrusted *UntrustedError
 	if !errors.As(err, &untrusted) || untrusted.ExitCode() != ExitRefused {
 		t.Fatalf("err = %v, want *UntrustedError", err)
 	}
-	for _, want := range []string{"hub:ada/bot is a profile", "clai profiles trust hub:ada/bot", "hub:ada/bot#sha256=" + Digest([]byte(tradeBot))} {
+	for _, want := range []string{"cchub:ada/bot is a profile", "clai profiles trust cchub:ada/bot", "cchub:ada/bot#sha256=" + Digest([]byte(tradeBot))} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error %q lacks %q", err, want)
 		}
@@ -108,23 +108,23 @@ func TestResolve_refusesUntrustedWithoutATerminal(t *testing.T) {
 func TestResolve_unpinnedTargetThatChangedAsksAgain(t *testing.T) {
 	h := newHub(t, map[string]string{"/hub/ada/bot/raw": tradeBot})
 	r := testResolver(t, h, yes)
-	if _, err := r.Resolve(t.Context(), "hub:ada/bot", ConsentAsk); err != nil {
+	if _, err := r.Resolve(t.Context(), "cchub:ada/bot", ConsentAsk); err != nil {
 		t.Fatalf("first: %v", err)
 	}
 	h.versions["/hub/ada/bot/raw"] = `{"model":"test","prompt":"v2"}`
 	r.Prompt = nil
-	_, err := r.Resolve(t.Context(), "hub:ada/bot", ConsentAsk)
+	_, err := r.Resolve(t.Context(), "cchub:ada/bot", ConsentAsk)
 	if err == nil || !strings.Contains(err.Error(), "changed to a version") {
 		t.Fatalf("err = %v, want a changed-version refusal", err)
 	}
 	r.Prompt = func(context.Context, TrustPrompt) (bool, error) { return false, nil }
-	_, err = r.Resolve(t.Context(), "hub:ada/bot", ConsentAsk)
+	_, err = r.Resolve(t.Context(), "cchub:ada/bot", ConsentAsk)
 	var untrusted *UntrustedError
 	if !errors.As(err, &untrusted) || !untrusted.Asked || !strings.Contains(err.Error(), "was not trusted") {
 		t.Fatalf("declined: err = %v", err)
 	}
 	r.Prompt = func(context.Context, TrustPrompt) (bool, error) { return false, errors.New("tty gone") }
-	if _, err = r.Resolve(t.Context(), "hub:ada/bot", ConsentAsk); err == nil || !strings.Contains(err.Error(), "tty gone") {
+	if _, err = r.Resolve(t.Context(), "cchub:ada/bot", ConsentAsk); err == nil || !strings.Contains(err.Error(), "tty gone") {
 		t.Fatalf("prompt failure: err = %v", err)
 	}
 }
@@ -133,14 +133,14 @@ func TestResolve_hashIsConsent(t *testing.T) {
 	h := newHub(t, map[string]string{"/hub/ada/bot/v/1/raw": tradeBot})
 	r := testResolver(t, h, nil)
 	digest := Digest([]byte(tradeBot))
-	if _, err := r.Resolve(t.Context(), "hub:ada/bot@1#sha256="+digest, ConsentAsk); err != nil {
+	if _, err := r.Resolve(t.Context(), "cchub:ada/bot@1#sha256="+digest, ConsentAsk); err != nil {
 		t.Fatalf("hash consent: %v", err)
 	}
-	if ok, err := r.Trust.Trusted("hub:ada/bot", digest); err != nil || !ok {
+	if ok, err := r.Trust.Trusted("cchub:ada/bot", digest); err != nil || !ok {
 		t.Fatalf("trusted = %v, %v", ok, err)
 	}
 	wrong := strings.Repeat("0", 64)
-	_, err := r.Resolve(t.Context(), "hub:ada/bot@1#sha256="+wrong, ConsentAsk)
+	_, err := r.Resolve(t.Context(), "cchub:ada/bot@1#sha256="+wrong, ConsentAsk)
 	var mismatch *HashMismatchError
 	if !errors.As(err, &mismatch) || mismatch.ExitCode() != ExitRefused || !strings.Contains(err.Error(), "does not match") {
 		t.Fatalf("err = %v, want *HashMismatchError", err)
@@ -150,10 +150,10 @@ func TestResolve_hashIsConsent(t *testing.T) {
 func TestResolve_consentGivenTrustsWithoutAsking(t *testing.T) {
 	h := newHub(t, map[string]string{"/hub/ada/bot/raw": tradeBot})
 	r := testResolver(t, h, nil)
-	if _, err := r.Resolve(t.Context(), "hub:ada/bot", ConsentGiven); err != nil {
+	if _, err := r.Resolve(t.Context(), "cchub:ada/bot", ConsentGiven); err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	if _, err := r.Resolve(t.Context(), "hub:ada/bot", ConsentAsk); err != nil {
+	if _, err := r.Resolve(t.Context(), "cchub:ada/bot", ConsentAsk); err != nil {
 		t.Fatalf("trusted resolve: %v", err)
 	}
 }
@@ -161,15 +161,15 @@ func TestResolve_consentGivenTrustsWithoutAsking(t *testing.T) {
 func TestResolve_offlineIsCacheOnly(t *testing.T) {
 	h := newHub(t, map[string]string{"/hub/ada/bot/raw": tradeBot})
 	r := testResolver(t, h, yes)
-	if _, err := r.Resolve(t.Context(), "hub:ada/bot", ConsentAsk); err != nil {
+	if _, err := r.Resolve(t.Context(), "cchub:ada/bot", ConsentAsk); err != nil {
 		t.Fatalf("online: %v", err)
 	}
 	r.Offline = true
-	got, err := r.Resolve(t.Context(), "hub:ada/bot", ConsentAsk)
+	got, err := r.Resolve(t.Context(), "cchub:ada/bot", ConsentAsk)
 	if err != nil || got.Fetched || h.hits.Load() != 1 {
 		t.Fatalf("offline cached: %+v %v hits=%d", got, err, h.hits.Load())
 	}
-	_, err = r.Resolve(t.Context(), "hub:ada/other", ConsentAsk)
+	_, err = r.Resolve(t.Context(), "cchub:ada/other", ConsentAsk)
 	var offline *OfflineError
 	if !errors.As(err, &offline) || offline.ExitCode() != ExitRefused || !strings.Contains(err.Error(), "CLAI_CLOUD=off") {
 		t.Fatalf("err = %v, want *OfflineError", err)
@@ -180,11 +180,11 @@ func TestResolve_refusals(t *testing.T) {
 	h := newHub(t, map[string]string{"/hub/ada/bad/raw": `{"promt":"x"}`, "/page": "<html></html>"})
 	r := testResolver(t, h, yes)
 	var invalid *InvalidProfileError
-	if _, err := r.Resolve(t.Context(), "hub:ada/bad", ConsentAsk); !errors.As(err, &invalid) {
+	if _, err := r.Resolve(t.Context(), "cchub:ada/bad", ConsentAsk); !errors.As(err, &invalid) {
 		t.Fatalf("invalid: err = %v", err)
 	}
 	var fetchErr *FetchError
-	if _, err := r.Resolve(t.Context(), "hub:ada/missing", ConsentAsk); !errors.As(err, &fetchErr) || fetchErr.Status != http.StatusNotFound || !strings.Contains(err.Error(), "HTTP 404") {
+	if _, err := r.Resolve(t.Context(), "cchub:ada/missing", ConsentAsk); !errors.As(err, &fetchErr) || fetchErr.Status != http.StatusNotFound || !strings.Contains(err.Error(), "HTTP 404") {
 		t.Fatalf("missing: err = %v", err)
 	}
 	h.ctype = "text/html"
@@ -192,7 +192,7 @@ func TestResolve_refusals(t *testing.T) {
 	if _, err := r.Resolve(t.Context(), h.srv.URL+"/page", ConsentAsk); !errors.As(err, &notJSON) || notJSON.ExitCode() != ExitRefused || !strings.Contains(err.Error(), "answered text/html") {
 		t.Fatalf("html: err = %v", err)
 	}
-	if _, err := r.Resolve(t.Context(), "hub:Bad", ConsentAsk); err == nil {
+	if _, err := r.Resolve(t.Context(), "cchub:Bad", ConsentAsk); err == nil {
 		t.Fatal("bad target: want error")
 	}
 }
@@ -265,14 +265,14 @@ func TestStores_reportCorruptFiles(t *testing.T) {
 
 func TestCache_dropsBytesThatNoLongerMatchTheirHash(t *testing.T) {
 	c := NewCache(t.TempDir())
-	digest, err := c.Store("hub:a1/b@1", []byte(tradeBot))
+	digest, err := c.Store("cchub:a1/b@1", []byte(tradeBot))
 	if err != nil {
 		t.Fatalf("Store: %v", err)
 	}
 	if err := os.WriteFile(c.Path(digest), []byte("tampered"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := c.Lookup("hub:a1/b@1"); !errors.Is(err, ErrNotCached) {
+	if _, _, err := c.Lookup("cchub:a1/b@1"); !errors.Is(err, ErrNotCached) {
 		t.Fatalf("Lookup tampered: err = %v, want ErrNotCached", err)
 	}
 }

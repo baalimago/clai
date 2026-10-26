@@ -95,7 +95,7 @@ func shortDigest(d string) string {
 // Resolver fetches, validates, trusts and caches remote profile targets.
 type Resolver struct {
 	Client Doer
-	// HubBase is the clai cloud origin hub: targets resolve against.
+	// HubBase is the clai cloud origin cchub: targets resolve against.
 	HubBase string
 	// Offline makes every target cache-only (CLAI_CLOUD=off).
 	Offline bool

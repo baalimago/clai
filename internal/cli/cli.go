@@ -88,7 +88,7 @@ type Deps struct {
 	NewSummarizer     func(confDir string) (models.Summarizer, error)
 	ForeignCache      func() vendors.SourceCache
 	NewImageGenerator imagegen.NewGeneratorFunc
-	// RemoteClient fetches -prp hub:, gh: and https:// targets. Tests point
+	// RemoteClient fetches -prp cchub:, gh: and https:// targets. Tests point
 	// it at a local TLS server.
 	RemoteClient remote.Doer
 }

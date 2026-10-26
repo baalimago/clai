@@ -67,31 +67,31 @@ func (f *fixture) profile(t *testing.T, name string) map[string]any {
 
 func TestTrust_recordsTheHash(t *testing.T) {
 	f := newFixture(t)
-	if err := f.deps.Trust(t.Context(), "hub:ada/bot@1"); err != nil {
+	if err := f.deps.Trust(t.Context(), "cchub:ada/bot@1"); err != nil {
 		t.Fatalf("Trust: %v", err)
 	}
-	ok, err := remote.NewTrustStore(f.confDir).Trusted("hub:ada/bot", remote.Digest([]byte(botV1)))
+	ok, err := remote.NewTrustStore(f.confDir).Trusted("cchub:ada/bot", remote.Digest([]byte(botV1)))
 	if err != nil || !ok {
 		t.Fatalf("trusted = %v %v", ok, err)
 	}
-	if !strings.Contains(f.out.String(), "Trusted hub:ada/bot@1") {
+	if !strings.Contains(f.out.String(), "Trusted cchub:ada/bot@1") {
 		t.Fatalf("out = %q", f.out)
 	}
-	if err := f.deps.Trust(t.Context(), "hub:ada/missing"); err == nil {
+	if err := f.deps.Trust(t.Context(), "cchub:ada/missing"); err == nil {
 		t.Fatal("missing target: want error")
 	}
 }
 
 func TestInstallAndUpdate(t *testing.T) {
 	f := newFixture(t)
-	if err := f.deps.Install(t.Context(), "hub:ada/bot@1", ""); err != nil {
+	if err := f.deps.Install(t.Context(), "cchub:ada/bot@1", ""); err != nil {
 		t.Fatalf("Install: %v", err)
 	}
-	stamp := "hub:ada/bot@1#sha256=" + remote.Digest([]byte(botV1))
+	stamp := "cchub:ada/bot@1#sha256=" + remote.Digest([]byte(botV1))
 	if p := f.profile(t, "bot"); p["prompt"] != "v1" || p["source"].(map[string]any)["target"] != stamp {
 		t.Fatalf("installed profile = %v", p)
 	}
-	if err := f.deps.Install(t.Context(), "hub:ada/bot@1", ""); err != nil {
+	if err := f.deps.Install(t.Context(), "cchub:ada/bot@1", ""); err != nil {
 		t.Fatalf("reinstall from the same target: %v", err)
 	}
 
@@ -107,7 +107,7 @@ func TestInstallAndUpdate(t *testing.T) {
 		t.Fatalf("Update: %v", err)
 	}
 	p := f.profile(t, "bot")
-	if p["prompt"] != "v2" || !strings.HasPrefix(p["source"].(map[string]any)["target"].(string), "hub:ada/bot#sha256=") {
+	if p["prompt"] != "v2" || !strings.HasPrefix(p["source"].(map[string]any)["target"].(string), "cchub:ada/bot#sha256=") {
 		t.Fatalf("updated profile = %v", p)
 	}
 }
@@ -121,15 +121,15 @@ func TestInstall_refusals(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "mine.json"), []byte(`{"model":"x"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "other.json"), []byte(`{"source":{"target":"hub:bob/other"}}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "other.json"), []byte(`{"source":{"target":"cchub:bob/other"}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct{ target, name, want string }{
-		{"hub:ada/bot", "mine", "was not installed from a remote target"},
-		{"hub:ada/bot", "other", "was installed from hub:bob/other"},
-		{"hub:ada/bot", "../x", "is not a profile name"},
+		{"cchub:ada/bot", "mine", "was not installed from a remote target"},
+		{"cchub:ada/bot", "other", "was installed from cchub:bob/other"},
+		{"cchub:ada/bot", "../x", "is not a profile name"},
 		{"./local.json", "", "not a remote profile target"},
-		{"hub:ada/missing", "", "HTTP 404"},
+		{"cchub:ada/missing", "", "HTTP 404"},
 	} {
 		if err := f.deps.Install(t.Context(), tc.target, tc.name); err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Fatalf("Install(%q, %q) err = %v, want %q", tc.target, tc.name, err, tc.want)
@@ -138,7 +138,7 @@ func TestInstall_refusals(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "broken.json"), []byte(`{`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.deps.Install(t.Context(), "hub:ada/bot", "broken"); err == nil {
+	if err := f.deps.Install(t.Context(), "cchub:ada/bot", "broken"); err == nil {
 		t.Fatal("broken existing profile: want error")
 	}
 }
@@ -161,10 +161,10 @@ func TestUpdate_refusalsAndEmptyDirs(t *testing.T) {
 	if err := f.deps.Update(t.Context(), "mine"); !errors.Is(err, ErrNotInstalled) {
 		t.Fatalf("Update(mine) err = %v, want ErrNotInstalled", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "gone.json"), []byte(`{"source":{"target":"hub:ada/gone"}}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "gone.json"), []byte(`{"source":{"target":"cchub:ada/gone"}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "bad.json"), []byte(`{"source":{"target":"hub:BAD"}}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "bad.json"), []byte(`{"source":{"target":"cchub:BAD"}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	err := f.deps.Update(t.Context(), "")
@@ -175,13 +175,13 @@ func TestUpdate_refusalsAndEmptyDirs(t *testing.T) {
 
 func TestRemoteCommands_needDeps(t *testing.T) {
 	var empty CommandDeps
-	if err := empty.Trust(t.Context(), "hub:ada/bot"); err == nil {
+	if err := empty.Trust(t.Context(), "cchub:ada/bot"); err == nil {
 		t.Fatal("no config dir: want error")
 	}
 	empty.ConfigDir = func() (string, error) { return t.TempDir(), nil }
 	for _, run := range []func() error{
-		func() error { return empty.Trust(t.Context(), "hub:ada/bot") },
-		func() error { return empty.Install(t.Context(), "hub:ada/bot", "") },
+		func() error { return empty.Trust(t.Context(), "cchub:ada/bot") },
+		func() error { return empty.Install(t.Context(), "cchub:ada/bot", "") },
 		func() error { return empty.Update(t.Context(), "") },
 	} {
 		if err := run(); err == nil || !strings.Contains(err.Error(), "not available") {
@@ -207,7 +207,7 @@ func TestRemoteSubcommands_checkTheirArgs(t *testing.T) {
 	for _, step := range []struct {
 		name string
 		args []string
-	}{{"trust", []string{"hub:ada/bot@1"}}, {"install", []string{"hub:ada/bot@1", "b"}}, {"update", []string{"b"}}} {
+	}{{"trust", []string{"cchub:ada/bot@1"}}, {"install", []string{"cchub:ada/bot@1", "b"}}, {"update", []string{"b"}}} {
 		name, args := step.name, step.args
 		sub := c.Subcommands()[name]
 		if err := sub.(interface{ Flagset() *flag.FlagSet }).Flagset().Parse(args); err != nil {

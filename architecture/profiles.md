@@ -2,7 +2,7 @@
 
 Command: `clai profiles [list|install|update|trust]`
 
-The **profiles** command lists the configured profile JSON files under the clai config directory. It also installs, updates and trusts remote profile targets (`hub:`, `gh:`, `https://`); [remote-targets.md](./remote-targets.md) covers those.
+The **profiles** command lists the configured profile JSON files under the clai config directory. It also installs, updates and trusts remote profile targets (`cchub:`, `gh:`, `https://`); [remote-targets.md](./remote-targets.md) covers those.
 
 Profiles themselves are used primarily via the `-p/-profile` and `-prp/-profile-path` flags on text-like commands (`query`, `chat`, `cmd`). Configuration semantics are described in `CONFIG.md`.
 

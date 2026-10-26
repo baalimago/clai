@@ -13,7 +13,7 @@ func TestValidate_acceptsAProfileAndListsKeysClaiIgnores(t *testing.T) {
 		"poly":{"command":"pnpx","envfile":"~/.secrets.env"},
 		"abs":{"command":"x","envfile":"/etc/x.env"},
 		"var":{"command":"x","envfile":"$HOME/x.env"}}}`
-	got, err := Validate("hub:a1/b", []byte(body))
+	got, err := Validate("cchub:a1/b", []byte(body))
 	if err != nil {
 		t.Fatalf("Validate: %v", err)
 	}

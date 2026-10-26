@@ -5,14 +5,14 @@ over https, checked strictly, trusted once per content hash, and cached, so a
 scheduled run reads its bytes from disk and makes no network call.
 
 ```text
-hub:<handle>/<agent>[@<version>]      an agent on the clai hub
+cchub:<handle>/<agent>[@<version>]      an agent on cchub, the clai hub
 gh:<owner>/<repo>[/<path>][@<ref>]    agent.json (or <path>) in a GitHub repo
 https://<host>/<path>                 any URL that answers application/json
 …#sha256=<hex>                        on any of them: consent to exactly these bytes
 ```
 
 `-p <name>` and `-prp ./file.json` are unchanged. They work offline, need no
-account, and fetch nothing. `IsRemote` matches only the `hub:`, `gh:`,
+account, and fetch nothing. `IsRemote` matches only the `cchub:`, `gh:`,
 `https://` and `http://` prefixes. Plain `http://` is refused rather than
 fetched.
 
@@ -91,7 +91,7 @@ A `gh:` target reads
   - A relative `envfile` is refused: the fetched profile has no directory
     for it to be relative to. Use `~/`, `$VAR/` or an absolute path.
 
-  `hub:` and `https://` responses must be `application/json` (or
+  `cchub:` and `https://` responses must be `application/json` (or
   `+json`). `raw.githubusercontent.com` serves `text/plain`, so `gh:`
   relies on `Validate` alone. Local profiles keep the lenient loader.
 - **Offline.** `CLAI_CLOUD=off` makes every target cache-only. An

@@ -79,11 +79,11 @@ func runRemoteOnPTY(t *testing.T, env remoteE2E, args []string, answer string) (
 func Test_REMOTE_terminalAsksBeforeTheFirstRun(t *testing.T) {
 	t.Run("yes trusts and runs", func(t *testing.T) {
 		env := setupRemoteE2E(t)
-		screen, stdout, status := runRemoteOnPTY(t, env, []string{"-r", "-prp", "hub:ada/bot", "q", "hello"}, "y")
+		screen, stdout, status := runRemoteOnPTY(t, env, []string{"-r", "-prp", "cchub:ada/bot", "q", "hello"}, "y")
 		if status != 0 || stdout != "hello\n" {
 			t.Fatalf("status %d stdout %q, screen:\n%s", status, stdout, screen)
 		}
-		for _, want := range []string{"fetched hub:ada/bot · sha256 " + digestOf(remoteBotV1), "Model: test", "Trust hub:ada/bot? [y/N]"} {
+		for _, want := range []string{"fetched cchub:ada/bot · sha256 " + digestOf(remoteBotV1), "Model: test", "Trust cchub:ada/bot? [y/N]"} {
 			if !strings.Contains(screen, want) {
 				t.Fatalf("screen lacks %q:\n%s", want, screen)
 			}
@@ -95,7 +95,7 @@ func Test_REMOTE_terminalAsksBeforeTheFirstRun(t *testing.T) {
 	})
 	t.Run("no refuses with exit 3", func(t *testing.T) {
 		env := setupRemoteE2E(t)
-		screen, stdout, status := runRemoteOnPTY(t, env, []string{"-r", "-prp", "hub:ada/bot", "q", "hello"}, "n")
+		screen, stdout, status := runRemoteOnPTY(t, env, []string{"-r", "-prp", "cchub:ada/bot", "q", "hello"}, "n")
 		if status != remote.ExitRefused || stdout != "" || !strings.Contains(screen, "was not trusted") {
 			t.Fatalf("status %d stdout %q, screen:\n%s", status, stdout, screen)
 		}
