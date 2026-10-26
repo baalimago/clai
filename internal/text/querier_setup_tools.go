@@ -183,7 +183,7 @@ func redactMcpServersForDebug(servers []pub_models.McpServer) []debugRedactedMcp
 //
 // A server discovered from the config directory is ambient: a startup failure
 // keeps today's warn-and-degrade. A server in userConf.McpServers is explicit
-// when the run is agent-driven (AgentSettings.StrictMcpStartup); its failures
+// (a profile's own servers, or an agent's under StrictMcpStartup); its failures
 // are collected while the in-setup wait runs and joined into a typed error on
 // return, so a caller whose task depends on the server can see that it is
 // absent (worklog 2026-09-05-error-propagation, D13).
@@ -203,7 +203,12 @@ func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configu
 	// Filter MCP servers based on profile tools
 	filteredFiles := filterMcpServersByProfile(files, userConf)
 	mcpServers, err := findConfiguredMcpServers(filteredFiles)
-	explicit := userConf.AgentSettings != nil && userConf.AgentSettings.StrictMcpStartup
+	strict := userConf.AgentSettings != nil && userConf.AgentSettings.StrictMcpStartup
+	// The servers in userConf.McpServers are required: an agent's
+	// WithMcpServers, or on the CLI a profile's own mcp_servers. The profile
+	// exists to give the run those tools, so running without them is a
+	// failure, not a degrade. Only strict startup also forces them eager.
+	explicit := strict || len(userConf.McpServers) > 0
 	// userConf.McpServers never passed through FindConfiguredServers, so its
 	// own transport XOR was never enforced: both command and url set
 	// silently preferred url, and neither set reached
@@ -211,9 +216,7 @@ func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configu
 	// exactly as a config-directory file is.
 	validExplicit, transportFailures := validateExplicitServers(explicit, userConf.McpServers)
 	// The config-dir servers are ambient; the userConf.McpServers tail is
-	// explicit exactly when the run is agent-driven. Profile-sourced servers
-	// ride the CLI path and stay ambient (D13: only WithMcpServers is
-	// load-bearing).
+	// explicit.
 	explicitTail := len(mcpServers)
 	mcpServers = append(mcpServers, validExplicit...)
 
@@ -257,12 +260,12 @@ func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configu
 	go mcp.Manager(ctx, controlChannel, &toolWg, runReg, startupFailures)
 
 	failures := &failureCollector{errs: append([]error(nil), transportFailures...)}
-	if err != nil && explicit {
+	if err != nil && strict {
 		failures.addExplicit("config-dir", claierr.NewMcpServerStartup("config-dir", "parse", err))
 	}
 	for i, mcpServer := range mcpServers {
 		isExplicitIdx := i >= explicitTail
-		strictExplicit := explicit && isExplicitIdx
+		strictExplicit := strict && isExplicitIdx
 		isHTTP := mcpServer.Url != ""
 
 		mode, modeErr := effectiveStartupMode(mcpServer, strictExplicit)

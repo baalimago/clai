@@ -527,7 +527,13 @@ The posture differs by how a server was requested, and the distinction is delibe
   continues, because a broken optional server should not fail a query.
 - A server passed through `agent.WithMcpServers` is **explicit** and sets
   `AgentSettings.StrictMcpStartup`. Its startup failure is returned as a typed error, because a
-  caller whose task depends on that server must be able to see that it is absent.
+  caller whose task depends on that server must be able to see that it is absent. Strict startup
+  also connects it eagerly, so a warm schema cache cannot hide a failure.
+- A server declared in a profile's `mcp_servers` is **explicit** too: its startup failure ends the
+  run with the same typed error. The profile exists to give the run those tools, and an agent that
+  silently runs without them does the wrong thing with confidence. Unlike strict startup, a profile
+  server keeps its startup mode, so a lazy one served from the schema cache still costs no connect;
+  a failure there surfaces when its tool is called.
 
 Startup failures are reported as `claierr.McpServerStartupError`, carrying the server name and the
 stage that failed. See `architecture/errors.md`.

@@ -300,15 +300,11 @@ func TestLazyCacheMissConnectBound(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(mcpDir, "hangs-http.json"), []byte(httpConf), 0o644); err != nil {
 		t.Fatalf("write http server config: %v", err)
 	}
-	conf := Configurations{
-		McpServers: []pub_models.McpServer{{
-			Name:                  "hangs-stdio",
-			Command:               testServerBinary(t),
-			Env:                   map[string]string{"TEST_SERVER_AUTH_HANG": "1"},
-			Startup:               pub_models.StartupLazy,
-			ConnectTimeoutSeconds: 1,
-		}},
+	stdioConf := fmt.Sprintf(`{"command":%q,"env":{"TEST_SERVER_AUTH_HANG":"1"},"startup":"lazy","connect_timeout_seconds":1}`, testServerBinary(t))
+	if err := os.WriteFile(filepath.Join(mcpDir, "hangs-stdio.json"), []byte(stdioConf), 0o644); err != nil {
+		t.Fatalf("write stdio server config: %v", err)
 	}
+	conf := Configurations{}
 
 	start := time.Now()
 	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
