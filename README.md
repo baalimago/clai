@@ -58,6 +58,22 @@ review, err := agent.NewTyped[Review](agent.WithModel("gpt-5.2")).Query(ctx, cha
 
 The agent runs silent and returns typed errors. See [pkg/agent](https://pkg.go.dev/github.com/baalimago/clai/pkg/agent) for the option surface, the command ban list and the token stoploss, and [pkg/tools](https://pkg.go.dev/github.com/baalimago/clai/pkg/tools) for the tool catalog.
 
+## Sync across machines (optional)
+
+`clai cloud` keeps your config (profiles, MCP servers, shell contexts, skills, theme) and, if you like, your conversations in step between machines through a [clai.chat](https://www.clai.chat) account.
+It works like git: nothing syncs on its own, and clai works the same without an account.
+
+```bash
+clai cloud login              # approve this machine in the browser
+clai cloud status             # what you would commit, and what the server has
+clai cloud pull               # bring down your account's changes
+clai cloud commit -m "laptop" # upload yours
+```
+
+Config sync is free (up to 1 GB); conversations cost $1 per started GB a month and need a card on file.
+A config file holding a literal key is never committed, a clash keeps your file and saves the other copy for `clai cloud resolve`, and `-r` prints JSON.
+See `clai cloud -h` and [architecture/cloud.md](./architecture/cloud.md).
+
 ## Features
 
 <div align="center">
@@ -73,6 +89,7 @@ The agent runs silent and returns typed errors. See [pkg/agent](https://pkg.go.d
 - **[Structured output](./examples.md#blocking-structured-output)** - `-rf` returns JSON instead of prose, from any vendor; Jev answers a fixed set of questions about the data you pipe in.
 - **[MCP client support](./examples.md#mcp-tools-external-tool-servers)** - Add any MCP server you'd like by pasting their configuration.
 - **[Images, both ways](./architecture/images.md)** - Attach images with `-img`, a glob or stdin to any model, and get images back through the `generate_image` tool, or from an image-output model.
+- **[Sync, git-style](./architecture/cloud.md)** - `clai cloud pull` and `commit` carry your config and conversations between machines, only when you ask.
 - **Unix-like** - Clai follows the [unix philosophy](https://en.wikipedia.org/wiki/Unix_philosophy) and works with data piped in and out.
 
 All of these features are easily combined and tweaked, empowering users to accomplish very diverse use cases.

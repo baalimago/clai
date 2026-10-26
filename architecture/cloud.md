@@ -117,8 +117,8 @@ log      GET stores/<s>/log?limit=
   left by a pull, a commit behind the server or blocked by conflicts, a
   plain commit that committed config but whose conversations billing
   refused (no card, or overdue; not while billing is not open yet), or a
-  first pull with nobody to ask or quit at its question. `cmd.Run` maps every error to 1, so the
-  command prints its message, calls `Deps.SetExit(4)` and returns nil;
+  first pull with nobody to ask or quit at its question. `cmd.Run` maps
+  every error to 1, so the command prints its message, calls `Deps.SetExit(4)` and returns nil;
   `cli.Run` wires `SetExit` to `internal.ExitStatus.Set`, whose `Resolve`
   turns that success into 4 (an `ExitCoder` error, such as remote targets'
   exit 3, replaces a failure instead).
@@ -145,8 +145,9 @@ log      GET stores/<s>/log?limit=
   so a refused commit uploads nothing (`BillingBlockedError`). While
   `/me` says `billing_open` is false the reason is `BillingNotOpen` and no
   billing link is printed. A plain
-  `clai cloud commit` then commits the config store and says why the
-  conversations were left out; naming the conversations is an error.
+  `clai cloud commit` then commits the config store, says why the
+  conversations were left out and exits 4 (0 when billing is not open
+  yet: there is nothing to decide); naming the conversations is an error.
 - **Progress.** Status, pull and commit report `Progress` (discovering,
   exporting, scanning, hashing, uploading, committing, downloading,
   indexing: the chat index taking in what a pull wrote) to
