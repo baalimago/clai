@@ -22,7 +22,7 @@ func TestParseTarget_valid(t *testing.T) {
 			want:     Target{Kind: KindHub, Handle: "lorentz", Name: "trade-bot"},
 			str:      "cchub:lorentz/trade-bot",
 			base:     "cchub:lorentz/trade-bot",
-			fetchURL: "https://clai.chat/hub/lorentz/trade-bot/raw",
+			fetchURL: "https://www.clai.chat/hub/lorentz/trade-bot/raw",
 		},
 		{
 			in:       "cchub:lorentz/trade-bot@3#sha256=" + strings.ToUpper(testDigest),
@@ -30,7 +30,7 @@ func TestParseTarget_valid(t *testing.T) {
 			str:      "cchub:lorentz/trade-bot@3",
 			base:     "cchub:lorentz/trade-bot",
 			pinned:   true,
-			fetchURL: "https://clai.chat/hub/lorentz/trade-bot/v/3/raw",
+			fetchURL: "https://www.clai.chat/hub/lorentz/trade-bot/v/3/raw",
 		},
 		{
 			in:       "gh:baalimago/sakfraga-researcher@v5",

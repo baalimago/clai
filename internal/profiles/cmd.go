@@ -129,7 +129,7 @@ Use this profile by passing the \'-p/-profile\' flag. Example:
 
 // RemoteHelp explains remote profile targets; surfaced in 'clai profiles -h'.
 const RemoteHelp = `-prp also takes a remote target, fetched over https and kept in the cache:
-  cchub:<handle>/<agent>[@<version>]   an agent on cchub, the clai hub (CLAI_CLOUD_URL, default https://clai.chat)
+  cchub:<handle>/<agent>[@<version>]   an agent on cchub, the clai hub (CLAI_CLOUD_URL, default https://www.clai.chat)
   gh:<owner>/<repo>[/<path>][@<ref>] agent.json, or <path>, in a GitHub repo
   https://<host>/<path>              any URL that answers application/json
 A new target runs only once you trust it: in a terminal clai asks; elsewhere it

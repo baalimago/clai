@@ -8,7 +8,7 @@ import (
 
 // DefaultHubBase is the clai cloud origin cchub: targets resolve against
 // when CLAI_CLOUD_URL is unset.
-const DefaultHubBase = "https://clai.chat"
+const DefaultHubBase = "https://www.clai.chat"
 
 // Env is the part of the environment remote targets read.
 type Env struct {

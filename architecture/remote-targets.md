@@ -55,7 +55,7 @@ text.SetupQuerier
 
 A hub target is read from the hub's raw routes:
 `<base>/hub/<handle>/<agent>/v/<n>/raw` when pinned, and `/raw` otherwise. The
-base is `CLAI_CLOUD_URL`, an https origin that defaults to `https://clai.chat`.
+base is `CLAI_CLOUD_URL`, an https origin that defaults to `https://www.clai.chat`.
 A `gh:` target reads
 `raw.githubusercontent.com/<owner>/<repo>/<ref or HEAD>/<path or agent.json>`.
 

@@ -212,3 +212,40 @@ func TestLoginFlow(t *testing.T) {
 		}
 	})
 }
+
+func TestClient_refusesARedirectThatDropsThePost(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/moved":
+			http.Redirect(w, r, "/landed", http.StatusMovedPermanently)
+		case "/kept":
+			http.Redirect(w, r, "/landed", http.StatusPermanentRedirect)
+		case "/landed":
+			if r.Method != http.MethodPost {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			_, _ = w.Write([]byte(`{}`))
+		}
+	}))
+	t.Cleanup(srv.Close)
+	c := cloud.NewClient(srv.URL, "")
+	err := c.PostJSON(t.Context(), "/moved", map[string]string{}, nil)
+	var changed *cloud.MethodChangeError
+	if !errors.As(err, &changed) || changed.From != http.MethodPost || changed.To != http.MethodGet ||
+		!strings.Contains(changed.Location, "/landed") {
+		t.Fatalf("301 on a POST: err = %v, want a MethodChangeError", err)
+	}
+	if !strings.Contains(err.Error(), "CLAI_CLOUD_URL") {
+		t.Fatalf("error %q does not say what to change", err)
+	}
+	if err := c.PostJSON(t.Context(), "/kept", map[string]string{}, nil); err != nil {
+		t.Fatalf("308 on a POST: %v", err)
+	}
+}
+
+func TestDefaultURL_isTheCanonicalHost(t *testing.T) {
+	if cloud.DefaultURL != "https://www.clai.chat" {
+		t.Fatalf("DefaultURL = %q: clai.chat redirects to www", cloud.DefaultURL)
+	}
+}

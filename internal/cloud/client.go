@@ -18,7 +18,7 @@ import (
 
 // DefaultURL is the service clai talks to unless CLAI_CLOUD_URL or the
 // login's -url says otherwise.
-const DefaultURL = "https://clai.chat"
+const DefaultURL = "https://www.clai.chat"
 
 // APIError is any non-2xx answer: the server's {error, message} body plus
 // the status.
@@ -51,6 +51,27 @@ type TransportError struct {
 func (e *TransportError) Error() string { return fmt.Sprintf("%s: %v", e.Op, e.Cause) }
 func (e *TransportError) Unwrap() error { return e.Cause }
 
+// MethodChangeError is a redirect that would resend a request with another
+// method, as a 301 does to a POST: followed, the server answers the wrong
+// request.
+type MethodChangeError struct {
+	From, To, Location string
+}
+
+func (e *MethodChangeError) Error() string {
+	return fmt.Sprintf("the server redirected this %s to %s, which would turn it into a %s; set CLAI_CLOUD_URL (or login -url) to the address it redirects to", e.From, e.Location, e.To)
+}
+
+func keepMethod(req *http.Request, via []*http.Request) error {
+	if len(via) >= 10 {
+		return errors.New("stopped after 10 redirects")
+	}
+	if from := via[0].Method; req.Method != from {
+		return &MethodChangeError{From: from, To: req.Method, Location: req.URL.String()}
+	}
+	return nil
+}
+
 // AsAPIError unwraps err to an *APIError.
 func AsAPIError(err error) (*APIError, bool) {
 	var e *APIError
@@ -67,7 +88,7 @@ type Client struct {
 
 // NewClient returns a client whose timeout still fits a large blob.
 func NewClient(baseURL, token string) *Client {
-	return &Client{BaseURL: strings.TrimRight(baseURL, "/"), Token: token, HTTP: &http.Client{Timeout: 5 * time.Minute}}
+	return &Client{BaseURL: strings.TrimRight(baseURL, "/"), Token: token, HTTP: &http.Client{Timeout: 5 * time.Minute, CheckRedirect: keepMethod}}
 }
 
 // Do sends one request. A non-nil out that is an io.Writer receives the
