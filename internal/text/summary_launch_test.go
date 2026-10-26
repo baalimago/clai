@@ -785,6 +785,11 @@ func TestQuery_plainQueryLabelsOnlyRunsThatContinue(t *testing.T) {
 		if err := q.Query(t.Context()); err != nil {
 			t.Fatalf("Query: %v", err)
 		}
+		select {
+		case <-fake.started:
+		case <-time.After(5 * time.Second):
+			t.Fatal("summarizer was never launched")
+		}
 		if got := fake.callCount(); got != 1 {
 			t.Fatalf("summarizer calls = %d, want exactly 1", got)
 		}
