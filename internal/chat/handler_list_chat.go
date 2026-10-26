@@ -146,6 +146,10 @@ var errToggleDirFilter = errors.New("toggle dir filter")
 // view with external conversations hidden or shown.
 var errToggleForeign = errors.New("toggle foreign conversations")
 
+// errContinueNewest is the group view's [c] action: continue the group's
+// newest conversation.
+var errContinueNewest = errors.New("continue newest group member")
+
 // toggleLabel renders a table toggle with its state in words, and bold plus
 // underline while it sits in the non-default position. The table colours
 // the whole prompt line, so the emphasis is switched off with the
@@ -474,23 +478,61 @@ func (cq *ChatHandler) actOnChat(chat pub_models.Chat, groupKey string) error {
 		return SaveAsPreviousQuery(cq.confDir, chat)
 	case "Q", "q":
 		return table.ErrUserInitiatedExit
-	case "":
-		if chat.Profile != "" {
-			cq.profile = chat.Profile
-		} else if cq.profile != "" {
-			chat.Profile = cq.profile
+	case "C", "c", "":
+		if err := cq.continueNative(chat); err != nil {
+			return err
 		}
-		if err := cq.printChat(chat); err != nil {
-			return fmt.Errorf("failed to print chat: %w", err)
-		}
-		if err := cq.UpdateDirScopeFromCWD(chat.ID); err != nil {
-			return fmt.Errorf("failed to update directory-scoped binding: %w", err)
-		}
-		ancli.Noticef("chat %s is now replyable with flag \"clai -dre query <prompt>\"\n", chat.ID)
 		return errExitList
 	default:
 		return fmt.Errorf("unknown choice: %q", choice)
 	}
+}
+
+func (cq *ChatHandler) continueNative(chat pub_models.Chat) error {
+	if chat.Profile != "" {
+		cq.profile = chat.Profile
+	} else if cq.profile != "" {
+		chat.Profile = cq.profile
+	}
+	if err := cq.printChat(chat); err != nil {
+		return fmt.Errorf("failed to print chat: %w", err)
+	}
+	if err := cq.UpdateDirScopeFromCWD(chat.ID); err != nil {
+		return fmt.Errorf("failed to update directory-scoped binding: %w", err)
+	}
+	ancli.Noticef("chat %s is now replyable with flag \"clai -dre query <prompt>\"\n", chat.ID)
+	return nil
+}
+
+// continueRow continues a listed member row without its info view: a
+// native chat binds as is, a foreign one is cloned first.
+func (cq *ChatHandler) continueRow(ctx context.Context, pr preparedRows, row chatListRow) error {
+	if row.Kind == chatRowNative {
+		chat, err := cq.getByID(row.ChatID)
+		if err != nil {
+			return fmt.Errorf("failed to load chat %q: %w", row.ChatID, err)
+		}
+		return cq.continueNative(chat)
+	}
+	reader, ok := pr.byName[row.Source]
+	if !ok {
+		return fmt.Errorf("unknown source reader %q", row.Source)
+	}
+	foreign, err := cq.readForeignChat(ctx, reader, row.SourceID)
+	if err != nil {
+		return fmt.Errorf("failed to read %s session %q: %w", row.Source, row.SourceID, err)
+	}
+	return cq.continueForeign(foreign, reader)
+}
+
+func (cq *ChatHandler) continueForeign(foreign pub_models.Chat, reader vendors.SourceReader) error {
+	cloned, err := cq.cloneForeignChat(foreign)
+	if err != nil {
+		return err
+	}
+	ancli.Noticef("cloned %s session %s → chat %s\n", reader.Source(), foreign.SourceID, cloned.ID)
+	ancli.Noticef("chat %s is now replyable with flag \"clai -dre query <prompt>\"\n", cloned.ID)
+	return nil
 }
 
 // handleEditMessages is a peek + edit: the message picker stays open across
@@ -894,6 +936,12 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 		}
 		if backLabel != "" {
 			tb = tb.WithBackLabel(backLabel)
+			tb = tb.WithActions(table.TableAction{
+				Format: "[c]ontinue newest",
+				Short:  "c",
+				Long:   "continue",
+				Action: func() error { return errContinueNewest },
+			})
 		}
 
 		selectedNumbers, shownPage, err := tb.Run()
@@ -908,6 +956,9 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 				// The scoped and unscoped views paginate differently.
 				listPage, groupPage = 0, 0
 				continue
+			}
+			if errors.Is(err, errContinueNewest) && len(pr.rows) > 0 {
+				return cq.continueRow(ctx, pr, pr.rows[0])
 			}
 			if errors.Is(err, errToggleForeign) {
 				foreignOn = !foreignOn
@@ -985,12 +1036,9 @@ func (cq *ChatHandler) actOnForeignChat(chat pub_models.Chat, reader vendors.Sou
 	}
 	switch choice {
 	case "C", "c", "":
-		cloned, err := cq.cloneForeignChat(chat)
-		if err != nil {
+		if err := cq.continueForeign(chat, reader); err != nil {
 			return err
 		}
-		ancli.Noticef("cloned %s session %s → chat %s\n", reader.Source(), chat.SourceID, cloned.ID)
-		ancli.Noticef("chat %s is now replyable with flag \"clai -dre query <prompt>\"\n", cloned.ID)
 		return errExitList
 	case "B", "b":
 		clearErr := table.ClearTermTo(cq.out, utils.TerminalRows(view+choice, cq.dims.Width))
@@ -1096,7 +1144,7 @@ func (cq *ChatHandler) printChatInfoCommon(w io.Writer, chat pub_models.Chat, gr
 	if opts.foreign {
 		choices = table.Colorize(utils.TableTheme().Primary, fmt.Sprintf("(press [c]ontinue (clone to clai), %s, [q]uit): ", backLabel))
 	} else {
-		choices = table.Colorize(utils.TableTheme().Primary, fmt.Sprintf("(make [p]revQuery (-re/-reply flag), %s, [e]dit messages, [d]elete messages, [q]uit, [<enter>] to continue): ", backLabel))
+		choices = table.Colorize(utils.TableTheme().Primary, fmt.Sprintf("(make [p]revQuery (-re/-reply flag), %s, [e]dit messages, [d]elete messages, [q]uit, [c]ontinue or [<enter>]): ", backLabel))
 	}
 	if _, err := fmt.Fprint(w, choices); err != nil {
 		return fmt.Errorf("write choices: %w", err)

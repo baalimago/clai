@@ -316,6 +316,9 @@ group: "fix the auth bug in login handler" ([b]ack to list, [/] filter, [q]uit, 
 
 The prompt preview is truncated to fit the terminal width. The `[b]ack to list` label
 disambiguates the `[b]` key from the top-level `[b]` (which exits).
+The group view also offers `[c]ontinue newest`, which continues the newest member (cloning it
+first when it is foreign) without its info view. So the macro `clai chat list <i> c` continues
+the selection whether `<i>` is a chat or a group. The chat info view takes `c` like `<enter>`.
 
 ### Pagination
 
