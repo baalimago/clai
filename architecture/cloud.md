@@ -82,7 +82,7 @@ log      GET stores/<s>/log?limit=
   original id, title suffixed with the other device's name) and the local file
   stays.
 - **What a commit leaves out.** A config file in which `FindSecret` finds a
-  literal credential (a key-like field name, or an opaque value under
+  literal credential (a key-like field name, or an opaque value, not a `~/` or `/` path, under
   `env`); a file over `FileLimits`; and `conversations/imported/` unless
   `-imports`, which first runs the `Export` hook. `status` lists all three.
 - **Exit 4** (`ExitDecisionNeeded`) means a decision is needed: conflicts

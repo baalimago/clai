@@ -60,7 +60,7 @@ func secretIn(v any, path string, inEnv bool) (Secret, bool) {
 				field = path + "." + k
 			}
 			if s, ok := val.(string); ok {
-				if (secretName(k) && literal(s, 8)) || (inEnv && literal(s, opaqueEnvMin)) {
+				if (secretName(k) && literal(s, 8)) || (inEnv && literal(s, opaqueEnvMin) && !isPath(s)) {
 					return Secret{Field: field}, true
 				}
 				continue
@@ -77,6 +77,11 @@ func secretIn(v any, path string, inEnv bool) (Secret, bool) {
 		}
 	}
 	return Secret{}, false
+}
+
+// isPath: a home or absolute path is an env setting however long it is.
+func isPath(s string) bool {
+	return strings.HasPrefix(s, "/") || strings.HasPrefix(s, "~/")
 }
 
 func secretName(k string) bool {
