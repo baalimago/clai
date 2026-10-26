@@ -1,6 +1,6 @@
 {
   "description": "Checks a codebase against the current docs of its dependencies and writes a migration plan for deprecated or changed APIs. Run from the repo root: 'clai -prp cchub:clai/upgrade-scout q \"next 15 -> 16\"' or 'q \"all dependencies\"' for the five most central ones. Uses Context7 for up-to-date docs; CONTEXT7_API_KEY is optional and raises rate limits. Needs Node (npx).",
-  "model": "gpt-5.2",
+  "model": "gpt-6.1-sol",
   "use_tools": true,
   "save-reply-as-conv": true,
   "tools": [

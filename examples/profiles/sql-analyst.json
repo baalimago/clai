@@ -1,6 +1,6 @@
 {
   "description": "Answers questions about a Postgres database by writing and running SQL, and gives index, bloat and health advice. Use: 'clai -prp cchub:clai/sql-analyst q \"Which customers churned last month and what did they have in common?\"'. Needs POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DATABASE, POSTGRES_USER and POSTGRES_PASSWORD in the environment, and Node (npx). Runs Google's MCP Toolbox for Postgres. Connect as a read-only role: the agent never writes, but the server can.",
-  "model": "gpt-5.2",
+  "model": "gpt-6.1-sol",
   "use_tools": true,
   "save-reply-as-conv": true,
   "tools": [

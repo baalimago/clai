@@ -1,6 +1,6 @@
 {
   "description": "Triages new GitHub issues: labels them, links duplicates and asks reporters for missing details. Use from cron or a workflow: 'clai -prp cchub:clai/issue-triager q owner/repo'. Add 'dry-run' to only print what it would do. Needs GITHUB_TOKEN (issues read and write) and Node (npx). Remembers past triage in ~/.triager.jsonl.",
-  "model": "gpt-5.2",
+  "model": "gpt-6.1-sol",
   "use_tools": true,
   "save-reply-as-conv": false,
   "tools": [

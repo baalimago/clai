@@ -1,6 +1,6 @@
 {
   "description": "Code reviewer for a diff on stdin. Run from the repo root: 'git diff main | clai -prp cchub:clai/reviewer q'. Prints findings by severity, then a one-line verdict. Needs no MCP servers and no keys beyond your model's.",
-  "model": "gpt-5.2",
+  "model": "gpt-6.1-sol",
   "use_tools": true,
   "save-reply-as-conv": false,
   "tools": [

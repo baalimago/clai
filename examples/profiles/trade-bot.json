@@ -1,6 +1,6 @@
 {
   "description": "Hourly Polymarket trading agent. Use from cron: 'clai -prp cchub:clai/trade-bot q Do your hourly run.' Needs a funded Polygon wallet: POLYMARKET_PRIVATE_KEY in the environment (keep it in a file you source, never in this profile), and optionally POLYMARKET_FUNDER, SIGNATURE_TYPE and POLYGON_RPC_URL. Needs Node (npx). Remembers theses and P&L in ~/.trade-bot.jsonl. Trades real money: start with a small bankroll.",
-  "model": "gpt-5.2",
+  "model": "gpt-6.1-sol",
   "save-reply-as-conv": true,
   "use_tools": true,
   "tools": [
