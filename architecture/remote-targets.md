@@ -89,13 +89,24 @@ A `gh:` target reads
   - A key within two edits of a profile key is an error that suggests the
     key (`"promt"` → `"prompt"`). Any other unknown key is listed and
     ignored, as a local profile's would be.
+  - Every field `Summarize` reads has the shape it decodes (`model` and
+    each server's `command`, `url` and `envfile` strings, `tools` and
+    `args` arrays of strings), so a body `Validate` accepts can always be
+    summarised.
   - Each MCP server needs `command` or `url`.
   - A relative `envfile` is refused: the fetched profile has no directory
     for it to be relative to. Use `~/`, `$VAR/` or an absolute path.
   - `auth`, when present, must be an object. Its `required_env` must be an
     array of valid variable names (`serverconfig.ValidEnvName`), each listed
     once and none also a key of that server's `env`, which would shadow the
-    variable the profile says it needs.
+    variable the profile says it needs. `token_env` must be a valid name,
+    `token_command` a non-empty array of strings and `scopes` an array of
+    strings. An unknown auth key within two edits of one of these is an
+    error that suggests it; any other is listed as ignored. A malformed
+    entry is reported by field or index (`required_env[2]`), never echoed:
+    it may be a pasted secret, and the names are printed in the trust
+    prompt, so they must not carry newlines or escape sequences. Local
+    config is lenient about duplicates and `env` overlap.
 
   The trust prompt's `It needs:` line names each variable a server reads
   from the environment, with its server: `auth.required_env`, plus

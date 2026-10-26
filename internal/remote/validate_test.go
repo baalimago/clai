@@ -63,7 +63,7 @@ func TestEditDistance(t *testing.T) {
 			t.Fatalf("editDistance(%q,%q) = %d, want %d", tc.a, tc.b, got, tc.want)
 		}
 	}
-	if nearestKey("description") != "" || nearestKey("Tool") != "tools" {
+	if nearestKey("description", ProfileKeys) != "" || nearestKey("Tool", ProfileKeys) != "tools" {
 		t.Fatal("nearestKey")
 	}
 }

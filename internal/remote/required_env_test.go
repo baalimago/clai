@@ -25,9 +25,15 @@ func TestValidate_checksAuthAndRequiredEnv(t *testing.T) {
 		{"auth null", `{"command":"x","auth":null}`, `mcp_servers.s.auth: needs an object`},
 		{"required_env not an array", `{"command":"x","auth":{"required_env":"A"}}`, `mcp_servers.s.auth.required_env: needs an array of variable names`},
 		{"required_env holds a number", `{"command":"x","auth":{"required_env":["A",1]}}`, `mcp_servers.s.auth.required_env: needs an array of variable names`},
-		{"invalid name", `{"command":"x","auth":{"required_env":["A-B"]}}`, `mcp_servers.s.auth.required_env: "A-B" is not a valid environment variable name`},
-		{"duplicate name", `{"url":"https://x.example","auth":{"required_env":["A","B","A"]}}`, `mcp_servers.s.auth.required_env: "A" is listed twice`},
-		{"name also in env", `{"command":"x","env":{"A":"v"},"auth":{"required_env":["A"]}}`, `mcp_servers.s.auth.required_env: "A" is also set in mcp_servers.s.env, so the environment never supplies it`},
+		{"invalid name", `{"command":"x","auth":{"required_env":["A","ghp-s3cr3t"]}}`, `mcp_servers.s.auth.required_env[1] is not a valid environment variable name`},
+		{"duplicate name", `{"url":"https://x.example","auth":{"required_env":["A","B","A"]}}`, `mcp_servers.s.auth.required_env[2] repeats required_env[0]`},
+		{"name also in env", `{"command":"x","env":{"A":"v"},"auth":{"required_env":["A"]}}`, `mcp_servers.s.auth.required_env[0] is also a key of mcp_servers.s.env, so the environment never supplies it`},
+		{"token_env not a string", `{"url":"https://x.example","auth":{"token_env":["A"]}}`, `mcp_servers.s.auth.token_env: needs a variable name`},
+		{"token_env not a name", `{"url":"https://x.example","auth":{"token_env":"A\n\u001b[31mB"}}`, `mcp_servers.s.auth.token_env is not a valid environment variable name`},
+		{"token_command empty", `{"url":"https://x.example","auth":{"token_command":[]}}`, `mcp_servers.s.auth.token_command: needs a non-empty array of strings`},
+		{"token_command not strings", `{"url":"https://x.example","auth":{"token_command":"vault read"}}`, `mcp_servers.s.auth.token_command: needs a non-empty array of strings`},
+		{"scopes not strings", `{"url":"https://x.example","auth":{"scopes":"read"}}`, `mcp_servers.s.auth.scopes: needs an array of strings`},
+		{"near-miss auth key", `{"command":"x","auth":{"requried_env":["A"]}}`, `mcp_servers.s.auth: "requried_env": unknown key (did you mean "required_env"?)`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := Validate("t", []byte(`{"mcp_servers":{"s":`+tc.server+`}}`))
@@ -38,7 +44,52 @@ func TestValidate_checksAuthAndRequiredEnv(t *testing.T) {
 			if strings.Join(invalid.Problems, "|") != tc.want {
 				t.Fatalf("Problems = %q, want [%q]", invalid.Problems, tc.want)
 			}
+			for _, leak := range []string{"s3cr3t", "\x1b"} {
+				if strings.Contains(err.Error(), leak) {
+					t.Fatalf("err %q echoes an invalid entry", err)
+				}
+			}
 		})
+	}
+}
+
+func TestValidate_listsAnUnknownAuthKeyAsIgnored(t *testing.T) {
+	got, err := Validate("t", []byte(`{"mcp_servers":{"s":{"url":"https://x.example","auth":{"headers":{"X":"y"}}}}}`))
+	if err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if strings.Join(got.Ignored, "|") != "mcp_servers.s.auth.headers" {
+		t.Fatalf("Ignored = %v", got.Ignored)
+	}
+}
+
+// Whatever Validate accepts, Summarize can read: every field it decodes is
+// type-checked first.
+func TestValidate_rejectsEveryShapeSummarizeCannotRead(t *testing.T) {
+	for _, body := range []string{
+		`{"model":5}`,
+		`{"tools":"mcp_x*"}`,
+		`{"tools":[1]}`,
+		`{"mcp_servers":{"s":{"command":5}}}`,
+		`{"mcp_servers":{"s":{"url":true}}}`,
+		`{"mcp_servers":{"s":{"command":"x","args":"-y pkg"}}}`,
+		`{"mcp_servers":{"s":{"command":"x","args":[1]}}}`,
+		`{"mcp_servers":{"s":{"command":"x","envfile":["/a"]}}}`,
+		`{"mcp_servers":{"s":{"url":"https://x.example","auth":{"token_env":5}}}}`,
+		`{"mcp_servers":{"s":{"url":"https://x.example","auth":{"token_command":[1]}}}}`,
+		`{"mcp_servers":{"s":{"url":"https://x.example","auth":{"required_env":{"A":1}}}}}`,
+	} {
+		checked, err := Validate("t", []byte(body))
+		if err == nil {
+			if _, sumErr := Summarize([]byte(body), checked); sumErr != nil {
+				t.Errorf("Validate accepted %s but Summarize failed: %v", body, sumErr)
+			}
+			continue
+		}
+		var invalid *InvalidProfileError
+		if !errors.As(err, &invalid) {
+			t.Errorf("Validate(%s) = %v, want *InvalidProfileError", body, err)
+		}
 	}
 }
 
