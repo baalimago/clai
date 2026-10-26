@@ -154,6 +154,10 @@ func unpinned(command string, args []string) bool {
 		if strings.HasPrefix(a, "-") {
 			continue
 		}
+		// uvx also pins with ==, as pkg==1.0.
+		if command == "uvx" && strings.Contains(a, "==") {
+			return false
+		}
 		// A scoped package starts with @, so its version is a second @.
 		return !strings.Contains(strings.TrimPrefix(a, "@"), "@")
 	}

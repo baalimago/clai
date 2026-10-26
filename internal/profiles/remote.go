@@ -100,8 +100,8 @@ func (d CommandDeps) Install(ctx context.Context, target, name string) error {
 	if name == "" {
 		name = t.DefaultName()
 	}
-	if !profileName.MatchString(name) {
-		return fmt.Errorf("%q is not a profile name: use letters, digits, '.', '_' and '-'", name)
+	if err := checkProfileName(name); err != nil {
+		return err
 	}
 	path := filepath.Join(confDir, "profiles", name+".json")
 	existing, err := readSource(path)
@@ -209,8 +209,18 @@ func (d CommandDeps) trustSkills(ctx context.Context, r remote.Resolver, res rem
 	return nil
 }
 
+func checkProfileName(name string) error {
+	if !profileName.MatchString(name) {
+		return fmt.Errorf("%q is not a profile name: use letters, digits, '.', '_' and '-'", name)
+	}
+	return nil
+}
+
 func installedNames(dir, only string) ([]string, error) {
 	if only != "" {
+		if err := checkProfileName(only); err != nil {
+			return nil, err
+		}
 		if _, err := readSource(filepath.Join(dir, only+".json")); err != nil {
 			return nil, fmt.Errorf("profile %q: %w", only, err)
 		}

@@ -309,7 +309,8 @@ func TestSummary_withoutServers(t *testing.T) {
 			t.Fatalf("summary %q lacks %q", got, want)
 		}
 	}
-	if !unpinned("npx", []string{"-y", "pkg"}) || unpinned("npx", []string{"-y", "@scope/pkg@1"}) || unpinned("node", []string{"x"}) || unpinned("npx", []string{"-y"}) {
+	if !unpinned("npx", []string{"-y", "pkg"}) || unpinned("npx", []string{"-y", "@scope/pkg@1"}) || unpinned("node", []string{"x"}) || unpinned("npx", []string{"-y"}) ||
+		unpinned("uvx", []string{"duckduckgo-mcp-server==0.7.0"}) || !unpinned("uvx", []string{"duckduckgo-mcp-server"}) {
 		t.Fatal("unpinned")
 	}
 }

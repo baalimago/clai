@@ -161,6 +161,9 @@ func TestUpdate_refusalsAndEmptyDirs(t *testing.T) {
 	if err := f.deps.Update(t.Context(), "mine"); !errors.Is(err, ErrNotInstalled) {
 		t.Fatalf("Update(mine) err = %v, want ErrNotInstalled", err)
 	}
+	if err := f.deps.Update(t.Context(), "../../outside"); err == nil || !strings.Contains(err.Error(), "is not a profile name") {
+		t.Fatalf("Update(../../outside) err = %v, want a name refusal", err)
+	}
 	if err := os.WriteFile(filepath.Join(dir, "gone.json"), []byte(`{"source":{"target":"cchub:ada/gone"}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
