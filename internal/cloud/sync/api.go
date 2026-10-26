@@ -1,12 +1,19 @@
 package sync
 
 import (
+	"bufio"
 	"bytes"
+	"compress/gzip"
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/baalimago/clai/internal/cloud"
 )
@@ -109,11 +116,69 @@ func (a api) putBlobs(ctx context.Context, blobs []batchBlob) (map[string]string
 	if err := w.Close(); err != nil {
 		return nil, err
 	}
+	var zipped bytes.Buffer
+	zw := gzip.NewWriter(&zipped)
+	if _, err := zw.Write(body.Bytes()); err != nil {
+		return nil, err
+	}
+	if err := zw.Close(); err != nil {
+		return nil, err
+	}
+	header := http.Header{}
+	header.Set("Content-Type", w.FormDataContentType())
+	header.Set(encodingHeader, "gzip")
 	var out struct {
 		Results map[string]string `json:"results"`
 	}
-	err := a.c.Do(ctx, http.MethodPost, "/api/v1/blobs/batch", &body, w.FormDataContentType(), &out)
+	err := a.c.DoHeader(ctx, http.MethodPost, "/api/v1/blobs/batch", &zipped, header, &out)
 	return out.Results, err
+}
+
+// encodingHeader is clai-cloud's own content coding for batches and
+// bundles; a standard Content-Encoding would be changed on the way.
+const encodingHeader = "X-Clai-Encoding"
+
+// BundleError is a fetch bundle that does not parse.
+type BundleError struct{ Reason string }
+
+func (e *BundleError) Error() string { return "read a download bundle: " + e.Reason }
+
+// fetchBlobs downloads blobs in one bundle: gzipped "<sha256> <size>\n"
+// frames, each followed by its bytes.
+func (a api) fetchBlobs(ctx context.Context, hashes []string) (map[string][]byte, error) {
+	in, err := json.Marshal(map[string][]string{"hashes": hashes})
+	if err != nil {
+		return nil, err
+	}
+	var raw bytes.Buffer
+	if err := a.c.Do(ctx, http.MethodPost, "/api/v1/blobs/fetch", bytes.NewReader(in), "application/json", &raw); err != nil {
+		return nil, err
+	}
+	zr, err := gzip.NewReader(&raw)
+	if err != nil {
+		return nil, &BundleError{Reason: err.Error()}
+	}
+	r := bufio.NewReader(zr)
+	out := map[string][]byte{}
+	for {
+		line, err := r.ReadString('\n')
+		if errors.Is(err, io.EOF) && line == "" {
+			return out, nil
+		}
+		if err != nil {
+			return nil, &BundleError{Reason: err.Error()}
+		}
+		sha, sizeText, ok := strings.Cut(strings.TrimSuffix(line, "\n"), " ")
+		size, convErr := strconv.ParseInt(sizeText, 10, 64)
+		if !ok || convErr != nil || size < 0 {
+			return nil, &BundleError{Reason: fmt.Sprintf("bad frame %q", line)}
+		}
+		b := make([]byte, size)
+		if _, err := io.ReadFull(r, b); err != nil {
+			return nil, &BundleError{Reason: "blob " + sha + ": " + err.Error()}
+		}
+		out[sha] = b
+	}
 }
 
 func (a api) getBlob(ctx context.Context, sha string) ([]byte, error) {

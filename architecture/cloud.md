@@ -32,6 +32,7 @@ for the login).
 | `internal/cloud/sync/pull.go` | `Engine.Pull`, the first pull's question, `Mode` |
 | `internal/cloud/sync/commit.go` | `Engine.Commit`, `BehindError`, `ConflictsOpenError` |
 | `internal/cloud/sync/progress.go` | `Progress` and `Phase` (reported through `Engine.Progress`), `uploadMissing` and `packUploads` (small files batched, 8 requests at once), `BlobRefusedError`, `checkBilling`, `BillingBlockedError` |
+| `internal/cloud/sync/download.go` | `applyAll`'s helpers: `pullWindows` (64 MB at a time), `prefetch` (bundles of 100 files, 8 at once), `blobCache`, which `Engine.fetch` reads first |
 | `internal/cloud/sync/resolve.go`, `diff.go`, `status.go`, `merge.go` | `Resolve`, `Diff`, `Status`/`Log`, the conversation merge and fork |
 | `internal/cloud/cloudcmd/` | `Command`: the subcommands and their output; `ExitDecisionNeeded` |
 | `internal/cloud/cloudcmd/view.go` | `statusLines`, `importLines`, `blockedLines`, `style`: the `▸ store · detail` look and the grouped status table |
@@ -48,7 +49,8 @@ login    POST /cli/v1/start {client} -> user code, approve at /cli/login#CODE
          save credentials, forget any sync state. Nothing is pulled or committed.
 
 status   plan (local, offline) + GET stores/<s>/changes?since=cursor (what the server has)
-pull     changes since cursor -> per path:
+pull     changes since cursor -> the blobs it needs, POST blobs/fetch: gzipped bundles of 100, 8 at once,
+         64 MB a window (a server without bundles: GET each) -> per path:
            mine unchanged since base          -> take theirs (update, add, delete)
            same bytes                         -> record the base
            conversation, both changed         -> longer copy wins, or theirs becomes a fork
@@ -57,7 +59,7 @@ pull     changes since cursor -> per path:
                       default                 -> keep mine, theirs to cloud/theirs/<path>: a conflict
 commit   refuse while conflicts are open (exit 4)
          plan -> conversations that grow: GET /me, no card or overdue -> BillingBlockedError, nothing uploaded
-         -> missing blobs -> POST blobs/batch (files up to 512 kB, 100 a request) or PUT blobs/<sha>,
+         -> missing blobs -> POST blobs/batch, gzipped (files up to 512 kB, 100 a request) or PUT blobs/<sha>,
             8 requests at once -> POST stores/<s>/commit {message, changes[base_rev]}
          the server applies all or nothing: one stale base_rev -> BehindError (exit 4)
 resolve  -mine keeps the file as it is; -theirs trashes it and takes cloud/theirs/<path>

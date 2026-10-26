@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"strings"
 	"time"
@@ -96,13 +97,20 @@ func NewClient(baseURL, token string) *Client {
 // Do sends one request. A non-nil out that is an io.Writer receives the
 // body as is; any other non-nil out is decoded from JSON.
 func (c *Client) Do(ctx context.Context, method, path string, body io.Reader, contentType string, out any) error {
+	header := http.Header{}
+	if contentType != "" {
+		header.Set("Content-Type", contentType)
+	}
+	return c.DoHeader(ctx, method, path, body, header, out)
+}
+
+// DoHeader is Do with the request's headers given whole.
+func (c *Client) DoHeader(ctx context.Context, method, path string, body io.Reader, header http.Header, out any) error {
 	req, err := http.NewRequestWithContext(ctx, method, c.BaseURL+path, body)
 	if err != nil {
 		return &TransportError{Op: method + " " + path, Cause: err}
 	}
-	if contentType != "" {
-		req.Header.Set("Content-Type", contentType)
-	}
+	maps.Copy(req.Header, header)
 	if c.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.Token)
 	}

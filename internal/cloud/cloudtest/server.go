@@ -3,9 +3,11 @@
 package cloudtest
 
 import (
+	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -62,8 +64,13 @@ type Server struct {
 	Refuse *Problem
 	// RefuseBlobs answers every blob upload with this error.
 	RefuseBlobs *Problem
-	// NoBatch answers /api/v1/blobs/batch 404, as a server from before it.
+	// NoBatch answers /api/v1/blobs/batch and /api/v1/blobs/fetch 404, as
+	// a server from before them.
 	NoBatch bool
+	// GzippedBatches counts the batches that arrived gzipped.
+	GzippedBatches int
+	// CorruptFetch flips a byte of every blob a fetch bundle carries.
+	CorruptFetch bool
 	// BatchOutcome, when set, is every batch blob's answer instead of
 	// stored, such as mismatch.
 	BatchOutcome string
@@ -175,6 +182,8 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(204)
 	case r.URL.Path == "/api/v1/blobs/batch" && r.Method == http.MethodPost && !s.NoBatch:
 		s.batch(w, r)
+	case r.URL.Path == "/api/v1/blobs/fetch" && r.Method == http.MethodPost && !s.NoBatch:
+		s.fetch(w, r)
 	case r.URL.Path == "/api/v1/blobs/missing":
 		var in struct{ Hashes []string }
 		_ = json.NewDecoder(r.Body).Decode(&in)
@@ -252,6 +261,15 @@ func (s *Server) batch(w http.ResponseWriter, r *http.Request) {
 		problem(w, *s.RefuseBlobs)
 		return
 	}
+	if r.Header.Get("X-Clai-Encoding") == "gzip" {
+		zr, err := gzip.NewReader(r.Body)
+		if err != nil {
+			problem(w, Problem{Status: 400, Code: "invalid_request", Message: err.Error()})
+			return
+		}
+		r.Body = zr
+		s.GzippedBatches++
+	}
 	if err := r.ParseMultipartForm(16 << 20); err != nil {
 		problem(w, Problem{Status: 400, Code: "invalid_request", Message: err.Error()})
 		return
@@ -278,6 +296,34 @@ func (s *Server) batch(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	reply(w, 200, map[string]any{"results": results})
+}
+
+// fetch answers a gzipped bundle of "<sha256> <size>\n<bytes>" frames.
+func (s *Server) fetch(w http.ResponseWriter, r *http.Request) {
+	var in struct{ Hashes []string }
+	_ = json.NewDecoder(r.Body).Decode(&in)
+	missing := []string{}
+	for _, h := range in.Hashes {
+		if _, ok := s.Blobs[h]; !ok {
+			missing = append(missing, h)
+		}
+	}
+	if len(missing) > 0 {
+		reply(w, 404, map[string]any{"error": "not_found", "message": "no such blob", "missing": missing})
+		return
+	}
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("X-Clai-Encoding", "gzip")
+	zw := gzip.NewWriter(w)
+	for _, h := range in.Hashes {
+		b := slices.Clone(s.Blobs[h])
+		if s.CorruptFetch && len(b) > 0 {
+			b[0] ^= 0xff
+		}
+		_, _ = fmt.Fprintf(zw, "%s %d\n", h, len(b))
+		_, _ = zw.Write(b)
+	}
+	_ = zw.Close()
 }
 
 func (s *Server) me(w http.ResponseWriter, device string) {

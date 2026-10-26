@@ -465,6 +465,8 @@ func progressText(p sync.Progress, elapsed time.Duration) string {
 		return fmt.Sprintf("reading %s/%s changed files · %s of %s · %s unchanged", count(p.Done), count(p.Total), human(p.Bytes), human(p.TotalBytes), count(p.Reused)) + pace(p, elapsed)
 	case sync.PhaseUploading:
 		return fmt.Sprintf("uploaded %d/%d files · %s of %s", p.Done, p.Total, human(p.Bytes), human(p.TotalBytes)) + pace(p, elapsed)
+	case sync.PhaseDownloading:
+		return fmt.Sprintf("downloaded %s/%s files · %s of %s", count(p.Done), count(p.Total), human(p.Bytes), human(p.TotalBytes)) + pace(p, elapsed)
 	case sync.PhaseCommitting:
 		return "recording the commit"
 	}

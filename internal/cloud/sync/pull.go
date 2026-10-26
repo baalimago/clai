@@ -98,21 +98,8 @@ func (e *Engine) Pull(ctx context.Context, store Store, opts PullOptions) (PullR
 			}
 		}
 	}
-	var applyErr error
-	for i, remote := range entries {
-		e.report(Progress{Store: store, Phase: PhaseDownloading, Done: i, Total: len(entries)})
-		if !Allowed(store, remote.Path) {
-			continue
-		}
-		if applyErr = e.apply(ctx, store, st, local, remote, mode, &res); applyErr != nil {
-			break
-		}
-		if remote.Commit > st.Commit {
-			st.Commit = remote.Commit
-		}
-	}
+	applyErr := e.applyAll(ctx, store, st, local, entries, mode, &res)
 	if applyErr == nil {
-		e.report(Progress{Store: store, Phase: PhaseDownloading, Done: len(entries), Total: len(entries)})
 		st.Cursor = cursor
 		st.Pulled = true
 	}
@@ -123,6 +110,32 @@ func (e *Engine) Pull(ctx context.Context, store Store, opts PullOptions) (PullR
 		errs = append(errs, e.hookPulled(res.written, res.removed))
 	}
 	return res, errors.Join(errs...)
+}
+
+// applyAll downloads what the entries need in bundles, a window at a time,
+// and applies each window in order.
+func (e *Engine) applyAll(ctx context.Context, store Store, st *state, local map[string]LocalFile, entries []RemoteEntry, mode Mode, res *PullResult) error {
+	e.cache = &blobCache{blobs: map[string][]byte{}}
+	defer func() { e.cache = nil }()
+	windows, d := pullWindows(store, st, local, entries)
+	e.report(Progress{Store: store, Phase: PhaseDownloading, Total: d.total, TotalBytes: d.totalBytes})
+	for _, w := range windows {
+		if err := e.prefetch(ctx, w, st, local, d); err != nil {
+			return err
+		}
+		for _, remote := range w {
+			if !Allowed(store, remote.Path) {
+				continue
+			}
+			if err := e.apply(ctx, store, st, local, remote, mode, res); err != nil {
+				return err
+			}
+			if remote.Commit > st.Commit {
+				st.Commit = remote.Commit
+			}
+		}
+	}
+	return nil
 }
 
 func classifyFirst(entries []RemoteEntry, local map[string]LocalFile, st *state) FirstPull {

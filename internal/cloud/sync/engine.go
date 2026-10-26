@@ -57,6 +57,8 @@ type Engine struct {
 	// Progress, when set, is told of each step of a pull or commit. It may
 	// be called from several goroutines at once.
 	Progress func(Progress)
+	// cache holds a pull's bundled downloads until they are written.
+	cache *blobCache
 }
 
 func (e *Engine) api() api { return api{c: e.Client} }
@@ -93,6 +95,9 @@ func removeFile(p string) error {
 
 // fetch downloads a blob and checks it.
 func (e *Engine) fetch(ctx context.Context, rel, sha string) ([]byte, error) {
+	if b, ok := e.cache.take(sha); ok {
+		return b, nil
+	}
 	b, err := e.api().getBlob(ctx, sha)
 	if err != nil {
 		return nil, err

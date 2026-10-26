@@ -554,7 +554,8 @@ func TestProgressText(t *testing.T) {
 		{sync.Progress{Phase: sync.PhaseUploading, Done: 12, Total: 4511, Bytes: 210_000_000, TotalBytes: 1_200_000_000}, 100 * time.Second, "uploaded 12/4511 files · 210.0 MB of 1.2 GB · 2.1 MB/s · 7m51s left"},
 		{sync.Progress{Phase: sync.PhaseUploading, Done: 12, Total: 4511, Bytes: 210_000_000, TotalBytes: 1_200_000_000}, 3 * time.Hour, "uploaded 12/4511 files · 210.0 MB of 1.2 GB · 19.4 kB/s · 14h08m left"},
 		{sync.Progress{Phase: sync.PhaseCommitting, Done: 1000, Total: 4511}, time.Minute, "recording the commit"},
-		{sync.Progress{Phase: sync.PhaseDownloading, Done: 3, Total: 9}, 0, "3/9 files"},
+		{sync.Progress{Phase: sync.PhaseDownloading, Done: 300, Total: 30000, Bytes: 6_000_000, TotalBytes: 553_000_000}, 3 * time.Second, "downloaded 300/30.0k files · 6.0 MB of 553.0 MB · 2.0 MB/s · 4m33s left"},
+		{sync.Progress{Phase: "other", Done: 3, Total: 9}, 0, "3/9 files"},
 	}
 	for _, c := range cases {
 		if got := progressText(c.p, c.elapsed); got != c.want {
