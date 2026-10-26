@@ -194,11 +194,18 @@ and every rule in this section follows from that one difference.
 | What a lost cache costs          | a full rebuild over every chat       | a full rescan; recoverable, never a data loss     |
 
 clai owns the native write path, so `chat_index.cache` is **pushed**: a row is
-upserted at save time and is current because clai was the writer. Every
-persisting query reads and rewrites the whole native index, so a row keeps at
-most 200 runes of the first user message (`indexPreviewRunes`, the listing
-label only needs a preview). Rows cached before the cap are trimmed on read,
-so the first upsert after an upgrade shrinks the file without a rebuild. clai is only
+upserted at save time and is current because clai was the writer. A save
+appends its row as one JSON line to `chat_index.journal` instead of rewriting
+the cache, so a query's index cost does not grow with history. Readers replay
+the journal over the cache, the latest line per id winning. When the journal
+passes 256 KiB, the save that crossed it folds it into the cache: the journal
+is first renamed to `chat_index.journal.compacting`, so a concurrent save
+lands in a fresh journal and is replayed rather than lost. A rebuild, or any
+full write of the cache, drops both journals. A journal line that does not
+decode triggers a rebuild, like a corrupt cache. While no cache exists the
+first save writes one directly. A row keeps at most 200 runes of the first
+user message (`indexPreviewRunes`, the listing label only needs a preview),
+and rows cached before the cap are trimmed on read. clai is only
 a spectator to the files Claude Code and pi write whenever they like, so
 `foreign_index.cache` is **pulled**: a row is current only while the
 `(size, mod time)` pair it was stored under still holds. That pair is taken

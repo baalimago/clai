@@ -458,7 +458,7 @@ func Test_e2e_chat_list_foreign_quit(t *testing.T) {
 		t.Fatalf("read conv dir: %v", err)
 	}
 	for _, e := range entries {
-		if strings.HasSuffix(e.Name(), ".json") && e.Name() != "chat_index.cache" {
+		if strings.HasSuffix(e.Name(), ".json") && !strings.HasPrefix(e.Name(), "chat_index.") {
 			t.Fatalf("expected no cloned conversations after foreign quit, found: %s", e.Name())
 		}
 	}

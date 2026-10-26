@@ -544,7 +544,7 @@ func Test_e2e_dre_queries_continue_directory_scoped_conversation(t *testing.T) {
 		if entry.IsDir() {
 			continue
 		}
-		if !strings.HasSuffix(entry.Name(), ".json") || entry.Name() == "globalScope.json" || entry.Name() == "chat_index.cache" {
+		if !strings.HasSuffix(entry.Name(), ".json") || entry.Name() == "globalScope.json" || strings.HasPrefix(entry.Name(), "chat_index.") {
 			continue
 		}
 		conversationFiles = append(conversationFiles, filepath.Join(confDir, "conversations", entry.Name()))
@@ -692,7 +692,7 @@ func Test_e2e_dre_profile_swap_does_not_create_new_conversation(t *testing.T) {
 		if entry.IsDir() {
 			continue
 		}
-		if !strings.HasSuffix(entry.Name(), ".json") || entry.Name() == "globalScope.json" || entry.Name() == "chat_index.cache" {
+		if !strings.HasSuffix(entry.Name(), ".json") || entry.Name() == "globalScope.json" || strings.HasPrefix(entry.Name(), "chat_index.") {
 			continue
 		}
 		conversationFiles = append(conversationFiles, filepath.Join(confDir, "conversations", entry.Name()))

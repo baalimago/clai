@@ -54,7 +54,8 @@ func readIndexRows(t *testing.T, confDir string) map[string]summaryIndexRow {
 	var cache struct {
 		Rows []summaryIndexRow `json:"rows"`
 	}
-	raw := e2etest.ReadStringFile(t, filepath.Join(confDir, "conversations", "chat_index.cache"))
+	convDir := filepath.Join(confDir, "conversations")
+	raw := e2etest.ReadStringFile(t, filepath.Join(convDir, "chat_index.cache"))
 	if err := json.Unmarshal([]byte(raw), &cache); err != nil {
 		t.Fatalf("Unmarshal(chat_index.cache): %v", err)
 	}
@@ -62,7 +63,40 @@ func readIndexRows(t *testing.T, confDir string) map[string]summaryIndexRow {
 	for _, row := range cache.Rows {
 		rows[row.ID] = row
 	}
+	// Saves append to the journal; readers replay it over the cache.
+	for _, name := range []string{"chat_index.journal.compacting", "chat_index.journal"} {
+		journal, err := os.ReadFile(filepath.Join(convDir, name))
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			t.Fatalf("ReadFile(%s): %v", name, err)
+		}
+		for line := range strings.SplitSeq(strings.TrimSpace(string(journal)), "\n") {
+			var row summaryIndexRow
+			if err := json.Unmarshal([]byte(line), &row); err != nil {
+				t.Fatalf("Unmarshal(%s line): %v", name, err)
+			}
+			rows[row.ID] = row
+		}
+	}
 	return rows
+}
+
+// indexSnapshot is the index's on-disk state, cache and journal, for
+// asserting that a run did or did not write it.
+func indexSnapshot(t *testing.T, convDir string) string {
+	t.Helper()
+	var b strings.Builder
+	for _, name := range []string{"chat_index.cache", "chat_index.journal.compacting", "chat_index.journal"} {
+		raw, err := os.ReadFile(filepath.Join(convDir, name))
+		if err != nil && !os.IsNotExist(err) {
+			t.Fatalf("ReadFile(%s): %v", name, err)
+		}
+		b.WriteString("== " + name + "\n")
+		b.Write(raw)
+	}
+	return b.String()
 }
 
 func runQuery(t *testing.T, args string) {
@@ -507,20 +541,19 @@ func Test_e2e_chat_summarize_idempotent_and_force(t *testing.T) {
 	seedSummarizable(t, convDir, "inside-a", time.Now().Add(-2*time.Hour))
 	seedSummarizable(t, convDir, "inside-b", time.Now().Add(-time.Hour))
 	pathA := filepath.Join(convDir, "inside-a.json")
-	cachePath := filepath.Join(convDir, "chat_index.cache")
 	if _, _, status := runStatusCaptured(t, "c summarize -y -sm test 7d"); status != 0 {
 		t.Fatalf("first run status %d", status)
 	}
 	first := loadConv(t, pathA)
 	assertMockLabel(t, first)
-	fileBefore, cacheBefore := e2etest.ReadStringFile(t, pathA), e2etest.ReadStringFile(t, cachePath)
+	fileBefore, cacheBefore := e2etest.ReadStringFile(t, pathA), indexSnapshot(t, convDir)
 
 	stdout, _, status := runStatusCaptured(t, "c summarize -y -sm test 7d")
 
 	if status != 0 || !strings.Contains(stdout, "0 conversations") {
 		t.Fatalf("rerun status %d stdout %q, want the zero notice", status, stdout)
 	}
-	if e2etest.ReadStringFile(t, pathA) != fileBefore || e2etest.ReadStringFile(t, cachePath) != cacheBefore {
+	if e2etest.ReadStringFile(t, pathA) != fileBefore || indexSnapshot(t, convDir) != cacheBefore {
 		t.Fatal("rerun must rewrite neither the file nor the index")
 	}
 
@@ -533,7 +566,7 @@ func Test_e2e_chat_summarize_idempotent_and_force(t *testing.T) {
 	if !forced.SummaryAt.After(first.SummaryAt) {
 		t.Fatalf("summary_at %v must be newer than %v after -force", forced.SummaryAt, first.SummaryAt)
 	}
-	if e2etest.ReadStringFile(t, cachePath) == cacheBefore {
+	if indexSnapshot(t, convDir) == cacheBefore {
 		t.Fatal("-force must rewrite the index")
 	}
 }
@@ -586,8 +619,7 @@ func Test_e2e_chat_summarize_vendor_error_leaves_list_working(t *testing.T) {
 	convDir := filepath.Join(confDir, "conversations")
 	seedSummarizable(t, convDir, "inside", time.Now().Add(-time.Hour))
 	path := filepath.Join(convDir, "inside.json")
-	cachePath := filepath.Join(convDir, "chat_index.cache")
-	fileBefore, cacheBefore := e2etest.ReadStringFile(t, path), e2etest.ReadStringFile(t, cachePath)
+	fileBefore, cacheBefore := e2etest.ReadStringFile(t, path), indexSnapshot(t, convDir)
 
 	stdout, _, status := runStatusCaptured(t, "c summarize -y -sm gpt-does-not-exist 7d")
 
@@ -597,7 +629,7 @@ func Test_e2e_chat_summarize_vendor_error_leaves_list_working(t *testing.T) {
 	if !strings.Contains(stdout, "inside: ERROR") || !strings.Contains(stdout, "1 failed") {
 		t.Fatalf("stdout %q, want the error line and the totals", stdout)
 	}
-	if e2etest.ReadStringFile(t, path) != fileBefore || e2etest.ReadStringFile(t, cachePath) != cacheBefore {
+	if e2etest.ReadStringFile(t, path) != fileBefore || indexSnapshot(t, convDir) != cacheBefore {
 		t.Fatal("a failed job must touch neither the file nor the index")
 	}
 	if _, err := os.Stat(filepath.Join(convDir, "globalScope.json")); !os.IsNotExist(err) {

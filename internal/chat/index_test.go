@@ -812,8 +812,7 @@ func TestChatIndexRowFromChat_capsFirstUserMessage(t *testing.T) {
 }
 
 // TestUpsertChatIndex_shrinksOversizedRows pins that an index written before
-// the cap is trimmed by the next upsert, so no rebuild is needed for the
-// per-query read and write to get cheap again.
+// the cap is trimmed when the journal is next folded in, with no rebuild.
 func TestUpsertChatIndex_shrinksOversizedRows(t *testing.T) {
 	tmp := t.TempDir()
 	huge := strings.Repeat("x", 50_000)
@@ -832,12 +831,15 @@ func TestUpsertChatIndex_shrinksOversizedRows(t *testing.T) {
 	if err := upsertChatIndex(tmp, chat); err != nil {
 		t.Fatalf("upsertChatIndex: %v", err)
 	}
+	if err := compactIndexJournal(tmp); err != nil {
+		t.Fatalf("compactIndexJournal: %v", err)
+	}
 	info, err := os.Stat(chatIndexPath(tmp))
 	if err != nil {
 		t.Fatalf("stat: %v", err)
 	}
 	if limit := int64(21 * (indexPreviewRunes + 300)); info.Size() > limit {
-		t.Fatalf("index is %d bytes after upsert, want at most %d", info.Size(), limit)
+		t.Fatalf("index is %d bytes after compaction, want at most %d", info.Size(), limit)
 	}
 	got, err := readChatIndex(tmp)
 	if err != nil {

@@ -236,6 +236,12 @@ several queriers of one model can be built concurrently in one process
 (`chat summarize -workers N`, the in-flight summarizer) and a reader must
 never see a torn file (worklog 2026-09-09-conversation-summaries, D31).
 
+When the catalog answers but has no price for the model (Jev, a local
+model), the cost manager stamps `price_unavailable_at` in the same file and
+skips the lookup for 7 days. Without the stamp, every run of such a model
+paid a catalog round trip, and the finalizer waits up to 200 ms for it. A
+transient fetch failure is not remembered.
+
 ### Where flags apply
 
 Flags are alias-aware primitives (`internal/flags.go`): shared groups live in package `internal`, domain-specific flags in their domain packages; override cascades read `Explicit()`/`Changed()` directly — there is no central configurations bag.
