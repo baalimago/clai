@@ -1,6 +1,7 @@
 package skills
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"os"
@@ -25,8 +26,12 @@ func LoadConfig(configDir string) (Config, error) {
 		}
 		return defaultConfig, nil
 	}
+	onDisk, err := os.ReadFile(path)
+	if err != nil {
+		return Config{}, err
+	}
 	var raw rawConfig
-	if err := readJSON(path, &raw); err != nil {
+	if err := json.Unmarshal(onDisk, &raw); err != nil {
 		return Config{}, err
 	}
 	cfg := Config{
@@ -39,7 +44,15 @@ func LoadConfig(configDir string) (Config, error) {
 		cfg.Enabled = *raw.Enabled
 	}
 	cfg = withConfigDefaults(cfg)
-	if err := writeJSONFile(path, cfg); err != nil {
+	normalized, err := encodeJSON(cfg)
+	if err != nil {
+		return Config{}, err
+	}
+	// Rewriting an unchanged file would cost every query an fsync.
+	if bytes.Equal(normalized, onDisk) {
+		return cfg, nil
+	}
+	if err := utils.WriteFileAtomic(path, normalized, 0o644); err != nil {
 		return Config{}, err
 	}
 	return cfg, nil
@@ -62,12 +75,19 @@ func writeJSONFile(path string, value any) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	b, err := json.MarshalIndent(value, "", "  ")
+	b, err := encodeJSON(value)
 	if err != nil {
 		return err
 	}
-	b = append(b, '\n')
 	return utils.WriteFileAtomic(path, b, 0o644)
+}
+
+func encodeJSON(value any) ([]byte, error) {
+	b, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(b, '\n'), nil
 }
 
 func readJSON(path string, dst any) error {
