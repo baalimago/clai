@@ -28,7 +28,9 @@ const (
 // TotalBytes are 0 while the total is unknown, as it is while scanning.
 // Hashing counts only the files whose bytes must be read; Reused counts
 // the ones whose hash the last run left and whose size and mod time have
-// not moved.
+// not moved. Downloading's Have counts the files this machine already has
+// as the server does, and Copies the files whose bytes another download
+// brings.
 type Progress struct {
 	Store      Store
 	Phase      Phase
@@ -37,6 +39,8 @@ type Progress struct {
 	Bytes      int64
 	TotalBytes int64
 	Reused     int
+	Have       int
+	Copies     int
 }
 
 func (e *Engine) report(p Progress) {

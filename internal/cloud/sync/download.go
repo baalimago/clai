@@ -25,6 +25,8 @@ const (
 type blobCache struct {
 	mu    stdsync.Mutex
 	blobs map[string][]byte
+	// uses is how many files still want a cached blob's bytes.
+	uses map[string]int
 	// off is set when the server has no bundles: every fetch goes alone.
 	off bool
 }
@@ -36,23 +38,36 @@ func (c *blobCache) take(sha string) ([]byte, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	b, ok := c.blobs[sha]
-	delete(c.blobs, sha)
+	if c.uses[sha]--; c.uses[sha] <= 0 {
+		delete(c.blobs, sha)
+		delete(c.uses, sha)
+	}
 	return b, ok
 }
 
-func (c *blobCache) put(blobs map[string][]byte) {
+func (c *blobCache) put(blobs map[string][]byte, uses map[string]int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	maps.Copy(c.blobs, blobs)
+	for sha := range blobs {
+		c.uses[sha] = uses[sha]
+	}
 }
 
 type pullDownloads struct {
 	store      Store
 	total      int
 	totalBytes int64
+	have       int
+	copies     int
 	done       int
 	bytes      int64
-	pathBySHA  map[string]string
+	uses       map[string]int
+	fetched    map[string]bool
+}
+
+func (d *pullDownloads) progress() Progress {
+	return Progress{Store: d.store, Phase: PhaseDownloading, Done: d.done, Total: d.total, Bytes: d.bytes, TotalBytes: d.totalBytes, Have: d.have, Copies: d.copies}
 }
 
 // needsBlob is whether applying remote may read its bytes: a file this
@@ -71,18 +86,22 @@ func needsBlob(store Store, st *state, local map[string]LocalFile, remote Remote
 // pullWindows splits entries, in order, into runs whose needed bytes stay
 // under pullWindow, and counts what the pull will download.
 func pullWindows(store Store, st *state, local map[string]LocalFile, entries []RemoteEntry) ([][]RemoteEntry, *pullDownloads) {
-	d := &pullDownloads{store: store, pathBySHA: map[string]string{}}
+	d := &pullDownloads{store: store, uses: map[string]int{}, fetched: map[string]bool{}}
 	var windows [][]RemoteEntry
 	start := 0
 	var held int64
 	for i, r := range entries {
 		if !needsBlob(store, st, local, r) {
+			if !r.Deleted && Allowed(store, r.Path) {
+				d.have++
+			}
 			continue
 		}
-		if _, seen := d.pathBySHA[r.SHA256]; seen {
+		d.uses[r.SHA256]++
+		if d.uses[r.SHA256] > 1 {
+			d.copies++
 			continue
 		}
-		d.pathBySHA[r.SHA256] = r.Path
 		d.total++
 		d.totalBytes += r.Size
 		if held > 0 && held+r.Size > pullWindow {
@@ -104,12 +123,11 @@ func (e *Engine) prefetch(ctx context.Context, window []RemoteEntry, st *state, 
 	var packs [][]RemoteEntry
 	var cur []RemoteEntry
 	var curBytes int64
-	seen := map[string]bool{}
 	for _, r := range window {
-		if !needsBlob(d.store, st, local, r) || seen[r.SHA256] || r.Size > fetchMaxBytes {
+		if !needsBlob(d.store, st, local, r) || d.fetched[r.SHA256] || r.Size > fetchMaxBytes {
 			continue
 		}
-		seen[r.SHA256] = true
+		d.fetched[r.SHA256] = true
 		if len(cur) == fetchMaxBlobs || (len(cur) > 0 && curBytes+r.Size > fetchMaxBytes) {
 			packs = append(packs, cur)
 			cur, curBytes = nil, 0
@@ -129,7 +147,7 @@ func (e *Engine) prefetch(ctx context.Context, window []RemoteEntry, st *state, 
 	for range min(downloadWorkers, len(packs)) {
 		wg.Go(func() {
 			for pack := range queue {
-				if err := e.fetchPack(ctx, pack); err != nil {
+				if err := e.fetchPack(ctx, pack, d.uses); err != nil {
 					errs <- err
 					cancel()
 					return
@@ -139,7 +157,7 @@ func (e *Engine) prefetch(ctx context.Context, window []RemoteEntry, st *state, 
 					d.done++
 					d.bytes += r.Size
 				}
-				e.report(Progress{Store: d.store, Phase: PhaseDownloading, Done: d.done, Total: d.total, Bytes: d.bytes, TotalBytes: d.totalBytes})
+				e.report(d.progress())
 				mu.Unlock()
 			}
 		})
@@ -161,7 +179,7 @@ feed:
 	return ctx.Err()
 }
 
-func (e *Engine) fetchPack(ctx context.Context, pack []RemoteEntry) error {
+func (e *Engine) fetchPack(ctx context.Context, pack []RemoteEntry, uses map[string]int) error {
 	hashes := make([]string, 0, len(pack))
 	for _, r := range pack {
 		hashes = append(hashes, r.SHA256)
@@ -186,6 +204,6 @@ func (e *Engine) fetchPack(ctx context.Context, pack []RemoteEntry) error {
 			return &ChecksumError{Path: r.Path, Want: r.SHA256, Got: got}
 		}
 	}
-	e.cache.put(blobs)
+	e.cache.put(blobs, uses)
 	return nil
 }

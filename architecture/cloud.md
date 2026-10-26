@@ -126,7 +126,10 @@ log      GET stores/<s>/log?limit=
   exporting, scanning, hashing, uploading, committing, downloading) to
   `Engine.Progress`. `scan` walks first and hashes second, so hashing
   reports against a known total and counts the files whose cached hash
-  still holds (`Reused`). `cloudcmd` draws it as a `board.Status` line on
+  still holds (`Reused`). Downloading counts distinct contents to fetch;
+  `Have` counts files already on disk as the server has them and `Copies`
+  files whose bytes another download brings (`blobCache` keeps a blob
+  until its last copy is written). `cloudcmd` draws it as a `board.Status` line on
   stderr, only on a terminal, and stops it before any output or question.
   Once a phase has run 2 seconds the line adds its pace and the time left,
   by bytes when the phase counts them and by files otherwise.

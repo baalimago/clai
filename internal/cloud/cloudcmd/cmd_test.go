@@ -555,6 +555,8 @@ func TestProgressText(t *testing.T) {
 		{sync.Progress{Phase: sync.PhaseUploading, Done: 12, Total: 4511, Bytes: 210_000_000, TotalBytes: 1_200_000_000}, 3 * time.Hour, "uploaded 12/4511 files · 210.0 MB of 1.2 GB · 19.4 kB/s · 14h08m left"},
 		{sync.Progress{Phase: sync.PhaseCommitting, Done: 1000, Total: 4511}, time.Minute, "recording the commit"},
 		{sync.Progress{Phase: sync.PhaseDownloading, Done: 300, Total: 30000, Bytes: 6_000_000, TotalBytes: 553_000_000}, 3 * time.Second, "downloaded 300/30.0k files · 6.0 MB of 553.0 MB · 2.0 MB/s · 4m33s left"},
+		{sync.Progress{Phase: sync.PhaseDownloading, Done: 448, Total: 10000, Bytes: 121_600_000, TotalBytes: 1_100_000_000, Have: 9600, Copies: 418}, 0, "downloaded 448/10.0k files · 121.6 MB of 1.1 GB · 9.6k already here · 418 copies"},
+		{sync.Progress{Phase: sync.PhaseDownloading, Total: 0, Have: 20018}, 0, "all 20.0k files already here"},
 		{sync.Progress{Phase: "other", Done: 3, Total: 9}, 0, "3/9 files"},
 	}
 	for _, c := range cases {

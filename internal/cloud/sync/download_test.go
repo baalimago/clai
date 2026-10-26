@@ -90,3 +90,34 @@ func TestCommit_gzipsItsBatches(t *testing.T) {
 		t.Fatalf("%d gzipped batches, want 1", srv.GzippedBatches)
 	}
 }
+
+func TestPull_countsWhatIsAlreadyHereAndCopies(t *testing.T) {
+	srv := cloudtest.New(t)
+	a := newMachine(t, srv, "tok-a")
+	for i := range 4 {
+		a.write(fmt.Sprintf("conversations/c%d.json", i), fmt.Sprintf(`{"n":%d}`, i))
+	}
+	a.write("conversations/copy.json", `{"n":3}`)
+	a.commit(StoreConversations, "bulk")
+	b := newMachine(t, srv, "tok-b")
+	b.write("conversations/c0.json", `{"n":0}`)
+	b.write("conversations/c1.json", `{"n":1}`)
+	unlock := srv.Lock()
+	clear(srv.Requests)
+	unlock()
+	var log progressLog
+	b.Progress = log.add
+	if _, err := b.Pull(context.Background(), StoreConversations, PullOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	last, _ := log.last(PhaseDownloading)
+	if last.Done != 2 || last.Total != 2 || last.Have != 2 || last.Copies != 1 {
+		t.Fatalf("last download event = %+v, want 2 downloaded, 2 already here, 1 copy", last)
+	}
+	if b.read("conversations/copy.json") != `{"n":3}` || b.read("conversations/c3.json") != `{"n":3}` {
+		t.Fatal("a copy was not written")
+	}
+	if n := singleGets(srv); n != 0 {
+		t.Fatalf("%d single downloads, want none: a copy reuses its bundled bytes", n)
+	}
+}

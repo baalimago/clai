@@ -115,10 +115,10 @@ func (e *Engine) Pull(ctx context.Context, store Store, opts PullOptions) (PullR
 // applyAll downloads what the entries need in bundles, a window at a time,
 // and applies each window in order.
 func (e *Engine) applyAll(ctx context.Context, store Store, st *state, local map[string]LocalFile, entries []RemoteEntry, mode Mode, res *PullResult) error {
-	e.cache = &blobCache{blobs: map[string][]byte{}}
+	e.cache = &blobCache{blobs: map[string][]byte{}, uses: map[string]int{}}
 	defer func() { e.cache = nil }()
 	windows, d := pullWindows(store, st, local, entries)
-	e.report(Progress{Store: store, Phase: PhaseDownloading, Total: d.total, TotalBytes: d.totalBytes})
+	e.report(d.progress())
 	for _, w := range windows {
 		if err := e.prefetch(ctx, w, st, local, d); err != nil {
 			return err

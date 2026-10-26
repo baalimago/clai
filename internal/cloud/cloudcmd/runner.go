@@ -466,7 +466,17 @@ func progressText(p sync.Progress, elapsed time.Duration) string {
 	case sync.PhaseUploading:
 		return fmt.Sprintf("uploaded %d/%d files · %s of %s", p.Done, p.Total, human(p.Bytes), human(p.TotalBytes)) + pace(p, elapsed)
 	case sync.PhaseDownloading:
-		return fmt.Sprintf("downloaded %s/%s files · %s of %s", count(p.Done), count(p.Total), human(p.Bytes), human(p.TotalBytes)) + pace(p, elapsed)
+		if p.Total == 0 {
+			return "all " + count(p.Have) + " " + plural(p.Have, "file", "files") + " already here"
+		}
+		line := fmt.Sprintf("downloaded %s/%s files · %s of %s", count(p.Done), count(p.Total), human(p.Bytes), human(p.TotalBytes))
+		if p.Have > 0 {
+			line += " · " + count(p.Have) + " already here"
+		}
+		if p.Copies > 0 {
+			line += " · " + count(p.Copies) + " " + plural(p.Copies, "copy", "copies")
+		}
+		return line + pace(p, elapsed)
 	case sync.PhaseCommitting:
 		return "recording the commit"
 	}
