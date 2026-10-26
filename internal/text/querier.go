@@ -30,6 +30,7 @@ const (
 
 type Querier[C models.StreamCompleter] struct {
 	Raw              bool
+	errOut           io.Writer
 	structuredOutput bool
 	outputModeKnown  bool
 	outputIsTerminal bool

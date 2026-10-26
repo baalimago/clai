@@ -242,6 +242,7 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	// only errors (on stderr, so stdout stays clean), and any other mode keeps
 	// the legacy direct print.
 	mcpMode := mcpLogModeFor(querier.debug, querier.outputIsTerminal, querier.Raw, querier.structuredOutput, utils.RollingOutputEnabled())
+	querier.errOut = userConf.ErrOut
 	if userConf.ErrOut != nil {
 		querier.mcpSink = newMcpLogSinkTo(mcpMode, userConf.ErrOut)
 	} else {

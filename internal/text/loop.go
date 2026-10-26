@@ -92,6 +92,10 @@ type LoopQuerier interface {
 	// its answer, so only the progress state is cleared. Calling it without
 	// progress from SetLoopProgress is an error.
 	FinishLoopIteration(outcome LoopOutcome, answer pub_models.Message) error
+
+	// ReportLoopSummary prints the end-of-run summary once the loop stops,
+	// whatever the reason.
+	ReportLoopSummary(summary LoopSummary) error
 }
 
 // RegisterExtraTool adds tool to the querier's dispatch and selectable
@@ -159,7 +163,58 @@ func (r *loopRunner) Query(ctx context.Context) error {
 	if r.cfg.MaxIterations < 0 {
 		return fmt.Errorf("loop: -max-iterations must be zero (unlimited) or positive, got %d", r.cfg.MaxIterations)
 	}
+	start := time.Now()
+	summary := LoopSummary{MaxIterations: r.cfg.MaxIterations}
+	err := r.run(ctx, &summary)
+	if summary.Iterations == 0 {
+		return err
+	}
+	summary.End = loopEndOf(err)
+	summary.Duration = time.Since(start)
+	if reportErr := r.querier.ReportLoopSummary(summary); reportErr != nil {
+		return errors.Join(err, fmt.Errorf("report loop summary: %w", reportErr))
+	}
+	return err
+}
 
+func loopEndOf(err error) LoopEnd {
+	var blocked *LoopBlockedError
+	var exhausted *MaxIterationsError
+	switch {
+	case err == nil:
+		return LoopEndAchieved
+	case errors.As(err, &blocked):
+		return LoopEndBlocked
+	case errors.As(err, &exhausted):
+		return LoopEndExhausted
+	default:
+		return LoopEndStopped
+	}
+}
+
+// addIteration folds one finished iteration's usage, cost rows and tool calls
+// into the summary. Only what the iteration added to chat is counted, so a
+// seed chat resumed from an earlier run does not count twice.
+func (s *LoopSummary) addIteration(chat, result pub_models.Chat) {
+	if result.TokenUsage != nil {
+		u := result.TokenUsage
+		s.Usage.PromptTokens += u.PromptTokens
+		s.Usage.CompletionTokens += u.CompletionTokens
+		s.Usage.TotalTokens += u.TotalTokens
+		s.Usage.PromptTokensDetails.CachedTokens += u.PromptTokensDetails.CachedTokens
+	}
+	if len(result.Queries) > len(chat.Queries) {
+		s.HasCost = true
+		for _, q := range result.Queries[len(chat.Queries):] {
+			s.CostUSD += q.CostUSD
+		}
+	}
+	if len(result.Messages) > len(chat.Messages) {
+		s.ToolCalls = append(s.ToolCalls, loopToolCalls(result.Messages[len(chat.Messages):])...)
+	}
+}
+
+func (r *loopRunner) run(ctx context.Context, summary *LoopSummary) error {
 	// Iteration 1 has no handover; the summarizer derives its phase from the
 	// initial prompt. Every later iteration inherits what the previous handover
 	// reported, and the loop-phase summarizer may refine it while the iteration
@@ -180,6 +235,7 @@ func (r *loopRunner) Query(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+		summary.Iterations = iteration
 		result, err := r.textQuery(ctx, chat)
 		if err != nil {
 			if ctxErr := ctx.Err(); ctxErr != nil {
@@ -187,6 +243,7 @@ func (r *loopRunner) Query(ctx context.Context) error {
 			}
 			return fmt.Errorf("loop iteration %d: %w", iteration, err)
 		}
+		summary.addIteration(chat, result)
 		answer := pub_models.Message{Role: "assistant", Content: lastAssistantText(result)}
 
 		if submission, ok := r.recorder.Submission(); ok {

@@ -108,6 +108,19 @@ runs leave the header and report through the error instead. Raw, structured,
 debug and redirected output keep the per-iteration prints they had before, and
 show no header. See `internal/text/loop_display.go`.
 
+When an iteration ends, its collapsed header gains a second row listing the
+iteration's tool calls in order, with consecutive repeats folded and failed
+calls (an `ERROR: ` result) marked: `↳ go ✗ · cat ×2 · apply_patch · go`.
+
+Every loop run that started at least one iteration ends with a summary,
+whatever stopped it (achieved, blocked, exhausted, or stopped by an error or
+cancellation): iterations used, wall time, tokens in/out (with cached input),
+the estimated cost when a price is known, and tool calls per tool with the
+failure count. Only what each iteration added is counted, so a resumed seed
+chat's earlier cost is not. A terminal session prints it below the loop's
+output; raw, structured and redirected runs print it to stderr so stdout stays
+machine-readable. See `internal/text/loop_summary.go`.
+
 ## Configuration Cascade
 
 The query command applies configuration in this order (lowest to highest precedence):

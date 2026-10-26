@@ -405,6 +405,25 @@ func TestLoopRunner_DisplayErrorPropagates(t *testing.T) {
 
 // rollingLoopQuerier returns a querier whose rolling window is enabled and
 // writes to printed.
+// splitLoopSummaryRows returns the screen rows above the end-of-run summary
+// and fails t unless the summary closes the screen.
+func splitLoopSummaryRows(t *testing.T, rows []string, end LoopEnd) []string {
+	t.Helper()
+	title := "▸ loop " + end.String() + " after "
+	for i, row := range rows {
+		if !strings.HasPrefix(row, title) {
+			continue
+		}
+		summary := rows[i:]
+		if len(summary) != 4 || !strings.HasPrefix(summary[1], "tokens") || !strings.HasPrefix(summary[2], "cost") || !strings.HasPrefix(summary[3], "tools") {
+			t.Fatalf("summary rows = %q, want the 4-row loop summary at the end of the screen", summary)
+		}
+		return rows[:i]
+	}
+	t.Fatalf("screen rows = %q, want a %q loop summary at the end", rows, end)
+	return nil
+}
+
 func rollingLoopQuerier(t *testing.T, printed *strings.Builder) *Querier[*MockQuerier] {
 	t.Helper()
 	t.Setenv("NO_COLOR", "true")
@@ -738,7 +757,7 @@ func TestLoopRunner_SettlesBeforeFinalizerChatter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read terminal log: %v", err)
 	}
-	rows := nonEmptyScreenRows(string(printed))
+	rows := splitLoopSummaryRows(t, nonEmptyScreenRows(string(printed)), LoopEndExhausted)
 	var headers []string
 	for _, row := range rows {
 		switch {
@@ -985,7 +1004,7 @@ func TestLoopRunner_LeavesOneHeaderPerIterationInScrollback(t *testing.T) {
 	if err := runner.Query(t.Context()); !errors.Is(err, ErrMaxIterations) {
 		t.Fatalf("Query error = %v, want ErrMaxIterations", err)
 	}
-	rows := nonEmptyScreenRows(printed.String())
+	rows := splitLoopSummaryRows(t, nonEmptyScreenRows(printed.String()), LoopEndExhausted)
 	want := []string{
 		"▸ loop 1/3",
 		"▸ loop 2/3 - still working on it",
