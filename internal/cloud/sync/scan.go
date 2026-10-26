@@ -94,6 +94,10 @@ func scan(confDir string, store Store, hashes map[string]hashEntry, report func(
 func walk(confDir string, store Store, report func(Progress)) ([]found, error) {
 	var files []found
 	seen := map[string]bool{}
+	// A config dir that is itself a link is where the user keeps it.
+	if real, err := filepath.EvalSymlinks(confDir); err == nil {
+		confDir = real
+	}
 	for _, root := range roots(store) {
 		abs := filepath.Join(confDir, filepath.FromSlash(root))
 		err := filepath.WalkDir(abs, func(p string, d fs.DirEntry, err error) error {

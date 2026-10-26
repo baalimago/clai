@@ -32,6 +32,8 @@ type blobCache struct {
 	uses map[string]int
 	// off is set when the server has no bundles: every fetch goes alone.
 	off bool
+	// downloads counts the pull's progress, including blobs fetched alone.
+	downloads *pullDownloads
 }
 
 func (c *blobCache) take(sha string) ([]byte, bool) {
@@ -58,6 +60,7 @@ func (c *blobCache) put(blobs map[string][]byte, uses map[string]int) {
 }
 
 type pullDownloads struct {
+	mu         stdsync.Mutex
 	store      Store
 	total      int
 	totalBytes int64
@@ -67,6 +70,21 @@ type pullDownloads struct {
 	bytes      int64
 	uses       map[string]int
 	fetched    map[string]bool
+	// counted are the blobs whose download is in done and bytes.
+	counted map[string]bool
+}
+
+// arrived counts a downloaded blob once, however many files share it.
+func (d *pullDownloads) arrived(sha string, size int64) (Progress, bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.counted[sha] {
+		return Progress{}, false
+	}
+	d.counted[sha] = true
+	d.done++
+	d.bytes += size
+	return d.progress(), true
 }
 
 func (d *pullDownloads) progress() Progress {
@@ -89,7 +107,7 @@ func needsBlob(store Store, st *state, local map[string]LocalFile, remote Remote
 // pullWindows splits entries, in order, into runs whose needed bytes stay
 // under window, and counts what the pull will download.
 func pullWindows(store Store, st *state, local map[string]LocalFile, entries []RemoteEntry, window int64) ([][]RemoteEntry, *pullDownloads) {
-	d := &pullDownloads{store: store, uses: map[string]int{}, fetched: map[string]bool{}}
+	d := &pullDownloads{store: store, uses: map[string]int{}, fetched: map[string]bool{}, counted: map[string]bool{}}
 	var windows [][]RemoteEntry
 	start := 0
 	var held int64
@@ -143,23 +161,24 @@ func (e *Engine) prefetch(ctx context.Context, want []RemoteEntry, d *pullDownlo
 	defer cancel()
 	queue := make(chan []RemoteEntry)
 	errs := make(chan error, downloadWorkers)
-	var mu stdsync.Mutex
 	var wg stdsync.WaitGroup
 	for range min(downloadWorkers, len(packs)) {
 		wg.Go(func() {
 			for pack := range queue {
-				if err := e.fetchPack(ctx, pack, d.uses); err != nil {
+				got, err := e.fetchPack(ctx, pack, d.uses)
+				if err != nil {
 					errs <- err
 					cancel()
 					return
 				}
-				mu.Lock()
-				for _, r := range pack {
-					d.done++
-					d.bytes += r.Size
+				if got == packUnserved {
+					continue
 				}
-				e.report(d.progress())
-				mu.Unlock()
+				for _, r := range pack {
+					if p, ok := d.arrived(r.SHA256, r.Size); ok {
+						e.report(p)
+					}
+				}
 			}
 		})
 	}
@@ -180,7 +199,16 @@ feed:
 	return ctx.Err()
 }
 
-func (e *Engine) fetchPack(ctx context.Context, pack []RemoteEntry, uses map[string]int) error {
+// packOutcome says whether a bundle request brought its blobs.
+type packOutcome int
+
+const (
+	packFetched packOutcome = iota
+	// packUnserved is a server without bundles; fetch gets each file alone.
+	packUnserved
+)
+
+func (e *Engine) fetchPack(ctx context.Context, pack []RemoteEntry, uses map[string]int) (packOutcome, error) {
 	hashes := make([]string, 0, len(pack))
 	for _, r := range pack {
 		hashes = append(hashes, r.SHA256)
@@ -191,20 +219,23 @@ func (e *Engine) fetchPack(ctx context.Context, pack []RemoteEntry, uses map[str
 		e.cache.mu.Lock()
 		e.cache.off = true
 		e.cache.mu.Unlock()
-		return nil
+		return packUnserved, nil
 	}
 	if err != nil {
-		return err
+		return packFetched, err
 	}
+	// Only the checked blobs this pack asked for reach the cache.
+	checked := make(map[string][]byte, len(pack))
 	for _, r := range pack {
 		b, ok := blobs[r.SHA256]
 		if !ok {
-			return &BundleError{Reason: "it lacks " + r.Path}
+			return packFetched, &BundleError{Reason: "it lacks " + r.Path}
 		}
 		if got := hashBytes(b); got != r.SHA256 {
-			return &ChecksumError{Path: r.Path, Want: r.SHA256, Got: got}
+			return packFetched, &ChecksumError{Path: r.Path, Want: r.SHA256, Got: got}
 		}
+		checked[r.SHA256] = b
 	}
-	e.cache.put(blobs, uses)
-	return nil
+	e.cache.put(checked, uses)
+	return packFetched, nil
 }

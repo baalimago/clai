@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/baalimago/clai/internal/cloud"
@@ -74,6 +75,35 @@ func (e *Engine) now() time.Time {
 
 func (e *Engine) abs(rel string) string { return filepath.Join(e.ConfDir, filepath.FromSlash(rel)) }
 
+// Linkage says whether a path reaches through a symbolic link below the
+// config dir. Sync leaves such a path alone in both directions: a scan does
+// not follow the link, so a pull must not write through it and a commit
+// must not read its absence as a delete.
+type Linkage bool
+
+const (
+	NotLinked Linkage = false
+	Linked    Linkage = true
+)
+
+func (e *Engine) linkage(rel string) (Linkage, error) {
+	p := e.ConfDir
+	for seg := range strings.SplitSeq(rel, "/") {
+		p = filepath.Join(p, seg)
+		info, err := os.Lstat(p)
+		if errors.Is(err, fs.ErrNotExist) {
+			return NotLinked, nil
+		}
+		if err != nil {
+			return NotLinked, err
+		}
+		if info.Mode()&fs.ModeSymlink != 0 {
+			return Linked, nil
+		}
+	}
+	return NotLinked, nil
+}
+
 // ChecksumError is a downloaded blob whose bytes do not hash to its name.
 type ChecksumError struct{ Path, Want, Got string }
 
@@ -106,6 +136,11 @@ func (e *Engine) fetch(ctx context.Context, rel, sha string) ([]byte, error) {
 	}
 	if got := hashBytes(b); got != sha {
 		return nil, &ChecksumError{Path: rel, Want: sha, Got: got}
+	}
+	if e.cache != nil && e.cache.downloads != nil {
+		if p, ok := e.cache.downloads.arrived(sha, int64(len(b))); ok {
+			e.report(p)
+		}
 	}
 	return b, nil
 }

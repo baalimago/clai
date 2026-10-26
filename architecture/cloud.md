@@ -55,7 +55,10 @@ pull     changes since cursor -> the blobs it needs, packed by size, POST blobs/
          applied (a server without bundles: GET each) -> per path:
            mine unchanged since base          -> take theirs (update, add, delete)
            same bytes                         -> record the base
-           conversation, both changed         -> longer copy wins, or theirs becomes a fork
+           through a symlink here             -> left alone (PullResult.Linked)
+           conversation, both changed         -> longer copy wins, or theirs becomes a fork;
+                                                 same messages, other fields -> mine to trash, take theirs;
+                                                 theirs not a chat -> a conflict
            otherwise, -theirs                 -> mine to cloud/trash/, take theirs
                       -mine                   -> keep mine, base = theirs (commit sends it)
                       default                 -> keep mine, theirs to cloud/theirs/<path>: a conflict
@@ -89,10 +92,19 @@ log      GET stores/<s>/log?limit=
   the other, the longer wins. When both added different messages, the
   server's copy is written as a new chat (`source: "clai"`, `source_id` the
   original id, title suffixed with the other device's name) and the local file
-  stays.
+  stays. Copies with the same messages that differ elsewhere (a title) take
+  the server's and trash this machine's. A server copy that is not a chat
+  becomes a conflict, so one broken file never stops a pull.
+- **Symlinks are left alone.** A scan does not follow a symbolic link below
+  the config dir (the config dir itself may be one), so a pull never writes
+  through one and a commit never reads its absence as a delete.
+- **Bundles are bounded.** A bundle that unpacks past 16 MiB is a
+  `BundleError`, and only the checked blobs a bundle was asked for reach the
+  cache.
 - **What a commit leaves out.** A config file in which `FindSecret` finds a
-  literal credential (a key-like field name, or an opaque value, not a `~/` or `/` path, under
-  `env`); a file over `FileLimits`; and `conversations/imported/` unless
+  literal credential (a key-like field name, an opaque value, not a `~/` or `/` path, under
+  `env`, a `--token <value>` pair in an array, or a URL with a password or a
+  key-like query parameter); a file over `FileLimits`; and `conversations/imported/` unless
   `-imports`, which first runs the `Export` hook. `status` lists all three.
   `status -imports` runs the `Pending` hook instead: it lists, per tool,
   what `commit -imports` would export (new, or grown since the last

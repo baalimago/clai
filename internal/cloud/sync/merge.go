@@ -22,6 +22,9 @@ const (
 	keepRemote mergeOutcome = iota
 	keepLocal
 	keepBoth
+	// replaceLocal is two copies with the same messages that differ
+	// elsewhere, such as a title: theirs is taken and mine goes to the trash.
+	replaceLocal
 )
 
 type chatShape struct {
@@ -52,8 +55,10 @@ func mergeChats(mine, theirs []byte) mergeOutcome {
 		return keepRemote
 	case a.Title != "" && b.Title == "":
 		return keepLocal
+	case jsonEqual(mine, theirs):
+		return keepRemote
 	}
-	return keepRemote
+	return replaceLocal
 }
 
 func jsonEqual(x, y json.RawMessage) bool {

@@ -52,25 +52,28 @@ type PullOptions struct {
 
 // PullResult is what a pull did to one store.
 type PullResult struct {
-	Store     Store      `json:"store"`
-	Commit    int64      `json:"pulled_to"`
-	Added     int        `json:"added"`
-	Updated   int        `json:"updated"`
-	Removed   int        `json:"removed"`
-	Merged    []string   `json:"merged"`
-	Forks     []Fork     `json:"forks"`
-	Conflicts []string   `json:"conflicts"`
-	Trashed   []string   `json:"trashed"`
-	First     *FirstPull `json:"first,omitempty"`
-	written   []string
-	removed   []string
+	Store     Store    `json:"store"`
+	Commit    int64    `json:"pulled_to"`
+	Added     int      `json:"added"`
+	Updated   int      `json:"updated"`
+	Removed   int      `json:"removed"`
+	Merged    []string `json:"merged"`
+	Forks     []Fork   `json:"forks"`
+	Conflicts []string `json:"conflicts"`
+	Trashed   []string `json:"trashed"`
+	// Linked are server paths left alone because they reach through a
+	// symbolic link here.
+	Linked  []string   `json:"linked"`
+	First   *FirstPull `json:"first,omitempty"`
+	written []string
+	removed []string
 }
 
 // Pull brings the server's changes to this machine. A file changed only on
 // the server is updated in place; a file changed on both sides is settled
 // by opts. Local files are never overwritten without going to the trash.
 func (e *Engine) Pull(ctx context.Context, store Store, opts PullOptions) (PullResult, error) {
-	res := PullResult{Store: store, Merged: []string{}, Forks: []Fork{}, Conflicts: []string{}, Trashed: []string{}}
+	res := PullResult{Store: store, Merged: []string{}, Forks: []Fork{}, Conflicts: []string{}, Trashed: []string{}, Linked: []string{}}
 	st, err := loadState(e.ConfDir, store)
 	if err != nil {
 		return res, err
@@ -116,9 +119,9 @@ func (e *Engine) Pull(ctx context.Context, store Store, opts PullOptions) (PullR
 // applyAll downloads what the entries need in bundles, a window at a time,
 // and applies each window in order while the next one downloads.
 func (e *Engine) applyAll(ctx context.Context, store Store, st *state, local map[string]LocalFile, entries []RemoteEntry, mode Mode, res *PullResult) error {
-	e.cache = &blobCache{blobs: map[string][]byte{}, uses: map[string]int{}}
-	defer func() { e.cache = nil }()
 	windows, d := pullWindows(store, st, local, entries, cmp.Or(e.window, pullWindow))
+	e.cache = &blobCache{blobs: map[string][]byte{}, uses: map[string]int{}, downloads: d}
+	defer func() { e.cache = nil }()
 	e.report(d.progress())
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -140,6 +143,14 @@ func (e *Engine) applyAll(ctx context.Context, store Store, st *state, local map
 		}
 		for _, remote := range w {
 			if !Allowed(store, remote.Path) {
+				continue
+			}
+			linked, err := e.linkage(remote.Path)
+			if err != nil {
+				return err
+			}
+			if linked == Linked {
+				res.Linked = append(res.Linked, remote.Path)
 				continue
 			}
 			if err := e.apply(ctx, store, st, local, remote, mode, res); err != nil {
@@ -299,13 +310,23 @@ func (e *Engine) mergeChat(ctx context.Context, st *state, local map[string]Loca
 		return err
 	}
 	agreed := baseEntry{Rev: remote.Rev, SHA256: remote.SHA256}
-	switch mergeChats(mine, theirs) {
+	outcome := mergeChats(mine, theirs)
+	switch outcome {
 	case keepLocal:
 		// Ours goes up with the next commit, on top of theirs.
 		res.Merged = append(res.Merged, remote.Path)
 		return e.setBase(StoreConversations, st, remote.Path, agreed, nil)
-	case keepRemote:
+	case keepRemote, replaceLocal:
 		res.Merged = append(res.Merged, remote.Path)
+		if outcome == replaceLocal {
+			where, err := e.trash(remote.Path)
+			if err != nil {
+				return err
+			}
+			if where != "" {
+				res.Trashed = append(res.Trashed, remote.Path)
+			}
+		}
 		if err := writeFile(e.abs(remote.Path), theirs); err != nil {
 			return err
 		}
@@ -316,7 +337,8 @@ func (e *Engine) mergeChat(ctx context.Context, st *state, local map[string]Loca
 	}
 	forked, b, title, err := forkTheirs(remote.Path, theirs, remote.Device, e.now())
 	if err != nil {
-		return err
+		// The server's copy is no chat clai can fork; resolve settles it.
+		return e.markConflict(ctx, st, remote, res)
 	}
 	if err := writeFile(e.abs(forked), b); err != nil {
 		return err

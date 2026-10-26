@@ -427,12 +427,20 @@ func TestPull_conversationMerges(t *testing.T) {
 			t.Fatalf("hook not told of the fork: %v", *written)
 		}
 	})
-	t.Run("not json forks fail", func(t *testing.T) {
+	t.Run("not json is a conflict, not a stuck pull", func(t *testing.T) {
 		srv, a, _ := setup(t)
 		srv.Put("conversations", "conversations/c1.json", "not json")
+		srv.Put("conversations", "conversations/c2.json", chat(m1))
 		a.write("conversations/c1.json", chat(m1, m3))
-		if _, err := a.Pull(context.Background(), StoreConversations, PullOptions{}); err == nil {
-			t.Fatal("want an error forking a broken conversation")
+		res, err := a.Pull(context.Background(), StoreConversations, PullOptions{})
+		if err != nil {
+			t.Fatalf("pull: %v", err)
+		}
+		if !slices.Equal(res.Conflicts, []string{"conversations/c1.json"}) || a.read("conversations/c1.json") != chat(m1, m3) {
+			t.Fatalf("res = %+v, local = %s", res, a.read("conversations/c1.json"))
+		}
+		if a.read("conversations/c2.json") != chat(m1) {
+			t.Fatal("the entries after a broken one should still apply")
 		}
 	})
 }

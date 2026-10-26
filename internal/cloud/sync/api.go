@@ -138,6 +138,9 @@ func (a api) putBlobs(ctx context.Context, blobs []batchBlob) (map[string]string
 // bundles; a standard Content-Encoding would be changed on the way.
 const encodingHeader = "X-Clai-Encoding"
 
+// bundleMaxBytes is clai-cloud's FETCH_MAX_BYTES: no bundle unpacks to more.
+const bundleMaxBytes = 16 << 20
+
 // BundleError is a fetch bundle that does not parse.
 type BundleError struct{ Reason string }
 
@@ -158,7 +161,8 @@ func (a api) fetchBlobs(ctx context.Context, hashes []string) (map[string][]byte
 	if err != nil {
 		return nil, &BundleError{Reason: err.Error()}
 	}
-	r := bufio.NewReader(zr)
+	r := bufio.NewReader(io.LimitReader(zr, bundleMaxBytes+1))
+	var read int64
 	out := map[string][]byte{}
 	for {
 		line, err := r.ReadString('\n')
@@ -172,6 +176,9 @@ func (a api) fetchBlobs(ctx context.Context, hashes []string) (map[string][]byte
 		size, convErr := strconv.ParseInt(sizeText, 10, 64)
 		if !ok || convErr != nil || size < 0 {
 			return nil, &BundleError{Reason: fmt.Sprintf("bad frame %q", line)}
+		}
+		if read += int64(len(line)) + size; read > bundleMaxBytes {
+			return nil, &BundleError{Reason: fmt.Sprintf("it holds more than %s", humanBytes(bundleMaxBytes))}
 		}
 		b := make([]byte, size)
 		if _, err := io.ReadFull(r, b); err != nil {

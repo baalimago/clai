@@ -151,6 +151,13 @@ func (e *Engine) plan(store Store, st *state, opts PlanOptions) (Plan, error) {
 		if _, conflicted := st.Conflicts[p]; conflicted || !opts.wants(p) {
 			continue
 		}
+		linked, err := e.linkage(p)
+		if err != nil {
+			return Plan{}, err
+		}
+		if linked == Linked {
+			continue
+		}
 		gone = append(gone, p)
 	}
 	slices.Sort(gone)
