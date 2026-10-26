@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -27,14 +28,14 @@ func TestChatHandlerListAndFind(t *testing.T) {
 		t.Fatalf("unexpected list result: %+v", got)
 	}
 
-	res, err := h.findChatByID("1 extra words")
+	res, err := h.findChatByID(context.Background(), "1 extra words", foreignClone)
 	if err != nil {
 		t.Fatalf("findChatByID err: %v", err)
 	}
 	if res.ID != "one" || h.prompt != "extra words" {
 		t.Errorf("unexpected chat or prompt: %+v %q", res, h.prompt)
 	}
-	res, err = h.findChatByID("two")
+	res, err = h.findChatByID(context.Background(), "two", foreignClone)
 	if err != nil || res.ID != "two" {
 		t.Errorf("find by id failed: %v %+v", err, res)
 	}
