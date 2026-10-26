@@ -244,7 +244,7 @@ func (s *Server) me(w http.ResponseWriter, device string) {
 	}
 	reply(w, 200, map[string]any{
 		"account": "u-12345678", "handle": "lorentz", "device": device, "access": "write",
-		"usage":  map[string]any{"bytes": total, "free_bytes": 1_000_000_000, "card_on_file": false, "overdue": false},
+		"usage":  map[string]any{"bytes": total, "config_limit_bytes": 1_000_000_000, "card_on_file": false, "overdue": false},
 		"stores": stores,
 	})
 }

@@ -3,8 +3,9 @@
 clai can keep two stores on clai.chat: a **config store** (profiles, MCP
 servers, shell contexts, skills, mode configs, theme) and a **conversation
 store** (conversations, their images, reasoning sidecars, and, when asked,
-the conversations clai imports from other tools). Both share one storage
-allowance: 1 GB free, then $1 per GB a month. Sync works like git: nothing
+the conversations clai imports from other tools). Config sync is free (up
+to 1 GB); conversations cost $1 per started GB a month and need a card on
+file. Sync works like git: nothing
 runs on its own, only `clai cloud` subcommands talk to clai.chat, and clai
 works the same without an account. This doc answers: how a machine logs in,
 which files sync, how pull and commit avoid overwriting another machine's
@@ -85,8 +86,11 @@ log      GET stores/<s>/log?limit=
   left by a pull, a commit behind the server or blocked by conflicts, or a
   first pull with nobody to ask. `cmd.Run` maps every error to 1, so the
   command prints its message, calls `Deps.SetExit(4)` and returns nil;
-  `cli.Run` returns that status.
-- **402 answers** (`card_required` past the free allowance, `payment_overdue`)
+  `cli.Run` wires `SetExit` to `internal.ExitStatus.Set`, whose `Resolve`
+  turns that success into 4 (an `ExitCoder` error, such as remote targets'
+  exit 3, replaces a failure instead).
+- **402 answers** (`card_required` for a conversation commit without a card,
+  `payment_overdue`)
   carry a URL to the Billing and usage page, which commit prints.
 - Replaced local files go to `cloud/trash/<path>.<UTC time>` and are pruned
   after 30 days. Config base copies under `cloud/base/` make `diff` work

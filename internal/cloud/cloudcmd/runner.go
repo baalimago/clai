@@ -139,8 +139,24 @@ func (r *runner) whoami(ctx context.Context, raw bool) error {
 		info := me.Stores[string(s)]
 		r.printf("%-14s %d files, %s, commit #%d\n", string(s)+":", info.Files, human(info.Bytes), info.Commit)
 	}
-	r.printf("Storage: %s of %s free\n", human(me.Usage.Bytes), human(me.Usage.FreeBytes))
+	r.printf("%s\n", billingLine(me))
 	return nil
+}
+
+const gigabyte = 1_000_000_000
+
+func billingLine(me cloud.Me) string {
+	line := fmt.Sprintf("Billing: config sync is free (%s of %s); ",
+		human(me.Stores[string(sync.StoreConfig)].Bytes), human(me.Usage.ConfigLimitBytes))
+	if !me.Usage.CardOnFile {
+		return line + "conversations need a card on file, $1 per started GB a month"
+	}
+	held := me.Stores[string(sync.StoreConversations)].Bytes
+	line += fmt.Sprintf("conversations $%d a month at %s", (held+gigabyte-1)/gigabyte, human(held))
+	if me.Usage.Overdue {
+		line += "; a payment is overdue, so commits are refused"
+	}
+	return line
 }
 
 // stores reads a [store] argument; none means both.

@@ -72,7 +72,7 @@ func TestClient_meAndRevoke(t *testing.T) {
 	srv := cloudtest.New(t)
 	c := cloud.NewClient(srv.URL(), "tok-a")
 	me, err := c.Me(context.Background())
-	if err != nil || me.Name() != "@lorentz" || me.Device != "a" || me.Access != "write" || me.Usage.FreeBytes != 1_000_000_000 {
+	if err != nil || me.Name() != "@lorentz" || me.Device != "a" || me.Access != "write" || me.Usage.ConfigLimitBytes != 1_000_000_000 {
 		t.Fatalf("me = %+v, %v", me, err)
 	}
 	if (cloud.Me{Account: "u-1"}).Name() != "u-1" {

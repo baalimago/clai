@@ -176,11 +176,12 @@ type StoreInfo struct {
 	Files  int   `json:"files"`
 }
 
-// Usage is the account's storage against the free allowance.
+// Usage is the account's storage and billing standing. Config sync is free
+// up to ConfigLimitBytes; conversations cost $1 per started GB a month.
 type Usage struct {
-	Bytes     int64 `json:"bytes"`
-	FreeBytes int64 `json:"free_bytes"`
-	// CardOnFile is whether the account may go past the free allowance.
+	Bytes            int64 `json:"bytes"`
+	ConfigLimitBytes int64 `json:"config_limit_bytes"`
+	// CardOnFile is whether the account may commit conversations.
 	CardOnFile bool `json:"card_on_file"`
 	// Overdue is a failed payment past its retries: commits are refused.
 	Overdue bool `json:"overdue"`

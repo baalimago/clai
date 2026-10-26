@@ -103,7 +103,8 @@ Sync
   log [store] [-limit N]          recent commits
 
 Stores: config (profiles, MCP servers, shell contexts, skills, mode configs,
-theme) and conversations. 1 GB free, then $1/GB a month.
+theme) and conversations. Config sync is free (up to 1 GB); conversations
+cost $1 per started GB a month and need a card on file.
 A config file that holds a key is never committed: status names it.
 Conflicts keep your file; the server's copy goes to <config>/cloud/theirs/.
 -r prints JSON. Exit 4 means a decision is needed: conflicts, a commit

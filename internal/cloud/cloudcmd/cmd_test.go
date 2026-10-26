@@ -163,7 +163,8 @@ func TestWhoami(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code %d", code)
 	}
-	mustContain(t, out, "@lorentz", "Device:  a", "Access:  write", "config:", "conversations:", "of 1.0 GB free")
+	mustContain(t, out, "@lorentz", "Device:  a", "Access:  write", "config:", "conversations:",
+		"Billing: config sync is free (0.0 kB of 1.0 GB)", "conversations need a card on file")
 	_, out = h.run("whoami", "-r")
 	var me cloud.Me
 	if err := json.Unmarshal([]byte(out), &me); err != nil || me.Handle != "lorentz" {
@@ -394,7 +395,7 @@ func TestCommit_pathsAndErrors(t *testing.T) {
 	if code, _ := h.run("commit", "conversations/", "-r"); code != 0 {
 		t.Fatal("commit conversations/")
 	}
-	h.srv.Refuse = &cloudtest.Problem{Status: 402, Code: "card_required", Message: "Past 1 GB needs a card", URL: "https://clai.chat/account/billing"}
+	h.srv.Refuse = &cloudtest.Problem{Status: 402, Code: "card_required", Message: "Syncing conversations needs a card", URL: "https://clai.chat/account/billing"}
 	h.write("mcpServers/b.json", "b2")
 	code, _ = h.run("commit")
 	if code != 1 {
@@ -481,5 +482,34 @@ func TestHelpers(t *testing.T) {
 	d.SetExit(4)
 	if (&QuitError{}).Error() == "" {
 		t.Fatal("QuitError")
+	}
+}
+
+func TestBillingLine(t *testing.T) {
+	cases := []struct {
+		name string
+		me   cloud.Me
+		want string
+	}{
+		{"no card", cloud.Me{
+			Usage:  cloud.Usage{ConfigLimitBytes: 1_000_000_000},
+			Stores: map[string]cloud.StoreInfo{"config": {Bytes: 2_000_000}},
+		}, "Billing: config sync is free (2.0 MB of 1.0 GB); conversations need a card on file, $1 per started GB a month"},
+		{"card, nothing stored", cloud.Me{
+			Usage: cloud.Usage{ConfigLimitBytes: 1_000_000_000, CardOnFile: true},
+		}, "Billing: config sync is free (0.0 kB of 1.0 GB); conversations $0 a month at 0.0 kB"},
+		{"card, 1.2 GB", cloud.Me{
+			Usage:  cloud.Usage{ConfigLimitBytes: 1_000_000_000, CardOnFile: true},
+			Stores: map[string]cloud.StoreInfo{"conversations": {Bytes: 1_200_000_000}},
+		}, "Billing: config sync is free (0.0 kB of 1.0 GB); conversations $2 a month at 1.2 GB"},
+		{"overdue", cloud.Me{
+			Usage:  cloud.Usage{ConfigLimitBytes: 1_000_000_000, CardOnFile: true, Overdue: true},
+			Stores: map[string]cloud.StoreInfo{"conversations": {Bytes: 1}},
+		}, "Billing: config sync is free (0.0 kB of 1.0 GB); conversations $1 a month at 0.0 kB; a payment is overdue, so commits are refused"},
+	}
+	for _, c := range cases {
+		if got := billingLine(c.me); got != c.want {
+			t.Errorf("%s:\n got %q\nwant %q", c.name, got, c.want)
+		}
 	}
 }
