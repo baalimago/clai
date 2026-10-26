@@ -65,6 +65,8 @@ type Server struct {
 	// CardOnFile and Overdue are the account's billing standing in /me.
 	CardOnFile bool
 	Overdue    bool
+	// BillingClosed answers billing_open false, as a server without Stripe.
+	BillingClosed bool
 	// PollsLeft answers authorization_pending this many times; Deny refuses
 	// the login; SlowDown answers slow_down once.
 	PollsLeft  int
@@ -256,7 +258,7 @@ func (s *Server) me(w http.ResponseWriter, device string) {
 	reply(w, 200, map[string]any{
 		"account": "u-12345678", "handle": "lorentz", "device": device, "access": "write",
 		"usage": map[string]any{
-			"bytes": total, "config_limit_bytes": 1_000_000_000, "card_on_file": s.CardOnFile, "overdue": s.Overdue,
+			"bytes": total, "config_limit_bytes": 1_000_000_000, "card_on_file": s.CardOnFile, "overdue": s.Overdue, "billing_open": !s.BillingClosed,
 			"billing_url": s.srv.URL + "/account/billing/",
 		},
 		"stores": stores,

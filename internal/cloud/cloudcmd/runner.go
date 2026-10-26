@@ -204,64 +204,15 @@ func (r *runner) status(ctx context.Context, args []string, imports, raw bool) e
 	return nil
 }
 
-func (r *runner) printStatus(st sync.Status) {
-	head := fmt.Sprintf("%-14s", st.Store)
-	parts := []string{}
-	if len(st.Changes) == 0 && len(st.Conflicts) == 0 {
-		parts = append(parts, "clean")
-	} else {
-		parts = append(parts, fmt.Sprintf("%d local %s", len(st.Changes), plural(len(st.Changes), "change", "changes")))
-	}
-	switch {
-	case st.RemoteError != nil:
-		parts = append(parts, "server not reachable: "+st.RemoteError.Error())
-	case st.Remote.Ahead > 0:
-		parts = append(parts, fmt.Sprintf("server is %d %s ahead", st.Remote.Ahead, plural(int(st.Remote.Ahead), "commit", "commits")))
-	}
-	if !st.Pulled {
-		parts = append(parts, "never pulled on this machine")
-	}
-	r.printf("%s %s\n", head, strings.Join(parts, " · "))
-	both := map[string]bool{}
-	if st.Remote != nil {
-		for _, p := range st.Remote.Both {
-			both[p] = true
-		}
-	}
-	for _, p := range st.Conflicts {
-		r.printf("  C %s   conflict: clai cloud resolve %s --mine|--theirs\n", p, p)
-	}
-	for _, c := range st.Changes {
-		mark := map[sync.ChangeKind]string{sync.Added: "+", sync.Modified: "~", sync.Deleted: "-"}[c.Kind]
-		note := ""
-		if both[c.Path] {
-			note = "   also changed on the server"
-		}
-		r.printf("  %s %s%s\n", mark, c.Path, note)
-	}
-	secrets, imports, large := 0, 0, 0
-	for _, x := range st.Excluded {
-		switch x.Kind {
-		case sync.ExcludedSecret:
-			if secrets == 0 {
-				r.printf("  not synced, holds a secret:\n")
-			}
-			secrets++
-			r.printf("    %s  %s\n", x.Path, x.Detail)
-		case sync.ExcludedTooLarge:
-			large++
-			r.printf("  not synced, larger than %s: %s\n", x.Detail, x.Path)
-		case sync.ExcludedImport:
-			imports++
-		}
-	}
-	if secrets > 0 {
-		r.printf("    move the value to an env var or envfile, then commit\n")
-	}
-	if imports > 0 {
-		r.printf("  %d imported %s from other tools not included; add them with commit -imports\n", imports, plural(imports, "file", "files"))
+func (r *runner) style() style { return style{color: r.deps.Color()} }
+
+func (r *runner) lines(lines []string) {
+	for _, l := range lines {
+		r.printf("%s\n", l)
 	}
 }
+
+func (r *runner) printStatus(st sync.Status) { r.lines(statusLines(st, r.style())) }
 
 func (r *runner) diff(ctx context.Context, args []string, remote bool) error {
 	_, engine, err := r.session()
@@ -398,7 +349,7 @@ type QuitError struct{}
 func (e *QuitError) Error() string { return "stopped: nothing was pulled" }
 
 func (r *runner) printPull(res sync.PullResult) {
-	parts := []string{fmt.Sprintf("Pulled %s #%d", res.Store, res.Commit)}
+	parts := []string{fmt.Sprintf("pulled #%d", res.Commit)}
 	for _, n := range []struct {
 		count int
 		word  string
@@ -410,7 +361,7 @@ func (r *runner) printPull(res sync.PullResult) {
 	if len(parts) == 1 {
 		parts = append(parts, "up to date")
 	}
-	r.printf("%s\n", strings.Join(parts, " · "))
+	r.printf("%s\n", r.style().head(string(res.Store), parts...))
 	if len(res.Merged) > 0 {
 		r.printf("  %d merged: one copy only added messages to the other\n", len(res.Merged))
 	}
@@ -495,7 +446,7 @@ func (r *runner) commit(ctx context.Context, args []string, msg string, imports,
 		switch {
 		case errors.As(err, &blocked) && len(args) == 0:
 			// A plain commit still commits the free config store.
-			r.printf("%-14s not committed: %v\n", s, blocked)
+			r.lines(blockedLines(s, blocked, r.style()))
 			continue
 		case errors.As(err, &open):
 			decision = true
@@ -582,15 +533,14 @@ func (r *runner) printBehind(b *sync.BehindError) {
 }
 
 func (r *runner) printCommit(res sync.CommitResult) {
-	if res.Files == 0 {
-		r.printf("%-14s nothing to commit\n", res.Store)
-	} else {
-		extra := ""
+	parts := []string{"nothing to commit"}
+	if res.Files > 0 {
+		parts = []string{fmt.Sprintf("commit #%d", res.Commit), count(res.Files) + " " + plural(res.Files, "file", "files"), human(res.Bytes)}
 		if res.Imported > 0 {
-			extra = fmt.Sprintf(", %d imported", res.Imported)
+			parts = append(parts, count(res.Imported)+" imported")
 		}
-		r.printf("%s commit #%d · %d %s (%s)%s\n", res.Store, res.Commit, res.Files, plural(res.Files, "file", "files"), human(res.Bytes), extra)
 	}
+	r.printf("%s\n", r.style().head(string(res.Store), parts...))
 	for _, x := range res.Excluded {
 		switch x.Kind {
 		case sync.ExcludedSecret:

@@ -34,6 +34,7 @@ for the login).
 | `internal/cloud/sync/progress.go` | `Progress` and `Phase` (reported through `Engine.Progress`), `uploadMissing` (parallel uploads), `checkBilling`, `BillingBlockedError` |
 | `internal/cloud/sync/resolve.go`, `diff.go`, `status.go`, `merge.go` | `Resolve`, `Diff`, `Status`/`Log`, the conversation merge and fork |
 | `internal/cloud/cloudcmd/` | `Command`: the subcommands and their output; `ExitDecisionNeeded` |
+| `internal/cloud/cloudcmd/view.go` | `statusLines`, `blockedLines`, `style`: the `▸ store · detail` look and the grouped status table |
 | `internal/cloud/cloudtest/` | An in-memory clai.chat for tests |
 | `internal/chat/imported.go` | `ExportForeign`, `importedReader`, `ReindexPulled` |
 | `internal/cli/cli.go` | Wires the command, its hooks and the exit-4 seam |
@@ -91,11 +92,21 @@ log      GET stores/<s>/log?limit=
   `cli.Run` wires `SetExit` to `internal.ExitStatus.Set`, whose `Resolve`
   turns that success into 4 (an `ExitCoder` error, such as remote targets'
   exit 3, replaces a failure instead).
+- **Output.** Every store gets one `▸ <store> · detail · detail` line, the
+  marker in the theme's primary colour and the details in its secondary one,
+  and a page to visit sits on its own `→ <url>` row. Colour needs a terminal
+  on stdout and colour enabled (`Deps.Color`). `status` lists up to ten
+  changes one per line; past that it groups them, as `duls` groups a tree:
+  chats, images, reasoning, each imported tool, or a config directory, by
+  size, with files, size, share and the largest files that fit, at most six
+  rows with the rest folded into `+N smaller`.
 - **402 answers** (`card_required` for a conversation commit without a card,
   `payment_overdue`)
   carry a URL to the Billing and usage page, which commit prints. The
   engine asks `/me` first when a conversation commit would grow the store,
-  so a refused commit uploads nothing (`BillingBlockedError`). A plain
+  so a refused commit uploads nothing (`BillingBlockedError`). While
+  `/me` says `billing_open` is false the reason is `BillingNotOpen` and no
+  billing link is printed. A plain
   `clai cloud commit` then commits the config store and says why the
   conversations were left out; naming the conversations is an error.
 - **Progress.** Pull and commit report `Progress` (scanning, uploading,

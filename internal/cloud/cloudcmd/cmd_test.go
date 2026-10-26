@@ -190,27 +190,27 @@ func TestStatusCommitPullLog(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("status %d", code)
 	}
-	mustContain(t, out, "+ profiles/coder.json", "holds a secret", "profiles/leak.json  api_key", "never pulled", "1 imported file")
+	mustContain(t, out, "▸ config · 1 to commit", "+ profiles/coder.json", "holds a secret: profiles/leak.json  api_key", "never pulled here", "1 imported file")
 
 	code, out = h.run("commit", "-m", "first", "config")
 	if code != 0 {
 		t.Fatalf("commit %d: %s", code, out)
 	}
-	mustContain(t, out, "config commit #1 · 1 file", "not committed, holds a secret")
+	mustContain(t, out, "▸ config · commit #1 · 1 file", "not committed, holds a secret")
 	if got, _ := h.srv.Content("config", "profiles/coder.json"); got == "" {
 		t.Fatal("not on the server")
 	}
 	_, out = h.run("commit")
-	mustContain(t, out, "nothing to commit")
+	mustContain(t, out, "▸ config · nothing to commit")
 
 	h.srv.Put("config", "profiles/coder.json", `{"prompt":"y"}`)
 	_, out = h.run("status", "config")
-	mustContain(t, out, "server is 1 commit ahead")
+	mustContain(t, out, "server 1 commit ahead")
 	code, out = h.run("pull", "config")
 	if code != 0 || h.read("profiles/coder.json") != `{"prompt":"y"}` {
 		t.Fatalf("pull %d: %s", code, out)
 	}
-	mustContain(t, out, "Pulled config #2 · 1 updated")
+	mustContain(t, out, "▸ config · pulled #2 · 1 updated")
 
 	code, out = h.run("log", "config", "-limit", "5")
 	if code != 0 {
@@ -528,7 +528,7 @@ func TestCommit_withoutACardCommitsConfigAndSaysWhyNotConversations(t *testing.T
 	if code != 0 {
 		t.Fatalf("code %d, out %s", code, out)
 	}
-	mustContain(t, out, "config commit #1", "conversations  not committed: syncing conversations needs a card on file", "/account/billing/")
+	mustContain(t, out, "▸ config · commit #1", "▸ conversations · not committed · needs a card on file", "  → "+h.srv.URL()+"/account/billing/")
 
 	r := &runner{deps: h.deps().withDefaults()}
 	err := r.commit(context.Background(), []string{"conversations"}, "", false, false)

@@ -209,6 +209,8 @@ type Usage struct {
 	CardOnFile bool `json:"card_on_file"`
 	// Overdue is a failed payment past its retries: commits are refused.
 	Overdue bool `json:"overdue"`
+	// BillingOpen is false while the server takes no cards.
+	BillingOpen bool `json:"billing_open"`
 	// BillingURL is the page where a card is added or an invoice paid.
 	BillingURL string `json:"billing_url"`
 }

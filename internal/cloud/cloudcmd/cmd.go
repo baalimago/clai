@@ -16,6 +16,7 @@ import (
 	"github.com/baalimago/clai/internal/cloud"
 	"github.com/baalimago/clai/internal/cloud/sync"
 	"github.com/baalimago/clai/internal/utils"
+	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/cmd"
 )
 
@@ -34,6 +35,8 @@ type Deps struct {
 	// Err takes the progress line, drawn only when ErrIsTerminal.
 	Err           io.Writer
 	ErrIsTerminal func() bool
+	// Color is whether Out takes the theme's colours.
+	Color func() bool
 	// Interactive is whether a person can answer a prompt on In.
 	Interactive func() bool
 	Now         func() time.Time
@@ -57,6 +60,9 @@ func (d Deps) withDefaults() Deps {
 	}
 	if d.ErrIsTerminal == nil {
 		d.ErrIsTerminal = func() bool { return utils.IsTerminalWriter(d.Err) }
+	}
+	if d.Color == nil {
+		d.Color = func() bool { return ancli.UseColor && utils.IsTerminalWriter(d.Out) }
 	}
 	if d.Interactive == nil {
 		d.Interactive = stdinIsTerminal

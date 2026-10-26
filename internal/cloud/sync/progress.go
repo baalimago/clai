@@ -47,6 +47,7 @@ type BillingReason string
 const (
 	CardRequired   BillingReason = "card_required"
 	PaymentOverdue BillingReason = "payment_overdue"
+	BillingNotOpen BillingReason = "billing_not_open"
 )
 
 // BillingBlockedError is a conversation commit the account's billing
@@ -57,8 +58,11 @@ type BillingBlockedError struct {
 }
 
 func (e *BillingBlockedError) Error() string {
-	if e.Reason == PaymentOverdue {
+	switch e.Reason {
+	case PaymentOverdue:
 		return fmt.Sprintf("a payment has been due for 7 days, so commits are refused; pay it at %s", e.URL)
+	case BillingNotOpen:
+		return "conversation sync is not open yet; config sync works now"
 	}
 	return fmt.Sprintf("syncing conversations needs a card on file ($1 per started GB a month); add one at %s", e.URL)
 }
@@ -83,6 +87,8 @@ func (e *Engine) checkBilling(ctx context.Context, store Store, changes []LocalC
 	switch {
 	case me.Usage.Overdue:
 		return &BillingBlockedError{Reason: PaymentOverdue, URL: me.Usage.BillingURL}
+	case !me.Usage.CardOnFile && !me.Usage.BillingOpen:
+		return &BillingBlockedError{Reason: BillingNotOpen, URL: me.Usage.BillingURL}
 	case !me.Usage.CardOnFile:
 		return &BillingBlockedError{Reason: CardRequired, URL: me.Usage.BillingURL}
 	}

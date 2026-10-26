@@ -100,6 +100,18 @@ func TestCommit_conversationsWithoutACardUploadNothing(t *testing.T) {
 		t.Fatalf("err = %v, want a BillingBlockedError for an overdue payment", err)
 	}
 
+	setBilling(srv, false, false)
+	unlock := srv.Lock()
+	srv.BillingClosed = true
+	unlock()
+	_, err = m.Commit(context.Background(), StoreConversations, CommitOptions{Message: "x"})
+	if !errors.As(err, &blocked) || blocked.Reason != BillingNotOpen || !strings.Contains(err.Error(), "not open") {
+		t.Fatalf("err = %v, want a BillingBlockedError saying billing is not open", err)
+	}
+	unlock = srv.Lock()
+	srv.BillingClosed = false
+	unlock()
+
 	// Deleting conversations never needs a card.
 	setBilling(srv, true, false)
 	m.commit(StoreConversations, "keep")
