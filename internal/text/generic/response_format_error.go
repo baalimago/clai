@@ -12,6 +12,9 @@ var (
 	// ErrResponseFormatShape is returned when the -rf file is JSON but not a
 	// well-formed response_format object.
 	ErrResponseFormatShape = errors.New("response format file must be a response_format JSON object")
+	// ErrResponseFormatUnsupported is returned when the selected model cannot
+	// honour the requested response format.
+	ErrResponseFormatUnsupported = errors.New("response format not supported")
 )
 
 // ErrorHandler is an optional capability of a stream completer. The text layer

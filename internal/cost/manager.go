@@ -68,6 +68,10 @@ func (m *Manager) SetWarnf(warnf func(format string, a ...any)) {
 
 var errCacheMiss = errors.New("cache miss")
 
+// ErrNoModelCatalog is returned, wrapped in a DebugError, when a price is not
+// cached and no model catalog is configured to fetch it.
+var ErrNoModelCatalog = errors.New("no model catalog configured")
+
 // DebugError marks a cost failure that is a normal condition rather than a
 // user-facing fault, such as a price catalog that cannot serve the model. A
 // consumer reports it only when the cost debug flag is set, so a cold price
@@ -170,7 +174,7 @@ func (m *Manager) resolveModelPrice(ctx context.Context) (ModelPriceScheme, erro
 		ancli.Noticef("fetching model price for: %v", m.model)
 	}
 	if m.fetcher == nil {
-		return ModelPriceScheme{}, fmt.Errorf("resolve model price for %q: missing model catalog fetcher", m.model)
+		return ModelPriceScheme{}, NewDebugError(fmt.Errorf("resolve model price for %q: %w", m.model, ErrNoModelCatalog))
 	}
 	price, err := m.fetcher.FetchModel(ctx, m.model)
 	if err != nil {

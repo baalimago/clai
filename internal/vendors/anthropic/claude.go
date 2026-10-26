@@ -2,12 +2,14 @@ package anthropic
 
 import (
 	"encoding/base64"
+	"fmt"
 	"maps"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/baalimago/clai/internal/models"
+	"github.com/baalimago/clai/internal/text/generic"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -43,6 +45,7 @@ type Claude struct {
 	functionJSON       string                     `json:"-"`
 	contentBlockType   string                     `json:"-"`
 	amInputTokens      int                        `json:"-"`
+	responseFormat     *generic.ResponseFormat    `json:"-"`
 }
 
 var Default = Claude{
@@ -114,6 +117,36 @@ type claudeReq struct {
 	TopK          int                        `json:"top_k,omitempty"`
 	StopSequences []string                   `json:"stop_sequences,omitempty"`
 	Tools         []pub_models.Specification `json:"tools,omitempty"`
+	OutputConfig  *outputConfig              `json:"output_config,omitempty"`
+}
+
+type outputConfig struct {
+	Format outputFormat `json:"format"`
+}
+
+type outputFormat struct {
+	Type   string         `json:"type"`
+	Schema map[string]any `json:"schema"`
+}
+
+// SetResponseFormat configures structured output. Only json_schema maps onto
+// Anthropic structured outputs; other non-text types fail the request.
+func (c *Claude) SetResponseFormat(rf *generic.ResponseFormat) {
+	c.responseFormat = rf
+}
+
+func (c *Claude) outputConfig() (*outputConfig, error) {
+	rf := c.responseFormat
+	if rf == nil || rf.Type == "" || rf.Type == "text" {
+		return nil, nil
+	}
+	if rf.Type != "json_schema" {
+		return nil, fmt.Errorf("anthropic: %w: type %q, use \"json_schema\" with a schema", generic.ErrResponseFormatUnsupported, rf.Type)
+	}
+	if rf.JSONSchema == nil || len(rf.JSONSchema.Schema) == 0 {
+		return nil, fmt.Errorf("anthropic: %w: json_schema without json_schema.schema", generic.ErrResponseFormatUnsupported)
+	}
+	return &outputConfig{Format: outputFormat{Type: "json_schema", Schema: rf.JSONSchema.Schema}}, nil
 }
 
 // claudifyMessages converts from 'normal' openai chat format into a format which claud prefers
