@@ -76,3 +76,24 @@ func TestIsMcpLogAuthChallengeLine_DistinguishesChallengeFromStatus(t *testing.T
 		}
 	}
 }
+
+func TestTerminalRows_WrapsAtWordBoundaries(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		in    string
+		width int
+		want  []string
+	}{
+		{name: "breaks at the last space", in: `{"style": "centered", "bg": "background"}`, width: 22, want: []string{`{"style": "centered",`, `"bg": "background"}`}},
+		{name: "a word longer than the row still hard-breaks", in: "abcdefghij kl", width: 4, want: []string{"abcd", "efgh", "ij", "kl"}},
+		{name: "spaces at the break are dropped", in: "aaa   bbb", width: 4, want: []string{"aaa", "bbb"}},
+		{name: "wide runes break before a word", in: "界界 ab", width: 5, want: []string{"界界", "ab"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := terminalRows(tc.in, tc.width)
+			if strings.Join(got, "|") != strings.Join(tc.want, "|") {
+				t.Fatalf("terminalRows(%q, %d) = %q, want %q", tc.in, tc.width, got, tc.want)
+			}
+		})
+	}
+}

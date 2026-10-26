@@ -1301,7 +1301,7 @@ func mcpLogBodyRows(content string, width, maxRows int) []activityRow {
 		case IsMcpLogErrorLine(line):
 			marker, color = "✗ ", RoleColor("tool")
 		}
-		for _, row := range terminalRows(marker+line, width) {
+		for _, row := range cellChunks(marker+line, max(width, 1)) {
 			rows = append(rows, activityRow{content: "  " + row, color: color})
 		}
 	}
@@ -1443,33 +1443,83 @@ func compactTerminalRows(content string, width, maxRows int) []string {
 	return compacted
 }
 
+// terminalRows wraps content into rows of at most width cells, breaking at
+// the last space that fits; a word wider than a row breaks by cell.
 func terminalRows(content string, width int) []string {
 	width = max(width, 1)
 	var rows []string
 	for line := range strings.SplitSeq(content, "\n") {
-		if line == "" {
-			rows = append(rows, "")
-			continue
-		}
-		var row strings.Builder
-		rowWidth := 0
-		for _, r := range line {
-			cellWidth := terminalRuneWidth(r)
-			if cellWidth > width {
-				r = '…'
-				cellWidth = 1
-			}
-			if wraps(rowWidth, cellWidth, width) {
-				rows = append(rows, row.String())
-				row.Reset()
-				rowWidth = 0
-			}
-			row.WriteRune(r)
-			rowWidth += cellWidth
-		}
-		rows = append(rows, row.String())
+		rows = append(rows, wordWrapLine(line, width)...)
 	}
 	return rows
+}
+
+func wordWrapLine(line string, width int) []string {
+	var (
+		rows  []string
+		row   strings.Builder
+		used  int
+		fresh bool
+	)
+	for i, word := range strings.Split(line, " ") {
+		wordWidth := terminalStringWidth(word)
+		sep := i > 0 && !fresh
+		need := wordWidth
+		if sep {
+			need++
+		}
+		if used > 0 && used+need > width {
+			rows = append(rows, strings.TrimRight(row.String(), " "))
+			row.Reset()
+			used, sep, fresh = 0, false, true
+		}
+		if fresh && word == "" {
+			continue
+		}
+		fresh = false
+		if sep {
+			row.WriteByte(' ')
+			used++
+		}
+		if used+wordWidth <= width {
+			row.WriteString(word)
+			used += wordWidth
+			continue
+		}
+		chunks := cellChunks(word, width)
+		for _, chunk := range chunks[:len(chunks)-1] {
+			rows = append(rows, chunk)
+		}
+		row.Reset()
+		row.WriteString(chunks[len(chunks)-1])
+		used = terminalStringWidth(chunks[len(chunks)-1])
+	}
+	return append(rows, row.String())
+}
+
+// cellChunks breaks s into rows of at most width cells, so joining the rows
+// gives s back; a rune wider than a row becomes an ellipsis.
+func cellChunks(word string, width int) []string {
+	var (
+		chunks []string
+		row    strings.Builder
+		used   int
+	)
+	for _, r := range word {
+		cellWidth := terminalRuneWidth(r)
+		if cellWidth > width {
+			r = '…'
+			cellWidth = 1
+		}
+		if wraps(used, cellWidth, width) {
+			chunks = append(chunks, row.String())
+			row.Reset()
+			used = 0
+		}
+		row.WriteRune(r)
+		used += cellWidth
+	}
+	return append(chunks, row.String())
 }
 
 func isToolOutputMarker(row string) bool {
