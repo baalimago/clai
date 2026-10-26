@@ -9,7 +9,7 @@ import (
 func Test_Command_tree(t *testing.T) {
 	t.Setenv("CLAI_CONFIG_DIR", t.TempDir())
 	c := Command(CommandDeps{})
-	if c.Describe() == "" || !strings.Contains(c.Help(), "profiles [list|install|update|trust]") {
+	if c.Describe() == "" || !strings.Contains(c.Help(), "profiles [list|install|update|trust|publish]") {
 		t.Fatalf("describe/help incomplete: %q / %q", c.Describe(), c.Help())
 	}
 	if !strings.Contains(c.Help(), "Profiles overwrite certain model configurations") {

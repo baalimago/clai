@@ -28,6 +28,11 @@ type CommandDeps struct {
 	// ConfigDir returns the clai config directory.
 	ConfigDir func() (string, error)
 	Out       io.Writer
+	// NewHubPublisher sends a profile to the Hub as the logged-in account;
+	// nil leaves publish unavailable.
+	NewHubPublisher NewHubPublisherFunc
+	// FindSecret is the credential check publish runs before sending.
+	FindSecret FindSecretFunc
 }
 
 // Source is the stamp install writes into a profile: the target it came

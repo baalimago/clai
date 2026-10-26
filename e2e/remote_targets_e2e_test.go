@@ -39,6 +39,8 @@ type fakeHub struct {
 	agents map[string][]string
 	files  map[string]fakeFile
 	hits   map[string]int
+	// handle is the account behind fakeHubToken, "" until it picks one.
+	handle string
 }
 
 type fakeFile struct {
@@ -52,6 +54,10 @@ func (h *fakeHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.hits[r.URL.Path]++
+	if r.URL.Path == "/api/v1/hub" {
+		h.publishFromCLI(w, r)
+		return
+	}
 	if m := hubRaw.FindStringSubmatch(r.URL.Path); m != nil {
 		versions := h.agents[m[1]]
 		n := len(versions)

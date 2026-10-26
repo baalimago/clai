@@ -16,6 +16,7 @@ import (
 	"github.com/baalimago/clai/internal"
 	"github.com/baalimago/clai/internal/audio"
 	"github.com/baalimago/clai/internal/chat"
+	"github.com/baalimago/clai/internal/cloud"
 	"github.com/baalimago/clai/internal/cloud/cloudcmd"
 	"github.com/baalimago/clai/internal/cloud/sync"
 	"github.com/baalimago/clai/internal/confdir"
@@ -119,6 +120,24 @@ func remoteResolver(client remote.Doer) text.NewRemoteResolverFunc {
 	}
 }
 
+// hubPublisher posts a profile to the Hub with this machine's clai.chat
+// login, for `clai profiles publish`.
+func hubPublisher(confDir string) (profiles.HubPublisher, error) {
+	creds, err := cloud.LoadCredentials(confDir)
+	if err != nil {
+		return nil, err
+	}
+	client := cloud.NewClient(creds.URL, creds.Token)
+	return func(ctx context.Context, req profiles.PublishRequest) (profiles.Published, error) {
+		var out profiles.Published
+		err := client.PostJSON(ctx, "/api/v1/hub", req, &out)
+		if apiErr, ok := cloud.AsAPIError(err); ok && apiErr.Code == "handle_required" {
+			return out, &profiles.HandleRequiredError{Suggested: apiErr.Suggested}
+		}
+		return out, err
+	}, nil
+}
+
 // Commands is the composition root: every command lives in its domain package
 // and receives its cross-package collaborators here. internal/setup owns config
 // prep and migrations, which the domain packages cannot import themselves.
@@ -177,8 +196,13 @@ func commands(deps Deps, setExit func(int)) map[string]cmd.Command {
 		"tools|t":        tools.Command(),
 		"mcp":            mcp.Command(),
 		"profiles": profiles.Command(profiles.CommandDeps{
-			NewResolver: profiles.NewResolverFunc(remoteResolver(deps.RemoteClient)),
-			ConfigDir:   func() (string, error) { return configPrep() },
+			NewResolver:     profiles.NewResolverFunc(remoteResolver(deps.RemoteClient)),
+			ConfigDir:       func() (string, error) { return configPrep() },
+			NewHubPublisher: hubPublisher,
+			FindSecret: func(name string, b []byte) (string, bool) {
+				s, found := sync.FindSecret(name, b)
+				return s.String(), found
+			},
 		}),
 		"confdir": confdir.Command(),
 		"cloud": cloudcmd.Command(cloudcmd.Deps{

@@ -143,15 +143,16 @@ func Command(deps CommandDeps) *internal.Command {
 	}
 	c := &internal.Command{
 		Name: "profiles",
-		Desc: "List, install, update and trust profiles",
-		HelpText: "profiles [list|install|update|trust]. Lists the profiles under <config-dir>/profiles.\n\n" +
+		Desc: "List, install, update, trust and publish profiles",
+		HelpText: "profiles [list|install|update|trust|publish]. Lists the profiles under <config-dir>/profiles.\n\n" +
 			Help + "\n\n" + RemoteHelp + `
 
 Examples:
   clai profiles
   clai -p gopher q refactor this file
   clai -prp cchub:lorentz/trade-bot@3 q 'Do your hourly run.'
-  clai profiles install cchub:lorentz/trade-bot@3`,
+  clai profiles install cchub:lorentz/trade-bot@3
+  clai profiles publish trade-bot`,
 	}
 	nonInteractive := &internal.NonInteractiveFlag{}
 	c.Register = nonInteractive.Register
@@ -177,6 +178,7 @@ Examples:
 		"list":    profilesList,
 		"trust":   remoteSub("trust", "Trust a remote profile target", trustHelp, 1, 1, func(ctx context.Context, a []string) error { return deps.Trust(ctx, a[0]) }),
 		"install": remoteSub("install", "Install a remote profile target as a local profile", installHelp, 1, 2, func(ctx context.Context, a []string) error { return deps.Install(ctx, a[0], at(a, 1)) }),
+		"publish": publishCommand(deps),
 		"update":  remoteSub("update", "Update installed profiles to their newest version", updateHelp, 0, 1, func(ctx context.Context, a []string) error { return deps.Update(ctx, at(a, 0)) }),
 	}
 	return c

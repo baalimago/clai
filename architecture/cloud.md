@@ -21,7 +21,7 @@ for the login).
 
 | File | Purpose |
 |---|---|
-| `internal/cloud/client.go` | `Client`: `Do`, `PostJSON`; `APIError` (with `URL` for a page that fixes it), `TransportError`; `StartDevice`, `PollDevice`, `Me`, `RevokeCurrent` |
+| `internal/cloud/client.go` | `Client`: `Do`, `PostJSON`; `APIError` (with `URL` for a page that fixes it, and `Suggested`, the handle the Hub offers with `handle_required`), `TransportError`; `StartDevice`, `PollDevice`, `Me`, `RevokeCurrent` |
 | `internal/cloud/login.go` | `LoginFlow.Run`: start, show the code, poll until approved, denied or expired |
 | `internal/cloud/credentials.go` | `<config>/cloud/credentials.json` (0600); `CLAI_CLOUD_TOKEN`, `CLAI_CLOUD_URL` |
 | `internal/cloud/sync/paths.go` | `Store`, `Allowed` (mirrors the server's `validPath`), `StoreOf` |

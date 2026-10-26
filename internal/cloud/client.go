@@ -30,6 +30,8 @@ type APIError struct {
 	Missing []string
 	// URL is a page that fixes the error, such as Billing and usage.
 	URL string
+	// Suggested is the handle the Hub offers with handle_required.
+	Suggested string
 }
 
 func (e *APIError) Error() string {
@@ -140,17 +142,18 @@ func (c *Client) PostJSON(ctx context.Context, path string, in, out any) error {
 
 func decodeAPIError(res *http.Response) error {
 	var body struct {
-		Error   string   `json:"error"`
-		Message string   `json:"message"`
-		Missing []string `json:"missing"`
-		URL     string   `json:"url"`
+		Error     string   `json:"error"`
+		Message   string   `json:"message"`
+		Missing   []string `json:"missing"`
+		URL       string   `json:"url"`
+		Suggested string   `json:"suggested"`
 	}
 	b, _ := io.ReadAll(io.LimitReader(res.Body, 64<<10))
 	if json.Unmarshal(b, &body) != nil || body.Error == "" {
 		body.Error = http.StatusText(res.StatusCode)
 		body.Message = strings.TrimSpace(string(b))
 	}
-	return &APIError{Status: res.StatusCode, Code: body.Error, Message: body.Message, Missing: body.Missing, URL: body.URL}
+	return &APIError{Status: res.StatusCode, Code: body.Error, Message: body.Message, Missing: body.Missing, URL: body.URL, Suggested: body.Suggested}
 }
 
 // DeviceCode is the answer to the start of a CLI login.
