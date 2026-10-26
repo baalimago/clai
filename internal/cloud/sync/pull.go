@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -113,21 +114,39 @@ func (e *Engine) Pull(ctx context.Context, store Store, opts PullOptions) (PullR
 }
 
 // applyAll downloads what the entries need in bundles, a window at a time,
-// and applies each window in order.
+// and applies each window in order while the next one downloads.
 func (e *Engine) applyAll(ctx context.Context, store Store, st *state, local map[string]LocalFile, entries []RemoteEntry, mode Mode, res *PullResult) error {
 	e.cache = &blobCache{blobs: map[string][]byte{}, uses: map[string]int{}}
 	defer func() { e.cache = nil }()
-	windows, d := pullWindows(store, st, local, entries)
+	windows, d := pullWindows(store, st, local, entries, cmp.Or(e.window, pullWindow))
 	e.report(d.progress())
-	for _, w := range windows {
-		if err := e.prefetch(ctx, w, st, local, d); err != nil {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	// prefetch reads local and st while apply writes them, so it is given
+	// what each window needs before apply starts on the one before.
+	start := func(w []RemoteEntry) chan error {
+		need := e.needed(w, st, local, d)
+		done := make(chan error, 1)
+		go func() { done <- e.prefetch(ctx, need, d) }()
+		return done
+	}
+	next := start(windows[0])
+	for i, w := range windows {
+		if err := <-next; err != nil {
 			return err
+		}
+		if i+1 < len(windows) {
+			next = start(windows[i+1])
 		}
 		for _, remote := range w {
 			if !Allowed(store, remote.Path) {
 				continue
 			}
 			if err := e.apply(ctx, store, st, local, remote, mode, res); err != nil {
+				cancel()
+				if i+1 < len(windows) {
+					<-next
+				}
 				return err
 			}
 			if remote.Commit > st.Commit {

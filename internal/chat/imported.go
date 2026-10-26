@@ -381,19 +381,17 @@ func globEscape(s string) string {
 
 // ReindexPulled brings the chat index up to date with the conversation
 // files a cloud sync wrote or removed (paths relative to confDir).
-func ReindexPulled(confDir string, written, removed []string) error {
+func ReindexPulled(confDir string, written, removed []string, progress func(done, total int)) error {
 	convDir := conversationsDir(confDir)
-	var chats []pub_models.Chat
 	var errs []error
-	for _, rel := range written {
-		c, err := FromPath(filepath.Join(confDir, filepath.FromSlash(rel)))
-		if err != nil {
-			errs = append(errs, err)
-			continue
+	for start := 0; start < len(written); start += reindexBatch {
+		batch := written[start:min(start+reindexBatch, len(written))]
+		chats, err := readPulled(confDir, batch)
+		errs = append(errs, err, UpsertChatIndexBatch(convDir, chats))
+		if progress != nil {
+			progress(start+len(batch), len(written))
 		}
-		chats = append(chats, c)
 	}
-	errs = append(errs, UpsertChatIndexBatch(convDir, chats))
 	if len(removed) > 0 && !SkipIndex {
 		gone := map[string]bool{}
 		for _, rel := range removed {
@@ -412,6 +410,41 @@ func ReindexPulled(confDir string, written, removed []string) error {
 		errs = append(errs, err)
 	}
 	return errors.Join(errs...)
+}
+
+// reindexBatch is how many pulled chats are read into memory and indexed
+// at once; reindexWorkers read them.
+const (
+	reindexBatch   = 256
+	reindexWorkers = 8
+)
+
+// readPulled parses the chats at rels, in order, on reindexWorkers
+// goroutines, leaving out and reporting the ones that do not parse.
+func readPulled(confDir string, rels []string) ([]pub_models.Chat, error) {
+	chats := make([]pub_models.Chat, len(rels))
+	errs := make([]error, len(rels))
+	next := make(chan int)
+	var wg stdsync.WaitGroup
+	for range min(reindexWorkers, len(rels)) {
+		wg.Go(func() {
+			for i := range next {
+				chats[i], errs[i] = FromPath(filepath.Join(confDir, filepath.FromSlash(rels[i])))
+			}
+		})
+	}
+	for i := range rels {
+		next <- i
+	}
+	close(next)
+	wg.Wait()
+	read := chats[:0]
+	for i, c := range chats {
+		if errs[i] == nil {
+			read = append(read, c)
+		}
+	}
+	return read, errors.Join(errs...)
 }
 
 // importedFiles lists every export, for the asset sweep.

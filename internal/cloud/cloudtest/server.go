@@ -256,6 +256,9 @@ func (s *Server) blob(w http.ResponseWriter, r *http.Request, sha string) {
 	reply(w, 201, map[string]string{"sha256": sha})
 }
 
+// MaxBundleBlobs is clai-cloud's BATCH_MAX_BLOBS and FETCH_MAX_BLOBS.
+const MaxBundleBlobs = 250
+
 func (s *Server) batch(w http.ResponseWriter, r *http.Request) {
 	if s.RefuseBlobs != nil {
 		problem(w, *s.RefuseBlobs)
@@ -272,6 +275,10 @@ func (s *Server) batch(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := r.ParseMultipartForm(16 << 20); err != nil {
 		problem(w, Problem{Status: 400, Code: "invalid_request", Message: err.Error()})
+		return
+	}
+	if len(r.MultipartForm.File) > MaxBundleBlobs {
+		problem(w, Problem{Status: 400, Code: "invalid_request", Message: "too many files in one batch"})
 		return
 	}
 	results := map[string]string{}
@@ -302,6 +309,10 @@ func (s *Server) batch(w http.ResponseWriter, r *http.Request) {
 func (s *Server) fetch(w http.ResponseWriter, r *http.Request) {
 	var in struct{ Hashes []string }
 	_ = json.NewDecoder(r.Body).Decode(&in)
+	if len(in.Hashes) > MaxBundleBlobs {
+		problem(w, Problem{Status: 400, Code: "invalid_request", Message: "too many hashes in one fetch"})
+		return
+	}
 	missing := []string{}
 	for _, h := range in.Hashes {
 		if _, ok := s.Blobs[h]; !ok {

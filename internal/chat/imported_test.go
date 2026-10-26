@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync/atomic"
@@ -181,7 +182,7 @@ func TestReindexPulled(t *testing.T) {
 		t.Fatal(err)
 	}
 	write(pub_models.Chat{ID: "new", Messages: []pub_models.Message{{Role: "user", Content: "hello"}}})
-	if err := ReindexPulled(confDir, []string{"conversations/new.json"}, []string{"conversations/old.json"}); err != nil {
+	if err := ReindexPulled(confDir, []string{"conversations/new.json"}, []string{"conversations/old.json"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	rows, err := readChatIndex(convDir)
@@ -191,7 +192,40 @@ func TestReindexPulled(t *testing.T) {
 	if len(rows) != 1 || rows[0].ID != "new" {
 		t.Fatalf("rows %+v", rows)
 	}
-	if err := ReindexPulled(confDir, []string{"conversations/missing.json"}, nil); err == nil {
+	if err := ReindexPulled(confDir, []string{"conversations/missing.json"}, nil, nil); err == nil {
 		t.Fatal("a missing file reindexed fine")
+	}
+}
+
+func TestReindexPulled_manyInBatchesWithProgress(t *testing.T) {
+	_, confDir := newTestHandler(t)
+	convDir := conversationsDir(confDir)
+	seed := pub_models.Chat{ID: "seed", Messages: []pub_models.Message{{Role: "user", Content: "hi"}}}
+	if err := UpsertChatIndexBatch(convDir, []pub_models.Chat{seed}); err != nil {
+		t.Fatal(err)
+	}
+	var written []string
+	for i := range 600 {
+		c := pub_models.Chat{ID: fmt.Sprintf("c%03d", i), Messages: []pub_models.Message{{Role: "user", Content: "hello"}}}
+		b, _ := json.Marshal(c)
+		if err := os.WriteFile(conversationPathFromDir(convDir, c.ID), b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		written = append(written, "conversations/"+c.ID+".json")
+	}
+	var calls [][2]int
+	err := ReindexPulled(confDir, written, nil, func(done, total int) { calls = append(calls, [2]int{done, total}) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) < 2 || calls[len(calls)-1] != [2]int{600, 600} {
+		t.Fatalf("progress calls = %v, want several ending at 600/600", calls)
+	}
+	rows, err := readChatIndex(convDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 601 {
+		t.Fatalf("%d index rows, want 601", len(rows))
 	}
 }

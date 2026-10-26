@@ -378,7 +378,10 @@ func TestPull_conversationMerges(t *testing.T) {
 		srv := cloudtest.New(t)
 		a := newMachine(t, srv, "tok-a")
 		written := &[]string{}
-		a.Hooks.Pulled = func(_ string, w, _ []string) error { *written = append(*written, w...); return nil }
+		a.Hooks.Pulled = func(_ string, w, _ []string, _ func(done, total int)) error {
+			*written = append(*written, w...)
+			return nil
+		}
 		a.write("conversations/c1.json", chat(m1))
 		a.commit(StoreConversations, "")
 		return srv, a, written

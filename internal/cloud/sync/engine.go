@@ -24,8 +24,8 @@ type Hooks struct {
 	// status --imports shows it.
 	Pending func(ctx context.Context, confDir string) ([]PendingImport, error)
 	// Pulled is told which conversation files a pull wrote or removed, so
-	// the chat index can follow.
-	Pulled func(confDir string, written, removed []string) error
+	// the chat index can follow, telling progress how many it has indexed.
+	Pulled func(confDir string, written, removed []string, progress func(done, total int)) error
 }
 
 // ImportChange is how a conversation in another tool differs from its
@@ -59,6 +59,8 @@ type Engine struct {
 	Progress func(Progress)
 	// cache holds a pull's bundled downloads until they are written.
 	cache *blobCache
+	// window overrides pullWindow (tests).
+	window int64
 }
 
 func (e *Engine) api() api { return api{c: e.Client} }
@@ -167,5 +169,7 @@ func (e *Engine) hookPulled(written, removed []string) error {
 	if e.Hooks.Pulled == nil || (len(written) == 0 && len(removed) == 0) {
 		return nil
 	}
-	return e.Hooks.Pulled(e.ConfDir, written, removed)
+	return e.Hooks.Pulled(e.ConfDir, written, removed, func(done, total int) {
+		e.report(Progress{Store: StoreConversations, Phase: PhaseIndexing, Done: done, Total: total})
+	})
 }

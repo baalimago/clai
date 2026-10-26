@@ -22,6 +22,7 @@ const (
 	PhaseUploading   Phase = "uploading"
 	PhaseCommitting  Phase = "committing"
 	PhaseDownloading Phase = "downloading"
+	PhaseIndexing    Phase = "indexing"
 )
 
 // Progress is one step forward of a pull, commit or status. Total and
@@ -122,7 +123,7 @@ const (
 	// batchMaxBlobs and batchMaxBytes stay under clai-cloud's
 	// BATCH_MAX_BLOBS and BATCH_MAX_BYTES (8 MiB), with room for the
 	// multipart framing.
-	batchMaxBlobs = 100
+	batchMaxBlobs = 250
 	batchMaxBytes = 6 << 20
 )
 
@@ -142,27 +143,8 @@ func (e *BlobRefusedError) Error() string {
 	return fmt.Sprintf("upload %s: the server answered %s", e.Path, e.Outcome)
 }
 
-// packUploads puts small files into batches and every large one alone.
 func packUploads(jobs []uploadJob) [][]uploadJob {
-	var packs [][]uploadJob
-	var cur []uploadJob
-	var curBytes int64
-	for _, j := range jobs {
-		if j.size > batchBlobMax {
-			packs = append(packs, []uploadJob{j})
-			continue
-		}
-		if len(cur) == batchMaxBlobs || curBytes+j.size > batchMaxBytes {
-			packs = append(packs, cur)
-			cur, curBytes = nil, 0
-		}
-		cur = append(cur, j)
-		curBytes += j.size
-	}
-	if len(cur) > 0 {
-		packs = append(packs, cur)
-	}
-	return packs
+	return pack(jobs, func(j uploadJob) int64 { return j.size }, packLimits{count: batchMaxBlobs, bytes: batchMaxBytes, alone: batchBlobMax})
 }
 
 func packBytes(pack []uploadJob) int64 {

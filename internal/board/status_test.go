@@ -136,3 +136,19 @@ func TestStatus_DetailFollowsTheElapsedTime(t *testing.T) {
 		t.Fatalf("an empty detail still drew %q", last)
 	}
 }
+
+func TestStatus_FollowsTheTerminalWhenItNarrows(t *testing.T) {
+	ancli.UseColor = false
+	out := &bytes.Buffer{}
+	s := fixedStatus(out, true, 0)
+	width := 80
+	s.measure = func() int { return width }
+	s.Start()
+	width = 10
+	s.tick()
+	s.Stop()
+	frames := strings.Split(out.String(), "\r\x1b[2K")
+	if len(frames) < 3 || frames[2] != "▸ generat…" {
+		t.Fatalf("frames = %q, want the second cut to 10 columns", frames)
+	}
+}

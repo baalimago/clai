@@ -32,13 +32,14 @@ for the login).
 | `internal/cloud/sync/pull.go` | `Engine.Pull`, the first pull's question, `Mode` |
 | `internal/cloud/sync/commit.go` | `Engine.Commit`, `BehindError`, `ConflictsOpenError` |
 | `internal/cloud/sync/progress.go` | `Progress` and `Phase` (reported through `Engine.Progress`), `uploadMissing` and `packUploads` (small files batched, 8 requests at once), `BlobRefusedError`, `checkBilling`, `BillingBlockedError` |
-| `internal/cloud/sync/download.go` | `applyAll`'s helpers: `pullWindows` (64 MB at a time), `prefetch` (bundles of 100 files, 8 at once), `blobCache`, which `Engine.fetch` reads first |
+| `internal/cloud/sync/download.go` | `applyAll`'s helpers: `pullWindows` (64 MB at a time), `needed`, `prefetch` (bundles of up to 250 files, 8 at once), `blobCache`, which `Engine.fetch` reads first |
+| `internal/cloud/sync/pack.go` | `pack`: groups files into requests smallest first, a large file alone, largest request first; used by uploads and downloads |
 | `internal/cloud/sync/resolve.go`, `diff.go`, `status.go`, `merge.go` | `Resolve`, `Diff`, `Status`/`Log`, the conversation merge and fork |
 | `internal/cloud/cloudcmd/` | `Command`: the subcommands and their output; `ExitDecisionNeeded` |
 | `internal/cloud/cloudcmd/view.go` | `statusLines`, `importLines`, `blockedLines`, `style`: the `▸ store · detail` look and the grouped status table |
 | `internal/cloud/cloudcmd/look.go` | `grid` and the lines of every other command: login, whoami, pull and its first-pull question (`firstPullChoices`, `parseChoice`), conflicts, a refused commit, resolve, log, diff |
 | `internal/cloud/cloudtest/` | An in-memory clai.chat for tests |
-| `internal/chat/imported.go` | `PendingForeign` (the preview), `ExportForeign` (8 at once, manifest checkpointed), `importedReader`, `ReindexPulled` |
+| `internal/chat/imported.go` | `PendingForeign` (the preview), `ExportForeign` (8 at once, manifest checkpointed), `importedReader`, `ReindexPulled` (256 at a time, read 8 at once, with progress) |
 | `internal/cli/cli.go` | Wires the command, its hooks and the exit-4 seam |
 
 ## Flow
@@ -49,8 +50,9 @@ login    POST /cli/v1/start {client} -> user code, approve at /cli/login#CODE
          save credentials, forget any sync state. Nothing is pulled or committed.
 
 status   plan (local, offline) + GET stores/<s>/changes?since=cursor (what the server has)
-pull     changes since cursor -> the blobs it needs, POST blobs/fetch: gzipped bundles of 100, 8 at once,
-         64 MB a window (a server without bundles: GET each) -> per path:
+pull     changes since cursor -> the blobs it needs, packed by size, POST blobs/fetch: gzipped bundles
+         of up to 250, 8 at once, 64 MB a window, the next window downloading while this one is
+         applied (a server without bundles: GET each) -> per path:
            mine unchanged since base          -> take theirs (update, add, delete)
            same bytes                         -> record the base
            conversation, both changed         -> longer copy wins, or theirs becomes a fork
@@ -59,7 +61,7 @@ pull     changes since cursor -> the blobs it needs, POST blobs/fetch: gzipped b
                       default                 -> keep mine, theirs to cloud/theirs/<path>: a conflict
 commit   refuse while conflicts are open (exit 4)
          plan -> conversations that grow: GET /me, no card or overdue -> BillingBlockedError, nothing uploaded
-         -> missing blobs -> POST blobs/batch, gzipped (files up to 512 kB, 100 a request) or PUT blobs/<sha>,
+         -> missing blobs -> POST blobs/batch, gzipped (files up to 512 kB, up to 250 a request, packed by size) or PUT blobs/<sha>,
             8 requests at once -> POST stores/<s>/commit {message, changes[base_rev]}
          the server applies all or nothing: one stale base_rev -> BehindError (exit 4)
 resolve  -mine keeps the file as it is; -theirs trashes it and takes cloud/theirs/<path>
@@ -123,7 +125,8 @@ log      GET stores/<s>/log?limit=
   `clai cloud commit` then commits the config store and says why the
   conversations were left out; naming the conversations is an error.
 - **Progress.** Status, pull and commit report `Progress` (discovering,
-  exporting, scanning, hashing, uploading, committing, downloading) to
+  exporting, scanning, hashing, uploading, committing, downloading,
+  indexing: the chat index taking in what a pull wrote) to
   `Engine.Progress`. `scan` walks first and hashes second, so hashing
   reports against a known total and counts the files whose cached hash
   still holds (`Reused`). Downloading counts distinct contents to fetch;
@@ -132,7 +135,10 @@ log      GET stores/<s>/log?limit=
   until its last copy is written). `cloudcmd` draws it as a `board.Status` line on
   stderr, only on a terminal, and stops it before any output or question.
   Once a phase has run 2 seconds the line adds its pace and the time left,
-  by bytes when the phase counts them and by files otherwise.
+  by bytes when the phase counts them and by files otherwise; the time left
+  is the slower of the two estimates, since many small files are bound by
+  requests rather than bandwidth. The line is cut to the terminal's width,
+  measured every frame.
 - **Nothing is done twice.** Commit saves the hash cache right after the
   plan, before billing, uploads or the commit can fail, so the next run
   reads only files that moved. The export from other tools writes its

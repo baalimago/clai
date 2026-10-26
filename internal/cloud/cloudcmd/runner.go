@@ -477,6 +477,8 @@ func progressText(p sync.Progress, elapsed time.Duration) string {
 			line += " · " + count(p.Copies) + " " + plural(p.Copies, "copy", "copies")
 		}
 		return line + pace(p, elapsed)
+	case sync.PhaseIndexing:
+		return "indexing " + count(p.Done) + "/" + count(p.Total) + " pulled chats" + pace(p, elapsed)
 	case sync.PhaseCommitting:
 		return "recording the commit"
 	}
@@ -485,21 +487,24 @@ func progressText(p sync.Progress, elapsed time.Duration) string {
 
 // pace is " · <rate> · <time> left", by bytes when the phase counts them
 // and by files otherwise; empty until the phase has run long enough to tell.
+// Time left is the slower of the bytes' and the files' estimates, since a
+// pull of many small files is bound by requests, not bandwidth.
 func pace(p sync.Progress, elapsed time.Duration) string {
 	if elapsed < paceAfter || p.Done == 0 || p.Total == 0 {
 		return ""
 	}
 	secs := elapsed.Seconds()
+	files := float64(p.Done) / secs
+	left := float64(p.Total-p.Done) / files
 	if p.TotalBytes > 0 && p.Bytes > 0 {
 		rate := float64(p.Bytes) / secs
-		return " · " + human(int64(rate)) + "/s · " + remaining(float64(p.TotalBytes-p.Bytes)/rate) + " left"
+		return " · " + human(int64(rate)) + "/s · " + remaining(max(left, float64(p.TotalBytes-p.Bytes)/rate)) + " left"
 	}
-	rate := float64(p.Done) / secs
-	perSec := fmt.Sprintf("%.0f", rate)
-	if rate < 10 {
-		perSec = fmt.Sprintf("%.1f", rate)
+	perSec := fmt.Sprintf("%.0f", files)
+	if files < 10 {
+		perSec = fmt.Sprintf("%.1f", files)
 	}
-	return " · " + perSec + " files/s · " + remaining(float64(p.Total-p.Done)/rate) + " left"
+	return " · " + perSec + " files/s · " + remaining(left) + " left"
 }
 
 func remaining(secs float64) string {

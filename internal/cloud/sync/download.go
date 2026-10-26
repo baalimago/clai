@@ -12,8 +12,11 @@ import (
 const (
 	// fetchMaxBlobs and fetchMaxBytes stay under clai-cloud's
 	// FETCH_MAX_BLOBS and FETCH_MAX_BYTES (16 MiB).
-	fetchMaxBlobs = 100
+	fetchMaxBlobs = 250
 	fetchMaxBytes = 12 << 20
+	// fetchAlone is the largest file that shares a bundle; a larger one
+	// downloads in a bundle of its own beside the small ones.
+	fetchAlone = 4 << 20
 	// pullWindow bounds the bytes a pull holds in memory between fetching
 	// them and writing them out.
 	pullWindow      = 64 << 20
@@ -84,8 +87,8 @@ func needsBlob(store Store, st *state, local map[string]LocalFile, remote Remote
 }
 
 // pullWindows splits entries, in order, into runs whose needed bytes stay
-// under pullWindow, and counts what the pull will download.
-func pullWindows(store Store, st *state, local map[string]LocalFile, entries []RemoteEntry) ([][]RemoteEntry, *pullDownloads) {
+// under window, and counts what the pull will download.
+func pullWindows(store Store, st *state, local map[string]LocalFile, entries []RemoteEntry, window int64) ([][]RemoteEntry, *pullDownloads) {
 	d := &pullDownloads{store: store, uses: map[string]int{}, fetched: map[string]bool{}}
 	var windows [][]RemoteEntry
 	start := 0
@@ -104,7 +107,7 @@ func pullWindows(store Store, st *state, local map[string]LocalFile, entries []R
 		}
 		d.total++
 		d.totalBytes += r.Size
-		if held > 0 && held+r.Size > pullWindow {
+		if held > 0 && held+r.Size > window {
 			windows = append(windows, entries[start:i])
 			start, held = i, 0
 		}
@@ -113,31 +116,29 @@ func pullWindows(store Store, st *state, local map[string]LocalFile, entries []R
 	return append(windows, entries[start:]), d
 }
 
-// prefetch downloads the blobs a window needs, in bundles, on
-// downloadWorkers goroutines. A blob too large for a bundle is left for
-// fetch to get alone.
-func (e *Engine) prefetch(ctx context.Context, window []RemoteEntry, st *state, local map[string]LocalFile, d *pullDownloads) error {
-	if e.cache.off {
-		return nil
-	}
-	var packs [][]RemoteEntry
-	var cur []RemoteEntry
-	var curBytes int64
+// needed lists the blobs a window will read that no earlier window fetched.
+func (e *Engine) needed(window []RemoteEntry, st *state, local map[string]LocalFile, d *pullDownloads) []RemoteEntry {
+	var want []RemoteEntry
 	for _, r := range window {
 		if !needsBlob(d.store, st, local, r) || d.fetched[r.SHA256] || r.Size > fetchMaxBytes {
 			continue
 		}
 		d.fetched[r.SHA256] = true
-		if len(cur) == fetchMaxBlobs || (len(cur) > 0 && curBytes+r.Size > fetchMaxBytes) {
-			packs = append(packs, cur)
-			cur, curBytes = nil, 0
-		}
-		cur = append(cur, r)
-		curBytes += r.Size
+		want = append(want, r)
 	}
-	if len(cur) > 0 {
-		packs = append(packs, cur)
+	return want
+}
+
+// prefetch downloads want, packed by size, on downloadWorkers goroutines.
+// A blob too large for a bundle is left for fetch to get alone.
+func (e *Engine) prefetch(ctx context.Context, want []RemoteEntry, d *pullDownloads) error {
+	e.cache.mu.Lock()
+	off := e.cache.off
+	e.cache.mu.Unlock()
+	if off {
+		return nil
 	}
+	packs := pack(want, func(r RemoteEntry) int64 { return r.Size }, packLimits{count: fetchMaxBlobs, bytes: fetchMaxBytes, alone: fetchAlone})
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	queue := make(chan []RemoteEntry)
