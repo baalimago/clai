@@ -523,9 +523,9 @@ func (cq *ChatHandler) continueRow(ctx context.Context, pr preparedRows, row cha
 		}
 		return cq.continueNative(chat)
 	}
-	reader, ok := pr.byName[row.Source]
-	if !ok {
-		return fmt.Errorf("unknown source reader %q", row.Source)
+	reader, err := pr.readerFor(row)
+	if err != nil {
+		return err
 	}
 	foreign, err := cq.readForeignChat(ctx, reader, row.SourceID)
 	if err != nil {
@@ -785,6 +785,20 @@ type preparedRows struct {
 	byName map[string]vendors.SourceReader
 }
 
+// readerFor is the reader that listed a foreign row: an export is read back
+// by the imported reader, though it shows its original tool.
+func (pr preparedRows) readerFor(row chatListRow) (vendors.SourceReader, error) {
+	name := row.Source
+	if row.Reader != "" {
+		name = row.Reader
+	}
+	reader, ok := pr.byName[name]
+	if !ok {
+		return nil, fmt.Errorf("unknown source reader %q", name)
+	}
+	return reader, nil
+}
+
 // prepareListRows derives the display view for the given group context from
 // an already-built row set — pure in-memory work. A non-nil inDir predicate
 // dir-scopes the view; member rows are filtered BEFORE group collapsing, so
@@ -1013,13 +1027,9 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 			continue
 		}
 
-		readerName := sel.Source
-		if sel.Reader != "" {
-			readerName = sel.Reader
-		}
-		reader, ok := pr.byName[readerName]
-		if !ok {
-			return fmt.Errorf("unknown source reader %q", readerName)
+		reader, err := pr.readerFor(sel)
+		if err != nil {
+			return err
 		}
 		foreign, err := cq.readForeignChat(ctx, reader, sel.SourceID)
 		if err != nil {

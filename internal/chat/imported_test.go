@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/baalimago/clai/internal/vendors"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -156,6 +158,27 @@ func TestExportForeignAndImportedReader(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("the export is not listed on a machine without the tool")
+	}
+}
+
+func TestImportedReader_previewKeepsWholeRunes(t *testing.T) {
+	_, confDir := newTestHandler(t)
+	convDir := conversationsDir(confDir)
+	c := pub_models.Chat{ID: "x", Source: "codex", SourceID: "s1", Messages: []pub_models.Message{{Role: "user", Content: "a" + strings.Repeat("é", 120)}}}
+	b, _ := json.Marshal(c)
+	p := importedPath(convDir, "codex", "s1")
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := importedReader{convDir: convDir}.Discover(context.Background(), nil)
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("rows %v %v", rows, err)
+	}
+	if !utf8.ValidString(rows[0].FirstUserMessage) {
+		t.Fatalf("preview %q is not valid UTF-8", rows[0].FirstUserMessage)
 	}
 }
 

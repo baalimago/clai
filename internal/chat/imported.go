@@ -340,10 +340,7 @@ func importedRow(p string) (vendors.SourceRow, error) {
 	}
 	if msg, err := c.FirstUserMessage(); err == nil {
 		row.FullFirstUserMessage = msg.Describe()
-		row.FirstUserMessage = strings.Join(strings.Fields(row.FullFirstUserMessage), " ")
-		if len(row.FirstUserMessage) > 100 {
-			row.FirstUserMessage = row.FirstUserMessage[:100]
-		}
+		row.FirstUserMessage = vendors.TruncateOneLine(strings.Join(strings.Fields(row.FullFirstUserMessage), " "), 100)
 	}
 	for i := len(c.Queries) - 1; i >= 0; i-- {
 		if c.Queries[i].Model != "" {

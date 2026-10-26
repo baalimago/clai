@@ -48,9 +48,9 @@ func (cq *ChatHandler) listedChat(ctx context.Context, paginator *ChatIndexPagin
 	if foreign == foreignRefuse {
 		return pub_models.Chat{}, fmt.Errorf("%w: %s session %q", ErrForeignRowSelected, sel.Source, sel.SourceID)
 	}
-	reader, ok := pr.byName[sel.Source]
-	if !ok {
-		return pub_models.Chat{}, fmt.Errorf("unknown source reader %q", sel.Source)
+	reader, err := pr.readerFor(sel)
+	if err != nil {
+		return pub_models.Chat{}, err
 	}
 	ext, err := cq.readForeignChat(ctx, reader, sel.SourceID)
 	if err != nil {

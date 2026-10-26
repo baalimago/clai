@@ -118,3 +118,26 @@ func TestCont_sendsTheTrailingPrompt(t *testing.T) {
 		}
 	})
 }
+
+// TestPreparedRows_readerFor pins that an exported row is read back by the
+// reader that listed it, not by its original tool's reader.
+func TestPreparedRows_readerFor(t *testing.T) {
+	tool := stubSourceReader{name: "claude-code"}
+	imported := stubSourceReader{name: "imported"}
+	pr := preparedRows{byName: map[string]vendors.SourceReader{"claude-code": tool, "imported": imported}}
+	for _, c := range []struct {
+		row  chatListRow
+		want string
+	}{
+		{chatListRow{Source: "claude-code"}, "claude-code"},
+		{chatListRow{Source: "claude-code", Reader: "imported"}, "imported"},
+	} {
+		got, err := pr.readerFor(c.row)
+		if err != nil || got.Source() != c.want {
+			t.Fatalf("readerFor(%+v) = %v, %v; want %s", c.row, got, err, c.want)
+		}
+	}
+	if _, err := pr.readerFor(chatListRow{Source: "nope"}); err == nil {
+		t.Fatal("want an error for an unknown reader")
+	}
+}
