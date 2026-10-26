@@ -348,7 +348,7 @@ func runSync(ctx context.Context, deps CommandDeps, args []string, background bo
 	var errs []error
 	// A background sync goes round again when a command asked for one
 	// while it ran, at most a few times.
-	for round := 0; round < 3; round++ {
+	for range 3 {
 		errs = errs[:0]
 		for _, s := range stores {
 			rep, err := engine.Sync(ctx, s)

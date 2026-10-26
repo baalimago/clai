@@ -59,7 +59,7 @@ func Allowed(store Store, rel string) bool {
 			return false
 		}
 	}
-	for _, seg := range strings.Split(rel, "/") {
+	for seg := range strings.SplitSeq(rel, "/") {
 		if seg == "" || strings.HasPrefix(seg, ".") || len(seg) > 255 {
 			return false
 		}

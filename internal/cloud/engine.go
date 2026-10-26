@@ -100,7 +100,7 @@ func (e *Engine) Sync(ctx context.Context, store Store) (Report, error) {
 	if err != nil {
 		return rep, &SyncError{Store: store, Cause: err}
 	}
-	for round := 0; round < syncRounds; round++ {
+	for range syncRounds {
 		if err := e.pull(ctx, store, st, &rep); err != nil {
 			return rep, e.finish(store, st, &rep, err)
 		}

@@ -39,7 +39,7 @@ func acquire(cacheDir string, now time.Time) (func(), error) {
 		return nil, err
 	}
 	p := lockPath(cacheDir)
-	for attempt := 0; attempt < 2; attempt++ {
+	for range 2 {
 		f, err := os.OpenFile(p, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 		if err == nil {
 			_, _ = fmt.Fprintf(f, "%d\n", os.Getpid())
