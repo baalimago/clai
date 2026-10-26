@@ -12,10 +12,12 @@ import (
 	"os"
 	"runtime/pprof"
 	"strings"
+	"time"
 
 	"github.com/baalimago/clai/internal"
 	"github.com/baalimago/clai/internal/audio"
 	"github.com/baalimago/clai/internal/chat"
+	"github.com/baalimago/clai/internal/cloud"
 	"github.com/baalimago/clai/internal/confdir"
 	"github.com/baalimago/clai/internal/debugflags"
 	"github.com/baalimago/clai/internal/imagegen"
@@ -87,6 +89,9 @@ type Deps struct {
 	NewSummarizer     func(confDir string) (models.Summarizer, error)
 	ForeignCache      func() vendors.SourceCache
 	NewImageGenerator imagegen.NewGeneratorFunc
+	// SpawnSync starts the background cloud sync after a command; nil
+	// never starts one.
+	SpawnSync cloud.Spawner
 }
 
 // DefaultDeps returns the production collaborators: the real summarizer, the
@@ -96,6 +101,7 @@ func DefaultDeps() Deps {
 		NewSummarizer:     summary.NewAgentSummarizer,
 		ForeignCache:      chat.DefaultForeignCache,
 		NewImageGenerator: route.NewGenerator,
+		SpawnSync:         cloud.SpawnSelf,
 	}
 }
 
@@ -151,6 +157,20 @@ func Commands(deps Deps) map[string]cmd.Command {
 		"mcp":            mcp.Command(),
 		"profiles":       profiles.Command(),
 		"confdir":        confdir.Command(),
+		"cloud": cloud.Command(cloud.CommandDeps{
+			ConfDir:  utils.GetClaiConfigDir,
+			CacheDir: utils.GetClaiCacheDir,
+			Hooks: cloud.Hooks{
+				Export: func(ctx context.Context, confDir string) error {
+					var cache vendors.SourceCache
+					if deps.ForeignCache != nil {
+						cache = deps.ForeignCache()
+					}
+					return chat.ExportForeign(ctx, confDir, cache)
+				},
+				Pulled: chat.ReindexPulled,
+			},
+		}),
 	}
 }
 
@@ -176,7 +196,13 @@ func Run(args []string, deps Deps) int {
 	cfgDir, _ := utils.GetClaiConfigDir()
 	cacheDir, _ := utils.GetClaiCacheDir()
 	usage := strings.NewReplacer("CONFIG_DIR", cfgDir, "CACHE_DIR", cacheDir).Replace(usageTemplate)
-	return cmd.Run(ctx, append([]string{"clai"}, args...), Commands(deps), usage)
+	code := cmd.Run(ctx, append([]string{"clai"}, args...), Commands(deps), usage)
+	// A finished command may have written a synced file; the sync runs
+	// detached and never delays the exit (architecture/cloud.md).
+	if code == 0 && deps.SpawnSync != nil {
+		cloud.AutoSync(cfgDir, cacheDir, args, time.Now(), deps.SpawnSync)
+	}
+	return code
 }
 
 func startCPUProfile(name string) (func(), error) {

@@ -256,6 +256,9 @@ type chatListRow struct {
 	// Foreign
 	Source   string
 	SourceID string
+	// Reader names the reader that found a foreign row when it is not
+	// Source: the imported reader lists rows under their original tool.
+	Reader string
 	// OriginDir is the directory the conversation was started from,
 	// best-effort (empty when neither clai nor the source recorded one).
 	OriginDir string
@@ -381,7 +384,12 @@ func (cq *ChatHandler) foreignChatRows(ctx context.Context, readers []vendors.So
 				continue
 			}
 			shown[k] = struct{}{}
+			reader := ""
+			if r.Source() != fr.Source {
+				reader = r.Source()
+			}
 			rows = append(rows, chatListRow{
+				Reader:           reader,
 				Kind:             chatRowForeign,
 				Created:          fr.Created,
 				Source:           fr.Source,
@@ -398,7 +406,8 @@ func (cq *ChatHandler) foreignChatRows(ctx context.Context, readers []vendors.So
 }
 
 func (cq *ChatHandler) buildChatListRows(ctx context.Context, paginator *ChatIndexPaginator) ([]chatListRow, map[string]vendors.SourceReader, error) {
-	readers := allSourceReaders()
+	// The imported reader goes last, so a tool's own reader wins the dedup.
+	readers := append(allSourceReaders(), importedReader{convDir: cq.convDir})
 	byName, err := sourceReaderByName(readers)
 	if err != nil {
 		return nil, nil, err
@@ -953,9 +962,13 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 			continue
 		}
 
-		reader, ok := pr.byName[sel.Source]
+		readerName := sel.Source
+		if sel.Reader != "" {
+			readerName = sel.Reader
+		}
+		reader, ok := pr.byName[readerName]
 		if !ok {
-			return fmt.Errorf("unknown source reader %q", sel.Source)
+			return fmt.Errorf("unknown source reader %q", readerName)
 		}
 		foreign, err := cq.readForeignChat(ctx, reader, sel.SourceID)
 		if err != nil {

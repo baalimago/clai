@@ -35,6 +35,7 @@ This directory contains short design notes for key parts of **clai**. Each file 
 - **[profiles.md](./profiles.md)** — `clai profiles`: lists profile JSONs and prints a small summary; profiles are applied via `-p` flags (see CONFIG).
 - **[setup.md](./setup.md)** — `clai setup` interactive wizard for editing mode configs, vendor model files, profiles, and MCP server configs.
 - **[help.md](./help.md)** — the help system: dispatcher usage on bare `clai`, per-command `-h` (Help() + flags + examples + sub tables), profile docs in `clai profiles -h`.
+- **[cloud.md](./cloud.md)** — `clai cloud`: device login to clai.chat, the free config store and the $1/month conversation store, the pull/push sync engine with per-path compare-and-swap, conflict handling (config: server wins, local copy set aside; conversations: the longer copy wins, diverged ones fork), the credential check, the detached background sync, and the export of imported conversations.
 - **[version.md](./version.md)** — `clai version`: prints build/module version information and exits.
 
 ## UI / output

@@ -33,7 +33,7 @@ flag at that level.
 `internal/cli` is the composition root: `Commands()` builds the
 `map[string]cmd.Command` with the keys `query|q`, `chat|c`, `photo|p`,
 `video|v`, `audio|a`, `setup|s`, `version`, `replay|re`, `dir-replay|dre`,
-`tools|t`, `mcp`, `profiles`, `confdir`. Loop mode is not a command: it is
+`tools|t`, `mcp`, `profiles`, `confdir`, `cloud`. Loop mode is not a command: it is
 the `-l`/`-loop` flag of `query` (see [query.md](./query.md#loop-mode)).
 The `completion` command and the hidden `__complete` protocol are
 auto-registered by
@@ -53,6 +53,7 @@ Each command lives in its domain package and exposes a
 | tools / profiles | `internal/tools` / `internal/profiles` |
 | mcp | `internal/tools/mcp` — `mcp auth <server>` runs the OAuth flow for one server and writes its token store entry; no model call, spends nothing |
 | version / confdir | `internal/version` / `internal/confdir` |
+| cloud | `internal/cloud` — login, logout, status, sync, enable, disable; after any other command that exits 0, `Run` may start a detached `cloud sync -background` (see [cloud.md](./cloud.md)) |
 
 Every factory lives in its domain package: `text.SetupQuerier`/
 `text.CreateQuerier` (query composition), photo's run on the injected
@@ -214,7 +215,8 @@ Commands that render content without reading a mode config call
 They need the theme for role colors and the completion bell, while the
 migration pass would be a no-op under `utils.NoCreateConfig` — and
 `clai -r chat dirv2` runs on shell-prompt hot paths. `completion`,
-`__complete`, `confdir` and `version` touch no config at all.
+`__complete`, `confdir` and `version` touch no config at all. `cloud`
+reads the config dir directly and never runs the migration.
 
 Clean exits use sentinels honored by `cmd.Run` via `errors.Is`:
 `cmd.ErrUserInitiatedExit` (new code) and `table.ErrUserInitiatedExit`
