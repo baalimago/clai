@@ -307,7 +307,7 @@ func (c *Configurations) setupSystemPrompt() {
 
 // SetupInitialChat by doing all sorts of organically grown stuff. Don\'t touch this
 // code too closely. Something will break, most likely.
-func (c *Configurations) SetupInitialChat(args []string) error {
+func (c *Configurations) SetupInitialChat(ctx context.Context, args []string) error {
 	traceChatf("setup initial chat start reply_mode=%t glob=%q args=%q", c.ReplyMode, c.Glob, strings.Join(args, " "))
 	if c.Glob != "" && c.ReplyMode {
 		ancli.PrintWarn("Using glob + reply modes together might yield strange results. The globalScope will be appended after the glob messages.\n")
@@ -316,7 +316,7 @@ func (c *Configurations) SetupInitialChat(args []string) error {
 	if !c.ReplyMode {
 		c.setupSystemPrompt()
 	}
-	collected, err := c.collectInputs(args)
+	collected, err := c.collectInputs(ctx, args)
 	if err != nil {
 		return err
 	}
@@ -387,9 +387,9 @@ func (c *Configurations) SetupInitialChat(args []string) error {
 }
 
 // collectInputs gathers the -img images, the -g matches and stdin with the prompt text.
-func (c *Configurations) collectInputs(args []string) (imageinput.Collected, error) {
+func (c *Configurations) collectInputs(ctx context.Context, args []string) (imageinput.Collected, error) {
 	traceChatf("setup initial chat collecting inputs images=%d glob=%q stdin_replace=%q", len(c.ImageInputs), c.Glob, c.StdinReplace)
-	stdin, err := utils.PipedStdin()
+	stdin, err := utils.PipedStdin(ctx)
 	if err != nil {
 		return imageinput.Collected{}, fmt.Errorf("failed to setup prompt: %w", err)
 	}

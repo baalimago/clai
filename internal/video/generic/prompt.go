@@ -1,6 +1,7 @@
 package generic
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -22,7 +23,7 @@ var ErrOneInputImage = errors.New("video takes at most one input image")
 // SetupPrompts builds Prompt from args and stdin. The input image comes from
 // -img or from stdin that is wholly an image (raw or base64), never from the
 // prompt text; it is passed on as PromptImageB64 (query.7).
-func (c *Configurations) SetupPrompts(args []string) error {
+func (c *Configurations) SetupPrompts(ctx context.Context, args []string) error {
 	prefix := ""
 	if c.ReplyMode {
 		confDir, err := utils.GetClaiConfigDir()
@@ -39,7 +40,7 @@ func (c *Configurations) SetupPrompts(args []string) error {
 		}
 	}
 
-	stdin, err := utils.PipedStdin()
+	stdin, err := utils.PipedStdin(ctx)
 	if err != nil {
 		return fmt.Errorf("setup prompt from stdin/args: %w", err)
 	}

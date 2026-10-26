@@ -34,7 +34,7 @@ type query struct {
 	took      time.Duration
 }
 
-func newQuery(deps CommandDeps, f *Flags, args []string) (*query, error) {
+func newQuery(ctx context.Context, deps CommandDeps, f *Flags, args []string) (*query, error) {
 	if err := deps.check(f.ReplyStdin.Reply.Value()); err != nil {
 		return nil, err
 	}
@@ -50,7 +50,7 @@ func newQuery(deps CommandDeps, f *Flags, args []string) (*query, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create image generator: %w", err)
 	}
-	req, err := buildRequest(deps, f, pConf, confDir, args)
+	req, err := buildRequest(ctx, deps, f, pConf, confDir, args)
 	if err != nil {
 		return nil, err
 	}
@@ -77,8 +77,8 @@ func newQuery(deps CommandDeps, f *Flags, args []string) (*query, error) {
 }
 
 // buildRequest is the prompt and input images of photo.1 and photo.4.
-func buildRequest(deps CommandDeps, f *Flags, pConf Configurations, confDir string, args []string) (imagegen.ImageRequest, error) {
-	stdin, err := utils.PipedStdin()
+func buildRequest(ctx context.Context, deps CommandDeps, f *Flags, pConf Configurations, confDir string, args []string) (imagegen.ImageRequest, error) {
+	stdin, err := utils.PipedStdin(ctx)
 	if err != nil {
 		return imagegen.ImageRequest{}, err
 	}

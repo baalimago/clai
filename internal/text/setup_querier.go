@@ -228,7 +228,7 @@ func SetupQuerier(ctx context.Context, confDir string, tf internal.TextFlags, ar
 		tConf.InitialChat = dirChat
 	}
 
-	err = tConf.SetupInitialChat(args)
+	err = tConf.SetupInitialChat(ctx, args)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to setup prompt: %w", err)
 	}
