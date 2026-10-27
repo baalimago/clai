@@ -79,6 +79,11 @@ func QueryCommand(deps QueryCommandDeps) *internal.Command {
 		if err != nil {
 			return err
 		}
+		if tf.QueryText.ReplyOnly.Value() {
+			if err := enableReplyOnly(q); err != nil {
+				return err
+			}
+		}
 		if !lf.Loop.Value() {
 			if tConf.QuerySummary {
 				if err := enableQuerySummary(q); err != nil {
@@ -188,6 +193,15 @@ func setSummaryJoinTimeout(q models.Querier, d time.Duration) error {
 		return fmt.Errorf("summary join timeout requires a text querier, got %T", q)
 	}
 	setter.SetSummaryJoinTimeout(d)
+	return nil
+}
+
+func enableReplyOnly(q models.Querier) error {
+	setter, ok := q.(interface{ SendTranscriptToStderr() })
+	if !ok {
+		return fmt.Errorf("reply-only requires a text querier, got %T", q)
+	}
+	setter.SendTranscriptToStderr()
 	return nil
 }
 

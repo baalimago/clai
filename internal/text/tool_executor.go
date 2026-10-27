@@ -389,7 +389,7 @@ func (e toolExecutor[C]) emitAssistantToolCalls(ctx context.Context, session *Qu
 		if !q.debug && !q.structuredOutput {
 			if q.rawDisplay() {
 				display := pub_models.Message{Role: "assistant", Content: call.PrettyPrint(), ToolCalls: []pub_models.Call{call}, ReasoningContent: call.ReasoningContent}
-				if err := utils.AttemptPrettyPrint(q.out, display, q.username, q.rawDisplay()); err != nil {
+				if err := utils.AttemptPrettyPrint(q.transcriptOut(), display, q.username, q.rawDisplay()); err != nil {
 					return fmt.Errorf("pretty print raw assistant tool call: %w", err)
 				}
 			}
@@ -500,7 +500,7 @@ func (e toolExecutor[C]) appendToolResult(ctx context.Context, session *QuerySes
 	if !q.structuredOutput {
 		if q.rawDisplay() {
 			printMsg := pub_models.Message{Role: outMsg.Role, Content: displayOut, ToolCallID: outMsg.ToolCallID}
-			if err := utils.AttemptPrettyPrint(q.out, printMsg, "tool", q.rawDisplay()); err != nil {
+			if err := utils.AttemptPrettyPrint(q.transcriptOut(), printMsg, "tool", q.rawDisplay()); err != nil {
 				return fmt.Errorf("pretty print raw tool output: %w", err)
 			}
 		} else if !q.debug {
@@ -600,7 +600,7 @@ func (e toolExecutor[C]) executeLoadSkill(ctx context.Context, session *QuerySes
 		printMsg := outMsg
 		printMsg.Content = userVisibleContent
 		if q.rawDisplay() {
-			if err := utils.AttemptPrettyPrint(q.out, printMsg, "tool", q.rawDisplay()); err != nil {
+			if err := utils.AttemptPrettyPrint(q.transcriptOut(), printMsg, "tool", q.rawDisplay()); err != nil {
 				return fmt.Errorf("pretty print raw skill output: %w", err)
 			}
 		} else if err := q.appendToolActivity(call, printMsg.Content); err != nil {

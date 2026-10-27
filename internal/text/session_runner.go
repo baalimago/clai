@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"time"
 
 	"github.com/baalimago/clai/internal/models"
@@ -281,10 +280,7 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 					if q.usesActivityViewport() {
 						q.ensureActivityViewport()
 					} else if !q.debug && !q.structuredOutput {
-						w := q.out
-						if w == nil {
-							w = os.Stdout
-						}
+						w := q.transcriptOut()
 						if q.rawDisplay() {
 							fmt.Fprint(w, "[thinking]")
 						} else {
@@ -299,10 +295,7 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 						return ModelStepResult{}, fmt.Errorf("render activity viewport: %w", err)
 					}
 				} else if !q.debug && !q.structuredOutput {
-					w := q.out
-					if w == nil {
-						w = os.Stdout
-					}
+					w := q.transcriptOut()
 					if q.rawDisplay() {
 						fmt.Fprint(w, cast.Content)
 					} else {

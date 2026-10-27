@@ -79,23 +79,49 @@ func TestClaiRunSetupFlags(t *testing.T) {
 		{
 			name:  "plain words gain the q subcommand and -r",
 			input: pub_models.Input{"args": "hello world"},
-			want:  []string{"-r", "q", "hello", "world"},
+			want:  []string{"-r", "-reply-only", "-summarize=false", "q", "hello", "world"},
 		},
 		{
 			name:  "an explicit q subcommand is kept",
 			input: pub_models.Input{"args": "q foo"},
-			want:  []string{"-r", "q", "foo"},
+			want:  []string{"-r", "-reply-only", "-summarize=false", "q", "foo"},
 		},
 		{
 			name:  "an explicit query subcommand is kept",
 			input: pub_models.Input{"args": "query foo"},
-			want:  []string{"-r", "query", "foo"},
+			want:  []string{"-r", "-reply-only", "-summarize=false", "query", "foo"},
 		},
 		{
 			name:  "a lone subcommand yields no flags",
 			input: pub_models.Input{"args": "q"},
 			want:  []string{},
 		},
+		{
+			name:  "everything after the subcommand is one verbatim prompt",
+			input: pub_models.Input{"args": "-cm m -t rg,cat q Review this.\nKeep \"quotes\",  don't split"},
+			want:  []string{"-r", "-reply-only", "-summarize=false", "-cm", "m", "-t", "rg,cat", "q", "Review this.\nKeep \"quotes\",  don't split"},
+		},
+		{
+			name:  "extra whitespace between flags yields no empty arguments",
+			input: pub_models.Input{"args": "  -cm  m\t-t rg  q   hi there "},
+			want:  []string{"-r", "-reply-only", "-summarize=false", "-cm", "m", "-t", "rg", "q", "hi there"},
+		},
+		{
+			name:  "a q inside the prompt is not the subcommand",
+			input: pub_models.Input{"args": "press q to quit"},
+			want:  []string{"-r", "-reply-only", "-summarize=false", "q", "press", "q", "to", "quit"},
+		},
+		{
+			name:  "an array is used as given",
+			input: pub_models.Input{"args": []any{"-cm", "m", "q", "two words"}},
+			want:  []string{"-r", "-reply-only", "-summarize=false", "-cm", "m", "q", "two words"},
+		},
+		{
+			name:  "an array without a subcommand gains q",
+			input: pub_models.Input{"args": []any{"hello world"}},
+			want:  []string{"-r", "-reply-only", "-summarize=false", "q", "hello world"},
+		},
+		{name: "an array with a non-string element", input: pub_models.Input{"args": []any{"q", 3}}, wantErr: true},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {

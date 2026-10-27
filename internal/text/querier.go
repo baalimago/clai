@@ -30,14 +30,16 @@ const (
 )
 
 type Querier[C models.StreamCompleter] struct {
-	Raw              bool
-	errOut           io.Writer
-	structuredOutput bool
-	outputModeKnown  bool
-	outputIsTerminal bool
-	chat             pub_models.Chat
-	callStackLevel   int
-	username         string
+	Raw    bool
+	errOut io.Writer
+	// transcriptToStderr is -reply-only: see SendTranscriptToStderr.
+	transcriptToStderr bool
+	structuredOutput   bool
+	outputModeKnown    bool
+	outputIsTerminal   bool
+	chat               pub_models.Chat
+	callStackLevel     int
+	username           string
 	// dims is the one terminal-dimensions snapshot of this interactive output
 	// session. It is resolved once in NewQuerier from the session writer's fd;
 	// every width-aware render path of the querier reads this value. The
@@ -501,10 +503,7 @@ func (q *Querier[C]) closeReasoningIfOpen(ctx context.Context, session *QuerySes
 		return
 	}
 	if !q.debug && !q.structuredOutput {
-		w := q.out
-		if w == nil {
-			w = os.Stdout
-		}
+		w := q.transcriptOut()
 		if q.rawDisplay() {
 			fmt.Fprint(w, "\n[/thinking]\n")
 		} else {

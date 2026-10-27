@@ -187,6 +187,27 @@ func toolTotals(calls []RunToolCall) string {
 	return head + ": " + strings.Join(parts, summarySeparator)
 }
 
+// SendTranscriptToStderr keeps stdout for the reply: raw tool calls, tool
+// output and reasoning print to stderr instead.
+func (q *Querier[C]) SendTranscriptToStderr() {
+	q.transcriptToStderr = true
+}
+
+// transcriptOut is where the raw transcript (everything but the reply)
+// prints.
+func (q *Querier[C]) transcriptOut() io.Writer {
+	if q.transcriptToStderr {
+		if q.errOut != nil {
+			return q.errOut
+		}
+		return os.Stderr
+	}
+	if q.out != nil {
+		return q.out
+	}
+	return os.Stdout
+}
+
 // EnableQuerySummary makes each plain Query print a QuerySummary when it
 // ends. Loop iterations never print one; the loop reports its own.
 func (q *Querier[C]) EnableQuerySummary() {

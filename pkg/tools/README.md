@@ -21,8 +21,8 @@ The tool name is what the model sees. The Go identifier is what you pass to `Wit
 | `clai_check` | `ClaiCheck` | Check whether a `clai_run` run-id is running, completed or failed. |
 | `clai_help` | `ClaiHelp` | Show the clai usage text. |
 | `clai_result` | `ClaiResult` | Return the stdout, stderr and status code of a `clai_run` run-id. |
-| `clai_run` | `ClaiRun` | Spawn clai as a non-blocking subprocess with a run-id. |
-| `clai_wait_for_workers` | `ClaiWaitForWorkers` | Wait for the current clai workers, or cancel them on timeout. |
+| `clai_run` | `ClaiRun` | Spawn clai as a non-blocking worker with a run-id. Flags, then `q`, then a verbatim prompt; the worker runs with `-reply-only`, so its stdout is just its reply. |
+| `clai_wait_for_workers` | `ClaiWaitForWorkers` | Wait for the workers started since the last wait and return each reply once; on timeout, interrupt the rest and still return what finished. |
 | `cmd` | `Cmd` | Run any freetext command. Returns an error on a non-zero exit code. Legacy alias `freetext_command`. |
 | `cp` | `Cp` | Copy a file or directory recursively. |
 | `date` | `Date` | Get or format the current date and time. |

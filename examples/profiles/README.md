@@ -8,6 +8,11 @@ clai -prp examples/profiles/reviewer.json q
 clai -prp cchub:clai/reviewer q
 ```
 
+An agent run with no prompt and nothing piped in acts on its defaults:
+reviewer reviews your branch, committer reads the staged diff. reviewer,
+pr-reviewer and upgrade-scout split their work across parallel clai
+workers (`clai_run`), each a separate clai process with its own brief.
+
 Every MCP package is pinned to an exact version, and no profile holds a
 secret: each one reads its keys from the environment variables listed
 below. A server declares the ones it needs in `auth.required_env` (or
@@ -17,11 +22,11 @@ profile lists them. Swap `model` for whichever model you have a key for.
 
 | Agent | What it does | Run | Needs |
 | --- | --- | --- | --- |
-| [reviewer](./reviewer.json) | Reviews a diff from stdin, findings by severity, then a verdict line | `git diff main \| clai -prp cchub:clai/reviewer q` | nothing extra |
-| [committer](./committer.json) | Writes a Conventional Commit message for the staged diff | `git diff --cached \| clai -raw -prp cchub:clai/committer q \| git commit -F -` | nothing extra |
+| [reviewer](./reviewer.json) | Reviews your branch against the default branch (plus uncommitted work) with parallel reviewer workers, verifies every finding, then prints a verdict | `clai -prp cchub:clai/reviewer q` | nothing extra |
+| [committer](./committer.json) | Writes the commit message for the staged changes, in the repository's own style | `clai -ro -prp cchub:clai/committer q \| git commit -F -` | nothing extra |
 | [researcher](./researcher.json) | Searches the web and answers with a short, sourced brief | `clai -prp cchub:clai/researcher q "<question>"` | `uvx` |
-| [pr-reviewer](./pr-reviewer.json) | Reviews a GitHub PR and posts the review with inline comments; never approves | `clai -prp cchub:clai/pr-reviewer q owner/repo#123` | `GITHUB_TOKEN` |
-| [upgrade-scout](./upgrade-scout.json) | Finds deprecated API use against current library docs and writes a migration plan | `clai -prp cchub:clai/upgrade-scout q "react 18 -> 19"` | `npx`; `CONTEXT7_API_KEY` optional |
+| [pr-reviewer](./pr-reviewer.json) | Finds the current branch's PR, runs reviewer on it and posts the review with inline comments; never approves | `clai -prp cchub:clai/pr-reviewer q` | `GITHUB_TOKEN` |
+| [upgrade-scout](./upgrade-scout.json) | Finds deprecated API use against current library docs and writes a migration plan, one worker per library | `clai -prp cchub:clai/upgrade-scout q` | `npx`; `CONTEXT7_API_KEY` optional |
 | [sql-analyst](./sql-analyst.json) | Answers questions about a Postgres database with SQL, plus index and health advice | `clai -prp cchub:clai/sql-analyst q "<question>"` | `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DATABASE`, `POSTGRES_USER`, `POSTGRES_PASSWORD` (a read-only role), `npx` |
 | [site-watch](./site-watch.json) | Hourly headless walk of a site's key flows, reports regressions since the last run | `clai -prp cchub:clai/site-watch q https://example.com "sign-up, pricing"` | `npx`, Google Chrome (`--no-sandbox` as root) |
 | [issue-triager](./issue-triager.json) | Labels new issues, links duplicates, asks for missing repro details | `clai -prp cchub:clai/issue-triager q owner/repo dry-run` | `GITHUB_TOKEN`, `npx` |

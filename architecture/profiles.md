@@ -6,6 +6,8 @@ The **profiles** command lists the configured profile JSON files under the clai 
 
 Profiles themselves are used primarily via the `-p/-profile` and `-prp/-profile-path` flags on text-like commands (`query`, `chat`, `cmd`). Configuration semantics are described in `CONFIG.md`.
 
+A profile run with no prompt and nothing on stdin sends `text.ProfileDefaultPrompt` as the user message instead of failing with `ErrNoPrompt`, so an agent like `clai -prp cchub:clai/reviewer q` acts on its own defaults. A plain query without a prompt is still an error.
+
 Loading a profile (`-p` or `-prp`) is read-only (`utils.ReadConfigFile`): fields missing from the file are filled from `DefaultProfile` in memory, the file is never rewritten, nothing is created beside it, and a missing profile file is an error.
 
 ## Entry Flow

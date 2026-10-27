@@ -7,14 +7,15 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
-// ClaiWaitForWorkers waits for all current clai workers to finish.
-// On timeout, it sends an interrupt signal to all running subprocesses.
-// On success, it returns a tool response containing the output for each worker.
+// ClaiWaitForWorkers waits for the clai workers no earlier wait returned. On
+// timeout it interrupts the ones still running and still returns the replies
+// of those that finished.
 var ClaiWaitForWorkers = &claiWaitForWorkersTool{}
 
 type claiWaitForWorkersTool struct{}
@@ -22,7 +23,7 @@ type claiWaitForWorkersTool struct{}
 func (t *claiWaitForWorkersTool) Specification() pub_models.Specification {
 	return pub_models.Specification{
 		Name:        "clai_wait_for_workers",
-		Description: "Wait for all current clai workers to finish. Takes a timeout in seconds. On timeout, cancels ongoing subprocesses by sending interrupt signal. On success, returns output for each worker, how long it took, and where their outputs are stored on disk.",
+		Description: "Wait for the clai workers started since the last wait to finish, and return each one's reply (its stdout) once. Takes a timeout in seconds. On timeout, interrupts the workers still running and reports them as TIMED OUT, still returning the replies of those that finished. A failed worker also shows the end of its stderr. Each worker's full log, including its tool-call transcript, is written to disk and its path returned.",
 		Inputs: &pub_models.InputSchema{
 			Type:     "object",
 			Required: []string{"timeout_seconds"},
@@ -72,10 +73,14 @@ func (t *claiWaitForWorkersTool) Call(input pub_models.Input) (string, error) {
 		return "", fmt.Errorf("timeout_seconds must be > 0, got %v", timeoutSeconds)
 	}
 
-	// Snapshot current runs
+	// Snapshot the runs no earlier wait has returned
 	claiRunsMu.Lock()
 	localRuns := make(map[string]*claiProcess, len(claiRuns))
-	maps.Copy(localRuns, claiRuns)
+	for id, p := range claiRuns {
+		if !p.collected {
+			localRuns[id] = p
+		}
+	}
 	claiRunsMu.Unlock()
 
 	if len(localRuns) == 0 {
@@ -89,7 +94,8 @@ func (t *claiWaitForWorkersTool) Call(input pub_models.Input) (string, error) {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
-	for {
+	timedOut := false
+	for !timedOut {
 		allDone := true
 
 		claiRunsMu.Lock()
@@ -107,16 +113,7 @@ func (t *claiWaitForWorkersTool) Call(input pub_models.Input) (string, error) {
 
 		select {
 		case <-ctx.Done():
-			// Timeout: send interrupt to all still-running processes
-			claiRunsMu.Lock()
-			for _, p := range localRuns {
-				if !p.done && p.cmd != nil && p.cmd.Process != nil {
-					_ = p.cmd.Process.Signal(os.Interrupt)
-				}
-			}
-			claiRunsMu.Unlock()
-			elapsed := time.Since(start)
-			return "", fmt.Errorf("timeout waiting for workers (%v seconds, elapsed %s); sent interrupt to running processes", timeoutSeconds, elapsed)
+			timedOut = true
 		case <-ticker.C:
 		}
 	}
@@ -128,9 +125,25 @@ func (t *claiWaitForWorkersTool) Call(input pub_models.Input) (string, error) {
 	defer claiRunsMu.Unlock()
 
 	var buf bytes.Buffer
-	fmt.Fprintf(&buf, "All workers completed in %s\n\n", elapsed)
+	if timedOut {
+		fmt.Fprintf(&buf, "Timed out after %s (timeout %v seconds); interrupted the workers still running\n\n", elapsed, timeoutSeconds)
+	} else {
+		fmt.Fprintf(&buf, "All workers completed in %s\n\n", elapsed)
+	}
 
-	for id, p := range localRuns {
+	for _, id := range slices.Sorted(maps.Keys(localRuns)) {
+		p := localRuns[id]
+		if !p.done {
+			if p.cmd != nil && p.cmd.Process != nil {
+				_ = p.cmd.Process.Signal(os.Interrupt)
+			}
+			p.collected = true
+			// Its output is still being written, so point at the log
+			// instead of reading the live buffer.
+			fmt.Fprintf(&buf, "Worker %s:\nStatus: TIMED OUT (interrupted)\nPartial stdout log: %s\n\n", id, workerLogPath(id, "stdout"))
+			continue
+		}
+		p.collected = true
 		status := "COMPLETED"
 		if p.exitCode != 0 || p.err != nil {
 			status = "FAILED"
@@ -152,7 +165,7 @@ func (t *claiWaitForWorkersTool) Call(input pub_models.Input) (string, error) {
 			_, _ = fmt.Fprintf(f, "Stderr:\n%s\n", p.stderr.String())
 			_ = f.Close()
 
-			fmt.Fprintf(&buf, "Worker %s log written to: %s\n", id, filepath.Clean(f.Name()))
+			fmt.Fprintf(&buf, "Worker %s log (stdout and the stderr transcript) written to: %s\n", id, filepath.Clean(f.Name()))
 		}
 
 		fmt.Fprintf(&buf, "Worker %s:\n", id)
@@ -161,9 +174,24 @@ func (t *claiWaitForWorkersTool) Call(input pub_models.Input) (string, error) {
 			fmt.Fprintf(&buf, "Error: %v\n", p.err)
 		}
 		fmt.Fprintf(&buf, "Stdout:\n%s\n", p.stdout.String())
-		fmt.Fprintf(&buf, "Stderr:\n%s\n", p.stderr.String())
+		// A completed worker's stderr is its tool transcript, kept in the log;
+		// a failed worker's stderr says why it failed.
+		if status == "FAILED" {
+			fmt.Fprintf(&buf, "Stderr (last %d bytes):\n%s\n", failedStderrTail, tail(p.stderr.String(), failedStderrTail))
+		}
 		fmt.Fprintln(&buf)
 	}
 
 	return buf.String(), nil
+}
+
+// failedStderrTail bounds how much of a failed worker's stderr reaches the
+// parent; the full stream stays in the worker's log.
+const failedStderrTail = 2000
+
+func tail(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[len(s)-n:]
 }

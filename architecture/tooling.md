@@ -325,3 +325,24 @@ If you add a new tool:
 - ensure arguments are validated
 - avoid implicit ambient access (require explicit paths / commands)
 - make failures actionable with contextual errors
+
+## clai workers (`clai_run`)
+
+`clai_run` starts a child `clai -r -reply-only -summarize=false <args>` and
+returns a run id; `clai_wait_for_workers` blocks on them.
+
+- **Args.** Flags before the `q` (or `query`) subcommand are split on
+  whitespace; everything after it is passed verbatim as one prompt, so a
+  worker brief keeps its newlines and quotes. A `q` only counts as the
+  subcommand when every token before it is a flag or a flag's value. Without
+  one, the string is split on whitespace and `q` is prepended. An array of
+  strings is used as given.
+- **Reply-only.** `-reply-only` (`-ro`) sends the raw transcript (tool calls,
+  tool output, reasoning) to stderr through `Querier.transcriptOut`, so the
+  worker's stdout is its reply alone. Users get the same with
+  `clai -ro ... q | git commit -F -`.
+- **Waiting.** A wait covers the workers no earlier wait returned, and returns
+  each one's stdout once; a failed worker adds the last 2000 bytes of its
+  stderr. On timeout it interrupts the workers still running, reports them
+  `TIMED OUT` with their stdout log path, and still returns the finished ones.
+  Every worker's full stdout and stderr is written to a log under `TMPDIR`.

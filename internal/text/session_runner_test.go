@@ -1146,3 +1146,49 @@ func Test_sessionRunner_Run_DrainsAndExecutesParallelToolCallsAsOneTurn(t *testi
 		t.Fatalf("expected the first result before the second call, got:\n%s", output)
 	}
 }
+
+func Test_sessionRunner_Run_ReplyOnlySendsTheTranscriptToStderr(t *testing.T) {
+	model := &MockQuerier{}
+	callCount := 0
+	model.streamFn = func(_ context.Context, _ pub_models.Chat) (chan models.CompletionEvent, error) {
+		callCount++
+		out := make(chan models.CompletionEvent, 3)
+		if callCount == 1 {
+			out <- models.ReasoningEvent{Content: "inspect"}
+			out <- pub_models.Call{ID: "call-1", Name: "missing_tool"}
+		} else {
+			out <- "done"
+		}
+		close(out)
+		return out, nil
+	}
+
+	var printed, transcript strings.Builder
+	q := &Querier[*MockQuerier]{
+		out:              &printed,
+		errOut:           &transcript,
+		outputModeKnown:  true,
+		outputIsTerminal: false,
+		Model:            model,
+	}
+	q.SendTranscriptToStderr()
+	session := &QuerySession{Chat: pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "hello"}}}}
+	runner := sessionRunner[*MockQuerier]{
+		querier:      q,
+		recorder:     &recordingCallUsageRecorder{},
+		finalizer:    &countingFinalizer{},
+		toolExecutor: toolExecutor[*MockQuerier]{querier: q},
+	}
+
+	if err := runner.Run(context.Background(), session); err != nil {
+		t.Fatalf("Run returned err: %v", err)
+	}
+	if got := strings.TrimSpace(printed.String()); got != "done" {
+		t.Fatalf("stdout = %q, want only the reply", got)
+	}
+	for _, want := range []string{"[thinking]inspect", "[/thinking]", "Call: 'missing_tool'", "ERROR: unknown tool call: missing_tool"} {
+		if !strings.Contains(transcript.String(), want) {
+			t.Fatalf("expected transcript %q on stderr, got %q", want, transcript.String())
+		}
+	}
+}

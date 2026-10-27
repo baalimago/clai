@@ -415,11 +415,23 @@ func (c *Configurations) collectInputs(ctx context.Context, args []string) (imag
 		Args:         args,
 		StdinReplace: c.StdinReplace,
 	})
+	if errors.Is(err, utils.ErrNoPrompt) && c.UsingProfile() && len(args) == 1 {
+		// args[0] is the command; the default prompt stands in for the rest.
+		return c.collectInputs(ctx, []string{args[0], ProfileDefaultPrompt})
+	}
 	if err != nil {
 		return imageinput.Collected{}, fmt.Errorf("failed to setup prompt: %w", err)
 	}
+	if c.UsingProfile() && strings.TrimSpace(collected.Prompt) == "" && len(collected.Images) == 0 {
+		collected.Prompt = ProfileDefaultPrompt
+	}
 	return collected, nil
 }
+
+// ProfileDefaultPrompt is the user message of a profile run given no prompt
+// and no stdin, so an agent like 'clai -prp cchub:clai/reviewer q' acts on
+// its own defaults instead of failing.
+const ProfileDefaultPrompt = "No input was given: do your job with your defaults."
 
 // userPromptMessage is the user message of query.1: Content when there is no image
 // (I10), otherwise Parts with the images followed by the prompt text.
