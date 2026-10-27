@@ -23,7 +23,7 @@ profile lists them. Swap `model` for whichever model you have a key for.
 
 | Agent | What it does | Run | Needs |
 | --- | --- | --- | --- |
-| [reviewer](./reviewer.json) | Reviews your branch against the default branch (plus uncommitted work) with parallel reviewer workers, verifies every finding, then prints a verdict | `clai -prp cchub:clai/reviewer q` | nothing extra |
+| [reviewer](./reviewer.json) | Reviews your branch against the default branch (plus uncommitted work) with parallel reviewer workers, verifies every finding (library behaviour against Context7 docs, no key needed), then prints a verdict; bans `git push` and `rm` | `clai -prp cchub:clai/reviewer q` | nothing extra |
 | [committer](./committer.json) | Writes the commit message for the staged changes, in the repository's own style | `clai -ro -prp cchub:clai/committer q \| git commit -F -` | nothing extra |
 | [researcher](./researcher.json) | Searches the web and answers with a short, sourced brief | `clai -prp cchub:clai/researcher q "<question>"` | `uvx` |
 | [pr-reviewer](./pr-reviewer.json) | Finds the current branch's PR, runs reviewer on it and posts the review with inline comments; never approves | `clai -prp cchub:clai/pr-reviewer q` | `GITHUB_TOKEN` |
