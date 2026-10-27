@@ -23,6 +23,11 @@ var ProfileKeys = []string{
 	"skills",
 }
 
+// hubKeys are fields the hub reads and clai does not, such as the
+// description its page shows: expected in a published profile, so never
+// listed as ignored.
+var hubKeys = []string{"description"}
+
 // InvalidProfileError lists every problem found in a remote profile.
 type InvalidProfileError struct {
 	Target   string
@@ -66,7 +71,7 @@ func Validate(target string, body []byte) (Checked, error) {
 	var problems []string
 	var checked Checked
 	for _, key := range sortedKeys(fields) {
-		if slices.Contains(ProfileKeys, key) {
+		if slices.Contains(ProfileKeys, key) || slices.Contains(hubKeys, key) {
 			continue
 		}
 		if near := nearestKey(key, ProfileKeys); near != "" {

@@ -120,8 +120,7 @@ func TestFormatRemoteTrustPrompt_sectionsInClaisLook(t *testing.T) {
 			{Name: "memory", Runs: "npx -y @modelcontextprotocol/server-memory@2.0.0", Env: []string{"MEMORY_FILE_PATH=~/.trade-bot.jsonl"}},
 			{Name: "polymarket", Runs: "npx -y @iqai/mcp-polymarket@0.1.0"},
 		},
-		Prompt:  "You are an automated trading agent.\nTrade small.",
-		Ignored: []string{"description"},
+		Prompt: "You are an automated trading agent.\nTrade small.",
 	}
 	got := FormatRemoteTrustPrompt(remote.TrustPrompt{Target: "cchub:clai/trade-bot@1", Digest: "6934c5", Page: "https://www.clai.chat/hub/clai/trade-bot/", Summary: summary}, look.Style{})
 	want := `▸ cchub:clai/trade-bot@1 · fetched · runs on your machine
@@ -137,7 +136,6 @@ func TestFormatRemoteTrustPrompt_sectionsInClaisLook(t *testing.T) {
 ▸ prompt · 48 characters
   │ You are an automated trading agent.
   │ Trade small.
-▸ not read by clai · description
 
 ? Trust cchub:clai/trade-bot@1? [y/N] `
 	if got != want {

@@ -151,8 +151,9 @@ func TestSummary_marksWhatCanChangeUnderIt(t *testing.T) {
 }
 
 func TestSummary_defaultsAndLeftovers(t *testing.T) {
-	got := summaryOf(t, `{"use_tools":true,"tools":["date"],"description":"d"}`)
-	assertHas(t, got, "▸ MCP servers · none of its own\n", "▸ model · your default\n", "▸ not read by clai · description\n")
+	got := summaryOf(t, `{"use_tools":true,"tools":["date"],"description":"d","notes":"n"}`)
+	assertHas(t, got, "▸ MCP servers · none of its own\n", "▸ model · your default\n", "▸ not read by clai · notes\n")
+	assertLacks(t, got, "description")
 }
 
 func TestSummary_colorsTheLookNotTheProfile(t *testing.T) {

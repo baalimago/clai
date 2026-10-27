@@ -90,8 +90,10 @@ A `gh:` target reads
 - **Strict validation, for remote profiles only.** The body must be at
   most 64 KiB and hold exactly one JSON object.
   - A key within two edits of a profile key is an error that suggests the
-    key (`"promt"` → `"prompt"`). Any other unknown key is listed and
-    ignored, as a local profile's would be.
+    key (`"promt"` → `"prompt"`). Any other unknown key is ignored, as a
+    local profile's would be, and listed in the trust prompt's
+    `not read by clai` line. `description`, the hub's own field
+    (`hubKeys`), is expected and never listed.
   - Every field `Summarize` reads has the shape it decodes (`model`,
     `prompt` and each server's `command`, `url` and `envfile` strings,
     `use_tools` a boolean, `tools` and `args` arrays of strings, each

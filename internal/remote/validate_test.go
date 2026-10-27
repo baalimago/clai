@@ -7,7 +7,7 @@ import (
 )
 
 func TestValidate_acceptsAProfileAndListsKeysClaiIgnores(t *testing.T) {
-	body := `{"description":"Run hourly.","model":"gpt-5.2","mcp_servers":{
+	body := `{"description":"Run hourly.","notes":"x","model":"gpt-5.2","mcp_servers":{
 		"memory":{"command":"npx","args":["-y","@modelcontextprotocol/server-memory@2025.9.25"]},
 		"remote":{"url":"https://mcp.example.com"},
 		"poly":{"command":"pnpx","envfile":"~/.secrets.env"},
@@ -17,8 +17,9 @@ func TestValidate_acceptsAProfileAndListsKeysClaiIgnores(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Validate: %v", err)
 	}
-	if len(got.Ignored) != 1 || got.Ignored[0] != "description" {
-		t.Fatalf("Ignored = %v, want [description]", got.Ignored)
+	// description is the hub's own field: expected, so not listed.
+	if len(got.Ignored) != 1 || got.Ignored[0] != "notes" {
+		t.Fatalf("Ignored = %v, want [notes]", got.Ignored)
 	}
 }
 
