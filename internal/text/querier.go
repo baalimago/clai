@@ -383,11 +383,17 @@ func (q *Querier[C]) drainMcpLogs() error {
 	}
 	normal := make(map[string]*strings.Builder)
 	var normalOrder []string
-	for _, entry := range entries {
+	for i := 0; i < len(entries); i++ {
+		entry := entries[i]
 		if entry.isError {
 			lines := entry.lines
 			if !entry.exit {
+				// A burst of error lines from one server shares one block.
 				lines = []string{entry.line}
+				for i+1 < len(entries) && entries[i+1].isError && !entries[i+1].exit && entries[i+1].server == entry.server {
+					i++
+					lines = append(lines, entries[i].line)
+				}
 			}
 			if err := q.elevateMcpError(w, entry.server, lines); err != nil {
 				return err

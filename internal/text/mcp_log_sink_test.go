@@ -819,6 +819,40 @@ func Test_drainMcpLogs_WindowAndElevation(t *testing.T) {
 	}
 }
 
+// Test_drainMcpLogs_ConsecutiveErrorsShareOneBlock pins that a burst of
+// error lines from one server, such as kubectl retrying an unreachable API
+// five times, prints under one header instead of one block per line.
+func Test_drainMcpLogs_ConsecutiveErrorsShareOneBlock(t *testing.T) {
+	var out strings.Builder
+	q := &Querier[*MockQuerier]{
+		out:  &out,
+		dims: dimensions.Dimensions{Width: 80, Height: 24},
+	}
+	q.mcpSink = newMcpLogSink(mcpLogRolling)
+	q.mcpSink.attach()
+	for i := range 5 {
+		q.mcpSink.AppendServerLog("k8s", fmt.Sprintf("E1027 error: connection refused %d", i))
+	}
+	q.mcpSink.AppendServerLog("other", "error: boom")
+	q.mcpSink.AppendServerLog("k8s", "error: the connection to the server was refused")
+
+	if err := q.drainMcpLogs(); err != nil {
+		t.Fatalf("drainMcpLogs: %v", err)
+	}
+	got := out.String()
+	if n := strings.Count(got, "▸ mcp.k8s log"); n != 2 {
+		t.Errorf("k8s headers = %d, want 2 (the burst, then the line after other's); got:\n%s", n, got)
+	}
+	for i := range 5 {
+		if want := fmt.Sprintf("connection refused %d", i); !strings.Contains(got, want) {
+			t.Errorf("output missing %q; got:\n%s", want, got)
+		}
+	}
+	if first, other := strings.Index(got, "connection refused 4"), strings.Index(got, "▸ mcp.other log"); first > other {
+		t.Errorf("the k8s burst must print before other's block; got:\n%s", got)
+	}
+}
+
 func Test_drainMcpLogs_AuthPromptElevates(t *testing.T) {
 	var out strings.Builder
 	q := &Querier[*MockQuerier]{
