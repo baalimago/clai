@@ -195,3 +195,56 @@ func TestHandleServer_CarriesMcpServerTimeout(t *testing.T) {
 		t.Fatalf("timeout = %v, want 7s", mt.timeout)
 	}
 }
+
+type recordingConn struct{ params map[string]any }
+
+func (r *recordingConn) Call(_ context.Context, _ string, params map[string]any) (json.RawMessage, error) {
+	r.params = params
+	return json.RawMessage(`{"content":[{"type":"text","text":"ok"}]}`), nil
+}
+
+func (r *recordingConn) Notify(context.Context, string, map[string]any) error { return nil }
+
+func (r *recordingConn) Close() error { return nil }
+
+// Test_McpTool_DropsUnsetOptionalArguments pins that an optional argument
+// the model sent as "" or null is left out: a server validates what it gets,
+// and Linear's list_issues refused customView "" ("expected string to have
+// >=1 characters") although the model meant no custom view.
+func Test_McpTool_DropsUnsetOptionalArguments(t *testing.T) {
+	conn := &recordingConn{}
+	mt := &mcpTool{
+		remoteName: "list_issues",
+		connector:  resolvedConnector{conn},
+		spec: pub_models.Specification{Inputs: &pub_models.InputSchema{
+			Type: "object",
+			Properties: map[string]pub_models.ParameterObject{
+				"team":       {Type: "string"},
+				"customView": {Type: "string"},
+				"cursor":     {Type: "string"},
+				"limit":      {Type: "integer"},
+				"query":      {Type: "string"},
+			},
+			Required: []string{"query"},
+		}},
+	}
+	_, err := mt.CallWithContext(t.Context(), pub_models.Input{
+		"team": "SRE", "customView": "", "cursor": nil, "limit": 0, "query": "",
+	})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	args, ok := conn.params["arguments"].(map[string]any)
+	if !ok {
+		t.Fatalf("arguments = %#v", conn.params["arguments"])
+	}
+	want := map[string]any{"team": "SRE", "limit": 0, "query": ""}
+	if len(args) != len(want) {
+		t.Fatalf("arguments = %#v, want %#v", args, want)
+	}
+	for k, v := range want {
+		if args[k] != v {
+			t.Errorf("arguments[%q] = %#v, want %#v", k, args[k], v)
+		}
+	}
+}

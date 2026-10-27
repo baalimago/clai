@@ -278,10 +278,12 @@ func (c *StdioConn) Call(ctx context.Context, method string, params map[string]a
 		c.mu.Lock()
 		closed := c.closed
 		c.mu.Unlock()
-		if closed {
-			// The connection closed concurrently with this write; report the
-			// same typed error a caller blocked in the select below would
-			// have seen, rather than a raw pipe-closed error.
+		if closed || errors.Is(err, syscall.EPIPE) {
+			// The connection closed concurrently with this write, or the
+			// server's end of stdin is gone because it exited before the
+			// reader saw EOF; report the same typed error a caller blocked
+			// in the select below would have seen, rather than a raw pipe
+			// error.
 			return nil, claierr.NewMcpConnClosed(c.serverName)
 		}
 		return nil, fmt.Errorf("mcp conn %q: write %s: %w", c.serverName, method, err)

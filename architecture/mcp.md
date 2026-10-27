@@ -136,6 +136,14 @@ Registered MCP tools are scoped to the run that discovered them. They are **neve
 process-global tool registry, because that registry's entries would be overwritten by every
 concurrent `Setup` — see the comment at `internal/text/querier_setup_tools.go`.
 
+## Tool arguments
+
+`mcpTool.CallParts` sends the model's arguments as given, except that an
+optional argument (not in the tool's `required`) sent as `""` or `null` is
+left out (`withoutUnsetOptional`). Models fill every property of a schema,
+and a server that validates lengths refuses `""` for an argument meant to
+be unset: Linear's `list_issues` failed on `customView: ""`.
+
 ## Tool results
 
 A `tools/call` result is mapped to parts (`models.PartsCaller`, see
