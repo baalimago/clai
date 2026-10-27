@@ -49,9 +49,18 @@ func (r *runner) login(ctx context.Context, url, name string) error {
 	if err != nil {
 		return err
 	}
-	creds, _ := cloud.LoadCredentials(confDir)
+	creds, err := cloud.LoadCredentials(confDir)
+	if insecure := (*cloud.InsecureURLError)(nil); errors.As(err, &insecure) && url == "" {
+		return err
+	}
+	if creds.URL == "" {
+		creds.URL = cloud.DefaultURL
+	}
 	if url != "" {
 		creds.URL = url
+	}
+	if err := cloud.CheckURL(creds.URL); err != nil {
+		return err
 	}
 	if name == "" {
 		name, _ = r.deps.Hostname()
@@ -70,6 +79,9 @@ func (r *runner) login(ctx context.Context, url, name string) error {
 	}
 	creds.Token, creds.Device, creds.Access, creds.ExpiresAt, creds.Account = tok.Key, name, tok.Access, tok.ExpiresAt, tok.Account
 	if tok.Endpoint != "" {
+		if err := cloud.CheckURL(tok.Endpoint); err != nil {
+			return fmt.Errorf("the login answered with another server: %w", err)
+		}
 		creds.URL = tok.Endpoint
 	}
 	client = cloud.NewClient(creds.URL, creds.Token)

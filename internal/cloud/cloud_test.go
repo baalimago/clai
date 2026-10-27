@@ -249,3 +249,25 @@ func TestDefaultURL_isTheCanonicalHost(t *testing.T) {
 		t.Fatalf("DefaultURL = %q: clai.chat redirects to www", cloud.DefaultURL)
 	}
 }
+
+// The CLI key goes only over https; plain http is allowed to this machine,
+// for a local server.
+func TestCheckURL_requiresHTTPS(t *testing.T) {
+	for _, ok := range []string{"https://www.clai.chat", "http://127.0.0.1:8787", "http://localhost:4321", "http://[::1]:9"} {
+		if err := cloud.CheckURL(ok); err != nil {
+			t.Errorf("CheckURL(%q) = %v, want nil", ok, err)
+		}
+	}
+	for _, bad := range []string{"http://clai.chat", "http://10.0.0.2", "ftp://x", "www.clai.chat", "https://"} {
+		var insecure *cloud.InsecureURLError
+		if err := cloud.CheckURL(bad); !errors.As(err, &insecure) {
+			t.Errorf("CheckURL(%q) = %v, want an InsecureURLError", bad, err)
+		}
+	}
+	t.Setenv("CLAI_CLOUD_TOKEN", "k")
+	t.Setenv("CLAI_CLOUD_URL", "http://evil.example")
+	var insecure *cloud.InsecureURLError
+	if _, err := cloud.LoadCredentials(t.TempDir()); !errors.As(err, &insecure) {
+		t.Fatalf("LoadCredentials with an http CLAI_CLOUD_URL = %v, want an InsecureURLError", err)
+	}
+}

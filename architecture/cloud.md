@@ -74,6 +74,10 @@ log      GET stores/<s>/log?limit=
 
 ## Behavior
 
+- **The key goes only over https.** `CheckURL` refuses a `-url`,
+  `CLAI_CLOUD_URL`, saved URL or login `endpoint` that is not https
+  (`InsecureURLError`); plain http is allowed only to a loopback host, for
+  a local server.
 - **Login syncs nothing.** It stores the CLI key, the access the browser
   granted (read or write) and the account, and clears any earlier sync state,
   since the new login may be another account. `logout` revokes the key on

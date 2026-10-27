@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 
@@ -76,10 +78,39 @@ func LoadCredentials(confDir string) (Credentials, error) {
 	if c.URL == "" {
 		c.URL = DefaultURL
 	}
+	if err := CheckURL(c.URL); err != nil {
+		return Credentials{}, err
+	}
 	if c.Token == "" {
 		return c, &NotLoggedInError{}
 	}
 	return c, nil
+}
+
+// InsecureURLError is a cloud URL the CLI key would cross in the clear.
+type InsecureURLError struct{ URL string }
+
+func (e *InsecureURLError) Error() string {
+	return fmt.Sprintf("%q is not an https:// URL: the clai.chat key is only sent over https (plain http only to this machine)", e.URL)
+}
+
+// CheckURL accepts an https URL, or plain http to a loopback host for a
+// local server.
+func CheckURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return &InsecureURLError{URL: raw}
+	}
+	switch u.Scheme {
+	case "https":
+		return nil
+	case "http":
+		host := u.Hostname()
+		if ip := net.ParseIP(host); host == "localhost" || (ip != nil && ip.IsLoopback()) {
+			return nil
+		}
+	}
+	return &InsecureURLError{URL: raw}
 }
 
 // SaveCredentials writes the login with mode 0600.
