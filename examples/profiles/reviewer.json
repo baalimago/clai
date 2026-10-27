@@ -1,5 +1,5 @@
 {
-  "description": "Reviews the changes on your current git branch like a senior colleague: parallel reviewer workers for correctness, security, contracts and concurrency, then a verifier that tries to disprove each finding, and Context7 docs for findings about a library. Run from the repo: 'clai -prp cchub:clai/reviewer q' (your branch vs the default branch, plus uncommitted work), or name a base ('q origin/release'), 'q staged', or pipe a diff in. Prints only verified findings and a verdict; never runs git push or rm. Needs only your model key.",
+  "description": "Reviews the changes on your current git branch like a senior colleague: parallel reviewer workers for correctness, security, contracts and concurrency, then a verifier that tries to disprove each finding, and Context7 docs for findings about a library. Run from the repo: 'clai -profile-path cchub:clai/reviewer -query-summary query' (your branch vs the default branch, plus uncommitted work), or name a base ('query origin/release'), 'query staged', or pipe a diff in. Prints only verified findings and a verdict; never runs git push or rm. Needs only your model key.",
   "model": "gpt-6.1-sol",
   "use_tools": true,
   "save-reply-as-conv": false,
