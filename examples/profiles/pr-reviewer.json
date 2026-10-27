@@ -15,6 +15,10 @@
     "async_cmd_status",
     "async_cmd_cancel"
   ],
+  "cmd-ban": [
+    "git push",
+    "rm"
+  ],
   "mcp_servers": {
     "github": {
       "url": "https://api.githubcopilot.com/mcp/",
