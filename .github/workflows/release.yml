@@ -6,7 +6,7 @@ on:
       - "v[0-9]+.[0-9]+.[0-9]+*"
 jobs:
   call-workflow:
-    uses: baalimago/simple-go-pipeline/.github/workflows/release.yml@4db15db8a791280dfac87dfc23a7f6464ad86e4d
+    uses: baalimago/simple-go-pipeline/.github/workflows/release.yml@85cc44ffbafea241db94086455fb2658524a95aa
     with:
       project-name: clai
       branch: main
@@ -16,7 +16,7 @@ jobs:
       native-build-command: >-
         CGO_ENABLED=0 GOOS="$TARGET_OS" GOARCH="$TARGET_ARCH"
         go build -trimpath
-        -ldflags "-s -w -X 'github.com/baalimago/clai/internal/version.BuildVersion=$RELEASE_VERSION'"
+        -ldflags "-s -X 'github.com/baalimago/clai/internal/version.BuildVersion=$RELEASE_VERSION'"
         -o "$TARGET_BINARY" .
       # Only the runner's own platform can start the binary.
       smoke-command: >-
