@@ -73,7 +73,7 @@ func TestResolve_asksOnceThenRunsFromCache(t *testing.T) {
 	if len(asked) != 1 || asked[0].Target != "cchub:ada/bot@1" || !strings.HasSuffix(asked[0].Page, "/hub/ada/bot/") {
 		t.Fatalf("asked = %+v", asked)
 	}
-	if s := asked[0].Summary.String(); !strings.Contains(s, "poly  pnpx @iqai/mcp-polymarket  (not pinned)") || !strings.Contains(s, "It reads: ~/.secrets.env") {
+	if s := asked[0].Summary.String(); !strings.Contains(s, "  poly   pnpx @iqai/mcp-polymarket   ! not pinned\n") || !strings.Contains(s, "▸ reads · ~/.secrets.env\n") {
 		t.Fatalf("summary = %q", s)
 	}
 
@@ -304,7 +304,7 @@ func TestSummary_withoutServers(t *testing.T) {
 		t.Fatalf("Summarize: %v", err)
 	}
 	got := s.String()
-	for _, want := range []string{"no MCP servers", "Model: your default", "Not read by clai: description"} {
+	for _, want := range []string{"no MCP servers", "▸ model · your default", "▸ not read by clai · description"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("summary %q lacks %q", got, want)
 		}

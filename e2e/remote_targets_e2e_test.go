@@ -312,10 +312,10 @@ func Test_REMOTE_trustShowsWhatTheProfileRunsHere(t *testing.T) {
 		t.Fatalf("trust: status %d stderr %q", status, stderr)
 	}
 	for _, want := range []string{
-		"  vault  https://mcp.example.com\n",
-		"         runs here for a token: vault print token\n",
-		"         env: VAULT_NAMESPACE=ops\n",
-		"Prompt:\n  Ops bot.\\x1b[2J\n  Check the deploys.\n",
+		"▸ MCP servers · 1\n  vault   https://mcp.example.com\n",
+		"          runs here for a token: vault print token\n",
+		"          env VAULT_NAMESPACE=ops\n",
+		"▸ prompt · 31 characters\n  │ Ops bot.\\x1b[2J\n  │ Check the deploys.\n",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("summary:\n%s\nlacks %q", stdout, want)
@@ -325,7 +325,7 @@ func Test_REMOTE_trustShowsWhatTheProfileRunsHere(t *testing.T) {
 		t.Fatalf("summary holds a raw escape: %q", stdout)
 	}
 	status, stdout, stderr = runRemote(t, "profiles trust cchub:ada/all")
-	if status != 0 || !strings.Contains(stdout, "  no tools, no MCP servers\n") {
+	if status != 0 || !strings.Contains(stdout, "▸ tools · none · no MCP servers\n") {
 		t.Fatalf("use_tools alone: status %d stdout %q stderr %q", status, stdout, stderr)
 	}
 }

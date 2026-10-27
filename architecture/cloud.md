@@ -37,8 +37,9 @@ for the login).
 | `internal/cloud/sync/resolve.go`, `diff.go`, `status.go`, `merge.go` | `Resolve`, `Diff`, `Status`/`Log`, the conversation merge and fork |
 | `internal/cloud/cloudcmd/` | `Command`: the subcommands and their output; `ExitDecisionNeeded` |
 | `internal/cloud/cloudcmd/errors.go` | `explain`, `UnreachableError`: the short form of a network error and a refused key |
-| `internal/cloud/cloudcmd/view.go` | `statusLines`, `pullNext`, `excludedRows`, `importLines`, `blockedLines`, `style`: the `▸ store · detail` look and the grouped status table |
-| `internal/cloud/cloudcmd/look.go` | `grid` and the lines of every other command: login, whoami, pull and its first-pull question (`firstPullChoices`, `parseChoice`), conflicts, a refused commit, resolve, log, diff |
+| `internal/cloud/cloudcmd/view.go` | `statusLines`, `pullNext`, `excludedRows`, `importLines`, `blockedLines`, `style` (an alias of `look.Style`): the grouped status table |
+| `internal/look/look.go` | `Style` (`Head`, `Link`, `Primary`, `Secondary`), `Grid`, `For`: clai's shared `▸ subject · detail` look, also drawn by the remote trust prompt |
+| `internal/cloud/cloudcmd/look.go` | the lines of every other command: login, whoami, pull and its first-pull question (`firstPullChoices`, `parseChoice`), conflicts, a refused commit, resolve, log, diff |
 | `internal/cloud/cloudtest/` | An in-memory clai.chat for tests |
 | `internal/chat/imported.go` | `PendingForeign` (the preview), `ExportForeign` (8 at once, manifest checkpointed), `importedReader`, `ReindexPulled` (256 at a time, read 8 at once, with progress) |
 | `internal/cli/cli.go` | Wires the command, its hooks and the exit-4 seam |
@@ -130,7 +131,7 @@ log      GET stores/<s>/log?limit=
   detail` head per store or subject, the marker in the theme's primary
   colour and the details in its secondary one, rows under it, and the page
   to visit or the commands that come next as `→ <target>   why` rows
-  (`grid`), always after the rows they follow from. A conflict always
+  (`look.Grid`), always after the rows they follow from. A conflict always
   names its next three commands: diff, resolve `-theirs`, resolve `-mine`.
   `status` lays its conflict (`C`), change (`+ ~ -`) and secret (`✕`) rows
   out in one grid, and adds `→ clai cloud pull <store>` when the server is

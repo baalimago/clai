@@ -114,7 +114,7 @@ func (r *runner) logout(ctx context.Context) error {
 	r.creds = creds
 	var notIn *cloud.NotLoggedInError
 	if errors.As(err, &notIn) {
-		r.lines([]string{r.style().head("not logged in")})
+		r.lines([]string{r.style().Head("not logged in")})
 		return nil
 	}
 	if err != nil {
@@ -128,7 +128,7 @@ func (r *runner) logout(ctx context.Context) error {
 	if err := errors.Join(cloud.RemoveCredentials(confDir), sync.ResetState(confDir)); err != nil {
 		return err
 	}
-	r.lines([]string{r.style().head("logged out", "your local files are unchanged")})
+	r.lines([]string{r.style().Head("logged out", "your local files are unchanged")})
 	return nil
 }
 
@@ -210,7 +210,7 @@ func (r *runner) status(ctx context.Context, args []string, imports, raw bool) e
 	return nil
 }
 
-func (r *runner) style() style { return style{color: r.deps.Color()} }
+func (r *runner) style() style { return style{Color: r.deps.Color()} }
 
 func (r *runner) lines(lines []string) {
 	for _, l := range lines {
@@ -239,7 +239,7 @@ func (r *runner) diff(ctx context.Context, args []string, remote bool) error {
 		}
 	}
 	if len(paths) == 0 {
-		r.lines([]string{r.style().head("diff", "no local changes")})
+		r.lines([]string{r.style().Head("diff", "no local changes")})
 		return nil
 	}
 	for _, p := range paths {
@@ -291,7 +291,7 @@ func (r *runner) pull(ctx context.Context, args []string, theirs, mine, raw bool
 		if errors.As(err, &quit) {
 			// A deliberate stop: the question is still open, and no other
 			// store is pulled behind the user's back.
-			r.printf("  %s\n", r.style().secondary(quit.Error()))
+			r.printf("  %s\n", r.style().Secondary(quit.Error()))
 			r.deps.SetExit(ExitDecisionNeeded)
 			return nil
 		}
@@ -302,7 +302,7 @@ func (r *runner) pull(ctx context.Context, args []string, theirs, mine, raw bool
 				if opts.Choose == nil {
 					r.lines(firstPullLines(s, first.First, r.style()))
 				}
-				r.printf("  %s\n", r.style().secondary("not pulled: no answer, so nothing changed"))
+				r.printf("  %s\n", r.style().Secondary("not pulled: no answer, so nothing changed"))
 				r.lines(firstPullFlags(s, r.style()))
 			}
 			results = append(results, res)
@@ -347,7 +347,7 @@ func (r *runner) chooseFirst(store sync.Store, f sync.FirstPull, in *bufio.Reade
 		case ok:
 			return choice.mode, nil
 		}
-		r.printf("  %s\n", r.style().secondary("answer a, h, d or q"))
+		r.printf("  %s\n", r.style().Secondary("answer a, h, d or q"))
 	}
 }
 

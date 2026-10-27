@@ -123,7 +123,7 @@ func TestStatusLines_unreachableServer(t *testing.T) {
 
 func TestStyle_colorsOnlyWhenAsked(t *testing.T) {
 	theme := utils.TableTheme()
-	colored := plainLines(statusLines(manyConversations(), style{color: true}))
+	colored := plainLines(statusLines(manyConversations(), style{Color: true}))
 	if !strings.Contains(colored, theme.Primary+"▸") || !strings.Contains(colored, theme.Secondary) {
 		t.Fatalf("colour output lacks the theme:\n%q", colored)
 	}

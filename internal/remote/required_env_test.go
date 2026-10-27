@@ -111,7 +111,7 @@ func TestSummary_listsTheVariablesItNeeds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Summarize: %v", err)
 	}
-	want := "It needs: GITHUB_TOKEN (github), SENTRY_ACCESS_TOKEN (sentry), VAULT_ADDR (vault)\n"
+	want := "▸ needs · GITHUB_TOKEN for github, SENTRY_ACCESS_TOKEN for sentry, VAULT_ADDR for vault\n"
 	if !strings.Contains(s.String(), want) {
 		t.Fatalf("summary:\n%s\nlacks %q", s, want)
 	}
@@ -123,7 +123,7 @@ func TestSummary_listsTheVariablesItNeeds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(none.String(), "It needs") {
+	if strings.Contains(none.String(), "▸ needs") {
 		t.Fatalf("summary without variables has a needs line:\n%s", none)
 	}
 }

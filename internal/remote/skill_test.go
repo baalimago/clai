@@ -129,7 +129,7 @@ func TestSummary_listsSkills(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out := s.String(); !strings.Contains(out, "skills: cchub:ada/review@2, gh:ada/kit/triage/SKILL.md (not pinned)") {
+	if out := s.String(); !strings.Contains(out, "▸ skills · 2\n  cchub:ada/review@2\n  gh:ada/kit/triage/SKILL.md   ! not pinned\n") {
 		t.Fatalf("summary = %q", out)
 	}
 }

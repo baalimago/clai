@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/baalimago/clai/internal/look"
 	"github.com/baalimago/clai/internal/skills"
 )
 
@@ -63,22 +64,16 @@ type SkillSummary struct {
 
 // String renders the summary as the trust prompt shows it, printable and
 // with a long description cut short.
-func (s SkillSummary) String() string {
-	var b strings.Builder
-	b.WriteString("This skill is instructions the agent may load:\n")
-	fmt.Fprintf(&b, "  %s:", Printable(s.Name))
-	lines := Preview(s.Description)
-	if len(lines) == 0 {
-		b.WriteString("\n")
+func (s SkillSummary) String() string { return render(s.Lines(look.Style{})) }
+
+// Lines are the skill in clai's look, its description quoted.
+func (s SkillSummary) Lines(st look.Style) []string {
+	head := st.Head("skill "+Printable(s.Name), "instructions the agent may load")
+	lines := []string{head}
+	for _, l := range Preview(s.Description) {
+		lines = append(lines, "  "+st.Secondary("│")+" "+l)
 	}
-	for i, line := range lines {
-		if i == 0 {
-			fmt.Fprintf(&b, " %s\n", line)
-			continue
-		}
-		fmt.Fprintf(&b, "    %s\n", line)
-	}
-	return b.String()
+	return lines
 }
 
 // ResolvedSkill is a skill target ready to load: Root holds one directory,

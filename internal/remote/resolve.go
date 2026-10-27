@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/baalimago/clai/internal/look"
 )
 
 // ExitRefused is the exit status of a run that refused a remote profile:
@@ -31,7 +33,14 @@ type TrustPrompt struct {
 	Target  string
 	Digest  string
 	Page    string
-	Summary fmt.Stringer
+	Summary Section
+}
+
+// Section is what a trust prompt shows of a target: its lines in clai's
+// look, and the same without colour as String.
+type Section interface {
+	fmt.Stringer
+	Lines(look.Style) []string
 }
 
 // Prompter asks the user whether to trust a target. A nil Prompter means
@@ -192,7 +201,7 @@ func (r Resolver) read(ctx context.Context, t Target, doc docKind) ([]byte, bool
 	return body, true, nil
 }
 
-func (r Resolver) authorize(ctx context.Context, t Target, digest string, summary fmt.Stringer, consent Consent) error {
+func (r Resolver) authorize(ctx context.Context, t Target, digest string, summary Section, consent Consent) error {
 	base := t.Base()
 	trusted, err := r.Trust.Trusted(base, digest)
 	if err != nil {

@@ -3,8 +3,11 @@ package remote
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/baalimago/clai/internal/look"
 )
 
 // Server is one MCP server a profile starts or reaches.
@@ -157,79 +160,102 @@ func unpinned(command string, args []string) bool {
 	return false
 }
 
-// String renders the summary as the trust prompt shows it. Every string
-// from the profile is made printable first.
-func (s Summary) String() string {
-	var b strings.Builder
-	b.WriteString("This agent runs on your machine:\n")
+// String renders the summary as `clai profiles trust` prints it, without
+// colour.
+func (s Summary) String() string { return render(s.Lines(look.Style{})) }
+
+// Lines are the summary's sections in clai's look. Every string from the
+// profile is made printable first.
+func (s Summary) Lines(st look.Style) []string {
+	var lines []string
 	switch {
 	case s.Access == ToolsOff:
-		b.WriteString("  no tools, no MCP servers\n")
+		lines = append(lines, st.Head("tools", "none", "no MCP servers"))
 	case len(s.Servers) == 0:
-		b.WriteString("  no MCP servers of its own\n")
+		lines = append(lines, st.Head("MCP servers", "none of its own"))
+	default:
+		lines = append(lines, st.Head("MCP servers", strconv.Itoa(len(s.Servers))))
+		lines = append(lines, look.Grid("  ", serverRows(s.Servers), st)...)
 	}
-	names := make([]string, len(s.Servers))
-	width := 0
-	for i, srv := range s.Servers {
-		names[i] = Printable(srv.Name)
-		width = max(width, utf8.RuneCountInString(names[i]))
-	}
-	under := strings.Repeat(" ", width+4)
-	for i, srv := range s.Servers {
-		fmt.Fprintf(&b, "  %s%s  %s", names[i], strings.Repeat(" ", width-utf8.RuneCountInString(names[i])), Printable(srv.Runs))
-		if srv.Unpinned {
-			b.WriteString("  (not pinned)")
-		}
-		b.WriteString("\n")
-		if srv.TokenCommand != "" {
-			fmt.Fprintf(&b, "%sruns here for a token: %s\n", under, srv.TokenCommand)
-		}
-		for _, kv := range srv.Env {
-			fmt.Fprintf(&b, "%senv: %s\n", under, Printable(kv))
-		}
-	}
-	if s.Access != ToolsOff && len(s.Tools) > 0 {
-		fmt.Fprintf(&b, "  tools: %s\n", printableList(s.Tools))
+	switch {
+	case s.Access == ToolsOff:
+	case len(s.Tools) > 0:
+		lines = append(lines, st.Head("tools", printableList(s.Tools)))
+	default:
+		lines = append(lines, st.Head("tools", "its MCP servers' only"))
 	}
 	if len(s.Skills) > 0 {
-		names := make([]string, 0, len(s.Skills))
-		for _, t := range s.Skills {
-			name := t.String()
-			if !t.Pinned() && t.SHA256 == "" {
-				name += " (not pinned)"
-			}
-			names = append(names, name)
-		}
-		fmt.Fprintf(&b, "  skills: %s\n", printableList(names))
+		lines = append(lines, st.Head("skills", strconv.Itoa(len(s.Skills))))
+		lines = append(lines, look.Grid("  ", skillRows(s.Skills), st)...)
 	}
 	if len(s.EnvFiles) > 0 {
-		fmt.Fprintf(&b, "It reads: %s\n", printableList(s.EnvFiles))
+		lines = append(lines, st.Head("reads", printableList(s.EnvFiles)))
 	}
 	if len(s.Needs) > 0 {
 		needs := make([]string, 0, len(s.Needs))
 		for _, n := range s.Needs {
-			needs = append(needs, fmt.Sprintf("%s (%s)", n.Name, n.Server))
+			needs = append(needs, n.Name+" for "+n.Server)
 		}
-		fmt.Fprintf(&b, "It needs: %s\n", printableList(needs))
+		lines = append(lines, st.Head("needs", printableList(needs)))
 	}
 	model := Printable(s.Model)
 	if model == "" {
 		model = "your default"
 	}
-	fmt.Fprintf(&b, "Model: %s\n", model)
-	if lines := Preview(s.Prompt); len(lines) == 0 {
-		b.WriteString("Prompt: none\n")
-	} else {
-		b.WriteString("Prompt:\n")
-		for _, l := range lines {
-			fmt.Fprintf(&b, "  %s\n", l)
+	lines = append(lines, st.Head("model", model))
+	lines = append(lines, promptLines(st, "prompt", s.Prompt)...)
+	if len(s.Ignored) > 0 {
+		lines = append(lines, st.Head("not read by clai", printableList(s.Ignored)))
+	}
+	return lines
+}
+
+func serverRows(servers []Server) [][]string {
+	var rows [][]string
+	for _, srv := range servers {
+		row := []string{Printable(srv.Name), Printable(srv.Runs)}
+		if srv.Unpinned {
+			row = append(row, "! not pinned")
+		}
+		rows = append(rows, row)
+		if srv.TokenCommand != "" {
+			rows = append(rows, []string{"", "runs here for a token: " + Printable(srv.TokenCommand)})
+		}
+		for _, kv := range srv.Env {
+			rows = append(rows, []string{"", "env " + Printable(kv)})
 		}
 	}
-	if len(s.Ignored) > 0 {
-		fmt.Fprintf(&b, "Not read by clai: %s\n", printableList(s.Ignored))
-	}
-	return b.String()
+	return rows
 }
+
+func skillRows(skills []Target) [][]string {
+	rows := make([][]string, 0, len(skills))
+	for _, t := range skills {
+		row := []string{Printable(t.String())}
+		if !t.Pinned() && t.SHA256 == "" {
+			row = append(row, "! not pinned")
+		}
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+// promptLines heads a text the model will read and quotes its preview
+// under a bar, so it never reads as clai's own output.
+func promptLines(st look.Style, title, text string, details ...string) []string {
+	preview := Preview(text)
+	if len(preview) == 0 {
+		return []string{st.Head(title, append(details, "none")...)}
+	}
+	n := utf8.RuneCountInString(strings.TrimSpace(text))
+	lines := []string{st.Head(title, append(details, strconv.Itoa(n)+" characters")...)}
+	for _, l := range preview {
+		lines = append(lines, "  "+st.Secondary("│")+" "+l)
+	}
+	return lines
+}
+
+func render(lines []string) string { return strings.Join(lines, "\n") + "\n" }
 
 func printableList(items []string) string {
 	return Printable(strings.Join(items, ", "))

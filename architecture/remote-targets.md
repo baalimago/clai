@@ -112,48 +112,64 @@ A `gh:` target reads
     prompt, so they must not carry newlines or escape sequences. Local
     config is lenient about duplicates and `env` overlap.
 
-  The trust prompt's `It needs:` line names each variable a server reads
+  The trust prompt's `needs` section names each variable a server reads
   from the environment, with its server: `auth.required_env`, plus
   `auth.token_env` when no `auth.token_command` takes precedence over it
   (`Summary.Needs`).
-- **The trust prompt.** `Summary.String` shows everything the profile
-  makes this machine do or the model read:
+- **The trust prompt.** `text.FormatRemoteTrustPrompt` draws it in clai's
+  shared look (`internal/look`, the same `▸ head · detail` sections and
+  aligned rows `clai cloud` prints): the target with its sha256 and hub
+  page, then `Summary.Lines`, everything the profile makes this machine do
+  or the model read, then the question on its own line. On a terminal
+  without `NO_COLOR` the markers, details and question are in the theme's
+  colours (`look.For`); the profile's own strings are never painted.
+  `Summary.String` is the same without colour, as `clai profiles trust`
+  prints it.
 
   ```text
-  This agent runs on your machine:
-    memory  npx -y @modelcontextprotocol/server-memory@2.0.0
-            env: MEMORY_FILE_PATH=~/.clai/memory.json
-    vault   https://mcp.example.com
-            runs here for a token: vault print token
-    tools: date, mcp_memory*
-  It needs: VAULT_ADDR (vault)
-  Model: gpt-6.1-sol
-  Prompt:
-    You keep the team's notes.
-    … 812 more characters not shown
+  ▸ cchub:ada/notes@1 · fetched · runs on your machine
+    sha256   6934c528…
+    page     https://www.clai.chat/hub/ada/notes/
+
+  ▸ MCP servers · 2
+    memory   npx -y @modelcontextprotocol/server-memory@2.0.0
+             env MEMORY_FILE_PATH=~/.clai/memory.json
+    vault    https://mcp.example.com
+             runs here for a token: vault print token
+  ▸ tools · date, mcp_memory*
+  ▸ needs · VAULT_ADDR for vault
+  ▸ model · gpt-6.1-sol
+  ▸ prompt · 1213 characters
+    │ You keep the team's notes.
+    │ … 812 more characters not shown
+
+  ? Trust cchub:ada/notes@1? [y/N]
   ```
 
   - Under each server: its `auth.token_command` (`credential.go` runs it
     with `exec`) and every `env` entry as `KEY=value`. An argument that
-    holds a space or a quote is quoted.
+    holds a space or a quote is quoted. A package runner fetching an
+    unversioned package is marked `! not pinned`, and so is an unpinned
+    skill target under `skills`.
   - Tools (`Summary.Access`, mirroring `ProfileOverrides`): a fetched or
     installed profile (`ProfileFetched`, or a `source` stamp) gets only the
     tools it names. `use_tools` with no `tools` list and no servers of its
     own gets no tools, since every local tool and MCP server would be one
-    prompt injection away; the prompt says `no tools, no MCP servers`. A
-    `tools` list is shown as written; a profile with servers is narrowed
-    to their tools plus that list.
-  - `Prompt:` shows the first `PreviewLines` (6) lines and at most
-    `PreviewChars` (400) characters of the prompt, indented, and says how
-    many characters it left out. A skill's description is shown the same
-    way.
+    prompt injection away; the prompt says `tools · none · no MCP
+    servers`. A `tools` list is shown as written; a profile with servers
+    is narrowed to their tools plus that list.
+  - `prompt` shows the first `PreviewLines` (6) lines and at most
+    `PreviewChars` (400) characters of the prompt behind a `│` bar, so it
+    never reads as clai's own output, and says how many characters it
+    left out. A skill's description is shown the same way
+    (`SkillSummary.Lines`).
   - Every string from the fetched bytes (names, command lines, env, model,
     ignored keys, skill targets, prompt, skill name and description, and
     the target and page in `FormatRemoteTrustPrompt`) goes through
     `remote.Printable`: C0 and C1 controls, DEL and bidi formatting
     characters become visible escapes (`\x1b`, `\u202e`), invalid UTF-8
     becomes U+FFFD. Only the prompt preview keeps line breaks, as separate
-    indented lines.
+    quoted lines.
 
   `cchub:` and `https://` responses must be `application/json` (or
   `+json`). `raw.githubusercontent.com` serves `text/plain`, so `gh:`

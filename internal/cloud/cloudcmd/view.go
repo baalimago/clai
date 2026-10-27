@@ -7,9 +7,9 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/baalimago/clai/internal/look"
+
 	"github.com/baalimago/clai/internal/cloud/sync"
-	"github.com/baalimago/clai/internal/utils"
-	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
 
 const (
@@ -22,49 +22,25 @@ const (
 	lineWidth = 100
 )
 
-// style draws clai's look: the ▸ marker in the theme's primary colour and
-// details in its secondary one, or plain text when color is off.
-type style struct{ color bool }
-
-func (s style) paint(c, t string) string {
-	if !s.color || c == "" || t == "" {
-		return t
-	}
-	return table.Colorize(c, t)
-}
-
-func (s style) primary(t string) string   { return s.paint(utils.TableTheme().Primary, t) }
-func (s style) secondary(t string) string { return s.paint(utils.TableTheme().Secondary, t) }
-
-// head is "▸ <title> · <detail> · <detail>".
-func (s style) head(title string, details ...string) string {
-	line := s.primary("▸") + " " + title
-	if len(details) > 0 {
-		line += s.secondary(" · " + strings.Join(details, " · "))
-	}
-	return line
-}
-
-func (s style) link(indent, target string) string {
-	return indent + s.primary("→") + " " + target
-}
+// style is clai's shared look.
+type style = look.Style
 
 func statusLines(st sync.Status, s style) []string {
-	lines := []string{s.head(string(st.Store), statusDetails(st)...)}
+	lines := []string{s.Head(string(st.Store), statusDetails(st)...)}
 	if st.RemoteError != nil {
-		lines = append(lines, grid("  ", [][]string{{"! " + remoteProblem(st.RemoteError), "only this machine's side is shown"}}, s)...)
+		lines = append(lines, look.Grid("  ", [][]string{{"! " + remoteProblem(st.RemoteError), "only this machine's side is shown"}}, s)...)
 	}
 	rows := conflictRows(st.Conflicts)
 	if len(st.Changes) <= listLimit {
 		rows = append(append(rows, changeRows(st)...), excludedRows(st.Excluded)...)
-		lines = append(lines, grid("  ", rows, s)...)
+		lines = append(lines, look.Grid("  ", rows, s)...)
 	} else {
-		lines = append(lines, grid("  ", rows, s)...)
+		lines = append(lines, look.Grid("  ", rows, s)...)
 		lines = append(lines, changeGroups(st, s)...)
-		lines = append(lines, grid("  ", excludedRows(st.Excluded), s)...)
+		lines = append(lines, look.Grid("  ", excludedRows(st.Excluded), s)...)
 	}
 	lines = append(lines, excludedNotes(st.Excluded, s)...)
-	lines = append(lines, grid("  ", append(conflictNext(st.Conflicts), pullNext(st)...), s)...)
+	lines = append(lines, look.Grid("  ", append(conflictNext(st.Conflicts), pullNext(st)...), s)...)
 	if st.Imports != nil {
 		lines = append(lines, importLines(st.Imports.Conversations, s)...)
 	}
@@ -95,7 +71,7 @@ type toolGroup struct {
 // importLines is what commit -imports would add, one row per tool.
 func importLines(pending []sync.PendingImport, s style) []string {
 	if len(pending) == 0 {
-		return []string{s.head("from other tools", "nothing new to export")}
+		return []string{s.Head("from other tools", "nothing new to export")}
 	}
 	var tools []toolGroup
 	index := map[string]int{}
@@ -126,13 +102,13 @@ func importLines(pending []sync.PendingImport, s style) []string {
 	}
 	widths := columnWidths(header, rows)
 	lines := []string{
-		s.head("from other tools", count(total.conversations)+" "+plural(total.conversations, "conversation", "conversations")+" to export", count(total.messages)+" messages", human(total.bytes)+" in their own files"),
-		"    " + s.secondary(columns(header, widths, 0)),
+		s.Head("from other tools", count(total.conversations)+" "+plural(total.conversations, "conversation", "conversations")+" to export", count(total.messages)+" messages", human(total.bytes)+" in their own files"),
+		"    " + s.Secondary(columns(header, widths, 0)),
 	}
 	for _, r := range rows {
-		lines = append(lines, "  "+s.primary("■")+" "+columns(r, widths, 0))
+		lines = append(lines, "  "+s.Primary("■")+" "+columns(r, widths, 0))
 	}
-	return append(lines, s.link("  ", "clai cloud commit -imports"))
+	return append(lines, s.Link("  ", "clai cloud commit -imports"))
 }
 
 // columnWidths is the widest cell of every column but the last.
@@ -321,12 +297,12 @@ func changeGroups(st sync.Status, s style) []string {
 		peekRoom -= w + 1
 	}
 	lines := []string{
-		"  " + s.secondary(strings.Join(mix, " · ")),
-		"    " + s.secondary(columns(header, widths, peekRoom)),
+		"  " + s.Secondary(strings.Join(mix, " · ")),
+		"    " + s.Secondary(columns(header, widths, peekRoom)),
 	}
 	for i, r := range rows {
 		r[len(r)-1] = peek(groups[i], peekRoom)
-		lines = append(lines, "  "+s.primary("■")+" "+columns(r, widths, peekRoom))
+		lines = append(lines, "  "+s.Primary("■")+" "+columns(r, widths, peekRoom))
 	}
 	return lines
 }
@@ -335,7 +311,7 @@ func changeGroups(st sync.Status, s style) []string {
 // the last cell, the peek, cut to what is left of the line.
 func columns(cells []string, widths []int, peekRoom int) string {
 	var line strings.Builder
-	line.WriteString(pad(cells[0], widths[0]))
+	line.WriteString(look.Pad(cells[0], widths[0]))
 	for i := 1; i < len(widths); i++ {
 		line.WriteString(" " + right(cells[i], widths[i]))
 	}
@@ -398,7 +374,7 @@ func excludedNotes(excluded []sync.Excluded, s style) []string {
 		}
 	}
 	if secrets > 0 {
-		lines = append(lines, "  "+s.secondary("move the value to an env var or envfile, then commit"))
+		lines = append(lines, "  "+s.Secondary("move the value to an env var or envfile, then commit"))
 	}
 	if len(large) > 0 {
 		shown := large[:min(peekItems, len(large))]
@@ -406,7 +382,7 @@ func excludedNotes(excluded []sync.Excluded, s style) []string {
 		if more := len(large) - len(shown); more > 0 {
 			text += " · +" + count(more) + " more"
 		}
-		lines = append(lines, "  not synced, too large: "+s.secondary(text))
+		lines = append(lines, "  not synced, too large: "+s.Secondary(text))
 	}
 	if imports > 0 {
 		lines = append(lines, fmt.Sprintf("  %s imported %s from other tools left out; add them with commit -imports", count(imports), plural(imports, "file", "files")))
@@ -420,11 +396,11 @@ func blockedLines(store sync.Store, b *sync.BillingBlockedError, s style) []stri
 	case sync.PaymentOverdue:
 		reason = "a payment is 7 days overdue"
 	case sync.BillingNotOpen:
-		return []string{s.head(string(store), "not committed", "conversation sync is not open yet; config sync works now")}
+		return []string{s.Head(string(store), "not committed", "conversation sync is not open yet; config sync works now")}
 	}
-	lines := []string{s.head(string(store), "not committed", reason)}
+	lines := []string{s.Head(string(store), "not committed", reason)}
 	if b.URL != "" {
-		lines = append(lines, s.link("  ", b.URL))
+		lines = append(lines, s.Link("  ", b.URL))
 	}
 	return lines
 }
@@ -450,10 +426,6 @@ func share(part, total int64) string {
 		return "<1%"
 	}
 	return fmt.Sprintf("%d%%", pct)
-}
-
-func pad(t string, width int) string {
-	return t + strings.Repeat(" ", max(0, width-utf8.RuneCountInString(t)))
 }
 
 func right(t string, width int) string {

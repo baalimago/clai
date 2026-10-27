@@ -35,7 +35,7 @@ func Test_SKILLS_installedProfileBringsItsSkills(t *testing.T) {
 	if status != 0 {
 		t.Fatalf("install: status %d stdout %q stderr %q", status, stdout, stderr)
 	}
-	for _, want := range []string{"skills: cchub:ada/review@1, gh:ada/kit/triage/SKILL.md@v1", "Skill review from cchub:ada/review@1", "Skill triage from gh:ada/kit/triage/SKILL.md@v1"} {
+	for _, want := range []string{"▸ skills · 2\n  cchub:ada/review@1\n  gh:ada/kit/triage/SKILL.md@v1\n", "Skill review from cchub:ada/review@1", "Skill triage from gh:ada/kit/triage/SKILL.md@v1"} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("install output %q lacks %q", stdout, want)
 		}

@@ -83,7 +83,7 @@ func Test_REMOTE_terminalAsksBeforeTheFirstRun(t *testing.T) {
 		if status != 0 || stdout != "hello\n" {
 			t.Fatalf("status %d stdout %q, screen:\n%s", status, stdout, screen)
 		}
-		for _, want := range []string{"fetched cchub:ada/bot · sha256 " + digestOf(remoteBotV1), "Model: test", "Prompt:", "  You are bot one.", "Trust cchub:ada/bot? [y/N]"} {
+		for _, want := range []string{"▸ cchub:ada/bot · fetched · runs on your machine", "  sha256   " + digestOf(remoteBotV1), "▸ model · test", "▸ prompt · 16 characters", "  │ You are bot one.", "? Trust cchub:ada/bot? [y/N] "} {
 			if !strings.Contains(screen, want) {
 				t.Fatalf("screen lacks %q:\n%s", want, screen)
 			}

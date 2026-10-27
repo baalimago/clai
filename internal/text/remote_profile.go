@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/baalimago/clai/internal/look"
 	"github.com/baalimago/clai/internal/remote"
 	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
@@ -129,7 +130,7 @@ func TerminalTrustPrompter(input io.Reader, out io.Writer) remote.Prompter {
 // stdout is piped still shows the question and keeps its output clean.
 func terminalTrustPrompt(input io.Reader, out io.Writer) remote.Prompter {
 	return func(_ context.Context, p remote.TrustPrompt) (bool, error) {
-		if _, err := fmt.Fprint(out, FormatRemoteTrustPrompt(p)); err != nil {
+		if _, err := fmt.Fprint(out, FormatRemoteTrustPrompt(p, look.For(out))); err != nil {
 			return false, fmt.Errorf("show trust prompt: %w", err)
 		}
 		answer, err := table.ReadUserInputFrom(input)
@@ -142,15 +143,19 @@ func terminalTrustPrompt(input io.Reader, out io.Writer) remote.Prompter {
 }
 
 // FormatRemoteTrustPrompt renders the question asked before a remote
-// profile runs for the first time.
-func FormatRemoteTrustPrompt(p remote.TrustPrompt) string {
-	summary := ""
-	if p.Summary != nil {
-		summary = p.Summary.String()
-	}
+// target runs for the first time: where it came from, what it runs here,
+// and the question on a line of its own.
+func FormatRemoteTrustPrompt(p remote.TrustPrompt, st look.Style) string {
 	target := remote.Printable(p.Target)
-	return fmt.Sprintf("fetched %s · sha256 %s\n\n%s\nRead it: %s\nTrust %s? [y/N] ",
-		target, remote.Printable(p.Digest), summary, remote.Printable(p.Page), target)
+	rows := [][]string{{"sha256", remote.Printable(p.Digest)}}
+	if p.Page != "" {
+		rows = append(rows, []string{"page", remote.Printable(p.Page)})
+	}
+	lines := append([]string{st.Head(target, "fetched", "runs on your machine")}, look.Grid("  ", rows, st)...)
+	if p.Summary != nil {
+		lines = append(append(lines, ""), p.Summary.Lines(st)...)
+	}
+	return strings.Join(lines, "\n") + "\n\n" + st.Primary("? Trust "+target+"?") + " [y/N] "
 }
 
 func resolveRemoteProfilePath(ctx context.Context, tConf *Configurations, resolve RemoteProfileResolver) error {
