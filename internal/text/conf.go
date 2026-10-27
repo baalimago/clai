@@ -1,6 +1,7 @@
 package text
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -411,16 +412,35 @@ func (c *Configurations) collectInputs(ctx context.Context, args []string) (imag
 	if err != nil {
 		return imageinput.Collected{}, fmt.Errorf("failed to setup prompt: %w", err)
 	}
-	collected, err := imageinput.New().Collect(imageinput.CollectRequest{
-		Images:       c.ImageInputs,
-		Glob:         c.Glob,
-		Stdin:        stdin,
-		Args:         args,
-		StdinReplace: c.StdinReplace,
-	})
+	return c.collectFrom(args, stdin)
+}
+
+func (c Configurations) collectFrom(args []string, stdin io.Reader) (imageinput.Collected, error) {
+	var piped []byte
+	if stdin != nil {
+		b, err := io.ReadAll(stdin)
+		if err != nil {
+			return imageinput.Collected{}, fmt.Errorf("failed to setup prompt: read stdin: %w", err)
+		}
+		piped = b
+	}
+	collect := func(args []string) (imageinput.Collected, error) {
+		var r io.Reader
+		if stdin != nil {
+			r = bytes.NewReader(piped)
+		}
+		return imageinput.New().Collect(imageinput.CollectRequest{
+			Images:       c.ImageInputs,
+			Glob:         c.Glob,
+			Stdin:        r,
+			Args:         args,
+			StdinReplace: c.StdinReplace,
+		})
+	}
+	collected, err := collect(args)
 	if errors.Is(err, utils.ErrNoPrompt) && c.UsingProfile() && len(args) == 1 {
 		// args[0] is the command; the default prompt stands in for the rest.
-		return c.collectInputs(ctx, []string{args[0], ProfileDefaultPrompt})
+		collected, err = collect([]string{args[0], ProfileDefaultPrompt})
 	}
 	if err != nil {
 		return imageinput.Collected{}, fmt.Errorf("failed to setup prompt: %w", err)
