@@ -8,7 +8,7 @@ Test coverage: 91.9% 😍👌
   <img src="img/clai-logo.png" alt="clai logo" width="112">
   </a>
   <h2>Command Line Artificial Intelligence</h2>
-  <p><code>clai</code> (<i>/klaɪ/</i>, like "cli" in "<b>cli</b>mate") is a command line context-feeder for any ai task.</p>
+  <p><code>clai</code> (<i>/klaɪ/</i>, like "cli" in "<b>cli</b>mate") is a unix-like command line agentic harness with batteries hosted online.</p>
 </div>
 
 ### Get started
@@ -39,7 +39,7 @@ clai | clai query Please give a concise explanation of clai
 
 Install [Glow](https://github.com/charmbracelet/glow) for formatted markdown output when querying text responses.
 
-`clai` is a <b>minimalistic non-interractive unix-like agentic harness</b> See <a href="https://www.clai.chat">clai.chat</a> for details on usecase of all the features. Here's a brief summary:
+See <a href="https://www.clai.chat">clai.chat</a> for details on usecase of all the features. Here's a brief summary:
 
 <div align="center">
   <img src="img/clai-demo.gif" alt="Three aliases, a loop that verifies itself, a generated image read back by the model, a Jev classification, a stored chat, a model swap and a replay">
