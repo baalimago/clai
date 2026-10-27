@@ -1,7 +1,7 @@
 ![Wakatime](https://wakatime.com/badge/user/018cc8d2-3fd9-47ef-81dc-e4ad645d5f34/project/018e07e1-bd22-4077-a213-c16290d3db52.svg)
 [![Go Reference](https://pkg.go.dev/badge/github.com/baalimago/clai.svg)](https://pkg.go.dev/github.com/baalimago/clai/pkg/agent)
 
-Test coverage: 92.0% 😍👌
+Test coverage: 91.9% 😍👌
 
 <div align="center">
   <a  href="https://www.clai.chat">
@@ -65,15 +65,15 @@ All of these features are easily combined and tweaked, empowering users to accom
 See [examples](./examples.md) for additional info.
 
 ## Run an agent from the Hub
-
-`-profile-path` also takes a remote profile: an agent on [clai.chat](https://www.clai.chat), a file in a GitHub repo, or a github.com link copied from the browser.
+Overwhelmed by all settings and configuration? Fear not! Load batteries from online by setting `-profile-path` to get a pre-configured agent.
 
 ```bash
-clai -profile-path cchub:baalimago/sre-sync-prep@4 query
-clai -profile-path gh:<owner>/<repo>/agent.json@v1 query
+clai -profile-path cchub:clai/pr-summarizer@1 query
 ```
 
 The first run shows what the agent brings (model, tools, MCP servers, skills) and asks you to trust it. See `clai profiles -h` for more.
+
+An agent can be uploaded by anyone to [clai.chat](https://www.clai.chat). A local file works just fine, or a github.com link copied from the browser.
 
 
 ## Use clai as a Go library
