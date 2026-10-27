@@ -38,9 +38,10 @@ cloud-medic, project-planner and researcher keep their memory in
 [slivingdoc](https://github.com/baalimago/slivingdoc), a shared text
 notebook served over MCP, each under its own path (`clai/cloud-medic`,
 `clai/project-planner`, `clai/researcher`, which its `--writable-paths`
-enforces). Sign in once with `npx slivingdoc@1.2.0 login`, or set
-`SLIVINGDOC_TOKEN`; without either they run and say that memory is off,
-since the server is marked `"optional": true`.
+enforces). The first run in a terminal signs you in to slivingdoc (or set
+`SLIVINGDOC_TOKEN`). Where it cannot sign in, such as a cron run before
+the first sign-in, they run and say that memory is off, since the server
+is marked `"optional": true`.
 
 `GITHUB_TOKEN` is used against GitHub's hosted MCP server
 (`https://api.githubcopilot.com/mcp/`). A fine-grained token scoped to the

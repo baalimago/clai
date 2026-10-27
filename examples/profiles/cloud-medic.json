@@ -1,5 +1,5 @@
 {
-  "description": "On-call agent for the repo you are in: works out where the service runs and where its errors show up (Sentry, GitHub Actions, and kubectl, wrangler, fly, gcloud or aws when you are signed in), finds the root cause of what hurts users most with parallel investigator workers, and opens a draft fix PR. Keeps a status note in slivingdoc, so each run follows up instead of starting over. Run it in a clone: 'clai -profile-path cchub:clai/cloud-medic -query-summary query'. Needs GITHUB_TOKEN (contents and pull requests write) and npx; slivingdoc memory needs 'npx slivingdoc login' or SLIVINGDOC_TOKEN, and runs without memory otherwise. The first run in a terminal opens your browser to sign in to Sentry.",
+  "description": "On-call agent for the repo you are in: works out where the service runs and where its errors show up (Sentry, GitHub Actions, and kubectl, wrangler, fly, gcloud or aws when you are signed in), finds the root cause of what hurts users most with parallel investigator workers, and opens a draft fix PR. Keeps a status note in slivingdoc, so each run follows up instead of starting over. Run it in a clone: 'clai -profile-path cchub:clai/cloud-medic -query-summary query'. Needs GITHUB_TOKEN (contents and pull requests write) and npx; slivingdoc memory signs you in on the first run in a terminal (or set SLIVINGDOC_TOKEN), and the agent runs without memory where it cannot sign in. The first run in a terminal opens your browser to sign in to Sentry.",
   "model": "gpt-6.1-sol",
   "use_tools": true,
   "save-reply-as-conv": true,
@@ -73,7 +73,7 @@
       "command": "npx",
       "args": [
         "-y",
-        "slivingdoc@1.2.0",
+        "slivingdoc@1.3.0",
         "serve",
         "--writable-paths",
         "clai/cloud-medic"

@@ -1,5 +1,5 @@
 {
-  "description": "Deep research on any question: splits it into sub-questions, searches each, hands the reading to parallel reader workers, checks every claim against its source and writes a sourced report. Keeps its reports in slivingdoc, so the next question on the same subject builds on them. With no question it reports what changed for the main dependencies of the project you are in since its last report. Use: 'clai -reply-only -profile-path cchub:clai/researcher query \"How do Postgres advisory locks behave across pgbouncer?\" > report.md'. Searches with DuckDuckGo, so it needs no search API key. Needs uv (uvx) and npx; memory needs 'npx slivingdoc login' or SLIVINGDOC_TOKEN, and it runs without memory otherwise.",
+  "description": "Deep research on any question: splits it into sub-questions, searches each, hands the reading to parallel reader workers, checks every claim against its source and writes a sourced report. Keeps its reports in slivingdoc, so the next question on the same subject builds on them. With no question it reports what changed for the main dependencies of the project you are in since its last report. Use: 'clai -reply-only -profile-path cchub:clai/researcher query \"How do Postgres advisory locks behave across pgbouncer?\" > report.md'. Searches with DuckDuckGo, so it needs no search API key. Needs uv (uvx) and npx; slivingdoc memory signs you in on the first run in a terminal (or set SLIVINGDOC_TOKEN), and the agent runs without memory where it cannot sign in.",
   "model": "gpt-6.1-sol",
   "use_tools": true,
   "save-reply-as-conv": true,
@@ -39,7 +39,7 @@
       "command": "npx",
       "args": [
         "-y",
-        "slivingdoc@1.2.0",
+        "slivingdoc@1.3.0",
         "serve",
         "--writable-paths",
         "clai/researcher"
