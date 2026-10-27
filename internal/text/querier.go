@@ -314,6 +314,9 @@ func (q *Querier[C]) handleTokenForSession(session *QuerySession, token string) 
 	prior := session.PendingTextString()
 	session.AppendPendingText(token)
 	q.fullMsg = session.PendingTextString()
+	if q.holdsStepText() {
+		return nil
+	}
 	if !q.debug && !q.structuredOutput {
 		if q.usesActivityViewport() && q.activityViewport != nil {
 			q.activityViewport.AppendText(token)

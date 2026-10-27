@@ -208,6 +208,34 @@ func (q *Querier[C]) transcriptOut() io.Writer {
 	return os.Stdout
 }
 
+// holdsStepText is -reply-only on a non-terminal stdout: a step's prose is
+// held until the step ends, because only then is it known to be the reply
+// rather than narration before a tool call.
+func (q *Querier[C]) holdsStepText() bool {
+	return q.transcriptToStderr && q.rawDisplay() && !q.debug && !q.structuredOutput
+}
+
+func (q *Querier[C]) releaseStepText(text string, endedWithTool bool) error {
+	text = stripThinkingBlocks(text)
+	if !q.holdsStepText() || text == "" {
+		return nil
+	}
+	w := q.out
+	if w == nil {
+		w = os.Stdout
+	}
+	if endedWithTool {
+		w = q.transcriptOut()
+		if !strings.HasSuffix(text, "\n") {
+			text += "\n"
+		}
+	}
+	if _, err := io.WriteString(w, text); err != nil {
+		return fmt.Errorf("print step text: %w", err)
+	}
+	return nil
+}
+
 // EnableQuerySummary makes each plain Query print a QuerySummary when it
 // ends. Loop iterations never print one; the loop reports its own.
 func (q *Querier[C]) EnableQuerySummary() {

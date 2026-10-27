@@ -112,6 +112,9 @@ func (r *sessionRunner[C]) Run(ctx context.Context, session *QuerySession) (runE
 			stepResult.ToolCalls = nil
 			stepResult.EndedNormally = true
 		}
+		if err := r.querier.releaseStepText(stepResult.AssistantText, len(stepResult.ToolCalls) > 0); err != nil {
+			return fmt.Errorf("run step %d: %w", stepIndex, err)
+		}
 
 		completedCall := CompletedModelCall{
 			StepIndex:      stepIndex,

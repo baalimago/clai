@@ -30,7 +30,7 @@ The tool name is what the model sees. The Go identifier is what you pass to `Wit
 | `file_tree` | `FileTree` | List the filetree of a directory. |
 | `file_type` | `FileType` | Determine the file type of a path. |
 | `find` | `Find` | Search for files in a directory hierarchy. |
-| `git` | `Git` | Run read-only git commands: log, diff, show, blame, status. |
+| `git` | `Git` | Run read-only git commands: log, diff, show, blame, status. `range` holds one or more space-separated arguments (quote one that has spaces); `--output` is refused. |
 | `go` | `Go` | Run `go` commands such as test, run and build. |
 | `head` | `Head` | Display the first part of a file. |
 | `jq` | `JQ` | Process a JSON file with the real `jq` executable. |

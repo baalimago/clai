@@ -350,7 +350,10 @@ prompt has it run `clai help` and `clai q -h` first, so it learns the flags.
 
 - **Reply-only.** `-reply-only` (`-ro`) sends the raw transcript (tool calls,
   tool output, reasoning) to stderr through `Querier.transcriptOut`, so a
-  worker's stdout is its reply alone. Users get the same with
+  worker's stdout is its reply alone. On a non-terminal stdout a step's
+  prose is held (`Querier.holdsStepText`) until the step ends, then
+  `releaseStepText` prints it to stderr when the step ended in tool calls
+  and to stdout only when it is the reply. Users get the same with
   `clai -ro ... q | git commit -F -`.
 - **No prompt.** A profile run without a prompt or stdin acts on its defaults
   (see profiles.md), so `clai -prp <agent> q` works as a worker too.

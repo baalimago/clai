@@ -63,3 +63,43 @@ func TestGitTool_Status(t *testing.T) {
 		t.Errorf("expected status to show untracked file, got %q", out)
 	}
 }
+
+func TestGitTool_RangeHoldsSeveralArguments(t *testing.T) {
+	repo := setupRepo(t)
+	out, err := Git.Call(pub_models.Input{"operation": "diff", "range": "--stat  HEAD~1...HEAD", "dir": repo})
+	if err != nil {
+		t.Fatalf("git diff --stat failed: %v", err)
+	}
+	if !strings.Contains(out, "a.txt |") {
+		t.Errorf("expected a diffstat, got %q", out)
+	}
+}
+
+func TestGitTool_RangeKeepsAQuotedArgumentWhole(t *testing.T) {
+	repo := setupRepo(t)
+	out, err := Git.Call(pub_models.Input{"operation": "log", "n": 1, "range": `"--format=%s by %an" HEAD`, "dir": repo})
+	if err != nil {
+		t.Fatalf("git log failed: %v", err)
+	}
+	if strings.TrimSpace(out) != "second by tester" {
+		t.Errorf("want %q, got %q", "second by tester", out)
+	}
+}
+
+func TestGitTool_RangeErrors(t *testing.T) {
+	repo := setupRepo(t)
+	for name, r := range map[string]string{
+		"unterminated quote": `"--format=%s HEAD`,
+		"output flag":        "--output=leak.txt HEAD~1",
+		"output flag split":  "--output leak.txt",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := Git.Call(pub_models.Input{"operation": "diff", "range": r, "dir": repo}); err == nil {
+				t.Fatalf("range %q: want an error", r)
+			}
+			if _, err := os.Stat(filepath.Join(repo, "leak.txt")); err == nil {
+				t.Fatalf("range %q wrote a file", r)
+			}
+		})
+	}
+}
