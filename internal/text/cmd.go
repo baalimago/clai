@@ -2,6 +2,7 @@ package text
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -12,6 +13,7 @@ import (
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/photo"
 	"github.com/baalimago/clai/internal/tools"
+	"github.com/baalimago/clai/pkg/claierr"
 )
 
 const queryHelp = `query <text>. Queries the chat model; piped stdin is appended to the
@@ -147,6 +149,12 @@ func setupTextQuerier(ctx context.Context, c *internal.Command, tf internal.Text
 	remoteTargets := &remoteRun{newResolver: deps.NewRemoteResolver, confDir: confDir, trustInput: trustInput, interactive: interactive}
 	q, tConf, err := SetupQuerier(ctx, confDir, tf, c.Args(), trustInput, remoteTargets.profile, remoteTargets.skills)
 	if err != nil {
+		// The startup error names the server and the stage; the setup layers
+		// it passed through add nothing a user can act on.
+		var startup *claierr.McpServerStartupError
+		if errors.As(err, &startup) {
+			return nil, nil, startup
+		}
 		return nil, nil, err
 	}
 	// NewQuerier stamps the effective profile on the querier chat; mirror it on

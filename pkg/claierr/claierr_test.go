@@ -250,6 +250,17 @@ func Test_Claierr_TransportAndMcpUnwrapSentinelAndCause(t *testing.T) {
 			t.Fatalf("unexpected fields: %#v", mcpErr)
 		}
 	})
+	t.Run("mcp_server_startup_exited", func(t *testing.T) {
+		closed := claierr.NewMcpConnClosed("polymarket")
+		err := claierr.NewMcpServerStartup("polymarket", "connect", closed)
+		want := "mcp server 'polymarket' failed to start at stage 'connect': it exited before answering; its log above says why"
+		if got := err.Error(); got != want {
+			t.Fatalf("Error() = %q, want %q", got, want)
+		}
+		if !errors.Is(err, claierr.ErrMcpConnClosed) {
+			t.Fatal("expected the closed connection to stay matchable")
+		}
+	})
 	t.Run("mcp_rpc_error", func(t *testing.T) {
 		err := claierr.NewMcpRPCError("fixture-server", -32601, "method not found: fixture_tool")
 		if !errors.Is(err, claierr.ErrMcpRPCError) {

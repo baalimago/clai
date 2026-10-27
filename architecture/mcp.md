@@ -597,7 +597,11 @@ The posture differs by how a server was requested, and the distinction is delibe
   a failure there surfaces when its tool is called.
 
 Startup failures are reported as `claierr.McpServerStartupError`, carrying the server name and the
-stage that failed. See `architecture/errors.md`.
+stage that failed. See `architecture/errors.md`. When the cause is a closed connection (the process
+exited before answering, as an `npx` package that fails to install does), the message says so and
+points at the server's log printed above it. `setupTextQuerier` (`internal/text/cmd.go`) returns the
+startup error itself, without the setup layers' wrapping, so the run ends on one line that names the
+server.
 
 ## Server output
 
