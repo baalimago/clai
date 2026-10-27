@@ -271,7 +271,7 @@ func TestPlan_excludesSecretsLargeFilesAndImports(t *testing.T) {
 	big := strings.Repeat("x", int(FileLimits[StoreConfig])+1)
 	a.write("profiles/big.json", big)
 
-	cfg, err := a.Plan(StoreConfig, PlanOptions{})
+	cfg, err := a.Plan(context.Background(), StoreConfig, PlanOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,22 +285,22 @@ func TestPlan_excludesSecretsLargeFilesAndImports(t *testing.T) {
 	if len(cfg.Changes) != 1 || cfg.Changes[0].Path != "profiles/ok.json" || cfg.Changes[0].Kind != Added {
 		t.Fatalf("changes = %+v", cfg.Changes)
 	}
-	conv, err := a.Plan(StoreConversations, PlanOptions{})
+	conv, err := a.Plan(context.Background(), StoreConversations, PlanOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(conv.Changes) != 1 || len(conv.Excluded) != 1 || conv.Excluded[0].Kind != ExcludedImport {
 		t.Fatalf("conversations plan = %+v", conv)
 	}
-	with, _ := a.Plan(StoreConversations, PlanOptions{Imports: true})
+	with, _ := a.Plan(context.Background(), StoreConversations, PlanOptions{Imports: true})
 	if len(with.Changes) != 2 {
 		t.Fatalf("with imports = %+v", with.Changes)
 	}
-	narrowed, _ := a.Plan(StoreConfig, PlanOptions{Paths: []string{"profiles/ok.json"}})
+	narrowed, _ := a.Plan(context.Background(), StoreConfig, PlanOptions{Paths: []string{"profiles/ok.json"}})
 	if len(narrowed.Changes) != 1 {
 		t.Fatalf("narrowed = %+v", narrowed.Changes)
 	}
-	none, _ := a.Plan(StoreConfig, PlanOptions{Paths: []string{"skills/"}})
+	none, _ := a.Plan(context.Background(), StoreConfig, PlanOptions{Paths: []string{"skills/"}})
 	if len(none.Changes) != 0 {
 		t.Fatalf("skills/ = %+v", none.Changes)
 	}
@@ -361,7 +361,7 @@ func TestCommit_fileChangedDuringUpload(t *testing.T) {
 	a := newMachine(t, srv, "tok-a")
 	a.write("profiles/x.json", "1")
 	st, _ := loadState(a.ConfDir, StoreConfig)
-	plan, _ := a.plan(StoreConfig, st, PlanOptions{})
+	plan, _ := a.plan(context.Background(), StoreConfig, st, PlanOptions{})
 	a.write("profiles/x.json", "2")
 	var changed *ChangedDuringCommitError
 	if _, err := a.upload(context.Background(), StoreConfig, plan.Changes); !errors.As(err, &changed) || !strings.Contains(err.Error(), "commit again") {
@@ -542,7 +542,7 @@ func TestState_unreadableIsAnError(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 	for _, f := range []func() error{
-		func() error { _, err := a.Plan(StoreConfig, PlanOptions{}); return err },
+		func() error { _, err := a.Plan(context.Background(), StoreConfig, PlanOptions{}); return err },
 		func() error { _, err := a.Commit(context.Background(), StoreConfig, CommitOptions{}); return err },
 		func() error { _, err := a.Status(context.Background(), StoreConfig, PlanOptions{}); return err },
 		func() error { _, err := a.Diff(context.Background(), "profiles/x.json", false); return err },
@@ -555,7 +555,7 @@ func TestState_unreadableIsAnError(t *testing.T) {
 	if err := ResetState(a.ConfDir); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := a.Plan(StoreConfig, PlanOptions{}); err != nil {
+	if _, err := a.Plan(context.Background(), StoreConfig, PlanOptions{}); err != nil {
 		t.Fatalf("after reset: %v", err)
 	}
 }

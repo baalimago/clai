@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -47,8 +48,9 @@ type found struct {
 // regular file whose size or mod time moved since the hash in hashes,
 // which it reads and refreshes in place. The walk comes first so the
 // hashing reports against a known total. report, when set, hears both.
-func scan(confDir string, store Store, hashes map[string]hashEntry, report func(Progress)) (map[string]LocalFile, error) {
-	files, err := walk(confDir, store, report)
+// A cancelled ctx stops it between files.
+func scan(ctx context.Context, confDir string, store Store, hashes map[string]hashEntry, report func(Progress)) (map[string]LocalFile, error) {
+	files, err := walk(ctx, confDir, store, report)
 	if err != nil {
 		return nil, err
 	}
@@ -69,6 +71,9 @@ func scan(confDir string, store Store, hashes map[string]hashEntry, report func(
 		report(hashing)
 	}
 	for _, f := range todo {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		sum, err := hashFile(f.abs)
 		if err != nil {
 			return nil, err
@@ -89,7 +94,7 @@ func scan(confDir string, store Store, hashes map[string]hashEntry, report func(
 	return out, nil
 }
 
-func walk(confDir string, store Store, report func(Progress)) ([]found, error) {
+func walk(ctx context.Context, confDir string, store Store, report func(Progress)) ([]found, error) {
 	var files []found
 	seen := map[string]bool{}
 	// A config dir that is itself a link is where the user keeps it.
@@ -99,6 +104,9 @@ func walk(confDir string, store Store, report func(Progress)) ([]found, error) {
 	for _, root := range roots(store) {
 		abs := filepath.Join(confDir, filepath.FromSlash(root))
 		err := filepath.WalkDir(abs, func(p string, d fs.DirEntry, err error) error {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return ctxErr
+			}
 			if err != nil {
 				if errors.Is(err, fs.ErrNotExist) {
 					return nil
@@ -136,6 +144,9 @@ func walk(confDir string, store Store, report func(Progress)) ([]found, error) {
 			}
 			return nil
 		})
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
 		if err != nil {
 			return nil, fmt.Errorf("scan %s: %w", abs, err)
 		}

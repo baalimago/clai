@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -433,6 +434,50 @@ func TestDiff(t *testing.T) {
 	}
 	if code, _ := h.run("diff", "notes.txt"); code != 1 {
 		t.Fatal("diff of an unsynced path")
+	}
+}
+
+func TestDiff_summarisesConversations(t *testing.T) {
+	h := newHarness(t, "tok-a")
+	for i := range 40 {
+		h.write(fmt.Sprintf("conversations/c%02d.json", i), `{"messages":[]}`)
+	}
+	h.write("profiles/x.json", "one\n")
+	h.run("commit")
+	for i := range 30 {
+		h.write(fmt.Sprintf("conversations/c%02d.json", i), `{"messages":[{"role":"user","content":"hi"}]}`)
+	}
+	h.write("conversations/new.json", `{"messages":[]}`)
+	h.write("profiles/x.json", "two\n")
+	h.srv.Put("conversations", "conversations/theirs.json", `{"messages":[]}`)
+	unlock := h.srv.Lock()
+	clear(h.srv.Requests)
+	unlock()
+	_, out := h.run("diff")
+	mustContain(t, out, "▸ conversations · 31 changed here",
+		"+ 1 added",
+		"~ 30 modified", "conversations/c00.json, conversations/c01.json, conversations/c02.json, +27 more",
+		"→ clai cloud diff -list",
+		"▸ profiles/x.json", "-one", "+two")
+	if strings.Contains(out, " messages;") || strings.Contains(out, "on your account") {
+		t.Fatalf("plain diff described conversations one by one or asked the server:\n%s", out)
+	}
+	unlock = h.srv.Lock()
+	for path, n := range h.srv.Requests {
+		t.Errorf("plain diff asked the server %s %d times", path, n)
+	}
+	unlock()
+	_, out = h.run("diff", "-list")
+	mustContain(t, out, "conversations/c29.json")
+	if strings.Contains(out, "more") {
+		t.Fatalf("-list still elided paths:\n%s", out)
+	}
+	_, out = h.run("diff", "-remote")
+	mustContain(t, out, "1 newer on your account", "↓+ 1 added on your account", "conversations/theirs.json")
+	unlock = h.srv.Lock()
+	defer unlock()
+	if n := h.srv.Requests["/api/v1/stores/conversations/changes"]; n != 1 {
+		t.Fatalf("-remote listed conversations %d times", n)
 	}
 }
 

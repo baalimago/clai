@@ -67,7 +67,7 @@ func (e *Engine) Commit(ctx context.Context, store Store, opts CommitOptions) (C
 	if err != nil {
 		return res, err
 	}
-	plan, err := e.plan(store, st, opts.PlanOptions)
+	plan, err := e.plan(ctx, store, st, opts.PlanOptions)
 	if err != nil {
 		return res, err
 	}

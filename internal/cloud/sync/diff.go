@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
+	"slices"
 	"strings"
 )
 
@@ -78,14 +80,54 @@ func describeChat(s Side) string {
 // against the base (and the server's side of a conflict); with remote it
 // shows the server's current copy against this machine's.
 func (e *Engine) Diff(ctx context.Context, rel string, remote bool) (FileDiff, error) {
-	store, ok := StoreOf(rel)
-	if !ok {
-		return FileDiff{}, &UnknownPathError{Path: rel}
+	var out FileDiff
+	err := e.Diffs(ctx, []string{rel}, remote, func(d FileDiff) error {
+		out = d
+		return nil
+	})
+	return out, err
+}
+
+// Diffs compares each path in turn and hands its diff to each. With
+// remote, each store's changes are listed from the server once, not once
+// per path.
+func (e *Engine) Diffs(ctx context.Context, rels []string, remote bool, each func(FileDiff) error) error {
+	listings := map[Store][]RemoteEntry{}
+	for _, rel := range rels {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		store, ok := StoreOf(rel)
+		if !ok {
+			return &UnknownPathError{Path: rel}
+		}
+		st, err := loadState(e.ConfDir, store)
+		if err != nil {
+			return err
+		}
+		var listing []RemoteEntry
+		if _, conflicted := st.Conflicts[rel]; remote && !conflicted {
+			var listed bool
+			if listing, listed = listings[store]; !listed {
+				if listing, _, err = e.api().allChanges(ctx, store, st.Cursor); err != nil {
+					return err
+				}
+				listings[store] = listing
+			}
+		}
+		d, err := e.diff(ctx, store, st, rel, remote, listing)
+		if err != nil {
+			return err
+		}
+		if err := each(d); err != nil {
+			return err
+		}
 	}
-	st, err := loadState(e.ConfDir, store)
-	if err != nil {
-		return FileDiff{}, err
-	}
+	return nil
+}
+
+func (e *Engine) diff(ctx context.Context, store Store, st *state, rel string, remote bool, listing []RemoteEntry) (FileDiff, error) {
+	var err error
 	d := FileDiff{Path: rel}
 	base, hasBase := st.Entries[rel]
 	d.Base = Side{Label: "base", Missing: !hasBase || base.Deleted}
@@ -116,12 +158,8 @@ func (e *Engine) Diff(ctx context.Context, rel string, remote bool) (FileDiff, e
 	if !remote {
 		return d, nil
 	}
-	entries, _, err := e.api().allChanges(ctx, store, st.Cursor)
-	if err != nil {
-		return d, err
-	}
 	theirs := Side{Label: "theirs (the server, same as base)", Bytes: d.Base.Bytes, Missing: d.Base.Missing}
-	for _, r := range entries {
+	for _, r := range listing {
 		if r.Path != rel || (hasBase && base.Rev >= r.Rev) {
 			continue
 		}
@@ -134,6 +172,97 @@ func (e *Engine) Diff(ctx context.Context, rel string, remote bool) (FileDiff, e
 	}
 	d.Theirs = &theirs
 	return d, nil
+}
+
+// Summary is one store's changes as paths only, read from the same hashes
+// a commit plans with: nothing is downloaded to describe them.
+type Summary struct {
+	Store     Store    `json:"store"`
+	Added     []string `json:"added"`
+	Modified  []string `json:"modified"`
+	Deleted   []string `json:"deleted"`
+	Conflicts []string `json:"conflicts"`
+	// Remote is what the server changed since this machine's last pull;
+	// nil unless asked for.
+	Remote *RemoteSummary `json:"remote,omitempty"`
+}
+
+// RemoteSummary is the server's side of a Summary.
+type RemoteSummary struct {
+	Added    []string `json:"added"`
+	Modified []string `json:"modified"`
+	Deleted  []string `json:"deleted"`
+	// Both lists the paths changed here and there.
+	Both []string `json:"both"`
+}
+
+// Changed is every path this machine changed, in the plan's order.
+func (s Summary) Changed() []string {
+	return slices.Concat(s.Added, s.Modified, s.Deleted)
+}
+
+// Summarize plans the store as a commit would and sorts its changes by
+// kind; with remote it also lists the server's changes, in one request.
+func (e *Engine) Summarize(ctx context.Context, store Store, remote bool) (Summary, error) {
+	st, err := loadState(e.ConfDir, store)
+	if err != nil {
+		return Summary{}, err
+	}
+	plan, err := e.plan(ctx, store, st, PlanOptions{})
+	if err != nil {
+		return Summary{}, err
+	}
+	if err := st.save(e.ConfDir, store); err != nil {
+		return Summary{}, err
+	}
+	sum := Summary{Store: store, Added: []string{}, Modified: []string{}, Deleted: []string{}, Conflicts: plan.Conflicts}
+	changed := map[string]bool{}
+	for _, c := range plan.Changes {
+		changed[c.Path] = true
+		switch c.Kind {
+		case Added:
+			sum.Added = append(sum.Added, c.Path)
+		case Modified:
+			sum.Modified = append(sum.Modified, c.Path)
+		case Deleted:
+			sum.Deleted = append(sum.Deleted, c.Path)
+		}
+	}
+	if !remote {
+		return sum, nil
+	}
+	entries, _, err := e.api().allChanges(ctx, store, st.Cursor)
+	if err != nil {
+		return sum, err
+	}
+	// A path committed more than once since the pull counts as its last.
+	latest := map[string]RemoteEntry{}
+	for _, r := range entries {
+		if base, ok := st.Entries[r.Path]; ok && base.Rev >= r.Rev {
+			continue
+		}
+		if prev, ok := latest[r.Path]; !ok || r.Rev > prev.Rev {
+			latest[r.Path] = r
+		}
+	}
+	paths := slices.Sorted(maps.Keys(latest))
+	rs := &RemoteSummary{Added: []string{}, Modified: []string{}, Deleted: []string{}, Both: []string{}}
+	for _, p := range paths {
+		base, ok := st.Entries[p]
+		switch {
+		case latest[p].Deleted:
+			rs.Deleted = append(rs.Deleted, p)
+		case ok && !base.Deleted:
+			rs.Modified = append(rs.Modified, p)
+		default:
+			rs.Added = append(rs.Added, p)
+		}
+		if changed[p] {
+			rs.Both = append(rs.Both, p)
+		}
+	}
+	sum.Remote = rs
+	return sum, nil
 }
 
 // baseBytes reads the local base copy of a config file, else asks the

@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"context"
 	"os"
 	"slices"
 	"strings"
@@ -77,21 +78,22 @@ func (o PlanOptions) wants(rel string) bool {
 	return false
 }
 
-// Plan reads the store's local side. It never touches the network.
-func (e *Engine) Plan(store Store, opts PlanOptions) (Plan, error) {
+// Plan reads the store's local side. It never touches the network, and a
+// cancelled ctx stops its read of the files.
+func (e *Engine) Plan(ctx context.Context, store Store, opts PlanOptions) (Plan, error) {
 	st, err := loadState(e.ConfDir, store)
 	if err != nil {
 		return Plan{}, err
 	}
-	plan, err := e.plan(store, st, opts)
+	plan, err := e.plan(ctx, store, st, opts)
 	if err != nil {
 		return Plan{}, err
 	}
 	return plan, st.save(e.ConfDir, store)
 }
 
-func (e *Engine) plan(store Store, st *state, opts PlanOptions) (Plan, error) {
-	local, err := scan(e.ConfDir, store, st.Hashes, e.scanned(store))
+func (e *Engine) plan(ctx context.Context, store Store, st *state, opts PlanOptions) (Plan, error) {
+	local, err := scan(ctx, e.ConfDir, store, st.Hashes, e.scanned(store))
 	if err != nil {
 		return Plan{}, err
 	}

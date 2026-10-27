@@ -3,6 +3,7 @@ package cloudcmd
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -254,6 +255,59 @@ func resolveLines(res sync.ResolveResult, how resolution, s style) []string {
 		return append([]string{s.Head(res.Path, "resolved", "kept yours")}, look.Grid("  ", [][]string{next("clai cloud commit", "share it")}, s)...)
 	}
 	return append([]string{s.Head(res.Path, "resolved", "kept your edited file")}, look.Grid("  ", [][]string{next("clai cloud commit", "share it")}, s)...)
+}
+
+// summaryListed is how many paths a summary row names before "+N more".
+const summaryListed = 3
+
+// summaryLines is a store's diff in counts, one row per kind of change,
+// naming a few paths each; list names them all.
+func summaryLines(sum sync.Summary, list bool, s style) []string {
+	most := summaryListed
+	if list {
+		most = math.MaxInt
+	}
+	var parts []string
+	if n := len(sum.Changed()); n > 0 {
+		parts = append(parts, count(n)+" changed here")
+	}
+	if n := len(sum.Conflicts); n > 0 {
+		parts = append(parts, count(n)+" "+plural(n, "conflict", "conflicts"))
+	}
+	var rows [][]string
+	more := false
+	row := func(mark string, paths []string, word string) {
+		if len(paths) == 0 {
+			return
+		}
+		more = more || len(paths) > most
+		rows = append(rows, []string{mark + " " + count(len(paths)) + " " + word, listed(paths, most)})
+	}
+	row("+", sum.Added, "added")
+	row("~", sum.Modified, "modified")
+	row("-", sum.Deleted, "deleted")
+	row("C", sum.Conflicts, plural(len(sum.Conflicts), "conflict", "conflicts"))
+	if rs := sum.Remote; rs != nil {
+		if n := len(rs.Added) + len(rs.Modified) + len(rs.Deleted); n > 0 {
+			parts = append(parts, count(n)+" newer on your account")
+		}
+		row("↓+", rs.Added, "added on your account")
+		row("↓~", rs.Modified, "modified on your account")
+		row("↓-", rs.Deleted, "deleted on your account")
+		row("≠", rs.Both, "changed on both sides")
+	}
+	if len(parts) == 0 {
+		parts = append(parts, "no changes")
+	}
+	lines := append([]string{s.Head(string(sum.Store), parts...)}, look.Grid("  ", rows, s)...)
+	if sum.Store == sync.StoreConversations && len(rows) > 0 {
+		hints := [][]string{next("clai cloud diff <path>", "one conversation's messages")}
+		if more {
+			hints = append(hints, next("clai cloud diff -list", "name every path"))
+		}
+		lines = append(lines, look.Grid("  ", hints, s)...)
+	}
+	return lines
 }
 
 // diffLines heads a file's diff in the shared look and keeps its body as

@@ -82,7 +82,7 @@ func (e *Engine) Pull(ctx context.Context, store Store, opts PullOptions) (PullR
 	if err != nil {
 		return res, err
 	}
-	local, err := scan(e.ConfDir, store, st.Hashes, e.scanned(store))
+	local, err := scan(ctx, e.ConfDir, store, st.Hashes, e.scanned(store))
 	if err != nil {
 		return res, err
 	}

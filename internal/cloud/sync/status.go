@@ -46,7 +46,7 @@ func (e *Engine) Status(ctx context.Context, store Store, opts PlanOptions) (Sta
 	if err != nil {
 		return Status{}, err
 	}
-	plan, err := e.plan(store, st, opts)
+	plan, err := e.plan(ctx, store, st, opts)
 	if err != nil {
 		return Status{}, err
 	}

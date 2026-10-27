@@ -162,7 +162,7 @@ Account
 Sync
   status [-imports] [store]       local changes, and what the server has;
                                   -imports previews other tools' chats
-  diff [path...] [-remote]        your changes; -remote for the server's
+  diff [path...] [-remote|-list]  your changes; -remote for the server's
   pull [store] [-theirs|-mine]    bring down server changes; on a clash
                                   -theirs keeps your account's copy,
                                   -mine this machine's
@@ -220,7 +220,7 @@ func Command(deps Deps) *internal.Command {
 
 	var loginURL, loginName string
 	whoamiRaw, statusRaw, pullRaw, commitRaw, logRaw := internal.RawFlag{Desc: rawDesc}, internal.RawFlag{Desc: rawDesc}, internal.RawFlag{Desc: rawDesc}, internal.RawFlag{Desc: rawDesc}, internal.RawFlag{Desc: rawDesc}
-	var statusImports, diffRemote, pullTheirs, pullMine, commitImports, resolveMine, resolveTheirs bool
+	var statusImports, diffRemote, diffList, pullTheirs, pullMine, commitImports, resolveMine, resolveTheirs bool
 	var commitMsg string
 	logN := 20
 	c.Subs = map[string]cmd.Command{
@@ -258,10 +258,11 @@ func Command(deps Deps) *internal.Command {
 				return r.status(ctx, args, statusImports, statusRaw.Value())
 			}),
 		"diff": sub("diff", "Show your changes, or the server's",
-			"cloud diff [path...]. Your changes against the base; both sides of a conflict.",
+			"cloud diff [path...]. Your changes against the base; both sides of a conflict.\nWithout a path, each store is summarised and config files are shown line by line.",
 			func(fs *flag.FlagSet) {
 				fs.BoolVar(&diffRemote, "remote", false, "compare against the server's current copy")
-			}, nil, func(ctx context.Context, args []string) error { return r.diff(ctx, args, diffRemote) }),
+				fs.BoolVar(&diffList, "list", false, "name every changed path in the summary")
+			}, nil, func(ctx context.Context, args []string) error { return r.diff(ctx, args, diffRemote, diffList) }),
 		"pull": sub("pull", "Bring down server changes",
 			"cloud pull [store]. Files you did not change update in place. A file both sides changed\nstays as it is, and the server's copy goes to cloud/theirs/<path>.",
 			func(fs *flag.FlagSet) {

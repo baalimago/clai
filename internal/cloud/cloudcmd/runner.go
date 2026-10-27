@@ -220,36 +220,67 @@ func (r *runner) lines(lines []string) {
 
 func (r *runner) printStatus(st sync.Status) { r.lines(statusLines(st, r.style())) }
 
-func (r *runner) diff(ctx context.Context, args []string, remote bool) error {
+func (r *runner) diff(ctx context.Context, args []string, remote, list bool) error {
 	_, engine, err := r.session()
 	if err != nil {
 		return err
 	}
-	paths := args
-	if len(paths) == 0 {
-		for _, s := range sync.Stores {
-			plan, err := engine.Plan(s, sync.PlanOptions{})
-			if err != nil {
-				return err
-			}
-			paths = append(paths, plan.Conflicts...)
-			for _, c := range plan.Changes {
-				paths = append(paths, c.Path)
-			}
-		}
+	if len(args) > 0 {
+		return r.diffPaths(ctx, engine, args, remote)
 	}
-	if len(paths) == 0 {
-		r.lines([]string{r.style().Head("diff", "no local changes")})
-		return nil
-	}
-	for _, p := range paths {
-		d, err := engine.Diff(ctx, p, remote)
+	// A plain diff summarises each store from the hashes a commit plans
+	// with; only config files, few and small, are shown line by line.
+	var sums []sync.Summary
+	for _, s := range sync.Stores {
+		status := r.track(engine, "comparing "+string(s))
+		sum, err := engine.Summarize(ctx, s, remote)
+		status.Stop()
 		if err != nil {
 			return r.explain(err)
 		}
-		r.lines(diffLines(d, r.style()))
+		sums = append(sums, sum)
+	}
+	if quiet(sums) {
+		detail := "no local changes"
+		if remote {
+			detail = "no changes here or on your account"
+		}
+		r.lines([]string{r.style().Head("diff", detail)})
+		return nil
+	}
+	for _, sum := range sums {
+		r.lines(summaryLines(sum, list, r.style()))
+		if sum.Store == sync.StoreConfig {
+			if err := r.diffPaths(ctx, engine, append(sum.Conflicts, sum.Changed()...), remote); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
+}
+
+func (r *runner) diffPaths(ctx context.Context, engine *sync.Engine, paths []string, remote bool) error {
+	err := engine.Diffs(ctx, paths, remote, func(d sync.FileDiff) error {
+		r.lines(diffLines(d, r.style()))
+		return nil
+	})
+	if err != nil {
+		return r.explain(err)
+	}
+	return nil
+}
+
+// quiet is a set of summaries with nothing changed on either side.
+func quiet(sums []sync.Summary) bool {
+	for _, sum := range sums {
+		if len(sum.Changed()) > 0 || len(sum.Conflicts) > 0 {
+			return false
+		}
+		if rs := sum.Remote; rs != nil && len(rs.Added)+len(rs.Modified)+len(rs.Deleted) > 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func (r *runner) pull(ctx context.Context, args []string, theirs, mine, raw bool) error {
