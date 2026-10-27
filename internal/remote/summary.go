@@ -36,10 +36,6 @@ const (
 	ToolsOff ToolAccess = iota
 	// ToolsListed: the profile's tools globs and its own servers' tools.
 	ToolsListed
-	// ToolsEverything: use_tools with no tools list and no servers of its
-	// own, so every built-in tool and every MCP server in the user's
-	// config.
-	ToolsEverything
 )
 
 // Summary is what a profile asks of the machine that runs it: what the
@@ -117,14 +113,11 @@ func Summarize(body []byte, checked Checked) (Summary, error) {
 	return s, nil
 }
 
-// toolAccess mirrors text.ProfileOverrides: a profile with servers uses
-// tools, and its servers' globs narrow the tools to theirs.
+// toolAccess mirrors text.ProfileOverrides: a fetched profile gets only
+// the tools it lists and its own servers' tools.
 func toolAccess(useTools bool, tools, servers int) ToolAccess {
-	switch {
-	case !useTools && servers == 0:
+	if servers == 0 && (!useTools || tools == 0) {
 		return ToolsOff
-	case tools == 0 && servers == 0:
-		return ToolsEverything
 	}
 	return ToolsListed
 }
@@ -172,9 +165,6 @@ func (s Summary) String() string {
 	switch {
 	case s.Access == ToolsOff:
 		b.WriteString("  no tools, no MCP servers\n")
-	case s.Access == ToolsEverything:
-		b.WriteString("  all built-in tools, shell commands and file writes included\n")
-		b.WriteString("  all your local MCP servers\n")
 	case len(s.Servers) == 0:
 		b.WriteString("  no MCP servers of its own\n")
 	}

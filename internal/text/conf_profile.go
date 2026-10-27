@@ -71,6 +71,12 @@ func (c *Configurations) ProfileOverrides() error {
 	c.Model = profile.Model
 	c.SystemPrompt = profile.Prompt
 	c.UseTools = profile.UseTools || (len(profile.McpServers) > 0)
+	// A fetched or installed profile gets only the tools it names: with
+	// use_tools alone, a prompt-injected model would reach every local tool
+	// and MCP server.
+	if (c.ProfileFetched || profile.Source != nil) && len(profile.Tools) == 0 && len(profile.McpServers) == 0 {
+		c.UseTools = false
+	}
 	c.ProfileSkills = profile.Skills
 	switch {
 	case profile.UseSkills != nil:

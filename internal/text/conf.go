@@ -44,12 +44,14 @@ type Configurations struct {
 	// DirReplyMode marks a directory-scoped reply (-dre). Unlike a plain -re (which
 	// forks a fresh promoted id and must not record), -dre continues the bound
 	// conversation in place, so it DOES upsert the directory history (see finalizer).
-	DirReplyMode        bool            `json:"-"`
-	Glob                string          `json:"-"`
-	InitialChat         pub_models.Chat `json:"-"`
-	UseProfile          string          `json:"-"`
-	ProfilePath         string          `json:"-"`
-	ProfileUseSkillsSet bool            `json:"-"`
+	DirReplyMode bool            `json:"-"`
+	Glob         string          `json:"-"`
+	InitialChat  pub_models.Chat `json:"-"`
+	UseProfile   string          `json:"-"`
+	ProfilePath  string          `json:"-"`
+	// ProfileFetched is set when ProfilePath came from a remote target.
+	ProfileFetched      bool `json:"-"`
+	ProfileUseSkillsSet bool `json:"-"`
 	// ProfileSkills are the active profile's skill targets.
 	ProfileSkills      []string `json:"-"`
 	RequestedToolGlobs []string `json:"-"`

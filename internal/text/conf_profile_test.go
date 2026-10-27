@@ -333,3 +333,36 @@ func TestConfigurations_ProfileOverrides_RejectsInvalidRequiredEnvName(t *testin
 		t.Fatalf("RequiredEnv = %v", got)
 	}
 }
+
+// A fetched profile gets only the tools it names: use_tools alone would hand
+// a prompt-injected model every local tool and MCP server.
+func TestConfigurations_ProfileOverrides_FetchedProfileGetsOnlyNamedTools(t *testing.T) {
+	t.Setenv("CLAI_CONFIG_DIR", t.TempDir())
+	for _, tc := range []struct {
+		name, body string
+		remote     bool
+		wantTools  bool
+	}{
+		{"local use_tools keeps every tool", `{"use_tools":true}`, false, true},
+		{"fetched by -prp gets none", `{"use_tools":true}`, true, false},
+		{"installed from the hub gets none", `{"use_tools":true,"source":{"target":"cchub:ada/bot"}}`, false, false},
+		{"fetched with a tools list keeps it", `{"use_tools":true,"tools":["date"]}`, true, true},
+		{"fetched with its own servers keeps them", `{"mcp_servers":{"m":{"command":"node","args":["m.js"]}}}`, true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "p.json")
+			if err := os.WriteFile(path, []byte(tc.body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			conf := Default
+			conf.ProfilePath = path
+			conf.ProfileFetched = tc.remote
+			if err := conf.ProfileOverrides(); err != nil {
+				t.Fatal(err)
+			}
+			if conf.UseTools != tc.wantTools {
+				t.Fatalf("UseTools = %v, want %v", conf.UseTools, tc.wantTools)
+			}
+		})
+	}
+}

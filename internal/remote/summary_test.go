@@ -45,13 +45,9 @@ func TestSummary_showsTheTokenCommandItRunsHere(t *testing.T) {
 }
 
 func TestSummary_saysWhatToolsTheProfileGets(t *testing.T) {
-	t.Run("use_tools without a list gets everything", func(t *testing.T) {
+	t.Run("use_tools without a list gets none", func(t *testing.T) {
 		got := summaryOf(t, `{"use_tools":true}`)
-		assertHas(t, got,
-			"  all built-in tools, shell commands and file writes included\n",
-			"  all your local MCP servers\n",
-		)
-		assertLacks(t, got, "no MCP servers")
+		assertHas(t, got, "  no tools, no MCP servers\n")
 	})
 	t.Run("a tools list is shown as written", func(t *testing.T) {
 		got := summaryOf(t, `{"use_tools":true,"tools":["date","mcp_git*"]}`)

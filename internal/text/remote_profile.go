@@ -156,6 +156,7 @@ func resolveRemoteProfilePath(ctx context.Context, tConf *Configurations, resolv
 		return fmt.Errorf("profile %s: %w", tConf.ProfilePath, err)
 	}
 	tConf.ProfilePath = path
+	tConf.ProfileFetched = true
 	return nil
 }
 

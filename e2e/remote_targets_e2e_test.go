@@ -325,7 +325,7 @@ func Test_REMOTE_trustShowsWhatTheProfileRunsHere(t *testing.T) {
 		t.Fatalf("summary holds a raw escape: %q", stdout)
 	}
 	status, stdout, stderr = runRemote(t, "profiles trust cchub:ada/all")
-	if status != 0 || !strings.Contains(stdout, "  all built-in tools, shell commands and file writes included\n  all your local MCP servers\n") {
+	if status != 0 || !strings.Contains(stdout, "  no tools, no MCP servers\n") {
 		t.Fatalf("use_tools alone: status %d stdout %q stderr %q", status, stdout, stderr)
 	}
 }

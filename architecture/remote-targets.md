@@ -136,13 +136,13 @@ A `gh:` target reads
   - Under each server: its `auth.token_command` (`credential.go` runs it
     with `exec`) and every `env` entry as `KEY=value`. An argument that
     holds a space or a quote is quoted.
-  - Tools (`Summary.Access`, mirroring `ProfileOverrides`): `use_tools`
-    with no `tools` list and no servers of its own gives the model every
-    built-in tool (shell commands and `write_file` among them) and every
-    MCP server in the user's config, and the prompt says so in those
-    words. A `tools` list is shown as written; a profile with servers is
-    narrowed to their tools plus that list. No `use_tools` and no servers
-    is `no tools, no MCP servers`.
+  - Tools (`Summary.Access`, mirroring `ProfileOverrides`): a fetched or
+    installed profile (`ProfileFetched`, or a `source` stamp) gets only the
+    tools it names. `use_tools` with no `tools` list and no servers of its
+    own gets no tools, since every local tool and MCP server would be one
+    prompt injection away; the prompt says `no tools, no MCP servers`. A
+    `tools` list is shown as written; a profile with servers is narrowed
+    to their tools plus that list.
   - `Prompt:` shows the first `PreviewLines` (6) lines and at most
     `PreviewChars` (400) characters of the prompt, indented, and says how
     many characters it left out. A skill's description is shown the same
