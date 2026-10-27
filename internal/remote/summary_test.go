@@ -61,6 +61,14 @@ func TestSummary_saysWhatToolsTheProfileGets(t *testing.T) {
 		assertHas(t, got, "▸ tools · its MCP servers' only\n")
 		assertLacks(t, got, "all built-in tools", "all your local MCP servers")
 	})
+	t.Run("its cmd-ban is shown beside the tools", func(t *testing.T) {
+		got := summaryOf(t, `{"use_tools":true,"tools":["async_cmd"],"cmd-ban":["git push","rm"]}`)
+		assertHas(t, got, "▸ tools · async_cmd\n▸ never runs · git push, rm\n")
+	})
+	t.Run("a cmd-ban without tools has nothing to ban", func(t *testing.T) {
+		got := summaryOf(t, `{"tools":["async_cmd"],"cmd-ban":["rm"]}`)
+		assertLacks(t, got, "never runs")
+	})
 	t.Run("no tools", func(t *testing.T) {
 		got := summaryOf(t, `{"tools":["date"]}`)
 		assertHas(t, got, "▸ tools · none · no MCP servers\n")

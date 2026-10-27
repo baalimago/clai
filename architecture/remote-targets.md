@@ -147,6 +147,7 @@ A `gh:` target reads
     vault    https://mcp.example.com
              runs here for a token: vault print token
   ▸ tools · date, mcp_memory*
+  ▸ never runs · git push, rm
   ▸ needs · VAULT_ADDR for vault
   ▸ model · gpt-6.1-sol
   ▸ prompt · 1213 characters
@@ -168,6 +169,10 @@ A `gh:` target reads
     prompt injection away; the prompt says `tools · none · no MCP
     servers`. A `tools` list is shown as written; a profile with servers
     is narrowed to their tools plus that list.
+  - Bans: the profile's `cmd-ban` is shown under its tools as `never
+    runs` (`Summary.CmdBan`), since `cmd` and `async_cmd` refuse a command
+    line that contains an entry before it spawns. A profile with no tools
+    has nothing to ban, so the line is left out.
   - Profile: a `-prp` run's conversation is stamped with the target it
     ran as (pin fragment left out), so `clai chat list` names the hub
     profile, and a reply through `chat continue` fetches it again with

@@ -45,9 +45,11 @@ const (
 // trust prompt and `clai profiles trust` show before anything runs. Its
 // strings are the profile's own; String makes them printable.
 type Summary struct {
-	Model    string
-	Access   ToolAccess
-	Tools    []string
+	Model  string
+	Access ToolAccess
+	Tools  []string
+	// CmdBan is the profile's cmd-ban: command lines it refuses to start.
+	CmdBan   []string
 	Servers  []Server
 	EnvFiles []string
 	// Needs are the variables the servers read from the environment, in
@@ -70,6 +72,7 @@ func Summarize(body []byte, checked Checked) (Summary, error) {
 		Prompt     string   `json:"prompt"`
 		UseTools   bool     `json:"use_tools"`
 		Tools      []string `json:"tools"`
+		CmdBan     []string `json:"cmd-ban"`
 		McpServers map[string]struct {
 			Command string            `json:"command"`
 			Args    []string          `json:"args"`
@@ -90,7 +93,7 @@ func Summarize(body []byte, checked Checked) (Summary, error) {
 	if err != nil {
 		return Summary{}, err
 	}
-	s := Summary{Model: p.Model, Prompt: p.Prompt, Tools: p.Tools, Ignored: checked.Ignored, Skills: skills}
+	s := Summary{Model: p.Model, Prompt: p.Prompt, Tools: p.Tools, CmdBan: p.CmdBan, Ignored: checked.Ignored, Skills: skills}
 	s.Access = toolAccess(p.UseTools, len(p.Tools), len(p.McpServers))
 	for _, name := range sortedKeys(p.McpServers) {
 		srv := p.McpServers[name]
@@ -183,6 +186,9 @@ func (s Summary) Lines(st look.Style) []string {
 		lines = append(lines, st.Head("tools", printableList(s.Tools)))
 	default:
 		lines = append(lines, st.Head("tools", "its MCP servers' only"))
+	}
+	if s.Access != ToolsOff && len(s.CmdBan) > 0 {
+		lines = append(lines, st.Head("never runs", printableList(s.CmdBan)))
 	}
 	if len(s.Skills) > 0 {
 		lines = append(lines, st.Head("skills", strconv.Itoa(len(s.Skills))))
