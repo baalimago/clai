@@ -9,11 +9,12 @@ clai -prp cchub:clai/reviewer -qs q
 ```
 
 An agent run with no prompt and nothing piped in acts on its defaults:
-reviewer reviews your branch, committer reads the staged diff. reviewer,
-pr-reviewer, pr-summarizer and upgrade-scout split their work across parallel clai
-workers: each runs `clai` through `async_cmd`, a separate process with its
-own brief. How to run them is the
-[clai-subagents](../skills/clai-subagents/SKILL.md) skill
+reviewer reviews your branch, pr-summarizer sums it up, cloud-medic checks
+the service whose repo you are in, project-planner plans its next two
+weeks, and researcher reports what changed for its dependencies. All but
+project-planner split their work across parallel clai workers: each runs
+`clai` through `async_cmd`, a separate process with its own brief. How to
+run them is the [clai-subagents](../skills/clai-subagents/SKILL.md) skill
 (`cchub:clai/clai-subagents`), which these profiles name in `"skills"` and
 load before their first worker; your own orchestrating profile can do the
 same.
@@ -28,23 +29,29 @@ profile lists them. Swap `model` for whichever model you have a key for.
 | Agent | What it does | Run | Needs |
 | --- | --- | --- | --- |
 | [reviewer](./reviewer.json) | Reviews your branch against the default branch (plus uncommitted work) with parallel reviewer workers, verifies every finding (library behaviour against Context7 docs, no key needed), then prints a verdict; bans `git push` and `rm` | `clai -prp cchub:clai/reviewer -qs q` | nothing extra |
-| [committer](./committer.json) | Writes the commit message for the staged changes, in the repository's own style | `clai -ro -prp cchub:clai/committer q \| git commit -F -` | nothing extra |
 | [pr-summarizer](./pr-summarizer.json) | Investigates your whole branch (parallel reader workers when it is large) and writes the one commit message that sums it up: a subject of at most 72 characters, a body of at most two paragraphs and 200 words; bans `git push` and `git commit` | `clai -ro -prp cchub:clai/pr-summarizer q` | nothing extra |
-| [researcher](./researcher.json) | Searches the web and answers with a short, sourced brief; with no question, what changed lately for your project's main dependencies | `clai -prp cchub:clai/researcher -qs q` | `uvx` |
-| [pr-reviewer](./pr-reviewer.json) | Finds the current branch's PR, runs reviewer on it and posts the review with inline comments; never approves | `clai -prp cchub:clai/pr-reviewer -qs q` | `GITHUB_TOKEN` |
-| [upgrade-scout](./upgrade-scout.json) | Finds deprecated API use against current library docs and writes a migration plan, one worker per library | `clai -prp cchub:clai/upgrade-scout -qs q` | `npx`; `CONTEXT7_API_KEY` optional |
-| [sql-analyst](./sql-analyst.json) | Answers questions about a Postgres database with SQL, plus index and health advice; with no question, a check-up | `clai -prp cchub:clai/sql-analyst -qs q` | `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DATABASE`, `POSTGRES_USER`, `POSTGRES_PASSWORD` (a read-only role), `npx` |
-| [site-watch](./site-watch.json) | Hourly headless walk of a site's key flows, reports regressions since the last run | `clai -prp cchub:clai/site-watch -qs q https://www.clai.chat "docs search, hub, pricing"` | `npx`, Google Chrome (`--no-sandbox` as root) |
-| [issue-triager](./issue-triager.json) | Labels new issues, links duplicates, asks for missing repro details | `clai -prp cchub:clai/issue-triager -qs q dry-run` (in a clone) | `GITHUB_TOKEN`, `npx` |
-| [sentry-medic](./sentry-medic.json) | Takes the top new Sentry error of the repo you are in, finds the cause and opens a draft fix PR | `clai -prp cchub:clai/sentry-medic -qs q` (in a clone) | `GITHUB_TOKEN`; the first run in a terminal opens your browser to sign in to Sentry's hosted MCP server |
-| [trade-bot](./trade-bot.json) | Hourly Polymarket trading with risk limits and a memory of past theses | `clai -prp cchub:clai/trade-bot -qs q Do your hourly run.` | `POLYMARKET_PRIVATE_KEY`, `npx` |
+| [cloud-medic](./cloud-medic.json) | Works out where the service of the repo you are in runs and reports errors (Sentry, GitHub Actions, and kubectl, wrangler, fly, gcloud or aws when signed in), finds the root cause of the worst with investigator workers and opens a draft fix PR; keeps a status note in slivingdoc; bans every deploying or deleting command | `clai -prp cchub:clai/cloud-medic -qs q` (in a clone) | `GITHUB_TOKEN`, `npx`; the first run in a terminal opens your browser to sign in to Sentry |
+| [project-planner](./project-planner.json) | Finds where the work is tracked (GitHub, Linear when the repo uses it, roadmap files, git history), checks how the last plan went and plans the next two weeks; keeps the plan in slivingdoc; never edits an issue | `clai -prp cchub:clai/project-planner -qs q` (in a clone) | `GITHUB_TOKEN`, `npx`; Linear signs in through your browser on first use |
+| [researcher](./researcher.json) | Deep research: splits the question, searches each part, parallel reader workers, every claim checked against its source; keeps its reports in slivingdoc; with no question, what changed for your project's dependencies since the last report | `clai -prp cchub:clai/researcher -qs q` | `uvx`, `npx` |
 
-The stateful agents (site-watch, issue-triager, trade-bot) keep their
-memory in a small JSONL file in your home directory, named in the
-profile's `MEMORY_FILE_PATH`, so they learn across cron runs.
+cloud-medic, project-planner and researcher keep their memory in
+[slivingdoc](https://github.com/baalimago/slivingdoc), a shared text
+notebook served over MCP, each under its own path (`clai/cloud-medic`,
+`clai/project-planner`, `clai/researcher`, which its `--writable-paths`
+enforces). Sign in once with `npx slivingdoc@1.2.0 login`, or set
+`SLIVINGDOC_TOKEN`; without either they run and say that memory is off.
 
 `GITHUB_TOKEN` is used against GitHub's hosted MCP server
 (`https://api.githubcopilot.com/mcp/`). A fine-grained token scoped to the
-repositories the agent works on is enough: pull requests read and write
-for pr-reviewer, issues read and write for issue-triager, contents and
-pull requests read and write for sentry-medic.
+repositories the agent works on is enough: contents and pull requests read
+and write for cloud-medic, issues and pull requests read for
+project-planner.
+
+## More examples
+
+[cody](./cody.json), [gopher](./gopher.json) and [ops](./ops.json) are
+the profiles clai started with; ops expects MCP servers you configure. [trade-bot](./trade-bot.json) trades Polymarket
+hourly with risk limits and keeps a memory of past theses in a JSONL file
+named in its `MEMORY_FILE_PATH`; run it with
+`clai -prp gh:baalimago/clai/examples/profiles/trade-bot.json -qs q Do your hourly run.`
+(needs `POLYMARKET_PRIVATE_KEY` and `npx`).
