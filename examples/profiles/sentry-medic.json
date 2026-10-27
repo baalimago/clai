@@ -1,5 +1,5 @@
 {
-  "description": "Picks the most urgent new Sentry error, finds the root cause in the code and opens a draft pull request with a fix. Use: 'clai -prp cchub:clai/sentry-medic q my-org/my-project owner/repo'. Needs SENTRY_ACCESS_TOKEN (scopes: org:read, project:read, event:read), GITHUB_TOKEN (contents and pull requests write) and Node (npx).",
+  "description": "Picks the most urgent new Sentry error, finds the root cause in the code and opens a draft pull request with a fix. Use: 'clai -prp cchub:clai/sentry-medic q my-org/my-project owner/repo'. Uses Sentry's hosted MCP server: the first run opens your browser to sign in to Sentry, and clai keeps the token. Needs GITHUB_TOKEN (contents and pull requests write).",
   "model": "gpt-6.1-sol",
   "use_tools": true,
   "save-reply-as-conv": true,
@@ -10,16 +10,7 @@
   ],
   "mcp_servers": {
     "sentry": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "@sentry/mcp-server@0.42.0"
-      ],
-      "auth": {
-        "required_env": [
-          "SENTRY_ACCESS_TOKEN"
-        ]
-      },
+      "url": "https://mcp.sentry.dev/mcp",
       "timeout_seconds": 120,
       "startup": "lazy",
       "connect_timeout_seconds": 180

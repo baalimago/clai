@@ -30,7 +30,7 @@ profile lists them. Swap `model` for whichever model you have a key for.
 | [sql-analyst](./sql-analyst.json) | Answers questions about a Postgres database with SQL, plus index and health advice | `clai -prp cchub:clai/sql-analyst q "<question>"` | `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DATABASE`, `POSTGRES_USER`, `POSTGRES_PASSWORD` (a read-only role), `npx` |
 | [site-watch](./site-watch.json) | Hourly headless walk of a site's key flows, reports regressions since the last run | `clai -prp cchub:clai/site-watch q https://example.com "sign-up, pricing"` | `npx`, Google Chrome (`--no-sandbox` as root) |
 | [issue-triager](./issue-triager.json) | Labels new issues, links duplicates, asks for missing repro details | `clai -prp cchub:clai/issue-triager q owner/repo dry-run` | `GITHUB_TOKEN`, `npx` |
-| [sentry-medic](./sentry-medic.json) | Takes the top new Sentry error, finds the cause and opens a draft fix PR | `clai -prp cchub:clai/sentry-medic q my-org/my-project owner/repo` | `SENTRY_ACCESS_TOKEN`, `GITHUB_TOKEN`, `npx` |
+| [sentry-medic](./sentry-medic.json) | Takes the top new Sentry error, finds the cause and opens a draft fix PR | `clai -prp cchub:clai/sentry-medic q my-org/my-project owner/repo` | `GITHUB_TOKEN`; the first run in a terminal opens your browser to sign in to Sentry's hosted MCP server |
 | [trade-bot](./trade-bot.json) | Hourly Polymarket trading with risk limits and a memory of past theses | `clai -prp cchub:clai/trade-bot q Do your hourly run.` | `POLYMARKET_PRIVATE_KEY`, `npx` |
 
 The stateful agents (site-watch, issue-triager, trade-bot) keep their
