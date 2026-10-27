@@ -943,7 +943,7 @@ func TestForeignIndex_locateAgreesWithWalkAcrossSiblingDirs(t *testing.T) {
 
 // TestDefaultForeignCache_failureYieldsNilInterface: an interface holding a
 // nil *ForeignIndex is not nil, so discovery would take the cached branch and
-// panic instead of scanning. The guard in setChatQuerier cannot see the
+// panic instead of scanning. The guard in newChatQuerier cannot see the
 // difference, so the factory has to be right.
 func TestDefaultForeignCache_failureYieldsNilInterface(t *testing.T) {
 	t.Run("a failed construction yields a nil interface", func(t *testing.T) {

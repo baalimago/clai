@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/tools/mcp"
 	"github.com/baalimago/clai/internal/tools/mcp/schemacache"
 	"github.com/baalimago/clai/pkg/claierr"
@@ -755,7 +756,7 @@ func TestLazyConnectHonoursStrictMcpStartupForExplicitServers(t *testing.T) {
 
 // TestExplicitServerBothCommandAndUrlFailsValidation pins D43/R2-07: a
 // server passed through agent.WithMcpServers never ran
-// serverconfig.ValidateTransport, so a struct with both command and url
+// serverconfig.Validate, so a struct with both command and url
 // silently preferred url. Under strict startup the typed error must come
 // back from Setup instead.
 func TestExplicitServerBothCommandAndUrlFailsValidation(t *testing.T) {
@@ -788,31 +789,25 @@ func TestExplicitServerBothCommandAndUrlFailsValidation(t *testing.T) {
 
 // TestExplicitServerNeitherCommandNorUrlFailsValidation pins the other half
 // of D43/R2-07: without validation, a server with neither command nor url
-// reached exec.CommandContext(ctx, "") instead of failing cleanly. An
-// ambient-posture run (no AgentSettings) degrades instead of failing, so
-// the run continues with no tools from this server and no panic or hang.
+// reached exec.CommandContext(ctx, "") instead of failing cleanly. A
+// profile's server is required, so the run fails at the config stage.
 func TestExplicitServerNeitherCommandNorUrlFailsValidation(t *testing.T) {
 	conf := Configurations{
 		McpServers: []pub_models.McpServer{{Name: "neither-set"}},
 	}
-	var got map[string]pub_models.LLMTool
-	var err error
-	// ancli.Warnf prints to stdout, not stderr, despite the name.
-	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		got, err = setupMcpManager(t.Context(), t.TempDir(), conf, &recordingSuccessSink{}, testSchemaCache(t), nil)
-	})
-	if err != nil {
-		t.Fatalf("an ambient-posture invalid server must degrade, not fail setup: %v", err)
+	got, err := setupMcpManager(t.Context(), t.TempDir(), conf, &recordingSuccessSink{}, testSchemaCache(t), nil)
+	var startupErr *claierr.McpServerStartupError
+	if !errors.As(err, &startupErr) {
+		t.Fatalf("err = %v, want errors.As to yield *claierr.McpServerStartupError", err)
+	}
+	// Without validation this still fails, but at exec.CommandContext(ctx,
+	// "") instead: the stage and message are what discriminate the two
+	// (R1-25's class, R2-18).
+	if startupErr.Stage != "config" || !strings.Contains(err.Error(), `sets neither "command" nor "url"`) {
+		t.Errorf("err = %v, want the config-stage transport-validation failure", err)
 	}
 	if len(got) != 0 {
 		t.Errorf("invalid explicit server registered tools: %v", got)
-	}
-	// Without validation this still fails, but at exec.CommandContext(ctx,
-	// "") instead: asserting the validation message, not just a nil error,
-	// is what discriminates the two (R1-25's class). The message names the
-	// neither-set branch specifically (R2-18), not a shared XOR string.
-	if !strings.Contains(stdout, `sets neither "command" nor "url"`) {
-		t.Errorf("stdout = %q, want the transport-validation message, not a bare exec failure", stdout)
 	}
 }
 
@@ -1089,5 +1084,104 @@ func TestSetupTooling_generateImagePatternDoesNotWarn(t *testing.T) {
 	}
 	if out := stdout + stderr; strings.Contains(out, "found none") || strings.Contains(out, "doesn't exist") {
 		t.Errorf("a generate_image selection warned: %q", out)
+	}
+}
+
+// Test_setupMcpManager_ProfileServerFailureFailsSetup pins that a profile's
+// own servers are required: the profile exists to give the run those tools,
+// so a server that fails to start ends setup with a typed error naming it
+// instead of running the agent without them. A broken config-dir server
+// beside it still only warns.
+func Test_setupMcpManager_ProfileServerFailureFailsSetup(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "stale.json"), []byte(`{"command":"/nonexistent-clai-test-binary","args":[],"startup":"eager"}`), 0o644); err != nil {
+		t.Fatalf("write ambient config: %v", err)
+	}
+	conf := Configurations{McpServers: []pub_models.McpServer{
+		{Name: "profile-server", Command: "/nonexistent-clai-test-binary-profile", Startup: pub_models.StartupEager},
+	}}
+
+	_, err := setupMcpManager(t.Context(), dir, conf, &recordingSuccessSink{}, testSchemaCache(t), nil)
+	if !errors.Is(err, claierr.ErrMcpServerStartup) {
+		t.Fatalf("err = %v, want errors.Is(err, claierr.ErrMcpServerStartup)", err)
+	}
+	if names := startupErrorNames(err); !slices.Equal(names, []string{"profile-server"}) {
+		t.Errorf("startup errors name %v, want only [profile-server]", names)
+	}
+}
+
+// Test_setupMcpManager_OptionalProfileServerFailureOnlyWarns pins that a
+// profile server marked optional does not end setup when it fails to start,
+// eager or lazy on a cold cache: the run goes on without its tools, while a
+// required server beside it still fails setup.
+func Test_setupMcpManager_OptionalProfileServerFailureOnlyWarns(t *testing.T) {
+	for _, mode := range []pub_models.StartupMode{pub_models.StartupEager, pub_models.StartupLazy} {
+		t.Run(string(mode), func(t *testing.T) {
+			conf := Configurations{McpServers: []pub_models.McpServer{
+				{Name: "memory", Command: "/nonexistent-clai-test-binary-optional", Startup: mode, Optional: true},
+			}}
+			var got map[string]pub_models.LLMTool
+			var err error
+			captureStdoutStderrText(t, func() {
+				got, err = setupMcpManager(t.Context(), t.TempDir(), conf, &recordingSuccessSink{}, testSchemaCache(t), nil)
+			})
+			if err != nil {
+				t.Fatalf("setupMcpManager: %v, want nil for an optional server", err)
+			}
+			if len(got) != 0 {
+				t.Errorf("tools = %v, want none from a server that never started", got)
+			}
+		})
+	}
+}
+
+func Test_setupMcpManager_RequiredServerStillFailsBesideAnOptionalOne(t *testing.T) {
+	conf := Configurations{McpServers: []pub_models.McpServer{
+		{Name: "memory", Command: "/nonexistent-clai-test-binary-optional", Startup: pub_models.StartupEager, Optional: true},
+		{Name: "required", Command: "/nonexistent-clai-test-binary-required", Startup: pub_models.StartupEager},
+	}}
+	var err error
+	captureStdoutStderrText(t, func() {
+		_, err = setupMcpManager(t.Context(), t.TempDir(), conf, &recordingSuccessSink{}, testSchemaCache(t), nil)
+	})
+	if !errors.Is(err, claierr.ErrMcpServerStartup) {
+		t.Fatalf("err = %v, want errors.Is(err, claierr.ErrMcpServerStartup)", err)
+	}
+	if names := startupErrorNames(err); !slices.Equal(names, []string{"required"}) {
+		t.Errorf("startup errors name %v, want only [required]", names)
+	}
+}
+
+// Test_setupMcpManager_ProfileServerKeepsLazyStartup pins that requiring a
+// profile's servers does not force them eager the way strict agent startup
+// does: a warm-cache lazy server still registers without connecting.
+func Test_setupMcpManager_ProfileServerKeepsLazyStartup(t *testing.T) {
+	if mode, err := effectiveStartupMode(pub_models.McpServer{Name: "p", Startup: pub_models.StartupLazy}, false); err != nil || mode != pub_models.StartupLazy {
+		t.Fatalf("effectiveStartupMode = %q, %v; want lazy", mode, err)
+	}
+	conf := Configurations{McpServers: []pub_models.McpServer{
+		{Name: "profile-lazy", Command: testServerBinary(t), Startup: pub_models.StartupLazy},
+	}}
+	got, err := setupMcpManager(t.Context(), t.TempDir(), conf, &recordingSuccessSink{}, testSchemaCache(t), nil)
+	if err != nil {
+		t.Fatalf("setupMcpManager: %v", err)
+	}
+	if _, ok := got["mcp_profile-lazy_echo"]; !ok {
+		t.Errorf("lazy profile server did not register tools; got %v", got)
+	}
+}
+
+func Test_matchingTools_hiddenToolsNeedTheirExactName(t *testing.T) {
+	tools.Init()
+	available := tools.Registry.All()
+	for _, pattern := range []string{"*", "clai_*"} {
+		for _, tool := range matchingTools(available, pattern) {
+			if tools.Registry.IsHidden(tool.Specification().Name) {
+				t.Fatalf("%q selected hidden tool %q", pattern, tool.Specification().Name)
+			}
+		}
+	}
+	if got := matchingTools(available, "clai_check"); len(got) != 1 {
+		t.Fatalf("an exact selection of a hidden tool must resolve it, got %d", len(got))
 	}
 }

@@ -1,6 +1,7 @@
 package text
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
@@ -304,5 +305,38 @@ func Test_toGenericResponseFormat(t *testing.T) {
 	if withSchema.JSONSchema.Name != "result" || !withSchema.JSONSchema.Strict ||
 		withSchema.JSONSchema.Description != "the result" || withSchema.JSONSchema.Schema["type"] != "object" {
 		t.Errorf("schema fields lost: %+v", withSchema.JSONSchema)
+	}
+}
+
+// Test_collectFrom_profileKeepsAnImagePipedWithNoPrompt pins that a profile
+// run given only an image on stdin keeps the image when the default prompt
+// stands in for the missing text: the retry must not read stdin again.
+func Test_collectFrom_profileKeepsAnImagePipedWithNoPrompt(t *testing.T) {
+	png := []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR png")
+	c := Configurations{UseProfile: "agent"}
+	got, err := c.collectFrom([]string{"q"}, bytes.NewReader(png))
+	if err != nil {
+		t.Fatalf("collectFrom: %v", err)
+	}
+	if len(got.Images) != 1 {
+		t.Fatalf("images = %d, want the piped image; prompt %q", len(got.Images), got.Prompt)
+	}
+}
+
+func Test_collectFrom_profileWithNothingGetsTheDefaultPrompt(t *testing.T) {
+	c := Configurations{UseProfile: "agent"}
+	got, err := c.collectFrom([]string{"q"}, nil)
+	if err != nil {
+		t.Fatalf("collectFrom: %v", err)
+	}
+	if got.Prompt != ProfileDefaultPrompt {
+		t.Fatalf("prompt = %q, want the default prompt", got.Prompt)
+	}
+}
+
+func Test_collectFrom_withoutAProfileNoPromptIsAnError(t *testing.T) {
+	_, err := Configurations{}.collectFrom([]string{"q"}, nil)
+	if !errors.Is(err, utils.ErrNoPrompt) {
+		t.Fatalf("err = %v, want ErrNoPrompt", err)
 	}
 }

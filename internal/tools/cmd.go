@@ -50,7 +50,7 @@ func Detail(toolName string) error {
 // information with no claim about any specific listed tool to be wrong
 // about).
 func List() error {
-	tls := Registry.All()
+	tls := Registry.Visible()
 	aliases := Registry.Aliases()
 	mcpEntries, shadowedBuiltins := mcpListingEntries()
 	mcpByName := make(map[string]mcpListingEntry, len(mcpEntries))

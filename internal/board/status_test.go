@@ -117,3 +117,38 @@ func TestStatus_NilIsSafe(t *testing.T) {
 	s.tick()
 	s.Stop()
 }
+
+func TestStatus_DetailFollowsTheElapsedTime(t *testing.T) {
+	plainStatus(t)
+	out := &bytes.Buffer{}
+	s := fixedStatus(out, true, 3*time.Second)
+	s.Start()
+	defer s.Stop()
+	s.SetDetail("12/40 files")
+	s.tick()
+	if !strings.Contains(out.String(), "3s · 12/40 files") {
+		t.Fatalf("tick drew %q, want the detail after the elapsed time", out.String())
+	}
+	s.SetDetail("")
+	s.tick()
+	last := out.String()[strings.LastIndex(out.String(), "\r"):]
+	if strings.Contains(last, "·") {
+		t.Fatalf("an empty detail still drew %q", last)
+	}
+}
+
+func TestStatus_FollowsTheTerminalWhenItNarrows(t *testing.T) {
+	ancli.UseColor = false
+	out := &bytes.Buffer{}
+	s := fixedStatus(out, true, 0)
+	width := 80
+	s.measure = func() int { return width }
+	s.Start()
+	width = 10
+	s.tick()
+	s.Stop()
+	frames := strings.Split(out.String(), "\r\x1b[2K")
+	if len(frames) < 3 || frames[2] != "▸ generat…" {
+		t.Fatalf("frames = %q, want the second cut to 10 columns", frames)
+	}
+}

@@ -1,6 +1,7 @@
 package video
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -54,7 +55,7 @@ func TestSetupPrompts(t *testing.T) {
 			Prompt:       "",
 		}
 
-		if err := conf.SetupPrompts(args); err != nil {
+		if err := conf.SetupPrompts(context.Background(), args); err != nil {
 			t.Fatalf("SetupPrompts failed: %v", err)
 		}
 
@@ -85,7 +86,7 @@ func TestSetupPrompts(t *testing.T) {
 			Prompt:       "",
 		}
 
-		if err := conf.SetupPrompts(args); err != nil {
+		if err := conf.SetupPrompts(context.Background(), args); err != nil {
 			t.Fatalf("SetupPrompts failed: %v", err)
 		}
 
@@ -104,7 +105,7 @@ func TestSetupPrompts(t *testing.T) {
 			Prompt:       "",
 		}
 
-		if err := conf.SetupPrompts(args); err != nil {
+		if err := conf.SetupPrompts(context.Background(), args); err != nil {
 			t.Fatalf("SetupPrompts failed: %v", err)
 		}
 

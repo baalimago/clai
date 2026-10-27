@@ -87,34 +87,15 @@ func Test_e2e_replay_loads_theme(t *testing.T) {
 	}
 }
 
-// Test_e2e_dirscope_replay_honors_notification_bell pins the bell against
-// theme.json: dir-replay runs through the adapter's default Run, which rings
-// the completion bell, so an unloaded theme would ring against the user's
-// explicit opt-out.
-func Test_e2e_dirscope_replay_honors_notification_bell(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		bell bool
-	}{
-		{name: "bell disabled in theme", bell: false},
-		{name: "bell enabled in theme", bell: true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			bin := filepath.Join(claiBinDir(t), "clai")
-			confDir := e2etest.SetupMainTestConfigDir(t)
-			t.Setenv("CLAI_CACHE_DIR", filepath.Join(t.TempDir(), "cache"))
-			e2etest.ChdirTemp(t)
-			writeReplayTheme(t, confDir, tc.bell)
-
-			if status := harness.Run(strings.Split("-r -cm mock_test q hello", " ")); status != 0 {
-				t.Fatalf("seed query status %d", status)
-			}
-
-			stdout := replayFreshProcess(t, bin, "dre")
-
-			if got := strings.Contains(stdout, "\a"); got != tc.bell {
-				t.Fatalf("bell rung: %v, want %v, stdout: %q", got, tc.bell, stdout)
-			}
-		})
+// Test_e2e_last_reply_only_is_query_then_replay pins the documented way to
+// get only the last reply: run the query with its output discarded, then
+// `clai -r replay` prints the reply alone.
+func Test_e2e_last_reply_only_is_query_then_replay(t *testing.T) {
+	confDir := e2etest.SetupMainTestConfigDir(t)
+	if _, status := harness.RunOne(t, confDir, "-cm mock_test q the answer"); status != 0 {
+		t.Fatalf("query: status %d", status)
 	}
+	stdout, status := harness.RunOne(t, confDir, "-r replay")
+	testboil.FailTestIfDiff(t, status, 0)
+	testboil.FailTestIfDiff(t, stdout, "the answer\n")
 }

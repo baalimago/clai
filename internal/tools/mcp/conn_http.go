@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/baalimago/clai/internal/tools/mcp/mcpauth"
 	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
@@ -117,7 +118,16 @@ type HttpConn struct {
 // has no child process and so nothing to log through it. ctx governs the
 // connection's background work (the optional server-initiated stream);
 // Close cancels it.
-func NewHttpConn(ctx context.Context, server pub_models.McpServer, sink ServerLogSink, opts ...HttpConnOption) Conn {
+//
+// Every connection to an endpoint-based server is built here, so this is
+// where its auth.required_env is checked before anything is sent; the
+// credential chain checks it too, before auth.token_command runs. Both look
+// a variable up where auth.token_env is resolved: the process environment,
+// then the envfile.
+func NewHttpConn(ctx context.Context, server pub_models.McpServer, sink ServerLogSink, opts ...HttpConnOption) (Conn, error) {
+	if err := mcpauth.CheckEndpointRequiredEnv(server, LoadEnvFile); err != nil {
+		return nil, err
+	}
 	connCtx, cancel := context.WithCancel(ctx)
 	c := &HttpConn{
 		serverName:         server.Name,
@@ -143,7 +153,7 @@ func NewHttpConn(ctx context.Context, server pub_models.McpServer, sink ServerLo
 		<-connCtx.Done()
 		_ = c.Close()
 	}()
-	return c
+	return c, nil
 }
 
 // Notifications implements NotificationWatcher.
@@ -797,7 +807,10 @@ func dialHttp(runCtx context.Context, server pub_models.McpServer, sink ServerLo
 	if decorate != nil {
 		opts = append(opts, WithRequestDecorator(decorate))
 	}
-	conn := NewHttpConn(runCtx, server, sink, opts...)
+	conn, err := NewHttpConn(runCtx, server, sink, opts...)
+	if err != nil {
+		return nil, err
+	}
 	httpConn := conn.(*HttpConn)
 
 	connectCtx, cancel := context.WithTimeout(runCtx, connectBound)

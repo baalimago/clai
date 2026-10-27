@@ -2,6 +2,7 @@ package cli
 
 import (
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
@@ -21,7 +22,7 @@ func TestCommands_buildsEveryDocumentedKey(t *testing.T) {
 	want := []string{
 		"query|q", "chat|c", "photo|p", "video|v", "audio|a", "setup|s",
 		"version", "replay|re", "dir-replay|dre", "tools|t", "mcp",
-		"profiles", "confdir",
+		"profiles", "skills", "confdir", "cloud",
 	}
 	got := Commands(DefaultDeps())
 	if len(got) != len(want) {
@@ -170,5 +171,54 @@ func TestRunProfiled_withoutCPUDebugWritesNoProfile(t *testing.T) {
 	}
 	if _, err := os.Stat(CPUProfileFileName); !os.IsNotExist(err) {
 		t.Fatalf("Stat(%q) = %v, want no profile without the CPU debug flag", CPUProfileFileName, err)
+	}
+}
+
+// `clai help`, `clai -h` and `clai --help` are how a person or an agent
+// asks for the usage: it goes to stdout, with no error, and exits 0.
+func TestRun_helpPrintsUsageAndExitsZero(t *testing.T) {
+	for _, args := range [][]string{{"help"}, {"-h"}, {"--help"}, {"-help"}} {
+		t.Run(args[0], func(t *testing.T) {
+			isolateEnv(t)
+			var status int
+			var stdout string
+			stderr := testboil.CaptureStderr(t, func(t *testing.T) {
+				stdout = testboil.CaptureStdout(t, func(t *testing.T) {
+					status = Run(args, DefaultDeps())
+				})
+			})
+			if status != 0 {
+				t.Fatalf("Run(%v) = %d, want 0", args, status)
+			}
+			if stderr != "" {
+				t.Fatalf("Run(%v) wrote to stderr: %q", args, stderr)
+			}
+			if !strings.HasPrefix(stdout, "clai - (c)ommand (l)ine (a)rtificial (i)ntelligence\n") {
+				t.Fatalf("Run(%v) stdout does not start with the usage:\n%s", args, stdout)
+			}
+			for _, want := range []string{"\n  query|q ", "\n  help ", "\n  completion ", "or 'clai <command> -h'"} {
+				if !strings.Contains(stdout, want) {
+					t.Fatalf("Run(%v) usage lacks %q:\n%s", args, want, stdout)
+				}
+			}
+			if strings.Contains(stdout, "%!") {
+				t.Fatalf("usage holds a formatting error:\n%s", stdout)
+			}
+		})
+	}
+}
+
+// `clai help <command>` is that command's -h.
+func TestRun_helpCommandShowsThatCommandsHelp(t *testing.T) {
+	isolateEnv(t)
+	var status int
+	var stdout string
+	_ = testboil.CaptureStderr(t, func(t *testing.T) {
+		stdout = testboil.CaptureStdout(t, func(t *testing.T) {
+			status = Run([]string{"help", "version"}, DefaultDeps())
+		})
+	})
+	if status != 0 || !strings.Contains(stdout, "clai version") {
+		t.Fatalf("Run(help version) = %d, stdout:\n%s", status, stdout)
 	}
 }

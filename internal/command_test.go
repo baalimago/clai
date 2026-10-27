@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"io"
 	"strings"
 	"testing"
 
@@ -18,19 +19,39 @@ func (c notificationTestCompletion) SuppressCompletionNotification() bool {
 	return c.suppress
 }
 
-func Test_triggerCompletionNotification(t *testing.T) {
-	t.Run("emits bell when completion does not suppress it", func(t *testing.T) {
-		gotStdout := testboil.CaptureStdout(t, func(t *testing.T) {
-			triggerCompletionNotification(notificationTestCompletion{})
-		})
-		testboil.FailTestIfDiff(t, gotStdout, "\a")
+func Test_ringCompletionBell(t *testing.T) {
+	ring := func(completed any, stdoutTerminal, stderrTerminal bool) (string, string) {
+		var stdout, stderr strings.Builder
+		isTerminal := func(w io.Writer) bool {
+			if w == &stdout {
+				return stdoutTerminal
+			}
+			return stderrTerminal
+		}
+		ringCompletionBell(completed, &stdout, &stderr, isTerminal)
+		return stdout.String(), stderr.String()
+	}
+
+	t.Run("rings on a terminal stdout", func(t *testing.T) {
+		stdout, stderr := ring(notificationTestCompletion{}, true, true)
+		testboil.FailTestIfDiff(t, stdout, "\a")
+		testboil.FailTestIfDiff(t, stderr, "")
+	})
+
+	t.Run("rings on a terminal stderr when stdout is redirected", func(t *testing.T) {
+		stdout, stderr := ring(notificationTestCompletion{}, false, true)
+		testboil.FailTestIfDiff(t, stdout, "")
+		testboil.FailTestIfDiff(t, stderr, "\a")
+	})
+
+	t.Run("stays silent with no terminal", func(t *testing.T) {
+		stdout, stderr := ring(notificationTestCompletion{}, false, false)
+		testboil.FailTestIfDiff(t, stdout+stderr, "")
 	})
 
 	t.Run("suppressed completion emits nothing", func(t *testing.T) {
-		gotStdout := testboil.CaptureStdout(t, func(t *testing.T) {
-			triggerCompletionNotification(notificationTestCompletion{suppress: true})
-		})
-		testboil.FailTestIfDiff(t, gotStdout, "")
+		stdout, stderr := ring(notificationTestCompletion{suppress: true}, true, true)
+		testboil.FailTestIfDiff(t, stdout+stderr, "")
 	})
 }
 

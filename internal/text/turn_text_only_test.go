@@ -18,13 +18,18 @@ import (
 
 const textOnlyGoldenDir = "testdata/turn_text_only"
 
-// textOnlyReplies are an Anthropic stream that calls ls, then answers.
+// textOnlyReplies are an Anthropic stream that calls ls, then answers. Their
+// message_start usage matches the token counts the goldens recorded.
 var textOnlyReplies = []string{
-	"event: content_block_start\n" +
+	"event: message_start\n" +
+		`data: {"type":"message_start","message":{"usage":{"input_tokens":6,"output_tokens":0}}}` + "\n\n" +
+		"event: content_block_start\n" +
 		`data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_1","name":"ls","input":{}}}` + "\n\n" +
 		"event: content_block_stop\n" +
 		`data: {"type":"content_block_stop","index":0}` + "\n\n",
-	"event: content_block_start\n" +
+	"event: message_start\n" +
+		`data: {"type":"message_start","message":{"usage":{"input_tokens":8,"output_tokens":0}}}` + "\n\n" +
+		"event: content_block_start\n" +
 		`data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}` + "\n\n" +
 		"event: content_block_delta\n" +
 		`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"One file: a.txt"}}` + "\n\n" +

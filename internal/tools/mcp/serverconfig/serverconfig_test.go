@@ -10,22 +10,22 @@ import (
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
-// TestValidateTransport_RequiresExactlyOneOfCommandOrUrl pins the exported
+// TestValidate_RequiresExactlyOneOfCommandOrUrl pins the exported
 // entry point a server with no config file uses (D43, R2-07): the same XOR
 // FindConfiguredServers enforces on the file path.
-func TestValidateTransport_RequiresExactlyOneOfCommandOrUrl(t *testing.T) {
+func TestValidate_RequiresExactlyOneOfCommandOrUrl(t *testing.T) {
 	both := pub_models.McpServer{Name: "both", Command: "node", Url: "https://mcp.example.com/mcp"}
-	if err := ValidateTransport(both.Name, both); err == nil || !strings.Contains(err.Error(), "both") {
+	if err := Validate(both.Name, both); err == nil || !strings.Contains(err.Error(), "both") {
 		t.Fatalf("both set: err = %v, want an error naming %q", err, "both")
 	}
 
 	neither := pub_models.McpServer{Name: "neither"}
-	if err := ValidateTransport(neither.Name, neither); err == nil || !strings.Contains(err.Error(), "neither") {
+	if err := Validate(neither.Name, neither); err == nil || !strings.Contains(err.Error(), "neither") {
 		t.Fatalf("neither set: err = %v, want an error naming %q", err, "neither")
 	}
 
 	ok := pub_models.McpServer{Name: "ok", Command: "node"}
-	if err := ValidateTransport(ok.Name, ok); err != nil {
+	if err := Validate(ok.Name, ok); err != nil {
 		t.Fatalf("command only: unexpected error: %v", err)
 	}
 }

@@ -131,12 +131,34 @@ A plain query prints the same summary, titled `▸ query done in 4s` (or
 off by default. Loop iterations never print it, since the loop reports for
 the whole run. See `internal/text/run_summary.go`.
 
+Both summaries count the clai runs a run starts (subagents), on a
+`subagents 4 runs · 210k in · 9k out · ~$0.41` row (`internal/runtally`).
+A run that prints a summary, or that has a `CLAI_RUN_TALLY_DIR` from a
+parent, opens a `runtally.Scope` in `QueryCommand` (`withRunTally`): a
+fresh temp directory that `CLAI_RUN_TALLY_DIR` points at for every process
+it starts, `cmd` and `async_cmd` workers included. When the run ends
+(`Querier.finishQuery` for a plain query, `ReportLoopSummary` for a loop),
+`settleRunTally` sums the `run-*.json` reports its children wrote there and
+writes its own spend plus theirs into its parent's directory, written under a
+`.tmp` name and renamed so a reader never sees half a file. The variable is
+restored and the directory removed when the command ends
+(`runTallyQuerier`). Nothing is read from a child's output, so `-ro` workers
+keep a clean stdout. A worker still running when its lead ends is not
+counted; one that ends after its lead finds the directory gone
+(`runtally.ParentGone`) and reports nowhere. Each run prices its own model,
+so a tree of mixed models still sums; runs with no known price are counted
+as unpriced.
+
 ## Configuration Cascade
 
 The query command applies configuration in this order (lowest to highest precedence):
 
 1. **Hard-coded defaults** (`text.Default` in `internal/text/conf.go`)
-2. **`textConfig.json`** loaded from config dir
+2. **`textConfig.json`** loaded from config dir. A missing file is created from
+   `text.FirstRunDefaults` (`internal/text/first_run_model.go`): `text.Default`
+   with the model of the first vendor whose API key is set, OpenAI first, so a
+   first query works with whichever key the user exported. An existing file
+   keeps its model.
 3. **Model-specific config** (e.g., `openai_gpt_gpt-5.2.json`)
 4. **Profile overrides** (if `-p`/`-profile` or `-prp`/`-profile-path` is set)
 5. **CLI flags** (e.g., `-cm`, `-r`, `-t`)
@@ -165,12 +187,17 @@ See `CONFIG.md` for full details.
 `utils.Prompt()` in `internal/utils/prompt.go`:
 
 - If pipe detected and no args: stdin becomes the prompt
-- If pipe detected and args present: replaces `{}` (or custom `-I` token) in args with stdin content
+- If pipe detected and args present: stdin replaces every `{}` (or the `-I` token) in the args; a prompt without the token gets stdin appended once. It is never sent twice nor dropped. `-I` alone implies `-i` (`text.ApplyFlagOverrides`).
 - If no pipe: joins args as the prompt
 - With no args and no pipe it fails with `utils.ErrNoPrompt`
 
 `Prompt()` decides whether stdin is piped and delegates to `PromptFrom(stdinReplace, args, stdin)`,
 where a nil reader means a terminal. Stdin that is wholly an image is attached instead (see below).
+
+A pipe is read to EOF, so a query run with stdin left as an open pipe nobody writes to (cron, CI,
+a background job) waits for it, as other Unix filters do; `</dev/null` avoids that. The wait ends
+with the run's context: `utils.PipedStdin(ctx)` wraps a pipe so its reads return the context's
+cause, and SIGINT or SIGTERM, which cancel that context, stop clai there.
 
 ### Image flags
 
@@ -384,6 +411,7 @@ This allows subsequent `-dre` queries from the same directory to continue the co
 ## Output Modes
 
 - **Default (animated)**: tokens stream to stdout character-by-character, then the full message is pretty-printed (via `glow` when the destination is a terminal)
-- **Raw (`-r`)**: tokens stream directly, no post-processing formatting. Reasoning with no visible text (e.g. Anthropic's omitted thinking display) prints no `[thinking]` wrapper.
+- **Raw (`-r`/`-raw`)**: the speed mode. The response is printed exactly as it streams, with no pretty print, and nothing is printed after it: the finished message is not shown again. Reasoning with no visible text (e.g. Anthropic's omitted thinking display) prints no `[thinking]` wrapper.
+- **Last reply only**: send the run's output to `/dev/null`, then print the saved reply with `clai -r replay` (`clai q "…" > /dev/null && clai -r replay`, pinned by `Test_e2e_last_reply_only_is_query_then_replay`). It needs the run saved (`save-reply-as-conv`), and runs in parallel share the one last-reply slot, so concurrent workers use `-reply-only` instead (see `architecture/tooling.md`).
 - **Structured (`-rf`/`-response-format`)**: blocks streaming and prints only the final structured response, followed by one newline. It suppresses reasoning, tool activity, skill-discovery logs, lookback notices, formatting, and BEL. The model must implement `generic.ResponseFormatSetter`; one that does not fails with `generic.ErrResponseFormatUnsupported` instead of silently streaming prose. OpenAI-compatible vendors send `response_format`, Jev reads its questions from `json_schema.schema`, and Anthropic maps `json_schema` onto `output_config.format` (it rejects `json_object`, which it has no equivalent for).
 - **Cmd mode (`cmd` command)**: output is treated as a shell command; user is prompted to execute it

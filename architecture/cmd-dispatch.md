@@ -33,13 +33,15 @@ flag at that level.
 `internal/cli` is the composition root: `Commands()` builds the
 `map[string]cmd.Command` with the keys `query|q`, `chat|c`, `photo|p`,
 `video|v`, `audio|a`, `setup|s`, `version`, `replay|re`, `dir-replay|dre`,
-`tools|t`, `mcp`, `profiles`, `confdir`. Loop mode is not a command: it is
+`tools|t`, `mcp`, `profiles`, `confdir`, `cloud`. Loop mode is not a command: it is
 the `-l`/`-loop` flag of `query` (see [query.md](./query.md#loop-mode)).
 The `completion` command and the hidden `__complete` protocol are
 auto-registered by
-`cmd.Run` (upstream). There is no `help` command: bare `clai` prints the
-full usage, and every command's `-h` prints its Help() text with examples,
-flags and subcommands (see [help.md](./help.md)).
+`cmd.Run` (upstream). `Run` adds the `help` command (`withHelp`, not in
+`Commands`, since it lists them): `clai help`, `clai -h` and `clai --help`
+print the full usage and exit 0, and `clai help <command>` is that
+command's `-h`, which prints its Help() text with examples, flags and
+subcommands (see [help.md](./help.md)).
 
 Each command lives in its domain package and exposes a
 `Command(deps) *internal.Command` constructor:
@@ -53,6 +55,7 @@ Each command lives in its domain package and exposes a
 | tools / profiles | `internal/tools` / `internal/profiles` |
 | mcp | `internal/tools/mcp` — `mcp auth <server>` runs the OAuth flow for one server and writes its token store entry; no model call, spends nothing |
 | version / confdir | `internal/version` / `internal/confdir` |
+| cloud | `internal/cloud/cloudcmd` — login, logout, whoami, status, diff, pull, commit, resolve, log; nothing syncs unless one of these runs. A command that needs a decision exits 4 through `Deps.SetExit` (see [cloud.md](./cloud.md)) |
 
 Every factory lives in its domain package: `text.SetupQuerier`/
 `text.CreateQuerier` (query composition), photo's run on the injected
@@ -78,6 +81,11 @@ subpackage depends on — organizational machinery only: the
 - `OnSetup` — command-specific setup (config load, querier construction),
 - `OnRun` — optional custom run; the default runs `querier.Query` and fires
   the completion bell,
+- `CheckArgs` — optional: `cli.Run` hands it the arguments after the
+  command's name, when that name is the first argument, before `cmd.Run`
+  dispatches; an error is printed alone and exits 1. `cloud` uses it so
+  an unknown subcommand or a bad flag names that subcommand's usage
+  rather than the whole one,
 - `Subs` — the `Subcommander` tree wiring; subs share their parent's values
   by closing over the same flag structs,
 - `CompleteFlagValueFn`/`CompleteArgsFn` — optional completion hooks; the
@@ -214,7 +222,8 @@ Commands that render content without reading a mode config call
 They need the theme for role colors and the completion bell, while the
 migration pass would be a no-op under `utils.NoCreateConfig` — and
 `clai -r chat dirv2` runs on shell-prompt hot paths. `completion`,
-`__complete`, `confdir` and `version` touch no config at all.
+`__complete`, `confdir` and `version` touch no config at all. `cloud`
+reads the config dir directly and never runs the migration.
 
 Clean exits use sentinels honored by `cmd.Run` via `errors.Is`:
 `cmd.ErrUserInitiatedExit` (new code) and `table.ErrUserInitiatedExit`

@@ -32,8 +32,8 @@ One recording, one scratch home, six model calls.
 11. `clai replay` prints the last reply again. It runs no model.
 
 ```bash
-alias ai='clai q'
-alias ask='clai -dre q'
+alias ai='clai -qs q'
+alias ask='clai -dre -qs q'
 alias fix='clai -l -t "ls,cat,pwd,go,apply_patch" -check "go test ./..." q'
 ```
 
@@ -58,23 +58,38 @@ See: [`config.md`](./architecture/config.md).
 ## Query + reply + directory reply
 
 ```bash
-clai query "Explain the design"
-clai -re query "Now give the trade-offs"
-clai -dre query "Apply it to this repo"
+clai -query-summary query "Explain the design"
+clai -reply -query-summary query "Now give the trade-offs"
+clai -dir-reply -query-summary query "Apply it to this repo"
 clai query -- -why does this fail
 ```
 
-- `query` saves reply context to `<clai-config>/conversations/globalScope.json`.
+- `query` (`q`) saves reply context to `<clai-config>/conversations/globalScope.json`.
 - Non-reply queries also bind CWD → chat ID (dir-scope).
-- `-re` loads `globalScope.json` as context.
-- `-dre` first copies the directory-bound chat into `globalScope.json`, then uses normal `-re` plumbing.
+- `-reply` (`-re`) loads `globalScope.json` as context.
+- `-dir-reply` (`-dre`) first copies the directory-bound chat into `globalScope.json`, then uses normal `-reply` plumbing.
+- `-query-summary` (`-qs`) prints how long the run took, its tokens, cost and tool calls.
 - A prompt whose first word starts with `-` is parsed as a flag; pass it after `--`.
 
 See: [`query.md`](./architecture/query.md), [`chat.md`](./architecture/chat.md), [`dre.md`](./architecture/dre.md).
 
+## Keep only the reply: write it to a file, watch the progress
+
+```bash
+clai -reply-only -profile-path cchub:baalimago/sre-sync-prep@4 query > agenda.md
+clai -reply-only -tools "rg,cat" query "Write release notes for the changes since the last tag" > NOTES.md
+git diff --staged | clai -reply-only query "Write a commit message for this diff: {}" | git commit -F -
+```
+
+- `-reply-only` (`-ro`) keeps stdout for the final reply. Tool calls, tool output and reasoning go to stderr.
+- When stderr is a terminal, it shows the run as a terminal normally would, rolling window included, and ends with `▸ reply written to stdout`.
+- Without `-reply-only`, a redirected stdout gets the whole transcript, tool calls included.
+
+See: [`tooling.md`](./architecture/tooling.md).
+
 ## Loop until the goal is verified
 
-Add `-l` / `-loop` to any query to iterate toward a goal. The dispatcher
+Add `-loop` (`-l`) to any query to iterate toward a goal. The dispatcher
 forwards a flag to the command that defines it, so the flag may stand before
 or after `q`; no other command accepts it.
 
@@ -92,15 +107,15 @@ Act 3 of the [showcase](#showcase) runs this workflow end to end:
    the result.
 
 ```bash
-clai -l q 'refactor the auth package and make the tests pass'
-clai -check 'go test ./...' -l q fix the failing build
-clai q -l -mi 3 -check ./verify.sh make the linter clean
+clai -loop query 'refactor the auth package and make the tests pass'
+clai -check 'go test ./...' -loop query fix the failing build
+clai query -loop -max-iterations 3 -check ./verify.sh make the linter clean
 ```
 
 - Each iteration is a fresh session. The previous iteration's final reply becomes its handover.
 - The agent calls `complete_task` when it is done. With `-check`, an achieved call is accepted only when the command exits 0.
-- `-mi` / `-max-iterations` bounds the run (default 10, `0` = unlimited). A blocked task or an exhausted bound exits 1.
-- `-mi` and `-check` require `-l`; without it they fail instead of configuring nothing.
+- `-max-iterations` (`-mi`) bounds the run (default 10, `0` = unlimited). A blocked task or an exhausted bound exits 1.
+- `-max-iterations` and `-check` require `-loop`; without it they fail instead of configuring nothing.
 
 See: [`query.md`](./architecture/query.md#loop-mode).
 
@@ -109,11 +124,11 @@ See: [`query.md`](./architecture/query.md#loop-mode).
 Use the included review schema to produce JSON that you can send directly to `jq`:
 
 ```bash
-go run . -rf examples/response-format-review.json query \
+go run . -response-format examples/response-format-review.json query \
   "Review the current changes. Return a summary, a findings list, and an approval decision." | jq
 ```
 
-The `-rf` flag blocks streaming output. Standard output contains only the final structured response and one trailing newline.
+The `-response-format` (`-rf`) flag blocks streaming output. Standard output contains only the final structured response and one trailing newline.
 
 Reasoning, tool activity, skill-discovery logs, lookback notices, formatting, and the completion notification bell do not appear in this output.
 
@@ -122,8 +137,8 @@ Errors still go to standard error.
 ## Auto-append shell context
 
 ```bash
-clai -asc minimal query "Why is this command failing?"
-clai -add-shell-context git query "Summarize the current repo state before answering"
+clai -add-shell-context minimal -query-summary query "Why is this command failing?"
+clai -add-shell-context git -query-summary query "Summarize the current repo state before answering"
 ```
 
 - Shell contexts live in `<clai-config>/shellContexts/<name>.json`.
@@ -135,12 +150,12 @@ See: [`shell-context.md`](./architecture/shell-context.md).
 ## Inspect “what did it say last time?”
 
 ```bash
-clai replay     # last message from globalScope.json
-clai dre        # last message from directory-bound chat
-clai -r replay  # raw (no pretty/glow)
+clai replay         # last message from globalScope.json
+clai dir-replay     # last message from directory-bound chat
+clai -raw replay    # raw (no pretty/glow)
 ```
 
-- `replay` and `dre` do not call any LLM.
+- `replay` (`re`) and `dir-replay` (`dre`) do not call any LLM.
 - They load a chat transcript and pretty-print the last message.
 
 See: [`replay.md`](./architecture/replay.md), [`dre.md`](./architecture/dre.md).
@@ -150,11 +165,11 @@ See: [`replay.md`](./architecture/replay.md), [`dre.md`](./architecture/dre.md).
 ```bash
 clai chat list
 clai chat continue 3
-clai -dre query "Continue from that context"
+clai -dir-reply -query-summary query "Continue from that context"
 ```
 
 - `chat continue <index|id>` selects an existing transcript and stores a directory binding.
-- After that, `-dre` in this directory uses that conversation as context.
+- After that, `-dir-reply` in this directory uses that conversation as context.
 
 See: [`chat.md`](./architecture/chat.md).
 
@@ -162,7 +177,7 @@ See: [`chat.md`](./architecture/chat.md).
 
 ```bash
 clai profiles list
-clai -p ops query "Find the owners of this subsystem"
+clai -profile ops -query-summary query "Find the owners of this subsystem"
 ```
 
 - Profiles live in `<clai-config>/profiles/*.json`.
@@ -175,18 +190,19 @@ Also see examples:
 
 - [ops](./examples/profiles/ops.json) - This agent can answer any question about your company's systems and customers
 - [tradebot](./examples/profiles/trade-bot.json) - Fully functional polymarket trade bot, defined as json. Swap prompt and model, try it out!
+- [starter agents](./examples/profiles/README.md) - A code reviewer, a commit writer, a web researcher, a PR reviewer, an upgrade scout, a SQL analyst, a site watcher, an issue triager and a Sentry medic, each one JSON file with pinned MCP servers
 
 ## Tools: inspect vs enable
 
 ```bash
 clai tools
 clai tools rg
-clai -t "rg,cat" query "Search for parsing logic and show me the file"
+clai -tools "rg,cat" -query-summary query "Search for parsing logic and show me the file"
 ```
 
 - `clai tools` is inspection only.
-- `-t` enables tool calling for that _run_; without it, tool calls are disabled.
-- `-t "*"` allows all registered tools.
+- `-tools` (`-t`) enables tool calling for that _run_; without it, tool calls are disabled.
+- `-tools "*"` allows all registered tools.
 
 See: [`tools-command.md`](./architecture/tools-command.md), [`tooling.md`](./architecture/tooling.md), [`config.md`](./architecture/config.md).
 
@@ -194,35 +210,41 @@ See: [`tools-command.md`](./architecture/tools-command.md), [`tooling.md`](./arc
 
 ```bash
 clai setup      # stage 3: MCP server configs
-clai -t "mcp_linear*" query "List open incidents assigned to me"
+clai -tools "mcp_linear*" -query-summary query "List open incidents assigned to me"
 ```
 
 - MCP server configs are stored in `<clai-config>/mcpServers/*.json`.
 - MCP tool names are typically `mcp_<server>_<tool>` (and can be globbed).
+- `"auth": {"required_env": ["SENTRY_ACCESS_TOKEN"]}` declares the environment variables a server needs. clai refuses to start the server, naming each one that is unset or empty, before anything is spawned or connected. A local server is checked against the environment it would be spawned with (including its `envfile` and `env`), a `url` server against clai's own environment, then its `envfile`, the same places its `token_env` is looked up.
 
-See: [`tooling.md`](./architecture/tooling.md), [`setup.md`](./architecture/setup.md).
+```json
+{ "command": "npx", "args": ["-y", "@sentry/mcp-server@0.42.0"],
+  "auth": { "required_env": ["SENTRY_ACCESS_TOKEN"] } }
+```
+
+See: [`mcp.md`](./architecture/mcp.md), [`tooling.md`](./architecture/tooling.md), [`setup.md`](./architecture/setup.md).
 
 ## Multimodal: images, photo + video
 
 ```bash
-clai -img screenshot.png q "What is wrong in this dialog?"
-cat diagram.png | clai q "Describe this diagram"
-clai -g 'docs/*' q "Summarize these notes and figures"
-clai -t generate_image -open q "Draw a fox in the snow"
-clai -re -t generate_image q "Make it night"
+clai -image screenshot.png -query-summary query "What is wrong in this dialog?"
+cat diagram.png | clai -query-summary query "Describe this diagram"
+clai -glob 'docs/*' -query-summary query "Summarize these notes and figures"
+clai -tools generate_image -open -query-summary query "Draw a fox in the snow"
+clai -reply -tools generate_image -query-summary query "Make it night"
 
 clai photo "A minimal architecture diagram"
-clai -re photo "Now simplify it further"
-clai photo -img sketch.png -open "Make it a watercolour"
+clai -reply photo "Now simplify it further"
+clai photo -image sketch.png -open "Make it a watercolour"
 
 clai video "A slow pan across a terminal showing streaming output"
-clai video -img still.png "Make the waves roll"
+clai video -image still.png "Make the waves roll"
 ```
 
-- `-img` attaches images to any model that reads them; a model that cannot fails before any request. Stdin that is wholly an image is attached too.
-- `generate_image` is clai's own tool on every vendor. It uses the chat vendor's image backend when it has one (OpenAI, Gemini, OpenRouter), otherwise the `photoConfig.json` model; `-pm` overrides both. Images are saved under `<clai-config>/conversations/assets/`. On a terminal each shows in the tool's block as two rows, `▸ [rebus] image <handle> · <details>` and its `file://` URL; piped, each is its bare path.
+- `-image` (`-img`) attaches images to any model that reads them; a model that cannot fails before any request. Stdin that is wholly an image is attached too.
+- `generate_image` is clai's own tool on every vendor. It uses the chat vendor's image backend when it has one (OpenAI, Gemini, OpenRouter), otherwise the `photoConfig.json` model; `-photo-model` (`-pm`) overrides both. Images are saved under `<clai-config>/conversations/assets/`. On a terminal each shows in the tool's block as two rows, `▸ [rebus] image <handle> · <details>` and its `file://` URL; piped, each is its bare path.
 - `photo`/`video` have separate mode configs: `photoConfig.json`, `videoConfig.json`.
-- `photo` saves each image under `output.dir` and prints its path; `-img` adds input images, and `-re` also sends the previous query's latest image.
+- `photo` saves each image under `output.dir` and prints its path; `-image` adds input images, and `-reply` also sends the previous query's latest image.
 
 See: [`images.md`](./architecture/images.md), [`photo.md`](./architecture/photo.md), [`video.md`](./architecture/video.md), [`config.md`](./architecture/config.md).
 
@@ -230,17 +252,17 @@ See: [`images.md`](./architecture/images.md), [`photo.md`](./architecture/photo.
 
 ```bash
 clai audio transcribe meeting.wav
-clai a t -af text meeting.wav
-cat meeting.wav | clai a t -
+clai audio transcribe -audio-format text meeting.wav
+cat meeting.wav | clai audio transcribe -
 
-clai a t meeting.wav | clai q "Summarize these meeting notes: {}"
+clai audio transcribe meeting.wav | clai -query-summary query "Summarize these meeting notes: {}"
 # let the agent transcribe, picking the model + format the tool uses:
-clai -am gpt-4o-transcribe-diarize -af json -t audio_transcribe q "Who said what in meeting.wav?"
+clai -audio-model gpt-4o-transcribe-diarize -audio-format json -tools audio_transcribe -query-summary query "Who said what in meeting.wav?"
 ```
 
 - Transcripts render locally as `vtt` (default), `srt`, `text`, or `json`; stdout carries only the transcript, so it pipes cleanly.
 - Files over 25 MB are split via ffmpeg and stitched back with adjusted timestamps.
-- The `audio_transcribe` built-in tool exposes the same engine to agents: `clai -t "*" q "Transcribe meeting.wav and summarize it"`.
+- The `audio_transcribe` built-in tool exposes the same engine to agents: `clai -tools "*" query "Transcribe meeting.wav and summarize it"`.
 
 See: [`audio.md`](./architecture/audio.md).
 

@@ -17,6 +17,9 @@ import (
 	"github.com/baalimago/clai/internal"
 	"github.com/baalimago/clai/internal/audio"
 	"github.com/baalimago/clai/internal/chat"
+	"github.com/baalimago/clai/internal/cloud"
+	"github.com/baalimago/clai/internal/cloud/cloudcmd"
+	"github.com/baalimago/clai/internal/cloud/sync"
 	"github.com/baalimago/clai/internal/confdir"
 	"github.com/baalimago/clai/internal/debugflags"
 	"github.com/baalimago/clai/internal/imagegen"
@@ -26,6 +29,8 @@ import (
 	"github.com/baalimago/clai/internal/photo"
 	"github.com/baalimago/clai/internal/present"
 	"github.com/baalimago/clai/internal/profiles"
+	"github.com/baalimago/clai/internal/remote"
+	"github.com/baalimago/clai/internal/runtally"
 	"github.com/baalimago/clai/internal/setup"
 	"github.com/baalimago/clai/internal/summary"
 	"github.com/baalimago/clai/internal/text"
@@ -53,7 +58,8 @@ Usage: clai [command flags] <command> [command flags] [args]
 
 Commands:
 %v
-Run 'clai <command> -h' for a command's flags, examples and subcommands.
+Run 'clai help <command>' or 'clai <command> -h' for a command's flags,
+examples and subcommands.
 
 Config dir: CONFIG_DIR
 Cache dir:  CACHE_DIR
@@ -61,21 +67,22 @@ Cache dir:  CACHE_DIR
 Examples:
   - clai --version   # same as 'clai version'
   - clai confdir
-  - clai -t website_text query "What'\''\'''s the weather like in Tokyo? Use website_text to fetch data"
-  - clai -glob "*.txt" query Please summarize these documents: 
-  - clai -asc minimal q "what changed in this repo?"
-  - clai -l q "refactor the auth package and make the tests pass"
-  - clai -pm dall-e-2 photo A cat in space
-  - clai -img screenshot.png q "What is wrong in this dialog?"
-  - clai -t generate_image q "Draw a fox in the snow"
-  - docker logs example | clai -I LOG q "Find errors in these logs: LOG"
-  - clai a t meeting.wav | clai q "Summarize these meeting notes: {}"
-  - clai a t -am gpt-4o-transcribe-diarize -strict-speakers long-meeting.wav
-  - clai c list
-  - clai -r c dirv2
-  - clai c summarize 7d   # label last week's conversations with a title and summary
-  - clai c help
-  - clai q -- -why does this fail   # '--' escapes a prompt starting with '-'
+  - clai -tools website_text -query-summary query "What'\''\'''s the weather like in Tokyo? Use website_text to fetch data"
+  - clai -glob "*.txt" -query-summary query Please summarize these documents: 
+  - clai -add-shell-context minimal -query-summary query "what changed in this repo?"
+  - clai -loop query "refactor the auth package and make the tests pass"
+  - clai -reply-only -profile-path cchub:clai/reviewer query > review.md   # progress on stderr, only the reply in the file
+  - clai -photo-model dall-e-2 photo A cat in space
+  - clai -image screenshot.png -query-summary query "What is wrong in this dialog?"
+  - clai -tools generate_image -query-summary query "Draw a fox in the snow"
+  - docker logs example | clai -replace LOG -query-summary query "Find errors in these logs: LOG"
+  - clai audio transcribe meeting.wav | clai -query-summary query "Summarize these meeting notes: {}"
+  - clai audio transcribe -audio-model gpt-4o-transcribe-diarize -strict-speakers long-meeting.wav
+  - clai chat list
+  - clai -raw chat dirv2
+  - clai chat summarize 7d   # label last week's conversations with a title and summary
+  - clai chat help
+  - clai query -- -why does this fail   # '--' escapes a prompt starting with '-'
 `
 
 // CPUProfileFileName is where RunProfiled writes when the CPU debug flag is on.
@@ -91,6 +98,9 @@ type Deps struct {
 	SummaryJoinTimeout time.Duration
 	ForeignCache       func() vendors.SourceCache
 	NewImageGenerator  imagegen.NewGeneratorFunc
+	// RemoteClient fetches -prp cchub:, gh: and https:// targets. Tests point
+	// it at a local TLS server.
+	RemoteClient remote.Doer
 }
 
 // DefaultDeps returns the production collaborators: the real summarizer, the
@@ -100,7 +110,39 @@ func DefaultDeps() Deps {
 		NewSummarizer:     summary.NewAgentSummarizer,
 		ForeignCache:      chat.DefaultForeignCache,
 		NewImageGenerator: route.NewGenerator,
+		RemoteClient:      remote.NewClient(),
 	}
+}
+
+// remoteResolver builds the resolver for remote profile targets over the
+// config directory a command prepared and the clai cache directory.
+func remoteResolver(client remote.Doer) text.NewRemoteResolverFunc {
+	return func(confDir string, prompt remote.Prompter) (remote.Resolver, error) {
+		cacheDir, err := utils.GetClaiCacheDir()
+		if err != nil {
+			return remote.Resolver{}, err
+		}
+		note := func(s string) { fmt.Fprintf(os.Stderr, "notice: %s\n", s) }
+		return remote.NewResolver(remote.EnvFrom(os.Getenv), confDir, cacheDir, client, prompt, note)
+	}
+}
+
+// hubPublisher posts a profile to the Hub with this machine's clai.chat
+// login, for `clai profiles publish` and `clai skills publish`.
+func hubPublisher(confDir string) (profiles.HubPublisher, error) {
+	creds, err := cloud.LoadCredentials(confDir)
+	if err != nil {
+		return nil, err
+	}
+	client := cloud.NewClient(creds.URL, creds.Token)
+	return func(ctx context.Context, req profiles.PublishRequest) (profiles.Published, error) {
+		var out profiles.Published
+		err := client.PostJSON(ctx, "/api/v1/hub", req, &out)
+		if apiErr, ok := cloud.AsAPIError(err); ok && apiErr.Code == "handle_required" {
+			return out, &profiles.HandleRequiredError{Suggested: apiErr.Suggested}
+		}
+		return out, err
+	}, nil
 }
 
 // Commands is the composition root: every command lives in its domain package
@@ -108,6 +150,12 @@ func DefaultDeps() Deps {
 // prep and migrations, which the domain packages cannot import themselves.
 // See architecture/cmd-dispatch.md.
 func Commands(deps Deps) map[string]cmd.Command {
+	return commands(deps, func(int) {})
+}
+
+// commands takes setExit, through which a command asks Run for an exit
+// status other than the 0 or 1 cmd.Run can return.
+func commands(deps Deps, setExit func(int)) map[string]cmd.Command {
 	configPrep := func() (string, error) {
 		confDir, _, err := setup.ConfigRunPrep(false)
 		return confDir, err
@@ -124,6 +172,18 @@ func Commands(deps Deps) map[string]cmd.Command {
 		SummaryJoinTimeout:  deps.SummaryJoinTimeout,
 		NewImageGenerator:   deps.NewImageGenerator,
 		PhotoConfig:         setup.LoadPhotoConfig,
+		NewRemoteResolver:   remoteResolver(deps.RemoteClient),
+		RunTallyEnv:         runtally.OSEnv{},
+	}
+	profileDeps := profiles.CommandDeps{
+		NewResolver:     profiles.NewResolverFunc(remoteResolver(deps.RemoteClient)),
+		ConfigDir:       func() (string, error) { return configPrep() },
+		NewHubPublisher: hubPublisher,
+		FindSecret: func(name string, b []byte) (string, bool) {
+			s, found := sync.FindSecret(name, b)
+			return s.String(), found
+		},
+		NewPrompt: func() remote.Prompter { return text.TerminalTrustPrompter(os.Stdin, os.Stderr) },
 	}
 	return map[string]cmd.Command{
 		"query|q": text.QueryCommand(queryDeps),
@@ -132,6 +192,7 @@ func Commands(deps Deps) map[string]cmd.Command {
 			NewSummarizer: deps.NewSummarizer,
 			ParseSince:    summary.ParseSince,
 			ForeignCache:  deps.ForeignCache,
+			SendPrompt:    text.DirReplySender(queryDeps),
 		}),
 		"photo|p": photo.Command(photo.CommandDeps{
 			ConfigPrep:    configPrep,
@@ -154,9 +215,35 @@ func Commands(deps Deps) map[string]cmd.Command {
 		"dir-replay|dre": chat.DirscopeReplayCommand(),
 		"tools|t":        tools.Command(),
 		"mcp":            mcp.Command(),
-		"profiles":       profiles.Command(),
+		"profiles":       profiles.Command(profileDeps),
+		"skills":         profiles.SkillsCommand(profileDeps),
 		"confdir":        confdir.Command(),
+		"cloud": cloudcmd.Command(cloudcmd.Deps{
+			ConfDir: utils.GetClaiConfigDir,
+			SetExit: setExit,
+			Hooks: sync.Hooks{
+				Export: func(ctx context.Context, confDir string, progress func(done, total int)) error {
+					return chat.ExportForeign(ctx, confDir, foreignCache(deps), progress)
+				},
+				Pending: func(ctx context.Context, confDir string) ([]sync.PendingImport, error) {
+					found, err := chat.PendingForeign(ctx, confDir, foreignCache(deps))
+					out := make([]sync.PendingImport, 0, len(found))
+					for _, f := range found {
+						out = append(out, sync.PendingImport{Source: f.Source, ID: f.SourceID, Change: sync.ImportChange(f.Change), Messages: f.Messages, RawBytes: f.RawBytes})
+					}
+					return out, err
+				},
+				Pulled: chat.ReindexPulled,
+			},
+		}),
 	}
+}
+
+func foreignCache(deps Deps) vendors.SourceCache {
+	if deps.ForeignCache == nil {
+		return nil
+	}
+	return deps.ForeignCache()
 }
 
 // versionFlagAsCommand rewrites the special first-argument version flag
@@ -172,7 +259,7 @@ func versionFlagAsCommand(args []string) []string {
 // Run dispatches args (without the program name) and returns the process exit
 // status. It never exits; the caller owns os.Exit.
 func Run(args []string, deps Deps) int {
-	args = versionFlagAsCommand(args)
+	args = helpAsCommand(versionFlagAsCommand(args))
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	// Nested tool calls stop clai through this cancel.
@@ -181,7 +268,33 @@ func Run(args []string, deps Deps) int {
 	cfgDir, _ := utils.GetClaiConfigDir()
 	cacheDir, _ := utils.GetClaiCacheDir()
 	usage := strings.NewReplacer("CONFIG_DIR", cfgDir, "CACHE_DIR", cacheDir).Replace(usageTemplate)
-	return cmd.Run(ctx, append([]string{"clai"}, args...), Commands(deps), usage)
+	ctx, exit := internal.WithExitStatus(ctx)
+	cmds := withHelp(commands(deps, exit.Set), usage)
+	if err := checkArgs(args, cmds); err != nil {
+		ancli.Errf("%v", err)
+		return 1
+	}
+	return exit.Resolve(cmd.Run(ctx, append([]string{"clai"}, args...), cmds, usage))
+}
+
+// checkArgs lets a command named first vet its own arguments (see
+// internal.Command.CheckArgs); every other command line is left to cmd.Run.
+func checkArgs(args []string, cmds map[string]cmd.Command) error {
+	if len(args) == 0 {
+		return nil
+	}
+	for key, c := range cmds {
+		for name := range strings.SplitSeq(key, "|") {
+			if name != args[0] {
+				continue
+			}
+			if ic, ok := c.(*internal.Command); ok && ic.CheckArgs != nil {
+				return ic.CheckArgs(args[1:])
+			}
+			return nil
+		}
+	}
+	return nil
 }
 
 func startCPUProfile(name string) (func(), error) {

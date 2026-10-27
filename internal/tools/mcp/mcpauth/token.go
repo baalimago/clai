@@ -27,6 +27,8 @@ func postTokenRequest(ctx context.Context, client *http.Client, tokenEndpoint st
 		return tokenResponse{}, fmt.Errorf("build token request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	// GitHub answers form-encoded unless asked for JSON.
+	req.Header.Set("Accept", "application/json")
 	resp, err := client.Do(req)
 	if err != nil {
 		return tokenResponse{}, fmt.Errorf("post to %q: %w", tokenEndpoint, err)
@@ -41,21 +43,34 @@ func postTokenRequest(ctx context.Context, client *http.Client, tokenEndpoint st
 		return tokenResponse{}, fmt.Errorf("decode token response: %w", err)
 	}
 	if out.AccessToken == "" {
+		// GitHub reports a refused grant with status 200 and an error body.
+		if reason, ok := tokenErrorReason(data); ok {
+			return tokenResponse{}, fmt.Errorf("%s", reason)
+		}
 		return tokenResponse{}, fmt.Errorf("token response carried no access_token")
 	}
 	return out, nil
 }
 
 func tokenRejectReason(body []byte, status int) string {
+	if reason, ok := tokenErrorReason(body); ok {
+		return reason
+	}
+	return fmt.Sprintf("status %d", status)
+}
+
+// tokenErrorReason is the OAuth error a token endpoint's body states, its
+// description when it gives one.
+func tokenErrorReason(body []byte) (string, bool) {
 	var errBody struct {
 		ErrorDescription string `json:"error_description"`
 		Error            string `json:"error"`
 	}
-	if json.Unmarshal(body, &errBody) == nil && (errBody.ErrorDescription != "" || errBody.Error != "") {
-		if errBody.ErrorDescription != "" {
-			return errBody.ErrorDescription
-		}
-		return errBody.Error
+	if json.Unmarshal(body, &errBody) != nil {
+		return "", false
 	}
-	return fmt.Sprintf("status %d", status)
+	if errBody.ErrorDescription != "" {
+		return errBody.ErrorDescription, true
+	}
+	return errBody.Error, errBody.Error != ""
 }

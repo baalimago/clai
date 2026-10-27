@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -107,10 +108,7 @@ func (m *mcpTool) CallParts(ctx context.Context, input pub_models.Input) ([]pub_
 		ctx, cancel = context.WithTimeout(ctx, m.timeout)
 		defer cancel()
 	}
-	nonNullableInp := make(map[string]any)
-	if len(input) != 0 {
-		nonNullableInp = input
-	}
+	nonNullableInp := withoutUnsetOptional(input, m.spec.Inputs)
 
 	raw, err := conn.Call(ctx, "tools/call", map[string]any{
 		"name":      m.remoteName,
@@ -194,4 +192,23 @@ func droppedImage(reason error) pub_models.TextPart {
 
 func (m *mcpTool) Specification() pub_models.Specification {
 	return m.spec
+}
+
+// withoutUnsetOptional leaves out each optional argument the model sent as ""
+// or null. Models fill every property of a schema, and a server that
+// validates a string's length refuses "" for an argument the model meant to
+// leave unset.
+func withoutUnsetOptional(input pub_models.Input, schema *pub_models.InputSchema) map[string]any {
+	out := make(map[string]any, len(input))
+	for k, v := range input {
+		if (v == nil || v == "") && !schemaRequires(schema, k) {
+			continue
+		}
+		out[k] = v
+	}
+	return out
+}
+
+func schemaRequires(schema *pub_models.InputSchema, name string) bool {
+	return schema != nil && slices.Contains(schema.Required, name)
 }

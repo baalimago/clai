@@ -56,7 +56,8 @@ func migrateConfigs(claiConfDir string, deferAnnouncements bool) []string {
 		}
 		ancli.PrintOK(msg + "\n")
 	}
-	if _, added, err := utils.LoadConfigFromFileCollect(claiConfDir, "textConfig.json", text.MigrateOldChatConfig, &text.Default); err != nil {
+	firstRun := text.FirstRunDefaults(os.Getenv)
+	if _, added, err := utils.LoadConfigFromFileCollect(claiConfDir, "textConfig.json", text.MigrateOldChatConfig, &firstRun); err != nil {
 		ancli.Warnf("failed to upgrade textConfig.json: %v\n", err)
 	} else {
 		announceUpgrade("textConfig.json", added)

@@ -79,10 +79,12 @@ type McpServer struct {
 	// connection. 0 means the connector's own default.
 	ConnectTimeoutSeconds int `json:"connect_timeout_seconds,omitempty"`
 	// Auth configures how an endpoint-based server's connection is
-	// authorized. Nil means every credential source is unset: the
-	// credential-precedence chain still applies, so an unauthenticated
-	// endpoint connects as before and a challenged one falls straight to
-	// the token store, then the interactive flow (worklog
+	// authorized, and which environment variables any server needs. Its
+	// RequiredEnv applies to both server kinds; its token fields apply only
+	// to an endpoint-based server. Nil means every credential source is
+	// unset: the credential-precedence chain still applies, so an
+	// unauthenticated endpoint connects as before and a challenged one
+	// falls straight to the token store, then the interactive flow (worklog
 	// 2026-10-02-mcp-connection-cost, phase 5).
 	Auth *McpServerAuth `json:"auth,omitempty"`
 	// AuthTimeoutSeconds is the auth-timeout parameter: how long a mid-run
@@ -94,6 +96,9 @@ type McpServer struct {
 	// distinguishable from unset (worklog 2026-10-02-mcp-connection-cost,
 	// phase 6, D22).
 	AuthTimeoutSeconds *int `json:"auth_timeout_seconds,omitempty"`
+	// Optional lets a run go on without this server's tools when it fails
+	// to start, where a profile's own servers otherwise end setup.
+	Optional bool `json:"optional,omitempty"`
 }
 
 // McpServerAuth configures an endpoint-based server's credential sources,
@@ -102,7 +107,8 @@ type McpServer struct {
 // then the interactive OAuth flow. Scopes is the auth.scopes parameter: the
 // scopes requested during the interactive flow, and the component this
 // phase adds to the endpoint-based schema cache identity. Empty means
-// whatever the server advertises.
+// whatever the server advertises. The token fields and Scopes apply only to
+// an endpoint-based server; RequiredEnv applies to both kinds.
 type McpServerAuth struct {
 	// TokenCommand is a command whose trimmed standard output is the access
 	// token. Empty means unset.
@@ -112,6 +118,12 @@ type McpServerAuth struct {
 	// token. Empty means unset.
 	TokenEnv string   `json:"token_env,omitempty"`
 	Scopes   []string `json:"scopes,omitempty"`
+	// RequiredEnv names the environment variables the server needs. A
+	// connection is refused before anything is spawned or dialled while
+	// one is unset or empty: for a command-based server in the environment
+	// its process is spawned with, for an endpoint-based server where
+	// TokenEnv is resolved (the process environment, then the envfile).
+	RequiredEnv []string `json:"required_env,omitempty"`
 }
 
 // ToolName is an enum-like type for available tools.

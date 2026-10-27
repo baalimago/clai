@@ -1,6 +1,7 @@
 package text
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -44,13 +45,20 @@ type Configurations struct {
 	// DirReplyMode marks a directory-scoped reply (-dre). Unlike a plain -re (which
 	// forks a fresh promoted id and must not record), -dre continues the bound
 	// conversation in place, so it DOES upsert the directory history (see finalizer).
-	DirReplyMode        bool            `json:"-"`
-	Glob                string          `json:"-"`
-	InitialChat         pub_models.Chat `json:"-"`
-	UseProfile          string          `json:"-"`
-	ProfilePath         string          `json:"-"`
-	ProfileUseSkillsSet bool            `json:"-"`
-	RequestedToolGlobs  []string        `json:"-"`
+	DirReplyMode bool            `json:"-"`
+	Glob         string          `json:"-"`
+	InitialChat  pub_models.Chat `json:"-"`
+	UseProfile   string          `json:"-"`
+	ProfilePath  string          `json:"-"`
+	// ProfileFetched is set when ProfilePath came from a remote target.
+	ProfileFetched bool `json:"-"`
+	// ProfileTarget is the remote target ProfilePath was fetched from; a
+	// chat run with it is stamped with it as its profile.
+	ProfileTarget       string `json:"-"`
+	ProfileUseSkillsSet bool   `json:"-"`
+	// ProfileSkills are the active profile's skill targets.
+	ProfileSkills      []string `json:"-"`
+	RequestedToolGlobs []string `json:"-"`
 	// explicitAllTools records a '*' entry that setupToolConfig folded into nil globs.
 	explicitAllTools bool
 	// CmdBan is the per-run command ban list for the freetext command tools
@@ -233,6 +241,9 @@ type Profile struct {
 	UseTools  bool     `json:"use_tools"`
 	UseSkills *bool    `json:"use_skills,omitempty"`
 	Tools     []string `json:"tools"`
+	// Skills are skill targets (cchub:, gh:, https://) fetched and trusted
+	// with the profile; naming any turns skills on unless use_skills is false.
+	Skills []string `json:"skills,omitempty"`
 	// CmdBan merges onto the file base in ProfileOverrides. An omitted or
 	// explicitly empty list contributes nothing (purely additive cascade,
 	// worklog 2026-08-02-cmd-ban-list R1-04 revision).
@@ -242,6 +253,14 @@ type Profile struct {
 	McpServers      map[string]pub_models.McpServer `json:"mcp_servers,omitempty"`
 	ShellContext    string                          `json:"shell_context,omitempty"`
 	UseLookback     *bool                           `json:"use_lookback,omitempty"`
+	// Source is the stamp `clai profiles install` writes: the remote target
+	// the profile came from, pinned by hash (architecture/remote-targets.md).
+	Source *ProfileSource `json:"source,omitempty"`
+}
+
+// ProfileSource names the remote target an installed profile came from.
+type ProfileSource struct {
+	Target string `json:"target"`
 }
 
 var Default = Configurations{
@@ -307,7 +326,7 @@ func (c *Configurations) setupSystemPrompt() {
 
 // SetupInitialChat by doing all sorts of organically grown stuff. Don\'t touch this
 // code too closely. Something will break, most likely.
-func (c *Configurations) SetupInitialChat(args []string) error {
+func (c *Configurations) SetupInitialChat(ctx context.Context, args []string) error {
 	traceChatf("setup initial chat start reply_mode=%t glob=%q args=%q", c.ReplyMode, c.Glob, strings.Join(args, " "))
 	if c.Glob != "" && c.ReplyMode {
 		ancli.PrintWarn("Using glob + reply modes together might yield strange results. The globalScope will be appended after the glob messages.\n")
@@ -316,7 +335,7 @@ func (c *Configurations) SetupInitialChat(args []string) error {
 	if !c.ReplyMode {
 		c.setupSystemPrompt()
 	}
-	collected, err := c.collectInputs(args)
+	collected, err := c.collectInputs(ctx, args)
 	if err != nil {
 		return err
 	}
@@ -387,24 +406,55 @@ func (c *Configurations) SetupInitialChat(args []string) error {
 }
 
 // collectInputs gathers the -img images, the -g matches and stdin with the prompt text.
-func (c *Configurations) collectInputs(args []string) (imageinput.Collected, error) {
+func (c *Configurations) collectInputs(ctx context.Context, args []string) (imageinput.Collected, error) {
 	traceChatf("setup initial chat collecting inputs images=%d glob=%q stdin_replace=%q", len(c.ImageInputs), c.Glob, c.StdinReplace)
-	stdin, err := utils.PipedStdin()
+	stdin, err := utils.PipedStdin(ctx)
 	if err != nil {
 		return imageinput.Collected{}, fmt.Errorf("failed to setup prompt: %w", err)
 	}
-	collected, err := imageinput.New().Collect(imageinput.CollectRequest{
-		Images:       c.ImageInputs,
-		Glob:         c.Glob,
-		Stdin:        stdin,
-		Args:         args,
-		StdinReplace: c.StdinReplace,
-	})
+	return c.collectFrom(args, stdin)
+}
+
+func (c Configurations) collectFrom(args []string, stdin io.Reader) (imageinput.Collected, error) {
+	var piped []byte
+	if stdin != nil {
+		b, err := io.ReadAll(stdin)
+		if err != nil {
+			return imageinput.Collected{}, fmt.Errorf("failed to setup prompt: read stdin: %w", err)
+		}
+		piped = b
+	}
+	collect := func(args []string) (imageinput.Collected, error) {
+		var r io.Reader
+		if stdin != nil {
+			r = bytes.NewReader(piped)
+		}
+		return imageinput.New().Collect(imageinput.CollectRequest{
+			Images:       c.ImageInputs,
+			Glob:         c.Glob,
+			Stdin:        r,
+			Args:         args,
+			StdinReplace: c.StdinReplace,
+		})
+	}
+	collected, err := collect(args)
+	if errors.Is(err, utils.ErrNoPrompt) && c.UsingProfile() && len(args) == 1 {
+		// args[0] is the command; the default prompt stands in for the rest.
+		collected, err = collect([]string{args[0], ProfileDefaultPrompt})
+	}
 	if err != nil {
 		return imageinput.Collected{}, fmt.Errorf("failed to setup prompt: %w", err)
+	}
+	if c.UsingProfile() && strings.TrimSpace(collected.Prompt) == "" && len(collected.Images) == 0 {
+		collected.Prompt = ProfileDefaultPrompt
 	}
 	return collected, nil
 }
+
+// ProfileDefaultPrompt is the user message of a profile run given no prompt
+// and no stdin, so an agent like 'clai -prp cchub:clai/reviewer q' acts on
+// its own defaults instead of failing.
+const ProfileDefaultPrompt = "No input was given: do your job with your defaults."
 
 // userPromptMessage is the user message of query.1: Content when there is no image
 // (I10), otherwise Parts with the images followed by the prompt text.

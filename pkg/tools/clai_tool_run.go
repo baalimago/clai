@@ -12,9 +12,9 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"unicode"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
 var (
@@ -25,12 +25,14 @@ var (
 )
 
 type claiProcess struct {
-	cmd      *exec.Cmd
-	stdout   *bytes.Buffer
-	stderr   *bytes.Buffer
-	done     bool
-	exitCode int
-	err      error
+	cmd    *exec.Cmd
+	stdout *bytes.Buffer
+	stderr *bytes.Buffer
+	done   bool
+	// collected marks a worker clai_wait_for_workers has already returned.
+	collected bool
+	exitCode  int
+	err       error
 }
 
 func generateRunID() string {
@@ -47,14 +49,14 @@ type claiRunTool struct{}
 func (t *claiRunTool) Specification() pub_models.Specification {
 	return pub_models.Specification{
 		Name:        "clai_run",
-		Description: "Run clai using a list of arguments. Spawns a non-blocking sub-process with an associated run-id.",
+		Description: "Run clai as a worker. Spawns a non-blocking sub-process with an associated run-id; collect its reply with clai_wait_for_workers. The worker sees nothing of this conversation, so give it a self-contained brief. Its stdout holds only its reply; its tool calls go to its log.",
 		Inputs: &pub_models.InputSchema{
 			Type:     "object",
 			Required: []string{"args"},
 			Properties: map[string]pub_models.ParameterObject{
 				"args": {
 					Type:        "string",
-					Description: "Arguments to pass to clai",
+					Description: "Arguments to pass to clai: flags, then q, then the prompt, e.g. `-cm gpt-5 -t rg,cat q <brief>`. Everything after q is passed verbatim as one prompt, newlines and quotes included.",
 				},
 			},
 		},
@@ -62,29 +64,75 @@ func (t *claiRunTool) Specification() pub_models.Specification {
 }
 
 func (t *claiRunTool) setupFlags(input pub_models.Input) ([]string, error) {
-	ret := make([]string, 0)
 	argsRaw, ok := input["args"]
 	if !ok {
 		return nil, fmt.Errorf("missing args")
 	}
 
-	args, isOk := argsRaw.(string)
-	if !isOk {
+	var args []string
+	hasSubcommand := false
+	switch v := argsRaw.(type) {
+	case string:
+		args, hasSubcommand = splitWorkerArgs(v)
+	case []any:
+		for i, el := range v {
+			s, isString := el.(string)
+			if !isString {
+				return nil, fmt.Errorf("args[%d] has type '%T', want a string", i, el)
+			}
+			args = append(args, s)
+		}
+		hasSubcommand = slices.Contains(args, "q") || slices.Contains(args, "query")
+	default:
 		return nil, fmt.Errorf("failed to cast data of type: '%T' to string. Data: '%v'", argsRaw, argsRaw)
 	}
 
-	argsSplit := strings.Split(args, " ")
-
-	// Automatically append q to assume text query if nothing else is listed
-	if !slices.Contains(argsSplit, "q") && !slices.Contains(argsSplit, "query") {
-		argsSplit = append([]string{"q"}, argsSplit...)
+	// Automatically prepend q to assume text query if nothing else is listed
+	if !hasSubcommand {
+		args = append([]string{"q"}, args...)
 	}
 
-	if len(argsSplit) > 1 {
-		ret = append([]string{"-r"}, argsSplit...)
+	if len(args) <= 1 {
+		return []string{}, nil
 	}
+	// The parent reads a worker's stdout as its answer, so the worker's
+	// tool calls and their output go to its stderr log instead, and no model
+	// call is spent labelling a throwaway conversation.
+	return append([]string{"-r", "-reply-only", "-summarize=false"}, args...), nil
+}
 
-	return ret, nil
+// splitWorkerArgs splits the flags before the q (or query) subcommand on
+// whitespace and keeps everything after it as one verbatim prompt, so a
+// worker brief keeps its newlines, quotes and apostrophes. A q only counts as
+// the subcommand when every token before it is a flag or a flag's value;
+// without one, the whole string is split on whitespace and q is prepended.
+func splitWorkerArgs(raw string) ([]string, bool) {
+	rest := raw
+	var flags []string
+	for {
+		rest = strings.TrimLeftFunc(rest, unicode.IsSpace)
+		if rest == "" {
+			return strings.Fields(raw), false
+		}
+		end := strings.IndexFunc(rest, unicode.IsSpace)
+		if end < 0 {
+			end = len(rest)
+		}
+		tok := rest[:end]
+		if tok == "q" || tok == "query" {
+			prompt := strings.TrimSpace(rest[end:])
+			if prompt == "" {
+				return append(flags, tok), true
+			}
+			return append(flags, tok, prompt), true
+		}
+		isValue := len(flags) > 0 && strings.HasPrefix(flags[len(flags)-1], "-")
+		if !strings.HasPrefix(tok, "-") && !isValue {
+			return strings.Fields(raw), false
+		}
+		flags = append(flags, tok)
+		rest = rest[end:]
+	}
 }
 
 func (t *claiRunTool) Call(input pub_models.Input) (string, error) {
@@ -102,10 +150,6 @@ func (t *claiRunTool) Call(input pub_models.Input) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to create temporary output files: %w", err)
 	}
-
-	// Log the temporary file paths for output tracking
-	ancli.Okf("stdout log written to: %s", stdoutFile.Name())
-	ancli.Okf("stderr log written to: %s", stderrFile.Name())
 
 	// Create command with environment configuration
 	cmd := exec.Command(ClaiBinaryPath, argsSplit...)
@@ -173,17 +217,20 @@ func (t *claiRunTool) waitForProcessCompletion(process *claiProcess, stdoutFile,
 	}
 }
 
+// workerLogPath is where clai_run mirrors a worker's stdout or stderr.
+func workerLogPath(runID, stream string) string {
+	return filepath.Join(os.TempDir(), fmt.Sprintf("clai-worker-%s-%s.log", runID, stream))
+}
+
 // createTempOutputFiles creates temporary files for stdout and stderr with the run ID.
 func createTempOutputFiles(runID string) (*os.File, *os.File, error) {
-	tempDir := os.TempDir()
-
-	stdoutPath := filepath.Join(tempDir, fmt.Sprintf("clai-worker-%s-stdout.log", runID))
+	stdoutPath := workerLogPath(runID, "stdout")
 	stdoutFile, err := os.Create(stdoutPath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create stdout file: %w", err)
 	}
 
-	stderrPath := filepath.Join(tempDir, fmt.Sprintf("clai-worker-%s-stderr.log", runID))
+	stderrPath := workerLogPath(runID, "stderr")
 	stderrFile, err := os.Create(stderrPath)
 	if err != nil {
 		stdoutFile.Close()

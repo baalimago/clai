@@ -2,16 +2,20 @@ package text
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"time"
 
 	"github.com/baalimago/clai/internal"
 	"github.com/baalimago/clai/internal/imagegen"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/photo"
+	"github.com/baalimago/clai/internal/runtally"
 	"github.com/baalimago/clai/internal/tools"
+	"github.com/baalimago/clai/pkg/claierr"
 )
 
 const queryHelp = `query <text>. Queries the chat model; piped stdin is appended to the
@@ -25,13 +29,14 @@ With -check, an achieved complete_task call is accepted only when that command
 exits 0.
 
 Examples:
-  clai q explain the files in this directory
-  clai -re q "and how do I fix that?"
-  docker logs my-app | clai -I LOG q "find errors in these logs: LOG"
-  clai -t '*' q inspect this repo using tools
-  clai q -- -why does this fail
-  clai -l q refactor the auth package and make the tests pass
-  clai -l -check 'go test ./...' q fix the failing build`
+  clai -query-summary query explain the files in this directory
+  clai -reply -query-summary query "and how do I fix that?"
+  docker logs my-app | clai -replace LOG -query-summary query "find errors in these logs: LOG"
+  clai -tools '*' -query-summary query inspect this repo using tools
+  clai -reply-only -tools 'rg,cat' query write release notes > NOTES.md
+  clai query -- -why does this fail
+  clai -loop query refactor the auth package and make the tests pass
+  clai -loop -check 'go test ./...' query fix the failing build`
 
 // QueryCommandDeps are the composition-root collaborators the query command
 // needs in plain and loop mode: config prep lives in internal/setup (which
@@ -57,6 +62,14 @@ type QueryCommandDeps struct {
 	// presenter's auto-open-images and image-opener and of the model that
 	// route.ImageModelFor and -pm may override.
 	PhotoConfig func(confDir string) (photo.Configurations, error)
+	// NewRemoteResolver builds the resolver for -prp cchub:, gh: and https://
+	// targets; nil refuses them.
+	NewRemoteResolver NewRemoteResolverFunc
+	// RunTallyEnv is the environment subagent tallies travel through; nil
+	// counts no subagents. RunTallyTempRoot is where a run's tally
+	// directory is made, "" being the OS default.
+	RunTallyEnv      runtally.Env
+	RunTallyTempRoot string
 }
 
 // QueryCommand builds the query command. With -l the same composition wraps
@@ -74,27 +87,67 @@ func QueryCommand(deps QueryCommandDeps) *internal.Command {
 		if err != nil {
 			return err
 		}
-		if !lf.Loop.Value() {
-			if tConf.QuerySummary {
-				if err := enableQuerySummary(q); err != nil {
-					return err
-				}
+		if tf.QueryText.ReplyOnly.Value() {
+			if err := enableReplyOnly(q, !lf.Loop.Value()); err != nil {
+				return err
 			}
-			c.SetQuerier(q)
-			return nil
 		}
-		runner, err := newLoopRunner(q, NewCompletionRecorder(lf.Check.Value()), LoopConfig{
-			SeedChat:      tConf.InitialChat,
-			GoalPrompt:    tConf.PostProccessedPrompt,
-			MaxIterations: lf.MaxIterations.Value(),
-		})
+		var top models.Querier = q
+		if lf.Loop.Value() {
+			runner, err := newLoopRunner(q, NewCompletionRecorder(lf.Check.Value()), LoopConfig{
+				SeedChat:      tConf.InitialChat,
+				GoalPrompt:    tConf.PostProccessedPrompt,
+				MaxIterations: lf.MaxIterations.Value(),
+			})
+			if err != nil {
+				return err
+			}
+			top = runner
+		} else if tConf.QuerySummary {
+			if err := enableQuerySummary(q); err != nil {
+				return err
+			}
+		}
+		top, err = withRunTally(q, top, deps, tConf.QuerySummary || lf.Loop.Value())
 		if err != nil {
 			return err
 		}
-		c.SetQuerier(runner)
+		c.SetQuerier(top)
 		return nil
 	}
 	return c
+}
+
+// withRunTally opens the run's subagent tally when a summary or a parent
+// wants one: q counts the workers it started into its summary and reports
+// to its parent, and the returned querier closes the tally once top ends.
+func withRunTally(q, top models.Querier, deps QueryCommandDeps, summary bool) (models.Querier, error) {
+	if deps.RunTallyEnv == nil || !runtally.Wanted(deps.RunTallyEnv, summary) {
+		return top, nil
+	}
+	setter, ok := q.(interface{ SetRunTally(*runtally.Scope) })
+	if !ok {
+		return nil, fmt.Errorf("subagent tally requires a text querier, got %T", q)
+	}
+	scope, err := runtally.Open(deps.RunTallyEnv, deps.RunTallyTempRoot)
+	if err != nil {
+		return nil, err
+	}
+	setter.SetRunTally(scope)
+	return runTallyQuerier{inner: top, scope: scope}, nil
+}
+
+type runTallyQuerier struct {
+	inner models.Querier
+	scope *runtally.Scope
+}
+
+func (r runTallyQuerier) Query(ctx context.Context) error {
+	err := r.inner.Query(ctx)
+	if closeErr := r.scope.Close(); closeErr != nil {
+		return errors.Join(err, fmt.Errorf("close subagent tally: %w", closeErr))
+	}
+	return err
 }
 
 // newTextCommand builds the flag surface shared by the text-querier commands:
@@ -140,8 +193,16 @@ func setupTextQuerier(ctx context.Context, c *internal.Command, tf internal.Text
 	if deps.TrustInput != nil {
 		trustInput = deps.TrustInput()
 	}
-	q, tConf, err := SetupQuerier(ctx, confDir, tf, c.Args(), trustInput)
+	interactive := !tf.AgentText.NonInteractive.Value() && terminalAvailable()
+	remoteTargets := &remoteRun{newResolver: deps.NewRemoteResolver, confDir: confDir, trustInput: trustInput, interactive: interactive}
+	q, tConf, err := SetupQuerier(ctx, confDir, tf, c.Args(), trustInput, remoteTargets.profile, remoteTargets.skills)
 	if err != nil {
+		// The startup error names the server and the stage; the setup layers
+		// it passed through add nothing a user can act on.
+		var startup *claierr.McpServerStartupError
+		if errors.As(err, &startup) {
+			return nil, nil, startup
+		}
 		return nil, nil, err
 	}
 	// NewQuerier stamps the effective profile on the querier chat; mirror it on
@@ -175,6 +236,23 @@ func setSummaryJoinTimeout(q models.Querier, d time.Duration) error {
 		return fmt.Errorf("summary join timeout requires a text querier, got %T", q)
 	}
 	setter.SetSummaryJoinTimeout(d)
+	return nil
+}
+
+// enableReplyOnly keeps stdout for the reply. With showProgress, a terminal
+// stderr shows the session's progress as a terminal stdout would.
+func enableReplyOnly(q models.Querier, showProgress bool) error {
+	setter, ok := q.(interface {
+		SendTranscriptToStderr()
+		ShowProgressOn(io.Writer)
+	})
+	if !ok {
+		return fmt.Errorf("reply-only requires a text querier, got %T", q)
+	}
+	setter.SendTranscriptToStderr()
+	if showProgress {
+		setter.ShowProgressOn(os.Stderr)
+	}
 	return nil
 }
 
@@ -226,7 +304,7 @@ func attachSummarizer(confDir string, newSummarizer func(string) (models.Summari
 // If there is no check if the flagSet is default, there may be a case where default > file, which breaks
 // the configuration convention flags > file > default
 func ApplyFlagOverrides(tConf *Configurations, tf internal.TextFlags) {
-	if tf.ReplyStdin.ExpectReplace.Value() {
+	if tf.ReplyStdin.ExpectReplace.Value() || tf.ReplyStdin.StdinReplace.Explicit() {
 		tConf.StdinReplace = tf.ReplyStdin.StdinReplace.Value()
 	}
 	if tf.AgentText.ChatModel.Changed() {

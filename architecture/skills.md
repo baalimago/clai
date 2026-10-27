@@ -130,6 +130,18 @@ Profiles may include:
 
 This field is optional. When omitted, a profile inherits the current `skills.json`/runtime value rather than forcing either enablement or disablement.
 
+### Profile skills
+
+A profile may also name skills to bring with it:
+
+```json
+{
+  "skills": ["cchub:ada/review@2", "gh:anthropics/skills/skills/pdf@<ref>"]
+}
+```
+
+Each entry is a skill target: `cchub:<handle>/<skill>[@<version>]` (a skill on the Hub), `gh:<owner>/<repo>[/<path>][@<ref>]` (`<path>/SKILL.md`, or the repo's root `SKILL.md`; a path ending in `.md` names the file itself) or an `https://` URL of a `SKILL.md`, each with an optional `#sha256=`. Naming any turns skills on for the profile's runs unless the profile sets `use_skills: false`; the CLI flag still wins. `text.Configurations.ProfileSkills` carries the list, and `resolveProfileSkills` in `internal/text/remote_profile.go` resolves it before discovery. Only the `SKILL.md` is fetched: a skill's other files are not. The fetch, trust and cache rules are those of a remote profile ([remote-targets.md](./remote-targets.md#skills)). A profile skill needs no second trust at activation: `ensureTrusted` skips the `profile` class, because the remote trust store already holds its hash.
+
 ### CLI flag
 
 clai exposes a string flag following the same parser style as `-t/-tools`:
@@ -210,8 +222,10 @@ Starting from the working directory, clai walks upward toward the filesystem roo
 When multiple skills share the same invocation name, clai resolves them deterministically by source precedence:
 
 ```text
-project > global > default
+profile > project > global > default
 ```
+
+The `profile` class (`SourceProfile`) holds the skills the run's profile names under `"skills"`: remote targets resolved by `remote.Resolver.ResolveSkill` into `<cache>/remote/skills/<sha256>/<name>/SKILL.md` and passed to `Discover` as `Options.ProfileRoots`. They outrank every other class because the profile's author chose them by name. See [Profile skills](#profile-skills).
 
 Within the `project` class, the nearest directory to the current working directory wins over farther ancestors. This makes nested project-local skills override repository-root skills of the same name.
 

@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -30,7 +31,7 @@ func TestContinueUsesLastProfileFromChatFile(t *testing.T) {
 	}
 
 	h.prompt = "mychat"
-	loaded, err := h.findChatByID(h.prompt)
+	loaded, err := h.findChatByID(context.Background(), h.prompt, foreignClone)
 	if err != nil {
 		t.Fatalf("findChatByID: %v", err)
 	}

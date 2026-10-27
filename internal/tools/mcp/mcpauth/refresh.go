@@ -3,7 +3,6 @@ package mcpauth
 import (
 	"context"
 	"net/url"
-	"time"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
@@ -99,7 +98,7 @@ func (a *Authorizer) doRefresh(ctx context.Context, server pub_models.McpServer,
 		ClientSecret: entry.ClientSecret,
 		AccessToken:  tok.AccessToken,
 		RefreshToken: tok.RefreshToken,
-		ExpiresAt:    a.clock().Add(time.Duration(tok.ExpiresIn) * time.Second),
+		ExpiresAt:    a.expiryFor(tok),
 		Scopes:       entry.Scopes,
 	}
 	if refreshed.RefreshToken == "" {

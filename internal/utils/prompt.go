@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -17,8 +18,8 @@ var ErrNoPrompt = errors.New("found no prompt, set args or pipe in some string")
 // If there is no arguments, but data in stdin, stdin will become the prompt.
 // If there are arguments and data in stdin, all stdinReplace tokens will be substituted
 // with the data in stdin
-func Prompt(stdinReplace string, args []string) (string, error) {
-	stdin, err := PipedStdin()
+func Prompt(ctx context.Context, stdinReplace string, args []string) (string, error) {
+	stdin, err := PipedStdin(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -26,16 +27,50 @@ func Prompt(stdinReplace string, args []string) (string, error) {
 }
 
 // PipedStdin returns os.Stdin when it is not a terminal (a pipe, a file
-// redirect), and nil when it is one.
-func PipedStdin() (io.Reader, error) {
+// redirect), and nil when it is one. A pipe's reads give up with the cause of
+// ctx once it ends, so an open pipe nobody writes to cannot outlast the run.
+func PipedStdin(ctx context.Context) (io.Reader, error) {
 	fi, err := os.Stdin.Stat()
 	if err != nil {
 		return nil, fmt.Errorf("stat stdin: %w", err)
 	}
-	if fi.Mode()&os.ModeCharDevice != 0 {
+	switch {
+	case fi.Mode()&os.ModeCharDevice != 0:
 		return nil, nil
+	case fi.Mode().IsRegular():
+		return os.Stdin, nil
 	}
-	return os.Stdin, nil
+	return contextReader{ctx: ctx, r: os.Stdin}, nil
+}
+
+type contextReader struct {
+	ctx context.Context
+	r   io.Reader
+}
+
+type readResult struct {
+	n   int
+	err error
+}
+
+func (c contextReader) Read(p []byte) (int, error) {
+	if err := context.Cause(c.ctx); err != nil {
+		return 0, fmt.Errorf("stopped waiting for stdin: %w", err)
+	}
+	// The read runs on its own buffer: an abandoned one must not write
+	// into p after Read returned.
+	buf := make([]byte, len(p))
+	res := make(chan readResult, 1)
+	go func() {
+		n, err := c.r.Read(buf)
+		res <- readResult{n: n, err: err}
+	}()
+	select {
+	case <-c.ctx.Done():
+		return 0, fmt.Errorf("stopped waiting for stdin: %w", context.Cause(c.ctx))
+	case r := <-res:
+		return copy(p, buf[:r.n]), r.err
+	}
 }
 
 // PromptFrom is Prompt with stdin given explicitly; nil means stdin is a terminal.
@@ -61,24 +96,27 @@ func PromptFrom(stdinReplace string, args []string, stdin io.Reader) (string, er
 		return "", fmt.Errorf("failed to read stdin: %w", err)
 	}
 	pipeIn := string(inputData)
-	// Add the pipeIn to the args if there are no args
+	// Stdin alone is the prompt.
 	if len(args) == 0 {
-		args = append(args, strings.Split(pipeIn, " ")...)
-	} else if stdinReplace == "" {
-		stdinReplace = "{}"
-		args = append(args, "{}")
+		return pipeIn, nil
 	}
-
-	// Replace all occurrence of stdinReplaceSignal with pipeIn
-	if stdinReplace != "" {
-		if debug {
-			ancli.PrintOK(fmt.Sprintf("attempting to replace: '%v' with stdin\n", stdinReplace))
+	if stdinReplace == "" {
+		stdinReplace = "{}"
+	}
+	// Stdin replaces every token in the prompt, or is appended once to a
+	// prompt without one; it is never sent twice nor dropped.
+	if debug {
+		ancli.PrintOK(fmt.Sprintf("attempting to replace: '%v' with stdin\n", stdinReplace))
+	}
+	replaced := false
+	for i, arg := range args {
+		if strings.Contains(arg, stdinReplace) {
+			args[i] = strings.ReplaceAll(arg, stdinReplace, pipeIn)
+			replaced = true
 		}
-		for i, arg := range args {
-			if strings.Contains(arg, stdinReplace) {
-				args[i] = strings.ReplaceAll(arg, stdinReplace, pipeIn)
-			}
-		}
+	}
+	if !replaced {
+		args = append(args, pipeIn)
 	}
 
 	if debug {

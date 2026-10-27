@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/baalimago/clai/internal/tools/mcp/httptestserver"
@@ -145,6 +148,40 @@ func TestMcpAuthCommandNoChallengeIsTypedError(t *testing.T) {
 		if !errors.As(err, &noChallenge) {
 			t.Fatalf("run %d: err = %v (%T), want *McpAuthNoChallengeError", i, err, err)
 		}
+	}
+}
+
+// A server whose required_env is unset is refused before the probe, with
+// an error that says to set the variables rather than one reading like a
+// failed connection.
+func TestMcpAuthCommandMissingRequiredEnvIsTypedError(t *testing.T) {
+	var requests int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		atomic.AddInt32(&requests, 1)
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+	confDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(confDir, mcpServersSubdir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	conf := fmt.Appendf(nil, `{"url":%q,"auth":{"required_env":["CLAI_RE_AUTH_UNSET"]}}`, srv.URL)
+	if err := os.WriteFile(filepath.Join(confDir, mcpServersSubdir, "gated.json"), conf, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	authz := mcpauth.NewAuthorizer(mcpauth.NewTokenStore(filepath.Join(confDir, mcpauth.TokenStoreDirName)))
+
+	err := runAuthWith(t.Context(), "gated", confDir, authz)
+	var missing *McpAuthMissingEnvError
+	if !errors.As(err, &missing) || missing.Name != "gated" || len(missing.Missing) != 1 || missing.Missing[0] != "CLAI_RE_AUTH_UNSET" {
+		t.Fatalf("err = %v (%T), want *McpAuthMissingEnvError naming CLAI_RE_AUTH_UNSET", err, err)
+	}
+	var connectErr *McpAuthConnectError
+	if errors.As(err, &connectErr) {
+		t.Fatal("a missing variable must not read as a connect failure")
+	}
+	if n := atomic.LoadInt32(&requests); n != 0 {
+		t.Fatalf("endpoint received %d requests, want 0", n)
 	}
 }
 

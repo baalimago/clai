@@ -21,7 +21,7 @@ func Test_SetupQuerier(t *testing.T) {
 		}
 		got, _, err := SetupQuerier(t.Context(),
 			testDir,
-			tf, []string{"q", "hello"}, nil)
+			tf, []string{"q", "hello"}, nil, nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -2,6 +2,7 @@ package text
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/baalimago/clai/internal/quantity"
+	"github.com/baalimago/clai/internal/runtally"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/table"
@@ -31,6 +33,24 @@ type RunTally struct {
 	// price is known for the model.
 	HasCost   bool
 	ToolCalls []RunToolCall
+	// Subagents is what the clai runs this run started spent, reported
+	// through internal/runtally.
+	Subagents runtally.Totals
+}
+
+// totals is the run's own spend in the form a parent collects.
+func (t RunTally) totals() runtally.Totals {
+	own := runtally.Totals{
+		Runs:             1,
+		PromptTokens:     t.Usage.PromptTokens,
+		CachedTokens:     t.Usage.PromptTokensDetails.CachedTokens,
+		CompletionTokens: t.Usage.CompletionTokens,
+		CostUSD:          t.CostUSD,
+	}
+	if !t.HasCost {
+		own.UnpricedRuns = 1
+	}
+	return own
 }
 
 // QuerySummary is the end-of-run report of a plain query.
@@ -102,7 +122,11 @@ func (t RunTally) detailLines() []string {
 		lines = append(lines, "  cost    unknown (no price for this model)")
 	}
 
-	return append(lines, "  tools   "+toolTotals(t.ToolCalls))
+	lines = append(lines, "  tools   "+toolTotals(t.ToolCalls))
+	if t.Subagents.Runs > 0 {
+		lines = append(lines, "  subagents "+t.Subagents.Line())
+	}
+	return lines
 }
 
 const summarySeparator = " · "
@@ -187,22 +211,143 @@ func toolTotals(calls []RunToolCall) string {
 	return head + ": " + strings.Join(parts, summarySeparator)
 }
 
+// SendTranscriptToStderr keeps stdout for the reply: raw tool calls, tool
+// output and reasoning print to stderr instead.
+func (q *Querier[C]) SendTranscriptToStderr() {
+	q.transcriptToStderr = true
+}
+
+// ShowProgressOn keeps a redirected stdout for the reply alone and draws the
+// session's progress on progress, a terminal, the way a terminal stdout
+// would show it: clai -reply-only q ... > reply.md shows the rolling window
+// on stderr. It does nothing unless stdout is redirected, progress is a
+// terminal, and the output is neither raw, structured nor debug.
+func (q *Querier[C]) ShowProgressOn(progress io.Writer) {
+	out := q.out
+	if out == nil {
+		out = os.Stdout
+	}
+	if q.Raw || q.structuredOutput || q.debug || utils.IsTerminalWriter(out) || !utils.IsTerminalWriter(progress) {
+		return
+	}
+	q.replyOut = out
+	q.out = progress
+	q.outputIsTerminal = true
+	q.dims = utils.SessionDimensions(progress)
+}
+
+// handOffReply clears what the session drew of the reply on the progress
+// terminal, writes the reply to the redirected stdout and leaves one line
+// saying where it went.
+func (q *Querier[C]) handOffReply(reply string) error {
+	if q.activityViewport != nil {
+		if err := q.clearActivityWindow(q.out); err != nil {
+			return err
+		}
+	} else if q.dims.Width > 0 {
+		utils.UpdateMessageTerminalMetadata(reply, &q.line, &q.lineCount, q.dims.Width)
+		if err := table.ClearTermTo(q.out, q.lineCount-1); err != nil {
+			return fmt.Errorf("clear streamed reply: %w", err)
+		}
+	}
+	reply = strings.TrimRight(stripThinkingBlocks(reply), "\n") + "\n"
+	if _, err := io.WriteString(q.replyOut, reply); err != nil {
+		return fmt.Errorf("write reply: %w", err)
+	}
+	lines := strings.Count(reply, "\n")
+	note := fmt.Sprintf("▸ reply written to stdout (%d lines)", lines)
+	if lines == 1 {
+		note = "▸ reply written to stdout (1 line)"
+	}
+	_, err := io.WriteString(q.out, table.Colorize(utils.LoopTitleColor(), note)+"\n")
+	return err
+}
+
+// transcriptOut is where the raw transcript (everything but the reply)
+// prints.
+func (q *Querier[C]) transcriptOut() io.Writer {
+	if q.transcriptToStderr {
+		if q.errOut != nil {
+			return q.errOut
+		}
+		return os.Stderr
+	}
+	if q.out != nil {
+		return q.out
+	}
+	return os.Stdout
+}
+
+// holdsStepText is -reply-only on a non-terminal stdout: a step's prose is
+// held until the step ends, because only then is it known to be the reply
+// rather than narration before a tool call.
+func (q *Querier[C]) holdsStepText() bool {
+	return q.transcriptToStderr && q.rawDisplay() && !q.debug && !q.structuredOutput
+}
+
+func (q *Querier[C]) releaseStepText(text string, endedWithTool bool) error {
+	text = stripThinkingBlocks(text)
+	if !q.holdsStepText() || text == "" {
+		return nil
+	}
+	w := q.out
+	if w == nil {
+		w = os.Stdout
+	}
+	if endedWithTool {
+		w = q.transcriptOut()
+		if !strings.HasSuffix(text, "\n") {
+			text += "\n"
+		}
+	}
+	if _, err := io.WriteString(w, text); err != nil {
+		return fmt.Errorf("print step text: %w", err)
+	}
+	return nil
+}
+
 // EnableQuerySummary makes each plain Query print a QuerySummary when it
 // ends. Loop iterations never print one; the loop reports its own.
 func (q *Querier[C]) EnableQuerySummary() {
 	q.querySummary = true
 }
 
-func (q *Querier[C]) reportQuerySummary(start time.Time, chat, result pub_models.Chat, runErr error) error {
+// SetRunTally makes the run count the subagents it starts into its summary
+// and report its own totals to the clai that started it.
+func (q *Querier[C]) SetRunTally(scope *runtally.Scope) {
+	q.runTally = scope
+}
+
+// finishQuery settles a plain query's tally and, with -qs, prints its
+// summary.
+func (q *Querier[C]) finishQuery(start time.Time, chat, result pub_models.Chat, runErr error) error {
 	summary := QuerySummary{Duration: time.Since(start)}
 	if runErr != nil {
 		summary.Outcome = QueryStopped
 	}
 	summary.addTurn(chat, result)
-	if err := q.reportSummary(summary.Lines()); err != nil {
-		return fmt.Errorf("print query summary: %w", err)
+	settleErr := q.settleRunTally(&summary.RunTally)
+	if !q.querySummary {
+		return settleErr
 	}
-	return nil
+	if err := q.reportSummary(summary.Lines()); err != nil {
+		return errors.Join(settleErr, fmt.Errorf("print query summary: %w", err))
+	}
+	return settleErr
+}
+
+// settleRunTally folds in what the run's subagents reported and hands the
+// sum, the run's own spend included, to its parent.
+func (q *Querier[C]) settleRunTally(t *RunTally) error {
+	if q.runTally == nil {
+		return nil
+	}
+	subagents, collectErr := q.runTally.Collect()
+	t.Subagents = subagents
+	if _, err := q.runTally.Report(t.totals().Add(subagents)); err != nil {
+		return errors.Join(collectErr, fmt.Errorf("report to parent run: %w", err))
+	}
+	return collectErr
 }
 
 // reportSummary prints summary rows. A terminal session prints them below

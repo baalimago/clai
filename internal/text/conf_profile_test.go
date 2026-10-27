@@ -303,3 +303,160 @@ func TestConfigurations_ProfileOverrides_EnvFileHomeResolution(t *testing.T) {
 		})
 	}
 }
+
+func TestConfigurations_ProfileOverrides_RejectsInvalidRequiredEnvName(t *testing.T) {
+	t.Setenv("CLAI_CONFIG_DIR", t.TempDir())
+	path := filepath.Join(t.TempDir(), "medic.json")
+	profileJSON := `{"name":"medic","model":"test","mcp_servers":{
+		"sentry":{"command":"npx","auth":{"required_env":["SENTRY-TOKEN"]}}}}`
+	if err := os.WriteFile(path, []byte(profileJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	conf := Default
+	conf.ProfilePath = path
+	err := conf.ProfileOverrides()
+	if err == nil || !strings.Contains(err.Error(), "sentry") || !strings.Contains(err.Error(), "auth.required_env[0]") || strings.Contains(err.Error(), "SENTRY-TOKEN") {
+		t.Fatalf("ProfileOverrides = %v, want an error naming the server and the entry's index, not its value", err)
+	}
+
+	valid := strings.Replace(profileJSON, "SENTRY-TOKEN", "SENTRY_ACCESS_TOKEN", 1)
+	if err := os.WriteFile(path, []byte(valid), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	conf = Default
+	conf.ProfilePath = path
+	if err := conf.ProfileOverrides(); err != nil {
+		t.Fatalf("ProfileOverrides with a valid name: %v", err)
+	}
+	if got := conf.McpServers[0].Auth.RequiredEnv; len(got) != 1 || got[0] != "SENTRY_ACCESS_TOKEN" {
+		t.Fatalf("RequiredEnv = %v", got)
+	}
+}
+
+// A fetched profile gets only the tools it names: use_tools alone would hand
+// a prompt-injected model every local tool and MCP server.
+func TestConfigurations_ProfileOverrides_FetchedProfileGetsOnlyNamedTools(t *testing.T) {
+	t.Setenv("CLAI_CONFIG_DIR", t.TempDir())
+	for _, tc := range []struct {
+		name, body string
+		remote     bool
+		wantTools  bool
+	}{
+		{"local use_tools keeps every tool", `{"use_tools":true}`, false, true},
+		{"fetched by -prp gets none", `{"use_tools":true}`, true, false},
+		{"installed from the hub gets none", `{"use_tools":true,"source":{"target":"cchub:ada/bot"}}`, false, false},
+		{"fetched with a tools list keeps it", `{"use_tools":true,"tools":["date"]}`, true, true},
+		{"fetched with its own servers keeps them", `{"mcp_servers":{"m":{"command":"node","args":["m.js"]}}}`, true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "p.json")
+			if err := os.WriteFile(path, []byte(tc.body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			conf := Default
+			conf.ProfilePath = path
+			conf.ProfileFetched = tc.remote
+			if err := conf.ProfileOverrides(); err != nil {
+				t.Fatal(err)
+			}
+			if conf.UseTools != tc.wantTools {
+				t.Fatalf("UseTools = %v, want %v", conf.UseTools, tc.wantTools)
+			}
+		})
+	}
+}
+
+// A fetched or installed profile cannot keep its runs out of the chat
+// history: the run is the record of what it did on this machine.
+func TestConfigurations_ProfileOverrides_FetchedProfileRunsAreSaved(t *testing.T) {
+	t.Setenv("CLAI_CONFIG_DIR", t.TempDir())
+	for _, tc := range []struct {
+		name, body string
+		remote     bool
+		base, want bool
+	}{
+		{"local profile may opt out", `{"save-reply-as-conv":false}`, false, true, false},
+		{"fetched by -prp is saved", `{"save-reply-as-conv":false}`, true, true, true},
+		{"installed from the hub is saved", `{"save-reply-as-conv":false,"source":{"target":"cchub:ada/bot"}}`, false, true, true},
+		{"your own opt-out still holds", `{"save-reply-as-conv":true}`, true, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "p.json")
+			if err := os.WriteFile(path, []byte(tc.body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			conf := Default
+			conf.SaveReplyAsConv = tc.base
+			conf.ProfilePath = path
+			conf.ProfileFetched = tc.remote
+			if err := conf.ProfileOverrides(); err != nil {
+				t.Fatal(err)
+			}
+			if conf.SaveReplyAsConv != tc.want {
+				t.Fatalf("SaveReplyAsConv = %v, want %v", conf.SaveReplyAsConv, tc.want)
+			}
+		})
+	}
+}
+
+// A fetched or installed profile never picks a shell context: it would run
+// this machine's shell context commands on the profile's say.
+func TestConfigurations_ProfileOverrides_FetchedProfileGetsNoShellContext(t *testing.T) {
+	t.Setenv("CLAI_CONFIG_DIR", t.TempDir())
+	for _, tc := range []struct {
+		name, body string
+		remote     bool
+		want       string
+	}{
+		{"local profile picks one", `{"shell_context":"git"}`, false, "git"},
+		{"fetched by -prp does not", `{"shell_context":"git"}`, true, ""},
+		{"installed from the hub does not", `{"shell_context":"git","source":{"target":"cchub:ada/bot"}}`, false, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "p.json")
+			if err := os.WriteFile(path, []byte(tc.body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			conf := Default
+			conf.ProfilePath = path
+			conf.ProfileFetched = tc.remote
+			if err := conf.ProfileOverrides(); err != nil {
+				t.Fatal(err)
+			}
+			if conf.ShellContext != tc.want {
+				t.Fatalf("ShellContext = %q, want %q", conf.ShellContext, tc.want)
+			}
+		})
+	}
+}
+
+// A run with a remote profile is stamped with the target it was run as, so
+// `clai chat list` shows which hub profile a chat came from.
+func TestConfigurations_ProfileOverrides_FetchedProfileIsNamedByItsTarget(t *testing.T) {
+	t.Setenv("CLAI_CONFIG_DIR", t.TempDir())
+	for _, tc := range []struct {
+		name, body, target, want string
+	}{
+		{"remote target wins over the profile's name", `{"name":"reviewer"}`, "cchub:clai/reviewer@5", "cchub:clai/reviewer@5"},
+		{"a pinned hash is left out", `{}`, "cchub:clai/reviewer@5#sha256=abc", "cchub:clai/reviewer@5"},
+		{"a local path keeps the profile's name", `{"name":"reviewer"}`, "", "reviewer"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "p.json")
+			if err := os.WriteFile(path, []byte(tc.body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			conf := Default
+			conf.ProfilePath = path
+			conf.ProfileTarget = tc.target
+			conf.ProfileFetched = tc.target != ""
+			if err := conf.ProfileOverrides(); err != nil {
+				t.Fatal(err)
+			}
+			if conf.UseProfile != tc.want {
+				t.Fatalf("UseProfile = %q, want %q", conf.UseProfile, tc.want)
+			}
+		})
+	}
+}

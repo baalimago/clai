@@ -46,14 +46,14 @@ func Test_e2e_dash_leading_prompt_escape(t *testing.T) {
 		stdout := testboil.CaptureStdout(t, func(t *testing.T) {
 			harness.Run(nil)
 		})
-		testboil.AssertStringContains(t, stdout, "clai q -- -")
+		testboil.AssertStringContains(t, stdout, "clai query -- -")
 	})
 
 	t.Run("query help documents the escape", func(t *testing.T) {
 		stdout := testboil.CaptureStdout(t, func(t *testing.T) {
 			harness.Run([]string{"q", "-h"})
 		})
-		testboil.AssertStringContains(t, stdout, "clai q -- -")
+		testboil.AssertStringContains(t, stdout, "clai query -- -")
 	})
 }
 
@@ -328,7 +328,7 @@ func Test_e2e_command_help(t *testing.T) {
 		{"dre -h", "conversation bound to the"},
 		{"tools -h", "MCP tool cached from a prior successful run"},
 		{"mcp -h", "Authorize a configured endpoint-based server interactively"},
-		{"profiles -h", "profiles under"},
+		{"profiles -h", "Lists your profiles"},
 		{"confdir -h", "registered subpath"},
 		{"completion -h", "source <(clai completion bash)"},
 	} {

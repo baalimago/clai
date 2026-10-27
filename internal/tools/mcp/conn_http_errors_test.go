@@ -216,7 +216,7 @@ func TestCallAcceptedWithoutBody(t *testing.T) {
 	defer srv.Close()
 
 	server := pub_models.McpServer{Name: "srv", Url: srv.URL}
-	conn := NewHttpConn(context.Background(), server, nil)
+	conn := mustNewHttpConn(t, context.Background(), server)
 	defer conn.Close()
 
 	if _, err := conn.Call(context.Background(), "initialize", nil); err == nil {
@@ -231,7 +231,7 @@ func TestCallCanceledContext(t *testing.T) {
 	defer srv.Close()
 
 	server := pub_models.McpServer{Name: "srv", Url: srv.URL}
-	conn := NewHttpConn(context.Background(), server, nil)
+	conn := mustNewHttpConn(t, context.Background(), server)
 	defer conn.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())

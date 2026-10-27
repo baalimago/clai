@@ -211,7 +211,11 @@ Lifecycle (`internal/text/summary_launch.go`, `finalizer.go`):
    whose cancel the launcher keeps. A panic inside `Summarize` is
    recovered into an error. Because the copy is taken before the model
    answers, the in-flight label describes the prompt, never the outcome;
-   only the batch path summarizes a finished transcript.
+   only the batch path summarizes a finished transcript. A plain query
+   whose join does not wait (below) defers the launch to its first tool
+   step: a one-step answer would only race a second model request that
+   almost never lands, so it sends none, while a run that continues past a
+   tool call has time for its label.
 2. **Stream.** The main call streams as today, unaffected. The session
    loop also watches the result channel, so a result that lands while the
    run still streams is taken early: on the loop path it rewrites the

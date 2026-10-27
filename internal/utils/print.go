@@ -1301,7 +1301,7 @@ func mcpLogBodyRows(content string, width, maxRows int) []activityRow {
 		case IsMcpLogErrorLine(line):
 			marker, color = "✗ ", RoleColor("tool")
 		}
-		for _, row := range terminalRows(marker+line, width) {
+		for _, row := range cellChunks(marker+line, max(width, 1)) {
 			rows = append(rows, activityRow{content: "  " + row, color: color})
 		}
 	}
@@ -1443,33 +1443,81 @@ func compactTerminalRows(content string, width, maxRows int) []string {
 	return compacted
 }
 
+// terminalRows wraps content into rows of at most width cells, breaking at
+// the last space that fits; a word wider than a row breaks by cell.
 func terminalRows(content string, width int) []string {
 	width = max(width, 1)
 	var rows []string
 	for line := range strings.SplitSeq(content, "\n") {
-		if line == "" {
-			rows = append(rows, "")
-			continue
-		}
-		var row strings.Builder
-		rowWidth := 0
-		for _, r := range line {
-			cellWidth := terminalRuneWidth(r)
-			if cellWidth > width {
-				r = '…'
-				cellWidth = 1
-			}
-			if wraps(rowWidth, cellWidth, width) {
-				rows = append(rows, row.String())
-				row.Reset()
-				rowWidth = 0
-			}
-			row.WriteRune(r)
-			rowWidth += cellWidth
-		}
-		rows = append(rows, row.String())
+		rows = append(rows, wordWrapLine(line, width)...)
 	}
 	return rows
+}
+
+func wordWrapLine(line string, width int) []string {
+	var (
+		rows  []string
+		row   strings.Builder
+		used  int
+		fresh bool
+	)
+	for i, word := range strings.Split(line, " ") {
+		wordWidth := terminalStringWidth(word)
+		sep := i > 0 && !fresh
+		need := wordWidth
+		if sep {
+			need++
+		}
+		if used > 0 && used+need > width {
+			rows = append(rows, strings.TrimRight(row.String(), " "))
+			row.Reset()
+			used, sep, fresh = 0, false, true
+		}
+		if fresh && word == "" {
+			continue
+		}
+		fresh = false
+		if sep {
+			row.WriteByte(' ')
+			used++
+		}
+		if used+wordWidth <= width {
+			row.WriteString(word)
+			used += wordWidth
+			continue
+		}
+		chunks := cellChunks(word, width)
+		rows = append(rows, chunks[:len(chunks)-1]...)
+		row.Reset()
+		row.WriteString(chunks[len(chunks)-1])
+		used = terminalStringWidth(chunks[len(chunks)-1])
+	}
+	return append(rows, row.String())
+}
+
+// cellChunks breaks s into rows of at most width cells, so joining the rows
+// gives s back; a rune wider than a row becomes an ellipsis.
+func cellChunks(word string, width int) []string {
+	var (
+		chunks []string
+		row    strings.Builder
+		used   int
+	)
+	for _, r := range word {
+		cellWidth := terminalRuneWidth(r)
+		if cellWidth > width {
+			r = '…'
+			cellWidth = 1
+		}
+		if wraps(used, cellWidth, width) {
+			chunks = append(chunks, row.String())
+			row.Reset()
+			used = 0
+		}
+		row.WriteRune(r)
+		used += cellWidth
+	}
+	return append(chunks, row.String())
 }
 
 func isToolOutputMarker(row string) bool {
@@ -1530,4 +1578,64 @@ func PrepareDisplayMessage(msg pub_models.Message) pub_models.Message {
 		display.Content = ShortenedOutput(display.Content, MaxShortenedNewlines)
 	}
 	return display
+}
+
+// PinWideRunes returns token, streamed after prior on rows width cells wide,
+// so that terminals which draw a wide rune one cell wide still break rows
+// where TerminalRows counts them: each wide rune is followed by a move to the
+// column it ends on, and a rune that starts a new row after a full one is
+// preceded by an explicit row break. Text holding escape sequences passes
+// through unchanged.
+func PinWideRunes(prior, token string, width int) string {
+	if width <= 0 || strings.ContainsRune(token, '\x1b') {
+		return token
+	}
+	last := prior
+	if i := strings.LastIndexByte(prior, '\n'); i >= 0 {
+		last = prior[i+1:]
+	}
+	if strings.ContainsRune(last, '\x1b') {
+		return token
+	}
+	// filledByWide marks a row a wide rune filled: a terminal that drew it
+	// narrow has no pending wrap, so the next rune needs an explicit break.
+	col, filledByWide := 0, false
+	for _, r := range last {
+		col = advanceColumn(col, r, width)
+		filledByWide = col == width && terminalRuneWidth(r) == 2
+	}
+	var b strings.Builder
+	for _, r := range token {
+		wide := terminalRuneWidth(r) == 2
+		printable := r != '\t' && !unicode.IsControl(r)
+		if printable && (filledByWide || (wide && col > 0 && col+2 > width)) {
+			b.WriteString("\r\n")
+			col = 0
+		}
+		b.WriteRune(r)
+		col = advanceColumn(col, r, width)
+		filledByWide = col == width && wide
+		if wide && col < width {
+			fmt.Fprintf(&b, "\x1b[%dG", col+1)
+		}
+	}
+	return b.String()
+}
+
+// advanceColumn is the column after r is written at col, as lineRows counts
+// it; width means the row is full.
+func advanceColumn(col int, r rune, width int) int {
+	switch {
+	case r == '\n' || r == '\r':
+		return 0
+	case r == '\t':
+		return min((col/tabStop+1)*tabStop, width-1)
+	case unicode.IsControl(r):
+		return col
+	}
+	w := terminalRuneWidth(r)
+	if wraps(col, w, width) {
+		col = 0
+	}
+	return col + w
 }

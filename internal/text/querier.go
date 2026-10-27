@@ -12,6 +12,7 @@ import (
 	"github.com/baalimago/clai/internal/debugflags"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/present"
+	"github.com/baalimago/clai/internal/runtally"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
@@ -30,8 +31,13 @@ const (
 )
 
 type Querier[C models.StreamCompleter] struct {
-	Raw              bool
-	errOut           io.Writer
+	Raw    bool
+	errOut io.Writer
+	// transcriptToStderr is -reply-only: see SendTranscriptToStderr.
+	transcriptToStderr bool
+	// replyOut is the redirected stdout while the session draws on a
+	// terminal stderr: see ShowProgressOn.
+	replyOut         io.Writer
 	structuredOutput bool
 	outputModeKnown  bool
 	outputIsTerminal bool
@@ -139,6 +145,7 @@ type Querier[C models.StreamCompleter] struct {
 	// querier).
 	summarizer             models.Summarizer
 	querySummary           bool
+	runTally               *runtally.Scope
 	summarizeConversations bool
 	summaryModel           string
 	summaryJoinTimeout     time.Duration
@@ -149,10 +156,15 @@ type Querier[C models.StreamCompleter] struct {
 	// summaryReady holds the result the session loop took while the run was
 	// still streaming; the join consumes it instead of waiting.
 	summaryReady *summaryResult
+	// summaryDeferred holds a plain query's label launch until its first
+	// tool step: a one-step answer never waits, so its label never lands.
+	summaryDeferred bool
 }
 
+// SuppressCompletionNotification keeps structured output bell-free. A
+// redirected stdout needs no check here: the bell then rings on stderr.
 func (q *Querier[C]) SuppressCompletionNotification() bool {
-	return q.structuredOutput || (q.outputModeKnown && !q.outputIsTerminal)
+	return q.structuredOutput
 }
 
 type SkillLoader interface {
@@ -177,6 +189,12 @@ func (q *Querier[C]) postProcessOutput(ctx context.Context, newSysMsg pub_models
 	// display branch so raw, structured, rolling, and terminal paths all emit
 	// it (worklog 2026-08-15-agent-slog-output, Phase 3).
 	q.logMessage(ctx, "final_answer", newSysMsg.Content, "")
+	if q.replyOut != nil {
+		if err := q.handOffReply(newSysMsg.Content); err != nil {
+			ancli.Warnf("failed to hand off reply: %v", err)
+		}
+		return
+	}
 	// The token should already have been printed while streamed
 	if q.rawDisplay() {
 		if q.debug {
@@ -306,8 +324,12 @@ func (q *Querier[C]) handleTokenForSession(session *QuerySession, token string) 
 	if w == nil {
 		w = os.Stdout
 	}
+	prior := session.PendingTextString()
 	session.AppendPendingText(token)
 	q.fullMsg = session.PendingTextString()
+	if q.holdsStepText() {
+		return nil
+	}
 	if !q.debug && !q.structuredOutput {
 		if q.usesActivityViewport() && q.activityViewport != nil {
 			q.activityViewport.AppendText(token)
@@ -315,6 +337,11 @@ func (q *Querier[C]) handleTokenForSession(session *QuerySession, token string) 
 				return fmt.Errorf("render activity viewport: %w", err)
 			}
 			return nil
+		}
+		if !q.rawDisplay() && q.dims.Width > 0 {
+			// The clear before a tool call counts these rows, so they must
+			// break where TerminalRows says on every terminal.
+			token = utils.PinWideRunes(prior, token, q.dims.Width)
 		}
 		fmt.Fprint(w, token)
 	}
@@ -369,11 +396,17 @@ func (q *Querier[C]) drainMcpLogs() error {
 	}
 	normal := make(map[string]*strings.Builder)
 	var normalOrder []string
-	for _, entry := range entries {
+	for i := 0; i < len(entries); i++ {
+		entry := entries[i]
 		if entry.isError {
 			lines := entry.lines
 			if !entry.exit {
+				// A burst of error lines from one server shares one block.
 				lines = []string{entry.line}
+				for i+1 < len(entries) && entries[i+1].isError && !entries[i+1].exit && entries[i+1].server == entry.server {
+					i++
+					lines = append(lines, entries[i].line)
+				}
 			}
 			if err := q.elevateMcpError(w, entry.server, lines); err != nil {
 				return err
@@ -492,10 +525,7 @@ func (q *Querier[C]) closeReasoningIfOpen(ctx context.Context, session *QuerySes
 		return
 	}
 	if !q.debug && !q.structuredOutput {
-		w := q.out
-		if w == nil {
-			w = os.Stdout
-		}
+		w := q.transcriptOut()
 		if q.rawDisplay() {
 			fmt.Fprint(w, "\n[/thinking]\n")
 		} else {
@@ -620,13 +650,14 @@ func (q *Querier[C]) Query(ctx context.Context) error {
 		stoploss:     q.newStoploss(),
 		resizeEvents: resizeEvents,
 	}
-	q.launchSummary(ctx)
+	q.startSummary(ctx)
+	defer func() { q.summaryDeferred = false }()
 	// The finalizer stores the result chat on q while Run is in flight.
 	before := q.chat
 	start := time.Now()
 	err := runner.Run(ctx, session)
-	if q.querySummary && q.loopProgress == nil {
-		err = errors.Join(err, q.reportQuerySummary(start, before, session.Chat, err))
+	if q.loopProgress == nil && (q.querySummary || q.runTally != nil) {
+		err = errors.Join(err, q.finishQuery(start, before, session.Chat, err))
 	}
 	q.chat = session.Chat
 	q.fullMsg = session.FinalAssistantText

@@ -8,7 +8,6 @@ import (
 	"io/fs"
 	"os"
 	"os/user"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -78,6 +77,9 @@ type ChatHandler struct {
 	// conversation so later -dre queries keep using it.
 	profile string
 	raw     bool
+	// sendPrompt sends the prompt of `continue <chat> <prompt>`; nil only
+	// previews it.
+	sendPrompt func(ctx context.Context, req DirReplyRequest) error
 
 	out    io.Writer
 	input  io.Reader
@@ -154,7 +156,7 @@ func (cq *ChatHandler) actOnSubCmd(ctx context.Context) error {
 	case "list", "l":
 		return cq.handleListCmd(ctx)
 	case "delete", "d":
-		return cq.deleteFromPrompt()
+		return cq.deleteFromPrompt(ctx)
 	case "query", "q":
 		return errors.New("not yet implemented")
 	case "summarize", "s":
@@ -179,36 +181,34 @@ func (cq *ChatHandler) actOnSubCmd(ctx context.Context) error {
 	}
 }
 
-func (cq *ChatHandler) findChatByID(potentialChatIdx string) (pub_models.Chat, error) {
+func (cq *ChatHandler) findChatByID(ctx context.Context, potentialChatIdx string, foreign foreignSelection) (pub_models.Chat, error) {
 	split := strings.Split(potentialChatIdx, " ")
 	firstToken := split[0]
 	chatIdx, err := strconv.Atoi(firstToken)
 	if err == nil {
-		rows, err := readChatIndex(cq.convDir)
+		paginator, err := NewChatIndexPaginator(cq.convDir)
 		if err != nil {
 			return pub_models.Chat{}, fmt.Errorf("failed to read chat index: %w", err)
 		}
-		slices.SortFunc(rows, func(a, b chatIndexRow) int {
-			return b.Created.Compare(a.Created)
-		})
-		if len(rows) == 0 {
+		var chat pub_models.Chat
+		if len(paginator.rows) == 0 {
 			chats, listErr := cq.list()
 			if listErr != nil {
 				return pub_models.Chat{}, fmt.Errorf("%w: %w", errListChats, listErr)
 			}
 			if chatIdx < 0 || chatIdx >= len(chats) {
-				return pub_models.Chat{}, fmt.Errorf("chat index out of range")
+				return pub_models.Chat{}, errIndexOutOfRange
 			}
-			cq.prompt = strings.Join(split[1:], " ")
-			return chats[chatIdx], nil
-		}
-
-		if chatIdx < 0 || chatIdx >= len(rows) {
-			return pub_models.Chat{}, fmt.Errorf("chat index out of range")
+			chat = chats[chatIdx]
+		} else {
+			chat, err = cq.listedChat(ctx, paginator, chatIdx, foreign)
+			if err != nil {
+				return pub_models.Chat{}, err
+			}
 		}
 		// Reassemble the prompt from the split tokens, but without the index selecting the chat
 		cq.prompt = strings.Join(split[1:], " ")
-		return cq.getByID(rows[chatIdx].ID)
+		return chat, nil
 	}
 
 	// Prefer exact ID match first.
@@ -274,7 +274,7 @@ func (cq *ChatHandler) cont(ctx context.Context) error {
 		return cq.handleListCmd(ctx)
 	}
 
-	chat, err := cq.findChatByID(cq.prompt)
+	chat, err := cq.findChatByID(ctx, cq.prompt, foreignClone)
 	if err != nil {
 		// If listing of chats failed, propagate error. This indicates a real filesystem or
 		// permissions issue that should not be treated as "not found".
@@ -310,12 +310,18 @@ func (cq *ChatHandler) cont(ctx context.Context) error {
 	if err := cq.UpdateDirScopeFromCWD(chat.ID); err != nil {
 		return fmt.Errorf("failed to update directory-scoped binding: %w", err)
 	}
+	if cq.prompt != "" && cq.sendPrompt != nil {
+		if err := cq.sendPrompt(ctx, DirReplyRequest{Prompt: cq.prompt, Profile: cq.profile, Raw: cq.raw}); err != nil {
+			return fmt.Errorf("failed to send prompt to chat %s: %w", chat.ID, err)
+		}
+		return nil
+	}
 	ancli.Noticef("chat %s is now replyable with flag \"clai -dre query <prompt>\"\n", chat.ID)
 	return nil
 }
 
-func (cq *ChatHandler) deleteFromPrompt() error {
-	c, err := cq.findChatByID(cq.prompt)
+func (cq *ChatHandler) deleteFromPrompt(ctx context.Context) error {
+	c, err := cq.findChatByID(ctx, cq.prompt, foreignRefuse)
 	if err != nil {
 		return fmt.Errorf("failed to get chat to delete: %w", err)
 	}

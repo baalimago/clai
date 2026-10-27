@@ -159,10 +159,16 @@ func redactMcpServersForDebug(servers []pub_models.McpServer) []debugRedactedMcp
 			EnvKeys:        keys,
 			EnvFileSet:     s.EnvFile != "",
 			Startup:        s.Startup,
-			AuthConfigured: s.Auth != nil,
+			AuthConfigured: hasTokenSource(s.Auth),
 		}
 	}
 	return out
+}
+
+// hasTokenSource reports a configured credential source. An auth block may
+// hold only required_env, which configures none.
+func hasTokenSource(auth *pub_models.McpServerAuth) bool {
+	return auth != nil && (len(auth.TokenCommand) > 0 || auth.TokenEnv != "")
 }
 
 // setupMcpManager loads MCP server configurations from a directory.
@@ -183,7 +189,7 @@ func redactMcpServersForDebug(servers []pub_models.McpServer) []debugRedactedMcp
 //
 // A server discovered from the config directory is ambient: a startup failure
 // keeps today's warn-and-degrade. A server in userConf.McpServers is explicit
-// when the run is agent-driven (AgentSettings.StrictMcpStartup); its failures
+// (a profile's own servers, or an agent's under StrictMcpStartup); its failures
 // are collected while the in-setup wait runs and joined into a typed error on
 // return, so a caller whose task depends on the server can see that it is
 // absent (worklog 2026-09-05-error-propagation, D13).
@@ -203,7 +209,12 @@ func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configu
 	// Filter MCP servers based on profile tools
 	filteredFiles := filterMcpServersByProfile(files, userConf)
 	mcpServers, err := findConfiguredMcpServers(filteredFiles)
-	explicit := userConf.AgentSettings != nil && userConf.AgentSettings.StrictMcpStartup
+	strict := userConf.AgentSettings != nil && userConf.AgentSettings.StrictMcpStartup
+	// The servers in userConf.McpServers are required: an agent's
+	// WithMcpServers, or on the CLI a profile's own mcp_servers. The profile
+	// exists to give the run those tools, so running without them is a
+	// failure, not a degrade. Only strict startup also forces them eager.
+	explicit := strict || len(userConf.McpServers) > 0
 	// userConf.McpServers never passed through FindConfiguredServers, so its
 	// own transport XOR was never enforced: both command and url set
 	// silently preferred url, and neither set reached
@@ -211,9 +222,7 @@ func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configu
 	// exactly as a config-directory file is.
 	validExplicit, transportFailures := validateExplicitServers(explicit, userConf.McpServers)
 	// The config-dir servers are ambient; the userConf.McpServers tail is
-	// explicit exactly when the run is agent-driven. Profile-sourced servers
-	// ride the CLI path and stay ambient (D13: only WithMcpServers is
-	// load-bearing).
+	// explicit.
 	explicitTail := len(mcpServers)
 	mcpServers = append(mcpServers, validExplicit...)
 
@@ -257,12 +266,12 @@ func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configu
 	go mcp.Manager(ctx, controlChannel, &toolWg, runReg, startupFailures)
 
 	failures := &failureCollector{errs: append([]error(nil), transportFailures...)}
-	if err != nil && explicit {
+	if err != nil && strict {
 		failures.addExplicit("config-dir", claierr.NewMcpServerStartup("config-dir", "parse", err))
 	}
 	for i, mcpServer := range mcpServers {
-		isExplicitIdx := i >= explicitTail
-		strictExplicit := explicit && isExplicitIdx
+		isExplicitIdx := i >= explicitTail && !mcpServer.Optional
+		strictExplicit := strict && isExplicitIdx
 		isHTTP := mcpServer.Url != ""
 
 		mode, modeErr := effectiveStartupMode(mcpServer, strictExplicit)
@@ -315,15 +324,15 @@ func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configu
 				opts = append(opts, mcp.WithRequestDecorator(decorator))
 			}
 			if connErr == nil {
-				conn = mcp.NewHttpConn(clientContext, mcpServer, sink, opts...)
+				conn, connErr = mcp.NewHttpConn(clientContext, mcpServer, sink, opts...)
 			}
 		} else {
 			conn, connErr = mcp.NewStdioConn(clientContext, mcpServer, sink)
 		}
 		if connErr != nil {
-			// NewStdioConn already returns a typed *claierr.McpServerStartupError
-			// naming the "spawn" stage, so it is propagated as-is rather than
-			// re-wrapped.
+			// NewStdioConn and NewHttpConn already return a typed
+			// *claierr.McpServerStartupError naming the "spawn" or "env"
+			// stage, so it is propagated as-is rather than re-wrapped.
 			failures.addIfExplicit(explicit, isExplicitIdx, mcpServer.Name, connErr)
 			toolWg.Done()
 			clientContextCancel()
@@ -371,7 +380,7 @@ func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configu
 // mcp_<name>_<tool> registration prefix, so a duplicate is not a new case.
 func isExplicitServer(name string, servers []pub_models.McpServer) bool {
 	for _, s := range servers {
-		if s.Name == name {
+		if s.Name == name && !s.Optional {
 			return true
 		}
 	}
@@ -423,7 +432,7 @@ func (f *failureCollector) all() []error {
 	return f.errs
 }
 
-// validateExplicitServers runs serverconfig.ValidateTransport over every
+// validateExplicitServers runs serverconfig.Validate over every
 // server passed through agent.WithMcpServers, exactly as
 // findConfiguredMcpServers already does for a config-directory file (D43,
 // R2-07): without it, a struct with both command and url set silently
@@ -434,7 +443,7 @@ func (f *failureCollector) all() []error {
 func validateExplicitServers(explicit bool, servers []pub_models.McpServer) (valid []pub_models.McpServer, failures []error) {
 	valid = make([]pub_models.McpServer, 0, len(servers))
 	for _, server := range servers {
-		if err := serverconfig.ValidateTransport(server.Name, server); err != nil {
+		if err := serverconfig.Validate(server.Name, server); err != nil {
 			typed := claierr.NewMcpServerStartup(server.Name, "config", err)
 			if explicit {
 				failures = append(failures, typed)
@@ -624,7 +633,10 @@ func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, us
 	// If usetools and no specific tools chosen, assume all are valid
 	if len(userConf.RequestedToolGlobs) == 0 && len(userConf.Tools) == 0 {
 		allTools := make([]pub_models.LLMTool, 0, len(available))
-		for _, tool := range available {
+		for name, tool := range available {
+			if tools.Registry.IsHidden(name) {
+				continue
+			}
 			allTools = append(allTools, tool)
 		}
 		for _, tool := range uniqueTools(allTools) {
@@ -686,12 +698,16 @@ func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, us
 	return nil
 }
 
-// matchingTools returns every tool in available whose name matches pattern.
+// matchingTools returns every tool in available whose name matches pattern;
+// a hidden tool matches only its exact name.
 // It mirrors tools.Registry.WildcardGet over a caller-owned map so tool
 // selection reads the per-run catalog instead of the process-global registry.
 func matchingTools(available map[string]pub_models.LLMTool, pattern string) []pub_models.LLMTool {
 	var matches []pub_models.LLMTool
 	for name, tool := range available {
+		if tools.Registry.IsHidden(name) && pattern != name {
+			continue
+		}
 		if tools.WildcardMatch(pattern, name) {
 			matches = append(matches, tool)
 		}

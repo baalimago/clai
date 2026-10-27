@@ -25,13 +25,25 @@ type completionNotificationSuppressor interface {
 }
 
 func triggerCompletionNotification(completed any) {
+	ringCompletionBell(completed, os.Stdout, os.Stderr, utils.IsTerminalWriter)
+}
+
+// ringCompletionBell rings the bell on whichever of stdout and stderr is a
+// terminal, stdout first. A redirected stdout never gets the bell: it would
+// land in the file or pipe holding the reply.
+func ringCompletionBell(completed any, stdout, stderr io.Writer, isTerminal func(io.Writer) bool) {
 	if suppressor, ok := completed.(completionNotificationSuppressor); ok && suppressor.SuppressCompletionNotification() {
 		return
 	}
 	if !utils.NotificationBellEnabled() {
 		return
 	}
-	fmt.Fprint(os.Stdout, "\a")
+	switch {
+	case isTerminal(stdout):
+		fmt.Fprint(stdout, "\a")
+	case isTerminal(stderr):
+		fmt.Fprint(stderr, "\a")
+	}
 }
 
 // Command adapts one clai command to the cmd.Command interface. Each
@@ -48,6 +60,10 @@ type Command struct {
 	OnSetup  func(ctx context.Context, c *Command) error
 	OnRun    func(ctx context.Context, c *Command) error
 	Subs     map[string]cmd.Command
+	// CheckArgs, when set, vets the arguments after the command's name
+	// before dispatch, so the command words its own usage errors instead
+	// of the dispatcher printing the whole usage.
+	CheckArgs func(args []string) error
 
 	// Raw and NonInteractive point at the command's flag groups (nil when
 	// the command doesn't own them) so Setup can derive the session
@@ -127,17 +143,17 @@ func (c *Command) Setup(ctx context.Context) error {
 	utils.NoCreateConfig = false
 	utils.Live = !(c.NonInteractive != nil && c.NonInteractive.Value())
 	if c.OnSetup != nil {
-		return c.OnSetup(ctx, c)
+		return recordExit(ctx, c.OnSetup(ctx, c))
 	}
 	return nil
 }
 
 func (c *Command) Run(ctx context.Context) error {
 	if c.OnRun != nil {
-		return c.OnRun(ctx, c)
+		return recordExit(ctx, c.OnRun(ctx, c))
 	}
 	if err := c.querier.Query(ctx); err != nil {
-		return err
+		return recordExit(ctx, err)
 	}
 	triggerCompletionNotification(c.querier)
 	return nil

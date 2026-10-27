@@ -330,3 +330,54 @@ func TestWildcardMatch(t *testing.T) {
 		})
 	}
 }
+
+// TestRegistry_SetHidden pins hidden tools: callable by their exact name, but
+// left out of wildcard selection, the listing names and Visible.
+func TestRegistry_SetHidden(t *testing.T) {
+	r := NewRegistry()
+	r.Set("shown", newMockTool("shown"))
+	hidden := newMockTool("secret_run")
+	r.SetHidden("secret_run", hidden)
+
+	if got, ok := r.Get("secret_run"); !ok || got != hidden {
+		t.Fatal("a hidden tool must resolve by its exact name")
+	}
+	if !r.IsHidden("secret_run") || r.IsHidden("shown") {
+		t.Fatal("IsHidden must report exactly the hidden tool")
+	}
+	for _, pattern := range []string{"*", "secret*", "*run"} {
+		for _, tool := range r.WildcardGet(pattern) {
+			if tool == hidden {
+				t.Fatalf("wildcard %q selected the hidden tool", pattern)
+			}
+		}
+	}
+	if got := r.WildcardGet("secret_run"); len(got) != 1 || got[0] != hidden {
+		t.Fatalf("an exact selection must still find the hidden tool, got %v", got)
+	}
+	if _, ok := r.Visible()["secret_run"]; ok {
+		t.Fatal("Visible must leave out the hidden tool")
+	}
+	if _, ok := r.Visible()["shown"]; !ok {
+		t.Fatal("Visible must keep the shown tool")
+	}
+	if _, ok := r.All()["secret_run"]; !ok {
+		t.Fatal("All keeps the hidden tool, so a named selection resolves")
+	}
+}
+
+func TestRegisterLocalToolsHidesTheClaiWorkerTools(t *testing.T) {
+	r := NewRegistry()
+	registerLocalTools(r, func(name string) (string, error) { return "/bin/" + name, nil })
+	for _, name := range []string{"clai_run", "clai_check", "clai_result", "clai_wait_for_workers", "clai_help"} {
+		if _, ok := r.Get(name); !ok {
+			t.Errorf("%s must stay registered so profiles naming it keep working", name)
+		}
+		if !r.IsHidden(name) {
+			t.Errorf("%s must be hidden; orchestration uses async_cmd", name)
+		}
+	}
+	if r.IsHidden("async_cmd") {
+		t.Error("async_cmd must stay visible")
+	}
+}

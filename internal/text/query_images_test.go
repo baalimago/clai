@@ -297,7 +297,7 @@ func TestSetupInitialChat_collectsImages(t *testing.T) {
 	conf := Default
 	conf.ConfigDir = t.TempDir()
 	conf.ImageInputs = []string{img}
-	if err := conf.SetupInitialChat([]string{"q", "what", "breed?"}); err != nil {
+	if err := conf.SetupInitialChat(context.Background(), []string{"q", "what", "breed?"}); err != nil {
 		t.Fatalf("SetupInitialChat: %v", err)
 	}
 	last := conf.InitialChat.Messages[len(conf.InitialChat.Messages)-1]
@@ -314,7 +314,7 @@ func TestSetupInitialChat_collectsImages(t *testing.T) {
 
 	text := Default
 	text.ConfigDir = t.TempDir()
-	if err := text.SetupInitialChat([]string{"q", "plain"}); err != nil {
+	if err := text.SetupInitialChat(context.Background(), []string{"q", "plain"}); err != nil {
 		t.Fatalf("SetupInitialChat: %v", err)
 	}
 	if last := text.InitialChat.Messages[len(text.InitialChat.Messages)-1]; last.Content != "plain" || last.Parts != nil {
@@ -324,7 +324,7 @@ func TestSetupInitialChat_collectsImages(t *testing.T) {
 	missing := Default
 	missing.ConfigDir = t.TempDir()
 	missing.ImageInputs = []string{filepath.Join(dir, "nope*.png")}
-	if err := missing.SetupInitialChat([]string{"q", "hi"}); err == nil || !strings.Contains(err.Error(), "nope*.png") {
+	if err := missing.SetupInitialChat(context.Background(), []string{"q", "hi"}); err == nil || !strings.Contains(err.Error(), "nope*.png") {
 		t.Fatalf("err = %v, want the collector's no-match error", err)
 	}
 }
@@ -340,7 +340,7 @@ func TestSetupInitialChat_globFramesCollectedFiles(t *testing.T) {
 	conf := Default
 	conf.ConfigDir = t.TempDir()
 	conf.Glob = filepath.Join(dir, "*")
-	if err := conf.SetupInitialChat([]string{"q", "sum"}); err != nil {
+	if err := conf.SetupInitialChat(context.Background(), []string{"q", "sum"}); err != nil {
 		t.Fatalf("SetupInitialChat: %v", err)
 	}
 	msgs := conf.InitialChat.Messages

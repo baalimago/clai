@@ -278,6 +278,18 @@ by entry `git commit`. Matching is exact and case-sensitive. Entries are
 whitespace-split only: quotes and metachars are never processed inside an
 entry.
 
+A nested clai's prompt is prose, not a command: when `async_cmd` runs `clai`
+(by name or path), an argument of more than one word is a prompt for the
+child's model and is not matched, so a worker brief saying "rm old files" is
+not refused by entry `rm`. Every other token still is: a lone `rm` argument,
+an entry naming `clai`, and anything a shell runs (`sh -c "clai q 'rm x'"`
+is matched as before). The child enforces the bans instead: every command
+`cmd` and `async_cmd` spawn under a policy gets it in `CLAI_CMD_BAN`
+(`pkgtools.CmdBanEnv`, one entry per line), and a clai run appends those
+entries to its own (`setupInheritedCmdBan`), so a worker refuses what its
+parent would. Under a policy, a command or an `async_cmd` `env` that names
+`CLAI_CMD_BAN` is refused, so a model cannot clear it for its children.
+
 Scope (D1): only the two freetext/direct command-execution tools `cmd` and
 `async_cmd` (plus their legacy aliases `freetext_command` and `async_cmd_run`).
 Structured tools with fixed binaries (`go`, `git`, `sed`, `ls`, ...),
@@ -310,7 +322,10 @@ Documented matching limits (literal-text matching):
 
 - Banning is by literal content: a command is refused whenever the phrase's
   tokens occur in it, even when nothing executes (`echo git commit` IS banned
-  by entry `git commit`).
+  by entry `git commit`, and so is `git commit -m "rm old files"` by entry
+  `rm`). The one exception is a direct `clai` invocation's multi-word
+  prompt, above; written into a `cmd` shell string, `clai q "rm x"` is still
+  refused.
 - The matcher sees literal text only: variable assignments are not expanded
   (`x=git; $x commit` is NOT caught by `git commit`), and command
   substitutions are not evaluated.
@@ -325,3 +340,42 @@ If you add a new tool:
 - ensure arguments are validated
 - avoid implicit ambient access (require explicit paths / commands)
 - make failures actionable with contextual errors
+
+## Orchestration and the hidden clai worker tools
+
+An agent orchestrates clai workers with `async_cmd` running the clai binary,
+for example `async_cmd {"command": "clai", "args": ["-ro", "-cm", "<model>",
+"-t", "rg,cat", "q", "<brief>"]}`, then `async_cmd_await` on the ids. Its
+The how-to lives in one skill, `examples/skills/clai-subagents/SKILL.md`,
+published as `cchub:clai/clai-subagents`: run `clai help` and `clai q -h`
+first, start every worker with `-ro -summarize=false`, await them together,
+read stdout (or `log_path` when truncated), check before merging. An
+orchestrating profile names it pinned in `"skills"` and its prompt says to
+`load_skill` it before the first worker, so the prompt keeps only its own
+workers' tools and briefs.
+
+- **Reply-only.** `-reply-only` (`-ro`) sends the raw transcript (tool calls,
+  tool output, reasoning) to stderr through `Querier.transcriptOut`, so a
+  worker's stdout is its reply alone. On a non-terminal stdout a step's
+  prose is held (`Querier.holdsStepText`) until the step ends, then
+  `releaseStepText` prints it to stderr when the step ended in tool calls
+  and to stdout only when it is the reply. Users get the same with
+  `clai -reply-only ... q | git commit -F -`. When stderr is a terminal
+  and the run is neither raw, structured nor a loop
+  (`Querier.ShowProgressOn`), the session draws on stderr exactly as it
+  would on a terminal stdout, rolling window included, and the reply goes
+  to stdout at the end (`Querier.handOffReply`), so
+  `clai -reply-only -profile-path <agent> q > agenda.md` shows progress and
+  leaves only the reply in the file.
+- **No prompt.** A profile run without a prompt or stdin acts on its defaults
+  (see profiles.md), so `clai -prp <agent> q` works as a worker too.
+- **Hidden tools.** `clai_run`, `clai_check`, `clai_result`,
+  `clai_wait_for_workers` and `clai_help` are registered with
+  `registry.SetHidden`: a profile or `-t` that names one exactly still gets it,
+  but `*` and other wildcards, `use_tools` without a list, `clai tools` and
+  completion leave them out. Their behaviour is kept for the profiles that
+  still list them: `clai_run` splits the flags before `q` on whitespace and
+  passes the rest verbatim as one prompt, and runs the child with `-r
+  -reply-only -summarize=false`; `clai_wait_for_workers` returns each worker
+  once, adds a failed worker's last 2000 bytes of stderr, and on timeout
+  interrupts the rest and still returns the finished ones.

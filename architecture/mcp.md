@@ -136,6 +136,14 @@ Registered MCP tools are scoped to the run that discovered them. They are **neve
 process-global tool registry, because that registry's entries would be overwritten by every
 concurrent `Setup` — see the comment at `internal/text/querier_setup_tools.go`.
 
+## Tool arguments
+
+`mcpTool.CallParts` sends the model's arguments as given, except that an
+optional argument (not in the tool's `required`) sent as `""` or `null` is
+left out (`withoutUnsetOptional`). Models fill every property of a schema,
+and a server that validates lengths refuses `""` for an argument meant to
+be unset: Linear's `list_issues` failed on `customView: ""`.
+
 ## Tool results
 
 A `tools/call` result is mapped to parts (`models.PartsCaller`, see
@@ -209,7 +217,9 @@ unsupported transport.
 
 ## Authorization
 
-Authorization applies to endpoint-based servers. A challenged endpoint returns
+Authorization applies to endpoint-based servers: every field of a server's `auth` block configures
+it, except `required_env`, which applies to both kinds (see
+[Required environment](#required-environment)). A challenged endpoint returns
 `claierr.AuthChallengeError`, carrying the `WWW-Authenticate` header verbatim and the
 `resource_metadata` URL parsed out of it; everything downstream consumes that error and parses
 nothing further.
@@ -241,10 +251,21 @@ path, which is RFC 8414's rule; the OIDC-style appended form is tried second, be
 for any issuer carrying a path component. Five fields are required of that document —
 `registration_endpoint`, `authorization_endpoint`, `token_endpoint`, `code_challenge_methods_supported`
 containing `S256`, and `grant_types_supported` containing the refresh grant — and a document missing
-any of them is a typed error naming which.
+any of them is a typed error naming which. `registration_endpoint` is checked after discovery
+rather than with the other four, because a pre-registered client can stand in for it (below).
 
 Dynamic registration means there is no per-vendor OAuth application to create by hand. It may or may
 not issue a client secret; both cases are supported.
+
+Some authorization servers offer no registration: GitHub's (`https://github.com/login/oauth`, the one
+its hosted MCP server names) only signs in clients registered with it in advance. For those, clai
+signs in as a client it ships, from `mcpauth.BuiltinClients` (`internal/tools/mcp/mcpauth/builtin_clients.go`),
+keyed by issuer and installed with `mcpauth.WithPreregisteredClients`. The client secret it carries
+is not confidential in a distributed binary; PKCE is what protects the flow. An issuer with neither
+registration nor a shipped client is a `NoClientError` that points at `auth.token_env`. A token
+request asks for JSON, since GitHub answers form-encoded otherwise, and an error body is reported
+even under status 200, which is how GitHub refuses a grant. A token issued without `expires_in`
+never expires: its entry carries no expiry and is never refreshed.
 
 ### What clai validates, and why fetching is not the whole story
 
@@ -282,7 +303,8 @@ A source is **unset** when its field is absent, and an unset source is skipped s
 **configured** when its field is set, and a configured source that fails is a typed error with **no
 fall-through** — a misconfigured secret manager must not quietly degrade into a browser prompt on a
 headless host. The token store is a **cache** rather than a configured source, so its absence or
-corruption is a miss and the next source is tried.
+corruption is a miss and the next source is tried. An unmet `auth.required_env` stops the chain
+before the first source is tried; see [Required environment](#required-environment).
 
 A credential command runs under the run's context, so cancellation reaps it, and is subject to the
 same command-ban policy that governs the freetext command tools. Its standard output is the token
@@ -291,6 +313,47 @@ only diagnostic an operator gets.
 
 An access token is refreshed before expiry by a margin, and refresh is single-flight per server, so
 a run with several calls in flight performs one refresh rather than one per call.
+
+### Required environment
+
+`auth.required_env` lists the environment variables a server needs, on a command-based or an
+endpoint-based server alike. It lets a profile declare the keys a server reads, so a run fails early
+with a message naming them, the remote-profile trust prompt can list them, and the hub can show them.
+A name must match `^[A-Za-z_][A-Za-z0-9_]*$`; an invalid one is a config error when the server's
+file or profile is loaded (`serverconfig.Validate`, `serverconfig.ValidateRequiredEnv`). The error
+names the entry by index, `auth.required_env[2]`, never by value, since a malformed entry may be a
+pasted secret.
+
+Local config is lenient beyond that: a name listed twice, or one that is also a key of the server's
+own `env` map, is accepted (the check simply finds it set or not). Only a remote profile (`-prp`)
+is strict about both, because its trust prompt shows the list to someone deciding whether to run
+it; see `architecture/remote-targets.md`.
+
+The check is `serverconfig.CheckRequiredEnv`, and it runs before anything is spawned or dialled, for
+an eager and a lazy server alike. A variable that is unset or empty is missing. Every missing name,
+sorted, is reported in a `*serverconfig.MissingEnvError` — names only, never a value — wrapped in a
+`claierr.McpServerStartupError` at the `env` stage:
+
+```text
+mcp server "sentry" needs GITHUB_TOKEN, SENTRY_ACCESS_TOKEN set in the environment
+```
+
+Which environment is checked follows what the server actually sees:
+
+| Server | Checked against | Where |
+| --- | --- | --- |
+| command-based | the environment it is spawned with: the process environment, then the envfile, then the `env` map, a later entry winning | `NewStdioConn`, through `spawnEnv`, the one function that also builds the spawn's environment, so the two cannot drift |
+| endpoint-based | where `auth.token_env` is resolved: the process environment, then the envfile, an empty value falling through | `mcpauth.CheckEndpointRequiredEnv`, sharing `token_env`'s lookup. It is called by `mcpauth.ResolveStaticCredential`, ahead of every source so `token_command` never runs without its variables, and by `NewHttpConn`, which every connection passes |
+
+A missing variable is a run-scoped failure: nothing in the run can set it, so it does not report
+itself blocked outside the run, and a lazily connected server memoises it like any other connect
+failure rather than dialling again on each tool call. `clai mcp auth <server>` checks it before
+its probe connect and refuses with `McpAuthMissingEnvError`, which says to set the variables first
+rather than reading like a failed connection.
+
+`required_env` configures no credential source. `token_env` is the variable that holds a token and
+is resolved as [Credential sources](#credential-sources) describes; `required_env` only demands
+that variables be present.
 
 ### What is secret
 
@@ -435,8 +498,8 @@ bins before its cache: a bin the working directory's own package declares, a
 global prefix. A spec any of these shadows is `Unresolvable` instead, so the
 fingerprint is never taken from a tree npx will not run.
 
-A resolution is memoised per server per run. A connect failure is marked for the run and not
-retried, so a model repeatedly calling a broken server cannot cause a spawn storm. A resolution
+A resolution is memoised per server per run. A connect failure, including a missing
+`auth.required_env` variable, is marked for the run and not retried, so a model repeatedly calling a broken server cannot cause a spawn storm. A resolution
 blocked on something *outside* the run — a human authorizing a server is the only such case — is
 neither a success nor a failure: it returns its typed error, leaves the memo untouched, and consumes
 no retry, because the blocking condition can change while the run is still going.
@@ -451,11 +514,16 @@ One JSON file per server under `<clai-config>/mcpServers/`, unmarshalled into
 { "command": "node", "args": ["server.js"],
   "env": { "KEY": "value" },
   "envfile": "~/.secrets/server.env",
+  "auth": { "required_env": ["SENTRY_ACCESS_TOKEN"] }, // checked against the
+                                          // spawn's environment: process,
+                                          // envfile, env
   "startup": "lazy",                      // or "eager"
   "timeout_seconds": 0,                   // one tool call; 0 is unbounded
   "connect_timeout_seconds": 45,          // spawn plus handshake
-  "auth_timeout_seconds": 120 }           // human wait. Applies here too: a
+  "auth_timeout_seconds": 120,            // human wait. Applies here too: a
                                           // local server prompts on stderr
+  "optional": true }                      // a startup failure only warns,
+                                          // even in a profile
 
 // A remote server.
 { "url": "https://mcp.example.com/mcp",
@@ -464,7 +532,21 @@ One JSON file per server under `<clai-config>/mcpServers/`, unmarshalled into
                                           // Unset follows the terminal
   "auth": { "token_command": ["doppler", "secrets", "get", "TOKEN", "--plain"],
             "token_env": "EXAMPLE_MCP_TOKEN",
+            "required_env": ["DOPPLER_TOKEN"], // the process environment,
+                                                // then the envfile
             "scopes": ["read", "write"] } }
+```
+
+The same server block is a value of a profile's `mcp_servers`, keyed by the server's name. A remote
+profile (`-prp`) is validated strictly and its trust prompt lists what the servers need; see
+`architecture/remote-targets.md`.
+
+```json
+{ "mcp_servers": {
+    "sentry": { "command": "npx", "args": ["-y", "@sentry/mcp-server@0.42.0"],
+                "auth": { "required_env": ["SENTRY_ACCESS_TOKEN"] } },
+    "github": { "url": "https://api.githubcopilot.com/mcp/",
+                "auth": { "token_env": "GITHUB_TOKEN" } } } }
 ```
 
 Discovery is ambient: every configured server is used whenever tooling is on and no tool glob
@@ -527,10 +609,25 @@ The posture differs by how a server was requested, and the distinction is delibe
   continues, because a broken optional server should not fail a query.
 - A server passed through `agent.WithMcpServers` is **explicit** and sets
   `AgentSettings.StrictMcpStartup`. Its startup failure is returned as a typed error, because a
-  caller whose task depends on that server must be able to see that it is absent.
+  caller whose task depends on that server must be able to see that it is absent. Strict startup
+  also connects it eagerly, so a warm schema cache cannot hide a failure.
+- A server declared in a profile's `mcp_servers` is **explicit** too: its startup failure ends the
+  run with the same typed error. The profile exists to give the run those tools, and an agent that
+  silently runs without them does the wrong thing with confidence. Unlike strict startup, a profile
+  server keeps its startup mode, so a lazy one served from the schema cache still costs no connect;
+  a failure there surfaces when its tool is called.
+- A server with `"optional": true` (`McpServer.Optional`) drops back to the ambient posture: its
+  startup failure warns and the run goes on without its tools. It is for a profile server the agent
+  can work without, such as a memory store that needs a sign-in the user may not have done
+  (`Test_setupMcpManager_OptionalProfileServerFailureOnlyWarns`). The profile's prompt has to say
+  what to do when those tools are missing.
 
 Startup failures are reported as `claierr.McpServerStartupError`, carrying the server name and the
-stage that failed. See `architecture/errors.md`.
+stage that failed. See `architecture/errors.md`. When the cause is a closed connection (the process
+exited before answering, as an `npx` package that fails to install does), the message says so and
+points at the server's log printed above it. `setupTextQuerier` (`internal/text/cmd.go`) returns the
+startup error itself, without the setup layers' wrapping, so the run ends on one line that names the
+server.
 
 ## Server output
 
@@ -565,7 +662,7 @@ reaches EOF.
 | --- | --- |
 | `internal/tools/mcp` | `Conn`, `Connector`, both transports, the manager, the tool wrapper |
 | `internal/tools/mcp/schemacache` | the tool-schema cache: identity, record, lookup, capture, invalidate, and the listing's cache-only read |
-| `internal/tools/mcp/serverconfig` | the server-config parser and transport validation, a leaf package so the tool listing can use it without an import cycle |
+| `internal/tools/mcp/serverconfig` | the server-config parser, transport and `required_env` validation, the `required_env` check, a leaf package so the tool listing can use it without an import cycle |
 | `internal/tools/mcp/mcpauth` | the OAuth client, the token store, and the credential chain |
 | `internal/tools/mcp/testserver` | fake stdio MCP server, for tests |
 | `internal/tools/mcp/httptestserver` | fake streamable-HTTP MCP server, for tests, including challenge and bearer modes |

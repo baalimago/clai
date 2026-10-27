@@ -82,6 +82,30 @@ func Test_ApplyFlagOverrides_stdin(t *testing.T) {
 		ApplyFlagOverrides(&given, tf)
 		testboil.FailTestIfDiff(t, given.StdinReplace, "{}")
 	})
+
+	t.Run("it should replace the -I token without -i", func(t *testing.T) {
+		given := Configurations{StdinReplace: ""}
+		tf := tfWith(t, func(tf *internal.TextFlags) {
+			mustSet(t, &tf.ReplyStdin.StdinReplace, "SCHEMA")
+		})
+		ApplyFlagOverrides(&given, tf)
+		testboil.FailTestIfDiff(t, given.StdinReplace, "SCHEMA")
+	})
+
+	t.Run("it should replace an explicit -I {} without -i", func(t *testing.T) {
+		given := Configurations{StdinReplace: ""}
+		tf := tfWith(t, func(tf *internal.TextFlags) {
+			mustSet(t, &tf.ReplyStdin.StdinReplace, "{}")
+		})
+		ApplyFlagOverrides(&given, tf)
+		testboil.FailTestIfDiff(t, given.StdinReplace, "{}")
+	})
+
+	t.Run("it should leave stdin appended without -i or -I", func(t *testing.T) {
+		given := Configurations{StdinReplace: ""}
+		ApplyFlagOverrides(&given, tfWith(t, nil))
+		testboil.FailTestIfDiff(t, given.StdinReplace, "")
+	})
 }
 
 // Test_ApplyFlagOverrides_Stoploss pins the flag > file override cascade

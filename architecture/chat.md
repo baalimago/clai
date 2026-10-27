@@ -273,11 +273,11 @@ The v2 format has one numeric cost field. It does not include the duplicate v1 c
 
 `clai chat continue <chatID|index> [prompt...]`:
 
-- loads an existing chat from disk (by index or ID)
-- if extra tokens are present after an index selection, they are re-joined and treated as the optional `prompt` to append
-- if an optional prompt is present, appends `user(prompt)` in-memory
-- prints a **fast obfuscated preview** (not full transcript rendering)
+- loads an existing chat from disk by ID, or by index. The index counts the rows `clai chat list` shows by default (native, external and grouped rows, newest first). An external row is cloned into a native chat, and a group row selects its newest member. `chat delete <index>` uses the same numbering and refuses an external row with `ErrForeignRowSelected`.
+- if extra tokens are present after an index selection, they are re-joined and treated as the optional `prompt`
+- prints a **fast obfuscated preview** (not full transcript rendering), with the prompt as the last user message
 - updates the directory-scoped binding for the current working directory to point at that chat
+- if a prompt is present, sends it as `clai [-r] [-p <profile>] -dre query <prompt>` would. `internal/cli` injects the sender (`text.DirReplySender`) as `CommandDeps.SendPrompt`, since the chat package holds no querier
 
 The primary purpose is selection/binding: choose which existing transcript should be used as reply context for `-dre` in the current directory.
 
@@ -303,7 +303,7 @@ Behavioral details:
 - long messages are shortened with `...` and a “and N more runes” note
 - the last messages (roughly the last six) are pretty-printed more fully
 
-After binding the directory scope, `chat continue` prints a notice that the chat is replyable with:
+After binding the directory scope without a prompt, `chat continue` prints a notice that the chat is replyable with:
 
 - `clai -dre query <prompt>`
 
@@ -313,6 +313,7 @@ In `internal/chat/handler.go:cont`:
 
 - If the loaded chat already has `chat.Profile != ""`, it overrides the runtime handler config so continuation uses that profile.
 - Otherwise, if a `--profile` was provided (wired into `UseProfile`), the handler stamps it into `chat.Profile` so future continuations persist it.
+- A `-prp` run with a remote target is stamped with the target as typed, without a `#sha256=` pin (`Configurations.ProfileTarget`, applied in `ProfileOverrides`), so `clai chat list` shows e.g. `cchub:clai/reviewer@5`; the wide list sizes its Profile column to the longest one (`profileWidth`). Replying through `chat continue` passes such a profile as `-prp`, a name as `-p` (`text.profileArgs`).
 
 ### `chat summarize` (label existing conversations)
 

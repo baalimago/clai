@@ -262,6 +262,16 @@ func liveAssetRefs(convDir string) (map[string]struct{}, error) {
 			return nil, err
 		}
 	}
+	// Exported imports share the asset dir (imported.go).
+	imported, err := importedFiles(convDir)
+	if err != nil {
+		return nil, err
+	}
+	for _, p := range imported {
+		if err := collectAssetRefs(p, live); err != nil {
+			return nil, err
+		}
+	}
 	return live, nil
 }
 

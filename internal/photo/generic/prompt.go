@@ -1,6 +1,7 @@
 package generic
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -12,7 +13,7 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
-func (c *Configurations) SetupPrompts(args []string) error {
+func (c *Configurations) SetupPrompts(ctx context.Context, args []string) error {
 	if c.ReplyMode {
 		confDir, err := utils.GetClaiConfigDir()
 		if err != nil {
@@ -29,7 +30,7 @@ func (c *Configurations) SetupPrompts(args []string) error {
 		c.Prompt += replyMessages
 	}
 
-	prompt, err := utils.Prompt(c.StdinReplace, args)
+	prompt, err := utils.Prompt(ctx, c.StdinReplace, args)
 	if err != nil {
 		return fmt.Errorf("failed to setup prompt from stdin: %w", err)
 	}

@@ -38,6 +38,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"sync"
 	"sync/atomic"
 )
@@ -131,6 +132,16 @@ type Config struct {
 	// carry a `resource` matching the declared resource identifier. The
 	// zero value requires it.
 	AllowMissingResourceParam bool
+	// GitHubTokenStyle makes the token endpoint answer as GitHub's does:
+	// form-encoded unless the request accepts JSON, a refused exchange as
+	// status 200 with an error body, and a token with no expires_in and no
+	// refresh_token, as an OAuth App's never expires.
+	GitHubTokenStyle bool
+	// RequiredClientID and RequiredClientSecret, when set, make the
+	// exchange refuse any other client, as a server that only knows its
+	// pre-registered clients does.
+	RequiredClientID     string
+	RequiredClientSecret string
 }
 
 type issuedCode struct {
@@ -448,6 +459,10 @@ func (s *Server) handleToken(w http.ResponseWriter, r *http.Request, cfg Config)
 }
 
 func (s *Server) handleExchange(w http.ResponseWriter, r *http.Request, cfg Config) {
+	if cfg.RequiredClientID != "" && (r.Form.Get("client_id") != cfg.RequiredClientID || r.Form.Get("client_secret") != cfg.RequiredClientSecret) {
+		writeTokenError(w, r, cfg, "incorrect_client_credentials", "the client_id and/or client_secret passed are incorrect")
+		return
+	}
 	if cfg.ExchangeRejects {
 		reason := cfg.ExchangeReason
 		if reason == "" {
@@ -491,12 +506,40 @@ func (s *Server) handleExchange(w http.ResponseWriter, r *http.Request, cfg Conf
 	s.codesMu.Lock()
 	s.tokens[access] = issuedToken{refreshToken: refresh}
 	s.codesMu.Unlock()
+	if cfg.GitHubTokenStyle {
+		writeGitHubToken(w, r, url.Values{"access_token": {access}, "token_type": {"bearer"}})
+		return
+	}
 	writeJSON(w, map[string]any{
 		"access_token":  access,
 		"refresh_token": refresh,
 		"token_type":    "Bearer",
 		"expires_in":    3600,
 	})
+}
+
+// writeTokenError answers a refused token request: status 400 with a JSON
+// body, or as GitHub does, status 200 with the error in the body.
+func writeTokenError(w http.ResponseWriter, r *http.Request, cfg Config, code, description string) {
+	if cfg.GitHubTokenStyle {
+		writeGitHubToken(w, r, url.Values{"error": {code}, "error_description": {description}})
+		return
+	}
+	w.WriteHeader(http.StatusBadRequest)
+	writeJSON(w, map[string]any{"error": code, "error_description": description})
+}
+
+func writeGitHubToken(w http.ResponseWriter, r *http.Request, fields url.Values) {
+	if !strings.Contains(r.Header.Get("Accept"), "application/json") {
+		w.Header().Set("Content-Type", "application/x-www-form-urlencoded")
+		w.Write([]byte(fields.Encode()))
+		return
+	}
+	body := make(map[string]any, len(fields))
+	for k := range fields {
+		body[k] = fields.Get(k)
+	}
+	writeJSON(w, body)
 }
 
 func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request, cfg Config) {

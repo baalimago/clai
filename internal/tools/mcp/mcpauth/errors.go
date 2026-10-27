@@ -38,6 +38,18 @@ func (e *MetadataMissingFieldError) Error() string {
 	return fmt.Sprintf("mcp server %q: authorization-server metadata is missing required field %q", e.ServerName, e.Field)
 }
 
+// NoClientError means the authorization server offers no dynamic client
+// registration and clai holds no pre-registered client for its issuer, so
+// there is no client to sign in as.
+type NoClientError struct {
+	ServerName string
+	Issuer     string
+}
+
+func (e *NoClientError) Error() string {
+	return fmt.Sprintf("mcp server %q: authorization server %q offers no dynamic client registration and clai has no registered client for it; give the server a token with auth.token_env instead", e.ServerName, e.Issuer)
+}
+
 // MetadataURLError means neither the RFC 8414 inserted well-known form nor
 // the OIDC-style appended form answered with a usable document.
 type MetadataURLError struct {

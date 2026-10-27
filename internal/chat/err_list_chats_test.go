@@ -47,7 +47,7 @@ func Test_findChatByID_ListFailureCarriesSentinel(t *testing.T) {
 	missingConvDir := filepath.Join(t.TempDir(), "missing-conversations")
 	cq := &ChatHandler{convDir: missingConvDir, out: io.Discard}
 
-	_, err := cq.findChatByID("1")
+	_, err := cq.findChatByID(context.Background(), "1", foreignClone)
 	if err == nil {
 		t.Fatal("expected an error, got nil")
 	}

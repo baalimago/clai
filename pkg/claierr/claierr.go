@@ -285,7 +285,13 @@ func NewMcpServerStartup(serverName, stage string, cause error) *McpServerStartu
 func (e *McpServerStartupError) Unwrap() []error { return []error{ErrMcpServerStartup, e.Cause} }
 
 func (e *McpServerStartupError) Error() string {
-	return fmt.Sprintf("mcp server '%v' failed to start at stage '%v': %v", e.ServerName, e.Stage, e.Cause)
+	cause := e.Cause.Error()
+	// A connection closed during startup means the process exited; its
+	// stderr tail, printed as the server's log, holds the reason.
+	if errors.Is(e.Cause, ErrMcpConnClosed) {
+		cause = "it exited before answering; its log above says why"
+	}
+	return fmt.Sprintf("mcp server '%v' failed to start at stage '%v': %v", e.ServerName, e.Stage, cause)
 }
 
 // McpConnClosedError means a call was attempted on an MCP connection that is

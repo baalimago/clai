@@ -13,6 +13,8 @@ There are two key concepts:
 
 If `NO_COLOR` is set to a truthy value, clai emits **no ANSI escape sequences**.
 
+`internal/look` is the shared `▸ subject · detail` look of `clai cloud` and the remote trust prompt: `Style.Head` paints the marker in `primary` and the details in `secondary`, `Grid` aligns rows under it, and `look.For(w)` turns colour on only when `w` is a terminal and `NO_COLOR` is not set.
+
 ## Theme file: `<clai-config-dir>/theme.json`
 
 On startup, clai ensures a theme file exists and loads it.

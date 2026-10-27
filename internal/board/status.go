@@ -14,12 +14,16 @@ import (
 // Start draws it on the cursor's row and animates it; Stop erases that row and
 // leaves the cursor at its start. A status that is not live writes nothing.
 type Status struct {
-	ctl     sync.Mutex // serializes Start and Stop
-	mu      sync.Mutex // guards drawing state
-	out     io.Writer
-	live    bool
-	width   int
+	ctl   sync.Mutex // serializes Start and Stop
+	mu    sync.Mutex // guards drawing state
+	out   io.Writer
+	live  bool
+	width int
+	// measure reads the terminal's width before each frame, so a narrowed
+	// terminal never wraps the row; nil keeps width.
+	measure func() int
 	title   string
+	detail  string
 	now     func() time.Time
 	started time.Time
 	frame   int
@@ -35,9 +39,20 @@ func NewStatus(out io.Writer, live bool, title string) *Status {
 	}
 	s := &Status{out: out, live: live, title: title, now: time.Now}
 	if live {
-		s.width = utils.SessionDimensions(out).Width
+		s.measure = func() int { return utils.SessionDimensions(out).Width }
 	}
 	return s
+}
+
+// SetDetail changes the text drawn after the elapsed time, such as a
+// count of files; it shows from the next frame.
+func (s *Status) SetDetail(detail string) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.detail = detail
 }
 
 // SetClock replaces the clock (tests).
@@ -52,6 +67,7 @@ func (s *Status) SetWidth(width int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.width = width
+	s.measure = nil
 }
 
 // Start shows the status and counts elapsed time from now. Starting a running
@@ -129,7 +145,13 @@ func (s *Status) tick() {
 
 // draw writes the current frame over the cursor's row (caller holds mu).
 func (s *Status) draw() {
+	if s.measure != nil {
+		s.width = s.measure()
+	}
 	spinner := string(spinnerFrames[s.frame%len(spinnerFrames)])
 	line := colorize(utils.TableTheme().Primary, "▸ "+s.title) + "  " + spinner + " " + ElapsedText(s.now().Sub(s.started))
+	if s.detail != "" {
+		line += " · " + s.detail
+	}
 	fmt.Fprint(s.out, "\r\x1b[2K"+Truncate(line, s.width))
 }

@@ -1597,3 +1597,49 @@ func TestChatHandler_persistForeignCacheRacesResolution(t *testing.T) {
 		t.Fatalf("the cache was persisted %d times, want at most 1", counting.persists)
 	}
 }
+
+// A remote profile's target is longer than a local profile's name; the
+// wide list widens its Profile column so every row stays aligned under the
+// header.
+func TestListChats_wideProfileColumnFitsARemoteTarget(t *testing.T) {
+	cq, confDir := newTestHandler(t)
+	convDir := conversationsDir(confDir)
+	cq.dims = dimensions.Dimensions{Width: 200}
+	saveAll(t, convDir,
+		pub_models.Chat{ID: "remote", Profile: "cchub:clai/reviewer@5", Created: time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC), Messages: []pub_models.Message{{Role: "user", Content: "review it"}}},
+		pub_models.Chat{ID: "local", Profile: "bot", Created: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Messages: []pub_models.Message{{Role: "user", Content: "hi bot"}}},
+	)
+	got := listOutput(t, cq, "")
+	var header, remote, local string
+	for line := range strings.SplitSeq(got, "\n") {
+		switch {
+		case strings.Contains(line, "Profile"):
+			header = line
+		case strings.Contains(line, "cchub:clai/reviewer@5"):
+			remote = line
+		case strings.Contains(line, "| bot "):
+			local = line
+		}
+	}
+	if header == "" || remote == "" || local == "" {
+		t.Fatalf("missing header or rows:\n%s", got)
+	}
+	// The fifth separator closes the Profile column.
+	for _, row := range []string{remote, local} {
+		if nthIndex(row, "|", 5) != nthIndex(header, "|", 5) {
+			t.Fatalf("columns after Profile misaligned:\n%s\n%s", header, row)
+		}
+	}
+}
+
+func nthIndex(s, sep string, n int) int {
+	at := -1
+	for range n {
+		i := strings.Index(s[at+1:], sep)
+		if i < 0 {
+			return -1
+		}
+		at += i + 1
+	}
+	return at
+}

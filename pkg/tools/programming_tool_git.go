@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os/exec"
 	"strconv"
+	"strings"
+	"unicode"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
@@ -31,7 +33,7 @@ var Git = GitTool{
 			},
 			"range": {
 				Type:        "string",
-				Description: "Optional revision range for log or diff.",
+				Description: "Optional revision range for log or diff. Holds one or more space-separated arguments, such as '--stat main...HEAD' or '--format=%D'; quote an argument that contains spaces.",
 			},
 			"n": {
 				Type:        "integer",
@@ -72,13 +74,17 @@ func (g GitTool) Call(input pub_models.Input) (string, error) {
 				args = append(args, "-n", fmt.Sprintf("%d", num))
 			}
 		}
-		if r, ok := input["range"].(string); ok && r != "" {
-			args = append(args, r)
+		rangeArgs, err := gitRangeArgs(input)
+		if err != nil {
+			return "", err
 		}
+		args = append(args, rangeArgs...)
 	case "diff":
-		if r, ok := input["range"].(string); ok && r != "" {
-			args = append(args, r)
+		rangeArgs, err := gitRangeArgs(input)
+		if err != nil {
+			return "", err
 		}
+		args = append(args, rangeArgs...)
 		if f, ok := input["file"].(string); ok && f != "" {
 			args = append(args, "--", f)
 		}
@@ -110,6 +116,56 @@ func (g GitTool) Call(input pub_models.Input) (string, error) {
 		return "", fmt.Errorf("failed to run git %s: %w, output: %s", op, err, string(output))
 	}
 	return string(output), nil
+}
+
+func gitRangeArgs(input pub_models.Input) ([]string, error) {
+	r, ok := input["range"].(string)
+	if !ok || strings.TrimSpace(r) == "" {
+		return nil, nil
+	}
+	args, err := splitQuotedArgs(r)
+	if err != nil {
+		return nil, fmt.Errorf("range %q: %w", r, err)
+	}
+	for _, a := range args {
+		if a == "--output" || strings.HasPrefix(a, "--output=") {
+			return nil, fmt.Errorf("range %q: --output writes a file, and the git tool is read-only", r)
+		}
+	}
+	return args, nil
+}
+
+func splitQuotedArgs(raw string) ([]string, error) {
+	var args []string
+	var cur strings.Builder
+	var quote rune
+	inArg := false
+	for _, c := range raw {
+		switch {
+		case quote != 0 && c == quote:
+			quote = 0
+		case quote != 0:
+			cur.WriteRune(c)
+		case c == '"' || c == '\'':
+			quote, inArg = c, true
+		case unicode.IsSpace(c):
+			if inArg {
+				args = append(args, cur.String())
+				cur.Reset()
+				inArg = false
+			}
+		default:
+			cur.WriteRune(c)
+			inArg = true
+		}
+	}
+	if quote != 0 {
+		return nil, fmt.Errorf("unterminated %c quote", quote)
+	}
+	if inArg {
+		args = append(args, cur.String())
+	}
+	return args, nil
 }
 
 func (g GitTool) Specification() pub_models.Specification {

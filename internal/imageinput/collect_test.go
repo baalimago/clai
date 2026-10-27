@@ -265,7 +265,7 @@ func TestCollect_PromptParity(t *testing.T) {
 		{"utils: stdin appended", []string{"cmd", "prefix", "suffix"}, "", in("input from stdin"), "prefix suffix input from stdin"},
 		{"utils: file redirect", []string{"cmd", "prefix"}, "", in("file content here"), "prefix file content here"},
 		{"e2e: stdin_only_becomes_prompt", []string{"q"}, "", in("from-stdin"), "from-stdin"},
-		{"e2e: stdin_replaces_default_token", []string{"q", "hello", "{}", "world"}, "", in("X"), "hello X world X"},
+		{"e2e: stdin_replaces_default_token", []string{"q", "hello", "{}", "world"}, "", in("X"), "hello X world"},
 		{"e2e: stdin_replaces_custom_token", []string{"q", "hello", "__", "world"}, "", in("Y"), "hello __ world Y"},
 		{"-I token", []string{"q", "hello", "__", "world"}, "__", in("Y"), "hello Y world"},
 		{"empty stdin", []string{"q", "hi"}, "", in(""), "hi "},

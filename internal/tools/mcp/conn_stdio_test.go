@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -717,5 +719,30 @@ func TestStdioConnectReclassifiesAuthPromptAsChallenge(t *testing.T) {
 			t.Fatal("the auth-pending wait never resolved after the process was reaped")
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+type brokenPipeWriter struct{}
+
+func (brokenPipeWriter) Write([]byte) (int, error) {
+	return 0, &os.PathError{Op: "write", Path: "|1", Err: syscall.EPIPE}
+}
+
+func (brokenPipeWriter) Close() error { return nil }
+
+// TestConnCallOnABrokenPipeIsConnClosed pins that a write failing because
+// the server's end of stdin is gone reports the typed closed error, as a
+// waiter would: the server exited, and the write can lose the race with
+// the reader seeing EOF.
+func TestConnCallOnABrokenPipeIsConnClosed(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	respR, respW := io.Pipe()
+	t.Cleanup(func() { respW.Close() })
+	c := newStdioConn(ctx, "gone", stdioTransport{stdin: brokenPipeWriter{}, stdout: respR, stderr: strings.NewReader(""), wait: func() {}}, nil)
+
+	_, err := c.Call(ctx, "initialize", nil)
+	if !errors.Is(err, claierr.ErrMcpConnClosed) {
+		t.Fatalf("err = %v, want ErrMcpConnClosed", err)
 	}
 }

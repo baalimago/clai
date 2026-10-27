@@ -51,6 +51,12 @@ func TestMcpAuthErrorMessages(t *testing.T) {
 			wantCause: cause,
 		},
 		{
+			name:      "missing env",
+			err:       &McpAuthMissingEnvError{Name: "linear", Missing: []string{"A_KEY", "B_KEY"}, Cause: cause},
+			wantError: `mcp auth: server "linear" needs A_KEY, B_KEY set in the environment or its envfile first (auth.required_env); nothing was sent`,
+			wantCause: cause,
+		},
+		{
 			name:      "flow",
 			err:       &McpAuthFlowError{Name: "linear", Cause: cause},
 			wantError: `mcp auth: authorize "linear": boom`,

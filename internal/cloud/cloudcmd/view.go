@@ -1,0 +1,452 @@
+package cloudcmd
+
+import (
+	"cmp"
+	"fmt"
+	"slices"
+	"strings"
+	"unicode/utf8"
+
+	"github.com/baalimago/clai/internal/look"
+
+	"github.com/baalimago/clai/internal/cloud/sync"
+)
+
+const (
+	// listLimit is the most changes status lists one by one; more are grouped.
+	listLimit = 10
+	// maxGroups is the most group rows, the folded row included.
+	maxGroups = 6
+	peekItems = 3
+	peekName  = 16
+	lineWidth = 100
+)
+
+// style is clai's shared look.
+type style = look.Style
+
+func statusLines(st sync.Status, s style) []string {
+	lines := []string{s.Head(string(st.Store), statusDetails(st)...)}
+	if st.RemoteError != nil {
+		lines = append(lines, look.Grid("  ", [][]string{{"! " + remoteProblem(st.RemoteError), "only this machine's side is shown"}}, s)...)
+	}
+	rows := conflictRows(st.Conflicts)
+	if len(st.Changes) <= listLimit {
+		rows = append(append(rows, changeRows(st)...), excludedRows(st.Excluded)...)
+		lines = append(lines, look.Grid("  ", rows, s)...)
+	} else {
+		lines = append(lines, look.Grid("  ", rows, s)...)
+		lines = append(lines, changeGroups(st, s)...)
+		lines = append(lines, look.Grid("  ", excludedRows(st.Excluded), s)...)
+	}
+	lines = append(lines, excludedNotes(st.Excluded, s)...)
+	lines = append(lines, look.Grid("  ", append(conflictNext(st.Conflicts), pullNext(st)...), s)...)
+	if st.Imports != nil {
+		lines = append(lines, importLines(st.Imports.Conversations, s)...)
+	}
+	return lines
+}
+
+// pullNext suggests a pull when the server is ahead or this machine never
+// pulled the store.
+func pullNext(st sync.Status) [][]string {
+	command := "clai cloud pull " + string(st.Store)
+	switch {
+	case st.Remote != nil && st.Remote.Ahead > 0:
+		n := int(st.Remote.Ahead)
+		return [][]string{next(command, "bring down "+count(n)+" "+plural(n, "commit", "commits"))}
+	case !st.Pulled:
+		return [][]string{next(command, "first pull on this machine")}
+	}
+	return nil
+}
+
+type toolGroup struct {
+	name                 string
+	conversations, grown int
+	messages             int
+	bytes                int64
+}
+
+// importLines is what commit -imports would add, one row per tool.
+func importLines(pending []sync.PendingImport, s style) []string {
+	if len(pending) == 0 {
+		return []string{s.Head("from other tools", "nothing new to export")}
+	}
+	var tools []toolGroup
+	index := map[string]int{}
+	var total toolGroup
+	for _, p := range pending {
+		i, ok := index[p.Source]
+		if !ok {
+			i = len(tools)
+			index[p.Source] = i
+			tools = append(tools, toolGroup{name: p.Source})
+		}
+		for _, g := range []*toolGroup{&tools[i], &total} {
+			g.conversations++
+			g.messages += p.Messages
+			g.bytes += p.RawBytes
+			if p.Change == sync.ImportGrown {
+				g.grown++
+			}
+		}
+	}
+	slices.SortFunc(tools, func(a, b toolGroup) int {
+		return cmp.Or(cmp.Compare(b.conversations, a.conversations), cmp.Compare(a.name, b.name))
+	})
+	header := []string{"tool", "conversations", "new", "grown", "messages", "size", ""}
+	rows := make([][]string, 0, len(tools))
+	for _, g := range tools {
+		rows = append(rows, []string{g.name, count(g.conversations), count(g.conversations - g.grown), count(g.grown), count(g.messages), human(g.bytes), ""})
+	}
+	widths := columnWidths(header, rows)
+	lines := []string{
+		s.Head("from other tools", count(total.conversations)+" "+plural(total.conversations, "conversation", "conversations")+" to export", count(total.messages)+" messages", human(total.bytes)+" in their own files"),
+		"    " + s.Secondary(columns(header, widths, 0)),
+	}
+	for _, r := range rows {
+		lines = append(lines, "  "+s.Primary("■")+" "+columns(r, widths, 0))
+	}
+	return append(lines, s.Link("  ", "clai cloud commit -imports"))
+}
+
+// columnWidths is the widest cell of every column but the last.
+func columnWidths(header []string, rows [][]string) []int {
+	widths := make([]int, len(header)-1)
+	for _, r := range append([][]string{header}, rows...) {
+		for i := range widths {
+			widths[i] = max(widths[i], utf8.RuneCountInString(r[i]))
+		}
+	}
+	return widths
+}
+
+func statusDetails(st sync.Status) []string {
+	var parts []string
+	var size int64
+	for _, c := range st.Changes {
+		size += c.Size
+	}
+	switch {
+	case len(st.Changes) > 0:
+		parts = append(parts, count(len(st.Changes))+" to commit", human(size))
+	case len(st.Conflicts) == 0 && st.Remote != nil && st.Remote.Ahead == 0:
+		parts = append(parts, "up to date")
+	case len(st.Conflicts) == 0:
+		parts = append(parts, "nothing to commit")
+	}
+	if n := len(st.Conflicts); n > 0 {
+		parts = append(parts, fmt.Sprintf("%d %s", n, plural(n, "conflict", "conflicts")))
+	}
+	switch {
+	case st.RemoteError != nil:
+	case st.Remote != nil && st.Remote.Ahead > 0:
+		parts = append(parts, fmt.Sprintf("server %d %s ahead", st.Remote.Ahead, plural(int(st.Remote.Ahead), "commit", "commits")))
+	}
+	if st.Remote != nil && len(st.Remote.Uploaded) > 0 {
+		parts = append(parts, count(len(st.Remote.Uploaded))+" already uploaded")
+	}
+	if st.Remote != nil && len(st.Changes) > listLimit && len(st.Remote.Both) > 0 {
+		parts = append(parts, count(len(st.Remote.Both))+" changed on both sides")
+	}
+	if !st.Pulled {
+		parts = append(parts, "never pulled here")
+	}
+	if st.Synced > 0 {
+		parts = append(parts, count(st.Synced)+" synced")
+	}
+	return parts
+}
+
+var changeMarks = map[sync.ChangeKind]string{sync.Added: "+", sync.Modified: "~", sync.Deleted: "-"}
+
+func changeRows(st sync.Status) [][]string {
+	both, uploaded := remoteSets(st)
+	rows := make([][]string, 0, len(st.Changes))
+	for _, c := range st.Changes {
+		var details []string
+		if c.Kind != sync.Deleted {
+			details = append(details, human(c.Size))
+		}
+		if uploaded[c.Path] {
+			details = append(details, "uploaded, not committed")
+		}
+		if both[c.Path] {
+			details = append(details, "also changed on the server")
+		}
+		row := []string{changeMarks[c.Kind] + " " + c.Path}
+		if len(details) > 0 {
+			row = append(row, strings.Join(details, " · "))
+		}
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+// remoteSets: the changes also made on the server, and the ones whose
+// bytes it already holds.
+func remoteSets(st sync.Status) (both, uploaded map[string]bool) {
+	both, uploaded = map[string]bool{}, map[string]bool{}
+	if st.Remote == nil {
+		return both, uploaded
+	}
+	for _, p := range st.Remote.Both {
+		both[p] = true
+	}
+	for _, p := range st.Remote.Uploaded {
+		uploaded[p] = true
+	}
+	return both, uploaded
+}
+
+type group struct {
+	name     string
+	files    int
+	uploaded int
+	bytes    int64
+	items    []sync.LocalChange
+}
+
+// groupOf names the part of the store a path belongs to, in the words the
+// user knows: chats, images and reasoning rather than directory names.
+func groupOf(p string) (name, prefix string) {
+	const conv = "conversations/"
+	switch {
+	case strings.HasPrefix(p, conv+"assets/"):
+		return "images", conv + "assets/"
+	case strings.HasPrefix(p, conv+"reasoning/"):
+		return "reasoning", conv + "reasoning/"
+	case strings.HasPrefix(p, conv+"imported/"):
+		tool, _, _ := strings.Cut(strings.TrimPrefix(p, conv+"imported/"), "/")
+		return "imported " + tool, conv + "imported/" + tool + "/"
+	case strings.HasPrefix(p, conv):
+		return "chats", conv
+	}
+	if dir, _, ok := strings.Cut(p, "/"); ok {
+		return dir, dir + "/"
+	}
+	return "settings", ""
+}
+
+func groupChanges(changes []sync.LocalChange, uploaded map[string]bool) []group {
+	byName := map[string]*group{}
+	var groups []*group
+	for _, c := range changes {
+		name, _ := groupOf(c.Path)
+		g, ok := byName[name]
+		if !ok {
+			g = &group{name: name}
+			byName[name] = g
+			groups = append(groups, g)
+		}
+		g.files++
+		g.bytes += c.Size
+		if uploaded[c.Path] {
+			g.uploaded++
+		}
+		g.items = append(g.items, c)
+	}
+	out := make([]group, 0, len(groups))
+	for _, g := range groups {
+		out = append(out, *g)
+	}
+	slices.SortFunc(out, func(a, b group) int {
+		return cmp.Or(cmp.Compare(b.bytes, a.bytes), cmp.Compare(a.name, b.name))
+	})
+	if len(out) <= maxGroups {
+		return out
+	}
+	rest := group{name: fmt.Sprintf("+%d smaller", len(out)-maxGroups+1)}
+	for _, g := range out[maxGroups-1:] {
+		rest.files += g.files
+		rest.uploaded += g.uploaded
+		rest.bytes += g.bytes
+	}
+	return append(out[:maxGroups-1], rest)
+}
+
+func changeGroups(st sync.Status, s style) []string {
+	var total int64
+	kinds := map[sync.ChangeKind]int{}
+	for _, c := range st.Changes {
+		total += c.Size
+		kinds[c.Kind]++
+	}
+	var mix []string
+	for _, k := range []struct {
+		kind sync.ChangeKind
+		word string
+	}{{sync.Added, "new"}, {sync.Modified, "edited"}, {sync.Deleted, "deleted"}} {
+		if kinds[k.kind] > 0 {
+			mix = append(mix, count(kinds[k.kind])+" "+k.word)
+		}
+	}
+	_, uploaded := remoteSets(st)
+	groups := groupChanges(st.Changes, uploaded)
+	header := []string{"group", "files", "uploaded", "size", "share", "largest"}
+	rows := make([][]string, 0, len(groups))
+	for _, g := range groups {
+		rows = append(rows, []string{g.name, count(g.files), count(g.uploaded), human(g.bytes), share(g.bytes, total), ""})
+	}
+	widths := columnWidths(header, rows)
+	// Two spaces and the box are the row's margin, and a space follows
+	// every column.
+	peekRoom := lineWidth - 4
+	for _, w := range widths {
+		peekRoom -= w + 1
+	}
+	lines := []string{
+		"  " + s.Secondary(strings.Join(mix, " · ")),
+		"    " + s.Secondary(columns(header, widths, peekRoom)),
+	}
+	for i, r := range rows {
+		r[len(r)-1] = peek(groups[i], peekRoom)
+		lines = append(lines, "  "+s.Primary("■")+" "+columns(r, widths, peekRoom))
+	}
+	return lines
+}
+
+// columns lays out a row: the name padded, the counts right-aligned and
+// the last cell, the peek, cut to what is left of the line.
+func columns(cells []string, widths []int, peekRoom int) string {
+	var line strings.Builder
+	line.WriteString(look.Pad(cells[0], widths[0]))
+	for i := 1; i < len(widths); i++ {
+		line.WriteString(" " + right(cells[i], widths[i]))
+	}
+	line.WriteString(" " + cut(cells[len(cells)-1], peekRoom))
+	return strings.TrimRight(line.String(), " ")
+}
+
+// peek names the largest files of a group, as many as fit in room, and
+// counts the rest.
+func peek(g group, room int) string {
+	if len(g.items) == 0 {
+		return ""
+	}
+	items := slices.Clone(g.items)
+	slices.SortFunc(items, func(a, b sync.LocalChange) int {
+		return cmp.Or(cmp.Compare(b.Size, a.Size), cmp.Compare(a.Path, b.Path))
+	})
+	_, prefix := groupOf(items[0].Path)
+	var parts []string
+	for _, c := range items[:min(peekItems, len(items))] {
+		parts = append(parts, cut(strings.TrimSuffix(strings.TrimPrefix(c.Path, prefix), ".json"), peekName)+" "+human(c.Size))
+	}
+	for {
+		text := strings.Join(parts, " · ")
+		if more := len(items) - len(parts); more > 0 {
+			text = strings.TrimPrefix(text+" · +"+count(more)+" more", " · ")
+		}
+		if len(parts) <= 1 || utf8.RuneCountInString(text) <= room {
+			return text
+		}
+		parts = parts[:len(parts)-1]
+	}
+}
+
+// excludedRows are the files left out for holding a secret, one row each.
+func excludedRows(excluded []sync.Excluded) [][]string {
+	var rows [][]string
+	for _, x := range excluded {
+		if x.Kind == sync.ExcludedSecret {
+			rows = append(rows, []string{"✕ " + x.Path, "not synced: holds a secret (" + x.Detail + ")"})
+		}
+	}
+	return rows
+}
+
+// excludedNotes say what to do about a secret, and count the files left
+// out for size or for being imported.
+func excludedNotes(excluded []sync.Excluded, s style) []string {
+	var lines []string
+	secrets, imports := 0, 0
+	var large []string
+	for _, x := range excluded {
+		switch x.Kind {
+		case sync.ExcludedSecret:
+			secrets++
+		case sync.ExcludedTooLarge:
+			large = append(large, x.Path+" (over "+x.Detail+")")
+		case sync.ExcludedImport:
+			imports++
+		}
+	}
+	if secrets > 0 {
+		lines = append(lines, "  "+s.Secondary("move the value to an env var or envfile, then commit"))
+	}
+	if len(large) > 0 {
+		shown := large[:min(peekItems, len(large))]
+		text := strings.Join(shown, " · ")
+		if more := len(large) - len(shown); more > 0 {
+			text += " · +" + count(more) + " more"
+		}
+		lines = append(lines, "  not synced, too large: "+s.Secondary(text))
+	}
+	if imports > 0 {
+		lines = append(lines, fmt.Sprintf("  %s imported %s from other tools left out; add them with commit -imports", count(imports), plural(imports, "file", "files")))
+	}
+	return lines
+}
+
+func blockedLines(store sync.Store, b *sync.BillingBlockedError, s style) []string {
+	reason := "needs a card on file, $1 per started GB a month"
+	switch b.Reason {
+	case sync.PaymentOverdue:
+		reason = "a payment is 7 days overdue"
+	case sync.BillingNotOpen:
+		return []string{s.Head(string(store), "not committed", "conversation sync is not open yet; config sync works now")}
+	}
+	lines := []string{s.Head(string(store), "not committed", reason)}
+	if b.URL != "" {
+		lines = append(lines, s.Link("  ", b.URL))
+	}
+	return lines
+}
+
+// count prints a count below 1000 exactly and above it with one decimal
+// and an SI prefix.
+func count(n int) string {
+	switch {
+	case n >= 999_500:
+		return fmt.Sprintf("%.1fM", float64(n)/1e6)
+	case n >= 1000:
+		return fmt.Sprintf("%.1fk", float64(n)/1e3)
+	}
+	return fmt.Sprint(n)
+}
+
+func share(part, total int64) string {
+	if total <= 0 {
+		return "0%"
+	}
+	pct := (part*100 + total/2) / total
+	if pct == 0 && part > 0 {
+		return "<1%"
+	}
+	return fmt.Sprintf("%d%%", pct)
+}
+
+func right(t string, width int) string {
+	return strings.Repeat(" ", max(0, width-utf8.RuneCountInString(t))) + t
+}
+
+func cut(t string, width int) string {
+	if width < 1 {
+		return ""
+	}
+	runes := []rune(t)
+	if len(runes) <= width {
+		return t
+	}
+	return string(runes[:width-1]) + "…"
+}
+
+// remoteProblem is why status could not ask the server, in a few words.
+func remoteProblem(err error) string {
+	if u, ok := unreachable(err); ok {
+		return u.Error()
+	}
+	return "the server's side is unknown: " + err.Error()
+}

@@ -1,5 +1,6 @@
 // Package serverconfig parses and validates MCP server config files into
-// pub_models.McpServer values. It is a leaf package deliberately kept out
+// pub_models.McpServer values, and checks a server's auth.required_env
+// against the environment it will run with. It is a leaf package deliberately kept out
 // of internal/tools/mcp itself: that package's own tests import
 // internal/tools, and internal/tools (the tools listing, phase 7) must call
 // this same parsing primitive setup already uses, which would be an import
@@ -44,7 +45,7 @@ func FindConfiguredServers(filePaths []string) ([]pub_models.McpServer, error) {
 			errs = append(errs, fmt.Errorf("failed to unmarshal: '%s', error: %w", file, unmarshalErr))
 			continue
 		}
-		if validateErr := validateTransport(file, mcpServer); validateErr != nil {
+		if validateErr := Validate(file, mcpServer); validateErr != nil {
 			errs = append(errs, validateErr)
 			continue
 		}
@@ -66,14 +67,17 @@ func FindConfiguredServers(filePaths []string) ([]pub_models.McpServer, error) {
 	return ret, errors.Join(errs...)
 }
 
-// ValidateTransport is validateTransport exported for a server that never
-// came from a config file: one passed through agent.WithMcpServers (D43,
-// R2-07). Without it, a struct with both command and url set silently
-// preferred url, and one with neither set reached exec.CommandContext(ctx,
-// ""). identifier names the server in the resulting error; a config-file
-// caller keeps using validateTransport, which passes the file path.
-func ValidateTransport(identifier string, server pub_models.McpServer) error {
-	return validateTransport(identifier, server)
+// Validate checks what a config file and a server that never came from one
+// (passed through agent.WithMcpServers, D43, R2-07) must both satisfy: the
+// transport XOR, and valid auth.required_env names. Without it, a struct
+// with both command and url set silently preferred url, and one with
+// neither set reached exec.CommandContext(ctx, ""). identifier names the
+// server in the resulting error: the file path for a config file.
+func Validate(identifier string, server pub_models.McpServer) error {
+	if err := validateTransport(identifier, server); err != nil {
+		return err
+	}
+	return ValidateRequiredEnv(identifier, server)
 }
 
 // validateTransport enforces the config's own XOR: exactly one of command

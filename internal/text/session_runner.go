@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"time"
 
 	"github.com/baalimago/clai/internal/models"
@@ -113,6 +112,9 @@ func (r *sessionRunner[C]) Run(ctx context.Context, session *QuerySession) (runE
 			stepResult.ToolCalls = nil
 			stepResult.EndedNormally = true
 		}
+		if err := r.querier.releaseStepText(stepResult.AssistantText, len(stepResult.ToolCalls) > 0); err != nil {
+			return fmt.Errorf("run step %d: %w", stepIndex, err)
+		}
 
 		completedCall := CompletedModelCall{
 			StepIndex:      stepIndex,
@@ -137,6 +139,7 @@ func (r *sessionRunner[C]) Run(ctx context.Context, session *QuerySession) (runE
 		}
 
 		if len(stepResult.ToolCalls) > 0 {
+			r.querier.launchDeferredSummary(ctx)
 			if err := r.toolExecutor.ExecuteBatch(ctx, session, stepResult.ToolCalls); err != nil {
 				if errors.Is(err, io.EOF) {
 					return nil
@@ -280,10 +283,7 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 					if q.usesActivityViewport() {
 						q.ensureActivityViewport()
 					} else if !q.debug && !q.structuredOutput {
-						w := q.out
-						if w == nil {
-							w = os.Stdout
-						}
+						w := q.transcriptOut()
 						if q.rawDisplay() {
 							fmt.Fprint(w, "[thinking]")
 						} else {
@@ -298,10 +298,7 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 						return ModelStepResult{}, fmt.Errorf("render activity viewport: %w", err)
 					}
 				} else if !q.debug && !q.structuredOutput {
-					w := q.out
-					if w == nil {
-						w = os.Stdout
-					}
+					w := q.transcriptOut()
 					if q.rawDisplay() {
 						fmt.Fprint(w, cast.Content)
 					} else {

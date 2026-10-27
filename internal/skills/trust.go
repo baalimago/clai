@@ -10,6 +10,9 @@ import (
 )
 
 func (m *Manager) ensureTrusted(ctx context.Context, skill Skill) error {
+	if skill.SourceClass == SourceProfile {
+		return nil
+	}
 	cachePath := filepath.Join(m.cacheDir, trustFileName)
 	cache, err := loadTrustCache(cachePath)
 	if err != nil {

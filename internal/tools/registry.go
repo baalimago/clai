@@ -27,7 +27,10 @@ type registry struct {
 	// listing can group aliases under their canonical entry instead of
 	// repeating the description.
 	aliases map[string]string
-	debug   bool
+	// hidden names tools that resolve only by their exact name: wildcard
+	// selection, the listing and completion leave them out.
+	hidden map[string]struct{}
+	debug  bool
 }
 
 // NewRegistry returns an empty tools registry.
@@ -35,6 +38,7 @@ func NewRegistry() *registry {
 	return &registry{
 		tools:   make(map[string]models.LLMTool),
 		aliases: make(map[string]string),
+		hidden:  make(map[string]struct{}),
 		debug:   misc.Truthy(os.Getenv("DEBUG")),
 	}
 }
@@ -54,6 +58,9 @@ func (r *registry) WildcardGet(pattern string) []models.LLMTool {
 
 	var matches []models.LLMTool
 	for name, tool := range r.tools {
+		if _, isHidden := r.hidden[name]; isHidden && pattern != name {
+			continue
+		}
 		if WildcardMatch(pattern, name) {
 			matches = append(matches, tool)
 		}
@@ -111,6 +118,37 @@ func (r *registry) SetAlias(alias, canonical string, t models.LLMTool) {
 	r.mu.Unlock()
 }
 
+// SetHidden registers t under name as a hidden tool: Get and an exact
+// selection resolve it, so profiles naming it keep working, but wildcard
+// selection, Visible, Names and the clai tools listing leave it out.
+func (r *registry) SetHidden(name string, t models.LLMTool) {
+	r.Set(name, t)
+	r.mu.Lock()
+	r.hidden[name] = struct{}{}
+	r.mu.Unlock()
+}
+
+// IsHidden reports whether name was registered with SetHidden.
+func (r *registry) IsHidden(name string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	_, ok := r.hidden[name]
+	return ok
+}
+
+// Visible returns a copy of the registered tools that are not hidden.
+func (r *registry) Visible() map[string]models.LLMTool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	cp := make(map[string]models.LLMTool, len(r.tools))
+	for name, t := range r.tools {
+		if _, isHidden := r.hidden[name]; !isHidden {
+			cp[name] = t
+		}
+	}
+	return cp
+}
+
 // Aliases returns a copy of the alias → canonical name map.
 func (r *registry) Aliases() map[string]string {
 	r.mu.RLock()
@@ -127,12 +165,12 @@ func (r *registry) All() map[string]models.LLMTool {
 	return cp
 }
 
-// Names returns every registered tool name, aliases included, sorted. It
+// Names returns every visible tool name, aliases included, sorted. It
 // initializes the registry first, so completion hooks and setup tables get
 // the same list from one place.
 func Names() []string {
 	Init()
-	all := Registry.All()
+	all := Registry.Visible()
 	names := make([]string, 0, len(all))
 	for name := range all {
 		names = append(names, name)
@@ -146,5 +184,6 @@ func (r *registry) Reset() {
 	r.mu.Lock()
 	r.tools = make(map[string]models.LLMTool)
 	r.aliases = make(map[string]string)
+	r.hidden = make(map[string]struct{})
 	r.mu.Unlock()
 }

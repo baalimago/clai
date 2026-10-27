@@ -146,6 +146,10 @@ var errToggleDirFilter = errors.New("toggle dir filter")
 // view with external conversations hidden or shown.
 var errToggleForeign = errors.New("toggle foreign conversations")
 
+// errContinueNewest is the group view's [c] action: continue the group's
+// newest conversation.
+var errContinueNewest = errors.New("continue newest group member")
+
 // toggleLabel renders a table toggle with its state in words, and bold plus
 // underline while it sits in the non-default position. The table colours
 // the whole prompt line, so the emphasis is switched off with the
@@ -256,6 +260,9 @@ type chatListRow struct {
 	// Foreign
 	Source   string
 	SourceID string
+	// Reader names the reader that found a foreign row when it is not
+	// Source: the imported reader lists rows under their original tool.
+	Reader string
 	// OriginDir is the directory the conversation was started from,
 	// best-effort (empty when neither clai nor the source recorded one).
 	OriginDir string
@@ -381,7 +388,12 @@ func (cq *ChatHandler) foreignChatRows(ctx context.Context, readers []vendors.So
 				continue
 			}
 			shown[k] = struct{}{}
+			reader := ""
+			if r.Source() != fr.Source {
+				reader = r.Source()
+			}
 			rows = append(rows, chatListRow{
+				Reader:           reader,
 				Kind:             chatRowForeign,
 				Created:          fr.Created,
 				Source:           fr.Source,
@@ -398,7 +410,8 @@ func (cq *ChatHandler) foreignChatRows(ctx context.Context, readers []vendors.So
 }
 
 func (cq *ChatHandler) buildChatListRows(ctx context.Context, paginator *ChatIndexPaginator) ([]chatListRow, map[string]vendors.SourceReader, error) {
-	readers := allSourceReaders()
+	// The imported reader goes last, so a tool's own reader wins the dedup.
+	readers := append(allSourceReaders(), importedReader{convDir: cq.convDir})
 	byName, err := sourceReaderByName(readers)
 	if err != nil {
 		return nil, nil, err
@@ -474,23 +487,61 @@ func (cq *ChatHandler) actOnChat(chat pub_models.Chat, groupKey string) error {
 		return SaveAsPreviousQuery(cq.confDir, chat)
 	case "Q", "q":
 		return table.ErrUserInitiatedExit
-	case "":
-		if chat.Profile != "" {
-			cq.profile = chat.Profile
-		} else if cq.profile != "" {
-			chat.Profile = cq.profile
+	case "C", "c", "":
+		if err := cq.continueNative(chat); err != nil {
+			return err
 		}
-		if err := cq.printChat(chat); err != nil {
-			return fmt.Errorf("failed to print chat: %w", err)
-		}
-		if err := cq.UpdateDirScopeFromCWD(chat.ID); err != nil {
-			return fmt.Errorf("failed to update directory-scoped binding: %w", err)
-		}
-		ancli.Noticef("chat %s is now replyable with flag \"clai -dre query <prompt>\"\n", chat.ID)
 		return errExitList
 	default:
 		return fmt.Errorf("unknown choice: %q", choice)
 	}
+}
+
+func (cq *ChatHandler) continueNative(chat pub_models.Chat) error {
+	if chat.Profile != "" {
+		cq.profile = chat.Profile
+	} else if cq.profile != "" {
+		chat.Profile = cq.profile
+	}
+	if err := cq.printChat(chat); err != nil {
+		return fmt.Errorf("failed to print chat: %w", err)
+	}
+	if err := cq.UpdateDirScopeFromCWD(chat.ID); err != nil {
+		return fmt.Errorf("failed to update directory-scoped binding: %w", err)
+	}
+	ancli.Noticef("chat %s is now replyable with flag \"clai -dre query <prompt>\"\n", chat.ID)
+	return nil
+}
+
+// continueRow continues a listed member row without its info view: a
+// native chat binds as is, a foreign one is cloned first.
+func (cq *ChatHandler) continueRow(ctx context.Context, pr preparedRows, row chatListRow) error {
+	if row.Kind == chatRowNative {
+		chat, err := cq.getByID(row.ChatID)
+		if err != nil {
+			return fmt.Errorf("failed to load chat %q: %w", row.ChatID, err)
+		}
+		return cq.continueNative(chat)
+	}
+	reader, err := pr.readerFor(row)
+	if err != nil {
+		return err
+	}
+	foreign, err := cq.readForeignChat(ctx, reader, row.SourceID)
+	if err != nil {
+		return fmt.Errorf("failed to read %s session %q: %w", row.Source, row.SourceID, err)
+	}
+	return cq.continueForeign(foreign, reader)
+}
+
+func (cq *ChatHandler) continueForeign(foreign pub_models.Chat, reader vendors.SourceReader) error {
+	cloned, err := cq.cloneForeignChat(foreign)
+	if err != nil {
+		return err
+	}
+	ancli.Noticef("cloned %s session %s → chat %s\n", reader.Source(), foreign.SourceID, cloned.ID)
+	ancli.Noticef("chat %s is now replyable with flag \"clai -dre query <prompt>\"\n", cloned.ID)
+	return nil
 }
 
 // handleEditMessages is a peek + edit: the message picker stays open across
@@ -553,6 +604,17 @@ func (cq *ChatHandler) handleListCmd(ctx context.Context) error {
 		return fmt.Errorf("failed to create chat index paginator: %w", err)
 	}
 	return cq.listChats(ctx, paginator, "")
+}
+
+// profileWidth fits the wide list's Profile column to its longest
+// profile, a remote target such as cchub:clai/reviewer@5 included, and
+// never narrower than the 15 it always had.
+func profileWidth(rows []chatListRow) int {
+	width := 15
+	for _, r := range rows {
+		width = max(width, utf8.RuneCountInString(r.Profile))
+	}
+	return width
 }
 
 // collapseGroupRows collapses rows with the same non-empty GroupKey and N≥2
@@ -734,6 +796,20 @@ type preparedRows struct {
 	byName map[string]vendors.SourceReader
 }
 
+// readerFor is the reader that listed a foreign row: an export is read back
+// by the imported reader, though it shows its original tool.
+func (pr preparedRows) readerFor(row chatListRow) (vendors.SourceReader, error) {
+	name := row.Source
+	if row.Reader != "" {
+		name = row.Reader
+	}
+	reader, ok := pr.byName[name]
+	if !ok {
+		return nil, fmt.Errorf("unknown source reader %q", name)
+	}
+	return reader, nil
+}
+
 // prepareListRows derives the display view for the given group context from
 // an already-built row set — pure in-memory work. A non-nil inDir predicate
 // dir-scopes the view; member rows are filtered BEFORE group collapsing, so
@@ -827,7 +903,7 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 		headArgs := []any{"Index", "Source", "Created", "Model", "Cost", "About"}
 		isWide := cq.dims.Width > 120
 		if isWide {
-			tblFmt = fmt.Sprintf("%%-%ds| %%-15s | %%-20s| %%-8v | %%-15s | %%-18s | %%-8s | %%-6s | %%v", maxIdxLen)
+			tblFmt = fmt.Sprintf("%%-%ds| %%-15s | %%-20s| %%-8v | %%-%ds | %%-18s | %%-8s | %%-6s | %%v", maxIdxLen, profileWidth(pr.rows))
 			headArgs = []any{"Index", "Source", "Created", "Messages", "Profile", "Model", "Cost", "Tokens", "About"}
 		}
 
@@ -894,6 +970,12 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 		}
 		if backLabel != "" {
 			tb = tb.WithBackLabel(backLabel)
+			tb = tb.WithActions(table.TableAction{
+				Format: "[c]ontinue newest",
+				Short:  "c",
+				Long:   "continue",
+				Action: func() error { return errContinueNewest },
+			})
 		}
 
 		selectedNumbers, shownPage, err := tb.Run()
@@ -908,6 +990,9 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 				// The scoped and unscoped views paginate differently.
 				listPage, groupPage = 0, 0
 				continue
+			}
+			if errors.Is(err, errContinueNewest) && len(pr.rows) > 0 {
+				return cq.continueRow(ctx, pr, pr.rows[0])
 			}
 			if errors.Is(err, errToggleForeign) {
 				foreignOn = !foreignOn
@@ -953,9 +1038,9 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 			continue
 		}
 
-		reader, ok := pr.byName[sel.Source]
-		if !ok {
-			return fmt.Errorf("unknown source reader %q", sel.Source)
+		reader, err := pr.readerFor(sel)
+		if err != nil {
+			return err
 		}
 		foreign, err := cq.readForeignChat(ctx, reader, sel.SourceID)
 		if err != nil {
@@ -985,12 +1070,9 @@ func (cq *ChatHandler) actOnForeignChat(chat pub_models.Chat, reader vendors.Sou
 	}
 	switch choice {
 	case "C", "c", "":
-		cloned, err := cq.cloneForeignChat(chat)
-		if err != nil {
+		if err := cq.continueForeign(chat, reader); err != nil {
 			return err
 		}
-		ancli.Noticef("cloned %s session %s → chat %s\n", reader.Source(), chat.SourceID, cloned.ID)
-		ancli.Noticef("chat %s is now replyable with flag \"clai -dre query <prompt>\"\n", cloned.ID)
 		return errExitList
 	case "B", "b":
 		clearErr := table.ClearTermTo(cq.out, utils.TerminalRows(view+choice, cq.dims.Width))
@@ -1096,7 +1178,7 @@ func (cq *ChatHandler) printChatInfoCommon(w io.Writer, chat pub_models.Chat, gr
 	if opts.foreign {
 		choices = table.Colorize(utils.TableTheme().Primary, fmt.Sprintf("(press [c]ontinue (clone to clai), %s, [q]uit): ", backLabel))
 	} else {
-		choices = table.Colorize(utils.TableTheme().Primary, fmt.Sprintf("(make [p]revQuery (-re/-reply flag), %s, [e]dit messages, [d]elete messages, [q]uit, [<enter>] to continue): ", backLabel))
+		choices = table.Colorize(utils.TableTheme().Primary, fmt.Sprintf("(make [p]revQuery (-re/-reply flag), %s, [e]dit messages, [d]elete messages, [q]uit, [c]ontinue or [<enter>]): ", backLabel))
 	}
 	if _, err := fmt.Fprint(w, choices); err != nil {
 		return fmt.Errorf("write choices: %w", err)

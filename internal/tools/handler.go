@@ -36,6 +36,7 @@ type executableLookup func(string) (string, error)
 type executableTool struct {
 	executable string
 	tool       pub_models.LLMTool
+	hidden     bool
 }
 
 // registerLocalTools adds native tools and executable-backed tools available
@@ -51,9 +52,6 @@ func registerLocalTools(reg *registry, lookup executableLookup) {
 		tools.RowsBetween,
 		tools.LineCount,
 		tools.AudioTranscribe,
-		tools.ClaiCheck,
-		tools.ClaiResult,
-		tools.ClaiWaitForWorkers,
 		tools.AsyncCmdRun,
 		tools.AsyncCmdStatus,
 		tools.AsyncCmdLogs,
@@ -67,32 +65,43 @@ func registerLocalTools(reg *registry, lookup executableLookup) {
 	}
 
 	executableTools := []executableTool{
-		{"tree", tools.FileTree},
-		{"cat", tools.Cat},
-		{"head", tools.Head},
-		{"tail", tools.Tail},
-		{"jq", tools.JQ},
-		{"find", tools.Find},
-		{"file", tools.FileType},
-		{"ls", tools.LS},
-		{"cp", tools.Cp},
-		{"rsync", tools.Rsync},
-		{"rg", tools.RipGrep},
-		{"go", tools.Go},
-		{"sh", tools.Cmd},
-		{"git", tools.Git},
-		{"ffprobe", tools.FFProbe},
-		{"date", tools.Date},
-		{"pwd", tools.Pwd},
-		{tools.ClaiBinaryPath, tools.ClaiHelp},
-		{tools.ClaiBinaryPath, tools.ClaiRun},
+		{executable: "tree", tool: tools.FileTree},
+		{executable: "cat", tool: tools.Cat},
+		{executable: "head", tool: tools.Head},
+		{executable: "tail", tool: tools.Tail},
+		{executable: "jq", tool: tools.JQ},
+		{executable: "find", tool: tools.Find},
+		{executable: "file", tool: tools.FileType},
+		{executable: "ls", tool: tools.LS},
+		{executable: "cp", tool: tools.Cp},
+		{executable: "rsync", tool: tools.Rsync},
+		{executable: "rg", tool: tools.RipGrep},
+		{executable: "go", tool: tools.Go},
+		{executable: "sh", tool: tools.Cmd},
+		{executable: "git", tool: tools.Git},
+		{executable: "ffprobe", tool: tools.FFProbe},
+		{executable: "date", tool: tools.Date},
+		{executable: "pwd", tool: tools.Pwd},
+		// The clai_* worker tools stay callable by name for profiles that
+		// list them, but are hidden: orchestration goes through async_cmd
+		// running clai.
+		{executable: tools.ClaiBinaryPath, tool: tools.ClaiHelp, hidden: true},
+		{executable: tools.ClaiBinaryPath, tool: tools.ClaiRun, hidden: true},
 	}
 	available := lookupExecutables(executableTools, lookup)
 	for _, candidate := range executableTools {
 		if !available[candidate.executable] {
 			continue
 		}
+		if candidate.hidden {
+			reg.SetHidden(candidate.tool.Specification().Name, candidate.tool)
+			continue
+		}
 		reg.Set(candidate.tool.Specification().Name, candidate.tool)
+	}
+
+	for _, tool := range []pub_models.LLMTool{tools.ClaiCheck, tools.ClaiResult, tools.ClaiWaitForWorkers} {
+		reg.SetHidden(tool.Specification().Name, tool)
 	}
 
 	// Legacy production alias: freetext_command predates the cmd name.

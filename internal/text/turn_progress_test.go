@@ -14,6 +14,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/baalimago/clai/internal/vttest"
+
 	"github.com/baalimago/clai/internal/asset"
 	"github.com/baalimago/clai/internal/board"
 	"github.com/baalimago/clai/internal/imagegen"
@@ -1395,5 +1397,32 @@ func TestTurn_WideProseClearsWhatItTook(t *testing.T) {
 	screen := strings.Join(finalScreen(t, f.out.String(), f.q.dims.Width), "\n")
 	if n := strings.Count(screen, "漢"); n != 30 {
 		t.Fatalf("%d wide runes on screen, want the prose's 30 once:\n%s", n, screen)
+	}
+}
+
+// Streamed prose holding emoji is cleared by the rows it took on a terminal that
+// draws emoji one cell wide, so the clear before a tool block never reaches the
+// command line above it.
+func TestTurn_EmojiProseClearKeepsTheCommandLine(t *testing.T) {
+	withTheme(t, false)
+	const command = "~/work $ clai -t generate_image q 'A minimal orange triangle'"
+	// 72 cells drawn narrow, 75 counted wide: three rows or four.
+	prose := strings.Repeat("a", 69) + "🔶🌌📐" + strings.Repeat("b", 144)
+	ls := partsTool{name: "ls", parts: []pub_models.Part{pub_models.TextPart{Text: "a.txt"}}}
+	f := newTurnFixture(t, &turnModel{caps: nativeCaps(), steps: [][]models.CompletionEvent{
+		{prose, call("c1", "ls", pub_models.Input{}), models.StopEvent{}},
+		{models.StopEvent{}},
+	}}, ls)
+	f.q.Raw = false
+	f.q.dims.Width, f.q.dims.Height = 72, 30
+	f.diskTurn(present.Options{Terminal: true})
+	if _, err := f.run(t, pub_models.Message{Role: "user", Content: "go"}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	for _, narrow := range []bool{false, true} {
+		screen := replayScreen(t, &vttest.Terminal{Width: 72, NarrowEmoji: narrow}, command+"\n"+f.out.String())
+		if len(screen) == 0 || screen[0] != command {
+			t.Fatalf("narrow emoji %v: the command line is gone:\n%s", narrow, strings.Join(screen, "\n"))
+		}
 	}
 }

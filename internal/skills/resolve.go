@@ -49,6 +49,8 @@ func compareSkillPrecedence(a, b Skill, precedence precedenceMap) int {
 
 func sourceRank(class string) int {
 	switch class {
+	case SourceProfile:
+		return -1
 	case "project":
 		return 0
 	case "global":

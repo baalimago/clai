@@ -17,6 +17,7 @@ import (
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/utils"
 	textmodels "github.com/baalimago/clai/pkg/text/models"
+	pkgtools "github.com/baalimago/clai/pkg/tools"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	imagodebug "github.com/baalimago/go_away_boilerplate/pkg/debug"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
@@ -108,14 +109,23 @@ func setupCmdBanConfig(tConf *Configurations, cmdBan string) {
 	}
 }
 
+// setupInheritedCmdBan appends the bans a parent run handed down in
+// pkgtools.CmdBanEnv, so a nested clai refuses what its parent would.
+func setupInheritedCmdBan(tConf *Configurations, inherited string) {
+	tConf.CmdBan = append(tConf.CmdBan, pkgtools.ParseCmdBanEnv(inherited)...)
+}
+
 // SetupQuerier composes the full text-querier path: config load, flag and
 // profile cascades, glob/tool/skill/lookback setup, prompt construction and
 // vendor routing. trustInput is the reader for interactive skill-trust
 // prompts (the composition root passes the wizard's input source; text
-// cannot import setup).
-func SetupQuerier(ctx context.Context, confDir string, tf internal.TextFlags, args []string, trustInput io.Reader) (models.Querier, *Configurations, error) {
+// cannot import setup). resolveRemote turns a cchub:, gh: or https:// -prp
+// target into a local file; nil refuses one. resolveSkills fetches the
+// skills a profile names; nil refuses a profile that names any.
+func SetupQuerier(ctx context.Context, confDir string, tf internal.TextFlags, args []string, trustInput io.Reader, resolveRemote RemoteProfileResolver, resolveSkills RemoteSkillsResolver) (models.Querier, *Configurations, error) {
 	// The flagset is first used to find chatModel and potentially setup a new configuration file from some default
-	tConf, err := utils.LoadConfigFromFile(confDir, "textConfig.json", MigrateOldChatConfig, &Default)
+	firstRun := FirstRunDefaults(os.Getenv)
+	tConf, err := utils.LoadConfigFromFile(confDir, "textConfig.json", MigrateOldChatConfig, &firstRun)
 	tConf.ConfigDir = confDir
 	tConf.TrustInput = trustInput
 	if err != nil {
@@ -153,6 +163,9 @@ func SetupQuerier(ctx context.Context, confDir string, tf internal.TextFlags, ar
 
 		tConf.Glob = globStr
 	}
+	if err := resolveRemoteProfilePath(ctx, &tConf, resolveRemote); err != nil {
+		return nil, nil, err
+	}
 	err = tConf.ProfileOverrides()
 	if err != nil {
 		return nil, nil, fmt.Errorf("profile override failure: %w", err)
@@ -161,6 +174,7 @@ func SetupQuerier(ctx context.Context, confDir string, tf internal.TextFlags, ar
 	setupToolConfig(&tConf, tf.AgentText.UseTools.Value())
 
 	setupCmdBanConfig(&tConf, tf.AgentText.CmdBan.Value())
+	setupInheritedCmdBan(&tConf, os.Getenv(pkgtools.CmdBanEnv))
 
 	// We want some flags, such as model, to be able to overwrite the profile configurations
 	// If this gets too confusing, it should be changed
@@ -173,6 +187,10 @@ func SetupQuerier(ctx context.Context, confDir string, tf internal.TextFlags, ar
 		tConf.UseSkills = skillsConfig.Enabled
 	}
 	if err := applyUseSkillsOverride(&tConf, tf.QueryText.UseSkills); err != nil {
+		return nil, nil, err
+	}
+	profileSkillRoots, err := resolveProfileSkills(ctx, &tConf, resolveSkills)
+	if err != nil {
 		return nil, nil, err
 	}
 	if tConf.UseSkills {
@@ -191,6 +209,7 @@ func SetupQuerier(ctx context.Context, confDir string, tf internal.TextFlags, ar
 			ConfigDir:    confDir,
 			CacheDir:     cacheDir,
 			WorkingDir:   mustGetwd(),
+			ProfileRoots: profileSkillRoots,
 			LogQueryText: logSkillDiscovery,
 			TrustPrompter: func(_ context.Context, prompt skills.TrustPrompt) (bool, error) {
 				ancli.Warnf("%s", formatSkillTrustPrompt(prompt))
@@ -228,7 +247,7 @@ func SetupQuerier(ctx context.Context, confDir string, tf internal.TextFlags, ar
 		tConf.InitialChat = dirChat
 	}
 
-	err = tConf.SetupInitialChat(args)
+	err = tConf.SetupInitialChat(ctx, args)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to setup prompt: %w", err)
 	}

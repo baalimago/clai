@@ -151,10 +151,17 @@ func (f *StringsFlag) Value() []string { return slices.Clone(f.vals) }
 // querier or conversation content.
 type RawFlag struct {
 	BoolFlag
+	// Desc replaces the flag's description for a command whose raw output
+	// is not rendered text, such as JSON.
+	Desc string
 }
 
 func (g *RawFlag) Register(fs *flag.FlagSet) {
-	g.BoolFlag.Register(fs, "Set to true to print raw output (don't attempt to use 'glow').", "r", "raw")
+	desc := g.Desc
+	if desc == "" {
+		desc = "Set to true to print raw output (don't attempt to use 'glow')."
+	}
+	g.BoolFlag.Register(fs, desc, "r", "raw")
 }
 
 // NonInteractiveFlag disables the interactive-macro fallback.
@@ -181,7 +188,7 @@ func NewReplyStdinFlags() ReplyStdinFlags {
 
 func (g *ReplyStdinFlags) Register(fs *flag.FlagSet) {
 	g.Reply.Register(fs, "Set to true to reply to the previous query, meaning that it will be used as context for your next query.", "re", "reply")
-	g.StdinReplace.Register(fs, "Set the string to replace with stdin. (flag syntax borrowed from xargs)", "I", "replace")
+	g.StdinReplace.Register(fs, "Set the string to replace with stdin; implies -i. (flag syntax borrowed from xargs)", "I", "replace")
 	g.ExpectReplace.Register(fs, "Set to true to replace '{}' with stdin. This is overwritten by -I and -replace. (flag syntax borrowed from xargs)", "i")
 }
 
@@ -316,7 +323,7 @@ func (g *AgentTextFlags) Register(fs *flag.FlagSet) {
 	g.MaxToolCallsAfterHandover.Register(fs, "Set the max tool calls for the post-handover phase of this run. 0 = unlimited. Overrides stoploss.max-tool-calls-after-handover in textConfig.json.", "max-tool-calls-after-handover")
 	g.Glob.Register(fs, "Glob files into the query context, e.g. -g '*.go'.", "g", "glob")
 	g.Profile.Register(fs, profileFlagDesc, "p", "profile")
-	g.ProfilePath.Register(fs, "Set this to the path of a profile file to use.", "prp", "profile-path")
+	g.ProfilePath.Register(fs, "Set this to the path of a profile file to use, or a remote target: cchub:<handle>/<agent>[@n], gh:<owner>/<repo>[/path][@ref] or an https:// URL (see clai profiles -h).", "prp", "profile-path")
 	g.NonInteractive.Register(fs)
 	g.MediaTools.Register(fs)
 }
@@ -373,6 +380,7 @@ type QueryTextFlags struct {
 	Summarize      BoolFlag
 	SummaryModel   StringFlag
 	QuerySummary   BoolFlag
+	ReplyOnly      BoolFlag
 	Images         StringsFlag
 	OpenImages     BoolFlag
 }
@@ -386,7 +394,8 @@ func (g *QueryTextFlags) Register(fs *flag.FlagSet) {
 	g.ShellContext.Register(fs, "Auto-append shell context by name.", "asc", "add-shell-context")
 	g.Summarize.Register(fs, "Generate a title and summary for a new conversation alongside the query. Overrides summarize-conversations in textConfig.json.", "summarize")
 	g.SummaryModel.Register(fs, "Set the model the conversation summarizer uses. Overrides summary-model in textConfig.json.", "sm", "summary-model")
-	g.QuerySummary.Register(fs, "Print a run summary (tokens, cost, tools) after the answer. Loop runs always print one. Overrides query-summary in textConfig.json.", "qs", "query-summary")
+	g.QuerySummary.Register(fs, "Print a run summary (tokens, cost, tools, subagents) after the answer. Loop runs always print one. Overrides query-summary in textConfig.json.", "qs", "query-summary")
+	g.ReplyOnly.Register(fs, "Print only the reply on stdout; tool calls, tool output and reasoning go to stderr, drawn as in a terminal when stderr is one. clai_run workers use it.", "ro", "reply-only")
 }
 
 // LoopFlags is the loop-mode surface query carries: -l elevates the query

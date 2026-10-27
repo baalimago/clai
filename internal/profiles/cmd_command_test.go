@@ -8,12 +8,17 @@ import (
 
 func Test_Command_tree(t *testing.T) {
 	t.Setenv("CLAI_CONFIG_DIR", t.TempDir())
-	c := Command()
-	if c.Describe() == "" || !strings.Contains(c.Help(), "profiles [list]") {
+	c := Command(CommandDeps{})
+	if c.Describe() == "" || !strings.Contains(c.Help(), "profiles [list|install|update|trust|publish]") {
 		t.Fatalf("describe/help incomplete: %q / %q", c.Describe(), c.Help())
 	}
-	if !strings.Contains(c.Help(), "Profiles overwrite certain model configurations") {
-		t.Fatal("profiles help must embed the profile explainer")
+	for _, want := range []string{Help, RemoteHelp, "<config-dir>/profiles/<name>.json", "clai profiles publish", "cchub:<handle>/<agent>"} {
+		if !strings.Contains(c.Help(), want) {
+			t.Fatalf("profiles help lacks %q", want)
+		}
+	}
+	if strings.Contains(c.Help(), `\'`) {
+		t.Fatal("profiles help holds an escaped quote")
 	}
 	if _, ok := c.Subcommands()["list"]; !ok {
 		t.Fatal("missing list subcommand")

@@ -1,10 +1,12 @@
 # Profiles Command Architecture
 
-Command: `clai profiles [list]`
+Command: `clai profiles [list|install|update|trust|publish]`
 
-The **profiles** command is a small inspection command that lists the configured profile JSON files under the clai config directory.
+The **profiles** command lists the configured profile JSON files under the clai config directory. It also installs, updates and trusts remote profile targets (`cchub:`, `gh:`, `https://`); [remote-targets.md](./remote-targets.md) covers those. `publish` sends a local profile to the Hub (below).
 
 Profiles themselves are used primarily via the `-p/-profile` and `-prp/-profile-path` flags on text-like commands (`query`, `chat`, `cmd`). Configuration semantics are described in `CONFIG.md`.
+
+A profile run with no prompt and nothing on stdin sends `text.ProfileDefaultPrompt` as the user message instead of failing with `ErrNoPrompt`, so an agent like `clai -prp cchub:clai/reviewer q` acts on its own defaults. A plain query without a prompt is still an error.
 
 Loading a profile (`-p` or `-prp`) is read-only (`utils.ReadConfigFile`): fields missing from the file are filled from `DefaultProfile` in memory, the file is never rewritten, nothing is created beside it, and a missing profile file is an error.
 
@@ -21,7 +23,11 @@ internal/cli:Run()
 
 | File | Purpose |
 |------|---------|
-| `internal/profiles/cmd.go` | profiles command + `list` sub (see [cmd-dispatch.md](./cmd-dispatch.md)) |
+| `internal/profiles/cmd.go` | profiles command + `list`, `trust`, `install`, `update`, `publish` subs (see [cmd-dispatch.md](./cmd-dispatch.md)) |
+| `internal/profiles/publish.go` | `CommandDeps.Publish`, `send`, `newPublishCommand`, `pinnedSkills`; `PublishRequest`, `Published`, `HubPublisher`, `HandleRequiredError` |
+| `internal/profiles/skills.go` | `clai skills` (`SkillsCommand`, `SkillsHelp`) and `CommandDeps.PublishSkill` |
+| `internal/cli/cli.go` | `hubPublisher`: posts to `/api/v1/hub` with the `clai cloud login` key; the secret check is `sync.FindSecret` |
+| `internal/profiles/remote.go` | `CommandDeps.Trust`, `Install`, `Update` and the `source` stamp |
 | `internal/profiles/cmd.go` | Implements `clai profiles` command |
 | `internal/utils/config_dir.go` (or similar) | `GetClaiConfigDir()` |
 | `internal/utils/json.go` (or similar) | `ReadAndUnmarshal()` helper |
@@ -34,8 +40,41 @@ Implemented in `internal/profiles/cmd.go`.
 
 - `clai profiles`
 - `clai profiles list`
+- `clai profiles trust <target>`
+- `clai profiles install <target> [name]`
+- `clai profiles update [name]`
+- `clai profiles publish <profile> [-name] [-title] [-summary] [-note] [-handle]`
 
 Any other subcommand returns an error.
+
+### Publishing
+
+`publish` reads `<config>/profiles/<profile>.json`, or the path given when
+it holds a separator or ends in `.json`, and sends the bytes as they are on
+disk to clai.chat's `POST /api/v1/hub` as the account of the
+`clai cloud login` key (`CLAI_CLOUD_TOKEN` and `CLAI_CLOUD_URL` stand in, as
+for sync). Before anything leaves the machine it runs `remote.Validate`,
+the strict check `-prp` gives a remote profile, and `sync.FindSecret`; a
+failure of either sends nothing. The name defaults to the file's base name
+and must be a Hub name. The first publish of a name creates the agent; the
+same name again is its next version, with `-note` as the changelog. An
+account without a handle gets `HandleRequiredError` with the suggested
+handle, printed as the command to rerun with `-handle`. Output is the
+address and version, the page URL, and the `-prp` line pinned by the
+returned sha256. Flags may follow the profile: `publishCommand` parses
+what comes after it again. The profiles command's config prep may have
+added default fields to the file first, so the published bytes, and their
+hash, are the upgraded file. A profile whose `"skills"` holds a target that
+can change (no version, ref or hash) is refused (`pinnedSkills`).
+
+`clai skills publish <skill>` sends a skill the same way, with `kind:
+"skill"`: `<config>/skills/<skill>/SKILL.md`, or a folder holding one, or
+the `SKILL.md` path. It must pass `skills.CheckSkill` and `FindSecret`;
+only `SKILL.md` is sent. The name is `-name`, else the frontmatter `name`
+when it is a Hub name, else the folder's name. Output ends with the
+`"skills"` line to paste into a profile, pinned by the returned hash.
+`clai skills` with no subcommand prints its help, which explains skills and
+the targets a profile's `"skills"` takes.
 
 ### Listing logic
 
@@ -66,6 +105,7 @@ Any other subcommand returns an error.
    - Name
    - Model
    - Tools
+   - Source, when the profile was installed from a remote target
    - First sentence/line from `Prompt`
 
 8. If no valid profiles were found, prints a warning.

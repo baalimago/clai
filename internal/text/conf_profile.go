@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/baalimago/clai/internal/tools/mcp/serverconfig"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/pkg/text/models"
 )
@@ -66,12 +67,27 @@ func (c *Configurations) ProfileOverrides() error {
 	if strings.TrimSpace(profile.Name) != "" {
 		c.UseProfile = profile.Name
 	}
+	if target, _, _ := strings.Cut(c.ProfileTarget, "#"); target != "" {
+		c.UseProfile = target
+	}
 
 	c.Model = profile.Model
 	c.SystemPrompt = profile.Prompt
 	c.UseTools = profile.UseTools || (len(profile.McpServers) > 0)
-	if profile.UseSkills != nil {
+	// A fetched or installed profile gets only the tools it names: with
+	// use_tools alone, a prompt-injected model would reach every local tool
+	// and MCP server.
+	fetched := c.ProfileFetched || profile.Source != nil
+	if fetched && len(profile.Tools) == 0 && len(profile.McpServers) == 0 {
+		c.UseTools = false
+	}
+	c.ProfileSkills = profile.Skills
+	switch {
+	case profile.UseSkills != nil:
 		c.UseSkills = *profile.UseSkills
+		c.ProfileUseSkillsSet = true
+	case len(profile.Skills) > 0:
+		c.UseSkills = true
 		c.ProfileUseSkillsSet = true
 	}
 	if profile.UseLookback != nil {
@@ -86,15 +102,23 @@ func (c *Configurations) ProfileOverrides() error {
 	if profile.CmdBan != nil {
 		c.CmdBan = append(c.CmdBan, profile.CmdBan...)
 	}
-	if profile.SaveReplyAsConv != nil {
+	// A fetched or installed profile cannot keep its runs out of the chat
+	// history; only your own config decides that for it.
+	if profile.SaveReplyAsConv != nil && !fetched {
 		c.SaveReplyAsConv = *profile.SaveReplyAsConv
 	}
-	if strings.TrimSpace(profile.ShellContext) != "" {
+	// A shell context runs commands from this machine's own definitions and
+	// puts their output in the prompt; which ones, and when, is the user's
+	// choice, never a fetched or installed profile's.
+	if strings.TrimSpace(profile.ShellContext) != "" && !fetched {
 		c.ShellContext = profile.ShellContext
 	}
 	mcpServers := make([]models.McpServer, 0)
 	for name, m := range profile.McpServers {
 		m.Name = name
+		if err := serverconfig.ValidateRequiredEnv(name, m); err != nil {
+			return err
+		}
 		if m.EnvFile != "" {
 			expanded, expandErr := utils.ExpandUserPath(m.EnvFile)
 			if expandErr != nil {

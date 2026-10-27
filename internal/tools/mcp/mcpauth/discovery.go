@@ -98,6 +98,9 @@ func requireSecureEndpoints(serverName string, doc AuthorizationServerMetadata) 
 		{StageAuthorization, doc.AuthorizationEndpoint},
 		{StageToken, doc.TokenEndpoint},
 	} {
+		if pair.stage == StageRegistration && pair.raw == "" {
+			continue
+		}
 		if err := requireSecureURL(serverName, pair.stage, pair.raw); err != nil {
 			return err
 		}
@@ -124,13 +127,12 @@ func wellKnownCandidates(issuer string) (inserted, appended string, err error) {
 	return insertedURL.String(), appendedURL.String(), nil
 }
 
-// missingRequiredField reports the first of the five required
-// authorization-server metadata fields that is absent, or "" when all five
-// are present.
+// missingRequiredField reports the first of the four required
+// authorization-server metadata fields that is absent, or "" when all four
+// are present. registration_endpoint is checked by AuthorizeInteractive,
+// since a pre-registered client stands in for it.
 func missingRequiredField(doc AuthorizationServerMetadata) string {
 	switch {
-	case doc.RegistrationEndpoint == "":
-		return "registration_endpoint"
 	case doc.AuthorizationEndpoint == "":
 		return "authorization_endpoint"
 	case doc.TokenEndpoint == "":
