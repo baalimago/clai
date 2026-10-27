@@ -147,11 +147,11 @@ log      GET stores/<s>/log?limit=
   carry a URL to the Billing and usage page, which commit prints. The
   engine asks `/me` first when a conversation commit would grow the store,
   so a refused commit uploads nothing (`BillingBlockedError`). While
-  `/me` says `billing_open` is false the reason is `BillingNotOpen` and no
-  billing link is printed. A plain
-  `clai cloud commit` then commits the config store, says why the
-  conversations were left out and exits 4 (0 when billing is not open
-  yet: there is nothing to decide); naming the conversations is an error.
+  `/me` says `billing_open` is false (a server with no Stripe
+  configuration) the reason is `BillingNotOpen` and no billing link is
+  printed. A plain `clai cloud commit` then commits the config store, says
+  why the conversations were left out and exits 4, whatever the reason;
+  naming the conversations is an error.
 - **Progress.** Status, pull and commit report `Progress` (discovering,
   exporting, scanning, hashing, uploading, committing, downloading,
   indexing: the chat index taking in what a pull wrote) to

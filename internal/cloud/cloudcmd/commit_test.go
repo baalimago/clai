@@ -111,7 +111,9 @@ func TestCommit_defaultMessageNamesTheHostWithoutADevice(t *testing.T) {
 	mustContain(t, out, `"from laptop"`)
 }
 
-func TestCommit_billingNotOpenIsNoDecision(t *testing.T) {
+// Conversations left out for any billing reason make the commit exit 4, so
+// a CI job never reads a partial sync as a whole one.
+func TestCommit_billingNotOpenStillExits4(t *testing.T) {
 	h := newHarness(t, "tok-a")
 	unlock := h.srv.Lock()
 	h.srv.CardOnFile, h.srv.BillingClosed = false, true
@@ -119,8 +121,8 @@ func TestCommit_billingNotOpenIsNoDecision(t *testing.T) {
 	h.write("profiles/a.json", `{"prompt":"a"}`)
 	h.write("conversations/abc.json", `{"messages":[]}`)
 	code, out := h.run("commit", "-r")
-	if code != 0 {
-		t.Fatalf("code %d: %s", code, out)
+	if code != 4 {
+		t.Fatalf("code %d, want 4: %s", code, out)
 	}
 	if c := decodeCommits(t, out)["conversations"]; c.Status != "billing" || c.Billing.Reason != "billing_not_open" {
 		t.Fatalf("conversations = %+v", c)

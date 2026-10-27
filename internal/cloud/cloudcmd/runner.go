@@ -457,7 +457,7 @@ func (r *runner) commit(ctx context.Context, args []string, msg string, imports,
 		case errors.As(err, &blocked) && len(args) == 0:
 			// A plain commit still commits the free config store.
 			report.Status, report.Billing = commitBilling, &billingReport{Reason: blocked.Reason, URL: blocked.URL}
-			decision = decision || blocked.Reason != sync.BillingNotOpen
+			decision = true
 			lines = blockedLines(s, blocked, r.style())
 		case errors.As(err, &open):
 			decision = true
