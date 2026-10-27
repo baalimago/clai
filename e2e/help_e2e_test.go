@@ -36,7 +36,7 @@ func Test_goldenFile_usage_on_no_args(t *testing.T) {
 		}
 	}
 	testboil.AssertStringContains(t, gotStdout, "clai <command> -h")
-	testboil.AssertStringContains(t, gotStdout, "clai -asc minimal -qs q \"what changed in this repo?\"")
+	testboil.AssertStringContains(t, gotStdout, "clai -add-shell-context minimal -query-summary query \"what changed in this repo?\"")
 	testboil.AssertStringContains(t, gotStdout, confDir)
 }
 
