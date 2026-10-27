@@ -270,7 +270,7 @@ func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configu
 		failures.addExplicit("config-dir", claierr.NewMcpServerStartup("config-dir", "parse", err))
 	}
 	for i, mcpServer := range mcpServers {
-		isExplicitIdx := i >= explicitTail
+		isExplicitIdx := i >= explicitTail && !mcpServer.Optional
 		strictExplicit := strict && isExplicitIdx
 		isHTTP := mcpServer.Url != ""
 
@@ -380,7 +380,7 @@ func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configu
 // mcp_<name>_<tool> registration prefix, so a duplicate is not a new case.
 func isExplicitServer(name string, servers []pub_models.McpServer) bool {
 	for _, s := range servers {
-		if s.Name == name {
+		if s.Name == name && !s.Optional {
 			return true
 		}
 	}

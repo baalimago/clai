@@ -369,8 +369,10 @@ points and stop reading after a terminal error send.
   whatever servers did start.
 
 A nil `Setup` error therefore carries meaning: nothing the caller asked for
-is missing. This is the public surface contract; profile-sourced servers
-ride the CLI path and stay ambient.
+is missing. This is the public surface contract. On the CLI path a
+profile's `mcp_servers` are explicit too and end the run when one fails to
+start, unless the server sets `"optional": true`, which keeps the ambient
+warn-and-degrade (see `architecture/mcp.md`, Failure posture).
 
 ## What stays untyped
 

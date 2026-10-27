@@ -520,8 +520,10 @@ One JSON file per server under `<clai-config>/mcpServers/`, unmarshalled into
   "startup": "lazy",                      // or "eager"
   "timeout_seconds": 0,                   // one tool call; 0 is unbounded
   "connect_timeout_seconds": 45,          // spawn plus handshake
-  "auth_timeout_seconds": 120 }           // human wait. Applies here too: a
+  "auth_timeout_seconds": 120,            // human wait. Applies here too: a
                                           // local server prompts on stderr
+  "optional": true }                      // a startup failure only warns,
+                                          // even in a profile
 
 // A remote server.
 { "url": "https://mcp.example.com/mcp",
@@ -614,6 +616,11 @@ The posture differs by how a server was requested, and the distinction is delibe
   silently runs without them does the wrong thing with confidence. Unlike strict startup, a profile
   server keeps its startup mode, so a lazy one served from the schema cache still costs no connect;
   a failure there surfaces when its tool is called.
+- A server with `"optional": true` (`McpServer.Optional`) drops back to the ambient posture: its
+  startup failure warns and the run goes on without its tools. It is for a profile server the agent
+  can work without, such as a memory store that needs a sign-in the user may not have done
+  (`Test_setupMcpManager_OptionalProfileServerFailureOnlyWarns`). The profile's prompt has to say
+  what to do when those tools are missing.
 
 Startup failures are reported as `claierr.McpServerStartupError`, carrying the server name and the
 stage that failed. See `architecture/errors.md`. When the cause is a closed connection (the process

@@ -499,8 +499,8 @@ defaults, and the behaviour each selects are owned by **[mcp.md](./mcp.md)** rat
 here. In outline: exactly one of `command` and `url` selects the transport; `startup` chooses lazy or
 eager connection; `timeout_seconds`, `connect_timeout_seconds` and `auth_timeout_seconds` are the
 three bounds, and the last applies to a local server's prompt just as much as to a remote one's;
-`auth` configures credential sources for an endpoint; and `env`/`envfile` supply the server's
-environment.
+`auth` configures credential sources for an endpoint; `env`/`envfile` supply the server's
+environment; and `optional` lets a profile's server fail to start without ending the run.
 
 The tool-schema cache these configs are keyed into lives under the **cache** directory, not the
 config directory: `<clai-cache>/mcpSchemas/`.

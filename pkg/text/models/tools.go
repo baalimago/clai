@@ -96,6 +96,9 @@ type McpServer struct {
 	// distinguishable from unset (worklog 2026-10-02-mcp-connection-cost,
 	// phase 6, D22).
 	AuthTimeoutSeconds *int `json:"auth_timeout_seconds,omitempty"`
+	// Optional lets a run go on without this server's tools when it fails
+	// to start, where a profile's own servers otherwise end setup.
+	Optional bool `json:"optional,omitempty"`
 }
 
 // McpServerAuth configures an endpoint-based server's credential sources,

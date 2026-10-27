@@ -1110,6 +1110,48 @@ func Test_setupMcpManager_ProfileServerFailureFailsSetup(t *testing.T) {
 	}
 }
 
+// Test_setupMcpManager_OptionalProfileServerFailureOnlyWarns pins that a
+// profile server marked optional does not end setup when it fails to start,
+// eager or lazy on a cold cache: the run goes on without its tools, while a
+// required server beside it still fails setup.
+func Test_setupMcpManager_OptionalProfileServerFailureOnlyWarns(t *testing.T) {
+	for _, mode := range []pub_models.StartupMode{pub_models.StartupEager, pub_models.StartupLazy} {
+		t.Run(string(mode), func(t *testing.T) {
+			conf := Configurations{McpServers: []pub_models.McpServer{
+				{Name: "memory", Command: "/nonexistent-clai-test-binary-optional", Startup: mode, Optional: true},
+			}}
+			var got map[string]pub_models.LLMTool
+			var err error
+			captureStdoutStderrText(t, func() {
+				got, err = setupMcpManager(t.Context(), t.TempDir(), conf, &recordingSuccessSink{}, testSchemaCache(t), nil)
+			})
+			if err != nil {
+				t.Fatalf("setupMcpManager: %v, want nil for an optional server", err)
+			}
+			if len(got) != 0 {
+				t.Errorf("tools = %v, want none from a server that never started", got)
+			}
+		})
+	}
+}
+
+func Test_setupMcpManager_RequiredServerStillFailsBesideAnOptionalOne(t *testing.T) {
+	conf := Configurations{McpServers: []pub_models.McpServer{
+		{Name: "memory", Command: "/nonexistent-clai-test-binary-optional", Startup: pub_models.StartupEager, Optional: true},
+		{Name: "required", Command: "/nonexistent-clai-test-binary-required", Startup: pub_models.StartupEager},
+	}}
+	var err error
+	captureStdoutStderrText(t, func() {
+		_, err = setupMcpManager(t.Context(), t.TempDir(), conf, &recordingSuccessSink{}, testSchemaCache(t), nil)
+	})
+	if !errors.Is(err, claierr.ErrMcpServerStartup) {
+		t.Fatalf("err = %v, want errors.Is(err, claierr.ErrMcpServerStartup)", err)
+	}
+	if names := startupErrorNames(err); !slices.Equal(names, []string{"required"}) {
+		t.Errorf("startup errors name %v, want only [required]", names)
+	}
+}
+
 // Test_setupMcpManager_ProfileServerKeepsLazyStartup pins that requiring a
 // profile's servers does not force them eager the way strict agent startup
 // does: a warm-cache lazy server still registers without connecting.

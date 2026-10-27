@@ -39,7 +39,8 @@ cloud-medic, project-planner and researcher keep their memory in
 notebook served over MCP, each under its own path (`clai/cloud-medic`,
 `clai/project-planner`, `clai/researcher`, which its `--writable-paths`
 enforces). Sign in once with `npx slivingdoc@1.2.0 login`, or set
-`SLIVINGDOC_TOKEN`; without either they run and say that memory is off.
+`SLIVINGDOC_TOKEN`; without either they run and say that memory is off,
+since the server is marked `"optional": true`.
 
 `GITHUB_TOKEN` is used against GitHub's hosted MCP server
 (`https://api.githubcopilot.com/mcp/`). A fine-grained token scoped to the
