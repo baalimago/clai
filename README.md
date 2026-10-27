@@ -64,6 +64,17 @@ See <a href="https://www.clai.chat">clai.chat</a> for details on usecase of all 
 All of these features are easily combined and tweaked, empowering users to accomplish very diverse use cases.
 See [examples](./examples.md) for additional info.
 
+## Run an agent from the Hub
+
+`-profile-path` also takes a remote profile: an agent on [clai.chat](https://www.clai.chat), a file in a GitHub repo, or a github.com link copied from the browser.
+
+```bash
+clai -profile-path cchub:baalimago/sre-sync-prep@4 query
+clai -profile-path gh:<owner>/<repo>/agent.json@v1 query
+```
+
+The first run shows what the agent brings (model, tools, MCP servers, skills) and asks you to trust it. See `clai profiles -h` for more.
+
 
 ## Use clai as a Go library
 
