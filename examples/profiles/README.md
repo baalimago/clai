@@ -12,7 +12,11 @@ An agent run with no prompt and nothing piped in acts on its defaults:
 reviewer reviews your branch, committer reads the staged diff. reviewer,
 pr-reviewer and upgrade-scout split their work across parallel clai
 workers: each runs `clai` through `async_cmd`, a separate process with its
-own brief.
+own brief. How to run them is the
+[clai-subagents](../skills/clai-subagents/SKILL.md) skill
+(`cchub:clai/clai-subagents`), which these profiles name in `"skills"` and
+load before their first worker; your own orchestrating profile can do the
+same.
 
 Every MCP package is pinned to an exact version, and no profile holds a
 secret: each one reads its keys from the environment variables listed

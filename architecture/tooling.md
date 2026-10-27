@@ -346,7 +346,13 @@ If you add a new tool:
 An agent orchestrates clai workers with `async_cmd` running the clai binary,
 for example `async_cmd {"command": "clai", "args": ["-ro", "-cm", "<model>",
 "-t", "rg,cat", "q", "<brief>"]}`, then `async_cmd_await` on the ids. Its
-prompt has it run `clai help` and `clai q -h` first, so it learns the flags.
+The how-to lives in one skill, `examples/skills/clai-subagents/SKILL.md`,
+published as `cchub:clai/clai-subagents`: run `clai help` and `clai q -h`
+first, start every worker with `-ro -summarize=false`, await them together,
+read stdout (or `log_path` when truncated), check before merging. An
+orchestrating profile names it pinned in `"skills"` and its prompt says to
+`load_skill` it before the first worker, so the prompt keeps only its own
+workers' tools and briefs.
 
 - **Reply-only.** `-reply-only` (`-ro`) sends the raw transcript (tool calls,
   tool output, reasoning) to stderr through `Querier.transcriptOut`, so a
