@@ -169,7 +169,7 @@ See `CONFIG.md` for full details.
 `utils.Prompt()` in `internal/utils/prompt.go`:
 
 - If pipe detected and no args: stdin becomes the prompt
-- If pipe detected and args present: with `-i` or `-I <token>`, replaces `{}` (or the `-I` token) in args with stdin content; without either, appends stdin after the args. `-I` alone implies `-i` (`text.ApplyFlagOverrides`). A prompt that lacks the token gets stdin appended, never dropped.
+- If pipe detected and args present: stdin replaces every `{}` (or the `-I` token) in the args; a prompt without the token gets stdin appended once. It is never sent twice nor dropped. `-I` alone implies `-i` (`text.ApplyFlagOverrides`).
 - If no pipe: joins args as the prompt
 - With no args and no pipe it fails with `utils.ErrNoPrompt`
 

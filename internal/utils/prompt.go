@@ -96,30 +96,27 @@ func PromptFrom(stdinReplace string, args []string, stdin io.Reader) (string, er
 		return "", fmt.Errorf("failed to read stdin: %w", err)
 	}
 	pipeIn := string(inputData)
-	// Add the pipeIn to the args if there are no args
+	// Stdin alone is the prompt.
 	if len(args) == 0 {
-		args = append(args, strings.Split(pipeIn, " ")...)
-	} else if stdinReplace == "" {
-		stdinReplace = "{}"
-		args = append(args, "{}")
+		return pipeIn, nil
 	}
-
-	// Replace all occurrence of stdinReplaceSignal with pipeIn. A prompt
-	// without the token gets stdin appended, never dropped.
-	if stdinReplace != "" {
-		if debug {
-			ancli.PrintOK(fmt.Sprintf("attempting to replace: '%v' with stdin\n", stdinReplace))
+	if stdinReplace == "" {
+		stdinReplace = "{}"
+	}
+	// Stdin replaces every token in the prompt, or is appended once to a
+	// prompt without one; it is never sent twice nor dropped.
+	if debug {
+		ancli.PrintOK(fmt.Sprintf("attempting to replace: '%v' with stdin\n", stdinReplace))
+	}
+	replaced := false
+	for i, arg := range args {
+		if strings.Contains(arg, stdinReplace) {
+			args[i] = strings.ReplaceAll(arg, stdinReplace, pipeIn)
+			replaced = true
 		}
-		replaced := false
-		for i, arg := range args {
-			if strings.Contains(arg, stdinReplace) {
-				args[i] = strings.ReplaceAll(arg, stdinReplace, pipeIn)
-				replaced = true
-			}
-		}
-		if !replaced {
-			args = append(args, pipeIn)
-		}
+	}
+	if !replaced {
+		args = append(args, pipeIn)
 	}
 
 	if debug {
