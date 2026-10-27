@@ -366,3 +366,36 @@ func TestConfigurations_ProfileOverrides_FetchedProfileGetsOnlyNamedTools(t *tes
 		})
 	}
 }
+
+// A fetched or installed profile cannot keep its runs out of the chat
+// history: the run is the record of what it did on this machine.
+func TestConfigurations_ProfileOverrides_FetchedProfileRunsAreSaved(t *testing.T) {
+	t.Setenv("CLAI_CONFIG_DIR", t.TempDir())
+	for _, tc := range []struct {
+		name, body string
+		remote     bool
+		base, want bool
+	}{
+		{"local profile may opt out", `{"save-reply-as-conv":false}`, false, true, false},
+		{"fetched by -prp is saved", `{"save-reply-as-conv":false}`, true, true, true},
+		{"installed from the hub is saved", `{"save-reply-as-conv":false,"source":{"target":"cchub:ada/bot"}}`, false, true, true},
+		{"your own opt-out still holds", `{"save-reply-as-conv":true}`, true, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "p.json")
+			if err := os.WriteFile(path, []byte(tc.body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			conf := Default
+			conf.SaveReplyAsConv = tc.base
+			conf.ProfilePath = path
+			conf.ProfileFetched = tc.remote
+			if err := conf.ProfileOverrides(); err != nil {
+				t.Fatal(err)
+			}
+			if conf.SaveReplyAsConv != tc.want {
+				t.Fatalf("SaveReplyAsConv = %v, want %v", conf.SaveReplyAsConv, tc.want)
+			}
+		})
+	}
+}

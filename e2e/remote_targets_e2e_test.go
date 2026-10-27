@@ -455,3 +455,23 @@ func Test_REMOTE_refusals(t *testing.T) {
 		t.Fatalf("a refusal recorded trust: %s", env.trusted(t))
 	}
 }
+
+// A run with a remote profile is a conversation like any other: saved, and
+// listed by `clai chat list`, even when the profile asks not to be.
+func Test_REMOTE_runIsSavedAndListed(t *testing.T) {
+	env := setupRemoteE2E(t)
+	t.Setenv("HOME", t.TempDir())
+	quiet := `{"model":"test","prompt":"You are bot one.","save-reply-as-conv":false}`
+	env.hub.publish("ada/quiet", quiet)
+	status, stdout, stderr := runRemote(t, "-r -prp cchub:ada/quiet#sha256="+digestOf(quiet)+" q hello from the hub")
+	if status != 0 || stdout != "hello from the hub\n" {
+		t.Fatalf("run: status %d stdout %q stderr %q", status, stdout, stderr)
+	}
+	if !strings.Contains(env.savedConversation(t), "hello from the hub") {
+		t.Fatalf("the run was not saved: %s", env.savedConversation(t))
+	}
+	listed, status := harness.RunOne(t, env.confDir, "-n -r chat list q")
+	if status != 0 || !strings.Contains(listed, "| test ") {
+		t.Fatalf("chat list: status %d stdout:\n%s", status, listed)
+	}
+}

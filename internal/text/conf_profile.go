@@ -74,7 +74,8 @@ func (c *Configurations) ProfileOverrides() error {
 	// A fetched or installed profile gets only the tools it names: with
 	// use_tools alone, a prompt-injected model would reach every local tool
 	// and MCP server.
-	if (c.ProfileFetched || profile.Source != nil) && len(profile.Tools) == 0 && len(profile.McpServers) == 0 {
+	fetched := c.ProfileFetched || profile.Source != nil
+	if fetched && len(profile.Tools) == 0 && len(profile.McpServers) == 0 {
 		c.UseTools = false
 	}
 	c.ProfileSkills = profile.Skills
@@ -98,7 +99,9 @@ func (c *Configurations) ProfileOverrides() error {
 	if profile.CmdBan != nil {
 		c.CmdBan = append(c.CmdBan, profile.CmdBan...)
 	}
-	if profile.SaveReplyAsConv != nil {
+	// A fetched or installed profile cannot keep its runs out of the chat
+	// history; only your own config decides that for it.
+	if profile.SaveReplyAsConv != nil && !fetched {
 		c.SaveReplyAsConv = *profile.SaveReplyAsConv
 	}
 	if strings.TrimSpace(profile.ShellContext) != "" {

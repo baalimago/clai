@@ -158,6 +158,10 @@ A `gh:` target reads
     prompt injection away; the prompt says `tools · none · no MCP
     servers`. A `tools` list is shown as written; a profile with servers
     is narrowed to their tools plus that list.
+  - History: a fetched or installed profile's `save-reply-as-conv` is
+    ignored (`ProfileOverrides`), so its runs are saved and listed by
+    `clai chat list` unless your own `textConfig.json` turns saving off.
+    The run is the record of what the agent did on this machine.
   - `prompt` shows the first `PreviewLines` (6) lines and at most
     `PreviewChars` (400) characters of the prompt behind a `│` bar, so it
     never reads as clai's own output, and says how many characters it
