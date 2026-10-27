@@ -179,15 +179,100 @@ func TestOauthDiscoversAuthorizationServerMetadata(t *testing.T) {
 func TestOauthMetadataMissingRequiredFieldIsTypedError(t *testing.T) {
 	as := oauthtestserver.New()
 	defer as.Close()
-	as.Configure(func(c *oauthtestserver.Config) { c.OmitMetadataField = "registration_endpoint" })
+	as.Configure(func(c *oauthtestserver.Config) { c.OmitMetadataField = "token_endpoint" })
 
 	_, err := discoverAuthorizationServer(t.Context(), http.DefaultClient, "srv", as.IssuerURL())
 	var missErr *MetadataMissingFieldError
 	if !errors.As(err, &missErr) {
 		t.Fatalf("got %v (%T), want *MetadataMissingFieldError", err, err)
 	}
-	if missErr.Field != "registration_endpoint" {
-		t.Errorf("field = %q, want registration_endpoint", missErr.Field)
+	if missErr.Field != "token_endpoint" {
+		t.Errorf("field = %q, want token_endpoint", missErr.Field)
+	}
+}
+
+func TestOauthNoRegistrationEndpointNorClientIsTypedError(t *testing.T) {
+	as := oauthtestserver.New()
+	defer as.Close()
+	as.Configure(func(c *oauthtestserver.Config) { c.OmitMetadataField = "registration_endpoint" })
+
+	_, _, _, err := fullInteractiveFlow(t, as)
+	var noClient *NoClientError
+	if !errors.As(err, &noClient) {
+		t.Fatalf("got %v (%T), want *NoClientError", err, err)
+	}
+	if noClient.Issuer != as.IssuerURL() {
+		t.Errorf("issuer = %q, want %q", noClient.Issuer, as.IssuerURL())
+	}
+	if !strings.Contains(err.Error(), "token_env") {
+		t.Errorf("error %q does not point at auth.token_env", err)
+	}
+}
+
+// TestOauthPreregisteredClientSignsInWithoutRegistration pins sign-in
+// against an authorization server shaped like GitHub's: no registration
+// endpoint, so clai uses its pre-registered client; a token endpoint that
+// answers JSON only when asked, and a token that never expires.
+func TestOauthPreregisteredClientSignsInWithoutRegistration(t *testing.T) {
+	as := oauthtestserver.New()
+	defer as.Close()
+	as.Configure(func(c *oauthtestserver.Config) {
+		c.OmitMetadataField = "registration_endpoint"
+		c.GitHubTokenStyle = true
+		c.RequiredClientID = "clai-app"
+		c.RequiredClientSecret = "clai-app-secret"
+	})
+	clients := map[string]ClientRegistration{as.IssuerURL() + "/": {ClientID: "clai-app", ClientSecret: "clai-app-secret"}}
+	authz, store := newTestAuthorizer(t, WithPreregisteredClients(clients))
+	challenge := &claierr.AuthChallengeError{ServerName: "srv", ResourceMetadata: as.ProtectedResourceURL()}
+
+	if _, err := authz.AuthorizeInteractive(t.Context(), testServer(as.URL), challenge); err != nil {
+		t.Fatalf("AuthorizeInteractive: %v", err)
+	}
+	if got := as.RegistrationCount(); got != 0 {
+		t.Errorf("registrations = %d, want 0 with a pre-registered client", got)
+	}
+	entry, ok := store.Load("srv")
+	if !ok {
+		t.Fatal("no entry stored")
+	}
+	if entry.ClientID != "clai-app" || entry.AccessToken == "" {
+		t.Fatalf("entry = client %q, token set %v; want clai-app and a token", entry.ClientID, entry.AccessToken != "")
+	}
+	if !entry.ExpiresAt.IsZero() {
+		t.Errorf("ExpiresAt = %v, want zero for a token issued without expires_in", entry.ExpiresAt)
+	}
+	if _, _, ok, err := authz.ResolveCached(t.Context(), testServer(as.URL)); err != nil || !ok {
+		t.Fatalf("ResolveCached = ok %v, err %v; want the stored token without a refresh", ok, err)
+	}
+	if got := as.RefreshCount(); got != 0 {
+		t.Errorf("refreshes = %d, want 0 for a token that never expires", got)
+	}
+}
+
+func TestOauthTokenErrorInSuccessStatusIsReported(t *testing.T) {
+	as := oauthtestserver.New()
+	defer as.Close()
+	as.Configure(func(c *oauthtestserver.Config) {
+		c.OmitMetadataField = "registration_endpoint"
+		c.GitHubTokenStyle = true
+		c.RequiredClientID = "clai-app"
+		c.RequiredClientSecret = "clai-app-secret"
+	})
+	clients := map[string]ClientRegistration{as.IssuerURL(): {ClientID: "clai-app", ClientSecret: "wrong"}}
+	authz, store := newTestAuthorizer(t, WithPreregisteredClients(clients))
+	challenge := &claierr.AuthChallengeError{ServerName: "srv", ResourceMetadata: as.ProtectedResourceURL()}
+
+	_, err := authz.AuthorizeInteractive(t.Context(), testServer(as.URL), challenge)
+	var exErr *ExchangeRejectedError
+	if !errors.As(err, &exErr) {
+		t.Fatalf("got %v (%T), want *ExchangeRejectedError", err, err)
+	}
+	if !strings.Contains(exErr.Reason, "client_id and/or client_secret") {
+		t.Errorf("reason = %q, want the server's own description", exErr.Reason)
+	}
+	if _, ok := store.Load("srv"); ok {
+		t.Error("an entry was stored after a refused exchange")
 	}
 }
 

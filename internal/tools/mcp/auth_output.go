@@ -47,6 +47,7 @@ func NewAuthorizer(config AuthorizerConfig) *mcpauth.Authorizer {
 		mcpauth.WithPasteInput(config.Input),
 		mcpauth.WithInteractive(config.Interactive),
 		mcpauth.WithEnvFileLoader(LoadEnvFile),
+		mcpauth.WithPreregisteredClients(mcpauth.BuiltinClients()),
 		mcpauth.WithProgress(func(message string) error { return WriteAuthMessage(output, message) }),
 	)
 }

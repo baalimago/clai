@@ -60,6 +60,8 @@ type Authorizer struct {
 	loopbackPortV int
 	refreshSkew   time.Duration
 
+	preregistered map[string]ClientRegistration
+
 	refreshMu sync.Mutex
 	inflight  map[string]*refreshCall
 
@@ -124,6 +126,31 @@ func WithInteractive(interactive bool) Option {
 // resolved from.
 func WithEnvFileLoader(loader EnvFileLoader) Option {
 	return func(a *Authorizer) { a.loadEnvFile = loader }
+}
+
+// WithPreregisteredClients sets the clients clai signs in as at an
+// authorization server that offers no dynamic client registration, keyed by
+// issuer. A trailing slash on a key or an issuer is ignored.
+func WithPreregisteredClients(clients map[string]ClientRegistration) Option {
+	return func(a *Authorizer) {
+		a.preregistered = make(map[string]ClientRegistration, len(clients))
+		for issuer, reg := range clients {
+			a.preregistered[strings.TrimRight(issuer, "/")] = reg
+		}
+	}
+}
+
+// clientFor is the client to sign in as at issuer: nil to register one
+// dynamically, the pre-registered one when the server offers no
+// registration.
+func (a *Authorizer) clientFor(serverName, issuer string, asMeta AuthorizationServerMetadata) (*ClientRegistration, error) {
+	if asMeta.RegistrationEndpoint != "" {
+		return nil, nil
+	}
+	if reg, ok := a.preregistered[strings.TrimRight(issuer, "/")]; ok {
+		return &reg, nil
+	}
+	return nil, &NoClientError{ServerName: serverName, Issuer: issuer}
 }
 
 // NewAuthorizer builds an Authorizer backed by store. store is required.
@@ -210,6 +237,15 @@ func (a *Authorizer) ResolveCached(ctx context.Context, server pub_models.McpSer
 	return bearerDecorator(entry.AccessToken), SourceTokenStore, true, nil
 }
 
+// expiryFor is when tok expires, or the zero time for a token issued
+// without expires_in, which never expires.
+func (a *Authorizer) expiryFor(tok tokenResponse) time.Time {
+	if tok.ExpiresIn <= 0 {
+		return time.Time{}
+	}
+	return a.clock().Add(time.Duration(tok.ExpiresIn) * time.Second)
+}
+
 func (a *Authorizer) needsRefresh(entry TokenEntry) bool {
 	if entry.ExpiresAt.IsZero() {
 		return false
@@ -266,8 +302,13 @@ func (a *Authorizer) AuthorizeInteractive(ctx context.Context, server pub_models
 		return nil, err
 	}
 
+	client, err := a.clientFor(server.Name, issuer, asMeta)
+	if err != nil {
+		return nil, err
+	}
+
 	scopes := requestedScopes(server, prm)
-	flow, err := a.authorizeViaFlow(ctx, server, asMeta, scopes, prm.Resource)
+	flow, err := a.authorizeViaFlow(ctx, server, asMeta, client, scopes, prm.Resource)
 	if err != nil {
 		return nil, err
 	}
@@ -328,19 +369,23 @@ type authorizationFlow struct {
 
 // authorizeViaFlow decides between the loopback redirect and the
 // printed-URL fallback, registers a client against the redirect URI that
-// decision settles on, and returns the resulting code, PKCE verifier and
-// that redirect URI.
-func (a *Authorizer) authorizeViaFlow(ctx context.Context, server pub_models.McpServer, asMeta AuthorizationServerMetadata, scopes []string, resource string) (authorizationFlow, error) {
+// decision settles on unless client is pre-registered, and returns the
+// resulting code, PKCE verifier and that redirect URI.
+func (a *Authorizer) authorizeViaFlow(ctx context.Context, server pub_models.McpServer, asMeta AuthorizationServerMetadata, client *ClientRegistration, scopes []string, resource string) (authorizationFlow, error) {
 	scopeStr := strings.Join(scopes, " ")
+	clientStep := "Registering an OAuth client"
+	if client != nil {
+		clientStep = "Using clai's registered OAuth client"
+	}
 
 	ln, bindErr := listenLoopback(a.loopbackHost(), a.loopbackPort())
 	if bindErr == nil {
 		defer ln.Close()
 		redirectURI := fmt.Sprintf("http://%s/callback", ln.Addr().String())
-		if err := a.reportProgress("Registering an OAuth client for the browser callback..."); err != nil {
+		if err := a.reportProgress(clientStep + " for the browser callback..."); err != nil {
 			return authorizationFlow{}, err
 		}
-		authURL, verifier2, state2, reg2, prepErr := a.prepareAuthorization(ctx, server, asMeta, scopeStr, redirectURI, resource)
+		authURL, verifier2, state2, reg2, prepErr := a.prepareAuthorization(ctx, server, asMeta, client, scopeStr, redirectURI, resource)
 		if prepErr == nil {
 			if err := a.reportProgress("Attempting to open your browser. If nothing opens, open this URL manually:\n" + authURL); err != nil {
 				return authorizationFlow{}, err
@@ -379,10 +424,10 @@ func (a *Authorizer) authorizeViaFlow(ctx context.Context, server pub_models.Mcp
 	// code directly, so there is no redirect request for a third party to
 	// forge.
 	const oobRedirectURI = "urn:ietf:wg:oauth:2.0:oob"
-	if err := a.reportProgress("Browser authorization could not start. Registering an OAuth client for manual code entry..."); err != nil {
+	if err := a.reportProgress("Browser authorization could not start. " + clientStep + " for manual code entry..."); err != nil {
 		return authorizationFlow{}, err
 	}
-	authURL, verifier2, _, reg2, prepErr := a.prepareAuthorization(ctx, server, asMeta, scopeStr, oobRedirectURI, resource)
+	authURL, verifier2, _, reg2, prepErr := a.prepareAuthorization(ctx, server, asMeta, client, scopeStr, oobRedirectURI, resource)
 	if prepErr != nil {
 		return authorizationFlow{}, prepErr
 	}
@@ -399,15 +444,19 @@ func (a *Authorizer) authorizeViaFlow(ctx context.Context, server pub_models.Mcp
 	return authorizationFlow{code: line, verifier: verifier2, redirectURI: oobRedirectURI, reg: reg2}, nil
 }
 
-// prepareAuthorization registers a dynamic client against redirectURI and
-// builds the authorization URL, generating a fresh PKCE verifier/challenge
+// prepareAuthorization registers a dynamic client against redirectURI,
+// unless client is pre-registered, and builds the authorization URL, generating a fresh PKCE verifier/challenge
 // and state for this attempt. state is returned so the loopback caller can
 // compare it against what the redirect actually carries back (R1-11); the
 // value only has anything to compare against on the loopback path.
-func (a *Authorizer) prepareAuthorization(ctx context.Context, server pub_models.McpServer, asMeta AuthorizationServerMetadata, scopeStr, redirectURI, resource string) (authURL, verifier, state string, reg ClientRegistration, err error) {
-	reg, err = registerDynamicClient(ctx, a.strictHTTPClient(), server.Name, asMeta.RegistrationEndpoint, redirectURI)
-	if err != nil {
-		return "", "", "", ClientRegistration{}, err
+func (a *Authorizer) prepareAuthorization(ctx context.Context, server pub_models.McpServer, asMeta AuthorizationServerMetadata, client *ClientRegistration, scopeStr, redirectURI, resource string) (authURL, verifier, state string, reg ClientRegistration, err error) {
+	if client != nil {
+		reg = *client
+	} else {
+		reg, err = registerDynamicClient(ctx, a.strictHTTPClient(), server.Name, asMeta.RegistrationEndpoint, redirectURI)
+		if err != nil {
+			return "", "", "", ClientRegistration{}, err
+		}
 	}
 	verifier, challenge, err := newPKCE()
 	if err != nil {
@@ -477,7 +526,7 @@ func (a *Authorizer) exchangeCode(ctx context.Context, server pub_models.McpServ
 		ClientSecret: ex.reg.ClientSecret,
 		AccessToken:  tok.AccessToken,
 		RefreshToken: tok.RefreshToken,
-		ExpiresAt:    a.clock().Add(time.Duration(tok.ExpiresIn) * time.Second),
+		ExpiresAt:    a.expiryFor(tok),
 		Scopes:       ex.scopes,
 	}, nil
 }

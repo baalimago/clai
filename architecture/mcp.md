@@ -243,10 +243,21 @@ path, which is RFC 8414's rule; the OIDC-style appended form is tried second, be
 for any issuer carrying a path component. Five fields are required of that document —
 `registration_endpoint`, `authorization_endpoint`, `token_endpoint`, `code_challenge_methods_supported`
 containing `S256`, and `grant_types_supported` containing the refresh grant — and a document missing
-any of them is a typed error naming which.
+any of them is a typed error naming which. `registration_endpoint` is checked after discovery
+rather than with the other four, because a pre-registered client can stand in for it (below).
 
 Dynamic registration means there is no per-vendor OAuth application to create by hand. It may or may
 not issue a client secret; both cases are supported.
+
+Some authorization servers offer no registration: GitHub's (`https://github.com/login/oauth`, the one
+its hosted MCP server names) only signs in clients registered with it in advance. For those, clai
+signs in as a client it ships, from `mcpauth.BuiltinClients` (`internal/tools/mcp/mcpauth/builtin_clients.go`),
+keyed by issuer and installed with `mcpauth.WithPreregisteredClients`. The client secret it carries
+is not confidential in a distributed binary; PKCE is what protects the flow. An issuer with neither
+registration nor a shipped client is a `NoClientError` that points at `auth.token_env`. A token
+request asks for JSON, since GitHub answers form-encoded otherwise, and an error body is reported
+even under status 200, which is how GitHub refuses a grant. A token issued without `expires_in`
+never expires: its entry carries no expiry and is never refreshed.
 
 ### What clai validates, and why fetching is not the whole story
 
