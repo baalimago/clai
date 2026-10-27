@@ -181,6 +181,12 @@ A `gh:` target reads
     ignored (`ProfileOverrides`), so its runs are saved and listed by
     `clai chat list` unless your own `textConfig.json` turns saving off.
     The run is the record of what the agent did on this machine.
+  - Shell context: a fetched or installed profile's `shell_context` is
+    ignored too (`ProfileOverrides`). A shell context runs commands from
+    this machine's own definitions and puts their output in the prompt;
+    which, and when, is the user's choice, so `-asc` or your own profile
+    sets it. `clai profiles publish` refuses a profile that names one, and
+    the Hub refuses it on publish.
   - `prompt` shows the first `PreviewLines` (6) lines and at most
     `PreviewChars` (400) characters of the prompt behind a `│` bar, so it
     never reads as clai's own output, and says how many characters it

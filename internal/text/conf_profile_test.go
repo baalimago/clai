@@ -400,6 +400,37 @@ func TestConfigurations_ProfileOverrides_FetchedProfileRunsAreSaved(t *testing.T
 	}
 }
 
+// A fetched or installed profile never picks a shell context: it would run
+// this machine's shell context commands on the profile's say.
+func TestConfigurations_ProfileOverrides_FetchedProfileGetsNoShellContext(t *testing.T) {
+	t.Setenv("CLAI_CONFIG_DIR", t.TempDir())
+	for _, tc := range []struct {
+		name, body string
+		remote     bool
+		want       string
+	}{
+		{"local profile picks one", `{"shell_context":"git"}`, false, "git"},
+		{"fetched by -prp does not", `{"shell_context":"git"}`, true, ""},
+		{"installed from the hub does not", `{"shell_context":"git","source":{"target":"cchub:ada/bot"}}`, false, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "p.json")
+			if err := os.WriteFile(path, []byte(tc.body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			conf := Default
+			conf.ProfilePath = path
+			conf.ProfileFetched = tc.remote
+			if err := conf.ProfileOverrides(); err != nil {
+				t.Fatal(err)
+			}
+			if conf.ShellContext != tc.want {
+				t.Fatalf("ShellContext = %q, want %q", conf.ShellContext, tc.want)
+			}
+		})
+	}
+}
+
 // A run with a remote profile is stamped with the target it was run as, so
 // `clai chat list` shows which hub profile a chat came from.
 func TestConfigurations_ProfileOverrides_FetchedProfileIsNamedByItsTarget(t *testing.T) {

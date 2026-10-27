@@ -105,6 +105,7 @@ func TestPublish_refusesBeforeAnythingLeaves(t *testing.T) {
 		{"typo", `{"modle":"m"}`, `did you mean "model"`},
 		{"envfile", `{"model":"m","mcp_servers":{"x":{"command":"x","envfile":"x.env"}}}`, "relative path"},
 		{"notjson", `{`, "not one JSON object"},
+		{"shellcontext", `{"model":"m","shell_context":"git"}`, "never applies a shell context"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			hub := &fakeHub{}

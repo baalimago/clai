@@ -2,6 +2,7 @@ package profiles
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -90,6 +91,9 @@ func (d CommandDeps) Publish(ctx context.Context, profile string, opts PublishOp
 	if err := pinnedSkills(body); err != nil {
 		return err
 	}
+	if err := noShellContext(body); err != nil {
+		return err
+	}
 	if d.FindSecret != nil {
 		if where, found := d.FindSecret(path, body); found {
 			return fmt.Errorf("%s holds what looks like a credential (%s): move it to an envfile or an environment variable, then publish", path, where)
@@ -129,6 +133,22 @@ func (d CommandDeps) send(ctx context.Context, confDir, arg string, req PublishR
 		what = " (a new version)"
 	}
 	fmt.Fprintf(d.Out, "Published %s%s\n  %s\n  %s\n", pinned, what, res.URL, use(pinned+"#sha256="+res.SHA256))
+	return nil
+}
+
+// noShellContext refuses a profile that names a shell context: a shell
+// context is the runner's own, and clai never applies one from a fetched
+// or installed profile, so publishing it would only mislead.
+func noShellContext(body []byte) error {
+	var p struct {
+		ShellContext string `json:"shell_context"`
+	}
+	if err := json.Unmarshal(body, &p); err != nil {
+		return fmt.Errorf("read profile: %w", err)
+	}
+	if strings.TrimSpace(p.ShellContext) != "" {
+		return fmt.Errorf("shell_context %q is your own: clai never applies a shell context from a shared profile, so remove it before you publish", p.ShellContext)
+	}
 	return nil
 }
 

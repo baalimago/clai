@@ -107,7 +107,10 @@ func (c *Configurations) ProfileOverrides() error {
 	if profile.SaveReplyAsConv != nil && !fetched {
 		c.SaveReplyAsConv = *profile.SaveReplyAsConv
 	}
-	if strings.TrimSpace(profile.ShellContext) != "" {
+	// A shell context runs commands from this machine's own definitions and
+	// puts their output in the prompt; which ones, and when, is the user's
+	// choice, never a fetched or installed profile's.
+	if strings.TrimSpace(profile.ShellContext) != "" && !fetched {
 		c.ShellContext = profile.ShellContext
 	}
 	mcpServers := make([]models.McpServer, 0)
