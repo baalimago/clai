@@ -30,6 +30,7 @@ import (
 	"github.com/baalimago/clai/internal/present"
 	"github.com/baalimago/clai/internal/profiles"
 	"github.com/baalimago/clai/internal/remote"
+	"github.com/baalimago/clai/internal/runtally"
 	"github.com/baalimago/clai/internal/setup"
 	"github.com/baalimago/clai/internal/summary"
 	"github.com/baalimago/clai/internal/text"
@@ -171,6 +172,7 @@ func commands(deps Deps, setExit func(int)) map[string]cmd.Command {
 		NewImageGenerator:   deps.NewImageGenerator,
 		PhotoConfig:         setup.LoadPhotoConfig,
 		NewRemoteResolver:   remoteResolver(deps.RemoteClient),
+		RunTallyEnv:         runtally.OSEnv{},
 	}
 	profileDeps := profiles.CommandDeps{
 		NewResolver:     profiles.NewResolverFunc(remoteResolver(deps.RemoteClient)),

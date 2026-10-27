@@ -2,6 +2,7 @@ package text
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/baalimago/clai/internal/quantity"
+	"github.com/baalimago/clai/internal/runtally"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/table"
@@ -31,6 +33,24 @@ type RunTally struct {
 	// price is known for the model.
 	HasCost   bool
 	ToolCalls []RunToolCall
+	// Subagents is what the clai runs this run started spent, reported
+	// through internal/runtally.
+	Subagents runtally.Totals
+}
+
+// totals is the run's own spend in the form a parent collects.
+func (t RunTally) totals() runtally.Totals {
+	own := runtally.Totals{
+		Runs:             1,
+		PromptTokens:     t.Usage.PromptTokens,
+		CachedTokens:     t.Usage.PromptTokensDetails.CachedTokens,
+		CompletionTokens: t.Usage.CompletionTokens,
+		CostUSD:          t.CostUSD,
+	}
+	if !t.HasCost {
+		own.UnpricedRuns = 1
+	}
+	return own
 }
 
 // QuerySummary is the end-of-run report of a plain query.
@@ -102,7 +122,11 @@ func (t RunTally) detailLines() []string {
 		lines = append(lines, "  cost    unknown (no price for this model)")
 	}
 
-	return append(lines, "  tools   "+toolTotals(t.ToolCalls))
+	lines = append(lines, "  tools   "+toolTotals(t.ToolCalls))
+	if t.Subagents.Runs > 0 {
+		lines = append(lines, "  subagents "+t.Subagents.Line())
+	}
+	return lines
 }
 
 const summarySeparator = " · "
@@ -242,16 +266,42 @@ func (q *Querier[C]) EnableQuerySummary() {
 	q.querySummary = true
 }
 
-func (q *Querier[C]) reportQuerySummary(start time.Time, chat, result pub_models.Chat, runErr error) error {
+// SetRunTally makes the run count the subagents it starts into its summary
+// and report its own totals to the clai that started it.
+func (q *Querier[C]) SetRunTally(scope *runtally.Scope) {
+	q.runTally = scope
+}
+
+// finishQuery settles a plain query's tally and, with -qs, prints its
+// summary.
+func (q *Querier[C]) finishQuery(start time.Time, chat, result pub_models.Chat, runErr error) error {
 	summary := QuerySummary{Duration: time.Since(start)}
 	if runErr != nil {
 		summary.Outcome = QueryStopped
 	}
 	summary.addTurn(chat, result)
-	if err := q.reportSummary(summary.Lines()); err != nil {
-		return fmt.Errorf("print query summary: %w", err)
+	settleErr := q.settleRunTally(&summary.RunTally)
+	if !q.querySummary {
+		return settleErr
 	}
-	return nil
+	if err := q.reportSummary(summary.Lines()); err != nil {
+		return errors.Join(settleErr, fmt.Errorf("print query summary: %w", err))
+	}
+	return settleErr
+}
+
+// settleRunTally folds in what the run's subagents reported and hands the
+// sum, the run's own spend included, to its parent.
+func (q *Querier[C]) settleRunTally(t *RunTally) error {
+	if q.runTally == nil {
+		return nil
+	}
+	subagents, collectErr := q.runTally.Collect()
+	t.Subagents = subagents
+	if _, err := q.runTally.Report(t.totals().Add(subagents)); err != nil {
+		return errors.Join(collectErr, fmt.Errorf("report to parent run: %w", err))
+	}
+	return collectErr
 }
 
 // reportSummary prints summary rows. A terminal session prints them below

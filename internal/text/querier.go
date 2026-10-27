@@ -12,6 +12,7 @@ import (
 	"github.com/baalimago/clai/internal/debugflags"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/present"
+	"github.com/baalimago/clai/internal/runtally"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
@@ -141,6 +142,7 @@ type Querier[C models.StreamCompleter] struct {
 	// querier).
 	summarizer             models.Summarizer
 	querySummary           bool
+	runTally               *runtally.Scope
 	summarizeConversations bool
 	summaryModel           string
 	summaryJoinTimeout     time.Duration
@@ -643,8 +645,8 @@ func (q *Querier[C]) Query(ctx context.Context) error {
 	before := q.chat
 	start := time.Now()
 	err := runner.Run(ctx, session)
-	if q.querySummary && q.loopProgress == nil {
-		err = errors.Join(err, q.reportQuerySummary(start, before, session.Chat, err))
+	if q.loopProgress == nil && (q.querySummary || q.runTally != nil) {
+		err = errors.Join(err, q.finishQuery(start, before, session.Chat, err))
 	}
 	q.chat = session.Chat
 	q.fullMsg = session.FinalAssistantText

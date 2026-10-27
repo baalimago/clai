@@ -131,6 +131,24 @@ A plain query prints the same summary, titled `▸ query done in 4s` (or
 off by default. Loop iterations never print it, since the loop reports for
 the whole run. See `internal/text/run_summary.go`.
 
+Both summaries count the clai runs a run starts (subagents), on a
+`subagents 4 runs · 210k in · 9k out · ~$0.41` row (`internal/runtally`).
+A run that prints a summary, or that has a `CLAI_RUN_TALLY_DIR` from a
+parent, opens a `runtally.Scope` in `QueryCommand` (`withRunTally`): a
+fresh temp directory that `CLAI_RUN_TALLY_DIR` points at for every process
+it starts, `cmd` and `async_cmd` workers included. When the run ends
+(`Querier.finishQuery` for a plain query, `ReportLoopSummary` for a loop),
+`settleRunTally` sums the `run-*.json` reports its children wrote there and
+writes its own spend plus theirs into its parent's directory, written under a
+`.tmp` name and renamed so a reader never sees half a file. The variable is
+restored and the directory removed when the command ends
+(`runTallyQuerier`). Nothing is read from a child's output, so `-ro` workers
+keep a clean stdout. A worker still running when its lead ends is not
+counted; one that ends after its lead finds the directory gone
+(`runtally.ParentGone`) and reports nowhere. Each run prices its own model,
+so a tree of mixed models still sums; runs with no known price are counted
+as unpriced.
+
 ## Configuration Cascade
 
 The query command applies configuration in this order (lowest to highest precedence):

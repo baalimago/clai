@@ -1,6 +1,7 @@
 package text
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -81,8 +82,9 @@ func (s LoopSummary) Lines() []string {
 // it below the loop's output; raw, structured and redirected output send it
 // to stderr so stdout stays machine-readable.
 func (q *Querier[C]) ReportLoopSummary(summary LoopSummary) error {
+	settleErr := q.settleRunTally(&summary.RunTally)
 	if err := q.reportSummary(summary.Lines()); err != nil {
-		return fmt.Errorf("print loop summary: %w", err)
+		return errors.Join(settleErr, fmt.Errorf("print loop summary: %w", err))
 	}
-	return nil
+	return settleErr
 }

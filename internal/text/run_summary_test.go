@@ -3,12 +3,15 @@ package text
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/baalimago/clai/internal/models"
+	"github.com/baalimago/clai/internal/runtally"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -19,6 +22,22 @@ func TestQuerySummary_Lines(t *testing.T) {
 		"  tokens  41.2k in (12k cached) · 3.12k out",
 		"  cost    ~$0.18",
 		"  tools   6 calls, 1 failed: go ×3 · cat ×2 · apply_patch",
+	}
+	if got := s.Lines(); !slices.Equal(got, want) {
+		t.Fatalf("Lines =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+func TestQuerySummary_LinesWithSubagents(t *testing.T) {
+	tally := sampleTally()
+	tally.Subagents = runtally.Totals{Runs: 4, PromptTokens: 210000, CompletionTokens: 9000, CostUSD: 0.41}
+	s := QuerySummary{Duration: 4 * time.Second, RunTally: tally}
+	want := []string{
+		"▸ query done in 4s",
+		"  tokens  41.2k in (12k cached) · 3.12k out",
+		"  cost    ~$0.18",
+		"  tools   6 calls, 1 failed: go ×3 · cat ×2 · apply_patch",
+		"  subagents 4 runs · 210k in · 9k out · ~$0.41",
 	}
 	if got := s.Lines(); !slices.Equal(got, want) {
 		t.Fatalf("Lines =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
@@ -76,11 +95,12 @@ func TestRunTally_AddTurnCountsOnlyWhatTheTurnAdded(t *testing.T) {
 	}
 }
 
-func TestQuerier_ReportQuerySummaryPropagatesWriteErrors(t *testing.T) {
+func TestQuerier_FinishQueryPropagatesWriteErrors(t *testing.T) {
 	q := rollingLoopQuerier(t, &strings.Builder{})
 	q.Raw = true
+	q.querySummary = true
 	q.errOut = failingWriter{}
-	err := q.reportQuerySummary(time.Now(), pub_models.Chat{}, pub_models.Chat{}, nil)
+	err := q.finishQuery(time.Now(), pub_models.Chat{}, pub_models.Chat{}, nil)
 	if err == nil || !strings.Contains(err.Error(), "print query summary: boom") {
 		t.Fatalf("err = %v, want the write failure", err)
 	}
@@ -261,3 +281,33 @@ func TestQuerier_TextQueryErrorCarriesThePartialRun(t *testing.T) {
 		})
 	}
 }
+
+func TestQuerier_FinishQueryNamesAFailedParentReport(t *testing.T) {
+	parent := filepath.Join(t.TempDir(), "a-file")
+	if err := os.WriteFile(parent, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	scope, err := runtally.Open(fakeRunTallyEnv{runtally.EnvDir: parent}, t.TempDir())
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = scope.Close() })
+	q := rollingLoopQuerier(t, &strings.Builder{})
+	q.SetRunTally(scope)
+	err = q.finishQuery(time.Now(), pub_models.Chat{}, pub_models.Chat{}, nil)
+	if err == nil || !strings.Contains(err.Error(), "report to parent run") {
+		t.Fatalf("err = %v, want the failed report", err)
+	}
+}
+
+func TestWithRunTally_refusesANonTextQuerier(t *testing.T) {
+	deps := QueryCommandDeps{RunTallyEnv: fakeRunTallyEnv{}, RunTallyTempRoot: t.TempDir()}
+	var q models.Querier = noopQuerier{}
+	if _, err := withRunTally(q, q, deps, true); err == nil {
+		t.Fatal("withRunTally accepted a querier that cannot count subagents")
+	}
+}
+
+type noopQuerier struct{}
+
+func (noopQuerier) Query(context.Context) error { return nil }

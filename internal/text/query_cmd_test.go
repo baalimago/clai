@@ -2,7 +2,9 @@ package text
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,6 +12,7 @@ import (
 
 	"github.com/baalimago/clai/internal/chat"
 	"github.com/baalimago/clai/internal/models"
+	"github.com/baalimago/clai/internal/runtally"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
@@ -249,5 +252,92 @@ func TestQueryCommand_querySummary(t *testing.T) {
 				t.Fatalf("summary on stderr = %t, want %t; stderr=%q", got, tc.want, stderr)
 			}
 		})
+	}
+}
+
+type fakeRunTallyEnv map[string]string
+
+func (e fakeRunTallyEnv) Getenv(key string) string { return e[key] }
+
+func (e fakeRunTallyEnv) Setenv(key, value string) error {
+	e[key] = value
+	return nil
+}
+
+func (e fakeRunTallyEnv) Unsetenv(key string) error {
+	delete(e, key)
+	return nil
+}
+
+func readRunTallies(t *testing.T, dir string) []runtally.Totals {
+	t.Helper()
+	paths, err := filepath.Glob(filepath.Join(dir, "run-*.json"))
+	if err != nil {
+		t.Fatalf("Glob: %v", err)
+	}
+	var got []runtally.Totals
+	for _, p := range paths {
+		raw, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatalf("ReadFile: %v", err)
+		}
+		var tally runtally.Totals
+		if err := json.Unmarshal(raw, &tally); err != nil {
+			t.Fatalf("Unmarshal %s: %v", p, err)
+		}
+		got = append(got, tally)
+	}
+	return got
+}
+
+// TestQueryCommand_reportsToItsParent pins the worker side of subagent
+// tallies: a query started under a parent's CLAI_RUN_TALLY_DIR reports its
+// totals there, with or without -qs, plain or looping, and leaves the
+// variable as it found it.
+func TestQueryCommand_reportsToItsParent(t *testing.T) {
+	t.Setenv("CLAI_DISABLE_COST_ERR_LOG_GOROUTINE", "1")
+	t.Setenv("OPENROUTER_API_KEY", "")
+	t.Setenv("DEBUG", "")
+	for _, tc := range []struct {
+		desc string
+		args []string
+	}{
+		{"plain", []string{"hello"}},
+		{"with -qs", []string{"-qs", "hello"}},
+		{"loop", []string{"-l", "run", "tool_complete_task"}},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			parent := t.TempDir()
+			env := fakeRunTallyEnv{runtally.EnvDir: parent}
+			conf := Default
+			conf.SummarizeConversations = false
+			runQueryCommand(t, conf, QueryCommandDeps{RunTallyEnv: env, RunTallyTempRoot: t.TempDir()}, tc.args...)
+			got := readRunTallies(t, parent)
+			if len(got) != 1 || got[0].Runs != 1 || got[0].PromptTokens == 0 {
+				t.Fatalf("reports = %+v, want one run with its tokens", got)
+			}
+			if env[runtally.EnvDir] != parent {
+				t.Fatalf("%s = %q after the run, want %q back", runtally.EnvDir, env[runtally.EnvDir], parent)
+			}
+		})
+	}
+}
+
+// TestQueryCommand_noTallyWithoutSummaryOrParent pins that a plain query
+// nobody collects from opens no tally directory.
+func TestQueryCommand_noTallyWithoutSummaryOrParent(t *testing.T) {
+	t.Setenv("CLAI_DISABLE_COST_ERR_LOG_GOROUTINE", "1")
+	t.Setenv("OPENROUTER_API_KEY", "")
+	env := fakeRunTallyEnv{}
+	root := t.TempDir()
+	conf := Default
+	conf.SummarizeConversations = false
+	runQueryCommand(t, conf, QueryCommandDeps{RunTallyEnv: env, RunTallyTempRoot: root}, "hello")
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatalf("ReadDir: %v", err)
+	}
+	if len(entries) != 0 || len(env) != 0 {
+		t.Fatalf("temp root = %v, env = %v; want both untouched", entries, env)
 	}
 }

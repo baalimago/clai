@@ -543,6 +543,7 @@ Minimum safeguards:
 For v1, the contract should also be explicit about two operational limits:
 
 - child processes inherit the parent environment by default, with explicit overrides from tool input
+  (that inheritance carries `CLAI_RUN_TALLY_DIR`, through which a nested `clai` reports its spend to the run's summary; see `architecture/query.md`)
 - log previews are byte-bounded and full logs are retained only until session end
 
 ## Acceptance criteria
