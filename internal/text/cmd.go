@@ -27,10 +27,10 @@ With -check, an achieved complete_task call is accepted only when that command
 exits 0.
 
 Examples:
-  clai q explain the files in this directory
-  clai -re q "and how do I fix that?"
-  docker logs my-app | clai -I LOG q "find errors in these logs: LOG"
-  clai -t '*' q inspect this repo using tools
+  clai -qs q explain the files in this directory
+  clai -re -qs q "and how do I fix that?"
+  docker logs my-app | clai -I LOG -qs q "find errors in these logs: LOG"
+  clai -t '*' -qs q inspect this repo using tools
   clai q -- -why does this fail
   clai -l q refactor the auth package and make the tests pass
   clai -l -check 'go test ./...' q fix the failing build`

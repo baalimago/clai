@@ -124,8 +124,8 @@ text config. Create or edit one in the profiles menu of 'clai setup', or write
 the JSON yourself.
 
 Run one by name with -p, or by file path or remote target with -prp:
-  clai -p gopher -g internal/handler.go q write tests for this file
-  clai -prp ./reviewer.json q review the staged diff`
+  clai -p gopher -g internal/handler.go -qs q write tests for this file
+  clai -prp ./reviewer.json -qs q review the staged diff`
 
 // RemoteHelp explains remote profile targets; surfaced in 'clai profiles -h'.
 const RemoteHelp = `Remote targets work with -prp, install and trust:
@@ -155,7 +155,7 @@ func Command(deps CommandDeps) *internal.Command {
 
 Examples:
   clai profiles
-  clai -prp cchub:lorentz/trade-bot@3 q 'Do your hourly run.'
+  clai -prp cchub:lorentz/trade-bot@3 -qs q 'Do your hourly run.'
   clai profiles trust cchub:lorentz/trade-bot@3
   clai profiles install cchub:lorentz/trade-bot@3
   clai profiles update

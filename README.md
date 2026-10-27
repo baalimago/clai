@@ -37,8 +37,10 @@ nix run github:baalimago/clai
 Then run:
 
 ```bash
-clai | clai query Please give a concise explanation of clai
+clai | clai -qs query Please give a concise explanation of clai
 ```
+
+`-qs` prints a run summary after the answer: how long it took, the tokens, the cost and the tools it called. Set `"query-summary": true` in `textConfig.json` to always get it.
 
 Either run bare `clai` (or `clai <command> -h`) or look at the [examples](./examples.md) for how to use `clai`.
 Prompt text starting with `-` is read as a flag, so pass it after `--`: `clai q -- -why does this fail`.

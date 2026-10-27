@@ -95,7 +95,7 @@ func SkillsCommand(deps CommandDeps) *internal.Command {
 
 Examples:
   clai skills publish review
-  clai -s '*' q 'review the staged diff'`,
+  clai -s '*' -qs q 'review the staged diff'`,
 	}
 	c.OnRun = func(_ context.Context, c *internal.Command) error {
 		if args := c.Args(); len(args) > 1 {

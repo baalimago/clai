@@ -32,8 +32,8 @@ One recording, one scratch home, six model calls.
 11. `clai replay` prints the last reply again. It runs no model.
 
 ```bash
-alias ai='clai q'
-alias ask='clai -dre q'
+alias ai='clai -qs q'
+alias ask='clai -dre -qs q'
 alias fix='clai -l -t "ls,cat,pwd,go,apply_patch" -check "go test ./..." q'
 ```
 
@@ -58,9 +58,9 @@ See: [`config.md`](./architecture/config.md).
 ## Query + reply + directory reply
 
 ```bash
-clai query "Explain the design"
-clai -re query "Now give the trade-offs"
-clai -dre query "Apply it to this repo"
+clai -qs query "Explain the design"
+clai -re -qs query "Now give the trade-offs"
+clai -dre -qs query "Apply it to this repo"
 clai query -- -why does this fail
 ```
 
@@ -122,8 +122,8 @@ Errors still go to standard error.
 ## Auto-append shell context
 
 ```bash
-clai -asc minimal query "Why is this command failing?"
-clai -add-shell-context git query "Summarize the current repo state before answering"
+clai -asc minimal -qs query "Why is this command failing?"
+clai -add-shell-context git -qs query "Summarize the current repo state before answering"
 ```
 
 - Shell contexts live in `<clai-config>/shellContexts/<name>.json`.
@@ -150,7 +150,7 @@ See: [`replay.md`](./architecture/replay.md), [`dre.md`](./architecture/dre.md).
 ```bash
 clai chat list
 clai chat continue 3
-clai -dre query "Continue from that context"
+clai -dre -qs query "Continue from that context"
 ```
 
 - `chat continue <index|id>` selects an existing transcript and stores a directory binding.
@@ -162,7 +162,7 @@ See: [`chat.md`](./architecture/chat.md).
 
 ```bash
 clai profiles list
-clai -p ops query "Find the owners of this subsystem"
+clai -p ops -qs query "Find the owners of this subsystem"
 ```
 
 - Profiles live in `<clai-config>/profiles/*.json`.
@@ -182,7 +182,7 @@ Also see examples:
 ```bash
 clai tools
 clai tools rg
-clai -t "rg,cat" query "Search for parsing logic and show me the file"
+clai -t "rg,cat" -qs query "Search for parsing logic and show me the file"
 ```
 
 - `clai tools` is inspection only.
@@ -195,7 +195,7 @@ See: [`tools-command.md`](./architecture/tools-command.md), [`tooling.md`](./arc
 
 ```bash
 clai setup      # stage 3: MCP server configs
-clai -t "mcp_linear*" query "List open incidents assigned to me"
+clai -t "mcp_linear*" -qs query "List open incidents assigned to me"
 ```
 
 - MCP server configs are stored in `<clai-config>/mcpServers/*.json`.
@@ -212,11 +212,11 @@ See: [`mcp.md`](./architecture/mcp.md), [`tooling.md`](./architecture/tooling.md
 ## Multimodal: images, photo + video
 
 ```bash
-clai -img screenshot.png q "What is wrong in this dialog?"
-cat diagram.png | clai q "Describe this diagram"
-clai -g 'docs/*' q "Summarize these notes and figures"
-clai -t generate_image -open q "Draw a fox in the snow"
-clai -re -t generate_image q "Make it night"
+clai -img screenshot.png -qs q "What is wrong in this dialog?"
+cat diagram.png | clai -qs q "Describe this diagram"
+clai -g 'docs/*' -qs q "Summarize these notes and figures"
+clai -t generate_image -open -qs q "Draw a fox in the snow"
+clai -re -t generate_image -qs q "Make it night"
 
 clai photo "A minimal architecture diagram"
 clai -re photo "Now simplify it further"
@@ -240,9 +240,9 @@ clai audio transcribe meeting.wav
 clai a t -af text meeting.wav
 cat meeting.wav | clai a t -
 
-clai a t meeting.wav | clai q "Summarize these meeting notes: {}"
+clai a t meeting.wav | clai -qs q "Summarize these meeting notes: {}"
 # let the agent transcribe, picking the model + format the tool uses:
-clai -am gpt-4o-transcribe-diarize -af json -t audio_transcribe q "Who said what in meeting.wav?"
+clai -am gpt-4o-transcribe-diarize -af json -t audio_transcribe -qs q "Who said what in meeting.wav?"
 ```
 
 - Transcripts render locally as `vtt` (default), `srt`, `text`, or `json`; stdout carries only the transcript, so it pipes cleanly.
