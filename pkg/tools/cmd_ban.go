@@ -3,10 +3,48 @@ package tools
 import (
 	"context"
 	"fmt"
+	"maps"
+	"path/filepath"
 	"strings"
 )
 
 type cmdBanContextKey struct{}
+
+// CmdBanEnv carries a run's ban policy, one entry per line, to every
+// command it spawns, so a nested clai enforces the same bans on what its
+// own model runs. Under a policy, a command may not set or clear it.
+const CmdBanEnv = "CLAI_CMD_BAN"
+
+// ParseCmdBanEnv reads the entries a parent run handed down in CmdBanEnv.
+func ParseCmdBanEnv(raw string) []string {
+	var entries []string
+	for line := range strings.SplitSeq(raw, "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			entries = append(entries, line)
+		}
+	}
+	return entries
+}
+
+// withCmdBanEnv returns env with the policy ctx carries under CmdBanEnv,
+// or env unchanged when there is none.
+func withCmdBanEnv(ctx context.Context, env map[string]string) map[string]string {
+	entries := cmdBanEntries(ctx)
+	if len(entries) == 0 {
+		return env
+	}
+	out := maps.Clone(env)
+	if out == nil {
+		out = map[string]string{}
+	}
+	out[CmdBanEnv] = strings.Join(entries, "\n")
+	return out
+}
+
+func cmdBanEntries(ctx context.Context) []string {
+	entries, _ := ctx.Value(cmdBanContextKey{}).([]string)
+	return entries
+}
 
 // WithCmdBanContext attaches an immutable command ban policy to a tool-call
 // context. The policy is the only ban state there is: every run carries its
@@ -36,13 +74,24 @@ func ValidateCmdNotBanned(ctx context.Context, command string, args []string) er
 // (command=sh, args=[-c, git commit]) is caught by entry git commit. Returns
 // nil when not banned or when ctx carries no policy.
 func validateCmdNotBannedWithContext(ctx context.Context, command string, args []string) error {
-	entries, _ := ctx.Value(cmdBanContextKey{}).([]string)
+	entries := cmdBanEntries(ctx)
 	if len(entries) == 0 {
 		return nil
 	}
 	tokens := tokenizeCommand(command)
+	prose := isClai(command)
 	for _, arg := range args {
+		// A nested clai's multi-word argument is a prompt for its model, not
+		// something executed; the child enforces the bans through CmdBanEnv.
+		if prose && len(strings.Fields(arg)) > 1 {
+			continue
+		}
 		tokens = append(tokens, tokenizeCommand(arg)...)
+	}
+	for _, tok := range tokens {
+		if strings.Contains(tok, CmdBanEnv) {
+			return errCmdBanEnvTouched("command")
+		}
 	}
 	if matched, banned := matchCmdBanTokens(tokens, entries); banned {
 		//lint:ignore ST1005 the refusal is a complete sentence for the agent, not a
@@ -50,6 +99,15 @@ func validateCmdNotBannedWithContext(ctx context.Context, command string, args [
 		return fmt.Errorf("command is banned by policy (matched entry %q). Do not run commands matching this rule.", matched)
 	}
 	return nil
+}
+
+func errCmdBanEnvTouched(what string) error {
+	return fmt.Errorf("%s touches %s, which carries the command ban policy to nested runs; do not set or clear it", what, CmdBanEnv)
+}
+
+func isClai(command string) bool {
+	base := filepath.Base(command)
+	return base == "clai" || base == "clai.exe"
 }
 
 // tokenizeCommand normalizes a raw command string into a flat token list.

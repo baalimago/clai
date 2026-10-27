@@ -278,6 +278,18 @@ by entry `git commit`. Matching is exact and case-sensitive. Entries are
 whitespace-split only: quotes and metachars are never processed inside an
 entry.
 
+A nested clai's prompt is prose, not a command: when `async_cmd` runs `clai`
+(by name or path), an argument of more than one word is a prompt for the
+child's model and is not matched, so a worker brief saying "rm old files" is
+not refused by entry `rm`. Every other token still is: a lone `rm` argument,
+an entry naming `clai`, and anything a shell runs (`sh -c "clai q 'rm x'"`
+is matched as before). The child enforces the bans instead: every command
+`cmd` and `async_cmd` spawn under a policy gets it in `CLAI_CMD_BAN`
+(`pkgtools.CmdBanEnv`, one entry per line), and a clai run appends those
+entries to its own (`setupInheritedCmdBan`), so a worker refuses what its
+parent would. Under a policy, a command or an `async_cmd` `env` that names
+`CLAI_CMD_BAN` is refused, so a model cannot clear it for its children.
+
 Scope (D1): only the two freetext/direct command-execution tools `cmd` and
 `async_cmd` (plus their legacy aliases `freetext_command` and `async_cmd_run`).
 Structured tools with fixed binaries (`go`, `git`, `sed`, `ls`, ...),
@@ -310,7 +322,10 @@ Documented matching limits (literal-text matching):
 
 - Banning is by literal content: a command is refused whenever the phrase's
   tokens occur in it, even when nothing executes (`echo git commit` IS banned
-  by entry `git commit`).
+  by entry `git commit`, and so is `git commit -m "rm old files"` by entry
+  `rm`). The one exception is a direct `clai` invocation's multi-word
+  prompt, above; written into a `cmd` shell string, `clai q "rm x"` is still
+  refused.
 - The matcher sees literal text only: variable assignments are not expanded
   (`x=git; $x commit` is NOT caught by `git commit`), and command
   substitutions are not evaluated.

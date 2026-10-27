@@ -17,6 +17,7 @@ import (
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/utils"
 	textmodels "github.com/baalimago/clai/pkg/text/models"
+	pkgtools "github.com/baalimago/clai/pkg/tools"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	imagodebug "github.com/baalimago/go_away_boilerplate/pkg/debug"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
@@ -108,6 +109,12 @@ func setupCmdBanConfig(tConf *Configurations, cmdBan string) {
 	}
 }
 
+// setupInheritedCmdBan appends the bans a parent run handed down in
+// pkgtools.CmdBanEnv, so a nested clai refuses what its parent would.
+func setupInheritedCmdBan(tConf *Configurations, inherited string) {
+	tConf.CmdBan = append(tConf.CmdBan, pkgtools.ParseCmdBanEnv(inherited)...)
+}
+
 // SetupQuerier composes the full text-querier path: config load, flag and
 // profile cascades, glob/tool/skill/lookback setup, prompt construction and
 // vendor routing. trustInput is the reader for interactive skill-trust
@@ -167,6 +174,7 @@ func SetupQuerier(ctx context.Context, confDir string, tf internal.TextFlags, ar
 	setupToolConfig(&tConf, tf.AgentText.UseTools.Value())
 
 	setupCmdBanConfig(&tConf, tf.AgentText.CmdBan.Value())
+	setupInheritedCmdBan(&tConf, os.Getenv(pkgtools.CmdBanEnv))
 
 	// We want some flags, such as model, to be able to overwrite the profile configurations
 	// If this gets too confusing, it should be changed

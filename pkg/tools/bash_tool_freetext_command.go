@@ -136,6 +136,7 @@ func (r FreetextCmdTool) CallWithContext(ctx context.Context, input pub_models.I
 
 	cmd := exec.Command("sh", "-c", freetextCmd)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Env = mergeEnv(withCmdBanEnv(ctx, nil))
 	var stdoutBuf, stderrBuf bytes.Buffer
 	cmd.Stdout = &stdoutBuf
 	cmd.Stderr = &stderrBuf

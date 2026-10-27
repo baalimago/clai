@@ -303,6 +303,9 @@ source's bans.
   nothing
 - CLI: `-cmd-ban=rm,git commit` — appends, comma-separated
 - agent API: `WithCmdBanList(...)` (see `pkg/agent`)
+- inherited: `CLAI_CMD_BAN`, one entry per line, which `cmd` and
+  `async_cmd` set on every command they spawn under a policy, so a nested
+  clai keeps its parent's bans
 
 A command matching any entry is refused before it spawns; the refusal names
 the matched entry and does not abort the run. The effective list is per

@@ -536,6 +536,10 @@ func callAsyncCmdRun(ctx context.Context, toolName string, input pub_models.Inpu
 	if err := validateCmdNotBannedWithContext(ctx, command, args); err != nil {
 		return "", fmt.Errorf("start async command: %w", err)
 	}
+	if _, set := env[CmdBanEnv]; set && len(cmdBanEntries(ctx)) > 0 {
+		return "", fmt.Errorf("start async command: %w", errCmdBanEnvTouched("env"))
+	}
+	env = withCmdBanEnv(ctx, env)
 	cmd, err := asyncCmdManager.Spawn(ctx, toolName, asyncCmdRunSpec{
 		Command: command,
 		Args:    args,
