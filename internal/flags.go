@@ -395,7 +395,7 @@ func (g *QueryTextFlags) Register(fs *flag.FlagSet) {
 	g.Summarize.Register(fs, "Generate a title and summary for a new conversation alongside the query. Overrides summarize-conversations in textConfig.json.", "summarize")
 	g.SummaryModel.Register(fs, "Set the model the conversation summarizer uses. Overrides summary-model in textConfig.json.", "sm", "summary-model")
 	g.QuerySummary.Register(fs, "Print a run summary (tokens, cost, tools, subagents) after the answer. Loop runs always print one. Overrides query-summary in textConfig.json.", "qs", "query-summary")
-	g.ReplyOnly.Register(fs, "Print only the reply on stdout; tool calls, tool output and reasoning go to stderr. clai_run workers use it.", "ro", "reply-only")
+	g.ReplyOnly.Register(fs, "Print only the reply on stdout; tool calls, tool output and reasoning go to stderr, drawn as in a terminal when stderr is one. clai_run workers use it.", "ro", "reply-only")
 }
 
 // LoopFlags is the loop-mode surface query carries: -l elevates the query

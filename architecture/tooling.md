@@ -360,7 +360,13 @@ workers' tools and briefs.
   prose is held (`Querier.holdsStepText`) until the step ends, then
   `releaseStepText` prints it to stderr when the step ended in tool calls
   and to stdout only when it is the reply. Users get the same with
-  `clai -ro ... q | git commit -F -`.
+  `clai -reply-only ... q | git commit -F -`. When stderr is a terminal
+  and the run is neither raw, structured nor a loop
+  (`Querier.ShowProgressOn`), the session draws on stderr exactly as it
+  would on a terminal stdout, rolling window included, and the reply goes
+  to stdout at the end (`Querier.handOffReply`), so
+  `clai -reply-only -profile-path <agent> q > agenda.md` shows progress and
+  leaves only the reply in the file.
 - **No prompt.** A profile run without a prompt or stdin acts on its defaults
   (see profiles.md), so `clai -prp <agent> q` works as a worker too.
 - **Hidden tools.** `clai_run`, `clai_check`, `clai_result`,

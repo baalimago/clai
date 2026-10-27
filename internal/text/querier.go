@@ -35,12 +35,15 @@ type Querier[C models.StreamCompleter] struct {
 	errOut io.Writer
 	// transcriptToStderr is -reply-only: see SendTranscriptToStderr.
 	transcriptToStderr bool
-	structuredOutput   bool
-	outputModeKnown    bool
-	outputIsTerminal   bool
-	chat               pub_models.Chat
-	callStackLevel     int
-	username           string
+	// replyOut is the redirected stdout while the session draws on a
+	// terminal stderr: see ShowProgressOn.
+	replyOut         io.Writer
+	structuredOutput bool
+	outputModeKnown  bool
+	outputIsTerminal bool
+	chat             pub_models.Chat
+	callStackLevel   int
+	username         string
 	// dims is the one terminal-dimensions snapshot of this interactive output
 	// session. It is resolved once in NewQuerier from the session writer's fd;
 	// every width-aware render path of the querier reads this value. The
@@ -186,6 +189,12 @@ func (q *Querier[C]) postProcessOutput(ctx context.Context, newSysMsg pub_models
 	// display branch so raw, structured, rolling, and terminal paths all emit
 	// it (worklog 2026-08-15-agent-slog-output, Phase 3).
 	q.logMessage(ctx, "final_answer", newSysMsg.Content, "")
+	if q.replyOut != nil {
+		if err := q.handOffReply(newSysMsg.Content); err != nil {
+			ancli.Warnf("failed to hand off reply: %v", err)
+		}
+		return
+	}
 	// The token should already have been printed while streamed
 	if q.rawDisplay() {
 		if q.debug {

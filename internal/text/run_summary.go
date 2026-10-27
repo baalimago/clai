@@ -217,6 +217,52 @@ func (q *Querier[C]) SendTranscriptToStderr() {
 	q.transcriptToStderr = true
 }
 
+// ShowProgressOn keeps a redirected stdout for the reply alone and draws the
+// session's progress on progress, a terminal, the way a terminal stdout
+// would show it: clai -reply-only q ... > reply.md shows the rolling window
+// on stderr. It does nothing unless stdout is redirected, progress is a
+// terminal, and the output is neither raw, structured nor debug.
+func (q *Querier[C]) ShowProgressOn(progress io.Writer) {
+	out := q.out
+	if out == nil {
+		out = os.Stdout
+	}
+	if q.Raw || q.structuredOutput || q.debug || utils.IsTerminalWriter(out) || !utils.IsTerminalWriter(progress) {
+		return
+	}
+	q.replyOut = out
+	q.out = progress
+	q.outputIsTerminal = true
+	q.dims = utils.SessionDimensions(progress)
+}
+
+// handOffReply clears what the session drew of the reply on the progress
+// terminal, writes the reply to the redirected stdout and leaves one line
+// saying where it went.
+func (q *Querier[C]) handOffReply(reply string) error {
+	if q.activityViewport != nil {
+		if err := q.clearActivityWindow(q.out); err != nil {
+			return err
+		}
+	} else if q.dims.Width > 0 {
+		utils.UpdateMessageTerminalMetadata(reply, &q.line, &q.lineCount, q.dims.Width)
+		if err := table.ClearTermTo(q.out, q.lineCount-1); err != nil {
+			return fmt.Errorf("clear streamed reply: %w", err)
+		}
+	}
+	reply = strings.TrimRight(stripThinkingBlocks(reply), "\n") + "\n"
+	if _, err := io.WriteString(q.replyOut, reply); err != nil {
+		return fmt.Errorf("write reply: %w", err)
+	}
+	lines := strings.Count(reply, "\n")
+	note := fmt.Sprintf("▸ reply written to stdout (%d lines)", lines)
+	if lines == 1 {
+		note = "▸ reply written to stdout (1 line)"
+	}
+	_, err := io.WriteString(q.out, table.Colorize(utils.LoopTitleColor(), note)+"\n")
+	return err
+}
+
 // transcriptOut is where the raw transcript (everything but the reply)
 // prints.
 func (q *Querier[C]) transcriptOut() io.Writer {

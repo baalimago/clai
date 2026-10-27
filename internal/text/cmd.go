@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"time"
 
 	"github.com/baalimago/clai/internal"
@@ -86,7 +87,7 @@ func QueryCommand(deps QueryCommandDeps) *internal.Command {
 			return err
 		}
 		if tf.QueryText.ReplyOnly.Value() {
-			if err := enableReplyOnly(q); err != nil {
+			if err := enableReplyOnly(q, !lf.Loop.Value()); err != nil {
 				return err
 			}
 		}
@@ -237,12 +238,20 @@ func setSummaryJoinTimeout(q models.Querier, d time.Duration) error {
 	return nil
 }
 
-func enableReplyOnly(q models.Querier) error {
-	setter, ok := q.(interface{ SendTranscriptToStderr() })
+// enableReplyOnly keeps stdout for the reply. With showProgress, a terminal
+// stderr shows the session's progress as a terminal stdout would.
+func enableReplyOnly(q models.Querier, showProgress bool) error {
+	setter, ok := q.(interface {
+		SendTranscriptToStderr()
+		ShowProgressOn(io.Writer)
+	})
 	if !ok {
 		return fmt.Errorf("reply-only requires a text querier, got %T", q)
 	}
 	setter.SendTranscriptToStderr()
+	if showProgress {
+		setter.ShowProgressOn(os.Stderr)
+	}
 	return nil
 }
 
