@@ -97,7 +97,7 @@ func (d CommandDeps) Publish(ctx context.Context, profile string, opts PublishOp
 	}
 	return d.send(ctx, confDir, profile, PublishRequest{
 		Name: name, Body: string(body), Title: opts.Title, Summary: opts.Summary, Note: opts.Note, Handle: opts.Handle,
-	}, func(pinned string) string { return "clai -prp " + pinned + " q …" })
+	}, func(pinned string) string { return "clai -profile-path " + pinned + " query …" })
 }
 
 // send publishes req and prints its address and use(address), how to use

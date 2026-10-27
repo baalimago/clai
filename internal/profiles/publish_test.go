@@ -68,7 +68,7 @@ func TestPublish_sendsTheProfileByNameAndShowsHowToRunIt(t *testing.T) {
 	for _, s := range []string{
 		"Published cchub:ada/go-reviewer@2 (a new version)",
 		"https://www.clai.chat/hub/ada/go-reviewer/",
-		"clai -prp cchub:ada/go-reviewer@2#sha256=abc q",
+		"clai -profile-path cchub:ada/go-reviewer@2#sha256=abc query",
 	} {
 		if !strings.Contains(out.String(), s) {
 			t.Fatalf("output %q lacks %q", out.String(), s)

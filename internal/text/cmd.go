@@ -29,13 +29,14 @@ With -check, an achieved complete_task call is accepted only when that command
 exits 0.
 
 Examples:
-  clai -qs q explain the files in this directory
-  clai -re -qs q "and how do I fix that?"
-  docker logs my-app | clai -I LOG -qs q "find errors in these logs: LOG"
-  clai -t '*' -qs q inspect this repo using tools
-  clai q -- -why does this fail
-  clai -l q refactor the auth package and make the tests pass
-  clai -l -check 'go test ./...' q fix the failing build`
+  clai -query-summary query explain the files in this directory
+  clai -reply -query-summary query "and how do I fix that?"
+  docker logs my-app | clai -replace LOG -query-summary query "find errors in these logs: LOG"
+  clai -tools '*' -query-summary query inspect this repo using tools
+  clai -reply-only -tools 'rg,cat' query write release notes > NOTES.md
+  clai query -- -why does this fail
+  clai -loop query refactor the auth package and make the tests pass
+  clai -loop -check 'go test ./...' query fix the failing build`
 
 // QueryCommandDeps are the composition-root collaborators the query command
 // needs in plain and loop mode: config prep lives in internal/setup (which

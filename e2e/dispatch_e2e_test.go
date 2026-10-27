@@ -46,14 +46,14 @@ func Test_e2e_dash_leading_prompt_escape(t *testing.T) {
 		stdout := testboil.CaptureStdout(t, func(t *testing.T) {
 			harness.Run(nil)
 		})
-		testboil.AssertStringContains(t, stdout, "clai q -- -")
+		testboil.AssertStringContains(t, stdout, "clai query -- -")
 	})
 
 	t.Run("query help documents the escape", func(t *testing.T) {
 		stdout := testboil.CaptureStdout(t, func(t *testing.T) {
 			harness.Run([]string{"q", "-h"})
 		})
-		testboil.AssertStringContains(t, stdout, "clai q -- -")
+		testboil.AssertStringContains(t, stdout, "clai query -- -")
 	})
 }
 

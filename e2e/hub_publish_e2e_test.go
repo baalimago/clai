@@ -88,7 +88,7 @@ func Test_HUB_publishThenRunByAddress(t *testing.T) {
 	}
 	// The run line pins the bytes sent: the profile as it is on disk.
 	v1 := digestOf(readBot(t))
-	if !strings.Contains(stdout, "clai -prp cchub:ada/trade-bot@1#sha256="+v1) {
+	if !strings.Contains(stdout, "clai -profile-path cchub:ada/trade-bot@1#sha256="+v1) {
 		t.Fatalf("first publish shows no pinned run line: %q", stdout)
 	}
 

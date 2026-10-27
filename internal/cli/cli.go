@@ -67,21 +67,22 @@ Cache dir:  CACHE_DIR
 Examples:
   - clai --version   # same as 'clai version'
   - clai confdir
-  - clai -t website_text -qs query "What'\''\'''s the weather like in Tokyo? Use website_text to fetch data"
-  - clai -glob "*.txt" -qs query Please summarize these documents: 
-  - clai -asc minimal -qs q "what changed in this repo?"
-  - clai -l q "refactor the auth package and make the tests pass"
-  - clai -pm dall-e-2 photo A cat in space
-  - clai -img screenshot.png -qs q "What is wrong in this dialog?"
-  - clai -t generate_image -qs q "Draw a fox in the snow"
-  - docker logs example | clai -I LOG -qs q "Find errors in these logs: LOG"
-  - clai a t meeting.wav | clai -qs q "Summarize these meeting notes: {}"
-  - clai a t -am gpt-4o-transcribe-diarize -strict-speakers long-meeting.wav
-  - clai c list
-  - clai -r c dirv2
-  - clai c summarize 7d   # label last week's conversations with a title and summary
-  - clai c help
-  - clai q -- -why does this fail   # '--' escapes a prompt starting with '-'
+  - clai -tools website_text -query-summary query "What'\''\'''s the weather like in Tokyo? Use website_text to fetch data"
+  - clai -glob "*.txt" -query-summary query Please summarize these documents: 
+  - clai -add-shell-context minimal -query-summary query "what changed in this repo?"
+  - clai -loop query "refactor the auth package and make the tests pass"
+  - clai -reply-only -profile-path cchub:clai/reviewer query > review.md   # progress on stderr, only the reply in the file
+  - clai -photo-model dall-e-2 photo A cat in space
+  - clai -image screenshot.png -query-summary query "What is wrong in this dialog?"
+  - clai -tools generate_image -query-summary query "Draw a fox in the snow"
+  - docker logs example | clai -replace LOG -query-summary query "Find errors in these logs: LOG"
+  - clai audio transcribe meeting.wav | clai -query-summary query "Summarize these meeting notes: {}"
+  - clai audio transcribe -audio-model gpt-4o-transcribe-diarize -strict-speakers long-meeting.wav
+  - clai chat list
+  - clai -raw chat dirv2
+  - clai chat summarize 7d   # label last week's conversations with a title and summary
+  - clai chat help
+  - clai query -- -why does this fail   # '--' escapes a prompt starting with '-'
 `
 
 // CPUProfileFileName is where RunProfiled writes when the CPU debug flag is on.

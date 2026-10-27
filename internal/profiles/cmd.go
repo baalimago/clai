@@ -123,9 +123,10 @@ servers it may start and the skills it brings (see 'clai skills -h'), kept in
 text config. Create or edit one in the profiles menu of 'clai setup', or write
 the JSON yourself.
 
-Run one by name with -p, or by file path or remote target with -prp:
-  clai -p gopher -g internal/handler.go -qs q write tests for this file
-  clai -prp ./reviewer.json -qs q review the staged diff`
+Run one by name with -profile (-p), or by file path or remote target with
+-profile-path (-prp):
+  clai -profile gopher -glob internal/handler.go -query-summary query write tests for this file
+  clai -profile-path ./reviewer.json -query-summary query review the staged diff`
 
 // RemoteHelp explains remote profile targets; surfaced in 'clai profiles -h'.
 const RemoteHelp = `Remote targets work with -prp, install and trust:
@@ -155,7 +156,7 @@ func Command(deps CommandDeps) *internal.Command {
 
 Examples:
   clai profiles
-  clai -prp cchub:lorentz/trade-bot@3 -qs q 'Do your hourly run.'
+  clai -profile-path cchub:lorentz/trade-bot@3 -query-summary query 'Do your hourly run.'
   clai profiles trust cchub:lorentz/trade-bot@3
   clai profiles install cchub:lorentz/trade-bot@3
   clai profiles update
@@ -199,7 +200,7 @@ Examples:
   clai profiles trust cchub:lorentz/trade-bot@4`
 
 const installHelp = `profiles install <target> [name]. Fetches a remote target and saves it as
-<config-dir>/profiles/<name>.json with a source stamp, so clai -p <name> runs it
+<config-dir>/profiles/<name>.json with a source stamp, so clai -profile <name> runs it
 offline. The name defaults to the agent's, repo's or file's name.
 
 Examples:
