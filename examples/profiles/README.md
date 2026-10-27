@@ -10,7 +10,7 @@ clai -prp cchub:clai/reviewer -qs q
 
 An agent run with no prompt and nothing piped in acts on its defaults:
 reviewer reviews your branch, committer reads the staged diff. reviewer,
-pr-reviewer and upgrade-scout split their work across parallel clai
+pr-reviewer, pr-summarizer and upgrade-scout split their work across parallel clai
 workers: each runs `clai` through `async_cmd`, a separate process with its
 own brief. How to run them is the
 [clai-subagents](../skills/clai-subagents/SKILL.md) skill
@@ -29,6 +29,7 @@ profile lists them. Swap `model` for whichever model you have a key for.
 | --- | --- | --- | --- |
 | [reviewer](./reviewer.json) | Reviews your branch against the default branch (plus uncommitted work) with parallel reviewer workers, verifies every finding (library behaviour against Context7 docs, no key needed), then prints a verdict; bans `git push` and `rm` | `clai -prp cchub:clai/reviewer -qs q` | nothing extra |
 | [committer](./committer.json) | Writes the commit message for the staged changes, in the repository's own style | `clai -ro -prp cchub:clai/committer q \| git commit -F -` | nothing extra |
+| [pr-summarizer](./pr-summarizer.json) | Investigates your whole branch (parallel reader workers when it is large) and writes the one commit message that sums it up: a subject of at most 72 characters, a body of at most two paragraphs and 200 words; bans `git push` and `git commit` | `clai -ro -prp cchub:clai/pr-summarizer q` | nothing extra |
 | [researcher](./researcher.json) | Searches the web and answers with a short, sourced brief; with no question, what changed lately for your project's main dependencies | `clai -prp cchub:clai/researcher -qs q` | `uvx` |
 | [pr-reviewer](./pr-reviewer.json) | Finds the current branch's PR, runs reviewer on it and posts the review with inline comments; never approves | `clai -prp cchub:clai/pr-reviewer -qs q` | `GITHUB_TOKEN` |
 | [upgrade-scout](./upgrade-scout.json) | Finds deprecated API use against current library docs and writes a migration plan, one worker per library | `clai -prp cchub:clai/upgrade-scout -qs q` | `npx`; `CONTEXT7_API_KEY` optional |
