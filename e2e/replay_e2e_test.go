@@ -118,3 +118,16 @@ func Test_e2e_dirscope_replay_honors_notification_bell(t *testing.T) {
 		})
 	}
 }
+
+// Test_e2e_last_reply_only_is_query_then_replay pins the documented way to
+// get only the last reply: run the query with its output discarded, then
+// `clai -r replay` prints the reply alone.
+func Test_e2e_last_reply_only_is_query_then_replay(t *testing.T) {
+	confDir := e2etest.SetupMainTestConfigDir(t)
+	if _, status := harness.RunOne(t, confDir, "-cm mock_test q the answer"); status != 0 {
+		t.Fatalf("query: status %d", status)
+	}
+	stdout, status := harness.RunOne(t, confDir, "-r replay")
+	testboil.FailTestIfDiff(t, status, 0)
+	testboil.FailTestIfDiff(t, stdout, "the answer\n")
+}

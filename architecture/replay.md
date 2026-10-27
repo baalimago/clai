@@ -84,3 +84,8 @@ Both `replay` and `dre` honor `-r/-raw`:
   `globalScope.json` entirely.
 
 So `replay`/`dre` are for inspection; `-re`/`-dre` are for context selection.
+
+`clai q "…" > /dev/null && clai -r replay` is the way to get only the
+last reply of a run: `-r` on the query itself prints the raw stream, which
+includes everything streamed before the final reply (see
+`architecture/query.md`, Output Modes).
