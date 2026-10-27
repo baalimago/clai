@@ -37,9 +37,11 @@ flag at that level.
 the `-l`/`-loop` flag of `query` (see [query.md](./query.md#loop-mode)).
 The `completion` command and the hidden `__complete` protocol are
 auto-registered by
-`cmd.Run` (upstream). There is no `help` command: bare `clai` prints the
-full usage, and every command's `-h` prints its Help() text with examples,
-flags and subcommands (see [help.md](./help.md)).
+`cmd.Run` (upstream). `Run` adds the `help` command (`withHelp`, not in
+`Commands`, since it lists them): `clai help`, `clai -h` and `clai --help`
+print the full usage and exit 0, and `clai help <command>` is that
+command's `-h`, which prints its Help() text with examples, flags and
+subcommands (see [help.md](./help.md)).
 
 Each command lives in its domain package and exposes a
 `Command(deps) *internal.Command` constructor:

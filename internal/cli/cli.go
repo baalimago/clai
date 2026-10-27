@@ -57,7 +57,8 @@ Usage: clai [command flags] <command> [command flags] [args]
 
 Commands:
 %v
-Run 'clai <command> -h' for a command's flags, examples and subcommands.
+Run 'clai help <command>' or 'clai <command> -h' for a command's flags,
+examples and subcommands.
 
 Config dir: CONFIG_DIR
 Cache dir:  CACHE_DIR
@@ -255,7 +256,7 @@ func versionFlagAsCommand(args []string) []string {
 // Run dispatches args (without the program name) and returns the process exit
 // status. It never exits; the caller owns os.Exit.
 func Run(args []string, deps Deps) int {
-	args = versionFlagAsCommand(args)
+	args = helpAsCommand(versionFlagAsCommand(args))
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	// Nested tool calls stop clai through this cancel.
@@ -265,7 +266,7 @@ func Run(args []string, deps Deps) int {
 	cacheDir, _ := utils.GetClaiCacheDir()
 	usage := strings.NewReplacer("CONFIG_DIR", cfgDir, "CACHE_DIR", cacheDir).Replace(usageTemplate)
 	ctx, exit := internal.WithExitStatus(ctx)
-	cmds := commands(deps, exit.Set)
+	cmds := withHelp(commands(deps, exit.Set), usage)
 	if err := checkArgs(args, cmds); err != nil {
 		ancli.Errf("%v", err)
 		return 1
