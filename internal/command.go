@@ -25,13 +25,25 @@ type completionNotificationSuppressor interface {
 }
 
 func triggerCompletionNotification(completed any) {
+	ringCompletionBell(completed, os.Stdout, os.Stderr, utils.IsTerminalWriter)
+}
+
+// ringCompletionBell rings the bell on whichever of stdout and stderr is a
+// terminal, stdout first. A redirected stdout never gets the bell: it would
+// land in the file or pipe holding the reply.
+func ringCompletionBell(completed any, stdout, stderr io.Writer, isTerminal func(io.Writer) bool) {
 	if suppressor, ok := completed.(completionNotificationSuppressor); ok && suppressor.SuppressCompletionNotification() {
 		return
 	}
 	if !utils.NotificationBellEnabled() {
 		return
 	}
-	fmt.Fprint(os.Stdout, "\a")
+	switch {
+	case isTerminal(stdout):
+		fmt.Fprint(stdout, "\a")
+	case isTerminal(stderr):
+		fmt.Fprint(stderr, "\a")
+	}
 }
 
 // Command adapts one clai command to the cmd.Command interface. Each

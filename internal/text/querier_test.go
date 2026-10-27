@@ -169,12 +169,12 @@ func Test_Querier_SuppressCompletionNotification(t *testing.T) {
 			},
 		},
 		{
+			// The bell itself moves to stderr when stdout is redirected.
 			name: "redirected output",
 			q: Querier[*MockQuerier]{
 				outputModeKnown:  true,
 				outputIsTerminal: false,
 			},
-			want: true,
 		},
 		{
 			name: "structured output",

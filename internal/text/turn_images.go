@@ -242,7 +242,15 @@ func (q *Querier[C]) imageProgress() ImageProgress {
 		return q.imageTurn.Progress
 	}
 	if q.defaultImageProgress == nil {
+		// Progress shares a terminal stdout with the session; a redirected
+		// stdout holds only the reply, so progress moves to stderr.
 		out := q.output()
+		if !utils.IsTerminalWriter(out) {
+			out = q.errOut
+			if out == nil {
+				out = os.Stderr
+			}
+		}
 		q.defaultImageProgress = board.NewStatus(out, utils.IsTerminalWriter(out), imageProgressTitle)
 	}
 	return q.defaultImageProgress

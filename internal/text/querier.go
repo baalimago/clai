@@ -158,8 +158,10 @@ type Querier[C models.StreamCompleter] struct {
 	summaryDeferred bool
 }
 
+// SuppressCompletionNotification keeps structured output bell-free. A
+// redirected stdout needs no check here: the bell then rings on stderr.
 func (q *Querier[C]) SuppressCompletionNotification() bool {
-	return q.structuredOutput || (q.outputModeKnown && !q.outputIsTerminal)
+	return q.structuredOutput
 }
 
 type SkillLoader interface {
