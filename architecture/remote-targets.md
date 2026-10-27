@@ -160,6 +160,10 @@ A `gh:` target reads
     prompt injection away; the prompt says `tools · none · no MCP
     servers`. A `tools` list is shown as written; a profile with servers
     is narrowed to their tools plus that list.
+  - Profile: a `-prp` run's conversation is stamped with the target it
+    ran as (pin fragment left out), so `clai chat list` names the hub
+    profile, and a reply through `chat continue` fetches it again with
+    `-prp`.
   - History: a fetched or installed profile's `save-reply-as-conv` is
     ignored (`ProfileOverrides`), so its runs are saved and listed by
     `clai chat list` unless your own `textConfig.json` turns saving off.

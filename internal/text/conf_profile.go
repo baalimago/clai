@@ -67,6 +67,9 @@ func (c *Configurations) ProfileOverrides() error {
 	if strings.TrimSpace(profile.Name) != "" {
 		c.UseProfile = profile.Name
 	}
+	if target, _, _ := strings.Cut(c.ProfileTarget, "#"); target != "" {
+		c.UseProfile = target
+	}
 
 	c.Model = profile.Model
 	c.SystemPrompt = profile.Prompt

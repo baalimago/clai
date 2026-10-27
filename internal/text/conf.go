@@ -50,8 +50,11 @@ type Configurations struct {
 	UseProfile   string          `json:"-"`
 	ProfilePath  string          `json:"-"`
 	// ProfileFetched is set when ProfilePath came from a remote target.
-	ProfileFetched      bool `json:"-"`
-	ProfileUseSkillsSet bool `json:"-"`
+	ProfileFetched bool `json:"-"`
+	// ProfileTarget is the remote target ProfilePath was fetched from; a
+	// chat run with it is stamped with it as its profile.
+	ProfileTarget       string `json:"-"`
+	ProfileUseSkillsSet bool   `json:"-"`
 	// ProfileSkills are the active profile's skill targets.
 	ProfileSkills      []string `json:"-"`
 	RequestedToolGlobs []string `json:"-"`

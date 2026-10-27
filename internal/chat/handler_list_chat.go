@@ -606,6 +606,17 @@ func (cq *ChatHandler) handleListCmd(ctx context.Context) error {
 	return cq.listChats(ctx, paginator, "")
 }
 
+// profileWidth fits the wide list's Profile column to its longest
+// profile, a remote target such as cchub:clai/reviewer@5 included, and
+// never narrower than the 15 it always had.
+func profileWidth(rows []chatListRow) int {
+	width := 15
+	for _, r := range rows {
+		width = max(width, utf8.RuneCountInString(r.Profile))
+	}
+	return width
+}
+
 // collapseGroupRows collapses rows with the same non-empty GroupKey and N≥2
 // into a single group row. Ungrouped rows pass through unchanged.
 func collapseGroupRows(rows []chatListRow) []chatListRow {
@@ -892,7 +903,7 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 		headArgs := []any{"Index", "Source", "Created", "Model", "Cost", "About"}
 		isWide := cq.dims.Width > 120
 		if isWide {
-			tblFmt = fmt.Sprintf("%%-%ds| %%-15s | %%-20s| %%-8v | %%-15s | %%-18s | %%-8s | %%-6s | %%v", maxIdxLen)
+			tblFmt = fmt.Sprintf("%%-%ds| %%-15s | %%-20s| %%-8v | %%-%ds | %%-18s | %%-8s | %%-6s | %%v", maxIdxLen, profileWidth(pr.rows))
 			headArgs = []any{"Index", "Source", "Created", "Messages", "Profile", "Model", "Cost", "Tokens", "About"}
 		}
 

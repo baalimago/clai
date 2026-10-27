@@ -399,3 +399,33 @@ func TestConfigurations_ProfileOverrides_FetchedProfileRunsAreSaved(t *testing.T
 		})
 	}
 }
+
+// A run with a remote profile is stamped with the target it was run as, so
+// `clai chat list` shows which hub profile a chat came from.
+func TestConfigurations_ProfileOverrides_FetchedProfileIsNamedByItsTarget(t *testing.T) {
+	t.Setenv("CLAI_CONFIG_DIR", t.TempDir())
+	for _, tc := range []struct {
+		name, body, target, want string
+	}{
+		{"remote target wins over the profile's name", `{"name":"reviewer"}`, "cchub:clai/reviewer@5", "cchub:clai/reviewer@5"},
+		{"a pinned hash is left out", `{}`, "cchub:clai/reviewer@5#sha256=abc", "cchub:clai/reviewer@5"},
+		{"a local path keeps the profile's name", `{"name":"reviewer"}`, "", "reviewer"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "p.json")
+			if err := os.WriteFile(path, []byte(tc.body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			conf := Default
+			conf.ProfilePath = path
+			conf.ProfileTarget = tc.target
+			conf.ProfileFetched = tc.target != ""
+			if err := conf.ProfileOverrides(); err != nil {
+				t.Fatal(err)
+			}
+			if conf.UseProfile != tc.want {
+				t.Fatalf("UseProfile = %q, want %q", conf.UseProfile, tc.want)
+			}
+		})
+	}
+}

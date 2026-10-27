@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/baalimago/clai/internal/chat"
+	"github.com/baalimago/clai/internal/remote"
 )
 
 // DirReplySender sends a prompt to the conversation bound to the working
@@ -16,9 +17,7 @@ func DirReplySender(deps QueryCommandDeps) func(ctx context.Context, req chat.Di
 		if req.Raw {
 			args = append(args, "-r")
 		}
-		if req.Profile != "" {
-			args = append(args, "-p", req.Profile)
-		}
+		args = append(args, profileArgs(req.Profile)...)
 		args = append(args, "--", req.Prompt)
 		c := QueryCommand(deps)
 		if err := c.Flagset().Parse(args); err != nil {
@@ -32,4 +31,16 @@ func DirReplySender(deps QueryCommandDeps) func(ctx context.Context, req chat.Di
 		}
 		return nil
 	}
+}
+
+// profileArgs selects a conversation's stamped profile again: a remote
+// target, as a -prp run stamps it, through -prp, a name through -p.
+func profileArgs(profile string) []string {
+	switch {
+	case profile == "":
+		return nil
+	case remote.IsRemote(profile):
+		return []string{"-prp", profile}
+	}
+	return []string{"-p", profile}
 }

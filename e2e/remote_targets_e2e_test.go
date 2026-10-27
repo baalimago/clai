@@ -470,6 +470,9 @@ func Test_REMOTE_runIsSavedAndListed(t *testing.T) {
 	if !strings.Contains(env.savedConversation(t), "hello from the hub") {
 		t.Fatalf("the run was not saved: %s", env.savedConversation(t))
 	}
+	if !strings.Contains(env.savedConversation(t), `"profile": "cchub:ada/quiet"`) {
+		t.Fatalf("the run is not stamped with its remote profile: %s", env.savedConversation(t))
+	}
 	listed, status := harness.RunOne(t, env.confDir, "-n -r chat list q")
 	if status != 0 || !strings.Contains(listed, "| test ") {
 		t.Fatalf("chat list: status %d stdout:\n%s", status, listed)
