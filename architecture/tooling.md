@@ -326,23 +326,26 @@ If you add a new tool:
 - avoid implicit ambient access (require explicit paths / commands)
 - make failures actionable with contextual errors
 
-## clai workers (`clai_run`)
+## Orchestration and the hidden clai worker tools
 
-`clai_run` starts a child `clai -r -reply-only -summarize=false <args>` and
-returns a run id; `clai_wait_for_workers` blocks on them.
+An agent orchestrates clai workers with `async_cmd` running the clai binary,
+for example `async_cmd {"command": "clai", "args": ["-ro", "-cm", "<model>",
+"-t", "rg,cat", "q", "<brief>"]}`, then `async_cmd_await` on the ids. Its
+prompt has it run `clai help` and `clai q -h` first, so it learns the flags.
 
-- **Args.** Flags before the `q` (or `query`) subcommand are split on
-  whitespace; everything after it is passed verbatim as one prompt, so a
-  worker brief keeps its newlines and quotes. A `q` only counts as the
-  subcommand when every token before it is a flag or a flag's value. Without
-  one, the string is split on whitespace and `q` is prepended. An array of
-  strings is used as given.
 - **Reply-only.** `-reply-only` (`-ro`) sends the raw transcript (tool calls,
-  tool output, reasoning) to stderr through `Querier.transcriptOut`, so the
+  tool output, reasoning) to stderr through `Querier.transcriptOut`, so a
   worker's stdout is its reply alone. Users get the same with
   `clai -ro ... q | git commit -F -`.
-- **Waiting.** A wait covers the workers no earlier wait returned, and returns
-  each one's stdout once; a failed worker adds the last 2000 bytes of its
-  stderr. On timeout it interrupts the workers still running, reports them
-  `TIMED OUT` with their stdout log path, and still returns the finished ones.
-  Every worker's full stdout and stderr is written to a log under `TMPDIR`.
+- **No prompt.** A profile run without a prompt or stdin acts on its defaults
+  (see profiles.md), so `clai -prp <agent> q` works as a worker too.
+- **Hidden tools.** `clai_run`, `clai_check`, `clai_result`,
+  `clai_wait_for_workers` and `clai_help` are registered with
+  `registry.SetHidden`: a profile or `-t` that names one exactly still gets it,
+  but `*` and other wildcards, `use_tools` without a list, `clai tools` and
+  completion leave them out. Their behaviour is kept for the profiles that
+  still list them: `clai_run` splits the flags before `q` on whitespace and
+  passes the rest verbatim as one prompt, and runs the child with `-r
+  -reply-only -summarize=false`; `clai_wait_for_workers` returns each worker
+  once, adds a failed worker's last 2000 bytes of stderr, and on timeout
+  interrupts the rest and still returns the finished ones.

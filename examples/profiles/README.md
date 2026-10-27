@@ -11,7 +11,8 @@ clai -prp cchub:clai/reviewer q
 An agent run with no prompt and nothing piped in acts on its defaults:
 reviewer reviews your branch, committer reads the staged diff. reviewer,
 pr-reviewer and upgrade-scout split their work across parallel clai
-workers (`clai_run`), each a separate clai process with its own brief.
+workers: each runs `clai` through `async_cmd`, a separate process with its
+own brief.
 
 Every MCP package is pinned to an exact version, and no profile holds a
 secret: each one reads its keys from the environment variables listed

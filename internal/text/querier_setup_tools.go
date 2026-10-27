@@ -633,7 +633,10 @@ func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, us
 	// If usetools and no specific tools chosen, assume all are valid
 	if len(userConf.RequestedToolGlobs) == 0 && len(userConf.Tools) == 0 {
 		allTools := make([]pub_models.LLMTool, 0, len(available))
-		for _, tool := range available {
+		for name, tool := range available {
+			if tools.Registry.IsHidden(name) {
+				continue
+			}
 			allTools = append(allTools, tool)
 		}
 		for _, tool := range uniqueTools(allTools) {
@@ -695,12 +698,16 @@ func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, us
 	return nil
 }
 
-// matchingTools returns every tool in available whose name matches pattern.
+// matchingTools returns every tool in available whose name matches pattern;
+// a hidden tool matches only its exact name.
 // It mirrors tools.Registry.WildcardGet over a caller-owned map so tool
 // selection reads the per-run catalog instead of the process-global registry.
 func matchingTools(available map[string]pub_models.LLMTool, pattern string) []pub_models.LLMTool {
 	var matches []pub_models.LLMTool
 	for name, tool := range available {
+		if tools.Registry.IsHidden(name) && pattern != name {
+			continue
+		}
 		if tools.WildcardMatch(pattern, name) {
 			matches = append(matches, tool)
 		}

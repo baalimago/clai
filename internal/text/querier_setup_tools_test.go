@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/tools/mcp"
 	"github.com/baalimago/clai/internal/tools/mcp/schemacache"
 	"github.com/baalimago/clai/pkg/claierr"
@@ -1125,5 +1126,20 @@ func Test_setupMcpManager_ProfileServerKeepsLazyStartup(t *testing.T) {
 	}
 	if _, ok := got["mcp_profile-lazy_echo"]; !ok {
 		t.Errorf("lazy profile server did not register tools; got %v", got)
+	}
+}
+
+func Test_matchingTools_hiddenToolsNeedTheirExactName(t *testing.T) {
+	tools.Init()
+	available := tools.Registry.All()
+	for _, pattern := range []string{"*", "clai_*"} {
+		for _, tool := range matchingTools(available, pattern) {
+			if tools.Registry.IsHidden(tool.Specification().Name) {
+				t.Fatalf("%q selected hidden tool %q", pattern, tool.Specification().Name)
+			}
+		}
+	}
+	if got := matchingTools(available, "clai_check"); len(got) != 1 {
+		t.Fatalf("an exact selection of a hidden tool must resolve it, got %d", len(got))
 	}
 }
