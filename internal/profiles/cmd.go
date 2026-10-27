@@ -207,6 +207,8 @@ Examples:
 const updateHelp = `profiles update [name]. Fetches the newest version of every installed
 profile, or of the one named, and rewrites those that changed. A Hub agent
 follows its newest version; other targets re-read the same ref or URL.
+With no name, each version you have not trusted yet shows what it runs and
+asks first; naming the profile takes its newest version.
 
 Examples:
   clai profiles update

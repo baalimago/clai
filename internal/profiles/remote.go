@@ -33,6 +33,10 @@ type CommandDeps struct {
 	NewHubPublisher NewHubPublisherFunc
 	// FindSecret is the credential check publish runs before sending.
 	FindSecret FindSecretFunc
+	// NewPrompt gives the question update with no name asks before it
+	// takes a version nobody trusted; nil, or a nil answer, means nobody
+	// can be asked, and such a version is left.
+	NewPrompt func() remote.Prompter
 }
 
 // Source is the stamp install writes into a profile: the target it came
@@ -50,7 +54,11 @@ func (d CommandDeps) resolver(confDir string) (remote.Resolver, error) {
 	if d.NewResolver == nil {
 		return remote.Resolver{}, fmt.Errorf("remote profile targets are not available in this build")
 	}
-	return d.NewResolver(confDir, nil)
+	var prompt remote.Prompter
+	if d.NewPrompt != nil {
+		prompt = d.NewPrompt()
+	}
+	return d.NewResolver(confDir, prompt)
 }
 
 func (d CommandDeps) configDir() (string, error) {
@@ -151,16 +159,22 @@ func (d CommandDeps) Update(ctx context.Context, name string) error {
 		fmt.Fprintln(d.Out, "No profile was installed from a remote target.")
 		return nil
 	}
+	// Naming the profile is consent to its newest version; updating them
+	// all asks for each version nobody trusted yet.
+	consent := remote.ConsentGiven
+	if name == "" {
+		consent = remote.ConsentAsk
+	}
 	var failed []error
 	for _, n := range names {
-		if err := d.updateOne(ctx, r, filepath.Join(dir, n+".json"), n); err != nil {
+		if err := d.updateOne(ctx, r, filepath.Join(dir, n+".json"), n, consent); err != nil {
 			failed = append(failed, fmt.Errorf("%s: %w", n, err))
 		}
 	}
 	return errors.Join(failed...)
 }
 
-func (d CommandDeps) updateOne(ctx context.Context, r remote.Resolver, path, name string) error {
+func (d CommandDeps) updateOne(ctx context.Context, r remote.Resolver, path, name string, consent remote.Consent) error {
 	src, err := readSource(path)
 	if err != nil {
 		return err
@@ -169,7 +183,7 @@ func (d CommandDeps) updateOne(ctx context.Context, r remote.Resolver, path, nam
 	if err != nil {
 		return fmt.Errorf("source stamp: %w", err)
 	}
-	res, err := r.Resolve(ctx, t.Unpinned().String(), remote.ConsentGiven)
+	res, err := r.Resolve(ctx, t.Unpinned().String(), consent)
 	if err != nil {
 		return err
 	}

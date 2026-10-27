@@ -173,7 +173,12 @@ A `gh:` target reads
     profile that came from elsewhere.
   - `profiles update [name]` re-resolves each stamped profile's
     `Unpinned()` target (a hub agent's newest version) and rewrites the
-    profiles that changed.
+    profiles that changed. Naming the profile is consent to its newest
+    version; with no name, each version nobody trusted yet shows the trust
+    prompt first (`CommandDeps.NewPrompt`), and with no terminal it is
+    left as an `UntrustedError`.
+  - A fetched or installed profile gets only the tools it names (see the
+    trust prompt's Tools above).
   - `profiles list` shows the stamp. `text.Profile.Source` reads it, and the
     hub's agent page shows it as "based on".
 

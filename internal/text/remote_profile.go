@@ -116,6 +116,15 @@ func isDevNull(fi os.FileInfo) bool {
 	return err == nil && os.SameFile(fi, null)
 }
 
+// TerminalTrustPrompter is the trust question asked on out when stdin is a
+// terminal, and nil when nobody can answer it.
+func TerminalTrustPrompter(input io.Reader, out io.Writer) remote.Prompter {
+	if !terminalAvailable() {
+		return nil
+	}
+	return terminalTrustPrompt(input, out)
+}
+
 // terminalTrustPrompt asks on out, stderr in production, so a run whose
 // stdout is piped still shows the question and keeps its output clean.
 func terminalTrustPrompt(input io.Reader, out io.Writer) remote.Prompter {

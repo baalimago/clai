@@ -378,7 +378,12 @@ func Test_REMOTE_installUpdateAndRunByName(t *testing.T) {
 	}
 
 	env.hub.publish("ada/bot", remoteBotV2)
-	status, stdout, stderr = runRemote(t, "profiles update")
+	// Updating them all asks before a new version; with no terminal it is left.
+	status, _, stderr = runRemote(t, "profiles update")
+	if status == 0 || !strings.Contains(stderr, "you have not trusted") {
+		t.Fatalf("update all without a terminal: status %d stderr %q", status, stderr)
+	}
+	status, stdout, stderr = runRemote(t, "profiles update bot")
 	if status != 0 || !strings.Contains(stdout, "Updated bot to cchub:ada/bot") {
 		t.Fatalf("update: status %d stdout %q stderr %q", status, stdout, stderr)
 	}

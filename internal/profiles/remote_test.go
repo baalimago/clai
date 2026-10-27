@@ -246,3 +246,40 @@ func TestInstall_fetchesAndTrustsTheProfilesSkills(t *testing.T) {
 		t.Fatalf("missing skill: err = %v, want it named", err)
 	}
 }
+
+// update with no name asks before it takes a version nobody trusted; with
+// nobody to ask, it changes nothing.
+func TestUpdate_allAsksBeforeANewVersion(t *testing.T) {
+	f := newFixture(t)
+	if err := f.deps.Install(t.Context(), "cchub:ada/bot@1", ""); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	f.files["/hub/ada/bot/raw"] = `{"model":"test","prompt":"v2"}`
+	var asked []string
+	answer := false
+	asking := func() remote.Prompter {
+		return func(_ context.Context, p remote.TrustPrompt) (bool, error) {
+			asked = append(asked, p.Target)
+			return answer, nil
+		}
+	}
+	f.deps.NewPrompt = asking
+	var untrusted *remote.UntrustedError
+	if err := f.deps.Update(t.Context(), ""); !errors.As(err, &untrusted) || len(asked) != 1 {
+		t.Fatalf("declined: err = %v, asked %v", err, asked)
+	}
+	if p := f.profile(t, "bot"); p["prompt"] != "v1" {
+		t.Fatalf("a declined version was written: %v", p)
+	}
+	f.deps.NewPrompt = func() remote.Prompter { return nil }
+	if err := f.deps.Update(t.Context(), ""); !errors.As(err, &untrusted) {
+		t.Fatalf("nobody to ask: err = %v, want an UntrustedError", err)
+	}
+	answer, f.deps.NewPrompt = true, asking
+	if err := f.deps.Update(t.Context(), ""); err != nil {
+		t.Fatalf("accepted: %v", err)
+	}
+	if p := f.profile(t, "bot"); p["prompt"] != "v2" {
+		t.Fatalf("accepted version not written: %v", p)
+	}
+}

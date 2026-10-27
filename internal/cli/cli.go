@@ -179,6 +179,7 @@ func commands(deps Deps, setExit func(int)) map[string]cmd.Command {
 			s, found := sync.FindSecret(name, b)
 			return s.String(), found
 		},
+		NewPrompt: func() remote.Prompter { return text.TerminalTrustPrompter(os.Stdin, os.Stderr) },
 	}
 	return map[string]cmd.Command{
 		"query|q": text.QueryCommand(queryDeps),
