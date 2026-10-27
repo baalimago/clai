@@ -132,6 +132,8 @@ const RemoteHelp = `Remote targets work with -prp, install and trust:
   cchub:<handle>/<agent>[@<version>]  an agent on the Hub at clai.chat
   gh:<owner>/<repo>[/<path>][@<ref>]  agent.json, or <path>, in a GitHub repo
   https://<host>/<path>               any URL that answers with profile JSON
+A github.com/<owner>/<repo>/blob/<ref>/<path> link, as copied from the
+browser, reads as gh:<owner>/<repo>/<path>@<ref>.
 A target runs only once you trust it: a terminal asks, anything else exits with
 status 3. Append #sha256=<hex> to trust exactly those bytes. Fetched targets
 are cached; CLAI_CLOUD=off runs from the cache only, and CLAI_CLOUD_URL points

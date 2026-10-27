@@ -11,6 +11,14 @@ https://<host>/<path>                 any URL that answers application/json
 …#sha256=<hex>                        on any of them: consent to exactly these bytes
 ```
 
+A link to a file on GitHub reads as its `gh:` target, so a link copied from
+the browser works: `https://github.com/<owner>/<repo>/blob/<ref>/<path>` (or
+`/raw/`) and `https://raw.githubusercontent.com/<owner>/<repo>/<ref>/<path>`
+become `gh:<owner>/<repo>/<path>@<ref>`, and a `HEAD` ref drops the `@`.
+Fetched as plain https, the first answers GitHub's page data as JSON and the
+second text/plain. The ref is one segment, or `refs/heads/<branch>` /
+`refs/tags/<tag>`; a branch with a `/` in it needs the `gh:` form.
+
 `-p <name>` and `-prp ./file.json` are unchanged. They work offline, need no
 account, and fetch nothing. `IsRemote` matches only the `cchub:`, `gh:`,
 `https://` and `http://` prefixes. Plain `http://` is refused rather than

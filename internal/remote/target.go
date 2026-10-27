@@ -1,6 +1,7 @@
 // Package remote resolves the profile targets -prp accepts besides a local
 // file: cchub:<handle>/<name>[@n], gh:<owner>/<repo>[/path][@ref] and an
-// https:// URL, each with an optional #sha256=<hex> suffix. It fetches,
+// https:// URL, each with an optional #sha256=<hex> suffix. A github.com
+// blob or raw link and a raw.githubusercontent.com URL parse as gh:. It fetches,
 // validates, caches and trust-checks the profile and hands back a local
 // path the profile loader reads like any other.
 // See architecture/remote-targets.md.
@@ -194,7 +195,44 @@ func parseHTTPS(s string) (Target, error) {
 	if slices.ContainsFunc(strings.Split(u.Path, "/"), dotSegment) {
 		return Target{}, fmt.Errorf("an https target's path cannot hold a . or .. segment")
 	}
+	if gh, ok := gitHubFileURL(u); ok {
+		return parseGitHub(gh)
+	}
 	return Target{Kind: KindHTTPS, URL: s}, nil
+}
+
+// gitHubFileURL reads a link to a file on GitHub as the gh: target for it,
+// so a copied link works: github.com/<owner>/<repo>/blob|raw/<ref>/<path>
+// would answer a page or a redirect, and raw.githubusercontent.com answers
+// text/plain, which an https target refuses. The ref is the first segment
+// after blob or raw (or a refs/heads/<branch> or refs/tags/<tag>), so a
+// branch with a / in it needs the gh: form.
+func gitHubFileURL(u *url.URL) (string, bool) {
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	switch strings.ToLower(u.Host) {
+	case "github.com", "www.github.com":
+		if len(parts) < 5 || (parts[2] != "blob" && parts[2] != "raw") {
+			return "", false
+		}
+		parts = append(parts[:2], parts[3:]...)
+	case "raw.githubusercontent.com":
+		if len(parts) < 4 {
+			return "", false
+		}
+	default:
+		return "", false
+	}
+	// GitHub's Raw button links refs/heads/<branch> and refs/tags/<tag>.
+	refLen := 1
+	if parts[2] == "refs" && len(parts) >= 6 && (parts[3] == "heads" || parts[3] == "tags") {
+		refLen = 3
+	}
+	owner, repo := parts[0], parts[1]
+	ref, path := strings.Join(parts[2:2+refLen], "/"), strings.Join(parts[2+refLen:], "/")
+	if ref == "HEAD" {
+		return owner + "/" + repo + "/" + path, true
+	}
+	return owner + "/" + repo + "/" + path + "@" + ref, true
 }
 
 // Pinned reports whether the target names fixed bytes: a hub version or a
