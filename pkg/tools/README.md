@@ -16,6 +16,8 @@ The tool name is what the model sees. The Go identifier is what you pass to `Wit
 | `async_cmd_logs` | `AsyncCmdLogs` | Return bounded stdout and stderr previews plus log file paths. |
 | `async_cmd_await` | `AsyncCmdAwait` | Wait for named async commands. Session end cancels the rest. |
 | `async_cmd_cancel` | `AsyncCmdCancel` | Request cancellation of a running async command. |
+| `audio_sources` | `AudioSources` | List audio inputs this machine can record now (mic and system-audio monitors). |
+| `audio_record` | `AudioRecord` | Record microphone and/or system audio into one WAV file and return its facts. |
 | `audio_transcribe` | `AudioTranscribe` | Transcribe a local audio file to text, optionally with timestamps and speakers. |
 | `cat` | `Cat` | Display the contents of a file. |
 | `clai_check` | `ClaiCheck` | Hidden legacy tool: resolves only when named exactly. Check whether a `clai_run` run-id is running, completed or failed. |

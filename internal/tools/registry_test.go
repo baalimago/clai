@@ -137,7 +137,7 @@ func TestRegisterLocalToolsOmitsUnavailableExecutables(t *testing.T) {
 // TestRegisterLocalToolsLooksUpExecutablesConcurrently pins the setup cost:
 // each PATH search is a run of stats, so they overlap instead of queueing.
 func TestRegisterLocalToolsLooksUpExecutablesConcurrently(t *testing.T) {
-	const executables = 18
+	const executables = 19
 	var arrived sync.WaitGroup
 	arrived.Add(executables)
 	allArrived := make(chan struct{})

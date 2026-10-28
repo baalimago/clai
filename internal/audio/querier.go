@@ -68,6 +68,7 @@ type Configurations struct {
 	// models a run tries in its place. A model the table does not name runs as
 	// itself (architecture/model-aliases.md).
 	ModelAliases modelalias.Table `json:"model-aliases"`
+	Capture      CaptureConfig    `json:"capture"`
 }
 
 var Default = Configurations{
@@ -83,6 +84,14 @@ var Default = Configurations{
 	// key still transcribes (architecture/model-aliases.md).
 	ModelAliases: modelalias.Table{
 		"fast": {"whisper-1", "or:openai/whisper-1"},
+	},
+	Capture: CaptureConfig{
+		Dir:            "~/Recordings",
+		MaxSeconds:     5400,
+		SilenceTimeout: 600,
+		SilencePeakDB:  -40,
+		Sinks:          "default",
+		Mic:            new(true),
 	},
 }
 
