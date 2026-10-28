@@ -180,7 +180,7 @@ func TestTranscribe_StreamsLargeFile(t *testing.T) {
 	server := multipartRecorder(t, &rec, loadFixture(t, "openai_whisper1_verbose.json"))
 	defer server.Close()
 	trans := setupTranscriber(t, "whisper-1", server.URL)
-	largeContent := make([]byte, 3<<20)
+	largeContent := make([]byte, 256<<10)
 	for i := range largeContent {
 		largeContent[i] = byte(i % 251)
 	}

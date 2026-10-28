@@ -476,50 +476,64 @@ func sparseFile(t *testing.T, path string, head []byte, size int64) string {
 	return path
 }
 
-func wantTooLarge(t *testing.T, err error, path string, size int64) {
+func wantTooLarge(t *testing.T, err error, path string, size, limit int64) {
 	t.Helper()
 	var tl *asset.ImageTooLargeError
 	if !errors.As(err, &tl) {
 		t.Fatalf("error = %v, want *asset.ImageTooLargeError", err)
 	}
-	if want := (asset.ImageTooLargeError{Path: path, Size: size, Limit: readmeImageLimit}); *tl != want {
+	if want := (asset.ImageTooLargeError{Path: path, Size: size, Limit: limit}); *tl != want {
 		t.Fatalf("ImageTooLargeError = %+v, want %+v", *tl, want)
 	}
 }
 
+// smallImageLimit keeps the oversize cases cheap; TestNew_refusesTheReadmeLimitBeforeReading
+// pins the production limit.
+const smallImageLimit = 4 << 10
+
 // Proves Collect.4 for -g image matches and image stdin (R1-10); text keeps today's rules (I10).
 func TestCollect_OversizedImagesRefused(t *testing.T) {
-	forEachCollector(t, func(t *testing.T, c imageinput.ImageCollector) {
-		t.Run("-g image over the limit", func(t *testing.T) {
-			dir := t.TempDir()
-			writeFile(t, filepath.Join(dir, "a.md"), []byte("notes"))
-			big := sparseFile(t, filepath.Join(dir, "big.png"), pngData, readmeImageLimit+1)
-			got, err := c.Collect(imageinput.CollectRequest{Glob: filepath.Join(dir, "*"), Args: []string{"q", "compare"}})
-			wantTooLarge(t, err, big, readmeImageLimit+1)
-			if got.Images != nil || got.GlobMessages != nil || got.Prompt != "" {
-				t.Fatalf("Collected = %+v, want zero on error", got)
-			}
-		})
-		t.Run("-g image at the limit, text over it", func(t *testing.T) {
-			dir := t.TempDir()
-			edge := sparseFile(t, filepath.Join(dir, "edge.png"), pngData, readmeImageLimit)
-			sparseFile(t, filepath.Join(dir, "log.txt"), []byte("log"), readmeImageLimit+1)
-			got := mustCollect(t, c, imageinput.CollectRequest{Glob: filepath.Join(dir, "*"), Args: []string{"q", "compare"}})
-			if len(got.Images) != 1 || int64(len(got.Images[0].Data)) != readmeImageLimit || got.Images[0].MIME != "image/png" {
-				t.Fatalf("images = %d, want %s as one PNG of exactly the limit", len(got.Images), edge)
-			}
-			if len(got.GlobMessages) != 1 || !strings.Contains(got.GlobMessages[0].Content, "log.txt") {
-				t.Fatalf("GlobMessages = %d, want log.txt as today's file message", len(got.GlobMessages))
-			}
-		})
-		t.Run("stdin image over the limit", func(t *testing.T) {
-			data := make([]byte, readmeImageLimit+1)
-			copy(data, pngData)
-			got, err := c.Collect(imageinput.CollectRequest{Stdin: bytes.NewReader(data), Args: []string{"q", "what"}})
-			wantTooLarge(t, err, "stdin", readmeImageLimit+1)
-			if got.Images != nil || got.Prompt != "" {
-				t.Fatalf("Collected = %+v, want zero on error", got)
-			}
-		})
+	c := imageinput.NewWithLimit(smallImageLimit)
+	t.Run("-g image over the limit", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFile(t, filepath.Join(dir, "a.md"), []byte("notes"))
+		big := sparseFile(t, filepath.Join(dir, "big.png"), pngData, smallImageLimit+1)
+		got, err := c.Collect(imageinput.CollectRequest{Glob: filepath.Join(dir, "*"), Args: []string{"q", "compare"}})
+		wantTooLarge(t, err, big, smallImageLimit+1, smallImageLimit)
+		if got.Images != nil || got.GlobMessages != nil || got.Prompt != "" {
+			t.Fatalf("Collected = %+v, want zero on error", got)
+		}
 	})
+	t.Run("-g image at the limit, text over it", func(t *testing.T) {
+		dir := t.TempDir()
+		edge := sparseFile(t, filepath.Join(dir, "edge.png"), pngData, smallImageLimit)
+		sparseFile(t, filepath.Join(dir, "log.txt"), []byte("log"), smallImageLimit+1)
+		got := mustCollect(t, c, imageinput.CollectRequest{Glob: filepath.Join(dir, "*"), Args: []string{"q", "compare"}})
+		if len(got.Images) != 1 || int64(len(got.Images[0].Data)) != smallImageLimit || got.Images[0].MIME != "image/png" {
+			t.Fatalf("images = %d, want %s as one PNG of exactly the limit", len(got.Images), edge)
+		}
+		if len(got.GlobMessages) != 1 || !strings.Contains(got.GlobMessages[0].Content, "log.txt") {
+			t.Fatalf("GlobMessages = %d, want log.txt as today's file message", len(got.GlobMessages))
+		}
+	})
+	t.Run("stdin image over the limit", func(t *testing.T) {
+		data := make([]byte, smallImageLimit+1)
+		copy(data, pngData)
+		got, err := c.Collect(imageinput.CollectRequest{Stdin: bytes.NewReader(data), Args: []string{"q", "what"}})
+		wantTooLarge(t, err, "stdin", smallImageLimit+1, smallImageLimit)
+		if got.Images != nil || got.Prompt != "" {
+			t.Fatalf("Collected = %+v, want zero on error", got)
+		}
+	})
+}
+
+// New reads with the README's limit, and an -img file over it is refused on its size alone.
+func TestNew_refusesTheReadmeLimitBeforeReading(t *testing.T) {
+	dir := t.TempDir()
+	big := sparseFile(t, filepath.Join(dir, "big.png"), pngData, readmeImageLimit+1)
+	got, err := imageinput.New().Collect(imageinput.CollectRequest{Images: []string{big}, Args: []string{"q", "what"}})
+	wantTooLarge(t, err, big, readmeImageLimit+1, readmeImageLimit)
+	if got.Images != nil || got.Prompt != "" {
+		t.Fatalf("Collected = %+v, want zero on error", got)
+	}
 }

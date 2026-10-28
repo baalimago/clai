@@ -907,11 +907,11 @@ func TestLazySetupResolvesServersConcurrently(t *testing.T) {
 	bin := testServerBinary(t)
 	const (
 		n     = 4
-		delay = 600 * time.Millisecond
-		// Resolved one at a time, four servers delayed 600ms each spread
-		// to at least 1.8s; resolved concurrently, launching four
+		delay = 300 * time.Millisecond
+		// Resolved one at a time, four servers delayed 300ms each spread
+		// to at least 900ms; resolved concurrently, launching four
 		// processes takes nowhere near that regardless of host load.
-		concurrentBound = 1500 * time.Millisecond
+		concurrentBound = 750 * time.Millisecond
 	)
 	mcpDir := t.TempDir()
 	spawnLogs := make([]string, n)
@@ -1008,7 +1008,7 @@ func TestAuthChallengeStdioSpawnBoundedAcrossRepeatedToolCallsEndToEnd(t *testin
 	// (conn_stdio.go's nil-sink guard) rather than silently declining to
 	// reclassify anything.
 	sink := newMcpLogSinkTo(mcpLogRolling, &strings.Builder{})
-	connector := mcp.NewConnector(t.Context(), srv, sink, mcp.WithConnectBound(300*time.Millisecond))
+	connector := mcp.NewConnector(t.Context(), srv, sink, mcp.WithConnectBound(100*time.Millisecond))
 	spec := pub_models.Specification{Name: "mcp_hang_echo"}
 	tool := mcp.NewTool(connector, "echo", spec, 0, "hang", nil, 50*time.Millisecond)
 

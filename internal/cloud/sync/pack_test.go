@@ -48,3 +48,15 @@ func TestPack_nothingIsNoPacks(t *testing.T) {
 		t.Fatalf("packs = %v, want none", packs)
 	}
 }
+
+func TestLimits_zeroFieldsTakeTheProductionConstants(t *testing.T) {
+	if got, want := (limits{}).upload(), (packLimits{count: batchMaxBlobs, bytes: batchMaxBytes, alone: batchBlobMax}); got != want {
+		t.Fatalf("upload limits = %+v, want %+v", got, want)
+	}
+	if got, want := (limits{}).fetch(), (packLimits{count: fetchMaxBlobs, bytes: fetchMaxBytes, alone: fetchAlone}); got != want {
+		t.Fatalf("fetch limits = %+v, want %+v", got, want)
+	}
+	if got := (limits{fetchBlobs: 5}).fetch().count; got != 5 {
+		t.Fatalf("fetch count = %d, want the override 5", got)
+	}
+}

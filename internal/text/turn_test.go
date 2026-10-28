@@ -23,6 +23,7 @@ import (
 	"github.com/baalimago/clai/internal/imagenorm"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/present"
+	"github.com/baalimago/clai/internal/testenv"
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/internal/vendors/anthropic"
@@ -231,8 +232,11 @@ func (f *turnFixture) diskTurn(opts present.Options) *ImageTurn {
 	return turn
 }
 
+// run drives a session over the fixture's writers; what the code under test
+// prints to the process streams instead (index progress, debug dumps) is parked.
 func (f *turnFixture) run(t *testing.T, msgs ...pub_models.Message) (*QuerySession, error) {
 	t.Helper()
+	defer testenv.Quiet(t)()
 	session := &QuerySession{Chat: pub_models.Chat{Messages: msgs}, ShouldSaveReply: true, Raw: f.q.rawDisplay()}
 	runner := sessionRunner[models.StreamCompleter]{
 		querier:      f.q,

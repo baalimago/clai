@@ -82,9 +82,9 @@ func TestSaveVideo(t *testing.T) {
 			t.Fatalf("SaveVideo failed during fallback test: %v", err)
 		}
 
-		// Check that it wrote to /tmp
-		if !strings.HasPrefix(filePath, "/tmp/") {
-			t.Errorf("Expected fallback to /tmp, got path: %v", filePath)
+		// The fallback is the process temp dir, wherever the harness put it.
+		if !strings.HasPrefix(filePath, os.TempDir()+string(filepath.Separator)) {
+			t.Errorf("Expected fallback into %v, got path: %v", os.TempDir(), filePath)
 		}
 
 		// Verify file exists

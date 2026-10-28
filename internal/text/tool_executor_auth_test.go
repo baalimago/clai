@@ -91,7 +91,7 @@ func TestAuthPendingSignalRaisedByHttpAndStdio(t *testing.T) {
 		wantOut     string
 		wantCalls   int32
 	}{
-		{"stdio-like, no resolver", nil, 150 * time.Millisecond, `ERROR: mcp server "fx" needs authorization; it is a command-based server prompting on its own stderr output — "clai mcp auth" only works for a url-based server`, 1},
+		{"stdio-like, no resolver", nil, 50 * time.Millisecond, `ERROR: mcp server "fx" needs authorization; it is a command-based server prompting on its own stderr output — "clai mcp auth" only works for a url-based server`, 1},
 		{"http-like, resolver drives the interactive flow", mcp.AuthResolverFunc(func(context.Context, *claierr.AuthChallengeError) error { return nil }), time.Second, "ok", 2},
 	}
 	for _, tc := range cases {
@@ -157,7 +157,7 @@ func TestAuthTimeoutExpiryReturnsActionableToolResult(t *testing.T) {
 		<-ctx.Done()
 		return ctx.Err()
 	})
-	tool := newAuthTool(t, "fx", alwaysChallengeDial("fx", &calls), blocksForever, 150*time.Millisecond, 0)
+	tool := newAuthTool(t, "fx", alwaysChallengeDial("fx", &calls), blocksForever, 50*time.Millisecond, 0)
 	e, _ := newAuthExecutor("mcp_fx_echo", tool)
 
 	out := e.invokeToolCall(t.Context(), pub_models.Call{Name: "mcp_fx_echo", Inputs: &pub_models.Input{"text": "hi"}})
@@ -254,7 +254,7 @@ func TestAuthWaitCancelledClosesWindowAndReaps(t *testing.T) {
 // during the wait.
 func TestAuthWaitOutlivesEnclosingBounds(t *testing.T) {
 	t.Parallel()
-	const shrunkConnectBound = 150 * time.Millisecond
+	const shrunkConnectBound = 50 * time.Millisecond
 	var calls int32
 	dial := func(ctx context.Context) (mcp.Conn, error) {
 		connectCtx, cancel := context.WithTimeout(ctx, shrunkConnectBound)
@@ -318,7 +318,7 @@ func TestExpiredAuthWaitConsumesNoExtraToolCallSlot(t *testing.T) {
 		<-ctx.Done()
 		return ctx.Err()
 	})
-	tool := newAuthTool(t, "fx", alwaysChallengeDial("fx", &calls), blocksForever, 150*time.Millisecond, 0)
+	tool := newAuthTool(t, "fx", alwaysChallengeDial("fx", &calls), blocksForever, 50*time.Millisecond, 0)
 	e, _ := newAuthExecutor("mcp_fx_echo", tool)
 	budget := 1
 	e.querier.tooling.maxCalls = &budget

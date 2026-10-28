@@ -226,6 +226,11 @@ func readChatIndex(convDir string) ([]chatIndexRow, error) {
 	return rows, nil
 }
 
+// indexProgressBatch is the rebuild's progress granularity and the size below
+// which a rebuild reports nothing: nobody waits for a handful of files, and a
+// one-file first run used to print a header and a 100 % progress line.
+const indexProgressBatch = 100
+
 func rebuildChatIndex(convDir string, fromVersion int, reason string) ([]chatIndexRow, error) {
 	files, err := os.ReadDir(convDir)
 	if err != nil {
@@ -242,12 +247,13 @@ func rebuildChatIndex(convDir string, fromVersion int, reason string) ([]chatInd
 		}
 	}
 
-	// Build the header line: explain why we're rebuilding. In read-only
-	// mode the cache cannot be persisted, so the rebuild is a silent
-	// in-memory scan for listing and no "Building cache index" chatter or
-	// persist attempt is produced.
+	// The header explains why the rebuild runs; it and the progress line
+	// appear only when there is a batch's worth of files to wait for. In
+	// read-only mode the cache cannot be persisted, so the rebuild is a
+	// silent in-memory scan for listing with no persist attempt either.
 	readonly := utils.NoCreateConfig
-	if !readonly {
+	announce := !readonly && total >= indexProgressBatch
+	if announce {
 		if fromVersion == 0 {
 			fmt.Fprintf(os.Stderr, "Building cache index v%d (%s):\n", chatIndexVersion, reason)
 		} else {
@@ -258,7 +264,7 @@ func rebuildChatIndex(convDir string, fromVersion int, reason string) ([]chatInd
 	rows := make([]chatIndexRow, 0, total)
 	processed := 0
 	batchStart := time.Now()
-	batchSize := 100
+	batchSize := indexProgressBatch
 
 	for _, file := range files {
 		if file.IsDir() || isIndexFile(file.Name()) {
@@ -282,7 +288,7 @@ func rebuildChatIndex(convDir string, fromVersion int, reason string) ([]chatInd
 		row.Updated = entryModTime(file)
 		rows = append(rows, row)
 		processed++
-		if !readonly && (processed%batchSize == 0 || processed == total) {
+		if announce && (processed%batchSize == 0 || processed == total) {
 			elapsed := time.Since(batchStart)
 			itemsPerSec := float64(batchSize) / elapsed.Seconds()
 			remaining := total - processed
@@ -294,7 +300,7 @@ func rebuildChatIndex(convDir string, fromVersion int, reason string) ([]chatInd
 			batchStart = time.Now()
 		}
 	}
-	if !readonly && total > 0 {
+	if announce {
 		fmt.Fprint(os.Stderr, "\n")
 	}
 	if !readonly {

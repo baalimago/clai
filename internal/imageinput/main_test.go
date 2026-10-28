@@ -6,4 +6,4 @@ import (
 	"github.com/baalimago/clai/internal/testenv"
 )
 
-func TestMain(m *testing.M) { testenv.MainInHome(m) }
+func TestMain(m *testing.M) { testenv.Main(m) }

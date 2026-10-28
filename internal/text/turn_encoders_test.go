@@ -22,6 +22,7 @@ import (
 	"github.com/baalimago/clai/internal/imagenorm"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/present"
+	"github.com/baalimago/clai/internal/testenv"
 	"github.com/baalimago/clai/internal/text/generic"
 	"github.com/baalimago/clai/internal/vendors"
 	"github.com/baalimago/clai/internal/vendors/anthropic"
@@ -184,6 +185,7 @@ func TestTurn_NormalizedAcceptedByEncoders(t *testing.T) {
 	}
 	for _, row := range inlineEncoderRows() {
 		t.Run(row.name, func(t *testing.T) {
+			defer testenv.Quiet(t)()
 			srv, bodies := recordingServer(t, row.reply)
 			out := &strings.Builder{}
 			persisted := t.TempDir()

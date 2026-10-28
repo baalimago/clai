@@ -37,7 +37,6 @@ func newImageFixture(t *testing.T) imageFixture {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
 	confDir := e2etest.SetupMainTestConfigDir(t)
-	e2etest.BlankDebugAndVendorKeys(t)
 	t.Setenv("HOME", t.TempDir())
 	work := e2etest.ChdirTemp(t)
 	png := e2etest.PNG(t, 1)

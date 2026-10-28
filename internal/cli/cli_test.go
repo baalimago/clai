@@ -2,8 +2,10 @@ package cli
 
 import (
 	"os"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
@@ -221,4 +223,23 @@ func TestRun_helpCommandShowsThatCommandsHelp(t *testing.T) {
 	if status != 0 || !strings.Contains(stdout, "clai version") {
 		t.Fatalf("Run(help version) = %d, stdout:\n%s", status, stdout)
 	}
+}
+
+// TestRun_leavesNoShutdownMonitorBehind pins that the signal monitor ends
+// with the run: an e2e binary once held 870 of them, and a timeout dump
+// printed every one.
+func TestRun_leavesNoShutdownMonitorBehind(t *testing.T) {
+	isolateEnv(t)
+	_ = testboil.CaptureStderr(t, func(t *testing.T) {
+		_ = testboil.CaptureStdout(t, func(t *testing.T) {
+			if status := Run([]string{"version"}, DefaultDeps()); status != 0 {
+				t.Fatalf("Run(version) = %d, want 0", status)
+			}
+		})
+	})
+	testboil.CheckTrueWithinTimeout(t, func(t *testing.T) bool {
+		buf := make([]byte, 1<<20)
+		n := runtime.Stack(buf, true)
+		return !strings.Contains(string(buf[:n]), "shutdown.Monitor")
+	}, 2*time.Second, 10*time.Millisecond)
 }

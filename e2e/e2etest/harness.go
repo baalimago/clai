@@ -16,7 +16,7 @@ import (
 )
 
 // SetupPTYHelperEnv marks the child process of the interactive setup PTY test.
-const SetupPTYHelperEnv = "CLAI_SETUP_PTY_HELPER"
+const SetupPTYHelperEnv = "E2E_SETUP_PTY_HELPER"
 
 // Harness holds one test package's CLI collaborators; every run reads Deps at call time.
 type Harness struct {
@@ -90,11 +90,4 @@ func (h *Harness) RunAudio(t *testing.T, args string) (int, string, string) {
 // RefusingSummarizer is what every e2e TestMain injects; only summary rows opt out.
 func RefusingSummarizer(string) (models.Summarizer, error) {
 	return nil, errors.New("real summarizer is off in the test binary; opt in through setupSummaryE2E")
-}
-
-// DetachTTY points the CLI's terminal at /dev/null, except in the PTY helper child.
-func DetachTTY() {
-	if os.Getenv(SetupPTYHelperEnv) == "" {
-		_ = os.Setenv("TTY", "/dev/null")
-	}
 }

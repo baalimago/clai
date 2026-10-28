@@ -2,7 +2,6 @@ package tools
 
 import (
 	"maps"
-	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -10,7 +9,6 @@ import (
 	"github.com/baalimago/clai/internal/debugflags"
 	"github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
-	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
 // registry is a threadsafe storage for LLMTools.
@@ -30,7 +28,6 @@ type registry struct {
 	// hidden names tools that resolve only by their exact name: wildcard
 	// selection, the listing and completion leave them out.
 	hidden map[string]struct{}
-	debug  bool
 }
 
 // NewRegistry returns an empty tools registry.
@@ -39,7 +36,6 @@ func NewRegistry() *registry {
 		tools:   make(map[string]models.LLMTool),
 		aliases: make(map[string]string),
 		hidden:  make(map[string]struct{}),
-		debug:   misc.Truthy(os.Getenv("DEBUG")),
 	}
 }
 
@@ -98,7 +94,7 @@ func (r *registry) Set(name string, t models.LLMTool) {
 	if strings.Contains(name, "printEnv") || strings.Contains(name, "get-env") {
 		ancli.Warnf("found env printing tool, skipping for security's sake. Tool name: '%v'", name)
 	}
-	if r.debug || debugflags.Enabled("TOOLS_REGISTRY_SET") {
+	if debugflags.Enabled("TOOLS_REGISTRY_SET") {
 		ancli.Okf("adding tool too registry, name: %v\n", t.Specification().Name)
 	}
 	r.tools[name] = t

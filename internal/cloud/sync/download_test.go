@@ -27,24 +27,25 @@ func bulkConversations(t *testing.T, srv *cloudtest.Server, n int) machine {
 
 func TestPull_downloadsInBundles(t *testing.T) {
 	srv := cloudtest.New(t)
-	bulkConversations(t, srv, 600)
+	bulkConversations(t, srv, 12)
 	b := newMachine(t, srv, "tok-b")
+	b.Engine.limits = limits{fetchBlobs: 5}
 	var log progressLog
 	b.Progress = log.add
 	if _, err := b.Pull(context.Background(), StoreConversations, PullOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	if b.read("conversations/c599.json") != `{"n":599}` {
+	if b.read("conversations/c011.json") != `{"n":11}` {
 		t.Fatal("a pulled file differs")
 	}
 	if n := requests(srv, "/api/v1/blobs/fetch"); n != 3 {
-		t.Fatalf("%d fetch requests, want 3 bundles for 600 files", n)
+		t.Fatalf("%d fetch requests, want 3 bundles of at most 5 for 12 files", n)
 	}
 	if n := singleGets(srv); n != 0 {
 		t.Fatalf("%d single downloads, want none", n)
 	}
 	last, _ := log.last(PhaseDownloading)
-	if last.Done != 600 || last.Total != 600 || last.Bytes == 0 || last.Bytes != last.TotalBytes {
+	if last.Done != 12 || last.Total != 12 || last.Bytes == 0 || last.Bytes != last.TotalBytes {
 		t.Fatalf("last download event = %+v", last)
 	}
 }

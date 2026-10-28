@@ -37,12 +37,21 @@ func Test_e2e_reply_only_shows_progress_on_a_terminal_stderr(t *testing.T) {
 	if got, want := string(stdout), "done after tool for: "+prompt+"\n"; got != want {
 		t.Fatalf("stdout = %q, want only the reply %q", got, want)
 	}
-	for _, want := range []string{"▸ pwd", workDir, "reply written to stdout (1 line)"} {
+	for _, want := range []string{"▸ pwd", "reply written to stdout (1 line)"} {
 		if !strings.Contains(string(terminal), want) {
 			t.Errorf("terminal lacks %q: %q", want, terminal)
 		}
 	}
+	// The progress window wraps a long path at the terminal width.
+	if !strings.Contains(unwrapped(string(terminal)), workDir) {
+		t.Errorf("terminal lacks the tool output %q: %q", workDir, terminal)
+	}
 	if strings.Contains(string(terminal), "Call: 'pwd'") {
 		t.Errorf("terminal shows the raw transcript instead of the progress window: %q", terminal)
 	}
+}
+
+// unwrapped removes the line breaks and indents a terminal window wraps with.
+func unwrapped(terminal string) string {
+	return strings.NewReplacer("\r", "", "\n", "", " ", "").Replace(terminal)
 }

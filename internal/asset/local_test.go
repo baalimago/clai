@@ -114,3 +114,18 @@ func TestReadLocalImage(t *testing.T) {
 		}
 	})
 }
+
+func TestReadLocalImageUpTo_refusesOverItsOwnLimitOnSizeAlone(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "big.png")
+	if err := os.WriteFile(path, make([]byte, 64), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	_, err := asset.ReadLocalImageUpTo(path, 16)
+	var tl *asset.ImageTooLargeError
+	if !errors.As(err, &tl) || *tl != (asset.ImageTooLargeError{Path: path, Size: 64, Limit: 16}) {
+		t.Fatalf("err = %v, want ImageTooLargeError{Size 64, Limit 16}", err)
+	}
+	if img, err := asset.ReadLocalImageUpTo(path, 64); err == nil || img.Data != nil {
+		t.Fatalf("64 bytes of zeros at a 64-byte limit = %v, %v; want ErrNotImage past the size check", img, err)
+	}
+}

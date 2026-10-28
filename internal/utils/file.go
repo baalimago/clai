@@ -27,7 +27,7 @@ func CreateFile[T any](path string, toCreate *T) error {
 }
 
 // SaveBase64File decodes a base64 string and writes it to dir/prefix_random.extension.
-// Falls back to /tmp on write failure.
+// Falls back to the temp dir on write failure.
 func SaveBase64File(prefix, dir, b64JSON, extension string) (string, error) {
 	data, err := base64.StdEncoding.DecodeString(b64JSON)
 	if err != nil {
@@ -38,7 +38,7 @@ func SaveBase64File(prefix, dir, b64JSON, extension string) (string, error) {
 	err = WriteFileAtomic(outFile, data, 0o644)
 	if err != nil {
 		ancli.PrintWarn(fmt.Sprintf("failed to write file: '%v', attempting tmp file...\n", err))
-		outFile = fmt.Sprintf("/tmp/%v", fileName)
+		outFile = filepath.Join(os.TempDir(), fileName)
 		err = WriteFileAtomic(outFile, data, 0o644)
 		if err != nil {
 			return "", fmt.Errorf("failed to write file: %w", err)

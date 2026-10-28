@@ -19,7 +19,7 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/cmd"
 )
 
-func TestMain(m *testing.M) { testenv.MainInHome(m) }
+func TestMain(m *testing.M) { testenv.Main(m) }
 
 var testNow = time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC)
 

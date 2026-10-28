@@ -21,7 +21,6 @@ func setupProfileTest(t *testing.T) string {
 	t.Cleanup(func() { os.Args = oldArgs })
 	_ = e2etest.SetupMainTestConfigDir(t)
 	t.Setenv("CLAI_CACHE_DIR", filepath.Join(t.TempDir(), "cache"))
-	e2etest.BlankDebugAndVendorKeys(t)
 	return e2etest.ChdirTemp(t)
 }
 
