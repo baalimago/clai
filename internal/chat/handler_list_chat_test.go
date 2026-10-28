@@ -1598,37 +1598,58 @@ func TestChatHandler_persistForeignCacheRacesResolution(t *testing.T) {
 	}
 }
 
-// A remote profile's target is longer than a local profile's name; the
-// wide list widens its Profile column so every row stays aligned under the
-// header.
-func TestListChats_wideProfileColumnFitsARemoteTarget(t *testing.T) {
+func TestListChats_wideProfileColumnTruncatesLongProfiles(t *testing.T) {
 	cq, confDir := newTestHandler(t)
 	convDir := conversationsDir(confDir)
 	cq.dims = dimensions.Dimensions{Width: 200}
 	saveAll(t, convDir,
 		pub_models.Chat{ID: "remote", Profile: "cchub:clai/reviewer@5", Created: time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC), Messages: []pub_models.Message{{Role: "user", Content: "review it"}}},
+		pub_models.Chat{ID: "github", Profile: "gh:account/repository/some-profile", Created: time.Date(2026, 1, 3, 0, 0, 0, 0, time.UTC), Messages: []pub_models.Message{{Role: "user", Content: "github"}}},
+		pub_models.Chat{ID: "longlocal", Profile: "a-very-long-local-profile-name", Created: time.Date(2026, 1, 4, 0, 0, 0, 0, time.UTC), Messages: []pub_models.Message{{Role: "user", Content: "long local"}}},
+		pub_models.Chat{ID: "boundary", Profile: "12345678901234567890", Created: time.Date(2026, 1, 5, 0, 0, 0, 0, time.UTC), Messages: []pub_models.Message{{Role: "user", Content: "boundary"}}},
 		pub_models.Chat{ID: "local", Profile: "bot", Created: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Messages: []pub_models.Message{{Role: "user", Content: "hi bot"}}},
 	)
 	got := listOutput(t, cq, "")
-	var header, remote, local string
+	var header string
+	rows := map[string]string{}
+	want := []string{"cchub:c...reviewer@5", "gh:a.../some-profile", "a...cal-profile-name", "12345678901234567890", "bot"}
 	for line := range strings.SplitSeq(got, "\n") {
-		switch {
-		case strings.Contains(line, "Profile"):
+		if strings.Contains(line, "Profile") {
 			header = line
-		case strings.Contains(line, "cchub:clai/reviewer@5"):
-			remote = line
-		case strings.Contains(line, "| bot "):
-			local = line
+		}
+		for _, profile := range want {
+			if strings.Contains(line, "| "+profile+" ") {
+				rows[profile] = line
+			}
 		}
 	}
-	if header == "" || remote == "" || local == "" {
-		t.Fatalf("missing header or rows:\n%s", got)
+	if header == "" {
+		t.Fatalf("missing header:\n%s", got)
 	}
-	// The fifth separator closes the Profile column.
-	for _, row := range []string{remote, local} {
+	for _, profile := range want {
+		row := rows[profile]
+		if row == "" {
+			t.Fatalf("missing profile %q:\n%s", profile, got)
+		}
 		if nthIndex(row, "|", 5) != nthIndex(header, "|", 5) {
 			t.Fatalf("columns after Profile misaligned:\n%s\n%s", header, row)
 		}
+	}
+}
+
+func TestListProfileDisplay(t *testing.T) {
+	for _, tc := range []struct{ input, want string }{
+		{"", ""},
+		{"12345678901234567890", "12345678901234567890"},
+		{"123456789012345678901", "1...6789012345678901"},
+		{"gh:界界界界界界界界界界界界界界界界界界界界", "gh:界...界界界界界界界界界界界界界"},
+		{"abcdefghijklmnopq:long-profile", "abcdefghijklmnop...e"},
+	} {
+		t.Run(tc.input, func(t *testing.T) {
+			if got := listProfileDisplay(tc.input); got != tc.want {
+				t.Fatalf("got %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 

@@ -313,7 +313,7 @@ In `internal/chat/handler.go:cont`:
 
 - If the loaded chat already has `chat.Profile != ""`, it overrides the runtime handler config so continuation uses that profile.
 - Otherwise, if a `--profile` was provided (wired into `UseProfile`), the handler stamps it into `chat.Profile` so future continuations persist it.
-- A `-prp` run with a remote target is stamped with the target as typed, without a `#sha256=` pin (`Configurations.ProfileTarget`, applied in `ProfileOverrides`), so `clai chat list` shows e.g. `cchub:clai/reviewer@5`; the wide list sizes its Profile column to the longest one (`profileWidth`). Replying through `chat continue` passes such a profile as `-prp`, a name as `-p` (`text.profileArgs`).
+- A `-prp` run saves the remote target as typed, without a `#sha256=` pin. The wide chat list limits the Profile column to 20 characters. Longer targets show the prefix, an ellipsis, and the end of the target. `chat continue` passes the full target as `-prp` and a local name as `-p` (`text.profileArgs`).
 
 ### `chat summarize` (label existing conversations)
 

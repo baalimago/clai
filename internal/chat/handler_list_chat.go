@@ -606,13 +606,25 @@ func (cq *ChatHandler) handleListCmd(ctx context.Context) error {
 	return cq.listChats(ctx, paginator, "")
 }
 
-// profileWidth fits the wide list's Profile column to its longest
-// profile, a remote target such as cchub:clai/reviewer@5 included, and
-// never narrower than the 15 it always had.
+const maxListProfileWidth = 20
+
+func listProfileDisplay(profile string) string {
+	runes := []rune(profile)
+	if len(runes) <= maxListProfileWidth {
+		return profile
+	}
+	head := 1
+	if colon := strings.IndexRune(profile, ':'); colon >= 0 {
+		head = utf8.RuneCountInString(profile[:colon]) + 2
+	}
+	head = min(head, maxListProfileWidth-len("...")-1)
+	return string(runes[:head]) + "..." + string(runes[len(runes)-(maxListProfileWidth-head-len("...")):])
+}
+
 func profileWidth(rows []chatListRow) int {
 	width := 15
 	for _, r := range rows {
-		width = max(width, utf8.RuneCountInString(r.Profile))
+		width = max(width, min(maxListProfileWidth, utf8.RuneCountInString(r.Profile)))
 	}
 	return width
 }
@@ -937,7 +949,7 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 						item.displaySource(),
 						item.Created.Format("2006-01-02 15:04:05"),
 						msgs,
-						profile,
+						listProfileDisplay(profile),
 						model,
 						costStr,
 						tokenStr,
