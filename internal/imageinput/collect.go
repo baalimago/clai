@@ -37,8 +37,9 @@ type ImageCollector interface {
 	//  2. An -img value that matches nothing fails with *NoMatchError{Pattern}.
 	//  3. A file matched by -img that is not an image fails with asset.ErrNotImage,
 	//     naming the path.
-	//  4. A file larger than the README's largest-local-image parameter fails with
-	//     *asset.ImageTooLargeError{Path, Size, Limit}, before the file is read.
+	//  4. A file larger than the collector's limit (New: the README's largest-local-image
+	//     parameter) fails with *asset.ImageTooLargeError{Path, Size, Limit}, before the
+	//     file is read.
 	//  5. A file that cannot be read fails with the os error, wrapped with the path.
 	//  6. A -g match that sniffs as an image becomes an ImagePart. Every other match
 	//     becomes a GlobMessages entry, exactly as the existing glob path builds its file
@@ -55,9 +56,10 @@ type ImageCollector interface {
 	Collect(req CollectRequest) (Collected, error)
 }
 
-func New() ImageCollector {
-	return collector{}
-}
+func New() ImageCollector { return NewWithLimit(asset.LargestLocalImage) }
+
+// NewWithLimit collects with its own largest image size, in bytes.
+func NewWithLimit(limit int64) ImageCollector { return collector{limit: limit} }
 
 // NoMatchError.1: Error names Pattern.
 type NoMatchError struct{ Pattern string }
@@ -66,19 +68,19 @@ func (e *NoMatchError) Error() string {
 	return fmt.Sprintf("image pattern %q matches no file", e.Pattern)
 }
 
-type collector struct{}
+type collector struct{ limit int64 }
 
-func (collector) Collect(req CollectRequest) (Collected, error) {
+func (c collector) Collect(req CollectRequest) (Collected, error) {
 	var out Collected
 	for _, pattern := range req.Images {
-		images, err := imagesMatching(pattern)
+		images, err := c.imagesMatching(pattern)
 		if err != nil {
 			return Collected{}, err
 		}
 		out.Images = append(out.Images, images...)
 	}
 	if req.Glob != "" {
-		images, messages, err := splitGlob(req.Glob)
+		images, messages, err := c.splitGlob(req.Glob)
 		if err != nil {
 			return Collected{}, err
 		}
@@ -91,7 +93,7 @@ func (collector) Collect(req CollectRequest) (Collected, error) {
 		if err != nil {
 			return Collected{}, fmt.Errorf("failed to read stdin: %w", err)
 		}
-		image, err := stdinImage(data)
+		image, err := c.stdinImage(data)
 		switch {
 		case err == nil:
 			out.Images = append(out.Images, image)
@@ -110,7 +112,7 @@ func (collector) Collect(req CollectRequest) (Collected, error) {
 	return out, nil
 }
 
-func imagesMatching(pattern string) ([]pub_models.ImagePart, error) {
+func (c collector) imagesMatching(pattern string) ([]pub_models.ImagePart, error) {
 	expanded, err := utils.ReplaceTildeWithHome(pattern)
 	if err != nil {
 		return nil, fmt.Errorf("image pattern %q: %w", pattern, err)
@@ -125,7 +127,7 @@ func imagesMatching(pattern string) ([]pub_models.ImagePart, error) {
 	slices.Sort(paths)
 	images := make([]pub_models.ImagePart, 0, len(paths))
 	for _, path := range paths {
-		image, err := readImageFile(path)
+		image, err := c.readImageFile(path)
 		if err != nil {
 			return nil, err
 		}
@@ -134,8 +136,8 @@ func imagesMatching(pattern string) ([]pub_models.ImagePart, error) {
 	return images, nil
 }
 
-func readImageFile(path string) (pub_models.ImagePart, error) {
-	img, err := asset.ReadLocalImage(path)
+func (c collector) readImageFile(path string) (pub_models.ImagePart, error) {
+	img, err := asset.ReadLocalImageUpTo(path, c.limit)
 	if err != nil {
 		return pub_models.ImagePart{}, err
 	}
@@ -143,18 +145,18 @@ func readImageFile(path string) (pub_models.ImagePart, error) {
 }
 
 // userImage caps a -g or stdin image once read; -img files are capped before the read.
-func userImage(data []byte, source string) (pub_models.ImagePart, error) {
+func (c collector) userImage(data []byte, source string) (pub_models.ImagePart, error) {
 	mime, err := asset.Sniff(data)
 	if err != nil {
 		return pub_models.ImagePart{}, fmt.Errorf("image %s: %w", source, err)
 	}
-	if size := int64(len(data)); size > asset.LargestLocalImage {
-		return pub_models.ImagePart{}, &asset.ImageTooLargeError{Path: source, Size: size, Limit: asset.LargestLocalImage}
+	if size := int64(len(data)); size > c.limit {
+		return pub_models.ImagePart{}, &asset.ImageTooLargeError{Path: source, Size: size, Limit: c.limit}
 	}
 	return pub_models.ImagePart{MIME: mime, Origin: pub_models.OriginUser, Data: data}, nil
 }
 
-func splitGlob(pattern string) ([]pub_models.ImagePart, []pub_models.Message, error) {
+func (c collector) splitGlob(pattern string) ([]pub_models.ImagePart, []pub_models.Message, error) {
 	files, err := glob.ReadFiles(pattern)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to parse glob string: '%v', err: %w", pattern, err)
@@ -162,7 +164,7 @@ func splitGlob(pattern string) ([]pub_models.ImagePart, []pub_models.Message, er
 	var images []pub_models.ImagePart
 	var messages []pub_models.Message
 	for _, f := range files {
-		image, err := userImage(f.Data, f.Name)
+		image, err := c.userImage(f.Data, f.Name)
 		switch {
 		case err == nil:
 			images = append(images, image)
@@ -176,8 +178,8 @@ func splitGlob(pattern string) ([]pub_models.ImagePart, []pub_models.Message, er
 }
 
 // stdinImage fails with asset.ErrNotImage unless stdin is an image, raw or as canonical base64.
-func stdinImage(data []byte) (pub_models.ImagePart, error) {
-	if image, err := userImage(data, "stdin"); !errors.Is(err, asset.ErrNotImage) {
+func (c collector) stdinImage(data []byte) (pub_models.ImagePart, error) {
+	if image, err := c.userImage(data, "stdin"); !errors.Is(err, asset.ErrNotImage) {
 		return image, err
 	}
 	trimmed := string(bytes.TrimSpace(data))
@@ -185,5 +187,5 @@ func stdinImage(data []byte) (pub_models.ImagePart, error) {
 	if err != nil || base64.StdEncoding.EncodeToString(decoded) != trimmed {
 		return pub_models.ImagePart{}, asset.ErrNotImage
 	}
-	return userImage(decoded, "stdin")
+	return c.userImage(decoded, "stdin")
 }

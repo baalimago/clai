@@ -143,8 +143,8 @@ func (e *BlobRefusedError) Error() string {
 	return fmt.Sprintf("upload %s: the server answered %s", e.Path, e.Outcome)
 }
 
-func packUploads(jobs []uploadJob) [][]uploadJob {
-	return pack(jobs, func(j uploadJob) int64 { return j.size }, packLimits{count: batchMaxBlobs, bytes: batchMaxBytes, alone: batchBlobMax})
+func packUploads(jobs []uploadJob, l packLimits) [][]uploadJob {
+	return pack(jobs, func(j uploadJob) int64 { return j.size }, l)
 }
 
 func packBytes(pack []uploadJob) int64 {
@@ -159,7 +159,7 @@ func packBytes(pack []uploadJob) int64 {
 // goroutines. The first error cancels the rest and is returned.
 func (e *Engine) uploadMissing(ctx context.Context, store Store, jobs []uploadJob) (int, error) {
 	total := packBytes(jobs)
-	packs := packUploads(jobs)
+	packs := packUploads(jobs, e.limits.upload())
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	queue := make(chan []uploadJob)

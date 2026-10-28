@@ -259,7 +259,7 @@ func (q *Sora) download(ctx context.Context, id string) error {
 	err = os.WriteFile(outFile, data, 0o644)
 	if err != nil {
 		ancli.PrintWarn(fmt.Sprintf("failed to write file: '%v', attempting tmp file...\n", err))
-		outFile = fmt.Sprintf("/tmp/%v", videoName)
+		outFile = filepath.Join(os.TempDir(), videoName)
 		err = os.WriteFile(outFile, data, 0o644)
 		if err != nil {
 			return fmt.Errorf("failed to write file: %w", err)

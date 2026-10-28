@@ -363,7 +363,7 @@ func Test_McpSink_AuthPromptSurfacesDuringBlockedStartup(t *testing.T) {
 }
 
 func TestMcpLogSink_RollingModeQueuesLines(t *testing.T) {
-	sink := newMcpLogSink(mcpLogRolling)
+	sink := newMcpLogSinkTo(mcpLogRolling, io.Discard)
 	sink.attach()
 	sink.AppendServerLog("fs", "started")
 	sink.AppendServerLog("fs", "error: boom")
@@ -419,7 +419,7 @@ func TestMcpLogSink_RawStructuredKeepsOnlyErrors(t *testing.T) {
 }
 
 func TestMcpLogSink_RollingModeElevatesAuthLines(t *testing.T) {
-	sink := newMcpLogSink(mcpLogRolling)
+	sink := newMcpLogSinkTo(mcpLogRolling, io.Discard)
 	sink.attach()
 	sink.AppendServerLog("github", "started")
 	sink.AppendServerLog("github", "Please visit https://github.com/login/device")
@@ -437,7 +437,7 @@ func TestMcpLogSink_RollingModeElevatesAuthLines(t *testing.T) {
 }
 
 func TestMcpLogSink_AuthFollowWindowElevatesPayloadLines(t *testing.T) {
-	sink := newMcpLogSink(mcpLogRolling)
+	sink := newMcpLogSinkTo(mcpLogRolling, io.Discard)
 	sink.attach()
 	sink.AppendServerLog("github", "To authenticate, visit:")
 	sink.AppendServerLog("github", "https://example.com/device-flow")
@@ -460,7 +460,7 @@ func TestMcpLogSink_AuthFollowWindowElevatesPayloadLines(t *testing.T) {
 }
 
 func TestMcpLogSink_AuthFollowWindowSkipsChatter(t *testing.T) {
-	sink := newMcpLogSink(mcpLogRolling)
+	sink := newMcpLogSinkTo(mcpLogRolling, io.Discard)
 	sink.attach()
 	sink.AppendServerLog("notion", "Please authorize this client by visiting:")
 	sink.AppendServerLog("notion", "Browser opened automatically.")
@@ -481,7 +481,7 @@ func TestMcpLogSink_AuthFollowWindowSkipsChatter(t *testing.T) {
 }
 
 func TestMcpLogSink_AuthFollowWindowIsPerServer(t *testing.T) {
-	sink := newMcpLogSink(mcpLogRolling)
+	sink := newMcpLogSinkTo(mcpLogRolling, io.Discard)
 	sink.attach()
 	sink.AppendServerLog("github", "please sign in")
 	sink.AppendServerLog("fs", "plain line from another server")
@@ -526,7 +526,7 @@ func TestMcpLogSink_RawStructuredPrintsAuthLines(t *testing.T) {
 }
 
 func TestMcpLogSink_NotifySignalsOnAuth(t *testing.T) {
-	sink := newMcpLogSink(mcpLogRolling)
+	sink := newMcpLogSinkTo(mcpLogRolling, io.Discard)
 	sink.attach()
 	sink.AppendServerLog("github", "please sign in at https://example.com")
 	select {
@@ -537,7 +537,7 @@ func TestMcpLogSink_NotifySignalsOnAuth(t *testing.T) {
 }
 
 func TestMcpLogSink_OverflowDropsOldestNonErrorFirst(t *testing.T) {
-	sink := newMcpLogSink(mcpLogRolling)
+	sink := newMcpLogSinkTo(mcpLogRolling, io.Discard)
 	sink.attach()
 	sink.AppendServerLog("fs", "error: keep me")
 	for range mcpLogQueueCap + 10 {
@@ -554,7 +554,7 @@ func TestMcpLogSink_OverflowDropsOldestNonErrorFirst(t *testing.T) {
 }
 
 func TestMcpLogSink_ServerExitedFlushesTail(t *testing.T) {
-	sink := newMcpLogSink(mcpLogRolling)
+	sink := newMcpLogSinkTo(mcpLogRolling, io.Discard)
 	sink.attach()
 	for i := range 5 {
 		sink.AppendServerLog("fs", fmt.Sprintf("line %d", i))
@@ -575,7 +575,7 @@ func TestMcpLogSink_ServerExitedFlushesTail(t *testing.T) {
 }
 
 func TestMcpLogSink_ServerExitedTailCapped(t *testing.T) {
-	sink := newMcpLogSink(mcpLogRolling)
+	sink := newMcpLogSinkTo(mcpLogRolling, io.Discard)
 	sink.attach()
 	for i := range 15 {
 		sink.AppendServerLog("fs", fmt.Sprintf("line %d", i))
@@ -635,7 +635,7 @@ func TestMcpLogSink_ServerExitedFlushesTailRawStructuredCapped(t *testing.T) {
 }
 
 func TestMcpLogSink_NotifySignalsOnError(t *testing.T) {
-	sink := newMcpLogSink(mcpLogRolling)
+	sink := newMcpLogSinkTo(mcpLogRolling, io.Discard)
 	sink.attach()
 	notify := sink.Notify()
 
@@ -703,7 +703,7 @@ func Test_sessionRunner_McpErrorRendersLiveWhileModelStreams(t *testing.T) {
 		Model: model,
 		dims:  dimensions.Dimensions{Width: 80, Height: 24},
 	}
-	q.mcpSink = newMcpLogSink(mcpLogRolling)
+	q.mcpSink = newMcpLogSinkTo(mcpLogRolling, io.Discard)
 	q.mcpSink.attach()
 	session := &QuerySession{Chat: pub_models.Chat{ID: "chat-live-mcp"}}
 	runner := sessionRunner[*MockQuerier]{
@@ -776,7 +776,7 @@ func Test_McpSink_RawStructuredFlushesCrashTailFromServer(t *testing.T) {
 
 func TestMcpLogSink_ConcurrentAppendAndDrain(t *testing.T) {
 	t.Parallel()
-	sink := newMcpLogSink(mcpLogRolling)
+	sink := newMcpLogSinkTo(mcpLogRolling, io.Discard)
 	var wg sync.WaitGroup
 	for i := range 4 {
 		wg.Add(1)
@@ -803,7 +803,7 @@ func Test_drainMcpLogs_WindowAndElevation(t *testing.T) {
 		out:  &out,
 		dims: dimensions.Dimensions{Width: 80, Height: 24},
 	}
-	q.mcpSink = newMcpLogSink(mcpLogRolling)
+	q.mcpSink = newMcpLogSinkTo(mcpLogRolling, io.Discard)
 	q.mcpSink.attach()
 	q.mcpSink.AppendServerLog("filesystem", "server started")
 	q.mcpSink.AppendServerLog("filesystem", "error: boom")
@@ -828,7 +828,7 @@ func Test_drainMcpLogs_ConsecutiveErrorsShareOneBlock(t *testing.T) {
 		out:  &out,
 		dims: dimensions.Dimensions{Width: 80, Height: 24},
 	}
-	q.mcpSink = newMcpLogSink(mcpLogRolling)
+	q.mcpSink = newMcpLogSinkTo(mcpLogRolling, io.Discard)
 	q.mcpSink.attach()
 	for i := range 5 {
 		q.mcpSink.AppendServerLog("k8s", fmt.Sprintf("E1027 error: connection refused %d", i))
@@ -859,7 +859,7 @@ func Test_drainMcpLogs_AuthPromptElevates(t *testing.T) {
 		out:  &out,
 		dims: dimensions.Dimensions{Width: 80, Height: 24},
 	}
-	q.mcpSink = newMcpLogSink(mcpLogRolling)
+	q.mcpSink = newMcpLogSinkTo(mcpLogRolling, io.Discard)
 	q.mcpSink.attach()
 	q.mcpSink.AppendServerLog("github", "To authenticate, visit:")
 	q.mcpSink.AppendServerLog("github", "https://example.com/device")
@@ -881,7 +881,7 @@ func Test_drainMcpLogs_ElevationClearsWindowRegion(t *testing.T) {
 		out:  &out,
 		dims: dimensions.Dimensions{Width: 80, Height: 24},
 	}
-	q.mcpSink = newMcpLogSink(mcpLogRolling)
+	q.mcpSink = newMcpLogSinkTo(mcpLogRolling, io.Discard)
 	q.mcpSink.attach()
 	q.mcpSink.AppendServerLog("fs", "started")
 	if err := q.drainMcpLogs(); err != nil {
@@ -908,7 +908,7 @@ func Test_drainMcpLogs_ExitFlushElevates(t *testing.T) {
 		out:  &out,
 		dims: dimensions.Dimensions{Width: 80, Height: 24},
 	}
-	q.mcpSink = newMcpLogSink(mcpLogRolling)
+	q.mcpSink = newMcpLogSinkTo(mcpLogRolling, io.Discard)
 	q.mcpSink.attach()
 	q.mcpSink.AppendServerLog("fs", "line one")
 	q.mcpSink.AppendServerLog("fs", "line two")

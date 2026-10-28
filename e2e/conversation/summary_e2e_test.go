@@ -301,7 +301,6 @@ func setupSummaryE2E(t *testing.T) string {
 		t.Fatalf("CreateFile(textConfig.json): %v", err)
 	}
 	t.Setenv("CLAI_CACHE_DIR", filepath.Join(t.TempDir(), "cache"))
-	e2etest.BlankDebugAndVendorKeys(t)
 	t.Setenv(summary.EnvSummarizer, "")
 	// TestMain swaps the real constructor for a refusing one; the summary
 	// rows are the only opt-in.
@@ -821,7 +820,9 @@ func Test_e2e_chat_summarize_cold_model_config(t *testing.T) {
 		seedSummarizable(t, convDir, id, time.Now().Add(-time.Duration(i+1)*time.Hour))
 	}
 	modelConfig := filepath.Join(confDir, "mock_test_test.json")
-	for round := range 10 {
+	// Two rounds through the CLI; the contention itself is pinned by
+	// summary.TestAgentSummarizer_concurrentColdModelConfig under -race.
+	for round := range 2 {
 		if err := os.Remove(modelConfig); err != nil && !os.IsNotExist(err) {
 			t.Fatalf("round %d Remove: %v", round, err)
 		}

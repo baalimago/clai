@@ -2,7 +2,10 @@ package utils
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
+
+	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
 type TestData struct {
@@ -67,5 +70,20 @@ func TestReadAndUnmarshal_FileNotFound(t *testing.T) {
 	err := ReadAndUnmarshal(filePath, &data)
 	if err == nil {
 		t.Error("ReadAndUnmarshal should have failed for non-existent file")
+	}
+}
+
+func TestSaveBase64File_fallsBackToTheTempDir(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
+	missing := filepath.Join(t.TempDir(), "does-not-exist")
+	var got string
+	var err error
+	// The fallback notice goes to the captured stream, not the test log.
+	_ = testboil.CaptureStdout(t, func(t *testing.T) { got, err = SaveBase64File("fallback", missing, "aGk=", "txt") })
+	if err != nil {
+		t.Fatalf("SaveBase64File: %v", err)
+	}
+	if filepath.Dir(got) != os.TempDir() {
+		t.Fatalf("fell back to %q, want a file in %q", got, os.TempDir())
 	}
 }

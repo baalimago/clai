@@ -13,6 +13,25 @@ type packLimits struct {
 	alone int64
 }
 
+// limits are the sizes an engine packs with; a zero field takes the
+// production constant, so a test can shrink them.
+type limits struct {
+	batchBlobs int
+	batchBytes int64
+	batchAlone int64
+	fetchBlobs int
+	fetchBytes int64
+	fetchAlone int64
+}
+
+func (l limits) upload() packLimits {
+	return packLimits{count: cmp.Or(l.batchBlobs, batchMaxBlobs), bytes: cmp.Or(l.batchBytes, batchMaxBytes), alone: cmp.Or(l.batchAlone, batchBlobMax)}
+}
+
+func (l limits) fetch() packLimits {
+	return packLimits{count: cmp.Or(l.fetchBlobs, fetchMaxBlobs), bytes: cmp.Or(l.fetchBytes, fetchMaxBytes), alone: cmp.Or(l.fetchAlone, fetchAlone)}
+}
+
 // pack groups items into requests, smallest first so many small files
 // share one, and orders the requests largest first so the big ones start
 // while the small ones fill the other workers.

@@ -62,6 +62,8 @@ type Engine struct {
 	cache *blobCache
 	// window overrides pullWindow (tests).
 	window int64
+	// limits override the packing constants (tests).
+	limits limits
 }
 
 func (e *Engine) api() api { return api{c: e.Client} }

@@ -33,24 +33,25 @@ func heldBlobs(srv *cloudtest.Server) int {
 func TestCommit_uploadsSmallFilesInBatchesAndLargeOnesAlone(t *testing.T) {
 	srv := cloudtest.New(t)
 	m := newMachine(t, srv, "tok-a")
+	m.Engine.limits = limits{batchBlobs: 5, batchAlone: 2 << 10}
 	var log progressLog
 	m.Progress = log.add
-	for i := range 600 {
+	for i := range 12 {
 		m.write(fmt.Sprintf("conversations/c%03d.json", i), fmt.Sprintf(`{"n":%d}`, i))
 	}
-	m.write("conversations/big.json", strings.Repeat("x", batchBlobMax+1))
+	m.write("conversations/big.json", strings.Repeat("x", 2<<10+1))
 	res := m.commit(StoreConversations, "bulk")
-	if res.Uploaded != 601 || heldBlobs(srv) != 601 {
-		t.Fatalf("uploaded %d, server holds %d, want 601", res.Uploaded, heldBlobs(srv))
+	if res.Uploaded != 13 || heldBlobs(srv) != 13 {
+		t.Fatalf("uploaded %d, server holds %d, want 13", res.Uploaded, heldBlobs(srv))
 	}
 	if n := requests(srv, "/api/v1/blobs/batch"); n != 3 {
-		t.Fatalf("%d batch requests, want 3 for 600 small files", n)
+		t.Fatalf("%d batch requests, want 3 batches of at most 5 for 12 small files", n)
 	}
 	if n := singlePuts(srv); n != 1 {
 		t.Fatalf("%d single uploads, want only the large file", n)
 	}
 	up, _ := log.last(PhaseUploading)
-	if up.Done != 601 || up.Total != 601 || up.Bytes != up.TotalBytes {
+	if up.Done != 13 || up.Total != 13 || up.Bytes != up.TotalBytes {
 		t.Fatalf("last upload event = %+v", up)
 	}
 }

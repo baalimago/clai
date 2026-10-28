@@ -21,10 +21,9 @@ func builtServer() (string, error) {
 }
 
 func TestMain(m *testing.M) {
-	testenv.LimitProcs()
-	code := m.Run()
-	if server.path != "" {
-		_ = os.Remove(server.path)
-	}
-	os.Exit(code)
+	testenv.MainWith(m, testenv.Setup{After: func() {
+		if server.path != "" {
+			_ = os.Remove(server.path)
+		}
+	}})
 }

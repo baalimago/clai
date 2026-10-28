@@ -23,6 +23,7 @@ import (
 	"github.com/baalimago/clai/internal/imagegen/route"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/present"
+	"github.com/baalimago/clai/internal/testenv"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/internal/vendors/gemini"
 	"github.com/baalimago/clai/internal/vendors/ollama"
@@ -395,7 +396,10 @@ func withTheme(t *testing.T, rolling bool) {
 	if err := os.WriteFile(filepath.Join(confDir, "theme.json"), []byte(theme), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := utils.LoadTheme(confDir); err != nil {
+	restore := testenv.Quiet(t)
+	err := utils.LoadTheme(confDir)
+	restore()
+	if err != nil {
 		t.Fatalf("LoadTheme: %v", err)
 	}
 	t.Cleanup(func() {

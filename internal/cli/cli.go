@@ -264,7 +264,7 @@ func Run(args []string, deps Deps) int {
 	defer cancel()
 	// Nested tool calls stop clai through this cancel.
 	ctx = context.WithValue(ctx, utils.ContextCancelKey, cancel)
-	go func() { shutdown.Monitor(cancel) }()
+	go shutdown.MonitorV2(ctx, cancel)
 	cfgDir, _ := utils.GetClaiConfigDir()
 	cacheDir, _ := utils.GetClaiCacheDir()
 	usage := strings.NewReplacer("CONFIG_DIR", cfgDir, "CACHE_DIR", cacheDir).Replace(usageTemplate)

@@ -15,11 +15,15 @@ var (
 )
 
 func TestMain(m *testing.M) {
-	testenv.LimitProcs()
-	testServerBinPath, testServerBinErr = testserverbin.Build()
-	code := m.Run()
-	if testServerBinPath != "" {
-		_ = os.Remove(testServerBinPath)
-	}
-	os.Exit(code)
+	testenv.MainWith(m, testenv.Setup{
+		Before: func(testenv.Home) error {
+			testServerBinPath, testServerBinErr = testserverbin.Build()
+			return nil
+		},
+		After: func() {
+			if testServerBinPath != "" {
+				_ = os.Remove(testServerBinPath)
+			}
+		},
+	})
 }

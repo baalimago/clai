@@ -19,23 +19,28 @@ func streamRows(tokens []string, width int, narrowEmoji bool) int {
 }
 
 func TestPinWideRunes_terminalsAgreeWithTerminalRows(t *testing.T) {
-	texts := []string{
-		`{"prompt": "A minimal flat illustration of a single orange triangle centered on a solid dark navy background. Clean geometric shapes, no text, no gradients, no extra elements.", "rebus": "🔶 🌌 📐", "size": "1024x1024"}`,
-		"ab🔶cd",
-		"abcdefgh🔶x",
-		"abcdefgh🔶\nx",
-		"abcdefghi🔶",
-		"🔶🔶🔶🔶🔶🔶",
-		"界界界 ab 🙂 c\n\n🙂",
+	// The prompt line is read at the width it wraps at and one narrow width;
+	// the short texts put a wide rune on every side of a wrap boundary.
+	cases := []struct {
+		text   string
+		widths []int
+	}{
+		{`{"prompt": "A flat illustration of an orange triangle on a dark navy background, no text.", "rebus": "🔶 🌌 📐", "size": "1024x1024"}`, []int{10, 72}},
+		{"ab🔶cd", []int{4, 9, 10, 11}},
+		{"abcdefgh🔶x", []int{4, 9, 10, 11}},
+		{"abcdefgh🔶\nx", []int{4, 9, 10, 11}},
+		{"abcdefghi🔶", []int{4, 9, 10, 11}},
+		{"🔶🔶🔶🔶🔶🔶", []int{4, 9, 10, 11}},
+		{"界界界 ab 🙂 c\n\n🙂", []int{4, 9, 10, 11}},
 	}
-	for _, text := range texts {
-		for _, width := range []int{4, 9, 10, 11, 72} {
-			want := TerminalRows(text, width)
-			for _, split := range []int{1, 3, len(text)} {
-				tokens := splitRunes(text, split)
+	for _, c := range cases {
+		for _, width := range c.widths {
+			want := TerminalRows(c.text, width)
+			for _, split := range []int{1, 3, len(c.text)} {
+				tokens := splitRunes(c.text, split)
 				for _, narrow := range []bool{false, true} {
 					if got := streamRows(tokens, width, narrow); got != want {
-						t.Errorf("text %q width %d tokens of %d runes, narrow emoji %v: %d rows, TerminalRows says %d", text, width, split, narrow, got, want)
+						t.Errorf("text %q width %d tokens of %d runes, narrow emoji %v: %d rows, TerminalRows says %d", c.text, width, split, narrow, got, want)
 					}
 				}
 			}

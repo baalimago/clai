@@ -53,16 +53,20 @@ Instead, start testing early and ensure that test passes for each new modificati
 
 **Important:** For new implementations, 70+% test coverage is a must. 90+% test coverage is preferred.
 
-**Test binaries and GOMAXPROCS:** `go test ./...` runs about one race test binary per core at
-once. When every binary uses full GOMAXPROCS, the runtimes oversubscribe the host: on 2026-10-22,
-230 of the gate's 470 CPU-seconds went to scheduler spin and GC pauses, and `e2e` timed out. A
-package whose tests take 5 s or more inside the gate starts its `TestMain` with
-`testenv.LimitProcs()`, or is just `func TestMain(m *testing.M) { testenv.Main(m) }`
-(`internal/testenv`). Race detection is unaffected.
-
-**Tests never read the developer's files:** a package whose code falls back to the user's home,
-config or cache directory uses `testenv.MainInHome(m)` or calls `testenv.IsolateHome()` in its
-`TestMain`. On 2026-10-22, `internal/chat` timed out only on the maintainer's machine because a
-test parsed every real Claude Desktop session file 99 times.
+**Every test binary is hermetic:** each test package's `TestMain` is
+`func TestMain(m *testing.M) { testenv.Main(m) }`, or `testenv.MainWith(m, testenv.Setup{...})`
+when it builds a fixture first (`internal/testenv`). `Main` caps GOMAXPROCS at 2 and sets GOGC to
+400 for the binary and its children (on 2026-10-22, 22 uncapped race binaries at full GOMAXPROCS
+spent half the gate's CPU in scheduler spin and GC pauses; on 2026-10-28, 53 uncapped binaries
+made tests run 5 to 14 times slower than alone, and the collector cost the e2e binary 20.6 CPU-s
+at GOGC 100 against 9.0 at 400), points HOME and the XDG directories at a fresh temporary
+directory with the go command's own directories pinned, and removes what the developer's shell
+could feed a test: `*_API_KEY`, `CLAI_*`, `DEBUG*`, `EDITOR`, `VISUAL`, proxies, `SANDBOX`,
+`QWEN_*`, `GIT_DIR`/`GIT_WORK_TREE`/`GIT_INDEX_FILE` and `NO_COLOR` go, `TTY` is `/dev/null`
+and `LC_ALL` is `C`. A test that needs one of them sets it with `t.Setenv`. The e2e packages use
+`e2etest.Main`, which also moves the working directory inside the isolated home, because the
+skills discovery walks the working directory's ancestors (on 2026-10-28, five e2e rows run
+from the repository read the developer's own skills directory, and one row listed a 1.9 GB
+directory of the developer's agent session logs for 240 CPU-s). Race detection is unaffected.
 
 Run `make qa` to run all at once.

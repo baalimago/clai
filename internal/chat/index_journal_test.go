@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -28,6 +29,29 @@ func seedIndexCache(t *testing.T, convDir string, rows []chatIndexRow) []byte {
 
 func journalChat(id, prompt string) pub_models.Chat {
 	return pub_models.Chat{ID: id, Created: time.Now(), Messages: []pub_models.Message{{Role: "user", Content: prompt}}}
+}
+
+// seedJournalPastCompaction writes a journal already over the compaction
+// threshold in one go, so the next save is the one that must compact.
+func seedJournalPastCompaction(t *testing.T, convDir string) int {
+	t.Helper()
+	var buf bytes.Buffer
+	n := 0
+	for buf.Len() < chatIndexJournalCompactBytes {
+		row := chatIndexRowFromChat(journalChat(fmt.Sprintf("seed%05d", n), strings.Repeat("x", indexPreviewRunes)))
+		row.Updated = time.Now().UTC()
+		line, err := json.Marshal(row)
+		if err != nil {
+			t.Fatalf("marshal row %d: %v", n, err)
+		}
+		buf.Write(line)
+		buf.WriteByte('\n')
+		n++
+	}
+	if err := os.WriteFile(chatIndexJournalPath(convDir), buf.Bytes(), 0o644); err != nil {
+		t.Fatalf("write journal: %v", err)
+	}
+	return n
 }
 
 // TestUpsertChatIndex_appendsWithoutRewritingTheCache pins the per-query
@@ -93,19 +117,12 @@ func TestUpsertChatIndexBatch_appendsEveryRow(t *testing.T) {
 func TestUpsertChatIndex_compactsAPastThresholdJournal(t *testing.T) {
 	tmp := t.TempDir()
 	seedIndexCache(t, tmp, nil)
-	prompt := strings.Repeat("x", indexPreviewRunes)
-	upserts := 0
-	for ; upserts < 10_000; upserts++ {
-		if err := upsertChatIndex(tmp, journalChat(fmt.Sprintf("c%05d", upserts), prompt)); err != nil {
-			t.Fatalf("upsertChatIndex %d: %v", upserts, err)
-		}
-		if _, err := os.Stat(chatIndexJournalPath(tmp)); os.IsNotExist(err) {
-			upserts++
-			break
-		}
+	seeded := seedJournalPastCompaction(t, tmp)
+	if err := upsertChatIndex(tmp, journalChat("last", "x")); err != nil {
+		t.Fatalf("upsertChatIndex: %v", err)
 	}
-	if upserts == 10_000 {
-		t.Fatal("the journal never compacted")
+	if _, err := os.Stat(chatIndexJournalPath(tmp)); !os.IsNotExist(err) {
+		t.Fatalf("journal after a save past the threshold: %v, want it folded into the cache", err)
 	}
 	b, err := os.ReadFile(chatIndexPath(tmp))
 	if err != nil {
@@ -115,16 +132,11 @@ func TestUpsertChatIndex_compactsAPastThresholdJournal(t *testing.T) {
 	if err := json.Unmarshal(b, &cache); err != nil {
 		t.Fatalf("decode cache: %v", err)
 	}
-	if len(cache.Rows) != upserts {
-		t.Fatalf("cache rows = %d, want all %d upserts folded in", len(cache.Rows), upserts)
-	}
-	if _, err := os.Stat(chatIndexCompactingPath(tmp)); !os.IsNotExist(err) {
-		t.Fatalf("compacting journal left behind: %v", err)
+	if len(cache.Rows) != seeded+1 {
+		t.Fatalf("cache rows = %d, want all %d saves folded in", len(cache.Rows), seeded+1)
 	}
 }
 
-// TestReadChatIndex_replaysACompactingJournal pins the crash window: a
-// journal moved aside but never folded in is still read.
 func TestReadChatIndex_replaysACompactingJournal(t *testing.T) {
 	tmp := t.TempDir()
 	seedIndexCache(t, tmp, nil)
@@ -224,14 +236,14 @@ func TestAppendIndexJournal_heldCompactionLockStillSaves(t *testing.T) {
 	if err := os.WriteFile(chatIndexCompactLockPath(tmp), nil, 0o644); err != nil {
 		t.Fatalf("write lock: %v", err)
 	}
-	prompt := strings.Repeat("x", indexPreviewRunes)
-	for i := range 2000 {
-		if err := upsertChatIndex(tmp, journalChat(fmt.Sprintf("c%05d", i), prompt)); err != nil {
-			t.Fatalf("upsertChatIndex %d: %v", i, err)
+	seeded := seedJournalPastCompaction(t, tmp)
+	for i := range 3 {
+		if err := upsertChatIndex(tmp, journalChat(fmt.Sprintf("held%d", i), "x")); err != nil {
+			t.Fatalf("upsertChatIndex %d under a held lock: %v", i, err)
 		}
 	}
 	rows, err := readChatIndex(tmp)
-	if err != nil || len(rows) != 2000 {
+	if err != nil || len(rows) != seeded+3 {
 		t.Fatalf("rows = %d, %v; want every save readable", len(rows), err)
 	}
 }

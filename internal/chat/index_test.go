@@ -3,6 +3,7 @@ package chat
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -848,5 +849,62 @@ func TestUpsertChatIndex_shrinksOversizedRows(t *testing.T) {
 	}
 	if len(got) != 21 {
 		t.Fatalf("rows = %d, want 21", len(got))
+	}
+}
+
+func writeIndexedChats(t *testing.T, dir string, n int) {
+	t.Helper()
+	for i := range n {
+		ch := pub_models.Chat{
+			ID:       fmt.Sprintf("c%03d", i),
+			Created:  time.Date(2026, 1, 1, 0, 0, i, 0, time.UTC),
+			Messages: []pub_models.Message{{Role: "user", Content: "hello"}},
+		}
+		b, err := json.Marshal(ch)
+		if err != nil {
+			t.Fatalf("marshal: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, ch.ID+".json"), b, 0o644); err != nil {
+			t.Fatalf("write chat file: %v", err)
+		}
+	}
+}
+
+// TestRebuildChatIndex_reportsProgressOnlyFromABatchOfFiles pins that a small
+// rebuild is silent on stderr while one with a batch's worth of files prints
+// the header and its progress.
+func TestRebuildChatIndex_reportsProgressOnlyFromABatchOfFiles(t *testing.T) {
+	small := t.TempDir()
+	writeIndexedChats(t, small, indexProgressBatch-1)
+	var rows []chatIndexRow
+	var err error
+	stderr := testboil.CaptureStderr(t, func(t *testing.T) {
+		rows, err = rebuildChatIndex(small, 0, "cache missing")
+	})
+	if err != nil {
+		t.Fatalf("rebuildChatIndex(small): %v", err)
+	}
+	if len(rows) != indexProgressBatch-1 {
+		t.Fatalf("small rebuild indexed %d rows, want %d", len(rows), indexProgressBatch-1)
+	}
+	if stderr != "" {
+		t.Fatalf("a rebuild below the batch size wrote %q to stderr, want nothing", stderr)
+	}
+
+	large := t.TempDir()
+	writeIndexedChats(t, large, indexProgressBatch)
+	stderr = testboil.CaptureStderr(t, func(t *testing.T) {
+		rows, err = rebuildChatIndex(large, 1, "legacy cache")
+	})
+	if err != nil {
+		t.Fatalf("rebuildChatIndex(large): %v", err)
+	}
+	if len(rows) != indexProgressBatch {
+		t.Fatalf("large rebuild indexed %d rows, want %d", len(rows), indexProgressBatch)
+	}
+	for _, want := range []string{"Rebuilding cache index legacy cache:", fmt.Sprintf("%d/%d (100%%", indexProgressBatch, indexProgressBatch)} {
+		if !strings.Contains(stderr, want) {
+			t.Fatalf("a rebuild of a full batch wrote %q, want %q in it", stderr, want)
+		}
 	}
 }

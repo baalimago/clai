@@ -138,7 +138,7 @@ func pullWindows(store Store, st *state, local map[string]LocalFile, entries []R
 func (e *Engine) needed(window []RemoteEntry, st *state, local map[string]LocalFile, d *pullDownloads) []RemoteEntry {
 	var want []RemoteEntry
 	for _, r := range window {
-		if !needsBlob(d.store, st, local, r) || d.fetched[r.SHA256] || r.Size > fetchMaxBytes {
+		if !needsBlob(d.store, st, local, r) || d.fetched[r.SHA256] || r.Size > e.limits.fetch().bytes {
 			continue
 		}
 		d.fetched[r.SHA256] = true
@@ -156,7 +156,7 @@ func (e *Engine) prefetch(ctx context.Context, want []RemoteEntry, d *pullDownlo
 	if off {
 		return nil
 	}
-	packs := pack(want, func(r RemoteEntry) int64 { return r.Size }, packLimits{count: fetchMaxBlobs, bytes: fetchMaxBytes, alone: fetchAlone})
+	packs := pack(want, func(r RemoteEntry) int64 { return r.Size }, e.limits.fetch())
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	queue := make(chan []RemoteEntry)

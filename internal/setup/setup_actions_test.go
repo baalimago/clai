@@ -15,6 +15,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/internal/testenv"
 	"github.com/baalimago/clai/internal/tools"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/table"
@@ -354,6 +355,13 @@ func registerMockTools(names ...string) {
 	}
 }
 
+// quietToolsValue runs the selector with its table parked on the null device.
+func quietToolsValue(t *testing.T, v any) ([]string, error) {
+	t.Helper()
+	defer testenv.Quiet(t)()
+	return getToolsValue(v)
+}
+
 func TestGetToolsValue_UsesSelectFromTable(t *testing.T) {
 	tools.Registry.Reset()
 	tools.Init()
@@ -375,7 +383,7 @@ func TestGetToolsValue_UsesSelectFromTable(t *testing.T) {
 		})
 		defer restore()
 
-		got, err := getToolsValue([]any{})
+		got, err := quietToolsValue(t, []any{})
 		if err != nil {
 			t.Fatalf("getToolsValue(): %v", err)
 		}
@@ -399,7 +407,7 @@ func TestGetToolsValue_UsesSelectFromTable(t *testing.T) {
 		})
 		defer restore()
 
-		got, err := getToolsValue([]any{})
+		got, err := quietToolsValue(t, []any{})
 		if err != nil {
 			t.Fatalf("getToolsValue(): %v", err)
 		}
@@ -423,7 +431,7 @@ func TestGetToolsValue_UsesSelectFromTable(t *testing.T) {
 		})
 		defer restore()
 
-		got, err := getToolsValue([]any{})
+		got, err := quietToolsValue(t, []any{})
 		if err != nil {
 			t.Fatalf("getToolsValue(): %v", err)
 		}
@@ -447,7 +455,7 @@ func TestGetToolsValue_UsesSelectFromTable(t *testing.T) {
 		})
 		defer restore()
 
-		got, err := getToolsValue([]any{})
+		got, err := quietToolsValue(t, []any{})
 		if err != nil {
 			t.Fatalf("getToolsValue(): %v", err)
 		}
@@ -470,7 +478,7 @@ func TestGetToolsValue_UsesSelectFromTable(t *testing.T) {
 		})
 		defer restore()
 
-		got, err := getToolsValue([]any{"rg", "cat"})
+		got, err := quietToolsValue(t, []any{"rg", "cat"})
 		if err != nil {
 			t.Fatalf("getToolsValue(): %v", err)
 		}
@@ -487,7 +495,7 @@ func TestGetToolsValue_UsesSelectFromTable(t *testing.T) {
 		defer restore()
 
 		current := []any{"rg", "ls"}
-		got, err := getToolsValue(current)
+		got, err := quietToolsValue(t, current)
 		if err != nil {
 			t.Fatalf("getToolsValue(): %v", err)
 		}
@@ -505,7 +513,7 @@ func TestGetToolsValue_UsesSelectFromTable(t *testing.T) {
 		})
 		defer restore()
 
-		_, err := getToolsValue([]any{})
+		_, err := quietToolsValue(t, []any{})
 		if !errors.Is(err, table.ErrUserInitiatedExit) {
 			t.Fatalf("getToolsValue() error = %v, want ErrUserInitiatedExit", err)
 		}
@@ -524,7 +532,7 @@ func TestGetToolsValue_UsesSelectFromTable(t *testing.T) {
 		})
 		defer restore()
 
-		got, err := getToolsValue([]any{"rg"})
+		got, err := quietToolsValue(t, []any{"rg"})
 		if err != nil {
 			t.Fatalf("getToolsValue(): %v", err)
 		}
@@ -536,7 +544,7 @@ func TestGetToolsValue_UsesSelectFromTable(t *testing.T) {
 	})
 
 	t.Run("non-slice input returns empty", func(t *testing.T) {
-		got, err := getToolsValue("not a slice")
+		got, err := quietToolsValue(t, "not a slice")
 		if err != nil {
 			t.Fatalf("getToolsValue(): %v", err)
 		}
@@ -2040,7 +2048,7 @@ func TestGetToolsValue_SelectError(t *testing.T) {
 	})
 	defer restore()
 
-	_, err := getToolsValue([]any{"rg"})
+	_, err := quietToolsValue(t, []any{"rg"})
 	if err == nil {
 		t.Fatal("getToolsValue(select error) expected error, got nil")
 	}

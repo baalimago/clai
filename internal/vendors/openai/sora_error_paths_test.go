@@ -157,16 +157,8 @@ func TestSoraDownloadErrorPaths(t *testing.T) {
 
 	t.Run("write fallback to tmp", func(t *testing.T) {
 		const prefix = "sora-fallback-test"
-		matches, _ := filepath.Glob("/tmp/" + prefix + "_*.mp4")
-		for _, m := range matches {
-			_ = os.Remove(m)
-		}
-		t.Cleanup(func() {
-			rem, _ := filepath.Glob("/tmp/" + prefix + "_*.mp4")
-			for _, m := range rem {
-				_ = os.Remove(m)
-			}
-		})
+		// A temp dir of this run's own, so the fallback file is the only match.
+		t.Setenv("TMPDIR", t.TempDir())
 
 		q := &Sora{
 			apiKey: "key",
@@ -178,9 +170,9 @@ func TestSoraDownloadErrorPaths(t *testing.T) {
 		if err := q.download(context.Background(), "id"); err != nil {
 			t.Fatalf("download: %v", err)
 		}
-		written, _ := filepath.Glob("/tmp/" + prefix + "_*.mp4")
+		written, _ := filepath.Glob(filepath.Join(os.TempDir(), prefix+"_*.mp4"))
 		if len(written) != 1 {
-			t.Fatalf("expected one /tmp fallback file, got %v", written)
+			t.Fatalf("expected one temp-dir fallback file, got %v", written)
 		}
 	})
 }

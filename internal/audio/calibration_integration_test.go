@@ -156,14 +156,14 @@ func TestCalibrationPreservesNonDiarizedAndSubLimitPaths(t *testing.T) {
 }
 
 func TestMaxRequestBytesAppliesToBothPaths(t *testing.T) {
-	// 60 MB input: with a 40 MB cap the non-diarized path splits into ceil(60/32)=2 chunks
+	// 60 KB input: with a 40 KB cap the non-diarized path splits into ceil(60/32)=2 chunks
 	trans := &fakeTranscriber{}
 	runner := &fakeRunner{defaultDur: "900.000000", durations: map[string]string{"input.wav": "1800.000000"}, chunkCount: 2}
 	s := NewSplitter(trans, runner)
 	s.StatusOut = &bytes.Buffer{}
 	s.Model = "whisper-1"
-	s.MaxBytes = 40 << 20
-	if _, err := s.Transcribe(context.Background(), sparseFile(t, 60<<20)); err != nil {
+	s.MaxBytes = 40 << 10
+	if _, err := s.Transcribe(context.Background(), sparseFile(t, 60<<10)); err != nil {
 		t.Fatal(err)
 	}
 	segmentTime := ""
@@ -173,26 +173,26 @@ func TestMaxRequestBytesAppliesToBothPaths(t *testing.T) {
 		}
 	}
 	if segmentTime != "900.000" {
-		t.Errorf("expected 2 chunks of 900 s under a 40 MB cap (80%% target), got segment time %q", segmentTime)
+		t.Errorf("expected 2 chunks of 900 s under a 40 KB cap (80%% target), got segment time %q", segmentTime)
 	}
-	// Same cap makes a 30 MB diarized file calibrate instead of passing through
+	// A 4 MiB cap (the multipart reserve is 16 KiB) passes a 3 MiB diarized file through and calibrates a 5 MiB one
 	p := &voiceProvider{truth: smallMeeting()}
 	conf := smallBudgetConf("gpt-4o-transcribe-diarize")
-	conf.Transcribe.MaxRequestBytes = 40 << 20
+	conf.Transcribe.MaxRequestBytes = 4 << 20
 	cs, _, _ := newCalibratedSplitter(t, p, conf)
 	direct := &fakeTranscriber{}
 	cs.Transcriber = direct
-	if _, err := cs.Transcribe(context.Background(), sparseFile(t, 30<<20)); err != nil {
+	if _, err := cs.Transcribe(context.Background(), sparseFile(t, 3<<20)); err != nil {
 		t.Fatal(err)
 	}
 	if direct.callCount() != 1 || p.requests() != 0 {
-		t.Errorf("30 MB under a 40 MB cap must be one direct request, got direct %v calibrated %v", direct.callCount(), p.requests())
+		t.Errorf("3 MiB under a 4 MiB cap must be one direct request, got direct %v calibrated %v", direct.callCount(), p.requests())
 	}
-	if _, err := cs.Transcribe(context.Background(), sparseFile(t, 50<<20)); err != nil {
+	if _, err := cs.Transcribe(context.Background(), sparseFile(t, 5<<20)); err != nil {
 		t.Fatal(err)
 	}
 	if p.requests() == 0 {
-		t.Error("50 MB over a 40 MB cap must calibrate")
+		t.Error("5 MiB over a 4 MiB cap must calibrate")
 	}
 }
 

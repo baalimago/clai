@@ -81,9 +81,6 @@ func (f sessionFinalizer[C]) Finalize(ctx context.Context, session *QuerySession
 	session.Finalized = true
 	q := f.querier
 
-	if q.debug {
-		ancli.Noticef("post process querier: %+v", q)
-	}
 	if session.Raw && !q.structuredOutput {
 		fmt.Fprintln(q.out)
 	}

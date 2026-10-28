@@ -97,10 +97,12 @@ func TestPull_sameMessagesOtherTitleTrashesMine(t *testing.T) {
 func TestPull_progressCountsBlobsFetchedAlone(t *testing.T) {
 	srv := cloudtest.New(t)
 	a := newMachine(t, srv, "tok-a")
-	a.write("conversations/big.json", `{"messages":[],"pad":"`+strings.Repeat("x", 13<<20)+`"}`)
+	a.write("conversations/big.json", `{"messages":[],"pad":"`+strings.Repeat("x", 8<<10)+`"}`)
 	a.write("conversations/small.json", `{"messages":[]}`)
 	a.commit(StoreConversations, "one")
 	b := newMachine(t, srv, "tok-b")
+	// big.json is over the bundle size, so it is fetched alone.
+	b.Engine.limits = limits{fetchBytes: 4 << 10, fetchAlone: 1 << 10}
 	var log progressLog
 	b.Progress = log.add
 	b.pull(StoreConversations, PullOptions{})

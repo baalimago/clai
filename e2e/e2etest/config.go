@@ -117,16 +117,6 @@ func SetupMainTestConfigDir(t *testing.T) string {
 	return confDir
 }
 
-// BlankDebugAndVendorKeys keeps a fixture host-insensitive: no debug
-// chatter on the captured streams and no developer key that could select a
-// paid vendor.
-func BlankDebugAndVendorKeys(t *testing.T) {
-	t.Helper()
-	for _, key := range []string{"DEBUG", "DEBUG_SUMMARY", "DEBUG_CHAT", "DEBUG_STOPLOSS", "OPENROUTER_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"} {
-		t.Setenv(key, "")
-	}
-}
-
 // ChdirTemp moves the test into a fresh temp dir, restored on cleanup, and
 // returns its canonical path.
 func ChdirTemp(t *testing.T) string {
