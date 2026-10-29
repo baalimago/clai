@@ -3,10 +3,16 @@
 //
 // Antigravity keeps one SQLite database per conversation under
 // <home>/conversations/<cascade-id>.db, where <home> is ~/.gemini/antigravity
-// for the IDE and ~/.gemini/antigravity-cli for the CLI. The steps table holds
-// one protobuf-encoded step per row: a user prompt, a model turn, a tool
-// result, or an operational event. A conversation's workspace is recorded in
-// the trajectory_metadata_blob table.
+// for the desktop app, ~/.gemini/antigravity-ide for the separately installed
+// IDE and ~/.gemini/antigravity-cli for the CLI. The steps table holds one
+// protobuf-encoded step per row: a user prompt, a model turn, a tool result, or
+// an operational event. A conversation's workspace is recorded in the
+// trajectory_metadata_blob table.
+//
+// The app also keeps one index per store root, conversation_summaries.db. It is
+// the only place that carries a generated conversation title and the parent of
+// an agent run the app spawned, so the reader consults it first and falls back
+// to the trajectory alone when it is absent.
 //
 // The reader never writes to the store. A write-ahead log is replayed by
 // internal/sqlitepage, so a running Antigravity still reads as the committed
@@ -102,25 +108,30 @@ func (r SourceReader) Source() string { return sourceName }
 // Discover lists every Antigravity conversation.
 //
 //   - A missing store root yields no rows and no error.
-//   - One row per conversation database with at least one mapped message; a
-//     database without a conversation message, a database without the steps
-//     table and a file that is not a SQLite database yield none.
+//   - One row per conversation database that holds at least one user message and
+//     that the index does not mark as a child agent run. A database without a
+//     user message, a database the index nests under a parent, a database
+//     without the steps table and a file that is not a SQLite database yield
+//     none. The index is asked first; when it is absent or silent the
+//     trajectory decides.
 //   - MessageCount is the number of messages Read returns minus the system
 //     preamble, because discovery and Read share one mapper.
-//   - FirstUserMessage is the first user prompt truncated to the preview width;
-//     FullFirstUserMessage is the full prompt.
-//   - Cwd is the first workspace URI in trajectory_metadata_blob; Created is
-//     the first step timestamp, else the file modification time.
+//   - FirstUserMessage is the index title when the app generated one, else the
+//     first user prompt, truncated to the preview width; FullFirstUserMessage is
+//     always the full first prompt.
+//   - Cwd is the first workspace URI in trajectory_metadata_blob, else the first
+//     workspace URI in the index; Created is the first step timestamp, else the
+//     file modification time.
 //   - A database that cannot be read is skipped and not cached. A cache hit
 //     costs one stat and no open.
 func (r SourceReader) Discover(ctx context.Context, cache vendors.SourceCache) ([]vendors.SourceRow, error) {
 	rows := []vendors.SourceRow{}
 	seen := map[string]struct{}{}
-	err := r.walkSessions(ctx, func(absPath, sourceID string) bool {
+	err := r.walkSessions(ctx, func(absPath, sourceID string, idx map[string]summary) bool {
 		if _, ok := seen[sourceID]; ok {
 			return false
 		}
-		row, ok := r.discoverFile(cache, absPath, sourceID)
+		row, ok := r.discoverFile(cache, absPath, sourceID, idx[sourceID])
 		if !ok {
 			return false
 		}
@@ -146,22 +157,28 @@ func (r SourceReader) Discover(ctx context.Context, cache vendors.SourceCache) (
 //     settled call is followed by its tool result. A call without a result,
 //     id or name becomes one [tool call: name(args)] text line.
 //   - Error, task-notification and unknown steps map to no message.
-//   - An empty id, an unknown id and a conversation with no messages are
-//     errors.
+//   - An empty id, an unknown id, a child agent run and a conversation without
+//     a user message are errors. A child run is never a clone target.
 func (r SourceReader) Read(ctx context.Context, cache vendors.SourceCache, sourceID string) (pub_models.Chat, error) {
 	if sourceID == "" {
 		return pub_models.Chat{}, errors.New("read antigravity session: empty session id")
 	}
-	absPath, err := r.findSession(ctx, cache, sourceID)
+	absPath, sum, err := r.findSession(ctx, cache, sourceID)
 	if err != nil {
 		return pub_models.Chat{}, err
+	}
+	if sum.child() {
+		if sum.parent != "" {
+			return pub_models.Chat{}, fmt.Errorf("antigravity session %q is a subagent of %q", sourceID, sum.parent)
+		}
+		return pub_models.Chat{}, fmt.Errorf("antigravity session %q is a subagent session", sourceID)
 	}
 	conv, err := r.readConversation(absPath)
 	if err != nil {
 		return pub_models.Chat{}, fmt.Errorf("read antigravity session %q: %w", sourceID, err)
 	}
-	if len(conv.messages) == 0 {
-		return pub_models.Chat{}, fmt.Errorf("antigravity session %q has no messages", sourceID)
+	if !conv.hasUser {
+		return pub_models.Chat{}, fmt.Errorf("antigravity session %q has no user message", sourceID)
 	}
 	created := conv.created
 	if created.IsZero() {
@@ -170,8 +187,12 @@ func (r SourceReader) Read(ctx context.Context, cache vendors.SourceCache, sourc
 		}
 	}
 	sys := fmt.Sprintf("Continued from Antigravity session %s", sourceID)
-	if conv.cwd != "" {
-		sys = fmt.Sprintf("Continued from Antigravity session %s (originally at %s).", sourceID, conv.cwd)
+	cwd := conv.cwd
+	if cwd == "" {
+		cwd = sum.cwd
+	}
+	if cwd != "" {
+		sys = fmt.Sprintf("Continued from Antigravity session %s (originally at %s).", sourceID, cwd)
 	}
 	return pub_models.Chat{
 		Created:  created,
@@ -181,9 +202,18 @@ func (r SourceReader) Read(ctx context.Context, cache vendors.SourceCache, sourc
 	}, nil
 }
 
-func (r SourceReader) discoverFile(cache vendors.SourceCache, absPath, sourceID string) (vendors.SourceRow, bool) {
+func (r SourceReader) discoverFile(cache vendors.SourceCache, absPath, sourceID string, sum summary) (vendors.SourceRow, bool) {
 	info, err := stateInfoOf(absPath)
 	if err != nil {
+		return vendors.SourceRow{}, false
+	}
+	// An indexed child run needs no trajectory read: the index already answers
+	// what the row would say, and a child is never a row. The index is fresh on
+	// every run, so it also retires a row the cache still holds.
+	if sum.child() {
+		if cache != nil {
+			cache.Store(absPath, info, vendors.SourceRow{})
+		}
 		return vendors.SourceRow{}, false
 	}
 	if cache != nil {
@@ -191,6 +221,8 @@ func (r SourceReader) discoverFile(cache vendors.SourceCache, absPath, sourceID 
 			if row.SourceID == "" {
 				return vendors.SourceRow{}, false
 			}
+			row = withSummary(row, sum)
+			cache.Store(absPath, info, row)
 			return row, true
 		}
 	}
@@ -198,27 +230,22 @@ func (r SourceReader) discoverFile(cache vendors.SourceCache, absPath, sourceID 
 	if err != nil {
 		return vendors.SourceRow{}, false
 	}
-	if len(conv.messages) == 0 {
+	if !conv.hasUser {
 		if cache != nil {
 			cache.Store(absPath, info, vendors.SourceRow{})
 		}
 		return vendors.SourceRow{}, false
 	}
-	full := conv.firstUser
-	preview := vendors.TruncateOneLine(full, previewRunes)
-	if strings.TrimSpace(preview) == "" {
-		preview = full
-	}
-	row := vendors.SourceRow{
+	row := withSummary(vendors.SourceRow{
 		Source:               sourceName,
 		SourceID:             sourceID,
 		Created:              conv.created,
-		FirstUserMessage:     preview,
-		FullFirstUserMessage: full,
+		FirstUserMessage:     vendors.TruncateOneLine(conv.firstUser, previewRunes),
+		FullFirstUserMessage: conv.firstUser,
 		MessageCount:         len(conv.messages),
 		RawPath:              absPath,
 		Cwd:                  conv.cwd,
-	}
+	}, sum)
 	if row.Created.IsZero() {
 		row.Created = info.ModTime()
 	}
@@ -228,34 +255,52 @@ func (r SourceReader) discoverFile(cache vendors.SourceCache, absPath, sourceID 
 	return row, true
 }
 
-func (r SourceReader) findSession(ctx context.Context, cache vendors.SourceCache, sourceID string) (string, error) {
+// withSummary applies the fields the app's index answers to a row, whether the
+// row came from the cache or from a read. The index is read on every run, so a
+// title the app generated after the row was cached still reaches the list.
+func withSummary(row vendors.SourceRow, sum summary) vendors.SourceRow {
+	if sum.title != "" {
+		row.FirstUserMessage = vendors.TruncateOneLine(sum.title, previewRunes)
+	}
+	if row.Cwd == "" {
+		row.Cwd = sum.cwd
+	}
+	return row
+}
+
+// findSession returns the database of one conversation together with the
+// entry the store index holds for it.
+func (r SourceReader) findSession(ctx context.Context, cache vendors.SourceCache, sourceID string) (string, summary, error) {
 	if cache != nil {
 		if p, ok := cache.Locate(sourceName, sourceID); ok {
 			if info, err := stateInfoOf(p); err == nil {
 				if row, ok := cache.Lookup(p, info); ok && row.SourceID == sourceID {
-					return p, nil
+					return p, readSummaries(storeRoot(p))[sourceID], nil
 				}
 			}
 		}
 	}
-	var found string
-	err := r.walkSessions(ctx, func(absPath, id string) bool {
+	var (
+		found string
+		sum   summary
+	)
+	err := r.walkSessions(ctx, func(absPath, id string, idx map[string]summary) bool {
 		if id != sourceID {
 			return false
 		}
-		found = absPath
+		found, sum = absPath, idx[id]
 		return true
 	})
 	if err != nil {
-		return "", fmt.Errorf("find antigravity session %q: %w", sourceID, err)
+		return "", summary{}, fmt.Errorf("find antigravity session %q: %w", sourceID, err)
 	}
 	if found == "" {
-		return "", fmt.Errorf("antigravity session %q not found", sourceID)
+		return "", summary{}, fmt.Errorf("antigravity session %q not found", sourceID)
 	}
-	return found, nil
+	return found, sum, nil
 }
 
-func (r SourceReader) walkSessions(ctx context.Context, visit func(absPath, sourceID string) bool) error {
+func (r SourceReader) walkSessions(ctx context.Context, visit func(absPath, sourceID string, idx map[string]summary) bool) error {
 	roots, err := r.roots()
 	if err != nil {
 		return err
@@ -269,6 +314,7 @@ func (r SourceReader) walkSessions(ctx context.Context, visit func(absPath, sour
 			}
 			return fmt.Errorf("read %q: %w", convs, err)
 		}
+		idx := readSummaries(root)
 		for _, entry := range entries {
 			if err := ctx.Err(); err != nil {
 				return err
@@ -280,12 +326,18 @@ func (r SourceReader) walkSessions(ctx context.Context, visit func(absPath, sour
 			if sourceID == "" {
 				continue
 			}
-			if visit(filepath.Join(convs, entry.Name()), sourceID) {
+			if visit(filepath.Join(convs, entry.Name()), sourceID, idx) {
 				return nil
 			}
 		}
 	}
 	return nil
+}
+
+// storeRoot is the home a conversation database lives under: the parent of its
+// conversations directory, where the app's index sits.
+func storeRoot(absPath string) string {
+	return filepath.Dir(filepath.Dir(absPath))
 }
 
 func (r SourceReader) roots() ([]string, error) {
@@ -299,6 +351,7 @@ func (r SourceReader) roots() ([]string, error) {
 	base := filepath.Join(home, ".gemini")
 	return []string{
 		filepath.Join(base, "antigravity"),
+		filepath.Join(base, "antigravity-ide"),
 		filepath.Join(base, "antigravity-cli"),
 	}, nil
 }
@@ -306,6 +359,7 @@ func (r SourceReader) roots() ([]string, error) {
 type conversation struct {
 	messages  []pub_models.Message
 	firstUser string
+	hasUser   bool
 	created   time.Time
 	cwd       string
 }
@@ -668,6 +722,7 @@ func mapSteps(steps []parsedStep) conversation {
 				continue
 			}
 			conv.messages = append(conv.messages, pub_models.Message{Role: "user", Content: text})
+			conv.hasUser = true
 			if conv.firstUser == "" {
 				conv.firstUser = text
 			}
