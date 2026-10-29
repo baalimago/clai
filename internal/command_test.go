@@ -15,8 +15,25 @@ type notificationTestCompletion struct {
 	suppress bool
 }
 
+func (c notificationTestCompletion) Query(context.Context) error { return nil }
+
 func (c notificationTestCompletion) SuppressCompletionNotification() bool {
 	return c.suppress
+}
+
+// notificationTestChain stands in for a model fallback chain: the bell follows
+// the run that answered it.
+type notificationTestChain struct {
+	answered *notificationTestCompletion
+}
+
+func (c *notificationTestChain) Query(context.Context) error { return nil }
+
+func (c *notificationTestChain) Answer() models.Querier {
+	if c.answered == nil {
+		return nil
+	}
+	return *c.answered
 }
 
 func Test_ringCompletionBell(t *testing.T) {
@@ -52,6 +69,18 @@ func Test_ringCompletionBell(t *testing.T) {
 	t.Run("suppressed completion emits nothing", func(t *testing.T) {
 		stdout, stderr := ring(notificationTestCompletion{suppress: true}, true, true)
 		testboil.FailTestIfDiff(t, stdout+stderr, "")
+	})
+
+	t.Run("a fallback chain adopts the answered run's policy", func(t *testing.T) {
+		chain := &notificationTestChain{answered: &notificationTestCompletion{suppress: true}}
+		stdout, stderr := ring(chain, true, true)
+		testboil.FailTestIfDiff(t, stdout+stderr, "")
+	})
+
+	t.Run("a fallback chain that never answered rings", func(t *testing.T) {
+		stdout, stderr := ring(&notificationTestChain{}, true, true)
+		testboil.FailTestIfDiff(t, stdout, "\a")
+		testboil.FailTestIfDiff(t, stderr, "")
 	})
 }
 

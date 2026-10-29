@@ -13,7 +13,10 @@ import (
 	"github.com/baalimago/clai/internal/asset"
 	"github.com/baalimago/clai/internal/imagegen"
 	"github.com/baalimago/clai/internal/imageinput"
+	"github.com/baalimago/clai/internal/modelfallback"
+	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/present"
+	"github.com/baalimago/clai/internal/remote"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
@@ -29,13 +32,14 @@ var ErrNoPreviousImage = errors.New("previous query holds no image")
 // import (setup imports photo), so internal/cli injects it, together with
 // the image generator, the input collector, the presenter and the opener.
 type CommandDeps struct {
-	ConfigPrep    func() (confDir string, err error)           // existing
-	LoadConfig    func(confDir string) (Configurations, error) // existing
-	NewGenerator  imagegen.NewGeneratorFunc
-	Collector     imageinput.ImageCollector
-	NewPresenter  func(present.Options) present.Presenter
-	NewOpener     func(command string) present.Opener
-	PreviousImage PreviousImageFunc
+	ConfigPrep        func() (confDir string, err error)           // existing
+	LoadConfig        func(confDir string) (Configurations, error) // existing
+	NewGenerator      imagegen.NewGeneratorFunc
+	Collector         imageinput.ImageCollector
+	NewPresenter      func(present.Options) present.Presenter
+	NewOpener         func(command string) present.Opener
+	PreviousImage     PreviousImageFunc
+	NewRemoteResolver func(confDir string, prompt remote.Prompter) (remote.Resolver, error)
 }
 
 var ErrPhotoUnconfigured = errors.New("photo: image dependencies not configured")
@@ -60,7 +64,7 @@ type Flags struct {
 func NewFlags() Flags {
 	return Flags{MediaFlags: internal.NewMediaFlags(internal.MediaFlagSpec{
 		ModelNames:  []string{"pm", "photo-model"},
-		ModelDesc:   "Set the image model to use.",
+		ModelDesc:   "Set the image model to use, or a model-aliases verb such as 'strong'.",
 		DirNames:    []string{"pd", "photo-dir"},
 		DirDesc:     "Set the directory to store the generated pictures, with a leading ~ and $VAR expanded. Default is ~/Pictures",
 		DirDefault:  path.Join(os.Getenv("HOME"), "Pictures"),
@@ -93,9 +97,11 @@ func (f *Flags) Register(fs *flag.FlagSet) {
 //	stderr  errors; the opener notice; the output-dir fallback notice
 //	exit    0 when every image is saved; 1 on any error
 //
-//	photo.1  The generator is deps.NewGenerator(GeneratorConfig{Model, ConfigDir}). It is
-//	         called once with Prompt = Collect(...).Prompt formatted through "prompt-format", as
-//	         today, and Inputs = Collect(...).Images, then the -re image.
+//	photo.1  The generator is deps.NewGenerator(GeneratorConfig{Model, ConfigDir}), built
+//	         once per model the configured name resolves to, so a model alias builds its
+//	         candidates in turn (architecture/model-aliases.md). It is called with
+//	         Prompt = Collect(...).Prompt formatted through "prompt-format", as today, and
+//	         Inputs = Collect(...).Images, then the -re image.
 //	photo.2  Each returned image is written to <output.dir>/<prefix>_<random>.<ext>, where
 //	         <ext> comes from the README MIME-to-extension parameter and <output.dir> has a
 //	         leading ~ and $VAR expanded. When output.dir is not writable, the image goes to
@@ -139,7 +145,13 @@ Examples:
 		CompleteArgsFn:      internal.SuppressArgs,
 	}
 	c.OnSetup = func(ctx context.Context, c *internal.Command) error {
-		q, err := newQuery(ctx, deps, &f, c.Args())
+		base, err := newQuery(ctx, deps, &f, c.Args())
+		if err != nil {
+			return err
+		}
+		q, err := modelfallback.New(ctx, base.aliases, base.model, func(_ context.Context, model string) (models.Querier, error) {
+			return base.forModel(model)
+		}, modelfallback.NoticeTo(base.stderr))
 		if err != nil {
 			return err
 		}

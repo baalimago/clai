@@ -300,14 +300,46 @@ func TestQuerier_FinishQueryNamesAFailedParentReport(t *testing.T) {
 	}
 }
 
-func TestWithRunTally_refusesANonTextQuerier(t *testing.T) {
-	deps := QueryCommandDeps{RunTallyEnv: fakeRunTallyEnv{}, RunTallyTempRoot: t.TempDir()}
-	var q models.Querier = noopQuerier{}
-	if _, err := withRunTally(q, q, deps, true); err == nil {
-		t.Fatal("withRunTally accepted a querier that cannot count subagents")
+func TestAttachRunTally_refusesANonTextQuerier(t *testing.T) {
+	if err := attachRunTally(noopQuerier{}, &runtally.Scope{}); err == nil {
+		t.Fatal("attachRunTally accepted a querier that cannot count subagents")
 	}
+}
+
+func TestOpenRunTally_opensOnlyWhenWanted(t *testing.T) {
+	t.Run("no environment means no tally", func(t *testing.T) {
+		scope, err := openRunTally(QueryCommandDeps{}, true)
+		if err != nil || scope != nil {
+			t.Fatalf("openRunTally = %v, %v; want no scope and no error", scope, err)
+		}
+	})
+	t.Run("a wanted tally opens once", func(t *testing.T) {
+		deps := QueryCommandDeps{RunTallyEnv: fakeRunTallyEnv{}, RunTallyTempRoot: t.TempDir()}
+		scope, err := openRunTally(deps, true)
+		if err != nil {
+			t.Fatalf("openRunTally: %v", err)
+		}
+		if err := scope.Close(); err != nil {
+			t.Fatalf("Close: %v", err)
+		}
+	})
 }
 
 type noopQuerier struct{}
 
 func (noopQuerier) Query(context.Context) error { return nil }
+
+// TestRunTallyQuerier_IsTransparentToTheCompletionBell pins that the tally only
+// closes a scope: the bell reads the output policy of the run it wraps, so a
+// tallied run still suppresses the bell when the run that answered does
+// (architecture/model-aliases.md).
+func TestRunTallyQuerier_IsTransparentToTheCompletionBell(t *testing.T) {
+	inner := noopQuerier{}
+	answerer, ok := any(runTallyQuerier{inner: inner}).(interface{ Answer() models.Querier })
+	if !ok {
+		t.Fatal("runTallyQuerier hides the run inside from the completion bell")
+	}
+	if got := answerer.Answer(); got != models.Querier(inner) {
+		t.Fatalf("Answer() = %T, want the run inside", got)
+	}
+}

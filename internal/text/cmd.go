@@ -6,13 +6,17 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/baalimago/clai/internal"
 	"github.com/baalimago/clai/internal/imagegen"
+	"github.com/baalimago/clai/internal/modelfallback"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/photo"
+	"github.com/baalimago/clai/internal/retry"
 	"github.com/baalimago/clai/internal/runtally"
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/pkg/claierr"
@@ -83,58 +87,32 @@ func QueryCommand(deps QueryCommandDeps) *internal.Command {
 		if err := lf.Validate(); err != nil {
 			return err
 		}
-		q, tConf, err := setupTextQuerier(ctx, c, tf, deps)
+		session, err := newTextSession(ctx, c, tf, lf, deps)
 		if err != nil {
 			return err
 		}
-		if tf.QueryText.ReplyOnly.Value() {
-			if err := enableReplyOnly(q, !lf.Loop.Value()); err != nil {
-				return err
-			}
-		}
-		var top models.Querier = q
-		if lf.Loop.Value() {
-			runner, err := newLoopRunner(q, NewCompletionRecorder(lf.Check.Value()), LoopConfig{
-				SeedChat:      tConf.InitialChat,
-				GoalPrompt:    tConf.PostProccessedPrompt,
-				MaxIterations: lf.MaxIterations.Value(),
-			})
-			if err != nil {
-				return err
-			}
-			top = runner
-		} else if tConf.QuerySummary {
-			if err := enableQuerySummary(q); err != nil {
-				return err
-			}
-		}
-		top, err = withRunTally(q, top, deps, tConf.QuerySummary || lf.Loop.Value())
+		querier, err := session.querier(ctx)
 		if err != nil {
 			return err
 		}
-		c.SetQuerier(top)
+		c.SetQuerier(querier)
 		return nil
 	}
 	return c
 }
 
-// withRunTally opens the run's subagent tally when a summary or a parent
-// wants one: q counts the workers it started into its summary and reports
-// to its parent, and the returned querier closes the tally once top ends.
-func withRunTally(q, top models.Querier, deps QueryCommandDeps, summary bool) (models.Querier, error) {
+// openRunTally opens the run's subagent tally when a summary or a parent wants
+// one: the querier counts the workers it started into its summary and reports
+// to its parent, and runTallyQuerier closes the tally once the run ends.
+func openRunTally(deps QueryCommandDeps, summary bool) (*runtally.Scope, error) {
 	if deps.RunTallyEnv == nil || !runtally.Wanted(deps.RunTallyEnv, summary) {
-		return top, nil
-	}
-	setter, ok := q.(interface{ SetRunTally(*runtally.Scope) })
-	if !ok {
-		return nil, fmt.Errorf("subagent tally requires a text querier, got %T", q)
+		return nil, nil
 	}
 	scope, err := runtally.Open(deps.RunTallyEnv, deps.RunTallyTempRoot)
 	if err != nil {
 		return nil, err
 	}
-	setter.SetRunTally(scope)
-	return runTallyQuerier{inner: top, scope: scope}, nil
+	return scope, nil
 }
 
 type runTallyQuerier struct {
@@ -149,6 +127,11 @@ func (r runTallyQuerier) Query(ctx context.Context) error {
 	}
 	return err
 }
+
+// Answer reports the run the tally wraps: closing the tally is bookkeeping, so
+// the completion bell reads the output policy of the run inside it
+// (architecture/model-aliases.md).
+func (r runTallyQuerier) Answer() models.Querier { return r.inner }
 
 // newTextCommand builds the flag surface shared by the text-querier commands:
 // the four TextFlags groups, raw/non-interactive setup and completion hooks.
@@ -177,16 +160,45 @@ func newTextCommand(name, desc, helpText string, tf *internal.TextFlags, registe
 	}
 }
 
-// setupTextQuerier runs the config, media, prompt and summarizer
-// composition query uses in plain and loop mode.
-func setupTextQuerier(ctx context.Context, c *internal.Command, tf internal.TextFlags, deps QueryCommandDeps) (models.Querier, *Configurations, error) {
+// textSession is one query setup: the resolved configuration, the run's
+// subagent tally and the step that composes a complete run for any one model.
+// A run is composed once per fallback attempt, so a model tried after another
+// failed is decorated exactly like the first, while the tally belongs to the
+// run and not to any one attempt (architecture/model-aliases.md).
+type textSession struct {
+	conf  *Configurations
+	build modelfallback.Builder
+	tally *runtally.Scope
+}
+
+// querier resolves the configured model, or the ordered models its alias names,
+// into the run the command executes. The tally wraps the resolved chain, so an
+// attempt is never closed by the chain and a failed attempt never hides the
+// replay guard of the run it composed.
+func (s *textSession) querier(ctx context.Context) (models.Querier, error) {
+	q, err := modelfallback.New(ctx, s.conf.ModelAliases, s.conf.Model, s.build, modelfallback.NoticeTo(os.Stderr))
+	if err != nil {
+		if s.tally != nil {
+			err = errors.Join(err, fmt.Errorf("close subagent tally: %w", s.tally.Close()))
+		}
+		return nil, err
+	}
+	if s.tally != nil {
+		return runTallyQuerier{inner: q, scope: s.tally}, nil
+	}
+	return q, nil
+}
+
+// newTextSession runs the config, media and prompt composition query uses in
+// plain and loop mode, and leaves the per-model run composition to build.
+func newTextSession(ctx context.Context, c *internal.Command, tf internal.TextFlags, lf internal.LoopFlags, deps QueryCommandDeps) (*textSession, error) {
 	confDir, err := deps.ConfigPrep()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if deps.ApplyMediaOverrides != nil {
 		if err := deps.ApplyMediaOverrides(tf.AgentText.MediaTools); err != nil {
-			return nil, nil, fmt.Errorf("apply media tool overrides: %w", err)
+			return nil, fmt.Errorf("apply media tool overrides: %w", err)
 		}
 	}
 	var trustInput io.Reader
@@ -195,15 +207,12 @@ func setupTextQuerier(ctx context.Context, c *internal.Command, tf internal.Text
 	}
 	interactive := !tf.AgentText.NonInteractive.Value() && terminalAvailable()
 	remoteTargets := &remoteRun{newResolver: deps.NewRemoteResolver, confDir: confDir, trustInput: trustInput, interactive: interactive}
-	q, tConf, err := SetupQuerier(ctx, confDir, tf, c.Args(), trustInput, remoteTargets.profile, remoteTargets.skills)
+	tConf, err := setupTextConfig(ctx, confDir, tf, c.Args(), trustInput, remoteTargets.profile, remoteTargets.skills)
 	if err != nil {
-		// The startup error names the server and the stage; the setup layers
-		// it passed through add nothing a user can act on.
-		var startup *claierr.McpServerStartupError
-		if errors.As(err, &startup) {
-			return nil, nil, startup
-		}
-		return nil, nil, err
+		return nil, err
+	}
+	if err := resolveRemoteModel(ctx, tConf, remoteTargets.models); err != nil {
+		return nil, err
 	}
 	// NewQuerier stamps the effective profile on the querier chat; mirror it on
 	// the seed so loop iterations persist the same profile as query runs.
@@ -212,22 +221,111 @@ func setupTextQuerier(ctx context.Context, c *internal.Command, tf internal.Text
 	// in place (SetupQuerier forces reply mode for it); bind the
 	// directory chat id so the continuation lands on the same chat.
 	if tf.QueryText.DirReply.Value() {
-		if err := applyDirReplyChatID(confDir, tConf, q); err != nil {
-			return nil, nil, fmt.Errorf("apply dir reply chat id: %w", err)
+		if err := applyDirReplyChatID(confDir, tConf); err != nil {
+			return nil, fmt.Errorf("apply dir reply chat id: %w", err)
 		}
 	}
+	var summarizer models.Summarizer
 	if tConf.SummarizeConversations {
-		attachSummarizer(confDir, deps.NewSummarizer, q)
+		summarizer = loadSummarizer(confDir, deps.NewSummarizer)
+	}
+	tally, err := openRunTally(deps, tConf.QuerySummary || lf.Loop.Value())
+	if err != nil {
+		return nil, err
+	}
+	return &textSession{
+		conf:  tConf,
+		tally: tally,
+		build: func(ctx context.Context, model string) (models.Querier, error) {
+			return buildTextRun(ctx, confDir, tConf, model, tf, lf, deps, summarizer, tally)
+		},
+	}, nil
+}
+
+func buildTextRun(ctx context.Context, confDir string, tConf *Configurations, model string, tf internal.TextFlags, lf internal.LoopFlags, deps QueryCommandDeps, summarizer models.Summarizer, tally *runtally.Scope) (models.Querier, error) {
+	conf := *tConf
+	conf.Model = model
+	conf.InitialChat.Messages = slices.Clone(tConf.InitialChat.Messages)
+	conf.InitialChat.Queries = slices.Clone(tConf.InitialChat.Queries)
+	conf.BaseTools = maps.Clone(tConf.BaseTools)
+	conf.RegisteredTools = maps.Clone(tConf.RegisteredTools)
+	q, err := CreateQuerier(ctx, conf)
+	if err != nil {
+		if startups := mcpStartupErrors(err); len(startups) > 0 {
+			return nil, retry.Final(errors.Join(startups...))
+		}
+		return nil, fmt.Errorf("failed to create text querier: %w", err)
+	}
+	if tf.QueryText.ReplyOnly.Value() {
+		if err := enableReplyOnly(q, !lf.Loop.Value()); err != nil {
+			return nil, retry.Final(err)
+		}
+	}
+	if summarizer != nil {
+		if setter, ok := q.(interface{ SetSummarizer(models.Summarizer) }); ok {
+			setter.SetSummarizer(summarizer)
+		}
 	}
 	if deps.SummaryJoinTimeout > 0 {
 		if err := setSummaryJoinTimeout(q, deps.SummaryJoinTimeout); err != nil {
-			return nil, nil, err
+			return nil, retry.Final(err)
 		}
 	}
-	if err := attachImageTurn(confDir, tConf, tf, deps, q); err != nil {
-		return nil, nil, err
+	if err := attachImageTurn(confDir, &conf, tf, deps, q); err != nil {
+		return nil, retry.Final(err)
 	}
-	return q, tConf, nil
+	var top models.Querier = q
+	if lf.Loop.Value() {
+		runner, err := newLoopRunner(q, NewCompletionRecorder(lf.Check.Value()), LoopConfig{
+			SeedChat:      conf.InitialChat,
+			GoalPrompt:    conf.PostProccessedPrompt,
+			MaxIterations: lf.MaxIterations.Value(),
+		})
+		if err != nil {
+			return nil, retry.Final(err)
+		}
+		top = runner
+	} else if conf.QuerySummary {
+		if err := enableQuerySummary(q); err != nil {
+			return nil, retry.Final(err)
+		}
+	}
+	if err := attachRunTally(q, tally); err != nil {
+		return nil, retry.Final(err)
+	}
+	return top, nil
+}
+
+func mcpStartupErrors(err error) []error {
+	if err == nil {
+		return nil
+	}
+	if startup, ok := err.(*claierr.McpServerStartupError); ok {
+		return []error{startup}
+	}
+	if multi, ok := err.(interface{ Unwrap() []error }); ok {
+		var out []error
+		for _, child := range multi.Unwrap() {
+			out = append(out, mcpStartupErrors(child)...)
+		}
+		return out
+	}
+	return mcpStartupErrors(errors.Unwrap(err))
+}
+
+// attachRunTally hands the run's tally to the querier that counts its workers.
+// The scope itself belongs to the run, so the chain around the attempts keeps
+// the replay guard of the querier it composed (architecture/model-aliases.md).
+func attachRunTally(q models.Querier, tally *runtally.Scope) error {
+	if tally == nil {
+		return nil
+	}
+	setter, ok := q.(interface{ SetRunTally(*runtally.Scope) })
+	if !ok {
+		return fmt.Errorf("subagent tally requires a text querier, got %T", q)
+	}
+	setter.SetRunTally(tally)
+	return nil
 }
 
 func setSummaryJoinTimeout(q models.Querier, d time.Duration) error {
@@ -276,24 +374,21 @@ func newLoopRunner(q models.Querier, recorder CompletionRecorder, cfg LoopConfig
 	return NewLoopRunner(loopQuerier, recorder, cfg), nil
 }
 
-// attachSummarizer hands the constructed summarizer to the querier through
-// its setter; a failure is traced and never reaches the run. The caller
-// skips it when summarize-conversations is off, so an opted-out run never
-// loads the summarizer's config.
-func attachSummarizer(confDir string, newSummarizer func(string) (models.Summarizer, error), q models.Querier) {
+// loadSummarizer builds the in-flight conversation summarizer once per run, so
+// every fallback attempt shares the same label index. A failure is traced and
+// never reaches the run: the caller skips the load when
+// summarize-conversations is off, so an opted-out run never loads the
+// summarizer's config.
+func loadSummarizer(confDir string, newSummarizer func(string) (models.Summarizer, error)) models.Summarizer {
 	if newSummarizer == nil {
-		return
-	}
-	setter, ok := q.(interface{ SetSummarizer(models.Summarizer) })
-	if !ok {
-		return
+		return nil
 	}
 	s, err := newSummarizer(confDir)
 	if err != nil {
 		traceSummaryf("summarizer unavailable, continuing without: %v", err)
-		return
+		return nil
 	}
-	setter.SetSummarizer(s)
+	return s
 }
 
 // ApplyFlagOverrides applies the CLI flag values onto the file-loaded

@@ -16,8 +16,9 @@ import (
 const fakeHubToken = "tok-ada"
 
 // publishFromCLI is clai.chat's POST /api/v1/hub (cloud/site/api.ts in
-// clai-cloud): a write key publishes a profile, or a skill, as its account, the first
-// time under a new name and as the next version after that.
+// clai-cloud): a write key publishes a profile, a skill or a model alias as
+// its account, the first time under a new name and as the next version after
+// that. It refuses other kinds with the server's own message.
 func (h *fakeHub) publishFromCLI(w http.ResponseWriter, r *http.Request) {
 	answer := func(status int, body any) {
 		w.Header().Set("Content-Type", "application/json")
@@ -31,6 +32,12 @@ func (h *fakeHub) publishFromCLI(w http.ResponseWriter, r *http.Request) {
 	var req struct{ Kind, Name, Body, Handle, Note string }
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		answer(http.StatusBadRequest, map[string]string{"error": "invalid_request", "message": "Send a JSON object."})
+		return
+	}
+	switch req.Kind {
+	case "", "profile", "skill", "alias":
+	default:
+		answer(http.StatusBadRequest, map[string]string{"error": "invalid_request", "message": `kind is "profile", "skill" or "alias"; publish other kinds on the site.`})
 		return
 	}
 	if h.handle == "" {

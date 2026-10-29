@@ -3,6 +3,7 @@ package setup
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/baalimago/clai/internal/photo"
@@ -47,6 +48,7 @@ func TestMigrateOldPhotoConfig(t *testing.T) {
 
 	expectedPhotoConfig := photo.Configurations{
 		Model:        "test-model",
+		ModelAliases: photo.DEFAULT.ModelAliases,
 		PromptFormat: "test-prompt-format",
 		Output: photo.Output{
 			Type:   photo.LOCAL,
@@ -55,7 +57,7 @@ func TestMigrateOldPhotoConfig(t *testing.T) {
 		},
 	}
 
-	if newPhotoConfig != expectedPhotoConfig {
+	if !reflect.DeepEqual(newPhotoConfig, expectedPhotoConfig) {
 		t.Errorf("Unexpected photo config.\nExpected: %+v\nGot: %+v", expectedPhotoConfig, newPhotoConfig)
 	}
 }

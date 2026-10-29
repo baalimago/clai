@@ -173,6 +173,7 @@ type docKind int
 const (
 	profileDoc docKind = iota + 1
 	skillDoc
+	modelListDoc
 )
 
 // read returns cached bytes for a pinned target, a target whose hash is

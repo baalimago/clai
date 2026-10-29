@@ -115,21 +115,38 @@ func setupInheritedCmdBan(tConf *Configurations, inherited string) {
 	tConf.CmdBan = append(tConf.CmdBan, pkgtools.ParseCmdBanEnv(inherited)...)
 }
 
-// SetupQuerier composes the full text-querier path: config load, flag and
-// profile cascades, glob/tool/skill/lookback setup, prompt construction and
-// vendor routing. trustInput is the reader for interactive skill-trust
-// prompts (the composition root passes the wizard's input source; text
-// cannot import setup). resolveRemote turns a cchub:, gh: or https:// -prp
-// target into a local file; nil refuses one. resolveSkills fetches the
-// skills a profile names; nil refuses a profile that names any.
+// SetupQuerier composes the full text-querier path for the configured model:
+// config load, flag and profile cascades, glob/tool/skill/lookback setup,
+// prompt construction, vendor routing. trustInput is the reader for interactive
+// skill-trust prompts (the composition root passes the wizard's input source;
+// text cannot import setup). resolveRemote turns a cchub:, gh: or https:// -prp
+// target into a local file; nil refuses one. resolveSkills fetches the skills a
+// profile names; nil refuses a profile that names any.
+//
+// Fallback is not part of this function: the query command composes one run per
+// candidate model itself (architecture/model-aliases.md).
 func SetupQuerier(ctx context.Context, confDir string, tf internal.TextFlags, args []string, trustInput io.Reader, resolveRemote RemoteProfileResolver, resolveSkills RemoteSkillsResolver) (models.Querier, *Configurations, error) {
+	tConf, err := setupTextConfig(ctx, confDir, tf, args, trustInput, resolveRemote, resolveSkills)
+	if err != nil {
+		return nil, nil, err
+	}
+	cq, err := CreateQuerier(ctx, *tConf)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create text querier: %w", err)
+	}
+	return cq, tConf, nil
+}
+
+// setupTextConfig loads and resolves everything one text run needs except the
+// querier itself.
+func setupTextConfig(ctx context.Context, confDir string, tf internal.TextFlags, args []string, trustInput io.Reader, resolveRemote RemoteProfileResolver, resolveSkills RemoteSkillsResolver) (*Configurations, error) {
 	// The flagset is first used to find chatModel and potentially setup a new configuration file from some default
 	firstRun := FirstRunDefaults(os.Getenv)
 	tConf, err := utils.LoadConfigFromFile(confDir, "textConfig.json", MigrateOldChatConfig, &firstRun)
 	tConf.ConfigDir = confDir
 	tConf.TrustInput = trustInput
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to load configs: %w", err)
+		return nil, fmt.Errorf("failed to load configs: %w", err)
 	}
 	logSkillDiscovery := shouldLogSkillDiscovery(args)
 	structuredOutput := false
@@ -145,7 +162,7 @@ func SetupQuerier(ctx context.Context, confDir string, tf internal.TextFlags, ar
 			if handler := vendorErrorHandler(tConf.Model); handler != nil {
 				err = handler.HandleError(err)
 			}
-			return nil, nil, fmt.Errorf("response format: %w", err)
+			return nil, fmt.Errorf("response format: %w", err)
 		}
 		structuredOutput = true
 		logSkillDiscovery = false
@@ -158,17 +175,17 @@ func SetupQuerier(ctx context.Context, confDir string, tf internal.TextFlags, ar
 		globStr, retArgs, globErr := glob.Setup(globPattern, args)
 		args = retArgs
 		if globErr != nil {
-			return nil, nil, fmt.Errorf("failed to setup glob: %w", globErr)
+			return nil, fmt.Errorf("failed to setup glob: %w", globErr)
 		}
 
 		tConf.Glob = globStr
 	}
 	if err := resolveRemoteProfilePath(ctx, &tConf, resolveRemote); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	err = tConf.ProfileOverrides()
 	if err != nil {
-		return nil, nil, fmt.Errorf("profile override failure: %w", err)
+		return nil, fmt.Errorf("profile override failure: %w", err)
 	}
 
 	setupToolConfig(&tConf, tf.AgentText.UseTools.Value())
@@ -181,17 +198,17 @@ func SetupQuerier(ctx context.Context, confDir string, tf internal.TextFlags, ar
 	ApplyProfileOverrides(&tConf, tf)
 	skillsConfig, err := skills.LoadConfig(confDir)
 	if err != nil {
-		return nil, nil, fmt.Errorf("load skills config: %w", err)
+		return nil, fmt.Errorf("load skills config: %w", err)
 	}
 	if !profileSetsSkills(&tConf) {
 		tConf.UseSkills = skillsConfig.Enabled
 	}
 	if err := applyUseSkillsOverride(&tConf, tf.QueryText.UseSkills); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	profileSkillRoots, err := resolveProfileSkills(ctx, &tConf, resolveSkills)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if tConf.UseSkills {
 		tools.Init()
@@ -225,13 +242,13 @@ func SetupQuerier(ctx context.Context, confDir string, tf internal.TextFlags, ar
 			LocalTools:     allTools,
 		})
 		if err != nil {
-			return nil, nil, fmt.Errorf("discover skills: %w", err)
+			return nil, fmt.Errorf("discover skills: %w", err)
 		}
 		tConf.SkillsDescriptor = skillMgr.DescriptorBlock()
 		tConf.SkillLoader = skillRuntimeAdapter{mgr: skillMgr}
 	}
 	if err := setupLookback(confDir, &tConf, tf.AgentText.UseLookback); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	// When directory reply mode is active, load the dirscope head directly
@@ -242,25 +259,17 @@ func SetupQuerier(ctx context.Context, confDir string, tf internal.TextFlags, ar
 	if tConf.DirReplyMode {
 		dirChat, err := chat.LoadDirScopedContext(confDir)
 		if err != nil {
-			return nil, nil, fmt.Errorf("load dir-scoped context: %w", err)
+			return nil, fmt.Errorf("load dir-scoped context: %w", err)
 		}
 		tConf.InitialChat = dirChat
 	}
 
 	err = tConf.SetupInitialChat(ctx, args)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to setup prompt: %w", err)
+		return nil, fmt.Errorf("failed to setup prompt: %w", err)
 	}
 
-	cq, err := CreateQuerier(ctx, tConf)
-
-	if misc.Truthy(os.Getenv("DEBUG")) {
-		ancli.PrintOK(fmt.Sprintf("querier post text querier create: %+v\n", tConf))
-	}
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create text querier: %w", err)
-	}
-	return cq, &tConf, nil
+	return &tConf, nil
 }
 
 // lookbackInjectCount is how many of the newest history entries the passive
@@ -338,8 +347,10 @@ func shouldLogSkillDiscovery(args []string) bool {
 	return false
 }
 
-// applyDirReplyChatID binds the directory-scoped chat id onto the querier.
-func applyDirReplyChatID(confDir string, tConf *Configurations, q models.Querier) error {
+// applyDirReplyChatID binds the directory-scoped chat id onto the seed chat.
+// Every run composed from the configuration adopts that chat, so no querier is
+// needed here.
+func applyDirReplyChatID(confDir string, tConf *Configurations) error {
 	if tConf == nil {
 		return fmt.Errorf("text configuration is nil")
 	}
@@ -351,9 +362,6 @@ func applyDirReplyChatID(confDir string, tConf *Configurations, q models.Querier
 		return nil
 	}
 	tConf.InitialChat.ID = chatID
-	if chatSetter, ok := q.(interface{ SetChatID(string) }); ok {
-		chatSetter.SetChatID(chatID)
-	}
 	return nil
 }
 

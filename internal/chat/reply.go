@@ -48,7 +48,7 @@ func promote(claiConfDir string, store asset.AssetStorer, chat pub_models.Chat) 
 	// This check avoids storing queries without any replies, which would most likely
 	// flood the conversations needlessly. Only promote to a fresh conversation when
 	// the chat does not already identify an existing persisted conversation.
-	if len(chat.Messages) > 2 && (sourceChat.ID == "" || sourceChat.ID == globalScopeChatID) {
+	if len(chat.Messages) > 2 && chat.Messages[len(chat.Messages)-1].Role != "user" && (sourceChat.ID == "" || sourceChat.ID == globalScopeChatID) {
 		firstUserMsg, err := globalScopeChat.FirstUserMessage()
 		if err != nil {
 			return fmt.Errorf("failed to get first user message: %w", err)

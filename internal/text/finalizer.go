@@ -81,7 +81,9 @@ func (f sessionFinalizer[C]) Finalize(ctx context.Context, session *QuerySession
 	session.Finalized = true
 	q := f.querier
 
-	if session.Raw && !q.structuredOutput {
+	// The raw blank line separates the reply from the prompt echo; a failed run
+	// has no reply to separate, so it stays silent.
+	if session.Raw && !q.structuredOutput && !session.Failed {
 		fmt.Fprintln(q.out)
 	}
 

@@ -142,6 +142,14 @@ func topLevelProblems(fields map[string]json.RawMessage) []string {
 			problems = append(problems, fmt.Sprintf("%q: needs a string", key))
 		}
 	}
+	if raw, ok := fields["model"]; ok {
+		var model string
+		if json.Unmarshal(raw, &model) == nil && IsRemote(model) {
+			if _, err := ParseModelListTarget(model); err != nil {
+				problems = append(problems, fmt.Sprintf("model: %v", err))
+			}
+		}
+	}
 	if !decodes(fields["use_tools"], kindBool) {
 		problems = append(problems, `"use_tools": needs true or false`)
 	}

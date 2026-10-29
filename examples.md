@@ -192,6 +192,32 @@ Also see examples:
 - [tradebot](./examples/profiles/trade-bot.json) - Fully functional polymarket trade bot, defined as json. Swap prompt and model, try it out!
 - [starter agents](./examples/profiles/README.md) - A code reviewer, a commit writer, a web researcher, a PR reviewer, an upgrade scout, a SQL analyst, a site watcher, an issue triager and a Sentry medic, each one JSON file with pinned MCP servers
 
+## Model fallback: name a verb, not a model
+
+In `<clai-config>/textConfig.json`:
+
+```json
+{
+  "model": "strong",
+  "model-aliases": {
+    "strong": ["claude-sonnet-5-5", "gpt-5.2", "gemini-3.6-flash"]
+  }
+}
+```
+
+```bash
+clai query "summarize this diff" < diff.txt
+# ▸ model claude-sonnet-5-5 unavailable · likely insufficient credits · trying gpt-5.2
+```
+
+- The run tries the ladder in order and stops at the first model that answers. The reply on stdout is unchanged.
+- A model the table does not name runs as itself, so nothing changes until you name a verb.
+- A run that already printed, saved a file or ran a tool is never replayed on the next model.
+- `strong`, `fast` and `cheap` ship as ladders with one model per vendor. They are yours to edit, and a shared profile may name one, so the same profile runs on every machine.
+- `clai p` and `clai a t` read `model-aliases` from `photoConfig.json` and `audioConfig.json` the same way.
+
+See: [`model-aliases.md`](./architecture/model-aliases.md).
+
 ## Tools: inspect vs enable
 
 ```bash

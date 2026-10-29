@@ -27,7 +27,7 @@ import (
 // select a paid vendor: debug traces, the kill switch and the vendor keys.
 func quietEnv(t *testing.T) {
 	t.Helper()
-	for _, key := range []string{"DEBUG", "DEBUG_SUMMARY", "DEBUG_CHAT", "DEBUG_STOPLOSS", EnvSummarizer, "OPENROUTER_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"} {
+	for _, key := range []string{"DEBUG", "DEBUG_SUMMARY", "DEBUG_CHAT", "DEBUG_STOPLOSS", EnvSummarizer, "OPENROUTER_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "MISTRAL_API_KEY", "DEEPSEEK_API_KEY", "XAI_API_KEY"} {
 		t.Setenv(key, "")
 	}
 }
@@ -563,6 +563,30 @@ func TestAgentSummarizer_unknownModel(t *testing.T) {
 	_, err := s.Summarize(context.Background(), req)
 	if err == nil || !strings.Contains(err.Error(), "no-such-vendor-model") {
 		t.Fatalf("err = %v, want the model name", err)
+	}
+}
+
+func TestAgentSummarizer_resolvesModelAlias(t *testing.T) {
+	confDir := seedConfigDir(t)
+	textConf := text.Default
+	textConf.Model = "strong"
+	textConf.SummaryModel = "fast"
+	textConf.ModelAliases = map[string][]string{
+		"fast":   {"no-such-vendor-model", "test"},
+		"strong": {"test"},
+	}
+	if err := utils.CreateFile(filepath.Join(confDir, "textConfig.json"), &textConf); err != nil {
+		t.Fatalf("CreateFile(textConfig.json): %v", err)
+	}
+	s := newTestSummarizer(t, confDir)
+	req := mockRequest(1)
+	req.Model = ""
+	got, err := s.Summarize(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Summarize: %v", err)
+	}
+	if got.Model != "test" {
+		t.Fatalf("Model = %q, want resolved candidate \"test\"", got.Model)
 	}
 }
 

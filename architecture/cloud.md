@@ -35,7 +35,8 @@ for the login).
 | `internal/cloud/sync/download.go` | `applyAll`'s helpers: `pullWindows` (64 MB at a time), `needed`, `prefetch` (bundles of up to 250 files, 8 at once), `blobCache`, which `Engine.fetch` reads first |
 | `internal/cloud/sync/pack.go` | `pack`: groups files into requests smallest first, a large file alone, largest request first; used by uploads and downloads |
 | `internal/cloud/sync/resolve.go`, `diff.go`, `status.go`, `merge.go` | `Resolve`, `Diff`, `Status`/`Log`, the conversation merge and fork |
-| `internal/cloud/cloudcmd/` | `Command`: the subcommands and their output; `ExitDecisionNeeded` |
+| `internal/cloud/cloudcmd/` | `Command`: the subcommands (`login`, `logout`, `whoami`, `publish`, `status`, `diff`, `pull`, `commit`, `resolve`, `log`) and their output; `ExitDecisionNeeded` |
+| `internal/profiles/models.go` | `PublishInteractive` walks `clai cloud publish [kind [name [mode]]]`: each argument given picks its level (kind, item, then an alias's mode: `text`, `photo`, `audio` or its index), each one missing is asked in a selector. `PublishAlias` publishes one mode config's alias to `/api/v1/hub`; an alias in several mode configs with no mode and no input is an `AmbiguousAliasError` |
 | `internal/cloud/cloudcmd/errors.go` | `explain`, `UnreachableError`: the short form of a network error and a refused key |
 | `internal/cloud/cloudcmd/view.go` | `statusLines`, `pullNext`, `excludedRows`, `importLines`, `blockedLines`, `style` (an alias of `look.Style`): the grouped status table |
 | `internal/look/look.go` | `Style` (`Head`, `Link`, `Primary`, `Secondary`), `Grid`, `For`: clai's shared `▸ subject · detail` look, also drawn by the remote trust prompt |

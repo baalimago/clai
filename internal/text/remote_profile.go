@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/baalimago/clai/internal/look"
+	"github.com/baalimago/clai/internal/modelalias"
 	"github.com/baalimago/clai/internal/remote"
 	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
@@ -88,6 +89,33 @@ func (r *remoteRun) skills(ctx context.Context, targets []string) ([]string, err
 		roots = append(roots, s.Root)
 	}
 	return roots, nil
+}
+
+func (r *remoteRun) models(ctx context.Context, target string) ([]string, error) {
+	res, err := r.resolver()
+	if err != nil {
+		return nil, err
+	}
+	got, err := res.ResolveModelList(ctx, target)
+	if err != nil {
+		return nil, err
+	}
+	return got.Models, nil
+}
+
+func resolveRemoteModel(ctx context.Context, tConf *Configurations, resolve func(context.Context, string) ([]string, error)) error {
+	if !remote.IsRemote(tConf.Model) {
+		return nil
+	}
+	if resolve == nil {
+		return fmt.Errorf("remote model targets are not available here: %s", tConf.Model)
+	}
+	models, err := resolve(ctx, tConf.Model)
+	if err != nil {
+		return fmt.Errorf("model %s: %w", tConf.Model, err)
+	}
+	tConf.ModelAliases = modelalias.Table{tConf.Model: models}
+	return nil
 }
 
 // terminalAvailable reports whether someone can answer a prompt: stdin is

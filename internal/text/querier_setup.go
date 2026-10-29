@@ -253,13 +253,21 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 		terminal := querier.outputIsTerminal
 		userConf.OutputIsTerminal = &terminal
 	}
-	if err := setupTooling(ctx, modelConf, &userConf, querier.mcpSink); err != nil {
-		return Querier[C]{}, err
+	if userConf.ResponseFormat != nil {
+		setter, ok := any(modelConf).(generic.ResponseFormatSetter)
+		if !ok {
+			return Querier[C]{}, fmt.Errorf("model %q: %w: this vendor cannot honour -rf", userConf.Model, generic.ErrResponseFormatUnsupported)
+		}
+		setter.SetResponseFormat(toGenericResponseFormat(userConf.ResponseFormat))
 	}
 
 	err = modelConf.Setup()
 	if err != nil {
 		return Querier[C]{}, fmt.Errorf("failed to setup model: %w", err)
+	}
+
+	if err := setupTooling(ctx, modelConf, &userConf, querier.mcpSink); err != nil {
+		return Querier[C]{}, err
 	}
 
 	traceChatf("post setup")
@@ -289,14 +297,6 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	querier.tooling.base = userConf.BaseTools
 	querier.tooling.run = userConf.BaseTools
 	querier.tooling.registered = userConf.RegisteredTools
-
-	if userConf.ResponseFormat != nil {
-		setter, ok := any(modelConf).(generic.ResponseFormatSetter)
-		if !ok {
-			return Querier[C]{}, fmt.Errorf("model %q: %w: this vendor cannot honour -rf", userConf.Model, generic.ErrResponseFormatUnsupported)
-		}
-		setter.SetResponseFormat(toGenericResponseFormat(userConf.ResponseFormat))
-	}
 
 	costWarnf := ancli.Errf
 	if userConf.CostWarnf != nil {

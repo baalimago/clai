@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -48,6 +49,17 @@ type Deps struct {
 	Hostname func() (string, error)
 	// SetExit asks the entry point for an exit status other than 0 or 1.
 	SetExit func(code int)
+	// Publish walks `publish [kind [name [mode]]]`, asking for each level
+	// args leave out, and sends the chosen alias, profile or skill to the Hub.
+	Publish func(ctx context.Context, args []string, opts PublishOptions) error
+}
+
+// PublishOptions are `clai cloud publish` flags.
+type PublishOptions struct {
+	Name, Title, Summary, Note, Handle string
+	// In answers the selectors for levels args leave out; nil when nobody
+	// can answer, so a missing level is an error.
+	In io.Reader
 }
 
 func (d Deps) withDefaults() Deps {
@@ -101,7 +113,7 @@ type UsageError struct{ Msg string }
 func (e *UsageError) Error() string { return e.Msg }
 
 // subcommandNames is the order help and errors list the subcommands in.
-var subcommandNames = []string{"login", "logout", "whoami", "status", "diff", "pull", "commit", "resolve", "log"}
+var subcommandNames = []string{"login", "logout", "whoami", "publish", "status", "diff", "pull", "commit", "resolve", "log"}
 
 // UnknownSubcommandError is `clai cloud <name>` for a name that is not one.
 type UnknownSubcommandError struct{ Name string }
@@ -158,6 +170,7 @@ Account
   login [-url URL] [-name NAME]   connect this machine (approve in the browser)
   logout                          disconnect it and forget its key
   whoami                          account, device, storage
+  publish [kind [name [mode]]]    publish an alias, profile or skill to the Hub
 
 Sync
   status [-imports] [store]       local changes, and what the server has;
@@ -219,6 +232,7 @@ func Command(deps Deps) *internal.Command {
 	}
 
 	var loginURL, loginName string
+	var publishOpts PublishOptions
 	whoamiRaw, statusRaw, pullRaw, commitRaw, logRaw := internal.RawFlag{Desc: rawDesc}, internal.RawFlag{Desc: rawDesc}, internal.RawFlag{Desc: rawDesc}, internal.RawFlag{Desc: rawDesc}, internal.RawFlag{Desc: rawDesc}
 	var statusImports, diffRemote, diffList, pullTheirs, pullMine, commitImports, resolveMine, resolveTheirs bool
 	var commitMsg string
@@ -249,6 +263,17 @@ func Command(deps Deps) *internal.Command {
 					return err
 				}
 				return r.whoami(ctx, whoamiRaw.Value())
+			}),
+		"publish": sub("publish", "Publish an alias, profile or skill to the Hub",
+			publishHelpText,
+			func(fs *flag.FlagSet) {
+				fs.StringVar(&publishOpts.Name, "name", "", "the name in its address (default: the alias, profile or skill name)")
+				fs.StringVar(&publishOpts.Title, "title", "", "the title on the Hub (default: the name; kept on a new version)")
+				fs.StringVar(&publishOpts.Summary, "summary", "", "one line on what it does (kept on a new version)")
+				fs.StringVar(&publishOpts.Note, "note", "", "what changed in this version")
+				fs.StringVar(&publishOpts.Handle, "handle", "", "your handle, needed once on an account without one")
+			}, nil, func(ctx context.Context, args []string) error {
+				return r.publish(ctx, args, publishOpts)
 			}),
 		"status": sub("status", "Show local changes and what the server has",
 			"cloud status [store] [-imports]. What a commit would send or leave out, and what the server has.\nThe local part works offline.",
@@ -314,4 +339,77 @@ func positionals(fs *flag.FlagSet, args []string) ([]string, error) {
 		args = args[1:]
 	}
 	return out, nil
+}
+
+const publishHelpText = `cloud publish [alias|profile|skill [name [mode]]] [flags]. Publishes a model
+alias, profile or skill to the Hub as your clai.chat account (clai cloud login
+first). Each argument left out is asked for in turn: the kind, then the item
+of that kind, then, for an alias defined in several mode configs, the mode.
+The mode is text, photo or audio, or its index in the selector.
+
+Examples:
+  clai cloud publish
+  clai cloud publish alias
+  clai cloud publish alias strong
+  clai cloud publish alias strong photo
+  clai cloud publish profile trade-bot -note 'tighter stop-loss'
+  clai cloud publish skill review`
+
+const publishUsage = "usage: clai cloud publish [alias|profile|skill [name [mode]]] [flags]"
+
+func (r *runner) publish(ctx context.Context, args []string, opts PublishOptions) error {
+	if r.deps.Publish == nil {
+		return fmt.Errorf("publishing is not available in this build")
+	}
+	if r.deps.Interactive() {
+		opts.In = r.deps.In
+	}
+	if len(args) == 0 {
+		return r.deps.Publish(ctx, nil, opts)
+	}
+	kind, status := normalizePublishKind(args[0])
+	if status == publishKindUnknown {
+		return &UsageError{Msg: fmt.Sprintf("unknown publish kind %q: expected alias, profile or skill\n%s", args[0], publishUsage)}
+	}
+	maxArgs := 2
+	if kind == "alias" {
+		maxArgs = 3
+	}
+	if len(args) > maxArgs {
+		return &UsageError{Msg: fmt.Sprintf("unexpected argument %q\n%s", args[maxArgs], publishUsage)}
+	}
+	if len(args) == 3 && !validAliasMode(args[2]) {
+		return &UsageError{Msg: fmt.Sprintf("unknown mode %q: expected text, photo or audio\n%s", args[2], publishUsage)}
+	}
+	return r.deps.Publish(ctx, append([]string{kind}, args[1:]...), opts)
+}
+
+// validAliasMode is a mode name, or an index into the mode selector.
+func validAliasMode(mode string) bool {
+	switch mode {
+	case "text", "photo", "audio":
+		return true
+	}
+	n, err := strconv.Atoi(mode)
+	return err == nil && n >= 0
+}
+
+type publishKindStatus int
+
+const (
+	publishKindUnknown publishKindStatus = iota
+	publishKindKnown
+)
+
+func normalizePublishKind(raw string) (string, publishKindStatus) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "alias", "aliases", "models":
+		return "alias", publishKindKnown
+	case "profile", "profiles":
+		return "profile", publishKindKnown
+	case "skill", "skills":
+		return "skill", publishKindKnown
+	default:
+		return "", publishKindUnknown
+	}
 }

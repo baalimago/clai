@@ -51,7 +51,12 @@ type stepImage struct {
 }
 
 func (s *QuerySession) addStepImage(img pub_models.ImagePart) {
+	s.SawAnyText = true
 	s.stepImages = append(s.stepImages, stepImage{at: len(stripThinkingBlocks(s.PendingText.String())), image: img})
+}
+
+func (s *QuerySession) Produced() bool {
+	return s.SawAnyText || s.ToolCallsUsed > 0
 }
 
 func (s *QuerySession) hasStepImages() bool { return len(s.stepImages) > 0 }

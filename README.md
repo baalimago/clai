@@ -53,6 +53,7 @@ See <a href="https://www.clai.chat">clai.chat</a> for details on usecase of all 
 - **[Seamless conversation import](./architecture/continue-from-claudex.md)** - Ran out of session? Continue in clai!
 - **[Agent Skills](./architecture/skills.md)** - Import skills from custom global directories, or project-level `.agents/skills`.
 - **[Profiles](./examples.md#profiles-workflow-presets)** - Pre-prompted profiles enabling customized workflows and agents, run locally or [from the Hub](#run-an-agent-from-the-hub).
+- **[Model fallback](./architecture/model-aliases.md)** - Name a verb (`strong`, `fast`, `cheap`) instead of a model: each machine resolves it to its own ordered list and the run tries them in turn, so a shared profile runs anywhere.
 - **[Loop until verified](./examples.md#loop-until-the-goal-is-verified)** - Add `-loop` to a query and clai iterates toward the goal, accepting completion only when `-check` passes.
 - **[Structured output](./examples.md#blocking-structured-output)** - `-response-format` returns JSON instead of prose, from any vendor; Jev answers a fixed set of questions about the data you pipe in.
 - **[MCP client support](./examples.md#mcp-tools-external-tool-servers)** - Add any MCP server you'd like by pasting their configuration.

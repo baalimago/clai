@@ -10,6 +10,7 @@ import (
 	"github.com/baalimago/clai/internal/chatid"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/utils"
+	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -148,6 +149,9 @@ type loopRunner struct {
 	querier  LoopQuerier
 	recorder CompletionRecorder
 	cfg      LoopConfig
+	// started is the highest loop iteration that began a query, so Produced
+	// can answer without asking the querier about an earlier iteration.
+	started int
 }
 
 // NewLoopRunner constructs a LoopRunner over cq and recorder with cfg. It
@@ -166,7 +170,7 @@ func (r *loopRunner) Query(ctx context.Context) error {
 	start := time.Now()
 	summary := LoopSummary{MaxIterations: r.cfg.MaxIterations}
 	err := r.run(ctx, &summary)
-	if summary.Iterations == 0 {
+	if summary.Iterations == 0 || (err != nil && !r.Produced() && claierr.ModelUnavailable(err)) {
 		return err
 	}
 	summary.End = loopEndOf(err)
@@ -175,6 +179,21 @@ func (r *loopRunner) Query(ctx context.Context) error {
 		return errors.Join(err, fmt.Errorf("report loop summary: %w", reportErr))
 	}
 	return err
+}
+
+// Produced reports whether the loop already emitted output. Only iteration 1
+// can be replayed: any later failure means the autonomous run began, and
+// replaying it would repeat work and side effects
+// (architecture/model-aliases.md).
+func (r *loopRunner) Produced() bool {
+	if r.started > 1 {
+		return true
+	}
+	reporter, ok := any(r.querier).(interface{ Produced() bool })
+	if !ok {
+		return true
+	}
+	return reporter.Produced()
 }
 
 func loopEndOf(err error) LoopEnd {
@@ -214,6 +233,7 @@ func (r *loopRunner) run(ctx context.Context, summary *LoopSummary) error {
 			return err
 		}
 		summary.Iterations = iteration
+		r.started = iteration
 		result, err := r.textQuery(ctx, chat)
 		if err != nil {
 			var partial *PartialRunError

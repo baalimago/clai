@@ -10,6 +10,7 @@ import (
 	"net/http"
 
 	"github.com/baalimago/clai/internal/asset"
+	"github.com/baalimago/clai/pkg/claierr"
 )
 
 type ImageRequest struct {
@@ -68,6 +69,11 @@ type UnknownImageModelError struct{ Model string }
 func (e *UnknownImageModelError) Error() string {
 	return fmt.Sprintf("no image generator for model %q: expected gpt-image-*, dall-e-*, chatgpt-image-*, or:<model>, or a model containing gemini or nano-banana", e.Model)
 }
+
+// Unwrap links UnknownImageModelError to ErrModelNotFound so a model fallback
+// notice prints the one-phrase meaning while the final failure keeps the full
+// routing hint above (architecture/model-aliases.md).
+func (e *UnknownImageModelError) Unwrap() error { return claierr.ErrModelNotFound }
 
 type MissingAPIKeyError struct{ Env string }
 

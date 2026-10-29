@@ -66,7 +66,7 @@ internal/cli:Run()
 
 | Field                      | Description                                                          |
 | -------------------------- | -------------------------------------------------------------------- |
-| `transcribe.model`         | Transcription model; routed to a vendor by name (see Vendor Routing) |
+| `transcribe.model`         | Transcription model; routed to a vendor by name (see Vendor Routing), or a root-level `model-aliases` verb such as `fast` (see [model-aliases.md](./model-aliases.md)) |
 | `transcribe.output-format` | Local render format: `vtt` (default), `srt`, `text`, or `json`       |
 | `transcribe.parallelism`   | Max concurrent chunk requests when a large file is split (default 3) |
 | `transcribe.max-request-bytes`   | Per-request upload cap for both split paths (default 25 MiB); zero means default, negative is an error |

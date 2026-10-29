@@ -314,7 +314,7 @@ type AgentTextFlags struct {
 }
 
 func (g *AgentTextFlags) Register(fs *flag.FlagSet) {
-	g.ChatModel.Register(fs, "Set the chat model to use.", "cm", "chat-model")
+	g.ChatModel.Register(fs, "Set the chat model to use, or a model-aliases verb such as 'strong'.", "cm", "chat-model")
 	g.UseTools.Register(fs, "Enable tools. Use '*' for all tools or comma-separated list for specific tools.", "t", "tools")
 	g.CmdBan.Register(fs, "Append comma-separated command ban entries for this run (e.g. 'rm,sudo'). Commands matching a ban are refused before they spawn.", "cmd-ban")
 	g.UseLookback.Register(fs, "Enable conversation lookback (recent-conversations memory + search/inspect/read tools).", "lb", "lookback")

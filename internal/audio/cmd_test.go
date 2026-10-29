@@ -1,6 +1,7 @@
 package audio
 
 import (
+	"reflect"
 	"testing"
 )
 
@@ -17,7 +18,7 @@ func TestApplyFlagOverridesForAudio(t *testing.T) {
 		if err := ApplyFlagOverrides(&conf, &Flags{}); err != nil {
 			t.Fatal(err)
 		}
-		if conf != fileConf {
+		if !reflect.DeepEqual(conf, fileConf) {
 			t.Errorf("expected file config untouched, got: %+v", conf)
 		}
 	})

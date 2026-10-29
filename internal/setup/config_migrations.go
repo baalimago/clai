@@ -43,6 +43,7 @@ func migrateOldPhotoConfig(configDirPath string) error {
 	ancli.PrintOK(fmt.Sprintf("migrating old photo config to new format saved to: '%v'\n", newFilePath))
 	migratedPhotoConfig := photo.Configurations{
 		Model:        oldConf.Model,
+		ModelAliases: photo.DEFAULT.ModelAliases,
 		PromptFormat: oldConf.PromptFormat,
 		Output: photo.Output{
 			Type:   photo.LOCAL,

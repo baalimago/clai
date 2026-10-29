@@ -69,7 +69,7 @@ only a test that opts in swaps in a fake. A missing image dependency fails with
 
 | Field | Description |
 |-------|-------------|
-| `model` | Image model; see the routing table under [Image generators](#image-generators) |
+| `model` | Image model; see the routing table under [Image generators](#image-generators), or a `model-aliases` verb such as `strong` (see [model-aliases.md](./model-aliases.md)) |
 | `prompt-format` | Go format string; `%v` is replaced with the user prompt |
 | `output.type` | `"local"` or `"unset"`: both save to `output.dir`. `"url"` was removed and fails with `*URLOutputRemovedError`; any other value fails too |
 | `output.dir` | Directory for saved images (default: `~/Pictures`). clai expands a leading `~` and each `$VAR`, in the file and on `-pd`. With `HOME` set, `~/Pictures` and `$HOME/Pictures` are the same |

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -59,6 +60,11 @@ func (e *HandleRequiredError) Error() string {
 // PublishOptions are publish's flags.
 type PublishOptions struct {
 	Name, Title, Summary, Note, Handle string
+	// Mode picks which mode config's alias to publish: text, photo, audio,
+	// or the index among the modes that define the alias.
+	Mode string
+	// In answers selection prompts; nil means nobody can be asked.
+	In io.Reader
 }
 
 var hubName = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,58}[a-z0-9])?$`)
@@ -118,11 +124,14 @@ func (d CommandDeps) send(ctx context.Context, confDir, arg string, req PublishR
 	res, err := publish(ctx, req)
 	var handle *HandleRequiredError
 	if errors.As(err, &handle) {
-		sub := "profiles"
-		if req.Kind == "skill" {
-			sub = "skills"
+		sub := "profiles publish"
+		switch req.Kind {
+		case "skill":
+			sub = "skills publish"
+		case "alias":
+			sub = "cloud publish alias"
 		}
-		return fmt.Errorf("%w: clai %s publish %s -handle %s", err, sub, arg, handle.Suggested)
+		return fmt.Errorf("%w: clai %s %s -handle %s", err, sub, arg, handle.Suggested)
 	}
 	if err != nil {
 		return err
@@ -132,7 +141,11 @@ func (d CommandDeps) send(ctx context.Context, confDir, arg string, req PublishR
 	if !res.Created {
 		what = " (a new version)"
 	}
-	fmt.Fprintf(d.Out, "Published %s%s\n  %s\n  %s\n", pinned, what, res.URL, use(pinned+"#sha256="+res.SHA256))
+	out := d.Out
+	if out == nil {
+		out = os.Stdout
+	}
+	fmt.Fprintf(out, "Published %s%s\n  %s\n  %s\n", pinned, what, res.URL, use(pinned+"#sha256="+res.SHA256))
 	return nil
 }
 

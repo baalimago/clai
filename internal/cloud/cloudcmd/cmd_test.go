@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -647,5 +648,101 @@ func TestStatus_drawsProgressOnATerminal(t *testing.T) {
 	}
 	if !strings.Contains(errOut.String(), "checking config") {
 		t.Fatalf("no progress on stderr: %q", errOut.String())
+	}
+}
+
+func TestPublish_macroAndInteractiveWizard(t *testing.T) {
+	h := newHarness(t, "tok-a")
+	var calls []string
+	d := h.deps()
+	d.Publish = func(_ context.Context, args []string, opts PublishOptions) error {
+		calls = append(calls, strings.Join(args, "/")+":"+opts.Handle+":"+opts.Note)
+		name := "strong"
+		if len(args) >= 2 {
+			name = args[1]
+		}
+		fmt.Fprintf(h.out, "Published cchub:%s/%s@1\n", opts.Handle, name)
+		return nil
+	}
+
+	run := func(args ...string) (int, string) {
+		h.out.Reset()
+		code := cmd.Run(context.Background(), append([]string{"clai", "cloud"}, args...), map[string]cmd.Command{"cloud": Command(d)}, "usage")
+		return code, h.out.String()
+	}
+
+	if code, out := run("publish", "alias", "strong", "-handle", "ada", "-note", "v1"); code != 0 || !strings.Contains(out, "Published cchub:ada/strong@1") {
+		t.Fatalf("macro alias: code=%d out=%q", code, out)
+	}
+	if code, out := run("publish", "alias", "strong", "photo", "-handle", "ada"); code != 0 || !strings.Contains(out, "Published cchub:ada/strong@1") {
+		t.Fatalf("macro alias with mode: code=%d out=%q", code, out)
+	}
+	if code, out := run("publish", "alias", "-handle", "ada"); code != 0 || !strings.Contains(out, "Published cchub:ada/strong@1") {
+		t.Fatalf("1-arg alias wizard: code=%d out=%q", code, out)
+	}
+	if code, out := run("publish", "profile", "reviewer", "-handle", "ada"); code != 0 || !strings.Contains(out, "Published cchub:ada/reviewer@1") {
+		t.Fatalf("macro profile: code=%d out=%q", code, out)
+	}
+	if code, out := run("publish", "skill", "triage", "-handle", "ada"); code != 0 || !strings.Contains(out, "Published cchub:ada/triage@1") {
+		t.Fatalf("macro skill: code=%d out=%q", code, out)
+	}
+	if code, out := run("publish", "-handle", "ada"); code != 0 || !strings.Contains(out, "Published cchub:ada/strong@1") {
+		t.Fatalf("0-arg interactive wizard: code=%d out=%q", code, out)
+	}
+	wantCalls := []string{
+		"alias/strong:ada:v1",
+		"alias/strong/photo:ada:",
+		"alias:ada:",
+		"profile/reviewer:ada:",
+		"skill/triage:ada:",
+		":ada:",
+	}
+	if strings.Join(calls, ",") != strings.Join(wantCalls, ",") {
+		t.Fatalf("calls = %v, want %v", calls, wantCalls)
+	}
+
+	if code, _ := run("publish", "unknown", "foo"); code != 1 {
+		t.Fatalf("unknown kind: code = %d, want 1", code)
+	}
+	if code, _ := run("publish", "profile", "reviewer", "extra"); code != 1 {
+		t.Fatalf("extra arg on profile: code = %d, want 1", code)
+	}
+	if code, _ := run("publish", "alias", "strong", "video"); code != 1 {
+		t.Fatalf("unknown mode on alias: code = %d, want 1", code)
+	}
+	if code, _ := run("publish", "alias", "strong", "photo", "extra"); code != 1 {
+		t.Fatalf("4 args: code = %d, want 1", code)
+	}
+	d.Publish = nil
+	if code, _ := run("publish", "alias", "strong"); code != 1 {
+		t.Fatalf("nil Publish: code = %d, want 1", code)
+	}
+	if code, _ := run("publish"); code != 1 {
+		t.Fatalf("nil Publish (0 args): code = %d, want 1", code)
+	}
+}
+
+func TestPublish_passesInputOnlyWhenSomeoneCanAnswer(t *testing.T) {
+	h := newHarness(t, "tok-a")
+	h.in = "0\n"
+	var got io.Reader
+	d := h.deps()
+	d.Publish = func(_ context.Context, _ []string, opts PublishOptions) error {
+		got = opts.In
+		return nil
+	}
+	run := func() {
+		if code := cmd.Run(context.Background(), []string{"clai", "cloud", "publish"}, map[string]cmd.Command{"cloud": Command(d)}, "usage"); code != 0 {
+			t.Fatalf("code %d", code)
+		}
+	}
+	run()
+	if got != nil {
+		t.Fatalf("no terminal: In = %v, want nil", got)
+	}
+	d.Interactive = func() bool { return true }
+	run()
+	if got != d.In {
+		t.Fatalf("terminal: In = %v, want Deps.In", got)
 	}
 }

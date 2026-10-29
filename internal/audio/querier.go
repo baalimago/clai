@@ -7,6 +7,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/baalimago/clai/internal/modelalias"
 )
 
 // TranscribeConfig is the transcribe verb's section of audioConfig.json.
@@ -62,6 +64,10 @@ func ResolveBudgets(c TranscribeConfig) (Budgets, error) {
 // Configurations is the audioConfig.json schema.
 type Configurations struct {
 	Transcribe TranscribeConfig `json:"transcribe"`
+	// ModelAliases maps a verb such as "fast" to the ordered transcription
+	// models a run tries in its place. A model the table does not name runs as
+	// itself (architecture/model-aliases.md).
+	ModelAliases modelalias.Table `json:"model-aliases"`
 }
 
 var Default = Configurations{
@@ -72,6 +78,11 @@ var Default = Configurations{
 		MaxRequestBytes:   MaxRequestBytes,
 		MaxRequestSeconds: 1400,
 		MaxSpeakers:       8,
+	},
+	// One ladder, one model per transcribe route, so a machine with either
+	// key still transcribes (architecture/model-aliases.md).
+	ModelAliases: modelalias.Table{
+		"fast": {"whisper-1", "or:openai/whisper-1"},
 	},
 }
 
@@ -104,14 +115,9 @@ type TranscribeQuerier struct {
 	FilePath string
 	Format   OutputFormat
 	Out      io.Writer
-	// Cleanup removes temp input (stdin '-' mode); always runs after Query
-	Cleanup func()
 }
 
 func (q *TranscribeQuerier) Query(ctx context.Context) error {
-	if q.Cleanup != nil {
-		defer q.Cleanup()
-	}
 	segs, err := q.Splitter.Transcribe(ctx, q.FilePath)
 	if err != nil {
 		return fmt.Errorf("failed to transcribe %v: %w", q.FilePath, err)

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -239,7 +240,7 @@ func TestFlagOverridesBudgetAndStrict(t *testing.T) {
 		t.Errorf("flags did not override config: %+v", tc)
 	}
 	untouched := Default
-	if err := ApplyFlagOverrides(&untouched, &Flags{}); err != nil || untouched != Default {
+	if err := ApplyFlagOverrides(&untouched, &Flags{}); err != nil || !reflect.DeepEqual(untouched, Default) {
 		t.Errorf("unset flags must leave the file config: %+v, %v", untouched, err)
 	}
 }
