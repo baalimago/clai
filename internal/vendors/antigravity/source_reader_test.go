@@ -23,6 +23,7 @@ const (
 func fixtureReader() SourceReader {
 	return SourceReader{Roots: []string{
 		filepath.Join("testdata", "store", "antigravity"),
+		filepath.Join("testdata", "store", "antigravity-ide"),
 		filepath.Join("testdata", "store", "antigravity-cli"),
 	}}
 }
@@ -55,15 +56,15 @@ func TestSource(t *testing.T) {
 
 func TestDiscover(t *testing.T) {
 	rows := discover(t)
-	if len(rows) != 7 {
-		t.Fatalf("got %d rows, want 7: %+v", len(rows), rows)
+	if len(rows) != 8 {
+		t.Fatalf("got %d rows, want 8: %+v", len(rows), rows)
 	}
 	main := mustRow(t, rows, "main")
-	if main.FirstUserMessage != "first prompt for antigravity" {
-		t.Fatalf("preview = %q", main.FirstUserMessage)
+	if main.FirstUserMessage != "Main Conversation Title" {
+		t.Fatalf("preview = %q, want the generated title", main.FirstUserMessage)
 	}
 	if main.FullFirstUserMessage != "first prompt for antigravity" {
-		t.Fatalf("full prompt = %q", main.FullFirstUserMessage)
+		t.Fatalf("full prompt = %q, want the prompt behind the title", main.FullFirstUserMessage)
 	}
 	if main.MessageCount != 4 {
 		t.Fatalf("message count = %d, want 4", main.MessageCount)
@@ -81,28 +82,57 @@ func TestDiscover(t *testing.T) {
 		t.Fatalf("source = %q", main.Source)
 	}
 
+	titled := mustRow(t, rows, "titled")
+	if titled.FirstUserMessage != "Generated Title" || titled.FullFirstUserMessage != "prompt behind the title" {
+		t.Fatalf("titled = %q / %q", titled.FirstUserMessage, titled.FullFirstUserMessage)
+	}
+	if titled.Cwd != "/work/titled" {
+		t.Fatalf("titled cwd = %q, want the index workspace", titled.Cwd)
+	}
+
 	nometa := mustRow(t, rows, "nometa")
-	if nometa.Cwd != "" {
-		t.Fatalf("nometa cwd = %q, want empty", nometa.Cwd)
+	if nometa.Cwd != "/work/from-index" {
+		t.Fatalf("nometa cwd = %q, want the index workspace", nometa.Cwd)
 	}
 	if nometa.FirstUserMessage != "prompt without metadata" {
 		t.Fatalf("nometa preview = %q", nometa.FirstUserMessage)
 	}
 
-	nouser := mustRow(t, rows, "nouser")
-	if nouser.FirstUserMessage != "" {
-		t.Fatalf("nouser preview = %q, want empty", nouser.FirstUserMessage)
-	}
-	if nouser.MessageCount != 1 {
-		t.Fatalf("nouser count = %d, want 1", nouser.MessageCount)
+	stray := mustRow(t, rows, "stray")
+	if stray.FirstUserMessage != "prompt outside the index" {
+		t.Fatalf("stray preview = %q", stray.FirstUserMessage)
 	}
 
-	emptyuser := mustRow(t, rows, "emptyuser")
-	if emptyuser.FirstUserMessage != "" {
-		t.Fatalf("emptyuser preview = %q, want empty", emptyuser.FirstUserMessage)
+	ide := mustRow(t, rows, "ide")
+	if ide.FirstUserMessage != "prompt from the ide" {
+		t.Fatalf("ide preview = %q", ide.FirstUserMessage)
 	}
-	if emptyuser.MessageCount != 1 {
-		t.Fatalf("emptyuser count = %d, want 1", emptyuser.MessageCount)
+	if ide.Cwd != "/work/ide" {
+		t.Fatalf("ide cwd = %q", ide.Cwd)
+	}
+
+	cli := mustRow(t, rows, "cli")
+	if cli.FirstUserMessage != "CLI Conversation Title" {
+		t.Fatalf("cli preview = %q", cli.FirstUserMessage)
+	}
+	if cli.Cwd != "/work/cli" {
+		t.Fatalf("cli cwd = %q", cli.Cwd)
+	}
+}
+
+func TestDiscoverSkipsChildRuns(t *testing.T) {
+	rows := discover(t)
+	ids := map[string]struct{}{}
+	for _, row := range rows {
+		ids[row.SourceID] = struct{}{}
+	}
+	for _, id := range []string{"nested", "childprompt", "orphan", "nouser", "emptyuser", "empty"} {
+		if _, ok := ids[id]; ok {
+			t.Errorf("%q was listed, want no row", id)
+		}
+	}
+	if _, err := fixtureReader().Read(context.Background(), nil, "childprompt"); err == nil {
+		t.Fatal("a child run reached Read")
 	}
 }
 
@@ -222,16 +252,36 @@ func (c *testCache) Locate(source, sourceID string) (string, bool) {
 	return "", false
 }
 
+func TestDiscoverIsStableAcrossWarmRuns(t *testing.T) {
+	cache := newTestCache()
+	first, err := fixtureReader().Discover(context.Background(), cache)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := fixtureReader().Discover(context.Background(), cache)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second) != len(first) {
+		t.Fatalf("second run listed %d rows, first listed %d", len(second), len(first))
+	}
+	for i, row := range first {
+		if second[i].SourceID != row.SourceID || second[i].FirstUserMessage != row.FirstUserMessage {
+			t.Fatalf("row %d changed: %+v then %+v", i, row, second[i])
+		}
+	}
+}
+
 func TestDiscoverUsesWarmCache(t *testing.T) {
-	mainPath := filepath.Join("testdata", "store", "antigravity", "conversations", "main.db")
-	info, err := stateInfoOf(mainPath)
+	strayPath := filepath.Join("testdata", "store", "antigravity", "conversations", "stray.db")
+	info, err := stateInfoOf(strayPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	cache := newTestCache()
-	cache.Store(mainPath, info, vendors.SourceRow{
+	cache.Store(strayPath, info, vendors.SourceRow{
 		Source:               "antigravity",
-		SourceID:             "main",
+		SourceID:             "stray",
 		FirstUserMessage:     "sentinel",
 		FullFirstUserMessage: "sentinel",
 		MessageCount:         1,
@@ -240,7 +290,7 @@ func TestDiscoverUsesWarmCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := mustRow(t, rows, "main").FirstUserMessage; got != "sentinel" {
+	if got := mustRow(t, rows, "stray").FirstUserMessage; got != "sentinel" {
 		t.Fatalf("Discover ignored the warm cache: %q", got)
 	}
 	if cache.lookups == 0 {
@@ -248,19 +298,98 @@ func TestDiscoverUsesWarmCache(t *testing.T) {
 	}
 }
 
-func TestDiscoverStoresZeroRowOnlyForEmptyConversation(t *testing.T) {
+func TestDiscoverAppliesTheIndexToAWarmRow(t *testing.T) {
+	root := filepath.Join("testdata", "store", "antigravity", "conversations")
+	cases := []struct {
+		file string
+		row  vendors.SourceRow
+	}{
+		{
+			file: "main.db",
+			row: vendors.SourceRow{
+				Source:               "antigravity",
+				SourceID:             "main",
+				FirstUserMessage:     "stale preview",
+				FullFirstUserMessage: "first prompt for antigravity",
+				MessageCount:         4,
+			},
+		},
+		{
+			file: "nometa.db",
+			row: vendors.SourceRow{
+				Source:               "antigravity",
+				SourceID:             "nometa",
+				FirstUserMessage:     "prompt without metadata",
+				FullFirstUserMessage: "prompt without metadata",
+				MessageCount:         2,
+			},
+		},
+	}
+	cache := newTestCache()
+	for _, tt := range cases {
+		path := filepath.Join(root, tt.file)
+		info, err := stateInfoOf(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cache.Store(path, info, tt.row)
+	}
+	rows, err := fixtureReader().Discover(context.Background(), cache)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := mustRow(t, rows, "main").FirstUserMessage; got != "Main Conversation Title" {
+		t.Fatalf("title did not reach the cached row: %q", got)
+	}
+	if got := mustRow(t, rows, "main").FullFirstUserMessage; got != "first prompt for antigravity" {
+		t.Fatalf("grouping text changed: %q", got)
+	}
+	if got := mustRow(t, rows, "nometa").Cwd; got != "/work/from-index" {
+		t.Fatalf("workspace did not reach the cached row: %q", got)
+	}
+}
+
+func TestDiscoverDropsACachedRowThatBecameAChildRun(t *testing.T) {
+	path := filepath.Join("testdata", "store", "antigravity", "conversations", "nested.db")
+	info, err := stateInfoOf(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cache := newTestCache()
+	cache.Store(path, info, vendors.SourceRow{
+		Source:           "antigravity",
+		SourceID:         "nested",
+		FirstUserMessage: "stale",
+	})
+	rows, err := fixtureReader().Discover(context.Background(), cache)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range rows {
+		if row.SourceID == "nested" {
+			t.Fatalf("a cached child run was listed: %+v", row)
+		}
+	}
+	if got := cache.rows[path]; got.SourceID != "" {
+		t.Fatalf("cached row = %+v, want a zero row", got)
+	}
+}
+
+func TestDiscoverStoresZeroRowForConversationsWithoutAPrompt(t *testing.T) {
 	cache := newTestCache()
 	if _, err := fixtureReader().Discover(context.Background(), cache); err != nil {
 		t.Fatal(err)
 	}
 	root := filepath.Join("testdata", "store", "antigravity", "conversations")
-	emptyPath := filepath.Join(root, "empty.db")
-	row, ok := cache.rows[emptyPath]
-	if !ok {
-		t.Fatal("empty conversation was not cached")
-	}
-	if row.SourceID != "" {
-		t.Fatalf("empty conversation row = %+v, want a zero row", row)
+	for _, name := range []string{"empty.db", "nouser.db", "emptyuser.db", "nested.db", "childprompt.db", "orphan.db"} {
+		row, ok := cache.rows[filepath.Join(root, name)]
+		if !ok {
+			t.Errorf("%s was not cached", name)
+			continue
+		}
+		if row.SourceID != "" {
+			t.Errorf("%s row = %+v, want a zero row", name, row)
+		}
 	}
 	for _, name := range []string{"malformed.db", "drift.db", "foreign.db", "junk.db"} {
 		if _, ok := cache.rows[filepath.Join(root, name)]; ok {
@@ -337,6 +466,30 @@ func TestReadMain(t *testing.T) {
 	}
 }
 
+func TestReadCacheHitStillConsultsTheIndex(t *testing.T) {
+	path := filepath.Join("testdata", "store", "antigravity", "conversations", "nested.db")
+	info, err := stateInfoOf(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cache := newTestCache()
+	cache.Store(path, info, vendors.SourceRow{Source: "antigravity", SourceID: "nested", MessageCount: 1})
+	_, err = fixtureReader().Read(context.Background(), cache, "nested")
+	if err == nil || !strings.Contains(err.Error(), `is a subagent of "main"`) {
+		t.Fatalf("err = %v, want a child run refusal", err)
+	}
+}
+
+func TestReadPreambleFallsBackToTheIndexWorkspace(t *testing.T) {
+	chat, err := fixtureReader().Read(context.Background(), nil, "titled")
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if !strings.Contains(chat.Messages[0].Content, "originally at /work/titled") {
+		t.Fatalf("preamble = %q, want the index workspace", chat.Messages[0].Content)
+	}
+}
+
 func TestReadUserPartsFallback(t *testing.T) {
 	chat, err := fixtureReader().Read(context.Background(), nil, "fallback")
 	if err != nil {
@@ -356,7 +509,11 @@ func TestReadErrors(t *testing.T) {
 	}{
 		{name: "empty id", id: "", want: "empty session id"},
 		{name: "unknown", id: "absent", want: "not found"},
-		{name: "no messages", id: "empty", want: "has no messages"},
+		{name: "no user message", id: "empty", want: "has no user message"},
+		{name: "structural child", id: "nouser", want: "has no user message"},
+		{name: "indexed child", id: "nested", want: `is a subagent of "main"`},
+		{name: "indexed child with a prompt", id: "childprompt", want: `is a subagent of "main"`},
+		{name: "indexed child without a parent", id: "orphan", want: `is a subagent session`},
 		{name: "malformed", id: "malformed", want: "parse antigravity step"},
 		{name: "drift", id: "drift", want: "column"},
 		{name: "foreign", id: "foreign"},

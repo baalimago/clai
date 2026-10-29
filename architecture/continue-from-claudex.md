@@ -720,12 +720,25 @@ Antigravity writes one SQLite database per conversation:
 
 | Path | Content |
 | --- | --- |
-| `~/.gemini/antigravity/conversations/<cascade-id>.db` | the IDE's conversations |
+| `~/.gemini/antigravity/conversations/<cascade-id>.db` | the desktop app's conversations |
+| `~/.gemini/antigravity-ide/conversations/<cascade-id>.db` | the separately installed IDE's conversations |
 | `~/.gemini/antigravity-cli/conversations/<cascade-id>.db` | the CLI's conversations |
 
-The reader scans both roots in that order. `SourceID` is the database filename
-stem. If both roots hold the same identity, the first root wins, matching the
-walk order `SourceCache.Locate` uses.
+The reader scans all three roots in that order. `SourceID` is the database
+filename stem. If two roots hold the same identity, the first root wins,
+matching the walk order `SourceCache.Locate` uses. `~/.gemini/antigravity-backup`
+is a snapshot the IDE wizard writes, not a store, so the reader never scans it.
+
+Each root also holds the app's own conversation index,
+`<root>/conversation_summaries.db`. The reader uses these columns, addressed by
+name because the app adds columns over time:
+
+| Column | Use |
+| --- | --- |
+| `conversation_id` | the `SourceID` a row describes |
+| `title` | the generated title, used as the preview |
+| `workspace_uris` | a JSON array of `file://` URIs, used for `Cwd` when the database records none |
+| `parent_conversation_id`, `nesting_depth` | a child agent run the app spawned |
 
 Each database has a `steps` table. One row is one step, and `step_payload` is a
 protobuf message:
@@ -751,16 +764,30 @@ Payload fields used by the reader:
 
 ### Rules
 
+- A child agent run is never a row, and `Read` refuses it the same way the
+  Gemini, opencode, Cursor and Codex readers do. The index is authoritative: a
+  non-empty parent or a non-zero nesting depth makes it a child even when the
+  database holds a user step. When the index is absent, unreadable or silent, a
+  database that maps no user message is treated as a child run, because every
+  conversation a user starts begins with one.
+- The index only enriches. Every failure returns no entries, so an old schema, a
+  corrupt file or a database the app has not indexed yet falls back to the
+  trajectory instead of hiding a conversation.
+- The preview is the generated title when the index has one, else the first user
+  prompt. `FullFirstUserMessage` stays the full first prompt, so grouping hashes
+  the same text it always hashed.
 - A tool call with a result becomes a structured `Call` and one
   `{role: "tool"}` message. A call without a result, id or name becomes one
   `[tool call: name(args)]` text line.
 - The reader proves the `steps` and `trajectory_metadata_blob` column positions
   before reading a row. A reordered table is refused, not misread.
 - A missing store root yields no rows. A database that cannot be read is skipped
-  and not cached. A valid database with no mapped messages is cached as a zero
-  row.
+  and not cached. A database that is a child run, or that has no user message, is
+  cached as a zero row.
 - The cache key combines the database and its `-wal` sidecar, so a row cannot
-  survive a change that only reached the log.
+  survive a change that only reached the log. The index is read on every run and
+  applied to cached rows too, so a title the app generated later still reaches
+  the list without invalidating every row when the index is written.
 - `Created` is the first step timestamp, else the file modification time.
 - The count is exact: discovery and `Read` share one step mapper. The reader
   never writes to the store.
@@ -1018,7 +1045,7 @@ Each further source adds one file in its vendor package and one line to `allSour
 | opencode    | `internal/vendors/opencode/`     | SQLite: `opencode.db` under the XDG data home            | **implemented** |
 | Gemini CLI  | `internal/vendors/gemini/`       | JSONL patch log under `~/.gemini/tmp/<slug>/chats/`      | **implemented** |
 | Qwen Code   | `internal/vendors/qwen/`         | JSONL record chain under `<runtime-base>/projects/`      | **implemented** |
-| Antigravity | `internal/vendors/antigravity/`  | SQLite: one trajectory database per conversation under `~/.gemini/antigravity{,-cli}/conversations/` | **implemented** |
+| Antigravity | `internal/vendors/antigravity/`  | SQLite: one trajectory database per conversation under `~/.gemini/antigravity{,-ide,-cli}/conversations/`, with a per-root `conversation_summaries.db` index | **implemented** |
 
 A JSONL-backed source is a schema and nothing more — see
 [Implementing a new JSONL source](#implementing-a-new-jsonl-source). A source
