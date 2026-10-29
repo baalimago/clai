@@ -86,7 +86,7 @@ func readCatalogRows(path string) (map[string]string, error) {
 // exportedToolNames returns the name every exported tool value reports.
 func exportedToolNames() map[string]struct{} {
 	all := []models.LLMTool{
-		ApplyPatch, AudioTranscribe, Cat, ClaiCheck, ClaiHelp, ClaiResult, ClaiRun,
+		ApplyPatch, AudioRecord, AudioSources, AudioTranscribe, Cat, ClaiCheck, ClaiHelp, ClaiResult, ClaiRun,
 		ClaiWaitForWorkers, Cmd, Cp, Date, FFProbe, FileTree, FileType, Find, Git,
 		Go, Head, JQ, LineCount, LoadSkill, LS, Mkdir, Mktemp, Pwd, RipGrep,
 		RowsBetween, Rsync, Sed, Tail, ViewImage, WebsiteText, WriteFile,

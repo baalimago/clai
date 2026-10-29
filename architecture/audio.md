@@ -390,3 +390,127 @@ clai -t "*" q "Transcribe meeting.wav and file the meeting notes"
 # picking the transcription model the tool uses for this run:
 clai -am gpt-4o-transcribe-diarize -af json -t audio_transcribe q "Summarize meeting.wav"
 ```
+
+## Capture: `audio_sources` and `audio_record`
+
+Two built-in tools capture this machine's audio with one `ffmpeg` process.
+`internal/capture` owns discovery, the argument line, the stop handshake and
+the final file; `internal/audio` owns the `capture` configuration and the
+result text; `pkg/tools` holds only the schemas. Both tools are registered
+exactly when `ffmpeg` resolves through `PATH`.
+
+`audio_sources` is read-only. Its first line is
+`system_audio: available` or `system_audio: unavailable`; every further line
+is `<kind> "<name>" [<label>]`, with ` default` on the source a role
+selection picks. A name is what `audio_record`'s `devices` argument takes.
+
+`audio_record` records the microphone, the system output, or both, and answers
+with six lines in this order: `recorded`, `started_at`, `ended_at`,
+`duration_seconds`, `stopped_because`, `sources`. The tool writes one status
+row to stderr and nothing to stdout.
+
+### Capture configuration
+
+The `capture` section of `audioConfig.json` holds the defaults. A tool call
+argument overrides the file; the file overrides the built-in default. The file
+holds no device names, so it stays portable.
+
+| Field             | Default        | Meaning                                                  |
+| ----------------- | -------------- | -------------------------------------------------------- |
+| `dir`             | `~/Recordings` | Directory of the output file; a leading `~/` is expanded |
+| `max-seconds`     | `5400`         | Hard stop; `0` disables it                               |
+| `silence-timeout` | `600`          | Stop after this many seconds of silence; `0` disables    |
+| `silence-peak-db` | `-40`          | Average level a frame must reach to count as sound       |
+| `sinks`           | `default`      | `default`, `all` or `none` system outputs                 |
+| `mic`             | `true`         | Record the default microphone                            |
+| `calibrated`      | `false`        | Silence levels were measured or accepted; see below      |
+
+An unknown `sinks` value, a negative duration or a positive
+`silence-peak-db` is an error that names the field before any recording
+starts.
+
+### Silence calibration
+
+`clai audio calibrate` measures the room and writes the threshold it derives.
+It runs `ffmpeg` against the default microphone for 3 seconds, reads the
+`lavfi.astats.Overall.RMS_level` that `astats` prints for every frame, about
+20 a second, and keeps the middle frame. The median and not the loudest frame,
+because `silencedetect` compares a frame's average power to the threshold: one
+keyboard click would otherwise set a threshold above speech, and the silence
+stop would then fire in the middle of a meeting. The written threshold is that
+level rounded to the nearest decibel plus 6 dB of headroom, and never above -1
+dB, so even a loud room yields a level below full scale. The verb writes
+`silence-peak-db` and `calibrated: true` into `audioConfig.json`, keeps every
+other field, and prints:
+
+```text
+mic "alsa_input.pci-0000_00_1f.3.analog-stereo" · ambient level -44 dB RMS · silence-peak-db -40 → -38
+```
+
+A microphone that reports digital silence (`-inf`) is muted or disconnected:
+the verb refuses, names the cause, writes nothing and fails. Only the default
+microphone is measured, because the room, not the system output, sets the
+noise floor. Accepting the defaults with `[A]` sets the same flag without a
+measurement.
+
+### Capture pipeline
+
+One `ffmpeg` process receives one input per source. The sources are mixed with
+`amix=normalize=1`, so equal weights cannot clip, and `silencedetect` reports
+the silence events that time the silence stop. The process writes a 16 kHz mono
+signed 16-bit PCM WAV into a `.part` file; on every stop the recorder sends at
+most one `SIGINT`, waits for ffmpeg to finalize the RIFF header and renames the
+file into place. One interrupt only: ffmpeg exits before it finalizes the WAV
+when it receives a second `SIGINT`. The process carries no context, because the
+terminal's `SIGINT` reaches clai and ffmpeg together and ffmpeg needs about
+300 ms to finalize; a caller cancellation waits one second for the process to
+stop on that signal before it sends its own.
+
+The recording ends at the first of the silence timeout, `max-seconds`, a
+completed line on an interactive stdin, or cancellation of the tool call.
+Each ending names its own reason. End of input is not a line: `/dev/null` is a
+character device too, so a non-interactive run keeps recording until the
+silence timeout or `max-seconds`. Cancellation still
+finalizes the file and returns an error that contains the saved path. The
+samples of the finalized WAV decide whether audio was heard, not the silence
+events: a source that never pauses emits no event at all. A recording in which
+no sample reached the silence threshold produces no file.
+
+While a recording runs, one stderr row names the silence state, the threshold
+that decides it, the destination directory and every stop that can end it:
+
+```text
+▸ recording  ⠋ 0:12 · ▁ silent 00:06 / 10m · threshold -40 dB · /home/<user>/Recordings · stops: [Enter], 10m silence, max 1h30m
+```
+
+`▮ sound` means a frame of the last window reached `silence-peak-db`; `▁
+silent` counts how long the input stayed below it and names the silence stop
+that counters it. Both come from the same `silencedetect` events that drive
+the silence stop, so the row shows what the stop sees and not a second
+measurement. On a terminal the row spins, counts elapsed time and erases
+itself before the tool result, so the result's `recorded:` line is the only
+place the final path appears: the recorder names the file when ffmpeg starts.
+Off a terminal the row is one plain line naming the destination and the
+stops, without the state, the threshold and `[Enter]`, which no terminal is
+watching.
+
+When `capture.calibrated` is false and stdin is a terminal, one line sits
+above the row:
+
+```text
+silence levels may not match this machine · run 'clai audio calibrate', or [A] and Enter to acknowledge
+```
+
+`[A]` then Enter stores `calibrated: true` and prints the outcome above the
+row; any other line stops the recording. A store that fails is reported and
+never ends the recording: a meeting must not be lost because a convenience
+flag could not be written.
+
+| Platform | Backend                        | Discovery                               | System audio                           |
+| -------- | ------------------------------ | --------------------------------------- | -------------------------------------- |
+| linux    | pulse (pipewire or pulseaudio) | `ffmpeg -sources pulse`, `-sinks pulse` | output monitors                        |
+| darwin   | AVFoundation                   | `ffmpeg -f avfoundation -list_devices`  | a loopback input such as BlackHole 2ch |
+
+`examples/profiles/meeting-transcriber.json` is the worked example: it
+inspects, records and transcribes with these tools. The design record is
+[`worklogs/2026-10-28-audio-record-tool/`](../worklogs/2026-10-28-audio-record-tool/).

@@ -292,6 +292,20 @@ clai -audio-model gpt-4o-transcribe-diarize -audio-format json -tools audio_tran
 
 See: [`audio.md`](./architecture/audio.md).
 
+## Record a meeting and file the notes
+
+```bash
+clai -profile-path examples/profiles/meeting-transcriber.json query "Record the platform standup for the platform team; attendees: Ada, Grace; file the notes in my notebook"
+```
+
+The [meeting-transcriber](./examples/profiles/meeting-transcriber.json) profile
+inspects this machine's inputs with `audio_sources`, captures the microphone
+and/or the system audio with `audio_record`, transcribes the returned WAV with
+`audio_transcribe`, and then writes the transcript and the notes. Enter stops
+the recording, and so do the silence timeout and the maximum duration.
+
+See: [`audio.md`](./architecture/audio.md#capture-audio_sources-and-audio_record).
+
 ## Streaming: one normalized event loop
 
 - All vendors map their streaming responses to a small set of normalized events:

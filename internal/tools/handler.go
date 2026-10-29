@@ -80,6 +80,8 @@ func registerLocalTools(reg *registry, lookup executableLookup) {
 		{executable: "sh", tool: tools.Cmd},
 		{executable: "git", tool: tools.Git},
 		{executable: "ffprobe", tool: tools.FFProbe},
+		{executable: "ffmpeg", tool: tools.AudioSources},
+		{executable: "ffmpeg", tool: tools.AudioRecord},
 		{executable: "date", tool: tools.Date},
 		{executable: "pwd", tool: tools.Pwd},
 		// The clai_* worker tools stay callable by name for profiles that

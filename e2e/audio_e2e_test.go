@@ -48,6 +48,42 @@ func Test_goldenFile_AUDIO_alias_and_text_format(t *testing.T) {
 	}
 }
 
+// Test_e2e_AUDIO_calibrate pins the verb end to end: it measures the default
+// microphone through ffmpeg and stores the threshold it derived.
+func Test_e2e_AUDIO_calibrate(t *testing.T) {
+	confDir := e2etest.SetupMainTestConfigDir(t)
+	e2etest.WriteJSONFileAny(t, filepath.Join(confDir, "audioConfig.json"), map[string]any{
+		"capture": map[string]any{"dir": t.TempDir(), "silence-peak-db": -40},
+	})
+	fixture, err := os.ReadFile(filepath.Join(e2etest.ModuleRoot(t), "internal", "capture", "testdata", "fake_ffmpeg.sh"))
+	if err != nil {
+		t.Fatalf("ReadFile(fake_ffmpeg.sh): %v", err)
+	}
+	binDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(binDir, "ffmpeg"), fixture, 0o755); err != nil {
+		t.Fatalf("WriteFile(ffmpeg): %v", err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	status, stdout, stderr := harness.RunAudio(t, "audio calibrate")
+	testboil.FailTestIfDiff(t, status, 0)
+	if !strings.Contains(stdout, "silence-peak-db -40 → -38") {
+		t.Fatalf("stdout = %q, want the stored threshold", stdout)
+	}
+	if !strings.Contains(stderr, "measuring the default microphone") {
+		t.Fatalf("stderr = %q, want the measurement notice", stderr)
+	}
+	stored, err := os.ReadFile(filepath.Join(confDir, "audioConfig.json"))
+	if err != nil {
+		t.Fatalf("ReadFile(audioConfig.json): %v", err)
+	}
+	for _, want := range []string{`"silence-peak-db": -38`, `"calibrated": true`} {
+		if !strings.Contains(string(stored), want) {
+			t.Fatalf("audioConfig.json = %s, want %v", stored, want)
+		}
+	}
+}
+
 func Test_goldenFile_AUDIO_stdin_dash(t *testing.T) {
 	_ = e2etest.SetupMainTestConfigDir(t)
 

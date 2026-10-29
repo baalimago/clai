@@ -6,8 +6,10 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/baalimago/clai/internal"
+	"github.com/baalimago/clai/internal/capture"
 	"github.com/baalimago/clai/internal/remote"
 	"github.com/baalimago/go_away_boilerplate/pkg/cmd"
 )
@@ -16,6 +18,7 @@ const namespaceHelp = `usage: clai audio <verb> [verb flags] [args]
 
 Verbs:
   t|transcribe <file>   Transcribe an audio file to text. Use '-' to read audio bytes from stdin.
+  c|calibrate           Measure this machine's ambient level and set the silence threshold.
   h|help                Show this help.
 
 Transcribe flags (placed after the verb):
@@ -31,6 +34,7 @@ Examples:
   clai audio transcribe meeting.wav
   clai a t -af text meeting.wav
   cat meeting.wav | clai a t -
+  clai audio calibrate
 `
 
 // CommandDeps are the composition-root collaborators from internal/setup.
@@ -63,12 +67,15 @@ func (f *Flags) Register(fs *flag.FlagSet) {
 	f.StrictSpeakers.Register(fs, "Fail instead of rendering unknown-N when a material speaker cannot be resolved.", "strict-speakers")
 }
 
+// calibrateWindow is how long one calibration listens to the microphone.
+const calibrateWindow = 3 * time.Second
+
 // Command builds the audio command tree.
 func Command(deps CommandDeps) *internal.Command {
 	raw := &internal.RawFlag{}
 	c := &internal.Command{
 		Name:     "audio",
-		Desc:     "Transcribe audio: audio t|transcribe <file> ('-' reads stdin)",
+		Desc:     "Transcribe and record audio: audio t|transcribe <file> ('-' reads stdin), audio c|calibrate",
 		HelpText: namespaceHelp,
 		Register: raw.Register,
 		Raw:      raw,
@@ -123,8 +130,32 @@ Examples:
 		fmt.Print(namespaceHelp)
 		return nil
 	}
+	calibrate := &internal.Command{
+		Name: "calibrate",
+		Desc: "Measure this machine's ambient level and set the silence threshold",
+		HelpText: `audio calibrate. Measures the default microphone for 3 seconds, then
+writes capture.silence-peak-db and capture.calibrated into audioConfig.json.
+Run it in the room where you record, while the room is as quiet as it is when
+a meeting starts.
+
+Examples:
+  clai audio calibrate`,
+	}
+	calibrate.OnRun = func(ctx context.Context, c *internal.Command) error {
+		if len(c.Args()) > 1 {
+			return fmt.Errorf("audio calibrate takes no arguments, got %q", c.Args()[1:])
+		}
+		fmt.Fprintf(os.Stderr, "measuring the default microphone for %v\n", calibrateWindow)
+		text, err := calibrateText(ctx, capture.New(), calibrateWindow)
+		if err != nil {
+			return err
+		}
+		fmt.Print(text)
+		return nil
+	}
 	c.Subs = map[string]cmd.Command{
 		"transcribe|t": transcribe,
+		"calibrate|c":  calibrate,
 		"help|h":       audioHelp,
 	}
 	return c
