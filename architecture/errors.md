@@ -200,6 +200,24 @@ add context without hiding the type. What stays true is only that the
 `fmt.Errorf` result is never itself of your type — decoders must return the
 typed value rather than a wrap of it.
 
+### One question with one answer: `ModelUnavailable`
+
+A caller that wants to try the next model must not enumerate the vocabulary
+itself:
+
+```go
+if claierr.ModelUnavailable(err) {
+    // another vendor's model may answer where this one could not
+}
+```
+
+`ModelUnavailable` is true for a retired or unknown model, a rejected key, an
+empty account, a throttled account and a failing provider. It is false for an
+answer about the request or about the network under every model: a transport
+failure, an unexpected payload, an over-long context and a content-policy
+refusal. See [model-aliases.md](./model-aliases.md) for the fallback walk that
+uses it as its retry policy.
+
 ### Composition: `errors.Join`, never nesting
 
 A response satisfies a _set_ of meanings, not a hierarchy. A `429
@@ -268,8 +286,12 @@ formatted string.
 Vendor-first is what lets a vendor quirk stay inside the vendor: xAI
 answers 403 for a drained account, so its decoder returns
 `ErrLikelyInsufficientCredits` alone and the baseline's `ErrAuthFailed`
-guess never fires. A naive `errors.Join(baseline, decode(...))` could not
-express that: Join adds meanings and cannot retract one.
+guess never fires. Anthropic reports the same condition as a 400
+`invalid_request_error` whose message names the credit balance, so its
+decoder reads the message and returns `ErrLikelyInsufficientCredits`; the
+baseline would have called that a broken request and no fallback could
+ever fire. A naive `errors.Join(baseline, decode(...))` could not
+express either case: Join adds meanings and cannot retract one.
 
 The image generation endpoints ([photo.md](./photo.md#image-generators))
 run the same chain with one wider decoder per vendor, `decodeImageError`: it

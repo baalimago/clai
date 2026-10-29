@@ -25,12 +25,9 @@ import (
 const heuristicTokenCountFactor = 1.1
 
 // decodeAnthropicError is anthropic's vendor decoder seat on the shared
-// decode chain. It is nil until wire evidence for a body-decoded anthropic
-// meaning exists (worklog 2026-09-05-error-propagation, D9): the live probe
-// recorded no anthropic error body, so the status baseline stands alone.
-// The 429 branch above does not go through it — its facts live in response
-// headers, not the body.
-var decodeAnthropicError func(status int, body []byte) error
+// decode chain. The 429 branch above does not go through it — its facts live in
+// response headers, not the body.
+var decodeAnthropicError = decodeError
 
 func (c *Claude) StreamCompletions(ctx context.Context, chat pub_models.Chat) (chan models.CompletionEvent, error) {
 	req, err := c.constructRequest(ctx, chat)
@@ -88,9 +85,8 @@ func (c *Claude) stream(ctx context.Context, req *http.Request) (chan models.Com
 				limit,
 			)
 		}
-		// Every other non-OK rides the shared decode chain instead of the old
-		// flattened formatted string. decodeAnthropicError is nil until wire
-		// evidence exists (D9), so the status baseline speaks.
+		// Every other non-OK rides the shared decode chain: anthropic's own
+		// decoder speaks first, the status baseline otherwise.
 		return nil, generic.ResponseError(resp.StatusCode, body, decodeAnthropicError)
 	}
 

@@ -10,8 +10,21 @@ import (
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/internal/vendors/openai"
 	"github.com/baalimago/clai/internal/vendors/openrouter"
+	"github.com/baalimago/clai/pkg/claierr"
 	pkgtools "github.com/baalimago/clai/pkg/tools"
 )
+
+// unknownModelError reports a transcribe model no route claims. Error keeps the
+// supported routes for the final failure; Unwrap links it to ErrModelNotFound
+// so a model fallback notice prints the one-phrase meaning
+// (architecture/model-aliases.md).
+type unknownModelError struct{ model string }
+
+func (e *unknownModelError) Error() string {
+	return fmt.Sprintf("failed to find audio transcriber for model: '%v', supported routes: 'or:' prefix (OpenRouter), model containing 'whisper' or 'transcribe' (OpenAI), 'test'/'mock_test' (mock)", e.model)
+}
+
+func (e *unknownModelError) Unwrap() error { return claierr.ErrModelNotFound }
 
 // createSplitter routes the model to a transcriber vendor by explicit
 // prefix/substring per the audio strategy and wraps it in the split/stitch
@@ -37,7 +50,7 @@ func createSplitter(conf Configurations) (*Splitter, error) {
 		}
 		transcriber = &vendorCpy
 	default:
-		return nil, fmt.Errorf("failed to find audio transcriber for model: '%v', supported routes: 'or:' prefix (OpenRouter), model containing 'whisper' or 'transcribe' (OpenAI), 'test'/'mock_test' (mock)", model)
+		return nil, &unknownModelError{model: model}
 	}
 	budgets, err := ResolveBudgets(conf.Transcribe)
 	if err != nil {
@@ -56,7 +69,7 @@ func createSplitter(conf Configurations) (*Splitter, error) {
 
 // CreateQuerier validates the output format, routes the transcriber and
 // returns the transcript-printing querier.
-func CreateQuerier(conf Configurations, filePath string, cleanup func()) (models.Querier, error) {
+func CreateQuerier(conf Configurations, filePath string) (models.Querier, error) {
 	format, err := ParseOutputFormat(conf.Transcribe.OutputFormat)
 	if err != nil {
 		return nil, err
@@ -69,7 +82,6 @@ func CreateQuerier(conf Configurations, filePath string, cleanup func()) (models
 		Splitter: splitter,
 		FilePath: filePath,
 		Format:   format,
-		Cleanup:  cleanup,
 	}, nil
 }
 

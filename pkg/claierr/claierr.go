@@ -467,3 +467,42 @@ func (e *ImageUnsupportedError) Error() string {
 }
 
 func (e *ImageUnsupportedError) Unwrap() error { return ErrImageUnsupported } // ErrImageUnsupported
+
+// modelUnavailableMeanings says which meanings mean "this model could not
+// answer", most actionable first, so a notice that names one reason names the
+// one the user can act on: a 429 that also reports an empty account is credits.
+// ModelUnavailable and UnavailableMeaning both read this one table.
+var modelUnavailableMeanings = []error{
+	ErrModelNotFound,
+	ErrAuthFailed,
+	ErrLikelyInsufficientCredits,
+	ErrRateLimited,
+	ErrProviderUnavailable,
+}
+
+// ModelUnavailable reports whether err means the model could not answer, so a
+// run may try its next model instead. It is true for a retired or unknown
+// model, a rejected key, an empty account, a throttled account and a failing
+// provider.
+//
+// The remaining meanings are answers about the request itself or about the
+// network under every model: a transport failure, an unexpected payload, an
+// over-long context, and a content-policy refusal. Those are reported to the
+// caller unchanged.
+//
+// An error composed with errors.Join is unavailable when any of its meanings
+// is, so a 429 that also reports insufficient quota is unavailable.
+func ModelUnavailable(err error) bool { return UnavailableMeaning(err) != nil }
+
+// UnavailableMeaning returns the meaning that makes err unavailable, or nil
+// when the error is about the request or the network and not the model. Its
+// text is the one-phrase reason a fallback notice prints, so the provider's own
+// prose stays out of the line.
+func UnavailableMeaning(err error) error {
+	for _, meaning := range modelUnavailableMeanings {
+		if errors.Is(err, meaning) {
+			return meaning
+		}
+	}
+	return nil
+}

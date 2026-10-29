@@ -37,6 +37,7 @@ address and fetch another (`gh:anthropics/..@evil`).
 | `internal/remote/fetch.go` | `NewClient`/`CheckRedirect` (https-only redirects, at most 5), the 64 KiB cap, the content-type check |
 | `internal/remote/store.go` | `TrustStore` (`<config>/trust.json`), `Cache` (`<cache>/remote/<sha256>.json` plus `index.json`), `Digest` |
 | `internal/remote/skill.go` | `ParseSkillTarget`, `Resolver.ResolveSkill`/`ResolveSkills`, `ResolvedSkill`, `SkillSummary`, `InvalidSkillError`, `ProfileSkills` |
+| `internal/remote/models.go` | `ParseModelListTarget`, `ValidateModelList`, `Resolver.ResolveModelList`, `ResolveModelTarget`, `InvalidModelListError` |
 | `internal/remote/summary.go` | `Summarize`: what the trust prompt and `profiles trust` show |
 | `internal/remote/env.go` | `CLAI_CLOUD_URL`, `CLAI_CLOUD=off`, `NewResolver` |
 | `internal/text/remote_profile.go` | `resolveRemoteProfilePath` (runs before `ProfileOverrides`), the terminal prompt, `terminalAvailable` |

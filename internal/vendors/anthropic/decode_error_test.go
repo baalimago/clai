@@ -195,6 +195,50 @@ func Test_AnthropicDecode_RateLimit_CarriesResetFacts(t *testing.T) {
 	}
 }
 
+// Test_AnthropicDecode_CreditBalance_IsInsufficientCredits pins a drained
+// account: anthropic answers 400 invalid_request_error whose message names the
+// credit balance, so the body is the only evidence that this model cannot
+// answer and the configured fallback may take over.
+func Test_AnthropicDecode_CreditBalance_IsInsufficientCredits(t *testing.T) {
+	body := fixture(t, "credit_balance_400.json")
+	err := claudeErr(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write(body)
+	})
+
+	if !errors.Is(err, claierr.ErrLikelyInsufficientCredits) {
+		t.Fatalf("expected ErrLikelyInsufficientCredits, got: %v", err)
+	}
+	if !claierr.ModelUnavailable(err) {
+		t.Fatalf("drained account must be retryable on another model, got: %v", err)
+	}
+	var credits *claierr.InsufficientCreditsError
+	if !errors.As(err, &credits) {
+		t.Fatalf("expected *claierr.InsufficientCreditsError via errors.As, got: %T %v", err, err)
+	}
+	if credits.StatusCode != http.StatusBadRequest || credits.ProviderCode != "invalid_request_error" {
+		t.Fatalf("facts mismatch: %+v", credits.APIError)
+	}
+}
+
+// Test_AnthropicDecode_UnrecognizedBody_Baseline pins that a 400 whose body
+// says nothing about the account keeps the baseline answer: the request itself
+// is wrong, so no other model can answer it.
+func Test_AnthropicDecode_UnrecognizedBody_Baseline(t *testing.T) {
+	body := []byte(`{"type":"error","error":{"type":"invalid_request_error","message":"max_tokens: too large"}}`)
+	err := claudeErr(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write(body)
+	})
+
+	if !errors.Is(err, claierr.ErrUnexpectedProviderResponse) {
+		t.Fatalf("expected ErrUnexpectedProviderResponse, got: %v", err)
+	}
+	if claierr.ModelUnavailable(err) {
+		t.Fatalf("a malformed request must not be retried on another model: %v", err)
+	}
+}
+
 // Test_AnthropicDecode_NonOK_Baseline pins the end of the flattened error:
 // every non-OK outside 429 rides generic.ResponseError, so the caller gets
 // the baseline vocabulary meaning with facts instead of a formatted string.

@@ -1,6 +1,7 @@
 package text
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -17,6 +18,7 @@ import (
 	"github.com/baalimago/clai/internal/vendors/openai"
 	"github.com/baalimago/clai/internal/vendors/openrouter"
 	"github.com/baalimago/clai/internal/vendors/xai"
+	"github.com/baalimago/clai/pkg/claierr"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
@@ -152,15 +154,12 @@ func TestSelectTextQuerier_AllVendors(t *testing.T) {
 				ConfigDir: tmp,
 			}
 			writeModelPriceFixture(t, conf, tc.defaults)
-			q, found, err := selectTextQuerier(
+			q, err := selectTextQuerier(
 				t.Context(),
 				conf,
 			)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
-			}
-			if !found {
-				t.Fatal("expected found")
 			}
 			if q == nil {
 				t.Fatal("expected querier")
@@ -180,12 +179,9 @@ func TestSelectTextQuerier_OpenRouterPrefix(t *testing.T) {
 		ConfigDir: tmp,
 	}
 	writeModelPriceFixture(t, conf, openrouter.Default)
-	q, found, err := selectTextQuerier(t.Context(), conf)
+	q, err := selectTextQuerier(t.Context(), conf)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
-	}
-	if !found {
-		t.Fatal("expected found")
 	}
 	if q == nil {
 		t.Fatal("expected querier")
@@ -210,12 +206,9 @@ func TestSelectTextQuerier_OpenRouterPrefixBeatsProviderSubstring(t *testing.T) 
 		ConfigDir: tmp,
 	}
 	writeModelPriceFixture(t, conf, openrouter.Default)
-	q, found, err := selectTextQuerier(t.Context(), conf)
+	q, err := selectTextQuerier(t.Context(), conf)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
-	}
-	if !found {
-		t.Fatal("expected found")
 	}
 	if q == nil {
 		t.Fatal("expected querier")
@@ -238,15 +231,15 @@ func TestSelectTextQuerier_ErrorPropagation(t *testing.T) {
 		Model:     "claude-3-opus",
 		ConfigDir: tmp,
 	}
-	q, found, err := selectTextQuerier(
+	q, err := selectTextQuerier(
 		t.Context(),
 		conf,
 	)
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if !found {
-		t.Error("expected found to be true")
+	if errors.Is(err, claierr.ErrModelNotFound) {
+		t.Errorf("err = %v, want vendor setup error, not ErrModelNotFound", err)
 	}
 	if q != nil {
 		t.Error("expected nil querier")
@@ -259,18 +252,32 @@ func TestSelectTextQuerier_Unknown(t *testing.T) {
 		Model:     "not-a-vendor",
 		ConfigDir: tmp,
 	}
-	q, found, err := selectTextQuerier(
+	q, err := selectTextQuerier(
 		t.Context(),
 		conf,
 	)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if found {
-		t.Fatalf("expected not found")
+	if !errors.Is(err, claierr.ErrModelNotFound) {
+		t.Fatalf("err = %v, want ErrModelNotFound", err)
 	}
 	if q != nil {
 		t.Fatalf("expected nil querier")
+	}
+}
+
+// TestCreateQuerier_UnknownModelKeepsTheWordingAndOffersAReason pins the two
+// audiences of the routing failure: the final error keeps its wording, while a
+// fallback notice gets one phrase (architecture/model-aliases.md).
+func TestCreateQuerier_UnknownModelKeepsTheWordingAndOffersAReason(t *testing.T) {
+	conf := Configurations{Model: "not-a-vendor", ConfigDir: t.TempDir()}
+	_, err := CreateQuerier(t.Context(), conf)
+	if err == nil {
+		t.Fatal("CreateQuerier: no error, want the routing failure")
+	}
+	if want := "failed to find text querier for model: not-a-vendor"; err.Error() != want {
+		t.Fatalf("err = %q, want %q", err, want)
+	}
+	if !errors.Is(err, claierr.ErrModelNotFound) || !claierr.ModelUnavailable(err) {
+		t.Fatalf("err = %v, want errors.Is(err, claierr.ErrModelNotFound) and ModelUnavailable(err)", err)
 	}
 }
 
@@ -283,16 +290,13 @@ func TestSelectTextQuerier_OllamaDeepseekPrefersOllama(t *testing.T) {
 		ConfigDir: tmp,
 		CostWarnf: func(format string, args ...any) { warnings <- fmt.Sprintf(format, args...) },
 	}
-	q, found, err := selectTextQuerier(
+	q, err := selectTextQuerier(
 		t.Context(),
 		conf,
 	)
 	t.Logf("%T,\nd: %v", q, debug.IndentedJsonFmt(q))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
-	}
-	if !found {
-		t.Fatal("expected found")
 	}
 	if q == nil {
 		t.Fatal("expected querier")

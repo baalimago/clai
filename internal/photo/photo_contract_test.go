@@ -19,6 +19,7 @@ import (
 	"github.com/baalimago/clai/internal/imagegen"
 	"github.com/baalimago/clai/internal/imagegen/imagegentest"
 	"github.com/baalimago/clai/internal/imageinput"
+	"github.com/baalimago/clai/internal/modelalias"
 	"github.com/baalimago/clai/internal/photo"
 	"github.com/baalimago/clai/internal/present"
 	"github.com/baalimago/clai/internal/utils"
@@ -52,6 +53,9 @@ type fixture struct {
 	gen        *imagegentest.Fake
 	genConfigs []imagegen.GeneratorConfig
 	newGenErr  error
+	// newGenErrs fails the generator for one model, which is how a fallback
+	// candidate that cannot be built is played.
+	newGenErrs map[string]error
 
 	opener      *fakeOpener
 	openerCmds  []string
@@ -121,6 +125,9 @@ func (f *fixture) deps() photo.CommandDeps {
 		},
 		NewGenerator: func(cfg imagegen.GeneratorConfig) (imagegen.ImageGenerator, error) {
 			f.genConfigs = append(f.genConfigs, cfg)
+			if err := f.newGenErrs[cfg.Model]; err != nil {
+				return nil, err
+			}
 			if f.newGenErr != nil {
 				return nil, f.newGenErr
 			}
@@ -838,5 +845,90 @@ func TestPhoto_PresentsDetails(t *testing.T) {
 	d := rec.shown[0].Details
 	if d.Model != "gpt-image-1" || d.Bytes != len(jpegData) || d.Elapsed < time.Millisecond {
 		t.Fatalf("details = %+v, want model gpt-image-1, %d bytes and the generation time", d, len(jpegData))
+	}
+}
+
+// Proves the media alias seam: photoConfig "model" may name a verb, and a
+// candidate this machine cannot compose is replaced by the next one
+// (architecture/model-aliases.md).
+func TestPhoto_ModelAliasFallsBackToTheNextModel(t *testing.T) {
+	f := newFixture(t)
+	f.conf.Model = "strong"
+	f.conf.ModelAliases = modelalias.Table{"strong": {"no-such-image-model", "gpt-image-1"}}
+	f.newGenErrs = map[string]error{"no-such-image-model": errors.New("no such image model")}
+
+	o := f.run("a", "fox")
+	if o.err != nil {
+		t.Fatalf("photo: %v (stderr %q)", o.err, o.stderr)
+	}
+	want := []imagegen.GeneratorConfig{
+		{Model: "no-such-image-model", ConfigDir: f.confDir},
+		{Model: "gpt-image-1", ConfigDir: f.confDir},
+	}
+	if !reflect.DeepEqual(f.genConfigs, want) {
+		t.Fatalf("NewGenerator configs = %+v, want %+v", f.genConfigs, want)
+	}
+	files := f.savedFiles(f.outDir)
+	if len(files) != 1 {
+		t.Fatalf("saved files = %v, want one", files)
+	}
+	if o.stdout != files[0]+"\n" {
+		t.Fatalf("stdout = %q, want the saved path only", o.stdout)
+	}
+	for _, want := range []string{"▸ model no-such-image-model unavailable · ", "trying gpt-image-1"} {
+		if !strings.Contains(o.stderr, want) {
+			t.Fatalf("stderr = %q, want it to contain %q", o.stderr, want)
+		}
+	}
+}
+
+// Proves that a ladder whose every candidate cannot be composed fails the run
+// and names each model, saving nothing.
+func TestPhoto_ExhaustedModelAliasNamesEveryModel(t *testing.T) {
+	f := newFixture(t)
+	f.conf.Model = "strong"
+	f.conf.ModelAliases = modelalias.Table{"strong": {"no-such-image-model", "another-unknown-model"}}
+	f.newGenErrs = map[string]error{
+		"no-such-image-model":   errors.New("no such image model"),
+		"another-unknown-model": errors.New("still no such image model"),
+	}
+
+	o := f.run("a", "fox")
+	if o.err == nil {
+		t.Fatal("photo: no error, want every candidate reported")
+	}
+	for _, want := range []string{"no-such-image-model", "another-unknown-model"} {
+		if !strings.Contains(o.err.Error(), want) {
+			t.Fatalf("err = %v, want it to name %q", o.err, want)
+		}
+	}
+	if files := f.savedFiles(f.outDir); len(files) != 0 {
+		t.Fatalf("saved files = %v, want none", files)
+	}
+}
+
+// Proves the replay guard: a run that already saved an image reports its
+// failure as final, so the next model never re-saves it
+// (architecture/model-aliases.md).
+func TestPhoto_ASavedImageIsNeverReplayedOnTheNextModel(t *testing.T) {
+	boom := errors.New("boom")
+	f := newFixture(t)
+	f.conf.Model = "strong"
+	f.conf.ModelAliases = modelalias.Table{"strong": {"gpt-image-1", "gpt-image-1-mini"}}
+	deps := f.deps()
+	deps.NewPresenter = func(present.Options) present.Presenter { return failingPresenter{err: boom} }
+
+	o := runCommand(t, deps, "a", "fox")
+	if !errors.Is(o.err, boom) {
+		t.Fatalf("err = %v, want the presenter failure", o.err)
+	}
+	if want := []imagegen.GeneratorConfig{{Model: "gpt-image-1", ConfigDir: f.confDir}}; !reflect.DeepEqual(f.genConfigs, want) {
+		t.Fatalf("NewGenerator configs = %+v, want only the model that ran %+v", f.genConfigs, want)
+	}
+	if files := f.savedFiles(f.outDir); len(files) != 1 {
+		t.Fatalf("saved files = %v, want exactly one", files)
+	}
+	if strings.Contains(o.stderr, "trying gpt-image-1-mini") {
+		t.Fatalf("stderr = %q, want no fallback after a saved image", o.stderr)
 	}
 }

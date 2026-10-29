@@ -64,6 +64,7 @@ func (e toolExecutor[C]) ExecuteBatch(ctx context.Context, session *QuerySession
 	if len(planned) == 0 {
 		return nil
 	}
+	session.SawAnyText = true
 	plans := q.newStoploss().PreflightToolCallBudget(session, planned)
 	if err := e.finalizeAssistantTextBeforeToolCall(ctx, session, planned[0]); err != nil {
 		return fmt.Errorf("finalize assistant text before tool call: %w", err)

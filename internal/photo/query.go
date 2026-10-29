@@ -14,8 +14,10 @@ import (
 	"github.com/baalimago/clai/internal/chat"
 	"github.com/baalimago/clai/internal/imagegen"
 	"github.com/baalimago/clai/internal/imageinput"
+	"github.com/baalimago/clai/internal/modelalias"
 	"github.com/baalimago/clai/internal/photo/generic"
 	"github.com/baalimago/clai/internal/present"
+	"github.com/baalimago/clai/internal/remote"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/table"
@@ -32,6 +34,15 @@ type query struct {
 	terminal  bool
 	model     string
 	took      time.Duration
+	// newGenerator and genConfig compose the generator for one model: a
+	// fallback attempt gets a fresh generator, the collected request and
+	// presenter are shared (architecture/model-aliases.md).
+	newGenerator imagegen.NewGeneratorFunc
+	genConfig    imagegen.GeneratorConfig
+	// aliases is the configured model table the run resolves through.
+	aliases modelalias.Table
+	// saved counts the files this run wrote, which is what Produced reports.
+	saved int
 }
 
 func newQuery(ctx context.Context, deps CommandDeps, f *Flags, args []string) (*query, error) {
@@ -46,9 +57,8 @@ func newQuery(ctx context.Context, deps CommandDeps, f *Flags, args []string) (*
 	if err != nil {
 		return nil, err
 	}
-	gen, err := deps.NewGenerator(imagegen.GeneratorConfig{Model: pConf.Model, ConfigDir: confDir})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create image generator: %w", err)
+	if err := resolveRemotePhotoModel(ctx, confDir, deps.NewRemoteResolver, &pConf); err != nil {
+		return nil, err
 	}
 	req, err := buildRequest(ctx, deps, f, pConf, confDir, args)
 	if err != nil {
@@ -65,15 +75,43 @@ func newQuery(ctx context.Context, deps CommandDeps, f *Flags, args []string) (*
 		Opener:   deps.NewOpener(pConf.ImageOpener),
 	})
 	return &query{
-		gen:       gen,
-		req:       req,
-		output:    pConf.Output,
-		presenter: presenter,
-		stderr:    os.Stderr,
-		progress:  board.NewStatus(out, terminal && !raw, "generating image"),
-		model:     pConf.Model,
-		terminal:  terminal,
+		req:          req,
+		output:       pConf.Output,
+		presenter:    presenter,
+		stderr:       os.Stderr,
+		progress:     board.NewStatus(out, terminal && !raw, "generating image"),
+		terminal:     terminal,
+		model:        pConf.Model,
+		newGenerator: deps.NewGenerator,
+		genConfig:    imagegen.GeneratorConfig{ConfigDir: confDir},
+		aliases:      pConf.ModelAliases,
 	}, nil
+}
+
+// forModel returns the run for one model: the same collected request, output
+// and presenter, with that model's generator.
+func (q *query) forModel(model string) (*query, error) {
+	genConfig := q.genConfig
+	genConfig.Model = model
+	gen, err := q.newGenerator(genConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create image generator: %w", err)
+	}
+	next := *q
+	next.gen, next.model = gen, model
+	return &next, nil
+}
+
+func resolveRemotePhotoModel(ctx context.Context, confDir string, newResolver func(string, remote.Prompter) (remote.Resolver, error), pConf *Configurations) error {
+	if !remote.IsRemote(pConf.Model) {
+		return nil
+	}
+	models, err := remote.ResolveModelTarget(ctx, confDir, newResolver, pConf.Model)
+	if err != nil {
+		return err
+	}
+	pConf.ModelAliases = modelalias.Table{pConf.Model: models}
+	return nil
 }
 
 // buildRequest is the prompt and input images of photo.1 and photo.4.
@@ -144,6 +182,13 @@ func (q *query) SuppressCompletionNotification() bool {
 	return !q.terminal
 }
 
+// Produced reports whether this run already saved an image. It is the fallback
+// guard: a run that saved anything is reported as it failed and never replayed
+// on another model (architecture/model-aliases.md).
+func (q *query) Produced() bool {
+	return q.saved > 0
+}
+
 func (q *query) generate(ctx context.Context) ([]imagegen.GeneratedImage, error) {
 	q.progress.Start()
 	began := time.Now()
@@ -169,6 +214,7 @@ func (q *query) save(data []byte) (string, error) {
 	name := fmt.Sprintf("%s_%s.%s", q.output.Prefix, utils.RandomPrefix(), ext)
 	saved, err := writeImage(q.output.Dir, name, data)
 	if err == nil {
+		q.saved++
 		return saved, nil
 	}
 	fallback, fallbackErr := writeImage(os.TempDir(), name, data)
@@ -178,6 +224,7 @@ func (q *query) save(data []byte) (string, error) {
 	if _, werr := fmt.Fprintf(q.stderr, "notice: %v; saved to %s instead\n", err, fallback); werr != nil {
 		return "", fmt.Errorf("write output-dir notice: %w", werr)
 	}
+	q.saved++
 	return fallback, nil
 }
 

@@ -6,6 +6,7 @@ This directory contains short design notes for key parts of **clai**. Each file 
 
 - **[cmd-dispatch.md](./cmd-dispatch.md)** — Command dispatch and the flag system: the `cmd.Run` command map, the `claiCommand` adapter, per-command flag groups and short/long alias values, `Subcommander` trees (chat/audio/tools/profiles), clean-exit sentinels, and the completion hook wiring.
 - **[config.md](./config.md)** — Where config lives (config/cache dirs), what files exist (mode configs, vendor model configs, profiles, conversations), and the override cascade (defaults → file → profiles → flags).
+- **[model-aliases.md](./model-aliases.md)** — Model fallback: a config or profile names a verb (`strong`, `fast`, `cheap`) and each machine resolves it to its own ordered model list. Covers the alias table and its strict validation, the `retry` walk and its policy, the `ModelUnavailable` vocabulary, the replay guard (`Produced`), the stderr notice, the completion-bell walk, and which modes are wired.
 - **[chat.md](./chat.md)** — Conversation storage format, global previous-query (`globalScope.json`), directory-scoped reply bindings, the OpenAI reasoning-item sidecar (`conversations/reasoning/<chatid>/`), and the `clai chat continue` flow.
 - **[continue-from-claudex.md](./continue-from-claudex.md)** — Auto-discover and continue conversations from external AI tools (Claude Desktop/Code, Codex, Pi, Cursor, …) directly from `clai chat list`. Foreign conversations are inspected on-the-fly and cloned to native clai chats on continue, with a shared `source` field that also enables chat forking.
 - **[chat-groups.md](./chat-groups.md)** — Entry-message clustering in `clai chat list`: conversations with the same first user message are collapsed into `[group:N]` rows; selecting a group expands it to show member conversations. Uses a content-derived `GroupKey` (hex SHA-256) that parallels the `Source`/`SourceID` identity pattern. Zero changes to `SelectFromTable`.
@@ -47,6 +48,7 @@ This directory contains short design notes for key parts of **clai**. Each file 
 ## Reading order suggestions
 
 - If you’re new: start with **config.md → query.md → chat.md**.
+- If a query fails because of the model: **model-aliases.md → errors.md**.
 - If you’re working on tool calls: **tooling.md → query.md → streaming.md**.
 - If you’re debugging reply context: **chat.md → replay.md → dre.md**.
 - If you’re working on chat listing / grouping: **chat.md → continue-from-claudex.md → chat-groups.md → dirscope.md → summaries.md**.

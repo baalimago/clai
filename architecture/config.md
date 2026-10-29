@@ -47,6 +47,9 @@ Stored at:
 They contain settings that are broadly applicable to that “mode” (text vs image vs video). For text this includes:
 
 - chosen model
+- model fallback ladders (`model-aliases`: verb → ordered models, e.g.
+  `strong`; the mode's model flag (`-cm`, `-pm`, `-am`), a profile and the
+  config value may all name a verb). See `architecture/model-aliases.md`.
 - printing options (raw vs glow)
 - system prompt
 - tool use selection defaults

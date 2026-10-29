@@ -2,8 +2,14 @@
 // and the progress animation.
 package generic
 
+import "github.com/baalimago/clai/internal/modelalias"
+
 type Configurations struct {
 	Model string `json:"model"`
+	// ModelAliases maps a verb such as "strong" to the ordered image models a
+	// run tries in its place. A model the table does not name runs as itself
+	// (architecture/model-aliases.md).
+	ModelAliases modelalias.Table `json:"model-aliases"`
 	// Format of the prompt, will place prompt at '%v'
 	PromptFormat string `json:"prompt-format"`
 	Output       Output `json:"output"`

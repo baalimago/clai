@@ -24,21 +24,7 @@ var skillName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 // ParseSkillTarget parses a skill target: a cchub: skill, a gh: SKILL.md
 // (a path that is not a .md file names its directory), or an https URL.
 func ParseSkillTarget(s string) (Target, error) {
-	t, err := ParseTarget(s)
-	if err != nil {
-		return Target{}, err
-	}
-	if t.Kind != KindGitHub {
-		return t, nil
-	}
-	addr, _, _ := strings.Cut(strings.TrimPrefix(s, "gh:"), "@")
-	switch {
-	case strings.Count(addr, "/") < 2:
-		t.Path = SkillFile
-	case !strings.HasSuffix(strings.ToLower(t.Path), ".md"):
-		t.Path += "/" + SkillFile
-	}
-	return t, nil
+	return parseTypedTarget(s, ".md", SkillFile)
 }
 
 // InvalidSkillError is a skill target whose bytes clai would not load.

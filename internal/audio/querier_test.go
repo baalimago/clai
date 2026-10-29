@@ -62,29 +62,6 @@ func TestTranscribeQuerier_Query(t *testing.T) {
 			t.Errorf("expected indented, newline-formatted json, got: %q", got)
 		}
 	})
-	t.Run("cleanup runs after query", func(t *testing.T) {
-		q, _ := newQuerier(t, FormatText)
-		cleaned := false
-		q.Cleanup = func() { cleaned = true }
-		if err := q.Query(context.Background()); err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if !cleaned {
-			t.Error("expected cleanup to run")
-		}
-	})
-	t.Run("transcription error propagates and cleanup still runs", func(t *testing.T) {
-		q, _ := newQuerier(t, FormatText)
-		q.FilePath = filepath.Join(t.TempDir(), "gone.wav")
-		cleaned := false
-		q.Cleanup = func() { cleaned = true }
-		if err := q.Query(context.Background()); err == nil {
-			t.Fatal("expected error, got nil")
-		}
-		if !cleaned {
-			t.Error("expected cleanup to run on error")
-		}
-	})
 	t.Run("suppresses completion bell to keep stdout clean", func(t *testing.T) {
 		q, _ := newQuerier(t, FormatText)
 		if !q.SuppressCompletionNotification() {

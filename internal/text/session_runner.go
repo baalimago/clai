@@ -9,6 +9,7 @@ import (
 
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/utils"
+	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/dimensions"
@@ -63,6 +64,12 @@ func (r *sessionRunner[C]) Run(ctx context.Context, session *QuerySession) (runE
 	defer func() {
 		session.FinishedAt = time.Now()
 		session.Failed = runErr != nil
+		if runErr != nil && !session.Produced() && claierr.ModelUnavailable(runErr) {
+			session.ShouldSaveReply = session.ShouldSaveReply &&
+				r.querier.loopProgress == nil &&
+				len(session.Chat.Messages) <= 2 &&
+				(session.Chat.ID == "" || session.Chat.ID == "globalScope")
+		}
 		// A failed reply persist joins the run's returned error (S8) so a
 		// later -re/-dre cannot silently read stale state; the finalizer runs
 		// last, so the join sees every error the run produced.
@@ -86,6 +93,14 @@ func (r *sessionRunner[C]) Run(ctx context.Context, session *QuerySession) (runE
 	// before the drain and the finalizer. It is idempotent.
 	defer func() {
 		if r.querier.loopProgress == nil {
+			return
+		}
+		if runErr != nil && !session.Produced() && claierr.ModelUnavailable(runErr) {
+			r.querier.abandonSummary()
+			_ = r.querier.clearActivityWindow(r.querier.out)
+			if r.querier.activityViewport != nil {
+				r.querier.activityViewport.SetHeader(nil)
+			}
 			return
 		}
 		if err := r.querier.settleLoopHeader(); err != nil {
@@ -279,6 +294,7 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 					// empty [thinking] block.
 					continue
 				}
+				session.SawAnyText = true
 				if !q.reasoningActive {
 					if q.usesActivityViewport() {
 						q.ensureActivityViewport()

@@ -24,6 +24,24 @@ type completionNotificationSuppressor interface {
 	SuppressCompletionNotification() bool
 }
 
+type answeredQuerier interface {
+	Answer() models.Querier
+}
+
+func answeringQuerier(completed any) any {
+	for {
+		chain, ok := completed.(answeredQuerier)
+		if !ok {
+			return completed
+		}
+		answered := chain.Answer()
+		if answered == nil {
+			return completed
+		}
+		completed = answered
+	}
+}
+
 func triggerCompletionNotification(completed any) {
 	ringCompletionBell(completed, os.Stdout, os.Stderr, utils.IsTerminalWriter)
 }
@@ -32,7 +50,7 @@ func triggerCompletionNotification(completed any) {
 // terminal, stdout first. A redirected stdout never gets the bell: it would
 // land in the file or pipe holding the reply.
 func ringCompletionBell(completed any, stdout, stderr io.Writer, isTerminal func(io.Writer) bool) {
-	if suppressor, ok := completed.(completionNotificationSuppressor); ok && suppressor.SuppressCompletionNotification() {
+	if suppressor, ok := answeringQuerier(completed).(completionNotificationSuppressor); ok && suppressor.SuppressCompletionNotification() {
 		return
 	}
 	if !utils.NotificationBellEnabled() {

@@ -14,6 +14,7 @@ import (
 	"github.com/baalimago/clai/internal/present"
 	"github.com/baalimago/clai/internal/runtally"
 	"github.com/baalimago/clai/internal/utils"
+	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
@@ -70,10 +71,16 @@ type Querier[C models.StreamCompleter] struct {
 	lookbackCWD string
 	// cmdBan is this run's command ban policy, attached to every tool-call
 	// context by the executor (D29). No package-level ban state exists.
-	cmdBan     []string
-	hasPrinted bool
-	Model      C
-	tooling    tooling
+	cmdBan []string
+	// finalized latches the session finalize step: the answer was already
+	// displayed and persisted, so finalizing twice would duplicate it.
+	finalized bool
+	// produced records that output or a tool already reached the user, so the
+	// run must never be replayed on another model
+	// (architecture/model-aliases.md).
+	produced bool
+	Model    C
+	tooling  tooling
 
 	// systemPrompt is the configured system prompt, injected into every
 	// TextQuery call that does not already carry a system message.
@@ -165,6 +172,13 @@ type Querier[C models.StreamCompleter] struct {
 // redirected stdout needs no check here: the bell then rings on stderr.
 func (q *Querier[C]) SuppressCompletionNotification() bool {
 	return q.structuredOutput
+}
+
+// Produced reports whether this query already emitted output or ran a tool.
+// It is the fallback guard: a run that produced anything is reported as it
+// failed and never replayed on another model (architecture/model-aliases.md).
+func (q *Querier[C]) Produced() bool {
+	return q.produced || q.tooling.calls > 0
 }
 
 type SkillLoader interface {
@@ -267,7 +281,7 @@ func (q *Querier[C]) postProcess() {
 		Raw:                q.rawDisplay(),
 		FinalAssistantText: q.fullMsg,
 		FinalUsage:         q.chat.TokenUsage,
-		Finalized:          q.hasPrinted,
+		Finalized:          q.finalized,
 		Line:               q.line,
 		LineCount:          q.lineCount,
 	}
@@ -278,14 +292,15 @@ func (q *Querier[C]) postProcess() {
 	q.fullMsg = session.FinalAssistantText
 	q.line = session.Line
 	q.lineCount = session.LineCount
-	q.hasPrinted = session.Finalized
+	q.finalized = session.Finalized
 }
 
 func (q *Querier[C]) resetTransientState() {
 	q.fullMsg = ""
 	q.line = ""
 	q.lineCount = 0
-	q.hasPrinted = false
+	q.finalized = false
+	q.produced = false
 	q.reasoningBuf.Reset()
 	q.reasoningActive = false
 	q.loopFrameSettled = false
@@ -656,19 +671,26 @@ func (q *Querier[C]) Query(ctx context.Context) error {
 	before := q.chat
 	start := time.Now()
 	err := runner.Run(ctx, session)
-	if q.loopProgress == nil && (q.querySummary || q.runTally != nil) {
-		err = errors.Join(err, q.finishQuery(start, before, session.Chat, err))
-	}
 	q.chat = session.Chat
 	q.fullMsg = session.FinalAssistantText
 	q.line = session.Line
 	q.lineCount = session.LineCount
-	q.hasPrinted = session.Finalized
+	q.finalized = session.Finalized
 	q.tooling.calls = session.ToolCallsUsed
+	// Production, not the finalize latch: a run that failed before any output
+	// is safe to replay on another model.
+	q.produced = session.Produced()
 	q.isLikelyGemini3Preview = session.LikelyGeminiPreview
 	// The final answer pop is consumed by the finalizer's postProcessOutput
 	// inside Run; it must not leak into the next query.
 	q.finalAnswerPopPending = false
+	// A run that failed before producing anything because the model was
+	// unavailable may be replayed on the next alias candidate; settling the
+	// run's tally or printing the query summary here would duplicate the
+	// footer and double-report to a parent tally (architecture/model-aliases.md).
+	if (err == nil || q.Produced() || !claierr.ModelUnavailable(err)) && q.loopProgress == nil && (q.querySummary || q.runTally != nil) {
+		err = errors.Join(err, q.finishQuery(start, before, session.Chat, err))
+	}
 	return err
 }
 

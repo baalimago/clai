@@ -16,6 +16,7 @@ import (
 	"github.com/baalimago/clai/internal/chatid"
 	"github.com/baalimago/clai/internal/glob"
 	"github.com/baalimago/clai/internal/imageinput"
+	"github.com/baalimago/clai/internal/modelalias"
 	"github.com/baalimago/clai/internal/text/generic"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -26,11 +27,15 @@ import (
 
 // Configurations used to setup the requirements of text models
 type Configurations struct {
-	Model        string `json:"model"`
-	SystemPrompt string `json:"system-prompt"`
-	Raw          bool   `json:"raw"`
-	UseTools     bool   `json:"use-tools"`
-	UseSkills    bool   `json:"-"`
+	Model string `json:"model"`
+	// ModelAliases maps a verb such as "strong" to the ordered chat models a
+	// run tries in its place. A model the table does not name runs as itself,
+	// so an unconfigured table changes nothing (architecture/model-aliases.md).
+	ModelAliases modelalias.Table `json:"model-aliases"`
+	SystemPrompt string           `json:"system-prompt"`
+	Raw          bool             `json:"raw"`
+	UseTools     bool             `json:"use-tools"`
+	UseSkills    bool             `json:"-"`
 	// CmdModePrompt is kept only for backwards compatibility with old config files.
 	// It is ignored by clai as the `cmd` command has been removed.
 	CmdModePrompt string `json:"cmd-mode-prompt"`
@@ -264,7 +269,16 @@ type ProfileSource struct {
 }
 
 var Default = Configurations{
-	Model:                  "gpt-5.2",
+	Model: "gpt-5.2",
+	// The shipped aliases are a starting point the user owns from the first
+	// write: clai seeds them once and never rewrites an existing table (config
+	// migration design, Q4). Each lists one model per vendor so a machine with
+	// any one key still answers.
+	ModelAliases: modelalias.Table{
+		"strong": {"claude-sonnet-5-5", "gpt-5.2", "gemini-3.6-flash"},
+		"fast":   {"gemini-3.6-flash", "gpt-4.1-mini", "deepseek-chat"},
+		"cheap":  {"deepseek-chat", "gpt-4.1-mini", "gemini-3.6-flash"},
+	},
 	SystemPrompt:           "You are an assistant for a CLI tool. Answer concisely and informatively. Prefer markdown if possible.",
 	Raw:                    false,
 	UseTools:               false,

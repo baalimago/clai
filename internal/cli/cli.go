@@ -195,19 +195,21 @@ func commands(deps Deps, setExit func(int)) map[string]cmd.Command {
 			SendPrompt:    text.DirReplySender(queryDeps),
 		}),
 		"photo|p": photo.Command(photo.CommandDeps{
-			ConfigPrep:    configPrep,
-			LoadConfig:    setup.LoadPhotoConfig,
-			NewGenerator:  deps.NewImageGenerator,
-			Collector:     imageinput.New(),
-			NewPresenter:  present.New,
-			NewOpener:     present.NewCommandOpener,
-			PreviousImage: photo.PreviousQueryImage,
+			ConfigPrep:        configPrep,
+			LoadConfig:        setup.LoadPhotoConfig,
+			NewGenerator:      deps.NewImageGenerator,
+			Collector:         imageinput.New(),
+			NewPresenter:      present.New,
+			NewOpener:         present.NewCommandOpener,
+			PreviousImage:     photo.PreviousQueryImage,
+			NewRemoteResolver: remoteResolver(deps.RemoteClient),
 		}),
 		"video|v": video.Command(video.CommandDeps{
 			ConfigPrep: configPrep,
 		}),
 		"audio|a": audio.Command(audio.CommandDeps{
-			ConfigPrep: func() (string, []string, error) { return setup.ConfigRunPrep(true) },
+			ConfigPrep:        func() (string, []string, error) { return setup.ConfigRunPrep(true) },
+			NewRemoteResolver: remoteResolver(deps.RemoteClient),
 		}),
 		"setup|s":        setup.Command(),
 		"version":        version.Command(),
@@ -221,6 +223,7 @@ func commands(deps Deps, setExit func(int)) map[string]cmd.Command {
 		"cloud": cloudcmd.Command(cloudcmd.Deps{
 			ConfDir: utils.GetClaiConfigDir,
 			SetExit: setExit,
+			Publish: cloudPublish(profileDeps),
 			Hooks: sync.Hooks{
 				Export: func(ctx context.Context, confDir string, progress func(done, total int)) error {
 					return chat.ExportForeign(ctx, confDir, foreignCache(deps), progress)
@@ -244,6 +247,18 @@ func foreignCache(deps Deps) vendors.SourceCache {
 		return nil
 	}
 	return deps.ForeignCache()
+}
+
+func cloudPublish(deps profiles.CommandDeps) func(ctx context.Context, args []string, opts cloudcmd.PublishOptions) error {
+	return func(ctx context.Context, args []string, opts cloudcmd.PublishOptions) error {
+		return deps.PublishInteractive(ctx, opts.In, args, profiles.PublishOptions{
+			Name:    opts.Name,
+			Title:   opts.Title,
+			Summary: opts.Summary,
+			Note:    opts.Note,
+			Handle:  opts.Handle,
+		})
+	}
 }
 
 // versionFlagAsCommand rewrites the special first-argument version flag

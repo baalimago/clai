@@ -11,9 +11,12 @@ import (
 	"time"
 
 	"github.com/baalimago/clai/internal/debugflags"
+	"github.com/baalimago/clai/internal/modelalias"
 	"github.com/baalimago/clai/internal/models"
+	"github.com/baalimago/clai/internal/remote"
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/internal/utils"
+	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
@@ -24,6 +27,7 @@ type agentSummarizer struct {
 	confDir      string
 	configModel  string
 	summaryModel string
+	aliases      modelalias.Table
 	newQuerier   func(context.Context, text.Configurations) (models.ChatQuerier, error)
 }
 
@@ -63,6 +67,7 @@ func NewAgentSummarizer(confDir string) (models.Summarizer, error) {
 		confDir:      confDir,
 		configModel:  conf.Model,
 		summaryModel: conf.SummaryModel,
+		aliases:      conf.ModelAliases,
 		newQuerier:   createChatQuerier,
 	}, nil
 }
@@ -76,9 +81,41 @@ func (a *agentSummarizer) Summarize(ctx context.Context, req models.SummaryReque
 	if err != nil {
 		return models.Summary{}, err
 	}
-	if err := ctx.Err(); err != nil {
-		return models.Summary{}, fmt.Errorf("summarize: %w", err)
+	var candidates []string
+	if remote.IsRemote(model) {
+		candidates, err = remote.ResolveModelTarget(ctx, a.confDir, nil, model)
+	} else {
+		candidates, err = a.aliases.Resolve(model)
 	}
+	if err != nil {
+		return models.Summary{}, fmt.Errorf("resolve summary model %q: %w", model, err)
+	}
+	rendered := render(req.Chat)
+	var lastErr error
+	for _, candidate := range candidates {
+		if err := ctx.Err(); err != nil {
+			return models.Summary{}, fmt.Errorf("summarize: %w", err)
+		}
+		summary, policy, err := a.summarizeWithCandidate(ctx, req.Kind, prompt, rendered, candidate)
+		if err == nil {
+			return summary, nil
+		}
+		lastErr = err
+		if policy != summaryAdvance {
+			return models.Summary{}, err
+		}
+	}
+	return models.Summary{}, lastErr
+}
+
+type summaryRetryPolicy int
+
+const (
+	summaryStop summaryRetryPolicy = iota
+	summaryAdvance
+)
+
+func (a *agentSummarizer) summarizeWithCandidate(ctx context.Context, kind models.SummaryKind, prompt, rendered, model string) (models.Summary, summaryRetryPolicy, error) {
 	// The runner cancels whatever sits under ContextCancelKey on StopEvent;
 	// owning that key on a child keeps the caller's context untouched (D27).
 	runCtx, cancel := context.WithCancel(ctx)
@@ -92,7 +129,7 @@ func (a *agentSummarizer) Summarize(ctx context.Context, req models.SummaryReque
 		Model:                 model,
 		SystemPrompt:          prompt,
 		UseTools:              true,
-		Tools:                 []pub_models.LLMTool{newSubmitSummaryTool(holder, req.Kind)},
+		Tools:                 []pub_models.LLMTool{newSubmitSummaryTool(holder, kind)},
 		SkipAmbientMcpServers: true,
 		SaveReplyAsConv:       false,
 		MaxToolCalls:          &maxCalls,
@@ -105,18 +142,22 @@ func (a *agentSummarizer) Summarize(ctx context.Context, req models.SummaryReque
 	}
 	cq, err := a.newQuerier(runCtx, conf)
 	if err != nil {
-		return models.Summary{}, fmt.Errorf("summarizer querier for model %q: %w", model, err)
+		return models.Summary{}, summaryAdvance, fmt.Errorf("summarizer querier for model %q: %w", model, err)
 	}
-	chat, err := cq.TextQuery(runCtx, pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: render(req.Chat)}}})
+	chat, err := cq.TextQuery(runCtx, pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: rendered}}})
 	if ctxErr := ctx.Err(); ctxErr != nil {
-		return models.Summary{}, fmt.Errorf("summarize: %w", ctxErr)
+		return models.Summary{}, summaryStop, fmt.Errorf("summarize: %w", ctxErr)
 	}
 	title, summary, ok := holder.get()
 	if !ok {
 		if err != nil {
-			return models.Summary{}, fmt.Errorf("summarize with %q: %w", model, err)
+			policy := summaryStop
+			if claierr.ModelUnavailable(err) {
+				policy = summaryAdvance
+			}
+			return models.Summary{}, policy, fmt.Errorf("summarize with %q: %w", model, err)
 		}
-		return models.Summary{}, errors.New("no summary submitted")
+		return models.Summary{}, summaryStop, errors.New("no summary submitted")
 	}
 	if err != nil {
 		tracef("summarize with %q: keeping the held submission over the querier error: %v", model, err)
@@ -127,7 +168,7 @@ func (a *agentSummarizer) Summarize(ctx context.Context, req models.SummaryReque
 		Model:       model,
 		Queries:     summaryQueries(chat.Queries, model, usage.total()),
 		GeneratedAt: time.Now().UTC(),
-	}, nil
+	}, summaryStop, nil
 }
 
 // summaryPlan returns the system prompt and transcript renderer for a kind.

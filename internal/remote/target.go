@@ -105,6 +105,24 @@ func ParseTarget(s string) (Target, error) {
 	return t, nil
 }
 
+func parseTypedTarget(s, ext, defaultFile string) (Target, error) {
+	t, err := ParseTarget(s)
+	if err != nil {
+		return Target{}, err
+	}
+	if t.Kind != KindGitHub {
+		return t, nil
+	}
+	addr, _, _ := strings.Cut(strings.TrimPrefix(s, "gh:"), "@")
+	switch {
+	case strings.Count(addr, "/") < 2:
+		t.Path = defaultFile
+	case !strings.HasSuffix(strings.ToLower(t.Path), ext):
+		t.Path += "/" + defaultFile
+	}
+	return t, nil
+}
+
 func splitDigest(s string) (string, string, error) {
 	body, fragment, found := strings.Cut(s, "#")
 	if !found {

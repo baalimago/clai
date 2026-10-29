@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/baalimago/clai/internal"
+	"github.com/baalimago/clai/internal/remote"
 	"github.com/baalimago/go_away_boilerplate/pkg/cmd"
 )
 
@@ -36,7 +37,8 @@ Examples:
 // ConfigPrep defers upgrade announcements: transcribe's stdout is the
 // transcript (architecture/config.md).
 type CommandDeps struct {
-	ConfigPrep func() (confDir string, announcements []string, err error)
+	ConfigPrep        func() (confDir string, announcements []string, err error)
+	NewRemoteResolver func(confDir string, prompt remote.Prompter) (remote.Resolver, error)
 }
 
 // Flags is the audio transcribe flag surface.
@@ -52,7 +54,7 @@ type Flags struct {
 
 // Register binds the audio flag surface onto fs.
 func (f *Flags) Register(fs *flag.FlagSet) {
-	f.Model.Register(fs, "Set the audio transcription model.", "am", "audio-model")
+	f.Model.Register(fs, "Set the audio transcription model, or a model-aliases verb such as 'fast'.", "am", "audio-model")
 	f.Format.Register(fs, "Set the transcript output format: vtt|srt|text|json.", "af", "audio-format")
 	f.Parallelism.Register(fs, "Set max parallel transcription requests for split audio files.", "parallelism")
 	f.MaxRequestBytes.Register(fs, "Set the per-request upload cap in bytes for split audio files.", "max-request-bytes")
@@ -96,7 +98,7 @@ Examples:
 		},
 		Raw: raw,
 	}
-	transcribe.OnSetup = func(_ context.Context, tc *internal.Command) error {
+	transcribe.OnSetup = func(ctx context.Context, tc *internal.Command) error {
 		confDir, announcements, err := deps.ConfigPrep()
 		if err != nil {
 			return err
@@ -104,7 +106,7 @@ Examples:
 		for _, msg := range announcements {
 			fmt.Fprintln(os.Stderr, msg)
 		}
-		q, err := setupTranscribeQuerier(confDir, f, tc.Args()[1:])
+		q, err := setupTranscribeQuerierWithResolver(ctx, confDir, f, tc.Args()[1:], deps.NewRemoteResolver)
 		if err != nil {
 			return err
 		}

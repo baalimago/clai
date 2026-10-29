@@ -16,6 +16,9 @@ func TestErrorsNameTheirFacts(t *testing.T) {
 	if msg := (&UnknownImageModelError{Model: "claude-x"}).Error(); !strings.Contains(msg, `"claude-x"`) || !strings.Contains(msg, "gpt-image-*") {
 		t.Errorf("UnknownImageModelError = %q", msg)
 	}
+	if err := (&UnknownImageModelError{Model: "claude-x"}); !errors.Is(err, claierr.ErrModelNotFound) || !claierr.ModelUnavailable(err) {
+		t.Errorf("UnknownImageModelError = %v, want errors.Is(err, claierr.ErrModelNotFound) and ModelUnavailable(err)", err)
+	}
 	if msg := (&MissingAPIKeyError{Env: "GEMINI_API_KEY"}).Error(); !strings.Contains(msg, "GEMINI_API_KEY") {
 		t.Errorf("MissingAPIKeyError = %q", msg)
 	}

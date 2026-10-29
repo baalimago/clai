@@ -2,6 +2,7 @@ package text
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -21,11 +22,12 @@ import (
 	"github.com/baalimago/clai/internal/vendors/openai"
 	"github.com/baalimago/clai/internal/vendors/openrouter"
 	"github.com/baalimago/clai/internal/vendors/xai"
+	"github.com/baalimago/clai/pkg/claierr"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
-func selectTextQuerier(ctx context.Context, conf Configurations) (models.Querier, bool, error) {
+func selectTextQuerier(ctx context.Context, conf Configurations) (models.Querier, error) {
 	var q models.Querier
 	found := false
 
@@ -33,7 +35,7 @@ func selectTextQuerier(ctx context.Context, conf Configurations) (models.Querier
 		found = true
 		qTmp, err := NewQuerier(ctx, conf, new(vendors.Mock{}))
 		if err != nil {
-			return nil, false, fmt.Errorf("failed to create test querier: %w", err)
+			return nil, fmt.Errorf("failed to create test querier: %w", err)
 		}
 		q = &qTmp
 	}
@@ -47,7 +49,7 @@ func selectTextQuerier(ctx context.Context, conf Configurations) (models.Querier
 		defaultCpy.Model = modelName
 		qTmp, err := NewQuerier(ctx, conf, &defaultCpy)
 		if err != nil {
-			return nil, found, fmt.Errorf("failed to create text querier: %w", err)
+			return nil, fmt.Errorf("failed to create text querier: %w", err)
 		}
 		q = &qTmp
 	}
@@ -58,33 +60,29 @@ func selectTextQuerier(ctx context.Context, conf Configurations) (models.Querier
 		defaultCpy.Model = conf.Model
 		qTmp, err := NewQuerier(ctx, conf, &defaultCpy)
 		if err != nil {
-			return nil, found, fmt.Errorf("failed to create text querier: %w", err)
+			return nil, fmt.Errorf("failed to create text querier: %w", err)
 		}
 		q = &qTmp
 	}
 
 	if strings.HasPrefix(conf.Model, "or:") {
-		found = true
 		defaultCpy := openrouter.Default
 		defaultCpy.Model = conf.Model
 		qTmp, err := NewQuerier(ctx, conf, &defaultCpy)
 		if err != nil {
-			return nil, found, fmt.Errorf("failed to create text querier: %w", err)
+			return nil, fmt.Errorf("failed to create text querier: %w", err)
 		}
-		q = &qTmp
-		return q, found, nil
+		return &qTmp, nil
 	}
 
 	if strings.HasPrefix(conf.Model, "jev-") {
-		found = true
 		defaultCpy := jev.Default
 		defaultCpy.Model = conf.Model
 		qTmp, err := NewQuerier(ctx, conf, &defaultCpy)
 		if err != nil {
-			return nil, found, fmt.Errorf("failed to create text querier: %w", err)
+			return nil, fmt.Errorf("failed to create text querier: %w", err)
 		}
-		q = &qTmp
-		return q, found, nil
+		return &qTmp, nil
 	}
 
 	if strings.Contains(conf.Model, "gpt") && !strings.HasPrefix(conf.Model, "or:") {
@@ -93,7 +91,7 @@ func selectTextQuerier(ctx context.Context, conf Configurations) (models.Querier
 		defaultCpy.Model = conf.Model
 		qTmp, err := NewQuerier(ctx, conf, &defaultCpy)
 		if err != nil {
-			return nil, found, fmt.Errorf("failed to create text querier: %w", err)
+			return nil, fmt.Errorf("failed to create text querier: %w", err)
 		}
 		q = &qTmp
 	}
@@ -104,7 +102,7 @@ func selectTextQuerier(ctx context.Context, conf Configurations) (models.Querier
 		defaultCpy.Model = conf.Model
 		qTmp, err := NewQuerier(ctx, conf, &defaultCpy)
 		if err != nil {
-			return nil, found, fmt.Errorf("failed to create text querier: %w", err)
+			return nil, fmt.Errorf("failed to create text querier: %w", err)
 		}
 		q = &qTmp
 	}
@@ -115,7 +113,7 @@ func selectTextQuerier(ctx context.Context, conf Configurations) (models.Querier
 		defaultCpy.Model = conf.Model
 		qTmp, err := NewQuerier(ctx, conf, &defaultCpy)
 		if err != nil {
-			return nil, found, fmt.Errorf("failed to create text querier: %w", err)
+			return nil, fmt.Errorf("failed to create text querier: %w", err)
 		}
 		q = &qTmp
 	}
@@ -126,7 +124,7 @@ func selectTextQuerier(ctx context.Context, conf Configurations) (models.Querier
 		defaultCpy.Model = conf.Model
 		qTmp, err := NewQuerier(ctx, conf, &defaultCpy)
 		if err != nil {
-			return nil, found, fmt.Errorf("failed to create text querier: %w", err)
+			return nil, fmt.Errorf("failed to create text querier: %w", err)
 		}
 		q = &qTmp
 	}
@@ -140,7 +138,7 @@ func selectTextQuerier(ctx context.Context, conf Configurations) (models.Querier
 		defaultCpy.Model = conf.Model
 		qTmp, err := NewQuerier(ctx, conf, &defaultCpy)
 		if err != nil {
-			return nil, false, fmt.Errorf("failed to create text querier: %w", err)
+			return nil, fmt.Errorf("failed to create text querier: %w", err)
 		}
 		q = &qTmp
 	}
@@ -151,7 +149,7 @@ func selectTextQuerier(ctx context.Context, conf Configurations) (models.Querier
 		defaultCpy.Model = conf.Model
 		qTmp, err := NewQuerier(ctx, conf, &defaultCpy)
 		if err != nil {
-			return nil, false, fmt.Errorf("failed to create text querier: %w", err)
+			return nil, fmt.Errorf("failed to create text querier: %w", err)
 		}
 		q = &qTmp
 	}
@@ -165,7 +163,7 @@ func selectTextQuerier(ctx context.Context, conf Configurations) (models.Querier
 		}
 		qTmp, err := NewQuerier(ctx, conf, &defaultCpy)
 		if err != nil {
-			return nil, found, fmt.Errorf("failed to create text querier: %w", err)
+			return nil, fmt.Errorf("failed to create text querier: %w", err)
 		}
 		q = &qTmp
 	} else if strings.HasPrefix(conf.Model, "novita:") {
@@ -174,7 +172,7 @@ func selectTextQuerier(ctx context.Context, conf Configurations) (models.Querier
 		defaultCpy.Model = conf.Model[7:]
 		qTmp, err := NewQuerier(ctx, conf, &defaultCpy)
 		if err != nil {
-			return nil, found, fmt.Errorf("failed to create text querier: %w", err)
+			return nil, fmt.Errorf("failed to create text querier: %w", err)
 		}
 		q = &qTmp
 	} else if strings.HasPrefix(conf.Model, "berget:") {
@@ -183,22 +181,34 @@ func selectTextQuerier(ctx context.Context, conf Configurations) (models.Querier
 		defaultCpy.Model = conf.Model[7:]
 		qTmp, err := NewQuerier(ctx, conf, &defaultCpy)
 		if err != nil {
-			return nil, found, fmt.Errorf("failed to create text querier: %w", err)
+			return nil, fmt.Errorf("failed to create text querier: %w", err)
 		}
 		q = &qTmp
 	}
-	return q, found, nil
+	if !found {
+		return nil, &unknownModelError{model: conf.Model}
+	}
+	return q, nil
 }
+
+type unknownModelError struct{ model string }
+
+func (e *unknownModelError) Error() string {
+	return fmt.Sprintf("failed to find text querier for model: %v", e.model)
+}
+
+func (e *unknownModelError) Unwrap() error { return claierr.ErrModelNotFound }
 
 // CreateQuerier by checking the model for which vendor to use, then initiating
 // a TextQuerier
 func CreateQuerier(ctx context.Context, conf Configurations) (models.Querier, error) {
-	q, found, err := selectTextQuerier(ctx, conf)
+	q, err := selectTextQuerier(ctx, conf)
 	if err != nil {
+		var unknown *unknownModelError
+		if errors.As(err, &unknown) {
+			return nil, err
+		}
 		return nil, fmt.Errorf("failed to select text querier: %w", err)
-	}
-	if !found {
-		return nil, fmt.Errorf("failed to find text querier for model: %v", conf.Model)
 	}
 
 	if misc.Truthy(os.Getenv("DEBUG")) {

@@ -1,11 +1,13 @@
 package audio
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/baalimago/clai/internal/vendors/openai"
 	"github.com/baalimago/clai/internal/vendors/openrouter"
+	"github.com/baalimago/clai/pkg/claierr"
 )
 
 func audioConfWithModel(model string) Configurations {
@@ -16,7 +18,7 @@ func audioConfWithModel(model string) Configurations {
 
 func mustCreateQuerier(t *testing.T, model string) *TranscribeQuerier {
 	t.Helper()
-	q, err := CreateQuerier(audioConfWithModel(model), "f.wav", nil)
+	q, err := CreateQuerier(audioConfWithModel(model), "f.wav")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -25,6 +27,24 @@ func mustCreateQuerier(t *testing.T, model string) *TranscribeQuerier {
 		t.Fatalf("expected *TranscribeQuerier, got %T", q)
 	}
 	return tq
+}
+
+// TestCreateAudioQuerier_UnknownModelNamesItsRoutes pins that a name no route
+// claims keeps the supported routes in its error and offers one phrase to a
+// fallback notice (architecture/model-aliases.md).
+func TestCreateAudioQuerier_UnknownModelNamesItsRoutes(t *testing.T) {
+	_, err := CreateQuerier(audioConfWithModel("no-such-model"), "f.wav")
+	if err == nil {
+		t.Fatal("CreateQuerier: no error, want the routing failure")
+	}
+	for _, want := range []string{"no-such-model", "supported routes"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("err = %v, want it to contain %q", err, want)
+		}
+	}
+	if !errors.Is(err, claierr.ErrModelNotFound) || !claierr.ModelUnavailable(err) {
+		t.Errorf("err = %v, want errors.Is(err, claierr.ErrModelNotFound) and ModelUnavailable(err)", err)
+	}
 }
 
 func TestCreateAudioQuerier_Routing(t *testing.T) {
@@ -58,7 +78,7 @@ func TestCreateAudioQuerier_Routing(t *testing.T) {
 	t.Run("parallelism and model propagate to splitter", func(t *testing.T) {
 		conf := audioConfWithModel("test")
 		conf.Transcribe.Parallelism = 5
-		q, err := CreateQuerier(conf, "f.wav", nil)
+		q, err := CreateQuerier(conf, "f.wav")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -71,7 +91,7 @@ func TestCreateAudioQuerier_Routing(t *testing.T) {
 		}
 	})
 	t.Run("unroutable model lists supported routes", func(t *testing.T) {
-		_, err := CreateQuerier(audioConfWithModel("mystery9000"), "f.wav", nil)
+		_, err := CreateQuerier(audioConfWithModel("mystery9000"), "f.wav")
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}
@@ -84,7 +104,7 @@ func TestCreateAudioQuerier_Routing(t *testing.T) {
 	t.Run("invalid output format errors listing valid values", func(t *testing.T) {
 		conf := audioConfWithModel("test")
 		conf.Transcribe.OutputFormat = "yaml"
-		_, err := CreateQuerier(conf, "f.wav", nil)
+		_, err := CreateQuerier(conf, "f.wav")
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}
