@@ -106,11 +106,15 @@ func (g *ChatGPT) mapResponsesTools() []responsesTool {
 	toolsMapped := make([]responsesTool, 0, len(g.tools))
 	for _, t := range g.tools {
 		spec := t.Specification()
+		params := spec.Inputs
+		if params == nil {
+			params = &pub_models.InputSchema{}
+		}
 		toolsMapped = append(toolsMapped, responsesTool{
 			Type:        "function",
 			Name:        spec.Name,
 			Description: spec.Description,
-			Parameters:  spec.Inputs,
+			Parameters:  params,
 		})
 	}
 	return toolsMapped

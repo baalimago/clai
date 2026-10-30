@@ -263,6 +263,16 @@ func (is *InputSchema) Patch() {
 	}
 }
 
+// MarshalJSON patches a copy before encoding. Providers that validate the tool
+// schema reject the null a nil Required or Properties encodes as
+// (2026-10-30 audio_record).
+func (is InputSchema) MarshalJSON() ([]byte, error) {
+	type wire InputSchema
+	patched := is
+	patched.Patch()
+	return json.Marshal(wire(patched))
+}
+
 // IsOk checks if the input schema is ok
 func (is *InputSchema) IsOk() bool {
 	for _, p := range is.Properties {

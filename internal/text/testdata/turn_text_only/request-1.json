@@ -1,1 +1,1 @@
-{"model":"claude-sonnet-5-5","messages":[{"role":"user","content":[{"type":"text","text":"list the files"}]}],"max_tokens":1024,"stream":true,"system":"You are terse.","tools":[{"name":"ls","description":"fixed ls","input_schema":{"type":"object","required":null,"properties":null}}]}
+{"model":"claude-sonnet-5-5","messages":[{"role":"user","content":[{"type":"text","text":"list the files"}]}],"max_tokens":1024,"stream":true,"system":"You are terse.","tools":[{"name":"ls","description":"fixed ls","input_schema":{"type":"object","required":[],"properties":{}}}]}

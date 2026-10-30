@@ -83,15 +83,20 @@ func readCatalogRows(path string) (map[string]string, error) {
 	return rows, nil
 }
 
-// exportedToolNames returns the name every exported tool value reports.
-func exportedToolNames() map[string]struct{} {
-	all := []models.LLMTool{
+// exportedTools is every tool value this package exports.
+func exportedTools() []models.LLMTool {
+	return []models.LLMTool{
 		ApplyPatch, AudioRecord, AudioSources, AudioTranscribe, Cat, ClaiCheck, ClaiHelp, ClaiResult, ClaiRun,
 		ClaiWaitForWorkers, Cmd, Cp, Date, FFProbe, FileTree, FileType, Find, Git,
 		Go, Head, JQ, LineCount, LoadSkill, LS, Mkdir, Mktemp, Pwd, RipGrep,
 		RowsBetween, Rsync, Sed, Tail, ViewImage, WebsiteText, WriteFile,
 		AsyncCmdRun, AsyncCmdStatus, AsyncCmdLogs, AsyncCmdAwait, AsyncCmdCancel,
 	}
+}
+
+// exportedToolNames returns the name every exported tool value reports.
+func exportedToolNames() map[string]struct{} {
+	all := exportedTools()
 	out := make(map[string]struct{}, len(all))
 	for _, tool := range all {
 		out[tool.Specification().Name] = struct{}{}

@@ -1,6 +1,8 @@
 package openai
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -34,5 +36,25 @@ func TestChatGPT_ToolMappingSetsToolName(t *testing.T) {
 	}
 	if toolsMapped[0].Name != "ls" {
 		t.Fatalf("expected tool name %q, got %q", "ls", toolsMapped[0].Name)
+	}
+}
+
+// TestChatGPT_ResponsesToolWithoutInputsSendsEmptySchema pins that a tool which
+// declares no inputs still goes on the wire with an object schema: a typed nil
+// pointer inside Parameters escapes omitempty and encodes as
+// "parameters":null, which strict validators reject (2026-10-30 audio_record).
+func TestChatGPT_ResponsesToolWithoutInputsSendsEmptySchema(t *testing.T) {
+	t.Parallel()
+
+	g := &ChatGPT{}
+	g.RegisterTool(fakeTool{spec: pub_models.Specification{Name: "pwd", Description: "print cwd"}})
+
+	raw, err := json.Marshal(g.mapResponsesTools())
+	if err != nil {
+		t.Fatalf("marshal tools: %v", err)
+	}
+	want := `"parameters":{"type":"object","required":[],"properties":{}}`
+	if !strings.Contains(string(raw), want) {
+		t.Fatalf("tools JSON = %s, want %s", raw, want)
 	}
 }

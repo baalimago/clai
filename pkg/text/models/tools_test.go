@@ -123,6 +123,19 @@ func TestInputSchemaPatchAndIsOk(t *testing.T) {
 	}
 }
 
+// TestInputSchemaMarshalNeverEmitsNull pins that an unpatched schema still
+// reaches the provider as JSON Schema: strict validators reject
+// "required": null (2026-10-30, deepseek 400 on audio_record).
+func TestInputSchemaMarshalNeverEmitsNull(t *testing.T) {
+	raw, err := json.Marshal(InputSchema{Type: "object"})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if got := string(raw); got != `{"type":"object","required":[],"properties":{}}` {
+		t.Fatalf("Marshal = %s, want empty arrays and objects", got)
+	}
+}
+
 func TestParameterObjectUnmarshalTypeAsStringOrArray(t *testing.T) {
 	// Test unmarshaling type as a string
 	jsonStr := `{"type": "string", "description": "A string parameter"}`

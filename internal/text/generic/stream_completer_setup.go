@@ -53,9 +53,12 @@ func (g *StreamCompleter) InternalRegisterTool(tool pub_models.LLMTool) {
 }
 
 func convertToGenericTool(tool pub_models.Specification) Tool {
-	return Tool{
+	generic := Tool{
 		Name:        tool.Name,
 		Description: tool.Description,
-		Inputs:      *tool.Inputs,
 	}
+	if tool.Inputs != nil {
+		generic.Inputs = *tool.Inputs
+	}
+	return generic
 }
