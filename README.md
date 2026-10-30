@@ -1,7 +1,7 @@
 ![Wakatime](https://wakatime.com/badge/user/018cc8d2-3fd9-47ef-81dc-e4ad645d5f34/project/018e07e1-bd22-4077-a213-c16290d3db52.svg)
 [![Go Reference](https://pkg.go.dev/badge/github.com/baalimago/clai.svg)](https://pkg.go.dev/github.com/baalimago/clai/pkg/agent)
 
-Test coverage: 92.0% 😍👌
+Test coverage: 91.9% 😍👌
 
 <div align="center">
   <a  href="https://www.clai.chat">
