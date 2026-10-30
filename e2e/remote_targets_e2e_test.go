@@ -328,6 +328,13 @@ func Test_REMOTE_trustShowsWhatTheProfileRunsHere(t *testing.T) {
 	if status != 0 || !strings.Contains(stdout, "▸ tools · none · no MCP servers\n") {
 		t.Fatalf("use_tools alone: status %d stdout %q stderr %q", status, stdout, stderr)
 	}
+	// A profile authored elsewhere (the site, another machine) may pin the
+	// audio model; the trust prompt shows it before anything runs.
+	env.hub.publish("ada/media", `{"model":"m","audio":{"model":"diarize"}}`)
+	status, stdout, stderr = runRemote(t, "profiles trust cchub:ada/media")
+	if status != 0 || !strings.Contains(stdout, "▸ audio model · diarize\n") {
+		t.Fatalf("audio model: status %d stdout %q stderr %q", status, stdout, stderr)
+	}
 }
 
 func Test_REMOTE_newVersionNeedsTrustAgain(t *testing.T) {
@@ -430,6 +437,8 @@ func Test_REMOTE_refusals(t *testing.T) {
 	env.hub.serveFile("/files/typo.json", "application/json", `{"modle":"test"}`)
 	env.hub.serveFile("/files/envfile.json", "application/json",
 		`{"model":"test","mcp_servers":{"crm":{"command":"crm","envfile":"crm.env"}}}`)
+	env.hub.serveFile("/files/audio-typo.json", "application/json",
+		`{"model":"test","audio":{"modle":"diarize"}}`)
 	base := env.hub.srv.URL
 
 	for _, tc := range []struct {
@@ -442,6 +451,7 @@ func Test_REMOTE_refusals(t *testing.T) {
 		{base + "/files/page.html", remote.ExitRefused, "not application/json"},
 		{base + "/files/typo.json", remote.ExitRefused, `did you mean "model"`},
 		{base + "/files/envfile.json", remote.ExitRefused, "a relative path has no meaning"},
+		{base + "/files/audio-typo.json", remote.ExitRefused, `audio: "modle": unknown key (did you mean "model"?)`},
 		{"http://example.com/a.json", 1, "only https:// is fetched"},
 	} {
 		t.Run(tc.target, func(t *testing.T) {

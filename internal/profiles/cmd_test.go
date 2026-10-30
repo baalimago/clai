@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/baalimago/clai/internal/utils"
@@ -165,27 +166,62 @@ func TestRunProfilesList_RehydratesLegacyEscapedPrompt(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(profilesDir, "legacy.json"), []byte(legacy), 0o644); err != nil {
 		t.Fatalf("failed to write profile: %v", err)
 	}
-	t.Setenv("CLAI_CONFIG_DIR", claiDir)
 
-	var buf bytes.Buffer
+	got := listStdout(t, claiDir)
+	if !strings.Contains(got, "First sentence prompt: First line\n") {
+		t.Fatalf("legacy escaped prompt not rehydrated in listing:\n%s", got)
+	}
+}
+
+// listStdout returns what List prints for the profiles under claiDir.
+func listStdout(t *testing.T, claiDir string) string {
+	t.Helper()
+	t.Setenv("CLAI_CONFIG_DIR", claiDir)
 	origStdout := os.Stdout
-	r, w, _ := os.Pipe()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
 	os.Stdout = w
+	var buf bytes.Buffer
 	done := make(chan struct{})
 	go func() {
-		var out bytes.Buffer
-		_, _ = out.ReadFrom(r)
-		buf.Write(out.Bytes())
+		_, _ = buf.ReadFrom(r)
 		close(done)
 	}()
-	err := List()
-	w.Close()
+	listErr := List()
+	_ = w.Close()
 	os.Stdout = origStdout
 	<-done
-	if err != nil {
-		t.Fatalf("expected nil error, got: %v", err)
+	if listErr != nil {
+		t.Fatalf("List: %v", listErr)
 	}
-	if !bytes.Contains(buf.Bytes(), []byte("First sentence prompt: First line\n")) {
-		t.Fatalf("legacy escaped prompt not rehydrated in listing:\n%s", buf.String())
+	return buf.String()
+}
+
+func TestRunProfilesList_showsTheAudioModel(t *testing.T) {
+	writeProfile := func(t *testing.T, body string) string {
+		t.Helper()
+		claiDir := filepath.Join(t.TempDir(), ".clai")
+		profilesDir := filepath.Join(claiDir, "profiles")
+		if err := os.MkdirAll(profilesDir, 0o755); err != nil {
+			t.Fatalf("failed to create profiles dir: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(profilesDir, "meeting.json"), []byte(body), 0o644); err != nil {
+			t.Fatalf("failed to write profile: %v", err)
+		}
+		return claiDir
 	}
+	t.Run("set", func(t *testing.T) {
+		got := listStdout(t, writeProfile(t, `{"name":"meeting","model":"m","audio":{"model":"diarize"}}`))
+		if !strings.Contains(got, "Audio model: diarize\n") {
+			t.Fatalf("listing lacks the audio model:\n%s", got)
+		}
+	})
+	t.Run("unset", func(t *testing.T) {
+		got := listStdout(t, writeProfile(t, `{"name":"meeting","model":"m"}`))
+		if strings.Contains(got, "Audio model:") {
+			t.Fatalf("listing shows an audio model it does not have:\n%s", got)
+		}
+	})
 }

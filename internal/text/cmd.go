@@ -49,9 +49,9 @@ Examples:
 type QueryCommandDeps struct {
 	ConfigPrep func() (confDir string, err error)
 	TrustInput func() io.Reader
-	// ApplyMediaOverrides hands the media-tool flags to the domains owning
-	// those tools (internal/audio today), which text must not import.
-	ApplyMediaOverrides func(internal.MediaToolFlags) error
+	// ApplyMediaOverrides hands the resolved media-tool settings to the domains
+	// owning those tools (internal/audio today), which text must not import.
+	ApplyMediaOverrides func(internal.MediaToolSettings) error
 	// NewSummarizer builds the in-flight conversation summarizer; nil or a
 	// constructor error attaches nothing (worklog
 	// 2026-09-09-conversation-summaries, D26).
@@ -196,11 +196,6 @@ func newTextSession(ctx context.Context, c *internal.Command, tf internal.TextFl
 	if err != nil {
 		return nil, err
 	}
-	if deps.ApplyMediaOverrides != nil {
-		if err := deps.ApplyMediaOverrides(tf.AgentText.MediaTools); err != nil {
-			return nil, fmt.Errorf("apply media tool overrides: %w", err)
-		}
-	}
 	var trustInput io.Reader
 	if deps.TrustInput != nil {
 		trustInput = deps.TrustInput()
@@ -210,6 +205,13 @@ func newTextSession(ctx context.Context, c *internal.Command, tf internal.TextFl
 	tConf, err := setupTextConfig(ctx, confDir, tf, c.Args(), trustInput, remoteTargets.profile, remoteTargets.skills)
 	if err != nil {
 		return nil, err
+	}
+	// The media tools read the values this run resolved, so the hand-off waits
+	// for the profile to be applied by setupTextConfig.
+	if deps.ApplyMediaOverrides != nil {
+		if err := deps.ApplyMediaOverrides(mediaToolSettings(tf, tConf)); err != nil {
+			return nil, fmt.Errorf("apply media tool overrides: %w", err)
+		}
 	}
 	if err := resolveRemoteModel(ctx, tConf, remoteTargets.models); err != nil {
 		return nil, err
@@ -460,5 +462,18 @@ func ApplyFlagOverrides(tConf *Configurations, tf internal.TextFlags) {
 func ApplyProfileOverrides(tConf *Configurations, tf internal.TextFlags) {
 	if tf.AgentText.ChatModel.Changed() {
 		tConf.Model = tf.AgentText.ChatModel.Value()
+	}
+	if tf.AgentText.MediaTools.AudioModel.Changed() {
+		tConf.AudioModel = tf.AgentText.MediaTools.AudioModel.Value()
+	}
+}
+
+// mediaToolSettings are the media-tool values this run resolved: the audio
+// model the flags or the profile chose, and the -af format, which no profile
+// key sets.
+func mediaToolSettings(tf internal.TextFlags, tConf *Configurations) internal.MediaToolSettings {
+	return internal.MediaToolSettings{
+		AudioModel:  tConf.AudioModel,
+		AudioFormat: tf.AgentText.MediaTools.AudioFormat.Value(),
 	}
 }

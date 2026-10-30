@@ -87,6 +87,10 @@ type Configurations struct {
 	QuerySummary bool `json:"query-summary" migrate:"true"`
 	// ImageInputs are the -img values in flag order.
 	ImageInputs []string `json:"-"`
+	// AudioModel is the model the audio_transcribe tool uses for this run: the
+	// profile's audio.model, then -am (ApplyProfileOverrides). Empty leaves
+	// audioConfig.json in charge (architecture/audio.md).
+	AudioModel string `json:"-"`
 	// SummaryJoinTimeout bounds the finalizer's wait for the in-flight
 	// summary; zero means no wait for a plain query and
 	// loopSummaryJoinTimeout inside a loop.
@@ -258,9 +262,17 @@ type Profile struct {
 	McpServers      map[string]pub_models.McpServer `json:"mcp_servers,omitempty"`
 	ShellContext    string                          `json:"shell_context,omitempty"`
 	UseLookback     *bool                           `json:"use_lookback,omitempty"`
+	// Audio configures the audio media tool this profile's runs call; nil or
+	// an empty object keeps audioConfig.json and the media flags in charge.
+	Audio *ProfileAudio `json:"audio,omitempty"`
 	// Source is the stamp `clai profiles install` writes: the remote target
 	// the profile came from, pinned by hash (architecture/remote-targets.md).
 	Source *ProfileSource `json:"source,omitempty"`
+}
+
+// ProfileAudio is the run-only audio configuration a profile carries.
+type ProfileAudio struct {
+	Model string `json:"model"`
 }
 
 // ProfileSource names the remote target an installed profile came from.

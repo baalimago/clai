@@ -160,9 +160,10 @@ func commands(deps Deps, setExit func(int)) map[string]cmd.Command {
 		confDir, _, err := setup.ConfigRunPrep(false)
 		return confDir, err
 	}
-	// An agent run may call audio_transcribe, so -am/-af must reach it.
-	applyMediaOverrides := func(f internal.MediaToolFlags) error {
-		return audio.SetTranscribeOverrides(f.AudioModel.Value(), f.AudioFormat.Value())
+	// An agent run may call audio_transcribe, so -am/-af and a profile's
+	// audio.model must reach it.
+	applyMediaOverrides := func(s internal.MediaToolSettings) error {
+		return audio.SetTranscribeOverrides(s.AudioModel, s.AudioFormat)
 	}
 	queryDeps := text.QueryCommandDeps{
 		ConfigPrep:          configPrep,

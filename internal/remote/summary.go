@@ -45,9 +45,11 @@ const (
 // trust prompt and `clai profiles trust` show before anything runs. Its
 // strings are the profile's own; String makes them printable.
 type Summary struct {
-	Model  string
-	Access ToolAccess
-	Tools  []string
+	Model string
+	// AudioModel is the model the profile's audio_transcribe calls use.
+	AudioModel string
+	Access     ToolAccess
+	Tools      []string
 	// CmdBan is the profile's cmd-ban: command lines it refuses to start.
 	CmdBan   []string
 	Servers  []Server
@@ -68,11 +70,14 @@ var fetchers = map[string]bool{"npx": true, "pnpx": true, "bunx": true, "uvx": t
 // Summarize reads a validated profile body.
 func Summarize(body []byte, checked Checked) (Summary, error) {
 	var p struct {
-		Model      string   `json:"model"`
-		Prompt     string   `json:"prompt"`
-		UseTools   bool     `json:"use_tools"`
-		Tools      []string `json:"tools"`
-		CmdBan     []string `json:"cmd-ban"`
+		Model    string   `json:"model"`
+		Prompt   string   `json:"prompt"`
+		UseTools bool     `json:"use_tools"`
+		Tools    []string `json:"tools"`
+		CmdBan   []string `json:"cmd-ban"`
+		Audio    *struct {
+			Model string `json:"model"`
+		} `json:"audio"`
 		McpServers map[string]struct {
 			Command string            `json:"command"`
 			Args    []string          `json:"args"`
@@ -94,6 +99,9 @@ func Summarize(body []byte, checked Checked) (Summary, error) {
 		return Summary{}, err
 	}
 	s := Summary{Model: p.Model, Prompt: p.Prompt, Tools: p.Tools, CmdBan: p.CmdBan, Ignored: checked.Ignored, Skills: skills}
+	if p.Audio != nil {
+		s.AudioModel = p.Audio.Model
+	}
 	s.Access = toolAccess(p.UseTools, len(p.Tools), len(p.McpServers))
 	for _, name := range sortedKeys(p.McpServers) {
 		srv := p.McpServers[name]
@@ -209,6 +217,9 @@ func (s Summary) Lines(st look.Style) []string {
 		model = "your default"
 	}
 	lines = append(lines, st.Head("model", model))
+	if audio := Printable(s.AudioModel); audio != "" {
+		lines = append(lines, st.Head("audio model", audio))
+	}
 	lines = append(lines, promptLines(st, "prompt", s.Prompt)...)
 	if len(s.Ignored) > 0 {
 		lines = append(lines, st.Head("not read by clai", printableList(s.Ignored)))

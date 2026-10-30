@@ -295,6 +295,13 @@ func (g *MediaToolFlags) Register(fs *flag.FlagSet) {
 	g.PhotoModel.Register(fs, "Set the image model the generate_image tool uses for this run. Overrides photoConfig.json.", "pm", "photo-model")
 }
 
+// MediaToolSettings are the media-tool values a run resolved from its flags and
+// its profile, handed to the domains owning those tools.
+type MediaToolSettings struct {
+	AudioModel  string
+	AudioFormat string
+}
+
 // AgentTextFlags is the model/agent group shared by every text-querier
 // command (query, chat and chat continue): model selection, tool and limit
 // configuration, profiles.

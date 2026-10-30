@@ -251,8 +251,9 @@ Flags are alias-aware primitives (`internal/flags.go`): shared groups live in pa
 
 For **text** the important override functions are:
 
-- `applyFlagOverridesForText(tConf, flagSet, defaultFlags)`
-- `applyProfileOverridesForText(tConf, flagSet, defaultFlags)` (currently only ensures `-cm` can override profile model)
+- `ApplyFlagOverrides(tConf, tf)` (file values replaced by explicit flags)
+- `ApplyProfileOverrides(tConf, tf)` (the flags that outrank a profile: `-cm`
+  for the chat model, `-am` for the audio model)
 
 Key behaviors:
 
@@ -316,6 +317,23 @@ run: it rides that run's tool-call context and there is no process-wide
 default, so a second querier in the same process never alters it. See
 `architecture/tooling.md` (Security, "Command ban list") for the matching
 semantics and documented limits.
+
+### Media model configuration
+
+An agent run may call the media tools, so its audio model has its own
+cascade. The value is run-only (`text.Configurations.AudioModel`) and is
+handed to `internal/audio` through `QueryCommandDeps.ApplyMediaOverrides`
+after the profile resolves, because the profile is read inside
+`setupTextConfig`:
+
+```text
+-am (explicit)  >  profile "audio": {"model": …}  >  audioConfig.json
+```
+
+`-af` has no profile key: the transcript format stays the tool call's choice
+unless the user sets it for the run. `"photo"` is not read from a profile; the
+image model follows `-pm` and `photoConfig.json` (see
+[audio.md](./audio.md), [images.md](./images.md)).
 
 ### Skills enablement configuration
 

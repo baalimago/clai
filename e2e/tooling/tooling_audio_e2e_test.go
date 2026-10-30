@@ -102,6 +102,51 @@ func Test_e2e_audio_transcribe_tool_flag_overrides(t *testing.T) {
 	})
 }
 
+// Test_e2e_audio_transcribe_tool_profile_model pins that a profile may pin the
+// model the media tool it calls uses: "audio": {"model": …} reaches
+// audio_transcribe for that run, and -am still outranks it.
+func Test_e2e_audio_transcribe_tool_profile_model(t *testing.T) {
+	writeProfile := func(t *testing.T, confDir, audioModel string) {
+		t.Helper()
+		e2etest.WriteJSONFileAny(t, filepath.Join(confDir, "profiles", "meeting.json"), map[string]any{
+			"name":  "meeting",
+			"model": "mock_test",
+			"audio": map[string]any{"model": audioModel},
+		})
+	}
+
+	t.Run("the profile pins the transcribe model", func(t *testing.T) {
+		confDir := e2etest.SetupMainTestConfigDir(t)
+		t.Setenv("CLAI_MOCK_AUDIO_TRANSCRIBE_FILE", e2etest.WriteAudioFile(t))
+		t.Setenv("OPENAI_API_KEY", "")
+		writeProfile(t, confDir, "test")
+
+		// audioConfig.json names an OpenAI model that needs a key; the
+		// profile routes the tool to the mock instead.
+		status, stdout, stderr := runAudioTool(t, confDir, "whisper-1",
+			"-r -cm mock_test -p meeting -t=audio_transcribe q tool_audio_transcribe")
+
+		if status != 0 {
+			t.Fatalf("expected success, got %d stdout=%q stderr=%q", status, stdout, stderr)
+		}
+		testboil.AssertStringContains(t, stdout+stderr, "mock transcription")
+	})
+	t.Run("-am beats the profile", func(t *testing.T) {
+		confDir := e2etest.SetupMainTestConfigDir(t)
+		t.Setenv("CLAI_MOCK_AUDIO_TRANSCRIBE_FILE", e2etest.WriteAudioFile(t))
+		t.Setenv("OPENAI_API_KEY", "")
+		writeProfile(t, confDir, "whisper-1")
+
+		status, stdout, stderr := runAudioTool(t, confDir, "test",
+			"-r -cm mock_test -am test -p meeting -t=audio_transcribe q tool_audio_transcribe")
+
+		if status != 0 {
+			t.Fatalf("expected success, got %d stdout=%q stderr=%q", status, stdout, stderr)
+		}
+		testboil.AssertStringContains(t, stdout+stderr, "mock transcription")
+	})
+}
+
 func Test_e2e_audio_transcribe_tool_vtt_format(t *testing.T) {
 	confDir := e2etest.SetupMainTestConfigDir(t)
 	audioFile := e2etest.WriteAudioFile(t)

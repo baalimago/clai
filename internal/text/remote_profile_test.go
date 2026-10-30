@@ -29,6 +29,20 @@ func TestRemoteProfileKeys_matchProfile(t *testing.T) {
 	}
 }
 
+func TestRemoteAudioKeys_matchProfileAudio(t *testing.T) {
+	typ := reflect.TypeFor[ProfileAudio]()
+	var keys []string
+	for field := range typ.Fields() {
+		keys = append(keys, strings.Split(field.Tag.Get("json"), ",")[0])
+	}
+	want := slices.Clone(remote.AudioKeys)
+	slices.Sort(keys)
+	slices.Sort(want)
+	if !slices.Equal(keys, want) {
+		t.Fatalf("ProfileAudio json keys = %v, remote.AudioKeys = %v", keys, want)
+	}
+}
+
 func TestResolveRemoteProfilePath(t *testing.T) {
 	local := &Configurations{ProfilePath: "./bot.json"}
 	if err := resolveRemoteProfilePath(t.Context(), local, nil); err != nil || local.ProfilePath != "./bot.json" {

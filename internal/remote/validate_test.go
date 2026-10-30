@@ -68,3 +68,42 @@ func TestEditDistance(t *testing.T) {
 		t.Fatal("nearestKey")
 	}
 }
+
+func TestValidate_audioBlock(t *testing.T) {
+	t.Run("a model is accepted", func(t *testing.T) {
+		got, err := Validate("t", []byte(`{"audio":{"model":"diarize"}}`))
+		if err != nil {
+			t.Fatalf("Validate: %v", err)
+		}
+		if len(got.Ignored) != 0 {
+			t.Fatalf("Ignored = %v, want none", got.Ignored)
+		}
+	})
+	t.Run("an empty object is accepted", func(t *testing.T) {
+		if _, err := Validate("t", []byte(`{"audio":{}}`)); err != nil {
+			t.Fatalf("Validate: %v", err)
+		}
+	})
+	t.Run("a wrong shape is refused", func(t *testing.T) {
+		for _, tc := range []struct{ body, want string }{
+			{`{"audio":"diarize"}`, `"audio": needs an object`},
+			{`{"audio":[]}`, `"audio": needs an object`},
+			{`{"audio":{"model":3}}`, `audio.model: needs a string`},
+			{`{"audio":{"modle":"x"}}`, `audio: "modle": unknown key (did you mean "model"?)`},
+		} {
+			_, err := Validate("t", []byte(tc.body))
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("Validate(%s) err = %v, want %q", tc.body, err, tc.want)
+			}
+		}
+	})
+	t.Run("a key clai does not read is listed, not refused", func(t *testing.T) {
+		got, err := Validate("t", []byte(`{"audio":{"language":"en"}}`))
+		if err != nil {
+			t.Fatalf("Validate: %v", err)
+		}
+		if strings.Join(got.Ignored, "|") != "audio.language" {
+			t.Fatalf("Ignored = %v, want [audio.language]", got.Ignored)
+		}
+	})
+}

@@ -43,6 +43,9 @@ func List() error {
 		Tools  []string `json:"tools"`
 		Prompt string   `json:"prompt"`
 		Source *Source  `json:"source"`
+		Audio  *struct {
+			Model string `json:"model"`
+		} `json:"audio"`
 	}
 
 	validCount := 0
@@ -73,11 +76,16 @@ func List() error {
 		if p.Source != nil && p.Source.Target != "" {
 			source = fmt.Sprintf("Source: %s\n", p.Source.Target)
 		}
+		audio := ""
+		if p.Audio != nil && p.Audio.Model != "" {
+			audio = fmt.Sprintf("Audio model: %s\n", p.Audio.Model)
+		}
 		fmt.Printf(
-			"Name: %s\nModel: %s\nTools: %v\n%sFirst sentence prompt: %s\n---\n",
+			"Name: %s\nModel: %s\nTools: %v\n%s%sFirst sentence prompt: %s\n---\n",
 			p.Name,
 			p.Model,
 			p.Tools,
+			audio,
 			source,
 			getFirstSentence(p.Prompt),
 		)
@@ -122,6 +130,9 @@ servers it may start and the skills it brings (see 'clai skills -h'), kept in
 <config-dir>/profiles/<name>.json. What a profile leaves out comes from your
 text config. Create or edit one in the profiles menu of 'clai setup', or write
 the JSON yourself.
+
+An "audio": {"model": ...} block sets the model the audio_transcribe tool uses
+when the agent's runs call it; -audio-model (-am) still overrides it.
 
 Run one by name with -profile (-p), or by file path or remote target with
 -profile-path (-prp):

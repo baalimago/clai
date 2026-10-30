@@ -72,6 +72,9 @@ func (c *Configurations) ProfileOverrides() error {
 	}
 
 	c.Model = profile.Model
+	if profile.Audio != nil {
+		c.AudioModel = profile.Audio.Model
+	}
 	c.SystemPrompt = profile.Prompt
 	c.UseTools = profile.UseTools || (len(profile.McpServers) > 0)
 	// A fetched or installed profile gets only the tools it names: with

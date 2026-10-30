@@ -101,6 +101,12 @@ func TestSummary_listsEachServersEnv(t *testing.T) {
 	assertHas(t, got, "  m   node m.js\n      env A=1\n      env NODE_OPTIONS=--require /tmp/x.js\n")
 }
 
+func TestSummary_showsTheAudioModel(t *testing.T) {
+	got := summaryOf(t, `{"model":"m","audio":{"model":"diarize"}}`)
+	assertHas(t, got, "▸ audio model · diarize\n")
+	assertLacks(t, summaryOf(t, `{"model":"m"}`), "audio model")
+}
+
 func TestSummary_escapesControlCharacters(t *testing.T) {
 	body := `{"model":"m\u001b[2J","prompt":"hi\u001b]0;x\u0007\nok\u009b","x\u001b[1m":1,"mcp_servers":{
 		"s\u001b[31m":{"command":"node\u0007","args":["a\rb"],"env":{"K":"v\u001b[0m"}},

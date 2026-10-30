@@ -20,8 +20,12 @@ const MaxBodyBytes = 64 * 1024
 var ProfileKeys = []string{
 	"name", "model", "use_tools", "use_skills", "tools", "cmd-ban", "prompt",
 	"save-reply-as-conv", "mcp_servers", "shell_context", "use_lookback", "source",
-	"skills",
+	"skills", "audio",
 }
+
+// AudioKeys are the keys clai's text.ProfileAudio reads; text's tests keep the
+// two in step.
+var AudioKeys = []string{"model"}
 
 // hubKeys are fields the hub reads and clai does not, such as the
 // description its page shows: expected in a published profile, so never
@@ -91,6 +95,11 @@ func Validate(target string, body []byte) (Checked, error) {
 			problems = append(problems, err.Error())
 		}
 	}
+	if raw, ok := fields["audio"]; ok {
+		audioIssues, ignored := audioProblems(raw)
+		problems = append(problems, audioIssues...)
+		checked.Ignored = append(checked.Ignored, ignored...)
+	}
 	if len(problems) > 0 {
 		return Checked{}, invalid(problems...)
 	}
@@ -157,6 +166,30 @@ func topLevelProblems(fields map[string]json.RawMessage) []string {
 		problems = append(problems, `"tools": needs an array of strings`)
 	}
 	return problems
+}
+
+// audioProblems checks the audio block clai's profile reads: an object whose
+// model is a string, with a key that looks like a misspelt one refused rather
+// than silently ignored.
+func audioProblems(raw json.RawMessage) (problems, ignored []string) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil || fields == nil {
+		return []string{`"audio": needs an object`}, nil
+	}
+	for _, key := range sortedKeys(fields) {
+		if slices.Contains(AudioKeys, key) {
+			continue
+		}
+		if near := nearestKey(key, AudioKeys); near != "" {
+			problems = append(problems, fmt.Sprintf("audio: %q: unknown key (did you mean %q?)", key, near))
+			continue
+		}
+		ignored = append(ignored, "audio."+key)
+	}
+	if !decodes(fields["model"], kindString) {
+		problems = append(problems, "audio.model: needs a string")
+	}
+	return problems, ignored
 }
 
 func serverProblems(raw json.RawMessage) (problems, ignored []string) {

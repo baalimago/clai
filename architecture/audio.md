@@ -89,6 +89,14 @@ internal/cli:Run()
 Precedence is the standard cascade: flags > file > defaults (see
 [`config.md`](./config.md)).
 
+An agent run reads one more source above the file: the profile it runs. A
+text command's profile may carry `"audio": {"model": "diarize"}`, which sets
+the model its `audio_transcribe` calls use for that run; `-am` overrides the
+profile. The profile key is the model only: the format stays the tool call's
+choice or `-af`, and a profile does not dictate presentation. The value is
+what `-am` takes: a model the tool can route, not an alias verb, because the
+tool path routes the name itself and never reads `model-aliases`.
+
 ## Vendor Routing
 
 `audio.CreateQuerier()` in `internal/audio/create_querier.go` routes explicitly:
@@ -378,7 +386,9 @@ the tool for the run with `-am`/`-af`, which
 `audio.SetTranscribeOverrides` layers on top (model overrides the file;
 format overrides the tool call's own `output_format`, since an explicit
 user choice outranks the model's per-call pick). An invalid `-af` fails at
-setup, not mid-conversation. Without the flags the tool keeps using the
+setup, not mid-conversation. A profile's `audio.model` reaches the same
+global, resolved before the flags are re-applied (`text.ApplyProfileOverrides`),
+so `-am` wins. Without a flag or a profile key the tool keeps using the
 config file and its per-call format.
 
 ## Example
@@ -389,6 +399,8 @@ clai a t meeting.wav | clai -p meetingnotes q "File these meeting notes: {}"
 clai -t "*" q "Transcribe meeting.wav and file the meeting notes"
 # picking the transcription model the tool uses for this run:
 clai -am gpt-4o-transcribe-diarize -af json -t audio_transcribe q "Summarize meeting.wav"
+# or pinning it in a profile, for every run of that agent:
+clai -p meeting -t audio_transcribe q "Transcribe today's meeting"
 ```
 
 ## Capture: `audio_sources` and `audio_record`

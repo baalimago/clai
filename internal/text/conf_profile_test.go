@@ -460,3 +460,30 @@ func TestConfigurations_ProfileOverrides_FetchedProfileIsNamedByItsTarget(t *tes
 		})
 	}
 }
+
+// A profile may pin the model the audio_transcribe tool uses for its runs.
+func TestConfigurations_ProfileOverrides_AudioModel(t *testing.T) {
+	t.Setenv("CLAI_CONFIG_DIR", t.TempDir())
+	for _, tc := range []struct {
+		name, body, want string
+	}{
+		{"the profile's audio model is carried to the run", `{"audio":{"model":"diarize"}}`, "diarize"},
+		{"an omitted audio block sets nothing", `{"model":"m"}`, ""},
+		{"an empty audio block sets nothing", `{"audio":{}}`, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "p.json")
+			if err := os.WriteFile(path, []byte(tc.body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			conf := Default
+			conf.ProfilePath = path
+			if err := conf.ProfileOverrides(); err != nil {
+				t.Fatal(err)
+			}
+			if conf.AudioModel != tc.want {
+				t.Fatalf("AudioModel = %q, want %q", conf.AudioModel, tc.want)
+			}
+		})
+	}
+}
