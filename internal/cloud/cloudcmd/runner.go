@@ -363,9 +363,9 @@ func (r *runner) pull(ctx context.Context, args []string, theirs, mine, raw bool
 // the answer is one of the choices.
 func (r *runner) chooseFirst(store sync.Store, f sync.FirstPull, in *bufio.Reader) (sync.Mode, error) {
 	r.lines(firstPullLines(store, f, r.style()))
-	r.lines(firstPullChoices(store, len(f.Differ), r.style()))
+	r.lines(firstPullChoices(len(f.Differ), r.style()))
 	for {
-		r.printf("  Keep [a/h/d/q]: ")
+		r.printf("  Keep [l/r/p/q]: ")
 		line, err := in.ReadString('\n')
 		if err != nil && line == "" {
 			// Nobody answered, as with no terminal at all.
@@ -378,7 +378,7 @@ func (r *runner) chooseFirst(store sync.Store, f sync.FirstPull, in *bufio.Reade
 		case ok:
 			return choice.mode, nil
 		}
-		r.printf("  %s\n", r.style().Secondary("answer a, h, d or q"))
+		r.printf("  %s\n", r.style().Secondary("answer l, r, p or q"))
 	}
 }
 

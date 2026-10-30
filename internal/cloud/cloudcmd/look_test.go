@@ -24,12 +24,12 @@ func TestFirstPullLines_nameEachChoiceByWhatItKeeps(t *testing.T) {
 		"  = 8 the same               nothing to do",
 		"  ≠ 1 differs                profiles/x.json",
 	)
-	wantLines(t, firstPullChoices(sync.StoreConfig, 1, style{}),
+	wantLines(t, firstPullChoices(1, style{}),
 		"  Keep which copy of the 1 file that differs?",
-		"  [a] your account's   this machine's goes to cloud/trash/ for 30 days   same as pull -theirs",
-		"  [h] this machine's   commit it later to share it                       same as pull -mine",
-		"  [d] decide later     each file becomes a conflict to resolve",
-		"  [q] quit             nothing is pulled",
+		"  [l]ocal      this machine's copy stays, to commit and share it",
+		"  [r]emote     your account's copy wins; this machine's goes to cloud/trash/ for 30 days",
+		"  [p]ostpone   each file becomes a conflict to resolve later",
+		"  [q]uit       nothing is pulled",
 	)
 	wantLines(t, firstPullFlags(sync.StoreConfig, style{}),
 		"  → clai cloud pull config -theirs   keep your account's copies",
@@ -42,7 +42,7 @@ func TestFirstPullLines_nameEachChoiceByWhatItKeeps(t *testing.T) {
 }
 
 func TestChoice_takesTheLetterOrTheWord(t *testing.T) {
-	for in, want := range map[string]sync.Mode{"a": sync.ModeTheirs, "Account": sync.ModeTheirs, "h": sync.ModeMine, "here": sync.ModeMine, "d": sync.ModeConflicts, " later ": sync.ModeConflicts} {
+	for in, want := range map[string]sync.Mode{"l": sync.ModeMine, "Local": sync.ModeMine, "r": sync.ModeTheirs, "remote": sync.ModeTheirs, "p": sync.ModeConflicts, " postpone ": sync.ModeConflicts} {
 		if got, ok := parseChoice(in); !ok || got.quit || got.mode != want {
 			t.Errorf("%q = %+v %v, want %q", in, got, ok, want)
 		}
@@ -52,7 +52,7 @@ func TestChoice_takesTheLetterOrTheWord(t *testing.T) {
 			t.Errorf("%q = %+v %v, want quit", in, got, ok)
 		}
 	}
-	for _, in := range []string{"", "t", "x"} {
+	for _, in := range []string{"", "a", "h", "d", "x"} {
 		if _, ok := parseChoice(in); ok {
 			t.Errorf("%q was taken as a choice", in)
 		}

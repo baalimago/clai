@@ -37,14 +37,15 @@ func firstPullLines(store sync.Store, f sync.FirstPull, s style) []string {
 }
 
 // firstPullChoices is the question for the files that differ; each answer
-// is named by what it keeps, and its letter is that word's first.
-func firstPullChoices(store sync.Store, differ int, s style) []string {
+// is keyed by the first letter of the side it keeps, inside the word, as
+// the chat list writes its keys.
+func firstPullChoices(differ int, s style) []string {
 	lines := []string{"  Keep which copy of the " + count(differ) + " " + plural(differ, "file that differs?", "files that differ?")}
 	return append(lines, look.Grid("  ", [][]string{
-		{"[a] your account's", "this machine's goes to cloud/trash/ for 30 days", "same as pull -theirs"},
-		{"[h] this machine's", "commit it later to share it", "same as pull -mine"},
-		{"[d] decide later", "each file becomes a conflict to resolve"},
-		{"[q] quit", "nothing is pulled"},
+		{"[l]ocal", "this machine's copy stays, to commit and share it"},
+		{"[r]emote", "your account's copy wins; this machine's goes to cloud/trash/ for 30 days"},
+		{"[p]ostpone", "each file becomes a conflict to resolve later"},
+		{"[q]uit", "nothing is pulled"},
 	}, s)...)
 }
 
@@ -63,11 +64,11 @@ type choice struct {
 
 func parseChoice(in string) (choice, bool) {
 	switch strings.ToLower(strings.TrimSpace(in)) {
-	case "a", "account":
-		return choice{mode: sync.ModeTheirs}, true
-	case "h", "here":
+	case "l", "local":
 		return choice{mode: sync.ModeMine}, true
-	case "d", "decide", "later":
+	case "r", "remote":
+		return choice{mode: sync.ModeTheirs}, true
+	case "p", "postpone":
 		return choice{mode: sync.ModeConflicts}, true
 	case "q", "quit":
 		return choice{quit: true}, true

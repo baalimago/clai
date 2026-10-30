@@ -18,12 +18,12 @@ func firstPullHarness(t *testing.T) *harness {
 
 func TestFirstPull_unknownAnswerAsksAgain(t *testing.T) {
 	h := firstPullHarness(t)
-	h.in = "yes\n\na\n"
+	h.in = "yes\n\nr\n"
 	code, out := h.run("pull", "config")
 	if code != 0 || h.read("profiles/x.json") != "theirs" {
 		t.Fatalf("code %d, file %q:\n%s", code, h.read("profiles/x.json"), out)
 	}
-	if n := strings.Count(out, "Keep [a/h/d/q]"); n != 3 {
+	if n := strings.Count(out, "Keep [l/r/p/q]"); n != 3 {
 		t.Fatalf("asked %d times, want 3:\n%s", n, out)
 	}
 }

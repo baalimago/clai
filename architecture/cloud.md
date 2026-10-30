@@ -88,9 +88,10 @@ log      GET stores/<s>/log?limit=
   that exist here and on the account with different bytes and no recorded
   base are the first pull's question: take the account's (`-theirs`), keep
   this machine's (`-mine`), or treat each as a conflict. On a terminal the
-  command asks, each answer named by what it keeps and keyed by that word's
-  first letter: `[a]` your account's, `[h]` this machine's, `[d]` decide
-  later, `[q]` quit. Another answer asks again; `q` stops the whole pull
+  command asks with the keys inside their words, as the chat list writes
+  them: `[l]ocal` keeps this machine's copy, `[r]emote` takes the
+  account's, `[p]ostpone` leaves each file a conflict, `[q]uit` stops.
+  Another answer asks again; `q` stops the whole pull
   with nothing changed and exit 4, since the question is still open.
   Without a terminal on stdin (a real one: `/dev/null` is a character
   device but not a terminal, `isTerminal` in `cloudcmd/term_*.go`) it

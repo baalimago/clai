@@ -335,14 +335,14 @@ func TestPull_firstPull(t *testing.T) {
 		}
 	})
 	t.Run("terminal answers", func(t *testing.T) {
-		for answer, want := range map[string]string{"h\n": "mine", "a\n": "theirs", "d\n": "mine"} {
+		for answer, want := range map[string]string{"l\n": "mine", "r\n": "theirs", "p\n": "mine"} {
 			h := setup(t)
 			h.tty, h.in = true, answer
 			code, out := h.run("pull", "config")
 			if h.read("profiles/x.json") != want {
 				t.Fatalf("%q: file %q, %d %s", answer, h.read("profiles/x.json"), code, out)
 			}
-			mustContain(t, out, "[a] your account's", "Keep [a/h/d/q]")
+			mustContain(t, out, "[l]ocal", "Keep [l/r/p/q]")
 		}
 	})
 	t.Run("terminal quits", func(t *testing.T) {
