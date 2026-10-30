@@ -19,6 +19,7 @@ type Segment = generic.Segment
 
 // Parser re-exports keep this package's historical API surface.
 var (
+	ParseJSON         = generic.ParseJSON
 	ParseVerboseJSON  = generic.ParseVerboseJSON
 	ParseDiarizedJSON = generic.ParseDiarizedJSON
 )

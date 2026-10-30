@@ -92,13 +92,61 @@ func (s *Splitter) Transcribe(ctx context.Context, filePath string) ([]Segment, 
 	if maxBytes <= 0 {
 		maxBytes = MaxRequestBytes
 	}
+	durationCap := s.durationCap()
 	if info.Size() <= maxBytes {
-		return s.Transcriber.Transcribe(ctx, filePath)
+		route, err := s.routeSubCap(ctx, filePath, durationCap)
+		if err != nil {
+			return nil, err
+		}
+		if route == routeDirect {
+			return s.Transcriber.Transcribe(ctx, filePath)
+		}
+		return s.splitTranscribeStitch(ctx, filePath, info.Size(), maxBytes, durationCap)
 	}
 	if strings.Contains(s.Model, "diarize") {
 		return s.calibrate(ctx, filePath, info.Size(), maxBytes)
 	}
-	return s.splitTranscribeStitch(ctx, filePath, info.Size(), maxBytes)
+	return s.splitTranscribeStitch(ctx, filePath, info.Size(), maxBytes, durationCap)
+}
+
+// subCapRoute is how a file under the byte cap reaches the vendor.
+type subCapRoute int
+
+const (
+	routeDirect subCapRoute = iota
+	routeDurationSplit
+)
+
+// durationCap is the per-request audio cap the negotiated format implies;
+// zero means the endpoint caps bytes only (verbose_json, diarized_json).
+func (s *Splitter) durationCap() time.Duration {
+	f, ok := s.Transcriber.(interface{ RequestFormat() generic.ResponseFormat })
+	if !ok || f.RequestFormat() != generic.ResponseFormatJSON {
+		return 0
+	}
+	if s.Budgets.MaxRequestDuration > 0 {
+		return s.Budgets.MaxRequestDuration
+	}
+	return time.Duration(Default.Transcribe.MaxRequestSeconds) * time.Second
+}
+
+// routeSubCap probes a capped model's input when ffprobe is available;
+// without it the file is posted whole and the vendor's own cap answers.
+func (s *Splitter) routeSubCap(ctx context.Context, filePath string, durationCap time.Duration) (subCapRoute, error) {
+	if durationCap == 0 {
+		return routeDirect, nil
+	}
+	if _, err := s.Runner.LookPath(ffprobeBin); err != nil {
+		return routeDirect, nil
+	}
+	duration, err := s.probeDuration(ctx, filePath)
+	if err != nil {
+		return routeDirect, err
+	}
+	if duration > durationCap.Seconds() {
+		return routeDurationSplit, nil
+	}
+	return routeDirect, nil
 }
 
 // calibrate routes an oversized diarized file through the coordinator.
@@ -148,7 +196,7 @@ func (s *Splitter) requireBinaries(filePath string, maxBytes int64) error {
 	return nil
 }
 
-func (s *Splitter) splitTranscribeStitch(ctx context.Context, filePath string, size, maxBytes int64) ([]Segment, error) {
+func (s *Splitter) splitTranscribeStitch(ctx context.Context, filePath string, size, maxBytes int64, durationCap time.Duration) ([]Segment, error) {
 	if err := s.requireBinaries(filePath, maxBytes); err != nil {
 		return nil, err
 	}
@@ -158,6 +206,13 @@ func (s *Splitter) splitTranscribeStitch(ctx context.Context, filePath string, s
 	}
 	targetChunkBytes := int64(float64(maxBytes) * nonDiarizedChunkRatio)
 	numChunks := int(math.Ceil(float64(size) / float64(targetChunkBytes)))
+	reason := fmt.Sprintf("%.1f MB > %.0f MB limit", toMB(size), toMB(maxBytes))
+	if durationCap > 0 {
+		if byDuration := int(math.Ceil(duration / durationCap.Seconds())); byDuration > numChunks {
+			numChunks = byDuration
+			reason = fmt.Sprintf("%.0f s > %.0f s per-request cap", duration, durationCap.Seconds())
+		}
+	}
 	segmentTime := duration / float64(numChunks)
 	tempDir, err := os.MkdirTemp("", "clai-audio-split-*")
 	if err != nil {
@@ -172,8 +227,8 @@ func (s *Splitter) splitTranscribeStitch(ctx context.Context, filePath string, s
 	for i := range chunks {
 		spans[i] = SourceInterval{Start: time.Duration(float64(i) * segmentTime * float64(time.Second)), End: time.Duration(float64(i+1) * segmentTime * float64(time.Second))}
 	}
-	b := newProgressBoard(s.StatusOut, utils.IsTerminalWriter(s.StatusOut), fmt.Sprintf("splitting via ffmpeg  %v  %.1f MB > %.0f MB limit  %v chunks × %.1f min  %v workers",
-		filepath.Base(filePath), toMB(size), toMB(maxBytes), numChunks, segmentTime/60, s.workers()), spans)
+	b := newProgressBoard(s.StatusOut, utils.IsTerminalWriter(s.StatusOut), fmt.Sprintf("splitting via ffmpeg  %v  %v  %v chunks × %.1f min  %v workers",
+		filepath.Base(filePath), reason, numChunks, segmentTime/60, s.workers()), spans)
 	s.verifyChunkOffsets(ctx, chunks, segmentTime, b)
 	return s.transcribePool(ctx, chunks, segmentTime, b)
 }
@@ -305,7 +360,15 @@ func (s *Splitter) transcribePool(ctx context.Context, chunks []string, segmentT
 				cancel()
 				return
 			}
-			results[i] = Offset(segs, generic.SecondsToDuration(float64(i)*segmentTime))
+			segs = Offset(segs, generic.SecondsToDuration(float64(i)*segmentTime))
+			// A billed duration is rounded up to whole seconds; keep cues inside the window
+			windowEnd := generic.SecondsToDuration(float64(i+1) * segmentTime)
+			for j := range segs {
+				if segs[j].End > windowEnd {
+					segs[j].End = windowEnd
+				}
+			}
+			results[i] = segs
 			b.Update(i, func(r *board.Row) {
 				r.Active, r.Elapsed, r.Cells[colState] = false, time.Since(r.Started), fmt.Sprintf("transcribed · %v segments", len(segs))
 				if r.Mark != board.MarkWarn {

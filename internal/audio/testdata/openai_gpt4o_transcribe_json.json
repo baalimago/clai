@@ -1,0 +1,1 @@
+{"text":"Hello there! This is a short test of the transcription model. The quick brown fox jumps over the lazy dog. Thank you for listening.","usage":{"type":"tokens","total_tokens":124,"input_tokens":94,"input_token_details":{"text_tokens":0,"audio_tokens":94},"output_tokens":30}}

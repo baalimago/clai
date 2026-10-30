@@ -17,9 +17,16 @@ import (
 	"github.com/baalimago/clai/internal/debugflags"
 )
 
+// ResponseFormat is the JSON shape requested from the endpoint; text/srt/vtt are rendered locally.
+type ResponseFormat string
+
 const (
-	formatVerboseJSON  = "verbose_json"
-	formatDiarizedJSON = "diarized_json"
+	// ResponseFormatJSON is text only, no timestamps: the transcript is one segment
+	ResponseFormatJSON ResponseFormat = "json"
+	// ResponseFormatVerboseJSON carries timestamped segments
+	ResponseFormatVerboseJSON ResponseFormat = "verbose_json"
+	// ResponseFormatDiarizedJSON adds speaker labels to the segments
+	ResponseFormatDiarizedJSON ResponseFormat = "diarized_json"
 )
 
 type Transcriber struct {
@@ -27,8 +34,10 @@ type Transcriber struct {
 	URL          string
 	ExtraHeaders map[string]string
 	Client       *http.Client
-	apiKey       string
-	debug        bool
+	// Format is the vendor-negotiated response format; empty uses the model-name rule
+	Format ResponseFormat
+	apiKey string
+	debug  bool
 }
 
 func (t *Transcriber) Setup(apiKeyEnv, url, debugEnv string) error {
@@ -47,13 +56,27 @@ func (t *Transcriber) Setup(apiKeyEnv, url, debugEnv string) error {
 	return nil
 }
 
-// responseFormat implements the negotiation rule: always the richest machine
-// format the endpoint supports, never text/srt/vtt (rendered locally).
-func (t *Transcriber) responseFormat() string {
-	if strings.Contains(t.Model, "diarize") {
-		return formatDiarizedJSON
+func (t *Transcriber) responseFormat() ResponseFormat {
+	if t.Format != "" {
+		return t.Format
 	}
-	return formatVerboseJSON
+	if strings.Contains(t.Model, "diarize") {
+		return ResponseFormatDiarizedJSON
+	}
+	return ResponseFormatVerboseJSON
+}
+
+func parserFor(format ResponseFormat) (func([]byte) ([]Segment, error), error) {
+	switch format {
+	case ResponseFormatJSON:
+		return ParseJSON, nil
+	case ResponseFormatVerboseJSON:
+		return ParseVerboseJSON, nil
+	case ResponseFormatDiarizedJSON:
+		return ParseDiarizedJSON, nil
+	default:
+		return nil, fmt.Errorf("unsupported transcription response format: %q, supported: %v, %v, %v", format, ResponseFormatJSON, ResponseFormatVerboseJSON, ResponseFormatDiarizedJSON)
+	}
 }
 
 func (t *Transcriber) Transcribe(ctx context.Context, filePath string) ([]Segment, error) {
@@ -63,17 +86,18 @@ func (t *Transcriber) Transcribe(ctx context.Context, filePath string) ([]Segmen
 	}
 	defer file.Close()
 	respFormat := t.responseFormat()
+	parse, err := parserFor(respFormat)
+	if err != nil {
+		return nil, err
+	}
 	body, err := t.post(ctx, file, respFormat)
 	if err != nil {
 		return nil, err
 	}
-	if respFormat == formatDiarizedJSON {
-		return ParseDiarizedJSON(body)
-	}
-	return ParseVerboseJSON(body)
+	return parse(body)
 }
 
-func (t *Transcriber) post(ctx context.Context, file *os.File, respFormat string) ([]byte, error) {
+func (t *Transcriber) post(ctx context.Context, file *os.File, respFormat ResponseFormat) ([]byte, error) {
 	// Pipe streams the file part to the request without buffering it in memory
 	pipeReader, pipeWriter := io.Pipe()
 	multipartWriter := multipart.NewWriter(pipeWriter)
@@ -120,7 +144,7 @@ func (t *Transcriber) post(ctx context.Context, file *os.File, respFormat string
 	return body, nil
 }
 
-func writeMultipart(w *multipart.Writer, file *os.File, model, respFormat string) error {
+func writeMultipart(w *multipart.Writer, file *os.File, model string, respFormat ResponseFormat) error {
 	part, err := w.CreateFormFile("file", filepath.Base(file.Name()))
 	if err != nil {
 		return fmt.Errorf("failed to create file part: %w", err)
@@ -131,11 +155,11 @@ func writeMultipart(w *multipart.Writer, file *os.File, model, respFormat string
 	if err := w.WriteField("model", model); err != nil {
 		return fmt.Errorf("failed to write model field: %w", err)
 	}
-	if err := w.WriteField("response_format", respFormat); err != nil {
+	if err := w.WriteField("response_format", string(respFormat)); err != nil {
 		return fmt.Errorf("failed to write response_format field: %w", err)
 	}
 	// OpenAI requires chunking_strategy for diarization models (400 without it)
-	if respFormat == formatDiarizedJSON {
+	if respFormat == ResponseFormatDiarizedJSON {
 		if err := w.WriteField("chunking_strategy", "auto"); err != nil {
 			return fmt.Errorf("failed to write chunking_strategy field: %w", err)
 		}
@@ -152,3 +176,7 @@ func truncate(b []byte, limit int) string {
 
 // Endpoint reports the request URL; the calibration cache keys on it.
 func (t *Transcriber) Endpoint() string { return t.URL }
+
+// RequestFormat reports the format every request asks for; the splitter
+// derives the per-request duration cap from it.
+func (t *Transcriber) RequestFormat() ResponseFormat { return t.responseFormat() }

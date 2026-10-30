@@ -58,6 +58,41 @@ func ParseVerboseJSON(data []byte) ([]Segment, error) {
 	return parsePayload(data, "verbose_json")
 }
 
+type wireUsage struct {
+	Type    string  `json:"type"`
+	Seconds float64 `json:"seconds"`
+}
+
+type wireTextPayload struct {
+	// Pointer distinguishes a missing text field from an empty transcript
+	Text  *string   `json:"text"`
+	Usage wireUsage `json:"usage"`
+}
+
+// ParseJSON normalizes a text-only json payload into one segment ending at
+// the billed duration when usage reports one, else at zero; empty text is silence.
+func ParseJSON(data []byte) ([]Segment, error) {
+	var payload wireTextPayload
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return nil, fmt.Errorf("failed to parse json payload: %w", err)
+	}
+	if payload.Text == nil {
+		return nil, fmt.Errorf("json payload has no text (field missing or null)")
+	}
+	text := strings.TrimSpace(*payload.Text)
+	if text == "" {
+		return []Segment{}, nil
+	}
+	var end time.Duration
+	if payload.Usage.Type == "duration" {
+		if payload.Usage.Seconds < 0 {
+			return nil, fmt.Errorf("json payload reports negative duration: %v", payload.Usage.Seconds)
+		}
+		end = SecondsToDuration(payload.Usage.Seconds)
+	}
+	return []Segment{{Start: 0, End: end, Text: text}}, nil
+}
+
 // ParseDiarizedJSON normalizes a gpt-4o-transcribe-diarize diarized_json payload.
 func ParseDiarizedJSON(data []byte) ([]Segment, error) {
 	return parsePayload(data, "diarized_json")

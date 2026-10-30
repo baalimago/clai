@@ -16,3 +16,11 @@ vendor documentation per the worklog fixture-provenance rule
   `gpt-4o-transcribe-diarize` `diarized_json` documentation
   (https://platform.openai.com/docs/api-reference/audio/createTranscription);
   labels `A`/`B` per the worklog README protocol survey (2026-08).
+- `openai_gpt_transcribe_json.json` — captured 2026-10-30 from a live
+  `POST /v1/audio/transcriptions` with model `gpt-transcribe` and
+  `response_format=json` on a 9.4 s synthesized clip. The family rejects
+  `verbose_json` and `diarized_json` with HTTP 400 `unsupported_value`
+  ("Use 'json' or 'text' instead."); `usage.type` is `duration`.
+- `openai_gpt4o_transcribe_json.json` — captured 2026-10-30 from the same
+  clip with model `gpt-4o-transcribe` and `response_format=json`; same
+  `text`-only shape but `usage.type` is `tokens`, so no duration is known.

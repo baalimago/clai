@@ -110,10 +110,40 @@ tool path routes the name itself and never reads `model-aliases`.
 ## Response-Format Negotiation
 
 The vendor request always asks for the richest machine format the endpoint
-supports: `diarized_json` when the model name contains `diarize`, else
-`verbose_json`. `text`/`srt`/`vtt` are never requested from a vendor
-(OpenRouter rejects them); those are local renderings from the shared
-`Segment` model. Speaker labels render as WebVTT voice tags (`<v A>`), SRT/text
+supports. The vendor package knows its model families and sets a typed
+`generic.ResponseFormat` on the client (`openai.ResponseFormatFor`):
+
+| Model (OpenAI)                                        | Requested format | Payload                                   |
+| ----------------------------------------------------- | ---------------- | ----------------------------------------- |
+| contains `diarize` (`gpt-4o-transcribe-diarize`)      | `diarized_json`  | timestamped segments with speaker labels  |
+| contains `whisper` (`whisper-1`)                      | `verbose_json`   | timestamped segments                      |
+| anything else (`gpt-transcribe`, `gpt-4o-transcribe`, `gpt-4o-mini-transcribe`, dated snapshots) | `json` | `text` only, plus `usage` |
+
+The `gpt-transcribe` family rejects `verbose_json` and `diarized_json` with
+HTTP 400 `unsupported_value` (measured 2026-10-30, fixtures in
+`internal/audio/testdata/`). Its `json` payload carries no timestamps, so
+`generic.ParseJSON` yields one segment per request: start at zero, end at
+the billed duration when `usage.type` is `duration` (`gpt-transcribe`), else
+zero (`gpt-4o-transcribe` bills tokens). An empty `text` is silence and
+yields no segment. The plain split path offsets each chunk's segment by its
+window start and clamps its end to the window, because the billed seconds are
+rounded up and would otherwise overlap the next chunk by under a second. A
+vendor that sets no format falls back to the model-name rule (`diarize` →
+`diarized_json`, else `verbose_json`), which is what OpenRouter relies on.
+
+The `json` format also implies a per-request audio-duration cap. Measured
+2026-10-30 against `gpt-transcribe` with files under the byte cap: 1713 s and
+2998 s succeeded, 5139 s returned HTTP 400 `invalid_value` "Audio file might
+be corrupted or unsupported" while `whisper-1` accepted the same file. The
+`Splitter` therefore asks the vendor client for its `RequestFormat()` and, for
+`json`, probes a sub-byte-cap file with `ffprobe` and splits it when it runs
+longer than `max-request-seconds` (default 1400 s, the budget the diarize
+spike measured; the config field is shared). An oversized `json` file is
+chunked by the tighter of the byte and duration budgets. Without `ffprobe` on
+PATH a short file is posted whole and a long one surfaces the vendor's error;
+`whisper-1` is never probed, as it has no duration cap. `text`/`srt`/`vtt` are
+never requested from a vendor (OpenRouter rejects them); those are local
+renderings from the shared `Segment` model. Speaker labels render as WebVTT voice tags (`<v A>`), SRT/text
 `A: ` prefixes, and a `speaker` field in `json` output (float-second
 timestamps). JSON output is indented with one segment object per block and a
 trailing newline so large transcripts remain usable with `jq`, `head`, `tail`,
@@ -133,7 +163,9 @@ Files over 25 MB exceed the vendor request cap. The `Splitter`
 5. Warns that diarization labels are request-local and can drift across chunks.
 
 This plain path applies to non-diarized models only. Diarize models take
-the calibration path below, which reconciles speakers across requests.
+the calibration path below, which reconciles speakers across requests. For
+`json`-format models the same path also handles files under the byte cap
+that exceed `max-request-seconds` (see Response-Format Negotiation).
 
 ## Adaptive Speaker Calibration
 

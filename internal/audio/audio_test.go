@@ -71,6 +71,7 @@ func TestParse_MalformedJSON(t *testing.T) {
 		wantInErr string
 	}{
 		{"verbose", ParseVerboseJSON, "verbose_json"},
+		{"json", ParseJSON, "json payload"},
 		{"diarized", ParseDiarizedJSON, "diarized_json"},
 	}
 	for _, tc := range testCases {
