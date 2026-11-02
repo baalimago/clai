@@ -9,3 +9,5 @@ require (
 )
 
 require golang.org/x/text v0.28.0
+
+replace github.com/baalimago/go_away_boilerplate => ../go_away_boilerplate
