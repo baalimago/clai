@@ -74,6 +74,9 @@ type QueryCommandDeps struct {
 	// directory is made, "" being the OS default.
 	RunTallyEnv      runtally.Env
 	RunTallyTempRoot string
+	// StepRetry resends a model request that failed before its stream opened;
+	// the zero value makes one request.
+	StepRetry StepRetry
 }
 
 // QueryCommand builds the query command. With -l the same composition wraps
@@ -247,6 +250,7 @@ func newTextSession(ctx context.Context, c *internal.Command, tf internal.TextFl
 func buildTextRun(ctx context.Context, confDir string, tConf *Configurations, model string, tf internal.TextFlags, lf internal.LoopFlags, deps QueryCommandDeps, summarizer models.Summarizer, tally *runtally.Scope) (models.Querier, error) {
 	conf := *tConf
 	conf.Model = model
+	conf.StepRetry = deps.StepRetry
 	conf.InitialChat.Messages = slices.Clone(tConf.InitialChat.Messages)
 	conf.InitialChat.Queries = slices.Clone(tConf.InitialChat.Queries)
 	conf.BaseTools = maps.Clone(tConf.BaseTools)

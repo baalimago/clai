@@ -32,8 +32,9 @@ const (
 )
 
 type Querier[C models.StreamCompleter] struct {
-	Raw    bool
-	errOut io.Writer
+	Raw       bool
+	errOut    io.Writer
+	stepRetry StepRetry
 	// transcriptToStderr is -reply-only: see SendTranscriptToStderr.
 	transcriptToStderr bool
 	// replyOut is the redirected stdout while the session draws on a

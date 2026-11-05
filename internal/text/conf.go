@@ -100,6 +100,9 @@ type Configurations struct {
 	// routes them to its own trace (worklog
 	// 2026-09-09-conversation-summaries, R2-03).
 	CostWarnf func(format string, a ...any) `json:"-"`
+	// StepRetry resends a model request that failed before its stream opened.
+	// The zero value makes one request: the summarizer has its own model ladder.
+	StepRetry StepRetry `json:"-"`
 	// ErrOut replaces the process stderr for the querier's MCP log sink; nil
 	// keeps os.Stderr. A querier that may outlive its caller (the abandoned
 	// in-flight summarizer) must never read the global stream (R2-09).

@@ -13,6 +13,7 @@ import (
 
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/text/generic"
+	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -392,4 +393,28 @@ func (errReader) Read([]byte) (int, error) { return 0, errors.New("read boom") }
 
 func formatWith(questions map[string]any) *generic.ResponseFormat {
 	return &generic.ResponseFormat{Type: "json_schema", JSONSchema: &generic.JSONSchemaSpec{Schema: questions}}
+}
+
+func TestStreamCompletionsTypesAConnectionFailure(t *testing.T) {
+	t.Setenv("TYPESAFE_API_KEY", "secret")
+	server := httptest.NewServer(http.NotFoundHandler())
+	url := server.URL + "/v1/systemone"
+	server.Close()
+
+	v := Default
+	if err := v.Setup(); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	v.URL = url
+	var format generic.ResponseFormat
+	if err := json.Unmarshal([]byte(QuestionsFormatExample), &format); err != nil {
+		t.Fatalf("decode format: %v", err)
+	}
+	v.SetResponseFormat(&format)
+
+	_, err := v.StreamCompletions(context.Background(), pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "hi"}}})
+
+	if !errors.Is(err, claierr.ErrTransport) {
+		t.Fatalf("err = %v, want ErrTransport", err)
+	}
 }

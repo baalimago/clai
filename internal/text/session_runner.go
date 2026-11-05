@@ -113,7 +113,6 @@ func (r *sessionRunner[C]) Run(ctx context.Context, session *QuerySession) (runE
 	}
 
 	for stepIndex := 0; ; {
-		stepStartedAt := time.Now()
 		stepResult, err := r.executeModelStep(ctx, session)
 		if err != nil {
 			if (session.PendingTextString() != "" && session.FinalAssistantText == "") || session.hasStepImages() {
@@ -134,7 +133,7 @@ func (r *sessionRunner[C]) Run(ctx context.Context, session *QuerySession) (runE
 		completedCall := CompletedModelCall{
 			StepIndex:      stepIndex,
 			Model:          r.modelName(),
-			StartedAt:      stepStartedAt,
+			StartedAt:      session.requestStartedAt,
 			FinishedAt:     time.Now(),
 			Usage:          stepResult.Usage,
 			EndedWithTool:  len(stepResult.ToolCalls) > 0,
@@ -197,7 +196,7 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 	if err != nil {
 		return ModelStepResult{}, err
 	}
-	completionsChan, err := q.Model.StreamCompletions(ctx, chatForModel)
+	completionsChan, err := q.streamWithRetry(ctx, session, chatForModel)
 	if err != nil {
 		return ModelStepResult{}, fmt.Errorf("stream completions: %w", err)
 	}

@@ -11,6 +11,7 @@ type QuerySession struct {
 	Chat               pub_models.Chat
 	StartedAt          time.Time
 	FinishedAt         time.Time
+	requestStartedAt   time.Time
 	PendingText        strings.Builder
 	PendingReasoning   strings.Builder
 	FinalAssistantText string

@@ -132,6 +132,9 @@ failure is reported to the caller unchanged.
 `table` and returns the `models.Querier` to run. The mode supplies `build`: a
 function that composes its own complete run for one model.
 
+A text query answers a 5xx itself first ([Request Retry](./query.md#request-retry)),
+so this walk sees a failing provider only after that schedule is spent.
+
 The retry table for one attempt:
 
 | Failure | Next model tried? | Reason |

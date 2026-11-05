@@ -312,7 +312,7 @@ What the HTTP status alone suggests, therefore safe in the generic layer:
 | 402 | payment required | `ErrLikelyInsufficientCredits` |
 | 404 | route or model unknown | `ErrModelNotFound` |
 | 429 | throttled | `ErrRateLimited` |
-| 5xx | provider-side, retryable **by the caller** | `ErrProviderUnavailable` |
+| 5xx | provider-side, retried by a CLI text query ([Request Retry](./query.md#request-retry)), otherwise **by the caller** | `ErrProviderUnavailable` |
 
 The baseline is a fallback, not ground truth (xAI's 403-for-drained-account
 and 400-shaped model-not-found from some providers are cases where the

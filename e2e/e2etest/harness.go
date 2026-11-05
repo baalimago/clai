@@ -3,10 +3,12 @@
 package e2etest
 
 import (
+	"context"
 	"errors"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/baalimago/clai/internal/cli"
 	"github.com/baalimago/clai/internal/models"
@@ -23,8 +25,14 @@ type Harness struct {
 	Deps cli.Deps
 }
 
-// NewHarness starts from the production collaborators.
-func NewHarness() *Harness { return &Harness{Deps: cli.DefaultDeps()} }
+// NewHarness starts from the production collaborators. The retry schedule stays
+// production's; only its waiting is skipped, so a failing request cannot spend
+// the test gate's timeout.
+func NewHarness() *Harness {
+	deps := cli.DefaultDeps()
+	deps.StepRetry.Wait = func(context.Context, time.Duration) error { return nil }
+	return &Harness{Deps: deps}
+}
 
 func (h *Harness) Run(args []string) int { return cli.Run(args, h.Deps) }
 

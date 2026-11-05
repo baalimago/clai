@@ -13,6 +13,7 @@ import (
 
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/text/generic"
+	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -130,7 +131,7 @@ func (j *Jev) StreamCompletions(ctx context.Context, chat pub_models.Chat) (chan
 	// error, not a runtime condition.
 	resp, err := j.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("jev: send request: %w", err)
+		return nil, claierr.NewTransport(fmt.Errorf("jev: send request: %w", err))
 	}
 	body, readErr := io.ReadAll(io.LimitReader(resp.Body, 10<<20))
 	closeErr := resp.Body.Close()

@@ -187,7 +187,10 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	noFrontslashModelVersion := strings.ReplaceAll(modelVersion, "/", "_")
 	configPath := path.Join(claiConfDir, fmt.Sprintf("%v_%v_%v.json", vendor, model, noFrontslashModelVersion))
 	traceChatf("new querier model config path=%q", configPath)
-	querier := Querier[C]{}
+	if err := userConf.StepRetry.validate(); err != nil {
+		return Querier[C]{}, fmt.Errorf("new querier: %w", err)
+	}
+	querier := Querier[C]{stepRetry: userConf.StepRetry}
 	if debugflags.Enabled("TEXT_QUERIER") {
 		querier.debug = true
 	}

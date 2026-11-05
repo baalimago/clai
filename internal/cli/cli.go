@@ -101,6 +101,8 @@ type Deps struct {
 	// RemoteClient fetches -prp cchub:, gh: and https:// targets. Tests point
 	// it at a local TLS server.
 	RemoteClient remote.Doer
+	// StepRetry resends a model request that failed before its stream opened.
+	StepRetry text.StepRetry
 }
 
 // DefaultDeps returns the production collaborators: the real summarizer, the
@@ -111,6 +113,7 @@ func DefaultDeps() Deps {
 		ForeignCache:      chat.DefaultForeignCache,
 		NewImageGenerator: route.NewGenerator,
 		RemoteClient:      remote.NewClient(),
+		StepRetry:         text.DefaultStepRetry(),
 	}
 }
 
@@ -175,6 +178,7 @@ func commands(deps Deps, setExit func(int)) map[string]cmd.Command {
 		PhotoConfig:         setup.LoadPhotoConfig,
 		NewRemoteResolver:   remoteResolver(deps.RemoteClient),
 		RunTallyEnv:         runtally.OSEnv{},
+		StepRetry:           deps.StepRetry,
 	}
 	profileDeps := profiles.CommandDeps{
 		NewResolver:     profiles.NewResolverFunc(remoteResolver(deps.RemoteClient)),

@@ -352,6 +352,21 @@ constructor is `cli.Deps.NewImageGenerator`
   failed-run persist. A viewer that fails to
   open is one notice on stderr and never fails the turn.
 
+### Request Retry
+
+A model request that fails before its stream opens is sent again, so one provider failure does not end a long run. `Querier.streamWithRetry` (`internal/text/step_retry.go`) does this for `claierr.ErrProviderUnavailable` (any 5xx) and `claierr.ErrTransport` (the request got no answer).
+
+- The CLI waits 1s, 10s, 30s and 60s (`text.DefaultStepRetry`), then returns the last error: 5 requests and 101s of waiting, and each request adds its own time.
+- Each step gets the whole schedule. A failure in one step does not spend a later step's retries, so no limit spans a run.
+- The conversation continues where it is. A failed request changed nothing: tool results reach the chat only after a step answers, so no tool runs twice.
+- A failure inside an open stream is not retried, because text from it may be on the screen. A stalled stream has no timeout.
+- A cancelled request is never retried, and a cancel during a wait ends the run as a cancel, not as an unavailable model.
+- Each retry prints one best-effort line on stderr, or above the live frame on a terminal, and never on a redirected stdout: a `-reply-only` worker hands stdout to its lead. A failed print does not cost the retry.
+- Every connection failure is retried whatever its cause, so a fault that cannot heal, such as a malformed API key, also waits out the schedule. The notice names the cause.
+- `CompletedModelCall.StartedAt` is the request that answered, so waits do not count as model time.
+- `StepRetry` is a collaborator, not a setting: `cli.Deps` carries the schedule through `QueryCommandDeps`. Its zero value makes one request, which is what the summarizer and the `pkg` API get.
+- Retry runs before alias fallback: after a 5xx on a run that produced nothing, the next model is tried once the schedule is spent. A connection failure stays final there too ([model-aliases.md](./model-aliases.md)).
+
 ### Rate Limit Handling
 
 A rate limit surfaces as a typed, terminal error on the step: the runner returns it on the first call, unretried (`claierr.ErrRateLimited` via `errors.Is`, facts such as `ResetAt` via `errors.As`). clai itself never sleeps or retries a throttled call — retry policy belongs to the caller, which has the context to choose it (worklog `2026-09-05-error-propagation`, phase 3; [errors.md](./errors.md)). `InputTokenCounter` remains in use only for the token stoploss budget, not for backoff.

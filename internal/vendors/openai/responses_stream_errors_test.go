@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/baalimago/clai/internal/models"
+	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -343,7 +344,7 @@ func TestValidateResponsesHTTPResponse(t *testing.T) {
 	}
 	err := validateResponsesHTTPResponse(&http.Response{StatusCode: http.StatusInternalServerError, Body: respErrBody{errors.New("boom")}})
 	if err == nil {
-		t.Fatal("expected a transport error when the error body cannot be read")
+		t.Fatal("expected an error when the error body cannot be read")
 	}
 }
 
@@ -429,5 +430,27 @@ func TestNormalizeResponsesCallID(t *testing.T) {
 	got := normalizeResponsesCallID(string(long))
 	if len(got) != responsesMaxCallIDLength {
 		t.Fatalf("long id length = %d, want %d", len(got), responsesMaxCallIDLength)
+	}
+}
+
+// A provider's status is its answer, even when its error body is cut short: a
+// truncated 429 must stay a rate limit rather than read as a connection failure.
+func TestValidateResponsesHTTPResponse_TruncatedBodyKeepsTheStatus(t *testing.T) {
+	cases := map[int]error{
+		http.StatusTooManyRequests:    claierr.ErrRateLimited,
+		http.StatusUnauthorized:       claierr.ErrAuthFailed,
+		http.StatusServiceUnavailable: claierr.ErrProviderUnavailable,
+	}
+	for status, want := range cases {
+		err := validateResponsesHTTPResponse(&http.Response{StatusCode: status, Body: respErrBody{err: io.ErrUnexpectedEOF}})
+		if !errors.Is(err, want) {
+			t.Fatalf("status %d: err = %v, want %v", status, err, want)
+		}
+		if errors.Is(err, claierr.ErrTransport) {
+			t.Fatalf("status %d: err = %v reads as a connection failure", status, err)
+		}
+		if !errors.Is(err, io.ErrUnexpectedEOF) {
+			t.Fatalf("status %d: err = %v lost the read failure", status, err)
+		}
 	}
 }

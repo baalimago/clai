@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -223,14 +224,15 @@ func validateResponsesHTTPResponse(res *http.Response) error {
 	}
 	defer func() { _ = res.Body.Close() }()
 
-	body, err := io.ReadAll(res.Body)
-	if err != nil {
-		return claierr.NewTransport(err)
-	}
+	body, readErr := io.ReadAll(res.Body)
 	// The shared decode chain (worklog 2026-09-05-error-propagation, D11):
 	// the openai decoder speaks first, the status baseline covers the rest,
 	// and an unmapped status degrades typed — never a formatted string.
-	return generic.ResponseError(res.StatusCode, body, decodeError)
+	responseErr := generic.ResponseError(res.StatusCode, body, decodeError)
+	if readErr != nil {
+		return errors.Join(responseErr, fmt.Errorf("read provider error response body: %w", readErr))
+	}
+	return responseErr
 }
 
 func (s *responsesStreamer) readResponsesStream(ctx context.Context, body io.ReadCloser, out chan models.CompletionEvent) {
