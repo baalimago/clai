@@ -101,6 +101,116 @@ type Resolution struct {
 // on a cache hit; one that is not must connect to observe.
 func (r Resolution) Known() bool { return r.Kind != Unresolvable }
 
+// InstallNeed is the evidence-backed answer to "may connecting this command
+// line have to download packages before the server can answer?". It exists
+// because a connect bound sized for a handshake kills an honest download: the
+// two are the same wait from clai's side, and only local evidence tells them
+// apart.
+type InstallNeed uint8
+
+const (
+	// NoInstallNeeded means local evidence covers the content that will run.
+	NoInstallNeeded InstallNeed = iota
+	// NeedsInstall means clai holds no such evidence, so the first run
+	// downloads. It is the safe default for anything unmodelled.
+	NeedsInstall
+)
+
+// NeedsInstall reports whether a download may precede the server's answer.
+func (n InstallNeed) NeedsInstall() bool { return n == NeedsInstall }
+
+// InstallProbe is what ProbeInstall found: whether a connect may first have to
+// install its package, and the package's name when one is nameable.
+type InstallProbe struct {
+	Need   InstallNeed
+	Target string
+}
+
+// ProbeInstall reports whether connecting server may first download its
+// package, using only local evidence and starting nothing. A connect bound and
+// a startup status line are scaled from this: an evidenced command line is a
+// handshake, an unevidenced one may be a multi-minute download.
+func ProbeInstall(server pub_models.McpServer) InstallProbe {
+	if strings.TrimSpace(server.Command) == "" {
+		return InstallProbe{}
+	}
+	if !GenericLauncher(server.Command) {
+		return InstallProbe{}
+	}
+	if _, _, ok := ScriptArg(server.Args); ok {
+		return InstallProbe{}
+	}
+	base := filepath.Base(server.Command)
+	if base == "npx" {
+		return probeNpxInstall(server.Args)
+	}
+	probe := InstallProbe{Need: NeedsInstall}
+	if specFirstRunners[base] {
+		if spec, ok := firstPackageSpec(server.Args); ok {
+			probe.Target = displayName(spec)
+		}
+	}
+	return probe
+}
+
+// specFirstRunners name the package runners whose first non-flag argument is
+// the package they install, so a status line can name what is downloading.
+var specFirstRunners = map[string]bool{"npx": true, "bunx": true, "uvx": true}
+
+// displayName strips a spec's version selector and extras, leaving the package
+// name a status line can print: "@scope/pkg@1.0.2", "pkg==1.0.2" and
+// "pkg[extra]>=2" all name their package. It never guesses beyond what the
+// selector spells out, so an unreadable spec is printed as written.
+func displayName(spec string) string {
+	spec = strings.TrimSpace(spec)
+	from := 0
+	if strings.HasPrefix(spec, "@") {
+		from = 1
+	}
+	for _, sep := range []string{"[", "==", ">=", "<=", "~=", "!=", ">", "<", "=", "@"} {
+		if i := strings.Index(spec[from:], sep); i > 0 {
+			return strings.TrimSpace(spec[:from+i])
+		}
+	}
+	return spec
+}
+
+// firstPackageSpec extracts the package a spec-first runner installs.
+func firstPackageSpec(args []string) (string, bool) {
+	for _, arg := range args {
+		arg = strings.TrimSpace(arg)
+		if arg == "" || strings.HasPrefix(arg, "-") {
+			continue
+		}
+		if InstallableSpec(arg) {
+			return arg, true
+		}
+		return "", false
+	}
+	return "", false
+}
+
+// probeNpxInstall answers the npx half from npm's own install layout: a spec
+// whose install directory holds the requested package is already installed,
+// while a missing directory means npx downloads on this run. A pinned spec is
+// no exception: the pin is evidence about the config, never about the disk.
+func probeNpxInstall(args []string) InstallProbe {
+	if res := resolveNpx(args); res.Kind == Unpinned {
+		return InstallProbe{Target: res.Spec}
+	}
+	spec, ok := npxPackageSpec(args)
+	if !ok {
+		return InstallProbe{Need: NeedsInstall}
+	}
+	name := displayName(spec)
+	if dir := NpxInstallDir([]string{spec}, npmCacheRoot()); dir != "" && installDirNames(dir, name) {
+		if _, ok := installedManifest(dir, name); ok {
+			return InstallProbe{Target: name}
+		}
+	}
+	return InstallProbe{Need: NeedsInstall, Target: name}
+}
+
 // RequiresEagerConnect reports whether server's command line must be
 // connected during setup rather than deferred to its first tool call.
 //

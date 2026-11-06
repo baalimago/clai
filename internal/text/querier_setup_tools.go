@@ -327,7 +327,12 @@ func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configu
 				conn, connErr = mcp.NewHttpConn(clientContext, mcpServer, sink, opts...)
 			}
 		} else {
-			conn, connErr = mcp.NewStdioConn(clientContext, mcpServer, sink)
+			// The handshake bound and the connect bound are one wait from the
+			// reader's side, so an eager server is bounded by the same
+			// resolver the lazy paths use: a first-run install gets the
+			// install bound here too.
+			conn, connErr = mcp.NewStdioConn(clientContext, mcpServer, sink,
+				mcp.WithHandshakeBound(mcp.ConnectBoundOf(mcpServer)))
 		}
 		if connErr != nil {
 			// NewStdioConn and NewHttpConn already return a typed
@@ -345,6 +350,7 @@ func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configu
 			Conn:        conn,
 			Cancel:      clientContextCancel,
 			OnHandshake: mcpSchemaCapture(cache, mcpServer),
+			Sink:        sink,
 		}
 	}
 
@@ -493,6 +499,8 @@ func resolveLazyServerViaCache(ctx context.Context, cache *schemacache.Cache, se
 	if err != nil {
 		return err
 	}
+	connectDone := mcp.AnnounceConnect(sink, server)
+	defer connectDone()
 
 	// The connect-bound, not the connection-level handshake bound, wraps
 	// spawn plus handshake here: this is the cache-miss connect, the same
@@ -504,7 +512,7 @@ func resolveLazyServerViaCache(ctx context.Context, cache *schemacache.Cache, se
 	serverInfo, toolsArray, err := mcp.Handshake(connectCtx, conn, server.Name)
 	connectCancel()
 	if err != nil {
-		return mcp.ReportAsConnectStage(err, connectCtx, server.Name)
+		return mcp.ReportBoundExpiry(err, connectCtx, server)
 	}
 
 	registerConn := conn

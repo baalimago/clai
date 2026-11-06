@@ -5,7 +5,112 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/baalimago/clai/internal/board"
 )
+
+// Test_mcpStartupWindows_StatusRegistersASilentServer pins the case a hang
+// hides in: a runner that prints nothing before it stalls still gets a window,
+// so the wait is visible instead of silent.
+func Test_mcpStartupWindows_StatusRegistersASilentServer(t *testing.T) {
+	w := newMcpStartupWindows()
+	w.startStatus("ddg", "installing duckduckgo-mcp-server")
+
+	if len(w.order) != 1 || w.order[0] != "ddg" {
+		t.Fatalf("order = %v, want [ddg] after a status with no stderr", w.order)
+	}
+	var out bytes.Buffer
+	if err := w.render(&out, 120, 40); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	got := out.String()
+	for _, want := range []string{"mcp.ddg log", "installing duckduckgo-mcp-server", "0s"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("render output %q does not contain %q", got, want)
+		}
+	}
+}
+
+// Test_mcpStartupWindows_StatusRowFollowsItsLogLines pins the row's place: the
+// frame keeps the tail of the region when it outgrows the terminal, so the row
+// that says what is happening is drawn after the lines it explains.
+func Test_mcpStartupWindows_StatusRowFollowsItsLogLines(t *testing.T) {
+	w := newMcpStartupWindows()
+	w.appendLine("ddg", "Downloading cryptography (4.5MiB)", false)
+	w.startStatus("ddg", "installing duckduckgo-mcp-server")
+
+	var out bytes.Buffer
+	if err := w.render(&out, 120, 40); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	got := out.String()
+	if line, status := strings.Index(got, "Downloading cryptography"), strings.Index(got, "installing"); line < 0 || status < 0 || status < line {
+		t.Errorf("status row is not drawn under its log lines:\n%q", got)
+	}
+}
+
+// Test_mcpStartupWindows_AdvanceMovesSpinnerAndElapsed pins the live half: each
+// advance changes the glyph and the clock decides the elapsed text, so a long
+// install is readable as time passing.
+func Test_mcpStartupWindows_AdvanceMovesSpinnerAndElapsed(t *testing.T) {
+	w := newMcpStartupWindows()
+	start := time.Date(2026, 11, 5, 21, 0, 0, 0, time.UTC)
+	w.now = func() time.Time { return start }
+	w.startStatus("ddg", "installing pkg")
+
+	first := w.statusRow(w.status["ddg"])
+	w.advance()
+	w.now = func() time.Time { return start.Add(63 * time.Second) }
+	second := w.statusRow(w.status["ddg"])
+
+	if first == second {
+		t.Fatalf("row did not change: %q", first)
+	}
+	if !strings.Contains(second, "1m3s") {
+		t.Errorf("row = %q, want the elapsed wait", second)
+	}
+	if !strings.HasPrefix(second, board.SpinnerFrame(1)) {
+		t.Errorf("row = %q, want the next spinner frame", second)
+	}
+}
+
+// Test_mcpStartupWindows_FinishingASilentStatusRemovesItsBlock pins that a
+// connect which printed nothing leaves no bare header behind.
+func Test_mcpStartupWindows_FinishingASilentStatusRemovesItsBlock(t *testing.T) {
+	w := newMcpStartupWindows()
+	w.startStatus("ddg", "starting")
+	w.finishStatus("ddg")
+
+	var out bytes.Buffer
+	if err := w.render(&out, 120, 40); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	if got := out.String(); strings.Contains(got, "mcp.ddg") {
+		t.Errorf("render output = %q, want no block after the status retired", got)
+	}
+}
+
+// Test_mcpStartupWindows_StatusSurvivesFrameClipping pins that a region taller
+// than the terminal keeps the live row: clipping takes the tail of the frame,
+// and the last server's status row is the tail.
+func Test_mcpStartupWindows_StatusSurvivesFrameClipping(t *testing.T) {
+	w := newMcpStartupWindows()
+	for _, server := range []string{"a", "b", "c", "d"} {
+		for i := range 8 {
+			w.appendLine(server, fmt.Sprintf("%s line %d", server, i), false)
+		}
+	}
+	w.startStatus("d", "installing pkg")
+
+	var out bytes.Buffer
+	if err := w.render(&out, 120, 6); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, "installing pkg") {
+		t.Errorf("clipped frame dropped the live status row:\n%q", got)
+	}
+}
 
 func Test_mcpStartupWindows_AppendLineKeepsFirstSeenOrder(t *testing.T) {
 	w := newMcpStartupWindows()

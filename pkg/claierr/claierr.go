@@ -270,6 +270,16 @@ type McpServerStartupError struct {
 	Cause      error
 }
 
+// The startup stages a connect attempt names. Install is separate from connect
+// because a first run downloads its package inside the same wait: a reader who
+// sees "connect" cannot tell a slow download from a hung server, while
+// "install" says which of the two clai was waiting on.
+const (
+	McpStageConnect    = "connect"
+	McpStageInstall    = "install"
+	McpStageInitialize = "initialize"
+)
+
 // NewMcpServerStartup builds a McpServerStartupError for the named server,
 // failing at the given startup stage, wrapping the cause.
 func NewMcpServerStartup(serverName, stage string, cause error) *McpServerStartupError {

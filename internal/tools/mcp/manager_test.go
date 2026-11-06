@@ -81,8 +81,11 @@ func TestConnHandshakeTimeoutReturnsTypedError(t *testing.T) {
 	if !errors.As(serveErr, &startupErr) {
 		t.Fatalf("err = %v, want *claierr.McpServerStartupError", serveErr)
 	}
-	if startupErr.Stage != "initialize" {
-		t.Errorf("Stage = %q, want %q", startupErr.Stage, "initialize")
+	// An expired bound names the connect stage on every path, eager included:
+	// the reader's question is which wait clai was in, and this one is the
+	// connect wait.
+	if startupErr.Stage != claierr.McpStageConnect {
+		t.Errorf("Stage = %q, want %q", startupErr.Stage, claierr.McpStageConnect)
 	}
 	if elapsed > 2*time.Second {
 		t.Fatalf("timeout did not fire promptly: elapsed %v", elapsed)

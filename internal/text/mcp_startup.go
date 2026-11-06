@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
+	"time"
 
+	"github.com/baalimago/clai/internal/board"
 	"github.com/baalimago/clai/internal/utils"
 )
 
@@ -24,8 +27,11 @@ type mcpStartupWindows struct {
 	order     []string
 	pinned    map[string][]string
 	tail      map[string][]string
+	status    map[string]mcpServerStatus
 	drawnRows int
 	cleared   bool
+	frame     int
+	now       func() time.Time
 	// reopened overrides cleared for one server at a time: a mid-run
 	// authorization wait (phase 6) reopens the window for its server even
 	// after the pre-session region has already cleared, so the prompt
@@ -33,10 +39,62 @@ type mcpStartupWindows struct {
 	reopened map[string]bool
 }
 
+// mcpServerStatus is one server's in-flight connect: what the wait is for and
+// when it started, drawn as that server's live row.
+type mcpServerStatus struct {
+	label   string
+	started time.Time
+}
+
 func newMcpStartupWindows() *mcpStartupWindows {
 	return &mcpStartupWindows{
 		pinned: make(map[string][]string),
 		tail:   make(map[string][]string),
+		status: make(map[string]mcpServerStatus),
+		now:    time.Now,
+	}
+}
+
+// startStatus enters server's connect row, registering the server in first-seen
+// order even when it has printed nothing: a silent hang must still be visible
+// as a running wait rather than as no window at all.
+func (w *mcpStartupWindows) startStatus(server, label string) {
+	w.touch(server)
+	w.status[server] = mcpServerStatus{label: label, started: w.now()}
+}
+
+// finishStatus retires server's connect row. A server that has nothing else to
+// show leaves the region entirely, so a connect that printed no stderr does not
+// leave a bare header behind.
+func (w *mcpStartupWindows) finishStatus(server string) {
+	delete(w.status, server)
+	if len(w.pinned[server]) == 0 && len(w.tail[server]) == 0 {
+		w.forget(server)
+	}
+}
+
+// hasStatus reports whether any server has a connect in flight, which is what
+// keeps the redraw ticker alive.
+func (w *mcpStartupWindows) hasStatus() bool { return len(w.status) > 0 }
+
+// advance moves the shared spinner to its next frame.
+func (w *mcpStartupWindows) advance() { w.frame++ }
+
+// touch appends server to the render order once.
+func (w *mcpStartupWindows) touch(server string) {
+	if slices.Contains(w.order, server) {
+		return
+	}
+	w.order = append(w.order, server)
+}
+
+// forget removes server from the render order.
+func (w *mcpStartupWindows) forget(server string) {
+	for i, s := range w.order {
+		if s == server {
+			w.order = append(w.order[:i], w.order[i+1:]...)
+			return
+		}
 	}
 }
 
@@ -65,12 +123,8 @@ func (w *mcpStartupWindows) closeReopened(server string, out io.Writer, width, h
 	}
 	delete(w.pinned, server)
 	delete(w.tail, server)
-	for i, s := range w.order {
-		if s == server {
-			w.order = append(w.order[:i], w.order[i+1:]...)
-			break
-		}
-	}
+	delete(w.status, server)
+	w.forget(server)
 	w.render(out, width, height)
 }
 
@@ -78,11 +132,7 @@ func (w *mcpStartupWindows) closeReopened(server string, out io.Writer, width, h
 // above the rolling tail, and the bounded tail keeps a chatty server from
 // drowning out its neighbours.
 func (w *mcpStartupWindows) appendLine(server, line string, pin bool) {
-	if _, seen := w.tail[server]; !seen {
-		if _, seenPinned := w.pinned[server]; !seenPinned {
-			w.order = append(w.order, server)
-		}
-	}
+	w.touch(server)
 	if pin {
 		pinned := append(w.pinned[server], line)
 		if len(pinned) > mcpStartupPinnedCap {
@@ -115,6 +165,14 @@ func (w *mcpStartupWindows) render(out io.Writer, width, height int) error {
 				}
 			}
 		}
+		// The status row is drawn last in its block: the frame keeps the
+		// tail of the whole region when it outgrows the terminal, and the
+		// row that says what is happening must be the one that survives.
+		if status, ok := w.status[server]; ok {
+			if err := utils.PrintMcpStatusLine(&frame, w.statusRow(status), width); err != nil {
+				return err
+			}
+		}
 	}
 	rows := strings.Split(strings.TrimSuffix(frame.String(), "\n"), "\n")
 	if maxRows := max(height-1, 1); len(rows) > maxRows {
@@ -134,10 +192,18 @@ func (w *mcpStartupWindows) render(out io.Writer, width, height int) error {
 	return nil
 }
 
+// statusRow renders one connect row: the shared spinner, what the wait is for,
+// and how long it has run.
+func (w *mcpStartupWindows) statusRow(status mcpServerStatus) string {
+	elapsed := w.now().Sub(status.started).Round(time.Second)
+	return board.SpinnerFrame(w.frame) + " " + status.label + " · " + elapsed.String()
+}
+
 // clear wipes the drawn region in place and retires the windows: appendLine
 // and render are never called again after clear.
 func (w *mcpStartupWindows) clear(out io.Writer) {
 	w.cleared = true
+	clear(w.status)
 	if w.drawnRows == 0 {
 		return
 	}

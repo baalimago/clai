@@ -24,6 +24,15 @@ import (
 
 var spinnerFrames = []rune("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
 
+// SpinnerFrame returns the spinner glyph of frame f, for a caller that draws
+// live progress in its own region instead of through a Status row.
+func SpinnerFrame(f int) string {
+	if f < 0 {
+		f = 0
+	}
+	return string(spinnerFrames[f%len(spinnerFrames)])
+}
+
 // Row marks. MarkPending doubles as the placeholder of an empty elapsed or
 // index cell.
 const (

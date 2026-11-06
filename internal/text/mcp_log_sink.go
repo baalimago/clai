@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
@@ -36,6 +37,10 @@ const mcpLogExitTailLines = 10
 // so payloads like URLs and device codes on the following lines stay visible.
 const mcpLogAuthFollowLines = 3
 
+// mcpStatusTickInterval is how often a live connect row redraws: fast enough to
+// look alive, slow enough that a long install costs nothing.
+const mcpStatusTickInterval = time.Second
+
 // mcpLogEntry is one buffered stderr line. isError marks entries that elevate
 // out of the rolling window: errors, auth prompts and their follow window. An
 // exit entry carries the flushed tail of a terminated server and always
@@ -63,6 +68,10 @@ type mcpLogSink struct {
 	tails      map[string][]string
 	authFollow map[string]int
 	notify     chan struct{}
+	// tickStop ends the redraw loop; nil means no loop runs. One loop serves
+	// every live connect row.
+	tickStop chan struct{}
+	ticking  bool
 	// attached marks the serialized session loop as running. Before that (MCP
 	// setup may block on the very auth prompt a server just wrote), rolling
 	// mode renders every stderr line live into per-server startup windows
@@ -76,6 +85,92 @@ type mcpLogSink struct {
 	// close function rather than opening a second window or ringing the
 	// bell again.
 	authOpen map[string]func()
+}
+
+// ConnectStarted implements mcp.ConnectStatusSink: server's connect is drawn as
+// a live row with a spinner and its elapsed wait, for as long as the returned
+// function is pending. Only the setup phase draws it: once the session loop owns
+// the terminal, a status row would compete with the answer stream, and a
+// connect there is a warm one. A non-terminal or non-rolling sink draws
+// nothing.
+func (s *mcpLogSink) ConnectStarted(server, label string) func() {
+	s.mu.Lock()
+	if s.mode != mcpLogRolling || s.attached || s.startup.cleared {
+		s.mu.Unlock()
+		return func() {}
+	}
+	s.startup.startStatus(server, label)
+	s.renderLocked()
+	s.startTickerLocked()
+	s.mu.Unlock()
+	var once sync.Once
+	return func() {
+		once.Do(func() { s.connectFinished(server) })
+	}
+}
+
+// connectFinished retires server's status row and stops the redraw loop once no
+// row is live.
+func (s *mcpLogSink) connectFinished(server string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.startup.finishStatus(server)
+	s.renderLocked()
+	s.stopTickerLocked()
+}
+
+// renderLocked redraws the region. A failed write means the stream is gone;
+// the sink's state stays consistent so the next write tries again.
+func (s *mcpLogSink) renderLocked() {
+	_ = s.startup.render(s.errOut, s.termWidth(), s.termHeight())
+}
+
+// startTickerLocked launches the redraw loop when a row is live and no loop
+// runs yet.
+func (s *mcpLogSink) startTickerLocked() {
+	if s.ticking || !s.startup.hasStatus() {
+		return
+	}
+	s.ticking = true
+	s.tickStop = make(chan struct{})
+	go s.tickLoop(s.tickStop)
+}
+
+// tickLoop advances the spinner until the last row retires.
+func (s *mcpLogSink) tickLoop(stop <-chan struct{}) {
+	ticker := time.NewTicker(mcpStatusTickInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			s.tick()
+		case <-stop:
+			return
+		}
+	}
+}
+
+// tick redraws the region on the next frame. It is the loop's whole body, split
+// out so a test drives it without waiting on a real interval.
+func (s *mcpLogSink) tick() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.startup.hasStatus() {
+		s.stopTickerLocked()
+		return
+	}
+	s.startup.advance()
+	s.renderLocked()
+}
+
+// stopTickerLocked ends the redraw loop once nothing is live.
+func (s *mcpLogSink) stopTickerLocked() {
+	if !s.ticking || s.startup.hasStatus() {
+		return
+	}
+	close(s.tickStop)
+	s.tickStop = nil
+	s.ticking = false
 }
 
 func newMcpLogSink(mode mcpLogMode) *mcpLogSink {
@@ -213,6 +308,7 @@ func (s *mcpLogSink) setupSucceeded() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.startup.clear(s.errOut)
+	s.stopTickerLocked()
 }
 
 // ServerExited reports an unexpected server termination. Rolling mode appends

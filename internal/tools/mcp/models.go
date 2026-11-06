@@ -30,6 +30,9 @@ type ControlEvent struct {
 	Conn        Conn
 	Cancel      context.CancelFunc
 	OnHandshake func(serverInfo, toolsArray json.RawMessage)
+	// Sink receives the server's stderr and its connect status; nil keeps the
+	// legacy direct printing and no status row.
+	Sink ServerLogSink
 }
 
 // Request represents a JSON-RPC request.

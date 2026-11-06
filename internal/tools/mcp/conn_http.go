@@ -820,7 +820,7 @@ func dialHttp(runCtx context.Context, server pub_models.McpServer, sink ServerLo
 		if legacyErr := detectLegacyOnlyEndpoint(connectCtx, httpConn, server, err); legacyErr != nil {
 			return nil, legacyErr
 		}
-		return nil, ReportAsConnectStage(err, connectCtx, server.Name)
+		return nil, ReportBoundExpiry(err, connectCtx, server)
 	}
 	return conn, nil
 }

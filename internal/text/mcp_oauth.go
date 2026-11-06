@@ -234,7 +234,7 @@ func runBoundedHandshake(ctx context.Context, conn mcp.Conn, server pub_models.M
 	defer cancel()
 	serverInfo, toolsArray, err = mcp.Handshake(connectCtx, conn, server.Name)
 	if err != nil {
-		return nil, nil, mcp.ReportAsConnectStage(err, connectCtx, server.Name)
+		return nil, nil, mcp.ReportBoundExpiry(err, connectCtx, server)
 	}
 	return serverInfo, toolsArray, nil
 }

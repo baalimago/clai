@@ -12,12 +12,129 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baalimago/clai/internal/board"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/tools/mcp"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/dimensions"
 )
+
+// TestConnectStartedDrawsAndRetiresAStatusRow pins the whole live row in the
+// real sink: the connect start draws a spinner row, a tick advances it, and the
+// returned function retires it and stops the redraw loop.
+func TestConnectStartedDrawsAndRetiresAStatusRow(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	var output bytes.Buffer
+	sink := newMcpLogSinkTo(mcpLogRolling, &output)
+	sink.termWidth = func() int { return 120 }
+	sink.termHeight = func() int { return 40 }
+	start := time.Date(2026, 11, 5, 21, 0, 0, 0, time.UTC)
+	sink.startup.now = func() time.Time { return start }
+
+	done := sink.ConnectStarted("ddg", "installing duckduckgo-mcp-server")
+	if !strings.Contains(lastStartupFrame(output.String()), "installing duckduckgo-mcp-server") {
+		t.Fatalf("status row not drawn at connect start:\n%q", output.String())
+	}
+	if !sink.ticking {
+		t.Error("the redraw loop did not start for a live status row")
+	}
+
+	sink.startup.now = func() time.Time { return start.Add(63 * time.Second) }
+	sink.tick()
+	if got := lastStartupFrame(output.String()); !strings.Contains(got, "1m3s") {
+		t.Errorf("tick did not advance the elapsed wait:\n%q", got)
+	}
+	if !strings.Contains(lastStartupFrame(output.String()), board.SpinnerFrame(1)) {
+		t.Errorf("tick did not advance the spinner:\n%q", lastStartupFrame(output.String()))
+	}
+
+	done()
+	if sink.ticking {
+		t.Error("the redraw loop kept running after the last status retired")
+	}
+	if got := lastStartupFrame(output.String()); strings.Contains(got, "installing") {
+		t.Errorf("status row survived the connect:\n%q", got)
+	}
+}
+
+// TestConnectStartedIsSilentOutsideTheSetupWindow pins where the row may be
+// drawn at all: a session loop that owns the terminal, a retired region, and a
+// sink with no live region to draw on all get nothing.
+func TestConnectStartedIsSilentOutsideTheSetupWindow(t *testing.T) {
+	tests := []struct {
+		name  string
+		mode  mcpLogMode
+		setup func(*mcpLogSink)
+	}{
+		{name: "attached session loop", mode: mcpLogRolling, setup: func(s *mcpLogSink) { s.attach() }},
+		{name: "region already cleared", mode: mcpLogRolling, setup: func(s *mcpLogSink) { s.setupSucceeded() }},
+		{name: "direct print mode", mode: mcpLogPlainDirect},
+		{name: "raw structured mode", mode: mcpLogRawStructured},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var output bytes.Buffer
+			sink := newMcpLogSinkTo(tt.mode, &output)
+			sink.termWidth = func() int { return 120 }
+			sink.termHeight = func() int { return 40 }
+			if tt.setup != nil {
+				tt.setup(sink)
+			}
+			before := output.Len()
+			done := sink.ConnectStarted("ddg", "installing pkg")
+			done()
+			if output.Len() != before {
+				t.Errorf("drew %q outside the setup window", output.String()[before:])
+			}
+			if sink.ticking {
+				t.Error("a silent sink started the redraw loop")
+			}
+		})
+	}
+}
+
+// TestConnectFinishedKeepsTheLogLinesOfAServerThatPrinted pins that only the
+// status row retires: the stderr a failed install printed stays visible as the
+// reason the connect failed.
+func TestConnectFinishedKeepsTheLogLinesOfAServerThatPrinted(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	var output bytes.Buffer
+	sink := newMcpLogSinkTo(mcpLogRolling, &output)
+	sink.termWidth = func() int { return 120 }
+	sink.termHeight = func() int { return 40 }
+
+	done := sink.ConnectStarted("ddg", "installing pkg")
+	sink.AppendServerLog("ddg", "Downloading cryptography (4.5MiB)")
+	done()
+
+	got := lastStartupFrame(output.String())
+	if strings.Contains(got, "installing pkg") {
+		t.Errorf("status row survived the connect:\n%q", got)
+	}
+	if !strings.Contains(got, "Downloading cryptography") {
+		t.Errorf("connect finish dropped the server's log line:\n%q", got)
+	}
+}
+
+// TestTickStopsTheLoopWhenNothingIsLive pins the loop's own exit: a tick that
+// finds no status row ends the redraw loop instead of spinning forever.
+func TestTickStopsTheLoopWhenNothingIsLive(t *testing.T) {
+	var output bytes.Buffer
+	sink := newMcpLogSinkTo(mcpLogRolling, &output)
+	sink.termWidth = func() int { return 120 }
+	sink.termHeight = func() int { return 40 }
+	done := sink.ConnectStarted("ddg", "installing pkg")
+	done()
+	sink.ticking = true
+	sink.tickStop = make(chan struct{})
+
+	sink.tick()
+
+	if sink.ticking {
+		t.Error("tick kept the loop alive with no live status row")
+	}
+}
 
 func TestMcpLogModeFor(t *testing.T) {
 	tests := []struct {

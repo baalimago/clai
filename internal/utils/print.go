@@ -1344,6 +1344,17 @@ func PrintMcpLogLine(w io.Writer, line string, termWidth int) error {
 	return nil
 }
 
+// PrintMcpStatusLine prints one live status row under a block header: the
+// activity indent and the caller's text, accented as the block's own state so a
+// running wait never reads as log output.
+func PrintMcpStatusLine(w io.Writer, line string, termWidth int) error {
+	row := truncateTerminalRow("  "+SanitizeTerminalRow(line), max(termWidth, 1))
+	if _, err := fmt.Fprintln(w, table.Colorize(TableTheme().Primary, row)); err != nil {
+		return fmt.Errorf("write mcp status line: %w", err)
+	}
+	return nil
+}
+
 // PrintMcpErrorBlock prints one elevated MCP server error block below the
 // rolling window. The block is display-only: it never enters the chat history
 // or model context.

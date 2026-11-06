@@ -3,11 +3,14 @@ package mcp
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
 	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
+
+	"github.com/baalimago/clai/internal/tools/mcp/launcher"
 )
 
 // mcpConnectBound is the connect-bound parameter: the default wait wrapping
@@ -15,6 +18,13 @@ import (
 // distinct from mcpHandshakeBound, which governs an already-spawned Conn's
 // initialize/tools-list round trip driven by Manager.
 const mcpConnectBound = 45 * time.Second
+
+// mcpInstallBound is the connect bound of a command line whose content clai
+// holds no local evidence for: the first run downloads its package before the
+// handshake can ever be answered, and a download on a slow link takes minutes.
+// Bounding that wait as if it were a handshake kills an honest install and
+// reports it as a hang.
+const mcpInstallBound = 10 * time.Minute
 
 // mcpBlockedRedialCap bounds how many consecutive blocked-outside-run
 // outcomes (D20's exemption) a connector will dial for before memoising the
@@ -158,6 +168,9 @@ func ConnectBoundOf(server pub_models.McpServer) time.Duration {
 	if server.ConnectTimeoutSeconds > 0 {
 		return time.Duration(server.ConnectTimeoutSeconds) * time.Second
 	}
+	if launcher.ProbeInstall(server).Need.NeedsInstall() {
+		return mcpInstallBound
+	}
 	return mcpConnectBound
 }
 
@@ -195,7 +208,7 @@ func NewResolvedConnector(conn Conn) Connector { return resolvedConnector{conn} 
 // connect-bound. runCtx governs the resolved connection's whole lifetime;
 // sink receives the server's stderr.
 func NewConnector(runCtx context.Context, server pub_models.McpServer, sink ServerLogSink, opts ...ConnectorOption) Connector {
-	o := connectOptions{connectBound: mcpConnectBound}
+	o := connectOptions{connectBound: ConnectBoundOf(server)}
 	for _, opt := range opts {
 		opt(&o)
 	}
@@ -227,11 +240,14 @@ func dialStdio(runCtx context.Context, server pub_models.McpServer, sink ServerL
 		return nil, err
 	}
 
+	done := AnnounceConnect(sink, server)
+	defer done()
+
 	connectCtx, cancel := context.WithTimeout(runCtx, connectBound)
 	defer cancel()
 
 	if _, err := initializeHandshake(connectCtx, conn, server.Name); err != nil {
-		return nil, reclassifyIfAuthChallenged(conn, ReportAsConnectStage(err, connectCtx, server.Name), server.Name)
+		return nil, reclassifyIfAuthChallenged(conn, ReportBoundExpiry(err, connectCtx, server), server.Name)
 	}
 	return conn, nil
 }
@@ -256,19 +272,26 @@ func reclassifyIfAuthChallenged(conn Conn, err error, serverName string) error {
 	return claierr.NewAuthChallenge(serverName, err.Error(), "")
 }
 
-// ReportAsConnectStage renames a handshake failure's stage to "connect" when
-// the connect-bound, rather than the handshake itself, is what expired: the
-// connect bound is the outer bound a lazy first call observes. Exported so
-// the schema cache's miss path, which connects without a Connector, applies
-// the same stage naming when its own connect-bound context is what expired
-// (R1-14).
-func ReportAsConnectStage(err error, connectCtx context.Context, serverName string) error {
-	if connectCtx.Err() == nil {
+// ReportBoundExpiry names the stage a connect attempt failed at when the bound
+// context, rather than the server, is what expired. A command line that may
+// have had to download its package names the install stage and states the wait
+// it was given, so a killed download never reads as a hang; every other expiry
+// names the connect stage. Exported so the schema cache's miss path and the
+// endpoint paths, which connect without a Connector, name their stages the same
+// way.
+func ReportBoundExpiry(err error, boundCtx context.Context, server pub_models.McpServer) error {
+	if err == nil || boundCtx.Err() == nil {
 		return err
 	}
+	cause := err
 	var startupErr *claierr.McpServerStartupError
-	if !errors.As(err, &startupErr) {
-		return err
+	if errors.As(err, &startupErr) {
+		cause = startupErr.Cause
 	}
-	return claierr.NewMcpServerStartup(serverName, "connect", startupErr.Cause)
+	if !launcher.ProbeInstall(server).Need.NeedsInstall() {
+		return claierr.NewMcpServerStartup(server.Name, claierr.McpStageConnect, cause)
+	}
+	return claierr.NewMcpServerStartup(server.Name, claierr.McpStageInstall, fmt.Errorf(
+		"a first-run install did not answer within %s; its log above shows the download, and connect_timeout_seconds raises this wait: %w",
+		ConnectBoundOf(server), cause))
 }

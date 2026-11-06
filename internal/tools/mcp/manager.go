@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -178,6 +179,9 @@ func RegisterTools(toolsArray json.RawMessage, serverName string, connector Conn
 // registers every tool it advertises. One id source, owned by the Conn,
 // serves initialize, tools/list and every tool call of this server.
 func handleServer(ctx context.Context, ev ControlEvent, registrar ToolRegistrar) error {
+	done := AnnounceConnect(ev.Sink, ev.Server)
+	defer done()
+
 	// Bound the handshake so a hung server cannot stall the whole setup.
 	ctx, cancel := context.WithTimeout(ctx, HandshakeBoundOf(ev.Conn))
 	defer cancel()
@@ -194,7 +198,7 @@ func handleServer(ctx context.Context, ev ControlEvent, registrar ToolRegistrar)
 
 	serverInfo, toolsArray, err := Handshake(ctx, ev.Conn, ev.ServerName)
 	if err != nil {
-		return err
+		return stageHandshakeFailure(ctx, ev.Server, err)
 	}
 	if ev.OnHandshake != nil {
 		ev.OnHandshake(serverInfo, toolsArray)
@@ -208,4 +212,19 @@ func handleServer(ctx context.Context, ev ControlEvent, registrar ToolRegistrar)
 	}
 	initOk = true
 	return nil
+}
+
+// stageHandshakeFailure names the stage a handshake failed at. An expired bound
+// is the install or connect stage, a typed failure keeps the stage its producer
+// chose, and anything else is a failed initialize. Without this the caller's
+// failure funnel had no stage to read and labelled every raw handshake error a
+// credential failure.
+func stageHandshakeFailure(ctx context.Context, server pub_models.McpServer, err error) error {
+	if ctx.Err() != nil {
+		return ReportBoundExpiry(err, ctx, server)
+	}
+	if _, ok := errors.AsType[*claierr.McpServerStartupError](err); ok {
+		return err
+	}
+	return claierr.NewMcpServerStartup(server.Name, claierr.McpStageInitialize, err)
 }

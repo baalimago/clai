@@ -519,7 +519,9 @@ One JSON file per server under `<clai-config>/mcpServers/`, unmarshalled into
                                           // envfile, env
   "startup": "lazy",                      // or "eager"
   "timeout_seconds": 0,                   // one tool call; 0 is unbounded
-  "connect_timeout_seconds": 45,          // spawn plus handshake
+  "connect_timeout_seconds": 45,          // spawn plus handshake; unset means
+                                          // 10m when a first-run install may
+                                          // have to download first
   "auth_timeout_seconds": 120,            // human wait. Applies here too: a
                                           // local server prompts on stderr
   "optional": true }                      // a startup failure only warns,
@@ -629,6 +631,27 @@ points at the server's log printed above it. `setupTextQuerier` (`internal/text/
 startup error itself, without the setup layers' wrapping, so the run ends on one line that names the
 server.
 
+### The install stage
+
+A first-run package install happens inside the connect wait: the child downloads its package before
+it can answer `initialize`. That wait is not a handshake, and bounding it as one kills an honest
+download and reports it as a hang.
+
+`launcher.ProbeInstall` answers, from local evidence and without starting anything, whether a
+command line may have to install first: a package runner whose installed content clai cannot see
+(`uvx`, `pipx`, `bunx`, an unmodelled runner), or an `npx` spec whose install directory does not
+hold the package. A pinned spec is no exception, because the pin is evidence about the config,
+never about the disk.
+
+That answer scales the wait in one place, `mcp.ConnectBoundOf`: the configured
+`connect_timeout_seconds` when set, `mcpInstallBound` (10 minutes) when an install may precede the
+handshake, `mcpConnectBound` (45 seconds) otherwise. Every stdio path reads the same resolver — the
+lazy Connector's dial, the schema cache's miss, and an eager server's handshake bound — so one
+number cannot drift from another.
+
+When such a bound expires, `mcp.ReportBoundExpiry` names the `install` stage and states the wait it
+was given and the knob that raises it, instead of a `connect` timeout that reads as a stall.
+
 ## Server output
 
 A server's standard error is not protocol traffic and is handled separately from the frame stream.
@@ -637,6 +660,13 @@ prompts and their payload lines pin above a bounded rolling tail so machinery ch
 the prompt a user must act on, error lines elevate, and a bounded tail is retained per server so an
 unexpected termination can be reported with its reason. A context-cancelled teardown is not an
 unexpected termination and is not reported as one.
+
+While a connect is in flight during setup, each server's window also carries a live status row —
+spinner, what the wait is for, and elapsed time — drawn last in the block so the region's tail
+clipping cannot drop it. The row is entered through `mcp.ConnectStatusSink` (an optional interface,
+like `AuthPendingSink`) and is drawn only while the setup window owns the terminal: a session loop
+that has attached renders the answer stream, so a mid-run connect draws no row. A server that
+prints nothing before it stalls still gets a row, which is what makes a silent hang visible.
 
 ## Process-tree teardown
 
