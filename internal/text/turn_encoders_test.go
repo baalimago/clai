@@ -27,6 +27,7 @@ import (
 	"github.com/baalimago/clai/internal/vendors"
 	"github.com/baalimago/clai/internal/vendors/anthropic"
 	"github.com/baalimago/clai/internal/vendors/berget"
+	"github.com/baalimago/clai/internal/vendors/cheaperinference"
 	"github.com/baalimago/clai/internal/vendors/deepseek"
 	"github.com/baalimago/clai/internal/vendors/gemini"
 	"github.com/baalimago/clai/internal/vendors/huggingface"
@@ -58,8 +59,8 @@ const (
 func setTurnVendorKeys(t *testing.T) {
 	t.Helper()
 	for _, k := range []string{
-		"OPENAI_API_KEY", "ANTHROPIC_API_KEY", "BERGET_API_KEY", "DEEPSEEK_API_KEY", "GEMINI_API_KEY",
-		huggingface.EnvAPITokenKey, "INCEPTION_API_KEY", "MISTRAL_API_KEY", "NOVITA_API_KEY",
+		"OPENAI_API_KEY", "ANTHROPIC_API_KEY", "BERGET_API_KEY", "CHEAPER_INFERENCE_API_KEY", "DEEPSEEK_API_KEY",
+		"GEMINI_API_KEY", huggingface.EnvAPITokenKey, "INCEPTION_API_KEY", "MISTRAL_API_KEY", "NOVITA_API_KEY",
 		"OLLAMA_API_KEY", "OPENROUTER_API_KEY", "XAI_API_KEY",
 	} {
 		t.Setenv(k, "test-key")
@@ -90,6 +91,7 @@ func inlineEncoderRows() []encoderRow {
 		{"openai-chat-completions", chatCompletionsDone, setUp(&openai.ChatGPT{Model: "gpt-4.1-mini", URL: openai.ChatURL}, func(c *openai.ChatGPT, url string) { c.URL = url + "/v1/chat/completions" })},
 		{"anthropic", anthropicDone, setUp(&anthropic.Claude{Model: "claude-sonnet-5-5", MaxTokens: 1024, AnthropicVersion: "2023-06-01"}, func(c *anthropic.Claude, url string) { c.URL = url + "/v1/messages" })},
 		{"berget", chatCompletionsDone, aimGeneric(&berget.Berget{Model: "google/gemma-4-31B-it"}, func(v *berget.Berget) *generic.StreamCompleter { return &v.StreamCompleter })},
+		{"cheaperinference", chatCompletionsDone, aimGeneric(&cheaperinference.CheaperInference{Model: "gpt-5.4-mini"}, func(v *cheaperinference.CheaperInference) *generic.StreamCompleter { return &v.StreamCompleter })},
 		{"deepseek", chatCompletionsDone, aimGeneric(&deepseek.Deepseek{Model: "deepseek-chat"}, func(v *deepseek.Deepseek) *generic.StreamCompleter { return &v.StreamCompleter })},
 		{"gemini", chatCompletionsDone, aimGeneric(&gemini.Gemini{Model: "gemini-3.1-flash-lite"}, func(v *gemini.Gemini) *generic.StreamCompleter { return &v.StreamCompleter })},
 		{"huggingface", chatCompletionsDone, aimGeneric(&huggingface.HuggingFaceChat{Model: huggingface.DefaultModelName}, func(v *huggingface.HuggingFaceChat) *generic.StreamCompleter { return &v.StreamCompleter })},

@@ -24,6 +24,7 @@ import (
 	"github.com/baalimago/clai/internal/vendors"
 	"github.com/baalimago/clai/internal/vendors/anthropic"
 	"github.com/baalimago/clai/internal/vendors/berget"
+	"github.com/baalimago/clai/internal/vendors/cheaperinference"
 	"github.com/baalimago/clai/internal/vendors/deepseek"
 	"github.com/baalimago/clai/internal/vendors/gemini"
 	"github.com/baalimago/clai/internal/vendors/huggingface"
@@ -122,6 +123,11 @@ func encoderCases() []encoderCase {
 			aim:   aimEmbedded(func(v *berget.Berget) *generic.StreamCompleter { return &v.StreamCompleter }),
 		},
 		{
+			name: "cheaperinference", vendor: "cheaperinference", model: "gpt-5.4-mini", caps: inline(fallback, noGIF),
+			fresh: func() models.ImageEncoder { return &cheaperinference.CheaperInference{Model: "gpt-5.4-mini"} },
+			aim:   aimEmbedded(func(v *cheaperinference.CheaperInference) *generic.StreamCompleter { return &v.StreamCompleter }),
+		},
+		{
 			name: "deepseek", vendor: "deepseek", model: "deepseek-chat", caps: inline(fallback, all),
 			fresh: func() models.ImageEncoder { return &deepseek.Deepseek{Model: "deepseek-chat"} },
 			aim:   aimEmbedded(func(v *deepseek.Deepseek) *generic.StreamCompleter { return &v.StreamCompleter }),
@@ -176,8 +182,8 @@ func encoderCases() []encoderCase {
 func setVendorKeys(t *testing.T) {
 	t.Helper()
 	for _, k := range []string{
-		"OPENAI_API_KEY", "ANTHROPIC_API_KEY", "TYPESAFE_API_KEY", "BERGET_API_KEY", "DEEPSEEK_API_KEY",
-		"GEMINI_API_KEY", huggingface.EnvAPITokenKey, "INCEPTION_API_KEY", "MISTRAL_API_KEY",
+		"OPENAI_API_KEY", "ANTHROPIC_API_KEY", "TYPESAFE_API_KEY", "BERGET_API_KEY", "CHEAPER_INFERENCE_API_KEY",
+		"DEEPSEEK_API_KEY", "GEMINI_API_KEY", huggingface.EnvAPITokenKey, "INCEPTION_API_KEY", "MISTRAL_API_KEY",
 		"NOVITA_API_KEY", "OLLAMA_API_KEY", "OPENROUTER_API_KEY", "XAI_API_KEY",
 	} {
 		t.Setenv(k, "test-key")

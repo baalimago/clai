@@ -117,6 +117,7 @@ See `clai cloud -h` and [architecture/cloud.md](./architecture/cloud.md).
 | OpenAI      | `OPENAI_API_KEY`     | [Text models](https://platform.openai.com/docs/models), [photo models](https://platform.openai.com/docs/models/dall-e)                                             |
 | DeepSeek    | `DEEPSEEK_API_KEY`   | [Text models](https://api-docs.deepseek.com/quick_start/pricing), key is optional, no prefix (defaults to `deepseek-chat`)                                         |
 | Berget AI   | `BERGET_API_KEY`     | [Text models](https://berget.ai/models), use prefix `berget:`                                                                                                      |
+| Cheaper Inference | `CHEAPER_INFERENCE_API_KEY` | [Text models](https://cheaperinference.com/docs), use prefix `ci:`, e.g. `ci:gpt-5.4-mini`                                                                |
 | Gemini      | `GEMINI_API_KEY`     | [Text models](https://ai.google.dev/gemini-api/docs/models), [photo models](https://ai.google.dev/gemini-api/docs/image-generation#image_generation_text-to-image) |
 | xAi         | `XAI_API_KEY`        | [Text models](https://docs.x.ai/docs/models)                                                                                                                       |
 | Inception   | `INCEPTION_API_KEY`  | [Text models](https://platform.inceptionlabs.ai/docs#models)                                                                                                       |

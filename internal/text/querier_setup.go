@@ -34,6 +34,8 @@ func CanonicalModelString(vendor, family, modelVersion string) string {
 			return "berget:" + modelVersion
 		}
 		return "berget:" + family + "/" + modelVersion
+	case "cheaperinference":
+		return "ci:" + modelVersion
 	case "ollama":
 		if strings.HasPrefix(modelVersion, "ollama:") {
 			return modelVersion
@@ -76,6 +78,9 @@ func vendorType(fromModel string) (string, string, string, error) {
 			modelVersion = parts[1]
 		}
 		return "berget", vendor, modelVersion, nil
+	}
+	if after, ok := strings.CutPrefix(fromModel, "ci:"); ok {
+		return "cheaperinference", "chat", after, nil
 	}
 	if strings.HasPrefix(fromModel, "jev-") {
 		return "typesafe", "jev", fromModel, nil
