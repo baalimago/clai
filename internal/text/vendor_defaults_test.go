@@ -5,6 +5,7 @@ import (
 
 	"github.com/baalimago/clai/internal/vendors/anthropic"
 	"github.com/baalimago/clai/internal/vendors/berget"
+	"github.com/baalimago/clai/internal/vendors/cheaperinference"
 	"github.com/baalimago/clai/internal/vendors/deepseek"
 	"github.com/baalimago/clai/internal/vendors/gemini"
 	"github.com/baalimago/clai/internal/vendors/inception"
@@ -46,6 +47,7 @@ func Test_vendorDefaultModelsRoute(t *testing.T) {
 		{"typesafe", "", jev.Default.Model},
 		{"xai", "", xai.Default.Model},
 		{"berget", "berget:", berget.Default.Model},
+		{"cheaperinference", "ci:", cheaperinference.Default.Model},
 		{"novita", "novita:", novita.Default.Model},
 		{"ollama", "ollama:", ollama.Default.Model},
 		{"openrouter", "or:", openrouter.Default.Model},

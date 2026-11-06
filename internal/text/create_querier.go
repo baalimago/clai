@@ -11,6 +11,7 @@ import (
 	"github.com/baalimago/clai/internal/vendors"
 	"github.com/baalimago/clai/internal/vendors/anthropic"
 	"github.com/baalimago/clai/internal/vendors/berget"
+	"github.com/baalimago/clai/internal/vendors/cheaperinference"
 	"github.com/baalimago/clai/internal/vendors/deepseek"
 	"github.com/baalimago/clai/internal/vendors/gemini"
 	"github.com/baalimago/clai/internal/vendors/huggingface"
@@ -52,6 +53,18 @@ func selectTextQuerier(ctx context.Context, conf Configurations) (models.Querier
 			return nil, fmt.Errorf("failed to create text querier: %w", err)
 		}
 		q = &qTmp
+	}
+
+	// Cheaper Inference model ids are bare (e.g. "claude-sonnet-5"), so route
+	// the "ci:" prefix before any substring match.
+	if strings.HasPrefix(conf.Model, "ci:") {
+		defaultCpy := cheaperinference.Default
+		defaultCpy.Model = conf.Model
+		qTmp, err := NewQuerier(ctx, conf, &defaultCpy)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create text querier: %w", err)
+		}
+		return &qTmp, nil
 	}
 
 	if strings.Contains(conf.Model, "claude") {
