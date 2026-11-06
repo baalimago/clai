@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 )
@@ -270,8 +271,7 @@ func (c *Chat) FirstUserMessage() (Message, error) {
 // along with its index position in the Messages slice.
 // Returns an error if no message with that role is found.
 func (c *Chat) LastOfRole(role string) (Message, int, error) {
-	for i := len(c.Messages) - 1; i >= 0; i-- {
-		msg := c.Messages[i]
+	for i, msg := range slices.Backward(c.Messages) {
 		if msg.Role == role {
 			return msg, i, nil
 		}

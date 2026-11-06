@@ -37,8 +37,7 @@ func TestAuthMessageUsesThemeAndPreservesURL(t *testing.T) {
 	testboil.CaptureStdout(t, func(t *testing.T) {
 		authErr = RunAuth(t.Context(), "missing", strings.NewReader(""))
 	})
-	var configErr *McpAuthServerConfigError
-	if !errors.As(authErr, &configErr) {
+	if _, ok := errors.AsType[*McpAuthServerConfigError](authErr); !ok {
 		t.Fatalf("RunAuth: %v, want missing-server config error", authErr)
 	}
 	if got := utils.TableTheme(); got.Primary != "\x1b[31m" || got.Secondary != "\x1b[32m" || got.Breadtext != "\x1b[33m" {

@@ -389,8 +389,7 @@ func TestOauthExchangeRejectionWritesNothing(t *testing.T) {
 	as.Configure(func(c *oauthtestserver.Config) { c.ExchangeRejects = true })
 
 	_, store, _, err := fullInteractiveFlow(t, as)
-	var exErr *ExchangeRejectedError
-	if !errors.As(err, &exErr) {
+	if _, ok := errors.AsType[*ExchangeRejectedError](err); !ok {
 		t.Fatalf("got %v (%T), want *ExchangeRejectedError", err, err)
 	}
 	if _, ok := store.Load("srv"); ok {
@@ -401,8 +400,7 @@ func TestOauthExchangeRejectionWritesNothing(t *testing.T) {
 func TestOauthChallengeWithoutResourceMetadataIsTypedError(t *testing.T) {
 	authz, _ := newTestAuthorizer(t)
 	_, err := authz.AuthorizeInteractive(t.Context(), testServer("https://mcp.example.invalid/mcp"), &claierr.AuthChallengeError{ServerName: "srv"})
-	var missErr *ChallengeMissingResourceMetadataError
-	if !errors.As(err, &missErr) {
+	if _, ok := errors.AsType[*ChallengeMissingResourceMetadataError](err); !ok {
 		t.Fatalf("got %v (%T), want *ChallengeMissingResourceMetadataError", err, err)
 	}
 }
@@ -650,8 +648,7 @@ func TestOauthRefreshFailureReturnsTypedAuthError(t *testing.T) {
 	}
 
 	_, _, _, err := authz.ResolveCached(t.Context(), testServer(as.URL))
-	var refErr *RefreshError
-	if !errors.As(err, &refErr) {
+	if _, ok := errors.AsType[*RefreshError](err); !ok {
 		t.Fatalf("got %v (%T), want *RefreshError", err, err)
 	}
 }

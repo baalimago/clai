@@ -356,8 +356,7 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 // A DebugError is a normal cold-catalog condition, so it surfaces only under
 // the cost debug flag.
 func shouldReportCostError(err error) bool {
-	var debugErr cost.DebugError
-	if errors.As(err, &debugErr) {
+	if _, ok := errors.AsType[cost.DebugError](err); ok {
 		return debugflags.Enabled("COST_MANAGER")
 	}
 	return true

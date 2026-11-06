@@ -63,8 +63,7 @@ func Test_Finalizer_PersistFailure_JoinsRunError(t *testing.T) {
 	if !strings.Contains(err.Error(), "failed to save previous query") {
 		t.Errorf("err = %v, want it to name the failed reply persist", err)
 	}
-	var pathErr *os.PathError
-	if !errors.As(err, &pathErr) {
+	if _, ok := errors.AsType[*os.PathError](err); !ok {
 		t.Errorf("err = %v, want the persist's *os.PathError cause reachable", err)
 	}
 	if !session.Failed {

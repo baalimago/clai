@@ -319,12 +319,12 @@ func TestCommit_importsRunExportAndCount(t *testing.T) {
 	if c := a.commit(StoreConversations, ""); c.Files != 0 || exported != 0 {
 		t.Fatalf("plain commit exported: %+v, %d", c, exported)
 	}
-	res, err := a.Commit(context.Background(), StoreConversations, CommitOptions{PlanOptions: PlanOptions{Imports: true}})
+	res, err := a.Commit(context.Background(), StoreConversations, CommitOptions{Imports: true})
 	if err != nil || res.Imported != 1 || exported != 1 {
 		t.Fatalf("commit -imports = %+v, %v", res, err)
 	}
 	a.Hooks.Export = func(context.Context, string, func(int, int)) error { return errors.New("boom") }
-	if _, err := a.Commit(context.Background(), StoreConversations, CommitOptions{PlanOptions: PlanOptions{Imports: true}}); err == nil || !strings.Contains(err.Error(), "boom") {
+	if _, err := a.Commit(context.Background(), StoreConversations, CommitOptions{Imports: true}); err == nil || !strings.Contains(err.Error(), "boom") {
 		t.Fatalf("export error: %v", err)
 	}
 }

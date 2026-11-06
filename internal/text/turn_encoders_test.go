@@ -241,8 +241,7 @@ func TestTurn_NormalizeRefusal(t *testing.T) {
 		toolExecutor: toolExecutor[models.StreamCompleter]{querier: q},
 	}
 	err := runner.Run(context.Background(), session)
-	var unsupported *claierr.ImageUnsupportedError
-	if !errors.As(err, &unsupported) {
+	if _, ok := errors.AsType[*claierr.ImageUnsupportedError](err); !ok {
 		t.Fatalf("Run err = %v, want *claierr.ImageUnsupportedError", err)
 	}
 	if n := len(bodies()); n != 0 {

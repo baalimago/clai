@@ -46,8 +46,7 @@ func TestTokenStoreUnwritableIsTypedError(t *testing.T) {
 	store := NewTokenStore(filepath.Join(blocker, "mcpAuth"))
 
 	err := store.Save("srv", TokenEntry{AccessToken: "tok"})
-	var writeErr *TokenStoreWriteError
-	if !errors.As(err, &writeErr) {
+	if _, ok := errors.AsType[*TokenStoreWriteError](err); !ok {
 		t.Fatalf("got %v (%T), want *TokenStoreWriteError", err, err)
 	}
 }

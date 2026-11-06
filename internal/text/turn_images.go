@@ -469,8 +469,7 @@ func (q *Querier[C]) openImages(shown []present.Shown) error {
 
 // openNotice turns a failed opener into one notice on Stderr (Run.8, U2).
 func (q *Querier[C]) openNotice(err error) error {
-	var openFailed *present.OpenFailedError
-	if !errors.As(err, &openFailed) {
+	if _, ok := errors.AsType[*present.OpenFailedError](err); !ok {
 		return err
 	}
 	if _, werr := fmt.Fprintf(q.imageWiring().Stderr, "notice: %v\n", err); werr != nil {

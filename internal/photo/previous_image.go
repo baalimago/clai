@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"slices"
 
 	"github.com/baalimago/clai/internal/asset"
 	"github.com/baalimago/clai/internal/chat"
@@ -40,10 +41,10 @@ func PreviousQueryImage(confDir string) (asset.Image, error) {
 }
 
 func lastImage(c pub_models.Chat) (pub_models.ImagePart, error) {
-	for i := len(c.Messages) - 1; i >= 0; i-- {
-		parts := c.Messages[i].Parts
-		for j := len(parts) - 1; j >= 0; j-- {
-			if img, ok := parts[j].(pub_models.ImagePart); ok {
+	for _, v := range slices.Backward(c.Messages) {
+		parts := v.Parts
+		for _, part := range slices.Backward(parts) {
+			if img, ok := part.(pub_models.ImagePart); ok {
 				return img, nil
 			}
 		}

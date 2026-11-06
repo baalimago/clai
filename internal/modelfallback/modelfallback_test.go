@@ -166,8 +166,7 @@ func TestNew_FinalBuildFailureEndsTheChain(t *testing.T) {
 	if !reflect.DeepEqual(*built, []string{"a"}) {
 		t.Fatalf("built = %v, want only the first model", *built)
 	}
-	var chain *retry.ChainError
-	if errors.As(err, &chain) {
+	if _, ok := errors.AsType[*retry.ChainError](err); ok {
 		t.Fatalf("Query error = %v, want the final error itself, not a chain summary", err)
 	}
 }
@@ -210,8 +209,7 @@ func TestNew_ProducedRunIsNeverReplayed(t *testing.T) {
 	if !reflect.DeepEqual(*built, []string{"a"}) {
 		t.Fatalf("built = %v, want only the first model", *built)
 	}
-	var chain *retry.ChainError
-	if errors.As(err, &chain) {
+	if _, ok := errors.AsType[*retry.ChainError](err); ok {
 		t.Fatalf("Query error = %v, want the run's own error, not a chain summary", err)
 	}
 }
@@ -251,8 +249,7 @@ func TestNew_EveryModelFailingReportsEachOne(t *testing.T) {
 	if !errors.Is(err, claierr.ErrRateLimited) || !errors.Is(err, claierr.ErrModelNotFound) {
 		t.Fatalf("Query error = %v, want both causes", err)
 	}
-	var chain *retry.ChainError
-	if !errors.As(err, &chain) {
+	if _, ok := errors.AsType[*retry.ChainError](err); !ok {
 		t.Fatalf("Query error = %v, want *retry.ChainError", err)
 	}
 	for _, model := range []string{"a", "b"} {

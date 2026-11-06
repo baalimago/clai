@@ -137,9 +137,9 @@ func TestConnectorMemoisesMissingRequiredEnv(t *testing.T) {
 		Args:    []string{"-c", "touch " + marker},
 		Auth:    &pub_models.McpServerAuth{RequiredEnv: []string{"CLAI_RE_UNSET_7F3A"}},
 	}
-	var dials int32
+	var dials atomic.Int32
 	c := newConnector(t.Context(), func(ctx context.Context) (Conn, error) {
-		atomic.AddInt32(&dials, 1)
+		dials.Add(1)
 		return dialStdio(ctx, server, nil, mcpConnectBound)
 	})
 	for i := range 3 {
@@ -149,7 +149,7 @@ func TestConnectorMemoisesMissingRequiredEnv(t *testing.T) {
 			t.Fatalf("call %d: a missing variable reported itself blocked outside the run", i)
 		}
 	}
-	if got := atomic.LoadInt32(&dials); got != 1 {
+	if got := dials.Load(); got != 1 {
 		t.Fatalf("dialled %d times, want 1", got)
 	}
 	requireNoFile(t, marker)
@@ -158,9 +158,9 @@ func TestConnectorMemoisesMissingRequiredEnv(t *testing.T) {
 // An endpoint-based server is checked where its token_env is resolved: the
 // process environment, then the envfile.
 func TestHttpConnectorRefusesMissingRequiredEnvBeforeConnecting(t *testing.T) {
-	var requests int32
+	var requests atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		atomic.AddInt32(&requests, 1)
+		requests.Add(1)
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer srv.Close()
@@ -172,7 +172,7 @@ func TestHttpConnectorRefusesMissingRequiredEnvBeforeConnecting(t *testing.T) {
 	}
 	_, err := NewHttpConnector(t.Context(), server, nil).Conn(t.Context())
 	requireMissing(t, err, "CLAI_RE_NOWHERE")
-	if got := atomic.LoadInt32(&requests); got != 0 {
+	if got := requests.Load(); got != 0 {
 		t.Fatalf("endpoint received %d requests, want 0", got)
 	}
 	if conn, err := NewHttpConn(t.Context(), server, nil); conn != nil || err == nil {

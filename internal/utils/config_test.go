@@ -530,8 +530,7 @@ func Test_ConfigLoad_CausePreserved(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected an error, got nil")
 		}
-		var synErr *json.SyntaxError
-		if !errors.As(err, &synErr) {
+		if _, ok := errors.AsType[*json.SyntaxError](err); !ok {
 			t.Errorf("err = %v, want the *json.SyntaxError cause reachable", err)
 		}
 	})
@@ -552,8 +551,7 @@ func Test_ConfigLoad_CausePreserved(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected an error, got nil")
 		}
-		var pathErr *fs.PathError
-		if !errors.As(err, &pathErr) {
+		if _, ok := errors.AsType[*fs.PathError](err); !ok {
 			t.Errorf("err = %v, want the read *fs.PathError cause reachable", err)
 		}
 	})

@@ -227,8 +227,7 @@ func TestOauthCrossHostResourceMetadataIsRefused(t *testing.T) {
 
 	_, err := authz.AuthorizeInteractive(t.Context(), testServer("https://mcp.example.invalid/mcp"),
 		&claierr.AuthChallengeError{ServerName: "srv", ResourceMetadata: "https://evil.example.invalid/.well-known/oauth-protected-resource"})
-	var untrusted *UntrustedMetadataHostError
-	if !errors.As(err, &untrusted) {
+	if _, ok := errors.AsType[*UntrustedMetadataHostError](err); !ok {
 		t.Fatalf("got %v (%T), want *UntrustedMetadataHostError", err, err)
 	}
 	if transport.roundTrips.Load() != 0 {
@@ -326,12 +325,10 @@ func TestOauthRedirectingTokenEndpointIsRefused(t *testing.T) {
 	as.Configure(func(c *oauthtestserver.Config) { c.TokenRedirectTo = sink.srv.URL })
 
 	_, store, _, err := fullInteractiveFlow(t, as)
-	var refused *RedirectRefusedError
-	if !errors.As(err, &refused) {
+	if _, ok := errors.AsType[*RedirectRefusedError](err); !ok {
 		t.Fatalf("got %v (%T), want it to unwrap to *RedirectRefusedError", err, err)
 	}
-	var rejected *ExchangeRejectedError
-	if !errors.As(err, &rejected) {
+	if _, ok := errors.AsType[*ExchangeRejectedError](err); !ok {
 		t.Errorf("got %v, want the refusal wrapped in *ExchangeRejectedError", err)
 	}
 	if sink.hits.Load() != 0 {
@@ -354,12 +351,10 @@ func TestOauthRedirectingRegistrationEndpointIsRefused(t *testing.T) {
 	as.Configure(func(c *oauthtestserver.Config) { c.RegistrationRedirectTo = sink.srv.URL })
 
 	_, _, _, err := fullInteractiveFlow(t, as)
-	var refused *RedirectRefusedError
-	if !errors.As(err, &refused) {
+	if _, ok := errors.AsType[*RedirectRefusedError](err); !ok {
 		t.Fatalf("got %v (%T), want it to unwrap to *RedirectRefusedError", err, err)
 	}
-	var rejected *RegistrationRejectedError
-	if !errors.As(err, &rejected) {
+	if _, ok := errors.AsType[*RegistrationRejectedError](err); !ok {
 		t.Errorf("got %v, want the refusal wrapped in *RegistrationRejectedError", err)
 	}
 	if sink.hits.Load() != 0 {
@@ -388,8 +383,7 @@ func TestOauthRedirectingRefreshEndpointIsRefused(t *testing.T) {
 	if ok {
 		t.Error("ResolveCached reported a usable credential from a refused refresh")
 	}
-	var refused *RedirectRefusedError
-	if !errors.As(err, &refused) {
+	if _, ok := errors.AsType[*RedirectRefusedError](err); !ok {
 		t.Fatalf("got %v (%T), want it to unwrap to *RedirectRefusedError", err, err)
 	}
 	if sink.hits.Load() != 0 || sink.leaked.Load() {
@@ -418,8 +412,7 @@ func TestOauthNonInteractiveRunIsRefused(t *testing.T) {
 	defer cancel()
 	_, err := authz.AuthorizeInteractive(ctx, testServer(as.URL),
 		&claierr.AuthChallengeError{ServerName: "srv", ResourceMetadata: as.ProtectedResourceURL()})
-	var disabled *InteractiveAuthDisabledError
-	if !errors.As(err, &disabled) {
+	if _, ok := errors.AsType[*InteractiveAuthDisabledError](err); !ok {
 		t.Fatalf("got %v (%T), want *InteractiveAuthDisabledError", err, err)
 	}
 	if opener.opens.Load() != 0 {

@@ -164,8 +164,7 @@ func TestManagerStart(t *testing.T) {
 		if !errors.Is(err, wantErr) {
 			t.Fatalf("Start err = %v, want the fetch failure", err)
 		}
-		var debugErr DebugError
-		if !errors.As(err, &debugErr) {
+		if _, ok := errors.AsType[DebugError](err); !ok {
 			t.Fatalf("Start err = %T, want a DebugError", err)
 		}
 	})
@@ -176,8 +175,7 @@ func TestManagerStart(t *testing.T) {
 		if !errors.Is(err, ErrNoModelCatalog) {
 			t.Fatalf("Start err = %v, want ErrNoModelCatalog", err)
 		}
-		var debugErr DebugError
-		if !errors.As(err, &debugErr) {
+		if _, ok := errors.AsType[DebugError](err); !ok {
 			t.Fatalf("Start err = %T, want a DebugError: no catalog is a normal condition", err)
 		}
 	})
@@ -198,8 +196,7 @@ func TestDebugError(t *testing.T) {
 	if !errors.Is(wrapped, cause) {
 		t.Fatal("DebugError must unwrap to its cause")
 	}
-	var debugErr DebugError
-	if !errors.As(wrapped, &debugErr) {
+	if _, ok := errors.AsType[DebugError](wrapped); !ok {
 		t.Fatal("errors.As must find a DebugError")
 	}
 }

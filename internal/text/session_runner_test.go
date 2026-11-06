@@ -915,8 +915,7 @@ func Test_sessionRunner_Run_RateLimitSurfacesOnFirstCall(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected rate limit error, got nil")
 	}
-	var rateLimitErr *claierr.RateLimitedError
-	if !errors.As(err, &rateLimitErr) {
+	if _, ok := errors.AsType[*claierr.RateLimitedError](err); !ok {
 		t.Fatalf("expected error to match *claierr.RateLimitedError via errors.As, got: %v", err)
 	}
 	if callCount != 1 {

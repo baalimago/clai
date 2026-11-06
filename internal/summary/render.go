@@ -2,6 +2,7 @@ package summary
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -92,11 +93,11 @@ func firstUserMessageText(chat pub_models.Chat) string {
 }
 
 func lastAssistantMessageText(chat pub_models.Chat) string {
-	for i := len(chat.Messages) - 1; i >= 0; i-- {
-		if chat.Messages[i].Role != "assistant" {
+	for _, v := range slices.Backward(chat.Messages) {
+		if v.Role != "assistant" {
 			continue
 		}
-		if text := messageText(chat.Messages[i]); text != "" {
+		if text := messageText(v); text != "" {
 			return text
 		}
 	}

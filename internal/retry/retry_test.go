@@ -94,8 +94,7 @@ func TestDo_SingleAttemptReturnsItsErrorUnchanged(t *testing.T) {
 	if !errors.Is(err, errRateLimited) {
 		t.Fatalf("Do error = %v, want the attempt's own error", err)
 	}
-	var chain *ChainError
-	if errors.As(err, &chain) {
+	if _, ok := errors.AsType[*ChainError](err); ok {
 		t.Fatalf("Do error = %v, want no *ChainError for a single attempt", err)
 	}
 	if len(notices) != 0 {

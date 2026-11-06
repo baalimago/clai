@@ -338,8 +338,7 @@ func TestPhoto_ImgInputs(t *testing.T) {
 	t.Run("an -img that matches nothing fails before generation", func(t *testing.T) {
 		f := newFixture(t)
 		o := f.run("-img", filepath.Join(dir, "missing-*.png"), "watercolour")
-		var noMatch *imageinput.NoMatchError
-		if !errors.As(o.err, &noMatch) {
+		if _, ok := errors.AsType[*imageinput.NoMatchError](o.err); !ok {
 			t.Fatalf("err = %v, want *imageinput.NoMatchError", o.err)
 		}
 		if len(f.gen.Requests()) != 0 {
@@ -578,8 +577,7 @@ func TestPhoto_URLModeRemoved(t *testing.T) {
 	f.conf.Output.Type = photo.URL
 
 	o := f.run("a", "fox")
-	var removed *photo.URLOutputRemovedError
-	if !errors.As(o.err, &removed) {
+	if _, ok := errors.AsType[*photo.URLOutputRemovedError](o.err); !ok {
 		t.Fatalf("err = %v, want *photo.URLOutputRemovedError", o.err)
 	}
 	if !strings.Contains(o.err.Error(), `"local"`) {

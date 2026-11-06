@@ -146,11 +146,11 @@ func chatIndexRowFromChat(chat pub_models.Chat) chatIndexRow {
 	if row.TotalTokens == 0 && chat.TokenUsage != nil {
 		row.TotalTokens = chat.TokenUsage.TotalTokens
 	}
-	for i := len(chat.Queries) - 1; i >= 0; i-- {
-		if chat.Queries[i].Model == "" || chat.Queries[i].Purpose != "" {
+	for _, v := range slices.Backward(chat.Queries) {
+		if v.Model == "" || v.Purpose != "" {
 			continue
 		}
-		row.Model = chat.Queries[i].Model
+		row.Model = v.Model
 		break
 	}
 	if msg, err := chat.FirstUserMessage(); err == nil {

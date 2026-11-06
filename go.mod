@@ -1,6 +1,6 @@
 module github.com/baalimago/clai
 
-go 1.26
+go 1.27
 
 require (
 	github.com/baalimago/go_away_boilerplate v1.33.12

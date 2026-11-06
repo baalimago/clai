@@ -121,8 +121,7 @@ func TestMcpAuthCommandNonEndpointServerIsTypedError(t *testing.T) {
 	authz := mcpauth.NewAuthorizer(store)
 
 	err := runAuthWith(t.Context(), "cmdbased", confDir, authz)
-	var notEndpoint *McpAuthNotEndpointBasedError
-	if !errors.As(err, &notEndpoint) {
+	if _, ok := errors.AsType[*McpAuthNotEndpointBasedError](err); !ok {
 		t.Fatalf("err = %v (%T), want *McpAuthNotEndpointBasedError", err, err)
 	}
 }
@@ -144,8 +143,7 @@ func TestMcpAuthCommandNoChallengeIsTypedError(t *testing.T) {
 
 	for i := range 2 {
 		err := runAuthWith(t.Context(), "unchallenged", confDir, authz)
-		var noChallenge *McpAuthNoChallengeError
-		if !errors.As(err, &noChallenge) {
+		if _, ok := errors.AsType[*McpAuthNoChallengeError](err); !ok {
 			t.Fatalf("run %d: err = %v (%T), want *McpAuthNoChallengeError", i, err, err)
 		}
 	}
@@ -155,9 +153,9 @@ func TestMcpAuthCommandNoChallengeIsTypedError(t *testing.T) {
 // an error that says to set the variables rather than one reading like a
 // failed connection.
 func TestMcpAuthCommandMissingRequiredEnvIsTypedError(t *testing.T) {
-	var requests int32
+	var requests atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		atomic.AddInt32(&requests, 1)
+		requests.Add(1)
 		w.WriteHeader(http.StatusUnauthorized)
 	}))
 	defer srv.Close()
@@ -176,11 +174,10 @@ func TestMcpAuthCommandMissingRequiredEnvIsTypedError(t *testing.T) {
 	if !errors.As(err, &missing) || missing.Name != "gated" || len(missing.Missing) != 1 || missing.Missing[0] != "CLAI_RE_AUTH_UNSET" {
 		t.Fatalf("err = %v (%T), want *McpAuthMissingEnvError naming CLAI_RE_AUTH_UNSET", err, err)
 	}
-	var connectErr *McpAuthConnectError
-	if errors.As(err, &connectErr) {
+	if _, ok := errors.AsType[*McpAuthConnectError](err); ok {
 		t.Fatal("a missing variable must not read as a connect failure")
 	}
-	if n := atomic.LoadInt32(&requests); n != 0 {
+	if n := requests.Load(); n != 0 {
 		t.Fatalf("endpoint received %d requests, want 0", n)
 	}
 }
@@ -201,8 +198,7 @@ func TestLoadNamedServerRejectsBothCommandAndUrl(t *testing.T) {
 	}
 
 	_, err := loadNamedServer(confDir, "both")
-	var cfgErr *McpAuthServerConfigError
-	if !errors.As(err, &cfgErr) {
+	if _, ok := errors.AsType[*McpAuthServerConfigError](err); !ok {
 		t.Fatalf("err = %v (%T), want *McpAuthServerConfigError", err, err)
 	}
 }

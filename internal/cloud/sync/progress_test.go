@@ -234,7 +234,7 @@ func TestCommit_reportsTheExportOfOtherTools(t *testing.T) {
 		progress(3, 3)
 		return nil
 	}
-	_, _ = m.Commit(context.Background(), StoreConversations, CommitOptions{Message: "x", PlanOptions: PlanOptions{Imports: true}})
+	_, _ = m.Commit(context.Background(), StoreConversations, CommitOptions{Message: "x", Imports: true})
 	last, n := log.last(PhaseExporting)
 	if n != 3 || last.Done != 3 || last.Total != 3 || last.Store != StoreConversations {
 		t.Fatalf("last exporting event = %+v (%d events)", last, n)

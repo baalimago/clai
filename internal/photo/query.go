@@ -260,8 +260,7 @@ func (q *query) show(path string, data []byte) error {
 		return fmt.Errorf("present %s: %w", path, err)
 	}
 	err = q.presenter.Present(present.Shown{Handle: handle, Path: path, Details: present.DetailsOf(data, q.model, q.took)})
-	var openFailed *present.OpenFailedError
-	if errors.As(err, &openFailed) {
+	if _, ok := errors.AsType[*present.OpenFailedError](err); ok {
 		if _, werr := fmt.Fprintf(q.stderr, "notice: %v\n", err); werr != nil {
 			return fmt.Errorf("write open notice for %s: %w", path, werr)
 		}

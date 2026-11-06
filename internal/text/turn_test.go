@@ -820,8 +820,7 @@ func TestTurn_CountTokensNormalizeRefusal(t *testing.T) {
 	f.diskTurn(present.Options{})
 
 	_, err := f.run(t, pub_models.Message{Role: "user", Content: "snap"})
-	var unsupported *claierr.ImageUnsupportedError
-	if !errors.As(err, &unsupported) {
+	if _, ok := errors.AsType[*claierr.ImageUnsupportedError](err); !ok {
 		t.Fatalf("Run err = %v, want *claierr.ImageUnsupportedError", err)
 	}
 	if len(model.counted) != 0 {

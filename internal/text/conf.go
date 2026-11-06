@@ -579,12 +579,10 @@ func (c *Configurations) LoadResponseFormat(path string) error {
 // JSON whose fields have the wrong JSON type (generic.ErrResponseFormatShape).
 // Every other error (missing file, unreadable path) is returned untouched.
 func classifyResponseFormatUnmarshal(err error) error {
-	var syntaxErr *json.SyntaxError
-	if errors.As(err, &syntaxErr) {
+	if _, ok := errors.AsType[*json.SyntaxError](err); ok {
 		return fmt.Errorf("%w: %w", generic.ErrResponseFormatNotJSON, err)
 	}
-	var typeErr *json.UnmarshalTypeError
-	if errors.As(err, &typeErr) {
+	if _, ok := errors.AsType[*json.UnmarshalTypeError](err); ok {
 		return fmt.Errorf("%w: %w", generic.ErrResponseFormatShape, err)
 	}
 	return err

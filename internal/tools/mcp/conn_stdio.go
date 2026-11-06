@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -196,8 +197,8 @@ func spawnEnv(server pub_models.McpServer) ([]string, error) {
 // the last entry for a name wins.
 func envLookup(env []string) func(string) string {
 	return func(name string) string {
-		for i := len(env) - 1; i >= 0; i-- {
-			if k, v, ok := strings.Cut(env[i], "="); ok && k == name {
+		for _, e := range slices.Backward(env) {
+			if k, v, ok := strings.Cut(e, "="); ok && k == name {
 				return v
 			}
 		}

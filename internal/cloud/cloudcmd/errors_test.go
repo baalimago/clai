@@ -16,8 +16,7 @@ func offline(t *testing.T) *harness {
 
 func wantUnreachable(t *testing.T, what string, err error) {
 	t.Helper()
-	var u *UnreachableError
-	if !errors.As(err, &u) {
+	if _, ok := errors.AsType[*UnreachableError](err); !ok {
 		t.Fatalf("%s: err = %v, want an UnreachableError", what, err)
 	}
 	msg := err.Error()

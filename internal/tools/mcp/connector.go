@@ -284,8 +284,7 @@ func ReportBoundExpiry(err error, boundCtx context.Context, server pub_models.Mc
 		return err
 	}
 	cause := err
-	var startupErr *claierr.McpServerStartupError
-	if errors.As(err, &startupErr) {
+	if startupErr, ok := errors.AsType[*claierr.McpServerStartupError](err); ok {
 		cause = startupErr.Cause
 	}
 	if !launcher.ProbeInstall(server).Need.NeedsInstall() {

@@ -122,8 +122,7 @@ func (d CommandDeps) send(ctx context.Context, confDir, arg string, req PublishR
 		return err
 	}
 	res, err := publish(ctx, req)
-	var handle *HandleRequiredError
-	if errors.As(err, &handle) {
+	if handle, ok := errors.AsType[*HandleRequiredError](err); ok {
 		sub := "profiles publish"
 		switch req.Kind {
 		case "skill":

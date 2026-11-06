@@ -93,8 +93,7 @@ func runAuthWith(ctx context.Context, serverName, confDir string, authz *mcpauth
 		return &McpAuthNotEndpointBasedError{Name: serverName}
 	}
 	if err := mcpauth.CheckEndpointRequiredEnv(server, LoadEnvFile); err != nil {
-		var missing *serverconfig.MissingEnvError
-		if errors.As(err, &missing) {
+		if missing, ok := errors.AsType[*serverconfig.MissingEnvError](err); ok {
 			return &McpAuthMissingEnvError{Name: serverName, Missing: missing.Missing, Cause: err}
 		}
 		return &McpAuthConnectError{Name: serverName, Cause: err}

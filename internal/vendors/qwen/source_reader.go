@@ -378,11 +378,11 @@ func qwenActiveChain(order []string, groups map[string]*qwenGroup) []qwenRecord 
 			referenced[*parent] = struct{}{}
 		}
 	}
-	for i := len(order) - 1; i >= 0; i-- {
-		if _, isParent := referenced[order[i]]; isParent {
+	for _, o := range slices.Backward(order) {
+		if _, isParent := referenced[o]; isParent {
 			continue
 		}
-		chain := qwenChain(order[i], groups)
+		chain := qwenChain(o, groups)
 		if !qwenChainHasMessage(chain) {
 			continue
 		}

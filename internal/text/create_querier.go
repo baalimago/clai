@@ -204,8 +204,7 @@ func (e *unknownModelError) Unwrap() error { return claierr.ErrModelNotFound }
 func CreateQuerier(ctx context.Context, conf Configurations) (models.Querier, error) {
 	q, err := selectTextQuerier(ctx, conf)
 	if err != nil {
-		var unknown *unknownModelError
-		if errors.As(err, &unknown) {
+		if _, ok := errors.AsType[*unknownModelError](err); ok {
 			return nil, err
 		}
 		return nil, fmt.Errorf("failed to select text querier: %w", err)

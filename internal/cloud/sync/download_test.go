@@ -172,8 +172,7 @@ func TestPull_aFailedWindowStopsThePull(t *testing.T) {
 	b := newMachine(t, srv, "tok-b")
 	b.window = 50
 	_, err := b.Pull(context.Background(), StoreConversations, PullOptions{})
-	var sum *ChecksumError
-	if !errors.As(err, &sum) {
+	if _, ok := errors.AsType[*ChecksumError](err); !ok {
 		t.Fatalf("err = %v, want a ChecksumError", err)
 	}
 }

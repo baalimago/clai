@@ -108,8 +108,7 @@ func (e toolExecutor[C]) ExecuteBatch(ctx context.Context, session *QuerySession
 		}
 		for _, plan := range plans[start:end] {
 			if err := e.runPlannedCall(ctx, session, plan); err != nil {
-				var imageErr *toolImageError
-				if !errors.As(err, &imageErr) {
+				if _, ok := errors.AsType[*toolImageError](err); !ok {
 					return fail(err)
 				}
 				displayErrs = append(displayErrs, err)
@@ -289,8 +288,7 @@ func (e toolExecutor[C]) resolveMcpAuthWait(ctx context.Context, resolver mcpCon
 
 	_, _, _, retryErr := resolver.ResolveForCall(ctx)
 	if retryErr != nil {
-		var retryChallenge *claierr.AuthChallengeError
-		if errors.As(retryErr, &retryChallenge) {
+		if _, ok := errors.AsType[*claierr.AuthChallengeError](retryErr); ok {
 			return actionableAuthResult(serverName, hasResolver), true
 		}
 		return fmt.Sprintf("ERROR: mcp server %q: %v", serverName, retryErr), true

@@ -127,8 +127,7 @@ func TestFetchBlobs_boundsAFrame(t *testing.T) {
 		}
 	}()
 	_, err := api{c: cloud.NewClient(hs.URL, "x")}.fetchBlobs(context.Background(), []string{strings.Repeat("a", 64)})
-	var be *BundleError
-	if !errors.As(err, &be) {
+	if _, ok := errors.AsType[*BundleError](err); !ok {
 		t.Fatalf("err = %v, want a BundleError", err)
 	}
 }

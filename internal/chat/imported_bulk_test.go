@@ -122,10 +122,10 @@ func TestExportForeign_runsInParallelAndReportsProgress(t *testing.T) {
 	rows, chats := manyRows("claude-code", 150, 1)
 	var reads atomic.Int64
 	reader := gateReader{
-		exportReader: exportReader{name: "claude-code", rows: rows, chats: chats, reads: &reads},
-		inflight:     &atomic.Int64{},
-		both:         make(chan struct{}),
-		once:         &stdsync.Once{},
+		name: "claude-code", rows: rows, chats: chats, reads: &reads,
+		inflight: &atomic.Int64{},
+		both:     make(chan struct{}),
+		once:     &stdsync.Once{},
 	}
 	defer useTestSourceReaders([]vendors.SourceReader{reader})()
 	var calls []string
@@ -172,9 +172,9 @@ func TestExportForeign_anInterruptedRunResumesWhereItStopped(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	reader := cancelReader{
-		exportReader: exportReader{name: "codex", rows: rows, chats: chats, reads: &reads},
-		after:        10,
-		cancel:       cancel,
+		name: "codex", rows: rows, chats: chats, reads: &reads,
+		after:  10,
+		cancel: cancel,
 	}
 	defer useTestSourceReaders([]vendors.SourceReader{reader})()
 	err := ExportForeign(ctx, confDir, nil, nil)

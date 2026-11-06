@@ -49,8 +49,7 @@ func replayFreshProcess(t *testing.T, bin, arg string) string {
 	t.Helper()
 	stdout, err := exec.Command(bin, arg).Output()
 	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 			t.Fatalf("clai %v failed: %v\nstderr: %s", arg, err, exitErr.Stderr)
 		}
 		t.Fatalf("clai %v failed: %v", arg, err)

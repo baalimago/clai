@@ -391,8 +391,7 @@ func TestImageStream_BadBase64(t *testing.T) {
 	setVendorKeys(t)
 	stream := bytes.ReplaceAll(emitterFixture(t, openRouterStreamFixture), []byte(";base64,/9j/"), []byte(";base64,*/9j/"))
 	err := terminalError(t, drain(t, openRouterImageEmitter(t, serveEmitter(t, stream, nil)), drawChat()))
-	var upr *claierr.UnexpectedProviderResponseError
-	if !errors.As(err, &upr) {
+	if _, ok := errors.AsType[*claierr.UnexpectedProviderResponseError](err); !ok {
 		t.Fatalf("err = %v, want *claierr.UnexpectedProviderResponseError", err)
 	}
 }

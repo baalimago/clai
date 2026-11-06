@@ -59,8 +59,7 @@ func TestResolveRemoteProfilePath(t *testing.T) {
 	refused := &remote.UntrustedError{Target: "cchub:ada/bot"}
 	bad := func(context.Context, string) (string, error) { return "", refused }
 	err := resolveRemoteProfilePath(t.Context(), &Configurations{ProfilePath: "cchub:ada/bot"}, bad)
-	var untrusted *remote.UntrustedError
-	if !errors.As(err, &untrusted) {
+	if _, ok := errors.AsType[*remote.UntrustedError](err); !ok {
 		t.Fatalf("err = %v, want the resolver's error wrapped", err)
 	}
 }

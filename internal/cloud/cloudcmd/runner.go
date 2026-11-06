@@ -112,8 +112,7 @@ func (r *runner) logout(ctx context.Context) error {
 	}
 	creds, err := cloud.LoadCredentials(confDir)
 	r.creds = creds
-	var notIn *cloud.NotLoggedInError
-	if errors.As(err, &notIn) {
+	if _, ok := errors.AsType[*cloud.NotLoggedInError](err); ok {
 		r.lines([]string{r.style().Head("not logged in")})
 		return nil
 	}
@@ -318,16 +317,14 @@ func (r *runner) pull(ctx context.Context, args []string, theirs, mine, raw bool
 		}
 		res, err := engine.Pull(ctx, s, opts)
 		status.Stop()
-		var quit *QuitError
-		if errors.As(err, &quit) {
+		if quit, ok := errors.AsType[*QuitError](err); ok {
 			// A deliberate stop: the question is still open, and no other
 			// store is pulled behind the user's back.
 			r.printf("  %s\n", r.style().Secondary(quit.Error()))
 			r.deps.SetExit(ExitDecisionNeeded)
 			return nil
 		}
-		var first *sync.FirstPullError
-		if errors.As(err, &first) {
+		if first, ok := errors.AsType[*sync.FirstPullError](err); ok {
 			needsDecision = true
 			if !raw {
 				if opts.Choose == nil {
@@ -470,7 +467,7 @@ func (r *runner) commit(ctx context.Context, args []string, msg string, imports,
 	decision := false
 	for _, s := range which {
 		status := r.track(engine, "committing "+string(s))
-		res, err := engine.Commit(ctx, s, sync.CommitOptions{Message: msg, PlanOptions: sync.PlanOptions{Paths: paths[s], Imports: imports}})
+		res, err := engine.Commit(ctx, s, sync.CommitOptions{Message: msg, Paths: paths[s], Imports: imports})
 		status.Stop()
 		res.Store = s
 		if res.Excluded == nil {

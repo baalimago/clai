@@ -13,7 +13,7 @@ import (
 func plainLines(lines []string) string { return strings.Join(lines, "\n") }
 
 func TestStatusLines_clean(t *testing.T) {
-	st := sync.Status{Plan: sync.Plan{Store: sync.StoreConfig, Pulled: true, Synced: 30}, Remote: &sync.RemoteStatus{}}
+	st := sync.Status{Store: sync.StoreConfig, Pulled: true, Synced: 30, Remote: &sync.RemoteStatus{}}
 	got := plainLines(statusLines(st, style{}))
 	if got != "▸ config · up to date · 30 synced" {
 		t.Fatalf("got %q", got)
@@ -22,16 +22,14 @@ func TestStatusLines_clean(t *testing.T) {
 
 func TestStatusLines_fewChangesAreListed(t *testing.T) {
 	st := sync.Status{
-		Plan: sync.Plan{
-			Store: sync.StoreConfig,
-			Changes: []sync.LocalChange{
-				{Path: "profiles/coder.json", Kind: sync.Added, Size: 1200},
-				{Path: "theme.json", Kind: sync.Modified, Size: 300},
-			},
-			Conflicts: []string{"mcpServers/x.json"},
-			Excluded:  []sync.Excluded{{Path: "profiles/leak.json", Kind: sync.ExcludedSecret, Detail: "api_key"}},
+		Store: sync.StoreConfig,
+		Changes: []sync.LocalChange{
+			{Path: "profiles/coder.json", Kind: sync.Added, Size: 1200},
+			{Path: "theme.json", Kind: sync.Modified, Size: 300},
 		},
-		Remote: &sync.RemoteStatus{Ahead: 2, Both: []string{"theme.json"}, Uploaded: []string{"profiles/coder.json"}},
+		Conflicts: []string{"mcpServers/x.json"},
+		Excluded:  []sync.Excluded{{Path: "profiles/leak.json", Kind: sync.ExcludedSecret, Detail: "api_key"}},
+		Remote:    &sync.RemoteStatus{Ahead: 2, Both: []string{"theme.json"}, Uploaded: []string{"profiles/coder.json"}},
 	}
 	wantLines(t, statusLines(st, style{}),
 		"▸ config · 2 to commit · 1.5 kB · 1 conflict · server 2 commits ahead · 1 already uploaded · never pulled here",
@@ -65,7 +63,7 @@ func manyConversations() sync.Status {
 		changes = append(changes, sync.LocalChange{Path: "conversations/imported/" + tool + "/s.json", Kind: sync.Added, Size: 10})
 	}
 	return sync.Status{
-		Plan:   sync.Plan{Store: sync.StoreConversations, Pulled: true, Synced: 12, Changes: changes, Excluded: []sync.Excluded{{Path: "conversations/imported/x/y.json", Kind: sync.ExcludedImport}}},
+		Store: sync.StoreConversations, Pulled: true, Synced: 12, Changes: changes, Excluded: []sync.Excluded{{Path: "conversations/imported/x/y.json", Kind: sync.ExcludedImport}},
 		Remote: &sync.RemoteStatus{Both: []string{"conversations/chat-01.json"}, Uploaded: []string{"conversations/chat-00.json", "conversations/chat-01.json", "conversations/chat-02.json"}},
 	}
 }
@@ -114,7 +112,7 @@ func TestStatusLines_manyChangesAreGrouped(t *testing.T) {
 }
 
 func TestStatusLines_unreachableServer(t *testing.T) {
-	st := sync.Status{Plan: sync.Plan{Store: sync.StoreConfig, Pulled: true}, RemoteError: errors.New("dial tcp: refused")}
+	st := sync.Status{Store: sync.StoreConfig, Pulled: true, RemoteError: errors.New("dial tcp: refused")}
 	got := plainLines(statusLines(st, style{}))
 	if got != "▸ config · nothing to commit\n  ! the server's side is unknown: dial tcp: refused   only this machine's side is shown" {
 		t.Fatalf("got %q", got)
@@ -160,7 +158,7 @@ func TestStatusLines_previewsOtherTools(t *testing.T) {
 	}
 	pending = append(pending, sync.PendingImport{Source: "codex", ID: "x", Change: sync.ImportNew, Messages: 4, RawBytes: 20_000})
 	st := sync.Status{
-		Plan:    sync.Plan{Store: sync.StoreConversations, Pulled: true, Synced: 12},
+		Store: sync.StoreConversations, Pulled: true, Synced: 12,
 		Remote:  &sync.RemoteStatus{},
 		Imports: &sync.ImportPreview{Conversations: pending},
 	}
@@ -185,12 +183,12 @@ func TestStatusLines_previewsOtherTools(t *testing.T) {
 }
 
 func TestStatusLines_pullHint(t *testing.T) {
-	never := sync.Status{Plan: sync.Plan{Store: sync.StoreConfig}, Remote: &sync.RemoteStatus{}}
+	never := sync.Status{Store: sync.StoreConfig, Remote: &sync.RemoteStatus{}}
 	wantLines(t, statusLines(never, style{}),
 		"▸ config · up to date · never pulled here",
 		"  → clai cloud pull config   first pull on this machine",
 	)
-	ahead := sync.Status{Plan: sync.Plan{Store: sync.StoreConfig, Pulled: true}, Remote: &sync.RemoteStatus{Ahead: 1}}
+	ahead := sync.Status{Store: sync.StoreConfig, Pulled: true, Remote: &sync.RemoteStatus{Ahead: 1}}
 	wantLines(t, statusLines(ahead, style{}),
 		"▸ config · nothing to commit · server 1 commit ahead",
 		"  → clai cloud pull config   bring down 1 commit",

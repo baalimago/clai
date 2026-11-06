@@ -342,9 +342,9 @@ func importedRow(p string) (vendors.SourceRow, error) {
 		row.FullFirstUserMessage = msg.Describe()
 		row.FirstUserMessage = vendors.TruncateOneLine(strings.Join(strings.Fields(row.FullFirstUserMessage), " "), 100)
 	}
-	for i := len(c.Queries) - 1; i >= 0; i-- {
-		if c.Queries[i].Model != "" {
-			row.Model = c.Queries[i].Model
+	for _, v := range slices.Backward(c.Queries) {
+		if v.Model != "" {
+			row.Model = v.Model
 			break
 		}
 	}

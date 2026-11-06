@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -236,8 +237,7 @@ func (r *loopRunner) run(ctx context.Context, summary *LoopSummary) error {
 		r.started = iteration
 		result, err := r.textQuery(ctx, chat)
 		if err != nil {
-			var partial *PartialRunError
-			if errors.As(err, &partial) {
+			if partial, ok := errors.AsType[*PartialRunError](err); ok {
 				summary.addTurn(chat, partial.Chat)
 			}
 			if ctxErr := ctx.Err(); ctxErr != nil {
@@ -392,11 +392,11 @@ func lastAssistantHandover(chat pub_models.Chat) string {
 // lastAssistantText returns the trimmed content of the last assistant message,
 // or "" when the chat has no non-empty assistant reply.
 func lastAssistantText(chat pub_models.Chat) string {
-	for i := len(chat.Messages) - 1; i >= 0; i-- {
-		if chat.Messages[i].Role != "assistant" {
+	for _, v := range slices.Backward(chat.Messages) {
+		if v.Role != "assistant" {
 			continue
 		}
-		return strings.TrimSpace(chat.Messages[i].Content)
+		return strings.TrimSpace(v.Content)
 	}
 	return ""
 }

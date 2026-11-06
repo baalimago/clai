@@ -1265,8 +1265,7 @@ func TestTurn_BatchJoinsImageThenHardError(t *testing.T) {
 	turn.Generation = ImageGenSetup{Requested: true}
 	turn.NewGenerator = pngGenerator(pngOf(t, 127)).New
 	_, err := f.run(t, pub_models.Message{Role: "user", Content: "draw and list"})
-	var imageErr *toolImageError
-	if !errors.As(err, &imageErr) {
+	if _, ok := errors.AsType[*toolImageError](err); !ok {
 		t.Fatalf("Run = %v, want the image failure kept", err)
 	}
 	msg := fmt.Sprint(err)

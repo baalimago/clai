@@ -423,8 +423,7 @@ func TestMidRunChallengeOnNonInteractiveRunNeverOpensBrowser(t *testing.T) {
 		ServerName:       "httpecho",
 		ResourceMetadata: as.ProtectedResourceURL(),
 	})
-	var disabled *mcpauth.InteractiveAuthDisabledError
-	if !errors.As(err, &disabled) {
+	if _, ok := errors.AsType[*mcpauth.InteractiveAuthDisabledError](err); !ok {
 		t.Fatalf("got %v (%T), want *mcpauth.InteractiveAuthDisabledError", err, err)
 	}
 	if opener.opens != 0 {

@@ -50,10 +50,10 @@ func TestConnectorEagerConnectsDuringSetup(t *testing.T) {
 // receive the same outcome, driven directly since no production path issues
 // concurrent calls today.
 func TestConnectorSingleFlightCreatesOneConnPerRun(t *testing.T) {
-	var calls int32
+	var calls atomic.Int32
 	fc := &fakeConn{raw: json.RawMessage(`"ok"`)}
 	c := newConnector(t.Context(), func(context.Context) (Conn, error) {
-		atomic.AddInt32(&calls, 1)
+		calls.Add(1)
 		time.Sleep(50 * time.Millisecond)
 		return fc, nil
 	})
@@ -71,7 +71,7 @@ func TestConnectorSingleFlightCreatesOneConnPerRun(t *testing.T) {
 	}
 	wg.Wait()
 
-	if got := atomic.LoadInt32(&calls); got != 1 {
+	if got := calls.Load(); got != 1 {
 		t.Fatalf("dial called %d times, want 1", got)
 	}
 	for i, err := range errs {
@@ -88,10 +88,10 @@ func TestConnectorSingleFlightCreatesOneConnPerRun(t *testing.T) {
 // resolves one connection: today's sequential tool-batch execution reaches
 // this through plain memoisation.
 func TestThreeCallsOneServerSpawnOnce(t *testing.T) {
-	var calls int32
+	var calls atomic.Int32
 	fc := &fakeConn{}
 	c := newConnector(t.Context(), func(context.Context) (Conn, error) {
-		atomic.AddInt32(&calls, 1)
+		calls.Add(1)
 		return fc, nil
 	})
 
@@ -100,7 +100,7 @@ func TestThreeCallsOneServerSpawnOnce(t *testing.T) {
 			t.Fatalf("call %d: %v", i, err)
 		}
 	}
-	if got := atomic.LoadInt32(&calls); got != 1 {
+	if got := calls.Load(); got != 1 {
 		t.Fatalf("dial called %d times across three calls, want 1", got)
 	}
 }
@@ -109,10 +109,10 @@ func TestThreeCallsOneServerSpawnOnce(t *testing.T) {
 // parameter: a connect failure is memoised and every later call returns it
 // unchanged, with no second dial.
 func TestConnectorConnectFailureIsRunScopedAndNotRetried(t *testing.T) {
-	var calls int32
+	var calls atomic.Int32
 	wantErr := claierr.NewMcpServerStartup("broken", "spawn", errors.New("boom"))
 	c := newConnector(t.Context(), func(context.Context) (Conn, error) {
-		atomic.AddInt32(&calls, 1)
+		calls.Add(1)
 		return nil, wantErr
 	})
 
@@ -122,7 +122,7 @@ func TestConnectorConnectFailureIsRunScopedAndNotRetried(t *testing.T) {
 			t.Fatalf("call %d: err = %v, want ErrMcpServerStartup", i, err)
 		}
 	}
-	if got := atomic.LoadInt32(&calls); got != 1 {
+	if got := calls.Load(); got != 1 {
 		t.Fatalf("dial called %d times, want 1 (no retry after a connect failure)", got)
 	}
 }
@@ -139,18 +139,17 @@ func (blockedOutsideRunErr) BlockedOutsideRun() bool { return true }
 // memoised, so the next call dials again instead of replaying a cached
 // failure.
 func TestBlockedResolutionIsNotMemoisedAsFailure(t *testing.T) {
-	var calls int32
+	var calls atomic.Int32
 	fc := &fakeConn{}
 	c := newConnector(t.Context(), func(context.Context) (Conn, error) {
-		if atomic.AddInt32(&calls, 1) == 1 {
+		if calls.Add(1) == 1 {
 			return nil, blockedOutsideRunErr{}
 		}
 		return fc, nil
 	})
 
 	_, err := c.Conn(t.Context())
-	var blocked blockedOutsideRunErr
-	if !errors.As(err, &blocked) {
+	if _, ok := errors.AsType[blockedOutsideRunErr](err); !ok {
 		t.Fatalf("first call err = %v, want blockedOutsideRunErr", err)
 	}
 
@@ -161,7 +160,7 @@ func TestBlockedResolutionIsNotMemoisedAsFailure(t *testing.T) {
 	if conn != fc {
 		t.Fatal("second call did not resolve a connection")
 	}
-	if got := atomic.LoadInt32(&calls); got != 2 {
+	if got := calls.Load(); got != 2 {
 		t.Fatalf("dial called %d times, want 2 (a blocked outcome must not consume the retry budget)", got)
 	}
 }
@@ -170,10 +169,10 @@ func TestBlockedResolutionIsNotMemoisedAsFailure(t *testing.T) {
 // server's later tool calls return the same typed error as a tool result,
 // naming the tool, with no new spawn.
 func TestConnectorConnectFailureSurfacesTypedToolResult(t *testing.T) {
-	var calls int32
+	var calls atomic.Int32
 	wantErr := claierr.NewMcpServerStartup("broken", "spawn", errors.New("boom"))
 	c := newConnector(t.Context(), func(context.Context) (Conn, error) {
-		atomic.AddInt32(&calls, 1)
+		calls.Add(1)
 		return nil, wantErr
 	})
 	mt := &mcpTool{remoteName: "echo", connector: c}
@@ -190,7 +189,7 @@ func TestConnectorConnectFailureSurfacesTypedToolResult(t *testing.T) {
 			t.Fatalf("call %d: err = %v, want it to name the tool", i, err)
 		}
 	}
-	if got := atomic.LoadInt32(&calls); got != 1 {
+	if got := calls.Load(); got != 1 {
 		t.Fatalf("dial called %d times across two tool calls, want 1", got)
 	}
 }
@@ -309,11 +308,11 @@ func TestConnectorCallAfterRunEndIsClosedError(t *testing.T) {
 // expires abandons its wait without cancelling the resolution, and a later
 // call in the same run reuses its outcome with no second spawn.
 func TestAbandonedWaitDoesNotCancelResolution(t *testing.T) {
-	var calls int32
+	var calls atomic.Int32
 	fc := &fakeConn{raw: json.RawMessage(`"ok"`)}
 	release := make(chan struct{})
 	c := newConnector(t.Context(), func(context.Context) (Conn, error) {
-		atomic.AddInt32(&calls, 1)
+		calls.Add(1)
 		<-release
 		return fc, nil
 	})
@@ -333,7 +332,7 @@ func TestAbandonedWaitDoesNotCancelResolution(t *testing.T) {
 	if conn != fc {
 		t.Fatal("later call did not reuse the completed resolution")
 	}
-	if got := atomic.LoadInt32(&calls); got != 1 {
+	if got := calls.Load(); got != 1 {
 		t.Fatalf("dial called %d times, want 1 (the abandoned wait must not trigger a second spawn)", got)
 	}
 }
@@ -399,18 +398,17 @@ func TestConnectorCancelDuringResolutionReapsProcess(t *testing.T) {
 // A later call is therefore free to retry instead of replaying a cached
 // failure.
 func TestAuthChallengeIsNotMemoisedAsRunFailure(t *testing.T) {
-	var calls int32
+	var calls atomic.Int32
 	fc := &fakeConn{raw: json.RawMessage(`"ok"`)}
 	c := newConnector(t.Context(), func(context.Context) (Conn, error) {
-		if atomic.AddInt32(&calls, 1) == 1 {
+		if calls.Add(1) == 1 {
 			return nil, claierr.NewAuthChallenge("fx", `Bearer realm="OAuth"`, "")
 		}
 		return fc, nil
 	})
 
 	_, err := c.Conn(t.Context())
-	var challenge *claierr.AuthChallengeError
-	if !errors.As(err, &challenge) {
+	if _, ok := errors.AsType[*claierr.AuthChallengeError](err); !ok {
 		t.Fatalf("first call err = %v, want *claierr.AuthChallengeError", err)
 	}
 
@@ -421,7 +419,7 @@ func TestAuthChallengeIsNotMemoisedAsRunFailure(t *testing.T) {
 	if conn != fc {
 		t.Fatal("second call did not resolve a connection")
 	}
-	if got := atomic.LoadInt32(&calls); got != 2 {
+	if got := calls.Load(); got != 2 {
 		t.Fatalf("dial called %d times, want 2 (a challenge must not consume the retry budget)", got)
 	}
 }

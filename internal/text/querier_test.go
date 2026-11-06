@@ -770,8 +770,7 @@ func Test_Querier_SavesConversation_WhenStreamSetupFailsDueToRateLimitTokenCount
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	var rateLimitErr *claierr.RateLimitedError
-	if !errors.As(err, &rateLimitErr) {
+	if _, ok := errors.AsType[*claierr.RateLimitedError](err); !ok {
 		t.Fatalf("expected error to match *claierr.RateLimitedError via errors.As, got: %v", err)
 	}
 

@@ -20,9 +20,9 @@ import (
 // typed, at the env stage. (Strict startup resolves every explicit server
 // eagerly; the lazy paths are below.)
 func Test_setupMcpManager_MissingRequiredEnvFailsEagerServersBeforeConnecting(t *testing.T) {
-	var requests int32
+	var requests atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		atomic.AddInt32(&requests, 1)
+		requests.Add(1)
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer srv.Close()
@@ -59,16 +59,16 @@ func Test_setupMcpManager_MissingRequiredEnvFailsEagerServersBeforeConnecting(t 
 	if !slices.Equal(failed, []string{"eager-stdio", "eager-url"}) {
 		t.Errorf("failed servers = %v", failed)
 	}
-	if n := atomic.LoadInt32(&requests); n != 0 {
+	if n := requests.Load(); n != 0 {
 		t.Errorf("endpoint received %d requests, want 0", n)
 	}
 }
 
 // The lazy cache-miss connect, command or url, stops at the same check.
 func TestResolveLazyServerViaCache_MissingRequiredEnvBeforeConnecting(t *testing.T) {
-	var requests int32
+	var requests atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		atomic.AddInt32(&requests, 1)
+		requests.Add(1)
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer srv.Close()
@@ -86,7 +86,7 @@ func TestResolveLazyServerViaCache_MissingRequiredEnvBeforeConnecting(t *testing
 	if !errors.As(err, &missing) || missing.ServerName != "lazy-url" {
 		t.Fatalf("url: err = %v, want *serverconfig.MissingEnvError", err)
 	}
-	if n := atomic.LoadInt32(&requests); n != 0 {
+	if n := requests.Load(); n != 0 {
 		t.Errorf("endpoint received %d requests, want 0", n)
 	}
 }
@@ -102,9 +102,9 @@ func TestAuthenticatingHttpConnector_MissingRequiredEnvDialsOnce(t *testing.T) {
 		{"without an authorizer", func(*testing.T) *mcpauth.Authorizer { return nil }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			var requests int32
+			var requests atomic.Int32
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				atomic.AddInt32(&requests, 1)
+				requests.Add(1)
 				w.WriteHeader(http.StatusInternalServerError)
 			}))
 			defer srv.Close()
@@ -123,7 +123,7 @@ func TestAuthenticatingHttpConnector_MissingRequiredEnvDialsOnce(t *testing.T) {
 					t.Fatalf("call %d: err = %v, want the memoised *serverconfig.MissingEnvError", i+2, err)
 				}
 			}
-			if n := atomic.LoadInt32(&requests); n != 0 {
+			if n := requests.Load(); n != 0 {
 				t.Fatalf("endpoint received %d requests, want 0: the connector dialled again", n)
 			}
 		})

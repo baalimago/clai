@@ -255,11 +255,11 @@ func TestAuthWaitCancelledClosesWindowAndReaps(t *testing.T) {
 func TestAuthWaitOutlivesEnclosingBounds(t *testing.T) {
 	t.Parallel()
 	const shrunkConnectBound = 50 * time.Millisecond
-	var calls int32
+	var calls atomic.Int32
 	dial := func(ctx context.Context) (mcp.Conn, error) {
 		connectCtx, cancel := context.WithTimeout(ctx, shrunkConnectBound)
 		defer cancel()
-		if atomic.AddInt32(&calls, 1) == 1 {
+		if calls.Add(1) == 1 {
 			return nil, claierr.NewAuthChallenge("fx", "Bearer", "")
 		}
 		select {
@@ -280,7 +280,7 @@ func TestAuthWaitOutlivesEnclosingBounds(t *testing.T) {
 	if out != "ok" {
 		t.Fatalf("out = %q, want %q (a wait 3x the enclosing bound must still reach its own, larger bound)", out, "ok")
 	}
-	if got := atomic.LoadInt32(&calls); got != 2 {
+	if got := calls.Load(); got != 2 {
 		t.Errorf("dial called %d times, want 2", got)
 	}
 }

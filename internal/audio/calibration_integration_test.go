@@ -279,8 +279,7 @@ func TestCalibrationStrictFailureHasNoStdout(t *testing.T) {
 	out := &strings.Builder{}
 	q := &TranscribeQuerier{Splitter: s, FilePath: input, Format: FormatText, Out: out}
 	err := q.Query(context.Background())
-	var ue *UnresolvedError
-	if !errors.As(err, &ue) {
+	if _, ok := errors.AsType[*UnresolvedError](err); !ok {
 		t.Fatalf("expected UnresolvedError, got %v", err)
 	}
 	if out.Len() != 0 {

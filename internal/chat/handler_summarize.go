@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -419,9 +420,9 @@ func (p *boardSummarizeProgress) footer(rows []board.Row) string {
 
 // summaryModelOf is the model of the newest summary row.
 func summaryModelOf(c pub_models.Chat) string {
-	for i := len(c.Queries) - 1; i >= 0; i-- {
-		if c.Queries[i].Purpose == "summary" && c.Queries[i].Model != "" {
-			return c.Queries[i].Model
+	for _, v := range slices.Backward(c.Queries) {
+		if v.Purpose == "summary" && v.Model != "" {
+			return v.Model
 		}
 	}
 	return board.MarkPending

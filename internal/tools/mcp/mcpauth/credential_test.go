@@ -55,8 +55,7 @@ func TestCredentialCommandEmptyOutputIsTypedError(t *testing.T) {
 	server := serverWithAuth(&pub_models.McpServerAuth{TokenCommand: []string{"sh", "-c", ":"}})
 
 	_, _, _, err := authz.ResolveCached(t.Context(), server)
-	var credErr *CredentialSourceError
-	if !errors.As(err, &credErr) {
+	if _, ok := errors.AsType[*CredentialSourceError](err); !ok {
 		t.Fatalf("got %v (%T), want *CredentialSourceError", err, err)
 	}
 }
@@ -68,8 +67,7 @@ func TestCredentialCommandBannedIsNeverSpawned(t *testing.T) {
 
 	ctx := pkgtools.WithCmdBanContext(t.Context(), []string{"sh"})
 	_, _, _, err := authz.ResolveCached(ctx, server)
-	var credErr *CredentialSourceError
-	if !errors.As(err, &credErr) {
+	if _, ok := errors.AsType[*CredentialSourceError](err); !ok {
 		t.Fatalf("got %v (%T), want *CredentialSourceError", err, err)
 	}
 	if _, statErr := os.Stat(markerPath); !os.IsNotExist(statErr) {

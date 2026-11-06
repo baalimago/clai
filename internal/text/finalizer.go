@@ -3,6 +3,7 @@ package text
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/baalimago/clai/internal/chat"
@@ -66,9 +67,9 @@ func accumulateCompletedUsage(completed []CompletedModelCall, final *pub_models.
 }
 
 func mostRecentCompletedUsage(completed []CompletedModelCall, final *pub_models.Usage) *pub_models.Usage {
-	for i := len(completed) - 1; i >= 0; i-- {
-		if completed[i].Usage != nil {
-			return completed[i].Usage
+	for _, c := range slices.Backward(completed) {
+		if c.Usage != nil {
+			return c.Usage
 		}
 	}
 	return final

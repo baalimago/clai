@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -213,11 +214,11 @@ func resolveModel(explicit, summaryModel string, chat pub_models.Chat, configMod
 }
 
 func lastRecordedModel(chat pub_models.Chat) string {
-	for i := len(chat.Queries) - 1; i >= 0; i-- {
-		if chat.Queries[i].Model == "" || chat.Queries[i].Purpose != "" {
+	for _, v := range slices.Backward(chat.Queries) {
+		if v.Model == "" || v.Purpose != "" {
 			continue
 		}
-		return chat.Queries[i].Model
+		return v.Model
 	}
 	return ""
 }

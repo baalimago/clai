@@ -90,8 +90,7 @@ func TestValidate_rejectsEveryShapeSummarizeCannotRead(t *testing.T) {
 			}
 			continue
 		}
-		var invalid *InvalidProfileError
-		if !errors.As(err, &invalid) {
+		if _, ok := errors.AsType[*InvalidProfileError](err); !ok {
 			t.Errorf("Validate(%s) = %v, want *InvalidProfileError", body, err)
 		}
 	}

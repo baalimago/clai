@@ -89,8 +89,7 @@ func (q *Querier[C]) noticeStepRetry(cause error, attempt int, delay time.Durati
 }
 
 func stepRetryReason(cause error) string {
-	var unavailable *claierr.ProviderUnavailableError
-	if errors.As(cause, &unavailable) {
+	if unavailable, ok := errors.AsType[*claierr.ProviderUnavailableError](cause); ok {
 		return fmt.Sprintf("provider unavailable (%d)", unavailable.StatusCode)
 	}
 	var transport *claierr.TransportError
@@ -99,8 +98,7 @@ func stepRetryReason(cause error) string {
 	}
 	detail := transport.Cause
 	// A request URL can carry a vendor's API key.
-	var request *url.Error
-	if errors.As(detail, &request) {
+	if request, ok := errors.AsType[*url.Error](detail); ok {
 		detail = request.Err
 	}
 	return "connection failed: " + strings.Join(strings.Fields(detail.Error()), " ")

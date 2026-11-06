@@ -283,7 +283,7 @@ func (cq *ChatHandler) cont(ctx context.Context) error {
 		}
 
 		// Otherwise, treat as a not-found case: inform the user and revert to the chat list UI.
-		firstToken := strings.Split(cq.prompt, " ")[0]
+		firstToken, _, _ := strings.Cut(cq.prompt, " ")
 		ancli.PrintErr(fmt.Sprintf("could not find chat with id: \"%v\"\n", firstToken))
 		return cq.handleListCmd(ctx)
 	}

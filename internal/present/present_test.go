@@ -219,8 +219,7 @@ func TestPresent_WriteFails(t *testing.T) {
 				if !errors.Is(err, writeErr) {
 					t.Fatalf("Present error = %v, want the write error", err)
 				}
-				var failed *present.OpenFailedError
-				if errors.As(err, &failed) {
+				if _, ok := errors.AsType[*present.OpenFailedError](err); ok {
 					t.Fatalf("a write failure must not be an OpenFailedError: %v", err)
 				}
 				if len(opener.calls) != 0 {

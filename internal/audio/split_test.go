@@ -510,8 +510,7 @@ func TestSplitter_ParseDurationFailureWrapsCause(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an error, got nil")
 	}
-	var numErr *strconv.NumError
-	if !errors.As(err, &numErr) {
+	if _, ok := errors.AsType[*strconv.NumError](err); !ok {
 		t.Errorf("err = %v, want the *strconv.NumError cause reachable", err)
 	}
 }
