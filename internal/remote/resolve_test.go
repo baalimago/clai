@@ -177,12 +177,8 @@ func TestResolve_offlineIsCacheOnly(t *testing.T) {
 }
 
 func TestResolve_refusals(t *testing.T) {
-	h := newHub(t, map[string]string{"/hub/ada/bad/raw": `{"promt":"x"}`, "/page": "<html></html>"})
+	h := newHub(t, map[string]string{"/page": "<html></html>"})
 	r := testResolver(t, h, yes)
-	var invalid *InvalidProfileError
-	if _, err := r.Resolve(t.Context(), "cchub:ada/bad", ConsentAsk); !errors.As(err, &invalid) {
-		t.Fatalf("invalid: err = %v", err)
-	}
 	var fetchErr *FetchError
 	if _, err := r.Resolve(t.Context(), "cchub:ada/missing", ConsentAsk); !errors.As(err, &fetchErr) || fetchErr.Status != http.StatusNotFound || !strings.Contains(err.Error(), "HTTP 404") {
 		t.Fatalf("missing: err = %v", err)
@@ -194,6 +190,52 @@ func TestResolve_refusals(t *testing.T) {
 	}
 	if _, err := r.Resolve(t.Context(), "cchub:Bad", ConsentAsk); err == nil {
 		t.Fatal("bad target: want error")
+	}
+}
+
+// TestResolve_refusesWhatTheInjectedCheckRefuses pins the order Resolve keeps
+// for every route: fetch, then check, then trust. A refused body records no
+// trust and exits 3.
+func TestResolve_refusesWhatTheInjectedCheckRefuses(t *testing.T) {
+	const bad = `{"promt":"x"}`
+	h := newHub(t, map[string]string{"/hub/ada/bad/raw": bad})
+	r := testResolver(t, h, yes)
+	r.CheckProfile = func([]byte) ProfileCheck {
+		return ProfileCheck{Problems: []string{`unknown member "promt": did you mean "prompt"?`}}
+	}
+	var invalid *InvalidProfileError
+	if _, err := r.Resolve(t.Context(), "cchub:ada/bad", ConsentAsk); !errors.As(err, &invalid) || invalid.ExitCode() != ExitRefused {
+		t.Fatalf("invalid: err = %v", err)
+	}
+	if trusted, err := r.Trust.Trusted("cchub:ada/bad", Digest([]byte(bad))); err != nil || trusted {
+		t.Fatalf("a refused body recorded trust: %v %v", trusted, err)
+	}
+}
+
+// TestPeek_readsWithoutTrustingOrCaching pins the path `clai profiles
+// validate <remote>` takes: it reads what a run would get and leaves neither
+// a trust record nor a cached file behind, so a later run still asks.
+func TestPeek_readsWithoutTrustingOrCaching(t *testing.T) {
+	h := newHub(t, map[string]string{"/hub/ada/bot/raw": tradeBot})
+	r := testResolver(t, h, nil)
+	body, err := r.Peek(t.Context(), "cchub:ada/bot")
+	if err != nil || string(body) != tradeBot {
+		t.Fatalf("Peek = %q, %v", body, err)
+	}
+	digest := Digest(body)
+	if trusted, err := r.Trust.Trusted("cchub:ada/bot", digest); err != nil || trusted {
+		t.Fatalf("Peek recorded trust: %v %v", trusted, err)
+	}
+	if _, _, err := r.Cache.Lookup("cchub:ada/bot"); !errors.Is(err, ErrNotCached) {
+		t.Fatalf("Peek cached the body: %v", err)
+	}
+	r.CheckProfile = func([]byte) ProfileCheck { return ProfileCheck{Problems: []string{"bad body"}} }
+	if body, err := r.Peek(t.Context(), "cchub:ada/bot"); err != nil || string(body) != tradeBot {
+		t.Fatalf("Peek checked the body instead of leaving it to the caller: %q, %v", body, err)
+	}
+	var mismatch *HashMismatchError
+	if _, err := r.Peek(t.Context(), "cchub:ada/bot#sha256="+strings.Repeat("0", 64)); !errors.As(err, &mismatch) {
+		t.Fatalf("Peek over bytes that miss their hash: err = %v", err)
 	}
 }
 

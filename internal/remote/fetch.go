@@ -64,7 +64,7 @@ func (e *FetchError) Error() string {
 // fetch reads at most MaxBodyBytes+1 bytes of url, asking for accept. requireJSON refuses a
 // response whose content type is not application/json or a +json type;
 // raw.githubusercontent.com serves every file as text/plain, so gh:
-// targets skip it and rely on Validate.
+// targets skip it and rely on the profile check.
 func fetch(ctx context.Context, client Doer, target, url, accept string, requireJSON bool) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {

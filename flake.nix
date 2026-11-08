@@ -17,7 +17,7 @@
     in
     {
       packages = forAll (pkgs: rec {
-        clai = pkgs.buildGoModule {
+        clai = pkgs.buildGoLatestModule {
           pname = "clai";
           inherit version;
           src = ./.;

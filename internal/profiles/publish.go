@@ -2,7 +2,6 @@ package profiles
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -13,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/baalimago/clai/internal"
-	"github.com/baalimago/clai/internal/remote"
+	"github.com/baalimago/clai/internal/profile"
 )
 
 // PublishRequest is what `clai profiles publish` sends to the Hub.
@@ -71,18 +70,18 @@ var hubName = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,58}[a-z0-9])?$`)
 
 // Publish sends a local profile, by name or path, to the Hub. It is checked
 // as strictly as a remote profile and for credentials before it leaves.
-func (d CommandDeps) Publish(ctx context.Context, profile string, opts PublishOptions) error {
+func (d CommandDeps) Publish(ctx context.Context, ref string, opts PublishOptions) error {
 	confDir, err := d.configDir()
 	if err != nil {
 		return err
 	}
-	path := profile
-	if !strings.ContainsRune(profile, os.PathSeparator) && !strings.HasSuffix(profile, ".json") {
-		path = filepath.Join(confDir, "profiles", profile+".json")
+	path := ref
+	if !strings.ContainsRune(ref, os.PathSeparator) && !strings.HasSuffix(ref, ".json") {
+		path = filepath.Join(confDir, "profiles", ref+".json")
 	}
 	body, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("read profile %s: %w", profile, err)
+		return fmt.Errorf("read profile %s: %w", ref, err)
 	}
 	name := opts.Name
 	if name == "" {
@@ -91,21 +90,27 @@ func (d CommandDeps) Publish(ctx context.Context, profile string, opts PublishOp
 	if !hubName.MatchString(name) {
 		return fmt.Errorf("%q cannot be a Hub name (lower-case letters, digits and dashes); pass one with -name", name)
 	}
-	if _, err := remote.Validate(path, body); err != nil {
+	env, err := d.profileEnv(confDir)
+	if err != nil {
 		return err
 	}
-	if err := pinnedSkills(body); err != nil {
-		return err
+	// Publish has no tool registry: a name is the Hub's to resolve.
+	env.ToolNames = nil
+	findings, err := profile.Validate(body, profile.Publish, env)
+	if err != nil {
+		return fmt.Errorf("check %s: %w", path, err)
 	}
-	if err := noShellContext(body); err != nil {
-		return err
+	if problems := findings.Problems(profile.Publish); len(problems) > 0 {
+		// Clause 7 gives a refused body one status on every route, 1; a run's
+		// remote refusal keeps its own 3 in remote.Resolver.
+		return fmt.Errorf("%s is not a valid profile:\n  %s", path, strings.Join(problems, "\n  "))
 	}
 	if d.FindSecret != nil {
 		if where, found := d.FindSecret(path, body); found {
 			return fmt.Errorf("%s holds what looks like a credential (%s): move it to an envfile or an environment variable, then publish", path, where)
 		}
 	}
-	return d.send(ctx, confDir, profile, PublishRequest{
+	return d.send(ctx, confDir, ref, PublishRequest{
 		Name: name, Body: string(body), Title: opts.Title, Summary: opts.Summary, Note: opts.Note, Handle: opts.Handle,
 	}, func(pinned string) string { return "clai -profile-path " + pinned + " query …" })
 }
@@ -145,37 +150,6 @@ func (d CommandDeps) send(ctx context.Context, confDir, arg string, req PublishR
 		out = os.Stdout
 	}
 	fmt.Fprintf(out, "Published %s%s\n  %s\n  %s\n", pinned, what, res.URL, use(pinned+"#sha256="+res.SHA256))
-	return nil
-}
-
-// noShellContext refuses a profile that names a shell context: a shell
-// context is the runner's own, and clai never applies one from a fetched
-// or installed profile, so publishing it would only mislead.
-func noShellContext(body []byte) error {
-	var p struct {
-		ShellContext string `json:"shell_context"`
-	}
-	if err := json.Unmarshal(body, &p); err != nil {
-		return fmt.Errorf("read profile: %w", err)
-	}
-	if strings.TrimSpace(p.ShellContext) != "" {
-		return fmt.Errorf("shell_context %q is your own: clai never applies a shell context from a shared profile, so remove it before you publish", p.ShellContext)
-	}
-	return nil
-}
-
-// pinnedSkills refuses a skill target that can change after publishing:
-// everyone who trusts this version trusts its skills' bytes too.
-func pinnedSkills(body []byte) error {
-	skills, err := remote.ProfileSkills(body)
-	if err != nil {
-		return err
-	}
-	for _, t := range skills {
-		if !t.Pinned() && t.SHA256 == "" {
-			return fmt.Errorf("skill %s can change after you publish: pin it with @<version> (cchub:), @<ref> (gh:) or #sha256=<hex>", t)
-		}
-	}
 	return nil
 }
 

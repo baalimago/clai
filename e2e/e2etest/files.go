@@ -23,6 +23,27 @@ func WriteJSONFileAny(t *testing.T, path string, value any) {
 	}
 }
 
+// WriteExecutable writes body as an executable named name in dir, so a fresh
+// tool registry sees it as a PATH tool (internal/tools/handler.go,
+// registerLocalTools).
+func WriteExecutable(t *testing.T, dir, name string, body []byte) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, name), body, 0o755); err != nil {
+		t.Fatalf("WriteFile(%s): %v", name, err)
+	}
+}
+
+// InstallFakeFFmpeg puts the capture package's fake ffmpeg in dir, which a row
+// prepends to PATH before the registry fills.
+func InstallFakeFFmpeg(t *testing.T, dir string) {
+	t.Helper()
+	fixture, err := os.ReadFile(filepath.Join(ModuleRoot(t), "internal", "capture", "testdata", "fake_ffmpeg.sh"))
+	if err != nil {
+		t.Fatalf("ReadFile(fake_ffmpeg.sh): %v", err)
+	}
+	WriteExecutable(t, dir, "ffmpeg", fixture)
+}
+
 func ReadStringFile(t *testing.T, path string) string {
 	t.Helper()
 	b, err := os.ReadFile(path)

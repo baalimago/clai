@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/baalimago/clai/internal/profile"
 	"github.com/baalimago/clai/internal/remote"
 )
 
@@ -27,7 +28,11 @@ type CommandDeps struct {
 	NewResolver NewResolverFunc
 	// ConfigDir returns the clai config directory.
 	ConfigDir func() (string, error)
-	Out       io.Writer
+	// ConfigDirLookup returns the config directory without running config
+	// prep or writing anything, so validate reads a target exactly as it is
+	// on disk. nil falls back to ConfigDir.
+	ConfigDirLookup func() (string, error)
+	Out             io.Writer
 	// NewHubPublisher sends a profile to the Hub as the logged-in account;
 	// nil leaves publish unavailable.
 	NewHubPublisher NewHubPublisherFunc
@@ -37,6 +42,12 @@ type CommandDeps struct {
 	// takes a version nobody trusted; nil, or a nil answer, means nobody
 	// can be asked, and such a version is left.
 	NewPrompt func() remote.Prompter
+	// ProfileEnv builds the checker's environment over the config dir; nil
+	// means this build has no checker.
+	ProfileEnv func(confDir string) (profile.Env, error)
+	// SetExit asks Run for an exit status other than the 0 a nil error and
+	// the 1 an error give, such as validate's 1 for a body it refuses.
+	SetExit func(int)
 }
 
 // Source is the stamp install writes into a profile: the target it came
@@ -66,6 +77,30 @@ func (d CommandDeps) configDir() (string, error) {
 		return "", fmt.Errorf("no config directory")
 	}
 	return d.ConfigDir()
+}
+
+// lookupConfigDir resolves the config directory for a read-only target read.
+func (d CommandDeps) lookupConfigDir() (string, error) {
+	if d.ConfigDirLookup != nil {
+		return d.ConfigDirLookup()
+	}
+	return d.configDir()
+}
+
+// profileEnv builds the environment the profile checker needs.
+func (d CommandDeps) profileEnv(confDir string) (profile.Env, error) {
+	if d.ProfileEnv == nil {
+		return profile.Env{}, fmt.Errorf("the profile check is not available in this build")
+	}
+	return d.ProfileEnv(confDir)
+}
+
+// setExit asks Run for code when the command succeeded but must still exit
+// with a status of its own.
+func (d CommandDeps) setExit(code ExitStatus) {
+	if d.SetExit != nil {
+		d.SetExit(int(code))
+	}
 }
 
 // Trust fetches target, shows what it runs and records it as trusted, so

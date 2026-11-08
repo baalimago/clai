@@ -121,16 +121,6 @@ func TestResolveModelList_verifiesOptionalSHA256(t *testing.T) {
 	}
 }
 
-func TestValidate_checksRemoteModelTargetInProfile(t *testing.T) {
-	if _, err := Validate("x", []byte(`{"model":"cchub:ada/strong@1","prompt":"hi"}`)); err != nil {
-		t.Fatalf("valid remote model target: %v", err)
-	}
-	_, err := Validate("x", []byte(`{"model":"http://insecure.example.com/models.json","prompt":"hi"}`))
-	if err == nil || !strings.Contains(err.Error(), "only https:// is fetched") {
-		t.Fatalf("insecure remote model target: err = %v", err)
-	}
-}
-
 func TestResolveModelTarget_andErrorPaths(t *testing.T) {
 	h := newHub(t, map[string]string{
 		"/hub/ada/strong/v/1/raw": remoteStrongList,

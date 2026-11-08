@@ -1,0 +1,216 @@
+{
+  "note": [
+    "One body per line of the profile document, plus the knowledge a schema cannot",
+    "carry, and each body's expected problems on the Publish route: clai's own",
+    "lines, `<member>: <reason>`, in clai's order. They were taken from clai's",
+    "internal/profile/validate.go (Findings for profile.Publish), not from this",
+    "Worker's output, so the same list in clai's TestConformanceFixture pins both",
+    "implementations to one answer. A body whose verdict depends on a model route",
+    "or a tool registry is absent: the Hub has neither. The pinned-skill rule is",
+    "the Hub's own and clai's on publish, so its line is in the list too."
+  ],
+  "route": "publish",
+  "bodies": [
+    {
+      "name": "valid",
+      "body": "{\n  \"prompt\": \"Review Go code.\",\n  \"description\": \"A strict Go reviewer.\",\n  \"use_tools\": true,\n  \"tools\": [\"date\"],\n  \"mcp_servers\": {\n    \"memory\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@modelcontextprotocol/server-memory@2025.9.25\"],\n      \"envfile\": \"~/.secrets.env\"\n    }\n  }\n}",
+      "problems": []
+    },
+    {
+      "name": "near-miss-key",
+      "body": "{\n  \"promt\": \"Review Go.\"\n}",
+      "problems": ["promt: unknown member \"promt\": did you mean \"prompt\"?"]
+    },
+    {
+      "name": "astral-character",
+      "body": "{\n  \"prompt\": \"Review 😀 please\"\n}",
+      "problems": []
+    },
+    {
+      "name": "audio-null",
+      "body": "{\n  \"prompt\": \"Review Go.\",\n  \"audio\": null\n}",
+      "problems": []
+    },
+    {
+      "name": "unpinned-skill",
+      "body": "{\n  \"prompt\": \"Review Go.\",\n  \"skills\": [\"cchub:ada/tidy\"]\n}",
+      "problems": [
+        "skills: skills: cchub:ada/tidy is not pinned; pin it with @<version>, @<ref> or #sha256=<hex>"
+      ]
+    },
+    {
+      "name": "duplicate-member",
+      "body": "{\n  \"prompt\": \"one\",\n  \"prompt\": \"two\"\n}",
+      "problems": [
+        "$: not one JSON object: duplicate object member name \"prompt\""
+      ]
+    },
+    {
+      "name": "not-one-object",
+      "body": "[]",
+      "problems": ["$: not one JSON object"]
+    },
+    {
+      "name": "prompt-not-string",
+      "body": "{\n  \"prompt\": 5\n}",
+      "problems": ["prompt: needs a string"]
+    },
+    {
+      "name": "use-tools-not-boolean",
+      "body": "{\n  \"use_tools\": \"yes\"\n}",
+      "problems": ["use_tools: needs true or false"]
+    },
+    {
+      "name": "env-value-not-string",
+      "body": "{\n  \"mcp_servers\": {\n    \"s\": {\n      \"command\": \"x\",\n      \"env\": {\n        \"A\": 1\n      }\n    }\n  }\n}",
+      "problems": ["mcp_servers.s.env.A: needs a string"]
+    },
+    {
+      "name": "server-without-transport",
+      "body": "{\n  \"mcp_servers\": {\n    \"x\": {\n      \"args\": []\n    }\n  }\n}",
+      "problems": ["mcp_servers.x: needs \"command\" or \"url\""]
+    },
+    {
+      "name": "relative-envfile",
+      "body": "{\n  \"mcp_servers\": {\n    \"s\": {\n      \"command\": \"x\",\n      \"envfile\": \"secrets/.env\"\n    }\n  }\n}",
+      "problems": [
+        "mcp_servers.s.envfile: a relative path has no profile directory to resolve against: use an absolute path, a ~/ path or a $variable"
+      ]
+    },
+    {
+      "name": "auth-token-env",
+      "body": "{\n  \"mcp_servers\": {\n    \"s\": {\n      \"command\": \"x\",\n      \"auth\": {\n        \"token_env\": \"not a name\"\n      }\n    }\n  }\n}",
+      "problems": [
+        "mcp_servers.s.auth.token_env: token_env is not a valid environment variable name"
+      ]
+    },
+    {
+      "name": "auth-required-env",
+      "body": "{\n  \"mcp_servers\": {\n    \"s\": {\n      \"command\": \"x\",\n      \"env\": {\n        \"GITHUB_TOKEN\": \"v\"\n      },\n      \"auth\": {\n        \"required_env\": [\"GITHUB_TOKEN\", \"GITHUB_TOKEN\"]\n      }\n    }\n  }\n}",
+      "problems": [
+        "mcp_servers.s.auth.required_env[0]: is also a key of mcp_servers.s.env, so the environment never supplies it",
+        "mcp_servers.s.auth.required_env[1]: repeats required_env[0]"
+      ]
+    },
+    {
+      "name": "shell-context",
+      "body": "{\n  \"prompt\": \"Review Go.\",\n  \"shell_context\": \"zsh\"\n}",
+      "problems": [
+        "shell_context: publish refuses shell_context: a shell context is the runner's own"
+      ]
+    },
+    {
+      "name": "schema-other-version",
+      "body": "{\n  \"$schema\": \"https://clai.chat/schema/profile-0.9.json\",\n  \"prompt\": \"Review Go.\"\n}",
+      "problems": [
+        "$schema: $schema names profile version 0.9; this clai reads 1.0"
+      ]
+    },
+    {
+      "name": "startup-not-in-enum",
+      "body": "{\n  \"mcp_servers\": {\n    \"s\": {\n      \"command\": \"x\",\n      \"startup\": \"always\"\n    }\n  }\n}",
+      "problems": ["mcp_servers.s.startup: needs one of [\"eager\",\"lazy\"]"]
+    },
+    {
+      "name": "timeout-not-integer",
+      "body": "{\n  \"mcp_servers\": {\n    \"s\": {\n      \"command\": \"x\",\n      \"timeout_seconds\": 1.5\n    }\n  }\n}",
+      "problems": ["mcp_servers.s.timeout_seconds: needs an integer"]
+    },
+    {
+      "name": "nested-near-miss",
+      "body": "{\n  \"mcp_servers\": {\n    \"s\": {\n      \"command\": \"x\",\n      \"auth\": {\n        \"toke_env\": \"GITHUB_TOKEN\"\n      }\n    }\n  }\n}",
+      "problems": [
+        "mcp_servers.s.auth.toke_env: unknown member \"toke_env\": did you mean \"token_env\"?"
+      ]
+    },
+    {
+      "name": "case-variant-member",
+      "body": "{\n  \"mcpServers\": {\n    \"s\": {\n      \"command\": \"x\"\n    }\n  }\n}",
+      "problems": [
+        "mcpServers: unknown member \"mcpServers\": did you mean \"mcp_servers\"?"
+      ]
+    },
+    {
+      "name": "skills-not-array",
+      "body": "{\n  \"skills\": \"cchub:ada/tidy@1\"\n}",
+      "problems": ["skills: needs an array"]
+    },
+    {
+      "name": "audio-near-miss",
+      "body": "{\n  \"audio\": {\n    \"modle\": \"whisper\"\n  }\n}",
+      "problems": [
+        "audio.modle: unknown member \"modle\": did you mean \"model\"?"
+      ]
+    },
+    {
+      "name": "audio-model-not-string",
+      "body": "{\n  \"audio\": {\n    \"model\": 3\n  }\n}",
+      "problems": ["audio.model: needs a string"]
+    },
+    {
+      "name": "source-target-not-string",
+      "body": "{\n  \"source\": {\n    \"target\": 1\n  }\n}",
+      "problems": ["source.target: needs a string"]
+    },
+    {
+      "name": "null-member",
+      "body": "{\n  \"prompt\": null\n}",
+      "problems": []
+    },
+    {
+      "name": "schema-version-ok",
+      "body": "{\n  \"$schema\": \"https://clai.chat/schema/profile-1.0.json\",\n  \"prompt\": \"Review Go.\"\n}",
+      "problems": []
+    },
+    {
+      "name": "member-clai-never-reads",
+      "body": "{\n  \"prompt\": \"Review Go.\",\n  \"notes\": \"anything\"\n}",
+      "problems": []
+    },
+    {
+      "name": "pinned-gh-skill",
+      "body": "{\n  \"skills\": [\"gh:ada/skills/pdf@main\"]\n}",
+      "problems": []
+    },
+    {
+      "name": "servers-not-object",
+      "body": "{\n  \"mcp_servers\": []\n}",
+      "problems": ["mcp_servers: needs an object"]
+    },
+    {
+      "name": "servers-null",
+      "body": "{\n  \"mcp_servers\": null\n}",
+      "problems": []
+    },
+    {
+      "name": "skills-null",
+      "body": "{\n  \"skills\": null\n}",
+      "problems": []
+    },
+    {
+      "name": "audio-model-null",
+      "body": "{\n  \"audio\": {\n    \"model\": null\n  }\n}",
+      "problems": []
+    },
+    {
+      "name": "server-not-object",
+      "body": "{\n  \"mcp_servers\": {\n    \"s\": \"x\"\n  }\n}",
+      "problems": ["mcp_servers.s: needs an object"]
+    },
+    {
+      "name": "tools-and-use-tools-false",
+      "body": "{\n  \"use_tools\": false,\n  \"tools\": [\"date\"]\n}",
+      "problems": []
+    },
+    {
+      "name": "description-and-schema",
+      "body": "{\n  \"$schema\": \"https://clai.chat/schema/profile-1.0.json\",\n  \"description\": \"A reviewer.\",\n  \"prompt\": \"Review Go.\"\n}",
+      "problems": []
+    },
+    {
+      "name": "empty-body",
+      "body": "",
+      "problems": ["$: not one JSON object: the body is empty"]
+    }
+  ]
+}

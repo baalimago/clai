@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/baalimago/clai/internal/profile"
 )
 
 const publishBody = `{"model":"gpt-5.2","prompt":"Review Go."}`
@@ -34,6 +36,7 @@ func publishDeps(t *testing.T, hub *fakeHub) (CommandDeps, string, *bytes.Buffer
 		ConfigDir:       func() (string, error) { return conf, nil },
 		Out:             &out,
 		NewHubPublisher: func(string) (HubPublisher, error) { return hub.publish, nil },
+		ProfileEnv:      func(string) (profile.Env, error) { return profile.Env{}, nil },
 		FindSecret: func(_ string, b []byte) (string, bool) {
 			if bytes.Contains(b, []byte("sk-")) {
 				return "prompt", true
@@ -105,7 +108,7 @@ func TestPublish_refusesBeforeAnythingLeaves(t *testing.T) {
 		{"typo", `{"modle":"m"}`, `did you mean "model"`},
 		{"envfile", `{"model":"m","mcp_servers":{"x":{"command":"x","envfile":"x.env"}}}`, "relative path"},
 		{"notjson", `{`, "not one JSON object"},
-		{"shellcontext", `{"model":"m","shell_context":"git"}`, "never applies a shell context"},
+		{"shellcontext", `{"model":"m","shell_context":"git"}`, "a shell context is the runner's own"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			hub := &fakeHub{}

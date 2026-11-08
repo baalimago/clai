@@ -94,7 +94,7 @@ func Test_SKILLS_refusals(t *testing.T) {
 	for _, tc := range []struct{ target, want string }{
 		{"cchub:ada/vague-agent@1", "missing required description"},
 		{"cchub:ada/lost-agent@1", "cchub:ada/gone@1: not found"},
-		{"cchub:ada/bare-agent@1", `"review" is not a skill target`},
+		{"cchub:ada/bare-agent@1", `skills: review: not a remote profile target`},
 	} {
 		status, _, stderr := runRemote(t, "profiles install "+tc.target)
 		if status == 0 || !strings.Contains(stderr, tc.want) {

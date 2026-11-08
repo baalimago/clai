@@ -109,23 +109,9 @@ func TestProfileSkills(t *testing.T) {
 	}
 }
 
-func TestValidate_checksSkills(t *testing.T) {
-	if _, err := Validate("x", []byte(`{"model":"m","skills":["cchub:ada/review@2"]}`)); err != nil {
-		t.Fatalf("Validate: %v", err)
-	}
-	_, err := Validate("x", []byte(`{"model":"m","skills":["review"]}`))
-	if err == nil || !strings.Contains(err.Error(), "skills") {
-		t.Fatalf("a bare skill name: err = %v", err)
-	}
-}
-
 func TestSummary_listsSkills(t *testing.T) {
 	body := []byte(`{"model":"m","skills":["cchub:ada/review@2","gh:ada/kit/triage"]}`)
-	checked, err := Validate("x", body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	s, err := Summarize(body, checked)
+	s, err := Summarize(body, Checked{})
 	if err != nil {
 		t.Fatal(err)
 	}

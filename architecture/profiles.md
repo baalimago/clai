@@ -26,11 +26,12 @@ internal/cli:Run()
 | File | Purpose |
 |------|---------|
 | `internal/profiles/cmd.go` | profiles command + `list`, `trust`, `install`, `update`, `publish` subs (see [cmd-dispatch.md](./cmd-dispatch.md)) |
-| `internal/profiles/publish.go` | `CommandDeps.Publish`, `send`, `newPublishCommand`, `pinnedSkills`; `PublishRequest`, `Published`, `HubPublisher`, `HandleRequiredError` |
+| `internal/profiles/publish.go` | `CommandDeps.Publish`, `send`, `newPublishCommand`; `PublishRequest`, `Published`, `HubPublisher`, `HandleRequiredError` |
 | `internal/profiles/skills.go` | `clai skills` (`SkillsCommand`, `SkillsHelp`) and `CommandDeps.PublishSkill` |
 | `internal/cli/cli.go` | `hubPublisher`: posts to `/api/v1/hub` with the `clai cloud login` key; the secret check is `sync.FindSecret` |
 | `internal/profiles/remote.go` | `CommandDeps.Trust`, `Install`, `Update` and the `source` stamp |
 | `internal/profiles/cmd.go` | Implements `clai profiles` command |
+| `internal/profiles/validate.go` | `profiles validate` (findings, `-json`, exit 0/1/2) and `profiles schema` |
 | `internal/utils/config_dir.go` (or similar) | `GetClaiConfigDir()` |
 | `internal/utils/json.go` (or similar) | `ReadAndUnmarshal()` helper |
 
@@ -42,6 +43,8 @@ Implemented in `internal/profiles/cmd.go`.
 
 - `clai profiles`
 - `clai profiles list`
+- `clai profiles validate <target> [-json]`
+- `clai profiles schema`
 - `clai profiles trust <target>`
 - `clai profiles install <target> [name]`
 - `clai profiles update [name]`
@@ -55,9 +58,10 @@ Any other subcommand returns an error.
 it holds a separator or ends in `.json`, and sends the bytes as they are on
 disk to clai.chat's `POST /api/v1/hub` as the account of the
 `clai cloud login` key (`CLAI_CLOUD_TOKEN` and `CLAI_CLOUD_URL` stand in, as
-for sync). Before anything leaves the machine it runs `remote.Validate`,
-the strict check `-prp` gives a remote profile, and `sync.FindSecret`; a
-failure of either sends nothing. The name defaults to the file's base name
+for sync). Before anything leaves the machine it runs `profile.Validate`
+with the `Publish` route, the same checker a run uses, and `sync.FindSecret`;
+a failure of either sends nothing. Publish has no tool registry, so the
+checker judges no tool name there. The name defaults to the file's base name
 and must be a Hub name. The first publish of a name creates the agent; the
 same name again is its next version, with `-note` as the changelog. An
 account without a handle gets `HandleRequiredError` with the suggested
@@ -66,8 +70,9 @@ address and version, the page URL, and the `-prp` line pinned by the
 returned sha256. Flags may follow the profile: `publishCommand` parses
 what comes after it again. The profiles command's config prep may have
 added default fields to the file first, so the published bytes, and their
-hash, are the upgraded file. A profile whose `"skills"` holds a target that
-can change (no version, ref or hash) is refused (`pinnedSkills`).
+hash, are the upgraded file. The checker refuses a profile whose `"skills"` holds a
+target that can change (no version, ref or hash), and one that names a
+`shell_context`, which is the runner's own.
 
 `clai skills publish <skill>` sends a skill the same way, with `kind:
 "skill"`: `<config>/skills/<skill>/SKILL.md`, or a folder holding one, or
@@ -102,7 +107,9 @@ the targets a profile's `"skills"` takes.
    }
    ```
 
-   Malformed profiles are skipped.
+   A file that cannot be read is named on a line of its own, with the
+   `clai profiles validate <path>` command that explains it; the rest are
+   listed as usual.
 
 6. Backward compatible naming: if `Name` is empty, derive from filename.
 7. Prints a small summary block per profile:
@@ -120,5 +127,21 @@ Returns `utils.ErrUserInitiatedExit`.
 
 ## Developer notes
 
-- This command is intentionally conservative: it does not validate the full profile schema; it only displays what it can read.
+- `list` is intentionally conservative: it reads what it can and does not
+  check the profile schema. `clai profiles validate <target>` is the
+  command that does, printing every finding of the one checker in
+  `internal/profile`; `-json` prints the findings array alone. It exits 0
+  with no error finding on any route, 1 with one, and 2 on a usage error,
+  and it never runs the profile. A remote target is read through
+  `remote.Resolver.Peek`, which records no trust.
+- The checker judges a `tools` entry against the local tool registry, which
+  holds the built-ins and the executables found on `PATH`: exact names and
+  globs alike, as clause 6 says. An entry that names the MCP namespace
+  (`mcp_…`, `tools.SelectsMCPTools`) is not judged. Such a name exists only
+  while an MCP server runs, so no offline registry can hold it, and a run
+  selects it without a lookup ([config.md](./config.md), tool usage). A
+  profile may get those servers from its own `mcp_servers`, from the config
+  dir's `mcpServers` directory, or from neither: the exemption does not
+  depend on knowing the server. A typo outside the namespace, `filetree` for
+  `file_tree`, is still refused on the file and remote routes.
 - Creation/editing of profiles is done via `clai setup` (stage `2`).

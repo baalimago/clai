@@ -91,9 +91,12 @@ func Test_goldenFile_PROFILES_list_prints_summary_for_valid_profiles_and_skips_i
 	// Note: getFirstSentence includes the newline terminator when splitting on \n.
 	testboil.AssertStringContains(t, stdout, "First sentence prompt: First line only\n\n---\n")
 
-	// The list silently skips the malformed profile (the united config
-	// migration, which warns about it, runs only in config-touching
-	// commands) and must never render a Name block for it.
+	// The malformed profile is named with the command that explains it, and
+	// must never render a Name block: the list hides nothing and invents
+	// nothing.
+	broken := filepath.Join(profilesDir, "broken.json")
+	testboil.AssertStringContains(t, stdout, broken)
+	testboil.AssertStringContains(t, stdout, "clai profiles validate "+broken)
 	if strings.Contains(stdout, "Name: broken") {
 		t.Fatalf("output must not list invalid profile file; got output: %q", stdout)
 	}

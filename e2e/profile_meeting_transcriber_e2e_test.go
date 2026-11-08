@@ -29,14 +29,12 @@ func Test_e2e_meeting_transcriber_profile(t *testing.T) {
 	// The registry fills once per process, so a fake ffmpeg that arrives later
 	// would never register the audio tools. Swap in a fresh registry, put the
 	// fixture on PATH and let Init observe both.
-	fixture, err := os.ReadFile(filepath.Join(e2etest.ModuleRoot(t), "internal", "capture", "testdata", "fake_ffmpeg.sh"))
-	if err != nil {
-		t.Fatalf("ReadFile(fake_ffmpeg.sh): %v", err)
-	}
 	binDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(binDir, "ffmpeg"), fixture, 0o755); err != nil {
-		t.Fatalf("WriteFile(ffmpeg): %v", err)
-	}
+	e2etest.InstallFakeFFmpeg(t, binDir)
+	// The shipped tools list names rg, which is an executable-backed tool and
+	// so a question the profile check asks of PATH (internal/tools/handler.go,
+	// registerLocalTools): a runner without ripgrep refuses the example.
+	e2etest.WriteExecutable(t, binDir, "rg", []byte("#!/bin/sh\nexit 0\n"))
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	// A non-interactive run gets /dev/null, which is a character device and so

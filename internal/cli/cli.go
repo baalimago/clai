@@ -7,9 +7,11 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"runtime/pprof"
 	"strings"
 	"time"
@@ -25,9 +27,11 @@ import (
 	"github.com/baalimago/clai/internal/imagegen"
 	"github.com/baalimago/clai/internal/imagegen/route"
 	"github.com/baalimago/clai/internal/imageinput"
+	"github.com/baalimago/clai/internal/modelalias"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/photo"
 	"github.com/baalimago/clai/internal/present"
+	"github.com/baalimago/clai/internal/profile"
 	"github.com/baalimago/clai/internal/profiles"
 	"github.com/baalimago/clai/internal/remote"
 	"github.com/baalimago/clai/internal/runtally"
@@ -118,16 +122,103 @@ func DefaultDeps() Deps {
 }
 
 // remoteResolver builds the resolver for remote profile targets over the
-// config directory a command prepared and the clai cache directory.
-func remoteResolver(client remote.Doer) text.NewRemoteResolverFunc {
+// config directory a command prepared and the clai cache directory. envAt
+// supplies the checker every route shares, which the resolver runs before a
+// body is trusted.
+func remoteResolver(client remote.Doer, envAt func(confDir string) (profile.Env, error)) text.NewRemoteResolverFunc {
 	return func(confDir string, prompt remote.Prompter) (remote.Resolver, error) {
 		cacheDir, err := utils.GetClaiCacheDir()
 		if err != nil {
 			return remote.Resolver{}, err
 		}
 		note := func(s string) { fmt.Fprintf(os.Stderr, "notice: %s\n", s) }
-		return remote.NewResolver(remote.EnvFrom(os.Getenv), confDir, cacheDir, client, prompt, note)
+		r, err := remote.NewResolver(remote.EnvFrom(os.Getenv), confDir, cacheDir, client, prompt, note)
+		if err != nil {
+			return remote.Resolver{}, err
+		}
+		env, err := envAt(confDir)
+		if err != nil {
+			return remote.Resolver{}, err
+		}
+		r.CheckProfile = func(body []byte) remote.ProfileCheck { return checkProfileBody(body, env) }
+		return r, nil
 	}
+}
+
+// profileEnvFunc returns a builder of the profile checker's environment. Its
+// first caller names the config dir it is built over; every later caller in
+// the same run gets the value back, so a run that checks a file and fetches a
+// remote target reads the alias table and the tool registry once.
+func profileEnvFunc() func(confDir string) (profile.Env, error) {
+	var (
+		built bool
+		env   profile.Env
+		err   error
+	)
+	return func(confDir string) (profile.Env, error) {
+		if !built {
+			env, err = newProfileEnv(confDir)
+			built = true
+		}
+		return env, err
+	}
+}
+
+// newProfileEnv is the machine-local knowledge a profile check needs: the
+// config's model aliases, the shell contexts in its config dir, and the tool
+// registry of this binary.
+func newProfileEnv(confDir string) (profile.Env, error) {
+	conf, err := utils.ReadConfigFile(filepath.Join(confDir, "textConfig.json"), &text.Default)
+	if err != nil {
+		return profile.Env{}, fmt.Errorf("read the model aliases for the profile check: %w", err)
+	}
+	return profile.Env{
+		ResolveModel: modelRouter(conf.ModelAliases),
+		HasShellContext: func(name string) bool {
+			_, err := text.LoadShellContextDefinition(confDir, name)
+			return err == nil
+		},
+		ToolNames: tools.Names(),
+	}, nil
+}
+
+// modelRouter routes a model string the way a run does: a cchub:, gh: or
+// https: model list is a route of its own, which no alias table can expand
+// offline, and anything else is an alias in the table or a model name.
+func modelRouter(table modelalias.Table) func(model string) ([]string, error) {
+	return func(model string) ([]string, error) {
+		if _, err := remote.ParseModelListTarget(model); err == nil {
+			return []string{model}, nil
+		} else if !errors.Is(err, remote.ErrNotRemote) {
+			return nil, err
+		}
+		return table.Resolve(model)
+	}
+}
+
+// checkProfileBody is the one checker on the remote route: the problems a run
+// would refuse, and the top-level members nothing reads, which a trust prompt
+// lists.
+func checkProfileBody(body []byte, env profile.Env) remote.ProfileCheck {
+	findings, err := profile.Validate(body, profile.Remote, env)
+	if err != nil {
+		// The document itself cannot be applied, which a shipped binary
+		// never hits; refuse rather than run unexamined bytes.
+		return remote.ProfileCheck{Problems: []string{fmt.Sprintf("check the profile: %v", err)}}
+	}
+	return remote.ProfileCheck{Problems: findings.Problems(profile.Remote), Ignored: unreadMembers(findings)}
+}
+
+// unreadMembers names every member the checker reports as never read, at any
+// depth, so a nested member such as audio.language reaches the trust prompt.
+func unreadMembers(findings profile.Findings) []string {
+	var names []string
+	for _, finding := range findings {
+		if finding.Unread {
+			names = append(names, finding.Member)
+		}
+	}
+	return names
 }
 
 // hubPublisher posts a profile to the Hub with this machine's clai.chat
@@ -168,6 +259,7 @@ func commands(deps Deps, setExit func(int)) map[string]cmd.Command {
 	applyMediaOverrides := func(s internal.MediaToolSettings) error {
 		return audio.SetTranscribeOverrides(s.AudioModel, s.AudioFormat)
 	}
+	envAt := profileEnvFunc()
 	queryDeps := text.QueryCommandDeps{
 		ConfigPrep:          configPrep,
 		TrustInput:          func() io.Reader { return setup.Input },
@@ -176,14 +268,18 @@ func commands(deps Deps, setExit func(int)) map[string]cmd.Command {
 		SummaryJoinTimeout:  deps.SummaryJoinTimeout,
 		NewImageGenerator:   deps.NewImageGenerator,
 		PhotoConfig:         setup.LoadPhotoConfig,
-		NewRemoteResolver:   remoteResolver(deps.RemoteClient),
+		NewRemoteResolver:   remoteResolver(deps.RemoteClient, envAt),
+		ProfileEnv:          envAt,
 		RunTallyEnv:         runtally.OSEnv{},
 		StepRetry:           deps.StepRetry,
 	}
 	profileDeps := profiles.CommandDeps{
-		NewResolver:     profiles.NewResolverFunc(remoteResolver(deps.RemoteClient)),
+		NewResolver:     profiles.NewResolverFunc(remoteResolver(deps.RemoteClient, envAt)),
 		ConfigDir:       func() (string, error) { return configPrep() },
+		ConfigDirLookup: utils.GetClaiConfigDir,
 		NewHubPublisher: hubPublisher,
+		ProfileEnv:      envAt,
+		SetExit:         setExit,
 		FindSecret: func(name string, b []byte) (string, bool) {
 			s, found := sync.FindSecret(name, b)
 			return s.String(), found
@@ -207,14 +303,14 @@ func commands(deps Deps, setExit func(int)) map[string]cmd.Command {
 			NewPresenter:      present.New,
 			NewOpener:         present.NewCommandOpener,
 			PreviousImage:     photo.PreviousQueryImage,
-			NewRemoteResolver: remoteResolver(deps.RemoteClient),
+			NewRemoteResolver: remoteResolver(deps.RemoteClient, envAt),
 		}),
 		"video|v": video.Command(video.CommandDeps{
 			ConfigPrep: configPrep,
 		}),
 		"audio|a": audio.Command(audio.CommandDeps{
 			ConfigPrep:        func() (string, []string, error) { return setup.ConfigRunPrep(true) },
-			NewRemoteResolver: remoteResolver(deps.RemoteClient),
+			NewRemoteResolver: remoteResolver(deps.RemoteClient, envAt),
 		}),
 		"setup|s":        setup.Command(),
 		"version":        version.Command(),

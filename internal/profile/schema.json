@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://clai.chat/schema/profile-1.0.json",
+  "title": "clai profile",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "name": { "type": "string" },
+    "model": { "type": "string" },
+    "use_tools": { "type": "boolean" },
+    "use_skills": { "type": "boolean" },
+    "tools": { "type": "array", "items": { "type": "string" } },
+    "skills": { "type": "array", "items": { "type": "string" } },
+    "cmd-ban": { "type": "array", "items": { "type": "string" } },
+    "prompt": { "type": "string" },
+    "save-reply-as-conv": { "type": "boolean" },
+    "mcp_servers": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/server" }
+    },
+    "shell_context": { "type": "string" },
+    "use_lookback": { "type": "boolean" },
+    "audio": { "$ref": "#/$defs/audio" },
+    "source": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "target": { "type": "string" }
+      }
+    },
+    "description": { "type": "string", "x-clai": "unread" },
+    "$schema": { "type": "string", "x-clai": "unread" }
+  },
+  "$defs": {
+    "audio": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "model": { "type": "string" }
+      }
+    },
+    "server": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "command": { "type": "string" },
+        "url": { "type": "string" },
+        "args": { "type": "array", "items": { "type": "string" } },
+        "env": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "envfile": { "type": "string" },
+        "name": { "type": "string" },
+        "timeout_seconds": { "type": "integer" },
+        "startup": { "type": "string", "enum": ["eager", "lazy"] },
+        "connect_timeout_seconds": { "type": "integer" },
+        "auth_timeout_seconds": { "type": "integer" },
+        "optional": { "type": "boolean" },
+        "auth": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "token_command": { "type": "array", "items": { "type": "string" } },
+            "token_env": { "type": "string" },
+            "required_env": { "type": "array", "items": { "type": "string" } },
+            "scopes": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      }
+    }
+  }
+}

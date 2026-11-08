@@ -7,17 +7,18 @@ import (
 	"github.com/baalimago/clai/internal/look"
 )
 
-func summaryOf(t *testing.T, body string) string {
+func summarizeWith(t *testing.T, body string, checked Checked) string {
 	t.Helper()
-	checked, err := Validate("t", []byte(body))
-	if err != nil {
-		t.Fatalf("Validate(%s): %v", body, err)
-	}
 	s, err := Summarize([]byte(body), checked)
 	if err != nil {
 		t.Fatalf("Summarize(%s): %v", body, err)
 	}
 	return s.String()
+}
+
+func summaryOf(t *testing.T, body string) string {
+	t.Helper()
+	return summarizeWith(t, body, Checked{})
 }
 
 func assertHas(t *testing.T, got string, wants ...string) {
@@ -111,7 +112,7 @@ func TestSummary_escapesControlCharacters(t *testing.T) {
 	body := `{"model":"m\u001b[2J","prompt":"hi\u001b]0;x\u0007\nok\u009b","x\u001b[1m":1,"mcp_servers":{
 		"s\u001b[31m":{"command":"node\u0007","args":["a\rb"],"env":{"K":"v\u001b[0m"}},
 		"u":{"url":"https://x.example/\u202e","auth":{"token_command":["t\u001bc"]}}}}`
-	got := summaryOf(t, body)
+	got := summarizeWith(t, body, Checked{Ignored: []string{"x\x1b[1m"}})
 	for _, r := range got {
 		if r != '\n' && (r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) || r == 0x202e) {
 			t.Fatalf("summary holds control character %U:\n%q", r, got)
@@ -165,18 +166,14 @@ func TestSummary_marksWhatCanChangeUnderIt(t *testing.T) {
 }
 
 func TestSummary_defaultsAndLeftovers(t *testing.T) {
-	got := summaryOf(t, `{"use_tools":true,"tools":["date"],"description":"d","notes":"n"}`)
+	got := summarizeWith(t, `{"use_tools":true,"tools":["date"],"description":"d","notes":"n"}`, Checked{Ignored: []string{"notes"}})
 	assertHas(t, got, "▸ MCP servers · none of its own\n", "▸ model · your default\n", "▸ not read by clai · notes\n")
 	assertLacks(t, got, "description")
 }
 
 func TestSummary_colorsTheLookNotTheProfile(t *testing.T) {
 	t.Setenv("NO_COLOR", "")
-	checked, err := Validate("t", []byte(`{"prompt":"p"}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	s, err := Summarize([]byte(`{"prompt":"p"}`), checked)
+	s, err := Summarize([]byte(`{"prompt":"p"}`), Checked{})
 	if err != nil {
 		t.Fatal(err)
 	}
