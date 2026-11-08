@@ -10,7 +10,7 @@ jobs:
   call-workflow:
     uses: baalimago/simple-go-pipeline/.github/workflows/validate.yml@85cc44ffbafea241db94086455fb2658524a95aa
     with:
-      go-version: "1.26"
+      go-version: "1.27"
       staticcheck-version: "latest"
       gofumpt-version: latest
       # awesome-go quotes one aggregate over a single -coverpkg profile, not the

@@ -9,7 +9,7 @@ import (
 func Test_Command_tree(t *testing.T) {
 	t.Setenv("CLAI_CONFIG_DIR", t.TempDir())
 	c := Command(CommandDeps{})
-	if c.Describe() == "" || !strings.Contains(c.Help(), "profiles [list|install|update|trust|publish]") {
+	if c.Describe() == "" || !strings.Contains(c.Help(), "profiles [list|validate|schema|install|update|trust|publish]") {
 		t.Fatalf("describe/help incomplete: %q / %q", c.Describe(), c.Help())
 	}
 	for _, want := range []string{Help, RemoteHelp, "<config-dir>/profiles/<name>.json", "clai profiles publish", "cchub:<handle>/<agent>"} {

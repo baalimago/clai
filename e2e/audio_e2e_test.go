@@ -55,14 +55,8 @@ func Test_e2e_AUDIO_calibrate(t *testing.T) {
 	e2etest.WriteJSONFileAny(t, filepath.Join(confDir, "audioConfig.json"), map[string]any{
 		"capture": map[string]any{"dir": t.TempDir(), "silence-peak-db": -40},
 	})
-	fixture, err := os.ReadFile(filepath.Join(e2etest.ModuleRoot(t), "internal", "capture", "testdata", "fake_ffmpeg.sh"))
-	if err != nil {
-		t.Fatalf("ReadFile(fake_ffmpeg.sh): %v", err)
-	}
 	binDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(binDir, "ffmpeg"), fixture, 0o755); err != nil {
-		t.Fatalf("WriteFile(ffmpeg): %v", err)
-	}
+	e2etest.InstallFakeFFmpeg(t, binDir)
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	status, stdout, stderr := harness.RunAudio(t, "audio calibrate")

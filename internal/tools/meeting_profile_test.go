@@ -6,23 +6,20 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/baalimago/clai/internal/remote"
 )
 
 // The meeting-transcriber profile ships as a hub-ready example, so it must
-// pass the strict validator and name only tools this catalog can provide
-// (worklog 2026-10-28-audio-record-tool, profile.1).
+// name only tools this catalog can provide (worklog
+// 2026-10-28-audio-record-tool, profile.1). Its strict validity is checked
+// where internal/profile can be imported: internal/profile's
+// TestValidateValidBody and internal/text's TestExampleProfiles, since
+// internal/profile imports this package.
 func Test_meeting_transcriber_profile_is_valid(t *testing.T) {
 	path := filepath.Join("..", "..", "examples", "profiles", "meeting-transcriber.json")
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("ReadFile(%q): %v", path, err)
 	}
-	if _, err := remote.Validate(path, raw); err != nil {
-		t.Fatalf("Validate(%q): %v", path, err)
-	}
-
 	var profile struct {
 		Model    string   `json:"model"`
 		Prompt   string   `json:"prompt"`

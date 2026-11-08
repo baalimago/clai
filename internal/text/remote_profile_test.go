@@ -6,42 +6,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"reflect"
-	"slices"
 	"strings"
 	"testing"
 
 	"github.com/baalimago/clai/internal/look"
 	"github.com/baalimago/clai/internal/remote"
 )
-
-func TestRemoteProfileKeys_matchProfile(t *testing.T) {
-	typ := reflect.TypeFor[Profile]()
-	var keys []string
-	for field := range typ.Fields() {
-		keys = append(keys, strings.Split(field.Tag.Get("json"), ",")[0])
-	}
-	want := slices.Clone(remote.ProfileKeys)
-	slices.Sort(keys)
-	slices.Sort(want)
-	if !slices.Equal(keys, want) {
-		t.Fatalf("Profile json keys = %v, remote.ProfileKeys = %v", keys, want)
-	}
-}
-
-func TestRemoteAudioKeys_matchProfileAudio(t *testing.T) {
-	typ := reflect.TypeFor[ProfileAudio]()
-	var keys []string
-	for field := range typ.Fields() {
-		keys = append(keys, strings.Split(field.Tag.Get("json"), ",")[0])
-	}
-	want := slices.Clone(remote.AudioKeys)
-	slices.Sort(keys)
-	slices.Sort(want)
-	if !slices.Equal(keys, want) {
-		t.Fatalf("ProfileAudio json keys = %v, remote.AudioKeys = %v", keys, want)
-	}
-}
 
 func TestResolveRemoteProfilePath(t *testing.T) {
 	local := &Configurations{ProfilePath: "./bot.json"}

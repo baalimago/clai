@@ -32,8 +32,9 @@ address and fetch another (`gh:anthropics/..@evil`).
 | File | Purpose |
 | --- | --- |
 | `internal/remote/target.go` | `ParseTarget`, `Target` (`Base`, `String`, `Pinned`, `Unpinned`, `WithDigest`, `FetchURL`, `PageURL`, `DefaultName`) |
-| `internal/remote/resolve.go` | `Resolver.Resolve`: cache or fetch, validate, hash check, trust, store. `Consent`, `Prompter`, and the refusal errors with `ExitCode() == ExitRefused` (3) |
-| `internal/remote/validate.go` | `Validate`: the strict check, `ProfileKeys`, `InvalidProfileError` |
+| `internal/remote/resolve.go` | `Resolver.Resolve`: cache or fetch, check, summarize, hash check, trust, store; `CheckProfile` is the injected check, `Peek` reads without checking or trusting. `Consent`, `Prompter`, and the refusal errors with `ExitCode() == ExitRefused` (3) |
+| `internal/remote/validate.go` | `MaxBodyBytes`, `InvalidProfileError`, `Checked`: what a check reports and what a refusal prints |
+| `internal/profile` | `Validate`: the one checker, over the embedded `schema.json`, plus `Findings`, `Env` and `Schema()` |
 | `internal/remote/fetch.go` | `NewClient`/`CheckRedirect` (https-only redirects, at most 5), the 64 KiB cap, the content-type check |
 | `internal/remote/store.go` | `TrustStore` (`<config>/trust.json`), `Cache` (`<cache>/remote/<sha256>.json` plus `index.json`), `Digest` |
 | `internal/remote/skill.go` | `ParseSkillTarget`, `Resolver.ResolveSkill`/`ResolveSkills`, `ResolvedSkill`, `SkillSummary`, `InvalidSkillError`, `ProfileSkills` |
@@ -42,6 +43,7 @@ address and fetch another (`gh:anthropics/..@evil`).
 | `internal/remote/env.go` | `CLAI_CLOUD_URL`, `CLAI_CLOUD=off`, `NewResolver` |
 | `internal/text/remote_profile.go` | `resolveRemoteProfilePath` (runs before `ProfileOverrides`), the terminal prompt, `terminalAvailable` |
 | `internal/profiles/remote.go` | `profiles trust`, `install`, `update`; the `source` stamp |
+| `internal/profiles/validate.go` | `profiles validate` and `profiles schema`: the findings a body has, and the document this clai ships |
 | `internal/exitstatus.go` | `ExitCoder`/`ExitStatus`: how exit status 3 survives upstream `cmd.Run` |
 | `internal/cli/cli.go` | `Deps.RemoteClient`, `remoteResolver` (the composition root) |
 | `e2e/remote_targets_e2e_test.go` | The CLI contract against `fakeHub`, a local TLS server with clai.chat's raw routes that also stands in for GitHub and any https host |
@@ -56,7 +58,7 @@ text.SetupQuerier
     → Resolver.Resolve(target, ConsentAsk)
       → cache hit for a pinned target, or for any target under CLAI_CLOUD=off
         otherwise fetch FetchURL(hub base)
-      → Validate → Summarize → Digest
+      → CheckProfile (the one checker) → Summarize → Digest
       → #sha256= present: must match, and counts as consent
       → trusted (base, digest) in trust.json? run
         else terminal? ask (summary + page link), record a yes
@@ -96,32 +98,28 @@ A `gh:` target reads
 - **The hash is consent.** `#sha256=<hex>` lets a fresh container or a CI
   job run a target nobody trusted there before. The bytes must match the
   hash, and the match is recorded as trust.
-- **Strict validation, for remote profiles only.** The body must be at
-  most 64 KiB and hold exactly one JSON object.
-  - A key within two edits of a profile key is an error that suggests the
-    key (`"promt"` → `"prompt"`). Any other unknown key is ignored, as a
-    local profile's would be, and listed in the trust prompt's
-    `not read by clai` line. `description`, the hub's own field
-    (`hubKeys`), is expected and never listed.
-  - Every field `Summarize` reads has the shape it decodes (`model`,
-    `prompt` and each server's `command`, `url` and `envfile` strings,
-    `use_tools` a boolean, `tools` and `args` arrays of strings, each
-    server's `env` an object of strings), so a body `Validate` accepts can
-    always be summarised.
-  - Each MCP server needs `command` or `url`.
-  - A relative `envfile` is refused: the fetched profile has no directory
-    for it to be relative to. Use `~/`, `$VAR/` or an absolute path.
-  - `auth`, when present, must be an object. Its `required_env` must be an
-    array of valid variable names (`serverconfig.ValidEnvName`), each listed
-    once and none also a key of that server's `env`, which would shadow the
-    variable the profile says it needs. `token_env` must be a valid name,
-    `token_command` a non-empty array of strings and `scopes` an array of
-    strings. An unknown auth key within two edits of one of these is an
-    error that suggests it; any other is listed as ignored. A malformed
-    entry is reported by field or index (`required_env[2]`), never echoed:
-    it may be a pasted secret, and the names are printed in the trust
-    prompt, so they must not carry newlines or escape sequences. Local
-    config is lenient about duplicates and `env` overlap.
+- **One checker, before trust, on every route.** The shape rules live in
+  `internal/profile`: an embedded JSON Schema document plus the checker that
+  applies it, with the knowledge a document cannot carry (routing, tools,
+  paths, publish policy). `Resolver.CheckProfile` runs it on a fetched body
+  after the fetch and before trust, so a body it refuses is an
+  `InvalidProfileError` (exit 3) that records no trust and runs nothing.
+  The composition root supplies the check, which is why the file route
+  (`-prp <path>`), the remote route and `profiles publish` all decide with
+  the same rules; the members the checker reports as never read fill the
+  trust prompt's `not read by clai` line.
+  - The body must be at most 64 KiB and hold exactly one JSON object.
+  - A key within two edits of a documented key is an error that suggests it
+    (`"promt"` → `"prompt"`); any other unknown key is a warning, and is
+    listed in the trust prompt as never read.
+  - Each MCP server needs `command` or `url`, and a relative `envfile` is
+    refused: a fetched profile has no directory for it to be relative to.
+    Use `~/`, `$VAR/` or an absolute path.
+  - An auth entry that is not a variable name is reported by field or index
+    (`required_env[2]`), never echoed: it may be a pasted secret, and the
+    names are printed in the trust prompt, so they must not carry newlines
+    or escape sequences. Local config is lenient about duplicates and `env`
+    overlap.
 
   The trust prompt's `needs` section names each variable a server reads
   from the environment, with its server: `auth.required_env`, plus
@@ -208,7 +206,10 @@ A `gh:` target reads
 
   `cchub:` and `https://` responses must be `application/json` (or
   `+json`). `raw.githubusercontent.com` serves `text/plain`, so `gh:`
-  relies on `Validate` alone. Local profiles keep the lenient loader.
+  relies on the checker alone. Local profiles keep the lenient loader,
+  except a `-prp <path>` body, which the file route checks the same way; a
+  file that carries the `source` stamp `profiles install` writes came from
+  a remote target and was checked there, so the file route leaves it alone.
 - **Offline.** `CLAI_CLOUD=off` makes every target cache-only. An
   uncached target is an `OfflineError` (exit 3).
 - **Exit status 3.** Upstream `cmd.Run` collapses every failure to 1.
@@ -230,8 +231,17 @@ A `gh:` target reads
     left as an `UntrustedError`.
   - A fetched or installed profile gets only the tools it names (see the
     trust prompt's Tools above).
-  - `profiles list` shows the stamp. `text.Profile.Source` reads it, and the
-    hub's agent page shows it as "based on".
+  - `profiles validate <target> [-json]` reads a path, a name under
+    `<config>/profiles` or a remote target and prints every finding as
+    `severity member: reason [routes]` (`*` for all three). It fetches a
+    remote target through `Resolver.Peek`, which records no trust and
+    stores nothing, never runs the profile, and exits 0, 1 (an error
+    finding) or 2 (a usage error). It is the only command that prints
+    warnings; a run prints only the findings its own route refuses.
+  - `profiles schema` prints `profile.Schema()` byte for byte.
+  - `profiles list` shows the stamp, and names each file it cannot read with
+    the `profiles validate` command that explains it. `text.Profile.Source`
+    reads it, and the hub's agent page shows it as "based on".
 
 ## Skills
 
@@ -251,7 +261,7 @@ reaches them.
   (`Cache.skillRoot`). The name is the frontmatter `name`, or the hub name,
   or the folder that holds the file. The trust prompt shows
   `SkillSummary`: the name and description.
-- `Validate` checks `"skills"` is a list of skill targets, and `Summarize`
+- The checker refuses a `"skills"` entry that is no skill target, and `Summarize`
   lists them (`Summary.Skills`, marked "not pinned" when they can change).
 - In a run, `text.remoteRun` resolves the profile and then its skills. A
   yes at the profile's prompt in this run is consent for its skills
@@ -263,13 +273,14 @@ reaches them.
   `ConsentGiven` too (`CommandDeps.trustSkills`), so an installed profile
   runs offline and in cron with its skills cached and trusted.
 - `profiles publish` refuses a skill that is not pinned by version, ref or
-  hash (`pinnedSkills`): whoever trusts a published version trusts the
-  bytes of its skills too.
+  hash, in the checker's `Publish` route: whoever trusts a published
+  version trusts the bytes of its skills too.
 
 ## Gotchas
 
-- `remote.ProfileKeys` must list every JSON key of `text.Profile`.
-  `TestRemoteProfileKeys_matchProfile` fails when they drift.
+- `internal/profile` is the one place a shape rule lives: `remote` holds no
+  checker of its own, only the `ProfileCheck`/`Checked` its resolver is
+  injected with.
 - Untrusted bytes are never cached. Only a resolve that passed trust calls
   `Cache.Store`, so a cache hit never skips the trust check. Trust is checked
   again on every resolve anyway.

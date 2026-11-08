@@ -213,7 +213,7 @@ The effective precedence is:
 
 1. **Hard-coded defaults** (`text.Default`) – lowest precedence
 2. **Mode config file** (`textConfig.json`)
-3. **Profiles** (`-p/-profile` or `-prp/-profile-path`; `-prp` also takes a remote target, see [remote-targets.md](./remote-targets.md))
+3. **Profiles** (`-p/-profile` or `-prp/-profile-path`; `-prp` also takes a remote target, see [remote-targets.md](./remote-targets.md)). A `-prp` body from a file is checked by `profile.Validate` with the `File` route before it is applied, so a body a run would refuse prints its findings and exits 1 with nothing run; `-p <name>` keeps the lenient loader. A remote `-prp` body is checked once by the resolver that fetched it, and a file carrying install's `source` stamp came from one and is not checked again.
 4. **Flags** (CLI)
 
 There is also a *model-specific vendor config* layer which is loaded during querier creation.
@@ -292,7 +292,9 @@ Notable rules:
   registers it (see `architecture/images.md`).
 - unknown tools are skipped with warnings.
 - if nothing valid remains, tooling is disabled for that run.
-- MCP tools are not validated against the local registry; names prefixed with `mcp_` are allowed.
+- MCP tools are not validated against the local registry; names prefixed with
+  `mcp_` are allowed (`tools.SelectsMCPTools`, which the profile checker uses
+  for the same rule).
 
 ### Command ban configuration
 

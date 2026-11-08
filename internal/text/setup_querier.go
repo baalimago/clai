@@ -65,8 +65,8 @@ func setupToolConfig(tConf *Configurations, useTools string) {
 				validTools = append(validTools, imagegentool.Name)
 			}
 
-			// MCP tools: accept any name starting with "mcp_"
-			if strings.HasPrefix(p, "mcp_") {
+			// MCP tools: accept any name in the MCP namespace.
+			if tools.SelectsMCPTools(p) {
 				validTools = append(validTools, p)
 				continue
 			}

@@ -69,6 +69,9 @@ type QueryCommandDeps struct {
 	// NewRemoteResolver builds the resolver for -prp cchub:, gh: and https://
 	// targets; nil refuses them.
 	NewRemoteResolver NewRemoteResolverFunc
+	// ProfileEnv builds the checker's environment over the config dir; nil
+	// leaves a local -prp body unchecked.
+	ProfileEnv ProfileEnvFunc
 	// RunTallyEnv is the environment subagent tallies travel through; nil
 	// counts no subagents. RunTallyTempRoot is where a run's tally
 	// directory is made, "" being the OS default.
@@ -207,6 +210,9 @@ func newTextSession(ctx context.Context, c *internal.Command, tf internal.TextFl
 	remoteTargets := &remoteRun{newResolver: deps.NewRemoteResolver, confDir: confDir, trustInput: trustInput, interactive: interactive}
 	tConf, err := setupTextConfig(ctx, confDir, tf, c.Args(), trustInput, remoteTargets.profile, remoteTargets.skills)
 	if err != nil {
+		return nil, err
+	}
+	if err := checkProfileBody(confDir, tConf, deps.ProfileEnv); err != nil {
 		return nil, err
 	}
 	// The media tools read the values this run resolved, so the hand-off waits

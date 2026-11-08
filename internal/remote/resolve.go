@@ -116,6 +116,17 @@ type Resolver struct {
 	// Note receives advice that does not stop the run, such as an
 	// unpinned gh: target following its default branch.
 	Note func(string)
+	// CheckProfile checks a fetched body before it is trusted; nil checks
+	// nothing. The composition root supplies the one checker every route
+	// uses, so a refused body records no trust.
+	CheckProfile func(body []byte) ProfileCheck
+}
+
+// ProfileCheck is what a check of one profile body reports: the problems
+// that refuse it, and the members clai never reads of it.
+type ProfileCheck struct {
+	Problems []string
+	Ignored  []string
 }
 
 // Resolved is a target ready to load.
@@ -139,7 +150,7 @@ func (r Resolver) Resolve(ctx context.Context, raw string, consent Consent) (Res
 	if err != nil {
 		return Resolved{}, err
 	}
-	checked, err := Validate(t.String(), body)
+	checked, err := r.check(t, body)
 	if err != nil {
 		return Resolved{}, err
 	}
@@ -148,8 +159,8 @@ func (r Resolver) Resolve(ctx context.Context, raw string, consent Consent) (Res
 		return Resolved{}, err
 	}
 	digest := Digest(body)
-	if t.SHA256 != "" && t.SHA256 != digest {
-		return Resolved{}, &HashMismatchError{Target: t.String(), Want: t.SHA256, Got: digest}
+	if err := checkPinned(t, digest); err != nil {
+		return Resolved{}, err
 	}
 	if err := r.authorize(ctx, t, digest, summary, consent); err != nil {
 		return Resolved{}, err
@@ -159,6 +170,45 @@ func (r Resolver) Resolve(ctx context.Context, raw string, consent Consent) (Res
 	}
 	r.noteUnpinned(t, fetched)
 	return Resolved{Target: t, Path: r.Cache.Path(digest), Digest: digest, Body: body, Summary: summary, Fetched: fetched}, nil
+}
+
+// Peek reads target's bytes without checking, trusting or caching them: the
+// caller that checks them itself, `clai profiles validate`, leaves no record
+// that lets a later run skip the question.
+func (r Resolver) Peek(ctx context.Context, raw string) ([]byte, error) {
+	t, err := ParseTarget(raw)
+	if err != nil {
+		return nil, err
+	}
+	body, _, err := r.read(ctx, t, profileDoc)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkPinned(t, Digest(body)); err != nil {
+		return nil, err
+	}
+	return body, nil
+}
+
+// checkPinned refuses bytes that do not match the hash a target pins them to.
+func checkPinned(t Target, got string) error {
+	if t.SHA256 != "" && t.SHA256 != got {
+		return &HashMismatchError{Target: t.String(), Want: t.SHA256, Got: got}
+	}
+	return nil
+}
+
+// check runs the injected profile check, if there is one, so that a body it
+// refuses never reaches trust.
+func (r Resolver) check(t Target, body []byte) (Checked, error) {
+	if r.CheckProfile == nil {
+		return Checked{}, nil
+	}
+	checked := r.CheckProfile(body)
+	if len(checked.Problems) > 0 {
+		return Checked{}, &InvalidProfileError{Target: t.String(), Problems: checked.Problems}
+	}
+	return Checked{Ignored: checked.Ignored}, nil
 }
 
 func (r Resolver) noteUnpinned(t Target, fetched bool) {

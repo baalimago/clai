@@ -88,6 +88,15 @@ func WildcardMatch(pattern, name string) bool {
 	return pattern == name
 }
 
+// SelectsMCPTools reports whether a selection pattern names the MCP tool
+// namespace. Such a name exists only while an MCP server runs, so no offline
+// registry can hold it and no offline check may refuse it
+// (architecture/config.md, tool usage: MCP tools are not validated against the
+// local registry).
+func SelectsMCPTools(pattern string) bool {
+	return strings.HasPrefix(pattern, "mcp_")
+}
+
 // Set registers tool under the provided name.
 func (r *registry) Set(name string, t models.LLMTool) {
 	r.mu.Lock()

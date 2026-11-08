@@ -334,6 +334,34 @@ func TestWildcardMatch(t *testing.T) {
 	}
 }
 
+// TestSelectsMCPTools pins the tool namespace whose names exist only while an
+// MCP server runs: an entry that selects it is never a local registry
+// question. Every other pattern, globs included, is.
+func TestSelectsMCPTools(t *testing.T) {
+	testCases := []struct {
+		pattern  string
+		expected bool
+	}{
+		{"mcp_", true},
+		{"mcp_slivingdoc_notes_pull", true},
+		{"mcp_slivingdoc*", true},
+		{"mcp_*", true},
+		{"*mcp_*", false},
+		{"*notes*", false},
+		{"MCP_slivingdoc*", false},
+		{"", false},
+		{"*", false},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.pattern, func(t *testing.T) {
+			if got := SelectsMCPTools(tc.pattern); got != tc.expected {
+				t.Errorf("SelectsMCPTools(%q) = %v, want %v", tc.pattern, got, tc.expected)
+			}
+		})
+	}
+}
+
 // TestRegistry_SetHidden pins hidden tools: callable by their exact name, but
 // left out of wildcard selection, the listing names and Visible.
 func TestRegistry_SetHidden(t *testing.T) {

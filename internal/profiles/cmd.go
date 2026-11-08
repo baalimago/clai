@@ -2,19 +2,25 @@ package profiles
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/baalimago/clai/internal"
+	"github.com/baalimago/clai/internal/profile"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/cmd"
 )
 
 // List prints all static profiles from <UserConfigDir>/.clai/profiles.
-func List() error {
+func List() error { return list(CommandDeps{}) }
+
+// list is List with the command's checker environment, so a profile the
+// checker refuses is named instead of listed as healthy.
+func list(deps CommandDeps) error {
 	configDir, err := utils.GetClaiConfigDir()
 	if err != nil {
 		return fmt.Errorf("failed to get clai config dir: %w", err)
@@ -37,7 +43,7 @@ func List() error {
 	}
 
 	// local view of the on-disk profile; we only need a subset of fields here
-	type profile struct {
+	type listedProfile struct {
 		Name   string   `json:"name"`
 		Model  string   `json:"model"`
 		Tools  []string `json:"tools"`
@@ -46,9 +52,17 @@ func List() error {
 		Audio  *struct {
 			Model string `json:"model"`
 		} `json:"audio"`
+		file string
 	}
 
-	validCount := 0
+	env := profile.Env{}
+	if deps.ProfileEnv != nil {
+		if built, err := deps.ProfileEnv(configDir); err == nil {
+			env = built
+		}
+	}
+
+	var healthy []listedProfile
 	for _, f := range files {
 		if f.IsDir() || filepath.Ext(f.Name()) != ".json" {
 			continue
@@ -56,19 +70,43 @@ func List() error {
 
 		fullPath := filepath.Join(profilesDir, f.Name())
 
-		var p profile
-		if err := utils.ReadAndUnmarshal(fullPath, &p); err != nil {
-			// Skip malformed profile files
+		body, err := os.ReadFile(fullPath)
+		if err != nil {
+			fmt.Printf("Cannot read %s: %v. Explain it with: clai profiles validate %s\n", fullPath, err, fullPath)
+			continue
+		}
+		findings, err := profile.Validate(body, profile.File, env)
+		if err != nil {
+			fmt.Printf("Cannot read %s: %v. Explain it with: clai profiles validate %s\n", fullPath, err, fullPath)
+			continue
+		}
+		if findings.Failed(profile.File) {
+			fmt.Printf("Cannot read %s: %s. Explain it with: clai profiles validate %s\n",
+				fullPath, strings.Join(findings.Problems(profile.File), "; "), fullPath)
 			continue
 		}
 
+		var p listedProfile
+		if err := json.Unmarshal(body, &p); err != nil {
+			// A file clai cannot read is named with the command that
+			// explains it: listing only the readable ones hides a profile
+			// that will never run.
+			fmt.Printf("Cannot read %s: %v. Explain it with: clai profiles validate %s\n", fullPath, err, fullPath)
+			continue
+		}
+		p.file = f.Name()
+		healthy = append(healthy, p)
+	}
+
+	validCount := 0
+	for _, p := range healthy {
 		// Mirror text.loadProfile: legacy files carry literal "\n" in the
 		// prompt (architecture/config.md, "String encoding in edited values").
 		p.Prompt = utils.RehydrateEscapedConfigString(p.Prompt)
 
 		// Backwards compatible: if Name is empty, derive from filename (without .json).
 		if strings.TrimSpace(p.Name) == "" {
-			base := filepath.Base(f.Name())
+			base := filepath.Base(p.file)
 			p.Name = strings.TrimSuffix(base, filepath.Ext(base))
 		}
 
@@ -161,12 +199,14 @@ func Command(deps CommandDeps) *internal.Command {
 	}
 	c := &internal.Command{
 		Name: "profiles",
-		Desc: "List, install, update, trust and publish profiles",
-		HelpText: "profiles [list|install|update|trust|publish]. Lists your profiles, or manages\nthem with a subcommand.\n\n" +
+		Desc: "List, validate, install, update, trust and publish profiles; print the schema",
+		HelpText: "profiles [list|validate|schema|install|update|trust|publish]. Lists your profiles,\nor manages them with a subcommand. 'profiles validate <target>' prints what a\nrun or a publish would refuse, and 'profiles schema' prints the JSON Schema\ndocument this clai reads.\n\n" +
 			Help + "\n\n" + RemoteHelp + `
 
 Examples:
   clai profiles
+  clai profiles validate ./reviewer.json
+  clai profiles schema > profile.json
   clai -profile-path cchub:lorentz/trade-bot@3 -query-summary query 'Do your hourly run.'
   clai profiles trust cchub:lorentz/trade-bot@3
   clai profiles install cchub:lorentz/trade-bot@3
@@ -180,7 +220,7 @@ Examples:
 		if args := c.Args(); len(args) > 1 {
 			return fmt.Errorf("unknown profiles subcommand: %q", args[1])
 		}
-		return List()
+		return list(deps)
 	}
 	profilesList := &internal.Command{
 		Name: "list",
@@ -191,14 +231,16 @@ Examples:
   clai profiles list`,
 	}
 	profilesList.OnRun = func(_ context.Context, _ *internal.Command) error {
-		return List()
+		return list(deps)
 	}
 	c.Subs = map[string]cmd.Command{
-		"list":    profilesList,
-		"trust":   remoteSub("trust", "Trust a remote profile target", trustHelp, 1, 1, func(ctx context.Context, a []string) error { return deps.Trust(ctx, a[0]) }),
-		"install": remoteSub("install", "Install a remote profile target as a local profile", installHelp, 1, 2, func(ctx context.Context, a []string) error { return deps.Install(ctx, a[0], at(a, 1)) }),
-		"publish": publishCommand(deps),
-		"update":  remoteSub("update", "Update installed profiles to their newest version", updateHelp, 0, 1, func(ctx context.Context, a []string) error { return deps.Update(ctx, at(a, 0)) }),
+		"list":     profilesList,
+		"validate": validateCommand(deps),
+		"schema":   schemaCommand(deps),
+		"trust":    remoteSub("trust", "Trust a remote profile target", trustHelp, 1, 1, func(ctx context.Context, a []string) error { return deps.Trust(ctx, a[0]) }),
+		"install":  remoteSub("install", "Install a remote profile target as a local profile", installHelp, 1, 2, func(ctx context.Context, a []string) error { return deps.Install(ctx, a[0], at(a, 1)) }),
+		"publish":  publishCommand(deps),
+		"update":   remoteSub("update", "Update installed profiles to their newest version", updateHelp, 0, 1, func(ctx context.Context, a []string) error { return deps.Update(ctx, at(a, 0)) }),
 	}
 	return c
 }

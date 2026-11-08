@@ -8,7 +8,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/baalimago/clai/internal/remote"
+	"github.com/baalimago/clai/internal/profile"
 )
 
 // pinnedPackage matches an npm package with an exact @version or a PyPI
@@ -35,10 +35,14 @@ func TestExampleProfiles(t *testing.T) {
 			if err := json.Unmarshal(raw, &p); err != nil {
 				t.Fatalf("not a profile: %v", err)
 			}
-			// The hub serves these as remote profiles, which are validated
-			// strictly.
-			if _, err := remote.Validate(path, raw); err != nil {
-				t.Fatal(err)
+			// The hub serves these as remote profiles, which are checked
+			// strictly on the Remote route.
+			findings, err := profile.Validate(raw, profile.Remote, profile.Env{})
+			if err != nil {
+				t.Fatalf("check %s: %v", path, err)
+			}
+			if problems := findings.Problems(profile.Remote); len(problems) > 0 {
+				t.Fatalf("%s is refused on the Remote route: %v", path, problems)
 			}
 			if p.Model == "" || p.Prompt == "" {
 				t.Fatal("profile needs a model and a prompt")

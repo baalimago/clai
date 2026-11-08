@@ -450,8 +450,8 @@ func Test_REMOTE_refusals(t *testing.T) {
 		{"cchub:ada/bot@9", 1, "cchub:ada/bot@9: not found"},
 		{base + "/files/page.html", remote.ExitRefused, "not application/json"},
 		{base + "/files/typo.json", remote.ExitRefused, `did you mean "model"`},
-		{base + "/files/envfile.json", remote.ExitRefused, "a relative path has no meaning"},
-		{base + "/files/audio-typo.json", remote.ExitRefused, `audio: "modle": unknown key (did you mean "model"?)`},
+		{base + "/files/envfile.json", remote.ExitRefused, "a relative path has no profile directory to resolve against"},
+		{base + "/files/audio-typo.json", remote.ExitRefused, `unknown member "modle": did you mean "model"?`},
 		{"http://example.com/a.json", 1, "only https:// is fetched"},
 	} {
 		t.Run(tc.target, func(t *testing.T) {
