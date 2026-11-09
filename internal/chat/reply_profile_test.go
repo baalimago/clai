@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -21,11 +22,11 @@ func TestSaveAsPreviousQuery_PreservesProfile(t *testing.T) {
 		},
 	}
 
-	if err := SaveAsPreviousQuery(tmp, given); err != nil {
+	if err := SaveAsPreviousQuery(context.Background(), tmp, given); err != nil {
 		t.Fatalf("SaveAsPreviousQuery: %v", err)
 	}
 
-	got, err := LoadPrevQuery(tmp)
+	got, err := LoadPrevQuery(context.Background(), tmp)
 	if err != nil {
 		t.Fatalf("LoadPrevQuery: %v", err)
 	}

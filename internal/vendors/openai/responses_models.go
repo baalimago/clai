@@ -173,6 +173,13 @@ type responsesResponse struct {
 	// Error carries the failure detail on a response.failed event (nested under
 	// response.error, unlike the top-level "error" stream frame).
 	Error *responsesStreamErrBody `json:"error,omitempty"`
+	// IncompleteDetails says why a response.incomplete event ended the
+	// response early, such as max_output_tokens.
+	IncompleteDetails *responsesIncompleteDetails `json:"incomplete_details,omitempty"`
+}
+
+type responsesIncompleteDetails struct {
+	Reason string `json:"reason,omitempty"`
 }
 
 type responsesUsage struct {

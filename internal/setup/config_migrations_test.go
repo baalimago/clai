@@ -1,10 +1,13 @@
 package setup
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	"github.com/baalimago/clai/internal/testenv/procenv"
 
 	"github.com/baalimago/clai/internal/photo"
 	"github.com/baalimago/clai/internal/utils"
@@ -28,7 +31,7 @@ func TestMigrateOldPhotoConfig(t *testing.T) {
 	}
 
 	// Call migrateOldPhotoConfig
-	err = migrateOldPhotoConfig(tempDir)
+	err = migrateOldPhotoConfig(procenv.Context(context.Background()), tempDir)
 	if err != nil {
 		t.Fatalf("migrateOldPhotoConfig failed: %v", err)
 	}

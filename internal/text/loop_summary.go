@@ -3,10 +3,12 @@ package text
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/models"
 )
 
@@ -70,12 +72,25 @@ func loopToolsLine(calls []RunToolCall) string {
 
 // Lines renders the summary as one title row and indented detail rows.
 func (s LoopSummary) Lines() []string {
+	return append([]string{"▸ " + s.message()}, s.detailLines()...)
+}
+
+func (s LoopSummary) message() string {
 	bound := "∞"
 	if s.MaxIterations > 0 {
 		bound = strconv.Itoa(s.MaxIterations)
 	}
-	title := fmt.Sprintf("▸ loop %v after %d/%s iterations in %v", s.End, s.Iterations, bound, s.Duration.Truncate(time.Second))
-	return append([]string{title}, s.detailLines()...)
+	return fmt.Sprintf("loop %v after %d/%s iterations in %v", s.End, s.Iterations, bound, s.Duration.Truncate(time.Second))
+}
+
+// facts is the summary as the facts of its JSON diagnostic record;
+// max_iterations 0 means unbounded.
+func (s LoopSummary) facts() []slog.Attr {
+	return append([]slog.Attr{
+		slog.String("end", s.End.String()),
+		slog.Int("iterations", s.Iterations),
+		slog.Int("max_iterations", s.MaxIterations),
+	}, s.tallyFacts(s.Duration)...)
 }
 
 // ReportLoopSummary prints the end-of-run summary. A terminal session prints
@@ -83,8 +98,12 @@ func (s LoopSummary) Lines() []string {
 // to stderr so stdout stays machine-readable.
 func (q *Querier[C]) ReportLoopSummary(summary LoopSummary) error {
 	settleErr := q.settleRunTally(&summary.RunTally)
+	if q.json.active() {
+		q.reportSummaryRecord(summary.message(), summary.facts())
+		return settleErr
+	}
 	if err := q.reportSummary(summary.Lines()); err != nil {
-		return errors.Join(settleErr, fmt.Errorf("print loop summary: %w", err))
+		return errors.Join(settleErr, diag.Errorf("print loop summary: %w", err))
 	}
 	return settleErr
 }

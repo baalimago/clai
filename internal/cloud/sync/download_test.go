@@ -129,7 +129,7 @@ func TestPull_reportsIndexingThePulledChats(t *testing.T) {
 	b := newMachine(t, srv, "tok-b")
 	var log progressLog
 	b.Progress = log.add
-	b.Hooks.Pulled = func(_ string, written, _ []string, progress func(done, total int)) error {
+	b.Hooks.Pulled = func(_ context.Context, _ string, written, _ []string, progress func(done, total int)) error {
 		progress(len(written), len(written))
 		return nil
 	}

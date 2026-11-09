@@ -3,8 +3,8 @@ package cost
 import (
 	"fmt"
 
+	"github.com/baalimago/clai/internal/runenv"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
 type ModelPriceScheme struct {
@@ -42,8 +42,6 @@ func (m *Manager) estimateUSD(usage *pub_models.Usage) (float64, error) {
 		float64(cachedPromptTokens)*cachedPrice +
 		float64(usage.CompletionTokens)*m.price.OutputUSDPerToken
 
-	if m.debug {
-		ancli.Noticef("found total: %v", total)
-	}
+	runenv.Debugf(m.ctx, runenv.SubsystemCostManager, "found total: %v", total)
 	return total, nil
 }

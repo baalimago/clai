@@ -10,6 +10,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/baalimago/clai/internal/diag"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -62,7 +63,7 @@ func (t *claiWaitForWorkersTool) Call(input pub_models.Input) (string, error) {
 		var parsed float64
 		_, err := fmt.Sscanf(v, "%f", &parsed)
 		if err != nil {
-			return "", fmt.Errorf("failed to parse timeout_seconds '%v' as number: %w", v, err)
+			return "", diag.Errorf("failed to parse timeout_seconds '%v' as number: %w", v, err)
 		}
 		timeoutSeconds = parsed
 	default:

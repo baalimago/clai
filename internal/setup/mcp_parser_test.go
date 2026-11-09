@@ -119,7 +119,7 @@ func TestParseAndAddMcpServer(t *testing.T) {
 		}
 	}`
 
-	got, err := ParseAndAddMcpServer(tempDir, config)
+	got, err := ParseAndAddMcpServer(procCtx(), tempDir, config)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

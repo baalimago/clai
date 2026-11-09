@@ -2,6 +2,7 @@ package chat
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"math"
 	"os"
@@ -36,7 +37,7 @@ func TestChatHandler_dirInfo_NoDirScopeNoPrevQuery(t *testing.T) {
 	}
 
 	// It should succeed and return empty info when neither a dir binding nor global scope exists.
-	if err := cq.dirInfo(); err != nil {
+	if err := cq.dirInfo(context.Background()); err != nil {
 		t.Fatalf("expected nil error, got: %v", err)
 	}
 }
@@ -72,7 +73,7 @@ func TestChatHandler_dirInfo_GlobalScope_Raw(t *testing.T) {
 			CompletionTokens: 3,
 		},
 	}
-	if err := Save(convDir, ch); err != nil {
+	if err := Save(context.Background(), convDir, ch); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
@@ -85,7 +86,7 @@ func TestChatHandler_dirInfo_GlobalScope_Raw(t *testing.T) {
 	}
 
 	// With no dir binding, it should show global scope info.
-	if err := cq.dirInfo(); err != nil {
+	if err := cq.dirInfo(context.Background()); err != nil {
 		t.Fatalf("dirInfo: %v", err)
 	}
 
@@ -142,17 +143,17 @@ func TestChatHandler_dirInfo_DirScopeWinsOverPrevQuery_Raw(t *testing.T) {
 			{Role: "assistant", Content: "a"},
 		},
 	}
-	if err := Save(convDir, bound); err != nil {
+	if err := Save(context.Background(), convDir, bound); err != nil {
 		t.Fatalf("Save(bound): %v", err)
 	}
 
 	prev := pub_models.Chat{ID: "globalScope", Created: time.Now()}
-	if err := Save(convDir, prev); err != nil {
+	if err := Save(context.Background(), convDir, prev); err != nil {
 		t.Fatalf("Save(prev): %v", err)
 	}
 
 	cq := &ChatHandler{confDir: confDir, convDir: convDir}
-	if err := cq.SaveDirScope("", bound.ID); err != nil {
+	if err := cq.SaveDirScope(context.Background(), "", bound.ID); err != nil {
 		t.Fatalf("SaveDirScope: %v", err)
 	}
 
@@ -160,7 +161,7 @@ func TestChatHandler_dirInfo_DirScopeWinsOverPrevQuery_Raw(t *testing.T) {
 	cq.raw = true
 	cq.out = &out
 
-	if err := cq.dirInfo(); err != nil {
+	if err := cq.dirInfo(context.Background()); err != nil {
 		t.Fatalf("dirInfo: %v", err)
 	}
 
@@ -208,12 +209,12 @@ func TestChatHandler_dirInfo_DirScopeIncludesCost_Raw(t *testing.T) {
 			{CostUSD: 0.0066},
 		},
 	}
-	if err := Save(convDir, bound); err != nil {
+	if err := Save(context.Background(), convDir, bound); err != nil {
 		t.Fatalf("Save(bound): %v", err)
 	}
 
 	cq := &ChatHandler{confDir: confDir, convDir: convDir}
-	if err := cq.SaveDirScope("", bound.ID); err != nil {
+	if err := cq.SaveDirScope(context.Background(), "", bound.ID); err != nil {
 		t.Fatalf("SaveDirScope: %v", err)
 	}
 
@@ -221,7 +222,7 @@ func TestChatHandler_dirInfo_DirScopeIncludesCost_Raw(t *testing.T) {
 	cq.raw = true
 	cq.out = &out
 
-	if err := cq.dirInfo(); err != nil {
+	if err := cq.dirInfo(context.Background()); err != nil {
 		t.Fatalf("dirInfo: %v", err)
 	}
 
@@ -278,7 +279,7 @@ func TestChatHandler_dirInfo_GlobalScope_Raw_IncludesTokenAndPriceBreakdown(t *t
 			Model: "openrouter/test-model",
 		}},
 	}
-	if err := Save(convDir, ch); err != nil {
+	if err := Save(context.Background(), convDir, ch); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
@@ -290,7 +291,7 @@ func TestChatHandler_dirInfo_GlobalScope_Raw_IncludesTokenAndPriceBreakdown(t *t
 		out:     &out,
 	}
 
-	if err := cq.dirInfo(); err != nil {
+	if err := cq.dirInfo(context.Background()); err != nil {
 		t.Fatalf("dirInfo: %v", err)
 	}
 
@@ -388,18 +389,18 @@ func TestChatHandler_dirInfo_Raw_PriceBreakdownAggregatesAllQueries(t *testing.T
 			},
 		},
 	}
-	if err := Save(convDir, ch); err != nil {
+	if err := Save(context.Background(), convDir, ch); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	cqInit := &ChatHandler{confDir: confDir, convDir: convDir}
-	if err := cqInit.SaveDirScope("", ch.ID); err != nil {
+	if err := cqInit.SaveDirScope(context.Background(), "", ch.ID); err != nil {
 		t.Fatalf("SaveDirScope: %v", err)
 	}
 
 	var out bytes.Buffer
 	cq := &ChatHandler{confDir: confDir, convDir: convDir, raw: true, out: &out}
 
-	if err := cq.dirInfo(); err != nil {
+	if err := cq.dirInfo(context.Background()); err != nil {
 		t.Fatalf("dirInfo: %v", err)
 	}
 
@@ -450,13 +451,13 @@ func TestChatHandler_dirInfo_V1RemainsBackwardCompatible(t *testing.T) {
 		},
 		RecentTokenUsage: &pub_models.Usage{PromptTokens: 18, CompletionTokens: 3, TotalTokens: 21},
 	}
-	if err := Save(convDir, chat); err != nil {
+	if err := Save(context.Background(), convDir, chat); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
 	var out bytes.Buffer
 	cq := &ChatHandler{confDir: confDir, convDir: convDir, raw: true, out: &out}
-	if err := cq.dirInfo(); err != nil {
+	if err := cq.dirInfo(context.Background()); err != nil {
 		t.Fatalf("dirInfo raw: %v", err)
 	}
 	var raw map[string]any
@@ -474,7 +475,7 @@ func TestChatHandler_dirInfo_V1RemainsBackwardCompatible(t *testing.T) {
 
 	out.Reset()
 	cq.raw = false
-	if err := cq.dirInfo(); err != nil {
+	if err := cq.dirInfo(context.Background()); err != nil {
 		t.Fatalf("dirInfo pretty: %v", err)
 	}
 	if !strings.Contains(out.String(), "input: 21") || strings.Contains(out.String(), "recent:") || strings.Contains(out.String(), "most recent:") {
@@ -544,18 +545,18 @@ func TestChatHandler_dirInfoV2_Raw_CleanTokenUsageSchema(t *testing.T) {
 			},
 		},
 	}
-	if err := Save(convDir, ch); err != nil {
+	if err := Save(context.Background(), convDir, ch); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	cqInit := &ChatHandler{confDir: confDir, convDir: convDir}
-	if err := cqInit.SaveDirScope("", ch.ID); err != nil {
+	if err := cqInit.SaveDirScope(context.Background(), "", ch.ID); err != nil {
 		t.Fatalf("SaveDirScope: %v", err)
 	}
 
 	var out bytes.Buffer
 	cq := &ChatHandler{confDir: confDir, convDir: convDir, raw: true, out: &out}
 
-	if err := cq.dirInfoV2(); err != nil {
+	if err := cq.dirInfoV2(context.Background()); err != nil {
 		t.Fatalf("dirInfoV2: %v", err)
 	}
 
@@ -654,12 +655,12 @@ func TestChatHandler_dirInfoV2_Pretty_IncludesTotalAndRecentUsage(t *testing.T) 
 			},
 		}},
 	}
-	if err := Save(convDir, bound); err != nil {
+	if err := Save(context.Background(), convDir, bound); err != nil {
 		t.Fatalf("Save(bound): %v", err)
 	}
 
 	cq := &ChatHandler{confDir: confDir, convDir: convDir}
-	if err := cq.SaveDirScope("", bound.ID); err != nil {
+	if err := cq.SaveDirScope(context.Background(), "", bound.ID); err != nil {
 		t.Fatalf("SaveDirScope: %v", err)
 	}
 
@@ -667,7 +668,7 @@ func TestChatHandler_dirInfoV2_Pretty_IncludesTotalAndRecentUsage(t *testing.T) 
 	cq.raw = false
 	cq.out = &out
 
-	if err := cq.dirInfoV2(); err != nil {
+	if err := cq.dirInfoV2(context.Background()); err != nil {
 		t.Fatalf("dirInfoV2: %v", err)
 	}
 
@@ -736,18 +737,18 @@ func TestChatHandler_dirInfoV2_Pretty_AbbreviatesTokenCounts(t *testing.T) {
 			},
 		},
 	}
-	if err := Save(convDir, ch); err != nil {
+	if err := Save(context.Background(), convDir, ch); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	cqInit := &ChatHandler{confDir: confDir, convDir: convDir}
-	if err := cqInit.SaveDirScope("", ch.ID); err != nil {
+	if err := cqInit.SaveDirScope(context.Background(), "", ch.ID); err != nil {
 		t.Fatalf("SaveDirScope: %v", err)
 	}
 
 	var out bytes.Buffer
 	cq := &ChatHandler{confDir: confDir, convDir: convDir, raw: false, out: &out}
 
-	if err := cq.dirInfoV2(); err != nil {
+	if err := cq.dirInfoV2(context.Background()); err != nil {
 		t.Fatalf("dirInfoV2: %v", err)
 	}
 
@@ -795,10 +796,10 @@ func bindDirChat(t *testing.T, c pub_models.Chat) *ChatHandler {
 	cq, _ := newTestHandler(t)
 	cq.dims = dimensions.Dimensions{Width: 200}
 	chdirToTemp(t)
-	if err := Save(cq.convDir, c); err != nil {
+	if err := Save(context.Background(), cq.convDir, c); err != nil {
 		t.Fatalf("Save(%q): %v", c.ID, err)
 	}
-	if err := cq.SaveDirScope("", c.ID); err != nil {
+	if err := cq.SaveDirScope(context.Background(), "", c.ID); err != nil {
 		t.Fatalf("SaveDirScope: %v", err)
 	}
 	return cq
@@ -816,12 +817,12 @@ func labelledDirChat(id string, title, summary string) pub_models.Chat {
 
 // assertDirInfoLabel checks the raw JSON and the pretty output of one dir
 // info verb for the labelled and the unlabelled forms.
-func assertDirInfoLabel(t *testing.T, cq *ChatHandler, verb func() error, labelled bool) map[string]any {
+func assertDirInfoLabel(t *testing.T, cq *ChatHandler, verb func(context.Context) error, labelled bool) map[string]any {
 	t.Helper()
 	var out bytes.Buffer
 	cq.out = &out
 	cq.raw = true
-	if err := verb(); err != nil {
+	if err := verb(context.Background()); err != nil {
 		t.Fatalf("raw: %v", err)
 	}
 	var raw map[string]any
@@ -830,7 +831,7 @@ func assertDirInfoLabel(t *testing.T, cq *ChatHandler, verb func() error, labell
 	}
 	out.Reset()
 	cq.raw = false
-	if err := verb(); err != nil {
+	if err := verb(context.Background()); err != nil {
 		t.Fatalf("pretty: %v", err)
 	}
 	pretty := out.String()

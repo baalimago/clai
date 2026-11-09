@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/baalimago/clai/internal/testenv/procenv"
 )
 
 func Test_Command_tree(t *testing.T) {
@@ -28,10 +30,10 @@ func Test_Command_tree(t *testing.T) {
 		if err := c.Flagset().Parse([]string{"bogus"}); err != nil {
 			t.Fatalf("Parse: %v", err)
 		}
-		if err := c.Setup(context.Background()); err != nil {
+		if err := c.Setup(procenv.Context(context.Background())); err != nil {
 			t.Fatalf("Setup: %v", err)
 		}
-		if err := c.Run(context.Background()); err == nil || !strings.Contains(err.Error(), "unknown profiles subcommand") {
+		if err := c.Run(procenv.Context(context.Background())); err == nil || !strings.Contains(err.Error(), "unknown profiles subcommand") {
 			t.Fatalf("expected unknown-subcommand error, got: %v", err)
 		}
 	})

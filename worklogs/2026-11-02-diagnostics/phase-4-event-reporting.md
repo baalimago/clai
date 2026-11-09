@@ -35,9 +35,13 @@ type Type struct {
 }
 
 type Event struct {
-	Type    string
-	Message string
-	Facts   []slog.Attr
+	// Type is the registered name. Subsystem and Level are that type's
+	// registered subsystem and level, filled by the Reporter.
+	Type      string
+	Subsystem string
+	Level     Level
+	Message   string
+	Facts     []slog.Attr
 }
 
 // Deliverer is one output destination. The owner supplies one per OutputMode.
@@ -50,8 +54,9 @@ type Deliverer interface {
 
 // SlogDeliverer adapts a slog.Handler as a Deliverer. The event's facts and
 // subsystem become the record's attributes, the subsystem is bound before
-// Enabled is consulted, and Handle's error is Deliver's error. A handler
-// that is not enabled for the level receives nothing. (SlogDeliverer.1, F6)
+// Enabled is consulted at the event's Level, and Handle's error is Deliver's
+// error. A handler that is not enabled for that level receives nothing.
+// (SlogDeliverer.1, F6)
 func SlogDeliverer(slog.Handler) Deliverer
 
 type Reporter interface {
@@ -156,7 +161,32 @@ None.
 | replan    | 2c9c4ff+wip | —       | F10: the routing Reporter implementation and constructor are internal; the public package keeps the interface, the types, and `SlogDeliverer`. |
 | replan    | 2c9c4ff+wip | —       | V3-02: `NewReporter` declared in `internal/diag`; construction-time refusals move from Report.3 to NewReporter.1; the contract suite lives in `diagnostic_test`. |
 | replan    | 2c9c4ff+wip | —       | round 4 note: criterion 3 cites NewReporter.1; F4 binds `NewReporter`. |
+| start+wip | 1bebb27+wip | README Validation policy (all six gates) | Pass: gofumpt, staticcheck, vet, race/coverage tests ×3, fix, and dupl returned 0. |
+| replan+wip | 1bebb27+wip | interface fit inspection | A02: `SlogDeliverer` cannot obtain an event's registered level or subsystem from `Event` or its constructor. |
+| replan+wip | 1bebb27+wip | — | A02 closed: `Event` carries `Subsystem` and `Level`, filled by the routing `Reporter` from the registered `Type`; SlogDeliverer.1 cites them. |
+| start+wip | 1bebb27+wip | README Validation policy (all six gates) | Pass: gofumpt, staticcheck, vet, race/coverage tests ×3, fix, and dupl returned 0. |
+| test+wip | 1bebb27+wip | `go test ./pkg/diagnostic ./internal/diag -race -cover -count=3 -timeout=30s` | Pass: reporter, Deliverer, slog adapter, construction, and concurrency contracts; coverage 93.3% and 84.2%. |
+| end-1+wip | 1bebb27+wip | README Validation policy (all six gates, randomized order) | Pass: vet, dupl, gofumpt, race/coverage tests ×3, staticcheck, and fix returned 0. |
+| end-2+wip | 1bebb27+wip | README Validation policy (all six gates, randomized order) | Pass: staticcheck, fix, race/coverage tests ×3, gofumpt, vet, and dupl returned 0. |
+| complete+wip | 1bebb27+wip | Acceptance criteria, Test cases, and Error management walk | Complete: every row is covered by its named test; no skips, gate changes, or open andons. |
+
+Andon: A02 (closed by plan).
 
 ## Review findings
 
+### Review 1, 2026-11-09 (root)
+
 None.
+
+Verified good:
+- Both Interface blocks match.
+- `TestDelivererContract` covers the fake, slog, buffered, text and JSON Deliverers.
+
+See R1-11 (README) for fakes in other packages that run no suite.
+
+### Review 2, 2026-11-09 (root)
+
+R1-11 resolved: the listed fakes are gone. Tests use `diagfake.Deliverer`, which is in `TestDelivererContract`, and the real `diag.NewReporter`. `erringReporter` (`pkg/agent/diagnostics_contract_test.go:442`) is a stub for the F6 failure clause, which the rule allows.
+
+**R2-03 · minor · owner fix · node root.** `internal/testenv/procenv/procenv.go:43-80` `envReporter` is a Reporter fake that runs through no `TestReporterContract`. `procenv.Context` hands it to tests in several packages. It re-resolves levels from `os.Environ` at every `Report` using its own copy of the legacy-control key list, which the README Legacy controls table and the composition already define. So a test can pass against behaviour the CLI does not have: it treats any `DEBUG_<X>` as a legacy key, and it falls back to info for every subsystem on a resolve error, where the CLI exits 1.
+- [ ] Add `envReporter` to `TestReporterContract`, or build it once from the composition's own level reading.

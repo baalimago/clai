@@ -1,8 +1,11 @@
 package chat
 
 import (
+	"context"
 	"fmt"
 	"strings"
+
+	"github.com/baalimago/clai/internal/diag"
 )
 
 // lookbackPreviewRunes is the head of the first user message an unlabelled
@@ -24,7 +27,7 @@ type LookbackDescriptor struct {
 // chat index (never inlining a transcript). It shows at most injectCount of the
 // newest-first history entries with a statistics header. When the directory has
 // no history, Block is empty and HasHistory is false.
-func BuildLookbackDescriptor(confDir, dir string, injectCount int) (LookbackDescriptor, error) {
+func BuildLookbackDescriptor(ctx context.Context, confDir, dir string, injectCount int) (LookbackDescriptor, error) {
 	scope, err := loadDirScope(confDir, dir)
 	if err != nil {
 		// Missing binding => no history; not an error for the caller.
@@ -34,9 +37,9 @@ func BuildLookbackDescriptor(confDir, dir string, injectCount int) (LookbackDesc
 		return LookbackDescriptor{}, nil
 	}
 
-	rows, err := readChatIndex(conversationsDir(confDir))
+	rows, err := readChatIndex(ctx, conversationsDir(confDir))
 	if err != nil {
-		return LookbackDescriptor{}, fmt.Errorf("read chat index for descriptor: %w", err)
+		return LookbackDescriptor{}, diag.Errorf("read chat index for descriptor: %w", err)
 	}
 	// Only the (capped) history ids are needed, so bound the lookup map to them
 	// rather than the whole corpus index.

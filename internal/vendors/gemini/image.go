@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/url"
 
 	"github.com/baalimago/clai/internal/asset"
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/imagegen"
 	"github.com/baalimago/clai/internal/text/generic"
 	"github.com/baalimago/clai/pkg/claierr"
@@ -73,7 +73,7 @@ func (g *ImageGenerator) Generate(ctx context.Context, req imagegen.ImageRequest
 	httpReq.Header.Set("x-goog-api-key", g.apiKey)
 	resp, err := imagegen.Exchange[imageResponse](g.client, httpReq, imageFailure)
 	if err != nil {
-		return nil, fmt.Errorf("gemini images: %w", err)
+		return nil, diag.Errorf("gemini images: %w", err)
 	}
 	return resp.firstImage()
 }
@@ -86,16 +86,16 @@ func (r imageResponse) firstImage() ([]imagegen.GeneratedImage, error) {
 			}
 			part, err := generic.GeneratedImage(p.InlineData.Data, p.InlineData.MimeType)
 			if err != nil {
-				return nil, fmt.Errorf("gemini images: %w", err)
+				return nil, diag.Errorf("gemini images: %w", err)
 			}
 			return []imagegen.GeneratedImage{{Image: asset.Image{Data: part.Data, MIME: part.MIME}}}, nil
 		}
 	}
 	if reason := r.refusal(); reason != "" {
 		filtered := claierr.NewContentFiltered(&claierr.APIError{StatusCode: http.StatusOK, ProviderCode: reason})
-		return nil, fmt.Errorf("gemini images: %w", errors.Join(imagegen.ErrNoImage, filtered))
+		return nil, diag.Errorf("gemini images: %w", errors.Join(imagegen.ErrNoImage, filtered))
 	}
-	return nil, fmt.Errorf("gemini images: %w", imagegen.ErrNoImage)
+	return nil, diag.Errorf("gemini images: %w", imagegen.ErrNoImage)
 }
 
 func (r imageResponse) refusal() string {

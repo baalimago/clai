@@ -7,19 +7,21 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/internal/testenv/procenv"
+
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
-// captureStdout redirects stdout for the duration of fn and returns what was
+// captureStderr redirects stderr for the duration of fn and returns what was
 // written, so opt-in debug output can be asserted.
-func captureStdout(t *testing.T, fn func()) string {
+func captureStderr(t *testing.T, fn func()) string {
 	t.Helper()
-	orig := os.Stdout
+	orig := os.Stderr
 	r, w, err := os.Pipe()
 	if err != nil {
-		t.Fatalf("create stdout pipe: %v", err)
+		t.Fatalf("create stderr pipe: %v", err)
 	}
-	os.Stdout = w
+	os.Stderr = w
 	readDone := make(chan string, 1)
 	go func() {
 		b, _ := io.ReadAll(r)
@@ -27,9 +29,9 @@ func captureStdout(t *testing.T, fn func()) string {
 	}()
 	fn()
 	if err := w.Close(); err != nil {
-		t.Fatalf("close stdout writer: %v", err)
+		t.Fatalf("close stderr writer: %v", err)
 	}
-	os.Stdout = orig
+	os.Stderr = orig
 	return <-readDone
 }
 
@@ -38,11 +40,11 @@ func captureStdout(t *testing.T, fn func()) string {
 func TestStoplossDebugLogging(t *testing.T) {
 	cross := func(t *testing.T) string {
 		t.Helper()
-		s := &stoploss{maxTokens: 10, maxTokensHandoverMsg: "wrap up"}
+		s := &stoploss{ctx: procenv.Context(context.Background()), maxTokens: 10, maxTokensHandoverMsg: "wrap up"}
 		session := &QuerySession{}
 		usage := &pub_models.Usage{PromptTokens: 10, CompletionTokens: 10}
-		return captureStdout(t, func() {
-			injected, err := s.CheckContextBudget(context.Background(), nil, session, usage)
+		return captureStderr(t, func() {
+			injected, err := s.CheckContextBudget(procenv.Context(context.Background()), nil, session, usage)
 			if err != nil {
 				t.Fatalf("CheckContextBudget: %v", err)
 			}

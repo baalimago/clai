@@ -3,9 +3,10 @@
 package testserverbin
 
 import (
-	"fmt"
 	"os"
 	"os/exec"
+
+	"github.com/baalimago/clai/internal/diag"
 )
 
 const testServerPkg = "github.com/baalimago/clai/internal/tools/mcp/testserver"
@@ -17,16 +18,16 @@ func Build() (string, error) { return build(os.TempDir(), testServerPkg) }
 func build(dir, pkg string) (string, error) {
 	f, err := os.CreateTemp(dir, "clai-mcp-testserver-*")
 	if err != nil {
-		return "", fmt.Errorf("create temp file: %w", err)
+		return "", diag.Errorf("create temp file: %w", err)
 	}
 	path := f.Name()
 	if err := f.Close(); err != nil {
 		_ = os.Remove(path)
-		return "", fmt.Errorf("close temp file %q: %w", path, err)
+		return "", diag.Errorf("close temp file %q: %w", path, err)
 	}
 	if out, err := exec.Command("go", "build", "-o", path, pkg).CombinedOutput(); err != nil {
 		_ = os.Remove(path)
-		return "", fmt.Errorf("go build %s: %w: %s", pkg, err, out)
+		return "", diag.Errorf("go build %s: %w: %s", pkg, err, out)
 	}
 	return path, nil
 }

@@ -3,13 +3,14 @@ package chat
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"path"
 	"time"
 
+	"github.com/baalimago/clai/internal/diag"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -52,10 +53,10 @@ var (
 	errCompactionHeld = errors.New("chat index compaction held by another process")
 )
 
-func appendIndexJournal(convDir string, chats []pub_models.Chat) error {
+func appendIndexJournal(ctx context.Context, convDir string, chats []pub_models.Chat) error {
 	now := time.Now().UTC()
 	if _, err := os.Stat(chatIndexPath(convDir)); errors.Is(err, os.ErrNotExist) {
-		return writeIndexWith(convDir, chats, now)
+		return writeIndexWith(ctx, convDir, chats, now)
 	}
 	var buf bytes.Buffer
 	for _, c := range chats {
@@ -63,29 +64,29 @@ func appendIndexJournal(convDir string, chats []pub_models.Chat) error {
 		row.Updated = now
 		line, err := json.Marshal(row)
 		if err != nil {
-			return fmt.Errorf("encode chat index journal row: %w", err)
+			return diag.Errorf("encode chat index journal row: %w", err)
 		}
 		buf.Write(line)
 		buf.WriteByte('\n')
 	}
 	f, err := os.OpenFile(chatIndexJournalPath(convDir), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
-		return fmt.Errorf("open chat index journal: %w", err)
+		return diag.Errorf("open chat index journal: %w", err)
 	}
 	_, writeErr := f.Write(buf.Bytes())
 	closeErr := f.Close()
 	if err := errors.Join(writeErr, closeErr); err != nil {
-		return fmt.Errorf("append chat index journal: %w", err)
+		return diag.Errorf("append chat index journal: %w", err)
 	}
 	info, err := os.Stat(chatIndexJournalPath(convDir))
 	if err != nil {
-		return fmt.Errorf("stat chat index journal: %w", err)
+		return diag.Errorf("stat chat index journal: %w", err)
 	}
 	if info.Size() < chatIndexJournalCompactBytes {
 		return nil
 	}
 	// The lock holder folds this save in, or the next save compacts.
-	if err := compactIndexJournal(convDir); err != nil && !errors.Is(err, errCompactionHeld) {
+	if err := compactIndexJournal(ctx, convDir); err != nil && !errors.Is(err, errCompactionHeld) {
 		return err
 	}
 	return nil
@@ -93,10 +94,10 @@ func appendIndexJournal(convDir string, chats []pub_models.Chat) error {
 
 // writeIndexWith builds the cache from scratch with chats upserted. It runs
 // when no cache exists yet, so a journal never sits beside a missing cache.
-func writeIndexWith(convDir string, chats []pub_models.Chat, now time.Time) error {
-	rows, err := readChatIndex(convDir)
+func writeIndexWith(ctx context.Context, convDir string, chats []pub_models.Chat, now time.Time) error {
+	rows, err := readChatIndex(ctx, convDir)
 	if err != nil {
-		return fmt.Errorf("read chat index: %w", err)
+		return diag.Errorf("read chat index: %w", err)
 	}
 	for _, c := range chats {
 		row := chatIndexRowFromChat(c)
@@ -110,37 +111,37 @@ func writeIndexWith(convDir string, chats []pub_models.Chat, now time.Time) erro
 // aside first, so a concurrent save appends to a fresh journal and is
 // replayed by the next read instead of being lost. A compacting journal left
 // by a crashed compactor is folded in before the move would replace it.
-func compactIndexJournal(convDir string) (err error) {
+func compactIndexJournal(ctx context.Context, convDir string) (err error) {
 	release, err := acquireCompactLock(convDir)
 	if err != nil {
 		return err
 	}
 	defer func() { err = errors.Join(err, release()) }()
 	if _, err := os.Stat(chatIndexCompactingPath(convDir)); err == nil {
-		if err := foldCompactingJournal(convDir); err != nil {
-			return fmt.Errorf("recover compacting chat index journal: %w", err)
+		if err := foldCompactingJournal(ctx, convDir); err != nil {
+			return diag.Errorf("recover compacting chat index journal: %w", err)
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("stat compacting chat index journal: %w", err)
+		return diag.Errorf("stat compacting chat index journal: %w", err)
 	}
 	if err := os.Rename(chatIndexJournalPath(convDir), chatIndexCompactingPath(convDir)); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("move chat index journal aside: %w", err)
+		return diag.Errorf("move chat index journal aside: %w", err)
 	}
-	return foldCompactingJournal(convDir)
+	return foldCompactingJournal(ctx, convDir)
 }
 
-func foldCompactingJournal(convDir string) error {
-	rows, err := readChatIndex(convDir)
+func foldCompactingJournal(ctx context.Context, convDir string) error {
+	rows, err := readChatIndex(ctx, convDir)
 	if err != nil {
-		return fmt.Errorf("read chat index for compaction: %w", err)
+		return diag.Errorf("read chat index for compaction: %w", err)
 	}
 	// Only the cache is written: the live journal may already hold a save
 	// made after the read above.
 	if err := writeChatIndexCache(convDir, rows); err != nil {
-		return fmt.Errorf("compact chat index: %w", err)
+		return diag.Errorf("compact chat index: %w", err)
 	}
 	if err := os.Remove(chatIndexCompactingPath(convDir)); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("remove compacted chat index journal: %w", err)
+		return diag.Errorf("remove compacted chat index journal: %w", err)
 	}
 	return nil
 }
@@ -153,28 +154,28 @@ func acquireCompactLock(convDir string) (release func() error, err error) {
 		f, err := os.OpenFile(lock, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
 		if err == nil {
 			if err := f.Close(); err != nil {
-				return nil, fmt.Errorf("close chat index compaction lock: %w", err)
+				return nil, diag.Errorf("close chat index compaction lock: %w", err)
 			}
 			return func() error {
 				if err := os.Remove(lock); err != nil && !errors.Is(err, os.ErrNotExist) {
-					return fmt.Errorf("release chat index compaction lock: %w", err)
+					return diag.Errorf("release chat index compaction lock: %w", err)
 				}
 				return nil
 			}, nil
 		}
 		if !errors.Is(err, os.ErrExist) {
-			return nil, fmt.Errorf("take chat index compaction lock: %w", err)
+			return nil, diag.Errorf("take chat index compaction lock: %w", err)
 		}
 		info, statErr := os.Stat(lock)
 		if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
-			return nil, fmt.Errorf("stat chat index compaction lock: %w", statErr)
+			return nil, diag.Errorf("stat chat index compaction lock: %w", statErr)
 		}
 		if attempt > 0 || (statErr == nil && time.Since(info.ModTime()) < chatIndexCompactLockStale) {
 			return nil, errCompactionHeld
 		}
 		if statErr == nil {
 			if err := os.Remove(lock); err != nil && !errors.Is(err, os.ErrNotExist) {
-				return nil, fmt.Errorf("break stale chat index compaction lock: %w", err)
+				return nil, diag.Errorf("break stale chat index compaction lock: %w", err)
 			}
 		}
 	}
@@ -189,7 +190,7 @@ func replayIndexJournal(convDir string, rows []chatIndexRow) ([]chatIndexRow, er
 			continue
 		}
 		if err != nil {
-			return nil, fmt.Errorf("read chat index journal: %w", err)
+			return nil, diag.Errorf("read chat index journal: %w", err)
 		}
 		scanner := bufio.NewScanner(bytes.NewReader(raw))
 		scanner.Buffer(make([]byte, 0, 64<<10), 16<<20)
@@ -199,12 +200,12 @@ func replayIndexJournal(convDir string, rows []chatIndexRow) ([]chatIndexRow, er
 			}
 			var row chatIndexRow
 			if err := json.Unmarshal(scanner.Bytes(), &row); err != nil {
-				return nil, fmt.Errorf("%w %s: %w", errCorruptJournal, p, err)
+				return nil, diag.Errorf("%w %s: %w", errCorruptJournal, p, err)
 			}
 			rows = replaceIndexRow(rows, row)
 		}
 		if err := scanner.Err(); err != nil {
-			return nil, fmt.Errorf("%w %s: %w", errCorruptJournal, p, err)
+			return nil, diag.Errorf("%w %s: %w", errCorruptJournal, p, err)
 		}
 	}
 	return rows, nil
@@ -218,7 +219,7 @@ func removeIndexJournals(convDir string) error {
 		}
 	}
 	if err := errors.Join(errs...); err != nil {
-		return fmt.Errorf("remove chat index journal: %w", err)
+		return diag.Errorf("remove chat index journal: %w", err)
 	}
 	return nil
 }

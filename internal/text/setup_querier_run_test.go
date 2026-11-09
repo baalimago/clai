@@ -1,9 +1,14 @@
 package text
 
 import (
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/baalimago/clai/internal"
+	"github.com/baalimago/clai/internal/jsonl"
+	"github.com/baalimago/clai/internal/runenv"
+	"github.com/baalimago/clai/internal/skills"
 	"github.com/baalimago/clai/internal/vendors/ollama"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
@@ -34,4 +39,19 @@ func Test_SetupQuerier(t *testing.T) {
 
 		testboil.FailTestIfDiff(t, ollamaModel.Model.URL, ollama.ChatURL)
 	})
+}
+
+// TestSkillTrustQuestion pins R3-04 for skills: under -json the trust
+// question is plain text and its choices carry the answers; the text form
+// keeps "[y/N]".
+func TestSkillTrustQuestion(t *testing.T) {
+	prompt := skills.TrustPrompt{Name: "review", Description: "Review pending changes"}
+	asJSON := skillTrustQuestion(runenv.New(runenv.Config{Format: jsonl.FormatJSON}), prompt)
+	if asJSON.Kind != "trust" || strings.Contains(asJSON.Text, "[y/N]") || !strings.HasSuffix(asJSON.Text, "Trust this skill?") ||
+		!slices.Equal(asJSON.Choices, []string{"y", "N"}) {
+		t.Fatalf("json question = %+v", asJSON)
+	}
+	if text := skillTrustQuestion(runenv.New(runenv.Config{}), prompt); !strings.HasSuffix(text.Text, "Trust this skill? [y/N]") {
+		t.Fatalf("text question = %+v", text)
+	}
 }

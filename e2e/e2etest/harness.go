@@ -67,6 +67,18 @@ func (h *Harness) RunOne(t *testing.T, cwd string, args string) (string, int) {
 	return stdout, status
 }
 
+// RunOneStreams is RunOne with stderr captured too: diagnostics such as the
+// config upgrade announcement are on stderr (F1).
+func (h *Harness) RunOneStreams(t *testing.T, cwd string, args string) (string, string, int) {
+	t.Helper()
+	var stdout string
+	var status int
+	stderr := testboil.CaptureStderr(t, func(t *testing.T) {
+		stdout, status = h.RunOne(t, cwd, args)
+	})
+	return stdout, stderr, status
+}
+
 func splitArgsForTest(args string) []string {
 	parts := strings.Split(args, " ")
 	out := make([]string, 0, len(parts))
@@ -96,6 +108,6 @@ func (h *Harness) RunAudio(t *testing.T, args string) (int, string, string) {
 }
 
 // RefusingSummarizer is what every e2e TestMain injects; only summary rows opt out.
-func RefusingSummarizer(string) (models.Summarizer, error) {
+func RefusingSummarizer(context.Context, string) (models.Summarizer, error) {
 	return nil, errors.New("real summarizer is off in the test binary; opt in through setupSummaryE2E")
 }

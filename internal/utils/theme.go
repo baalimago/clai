@@ -1,11 +1,12 @@
 package utils
 
 import (
+	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
 
@@ -82,9 +83,15 @@ var globalTheme = *defaultTheme()
 // LoadTheme loads (and possibly creates) the theme.json file within the config dir.
 // It is safe to call multiple times. After loading, stores the theme for consumer access.
 func LoadTheme(configDirPath string) error {
-	conf, err := LoadConfigFromFile(configDirPath, "theme.json", migrateThemeConfig, defaultTheme())
+	return LoadThemeFor(context.Background(), configDirPath)
+}
+
+// LoadThemeFor is LoadTheme that announces a theme upgrade and reports its
+// debug detail through the run on ctx.
+func LoadThemeFor(ctx context.Context, configDirPath string) error {
+	conf, err := LoadConfigFromFile(ctx, configDirPath, "theme.json", migrateThemeConfig, defaultTheme())
 	if err != nil {
-		return fmt.Errorf("load theme config: %w", err)
+		return diag.Errorf("load theme config: %w", err)
 	}
 	globalTheme = conf
 	return nil
@@ -100,15 +107,15 @@ func TableTheme() table.Theme {
 	}
 }
 
-func migrateThemeConfig(configDirPath string) error {
+func migrateThemeConfig(_ context.Context, configDirPath string) error {
 	themePath := ThemeConfigPath(configDirPath)
 	content, err := os.ReadFile(themePath)
 	if err != nil {
-		return fmt.Errorf("read theme config for migration: %w", err)
+		return diag.Errorf("read theme config for migration: %w", err)
 	}
 	var conf map[string]json.RawMessage
 	if err := json.Unmarshal(content, &conf); err != nil {
-		return fmt.Errorf("read theme config for migration: %w", err)
+		return diag.Errorf("read theme config for migration: %w", err)
 	}
 	changed := false
 
@@ -144,7 +151,7 @@ func migrateThemeConfig(configDirPath string) error {
 			if subChanged {
 				updated, err := json.Marshal(sub)
 				if err != nil {
-					return fmt.Errorf("marshal rolling output config migration: %w", err)
+					return diag.Errorf("marshal rolling output config migration: %w", err)
 				}
 				conf["rollingOutput"] = updated
 				changed = true
@@ -163,7 +170,7 @@ func migrateThemeConfig(configDirPath string) error {
 	if changed {
 		err = WriteFile(themePath, &conf)
 		if err != nil {
-			return fmt.Errorf("write theme config migration: %w", err)
+			return diag.Errorf("write theme config migration: %w", err)
 		}
 	}
 	return nil

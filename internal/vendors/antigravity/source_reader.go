@@ -31,6 +31,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/sqlitepage"
 	"github.com/baalimago/clai/internal/vendors"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -140,10 +141,10 @@ func (r SourceReader) Discover(ctx context.Context, cache vendors.SourceCache) (
 		return false
 	})
 	if err != nil {
-		return nil, fmt.Errorf("discover antigravity sessions: %w", err)
+		return nil, diag.Errorf("discover antigravity sessions: %w", err)
 	}
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("discover antigravity sessions: %w", err)
+		return nil, diag.Errorf("discover antigravity sessions: %w", err)
 	}
 	return rows, nil
 }
@@ -175,7 +176,7 @@ func (r SourceReader) Read(ctx context.Context, cache vendors.SourceCache, sourc
 	}
 	conv, err := r.readConversation(absPath)
 	if err != nil {
-		return pub_models.Chat{}, fmt.Errorf("read antigravity session %q: %w", sourceID, err)
+		return pub_models.Chat{}, diag.Errorf("read antigravity session %q: %w", sourceID, err)
 	}
 	if !conv.hasUser {
 		return pub_models.Chat{}, fmt.Errorf("antigravity session %q has no user message", sourceID)
@@ -292,7 +293,7 @@ func (r SourceReader) findSession(ctx context.Context, cache vendors.SourceCache
 		return true
 	})
 	if err != nil {
-		return "", summary{}, fmt.Errorf("find antigravity session %q: %w", sourceID, err)
+		return "", summary{}, diag.Errorf("find antigravity session %q: %w", sourceID, err)
 	}
 	if found == "" {
 		return "", summary{}, fmt.Errorf("antigravity session %q not found", sourceID)
@@ -312,7 +313,7 @@ func (r SourceReader) walkSessions(ctx context.Context, visit func(absPath, sour
 			if errors.Is(err, fs.ErrNotExist) {
 				continue
 			}
-			return fmt.Errorf("read %q: %w", convs, err)
+			return diag.Errorf("read %q: %w", convs, err)
 		}
 		idx := readSummaries(root)
 		for _, entry := range entries {
@@ -346,7 +347,7 @@ func (r SourceReader) roots() ([]string, error) {
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return nil, fmt.Errorf("resolve home directory: %w", err)
+		return nil, diag.Errorf("resolve home directory: %w", err)
 	}
 	base := filepath.Join(home, ".gemini")
 	return []string{
@@ -367,7 +368,7 @@ type conversation struct {
 func (r SourceReader) readConversation(absPath string) (conversation, error) {
 	db, err := sqlitepage.Open(absPath)
 	if err != nil {
-		return conversation{}, fmt.Errorf("open antigravity database %q: %w", absPath, err)
+		return conversation{}, diag.Errorf("open antigravity database %q: %w", absPath, err)
 	}
 	defer db.Close()
 
@@ -379,7 +380,7 @@ func (r SourceReader) readConversation(absPath string) (conversation, error) {
 	for _, raw := range steps {
 		step, err := parseStep(raw)
 		if err != nil {
-			return conversation{}, fmt.Errorf("parse antigravity step %d: %w", raw.idx, err)
+			return conversation{}, diag.Errorf("parse antigravity step %d: %w", raw.idx, err)
 		}
 		parsed = append(parsed, step)
 	}
@@ -427,7 +428,7 @@ func readSteps(db *sqlitepage.DB) ([]rawStep, error) {
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("scan antigravity steps: %w", err)
+		return nil, diag.Errorf("scan antigravity steps: %w", err)
 	}
 	sort.SliceStable(steps, func(i, j int) bool { return steps[i].idx < steps[j].idx })
 	return steps, nil

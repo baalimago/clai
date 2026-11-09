@@ -455,8 +455,8 @@ func TestForeignIndex_readOnlyDegradesSilently(t *testing.T) {
 		cq, _ := newTestHandler(t)
 		warnings := &bytes.Buffer{}
 		cq.errOut = warnings
-		cq.announceForeignCacheFailure(err)
-		cq.announceForeignCacheFailure(err)
+		cq.announceForeignCacheFailure(context.Background(), err)
+		cq.announceForeignCacheFailure(context.Background(), err)
 		return warnings.String()
 	}
 	stored := func(t *testing.T, dir string) (*ForeignIndex, string, fs.FileInfo) {

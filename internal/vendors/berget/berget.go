@@ -1,12 +1,12 @@
 package berget
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/text/generic"
 
+	"github.com/baalimago/clai/internal/diag"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -33,7 +33,7 @@ const ChatURL = "https://api.berget.ai/v1/chat/completions"
 func (g *Berget) Setup() error {
 	err := g.StreamCompleter.Setup("BERGET_API_KEY", ChatURL, "BERGET_DEBUG")
 	if err != nil {
-		return fmt.Errorf("failed to setup stream completer: %w", err)
+		return diag.Errorf("failed to setup stream completer: %w", err)
 	}
 
 	modelName := strings.TrimPrefix(g.Model, "berget:")

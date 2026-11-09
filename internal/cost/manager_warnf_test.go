@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/internal/testenv/procenv"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
@@ -52,7 +53,7 @@ func TestManager_SetWarnf(t *testing.T) {
 	price := ModelPriceScheme{InputUSDPerToken: 0.3, OutputUSDPerToken: 0.1}
 
 	t.Run("failed store without the seam is an error on stderr", func(t *testing.T) {
-		mgr := Manager{model: "m", configFilePath: unwritableConfig(t), fetcher: fakeFetcher{price: price}}
+		mgr := Manager{ctx: procenv.Context(context.Background()), model: "m", configFilePath: unwritableConfig(t), fetcher: fakeFetcher{price: price}}
 		var err error
 		stdout, stderr := captureStreams(t, func() { _, err = mgr.resolveModelPrice(context.Background()) })
 		if err != nil {
@@ -79,7 +80,7 @@ func TestManager_SetWarnf(t *testing.T) {
 		}
 	})
 	t.Run("user-role warning without the seam is a diagnostic on stderr", func(t *testing.T) {
-		mgr := Manager{model: "m", price: &price}
+		mgr := Manager{ctx: procenv.Context(context.Background()), model: "m", price: &price}
 		var err error
 		stdout, stderr := captureStreams(t, func() { _, err = mgr.Enrich(noUserRoleChat()) })
 		if err != nil {

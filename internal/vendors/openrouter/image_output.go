@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/text/generic"
 )
@@ -57,7 +58,7 @@ func decodeDataURL(url string) (models.ImageEvent, error) {
 	}
 	part, err := generic.GeneratedImage(payload, mime)
 	if err != nil {
-		return models.ImageEvent{}, fmt.Errorf("openrouter image: %w", err)
+		return models.ImageEvent{}, diag.Errorf("openrouter image: %w", err)
 	}
 	return models.ImageEvent{Image: part}, nil
 }

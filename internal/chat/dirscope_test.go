@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -24,7 +25,7 @@ func TestDirScope_SaveLoadRoundTrip(t *testing.T) {
 	}
 
 	chatID := "my_chat_id"
-	if err := cq.SaveDirScope(dir, chatID); err != nil {
+	if err := cq.SaveDirScope(context.Background(), dir, chatID); err != nil {
 		t.Fatalf("SaveDirScope: %v", err)
 	}
 
@@ -72,7 +73,7 @@ func Test_UpdateDirScopeFromCWD_updatesBinding(t *testing.T) {
 
 	chatID := "some_chat"
 	cq := &ChatHandler{confDir: confDir}
-	if err := cq.UpdateDirScopeFromCWD(chatID); err != nil {
+	if err := cq.UpdateDirScopeFromCWD(context.Background(), chatID); err != nil {
 		t.Fatalf("UpdateDirScopeFromCWD: %v", err)
 	}
 
@@ -91,11 +92,11 @@ func TestLoadDirScopedContext_keepsFields(t *testing.T) {
 		t.Fatalf("MkdirAll: %v", err)
 	}
 	want := labelledChat("bound", pub_models.Message{Role: "user", Content: "hi"})
-	if err := Save(filepath.Join(confDir, "conversations"), want); err != nil {
+	if err := Save(context.Background(), filepath.Join(confDir, "conversations"), want); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	wd := t.TempDir()
-	if err := saveDirScope(confDir, wd, want.ID); err != nil {
+	if err := saveDirScope(context.Background(), confDir, wd, want.ID); err != nil {
 		t.Fatalf("saveDirScope: %v", err)
 	}
 	oldWd, _ := os.Getwd()
@@ -103,7 +104,7 @@ func TestLoadDirScopedContext_keepsFields(t *testing.T) {
 	if err := os.Chdir(wd); err != nil {
 		t.Fatalf("Chdir: %v", err)
 	}
-	got, err := LoadDirScopedContext(confDir)
+	got, err := LoadDirScopedContext(context.Background(), confDir)
 	if err != nil {
 		t.Fatalf("LoadDirScopedContext: %v", err)
 	}

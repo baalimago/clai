@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/tools/mcp/serverconfig"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/pkg/text/models"
@@ -59,7 +60,7 @@ func (c *Configurations) ProfileOverrides() error {
 		profileDir = filepath.Join(cfg, "profiles")
 	}
 	if err != nil {
-		return fmt.Errorf("failed to find profile: %w", err)
+		return diag.Errorf("failed to find profile: %w", err)
 	}
 
 	// Ensure the selected profile is carried forward into persisted conversations.
@@ -125,7 +126,7 @@ func (c *Configurations) ProfileOverrides() error {
 		if m.EnvFile != "" {
 			expanded, expandErr := utils.ExpandUserPath(m.EnvFile)
 			if expandErr != nil {
-				return fmt.Errorf("failed to expand envfile path %q: %w", m.EnvFile, expandErr)
+				return diag.Errorf("failed to expand envfile path %q: %w", m.EnvFile, expandErr)
 			}
 			if profileDir != "" && !filepath.IsAbs(expanded) {
 				expanded = filepath.Join(profileDir, expanded)

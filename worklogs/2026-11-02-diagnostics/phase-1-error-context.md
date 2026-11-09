@@ -81,6 +81,10 @@ None.
 
 ## Local facts
 
+`diag.Errorf` and `diag.ErrorfWithStack` delegate to the leaf package
+`internal/errctx`, which holds their body so that `internal/jsonl` can wrap
+errors without importing `internal/diag`; the phase's suite proves it through
+the `diag` functions.
 An absent origin stack is an expected state, not an error. Library callers can
 traverse independent joined causes with Go's standard error conventions.
 
@@ -94,7 +98,23 @@ None.
 | --------- | ----------- | ------- | ------ |
 | replan    | 2c9c4ff+wip | —       | V1-11: `ErrorContext` renamed `Locator`. V1-03: criterion 4 cites F2 only; F3 binds phase 8. |
 | replan    | 2c9c4ff+wip | —       | F10: Location.1 cites the public surface; `TestPublicAPISurface` bounds the exported identifiers to the allowlist from this phase on. |
+| start     | 1bebb27     | full validation policy gate set | pass: all six commands |
+| end       | 1bebb27+wip | full validation policy gate set, randomized | pass: all six commands |
+| end       | 1bebb27+wip | full validation policy gate set, randomized | pass: all six commands |
+
+Andon: none.
 
 ## Review findings
 
-None.
+### Review 1, 2026-11-09 (root)
+
+**R1-09 · minor · owner plan.** No interface declares the producer of `Locator`s. Since the V9 fix, `internal/errctx` exports `Errorf`, `ErrorfWithStack`, `ErrorfAt`, `Capture`, `LocationOnly` and `SourceLocation`, and `internal/jsonl` calls `errctx.Errorf` directly. `TestLocatorContract` runs only the `diag.*` factories (`pkg/diagnostic/context_test.go:42`).
+- Scenario: a change to `errctx.Errorf` that drops the location still passes the contract suite.
+- [ ] Declare the producer in this phase's Interface (or record why `internal/errctx` is body).
+- [ ] Add an `errctx` factory to `locatorFactories()`.
+
+Verified good:
+- The Interface matches `pkg/diagnostic` token for token.
+- `TestPublicAPISurface` holds the F10 allowlist.
+
+Note: `TestLocatorInventory` still excludes `internal/diag/context.go`, which no longer wraps errors (the wrapper is now `internal/errctx/errctx.go`). The test passes only because errctx's format string is not a constant, so the exclusion is stale but harmless.

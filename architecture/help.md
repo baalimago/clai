@@ -46,8 +46,9 @@ The flagset's own output is silenced upstream (`parseFlagset` →
 
 | File | Purpose |
 |------|---------|
-| `internal/cli` | `usageTemplate` + dir interpolation in `Run()` |
-| `internal/cli/help.go` | `helpAsCommand`, `withHelp`, `commandTable`: the help command and its flag spellings |
+| `internal/cli` | `usageTemplate`: the command table, a pointer to each command's own `-h` for its examples, `-json`, how to investigate with `LOG_LEVEL`, and the subsystem table; dirs interpolated in `Run()` |
+| `internal/cli/help.go` | `helpAsCommand`, `withHelp`, `commandTable`, `subsystemTable`: the help command and its flag spellings |
+| `internal/runenv/types.go` | `Subsystems()`: the one place a subsystem is registered, with the purpose the usage prints; the diagnostic types and the names `LOG_LEVEL` accepts come from it |
 | `internal/<domain>/cmd.go` | per-command help strings with Examples; `internal.Command.Help()` appends the flag list |
 | `go_away_boilerplate/pkg/cmd` | `-h` routing, sub-table composition, sorted command table |
 

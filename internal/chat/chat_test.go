@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -15,14 +16,14 @@ func TestSaveAndFromPath(t *testing.T) {
 		ID:       "my_chat",
 		Messages: []pub_models.Message{{Role: "user", Content: "hello"}},
 	}
-	if err := Save(tmp, ch); err != nil {
+	if err := Save(context.Background(), tmp, ch); err != nil {
 		t.Fatalf("save failed: %v", err)
 	}
 	file := filepath.Join(tmp, "my_chat.json")
 	if _, err := os.Stat(file); err != nil {
 		t.Fatalf("expected file %v to exist: %v", file, err)
 	}
-	loaded, err := FromPath(file)
+	loaded, err := FromPath(context.Background(), file)
 	if err != nil {
 		t.Fatalf("frompath failed: %v", err)
 	}
@@ -35,7 +36,7 @@ func TestSaveAndFromPath(t *testing.T) {
 }
 
 func TestFromPathError(t *testing.T) {
-	if _, err := FromPath("nonexistent.json"); err == nil {
+	if _, err := FromPath(context.Background(), "nonexistent.json"); err == nil {
 		t.Error("expected error for missing file")
 	}
 }
@@ -48,7 +49,7 @@ func TestList_WhenConversationsContainDirs_DoesNotError(t *testing.T) {
 	}
 
 	cq := &ChatHandler{convDir: convDir}
-	_, err := cq.list()
+	_, err := cq.list(context.Background())
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}

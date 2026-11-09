@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -25,7 +26,7 @@ func TestSaveDirScope_WritesVersion2WithHistoryAndTypedTime(t *testing.T) {
 	cq, confDir := newTestHandler(t)
 	dir := t.TempDir()
 
-	if err := cq.SaveDirScope(dir, "chat-a"); err != nil {
+	if err := cq.SaveDirScope(context.Background(), dir, "chat-a"); err != nil {
 		t.Fatalf("SaveDirScope: %v", err)
 	}
 
@@ -72,16 +73,16 @@ func TestSaveDirScope_HistoryUpsertDedupAndFirstLast(t *testing.T) {
 	cq, _ := newTestHandler(t)
 	dir := t.TempDir()
 
-	if err := cq.SaveDirScope(dir, "a"); err != nil {
+	if err := cq.SaveDirScope(context.Background(), dir, "a"); err != nil {
 		t.Fatalf("SaveDirScope(a): %v", err)
 	}
 	ds, _ := cq.LoadDirScope(dir)
 	firstScopedA := ds.History[0].FirstScoped
 
-	if err := cq.SaveDirScope(dir, "b"); err != nil {
+	if err := cq.SaveDirScope(context.Background(), dir, "b"); err != nil {
 		t.Fatalf("SaveDirScope(b): %v", err)
 	}
-	if err := cq.SaveDirScope(dir, "a"); err != nil {
+	if err := cq.SaveDirScope(context.Background(), dir, "a"); err != nil {
 		t.Fatalf("SaveDirScope(a again): %v", err)
 	}
 
@@ -146,7 +147,7 @@ func TestLoadDirScope_V1UpgradesToV2InPlaceSamePath(t *testing.T) {
 	}
 
 	// Next write upgrades in place at the same path, preserving chat history head.
-	if err := cq.SaveDirScope(dir, "fresh"); err != nil {
+	if err := cq.SaveDirScope(context.Background(), dir, "fresh"); err != nil {
 		t.Fatalf("SaveDirScope(upgrade): %v", err)
 	}
 	if _, err := os.Stat(path); err != nil {
@@ -176,18 +177,18 @@ func TestEnsureOriginDir_StampsOnFirstPersistAndIsImmutable(t *testing.T) {
 	canonWd, _ := canonicalDir(wd)
 
 	c := pub_models.Chat{ID: "origin-chat", Messages: []pub_models.Message{{Role: "user", Content: "hi"}}}
-	if err := EnsureOriginDir(confDir, &c); err != nil {
+	if err := EnsureOriginDir(context.Background(), confDir, &c); err != nil {
 		t.Fatalf("EnsureOriginDir(first): %v", err)
 	}
 	if c.OriginDir != canonWd {
 		t.Fatalf("expected origin %q, got %q", canonWd, c.OriginDir)
 	}
-	if err := Save(conversationsDir(confDir), c); err != nil {
+	if err := Save(context.Background(), conversationsDir(confDir), c); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
 	// Index mirroring: the persisted row carries origin_dir.
-	rows, err := readChatIndex(conversationsDir(confDir))
+	rows, err := readChatIndex(context.Background(), conversationsDir(confDir))
 	if err != nil {
 		t.Fatalf("readChatIndex: %v", err)
 	}
@@ -202,7 +203,7 @@ func TestEnsureOriginDir_StampsOnFirstPersistAndIsImmutable(t *testing.T) {
 		t.Fatalf("Chdir(other): %v", err)
 	}
 	reply := pub_models.Chat{ID: "origin-chat"}
-	if err := EnsureOriginDir(confDir, &reply); err != nil {
+	if err := EnsureOriginDir(context.Background(), confDir, &reply); err != nil {
 		t.Fatalf("EnsureOriginDir(reply): %v", err)
 	}
 	if reply.OriginDir != canonWd {

@@ -13,7 +13,7 @@ func Test_Command(t *testing.T) {
 	t.Setenv("CLAI_CONFIG_DIR", t.TempDir())
 	t.Setenv("OPENAI_API_KEY", "key")
 	deps := CommandDeps{
-		ConfigPrep: func() (string, error) { return t.TempDir(), nil },
+		ConfigPrep: func(context.Context) (string, error) { return t.TempDir(), nil },
 	}
 	c := Command(deps)
 	if c.Describe() == "" || !strings.Contains(c.Help(), "video <text>") {
@@ -106,7 +106,7 @@ func Test_CommandExpandsOutputDir(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(confDir, "videoConfig.json"), []byte(`{"output":{"type":"local","dir":"~/Videos"}}`), 0o644); err != nil {
 				t.Fatalf("write videoConfig.json: %v", err)
 			}
-			c := Command(CommandDeps{ConfigPrep: func() (string, error) { return confDir, nil }})
+			c := Command(CommandDeps{ConfigPrep: func(context.Context) (string, error) { return confDir, nil }})
 			if err := c.Flagset().Parse([]string{"-vm", "sora-2", "ocean", "waves"}); err != nil {
 				t.Fatalf("Parse: %v", err)
 			}

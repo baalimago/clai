@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/baalimago/clai/internal/diag"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -74,7 +75,7 @@ func (r FreetextCmdTool) Call(input pub_models.Input) (string, error) {
 	killDelay := max(killAfter-timeout, 0)
 	state := &cmdTimeoutState{}
 	if startErr := cmd.Start(); startErr != nil {
-		return "", fmt.Errorf("run freetext command %q: %w", freetextCmd, startErr)
+		return "", diag.Errorf("run freetext command %q: %w", freetextCmd, startErr)
 	}
 	pid := cmd.Process.Pid
 	timeoutTimer := time.AfterFunc(timeout, func() {
@@ -109,7 +110,7 @@ func (r FreetextCmdTool) Call(input pub_models.Input) (string, error) {
 		if didTimeout {
 			return "", fmt.Errorf("run freetext command %q: %s Output: %s", freetextCmd, timeoutMessage(timeout, killAfter, state), string(output))
 		}
-		return "", fmt.Errorf("run freetext command %q: %w, output: %v", freetextCmd, err, string(output))
+		return "", diag.Errorf("run freetext command %q: %w, output: %v", freetextCmd, err, string(output))
 	}
 	if didTimeout {
 		return "", fmt.Errorf("run freetext command %q: %s Output: %s", freetextCmd, timeoutMessage(timeout, killAfter, state), string(output))
@@ -126,7 +127,7 @@ func (r FreetextCmdTool) CallWithContext(ctx context.Context, input pub_models.I
 		return "", fmt.Errorf("validate command input: command must not be empty")
 	}
 	if err := validateCmdNotBannedWithContext(ctx, freetextCmd, nil); err != nil {
-		return "", fmt.Errorf("run freetext command %q: %w", freetextCmd, err)
+		return "", diag.Errorf("run freetext command %q: %w", freetextCmd, err)
 	}
 
 	timeout, err := parseOptionalCmdTimeout(input["timeout_seconds"])
@@ -142,7 +143,7 @@ func (r FreetextCmdTool) CallWithContext(ctx context.Context, input pub_models.I
 	cmd.Stderr = &stderrBuf
 
 	if startErr := cmd.Start(); startErr != nil {
-		return "", fmt.Errorf("run freetext command %q: %w", freetextCmd, startErr)
+		return "", diag.Errorf("run freetext command %q: %w", freetextCmd, startErr)
 	}
 	pid := cmd.Process.Pid
 
@@ -175,7 +176,7 @@ func (r FreetextCmdTool) CallWithContext(ctx context.Context, input pub_models.I
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			return "", fmt.Errorf("run freetext command %q: exit code %d, output: %v", freetextCmd, exitErr.ExitCode(), string(output))
 		}
-		return "", fmt.Errorf("run freetext command %q: %w, output: %v", freetextCmd, err, string(output))
+		return "", diag.Errorf("run freetext command %q: %w, output: %v", freetextCmd, err, string(output))
 	}
 	return string(output), nil
 }
@@ -218,7 +219,7 @@ func parseOptionalCmdTimeout(raw any) (time.Duration, error) {
 	}
 	seconds, err := parseTimeoutSeconds(raw)
 	if err != nil {
-		return 0, fmt.Errorf("timeout_seconds: %w", err)
+		return 0, diag.Errorf("timeout_seconds: %w", err)
 	}
 	if seconds <= 0 {
 		return 0, fmt.Errorf("timeout_seconds must be > 0")

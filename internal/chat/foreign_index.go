@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io/fs"
 	"os"
 	"path"
@@ -14,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/internal/vendors"
 )
@@ -181,14 +181,14 @@ func (f *ForeignIndex) Persist() error {
 	}
 	rows := f.liveRows()
 	if err := os.MkdirAll(f.dir, 0o755); err != nil {
-		return fmt.Errorf("failed to create foreign index cache dir %q: %w", f.dir, err)
+		return diag.Errorf("failed to create foreign index cache dir %q: %w", f.dir, err)
 	}
 	b, err := json.Marshal(foreignIndexCache{Version: foreignIndexVersion, Rows: rows})
 	if err != nil {
-		return fmt.Errorf("failed to encode foreign index cache: %w", err)
+		return diag.Errorf("failed to encode foreign index cache: %w", err)
 	}
 	if err := utils.WriteFileAtomic(f.path(), b, 0o644); err != nil {
-		return fmt.Errorf("failed to persist foreign index cache: %w", err)
+		return diag.Errorf("failed to persist foreign index cache: %w", err)
 	}
 	return nil
 }

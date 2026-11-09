@@ -24,6 +24,7 @@ import (
 	"github.com/baalimago/clai/internal/cloud/sync"
 	"github.com/baalimago/clai/internal/confdir"
 	"github.com/baalimago/clai/internal/debugflags"
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/imagegen"
 	"github.com/baalimago/clai/internal/imagegen/route"
 	"github.com/baalimago/clai/internal/imageinput"
@@ -34,6 +35,7 @@ import (
 	"github.com/baalimago/clai/internal/profile"
 	"github.com/baalimago/clai/internal/profiles"
 	"github.com/baalimago/clai/internal/remote"
+	"github.com/baalimago/clai/internal/runenv"
 	"github.com/baalimago/clai/internal/runtally"
 	"github.com/baalimago/clai/internal/setup"
 	"github.com/baalimago/clai/internal/summary"
@@ -44,13 +46,28 @@ import (
 	"github.com/baalimago/clai/internal/vendors"
 	"github.com/baalimago/clai/internal/version"
 	"github.com/baalimago/clai/internal/video"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/cmd"
-	"github.com/baalimago/go_away_boilerplate/pkg/shutdown"
 )
 
 // CONFIG_DIR and CACHE_DIR are interpolated by Run; %v takes the generated
 // command table. Per-command help lives on each command's -h.
+//
+// The diagnostic and format synopsis extends the usage below (the help text
+// itself is pinned by e2e/testdata/diagnostics/help.golden):
+//
+//	LOG_LEVEL=<level>[,<subsystem>=<level>...] clai ...
+//	  levels error, warn (warning), info (default), debug, trace; the
+//	  legacy controls of architecture/output.md form the lowest layer
+//	  results on stdout, diagnostics on stderr, spill files under
+//	  CACHE_DIR/diagnostics; an invalid LOG_LEVEL or legacy control exits 1
+//
+//	clai -json [command flags] <command> [command flags] [args]
+//	  -json/--json, before the command or among its flags before the first
+//	  positional argument, makes every line on stdout and stderr one JSON
+//	  record; destinations, input and exit statuses are unchanged, except
+//	  that $EDITOR is refused with exit status 1; -json=<bool> takes the
+//	  values Go's bool flags take, so -json=false selects text, and any
+//	  other value is a usage error
 const usageTemplate = `clai - (c)ommand (l)ine (a)rtificial (i)ntelligence
 
 Prerequisites:
@@ -62,31 +79,33 @@ Usage: clai [command flags] <command> [command flags] [args]
 
 Commands:
 %v
-Run 'clai help <command>' or 'clai <command> -h' for a command's flags,
-examples and subcommands.
+Each command has its own flags, examples and subcommands in its help:
+'clai help <command>' or 'clai <command> -h'. For example, 'clai query -h'
+has the details of a query. A prompt that starts with '-' goes after '--':
+'clai query -- -why does this fail'.
+
+For scripts, -json before the command prints every line, on stdout and on
+stderr, as one JSON record: 'clai -json query hi'.
+
+Investigating:
+  clai reports what it does on stderr, by subsystem. LOG_LEVEL sets how much
+  is shown: first a level for everything (error, warn, info, debug or trace),
+  then subsystem=level for the ones to look closer at. A name also selects
+  the names under it, so vendor=debug is every vendor.
+
+    LOG_LEVEL=debug clai query hi                     # everything
+    LOG_LEVEL=warn,mcp=debug clai query hi            # MCP servers in detail
+    LOG_LEVEL=warn,vendor=debug,call=debug clai ...   # requests and tool calls
+
+  Each line names its subsystem in brackets, such as 'debug [config] ...',
+  and with -json it is the record's "subsystem" field. So one run at debug
+  shows which subsystem to narrow to.
+
+Subsystems:
+SUBSYSTEMS
 
 Config dir: CONFIG_DIR
 Cache dir:  CACHE_DIR
-
-Examples:
-  - clai --version   # same as 'clai version'
-  - clai confdir
-  - clai -tools website_text -query-summary query "What'\''\'''s the weather like in Tokyo? Use website_text to fetch data"
-  - clai -glob "*.txt" -query-summary query Please summarize these documents: 
-  - clai -add-shell-context minimal -query-summary query "what changed in this repo?"
-  - clai -loop query "refactor the auth package and make the tests pass"
-  - clai -reply-only -profile-path cchub:clai/reviewer query > review.md   # progress on stderr, only the reply in the file
-  - clai -photo-model dall-e-2 photo A cat in space
-  - clai -image screenshot.png -query-summary query "What is wrong in this dialog?"
-  - clai -tools generate_image -query-summary query "Draw a fox in the snow"
-  - docker logs example | clai -replace LOG -query-summary query "Find errors in these logs: LOG"
-  - clai audio transcribe meeting.wav | clai -query-summary query "Summarize these meeting notes: {}"
-  - clai audio transcribe -audio-model gpt-4o-transcribe-diarize -strict-speakers long-meeting.wav
-  - clai chat list
-  - clai -raw chat dirv2
-  - clai chat summarize 7d   # label last week's conversations with a title and summary
-  - clai chat help
-  - clai query -- -why does this fail   # '--' escapes a prompt starting with '-'
 `
 
 // CPUProfileFileName is where RunProfiled writes when the CPU debug flag is on.
@@ -96,7 +115,7 @@ const CPUProfileFileName = "cpu_profile.prof"
 // table. Tests substitute the summarizer, foreign-cache and image-generator
 // factories through it, so none of those packages holds mutable state.
 type Deps struct {
-	NewSummarizer func(confDir string) (models.Summarizer, error)
+	NewSummarizer func(ctx context.Context, confDir string) (models.Summarizer, error)
 	// SummaryJoinTimeout makes a plain query wait this long for its label;
 	// zero (production) keeps labelling best effort with no wait.
 	SummaryJoinTimeout time.Duration
@@ -125,13 +144,13 @@ func DefaultDeps() Deps {
 // config directory a command prepared and the clai cache directory. envAt
 // supplies the checker every route shares, which the resolver runs before a
 // body is trusted.
-func remoteResolver(client remote.Doer, envAt func(confDir string) (profile.Env, error)) text.NewRemoteResolverFunc {
+func remoteResolver(client remote.Doer, envAt func(confDir string) (profile.Env, error), notices func() io.Writer) text.NewRemoteResolverFunc {
 	return func(confDir string, prompt remote.Prompter) (remote.Resolver, error) {
 		cacheDir, err := utils.GetClaiCacheDir()
 		if err != nil {
 			return remote.Resolver{}, err
 		}
-		note := func(s string) { fmt.Fprintf(os.Stderr, "notice: %s\n", s) }
+		note := func(s string) { fmt.Fprintf(notices(), "notice: %s\n", s) }
 		r, err := remote.NewResolver(remote.EnvFrom(os.Getenv), confDir, cacheDir, client, prompt, note)
 		if err != nil {
 			return remote.Resolver{}, err
@@ -170,7 +189,7 @@ func profileEnvFunc() func(confDir string) (profile.Env, error) {
 func newProfileEnv(confDir string) (profile.Env, error) {
 	conf, err := utils.ReadConfigFile(filepath.Join(confDir, "textConfig.json"), &text.Default)
 	if err != nil {
-		return profile.Env{}, fmt.Errorf("read the model aliases for the profile check: %w", err)
+		return profile.Env{}, diag.Errorf("read the model aliases for the profile check: %w", err)
 	}
 	return profile.Env{
 		ResolveModel: modelRouter(conf.ModelAliases),
@@ -244,14 +263,14 @@ func hubPublisher(confDir string) (profiles.HubPublisher, error) {
 // prep and migrations, which the domain packages cannot import themselves.
 // See architecture/cmd-dispatch.md.
 func Commands(deps Deps) map[string]cmd.Command {
-	return commands(deps, func(int) {})
+	return commands(deps, func(int) {}, func() io.Writer { return io.Discard })
 }
 
 // commands takes setExit, through which a command asks Run for an exit
 // status other than the 0 or 1 cmd.Run can return.
-func commands(deps Deps, setExit func(int)) map[string]cmd.Command {
-	configPrep := func() (string, error) {
-		confDir, _, err := setup.ConfigRunPrep(false)
+func commands(deps Deps, setExit func(int), notices func() io.Writer) map[string]cmd.Command {
+	configPrep := func(ctx context.Context) (string, error) {
+		confDir, _, err := setup.ConfigRunPrep(ctx, false)
 		return confDir, err
 	}
 	// An agent run may call audio_transcribe, so -am/-af and a profile's
@@ -268,14 +287,14 @@ func commands(deps Deps, setExit func(int)) map[string]cmd.Command {
 		SummaryJoinTimeout:  deps.SummaryJoinTimeout,
 		NewImageGenerator:   deps.NewImageGenerator,
 		PhotoConfig:         setup.LoadPhotoConfig,
-		NewRemoteResolver:   remoteResolver(deps.RemoteClient, envAt),
+		NewRemoteResolver:   remoteResolver(deps.RemoteClient, envAt, notices),
 		ProfileEnv:          envAt,
 		RunTallyEnv:         runtally.OSEnv{},
 		StepRetry:           deps.StepRetry,
 	}
 	profileDeps := profiles.CommandDeps{
-		NewResolver:     profiles.NewResolverFunc(remoteResolver(deps.RemoteClient, envAt)),
-		ConfigDir:       func() (string, error) { return configPrep() },
+		NewResolver:     profiles.NewResolverFunc(remoteResolver(deps.RemoteClient, envAt, notices)),
+		ConfigDir:       configPrep,
 		ConfigDirLookup: utils.GetClaiConfigDir,
 		NewHubPublisher: hubPublisher,
 		ProfileEnv:      envAt,
@@ -284,7 +303,10 @@ func commands(deps Deps, setExit func(int)) map[string]cmd.Command {
 			s, found := sync.FindSecret(name, b)
 			return s.String(), found
 		},
-		NewPrompt: func() remote.Prompter { return text.TerminalTrustPrompter(os.Stdin, os.Stderr) },
+		NewPrompt: func(ctx context.Context) remote.Prompter {
+			env := runenv.From(ctx)
+			return text.TerminalTrustPrompter(env.Stdin(), env.StdinIsTerminal(), env.Stderr())
+		},
 	}
 	return map[string]cmd.Command{
 		"query|q": text.QueryCommand(queryDeps),
@@ -303,14 +325,14 @@ func commands(deps Deps, setExit func(int)) map[string]cmd.Command {
 			NewPresenter:      present.New,
 			NewOpener:         present.NewCommandOpener,
 			PreviousImage:     photo.PreviousQueryImage,
-			NewRemoteResolver: remoteResolver(deps.RemoteClient, envAt),
+			NewRemoteResolver: remoteResolver(deps.RemoteClient, envAt, notices),
 		}),
 		"video|v": video.Command(video.CommandDeps{
 			ConfigPrep: configPrep,
 		}),
 		"audio|a": audio.Command(audio.CommandDeps{
-			ConfigPrep:        func() (string, []string, error) { return setup.ConfigRunPrep(true) },
-			NewRemoteResolver: remoteResolver(deps.RemoteClient, envAt),
+			ConfigPrep:        func(ctx context.Context) (string, []string, error) { return setup.ConfigRunPrep(ctx, true) },
+			NewRemoteResolver: remoteResolver(deps.RemoteClient, envAt, notices),
 		}),
 		"setup|s":        setup.Command(),
 		"version":        version.Command(),
@@ -373,24 +395,10 @@ func versionFlagAsCommand(args []string) []string {
 }
 
 // Run dispatches args (without the program name) and returns the process exit
-// status. It never exits; the caller owns os.Exit.
+// status. It never exits; the caller owns os.Exit. It reads the process
+// streams, their terminal states, the environment and the signals once.
 func Run(args []string, deps Deps) int {
-	args = helpAsCommand(versionFlagAsCommand(args))
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	// Nested tool calls stop clai through this cancel.
-	ctx = context.WithValue(ctx, utils.ContextCancelKey, cancel)
-	go shutdown.MonitorV2(ctx, cancel)
-	cfgDir, _ := utils.GetClaiConfigDir()
-	cacheDir, _ := utils.GetClaiCacheDir()
-	usage := strings.NewReplacer("CONFIG_DIR", cfgDir, "CACHE_DIR", cacheDir).Replace(usageTemplate)
-	ctx, exit := internal.WithExitStatus(ctx)
-	cmds := withHelp(commands(deps, exit.Set), usage)
-	if err := checkArgs(args, cmds); err != nil {
-		ancli.Errf("%v", err)
-		return 1
-	}
-	return exit.Resolve(cmd.Run(ctx, append([]string{"clai"}, args...), cmds, usage))
+	return run(args, deps, osProcess())
 }
 
 // checkArgs lets a command named first vet its own arguments (see
@@ -416,12 +424,12 @@ func checkArgs(args []string, cmds map[string]cmd.Command) error {
 func startCPUProfile(name string) (func(), error) {
 	f, err := os.Create(name)
 	if err != nil {
-		return nil, fmt.Errorf("create profile file %q: %w", name, err)
+		return nil, diag.Errorf("create profile file %q: %w", name, err)
 	}
 	if err := pprof.StartCPUProfile(f); err != nil {
 		_ = f.Close()
 		_ = os.Remove(name)
-		return nil, fmt.Errorf("start profile %q: %w", name, err)
+		return nil, diag.Errorf("start profile %q: %w", name, err)
 	}
 	return func() {
 		pprof.StopCPUProfile()
@@ -437,8 +445,9 @@ func RunProfiled(args []string, deps Deps) int {
 	}
 	stop, err := startCPUProfile(CPUProfileFileName)
 	if err != nil {
-		ancli.PrintErr(fmt.Sprintf("failed to start cpu profile: %v\n", err))
-		return Run(args, deps)
+		p := osProcess()
+		p.startupWarnings = append(p.startupWarnings, fmt.Sprintf("failed to start cpu profile: %v", err))
+		return run(args, deps, p)
 	}
 	defer stop()
 	return Run(args, deps)

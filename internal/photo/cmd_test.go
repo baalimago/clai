@@ -16,8 +16,8 @@ func Test_Command(t *testing.T) {
 	var gotConfDir string
 	var loaded Configurations
 	deps := CommandDeps{
-		ConfigPrep: func() (string, error) { return "/stub/conf", nil },
-		LoadConfig: func(confDir string) (Configurations, error) {
+		ConfigPrep: func(context.Context) (string, error) { return "/stub/conf", nil },
+		LoadConfig: func(_ context.Context, confDir string) (Configurations, error) {
 			gotConfDir = confDir
 			loaded = Configurations{Model: "from-file", PromptFormat: "%v", Output: Output{Type: UNSET}}
 			return loaded, nil

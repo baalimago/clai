@@ -375,6 +375,7 @@ func Test_Generic_MalformedFrame_Noop(t *testing.T) {
 			`data: {"choices":[{"delta":{"content":"Hello"}}]}`,
 			"data: not-json{{",
 			`data: {"error":null,"choices":[{"delta":{"content":"World"}}]}`,
+			"data: [DONE]",
 		)
 		defer ts.Close()
 		s := &StreamCompleter{}

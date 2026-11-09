@@ -70,7 +70,16 @@ None.
 | Run       | Commit      | Command | Result |
 | --------- | ----------- | ------- | ------ |
 | replan    | 2c9c4ff+wip | —       | V1-11: `Remediable` renamed `Remedier`. |
+| start+wip | 1bebb27+wip | `gofumpt; staticcheck ./...; go vet ./...; go test ./... -race -cover -count=3 -timeout=30s; go fix ./...; dupl -t 80 .` | PASS. |
+| end+wip   | 1bebb27+wip | `go test ./... -race -cover -count=3 -timeout=30s; gofumpt; dupl -t 80 .; go vet ./...; go fix ./...; staticcheck ./...` | PASS. |
+| end+wip   | 1bebb27+wip | `staticcheck ./...; go fix ./...; gofumpt; go test ./... -race -cover -count=3 -timeout=30s; go vet ./...; dupl -t 80 .` | PASS. |
+
+Andon: none.
 
 ## Review findings
 
+### Review 1, 2026-11-09 (root)
+
 None.
+
+Verified good: the Interface matches the written file token for token, and each clause's test names its id.

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os/exec"
 
+	"github.com/baalimago/clai/internal/diag"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -54,7 +55,7 @@ func (c CpTool) Call(input pub_models.Input) (string, error) {
 	}
 	output, err := exec.Command("cp", flag, "--", source, destination).CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("copy %q to %q: %w, output: %s", source, destination, err, output)
+		return "", diag.Errorf("copy %q to %q: %w, output: %s", source, destination, err, output)
 	}
 	return fmt.Sprintf("Successfully copied %s to %s", source, destination), nil
 }

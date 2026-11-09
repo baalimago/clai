@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -40,12 +41,12 @@ func TestLoadDirScopedContext_ReturnsFullConversation(t *testing.T) {
 			{Role: "assistant", Content: "response from dir"},
 		},
 	}
-	if err := Save(conversationsDir(confDir), sourceChat); err != nil {
+	if err := Save(context.Background(), conversationsDir(confDir), sourceChat); err != nil {
 		t.Fatalf("Save(sourceChat): %v", err)
 	}
 
 	handler := &ChatHandler{confDir: confDir}
-	if err := handler.SaveDirScope(dir, sourceChat.ID); err != nil {
+	if err := handler.SaveDirScope(context.Background(), dir, sourceChat.ID); err != nil {
 		t.Fatalf("SaveDirScope: %v", err)
 	}
 
@@ -56,11 +57,11 @@ func TestLoadDirScopedContext_ReturnsFullConversation(t *testing.T) {
 			{Role: "user", Content: "stale"},
 		},
 	}
-	if err := Save(conversationsDir(confDir), staleChat); err != nil {
+	if err := Save(context.Background(), conversationsDir(confDir), staleChat); err != nil {
 		t.Fatalf("Save(stale): %v", err)
 	}
 
-	got, err := LoadDirScopedContext(confDir)
+	got, err := LoadDirScopedContext(context.Background(), confDir)
 	if err != nil {
 		t.Fatalf("LoadDirScopedContext: %v", err)
 	}
@@ -79,7 +80,7 @@ func TestLoadDirScopedContext_ReturnsFullConversation(t *testing.T) {
 	}
 
 	// Verify globalScope was NOT modified (the stale content is still there).
-	gs, err := LoadGlobalScope(confDir)
+	gs, err := LoadGlobalScope(context.Background(), confDir)
 	if err != nil {
 		t.Fatalf("LoadGlobalScope: %v", err)
 	}

@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
@@ -45,6 +46,7 @@ type Authorizer struct {
 	clock           func() time.Time
 	opener          BrowserOpener
 	progressFn      func(string) error
+	pasteQuestionFn func(string) error
 	loadEnvFile     EnvFileLoader
 
 	// PasteInput is the trusted input reader the repository already
@@ -104,6 +106,13 @@ func WithPasteInput(r io.Reader) Option {
 // authorization URL. It never receives tokens, codes or client secrets.
 // Without a callback, progress reporting is disabled.
 func WithProgress(fn func(string) error) Option { return func(a *Authorizer) { a.progressFn = fn } }
+
+// WithPasteQuestion asks for the pasted authorization code in place of
+// reporting that wait as progress, before the code is read. An error it
+// returns ends the flow.
+func WithPasteQuestion(fn func(string) error) Option {
+	return func(a *Authorizer) { a.pasteQuestionFn = fn }
+}
 
 // WithLoopback overrides the loopback-host and loopback-port parameters.
 func WithLoopback(host string, port int) Option {
@@ -189,6 +198,13 @@ func (a *Authorizer) reportProgress(message string) error {
 		return a.progressFn(message)
 	}
 	return nil
+}
+
+func (a *Authorizer) askForPaste(question string) error {
+	if a.pasteQuestionFn != nil {
+		return a.pasteQuestionFn(question)
+	}
+	return a.reportProgress(question)
 }
 
 // bearerDecorator attaches token as a bearer Authorization header to every
@@ -396,7 +412,7 @@ func (a *Authorizer) authorizeViaFlow(ctx context.Context, server pub_models.Mcp
 				}
 				res, waitErr := awaitRedirect(ctx, ln)
 				if waitErr != nil {
-					return authorizationFlow{}, fmt.Errorf("mcpauth: await loopback redirect: %w", waitErr)
+					return authorizationFlow{}, diag.Errorf("mcpauth: await loopback redirect: %w", waitErr)
 				}
 				if res.err != "" {
 					return authorizationFlow{}, &RedirectError{ServerName: server.Name, Reason: res.err}
@@ -434,12 +450,12 @@ func (a *Authorizer) authorizeViaFlow(ctx context.Context, server pub_models.Mcp
 	if err := a.reportProgress("Open this URL to authorize clai, then paste the resulting code:\n" + authURL); err != nil {
 		return authorizationFlow{}, err
 	}
-	if err := a.reportProgress("Waiting for you to paste the authorization code; press Ctrl-C to cancel."); err != nil {
+	if err := a.askForPaste("Waiting for you to paste the authorization code; press Ctrl-C to cancel."); err != nil {
 		return authorizationFlow{}, err
 	}
 	line, readErr := readPastedLine(a.PasteInput)
 	if readErr != nil {
-		return authorizationFlow{}, fmt.Errorf("mcpauth: read pasted authorization code: %w", readErr)
+		return authorizationFlow{}, diag.Errorf("mcpauth: read pasted authorization code: %w", readErr)
 	}
 	return authorizationFlow{code: line, verifier: verifier2, redirectURI: oobRedirectURI, reg: reg2}, nil
 }

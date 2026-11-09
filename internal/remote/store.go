@@ -5,12 +5,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
 	"time"
+
+	"github.com/baalimago/clai/internal/diag"
 )
 
 // TrustFile is the trust store's name in the config directory. It is
@@ -54,10 +55,10 @@ func (s TrustStore) load() (trustRecord, error) {
 		return rec, nil
 	}
 	if err != nil {
-		return rec, fmt.Errorf("read trust store: %w", err)
+		return rec, diag.Errorf("read trust store: %w", err)
 	}
 	if err := json.Unmarshal(b, &rec); err != nil {
-		return rec, fmt.Errorf("parse trust store %s: %w", s.path, err)
+		return rec, diag.Errorf("parse trust store %s: %w", s.path, err)
 	}
 	if rec.Targets == nil {
 		rec.Targets = map[string][]trustItem{}
@@ -110,10 +111,10 @@ func (c Cache) index() (map[string]string, error) {
 		return idx, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("read remote cache index: %w", err)
+		return nil, diag.Errorf("read remote cache index: %w", err)
 	}
 	if err := json.Unmarshal(b, &idx); err != nil {
-		return nil, fmt.Errorf("parse remote cache index: %w", err)
+		return nil, diag.Errorf("parse remote cache index: %w", err)
 	}
 	return idx, nil
 }
@@ -130,14 +131,14 @@ func (c Cache) Lookup(target string) ([]byte, string, error) {
 	}
 	digest, ok := idx[target]
 	if !ok {
-		return nil, "", fmt.Errorf("%s: %w", target, ErrNotCached)
+		return nil, "", diag.Errorf("%s: %w", target, ErrNotCached)
 	}
 	body, err := os.ReadFile(c.Path(digest))
 	if errors.Is(err, fs.ErrNotExist) || (err == nil && Digest(body) != digest) {
-		return nil, "", fmt.Errorf("%s: %w", target, ErrNotCached)
+		return nil, "", diag.Errorf("%s: %w", target, ErrNotCached)
 	}
 	if err != nil {
-		return nil, "", fmt.Errorf("read cached %s: %w", target, err)
+		return nil, "", diag.Errorf("read cached %s: %w", target, err)
 	}
 	return body, digest, nil
 }
@@ -146,7 +147,7 @@ func (c Cache) Lookup(target string) ([]byte, string, error) {
 func (c Cache) Store(target string, body []byte) (string, error) {
 	digest := Digest(body)
 	if err := os.MkdirAll(c.dir, 0o755); err != nil {
-		return "", fmt.Errorf("create remote cache: %w", err)
+		return "", diag.Errorf("create remote cache: %w", err)
 	}
 	if err := writeFileAtomic(c.Path(digest), body); err != nil {
 		return "", err
@@ -165,10 +166,10 @@ func (c Cache) Store(target string, body []byte) (string, error) {
 func writeJSON(path string, v any) error {
 	b, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
-		return fmt.Errorf("encode %s: %w", path, err)
+		return diag.Errorf("encode %s: %w", path, err)
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("create %s: %w", filepath.Dir(path), err)
+		return diag.Errorf("create %s: %w", filepath.Dir(path), err)
 	}
 	return writeFileAtomic(path, append(b, '\n'))
 }
@@ -176,20 +177,20 @@ func writeJSON(path string, v any) error {
 func writeFileAtomic(path string, b []byte) error {
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".tmp-*")
 	if err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
+		return diag.Errorf("write %s: %w", path, err)
 	}
 	if _, err := tmp.Write(b); err != nil {
 		_ = tmp.Close()
 		_ = os.Remove(tmp.Name())
-		return fmt.Errorf("write %s: %w", path, err)
+		return diag.Errorf("write %s: %w", path, err)
 	}
 	if err := tmp.Close(); err != nil {
 		_ = os.Remove(tmp.Name())
-		return fmt.Errorf("write %s: %w", path, err)
+		return diag.Errorf("write %s: %w", path, err)
 	}
 	if err := os.Rename(tmp.Name(), path); err != nil {
 		_ = os.Remove(tmp.Name())
-		return fmt.Errorf("write %s: %w", path, err)
+		return diag.Errorf("write %s: %w", path, err)
 	}
 	return nil
 }

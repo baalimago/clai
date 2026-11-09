@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"strconv"
 
+	"github.com/baalimago/clai/internal/diag"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -78,7 +79,7 @@ func runCountedFileTool(executable string, input pub_models.Input) (string, erro
 
 	output, err := exec.Command(executable, args...).CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("failed to run %s: %w, output: %s", executable, err, output)
+		return "", diag.Errorf("failed to run %s: %w, output: %s", executable, err, output)
 	}
 	return string(output), nil
 }

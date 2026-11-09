@@ -8,6 +8,7 @@ import (
 	"runtime/debug"
 
 	"github.com/baalimago/clai/internal"
+	"github.com/baalimago/clai/internal/runenv"
 )
 
 // Set with buildflag if built in pipeline and not using go install
@@ -26,29 +27,30 @@ func Command() *internal.Command {
 Examples:
   clai version`,
 	}
-	c.OnRun = func(_ context.Context, _ *internal.Command) error {
-		return Print()
+	c.OnRun = func(ctx context.Context, _ *internal.Command) error {
+		return Print(ctx)
 	}
 	return c
 }
 
 // Print writes the build version (ldflags-stamped when present, module
-// version otherwise) and every dependency version to stdout.
-func Print() error {
+// version otherwise) and every dependency version to the run's stdout.
+func Print(ctx context.Context) error {
+	out := runenv.From(ctx).Stdout()
 	hasPrintedVersion := false
 	if BuildVersion != "" {
 		hasPrintedVersion = true
-		fmt.Println("version: " + BuildVersion)
+		fmt.Fprintln(out, "version: "+BuildVersion)
 	}
 	bi, ok := debug.ReadBuildInfo()
 	if !ok {
 		return errors.New("failed to read build info")
 	}
 	if !hasPrintedVersion {
-		fmt.Println("version: " + bi.Main.Version)
+		fmt.Fprintln(out, "version: "+bi.Main.Version)
 	}
 	for _, dep := range bi.Deps {
-		fmt.Printf("%s %s\n", dep.Path, dep.Version)
+		fmt.Fprintf(out, "%s %s\n", dep.Path, dep.Version)
 	}
 	return nil
 }

@@ -1,11 +1,12 @@
 package utils
 
 import (
-	"fmt"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
+
+	"github.com/baalimago/clai/internal/diag"
 )
 
 // GetClaiConfigDir returns the path to the clai configuration directory.
@@ -17,7 +18,7 @@ func GetClaiConfigDir() (string, error) {
 	}
 	cfg, err := os.UserConfigDir()
 	if err != nil {
-		return "", fmt.Errorf("failed to get user config directory: %w", err)
+		return "", diag.Errorf("failed to get user config directory: %w", err)
 	}
 	return path.Join(cfg, ".clai"), nil
 }
@@ -35,7 +36,7 @@ func ExpandUserPath(p string) (string, error) {
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", fmt.Errorf("resolve home dir: %w", err)
+		return "", diag.Errorf("resolve home dir: %w", err)
 	}
 	if p == "~" {
 		return home, nil
@@ -65,7 +66,7 @@ func GetClaiCacheDir() (string, error) {
 	}
 	cacheDir, err := os.UserCacheDir()
 	if err != nil {
-		return "", fmt.Errorf("failed to get user cache directory: %w", err)
+		return "", diag.Errorf("failed to get user cache directory: %w", err)
 	}
 	return path.Join(cacheDir, "clai"), nil
 }

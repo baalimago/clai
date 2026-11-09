@@ -26,7 +26,6 @@ func TestDiscover_profileSkillsWinAndNeedNoSecondTrust(t *testing.T) {
 			asked++
 			return false, nil
 		},
-		LogLevel: LogLevelError,
 	})
 	if err != nil {
 		t.Fatalf("Discover: %v", err)

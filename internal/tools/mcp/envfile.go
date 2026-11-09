@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/utils"
 )
 
@@ -26,11 +27,11 @@ func LoadEnvFile(envFile string) (map[string]string, error) {
 	}
 	data, err := os.ReadFile(resolved)
 	if err != nil {
-		return nil, fmt.Errorf("read envfile %q: %w", resolved, err)
+		return nil, diag.Errorf("read envfile %q: %w", resolved, err)
 	}
 	parsed, err := parseEnvFileContent(string(data))
 	if err != nil {
-		return nil, fmt.Errorf("parse envfile %q: %w", resolved, err)
+		return nil, diag.Errorf("parse envfile %q: %w", resolved, err)
 	}
 	return parsed, nil
 }
@@ -65,7 +66,7 @@ func parseEnvFileContent(content string) (map[string]string, error) {
 		env[key] = val
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("scan envfile: %w", err)
+		return nil, diag.Errorf("scan envfile: %w", err)
 	}
 	return env, nil
 }

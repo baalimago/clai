@@ -89,11 +89,11 @@ func Test_e2e_query_migrates_mode_configs(t *testing.T) {
 		"model": "test",
 	})
 
-	stdout, status := harness.RunOne(t, confDir, "-cm test q hello")
+	stdout, stderr, status := harness.RunOneStreams(t, confDir, "-cm test q hello")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
-	if !strings.Contains(stdout, "added new field(s) to textConfig.json:") {
+	if !strings.Contains(stderr, "added new field(s) to textConfig.json:") {
 		t.Fatalf("expected the config upgrade announcement for a non-setup command, got:\n%s", stdout)
 	}
 	regenerated, err := os.ReadFile(filepath.Join(confDir, "textConfig.json"))
@@ -144,11 +144,11 @@ func Test_e2e_query_migrates_profiles(t *testing.T) {
 		"model": "test",
 	})
 
-	stdout, status := harness.RunOne(t, confDir, "-cm test q hello")
+	stdout, stderr, status := harness.RunOneStreams(t, confDir, "-cm test q hello")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
-	if !strings.Contains(stdout, "added new field(s) to john.json:") {
+	if !strings.Contains(stderr, "added new field(s) to john.json:") {
 		t.Fatalf("expected the profile upgrade announcement, got:\n%s", stdout)
 	}
 	regenerated, err := os.ReadFile(filepath.Join(confDir, "profiles", "john.json"))
@@ -205,17 +205,17 @@ func Test_e2e_query_migrates_profiles_skips_broken_and_non_json_files(t *testing
 		t.Fatalf("WriteFile(notes.txt): %v", err)
 	}
 
-	stdout, status := harness.RunOne(t, confDir, "-cm test q hello")
+	stdout, stderr, status := harness.RunOneStreams(t, confDir, "-cm test q hello")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
-	if !strings.Contains(stdout, "failed to upgrade profile broken.json") {
-		t.Fatalf("expected a warning for the broken profile, got:\n%s", stdout)
+	if !strings.Contains(stderr, "failed to upgrade profile broken.json") {
+		t.Fatalf("expected a warning for the broken profile, got:\n%s", stderr)
 	}
-	if !strings.Contains(stdout, "added new field(s) to john.json:") {
-		t.Fatalf("expected the profile upgrade announcement, got:\n%s", stdout)
+	if !strings.Contains(stderr, "added new field(s) to john.json:") {
+		t.Fatalf("expected the profile upgrade announcement, got:\n%s", stderr)
 	}
-	if strings.Contains(stdout, "notes.txt") {
+	if strings.Contains(stdout+stderr, "notes.txt") {
 		t.Fatalf("non-JSON files must not be migrated or announced, got:\n%s", stdout)
 	}
 }

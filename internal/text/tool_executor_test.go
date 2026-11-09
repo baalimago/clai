@@ -237,7 +237,7 @@ func TestToolExecutor_attachesCmdBanPolicy(t *testing.T) {
 			Raw:     true,
 			out:     &strings.Builder{},
 			cmdBan:  cmdBan,
-			tooling: tooling{run: map[string]pub_models.LLMTool{"cmd": pkgtools.Cmd}},
+			tooling: tooling{offered: offeredTools(map[string]pub_models.LLMTool{"cmd": pkgtools.Cmd})},
 		}
 		session := &QuerySession{}
 		call := pub_models.Call{ID: "c1", Name: "cmd", Inputs: &pub_models.Input{"command": "touch " + marker}}

@@ -2,10 +2,10 @@ package text
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
+	"github.com/baalimago/clai/internal/diag"
+	"github.com/baalimago/clai/internal/runenv"
 )
 
 // AppendShellContextIfConfigured inserts the rendered shell context block into prompt.
@@ -21,15 +21,17 @@ func AppendShellContextIfConfigured(ctx context.Context, configDir, shellContext
 
 	def, err := LoadShellContextDefinition(configDir, name)
 	if err != nil {
-		return prompt, fmt.Errorf("load shell context definition: %w", err)
+		return prompt, diag.Errorf("load shell context definition: %w", err)
 	}
 
 	if r.Warnf == nil {
-		r.Warnf = ancli.Warnf
+		r.Warnf = func(format string, args ...any) {
+			runenv.Warnf(ctx, runenv.SubsystemTextQuerier, format, args...)
+		}
 	}
 	rendered, err := r.Render(ctx, name, def)
 	if err != nil {
-		return prompt, fmt.Errorf("render shell context: %w", err)
+		return prompt, diag.Errorf("render shell context: %w", err)
 	}
 	rendered = strings.Trim(rendered, " \t\r")
 	if rendered == "" {

@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -73,7 +74,7 @@ func Test_goldenFile_PROFILES_list_prints_summary_for_valid_profiles_and_skips_i
 	}
 
 	var gotStatus int
-	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
+	stdout, stderr := e2etest.CaptureStdoutStderr(t, func() {
 		gotStatus = harness.Run(strings.Split("profiles", " "))
 	})
 
@@ -95,8 +96,11 @@ func Test_goldenFile_PROFILES_list_prints_summary_for_valid_profiles_and_skips_i
 	// must never render a Name block: the list hides nothing and invents
 	// nothing.
 	broken := filepath.Join(profilesDir, "broken.json")
-	testboil.AssertStringContains(t, stdout, broken)
-	testboil.AssertStringContains(t, stdout, "clai profiles validate "+broken)
+	testboil.AssertStringContains(t, stderr, broken)
+	testboil.AssertStringContains(t, stderr, "clai profiles validate "+broken)
+	if strings.Contains(stdout, broken) {
+		t.Fatalf("stdout %q carries the diagnostic for %s", stdout, broken)
+	}
 	if strings.Contains(stdout, "Name: broken") {
 		t.Fatalf("output must not list invalid profile file; got output: %q", stdout)
 	}
@@ -124,15 +128,16 @@ func Test_goldenFile_PROFILES_list_warns_when_no_profiles_found(t *testing.T) {
 	}
 
 	var gotStatus int
-	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
+	stdout, stderr := e2etest.CaptureStdoutStderr(t, func() {
 		gotStatus = harness.Run(strings.Split("profiles", " "))
 	})
 
 	// profiles list exits via ErrUserInitiatedExit which main.run maps to status code 0.
 	testboil.FailTestIfDiff(t, gotStatus, 0)
-	testboil.AssertStringContains(t, stdout, "warning")
-	testboil.AssertStringContains(t, stdout, "no profiles found in ")
-	testboil.AssertStringContains(t, stdout, filepath.Join(confDir, "profiles"))
+	testboil.FailTestIfDiff(t, stdout, "")
+	testboil.AssertStringContains(t, stderr, "warn [profiles]")
+	testboil.AssertStringContains(t, stderr, "no profiles found in ")
+	testboil.AssertStringContains(t, stderr, filepath.Join(confDir, "profiles"))
 }
 
 func Test_goldenFile_profile2_is_applied_to_conversations(t *testing.T) {
@@ -179,7 +184,7 @@ func Test_goldenFile_profile2_is_applied_to_conversations(t *testing.T) {
 	testboil.FailTestIfDiff(t, gotStatus, 0)
 	testboil.AssertStringContains(t, stdout, "hello\n")
 
-	prev, err := chat.LoadPrevQuery(confDir)
+	prev, err := chat.LoadPrevQuery(context.Background(), confDir)
 	if err != nil {
 		t.Fatalf("LoadPrevQuery: %v", err)
 	}

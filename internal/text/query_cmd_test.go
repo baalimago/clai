@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baalimago/clai/internal/testenv/procenv"
+
 	"github.com/baalimago/clai/internal/chat"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/runtally"
@@ -24,7 +26,7 @@ func Test_QueryCommand(t *testing.T) {
 		t.Setenv("CLAI_CONFIG_DIR", confDir)
 		t.Setenv("HOME", t.TempDir())
 		deps := QueryCommandDeps{
-			ConfigPrep: func() (string, error) { return confDir, nil },
+			ConfigPrep: func(context.Context) (string, error) { return confDir, nil },
 		}
 		c := QueryCommand(deps)
 		if c.Describe() == "" || !strings.Contains(c.Help(), "query <text>") {
@@ -38,18 +40,18 @@ func Test_QueryCommand(t *testing.T) {
 		if err := c.Flagset().Parse([]string{"-cm", "test", "hello", "there"}); err != nil {
 			t.Fatalf("Parse: %v", err)
 		}
-		if err := c.Setup(t.Context()); err != nil {
+		if err := c.Setup(procenv.Context(t.Context())); err != nil {
 			t.Fatalf("Setup: %v", err)
 		}
 	})
 
 	t.Run("prep error propagates", func(t *testing.T) {
 		wantErr := errors.New("prep boom")
-		c := QueryCommand(QueryCommandDeps{ConfigPrep: func() (string, error) { return "", wantErr }})
+		c := QueryCommand(QueryCommandDeps{ConfigPrep: func(context.Context) (string, error) { return "", wantErr }})
 		if err := c.Flagset().Parse(nil); err != nil {
 			t.Fatalf("Parse: %v", err)
 		}
-		if err := c.Setup(context.Background()); !errors.Is(err, wantErr) {
+		if err := c.Setup(procenv.Context(context.Background())); !errors.Is(err, wantErr) {
 			t.Fatalf("expected prep error, got: %v", err)
 		}
 	})
@@ -64,7 +66,7 @@ func TestQueryCommand_newSummarizerError(t *testing.T) {
 	t.Setenv("CLAI_DISABLE_COST_ERR_LOG_GOROUTINE", "1")
 	t.Setenv("OPENROUTER_API_KEY", "")
 	t.Setenv("DEBUG", "")
-	runCommand := func(t *testing.T, confDir string, newSummarizer func(string) (models.Summarizer, error)) (string, string) {
+	runCommand := func(t *testing.T, confDir string, newSummarizer func(context.Context, string) (models.Summarizer, error)) (string, string) {
 		t.Helper()
 		// Command.Setup derives the session globals from -r; restore them so
 		// later tests in the package see the defaults.
@@ -77,7 +79,7 @@ func TestQueryCommand_newSummarizerError(t *testing.T) {
 		// A plain query launches its labeller up front only when it waits
 		// for the label.
 		c := QueryCommand(QueryCommandDeps{
-			ConfigPrep:         func() (string, error) { return confDir, nil },
+			ConfigPrep:         func(context.Context) (string, error) { return confDir, nil },
 			NewSummarizer:      newSummarizer,
 			SummaryJoinTimeout: 5 * time.Second,
 		})
@@ -86,11 +88,11 @@ func TestQueryCommand_newSummarizerError(t *testing.T) {
 		}
 		var runErr error
 		stdout, stderr := captureStdoutStderrText(t, func() {
-			if err := c.Setup(context.Background()); err != nil {
+			if err := c.Setup(procenv.Context(context.Background())); err != nil {
 				t.Errorf("Setup: %v", err)
 				return
 			}
-			runErr = c.Run(context.Background())
+			runErr = c.Run(procenv.Context(context.Background()))
 		})
 		if runErr != nil {
 			t.Fatalf("Run: %v", runErr)
@@ -99,7 +101,7 @@ func TestQueryCommand_newSummarizerError(t *testing.T) {
 	}
 	savedChat := func(t *testing.T, confDir string) pub_models.Chat {
 		t.Helper()
-		got, err := chat.LoadPrevQuery(confDir)
+		got, err := chat.LoadPrevQuery(procenv.Context(context.Background()), confDir)
 		if err != nil {
 			t.Fatalf("LoadPrevQuery: %v", err)
 		}
@@ -109,7 +111,7 @@ func TestQueryCommand_newSummarizerError(t *testing.T) {
 	t.Run("constructor error attaches nothing and stays silent", func(t *testing.T) {
 		t.Setenv("DEBUG_SUMMARY", "")
 		confDir := t.TempDir()
-		stdout, stderr := runCommand(t, confDir, func(string) (models.Summarizer, error) {
+		stdout, stderr := runCommand(t, confDir, func(context.Context, string) (models.Summarizer, error) {
 			return nil, errors.New("constructor boom")
 		})
 		if !strings.Contains(stdout, "hello there") {
@@ -125,7 +127,7 @@ func TestQueryCommand_newSummarizerError(t *testing.T) {
 
 	t.Run("constructor error traces under DEBUG_SUMMARY", func(t *testing.T) {
 		t.Setenv("DEBUG_SUMMARY", "1")
-		stdout, stderr := runCommand(t, t.TempDir(), func(string) (models.Summarizer, error) {
+		stdout, stderr := runCommand(t, t.TempDir(), func(context.Context, string) (models.Summarizer, error) {
 			return nil, errors.New("constructor boom")
 		})
 		// Traces go to stderr so they never enter a -r answer stream (R3-17).
@@ -142,7 +144,7 @@ func TestQueryCommand_newSummarizerError(t *testing.T) {
 		confDir := t.TempDir()
 		var seen string
 		fake := instantSummarizer()
-		_, stderr := runCommand(t, confDir, func(dir string) (models.Summarizer, error) {
+		_, stderr := runCommand(t, confDir, func(_ context.Context, dir string) (models.Summarizer, error) {
 			seen = dir
 			return fake, nil
 		})
@@ -171,7 +173,7 @@ func TestQueryCommand_summarizerNotBuiltWhenOff(t *testing.T) {
 		conf.SummarizeConversations = false
 		built := 0
 		runQueryCommand(t, conf, QueryCommandDeps{
-			NewSummarizer: func(string) (models.Summarizer, error) {
+			NewSummarizer: func(context.Context, string) (models.Summarizer, error) {
 				built++
 				return instantSummarizer(), nil
 			},
@@ -200,17 +202,17 @@ func runQueryCommand(t *testing.T, conf Configurations, deps QueryCommandDeps, a
 	if err := utils.CreateFile(filepath.Join(confDir, "textConfig.json"), &conf); err != nil {
 		t.Fatalf("CreateFile: %v", err)
 	}
-	deps.ConfigPrep = func() (string, error) { return confDir, nil }
+	deps.ConfigPrep = func(context.Context) (string, error) { return confDir, nil }
 	c := QueryCommand(deps)
 	if err := c.Flagset().Parse(append([]string{"-r", "-cm", "test"}, args...)); err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
 	return captureStdoutStderrText(t, func() {
-		if err := c.Setup(context.Background()); err != nil {
+		if err := c.Setup(procenv.Context(context.Background())); err != nil {
 			t.Errorf("Setup: %v", err)
 			return
 		}
-		if err := c.Run(context.Background()); err != nil {
+		if err := c.Run(procenv.Context(context.Background())); err != nil {
 			t.Errorf("Run: %v", err)
 		}
 	})

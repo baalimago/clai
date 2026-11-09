@@ -36,7 +36,11 @@ func Test_goldenFile_usage_on_no_args(t *testing.T) {
 		}
 	}
 	testboil.AssertStringContains(t, gotStdout, "clai <command> -h")
-	testboil.AssertStringContains(t, gotStdout, "clai -add-shell-context minimal -query-summary query \"what changed in this repo?\"")
+	// The usage holds no examples of its own: it sends the reader to a
+	// command's help for them, and lists the subsystems LOG_LEVEL selects.
+	testboil.AssertStringContains(t, gotStdout, "'clai query -h'")
+	testboil.AssertStringContains(t, gotStdout, "Subsystems:")
+	testboil.AssertStringContains(t, gotStdout, "LOG_LEVEL=warn,mcp=debug")
 	testboil.AssertStringContains(t, gotStdout, confDir)
 }
 

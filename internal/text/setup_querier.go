@@ -7,9 +7,13 @@ import (
 	"os"
 	"strings"
 
+	"github.com/baalimago/clai/internal/display"
+	"github.com/baalimago/clai/internal/runenv"
+	"github.com/baalimago/clai/internal/stdio"
+
 	"github.com/baalimago/clai/internal"
 	"github.com/baalimago/clai/internal/chat"
-	"github.com/baalimago/clai/internal/debugflags"
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/glob"
 	imagegentool "github.com/baalimago/clai/internal/imagegen/tool"
 	"github.com/baalimago/clai/internal/models"
@@ -18,9 +22,7 @@ import (
 	"github.com/baalimago/clai/internal/utils"
 	textmodels "github.com/baalimago/clai/pkg/text/models"
 	pkgtools "github.com/baalimago/clai/pkg/tools"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	imagodebug "github.com/baalimago/go_away_boilerplate/pkg/debug"
-	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
 
@@ -40,14 +42,12 @@ func setupToolConfig(tConf *Configurations, useTools string) {
 	if tConf.UseTools {
 		// Validate against tool registry and allow MCP-prefixed names.
 		// tools.Registry only knows *local* tools; MCP tools are prefixed "mcp_".
-		tools.Init()
+		tools.Init(tConf.diagContext())
 
 		validTools := make([]string, 0, len(tConf.RequestedToolGlobs))
 
 		for _, p := range tConf.RequestedToolGlobs {
-			if debugflags.Enabled("PROFILES") {
-				ancli.Noticef("found: '%v' in RequestedToolGlobs", p)
-			}
+			runenv.Debugf(tConf.diagContext(), runenv.SubsystemProfiles, "found: '%v' in RequestedToolGlobs", p)
 			p = strings.TrimSpace(p)
 			if p == "" {
 				continue
@@ -77,13 +77,13 @@ func setupToolConfig(tConf *Configurations, useTools string) {
 				validTools = append(validTools, t.Specification().Name)
 			}
 			if len(wCardTools) == 0 && !selectsGen {
-				ancli.Warnf("attempted to select unknown tool '%s' via -t/-tools, skipping\n", p)
+				runenv.Warnf(tConf.diagContext(), runenv.SubsystemTextQuerier, "attempted to select unknown tool '%s' via -t/-tools, skipping\n", p)
 			}
 		}
 
 		// If nothing valid was found, disable tools from CLI perspective
 		if len(validTools) == 0 && useTools != "" {
-			ancli.Warnf("no valid tools found from -t/-tools flag; disabling tools for this run\n")
+			runenv.Warnf(tConf.diagContext(), runenv.SubsystemTextQuerier, "no valid tools found from -t/-tools flag; disabling tools for this run\n")
 			tConf.UseTools = false
 			tConf.RequestedToolGlobs = nil
 		} else {
@@ -132,7 +132,7 @@ func SetupQuerier(ctx context.Context, confDir string, tf internal.TextFlags, ar
 	}
 	cq, err := CreateQuerier(ctx, *tConf)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create text querier: %w", err)
+		return nil, nil, diag.Errorf("failed to create text querier: %w", err)
 	}
 	return cq, tConf, nil
 }
@@ -142,11 +142,12 @@ func SetupQuerier(ctx context.Context, confDir string, tf internal.TextFlags, ar
 func setupTextConfig(ctx context.Context, confDir string, tf internal.TextFlags, args []string, trustInput io.Reader, resolveRemote RemoteProfileResolver, resolveSkills RemoteSkillsResolver) (*Configurations, error) {
 	// The flagset is first used to find chatModel and potentially setup a new configuration file from some default
 	firstRun := FirstRunDefaults(os.Getenv)
-	tConf, err := utils.LoadConfigFromFile(confDir, "textConfig.json", MigrateOldChatConfig, &firstRun)
+	tConf, err := utils.LoadConfigFromFile(ctx, confDir, "textConfig.json", MigrateOldChatConfig, &firstRun)
 	tConf.ConfigDir = confDir
 	tConf.TrustInput = trustInput
+	tConf.runCtx = ctx
 	if err != nil {
-		return nil, fmt.Errorf("failed to load configs: %w", err)
+		return nil, diag.Errorf("failed to load configs: %w", err)
 	}
 	logSkillDiscovery := shouldLogSkillDiscovery(args)
 	structuredOutput := false
@@ -162,20 +163,18 @@ func setupTextConfig(ctx context.Context, confDir string, tf internal.TextFlags,
 			if handler := vendorErrorHandler(tConf.Model); handler != nil {
 				err = handler.HandleError(err)
 			}
-			return nil, fmt.Errorf("response format: %w", err)
+			return nil, diag.Errorf("response format: %w", err)
 		}
 		structuredOutput = true
 		logSkillDiscovery = false
 	}
 
-	if misc.Truthy(os.Getenv("DEBUG")) {
-		ancli.PrintOK(fmt.Sprintf("config post flag override: %+v\n", imagodebug.IndentedJsonFmt(tConf)))
-	}
+	runenv.Debugf(ctx, runenv.SubsystemTextQuerier, "config post flag override: %+v\n", imagodebug.IndentedJsonFmt(tConf))
 	if globPattern := tf.AgentText.Glob.Value(); globPattern != "" {
-		globStr, retArgs, globErr := glob.Setup(globPattern, args)
+		globStr, retArgs, globErr := glob.Setup(ctx, globPattern, args)
 		args = retArgs
 		if globErr != nil {
-			return nil, fmt.Errorf("failed to setup glob: %w", globErr)
+			return nil, diag.Errorf("failed to setup glob: %w", globErr)
 		}
 
 		tConf.Glob = globStr
@@ -185,7 +184,7 @@ func setupTextConfig(ctx context.Context, confDir string, tf internal.TextFlags,
 	}
 	err = tConf.ProfileOverrides()
 	if err != nil {
-		return nil, fmt.Errorf("profile override failure: %w", err)
+		return nil, diag.Errorf("profile override failure: %w", err)
 	}
 
 	setupToolConfig(&tConf, tf.AgentText.UseTools.Value())
@@ -198,7 +197,7 @@ func setupTextConfig(ctx context.Context, confDir string, tf internal.TextFlags,
 	ApplyProfileOverrides(&tConf, tf)
 	skillsConfig, err := skills.LoadConfig(confDir)
 	if err != nil {
-		return nil, fmt.Errorf("load skills config: %w", err)
+		return nil, diag.Errorf("load skills config: %w", err)
 	}
 	if !profileSetsSkills(&tConf) {
 		tConf.UseSkills = skillsConfig.Enabled
@@ -211,25 +210,29 @@ func setupTextConfig(ctx context.Context, confDir string, tf internal.TextFlags,
 		return nil, err
 	}
 	if tConf.UseSkills {
-		tools.Init()
+		tools.Init(ctx)
 		allTools := tools.Registry.All()
 		knownToolNames := make([]string, 0, len(allTools))
 		for name := range allTools {
 			knownToolNames = append(knownToolNames, name)
 		}
 		cacheDir, _ := utils.GetClaiCacheDir()
-		skillLogLevel := skills.ParseLogLevelFromEnv()
+		discoverCtx := ctx
 		if structuredOutput {
-			skillLogLevel = skills.LogLevelError
+			discoverCtx = runenv.With(ctx, runenv.New(runenv.Config{Streams: runenv.From(ctx).Streams()}))
 		}
 		skillMgr, err := skills.Discover(skills.Options{
+			Context:      discoverCtx,
 			ConfigDir:    confDir,
 			CacheDir:     cacheDir,
 			WorkingDir:   mustGetwd(),
 			ProfileRoots: profileSkillRoots,
 			LogQueryText: logSkillDiscovery,
 			TrustPrompter: func(_ context.Context, prompt skills.TrustPrompt) (bool, error) {
-				ancli.Warnf("%s", formatSkillTrustPrompt(prompt))
+				env := runenv.From(ctx)
+				if err := env.ShowPrompt(stdio.Stdout, skillTrustQuestion(env, prompt)); err != nil {
+					return false, err
+				}
 				answer, err := table.ReadUserInputFrom(trustInput)
 				if err != nil {
 					return false, err
@@ -237,17 +240,16 @@ func setupTextConfig(ctx context.Context, confDir string, tf internal.TextFlags,
 				answer = strings.ToLower(strings.TrimSpace(answer))
 				return answer == "y" || answer == "yes", nil
 			},
-			LogLevel:       skillLogLevel,
 			KnownToolNames: knownToolNames,
 			LocalTools:     allTools,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("discover skills: %w", err)
+			return nil, diag.Errorf("discover skills: %w", err)
 		}
 		tConf.SkillsDescriptor = skillMgr.DescriptorBlock()
 		tConf.SkillLoader = skillRuntimeAdapter{mgr: skillMgr}
 	}
-	if err := setupLookback(confDir, &tConf, tf.AgentText.UseLookback); err != nil {
+	if err := setupLookback(ctx, confDir, &tConf, tf.AgentText.UseLookback); err != nil {
 		return nil, err
 	}
 
@@ -257,16 +259,16 @@ func setupTextConfig(ctx context.Context, confDir string, tf internal.TextFlags,
 	// filesystem roundtrip (write globalScope then read it back) that was
 	// the root cause of the -dre query forking bug.
 	if tConf.DirReplyMode {
-		dirChat, err := chat.LoadDirScopedContext(confDir)
+		dirChat, err := chat.LoadDirScopedContext(ctx, confDir)
 		if err != nil {
-			return nil, fmt.Errorf("load dir-scoped context: %w", err)
+			return nil, diag.Errorf("load dir-scoped context: %w", err)
 		}
 		tConf.InitialChat = dirChat
 	}
 
 	err = tConf.SetupInitialChat(ctx, args)
 	if err != nil {
-		return nil, fmt.Errorf("failed to setup prompt: %w", err)
+		return nil, diag.Errorf("failed to setup prompt: %w", err)
 	}
 
 	return &tConf, nil
@@ -282,7 +284,7 @@ const lookbackInjectCount = 5
 // binding has recorded history — builds the recent-conversations descriptor and
 // marks the lookback active so the tools are registered. Enabled-but-no-history
 // surfaces nothing, matching the dirscope spec.
-func setupLookback(confDir string, tConf *Configurations, lookback internal.BoolFlag) error {
+func setupLookback(ctx context.Context, confDir string, tConf *Configurations, lookback internal.BoolFlag) error {
 	// Profile overrides have already been applied to tConf.UseLookback.
 	// The flag (if explicitly set) takes final precedence, in both directions:
 	// -lb enables, -lb=false disables profile/file-enabled lookback.
@@ -298,23 +300,23 @@ func setupLookback(confDir string, tConf *Configurations, lookback internal.Bool
 
 	// Setup notices are debug-only chatter: they print when DEBUG_LOOKBACK (or
 	// plain DEBUG) is truthy, and never in structured-response mode.
-	debugLookback := debugflags.Enabled("LOOKBACK")
+	debugLookback := runenv.DebugEnabled(ctx, runenv.SubsystemLookback)
 
 	// Tool registration is decoupled from local history: whenever lookback is
 	// enabled the search/inspect/read tools are registered (so the agent can search
 	// OTHER directories even from a dir with no recorded history). The passive
 	// descriptor block, by contrast, is only injected when the CWD has history.
-	desc, err := chat.BuildLookbackDescriptor(confDir, tConf.LookbackCWD, lookbackInjectCount)
+	desc, err := chat.BuildLookbackDescriptor(ctx, confDir, tConf.LookbackCWD, lookbackInjectCount)
 	if err != nil {
-		return fmt.Errorf("build lookback descriptor: %w", err)
+		return diag.Errorf("build lookback descriptor: %w", err)
 	}
 	if desc.HasHistory {
 		tConf.LookbackDescriptor = desc.Block
 		if debugLookback && tConf.ResponseFormat == nil {
-			ancli.Noticef("lookback: surfaced %d recent conversation(s) for this directory\n", desc.Shown)
+			runenv.Debugf(ctx, runenv.SubsystemLookback, "lookback: surfaced %d recent conversation(s) for this directory", desc.Shown)
 		}
 	} else if debugLookback && tConf.ResponseFormat == nil {
-		ancli.Noticef("lookback: enabled (no recorded history in this directory yet; search other paths with search_conversations)\n")
+		runenv.Debugf(ctx, runenv.SubsystemLookback, "lookback: enabled (no recorded history in this directory yet; search other paths with search_conversations)")
 	}
 	return nil
 }
@@ -356,7 +358,7 @@ func applyDirReplyChatID(confDir string, tConf *Configurations) error {
 	}
 	chatID, err := chat.LoadDirScopeChatID(confDir)
 	if err != nil {
-		return fmt.Errorf("load dir reply chat id: %w", err)
+		return diag.Errorf("load dir reply chat id: %w", err)
 	}
 	if chatID == "" {
 		return nil
@@ -394,8 +396,18 @@ func formatSkillPromptDescription(description string) string {
 	return description
 }
 
+// skillTrustQuestion is the skill trust question; the text form spells out
+// the answers, a JSON prompt record carries them as its choices (F12, F13).
+func skillTrustQuestion(env runenv.Env, prompt skills.TrustPrompt) display.Prompt {
+	text := formatSkillTrustPrompt(prompt)
+	if !env.JSON() {
+		text += " [y/N]"
+	}
+	return display.Prompt{Kind: "trust", Text: text, Choices: []string{"y", "N"}}
+}
+
 func formatSkillTrustPrompt(prompt skills.TrustPrompt) string {
-	return fmt.Sprintf("Untrusted skill detected!\n  Name: %s\n  Source: %s\n  Path: %s\n  Hash: %s\n  Description: %s\n  Note: disable this check in settings with trust_all_skills.\nTrust this skill? [y/N]", prompt.Name, prompt.SourceClass, prompt.Path, prompt.Hash, formatSkillPromptDescription(prompt.Description))
+	return fmt.Sprintf("Untrusted skill detected!\n  Name: %s\n  Source: %s\n  Path: %s\n  Hash: %s\n  Description: %s\n  Note: disable this check in settings with trust_all_skills.\nTrust this skill?", prompt.Name, prompt.SourceClass, prompt.Path, prompt.Hash, formatSkillPromptDescription(prompt.Description))
 }
 
 func mustGetwd() string {

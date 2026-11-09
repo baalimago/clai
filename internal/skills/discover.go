@@ -2,16 +2,20 @@ package skills
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
 
+	"github.com/baalimago/clai/internal/diag"
+	"github.com/baalimago/clai/internal/runenv"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
 func Discover(opts Options) (*Manager, error) {
-	log := newLogger(opts.LogLevel)
+	ctx := opts.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	var (
 		cfg Config
 		err error
@@ -21,7 +25,7 @@ func Discover(opts Options) (*Manager, error) {
 	} else {
 		cfg, err = LoadConfig(opts.ConfigDir)
 		if err != nil {
-			return nil, fmt.Errorf("load skills config: %w", err)
+			return nil, diag.Errorf("load skills config: %w", err)
 		}
 	}
 	if opts.WorkingDir == "" {
@@ -60,10 +64,10 @@ func Discover(opts Options) (*Manager, error) {
 	if debugSkills() && len(resolution.Active) > 0 {
 		for _, summary := range sources {
 			if loaded := loadedByRoot[summary.Path]; loaded > 0 {
-				log.Infof("skills %s: %s [loaded=%d]", summary.Class, summary.Path, loaded)
+				runenv.Noticef(ctx, runenv.SubsystemSkills, "skills %s: %s [loaded=%d]", summary.Class, summary.Path, loaded)
 			}
 		}
-		log.Infof("skills: loaded=%d shadowed=%d invalid=%d", len(resolution.Active), len(resolution.Shadowed), len(invalids))
+		runenv.Noticef(ctx, runenv.SubsystemSkills, "skills: loaded=%d shadowed=%d invalid=%d", len(resolution.Active), len(resolution.Shadowed), len(invalids))
 	}
 	return &Manager{
 		Config:         cfg,
@@ -73,7 +77,6 @@ func Discover(opts Options) (*Manager, error) {
 		trustPrompter:  opts.TrustPrompter,
 		knownToolNames: toSet(opts.KnownToolNames),
 		localTools:     opts.LocalTools,
-		logger:         log,
 		state: ActivationState{
 			Allowed:    map[string]struct{}{},
 			Disallowed: map[string]struct{}{},
@@ -91,7 +94,6 @@ type Manager struct {
 	knownToolNames map[string]struct{}
 	localTools     map[string]pub_models.LLMTool
 	state          ActivationState
-	logger         logger
 }
 
 type rootSpec struct {
@@ -128,7 +130,7 @@ func scanRoot(class, root string) ([]Candidate, []InvalidSkill, error) {
 		return nil, nil, nil
 	}
 	if err != nil {
-		return nil, nil, fmt.Errorf("scan skill root %q: %w", root, err)
+		return nil, nil, diag.Errorf("scan skill root %q: %w", root, err)
 	}
 	slices.SortFunc(entries, func(a, b os.DirEntry) int { return cmpString(a.Name(), b.Name()) })
 	candidates := make([]Candidate, 0)

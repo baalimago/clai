@@ -3,8 +3,9 @@ package asset
 import (
 	"bytes"
 	"errors"
-	"fmt"
 	"image"
+
+	"github.com/baalimago/clai/internal/diag"
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
@@ -23,7 +24,7 @@ var ErrUnmeasurable = errors.New("image dimensions unknown")
 func Measure(data []byte) (Size, error) {
 	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil {
-		return Size{}, fmt.Errorf("%w: %v", ErrUnmeasurable, err)
+		return Size{}, diag.Errorf("%w: %v", ErrUnmeasurable, err)
 	}
 	return Size{Width: cfg.Width, Height: cfg.Height}, nil
 }

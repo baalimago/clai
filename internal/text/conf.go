@@ -5,29 +5,32 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
-	"os"
 	"strings"
 	"time"
 
+	"github.com/baalimago/clai/internal/runenv"
+
 	"github.com/baalimago/clai/internal/chat"
 	"github.com/baalimago/clai/internal/chatid"
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/glob"
 	"github.com/baalimago/clai/internal/imageinput"
 	"github.com/baalimago/clai/internal/modelalias"
 	"github.com/baalimago/clai/internal/text/generic"
+	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
-	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
 // Configurations used to setup the requirements of text models
 type Configurations struct {
-	Model string `json:"model"`
+	// runCtx carries the run's streams and diagnostics for setup steps that
+	// take no context of their own.
+	runCtx context.Context `json:"-"`
+	Model  string          `json:"model"`
 	// ModelAliases maps a verb such as "strong" to the ordered chat models a
 	// run tries in its place. A model the table does not name runs as itself,
 	// so an unconfigured table changes nothing (architecture/model-aliases.md).
@@ -96,7 +99,7 @@ type Configurations struct {
 	// loopSummaryJoinTimeout inside a loop.
 	SummaryJoinTimeout time.Duration `json:"-"`
 	// CostWarnf receives the cost manager's and the cost enricher's
-	// warnings; nil keeps ancli.Warnf. A querier whose output is discarded
+	// warnings; nil reports them as diagnostics. A querier whose output is discarded
 	// routes them to its own trace (worklog
 	// 2026-09-09-conversation-summaries, R2-03).
 	CostWarnf func(format string, a ...any) `json:"-"`
@@ -127,10 +130,13 @@ type Configurations struct {
 	// SkipAmbientMcpServers skips discovery of <configDir>/mcpServers/*.json;
 	// servers passed in McpServers still start and keep their explicit or
 	// ambient posture (worklog 2026-09-09-conversation-summaries, D18).
-	SkipAmbientMcpServers bool                          `json:"-"`
-	BaseTools             map[string]pub_models.LLMTool `json:"-"`
-	RegisteredTools       map[string]struct{}           `json:"-"`
-	MaxToolCalls          *int                          `json:"max-tool-calls,omitempty"`
+	SkipAmbientMcpServers bool `json:"-"`
+	// BaseTools is the catalog a skill may enable tools from. It makes
+	// nothing callable: a model's call resolves through Offered alone.
+	BaseTools map[string]pub_models.LLMTool `json:"-"`
+	// Offered is what setup has offered the model.
+	Offered      *tools.Offered `json:"-"`
+	MaxToolCalls *int           `json:"max-tool-calls,omitempty"`
 	// Stoploss is the token stoploss policy for the run. Nil or
 	// MaxTokens <= 0 disables the stoploss (no handover injection).
 	Stoploss *Stoploss `json:"stoploss,omitempty"`
@@ -329,7 +335,7 @@ var DefaultProfile = Profile{
 }
 
 func (c *Configurations) setupSystemPrompt() {
-	traceChatf("setup initial chat system prompt start shell_context=%q", c.ShellContext)
+	traceChatf(c.diagContext(), "setup initial chat system prompt start shell_context=%q", c.ShellContext)
 	systemPrompt := c.SystemPrompt
 	if strings.TrimSpace(c.SkillsDescriptor) != "" {
 		systemPrompt += "\n\n" + c.SkillsDescriptor
@@ -338,9 +344,9 @@ func (c *Configurations) setupSystemPrompt() {
 		systemPrompt += "\n\n" + c.LookbackDescriptor
 	}
 	if strings.TrimSpace(c.ShellContext) != "" {
-		promptWithCtx, err := AppendShellContextIfConfigured(context.Background(), c.ConfigDir, c.ShellContext, systemPrompt, ShellContextRenderer{})
+		promptWithCtx, err := AppendShellContextIfConfigured(c.diagContext(), c.ConfigDir, c.ShellContext, systemPrompt, ShellContextRenderer{})
 		if err != nil {
-			ancli.PrintWarn(fmt.Sprintf("failed to append shell context to system prompt: %v\n", err))
+			runenv.Warnf(c.diagContext(), runenv.SubsystemTextQuerier, "failed to append shell context to system prompt: %v\n", err)
 		} else {
 			systemPrompt = promptWithCtx
 		}
@@ -350,15 +356,15 @@ func (c *Configurations) setupSystemPrompt() {
 			{Role: "system", Content: systemPrompt},
 		},
 	}
-	traceChatf("setup initial chat system prompt done messages=%d", len(c.InitialChat.Messages))
+	traceChatf(c.diagContext(), "setup initial chat system prompt done messages=%d", len(c.InitialChat.Messages))
 }
 
 // SetupInitialChat by doing all sorts of organically grown stuff. Don\'t touch this
 // code too closely. Something will break, most likely.
 func (c *Configurations) SetupInitialChat(ctx context.Context, args []string) error {
-	traceChatf("setup initial chat start reply_mode=%t glob=%q args=%q", c.ReplyMode, c.Glob, strings.Join(args, " "))
+	traceChatf(ctx, "setup initial chat start reply_mode=%t glob=%q args=%q", c.ReplyMode, c.Glob, strings.Join(args, " "))
 	if c.Glob != "" && c.ReplyMode {
-		ancli.PrintWarn("Using glob + reply modes together might yield strange results. The globalScope will be appended after the glob messages.\n")
+		runenv.Warnf(ctx, runenv.SubsystemTextQuerier, "Using glob + reply modes together might yield strange results. The globalScope will be appended after the glob messages.\n")
 	}
 
 	if !c.ReplyMode {
@@ -369,13 +375,11 @@ func (c *Configurations) SetupInitialChat(ctx context.Context, args []string) er
 		return err
 	}
 	if c.Glob != "" {
-		traceChatf("setup initial chat creating glob chat glob=%q", c.Glob)
+		traceChatf(ctx, "setup initial chat creating glob chat glob=%q", c.Glob)
 		globChat := glob.FramedChat(c.Glob, collected.GlobMessages)
-		if misc.Truthy(os.Getenv("DEBUG")) {
-			ancli.PrintOK(fmt.Sprintf("glob messages: %v", globChat.Messages))
-		}
+		runenv.Debugf(ctx, runenv.SubsystemTextQuerier, "glob messages: %v", globChat.Messages)
 		c.InitialChat = globChat
-		traceChatf("setup initial chat glob chat loaded messages=%d", len(c.InitialChat.Messages))
+		traceChatf(ctx, "setup initial chat glob chat loaded messages=%d", len(c.InitialChat.Messages))
 	}
 
 	if c.ReplyMode {
@@ -383,73 +387,71 @@ func (c *Configurations) SetupInitialChat(ctx context.Context, args []string) er
 		// (pre-populated in InitialChat before SetupInitialChat). Skip the
 		// globalScope.json read entirely — no filesystem roundtrip needed.
 		if c.DirReplyMode {
-			traceChatf("setup initial chat skipping globalScope load — dirreply mode, initial chat already populated messages=%d", len(c.InitialChat.Messages))
+			traceChatf(ctx, "setup initial chat skipping globalScope load — dirreply mode, initial chat already populated messages=%d", len(c.InitialChat.Messages))
 		} else {
-			traceChatf("setup initial chat loading reply context from previous query config_dir=%q", c.ConfigDir)
-			iP, err := chat.LoadPrevQuery(c.ConfigDir)
+			traceChatf(ctx, "setup initial chat loading reply context from previous query config_dir=%q", c.ConfigDir)
+			iP, err := chat.LoadPrevQuery(ctx, c.ConfigDir)
 			if err != nil {
-				return fmt.Errorf("failed to load previous query: %w", err)
+				return diag.Errorf("failed to load previous query: %w", err)
 			}
 			if c.InitialChat.ID == "" && iP.ID != "" && iP.ID != "globalScope" {
 				c.InitialChat.ID = iP.ID
-				traceChatf("setup initial chat adopted previous query chat id=%q", c.InitialChat.ID)
+				traceChatf(ctx, "setup initial chat adopted previous query chat id=%q", c.InitialChat.ID)
 			}
 			if c.InitialChat.Created.IsZero() && !iP.Created.IsZero() {
 				c.InitialChat.Created = iP.Created
-				traceChatf("setup initial chat adopted previous query created=%q", c.InitialChat.Created.Format(time.RFC3339Nano))
+				traceChatf(ctx, "setup initial chat adopted previous query created=%q", c.InitialChat.Created.Format(time.RFC3339Nano))
 			}
 			if c.InitialChat.Summary == "" && iP.Summary != "" {
 				c.InitialChat.Title, c.InitialChat.Summary, c.InitialChat.SummaryAt = iP.Title, iP.Summary, iP.SummaryAt
-				traceChatf("setup initial chat adopted previous query title=%q summary_at=%q", iP.Title, iP.SummaryAt.Format(time.RFC3339Nano))
+				traceChatf(ctx, "setup initial chat adopted previous query title=%q summary_at=%q", iP.Title, iP.SummaryAt.Format(time.RFC3339Nano))
 			}
-			traceChatf("setup initial chat loaded previous query chat_id=%q messages=%d, queries=%d", iP.ID, len(iP.Messages), len(iP.Queries))
+			traceChatf(ctx, "setup initial chat loaded previous query chat_id=%q messages=%d, queries=%d", iP.ID, len(iP.Messages), len(iP.Queries))
 			c.InitialChat.Messages = append(c.InitialChat.Messages, iP.Messages...)
 			c.InitialChat.Queries = append(c.InitialChat.Queries, iP.Queries...)
-			traceChatf("setup initial chat appended previous query messages=%d total_messages=%d", len(iP.Messages), len(c.InitialChat.Messages))
+			traceChatf(ctx, "setup initial chat appended previous query messages=%d total_messages=%d", len(iP.Messages), len(c.InitialChat.Messages))
 		}
 	}
 
 	prompt := strings.TrimRight(collected.Prompt, " \t\r\n")
-	traceChatf("setup initial chat prompt ready prompt_len=%d images=%d", len(prompt), len(collected.Images))
+	traceChatf(ctx, "setup initial chat prompt ready prompt_len=%d images=%d", len(prompt), len(collected.Images))
 	c.InitialChat.Messages = append(c.InitialChat.Messages, userPromptMessage(prompt, collected.Images))
-	traceChatf("setup initial chat appended prompt total_messages=%d", len(c.InitialChat.Messages))
+	traceChatf(ctx, "setup initial chat appended prompt total_messages=%d", len(c.InitialChat.Messages))
 
-	if misc.Truthy(os.Getenv("DEBUG")) {
-		ancli.PrintOK(fmt.Sprintf("InitialPrompt: %v\n", debug.IndentedJsonFmt(c.InitialChat)))
-	}
+	runenv.Debugf(ctx, runenv.SubsystemTextQuerier, "InitialPrompt: %v\n", debug.IndentedJsonFmt(c.InitialChat))
 	c.PostProccessedPrompt = prompt
 	if c.InitialChat.ID == "" {
 		chatID, err := chatid.New()
 		if err != nil {
-			return fmt.Errorf("generate chat id: %w", err)
+			return diag.Errorf("generate chat id: %w", err)
 		}
 		c.InitialChat.ID = chatID
-		traceChatf("setup initial chat generated chat id=%q", c.InitialChat.ID)
+		traceChatf(ctx, "setup initial chat generated chat id=%q", c.InitialChat.ID)
 	}
 	if c.InitialChat.Created.IsZero() {
 		c.InitialChat.Created = time.Now()
-		traceChatf("setup initial chat set created timestamp created=%q", c.InitialChat.Created.Format(time.RFC3339Nano))
+		traceChatf(ctx, "setup initial chat set created timestamp created=%q", c.InitialChat.Created.Format(time.RFC3339Nano))
 	}
-	traceChatf("setup initial chat done chat_id=%q total_messages=%d", c.InitialChat.ID, len(c.InitialChat.Messages))
+	traceChatf(ctx, "setup initial chat done chat_id=%q total_messages=%d", c.InitialChat.ID, len(c.InitialChat.Messages))
 	return nil
 }
 
 // collectInputs gathers the -img images, the -g matches and stdin with the prompt text.
 func (c *Configurations) collectInputs(ctx context.Context, args []string) (imageinput.Collected, error) {
-	traceChatf("setup initial chat collecting inputs images=%d glob=%q stdin_replace=%q", len(c.ImageInputs), c.Glob, c.StdinReplace)
+	traceChatf(ctx, "setup initial chat collecting inputs images=%d glob=%q stdin_replace=%q", len(c.ImageInputs), c.Glob, c.StdinReplace)
 	stdin, err := utils.PipedStdin(ctx)
 	if err != nil {
-		return imageinput.Collected{}, fmt.Errorf("failed to setup prompt: %w", err)
+		return imageinput.Collected{}, diag.Errorf("failed to setup prompt: %w", err)
 	}
-	return c.collectFrom(args, stdin)
+	return c.collectFrom(ctx, args, stdin)
 }
 
-func (c Configurations) collectFrom(args []string, stdin io.Reader) (imageinput.Collected, error) {
+func (c Configurations) collectFrom(ctx context.Context, args []string, stdin io.Reader) (imageinput.Collected, error) {
 	var piped []byte
 	if stdin != nil {
 		b, err := io.ReadAll(stdin)
 		if err != nil {
-			return imageinput.Collected{}, fmt.Errorf("failed to setup prompt: read stdin: %w", err)
+			return imageinput.Collected{}, diag.Errorf("failed to setup prompt: read stdin: %w", err)
 		}
 		piped = b
 	}
@@ -459,6 +461,7 @@ func (c Configurations) collectFrom(args []string, stdin io.Reader) (imageinput.
 			r = bytes.NewReader(piped)
 		}
 		return imageinput.New().Collect(imageinput.CollectRequest{
+			Context:      ctx,
 			Images:       c.ImageInputs,
 			Glob:         c.Glob,
 			Stdin:        r,
@@ -472,7 +475,7 @@ func (c Configurations) collectFrom(args []string, stdin io.Reader) (imageinput.
 		collected, err = collect([]string{args[0], ProfileDefaultPrompt})
 	}
 	if err != nil {
-		return imageinput.Collected{}, fmt.Errorf("failed to setup prompt: %w", err)
+		return imageinput.Collected{}, diag.Errorf("failed to setup prompt: %w", err)
 	}
 	if c.UsingProfile() && strings.TrimSpace(collected.Prompt) == "" && len(collected.Images) == 0 {
 		collected.Prompt = ProfileDefaultPrompt
@@ -565,10 +568,10 @@ const responseFormatExample = `A response format file is JSON and looks like:
 func (c *Configurations) LoadResponseFormat(path string) error {
 	var gf generic.ResponseFormat
 	if err := utils.ReadAndUnmarshal(path, &gf); err != nil {
-		return fmt.Errorf("failed to load response format from %q: %w\n%s", path, classifyResponseFormatUnmarshal(err), responseFormatExample)
+		return diag.Errorf("failed to load response format from %q: %w\n%s", path, classifyResponseFormatUnmarshal(err), responseFormatExample)
 	}
 	if err := validateResponseFormatShape(&gf); err != nil {
-		return fmt.Errorf("failed to load response format from %q: %w\n%s", path, err, responseFormatExample)
+		return diag.Errorf("failed to load response format from %q: %w\n%s", path, err, responseFormatExample)
 	}
 	c.ResponseFormat = responseFormatFromGeneric(&gf)
 	return nil
@@ -580,10 +583,10 @@ func (c *Configurations) LoadResponseFormat(path string) error {
 // Every other error (missing file, unreadable path) is returned untouched.
 func classifyResponseFormatUnmarshal(err error) error {
 	if _, ok := errors.AsType[*json.SyntaxError](err); ok {
-		return fmt.Errorf("%w: %w", generic.ErrResponseFormatNotJSON, err)
+		return diag.Errorf("%w: %w", generic.ErrResponseFormatNotJSON, err)
 	}
 	if _, ok := errors.AsType[*json.UnmarshalTypeError](err); ok {
-		return fmt.Errorf("%w: %w", generic.ErrResponseFormatShape, err)
+		return diag.Errorf("%w: %w", generic.ErrResponseFormatShape, err)
 	}
 	return err
 }
@@ -597,12 +600,20 @@ func validateResponseFormatShape(gf *generic.ResponseFormat) error {
 		return nil
 	case "json_schema":
 		if gf.JSONSchema == nil {
-			return fmt.Errorf("%w: type \"json_schema\" requires a \"json_schema\" object", generic.ErrResponseFormatShape)
+			return diag.Errorf("%w: type \"json_schema\" requires a \"json_schema\" object", generic.ErrResponseFormatShape)
 		}
 		return nil
 	case "":
-		return fmt.Errorf("%w: missing top-level \"type\"", generic.ErrResponseFormatShape)
+		return diag.Errorf("%w: missing top-level \"type\"", generic.ErrResponseFormatShape)
 	default:
-		return fmt.Errorf("%w: unsupported top-level \"type\" %q, want \"json_object\" or \"json_schema\"", generic.ErrResponseFormatShape, gf.Type)
+		return diag.Errorf("%w: unsupported top-level \"type\" %q, want \"json_object\" or \"json_schema\"", generic.ErrResponseFormatShape, gf.Type)
 	}
+}
+
+// diagContext is the run context of the configuration's setup diagnostics.
+func (c *Configurations) diagContext() context.Context {
+	if c.runCtx == nil {
+		return context.Background()
+	}
+	return c.runCtx
 }

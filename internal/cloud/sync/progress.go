@@ -9,6 +9,7 @@ import (
 	stdsync "sync"
 
 	"github.com/baalimago/clai/internal/cloud"
+	"github.com/baalimago/clai/internal/diag"
 )
 
 // Phase is the step of a pull or commit a Progress reports.
@@ -101,7 +102,7 @@ func (e *Engine) checkBilling(ctx context.Context, store Store, changes []LocalC
 	}
 	me, err := e.Client.Me(ctx)
 	if err != nil {
-		return fmt.Errorf("check billing: %w", err)
+		return diag.Errorf("check billing: %w", err)
 	}
 	switch {
 	case me.Usage.Overdue:

@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -16,11 +15,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/baalimago/clai/internal/diag"
+	"github.com/baalimago/clai/internal/runenv"
 	"github.com/baalimago/clai/internal/tools/mcp/serverconfig"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
 // mcpServerOutBufferSizeKib bounds one message's line length on both stdout
@@ -160,7 +160,7 @@ func NewStdioConn(ctx context.Context, server pub_models.McpServer, sink ServerL
 
 	if err := cmd.Start(); err != nil {
 		pipes.closeAll()
-		return nil, claierr.NewMcpServerStartup(server.Name, "spawn", fmt.Errorf("start mcp server: %w", err))
+		return nil, claierr.NewMcpServerStartup(server.Name, "spawn", diag.Errorf("start mcp server: %w", err))
 	}
 	pipes.closeChildEnds()
 	// Captured once: Process.Pid is not a constant after the process ends.
@@ -170,7 +170,7 @@ func NewStdioConn(ctx context.Context, server pub_models.McpServer, sink ServerL
 		stdin:  pipes.stdinW,
 		stdout: pipes.stdoutR,
 		stderr: pipes.stderrR,
-		wait:   func() { reapProcessTree(pgid, server.Name, cmd) },
+		wait:   func() { reapProcessTree(ctx, pgid, server.Name, cmd) },
 	}
 	return newStdioConn(ctx, server.Name, t, sink, opts...), nil
 }
@@ -232,12 +232,15 @@ func newStdioConn(ctx context.Context, serverName string, t stdioTransport, sink
 	}
 
 	stderrDone := make(chan struct{})
+	// The run waits for this hold before it closes its streams, so the
+	// stderr tail and the exit report land while the streams are open.
+	release := runenv.From(ctx).Hold()
 
 	// The frame reader is the only reader of the process's standard output
 	// and the only producer of demuxed responses.
 	go c.readFrames(t.stdout)
 	// The stderr reader is a separate reader; it never sees a JSON-RPC frame.
-	go c.readStderr(t.stderr, sink, stderrDone)
+	go c.readStderr(ctx, t.stderr, sink, stderrDone)
 	// The stdin closer closes the process's standard input when the context
 	// ends.
 	go func() {
@@ -247,6 +250,7 @@ func newStdioConn(ctx context.Context, serverName string, t stdioTransport, sink
 	// The reap never waits for the stderr reader: a descendant inherits that
 	// pipe. The exit report does, so the tail is complete before it fires.
 	go func() {
+		defer release()
 		t.wait()
 		<-stderrDone
 		if ctx.Err() != nil {
@@ -287,7 +291,7 @@ func (c *StdioConn) Call(ctx context.Context, method string, params map[string]a
 			// error.
 			return nil, claierr.NewMcpConnClosed(c.serverName)
 		}
-		return nil, fmt.Errorf("mcp conn %q: write %s: %w", c.serverName, method, err)
+		return nil, diag.Errorf("mcp conn %q: write %s: %w", c.serverName, method, err)
 	}
 
 	select {
@@ -295,7 +299,7 @@ func (c *StdioConn) Call(ctx context.Context, method string, params map[string]a
 		return res.raw, res.err
 	case <-ctx.Done():
 		c.removeWaiter(id)
-		return nil, fmt.Errorf("mcp conn %q: %s cancelled: %w", c.serverName, method, ctx.Err())
+		return nil, diag.Errorf("mcp conn %q: %s cancelled: %w", c.serverName, method, ctx.Err())
 	}
 }
 
@@ -308,7 +312,7 @@ func (c *StdioConn) Notify(ctx context.Context, method string, params map[string
 	}
 	c.mu.Unlock()
 	if err := c.writeMessage(map[string]any{"jsonrpc": "2.0", "method": method, "params": params}); err != nil {
-		return fmt.Errorf("mcp conn %q: notify %s: %w", c.serverName, method, err)
+		return diag.Errorf("mcp conn %q: notify %s: %w", c.serverName, method, err)
 	}
 	return nil
 }
@@ -384,7 +388,7 @@ func (c *StdioConn) readFrames(stdout io.Reader) {
 		line, err := r.readLine()
 		if err != nil {
 			if errors.Is(err, errFrameTooLarge) {
-				c.failAllPending(claierr.NewMcpFrameUndecodable(c.serverName, fmt.Errorf("%w: bound %d bytes", errFrameTooLarge, c.readBound)))
+				c.failAllPending(claierr.NewMcpFrameUndecodable(c.serverName, diag.Errorf("%w: bound %d bytes", errFrameTooLarge, c.readBound)))
 				continue
 			}
 			return
@@ -483,12 +487,15 @@ func (c *StdioConn) deliver(id int, resp Response) {
 	ch <- pendingResult{raw: resp.Result, err: err}
 }
 
-func (c *StdioConn) readStderr(stderr io.Reader, sink ServerLogSink, done chan<- struct{}) {
+func (c *StdioConn) readStderr(ctx context.Context, stderr io.Reader, sink ServerLogSink, done chan<- struct{}) {
 	defer close(done)
 	defer closeReader(stderr)
+	env := runenv.From(ctx)
+	relay := NewStderrRelay(env)
 	scanner := bufio.NewScanner(stderr)
 	buf := make([]byte, c.readBound)
 	scanner.Buffer(buf, c.readBound)
+	scanner.Split(scanStderrLines)
 	for scanner.Scan() {
 		line := scanner.Text()
 		if line == "" {
@@ -501,10 +508,11 @@ func (c *StdioConn) readStderr(stderr io.Reader, sink ServerLogSink, done chan<-
 			sink.AppendServerLog(c.serverName, line)
 			continue
 		}
-		ancli.Noticef("mcp_%v: %v\n", c.serverName, line)
+		// A relay that cannot write has nowhere to report it but stderr.
+		_ = relay.Write(env.Stderr(), c.serverName, line)
 	}
 	if err := scanner.Err(); err != nil {
-		ancli.Errf("mcp_%v: %s\n", c.serverName, err)
+		runenv.Failuref(ctx, runenv.SubsystemMCP, "mcp_%v: %s", c.serverName, err)
 	}
 }
 

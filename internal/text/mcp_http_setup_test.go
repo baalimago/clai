@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baalimago/clai/internal/testenv/procenv"
+
 	"github.com/baalimago/clai/internal/tools/mcp/httptestserver"
 	"github.com/baalimago/clai/internal/tools/mcp/schemacache"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -23,7 +25,7 @@ import (
 // server-initiated stream connected when srv.Close() runs and hang it
 // waiting for an idle connection.
 func httpSetupTestContext() (context.Context, context.CancelFunc) {
-	return context.WithCancel(context.Background())
+	return context.WithCancel(procenv.Context(context.Background()))
 }
 
 func writeHttpServerConfig(t *testing.T, mcpDir, name, url string) {

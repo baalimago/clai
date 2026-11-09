@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baalimago/clai/internal/testenv/procenv"
+
 	"github.com/baalimago/clai/internal/capture"
 	"github.com/baalimago/clai/internal/utils"
 	pkgtools "github.com/baalimago/clai/pkg/tools"
@@ -30,7 +32,7 @@ func TestRecordText_Facts(t *testing.T) {
 	})
 	status := captureStderr(t)
 
-	result, err := recordText(context.Background(), pkgtools.AudioRecordCall{NameSuffix: "release-week"}, capture.New(), strings.NewReader(""), false)
+	result, err := recordText(procenv.Context(context.Background()), pkgtools.AudioRecordCall{NameSuffix: "release-week"}, capture.New(), strings.NewReader(""), false)
 	stderr := status()
 	if err != nil {
 		t.Fatalf("recordText: %v", err)
@@ -87,7 +89,7 @@ func TestRecordText_Config(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			setAudioConfig(t, tc.values)
 			stub := &recordStub{}
-			_, err := recordText(context.Background(), pkgtools.AudioRecordCall{}, stub, nil, false)
+			_, err := recordText(procenv.Context(context.Background()), pkgtools.AudioRecordCall{}, stub, nil, false)
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("error = %v, want it to name %s", err, tc.want)
 			}
@@ -110,7 +112,7 @@ func TestRecordText_Config(t *testing.T) {
 		})
 		stub := &recordStub{recording: capture.Recording{Path: "x.wav"}}
 		mic := true
-		_, err := recordText(context.Background(), pkgtools.AudioRecordCall{
+		_, err := recordText(procenv.Context(context.Background()), pkgtools.AudioRecordCall{
 			Devices:        []string{"device-a"},
 			MaxSeconds:     2,
 			SilenceTimeout: 3,
@@ -144,7 +146,7 @@ func TestRecordText_Config(t *testing.T) {
 		dir := t.TempDir()
 		setAudioConfig(t, map[string]any{"dir": dir, "max-seconds": 7})
 		stub := &recordStub{}
-		if _, err := recordText(context.Background(), pkgtools.AudioRecordCall{}, stub, nil, false); err != nil {
+		if _, err := recordText(procenv.Context(context.Background()), pkgtools.AudioRecordCall{}, stub, nil, false); err != nil {
 			t.Fatalf("recordText: %v", err)
 		}
 		got := stub.request
@@ -167,7 +169,7 @@ func TestRecordText_DirError(t *testing.T) {
 	}
 	setAudioConfig(t, map[string]any{"dir": filepath.Join(file, "recordings")})
 	stub := &recordStub{}
-	_, err := recordText(context.Background(), pkgtools.AudioRecordCall{}, stub, nil, false)
+	_, err := recordText(procenv.Context(context.Background()), pkgtools.AudioRecordCall{}, stub, nil, false)
 	if err == nil || !strings.Contains(err.Error(), "create recording dir") {
 		t.Fatalf("error = %v, want a directory error", err)
 	}
@@ -181,7 +183,7 @@ func TestRecordText_Enter(t *testing.T) {
 		fakeFFmpeg(t)
 		dir := t.TempDir()
 		setAudioConfig(t, map[string]any{"dir": dir, "max-seconds": 5, "silence-timeout": 0, "sinks": "none", "mic": true})
-		result, err := recordText(context.Background(), pkgtools.AudioRecordCall{}, capture.New(), enterAfter(150*time.Millisecond), true)
+		result, err := recordText(procenv.Context(context.Background()), pkgtools.AudioRecordCall{}, capture.New(), enterAfter(150*time.Millisecond), true)
 		if err != nil {
 			t.Fatalf("recordText: %v", err)
 		}
@@ -194,7 +196,7 @@ func TestRecordText_Enter(t *testing.T) {
 		stub := &recordStub{}
 		dir := t.TempDir()
 		setAudioConfig(t, map[string]any{"dir": dir, "max-seconds": 1, "sinks": "none"})
-		if _, err := recordText(context.Background(), pkgtools.AudioRecordCall{}, stub, strings.NewReader("\n"), false); err != nil {
+		if _, err := recordText(procenv.Context(context.Background()), pkgtools.AudioRecordCall{}, stub, strings.NewReader("\n"), false); err != nil {
 			t.Fatalf("recordText: %v", err)
 		}
 		if stub.request.Stop != nil {
@@ -205,7 +207,7 @@ func TestRecordText_Enter(t *testing.T) {
 	t.Run("end of terminal stdin is not an Enter press", func(t *testing.T) {
 		stub := &recordStub{}
 		setAudioConfig(t, map[string]any{"dir": t.TempDir(), "max-seconds": 1, "sinks": "none"})
-		if _, err := recordText(context.Background(), pkgtools.AudioRecordCall{}, stub, strings.NewReader(""), true); err != nil {
+		if _, err := recordText(procenv.Context(context.Background()), pkgtools.AudioRecordCall{}, stub, strings.NewReader(""), true); err != nil {
 			t.Fatalf("recordText: %v", err)
 		}
 		if stub.request.Stop == nil {
@@ -287,7 +289,7 @@ func TestRecordText_CalibrationNotice(t *testing.T) {
 		dir := t.TempDir()
 		setAudioConfig(t, map[string]any{"dir": dir, "max-seconds": 1, "sinks": "none"})
 		status := captureStderr(t)
-		if _, err := recordText(context.Background(), pkgtools.AudioRecordCall{}, &recordStub{}, strings.NewReader(""), true); err != nil {
+		if _, err := recordText(procenv.Context(context.Background()), pkgtools.AudioRecordCall{}, &recordStub{}, strings.NewReader(""), true); err != nil {
 			t.Fatalf("recordText: %v", err)
 		}
 		want := calibrationNotice + "\nrecording " + dir + " · stops: [Enter], 10m silence, max 1s\n"
@@ -300,7 +302,7 @@ func TestRecordText_CalibrationNotice(t *testing.T) {
 		dir := t.TempDir()
 		setAudioConfig(t, map[string]any{"dir": dir, "max-seconds": 1, "sinks": "none", "calibrated": true})
 		status := captureStderr(t)
-		if _, err := recordText(context.Background(), pkgtools.AudioRecordCall{}, &recordStub{}, strings.NewReader(""), true); err != nil {
+		if _, err := recordText(procenv.Context(context.Background()), pkgtools.AudioRecordCall{}, &recordStub{}, strings.NewReader(""), true); err != nil {
 			t.Fatalf("recordText: %v", err)
 		}
 		want := "recording " + dir + " · stops: [Enter], 10m silence, max 1s\n"
@@ -313,7 +315,7 @@ func TestRecordText_CalibrationNotice(t *testing.T) {
 		dir := t.TempDir()
 		setAudioConfig(t, map[string]any{"dir": dir, "max-seconds": 1, "sinks": "none"})
 		status := captureStderr(t)
-		if _, err := recordText(context.Background(), pkgtools.AudioRecordCall{}, &recordStub{}, strings.NewReader(""), false); err != nil {
+		if _, err := recordText(procenv.Context(context.Background()), pkgtools.AudioRecordCall{}, &recordStub{}, strings.NewReader(""), false); err != nil {
 			t.Fatalf("recordText: %v", err)
 		}
 		if got := status(); strings.Contains(got, calibrationNotice) {
@@ -345,7 +347,7 @@ func TestRecordText_AcknowledgeKey(t *testing.T) {
 		}
 	}()
 
-	if _, err := recordText(context.Background(), pkgtools.AudioRecordCall{}, &recordStub{block: block}, strings.NewReader("a\n"), true); err != nil {
+	if _, err := recordText(procenv.Context(context.Background()), pkgtools.AudioRecordCall{}, &recordStub{block: block}, strings.NewReader("a\n"), true); err != nil {
 		t.Fatalf("recordText: %v", err)
 	}
 	if !readAudioConfig(t).Capture.Calibrated {
@@ -367,7 +369,7 @@ func TestRecordText_RecorderError(t *testing.T) {
 		setAudioConfig(t, map[string]any{"dir": t.TempDir()})
 		saved := filepath.Join(t.TempDir(), "saved.wav")
 		stub := &recordStub{err: fmt.Errorf("%w: saved %s", capture.ErrInterrupted, saved)}
-		_, err := recordText(context.Background(), pkgtools.AudioRecordCall{}, stub, nil, false)
+		_, err := recordText(procenv.Context(context.Background()), pkgtools.AudioRecordCall{}, stub, nil, false)
 		if !errors.Is(err, capture.ErrInterrupted) || !strings.Contains(err.Error(), saved) {
 			t.Fatalf("error = %v, want the interrupted error with %q", err, saved)
 		}
@@ -377,7 +379,7 @@ func TestRecordText_RecorderError(t *testing.T) {
 		fakeFFmpeg(t)
 		setAudioConfig(t, map[string]any{"dir": t.TempDir(), "max-seconds": 2, "sinks": "none", "mic": true})
 		t.Setenv("FAKE_FFMPEG_RECORD_MODE", "fail")
-		_, err := recordText(context.Background(), pkgtools.AudioRecordCall{}, capture.New(), nil, false)
+		_, err := recordText(procenv.Context(context.Background()), pkgtools.AudioRecordCall{}, capture.New(), nil, false)
 		if err == nil || !strings.Contains(err.Error(), "device open failed") {
 			t.Fatalf("error = %v, want ffmpeg's message", err)
 		}
@@ -411,7 +413,7 @@ func TestRecordText_WritesNothingToStdout(t *testing.T) {
 	os.Stdout = write
 	t.Cleanup(func() { os.Stdout = stdout })
 
-	_, callErr := recordText(context.Background(), pkgtools.AudioRecordCall{}, &recordStub{}, nil, false)
+	_, callErr := recordText(procenv.Context(context.Background()), pkgtools.AudioRecordCall{}, &recordStub{}, nil, false)
 	os.Stdout = stdout
 	_ = write.Close()
 	out, readErr := io.ReadAll(read)

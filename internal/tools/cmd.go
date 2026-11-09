@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"github.com/baalimago/clai/internal"
+	"github.com/baalimago/clai/internal/diag"
+	"github.com/baalimago/clai/internal/runenv"
 	"github.com/baalimago/clai/internal/tools/mcp/schemacache"
 	"github.com/baalimago/clai/internal/tools/mcp/serverconfig"
 	"github.com/baalimago/clai/internal/utils"
@@ -20,7 +22,7 @@ import (
 
 // Detail prints the specification of one tool, a built-in or an MCP tool
 // that the schema cache has a record of.
-func Detail(toolName string) error {
+func Detail(ctx context.Context, toolName string) error {
 	var spec pub_models.Specification
 	if tool, exists := Registry.Get(toolName); exists {
 		spec = tool.Specification()
@@ -31,9 +33,9 @@ func Detail(toolName string) error {
 	}
 	jsonSpec, err := json.MarshalIndent(spec, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal tool specification: %w", err)
+		return diag.Errorf("failed to marshal tool specification: %w", err)
 	}
-	fmt.Printf("%s\n", string(jsonSpec))
+	fmt.Fprintf(runenv.From(ctx).Stdout(), "%s\n", string(jsonSpec))
 	return nil
 }
 
@@ -49,7 +51,8 @@ func Detail(toolName string) error {
 // behind it. A footer carries the same "check whether you need this"
 // information with no claim about any specific listed tool to be wrong
 // about).
-func List() error {
+func List(ctx context.Context) error {
+	out := runenv.From(ctx).Stdout()
 	tls := Registry.Visible()
 	aliases := Registry.Aliases()
 	mcpEntries, shadowedBuiltins := mcpListingEntries()
@@ -67,7 +70,7 @@ func List() error {
 	}
 	sort.Strings(names)
 
-	fmt.Printf("Available Tools:\n")
+	fmt.Fprintf(out, "Available Tools:\n")
 	for _, name := range names {
 		var spec pub_models.Specification
 		aliasSuffix := ""
@@ -90,13 +93,13 @@ func List() error {
 		// The listing writes to stdout, so it resolves one snapshot bound to
 		// stdout's fd (R2-02): a non-terminal stdout yields the deterministic
 		// fallback width.
-		line := table.WidthAppropriateStringTruncWithWidth(spec.Description, prefix, 5, utils.SessionDimensions(os.Stdout).Width)
-		fmt.Println(line)
+		line := table.WidthAppropriateStringTruncWithWidth(spec.Description, prefix, 5, utils.SessionDimensions(out).Width)
+		fmt.Fprintln(out, line)
 	}
 	if len(shadowedBuiltins) > 0 {
-		fmt.Printf("\nNote: a configured MCP server's tool may already be covered by a local built-in: %s. Check each server's own tools before assuming redundancy.\n", strings.Join(shadowedBuiltins, ", "))
+		fmt.Fprintf(out, "\nNote: a configured MCP server's tool may already be covered by a local built-in: %s. Check each server's own tools before assuming redundancy.\n", strings.Join(shadowedBuiltins, ", "))
 	}
-	fmt.Println("\nRun 'clai tools <tool-name>' for more details.")
+	fmt.Fprintln(out, "\nRun 'clai tools <tool-name>' for more details.")
 	return nil
 }
 
@@ -111,12 +114,12 @@ func Command() *internal.Command {
 		NonInteractive: nonInteractive,
 		CompleteArgsFn: toolNameArgs,
 	}
-	c.OnRun = func(_ context.Context, c *internal.Command) error {
-		Init()
+	c.OnRun = func(ctx context.Context, c *internal.Command) error {
+		Init(ctx)
 		if args := c.Args(); len(args) > 1 {
-			return Detail(args[1])
+			return Detail(ctx, args[1])
 		}
-		return List()
+		return List(ctx)
 	}
 	toolsList := &internal.Command{
 		Name: "list",
@@ -126,9 +129,9 @@ func Command() *internal.Command {
 Examples:
   clai tools list`,
 	}
-	toolsList.OnRun = func(_ context.Context, _ *internal.Command) error {
-		Init()
-		return List()
+	toolsList.OnRun = func(ctx context.Context, _ *internal.Command) error {
+		Init(ctx)
+		return List(ctx)
 	}
 	c.Subs = map[string]cmd.Command{"list": toolsList}
 	return c

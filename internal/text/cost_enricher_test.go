@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baalimago/clai/internal/testenv/procenv"
+
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -41,7 +43,7 @@ func Test_costEnricher_EnrichesWhenReady(t *testing.T) {
 	}}
 	ready := make(chan struct{})
 	close(ready)
-	enricher := newCostEnricher(manager, ready)
+	enricher := newCostEnricher(procenv.Context(context.Background()), manager, ready)
 
 	got := enricher.enrich(pub_models.Chat{ID: "chat"})
 	if len(got.Queries) != 1 || got.Queries[0].CostUSD != 0.42 {
@@ -61,7 +63,7 @@ func Test_costEnricher_ReadyCatalogBeatsAnExpiredBound(t *testing.T) {
 	}}
 	ready := make(chan struct{})
 	close(ready)
-	enricher := newCostEnricher(manager, ready)
+	enricher := newCostEnricher(procenv.Context(context.Background()), manager, ready)
 	enricher.waitFor = time.Nanosecond
 	var warned strings.Builder
 	enricher.warnf = func(format string, a ...any) { fmt.Fprintf(&warned, format, a...) }
@@ -77,7 +79,7 @@ func Test_costEnricher_ReadinessTimeoutKeepsChat(t *testing.T) {
 	manager := &fakeCostManager{enrichFn: func(chat pub_models.Chat) (pub_models.Chat, error) {
 		return chat, nil
 	}}
-	enricher := newCostEnricher(manager, make(chan struct{}))
+	enricher := newCostEnricher(procenv.Context(context.Background()), manager, make(chan struct{}))
 	enricher.waitFor = time.Millisecond
 	var warned strings.Builder
 	enricher.warnf = func(format string, a ...any) { fmt.Fprintf(&warned, format, a...) }
@@ -103,7 +105,7 @@ func Test_costEnricher_EnrichErrorKeepsChat(t *testing.T) {
 
 	t.Run("debug flag reports the failure", func(t *testing.T) {
 		t.Setenv("DEBUG_COST_MANAGER", "1")
-		enricher := newCostEnricher(manager, ready)
+		enricher := newCostEnricher(procenv.Context(context.Background()), manager, ready)
 		var warned strings.Builder
 		enricher.warnf = func(format string, a ...any) { fmt.Fprintf(&warned, format, a...) }
 
@@ -119,7 +121,7 @@ func Test_costEnricher_EnrichErrorKeepsChat(t *testing.T) {
 	t.Run("without the debug flag the failure is silent", func(t *testing.T) {
 		t.Setenv("DEBUG", "")
 		t.Setenv("DEBUG_COST_MANAGER", "")
-		enricher := newCostEnricher(manager, ready)
+		enricher := newCostEnricher(procenv.Context(context.Background()), manager, ready)
 		var warned strings.Builder
 		enricher.warnf = func(format string, a ...any) { fmt.Fprintf(&warned, format, a...) }
 

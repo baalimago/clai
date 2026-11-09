@@ -12,7 +12,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baalimago/clai/internal/testenv/procenv"
+
 	"github.com/baalimago/clai/internal/cost"
+	"github.com/baalimago/clai/internal/runenv"
 	"github.com/baalimago/clai/internal/vendors"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/dimensions"
@@ -42,7 +45,7 @@ func TestSetupConfigFile_concurrentCold(t *testing.T) {
 		var wg sync.WaitGroup
 		for i := range workers {
 			wg.Go(func() {
-				_, errs[i] = NewQuerier(t.Context(), conf, &vendors.Mock{})
+				_, errs[i] = NewQuerier(procenv.Context(t.Context()), conf, &vendors.Mock{})
 			})
 		}
 		wg.Wait()
@@ -88,11 +91,18 @@ func TestNewCostEnricher_defaultWarnf(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(confDir, "mock_test_test.json"), []byte(`{}`), 0o644); err != nil {
 			t.Fatalf("WriteFile: %v", err)
 		}
-		q, err := NewQuerier(t.Context(), Configurations{
+		q, err := NewQuerier(procenv.Context(t.Context()), Configurations{
 			Model: "test", ConfigDir: confDir, SkipAmbientMcpServers: true, Raw: true, Out: &strings.Builder{}, CostWarnf: warnf,
 		}, &vendors.Mock{})
 		if err != nil {
 			t.Fatalf("NewQuerier: %v", err)
+		}
+		// The price routine reports its debug detail on the run's stderr;
+		// it ends before ready closes, so no capture below races with it.
+		select {
+		case <-q.costEnricher.ready:
+		case <-time.After(5 * time.Second):
+			t.Fatal("the cost manager never became ready")
 		}
 		return q
 	}
@@ -174,7 +184,7 @@ func TestCostReadinessWaitsForDiagnosticDelivery(t *testing.T) {
 	var once sync.Once
 	finish := func() { once.Do(func() { close(release) }) }
 	t.Cleanup(finish)
-	q, err := NewQuerier(t.Context(), Configurations{
+	q, err := NewQuerier(procenv.Context(t.Context()), Configurations{
 		Model: "test", ConfigDir: dir, Out: io.Discard, SkipAmbientMcpServers: true,
 		CostWarnf: func(string, ...any) { close(entered); <-release },
 	}, &vendors.Mock{})
@@ -216,7 +226,7 @@ func TestNewQuerier_costManagerErrorUsesCostWarnf(t *testing.T) {
 	}
 	got := make(chan string, 4)
 	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		if _, err := NewQuerier(t.Context(), Configurations{
+		if _, err := NewQuerier(procenv.Context(t.Context()), Configurations{
 			Model: "test", ConfigDir: confDir, SkipAmbientMcpServers: true, Raw: true, Out: &strings.Builder{},
 			CostWarnf: func(format string, a ...any) { got <- fmt.Sprintf(format, a...) },
 		}, &vendors.Mock{}); err != nil {
@@ -252,7 +262,7 @@ func TestNewQuerier_missingCatalogIsSilent(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 	got := make(chan string, 4)
-	q, err := NewQuerier(t.Context(), Configurations{
+	q, err := NewQuerier(procenv.Context(t.Context()), Configurations{
 		Model: "test", ConfigDir: confDir, SkipAmbientMcpServers: true, Raw: true, Out: &strings.Builder{},
 		CostWarnf: func(format string, a ...any) { got <- fmt.Sprintf(format, a...) },
 	}, &vendors.Mock{})
@@ -283,7 +293,7 @@ func TestNewQuerier_errOut(t *testing.T) {
 		if err := os.MkdirAll(filepath.Join(confDir, "mcpServers"), 0o755); err != nil {
 			t.Fatalf("MkdirAll: %v", err)
 		}
-		q, err := NewQuerier(t.Context(), Configurations{
+		q, err := NewQuerier(procenv.Context(t.Context()), Configurations{
 			Model: "test", ConfigDir: confDir, SkipAmbientMcpServers: true, Raw: true, Out: &strings.Builder{}, ErrOut: errOut,
 		}, &vendors.Mock{})
 		if err != nil {
@@ -291,10 +301,10 @@ func TestNewQuerier_errOut(t *testing.T) {
 		}
 		return q
 	}
-	t.Run("nil keeps os.Stderr", func(t *testing.T) {
+	t.Run("nil keeps the run's stderr", func(t *testing.T) {
 		q := build(t, nil)
-		if q.mcpSink.errOut != os.Stderr {
-			t.Fatalf("sink errOut = %T, want os.Stderr", q.mcpSink.errOut)
+		if want := runenv.From(procenv.Context(t.Context())).Stderr(); q.mcpSink.errOut != want {
+			t.Fatalf("sink errOut = %T, want the run's stderr %T", q.mcpSink.errOut, want)
 		}
 	})
 	t.Run("writer replaces the stream", func(t *testing.T) {
@@ -324,7 +334,7 @@ func TestNewQuerier_costWarnfRoutesManagerWarnings(t *testing.T) {
 			t.Fatalf("MkdirAll: %v", err)
 		}
 		writeMockPriceFile(t, confDir)
-		q, err := NewQuerier(t.Context(), Configurations{
+		q, err := NewQuerier(procenv.Context(t.Context()), Configurations{
 			Model: "test", ConfigDir: confDir, SkipAmbientMcpServers: true, Raw: true, Out: &strings.Builder{}, CostWarnf: warnf,
 		}, &vendors.Mock{})
 		if err != nil {

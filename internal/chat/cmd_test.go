@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baalimago/clai/internal/testenv/procenv"
+
 	"github.com/baalimago/clai/internal"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/utils"
@@ -23,7 +25,7 @@ import (
 func Test_Command_tree(t *testing.T) {
 	prepCalls := 0
 	deps := CommandDeps{
-		ConfigPrep: func() (string, error) {
+		ConfigPrep: func(context.Context) (string, error) {
 			prepCalls++
 			return t.TempDir(), nil
 		},
@@ -64,7 +66,7 @@ func Test_Command_tree(t *testing.T) {
 		if err := sub.Flagset().Parse([]string{"0"}); err != nil {
 			t.Fatalf("Parse: %v", err)
 		}
-		if err := sub.Setup(context.Background()); err != nil {
+		if err := sub.Setup(procenv.Context(context.Background())); err != nil {
 			t.Fatalf("Setup: %v", err)
 		}
 		if prepCalls != before+1 {
@@ -80,7 +82,7 @@ func Test_Command_tree(t *testing.T) {
 		if err := sub.Flagset().Parse(nil); err != nil {
 			t.Fatalf("Parse: %v", err)
 		}
-		if err := sub.Setup(context.Background()); err != nil {
+		if err := sub.Setup(procenv.Context(context.Background())); err != nil {
 			t.Fatalf("Setup: %v", err)
 		}
 		if !utils.NoCreateConfig {
@@ -94,7 +96,7 @@ func Test_Command_tree(t *testing.T) {
 // prompt (a chat id or index for continue/delete).
 func Test_New(t *testing.T) {
 	t.Run("splits verb from prompt", func(t *testing.T) {
-		h, err := New(t.TempDir(), "continue my-chat-id", "gopher", true, io.Discard)
+		h, err := New(procenv.Context(context.Background()), t.TempDir(), "continue my-chat-id", "gopher", true, io.Discard)
 		if err != nil {
 			t.Fatalf("New: %v", err)
 		}
@@ -107,7 +109,7 @@ func Test_New(t *testing.T) {
 	})
 
 	t.Run("list macro inputs", func(t *testing.T) {
-		h, err := New(t.TempDir(), "list q", "", false, io.Discard)
+		h, err := New(procenv.Context(context.Background()), t.TempDir(), "list q", "", false, io.Discard)
 		if err != nil {
 			t.Fatalf("New: %v", err)
 		}
@@ -117,7 +119,7 @@ func Test_New(t *testing.T) {
 	})
 
 	t.Run("requires a config dir", func(t *testing.T) {
-		if _, err := New("", "list", "", false, io.Discard); err == nil {
+		if _, err := New(procenv.Context(context.Background()), "", "list", "", false, io.Discard); err == nil {
 			t.Fatal("expected an error for an empty config dir")
 		}
 	})
@@ -141,7 +143,7 @@ func Test_DirscopeReplayCommand_setup(t *testing.T) {
 	if err := c.Flagset().Parse([]string{"-r"}); err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	if err := c.Setup(context.Background()); err != nil {
+	if err := c.Setup(procenv.Context(context.Background())); err != nil {
 		t.Fatalf("Setup: %v", err)
 	}
 }
@@ -162,8 +164,8 @@ func TestChatCommand_summarizeSub(t *testing.T) {
 		confDir := t.TempDir()
 		calls := &depCalls{}
 		deps := CommandDeps{
-			ConfigPrep: func() (string, error) { return confDir, nil },
-			NewSummarizer: func(dir string) (models.Summarizer, error) {
+			ConfigPrep: func(context.Context) (string, error) { return confDir, nil },
+			NewSummarizer: func(_ context.Context, dir string) (models.Summarizer, error) {
 				calls.summarizers++
 				if dir != confDir {
 					t.Fatalf("NewSummarizer dir = %q, want %q", dir, confDir)
@@ -218,28 +220,28 @@ func TestChatCommand_summarizeSub(t *testing.T) {
 		if err := os.MkdirAll(convDir, 0o755); err != nil {
 			t.Fatalf("MkdirAll: %v", err)
 		}
-		if err := Save(convDir, pub_models.Chat{ID: "seed", Created: time.Now(), Title: "old", Summary: "old", Messages: []pub_models.Message{{Role: "user", Content: "hi"}}}); err != nil {
+		if err := Save(procenv.Context(context.Background()), convDir, pub_models.Chat{ID: "seed", Created: time.Now(), Title: "old", Summary: "old", Messages: []pub_models.Message{{Role: "user", Content: "hi"}}}); err != nil {
 			t.Fatalf("Save: %v", err)
 		}
 		verb := sub(c, "summarize|s")
 		if err := verb.Flagset().Parse([]string{"-y", "-force", "-sm", "test", "7d"}); err != nil {
 			t.Fatalf("Parse: %v", err)
 		}
-		if err := verb.Setup(context.Background()); err != nil {
+		if err := verb.Setup(procenv.Context(context.Background())); err != nil {
 			t.Fatalf("Setup: %v", err)
 		}
 		if calls.sinceInput != "7d" || calls.summarizers != 1 {
 			t.Fatalf("deps calls = %+v, want ParseSince(7d) and one summarizer", calls)
 		}
 		testboil.CaptureStdout(t, func(t *testing.T) {
-			if err := verb.Run(context.Background()); err != nil {
+			if err := verb.Run(procenv.Context(context.Background())); err != nil {
 				t.Fatalf("Run: %v", err)
 			}
 		})
 		if gotModel != "test" {
 			t.Fatalf("summarizer model = %q, want the -sm value", gotModel)
 		}
-		got, err := FromPath(filepath.Join(convDir, "seed.json"))
+		got, err := FromPath(procenv.Context(context.Background()), filepath.Join(convDir, "seed.json"))
 		if err != nil {
 			t.Fatalf("FromPath: %v", err)
 		}
@@ -251,7 +253,7 @@ func TestChatCommand_summarizeSub(t *testing.T) {
 		if err := cont.Flagset().Parse([]string{"seed"}); err != nil {
 			t.Fatalf("Parse: %v", err)
 		}
-		if err := cont.Setup(context.Background()); err != nil {
+		if err := cont.Setup(procenv.Context(context.Background())); err != nil {
 			t.Fatalf("Setup(continue): %v", err)
 		}
 		if calls.summarizers != 1 {
@@ -265,7 +267,7 @@ func TestChatCommand_summarizeSub(t *testing.T) {
 		if err := verb.Flagset().Parse([]string{"-y"}); err != nil {
 			t.Fatalf("Parse: %v", err)
 		}
-		err := verb.Setup(context.Background())
+		err := verb.Setup(procenv.Context(context.Background()))
 		if err == nil || !strings.Contains(err.Error(), "<window>") {
 			t.Fatalf("err = %v, want the usage naming <window>", err)
 		}
@@ -280,7 +282,7 @@ func TestChatCommand_summarizeSub(t *testing.T) {
 		if err := verb.Flagset().Parse([]string{"-y", "7d", "extra"}); err != nil {
 			t.Fatalf("Parse: %v", err)
 		}
-		err := verb.Setup(context.Background())
+		err := verb.Setup(procenv.Context(context.Background()))
 		if err == nil || !strings.Contains(err.Error(), "<window>") {
 			t.Fatalf("err = %v, want the usage naming <window>", err)
 		}
@@ -296,7 +298,7 @@ func TestChatCommand_summarizeSub(t *testing.T) {
 		if err := verb.Flagset().Parse([]string{"7d", "-y"}); err != nil {
 			t.Fatalf("Parse: %v", err)
 		}
-		err := verb.Setup(context.Background())
+		err := verb.Setup(procenv.Context(context.Background()))
 		if err == nil || !strings.Contains(err.Error(), "flags go before the window") || !strings.Contains(err.Error(), "-y") {
 			t.Fatalf("err = %v, want the flag-order hint naming -y", err)
 		}
@@ -312,7 +314,7 @@ func TestChatCommand_summarizeSub(t *testing.T) {
 		if err := verb.Flagset().Parse([]string{"-y", "yesterday"}); err != nil {
 			t.Fatalf("Parse: %v", err)
 		}
-		err := verb.Setup(context.Background())
+		err := verb.Setup(procenv.Context(context.Background()))
 		if !errors.Is(err, parseErr) {
 			t.Fatalf("err = %v, want the ParseSince error naming the accepted forms", err)
 		}
@@ -328,7 +330,7 @@ func TestChatCommand_summarizeSub(t *testing.T) {
 			if err := verb.Flagset().Parse([]string{"-y", "-workers", workers, "7d"}); err != nil {
 				t.Fatalf("Parse: %v", err)
 			}
-			err := verb.Setup(context.Background())
+			err := verb.Setup(procenv.Context(context.Background()))
 			if err == nil || !strings.Contains(err.Error(), "-workers") {
 				t.Fatalf("-workers %s: err = %v, want a usage error naming the flag", workers, err)
 			}
@@ -345,7 +347,7 @@ func TestChatCommand_summarizeSub(t *testing.T) {
 		if err := verb.Flagset().Parse([]string{"7d"}); err != nil {
 			t.Fatalf("Parse: %v", err)
 		}
-		if err := verb.Setup(context.Background()); !errors.Is(err, newErr) {
+		if err := verb.Setup(procenv.Context(context.Background())); !errors.Is(err, newErr) {
 			t.Fatalf("err = %v, want the wrapped constructor error", err)
 		}
 	})
@@ -369,7 +371,7 @@ func chatTreeDeps(t *testing.T, factory func() vendors.SourceCache) CommandDeps 
 	t.Helper()
 	confDir := t.TempDir()
 	return CommandDeps{
-		ConfigPrep:   func() (string, error) { return confDir, nil },
+		ConfigPrep:   func(context.Context) (string, error) { return confDir, nil },
 		ForeignCache: factory,
 	}
 }
@@ -393,7 +395,7 @@ func TestChatCommand_cacheFactoryRunsOncePerVerb(t *testing.T) {
 			if err := sub.Flagset().Parse(nil); err != nil {
 				t.Fatalf("Parse: %v", err)
 			}
-			if err := sub.Setup(context.Background()); err != nil {
+			if err := sub.Setup(procenv.Context(context.Background())); err != nil {
 				t.Fatalf("Setup: %v", err)
 			}
 			if *calls != 0 {
@@ -412,14 +414,14 @@ func TestChatCommand_cacheFactoryRunsOncePerVerb(t *testing.T) {
 		restoreFlags(t)
 		factory, calls := countingCacheFactory(nil)
 		deps := chatTreeDeps(t, factory)
-		deps.NewSummarizer = func(string) (models.Summarizer, error) { return nil, errors.New("no summarizer") }
+		deps.NewSummarizer = func(context.Context, string) (models.Summarizer, error) { return nil, errors.New("no summarizer") }
 		deps.ParseSince = func(string, time.Time) (time.Time, error) { return time.Time{}, nil }
 		c := Command(deps)
 		sub := c.Subcommands()["summarize|s"].(*internal.Command)
 		if err := sub.Flagset().Parse([]string{"7d"}); err != nil {
 			t.Fatalf("Parse: %v", err)
 		}
-		_ = sub.Setup(context.Background())
+		_ = sub.Setup(procenv.Context(context.Background()))
 		if *calls != 0 {
 			t.Fatalf("summarize asked for %d indexes; it lists nothing", *calls)
 		}
@@ -435,7 +437,7 @@ func TestChatCommand_cacheFactoryRunsOncePerVerb(t *testing.T) {
 func TestChatCommand_failedFactoryLeavesCacheNil(t *testing.T) {
 	restoreFlags(t)
 	factory, calls := countingCacheFactory(nil)
-	h, err := newChatQuerier(t.TempDir(), []string{"chat", "list"}, &internal.ChatFlags{}, factory)
+	h, err := newChatQuerier(procenv.Context(context.Background()), t.TempDir(), []string{"chat", "list"}, &internal.ChatFlags{}, factory)
 	if err != nil {
 		t.Fatalf("newChatQuerier: %v", err)
 	}
@@ -453,7 +455,7 @@ func TestChatCommand_failedFactoryLeavesCacheNil(t *testing.T) {
 	}
 
 	// A composition root that produced no factory at all is the same case.
-	noFactory, err := newChatQuerier(t.TempDir(), []string{"chat", "list"}, &internal.ChatFlags{}, nil)
+	noFactory, err := newChatQuerier(procenv.Context(context.Background()), t.TempDir(), []string{"chat", "list"}, &internal.ChatFlags{}, nil)
 	if err != nil {
 		t.Fatalf("newChatQuerier without a factory: %v", err)
 	}
@@ -505,14 +507,14 @@ func runListVerb(t *testing.T, args []string) string {
 	}
 
 	c := Command(CommandDeps{
-		ConfigPrep:   func() (string, error) { return confDir, nil },
+		ConfigPrep:   func(context.Context) (string, error) { return confDir, nil },
 		ForeignCache: factory,
 	})
 	sub := c.Subcommands()["list|l"].(*internal.Command)
 	if err := sub.Flagset().Parse(args); err != nil {
 		t.Fatalf("Parse(%v): %v", args, err)
 	}
-	ctx := context.Background()
+	ctx := procenv.Context(context.Background())
 	stderr := ""
 	testboil.CaptureStdout(t, func(t *testing.T) {
 		stderr = testboil.CaptureStderr(t, func(t *testing.T) {
@@ -574,7 +576,7 @@ func runChatVerbCounting(t *testing.T, verb string, args []string) int {
 	// decode of a cache file rather than a no-op.
 	cacheDir := t.TempDir()
 	warm := newForeignIndexT(t, cacheDir)
-	if _, err := (anthropic.SourceReader{Root: root}).Discover(context.Background(), warm); err != nil {
+	if _, err := (anthropic.SourceReader{Root: root}).Discover(procenv.Context(context.Background()), warm); err != nil {
 		t.Fatalf("warming Discover: %v", err)
 	}
 	persistT(t, warm)
@@ -590,14 +592,14 @@ func runChatVerbCounting(t *testing.T, verb string, args []string) int {
 		return idx
 	}
 	c := Command(CommandDeps{
-		ConfigPrep:   func() (string, error) { return confDir, nil },
+		ConfigPrep:   func(context.Context) (string, error) { return confDir, nil },
 		ForeignCache: factory,
 	})
 	sub := c.Subcommands()[verb].(*internal.Command)
 	if err := sub.Flagset().Parse(args); err != nil {
 		t.Fatalf("Parse(%v): %v", args, err)
 	}
-	ctx := context.Background()
+	ctx := procenv.Context(context.Background())
 	testboil.CaptureStdout(t, func(t *testing.T) {
 		if err := sub.Setup(ctx); err != nil {
 			t.Errorf("Setup: %v", err)
@@ -649,7 +651,7 @@ func TestChatCommand_lazyFactoryRunsAtMostOnce(t *testing.T) {
 		idx := newForeignIndexT(t, cacheDir)
 		return idx
 	}
-	h, err := newChatQuerier(t.TempDir(), []string{"chat", "list"}, &internal.ChatFlags{}, factory)
+	h, err := newChatQuerier(procenv.Context(context.Background()), t.TempDir(), []string{"chat", "list"}, &internal.ChatFlags{}, factory)
 	if err != nil {
 		t.Fatalf("newChatQuerier: %v", err)
 	}
@@ -660,12 +662,12 @@ func TestChatCommand_lazyFactoryRunsAtMostOnce(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "projects")
 	jsonltest.WriteCorpus(t, root, smallCorpus(jsonltest.ShapeClaude))
 	readers := []vendors.SourceReader{anthropic.SourceReader{Root: root}}
-	first, err := h.foreignChatRows(context.Background(), readers, map[string]struct{}{})
+	first, err := h.foreignChatRows(procenv.Context(context.Background()), readers, map[string]struct{}{})
 	if err != nil {
 		t.Fatalf("first foreignChatRows: %v", err)
 	}
 	after := h.foreignCache
-	second, err := h.foreignChatRows(context.Background(), readers, map[string]struct{}{})
+	second, err := h.foreignChatRows(procenv.Context(context.Background()), readers, map[string]struct{}{})
 	if err != nil {
 		t.Fatalf("second foreignChatRows: %v", err)
 	}
@@ -688,7 +690,7 @@ func TestChatCommand_lazyFactoryRunsAtMostOnce(t *testing.T) {
 func TestChatCommand_lazyFactoryFailureLeavesCacheUnset(t *testing.T) {
 	restoreFlags(t)
 	factory, calls := countingCacheFactory(nil)
-	h, err := newChatQuerier(t.TempDir(), []string{"chat", "list"}, &internal.ChatFlags{}, factory)
+	h, err := newChatQuerier(procenv.Context(context.Background()), t.TempDir(), []string{"chat", "list"}, &internal.ChatFlags{}, factory)
 	if err != nil {
 		t.Fatalf("newChatQuerier: %v", err)
 	}
@@ -700,7 +702,7 @@ func TestChatCommand_lazyFactoryFailureLeavesCacheUnset(t *testing.T) {
 	jsonltest.WriteCorpus(t, root, smallCorpus(jsonltest.ShapeClaude))
 	readers := []vendors.SourceReader{anthropic.SourceReader{Root: root}}
 	for i := range 3 {
-		rows, err := h.foreignChatRows(context.Background(), readers, map[string]struct{}{})
+		rows, err := h.foreignChatRows(procenv.Context(context.Background()), readers, map[string]struct{}{})
 		if err != nil {
 			t.Fatalf("consultation %d: foreignChatRows: %v", i, err)
 		}

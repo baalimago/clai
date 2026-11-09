@@ -303,8 +303,8 @@ func TestNewQuerier_oneOffQuerier_isSideEffectFree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewQuerier: %v", err)
 	}
-	if _, ok := q.tooling.registered["injected"]; !ok || len(q.tooling.registered) != 1 {
-		t.Fatalf("registered tools = %v, want only the injected tool", q.tooling.registered)
+	if names := q.tooling.offered.Names(); !slices.Equal(names, []string{"injected"}) {
+		t.Fatalf("offered tools = %v, want only the injected tool", names)
 	}
 	assertMarkerAbsent(t, marker)
 	if strings.Contains(stderr, "failed to setup") {
@@ -409,9 +409,9 @@ func TestNewQuerierThreadsOutputIsTerminalIntoAuthTimeout(t *testing.T) {
 		if err != nil {
 			t.Fatalf("NewQuerier: %v", err)
 		}
-		tool, ok := q.tooling.run["mcp_httpecho_echo"]
+		tool, ok := q.tooling.offered.Get("mcp_httpecho_echo")
 		if !ok {
-			t.Fatalf("mcp_httpecho_echo not registered; got: %v", q.tooling.run)
+			t.Fatalf("mcp_httpecho_echo not registered; got: %v", q.tooling.offered.Names())
 		}
 		resolver, ok := tool.(mcpConnectionResolver)
 		if !ok {
@@ -436,9 +436,9 @@ func TestNewQuerierThreadsOutputIsTerminalIntoAuthTimeout(t *testing.T) {
 		if err != nil {
 			t.Fatalf("NewQuerier: %v", err)
 		}
-		tool, ok := q.tooling.run["mcp_httpecho_echo"]
+		tool, ok := q.tooling.offered.Get("mcp_httpecho_echo")
 		if !ok {
-			t.Fatalf("mcp_httpecho_echo not registered; got: %v", q.tooling.run)
+			t.Fatalf("mcp_httpecho_echo not registered; got: %v", q.tooling.offered.Names())
 		}
 		resolver, ok := tool.(mcpConnectionResolver)
 		if !ok {

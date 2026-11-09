@@ -3,13 +3,12 @@ package utils
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"strings"
 
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
-	"github.com/baalimago/go_away_boilerplate/pkg/misc"
+	"github.com/baalimago/clai/internal/diag"
+	"github.com/baalimago/clai/internal/runenv"
 )
 
 var ErrNoPrompt = errors.New("found no prompt, set args or pipe in some string")
@@ -26,21 +25,29 @@ func Prompt(ctx context.Context, stdinReplace string, args []string) (string, er
 	return PromptFrom(stdinReplace, args, stdin)
 }
 
-// PipedStdin returns os.Stdin when it is not a terminal (a pipe, a file
-// redirect), and nil when it is one. A pipe's reads give up with the cause of
-// ctx once it ends, so an open pipe nobody writes to cannot outlast the run.
+// PipedStdin returns the run's stdin when it is not a terminal (a pipe, a
+// file redirect), and nil when it is one. A pipe's reads give up with the
+// cause of ctx once it ends, so an open pipe nobody writes to cannot outlast
+// the run.
 func PipedStdin(ctx context.Context) (io.Reader, error) {
-	fi, err := os.Stdin.Stat()
-	if err != nil {
-		return nil, fmt.Errorf("stat stdin: %w", err)
-	}
-	switch {
-	case fi.Mode()&os.ModeCharDevice != 0:
+	env := runenv.From(ctx)
+	if env.StdinIsTerminal() {
 		return nil, nil
-	case fi.Mode().IsRegular():
-		return os.Stdin, nil
 	}
-	return contextReader{ctx: ctx, r: os.Stdin}, nil
+	in := env.Stdin()
+	if f, ok := in.(interface{ Stat() (os.FileInfo, error) }); ok {
+		fi, err := f.Stat()
+		if err != nil {
+			return nil, diag.Errorf("stat stdin: %w", err)
+		}
+		if fi.Mode()&os.ModeCharDevice != 0 {
+			return nil, nil
+		}
+		if fi.Mode().IsRegular() {
+			return in, nil
+		}
+	}
+	return contextReader{ctx: ctx, r: in}, nil
 }
 
 type contextReader struct {
@@ -55,7 +62,7 @@ type readResult struct {
 
 func (c contextReader) Read(p []byte) (int, error) {
 	if err := context.Cause(c.ctx); err != nil {
-		return 0, fmt.Errorf("stopped waiting for stdin: %w", err)
+		return 0, diag.Errorf("stopped waiting for stdin: %w", err)
 	}
 	// The read runs on its own buffer: an abandoned one must not write
 	// into p after Read returned.
@@ -67,7 +74,7 @@ func (c contextReader) Read(p []byte) (int, error) {
 	}()
 	select {
 	case <-c.ctx.Done():
-		return 0, fmt.Errorf("stopped waiting for stdin: %w", context.Cause(c.ctx))
+		return 0, diag.Errorf("stopped waiting for stdin: %w", context.Cause(c.ctx))
 	case r := <-res:
 		return copy(p, buf[:r.n]), r.err
 	}
@@ -75,10 +82,6 @@ func (c contextReader) Read(p []byte) (int, error) {
 
 // PromptFrom is Prompt with stdin given explicitly; nil means stdin is a terminal.
 func PromptFrom(stdinReplace string, args []string, stdin io.Reader) (string, error) {
-	debug := misc.Truthy(os.Getenv("DEBUG"))
-	if debug {
-		ancli.PrintOK(fmt.Sprintf("stdinReplace: %v\n", stdinReplace))
-	}
 	hasStdin := stdin != nil
 
 	if len(args) == 0 || (len(args) == 1 && !hasStdin) {
@@ -93,7 +96,7 @@ func PromptFrom(stdinReplace string, args []string, stdin io.Reader) (string, er
 
 	inputData, err := io.ReadAll(stdin)
 	if err != nil {
-		return "", fmt.Errorf("failed to read stdin: %w", err)
+		return "", diag.Errorf("failed to read stdin: %w", err)
 	}
 	pipeIn := string(inputData)
 	// Stdin alone is the prompt.
@@ -105,9 +108,6 @@ func PromptFrom(stdinReplace string, args []string, stdin io.Reader) (string, er
 	}
 	// Stdin replaces every token in the prompt, or is appended once to a
 	// prompt without one; it is never sent twice nor dropped.
-	if debug {
-		ancli.PrintOK(fmt.Sprintf("attempting to replace: '%v' with stdin\n", stdinReplace))
-	}
 	replaced := false
 	for i, arg := range args {
 		if strings.Contains(arg, stdinReplace) {
@@ -119,16 +119,13 @@ func PromptFrom(stdinReplace string, args []string, stdin io.Reader) (string, er
 		args = append(args, pipeIn)
 	}
 
-	if debug {
-		ancli.PrintOK(fmt.Sprintf("args: %v\n", args))
-	}
 	return strings.Join(args, " "), nil
 }
 
 func ReplaceTildeWithHome(s string) (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil && strings.Contains(s, "~/") { // only fail if glob contains ~/ and home dir is not found
-		return "", fmt.Errorf("failed to get home dir: %w", err)
+		return "", diag.Errorf("failed to get home dir: %w", err)
 	}
 	return strings.ReplaceAll(s, "~", home), nil
 }

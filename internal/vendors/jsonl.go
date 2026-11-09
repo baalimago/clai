@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -14,6 +13,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/baalimago/clai/internal/diag"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -36,7 +36,7 @@ func OpenAbs(fsys fs.FS, absPath string) (io.ReadCloser, error) {
 	p := strings.TrimPrefix(absPath, string(filepath.Separator))
 	f, err := fsys.Open(p)
 	if err != nil {
-		return nil, fmt.Errorf("open %q: %w", absPath, err)
+		return nil, diag.Errorf("open %q: %w", absPath, err)
 	}
 	if rc, ok := f.(io.ReadCloser); ok {
 		return rc, nil
@@ -55,7 +55,7 @@ func StatAbs(fsys fs.FS, absPath string) (fs.FileInfo, error) {
 	p := strings.TrimPrefix(absPath, string(filepath.Separator))
 	fi, err := fs.Stat(fsys, p)
 	if err != nil {
-		return nil, fmt.Errorf("stat %q: %w", absPath, err)
+		return nil, diag.Errorf("stat %q: %w", absPath, err)
 	}
 	return fi, nil
 }
@@ -76,7 +76,7 @@ func WalkJSONLFiles(ctx context.Context, root string, skipDirs []string, visit f
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		}
-		return fmt.Errorf("stat %q: %w", root, err)
+		return diag.Errorf("stat %q: %w", root, err)
 	}
 	if !st.IsDir() {
 		return nil
@@ -103,7 +103,7 @@ func WalkJSONLFiles(ctx context.Context, root string, skipDirs []string, visit f
 		return nil
 	})
 	if err != nil && !errors.Is(err, errStopWalk) {
-		return fmt.Errorf("walk %q: %w", root, err)
+		return diag.Errorf("walk %q: %w", root, err)
 	}
 	return nil
 }
@@ -131,7 +131,7 @@ func ScanJSONLRecords[T any](r io.Reader, maxToken int, fn func(rec T) bool) err
 	// %w is load-bearing: discovery's cacheability gate is
 	// errors.Is(err, bufio.ErrTooLong) (D28).
 	if errors.Is(err, bufio.ErrTooLong) {
-		return fmt.Errorf("a line exceeds the %d byte line bound, so this conversation cannot be read in full: %w", maxToken, err)
+		return diag.Errorf("a line exceeds the %d byte line bound, so this conversation cannot be read in full: %w", maxToken, err)
 	}
 	return err
 }

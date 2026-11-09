@@ -14,8 +14,14 @@ import (
 	// tool engine (mode-as-tool bridge) for library consumers of pkg/agent.
 	_ "github.com/baalimago/clai/internal/audio"
 	"github.com/baalimago/clai/internal/chat"
+	"github.com/baalimago/clai/internal/cli/process"
+	"github.com/baalimago/clai/internal/diag"
+	"github.com/baalimago/clai/internal/jsonl"
 	priv_models "github.com/baalimago/clai/internal/models"
+	"github.com/baalimago/clai/internal/runenv"
+	"github.com/baalimago/clai/internal/stdio"
 	"github.com/baalimago/clai/internal/text"
+	"github.com/baalimago/clai/pkg/diagnostic"
 	"github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -61,7 +67,19 @@ type Agent struct {
 	// (worklog 2026-08-15-agent-slog-output, D2, D5). Default 200.
 	slogRuneLimit int
 
+	// diagnosticReporter receives agent diagnostics, the internal ones of
+	// the run included; nil keeps the agent silent (phase 8 of worklog
+	// 2026-11-02-diagnostics, F3). diagnosticLevels decide which detail the
+	// run's producers build for it.
+	diagnosticReporter diagnostic.Reporter
+	diagnosticLevels   diag.ResolvedLevels
+
 	querierCreator func(ctx context.Context, conf text.Configurations) (priv_models.Querier, error)
+
+	// stdin and stdinIsTerminal are the process input a run reads when its
+	// caller supplies no run environment: audio_record stops on Enter there.
+	stdin           io.Reader
+	stdinIsTerminal bool
 
 	querier priv_models.ChatQuerier
 }
@@ -91,6 +109,7 @@ func New(options ...Option) Agent {
 		home = "."
 	}
 	conf.cfgDir = path.Join(home, ".config", "clai")
+	conf.stdin, conf.stdinIsTerminal = process.Stdin()
 
 	for _, o := range options {
 		o(&conf)
@@ -150,6 +169,11 @@ func WithPrompt(prompt string) Option {
 	}
 }
 
+// WithTools offers tools to the model. Without WithToolGlobs they are the
+// only tools of the run; an agent given neither option offers every built-in
+// tool (cmd, write_file and apply_patch among them) and every MCP tool. The
+// model can call only what it was offered: a call naming any other tool is
+// answered with "ERROR: unknown tool call: <name>" and runs nothing.
 func WithTools(tools []models.LLMTool) Option {
 	return func(a *Agent) {
 		a.tools = tools
@@ -194,6 +218,8 @@ func WithSlogRuneLimit(n int) Option {
 
 // WithToolGlobs sets freetext glob patterns to filter which tools are registered.
 // Supports wildcards like "mcp_*", "mcp_playwright_*", or exact names like "cat".
+// Only the matched tools, and those of WithTools, are offered to the model
+// and callable by it.
 func WithToolGlobs(globs ...string) Option {
 	return func(a *Agent) {
 		a.toolGlobs = globs
@@ -310,26 +336,50 @@ func (a *Agent) Setup(ctx context.Context) error {
 	// when the conversation directory is large.
 	skipIndexOnce.Do(func() { chat.SkipIndex = true })
 
-	if _, err := os.Stat(a.cfgDir); os.IsNotExist(err) {
-		os.Mkdir(a.cfgDir, 0o755)
-	}
-	mcpServersDir := path.Join(a.cfgDir, "mcpServers")
-	if _, err := os.Stat(mcpServersDir); os.IsNotExist(err) {
-		os.Mkdir(mcpServersDir, 0o755)
-	}
-	conversationsDir := path.Join(a.cfgDir, "conversations")
-	if _, err := os.Stat(conversationsDir); os.IsNotExist(err) {
-		os.Mkdir(conversationsDir, 0o755)
+	ctx = a.runContext(ctx)
+	for _, dir := range []string{a.cfgDir, path.Join(a.cfgDir, "mcpServers"), path.Join(a.cfgDir, "conversations")} {
+		if _, err := os.Stat(dir); os.IsNotExist(err) {
+			if err := os.Mkdir(dir, 0o755); err != nil {
+				a.report(ctx, diagnosticConfigDirUnavailable, "agent configuration directory could not be created",
+					slog.String("path", dir), slog.String("error", err.Error()))
+			}
+		}
 	}
 
 	querier, err := a.querierCreator(ctx, a.asInternalConfig())
 	if err != nil {
-		return fmt.Errorf("publicQuerier.Setup failed to CreateTextQuerier: %w", err)
+		return diag.Errorf("publicQuerier.Setup failed to CreateTextQuerier: %w", err)
 	}
 	tq, isChatQuerier := querier.(priv_models.ChatQuerier)
 	if !isChatQuerier {
 		return fmt.Errorf("failed to cast Querier using model: '%v' to TextQuerier, cannot proceed", a.model)
 	}
 	a.querier = tq
+	a.report(ctx, diagnosticSetupCompleted, "agent setup completed", slog.String("model", a.model))
 	return nil
+}
+
+// runContext is ctx carrying a run environment. The caller's own is kept;
+// without one the run reads the process input with its terminal state and
+// writes nothing. Its internal diagnostics reach the caller's Reporter, and
+// without one it reports nothing, so the library stays silent (F3).
+func (a *Agent) runContext(ctx context.Context) context.Context {
+	if _, ok := runenv.Lookup(ctx); ok {
+		return ctx
+	}
+	stdin := a.stdin
+	if stdin == nil {
+		stdin = strings.NewReader("")
+	}
+	config := runenv.Config{Streams: stdio.New(stdio.Config{
+		Format:        jsonl.FormatText,
+		Stdin:         stdin,
+		Stdout:        io.Discard,
+		Stderr:        io.Discard,
+		StdinTerminal: a.stdinIsTerminal && a.stdin != nil,
+	})}
+	if a.diagnosticReporter != nil {
+		config.Reporter, config.Levels = a.diagnosticReporter, a.diagnosticLevels
+	}
+	return runenv.With(ctx, runenv.New(config))
 }

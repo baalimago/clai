@@ -2,6 +2,7 @@ package text
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -196,7 +197,7 @@ func TestConfigurations_LegacyTokenWarnLimitKeyIgnored(t *testing.T) {
 		t.Fatalf("WriteFile(textConfig.json): %v", err)
 	}
 
-	conf, err := utils.LoadConfigFromFile(dir, "textConfig.json", nil, &Default)
+	conf, err := utils.LoadConfigFromFile(context.Background(), dir, "textConfig.json", nil, &Default)
 	if err != nil {
 		t.Fatalf("LoadConfigFromFile: %v", err)
 	}
@@ -223,7 +224,7 @@ func TestConfigurations_CmdBanPersistsViaTextConfigJSON(t *testing.T) {
 		t.Fatalf("WriteFile(textConfig.json): %v", err)
 	}
 
-	conf, err := utils.LoadConfigFromFile(dir, "textConfig.json", nil, &Default)
+	conf, err := utils.LoadConfigFromFile(context.Background(), dir, "textConfig.json", nil, &Default)
 	if err != nil {
 		t.Fatalf("LoadConfigFromFile: %v", err)
 	}
@@ -314,7 +315,7 @@ func Test_toGenericResponseFormat(t *testing.T) {
 func Test_collectFrom_profileKeepsAnImagePipedWithNoPrompt(t *testing.T) {
 	png := []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR png")
 	c := Configurations{UseProfile: "agent"}
-	got, err := c.collectFrom([]string{"q"}, bytes.NewReader(png))
+	got, err := c.collectFrom(context.Background(), []string{"q"}, bytes.NewReader(png))
 	if err != nil {
 		t.Fatalf("collectFrom: %v", err)
 	}
@@ -325,7 +326,7 @@ func Test_collectFrom_profileKeepsAnImagePipedWithNoPrompt(t *testing.T) {
 
 func Test_collectFrom_profileWithNothingGetsTheDefaultPrompt(t *testing.T) {
 	c := Configurations{UseProfile: "agent"}
-	got, err := c.collectFrom([]string{"q"}, nil)
+	got, err := c.collectFrom(context.Background(), []string{"q"}, nil)
 	if err != nil {
 		t.Fatalf("collectFrom: %v", err)
 	}
@@ -335,7 +336,7 @@ func Test_collectFrom_profileWithNothingGetsTheDefaultPrompt(t *testing.T) {
 }
 
 func Test_collectFrom_withoutAProfileNoPromptIsAnError(t *testing.T) {
-	_, err := Configurations{}.collectFrom([]string{"q"}, nil)
+	_, err := Configurations{}.collectFrom(context.Background(), []string{"q"}, nil)
 	if !errors.Is(err, utils.ErrNoPrompt) {
 		t.Fatalf("err = %v, want ErrNoPrompt", err)
 	}

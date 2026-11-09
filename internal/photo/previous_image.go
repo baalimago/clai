@@ -1,13 +1,14 @@
 package photo
 
 import (
+	"context"
 	"errors"
-	"fmt"
 	"io/fs"
 	"slices"
 
 	"github.com/baalimago/clai/internal/asset"
 	"github.com/baalimago/clai/internal/chat"
+	"github.com/baalimago/clai/internal/diag"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -17,14 +18,14 @@ var _ PreviousImageFunc = PreviousQueryImage
 // globalScope.json, loaded through the conversation Persister. A stored part is
 // read from the asset store; a pending (legacy) part gives its own bytes. No
 // globalScope.json, or one without an image, is ErrNoPreviousImage (query.6).
-func PreviousQueryImage(confDir string) (asset.Image, error) {
+func PreviousQueryImage(ctx context.Context, confDir string) (asset.Image, error) {
 	store := asset.NewStore(chat.AssetsDir(confDir))
-	prev, err := chat.NewPersister(confDir, store).Load(chat.GlobalScopePath(confDir))
+	prev, err := chat.NewPersister(confDir, store).Load(ctx, chat.GlobalScopePath(confDir))
 	if errors.Is(err, fs.ErrNotExist) {
 		return asset.Image{}, ErrNoPreviousImage
 	}
 	if err != nil {
-		return asset.Image{}, fmt.Errorf("load the previous query: %w", err)
+		return asset.Image{}, diag.Errorf("load the previous query: %w", err)
 	}
 	img, err := lastImage(prev)
 	if err != nil {
@@ -35,7 +36,7 @@ func PreviousQueryImage(confDir string) (asset.Image, error) {
 	}
 	stored, err := store.Load(img.Asset)
 	if err != nil {
-		return asset.Image{}, fmt.Errorf("load the previous image %s: %w", img.Describe(), err)
+		return asset.Image{}, diag.Errorf("load the previous image %s: %w", img.Describe(), err)
 	}
 	return stored, nil
 }

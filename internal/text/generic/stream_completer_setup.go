@@ -6,22 +6,22 @@ import (
 	"os"
 	"strings"
 
-	"github.com/baalimago/clai/internal/debugflags"
+	"github.com/baalimago/clai/internal/apikey"
+	"github.com/baalimago/clai/internal/diag"
+	"github.com/baalimago/clai/internal/runenv"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
 func (s *StreamCompleter) Setup(apiKeyEnv, url, debugEnv string) error {
 	apiKey := os.Getenv(apiKeyEnv)
 	if apiKey == "" {
-		return fmt.Errorf("environment variable '%v' not set", apiKeyEnv)
+		return &apikey.MissingError{Env: apiKeyEnv, Message: fmt.Sprintf("environment variable '%v' not set", apiKeyEnv)}
 	}
 	s.client = &http.Client{}
 	s.apiKey = apiKey
 	s.URL = url
 
-	if debugflags.EnabledEnv(debugEnv) {
-		s.debug = true
-	}
+	s.subsystem = runenv.VendorSubsystem(debugEnv)
 
 	return nil
 }
@@ -33,7 +33,7 @@ func (s *StreamCompleter) SetupOpenAICompatible(model, apiKeyEnv, fallbackKey, u
 		os.Setenv(apiKeyEnv, fallbackKey)
 	}
 	if err := s.Setup(apiKeyEnv, url, debugEnv); err != nil {
-		return fmt.Errorf("failed to setup stream completer: %w", err)
+		return diag.Errorf("failed to setup stream completer: %w", err)
 	}
 	s.Model = strings.TrimPrefix(model, prefix)
 	s.FrequencyPenalty = &frequencyPenalty

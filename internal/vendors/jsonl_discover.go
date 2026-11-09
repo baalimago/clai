@@ -10,6 +10,8 @@ import (
 	"io/fs"
 	"runtime"
 	"sync"
+
+	"github.com/baalimago/clai/internal/diag"
 )
 
 // jsonl_discover.go owns the discovery algorithm every JSONL-backed source
@@ -40,13 +42,13 @@ type discoverSlot struct {
 func DiscoverJSONL(ctx context.Context, schema JSONLSchema, fsys fs.FS, cache SourceCache) ([]SourceRow, error) {
 	paths, err := walkJSONLPaths(ctx, schema)
 	if err != nil {
-		return nil, fmt.Errorf("discover %v sessions: %w", schema.SourceName(), err)
+		return nil, diag.Errorf("discover %v sessions: %w", schema.SourceName(), err)
 	}
 	slots := make([]discoverSlot, len(paths))
 	scanJSONLFileSlots(ctx, schema, fsys, cache, paths, slots)
 	// A partial list is worse than none, because nothing says it is partial.
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("discover %v sessions: %w", schema.SourceName(), err)
+		return nil, diag.Errorf("discover %v sessions: %w", schema.SourceName(), err)
 	}
 	rows := make([]SourceRow, 0, len(slots))
 	for _, slot := range slots {
@@ -239,7 +241,7 @@ func FindJSONLSession(ctx context.Context, schema JSONLSchema, fsys fs.FS, cache
 	for _, root := range roots {
 		found, err := findJSONLSessionInRoot(ctx, schema, fsys, root, sourceID)
 		if err != nil {
-			return "", fmt.Errorf("find %v session: %w", schema.SourceName(), err)
+			return "", diag.Errorf("find %v session: %w", schema.SourceName(), err)
 		}
 		if found != "" {
 			return found, nil
@@ -255,7 +257,7 @@ func findJSONLSessionInRoot(ctx context.Context, schema JSONLSchema, fsys fs.FS,
 		identity, idErr := jsonlFileIdentity(schema, fsys, absPath)
 		// Walking on would answer with a file the walk would not have chosen.
 		if idErr != nil {
-			readErr = fmt.Errorf("read %q: %w", absPath, idErr)
+			readErr = diag.Errorf("read %q: %w", absPath, idErr)
 			return true
 		}
 		if identity == sourceID {
@@ -307,10 +309,10 @@ func WalkSessionRows(
 		return false
 	})
 	if err != nil {
-		return nil, fmt.Errorf("discover %s sessions: %w", source, err)
+		return nil, diag.Errorf("discover %s sessions: %w", source, err)
 	}
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("discover %s sessions: %w", source, err)
+		return nil, diag.Errorf("discover %s sessions: %w", source, err)
 	}
 	return rows, nil
 }
@@ -340,7 +342,7 @@ func FindSessionFile(
 	err := walk(ctx, func(absPath string) bool {
 		id, err := fileID(absPath)
 		if err != nil {
-			readErr = fmt.Errorf("read %q: %w", absPath, err)
+			readErr = diag.Errorf("read %q: %w", absPath, err)
 			return true
 		}
 		if id == sourceID {
@@ -350,7 +352,7 @@ func FindSessionFile(
 		return false
 	})
 	if err != nil {
-		return "", fmt.Errorf("find %s session: %w", source, err)
+		return "", diag.Errorf("find %s session: %w", source, err)
 	}
 	if readErr != nil {
 		return "", readErr

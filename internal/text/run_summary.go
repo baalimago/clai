@@ -5,13 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
+	"log/slog"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/quantity"
+	"github.com/baalimago/clai/internal/runenv"
 	"github.com/baalimago/clai/internal/runtally"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -82,8 +84,16 @@ func (o QueryOutcome) String() string {
 
 // Lines renders the summary as one title row and indented detail rows.
 func (s QuerySummary) Lines() []string {
-	title := fmt.Sprintf("▸ query %v in %v", s.Outcome, s.Duration.Truncate(time.Second))
-	return append([]string{title}, s.detailLines()...)
+	return append([]string{"▸ " + s.message()}, s.detailLines()...)
+}
+
+func (s QuerySummary) message() string {
+	return fmt.Sprintf("query %v in %v", s.Outcome, s.Duration.Truncate(time.Second))
+}
+
+// facts is the summary as the facts of its JSON diagnostic record.
+func (s QuerySummary) facts() []slog.Attr {
+	return append([]slog.Attr{slog.String("outcome", s.Outcome.String())}, s.tallyFacts(s.Duration)...)
 }
 
 // addTurn folds one finished turn's usage, cost rows and tool calls into the
@@ -127,6 +137,54 @@ func (t RunTally) detailLines() []string {
 		lines = append(lines, "  subagents "+t.Subagents.Line())
 	}
 	return lines
+}
+
+// tallyFacts is the tally as diagnostic facts: what detailLines shows, as
+// fields instead of aligned rows.
+func (t RunTally) tallyFacts(duration time.Duration) []slog.Attr {
+	facts := []slog.Attr{
+		slog.Int64("duration_ms", duration.Milliseconds()),
+		slog.Int("tokens_in", t.Usage.PromptTokens),
+		slog.Int("tokens_cached", t.Usage.PromptTokensDetails.CachedTokens),
+		slog.Int("tokens_out", t.Usage.CompletionTokens),
+	}
+	if t.HasCost {
+		facts = append(facts, slog.Float64("cost_usd", t.CostUSD))
+	}
+	failed := 0
+	var perTool []slog.Attr
+	index := map[string]int{}
+	for _, c := range t.ToolCalls {
+		if c.Failed {
+			failed++
+		}
+		i, ok := index[c.Name]
+		if !ok {
+			i = len(perTool)
+			index[c.Name] = i
+			perTool = append(perTool, slog.Int(c.Name, 0))
+		}
+		perTool[i].Value = slog.IntValue(int(perTool[i].Value.Int64()) + 1)
+	}
+	facts = append(facts,
+		slog.Int("tool_calls", len(t.ToolCalls)),
+		slog.Int("tool_failures", failed),
+		slog.Attr{Key: "tools", Value: slog.GroupValue(perTool...)},
+	)
+	if s := t.Subagents; s.Runs > 0 {
+		subagents := []slog.Attr{
+			slog.Int("runs", s.Runs),
+			slog.Int("tokens_in", s.PromptTokens),
+			slog.Int("tokens_cached", s.CachedTokens),
+			slog.Int("tokens_out", s.CompletionTokens),
+			slog.Int("unpriced_runs", s.UnpricedRuns),
+		}
+		if s.UnpricedRuns < s.Runs {
+			subagents = append(subagents, slog.Float64("cost_usd", s.CostUSD))
+		}
+		facts = append(facts, slog.Attr{Key: "subagents", Value: slog.GroupValue(subagents...)})
+	}
+	return facts
 }
 
 const summarySeparator = " · "
@@ -225,7 +283,7 @@ func (q *Querier[C]) SendTranscriptToStderr() {
 func (q *Querier[C]) ShowProgressOn(progress io.Writer) {
 	out := q.out
 	if out == nil {
-		out = os.Stdout
+		out = runenv.From(q.diagContext()).Stdout()
 	}
 	if q.Raw || q.structuredOutput || q.debug || utils.IsTerminalWriter(out) || !utils.IsTerminalWriter(progress) {
 		return
@@ -247,12 +305,12 @@ func (q *Querier[C]) handOffReply(reply string) error {
 	} else if q.dims.Width > 0 {
 		utils.UpdateMessageTerminalMetadata(reply, &q.line, &q.lineCount, q.dims.Width)
 		if err := table.ClearTermTo(q.out, q.lineCount-1); err != nil {
-			return fmt.Errorf("clear streamed reply: %w", err)
+			return diag.Errorf("clear streamed reply: %w", err)
 		}
 	}
 	reply = strings.TrimRight(stripThinkingBlocks(reply), "\n") + "\n"
 	if _, err := io.WriteString(q.replyOut, reply); err != nil {
-		return fmt.Errorf("write reply: %w", err)
+		return diag.Errorf("write reply: %w", err)
 	}
 	lines := strings.Count(reply, "\n")
 	note := fmt.Sprintf("▸ reply written to stdout (%d lines)", lines)
@@ -270,12 +328,12 @@ func (q *Querier[C]) transcriptOut() io.Writer {
 		if q.errOut != nil {
 			return q.errOut
 		}
-		return os.Stderr
+		return runenv.From(q.diagContext()).Stderr()
 	}
 	if q.out != nil {
 		return q.out
 	}
-	return os.Stdout
+	return runenv.From(q.diagContext()).Stdout()
 }
 
 // holdsStepText is -reply-only on a non-terminal stdout: a step's prose is
@@ -290,9 +348,20 @@ func (q *Querier[C]) releaseStepText(text string, endedWithTool bool) error {
 	if !q.holdsStepText() || text == "" {
 		return nil
 	}
+	if q.json.active() {
+		// The final step's text is the reply record; narration before a tool
+		// call is transcript, on the destination the text form uses.
+		if !endedWithTool {
+			return nil
+		}
+		if err := q.jsonTranscript().ReplyDelta(text); err != nil {
+			return diag.Errorf("write step text record: %w", err)
+		}
+		return nil
+	}
 	w := q.out
 	if w == nil {
-		w = os.Stdout
+		w = runenv.From(q.diagContext()).Stdout()
 	}
 	if endedWithTool {
 		w = q.transcriptOut()
@@ -301,7 +370,7 @@ func (q *Querier[C]) releaseStepText(text string, endedWithTool bool) error {
 		}
 	}
 	if _, err := io.WriteString(w, text); err != nil {
-		return fmt.Errorf("print step text: %w", err)
+		return diag.Errorf("print step text: %w", err)
 	}
 	return nil
 }
@@ -330,10 +399,22 @@ func (q *Querier[C]) finishQuery(start time.Time, chat, result pub_models.Chat, 
 	if !q.querySummary {
 		return settleErr
 	}
+	if q.json.active() {
+		q.reportSummaryRecord(summary.message(), summary.facts())
+		return settleErr
+	}
 	if err := q.reportSummary(summary.Lines()); err != nil {
-		return errors.Join(settleErr, fmt.Errorf("print query summary: %w", err))
+		return errors.Join(settleErr, diag.Errorf("print query summary: %w", err))
 	}
 	return settleErr
+}
+
+// reportSummaryRecord is the JSON format's summary: a diagnostic record with
+// the summary as facts, delivered by the run's Reporter (F12, F14). A failed
+// Report changes nothing for the run (F6).
+func (q *Querier[C]) reportSummaryRecord(message string, facts []slog.Attr) {
+	ctx := q.diagContext()
+	runenv.From(ctx).Report(ctx, runenv.TypeRunSummary, message, facts...)
 }
 
 // settleRunTally folds in what the run's subagents reported and hands the
@@ -345,7 +426,7 @@ func (q *Querier[C]) settleRunTally(t *RunTally) error {
 	subagents, collectErr := q.runTally.Collect()
 	t.Subagents = subagents
 	if _, err := q.runTally.Report(t.totals().Add(subagents)); err != nil {
-		return errors.Join(collectErr, fmt.Errorf("report to parent run: %w", err))
+		return errors.Join(collectErr, diag.Errorf("report to parent run: %w", err))
 	}
 	return collectErr
 }
@@ -357,7 +438,7 @@ func (q *Querier[C]) reportSummary(lines []string) error {
 	if q.usesActivityViewport() {
 		w := q.out
 		if w == nil {
-			w = os.Stdout
+			w = runenv.From(q.diagContext()).Stdout()
 		}
 		var out strings.Builder
 		out.WriteString(table.Colorize(utils.LoopTitleColor(), lines[0]) + "\n")
@@ -369,7 +450,7 @@ func (q *Querier[C]) reportSummary(lines []string) error {
 	}
 	w := q.errOut
 	if w == nil {
-		w = os.Stderr
+		w = runenv.From(q.diagContext()).Stderr()
 	}
 	_, err := io.WriteString(w, strings.Join(lines, "\n")+"\n")
 	return err

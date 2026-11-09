@@ -10,6 +10,10 @@ import (
 	"path/filepath"
 
 	"github.com/baalimago/clai/internal"
+	"github.com/baalimago/clai/internal/diag"
+	"github.com/baalimago/clai/internal/display"
+	"github.com/baalimago/clai/internal/runenv"
+	"github.com/baalimago/clai/internal/stdio"
 	"github.com/baalimago/clai/internal/tools/mcp/mcpauth"
 	"github.com/baalimago/clai/internal/tools/mcp/serverconfig"
 	"github.com/baalimago/clai/pkg/claierr"
@@ -52,14 +56,16 @@ Examples:
 		if len(args) < 2 {
 			return &McpAuthUsageError{}
 		}
-		return RunAuth(ctx, args[1], os.Stdin)
+		return RunAuth(ctx, args[1], runenv.From(ctx).Stdin())
 	}
 	// c has Subs but no default action of its own, so a bare invocation
 	// must not fall through to internal.Command.Run's querier.Query path,
 	// which has no querier here and panics (R1-04). Printing help mirrors
 	// a usage error without inventing a model-callable default action.
-	c.OnRun = func(_ context.Context, c *internal.Command) error {
-		fmt.Println(c.Help())
+	c.OnRun = func(ctx context.Context, c *internal.Command) error {
+		if _, err := fmt.Fprintln(runenv.From(ctx).Stdout(), c.Help()); err != nil {
+			return diag.Errorf("print mcp help: %w", err)
+		}
 		return nil
 	}
 	c.Subs = map[string]cmd.Command{"auth": auth}
@@ -71,13 +77,26 @@ Examples:
 // token store entry. trustInput feeds the printed-URL fallback's pasted
 // authorization code when the loopback redirect cannot complete.
 func RunAuth(ctx context.Context, serverName string, trustInput io.Reader) error {
-	confDir, err := internal.PrepTheme()
+	confDir, err := internal.PrepTheme(ctx)
 	if err != nil {
 		return &McpAuthConfigDirError{Cause: err}
 	}
 	store := mcpauth.NewTokenStore(path.Join(confDir, mcpauth.TokenStoreDirName))
-	authz := NewAuthorizer(AuthorizerConfig{Store: store, Input: trustInput, Output: os.Stdout, Interactive: true})
-	return runAuthWith(ctx, serverName, confDir, authz)
+	return runAuthWith(ctx, serverName, confDir, NewAuthorizer(runAuthConfig(ctx, store, trustInput)))
+}
+
+// runAuthConfig is RunAuth's authorizer configuration for the run on ctx:
+// under -json the stages are plain and the paste question is a select
+// prompt record on stdout (F12, F13).
+func runAuthConfig(ctx context.Context, store *mcpauth.TokenStore, trustInput io.Reader) AuthorizerConfig {
+	env := runenv.From(ctx)
+	config := AuthorizerConfig{Store: store, Input: trustInput, Output: env.Stdout(), Interactive: true, Plain: env.JSON()}
+	if env.JSON() {
+		config.PasteQuestion = func(question string) error {
+			return env.ShowPrompt(stdio.Stdout, display.Prompt{Kind: "select", Text: question})
+		}
+	}
+	return config
 }
 
 // runAuthWith is RunAuth's testable core: it takes an already-constructed
@@ -99,7 +118,8 @@ func runAuthWith(ctx context.Context, serverName, confDir string, authz *mcpauth
 		return &McpAuthConnectError{Name: serverName, Cause: err}
 	}
 
-	if err := WriteAuthMessage(os.Stdout, fmt.Sprintf("Connecting to MCP server %q at %s...", serverName, server.Url)); err != nil {
+	env := runenv.From(ctx)
+	if err := writeAuthMessage(env.Stdout(), fmt.Sprintf("Connecting to MCP server %q at %s...", serverName, server.Url), env.JSON()); err != nil {
 		return err
 	}
 	connector := NewHttpConnector(ctx, server, nil)
@@ -119,7 +139,7 @@ func runAuthWith(ctx context.Context, serverName, confDir string, authz *mcpauth
 	}
 
 	store := mcpauth.NewTokenStore(path.Join(confDir, mcpauth.TokenStoreDirName))
-	return WriteAuthMessage(os.Stdout, fmt.Sprintf("Authorized %q. Token stored at %s (mode %#o).", serverName, store.Path(serverName), mcpauth.TokenStoreFileMode))
+	return writeAuthMessage(env.Stdout(), fmt.Sprintf("Authorized %q. Token stored at %s (mode %#o).", serverName, store.Path(serverName), mcpauth.TokenStoreFileMode), env.JSON())
 }
 
 // loadNamedServer reads and validates the named server's config file

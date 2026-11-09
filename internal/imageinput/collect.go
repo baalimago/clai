@@ -3,6 +3,7 @@ package imageinput
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -11,12 +12,15 @@ import (
 	"slices"
 
 	"github.com/baalimago/clai/internal/asset"
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/glob"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
 type CollectRequest struct {
+	// Context carries the run whose diagnostics the collection reports.
+	Context      context.Context
 	Images       []string  // -img/-image values in flag order: paths or globs, "~" allowed
 	Glob         string    // -g/-glob value; "" when unset
 	Stdin        io.Reader // nil when stdin is a terminal
@@ -80,7 +84,7 @@ func (c collector) Collect(req CollectRequest) (Collected, error) {
 		out.Images = append(out.Images, images...)
 	}
 	if req.Glob != "" {
-		images, messages, err := c.splitGlob(req.Glob)
+		images, messages, err := c.splitGlob(req.Context, req.Glob)
 		if err != nil {
 			return Collected{}, err
 		}
@@ -91,7 +95,7 @@ func (c collector) Collect(req CollectRequest) (Collected, error) {
 	if stdin != nil {
 		data, err := io.ReadAll(stdin)
 		if err != nil {
-			return Collected{}, fmt.Errorf("failed to read stdin: %w", err)
+			return Collected{}, diag.Errorf("failed to read stdin: %w", err)
 		}
 		image, err := c.stdinImage(data)
 		switch {
@@ -115,11 +119,11 @@ func (c collector) Collect(req CollectRequest) (Collected, error) {
 func (c collector) imagesMatching(pattern string) ([]pub_models.ImagePart, error) {
 	expanded, err := utils.ReplaceTildeWithHome(pattern)
 	if err != nil {
-		return nil, fmt.Errorf("image pattern %q: %w", pattern, err)
+		return nil, diag.Errorf("image pattern %q: %w", pattern, err)
 	}
 	paths, err := filepath.Glob(expanded)
 	if err != nil {
-		return nil, fmt.Errorf("image pattern %q: %w", pattern, err)
+		return nil, diag.Errorf("image pattern %q: %w", pattern, err)
 	}
 	if len(paths) == 0 {
 		return nil, &NoMatchError{Pattern: pattern}
@@ -148,7 +152,7 @@ func (c collector) readImageFile(path string) (pub_models.ImagePart, error) {
 func (c collector) userImage(data []byte, source string) (pub_models.ImagePart, error) {
 	mime, err := asset.Sniff(data)
 	if err != nil {
-		return pub_models.ImagePart{}, fmt.Errorf("image %s: %w", source, err)
+		return pub_models.ImagePart{}, diag.Errorf("image %s: %w", source, err)
 	}
 	if size := int64(len(data)); size > c.limit {
 		return pub_models.ImagePart{}, &asset.ImageTooLargeError{Path: source, Size: size, Limit: c.limit}
@@ -156,10 +160,13 @@ func (c collector) userImage(data []byte, source string) (pub_models.ImagePart, 
 	return pub_models.ImagePart{MIME: mime, Origin: pub_models.OriginUser, Data: data}, nil
 }
 
-func (c collector) splitGlob(pattern string) ([]pub_models.ImagePart, []pub_models.Message, error) {
-	files, err := glob.ReadFiles(pattern)
+func (c collector) splitGlob(ctx context.Context, pattern string) ([]pub_models.ImagePart, []pub_models.Message, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	files, err := glob.ReadFiles(ctx, pattern)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to parse glob string: '%v', err: %w", pattern, err)
+		return nil, nil, diag.Errorf("failed to parse glob string: '%v', err: %w", pattern, err)
 	}
 	var images []pub_models.ImagePart
 	var messages []pub_models.Message

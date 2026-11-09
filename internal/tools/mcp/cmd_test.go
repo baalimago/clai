@@ -2,16 +2,22 @@ package mcp
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
 
+	"github.com/baalimago/clai/internal/jsonl"
+	"github.com/baalimago/clai/internal/runenv"
+	"github.com/baalimago/clai/internal/stdio"
 	"github.com/baalimago/clai/internal/tools/mcp/httptestserver"
 	"github.com/baalimago/clai/internal/tools/mcp/mcpauth"
 	"github.com/baalimago/clai/internal/tools/mcp/oauthtestserver"
@@ -228,5 +234,72 @@ func TestLoadNamedServerExpandsEnvfileRelativeToConfigDir(t *testing.T) {
 	want := filepath.Join(confDir, mcpServersSubdir, "relative.env")
 	if server.EnvFile != want {
 		t.Errorf("EnvFile = %q, want %q (resolved against the config file's directory, not the process CWD)", server.EnvFile, want)
+	}
+}
+
+// TestMcpAuthCommandUnderJSON pins F12 and F13 for `clai -json mcp auth`:
+// every stage is a plain output record, without the terminal look, and the
+// paste question is a select prompt record; the text form keeps the look
+// and has no question callback.
+func TestMcpAuthCommandUnderJSON(t *testing.T) {
+	store := mcpauth.NewTokenStore(t.TempDir())
+	if text := runAuthConfig(t.Context(), store, strings.NewReader("")); text.Plain || text.PasteQuestion != nil {
+		t.Fatalf("text config = %+v, want the look and no question callback", text)
+	}
+
+	as := oauthtestserver.New()
+	defer as.Close()
+	as.Configure(func(c *oauthtestserver.Config) { c.FixedAccessToken = "mcp-auth-json-token" })
+	hs := httptestserver.New()
+	defer hs.Close()
+	as.Configure(func(c *oauthtestserver.Config) { c.Resource = hs.URL })
+	hs.Configure(func(c *httptestserver.Config) {
+		c.RequireBearerToken = "mcp-auth-json-token"
+		c.ChallengeResourceMetaURL = as.ProtectedResourceURL()
+	})
+	confDir := t.TempDir()
+	writeNamedServerConfig(t, confDir, "httpecho", hs.URL)
+
+	var stdout bytes.Buffer
+	env := runenv.New(runenv.Config{
+		Streams: stdio.New(stdio.Config{Format: jsonl.FormatJSON, Stdin: strings.NewReader(""), Stdout: &stdout, Stderr: io.Discard}),
+		Format:  jsonl.FormatJSON,
+	})
+	ctx := runenv.With(t.Context(), env)
+	config := runAuthConfig(ctx, mcpauth.NewTokenStore(filepath.Join(confDir, mcpauth.TokenStoreDirName)), strings.NewReader(""))
+	if !config.Plain || config.PasteQuestion == nil {
+		t.Fatalf("json config = %+v, want plain stages and a paste question", config)
+	}
+	if err := config.PasteQuestion("Paste the code"); err != nil {
+		t.Fatalf("paste question: %v", err)
+	}
+	authz := NewAuthorizer(config)
+	mcpauth.WithBrowserOpener(oauthtestserver.NewAutoFollowOpener())(authz)
+	if err := runAuthWith(ctx, "httpecho", confDir, authz); err != nil {
+		t.Fatalf("runAuthWith: %v", err)
+	}
+	if err := env.Streams().Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	var stages []string
+	for line := range strings.SplitSeq(strings.TrimSuffix(stdout.String(), "\n"), "\n") {
+		var rec struct{ Type, Kind, Text string }
+		if err := json.Unmarshal([]byte(line), &rec); err != nil {
+			t.Fatalf("stdout line %q is not a record: %v", line, err)
+		}
+		if strings.ContainsAny(rec.Text, "▸\x1b") || strings.HasPrefix(rec.Text, "  ") {
+			t.Fatalf("record carries the terminal look: %q", line)
+		}
+		if rec.Type == "prompt" && (rec.Kind != "select" || rec.Text != "Paste the code") {
+			t.Fatalf("paste question record = %q", line)
+		}
+		if rec.Type == "output" && strings.HasPrefix(rec.Text, "mcp.auth: ") {
+			stages = append(stages, rec.Text)
+		}
+	}
+	for _, want := range []string{"mcp.auth: Connecting to MCP server", "mcp.auth: Discovering", "mcp.auth: Authorized"} {
+		if !slices.ContainsFunc(stages, func(s string) bool { return strings.HasPrefix(s, want) }) {
+			t.Fatalf("stages %q lack %q", stages, want)
+		}
 	}
 }

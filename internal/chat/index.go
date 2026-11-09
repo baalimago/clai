@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +12,9 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/baalimago/clai/internal/diag"
+	"github.com/baalimago/clai/internal/runenv"
+	"github.com/baalimago/clai/internal/stdio"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/table"
@@ -159,20 +163,20 @@ func chatIndexRowFromChat(chat pub_models.Chat) chatIndexRow {
 	return row
 }
 
-func readChatIndex(convDir string) ([]chatIndexRow, error) {
+func readChatIndex(ctx context.Context, convDir string) ([]chatIndexRow, error) {
 	if SkipIndex {
 		return []chatIndexRow{}, nil
 	}
 	b, err := os.ReadFile(chatIndexPath(convDir))
 	if err != nil {
 		if os.IsNotExist(err) {
-			rows, rebuildErr := rebuildChatIndex(convDir, 0, "cache missing")
+			rows, rebuildErr := rebuildChatIndex(ctx, convDir, 0, "cache missing")
 			if rebuildErr != nil {
-				return nil, fmt.Errorf("failed to rebuild missing chat index: %w", rebuildErr)
+				return nil, diag.Errorf("failed to rebuild missing chat index: %w", rebuildErr)
 			}
 			return rows, nil
 		}
-		return nil, fmt.Errorf("failed to read chat index: %w", err)
+		return nil, diag.Errorf("failed to read chat index: %w", err)
 	}
 
 	// Try versioned wrapper first; fall back to legacy unwrapped array.
@@ -182,35 +186,35 @@ func readChatIndex(convDir string) ([]chatIndexRow, error) {
 		var rows []chatIndexRow
 		if err := json.Unmarshal(b, &rows); err != nil {
 			// Both formats failed — cache is corrupted; rebuild from scratch.
-			table.ClearLine(os.Stderr)
-			rows, rebuildErr := rebuildChatIndex(convDir, 0, "corrupted cache")
+			clearProgressLine(ctx)
+			rows, rebuildErr := rebuildChatIndex(ctx, convDir, 0, "corrupted cache")
 			if rebuildErr != nil {
-				return nil, fmt.Errorf("failed to rebuild corrupted chat index: %w", rebuildErr)
+				return nil, diag.Errorf("failed to rebuild corrupted chat index: %w", rebuildErr)
 			}
 			return rows, nil
 		}
-		rows, rebuildErr := rebuildChatIndex(convDir, 1, "legacy cache (no version) → v2: GroupKey hashing")
+		rows, rebuildErr := rebuildChatIndex(ctx, convDir, 1, "legacy cache (no version) → v2: GroupKey hashing")
 		if rebuildErr != nil {
-			return nil, fmt.Errorf("failed to rebuild chat index for migration: %w", rebuildErr)
+			return nil, diag.Errorf("failed to rebuild chat index for migration: %w", rebuildErr)
 		}
 		return rows, nil
 	}
 
 	if cache.Version < chatIndexVersion {
 		reason := fmt.Sprintf("v%d → v%d: schema upgrade", cache.Version, chatIndexVersion)
-		rows, rebuildErr := rebuildChatIndex(convDir, cache.Version, reason)
+		rows, rebuildErr := rebuildChatIndex(ctx, convDir, cache.Version, reason)
 		if rebuildErr != nil {
-			return nil, fmt.Errorf("failed to rebuild chat index for version upgrade: %w", rebuildErr)
+			return nil, diag.Errorf("failed to rebuild chat index for version upgrade: %w", rebuildErr)
 		}
 		return rows, nil
 	}
 
 	rows, err := replayIndexJournal(convDir, cache.Rows)
 	if errors.Is(err, errCorruptJournal) {
-		table.ClearLine(os.Stderr)
-		rows, rebuildErr := rebuildChatIndex(convDir, 0, "corrupted journal")
+		clearProgressLine(ctx)
+		rows, rebuildErr := rebuildChatIndex(ctx, convDir, 0, "corrupted journal")
 		if rebuildErr != nil {
-			return nil, fmt.Errorf("failed to rebuild chat index after a corrupt journal: %w", rebuildErr)
+			return nil, diag.Errorf("failed to rebuild chat index after a corrupt journal: %w", rebuildErr)
 		}
 		return rows, nil
 	}
@@ -231,14 +235,14 @@ func readChatIndex(convDir string) ([]chatIndexRow, error) {
 // one-file first run used to print a header and a 100 % progress line.
 const indexProgressBatch = 100
 
-func rebuildChatIndex(convDir string, fromVersion int, reason string) ([]chatIndexRow, error) {
+func rebuildChatIndex(ctx context.Context, convDir string, fromVersion int, reason string) ([]chatIndexRow, error) {
 	files, err := os.ReadDir(convDir)
 	if err != nil {
 		if os.IsNotExist(err) {
 			// No conversations dir yet: there is nothing to index.
 			return []chatIndexRow{}, nil
 		}
-		return nil, fmt.Errorf("failed to list conversations for index rebuild: %w", err)
+		return nil, diag.Errorf("failed to list conversations for index rebuild: %w", err)
 	}
 	total := 0
 	for _, f := range files {
@@ -253,11 +257,12 @@ func rebuildChatIndex(convDir string, fromVersion int, reason string) ([]chatInd
 	// silent in-memory scan for listing with no persist attempt either.
 	readonly := utils.NoCreateConfig
 	announce := !readonly && total >= indexProgressBatch
+	progress := runenv.From(ctx).Stderr()
 	if announce {
 		if fromVersion == 0 {
-			fmt.Fprintf(os.Stderr, "Building cache index v%d (%s):\n", chatIndexVersion, reason)
+			fmt.Fprintf(progress, "Building cache index v%d (%s):\n", chatIndexVersion, reason)
 		} else {
-			fmt.Fprintf(os.Stderr, "Rebuilding cache index %s:\n", reason)
+			fmt.Fprintf(progress, "Rebuilding cache index %s:\n", reason)
 		}
 	}
 
@@ -271,12 +276,12 @@ func rebuildChatIndex(convDir string, fromVersion int, reason string) ([]chatInd
 			continue
 		}
 		chatPath := path.Join(convDir, file.Name())
-		chat, err := FromPath(chatPath)
+		chat, err := FromPath(ctx, chatPath)
 		if err != nil {
 			// One corrupt/stray file must not permanently break list/search
 			// for every invocation; index what parses and warn.
-			table.ClearLine(os.Stderr)
-			fmt.Fprintf(os.Stderr, "  skipping unreadable chat %q: %v\n", chatPath, err)
+			clearProgressLine(ctx)
+			fmt.Fprintf(progress, "  skipping unreadable chat %q: %v\n", chatPath, err)
 			continue
 		}
 		// Stamp GroupKey for pre-existing conversations that lack it
@@ -295,13 +300,13 @@ func rebuildChatIndex(convDir string, fromVersion int, reason string) ([]chatInd
 			estSec := float64(remaining) / itemsPerSec
 			est := time.Duration(estSec) * time.Second
 			pct := float64(processed) / float64(total) * 100
-			table.ClearLine(os.Stderr)
-			fmt.Fprintf(os.Stderr, "  %d/%d (%.0f%%, est. left: %v)", processed, total, pct, est.Truncate(time.Second))
+			clearProgressLine(ctx)
+			fmt.Fprintf(progress, "  %d/%d (%.0f%%, est. left: %v)", processed, total, pct, est.Truncate(time.Second))
 			batchStart = time.Now()
 		}
 	}
 	if announce {
-		fmt.Fprint(os.Stderr, "\n")
+		fmt.Fprint(progress, "\n")
 	}
 	if !readonly {
 		// The rebuild read every conversation, so writeChatIndex drops the
@@ -309,11 +314,20 @@ func rebuildChatIndex(convDir string, fromVersion int, reason string) ([]chatInd
 		if err := writeChatIndex(convDir, rows); err != nil {
 			// The cache is an optimization; listing must still work from the
 			// in-memory rebuild when the filesystem is read-only.
-			table.ClearLine(os.Stderr)
-			fmt.Fprintf(os.Stderr, "warning: failed to persist chat index cache: %v\n", err)
+			clearProgressLine(ctx)
+			runenv.Warnf(ctx, runenv.SubsystemChat, "failed to persist chat index cache: %v", err)
 		}
 	}
 	return rows, nil
+}
+
+// clearProgressLine erases the progress line, only on a terminal stderr so
+// no ANSI reaches a pipe.
+func clearProgressLine(ctx context.Context) {
+	env := runenv.From(ctx)
+	if env.IsTerminal(stdio.Stderr) {
+		table.ClearLine(env.Stderr())
+	}
 }
 
 func entryModTime(entry fs.DirEntry) time.Time {
@@ -343,26 +357,26 @@ func writeChatIndexCache(convDir string, rows []chatIndexRow) error {
 	cache := chatIndexCache{Version: chatIndexVersion, Rows: rows}
 	b, err := json.Marshal(cache)
 	if err != nil {
-		return fmt.Errorf("failed to encode chat index JSON: %w", err)
+		return diag.Errorf("failed to encode chat index JSON: %w", err)
 	}
 	if err := utils.WriteFileAtomic(chatIndexPath(convDir), b, 0o644); err != nil {
-		return fmt.Errorf("failed to write chat index: %w", err)
+		return diag.Errorf("failed to write chat index: %w", err)
 	}
 	return nil
 }
 
-func upsertChatIndex(convDir string, chat pub_models.Chat) error {
-	return UpsertChatIndexBatch(convDir, []pub_models.Chat{chat})
+func upsertChatIndex(ctx context.Context, convDir string, chat pub_models.Chat) error {
+	return UpsertChatIndexBatch(ctx, convDir, []pub_models.Chat{chat})
 }
 
 // UpsertChatIndexBatch records every chat's row in one journal append, so a
 // save never rewrites the whole cache (D24).
-func UpsertChatIndexBatch(convDir string, chats []pub_models.Chat) error {
+func UpsertChatIndexBatch(ctx context.Context, convDir string, chats []pub_models.Chat) error {
 	if SkipIndex || len(chats) == 0 {
 		return nil
 	}
-	if err := appendIndexJournal(convDir, chats); err != nil {
-		return fmt.Errorf("failed to persist chat index: %w", err)
+	if err := appendIndexJournal(ctx, convDir, chats); err != nil {
+		return diag.Errorf("failed to persist chat index: %w", err)
 	}
 	return nil
 }
@@ -377,13 +391,13 @@ func replaceIndexRow(rows []chatIndexRow, row chatIndexRow) []chatIndexRow {
 	return append(rows, row)
 }
 
-func NewChatIndexPaginator(convDir string) (*ChatIndexPaginator, error) {
+func NewChatIndexPaginator(ctx context.Context, convDir string) (*ChatIndexPaginator, error) {
 	if SkipIndex {
 		return &ChatIndexPaginator{rows: []chatIndexRow{}}, nil
 	}
-	rows, err := readChatIndex(convDir)
+	rows, err := readChatIndex(ctx, convDir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read chat index paginator rows: %w", err)
+		return nil, diag.Errorf("failed to read chat index paginator rows: %w", err)
 	}
 	return &ChatIndexPaginator{rows: rows}, nil
 }

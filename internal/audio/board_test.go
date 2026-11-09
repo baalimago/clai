@@ -16,7 +16,7 @@ func TestDiarizationBoardLayout(t *testing.T) {
 	plainStatus(t)
 	out := &bytes.Buffer{}
 	spans := []SourceInterval{{Start: 0, End: 1266 * time.Second}, {Start: 1266 * time.Second, End: 2532 * time.Second}}
-	b := newProgressBoard(out, false, "calibrated diarization  meeting.wav  2 cores × 21m06s  3 workers", spans)
+	b := newProgressBoard(out, false, false, "calibrated diarization  meeting.wav  2 cores × 21m06s  3 workers", spans)
 	b.Update(0, func(r *board.Row) {
 		r.Mark, r.Cells[colState], r.Cells[colReq], r.Cells[colVerified], r.Cells[colUnresolved], r.Cells[colUnknown] = board.MarkDone, "calibrated", "2/4", "3/3", "0", "12s"
 		r.Elapsed = 12*time.Minute + 32*time.Second

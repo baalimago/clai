@@ -100,15 +100,52 @@ func importLines(pending []sync.PendingImport, s style) []string {
 	for _, g := range tools {
 		rows = append(rows, []string{g.name, count(g.conversations), count(g.conversations - g.grown), count(g.grown), count(g.messages), human(g.bytes), ""})
 	}
-	widths := columnWidths(header, rows)
 	lines := []string{
 		s.Head("from other tools", count(total.conversations)+" "+plural(total.conversations, "conversation", "conversations")+" to export", count(total.messages)+" messages", human(total.bytes)+" in their own files"),
-		"    " + s.Secondary(columns(header, widths, 0)),
 	}
-	for _, r := range rows {
-		lines = append(lines, "  "+s.Primary("■")+" "+columns(r, widths, 0))
-	}
+	lines = append(lines, tableLines(header, rows, 0, s)...)
 	return append(lines, s.Link("  ", "clai cloud commit -imports"))
+}
+
+// tableLines lays out a header and its rows, a box before each row; when
+// Plain, each row is "<first>: <header> <cell>, ..." instead, with no box
+// and no columns (F12).
+func tableLines(header []string, rows [][]string, peekRoom int, s style) []string {
+	if s.Plain {
+		return plainTable(header, rows)
+	}
+	widths := columnWidths(header, rows)
+	lines := []string{"    " + s.Secondary(columns(header, widths, peekRoom))}
+	for _, r := range rows {
+		lines = append(lines, "  "+s.Primary("■")+" "+columns(r, widths, peekRoom))
+	}
+	return lines
+}
+
+func plainTable(header []string, rows [][]string) []string {
+	lines := make([]string, 0, len(rows))
+	for _, r := range rows {
+		var cells []string
+		for i := 1; i < len(r); i++ {
+			switch {
+			case r[i] == "":
+			case header[i] == "":
+				cells = append(cells, r[i])
+			default:
+				cells = append(cells, header[i]+" "+r[i])
+			}
+		}
+		lines = append(lines, "  "+r[0]+": "+strings.Join(cells, ", "))
+	}
+	return lines
+}
+
+// separator joins the parts of a detail: " · ", or ", " when Plain.
+func separator(s style) string {
+	if s.Plain {
+		return ", "
+	}
+	return " · "
 }
 
 // columnWidths is the widest cell of every column but the last.
@@ -296,15 +333,10 @@ func changeGroups(st sync.Status, s style) []string {
 	for _, w := range widths {
 		peekRoom -= w + 1
 	}
-	lines := []string{
-		"  " + s.Secondary(strings.Join(mix, " · ")),
-		"    " + s.Secondary(columns(header, widths, peekRoom)),
-	}
 	for i, r := range rows {
-		r[len(r)-1] = peek(groups[i], peekRoom)
-		lines = append(lines, "  "+s.Primary("■")+" "+columns(r, widths, peekRoom))
+		r[len(r)-1] = peek(groups[i], peekRoom, separator(s))
 	}
-	return lines
+	return append([]string{"  " + s.Secondary(strings.Join(mix, separator(s)))}, tableLines(header, rows, peekRoom, s)...)
 }
 
 // columns lays out a row: the name padded, the counts right-aligned and
@@ -321,7 +353,7 @@ func columns(cells []string, widths []int, peekRoom int) string {
 
 // peek names the largest files of a group, as many as fit in room, and
 // counts the rest.
-func peek(g group, room int) string {
+func peek(g group, room int, sep string) string {
 	if len(g.items) == 0 {
 		return ""
 	}
@@ -335,9 +367,9 @@ func peek(g group, room int) string {
 		parts = append(parts, cut(strings.TrimSuffix(strings.TrimPrefix(c.Path, prefix), ".json"), peekName)+" "+human(c.Size))
 	}
 	for {
-		text := strings.Join(parts, " · ")
+		text := strings.Join(parts, sep)
 		if more := len(items) - len(parts); more > 0 {
-			text = strings.TrimPrefix(text+" · +"+count(more)+" more", " · ")
+			text = strings.TrimPrefix(text+sep+"+"+count(more)+" more", sep)
 		}
 		if len(parts) <= 1 || utf8.RuneCountInString(text) <= room {
 			return text

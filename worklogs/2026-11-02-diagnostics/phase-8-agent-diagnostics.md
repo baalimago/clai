@@ -81,6 +81,7 @@ Consumes: `Reporter.Report`, `Deliverer`, `Type`, `NewReporter` (phase 4),
 | `TestAgentLoggerCompatibility`      | contract suite | WithDiagnosticReporter.1, F3           | Both the existing message logger and a diagnostic Reporter               | Each receives its own records                              | Mix diagnostics into message records                        |
 | `TestAgentDelivererOption`          | contract suite | WithDiagnosticDeliverer.1              | A recording Deliverer at LevelDebug and at LevelError, both options given in each order | Events at or above the Level reach the Deliverer whatever their mode; the later option wins | Require the caller to import `internal/diag` or build a Reporter |
 | `TestAgentDiagnosticTypes`          | contract suite | DiagnosticTypes.1                      | A Reporter registered with `DiagnosticTypes()` and every diagnostic-producing scenario | No event is refused as unknown; names are unique | Emit an event whose type is not declared                    |
+| `TestAgentInternalDiagnostics`      | contract suite | DiagnosticTypes.1, WithDiagnosticReporter.1, WithDiagnosticDeliverer.1, Setup.1, F3 | A setup that reports through clai's internal producers (a warning and debug detail), with a Deliverer at LevelDebug and at LevelWarn, with a caller's Reporter, and with neither | The internal events reach the Deliverer at its level and the Reporter with their registered subsystem and level; `DiagnosticTypes()` declares them; with neither the run reports nothing | Write to the process streams or report without a Reporter |
 
 ## Error management
 
@@ -103,6 +104,14 @@ None.
 The caller owns Reporter configuration and output. The Reporter does not
 replace `WithLogger` and is absent by default.
 
+The agent reports what its run reports (R4-03, a provisional decision of the
+fix brief, 2026-11-10): with either option, the events of clai's internal
+producers during `Setup` and `Query` reach the caller too, so
+`DiagnosticTypes()` holds the internal registry (`internal/runenv` `Types`)
+besides the agent's own types. With `WithDiagnosticDeliverer` the run's
+levels are the option's Level; with `WithDiagnosticReporter` every event
+reaches the Reporter, which applies its own level.
+
 Setup.2 and Query.2 are a plan proposal. The maintainer skipped the question
 of how a failing caller-supplied Reporter affects a call (Q19, notebook
 `clai/diagnostics-planning-decisions.md`) and decides it at the interface
@@ -119,7 +128,22 @@ None.
 | replan    | 2c9c4ff+wip | —       | V1-04: `WithDiagnosticReporter` is in the block; Setup.2 and Query.2 decide the failing-Reporter case per F6. V1-05: `DiagnosticTypes` declared. V1-11: `AgentDiagnostics` renamed `SetupQuerier`. V1-03: Query.1 cites F9; F8 no longer binds this phase. |
 | replan    | 2c9c4ff+wip | —       | F10: `WithDiagnosticDeliverer(Deliverer, Level)` added as the one-line path; the agent builds its Reporter internally. |
 | replan    | 2c9c4ff+wip | —       | V3-01: `SetupQuerier` is on the F10 allowlist. V3-02: WithDiagnosticDeliverer.1 builds through `NewReporter`; Consumes name it and `ResolvedLevels`. |
+| start     | 0ea7c95+wip | gofumpt, staticcheck, vet, `go test ./... -race -cover -count=3 -timeout=30s`, fix, dupl | all rc 0; 92 packages ok, 0 failed; dupl 41 clone groups |
+| end       | 0ea7c95+wip | gofumpt, staticcheck, vet, `go test ./... -race -cover -count=3 -timeout=30s`, fix, dupl (shuffled order) | all rc 0; 92 packages ok, 0 failed; `pkg/agent` coverage 96.2%; dupl 41 clone groups |
+| end       | 0ea7c95+wip | gofumpt, staticcheck, vet, `go test ./... -race -cover -count=3 -timeout=30s`, fix, dupl (shuffled order) | all rc 0; 92 packages ok, 0 failed; `pkg/agent` coverage 96.2%; dupl 41 clone groups |
+
+Andon: none.
+Surprises:
+- The Interface block's unnamed parameters (`WithDiagnosticReporter(diagnostic.Reporter)`, `WithDiagnosticDeliverer(diagnostic.Deliverer, diagnostic.Level)`) are named in the written functions so the bodies can use them; the Go signatures are identical.
+- The agent's three types (`agent.setup.config_dir_unavailable` warn immediate, `agent.setup.completed` debug immediate, `agent.query.completed` debug buffered, subsystem `agent`) are body choices; the config-dir event reports the `os.Mkdir` failures `Setup` already ignored.
 
 ## Review findings
 
+### Review 1, 2026-11-09 (root)
+
 None.
+
+Verified good:
+- With no Reporter, `report` returns at once (silent by default, F3).
+- A failed `Report` is discarded (F6).
+- `DiagnosticTypes` returns a fresh slice; a later option wins; a nil Deliverer stays silent.

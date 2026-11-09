@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
@@ -18,10 +19,10 @@ func CheckImageParts(caps ImageCapabilities, vendor, model string, msgs []pub_mo
 			case pub_models.TextPart:
 			case pub_models.ImagePart:
 				if err := checkImage(caps, vendor, model, m.Role, part); err != nil {
-					return fmt.Errorf("message %d part %d: %w", i, j, err)
+					return diag.Errorf("message %d part %d: %w", i, j, err)
 				}
 			default:
-				return fmt.Errorf("message %d part %d: %w: %T", i, j, pub_models.ErrUnknownPartType, p)
+				return diag.Errorf("message %d part %d: %w: %T", i, j, pub_models.ErrUnknownPartType, p)
 			}
 		}
 	}

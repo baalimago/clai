@@ -8,7 +8,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/modelalias"
+	"github.com/baalimago/clai/internal/runenv"
 )
 
 // TranscribeConfig is the transcribe verb's section of audioConfig.json.
@@ -104,7 +106,7 @@ type MockTranscriber struct {
 
 func (m MockTranscriber) Transcribe(_ context.Context, filePath string) ([]Segment, error) {
 	if _, err := os.Stat(filePath); err != nil {
-		return nil, fmt.Errorf("failed to stat audio file: %w", err)
+		return nil, diag.Errorf("failed to stat audio file: %w", err)
 	}
 	segs := []Segment{
 		{Start: 0, End: 1500 * time.Millisecond, Text: "mock transcription"},
@@ -129,21 +131,21 @@ type TranscribeQuerier struct {
 func (q *TranscribeQuerier) Query(ctx context.Context) error {
 	segs, err := q.Splitter.Transcribe(ctx, q.FilePath)
 	if err != nil {
-		return fmt.Errorf("failed to transcribe %v: %w", q.FilePath, err)
+		return diag.Errorf("failed to transcribe %v: %w", q.FilePath, err)
 	}
 	rendered, err := Render(segs, q.Format)
 	if err != nil {
-		return fmt.Errorf("failed to render transcript: %w", err)
+		return diag.Errorf("failed to render transcript: %w", err)
 	}
 	if rendered != "" && !strings.HasSuffix(rendered, "\n") {
 		rendered += "\n"
 	}
 	out := q.Out
 	if out == nil {
-		out = os.Stdout
+		out = runenv.From(ctx).Stdout()
 	}
 	if _, err := io.WriteString(out, rendered); err != nil {
-		return fmt.Errorf("failed to write transcript: %w", err)
+		return diag.Errorf("failed to write transcript: %w", err)
 	}
 	return nil
 }

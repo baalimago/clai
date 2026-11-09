@@ -14,7 +14,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/baalimago/clai/internal/debugflags"
+	"github.com/baalimago/clai/internal/runenv"
+
 	imagegentool "github.com/baalimago/clai/internal/imagegen/tool"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/tools"
@@ -25,10 +26,9 @@ import (
 	"github.com/baalimago/clai/internal/tools/mcp/serverconfig"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/pkg/claierr"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
-	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 
+	"github.com/baalimago/clai/internal/diag"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	pkgtools "github.com/baalimago/clai/pkg/tools"
 )
@@ -44,24 +44,18 @@ func filterMcpServersByProfile(mcpServerPaths []string, userConf Configurations)
 	for _, file := range mcpServerPaths {
 		serverName := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
 
-		if debugflags.Enabled("PROFILES") {
-			ancli.Noticef("checking out: %v...", file)
-		}
+		runenv.Debugf(userConf.diagContext(), runenv.SubsystemProfiles, "checking out: %v...", file)
 	INNER:
 		for _, tool := range userConf.RequestedToolGlobs {
 			toolSplit := strings.Split(tool, "_")
 			// It can't have mcp prefix
 			if len(toolSplit) < 2 {
-				if debugflags.Enabled("PROFILES") {
-					ancli.Noticef("SKIP: no mcp prefix, wrong length of split")
-				}
+				runenv.Debugf(userConf.diagContext(), runenv.SubsystemProfiles, "SKIP: no mcp prefix, wrong length of split")
 				continue
 			}
 			// Its not a mcp server nor tool
 			if toolSplit[0] != "mcp" {
-				if debugflags.Enabled("PROFILES") {
-					ancli.Noticef("SKIP: no mcp prefix")
-				}
+				runenv.Debugf(userConf.diagContext(), runenv.SubsystemProfiles, "SKIP: no mcp prefix")
 				continue
 			}
 			toolServer := toolSplit[1]
@@ -202,7 +196,7 @@ func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configu
 		var err error
 		files, err = filepath.Glob(filepath.Join(mcpServersDir, "*.json"))
 		if err != nil {
-			return nil, fmt.Errorf("failed to list mcp server configs: %w", err)
+			return nil, diag.Errorf("failed to list mcp server configs: %w", err)
 		}
 	}
 
@@ -220,15 +214,13 @@ func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configu
 	// silently preferred url, and neither set reached
 	// exec.CommandContext(ctx, "") (D43, R2-07). validExplicit is validated
 	// exactly as a config-directory file is.
-	validExplicit, transportFailures := validateExplicitServers(explicit, userConf.McpServers)
+	validExplicit, transportFailures := validateExplicitServers(ctx, explicit, userConf.McpServers)
 	// The config-dir servers are ambient; the userConf.McpServers tail is
 	// explicit.
 	explicitTail := len(mcpServers)
 	mcpServers = append(mcpServers, validExplicit...)
 
-	if misc.Truthy(os.Getenv("DEBUG")) {
-		ancli.Okf("mcpServers: %v", debug.IndentedJsonFmt(redactMcpServersForDebug(mcpServers)))
-	}
+	runenv.Debugf(ctx, runenv.SubsystemTextQuerier, "mcpServers: %v", debug.IndentedJsonFmt(redactMcpServersForDebug(mcpServers)))
 	// A per-file parse or validation failure must never be silently dropped
 	// just because some other file in the same directory parsed (D44,
 	// R2-06): before this, the joined error from findConfiguredMcpServers
@@ -237,11 +229,11 @@ func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configu
 	// is reported unconditionally here and, under strict startup, also
 	// joined into the explicit failures returned to the caller.
 	if err != nil {
-		ancli.Warnf("failed to parse mcp server config(s): %v\n", err)
+		runenv.Warnf(ctx, runenv.SubsystemTextQuerier, "failed to parse mcp server config(s): %v\n", err)
 	}
 	if len(mcpServers) == 0 {
 		if err != nil {
-			return nil, fmt.Errorf("failed to find mcpServers: %w", err)
+			return nil, diag.Errorf("failed to find mcpServers: %w", err)
 		}
 		if len(transportFailures) > 0 {
 			return map[string]pub_models.LLMTool{}, errors.Join(transportFailures...)
@@ -276,7 +268,7 @@ func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configu
 
 		mode, modeErr := effectiveStartupMode(mcpServer, strictExplicit)
 		if modeErr != nil {
-			failures.addIfExplicit(explicit, isExplicitIdx, mcpServer.Name, modeErr)
+			failures.addIfExplicit(ctx, explicit, isExplicitIdx, mcpServer.Name, modeErr)
 			toolWg.Done()
 			continue
 		}
@@ -299,7 +291,7 @@ func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configu
 					err = resolveLazyServerViaCache(ctx, cache, mcpServer, sink, runReg, userConf.OutputIsTerminalOrDefault())
 				}
 				if err != nil {
-					failures.addIfExplicit(explicit, isExplicitIdx, mcpServer.Name, err)
+					failures.addIfExplicit(ctx, explicit, isExplicitIdx, mcpServer.Name, err)
 				}
 			}(mcpServer, isExplicitIdx, isHTTP)
 			continue
@@ -338,7 +330,7 @@ func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configu
 			// NewStdioConn and NewHttpConn already return a typed
 			// *claierr.McpServerStartupError naming the "spawn" or "env"
 			// stage, so it is propagated as-is rather than re-wrapped.
-			failures.addIfExplicit(explicit, isExplicitIdx, mcpServer.Name, connErr)
+			failures.addIfExplicit(ctx, explicit, isExplicitIdx, mcpServer.Name, connErr)
 			toolWg.Done()
 			clientContextCancel()
 			continue
@@ -349,7 +341,7 @@ func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configu
 			Server:      mcpServer,
 			Conn:        conn,
 			Cancel:      clientContextCancel,
-			OnHandshake: mcpSchemaCapture(cache, mcpServer),
+			OnHandshake: mcpSchemaCapture(ctx, cache, mcpServer),
 			Sink:        sink,
 		}
 	}
@@ -371,7 +363,7 @@ func setupMcpManager(ctx context.Context, mcpServersDir string, userConf Configu
 			failures.addExplicit(f.ServerName, f.Err)
 			continue
 		}
-		ancli.Warnf("failed to setup mcp server '%v': %v\n", f.ServerName, f.Err)
+		runenv.Warnf(ctx, runenv.SubsystemTextQuerier, "failed to setup mcp server '%v': %v\n", f.ServerName, f.Err)
 	}
 	if explicitFailures := failures.all(); len(explicitFailures) > 0 {
 		return runReg.All(), errors.Join(explicitFailures...)
@@ -404,12 +396,12 @@ type failureCollector struct {
 	errs []error
 }
 
-func (f *failureCollector) addIfExplicit(explicit, isExplicitIdx bool, serverName string, err error) {
+func (f *failureCollector) addIfExplicit(ctx context.Context, explicit, isExplicitIdx bool, serverName string, err error) {
 	if explicit && isExplicitIdx {
 		f.addExplicit(serverName, err)
 		return
 	}
-	ancli.Warnf("failed to setup: '%v', err: %v\n", serverName, err)
+	runenv.Warnf(ctx, runenv.SubsystemTextQuerier, "failed to setup: '%v', err: %v\n", serverName, err)
 }
 
 // addExplicit is the single funnel every explicit server's failure passes
@@ -446,7 +438,7 @@ func (f *failureCollector) all() []error {
 // exec.CommandContext(ctx, ""). A server that fails validation is routed by
 // the same explicit/ambient posture a startup failure would be and never
 // joins valid, so it never reaches the manager.
-func validateExplicitServers(explicit bool, servers []pub_models.McpServer) (valid []pub_models.McpServer, failures []error) {
+func validateExplicitServers(ctx context.Context, explicit bool, servers []pub_models.McpServer) (valid []pub_models.McpServer, failures []error) {
 	valid = make([]pub_models.McpServer, 0, len(servers))
 	for _, server := range servers {
 		if err := serverconfig.Validate(server.Name, server); err != nil {
@@ -454,7 +446,7 @@ func validateExplicitServers(explicit bool, servers []pub_models.McpServer) (val
 			if explicit {
 				failures = append(failures, typed)
 			} else {
-				ancli.Warnf("failed to setup: '%v', err: %v\n", server.Name, typed)
+				runenv.Warnf(ctx, runenv.SubsystemTextQuerier, "failed to setup: '%v', err: %v\n", server.Name, typed)
 			}
 			continue
 		}
@@ -481,7 +473,7 @@ func resolveLazyServerViaCache(ctx context.Context, cache *schemacache.Cache, se
 		if rec, ok := cache.Lookup(identity); ok {
 			connector := mcp.NewConnector(ctx, server, sink, connectorOptsFor(server)...)
 			invalidating := newCacheInvalidatingConnector(ctx, connector, cache, identity, server.Name)
-			return mcp.RegisterTools(rec.Tools, server.Name, invalidating, timeout, registrar, nil, authTimeout)
+			return mcp.RegisterTools(ctx, rec.Tools, server.Name, invalidating, timeout, registrar, nil, authTimeout)
 		}
 	}
 
@@ -519,14 +511,14 @@ func resolveLazyServerViaCache(ctx context.Context, cache *schemacache.Cache, se
 	if cache != nil {
 		registerConn = newCacheInvalidatingConn(conn, cache, identity, server.Name)
 	}
-	if err := mcp.RegisterTools(toolsArray, server.Name, mcp.NewResolvedConnector(registerConn), timeout, registrar, nil, authTimeout); err != nil {
+	if err := mcp.RegisterTools(ctx, toolsArray, server.Name, mcp.NewResolvedConnector(registerConn), timeout, registrar, nil, authTimeout); err != nil {
 		return err
 	}
 	connected = true
 
 	if cache != nil {
 		if captureErr := cache.Capture(identity, mcp.ProtocolVersion, serverInfo, toolsArray); captureErr != nil {
-			ancli.Warnf("failed to persist mcp schema cache entry for %q: %v\n", server.Name, captureErr)
+			runenv.Warnf(ctx, runenv.SubsystemTextQuerier, "failed to persist mcp schema cache entry for %q: %v\n", server.Name, captureErr)
 		}
 		if watcher, ok := conn.(mcp.NotificationWatcher); ok {
 			go watchForToolsListChanged(connCtx, watcher, cache, identity, server.Name)
@@ -542,14 +534,14 @@ func resolveLazyServerViaCache(ctx context.Context, cache *schemacache.Cache, se
 // listing, which never connects. A nil cache disables capture, as everywhere
 // else, and a capture failure degrades to a warning because the cache is an
 // optimisation, never a dependency.
-func mcpSchemaCapture(cache *schemacache.Cache, server pub_models.McpServer) func(serverInfo, toolsArray json.RawMessage) {
+func mcpSchemaCapture(ctx context.Context, cache *schemacache.Cache, server pub_models.McpServer) func(serverInfo, toolsArray json.RawMessage) {
 	if cache == nil {
 		return nil
 	}
 	identity := schemacache.BuildIdentity(server)
 	return func(serverInfo, toolsArray json.RawMessage) {
 		if err := cache.Capture(identity, mcp.ProtocolVersion, serverInfo, toolsArray); err != nil {
-			ancli.Warnf("failed to persist mcp schema cache entry for %q: %v\n", server.Name, err)
+			runenv.Warnf(ctx, runenv.SubsystemTextQuerier, "failed to persist mcp schema cache entry for %q: %v\n", server.Name, err)
 		}
 	}
 }
@@ -571,7 +563,7 @@ func connectorOptsFor(server pub_models.McpServer) []mcp.ConnectorOption {
 func newMcpSchemaCache() (*schemacache.Cache, error) {
 	cacheDir, err := utils.GetClaiCacheDir()
 	if err != nil {
-		return nil, fmt.Errorf("resolve clai cache dir: %w", err)
+		return nil, diag.Errorf("resolve clai cache dir: %w", err)
 	}
 	return schemacache.New(path.Join(cacheDir, schemacache.DefaultDirName))
 }
@@ -603,10 +595,10 @@ func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, us
 	if !userConf.UseTools {
 		return nil
 	}
-	tools.Init()
+	tools.Init(ctx)
 	cache, cacheErr := newMcpSchemaCache()
 	if cacheErr != nil {
-		ancli.Warnf("mcp schema cache unavailable, every lazy server will connect at setup: %v\n", cacheErr)
+		runenv.Warnf(ctx, runenv.SubsystemTextQuerier, "mcp schema cache unavailable, every lazy server will connect at setup: %v\n", cacheErr)
 	}
 	authz := newMcpAuthorizer(userConf.ConfigDir, userConf.TrustInput, userConf.OutputIsTerminalOrDefault(), sink)
 	// A credential command is subject to the same command-ban policy a
@@ -616,18 +608,16 @@ func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, us
 	// reaches every call site in one place rather than at each producer.
 	mcpCtx := pkgtools.WithCmdBanContext(ctx, userConf.CmdBan)
 	mcpTools, err := setupMcpManager(mcpCtx, path.Join(userConf.ConfigDir, "mcpServers"), *userConf, sink, cache, authz)
-	if misc.Truthy(os.Getenv("DEBUG")) {
-		ancli.Okf("Registering tools on querier of type: %T\n", modelConf)
-	}
+	runenv.Debugf(ctx, runenv.SubsystemTextQuerier, "Registering tools on querier of type: %T\n", modelConf)
 	if err != nil {
 		if errors.Is(err, claierr.ErrMcpServerStartup) {
 			// D13: an explicitly requested server failed to start, so the setup
 			// fails rather than silently running without the requested tools.
-			return fmt.Errorf("failed to start explicitly requested MCP servers: %w", err)
+			return diag.Errorf("failed to start explicitly requested MCP servers: %w", err)
 		}
 		// Ambient and environment failures keep the legacy degrade: a missing
 		// or broken config-dir server is not by itself terminal.
-		ancli.Warnf("failed to add mcp tools: %v", err)
+		runenv.Warnf(ctx, runenv.SubsystemTextQuerier, "failed to add mcp tools: %v", err)
 		return nil
 	}
 
@@ -637,6 +627,7 @@ func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, us
 	// cannot overwrite each other's instances.
 	available := tools.Registry.All()
 	maps.Copy(available, mcpTools)
+	offerAliases(userConf)
 
 	// If usetools and no specific tools chosen, assume all are valid
 	if len(userConf.RequestedToolGlobs) == 0 && len(userConf.Tools) == 0 {
@@ -663,14 +654,14 @@ func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, us
 		if strings.Contains(t, "*") {
 			matchingTools := matchingTools(available, t)
 			if len(matchingTools) == 0 && !selectsGenerateImage(t) {
-				ancli.Warnf("attempted to find tools using wildcard search: '%v', found none\n", t)
+				runenv.Warnf(ctx, runenv.SubsystemTextQuerier, "attempted to find tools using wildcard search: '%v', found none\n", t)
 			}
 			toAdd = append(toAdd, matchingTools...)
 			continue
 		}
 		tool, exists := available[t]
 		if !exists {
-			ancli.Warnf("attempted to find tool: '%v', which doesn't exist, skipping\n", t)
+			runenv.Warnf(ctx, runenv.SubsystemTextQuerier, "attempted to find tool: '%v', which doesn't exist, skipping\n", t)
 			continue
 		}
 		toAdd = append(toAdd, tool)
@@ -678,9 +669,7 @@ func setupTooling[C models.StreamCompleter](ctx context.Context, modelConf C, us
 
 	toAdd = uniqueTools(toAdd)
 	for _, tool := range toAdd {
-		if misc.Truthy(os.Getenv("DEBUG")) {
-			ancli.PrintOK(fmt.Sprintf("\tname: %v, desc: %v\n", tool.Specification().Name, tool.Specification().Description))
-		}
+		runenv.Debugf(ctx, runenv.SubsystemTextQuerier, "\tname: %v, desc: %v\n", tool.Specification().Name, tool.Specification().Description)
 		registerTool(toolBox, userConf, tool)
 		if userConf.BaseTools == nil {
 			userConf.BaseTools = map[string]pub_models.LLMTool{}
@@ -723,16 +712,22 @@ func matchingTools(available map[string]pub_models.LLMTool, pattern string) []pu
 	return matches
 }
 
+// offerAliases lets a call under a legacy alias reach its tool when, and only
+// when, this run offers that tool.
+func offerAliases(userConf *Configurations) {
+	if userConf.Offered == nil {
+		userConf.Offered = tools.NewOffered()
+	}
+	for alias, canonical := range tools.Registry.Aliases() {
+		userConf.Offered.Alias(alias, canonical)
+	}
+}
+
 func registerTool(toolBox models.ToolBox, userConf *Configurations, tool pub_models.LLMTool) {
-	if userConf.RegisteredTools == nil {
-		userConf.RegisteredTools = map[string]struct{}{}
+	if userConf.Offered == nil {
+		userConf.Offered = tools.NewOffered()
 	}
-	name := tool.Specification().Name
-	if _, exists := userConf.RegisteredTools[name]; exists {
-		return
-	}
-	toolBox.RegisterTool(tool)
-	userConf.RegisteredTools[name] = struct{}{}
+	userConf.Offered.Offer(toolBox, tool)
 }
 
 // uniqueTools removes aliases and repeated selections before tool schemas are

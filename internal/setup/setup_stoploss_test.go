@@ -77,7 +77,7 @@ func runInterractiveReconfigure(t *testing.T, cfgPath string, orig map[string]an
 	})
 	defer restore()
 
-	if err := interractiveReconfigure(config{name: "textConfig.json", filePath: cfgPath}, origBytes); err != nil {
+	if err := interractiveReconfigure(procCtx(), config{name: "textConfig.json", filePath: cfgPath}, origBytes); err != nil {
 		t.Fatalf("interractiveReconfigure: %v", err)
 	}
 
@@ -127,7 +127,7 @@ func TestEditMap_StoplossUpdate(t *testing.T) {
 				"max-tokens":                       100000,
 				"max-tokens-handover-instructions": "Wrap up.",
 			}
-			got, err := editMap("stoploss", m, "")
+			got, err := editMap(procCtx(), "stoploss", m, "")
 			if err != nil {
 				t.Fatalf("editMap(update %s): %v", tt.key, err)
 			}
@@ -162,7 +162,7 @@ func TestEditMap_StoplossAddKey(t *testing.T) {
 	defer restore()
 
 	m := map[string]any{} // present but empty (R7-01)
-	got, err := editMap("stoploss", m, "")
+	got, err := editMap(procCtx(), "stoploss", m, "")
 	if err != nil {
 		t.Fatalf("editMap(add): %v", err)
 	}
@@ -196,7 +196,7 @@ func TestEditMap_StoplossRemoveKey(t *testing.T) {
 		"max-tokens":                       100000,
 		"max-tokens-handover-instructions": "Wrap up.",
 	}
-	got, err := editMap("stoploss", m, "")
+	got, err := editMap(procCtx(), "stoploss", m, "")
 	if err != nil {
 		t.Fatalf("editMap(remove): %v", err)
 	}
@@ -222,7 +222,7 @@ func TestEditMap_StoplossDone_Unchanged(t *testing.T) {
 		"max-tokens":                       100000,
 		"max-tokens-handover-instructions": "Wrap up.",
 	}
-	got, err := editMap("stoploss", m, "")
+	got, err := editMap(procCtx(), "stoploss", m, "")
 	if err != nil {
 		t.Fatalf("editMap(done): %v", err)
 	}
@@ -250,7 +250,7 @@ func TestEditMap_StoplossInvalidInt_StaysString(t *testing.T) {
 		"max-tokens":                       100000,
 		"max-tokens-handover-instructions": "Wrap up.",
 	}
-	got, err := editMap("stoploss", m, "")
+	got, err := editMap(procCtx(), "stoploss", m, "")
 	if err != nil {
 		t.Fatalf("editMap(invalid int): %v", err)
 	}

@@ -7,10 +7,12 @@ import (
 	"io"
 	"os"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/modelalias"
 	"github.com/baalimago/clai/internal/modelfallback"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/remote"
+	"github.com/baalimago/clai/internal/runenv"
 	"github.com/baalimago/clai/internal/utils"
 )
 
@@ -22,11 +24,11 @@ func setupTranscribeQuerier(ctx context.Context, confDir string, f *Flags, args 
 }
 
 func setupTranscribeQuerierWithResolver(ctx context.Context, confDir string, f *Flags, args []string, newResolver func(string, remote.Prompter) (remote.Resolver, error)) (models.Querier, error) {
-	filePath, cleanup, err := resolveAudioInput(args)
+	filePath, cleanup, err := resolveAudioInput(ctx, args)
 	if err != nil {
 		return nil, err
 	}
-	aConf, err := loadTranscribeConfig(confDir, f)
+	aConf, err := loadTranscribeConfig(ctx, confDir, f)
 	if err != nil {
 		cleanup()
 		return nil, err
@@ -38,7 +40,7 @@ func setupTranscribeQuerierWithResolver(ctx context.Context, confDir string, f *
 	q, err := transcribeChain(ctx, aConf, filePath)
 	if err != nil {
 		cleanup()
-		return nil, fmt.Errorf("failed to create audio querier: %w", err)
+		return nil, diag.Errorf("failed to create audio querier: %w", err)
 	}
 	return &cleanupQuerier{Querier: q, cleanup: cleanup}, nil
 }
@@ -55,10 +57,10 @@ func resolveRemoteAudioModel(ctx context.Context, confDir string, newResolver fu
 	return nil
 }
 
-func loadTranscribeConfig(confDir string, f *Flags) (Configurations, error) {
-	aConf, err := utils.LoadConfigFromFile(confDir, "audioConfig.json", nil, &Default)
+func loadTranscribeConfig(ctx context.Context, confDir string, f *Flags) (Configurations, error) {
+	aConf, err := utils.LoadConfigFromFile(ctx, confDir, "audioConfig.json", nil, &Default)
 	if err != nil {
-		return Configurations{}, fmt.Errorf("failed to load configs: %w", err)
+		return Configurations{}, diag.Errorf("failed to load configs: %w", err)
 	}
 	if err := ApplyFlagOverrides(&aConf, f); err != nil {
 		return Configurations{}, err
@@ -82,7 +84,7 @@ func transcribeChain(ctx context.Context, aConf Configurations, filePath string)
 		perModel.Transcribe.Model = model
 		return CreateQuerier(perModel, filePath)
 	}
-	return modelfallback.New(ctx, aConf.ModelAliases, aConf.Transcribe.Model, build, modelfallback.NoticeTo(os.Stderr))
+	return modelfallback.New(ctx, aConf.ModelAliases, aConf.Transcribe.Model, build, modelfallback.Notice(runenv.From(ctx)))
 }
 
 // cleanupQuerier removes the transient input one run read after it ends, once,
@@ -113,7 +115,7 @@ func (q *cleanupQuerier) SuppressCompletionNotification() bool {
 
 // resolveAudioInput returns the audio file path from the positional args.
 // '-' drains stdin into a temp file; the cleanup removes it after the query.
-func resolveAudioInput(args []string) (string, func(), error) {
+func resolveAudioInput(ctx context.Context, args []string) (string, func(), error) {
 	noop := func() {}
 	if len(args) == 0 {
 		return "", noop, fmt.Errorf("missing audio file argument, usage: clai audio transcribe <file>")
@@ -122,35 +124,36 @@ func resolveAudioInput(args []string) (string, func(), error) {
 	if filePath == "-" {
 		// The extension is load-bearing downstream (vendor multipart filename,
 		// ffmpeg chunk pattern), so sniff the container before creating the file
+		stdin := runenv.From(ctx).Stdin()
 		header := make([]byte, SniffLen)
-		n, err := io.ReadFull(os.Stdin, header)
+		n, err := io.ReadFull(stdin, header)
 		if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
-			return "", noop, fmt.Errorf("failed to read stdin audio: %w", err)
+			return "", noop, diag.Errorf("failed to read stdin audio: %w", err)
 		}
 		ext, err := DetectExtension(header[:n])
 		if err != nil {
-			return "", noop, fmt.Errorf("failed to detect stdin audio format: %w", err)
+			return "", noop, diag.Errorf("failed to detect stdin audio format: %w", err)
 		}
 		tmpFile, err := os.CreateTemp("", "clai-audio-stdin-*"+ext)
 		if err != nil {
-			return "", noop, fmt.Errorf("failed to create temp file for stdin audio: %w", err)
+			return "", noop, diag.Errorf("failed to create temp file for stdin audio: %w", err)
 		}
 		cleanup := func() { os.Remove(tmpFile.Name()) }
 		_, err = tmpFile.Write(header[:n])
 		if err == nil {
-			_, err = io.Copy(tmpFile, os.Stdin)
+			_, err = io.Copy(tmpFile, stdin)
 		}
 		if closeErr := tmpFile.Close(); err == nil {
 			err = closeErr
 		}
 		if err != nil {
 			cleanup()
-			return "", noop, fmt.Errorf("failed to read stdin audio: %w", err)
+			return "", noop, diag.Errorf("failed to read stdin audio: %w", err)
 		}
 		return tmpFile.Name(), cleanup, nil
 	}
 	if _, err := os.Stat(filePath); err != nil {
-		return "", noop, fmt.Errorf("failed to find audio file: %w", err)
+		return "", noop, diag.Errorf("failed to find audio file: %w", err)
 	}
 	return filePath, noop, nil
 }

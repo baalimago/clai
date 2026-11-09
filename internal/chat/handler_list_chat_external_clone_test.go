@@ -30,7 +30,7 @@ func TestCloneForeignChat_UpsertsIndexAndDedupsOnNextListBuild(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Setenv("TTY", oldTTY) })
 
-	cloned, err := cq.cloneForeignChat(foreign)
+	cloned, err := cq.cloneForeignChat(context.Background(), foreign)
 	if err != nil {
 		t.Fatalf("cloneForeignChat: %v", err)
 	}
@@ -38,7 +38,7 @@ func TestCloneForeignChat_UpsertsIndexAndDedupsOnNextListBuild(t *testing.T) {
 		t.Fatal("expected cloned chat to have non-empty ID")
 	}
 
-	p, err := NewChatIndexPaginator(convDir)
+	p, err := NewChatIndexPaginator(context.Background(), convDir)
 	if err != nil {
 		t.Fatalf("NewChatIndexPaginator: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestCloneForeignChat_UpsertsIndexAndDedupsOnNextListBuild(t *testing.T) {
 		t.Fatalf("write jsonl: %v", err)
 	}
 
-	p2, err := NewChatIndexPaginator(convDir)
+	p2, err := NewChatIndexPaginator(context.Background(), convDir)
 	if err != nil {
 		t.Fatalf("NewChatIndexPaginator: %v", err)
 	}

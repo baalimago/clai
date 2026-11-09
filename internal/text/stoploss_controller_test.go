@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/internal/testenv/procenv"
+
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
@@ -26,10 +28,10 @@ func Test_stoploss_CheckContextBudget(t *testing.T) {
 	noopModel := &MockQuerier{}
 
 	t.Run("disabled when maxTokens <= 0", func(t *testing.T) {
-		ctrl := &stoploss{maxTokens: 0}
+		ctrl := &stoploss{ctx: procenv.Context(context.Background()), maxTokens: 0}
 		session := &QuerySession{Chat: pub_models.Chat{}}
 
-		just, err := ctrl.CheckContextBudget(context.Background(), noopModel, session, &pub_models.Usage{PromptTokens: 1000})
+		just, err := ctrl.CheckContextBudget(procenv.Context(context.Background()), noopModel, session, &pub_models.Usage{PromptTokens: 1000})
 		if err != nil {
 			t.Fatalf("CheckContextBudget: %v", err)
 		}
@@ -42,10 +44,10 @@ func Test_stoploss_CheckContextBudget(t *testing.T) {
 	})
 
 	t.Run("non-crossing usage is a no-op", func(t *testing.T) {
-		ctrl := &stoploss{maxTokens: 100, maxTokensHandoverMsg: "wrap up"}
+		ctrl := &stoploss{ctx: procenv.Context(context.Background()), maxTokens: 100, maxTokensHandoverMsg: "wrap up"}
 		session := &QuerySession{Chat: pub_models.Chat{}}
 
-		just, err := ctrl.CheckContextBudget(context.Background(), noopModel, session, &pub_models.Usage{PromptTokens: 40, CompletionTokens: 20})
+		just, err := ctrl.CheckContextBudget(procenv.Context(context.Background()), noopModel, session, &pub_models.Usage{PromptTokens: 40, CompletionTokens: 20})
 		if err != nil {
 			t.Fatalf("CheckContextBudget: %v", err)
 		}
@@ -55,18 +57,18 @@ func Test_stoploss_CheckContextBudget(t *testing.T) {
 	})
 
 	t.Run("crossing injects once and prints one notice", func(t *testing.T) {
-		ctrl := &stoploss{maxTokens: 100, maxTokensHandoverMsg: "wrap up"}
+		ctrl := &stoploss{ctx: procenv.Context(context.Background()), maxTokens: 100, maxTokensHandoverMsg: "wrap up"}
 		session := &QuerySession{Chat: pub_models.Chat{}}
 		usage := &pub_models.Usage{PromptTokens: 60, CompletionTokens: 60}
 
 		var firstJust, secondJust bool
-		out := testboil.CaptureStdout(t, func(t *testing.T) {
+		out := testboil.CaptureStderr(t, func(t *testing.T) {
 			var err error
-			firstJust, err = ctrl.CheckContextBudget(context.Background(), noopModel, session, usage)
+			firstJust, err = ctrl.CheckContextBudget(procenv.Context(context.Background()), noopModel, session, usage)
 			if err != nil {
 				t.Fatalf("first CheckContextBudget: %v", err)
 			}
-			secondJust, err = ctrl.CheckContextBudget(context.Background(), noopModel, session, usage)
+			secondJust, err = ctrl.CheckContextBudget(procenv.Context(context.Background()), noopModel, session, usage)
 			if err != nil {
 				t.Fatalf("second CheckContextBudget: %v", err)
 			}
@@ -96,9 +98,9 @@ func Test_stoploss_CheckContextBudget(t *testing.T) {
 		session := &QuerySession{Chat: pub_models.Chat{}}
 
 		var injected bool
-		out := testboil.CaptureStdout(t, func(t *testing.T) {
+		out := testboil.CaptureStderr(t, func(t *testing.T) {
 			var err error
-			injected, err = ctrl.CheckContextBudget(context.Background(), noopModel, session, &pub_models.Usage{PromptTokens: 120})
+			injected, err = ctrl.CheckContextBudget(procenv.Context(context.Background()), noopModel, session, &pub_models.Usage{PromptTokens: 120})
 			if err != nil {
 				t.Fatalf("CheckContextBudget: %v", err)
 			}
@@ -116,7 +118,7 @@ func Test_stoploss_CheckContextBudget(t *testing.T) {
 		ctrl := q.newStoploss()
 		session := &QuerySession{Chat: pub_models.Chat{}}
 
-		just, err := ctrl.CheckContextBudget(context.Background(), noopModel, session, &pub_models.Usage{TotalTokens: 120})
+		just, err := ctrl.CheckContextBudget(procenv.Context(context.Background()), noopModel, session, &pub_models.Usage{TotalTokens: 120})
 		if err != nil {
 			t.Fatalf("CheckContextBudget: %v", err)
 		}
@@ -133,7 +135,7 @@ func Test_stoploss_CheckContextBudget(t *testing.T) {
 		ctrl := q.newStoploss()
 		session := &QuerySession{Chat: pub_models.Chat{}}
 
-		just, err := ctrl.CheckContextBudget(context.Background(), noopModel, session, &pub_models.Usage{CompletionTokens: 120})
+		just, err := ctrl.CheckContextBudget(procenv.Context(context.Background()), noopModel, session, &pub_models.Usage{CompletionTokens: 120})
 		if err != nil {
 			t.Fatalf("CheckContextBudget: %v", err)
 		}
@@ -151,7 +153,7 @@ func Test_stoploss_CheckContextBudget(t *testing.T) {
 		ctrl := q.newStoploss()
 		session := &QuerySession{Chat: pub_models.Chat{}}
 
-		just, err := ctrl.CheckContextBudget(context.Background(), model, session, nil)
+		just, err := ctrl.CheckContextBudget(procenv.Context(context.Background()), model, session, nil)
 		if err != nil {
 			t.Fatalf("CheckContextBudget: %v", err)
 		}
@@ -169,7 +171,7 @@ func Test_stoploss_CheckContextBudget(t *testing.T) {
 		ctrl := q.newStoploss()
 		session := &QuerySession{Chat: pub_models.Chat{}}
 
-		just, err := ctrl.CheckContextBudget(context.Background(), model, session, &pub_models.Usage{})
+		just, err := ctrl.CheckContextBudget(procenv.Context(context.Background()), model, session, &pub_models.Usage{})
 		if err != nil {
 			t.Fatalf("CheckContextBudget: %v", err)
 		}
@@ -183,7 +185,7 @@ func Test_stoploss_CheckContextBudget(t *testing.T) {
 		ctrl := q.newStoploss()
 		session := &QuerySession{Chat: pub_models.Chat{}}
 
-		just, err := ctrl.CheckContextBudget(context.Background(), noopModel, session, nil)
+		just, err := ctrl.CheckContextBudget(procenv.Context(context.Background()), noopModel, session, nil)
 		if err != nil {
 			t.Fatalf("CheckContextBudget: %v", err)
 		}
@@ -201,17 +203,17 @@ func Test_stoploss_CheckContextBudget(t *testing.T) {
 		ctrl := q.newStoploss()
 		session := &QuerySession{Chat: pub_models.Chat{}}
 
-		_, err := ctrl.CheckContextBudget(context.Background(), model, session, nil)
+		_, err := ctrl.CheckContextBudget(procenv.Context(context.Background()), model, session, nil)
 		if err == nil || !strings.Contains(err.Error(), "count failed") {
 			t.Fatalf("expected propagated counter error, got %v", err)
 		}
 	})
 
 	t.Run("no-op once handover already requested", func(t *testing.T) {
-		ctrl := &stoploss{maxTokens: 100, maxTokensHandoverMsg: "wrap up"}
+		ctrl := &stoploss{ctx: procenv.Context(context.Background()), maxTokens: 100, maxTokensHandoverMsg: "wrap up"}
 		session := &QuerySession{HandoverRequested: true, Chat: pub_models.Chat{}}
 
-		just, err := ctrl.CheckContextBudget(context.Background(), noopModel, session, &pub_models.Usage{PromptTokens: 500})
+		just, err := ctrl.CheckContextBudget(procenv.Context(context.Background()), noopModel, session, &pub_models.Usage{PromptTokens: 500})
 		if err != nil {
 			t.Fatalf("CheckContextBudget: %v", err)
 		}
@@ -223,7 +225,7 @@ func Test_stoploss_CheckContextBudget(t *testing.T) {
 
 func Test_stoploss_PreflightToolCallBudget(t *testing.T) {
 	t.Run("nil max-tool-calls means unlimited", func(t *testing.T) {
-		ctrl := &stoploss{}
+		ctrl := &stoploss{ctx: procenv.Context(context.Background())}
 		session := &QuerySession{}
 
 		plans := ctrl.PreflightToolCallBudget(session, []pub_models.Call{{ID: "a"}, {ID: "b"}})
@@ -239,7 +241,7 @@ func Test_stoploss_PreflightToolCallBudget(t *testing.T) {
 
 	t.Run("zero max-tool-calls means unlimited", func(t *testing.T) {
 		zero := 0
-		ctrl := &stoploss{maxToolCalls: &zero}
+		ctrl := &stoploss{ctx: procenv.Context(context.Background()), maxToolCalls: &zero}
 		session := &QuerySession{}
 
 		plans := ctrl.PreflightToolCallBudget(session, []pub_models.Call{{ID: "a"}})
@@ -253,7 +255,7 @@ func Test_stoploss_PreflightToolCallBudget(t *testing.T) {
 
 	t.Run("within-budget batch reserves slots in order", func(t *testing.T) {
 		maxCalls := 2
-		ctrl := &stoploss{maxToolCalls: &maxCalls}
+		ctrl := &stoploss{ctx: procenv.Context(context.Background()), maxToolCalls: &maxCalls}
 		session := &QuerySession{}
 
 		plans := ctrl.PreflightToolCallBudget(session, []pub_models.Call{{ID: "a"}, {ID: "b"}})
@@ -270,7 +272,7 @@ func Test_stoploss_PreflightToolCallBudget(t *testing.T) {
 
 	t.Run("over-budget calls are refused with the escalation ladder", func(t *testing.T) {
 		maxCalls := 1
-		ctrl := &stoploss{maxToolCalls: &maxCalls}
+		ctrl := &stoploss{ctx: procenv.Context(context.Background()), maxToolCalls: &maxCalls}
 		session := &QuerySession{}
 
 		plans := ctrl.PreflightToolCallBudget(session, []pub_models.Call{{ID: "a"}, {ID: "b"}, {ID: "c"}, {ID: "d"}, {ID: "e"}})
@@ -295,7 +297,7 @@ func Test_stoploss_PreflightToolCallBudget(t *testing.T) {
 	})
 
 	t.Run("default (no post-handover budget) allows every call", func(t *testing.T) {
-		ctrl := &stoploss{}
+		ctrl := &stoploss{ctx: procenv.Context(context.Background())}
 		session := &QuerySession{HandoverRequested: true}
 
 		plans := ctrl.PreflightToolCallBudget(session, []pub_models.Call{
@@ -314,7 +316,7 @@ func Test_stoploss_PreflightToolCallBudget(t *testing.T) {
 
 	t.Run("post-handover budget is a fresh allowance", func(t *testing.T) {
 		maxCalls := 1
-		ctrl := &stoploss{maxToolCalls: &maxCalls, maxToolCallsAfterHandover: 2}
+		ctrl := &stoploss{ctx: procenv.Context(context.Background()), maxToolCalls: &maxCalls, maxToolCallsAfterHandover: 2}
 		// The pre-handover budget is exhausted; the wrap-up allowance must not
 		// be eaten by pre-handover consumption.
 		session := &QuerySession{ToolCallsUsed: 1, HandoverRequested: true}
@@ -335,7 +337,7 @@ func Test_stoploss_PreflightToolCallBudget(t *testing.T) {
 	})
 
 	t.Run("post-handover budget escalates the ladder when exhausted", func(t *testing.T) {
-		ctrl := &stoploss{maxToolCallsAfterHandover: 1}
+		ctrl := &stoploss{ctx: procenv.Context(context.Background()), maxToolCallsAfterHandover: 1}
 		session := &QuerySession{HandoverRequested: true}
 
 		plans := ctrl.PreflightToolCallBudget(session, []pub_models.Call{{ID: "a"}, {ID: "b"}, {ID: "c"}, {ID: "d"}, {ID: "e"}})
@@ -360,7 +362,7 @@ func Test_stoploss_PreflightToolCallBudget(t *testing.T) {
 	})
 
 	t.Run("zero post-handover budget means unlimited", func(t *testing.T) {
-		ctrl := &stoploss{maxToolCallsAfterHandover: 0}
+		ctrl := &stoploss{ctx: procenv.Context(context.Background()), maxToolCallsAfterHandover: 0}
 		session := &QuerySession{HandoverRequested: true}
 
 		plans := ctrl.PreflightToolCallBudget(session, []pub_models.Call{{ID: "a"}})
@@ -370,7 +372,7 @@ func Test_stoploss_PreflightToolCallBudget(t *testing.T) {
 	})
 
 	t.Run("load_skill allowed post-handover while budget has room, refused when exhausted", func(t *testing.T) {
-		ctrl := &stoploss{maxToolCallsAfterHandover: 1}
+		ctrl := &stoploss{ctx: procenv.Context(context.Background()), maxToolCallsAfterHandover: 1}
 		session := &QuerySession{HandoverRequested: true}
 
 		skill := pub_models.Call{ID: "s", Name: string(pub_models.LoadSkillTool)}
@@ -398,7 +400,7 @@ func Test_stoploss_PreflightToolCallBudget(t *testing.T) {
 
 	t.Run("load_skill is exempt from the positive budget before handover", func(t *testing.T) {
 		maxCalls := 1
-		ctrl := &stoploss{maxToolCalls: &maxCalls}
+		ctrl := &stoploss{ctx: procenv.Context(context.Background()), maxToolCalls: &maxCalls}
 		session := &QuerySession{}
 
 		plans := ctrl.PreflightToolCallBudget(session, []pub_models.Call{{ID: "a", Name: string(pub_models.LoadSkillTool)}})
@@ -412,7 +414,7 @@ func Test_stoploss_PreflightToolCallBudget(t *testing.T) {
 
 	t.Run("pre-handover load_skill exemption survives budget exhaustion", func(t *testing.T) {
 		maxCalls := 1
-		ctrl := &stoploss{maxToolCalls: &maxCalls}
+		ctrl := &stoploss{ctx: procenv.Context(context.Background()), maxToolCalls: &maxCalls}
 		session := &QuerySession{ToolCallsUsed: 1} // budget exhausted pre-handover
 
 		plan := ctrl.PreflightToolCallBudget(session, []pub_models.Call{{ID: "s", Name: string(pub_models.LoadSkillTool)}})[0]

@@ -652,3 +652,70 @@ func TestOauthRefreshFailureReturnsTypedAuthError(t *testing.T) {
 		t.Fatalf("got %v (%T), want *RefreshError", err, err)
 	}
 }
+
+// questionFirstInput records whether the paste question was asked before
+// the pasted code is read.
+type questionFirstInput struct {
+	in            *pipeBuffer
+	asked         *bool
+	askedFirst    bool
+	readAttempted bool
+}
+
+func (q *questionFirstInput) Read(b []byte) (int, error) {
+	if !q.readAttempted {
+		q.readAttempted, q.askedFirst = true, *q.asked
+	}
+	return q.in.Read(b)
+}
+
+// TestPasteQuestionAsksForTheCode pins the paste question: with
+// WithPasteQuestion, the printed-URL fallback asks it, not the progress
+// callback, before the pasted code is read (F13 of worklog
+// 2026-11-02-diagnostics).
+func TestPasteQuestionAsksForTheCode(t *testing.T) {
+	as := oauthtestserver.New()
+	defer as.Close()
+	buf := newPipeBuffer()
+	var asked bool
+	var questions, waitingProgress []string
+	captureCode := capturingPrintURL(t, buf)
+	input := &questionFirstInput{in: buf, asked: &asked}
+	authz := NewAuthorizer(NewTokenStore(t.TempDir()),
+		WithBrowserOpener(oauthtestserver.FailingOpener{}),
+		WithPasteInput(input),
+		WithProgress(func(message string) error {
+			if strings.HasPrefix(message, "Waiting for you to paste") {
+				waitingProgress = append(waitingProgress, message)
+			}
+			return captureCode(message)
+		}),
+		WithPasteQuestion(func(question string) error {
+			asked = true
+			questions = append(questions, question)
+			return nil
+		}),
+		WithInteractive(true),
+	)
+	if _, err := authz.AuthorizeInteractive(t.Context(), testServer(as.URL), &claierr.AuthChallengeError{ServerName: "srv", ResourceMetadata: as.ProtectedResourceURL()}); err != nil {
+		t.Fatalf("AuthorizeInteractive: %v", err)
+	}
+	if len(questions) != 1 || !strings.HasPrefix(questions[0], "Waiting for you to paste the authorization code") || len(waitingProgress) != 0 {
+		t.Fatalf("questions %q, waiting progress %q; want the one question and no waiting progress", questions, waitingProgress)
+	}
+	if !input.askedFirst {
+		t.Fatal("the pasted code was read before the question was asked")
+	}
+
+	want := errors.New("closed prompt destination")
+	failing := NewAuthorizer(NewTokenStore(t.TempDir()),
+		WithBrowserOpener(oauthtestserver.FailingOpener{}),
+		WithPasteInput(newPipeBuffer()),
+		WithProgress(capturingPrintURL(t, newPipeBuffer())),
+		WithPasteQuestion(func(string) error { return want }),
+		WithInteractive(true),
+	)
+	if _, err := failing.AuthorizeInteractive(t.Context(), testServer(as.URL), &claierr.AuthChallengeError{ServerName: "srv", ResourceMetadata: as.ProtectedResourceURL()}); !errors.Is(err, want) {
+		t.Fatalf("got %v, want the paste question's error", err)
+	}
+}

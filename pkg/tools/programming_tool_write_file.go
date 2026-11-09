@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/baalimago/clai/internal/diag"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -55,7 +56,7 @@ func (w WriteFileTool) Call(input pub_models.Input) (string, error) {
 	// Ensure the directory exists
 	dir := filepath.Dir(filePath)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", fmt.Errorf("failed to create directory: %w", err)
+		return "", diag.Errorf("failed to create directory: %w", err)
 	}
 
 	var flag int
@@ -67,13 +68,13 @@ func (w WriteFileTool) Call(input pub_models.Input) (string, error) {
 
 	file, err := os.OpenFile(filePath, flag, 0o644)
 	if err != nil {
-		return "", fmt.Errorf("failed to open file: %w", err)
+		return "", diag.Errorf("failed to open file: %w", err)
 	}
 	defer file.Close()
 
 	_, err = file.WriteString(content)
 	if err != nil {
-		return "", fmt.Errorf("failed to write to file: %w", err)
+		return "", diag.Errorf("failed to write to file: %w", err)
 	}
 
 	return fmt.Sprintf("Successfully wrote %d bytes to %s", len(content), filePath), nil

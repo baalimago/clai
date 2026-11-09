@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+
+	"github.com/baalimago/clai/internal/diag"
 )
 
 // ClientRegistration is what RFC 7591 dynamic client registration yields:
@@ -32,11 +34,11 @@ func registerDynamicClient(ctx context.Context, client *http.Client, serverName,
 		ResponseType: []string{"code"},
 	})
 	if err != nil {
-		return ClientRegistration{}, fmt.Errorf("mcpauth: encode registration request: %w", err)
+		return ClientRegistration{}, diag.Errorf("mcpauth: encode registration request: %w", err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, registrationEndpoint, bytes.NewReader(body))
 	if err != nil {
-		return ClientRegistration{}, fmt.Errorf("mcpauth: build registration request: %w", err)
+		return ClientRegistration{}, diag.Errorf("mcpauth: build registration request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := client.Do(req)

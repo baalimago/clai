@@ -14,6 +14,7 @@ import (
 	"sync"
 
 	"github.com/baalimago/clai/internal/asset"
+	"github.com/baalimago/clai/internal/diag"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -64,11 +65,11 @@ func (m *Memory) Names() []string {
 func (m *Memory) Put(data []byte, mime string) (string, error) {
 	ext, ok := m.exts[mime]
 	if !ok {
-		return "", fmt.Errorf("%w: %q", asset.ErrUnsupportedMIME, mime)
+		return "", diag.Errorf("%w: %q", asset.ErrUnsupportedMIME, mime)
 	}
 	sniffed, err := asset.Sniff(data)
 	if err != nil {
-		return "", fmt.Errorf("declared %s: %w", mime, err)
+		return "", diag.Errorf("declared %s: %w", mime, err)
 	}
 	if sniffed != mime {
 		return "", &asset.MIMEMismatchError{Declared: mime, Sniffed: sniffed}
@@ -90,7 +91,7 @@ func (m *Memory) Load(ref string) (asset.Image, error) {
 	}
 	sum := sha256.Sum256(data)
 	if !strings.HasPrefix(ref, hex.EncodeToString(sum[:])+".") {
-		return asset.Image{}, fmt.Errorf("%w: %s", asset.ErrAssetCorrupt, ref)
+		return asset.Image{}, diag.Errorf("%w: %s", asset.ErrAssetCorrupt, ref)
 	}
 	return asset.Image{Data: data, MIME: m.mimes[path.Ext(ref)]}, nil
 }
@@ -104,7 +105,7 @@ func (m *Memory) Path(ref string) (string, error) {
 
 func (m *Memory) Resolve(handle string) (string, error) {
 	if !m.handle.MatchString(handle) {
-		return "", fmt.Errorf("%w: %q", asset.ErrHandle, handle)
+		return "", diag.Errorf("%w: %q", asset.ErrHandle, handle)
 	}
 	var matches []string
 	for _, name := range m.Names() {
@@ -116,7 +117,7 @@ func (m *Memory) Resolve(handle string) (string, error) {
 		return "", &asset.AmbiguousHandleError{Handle: handle, Refs: matches}
 	}
 	if len(matches) == 0 {
-		return "", fmt.Errorf("%w: %s", asset.ErrUnknownHandle, handle)
+		return "", diag.Errorf("%w: %s", asset.ErrUnknownHandle, handle)
 	}
 	return matches[0], nil
 }
@@ -137,13 +138,13 @@ func (m *Memory) Sweep(live map[string]struct{}) (asset.SweepCount, error) {
 
 func (m *Memory) stored(ref string) ([]byte, error) {
 	if !m.ref.MatchString(ref) {
-		return nil, fmt.Errorf("%w: %q", asset.ErrAssetRef, ref)
+		return nil, diag.Errorf("%w: %q", asset.ErrAssetRef, ref)
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	data, ok := m.files[ref]
 	if !ok {
-		return nil, fmt.Errorf("%w: %s", asset.ErrAssetNotFound, ref)
+		return nil, diag.Errorf("%w: %s", asset.ErrAssetNotFound, ref)
 	}
 	return bytes.Clone(data), nil
 }

@@ -6,17 +6,19 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/baalimago/clai/internal/board"
+	"github.com/baalimago/clai/internal/diag"
+	"github.com/baalimago/clai/internal/display"
 	"github.com/baalimago/clai/internal/models"
+	"github.com/baalimago/clai/internal/runenv"
+	"github.com/baalimago/clai/internal/stdio"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
 
@@ -62,27 +64,27 @@ func (cq *ChatHandler) handleSummarize(ctx context.Context) error {
 	if !opts.yes && !utils.Live {
 		return errors.New("chat summarize: non-interactive mode needs -y to confirm the run")
 	}
-	rows, err := readChatIndex(cq.convDir)
+	rows, err := readChatIndex(ctx, cq.convDir)
 	if err != nil {
-		return fmt.Errorf("chat summarize: read chat index: %w", err)
+		return diag.Errorf("chat summarize: read chat index: %w", err)
 	}
 	selected := selectSummarizeRows(rows, opts.since, opts.force)
 	if len(selected) == 0 {
 		if cq.raw {
-			cq.printSummarizeTotals(0, 0, 0)
+			cq.printSummarizeTotals(ctx, 0, 0, 0)
 		} else {
 			fmt.Fprintf(cq.out, "0 conversations to summarize since %s\n", opts.since.Format(time.RFC3339))
 		}
 		return nil
 	}
 	if !opts.yes {
-		ok, err := cq.confirmSummarize(len(selected))
+		ok, err := cq.confirmSummarize(ctx, len(selected))
 		if err != nil {
 			return err
 		}
 		if !ok {
 			if cq.raw {
-				cq.printJSONLine(map[string]bool{"aborted": true})
+				cq.printJSONLine(ctx, map[string]bool{"aborted": true})
 			} else {
 				fmt.Fprintln(cq.out, "aborted")
 			}
@@ -97,8 +99,8 @@ func (cq *ChatHandler) handleSummarize(ctx context.Context) error {
 	labelled, failed := cq.runSummarizeJobs(ctx, ids, progress)
 	var errs []error
 	if len(labelled) > 0 {
-		if err := cq.flushSummarizeIndex(labelled); err != nil {
-			ancli.Warnf("chat summarize: %v\n", err)
+		if err := cq.flushSummarizeIndex(ctx, labelled); err != nil {
+			runenv.Warnf(ctx, runenv.SubsystemChat, "chat summarize: %v", err)
 			errs = append(errs, err)
 		}
 	}
@@ -107,7 +109,7 @@ func (cq *ChatHandler) handleSummarize(ctx context.Context) error {
 		errs = append(errs, fmt.Errorf("chat summarize: %d of %d conversations failed", failed, len(ids)))
 	}
 	if err := ctx.Err(); err != nil {
-		errs = append(errs, fmt.Errorf("chat summarize: cancelled: %w", err))
+		errs = append(errs, diag.Errorf("chat summarize: cancelled: %w", err))
 	}
 	return errors.Join(errs...)
 }
@@ -132,12 +134,23 @@ func summarizeTokenEstimate(count int) int {
 	return count * models.SummaryInputRunes / summaryEstimateRunesPerToken
 }
 
-func (cq *ChatHandler) confirmSummarize(count int) (bool, error) {
-	fmt.Fprintf(cq.promptWriter(), "Summarize %d conversations since %s (at most ~%d input tokens)? [y/N]: ",
+func (cq *ChatHandler) confirmSummarize(ctx context.Context, count int) (bool, error) {
+	question := fmt.Sprintf("Summarize %d conversations since %s (at most ~%d input tokens)?",
 		count, cq.summarizeOptions.since.Format(time.RFC3339), summarizeTokenEstimate(count))
+	if env := runenv.From(ctx); env.JSON() {
+		stream := stdio.Stdout
+		if cq.raw {
+			stream = stdio.Stderr
+		}
+		if err := env.ShowPrompt(stream, display.Prompt{Kind: "confirm", Text: question, Choices: []string{"y", "N"}}); err != nil {
+			return false, diag.Errorf("chat summarize: show confirmation: %w", err)
+		}
+	} else {
+		fmt.Fprint(cq.promptWriter(ctx), question+" [y/N]: ")
+	}
 	choice, err := table.ReadUserInputFrom(cq.input)
 	if err != nil {
-		return false, fmt.Errorf("chat summarize: read confirmation: %w", err)
+		return false, diag.Errorf("chat summarize: read confirmation: %w", err)
 	}
 	switch strings.ToLower(strings.TrimSpace(choice)) {
 	case "y", "yes":
@@ -148,14 +161,14 @@ func (cq *ChatHandler) confirmSummarize(count int) (bool, error) {
 
 // promptWriter is stdout, or stderr under -r so stdout carries only the
 // JSON lines.
-func (cq *ChatHandler) promptWriter() io.Writer {
+func (cq *ChatHandler) promptWriter(ctx context.Context) io.Writer {
 	if !cq.raw {
 		return cq.out
 	}
 	if cq.errOut != nil {
 		return cq.errOut
 	}
-	return os.Stderr
+	return runenv.From(ctx).Stderr()
 }
 
 // runSummarizeJobs drives the worker pool: one job channel fed until the
@@ -213,28 +226,30 @@ func (cq *ChatHandler) summarizeOne(ctx context.Context, id string) summarizeRes
 	jobCtx, jobCancel := context.WithCancel(ctx)
 	defer jobCancel()
 	jobCtx = context.WithValue(jobCtx, utils.ContextCancelKey, jobCancel)
-	c, err := cq.getByID(id)
+	c, err := cq.getByID(ctx, id)
 	if err != nil {
-		return summarizeResult{id: id, err: fmt.Errorf("load: %w", err)}
+		return summarizeResult{id: id, err: diag.Errorf("load: %w", err)}
 	}
 	s, err := cq.summarizer.Summarize(jobCtx, models.SummaryRequest{Chat: c, Model: cq.summarizeOptions.model})
 	if err != nil {
 		return summarizeResult{id: id, err: err}
 	}
 	s.ApplyTo(&c)
-	if err := SaveWithoutIndex(cq.convDir, c); err != nil {
-		return summarizeResult{id: id, err: fmt.Errorf("save: %w", err)}
+	if err := SaveWithoutIndex(ctx, cq.convDir, c); err != nil {
+		return summarizeResult{id: id, err: diag.Errorf("save: %w", err)}
 	}
 	return summarizeResult{id: id, chat: c}
 }
 
-func (cq *ChatHandler) flushSummarizeIndex(labelled []pub_models.Chat) error {
+func (cq *ChatHandler) flushSummarizeIndex(ctx context.Context, labelled []pub_models.Chat) error {
 	upsert := cq.upsertIndexBatch
 	if upsert == nil {
-		upsert = UpsertChatIndexBatch
+		upsert = func(convDir string, chats []pub_models.Chat) error {
+			return UpsertChatIndexBatch(ctx, convDir, chats)
+		}
 	}
 	if err := upsert(cq.convDir, labelled); err != nil {
-		return fmt.Errorf("update chat index: %w", err)
+		return diag.Errorf("update chat index: %w", err)
 	}
 	return nil
 }
@@ -247,21 +262,24 @@ func (cq *ChatHandler) summarizeLive() bool {
 
 func (cq *ChatHandler) newSummarizeProgress(ctx context.Context, selected int) summarizeProgress {
 	if !cq.summarizeLive() {
-		return plainSummarizeProgress{cq: cq}
+		return plainSummarizeProgress{ctx: ctx, cq: cq}
 	}
 	return newBoardSummarizeProgress(ctx, cq, selected)
 }
 
 // plainSummarizeProgress is today's output: one line per result and a
 // totals line, JSON objects under -r.
-type plainSummarizeProgress struct{ cq *ChatHandler }
+type plainSummarizeProgress struct {
+	ctx context.Context
+	cq  *ChatHandler
+}
 
 func (p plainSummarizeProgress) started(int, int, string) {}
 
-func (p plainSummarizeProgress) finished(res summarizeResult) { p.cq.printSummarizeResult(res) }
+func (p plainSummarizeProgress) finished(res summarizeResult) { p.cq.printSummarizeResult(p.ctx, res) }
 
 func (p plainSummarizeProgress) done(selected, labelled, failed int) {
-	p.cq.printSummarizeTotals(selected, labelled, failed)
+	p.cq.printSummarizeTotals(p.ctx, selected, labelled, failed)
 }
 
 // Board columns of the summarize table, in Row.Cells order.
@@ -336,7 +354,8 @@ func newBoardSummarizeProgress(ctx context.Context, cq *ChatHandler, selected in
 			{Name: "model", Width: sumModelWidth},
 			{Name: "tokens", Width: sumTokensWidth},
 		},
-		Time: "time",
+		Time:  "time",
+		Color: runenv.From(ctx).Color(),
 	}, rows)
 	b.SetWidth(width)
 	p := &boardSummarizeProgress{b: b, begun: time.Now(), now: time.Now, selected: selected, workers: workers, inProgress: map[int]time.Time{}}
@@ -444,13 +463,13 @@ func summaryTokensOf(c pub_models.Chat) string {
 	return fmt.Sprint(total)
 }
 
-func (cq *ChatHandler) printSummarizeResult(res summarizeResult) {
+func (cq *ChatHandler) printSummarizeResult(ctx context.Context, res summarizeResult) {
 	if cq.raw {
 		line := map[string]string{"id": res.id, "title": res.chat.Title, "summary": res.chat.Summary, "error": ""}
 		if res.err != nil {
 			line["error"] = res.err.Error()
 		}
-		cq.printJSONLine(line)
+		cq.printJSONLine(ctx, line)
 		return
 	}
 	if res.err != nil {
@@ -460,18 +479,18 @@ func (cq *ChatHandler) printSummarizeResult(res summarizeResult) {
 	fmt.Fprintf(cq.out, "%s: %s\n", res.id, res.chat.Title)
 }
 
-func (cq *ChatHandler) printSummarizeTotals(selected, labelled, failed int) {
+func (cq *ChatHandler) printSummarizeTotals(ctx context.Context, selected, labelled, failed int) {
 	if cq.raw {
-		cq.printJSONLine(map[string]int{"selected": selected, "labelled": labelled, "failed": failed})
+		cq.printJSONLine(ctx, map[string]int{"selected": selected, "labelled": labelled, "failed": failed})
 		return
 	}
 	fmt.Fprintf(cq.out, "summarized %d of %d conversations, %d failed\n", labelled, selected, failed)
 }
 
-func (cq *ChatHandler) printJSONLine(v any) {
+func (cq *ChatHandler) printJSONLine(ctx context.Context, v any) {
 	b, err := json.Marshal(v)
 	if err != nil {
-		ancli.Warnf("chat summarize: encode output line: %v\n", err)
+		runenv.Warnf(ctx, runenv.SubsystemChat, "chat summarize: encode output line: %v", err)
 		return
 	}
 	fmt.Fprintf(cq.out, "%s\n", b)

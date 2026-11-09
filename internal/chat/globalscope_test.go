@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -20,7 +21,7 @@ func TestGlobalScopeMigration_PrevQueryToGlobalScope_AndPreferGlobalScopeForDirI
 
 	// Create an old global chat file.
 	old := pub_models.Chat{ID: "prevQuery"}
-	if err := Save(convDir, old); err != nil {
+	if err := Save(context.Background(), convDir, old); err != nil {
 		t.Fatalf("save old prevQuery chat: %v", err)
 	}
 	if _, err := os.Stat(oldPath); err != nil {
@@ -33,7 +34,7 @@ func TestGlobalScopeMigration_PrevQueryToGlobalScope_AndPreferGlobalScopeForDirI
 	}
 
 	// Load should migrate and prefer the old content.
-	got, err := LoadGlobalScope(tmp)
+	got, err := LoadGlobalScope(context.Background(), tmp)
 	if err != nil {
 		t.Fatalf("LoadGlobalScope: %v", err)
 	}
@@ -51,7 +52,7 @@ func TestGlobalScopeMigration_PrevQueryToGlobalScope_AndPreferGlobalScopeForDirI
 
 	// For `chat dir`, when no dir-scoped chat exists, global scope should be used.
 	cq := &ChatHandler{confDir: tmp, convDir: convDir}
-	info, err := cq.resolveChatDirInfo()
+	info, err := cq.resolveChatDirInfo(context.Background())
 	if err != nil {
 		t.Fatalf("resolveChatDirInfo: %v", err)
 	}

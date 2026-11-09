@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/tools/mcp/mcpauth"
 	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -206,7 +207,7 @@ func (c *HttpConn) Call(ctx context.Context, method string, params map[string]an
 	body, err := json.Marshal(Request{JSONRPC: "2.0", ID: id, Method: method, Params: params})
 	if err != nil {
 		c.removeWaiter(id)
-		return nil, fmt.Errorf("mcp conn %q: encode %s: %w", c.serverName, method, err)
+		return nil, diag.Errorf("mcp conn %q: encode %s: %w", c.serverName, method, err)
 	}
 
 	resp, err := c.doPost(ctx, body)
@@ -237,7 +238,7 @@ func (c *HttpConn) Call(ctx context.Context, method string, params map[string]an
 		return res.raw, res.err
 	case <-ctx.Done():
 		c.removeWaiter(id)
-		return nil, fmt.Errorf("mcp conn %q: %s cancelled: %w", c.serverName, method, ctx.Err())
+		return nil, diag.Errorf("mcp conn %q: %s cancelled: %w", c.serverName, method, ctx.Err())
 	}
 }
 
@@ -254,11 +255,11 @@ func (c *HttpConn) Notify(ctx context.Context, method string, params map[string]
 
 	body, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": method, "params": params})
 	if err != nil {
-		return fmt.Errorf("mcp conn %q: encode notify %s: %w", c.serverName, method, err)
+		return diag.Errorf("mcp conn %q: encode notify %s: %w", c.serverName, method, err)
 	}
 	resp, err := c.doPost(ctx, body)
 	if err != nil {
-		return fmt.Errorf("mcp conn %q: notify %s: %w", c.serverName, method, err)
+		return diag.Errorf("mcp conn %q: notify %s: %w", c.serverName, method, err)
 	}
 	defer resp.Body.Close()
 	io.Copy(io.Discard, io.LimitReader(resp.Body, int64(c.readBound)))
@@ -428,7 +429,7 @@ func (c *HttpConn) publishNotification(method string) {
 func (c *HttpConn) doPost(ctx context.Context, body []byte) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("mcp conn %q: build request: %w", c.serverName, err)
+		return nil, diag.Errorf("mcp conn %q: build request: %w", c.serverName, err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
@@ -478,11 +479,11 @@ func (c *HttpConn) consumeResponseBody(resp *http.Response, forID int) {
 	case strings.HasPrefix(ct, "application/json"):
 		data, err := io.ReadAll(limited)
 		if err != nil {
-			c.failOne(forID, fmt.Errorf("mcp conn %q: read response: %w", c.serverName, err))
+			c.failOne(forID, diag.Errorf("mcp conn %q: read response: %w", c.serverName, err))
 			return
 		}
 		if len(data) > c.readBound {
-			c.failOne(forID, claierr.NewMcpFrameUndecodable(c.serverName, fmt.Errorf("%w: bound %d bytes", errFrameTooLarge, c.readBound)))
+			c.failOne(forID, claierr.NewMcpFrameUndecodable(c.serverName, diag.Errorf("%w: bound %d bytes", errFrameTooLarge, c.readBound)))
 			return
 		}
 		c.handleJSONFrame(data, func(e error) {
@@ -506,7 +507,7 @@ func (c *HttpConn) consumeSSE(r io.Reader, forID int) {
 		data, err := fr.next()
 		if err != nil {
 			if !errors.Is(err, io.EOF) {
-				c.failOne(forID, claierr.NewMcpFrameUndecodable(c.serverName, fmt.Errorf("%w: bound %d bytes", errFrameTooLarge, c.readBound)))
+				c.failOne(forID, claierr.NewMcpFrameUndecodable(c.serverName, diag.Errorf("%w: bound %d bytes", errFrameTooLarge, c.readBound)))
 			}
 			break
 		}
@@ -672,7 +673,7 @@ func (c *HttpConn) openServerStreamOnce(lastEventID string) (established bool, n
 		data, err := fr.next()
 		if err != nil {
 			if !errors.Is(err, io.EOF) {
-				c.failAllPending(claierr.NewMcpFrameUndecodable(c.serverName, fmt.Errorf("%w: bound %d bytes", errFrameTooLarge, c.readBound)))
+				c.failAllPending(claierr.NewMcpFrameUndecodable(c.serverName, diag.Errorf("%w: bound %d bytes", errFrameTooLarge, c.readBound)))
 			}
 			return true, fr.LastID()
 		}

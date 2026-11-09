@@ -13,9 +13,9 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"os"
 
 	"github.com/baalimago/clai/internal/models"
+	"github.com/baalimago/clai/internal/runenv"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/cmd"
 )
@@ -42,8 +42,9 @@ func answeringQuerier(completed any) any {
 	}
 }
 
-func triggerCompletionNotification(completed any) {
-	ringCompletionBell(completed, os.Stdout, os.Stderr, utils.IsTerminalWriter)
+func triggerCompletionNotification(ctx context.Context, completed any) {
+	env := runenv.From(ctx)
+	ringCompletionBell(completed, env.Stdout(), env.Stderr(), utils.IsTerminalWriter)
 }
 
 // ringCompletionBell rings the bell on whichever of stdout and stderr is a
@@ -173,6 +174,6 @@ func (c *Command) Run(ctx context.Context) error {
 	if err := c.querier.Query(ctx); err != nil {
 		return recordExit(ctx, err)
 	}
-	triggerCompletionNotification(c.querier)
+	triggerCompletionNotification(ctx, c.querier)
 	return nil
 }

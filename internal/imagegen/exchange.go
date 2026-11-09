@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/pkg/claierr"
 )
 
@@ -15,11 +16,11 @@ import (
 func NewJSONRequest(ctx context.Context, url string, body any) (*http.Request, error) {
 	b, err := json.Marshal(body)
 	if err != nil {
-		return nil, fmt.Errorf("encode image request: %w", err)
+		return nil, diag.Errorf("encode image request: %w", err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(b))
 	if err != nil {
-		return nil, fmt.Errorf("build image request: %w", err)
+		return nil, diag.Errorf("build image request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	return req, nil
@@ -57,7 +58,7 @@ func Exchange[T any](client *http.Client, req *http.Request, failure func(status
 
 func unanswered(req *http.Request, err error) error {
 	if ctxErr := req.Context().Err(); ctxErr != nil {
-		return fmt.Errorf("image request to %s: %w", req.URL.Host, ctxErr)
+		return diag.Errorf("image request to %s: %w", req.URL.Host, ctxErr)
 	}
 	return claierr.NewTransport(err)
 }

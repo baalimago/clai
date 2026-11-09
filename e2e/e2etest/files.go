@@ -1,6 +1,7 @@
 package e2etest
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -95,7 +96,7 @@ func WriteAudioFile(t *testing.T) string {
 
 func SeedConv(t *testing.T, convDir string, c pub_models.Chat) {
 	t.Helper()
-	if err := chat.Save(convDir, c); err != nil {
+	if err := chat.Save(context.Background(), convDir, c); err != nil {
 		t.Fatalf("Save(%q): %v", c.ID, err)
 	}
 }

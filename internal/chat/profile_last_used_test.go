@@ -21,7 +21,7 @@ func TestContinueUsesLastProfileFromChatFile(t *testing.T) {
 			{Role: "assistant", Content: "yo"},
 		},
 	}
-	if err := Save(tmp, c); err != nil {
+	if err := Save(context.Background(), tmp, c); err != nil {
 		t.Fatalf("save: %v", err)
 	}
 

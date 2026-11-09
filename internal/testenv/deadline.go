@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/baalimago/clai/internal/diag"
 )
 
 // reportMargin is how long before the -test.timeout alarm the deadline report
@@ -138,7 +140,7 @@ func sample(start time.Time, timeout time.Duration) (budget, error) {
 func runQueueWait(taskDir string) (time.Duration, error) {
 	threads, err := os.ReadDir(taskDir)
 	if err != nil {
-		return 0, fmt.Errorf("list threads: %w", err)
+		return 0, diag.Errorf("list threads: %w", err)
 	}
 	var wait time.Duration
 	for _, thread := range threads {
@@ -147,7 +149,7 @@ func runQueueWait(taskDir string) (time.Duration, error) {
 			continue
 		}
 		if err != nil {
-			return 0, fmt.Errorf("read schedstat of thread %s: %w", thread.Name(), err)
+			return 0, diag.Errorf("read schedstat of thread %s: %w", thread.Name(), err)
 		}
 		fields := strings.Fields(string(raw))
 		if len(fields) < 2 {
@@ -155,7 +157,7 @@ func runQueueWait(taskDir string) (time.Duration, error) {
 		}
 		ns, err := strconv.ParseInt(fields[1], 10, 64)
 		if err != nil {
-			return 0, fmt.Errorf("parse run-queue wait of thread %s: %w", thread.Name(), err)
+			return 0, diag.Errorf("parse run-queue wait of thread %s: %w", thread.Name(), err)
 		}
 		wait += time.Duration(ns)
 	}
@@ -169,12 +171,12 @@ const loadAveragePath = "/proc/loadavg"
 func loadAverageAt(path string) (float64, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return 0, fmt.Errorf("read load average: %w", err)
+		return 0, diag.Errorf("read load average: %w", err)
 	}
 	first, _, _ := strings.Cut(strings.TrimSpace(string(raw)), " ")
 	load, err := strconv.ParseFloat(first, 64)
 	if err != nil {
-		return 0, fmt.Errorf("parse load average %q: %w", first, err)
+		return 0, diag.Errorf("parse load average %q: %w", first, err)
 	}
 	return load, nil
 }

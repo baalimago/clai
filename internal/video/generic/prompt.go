@@ -6,15 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/baalimago/clai/internal/chat"
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/imageinput"
+	"github.com/baalimago/clai/internal/runenv"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
-	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
 // ErrOneInputImage is returned when the inputs hold more than the one image a video takes.
@@ -28,11 +27,11 @@ func (c *Configurations) SetupPrompts(ctx context.Context, args []string) error 
 	if c.ReplyMode {
 		confDir, err := utils.GetClaiConfigDir()
 		if err != nil {
-			return fmt.Errorf("get config dir: %w", err)
+			return diag.Errorf("get config dir: %w", err)
 		}
-		iP, err := chat.LoadPrevQuery(confDir)
+		iP, err := chat.LoadPrevQuery(ctx, confDir)
 		if err != nil {
-			return fmt.Errorf("load previous query: %w", err)
+			return diag.Errorf("load previous query: %w", err)
 		}
 		prefix, err = replyContext(iP)
 		if err != nil {
@@ -42,22 +41,21 @@ func (c *Configurations) SetupPrompts(ctx context.Context, args []string) error 
 
 	stdin, err := utils.PipedStdin(ctx)
 	if err != nil {
-		return fmt.Errorf("setup prompt from stdin/args: %w", err)
+		return diag.Errorf("setup prompt from stdin/args: %w", err)
 	}
 	collected, err := imageinput.New().Collect(imageinput.CollectRequest{
+		Context:      ctx,
 		Images:       c.Images,
 		Stdin:        stdin,
 		Args:         args,
 		StdinReplace: c.StdinReplace,
 	})
 	if err != nil {
-		return fmt.Errorf("setup prompt from stdin/args: %w", err)
+		return diag.Errorf("setup prompt from stdin/args: %w", err)
 	}
 	prompt := collected.Prompt
 
-	if misc.Truthy(os.Getenv("DEBUG")) {
-		ancli.PrintOK(fmt.Sprintf("format: '%v', prompt: '%v'\n", c.PromptFormat, prompt))
-	}
+	runenv.Debugf(ctx, runenv.SubsystemVideo, "format: '%v', prompt: '%v'", c.PromptFormat, prompt)
 
 	switch len(collected.Images) {
 	case 0:
@@ -67,7 +65,7 @@ func (c *Configurations) SetupPrompts(ctx context.Context, args []string) error 
 		c.Prompt = prompt
 		return nil
 	default:
-		return fmt.Errorf("%w: got %d", ErrOneInputImage, len(collected.Images))
+		return diag.Errorf("%w: got %d", ErrOneInputImage, len(collected.Images))
 	}
 
 	if strings.Contains(c.PromptFormat, "%v") {
@@ -88,7 +86,7 @@ func replyContext(prev pub_models.Chat) (string, error) {
 	replyMessages += "The roles are 'system' and 'user'. "
 	b, err := json.Marshal(chat.ImagesDescribed(prev.Messages))
 	if err != nil {
-		return "", fmt.Errorf("encode reply JSON: %w", err)
+		return "", diag.Errorf("encode reply JSON: %w", err)
 	}
 	return fmt.Sprintf("%vMessages:\n%v\n-------------\n", replyMessages, string(b)), nil
 }

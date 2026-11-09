@@ -8,11 +8,12 @@ import (
 	"path"
 	"time"
 
+	"github.com/baalimago/clai/internal/runenv"
+
 	"github.com/baalimago/clai/internal/tools/mcp"
 	"github.com/baalimago/clai/internal/tools/mcp/mcpauth"
 	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
 // defaultAuthTimeoutOnTerminal is the auth-timeout parameter's
@@ -125,7 +126,7 @@ func dialHttpServerWithAuth(ctx context.Context, authz *mcpauth.Authorizer, serv
 			// token-store write failure rather than discarding a valid,
 			// freshly refreshed token; the run continues with it, with the
 			// write failure surfaced rather than swallowed.
-			ancli.Warnf("%v\n", err)
+			runenv.Warnf(ctx, runenv.SubsystemTextQuerier, "%v\n", err)
 		}
 		if ok {
 			dialOpts = append(dialOpts, mcp.WithHttpRequestDecorator(mcp.RequestDecorator(decorator)))
@@ -186,7 +187,7 @@ func handshakeHttpServerWithAuth(ctx, connCtx context.Context, authz *mcpauth.Au
 		// The freshly issued token is still used for this connection
 		// instead of being discarded, with the write failure surfaced
 		// rather than swallowed.
-		ancli.Warnf("%v\n", authErr)
+		runenv.Warnf(ctx, runenv.SubsystemTextQuerier, "%v\n", authErr)
 	}
 	conn2, err := mcp.NewHttpConn(connCtx, server, sink, mcp.WithRequestDecorator(mcp.RequestDecorator(decorator2)))
 	if err != nil {
@@ -215,7 +216,7 @@ func httpConnOptsFor(ctx context.Context, authz *mcpauth.Authorizer, server pub_
 		// R1-09: as in dialHttpServerWithAuth, ok is true here only when a
 		// valid, freshly refreshed token survived a token-store write
 		// failure; the run continues with it instead of discarding it.
-		ancli.Warnf("%v\n", err)
+		runenv.Warnf(ctx, runenv.SubsystemTextQuerier, "%v\n", err)
 	}
 	if !ok {
 		return nil, nil

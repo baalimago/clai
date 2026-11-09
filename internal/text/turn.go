@@ -68,7 +68,7 @@ type TurnRunner interface {
 	//     its text and images as Parts, in arrival order. A text-only step still persists
 	//     Content (I10).
 	//  5. A PartsCaller tool's result is persisted as Parts when it holds an image. Any
-	//     other tool result is persisted as Content, byte-equal to today's InvokeWith
+	//     other tool result is persisted as Content, byte-equal to tools.Run's
 	//     output, error folding included (I10). A tool ImagePart with Origin generated is
 	//     presented when the tool returns, with the call's imagegen/tool.Rebus when it is
 	//     valid and, for generate_image, present.DetailsOf the image, its model and how

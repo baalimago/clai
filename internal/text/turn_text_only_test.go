@@ -112,7 +112,7 @@ func runTextOnlyTurn(t *testing.T, prepare func(q *Querier[*anthropic.Claude], c
 		out:       &out,
 		configDir: configDir,
 		Model:     claude,
-		tooling:   tooling{run: map[string]pub_models.LLMTool{"ls": ls}},
+		tooling:   tooling{offered: offeredTools(map[string]pub_models.LLMTool{"ls": ls})},
 	}
 	if prepare != nil {
 		prepare(q, configDir)

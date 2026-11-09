@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -26,11 +27,11 @@ func TestSaveAsPreviousQuery_PreservesQueries(t *testing.T) {
 		},
 	}
 
-	if err := SaveAsPreviousQuery(confDir, chat); err != nil {
+	if err := SaveAsPreviousQuery(context.Background(), confDir, chat); err != nil {
 		t.Fatalf("SaveAsPreviousQuery: %v", err)
 	}
 
-	got, err := LoadPrevQuery(confDir)
+	got, err := LoadPrevQuery(context.Background(), confDir)
 	if err != nil {
 		t.Fatalf("LoadPrevQuery: %v", err)
 	}
@@ -53,7 +54,7 @@ func TestSaveAsPreviousQuery_PreservesQueries(t *testing.T) {
 		if entry.IsDir() || entry.Name() == "globalScope.json" || filepath.Ext(entry.Name()) != ".json" {
 			continue
 		}
-		conv, err := FromPath(filepath.Join(confDir, "conversations", entry.Name()))
+		conv, err := FromPath(context.Background(), filepath.Join(confDir, "conversations", entry.Name()))
 		if err != nil {
 			t.Fatalf("load saved conversation %q: %v", entry.Name(), err)
 		}
@@ -85,7 +86,7 @@ func TestSaveAsPreviousQuery_DoesNotCreateDuplicateConversationForExistingChat(t
 		},
 	}
 
-	if err := SaveAsPreviousQuery(confDir, chat); err != nil {
+	if err := SaveAsPreviousQuery(context.Background(), confDir, chat); err != nil {
 		t.Fatalf("SaveAsPreviousQuery: %v", err)
 	}
 
@@ -132,10 +133,10 @@ func assertLabelled(t *testing.T, got pub_models.Chat, want pub_models.Chat) {
 func TestSave_roundTripsTitleSummary(t *testing.T) {
 	convDir := t.TempDir()
 	want := labelledChat("labelled", pub_models.Message{Role: "user", Content: "hi"})
-	if err := Save(convDir, want); err != nil {
+	if err := Save(context.Background(), convDir, want); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
-	got, err := FromPath(filepath.Join(convDir, "labelled.json"))
+	got, err := FromPath(context.Background(), filepath.Join(convDir, "labelled.json"))
 	if err != nil {
 		t.Fatalf("FromPath: %v", err)
 	}
@@ -145,10 +146,10 @@ func TestSave_roundTripsTitleSummary(t *testing.T) {
 func TestSaveAsPreviousQuery_mirrorCarriesFields(t *testing.T) {
 	confDir := t.TempDir()
 	want := labelledChat("source", pub_models.Message{Role: "user", Content: "hi"}, pub_models.Message{Role: "assistant", Content: "yo"})
-	if err := SaveAsPreviousQuery(confDir, want); err != nil {
+	if err := SaveAsPreviousQuery(context.Background(), confDir, want); err != nil {
 		t.Fatalf("SaveAsPreviousQuery: %v", err)
 	}
-	mirror, err := LoadPrevQuery(confDir)
+	mirror, err := LoadPrevQuery(context.Background(), confDir)
 	if err != nil {
 		t.Fatalf("LoadPrevQuery: %v", err)
 	}
@@ -165,7 +166,7 @@ func TestSaveAsPreviousQuery_promotionCarriesFields(t *testing.T) {
 		pub_models.Message{Role: "user", Content: "hi"},
 		pub_models.Message{Role: "assistant", Content: "yo"},
 	)
-	if err := SaveAsPreviousQuery(confDir, want); err != nil {
+	if err := SaveAsPreviousQuery(context.Background(), confDir, want); err != nil {
 		t.Fatalf("SaveAsPreviousQuery: %v", err)
 	}
 	entries, err := os.ReadDir(filepath.Join(confDir, "conversations"))
@@ -177,7 +178,7 @@ func TestSaveAsPreviousQuery_promotionCarriesFields(t *testing.T) {
 		if entry.IsDir() || entry.Name() == "globalScope.json" || filepath.Ext(entry.Name()) != ".json" {
 			continue
 		}
-		got, err := FromPath(filepath.Join(confDir, "conversations", entry.Name()))
+		got, err := FromPath(context.Background(), filepath.Join(confDir, "conversations", entry.Name()))
 		if err != nil {
 			t.Fatalf("FromPath(%q): %v", entry.Name(), err)
 		}

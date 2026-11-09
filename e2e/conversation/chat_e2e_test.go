@@ -1,6 +1,7 @@
 package conversation
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -280,7 +281,7 @@ func Test_goldenFile_CHAT_CONTINUE_obfuscated_preview(t *testing.T) {
 			{Role: "assistant", Content: "world"},
 		},
 	}
-	if err := chat.Save(convDir, conv); err != nil {
+	if err := chat.Save(context.Background(), convDir, conv); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
@@ -292,7 +293,7 @@ func Test_goldenFile_CHAT_CONTINUE_obfuscated_preview(t *testing.T) {
 		_ = os.Chdir(oldWd)
 	})
 
-	out, status := harness.RunOne(t, confDir, "-r c c 0")
+	out, stderr, status := harness.RunOneStreams(t, confDir, "-r c c 0")
 	if status != 0 {
 		t.Fatalf("expected status code 0, got %v. stdout=%q", status, out)
 	}
@@ -304,8 +305,8 @@ func Test_goldenFile_CHAT_CONTINUE_obfuscated_preview(t *testing.T) {
 	// last message is fully printed
 	testboil.AssertStringContains(t, out, "world")
 
-	// replyable notice
-	testboil.AssertStringContains(t, out, "is now replyable with flag")
+	// replyable notice, a diagnostic on stderr
+	testboil.AssertStringContains(t, stderr, "is now replyable with flag")
 
 	// ensure dirscope binding exists and points to chat
 	chatID, err := chat.LoadDirScopeChatID(confDir)
@@ -337,7 +338,7 @@ func Test_e2e_chat_continue_needs_no_model(t *testing.T) {
 		ID:       "keyless-chat",
 		Messages: []models.Message{{Role: "user", Content: "hello"}, {Role: "assistant", Content: "world"}},
 	}
-	if err := chat.Save(filepath.Join(confDir, "conversations"), conv); err != nil {
+	if err := chat.Save(context.Background(), filepath.Join(confDir, "conversations"), conv); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 

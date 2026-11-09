@@ -1,4 +1,4 @@
-package cloudcmd
+package term
 
 import "syscall"
 

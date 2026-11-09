@@ -10,14 +10,16 @@ import (
 	"path"
 	"strings"
 
+	"github.com/baalimago/clai/internal/runenv"
+
 	"github.com/baalimago/clai/internal/cost"
 	"github.com/baalimago/clai/internal/debugflags"
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/text/generic"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/internal/vendors/openrouter"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
@@ -154,22 +156,22 @@ func setupConfigFile[C models.StreamCompleter](configPath string, userConf Confi
 			data, err := json.Marshal(dfault)
 			if err != nil {
 				retErr = err
-				return modelConf, fmt.Errorf("failed to marshal default model: %v, error: %w", dfault, retErr)
+				return modelConf, diag.Errorf("failed to marshal default model: %v, error: %w", dfault, retErr)
 			}
 
 			// Atomic: concurrent in-process queriers of one model race on
 			// this file (D31).
 			err = utils.WriteFileAtomic(configPath, data, os.FileMode(0o644))
 			if err != nil {
-				return modelConf, fmt.Errorf("failed to write default model: %v, error: %w", dfault, err)
+				return modelConf, diag.Errorf("failed to write default model: %v, error: %w", dfault, err)
 			}
 
 			err = utils.ReadAndUnmarshal(configPath, &modelConf)
 			if err != nil {
-				return modelConf, fmt.Errorf("failed to read default model: %v, error: %w", dfault, err)
+				return modelConf, diag.Errorf("failed to read default model: %v, error: %w", dfault, err)
 			}
 		} else {
-			return modelConf, fmt.Errorf("failed to load querier of model: %v, error: %w", userConf.Model, retErr)
+			return modelConf, diag.Errorf("failed to load querier of model: %v, error: %w", userConf.Model, retErr)
 		}
 	}
 	retErr = nil
@@ -177,38 +179,37 @@ func setupConfigFile[C models.StreamCompleter](configPath string, userConf Confi
 }
 
 func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configurations, dfault C) (Querier[C], error) {
-	traceChatf("new querier start model=%q config_dir=%q initial_chat_id=%q messages=%d", userConf.Model, userConf.ConfigDir, userConf.InitialChat.ID, len(userConf.InitialChat.Messages))
+	traceChatf(ctx, "new querier start model=%q config_dir=%q initial_chat_id=%q messages=%d", userConf.Model, userConf.ConfigDir, userConf.InitialChat.ID, len(userConf.InitialChat.Messages))
 	vendor, model, modelVersion, err := vendorType(userConf.Model)
 	if err != nil {
-		return Querier[C]{}, fmt.Errorf("failed to find vendorType: %w", err)
+		return Querier[C]{}, diag.Errorf("failed to find vendorType: %w", err)
 	}
-	traceChatf("new querier vendor resolved vendor=%q model=%q version=%q", vendor, model, modelVersion)
+	traceChatf(ctx, "new querier vendor resolved vendor=%q model=%q version=%q", vendor, model, modelVersion)
 	claiConfDir := userConf.ConfigDir
 	noFrontslashModelVersion := strings.ReplaceAll(modelVersion, "/", "_")
 	configPath := path.Join(claiConfDir, fmt.Sprintf("%v_%v_%v.json", vendor, model, noFrontslashModelVersion))
-	traceChatf("new querier model config path=%q", configPath)
+	traceChatf(ctx, "new querier model config path=%q", configPath)
 	if err := userConf.StepRetry.validate(); err != nil {
-		return Querier[C]{}, fmt.Errorf("new querier: %w", err)
+		return Querier[C]{}, diag.Errorf("new querier: %w", err)
 	}
+	// The diagnostic level never selects the debug display: raising it
+	// changes stderr only, never what the result stream receives.
 	querier := Querier[C]{stepRetry: userConf.StepRetry}
-	if debugflags.Enabled("TEXT_QUERIER") {
-		querier.debug = true
-	}
 	querier.configDir = claiConfDir
 	modelConf, err := setupConfigFile(configPath, userConf, dfault)
 	if err != nil {
-		return Querier[C]{}, fmt.Errorf("failed to setup config file: %w", err)
+		return Querier[C]{}, diag.Errorf("failed to setup config file: %w", err)
 	}
-	traceChatf("new querier model config loaded path=%q", configPath)
+	traceChatf(ctx, "new querier model config loaded path=%q", configPath)
 
-	if querier.debug {
-		ancli.PrintOK(fmt.Sprintf("userConf: %v\n", debug.IndentedJsonFmt(userConf)))
+	if runenv.DebugEnabled(ctx, runenv.SubsystemTextQuerier) {
+		runenv.Debugf(ctx, runenv.SubsystemTextQuerier, "userConf: %v\n", debug.IndentedJsonFmt(userConf))
 	}
 	querier.cmdBan = append([]string(nil), userConf.CmdBan...)
 	querier.Raw = userConf.Raw
 	output := userConf.Out
 	if output == nil {
-		output = os.Stdout
+		output = runenv.From(ctx).Stdout()
 	}
 	querier.outputModeKnown = true
 	querier.outputIsTerminal = utils.IsTerminalWriter(output)
@@ -243,10 +244,12 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	// the legacy direct print.
 	mcpMode := mcpLogModeFor(querier.debug, querier.outputIsTerminal, querier.Raw, querier.structuredOutput, utils.RollingOutputEnabled())
 	querier.errOut = userConf.ErrOut
-	if userConf.ErrOut != nil {
-		querier.mcpSink = newMcpLogSinkTo(mcpMode, userConf.ErrOut)
-	} else {
-		querier.mcpSink = newMcpLogSink(mcpMode)
+	if querier.errOut == nil {
+		querier.errOut = runenv.From(ctx).Stderr()
+	}
+	querier.mcpSink = newMcpLogSinkTo(ctx, mcpMode, querier.errOut)
+	if userConf.Out == nil {
+		querier.json = newJSONDisplay(ctx)
 	}
 	if userConf.OutputIsTerminal == nil {
 		// Only when unset (R2-09): a caller that already set this
@@ -259,35 +262,35 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	if userConf.ResponseFormat != nil {
 		setter, ok := any(modelConf).(generic.ResponseFormatSetter)
 		if !ok {
-			return Querier[C]{}, fmt.Errorf("model %q: %w: this vendor cannot honour -rf", userConf.Model, generic.ErrResponseFormatUnsupported)
+			return Querier[C]{}, diag.Errorf("model %q: %w: this vendor cannot honour -rf", userConf.Model, generic.ErrResponseFormatUnsupported)
 		}
 		setter.SetResponseFormat(toGenericResponseFormat(userConf.ResponseFormat))
 	}
 
 	err = modelConf.Setup()
 	if err != nil {
-		return Querier[C]{}, fmt.Errorf("failed to setup model: %w", err)
+		return Querier[C]{}, diag.Errorf("failed to setup model: %w", err)
 	}
 
 	if err := setupTooling(ctx, modelConf, &userConf, querier.mcpSink); err != nil {
 		return Querier[C]{}, err
 	}
 
-	traceChatf("post setup")
+	traceChatf(ctx, "post setup")
 	currentUser, err := user.Current()
 	if err == nil {
 		querier.username = currentUser.Username
 	} else {
 		querier.username = "user"
 	}
-	traceChatf("user is: %v", currentUser.Name)
+	traceChatf(ctx, "user is: %v", currentUser.Name)
 	querier.Model = modelConf
-	traceChatf("querier: %v,\n===\nmodels: %v\n",
+	traceChatf(ctx, "querier: %v,\n===\nmodels: %v\n",
 		debug.IndentedJsonFmt(querier),
 		debug.IndentedJsonFmt(modelConf))
 	querier.chat = userConf.InitialChat
 	querier.systemPrompt = userConf.SystemPrompt
-	traceChatf("new querier chat attached chat_id=%q messages=%d system_prompt_len=%d", querier.chat.ID, len(querier.chat.Messages), len(querier.systemPrompt))
+	traceChatf(ctx, "new querier chat attached chat_id=%q messages=%d system_prompt_len=%d", querier.chat.ID, len(querier.chat.Messages), len(querier.systemPrompt))
 	// Ensure profile selection is persisted in globalScope/saved conversations.
 	querier.chat.Profile = userConf.UseProfile
 	// One dimensions snapshot per interactive output session, bound to the
@@ -295,13 +298,15 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	// (R2-02). A non-terminal writer or a failed read yields the deterministic
 	// dimensions.Fallback, so no width-aware path ever queries the terminal
 	// again.
+	querier.runCtx = ctx
 	querier.dims = utils.SessionDimensions(output)
 	querier.tooling.skillLoader = userConf.SkillLoader
 	querier.tooling.base = userConf.BaseTools
-	querier.tooling.run = userConf.BaseTools
-	querier.tooling.registered = userConf.RegisteredTools
+	querier.tooling.offered = userConf.Offered
 
-	costWarnf := ancli.Errf
+	costWarnf := func(format string, a ...any) {
+		runenv.Failuref(ctx, runenv.SubsystemCostManager, format, a...)
+	}
 	if userConf.CostWarnf != nil {
 		costWarnf = userConf.CostWarnf
 	}
@@ -334,10 +339,8 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	})
 	rdyChan, errChan := costManager.Start(ctx)
 	costDone := make(chan struct{})
-	querier.costEnricher = newCostEnricher(costManager, costDone)
-	if userConf.CostWarnf != nil {
-		querier.costEnricher.warnf = costWarnf
-	}
+	querier.costEnricher = newCostEnricher(ctx, costManager, costDone)
+	querier.costEnricher.warnf = costWarnf
 	logCostErrors := !misc.Truthy(os.Getenv("CLAI_DISABLE_COST_ERR_LOG_GOROUTINE"))
 	go func() {
 		defer close(costDone)

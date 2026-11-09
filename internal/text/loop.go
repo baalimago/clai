@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/baalimago/clai/internal/chatid"
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/pkg/claierr"
@@ -100,16 +101,13 @@ type LoopQuerier interface {
 	ReportLoopSummary(summary LoopSummary) error
 }
 
-// RegisterExtraTool adds tool to the querier's dispatch and selectable
-// catalogs and to the model's tool box, so a following TextQuery offers it
-// beside every already-selected tool. It is called between queries and never
-// during one. (worklog 2026-10-21-clai-loop, README F6)
+// RegisterExtraTool adds tool to the querier's selectable catalog and offers
+// it to the model, so a following TextQuery offers it beside every
+// already-selected tool. A model without a tool box is offered nothing, so
+// tool stays uncallable. It is called between queries and never during one.
+// (worklog 2026-10-21-clai-loop, README F6)
 func (q *Querier[C]) RegisterExtraTool(tool pub_models.LLMTool) {
 	name := tool.Specification().Name
-	if q.tooling.run == nil {
-		q.tooling.run = map[string]pub_models.LLMTool{}
-	}
-	q.tooling.run[name] = tool
 	if q.tooling.base == nil {
 		q.tooling.base = map[string]pub_models.LLMTool{}
 	}
@@ -119,14 +117,7 @@ func (q *Querier[C]) RegisterExtraTool(tool pub_models.LLMTool) {
 	if !ok {
 		return
 	}
-	if q.tooling.registered == nil {
-		q.tooling.registered = map[string]struct{}{}
-	}
-	if _, registered := q.tooling.registered[name]; registered {
-		return
-	}
-	toolBox.RegisterTool(tool)
-	q.tooling.registered[name] = struct{}{}
+	q.tooling.offer(toolBox, tool)
 }
 
 // LoopRunner executes outer-loop iterations over a LoopQuerier and a
@@ -177,7 +168,7 @@ func (r *loopRunner) Query(ctx context.Context) error {
 	summary.End = loopEndOf(err)
 	summary.Duration = time.Since(start)
 	if reportErr := r.querier.ReportLoopSummary(summary); reportErr != nil {
-		return errors.Join(err, fmt.Errorf("report loop summary: %w", reportErr))
+		return errors.Join(err, diag.Errorf("report loop summary: %w", reportErr))
 	}
 	return err
 }
@@ -243,7 +234,7 @@ func (r *loopRunner) run(ctx context.Context, summary *LoopSummary) error {
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return ctxErr
 			}
-			return fmt.Errorf("loop iteration %d: %w", iteration, err)
+			return diag.Errorf("loop iteration %d: %w", iteration, err)
 		}
 		summary.addTurn(chat, result)
 		answer := pub_models.Message{Role: "assistant", Content: lastAssistantText(result)}
@@ -282,7 +273,7 @@ func (r *loopRunner) run(ctx context.Context, summary *LoopSummary) error {
 // iteration when it fails.
 func (r *loopRunner) finishDisplay(iteration int, outcome LoopOutcome, answer pub_models.Message) error {
 	if err := r.querier.FinishLoopIteration(outcome, answer); err != nil {
-		return fmt.Errorf("display loop iteration %d: %w", iteration, err)
+		return diag.Errorf("display loop iteration %d: %w", iteration, err)
 	}
 	return nil
 }
@@ -315,7 +306,7 @@ func (r *loopRunner) iterationChat(iteration int, handover string) (pub_models.C
 
 	id, err := chatid.New()
 	if err != nil {
-		return pub_models.Chat{}, fmt.Errorf("generate loop iteration chat id: %w", err)
+		return pub_models.Chat{}, diag.Errorf("generate loop iteration chat id: %w", err)
 	}
 	seedMessages, ok := messagesThroughFirstUser(r.cfg.SeedChat.Messages)
 	if !ok {

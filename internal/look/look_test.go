@@ -60,3 +60,27 @@ func TestFor_noColorOffATerminal(t *testing.T) {
 		t.Fatal("a regular file is not a terminal")
 	}
 }
+
+func TestPlain_dropsMarkersAndAlignment(t *testing.T) {
+	plain := Style{Plain: true, Color: true}
+	if got := plain.Head("tools", "a", "b"); got != "tools: a, b" {
+		t.Fatalf("Head = %q", got)
+	}
+	if got := plain.Head("model"); got != "model" {
+		t.Fatalf("Head = %q", got)
+	}
+	got := Grid("  ", [][]string{{"sha256", "abc"}, {"page", "https://x/"}, {"", "env A=1"}, {"→ clai", "run"}, {"srv", "npx", "! not pinned"}}, plain)
+	want := []string{"  sha256: abc", "  page: https://x/", "  env A=1", "  clai: run", "  srv: npx, ! not pinned"}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("Grid = %q, want %q", got, want)
+	}
+	if got := plain.Quote("text"); got != "  > text" {
+		t.Fatalf("Quote = %q", got)
+	}
+	if got := (Style{}).Quote("text"); got != "  │ text" {
+		t.Fatalf("Quote = %q", got)
+	}
+	if got := plain.Link("  ", "https://x/"); got != "  https://x/" {
+		t.Fatalf("Link = %q", got)
+	}
+}

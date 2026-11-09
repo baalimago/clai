@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"sync/atomic"
 	"time"
+
+	"github.com/baalimago/clai/internal/diag"
 )
 
 const (
@@ -108,11 +110,11 @@ type AudioAssembler struct {
 func NewAssembler(runner CommandRunner, budgets Budgets, sourcePath string, sourceDuration time.Duration) (*AudioAssembler, error) {
 	sourceHash, err := hashFile(sourcePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to hash source: %w", err)
+		return nil, diag.Errorf("failed to hash source: %w", err)
 	}
 	runDir, err := os.MkdirTemp("", "clai-audio-calibrate-*")
 	if err != nil {
-		return nil, fmt.Errorf("failed to create run directory: %w", err)
+		return nil, diag.Errorf("failed to create run directory: %w", err)
 	}
 	return &AudioAssembler{
 		Runner:         runner,
@@ -143,7 +145,7 @@ func (a *AudioAssembler) Assemble(ctx context.Context, req AssembleRequest) (man
 	base := filepath.Join(a.runDir, "req-"+strconv.FormatInt(a.seq.Add(1), 10))
 	workDir := base + ".work"
 	if err := os.Mkdir(workDir, 0o700); err != nil {
-		return nil, fmt.Errorf("failed to create request work dir: %w", err)
+		return nil, diag.Errorf("failed to create request work dir: %w", err)
 	}
 	encoded := base + requestExtension
 	defer func() {
@@ -155,7 +157,7 @@ func (a *AudioAssembler) Assemble(ctx context.Context, req AssembleRequest) (man
 	timelinePath := filepath.Join(workDir, "timeline.raw")
 	timeline, err := os.Create(timelinePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create timeline: %w", err)
+		return nil, diag.Errorf("failed to create timeline: %w", err)
 	}
 	defer timeline.Close()
 	hasher := sha256.New()
@@ -176,7 +178,7 @@ func (a *AudioAssembler) Assemble(ctx context.Context, req AssembleRequest) (man
 		appendRegion(Region{Kind: RegionSample, Label: s.ID, SrcStart: start, SrcEnd: end, Clipped: clipped, Candidate: s.Candidate}, n)
 		gap := samplesOf(sampleGap)
 		if _, err := out.Write(make([]byte, gap*bytesPerSample)); err != nil {
-			return nil, fmt.Errorf("failed to write gap: %w", err)
+			return nil, diag.Errorf("failed to write gap: %w", err)
 		}
 		appendRegion(Region{Kind: RegionGap}, gap)
 	}
@@ -190,7 +192,7 @@ func (a *AudioAssembler) Assemble(ctx context.Context, req AssembleRequest) (man
 	m.CoreStart, m.CoreEnd = coreStart, coreEnd
 	m.Duration = durationOf(pos)
 	if err := timeline.Close(); err != nil {
-		return nil, fmt.Errorf("failed to flush timeline: %w", err)
+		return nil, diag.Errorf("failed to flush timeline: %w", err)
 	}
 	if m.Duration > a.Budgets.MaxRequestDuration {
 		return nil, fmt.Errorf("request of %v exceeds max-request-seconds %v (prefix %v, core %v)",
@@ -201,7 +203,7 @@ func (a *AudioAssembler) Assemble(ctx context.Context, req AssembleRequest) (man
 	}
 	info, err := os.Stat(encoded)
 	if err != nil {
-		return nil, fmt.Errorf("encoded request missing: %w", err)
+		return nil, diag.Errorf("encoded request missing: %w", err)
 	}
 	m.Bytes = info.Size()
 	if m.Bytes+envelopeReserve > a.Budgets.MaxRequestBytes {
@@ -238,18 +240,18 @@ func (a *AudioAssembler) extractPCM(ctx context.Context, start, end time.Duratio
 		"-y", tmp)
 	if err != nil {
 		if ctx.Err() != nil {
-			return 0, fmt.Errorf("pcm extraction aborted: %w", ctx.Err())
+			return 0, diag.Errorf("pcm extraction aborted: %w", ctx.Err())
 		}
-		return 0, fmt.Errorf("ffmpeg failed to extract %v–%v: %w, stderr: %v", start, end, err, tail(stderr))
+		return 0, diag.Errorf("ffmpeg failed to extract %v–%v: %w, stderr: %v", start, end, err, tail(stderr))
 	}
 	f, err := os.Open(tmp)
 	if err != nil {
-		return 0, fmt.Errorf("extracted pcm missing: %w", err)
+		return 0, diag.Errorf("extracted pcm missing: %w", err)
 	}
 	defer f.Close()
 	written, err := io.Copy(out, f)
 	if err != nil {
-		return 0, fmt.Errorf("failed to append pcm to timeline: %w", err)
+		return 0, diag.Errorf("failed to append pcm to timeline: %w", err)
 	}
 	os.Remove(tmp)
 	return written / bytesPerSample, nil
@@ -265,9 +267,9 @@ func (a *AudioAssembler) encode(ctx context.Context, timeline, encoded string) e
 		"-y", encoded)
 	if err != nil {
 		if ctx.Err() != nil {
-			return fmt.Errorf("request encode aborted: %w", ctx.Err())
+			return diag.Errorf("request encode aborted: %w", ctx.Err())
 		}
-		return fmt.Errorf("ffmpeg failed to encode request: %w, stderr: %v", err, tail(stderr))
+		return diag.Errorf("ffmpeg failed to encode request: %w, stderr: %v", err, tail(stderr))
 	}
 	return nil
 }

@@ -3,7 +3,6 @@ package board
 import (
 	"fmt"
 	"io"
-	"os"
 	"sync"
 	"time"
 
@@ -18,6 +17,7 @@ type Status struct {
 	mu    sync.Mutex // guards drawing state
 	out   io.Writer
 	live  bool
+	color bool
 	width int
 	// measure reads the terminal's width before each frame, so a narrowed
 	// terminal never wraps the row; nil keeps width.
@@ -32,16 +32,28 @@ type Status struct {
 	done    chan struct{}
 }
 
-// NewStatus creates a stopped status; live is true when out is a terminal.
+// NewStatus creates a stopped, uncolored status; live is true when out is a
+// terminal. A nil out discards.
 func NewStatus(out io.Writer, live bool, title string) *Status {
 	if out == nil {
-		out = os.Stderr
+		out = io.Discard
 	}
 	s := &Status{out: out, live: live, title: title, now: time.Now}
 	if live {
 		s.measure = func() int { return utils.SessionDimensions(out).Width }
 	}
 	return s
+}
+
+// SetColor lets the status color its title; callers fill it from the run's
+// Env.
+func (s *Status) SetColor(on bool) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.color = on
 }
 
 // SetDetail changes the text drawn after the elapsed time, such as a
@@ -149,7 +161,7 @@ func (s *Status) draw() {
 		s.width = s.measure()
 	}
 	spinner := string(spinnerFrames[s.frame%len(spinnerFrames)])
-	line := colorize(utils.TableTheme().Primary, "▸ "+s.title) + "  " + spinner + " " + ElapsedText(s.now().Sub(s.started))
+	line := colorize(s.color, utils.TableTheme().Primary, "▸ "+s.title) + "  " + spinner + " " + ElapsedText(s.now().Sub(s.started))
 	if s.detail != "" {
 		line += " · " + s.detail
 	}

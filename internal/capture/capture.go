@@ -1,6 +1,9 @@
 // Package capture records this machine's audio with one ffmpeg process: it
 // discovers the sources, builds the argument line, and interrupts that process
 // to stop. ffmpeg is the only required program.
+//
+// The process runs in its own process group, so a terminal's Ctrl-C reaches
+// clai alone and the recorder is the one that asks ffmpeg to finish.
 package capture
 
 import (
@@ -9,6 +12,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/baalimago/clai/internal/diag"
 )
 
 var (
@@ -18,16 +23,60 @@ var (
 	ErrNoSource = errors.New("no capture source selected")
 	// ErrNoAudio means no source reached the silence threshold, so no file stays.
 	ErrNoAudio = errors.New("no audio captured")
-	// ErrInterrupted means the caller cancelled the recording; the message holds the saved path.
+	// ErrInterrupted means the caller cancelled the recording. The error that
+	// carries it is an *InterruptedError, which names the saved file.
 	ErrInterrupted = errors.New("recording interrupted")
 )
+
+// Finish is how the file of one recording got a header that matches its
+// samples.
+type Finish string
+
+const (
+	// FinishFinalized means ffmpeg ended on the stop request and wrote the
+	// header itself.
+	FinishFinalized Finish = "finalized"
+	// FinishRepaired means ffmpeg left the header unfinished, so the recorder
+	// wrote the sizes from the samples on disk. Samples ffmpeg had not written
+	// yet are missing.
+	FinishRepaired Finish = "repaired"
+)
+
+// InterruptedError is a recording the caller cancelled. Path is the saved
+// file; it is empty when nothing could be kept, and Lost then says why.
+type InterruptedError struct {
+	Path   string
+	Finish Finish
+	// Quiet means no sample of the saved file reached the silence threshold.
+	// An interrupted recording is kept all the same.
+	Quiet bool
+	Lost  error
+}
+
+func (e *InterruptedError) Error() string {
+	if e.Path == "" {
+		return fmt.Sprintf("%v: nothing saved: %v", ErrInterrupted, e.Lost)
+	}
+	text := fmt.Sprintf("%v: saved %s", ErrInterrupted, e.Path)
+	if e.Finish == FinishRepaired {
+		text += "; ffmpeg did not finish in time and was killed, so the last moments may be missing"
+	}
+	if e.Quiet {
+		text += "; no sample reached the silence threshold"
+	}
+	return text
+}
+
+func (e *InterruptedError) Is(target error) bool { return target == ErrInterrupted }
+
+func (e *InterruptedError) Unwrap() error { return e.Lost }
 
 // discoveryCancellation reports the caller's cancellation when the context
 // ended while a discovery child ran: exec kills that child, and its signal
 // must not stand in for the cancellation (A01).
 func discoveryCancellation(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
-		return fmt.Errorf("source discovery: %w", err)
+		return diag.Errorf("source discovery: %w", err)
 	}
 	return nil
 }
@@ -36,9 +85,9 @@ func discoveryCancellation(ctx context.Context) error {
 // leaves the tail out when the child wrote nothing.
 func childFailure(summary string, err error, stderr string) error {
 	if tail := strings.TrimSpace(stderr); tail != "" {
-		return fmt.Errorf("%s: %w: %s", summary, err, tail)
+		return diag.Errorf("%s: %w: %s", summary, err, tail)
 	}
-	return fmt.Errorf("%s: %w", summary, err)
+	return diag.Errorf("%s: %w", summary, err)
 }
 
 // Kind classifies one capture source.
@@ -118,6 +167,8 @@ type Recording struct {
 	Duration       time.Duration
 	StoppedBecause StopReason
 	Sources        []Source
+	// Finish is empty when no file was kept.
+	Finish Finish
 }
 
 // Recorder captures this machine's audio, the same way on every supported

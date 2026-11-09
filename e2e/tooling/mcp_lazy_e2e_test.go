@@ -73,7 +73,7 @@ func TestLazyStartupE2EUnderRace(t *testing.T) {
 	if coldStatus != 0 {
 		t.Fatalf("cold run: status %d, stderr=%q", coldStatus, coldStderr)
 	}
-	if strings.Contains(coldStdout, "which doesn't exist") {
+	if strings.Contains(coldStdout+coldStderr, "which doesn't exist") {
 		t.Fatalf("cold run: stdout = %q, want mcp_echo_echo found, not warned about", coldStdout)
 	}
 	coldSpawns := countMcpLazySpawns(t, spawnLog)
@@ -88,10 +88,11 @@ func TestLazyStartupE2EUnderRace(t *testing.T) {
 	if warmStatus != 0 {
 		t.Fatalf("warm run: status %d, stderr=%q", warmStatus, warmStderr)
 	}
-	if !strings.Contains(warmStdout, "mcp_echo_echo") {
+	// The registration detail is a diagnostic on stderr (F1).
+	if !strings.Contains(warmStderr, "mcp_echo_echo") {
 		t.Fatalf("warm run: stdout = %q, want positive evidence mcp_echo_echo registered", warmStdout)
 	}
-	if strings.Contains(warmStdout, "which doesn't exist") {
+	if strings.Contains(warmStdout+warmStderr, "which doesn't exist") {
 		t.Fatalf("warm run: stdout = %q, want mcp_echo_echo found, not warned about", warmStdout)
 	}
 	if got := countMcpLazySpawns(t, spawnLog); got != coldSpawns {

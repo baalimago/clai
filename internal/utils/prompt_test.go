@@ -9,6 +9,8 @@ import (
 	"testing"
 	"testing/iotest"
 	"time"
+
+	"github.com/baalimago/clai/internal/runenv"
 )
 
 func TestPrompt(t *testing.T) {
@@ -89,7 +91,7 @@ func TestPrompt(t *testing.T) {
 			}
 
 			// Call the function
-			prompt, err := Prompt(context.Background(), tc.stdinReplace, tc.args)
+			prompt, err := Prompt(stdinCtx(), tc.stdinReplace, tc.args)
 
 			// Check the error
 			if tc.expectedError && err == nil {
@@ -128,7 +130,7 @@ func TestPrompt_FileRedirect(t *testing.T) {
 
 	os.Stdin = tmp
 
-	prompt, err := Prompt(context.Background(), "", []string{"cmd", "prefix"})
+	prompt, err := Prompt(stdinCtx(), "", []string{"cmd", "prefix"})
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -166,7 +168,7 @@ func TestPrompt_StdinStatErrorIsReturned(t *testing.T) {
 		t.Fatal(err)
 	}
 	os.Stdin = f
-	if _, err := Prompt(context.Background(), "", []string{"cmd", "x"}); !errors.Is(err, os.ErrClosed) {
+	if _, err := Prompt(stdinCtx(), "", []string{"cmd", "x"}); !errors.Is(err, os.ErrClosed) {
 		t.Fatalf("Prompt error = %v, want the stdin stat error", err)
 	}
 }
@@ -181,7 +183,7 @@ func TestPipedStdin(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = devNull.Close() })
 	os.Stdin = devNull
-	if in, err := PipedStdin(context.Background()); err != nil || in != nil {
+	if in, err := PipedStdin(stdinCtx()); err != nil || in != nil {
 		t.Fatalf("PipedStdin() on a character device = %v, %v; want nil, nil", in, err)
 	}
 
@@ -191,7 +193,7 @@ func TestPipedStdin(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = file.Close() })
 	os.Stdin = file
-	if in, err := PipedStdin(context.Background()); err != nil || in != io.Reader(file) {
+	if in, err := PipedStdin(stdinCtx()); err != nil || in != io.Reader(file) {
 		t.Fatalf("PipedStdin() on a file = %v, %v; want the file", in, err)
 	}
 }
@@ -209,7 +211,7 @@ func TestPipedStdin_stopsWaitingWhenTheContextEnds(t *testing.T) {
 	t.Cleanup(func() { _ = r.Close(); _ = w.Close() })
 	os.Stdin = r
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(stdinCtx())
 	in, err := PipedStdin(ctx)
 	if err != nil || in == nil {
 		t.Fatalf("PipedStdin() on a pipe = %v, %v; want a reader", in, err)
@@ -243,7 +245,7 @@ func TestPipedStdin_readsWhatThePipeHolds(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = w.Close()
-	in, err := PipedStdin(context.Background())
+	in, err := PipedStdin(stdinCtx())
 	if err != nil {
 		t.Fatalf("PipedStdin: %v", err)
 	}
@@ -251,4 +253,9 @@ func TestPipedStdin_readsWhatThePipeHolds(t *testing.T) {
 	if err != nil || string(got) != "piped text" {
 		t.Fatalf("ReadAll = %q, %v; want the piped text", got, err)
 	}
+}
+
+// stdinCtx carries a run whose stdin is the current os.Stdin.
+func stdinCtx() context.Context {
+	return runenv.With(context.Background(), runenv.Text(os.Stdin, io.Discard, io.Discard))
 }

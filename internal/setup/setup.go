@@ -1,6 +1,7 @@
 package setup
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -9,10 +10,12 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/baalimago/clai/internal/runenv"
+
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/skills"
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/internal/utils"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
 
@@ -137,24 +140,24 @@ func (a action) String() string {
 	}
 }
 
-func executeConfigAction(cfg config, a action) error {
+func executeConfigAction(ctx context.Context, cfg config, a action) error {
 	switch a {
 	case conf:
-		return actionReconfigure(cfg)
+		return actionReconfigure(ctx, cfg)
 	case confWithEditor:
-		return actionReconfigureWithEditor(cfg)
+		return actionReconfigureWithEditor(ctx, cfg)
 	case promptEditWithEditor:
-		return actionReconfigurePromptWithEditor(cfg)
+		return actionReconfigurePromptWithEditor(ctx, cfg)
 	case unescapedFieldEditWithEditor:
-		return actionReconfigureStringFieldWithEditor(cfg, "")
+		return actionReconfigureStringFieldWithEditor(ctx, cfg, "")
 	case del:
-		return actionRemove(cfg)
+		return actionRemove(ctx, cfg)
 	case copyAction:
-		newCfg, cpErr := actionCopy(cfg)
+		newCfg, cpErr := actionCopy(ctx, cfg)
 		if cpErr != nil {
-			return fmt.Errorf("failed to copy config %q: %w", cfg.name, cpErr)
+			return diag.Errorf("failed to copy config %q: %w", cfg.name, cpErr)
 		}
-		return actionReconfigure(newCfg)
+		return actionReconfigure(ctx, newCfg)
 	case back:
 		return table.ErrBack
 	default:
@@ -163,10 +166,10 @@ func executeConfigAction(cfg config, a action) error {
 }
 
 // InitCmd the setup to configure the different files
-func InitCmd() error {
+func InitCmd(ctx context.Context) error {
 	claiDir, err := utils.GetClaiConfigDir()
 	if err != nil {
-		return fmt.Errorf("failed to get user config directory: %w", err)
+		return diag.Errorf("failed to get user config directory: %w", err)
 	}
 
 	categories := []setupCategory{
@@ -178,7 +181,7 @@ func InitCmd() error {
 					return nil, err
 				}
 				if _, err := skills.LoadConfig(dir); err != nil {
-					return nil, fmt.Errorf("failed to ensure skills config: %w", err)
+					return nil, diag.Errorf("failed to ensure skills config: %w", err)
 				}
 				cfgs = append(cfgs, config{name: "skills.json", filePath: filepath.Join(dir, "skills.json")})
 				cfgs = append(cfgs, config{name: "theme.json", filePath: filepath.Join(dir, "theme.json")})
@@ -201,7 +204,7 @@ func InitCmd() error {
 				profilesDir := filepath.Join(dir, "profiles")
 				cfgs, err := getConfigs(filepath.Join(profilesDir, "*.json"), []string{})
 				if err != nil {
-					return nil, fmt.Errorf("failed to get profile configs: %w", err)
+					return nil, diag.Errorf("failed to get profile configs: %w", err)
 				}
 				return cfgs, nil
 			},
@@ -216,12 +219,12 @@ func InitCmd() error {
 				mcpServersDir := filepath.Join(dir, "mcpServers")
 				if _, statErr := os.Stat(mcpServersDir); os.IsNotExist(statErr) {
 					if err := utils.CreateFile(filepath.Join(mcpServersDir, "everything.json"), &defaultMcpServer); err != nil {
-						return nil, fmt.Errorf("failed to create default mcp server config: %w", err)
+						return nil, diag.Errorf("failed to create default mcp server config: %w", err)
 					}
 				}
 				cfgs, err := getConfigs(filepath.Join(mcpServersDir, "*.json"), []string{})
 				if err != nil {
-					return nil, fmt.Errorf("failed to get mcp configs: %w", err)
+					return nil, diag.Errorf("failed to get mcp configs: %w", err)
 				}
 				return cfgs, nil
 			},
@@ -234,26 +237,26 @@ func InitCmd() error {
 	}
 
 	for {
-		category, err := selectCategory(categories)
+		category, err := selectCategory(ctx, categories)
 		if err != nil {
 			if errors.Is(err, table.ErrUserInitiatedExit) {
 				return table.ErrUserInitiatedExit
 			}
-			return fmt.Errorf("failed to select category: %w", err)
+			return diag.Errorf("failed to select category: %w", err)
 		}
-		if err := runCategory(claiDir, category); err != nil {
+		if err := runCategory(ctx, claiDir, category); err != nil {
 			if errors.Is(err, table.ErrBack) {
 				continue
 			}
 			if errors.Is(err, table.ErrUserInitiatedExit) {
 				return table.ErrUserInitiatedExit
 			}
-			return fmt.Errorf("failed to run category %q: %w", category.name, err)
+			return diag.Errorf("failed to run category %q: %w", category.name, err)
 		}
 	}
 }
 
-func selectCategory(categories []setupCategory) (setupCategory, error) {
+func selectCategory(ctx context.Context, categories []setupCategory) (setupCategory, error) {
 	selected, _, err := table.New(
 		table.SlicePaginator(categories),
 		func(i int, category setupCategory) (string, error) {
@@ -263,11 +266,12 @@ func selectCategory(categories []setupCategory) (setupCategory, error) {
 		WithHeader(stage0Raw).
 		WithPageSize(utils.TableTheme().Items).
 		WithSingleSelect().
-		WithWriter(os.Stdout).
-		WithInput(Input).
+		WithWriter(runenv.From(ctx).Stdout()).
+		WithInput(termIn(ctx)).
+		WithPrompter(selectPrompt(ctx)).
 		Run()
 	if err != nil {
-		return setupCategory{}, fmt.Errorf("failed to select setup category: %w", err)
+		return setupCategory{}, diag.Errorf("failed to select setup category: %w", err)
 	}
 	index := selected[0]
 	if index < 0 || index >= len(categories) {
@@ -276,21 +280,21 @@ func selectCategory(categories []setupCategory) (setupCategory, error) {
 	return categories[index], nil
 }
 
-func runCategory(claiDir string, category setupCategory) error {
+func runCategory(ctx context.Context, claiDir string, category setupCategory) error {
 	for {
 		cfgs, err := category.load(claiDir)
 		if err != nil {
-			return fmt.Errorf("failed to load category configs: %w", err)
+			return diag.Errorf("failed to load category configs: %w", err)
 		}
-		err = selectConfigItem(category, cfgs)
+		err = selectConfigItem(ctx, category, cfgs)
 		if err != nil {
 			if errors.Is(err, table.ErrBack) {
-				return fmt.Errorf("user returned to category selection: %w", err)
+				return diag.Errorf("user returned to category selection: %w", err)
 			}
 			if errors.Is(err, table.ErrUserInitiatedExit) {
 				return table.ErrUserInitiatedExit
 			}
-			return fmt.Errorf("failed to select config item: %w", err)
+			return diag.Errorf("failed to select config item: %w", err)
 		}
 	}
 }
@@ -299,7 +303,7 @@ func runCategory(claiDir string, category setupCategory) error {
 func getConfigs(includeGlob string, excludeContains []string) ([]config, error) {
 	files, err := filepath.Glob(includeGlob)
 	if err != nil {
-		return nil, fmt.Errorf("failed to glob pattern %v: %w", includeGlob, err)
+		return nil, diag.Errorf("failed to glob pattern %v: %w", includeGlob, err)
 	}
 	var configs []config
 OUTER:
@@ -318,7 +322,7 @@ OUTER:
 	return configs, nil
 }
 
-func setupCustomTableActions(category setupCategory) []table.TableAction {
+func setupCustomTableActions(ctx context.Context, category setupCategory) []table.TableAction {
 	ret := []table.TableAction{}
 	seenActions := map[action]struct{}{back: {}}
 	for _, a := range category.itemSelectActions {
@@ -327,21 +331,21 @@ func setupCustomTableActions(category setupCategory) []table.TableAction {
 		}
 		cta, found := actionToTableAction[a]
 		if !found {
-			ancli.Warnf("custom table action not found: %q, this is a bit odd", a)
+			runenv.Warnf(ctx, runenv.SubsystemSetup, "custom table action not found: %q, this is a bit odd", a)
 			continue
 		}
 		switch a {
 		case newaction:
 			cta.Action = func() error {
-				cfg, err := createConfigFile(category.subdirPath, category.name, category.defaultConfig)
+				cfg, err := createConfigFile(ctx, category.subdirPath, category.name, category.defaultConfig)
 				if err != nil {
-					return fmt.Errorf("failed to create config file: %w", err)
+					return diag.Errorf("failed to create config file: %w", err)
 				}
-				return actionReconfigure(cfg)
+				return actionReconfigure(ctx, cfg)
 			}
 		case pasteConfig:
 			cta.Action = func() error {
-				return actionPasteMcpServer(category.subdirPath)
+				return actionPasteMcpServer(ctx, category.subdirPath)
 			}
 		}
 		ret = append(ret, cta)
@@ -362,12 +366,12 @@ func actionsWithNavigation(actions []action) []action {
 	return ret
 }
 
-func selectConfigItem(category setupCategory, cfgs []config) error {
+func selectConfigItem(ctx context.Context, category setupCategory, cfgs []config) error {
 	if len(cfgs) == 0 {
 		return fmt.Errorf("found no configuration files for category %q", category.name)
 	}
 
-	customTableActions := setupCustomTableActions(category)
+	customTableActions := setupCustomTableActions(ctx, category)
 	tb := table.New(
 		table.SlicePaginator(cfgs),
 		func(i int, cfg config) (string, error) {
@@ -377,8 +381,9 @@ func selectConfigItem(category setupCategory, cfgs []config) error {
 		WithHeader(fmt.Sprintf("Configs in %s", category.name)).
 		WithPageSize(utils.TableTheme().Items).
 		WithSingleSelect().
-		WithWriter(os.Stdout).
-		WithInput(Input)
+		WithWriter(runenv.From(ctx).Stdout()).
+		WithInput(termIn(ctx)).
+		WithPrompter(selectPrompt(ctx))
 
 	if len(customTableActions) > 0 {
 		tb = tb.WithActions(customTableActions...)
@@ -386,7 +391,7 @@ func selectConfigItem(category setupCategory, cfgs []config) error {
 
 	selectedIndices, _, err := tb.Run()
 	if err != nil {
-		return fmt.Errorf("failed to select config item: %w", err)
+		return diag.Errorf("failed to select config item: %w", err)
 	}
 
 	selectedIndex := selectedIndices[0]
@@ -395,15 +400,15 @@ func selectConfigItem(category setupCategory, cfgs []config) error {
 	}
 
 	selectedCfg := cfgs[selectedIndex]
-	if err := previewConfigItem(selectedCfg); err != nil {
-		return fmt.Errorf("failed to preview selected config item %q: %w", selectedCfg.name, err)
+	if err := previewConfigItem(ctx, selectedCfg); err != nil {
+		return diag.Errorf("failed to preview selected config item %q: %w", selectedCfg.name, err)
 	}
 
-	err = actOnConfigItem(category, selectedCfg)
+	err = actOnConfigItem(ctx, category, selectedCfg)
 	// Allow the user to go one step back on back actions
 	// Will fill callstack, but veeeeeery slowly
 	if err != nil && errors.Is(err, table.ErrBack) {
-		return selectConfigItem(category, cfgs)
+		return selectConfigItem(ctx, category, cfgs)
 	}
 	return err
 }

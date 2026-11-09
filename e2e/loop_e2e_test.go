@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -44,7 +45,7 @@ func loadLoopConversations(t *testing.T, confDir string) []pub_models.Chat {
 		if entry.IsDir() || !strings.HasSuffix(name, ".json") || name == "globalScope.json" {
 			continue
 		}
-		loaded, err := chat.FromPath(filepath.Join(convDir, name))
+		loaded, err := chat.FromPath(context.Background(), filepath.Join(convDir, name))
 		if err != nil {
 			t.Fatalf("FromPath(%q): %v", name, err)
 		}

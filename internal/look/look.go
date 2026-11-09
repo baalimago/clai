@@ -15,8 +15,13 @@ import (
 
 const gap = "   "
 
-// Style paints in the theme's colours when Color is set.
-type Style struct{ Color bool }
+// Style paints in the theme's colours when Color is set. Plain drops the
+// look altogether, markers and alignment included, for text a JSON record
+// carries (README F12 of worklog 2026-11-02-diagnostics).
+type Style struct {
+	Color bool
+	Plain bool
+}
 
 func (s Style) Paint(c, t string) string {
 	if !s.Color || c == "" || t == "" {
@@ -28,8 +33,15 @@ func (s Style) Paint(c, t string) string {
 func (s Style) Primary(t string) string   { return s.Paint(utils.TableTheme().Primary, t) }
 func (s Style) Secondary(t string) string { return s.Paint(utils.TableTheme().Secondary, t) }
 
-// Head is "▸ <title> · <detail> · <detail>".
+// Head is "▸ <title> · <detail> · <detail>", or "<title>: <detail>, <detail>"
+// when Plain.
 func (s Style) Head(title string, details ...string) string {
+	if s.Plain {
+		if len(details) == 0 {
+			return title
+		}
+		return title + ": " + strings.Join(details, ", ")
+	}
 	line := s.Primary("▸") + " " + title
 	if len(details) > 0 {
 		line += s.Secondary(" · " + strings.Join(details, " · "))
@@ -37,8 +49,20 @@ func (s Style) Head(title string, details ...string) string {
 	return line
 }
 
-// Link is "→ <target>" under indent.
+// Quote is a line of quoted text under a bar: "  │ <line>", or "  > <line>"
+// when Plain.
+func (s Style) Quote(line string) string {
+	if s.Plain {
+		return "  > " + line
+	}
+	return "  " + s.Secondary("│") + " " + line
+}
+
+// Link is "→ <target>" under indent, or the target alone when Plain.
 func (s Style) Link(indent, target string) string {
+	if s.Plain {
+		return indent + target
+	}
 	return indent + s.Primary("→") + " " + target
 }
 
@@ -46,7 +70,12 @@ func (s Style) Link(indent, target string) string {
 // to its column's width, the first column in plain text and the rest in
 // the secondary colour. A first cell starting with "→ " gets the marker in
 // the primary colour.
+//
+// When Plain, a row is "<first>: <rest>, <rest>" under indent, unpadded.
 func Grid(indent string, rows [][]string, s Style) []string {
+	if s.Plain {
+		return plainGrid(indent, rows)
+	}
 	var widths []int
 	for _, r := range rows {
 		for i, c := range r[:len(r)-1] {
@@ -75,6 +104,28 @@ func Grid(indent string, rows [][]string, s Style) []string {
 			}
 		}
 		lines = append(lines, strings.TrimRight(line.String(), " "))
+	}
+	return lines
+}
+
+func plainGrid(indent string, rows [][]string) []string {
+	lines := make([]string, 0, len(rows))
+	for _, r := range rows {
+		first := strings.TrimPrefix(r[0], "→ ")
+		var rest []string
+		for _, c := range r[1:] {
+			if c != "" {
+				rest = append(rest, c)
+			}
+		}
+		line := first
+		switch {
+		case first == "":
+			line = strings.Join(rest, ", ")
+		case len(rest) > 0:
+			line += ": " + strings.Join(rest, ", ")
+		}
+		lines = append(lines, indent+line)
 	}
 	return lines
 }

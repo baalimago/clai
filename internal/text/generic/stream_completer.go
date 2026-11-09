@@ -12,12 +12,12 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/baalimago/clai/internal/debugflags"
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/models"
+	"github.com/baalimago/clai/internal/runenv"
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 )
 
@@ -33,6 +33,7 @@ const maxReasoningContent = 1 << 20 // 1 MiB
 
 // StreamCompletions taking the messages as prompt conversation. Returns the messages from the chat model.
 func (s *StreamCompleter) StreamCompletions(ctx context.Context, chat pub_models.Chat) (chan models.CompletionEvent, error) {
+	s.ctx = ctx
 	s.reasoningContent = s.reasoningContent[:0]
 	if s.Clean != nil {
 		cpy := make([]pub_models.Message, len(chat.Messages))
@@ -41,7 +42,7 @@ func (s *StreamCompleter) StreamCompletions(ctx context.Context, chat pub_models
 	}
 	req, err := s.createRequest(ctx, chat)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, diag.Errorf("failed to create request: %w", err)
 	}
 	res, err := s.client.Do(req)
 	if err != nil {
@@ -52,19 +53,17 @@ func (s *StreamCompleter) StreamCompletions(ctx context.Context, chat pub_models
 		closeErr := res.Body.Close()
 		responseErr := ResponseError(res.StatusCode, body, s.DecodeError)
 		if readErr != nil {
-			responseErr = errors.Join(responseErr, fmt.Errorf("read provider error response body: %w", readErr))
+			responseErr = errors.Join(responseErr, diag.Errorf("read provider error response body: %w", readErr))
 		}
 		if closeErr != nil {
-			responseErr = errors.Join(responseErr, fmt.Errorf("close provider error response body: %w", closeErr))
+			responseErr = errors.Join(responseErr, diag.Errorf("close provider error response body: %w", closeErr))
 		}
 		return nil, responseErr
 	}
-	if s.debug {
-		ancli.Noticef("now attepmting to handle response")
-	}
+	s.debugf("now attepmting to handle response")
 	outChan, err := s.handleStreamResponse(ctx, res)
 	if err != nil {
-		return outChan, fmt.Errorf("failed to handle stream response: %w", err)
+		return outChan, diag.Errorf("failed to handle stream response: %w", err)
 	}
 
 	return outChan, nil
@@ -80,7 +79,7 @@ func (s *StreamCompleter) createRequest(ctx context.Context, chat pub_models.Cha
 	}
 	wireMsgs, err := toWireMessages(chat.Messages, s.Images)
 	if err != nil {
-		return nil, fmt.Errorf("project messages to wire shape: %w", err)
+		return nil, diag.Errorf("project messages to wire shape: %w", err)
 	}
 	reqData := req{
 		Model:            s.Model,
@@ -100,26 +99,25 @@ func (s *StreamCompleter) createRequest(ctx context.Context, chat pub_models.Cha
 		ParalellToolCalls: false,
 		Modalities:        s.OutputModalities,
 	}
-	if s.debug {
-		ancli.PrintOK(fmt.Sprintf("streamcompleter api key: %v...\n", s.apiKey[:5]))
-	}
+	// No part of the key is shown: diagnostics reach callers' Reporters.
+	s.debugf("streamcompleter api key: set, %d characters", len(s.apiKey))
 	if len(s.tools) > 0 {
 		reqData.Tools = s.tools
 		reqData.ToolChoice = s.ToolChoice
 	}
-	if s.debug {
+	if s.debugging() {
 		noTools := reqData
 		noTools.Tools = make([]ToolSuper, 0)
-		ancli.PrintOK(fmt.Sprintf("generic streamcompleter request (tools redacted):\nurl: %v\nstruct: %v\n", s.URL, debug.IndentedJsonFmt(noTools)))
+		s.debugf("generic streamcompleter request (tools redacted):\nurl: %v\nstruct: %v", s.URL, debug.IndentedJsonFmt(noTools))
 	}
 	jsonData, err := json.Marshal(reqData)
 	if err != nil {
-		return nil, fmt.Errorf("failed to encode JSON: %w", err)
+		return nil, diag.Errorf("failed to encode JSON: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", s.URL, bytes.NewBuffer(jsonData))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, diag.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -134,6 +132,7 @@ func (s *StreamCompleter) createRequest(ctx context.Context, chat pub_models.Cha
 
 func (s *StreamCompleter) handleStreamResponse(ctx context.Context, res *http.Response) (chan models.CompletionEvent, error) {
 	outChan := make(chan models.CompletionEvent)
+	s.stream = streamState{}
 	go func() {
 		br := bufio.NewReader(res.Body)
 		defer func() {
@@ -152,19 +151,26 @@ func (s *StreamCompleter) handleStreamResponse(ctx context.Context, res *http.Re
 				return
 			}
 			token, err := br.ReadBytes('\n')
-			if err != nil {
-				if err != io.EOF {
-					select {
-					case outChan <- claierr.NewTransport(err):
-					case <-ctx.Done():
-					}
+			// The excerpt only describes a body that is no stream; once an
+			// event decoded nothing of the body is kept.
+			if s.stream.sawData {
+				s.stream.excerpt.head = nil
+			} else {
+				s.stream.excerpt.add(token)
+			}
+			if err != nil && err != io.EOF {
+				select {
+				case outChan <- claierr.NewTransport(err):
+				case <-ctx.Done():
 				}
 				return
 			}
-			if s.debug {
-				ancli.Okf("received data from model, len: '%v', content: '%s'", len(token), token)
+			s.debugf("received data from model, len: '%v', content: '%s'", len(token), token)
+			if len(token) > 0 && s.forwardChunk(ctx, outChan, token) == streamEnded {
+				return
 			}
-			if s.forwardChunk(ctx, outChan, token) == streamEnded {
+			if err == io.EOF {
+				s.endStream(ctx, outChan)
 				return
 			}
 		}
@@ -187,9 +193,20 @@ func (s *StreamCompleter) forwardChunk(ctx context.Context, out chan<- models.Co
 	if err != nil {
 		events = []models.CompletionEvent{err}
 	} else {
-		events = append(events, s.handleStreamChunk(token))
+		shared := s.handleStreamChunk(token)
+		events = append(append(events, s.stream.takeCalls()...), shared)
 	}
 	for _, evt := range events {
+		switch cast := evt.(type) {
+		case models.StopEvent:
+			if failure := s.stream.emptyEnd(); failure != nil {
+				evt = failure
+			}
+		case string:
+			s.stream.produced = s.stream.produced || cast != ""
+		case pub_models.Call, models.ReasoningEvent, models.ImageEvent:
+			s.stream.produced = true
+		}
 		select {
 		case out <- evt:
 		case <-ctx.Done():
@@ -226,12 +243,30 @@ func chunkPayload(token []byte) []byte {
 	return bytes.TrimSpace(bytes.TrimPrefix(token, dataPrefix))
 }
 
+// endStream sends what the end of the body means when no finish marker ended
+// the stream first: no completion stream at all, or a truncated one.
+func (s *StreamCompleter) endStream(ctx context.Context, out chan<- models.CompletionEvent) {
+	var end models.CompletionEvent = s.stream.emptyEnd()
+	if end == nil {
+		if s.stream.finished {
+			return
+		}
+		end = TruncatedError("finish_reason or [DONE]")
+	}
+	select {
+	case out <- end:
+	case <-ctx.Done():
+	}
+}
+
 func (s *StreamCompleter) handleStreamChunk(token []byte) models.CompletionEvent {
+	isData := bytes.HasPrefix(token, dataPrefix)
 	token = chunkPayload(token)
 	if string(token) == "[DONE]" {
-		if s.debug {
-			ancli.Okf("sending StopEvent due to [DONE]")
-		}
+		s.debugf("sending StopEvent due to [DONE]")
+		s.stream.sawData = s.stream.sawData || isData
+		s.stream.finished = true
+		s.flushInvalidToolsCall()
 		return models.StopEvent{}
 	}
 
@@ -239,18 +274,20 @@ func (s *StreamCompleter) handleStreamChunk(token []byte) models.CompletionEvent
 		return models.NoopEvent{}
 	}
 
-	if s.debug {
-		ancli.PrintOK(fmt.Sprintf("token: %+v\n", string(token)))
-	}
+	s.debugf("token: %+v\n", string(token))
 	var chunk chatCompletionChunk
 	err := json.Unmarshal(token, &chunk)
 	if err != nil {
-		if debugflags.Enabled("CHAT") {
-			// Expect some failing unmarshalls, which seems to be fine
-			ancli.PrintWarn(fmt.Sprintf("failed to unmarshal token: %s, err: %v\n", token, err))
+		// A malformed line is tolerated, as a keep-alive is; the first data
+		// event that is no JSON is kept, since a stream that then delivers
+		// nothing has failed on it.
+		if isData && s.stream.malformed == nil {
+			s.stream.malformed = bytes.Clone(token)
 		}
+		runenv.Debugf(s.diagContext(), runenv.SubsystemChat, "failed to unmarshal token: %s, err: %v", token, err)
 		return models.NoopEvent{}
 	}
+	s.stream.sawData = s.stream.sawData || isData
 
 	// An error frame at HTTP 200 (the OpenAI-compat {"error": …} envelope)
 	// is a terminal provider state, never a NoopEvent. The whole raw frame
@@ -288,9 +325,7 @@ func (s *StreamCompleter) handleStreamChunk(token []byte) models.CompletionEvent
 		}
 	}
 
-	if s.debug {
-		ancli.PrintOK(fmt.Sprintf("chosen: %T -  %+v\n", chosen, chosen))
-	}
+	s.debugf("chosen: %T -  %+v\n", chosen, chosen)
 
 	return chosen
 }
@@ -302,8 +337,14 @@ func (s *StreamCompleter) handleChoice(choice Choice) models.CompletionEvent {
 	// If there is no tools call, just handle it as a strings. This works for most cases
 	if len(choice.Delta.ToolCalls) == 0 {
 		if choice.FinishReason != "" {
-			if s.debug {
-				ancli.Noticef("stopping due to FinishReason: '%v'", choice.FinishReason)
+			s.debugf("stopping due to FinishReason: '%v'", choice.FinishReason)
+			s.stream.finished = true
+			if choice.FinishReason == finishReasonLength {
+				runenv.Warnf(s.diagContext(), s.diagSubsystem(), "the reply was cut off at the output token limit (finish_reason: %s)", choice.FinishReason)
+			}
+			if s.flushInvalidToolsCall() {
+				// The calls end the step; a StopEvent would end the run.
+				return models.NoopEvent{}
 			}
 			return models.StopEvent{}
 		}
@@ -317,6 +358,9 @@ func (s *StreamCompleter) handleChoice(choice Choice) models.CompletionEvent {
 	// TODO: Implement support for parallel function calls, now we only handle first tools call in list
 	var argChunk string
 	if len(choice.Delta.ToolCalls) > 0 && choice.Delta.ToolCalls[0].Function.Name != "" {
+		// A new call starts: one still waiting for arguments that parse
+		// never got them.
+		s.flushInvalidToolsCall()
 		s.toolsCallName = choice.Delta.ToolCalls[0].Function.Name
 		s.toolsCallID = choice.Delta.ToolCalls[0].ID
 	}
@@ -326,9 +370,7 @@ func (s *StreamCompleter) handleChoice(choice Choice) models.CompletionEvent {
 		// The arguments is streamed as a stringified json for chatgpt, chunk by chunk, with no apparent structure
 		s.toolsCallArgsString += argChunk
 
-		if s.debug {
-			ancli.PrintOK(fmt.Sprintf("toolsCallArgsString: %v\n", s.toolsCallArgsString))
-		}
+		s.debugf("toolsCallArgsString: %v\n", s.toolsCallArgsString)
 		var input pub_models.Input
 		err := json.Unmarshal([]byte(s.toolsCallArgsString), &input)
 		if err == nil {
@@ -337,6 +379,30 @@ func (s *StreamCompleter) handleChoice(choice Choice) models.CompletionEvent {
 		}
 	}
 	return models.NoopEvent{}
+}
+
+// flushInvalidToolsCall queues the call whose arguments never became a JSON
+// object, so the model is answered with what was wrong instead of the call
+// vanishing. It reports whether there was one.
+func (s *StreamCompleter) flushInvalidToolsCall() bool {
+	if s.toolsCallName == "" {
+		return false
+	}
+	spec := tools.ToolFromName(s.toolsCallName)
+	spec.Arguments = "{}"
+	spec.Inputs = &pub_models.InputSchema{}
+	s.stream.calls = append(s.stream.calls, pub_models.Call{
+		ID:               s.toolsCallID,
+		Name:             s.toolsCallName,
+		Inputs:           &pub_models.Input{},
+		Type:             "function",
+		Function:         spec,
+		ReasoningContent: s.reasoning(),
+		ArgumentsErr:     pub_models.ArgumentsProblem(s.toolsCallName, s.toolsCallArgsString),
+	})
+	s.toolsCallName = ""
+	s.toolsCallArgsString = ""
+	return true
 }
 
 // doToolsCall by parsing the arguments
@@ -349,7 +415,7 @@ func (s *StreamCompleter) doToolsCall() models.CompletionEvent {
 	var input pub_models.Input
 	err := json.Unmarshal([]byte(s.toolsCallArgsString), &input)
 	if err != nil {
-		return fmt.Errorf("failed to unmarshal argument string: %w, argsString: %v", err, s.toolsCallArgsString)
+		return diag.Errorf("failed to unmarshal argument string: %w, argsString: %v", err, s.toolsCallArgsString)
 	}
 
 	userFunc := tools.ToolFromName(s.toolsCallName)
@@ -399,4 +465,30 @@ func (s *StreamCompleter) CountInputTokens(ctx context.Context, chat pub_models.
 
 func (s *StreamCompleter) TokenUsage() *pub_models.Usage {
 	return s.usage
+}
+
+// diagContext is the context of the current stream's diagnostics.
+func (s *StreamCompleter) diagContext() context.Context {
+	if s.ctx == nil {
+		return context.Background()
+	}
+	return s.ctx
+}
+
+// diagSubsystem is the vendor's subsystem, or the chat one without a vendor.
+func (s *StreamCompleter) diagSubsystem() string {
+	if s.subsystem == "" {
+		return runenv.SubsystemChat
+	}
+	return s.subsystem
+}
+
+// debugging reports whether the vendor's debug detail is shown.
+func (s *StreamCompleter) debugging() bool {
+	return runenv.DebugEnabled(s.diagContext(), s.subsystem)
+}
+
+// debugf reports debug detail of the vendor this completer streams for.
+func (s *StreamCompleter) debugf(format string, args ...any) {
+	runenv.Debugf(s.diagContext(), s.subsystem, format, args...)
 }

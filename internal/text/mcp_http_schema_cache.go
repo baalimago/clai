@@ -8,12 +8,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/baalimago/clai/internal/runenv"
+
 	"github.com/baalimago/clai/internal/tools/mcp"
 	"github.com/baalimago/clai/internal/tools/mcp/mcpauth"
 	"github.com/baalimago/clai/internal/tools/mcp/schemacache"
 	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
 // resolveLazyHttpServerViaCache is the schema-cache-aware path for a
@@ -45,7 +46,7 @@ func resolveLazyHttpServerViaCache(ctx context.Context, cache *schemacache.Cache
 		if rec, ok := cache.Lookup(identity); ok {
 			connector := newAuthenticatingHttpConnector(ctx, authz, server, sink, connectorOptsFor(server)...)
 			invalidating := newCacheInvalidatingConnector(ctx, connector, cache, identity, server.Name)
-			return mcp.RegisterTools(rec.Tools, server.Name, invalidating, timeout, registrar, httpChallengeResolver(authz, server), authTimeout)
+			return mcp.RegisterTools(ctx, rec.Tools, server.Name, invalidating, timeout, registrar, httpChallengeResolver(authz, server), authTimeout)
 		}
 	}
 
@@ -64,7 +65,7 @@ func resolveLazyHttpServerViaCache(ctx context.Context, cache *schemacache.Cache
 		return err
 	}
 
-	if err := mcp.RegisterTools(toolsArray, server.Name, mcp.NewResolvedConnector(newCacheInvalidatingConn(conn, cache, identity, server.Name)), timeout, registrar, nil, authTimeout); err != nil {
+	if err := mcp.RegisterTools(ctx, toolsArray, server.Name, mcp.NewResolvedConnector(newCacheInvalidatingConn(conn, cache, identity, server.Name)), timeout, registrar, nil, authTimeout); err != nil {
 		return err
 	}
 	connected = true
@@ -80,7 +81,7 @@ func resolveLazyHttpServerViaCache(ctx context.Context, cache *schemacache.Cache
 		// connCtx directly, the watcher stops with the connection it
 		// watches instead of outliving it for the rest of the run.
 		if captureErr := cache.Capture(identity, mcp.ProtocolVersion, serverInfo, toolsArray); captureErr != nil {
-			ancli.Warnf("failed to persist mcp schema cache entry for %q: %v\n", server.Name, captureErr)
+			runenv.Warnf(ctx, runenv.SubsystemTextQuerier, "failed to persist mcp schema cache entry for %q: %v\n", server.Name, captureErr)
 		}
 		if watcher, ok := conn.(mcp.NotificationWatcher); ok {
 			go watchForToolsListChanged(connCtx, watcher, cache, identity, server.Name)
@@ -130,7 +131,7 @@ func watchForToolsListChanged(runCtx context.Context, watcher mcp.NotificationWa
 			}
 			if method == "notifications/tools/list_changed" {
 				if err := cache.Invalidate(identity); err != nil {
-					ancli.Warnf("failed to invalidate mcp schema cache entry for %q: %v\n", serverName, err)
+					runenv.Warnf(runCtx, runenv.SubsystemTextQuerier, "failed to invalidate mcp schema cache entry for %q: %v\n", serverName, err)
 				}
 			}
 		case <-runCtx.Done():
@@ -160,7 +161,7 @@ func (w *cacheInvalidatingConn) Call(ctx context.Context, method string, params 
 		toolName, _ := params["name"].(string)
 		if isUnknownToolFailure(raw, err, toolName) {
 			if invErr := w.cache.Invalidate(w.identity); invErr != nil {
-				ancli.Warnf("failed to invalidate mcp schema cache entry for %q: %v\n", w.serverName, invErr)
+				runenv.Warnf(ctx, runenv.SubsystemTextQuerier, "failed to invalidate mcp schema cache entry for %q: %v\n", w.serverName, invErr)
 			}
 		}
 	}

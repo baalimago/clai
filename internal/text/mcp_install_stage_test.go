@@ -62,7 +62,7 @@ func TestLazyCacheMissInstallStageNamesTheDownload(t *testing.T) {
 	sink := &installStatusSink{}
 
 	start := time.Now()
-	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
+	stdout := testboil.CaptureStderr(t, func(t *testing.T) {
 		if _, err := setupMcpManager(ctx, mcpDir, Configurations{}, sink, testSchemaCache(t), nil); err != nil {
 			t.Fatalf("an ambient connect failure must degrade, not fail setup: %v", err)
 		}
@@ -106,7 +106,7 @@ func TestEagerInstallStageAndStatusNamesTheDownload(t *testing.T) {
 	}
 	sink := &installStatusSink{}
 
-	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
+	stdout := testboil.CaptureStderr(t, func(t *testing.T) {
 		if _, err := setupMcpManager(ctx, mcpDir, Configurations{}, sink, testSchemaCache(t), nil); err != nil {
 			t.Fatalf("an ambient connect failure must degrade, not fail setup: %v", err)
 		}

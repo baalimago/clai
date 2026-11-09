@@ -275,14 +275,17 @@ func Test_e2e_profiles_list_broken(t *testing.T) {
 	if status != 0 {
 		t.Fatalf("status %d stderr %q, want 0", status, stderr)
 	}
-	if !strings.Contains(stdout, broken) {
-		t.Fatalf("stdout %q does not name the unreadable file", stdout)
+	if !strings.Contains(stderr, broken) {
+		t.Fatalf("stderr %q does not name the unreadable file", stderr)
 	}
-	if !strings.Contains(stdout, "clai profiles validate "+broken) {
-		t.Fatalf("stdout %q does not name the command that explains it", stdout)
+	if !strings.Contains(stderr, "clai profiles validate "+broken) {
+		t.Fatalf("stderr %q does not name the command that explains it", stderr)
 	}
-	if !strings.Contains(stdout, refused) || !strings.Contains(stdout, "clai profiles validate "+refused) {
-		t.Fatalf("stdout %q does not name the refused profile with its validate command", stdout)
+	if !strings.Contains(stderr, refused) || !strings.Contains(stderr, "clai profiles validate "+refused) {
+		t.Fatalf("stderr %q does not name the refused profile with its validate command", stderr)
+	}
+	if strings.Contains(stdout, "Cannot read") {
+		t.Fatalf("stdout %q carries a diagnostic", stdout)
 	}
 	if strings.Contains(stdout, "Name: refused\n") {
 		t.Fatalf("stdout %q lists a refused profile as healthy", stdout)

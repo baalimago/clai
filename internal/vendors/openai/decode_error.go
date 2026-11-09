@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/baalimago/clai/internal/text/generic"
 	"github.com/baalimago/clai/pkg/claierr"
 )
 
@@ -23,10 +24,14 @@ import (
 //   - the top-level {"type": "error", code, message} Responses stream event;
 //   - the {"type": "response.failed", "response": {"error": {code, message}}}
 //     Responses stream event.
+//
+// Any other envelope keeps the meaning its status gives (the generic
+// baseline), with the envelope's code as the provider-code fact; a body
+// without one returns nil.
 func decodeError(status int, body []byte) error {
 	facts := parseProviderError(body)
 	if !facts.insufficientQuota() {
-		return nil
+		return generic.ResponseErrorWithProviderCode(status, body, facts.code())
 	}
 	api := &claierr.APIError{
 		StatusCode:   status,

@@ -30,7 +30,7 @@ func Test_Command_setupPhase(t *testing.T) {
 func Test_ConfigRunPrep(t *testing.T) {
 	confDir := t.TempDir()
 	t.Setenv("CLAI_CONFIG_DIR", confDir)
-	gotDir, announcements, err := ConfigRunPrep(true)
+	gotDir, announcements, err := ConfigRunPrep(context.Background(), true)
 	if err != nil {
 		t.Fatalf("ConfigRunPrep: %v", err)
 	}

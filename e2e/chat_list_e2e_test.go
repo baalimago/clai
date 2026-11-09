@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -52,12 +53,12 @@ func Test_e2e_chat_list_foreign_clone_and_dedup(t *testing.T) {
 
 	// First run: select row 0, then continue ("c") to clone. Trailing "q"s from -n
 	// exit the list loop after clone.
-	stdout, status := harness.RunOne(t, confDir, "-n -r c l 0 c")
+	stdout, stderr, status := harness.RunOneStreams(t, confDir, "-n -r c l 0 c")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
-	if !strings.Contains(stdout, "cloned claude-code session s-clone") {
-		t.Fatalf("expected clone notice in output, got:\n%s", stdout)
+	if !strings.Contains(stderr, "cloned claude-code session s-clone") {
+		t.Fatalf("expected clone notice in stderr, got:\n%s", stderr)
 	}
 
 	// Second run: the foreign row should be deduped. Select row 0, then "q" exits.
@@ -91,12 +92,12 @@ func Test_e2e_chat_list_cursor_clone(t *testing.T) {
 		t.Fatalf("write cursor database: %v", err)
 	}
 
-	stdout, status := harness.RunOne(t, confDir, "-n -r c l 0 c")
+	stdout, stderr, status := harness.RunOneStreams(t, confDir, "-n -r c l 0 c")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
-	if !strings.Contains(stdout, "cloned cursor session composer-no-preview") {
-		t.Fatalf("expected a cursor clone notice, got:\n%s", stdout)
+	if !strings.Contains(stderr, "cloned cursor session composer-no-preview") {
+		t.Fatalf("expected a cursor clone notice on stderr, got:\n%s", stderr)
 	}
 }
 
@@ -123,12 +124,12 @@ func Test_e2e_chat_list_cursor_cli_clone(t *testing.T) {
 		}
 	}
 
-	stdout, status := harness.RunOne(t, confDir, "-n -r c l 0 c")
+	stdout, stderr, status := harness.RunOneStreams(t, confDir, "-n -r c l 0 c")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
-	if !strings.Contains(stdout, "cloned cursor session cli:chat-cli-1") {
-		t.Fatalf("expected a cursor cli clone notice, got:\n%s", stdout)
+	if !strings.Contains(stderr, "cloned cursor session cli:chat-cli-1") {
+		t.Fatalf("expected a cursor cli clone notice on stderr, got:\n%s", stderr)
 	}
 }
 
@@ -154,12 +155,12 @@ func Test_e2e_chat_list_codex_clone(t *testing.T) {
 		t.Fatalf("write codex session: %v", err)
 	}
 
-	stdout, status := harness.RunOne(t, confDir, "-n -r c l 0 c")
+	stdout, stderr, status := harness.RunOneStreams(t, confDir, "-n -r c l 0 c")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
-	if !strings.Contains(stdout, "cloned codex session cdx-1") {
-		t.Fatalf("expected a codex clone notice, got:\n%s", stdout)
+	if !strings.Contains(stderr, "cloned codex session cdx-1") {
+		t.Fatalf("expected a codex clone notice on stderr, got:\n%s", stderr)
 	}
 }
 
@@ -184,12 +185,12 @@ func Test_e2e_chat_list_opencode_clone(t *testing.T) {
 		t.Fatalf("write opencode database: %v", err)
 	}
 
-	stdout, status := harness.RunOne(t, confDir, "-n -r c l 0 c")
+	stdout, stderr, status := harness.RunOneStreams(t, confDir, "-n -r c l 0 c")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
-	if !strings.Contains(stdout, "cloned opencode session ses_main") {
-		t.Fatalf("expected an opencode clone notice, got:\n%s", stdout)
+	if !strings.Contains(stderr, "cloned opencode session ses_main") {
+		t.Fatalf("expected an opencode clone notice on stderr, got:\n%s", stderr)
 	}
 }
 
@@ -214,12 +215,12 @@ func Test_e2e_chat_list_gemini_clone(t *testing.T) {
 		t.Fatalf("write gemini session: %v", err)
 	}
 
-	stdout, status := harness.RunOne(t, confDir, "-n -r c l 0 c")
+	stdout, stderr, status := harness.RunOneStreams(t, confDir, "-n -r c l 0 c")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
-	if !strings.Contains(stdout, "cloned gemini session gem-1") {
-		t.Fatalf("expected a gemini clone notice, got:\n%s", stdout)
+	if !strings.Contains(stderr, "cloned gemini session gem-1") {
+		t.Fatalf("expected a gemini clone notice on stderr, got:\n%s", stderr)
 	}
 }
 
@@ -244,12 +245,12 @@ func Test_e2e_chat_list_qwen_clone(t *testing.T) {
 		t.Fatalf("write qwen session: %v", err)
 	}
 
-	stdout, status := harness.RunOne(t, confDir, "-n -r c l 0 c")
+	stdout, stderr, status := harness.RunOneStreams(t, confDir, "-n -r c l 0 c")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
-	if !strings.Contains(stdout, "cloned qwen session qwen-1") {
-		t.Fatalf("expected a qwen clone notice, got:\n%s", stdout)
+	if !strings.Contains(stderr, "cloned qwen session qwen-1") {
+		t.Fatalf("expected a qwen clone notice on stderr, got:\n%s", stderr)
 	}
 }
 
@@ -273,12 +274,12 @@ func Test_e2e_chat_list_antigravity_clone(t *testing.T) {
 		t.Fatalf("write antigravity database: %v", err)
 	}
 
-	stdout, status := harness.RunOne(t, confDir, "-n -r c l 0 c")
+	stdout, stderr, status := harness.RunOneStreams(t, confDir, "-n -r c l 0 c")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
-	if !strings.Contains(stdout, "cloned antigravity session main") {
-		t.Fatalf("expected an antigravity clone notice, got:\n%s", stdout)
+	if !strings.Contains(stderr, "cloned antigravity session main") {
+		t.Fatalf("expected an antigravity clone notice on stderr, got:\n%s", stderr)
 	}
 }
 
@@ -331,7 +332,7 @@ func Test_e2e_chat_list_edit_message_picker_reopens(t *testing.T) {
 	}
 
 	// Verify message 11 was edited.
-	edited, err := chat.FromPath(filepath.Join(convDir, "conv-01.json"))
+	edited, err := chat.FromPath(context.Background(), filepath.Join(convDir, "conv-01.json"))
 	if err != nil {
 		t.Fatalf("load edited chat: %v", err)
 	}
@@ -376,7 +377,7 @@ func Test_e2e_chat_list_delete_message_picker_reopens(t *testing.T) {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
 
-	pruned, err := chat.FromPath(filepath.Join(convDir, "conv-01.json"))
+	pruned, err := chat.FromPath(context.Background(), filepath.Join(convDir, "conv-01.json"))
 	if err != nil {
 		t.Fatalf("load chat after delete: %v", err)
 	}
@@ -580,7 +581,7 @@ func Test_e2e_chat_list_macro_delete_messages(t *testing.T) {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
 
-	loaded, loadErr := chat.FromPath(filepath.Join(convDir, "chat-0.json"))
+	loaded, loadErr := chat.FromPath(context.Background(), filepath.Join(convDir, "chat-0.json"))
 	if loadErr != nil {
 		t.Fatalf("load chat: %v", loadErr)
 	}
@@ -613,7 +614,7 @@ func Test_e2e_chat_list_macro_delete_no_messages(t *testing.T) {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
 
-	loaded, loadErr := chat.FromPath(filepath.Join(convDir, "chat-0.json"))
+	loaded, loadErr := chat.FromPath(context.Background(), filepath.Join(convDir, "chat-0.json"))
 	if loadErr != nil {
 		t.Fatalf("load chat: %v", loadErr)
 	}
@@ -655,7 +656,7 @@ func Test_e2e_chat_list_macro_edit_message(t *testing.T) {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
 
-	loaded, loadErr := chat.FromPath(filepath.Join(convDir, "chat-0.json"))
+	loaded, loadErr := chat.FromPath(context.Background(), filepath.Join(convDir, "chat-0.json"))
 	if loadErr != nil {
 		t.Fatalf("load chat: %v", loadErr)
 	}

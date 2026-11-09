@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/internal/vendors/openai"
@@ -39,14 +40,14 @@ func createSplitter(conf Configurations) (*Splitter, error) {
 		vendorCpy := openrouter.TranscriberDefault
 		vendorCpy.Model = model
 		if err := vendorCpy.Setup(); err != nil {
-			return nil, fmt.Errorf("failed to setup openrouter transcriber: %w", err)
+			return nil, diag.Errorf("failed to setup openrouter transcriber: %w", err)
 		}
 		transcriber = &vendorCpy
 	case strings.Contains(model, "whisper") || strings.Contains(model, "transcribe"):
 		vendorCpy := openai.TranscriberDefault
 		vendorCpy.Model = model
 		if err := vendorCpy.Setup(); err != nil {
-			return nil, fmt.Errorf("failed to setup openai transcriber: %w", err)
+			return nil, diag.Errorf("failed to setup openai transcriber: %w", err)
 		}
 		transcriber = &vendorCpy
 	default:
@@ -88,14 +89,14 @@ func CreateQuerier(conf Configurations, filePath string) (models.Querier, error)
 // audioTranscribeEngine backs the audio_transcribe built-in tool: config →
 // querier path → rendered transcript string. Wired via init below so
 // pkg/tools carries no engine dependencies (mode-as-tool bridge).
-func transcribeEngine(filePath, outputFormat string) (string, error) {
+func transcribeEngine(ctx context.Context, filePath, outputFormat string) (string, error) {
 	confDir, err := utils.GetClaiConfigDir()
 	if err != nil {
-		return "", fmt.Errorf("failed to find config dir: %w", err)
+		return "", diag.Errorf("failed to find config dir: %w", err)
 	}
-	aConf, err := utils.LoadConfigFromFile(confDir, "audioConfig.json", nil, &Default)
+	aConf, err := utils.LoadConfigFromFile(ctx, confDir, "audioConfig.json", nil, &Default)
 	if err != nil {
-		return "", fmt.Errorf("failed to load configs: %w", err)
+		return "", diag.Errorf("failed to load configs: %w", err)
 	}
 	if outputFormat == "" {
 		outputFormat = "text"
@@ -106,15 +107,15 @@ func transcribeEngine(filePath, outputFormat string) (string, error) {
 		return "", err
 	}
 	if _, err := os.Stat(filePath); err != nil {
-		return "", fmt.Errorf("failed to find audio file: %w", err)
+		return "", diag.Errorf("failed to find audio file: %w", err)
 	}
 	splitter, err := createSplitter(aConf)
 	if err != nil {
 		return "", err
 	}
-	segs, err := splitter.Transcribe(context.Background(), filePath)
+	segs, err := splitter.Transcribe(ctx, filePath)
 	if err != nil {
-		return "", fmt.Errorf("failed to transcribe %v: %w", filePath, err)
+		return "", diag.Errorf("failed to transcribe %v: %w", filePath, err)
 	}
 	return Render(segs, format)
 }

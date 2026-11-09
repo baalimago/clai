@@ -20,6 +20,34 @@ write_wav() {
   fi
 }
 
+# le32 prints a number as four little-endian bytes.
+le32() {
+  n="$1"
+  printf "\\$(printf '%03o' $((n & 255)))\\$(printf '%03o' $((n >> 8 & 255)))\\$(printf '%03o' $((n >> 16 & 255)))\\$(printf '%03o' $((n >> 24 & 255)))"
+}
+
+# open_wav writes the header ffmpeg writes before the first sample: both sizes
+# are the 0xFFFFFFFF placeholder until the file is finalized (measured
+# 2026-11-10 with ffmpeg 8.0.1).
+open_wav() {
+  printf 'RIFF\377\377\377\377WAVEfmt \020\000\000\000\001\000\001\000\200\076\000\000\000\175\000\000\002\000\020\000data\377\377\377\377' >"$1"
+}
+
+# close_wav finalizes the header in place, as ffmpeg does on its one SIGINT.
+close_wav() {
+  size=$(($(wc -c <"$1")))
+  le32 $((size - 8)) | dd of="$1" bs=1 seek=4 conv=notrunc 2>/dev/null
+  le32 $((size - 44)) | dd of="$1" bs=1 seek=40 conv=notrunc 2>/dev/null
+}
+
+# grow_wav appends two loud samples every 20 ms until the process ends.
+grow_wav() {
+  while :; do
+    printf '\020\047\020\047' >>"$1"
+    sleep 0.02
+  done
+}
+
 pulse_list() {
   kind="$1"
   if [ "$kind" = "sources" ]; then
@@ -203,6 +231,25 @@ case "${FAKE_FFMPEG_RECORD_MODE:-spoken}" in
     # A source that never pauses emits no silencedetect event at all.
     write_wav "$out"
     while :; do sleep 0.1; done
+    ;;
+  growing)
+    # The real recorder: the header holds placeholders while samples arrive,
+    # and only an interrupt finalizes it. A kill leaves the placeholders.
+    open_wav "$out"
+    trap 'sleep "${FAKE_FFMPEG_FINALIZE_SECONDS:-0.05}"; close_wav "$out"; exit 255' INT TERM
+    grow_wav "$out"
+    ;;
+  stubborn)
+    # A recorder that ignores the graceful stop: only a kill ends it.
+    open_wav "$out"
+    trap '' INT TERM
+    grow_wav "$out"
+    ;;
+  stubborn_empty)
+    # Ignores the graceful stop before it wrote a single byte.
+    : >"$out"
+    trap '' INT TERM
+    while :; do sleep 0.02; done
     ;;
   fail)
     write_wav "$out"

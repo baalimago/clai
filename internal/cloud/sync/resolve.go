@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+
+	"github.com/baalimago/clai/internal/diag"
 )
 
 // Resolution is how resolve settles a conflict.
@@ -61,7 +63,7 @@ func (e *Engine) Resolve(rel string, how Resolution) (ResolveResult, error) {
 	var theirs []byte
 	if !c.Deleted {
 		if theirs, err = os.ReadFile(theirsPath); err != nil {
-			return res, fmt.Errorf("the server's copy of %s is gone (%w): pull again", rel, err)
+			return res, diag.Errorf("the server's copy of %s is gone (%w): pull again", rel, err)
 		}
 	}
 	if how == ResolveTheirs {

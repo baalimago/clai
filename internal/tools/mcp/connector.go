@@ -3,13 +3,13 @@ package mcp
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 	"time"
 
 	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/tools/mcp/launcher"
 )
 
@@ -290,7 +290,7 @@ func ReportBoundExpiry(err error, boundCtx context.Context, server pub_models.Mc
 	if !launcher.ProbeInstall(server).Need.NeedsInstall() {
 		return claierr.NewMcpServerStartup(server.Name, claierr.McpStageConnect, cause)
 	}
-	return claierr.NewMcpServerStartup(server.Name, claierr.McpStageInstall, fmt.Errorf(
+	return claierr.NewMcpServerStartup(server.Name, claierr.McpStageInstall, diag.Errorf(
 		"a first-run install did not answer within %s; its log above shows the download, and connect_timeout_seconds raises this wait: %w",
 		ConnectBoundOf(server), cause))
 }

@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/baalimago/clai/internal/diag"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -76,7 +77,7 @@ func (r RsyncTool) Call(input pub_models.Input) (string, error) {
 	args = append(args, "--", source, destination)
 	output, err := exec.Command("rsync", args...).CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("rsync %q to %q: %w, output: %s", source, destination, err, output)
+		return "", diag.Errorf("rsync %q to %q: %w, output: %s", source, destination, err, output)
 	}
 	return string(output), nil
 }

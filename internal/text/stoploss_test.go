@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/internal/testenv/procenv"
+
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
@@ -52,7 +54,7 @@ func TestConfigurations_StoplossLoadsFromTextConfig(t *testing.T) {
 		t.Fatalf("WriteFile(textConfig.json): %v", err)
 	}
 
-	conf, err := utils.LoadConfigFromFile(dir, "textConfig.json", nil, &Default)
+	conf, err := utils.LoadConfigFromFile(procenv.Context(context.Background()), dir, "textConfig.json", nil, &Default)
 	if err != nil {
 		t.Fatalf("LoadConfigFromFile: %v", err)
 	}
@@ -77,7 +79,7 @@ func TestConfigurations_StoplossZeroMaxTokensDisabled(t *testing.T) {
 		t.Fatalf("WriteFile(textConfig.json): %v", err)
 	}
 
-	conf, err := utils.LoadConfigFromFile(dir, "textConfig.json", nil, &Default)
+	conf, err := utils.LoadConfigFromFile(procenv.Context(context.Background()), dir, "textConfig.json", nil, &Default)
 	if err != nil {
 		t.Fatalf("LoadConfigFromFile: %v", err)
 	}
@@ -102,7 +104,7 @@ func TestConfigurations_StoplossAbsentGetsAppendedWithDefaults(t *testing.T) {
 		t.Fatalf("WriteFile(textConfig.json): %v", err)
 	}
 
-	conf, err := utils.LoadConfigFromFile(dir, "textConfig.json", nil, &Default)
+	conf, err := utils.LoadConfigFromFile(procenv.Context(context.Background()), dir, "textConfig.json", nil, &Default)
 	if err != nil {
 		t.Fatalf("LoadConfigFromFile: %v", err)
 	}
@@ -136,7 +138,7 @@ func TestConfigurations_StoplossPartialObjectFillsMissingSubfield(t *testing.T) 
 		t.Fatalf("WriteFile(textConfig.json): %v", err)
 	}
 
-	conf, err := utils.LoadConfigFromFile(dir, "textConfig.json", nil, &Default)
+	conf, err := utils.LoadConfigFromFile(procenv.Context(context.Background()), dir, "textConfig.json", nil, &Default)
 	if err != nil {
 		t.Fatalf("LoadConfigFromFile: %v", err)
 	}
@@ -159,7 +161,7 @@ func TestConfigurations_StoplossNotObject(t *testing.T) {
 		t.Fatalf("WriteFile(textConfig.json): %v", err)
 	}
 
-	_, err := utils.LoadConfigFromFile(dir, "textConfig.json", nil, &Default)
+	_, err := utils.LoadConfigFromFile(procenv.Context(context.Background()), dir, "textConfig.json", nil, &Default)
 	if err == nil {
 		t.Fatal("expected error for non-object stoploss")
 	}
@@ -202,7 +204,7 @@ func TestConfigurations_StoplossMaxToolCallsAfterHandoverLoads(t *testing.T) {
 		t.Fatalf("WriteFile(textConfig.json): %v", err)
 	}
 
-	conf, err := utils.LoadConfigFromFile(dir, "textConfig.json", nil, &Default)
+	conf, err := utils.LoadConfigFromFile(procenv.Context(context.Background()), dir, "textConfig.json", nil, &Default)
 	if err != nil {
 		t.Fatalf("LoadConfigFromFile: %v", err)
 	}
@@ -228,9 +230,9 @@ func TestConfigurations_StoplossMaxToolCallsAfterHandoverAbsentGetsMaterialized(
 	}
 
 	var conf Configurations
-	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
+	stdout := testboil.CaptureStderr(t, func(t *testing.T) {
 		var err error
-		conf, err = utils.LoadConfigFromFile(dir, "textConfig.json", nil, &Default)
+		conf, err = utils.LoadConfigFromFile(procenv.Context(context.Background()), dir, "textConfig.json", nil, &Default)
 		if err != nil {
 			t.Fatalf("LoadConfigFromFile: %v", err)
 		}
@@ -249,8 +251,8 @@ func TestConfigurations_StoplossMaxToolCallsAfterHandoverAbsentGetsMaterialized(
 		t.Fatalf("expected the materialized zero key in the rewritten file:\n%s", regenerated)
 	}
 	before := string(regenerated)
-	stdout2 := testboil.CaptureStdout(t, func(t *testing.T) {
-		if _, err := utils.LoadConfigFromFile(dir, "textConfig.json", nil, &Default); err != nil {
+	stdout2 := testboil.CaptureStderr(t, func(t *testing.T) {
+		if _, err := utils.LoadConfigFromFile(procenv.Context(context.Background()), dir, "textConfig.json", nil, &Default); err != nil {
 			t.Fatalf("second LoadConfigFromFile: %v", err)
 		}
 	})
@@ -324,7 +326,7 @@ func Test_NewQuerier_CarriesStoploss(t *testing.T) {
 		},
 	}
 
-	q, err := NewQuerier(context.Background(), conf, &MockQuerier{})
+	q, err := NewQuerier(procenv.Context(context.Background()), conf, &MockQuerier{})
 	if err != nil {
 		t.Fatalf("NewQuerier: %v", err)
 	}

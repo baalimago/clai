@@ -1,0 +1,99 @@
+# clai help
+# env: -
+== status
+0
+== stdout
+clai - (c)ommand (l)ine (a)rtificial (i)ntelligence
+
+Prerequisites:
+  - Set the environment variable to your API key according to the vendor you seek to use
+  - (Optional) Set the NO_COLOR environment variable to disable ansi color output
+  - (Optional) Install glow - https://github.com/charmbracelet/glow for formatted markdown output
+
+Usage: clai [command flags] <command> [command flags] [args]
+
+Commands:
+  audio|a         Transcribe and record audio: audio t|transcribe <file> ('-' reads stdin), audio c|calibrate
+  chat|c          Manage chats: continue|delete|list|dir|dirv2|summarize|help
+  cloud           Your clai.chat account and sync (optional)
+  completion      generate shell completion scripts (bash|zsh)
+  confdir         Print clai config dir or a registered config subpath
+  dir-replay|dre  Replay the last message of the directory-scoped conversation
+  help            Print this usage; 'clai help <command>' is that command's -h
+  mcp             Manage MCP server state
+  photo|p         Ask the photo model for a picture with the given prompt
+  profiles        List, validate, install, update, trust and publish profiles; print the schema
+  query|q         Query the chat model with the given text; -l iterates toward a goal
+  replay|re       Replay the most recent message
+  setup|s         Setup the configuration files
+  skills          Publish skills and use them from profiles
+  tools|t         List available tools, or show details for a specific tool
+  version         Print the version of clai and its dependencies
+  video|v         Ask the video model for a video with the given prompt
+
+Each command has its own flags, examples and subcommands in its help:
+'clai help <command>' or 'clai <command> -h'. For example, 'clai query -h'
+has the details of a query. A prompt that starts with '-' goes after '--':
+'clai query -- -why does this fail'.
+
+For scripts, -json before the command prints every line, on stdout and on
+stderr, as one JSON record: 'clai -json query hi'.
+
+Investigating:
+  clai reports what it does on stderr, by subsystem. LOG_LEVEL sets how much
+  is shown: first a level for everything (error, warn, info, debug or trace),
+  then subsystem=level for the ones to look closer at. A name also selects
+  the names under it, so vendor=debug is every vendor.
+
+    LOG_LEVEL=debug clai query hi                     # everything
+    LOG_LEVEL=warn,mcp=debug clai query hi            # MCP servers in detail
+    LOG_LEVEL=warn,vendor=debug,call=debug clai ...   # requests and tool calls
+
+  Each line names its subsystem in brackets, such as 'debug [config] ...',
+  and with -json it is the record's "subsystem" field. So one run at debug
+  shows which subsystem to narrow to.
+
+Subsystems:
+  clai                      the run itself: start, signals, shutdown
+  config                    configuration files: loading and migrating
+  setup                     the setup wizard and what it writes
+  chat                      stored conversations: saving, listing, continuing
+  dirscope                  which conversation belongs to the directory
+  reply_mode                replay and reply: the conversation being continued
+  profiles                  profiles: loading, validating, installing
+  skills                    skills: discovery, trust and loading
+  cloud                     the clai.chat account and its sync
+  text_querier              a query: prompt setup, steps, retries, fallback
+  call                      each tool call and its result
+  summary                   conversation titles and summaries
+  lookback                  recent conversations surfaced to the model
+  stoploss                  the token and tool-call limits of a run
+  cost_manager              token prices and the cost of a run
+  openrouter_model_catalog  OpenRouter's model and price list
+  tools                     which built-in tools a run is given
+  tools_registry_set        each tool as it is registered
+  mcp                       MCP servers: start, handshake, schema cache
+  glob                      the files a -glob pattern adds to the prompt
+  audio                     recording and transcription
+  photo                     image generation
+  video                     video generation
+  verbose                   extra detail: saved chat paths, raw stream tokens
+  claudified_msgs           the messages as sent to Anthropic
+  vendor.openai             requests to and responses from OpenAI
+  vendor.anthropic          requests to and responses from Anthropic
+  vendor.openrouter         requests to and responses from OpenRouter
+  vendor.mistral            requests to and responses from Mistral
+  vendor.huggingface        requests to and responses from Hugging Face
+  vendor.berget             requests to and responses from Berget
+  vendor.deepseek           requests to and responses from DeepSeek
+  vendor.gemini             requests to and responses from Gemini
+  vendor.inception          requests to and responses from Inception
+  vendor.novita             requests to and responses from Novita
+  vendor.ollama             requests to and responses from Ollama
+  vendor.xai                requests to and responses from xAI
+
+Config dir: $CONFIG
+Cache dir:  $CONFIG/cache
+
+== stderr
+

@@ -7,9 +7,13 @@ import (
 	"os"
 	"strings"
 
+	"github.com/baalimago/clai/internal/diag"
+	"github.com/baalimago/clai/internal/display"
 	"github.com/baalimago/clai/internal/look"
 	"github.com/baalimago/clai/internal/modelalias"
 	"github.com/baalimago/clai/internal/remote"
+	"github.com/baalimago/clai/internal/runenv"
+	"github.com/baalimago/clai/internal/stdio"
 	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
 
@@ -29,6 +33,8 @@ type RemoteSkillsResolver func(ctx context.Context, targets []string) ([]string,
 // profile the user just trusted at the prompt carries its skills with it,
 // so they are not asked about one by one.
 type remoteRun struct {
+	// stderr is where the trust question is asked.
+	stderr      io.Writer
 	newResolver NewRemoteResolverFunc
 	confDir     string
 	trustInput  io.Reader
@@ -49,7 +55,11 @@ func (r *remoteRun) resolver() (remote.Resolver, error) {
 	}
 	var prompt remote.Prompter
 	if r.interactive {
-		ask := terminalTrustPrompt(r.trustInput, os.Stderr)
+		out := r.stderr
+		if out == nil {
+			out = io.Discard
+		}
+		ask := terminalTrustPrompt(r.trustInput, out)
 		prompt = func(ctx context.Context, p remote.TrustPrompt) (bool, error) {
 			ok, err := ask(ctx, p)
 			r.consented = r.consented || ok
@@ -112,7 +122,7 @@ func resolveRemoteModel(ctx context.Context, tConf *Configurations, resolve func
 	}
 	models, err := resolve(ctx, tConf.Model)
 	if err != nil {
-		return fmt.Errorf("model %s: %w", tConf.Model, err)
+		return diag.Errorf("model %s: %w", tConf.Model, err)
 	}
 	tConf.ModelAliases = modelalias.Table{tConf.Model: models}
 	return nil
@@ -122,9 +132,13 @@ func resolveRemoteModel(ctx context.Context, tConf *Configurations, resolve func
 // a character device other than /dev/null, and the terminal the answer is
 // read from (TTY, default /dev/tty) opens. Cron gives /dev/null and has
 // no controlling terminal, so it never qualifies.
-func terminalAvailable() bool {
-	fi, err := os.Stdin.Stat()
-	if err != nil || fi.Mode()&os.ModeCharDevice == 0 || isDevNull(fi) {
+func terminalAvailable(stdin io.Reader, stdinTerminal bool) bool {
+	if f, ok := stdin.(interface{ Stat() (os.FileInfo, error) }); ok {
+		fi, err := f.Stat()
+		if err != nil || fi.Mode()&os.ModeCharDevice == 0 || isDevNull(fi) {
+			return false
+		}
+	} else if !stdinTerminal {
 		return false
 	}
 	ttyPath := os.Getenv("TTY")
@@ -147,8 +161,8 @@ func isDevNull(fi os.FileInfo) bool {
 
 // TerminalTrustPrompter is the trust question asked on out when stdin is a
 // terminal, and nil when nobody can answer it.
-func TerminalTrustPrompter(input io.Reader, out io.Writer) remote.Prompter {
-	if !terminalAvailable() {
+func TerminalTrustPrompter(input io.Reader, inputIsTerminal bool, out io.Writer) remote.Prompter {
+	if !terminalAvailable(input, inputIsTerminal) {
 		return nil
 	}
 	return terminalTrustPrompt(input, out)
@@ -157,9 +171,14 @@ func TerminalTrustPrompter(input io.Reader, out io.Writer) remote.Prompter {
 // terminalTrustPrompt asks on out, stderr in production, so a run whose
 // stdout is piped still shows the question and keeps its output clean.
 func terminalTrustPrompt(input io.Reader, out io.Writer) remote.Prompter {
-	return func(_ context.Context, p remote.TrustPrompt) (bool, error) {
-		if _, err := fmt.Fprint(out, FormatRemoteTrustPrompt(p, look.For(out))); err != nil {
-			return false, fmt.Errorf("show trust prompt: %w", err)
+	return func(ctx context.Context, p remote.TrustPrompt) (bool, error) {
+		if env := runenv.From(ctx); env.JSON() {
+			question := display.Prompt{Kind: "trust", Text: FormatRemoteTrustPrompt(p, look.Style{Plain: true}), Choices: []string{"y", "N"}}
+			if err := env.ShowPrompt(stdio.Stderr, question); err != nil {
+				return false, diag.Errorf("show trust prompt: %w", err)
+			}
+		} else if _, err := fmt.Fprint(out, FormatRemoteTrustPrompt(p, look.For(out))); err != nil {
+			return false, diag.Errorf("show trust prompt: %w", err)
 		}
 		answer, err := table.ReadUserInputFrom(input)
 		if err != nil {
@@ -172,7 +191,8 @@ func terminalTrustPrompt(input io.Reader, out io.Writer) remote.Prompter {
 
 // FormatRemoteTrustPrompt renders the question asked before a remote
 // target runs for the first time: where it came from, what it runs here,
-// and the question on a line of its own.
+// and the question on a line of its own. A Plain style leaves the answer
+// choices to the caller.
 func FormatRemoteTrustPrompt(p remote.TrustPrompt, st look.Style) string {
 	target := remote.Printable(p.Target)
 	rows := [][]string{{"sha256", remote.Printable(p.Digest)}}
@@ -182,6 +202,9 @@ func FormatRemoteTrustPrompt(p remote.TrustPrompt, st look.Style) string {
 	lines := append([]string{st.Head(target, "fetched", "runs on your machine")}, look.Grid("  ", rows, st)...)
 	if p.Summary != nil {
 		lines = append(append(lines, ""), p.Summary.Lines(st)...)
+	}
+	if st.Plain {
+		return strings.Join(lines, "\n") + "\n\nTrust " + target + "?"
 	}
 	return strings.Join(lines, "\n") + "\n\n" + st.Primary("? Trust "+target+"?") + " [y/N] "
 }
@@ -195,7 +218,7 @@ func resolveRemoteProfilePath(ctx context.Context, tConf *Configurations, resolv
 	}
 	path, err := resolve(ctx, tConf.ProfilePath)
 	if err != nil {
-		return fmt.Errorf("profile %s: %w", tConf.ProfilePath, err)
+		return diag.Errorf("profile %s: %w", tConf.ProfilePath, err)
 	}
 	tConf.ProfileTarget = tConf.ProfilePath
 	tConf.ProfilePath = path
@@ -214,7 +237,7 @@ func resolveProfileSkills(ctx context.Context, tConf *Configurations, resolve Re
 	}
 	roots, err := resolve(ctx, tConf.ProfileSkills)
 	if err != nil {
-		return nil, fmt.Errorf("profile %s: %w", tConf.UseProfile, err)
+		return nil, diag.Errorf("profile %s: %w", tConf.UseProfile, err)
 	}
 	return roots, nil
 }

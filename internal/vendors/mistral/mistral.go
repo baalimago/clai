@@ -2,13 +2,11 @@ package mistral
 
 import (
 	"context"
-	"fmt"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/text/generic"
-	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
 const MistralURL = "https://api.mistral.ai/v1/chat/completions"
@@ -62,11 +60,7 @@ func clean(msg []pub_models.Message) []pub_models.Message {
 	for i := 1; i < len(msg); i++ {
 		if msg[i].Role == "assistant" && msg[i-1].Role == "assistant" {
 			msg[i-1] = mergeAssistant(msg[i-1], msg[i])
-			nMsg, err := utils.DeleteRange(msg, i, i)
-			if err != nil {
-				ancli.Warnf("failed to merge consecutive assistant messages: %v", err)
-			}
-			msg = nMsg
+			msg = append(msg[:i], msg[i+1:]...)
 			i--
 		}
 	}
@@ -96,7 +90,7 @@ func asParts(m pub_models.Message) []pub_models.Part {
 func (m *Mistral) Setup() error {
 	err := m.StreamCompleter.Setup("MISTRAL_API_KEY", MistralURL, "DEBUG_MISTRAL")
 	if err != nil {
-		return fmt.Errorf("failed to setup stream completer: %w", err)
+		return diag.Errorf("failed to setup stream completer: %w", err)
 	}
 	m.StreamCompleter.Model = m.Model
 	m.StreamCompleter.MaxTokens = &m.MaxTokens

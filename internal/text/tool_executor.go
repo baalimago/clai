@@ -9,7 +9,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/baalimago/clai/internal/debugflags"
+	"github.com/baalimago/clai/internal/runenv"
+
+	"github.com/baalimago/clai/internal/diag"
+	"github.com/baalimago/clai/internal/display"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/present"
 	"github.com/baalimago/clai/internal/tools"
@@ -18,7 +21,6 @@ import (
 	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	pkgtools "github.com/baalimago/clai/pkg/tools"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
@@ -52,8 +54,8 @@ func (e toolExecutor[C]) ExecuteBatch(ctx context.Context, session *QuerySession
 	q := e.querier
 	planned := make([]pub_models.Call, 0, len(calls))
 	for _, call := range calls {
-		if q.debug || debugflags.Enabled("CALL") {
-			ancli.PrintOK(fmt.Sprintf("received tool call: %v", debug.IndentedJsonFmt(call)))
+		if runenv.DebugEnabled(ctx, runenv.SubsystemCall) {
+			runenv.Debugf(ctx, runenv.SubsystemCall, "received tool call: %v", debug.IndentedJsonFmt(call))
 		}
 		decision := q.decideToolCall(session, call)
 		if decision.TreatAsReturnToUser || decision.SkipExecution {
@@ -67,7 +69,7 @@ func (e toolExecutor[C]) ExecuteBatch(ctx context.Context, session *QuerySession
 	session.SawAnyText = true
 	plans := q.newStoploss().PreflightToolCallBudget(session, planned)
 	if err := e.finalizeAssistantTextBeforeToolCall(ctx, session, planned[0]); err != nil {
-		return fmt.Errorf("finalize assistant text before tool call: %w", err)
+		return diag.Errorf("finalize assistant text before tool call: %w", err)
 	}
 	// load_skill self-emits its assistant tool-call at execution time (the
 	// trust prompt and the load error must precede the call echo, and a
@@ -134,6 +136,9 @@ func (e toolExecutor[C]) ExecuteBatch(ctx context.Context, session *QuerySession
 // assistant tool-call so the exchange stays valid (R2-02).
 func (e toolExecutor[C]) runPlannedCall(ctx context.Context, session *QuerySession, plan toolCallBudgetPlan) error {
 	defer func() { clear(e.querier.imageDetails) }()
+	if plan.allowed && e.unoffered(plan.call.Name) {
+		plan.allowed, plan.out = false, plan.prefix+tools.UnknownToolCall(plan.call.Name)
+	}
 	if !plan.allowed {
 		if plan.call.Name == string(pub_models.LoadSkillTool) {
 			if err := e.emitAssistantToolCall(ctx, session, plan.call); err != nil {
@@ -151,7 +156,7 @@ func (e toolExecutor[C]) runPlannedCall(ctx context.Context, session *QuerySessi
 	if isLookbackTool(plan.call.Name) {
 		if !q.useLookback {
 			out = fmt.Sprintf("ERROR: %s requested but lookback is disabled for this run (enable with -lb/-lookback)", plan.call.Name)
-		} else if res, err := e.runLookbackTool(plan.call); err != nil {
+		} else if res, err := e.runLookbackTool(ctx, plan.call); err != nil {
 			out = "ERROR: " + err.Error()
 		} else {
 			out = res
@@ -169,22 +174,38 @@ func (e toolExecutor[C]) runPlannedCall(ctx context.Context, session *QuerySessi
 	return e.emitToolResult(ctx, session, plan.call, plan.prefix+out)
 }
 
+// unoffered reports whether name is a tool this run never offered its model.
+// Such a call executes nothing, whatever the name: a built-in, load_skill or
+// a lookback tool. Two calls keep the failure they already had, which runs
+// nothing either: a lookback call while lookback is disabled is refused
+// naming the flag, and load_skill without a skill loader fails the run.
+func (e toolExecutor[C]) unoffered(name string) bool {
+	if isLookbackTool(name) && !e.querier.useLookback {
+		return false
+	}
+	if name == string(pub_models.LoadSkillTool) && e.querier.tooling.skillLoader == nil {
+		return false
+	}
+	_, offered := e.querier.tooling.offered.Get(name)
+	return !offered
+}
+
 // mcpConnectionResolver is implemented by an MCP tool (internal/tools/mcp's
 // unexported *mcpTool, matched structurally: its ResolveForCall method is
 // public). It exposes the Connector's typed resolution outcome, which
-// tools.InvokeWith would otherwise fold into a string before a mid-run
+// tools.Run would otherwise fold into a string before a mid-run
 // authorization wait could ever be recognised (worklog
 // 2026-10-02-mcp-connection-cost, phase 6).
 type mcpConnectionResolver interface {
 	ResolveForCall(ctx context.Context) (serverName string, resolver mcp.AuthResolver, authTimeout time.Duration, err error)
 }
 
-// invokeToolCall is tools.InvokeWith's call site, extended to surface and
-// bound a mid-run authorization wait (D20, D22) before the generic dispatch
-// folds every error into a string. Only a tool already present in the
-// per-run toolset (q.tooling.run) is ever consulted for this: MCP tools are
-// never written into the process-global registry (querier_setup_tools.go),
-// so a plain map lookup here can never reach a tool whose connection is a
+// invokeToolCall is the one place a model's call reaches a tool, extended to
+// surface and bound a mid-run authorization wait (D20, D22) before the
+// generic dispatch folds every error into a string. Only a tool this run
+// offered (q.tooling.offered) is ever consulted: the process-global registry
+// is not reachable from here, so the lookup can never reach an unoffered
+// built-in, nor a tool whose connection is a
 // model-reachable input rather than a fixed property of the server config
 // (D23 — the wait is raised solely by a component that cannot proceed
 // without a credential, never by a tool or a model request).
@@ -194,38 +215,29 @@ func (e toolExecutor[C]) invokeToolCall(ctx context.Context, call pub_models.Cal
 }
 
 // invokeToolCallParts is invokeToolCall that also returns a PartsCaller's parts when
-// they hold an image (Run.5). The string is always today's tools.InvokeWith output.
+// they hold an image (Run.5). The string is always tools.Run's output.
 func (e toolExecutor[C]) invokeToolCallParts(ctx context.Context, call pub_models.Call) (string, []pub_models.Part) {
 	q := e.querier
 	callCtx := pkgtools.WithCmdBanContext(ctx, q.cmdBan)
-	if resolver, ok := q.tooling.run[call.Name].(mcpConnectionResolver); ok {
+	tool, offered := q.tooling.offered.Get(call.Name)
+	if !offered {
+		return tools.UnknownToolCall(call.Name), nil
+	}
+	if resolver, ok := tool.(mcpConnectionResolver); ok {
 		if out, handled := e.resolveMcpAuthWait(callCtx, resolver); handled {
 			return out, nil
 		}
 	}
-	caller, ok := e.partsCaller(call.Name)
+	caller, ok := tool.(pub_models.PartsCaller)
 	if !ok {
-		return tools.InvokeWith(callCtx, call, q.tooling.run), nil
+		return tools.Run(callCtx, tool, call), nil
 	}
 	capture := &partsCapture{PartsCaller: caller}
-	out := tools.InvokeWith(callCtx, call, map[string]pub_models.LLMTool{call.Name: capture})
+	out := tools.Run(callCtx, capture, call)
 	if !holdsImage(capture.parts) {
 		return out, nil
 	}
 	return out, capture.parts
-}
-
-// partsCaller resolves name as tools.InvokeWith does: the run's toolset, then the registry.
-func (e toolExecutor[C]) partsCaller(name string) (pub_models.PartsCaller, bool) {
-	tool, ok := e.querier.tooling.run[name]
-	if !ok {
-		tool, ok = tools.Registry.Get(name)
-	}
-	if !ok {
-		return nil, false
-	}
-	caller, ok := tool.(pub_models.PartsCaller)
-	return caller, ok
 }
 
 // resolveMcpAuthWait pre-resolves an MCP tool's connection. handled is false
@@ -294,14 +306,14 @@ func (e toolExecutor[C]) resolveMcpAuthWait(ctx context.Context, resolver mcpCon
 		return fmt.Sprintf("ERROR: mcp server %q: %v", serverName, retryErr), true
 	}
 	// Resolved: fall through to the normal dispatch path. The Connector is
-	// now memoised, so tools.InvokeWith's own resolution is a cheap replay,
+	// now memoised, so tools.Run's own resolution is a cheap replay,
 	// not a second real attempt.
 	return "", false
 }
 
 // actionableAuthResult is the fixed tool-result string a mid-run
 // authorization wait degrades to, reusing the ERROR: convention
-// tools.InvokeWith already produces for a failed call rather than
+// tools.Run already produces for a failed call rather than
 // introducing a new tool-result shape. hasResolver distinguishes an
 // endpoint-based server, which "clai mcp auth" can actually authorize,
 // from a command-based one, which the subcommand refuses (R1-08): the
@@ -333,7 +345,7 @@ func (e toolExecutor[C]) recordToolCall(ctx context.Context, name string, starte
 		Err:        toolCallError(name, out),
 	}); err != nil {
 		if warnErr := e.querier.warnf("failed to record tool call: %v", err); warnErr != nil {
-			return fmt.Errorf("report tool call recorder failure: %w", warnErr)
+			return diag.Errorf("report tool call recorder failure: %w", warnErr)
 		}
 	}
 	return nil
@@ -385,11 +397,15 @@ func (e toolExecutor[C]) emitAssistantToolCalls(ctx context.Context, session *Qu
 			// assistant turn. Empty for other vendors.
 			modelSafe.ReasoningItems = call.ReasoningItems
 		}
-		if !q.debug && !q.structuredOutput {
+		if q.json.active() {
+			if !q.structuredOutput {
+				_ = q.jsonTranscript().ReportToolCall(jsonToolCall(call))
+			}
+		} else if !q.debug && !q.structuredOutput {
 			if q.rawDisplay() {
 				display := pub_models.Message{Role: "assistant", Content: call.PrettyPrint(), ToolCalls: []pub_models.Call{call}, ReasoningContent: call.ReasoningContent}
 				if err := utils.AttemptPrettyPrint(q.transcriptOut(), display, q.username, q.rawDisplay()); err != nil {
-					return fmt.Errorf("pretty print raw assistant tool call: %w", err)
+					return diag.Errorf("pretty print raw assistant tool call: %w", err)
 				}
 			}
 		}
@@ -432,7 +448,7 @@ func (e toolExecutor[C]) emitToolResultParts(ctx context.Context, session *Query
 			if part.Origin == pub_models.OriginGenerated && part.Asset == "" {
 				stored, err := storeImage(q.imageWiring().Store, part)
 				if err != nil {
-					storeErr := fmt.Errorf("store image: %w", err)
+					storeErr := diag.Errorf("store image: %w", err)
 					if emitErr := e.emitToolResult(ctx, session, call, prefix+"ERROR: "+storeErr.Error()); emitErr != nil {
 						return emitErr
 					}
@@ -496,15 +512,19 @@ func (e *toolImageError) Unwrap() error { return e.err }
 func (e toolExecutor[C]) appendToolResult(ctx context.Context, session *QuerySession, call pub_models.Call, outMsg pub_models.Message, displayOut, shown string) error {
 	q := e.querier
 	e.recordToolResult(ctx, session, call, outMsg, displayOut)
-	if !q.structuredOutput {
+	if q.json.active() {
+		if !q.structuredOutput {
+			_ = q.jsonTranscript().ReportToolResult(display.ToolResult{Name: call.Name, Output: shown})
+		}
+	} else if !q.structuredOutput {
 		if q.rawDisplay() {
 			printMsg := pub_models.Message{Role: outMsg.Role, Content: displayOut, ToolCallID: outMsg.ToolCallID}
 			if err := utils.AttemptPrettyPrint(q.transcriptOut(), printMsg, "tool", q.rawDisplay()); err != nil {
-				return fmt.Errorf("pretty print raw tool output: %w", err)
+				return diag.Errorf("pretty print raw tool output: %w", err)
 			}
 		} else if !q.debug {
 			if err := q.appendToolActivity(call, shown); err != nil {
-				return fmt.Errorf("print tool output: %w", err)
+				return diag.Errorf("print tool output: %w", err)
 			}
 		}
 	}
@@ -559,14 +579,10 @@ func (e toolExecutor[C]) executeLoadSkill(ctx context.Context, session *QuerySes
 			if !exists {
 				continue
 			}
-			if q.tooling.registered == nil {
-				q.tooling.registered = map[string]struct{}{}
-			}
-			if _, registered := q.tooling.registered[name]; registered {
+			if _, offered := q.tooling.offered.Get(name); offered {
 				continue
 			}
-			toolBox.RegisterTool(tool)
-			q.tooling.registered[name] = struct{}{}
+			q.tooling.offer(toolBox, tool)
 		}
 		loaded.Warnings = append(loaded.Warnings, "skill enabled local tools: "+strings.Join(loaded.EnabledTools, ", "))
 	}
@@ -595,15 +611,19 @@ func (e toolExecutor[C]) executeLoadSkill(ctx context.Context, session *QuerySes
 	// display shortening): the loaded skill IS the instruction set.
 	outMsg := pub_models.Message{Role: "tool", Content: content, ToolCallID: call.ID}
 	session.Chat.Messages = append(session.Chat.Messages, outMsg)
-	if !q.debug && !q.structuredOutput {
+	if q.json.active() {
+		if !q.structuredOutput {
+			_ = q.jsonTranscript().ReportToolResult(display.ToolResult{Name: call.Name, Output: content})
+		}
+	} else if !q.debug && !q.structuredOutput {
 		printMsg := outMsg
 		printMsg.Content = userVisibleContent
 		if q.rawDisplay() {
 			if err := utils.AttemptPrettyPrint(q.transcriptOut(), printMsg, "tool", q.rawDisplay()); err != nil {
-				return fmt.Errorf("pretty print raw skill output: %w", err)
+				return diag.Errorf("pretty print raw skill output: %w", err)
 			}
 		} else if err := q.appendToolActivity(call, printMsg.Content); err != nil {
-			return fmt.Errorf("print skill output: %w", err)
+			return diag.Errorf("print skill output: %w", err)
 		}
 	}
 	session.ResetPendingText()
@@ -613,17 +633,17 @@ func (e toolExecutor[C]) executeLoadSkill(ctx context.Context, session *QuerySes
 func (q *Querier[C]) appendToolActivity(call pub_models.Call, content string) error {
 	if !utils.RollingOutputEnabled() {
 		if err := utils.PrintToolActivity(q.out, call, content, q.dims.Width, utils.ToolOutputRows()); err != nil {
-			return fmt.Errorf("print tool activity: %w", err)
+			return diag.Errorf("print tool activity: %w", err)
 		}
 		q.line, q.lineCount = "", 0
 		return nil
 	}
 	if err := q.drainMcpLogs(); err != nil {
-		return fmt.Errorf("drain mcp logs before tool activity: %w", err)
+		return diag.Errorf("drain mcp logs before tool activity: %w", err)
 	}
 	q.ensureActivityViewport().AppendTool(call, utils.SummarizeAsyncToolResult(call.Name, content), utils.ToolOutputRows())
 	if err := q.activityViewport.Render(q.out); err != nil {
-		return fmt.Errorf("render activity viewport: %w", err)
+		return diag.Errorf("render activity viewport: %w", err)
 	}
 	return nil
 }
@@ -668,7 +688,7 @@ func (e toolExecutor[C]) finalizeAssistantTextPlain(ctx context.Context, session
 			rowsToClear += q.activityViewport.DetachRenderedRegion()
 		}
 		if err := table.ClearTermTo(q.out, rowsToClear); err != nil {
-			return fmt.Errorf("clear streamed assistant text before tool call: %w", err)
+			return diag.Errorf("clear streamed assistant text before tool call: %w", err)
 		}
 	}
 	if isEchoedToolCallText(pending, call) {
@@ -716,12 +736,12 @@ func (e toolExecutor[C]) finalizeAssistantTextRolling(ctx context.Context, sessi
 		// the window did not exist yet.
 		if q.activityViewport.RemoveTextBlock() > 0 {
 			if err := q.activityViewport.Render(q.out); err != nil {
-				return fmt.Errorf("render activity viewport after dropping echoed tool call: %w", err)
+				return diag.Errorf("render activity viewport after dropping echoed tool call: %w", err)
 			}
 		} else if q.dims.Width > 0 {
 			utils.UpdateMessageTerminalMetadata(pending, &session.Line, &session.LineCount, q.dims.Width)
 			if err := table.ClearTermTo(q.out, session.LineCount-1); err != nil {
-				return fmt.Errorf("clear echoed tool call text: %w", err)
+				return diag.Errorf("clear echoed tool call text: %w", err)
 			}
 		}
 		session.ResetPendingText()
@@ -738,12 +758,12 @@ func (e toolExecutor[C]) finalizeAssistantTextRolling(ctx context.Context, sessi
 		if q.dims.Width > 0 {
 			utils.UpdateMessageTerminalMetadata(pending, &session.Line, &session.LineCount, q.dims.Width)
 			if err := table.ClearTermTo(q.out, session.LineCount-1); err != nil {
-				return fmt.Errorf("clear streamed assistant text before tool call: %w", err)
+				return diag.Errorf("clear streamed assistant text before tool call: %w", err)
 			}
 		}
 		q.activityViewport.AppendText(pending)
 		if err := q.activityViewport.Render(q.out); err != nil {
-			return fmt.Errorf("render activity viewport: %w", err)
+			return diag.Errorf("render activity viewport: %w", err)
 		}
 	}
 	session.ResetPendingText()

@@ -406,7 +406,7 @@ func TestCommit_pathsAndErrors(t *testing.T) {
 	if code != 1 {
 		t.Fatalf("refused commit code %d", code)
 	}
-	r := &runner{deps: h.deps().withDefaults()}
+	r := &runner{deps: h.deps().withDefaults(context.Background())}
 	err := r.commit(context.Background(), nil, "", false, false)
 	if err == nil || !strings.Contains(err.Error(), "https://clai.chat/account/billing") {
 		t.Fatalf("card error = %v", err)
@@ -521,7 +521,7 @@ func TestHelpers(t *testing.T) {
 	if quoteOr("") != "-" || hostOf("https://clai.chat/") != "clai.chat" {
 		t.Fatal("quoteOr/hostOf")
 	}
-	d := Deps{}.withDefaults()
+	d := Deps{}.withDefaults(context.Background())
 	if d.Out == nil || d.Now == nil || d.Interactive == nil {
 		t.Fatal("defaults")
 	}
@@ -581,7 +581,7 @@ func TestCommit_withoutACardCommitsConfigAndSaysWhyNotConversations(t *testing.T
 	}
 	mustContain(t, out, "▸ config · commit #1", "▸ conversations · not committed · needs a card on file", "  → "+h.srv.URL()+"/account/billing/")
 
-	r := &runner{deps: h.deps().withDefaults()}
+	r := &runner{deps: h.deps().withDefaults(context.Background())}
 	err := r.commit(context.Background(), []string{"conversations"}, "", false, false)
 	if err == nil || !strings.Contains(err.Error(), "/account/billing/") {
 		t.Fatalf("explicit conversations commit err = %v, want the billing link", err)

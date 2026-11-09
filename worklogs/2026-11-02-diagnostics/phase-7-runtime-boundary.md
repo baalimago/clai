@@ -17,7 +17,9 @@ package runtimeboundary
 
 import (
 	"context"
+	"os"
 
+	"github.com/baalimago/clai/pkg/diagnostic"
 	"github.com/baalimago/go_away_boilerplate/pkg/cmd"
 )
 
@@ -57,6 +59,19 @@ type DispatchMonitor interface {
 	Dispatcher
 	ShutdownMonitor
 }
+
+// SignalSource is where the owner's interrupt signals come from.
+type SignalSource interface {
+	// Subscribe starts delivery on signals until stop runs, or returns an
+	// error when the source cannot be observed. (Subscribe.1)
+	Subscribe() (signals <-chan os.Signal, stop func(), err error)
+}
+
+// NewDispatchMonitor returns the DispatchMonitor that observes source,
+// reports each signal as an event of signalType through reporter, and calls
+// forceExit on the third signal. It reads no process state itself.
+// (NewDispatchMonitor.1, F9)
+func NewDispatchMonitor(source SignalSource, reporter diagnostic.Reporter, signalType string, forceExit func()) DispatchMonitor
 ```
 
 Consumes: `Reporter.Report` and `Event` (phase 4); `cmd:RunSilent`,
@@ -73,13 +88,14 @@ Human required); `table:ErrUserInitiatedExit` (import).
 | 3   | Dispatch writes nothing to the diagnostic stream; completion and results are unchanged.  | Dispatch.2, F1     | `TestDispatcherContract`  |
 | 4   | The signal sequence keeps the current cancel, warn, and force-exit order.                | Monitor.1, F9      | `TestShutdownMonitorSignals` |
 | 5   | A diagnostic delivery failure reaches the owner, and the channel closes with the ctx.    | Monitor.1          | `TestShutdownMonitorSignals` |
+| 6   | The constructor wires the owner's signal source, Reporter, signal type, and force exit; a source that cannot be observed fails `Monitor`. | NewDispatchMonitor.1, Subscribe.1 | `TestShutdownMonitorSignals` |
 
 ## Test cases
 
 | Test                         | Level          | Proves                 | Given                                                                                                  | Then                                                                                         | Must not                                        |
 | ---------------------------- | -------------- | ---------------------- | ------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- | ----------------------------------------------- |
 | `TestDispatcherContract`     | contract suite | Dispatch.1, Dispatch.2 | Fake commands failing in parse, setup, and run; `-h`; no arguments; a user exit; `__complete`          | Statuses and error identities match the clause; stderr is empty; completion reaches stdout   | Print a diagnostic or usage, or change a result |
-| `TestShutdownMonitorSignals` | contract suite | Monitor.1              | An injected signal source, a Reporter whose `Report` fails, a force-exit recorder, and a cancelled ctx | Cancel on the first signal, an event per signal, force-exit on the third, failure on channel | Call `os.Exit` or leak a goroutine              |
+| `TestShutdownMonitorSignals` | contract suite | Monitor.1, Subscribe.1, NewDispatchMonitor.1 | An injected signal source, a Reporter whose `Report` fails, a force-exit recorder, and a cancelled ctx | Cancel on the first signal, an event per signal, force-exit on the third, failure on channel | Call `os.Exit` or leak a goroutine              |
 
 ## Error management
 
@@ -134,7 +150,24 @@ checkout; a needed upstream change is a design andon.
 | replan    | 2c9c4ff+wip | —       | V1-11: `RuntimeBoundary` renamed `DispatchMonitor`; consumes `Reporter.Report`. V1-03: F1 and F2 now bind this phase. |
 | replan    | 2c9c4ff+wip | —       | dry run: Dispatch.1 names both user-exit sentinels that `cmd.RunSilent` passes through. |
 | replan    | 2c9c4ff+wip | —       | round 3 note: Monitor.1 names the condition for its returned error. |
+| replan    | 0ea7c95+wip | —       | A03 sweep: `SignalSource` and `NewDispatchMonitor` declared so the owner can build the boundary; criterion 6. |
+| start     | 0ea7c95+wip | gofumpt -w -l . && staticcheck ./... && go vet ./... && go test ./... -race -cover -count=3 -timeout=30s && go fix ./... && dupl -t 80 . | all rc 0; 91 packages ok, 0 FAIL; dupl 41 clone groups; Human required checks `go list -m` and `go doc cmd.RunSilent`: rc 0 |
+| end       | 0ea7c95+wip | same six gates, command order shuffled | all rc 0; 92 packages ok, 0 FAIL; `internal/runtimeboundary` coverage 94.3%; dupl 41 clone groups |
+| end       | 0ea7c95+wip | same six gates, command order shuffled | all rc 0; 92 packages ok, 0 FAIL; `internal/runtimeboundary` coverage 94.3%; dupl 41 clone groups |
+
+Andon: none.
+Surprises:
+- A first end pair failed staticcheck on an unused test variable (`errRun`) this phase added; removed, both end runs repeated.
+- Monitor stops at ctx done, so the warn and force-exit steps need the owner to pass an observation ctx that the first signal's cancel does not end (unlike `MonitorV2`'s detached drainer).
 
 ## Review findings
 
+### Review 1, 2026-11-09 (root)
+
 None.
+
+Verified good:
+- The Interface matches.
+- The steps run cancel, warn, then force-exit, each reported with `WithoutCancel`.
+- The failure channel holds 3 and closes when observation ends; the source is stopped.
+- The composition's context outlives the first cancel (`compose.go:325`).

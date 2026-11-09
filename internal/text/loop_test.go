@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -660,11 +661,12 @@ func TestQuerier_RegisterExtraTool_withoutToolBox(t *testing.T) {
 	var lq LoopQuerier = &q
 	lq.RegisterExtraTool(loopTestTool{name: "extra_tool", out: "extra output"})
 
-	if q.tooling.run["extra_tool"] == nil || q.tooling.base["extra_tool"] == nil {
-		t.Fatalf("extra_tool = (run %v, base %v), want it in both catalogs", q.tooling.run, q.tooling.base)
+	if q.tooling.base["extra_tool"] == nil {
+		t.Fatalf("base = %v, want extra_tool selectable", q.tooling.base)
 	}
-	if len(q.tooling.registered) != 0 {
-		t.Fatalf("registered tools = %v, want no model registration without a tool box", q.tooling.registered)
+	// A model without a tool box is offered nothing, so nothing is callable.
+	if names := q.tooling.offered.Names(); len(names) != 0 {
+		t.Fatalf("offered tools = %v, want none without a tool box", names)
 	}
 }
 
@@ -676,12 +678,8 @@ func TestQuerier_RegisterExtraTool(t *testing.T) {
 		var lq LoopQuerier = q
 		lq.RegisterExtraTool(loopTestTool{name: "extra_tool", out: "extra output"})
 		lq.RegisterExtraTool(loopTestTool{name: "extra_tool", out: "extra output"})
-		if len(q.tooling.registered) != 1 {
-			t.Fatalf("registered tools = %v, want extra_tool registered once", q.tooling.registered)
-		}
-
-		if q.tooling.run["extra_tool"] == nil {
-			t.Fatal("extra_tool is not in the dispatch catalog")
+		if names := q.tooling.offered.Names(); !slices.Equal(names, []string{"extra_tool"}) {
+			t.Fatalf("offered tools = %v, want extra_tool offered once", names)
 		}
 		chat, err := lq.TextQuery(t.Context(), pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "tool_extra_tool"}}})
 		if err != nil {
@@ -702,8 +700,8 @@ func TestQuerier_RegisterExtraTool(t *testing.T) {
 		})
 		var lq LoopQuerier = q
 		lq.RegisterExtraTool(loopTestTool{name: "extra_tool", out: "extra output"})
-		if _, ok := q.tooling.registered["existing_tool"]; !ok {
-			t.Fatalf("registered tools = %v, want the pre-existing tool", q.tooling.registered)
+		if _, ok := q.tooling.offered.Get("existing_tool"); !ok {
+			t.Fatalf("offered tools = %v, want the pre-existing tool", q.tooling.offered.Names())
 		}
 
 		chat, err := lq.TextQuery(t.Context(), pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "tool_existing_tool tool_extra_tool"}}})

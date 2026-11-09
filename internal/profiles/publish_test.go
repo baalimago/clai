@@ -3,13 +3,18 @@ package profiles
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/internal/jsonl"
 	"github.com/baalimago/clai/internal/profile"
+	"github.com/baalimago/clai/internal/runenv"
+	"github.com/baalimago/clai/internal/stdio"
 )
 
 const publishBody = `{"model":"gpt-5.2","prompt":"Review Go."}`
@@ -33,7 +38,7 @@ func publishDeps(t *testing.T, hub *fakeHub) (CommandDeps, string, *bytes.Buffer
 	}
 	var out bytes.Buffer
 	return CommandDeps{
-		ConfigDir:       func() (string, error) { return conf, nil },
+		ConfigDir:       func(context.Context) (string, error) { return conf, nil },
 		Out:             &out,
 		NewHubPublisher: func(string) (HubPublisher, error) { return hub.publish, nil },
 		ProfileEnv:      func(string) (profile.Env, error) { return profile.Env{}, nil },
@@ -514,5 +519,45 @@ func TestPublishInteractive_nilInputNeverPrompts(t *testing.T) {
 	}
 	if len(hub.got) != 1 || !strings.HasSuffix(hub.got[0].Body, `["m"]`) {
 		t.Fatalf("wizard sent %+v", hub.got)
+	}
+}
+
+// TestPublishInteractive_jsonSelectPrompt pins F13 for the Hub selectors:
+// under -json the table's selection prompt is a select prompt record on
+// stdout, written before the answer is read, and the rows stay output.
+func TestPublishInteractive_jsonSelectPrompt(t *testing.T) {
+	hub := &fakeHub{resp: Published{Address: "cchub:ada/go-reviewer", Version: 1, Created: true}}
+	deps, conf, _ := publishDeps(t, hub)
+	deps.Out = nil
+	writeProfile(t, conf, "go-reviewer", publishBody)
+	var stdout bytes.Buffer
+	env := runenv.New(runenv.Config{
+		Streams: stdio.New(stdio.Config{Format: jsonl.FormatJSON, Stdout: &stdout, Stderr: io.Discard}),
+		Format:  jsonl.FormatJSON,
+	})
+	ctx := runenv.With(t.Context(), env)
+	if err := deps.PublishInteractive(ctx, strings.NewReader("0\n"), []string{"profile"}, PublishOptions{Handle: "ada"}); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	if err := env.Streams().Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	var prompts, rows int
+	for line := range strings.SplitSeq(strings.TrimSuffix(stdout.String(), "\n"), "\n") {
+		var rec struct{ Type, Kind, Text string }
+		if err := json.Unmarshal([]byte(line), &rec); err != nil {
+			t.Fatalf("stdout line %q is not a record: %v", line, err)
+		}
+		switch {
+		case rec.Type == "prompt" && rec.Kind == "select" && strings.HasPrefix(rec.Text, "(select, "):
+			prompts++
+		case rec.Type == "output" && strings.Contains(rec.Text, "(select, "):
+			t.Fatalf("the selection prompt is an output record: %q", line)
+		case rec.Type == "output" && strings.Contains(rec.Text, "go-reviewer"):
+			rows++
+		}
+	}
+	if prompts != 1 || rows == 0 || len(hub.got) != 1 {
+		t.Fatalf("select prompts %d, rows %d, published %d; want 1, at least 1, 1:\n%s", prompts, rows, len(hub.got), stdout.String())
 	}
 }

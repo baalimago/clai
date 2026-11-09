@@ -184,6 +184,33 @@ type Call struct {
 	// function call so stateless (store:false) reasoning-model tool loops keep
 	// reasoning continuity. OpenAI-only; empty for other vendors.
 	ReasoningItems []ReasoningItem `json:"-"`
+	// ArgumentsErr is set when the model wrote arguments that are not a JSON
+	// object. Such a call runs nothing: its tool result is "ERROR: " and this
+	// text, so the model can correct the call.
+	ArgumentsErr string `json:"-"`
+}
+
+// argumentsExcerptLimit bounds how much of rejected arguments a tool result
+// repeats.
+const argumentsExcerptLimit = 200
+
+// ArgumentsProblem says why raw, the arguments a model wrote for tool, are
+// not a JSON object, in the words the model is answered with. It returns ""
+// for a JSON object.
+func ArgumentsProblem(tool, raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	var object map[string]any
+	if json.Unmarshal([]byte(trimmed), &object) == nil && object != nil {
+		return ""
+	}
+	prefix := fmt.Sprintf("the arguments of the %s call are not a JSON object", tool)
+	if trimmed == "" {
+		return prefix + ": they are empty; send the call again with a JSON object, {} when the tool takes no arguments"
+	}
+	if len(trimmed) > argumentsExcerptLimit {
+		trimmed = strings.ToValidUTF8(trimmed[:argumentsExcerptLimit], "") + "…"
+	}
+	return prefix + ": " + trimmed + "; send the call again with a JSON object"
 }
 
 // Patch the call, filling structs and initializing fields so that

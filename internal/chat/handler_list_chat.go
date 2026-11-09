@@ -14,6 +14,10 @@ import (
 	"unicode/utf8"
 
 	"github.com/baalimago/clai/internal/cost"
+	"github.com/baalimago/clai/internal/diag"
+	"github.com/baalimago/clai/internal/display"
+	"github.com/baalimago/clai/internal/runenv"
+	"github.com/baalimago/clai/internal/stdio"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/internal/vendors"
 	"github.com/baalimago/clai/internal/vendors/anthropic"
@@ -25,8 +29,6 @@ import (
 	"github.com/baalimago/clai/internal/vendors/pi"
 	"github.com/baalimago/clai/internal/vendors/qwen"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
-	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
 
@@ -154,12 +156,12 @@ var errContinueNewest = errors.New("continue newest group member")
 // underline while it sits in the non-default position. The table colours
 // the whole prompt line, so the emphasis is switched off with the
 // attribute-specific resets rather than a full reset.
-func toggleLabel(base, sep, active, inactive string, on bool) string {
+func toggleLabel(color bool, base, sep, active, inactive string, on bool) string {
 	if !on {
 		return base + sep + inactive
 	}
 	label := base + sep + active
-	if !ancli.UseColor {
+	if !color {
 		return label
 	}
 	return "\x1b[1;4m" + label + "\x1b[22;24m"
@@ -342,14 +344,14 @@ func (cq *ChatHandler) persistForeignCache() error {
 // never on a raw run: that may be a shell-prompt hook or a script parsing this
 // output (architecture/config.md). The gate is utils.ReadonlyConfig and not
 // utils.NoCreateConfig, which `list` sets unconditionally (D25).
-func (cq *ChatHandler) announceForeignCacheFailure(err error) {
+func (cq *ChatHandler) announceForeignCacheFailure(ctx context.Context, err error) {
 	if err == nil || utils.ReadonlyConfig {
 		return
 	}
 	cq.foreignWarnOnce.Do(func() {
 		out := cq.errOut
 		if out == nil {
-			out = os.Stderr
+			out = runenv.From(ctx).Stderr()
 		}
 		fmt.Fprintf(out, "warning: %v\n", err)
 	})
@@ -363,7 +365,7 @@ func (cq *ChatHandler) foreignChatRows(ctx context.Context, readers []vendors.So
 	// One index serves every reader, and one write happens after the last of
 	// them. A failed write never fails the listing: the cache is derived.
 	cache := cq.foreignCacheOrNil()
-	defer func() { cq.announceForeignCacheFailure(cq.persistForeignCache()) }()
+	defer func() { cq.announceForeignCacheFailure(ctx, cq.persistForeignCache()) }()
 	// One identity, one row: two files may claim the same source id, and the
 	// walk-first row wins, the same tie-break ForeignIndex.Locate uses.
 	shown := make(map[string]struct{}, len(existing))
@@ -374,9 +376,7 @@ func (cq *ChatHandler) foreignChatRows(ctx context.Context, readers []vendors.So
 	for _, r := range readers {
 		found, err := r.Discover(ctx, cache)
 		if err != nil {
-			if misc.Truthy(os.Getenv("DEBUG")) {
-				ancli.Noticef("skipping source %s: %v\n", r.Source(), err)
-			}
+			runenv.Debugf(ctx, runenv.SubsystemChat, "skipping source %s: %v", r.Source(), err)
 			continue
 		}
 		for _, fr := range found {
@@ -462,33 +462,33 @@ func (cq *ChatHandler) buildChatListRows(ctx context.Context, paginator *ChatInd
 	return rows, byName, nil
 }
 
-func (cq *ChatHandler) actOnChat(chat pub_models.Chat, groupKey string) error {
-	view, err := cq.showChatInfo(func(w io.Writer) error { return cq.printChatInfo(w, chat, groupKey) })
+func (cq *ChatHandler) actOnChat(ctx context.Context, chat pub_models.Chat, groupKey string) error {
+	view, err := cq.showChatActions(ctx, chat, groupKey, false)
 	if err != nil {
-		return fmt.Errorf("failed to printChatInfo: %w", err)
+		return diag.Errorf("failed to printChatInfo: %w", err)
 	}
 	choice, err := table.ReadUserInputFrom(cq.input)
 	if err != nil {
-		return fmt.Errorf("failed to read user input: %w", err)
+		return diag.Errorf("failed to read user input: %w", err)
 	}
 	drawn := utils.TerminalRows(view+choice, cq.dims.Width)
 	switch choice {
 	case "E", "e":
-		return cq.handleEditMessages(chat, drawn)
+		return cq.handleEditMessages(ctx, chat, drawn)
 	case "D", "d":
-		return cq.handleDeleteMessages(chat, drawn)
+		return cq.handleDeleteMessages(ctx, chat, drawn)
 	case "B", "b":
 		clearErr := table.ClearTermTo(cq.out, drawn)
 		if clearErr != nil {
-			return fmt.Errorf("failed to clear term: %w", clearErr)
+			return diag.Errorf("failed to clear term: %w", clearErr)
 		}
 		return nil
 	case "P", "p":
-		return SaveAsPreviousQuery(cq.confDir, chat)
+		return SaveAsPreviousQuery(ctx, cq.confDir, chat)
 	case "Q", "q":
 		return table.ErrUserInitiatedExit
 	case "C", "c", "":
-		if err := cq.continueNative(chat); err != nil {
+		if err := cq.continueNative(ctx, chat); err != nil {
 			return err
 		}
 		return errExitList
@@ -497,19 +497,19 @@ func (cq *ChatHandler) actOnChat(chat pub_models.Chat, groupKey string) error {
 	}
 }
 
-func (cq *ChatHandler) continueNative(chat pub_models.Chat) error {
+func (cq *ChatHandler) continueNative(ctx context.Context, chat pub_models.Chat) error {
 	if chat.Profile != "" {
 		cq.profile = chat.Profile
 	} else if cq.profile != "" {
 		chat.Profile = cq.profile
 	}
 	if err := cq.printChat(chat); err != nil {
-		return fmt.Errorf("failed to print chat: %w", err)
+		return diag.Errorf("failed to print chat: %w", err)
 	}
-	if err := cq.UpdateDirScopeFromCWD(chat.ID); err != nil {
-		return fmt.Errorf("failed to update directory-scoped binding: %w", err)
+	if err := cq.UpdateDirScopeFromCWD(ctx, chat.ID); err != nil {
+		return diag.Errorf("failed to update directory-scoped binding: %w", err)
 	}
-	ancli.Noticef("chat %s is now replyable with flag \"clai -dre query <prompt>\"\n", chat.ID)
+	runenv.Noticef(ctx, runenv.SubsystemChat, "chat %s is now replyable with flag \"clai -dre query <prompt>\"", chat.ID)
 	return nil
 }
 
@@ -517,11 +517,11 @@ func (cq *ChatHandler) continueNative(chat pub_models.Chat) error {
 // native chat binds as is, a foreign one is cloned first.
 func (cq *ChatHandler) continueRow(ctx context.Context, pr preparedRows, row chatListRow) error {
 	if row.Kind == chatRowNative {
-		chat, err := cq.getByID(row.ChatID)
+		chat, err := cq.getByID(ctx, row.ChatID)
 		if err != nil {
-			return fmt.Errorf("failed to load chat %q: %w", row.ChatID, err)
+			return diag.Errorf("failed to load chat %q: %w", row.ChatID, err)
 		}
-		return cq.continueNative(chat)
+		return cq.continueNative(ctx, chat)
 	}
 	reader, err := pr.readerFor(row)
 	if err != nil {
@@ -529,18 +529,18 @@ func (cq *ChatHandler) continueRow(ctx context.Context, pr preparedRows, row cha
 	}
 	foreign, err := cq.readForeignChat(ctx, reader, row.SourceID)
 	if err != nil {
-		return fmt.Errorf("failed to read %s session %q: %w", row.Source, row.SourceID, err)
+		return diag.Errorf("failed to read %s session %q: %w", row.Source, row.SourceID, err)
 	}
-	return cq.continueForeign(foreign, reader)
+	return cq.continueForeign(ctx, foreign, reader)
 }
 
-func (cq *ChatHandler) continueForeign(foreign pub_models.Chat, reader vendors.SourceReader) error {
-	cloned, err := cq.cloneForeignChat(foreign)
+func (cq *ChatHandler) continueForeign(ctx context.Context, foreign pub_models.Chat, reader vendors.SourceReader) error {
+	cloned, err := cq.cloneForeignChat(ctx, foreign)
 	if err != nil {
 		return err
 	}
-	ancli.Noticef("cloned %s session %s → chat %s\n", reader.Source(), foreign.SourceID, cloned.ID)
-	ancli.Noticef("chat %s is now replyable with flag \"clai -dre query <prompt>\"\n", cloned.ID)
+	runenv.Noticef(ctx, runenv.SubsystemChat, "cloned %s session %s → chat %s", reader.Source(), foreign.SourceID, cloned.ID)
+	runenv.Noticef(ctx, runenv.SubsystemChat, "chat %s is now replyable with flag \"clai -dre query <prompt>\"", cloned.ID)
 	return nil
 }
 
@@ -548,47 +548,45 @@ func (cq *ChatHandler) continueForeign(foreign pub_models.Chat, reader vendors.S
 // edits, reopening on the page each selection was made from, so a conversation
 // can be studied and reworked in one sitting. Backing out returns to the chat
 // list, which also keeps its page.
-func (cq *ChatHandler) handleEditMessages(chat pub_models.Chat, infoRows int) error {
+func (cq *ChatHandler) handleEditMessages(ctx context.Context, chat pub_models.Chat, infoRows int) error {
 	clearErr := table.ClearTermTo(cq.out, infoRows)
 	if clearErr != nil {
-		return fmt.Errorf("failed to clear term: %w", clearErr)
+		return diag.Errorf("failed to clear term: %w", clearErr)
 	}
-	if err := cq.editMessageInChat(chat); err != nil {
-		return fmt.Errorf("failed to editChat: %w", err)
+	if err := cq.editMessageInChat(ctx, chat); err != nil {
+		return diag.Errorf("failed to editChat: %w", err)
 	}
 	return nil
 }
 
 // handleDeleteMessages is a peek + delete, symmetric with handleEditMessages:
 // the message picker stays open across deletions, reopening on the same page.
-func (cq *ChatHandler) handleDeleteMessages(chat pub_models.Chat, infoRows int) error {
+func (cq *ChatHandler) handleDeleteMessages(ctx context.Context, chat pub_models.Chat, infoRows int) error {
 	clearErr := table.ClearTermTo(cq.out, infoRows)
 	if clearErr != nil {
-		return fmt.Errorf("failed to clear term: %w", clearErr)
+		return diag.Errorf("failed to clear term: %w", clearErr)
 	}
-	if err := cq.deleteMessageInChat(chat); err != nil {
-		return fmt.Errorf("failed to deleteMessageInChat: %w", err)
+	if err := cq.deleteMessageInChat(ctx, chat); err != nil {
+		return diag.Errorf("failed to deleteMessageInChat: %w", err)
 	}
 	return nil
 }
 
-func (cq *ChatHandler) list() ([]pub_models.Chat, error) {
+func (cq *ChatHandler) list(ctx context.Context) ([]pub_models.Chat, error) {
 	files, err := os.ReadDir(cq.convDir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list conversations: %w", err)
+		return nil, diag.Errorf("failed to list conversations: %w", err)
 	}
 	var chats []pub_models.Chat
-	if misc.Truthy(os.Getenv("DEBUG")) {
-		ancli.PrintOK(fmt.Sprintf("found '%v' conversations:\n", len(files)))
-	}
+	runenv.Debugf(ctx, runenv.SubsystemChat, "found '%v' conversations", len(files))
 	for _, dirEntry := range files {
 		if dirEntry.IsDir() || isIndexFile(dirEntry.Name()) {
 			continue
 		}
 		p := filepath.Join(cq.convDir, dirEntry.Name())
-		chat, err := FromPath(p)
+		chat, err := FromPath(ctx, p)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get chat %q: %w", p, err)
+			return nil, diag.Errorf("failed to get chat %q: %w", p, err)
 		}
 		chats = append(chats, chat)
 	}
@@ -599,9 +597,9 @@ func (cq *ChatHandler) list() ([]pub_models.Chat, error) {
 }
 
 func (cq *ChatHandler) handleListCmd(ctx context.Context) error {
-	paginator, err := NewChatIndexPaginator(cq.convDir)
+	paginator, err := NewChatIndexPaginator(ctx, cq.convDir)
 	if err != nil {
-		return fmt.Errorf("failed to create chat index paginator: %w", err)
+		return diag.Errorf("failed to create chat index paginator: %w", err)
 	}
 	return cq.listChats(ctx, paginator, "")
 }
@@ -857,7 +855,7 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 	// re-derives the in-memory view, keeping the round-trip instant.
 	allRows, byName, err := cq.buildChatListRows(ctx, paginator)
 	if err != nil {
-		return fmt.Errorf("failed to build chat list rows: %w", err)
+		return diag.Errorf("failed to build chat list rows: %w", err)
 	}
 	inDir, _, hasDirFilter := cq.dirScopeRowPredicate()
 	dirFilterOn := false
@@ -869,6 +867,7 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 	// conversation lands back where they left off. The main list and the
 	// group view page independently.
 	listPage, groupPage := 0, 0
+	color := runenv.From(ctx).Color()
 	for {
 		var scope func(chatListRow) bool
 		if dirFilterOn {
@@ -884,7 +883,7 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 		tableActions := []table.TableAction{}
 		if hasDirFilter {
 			tableActions = append(tableActions, table.TableAction{
-				Format: toggleLabel(tier.dir, tier.sep, "on", "off", dirFilterOn),
+				Format: toggleLabel(color, tier.dir, tier.sep, "on", "off", dirFilterOn),
 				Short:  "d",
 				Long:   "dir",
 				Action: func() error { return errToggleDirFilter },
@@ -892,7 +891,7 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 		}
 		if hasForeign {
 			tableActions = append(tableActions, table.TableAction{
-				Format: toggleLabel(tier.foreign, tier.sep, "hidden", "shown", !foreignOn),
+				Format: toggleLabel(color, tier.foreign, tier.sep, "hidden", "shown", !foreignOn),
 				Short:  "f",
 				Long:   "foreign",
 				Action: func() error { return errToggleForeign },
@@ -975,6 +974,7 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 			WithSingleSelect().
 			WithWriter(cq.out).
 			WithInput(cq.input).
+			WithPrompter(cq.selectPrompt).
 			WithStartPage(startPage)
 
 		if len(tableActions) > 0 {
@@ -1021,7 +1021,7 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 			if errors.Is(err, table.ErrUserInitiatedExit) {
 				return nil
 			}
-			return fmt.Errorf("failed to select chat: %w", err)
+			return diag.Errorf("failed to select chat: %w", err)
 		}
 		if len(selectedNumbers) == 0 || selectedNumbers[0] < 0 || selectedNumbers[0] >= len(pr.rows) {
 			fmt.Fprintf(cq.out, "selection out of range, please pick one of the listed indices\n")
@@ -1034,11 +1034,11 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 			continue
 		}
 		if sel.Kind == chatRowNative {
-			selectedChat, err := cq.getByID(sel.ChatID)
+			selectedChat, err := cq.getByID(ctx, sel.ChatID)
 			if err != nil {
-				return fmt.Errorf("failed to load selected chat %q: %w", sel.ChatID, err)
+				return diag.Errorf("failed to load selected chat %q: %w", sel.ChatID, err)
 			}
-			if err := cq.actOnChat(selectedChat, groupKey); err != nil {
+			if err := cq.actOnChat(ctx, selectedChat, groupKey); err != nil {
 				if errors.Is(err, errExitList) {
 					return nil
 				}
@@ -1056,9 +1056,9 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 		}
 		foreign, err := cq.readForeignChat(ctx, reader, sel.SourceID)
 		if err != nil {
-			return fmt.Errorf("failed to read %s session %q: %w", sel.Source, sel.SourceID, err)
+			return diag.Errorf("failed to read %s session %q: %w", sel.Source, sel.SourceID, err)
 		}
-		if err := cq.actOnForeignChat(foreign, reader, groupKey); err != nil {
+		if err := cq.actOnForeignChat(ctx, foreign, reader, groupKey); err != nil {
 			if errors.Is(err, errExitList) {
 				return nil
 			}
@@ -1071,25 +1071,25 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 	}
 }
 
-func (cq *ChatHandler) actOnForeignChat(chat pub_models.Chat, reader vendors.SourceReader, groupKey string) error {
-	view, err := cq.showChatInfo(func(w io.Writer) error { return cq.printChatInfoForeign(w, chat, groupKey) })
+func (cq *ChatHandler) actOnForeignChat(ctx context.Context, chat pub_models.Chat, reader vendors.SourceReader, groupKey string) error {
+	view, err := cq.showChatActions(ctx, chat, groupKey, true)
 	if err != nil {
-		return fmt.Errorf("failed to printChatInfoForeign: %w", err)
+		return diag.Errorf("failed to printChatInfoForeign: %w", err)
 	}
 	choice, err := table.ReadUserInputFrom(cq.input)
 	if err != nil {
-		return fmt.Errorf("failed to read user input: %w", err)
+		return diag.Errorf("failed to read user input: %w", err)
 	}
 	switch choice {
 	case "C", "c", "":
-		if err := cq.continueForeign(chat, reader); err != nil {
+		if err := cq.continueForeign(ctx, chat, reader); err != nil {
 			return err
 		}
 		return errExitList
 	case "B", "b":
 		clearErr := table.ClearTermTo(cq.out, utils.TerminalRows(view+choice, cq.dims.Width))
 		if clearErr != nil {
-			return fmt.Errorf("failed to clear term: %w", clearErr)
+			return diag.Errorf("failed to clear term: %w", clearErr)
 		}
 		return nil
 	case "Q", "q":
@@ -1102,12 +1102,46 @@ func (cq *ChatHandler) actOnForeignChat(chat pub_models.Chat, reader vendors.Sou
 // chatInfoOpts controls differences between native and foreign chat info display.
 type chatInfoOpts struct {
 	foreign bool
+	// actionsAsRecord leaves the action question out of the view: under
+	// -json it is a select prompt record of its own (F13, F14).
+	actionsAsRecord bool
+}
+
+// chatActions is the question asked under the chat info: its answers, and
+// the text form clai prints for them.
+func chatActions(groupKey string, foreign bool) (choices []string, textForm string) {
+	backLabel := "go [b]ack to list"
+	if groupKey != "" {
+		backLabel = "[b]ack to group"
+	}
+	if foreign {
+		choices = []string{"[c]ontinue (clone to clai)", backLabel, "[q]uit"}
+		return choices, "(press " + strings.Join(choices, ", ") + "): "
+	}
+	choices = []string{"make [p]revQuery (-re/-reply flag)", backLabel, "[e]dit messages", "[d]elete messages", "[q]uit", "[c]ontinue or [<enter>]"}
+	return choices, "(" + strings.Join(choices, ", ") + "): "
+}
+
+// showChatActions shows the chat info view and, under -json, the action
+// question as a select prompt record after it.
+func (cq *ChatHandler) showChatActions(ctx context.Context, chat pub_models.Chat, groupKey string, foreign bool) (string, error) {
+	env := runenv.From(ctx)
+	opts := chatInfoOpts{foreign: foreign, actionsAsRecord: env.JSON()}
+	view, err := cq.showChatInfo(func(w io.Writer) error { return cq.printChatInfoCommon(w, chat, groupKey, opts) })
+	if err != nil || !opts.actionsAsRecord {
+		return view, err
+	}
+	choices, _ := chatActions(groupKey, foreign)
+	if err := env.ShowPrompt(stdio.Stdout, display.Prompt{Kind: "select", Text: "What to do with this chat?", Choices: choices}); err != nil {
+		return "", diag.Errorf("show chat actions: %w", err)
+	}
+	return view, nil
 }
 
 func (cq *ChatHandler) printChatInfoCommon(w io.Writer, chat pub_models.Chat, groupKey string, opts chatInfoOpts) error {
 	claiConfDir, err := utils.GetClaiConfigDir()
 	if err != nil {
-		return fmt.Errorf("failed to get clai config dir: %w", err)
+		return diag.Errorf("failed to get clai config dir: %w", err)
 	}
 	filePath := conversationPath(claiConfDir, chat.ID)
 	if opts.foreign && chat.ID == "" {
@@ -1131,69 +1165,63 @@ func (cq *ChatHandler) printChatInfoCommon(w io.Writer, chat pub_models.Chat, gr
 	bread := utils.TableTheme().Breadtext
 
 	if _, err := fmt.Fprintf(w, "%s\n\n", header); err != nil {
-		return fmt.Errorf("write chat header: %w", err)
+		return diag.Errorf("write chat header: %w", err)
 	}
 	// GroupKey display (when non-empty)
 	if chat.GroupKey != "" {
 		if _, err := fmt.Fprintf(w, "%s %s\n", table.Colorize(utils.TableTheme().Primary, "group key:"), table.Colorize(bread, chat.GroupKey)); err != nil {
-			return fmt.Errorf("write group key: %w", err)
+			return diag.Errorf("write group key: %w", err)
 		}
 	}
 	if _, err := fmt.Fprintf(w, "%s %s\n", fileKey, table.Colorize(bread, filePath)); err != nil {
-		return fmt.Errorf("write file path: %w", err)
+		return diag.Errorf("write file path: %w", err)
 	}
 	if opts.foreign {
 		if _, err := fmt.Fprintf(w, "%s %s\n", sourceKey, table.Colorize(bread, fmt.Sprintf("%s (session: %s)", chat.Source, chat.SourceID))); err != nil {
-			return fmt.Errorf("write source: %w", err)
+			return diag.Errorf("write source: %w", err)
 		}
 	}
 	if _, err := fmt.Fprintf(w, "%s %s\n", createdKey, table.Colorize(bread, fmt.Sprintf("%v", chat.Created))); err != nil {
-		return fmt.Errorf("write created at: %w", err)
+		return diag.Errorf("write created at: %w", err)
 	}
 	if _, err := fmt.Fprintf(w, "%s %s\n", costKey, table.Colorize(bread, chatListCostStr(chat))); err != nil {
-		return fmt.Errorf("write total cost: %w", err)
+		return diag.Errorf("write total cost: %w", err)
 	}
 	tokenTotalStr, tokenRecentStr := chatTokenSection(chat)
 	tokenUsageKey := table.Colorize(utils.TableTheme().Primary, "token usage:")
 	if _, err := fmt.Fprintf(w, "%s\n", tokenUsageKey); err != nil {
-		return fmt.Errorf("write token usage key: %w", err)
+		return diag.Errorf("write token usage key: %w", err)
 	}
 	if _, err := fmt.Fprintf(w, "\ttotal: %s\n", table.Colorize(bread, tokenTotalStr)); err != nil {
-		return fmt.Errorf("write token usage total: %w", err)
+		return diag.Errorf("write token usage total: %w", err)
 	}
 	if _, err := fmt.Fprintf(w, "\tmost recent: %s\n", table.Colorize(bread, tokenRecentStr)); err != nil {
-		return fmt.Errorf("write token usage recent: %w", err)
+		return diag.Errorf("write token usage recent: %w", err)
 	}
 	if _, err := fmt.Fprintf(w, "%s\n", amRepliesKey); err != nil {
-		return fmt.Errorf("write am replies key: %w", err)
+		return diag.Errorf("write am replies key: %w", err)
 	}
 	if _, err := fmt.Fprintf(w, "\t%s %s'%v'\n", userRole, table.Colorize(bread, "   "), messageTypeCounter["user"]); err != nil {
-		return fmt.Errorf("write user replies: %w", err)
+		return diag.Errorf("write user replies: %w", err)
 	}
 	if _, err := fmt.Fprintf(w, "\t%s %s'%v'\n", toolRole, table.Colorize(bread, "   "), messageTypeCounter["tool"]); err != nil {
-		return fmt.Errorf("write tool replies: %w", err)
+		return diag.Errorf("write tool replies: %w", err)
 	}
 	if _, err := fmt.Fprintf(w, "\t%s %s'%v'\n", systemRole, table.Colorize(bread, "  "), messageTypeCounter["system"]); err != nil {
-		return fmt.Errorf("write system replies: %w", err)
+		return diag.Errorf("write system replies: %w", err)
 	}
 	if _, err := fmt.Fprintf(w, "\t%s %s'%v'\n\n", assistantRole, table.Colorize(bread, ""), messageTypeCounter["assistant"]); err != nil {
-		return fmt.Errorf("write assistant replies: %w", err)
+		return diag.Errorf("write assistant replies: %w", err)
 	}
 	if _, err := fmt.Fprintf(w, "%s\n\n", table.Colorize(bread, cq.chatInfoLabel(chat))); err != nil {
-		return fmt.Errorf("write summary: %w", err)
+		return diag.Errorf("write summary: %w", err)
 	}
-	backLabel := "go [b]ack to list"
-	if groupKey != "" {
-		backLabel = "[b]ack to group"
+	if opts.actionsAsRecord {
+		return nil
 	}
-	var choices string
-	if opts.foreign {
-		choices = table.Colorize(utils.TableTheme().Primary, fmt.Sprintf("(press [c]ontinue (clone to clai), %s, [q]uit): ", backLabel))
-	} else {
-		choices = table.Colorize(utils.TableTheme().Primary, fmt.Sprintf("(make [p]revQuery (-re/-reply flag), %s, [e]dit messages, [d]elete messages, [q]uit, [c]ontinue or [<enter>]): ", backLabel))
-	}
-	if _, err := fmt.Fprint(w, choices); err != nil {
-		return fmt.Errorf("write choices: %w", err)
+	_, textForm := chatActions(groupKey, opts.foreign)
+	if _, err := fmt.Fprint(w, table.Colorize(utils.TableTheme().Primary, textForm)); err != nil {
+		return diag.Errorf("write choices: %w", err)
 	}
 	return nil
 }
@@ -1223,7 +1251,7 @@ func (cq *ChatHandler) showChatInfo(render func(io.Writer) error) (string, error
 		return "", err
 	}
 	if _, err := io.WriteString(cq.out, view.String()); err != nil {
-		return "", fmt.Errorf("write chat info: %w", err)
+		return "", diag.Errorf("write chat info: %w", err)
 	}
 	return view.String(), nil
 }
@@ -1236,7 +1264,7 @@ func (cq *ChatHandler) printChatInfoForeign(w io.Writer, chat pub_models.Chat, g
 	return cq.printChatInfoCommon(w, chat, groupKey, chatInfoOpts{foreign: true})
 }
 
-func (cq *ChatHandler) cloneForeignChat(foreign pub_models.Chat) (pub_models.Chat, error) {
+func (cq *ChatHandler) cloneForeignChat(ctx context.Context, foreign pub_models.Chat) (pub_models.Chat, error) {
 	if foreign.Source == "" || foreign.SourceID == "" {
 		return pub_models.Chat{}, fmt.Errorf("invalid foreign chat: missing source or source_id")
 	}
@@ -1245,28 +1273,34 @@ func (cq *ChatHandler) cloneForeignChat(foreign pub_models.Chat) (pub_models.Cha
 	// Preserve Created as discovered/read. Do not stamp wall clock here.
 	// Save stamps GroupKey and upserts the index itself; a second upsert with
 	// the pre-stamp copy would wipe the group_key from the index row.
-	if _, err := convPersister(cq.convDir).Save(cloned); err != nil {
-		return pub_models.Chat{}, fmt.Errorf("failed to save cloned chat: %w", err)
+	if _, err := convPersister(cq.convDir).Save(ctx, cloned); err != nil {
+		return pub_models.Chat{}, diag.Errorf("failed to save cloned chat: %w", err)
 	}
-	if err := cq.UpdateDirScopeFromCWD(cloned.ID); err != nil {
-		return pub_models.Chat{}, fmt.Errorf("failed to update directory-scoped binding: %w", err)
+	if err := cq.UpdateDirScopeFromCWD(ctx, cloned.ID); err != nil {
+		return pub_models.Chat{}, diag.Errorf("failed to update directory-scoped binding: %w", err)
 	}
 	return cloned, nil
 }
 
-func editorEditString(toEdit string) (string, error) {
+// editorEditString round-trips toEdit through $EDITOR on a temp copy, so
+// under -json there is no file the user could edit instead.
+func editorEditString(ctx context.Context, toEdit string) (string, error) {
+	env := runenv.From(ctx)
+	if err := env.RefuseEditor(""); err != nil {
+		return "", err
+	}
 	f, err := os.CreateTemp("", "clai-edit-*.txt")
 	if err != nil {
-		return "", fmt.Errorf("failed to create temp file: %w", err)
+		return "", diag.Errorf("failed to create temp file: %w", err)
 	}
 	defer os.Remove(f.Name())
 
 	if _, err := f.WriteString(toEdit); err != nil {
 		_ = f.Close()
-		return "", fmt.Errorf("failed to write temp file: %w", err)
+		return "", diag.Errorf("failed to write temp file: %w", err)
 	}
 	if err := f.Close(); err != nil {
-		return "", fmt.Errorf("failed to close temp file: %w", err)
+		return "", diag.Errorf("failed to close temp file: %w", err)
 	}
 
 	editor := os.Getenv("EDITOR")
@@ -1275,16 +1309,16 @@ func editorEditString(toEdit string) (string, error) {
 	}
 
 	cmd := exec.Command(editor, f.Name())
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stdin = env.Stdin()
+	cmd.Stdout = env.Stdout()
+	cmd.Stderr = env.Stderr()
 	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("failed to edit file %s: %w", f.Name(), err)
+		return "", diag.Errorf("failed to edit file %s: %w", f.Name(), err)
 	}
 
 	b, err := os.ReadFile(f.Name())
 	if err != nil {
-		return "", fmt.Errorf("failed to read edited file: %w", err)
+		return "", diag.Errorf("failed to read edited file: %w", err)
 	}
 	return string(b), nil
 }
@@ -1421,6 +1455,7 @@ func (cq *ChatHandler) selectMessagesAt(chat pub_models.Chat, onlyOneSelect bool
 		WithPageSize(utils.TableTheme().Items).
 		WithWriter(cq.out).
 		WithInput(cq.input).
+		WithPrompter(cq.selectPrompt).
 		WithStartPage(startPage)
 
 	if onlyOneSelect {
@@ -1434,7 +1469,7 @@ func (cq *ChatHandler) selectMessagesAt(chat pub_models.Chat, onlyOneSelect bool
 // messages, then reopen the picker on the same page so a conversation can be
 // pruned in one sitting. Indices shift after each deletion; the page is
 // clamped to the shrunken range. [b]ack returns to the chat list.
-func (cq *ChatHandler) deleteMessageInChat(chat pub_models.Chat) error {
+func (cq *ChatHandler) deleteMessageInChat(ctx context.Context, chat pub_models.Chat) error {
 	page := 0
 	for {
 		selectedIndices, shownPage, err := cq.selectMessagesAt(chat, false, page)
@@ -1443,7 +1478,7 @@ func (cq *ChatHandler) deleteMessageInChat(chat pub_models.Chat) error {
 			if errors.Is(err, table.ErrBack) || errors.Is(err, table.ErrUserInitiatedExit) {
 				return nil
 			}
-			return fmt.Errorf("failed to select from table: %w", err)
+			return diag.Errorf("failed to select from table: %w", err)
 		}
 
 		idxSet := make(map[int]struct{}, len(selectedIndices))
@@ -1459,17 +1494,17 @@ func (cq *ChatHandler) deleteMessageInChat(chat pub_models.Chat) error {
 		}
 		chat.Messages = filtered
 
-		if err := Save(cq.convDir, chat); err != nil {
-			return fmt.Errorf("failed to save chat: %w", err)
+		if err := Save(ctx, cq.convDir, chat); err != nil {
+			return diag.Errorf("failed to save chat: %w", err)
 		}
-		ancli.Okf("modified chat: '%v', deleted messages: '%v'", chat.ID, selectedIndices)
+		runenv.Noticef(ctx, runenv.SubsystemChat, "modified chat: '%v', deleted messages: '%v'", chat.ID, selectedIndices)
 	}
 }
 
 // editMessageInChat loops the message picker: pick a message, edit it in
 // $EDITOR, then reopen the picker on the same page so several messages can be
 // reworked in one sitting. [b]ack returns to the chat list.
-func (cq *ChatHandler) editMessageInChat(chat pub_models.Chat) error {
+func (cq *ChatHandler) editMessageInChat(ctx context.Context, chat pub_models.Chat) error {
 	page := 0
 	for {
 		selectedNumbers, shownPage, err := cq.selectMessagesAt(chat, true, page)
@@ -1478,32 +1513,32 @@ func (cq *ChatHandler) editMessageInChat(chat pub_models.Chat) error {
 			if errors.Is(err, table.ErrBack) || errors.Is(err, table.ErrUserInitiatedExit) {
 				return nil
 			}
-			return fmt.Errorf("failed to select from table: %w", err)
+			return diag.Errorf("failed to select from table: %w", err)
 		}
 		if len(selectedNumbers) == 0 || selectedNumbers[0] < 0 || selectedNumbers[0] >= len(chat.Messages) {
-			ancli.Warnf("selected message index out of range, nothing edited\n")
+			runenv.Warnf(ctx, runenv.SubsystemChat, "selected message index out of range, nothing edited")
 			continue
 		}
 		selectedNumber := selectedNumbers[0]
-		editedString, err := editorEditString(editorShown(chat.Messages[selectedNumber]))
+		editedString, err := editorEditString(ctx, editorShown(chat.Messages[selectedNumber]))
 		if err != nil {
-			return fmt.Errorf("failed to escapeEdit string: %w", err)
+			return diag.Errorf("failed to escapeEdit string: %w", err)
 		}
 		updated, outcome := applyEdit(chat.Messages[selectedNumber], editedString)
 		switch outcome {
 		case editUnchanged:
 			continue
 		case editRefusedCalls:
-			ancli.Warnf("message %d holds tool calls, which cannot be edited as text; it is unchanged\n", selectedNumber)
+			runenv.Warnf(ctx, runenv.SubsystemChat, "message %d holds tool calls, which cannot be edited as text; it is unchanged", selectedNumber)
 			continue
 		case editRefusedEmpty:
-			ancli.Warnf("message %d would be left empty; it is unchanged, %s\n", selectedNumber, emptyEditHint(chat.Messages[selectedNumber].Role))
+			runenv.Warnf(ctx, runenv.SubsystemChat, "message %d would be left empty; it is unchanged, %s", selectedNumber, emptyEditHint(chat.Messages[selectedNumber].Role))
 			continue
 		}
 		chat.Messages[selectedNumber] = updated
-		if err := Save(cq.convDir, chat); err != nil {
-			return fmt.Errorf("failed to save chat: %w", err)
+		if err := Save(ctx, cq.convDir, chat); err != nil {
+			return diag.Errorf("failed to save chat: %w", err)
 		}
-		ancli.Okf("modified chat: '%v', message with index: '%v'", chat.ID, selectedNumber)
+		runenv.Noticef(ctx, runenv.SubsystemChat, "modified chat: '%v', message with index: '%v'", chat.ID, selectedNumber)
 	}
 }

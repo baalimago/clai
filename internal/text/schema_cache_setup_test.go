@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baalimago/clai/internal/testenv/procenv"
+
 	"github.com/baalimago/clai/internal/tools/mcp"
 	"github.com/baalimago/clai/internal/tools/mcp/httptestserver"
 	"github.com/baalimago/clai/internal/tools/mcp/launcher"
@@ -58,7 +60,7 @@ func TestSchemaCacheHitRegistersToolsWithoutTransport(t *testing.T) {
 	writeLazyEchoConfig(t, mcpDir, spawnLog)
 	cache := testSchemaCache(t)
 
-	if _, err := setupMcpManager(t.Context(), mcpDir, Configurations{}, &recordingSuccessSink{}, cache, nil); err != nil {
+	if _, err := setupMcpManager(procenv.Context(t.Context()), mcpDir, Configurations{}, &recordingSuccessSink{}, cache, nil); err != nil {
 		t.Fatalf("cold run: %v", err)
 	}
 	warmedSpawns := countSpawnLines(t, spawnLog)
@@ -66,7 +68,7 @@ func TestSchemaCacheHitRegistersToolsWithoutTransport(t *testing.T) {
 		t.Fatal("cold run never connected, so the cache was never warmed")
 	}
 
-	got, err := setupMcpManager(t.Context(), mcpDir, Configurations{}, &recordingSuccessSink{}, cache, nil)
+	got, err := setupMcpManager(procenv.Context(t.Context()), mcpDir, Configurations{}, &recordingSuccessSink{}, cache, nil)
 	if err != nil {
 		t.Fatalf("warm-cache run: %v", err)
 	}
@@ -88,11 +90,11 @@ func TestCacheHitAndMissRegisterIdenticalToolSets(t *testing.T) {
 	writeLazyEchoConfig(t, mcpDir, spawnLog)
 	cache := testSchemaCache(t)
 
-	missGot, err := setupMcpManager(t.Context(), mcpDir, Configurations{}, &recordingSuccessSink{}, cache, nil)
+	missGot, err := setupMcpManager(procenv.Context(t.Context()), mcpDir, Configurations{}, &recordingSuccessSink{}, cache, nil)
 	if err != nil {
 		t.Fatalf("miss run: %v", err)
 	}
-	hitGot, err := setupMcpManager(t.Context(), mcpDir, Configurations{}, &recordingSuccessSink{}, cache, nil)
+	hitGot, err := setupMcpManager(procenv.Context(t.Context()), mcpDir, Configurations{}, &recordingSuccessSink{}, cache, nil)
 	if err != nil {
 		t.Fatalf("hit run: %v", err)
 	}
@@ -135,7 +137,7 @@ func TestSchemaCacheMissConnectsCapturesThenHits(t *testing.T) {
 		t.Fatal("cache already had an entry before the first run")
 	}
 
-	if _, err := setupMcpManager(t.Context(), mcpDir, Configurations{}, &recordingSuccessSink{}, cache, nil); err != nil {
+	if _, err := setupMcpManager(procenv.Context(t.Context()), mcpDir, Configurations{}, &recordingSuccessSink{}, cache, nil); err != nil {
 		t.Fatalf("setupMcpManager: %v", err)
 	}
 
@@ -162,7 +164,7 @@ func TestSchemaCacheNeverPersistsConnectFailure(t *testing.T) {
 	identity := schemacache.BuildIdentity(server)
 
 	testboil.CaptureStdout(t, func(t *testing.T) {
-		if _, err := setupMcpManager(t.Context(), mcpDir, Configurations{}, &recordingSuccessSink{}, cache, nil); err != nil {
+		if _, err := setupMcpManager(procenv.Context(t.Context()), mcpDir, Configurations{}, &recordingSuccessSink{}, cache, nil); err != nil {
 			t.Fatalf("setupMcpManager: %v", err)
 		}
 	})
@@ -196,8 +198,8 @@ func TestSchemaCacheWriteFailureDoesNotFailSetup(t *testing.T) {
 	var got map[string]pub_models.LLMTool
 	var setupErr error
 	// ancli.Warnf prints to stdout, not stderr.
-	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		got, setupErr = setupMcpManager(t.Context(), mcpDir, Configurations{}, &recordingSuccessSink{}, cache, nil)
+	stdout := testboil.CaptureStderr(t, func(t *testing.T) {
+		got, setupErr = setupMcpManager(procenv.Context(t.Context()), mcpDir, Configurations{}, &recordingSuccessSink{}, cache, nil)
 	})
 	if setupErr != nil {
 		t.Fatalf("a cache write failure must not fail setup: %v", setupErr)
@@ -271,7 +273,7 @@ func TestSchemaCacheMissingEnvfileIsTypedError(t *testing.T) {
 		}},
 	}
 
-	_, err := setupMcpManager(t.Context(), t.TempDir(), conf, &recordingSuccessSink{}, testSchemaCache(t), nil)
+	_, err := setupMcpManager(procenv.Context(t.Context()), t.TempDir(), conf, &recordingSuccessSink{}, testSchemaCache(t), nil)
 	if !errors.Is(err, claierr.ErrMcpServerStartup) {
 		t.Fatalf("err = %v, want errors.Is(err, claierr.ErrMcpServerStartup)", err)
 	}
@@ -307,7 +309,7 @@ func TestLazyCacheMissConnectBound(t *testing.T) {
 	conf := Configurations{}
 
 	start := time.Now()
-	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
+	stdout := testboil.CaptureStderr(t, func(t *testing.T) {
 		if _, err := setupMcpManager(ctx, mcpDir, conf, &recordingSuccessSink{}, testSchemaCache(t), nil); err != nil {
 			t.Fatalf("an ambient-posture connect failure must degrade, not fail setup: %v", err)
 		}
@@ -357,7 +359,7 @@ func TestUnresolvableCommandLineConnectsAheadOfTime(t *testing.T) {
 		t.Fatalf("seed warm cache: %v", err)
 	}
 
-	got, err := setupMcpManager(t.Context(), mcpDir, Configurations{}, &recordingSuccessSink{}, cache, nil)
+	got, err := setupMcpManager(procenv.Context(t.Context()), mcpDir, Configurations{}, &recordingSuccessSink{}, cache, nil)
 	if err != nil {
 		t.Fatalf("setupMcpManager: %v", err)
 	}
@@ -401,7 +403,7 @@ func TestResolvablePinnedCommandLineStaysLazyOnWarmCache(t *testing.T) {
 		t.Fatalf("seed warm cache: %v", err)
 	}
 
-	got, err := setupMcpManager(t.Context(), mcpDir, Configurations{}, &recordingSuccessSink{}, cache, nil)
+	got, err := setupMcpManager(procenv.Context(t.Context()), mcpDir, Configurations{}, &recordingSuccessSink{}, cache, nil)
 	if err != nil {
 		t.Fatalf("setupMcpManager: %v", err)
 	}
@@ -431,7 +433,7 @@ func TestEagerServerPersistsObservedTools(t *testing.T) {
 		t.Fatal("an unmodelled launcher must require an eager connect")
 	}
 	cache := testSchemaCache(t)
-	got, err := setupMcpManager(t.Context(), mcpDir, Configurations{}, &recordingSuccessSink{}, cache, nil)
+	got, err := setupMcpManager(procenv.Context(t.Context()), mcpDir, Configurations{}, &recordingSuccessSink{}, cache, nil)
 	if err != nil {
 		t.Fatalf("setupMcpManager: %v", err)
 	}
@@ -465,7 +467,7 @@ func TestNoSetupNoticeForLauncherShapedWarmCache(t *testing.T) {
 	}
 
 	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		if _, err := setupMcpManager(t.Context(), mcpDir, Configurations{}, &recordingSuccessSink{}, cache, nil); err != nil {
+		if _, err := setupMcpManager(procenv.Context(t.Context()), mcpDir, Configurations{}, &recordingSuccessSink{}, cache, nil); err != nil {
 			t.Fatalf("setupMcpManager: %v", err)
 		}
 	})

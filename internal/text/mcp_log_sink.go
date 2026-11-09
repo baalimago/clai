@@ -2,14 +2,15 @@ package text
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
-	"os"
 	"sync"
 	"time"
 
+	"github.com/baalimago/clai/internal/runenv"
+	"github.com/baalimago/clai/internal/tools/mcp"
 	"github.com/baalimago/clai/internal/utils"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
 // mcpLogMode decides how MCP server stderr lines are handled before the
@@ -53,19 +54,29 @@ type mcpLogEntry struct {
 	lines   []string
 }
 
+// mcpTailLine is one retained trailing stderr line. shown marks a line the
+// run already printed for good, which the exit tail leaves out.
+type mcpTailLine struct {
+	text  string
+	shown bool
+}
+
 // mcpLogSink buffers or prints MCP server stderr lines. AppendServerLog and
 // ServerExited run on the MCP client goroutines; Drain runs on the serialized
 // session loop, so the queue is mutex-guarded. The notify channel wakes the
 // session loop when an error entry is buffered, so elevated errors render
 // live instead of waiting for the next session event.
 type mcpLogSink struct {
-	mu         sync.Mutex
-	mode       mcpLogMode
-	notice     func(server, line string)
-	errOut     io.Writer
+	mu     sync.Mutex
+	mode   mcpLogMode
+	notice func(server, line string)
+	errOut io.Writer
+	// relay writes a server's stderr line in the run's format: a child_output
+	// record under JSON, "mcp_<server>: <line>" on errOut otherwise.
+	relay      mcp.StderrRelay
 	termWidth  func() int
 	queue      []mcpLogEntry
-	tails      map[string][]string
+	tails      map[string][]mcpTailLine
 	authFollow map[string]int
 	notify     chan struct{}
 	// tickStop ends the redraw loop; nil means no loop runs. One loop serves
@@ -173,21 +184,18 @@ func (s *mcpLogSink) stopTickerLocked() {
 	s.ticking = false
 }
 
-func newMcpLogSink(mode mcpLogMode) *mcpLogSink {
-	return newMcpLogSinkTo(mode, os.Stderr)
-}
-
 // newMcpLogSinkTo builds a sink that writes to errOut instead of the process
 // stderr, so a querier whose output is discarded never touches the global
 // stream (phase 8 gate finding, R2-09).
-func newMcpLogSinkTo(mode mcpLogMode, errOut io.Writer) *mcpLogSink {
+func newMcpLogSinkTo(ctx context.Context, mode mcpLogMode, errOut io.Writer) *mcpLogSink {
 	return &mcpLogSink{
 		mode:       mode,
-		notice:     func(server, line string) { ancli.Noticef("mcp_%v: %v\n", server, line) },
+		notice:     func(server, line string) { runenv.Noticef(ctx, runenv.SubsystemMCP, "mcp_%v: %v", server, line) },
+		relay:      mcp.NewStderrRelay(runenv.From(ctx)),
 		errOut:     errOut,
 		termWidth:  func() int { return utils.SessionDimensions(errOut).Width },
 		termHeight: func() int { return utils.SessionDimensions(errOut).Height },
-		tails:      make(map[string][]string),
+		tails:      make(map[string][]mcpTailLine),
 		authFollow: make(map[string]int),
 		startup:    newMcpStartupWindows(),
 		notify:     make(chan struct{}, 1),
@@ -220,7 +228,8 @@ func mcpLogModeFor(debug, outputIsTerminal, raw, structured, rollingEnabled bool
 // prompt also opens a short follow window elevating payload-shaped lines
 // (URLs, user codes), since the actionable payload often arrives on its own
 // line. Every mode retains the bounded termination tail so ServerExited can
-// flush the crash reason.
+// flush the crash reason. A line is redacted as a diagnostic is before it is
+// shown; plain direct mode leaves that to the Presenter its notice reaches.
 func (s *mcpLogSink) AppendServerLog(server, line string) {
 	isErr := utils.IsMcpLogErrorLine(line)
 	isAuth := utils.IsMcpLogAuthLine(line)
@@ -239,18 +248,21 @@ func (s *mcpLogSink) AppendServerLog(server, line string) {
 		s.notice(server, line)
 		return
 	case mcpLogRawStructured:
-		s.retainTailLocked(server, line)
+		s.retainTailLocked(server, mcpTailLine{text: line, shown: elevate})
 		if elevate {
-			fmt.Fprintf(s.errOut, "mcp_%v: %v\n", server, line)
+			s.relayLocked(server, line)
 		}
 		return
 	}
-	s.retainTailLocked(server, line)
+	// The rolling display strips the control characters itself.
+	line = s.relay.Redacted(line)
 	if (!s.attached && !s.startup.cleared) || s.startup.isReopened(server) {
+		s.retainTailLocked(server, mcpTailLine{text: line})
 		s.startup.appendLine(server, line, isAuth || followPayload)
 		s.startup.render(s.errOut, s.termWidth(), s.termHeight())
 		return
 	}
+	s.retainTailLocked(server, mcpTailLine{text: line, shown: elevate})
 	s.queue = append(s.queue, mcpLogEntry{server: server, line: line, isError: elevate})
 	s.dropOldestNonErrorLocked()
 	if elevate {
@@ -316,34 +328,54 @@ func (s *mcpLogSink) setupSucceeded() {
 // window. Raw and structured modes keep normal lines suppressed while the
 // server runs, but the termination tail is emitted to stderr as an error
 // diagnostic. Plain direct mode already printed every line live and has
-// nothing to flush.
+// nothing to flush. A tail line the run already elevated is not flushed a
+// second time.
 func (s *mcpLogSink) ServerExited(server string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	tail := s.tails[server]
-	if len(tail) == 0 {
+	if s.mode == mcpLogRolling && !s.attached && !s.startup.cleared {
+		// The startup window already shows this server's trailing lines;
+		// a failed setup leaves them visible as the crash reason.
+		return
+	}
+	unshown := s.takeUnshownTailLocked(server)
+	if len(unshown) == 0 {
 		return
 	}
 	switch s.mode {
 	case mcpLogRolling:
-		if !s.attached && !s.startup.cleared {
-			// The startup window already shows this server's trailing lines;
-			// a failed setup leaves them visible as the crash reason.
-			return
-		}
-		s.queue = append(s.queue, mcpLogEntry{server: server, exit: true, lines: tail, isError: true})
+		s.queue = append(s.queue, mcpLogEntry{server: server, exit: true, lines: unshown, isError: true})
 		s.dropOldestNonErrorLocked()
 		s.signalLocked()
 	case mcpLogRawStructured:
-		for _, line := range tail {
-			fmt.Fprintf(s.errOut, "mcp_%v: %v\n", server, line)
+		for _, line := range unshown {
+			s.relayLocked(server, line)
 		}
 	}
 }
 
+// takeUnshownTailLocked returns server's tail lines the run has not shown for
+// good and marks the whole tail shown, so a second exit flushes nothing twice.
+func (s *mcpLogSink) takeUnshownTailLocked(server string) []string {
+	var unshown []string
+	for i, line := range s.tails[server] {
+		if !line.shown {
+			unshown = append(unshown, line.text)
+		}
+		s.tails[server][i].shown = true
+	}
+	return unshown
+}
+
+// relayLocked writes one line through the relay. A relay that cannot write
+// has nowhere to report it but the stream that failed.
+func (s *mcpLogSink) relayLocked(server, line string) {
+	_ = s.relay.Write(s.errOut, server, line)
+}
+
 // retainTailLocked keeps the bounded trailing stderr lines per server so the
 // termination tail can be flushed by ServerExited.
-func (s *mcpLogSink) retainTailLocked(server, line string) {
+func (s *mcpLogSink) retainTailLocked(server string, line mcpTailLine) {
 	tail := s.tails[server]
 	tail = append(tail, line)
 	if len(tail) > mcpLogExitTailLines {

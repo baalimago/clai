@@ -1,10 +1,13 @@
 package chat
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/baalimago/clai/internal/testenv/procenv"
 
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -36,16 +39,16 @@ func TestReplayDirScoped_RawOmitsReasoning(t *testing.T) {
 		}},
 	}
 	convDir := filepath.Join(confDir, "conversations")
-	if err := Save(convDir, chat); err != nil {
+	if err := Save(procenv.Context(context.Background()), convDir, chat); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
-	if err := (&ChatHandler{confDir: confDir, convDir: convDir}).SaveDirScope("", chat.ID); err != nil {
+	if err := (&ChatHandler{confDir: confDir, convDir: convDir}).SaveDirScope(procenv.Context(context.Background()), "", chat.ID); err != nil {
 		t.Fatalf("SaveDirScope: %v", err)
 	}
 
 	var replayErr error
 	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		replayErr = Replay(true, true)
+		replayErr = Replay(procenv.Context(context.Background()), true, true)
 	})
 	if replayErr != nil {
 		t.Fatalf("Replay: %v", replayErr)

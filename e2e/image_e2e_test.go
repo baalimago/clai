@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -51,7 +52,7 @@ func (f imageFixture) assetDir() string { return filepath.Join(f.confDir, "conve
 
 func (f imageFixture) globalScope(t *testing.T) pub_models.Chat {
 	t.Helper()
-	c, err := chat.FromPath(filepath.Join(f.confDir, "conversations", "globalScope.json"))
+	c, err := chat.FromPath(context.Background(), filepath.Join(f.confDir, "conversations", "globalScope.json"))
 	if err != nil {
 		t.Fatalf("load globalScope.json: %v", err)
 	}
@@ -353,7 +354,7 @@ func Test_goldenFile_REPLAY_image_placeholder(t *testing.T) {
 		pub_models.TextPart{Text: "a tabby"},
 		pub_models.ImagePart{Asset: f.ref, MIME: "image/png", Origin: pub_models.OriginGenerated},
 	}}
-	if err := chat.Save(filepath.Join(f.confDir, "conversations"), c); err != nil {
+	if err := chat.Save(context.Background(), filepath.Join(f.confDir, "conversations"), c); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
@@ -512,7 +513,7 @@ func Test_e2e_editor_keeps_images(t *testing.T) {
 	if stdout, status := harness.RunOne(t, f.confDir, "-n -r c l 0 e 0 b"); status != 0 {
 		t.Fatalf("status %d, stdout=%q", status, stdout)
 	}
-	edited, err := chat.FromPath(filepath.Join(convDir, "pic.json"))
+	edited, err := chat.FromPath(context.Background(), filepath.Join(convDir, "pic.json"))
 	if err != nil {
 		t.Fatalf("load edited chat: %v", err)
 	}

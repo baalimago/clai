@@ -6,7 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
+	"github.com/baalimago/clai/internal/testenv/procenv"
+	"github.com/baalimago/clai/pkg/diagnostic"
 )
 
 func TestDiscoverPrecedenceAndDescriptor(t *testing.T) {
@@ -38,7 +39,6 @@ func TestDiscoverPrecedenceAndDescriptor(t *testing.T) {
 		TrustPrompter: func(context.Context, TrustPrompt) (bool, error) {
 			return true, nil
 		},
-		LogLevel: LogLevelError,
 	})
 	if err != nil {
 		t.Fatalf("Discover() error = %v", err)
@@ -74,8 +74,10 @@ func TestDiscover_LogsPostResolutionRootCounts(t *testing.T) {
 		MaxActivatedSkills: 10,
 	})
 
-	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
+	var logs strings.Builder
+	func() {
 		_, err := Discover(Options{
+			Context:      procenv.Diagnostics(context.Background(), &logs, diagnostic.LevelInfo),
 			ConfigDir:    cfgDir,
 			CacheDir:     cacheDir,
 			WorkingDir:   cwd,
@@ -83,12 +85,12 @@ func TestDiscover_LogsPostResolutionRootCounts(t *testing.T) {
 			TrustPrompter: func(context.Context, TrustPrompt) (bool, error) {
 				return true, nil
 			},
-			LogLevel: LogLevelInfo,
 		})
 		if err != nil {
 			t.Fatalf("Discover() error = %v", err)
 		}
-	})
+	}()
+	stdout := logs.String()
 	if strings.Contains(stdout, "skills default: "+defaultRoot+" [loaded=1]") {
 		t.Fatalf("expected shadowed default root to be omitted, got %q", stdout)
 	}
@@ -108,20 +110,22 @@ func TestDiscover_DoesNotLogWithoutQueryText(t *testing.T) {
 	writeSkill(t, filepath.Join(cfgDir, "skills", "review", "SKILL.md"), "---\ndescription: review\n---\nBody")
 	mustWriteSkillsConfig(t, cfgDir, Config{Enabled: true})
 
-	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
+	var logs strings.Builder
+	func() {
 		_, err := Discover(Options{
+			Context:    procenv.Diagnostics(context.Background(), &logs, diagnostic.LevelInfo),
 			ConfigDir:  cfgDir,
 			CacheDir:   cacheDir,
 			WorkingDir: cwd,
 			TrustPrompter: func(context.Context, TrustPrompt) (bool, error) {
 				return true, nil
 			},
-			LogLevel: LogLevelInfo,
 		})
 		if err != nil {
 			t.Fatalf("Discover() error = %v", err)
 		}
-	})
+	}()
+	stdout := logs.String()
 	if strings.Contains(stdout, "skills") {
 		t.Fatalf("expected no non-debug skills logs without query text, got %q", stdout)
 	}
@@ -134,8 +138,10 @@ func TestDiscover_HidesDiscoveryInfoWithoutDebug(t *testing.T) {
 	writeSkill(t, filepath.Join(cfgDir, "skills", "review", "SKILL.md"), "---\ndescription: review\n---\nBody")
 	mustWriteSkillsConfig(t, cfgDir, Config{Enabled: true})
 
-	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
+	var logs strings.Builder
+	func() {
 		_, err := Discover(Options{
+			Context:      procenv.Diagnostics(context.Background(), &logs, diagnostic.LevelInfo),
 			ConfigDir:    cfgDir,
 			CacheDir:     cacheDir,
 			WorkingDir:   cwd,
@@ -147,7 +153,8 @@ func TestDiscover_HidesDiscoveryInfoWithoutDebug(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Discover() error = %v", err)
 		}
-	})
+	}()
+	stdout := logs.String()
 	if strings.Contains(stdout, "skills:") {
 		t.Fatalf("expected no discovery information without debug, got %q", stdout)
 	}

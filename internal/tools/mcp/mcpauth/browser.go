@@ -1,9 +1,10 @@
 package mcpauth
 
 import (
-	"fmt"
 	"os/exec"
 	"runtime"
+
+	"github.com/baalimago/clai/internal/diag"
 )
 
 // BrowserOpener opens url in the operator's browser. No such helper exists
@@ -33,7 +34,7 @@ func (osBrowserOpener) Open(url string) error {
 		cmd = exec.Command("xdg-open", url)
 	}
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("mcpauth: open browser: %w", err)
+		return diag.Errorf("mcpauth: open browser: %w", err)
 	}
 	return nil
 }

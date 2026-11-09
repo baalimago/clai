@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 
+	"github.com/baalimago/clai/internal/text/generic"
 	"github.com/baalimago/clai/pkg/claierr"
 )
 
@@ -14,7 +15,8 @@ const drainedAccount = "credit balance is too low"
 // decodeError reads anthropic's error envelope and reports the one meaning the
 // status baseline cannot see: a drained account arrives as a 400, which the
 // baseline would call an unexpected response and so a broken request no other
-// model could answer. Every other status keeps the baseline meaning.
+// model could answer. Every other envelope keeps the baseline meaning, with
+// the envelope's error type as the provider-code fact.
 func decodeError(status int, body []byte) error {
 	var envelope struct {
 		Error struct {
@@ -26,7 +28,7 @@ func decodeError(status int, body []byte) error {
 		return nil
 	}
 	if !strings.Contains(strings.ToLower(envelope.Error.Message), drainedAccount) {
-		return nil
+		return generic.ResponseErrorWithProviderCode(status, body, envelope.Error.Type)
 	}
 	return claierr.NewInsufficientCredits(&claierr.APIError{
 		StatusCode:   status,

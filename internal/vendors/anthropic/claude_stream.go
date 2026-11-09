@@ -13,16 +13,19 @@ import (
 	"strings"
 	"time"
 
-	"github.com/baalimago/clai/internal/debugflags"
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/models"
+	"github.com/baalimago/clai/internal/runenv"
 	"github.com/baalimago/clai/internal/text/generic"
 	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 )
 
 const heuristicTokenCountFactor = 1.1
+
+// stopReasonMaxTokens is the stop_reason of a reply cut at max_tokens.
+const stopReasonMaxTokens = "max_tokens"
 
 // decodeAnthropicError is anthropic's vendor decoder seat on the shared
 // decode chain. The 429 branch above does not go through it — its facts live in
@@ -32,14 +35,14 @@ var decodeAnthropicError = decodeError
 func (c *Claude) StreamCompletions(ctx context.Context, chat pub_models.Chat) (chan models.CompletionEvent, error) {
 	req, err := c.constructRequest(ctx, chat)
 	if err != nil {
-		return nil, fmt.Errorf("failed to construct request: %w", err)
+		return nil, diag.Errorf("failed to construct request: %w", err)
 	}
 	c.amInputTokens, c.amCachedTokens, c.amOutputTokens = 0, 0, 0
 	// The stream reports its own usage; counting first would cost every
 	// step an extra round trip, so it is only done when asked to print.
 	if c.PrintInputCount {
 		if _, err = c.CountInputTokens(ctx, chat); err != nil {
-			return nil, fmt.Errorf("failed to count input tokens: %w", err)
+			return nil, diag.Errorf("failed to count input tokens: %w", err)
 		}
 	}
 	return c.stream(ctx, req)
@@ -57,21 +60,21 @@ func (c *Claude) stream(ctx context.Context, req *http.Request) (chan models.Com
 			retryAtStr := resp.Header.Get("anthropic-ratelimit-tokens-reset")
 			resetAt, timeParseErr := time.Parse(time.RFC3339, retryAtStr)
 			if timeParseErr != nil {
-				ancli.Warnf("failed to parse rate limit reset, defaulting to 30 seconds from now")
+				runenv.Warnf(ctx, runenv.SubsystemVendorAnthropic, "failed to parse rate limit reset, defaulting to 30 seconds from now")
 				resetAt = time.Now().Add(time.Minute / 2)
 			}
 
 			limitStr := resp.Header.Get("anthropic-ratelimit-input-tokens-limit")
 			limit, atoiErr := strconv.Atoi(limitStr)
 			if atoiErr != nil {
-				ancli.Warnf("failed to parse input tokens limit, defaulting to 0")
+				runenv.Warnf(ctx, runenv.SubsystemVendorAnthropic, "failed to parse input tokens limit, defaulting to 0")
 				limit = 0
 			}
 
 			remainingStr := resp.Header.Get("anthropic-ratelimit-tokens-remaining")
 			remaining, atoiErr := strconv.Atoi(remainingStr)
 			if atoiErr != nil {
-				ancli.Warnf("failed to parse am remaining tokens header: '%s', defaulting to 0", remainingStr)
+				runenv.Warnf(ctx, runenv.SubsystemVendorAnthropic, "failed to parse am remaining tokens header: '%s', defaulting to 0", remainingStr)
 				remaining = 0
 			}
 
@@ -92,7 +95,7 @@ func (c *Claude) stream(ctx context.Context, req *http.Request) (chan models.Com
 
 	outChan, err := c.handleStreamResponse(ctx, resp)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+		return nil, diag.Errorf("failed to parse response: %w", err)
 	}
 	return outChan, nil
 }
@@ -109,6 +112,9 @@ func (c *Claude) handleStreamResponse(ctx context.Context, resp *http.Response) 
 		// A tool call is held until the message ends: its output usage
 		// arrives in the message_delta after the tool block.
 		var pending *pub_models.Call
+		// sawEvent is set by the first stream event; a body without one is
+		// not a message stream.
+		sawEvent := false
 		for {
 			token, err := br.ReadString('\n')
 			if err != nil {
@@ -117,12 +123,16 @@ func (c *Claude) handleStreamResponse(ctx context.Context, resp *http.Response) 
 					return
 				}
 				if errors.Is(err, io.EOF) {
-					if token != "" {
+					// The Messages stream always ends with message_stop,
+					// which returns above; reaching the end of the body
+					// means no stream at all or one cut short.
+					switch {
+					case sawEvent:
+						emitClaude(ctx, outChan, models.CompletionEvent(generic.TruncatedError("message_stop")))
+					case token != "":
 						c.handleFullResponse(ctx, token, outChan)
-					} else {
-						if !emitClaude(ctx, outChan, err) {
-							return
-						}
+					default:
+						emitClaude(ctx, outChan, models.CompletionEvent(generic.NoCompletionError(nil)))
 					}
 					// Terminal: a clean EOF must not emit a second, unconsumed error.
 					// The consumer returns on io.EOF and never reads the channel
@@ -147,7 +157,8 @@ func (c *Claude) handleStreamResponse(ctx context.Context, resp *http.Response) 
 			if token == "" {
 				continue
 			}
-			processed := c.handleToken(br, token)
+			processed := c.handleToken(ctx, br, token)
+			sawEvent = true
 			if pending != nil {
 				if _, ended := processed.(error); ended {
 					emitClaude(ctx, outChan, *pending)
@@ -159,12 +170,9 @@ func (c *Claude) handleStreamResponse(ctx context.Context, resp *http.Response) 
 				pending = &call
 				continue
 			}
-			if c.debug {
-				switch cast := processed.(type) {
-				case string:
-					c.debugFullStreamMsg += cast
-					ancli.Okf("new bit: %v, full message: '%v'\n--\n", cast, c.debugFullStreamMsg)
-				}
+			if cast, ok := processed.(string); ok && runenv.DebugEnabled(ctx, runenv.SubsystemVendorAnthropic) {
+				c.debugFullStreamMsg += cast
+				runenv.Debugf(ctx, runenv.SubsystemVendorAnthropic, "new bit: %v, full message: '%v'", cast, c.debugFullStreamMsg)
 			}
 			if !emitClaude(ctx, outChan, processed) {
 				return
@@ -199,23 +207,64 @@ func (c *Claude) handleFullResponse(ctx context.Context, token string, outChan c
 	var rspBody ClaudeResponse
 	err := json.Unmarshal([]byte(token), &rspBody)
 	if err != nil {
-		emitClaude(ctx, outChan, models.CompletionEvent(fmt.Errorf("failed to unmarshal response: %w, resp body as string: %v", err, token)))
+		emitClaude(ctx, outChan, models.CompletionEvent(diag.Errorf("failed to unmarshal response: %w, resp body as string: %v", err, token)))
 		return
 	}
+	produced := false
 	for _, content := range rspBody.Content {
 		switch content.Type {
 		case "text":
+			produced = produced || content.Text != ""
 			emitClaude(ctx, outChan, content.Text)
 		case "tool_use":
+			produced = true
 			emitClaude(ctx, outChan, pub_models.Call{
 				Name:   content.Name,
 				Inputs: content.Input,
 			})
 		}
 	}
+	if !produced {
+		emitClaude(ctx, outChan, models.CompletionEvent(generic.NoCompletionError([]byte(token))))
+	}
 }
 
-func (c *Claude) handleToken(br *bufio.Reader, token string) models.CompletionEvent {
+// streamErrorStatus is the HTTP status anthropic documents for each error
+// type. An error event inside a 200 stream names only the type, so the
+// status it would have had as a response decides its meaning.
+var streamErrorStatus = map[string]int{
+	"invalid_request_error": http.StatusBadRequest,
+	"authentication_error":  http.StatusUnauthorized,
+	"billing_error":         http.StatusPaymentRequired,
+	"permission_error":      http.StatusForbidden,
+	"not_found_error":       http.StatusNotFound,
+	"request_too_large":     http.StatusRequestEntityTooLarge,
+	"rate_limit_error":      http.StatusTooManyRequests,
+	"api_error":             http.StatusInternalServerError,
+	"timeout_error":         http.StatusGatewayTimeout,
+	"overloaded_error":      529,
+}
+
+// streamError decodes the data of an error event like the body of a non-OK
+// response. An error type without a documented status keeps the stream's
+// own 200, which the chain reports as an unexpected provider response.
+func streamError(data string) error {
+	body := []byte(trimDataPrefix(strings.TrimSpace(data)))
+	var envelope struct {
+		Error struct {
+			Type string `json:"type"`
+		} `json:"error"`
+	}
+	status := http.StatusOK
+	if err := json.Unmarshal(body, &envelope); err == nil {
+		if documented, ok := streamErrorStatus[envelope.Error.Type]; ok {
+			status = documented
+		}
+	}
+	return generic.ResponseError(status, body, decodeAnthropicError)
+}
+
+func (c *Claude) handleToken(ctx context.Context, br *bufio.Reader, token string) models.CompletionEvent {
 	tokSplit := strings.Split(token, " ")
 	if len(tokSplit) != 2 {
 		return fmt.Errorf("unexpected token length for token: '%v', expected format: 'event: <event>'", token)
@@ -226,9 +275,7 @@ func (c *Claude) handleToken(br *bufio.Reader, token string) models.CompletionEv
 		return fmt.Errorf("unexpected token, want: 'event:', got: '%v'", eventTok)
 	}
 	eventType = strings.TrimSpace(eventType)
-	if c.debug {
-		fmt.Printf("eventTok: '%v', eventType: '%s'\n", eventTok, eventType)
-	}
+	runenv.Debugf(ctx, runenv.SubsystemVendorAnthropic, "eventTok: '%v', eventType: '%s'", eventTok, eventType)
 	switch eventType {
 	case "message_stop":
 		return io.EOF
@@ -239,21 +286,33 @@ func (c *Claude) handleToken(br *bufio.Reader, token string) models.CompletionEv
 			} `json:"message"`
 		}
 		if err := readEventData(br, &start); err != nil {
-			return fmt.Errorf("message_start: %w", err)
+			return diag.Errorf("message_start: %w", err)
 		}
 		c.recordStreamUsage(start.Message.Usage)
 		return models.NoopEvent{}
+	case "error":
+		data, err := br.ReadString('\n')
+		if err != nil && !errors.Is(err, io.EOF) {
+			return diag.Errorf("read error event: %w", err)
+		}
+		return streamError(data)
 	case "message_delta":
 		var delta struct {
+			Delta struct {
+				StopReason string `json:"stop_reason"`
+			} `json:"delta"`
 			Usage *struct {
 				OutputTokens int `json:"output_tokens"`
 			} `json:"usage"`
 		}
 		if err := readEventData(br, &delta); err != nil {
-			return fmt.Errorf("message_delta: %w", err)
+			return diag.Errorf("message_delta: %w", err)
 		}
 		if delta.Usage != nil {
 			c.amOutputTokens = delta.Usage.OutputTokens
+		}
+		if delta.Delta.StopReason == stopReasonMaxTokens {
+			runenv.Warnf(ctx, runenv.SubsystemVendorAnthropic, "the reply was cut off at the output token limit (stop_reason: %s)", delta.Delta.StopReason)
 		}
 		return models.NoopEvent{}
 
@@ -261,20 +320,20 @@ func (c *Claude) handleToken(br *bufio.Reader, token string) models.CompletionEv
 		c.debugFullStreamMsg = ""
 		blockStart, err := br.ReadString('\n')
 		if err != nil {
-			return fmt.Errorf("failed to read content_block_delta: %w", err)
+			return diag.Errorf("failed to read content_block_delta: %w", err)
 		}
 		return c.handleContentBlockStart(blockStart)
 	// TODO: Print token amount
 	case "content_block_delta":
 		deltaToken, err := br.ReadString('\n')
 		if err != nil {
-			return fmt.Errorf("failed to read content_block_delta: %w", err)
+			return diag.Errorf("failed to read content_block_delta: %w", err)
 		}
-		return c.handleContentBlockDelta(deltaToken)
+		return c.handleContentBlockDelta(ctx, deltaToken)
 	case "content_block_stop":
 		blockStop, err := br.ReadString('\n')
 		if err != nil {
-			return fmt.Errorf("failed to read content_block_stop: %w", err)
+			return diag.Errorf("failed to read content_block_stop: %w", err)
 		}
 		return c.handleContentBlockStop(blockStop)
 	}
@@ -287,10 +346,10 @@ func (c *Claude) handleToken(br *bufio.Reader, token string) models.CompletionEv
 func readEventData(br *bufio.Reader, dst any) error {
 	line, err := br.ReadString('\n')
 	if err != nil && !errors.Is(err, io.EOF) {
-		return fmt.Errorf("read event data: %w", err)
+		return diag.Errorf("read event data: %w", err)
 	}
 	if err := json.Unmarshal([]byte(trimDataPrefix(strings.TrimSpace(line))), dst); err != nil {
-		return fmt.Errorf("decode event data: %w", err)
+		return diag.Errorf("decode event data: %w", err)
 	}
 	return nil
 }
@@ -299,7 +358,7 @@ func trimDataPrefix(data string) string {
 	return strings.TrimPrefix(data, "data: ")
 }
 
-func (c *Claude) stringFromDeltaToken(deltaToken string) (Delta, error) {
+func (c *Claude) stringFromDeltaToken(ctx context.Context, deltaToken string) (Delta, error) {
 	deltaTokSplit := strings.Split(deltaToken, " ")
 	if deltaTokSplit[0] != "data:" {
 		return Delta{}, fmt.Errorf("unexpected split token. Expected: 'data:', got: '%v'", deltaTokSplit[0])
@@ -308,10 +367,10 @@ func (c *Claude) stringFromDeltaToken(deltaToken string) (Delta, error) {
 	var contentBlockDelta ContentBlockDelta
 	err := json.Unmarshal([]byte(deltaJSONString), &contentBlockDelta)
 	if err != nil {
-		return Delta{}, fmt.Errorf("failed to unmarshal deltaJsonString: '%v' to struct, err: %w", deltaJSONString, err)
+		return Delta{}, diag.Errorf("failed to unmarshal deltaJsonString: '%v' to struct, err: %w", deltaJSONString, err)
 	}
-	if c.debug {
-		ancli.PrintOK(fmt.Sprintf("delta struct: %+v\nstring: %v", debug.IndentedJsonFmt(contentBlockDelta), deltaJSONString))
+	if runenv.DebugEnabled(ctx, runenv.SubsystemVendorAnthropic) {
+		runenv.Debugf(ctx, runenv.SubsystemVendorAnthropic, "delta struct: %+v\nstring: %v", debug.IndentedJsonFmt(contentBlockDelta), deltaJSONString)
 	}
 	return contentBlockDelta.Delta, nil
 }
@@ -323,13 +382,8 @@ func (c *Claude) constructRequest(ctx context.Context, chat pub_models.Chat) (*h
 	if err != nil {
 		return nil, err
 	}
-	if debugflags.Enabled("CLAUDIFIED_MSGS") {
-		ancli.PrintOK(
-			fmt.Sprintf(
-				"claudified messages: %+v\n",
-				debug.IndentedJsonFmt(claudifiedMsgs),
-			),
-		)
+	if runenv.DebugEnabled(ctx, runenv.SubsystemClaudifiedMsgs) {
+		runenv.Debugf(ctx, runenv.SubsystemClaudifiedMsgs, "claudified messages: %+v", debug.IndentedJsonFmt(claudifiedMsgs))
 	}
 
 	reqData := claudeReq{
@@ -355,17 +409,17 @@ func (c *Claude) constructRequest(ctx context.Context, chat pub_models.Chat) (*h
 	reqData.OutputConfig = outCfg
 	jsonData, err := json.Marshal(reqData)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal ClaudeReq: %w", err)
+		return nil, diag.Errorf("failed to marshal ClaudeReq: %w", err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.URL, bytes.NewBuffer(jsonData))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, diag.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-api-key", c.apiKey)
 	req.Header.Set("anthropic-version", c.AnthropicVersion)
-	if c.debug && debugflags.Enabled("VERBOSE") {
-		ancli.PrintOK(fmt.Sprintf("Request: %+v\n", req))
+	if runenv.DebugEnabled(ctx, runenv.SubsystemVerbose) {
+		runenv.Debugf(ctx, runenv.SubsystemVendorAnthropic, "Request: %+v", req)
 	}
 	return req, nil
 }
@@ -383,7 +437,7 @@ func (c *Claude) CountInputTokens(ctx context.Context, chat pub_models.Chat) (in
 
 	jsonData, err := json.Marshal(reqData)
 	if err != nil {
-		return 0, fmt.Errorf("failed to marshal request: %w", err)
+		return 0, diag.Errorf("failed to marshal request: %w", err)
 	}
 
 	countURL := strings.TrimSuffix(c.URL, "/messages") + "/messages/count_tokens"
@@ -399,7 +453,7 @@ func (c *Claude) CountInputTokens(ctx context.Context, chat pub_models.Chat) (in
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, countURL, bytes.NewBuffer(jsonData))
 	if err != nil {
-		return 0, fmt.Errorf("failed to create request: %w", err)
+		return 0, diag.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -422,11 +476,13 @@ func (c *Claude) CountInputTokens(ctx context.Context, chat pub_models.Chat) (in
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
-		return 0, fmt.Errorf("failed to decode token count response: %w", err)
+		return 0, diag.Errorf("failed to decode token count response: %w", err)
 	}
 
-	if c.debug || c.PrintInputCount {
-		ancli.Okf("Token count: %d\n", tokenResp.InputTokens)
+	if c.PrintInputCount {
+		runenv.Noticef(ctx, runenv.SubsystemVendorAnthropic, "Token count: %d", tokenResp.InputTokens)
+	} else {
+		runenv.Debugf(ctx, runenv.SubsystemVendorAnthropic, "Token count: %d", tokenResp.InputTokens)
 	}
 
 	c.amInputTokens = tokenResp.InputTokens

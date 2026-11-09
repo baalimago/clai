@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/baalimago/clai/internal/asset"
+	"github.com/baalimago/clai/internal/diag"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -50,7 +51,7 @@ func (r resolvedConnector) Conn(context.Context) (Conn, error) { return r.conn, 
 // a schema cache hit's cached tool list, which carries no live Conn and so
 // supplies a Connector instead. serverName, authResolver and authTimeout are
 // phase 6's addition: they let the tool-call site (internal/text/tool_executor.go)
-// surface and bound a mid-run authorization wait before tools.InvokeWith
+// surface and bound a mid-run authorization wait before tools.Run
 // folds the typed error into a string. authResolver may be nil.
 func NewTool(connector Connector, remoteName string, spec pub_models.Specification, timeout time.Duration, serverName string, authResolver AuthResolver, authTimeout time.Duration) pub_models.LLMTool {
 	return &mcpTool{
@@ -66,7 +67,7 @@ func NewTool(connector Connector, remoteName string, spec pub_models.Specificati
 
 // ResolveForCall drives the tool's Connector to a terminal outcome or an
 // AuthChallengeError, exposing the typed error and this tool's AuthResolver
-// before tools.InvokeWith would fold the error into a string. The tool-call
+// before tools.Run would fold the error into a string. The tool-call
 // site uses this to raise and bound a human wait outside connector
 // resolution (D20): ctx governs only this attempt, exactly like Call.
 func (m *mcpTool) ResolveForCall(ctx context.Context) (serverName string, resolver AuthResolver, authTimeout time.Duration, err error) {
@@ -98,7 +99,7 @@ func (m *mcpTool) CallParts(ctx context.Context, input pub_models.Input) ([]pub_
 	// would make a lazy first call look like a hung tool.
 	conn, err := m.connector.Conn(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("mcp tool %q: %w", m.remoteName, err)
+		return nil, diag.Errorf("mcp tool %q: %w", m.remoteName, err)
 	}
 
 	if m.timeout > 0 {
@@ -115,7 +116,7 @@ func (m *mcpTool) CallParts(ctx context.Context, input pub_models.Input) ([]pub_
 		"arguments": nonNullableInp,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("mcp tool %q: %w", m.remoteName, err)
+		return nil, diag.Errorf("mcp tool %q: %w", m.remoteName, err)
 	}
 
 	var result struct {
@@ -123,7 +124,7 @@ func (m *mcpTool) CallParts(ctx context.Context, input pub_models.Input) ([]pub_
 		IsError bool          `json:"isError"`
 	}
 	if err := json.Unmarshal(raw, &result); err != nil {
-		return nil, fmt.Errorf("mcp tool %q: decode result: %w", m.remoteName, err)
+		return nil, diag.Errorf("mcp tool %q: decode result: %w", m.remoteName, err)
 	}
 	if result.IsError {
 		var text strings.Builder
@@ -174,7 +175,7 @@ type contentItem struct {
 func (c contentItem) imagePart() pub_models.Part {
 	data, err := base64.StdEncoding.DecodeString(c.Data)
 	if err != nil {
-		return droppedImage(fmt.Errorf("corrupt base64: %w", err))
+		return droppedImage(diag.Errorf("corrupt base64: %w", err))
 	}
 	sniffed, err := asset.Sniff(data)
 	if err != nil {

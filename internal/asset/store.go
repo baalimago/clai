@@ -2,11 +2,11 @@ package asset
 
 import (
 	"errors"
-	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/utils"
 )
 
@@ -25,13 +25,13 @@ func (s diskStore) Put(data []byte, mime string) (string, error) {
 		return ref, nil
 	}
 	if !errors.Is(err, fs.ErrNotExist) {
-		return "", fmt.Errorf("stat asset %s: %w", ref, err)
+		return "", diag.Errorf("stat asset %s: %w", ref, err)
 	}
 	if err := os.MkdirAll(s.dir, 0o755); err != nil {
-		return "", fmt.Errorf("create asset dir for %s: %w", ref, err)
+		return "", diag.Errorf("create asset dir for %s: %w", ref, err)
 	}
 	if err := utils.WriteFileAtomic(path, data, 0o644); err != nil {
-		return "", fmt.Errorf("write asset %s: %w", ref, err)
+		return "", diag.Errorf("write asset %s: %w", ref, err)
 	}
 	return ref, nil
 }
@@ -43,10 +43,10 @@ func (s diskStore) Load(ref string) (Image, error) {
 	}
 	data, err := os.ReadFile(filepath.Join(s.dir, ref))
 	if errors.Is(err, fs.ErrNotExist) {
-		return Image{}, fmt.Errorf("%w: %s", ErrAssetNotFound, ref)
+		return Image{}, diag.Errorf("%w: %s", ErrAssetNotFound, ref)
 	}
 	if err != nil {
-		return Image{}, fmt.Errorf("read asset %s: %w", ref, err)
+		return Image{}, diag.Errorf("read asset %s: %w", ref, err)
 	}
 	if err := checkContent(ref, data); err != nil {
 		return Image{}, err
@@ -60,14 +60,14 @@ func (s diskStore) Path(ref string) (string, error) {
 	}
 	path, err := filepath.Abs(filepath.Join(s.dir, ref))
 	if err != nil {
-		return "", fmt.Errorf("absolute path of asset %s: %w", ref, err)
+		return "", diag.Errorf("absolute path of asset %s: %w", ref, err)
 	}
 	_, err = os.Stat(path)
 	if errors.Is(err, fs.ErrNotExist) {
-		return "", fmt.Errorf("%w: %s", ErrAssetNotFound, ref)
+		return "", diag.Errorf("%w: %s", ErrAssetNotFound, ref)
 	}
 	if err != nil {
-		return "", fmt.Errorf("stat asset %s: %w", ref, err)
+		return "", diag.Errorf("stat asset %s: %w", ref, err)
 	}
 	return path, nil
 }
@@ -98,7 +98,7 @@ func (s diskStore) Sweep(live map[string]struct{}) (SweepCount, error) {
 			continue
 		}
 		if err != nil {
-			return removed, fmt.Errorf("remove asset %s: %w", ref, err)
+			return removed, diag.Errorf("remove asset %s: %w", ref, err)
 		}
 		removed++
 	}
@@ -112,7 +112,7 @@ func (s diskStore) refs() ([]string, error) {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("list assets in %s: %w", s.dir, err)
+		return nil, diag.Errorf("list assets in %s: %w", s.dir, err)
 	}
 	var refs []string
 	for _, e := range entries {

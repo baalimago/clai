@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/baalimago/clai/internal/diag"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -153,12 +154,12 @@ func (m *asyncCmdManagerImpl) Spawn(parent context.Context, toolName string, spe
 	stderrPath := filepath.Join(asyncLogDir, fmt.Sprintf("clai-async-cmd-%s-stderr.log", cmdID))
 	stdoutFile, err := os.Create(stdoutPath)
 	if err != nil {
-		return nil, fmt.Errorf("create stdout log: %w", err)
+		return nil, diag.Errorf("create stdout log: %w", err)
 	}
 	stderrFile, err := os.Create(stderrPath)
 	if err != nil {
 		_ = stdoutFile.Close()
-		return nil, fmt.Errorf("create stderr log: %w", err)
+		return nil, diag.Errorf("create stderr log: %w", err)
 	}
 
 	// The exec context must not inherit the session parent: session teardown
@@ -184,7 +185,7 @@ func (m *asyncCmdManagerImpl) Spawn(parent context.Context, toolName string, spe
 		cancel()
 		_ = os.Remove(stdoutPath)
 		_ = os.Remove(stderrPath)
-		return nil, fmt.Errorf("start async command: %w", err)
+		return nil, diag.Errorf("start async command: %w", err)
 	}
 	cmdHandle := &asyncCmd{
 		cmdID:         cmdID,
@@ -429,7 +430,7 @@ func cloneStringPtr(in *string) *string {
 func mustJSONString(v any) (string, error) {
 	b, err := json.Marshal(v)
 	if err != nil {
-		return "", fmt.Errorf("marshal json response: %w", err)
+		return "", diag.Errorf("marshal json response: %w", err)
 	}
 	return string(b), nil
 }
@@ -520,7 +521,7 @@ func callAsyncCmdRun(ctx context.Context, toolName string, input pub_models.Inpu
 	}
 	args, err := parseStringSlice(input["args"])
 	if err != nil {
-		return "", fmt.Errorf("args: %w", err)
+		return "", diag.Errorf("args: %w", err)
 	}
 	cwd := ""
 	if raw, ok := input["cwd"]; ok {
@@ -531,13 +532,13 @@ func callAsyncCmdRun(ctx context.Context, toolName string, input pub_models.Inpu
 	}
 	env, err := parseStringMap(input["env"])
 	if err != nil {
-		return "", fmt.Errorf("env: %w", err)
+		return "", diag.Errorf("env: %w", err)
 	}
 	if err := validateCmdNotBannedWithContext(ctx, command, args); err != nil {
-		return "", fmt.Errorf("start async command: %w", err)
+		return "", diag.Errorf("start async command: %w", err)
 	}
 	if _, set := env[CmdBanEnv]; set && len(cmdBanEntries(ctx)) > 0 {
-		return "", fmt.Errorf("start async command: %w", errCmdBanEnvTouched("env"))
+		return "", diag.Errorf("start async command: %w", errCmdBanEnvTouched("env"))
 	}
 	env = withCmdBanEnv(ctx, env)
 	cmd, err := asyncCmdManager.Spawn(ctx, toolName, asyncCmdRunSpec{
@@ -731,7 +732,7 @@ func parseRequiredStringSlice(input pub_models.Input, key string) ([]string, err
 	}
 	ret, err := parseStringSlice(raw)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", key, err)
+		return nil, diag.Errorf("%s: %w", key, err)
 	}
 	if len(ret) == 0 {
 		return nil, fmt.Errorf("%s must not be empty", key)

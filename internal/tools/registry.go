@@ -1,14 +1,13 @@
 package tools
 
 import (
+	"context"
 	"maps"
 	"sort"
 	"strings"
 	"sync"
 
-	"github.com/baalimago/clai/internal/debugflags"
 	"github.com/baalimago/clai/pkg/text/models"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
 // registry is a threadsafe storage for LLMTools.
@@ -100,12 +99,6 @@ func SelectsMCPTools(pattern string) bool {
 // Set registers tool under the provided name.
 func (r *registry) Set(name string, t models.LLMTool) {
 	r.mu.Lock()
-	if strings.Contains(name, "printEnv") || strings.Contains(name, "get-env") {
-		ancli.Warnf("found env printing tool, skipping for security's sake. Tool name: '%v'", name)
-	}
-	if debugflags.Enabled("TOOLS_REGISTRY_SET") {
-		ancli.Okf("adding tool too registry, name: %v\n", t.Specification().Name)
-	}
 	r.tools[name] = t
 	r.mu.Unlock()
 }
@@ -115,9 +108,6 @@ func (r *registry) Set(name string, t models.LLMTool) {
 // registered (it usually is: SetAlias is called right after Set(canonical, t)).
 func (r *registry) SetAlias(alias, canonical string, t models.LLMTool) {
 	r.mu.Lock()
-	if _, ok := r.tools[canonical]; !ok {
-		ancli.Warnf("SetAlias: canonical tool '%s' for alias '%s' is not registered", canonical, alias)
-	}
 	r.tools[alias] = t
 	r.aliases[alias] = canonical
 	r.mu.Unlock()
@@ -174,7 +164,7 @@ func (r *registry) All() map[string]models.LLMTool {
 // initializes the registry first, so completion hooks and setup tables get
 // the same list from one place.
 func Names() []string {
-	Init()
+	Init(context.Background())
 	all := Registry.Visible()
 	names := make([]string, 0, len(all))
 	for name := range all {

@@ -1,3 +1,5 @@
+github.com/baalimago/go_away_boilerplate v1.33.14 h1:0Hz4k617lLdCQBChY8AE3BegorXMjp5rJRbIs+I5taM=
+github.com/baalimago/go_away_boilerplate v1.33.14/go.mod h1:+ztXRRgLux3CA8QBa8qF7tu+S4vcy0WHkfxhHbD48Mg=
 golang.org/x/exp v0.0.0-20240119083558-1b970713d09a h1:Q8/wZp0KX97QFTc2ywcOE0YRjZPVIx+MXInMzdvQqcA=
 golang.org/x/exp v0.0.0-20240119083558-1b970713d09a/go.mod h1:idGWGoKP1toJGkd5/ig9ZLuPcZBC3ewk7SzmH0uou08=
 golang.org/x/net v0.43.0 h1:lat02VYK2j4aLzMzecihNvTlJNQUq316m2Mr9rnM6YE=

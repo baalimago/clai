@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/baalimago/clai/internal/asset"
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/imagegen"
 	"github.com/baalimago/clai/internal/text/generic"
 	"github.com/baalimago/clai/pkg/claierr"
@@ -70,10 +71,10 @@ func loadImageDefaults(configDir, model string) (imageDefaults, error) {
 		return defaults, nil
 	}
 	if err != nil {
-		return defaults, fmt.Errorf("read openai image defaults: %w", err)
+		return defaults, diag.Errorf("read openai image defaults: %w", err)
 	}
 	if err := json.Unmarshal(b, &defaults); err != nil {
-		return defaults, fmt.Errorf("parse openai image defaults %s: %w", path, err)
+		return defaults, diag.Errorf("parse openai image defaults %s: %w", path, err)
 	}
 	return defaults, nil
 }
@@ -110,7 +111,7 @@ func (g *ImageGenerator) Generate(ctx context.Context, req imagegen.ImageRequest
 	httpReq.Header.Set("Authorization", "Bearer "+g.apiKey)
 	resp, err := imagegen.Exchange[imagesResponse](g.client, httpReq, imageFailure)
 	if err != nil {
-		return nil, fmt.Errorf("openai images: %w", err)
+		return nil, diag.Errorf("openai images: %w", err)
 	}
 	return resp.images()
 }
@@ -138,7 +139,7 @@ func editRequest(ctx context.Context, url string, p imageParams, inputs []asset.
 			continue
 		}
 		if err := w.WriteField(f[0], f[1]); err != nil {
-			return nil, fmt.Errorf("write edit field %s: %w", f[0], err)
+			return nil, diag.Errorf("write edit field %s: %w", f[0], err)
 		}
 	}
 	for i, img := range inputs {
@@ -147,18 +148,18 @@ func editRequest(ctx context.Context, url string, p imageParams, inputs []asset.
 		header.Set("Content-Type", img.MIME)
 		part, err := w.CreatePart(header)
 		if err != nil {
-			return nil, fmt.Errorf("create edit image %d: %w", i, err)
+			return nil, diag.Errorf("create edit image %d: %w", i, err)
 		}
 		if _, err := part.Write(img.Data); err != nil {
-			return nil, fmt.Errorf("write edit image %d: %w", i, err)
+			return nil, diag.Errorf("write edit image %d: %w", i, err)
 		}
 	}
 	if err := w.Close(); err != nil {
-		return nil, fmt.Errorf("close edit body: %w", err)
+		return nil, diag.Errorf("close edit body: %w", err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, &body)
 	if err != nil {
-		return nil, fmt.Errorf("build edit request: %w", err)
+		return nil, diag.Errorf("build edit request: %w", err)
 	}
 	req.Header.Set("Content-Type", w.FormDataContentType())
 	return req, nil
@@ -166,11 +167,11 @@ func editRequest(ctx context.Context, url string, p imageParams, inputs []asset.
 
 func (r imagesResponse) images() ([]imagegen.GeneratedImage, error) {
 	if len(r.Data) == 0 || r.Data[0].B64JSON == "" {
-		return nil, fmt.Errorf("openai images: %w", imagegen.ErrNoImage)
+		return nil, diag.Errorf("openai images: %w", imagegen.ErrNoImage)
 	}
 	part, err := generic.GeneratedImage(r.Data[0].B64JSON, outputMIME(r.OutputFormat))
 	if err != nil {
-		return nil, fmt.Errorf("openai images: %w", err)
+		return nil, diag.Errorf("openai images: %w", err)
 	}
 	return []imagegen.GeneratedImage{{Image: asset.Image{Data: part.Data, MIME: part.MIME}, RevisedPrompt: r.Data[0].RevisedPrompt}}, nil
 }
@@ -188,12 +189,9 @@ func imageFailure(status int, body []byte) error {
 
 // decodeImageError is decodeError plus the images API's content-policy refusals.
 func decodeImageError(status int, body []byte) error {
-	if err := decodeError(status, body); err != nil {
-		return err
-	}
 	facts := parseProviderError(body)
 	if facts.Code != "moderation_blocked" && facts.Code != "content_policy_violation" {
-		return nil
+		return decodeError(status, body)
 	}
 	return claierr.NewContentFiltered(&claierr.APIError{
 		StatusCode:   status,

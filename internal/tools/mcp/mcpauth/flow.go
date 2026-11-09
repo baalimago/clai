@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+
+	"github.com/baalimago/clai/internal/diag"
 )
 
 // redirectResult is what either the loopback listener or the paste
@@ -27,7 +29,7 @@ func listenLoopback(host string, port int) (net.Listener, error) {
 	addr := fmt.Sprintf("%s:%d", host, port)
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
-		return nil, fmt.Errorf("mcpauth: bind loopback listener on %q: %w", addr, err)
+		return nil, diag.Errorf("mcpauth: bind loopback listener on %q: %w", addr, err)
 	}
 	return ln, nil
 }

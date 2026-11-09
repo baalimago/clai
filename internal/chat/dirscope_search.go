@@ -2,6 +2,7 @@ package chat
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/baalimago/clai/internal/diag"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -29,7 +31,7 @@ const (
 // without changing callers once a corpus outgrows linear scanning (see
 // architecture/dirscope.md for the documented upgrade trigger).
 type ConversationSearcher interface {
-	Search(req SearchRequest) (SearchResult, error)
+	Search(ctx context.Context, req SearchRequest) (SearchResult, error)
 }
 
 // SearchRequest anchors a keyword search to a directory.
@@ -77,7 +79,7 @@ func NewConversationSearcher(confDir string) ConversationSearcher {
 // Search executes the dir-anchored keyword pipeline: metadata prefilter on the
 // chat index, raw-byte content prefilter, then parse-and-rank survivors with a
 // keyword-centred snippet, paginated.
-func (s *bruteForceSearcher) Search(req SearchRequest) (SearchResult, error) {
+func (s *bruteForceSearcher) Search(ctx context.Context, req SearchRequest) (SearchResult, error) {
 	pageSize := req.PageSize
 	if pageSize <= 0 {
 		pageSize = defaultSearchPageSize
@@ -89,17 +91,17 @@ func (s *bruteForceSearcher) Search(req SearchRequest) (SearchResult, error) {
 
 	dir, err := canonicalDir(req.Directory)
 	if err != nil {
-		return SearchResult{}, fmt.Errorf("canonicalize search directory %q: %w", req.Directory, err)
+		return SearchResult{}, diag.Errorf("canonicalize search directory %q: %w", req.Directory, err)
 	}
 	result := SearchResult{Directory: dir, Page: page, PageSize: pageSize}
 
 	tokens := tokenizeQuery(req.Query)
-	debugDirscopef("search %q in %q: tokens=%v", req.Query, dir, tokens)
+	debugDirscopef(ctx, "search %q in %q: tokens=%v", req.Query, dir, tokens)
 
 	convDir := conversationsDir(s.confDir)
-	rows, err := readChatIndex(convDir)
+	rows, err := readChatIndex(ctx, convDir)
 	if err != nil {
-		return SearchResult{}, fmt.Errorf("read chat index: %w", err)
+		return SearchResult{}, diag.Errorf("read chat index: %w", err)
 	}
 
 	// Candidates are restricted to the queried directory subtree, which is a small
@@ -157,7 +159,7 @@ func (s *bruteForceSearcher) Search(req SearchRequest) (SearchResult, error) {
 	})
 
 	result.TotalMatches = len(matches)
-	debugDirscopef("search %q: %d match(es) from %d candidate(s)", req.Query, len(matches), scanned)
+	debugDirscopef(ctx, "search %q: %d match(es) from %d candidate(s)", req.Query, len(matches), scanned)
 	start := page * pageSize
 	// start < 0 guards an int overflow from a hostile/huge page value (page*pageSize
 	// can wrap negative), which would otherwise panic on the slice below.
@@ -382,7 +384,7 @@ func modelOrUnknown(model string) string {
 // message bodies) with stable storage-true indices and optional role/substring
 // filters. The leading system prompt is listed (not hidden) to keep indices
 // honest; its preview makes it obvious to skip.
-func InspectConversation(confDir, chatID string, page, pageSize int, role, match string) (string, error) {
+func InspectConversation(ctx context.Context, confDir, chatID string, page, pageSize int, role, match string) (string, error) {
 	if pageSize <= 0 {
 		pageSize = defaultInspectPageSize
 	}
@@ -395,9 +397,9 @@ func InspectConversation(confDir, chatID string, page, pageSize int, role, match
 	if err := validateChatID(chatID); err != nil {
 		return "", err
 	}
-	chat, err := FromPath(conversationPath(confDir, chatID))
+	chat, err := FromPath(ctx, conversationPath(confDir, chatID))
 	if err != nil {
-		return "", fmt.Errorf("load conversation %q: %w", chatID, err)
+		return "", diag.Errorf("load conversation %q: %w", chatID, err)
 	}
 
 	lowerRole := strings.ToLower(strings.TrimSpace(role))
@@ -456,14 +458,14 @@ func InspectConversation(confDir, chatID string, page, pageSize int, role, match
 // storage-true index, plus the on-disk conversation path so a caller can surface
 // it when the content is truncated by the tool-output limit. An out-of-range
 // index or unresolvable chat id returns an error.
-func ReadMessage(confDir, chatID string, messageIndex int) (content, path string, err error) {
+func ReadMessage(ctx context.Context, confDir, chatID string, messageIndex int) (content, path string, err error) {
 	if err := validateChatID(chatID); err != nil {
 		return "", "", err
 	}
 	path = conversationPath(confDir, chatID)
-	chat, err := FromPath(path)
+	chat, err := FromPath(ctx, path)
 	if err != nil {
-		return "", path, fmt.Errorf("load conversation %q: %w", chatID, err)
+		return "", path, diag.Errorf("load conversation %q: %w", chatID, err)
 	}
 	if messageIndex < 0 || messageIndex >= len(chat.Messages) {
 		return "", path, fmt.Errorf("message_index %d out of range: conversation %q has %d message(s)", messageIndex, chatID, len(chat.Messages))

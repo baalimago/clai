@@ -1083,7 +1083,7 @@ cloned claude-code session 5bb90024… → chat <newID>
 chat <newID> is now replyable with "clai -dre query <prompt>"
 ```
 
-All output uses existing `ancli` functions and respects `NO_COLOR`.
+Notices are diagnostics (`runenv.Noticef`, on stderr) and respect `NO_COLOR` (see [output.md](./output.md)).
 
 ## Documentation alignment
 

@@ -6,20 +6,20 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"os"
 	"os/user"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/models"
+	"github.com/baalimago/clai/internal/runenv"
+	"github.com/baalimago/clai/internal/stdio"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/internal/vendors"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/dimensions"
-	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
 const chatUsage = `clai - (c)ommand (l)ine (a)rtificial (i)ntelligence
@@ -66,7 +66,6 @@ const (
 var errListChats = errors.New("failed to list chats")
 
 type ChatHandler struct {
-	debug    bool
 	username string
 	subCmd   string
 	chat     pub_models.Chat
@@ -84,6 +83,9 @@ type ChatHandler struct {
 	out    io.Writer
 	input  io.Reader
 	errOut io.Writer
+	// selectPrompt shows a table's selection prompt; nil lets the table
+	// write it to out.
+	selectPrompt func(string) error
 	// dims is the one terminal-dimensions snapshot of this chat command
 	// invocation, bound to the handler's output writer. It is resolved once in
 	// New and used by every width-aware render path of the handler. Tests
@@ -147,9 +149,7 @@ func (q *ChatHandler) SuppressCompletionNotification() bool {
 }
 
 func (cq *ChatHandler) actOnSubCmd(ctx context.Context) error {
-	if cq.debug {
-		ancli.PrintOK(fmt.Sprintf("chat: %+v\n", cq))
-	}
+	runenv.Debugf(ctx, runenv.SubsystemChat, "chat: %+v", cq)
 	switch cq.subCmd {
 	case "continue", "c":
 		return cq.cont(ctx)
@@ -164,9 +164,9 @@ func (cq *ChatHandler) actOnSubCmd(ctx context.Context) error {
 	case "dir", "dirv2":
 		var err error
 		if cq.subCmd == "dirv2" {
-			err = cq.dirInfoV2()
+			err = cq.dirInfoV2(ctx)
 		} else {
-			err = cq.dirInfo()
+			err = cq.dirInfo(ctx)
 		}
 		if errors.Is(err, fs.ErrNotExist) {
 			return errors.New("failed to print any chat information as there was no bound chats found. This is unusual, check if replies are enabled")
@@ -174,7 +174,7 @@ func (cq *ChatHandler) actOnSubCmd(ctx context.Context) error {
 		return err
 	case "help", "h":
 		claiConfDir, _ := utils.GetClaiConfigDir()
-		fmt.Printf(chatUsage, claiConfDir)
+		fmt.Fprintf(cq.out, chatUsage, claiConfDir)
 		return nil
 	default:
 		return fmt.Errorf("unknown subcommand: '%s'\n%v", cq.subCmd, chatUsage)
@@ -186,15 +186,15 @@ func (cq *ChatHandler) findChatByID(ctx context.Context, potentialChatIdx string
 	firstToken := split[0]
 	chatIdx, err := strconv.Atoi(firstToken)
 	if err == nil {
-		paginator, err := NewChatIndexPaginator(cq.convDir)
+		paginator, err := NewChatIndexPaginator(ctx, cq.convDir)
 		if err != nil {
-			return pub_models.Chat{}, fmt.Errorf("failed to read chat index: %w", err)
+			return pub_models.Chat{}, diag.Errorf("failed to read chat index: %w", err)
 		}
 		var chat pub_models.Chat
 		if len(paginator.rows) == 0 {
-			chats, listErr := cq.list()
+			chats, listErr := cq.list(ctx)
 			if listErr != nil {
-				return pub_models.Chat{}, fmt.Errorf("%w: %w", errListChats, listErr)
+				return pub_models.Chat{}, diag.Errorf("%w: %w", errListChats, listErr)
 			}
 			if chatIdx < 0 || chatIdx >= len(chats) {
 				return pub_models.Chat{}, errIndexOutOfRange
@@ -212,65 +212,63 @@ func (cq *ChatHandler) findChatByID(ctx context.Context, potentialChatIdx string
 	}
 
 	// Prefer exact ID match first.
-	c, err := cq.getByID(firstToken)
+	c, err := cq.getByID(ctx, firstToken)
 	if err == nil {
 		return c, nil
 	}
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return pub_models.Chat{}, fmt.Errorf("load chat by id %q: %w", firstToken, err)
+		return pub_models.Chat{}, diag.Errorf("load chat by id %q: %w", firstToken, err)
 	}
-	return pub_models.Chat{}, fmt.Errorf("load chat by id %q: %w", firstToken, err)
+	return pub_models.Chat{}, diag.Errorf("load chat by id %q: %w", firstToken, err)
 }
 
 func (cq *ChatHandler) printChat(chat pub_models.Chat) error {
 	// New default behavior: fast, heavily obfuscated preview.
 	// This avoids expensive glow rendering and avoids printing message bodies.
 	if err := printChatObfuscated(cq.out, chat, cq.raw, cq.dims.Width); err != nil {
-		return fmt.Errorf("print obfuscated chat: %w", err)
+		return diag.Errorf("print obfuscated chat: %w", err)
 	}
 	return nil
 }
 
 func (cq *ChatHandler) cont(ctx context.Context) error {
-	if misc.Truthy(os.Getenv("DEBUG")) {
-		ancli.PrintOK(fmt.Sprintf("prompt: %v", cq.prompt))
-	}
+	runenv.Debugf(ctx, runenv.SubsystemChat, "prompt: %v", cq.prompt)
 
 	// Special case: `clai chat continue` with an empty string continues the chat
 	// in the current directory. Fallback: globalScope.
 	if strings.TrimSpace(cq.prompt) == "" {
 		// 1) dir-scoped (CWD)
 		if dsID, err := LoadDirScopeChatID(cq.confDir); err == nil && strings.TrimSpace(dsID) != "" {
-			c, err := cq.getByID(dsID)
+			c, err := cq.getByID(ctx, dsID)
 			if err != nil {
 				// In the case that the linked dirscope chat for some reason doesnt exist
 				// instead attempt to run global chat
 				if errors.Is(err, fs.ErrNotExist) {
 					goto global_scope
 				}
-				return fmt.Errorf("load dirscoped chat %q: %w", dsID, err)
+				return diag.Errorf("load dirscoped chat %q: %w", dsID, err)
 			}
 			if err := cq.printChat(c); err != nil {
-				return fmt.Errorf("print dirscoped chat: %w", err)
+				return diag.Errorf("print dirscoped chat: %w", err)
 			}
 			return nil
 		}
 
 		// 2) globalScope
 	global_scope:
-		g, err := LoadGlobalScope(cq.confDir)
+		g, err := LoadGlobalScope(ctx, cq.confDir)
 		if err != nil {
-			return fmt.Errorf("load global scope chat: %w", err)
+			return diag.Errorf("load global scope chat: %w", err)
 		}
 		if strings.TrimSpace(g.ID) != "" {
 			if err := cq.printChat(g); err != nil {
-				return fmt.Errorf("print global scope chat: %w", err)
+				return diag.Errorf("print global scope chat: %w", err)
 			}
 			return nil
 		}
 
 		// 3) no chat found
-		ancli.PrintErr("could not find chat with id: \"\"\n")
+		runenv.Failuref(ctx, runenv.SubsystemChat, "could not find chat with id: \"\"")
 		return cq.handleListCmd(ctx)
 	}
 
@@ -279,12 +277,12 @@ func (cq *ChatHandler) cont(ctx context.Context) error {
 		// If listing of chats failed, propagate error. This indicates a real filesystem or
 		// permissions issue that should not be treated as "not found".
 		if errors.Is(err, errListChats) {
-			return fmt.Errorf("failed to get chat: %w", err)
+			return diag.Errorf("failed to get chat: %w", err)
 		}
 
 		// Otherwise, treat as a not-found case: inform the user and revert to the chat list UI.
 		firstToken, _, _ := strings.Cut(cq.prompt, " ")
-		ancli.PrintErr(fmt.Sprintf("could not find chat with id: \"%v\"\n", firstToken))
+		runenv.Failuref(ctx, runenv.SubsystemChat, "could not find chat with id: \"%v\"", firstToken)
 		return cq.handleListCmd(ctx)
 	}
 
@@ -301,72 +299,71 @@ func (cq *ChatHandler) cont(ctx context.Context) error {
 		chat.Messages = append(chat.Messages, pub_models.Message{Role: "user", Content: cq.prompt})
 	}
 	if err := cq.printChat(chat); err != nil {
-		return fmt.Errorf("failed to print chat: %w", err)
+		return diag.Errorf("failed to print chat: %w", err)
 	}
 
 	// New behavior: `clai chat continue` should not enter interactive loop.
 	// Instead, bind the current working directory to this chat so that it can be
 	// continued using directory-reply mode (-dre).
-	if err := cq.UpdateDirScopeFromCWD(chat.ID); err != nil {
-		return fmt.Errorf("failed to update directory-scoped binding: %w", err)
+	if err := cq.UpdateDirScopeFromCWD(ctx, chat.ID); err != nil {
+		return diag.Errorf("failed to update directory-scoped binding: %w", err)
 	}
 	if cq.prompt != "" && cq.sendPrompt != nil {
 		if err := cq.sendPrompt(ctx, DirReplyRequest{Prompt: cq.prompt, Profile: cq.profile, Raw: cq.raw}); err != nil {
-			return fmt.Errorf("failed to send prompt to chat %s: %w", chat.ID, err)
+			return diag.Errorf("failed to send prompt to chat %s: %w", chat.ID, err)
 		}
 		return nil
 	}
-	ancli.Noticef("chat %s is now replyable with flag \"clai -dre query <prompt>\"\n", chat.ID)
+	runenv.Noticef(ctx, runenv.SubsystemChat, "chat %s is now replyable with flag \"clai -dre query <prompt>\"", chat.ID)
 	return nil
 }
 
 func (cq *ChatHandler) deleteFromPrompt(ctx context.Context) error {
 	c, err := cq.findChatByID(ctx, cq.prompt, foreignRefuse)
 	if err != nil {
-		return fmt.Errorf("failed to get chat to delete: %w", err)
+		return diag.Errorf("failed to get chat to delete: %w", err)
 	}
 	_, err = convPersister(cq.convDir).Delete(c.ID)
 	var sidecar *sidecarNotRemovedError
 	var sweep *SweepFailedError
 	if errors.As(err, &sidecar) && !errors.As(err, &sweep) {
-		ancli.Warnf("failed to remove reasoning sidecar for chat %q: %v", c.ID, sidecar.Cause)
+		runenv.Warnf(ctx, runenv.SubsystemChat, "failed to remove reasoning sidecar for chat %q: %v", c.ID, sidecar.Cause)
 		err = nil
 	}
 	if err != nil {
-		return fmt.Errorf("failed to delete chat: %w", err)
+		return diag.Errorf("failed to delete chat: %w", err)
 	}
-	ancli.PrintOK(fmt.Sprintf("deleted chat '%v'\n", c.ID))
+	runenv.Noticef(ctx, runenv.SubsystemChat, "deleted chat '%v'", c.ID)
 	return nil
 }
 
-func (cq *ChatHandler) getByID(ID string) (pub_models.Chat, error) {
-	return convPersister(cq.convDir).Load(conversationPathFromDir(cq.convDir, ID))
+func (cq *ChatHandler) getByID(ctx context.Context, ID string) (pub_models.Chat, error) {
+	return convPersister(cq.convDir).Load(ctx, conversationPathFromDir(cq.convDir, ID))
 }
 
 // New builds the chat handler. args is the dispatched "<verb> <rest...>"
 // string: the verb selects the action, the rest is the chat id or index.
 // The handler holds no model querier — every chat subcommand reads stored
 // transcripts and writes conversation state, so none of them query a
-// vendor.
-func New(confDir, args, profile string, raw bool, out io.Writer) (*ChatHandler, error) {
+// vendor. A nil out is the run's stdout on ctx.
+func New(ctx context.Context, confDir, args, profile string, raw bool, out io.Writer) (*ChatHandler, error) {
 	if confDir == "" {
 		return nil, errors.New("chat handler requires a config dir")
 	}
 	username := "user"
-	debug := misc.Truthy(os.Getenv("DEBUG"))
 	argsArr := strings.Split(args, " ")
 	subCmd := argsArr[0]
 	if currentUser, err := user.Current(); err == nil {
 		username = currentUser.Username
 	}
 
+	env := runenv.From(ctx)
 	if out == nil {
-		out = os.Stdout
+		out = env.Stdout()
 	}
 
 	ch := &ChatHandler{
 		username: username,
-		debug:    debug,
 		subCmd:   subCmd,
 		prompt:   strings.Join(argsArr[1:], " "),
 		confDir:  confDir,
@@ -374,8 +371,11 @@ func New(confDir, args, profile string, raw bool, out io.Writer) (*ChatHandler, 
 		profile:  profile,
 		raw:      raw,
 		out:      out,
-		errOut:   os.Stderr,
+		input:    env.Stdin(),
+		errOut:   env.Stderr(),
 		dims:     utils.SessionDimensions(out),
+		// The tables write to out, which is the run's stdout under -json.
+		selectPrompt: env.TablePrompter(stdio.Stdout),
 	}
 
 	// Macro mode: extra positional args after "chat list" become table inputs.

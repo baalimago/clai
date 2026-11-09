@@ -63,7 +63,7 @@ func (f *stepRetryFixture) querier(script func(request int) (chan models.Complet
 		Raw:     true,
 		out:     &f.stdout,
 		errOut:  &f.stderr,
-		tooling: tooling{run: map[string]pub_models.LLMTool{"echo": stepRetryTool{ran: &f.toolRuns}}},
+		tooling: tooling{offered: offeredTools(map[string]pub_models.LLMTool{"echo": stepRetryTool{ran: &f.toolRuns}})},
 		stepRetry: StepRetry{
 			Delays: stepRetrySchedule,
 			Wait: func(_ context.Context, d time.Duration) error {

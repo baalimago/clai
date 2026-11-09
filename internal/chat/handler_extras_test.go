@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"os"
@@ -9,26 +10,29 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baalimago/clai/internal/testenv/procenv"
 	"github.com/baalimago/clai/internal/utils"
+	"github.com/baalimago/clai/pkg/diagnostic"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
-	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
 func TestActOnSubCmd_DebugQueryAndUnknown(t *testing.T) {
 	cq, _ := newTestHandler(t)
-	cq.debug = true
 	cq.subCmd = "query"
-	testboil.CaptureStdout(t, func(t *testing.T) {
-		err := cq.actOnSubCmd(context.Background())
-		if err == nil || !strings.Contains(err.Error(), "not yet implemented") {
-			t.Fatalf("err = %v, want the not-implemented error", err)
-		}
+	var diagnostics bytes.Buffer
+	ctx := procenv.Diagnostics(context.Background(), &diagnostics, diagnostic.LevelDebug)
+	err := cq.actOnSubCmd(ctx)
+	if err == nil || !strings.Contains(err.Error(), "not yet implemented") {
+		t.Fatalf("err = %v, want the not-implemented error", err)
+	}
+	if !strings.Contains(diagnostics.String(), "chat: ") {
+		t.Fatalf("debug level must report the handler dump, got %q", diagnostics.String())
+	}
 
-		cq.subCmd = "nonsense"
-		if err := cq.actOnSubCmd(context.Background()); err == nil {
-			t.Fatal("expected an error for an unknown subcommand")
-		}
-	})
+	cq.subCmd = "nonsense"
+	if err := cq.actOnSubCmd(ctx); err == nil {
+		t.Fatal("expected an error for an unknown subcommand")
+	}
 }
 
 func TestPrintChat_WriteFailure(t *testing.T) {
@@ -47,7 +51,7 @@ func TestFindChatByID_NumericIndexFallback(t *testing.T) {
 		Created:  time.Now(),
 		Messages: []pub_models.Message{{Role: "user", Content: "hi"}},
 	}
-	if err := Save(convDir, chat); err != nil {
+	if err := Save(context.Background(), convDir, chat); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
@@ -103,7 +107,7 @@ func TestCont_ProfileStampingAndPrintFailure(t *testing.T) {
 		Profile:  "stored-profile",
 		Messages: []pub_models.Message{{Role: "user", Content: "hi"}},
 	}
-	if err := Save(convDir, stored); err != nil {
+	if err := Save(context.Background(), convDir, stored); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	cq.profile = "cli-profile"
@@ -123,7 +127,7 @@ func TestCont_ProfileStampingAndPrintFailure(t *testing.T) {
 		Created:  time.Now(),
 		Messages: []pub_models.Message{{Role: "user", Content: "hi"}},
 	}
-	if err := Save(convDir, plain); err != nil {
+	if err := Save(context.Background(), convDir, plain); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	cq.prompt = "no-profile"
@@ -144,7 +148,7 @@ func TestCont_DebugAndPrintFailure(t *testing.T) {
 		Created:  time.Now(),
 		Messages: []pub_models.Message{{Role: "user", Content: "hi"}},
 	}
-	if err := Save(conversationsDir(confDir), stored); err != nil {
+	if err := Save(context.Background(), conversationsDir(confDir), stored); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	cq.prompt = "abc"
@@ -176,7 +180,7 @@ func TestDeleteFromPrompt(t *testing.T) {
 		Created:  time.Now(),
 		Messages: []pub_models.Message{{Role: "user", Content: "hi"}},
 	}
-	if err := Save(convDir, stored); err != nil {
+	if err := Save(context.Background(), convDir, stored); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	cq.prompt = "doomed"
@@ -199,7 +203,7 @@ func TestNew_NilOutAndMacroInput(t *testing.T) {
 	if err := utils.CreateConfigDir(confDir); err != nil {
 		t.Fatalf("CreateConfigDir: %v", err)
 	}
-	ch, err := New(confDir, "list 0 b", "", false, nil)
+	ch, err := New(context.Background(), confDir, "list 0 b", "", false, nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -210,7 +214,7 @@ func TestNew_NilOutAndMacroInput(t *testing.T) {
 		t.Fatal("expected the macro input reader to be wired")
 	}
 
-	if _, err := New("", "list", "", false, io.Discard); err == nil {
+	if _, err := New(context.Background(), "", "list", "", false, io.Discard); err == nil {
 		t.Fatal("expected an error without a config dir")
 	}
 }

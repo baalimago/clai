@@ -61,7 +61,7 @@ func TestDirScopeRowPredicate(t *testing.T) {
 		t.Fatal("predicate should drop everything before any history is recorded")
 	}
 
-	if err := cq.SaveDirScope(wd, "bound"); err != nil {
+	if err := cq.SaveDirScope(context.Background(), wd, "bound"); err != nil {
 		t.Fatalf("SaveDirScope: %v", err)
 	}
 
@@ -101,7 +101,7 @@ func TestPrepareListRows_DirScopedGroups(t *testing.T) {
 	wd := chdirToTemp(t)
 
 	for _, id := range []string{"bound", "bound2"} {
-		if err := cq.SaveDirScope(wd, id); err != nil {
+		if err := cq.SaveDirScope(context.Background(), wd, id); err != nil {
 			t.Fatalf("SaveDirScope(%q): %v", id, err)
 		}
 	}
@@ -198,7 +198,7 @@ func TestListChats_ForeignToggleThroughListChats(t *testing.T) {
 	cq, confDir := newTestHandler(t)
 	convDir := conversationsDir(confDir)
 	chdirToTemp(t)
-	if err := Save(convDir, pub_models.Chat{ID: "native", Created: time.Date(2026, 1, 2, 3, 4, 6, 0, time.UTC), Messages: []pub_models.Message{{Role: "user", Content: "native prompt"}}}); err != nil {
+	if err := Save(context.Background(), convDir, pub_models.Chat{ID: "native", Created: time.Date(2026, 1, 2, 3, 4, 6, 0, time.UTC), Messages: []pub_models.Message{{Role: "user", Content: "native prompt"}}}); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	reader := stubSourceReader{name: "test-source", rows: []vendors.SourceRow{{
@@ -208,7 +208,7 @@ func TestListChats_ForeignToggleThroughListChats(t *testing.T) {
 	t.Cleanup(useTestSourceReaders([]vendors.SourceReader{reader}))
 
 	cq.input = strings.NewReader("f\nf\n")
-	paginator, err := NewChatIndexPaginator(convDir)
+	paginator, err := NewChatIndexPaginator(context.Background(), convDir)
 	if err != nil {
 		t.Fatalf("NewChatIndexPaginator: %v", err)
 	}
@@ -237,7 +237,7 @@ func TestListChats_ForeignToggleThroughListChats(t *testing.T) {
 	t.Cleanup(useTestSourceReaders(nil))
 	cq.input = strings.NewReader("")
 	out.Reset()
-	paginator, err = NewChatIndexPaginator(convDir)
+	paginator, err = NewChatIndexPaginator(context.Background(), convDir)
 	if err != nil {
 		t.Fatalf("NewChatIndexPaginator: %v", err)
 	}
@@ -251,17 +251,13 @@ func TestListChats_ForeignToggleThroughListChats(t *testing.T) {
 // underline only in the non-default position and only with colour on,
 // closed with attribute resets so the prompt's own colour survives.
 func TestToggleLabel(t *testing.T) {
-	prev := ancli.UseColor
-	t.Cleanup(func() { ancli.UseColor = prev })
-	ancli.UseColor = true
-	if got := toggleLabel("[f]oreign convs", ": ", "hidden", "shown", false); got != "[f]oreign convs: shown" {
+	if got := toggleLabel(true, "[f]oreign convs", ": ", "hidden", "shown", false); got != "[f]oreign convs: shown" {
 		t.Fatalf("default position must be plain, got %q", got)
 	}
-	if got := toggleLabel("[f]oreign convs", ": ", "hidden", "shown", true); got != "\x1b[1;4m[f]oreign convs: hidden\x1b[22;24m" {
+	if got := toggleLabel(true, "[f]oreign convs", ": ", "hidden", "shown", true); got != "\x1b[1;4m[f]oreign convs: hidden\x1b[22;24m" {
 		t.Fatalf("active position must be bold and underlined without a full reset, got %q", got)
 	}
-	ancli.UseColor = false
-	if got := toggleLabel("[d]", ":", "on", "off", true); got != "[d]:on" {
+	if got := toggleLabel(false, "[d]", ":", "on", "off", true); got != "[d]:on" {
 		t.Fatalf("without colour the words carry the state alone, got %q", got)
 	}
 }
@@ -282,11 +278,11 @@ func TestListChats_DirFilterTogglesThroughListChats(t *testing.T) {
 		{ID: "bound", Created: time.Date(2026, 1, 2, 3, 4, 6, 0, time.UTC), Messages: []pub_models.Message{{Role: "user", Content: "bound prompt"}}},
 		{ID: "unbound", Created: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC), Messages: []pub_models.Message{{Role: "user", Content: "unbound prompt"}}},
 	} {
-		if err := Save(convDir, c); err != nil {
+		if err := Save(context.Background(), convDir, c); err != nil {
 			t.Fatalf("Save(%q): %v", c.ID, err)
 		}
 	}
-	if err := cq.SaveDirScope(wd, "bound"); err != nil {
+	if err := cq.SaveDirScope(context.Background(), wd, "bound"); err != nil {
 		t.Fatalf("SaveDirScope: %v", err)
 	}
 
@@ -294,7 +290,7 @@ func TestListChats_DirFilterTogglesThroughListChats(t *testing.T) {
 	// back off, then abort (EOF) so listChats returns.
 	cq.input = strings.NewReader("d\nd\n")
 
-	paginator, err := NewChatIndexPaginator(convDir)
+	paginator, err := NewChatIndexPaginator(context.Background(), convDir)
 	if err != nil {
 		t.Fatalf("NewChatIndexPaginator: %v", err)
 	}
@@ -333,14 +329,14 @@ func TestListChats_DirFilterWithoutBindingsShowsEmptyDirScopedView(t *testing.T)
 		{ID: "a", Created: time.Date(2026, 1, 2, 3, 4, 6, 0, time.UTC), Messages: []pub_models.Message{{Role: "user", Content: "prompt a"}}},
 		{ID: "b", Created: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC), Messages: []pub_models.Message{{Role: "user", Content: "prompt b"}}},
 	} {
-		if err := Save(convDir, c); err != nil {
+		if err := Save(context.Background(), convDir, c); err != nil {
 			t.Fatalf("Save(%q): %v", c.ID, err)
 		}
 	}
 
 	cq.input = strings.NewReader("d\n")
 
-	paginator, err := NewChatIndexPaginator(convDir)
+	paginator, err := NewChatIndexPaginator(context.Background(), convDir)
 	if err != nil {
 		t.Fatalf("NewChatIndexPaginator: %v", err)
 	}
@@ -470,7 +466,7 @@ func TestActOnChat_enter_continues(t *testing.T) {
 	convDir := filepath.Join(confDir, "conversations")
 	id := "enter-continue-test"
 	ch := pub_models.Chat{ID: id, Created: time.Now(), Messages: []pub_models.Message{{Role: "user", Content: "seed"}}}
-	if err := Save(convDir, ch); err != nil {
+	if err := Save(context.Background(), convDir, ch); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
@@ -495,7 +491,7 @@ func TestActOnChat_enter_continues(t *testing.T) {
 	defer func() { _ = os.Setenv("TTY", oldTTY) }()
 
 	cq := &ChatHandler{confDir: confDir, convDir: convDir, out: io.Discard}
-	if err := cq.actOnChat(ch, ""); err != nil {
+	if err := cq.actOnChat(context.Background(), ch, ""); err != nil {
 		if !errors.Is(err, errExitList) {
 			t.Fatalf("actOnChat: %v", err)
 		}
@@ -665,7 +661,7 @@ func TestListChats_IncludesModelColumnAndValue(t *testing.T) {
 		Messages: []pub_models.Message{{Role: "user", Content: "hello from a fairly descriptive prompt"}},
 		Queries:  []pub_models.QueryCost{{CostUSD: 0.42, Model: "openai/gpt-4.1-mini"}},
 	}
-	if err := Save(convDir, chat); err != nil {
+	if err := Save(context.Background(), convDir, chat); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
@@ -679,7 +675,7 @@ func TestListChats_IncludesModelColumnAndValue(t *testing.T) {
 		}
 	}()
 
-	paginator, err := NewChatIndexPaginator(convDir)
+	paginator, err := NewChatIndexPaginator(context.Background(), convDir)
 	if err != nil {
 		t.Fatalf("NewChatIndexPaginator: %v", err)
 	}
@@ -720,7 +716,7 @@ func TestListChats_NarrowWidthShowsCostAndAbout(t *testing.T) {
 		Messages: []pub_models.Message{{Role: "user", Content: "hello from a fairly descriptive prompt"}},
 		Queries:  []pub_models.QueryCost{{CostUSD: 0.42, Model: "gpt-5.4"}},
 	}
-	if err := Save(convDir, chat); err != nil {
+	if err := Save(context.Background(), convDir, chat); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
@@ -734,7 +730,7 @@ func TestListChats_NarrowWidthShowsCostAndAbout(t *testing.T) {
 		}
 	})
 
-	paginator, err := NewChatIndexPaginator(convDir)
+	paginator, err := NewChatIndexPaginator(context.Background(), convDir)
 	if err != nil {
 		t.Fatalf("NewChatIndexPaginator: %v", err)
 	}
@@ -884,11 +880,11 @@ func TestSave_StampsGroupKeyOnFirstPersist(t *testing.T) {
 	if ch.GroupKey != "" {
 		t.Fatal("expected empty GroupKey before save")
 	}
-	if err := Save(tmp, ch); err != nil {
+	if err := Save(context.Background(), tmp, ch); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	// Reload from disk
-	loaded, err := FromPath(filepath.Join(tmp, "test-chat.json"))
+	loaded, err := FromPath(context.Background(), filepath.Join(tmp, "test-chat.json"))
 	if err != nil {
 		t.Fatalf("FromPath: %v", err)
 	}
@@ -1046,7 +1042,7 @@ func TestListChats_GroupKeyZeroMembers_RendersGroupIndicator(t *testing.T) {
 			GroupKey: ComputeGroupKeyFromText("another unrelated"),
 		},
 	} {
-		if err := Save(convDir, c); err != nil {
+		if err := Save(context.Background(), convDir, c); err != nil {
 			t.Fatalf("Save(%q): %v", c.ID, err)
 		}
 	}
@@ -1056,7 +1052,7 @@ func TestListChats_GroupKeyZeroMembers_RendersGroupIndicator(t *testing.T) {
 
 	cq.input = strings.NewReader("b\nb\n")
 
-	paginator, err := NewChatIndexPaginator(convDir)
+	paginator, err := NewChatIndexPaginator(context.Background(), convDir)
 	if err != nil {
 		t.Fatalf("NewChatIndexPaginator: %v", err)
 	}
@@ -1091,7 +1087,7 @@ func listOutput(t *testing.T, cq *ChatHandler, input string) string {
 	t.Helper()
 	restoreReaders := useTestSourceReaders(nil)
 	t.Cleanup(restoreReaders)
-	paginator, err := NewChatIndexPaginator(cq.convDir)
+	paginator, err := NewChatIndexPaginator(context.Background(), cq.convDir)
 	if err != nil {
 		t.Fatalf("NewChatIndexPaginator: %v", err)
 	}
@@ -1107,7 +1103,7 @@ func listOutput(t *testing.T, cq *ChatHandler, input string) string {
 func saveAll(t *testing.T, convDir string, chats ...pub_models.Chat) {
 	t.Helper()
 	for _, c := range chats {
-		if err := Save(convDir, c); err != nil {
+		if err := Save(context.Background(), convDir, c); err != nil {
 			t.Fatalf("Save(%q): %v", c.ID, err)
 		}
 	}
@@ -1137,7 +1133,7 @@ func TestListChats_rowShowsTitle(t *testing.T) {
 
 	// A cache written before the feature carries no title fields: the row
 	// falls back to the first message.
-	rows, err := readChatIndex(convDir)
+	rows, err := readChatIndex(context.Background(), convDir)
 	if err != nil {
 		t.Fatalf("readChatIndex: %v", err)
 	}
@@ -1287,7 +1283,7 @@ func TestListChats_PromptFitsWidth(t *testing.T) {
 	cq, confDir := newTestHandler(t)
 	convDir := conversationsDir(confDir)
 	wd := chdirToTemp(t)
-	if err := Save(convDir, pub_models.Chat{ID: "native", Created: time.Date(2026, 1, 2, 3, 4, 6, 0, time.UTC), Messages: []pub_models.Message{{Role: "user", Content: "native prompt"}}}); err != nil {
+	if err := Save(context.Background(), convDir, pub_models.Chat{ID: "native", Created: time.Date(2026, 1, 2, 3, 4, 6, 0, time.UTC), Messages: []pub_models.Message{{Role: "user", Content: "native prompt"}}}); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	reader := stubSourceReader{name: "test-source", rows: []vendors.SourceRow{{
@@ -1295,14 +1291,14 @@ func TestListChats_PromptFitsWidth(t *testing.T) {
 		Created: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
 	}}}
 	t.Cleanup(useTestSourceReaders([]vendors.SourceReader{reader}))
-	if err := cq.SaveDirScope(wd, "native"); err != nil {
+	if err := cq.SaveDirScope(context.Background(), wd, "native"); err != nil {
 		t.Fatalf("SaveDirScope: %v", err)
 	}
 	render := func(t *testing.T, width int, keys string) string {
 		t.Helper()
 		cq.dims = dimensions.Dimensions{Width: width}
 		cq.input = strings.NewReader(keys)
-		paginator, err := NewChatIndexPaginator(convDir)
+		paginator, err := NewChatIndexPaginator(context.Background(), convDir)
 		if err != nil {
 			t.Fatalf("NewChatIndexPaginator: %v", err)
 		}

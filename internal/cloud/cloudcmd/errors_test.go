@@ -27,7 +27,7 @@ func wantUnreachable(t *testing.T, what string, err error) {
 
 func TestUnreachable_isOneShortMessage(t *testing.T) {
 	h := offline(t)
-	r := &runner{deps: h.deps().withDefaults()}
+	r := &runner{deps: h.deps().withDefaults(context.Background())}
 	ctx := context.Background()
 	wantUnreachable(t, "whoami", r.whoami(ctx, false))
 	wantUnreachable(t, "pull", r.pull(ctx, nil, false, false, false))
@@ -54,7 +54,7 @@ func TestStatus_unreachableIsItsOwnRow(t *testing.T) {
 
 func TestRevokedToken_saysWhereTheKeyCameFrom(t *testing.T) {
 	h := newHarness(t, "revoked")
-	r := &runner{deps: h.deps().withDefaults()}
+	r := &runner{deps: h.deps().withDefaults(context.Background())}
 	if err := r.whoami(context.Background(), false); err == nil || strings.Contains(err.Error(), "CLAI_CLOUD_TOKEN") || !strings.Contains(err.Error(), "clai cloud login") {
 		t.Fatalf("saved key: err = %v", err)
 	}

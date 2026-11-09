@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
 	"strings"
 
+	"github.com/baalimago/clai/internal/diag"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -44,7 +44,7 @@ func formatOfMIME(mime string) (format, error) {
 			return f, nil
 		}
 	}
-	return format{}, fmt.Errorf("%w: %q", ErrUnsupportedMIME, mime)
+	return format{}, diag.Errorf("%w: %q", ErrUnsupportedMIME, mime)
 }
 
 func refFor(data []byte, mime string) (string, error) {
@@ -54,7 +54,7 @@ func refFor(data []byte, mime string) (string, error) {
 	}
 	sniffed, err := Sniff(data)
 	if err != nil {
-		return "", fmt.Errorf("declared %s: %w", mime, err)
+		return "", diag.Errorf("declared %s: %w", mime, err)
 	}
 	if sniffed != mime {
 		return "", &MIMEMismatchError{Declared: mime, Sniffed: sniffed}
@@ -71,19 +71,19 @@ func parseRef(ref string) (format, error) {
 			}
 		}
 	}
-	return format{}, fmt.Errorf("%w: %q", ErrAssetRef, ref)
+	return format{}, diag.Errorf("%w: %q", ErrAssetRef, ref)
 }
 
 func checkHandle(handle string) error {
 	if len(handle) != pub_models.HandleLength || !isLowerHex(handle) {
-		return fmt.Errorf("%w: %q", ErrHandle, handle)
+		return diag.Errorf("%w: %q", ErrHandle, handle)
 	}
 	return nil
 }
 
 func checkContent(ref string, data []byte) error {
 	if stem, _, _ := strings.Cut(ref, "."); stem != sha256Hex(data) {
-		return fmt.Errorf("%w: %s", ErrAssetCorrupt, ref)
+		return diag.Errorf("%w: %s", ErrAssetCorrupt, ref)
 	}
 	return nil
 }
@@ -97,7 +97,7 @@ func matchHandle(handle string, refs []string) (string, error) {
 	}
 	switch len(matches) {
 	case 0:
-		return "", fmt.Errorf("%w: %s", ErrUnknownHandle, handle)
+		return "", diag.Errorf("%w: %s", ErrUnknownHandle, handle)
 	case 1:
 		return matches[0], nil
 	}

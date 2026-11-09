@@ -1,9 +1,9 @@
 package gemini
 
 import (
-	"fmt"
 	"os"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/text/generic"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -34,7 +34,7 @@ func (g *Gemini) Setup() error {
 	}
 	err := g.StreamCompleter.Setup("GEMINI_API_KEY", ChatURL, "GEMINI_DEBUG")
 	if err != nil {
-		return fmt.Errorf("failed to setup stream completer: %w", err)
+		return diag.Errorf("failed to setup stream completer: %w", err)
 	}
 	g.StreamCompleter.Model = g.Model
 	g.StreamCompleter.MaxTokens = g.MaxTokens

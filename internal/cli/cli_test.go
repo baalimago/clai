@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baalimago/clai/internal/runenv"
+	"github.com/baalimago/clai/pkg/agent"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
@@ -242,4 +244,19 @@ func TestRun_leavesNoShutdownMonitorBehind(t *testing.T) {
 		n := runtime.Stack(buf, true)
 		return !strings.Contains(string(buf[:n]), "shutdown.Monitor")
 	}, 2*time.Second, 10*time.Millisecond)
+}
+
+// TestCLITypesRegisterEachTypeOnce pins the registry the CLI's Reporter is
+// built over: the CLI's own types and the agent's, which include the
+// internal registry, each exactly once.
+func TestCLITypesRegisterEachTypeOnce(t *testing.T) {
+	seen := map[string]int{}
+	for _, registered := range cliTypes() {
+		seen[registered.Name]++
+	}
+	for _, want := range append(runenv.Types(), agent.DiagnosticTypes()...) {
+		if seen[want.Name] != 1 {
+			t.Fatalf("type %q registered %d times, want once", want.Name, seen[want.Name])
+		}
+	}
 }

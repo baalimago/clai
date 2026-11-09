@@ -150,7 +150,7 @@ func Test_toolExecutor_NormalizesEmptyToolOutput(t *testing.T) {
 }
 
 func Test_toolExecutor_Execute_EmptyNonAsyncToolOutputBecomesDescriptiveMessage(t *testing.T) {
-	internaltools.Init()
+	internaltools.Init(context.Background())
 	repo := t.TempDir()
 	cmd := exec.Command("git", "init")
 	cmd.Dir = repo
@@ -165,7 +165,7 @@ func Test_toolExecutor_Execute_EmptyNonAsyncToolOutputBecomesDescriptiveMessage(
 	_ = exec.Command("git", "-C", repo, "add", "a.txt").Run()
 	_ = exec.Command("git", "-C", repo, "commit", "-m", "first").Run()
 
-	q := Querier[*MockQuerier]{}
+	q := Querier[*MockQuerier]{tooling: tooling{offered: offeredRegistry()}}
 	session := &QuerySession{}
 	inputs := pub_models.Input{"operation": "status", "dir": repo}
 	call := pub_models.Call{ID: "call-1", Name: "git", Inputs: &inputs}
@@ -180,9 +180,9 @@ func Test_toolExecutor_Execute_EmptyNonAsyncToolOutputBecomesDescriptiveMessage(
 }
 
 func Test_toolExecutor_Execute_LargeToolOutputStoresTranscriptButCompactsDisplay(t *testing.T) {
-	internaltools.Init()
+	internaltools.Init(context.Background())
 	var printed bytes.Buffer
-	q := Querier[*MockQuerier]{out: &printed, tooling: tooling{outputRuneLimit: 10000}, dims: dimensions.Dimensions{Width: 80, Height: 24}}
+	q := Querier[*MockQuerier]{out: &printed, tooling: tooling{outputRuneLimit: 10000, offered: offeredRegistry()}, dims: dimensions.Dimensions{Width: 80, Height: 24}}
 	session := &QuerySession{}
 	dir := t.TempDir()
 	for i := range 20 {
@@ -242,7 +242,7 @@ func Test_toolExecutor_EmitToolResult_RawDisplayKeepsCompleteResult(t *testing.T
 
 func Test_toolExecutor_ExecuteLoadSkill_PrintsSummary(t *testing.T) {
 	var out bytes.Buffer
-	q := Querier[*MockQuerier]{out: &out, tooling: tooling{skillLoader: fakeSkillLoader{
+	q := Querier[*MockQuerier]{out: &out, tooling: tooling{offered: offeredRegistry("load_skill"), skillLoader: fakeSkillLoader{
 		loaded: LoadedSkillRuntime{
 			Name:         "review",
 			SourceClass:  "project",
@@ -261,7 +261,7 @@ func Test_toolExecutor_ExecuteLoadSkill_PrintsSummary(t *testing.T) {
 func Test_toolExecutor_ExecuteLoadSkill_TruncatesUserVisibleOutputUnlessRaw(t *testing.T) {
 	t.Run("non_raw", func(t *testing.T) {
 		var out bytes.Buffer
-		q := Querier[*MockQuerier]{out: &out, dims: dimensions.Dimensions{Width: 80, Height: 24}, tooling: tooling{skillLoader: fakeSkillLoader{
+		q := Querier[*MockQuerier]{out: &out, dims: dimensions.Dimensions{Width: 80, Height: 24}, tooling: tooling{offered: offeredRegistry("load_skill"), skillLoader: fakeSkillLoader{
 			loaded: LoadedSkillRuntime{
 				Name:         "review",
 				SourceClass:  "default",
@@ -294,7 +294,7 @@ func Test_toolExecutor_ExecuteLoadSkill_TruncatesUserVisibleOutputUnlessRaw(t *t
 
 	t.Run("raw", func(t *testing.T) {
 		var out bytes.Buffer
-		q := Querier[*MockQuerier]{out: &out, Raw: true, tooling: tooling{skillLoader: fakeSkillLoader{
+		q := Querier[*MockQuerier]{out: &out, Raw: true, tooling: tooling{offered: offeredRegistry("load_skill"), skillLoader: fakeSkillLoader{
 			loaded: LoadedSkillRuntime{
 				Name:         "review",
 				SourceClass:  "default",
@@ -315,7 +315,7 @@ func Test_toolExecutor_ExecuteLoadSkill_TruncatesUserVisibleOutputUnlessRaw(t *t
 }
 
 func Test_toolExecutor_ExecuteLoadSkill_ActivationCapAppendsError(t *testing.T) {
-	q := Querier[*MockQuerier]{tooling: tooling{skillLoader: fakeSkillLoader{
+	q := Querier[*MockQuerier]{tooling: tooling{offered: offeredRegistry("load_skill"), skillLoader: fakeSkillLoader{
 		loaded: LoadedSkillRuntime{ActivationErr: "skill activation cap exceeded: maxActivatedSkills=1"},
 	}}}
 	session := &QuerySession{}
@@ -335,7 +335,7 @@ func Test_toolExecutor_ExecuteLoadSkill_RegistersNewlyEnabledLocalToolsOnce(t *t
 	q := Querier[*toolRegisteringCompleter]{
 		Model: model,
 		tooling: tooling{
-			registered: map[string]struct{}{"load_skill": {}},
+			offered: offeredTools(map[string]pub_models.LLMTool{"load_skill": setupToolsTestTool{name: "load_skill"}}),
 			skillLoader: fakeSkillLoader{loaded: LoadedSkillRuntime{
 				Name:         "review",
 				RenderedBody: "Body",
@@ -354,6 +354,9 @@ func Test_toolExecutor_ExecuteLoadSkill_RegistersNewlyEnabledLocalToolsOnce(t *t
 	}
 	if got := model.registered; !slices.Equal(got, []string{"rg"}) {
 		t.Fatalf("expected one registered local tool, got %#v", got)
+	}
+	if _, callable := q.tooling.offered.Get("rg"); !callable {
+		t.Fatalf("the skill offered rg to the model but its call would be refused; offered %v", q.tooling.offered.Names())
 	}
 	if got := session.Chat.Messages[len(session.Chat.Messages)-1].Content; got != "Body" {
 		t.Fatalf("unexpected skill body: %q", got)
@@ -413,8 +416,8 @@ func Test_toolExecutor_DispatchUsesPerRunToolTable(t *testing.T) {
 		// instance is what the process-global registry resolves to.
 		internaltools.Registry.Set("submit_meeting", toolB)
 
-		qA := Querier[*MockQuerier]{out: io.Discard, tooling: tooling{run: map[string]pub_models.LLMTool{"submit_meeting": toolA}}}
-		qB := Querier[*MockQuerier]{out: io.Discard, tooling: tooling{run: map[string]pub_models.LLMTool{"submit_meeting": toolB}}}
+		qA := Querier[*MockQuerier]{out: io.Discard, tooling: tooling{offered: offeredTools(map[string]pub_models.LLMTool{"submit_meeting": toolA})}}
+		qB := Querier[*MockQuerier]{out: io.Discard, tooling: tooling{offered: offeredTools(map[string]pub_models.LLMTool{"submit_meeting": toolB})}}
 		call := pub_models.Call{ID: "c1", Name: "submit_meeting", Inputs: &pub_models.Input{}}
 
 		if err := (toolExecutor[*MockQuerier]{querier: &qA}).Execute(context.Background(), &QuerySession{}, call); err != nil {

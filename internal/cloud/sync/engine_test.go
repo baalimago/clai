@@ -378,7 +378,7 @@ func TestPull_conversationMerges(t *testing.T) {
 		srv := cloudtest.New(t)
 		a := newMachine(t, srv, "tok-a")
 		written := &[]string{}
-		a.Hooks.Pulled = func(_ string, w, _ []string, _ func(done, total int)) error {
+		a.Hooks.Pulled = func(_ context.Context, _ string, w, _ []string, _ func(done, total int)) error {
 			*written = append(*written, w...)
 			return nil
 		}

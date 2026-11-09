@@ -1,13 +1,13 @@
 package internal
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/cmd"
 )
@@ -126,20 +126,20 @@ func loadCompletionData(configDir string) (completionData, error) {
 	profilesDir := filepath.Join(configDir, "profiles")
 	profiles, err := readJSONBaseNames(profilesDir)
 	if err != nil {
-		return completionData{}, fmt.Errorf("read profiles for completion: %w", err)
+		return completionData{}, diag.Errorf("read profiles for completion: %w", err)
 	}
 	data.Profiles = profiles
 
 	shellContextsDir := filepath.Join(configDir, "shellContexts")
 	shellContexts, err := readJSONBaseNames(shellContextsDir)
 	if err != nil {
-		return completionData{}, fmt.Errorf("read shell contexts for completion: %w", err)
+		return completionData{}, diag.Errorf("read shell contexts for completion: %w", err)
 	}
 	data.ShellContexts = shellContexts
 
 	models, err := discoverModelHistory(configDir)
 	if err != nil {
-		return completionData{}, fmt.Errorf("discover model history for completion: %w", err)
+		return completionData{}, diag.Errorf("discover model history for completion: %w", err)
 	}
 	data.Models = models
 
@@ -152,7 +152,7 @@ func readJSONBaseNames(dir string) ([]string, error) {
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("read directory %q: %w", dir, err)
+		return nil, diag.Errorf("read directory %q: %w", dir, err)
 	}
 
 	out := make([]string, 0, len(entries))
@@ -177,7 +177,7 @@ func discoverModelHistory(configDir string) ([]string, error) {
 			// No config dir yet: there is no model history to offer.
 			return nil, nil
 		}
-		return nil, fmt.Errorf("read config dir %q: %w", configDir, err)
+		return nil, diag.Errorf("read config dir %q: %w", configDir, err)
 	}
 
 	uniq := map[string]struct{}{}

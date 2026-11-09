@@ -1,12 +1,15 @@
 package chat
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/baalimago/clai/internal/jsonl"
+	"github.com/baalimago/clai/internal/runenv"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
@@ -76,7 +79,7 @@ func TestPrintChatInfoCommonPropagatesEveryWriteFailure(t *testing.T) {
 func TestEditorEditString(t *testing.T) {
 	t.Run("EDITOR unset", func(t *testing.T) {
 		t.Setenv("EDITOR", "")
-		if _, err := editorEditString("x"); err == nil {
+		if _, err := editorEditString(context.Background(), "x"); err == nil {
 			t.Fatal("expected error when EDITOR is not set")
 		}
 	})
@@ -87,7 +90,7 @@ func TestEditorEditString(t *testing.T) {
 			t.Fatalf("WriteFile editor: %v", err)
 		}
 		t.Setenv("EDITOR", script)
-		got, err := editorEditString("original")
+		got, err := editorEditString(context.Background(), "original")
 		if err != nil {
 			t.Fatalf("editorEditString: %v", err)
 		}
@@ -98,8 +101,26 @@ func TestEditorEditString(t *testing.T) {
 
 	t.Run("editor exits non-zero", func(t *testing.T) {
 		t.Setenv("EDITOR", "false")
-		if _, err := editorEditString("x"); err == nil {
+		if _, err := editorEditString(context.Background(), "x"); err == nil {
 			t.Fatal("expected error when the editor command fails")
+		}
+	})
+
+	t.Run("-json refuses before the editor starts", func(t *testing.T) {
+		marker := filepath.Join(t.TempDir(), "started")
+		script := filepath.Join(t.TempDir(), "editor.sh")
+		if err := os.WriteFile(script, []byte("#!/bin/sh\ntouch \""+marker+"\"\n"), 0o755); err != nil {
+			t.Fatalf("WriteFile editor: %v", err)
+		}
+		t.Setenv("EDITOR", script)
+		ctx := runenv.With(context.Background(), runenv.New(runenv.Config{Format: jsonl.FormatJSON}))
+		_, err := editorEditString(ctx, "x")
+		var refused runenv.EditorRefusedError
+		if !errors.As(err, &refused) || refused.Path != "" {
+			t.Fatalf("err = %v, want the editor refusal without a path", err)
+		}
+		if _, statErr := os.Stat(marker); !os.IsNotExist(statErr) {
+			t.Fatalf("the editor started under -json, stat err = %v", statErr)
 		}
 	})
 }

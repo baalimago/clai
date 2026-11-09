@@ -10,24 +10,22 @@ import (
 	"strings"
 
 	"github.com/baalimago/clai/internal/cost"
-	"github.com/baalimago/clai/internal/debugflags"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
+	"github.com/baalimago/clai/internal/diag"
+	"github.com/baalimago/clai/internal/runenv"
 )
 
 const modelsEndpoint = "https://openrouter.ai/api/v1/models"
 
 type OpenRouterModelCatalog struct {
-	debug       bool
+	// keyLength is all a trace shows of the api key: diagnostics reach
+	// callers' Reporters, so no part of the key is in them.
+	keyLength   int
 	fetchModels func(context.Context) ([]Model, error)
 }
 
 func NewModelCatalog(apiKey string) (OpenRouterModelCatalog, error) {
-	debug := debugflags.Enabled("OPENROUTER_MODEL_CATALOG")
-	if debug {
-		ancli.Noticef("setting up openrouter model catalog with api key: %v...(redacted)\n", apiKey[:5])
-	}
 	cat := OpenRouterModelCatalog{
-		debug: debug,
+		keyLength: len(apiKey),
 	}
 	cat.fetchModels = cat.liveFetchModels
 	return cat, nil
@@ -38,7 +36,7 @@ func (c OpenRouterModelCatalog) liveFetchModels(
 ) ([]Model, error) {
 	resp, err := http.Get(modelsEndpoint)
 	if err != nil {
-		return nil, fmt.Errorf("fetch openrouter models: %w", err)
+		return nil, diag.Errorf("fetch openrouter models: %w", err)
 	}
 	return decodeCatalog(resp)
 }
@@ -49,7 +47,7 @@ func decodeCatalog(resp *http.Response) ([]Model, error) {
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("read openrouter models body: %w", err)
+		return nil, diag.Errorf("read openrouter models body: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf(
@@ -62,16 +60,17 @@ func decodeCatalog(resp *http.Response) ([]Model, error) {
 		Data []Model `json:"data"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
-		return nil, fmt.Errorf("unmarshal openrouter models body: %w", err)
+		return nil, diag.Errorf("unmarshal openrouter models body: %w", err)
 	}
 
 	return payload.Data, nil
 }
 
 func (c OpenRouterModelCatalog) FetchModel(ctx context.Context, model string) (cost.ModelPriceScheme, error) {
+	runenv.Debugf(ctx, runenv.SubsystemOpenrouterModelCatalog, "fetching openrouter model catalog with an api key of %d characters", c.keyLength)
 	d, err := c.fetchModels(ctx)
 	if err != nil {
-		return cost.ModelPriceScheme{}, fmt.Errorf("failed to fetch models: %w", err)
+		return cost.ModelPriceScheme{}, diag.Errorf("failed to fetch models: %w", err)
 	}
 	for _, entry := range d {
 		// This is turbo inefficient, but good enough for now. Ideally we store price snapshot for all models here
@@ -80,15 +79,15 @@ func (c OpenRouterModelCatalog) FetchModel(ctx context.Context, model string) (c
 		}
 		prompt, err := parseOpenRouterPrice(entry.Pricing.Prompt)
 		if err != nil {
-			return cost.ModelPriceScheme{}, fmt.Errorf("parse prompt price for model %q: %w", model, err)
+			return cost.ModelPriceScheme{}, diag.Errorf("parse prompt price for model %q: %w", model, err)
 		}
 		completion, err := parseOpenRouterPrice(entry.Pricing.Completion)
 		if err != nil {
-			return cost.ModelPriceScheme{}, fmt.Errorf("parse completion price for model %q: %w", model, err)
+			return cost.ModelPriceScheme{}, diag.Errorf("parse completion price for model %q: %w", model, err)
 		}
 		cachedPrompt, err := parseOpenRouterPrice(entry.Pricing.InputCacheRead)
 		if err != nil {
-			return cost.ModelPriceScheme{}, fmt.Errorf("parse cached prompt price for model %q: %w", model, err)
+			return cost.ModelPriceScheme{}, diag.Errorf("parse cached prompt price for model %q: %w", model, err)
 		}
 		return cost.ModelPriceScheme{
 			InputUSDPerToken:       prompt,
@@ -96,7 +95,7 @@ func (c OpenRouterModelCatalog) FetchModel(ctx context.Context, model string) (c
 			InputCachedUSDPerToken: cachedPrompt,
 		}, nil
 	}
-	return cost.ModelPriceScheme{}, fmt.Errorf("find price for model %q: %w", model, cost.ErrModelNotInCatalog)
+	return cost.ModelPriceScheme{}, diag.Errorf("find price for model %q: %w", model, cost.ErrModelNotInCatalog)
 }
 
 func parseOpenRouterPrice(raw string) (float64, error) {
@@ -105,7 +104,7 @@ func parseOpenRouterPrice(raw string) (float64, error) {
 	}
 	v, err := strconv.ParseFloat(raw, 64)
 	if err != nil {
-		return 0, fmt.Errorf("parse price %q: %w", raw, err)
+		return 0, diag.Errorf("parse price %q: %w", raw, err)
 	}
 	return v, nil
 }

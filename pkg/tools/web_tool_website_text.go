@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/baalimago/clai/internal/diag"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/charset"
@@ -46,7 +47,7 @@ func (w WebsiteTextTool) Call(input pub_models.Input) (string, error) {
 
 	u, err := url.ParseRequestURI(urlStr)
 	if err != nil {
-		return "", fmt.Errorf("invalid url: %w", err)
+		return "", diag.Errorf("invalid url: %w", err)
 	}
 
 	ua := "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
@@ -59,7 +60,7 @@ func (w WebsiteTextTool) Call(input pub_models.Input) (string, error) {
 	}
 	req, err := http.NewRequest("GET", u.String(), nil)
 	if err != nil {
-		return "", fmt.Errorf("build request: %w", err)
+		return "", diag.Errorf("build request: %w", err)
 	}
 	req.Header.Set("User-Agent", ua)
 	req.Header.Set("Accept", "text/markdown, application/json;q=0.9, "+
@@ -69,7 +70,7 @@ func (w WebsiteTextTool) Call(input pub_models.Input) (string, error) {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("failed to fetch: %w", err)
+		return "", diag.Errorf("failed to fetch: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -100,7 +101,7 @@ func (w WebsiteTextTool) Call(input pub_models.Input) (string, error) {
 		}
 		body, err := io.ReadAll(ur)
 		if err != nil {
-			return "", fmt.Errorf("read response body: %w", err)
+			return "", diag.Errorf("read response body: %w", err)
 		}
 		return string(body), nil
 	}
@@ -156,7 +157,7 @@ func (w WebsiteTextTool) Call(input pub_models.Input) (string, error) {
 			if tokenizer.Err() == io.EOF {
 				break
 			}
-			return "", fmt.Errorf("tokenizer error: %w",
+			return "", diag.Errorf("tokenizer error: %w",
 				tokenizer.Err())
 		}
 		switch tt {

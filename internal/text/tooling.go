@@ -1,6 +1,9 @@
 package text
 
-import pub_models "github.com/baalimago/clai/pkg/text/models"
+import (
+	"github.com/baalimago/clai/internal/tools"
+	pub_models "github.com/baalimago/clai/pkg/text/models"
+)
 
 // tooling groups the per-run tool runtime state the querier carries for tool
 // dispatch, budgeting, skill activation, and telemetry. It is one field on
@@ -22,13 +25,15 @@ type tooling struct {
 	// base is the tool catalog handed to SkillLoader as the selectable set; a
 	// trusted skill replaces it with its active tools.
 	base map[string]pub_models.LLMTool
-	// run is the per-run tool dispatch table. NewQuerier populates it from the
-	// selected tools and RegisterExtraTool may add entries between queries;
-	// dispatch resolves here instead of the process-global registry so
-	// concurrent agents cannot overwrite each other's tool instances.
-	run map[string]pub_models.LLMTool
-	// registered records which tool names have been registered on the model
-	// tool box so a skill enabling an already-registered tool does not
-	// double-register it.
-	registered map[string]struct{}
+	// offered is what this run has offered its model, and the only table a
+	// model's call dispatches through. Every registration on the model's tool
+	// box goes through offer, so the two cannot differ.
+	offered *tools.Offered
+}
+
+func (t *tooling) offer(box tools.ToolBox, tool pub_models.LLMTool) {
+	if t.offered == nil {
+		t.offered = tools.NewOffered()
+	}
+	t.offered.Offer(box, tool)
 }

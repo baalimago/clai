@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/tools/mcp/launcher"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
@@ -109,7 +110,7 @@ type Identity struct {
 func (id Identity) Key() (string, error) {
 	b, err := json.Marshal(id)
 	if err != nil {
-		return "", fmt.Errorf("schema cache: encode identity: %w", err)
+		return "", diag.Errorf("schema cache: encode identity: %w", err)
 	}
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:]), nil
@@ -344,10 +345,10 @@ func (c *Cache) Lookup(identity Identity) (Record, bool) {
 func (c *Cache) Invalidate(identity Identity) error {
 	key, err := identity.Key()
 	if err != nil {
-		return fmt.Errorf("schema cache: key: %w", err)
+		return diag.Errorf("schema cache: key: %w", err)
 	}
 	if err := os.Remove(filepath.Join(c.dir, key+".json")); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("schema cache: invalidate: %w", err)
+		return diag.Errorf("schema cache: invalidate: %w", err)
 	}
 	return nil
 }
@@ -373,10 +374,10 @@ func (c *Cache) Capture(identity Identity, protocolVersion string, serverInfo, t
 	}
 	key, err := identity.Key()
 	if err != nil {
-		return fmt.Errorf("schema cache: key: %w", err)
+		return diag.Errorf("schema cache: key: %w", err)
 	}
 	if err := os.MkdirAll(c.dir, 0o755); err != nil {
-		return fmt.Errorf("schema cache: ensure directory %q: %w", c.dir, err)
+		return diag.Errorf("schema cache: ensure directory %q: %w", c.dir, err)
 	}
 
 	rec := Record{
@@ -388,25 +389,25 @@ func (c *Cache) Capture(identity Identity, protocolVersion string, serverInfo, t
 	}
 	data, err := json.MarshalIndent(rec, "", "  ")
 	if err != nil {
-		return fmt.Errorf("schema cache: encode record: %w", err)
+		return diag.Errorf("schema cache: encode record: %w", err)
 	}
 
 	tmp, err := os.CreateTemp(c.dir, key+"-*.tmp")
 	if err != nil {
-		return fmt.Errorf("schema cache: create temp file: %w", err)
+		return diag.Errorf("schema cache: create temp file: %w", err)
 	}
 	tmpPath := tmp.Name()
 	defer os.Remove(tmpPath)
 
 	if _, err := tmp.Write(data); err != nil {
 		tmp.Close()
-		return fmt.Errorf("schema cache: write temp file: %w", err)
+		return diag.Errorf("schema cache: write temp file: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("schema cache: close temp file: %w", err)
+		return diag.Errorf("schema cache: close temp file: %w", err)
 	}
 	if err := os.Rename(tmpPath, filepath.Join(c.dir, key+".json")); err != nil {
-		return fmt.Errorf("schema cache: rename temp file: %w", err)
+		return diag.Errorf("schema cache: rename temp file: %w", err)
 	}
 	return nil
 }

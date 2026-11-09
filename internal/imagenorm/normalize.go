@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"github.com/baalimago/clai/internal/asset"
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -108,7 +109,7 @@ func degrade(chat pub_models.Chat) (pub_models.Chat, error) {
 			}
 			h, err := img.Handle()
 			if err != nil {
-				return pub_models.Chat{}, fmt.Errorf("message %d: part %d: %w", i, j, err)
+				return pub_models.Chat{}, diag.Errorf("message %d: part %d: %w", i, j, err)
 			}
 			parts[j] = labelOf(h)
 		}
@@ -151,7 +152,7 @@ func (n normalizer) messages(in []pub_models.Message, mimes []string, toolNote n
 		if len(m.Parts) > 0 {
 			kept, carried, err := n.parts(m.Parts, mimes, note)
 			if err != nil {
-				return nil, fmt.Errorf("message %d: %w", i, err)
+				return nil, diag.Errorf("message %d: %w", i, err)
 			}
 			m.Parts = kept
 			moved = append(moved, carried...)
@@ -183,11 +184,11 @@ func (n normalizer) parts(in []pub_models.Part, mimes []string, note noteFunc) (
 		}
 		h, err := img.Handle()
 		if err != nil {
-			return nil, nil, fmt.Errorf("part %d: %w", j, err)
+			return nil, nil, diag.Errorf("part %d: %w", j, err)
 		}
 		img, err = n.load(img, h, mimes)
 		if err != nil {
-			return nil, nil, fmt.Errorf("part %d: %w", j, err)
+			return nil, nil, diag.Errorf("part %d: %w", j, err)
 		}
 		if note == nil {
 			kept = append(kept, labelOf(h), img)
@@ -203,7 +204,7 @@ func (n normalizer) load(img pub_models.ImagePart, h string, mimes []string) (pu
 	if img.Asset != "" {
 		loaded, err := n.loader.Load(img.Asset)
 		if err != nil {
-			return pub_models.ImagePart{}, fmt.Errorf("load image %s: %w", h, err)
+			return pub_models.ImagePart{}, diag.Errorf("load image %s: %w", h, err)
 		}
 		img.Data, img.MIME = loaded.Data, loaded.MIME
 	}

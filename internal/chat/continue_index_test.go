@@ -67,7 +67,7 @@ func TestFindChatByID_indexMatchesTheListedRow(t *testing.T) {
 		if got.Source != "test-source" || got.SourceID != "ext-1" || got.ID == "" {
 			t.Fatalf("got %+v, want a clone of the foreign session", got)
 		}
-		if _, err := cq.getByID(got.ID); err != nil {
+		if _, err := cq.getByID(context.Background(), got.ID); err != nil {
 			t.Fatalf("clone not saved: %v", err)
 		}
 	})

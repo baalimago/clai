@@ -2,9 +2,9 @@ package text
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/baalimago/clai/internal/chat"
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/remote"
 )
 
@@ -21,13 +21,13 @@ func DirReplySender(deps QueryCommandDeps) func(ctx context.Context, req chat.Di
 		args = append(args, "--", req.Prompt)
 		c := QueryCommand(deps)
 		if err := c.Flagset().Parse(args); err != nil {
-			return fmt.Errorf("parse dir reply flags: %w", err)
+			return diag.Errorf("parse dir reply flags: %w", err)
 		}
 		if err := c.Setup(ctx); err != nil {
-			return fmt.Errorf("set up dir reply: %w", err)
+			return diag.Errorf("set up dir reply: %w", err)
 		}
 		if err := c.Run(ctx); err != nil {
-			return fmt.Errorf("run dir reply: %w", err)
+			return diag.Errorf("run dir reply: %w", err)
 		}
 		return nil
 	}

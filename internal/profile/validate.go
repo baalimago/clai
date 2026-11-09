@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/remote"
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/tools/mcp/serverconfig"
@@ -194,7 +195,7 @@ func (c *checker) value(node *schemaNode, path string, raw jsontext.Value) error
 		}
 		var items []jsontext.Value
 		if err := json.Unmarshal(raw, &items); err != nil {
-			return fmt.Errorf("apply the profile document at %s: %w", path, err)
+			return diag.Errorf("apply the profile document at %s: %w", path, err)
 		}
 		for i, item := range items {
 			if err := c.value(resolved.Items, fmt.Sprintf("%s[%d]", path, i), item); err != nil {
@@ -204,14 +205,14 @@ func (c *checker) value(node *schemaNode, path string, raw jsontext.Value) error
 	case "string":
 		var value string
 		if err := json.Unmarshal(raw, &value); err != nil {
-			return fmt.Errorf("apply the profile document at %s: %w", path, err)
+			return diag.Errorf("apply the profile document at %s: %w", path, err)
 		}
 		if len(resolved.Enum) == 0 || slices.Contains(resolved.Enum, value) {
 			return nil
 		}
 		allowed, err := json.Marshal(resolved.Enum)
 		if err != nil {
-			return fmt.Errorf("the profile document's enum at %s does not encode: %w", path, err)
+			return diag.Errorf("the profile document's enum at %s does not encode: %w", path, err)
 		}
 		c.out = append(c.out, Finding{
 			Severity: Error,
@@ -249,7 +250,7 @@ type schemaNode struct {
 var loadDocument = sync.OnceValues(func() (*schemaNode, error) {
 	var doc schemaNode
 	if err := json.Unmarshal(schema, &doc); err != nil {
-		return nil, fmt.Errorf("the embedded profile document does not decode: %w", err)
+		return nil, diag.Errorf("the embedded profile document does not decode: %w", err)
 	}
 	if doc.Type != "object" || len(doc.Properties) == 0 {
 		return nil, fmt.Errorf("the embedded profile document is not one object with properties")
@@ -302,7 +303,7 @@ func (n *schemaNode) additionalSchema() (*schemaNode, error) {
 	}
 	var child schemaNode
 	if err := json.Unmarshal(raw, &child); err != nil {
-		return nil, fmt.Errorf("the profile document's additionalProperties does not decode: %w", err)
+		return nil, diag.Errorf("the profile document's additionalProperties does not decode: %w", err)
 	}
 	return &child, nil
 }

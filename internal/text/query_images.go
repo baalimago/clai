@@ -1,9 +1,9 @@
 package text
 
 import (
+	"context"
 	"fmt"
 	"io"
-	"os"
 	"slices"
 	"strings"
 
@@ -11,6 +11,7 @@ import (
 	"github.com/baalimago/clai/internal/asset"
 	"github.com/baalimago/clai/internal/board"
 	"github.com/baalimago/clai/internal/chat"
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/imagegen"
 	"github.com/baalimago/clai/internal/imagegen/route"
 	imagegentool "github.com/baalimago/clai/internal/imagegen/tool"
@@ -18,13 +19,14 @@ import (
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/photo"
 	"github.com/baalimago/clai/internal/present"
+	"github.com/baalimago/clai/internal/runenv"
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
 
 // attachImageTurn hands the query command's ImageTurn to the querier (query.2).
-func attachImageTurn(confDir string, tConf *Configurations, tf internal.TextFlags, deps QueryCommandDeps, q models.Querier) error {
+func attachImageTurn(ctx context.Context, confDir string, tConf *Configurations, tf internal.TextFlags, deps QueryCommandDeps, q models.Querier) error {
 	setter, ok := q.(interface {
 		setImageTurn(*ImageTurn)
 		imageVendor() route.ChatVendor
@@ -32,7 +34,7 @@ func attachImageTurn(confDir string, tConf *Configurations, tf internal.TextFlag
 	if !ok {
 		return fmt.Errorf("attach image turn: %T is not a text querier", q)
 	}
-	turn, err := newImageTurn(confDir, tConf, tf, deps, setter.imageVendor())
+	turn, err := newImageTurn(ctx, confDir, tConf, tf, deps, setter.imageVendor())
 	if err != nil {
 		return err
 	}
@@ -40,37 +42,40 @@ func attachImageTurn(confDir string, tConf *Configurations, tf internal.TextFlag
 	return nil
 }
 
-func newImageTurn(confDir string, tConf *Configurations, tf internal.TextFlags, deps QueryCommandDeps, vendor route.ChatVendor) (*ImageTurn, error) {
-	pConf, err := loadPhotoConfig(confDir, deps)
+func newImageTurn(ctx context.Context, confDir string, tConf *Configurations, tf internal.TextFlags, deps QueryCommandDeps, vendor route.ChatVendor) (*ImageTurn, error) {
+	pConf, err := loadPhotoConfig(ctx, confDir, deps)
 	if err != nil {
-		return nil, fmt.Errorf("load photoConfig.json for the image turn: %w", err)
+		return nil, diag.Errorf("load photoConfig.json for the image turn: %w", err)
 	}
+	env := runenv.From(tConf.diagContext())
 	out := tConf.Out
 	if out == nil {
-		out = os.Stdout
+		out = env.Stdout()
 	}
 	terminal := utils.IsTerminalWriter(out)
 	store := asset.NewStore(chat.AssetsDir(confDir))
+	progress := board.NewStatus(out, terminal, imageProgressTitle)
+	progress.SetColor(env.Color())
 	return &ImageTurn{
 		Store:        store,
 		Normalizer:   imagenorm.New(store),
 		Presenter:    present.New(imagePresenterOptions(out, terminal, tConf, tf, pConf)),
 		Persister:    chat.NewPersister(confDir, store),
-		Stderr:       os.Stderr,
+		Stderr:       env.Stderr(),
 		Generation:   imageGenSetup(confDir, pConf, tConf, tf, vendor),
 		NewGenerator: deps.NewImageGenerator,
-		Progress:     board.NewStatus(out, terminal, imageProgressTitle),
+		Progress:     progress,
 	}, nil
 }
 
 // loadPhotoConfig reads photoConfig.json through the injected loader. A nil
 // loader reads no file: the model falls back to the chat vendor's default and
 // the presenter to no auto-open and the platform opener.
-func loadPhotoConfig(confDir string, deps QueryCommandDeps) (photo.Configurations, error) {
+func loadPhotoConfig(ctx context.Context, confDir string, deps QueryCommandDeps) (photo.Configurations, error) {
 	if deps.PhotoConfig == nil {
 		return photo.Configurations{}, nil
 	}
-	return deps.PhotoConfig(confDir)
+	return deps.PhotoConfig(ctx, confDir)
 }
 
 // imagePresenterOptions is the query surface's presenter setup:

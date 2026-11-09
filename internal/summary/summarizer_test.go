@@ -1,6 +1,7 @@
 package summary
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -17,8 +18,10 @@ import (
 	"github.com/baalimago/clai/internal/chat"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/skills"
+	"github.com/baalimago/clai/internal/testenv/procenv"
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/internal/utils"
+	"github.com/baalimago/clai/pkg/diagnostic"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
@@ -87,7 +90,7 @@ func writePriceFiles(t *testing.T, confDir string) {
 
 func newTestSummarizer(t *testing.T, confDir string) *agentSummarizer {
 	t.Helper()
-	s, err := NewAgentSummarizer(confDir)
+	s, err := NewAgentSummarizer(procenv.Context(context.Background()), confDir)
 	if err != nil {
 		t.Fatalf("NewAgentSummarizer: %v", err)
 	}
@@ -599,7 +602,7 @@ func TestNewAgentSummarizer_loadsConfig(t *testing.T) {
 		var stderr string
 		stdout := testboil.CaptureStdout(t, func(t *testing.T) {
 			stderr = testboil.CaptureStderr(t, func(t *testing.T) {
-				s, err = NewAgentSummarizer(confDir)
+				s, err = NewAgentSummarizer(procenv.Context(context.Background()), confDir)
 			})
 		})
 		if err != nil {
@@ -621,14 +624,15 @@ func TestNewAgentSummarizer_loadsConfig(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(confDir, "textConfig.json"), []byte(`{"model": "test",`), 0o644); err != nil {
 			t.Fatalf("WriteFile: %v", err)
 		}
-		_, err := NewAgentSummarizer(confDir)
+		_, err := NewAgentSummarizer(procenv.Context(context.Background()), confDir)
 		if err == nil || !strings.Contains(err.Error(), "unmarshal") || !strings.Contains(err.Error(), "textConfig.json") {
 			t.Fatalf("err = %v, want the unmarshal error naming textConfig.json", err)
 		}
 	})
 
-	// Phase 8 (R2-04): the constructor announces an upgrade it performs;
-	// the query path stays silent because SetupQuerier upgraded first.
+	// Phase 8 (R2-04): the constructor holds the announcement of an upgrade
+	// it performs for the first Summarize to report; the query path stays
+	// silent because SetupQuerier upgraded first.
 	t.Run("file predating keys announces the upgrade once", func(t *testing.T) {
 		confDir := t.TempDir()
 		if err := os.WriteFile(filepath.Join(confDir, "textConfig.json"), []byte(`{"model":"test"}`), 0o644); err != nil {
@@ -637,15 +641,18 @@ func TestNewAgentSummarizer_loadsConfig(t *testing.T) {
 		var s models.Summarizer
 		var err error
 		stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-			s, err = NewAgentSummarizer(confDir)
+			s, err = NewAgentSummarizer(procenv.Context(context.Background()), confDir)
 		})
 		if err != nil {
 			t.Fatalf("NewAgentSummarizer: %v", err)
 		}
-		if !strings.Contains(stdout, "added new field(s) to textConfig.json") || !strings.Contains(stdout, "summary-model") {
-			t.Fatalf("stdout = %q, want one upgrade announcement naming summary-model", stdout)
+		if stdout != "" {
+			t.Fatalf("stdout = %q, want the announcement off stdout", stdout)
 		}
 		as := s.(*agentSummarizer)
+		if !strings.Contains(as.upgradeNotice, "added new field(s) to textConfig.json") || !strings.Contains(as.upgradeNotice, "summary-model") {
+			t.Fatalf("upgrade notice = %q, want one upgrade announcement naming summary-model", as.upgradeNotice)
+		}
 		if as.configModel != "test" || as.summaryModel != "" || as.confDir != confDir {
 			t.Fatalf("loaded = %+v", as)
 		}
@@ -663,7 +670,7 @@ func TestNewAgentSummarizer_loadsConfig(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(confDir, "textConfig.json"), []byte(`{"model":"test","summary-model":"tiny"}`), 0o644); err != nil {
 			t.Fatalf("WriteFile: %v", err)
 		}
-		s, err := NewAgentSummarizer(confDir)
+		s, err := NewAgentSummarizer(procenv.Context(context.Background()), confDir)
 		if err != nil {
 			t.Fatalf("NewAgentSummarizer: %v", err)
 		}
@@ -677,7 +684,7 @@ func TestNewAgentSummarizer_loadsConfig(t *testing.T) {
 		if err := os.Mkdir(filepath.Join(confDir, "textConfig.json"), 0o755); err != nil {
 			t.Fatalf("Mkdir: %v", err)
 		}
-		if _, err := NewAgentSummarizer(confDir); err == nil {
+		if _, err := NewAgentSummarizer(procenv.Context(context.Background()), confDir); err == nil {
 			t.Fatalf("expected the load error")
 		}
 	})
@@ -707,22 +714,20 @@ func TestAgentSummarizer_heldSubmissionSurvivesQuerierError(t *testing.T) {
 		}
 	})
 
-	t.Run("submits then errors traces the dropped error on stderr", func(t *testing.T) {
-		t.Setenv("DEBUG_SUMMARY", "1")
+	t.Run("submits then errors traces the dropped error as summary debug", func(t *testing.T) {
 		s := newTestSummarizer(t, confDir)
 		installSubmittingQuerier(s, &submittingQuerier{input: valid, err: boom})
-		var stderr string
+		var diagnostics bytes.Buffer
+		ctx := procenv.Diagnostics(context.Background(), &diagnostics, diagnostic.LevelDebug)
 		var err error
 		stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-			stderr = testboil.CaptureStderr(t, func(t *testing.T) {
-				_, err = s.Summarize(context.Background(), mockRequest(1))
-			})
+			_, err = s.Summarize(ctx, mockRequest(1))
 		})
 		if err != nil {
 			t.Fatalf("Summarize: %v", err)
 		}
-		if stdout != "" || !strings.Contains(stderr, "[DEBUG_SUMMARY]") || !strings.Contains(stderr, boom.Error()) {
-			t.Fatalf("stdout = %q, stderr = %q, want the dropped error traced on stderr only", stdout, stderr)
+		if stdout != "" || !strings.Contains(diagnostics.String(), "keeping the held submission") || !strings.Contains(diagnostics.String(), boom.Error()) {
+			t.Fatalf("stdout = %q, diagnostics = %q, want the dropped error traced as a diagnostic only", stdout, diagnostics.String())
 		}
 	})
 
@@ -781,31 +786,29 @@ func TestAsChatQuerier(t *testing.T) {
 	}
 }
 
-// TestTraceCostWarnf_stderr pins that the summarizer's trace lands on
-// stderr, never in the answer stream, and stays silent without the flag
-// (review 3, R3-17).
-func TestTraceCostWarnf_stderr(t *testing.T) {
+// TestCostTrace_diagnostics pins that the summarizer querier's cost warnings
+// are summary debug detail on the run's diagnostics, never the answer stream,
+// and silent below debug (review 3, R3-17).
+func TestCostTrace_diagnostics(t *testing.T) {
 	quietEnv(t)
-	capture := func(t *testing.T) (string, string) {
-		var stderr string
+	capture := func(t *testing.T, level diagnostic.Level) (string, string) {
+		var diagnostics bytes.Buffer
+		ctx := procenv.Diagnostics(context.Background(), &diagnostics, level)
 		stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-			stderr = testboil.CaptureStderr(t, func(t *testing.T) {
-				traceCostWarnf("manager error: %v", "boom")
-			})
+			costTrace(ctx)("manager error: %v", "boom")
 		})
-		return stdout, stderr
+		return stdout, diagnostics.String()
 	}
-	t.Run("DEBUG_SUMMARY=1 writes stderr only", func(t *testing.T) {
-		t.Setenv("DEBUG_SUMMARY", "1")
-		stdout, stderr := capture(t)
-		if stdout != "" || stderr != "[DEBUG_SUMMARY] cost: manager error: boom\n" {
-			t.Fatalf("stdout = %q, stderr = %q", stdout, stderr)
+	t.Run("debug level reports it", func(t *testing.T) {
+		stdout, got := capture(t, diagnostic.LevelDebug)
+		if stdout != "" || !strings.Contains(got, "cost: manager error: boom") || strings.Contains(got, "[DEBUG_SUMMARY]") {
+			t.Fatalf("stdout = %q, diagnostics = %q", stdout, got)
 		}
 	})
-	t.Run("silent without the flag", func(t *testing.T) {
-		stdout, stderr := capture(t)
-		if stdout != "" || stderr != "" {
-			t.Fatalf("stdout = %q, stderr = %q, want both empty", stdout, stderr)
+	t.Run("silent below debug", func(t *testing.T) {
+		stdout, got := capture(t, diagnostic.LevelInfo)
+		if stdout != "" || got != "" {
+			t.Fatalf("stdout = %q, diagnostics = %q, want both empty", stdout, got)
 		}
 	})
 }

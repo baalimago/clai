@@ -240,7 +240,7 @@ func TestStdioConnReadStderr(t *testing.T) {
 	sink := &recordingSink{}
 	c.authSink = sink
 	done := make(chan struct{})
-	c.readStderr(strings.NewReader("please authorize\n\nplain log line\n"), sink, done)
+	c.readStderr(context.Background(), strings.NewReader("please authorize\n\nplain log line\n"), sink, done)
 	<-done
 	lines, _ := sink.snapshot()
 	if len(lines) != 2 || lines[0] != "please authorize" || lines[1] != "plain log line" {

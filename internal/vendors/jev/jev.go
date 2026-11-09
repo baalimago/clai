@@ -11,6 +11,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/baalimago/clai/internal/apikey"
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/text/generic"
 	"github.com/baalimago/clai/pkg/claierr"
@@ -67,7 +69,7 @@ type systemOneUsage struct {
 func (j *Jev) Setup() error {
 	j.apiKey = os.Getenv("TYPESAFE_API_KEY")
 	if j.apiKey == "" {
-		return fmt.Errorf("jev: missing TYPESAFE_API_KEY")
+		return &apikey.MissingError{Env: "TYPESAFE_API_KEY", Message: "jev: missing TYPESAFE_API_KEY"}
 	}
 	if j.Model == "" {
 		j.Model = Default.Model
@@ -87,7 +89,7 @@ func (j *Jev) SetResponseFormat(rf *generic.ResponseFormat) {
 
 func (j *Jev) HandleError(err error) error {
 	if errors.Is(err, generic.ErrResponseFormatNotJSON) || errors.Is(err, generic.ErrResponseFormatShape) {
-		return fmt.Errorf("%w\nfor jev, json_schema.schema holds your questions, e.g.:\n%s", err, QuestionsFormatExample)
+		return diag.Errorf("%w\nfor jev, json_schema.schema holds your questions, e.g.:\n%s", err, QuestionsFormatExample)
 	}
 	return err
 }
@@ -119,11 +121,11 @@ func (j *Jev) StreamCompletions(ctx context.Context, chat pub_models.Chat) (chan
 	request := systemOneRequest{State: state, Model: j.Model, Questions: questions}
 	requestBody, err := json.Marshal(request)
 	if err != nil {
-		return nil, fmt.Errorf("jev: encode request: %w", err)
+		return nil, diag.Errorf("jev: encode request: %w", err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, j.URL, bytes.NewReader(requestBody))
 	if err != nil {
-		return nil, fmt.Errorf("jev: create request: %w", err)
+		return nil, diag.Errorf("jev: create request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+j.apiKey)
 	req.Header.Set("Content-Type", "application/json")
@@ -131,7 +133,7 @@ func (j *Jev) StreamCompletions(ctx context.Context, chat pub_models.Chat) (chan
 	// error, not a runtime condition.
 	resp, err := j.client.Do(req)
 	if err != nil {
-		return nil, claierr.NewTransport(fmt.Errorf("jev: send request: %w", err))
+		return nil, claierr.NewTransport(diag.Errorf("jev: send request: %w", err))
 	}
 	body, readErr := io.ReadAll(io.LimitReader(resp.Body, 10<<20))
 	closeErr := resp.Body.Close()
@@ -143,7 +145,7 @@ func (j *Jev) StreamCompletions(ctx context.Context, chat pub_models.Chat) (chan
 	}
 	var decoded systemOneResponse
 	if err := json.Unmarshal(body, &decoded); err != nil {
-		return nil, fmt.Errorf("jev: decode response: %w", err)
+		return nil, diag.Errorf("jev: decode response: %w", err)
 	}
 	if decoded.Model == "" {
 		return nil, fmt.Errorf("jev: response is missing model")
@@ -165,7 +167,7 @@ func (j *Jev) StreamCompletions(ctx context.Context, chat pub_models.Chat) (chan
 	// One deterministic cancellation check: the channel below holds both events
 	// without blocking, so a select on ctx.Done() would decide at random.
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("jev: request context ended before response delivery: %w", err)
+		return nil, diag.Errorf("jev: request context ended before response delivery: %w", err)
 	}
 	out := make(chan models.CompletionEvent, 2)
 	out <- string(body)
@@ -261,5 +263,5 @@ func wrapOptional(message string, err error) error {
 	if err == nil {
 		return nil
 	}
-	return fmt.Errorf("%s: %w", message, err)
+	return diag.Errorf("%s: %w", message, err)
 }

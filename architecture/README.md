@@ -4,7 +4,8 @@ This directory contains short design notes for key parts of **clai**. Each file 
 
 ## Core concepts
 
-- **[cmd-dispatch.md](./cmd-dispatch.md)** — Command dispatch and the flag system: the `cmd.Run` command map, the `claiCommand` adapter, per-command flag groups and short/long alias values, `Subcommander` trees (chat/audio/tools/profiles), clean-exit sentinels, and the completion hook wiring.
+- **[cmd-dispatch.md](./cmd-dispatch.md)** — Command dispatch and the flag system: the `cmd.RunSilent` command map, the `claiCommand` adapter, per-command flag groups and short/long alias values, `Subcommander` trees (chat/audio/tools/profiles), clean-exit sentinels, and the completion hook wiring.
+- **[output.md](./output.md)** — The run's Env: every stream, diagnostic, prompt and terminal check a producer uses; `LOG_LEVEL` and the legacy controls; buffered diagnostics and spill files; the `-json` record format.
 - **[config.md](./config.md)** — Where config lives (config/cache dirs), what files exist (mode configs, vendor model configs, profiles, conversations), and the override cascade (defaults → file → profiles → flags).
 - **[model-aliases.md](./model-aliases.md)** — Model fallback: a config or profile names a verb (`strong`, `fast`, `cheap`) and each machine resolves it to its own ordered model list. Covers the alias table and its strict validation, the `retry` walk and its policy, the `ModelUnavailable` vocabulary, the replay guard (`Produced`), the stderr notice, the completion-bell walk, and which modes are wired.
 - **[chat.md](./chat.md)** — Conversation storage format, global previous-query (`globalScope.json`), directory-scoped reply bindings, the OpenAI reasoning-item sidecar (`conversations/reasoning/<chatid>/`), and the `clai chat continue` flow.

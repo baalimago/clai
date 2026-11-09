@@ -1,9 +1,9 @@
 package deepseek
 
 import (
-	"fmt"
 	"os"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/text/generic"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -35,7 +35,7 @@ func (g *Deepseek) Setup() error {
 	}
 	err := g.StreamCompleter.Setup("DEEPSEEK_API_KEY", ChatURL, "DEEPSEEK_DEBUG")
 	if err != nil {
-		return fmt.Errorf("failed to setup stream completer: %w", err)
+		return diag.Errorf("failed to setup stream completer: %w", err)
 	}
 	// Vendor decoder for both decode points (non-OK body and error frame at
 	// HTTP 200), per worklog 2026-09-05-error-propagation D11/D12.

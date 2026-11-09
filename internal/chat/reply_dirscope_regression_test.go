@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -25,11 +26,11 @@ func TestSaveAsPreviousQuery_ExistingConversationDoesNotCreatePromotedCopy(t *te
 		},
 	}
 
-	if err := Save(conversationsDir(confDir), chat); err != nil {
+	if err := Save(context.Background(), conversationsDir(confDir), chat); err != nil {
 		t.Fatalf("Save(existing chat): %v", err)
 	}
 
-	if err := SaveAsPreviousQuery(confDir, chat); err != nil {
+	if err := SaveAsPreviousQuery(context.Background(), confDir, chat); err != nil {
 		t.Fatalf("SaveAsPreviousQuery: %v", err)
 	}
 

@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/baalimago/clai/internal/cost"
+	"github.com/baalimago/clai/internal/diag"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
@@ -137,16 +139,16 @@ token usage:
 		output: %v
 `
 
-func (cq *ChatHandler) dirInfo() error {
-	info, err := cq.resolveChatDirInfo()
+func (cq *ChatHandler) dirInfo(ctx context.Context) error {
+	info, err := cq.resolveChatDirInfo(ctx)
 	if err != nil {
-		return fmt.Errorf("resolve chat dir info: %w", err)
+		return diag.Errorf("resolve chat dir info: %w", err)
 	}
 
 	if cq.raw {
 		b, err := json.Marshal(info)
 		if err != nil {
-			return fmt.Errorf("marshal chat dir info: %w", err)
+			return diag.Errorf("marshal chat dir info: %w", err)
 		}
 		fmt.Fprintln(cq.out, string(b))
 		return nil
@@ -172,17 +174,17 @@ func (cq *ChatHandler) dirInfo() error {
 	return nil
 }
 
-func (cq *ChatHandler) dirInfoV2() error {
-	legacy, err := cq.resolveChatDirInfo()
+func (cq *ChatHandler) dirInfoV2(ctx context.Context) error {
+	legacy, err := cq.resolveChatDirInfo(ctx)
 	if err != nil {
-		return fmt.Errorf("resolve chat dir info v2: %w", err)
+		return diag.Errorf("resolve chat dir info v2: %w", err)
 	}
 	info := newChatDirInfoV2(legacy)
 
 	if cq.raw {
 		b, err := json.Marshal(info)
 		if err != nil {
-			return fmt.Errorf("marshal chat dir info v2: %w", err)
+			return diag.Errorf("marshal chat dir info v2: %w", err)
 		}
 		fmt.Fprintln(cq.out, string(b))
 		return nil
@@ -288,15 +290,15 @@ func (cdi chatDirInfo) priceTotalString() string {
 	return cdi.costString()
 }
 
-func (cq *ChatHandler) resolveChatDirInfo() (chatDirInfo, error) {
+func (cq *ChatHandler) resolveChatDirInfo(ctx context.Context) (chatDirInfo, error) {
 	// 1) Dir scope
 	ds, err := cq.LoadDirScope("")
 	if err != nil {
 		if !errors.Is(err, fs.ErrNotExist) {
-			return chatDirInfo{}, fmt.Errorf("load dir scope: %w", err)
+			return chatDirInfo{}, diag.Errorf("load dir scope: %w", err)
 		}
 	} else {
-		c, err := FromPath(conversationPathFromDir(cq.convDir, ds.ChatID))
+		c, err := FromPath(ctx, conversationPathFromDir(cq.convDir, ds.ChatID))
 		if err == nil {
 			info := cq.infoFromChat("dir", ds.ChatID, c)
 			if !ds.Updated.IsZero() {
@@ -310,12 +312,12 @@ func (cq *ChatHandler) resolveChatDirInfo() (chatDirInfo, error) {
 			return info, nil
 		}
 		if !errors.Is(err, fs.ErrNotExist) {
-			return chatDirInfo{}, fmt.Errorf("load bound dir chat: %w", err)
+			return chatDirInfo{}, diag.Errorf("load bound dir chat: %w", err)
 		}
 	}
 
 	// 2) Global scope
-	prev, err := FromPath(filepath.Join(cq.convDir, globalScopeFile))
+	prev, err := FromPath(ctx, filepath.Join(cq.convDir, globalScopeFile))
 	if err == nil {
 		info := cq.infoFromChat("global", globalScopeChatID, prev)
 		info.ConversationCreated = prev.Created.Format("2006-01-02T15:04:05Z07:00")
@@ -324,7 +326,7 @@ func (cq *ChatHandler) resolveChatDirInfo() (chatDirInfo, error) {
 		return info, nil
 	}
 	if !errors.Is(err, fs.ErrNotExist) {
-		return chatDirInfo{}, fmt.Errorf("load globalScope: %w", err)
+		return chatDirInfo{}, diag.Errorf("load globalScope: %w", err)
 	}
 
 	return chatDirInfo{}, nil

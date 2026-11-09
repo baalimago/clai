@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/vendors"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
@@ -90,7 +91,7 @@ func (r SourceReader) Read(ctx context.Context, cache vendors.SourceCache, sourc
 	}
 	conv, ok, err := r.readConversation(absPath)
 	if err != nil {
-		return pub_models.Chat{}, fmt.Errorf("read qwen session %q: %w", sourceID, err)
+		return pub_models.Chat{}, diag.Errorf("read qwen session %q: %w", sourceID, err)
 	}
 	if !ok || conv.sessionID != sourceID {
 		return pub_models.Chat{}, fmt.Errorf("qwen session %q not found", sourceID)

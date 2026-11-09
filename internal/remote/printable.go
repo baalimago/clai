@@ -23,7 +23,7 @@ func Printable(s string) string {
 	b.Grow(len(s))
 	for i, r := range s {
 		switch {
-		case r == utf8.RuneError && !strings.HasPrefix(s[i:], "�"):
+		case r == utf8.RuneError && !strings.HasPrefix(s[i:], "\uFFFD"):
 			b.WriteRune(utf8.RuneError)
 		case r < 0x20 || r == 0x7f:
 			fmt.Fprintf(&b, `\x%02x`, r)

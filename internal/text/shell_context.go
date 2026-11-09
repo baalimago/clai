@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +12,7 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/utils"
 )
 
@@ -60,11 +60,11 @@ func LoadShellContextDefinition(configDir, name string) (ShellContextDefinition,
 	p := filepath.Join(configDir, "shellContexts", name+".json")
 	b, err := os.ReadFile(p)
 	if err != nil {
-		return ShellContextDefinition{}, fmt.Errorf("read shell context definition %q: %w", p, err)
+		return ShellContextDefinition{}, diag.Errorf("read shell context definition %q: %w", p, err)
 	}
 	var def ShellContextDefinition
 	if err := json.Unmarshal(b, &def); err != nil {
-		return ShellContextDefinition{}, fmt.Errorf("unmarshal shell context definition %q: %w", p, err)
+		return ShellContextDefinition{}, diag.Errorf("unmarshal shell context definition %q: %w", p, err)
 	}
 	def.Template = utils.UnescapeConfigString(def.Template)
 	return def.withDefaults(), nil
@@ -102,11 +102,11 @@ func (r ShellContextRenderer) Render(ctx context.Context, ctxName string, def Sh
 
 	tpl, err := template.New("shell-context").Parse(def.Template)
 	if err != nil {
-		return "", fmt.Errorf("parse shell context template: %w", err)
+		return "", diag.Errorf("parse shell context template: %w", err)
 	}
 	var buf bytes.Buffer
 	if err := tpl.Execute(&buf, data); err != nil {
-		return "", fmt.Errorf("execute shell context template: %w", err)
+		return "", diag.Errorf("execute shell context template: %w", err)
 	}
 	return strings.TrimRight(buf.String(), "\r\n"), nil
 }
@@ -118,7 +118,7 @@ func runShellVar(ctx context.Context, shell, cmd string, timeout time.Duration) 
 	ex := exec.CommandContext(ctx2, shell, "-c", cmd)
 	out, err := ex.Output()
 	if err != nil {
-		return "", fmt.Errorf("run %q -c %q: %w", shell, cmd, err)
+		return "", diag.Errorf("run %q -c %q: %w", shell, cmd, err)
 	}
 	return strings.TrimSpace(string(out)), nil
 }

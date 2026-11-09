@@ -172,7 +172,7 @@ func copyLegacyFixture(t *testing.T, dst string) {
 
 func indexRow(t *testing.T, convDir, id string) chatIndexRow {
 	t.Helper()
-	rows, err := readChatIndex(convDir)
+	rows, err := readChatIndex(context.Background(), convDir)
 	if err != nil {
 		t.Fatalf("readChatIndex: %v", err)
 	}
@@ -190,7 +190,7 @@ func TestPersister_SaveStoresPending(t *testing.T) {
 	img := testPNG(t, 1)
 	in := imageChat("with-image", img)
 
-	out, err := p.Save(in)
+	out, err := p.Save(context.Background(), in)
 	if err != nil {
 		t.Fatalf("Save: %v", err)
 	}
@@ -216,14 +216,14 @@ func TestPersister_SavePutFails(t *testing.T) {
 	putErr := errors.New("disk full")
 	p := NewPersister(confDir, &stubStore{Memory: assettest.NewMemory(), putErr: putErr})
 	textOnly := pub_models.Chat{ID: "kept", Messages: []pub_models.Message{{Role: "user", Content: "hi"}}}
-	if _, err := p.Save(textOnly); err != nil {
+	if _, err := p.Save(context.Background(), textOnly); err != nil {
 		t.Fatalf("Save text-only: %v", err)
 	}
 	path := filepath.Join(convDir, "kept.json")
 	before := mustRead(t, path)
 	indexBefore := mustRead(t, chatIndexPath(convDir))
 
-	_, err := p.Save(imageChat("kept", testPNG(t, 2)))
+	_, err := p.Save(context.Background(), imageChat("kept", testPNG(t, 2)))
 	if !errors.Is(err, putErr) {
 		t.Fatalf("Save error = %v, want the Put error", err)
 	}
@@ -244,7 +244,7 @@ func TestPersister_GroupKeyAndIndex(t *testing.T) {
 	imageOnly := pub_models.Chat{ID: "image-only", Messages: []pub_models.Message{
 		{Role: "user", Parts: []pub_models.Part{pending(img)}},
 	}}
-	out, err := p.Save(imageOnly)
+	out, err := p.Save(context.Background(), imageOnly)
 	if err != nil {
 		t.Fatalf("Save image-only: %v", err)
 	}
@@ -256,7 +256,7 @@ func TestPersister_GroupKeyAndIndex(t *testing.T) {
 		t.Fatalf("index row = %q / %q, want %q / %q", row.FirstUserMessage, row.GroupKey, label, out.GroupKey)
 	}
 
-	mixed, err := p.Save(imageChat("mixed", img))
+	mixed, err := p.Save(context.Background(), imageChat("mixed", img))
 	if err != nil {
 		t.Fatalf("Save mixed: %v", err)
 	}
@@ -267,7 +267,7 @@ func TestPersister_GroupKeyAndIndex(t *testing.T) {
 		t.Fatalf("mixed FirstUserMessage = %q, want the message Describe", row.FirstUserMessage)
 	}
 
-	text, err := p.Save(pub_models.Chat{ID: "text", Messages: []pub_models.Message{{Role: "user", Content: "hello there"}}})
+	text, err := p.Save(context.Background(), pub_models.Chat{ID: "text", Messages: []pub_models.Message{{Role: "user", Content: "hello there"}}})
 	if err != nil {
 		t.Fatalf("Save text-only: %v", err)
 	}
@@ -286,7 +286,7 @@ func TestPersister_LegacyMigratesOnSave(t *testing.T) {
 	copyLegacyFixture(t, path)
 	before := mustRead(t, path)
 
-	c, err := p.Load(path)
+	c, err := p.Load(context.Background(), path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -299,13 +299,13 @@ func TestPersister_LegacyMigratesOnSave(t *testing.T) {
 	}
 	assertAssets(t, assetDir)
 
-	if _, err := p.Save(c); err != nil {
+	if _, err := p.Save(context.Background(), c); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	ref := pngRef(img.Data)
 	assertRefsOnly(t, path, ref)
 	assertAssets(t, assetDir, ref)
-	again, err := p.Load(path)
+	again, err := p.Load(context.Background(), path)
 	if err != nil {
 		t.Fatalf("Load after migration: %v", err)
 	}
@@ -319,7 +319,7 @@ func TestPersister_LegacyMIMEMismatch(t *testing.T) {
 
 	mismatch := filepath.Join(convDir, "mismatch.json")
 	writeLegacyChat(t, mismatch, "data:image/jpeg;base64,"+base64.StdEncoding.EncodeToString(testPNG(t, 4)))
-	c, err := p.Load(mismatch)
+	c, err := p.Load(context.Background(), mismatch)
 	var mm *asset.MIMEMismatchError
 	if !errors.As(err, &mm) || mm.Declared != "image/jpeg" || mm.Sniffed != "image/png" {
 		t.Fatalf("Load error = %v, want *asset.MIMEMismatchError{jpeg, png}", err)
@@ -333,7 +333,7 @@ func TestPersister_LegacyMIMEMismatch(t *testing.T) {
 
 	notImage := filepath.Join(convDir, "not-image.json")
 	writeLegacyChat(t, notImage, "data:image/png;base64,"+base64.StdEncoding.EncodeToString([]byte("plain text")))
-	c, err = p.Load(notImage)
+	c, err = p.Load(context.Background(), notImage)
 	if !errors.Is(err, asset.ErrNotImage) {
 		t.Fatalf("Load error = %v, want asset.ErrNotImage", err)
 	}
@@ -354,36 +354,36 @@ func TestFreeWriters_StorePending(t *testing.T) {
 	assetDir := filepath.Join(convDir, "assets")
 	path := filepath.Join(convDir, "legacy-image.json")
 	copyLegacyFixture(t, path)
-	c, err := FromPath(path)
+	c, err := FromPath(context.Background(), path)
 	if err != nil {
 		t.Fatalf("FromPath: %v", err)
 	}
 	ref := pngRef(c.Messages[1].Parts[0].(pub_models.ImagePart).Data)
 
-	if err := Save(convDir, c); err != nil {
+	if err := Save(context.Background(), convDir, c); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	assertRefsOnly(t, path, ref)
 
 	summarized := c
 	summarized.ID = "summarized"
-	if err := SaveWithoutIndex(convDir, summarized); err != nil {
+	if err := SaveWithoutIndex(context.Background(), convDir, summarized); err != nil {
 		t.Fatalf("SaveWithoutIndex: %v", err)
 	}
 	assertRefsOnly(t, filepath.Join(convDir, "summarized.json"), ref)
 
-	if err := SaveAsPreviousQuery(confDir, c); err != nil {
+	if err := SaveAsPreviousQuery(context.Background(), confDir, c); err != nil {
 		t.Fatalf("SaveAsPreviousQuery with id: %v", err)
 	}
 	fresh := c
 	fresh.ID = ""
-	if err := SaveAsPreviousQuery(confDir, fresh); err != nil {
+	if err := SaveAsPreviousQuery(context.Background(), confDir, fresh); err != nil {
 		t.Fatalf("SaveAsPreviousQuery without id: %v", err)
 	}
 
 	globalPath := filepath.Join(convDir, globalScopeFile)
 	copyLegacyFixture(t, globalPath)
-	if _, err := LoadGlobalScope(confDir); err != nil {
+	if _, err := LoadGlobalScope(context.Background(), confDir); err != nil {
 		t.Fatalf("LoadGlobalScope id rewrite: %v", err)
 	}
 
@@ -407,7 +407,7 @@ func TestFreeWriters_StorePending(t *testing.T) {
 
 func TestPersister_LoadKeepsRefs(t *testing.T) {
 	p, _, convDir, assetDir := newDiskPersister(t)
-	if _, err := p.Save(imageChat("refs", testPNG(t, 5))); err != nil {
+	if _, err := p.Save(context.Background(), imageChat("refs", testPNG(t, 5))); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	ref := assetNames(t, assetDir)[0]
@@ -415,7 +415,7 @@ func TestPersister_LoadKeepsRefs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	c, err := p.Load(filepath.Join(convDir, "refs.json"))
+	c, err := p.Load(context.Background(), filepath.Join(convDir, "refs.json"))
 	if err != nil {
 		t.Fatalf("Load with a missing asset: %v", err)
 	}
@@ -429,7 +429,7 @@ func TestPersister_LoadCodecError(t *testing.T) {
 
 	remote := filepath.Join(convDir, "remote.json")
 	writeLegacyChat(t, remote, "https://example.com/cat.png")
-	_, err := p.Load(remote)
+	_, err := p.Load(context.Background(), remote)
 	if !errors.Is(err, pub_models.ErrLegacyImageURL) || !strings.Contains(err.Error(), remote) {
 		t.Fatalf("Load error = %v, want ErrLegacyImageURL naming %s", err, remote)
 	}
@@ -439,7 +439,7 @@ func TestPersister_LoadCodecError(t *testing.T) {
 	if err := os.WriteFile(unknown, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, err = p.Load(unknown)
+	_, err = p.Load(context.Background(), unknown)
 	if !errors.Is(err, pub_models.ErrUnknownPartType) || !strings.Contains(err.Error(), unknown) {
 		t.Fatalf("Load error = %v, want ErrUnknownPartType naming %s", err, unknown)
 	}
@@ -450,7 +450,7 @@ func TestPersister_PromoteShares(t *testing.T) {
 	img := testPNG(t, 6)
 	ref := pngRef(img)
 
-	if err := p.Promote(imageChat("", img)); err != nil {
+	if err := p.Promote(context.Background(), imageChat("", img)); err != nil {
 		t.Fatalf("Promote without id: %v", err)
 	}
 	files := conversationFiles(t, convDir)
@@ -462,7 +462,7 @@ func TestPersister_PromoteShares(t *testing.T) {
 	}
 	assertAssets(t, assetDir, ref)
 
-	if err := p.Promote(imageChat("kept", img)); err != nil {
+	if err := p.Promote(context.Background(), imageChat("kept", img)); err != nil {
 		t.Fatalf("Promote with id: %v", err)
 	}
 	if files := conversationFiles(t, convDir); len(files) != 3 || !slices.Contains(files, "kept.json") {
@@ -492,15 +492,15 @@ func TestPersister_DeleteSweeps(t *testing.T) {
 	p, _, convDir, assetDir := newDiskPersister(t)
 	x, y := testPNG(t, 7), testPNG(t, 8)
 	refX, refY := pngRef(x), pngRef(y)
-	if _, err := p.Save(imageChat("a", x, y)); err != nil {
+	if _, err := p.Save(context.Background(), imageChat("a", x, y)); err != nil {
 		t.Fatalf("Save a: %v", err)
 	}
-	if _, err := p.Save(imageChat("b", x)); err != nil {
+	if _, err := p.Save(context.Background(), imageChat("b", x)); err != nil {
 		t.Fatalf("Save b: %v", err)
 	}
 	global := imageChat("", x)
 	global.Messages = global.Messages[1:]
-	if err := p.Promote(global); err != nil {
+	if err := p.Promote(context.Background(), global); err != nil {
 		t.Fatalf("Promote: %v", err)
 	}
 	assertAssets(t, assetDir, refX, refY)
@@ -533,7 +533,7 @@ func TestPersister_DeleteSweepFails(t *testing.T) {
 	}
 	sweepErr := errors.New("permission denied")
 	p := NewPersister(confDir, &stubStore{Memory: assettest.NewMemory(), sweepErr: sweepErr})
-	if _, err := p.Save(imageChat("doomed", testPNG(t, 9))); err != nil {
+	if _, err := p.Save(context.Background(), imageChat("doomed", testPNG(t, 9))); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
@@ -551,10 +551,10 @@ func TestPersister_DeleteSweepFails(t *testing.T) {
 
 	disk, _, diskConv, assetDir := newDiskPersister(t)
 	kept, gone := testPNG(t, 12), testPNG(t, 13)
-	if _, err := disk.Save(imageChat("kept", kept)); err != nil {
+	if _, err := disk.Save(context.Background(), imageChat("kept", kept)); err != nil {
 		t.Fatalf("Save kept: %v", err)
 	}
-	if _, err := disk.Save(imageChat("gone", gone)); err != nil {
+	if _, err := disk.Save(context.Background(), imageChat("gone", gone)); err != nil {
 		t.Fatalf("Save gone: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(diskConv, "corrupt.json"), []byte("{not json"), 0o644); err != nil {
@@ -578,10 +578,10 @@ func blockReasoningSidecars(t *testing.T, convDir string) {
 func TestPersister_DeleteSidecarFails(t *testing.T) {
 	p, _, convDir, assetDir := newDiskPersister(t)
 	kept, orphan := testPNG(t, 15), testPNG(t, 16)
-	if _, err := p.Save(imageChat("kept", kept)); err != nil {
+	if _, err := p.Save(context.Background(), imageChat("kept", kept)); err != nil {
 		t.Fatalf("Save kept: %v", err)
 	}
-	if _, err := p.Save(imageChat("doomed", orphan)); err != nil {
+	if _, err := p.Save(context.Background(), imageChat("doomed", orphan)); err != nil {
 		t.Fatalf("Save doomed: %v", err)
 	}
 	blockReasoningSidecars(t, convDir)
@@ -662,13 +662,13 @@ func TestPersister_ForeignCloneStored(t *testing.T) {
 	clone := foreign
 	clone.ID = "clone"
 	p := NewPersister(confDir, asset.NewStore(assetDir))
-	if _, err := p.Save(clone); err != nil {
+	if _, err := p.Save(context.Background(), clone); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	assertRefsOnly(t, filepath.Join(cq.convDir, "clone.json"), ref)
 	assertAssets(t, assetDir, ref)
 
-	cloned, err := cq.cloneForeignChat(foreign)
+	cloned, err := cq.cloneForeignChat(context.Background(), foreign)
 	if err != nil {
 		t.Fatalf("cloneForeignChat: %v", err)
 	}
@@ -681,7 +681,7 @@ func TestPersister_TextOnlyUnchanged(t *testing.T) {
 
 	p, _, convDir, assetDir := newDiskPersister(t)
 	for _, c := range []pub_models.Chat{plain, tools} {
-		if _, err := p.Save(c); err != nil {
+		if _, err := p.Save(context.Background(), c); err != nil {
 			t.Fatalf("Save %s: %v", c.ID, err)
 		}
 	}
@@ -693,7 +693,7 @@ func TestPersister_TextOnlyUnchanged(t *testing.T) {
 	p, _, convDir, assetDir = newDiskPersister(t)
 	fresh := plain
 	fresh.ID = ""
-	if err := p.Promote(fresh); err != nil {
+	if err := p.Promote(context.Background(), fresh); err != nil {
 		t.Fatalf("Promote without id: %v", err)
 	}
 	if got := snapshotConvDir(t, convDir); got != readGolden(t, "promote-new.golden") {
@@ -702,7 +702,7 @@ func TestPersister_TextOnlyUnchanged(t *testing.T) {
 	assertNoAssetDir(t, assetDir)
 
 	p, _, convDir, assetDir = newDiskPersister(t)
-	if err := p.Promote(tools); err != nil {
+	if err := p.Promote(context.Background(), tools); err != nil {
 		t.Fatalf("Promote with id: %v", err)
 	}
 	if got := snapshotConvDir(t, convDir, tools.ID); got != readGolden(t, "promote-existing.golden") {
@@ -720,7 +720,7 @@ func assertNoAssetDir(t *testing.T, dir string) {
 
 func TestPersister_IndexSkipsAssets(t *testing.T) {
 	p, _, convDir, assetDir := newDiskPersister(t)
-	if _, err := p.Save(imageChat("indexed", testPNG(t, 11))); err != nil {
+	if _, err := p.Save(context.Background(), imageChat("indexed", testPNG(t, 11))); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(assetDir, "stray.json"), []byte(`{"id":"stray"}`), 0o644); err != nil {
@@ -730,7 +730,7 @@ func TestPersister_IndexSkipsAssets(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rows, err := rebuildChatIndex(convDir, 0, "test")
+	rows, err := rebuildChatIndex(context.Background(), convDir, 0, "test")
 	if err != nil {
 		t.Fatalf("rebuildChatIndex: %v", err)
 	}

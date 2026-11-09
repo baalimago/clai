@@ -1,8 +1,11 @@
 package text
 
 import (
+	"context"
 	"strings"
 	"testing"
+
+	"github.com/baalimago/clai/internal/testenv/procenv"
 
 	"github.com/baalimago/clai/internal"
 
@@ -18,7 +21,7 @@ func Test_setupLookback_ExplicitDisableOverridesProfile(t *testing.T) {
 	if err := lookback.Set("false"); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
-	if err := setupLookback(t.TempDir(), &tConf, lookback); err != nil {
+	if err := setupLookback(procenv.Context(context.Background()), t.TempDir(), &tConf, lookback); err != nil {
 		t.Fatalf("setupLookback: %v", err)
 	}
 	if tConf.UseLookback {
@@ -38,13 +41,13 @@ func Test_setupLookback_NoticeDebugGated(t *testing.T) {
 	t.Run("silent without debug flag", func(t *testing.T) {
 		t.Setenv("DEBUG", "")
 		t.Setenv("DEBUG_LOOKBACK", "")
-		out := captureStdout(t, func() {
+		out := captureStderr(t, func() {
 			tConf := Configurations{UseLookback: true}
 			var lookback internal.BoolFlag
 			if err := lookback.Set("true"); err != nil {
 				t.Fatalf("Set: %v", err)
 			}
-			if err := setupLookback(t.TempDir(), &tConf, lookback); err != nil {
+			if err := setupLookback(procenv.Context(context.Background()), t.TempDir(), &tConf, lookback); err != nil {
 				t.Fatalf("setupLookback: %v", err)
 			}
 		})
@@ -64,13 +67,13 @@ func Test_setupLookback_NoticeDebugGated(t *testing.T) {
 				for k, v := range tt.env {
 					t.Setenv(k, v)
 				}
-				out := captureStdout(t, func() {
+				out := captureStderr(t, func() {
 					tConf := Configurations{UseLookback: true}
 					var lookback internal.BoolFlag
 					if err := lookback.Set("true"); err != nil {
 						t.Fatalf("Set: %v", err)
 					}
-					if err := setupLookback(t.TempDir(), &tConf, lookback); err != nil {
+					if err := setupLookback(procenv.Context(context.Background()), t.TempDir(), &tConf, lookback); err != nil {
 						t.Fatalf("setupLookback: %v", err)
 					}
 				})
@@ -83,13 +86,13 @@ func Test_setupLookback_NoticeDebugGated(t *testing.T) {
 	t.Run("silent in structured-response mode", func(t *testing.T) {
 		t.Setenv("DEBUG", "1")
 		t.Setenv("DEBUG_LOOKBACK", "1")
-		out := captureStdout(t, func() {
+		out := captureStderr(t, func() {
 			tConf := Configurations{UseLookback: true, ResponseFormat: &pub_models.ResponseFormat{}}
 			var lookback internal.BoolFlag
 			if err := lookback.Set("true"); err != nil {
 				t.Fatalf("Set: %v", err)
 			}
-			if err := setupLookback(t.TempDir(), &tConf, lookback); err != nil {
+			if err := setupLookback(procenv.Context(context.Background()), t.TempDir(), &tConf, lookback); err != nil {
 				t.Fatalf("setupLookback: %v", err)
 			}
 		})

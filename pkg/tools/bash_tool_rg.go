@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os/exec"
 
+	"github.com/baalimago/clai/internal/diag"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -87,7 +88,7 @@ func (r RipGrepTool) Call(input pub_models.Input) (string, error) {
 			err = nil
 			output = fmt.Appendf(nil, "found no hits with pattern: '%s'", pattern)
 		} else {
-			return "", fmt.Errorf("failed to run rg: %w, output: %v", err, string(output))
+			return "", diag.Errorf("failed to run rg: %w, output: %v", err, string(output))
 		}
 	}
 	return string(output), nil

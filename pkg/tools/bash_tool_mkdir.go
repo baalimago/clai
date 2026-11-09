@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/baalimago/clai/internal/diag"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -30,7 +31,7 @@ func (m MkdirTool) Call(input pub_models.Input) (string, error) {
 		return "", fmt.Errorf("directory must be a string")
 	}
 	if err := os.MkdirAll(directory, 0o755); err != nil {
-		return "", fmt.Errorf("create directory %q: %w", directory, err)
+		return "", diag.Errorf("create directory %q: %w", directory, err)
 	}
 	return fmt.Sprintf("Successfully created directory %s", directory), nil
 }

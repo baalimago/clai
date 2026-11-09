@@ -13,6 +13,8 @@ import (
 	"github.com/baalimago/clai/internal/board"
 	"github.com/baalimago/clai/internal/cloud"
 	"github.com/baalimago/clai/internal/cloud/sync"
+	"github.com/baalimago/clai/internal/diag"
+	"github.com/baalimago/clai/internal/display"
 )
 
 type runner struct {
@@ -80,7 +82,7 @@ func (r *runner) login(ctx context.Context, url, name string) error {
 	creds.Token, creds.Device, creds.Access, creds.ExpiresAt, creds.Account = tok.Key, name, tok.Access, tok.ExpiresAt, tok.Account
 	if tok.Endpoint != "" {
 		if err := cloud.CheckURL(tok.Endpoint); err != nil {
-			return fmt.Errorf("the login answered with another server: %w", err)
+			return diag.Errorf("the login answered with another server: %w", err)
 		}
 		creds.URL = tok.Endpoint
 	}
@@ -209,7 +211,7 @@ func (r *runner) status(ctx context.Context, args []string, imports, raw bool) e
 	return nil
 }
 
-func (r *runner) style() style { return style{Color: r.deps.Color()} }
+func (r *runner) style() style { return style{Color: r.deps.Color(), Plain: r.deps.Plain()} }
 
 func (r *runner) lines(lines []string) {
 	for _, l := range lines {
@@ -360,9 +362,16 @@ func (r *runner) pull(ctx context.Context, args []string, theirs, mine, raw bool
 // the answer is one of the choices.
 func (r *runner) chooseFirst(store sync.Store, f sync.FirstPull, in *bufio.Reader) (sync.Mode, error) {
 	r.lines(firstPullLines(store, f, r.style()))
-	r.lines(firstPullChoices(len(f.Differ), r.style()))
+	question := firstPullQuestion(len(f.Differ))
+	if r.deps.Prompt == nil {
+		r.lines(firstPullChoices(len(f.Differ), r.style()))
+	} else {
+		r.lines(firstPullAnswers(r.style()))
+	}
 	for {
-		r.printf("  Keep [l/r/p/q]: ")
+		if err := r.askFirst(question); err != nil {
+			return "", err
+		}
 		line, err := in.ReadString('\n')
 		if err != nil && line == "" {
 			// Nobody answered, as with no terminal at all.
@@ -377,6 +386,19 @@ func (r *runner) chooseFirst(store sync.Store, f sync.FirstPull, in *bufio.Reade
 		}
 		r.printf("  %s\n", r.style().Secondary("answer l, r, p or q"))
 	}
+}
+
+// askFirst shows the first pull's question before its answer is read: a
+// select prompt record when deps.Prompt is set (F13), else the text form.
+func (r *runner) askFirst(question string) error {
+	if r.deps.Prompt == nil {
+		r.printf("  Keep [l/r/p/q]: ")
+		return nil
+	}
+	if err := r.deps.Prompt(display.Prompt{Kind: "select", Text: question, Choices: firstPullKeys()}); err != nil {
+		return diag.Errorf("ask the first pull's question: %w", err)
+	}
+	return nil
 }
 
 // QuitError is a first pull the user stopped at its question.
@@ -535,6 +557,7 @@ func (r *runner) deviceName(creds cloud.Credentials) string {
 // with what it is doing as the detail. Stop it before printing.
 func (r *runner) track(engine *sync.Engine, title string) *board.Status {
 	status := board.NewStatus(r.deps.Err, r.deps.ErrIsTerminal(), title)
+	status.SetColor(r.deps.Color())
 	var mu stdsync.Mutex
 	var phase sync.Progress
 	var since time.Time

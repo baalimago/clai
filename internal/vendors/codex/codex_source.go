@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/vendors"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
@@ -332,7 +333,7 @@ func (r SourceReader) Read(ctx context.Context, cache vendors.SourceCache, sourc
 		return true
 	})
 	if err != nil {
-		return pub_models.Chat{}, fmt.Errorf("scan codex transcript %q: %w", absPath, err)
+		return pub_models.Chat{}, diag.Errorf("scan codex transcript %q: %w", absPath, err)
 	}
 	if err := ctx.Err(); err != nil {
 		return pub_models.Chat{}, err

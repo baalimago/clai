@@ -1,9 +1,10 @@
 package chat
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/baalimago/clai/internal/diag"
 )
 
 func conversationsDir(confDir string) string {
@@ -63,7 +64,7 @@ func dirscopePath(confDir, hash string) string {
 func currentWorkingDirectory() (string, error) {
 	wd, err := os.Getwd()
 	if err != nil {
-		return "", fmt.Errorf("get current working directory: %w", err)
+		return "", diag.Errorf("get current working directory: %w", err)
 	}
 	return wd, nil
 }

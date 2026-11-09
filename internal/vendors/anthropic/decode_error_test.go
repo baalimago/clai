@@ -274,3 +274,40 @@ func Test_AnthropicDecode_NonOK_Baseline(t *testing.T) {
 		})
 	}
 }
+
+// Test_AnthropicDecode_BaselineCarriesTheEnvelopeType pins that an envelope
+// the decoder gives no meaning of its own keeps the status baseline and
+// carries anthropic's error type as the provider-code fact.
+func Test_AnthropicDecode_BaselineCarriesTheEnvelopeType(t *testing.T) {
+	cases := []struct {
+		name   string
+		status int
+		body   string
+		want   error
+		code   string
+	}{
+		{"401 authentication_error", http.StatusUnauthorized, `{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"},"request_id":"req_1"}`, claierr.ErrAuthFailed, "authentication_error"},
+		{"400 invalid_request_error", http.StatusBadRequest, `{"type":"error","error":{"type":"invalid_request_error","message":"max_tokens: too large"}}`, claierr.ErrUnexpectedProviderResponse, "invalid_request_error"},
+		{"529 overloaded_error", 529, `{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}`, claierr.ErrProviderUnavailable, "overloaded_error"},
+		{"500 without an envelope", http.StatusInternalServerError, `upstream failed`, claierr.ErrProviderUnavailable, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := claudeErr(t, func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(tc.body))
+			})
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("expected %v, got: %v", tc.want, err)
+			}
+			var apiErr claierr.APIErrorer
+			if !errors.As(err, &apiErr) {
+				t.Fatalf("no API facts on %T %v", err, err)
+			}
+			api := apiErr.API()
+			if api.ProviderCode != tc.code || api.StatusCode != tc.status || api.Body != tc.body {
+				t.Fatalf("facts = %+v, want provider code %q", api, tc.code)
+			}
+		})
+	}
+}

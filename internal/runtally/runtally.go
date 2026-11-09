@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/quantity"
 )
 
@@ -107,11 +108,11 @@ type Scope struct {
 func Open(env Env, tempRoot string) (*Scope, error) {
 	childDir, err := os.MkdirTemp(tempRoot, "clai-run-tally-")
 	if err != nil {
-		return nil, fmt.Errorf("create subagent tally dir: %w", err)
+		return nil, diag.Errorf("create subagent tally dir: %w", err)
 	}
 	s := &Scope{env: env, parentDir: env.Getenv(EnvDir), childDir: childDir}
 	if err := env.Setenv(EnvDir, childDir); err != nil {
-		return nil, errors.Join(fmt.Errorf("set %s: %w", EnvDir, err), os.RemoveAll(childDir))
+		return nil, errors.Join(diag.Errorf("set %s: %w", EnvDir, err), os.RemoveAll(childDir))
 	}
 	return s, nil
 }
@@ -121,17 +122,17 @@ func Open(env Env, tempRoot string) (*Scope, error) {
 func (s *Scope) Collect() (Totals, error) {
 	paths, err := filepath.Glob(filepath.Join(s.childDir, reportPattern))
 	if err != nil {
-		return Totals{}, fmt.Errorf("list subagent reports: %w", err)
+		return Totals{}, diag.Errorf("list subagent reports: %w", err)
 	}
 	var sum Totals
 	for _, p := range paths {
 		raw, err := os.ReadFile(p)
 		if err != nil {
-			return Totals{}, fmt.Errorf("read subagent report: %w", err)
+			return Totals{}, diag.Errorf("read subagent report: %w", err)
 		}
 		var t Totals
 		if err := json.Unmarshal(raw, &t); err != nil {
-			return Totals{}, fmt.Errorf("parse subagent report %s: %w", filepath.Base(p), err)
+			return Totals{}, diag.Errorf("parse subagent report %s: %w", filepath.Base(p), err)
 		}
 		sum = sum.Add(t)
 	}
@@ -174,18 +175,18 @@ func (s *Scope) Report(t Totals) (ReportOutcome, error) {
 	}
 	raw, err := json.Marshal(t)
 	if err != nil {
-		return Reported, fmt.Errorf("encode run tally: %w", err)
+		return Reported, diag.Errorf("encode run tally: %w", err)
 	}
 	f, err := os.CreateTemp(s.parentDir, reportPattern+pendingSuffix)
 	if err != nil {
-		return Reported, fmt.Errorf("create run tally: %w", err)
+		return Reported, diag.Errorf("create run tally: %w", err)
 	}
 	_, writeErr := f.Write(raw)
 	if err := errors.Join(writeErr, f.Close()); err != nil {
-		return Reported, errors.Join(fmt.Errorf("write run tally: %w", err), os.Remove(f.Name()))
+		return Reported, errors.Join(diag.Errorf("write run tally: %w", err), os.Remove(f.Name()))
 	}
 	if err := os.Rename(f.Name(), strings.TrimSuffix(f.Name(), pendingSuffix)); err != nil {
-		return Reported, errors.Join(fmt.Errorf("publish run tally: %w", err), os.Remove(f.Name()))
+		return Reported, errors.Join(diag.Errorf("publish run tally: %w", err), os.Remove(f.Name()))
 	}
 	return Reported, nil
 }
@@ -200,7 +201,7 @@ func (s *Scope) Close() error {
 		envErr = s.env.Setenv(EnvDir, s.parentDir)
 	}
 	if envErr != nil {
-		envErr = fmt.Errorf("restore %s: %w", EnvDir, envErr)
+		envErr = diag.Errorf("restore %s: %w", EnvDir, envErr)
 	}
 	return errors.Join(envErr, os.RemoveAll(s.childDir))
 }

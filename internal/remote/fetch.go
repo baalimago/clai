@@ -7,6 +7,8 @@ import (
 	"io"
 	"mime"
 	"net/http"
+
+	"github.com/baalimago/clai/internal/diag"
 )
 
 // Doer sends one HTTP request. *http.Client satisfies it; the composition
@@ -27,7 +29,7 @@ func NewClient() *http.Client {
 // CheckRedirect refuses a redirect that leaves https and caps the chain.
 func CheckRedirect(req *http.Request, via []*http.Request) error {
 	if req.URL.Scheme != "https" {
-		return fmt.Errorf("%w: %s", ErrInsecureRedirect, req.URL)
+		return diag.Errorf("%w: %s", ErrInsecureRedirect, req.URL)
 	}
 	if len(via) >= 5 {
 		return fmt.Errorf("more than 5 redirects")
@@ -68,12 +70,12 @@ func (e *FetchError) Error() string {
 func fetch(ctx context.Context, client Doer, target, url, accept string, requireJSON bool) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("build request for %s: %w", url, err)
+		return nil, diag.Errorf("build request for %s: %w", url, err)
 	}
 	req.Header.Set("Accept", accept)
 	res, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("fetch %s: %w", url, err)
+		return nil, diag.Errorf("fetch %s: %w", url, err)
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
@@ -84,7 +86,7 @@ func fetch(ctx context.Context, client Doer, target, url, accept string, require
 	}
 	body, err := io.ReadAll(io.LimitReader(res.Body, MaxBodyBytes+1))
 	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", url, err)
+		return nil, diag.Errorf("read %s: %w", url, err)
 	}
 	return body, nil
 }

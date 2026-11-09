@@ -168,7 +168,7 @@ func TestNewImageTurn_wiresTheQueryCommand(t *testing.T) {
 	}}
 	conf := Default
 	conf.Out = &bytes.Buffer{}
-	turn, err := newImageTurn(confDir, &conf, parsedQueryFlags(t, "-t", "generate_image", "hi"), deps, route.OtherVendor)
+	turn, err := newImageTurn(context.Background(), confDir, &conf, parsedQueryFlags(t, "-t", "generate_image", "hi"), deps, route.OtherVendor)
 	if err != nil {
 		t.Fatalf("newImageTurn: %v", err)
 	}
@@ -195,7 +195,7 @@ func TestNewImageTurn_wiresTheQueryCommand(t *testing.T) {
 func TestNewImageTurn_readsPhotoConfig(t *testing.T) {
 	confDir := t.TempDir()
 	calls := 0
-	deps := QueryCommandDeps{PhotoConfig: func(dir string) (photo.Configurations, error) {
+	deps := QueryCommandDeps{PhotoConfig: func(_ context.Context, dir string) (photo.Configurations, error) {
 		calls++
 		if dir != confDir {
 			t.Fatalf("PhotoConfig dir = %q, want %q", dir, confDir)
@@ -204,7 +204,7 @@ func TestNewImageTurn_readsPhotoConfig(t *testing.T) {
 	}}
 	conf := Default
 	conf.Out = &bytes.Buffer{}
-	turn, err := newImageTurn(confDir, &conf, parsedQueryFlags(t, "-t", "generate_image", "hi"), deps, route.OtherVendor)
+	turn, err := newImageTurn(context.Background(), confDir, &conf, parsedQueryFlags(t, "-t", "generate_image", "hi"), deps, route.OtherVendor)
 	if err != nil {
 		t.Fatalf("newImageTurn: %v", err)
 	}
@@ -218,12 +218,12 @@ func TestNewImageTurn_readsPhotoConfig(t *testing.T) {
 
 func TestNewImageTurn_photoConfigError(t *testing.T) {
 	boom := errors.New("boom")
-	deps := QueryCommandDeps{PhotoConfig: func(string) (photo.Configurations, error) {
+	deps := QueryCommandDeps{PhotoConfig: func(context.Context, string) (photo.Configurations, error) {
 		return photo.Configurations{}, boom
 	}}
 	conf := Default
 	conf.Out = &bytes.Buffer{}
-	_, err := newImageTurn(t.TempDir(), &conf, parsedQueryFlags(t, "hi"), deps, route.OtherVendor)
+	_, err := newImageTurn(context.Background(), t.TempDir(), &conf, parsedQueryFlags(t, "hi"), deps, route.OtherVendor)
 	if !errors.Is(err, boom) {
 		t.Fatalf("err = %v, want boom", err)
 	}
@@ -236,12 +236,12 @@ func (notATextQuerier) Query(context.Context) error { return nil }
 func TestAttachImageTurn_needsATextQuerier(t *testing.T) {
 	conf := Default
 	conf.Out = &bytes.Buffer{}
-	err := attachImageTurn(t.TempDir(), &conf, parsedQueryFlags(t, "hi"), QueryCommandDeps{}, models.Querier(notATextQuerier{}))
+	err := attachImageTurn(context.Background(), t.TempDir(), &conf, parsedQueryFlags(t, "hi"), QueryCommandDeps{}, models.Querier(notATextQuerier{}))
 	if err == nil || !strings.Contains(err.Error(), "not a text querier") {
 		t.Fatalf("err = %v, want the text-querier error", err)
 	}
 	q := &Querier[*MockQuerier]{}
-	if err := attachImageTurn(t.TempDir(), &conf, parsedQueryFlags(t, "hi"), QueryCommandDeps{}, q); err != nil || q.imageTurn == nil {
+	if err := attachImageTurn(context.Background(), t.TempDir(), &conf, parsedQueryFlags(t, "hi"), QueryCommandDeps{}, q); err != nil || q.imageTurn == nil {
 		t.Fatalf("attach: err = %v, turn set = %v", err, q.imageTurn != nil)
 	}
 	q.setImageTurn(nil)
@@ -270,7 +270,7 @@ func TestToolSelection_starSelectsBothImageTools(t *testing.T) {
 	if !conf.UseTools || conf.RequestedToolGlobs != nil {
 		t.Fatalf("'*' must select every registry tool: %+v", conf)
 	}
-	tools.Init()
+	tools.Init(context.Background())
 	viewImage, ok := tools.Registry.Get("view_image")
 	if !ok {
 		t.Fatal("view_image is not a registered native tool")

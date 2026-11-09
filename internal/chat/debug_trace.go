@@ -1,29 +1,21 @@
 package chat
 
 import (
-	"fmt"
+	"context"
 
-	"github.com/baalimago/clai/internal/debugflags"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
+	"github.com/baalimago/clai/internal/runenv"
 )
 
-func debugChatEnabled() bool {
-	return debugflags.Enabled("CHAT")
+func debugChatEnabled(ctx context.Context) bool {
+	return runenv.DebugEnabled(ctx, runenv.SubsystemChat)
 }
 
-func traceChatf(format string, args ...any) {
-	if !debugChatEnabled() {
-		return
-	}
-	ancli.PrintOK(fmt.Sprintf("[DEBUG_CHAT] "+format+"\n", args...))
+func traceChatf(ctx context.Context, format string, args ...any) {
+	runenv.Debugf(ctx, runenv.SubsystemChat, format, args...)
 }
 
-// debugDirscopef prints dirscope internals when DEBUG_DIRSCOPE (or plain
-// DEBUG) is truthy. Recording and search stay silent by default; this is the
-// opt-in detail layer for binding/history/search behaviour.
-func debugDirscopef(format string, args ...any) {
-	if !debugflags.Enabled("DIRSCOPE") {
-		return
-	}
-	ancli.PrintOK(fmt.Sprintf("[DEBUG_DIRSCOPE] "+format+"\n", args...))
+// debugDirscopef reports dirscope internals at debug level: the opt-in detail
+// layer for binding/history/search behaviour.
+func debugDirscopef(ctx context.Context, format string, args ...any) {
+	runenv.Debugf(ctx, runenv.SubsystemDirscope, format, args...)
 }

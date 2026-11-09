@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"io"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 
+	"github.com/baalimago/clai/internal/diag"
+	"github.com/baalimago/clai/internal/display"
 	"github.com/baalimago/clai/internal/look"
 	"github.com/baalimago/clai/internal/models"
+	"github.com/baalimago/clai/internal/runenv"
 	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
@@ -64,7 +66,7 @@ func (q *Querier[C]) streamWithRetry(ctx context.Context, session *QuerySession,
 		delay := q.stepRetry.Delays[try]
 		q.noticeStepRetry(err, try+1, delay)
 		if waitErr := q.stepRetry.Wait(ctx, delay); waitErr != nil {
-			return nil, fmt.Errorf("retry wait after %v: %w", err, waitErr)
+			return nil, diag.Errorf("retry wait after %v: %w", err, waitErr)
 		}
 	}
 }
@@ -77,11 +79,20 @@ func stepRetryable(err error) bool {
 func (q *Querier[C]) noticeStepRetry(cause error, attempt int, delay time.Duration) {
 	title := fmt.Sprintf("retry %d/%d in %v", attempt, len(q.stepRetry.Delays), delay)
 	model, reason := q.routeModel(), stepRetryReason(cause)
+	if q.json.active() {
+		_ = q.json.stderr.ReportProgress(display.Progress{
+			Title:  "retry",
+			Row:    model,
+			State:  "update",
+			Detail: fmt.Sprintf("attempt %d/%d in %v: %s", attempt, len(q.stepRetry.Delays), delay, reason),
+		})
+		return
+	}
 	if q.activityViewport != nil && q.usesActivityViewport() {
 		_ = q.warnf("%s · %s · %s", title, model, reason)
 		return
 	}
-	var w io.Writer = os.Stderr
+	var w io.Writer = runenv.From(q.diagContext()).Stderr()
 	if q.errOut != nil {
 		w = q.errOut
 	}

@@ -1,11 +1,13 @@
 package generic
 
 import (
+	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/models"
+	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -50,7 +52,12 @@ type StreamCompleter struct {
 	reasoningContent    []byte
 	client              *http.Client
 	apiKey              string
-	debug               bool
+	// subsystem is the vendor's diagnostic subsystem; ctx is the current
+	// stream's run.
+	subsystem string
+	ctx       context.Context
+	// stream is what the current response body has shown so far.
+	stream streamState
 
 	// ResponseFormat configures structured output. When nil, defaults to {type: "text"}.
 	ResponseFormat *ResponseFormat `json:"-"`
@@ -194,11 +201,11 @@ func (j *JSONSchemaSpec) SchemaJSON() (json.RawMessage, error) {
 		return j.RawSchema, nil
 	}
 	if j.Schema == nil {
-		return nil, fmt.Errorf("%w: json_schema %q has no schema", ErrResponseFormatShape, j.Name)
+		return nil, diag.Errorf("%w: json_schema %q has no schema", ErrResponseFormatShape, j.Name)
 	}
 	b, err := json.Marshal(j.Schema)
 	if err != nil {
-		return nil, fmt.Errorf("encode json_schema %q: %w", j.Name, err)
+		return nil, diag.Errorf("encode json_schema %q: %w", j.Name, err)
 	}
 	return b, nil
 }
@@ -219,4 +226,47 @@ type req struct {
 	Tools             []ToolSuper    `json:"tools,omitempty"`
 	ParalellToolCalls bool           `json:"parallel_tools_call,omitempty"`
 	Modalities        []string       `json:"modalities,omitempty"`
+}
+
+// finishReasonLength is the finish_reason of a reply cut at the output token
+// limit.
+const finishReasonLength = "length"
+
+// streamState is what one response body has shown so far.
+type streamState struct {
+	// sawData is set by the first data event that decodes; without one the
+	// body is not a completion stream.
+	sawData bool
+	// finished is set by finish_reason or [DONE], the terminators the chat
+	// completions protocol guarantees.
+	finished bool
+	excerpt  excerptBuffer
+	// malformed is the first data event that was no JSON.
+	malformed []byte
+	// produced is set by text, reasoning, an image or a tool call.
+	produced bool
+	// calls are tool calls to send before the current line's own event.
+	calls []pub_models.Call
+}
+
+func (st *streamState) takeCalls() []models.CompletionEvent {
+	events := make([]models.CompletionEvent, 0, len(st.calls))
+	for _, call := range st.calls {
+		events = append(events, call)
+	}
+	st.calls = nil
+	return events
+}
+
+// emptyEnd is the failure of a body that ends with no completion in it: one
+// that is no completion stream at all, or one whose only content was a data
+// event that did not parse. It is nil for every other body.
+func (st *streamState) emptyEnd() error {
+	switch {
+	case !st.sawData && st.malformed == nil:
+		return NoCompletionError(st.excerpt.head)
+	case !st.produced && st.malformed != nil:
+		return claierr.NewUnexpectedProviderResponse(http.StatusOK, []byte("the provider returned no completion: unparseable stream event: "+BodyExcerpt(st.malformed)))
+	}
+	return nil
 }

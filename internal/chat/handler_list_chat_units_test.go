@@ -1,14 +1,20 @@
 package chat
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/internal/jsonl"
+	"github.com/baalimago/clai/internal/runenv"
+	"github.com/baalimago/clai/internal/stdio"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/internal/vendors"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -106,7 +112,7 @@ func TestList_DebugPrintAndMalformedChat(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(convDir, "broken.json"), []byte("{not json"), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	_, err := cq.list()
+	_, err := cq.list(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "failed to get chat") {
 		t.Fatalf("err = %v, want the per-chat parse failure", err)
 	}
@@ -126,7 +132,7 @@ func TestHandleListCmd_IndexReadFailure(t *testing.T) {
 
 func TestActOnChat_UnknownChoice(t *testing.T) {
 	cq := &ChatHandler{out: io.Discard, input: utils.NewMacroReader([]string{"zzz"})}
-	err := cq.actOnChat(pub_models.Chat{ID: "x"}, "")
+	err := cq.actOnChat(context.Background(), pub_models.Chat{ID: "x"}, "")
 	if err == nil || !strings.Contains(err.Error(), "unknown choice") {
 		t.Fatalf("err = %v, want the unknown-choice error", err)
 	}
@@ -134,7 +140,7 @@ func TestActOnChat_UnknownChoice(t *testing.T) {
 
 func TestActOnChat_PrintFailure(t *testing.T) {
 	cq := &ChatHandler{out: &failWriteAt{remaining: 0}, input: utils.NewMacroReader([]string{"b"})}
-	err := cq.actOnChat(pub_models.Chat{ID: "x"}, "")
+	err := cq.actOnChat(context.Background(), pub_models.Chat{ID: "x"}, "")
 	if err == nil || !strings.Contains(err.Error(), "failed to printChatInfo") {
 		t.Fatalf("err = %v, want the print failure", err)
 	}
@@ -144,13 +150,13 @@ func TestActOnChat_BackAndPreviousQuery(t *testing.T) {
 	cq, confDir := newTestHandler(t)
 	cq.out = io.Discard
 	cq.input = utils.NewMacroReader([]string{"b"})
-	if err := cq.actOnChat(pub_models.Chat{ID: "x"}, ""); err != nil {
+	if err := cq.actOnChat(context.Background(), pub_models.Chat{ID: "x"}, ""); err != nil {
 		t.Fatalf("actOnChat(back): %v", err)
 	}
 
 	cq.input = utils.NewMacroReader([]string{"P"})
 	chat := pub_models.Chat{ID: "prev-chat", Messages: []pub_models.Message{{Role: "user", Content: "hi"}}}
-	if err := cq.actOnChat(chat, ""); err != nil {
+	if err := cq.actOnChat(context.Background(), chat, ""); err != nil {
 		t.Fatalf("actOnChat(save as previous): %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(confDir, "conversations", "prev-chat.json")); err != nil {
@@ -175,7 +181,7 @@ func TestCloneForeignChat_SaveFailure(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 	cq := &ChatHandler{convDir: filepath.Join(blocker, "conversations")}
-	_, err := cq.cloneForeignChat(pub_models.Chat{Source: "anthropic", SourceID: "s"})
+	_, err := cq.cloneForeignChat(context.Background(), pub_models.Chat{Source: "anthropic", SourceID: "s"})
 	if err == nil || !strings.Contains(err.Error(), "failed to save cloned chat") {
 		t.Fatalf("err = %v", err)
 	}
@@ -190,12 +196,12 @@ func TestDeleteAndEditMessageInChat_BackExitsCleanly(t *testing.T) {
 	}
 
 	cq.input = utils.NewMacroReader([]string{"b"})
-	if err := cq.deleteMessageInChat(chat); err != nil {
+	if err := cq.deleteMessageInChat(context.Background(), chat); err != nil {
 		t.Fatalf("deleteMessageInChat(back): %v", err)
 	}
 
 	cq.input = utils.NewMacroReader([]string{"b"})
-	if err := cq.editMessageInChat(chat); err != nil {
+	if err := cq.editMessageInChat(context.Background(), chat); err != nil {
 		t.Fatalf("editMessageInChat(back): %v", err)
 	}
 }
@@ -209,12 +215,55 @@ func TestHandleEditAndDeleteMessages(t *testing.T) {
 	}
 
 	cq.input = utils.NewMacroReader([]string{"b"})
-	if err := cq.handleDeleteMessages(chat, 19); err != nil {
+	if err := cq.handleDeleteMessages(context.Background(), chat, 19); err != nil {
 		t.Fatalf("handleDeleteMessages: %v", err)
 	}
 
 	cq.input = utils.NewMacroReader([]string{"b"})
-	if err := cq.handleEditMessages(chat, 19); err != nil {
+	if err := cq.handleEditMessages(context.Background(), chat, 19); err != nil {
 		t.Fatalf("handleEditMessages: %v", err)
+	}
+}
+
+// TestActOnChat_jsonSelectPrompt pins R3-03: under -json the chat's action
+// question is a select prompt record after the chat info, with the actions
+// as its choices, and the same input answers it.
+func TestActOnChat_jsonSelectPrompt(t *testing.T) {
+	for _, foreign := range []bool{false, true} {
+		var out bytes.Buffer
+		env := runenv.New(runenv.Config{
+			Streams: stdio.New(stdio.Config{Format: jsonl.FormatJSON, Stdout: &out, Stderr: io.Discard}),
+			Format:  jsonl.FormatJSON,
+		})
+		ctx := runenv.With(context.Background(), env)
+		cq := &ChatHandler{out: env.Stdout(), input: utils.NewMacroReader([]string{"b"})}
+		var err error
+		if foreign {
+			err = cq.actOnForeignChat(ctx, pub_models.Chat{ID: "x", Source: "codex", SourceID: "s"}, nil, "")
+		} else {
+			err = cq.actOnChat(ctx, pub_models.Chat{ID: "x"}, "")
+		}
+		if err != nil {
+			t.Fatalf("foreign %v: act on chat (back): %v", foreign, err)
+		}
+		if err := env.Streams().Close(); err != nil {
+			t.Fatalf("Close: %v", err)
+		}
+		lines := strings.Split(strings.TrimSuffix(out.String(), "\n"), "\n")
+		var last struct {
+			Type, Kind, Text string
+			Choices          []string
+		}
+		if err := json.Unmarshal([]byte(lines[len(lines)-1]), &last); err != nil {
+			t.Fatalf("foreign %v: last stdout line %q is not a record: %v", foreign, lines[len(lines)-1], err)
+		}
+		if last.Type != "prompt" || last.Kind != "select" || len(last.Choices) < 3 || !slices.Contains(last.Choices, "[q]uit") {
+			t.Fatalf("foreign %v: last record = %+v, want a select prompt with the actions", foreign, last)
+		}
+		for _, line := range lines[:len(lines)-1] {
+			if strings.Contains(line, "[q]uit") {
+				t.Fatalf("foreign %v: the actions are also an output record: %q", foreign, line)
+			}
+		}
 	}
 }

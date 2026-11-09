@@ -18,8 +18,10 @@ import (
 	"github.com/baalimago/clai/internal"
 	"github.com/baalimago/clai/internal/cloud"
 	"github.com/baalimago/clai/internal/cloud/sync"
+	"github.com/baalimago/clai/internal/display"
+	"github.com/baalimago/clai/internal/runenv"
+	"github.com/baalimago/clai/internal/stdio"
 	"github.com/baalimago/clai/internal/utils"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/cmd"
 )
 
@@ -40,6 +42,12 @@ type Deps struct {
 	ErrIsTerminal func() bool
 	// Color is whether Out takes the theme's colours.
 	Color func() bool
+	// Plain is whether Out carries JSON records, so the terminal look is
+	// dropped from the text (F12).
+	Plain func() bool
+	// Prompt shows a question as a record before In is read; nil writes
+	// its text form to Out (F13).
+	Prompt func(display.Prompt) error
 	// Interactive is whether a person can answer a prompt on In.
 	Interactive func() bool
 	Now         func() time.Time
@@ -62,24 +70,37 @@ type PublishOptions struct {
 	In io.Reader
 }
 
-func (d Deps) withDefaults() Deps {
+// withDefaults fills what the caller left nil from the run's Env on ctx.
+func (d Deps) withDefaults(ctx context.Context) Deps {
+	env := runenv.From(ctx)
 	if d.Out == nil {
-		d.Out = os.Stdout
+		d.Out = env.Stdout()
 	}
 	if d.In == nil {
-		d.In = os.Stdin
-	}
-	if d.Err == nil {
-		d.Err = os.Stderr
+		d.In = env.Stdin()
 	}
 	if d.ErrIsTerminal == nil {
-		d.ErrIsTerminal = func() bool { return utils.IsTerminalWriter(d.Err) }
+		if d.Err == nil {
+			d.ErrIsTerminal = func() bool { return env.IsTerminal(stdio.Stderr) }
+		} else {
+			errOut := d.Err
+			d.ErrIsTerminal = func() bool { return utils.IsTerminalWriter(errOut) }
+		}
+	}
+	if d.Err == nil {
+		d.Err = env.Stderr()
 	}
 	if d.Color == nil {
-		d.Color = func() bool { return ancli.UseColor && utils.IsTerminalWriter(d.Out) }
+		d.Color = func() bool { return env.Color() && env.IsTerminal(stdio.Stdout) }
+	}
+	if d.Plain == nil {
+		d.Plain = env.JSON
+	}
+	if d.Prompt == nil && env.JSON() {
+		d.Prompt = func(p display.Prompt) error { return env.ShowPrompt(stdio.Stdout, p) }
 	}
 	if d.Interactive == nil {
-		d.Interactive = stdinIsTerminal
+		d.Interactive = env.StdinIsTerminal
 	}
 	if d.Now == nil {
 		d.Now = time.Now
@@ -104,8 +125,6 @@ func (d Deps) withDefaults() Deps {
 	}
 	return d
 }
-
-func stdinIsTerminal() bool { return isTerminal(os.Stdin) }
 
 // UsageError is a cloud subcommand given the wrong arguments.
 type UsageError struct{ Msg string }
@@ -200,14 +219,13 @@ Examples:
 
 // Command builds the cloud command tree.
 func Command(deps Deps) *internal.Command {
-	deps = deps.withDefaults()
-	r := &runner{deps: deps}
+	r := &runner{}
 	c := &internal.Command{Name: "cloud", Desc: "Your clai.chat account and sync (optional)", HelpText: helpText}
-	c.OnRun = func(_ context.Context, c *internal.Command) error {
+	c.OnRun = func(ctx context.Context, c *internal.Command) error {
 		if args := c.Args(); len(args) > 1 {
 			return &UnknownSubcommandError{Name: args[1]}
 		}
-		_, err := fmt.Fprintln(deps.Out, c.Help())
+		_, err := fmt.Fprintln(deps.withDefaults(ctx).Out, c.Help())
 		return err
 	}
 	c.CheckArgs = func(args []string) error { return checkArgs(deps, args) }
@@ -226,6 +244,7 @@ func Command(deps Deps) *internal.Command {
 			if err != nil {
 				return &UsageError{Msg: err.Error()}
 			}
+			r.deps = deps.withDefaults(ctx)
 			return run(ctx, args)
 		}
 		return s

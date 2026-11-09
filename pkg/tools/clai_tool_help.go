@@ -1,9 +1,9 @@
 package tools
 
 import (
-	"fmt"
 	"os/exec"
 
+	"github.com/baalimago/clai/internal/diag"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -35,7 +35,7 @@ func (t *claiHelpTool) Call(input pub_models.Input) (string, error) {
 	cmd := exec.Command(ClaiBinaryPath, "help")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return string(out), fmt.Errorf("failed to run clai help: %w", err)
+		return string(out), diag.Errorf("failed to run clai help: %w", err)
 	}
 	return string(out), nil
 }

@@ -7,21 +7,13 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
-
-func plainStatus(t *testing.T) {
-	t.Helper()
-	prev := ancli.UseColor
-	ancli.UseColor = false
-	t.Cleanup(func() { ancli.UseColor = prev })
-}
 
 // fixedBoard mirrors the audio diarization layout the package was
 // extracted from: index, span, marked state, four counters, time.
-func fixedBoard(out *bytes.Buffer, live bool) *Board {
+func fixedBoard(out *bytes.Buffer, live, color bool) *Board {
 	cfg := Config{
+		Color: color,
 		Title: "calibrated diarization  meeting.wav  2 cores × 21m06s  3 workers",
 		Index: "core",
 		Columns: []Column{
@@ -47,9 +39,8 @@ func fixedBoard(out *bytes.Buffer, live bool) *Board {
 }
 
 func TestBoardPlainModePrintsRowsOnChange(t *testing.T) {
-	plainStatus(t)
 	out := &bytes.Buffer{}
-	b := fixedBoard(out, false)
+	b := fixedBoard(out, false, false)
 	b.Update(0, func(r *Row) {
 		r.Cells[1] = "uncalibrated pass"
 		r.Active = true
@@ -78,8 +69,8 @@ func TestBoardPlainModePrintsRowsOnChange(t *testing.T) {
 			t.Errorf("expected %q in plain output:\n%v", want, got)
 		}
 	}
-	if strings.Contains(got, "\x1b[") {
-		t.Errorf("plain mode must not emit cursor control:\n%q", got)
+	if strings.Contains(got, "\x1b[") || strings.Contains(got, "\r") {
+		t.Errorf("plain mode must not emit cursor control or color:\n%q", got)
 	}
 	if n := strings.Count(got, "\n"); n != 8 {
 		t.Errorf("expected header + 3 row lines + phase + log + footer + detail = 8 lines, got %v:\n%v", n, got)
@@ -97,9 +88,8 @@ func TestBoardPlainModePrintsRowsOnChange(t *testing.T) {
 }
 
 func TestBoardLiveModeRedrawsInPlace(t *testing.T) {
-	plainStatus(t)
 	out := &bytes.Buffer{}
-	b := fixedBoard(out, true)
+	b := fixedBoard(out, true, false)
 	if out.Len() != 0 {
 		t.Fatalf("live mode must not print the header before the first change, got %q", out.String())
 	}
@@ -169,9 +159,8 @@ func TestBoardLiveModeRedrawsInPlace(t *testing.T) {
 }
 
 func TestBoardAnimateStopsOnFinish(t *testing.T) {
-	plainStatus(t)
 	out := &bytes.Buffer{}
-	b := fixedBoard(out, true)
+	b := fixedBoard(out, true, false)
 	done := make(chan struct{})
 	go func() { b.Animate(context.Background()); close(done) }()
 	time.Sleep(2 * TickInterval)
@@ -187,11 +176,8 @@ func TestBoardAnimateStopsOnFinish(t *testing.T) {
 }
 
 func TestBoardColorsWarningRowsOnly(t *testing.T) {
-	prev := ancli.UseColor
-	ancli.UseColor = true
-	t.Cleanup(func() { ancli.UseColor = prev })
 	out := &bytes.Buffer{}
-	b := fixedBoard(out, false)
+	b := fixedBoard(out, false, true)
 	b.Update(0, func(r *Row) { r.Mark = MarkDone; r.Cells[1] = "calibrated" })
 	b.Update(1, func(r *Row) { r.Mark = MarkWarn; r.Cells[1] = "1 unresolved" })
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
@@ -207,9 +193,8 @@ func TestBoardColorsWarningRowsOnly(t *testing.T) {
 }
 
 func TestBoardRowIndexOverride(t *testing.T) {
-	plainStatus(t)
 	out := &bytes.Buffer{}
-	b := fixedBoard(out, false)
+	b := fixedBoard(out, false, false)
 	b.Update(1, func(r *Row) { r.Index = "7/12"; r.Cells[1] = "working" })
 	if got := out.String(); !strings.Contains(got, "  7/12   21:06–42:12") || strings.Contains(got, "2/2") {
 		t.Errorf("Index must replace the position in the first column:\n%q", got)
@@ -230,7 +215,7 @@ func TestBoardNilAndBoundsAreSafe(t *testing.T) {
 	b.Finish("x")
 	b.Animate(context.Background())
 	out := &bytes.Buffer{}
-	real := fixedBoard(out, false)
+	real := fixedBoard(out, false, false)
 	out.Reset()
 	real.Update(7, func(*Row) { t.Fatal("out-of-range update must not run") })
 	if out.Len() != 0 {
@@ -256,18 +241,11 @@ func TestHelpers(t *testing.T) {
 	}
 }
 
-func colourStatus(t *testing.T) {
-	t.Helper()
-	prev := ancli.UseColor
-	ancli.UseColor = true
-	t.Setenv("NO_COLOR", "")
-	t.Cleanup(func() { ancli.UseColor = prev })
-}
-
 // eightyBoard lays out a summarize-like table whose columns line, its
 // header and a warning row are exactly eighty visible columns wide.
 func eightyBoard(out *bytes.Buffer, title string) *Board {
 	cfg := Config{
+		Color: true,
 		Title: title,
 		Index: "job",
 		Columns: []Column{
@@ -284,7 +262,7 @@ func eightyBoard(out *bytes.Buffer, title string) *Board {
 }
 
 func TestBoardLiveColourKeepsLastColumnAndReset(t *testing.T) {
-	colourStatus(t)
+	t.Setenv("NO_COLOR", "")
 	out := &bytes.Buffer{}
 	b := eightyBoard(out, strings.Repeat("t", 78))
 	b.Update(1, func(r *Row) {
@@ -317,7 +295,7 @@ func TestBoardLiveColourKeepsLastColumnAndReset(t *testing.T) {
 }
 
 func TestBoardLiveWideTitleFitsWidth(t *testing.T) {
-	colourStatus(t)
+	t.Setenv("NO_COLOR", "")
 	out := &bytes.Buffer{}
 	b := eightyBoard(out, strings.Repeat("日", 60))
 	b.Update(0, func(r *Row) { r.Cells[1] = "working" })
@@ -358,10 +336,9 @@ func TestTruncate(t *testing.T) {
 }
 
 func TestBoardMutatorsAfterFinishAreNoOps(t *testing.T) {
-	plainStatus(t)
 	for _, live := range []bool{true, false} {
 		out := &bytes.Buffer{}
-		b := fixedBoard(out, live)
+		b := fixedBoard(out, live, false)
 		b.Update(0, func(r *Row) { r.Cells[1] = "working" })
 		b.Finish("", "extra 1", "extra 2")
 		before := out.String()
@@ -385,9 +362,8 @@ func TestBoardMutatorsAfterFinishAreNoOps(t *testing.T) {
 }
 
 func TestBoardFinishShrinksFrame(t *testing.T) {
-	plainStatus(t)
 	out := &bytes.Buffer{}
-	b := fixedBoard(out, true)
+	b := fixedBoard(out, true, false)
 	b.SetFooterFunc(func([]Row) string { return "live footer" })
 	b.Update(0, func(r *Row) { r.Cells[1] = "working" })
 	if !strings.Contains(out.String(), "  live footer") {

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/baalimago/clai/internal/diag"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -113,7 +114,7 @@ func (g GitTool) Call(input pub_models.Input) (string, error) {
 	}
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("failed to run git %s: %w, output: %s", op, err, string(output))
+		return "", diag.Errorf("failed to run git %s: %w, output: %s", op, err, string(output))
 	}
 	return string(output), nil
 }
@@ -125,7 +126,7 @@ func gitRangeArgs(input pub_models.Input) ([]string, error) {
 	}
 	args, err := splitQuotedArgs(r)
 	if err != nil {
-		return nil, fmt.Errorf("range %q: %w", r, err)
+		return nil, diag.Errorf("range %q: %w", r, err)
 	}
 	for _, a := range args {
 		if a == "--output" || strings.HasPrefix(a, "--output=") {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os/exec"
 
+	"github.com/baalimago/clai/internal/diag"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -65,7 +66,7 @@ func (f FindTool) Call(input pub_models.Input) (string, error) {
 	}
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("failed to run find: %w, output: %v", err, string(output))
+		return "", diag.Errorf("failed to run find: %w, output: %v", err, string(output))
 	}
 	return string(output), nil
 }

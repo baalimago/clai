@@ -5,13 +5,15 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/internal/testenv/procenv"
+
 	"github.com/baalimago/clai/internal"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
 func Test_Command_tree(t *testing.T) {
 	deps := CommandDeps{
-		ConfigPrep: func() (string, []string, error) { return t.TempDir(), nil, nil },
+		ConfigPrep: func(context.Context) (string, []string, error) { return t.TempDir(), nil, nil },
 	}
 	c := Command(deps)
 	if c.Describe() == "" || !strings.Contains(c.Help(), "t|transcribe") || !strings.Contains(c.Help(), "c|calibrate") {
@@ -22,11 +24,11 @@ func Test_Command_tree(t *testing.T) {
 		if err := c.Flagset().Parse(nil); err != nil {
 			t.Fatalf("Parse: %v", err)
 		}
-		if err := c.Setup(context.Background()); err != nil {
+		if err := c.Setup(procenv.Context(context.Background())); err != nil {
 			t.Fatalf("Setup: %v", err)
 		}
 		stderr := testboil.CaptureStderr(t, func(t *testing.T) {
-			if err := c.Run(context.Background()); err == nil || !strings.Contains(err.Error(), "missing audio verb") {
+			if err := c.Run(procenv.Context(context.Background())); err == nil || !strings.Contains(err.Error(), "missing audio verb") {
 				t.Fatalf("expected missing-verb error, got: %v", err)
 			}
 		})
@@ -46,7 +48,7 @@ func Test_Command_tree(t *testing.T) {
 		if err := sub.Flagset().Parse([]string{"does-not-exist.wav"}); err != nil {
 			t.Fatalf("Parse: %v", err)
 		}
-		err := sub.Setup(context.Background())
+		err := sub.Setup(procenv.Context(context.Background()))
 		if err == nil || !strings.Contains(err.Error(), "failed to find audio file") {
 			t.Fatalf("expected missing-file error through the real setup path, got: %v", err)
 		}
@@ -62,12 +64,12 @@ func Test_Command_tree(t *testing.T) {
 		if err := sub.Flagset().Parse(nil); err != nil {
 			t.Fatalf("Parse: %v", err)
 		}
-		if err := sub.Setup(context.Background()); err != nil {
+		if err := sub.Setup(procenv.Context(context.Background())); err != nil {
 			t.Fatalf("Setup: %v", err)
 		}
 		stderr := testboil.CaptureStderr(t, func(t *testing.T) {
 			out := testboil.CaptureStdout(t, func(t *testing.T) {
-				if err := sub.Run(context.Background()); err != nil {
+				if err := sub.Run(procenv.Context(context.Background())); err != nil {
 					t.Fatalf("Run: %v", err)
 				}
 			})
@@ -88,10 +90,10 @@ func Test_Command_tree(t *testing.T) {
 		if err := sub.Flagset().Parse([]string{"extra"}); err != nil {
 			t.Fatalf("Parse: %v", err)
 		}
-		if err := sub.Setup(context.Background()); err != nil {
+		if err := sub.Setup(procenv.Context(context.Background())); err != nil {
 			t.Fatalf("Setup: %v", err)
 		}
-		if err := sub.Run(context.Background()); err == nil || !strings.Contains(err.Error(), "takes no arguments") {
+		if err := sub.Run(procenv.Context(context.Background())); err == nil || !strings.Contains(err.Error(), "takes no arguments") {
 			t.Fatalf("err = %v, want an argument error", err)
 		}
 	})
@@ -102,7 +104,7 @@ func Test_Command_tree(t *testing.T) {
 			t.Fatal("help sub missing")
 		}
 		out := testboil.CaptureStdout(t, func(t *testing.T) {
-			if err := sub.Run(context.Background()); err != nil {
+			if err := sub.Run(procenv.Context(context.Background())); err != nil {
 				t.Fatalf("Run: %v", err)
 			}
 		})

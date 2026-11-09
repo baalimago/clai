@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
@@ -49,16 +50,16 @@ func saveReasoningSidecars(convDir string, chat pub_models.Chat) error {
 		}
 		dir := reasoningDirFromConvDir(convDir, chat.ID)
 		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return fmt.Errorf("create reasoning dir %q: %w", dir, err)
+			return diag.Errorf("create reasoning dir %q: %w", dir, err)
 		}
 		b, err := json.MarshalIndent(msg.ReasoningItems, "", "  ")
 		if err != nil {
-			return fmt.Errorf("encode reasoning items: %w", err)
+			return diag.Errorf("encode reasoning items: %w", err)
 		}
 		b = append(b, '\n')
 		f := reasoningFileFromConvDir(convDir, chat.ID, key)
 		if err := utils.WriteFileAtomic(f, b, 0o644); err != nil {
-			return fmt.Errorf("write reasoning sidecar %q: %w", f, err)
+			return diag.Errorf("write reasoning sidecar %q: %w", f, err)
 		}
 	}
 	return nil
@@ -85,11 +86,11 @@ func loadReasoningSidecars(convDir string, chat *pub_models.Chat) error {
 			if errors.Is(err, os.ErrNotExist) {
 				continue
 			}
-			return fmt.Errorf("read reasoning sidecar %q: %w", f, err)
+			return diag.Errorf("read reasoning sidecar %q: %w", f, err)
 		}
 		var items []pub_models.ReasoningItem
 		if err := json.Unmarshal(b, &items); err != nil {
-			return fmt.Errorf("decode reasoning sidecar %q: %w", f, err)
+			return diag.Errorf("decode reasoning sidecar %q: %w", f, err)
 		}
 		msg.ReasoningItems = items
 	}
@@ -104,7 +105,7 @@ func removeReasoningSidecars(convDir, chatID string) error {
 	}
 	dir := reasoningDirFromConvDir(convDir, chatID)
 	if err := os.RemoveAll(dir); err != nil {
-		return fmt.Errorf("remove reasoning dir %q: %w", dir, err)
+		return diag.Errorf("remove reasoning dir %q: %w", dir, err)
 	}
 	return nil
 }

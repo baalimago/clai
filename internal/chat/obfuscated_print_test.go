@@ -97,7 +97,7 @@ func TestChatContinue_printsObfuscatedSummary_withPaddingAndPreview(t *testing.T
 		ID:       "chat-hello",
 		Messages: msgs,
 	}
-	if err := Save(convDir, conv); err != nil {
+	if err := Save(context.Background(), convDir, conv); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
@@ -154,7 +154,7 @@ func TestChatContinue_highMessageCount_obfuscatesOldMessages_andPrettyPrintsLast
 		ID:       "chat-high-msg-count",
 		Messages: msgs,
 	}
-	if err := Save(convDir, conv); err != nil {
+	if err := Save(context.Background(), convDir, conv); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 

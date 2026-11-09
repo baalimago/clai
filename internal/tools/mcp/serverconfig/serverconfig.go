@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
@@ -42,7 +43,7 @@ func FindConfiguredServers(filePaths []string) ([]pub_models.McpServer, error) {
 		}
 		var mcpServer pub_models.McpServer
 		if unmarshalErr := json.Unmarshal(data, &mcpServer); unmarshalErr != nil {
-			errs = append(errs, fmt.Errorf("failed to unmarshal: '%s', error: %w", file, unmarshalErr))
+			errs = append(errs, diag.Errorf("failed to unmarshal: '%s', error: %w", file, unmarshalErr))
 			continue
 		}
 		if validateErr := Validate(file, mcpServer); validateErr != nil {
@@ -52,7 +53,7 @@ func FindConfiguredServers(filePaths []string) ([]pub_models.McpServer, error) {
 		if mcpServer.EnvFile != "" {
 			expanded, expandErr := utils.ExpandUserPath(mcpServer.EnvFile)
 			if expandErr != nil {
-				errs = append(errs, fmt.Errorf("failed to expand envfile %q in %q: %w", mcpServer.EnvFile, file, expandErr))
+				errs = append(errs, diag.Errorf("failed to expand envfile %q in %q: %w", mcpServer.EnvFile, file, expandErr))
 				continue
 			}
 			if !filepath.IsAbs(expanded) {

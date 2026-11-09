@@ -39,7 +39,7 @@ func TestQueryAuthProgressAtStartupAndLazyToolCall(t *testing.T) {
 				ctx, cancel := httpSetupTestContext()
 				defer cancel()
 				var diagnostic bytes.Buffer
-				sink := newMcpLogSinkTo(mode, &diagnostic)
+				sink := newMcpLogSinkTo(context.Background(), mode, &diagnostic)
 				sink.termWidth = func() int { return 120 }
 				sink.termHeight = func() int { return 40 }
 				authz := newMcpAuthorizer(t.TempDir(), strings.NewReader(""), true, sink)
@@ -65,7 +65,7 @@ func TestQueryAuthProgressAtStartupAndLazyToolCall(t *testing.T) {
 					sink.attach()
 					connector := newAuthenticatingHttpConnector(ctx, authz, server, sink)
 					tool := mcp.NewTool(connector, "echo", pub_models.Specification{Name: "mcp_httpecho_echo"}, 0, server.Name, httpChallengeResolver(authz, server), 5*time.Second)
-					q := &Querier[*MockQuerier]{out: &bytes.Buffer{}, mcpSink: sink, tooling: tooling{run: map[string]pub_models.LLMTool{"mcp_httpecho_echo": tool}}}
+					q := &Querier[*MockQuerier]{out: &bytes.Buffer{}, mcpSink: sink, tooling: tooling{offered: offeredTools(map[string]pub_models.LLMTool{"mcp_httpecho_echo": tool})}}
 					e := toolExecutor[*MockQuerier]{querier: q}
 					if result := e.invokeToolCall(ctx, pub_models.Call{Name: "mcp_httpecho_echo", Inputs: &pub_models.Input{"text": "hello"}}); result != "hello" {
 						t.Fatalf("lazy tool call = %q, want hello", result)
@@ -90,7 +90,7 @@ func TestQueryAuthProgressAtStartupAndLazyToolCall(t *testing.T) {
 
 func TestQueryHeadlessAuthNeverPrintsOrOpensBrowser(t *testing.T) {
 	var output bytes.Buffer
-	authz := newMcpAuthorizer(t.TempDir(), strings.NewReader(""), false, newMcpLogSinkTo(mcpLogRawStructured, &output))
+	authz := newMcpAuthorizer(t.TempDir(), strings.NewReader(""), false, newMcpLogSinkTo(context.Background(), mcpLogRawStructured, &output))
 	mcpauth.WithBrowserOpener(progressCheckingBrowser(func(string) error { t.Fatal("headless auth opened a browser"); return nil }))(authz)
 	_, err := authz.AuthorizeInteractive(context.Background(), pub_models.McpServer{Name: "test", Url: "https://example.invalid/mcp"}, &claierr.AuthChallengeError{})
 	if err == nil || output.Len() != 0 {
@@ -105,7 +105,7 @@ func TestQueryAuthShowsManualLinkWhenBrowserDoesNotRedirect(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	var output bytes.Buffer
-	authz := newMcpAuthorizer(t.TempDir(), strings.NewReader(""), true, newMcpLogSinkTo(mcpLogRolling, &output))
+	authz := newMcpAuthorizer(t.TempDir(), strings.NewReader(""), true, newMcpLogSinkTo(context.Background(), mcpLogRolling, &output))
 	mcpauth.WithBrowserOpener(progressCheckingBrowser(func(url string) error {
 		if !strings.Contains(output.String(), url) {
 			t.Error("manual authorization URL was not shown before the wait")

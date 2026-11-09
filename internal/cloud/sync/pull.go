@@ -111,7 +111,7 @@ func (e *Engine) Pull(ctx context.Context, store Store, opts PullOptions) (PullR
 	slices.Sort(res.Conflicts)
 	errs := []error{applyErr, st.save(e.ConfDir, store), e.pruneTrash()}
 	if store == StoreConversations {
-		errs = append(errs, e.hookPulled(res.written, res.removed))
+		errs = append(errs, e.hookPulled(ctx, res.written, res.removed))
 	}
 	return res, errors.Join(errs...)
 }

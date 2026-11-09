@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/baalimago/clai/internal/asset"
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/imagegen"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -420,10 +421,10 @@ func (g *generateImage) CallParts(ctx context.Context, in pub_models.Input) ([]p
 	}
 	images, err := gen.Generate(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", Name, err)
+		return nil, diag.Errorf("%s: %w", Name, err)
 	}
 	if len(images) == 0 {
-		return nil, fmt.Errorf("%s: %w", Name, imagegen.ErrNoImage)
+		return nil, diag.Errorf("%s: %w", Name, imagegen.ErrNoImage)
 	}
 	return g.save(images)
 }
@@ -492,13 +493,13 @@ func inputEntries(raw any) ([]string, error) {
 		for i, el := range v {
 			s, ok := el.(string)
 			if !ok {
-				return nil, fmt.Errorf("%w: entry %d is %T", errInputImages, i, el)
+				return nil, diag.Errorf("%w: entry %d is %T", errInputImages, i, el)
 			}
 			entries = append(entries, s)
 		}
 		return entries, nil
 	}
-	return nil, fmt.Errorf("%w, got %T", errInputImages, raw)
+	return nil, diag.Errorf("%w, got %T", errInputImages, raw)
 }
 
 func (g *generateImage) input(entry string) (asset.Image, error) {
@@ -507,11 +508,11 @@ func (g *generateImage) input(entry string) (asset.Image, error) {
 	}
 	ref, err := g.store.Resolve(entry)
 	if err != nil {
-		return asset.Image{}, fmt.Errorf("%s: input image %s: %w", Name, entry, err)
+		return asset.Image{}, diag.Errorf("%s: input image %s: %w", Name, entry, err)
 	}
 	img, err := g.store.Load(ref)
 	if err != nil {
-		return asset.Image{}, fmt.Errorf("%s: input image %s: %w", Name, entry, err)
+		return asset.Image{}, diag.Errorf("%s: input image %s: %w", Name, entry, err)
 	}
 	return img, nil
 }
@@ -527,11 +528,11 @@ func isHandle(entry string) bool {
 func readLocalImage(entry string) (asset.Image, error) {
 	path, err := utils.AbsHomePath(entry)
 	if err != nil {
-		return asset.Image{}, fmt.Errorf("%s: input image %s: %w", Name, entry, err)
+		return asset.Image{}, diag.Errorf("%s: input image %s: %w", Name, entry, err)
 	}
 	img, err := asset.ReadLocalImage(path)
 	if err != nil {
-		return asset.Image{}, fmt.Errorf("%s: input %w", Name, err)
+		return asset.Image{}, diag.Errorf("%s: input %w", Name, err)
 	}
 	return img, nil
 }
@@ -541,16 +542,16 @@ func (g *generateImage) save(images []imagegen.GeneratedImage) ([]pub_models.Par
 	for i, generated := range images {
 		ref, err := g.store.Put(generated.Image.Data, generated.Image.MIME)
 		if err != nil {
-			return nil, fmt.Errorf("%s: store image %d: %w", Name, i+1, err)
+			return nil, diag.Errorf("%s: store image %d: %w", Name, i+1, err)
 		}
 		path, err := g.store.Path(ref)
 		if err != nil {
-			return nil, fmt.Errorf("%s: store image %d: %w", Name, i+1, err)
+			return nil, diag.Errorf("%s: store image %d: %w", Name, i+1, err)
 		}
 		img := pub_models.ImagePart{Asset: ref, MIME: generated.Image.MIME, Origin: pub_models.OriginGenerated}
 		handle, err := img.Handle()
 		if err != nil {
-			return nil, fmt.Errorf("%s: store image %d: %w", Name, i+1, err)
+			return nil, diag.Errorf("%s: store image %d: %w", Name, i+1, err)
 		}
 		text := SavedText(handle, path)
 		if generated.RevisedPrompt != "" {

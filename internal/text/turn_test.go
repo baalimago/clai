@@ -131,9 +131,9 @@ func newRecordingPersister(confDir string, store asset.AssetStorer) *recordingPe
 	return &recordingPersister{Persister: chat.NewPersister(confDir, store)}
 }
 
-func (p *recordingPersister) Promote(c pub_models.Chat) error {
+func (p *recordingPersister) Promote(ctx context.Context, c pub_models.Chat) error {
 	p.promoted = append(p.promoted, c)
-	return p.Persister.Promote(c)
+	return p.Persister.Promote(ctx, c)
 }
 
 type failingPutStore struct {
@@ -210,7 +210,7 @@ func newTurnFixture(t *testing.T, model models.StreamCompleter, tools ...pub_mod
 		out:       f.out,
 		configDir: f.configDir,
 		Model:     model,
-		tooling:   tooling{run: run},
+		tooling:   tooling{offered: offeredTools(run)},
 	}
 	return f
 }
@@ -276,7 +276,7 @@ func (f *turnFixture) assets(t *testing.T) []string {
 func (f *turnFixture) promoted(t *testing.T) pub_models.Chat {
 	t.Helper()
 	p := filepath.Join(f.configDir, "conversations", "globalScope.json")
-	c, err := chat.NewPersister(f.configDir, assettest.NewMemory()).Load(p)
+	c, err := chat.NewPersister(f.configDir, assettest.NewMemory()).Load(context.Background(), p)
 	if err != nil {
 		t.Fatalf("load promoted chat: %v", err)
 	}
@@ -470,7 +470,7 @@ func TestTurn_PartsCallerWithoutImageIsContent(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Run: %v", err)
 			}
-			want := tools.InvokeWith(context.Background(), call("c1", "snap", nil), map[string]pub_models.LLMTool{"snap": tc.tool})
+			want := tools.Run(context.Background(), tc.tool, call("c1", "snap", nil))
 			toolMsg := lastOfRole(t, session.Chat, "tool")
 			if toolMsg.Parts != nil || toolMsg.Content != want {
 				t.Errorf("tool message = %+v, want Content %q", toolMsg, want)
@@ -841,7 +841,7 @@ func TestTurn_ImageGeneration(t *testing.T) {
 	if _, err := f.run(t, pub_models.Message{Role: "user", Content: "hi"}); err != nil {
 		t.Fatalf("no tool box: Run: %v", err)
 	}
-	if _, inRun := f.q.tooling.run["generate_image"]; inRun {
+	if _, inRun := f.q.tooling.offered.Get("generate_image"); inRun {
 		t.Error("no tool box: generate_image must not be in the toolset")
 	}
 
@@ -856,7 +856,7 @@ func TestTurn_ImageGeneration(t *testing.T) {
 			t.Fatalf("requested %v: Run: %v", requested, err)
 		}
 		registered := slices.Contains(model.registered(), "generate_image")
-		_, inRun := f.q.tooling.run["generate_image"]
+		_, inRun := f.q.tooling.offered.Get("generate_image")
 		if registered != requested || inRun != requested {
 			t.Errorf("requested %v: generate_image registered = %v, in toolset = %v", requested, registered, inRun)
 		}

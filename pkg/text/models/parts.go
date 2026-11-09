@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/baalimago/clai/internal/diag"
 )
 
 // HandleLength is the README parameter "Handle length": the hex digits of a handle.
@@ -121,13 +123,13 @@ func encodeParts(parts []Part) ([]any, error) {
 		case ImagePart:
 			if p.Asset == "" {
 				if len(p.Data) > 0 {
-					return nil, fmt.Errorf("content part %d: %w", i, ErrPendingImage)
+					return nil, diag.Errorf("content part %d: %w", i, ErrPendingImage)
 				}
-				return nil, fmt.Errorf("content part %d: %w", i, ErrImageEmpty)
+				return nil, diag.Errorf("content part %d: %w", i, ErrImageEmpty)
 			}
 			out = append(out, imagePartJSON{Type: "image", Asset: p.Asset, MIME: p.MIME, Origin: p.Origin})
 		default:
-			return nil, fmt.Errorf("content part %d: %w: %T", i, ErrUnknownPartType, part)
+			return nil, diag.Errorf("content part %d: %w: %T", i, ErrUnknownPartType, part)
 		}
 	}
 	return out, nil
@@ -141,17 +143,17 @@ func decodeParts(raw []partJSON) ([]Part, error) {
 			out = append(out, TextPart{Text: el.Text})
 		case "image":
 			if el.Asset == "" {
-				return nil, fmt.Errorf("content part %d: %w", i, ErrImageEmpty)
+				return nil, diag.Errorf("content part %d: %w", i, ErrImageEmpty)
 			}
 			out = append(out, ImagePart{Asset: el.Asset, MIME: el.MIME, Origin: el.Origin})
 		case legacyImageType:
 			p, err := decodeLegacyImage(el.Legacy)
 			if err != nil {
-				return nil, fmt.Errorf("content part %d: %w", i, err)
+				return nil, diag.Errorf("content part %d: %w", i, err)
 			}
 			out = append(out, p)
 		default:
-			return nil, fmt.Errorf("content part %d: %w: %q", i, ErrUnknownPartType, el.Type)
+			return nil, diag.Errorf("content part %d: %w: %q", i, ErrUnknownPartType, el.Type)
 		}
 	}
 	return out, nil
@@ -159,26 +161,26 @@ func decodeParts(raw []partJSON) ([]Part, error) {
 
 func decodeLegacyImage(u *legacyImageURL) (ImagePart, error) {
 	if u == nil {
-		return ImagePart{}, fmt.Errorf("%w: image_url is missing", ErrLegacyImageURL)
+		return ImagePart{}, diag.Errorf("%w: image_url is missing", ErrLegacyImageURL)
 	}
 	rest, ok := strings.CutPrefix(u.URL, "data:")
 	if !ok {
-		return ImagePart{}, fmt.Errorf("%w: url is not a data URL", ErrLegacyImageURL)
+		return ImagePart{}, diag.Errorf("%w: url is not a data URL", ErrLegacyImageURL)
 	}
 	header, payload, ok := strings.Cut(rest, ",")
 	if !ok || !strings.HasSuffix(header, ";base64") {
-		return ImagePart{}, fmt.Errorf("%w: data URL is not base64", ErrLegacyImageURL)
+		return ImagePart{}, diag.Errorf("%w: data URL is not base64", ErrLegacyImageURL)
 	}
 	mime, _, _ := strings.Cut(header, ";")
 	if mime == "" {
-		return ImagePart{}, fmt.Errorf("%w: data URL has no MIME type", ErrLegacyImageURL)
+		return ImagePart{}, diag.Errorf("%w: data URL has no MIME type", ErrLegacyImageURL)
 	}
 	data, err := base64.StdEncoding.DecodeString(payload)
 	if err != nil {
-		return ImagePart{}, fmt.Errorf("%w: %w", ErrLegacyImageURL, err)
+		return ImagePart{}, diag.Errorf("%w: %w", ErrLegacyImageURL, err)
 	}
 	if len(data) == 0 {
-		return ImagePart{}, fmt.Errorf("%w: data URL holds no bytes", ErrLegacyImageURL)
+		return ImagePart{}, diag.Errorf("%w: data URL holds no bytes", ErrLegacyImageURL)
 	}
 	return ImagePart{Origin: OriginUser, MIME: mime, Data: data}, nil
 }

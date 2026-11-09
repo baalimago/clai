@@ -502,23 +502,51 @@ measurement.
 One `ffmpeg` process receives one input per source. The sources are mixed with
 `amix=normalize=1`, so equal weights cannot clip, and `silencedetect` reports
 the silence events that time the silence stop. The process writes a 16 kHz mono
-signed 16-bit PCM WAV into a `.part` file; on every stop the recorder sends at
-most one `SIGINT`, waits for ffmpeg to finalize the RIFF header and renames the
-file into place. One interrupt only: ffmpeg exits before it finalizes the WAV
-when it receives a second `SIGINT`. The process carries no context, because the
-terminal's `SIGINT` reaches clai and ffmpeg together and ffmpeg needs about
-300 ms to finalize; a caller cancellation waits one second for the process to
-stop on that signal before it sends its own.
+signed 16-bit PCM WAV into a `.part` file with `-flush_packets 1`, so every
+packet reaches the file as it is encoded. Without the flag ffmpeg holds up to
+256 KiB in memory, eight seconds of this format, and a killed ffmpeg loses
+them (measured 2026-11-10 with ffmpeg 8.0.1: killed after 2.5 s the file was
+empty; with the flag it held all but the last packet).
+
+The process runs in its own process group (`group_unix.go`) and carries no
+context. A terminal's Ctrl-C therefore reaches clai alone, and the recorder is
+the only one that stops ffmpeg: on every stop it sends that group one `SIGINT`,
+waits up to two seconds for ffmpeg to finalize the RIFF header, and kills the
+group when it is still running. One interrupt only: ffmpeg exits before it
+finalizes the WAV when it receives a second `SIGINT`, which is what a second
+Ctrl-C did while ffmpeg shared clai's group. Then `settleWAV` checks the two
+header sizes against the bytes on disk. A killed ffmpeg leaves `0xFFFFFFFF` in
+both; the recorder writes the sizes that follow from the samples and drops a
+trailing half sample, so the file plays (`Recording.Finish` is `repaired`,
+otherwise `finalized`). The file is then renamed into place.
 
 The recording ends at the first of the silence timeout, `max-seconds`, a
 completed line on an interactive stdin, or cancellation of the tool call.
 Each ending names its own reason. End of input is not a line: `/dev/null` is a
 character device too, so a non-interactive run keeps recording until the
-silence timeout or `max-seconds`. Cancellation still
-finalizes the file and returns an error that contains the saved path. The
+silence timeout or `max-seconds`. The
 samples of the finalized WAV decide whether audio was heard, not the silence
 events: a source that never pauses emits no event at all. A recording in which
-no sample reached the silence threshold produces no file.
+no sample reached the silence threshold produces no file, unless it was
+cancelled.
+
+Cancellation, which is what the first Ctrl-C or `SIGTERM` of a run becomes,
+stops the recording the same graceful way and keeps the file at its normal
+path. It is kept only, never transcribed: the call returns no facts but a
+`*capture.InterruptedError`, whose text is the tool result and the last line
+of the notice on stderr (a `progress` record with state `done` and that text
+as detail under `-json`):
+
+```text
+recording interrupted: saved /home/<user>/Recordings/2026-11-10T10-00-00Z.wav
+```
+
+The text adds `; ffmpeg did not finish in time and was killed, so the last
+moments may be missing` after a repair, and `; no sample reached the silence
+threshold` for a quiet recording, which a cancellation keeps because the
+threshold may be wrong for the room and nothing reads the file before the user
+does. A cancelled recording without a single sample leaves no file and says
+`recording interrupted: nothing saved: <cause>`, state `failed`.
 
 While a recording runs, one stderr row names the silence state, the threshold
 that decides it, the destination directory and every stop that can end it:

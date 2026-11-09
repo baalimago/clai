@@ -1,6 +1,7 @@
 package summary
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -11,7 +12,10 @@ import (
 	"testing"
 
 	"github.com/baalimago/clai/internal/models"
+	"github.com/baalimago/clai/internal/testenv/procenv"
 	"github.com/baalimago/clai/internal/text"
+	"github.com/baalimago/clai/pkg/diagnostic"
+	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
@@ -74,23 +78,40 @@ func TestAgentSummarizer_coldPriceIsSilent(t *testing.T) {
 }
 
 // TestNewAgentSummarizer_announcesUpgrade pins that a config upgrade the
-// constructor's load performs is announced, and an up-to-date file stays
-// silent (review 2, R2-04).
+// constructor's load performs is announced, as a config notice on the first
+// Summarize's run, and an up-to-date file stays silent (review 2, R2-04).
 func TestNewAgentSummarizer_announcesUpgrade(t *testing.T) {
 	t.Setenv("DEBUG", "")
+	summarizeOnce := func(t *testing.T, confDir string) string {
+		t.Helper()
+		s := newTestSummarizer(t, confDir)
+		installSubmittingQuerier(s, &submittingQuerier{input: pub_models.Input{"title": "Title", "summary": "Summary."}})
+		var diagnostics bytes.Buffer
+		ctx := procenv.Diagnostics(context.Background(), &diagnostics, diagnostic.LevelInfo)
+		stdout := testboil.CaptureStdout(t, func(t *testing.T) {
+			for range 2 {
+				if _, err := s.Summarize(ctx, mockRequest(1)); err != nil {
+					t.Fatalf("Summarize: %v", err)
+				}
+			}
+		})
+		if stdout != "" {
+			t.Fatalf("stdout = %q, want empty", stdout)
+		}
+		return diagnostics.String()
+	}
 	t.Run("stale file announces the added field", func(t *testing.T) {
 		confDir := seedConfigDir(t)
 		stale := `{"model":"test","system-prompt":"x","use-tools":false}`
 		if err := os.WriteFile(filepath.Join(confDir, "textConfig.json"), []byte(stale), 0o644); err != nil {
 			t.Fatalf("WriteFile: %v", err)
 		}
-		stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-			if _, err := NewAgentSummarizer(confDir); err != nil {
-				t.Fatalf("NewAgentSummarizer: %v", err)
-			}
-		})
-		if !strings.Contains(stdout, "textConfig.json") || !strings.Contains(stdout, "summary-model") {
-			t.Fatalf("stdout = %q, want the upgrade announcement naming summary-model", stdout)
+		got := summarizeOnce(t, confDir)
+		if !strings.Contains(got, "textConfig.json") || !strings.Contains(got, "summary-model") {
+			t.Fatalf("diagnostics = %q, want the upgrade announcement naming summary-model", got)
+		}
+		if strings.Count(got, "summary-model") != 1 {
+			t.Fatalf("diagnostics = %q, want the announcement once", got)
 		}
 		b, err := os.ReadFile(filepath.Join(confDir, "textConfig.json"))
 		if err != nil || !strings.Contains(string(b), `"summary-model"`) {
@@ -99,16 +120,11 @@ func TestNewAgentSummarizer_announcesUpgrade(t *testing.T) {
 	})
 	t.Run("up-to-date file is silent", func(t *testing.T) {
 		confDir := seedConfigDir(t)
-		if _, err := NewAgentSummarizer(confDir); err != nil {
+		if _, err := NewAgentSummarizer(procenv.Context(context.Background()), confDir); err != nil {
 			t.Fatalf("first load: %v", err)
 		}
-		stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-			if _, err := NewAgentSummarizer(confDir); err != nil {
-				t.Fatalf("NewAgentSummarizer: %v", err)
-			}
-		})
-		if stdout != "" {
-			t.Fatalf("stdout = %q, want empty", stdout)
+		if got := summarizeOnce(t, confDir); got != "" {
+			t.Fatalf("diagnostics = %q, want empty", got)
 		}
 	})
 }

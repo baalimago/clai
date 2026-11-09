@@ -17,11 +17,13 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/baalimago/clai/internal/runenv"
+
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 	"github.com/baalimago/go_away_boilerplate/pkg/table"
 	"golang.org/x/exp/maps"
@@ -32,10 +34,10 @@ var defaultMcpServer = pub_models.McpServer{
 	Args:    []string{"-y", "@modelcontextprotocol/server-everything"},
 }
 
-func previewConfigItem(cfg config) error {
+func previewConfigItem(ctx context.Context, cfg config) error {
 	b, err := os.ReadFile(cfg.filePath)
 	if err != nil {
-		return fmt.Errorf(
+		return diag.Errorf(
 			"failed to read config preview from %q: %w",
 			cfg.filePath,
 			err,
@@ -44,31 +46,31 @@ func previewConfigItem(cfg config) error {
 
 	var jzon any
 	if err := json.Unmarshal(b, &jzon); err != nil {
-		return fmt.Errorf("failed to unmarshal json: %w", err)
+		return diag.Errorf("failed to unmarshal json: %w", err)
 	}
 
 	indentedJSON, err := json.MarshalIndent(jzon, "", " ")
 	if err != nil {
-		return fmt.Errorf("failed to indent json: %w", err)
+		return diag.Errorf("failed to indent json: %w", err)
 	}
 
-	fmt.Print(colorPrimary("Selected config preview:\n"))
-	fmt.Print(
+	fmt.Fprint(runenv.From(ctx).Stdout(), colorPrimary("Selected config preview:\n"))
+	fmt.Fprint(runenv.From(ctx).Stdout(),
 		colorBreadtext(fmt.Sprintf("%s\n---\n", string(indentedJSON))),
 	)
 	return nil
 }
 
-func queryForAction(options []action) (action, error) {
+func queryForAction(ctx context.Context, options []action) (action, error) {
 	var ret action
 	formattedOptions := make([]string, 0, len(options))
 	for _, option := range options {
 		formattedOptions = append(formattedOptions, option.String())
 	}
-	fmt.Print(colorSecondary(fmt.Sprintf("(%s): ", strings.Join(formattedOptions, ", "))))
-	input, err := table.ReadUserInputFrom(Input)
+	ask(ctx, "select", "Choose an action", formattedOptions, colorSecondary(fmt.Sprintf("(%s): ", strings.Join(formattedOptions, ", "))))
+	input, err := table.ReadUserInputFrom(termIn(ctx))
 	if err != nil {
-		return unset, fmt.Errorf("failed to query for action: %w", err)
+		return unset, diag.Errorf("failed to query for action: %w", err)
 	}
 	for choiceStr, act := range choiceToAction {
 		split := strings.Split(choiceStr, ",")
@@ -78,8 +80,8 @@ func queryForAction(options []action) (action, error) {
 		}
 	}
 	if ret == unset {
-		ancli.Warnf("invalid choice: %v", input)
-		return queryForAction(options)
+		runenv.Warnf(ctx, runenv.SubsystemSetup, "invalid choice: %v", input)
+		return queryForAction(ctx, options)
 	}
 	if ret == quit {
 		return unset, table.ErrUserInitiatedExit
@@ -87,41 +89,41 @@ func queryForAction(options []action) (action, error) {
 	return ret, nil
 }
 
-func actOnConfigItem(category setupCategory, cfg config) error {
-	selectedAction, err := queryForAction(actionsWithNavigation(category.itemActions))
+func actOnConfigItem(ctx context.Context, category setupCategory, cfg config) error {
+	selectedAction, err := queryForAction(ctx, actionsWithNavigation(category.itemActions))
 	if err != nil {
 		if errors.Is(err, table.ErrBack) || errors.Is(err, table.ErrUserInitiatedExit) {
 			return err
 		}
-		return fmt.Errorf("failed to query for config action: %w", err)
+		return diag.Errorf("failed to query for config action: %w", err)
 	}
 
-	if err := executeConfigAction(cfg, selectedAction); err != nil {
+	if err := executeConfigAction(ctx, cfg, selectedAction); err != nil {
 		if errors.Is(err, table.ErrBack) || errors.Is(err, table.ErrUserInitiatedExit) {
 			return err
 		}
-		return fmt.Errorf("failed to execute action %q for %q: %w", selectedAction, cfg.name, err)
+		return diag.Errorf("failed to execute action %q for %q: %w", selectedAction, cfg.name, err)
 	}
 	return nil
 }
 
-func actionPasteMcpServer(mcpCfgPath string) error {
-	pastedCfgs, err := pasteMcpServerConfig(mcpCfgPath)
+func actionPasteMcpServer(ctx context.Context, mcpCfgPath string) error {
+	pastedCfgs, err := pasteMcpServerConfig(ctx, mcpCfgPath)
 	if err != nil {
-		return fmt.Errorf("failed to paste mcp server config: %w", err)
+		return diag.Errorf("failed to paste mcp server config: %w", err)
 	}
 	for _, pastedCfg := range pastedCfgs {
-		if err := executeConfigAction(pastedCfg, conf); err != nil {
-			return fmt.Errorf("failed to configure pasted mcp server %q: %w", pastedCfg.name, err)
+		if err := executeConfigAction(ctx, pastedCfg, conf); err != nil {
+			return diag.Errorf("failed to configure pasted mcp server %q: %w", pastedCfg.name, err)
 		}
 	}
 	return nil
 }
 
-func actionReconfigure(cfg config) error {
+func actionReconfigure(ctx context.Context, cfg config) error {
 	f, err := os.Open(cfg.filePath)
 	if err != nil {
-		return fmt.Errorf("failed to open file %s: %w", cfg.filePath, err)
+		return diag.Errorf("failed to open file %s: %w", cfg.filePath, err)
 	}
 	defer func() {
 		_ = f.Close()
@@ -129,9 +131,9 @@ func actionReconfigure(cfg config) error {
 
 	b, err := io.ReadAll(f)
 	if err != nil {
-		return fmt.Errorf("failed to read file %s: %w", cfg.filePath, err)
+		return diag.Errorf("failed to read file %s: %w", cfg.filePath, err)
 	}
-	return interractiveReconfigure(cfg, b)
+	return interractiveReconfigure(ctx, cfg, b)
 }
 
 // isShellContextTemplate reports whether the field is the template of a shell
@@ -144,7 +146,10 @@ func isShellContextTemplate(cfg config, fieldName string) bool {
 	return fieldName == "template" && filepath.Base(filepath.Dir(cfg.filePath)) == "shellContexts"
 }
 
-func unescapeEditWithEditor(toEdit string, unguarded bool) (string, error) {
+func unescapeEditWithEditor(ctx context.Context, toEdit string, unguarded bool) (string, error) {
+	if err := runenv.From(ctx).RefuseEditor(""); err != nil {
+		return "", err
+	}
 	var unescapedStr string
 	if unguarded {
 		unescapedStr = utils.UnescapeConfigString(toEdit)
@@ -153,14 +158,14 @@ func unescapeEditWithEditor(toEdit string, unguarded bool) (string, error) {
 	}
 	tmp, err := os.CreateTemp("", "unescapeEdit_*")
 	if err != nil {
-		return "", fmt.Errorf("failed to create temp file: %w", err)
+		return "", diag.Errorf("failed to create temp file: %w", err)
 	}
 	_, err = tmp.WriteString(unescapedStr)
 	if closeErr := tmp.Close(); closeErr != nil {
-		return "", fmt.Errorf("failed to close temp file: %w", closeErr)
+		return "", diag.Errorf("failed to close temp file: %w", closeErr)
 	}
 	if err != nil {
-		return "", fmt.Errorf("failed to write string to edit: %w", err)
+		return "", diag.Errorf("failed to write string to edit: %w", err)
 	}
 	defer os.Remove(tmp.Name())
 
@@ -169,14 +174,14 @@ func unescapeEditWithEditor(toEdit string, unguarded bool) (string, error) {
 		filePath: tmp.Name(),
 	}
 
-	err = actionReconfigureWithEditor(tmpCfg)
+	err = actionReconfigureWithEditor(ctx, tmpCfg)
 	if err != nil {
-		return "", fmt.Errorf("failed to reconfigure with editor: %w", err)
+		return "", diag.Errorf("failed to reconfigure with editor: %w", err)
 	}
 
 	b, err := os.ReadFile(tmpCfg.filePath)
 	if err != nil {
-		return "", fmt.Errorf("failed to read edited file: %w", err)
+		return "", diag.Errorf("failed to read edited file: %w", err)
 	}
 
 	// The edited value is the config value itself: json.Marshal performs the
@@ -188,7 +193,7 @@ func unescapeEditWithEditor(toEdit string, unguarded bool) (string, error) {
 	return editedStr, nil
 }
 
-func validateEditedStringField(cfg config, fieldName, rawEditedValue string) error {
+func validateEditedStringField(ctx context.Context, cfg config, fieldName, rawEditedValue string) error {
 	if !isShellContextTemplate(cfg, fieldName) {
 		return nil
 	}
@@ -197,31 +202,31 @@ func validateEditedStringField(cfg config, fieldName, rawEditedValue string) err
 		Template: utils.UnescapeConfigString(rawEditedValue),
 	}
 	renderer := text.ShellContextRenderer{}
-	_, err := renderer.Render(context.Background(), cfg.name, def)
+	_, err := renderer.Render(ctx, cfg.name, def)
 	if err != nil {
-		return fmt.Errorf("validate shell context template for %q: %w", cfg.filePath, err)
+		return diag.Errorf("validate shell context template for %q: %w", cfg.filePath, err)
 	}
 	return nil
 }
 
 // actionReconfigureStringFieldWithEditor opens the config, optionally queries
 // the user to select a string field, then edits it via $EDITOR with unescape/re-escape.
-func actionReconfigureStringFieldWithEditor(cfg config, fieldName string) error {
+func actionReconfigureStringFieldWithEditor(ctx context.Context, cfg config, fieldName string) error {
 	b, err := os.ReadFile(cfg.filePath)
 	if err != nil {
-		return fmt.Errorf("failed to read file %s: %w", cfg.filePath, err)
+		return diag.Errorf("failed to read file %s: %w", cfg.filePath, err)
 	}
 
 	var jzon map[string]any
 	if err := json.Unmarshal(b, &jzon); err != nil {
-		return fmt.Errorf("failed to unmarshal config from %s: %w", cfg.filePath, err)
+		return diag.Errorf("failed to unmarshal config from %s: %w", cfg.filePath, err)
 	}
 
 	if fieldName == "" {
 		var selErr error
-		fieldName, selErr = selectStringField(jzon)
+		fieldName, selErr = selectStringField(ctx, jzon)
 		if selErr != nil {
-			return fmt.Errorf("failed to select field: %w", selErr)
+			return diag.Errorf("failed to select field: %w", selErr)
 		}
 	}
 
@@ -235,26 +240,26 @@ func actionReconfigureStringFieldWithEditor(cfg config, fieldName string) error 
 		return fmt.Errorf("field %q in %s is not a string, got %T", fieldName, cfg.filePath, rawValue)
 	}
 
-	editedValue, err := unescapeEditWithEditor(stringValue, isShellContextTemplate(cfg, fieldName))
+	editedValue, err := unescapeEditWithEditor(ctx, stringValue, isShellContextTemplate(cfg, fieldName))
 	if err != nil {
-		return fmt.Errorf("failed to edit field %q with editor: %w", fieldName, err)
+		return diag.Errorf("failed to edit field %q with editor: %w", fieldName, err)
 	}
-	if err := validateEditedStringField(cfg, fieldName, editedValue); err != nil {
-		return fmt.Errorf("failed to validate edited field %q: %w", fieldName, err)
+	if err := validateEditedStringField(ctx, cfg, fieldName, editedValue); err != nil {
+		return diag.Errorf("failed to validate edited field %q: %w", fieldName, err)
 	}
 	jzon[fieldName] = editedValue
 
 	if err := writeConfig(cfg.filePath, jzon); err != nil {
-		return fmt.Errorf("failed to write config: %w", err)
+		return diag.Errorf("failed to write config: %w", err)
 	}
 
-	ancli.Okf("updated field %q at path: %v", fieldName, cfg.filePath)
+	fmt.Fprintf(runenv.From(ctx).Stdout(), "updated field %q at path: %v\n", fieldName, cfg.filePath)
 	return nil
 }
 
 // selectStringField filters jzon to string-typed keys (sorted), presents a
 // single-choice table, and returns the selected key.
-func selectStringField(jzon map[string]any) (string, error) {
+func selectStringField(ctx context.Context, jzon map[string]any) (string, error) {
 	keys := stringKeysSorted(jzon)
 	indices, _, err := table.New(
 		table.SlicePaginator(keys),
@@ -265,8 +270,9 @@ func selectStringField(jzon map[string]any) (string, error) {
 		WithHeader("Select field").
 		WithPageSize(utils.TableTheme().Items).
 		WithSingleSelect().
-		WithWriter(os.Stdout).
-		WithInput(Input).
+		WithWriter(runenv.From(ctx).Stdout()).
+		WithInput(termIn(ctx)).
+		WithPrompter(selectPrompt(ctx)).
 		Run()
 	if err != nil {
 		return "", err
@@ -293,58 +299,63 @@ func stringKeysSorted(jzon map[string]any) []string {
 
 // actionReconfigurePromptWithEditor by extracting the prompt from the selected config
 // and then escape-editing the field. Lastly, reapply the prompt and save the profile
-func actionReconfigurePromptWithEditor(cfg config) error {
-	if err := actionReconfigureStringFieldWithEditor(cfg, "prompt"); err != nil {
-		return fmt.Errorf("failed to edit prompt with editor: %w", err)
+func actionReconfigurePromptWithEditor(ctx context.Context, cfg config) error {
+	if err := actionReconfigureStringFieldWithEditor(ctx, cfg, "prompt"); err != nil {
+		return diag.Errorf("failed to edit prompt with editor: %w", err)
 	}
 	return nil
 }
 
 // actionReconfigureWithEditor. As in the $EDITOR environment variable
-func actionReconfigureWithEditor(cfg config) error {
+func actionReconfigureWithEditor(ctx context.Context, cfg config) error {
 	editor := os.Getenv("EDITOR")
 	if editor == "" {
 		return fmt.Errorf("environment variable EDITOR is not set")
 	}
+	env := runenv.From(ctx)
+	if err := env.RefuseEditor(cfg.filePath); err != nil {
+		return err
+	}
 	cmd := exec.Command(editor, cfg.filePath)
 
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stdin = env.Stdin()
+	cmd.Stdout = env.Stdout()
+	cmd.Stderr = env.Stderr()
 
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to edit file %s: %w", cfg.filePath, err)
+		return diag.Errorf("failed to edit file %s: %w", cfg.filePath, err)
 	}
 	newConfig, err := os.ReadFile(cfg.filePath)
 	if err != nil {
-		return fmt.Errorf("editor exited OK, failed to read config file %q after edit: %w", cfg.filePath, err)
+		return diag.Errorf("editor exited OK, failed to read config file %q after edit: %w", cfg.filePath, err)
 	}
-	ancli.Okf("updated:\n%v", string(newConfig))
+	fmt.Fprintf(runenv.From(ctx).Stdout(), "updated:\n%v\n", string(newConfig))
 	return nil
 }
 
-func actionRemove(cfg config) error {
-	fmt.Print(colorSecondary(fmt.Sprintf("Are you sure you want to delete: '%v'?\n[y/n]: ", cfg.filePath)))
-	input, err := table.ReadUserInputFrom(Input)
+func actionRemove(ctx context.Context, cfg config) error {
+	question := fmt.Sprintf("Are you sure you want to delete: '%v'?", cfg.filePath)
+	ask(ctx, "confirm", question, []string{"y", "n"}, colorSecondary(question+"\n[y/n]: "))
+	input, err := table.ReadUserInputFrom(termIn(ctx))
 	if err != nil {
-		return fmt.Errorf("read delete confirmation: %w", err)
+		return diag.Errorf("read delete confirmation: %w", err)
 	}
 	if input != "y" {
-		return fmt.Errorf("aborting deletion: %w", errors.New("delete not confirmed"))
+		return diag.Errorf("aborting deletion: %w", errors.New("delete not confirmed"))
 	}
 	err = os.Remove(cfg.filePath)
 	if err != nil {
-		return fmt.Errorf("failed to delete file %q: %w", cfg.filePath, err)
+		return diag.Errorf("failed to delete file %q: %w", cfg.filePath, err)
 	}
-	ancli.PrintOK(fmt.Sprintf("deleted file: '%v'\n", cfg.filePath))
+	fmt.Fprintf(runenv.From(ctx).Stdout(), "deleted file: '%v'\n", cfg.filePath)
 	return nil
 }
 
-func actionCopy(cfg config) (config, error) {
-	fmt.Print(colorSecondary("Enter name for copy: "))
-	newName, err := table.ReadUserInputFrom(Input)
+func actionCopy(ctx context.Context, cfg config) (config, error) {
+	ask(ctx, "select", "Enter name for copy", nil, colorSecondary("Enter name for copy: "))
+	newName, err := table.ReadUserInputFrom(termIn(ctx))
 	if err != nil {
-		return config{}, fmt.Errorf("read copy name: %w", err)
+		return config{}, diag.Errorf("read copy name: %w", err)
 	}
 	if newName == "" {
 		return config{}, fmt.Errorf("name cannot be empty")
@@ -359,14 +370,14 @@ func actionCopy(cfg config) (config, error) {
 
 	srcBytes, readErr := os.ReadFile(cfg.filePath)
 	if readErr != nil {
-		return config{}, fmt.Errorf("read source file: %w", readErr)
+		return config{}, diag.Errorf("read source file: %w", readErr)
 	}
 
 	if writeErr := utils.WriteFileAtomic(newPath, srcBytes, 0o644); writeErr != nil {
-		return config{}, fmt.Errorf("write copy: %w", writeErr)
+		return config{}, diag.Errorf("write copy: %w", writeErr)
 	}
 
-	ancli.PrintOK(fmt.Sprintf("copied to: '%v'\n", newPath))
+	fmt.Fprintf(runenv.From(ctx).Stdout(), "copied to: '%v'\n", newPath)
 	return config{name: newName, filePath: newPath}, nil
 }
 
@@ -374,11 +385,11 @@ var errDoneEditing = errors.New("done editing")
 
 // interractiveReconfigure presents the user with a field-by-field editing loop
 // over the JSON config and writes the result to disk.
-func interractiveReconfigure(cfg config, b []byte) error {
+func interractiveReconfigure(ctx context.Context, cfg config, b []byte) error {
 	var jzon map[string]any
 	err := json.Unmarshal(b, &jzon)
 	if err != nil {
-		return fmt.Errorf("failed to unmarshal config %v: %w", cfg.name, err)
+		return diag.Errorf("failed to unmarshal config %v: %w", cfg.name, err)
 	}
 
 	claiConfigDir := claiConfigDirFromPath(cfg.filePath)
@@ -386,11 +397,11 @@ func interractiveReconfigure(cfg config, b []byte) error {
 		return fmt.Errorf("failed to derive clai config dir from path: %q", cfg.filePath)
 	}
 
-	fmt.Print(colorPrimary("Current config:\n"))
-	fmt.Print(colorBreadtext(fmt.Sprintf("%s\n---\n", b)))
+	fmt.Fprint(runenv.From(ctx).Stdout(), colorPrimary("Current config:\n"))
+	fmt.Fprint(runenv.From(ctx).Stdout(), colorBreadtext(fmt.Sprintf("%s\n---\n", b)))
 
 	for {
-		key, err := selectFieldToEdit(jzon)
+		key, err := selectFieldToEdit(ctx, jzon)
 		if err != nil {
 			if errors.Is(err, errDoneEditing) {
 				break
@@ -398,9 +409,9 @@ func interractiveReconfigure(cfg config, b []byte) error {
 			return err
 		}
 
-		nv, err := handleValue(key, jzon[key], claiConfigDir)
+		nv, err := handleValue(ctx, key, jzon[key], claiConfigDir)
 		if err != nil {
-			return fmt.Errorf("failed to edit field %q: %w", key, err)
+			return diag.Errorf("failed to edit field %q: %w", key, err)
 		}
 		jzon[key] = nv
 	}
@@ -441,7 +452,7 @@ func doneEditingAction() table.TableAction {
 // selectFieldToEdit presents the user with a table of jzon keys and returns
 // the chosen key. It propagates errDoneEditing, table.ErrBack, and
 // table.ErrUserInitiatedExit directly; other errors are wrapped.
-func selectFieldToEdit(jzon map[string]any) (string, error) {
+func selectFieldToEdit(ctx context.Context, jzon map[string]any) (string, error) {
 	keys := sortedKeys(jzon)
 	indices, _, err := table.New(
 		table.SlicePaginator(keys),
@@ -452,8 +463,9 @@ func selectFieldToEdit(jzon map[string]any) (string, error) {
 		WithHeader("Select field to edit").
 		WithPageSize(utils.TableTheme().Items).
 		WithSingleSelect().
-		WithWriter(os.Stdout).
-		WithInput(Input).
+		WithWriter(runenv.From(ctx).Stdout()).
+		WithInput(termIn(ctx)).
+		WithPrompter(selectPrompt(ctx)).
 		WithActions(doneEditingAction()).
 		Run()
 	if err != nil {
@@ -466,10 +478,10 @@ func selectFieldToEdit(jzon map[string]any) (string, error) {
 func writeConfig(filePath string, jzon map[string]any) error {
 	newB, err := json.MarshalIndent(jzon, "", "\t")
 	if err != nil {
-		return fmt.Errorf("failed to marshal new config: %w", err)
+		return diag.Errorf("failed to marshal new config: %w", err)
 	}
 	if err := utils.WriteFileAtomic(filePath, newB, 0o644); err != nil {
-		return fmt.Errorf("failed to write config at %q: %w", filePath, err)
+		return diag.Errorf("failed to write config at %q: %w", filePath, err)
 	}
 	return nil
 }
@@ -482,10 +494,10 @@ var (
 
 // getToolsValue presents an interactive toggle-table for tool selection
 // and returns the ordered list of selected tool names.
-func getToolsValue(v any) ([]string, error) {
+func getToolsValue(ctx context.Context, v any) ([]string, error) {
 	sArr, isSSlice := v.([]any)
 	if !isSSlice {
-		ancli.PrintWarn(fmt.Sprintf("invalid type for tools, expected string slice, got: %v. Returning empty slice\n", sArr))
+		runenv.Warnf(ctx, runenv.SubsystemSetup, "invalid type for tools, expected string slice, got: %v. Returning empty slice\n", sArr)
 		return []string{}, nil
 	}
 
@@ -493,7 +505,7 @@ func getToolsValue(v any) ([]string, error) {
 	names := tools.Names()
 	doneAction, allAction, clearAction := toolSelectionActions()
 
-	fmt.Print(colorPrimary("Tooling configuration\n"))
+	fmt.Fprint(runenv.From(ctx).Stdout(), colorPrimary("Tooling configuration\n"))
 	for {
 		indices, _, err := table.New(
 			table.SlicePaginator(names),
@@ -501,8 +513,9 @@ func getToolsValue(v any) ([]string, error) {
 		).
 			WithHeader("Toggle tools with comma/range (e.g. 0,2,5 or 0:3)").
 			WithPageSize(len(names)).
-			WithWriter(os.Stdout).
-			WithInput(Input).
+			WithWriter(runenv.From(ctx).Stdout()).
+			WithInput(termIn(ctx)).
+			WithPrompter(selectPrompt(ctx)).
 			WithActions(allAction, clearAction, doneAction).
 			Run()
 		if err != nil {
@@ -626,19 +639,19 @@ func toolRowFormatter(currentlySelected map[string]bool) func(int, string) (stri
 
 // getNewValue handles primitive scalar values, dispatching on key name
 // for model and shell_context or falling back to a text input prompt.
-func getNewValue(k string, v any, claiConfigDir string) (any, error) {
+func getNewValue(ctx context.Context, k string, v any, claiConfigDir string) (any, error) {
 	switch k {
 	case "model":
-		return getModelValue(v, claiConfigDir)
+		return getModelValue(ctx, v, claiConfigDir)
 	case "shell_context":
-		return getShellContextValue(v, claiConfigDir)
+		return getShellContextValue(ctx, v, claiConfigDir)
 	}
 
-	fmt.Print(colorBreadtext(fmt.Sprintf("Key: '%v', current: '%v'\n", k, v)))
-	fmt.Print(colorSecondary("Please enter new value, or leave empty to keep: "))
-	input, err := table.ReadUserInputFrom(Input)
+	ask(ctx, "select", fmt.Sprintf("Key: '%v', current: '%v'. Please enter new value, or leave empty to keep", k, v), nil,
+		colorBreadtext(fmt.Sprintf("Key: '%v', current: '%v'\n", k, v))+colorSecondary("Please enter new value, or leave empty to keep: "))
+	input, err := table.ReadUserInputFrom(termIn(ctx))
 	if err != nil {
-		return nil, fmt.Errorf("failed to read input for key %q: %w", k, err)
+		return nil, diag.Errorf("failed to read input for key %q: %w", k, err)
 	}
 	if input == "" {
 		return v, nil
@@ -647,16 +660,16 @@ func getNewValue(k string, v any, claiConfigDir string) (any, error) {
 }
 
 // getModelValue presents a table of available models for selection.
-func getModelValue(v any, claiConfigDir string) (any, error) {
+func getModelValue(ctx context.Context, v any, claiConfigDir string) (any, error) {
 	models, err := getAvailableModels(claiConfigDir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to discover models: %w", err)
+		return nil, diag.Errorf("failed to discover models: %w", err)
 	}
 	if len(models) == 0 {
 		return v, nil
 	}
 	currentStr, _ := v.(string)
-	choice, err := selectFromList(models, "Available models", fmt.Sprintf("Select model (current: %q):", currentStr))
+	choice, err := selectFromList(ctx, models, "Available models", fmt.Sprintf("Select model (current: %q):", currentStr))
 	if err != nil || choice == "" {
 		return v, nil
 	}
@@ -664,16 +677,16 @@ func getModelValue(v any, claiConfigDir string) (any, error) {
 }
 
 // getShellContextValue presents a table of available shell contexts for selection.
-func getShellContextValue(v any, claiConfigDir string) (any, error) {
+func getShellContextValue(ctx context.Context, v any, claiConfigDir string) (any, error) {
 	contexts, err := getAvailableShellContexts(claiConfigDir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to discover shell contexts: %w", err)
+		return nil, diag.Errorf("failed to discover shell contexts: %w", err)
 	}
 	if len(contexts) == 0 {
 		return v, nil
 	}
 	currentStr, _ := v.(string)
-	choice, err := selectFromList(contexts, "Available shell contexts", fmt.Sprintf("Select shell_context (current: %q):", currentStr))
+	choice, err := selectFromList(ctx, contexts, "Available shell contexts", fmt.Sprintf("Select shell_context (current: %q):", currentStr))
 	if err != nil || choice == "" {
 		return v, nil
 	}
@@ -681,8 +694,8 @@ func getShellContextValue(v any, claiConfigDir string) (any, error) {
 }
 
 // selectFromList presents a single-select table of items and returns the chosen value.
-func selectFromList(items []string, header, prompt string) (string, error) {
-	fmt.Print(colorPrimary(prompt + "\n"))
+func selectFromList(ctx context.Context, items []string, header, prompt string) (string, error) {
+	fmt.Fprint(runenv.From(ctx).Stdout(), colorPrimary(prompt+"\n"))
 	selected, _, err := table.New(
 		table.SlicePaginator(items),
 		func(i int, name string) (string, error) {
@@ -692,8 +705,9 @@ func selectFromList(items []string, header, prompt string) (string, error) {
 		WithHeader(header).
 		WithPageSize(utils.TableTheme().Items).
 		WithSingleSelect().
-		WithWriter(os.Stdout).
-		WithInput(Input).
+		WithWriter(runenv.From(ctx).Stdout()).
+		WithInput(termIn(ctx)).
+		WithPrompter(selectPrompt(ctx)).
 		Run()
 	if err != nil {
 		return "", err
@@ -742,125 +756,127 @@ func getAvailableShellContexts(claiConfigDir string) ([]string, error) {
 
 // handleValue dispatches value editing to the appropriate handler based on
 // key name (for "tools") or value type (map, slice, primitive).
-func handleValue(k string, v any, claiConfigDir string) (any, error) {
+func handleValue(ctx context.Context, k string, v any, claiConfigDir string) (any, error) {
 	if k == "tools" {
-		return getToolsValue(v)
+		return getToolsValue(ctx, v)
 	}
 	switch val := v.(type) {
 	case map[string]any:
-		return editMap(k, val, claiConfigDir)
+		return editMap(ctx, k, val, claiConfigDir)
 	case []any:
-		return editSlice(k, val, claiConfigDir)
+		return editSlice(ctx, k, val, claiConfigDir)
 	default:
-		return getNewValue(k, val, claiConfigDir)
+		return getNewValue(ctx, k, val, claiConfigDir)
 	}
 }
 
 // editMap presents an interactive loop for adding, updating, removing keys
 // from a JSON map, or marking it as done.
-func editMap(k string, m map[string]any, claiConfigDir string) (map[string]any, error) {
+func editMap(ctx context.Context, k string, m map[string]any, claiConfigDir string) (map[string]any, error) {
 	edited := maps.Clone(m)
 	for {
 		keys := sortedKeys(edited)
-		fmt.Print(colorSecondary(fmt.Sprintf("Map '%s' keys: %v\n[a]dd [u]pdate [r]emove [d]one: ", k, keys)))
-		action, err := table.ReadUserInputFrom(Input)
+		ask(ctx, "select", fmt.Sprintf("Map '%s' keys: %v", k, keys), []string{"[a]dd", "[u]pdate", "[r]emove", "[d]one"},
+			colorSecondary(fmt.Sprintf("Map '%s' keys: %v\n[a]dd [u]pdate [r]emove [d]one: ", k, keys)))
+		action, err := table.ReadUserInputFrom(termIn(ctx))
 		if err != nil {
-			return nil, fmt.Errorf("read map action: %w", err)
+			return nil, diag.Errorf("read map action: %w", err)
 		}
 		switch action {
 		case "d", "":
 			return edited, nil
 		case "a":
-			fmt.Print(colorSecondary("New key: "))
-			nk, err := table.ReadUserInputFrom(Input)
+			ask(ctx, "select", "New key", nil, colorSecondary("New key: "))
+			nk, err := table.ReadUserInputFrom(termIn(ctx))
 			if err != nil {
-				return nil, fmt.Errorf("read new key: %w", err)
+				return nil, diag.Errorf("read new key: %w", err)
 			}
-			fmt.Print(colorSecondary("Value: "))
-			nv, err := table.ReadUserInputFrom(Input)
+			ask(ctx, "select", "Value", nil, colorSecondary("Value: "))
+			nv, err := table.ReadUserInputFrom(termIn(ctx))
 			if err != nil {
-				return nil, fmt.Errorf("read new value: %w", err)
+				return nil, diag.Errorf("read new value: %w", err)
 			}
 			edited[nk] = castPrimitive(nv)
 		case "r":
-			fmt.Print(colorSecondary("Key to remove: "))
-			rk, err := table.ReadUserInputFrom(Input)
+			ask(ctx, "select", "Key to remove", nil, colorSecondary("Key to remove: "))
+			rk, err := table.ReadUserInputFrom(termIn(ctx))
 			if err != nil {
-				return nil, fmt.Errorf("read key to remove: %w", err)
+				return nil, diag.Errorf("read key to remove: %w", err)
 			}
 			delete(edited, rk)
 		case "u":
-			fmt.Print(colorSecondary("Key to update: "))
-			uk, err := table.ReadUserInputFrom(Input)
+			ask(ctx, "select", "Key to update", nil, colorSecondary("Key to update: "))
+			uk, err := table.ReadUserInputFrom(termIn(ctx))
 			if err != nil {
-				return nil, fmt.Errorf("read key to update: %w", err)
+				return nil, diag.Errorf("read key to update: %w", err)
 			}
 			val, exists := edited[uk]
 			if !exists {
-				fmt.Print(colorBreadtext(fmt.Sprintf("no such key '%s'\n", uk)))
+				fmt.Fprint(runenv.From(ctx).Stdout(), colorBreadtext(fmt.Sprintf("no such key '%s'\n", uk)))
 				continue
 			}
-			nv, err := handleValue(fmt.Sprintf("%s.%s", k, uk), val, claiConfigDir)
+			nv, err := handleValue(ctx, fmt.Sprintf("%s.%s", k, uk), val, claiConfigDir)
 			if err != nil {
-				return nil, fmt.Errorf("failed to handle map value %q: %w", uk, err)
+				return nil, diag.Errorf("failed to handle map value %q: %w", uk, err)
 			}
 			edited[uk] = nv
 		default:
-			fmt.Print(colorBreadtext(fmt.Sprintf("unsupported map action %q\n", action)))
+			fmt.Fprint(runenv.From(ctx).Stdout(), colorBreadtext(fmt.Sprintf("unsupported map action %q\n", action)))
 		}
 	}
 }
 
 // editSlice presents a numbered table of elements and an action prompt
 // for appending, updating, removing entries, or marking as done.
-func editSlice(k string, s []any, claiConfigDir string) ([]any, error) {
+func editSlice(ctx context.Context, k string, s []any, claiConfigDir string) ([]any, error) {
 	edited := append([]any(nil), s...)
 	for {
-		printSliceTable(k, edited)
-		fmt.Print(colorSecondary("[a]ppend [u]pdate [r]emove [d]one: "))
-		action, err := table.ReadUserInputFrom(Input)
+		printSliceTable(ctx, k, edited)
+		ask(ctx, "select", fmt.Sprintf("Slice '%s' action", k), []string{"[a]ppend", "[u]pdate", "[r]emove", "[d]one"},
+			colorSecondary("[a]ppend [u]pdate [r]emove [d]one: "))
+		action, err := table.ReadUserInputFrom(termIn(ctx))
 		if err != nil {
-			return nil, fmt.Errorf("read slice action: %w", err)
+			return nil, diag.Errorf("read slice action: %w", err)
 		}
 		switch action {
 		case "d", "":
 			return edited, nil
 		case "a":
-			edited = append(edited, promptSliceAppend())
+			edited = append(edited, promptSliceAppend(ctx))
 		case "u":
-			edited, err = promptSliceUpdate(k, edited, claiConfigDir)
+			edited, err = promptSliceUpdate(ctx, k, edited, claiConfigDir)
 			if err != nil {
 				return nil, err
 			}
 		case "r":
-			edited, err = promptSliceRemove(edited)
+			edited, err = promptSliceRemove(ctx, edited)
 			if err != nil {
-				ancli.Errf("%v", err)
+				runenv.Failuref(ctx, runenv.SubsystemSetup, "%v", err)
 			}
 		default:
-			fmt.Println(colorBreadtext("invalid slice action"))
+			fmt.Fprintln(runenv.From(ctx).Stdout(), colorBreadtext("invalid slice action"))
 		}
 	}
 }
 
 // printSliceTable renders a numbered table of slice elements.
-func printSliceTable(key string, s []any) {
-	fmt.Print(colorPrimary(fmt.Sprintf("Slice '%s' (%d elements):\n", key, len(s))))
+func printSliceTable(ctx context.Context, key string, s []any) {
+	fmt.Fprint(runenv.From(ctx).Stdout(), colorPrimary(fmt.Sprintf("Slice '%s' (%d elements):\n", key, len(s))))
 	if len(s) == 0 {
-		fmt.Print(colorBreadtext("  (empty)\n"))
+		fmt.Fprint(runenv.From(ctx).Stdout(), colorBreadtext("  (empty)\n"))
 		return
 	}
 	for i, v := range s {
-		fmt.Print(colorBreadtext(fmt.Sprintf("  %d. %v\n", i, v)))
+		fmt.Fprint(runenv.From(ctx).Stdout(), colorBreadtext(fmt.Sprintf("  %d. %v\n", i, v)))
 	}
 }
 
 // promptSliceAppend reads a single value from the user and casts it.
-func promptSliceAppend() any {
-	fmt.Print(colorSecondary("Value: "))
-	nv, err := table.ReadUserInputFrom(Input)
+func promptSliceAppend(ctx context.Context) any {
+	ask(ctx, "select", "Value", nil, colorSecondary("Value: "))
+	nv, err := table.ReadUserInputFrom(termIn(ctx))
 	if err != nil {
-		ancli.Errf("read append value: %v", err)
+		runenv.Failuref(ctx, runenv.SubsystemSetup, "read append value: %v", err)
 		return nil
 	}
 	return castPrimitive(nv)
@@ -868,21 +884,21 @@ func promptSliceAppend() any {
 
 // promptSliceUpdate presents a single-select table of slice elements and
 // delegates to handleValue on the chosen index.
-func promptSliceUpdate(key string, s []any, claiConfigDir string) ([]any, error) {
+func promptSliceUpdate(ctx context.Context, key string, s []any, claiConfigDir string) ([]any, error) {
 	if len(s) == 0 {
 		return s, nil
 	}
-	indices, err := selectFromSlice(s, true)
+	indices, err := selectFromSlice(ctx, s, true)
 	if err != nil {
 		if errors.Is(err, table.ErrBack) || errors.Is(err, table.ErrUserInitiatedExit) {
 			return s, nil
 		}
-		return nil, fmt.Errorf("select index for update: %w", err)
+		return nil, diag.Errorf("select index for update: %w", err)
 	}
 	idx := indices[0]
-	nv, err := handleValue(fmt.Sprintf("%s[%d]", key, idx), s[idx], claiConfigDir)
+	nv, err := handleValue(ctx, fmt.Sprintf("%s[%d]", key, idx), s[idx], claiConfigDir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to handle slice value at %d: %w", idx, err)
+		return nil, diag.Errorf("failed to handle slice value at %d: %w", idx, err)
 	}
 	s[idx] = nv
 	return s, nil
@@ -890,11 +906,11 @@ func promptSliceUpdate(key string, s []any, claiConfigDir string) ([]any, error)
 
 // promptSliceRemove presents a multi-select table of slice elements and
 // deletes chosen indices in descending order.
-func promptSliceRemove(s []any) ([]any, error) {
+func promptSliceRemove(ctx context.Context, s []any) ([]any, error) {
 	if len(s) == 0 {
 		return s, nil
 	}
-	indices, err := selectFromSlice(s, false)
+	indices, err := selectFromSlice(ctx, s, false)
 	if err != nil {
 		if errors.Is(err, table.ErrBack) || errors.Is(err, table.ErrUserInitiatedExit) {
 			return s, nil
@@ -911,7 +927,7 @@ func promptSliceRemove(s []any) ([]any, error) {
 
 // selectFromSlice presents a table of slice values and returns selected
 // indices. When single is true only one index may be chosen.
-func selectFromSlice(s []any, single bool) ([]int, error) {
+func selectFromSlice(ctx context.Context, s []any, single bool) ([]int, error) {
 	labels := make([]string, len(s))
 	for i := range labels {
 		labels[i] = strconv.Itoa(i)
@@ -922,8 +938,9 @@ func selectFromSlice(s []any, single bool) ([]int, error) {
 	).
 		WithHeader("Select elements").
 		WithPageSize(len(s)).
-		WithWriter(os.Stdout).
-		WithInput(Input)
+		WithWriter(runenv.From(ctx).Stdout()).
+		WithInput(termIn(ctx)).
+		WithPrompter(selectPrompt(ctx))
 
 	if single {
 		tb = tb.WithSingleSelect()
@@ -967,21 +984,21 @@ func castPrimitive(v any) any {
 	return s
 }
 
-func createConfigFile[T any](configTypePath, configType string, defaultConfig T) (config, error) {
+func createConfigFile[T any](ctx context.Context, configTypePath, configType string, defaultConfig T) (config, error) {
 	if _, err := os.Stat(configTypePath); os.IsNotExist(err) {
 		if err := os.MkdirAll(configTypePath, os.ModePerm); err != nil {
-			return config{}, fmt.Errorf("failed to create %s directory: %w", configType, err)
+			return config{}, diag.Errorf("failed to create %s directory: %w", configType, err)
 		}
 	}
-	fmt.Print(colorSecondary(fmt.Sprintf("Enter %s name: ", configType)))
-	configName, err := table.ReadUserInputFrom(Input)
+	ask(ctx, "select", fmt.Sprintf("Enter %s name", configType), nil, colorSecondary(fmt.Sprintf("Enter %s name: ", configType)))
+	configName, err := table.ReadUserInputFrom(termIn(ctx))
 	if err != nil {
-		return config{}, fmt.Errorf("read %s name: %w", configType, err)
+		return config{}, diag.Errorf("read %s name: %w", configType, err)
 	}
 	newConfigPath := path.Join(configTypePath, fmt.Sprintf("%v.json", configName))
 	err = utils.CreateFile(newConfigPath, &defaultConfig)
 	if err != nil {
-		return config{}, fmt.Errorf("create %s file: %w", configType, err)
+		return config{}, diag.Errorf("create %s file: %w", configType, err)
 	}
 	return config{
 		name:     configName,
@@ -989,12 +1006,12 @@ func createConfigFile[T any](configTypePath, configType string, defaultConfig T)
 	}, nil
 }
 
-func pasteMcpServerConfig(mcpConfDir string) ([]config, error) {
-	ancli.Noticef("Paste your MCP server configuration below.")
-	ancli.Noticef("Press Ctrl+D when finished (or type 'EOF' on a new line):")
+func pasteMcpServerConfig(ctx context.Context, mcpConfDir string) ([]config, error) {
+	ask(ctx, "select", "Paste your MCP server configuration below, then close the input or type 'EOF' on a new line", nil,
+		"Paste your MCP server configuration below.\nPress Ctrl+D when finished (or type 'EOF' on a new line):\n")
 
 	var lines []string
-	scanner := bufio.NewScanner(os.Stdin)
+	scanner := bufio.NewScanner(runenv.From(ctx).Stdin())
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -1005,7 +1022,7 @@ func pasteMcpServerConfig(mcpConfDir string) ([]config, error) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("error reading input: %w", err)
+		return nil, diag.Errorf("error reading input: %w", err)
 	}
 
 	pastedConfig := strings.Join(lines, "\n")
@@ -1013,9 +1030,9 @@ func pasteMcpServerConfig(mcpConfDir string) ([]config, error) {
 		return nil, fmt.Errorf("no configuration provided")
 	}
 
-	serverNames, err := ParseAndAddMcpServer(mcpConfDir, pastedConfig)
+	serverNames, err := ParseAndAddMcpServer(ctx, mcpConfDir, pastedConfig)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse mcp server: %w", err)
+		return nil, diag.Errorf("failed to parse mcp server: %w", err)
 	}
 
 	ret := make([]config, 0, len(serverNames))

@@ -581,7 +581,8 @@ func Test_sessionRunner_Run_StreamEndsWhileResizePendingNoLateRedraw(t *testing.
 
 // Test_sessionRunner_Run_ContextCancellationStopsCleanly proves the
 // cancellation path: the session loop returns promptly when the context is
-// done, with the watcher channel open but idle.
+// done, with the watcher channel open but idle, and reports the stop as an
+// error matching the context's, never as a finished run.
 func Test_sessionRunner_Run_ContextCancellationStopsCleanly(t *testing.T) {
 	withRollingTheme(t)
 	model := &MockQuerier{}
@@ -613,8 +614,8 @@ func Test_sessionRunner_Run_ContextCancellationStopsCleanly(t *testing.T) {
 
 	select {
 	case err := <-done:
-		if err != nil {
-			t.Fatalf("Run returned err after cancellation: %v", err)
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Run returned %v after cancellation, want an error matching context.Canceled", err)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("Run did not return after context cancellation")

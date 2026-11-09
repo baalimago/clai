@@ -1,12 +1,14 @@
 package text
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/internal/testenv/procenv"
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
@@ -45,9 +47,9 @@ func TestToolsListAgreesWithProductionSetupForAuthScopedCommandServer(t *testing
 		t.Fatalf("setupMcpManager: %v", err)
 	}
 
-	tools.Init()
+	tools.Init(context.Background())
 	var listErr error
-	got := testboil.CaptureStdout(t, func(t *testing.T) { listErr = tools.List() })
+	got := testboil.CaptureStdout(t, func(t *testing.T) { listErr = tools.List(procenv.Context(context.Background())) })
 	if listErr != nil {
 		t.Fatalf("tools.List: %v", listErr)
 	}

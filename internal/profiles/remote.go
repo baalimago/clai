@@ -13,8 +13,11 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/profile"
 	"github.com/baalimago/clai/internal/remote"
+	"github.com/baalimago/clai/internal/runenv"
+	"github.com/baalimago/clai/internal/stdio"
 )
 
 // NewResolverFunc builds the remote-target resolver over a config dir.
@@ -26,13 +29,15 @@ type CommandDeps struct {
 	// NewResolver resolves targets for trust, install and update; nil
 	// leaves only list.
 	NewResolver NewResolverFunc
-	// ConfigDir returns the clai config directory.
-	ConfigDir func() (string, error)
+	// ConfigDir prepares and returns the clai config directory for the run
+	// on ctx.
+	ConfigDir func(ctx context.Context) (string, error)
 	// ConfigDirLookup returns the config directory without running config
 	// prep or writing anything, so validate reads a target exactly as it is
 	// on disk. nil falls back to ConfigDir.
 	ConfigDirLookup func() (string, error)
-	Out             io.Writer
+	// Out is where the commands print; nil is the run's stdout.
+	Out io.Writer
 	// NewHubPublisher sends a profile to the Hub as the logged-in account;
 	// nil leaves publish unavailable.
 	NewHubPublisher NewHubPublisherFunc
@@ -41,13 +46,17 @@ type CommandDeps struct {
 	// NewPrompt gives the question update with no name asks before it
 	// takes a version nobody trusted; nil, or a nil answer, means nobody
 	// can be asked, and such a version is left.
-	NewPrompt func() remote.Prompter
+	NewPrompt func(context.Context) remote.Prompter
 	// ProfileEnv builds the checker's environment over the config dir; nil
 	// means this build has no checker.
 	ProfileEnv func(confDir string) (profile.Env, error)
 	// SetExit asks Run for an exit status other than the 0 a nil error and
 	// the 1 an error give, such as validate's 1 for a body it refuses.
 	SetExit func(int)
+
+	// selectPrompt shows a selector's prompt line; withEnv sets it when Out
+	// is the run's stdout, and nil lets the table write it to Out.
+	selectPrompt func(string) error
 }
 
 // Source is the stamp install writes into a profile: the target it came
@@ -61,30 +70,40 @@ var profileName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 // ErrNotInstalled is returned by update for a profile without a source.
 var ErrNotInstalled = errors.New("not installed from a remote target")
 
-func (d CommandDeps) resolver(confDir string) (remote.Resolver, error) {
+func (d CommandDeps) resolver(ctx context.Context, confDir string) (remote.Resolver, error) {
 	if d.NewResolver == nil {
 		return remote.Resolver{}, fmt.Errorf("remote profile targets are not available in this build")
 	}
 	var prompt remote.Prompter
 	if d.NewPrompt != nil {
-		prompt = d.NewPrompt()
+		prompt = d.NewPrompt(ctx)
 	}
 	return d.NewResolver(confDir, prompt)
 }
 
-func (d CommandDeps) configDir() (string, error) {
+func (d CommandDeps) configDir(ctx context.Context) (string, error) {
 	if d.ConfigDir == nil {
 		return "", fmt.Errorf("no config directory")
 	}
-	return d.ConfigDir()
+	return d.ConfigDir(ctx)
 }
 
 // lookupConfigDir resolves the config directory for a read-only target read.
-func (d CommandDeps) lookupConfigDir() (string, error) {
+func (d CommandDeps) lookupConfigDir(ctx context.Context) (string, error) {
 	if d.ConfigDirLookup != nil {
 		return d.ConfigDirLookup()
 	}
-	return d.configDir()
+	return d.configDir(ctx)
+}
+
+// withEnv fills the writer the caller left nil from the run's Env on ctx.
+func (d CommandDeps) withEnv(ctx context.Context) CommandDeps {
+	if d.Out == nil {
+		env := runenv.From(ctx)
+		d.Out = env.Stdout()
+		d.selectPrompt = env.TablePrompter(stdio.Stdout)
+	}
+	return d
 }
 
 // profileEnv builds the environment the profile checker needs.
@@ -106,11 +125,12 @@ func (d CommandDeps) setExit(code ExitStatus) {
 // Trust fetches target, shows what it runs and records it as trusted, so
 // a later -prp run, a cron job included, runs it without asking.
 func (d CommandDeps) Trust(ctx context.Context, target string) error {
-	confDir, err := d.configDir()
+	d = d.withEnv(ctx)
+	confDir, err := d.configDir(ctx)
 	if err != nil {
 		return err
 	}
-	r, err := d.resolver(confDir)
+	r, err := d.resolver(ctx, confDir)
 	if err != nil {
 		return err
 	}
@@ -128,11 +148,12 @@ func (d CommandDeps) Trust(ctx context.Context, target string) error {
 // Install fetches target and saves it as <config>/profiles/<name>.json
 // with a source stamp, so clai -p <name> runs it offline from then on.
 func (d CommandDeps) Install(ctx context.Context, target, name string) error {
-	confDir, err := d.configDir()
+	d = d.withEnv(ctx)
+	confDir, err := d.configDir(ctx)
 	if err != nil {
 		return err
 	}
-	r, err := d.resolver(confDir)
+	r, err := d.resolver(ctx, confDir)
 	if err != nil {
 		return err
 	}
@@ -177,11 +198,12 @@ func (d CommandDeps) Install(ctx context.Context, target, name string) error {
 // Update re-fetches the newest version of each installed profile, or of
 // the one named, and rewrites those that changed.
 func (d CommandDeps) Update(ctx context.Context, name string) error {
-	confDir, err := d.configDir()
+	d = d.withEnv(ctx)
+	confDir, err := d.configDir(ctx)
 	if err != nil {
 		return err
 	}
-	r, err := d.resolver(confDir)
+	r, err := d.resolver(ctx, confDir)
 	if err != nil {
 		return err
 	}
@@ -203,7 +225,7 @@ func (d CommandDeps) Update(ctx context.Context, name string) error {
 	var failed []error
 	for _, n := range names {
 		if err := d.updateOne(ctx, r, filepath.Join(dir, n+".json"), n, consent); err != nil {
-			failed = append(failed, fmt.Errorf("%s: %w", n, err))
+			failed = append(failed, diag.Errorf("%s: %w", n, err))
 		}
 	}
 	return errors.Join(failed...)
@@ -216,7 +238,7 @@ func (d CommandDeps) updateOne(ctx context.Context, r remote.Resolver, path, nam
 	}
 	t, err := remote.ParseTarget(src.Target)
 	if err != nil {
-		return fmt.Errorf("source stamp: %w", err)
+		return diag.Errorf("source stamp: %w", err)
 	}
 	res, err := r.Resolve(ctx, t.Unpinned().String(), consent)
 	if err != nil {
@@ -271,7 +293,7 @@ func installedNames(dir, only string) ([]string, error) {
 			return nil, err
 		}
 		if _, err := readSource(filepath.Join(dir, only+".json")); err != nil {
-			return nil, fmt.Errorf("profile %q: %w", only, err)
+			return nil, diag.Errorf("profile %q: %w", only, err)
 		}
 		return []string{only}, nil
 	}
@@ -280,7 +302,7 @@ func installedNames(dir, only string) ([]string, error) {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("read profiles: %w", err)
+		return nil, diag.Errorf("read profiles: %w", err)
 	}
 	var names []string
 	for _, e := range entries {
@@ -305,7 +327,7 @@ func readSource(path string) (Source, error) {
 		Source *Source `json:"source"`
 	}
 	if err := json.Unmarshal(b, &p); err != nil {
-		return Source{}, fmt.Errorf("parse %s: %w", path, err)
+		return Source{}, diag.Errorf("parse %s: %w", path, err)
 	}
 	if p.Source == nil || strings.TrimSpace(p.Source.Target) == "" {
 		return Source{}, ErrNotInstalled
@@ -316,22 +338,22 @@ func readSource(path string) (Source, error) {
 func writeStamped(path string, res remote.Resolved) error {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(res.Body, &fields); err != nil {
-		return fmt.Errorf("parse %s: %w", res.Target, err)
+		return diag.Errorf("parse %s: %w", res.Target, err)
 	}
 	stamp, err := json.Marshal(Source{Target: res.Target.WithDigest(res.Digest)})
 	if err != nil {
-		return fmt.Errorf("encode source stamp: %w", err)
+		return diag.Errorf("encode source stamp: %w", err)
 	}
 	fields["source"] = stamp
 	out, err := json.MarshalIndent(fields, "", "  ")
 	if err != nil {
-		return fmt.Errorf("encode profile: %w", err)
+		return diag.Errorf("encode profile: %w", err)
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("create profiles dir: %w", err)
+		return diag.Errorf("create profiles dir: %w", err)
 	}
 	if err := os.WriteFile(path, append(out, '\n'), 0o644); err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
+		return diag.Errorf("write %s: %w", path, err)
 	}
 	return nil
 }

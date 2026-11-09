@@ -3,8 +3,8 @@ package generic
 import (
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/models"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
@@ -73,7 +73,7 @@ func toWireMessages(msgs []pub_models.Message, caps models.ImageCapabilities) ([
 			for j, c := range m.ToolCalls {
 				wc, err := toWireToolCall(c)
 				if err != nil {
-					return nil, fmt.Errorf("message %d tool call %d: %w", i, j, err)
+					return nil, diag.Errorf("message %d tool call %d: %w", i, j, err)
 				}
 				wm.ToolCalls[j] = wc
 			}
@@ -103,7 +103,7 @@ func toWireToolCall(c pub_models.Call) (wireToolCall, error) {
 		}
 		b, err := json.Marshal(inputs)
 		if err != nil {
-			return wireToolCall{}, fmt.Errorf("marshal arguments of %q: %w", name, err)
+			return wireToolCall{}, diag.Errorf("marshal arguments of %q: %w", name, err)
 		}
 		args = string(b)
 	}
