@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/baalimago/clai/internal/diag"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -68,7 +69,7 @@ func (r RowsBetweenTool) Call(input pub_models.Input) (string, error) {
 
 	file, err := os.Open(filePath)
 	if err != nil {
-		return "", fmt.Errorf("failed to open file: %w", err)
+		return "", diag.Errorf("failed to open file: %w", err)
 	}
 	defer file.Close()
 
@@ -84,7 +85,7 @@ func (r RowsBetweenTool) Call(input pub_models.Input) (string, error) {
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return "", fmt.Errorf("failed to scan file: %w", err)
+		return "", diag.Errorf("failed to scan file: %w", err)
 	}
 
 	return strings.Join(lines, "\n"), nil

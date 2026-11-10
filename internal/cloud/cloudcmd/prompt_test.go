@@ -2,7 +2,6 @@ package cloudcmd
 
 import (
 	"context"
-	"os"
 	"strings"
 	"testing"
 )
@@ -31,7 +30,7 @@ func TestFirstPull_unknownAnswerAsksAgain(t *testing.T) {
 func TestFirstPull_quitStopsCleanly(t *testing.T) {
 	h := firstPullHarness(t)
 	h.in = "q\n"
-	r := &runner{deps: h.deps().withDefaults()}
+	r := &runner{deps: h.deps().withDefaults(context.Background())}
 	if err := r.pull(context.Background(), nil, false, false, false); err != nil {
 		t.Fatalf("quit is an error: %v", err)
 	}
@@ -42,31 +41,5 @@ func TestFirstPull_quitStopsCleanly(t *testing.T) {
 	mustContain(t, out, "stopped: nothing was pulled")
 	if strings.Contains(out, "▸ conversations") {
 		t.Fatalf("pulled on after quit:\n%s", out)
-	}
-}
-
-func TestIsTerminal_devNullIsNot(t *testing.T) {
-	f, err := os.Open(os.DevNull)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer f.Close()
-	if isTerminal(f) {
-		t.Fatal("/dev/null counted as a terminal")
-	}
-	rd, wr, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer rd.Close()
-	defer wr.Close()
-	if isTerminal(rd) {
-		t.Fatal("a pipe counted as a terminal")
-	}
-	if ptmx, err := os.OpenFile("/dev/ptmx", os.O_RDWR, 0); err == nil {
-		defer ptmx.Close()
-		if !isTerminal(ptmx) {
-			t.Fatal("a pseudo-terminal is not a terminal")
-		}
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/baalimago/clai/internal/diag"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -81,12 +82,12 @@ func (s SedTool) Call(input pub_models.Input) (string, error) {
 
 	raw, err := os.ReadFile(filePath)
 	if err != nil {
-		return "", fmt.Errorf("failed to read file: %w", err)
+		return "", diag.Errorf("failed to read file: %w", err)
 	}
 
 	re, err := regexp.Compile(pattern)
 	if err != nil {
-		return "", fmt.Errorf("invalid regex: %w", err)
+		return "", diag.Errorf("invalid regex: %w", err)
 	}
 
 	lines := strings.Split(string(raw), "\n")
@@ -103,7 +104,7 @@ func (s SedTool) Call(input pub_models.Input) (string, error) {
 	out := strings.Join(lines, "\n")
 	err = os.WriteFile(filePath, []byte(out), 0o644)
 	if err != nil {
-		return "", fmt.Errorf("failed to write file: %w", err)
+		return "", diag.Errorf("failed to write file: %w", err)
 	}
 	return fmt.Sprintf("sed: replaced occurrences of %q with %q in %s (%d-%d)", pattern, repl, filePath, startLine, endLine), nil
 }

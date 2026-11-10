@@ -1,6 +1,7 @@
 package text
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"unicode/utf8"
@@ -20,7 +21,7 @@ func isLookbackTool(name string) bool {
 	}
 }
 
-func (e toolExecutor[C]) runLookbackTool(call pub_models.Call) (string, error) {
+func (e toolExecutor[C]) runLookbackTool(ctx context.Context, call pub_models.Call) (string, error) {
 	q := e.querier
 	var inputs pub_models.Input
 	if call.Inputs != nil {
@@ -39,13 +40,14 @@ func (e toolExecutor[C]) runLookbackTool(call pub_models.Call) (string, error) {
 			Page:      intInput(inputs, "page", 0),
 			PageSize:  intInput(inputs, "page_size", 0),
 		}
-		res, err := chat.NewConversationSearcher(q.configDir).Search(req)
+		res, err := chat.NewConversationSearcher(q.configDir).Search(ctx, req)
 		if err != nil {
 			return "", err
 		}
 		return chat.FormatSearchResult(res), nil
 	case string(pub_models.InspectConversationTool):
 		return chat.InspectConversation(
+			ctx,
 			q.configDir,
 			stringInput(inputs, "chat_id"),
 			intInput(inputs, "page", 0),
@@ -55,6 +57,7 @@ func (e toolExecutor[C]) runLookbackTool(call pub_models.Call) (string, error) {
 		)
 	case string(pub_models.ReadMessageTool):
 		content, path, err := chat.ReadMessage(
+			ctx,
 			q.configDir,
 			stringInput(inputs, "chat_id"),
 			intInput(inputs, "message_index", -1),

@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -8,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/internal/testenv/procenv"
 	"github.com/baalimago/clai/internal/tools/mcp/schemacache"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
@@ -105,7 +107,7 @@ func TestToolsListShowsMcpToolsFromCache(t *testing.T) {
 
 	WithTestRegistry(t, func() {
 		var err error
-		got := captureSubCmdOut(t, func() { err = List() })
+		got := captureSubCmdOut(t, func() { err = List(procenv.Context(context.Background())) })
 		if err != nil {
 			t.Fatalf("List: %v", err)
 		}
@@ -155,7 +157,7 @@ func TestToolsListOmitsServersWithoutCacheEntry(t *testing.T) {
 
 	WithTestRegistry(t, func() {
 		var err error
-		got := captureSubCmdOut(t, func() { err = List() })
+		got := captureSubCmdOut(t, func() { err = List(procenv.Context(context.Background())) })
 		if err != nil {
 			t.Fatalf("List: %v", err)
 		}
@@ -189,7 +191,7 @@ func TestToolsListNeverWritesMcpIntoGlobalRegistry(t *testing.T) {
 		before := len(Registry.All())
 
 		var err error
-		got := captureSubCmdOut(t, func() { err = List() })
+		got := captureSubCmdOut(t, func() { err = List(procenv.Context(context.Background())) })
 		if err != nil {
 			t.Fatalf("List: %v", err)
 		}
@@ -199,7 +201,7 @@ func TestToolsListNeverWritesMcpIntoGlobalRegistry(t *testing.T) {
 
 		after := Registry.All()
 		if len(after) != before {
-			t.Fatalf("global Registry size changed from %d to %d after List()", before, len(after))
+			t.Fatalf("global Registry size changed from %d to %d after List(procenv.Context(context.Background()))", before, len(after))
 		}
 		for name := range after {
 			if strings.HasPrefix(name, "mcp_") {
@@ -230,7 +232,7 @@ func TestToolsListNeverEmitsPerToolShadowMarker(t *testing.T) {
 		Registry.Set("cat", &mockLLMTool{spec: pub_models.Specification{Name: "cat"}})
 
 		var err error
-		got := captureSubCmdOut(t, func() { err = List() })
+		got := captureSubCmdOut(t, func() { err = List(procenv.Context(context.Background())) })
 		if err != nil {
 			t.Fatalf("List: %v", err)
 		}
@@ -274,7 +276,7 @@ func TestShadowFooterOmitsUnregisteredBuiltin(t *testing.T) {
 	WithTestRegistry(t, func() {
 		// "cat" is deliberately never registered in this test's registry.
 		var err error
-		got := captureSubCmdOut(t, func() { err = List() })
+		got := captureSubCmdOut(t, func() { err = List(procenv.Context(context.Background())) })
 		if err != nil {
 			t.Fatalf("List: %v", err)
 		}
@@ -304,7 +306,7 @@ func TestShadowFooterDeduplicatesAcrossServers(t *testing.T) {
 		Registry.Set("cat", &mockLLMTool{spec: pub_models.Specification{Name: "cat"}})
 
 		var err error
-		got := captureSubCmdOut(t, func() { err = List() })
+		got := captureSubCmdOut(t, func() { err = List(procenv.Context(context.Background())) })
 		if err != nil {
 			t.Fatalf("List: %v", err)
 		}
@@ -348,7 +350,7 @@ func TestShadowFooterCoversLazyCachedServer(t *testing.T) {
 
 // listSingleCachedToolWithBuiltinRegistered configures one command-based
 // server with one cached tool, registers builtinName, runs the real
-// List(), and hands the output to assert. Extracted once dupl flagged three
+// List(procenv.Context(context.Background())), and hands the output to assert. Extracted once dupl flagged three
 // of this file's footer tests (TestShadowFooterNamesAvailableBuiltin,
 // TestShadowFooterCoversLazyCachedServer, TestShadowFooterCoversCreateDirectory)
 // as a clone group: each configures exactly one server with exactly one
@@ -367,7 +369,7 @@ func listSingleCachedToolWithBuiltinRegistered(t *testing.T, serverExtraJSON, to
 }
 
 // listWithBuiltinRegistered registers builtinName in a fresh test registry,
-// runs the real List(), and hands the output to assert — the shape shared
+// runs the real List(procenv.Context(context.Background())), and hands the output to assert — the shape shared
 // by TestShadowFooterNeverAttributesToASpecificRemoteTool and
 // TestShadowFooterSkipsEndpointBasedServers, extracted once dupl flagged
 // them as a clone pair.
@@ -376,7 +378,7 @@ func listWithBuiltinRegistered(t *testing.T, builtinName string, assert func(t *
 	WithTestRegistry(t, func() {
 		Registry.Set(builtinName, &mockLLMTool{spec: pub_models.Specification{Name: builtinName}})
 		var err error
-		got := captureSubCmdOut(t, func() { err = List() })
+		got := captureSubCmdOut(t, func() { err = List(procenv.Context(context.Background())) })
 		if err != nil {
 			t.Fatalf("List: %v", err)
 		}
@@ -444,7 +446,7 @@ func TestShadowAdvisoryHandlesNoMcpServers(t *testing.T) {
 		Registry.Set("cat", &mockLLMTool{spec: pub_models.Specification{Name: "cat", Description: "concatenate"}})
 
 		var err error
-		got := captureSubCmdOut(t, func() { err = List() })
+		got := captureSubCmdOut(t, func() { err = List(procenv.Context(context.Background())) })
 		if err != nil {
 			t.Fatalf("List: %v", err)
 		}
@@ -467,7 +469,7 @@ func TestShadowAdvisoryAbsentConfigDirIsNotAnError(t *testing.T) {
 
 	WithTestRegistry(t, func() {
 		var err error
-		got := captureSubCmdOut(t, func() { err = List() })
+		got := captureSubCmdOut(t, func() { err = List(procenv.Context(context.Background())) })
 		if err != nil {
 			t.Fatalf("List: %v", err)
 		}
@@ -480,7 +482,7 @@ func TestShadowAdvisoryAbsentConfigDirIsNotAnError(t *testing.T) {
 // TestShadowAdvisoryDoesNotAlterSelection pins the invariant that the
 // shadow advisory changes nothing about tool selection, registration or
 // the specification sent to a model. It drives both halves of the real
-// listing path over one cached, shadowed entry: List(), where the advisory
+// listing path over one cached, shadowed entry: List(procenv.Context(context.Background())), where the advisory
 // is now a footer rather than text on the tool's own line, and Detail(),
 // whose JSON specification is what a run's tool selection actually reads —
 // the cached description must survive there unmodified and footer-free.
@@ -507,7 +509,7 @@ func TestShadowAdvisoryDoesNotAlterSelection(t *testing.T) {
 		Registry.Set("cat", &mockLLMTool{spec: pub_models.Specification{Name: "cat"}})
 
 		var listErr error
-		listing := captureSubCmdOut(t, func() { listErr = List() })
+		listing := captureSubCmdOut(t, func() { listErr = List(procenv.Context(context.Background())) })
 		if listErr != nil {
 			t.Fatalf("List: %v", listErr)
 		}
@@ -519,7 +521,7 @@ func TestShadowAdvisoryDoesNotAlterSelection(t *testing.T) {
 		}
 
 		var detailErr error
-		detailOut := captureSubCmdOut(t, func() { detailErr = Detail("mcp_fs_read_file") })
+		detailOut := captureSubCmdOut(t, func() { detailErr = Detail(procenv.Context(context.Background()), "mcp_fs_read_file") })
 		if detailErr != nil {
 			t.Fatalf("Detail: %v", detailErr)
 		}

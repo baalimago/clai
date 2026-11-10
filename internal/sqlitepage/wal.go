@@ -4,10 +4,11 @@ import (
 	"bufio"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"io"
 	"maps"
 	"os"
+
+	"github.com/baalimago/clai/internal/diag"
 )
 
 const (
@@ -26,28 +27,28 @@ const (
 func (db *DB) applyWAL(path string) error {
 	f, err := os.Open(path)
 	if err != nil {
-		return fmt.Errorf("open %s: %w", path, err)
+		return diag.Errorf("open %s: %w", path, err)
 	}
 	defer f.Close()
 
 	r := bufio.NewReaderSize(f, 64<<10)
 	hdr := make([]byte, walHeaderSize)
 	if _, err := io.ReadFull(r, hdr); err != nil {
-		return fmt.Errorf("%w: short wal header %q: %w", ErrWALPresent, path, err)
+		return diag.Errorf("%w: short wal header %q: %w", ErrWALPresent, path, err)
 	}
 	magic := binary.BigEndian.Uint32(hdr[0:4])
 	if magic != 0x377f0682 && magic != 0x377f0683 {
-		return fmt.Errorf("%w: wal magic %#x in %q", ErrWALPresent, magic, path)
+		return diag.Errorf("%w: wal magic %#x in %q", ErrWALPresent, magic, path)
 	}
 	if v := binary.BigEndian.Uint32(hdr[4:8]); v != walVersion {
-		return fmt.Errorf("%w: wal format %d in %q", ErrWALPresent, v, path)
+		return diag.Errorf("%w: wal format %d in %q", ErrWALPresent, v, path)
 	}
 	pageSize := int(binary.BigEndian.Uint32(hdr[8:12]))
 	if pageSize == 1 {
 		pageSize = 65536
 	}
 	if pageSize != db.pageSize {
-		return fmt.Errorf("%w: wal page size %d, database %d", ErrWALPresent, pageSize, db.pageSize)
+		return diag.Errorf("%w: wal page size %d, database %d", ErrWALPresent, pageSize, db.pageSize)
 	}
 	// The low bit of the magic selects the word order of the checksum.
 	bigEndian := magic&1 == 1
@@ -55,7 +56,7 @@ func (db *DB) applyWAL(path string) error {
 	salt2 := binary.BigEndian.Uint32(hdr[20:24])
 	sum1, sum2 := walChecksum(hdr[:24], 0, 0, bigEndian)
 	if sum1 != binary.BigEndian.Uint32(hdr[24:28]) || sum2 != binary.BigEndian.Uint32(hdr[28:32]) {
-		return fmt.Errorf("%w: wal header checksum in %q", ErrWALPresent, path)
+		return diag.Errorf("%w: wal header checksum in %q", ErrWALPresent, path)
 	}
 
 	frame := make([]byte, walFrameSize+pageSize)
@@ -103,7 +104,7 @@ func walTailError(path string, err error) error {
 	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 		return nil
 	}
-	return fmt.Errorf("read %s: %w", path, err)
+	return diag.Errorf("read %s: %w", path, err)
 }
 
 // walChecksum folds data into the cumulative checksum SQLite writes into a

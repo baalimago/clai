@@ -33,6 +33,8 @@ var defaultConfig = Config{
 }
 
 type Options struct {
+	// Context carries the run whose diagnostics discovery reports.
+	Context        context.Context
 	ConfigDir      string
 	CacheDir       string
 	WorkingDir     string
@@ -41,7 +43,6 @@ type Options struct {
 	// fetched and trusted with the profile (architecture/remote-targets.md).
 	ProfileRoots   []string
 	TrustPrompter  func(context.Context, TrustPrompt) (bool, error)
-	LogLevel       LogLevel
 	LogQueryText   bool
 	KnownToolNames []string
 	// LocalTools contains the registered built-in tools that a trusted skill

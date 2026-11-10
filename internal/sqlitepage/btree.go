@@ -2,7 +2,8 @@ package sqlitepage
 
 import (
 	"encoding/binary"
-	"fmt"
+
+	"github.com/baalimago/clai/internal/diag"
 )
 
 type pageHeader struct {
@@ -19,7 +20,7 @@ func pageHeaderAt(page []byte, pgno uint32) (pageHeader, error) {
 		off = headerSize
 	}
 	if len(page) < off+8 {
-		return pageHeader{}, fmt.Errorf("%w: short page %d", ErrCorrupt, pgno)
+		return pageHeader{}, diag.Errorf("%w: short page %d", ErrCorrupt, pgno)
 	}
 	h := pageHeader{
 		typ:      page[off],
@@ -30,13 +31,13 @@ func pageHeaderAt(page []byte, pgno uint32) (pageHeader, error) {
 	switch h.typ {
 	case 0x02, 0x05:
 		if len(page) < off+12 {
-			return pageHeader{}, fmt.Errorf("%w: short interior page %d", ErrCorrupt, pgno)
+			return pageHeader{}, diag.Errorf("%w: short interior page %d", ErrCorrupt, pgno)
 		}
 		h.right = binary.BigEndian.Uint32(page[off+8 : off+12])
 		h.ptrStart = off + 12
 	case 0x0a, 0x0d:
 	default:
-		return pageHeader{}, fmt.Errorf("%w: page type %#x on page %d", ErrUnsupported, h.typ, pgno)
+		return pageHeader{}, diag.Errorf("%w: page type %#x on page %d", ErrUnsupported, h.typ, pgno)
 	}
 	return h, nil
 }
@@ -44,11 +45,11 @@ func pageHeaderAt(page []byte, pgno uint32) (pageHeader, error) {
 func (h pageHeader) cellOffset(page []byte, i int) (int, error) {
 	p := h.ptrStart + 2*i
 	if p+2 > len(page) {
-		return 0, fmt.Errorf("%w: cell pointer %d outside page", ErrCorrupt, i)
+		return 0, diag.Errorf("%w: cell pointer %d outside page", ErrCorrupt, i)
 	}
 	off := int(binary.BigEndian.Uint16(page[p : p+2]))
 	if off < h.hdrOff || off >= len(page) {
-		return 0, fmt.Errorf("%w: cell offset %d outside page", ErrCorrupt, off)
+		return 0, diag.Errorf("%w: cell offset %d outside page", ErrCorrupt, off)
 	}
 	return off, nil
 }
@@ -59,7 +60,7 @@ const maxPayloadSize = 256 << 20
 
 func (db *DB) readTableCell(page []byte, off int) (int64, []byte, error) {
 	if off < 0 || off >= len(page) {
-		return 0, nil, fmt.Errorf("%w: cell offset %d", ErrCorrupt, off)
+		return 0, nil, diag.Errorf("%w: cell offset %d", ErrCorrupt, off)
 	}
 	payloadLen, n, err := varint(page[off:])
 	if err != nil {
@@ -72,7 +73,7 @@ func (db *DB) readTableCell(page []byte, off int) (int64, []byte, error) {
 	}
 	off += n
 	if payloadLen < 0 || payloadLen > maxPayloadSize {
-		return 0, nil, fmt.Errorf("%w: invalid payload length %d", ErrCorrupt, payloadLen)
+		return 0, nil, diag.Errorf("%w: invalid payload length %d", ErrCorrupt, payloadLen)
 	}
 	payload, err := db.readPayload(page, off, int(payloadLen))
 	if err != nil {
@@ -95,23 +96,23 @@ func (db *DB) readPayload(page []byte, off, size int) ([]byte, error) {
 		}
 	}
 	if off < 0 || local < 0 || off+local > len(page) {
-		return nil, fmt.Errorf("%w: local payload %d at %d", ErrCorrupt, local, off)
+		return nil, diag.Errorf("%w: local payload %d at %d", ErrCorrupt, local, off)
 	}
 	out := append([]byte(nil), page[off:off+local]...)
 	if local == size {
 		return out, nil
 	}
 	if off+local+4 > len(page) {
-		return nil, fmt.Errorf("%w: missing overflow pointer", ErrCorrupt)
+		return nil, diag.Errorf("%w: missing overflow pointer", ErrCorrupt)
 	}
 	next := binary.BigEndian.Uint32(page[off+local : off+local+4])
 	seen := map[uint32]bool{}
 	for len(out) < size {
 		if next == 0 {
-			return nil, fmt.Errorf("%w: overflow chain ended early", ErrCorrupt)
+			return nil, diag.Errorf("%w: overflow chain ended early", ErrCorrupt)
 		}
 		if seen[next] {
-			return nil, fmt.Errorf("%w: overflow cycle at page %d", ErrCorrupt, next)
+			return nil, diag.Errorf("%w: overflow cycle at page %d", ErrCorrupt, next)
 		}
 		seen[next] = true
 		pg, err := db.readPage(next)
@@ -124,7 +125,7 @@ func (db *DB) readPayload(page []byte, off, size int) ([]byte, error) {
 			chunk = want
 		}
 		if 4+chunk > len(pg) {
-			return nil, fmt.Errorf("%w: short overflow page %d", ErrCorrupt, next)
+			return nil, diag.Errorf("%w: short overflow page %d", ErrCorrupt, next)
 		}
 		out = append(out, pg[4:4+chunk]...)
 		next = following

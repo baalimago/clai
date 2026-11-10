@@ -3,19 +3,19 @@ package video
 import (
 	"context"
 	"flag"
-	"fmt"
 	"net/http"
 	"os"
 	"path"
 
 	"github.com/baalimago/clai/internal"
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/utils"
 )
 
 // CommandDeps are the composition-root collaborators: config prep lives
 // in internal/setup, which video cannot import (setup imports video).
 type CommandDeps struct {
-	ConfigPrep func() (confDir string, err error)
+	ConfigPrep func(ctx context.Context) (confDir string, err error)
 	// Client sends the vendor requests; nil means the vendor's own client.
 	Client *http.Client
 }
@@ -66,24 +66,24 @@ Examples:
 		CompleteArgsFn:      internal.SuppressArgs,
 	}
 	c.OnSetup = func(ctx context.Context, c *internal.Command) error {
-		confDir, err := deps.ConfigPrep()
+		confDir, err := deps.ConfigPrep(ctx)
 		if err != nil {
 			return err
 		}
-		vConf, err := utils.LoadConfigFromFile(confDir, "videoConfig.json", nil, &Default)
+		vConf, err := utils.LoadConfigFromFile(ctx, confDir, "videoConfig.json", nil, &Default)
 		if err != nil {
-			return fmt.Errorf("failed to load configs: %w", err)
+			return diag.Errorf("failed to load configs: %w", err)
 		}
 		if err := ApplyFlagOverrides(&vConf, &f); err != nil {
 			return err
 		}
 		vConf.Client = deps.Client
 		if err := vConf.SetupPrompts(ctx, c.Args()); err != nil {
-			return fmt.Errorf("failed to setup prompt: %w", err)
+			return diag.Errorf("failed to setup prompt: %w", err)
 		}
-		vq, err := CreateQuerier(vConf)
+		vq, err := CreateQuerier(ctx, vConf)
 		if err != nil {
-			return fmt.Errorf("failed to create video querier: %w", err)
+			return diag.Errorf("failed to create video querier: %w", err)
 		}
 		c.SetQuerier(vq)
 		return nil

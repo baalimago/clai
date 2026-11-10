@@ -3,9 +3,9 @@ package tools
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"github.com/baalimago/clai/internal/asset"
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
@@ -50,20 +50,20 @@ func (v ViewImageTool) Call(in pub_models.Input) (string, error) {
 func (v ViewImageTool) CallParts(_ context.Context, in pub_models.Input) ([]pub_models.Part, error) {
 	raw, ok := in["path"].(string)
 	if !ok || raw == "" {
-		return nil, fmt.Errorf("%w, got %T %v", errViewImagePath, in["path"], in["path"])
+		return nil, diag.Errorf("%w, got %T %v", errViewImagePath, in["path"], in["path"])
 	}
 	path, err := utils.AbsHomePath(raw)
 	if err != nil {
-		return nil, fmt.Errorf("view_image %s: %w", raw, err)
+		return nil, diag.Errorf("view_image %s: %w", raw, err)
 	}
 	local, err := asset.ReadLocalImage(path)
 	if err != nil {
-		return nil, fmt.Errorf("view_image: %w", err)
+		return nil, diag.Errorf("view_image: %w", err)
 	}
 	img := pub_models.ImagePart{Origin: pub_models.OriginTool, MIME: local.MIME, Data: local.Data}
 	handle, err := img.Handle()
 	if err != nil {
-		return nil, fmt.Errorf("view_image %s: %w", path, err)
+		return nil, diag.Errorf("view_image %s: %w", path, err)
 	}
 	return []pub_models.Part{pub_models.TextPart{Text: "image " + handle + " from " + path}, img}, nil
 }

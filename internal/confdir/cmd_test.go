@@ -2,10 +2,11 @@ package confdir
 
 import (
 	"context"
+	"io"
 	"strings"
 	"testing"
 
-	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
+	"github.com/baalimago/clai/internal/runenv"
 )
 
 func Test_Command(t *testing.T) {
@@ -22,11 +23,12 @@ func Test_Command(t *testing.T) {
 	if err := c.Setup(context.Background()); err != nil {
 		t.Fatalf("Setup: %v", err)
 	}
-	out := testboil.CaptureStdout(t, func(t *testing.T) {
-		if err := c.Run(context.Background()); err != nil {
-			t.Fatalf("Run: %v", err)
-		}
-	})
+	var buf strings.Builder
+	ctx := runenv.With(context.Background(), runenv.Text(strings.NewReader(""), &buf, io.Discard))
+	if err := c.Run(ctx); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	out := buf.String()
 	if !strings.Contains(out, confDir) {
 		t.Fatalf("expected config dir %q, got: %q", confDir, out)
 	}
@@ -34,7 +36,7 @@ func Test_Command(t *testing.T) {
 
 func Test_Print_unknownSubpathErrors(t *testing.T) {
 	t.Setenv("CLAI_CONFIG_DIR", t.TempDir())
-	if err := Print([]string{"confdir", "not-a-registered-subpath"}); err == nil {
+	if err := Print(context.Background(), []string{"confdir", "not-a-registered-subpath"}); err == nil {
 		t.Fatal("expected error for unregistered subpath")
 	}
 }

@@ -2,6 +2,7 @@ package chat
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"testing"
 
@@ -35,7 +36,7 @@ func TestReasoningSidecar_RoundTripThroughSaveAndFromPath(t *testing.T) {
 	convDir := t.TempDir()
 	chat := reasoningChat()
 
-	if err := Save(convDir, chat); err != nil {
+	if err := Save(context.Background(), convDir, chat); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
@@ -59,7 +60,7 @@ func TestReasoningSidecar_RoundTripThroughSaveAndFromPath(t *testing.T) {
 	}
 
 	// FromPath restores the reasoning items.
-	loaded, err := FromPath(conversationPathFromDir(convDir, chat.ID))
+	loaded, err := FromPath(context.Background(), conversationPathFromDir(convDir, chat.ID))
 	if err != nil {
 		t.Fatalf("FromPath: %v", err)
 	}
@@ -83,7 +84,7 @@ func TestReasoningSidecar_RemoveDeletesDir(t *testing.T) {
 
 	convDir := t.TempDir()
 	chat := reasoningChat()
-	if err := Save(convDir, chat); err != nil {
+	if err := Save(context.Background(), convDir, chat); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	dir := reasoningDirFromConvDir(convDir, chat.ID)
@@ -114,10 +115,10 @@ func TestReasoningSidecar_MissingIsNonFatal(t *testing.T) {
 			{Role: "assistant", ToolCalls: []pub_models.Call{{ID: "c", Name: "foo"}}},
 		},
 	}
-	if err := Save(convDir, chat); err != nil {
+	if err := Save(context.Background(), convDir, chat); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
-	loaded, err := FromPath(conversationPathFromDir(convDir, chat.ID))
+	loaded, err := FromPath(context.Background(), conversationPathFromDir(convDir, chat.ID))
 	if err != nil {
 		t.Fatalf("FromPath must not fail on a missing sidecar: %v", err)
 	}

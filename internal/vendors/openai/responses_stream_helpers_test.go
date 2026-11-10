@@ -127,12 +127,18 @@ func TestToolCallState_EmitCall_InvalidJSONArgs(t *testing.T) {
 		}
 
 		out := make(chan models.CompletionEvent, 1)
-		err := st.emitCall(nil, out, nil)
-		if err == nil {
-			t.Fatalf("expected error")
+		// Arguments that are no JSON object do not end the stream: the call
+		// is emitted carrying the problem, and its tool result tells the
+		// model what to correct.
+		if err := st.emitCall(nil, out, nil); err != nil {
+			t.Fatalf("emitCall: %v", err)
 		}
-		if got := err.Error(); got == "" || !containsAll(got, []string{"unmarshal tool args", "call_1", "rg"}) {
-			t.Fatalf("expected unmarshal context, got %q", got)
+		call, ok := (<-out).(pub_models.Call)
+		if !ok || call.ID != "call_1" || call.Name != "rg" || call.Function.Arguments != "{}" {
+			t.Fatalf("got %#v, want the rg call replayed with an empty object", call)
+		}
+		if !containsAll(call.ArgumentsErr, []string{"rg", "not a JSON object"}) {
+			t.Fatalf("ArgumentsErr %q, want the problem named", call.ArgumentsErr)
 		}
 	})
 }

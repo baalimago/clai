@@ -2,6 +2,7 @@ package photo_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"errors"
 	"os"
@@ -23,7 +24,7 @@ func TestPreviousQueryImage(t *testing.T) {
 			t.Fatalf("MkdirAll: %v", err)
 		}
 		c := pub_models.Chat{ID: "globalScope", Messages: msgs}
-		if _, err := chat.NewPersister(confDir, asset.NewStore(chat.AssetsDir(confDir))).Save(c); err != nil {
+		if _, err := chat.NewPersister(confDir, asset.NewStore(chat.AssetsDir(confDir))).Save(context.Background(), c); err != nil {
 			t.Fatalf("Save: %v", err)
 		}
 	}
@@ -32,7 +33,7 @@ func TestPreviousQueryImage(t *testing.T) {
 	}
 
 	t.Run("no globalScope.json", func(t *testing.T) {
-		if _, err := photo.PreviousQueryImage(t.TempDir()); !errors.Is(err, photo.ErrNoPreviousImage) {
+		if _, err := photo.PreviousQueryImage(context.Background(), t.TempDir()); !errors.Is(err, photo.ErrNoPreviousImage) {
 			t.Fatalf("err = %v, want ErrNoPreviousImage", err)
 		}
 	})
@@ -40,7 +41,7 @@ func TestPreviousQueryImage(t *testing.T) {
 	t.Run("text-only previous query", func(t *testing.T) {
 		confDir := t.TempDir()
 		saveGlobalScope(t, confDir, pub_models.Message{Role: "user", Content: "hi"})
-		if _, err := photo.PreviousQueryImage(confDir); !errors.Is(err, photo.ErrNoPreviousImage) {
+		if _, err := photo.PreviousQueryImage(context.Background(), confDir); !errors.Is(err, photo.ErrNoPreviousImage) {
 			t.Fatalf("err = %v, want ErrNoPreviousImage", err)
 		}
 	})
@@ -52,7 +53,7 @@ func TestPreviousQueryImage(t *testing.T) {
 			pub_models.Message{Role: "assistant", Parts: []pub_models.Part{image(second), pub_models.TextPart{Text: "done"}}},
 			pub_models.Message{Role: "user", Content: "more"},
 		)
-		got, err := photo.PreviousQueryImage(confDir)
+		got, err := photo.PreviousQueryImage(context.Background(), confDir)
 		if err != nil || !bytes.Equal(got.Data, second) || got.MIME != "image/png" {
 			t.Fatalf("got %d bytes %q, err %v; want the last image", len(got.Data), got.MIME, err)
 		}
@@ -69,7 +70,7 @@ func TestPreviousQueryImage(t *testing.T) {
 		if err := os.WriteFile(chat.GlobalScopePath(confDir), []byte(legacy), 0o644); err != nil {
 			t.Fatalf("WriteFile: %v", err)
 		}
-		got, err := photo.PreviousQueryImage(confDir)
+		got, err := photo.PreviousQueryImage(context.Background(), confDir)
 		if err != nil || !bytes.Equal(got.Data, first) || got.MIME != "image/png" {
 			t.Fatalf("got %d bytes, err %v; want the legacy image", len(got.Data), err)
 		}
@@ -84,7 +85,7 @@ func TestPreviousQueryImage(t *testing.T) {
 		if err := os.RemoveAll(chat.AssetsDir(confDir)); err != nil {
 			t.Fatalf("RemoveAll: %v", err)
 		}
-		if _, err := photo.PreviousQueryImage(confDir); !errors.Is(err, asset.ErrAssetNotFound) {
+		if _, err := photo.PreviousQueryImage(context.Background(), confDir); !errors.Is(err, asset.ErrAssetNotFound) {
 			t.Fatalf("err = %v, want ErrAssetNotFound", err)
 		}
 	})
@@ -97,7 +98,7 @@ func TestPreviousQueryImage(t *testing.T) {
 		if err := os.WriteFile(chat.GlobalScopePath(confDir), []byte("{"), 0o644); err != nil {
 			t.Fatalf("WriteFile: %v", err)
 		}
-		_, err := photo.PreviousQueryImage(confDir)
+		_, err := photo.PreviousQueryImage(context.Background(), confDir)
 		if err == nil || errors.Is(err, photo.ErrNoPreviousImage) {
 			t.Fatalf("err = %v, want the decode error", err)
 		}

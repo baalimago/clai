@@ -3,17 +3,18 @@
 package testenv
 
 import (
-	"fmt"
 	"io/fs"
 	"os"
 	"syscall"
+
+	"github.com/baalimago/clai/internal/diag"
 )
 
 // roomAt is the space this user may still fill at path, in bytes.
 func roomAt(path string) (int64, error) {
 	var st syscall.Statfs_t
 	if err := syscall.Statfs(path, &st); err != nil {
-		return 0, fmt.Errorf("statfs %s: %w", path, err)
+		return 0, diag.Errorf("statfs %s: %w", path, err)
 	}
 	return int64(st.Bavail) * int64(st.Bsize), nil
 }

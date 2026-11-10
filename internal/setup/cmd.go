@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/baalimago/clai/internal/runenv"
+
 	"github.com/baalimago/clai/internal"
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/utils"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
 // Command builds the setup command: the interactive configuration wizard.
@@ -24,15 +26,15 @@ Examples:
 	c.Register = nonInteractive.Register
 	c.NonInteractive = nonInteractive
 	var announcements []string
-	c.OnSetup = func(_ context.Context, c *internal.Command) error {
+	c.OnSetup = func(ctx context.Context, c *internal.Command) error {
 		if args := c.Args(); len(args) > 1 {
-			Input = utils.NewMacroReader(args[1:])
+			Input = utils.NewMacroReaderFrom(args[1:], runenv.From(ctx).Stdin())
 		}
-		_, ann, err := ConfigRunPrep(true)
+		_, ann, err := ConfigRunPrep(ctx, true)
 		announcements = ann
 		return err
 	}
-	c.OnRun = func(_ context.Context, _ *internal.Command) error {
+	c.OnRun = func(ctx context.Context, _ *internal.Command) error {
 		// Announce upgrades before the wizard starts, so the user sees what
 		// the united migration changed while the configs were upgraded. The
 		// wizard's TUI redraws by clearing its own frame plus one line above
@@ -42,13 +44,13 @@ Examples:
 		// announcement. Printed even when InitCmd fails, which reports exit
 		// as table.ErrUserInitiatedExit.
 		for _, msg := range announcements {
-			ancli.PrintOK(msg + "\n")
+			runenv.Noticef(ctx, runenv.SubsystemConfig, "%s", msg)
 		}
 		if len(announcements) > 0 {
-			fmt.Println()
+			fmt.Fprintln(runenv.From(ctx).Stderr())
 		}
-		if err := InitCmd(); err != nil {
-			return fmt.Errorf("failed to run setup: %w", err)
+		if err := InitCmd(ctx); err != nil {
+			return diag.Errorf("failed to run setup: %w", err)
 		}
 		return nil
 	}

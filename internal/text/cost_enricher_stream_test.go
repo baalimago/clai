@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baalimago/clai/internal/testenv/procenv"
+
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -39,7 +41,7 @@ func Test_costEnricher_diagnosticsAvoidStdout(t *testing.T) {
 	defer func() { os.Stdout, os.Stderr = origOut, origErr }()
 
 	// A never-ready catalog forces the timeout path, which is the default warnf.
-	enricher := newCostEnricher(stubCostManager{err: errors.New("find price for model \"x\": model not found")}, make(chan struct{}))
+	enricher := newCostEnricher(procenv.Context(context.Background()), stubCostManager{err: errors.New("find price for model \"x\": model not found")}, make(chan struct{}))
 	enricher.waitFor = time.Millisecond
 	_ = enricher.enrich(pub_models.Chat{})
 

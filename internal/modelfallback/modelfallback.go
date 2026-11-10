@@ -15,10 +15,14 @@ import (
 	"io"
 	"strings"
 
+	"github.com/baalimago/clai/internal/diag"
+	"github.com/baalimago/clai/internal/display"
 	"github.com/baalimago/clai/internal/look"
 	"github.com/baalimago/clai/internal/modelalias"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/retry"
+	"github.com/baalimago/clai/internal/runenv"
+	"github.com/baalimago/clai/internal/stdio"
 	"github.com/baalimago/clai/pkg/claierr"
 )
 
@@ -35,7 +39,7 @@ type Builder func(context.Context, string) (models.Querier, error)
 func New(ctx context.Context, table modelalias.Table, model string, build Builder, notice retry.Notice) (models.Querier, error) {
 	candidates, err := table.Resolve(model)
 	if err != nil {
-		return nil, fmt.Errorf("resolve model %q: %w", model, err)
+		return nil, diag.Errorf("resolve model %q: %w", model, err)
 	}
 	if len(candidates) == 1 {
 		return build(ctx, candidates[0])
@@ -55,6 +59,27 @@ func NoticeTo(w io.Writer) retry.Notice {
 	style := look.For(w)
 	return func(failed, next string, cause error) {
 		_, _ = fmt.Fprintln(w, style.Head("model "+failed+" unavailable", reason(cause), "trying "+next))
+	}
+}
+
+// Notice is the run's fallback notice: NoticeTo the run's stderr under the
+// text format, and under the JSON format a "model fallback" progress record
+// on stderr whose row is the model tried next (F12, F14).
+func Notice(env runenv.Env) retry.Notice {
+	if !env.JSON() {
+		return NoticeTo(env.Stderr())
+	}
+	d, err := env.Displayer(stdio.Stderr)
+	if err != nil {
+		return NoticeTo(env.Stderr())
+	}
+	return func(failed, next string, cause error) {
+		_ = d.ReportProgress(display.Progress{
+			Title:  "model fallback",
+			Row:    next,
+			State:  "start",
+			Detail: failed + " unavailable: " + reason(cause),
+		})
 	}
 }
 

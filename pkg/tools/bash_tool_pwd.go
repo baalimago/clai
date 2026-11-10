@@ -1,9 +1,9 @@
 package tools
 
 import (
-	"fmt"
 	"os/exec"
 
+	"github.com/baalimago/clai/internal/diag"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -23,7 +23,7 @@ func (p PwdTool) Call(input pub_models.Input) (string, error) {
 	cmd := exec.Command("pwd")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("failed to run pwd: %w, output: %v", err, string(output))
+		return "", diag.Errorf("failed to run pwd: %w, output: %v", err, string(output))
 	}
 	return string(output), nil
 }

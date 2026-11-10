@@ -2,9 +2,10 @@ package sqlitepage
 
 import (
 	"encoding/binary"
-	"fmt"
 	"math"
 	"unicode/utf16"
+
+	"github.com/baalimago/clai/internal/diag"
 )
 
 var intSizes = [...]int{0, 1, 2, 3, 4, 6, 8}
@@ -16,7 +17,7 @@ func (db *DB) decodeRecord(payload []byte) ([]Value, error) {
 		return nil, err
 	}
 	if hdrLen < int64(n) || int64(len(payload)) < hdrLen {
-		return nil, fmt.Errorf("%w: record header length %d", ErrCorrupt, hdrLen)
+		return nil, diag.Errorf("%w: record header length %d", ErrCorrupt, hdrLen)
 	}
 	serial := make([]int64, 0, 8)
 	for off := n; off < int(hdrLen); {
@@ -47,7 +48,7 @@ func (db *DB) decodeValue(st int64, body []byte) (Value, int, error) {
 	case st >= 1 && st <= 6:
 		size := intSizes[st]
 		if len(body) < size {
-			return Value{}, 0, fmt.Errorf("%w: short integer body", ErrCorrupt)
+			return Value{}, 0, diag.Errorf("%w: short integer body", ErrCorrupt)
 		}
 		var v int64
 		for _, c := range body[:size] {
@@ -57,7 +58,7 @@ func (db *DB) decodeValue(st int64, body []byte) (Value, int, error) {
 		return Value{Kind: Integer, Int: v << shift >> shift}, size, nil
 	case st == 7:
 		if len(body) < 8 {
-			return Value{}, 0, fmt.Errorf("%w: short real body", ErrCorrupt)
+			return Value{}, 0, diag.Errorf("%w: short real body", ErrCorrupt)
 		}
 		return Value{Kind: Real, Real: math.Float64frombits(binary.BigEndian.Uint64(body[:8]))}, 8, nil
 	case st == 8:
@@ -65,18 +66,18 @@ func (db *DB) decodeValue(st int64, body []byte) (Value, int, error) {
 	case st == 9:
 		return Value{Kind: Integer, Int: 1}, 0, nil
 	case st < 0 || st == 10 || st == 11:
-		return Value{}, 0, fmt.Errorf("%w: invalid serial type %d", ErrCorrupt, st)
+		return Value{}, 0, diag.Errorf("%w: invalid serial type %d", ErrCorrupt, st)
 	}
 	if st%2 == 0 {
 		size := (st - 12) / 2
 		if size > int64(len(body)) {
-			return Value{}, 0, fmt.Errorf("%w: short blob body", ErrCorrupt)
+			return Value{}, 0, diag.Errorf("%w: short blob body", ErrCorrupt)
 		}
 		return Value{Kind: Blob, Blob: body[:int(size)]}, int(size), nil
 	}
 	size := (st - 13) / 2
 	if size > int64(len(body)) {
-		return Value{}, 0, fmt.Errorf("%w: short text body", ErrCorrupt)
+		return Value{}, 0, diag.Errorf("%w: short text body", ErrCorrupt)
 	}
 	return Value{Kind: Text, Text: db.decodeText(body[:int(size)])}, int(size), nil
 }

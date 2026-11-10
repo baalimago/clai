@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/sqlitepage"
 	"github.com/baalimago/clai/internal/vendors"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -56,7 +57,7 @@ func (r SourceReader) discoverCLI(ctx context.Context) ([]vendors.SourceRow, err
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("read cursor cli root %q: %w", root, err)
+		return nil, diag.Errorf("read cursor cli root %q: %w", root, err)
 	}
 	var rows []vendors.SourceRow
 	var errs []error
@@ -66,7 +67,7 @@ func (r SourceReader) discoverCLI(ctx context.Context) ([]vendors.SourceRow, err
 		}
 		chats, err := os.ReadDir(filepath.Join(root, workspace.Name()))
 		if err != nil {
-			errs = append(errs, fmt.Errorf("read cursor cli workspace %q: %w", workspace.Name(), err))
+			errs = append(errs, diag.Errorf("read cursor cli workspace %q: %w", workspace.Name(), err))
 			continue
 		}
 		for _, chat := range chats {
@@ -99,7 +100,7 @@ func readCLIRow(ctx context.Context, dir string) (vendors.SourceRow, error) {
 		if errors.Is(err, fs.ErrNotExist) {
 			return vendors.SourceRow{}, errNoCLIConversation
 		}
-		return vendors.SourceRow{}, fmt.Errorf("stat cursor cli store %q: %w", dbPath, err)
+		return vendors.SourceRow{}, diag.Errorf("stat cursor cli store %q: %w", dbPath, err)
 	}
 	fileMeta, err := readCLIFileMeta(dir)
 	if err != nil {
@@ -107,13 +108,13 @@ func readCLIRow(ctx context.Context, dir string) (vendors.SourceRow, error) {
 	}
 	db, err := sqlitepage.Open(dbPath)
 	if err != nil {
-		return vendors.SourceRow{}, fmt.Errorf("open cursor cli store %q: %w", dbPath, err)
+		return vendors.SourceRow{}, diag.Errorf("open cursor cli store %q: %w", dbPath, err)
 	}
 	defer db.Close()
 
 	storeMeta, ids, blobs, err := readCLIStore(ctx, db)
 	if err != nil {
-		return vendors.SourceRow{}, fmt.Errorf("read cursor cli store %q: %w", dbPath, err)
+		return vendors.SourceRow{}, diag.Errorf("read cursor cli store %q: %w", dbPath, err)
 	}
 	if storeMeta.SubagentInfo != nil && storeMeta.SubagentInfo.ParentAgentID != "" {
 		return vendors.SourceRow{}, errNoCLIConversation
@@ -170,13 +171,13 @@ func (r SourceReader) readCLI(ctx context.Context, chatID string) (pub_models.Ch
 	dbPath := filepath.Join(dir, cliStoreName)
 	db, err := sqlitepage.Open(dbPath)
 	if err != nil {
-		return pub_models.Chat{}, fmt.Errorf("open cursor cli chat %q: %w", chatID, err)
+		return pub_models.Chat{}, diag.Errorf("open cursor cli chat %q: %w", chatID, err)
 	}
 	defer db.Close()
 
 	storeMeta, ids, blobs, err := readCLIStore(ctx, db)
 	if err != nil {
-		return pub_models.Chat{}, fmt.Errorf("read cursor cli chat %q: %w", chatID, err)
+		return pub_models.Chat{}, diag.Errorf("read cursor cli chat %q: %w", chatID, err)
 	}
 
 	msgs, _, err := mapCLIBlobs(ctx, ids, blobs)
@@ -234,7 +235,7 @@ func mapCLIBlobs(ctx context.Context, ids []string, blobs map[string][]byte) ([]
 func (r SourceReader) cliChatDir(chatID string) (string, error) {
 	root := r.cliRoot()
 	if root == "" {
-		return "", fmt.Errorf("cursor cli chat %q: %w", chatID, errNoDatabase)
+		return "", diag.Errorf("cursor cli chat %q: %w", chatID, errNoDatabase)
 	}
 	var found string
 	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
@@ -257,10 +258,10 @@ func (r SourceReader) cliChatDir(chatID string) (string, error) {
 		return found, nil
 	}
 	if errors.Is(err, fs.ErrNotExist) {
-		return "", fmt.Errorf("cursor cli chat %q: %w", chatID, errNoDatabase)
+		return "", diag.Errorf("cursor cli chat %q: %w", chatID, errNoDatabase)
 	}
 	if err != nil {
-		return "", fmt.Errorf("find cursor cli chat %q: %w", chatID, err)
+		return "", diag.Errorf("find cursor cli chat %q: %w", chatID, err)
 	}
 	return "", fmt.Errorf("cursor cli chat %q not found", chatID)
 }
@@ -278,10 +279,10 @@ func readCLIFileMeta(dir string) (cliFileMeta, error) {
 		if errors.Is(err, fs.ErrNotExist) {
 			return meta, nil
 		}
-		return cliFileMeta{}, fmt.Errorf("read cursor cli metadata in %q: %w", dir, err)
+		return cliFileMeta{}, diag.Errorf("read cursor cli metadata in %q: %w", dir, err)
 	}
 	if err := json.Unmarshal(b, &meta); err != nil {
-		return cliFileMeta{}, fmt.Errorf("decode cursor cli metadata in %q: %w", dir, err)
+		return cliFileMeta{}, diag.Errorf("decode cursor cli metadata in %q: %w", dir, err)
 	}
 	return meta, nil
 }
@@ -423,15 +424,15 @@ func readCLIStoreMeta(ctx context.Context, db *sqlitepage.DB) (cliStoreMeta, err
 		return cliStoreMeta{}, err
 	}
 	if encoded == "" {
-		return cliStoreMeta{}, fmt.Errorf("%w: no metadata", errNoCLIConversation)
+		return cliStoreMeta{}, diag.Errorf("%w: no metadata", errNoCLIConversation)
 	}
 	raw, err := hex.DecodeString(strings.TrimSpace(encoded))
 	if err != nil {
-		return cliStoreMeta{}, fmt.Errorf("decode cursor cli metadata: %w", err)
+		return cliStoreMeta{}, diag.Errorf("decode cursor cli metadata: %w", err)
 	}
 	var meta cliStoreMeta
 	if err := json.Unmarshal(raw, &meta); err != nil {
-		return cliStoreMeta{}, fmt.Errorf("decode cursor cli metadata: %w", err)
+		return cliStoreMeta{}, diag.Errorf("decode cursor cli metadata: %w", err)
 	}
 	return meta, nil
 }
@@ -440,7 +441,7 @@ func readCLIStoreMeta(ctx context.Context, db *sqlitepage.DB) (cliStoreMeta, err
 // 32-byte id of one message blob, in conversation order.
 func readRootBlobIDs(raw []byte) ([]string, error) {
 	if len(raw) == 0 {
-		return nil, fmt.Errorf("%w: root blob is missing", errNoCLIConversation)
+		return nil, diag.Errorf("%w: root blob is missing", errNoCLIConversation)
 	}
 	var ids []string
 	for i := 0; i < len(raw); {

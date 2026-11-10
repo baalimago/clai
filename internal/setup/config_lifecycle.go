@@ -1,8 +1,11 @@
 package setup
 
 import (
+	"context"
 	"os"
 	"path/filepath"
+
+	"github.com/baalimago/clai/internal/runenv"
 
 	"github.com/baalimago/clai/internal"
 	"github.com/baalimago/clai/internal/audio"
@@ -10,7 +13,6 @@ import (
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/internal/video"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
 // ConfigRunPrep runs the shared pre-command config work for config-touching
@@ -21,20 +23,20 @@ import (
 // completion, __complete, confdir and version stay fully side-effect-free.
 // internal/cli injects it into the commands that need it; the setup command
 // calls it directly.
-func ConfigRunPrep(deferAnnouncements bool) (string, []string, error) {
-	claiConfDir, err := internal.PrepTheme()
+func ConfigRunPrep(ctx context.Context, deferAnnouncements bool) (string, []string, error) {
+	claiConfDir, err := internal.PrepTheme(ctx)
 	if err != nil {
 		return "", nil, err
 	}
 
-	announcements := migrateConfigs(claiConfDir, deferAnnouncements)
+	announcements := migrateConfigs(ctx, claiConfDir, deferAnnouncements)
 	return claiConfDir, announcements, nil
 }
 
 // LoadPhotoConfig loads the photo configuration with the old-config
 // migration applied; injected into the photo command by internal/cli.
-func LoadPhotoConfig(confDir string) (photo.Configurations, error) {
-	return utils.LoadConfigFromFile(confDir, "photoConfig.json", migrateOldPhotoConfig, &photo.DEFAULT)
+func LoadPhotoConfig(ctx context.Context, confDir string) (photo.Configurations, error) {
+	return utils.LoadConfigFromFile(ctx, confDir, "photoConfig.json", migrateOldPhotoConfig, &photo.DEFAULT)
 }
 
 // migrateConfigs runs the united config migration: every mode config and
@@ -43,7 +45,7 @@ func LoadPhotoConfig(confDir string) (photo.Configurations, error) {
 // warnings, same policy as LoadTheme. With deferAnnouncements (the setup
 // wizard), upgrade announcements are collected and returned instead of
 // printed, so the wizard can print them before its first TUI frame.
-func migrateConfigs(claiConfDir string, deferAnnouncements bool) []string {
+func migrateConfigs(ctx context.Context, claiConfDir string, deferAnnouncements bool) []string {
 	var deferred []string
 	announceUpgrade := func(configFileName string, added []string) {
 		if len(added) == 0 {
@@ -54,26 +56,26 @@ func migrateConfigs(claiConfDir string, deferAnnouncements bool) []string {
 			deferred = append(deferred, msg)
 			return
 		}
-		ancli.PrintOK(msg + "\n")
+		runenv.Noticef(ctx, runenv.SubsystemConfig, "%s", msg+"\n")
 	}
 	firstRun := text.FirstRunDefaults(os.Getenv)
-	if _, added, err := utils.LoadConfigFromFileCollect(claiConfDir, "textConfig.json", text.MigrateOldChatConfig, &firstRun); err != nil {
-		ancli.Warnf("failed to upgrade textConfig.json: %v\n", err)
+	if _, added, err := utils.LoadConfigFromFileCollect(ctx, claiConfDir, "textConfig.json", text.MigrateOldChatConfig, &firstRun); err != nil {
+		runenv.Warnf(ctx, runenv.SubsystemConfig, "failed to upgrade textConfig.json: %v\n", err)
 	} else {
 		announceUpgrade("textConfig.json", added)
 	}
-	if _, added, err := utils.LoadConfigFromFileCollect(claiConfDir, "photoConfig.json", migrateOldPhotoConfig, &photo.DEFAULT); err != nil {
-		ancli.Warnf("failed to upgrade photoConfig.json: %v\n", err)
+	if _, added, err := utils.LoadConfigFromFileCollect(ctx, claiConfDir, "photoConfig.json", migrateOldPhotoConfig, &photo.DEFAULT); err != nil {
+		runenv.Warnf(ctx, runenv.SubsystemConfig, "failed to upgrade photoConfig.json: %v\n", err)
 	} else {
 		announceUpgrade("photoConfig.json", added)
 	}
-	if _, added, err := utils.LoadConfigFromFileCollect(claiConfDir, "videoConfig.json", nil, &video.Default); err != nil {
-		ancli.Warnf("failed to upgrade videoConfig.json: %v\n", err)
+	if _, added, err := utils.LoadConfigFromFileCollect(ctx, claiConfDir, "videoConfig.json", nil, &video.Default); err != nil {
+		runenv.Warnf(ctx, runenv.SubsystemConfig, "failed to upgrade videoConfig.json: %v\n", err)
 	} else {
 		announceUpgrade("videoConfig.json", added)
 	}
-	if _, added, err := utils.LoadConfigFromFileCollect(claiConfDir, "audioConfig.json", nil, &audio.Default); err != nil {
-		ancli.Warnf("failed to upgrade audioConfig.json: %v\n", err)
+	if _, added, err := utils.LoadConfigFromFileCollect(ctx, claiConfDir, "audioConfig.json", nil, &audio.Default); err != nil {
+		runenv.Warnf(ctx, runenv.SubsystemConfig, "failed to upgrade audioConfig.json: %v\n", err)
 	} else {
 		announceUpgrade("audioConfig.json", added)
 	}
@@ -87,7 +89,7 @@ func migrateConfigs(claiConfDir string, deferAnnouncements bool) []string {
 	profileFiles, err := os.ReadDir(profilesDir)
 	if err != nil {
 		if !os.IsNotExist(err) {
-			ancli.Warnf("failed to list profiles dir %q: %v\n", profilesDir, err)
+			runenv.Warnf(ctx, runenv.SubsystemConfig, "failed to list profiles dir %q: %v\n", profilesDir, err)
 		}
 		return deferred
 	}
@@ -95,8 +97,8 @@ func migrateConfigs(claiConfDir string, deferAnnouncements bool) []string {
 		if f.IsDir() || filepath.Ext(f.Name()) != ".json" {
 			continue
 		}
-		if _, added, err := utils.LoadConfigFromFileCollect(profilesDir, f.Name(), nil, &text.DefaultProfile); err != nil {
-			ancli.Warnf("failed to upgrade profile %v: %v\n", f.Name(), err)
+		if _, added, err := utils.LoadConfigFromFileCollect(ctx, profilesDir, f.Name(), nil, &text.DefaultProfile); err != nil {
+			runenv.Warnf(ctx, runenv.SubsystemConfig, "failed to upgrade profile %v: %v\n", f.Name(), err)
 		} else {
 			announceUpgrade(f.Name(), added)
 		}

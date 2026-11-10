@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -675,18 +676,21 @@ func TestHttpConnCreatesNoChildProcess(t *testing.T) {
 	if _, err := exec.LookPath("pgrep"); err != nil {
 		t.Skip("pgrep not available on this host")
 	}
-	countChildren := func() int {
+	// The children are compared as a set: an earlier test's stdio server
+	// may still be reaped while this test runs, and its exit is not a
+	// process this lifecycle started.
+	children := func() []string {
 		out, err := exec.Command("pgrep", "-P", strconv.Itoa(os.Getpid())).Output()
 		if err != nil {
-			return 0
+			return nil
 		}
-		return len(strings.Fields(strings.TrimSpace(string(out))))
+		return strings.Fields(strings.TrimSpace(string(out)))
 	}
 
 	srv := httptestserver.New()
 	defer srv.Close()
 
-	before := countChildren()
+	before := children()
 	conn := newTestHttpConn(t, srv)
 	defer conn.Close()
 	mustInitialize(t, conn)
@@ -696,10 +700,12 @@ func TestHttpConnCreatesNoChildProcess(t *testing.T) {
 	if _, err := conn.Call(t.Context(), "tools/call", map[string]any{"name": "echo", "arguments": map[string]any{"text": "hi"}}); err != nil {
 		t.Fatalf("tools/call: %v", err)
 	}
-	after := countChildren()
+	after := children()
 
-	if after != before {
-		t.Errorf("child process count went from %d to %d, want unchanged", before, after)
+	for _, pid := range after {
+		if !slices.Contains(before, pid) {
+			t.Errorf("child process %s appeared during the HTTP lifecycle (children before %v, after %v), want none", pid, before, after)
+		}
 	}
 }
 

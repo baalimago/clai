@@ -453,7 +453,7 @@ func TestRequestStop(t *testing.T) {
 		cmd, procDone := startSignalChild(t, log)
 		time.Sleep(100 * time.Millisecond)
 
-		requestStop(cmd, procDone, 0)
+		requestStop(cmd, procDone, time.Second)
 		requireSignals(t, log, 1)
 	})
 }

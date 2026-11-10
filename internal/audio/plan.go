@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"strconv"
 	"time"
+
+	"github.com/baalimago/clai/internal/diag"
 )
 
 // Canonical PCM timeline: s16le mono 16 kHz. Every request boundary is a
@@ -153,9 +155,9 @@ func (p *ChunkPlanner) detectSilence(ctx context.Context, filePath string) ([]Si
 		"-f", "null", "-")
 	if err != nil {
 		if ctx.Err() != nil {
-			return nil, fmt.Errorf("silence detection aborted: %w", ctx.Err())
+			return nil, diag.Errorf("silence detection aborted: %w", ctx.Err())
 		}
-		return nil, fmt.Errorf("ffmpeg silencedetect failed on %v: %w, stderr: %v", filePath, err, tail(stderr))
+		return nil, diag.Errorf("ffmpeg silencedetect failed on %v: %w, stderr: %v", filePath, err, tail(stderr))
 	}
 	starts := silenceStartRe.FindAllStringSubmatch(stderr, -1)
 	ends := silenceEndRe.FindAllStringSubmatch(stderr, -1)

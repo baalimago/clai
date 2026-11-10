@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/baalimago/clai/internal/audio/generic"
+	"github.com/baalimago/clai/internal/diag"
 )
 
 // Segment aliases the shared transcript unit, defined in audio/generic so
@@ -135,7 +136,7 @@ func renderJSON(segs []Segment) (string, error) {
 	// can exceed line-oriented tool limits before it can be parsed.
 	b, err := json.MarshalIndent(dtos, "", "  ")
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal segments to json: %w", err)
+		return "", diag.Errorf("failed to marshal segments to json: %w", err)
 	}
 	return string(b) + "\n", nil
 }

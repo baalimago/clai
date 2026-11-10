@@ -2,21 +2,15 @@ package tools
 
 import (
 	"context"
-	"fmt"
+	"maps"
 	"os/exec"
 	"slices"
 	"sync"
 
-	"github.com/baalimago/clai/internal/debugflags"
+	"github.com/baalimago/clai/internal/runenv"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/clai/pkg/tools"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
-	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 )
-
-type contextualTool interface {
-	CallWithContext(context.Context, pub_models.Input) (string, error)
-}
 
 // Registry is the global registry of available LLM tools.
 var Registry = NewRegistry()
@@ -25,9 +19,12 @@ var Registry = NewRegistry()
 // If the Registry has already been initialized, it simply returns. It is safe
 // to call concurrently; the registration happens exactly once and every caller
 // blocks until it has completed.
-func Init() {
+func Init(ctx context.Context) {
 	Registry.initOnce.Do(func() {
 		registerLocalTools(Registry, exec.LookPath)
+		for _, name := range slices.Sorted(maps.Keys(Registry.All())) {
+			runenv.Debugf(ctx, runenv.SubsystemToolsRegistrySet, "adding tool to registry, name: %v", name)
+		}
 	})
 }
 
@@ -142,53 +139,8 @@ func lookupExecutables(candidates []executableTool, lookup executableLookup) map
 	return available
 }
 
-// Invoke the call, and gather both error and output in the same string.
-// It resolves against the process-global Registry and exists for the CLI
-// tool listing path and tests; agent runs dispatch through InvokeWith so
-// their per-run tool instances are used.
-func Invoke(ctx context.Context, call pub_models.Call) string {
-	return InvokeWith(ctx, call, nil)
-}
-
-// InvokeWith resolves the call against toolset first, falling back to the
-// global Registry. toolset is the per-run tool table owned by one agent
-// run; resolving it before the process-global registry keeps stateful tools
-// (MCP tools, WithTools instances) scoped to the agent that registered them
-// instead of whatever instance another concurrent Setup wrote last.
-func InvokeWith(ctx context.Context, call pub_models.Call, toolset map[string]pub_models.LLMTool) string {
-	var t pub_models.LLMTool
-	var exists bool
-	if toolset != nil {
-		t, exists = toolset[call.Name]
-	}
-	if !exists {
-		t, exists = Registry.Get(call.Name)
-	}
-	if !exists {
-		return "ERROR: unknown tool call: " + call.Name
-	}
-	if debugflags.Enabled("CALL") {
-		ancli.Noticef("Invoke call: %v", debug.IndentedJsonFmt(call))
-	}
-	inp := pub_models.Input{}
-	if call.Inputs != nil {
-		inp = *call.Inputs
-	}
-	if ct, ok := t.(contextualTool); ok {
-		out, err := ct.CallWithContext(ctx, inp)
-		if err != nil {
-			return fmt.Sprintf("ERROR: failed to run tool: %v, error: %v", call.Name, err)
-		}
-		return out
-	}
-	out, err := t.Call(inp)
-	if err != nil {
-		return fmt.Sprintf("ERROR: failed to run tool: %v, error: %v", call.Name, err)
-	}
-	return out
-}
-
-// ToolFromName looks at the static tools.Tools map
+// ToolFromName returns the specification of the built-in registered as name.
+// It describes a tool and never runs one.
 func ToolFromName(name string) pub_models.Specification {
 	t, exists := Registry.Get(name)
 	if !exists {

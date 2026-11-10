@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/internal/testenv/procenv"
+
 	"github.com/baalimago/clai/internal/modelalias"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/utils"
@@ -34,11 +36,11 @@ func transcribe(t *testing.T, confDir string, args []string) (stdout, stderr str
 	t.Helper()
 	stdout = testboil.CaptureStdout(t, func(t *testing.T) {
 		stderr = testboil.CaptureStderr(t, func(t *testing.T) {
-			q, err = setupTranscribeQuerier(context.Background(), confDir, &Flags{}, args)
+			q, err = setupTranscribeQuerier(procenv.Context(context.Background()), confDir, &Flags{}, args)
 			if err != nil {
 				return
 			}
-			err = q.Query(context.Background())
+			err = q.Query(procenv.Context(context.Background()))
 		})
 	})
 	return stdout, stderr, q, err
@@ -137,7 +139,7 @@ func TestSetupTranscribeQuerier_SuppressesCompletionBell(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			confDir := seedAudioAliases(t, tc.model, tc.table)
-			q, err := setupTranscribeQuerier(context.Background(), confDir, &Flags{}, []string{sparseFile(t, 8)})
+			q, err := setupTranscribeQuerier(procenv.Context(context.Background()), confDir, &Flags{}, []string{sparseFile(t, 8)})
 			if err != nil {
 				t.Fatalf("setupTranscribeQuerier: %v", err)
 			}
@@ -186,9 +188,9 @@ func TestSetupTranscribeQuerier_InvalidConfigFailsWithoutFallback(t *testing.T) 
 	_ = testboil.CaptureStdout(t, func(t *testing.T) {
 		stderr = testboil.CaptureStderr(t, func(t *testing.T) {
 			var q models.Querier
-			q, err = setupTranscribeQuerier(context.Background(), confDir, &f, []string{sparseFile(t, 8)})
+			q, err = setupTranscribeQuerier(procenv.Context(context.Background()), confDir, &f, []string{sparseFile(t, 8)})
 			if err == nil {
-				err = q.Query(context.Background())
+				err = q.Query(procenv.Context(context.Background()))
 			}
 		})
 	})
@@ -209,7 +211,7 @@ func TestCleanupQuerier(t *testing.T) {
 			Querier: &TranscribeQuerier{Splitter: NewSplitter(MockTranscriber{}, &fakeRunner{}), FilePath: sparseFile(t, 8), Format: FormatText, Out: &strings.Builder{}},
 			cleanup: func() { cleaned = true },
 		}
-		if err := q.Query(context.Background()); err != nil {
+		if err := q.Query(procenv.Context(context.Background())); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if !cleaned {
@@ -223,7 +225,7 @@ func TestCleanupQuerier(t *testing.T) {
 			Querier: &TranscribeQuerier{FilePath: filepath.Join(t.TempDir(), "gone.wav"), Format: FormatText},
 			cleanup: func() { cleaned = true },
 		}
-		if err := q.Query(context.Background()); err == nil {
+		if err := q.Query(procenv.Context(context.Background())); err == nil {
 			t.Fatal("expected error, got nil")
 		}
 		if !cleaned {

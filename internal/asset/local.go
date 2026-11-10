@@ -1,10 +1,11 @@
 package asset
 
 import (
-	"fmt"
 	"io"
 	"io/fs"
 	"os"
+
+	"github.com/baalimago/clai/internal/diag"
 )
 
 // LargestLocalImage is the README parameter "Largest local image file read", in bytes.
@@ -19,14 +20,14 @@ func ReadLocalImage(path string) (Image, error) { return ReadLocalImageUpTo(path
 // ReadLocalImageUpTo is ReadLocalImage with its own size limit.
 func ReadLocalImageUpTo(path string, limit int64) (Image, error) {
 	fail := func(err error) (Image, error) {
-		return Image{}, fmt.Errorf("image %s: %w", path, err)
+		return Image{}, diag.Errorf("image %s: %w", path, err)
 	}
 	info, err := os.Stat(path)
 	if err != nil {
 		return fail(err)
 	}
 	if !info.Mode().IsRegular() {
-		return fail(fmt.Errorf("%w: not a regular file", fs.ErrInvalid))
+		return fail(diag.Errorf("%w: not a regular file", fs.ErrInvalid))
 	}
 	if info.Size() > limit {
 		return Image{}, &ImageTooLargeError{Path: path, Size: info.Size(), Limit: limit}

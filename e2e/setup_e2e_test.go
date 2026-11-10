@@ -1,8 +1,11 @@
 package e2e
 
 import (
+	"context"
 	"strings"
 	"testing"
+
+	"github.com/baalimago/clai/internal/testenv/procenv"
 
 	"github.com/baalimago/clai/e2e/e2etest"
 	"github.com/baalimago/clai/internal/setup"
@@ -37,7 +40,7 @@ func Test_setup_initcmd_user_exit_is_not_an_error_regression(t *testing.T) {
 	})
 	t.Cleanup(restoreInput)
 
-	err := setup.InitCmd()
+	err := setup.InitCmd(procenv.Context(context.Background()))
 	if err == nil {
 		t.Fatal("expected setup.InitCmd to return user exit sentinel")
 	}

@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/baalimago/clai/internal/diag"
 )
 
 // tokenResponse is a token endpoint's successful JSON body, shared by the
@@ -24,14 +26,14 @@ type tokenResponse struct {
 func postTokenRequest(ctx context.Context, client *http.Client, tokenEndpoint string, form url.Values) (tokenResponse, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenEndpoint, strings.NewReader(form.Encode()))
 	if err != nil {
-		return tokenResponse{}, fmt.Errorf("build token request: %w", err)
+		return tokenResponse{}, diag.Errorf("build token request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	// GitHub answers form-encoded unless asked for JSON.
 	req.Header.Set("Accept", "application/json")
 	resp, err := client.Do(req)
 	if err != nil {
-		return tokenResponse{}, fmt.Errorf("post to %q: %w", tokenEndpoint, err)
+		return tokenResponse{}, diag.Errorf("post to %q: %w", tokenEndpoint, err)
 	}
 	defer resp.Body.Close()
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, discoveryReadLimit))
@@ -40,7 +42,7 @@ func postTokenRequest(ctx context.Context, client *http.Client, tokenEndpoint st
 	}
 	var out tokenResponse
 	if err := json.Unmarshal(data, &out); err != nil {
-		return tokenResponse{}, fmt.Errorf("decode token response: %w", err)
+		return tokenResponse{}, diag.Errorf("decode token response: %w", err)
 	}
 	if out.AccessToken == "" {
 		// GitHub reports a refused grant with status 200 and an error body.

@@ -5,8 +5,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
 // fixedStatus returns a live status whose clock reads t0 on the first call and
@@ -27,7 +25,6 @@ func fixedStatus(out *bytes.Buffer, live bool, advance time.Duration) *Status {
 }
 
 func TestStatus_NotLiveWritesNothing(t *testing.T) {
-	plainStatus(t)
 	out := &bytes.Buffer{}
 	s := fixedStatus(out, false, time.Second)
 	s.Start()
@@ -39,7 +36,6 @@ func TestStatus_NotLiveWritesNothing(t *testing.T) {
 }
 
 func TestStatus_StartDrawsOneRowStopErasesIt(t *testing.T) {
-	plainStatus(t)
 	out := &bytes.Buffer{}
 	s := fixedStatus(out, true, 0)
 	s.Start()
@@ -58,7 +54,6 @@ func TestStatus_StartDrawsOneRowStopErasesIt(t *testing.T) {
 }
 
 func TestStatus_TickAdvancesSpinnerAndElapsed(t *testing.T) {
-	plainStatus(t)
 	out := &bytes.Buffer{}
 	s := fixedStatus(out, true, 12*time.Second)
 	s.Start()
@@ -70,7 +65,6 @@ func TestStatus_TickAdvancesSpinnerAndElapsed(t *testing.T) {
 }
 
 func TestStatus_StartAndStopAreIdempotent(t *testing.T) {
-	plainStatus(t)
 	out := &bytes.Buffer{}
 	s := fixedStatus(out, true, 30*time.Second)
 	s.Start()
@@ -89,18 +83,15 @@ func TestStatus_StartAndStopAreIdempotent(t *testing.T) {
 }
 
 func TestStatus_TruncatesToWidthAndColoursTheTitle(t *testing.T) {
-	prev := ancli.UseColor
-	ancli.UseColor = true
-	t.Cleanup(func() { ancli.UseColor = prev })
 	out := &bytes.Buffer{}
 	s := fixedStatus(out, true, 0)
+	s.SetColor(true)
 	s.Start()
 	s.Stop()
 	if !strings.Contains(out.String(), "\x1b[") || !strings.Contains(out.String(), "generating image") {
 		t.Fatalf("the title must be coloured: %q", out.String())
 	}
 
-	ancli.UseColor = false
 	out.Reset()
 	s = fixedStatus(out, true, 0)
 	s.SetWidth(10)
@@ -119,7 +110,6 @@ func TestStatus_NilIsSafe(t *testing.T) {
 }
 
 func TestStatus_DetailFollowsTheElapsedTime(t *testing.T) {
-	plainStatus(t)
 	out := &bytes.Buffer{}
 	s := fixedStatus(out, true, 3*time.Second)
 	s.Start()
@@ -138,7 +128,6 @@ func TestStatus_DetailFollowsTheElapsedTime(t *testing.T) {
 }
 
 func TestStatus_FollowsTheTerminalWhenItNarrows(t *testing.T) {
-	ancli.UseColor = false
 	out := &bytes.Buffer{}
 	s := fixedStatus(out, true, 0)
 	width := 80

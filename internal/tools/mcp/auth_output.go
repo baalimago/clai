@@ -5,6 +5,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/tools/mcp/mcpauth"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/go_away_boilerplate/pkg/table"
@@ -20,10 +21,22 @@ func formatAuthMessage(message string) string {
 	return strings.Join(lines, "\n")
 }
 
+// plainAuthMessage is an authorization stage as a JSON record carries it:
+// no marker, colour or indent (F12).
+func plainAuthMessage(message string) string { return "mcp.auth: " + message }
+
 // WriteAuthMessage renders an authorization stage without shortening URLs.
 func WriteAuthMessage(out io.Writer, message string) error {
-	if _, err := fmt.Fprintln(out, formatAuthMessage(message)); err != nil {
-		return fmt.Errorf("write MCP authorization output: %w", err)
+	return writeAuthMessage(out, message, false)
+}
+
+func writeAuthMessage(out io.Writer, message string, plain bool) error {
+	text := formatAuthMessage(message)
+	if plain {
+		text = plainAuthMessage(message)
+	}
+	if _, err := fmt.Fprintln(out, text); err != nil {
+		return diag.Errorf("write MCP authorization output: %w", err)
 	}
 	return nil
 }
@@ -34,6 +47,12 @@ type AuthorizerConfig struct {
 	Input       io.Reader
 	Output      io.Writer
 	Interactive bool
+	// Plain writes the stages without the terminal look, for output that
+	// JSON records carry (F12).
+	Plain bool
+	// PasteQuestion asks for a pasted authorization code before it is read;
+	// nil reports the wait as a stage.
+	PasteQuestion func(string) error
 }
 
 // NewAuthorizer wires the same credential loading and themed progress output
@@ -43,11 +62,15 @@ func NewAuthorizer(config AuthorizerConfig) *mcpauth.Authorizer {
 	if output == nil {
 		output = io.Discard
 	}
-	return mcpauth.NewAuthorizer(config.Store,
+	options := []mcpauth.Option{
 		mcpauth.WithPasteInput(config.Input),
 		mcpauth.WithInteractive(config.Interactive),
 		mcpauth.WithEnvFileLoader(LoadEnvFile),
 		mcpauth.WithPreregisteredClients(mcpauth.BuiltinClients()),
-		mcpauth.WithProgress(func(message string) error { return WriteAuthMessage(output, message) }),
-	)
+		mcpauth.WithProgress(func(message string) error { return writeAuthMessage(output, message, config.Plain) }),
+	}
+	if config.PasteQuestion != nil {
+		options = append(options, mcpauth.WithPasteQuestion(config.PasteQuestion))
+	}
+	return mcpauth.NewAuthorizer(config.Store, options...)
 }

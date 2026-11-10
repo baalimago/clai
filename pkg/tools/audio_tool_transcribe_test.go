@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -8,7 +9,7 @@ import (
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
-func withFakeEngine(t *testing.T, engine func(filePath, outputFormat string) (string, error)) {
+func withFakeEngine(t *testing.T, engine func(ctx context.Context, filePath, outputFormat string) (string, error)) {
 	t.Helper()
 	orig := AudioTranscribeEngine
 	AudioTranscribeEngine = engine
@@ -35,7 +36,7 @@ func TestAudioTranscribe_Specification(t *testing.T) {
 func TestAudioTranscribe_Call(t *testing.T) {
 	t.Run("passes file path and defaults format to text", func(t *testing.T) {
 		var gotPath, gotFormat string
-		withFakeEngine(t, func(filePath, outputFormat string) (string, error) {
+		withFakeEngine(t, func(_ context.Context, filePath, outputFormat string) (string, error) {
 			gotPath, gotFormat = filePath, outputFormat
 			return "the transcript", nil
 		})
@@ -52,7 +53,7 @@ func TestAudioTranscribe_Call(t *testing.T) {
 	})
 	t.Run("forwards explicit output_format", func(t *testing.T) {
 		var gotFormat string
-		withFakeEngine(t, func(_, outputFormat string) (string, error) {
+		withFakeEngine(t, func(_ context.Context, _, outputFormat string) (string, error) {
 			gotFormat = outputFormat
 			return "", nil
 		})
@@ -64,7 +65,7 @@ func TestAudioTranscribe_Call(t *testing.T) {
 		}
 	})
 	t.Run("missing file_path errors", func(t *testing.T) {
-		withFakeEngine(t, func(_, _ string) (string, error) { return "", nil })
+		withFakeEngine(t, func(context.Context, string, string) (string, error) { return "", nil })
 		_, err := AudioTranscribe.Call(pub_models.Input{})
 		if err == nil {
 			t.Fatal("expected error, got nil")
@@ -74,14 +75,14 @@ func TestAudioTranscribe_Call(t *testing.T) {
 		}
 	})
 	t.Run("non-string output_format errors", func(t *testing.T) {
-		withFakeEngine(t, func(_, _ string) (string, error) { return "", nil })
+		withFakeEngine(t, func(context.Context, string, string) (string, error) { return "", nil })
 		_, err := AudioTranscribe.Call(pub_models.Input{"file_path": "f.wav", "output_format": 7})
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}
 	})
 	t.Run("engine errors propagate as tool errors", func(t *testing.T) {
-		withFakeEngine(t, func(_, _ string) (string, error) {
+		withFakeEngine(t, func(context.Context, string, string) (string, error) {
 			return "", errors.New("vendor exploded")
 		})
 		_, err := AudioTranscribe.Call(pub_models.Input{"file_path": "f.wav"})
@@ -96,4 +97,23 @@ func TestAudioTranscribe_Call(t *testing.T) {
 			t.Fatal("expected error, got nil")
 		}
 	})
+}
+
+type ctxKey struct{}
+
+// TestAudioTranscribe_CallWithContext is R2-02: the engine runs on the
+// call's context, so its progress and notices reach the run's streams.
+func TestAudioTranscribe_CallWithContext(t *testing.T) {
+	var got any
+	withFakeEngine(t, func(ctx context.Context, _, _ string) (string, error) {
+		got = ctx.Value(ctxKey{})
+		return "", nil
+	})
+	ctx := context.WithValue(context.Background(), ctxKey{}, "the run")
+	if _, err := AudioTranscribe.CallWithContext(ctx, pub_models.Input{"file_path": "f.wav"}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "the run" {
+		t.Fatalf("engine context value = %v, want the call's context", got)
+	}
 }

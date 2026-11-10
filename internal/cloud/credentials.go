@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/utils"
 )
 
@@ -64,7 +65,7 @@ func LoadCredentials(confDir string) (Credentials, error) {
 	switch {
 	case err == nil:
 		if err := json.Unmarshal(b, &c); err != nil {
-			return Credentials{}, fmt.Errorf("read %s: %w", credentialsPath(confDir), err)
+			return Credentials{}, diag.Errorf("read %s: %w", credentialsPath(confDir), err)
 		}
 	case !errors.Is(err, fs.ErrNotExist):
 		return Credentials{}, err

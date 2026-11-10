@@ -190,7 +190,7 @@ For each var `(name, cmd)`:
 - Each var is executed with a timeout from `timeout_ms`.
 - If the command exceeds the timeout:
   - the variable value becomes `timed_out_value`
-  - a warning is printed via `ancli` (not direct stderr writes), so it is visible and consistent with other output.
+  - a warning is reported as a diagnostic through `runenv.Warnf` (not direct stderr writes), so it is visible and consistent with other output.
 
 Example warning:
 ```text
@@ -287,7 +287,7 @@ Recommended approach:
   - assert stdout remains just the user-visible prompt/response path, i.e. shell context is **not** echoed as part of the user message
 - add a test verifying timeout behavior:
   - a var exceeding `timeout_ms` yields `timed_out_value`
-  - a warning is printed (via `ancli`) for each timed-out var
+  - a warning is reported (via `runenv.Warnf`) for each timed-out var
 
 All tests should be run with:
 ```bash

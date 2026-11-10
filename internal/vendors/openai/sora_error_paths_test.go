@@ -14,8 +14,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/internal/testenv/procenv"
 	"github.com/baalimago/clai/internal/utils"
 	video "github.com/baalimago/clai/internal/video/generic"
+	"github.com/baalimago/clai/pkg/diagnostic"
 )
 
 type errReader struct{ err error }
@@ -73,22 +75,21 @@ func TestSoraCreateRequestImageDecodeError(t *testing.T) {
 
 func TestSoraCreateRequestDebugPrint(t *testing.T) {
 	const apiKey = "key12-secret"
-	q := &Sora{Model: "sora-2", Prompt: "p", apiKey: apiKey, debug: true}
-	var req *http.Request
-	output := captureOpenAIStdout(t, func() {
-		var err error
-		req, err = q.createRequest(context.Background())
-		if err != nil {
-			t.Errorf("createRequest: %v", err)
-		}
-	})
+	q := &Sora{Model: "sora-2", Prompt: "p", apiKey: apiKey}
+	var diagnostics bytes.Buffer
+	req, err := q.createRequest(procenv.Diagnostics(context.Background(), &diagnostics, diagnostic.LevelDebug))
+	if err != nil {
+		t.Fatalf("createRequest: %v", err)
+	}
+	output := diagnostics.String()
 	if req == nil {
 		t.Fatal("createRequest returned no request")
 	}
-	if !strings.Contains(output, "Sora request:") || !strings.Contains(output, "apiKey:key12...") {
-		t.Fatalf("debug output does not include the request summary and masked key: %s", output)
+	// The diagnostic presenter redacts the masked key field itself.
+	if !strings.Contains(output, "Sora request:") || !strings.Contains(output, "apiKey:") {
+		t.Fatalf("debug output does not include the request summary and key field: %s", output)
 	}
-	if strings.Contains(output, apiKey) {
+	if strings.Contains(output, apiKey) || strings.Contains(output, "secret") {
 		t.Fatalf("debug output exposed the full API key: %s", output)
 	}
 }
@@ -205,7 +206,7 @@ func TestNewVideoQuerierWarnsOnBadConfigFile(t *testing.T) {
 
 	// A broken config is a warning, not a hard failure: the querier is still
 	// built so the user can be told and retry.
-	q, err := NewVideoQuerier(video.Configurations{Model: model, Output: video.Output{Type: video.LOCAL}})
+	q, err := NewVideoQuerier(context.Background(), video.Configurations{Model: model, Output: video.Output{Type: video.LOCAL}})
 	if err != nil {
 		t.Fatalf("NewVideoQuerier: %v", err)
 	}

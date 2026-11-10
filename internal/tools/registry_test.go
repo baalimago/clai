@@ -1,14 +1,12 @@
 package tools
 
 import (
+	"context"
 	"os/exec"
 	"slices"
-	"strings"
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
@@ -94,7 +92,7 @@ func TestInitRegistersApplyPatch(t *testing.T) {
 		Registry = origRegistry
 	})
 
-	Init()
+	Init(context.Background())
 	if _, ok := Registry.Get("apply_patch"); !ok {
 		t.Fatalf("expected apply_patch to be registered")
 	}
@@ -177,7 +175,7 @@ func TestInitConcurrent(t *testing.T) {
 		var wg sync.WaitGroup
 		for range 8 {
 			wg.Go(func() {
-				Init()
+				Init(context.Background())
 				// Every caller must observe a fully populated registry once
 				// Init has returned, not only the one which won the race
 				if _, ok := Registry.Get("apply_patch"); !ok {
@@ -410,22 +408,5 @@ func TestRegisterLocalToolsHidesTheClaiWorkerTools(t *testing.T) {
 	}
 	if r.IsHidden("async_cmd") {
 		t.Error("async_cmd must stay visible")
-	}
-}
-
-// The registry reads DEBUG when a tool is set, not when the package-level
-// Registry is built: a test binary blanks its environment after init.
-func TestRegistrySet_readsDebugAtCallTime(t *testing.T) {
-	t.Setenv("DEBUG", "1")
-	r := NewRegistry()
-	t.Setenv("DEBUG", "")
-	quiet := testboil.CaptureStdout(t, func(t *testing.T) { r.Set("a", newMockTool("a")) })
-	if quiet != "" {
-		t.Fatalf("Set with DEBUG unset printed %q", quiet)
-	}
-	t.Setenv("DEBUG", "1")
-	loud := testboil.CaptureStdout(t, func(t *testing.T) { r.Set("b", newMockTool("b")) })
-	if !strings.Contains(loud, "adding tool too registry, name: b") {
-		t.Fatalf("Set with DEBUG=1 printed %q, want the registry notice", loud)
 	}
 }

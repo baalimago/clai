@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/baalimago/clai/internal"
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/profile"
 	"github.com/baalimago/clai/internal/remote"
 )
@@ -53,10 +54,11 @@ Examples:
 // finding, warnings included. It never runs the profile and never records
 // trust for a remote target.
 func (d CommandDeps) Validate(ctx context.Context, target string, asJSON bool) (ExitStatus, error) {
+	d = d.withEnv(ctx)
 	if strings.TrimSpace(target) == "" {
 		return ExitUsage, nil
 	}
-	confDir, err := d.lookupConfigDir()
+	confDir, err := d.lookupConfigDir(ctx)
 	if err != nil {
 		return ExitClean, err
 	}
@@ -70,7 +72,7 @@ func (d CommandDeps) Validate(ctx context.Context, target string, asJSON bool) (
 	}
 	findings, err := profile.Validate(body, route, env)
 	if err != nil {
-		return ExitClean, fmt.Errorf("check %s: %w", target, err)
+		return ExitClean, diag.Errorf("check %s: %w", target, err)
 	}
 	if err := d.printFindings(findings, asJSON); err != nil {
 		return ExitClean, err
@@ -86,7 +88,7 @@ func (d CommandDeps) Validate(ctx context.Context, target string, asJSON bool) (
 // config dir's profiles directory.
 func (d CommandDeps) readTarget(ctx context.Context, confDir, target string) ([]byte, profile.Route, error) {
 	if remote.IsRemote(target) {
-		r, err := d.resolver(confDir)
+		r, err := d.resolver(ctx, confDir)
 		if err != nil {
 			return nil, profile.Remote, err
 		}
@@ -102,7 +104,7 @@ func (d CommandDeps) readTarget(ctx context.Context, confDir, target string) ([]
 		return nil, profile.File, fmt.Errorf("no such profile: %s", target)
 	}
 	if err != nil {
-		return nil, profile.File, fmt.Errorf("read profile %s: %w", target, err)
+		return nil, profile.File, diag.Errorf("read profile %s: %w", target, err)
 	}
 	return body, profile.File, nil
 }
@@ -130,16 +132,16 @@ func (d CommandDeps) printFindings(findings profile.Findings, asJSON bool) error
 	if asJSON {
 		encoded, err := json.Marshal(jsonFindings(findings))
 		if err != nil {
-			return fmt.Errorf("encode findings: %w", err)
+			return diag.Errorf("encode findings: %w", err)
 		}
 		if _, err := fmt.Fprintf(out, "%s\n", encoded); err != nil {
-			return fmt.Errorf("print findings: %w", err)
+			return diag.Errorf("print findings: %w", err)
 		}
 		return nil
 	}
 	for _, finding := range findings {
 		if _, err := fmt.Fprintln(out, findingLine(finding)); err != nil {
-			return fmt.Errorf("print findings: %w", err)
+			return diag.Errorf("print findings: %w", err)
 		}
 	}
 	return nil
@@ -219,10 +221,10 @@ func severityName(severity profile.Severity) string {
 	return "error"
 }
 
-// out is where the subcommand prints.
+// out is where the subcommand prints; withEnv fills it on every entry.
 func (d CommandDeps) out() io.Writer {
 	if d.Out == nil {
-		return os.Stdout
+		return io.Discard
 	}
 	return d.Out
 }
@@ -239,6 +241,7 @@ func validateCommand(deps CommandDeps) *internal.Command {
 		},
 	}
 	sub.OnRun = func(ctx context.Context, c *internal.Command) error {
+		deps := deps.withEnv(ctx)
 		args := c.Args()[1:]
 		if len(args) == 0 {
 			return deps.validateUsage("")
@@ -269,7 +272,7 @@ func (d CommandDeps) validateUsage(problem string) error {
 		line += ": " + problem
 	}
 	if _, err := fmt.Fprintln(d.out(), line); err != nil {
-		return fmt.Errorf("print usage: %w", err)
+		return diag.Errorf("print usage: %w", err)
 	}
 	d.setExit(ExitUsage)
 	return nil
@@ -281,9 +284,9 @@ func schemaCommand(deps CommandDeps) *internal.Command {
 		Name:     "schema",
 		Desc:     "Print the profile JSON Schema document this clai ships",
 		HelpText: schemaHelp,
-		OnRun: func(context.Context, *internal.Command) error {
-			if _, err := deps.out().Write(profile.Schema()); err != nil {
-				return fmt.Errorf("print the profile schema: %w", err)
+		OnRun: func(ctx context.Context, _ *internal.Command) error {
+			if _, err := deps.withEnv(ctx).out().Write(profile.Schema()); err != nil {
+				return diag.Errorf("print the profile schema: %w", err)
 			}
 			return nil
 		},

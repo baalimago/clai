@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/baalimago/clai/internal/debugflags"
+	"github.com/baalimago/clai/internal/runenv"
+
 	"github.com/baalimago/clai/internal/models"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
 // stoploss owns both run budgets: the token stoploss (max-tokens + handover
@@ -27,8 +27,9 @@ type stoploss struct {
 	suppressHandoverNotice bool
 	// warn reports the handover notice. The querier injects a writer that keeps
 	// a drawn rolling frame intact; a controller built outside a querier prints
-	// through ancli.
+	// as a diagnostic.
 	warn func(format string, args ...any) error
+	ctx  context.Context
 }
 
 // newStoploss builds the controller from the querier's configured policies.
@@ -39,6 +40,7 @@ func (q *Querier[C]) newStoploss() *stoploss {
 	ctrl := &stoploss{
 		maxToolCalls:           q.tooling.maxCalls,
 		warn:                   q.warnf,
+		ctx:                    q.diagContext(),
 		suppressHandoverNotice: q.loopProgress != nil,
 	}
 	if q.stoploss != nil {
@@ -132,11 +134,11 @@ func (s *stoploss) preflightToolCall(session *QuerySession, call pub_models.Call
 		return toolCallBudgetPlan{call: call, allowed: true}
 	}
 	used := s.effectiveUsed(session)
-	debugStoplossf("tool call %q: budget=%d used=%d", call.Name, budget, used)
+	s.debugf("tool call %q: budget=%d used=%d", call.Name, budget, used)
 	if used >= budget {
 		refusal, hardStop := ladderText(used - budget)
 		plan := toolCallBudgetPlan{call: call, out: refusal, hardStop: hardStop}
-		debugStoplossf("tool call %q refused (persistence %d, hardStop %v)", call.Name, used-budget, hardStop)
+		s.debugf("tool call %q refused (persistence %d, hardStop %v)", call.Name, used-budget, hardStop)
 		if !hardStop {
 			s.incUsed(session)
 		}
@@ -148,7 +150,7 @@ func (s *stoploss) preflightToolCall(session *QuerySession, call pub_models.Call
 		return toolCallBudgetPlan{call: call, allowed: true}
 	}
 	s.incUsed(session)
-	debugStoplossf("tool call %q allowed, %d remaining", call.Name, budget-used-1)
+	s.debugf("tool call %q allowed, %d remaining", call.Name, budget-used-1)
 	return toolCallBudgetPlan{
 		call:    call,
 		allowed: true,
@@ -177,7 +179,7 @@ func (s *stoploss) CheckContextBudget(ctx context.Context, model models.StreamCo
 		if !ok {
 			// Neither the vendor usage nor an estimate is available: skip the
 			// check for this step.
-			debugStoplossf("no vendor usage and no input token counter; skipping check")
+			s.debugf("no vendor usage and no input token counter; skipping check")
 			return false, nil
 		}
 		counted, err := counter.CountInputTokens(ctx, session.Chat)
@@ -185,13 +187,13 @@ func (s *stoploss) CheckContextBudget(ctx context.Context, model models.StreamCo
 			return false, err
 		}
 		footprint = counted
-		debugStoplossf("vendor usage unavailable; counted %d input tokens", footprint)
+		s.debugf("vendor usage unavailable; counted %d input tokens", footprint)
 	}
 	if footprint <= 0 || footprint < s.maxTokens {
-		debugStoplossf("footprint %d below max-tokens %d; no handover", footprint, s.maxTokens)
+		s.debugf("footprint %d below max-tokens %d; no handover", footprint, s.maxTokens)
 		return false, nil
 	}
-	debugStoplossf("footprint %d reached max-tokens %d; injecting handover", footprint, s.maxTokens)
+	s.debugf("footprint %d reached max-tokens %d; injecting handover", footprint, s.maxTokens)
 	session.HandoverRequested = true
 	session.Chat.Messages = append(session.Chat.Messages, pub_models.Message{
 		Role:    "user",
@@ -209,7 +211,7 @@ func (s *stoploss) CheckContextBudget(ctx context.Context, model models.StreamCo
 // warnf reports the human-facing notice through the injected writer.
 func (s *stoploss) warnf(format string, args ...any) error {
 	if s.warn == nil {
-		ancli.Warnf(format, args...)
+		runenv.Warnf(s.diagContext(), runenv.SubsystemTextQuerier, format, args...)
 		return nil
 	}
 	return s.warn(format, args...)
@@ -230,9 +232,14 @@ func usageFootprint(usage *pub_models.Usage) int {
 // debugStoplossf prints stoploss internals when DEBUG_STOPLOSS (or plain
 // DEBUG) is truthy. The human-facing handover notice stays an unconditional
 // warning; this is the opt-in detail layer for budget decisions.
-func debugStoplossf(format string, args ...any) {
-	if !debugflags.Enabled("STOPLOSS") {
-		return
+func (s *stoploss) debugf(format string, args ...any) {
+	runenv.Debugf(s.diagContext(), runenv.SubsystemStoploss, "[DEBUG_STOPLOSS] "+format, args...)
+}
+
+// diagContext is the run context of the stoploss diagnostics.
+func (s *stoploss) diagContext() context.Context {
+	if s.ctx == nil {
+		return context.Background()
 	}
-	ancli.Noticef("[DEBUG_STOPLOSS] "+format+"\n", args...)
+	return s.ctx
 }

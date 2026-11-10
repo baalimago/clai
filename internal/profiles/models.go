@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/modelalias"
 	"github.com/baalimago/clai/internal/remote"
 	"github.com/baalimago/clai/internal/utils"
@@ -76,7 +77,8 @@ func (a definedAlias) label() string {
 // An alias defined in several mode configs needs opts.Mode, or opts.In to
 // ask which one.
 func (d CommandDeps) PublishAlias(ctx context.Context, alias string, opts PublishOptions) error {
-	confDir, err := d.configDir()
+	d = d.withEnv(ctx)
+	confDir, err := d.configDir(ctx)
 	if err != nil {
 		return err
 	}
@@ -97,7 +99,7 @@ func (d CommandDeps) PublishAlias(ctx context.Context, alias string, opts Publis
 	}
 	body, err := json.Marshal(models)
 	if err != nil {
-		return fmt.Errorf("marshal model alias %s: %w", name, err)
+		return diag.Errorf("marshal model alias %s: %w", name, err)
 	}
 	if d.FindSecret != nil {
 		if where, found := d.FindSecret(source, body); found {
@@ -121,7 +123,7 @@ func (d CommandDeps) loadAlias(confDir, alias string, opts PublishOptions) (sour
 		}
 		b, err := os.ReadFile(alias)
 		if err != nil {
-			return "", nil, nil, fmt.Errorf("read model alias %s: %w", alias, err)
+			return "", nil, nil, diag.Errorf("read model alias %s: %w", alias, err)
 		}
 		return alias, b, mode.use, nil
 	}
@@ -135,7 +137,7 @@ func (d CommandDeps) loadAlias(confDir, alias string, opts PublishOptions) (sour
 	}
 	b, err := json.Marshal(chosen.models)
 	if err != nil {
-		return "", nil, nil, fmt.Errorf("marshal alias %s: %w", alias, err)
+		return "", nil, nil, diag.Errorf("marshal alias %s: %w", alias, err)
 	}
 	return chosen.path, b, chosen.mode.use, nil
 }
@@ -167,7 +169,7 @@ func aliasDefinitions(confDir, alias string) ([]definedAlias, error) {
 		defined = append(defined, definedAlias{mode: m, path: path, models: models})
 	}
 	if len(defined) == 0 {
-		return nil, fmt.Errorf("model alias %q: %w in %s", alias, fs.ErrNotExist, confDir)
+		return nil, diag.Errorf("model alias %q: %w in %s", alias, fs.ErrNotExist, confDir)
 	}
 	return defined, nil
 }
@@ -210,7 +212,7 @@ func pickMode(alias string, defined []definedAlias, mode string) (definedAlias, 
 			return a, nil
 		}
 	}
-	return definedAlias{}, fmt.Errorf("model alias %q: %w in %s", alias, fs.ErrNotExist, m.file)
+	return definedAlias{}, diag.Errorf("model alias %q: %w in %s", alias, fs.ErrNotExist, m.file)
 }
 
 func readConfigAliases(path string) (modelalias.Table, error) {
@@ -219,13 +221,13 @@ func readConfigAliases(path string) (modelalias.Table, error) {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", path, err)
+		return nil, diag.Errorf("read %s: %w", path, err)
 	}
 	var cfg struct {
 		ModelAliases modelalias.Table `json:"model-aliases"`
 	}
 	if err := json.Unmarshal(b, &cfg); err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
+		return nil, diag.Errorf("parse %s: %w", path, err)
 	}
 	return cfg.ModelAliases, nil
 }
@@ -266,7 +268,8 @@ var publishKinds = []publishKind{
 // argument given picks its level, and each one missing is asked on in. A nil
 // in means nobody can answer, so a missing level is an error.
 func (d CommandDeps) PublishInteractive(ctx context.Context, in io.Reader, args []string, opts PublishOptions) error {
-	confDir, err := d.configDir()
+	d = d.withEnv(ctx)
+	confDir, err := d.configDir(ctx)
 	if err != nil {
 		return err
 	}
@@ -326,10 +329,6 @@ func (d CommandDeps) pickKind(in io.Reader, args []string) (publishKind, error) 
 
 // selectOne asks on in for one of items and returns its index.
 func selectOne[T any](d CommandDeps, in io.Reader, header string, items []T, label func(T) string) (int, error) {
-	out := d.Out
-	if out == nil {
-		out = os.Stdout
-	}
 	selected, _, err := table.New(
 		table.SlicePaginator(items),
 		func(i int, item T) (string, error) {
@@ -339,11 +338,12 @@ func selectOne[T any](d CommandDeps, in io.Reader, header string, items []T, lab
 		WithHeader(header).
 		WithPageSize(utils.TableTheme().Items).
 		WithSingleSelect().
-		WithWriter(out).
+		WithWriter(d.out()).
 		WithInput(in).
+		WithPrompter(d.selectPrompt).
 		Run()
 	if err != nil {
-		return 0, fmt.Errorf("%s: %w", strings.ToLower(header), err)
+		return 0, diag.Errorf("%s: %w", strings.ToLower(header), err)
 	}
 	if len(selected) == 0 || selected[0] < 0 || selected[0] >= len(items) {
 		return 0, fmt.Errorf("%s: nothing selected", strings.ToLower(header))
@@ -408,7 +408,7 @@ func readDirIfExists(dir string) ([]os.DirEntry, error) {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", dir, err)
+		return nil, diag.Errorf("read %s: %w", dir, err)
 	}
 	return entries, nil
 }

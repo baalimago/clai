@@ -1,0 +1,14 @@
+# clai -r -cm gpt-stub -t pwd q hi
+# env: DEBUG_CALL=1
+== status
+0
+== stdout
+Call: 'pwd', inputs: [  ]
+$HOME/work
+
+THE-REPLY
+
+== stderr
+debug [call] received tool call: {\x0a "id": "call_1",\x0a "name": "pwd",\x0a "type": "function",\x0a "inputs": {},\x0a "function": {\x0a  "name": "pwd",\x0a  "description": "Print the current working directory. Uses the Linux command 'pwd'.",\x0a  "input_schema": {\x0a   "type": "object",\x0a   "required": [],\x0a   "properties": {}\x0a  },\x0a  "arguments": "{}"\x0a }\x0a}
+debug [call] Invoke call: {\x0a "id": "call_1",\x0a "name": "pwd",\x0a "type": "function",\x0a "inputs": {},\x0a "function": {\x0a  "name": "pwd",\x0a  "description": "Print the current working directory. Uses the Linux command 'pwd'.",\x0a  "input_schema": {\x0a   "type": "object",\x0a   "required": [],\x0a   "properties": {}\x0a  },\x0a  "arguments": "{}"\x0a }\x0a}
+

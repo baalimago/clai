@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,8 +12,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/internal/runenv"
+	"github.com/baalimago/clai/internal/testenv/procenv"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/internal/vttest"
+	"github.com/baalimago/clai/pkg/diagnostic"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/dimensions"
@@ -140,9 +144,9 @@ func runChatInfo(t *testing.T, sh infoViewShape, w int) (int, []string) {
 	cq := &ChatHandler{out: hook, dims: dimensions.Dimensions{Width: w}}
 	var err error
 	if sh.foreign {
-		err = cq.actOnForeignChat(sh.chat, nil, "")
+		err = cq.actOnForeignChat(context.Background(), sh.chat, nil, "")
 	} else {
-		err = cq.actOnChat(sh.chat, "")
+		err = cq.actOnChat(context.Background(), sh.chat, "")
 	}
 	if err != nil {
 		t.Fatalf("%s @%d: %v", sh.name, w, err)
@@ -169,12 +173,13 @@ func TestChatInfoView_BackClearsWhatItDrew(t *testing.T) {
 
 // editFlow drives actOnChat on a 204-column terminal with answers, through an editor
 // that logs each buffer and appends EDIT_APPEND to it, and returns the screen at the
-// last prompt, the editor log and what the handler printed through ancli.
+// last prompt, the editor log and what the handler printed, its notices included: the
+// run's stdout and stderr share the terminal.
 func editFlow(t *testing.T, appendText string, answers ...string) (screen []string, editorLog, notices string, convDir string) {
 	t.Helper()
 	_, convDir = editFlowConf(t)
 	work := t.TempDir()
-	if err := Save(convDir, editFlowChat(t)); err != nil {
+	if err := Save(context.Background(), convDir, editFlowChat(t)); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 	logPath := filepath.Join(work, "editor.log")
@@ -205,11 +210,12 @@ func editFlow(t *testing.T, appendText string, answers ...string) (screen []stri
 
 	hook := &answeringTerminal{w: pw, tty: tty, answers: answers, snapAt: len(answers) - 1}
 	cq := &ChatHandler{convDir: convDir, out: hook, dims: dimensions.Dimensions{Width: 204}}
-	chat, err := cq.getByID("globalScope")
+	chat, err := cq.getByID(context.Background(), "globalScope")
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	actErr := cq.actOnChat(chat, "")
+	terminal := runenv.With(context.Background(), procenv.WithStreams(strings.NewReader(""), pw, pw, diagnostic.LevelInfo))
+	actErr := cq.actOnChat(terminal, chat, "")
 	os.Stdout = oldStdout
 	pw.Close()
 	if err := <-done; err != nil {
@@ -251,7 +257,7 @@ func TestChatEditFlow_InspectSavesNothing(t *testing.T) {
 			if strings.Contains(printed, "modified chat") || strings.Contains(printed, "holds tool calls") {
 				t.Fatalf("an unchanged edit was handled as a change: %q", printed)
 			}
-			after, err := FromPath(conversationPathFromDir(convDir, "globalScope"))
+			after, err := FromPath(context.Background(), conversationPathFromDir(convDir, "globalScope"))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -272,7 +278,7 @@ func TestChatDeleteFlow_BackKeepsScreen(t *testing.T) {
 	if len(screen) < 2 || screen[1] != "clai chat list" {
 		t.Fatalf("the typed command was erased:\n%s", strings.Join(screen, "\n"))
 	}
-	after, err := FromPath(conversationPathFromDir(convDir, "globalScope"))
+	after, err := FromPath(context.Background(), conversationPathFromDir(convDir, "globalScope"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,7 +291,7 @@ func TestChatDeleteFlow_BackKeepsScreen(t *testing.T) {
 // text message saves it without the newline the editor added.
 func TestChatEditFlow_EditsTextNotCalls(t *testing.T) {
 	_, _, printed, convDir := editFlow(t, " (edited)\n", "e", "2", "1", "b")
-	after, err := FromPath(conversationPathFromDir(convDir, "globalScope"))
+	after, err := FromPath(context.Background(), conversationPathFromDir(convDir, "globalScope"))
 	if err != nil {
 		t.Fatal(err)
 	}

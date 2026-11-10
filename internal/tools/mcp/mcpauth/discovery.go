@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+
+	"github.com/baalimago/clai/internal/diag"
 )
 
 // discoveryReadLimit bounds a discovery document's body: these are small,
@@ -116,7 +118,7 @@ func requireSecureEndpoints(serverName string, doc AuthorizationServerMetadata) 
 func wellKnownCandidates(issuer string) (inserted, appended string, err error) {
 	u, err := url.Parse(issuer)
 	if err != nil {
-		return "", "", fmt.Errorf("mcpauth: parse issuer %q: %w", issuer, err)
+		return "", "", diag.Errorf("mcpauth: parse issuer %q: %w", issuer, err)
 	}
 	const wellKnown = "/.well-known/oauth-authorization-server"
 
@@ -161,12 +163,12 @@ func fetchJSON(ctx context.Context, client *http.Client, serverName string, stag
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
-		return fmt.Errorf("build request for %q: %w", u, err)
+		return diag.Errorf("build request for %q: %w", u, err)
 	}
 	req.Header.Set("Accept", "application/json")
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("fetch %q: %w", u, err)
+		return diag.Errorf("fetch %q: %w", u, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -174,10 +176,10 @@ func fetchJSON(ctx context.Context, client *http.Client, serverName string, stag
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, discoveryReadLimit))
 	if err != nil {
-		return fmt.Errorf("read %q: %w", u, err)
+		return diag.Errorf("read %q: %w", u, err)
 	}
 	if err := json.Unmarshal(data, v); err != nil {
-		return fmt.Errorf("decode %q: %w", u, err)
+		return diag.Errorf("decode %q: %w", u, err)
 	}
 	return nil
 }

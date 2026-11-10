@@ -338,6 +338,9 @@ sorted, is reported in a `*serverconfig.MissingEnvError` — names only, never a
 mcp server "sentry" needs GITHUB_TOKEN, SENTRY_ACCESS_TOKEN set in the environment
 ```
 
+The missing-environment cause implements `diagnostic.Remedier`. Its display-only instruction tells
+the user to set the named variables before starting the server; it contains no command or value.
+
 Which environment is checked follows what the server actually sees:
 
 | Server | Checked against | Where |

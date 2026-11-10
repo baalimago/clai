@@ -1,7 +1,9 @@
 package anthropic
 
 import (
+	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/baalimago/clai/internal/models"
@@ -35,14 +37,14 @@ func TestHandleContentBlockStart(t *testing.T) {
 func TestHandleContentBlockDelta(t *testing.T) {
 	t.Run("token is not a data frame", func(t *testing.T) {
 		c := &Claude{}
-		if _, ok := c.handleContentBlockDelta("nope").(error); !ok {
+		if _, ok := c.handleContentBlockDelta(context.Background(), "nope").(error); !ok {
 			t.Fatal("expected an error event for a non-data token")
 		}
 	})
 
 	t.Run("empty text delta", func(t *testing.T) {
 		c := &Claude{}
-		ev := c.handleContentBlockDelta(`data: {"delta":{"type":"text_delta"}}`)
+		ev := c.handleContentBlockDelta(context.Background(), `data: {"delta":{"type":"text_delta"}}`)
 		err, ok := ev.(error)
 		if !ok || !errors.Is(err, err) || err.Error() != "unexpected empty response" {
 			t.Fatalf("got %v (%T), want the empty response error", ev, ev)
@@ -51,7 +53,7 @@ func TestHandleContentBlockDelta(t *testing.T) {
 
 	t.Run("input json delta accumulates the partial json", func(t *testing.T) {
 		c := &Claude{}
-		ev := c.handleContentBlockDelta(`data: {"delta":{"type":"input_json_delta","partial_json":"{\"a\":"}}`)
+		ev := c.handleContentBlockDelta(context.Background(), `data: {"delta":{"type":"input_json_delta","partial_json":"{\"a\":"}}`)
 		if got, ok := ev.(string); !ok || got != `{"a":` {
 			t.Fatalf("got %v (%T)", ev, ev)
 		}
@@ -62,14 +64,14 @@ func TestHandleContentBlockDelta(t *testing.T) {
 
 	t.Run("unexpected delta type", func(t *testing.T) {
 		c := &Claude{}
-		if _, ok := c.handleContentBlockDelta(`data: {"delta":{"type":"mystery"}}`).(error); !ok {
+		if _, ok := c.handleContentBlockDelta(context.Background(), `data: {"delta":{"type":"mystery"}}`).(error); !ok {
 			t.Fatal("expected an error event for an unknown delta type")
 		}
 	})
 
 	t.Run("thinking delta becomes a reasoning event", func(t *testing.T) {
 		c := &Claude{}
-		ev := c.handleContentBlockDelta(`data: {"delta":{"type":"thinking_delta","thinking":"hmm"}}`)
+		ev := c.handleContentBlockDelta(context.Background(), `data: {"delta":{"type":"thinking_delta","thinking":"hmm"}}`)
 		reasoning, ok := ev.(models.ReasoningEvent)
 		if !ok || reasoning.Content != "hmm" {
 			t.Fatalf("got %#v (%T)", ev, ev)
@@ -113,8 +115,11 @@ func TestHandleContentBlockStop(t *testing.T) {
 			contentBlockType: "tool_use",
 			functionJSON:     `{not json`,
 		}
-		if _, ok := c.handleContentBlockStop(`data: {"type":"tool_use"}`).(error); !ok {
-			t.Fatal("expected an error event for malformed accumulated tool JSON")
+		// The call is delivered with the problem, so the model gets a failed
+		// tool result it can correct instead of the run ending on it.
+		call, ok := c.handleContentBlockStop(`data: {"type":"tool_use"}`).(pub_models.Call)
+		if !ok || !strings.Contains(call.ArgumentsErr, "not a JSON object") {
+			t.Fatalf("got %#v, want a call carrying the arguments problem", call)
 		}
 	})
 

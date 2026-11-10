@@ -106,7 +106,7 @@ holding:
 | `SaveReplyAsConv: false` | never persists a conversation, never writes `globalScope.json`, never touches a dirscope binding | |
 | `MaxToolCalls: 4` | bounds the validate-and-retry loop: four accepted submissions; the stoploss then refuses three more before the hard stop, so a hostile run makes up to eight tool round trips, and every label costs at least two model calls because the querier ends on a text turn after `accepted` | |
 | `Raw: true`, `Out: io.Discard`, `ErrOut: io.Discard` | nothing reaches the host's stdout or stderr, and an abandoned run never reads a process stream | |
-| `CostWarnf` → `DEBUG_SUMMARY` trace | the cost manager's and enricher's warnings (`ancli.Warnf` prints on stdout) never reach the host | |
+| `CostWarnf` → `DEBUG_SUMMARY` trace | the cost manager's and enricher's warnings (diagnostics on stderr) never reach the host | |
 | `ConfigDir` verbatim | no `clai` segment appended | |
 | empty `CmdBan` | the tool is not a shell tool; the policy is per run anyway (D29) | |
 | `AgentSettings.UsageRecorder` | captures every model step for the synthesized usage row | |

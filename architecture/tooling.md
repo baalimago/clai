@@ -98,7 +98,9 @@ by **[mcp.md](./mcp.md)**.
 Registry aliases are lookup names, not additional model capabilities. When
 tools are selected, clai sends one schema per specification name. This keeps a
 canonical tool and its legacy aliases from producing duplicate tool names in
-provider requests.
+provider requests. A call under an alias (`freetext_command`, `async_cmd_run`)
+reaches its tool only in a run that offers the canonical tool (`cmd`,
+`async_cmd`); in any other run the alias is an unknown tool.
 
 ## Allowed tools: selection and enforcement
 
@@ -131,12 +133,35 @@ Common patterns:
 
 ### Enforcement points
 
-Enforcement happens in two key places:
+A tool call is executed only if that tool was offered to the model by the run
+that received the call. One object holds both sides: `tools.Offered`
+(`internal/tools/offered.go`).
 
-1. **Before sending tool specs to the model**: only allowed tools are advertised.
-2. **Before executing a tool call**: the executor checks the tool name is allowed. If not, it fails with an error explaining the tool is not permitted.
+1. **Offering.** `Offered.Offer(toolBox, tool)` registers the tool on the
+   model's tool box, which is what puts its schema in the request, and records
+   it as callable. It is the only caller of `RegisterTool` outside the vendors,
+   so a tool cannot be offered without being callable or callable without
+   being offered. Setup (`setupTooling`), a trusted skill enabling a tool,
+   `generate_image` and the loop's `complete_task` all go through it.
+2. **Executing.** `toolExecutor.runPlannedCall` resolves the call's name in the
+   run's `Offered` set and nowhere else. A name that is not there gets the
+   tool result `ERROR: unknown tool call: <name>`, which the model reads and
+   the user sees like any other failed call (`tool_result` with `ok: false`
+   under `-json`). Nothing runs. This holds for `load_skill` and the lookback
+   tools too, which the executor dispatches itself.
 
-This prevents accidental execution even if a model “hallucinates” a tool name.
+The process-global registry is a catalog: setup selects from it, `clai tools`
+lists it, and the stream parsers read a specification from it. It is never
+consulted to execute a model's call, so the tools another run or the host
+process registered are out of reach. This covers every run in the process: the
+main query, each loop iteration, the conversation labeller and
+`clai chat summarize` (which offer only `submit_summary`), and a `pkg/agent`
+agent. `internal/tools/dispatch_static_test.go` fails the build of a change
+that reads the registry outside the setup files or registers a tool on a
+model outside `Offered.Offer`.
+
+A hidden tool (`clai_*`) is offered only to a run that selects it by its exact
+name. A model without a tool box is offered nothing, so nothing is callable.
 
 ## Tool call execution model
 
@@ -147,8 +172,9 @@ A model tool call is represented as:
 
 Execution steps:
 
-1. Look up `tool_name` in the registry.
-2. Validate the tool is allowed.
+1. Look up `tool_name` in the run's offered set; an absent name is refused
+   with `ERROR: unknown tool call: <name>` (see Enforcement points).
+2. Check the tool-call budget.
 3. Validate/parse arguments according to the tool’s schema.
 4. Execute:
    - built-in executor (local)
@@ -191,7 +217,7 @@ message's `Parts`, and presents only the images with origin `generated`: on a te
 `Presenter.Rows` inside a tool block that stays on screen (after the rolling window's rows, which
 stay in place; never compacted or cut), in place of the image label and `generate_image`'s
 `SavedText` line; in raw or debug mode as a line of their own. A result without an
-image, or a failed call, is the same string `tools.InvokeWith` gives, error folding included (see
+image, or a failed call, is the same string `tools.Run` gives, error folding included (see
 [query.md](./query.md#images-in-a-turn)). The turn registers `generate_image` itself whenever it is
 requested, on every vendor whose completer takes tools (a `models.ToolBox`); a model without
 tools runs without it, as it runs without every tool. On the CLI it is requested by any `-t` entry or profile tool that

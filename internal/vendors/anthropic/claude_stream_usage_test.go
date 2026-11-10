@@ -118,7 +118,7 @@ func TestStreamCompletions_toolCallWithoutUsageStillArrives(t *testing.T) {
 func TestHandleToken_malformedUsageIsAnError(t *testing.T) {
 	for _, event := range []string{"message_start", "message_delta"} {
 		c := &Claude{}
-		ev := c.handleToken(bufio.NewReader(strings.NewReader("data: {not json\n")), "event: "+event)
+		ev := c.handleToken(context.Background(), bufio.NewReader(strings.NewReader("data: {not json\n")), "event: "+event)
 		if err, ok := ev.(error); !ok || !strings.Contains(err.Error(), event) {
 			t.Fatalf("%s: event = %#v, want an error naming it", event, ev)
 		}

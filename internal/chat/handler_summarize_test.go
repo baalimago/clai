@@ -19,10 +19,12 @@ import (
 	"time"
 
 	"github.com/baalimago/clai/internal/board"
+	"github.com/baalimago/clai/internal/jsonl"
 	"github.com/baalimago/clai/internal/models"
+	"github.com/baalimago/clai/internal/runenv"
+	"github.com/baalimago/clai/internal/stdio"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
 type fakeSummarizer struct {
@@ -68,7 +70,7 @@ func newSummarizeFixture(t *testing.T, s models.Summarizer, ids ...string) *summ
 	utils.Live = true
 	dir := t.TempDir()
 	for _, id := range ids {
-		if err := Save(dir, pub_models.Chat{ID: id, Created: time.Now().Add(-time.Hour), Messages: []pub_models.Message{{Role: "user", Content: "hello " + id}}}); err != nil {
+		if err := Save(context.Background(), dir, pub_models.Chat{ID: id, Created: time.Now().Add(-time.Hour), Messages: []pub_models.Message{{Role: "user", Content: "hello " + id}}}); err != nil {
 			t.Fatalf("Save(%q): %v", id, err)
 		}
 	}
@@ -104,7 +106,7 @@ func (f *summarizeFixture) countFlush(_ string, chats []pub_models.Chat) error {
 
 func (f *summarizeFixture) load(t *testing.T, id string) pub_models.Chat {
 	t.Helper()
-	c, err := FromPath(filepath.Join(f.dir, id+".json"))
+	c, err := FromPath(context.Background(), filepath.Join(f.dir, id+".json"))
 	if err != nil {
 		t.Fatalf("FromPath(%q): %v", id, err)
 	}
@@ -113,7 +115,7 @@ func (f *summarizeFixture) load(t *testing.T, id string) pub_models.Chat {
 
 func (f *summarizeFixture) indexRows(t *testing.T) map[string]chatIndexRow {
 	t.Helper()
-	rows, err := readChatIndex(f.dir)
+	rows, err := readChatIndex(context.Background(), f.dir)
 	if err != nil {
 		t.Fatalf("readChatIndex: %v", err)
 	}
@@ -422,7 +424,7 @@ func TestHandleSummarize_flushesOnCancel(t *testing.T) {
 	f.h.upsertIndexBatch = f.countFlush
 	// "a" sorts youngest-first only by Created; feed order is the index order,
 	// so make "a" the newest row and the first job.
-	if err := Save(f.dir, pub_models.Chat{ID: "a", Created: time.Now(), Messages: []pub_models.Message{{Role: "user", Content: "hello a"}}}); err != nil {
+	if err := Save(context.Background(), f.dir, pub_models.Chat{ID: "a", Created: time.Now(), Messages: []pub_models.Message{{Role: "user", Content: "hello a"}}}); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	done := make(chan error, 1)
@@ -598,9 +600,6 @@ func TestHandleSummarize_rawOutput(t *testing.T) {
 // with a fixed width and a stepping clock.
 func liveFixture(t *testing.T, s models.Summarizer, ids ...string) *summarizeFixture {
 	t.Helper()
-	prev := ancli.UseColor
-	ancli.UseColor = false
-	t.Cleanup(func() { ancli.UseColor = prev })
 	f := newSummarizeFixture(t, s, ids...)
 	f.h.forceLive = true
 	f.h.boardWidth = 160
@@ -783,7 +782,7 @@ func TestBoardSummarizeProgress_footerEstimate(t *testing.T) {
 func TestConfirmSummarize_promptWriter(t *testing.T) {
 	f := newSummarizeFixture(t, instantSummarizer())
 	f.h.input = strings.NewReader("y\n")
-	if ok, err := f.h.confirmSummarize(3); err != nil || !ok {
+	if ok, err := f.h.confirmSummarize(context.Background(), 3); err != nil || !ok {
 		t.Fatalf("confirmSummarize = %v, %v", ok, err)
 	}
 	if !strings.Contains(f.out.String(), "Summarize 3 conversations") || f.errOut.Len() != 0 {
@@ -792,7 +791,7 @@ func TestConfirmSummarize_promptWriter(t *testing.T) {
 	f.out.Reset()
 	f.h.raw = true
 	f.h.input = strings.NewReader("\n")
-	if ok, err := f.h.confirmSummarize(3); err != nil || ok {
+	if ok, err := f.h.confirmSummarize(context.Background(), 3); err != nil || ok {
 		t.Fatalf("confirmSummarize = %v, %v", ok, err)
 	}
 	if f.out.Len() != 0 || !strings.Contains(f.errOut.String(), "Summarize 3 conversations") {
@@ -806,10 +805,10 @@ func TestConfirmSummarize_promptWriter(t *testing.T) {
 func TestHandleSummarize_liveBoardColour(t *testing.T) {
 	const uuid = "0192a7b3-4c5d-7e6f-8a9b-0c1d2e3f4a5b"
 	f := liveFixture(t, instantSummarizer(), uuid)
-	ancli.UseColor = true
 	f.h.boardWidth = 80
 	f.h.summarizeOptions.workers = 1
-	if err := f.h.handleSummarize(context.Background()); err != nil {
+	colour := runenv.With(context.Background(), runenv.New(runenv.Config{Color: true}))
+	if err := f.h.handleSummarize(colour); err != nil {
 		t.Fatalf("handleSummarize: %v", err)
 	}
 	got := f.out.String()
@@ -825,6 +824,47 @@ func TestHandleSummarize_liveBoardColour(t *testing.T) {
 		}
 		if board.Truncate(line, 80) != line {
 			t.Fatalf("line wider than 80 columns: %q", line)
+		}
+	}
+}
+
+// TestConfirmSummarize_jsonPrompt pins R3-03: under -json the confirmation
+// is a confirm prompt record on the destination the text form uses, with
+// the answers as its choices, and the same input answers it.
+func TestConfirmSummarize_jsonPrompt(t *testing.T) {
+	for _, raw := range []bool{false, true} {
+		f := newSummarizeFixture(t, instantSummarizer())
+		var out, errOut bytes.Buffer
+		env := runenv.New(runenv.Config{
+			Streams: stdio.New(stdio.Config{Format: jsonl.FormatJSON, Stdout: &out, Stderr: &errOut}),
+			Format:  jsonl.FormatJSON,
+		})
+		ctx := runenv.With(context.Background(), env)
+		f.h.out, f.h.errOut, f.h.raw = env.Stdout(), env.Stderr(), raw
+		f.h.input = strings.NewReader("y\n")
+		if ok, err := f.h.confirmSummarize(ctx, 3); err != nil || !ok {
+			t.Fatalf("raw %v: confirmSummarize = %v, %v", raw, ok, err)
+		}
+		if err := env.Streams().Close(); err != nil {
+			t.Fatalf("Close: %v", err)
+		}
+		shown, empty := out.String(), errOut.String()
+		if raw {
+			shown, empty = empty, shown
+		}
+		if empty != "" || strings.Count(shown, "\n") != 1 {
+			t.Fatalf("raw %v: want one record on one destination, got stdout %q stderr %q", raw, out.String(), errOut.String())
+		}
+		var rec struct {
+			Type, Kind, Text string
+			Choices          []string
+		}
+		if err := json.Unmarshal([]byte(shown), &rec); err != nil {
+			t.Fatalf("raw %v: %q is not a record: %v", raw, shown, err)
+		}
+		if rec.Type != "prompt" || rec.Kind != "confirm" || !slices.Equal(rec.Choices, []string{"y", "N"}) ||
+			!strings.HasPrefix(rec.Text, "Summarize 3 conversations since ") || strings.Contains(rec.Text, "[y/N]") {
+			t.Fatalf("raw %v: record = %+v, want a confirm prompt with choices y, N", raw, rec)
 		}
 	}
 }

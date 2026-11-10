@@ -195,10 +195,10 @@ if errors.As(err, &facts) {
 }
 ```
 
-`errors.As` unwraps through `fmt.Errorf("…: %w", err)` wraps, so callers can
-add context without hiding the type. What stays true is only that the
-`fmt.Errorf` result is never itself of your type — decoders must return the
-typed value rather than a wrap of it.
+`errors.As` unwraps through clai's diagnostic context wraps, so callers can
+inspect a `diagnostic.Locator` without losing the underlying type. The wrap
+keeps the existing text and source chain; decoders must still return the typed
+value rather than adding context themselves.
 
 ### One question with one answer: `ModelUnavailable`
 
@@ -295,10 +295,16 @@ express either case: Join adds meanings and cannot retract one.
 
 The image generation endpoints ([photo.md](./photo.md#image-generators))
 run the same chain with one wider decoder per vendor, `decodeImageError`: it
-asks the vendor's `decodeError` first, then maps a content-policy refusal to
-`ErrContentFiltered` (OpenAI `moderation_blocked` and
-`content_policy_violation`; an OpenRouter body whose `error.metadata.reasons`
-is set). Gemini refuses at HTTP 200 with a `promptFeedback.blockReason` or a
+maps a content-policy refusal to `ErrContentFiltered` (OpenAI
+`moderation_blocked` and `content_policy_violation`; an OpenRouter body whose
+`error.metadata.reasons` is set) and asks the vendor's `decodeError` for
+anything else.
+
+OpenAI's `decodeError` answers every envelope that names a code: a quota
+code means likely-insufficient-credits, and any other code keeps the meaning
+its status gives (the baseline, or `ErrUnexpectedProviderResponse` for a
+frame at HTTP 200) with the code as the `ProviderCode` fact, so a 401
+`invalid_api_key` is `ErrAuthFailed` with provider code `invalid_api_key`. Gemini refuses at HTTP 200 with a `promptFeedback.blockReason` or a
 safety `finishReason`, so its generator returns
 `errors.Join(imagegen.ErrNoImage, ContentFilteredError)`.
 
@@ -366,13 +372,50 @@ pinned rule, documented on `internal/models/models.go`:
   continued would block on its next send. This is the producer-side half of
   the rule; without it, an error frame followed by `data: [DONE]` strands the
   producer goroutine and holds the response body open until cancellation.
-- The runner wraps the terminal error with `%w` and must not flatten it, so
-  `errors.Is`/`errors.As` keep matching the vocabulary through the wrap.
+- The runner attaches diagnostic context and must not flatten the terminal
+  error, so `errors.Is`/`errors.As` keep matching the vocabulary through the
+  wrap and callers can inspect its source location.
 
 Four producers feed the channel: `generic.StreamCompleter`, anthropic's
 `claude_stream`, openai's `responses_stream`, and the mock. The mock sends
 no errors; the three real producers send vocabulary values at their decode
 points and stop reading after a terminal error send.
+
+## A 200 without a completion, and a stream cut short
+
+A stream that opens with HTTP 200 can still fail without an error frame.
+Each producer decides from what its protocol guarantees:
+
+| Producer | Terminator the protocol guarantees | In-protocol length limit (a warning, the run succeeds) |
+| --- | --- | --- |
+| `generic.StreamCompleter` (chat completions and every vendor that embeds it) | `finish_reason` or `data: [DONE]` | `finish_reason: length` |
+| anthropic `claude_stream` | `message_stop` | `stop_reason: max_tokens` |
+| openai `responses_stream` | `response.completed`, `response.incomplete` or a failure event | `response.incomplete` with its reason |
+
+- A body with no stream event at all (an HTML page, an empty body, a plain
+  JSON document, an event stream with no events), or one whose only content
+  was a data event that did not parse, is
+  `ErrUnexpectedProviderResponse` at status 200 whose body says
+  `the provider returned no completion` and carries a bounded excerpt
+  (`generic.NoCompletionError`, `generic.BodyExcerpt`). A malformed data
+  line inside a stream that does deliver stays tolerated.
+- A stream that ends before its terminator is a truncated reply:
+  `generic.TruncatedError`, an `ErrTransport` whose cause matches
+  `io.ErrUnexpectedEOF`. The text that arrived is delivered first, shown
+  and persisted.
+- The runner adds the backstop for every producer: a run that finishes with
+  no text, no reasoning, no image and no tool call returns the same
+  no-completion error. An empty final answer after tool calls is a success.
+- Anthropic's `event: error` inside a 200 stream goes through
+  `generic.ResponseError` with the anthropic decoder, at the status
+  anthropic documents for the error type (`overloaded_error` 529,
+  `api_error` 500, `rate_limit_error` 429, ...; an unknown type keeps 200).
+- A tool call whose arguments are not a JSON object is still a call: it
+  carries `Call.ArgumentsErr` (`models.ArgumentsProblem`), runs nothing, and
+  its tool result is `ERROR: ` plus that text, so the model can correct it.
+- A context that ends mid-run is not a provider failure: the runner returns
+  `interrupt.StoppedError`, matching `ctx.Err()` (see
+  [output.md](./output.md)).
 
 ## The `Setup` MCP contract — explicit versus ambient
 
@@ -396,11 +439,35 @@ profile's `mcp_servers` are explicit too and end the run when one fails to
 start, unless the server sets `"optional": true`, which keeps the ambient
 warn-and-degrade (see `architecture/mcp.md`, Failure posture).
 
+## Presenting a terminal error
+
+`internal/diag`'s `Presenter.ReportError` (text or `-json`) shows a terminal
+error as its independent causes, without changing the error tree:
+
+- An `errors.Join` splits into causes. A joined error that a sibling already
+  matches with `errors.Is` (a classification sentinel) is no separate
+  incident, and joined meanings that share one `*claierr.APIError` are one
+  incident. One error wrapping several `%w` operands is one cause.
+- Each cause shows its deepest `diagnostic.Locator`'s operation and location
+  from `LevelDebug`, its origin stack at `LevelTrace` (text only: the `error`
+  record has no stack field), and the remedies of every `Remedier` on its
+  path; each remedy appears once.
+- External text gets best-effort redaction of known secret shapes and, in
+  text, visible escapes for terminal controls. Remedies are clai-authored and
+  are escaped, not redacted.
+- A cause's message loses trailing newlines (go_away_boilerplate's usage
+  errors end in one). A misplaced flag's `Hint:` is lifted out of the
+  message into a remedy (`internal/cli` wraps `cmd.MisplacedFlagError`, using
+  its `Reason` and `Hint`); a misplaced global `-json` gets the hint of where
+  the global flag goes. A vendor's missing API key is an
+  `apikey.MissingError` whose remedy names the variable to set.
+
 ## What stays untyped
 
-- **Request-construction and marshalling failures** stay plain wrapped
+- **Request-construction and marshalling failures** stay context-wrapped
   errors: they are clai bugs, not provider states, and a consumer has no
-  distinct action for them.
+  distinct action for them. Their causes remain available through the public
+  `diagnostic.Locator` contract.
 - **Non-text boundaries** (`openai/sora.go`, `openrouter/catalog_fetcher.go`)
   do not decode into the vocabulary — their chain-breaking `%v` sites are
   repaired, their error wording is not a contract.

@@ -93,6 +93,10 @@ func main() {
 		fmt.Fprintln(os.Stderr, "stderr line one")
 		fmt.Fprintln(os.Stderr, "stderr line two: an error occurred")
 	}
+	if text := os.Getenv("TEST_SERVER_STDERR_TEXT"); text != "" {
+		// Written as it is, so a test chooses the control characters.
+		fmt.Fprintln(os.Stderr, text)
+	}
 	if n := os.Getenv("TEST_SERVER_STDERR_BULK"); n != "" {
 		// More lines than a reader can drain before this exits, so a reap
 		// that closes the pipe under the reader shows up as a truncated tail.

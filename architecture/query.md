@@ -342,7 +342,7 @@ constructor is `cli.Deps.NewImageGenerator`
 - **Tool results.** A `PartsCaller` result that holds an image is persisted as `Parts`;
   the images the tool generated are presented, with the call's `rebus` when it is one to
   three emoji, and a tool's own images (MCP, `view_image`) are not. Every other result is
-  the `tools.InvokeWith` string, as before.
+  the `tools.Run` string, as before.
 - **Generation.** When `generate_image` is requested, the turn registers the tool for every
   completer that takes tools; a vendor's built-in image output is never enabled. With
   structured output (`-rf`) generated images are stored but not presented.
@@ -392,8 +392,11 @@ When a model step returns one or more `pub_models.Call` events, the
    the final warning, the `io.EOF` that ends the run is deferred until every
    call of the batch has emitted its result, so the persisted transcript
    always pairs one tool result with every declared call.
-3. `tools.Invoke(call)` looks the tool up in the registry and runs it, then
-   `toolOutputRuneLimit` truncation is applied to the result.
+3. The call's tool is looked up in the run's offered set
+   (`tools.Offered`, see [tooling.md](./tooling.md#enforcement-points)) and
+   run; a tool the run did not offer is refused with
+   `ERROR: unknown tool call: <name>`. Then `toolOutputRuneLimit` truncation
+   is applied to the result.
 4. The runner continues the loop with the updated chat (the model sees the
    tool output and continues).
 

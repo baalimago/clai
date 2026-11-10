@@ -11,6 +11,8 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+
+	"github.com/baalimago/clai/internal/diag"
 )
 
 // FileLimits is the largest single file each store takes, mirroring
@@ -148,7 +150,7 @@ func walk(ctx context.Context, confDir string, store Store, report func(Progress
 			return nil, ctxErr
 		}
 		if err != nil {
-			return nil, fmt.Errorf("scan %s: %w", abs, err)
+			return nil, diag.Errorf("scan %s: %w", abs, err)
 		}
 	}
 	return files, nil
@@ -162,7 +164,7 @@ func hashFile(p string) (string, error) {
 	defer f.Close()
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
-		return "", fmt.Errorf("hash %s: %w", p, err)
+		return "", diag.Errorf("hash %s: %w", p, err)
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
 }

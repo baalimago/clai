@@ -45,7 +45,7 @@ func TestReplyMode_AttachesProfileToPrevQueryConversation(t *testing.T) {
 		t.Fatalf("query: %v", err)
 	}
 
-	prev, err := chat.LoadPrevQuery(tmpConfigDir)
+	prev, err := chat.LoadPrevQuery(context.Background(), tmpConfigDir)
 	if err != nil {
 		t.Fatalf("load prevquery: %v", err)
 	}

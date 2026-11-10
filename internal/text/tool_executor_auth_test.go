@@ -59,13 +59,13 @@ func newAuthTool(t *testing.T, serverName string, dial mcp.DialFunc, authResolve
 // the production sink rather than a stand-in.
 func newAuthExecutor(toolName string, tool pub_models.LLMTool) (toolExecutor[*MockQuerier], *strings.Builder) {
 	var errOut strings.Builder
-	sink := newMcpLogSinkTo(mcpLogRolling, &errOut)
+	sink := newMcpLogSinkTo(context.Background(), mcpLogRolling, &errOut)
 	sink.attach() // past the pre-session window; this phase's own reopen is what's under test
 	q := &Querier[*MockQuerier]{
 		Raw:     true,
 		out:     &strings.Builder{},
 		mcpSink: sink,
-		tooling: tooling{run: map[string]pub_models.LLMTool{toolName: tool}},
+		tooling: tooling{offered: offeredTools(map[string]pub_models.LLMTool{toolName: tool})},
 	}
 	return toolExecutor[*MockQuerier]{querier: q}, &errOut
 }
@@ -349,7 +349,7 @@ func TestHumanWaitIsNotModelInvocable(t *testing.T) {
 	q := &Querier[*MockQuerier]{
 		Raw:     true,
 		out:     &strings.Builder{},
-		tooling: tooling{run: map[string]pub_models.LLMTool{"not_mcp_but_mentions_auth": plain}},
+		tooling: tooling{offered: offeredTools(map[string]pub_models.LLMTool{"not_mcp_but_mentions_auth": plain})},
 	}
 	e := toolExecutor[*MockQuerier]{querier: q}
 

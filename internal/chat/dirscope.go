@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
@@ -45,7 +47,7 @@ type ScopedChat struct {
 func canonicalDir(dir string) (string, error) {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
-		return "", fmt.Errorf("abs: %w", err)
+		return "", diag.Errorf("abs: %w", err)
 	}
 	clean := filepath.Clean(abs)
 	if eval, err := filepath.EvalSymlinks(clean); err == nil {
@@ -115,18 +117,18 @@ func loadDirScopeForDir(confDir, dir string) (DirScope, error) {
 	}
 	canonical, err := canonicalDir(dir)
 	if err != nil {
-		return DirScope{}, fmt.Errorf("canonicalize directory %q: %w", dir, err)
+		return DirScope{}, diag.Errorf("canonicalize directory %q: %w", dir, err)
 	}
 	bindingPath := dirscopePath(confDir, dirHash(canonical))
 
 	b, err := os.ReadFile(bindingPath)
 	if err != nil {
-		return DirScope{}, fmt.Errorf("read dirscope binding %q: %w", bindingPath, err)
+		return DirScope{}, diag.Errorf("read dirscope binding %q: %w", bindingPath, err)
 	}
 
 	var scope DirScope
 	if err := json.Unmarshal(b, &scope); err != nil {
-		return DirScope{}, fmt.Errorf("unmarshal dirscope binding %q: %w", bindingPath, err)
+		return DirScope{}, diag.Errorf("unmarshal dirscope binding %q: %w", bindingPath, err)
 	}
 	return scope, nil
 }
@@ -134,22 +136,22 @@ func loadDirScopeForDir(confDir, dir string) (DirScope, error) {
 // SaveDirScope read-modify-writes the binding for dir, promoting it to version 2:
 // it sets the head ChatID, refreshes abs_path + updated, upserts the chat into
 // the capped newest-first history, and persists atomically (temp + rename).
-func (cq *ChatHandler) SaveDirScope(dir, chatID string) error {
-	return saveDirScope(cq.confDir, dir, chatID)
+func (cq *ChatHandler) SaveDirScope(ctx context.Context, dir, chatID string) error {
+	return saveDirScope(ctx, cq.confDir, dir, chatID)
 }
 
-func saveDirScope(confDir, dir, chatID string) error {
+func saveDirScope(ctx context.Context, confDir, dir, chatID string) error {
 	canonical, err := canonicalDir(dir)
 	if err != nil {
-		return fmt.Errorf("canonicalize directory %q: %w", dir, err)
+		return diag.Errorf("canonicalize directory %q: %w", dir, err)
 	}
 	if err := os.MkdirAll(dirscopeRoot(confDir), 0o755); err != nil {
-		return fmt.Errorf("ensure dirscope root %q: %w", dirscopeRoot(confDir), err)
+		return diag.Errorf("ensure dirscope root %q: %w", dirscopeRoot(confDir), err)
 	}
 
 	binding, err := loadDirScopeForDir(confDir, canonical)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("load existing binding: %w", err)
+		return diag.Errorf("load existing binding: %w", err)
 	}
 
 	now := time.Now().UTC()
@@ -160,7 +162,7 @@ func saveDirScope(confDir, dir, chatID string) error {
 	binding.History = upsertScopedHistory(binding.History, chatID, now)
 	binding.Updated = now
 
-	debugDirscopef("saving binding for %q: chat_id=%s history=%d", canonical, chatID, len(binding.History))
+	debugDirscopef(ctx, "saving binding for %q: chat_id=%s history=%d", canonical, chatID, len(binding.History))
 
 	return persistDirScope(confDir, binding)
 }
@@ -194,7 +196,7 @@ func persistDirScope(confDir string, binding DirScope) error {
 	finalPath := dirscopePath(confDir, binding.DirHash)
 	tmp, err := os.CreateTemp(filepath.Dir(finalPath), binding.DirHash+"-*.tmp")
 	if err != nil {
-		return fmt.Errorf("CreateTemp: %w", err)
+		return diag.Errorf("CreateTemp: %w", err)
 	}
 	defer func() { _ = os.Remove(tmp.Name()) }()
 
@@ -202,13 +204,13 @@ func persistDirScope(confDir string, binding DirScope) error {
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(binding); err != nil {
 		_ = tmp.Close()
-		return fmt.Errorf("encode binding: %w", err)
+		return diag.Errorf("encode binding: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("close tmp: %w", err)
+		return diag.Errorf("close tmp: %w", err)
 	}
 	if err := os.Rename(tmp.Name(), finalPath); err != nil {
-		return fmt.Errorf("rename tmp to final: %w", err)
+		return diag.Errorf("rename tmp to final: %w", err)
 	}
 	return nil
 }
@@ -216,12 +218,12 @@ func persistDirScope(confDir string, binding DirScope) error {
 // UpdateDirScopeFromCWD binds the current working directory to the provided chatID.
 // It is used after non-reply interactions (e.g. query) to keep the directory-scoped
 // pointer up to date.
-func (cq *ChatHandler) UpdateDirScopeFromCWD(chatID string) error {
-	return UpdateDirScopeFromCWD(cq.confDir, chatID)
+func (cq *ChatHandler) UpdateDirScopeFromCWD(ctx context.Context, chatID string) error {
+	return UpdateDirScopeFromCWD(ctx, cq.confDir, chatID)
 }
 
 // UpdateDirScopeFromCWD binds the current working directory to the provided chatID.
-func UpdateDirScopeFromCWD(confDir, chatID string) error {
+func UpdateDirScopeFromCWD(ctx context.Context, confDir, chatID string) error {
 	if chatID == "" {
 		return fmt.Errorf("empty chatID")
 	}
@@ -229,7 +231,7 @@ func UpdateDirScopeFromCWD(confDir, chatID string) error {
 	if err != nil {
 		return err
 	}
-	return saveDirScope(confDir, wd, chatID)
+	return saveDirScope(ctx, confDir, wd, chatID)
 }
 
 // EnsureOriginDir stamps chat.OriginDir with the canonical CWD the first time the
@@ -237,19 +239,19 @@ func UpdateDirScopeFromCWD(confDir, chatID string) error {
 // conversation file for the id already carries an origin_dir, that value is
 // adopted so a reply never rewrites the original origin. Stamping is always-on
 // and forward-only: it has no enablement switch and never overwrites a set value.
-func EnsureOriginDir(confDir string, chat *pub_models.Chat) error {
+func EnsureOriginDir(ctx context.Context, confDir string, chat *pub_models.Chat) error {
 	if chat == nil || chat.OriginDir != "" {
 		return nil
 	}
 	if chat.ID != "" && chat.ID != globalScopeChatID {
-		if existing, err := FromPath(conversationPath(confDir, chat.ID)); err == nil && existing.OriginDir != "" {
+		if existing, err := FromPath(ctx, conversationPath(confDir, chat.ID)); err == nil && existing.OriginDir != "" {
 			chat.OriginDir = existing.OriginDir
 			return nil
 		}
 	}
 	canonical, err := canonicalCWD()
 	if err != nil {
-		return fmt.Errorf("canonicalize cwd for origin stamp: %w", err)
+		return diag.Errorf("canonicalize cwd for origin stamp: %w", err)
 	}
 	chat.OriginDir = canonical
 	return nil
@@ -261,13 +263,13 @@ func LoadDirScopeChatID(claiConfDir string) (string, error) {
 		var err error
 		claiConfDir, err = utils.GetClaiConfigDir()
 		if err != nil {
-			return "", fmt.Errorf("get clai config dir: %w", err)
+			return "", diag.Errorf("get clai config dir: %w", err)
 		}
 	}
 
 	scope, err := loadDirScopeForCurrentDir(claiConfDir)
 	if err != nil {
-		return "", fmt.Errorf("load dir scope: %w", err)
+		return "", diag.Errorf("load dir scope: %w", err)
 	}
 	return scope.ChatID, nil
 }
@@ -275,19 +277,19 @@ func LoadDirScopeChatID(claiConfDir string) (string, error) {
 // LoadDirScopedContext loads the full conversation bound to the current working
 // directory, returning it directly. The caller receives the dirscope head chat
 // and wires it into the initial-chat context without any filesystem intermediary.
-func LoadDirScopedContext(confDir string) (pub_models.Chat, error) {
+func LoadDirScopedContext(ctx context.Context, confDir string) (pub_models.Chat, error) {
 	scope, err := loadDirScopeForCurrentDir(confDir)
 	if err != nil {
-		return pub_models.Chat{}, fmt.Errorf("load dirscope: %w", err)
+		return pub_models.Chat{}, diag.Errorf("load dirscope: %w", err)
 	}
 	if scope.ChatID == "" {
 		return pub_models.Chat{}, fmt.Errorf("no directory-scoped conversation bound to current directory")
 	}
 
 	convPath := conversationPath(confDir, scope.ChatID)
-	c, err := loadConversation(confDir, convPath)
+	c, err := loadConversation(ctx, confDir, convPath)
 	if err != nil {
-		return pub_models.Chat{}, fmt.Errorf("load conversation for chat_id %q: %w", scope.ChatID, err)
+		return pub_models.Chat{}, diag.Errorf("load conversation for chat_id %q: %w", scope.ChatID, err)
 	}
 	return c, nil
 }
@@ -299,7 +301,7 @@ func loadDirScopeForCurrentDir(confDir string) (DirScope, error) {
 	}
 	scope, err := loadDirScope(confDir, wd)
 	if err != nil {
-		return DirScope{}, fmt.Errorf("load dir scope for current working directory %q: %w", wd, err)
+		return DirScope{}, diag.Errorf("load dir scope for current working directory %q: %w", wd, err)
 	}
 	return scope, nil
 }

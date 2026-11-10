@@ -10,19 +10,21 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/internal/testenv/procenv"
+
 	"github.com/baalimago/clai/internal/audio/generic"
 )
 
 func TestResolveAudioInput(t *testing.T) {
 	t.Run("missing argument errors", func(t *testing.T) {
-		_, _, err := resolveAudioInput(nil)
+		_, _, err := resolveAudioInput(procenv.Context(context.Background()), nil)
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}
 	})
 	t.Run("nonexistent path errors with path in message", func(t *testing.T) {
 		missing := filepath.Join(t.TempDir(), "gone.wav")
-		_, _, err := resolveAudioInput([]string{missing})
+		_, _, err := resolveAudioInput(procenv.Context(context.Background()), []string{missing})
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}
@@ -35,7 +37,7 @@ func TestResolveAudioInput(t *testing.T) {
 		if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
 			t.Fatalf("WriteFile: %v", err)
 		}
-		got, cleanup, err := resolveAudioInput([]string{path})
+		got, cleanup, err := resolveAudioInput(procenv.Context(context.Background()), []string{path})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -51,7 +53,7 @@ func TestResolveAudioInput(t *testing.T) {
 		stdinBytes := fakeWAVBytes("stdin-audio-bytes")
 		setStdin(t, stdinBytes)
 
-		got, cleanup, err := resolveAudioInput([]string{"-"})
+		got, cleanup, err := resolveAudioInput(procenv.Context(context.Background()), []string{"-"})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -72,7 +74,7 @@ func TestResolveAudioInput(t *testing.T) {
 	})
 	t.Run("dash with unrecognized bytes errors before creating a file", func(t *testing.T) {
 		setStdin(t, []byte("definitely not audio bytes"))
-		_, _, err := resolveAudioInput([]string{"-"})
+		_, _, err := resolveAudioInput(procenv.Context(context.Background()), []string{"-"})
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}
@@ -111,7 +113,7 @@ func setStdin(t *testing.T, content []byte) {
 // extension, since vendors infer the upload format from it
 func TestStdinMultipartFilename(t *testing.T) {
 	setStdin(t, fakeWAVBytes("stdin-audio-bytes"))
-	filePath, cleanup, err := resolveAudioInput([]string{"-"})
+	filePath, cleanup, err := resolveAudioInput(procenv.Context(context.Background()), []string{"-"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -140,7 +142,7 @@ func TestStdinMultipartFilename(t *testing.T) {
 	if err := trans.Setup("TEST_AUDIO_API_KEY", server.URL, "DEBUG_TEST_AUDIO"); err != nil {
 		t.Fatalf("failed to setup transcriber: %v", err)
 	}
-	if _, err := trans.Transcribe(context.Background(), filePath); err != nil {
+	if _, err := trans.Transcribe(procenv.Context(context.Background()), filePath); err != nil {
 		t.Fatalf("unexpected transcribe error: %v", err)
 	}
 	if !strings.HasPrefix(gotFilename, "clai-audio-stdin-") || !strings.HasSuffix(gotFilename, ".wav") {

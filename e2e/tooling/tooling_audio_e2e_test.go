@@ -1,12 +1,14 @@
 package tooling
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/baalimago/clai/e2e/e2etest"
+	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
@@ -247,5 +249,108 @@ func Test_e2e_audio_transcribe_tool_errors_keep_query_alive(t *testing.T) {
 			t.Fatalf("expected query loop to continue, got %d stdout=%q stderr=%q", status, stdout, stderr)
 		}
 		testboil.AssertStringContains(t, stdout+stderr, "unroutable9000")
+	})
+}
+
+// withSplittingFFmpeg puts an ffprobe that reports 6 s and an ffmpeg that
+// writes three chunks on PATH, and registers the audio tools against them.
+func withSplittingFFmpeg(t *testing.T, fn func()) {
+	t.Helper()
+	binDir := t.TempDir()
+	e2etest.WriteExecutable(t, binDir, "ffprobe", []byte("#!/bin/sh\necho 6.0\n"))
+	e2etest.WriteExecutable(t, binDir, "ffmpeg", []byte("#!/bin/sh\nfor a; do last=$a; done\ndir=$(dirname \"$last\")\nfor i in 000 001 002; do echo chunk > \"$dir/chunk_$i.wav\"; done\n"))
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	tools.WithTestRegistry(t, func() {
+		tools.Init(context.Background())
+		fn()
+	})
+}
+
+// runSplittingTranscribeTool runs a query whose model calls audio_transcribe
+// on a file over the configured request size, from a pre-upgrade audioConfig.
+func runSplittingTranscribeTool(t *testing.T, args string) streamRun {
+	t.Helper()
+	confDir := e2etest.SetupMainTestConfigDir(t)
+	t.Setenv("CLAI_MOCK_AUDIO_TRANSCRIBE_FILE", e2etest.WriteAudioFile(t))
+	if err := os.WriteFile(filepath.Join(confDir, "audioConfig.json"), []byte(`{"transcribe": {"model": "test", "max-request-bytes": 8}}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(audioConfig.json): %v", err)
+	}
+	var run streamRun
+	withSplittingFFmpeg(t, func() { run = runOnStreams(strings.Fields(args), streamOpts{}) })
+	return run
+}
+
+// TestAudioTranscribeToolProgress is R2-02: the audio_transcribe tool runs
+// on the run's context, so a split transcription draws its board and the
+// audioConfig upgrade notice on stderr in text, and writes one progress
+// record per state change under -json.
+func TestAudioTranscribeToolProgress(t *testing.T) {
+	t.Run("text", func(t *testing.T) {
+		run := runSplittingTranscribeTool(t, "-cm mock_test -t=audio_transcribe q tool_audio_transcribe")
+		if run.status != 0 {
+			t.Fatalf("status %d, stderr %q", run.status, run.stderr)
+		}
+		for _, want := range []string{"splitting via ffmpeg", "3 chunks", "transcribed", "added new field(s) to audioConfig.json"} {
+			if !strings.Contains(run.stderr, want) {
+				t.Errorf("stderr lacks %q: %q", want, run.stderr)
+			}
+		}
+		if strings.Contains(run.stdout, "splitting via ffmpeg") {
+			t.Errorf("the board is on stdout: %q", run.stdout)
+		}
+	})
+	t.Run("json", func(t *testing.T) {
+		run := runSplittingTranscribeTool(t, "-json -cm mock_test -t=audio_transcribe q tool_audio_transcribe")
+		if run.status != 0 {
+			t.Fatalf("status %d, stderr %q", run.status, run.stderr)
+		}
+		stdout := parseRecords(t, "stdout", run.stdout)
+		stderr := parseRecords(t, "stderr", run.stderr)
+		if p := ofType(stdout, "progress"); len(p) != 0 {
+			t.Fatalf("progress records on stdout: %v", p)
+		}
+		progress := ofType(stderr, "progress")
+		if len(progress) == 0 {
+			t.Fatalf("no progress records on stderr: %v", stderr)
+		}
+		rowsDone := map[string]bool{}
+		last := map[string]string{}
+		for _, p := range progress {
+			if p.str("title") != "audio_transcribe" {
+				t.Fatalf("progress record %v, want title audio_transcribe", p)
+			}
+			row := p.str("row")
+			if state := p.str("state") + "|" + p.str("detail"); last[row] == state {
+				t.Fatalf("progress record repeated without a state change: %v", p)
+			} else {
+				last[row] = state
+			}
+			if row != "" && p.str("state") == "done" {
+				rowsDone[row] = true
+			}
+		}
+		if first := progress[0]; first.str("state") != "start" || first.str("row") != "" || !strings.Contains(first.str("detail"), "splitting via ffmpeg") {
+			t.Fatalf("first progress record %v, want the board's start", first)
+		}
+		if final := progress[len(progress)-1]; final.str("state") != "done" || final.str("row") != "" {
+			t.Fatalf("last progress record %v, want the board's done", final)
+		}
+		if len(rowsDone) != 3 {
+			t.Fatalf("rows done %v, want three chunks", rowsDone)
+		}
+		for _, r := range ofType(stderr, "output") {
+			if strings.Contains(r.str("text"), "splitting via ffmpeg") {
+				t.Fatalf("the board is drawn under -json: %v", r)
+			}
+		}
+		notice := false
+		for _, r := range stderr {
+			if strings.Contains(r.str("message")+r.str("text"), "added new field(s) to audioConfig.json") {
+				notice = true
+			}
+		}
+		if !notice {
+			t.Fatalf("no audioConfig upgrade notice on stderr: %v", stderr)
+		}
 	})
 }

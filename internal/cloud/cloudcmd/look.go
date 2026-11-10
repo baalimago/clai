@@ -36,17 +36,39 @@ func firstPullLines(store sync.Store, f sync.FirstPull, s style) []string {
 	}, s)...)
 }
 
-// firstPullChoices is the question for the files that differ; each answer
-// is keyed by the first letter of the side it keeps, inside the word, as
-// the chat list writes its keys.
-func firstPullChoices(differ int, s style) []string {
-	lines := []string{"  Keep which copy of the " + count(differ) + " " + plural(differ, "file that differs?", "files that differ?")}
-	return append(lines, look.Grid("  ", [][]string{
+// firstPullQuestion is the question for the files that differ.
+func firstPullQuestion(differ int) string {
+	return "Keep which copy of the " + count(differ) + " " + plural(differ, "file that differs?", "files that differ?")
+}
+
+// firstPullAnswerRows are the question's answers and what each does; each
+// answer is keyed by the first letter of the side it keeps, inside the
+// word, as the chat list writes its keys.
+func firstPullAnswerRows() [][]string {
+	return [][]string{
 		{"[l]ocal", "this machine's copy stays, to commit and share it"},
 		{"[r]emote", "your account's copy wins; this machine's goes to cloud/trash/ for 30 days"},
 		{"[p]ostpone", "each file becomes a conflict to resolve later"},
 		{"[q]uit", "nothing is pulled"},
-	}, s)...)
+	}
+}
+
+func firstPullAnswers(s style) []string { return look.Grid("  ", firstPullAnswerRows(), s) }
+
+// firstPullChoices is the question's text form: the question, then its
+// answers.
+func firstPullChoices(differ int, s style) []string {
+	return append([]string{"  " + firstPullQuestion(differ)}, firstPullAnswers(s)...)
+}
+
+// firstPullKeys are the answers alone, the choices of the question's
+// prompt record.
+func firstPullKeys() []string {
+	keys := make([]string, 0, 4)
+	for _, row := range firstPullAnswerRows() {
+		keys = append(keys, row[0])
+	}
+	return keys
 }
 
 func firstPullFlags(store sync.Store, s style) []string {
@@ -212,12 +234,15 @@ func whoamiLines(me cloud.Me, host string, s style) []string {
 	}
 	for _, st := range sync.Stores {
 		info := me.Stores[string(st)]
-		detail := right(count(info.Files), files) + " " + plural(info.Files, "file ", "files") + " · " + right(human(info.Bytes), sizes) + " · "
+		commit := "no commits yet"
 		if info.Commit > 0 {
-			detail += fmt.Sprintf("commit #%d", info.Commit)
-		} else {
-			detail += "no commits yet"
+			commit = fmt.Sprintf("commit #%d", info.Commit)
 		}
+		if s.Plain {
+			lines = append(lines, "  "+string(st)+": "+count(info.Files)+" "+plural(info.Files, "file", "files")+", "+human(info.Bytes)+", "+commit)
+			continue
+		}
+		detail := right(count(info.Files), files) + " " + plural(info.Files, "file ", "files") + " · " + right(human(info.Bytes), sizes) + " · " + commit
 		lines = append(lines, "  "+s.Primary("■")+" "+look.Pad(string(st), names)+"  "+s.Secondary(detail))
 	}
 	lines = append(lines, "  "+s.Secondary(billingLine(me)))

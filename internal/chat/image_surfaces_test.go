@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -13,7 +14,9 @@ import (
 	"time"
 
 	"github.com/baalimago/clai/internal/asset"
+	"github.com/baalimago/clai/internal/testenv/procenv"
 	"github.com/baalimago/clai/internal/utils"
+	"github.com/baalimago/clai/pkg/diagnostic"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
@@ -21,7 +24,7 @@ import (
 func storedImageChat(t *testing.T, confDir, id string, data []byte, msgs ...pub_models.Message) pub_models.Chat {
 	t.Helper()
 	c := pub_models.Chat{ID: id, Created: time.Now(), Messages: msgs}
-	saved, err := NewPersister(confDir, asset.NewStore(AssetsDir(confDir))).Save(c)
+	saved, err := NewPersister(confDir, asset.NewStore(AssetsDir(confDir))).Save(procenv.Context(context.Background()), c)
 	if err != nil {
 		t.Fatalf("Save %s: %v", id, err)
 	}
@@ -82,7 +85,7 @@ func TestReplay_printsStoredImagePath(t *testing.T) {
 
 	var replayErr error
 	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		replayErr = Replay(true, false)
+		replayErr = Replay(procenv.Context(context.Background()), true, false)
 	})
 	if replayErr != nil {
 		t.Fatalf("Replay: %v", replayErr)
@@ -118,7 +121,7 @@ func TestLoadGlobalScope_legacyImageThroughPersister(t *testing.T) {
 
 	data := testPNG(t, 5)
 	write(data, "image/png")
-	got, err := LoadPrevQuery(confDir)
+	got, err := LoadPrevQuery(procenv.Context(context.Background()), confDir)
 	if err != nil {
 		t.Fatalf("LoadPrevQuery: %v", err)
 	}
@@ -128,7 +131,7 @@ func TestLoadGlobalScope_legacyImageThroughPersister(t *testing.T) {
 	}
 
 	write([]byte("not an image at all"), "image/png")
-	if _, err := LoadPrevQuery(confDir); !errors.Is(err, asset.ErrNotImage) {
+	if _, err := LoadPrevQuery(procenv.Context(context.Background()), confDir); !errors.Is(err, asset.ErrNotImage) {
 		t.Fatalf("non-image legacy part: err = %v, want ErrNotImage from Persister.Load", err)
 	}
 }
@@ -177,11 +180,11 @@ func TestTextSurfaces_describeImages(t *testing.T) {
 	)
 	label := "[image " + saved.Messages[1].Parts[0].(pub_models.ImagePart).Asset[:6] + "]"
 
-	read, _, err := ReadMessage(confDir, "pic", 1)
+	read, _, err := ReadMessage(procenv.Context(context.Background()), confDir, "pic", 1)
 	if err != nil || read != "[user]\n"+label+"\nfind zebra" {
 		t.Fatalf("ReadMessage = %q, %v", read, err)
 	}
-	inspected, err := InspectConversation(confDir, "pic", 0, 10, "user", "")
+	inspected, err := InspectConversation(procenv.Context(context.Background()), confDir, "pic", 0, 10, "user", "")
 	if err != nil || !strings.Contains(inspected, label) {
 		t.Fatalf("InspectConversation = %q, %v", inspected, err)
 	}
@@ -207,14 +210,14 @@ func TestDeleteFromPrompt_sweepsUnreferencedAssets(t *testing.T) {
 	assetPath := filepath.Join(AssetsDir(confDir), pngRef(data))
 
 	cq.prompt = "first"
-	if err := cq.deleteFromPrompt(context.Background()); err != nil {
+	if err := cq.deleteFromPrompt(procenv.Context(context.Background())); err != nil {
 		t.Fatalf("delete first: %v", err)
 	}
 	if _, err := os.Stat(assetPath); err != nil {
 		t.Fatalf("asset still referenced by second must remain: %v", err)
 	}
 	cq.prompt = "second"
-	if err := cq.deleteFromPrompt(context.Background()); err != nil {
+	if err := cq.deleteFromPrompt(procenv.Context(context.Background())); err != nil {
 		t.Fatalf("delete second: %v", err)
 	}
 	if _, err := os.Stat(assetPath); !os.IsNotExist(err) {
@@ -231,13 +234,16 @@ func TestDeleteFromPrompt_sidecarFailureWarns(t *testing.T) {
 	blockReasoningSidecars(t, convDir)
 
 	cq.prompt = "doomed"
-	var deleteErr error
-	stdout := testboil.CaptureStdout(t, func(*testing.T) { deleteErr = cq.deleteFromPrompt(context.Background()) })
-	if deleteErr != nil {
-		t.Fatalf("deleteFromPrompt: %v, want the delete to succeed", deleteErr)
+	var stderr bytes.Buffer
+	ctx := procenv.Diagnostics(context.Background(), &stderr, diagnostic.LevelInfo)
+	if err := cq.deleteFromPrompt(ctx); err != nil {
+		t.Fatalf("deleteFromPrompt: %v, want the delete to succeed", err)
 	}
-	if !strings.Contains(stdout, `failed to remove reasoning sidecar for chat "doomed": remove reasoning dir`) || !strings.Contains(stdout, "deleted chat 'doomed'") {
-		t.Fatalf("stdout = %q, want the sidecar warning, then the deletion", stdout)
+	got := stderr.String()
+	warnAt := strings.Index(got, `failed to remove reasoning sidecar for chat "doomed": remove reasoning dir`)
+	deletedAt := strings.Index(got, "deleted chat 'doomed'")
+	if warnAt < 0 || deletedAt < warnAt {
+		t.Fatalf("stderr = %q, want the sidecar warning, then the deletion", got)
 	}
 	if _, err := os.Stat(conversationPathFromDir(convDir, "doomed")); !os.IsNotExist(err) {
 		t.Fatalf("the conversation must be removed, stat err = %v", err)

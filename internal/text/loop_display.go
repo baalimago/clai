@@ -3,11 +3,12 @@ package text
 import (
 	"errors"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/models"
+	"github.com/baalimago/clai/internal/runenv"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
@@ -158,10 +159,10 @@ func (q *Querier[C]) showLoopPhase(phase string) error {
 	q.activityViewport.SetHeader(q.loopProgress.Header())
 	w := q.out
 	if w == nil {
-		w = os.Stdout
+		w = runenv.From(q.diagContext()).Stdout()
 	}
 	if err := q.activityViewport.Render(w); err != nil {
-		return fmt.Errorf("render loop phase: %w", err)
+		return diag.Errorf("render loop phase: %w", err)
 	}
 	return nil
 }
@@ -197,10 +198,10 @@ func (q *Querier[C]) settleLoopHeader() error {
 	q.activityViewport.CollapseToHeader()
 	w := q.out
 	if w == nil {
-		w = os.Stdout
+		w = runenv.From(q.diagContext()).Stdout()
 	}
 	if err := q.activityViewport.RenderPinned(w); err != nil {
-		return fmt.Errorf("collapse loop window: %w", err)
+		return diag.Errorf("collapse loop window: %w", err)
 	}
 	q.activityViewport.DetachRenderedRegion()
 	return nil
@@ -219,9 +220,9 @@ func (q *Querier[C]) awaitLoopPhaseBeforeSettle() error {
 	case summaryWaitResult:
 		return q.awaitSummaryResult(res)
 	case summaryWaitTimeout:
-		traceSummaryf("loop-phase summary abandoned before settle after %v", q.summaryJoinBound())
+		traceSummaryf(q.diagContext(), "loop-phase summary abandoned before settle after %v", q.summaryJoinBound())
 	case summaryWaitInterrupt:
-		traceSummaryf("loop-phase summary abandoned before settle on interrupt")
+		traceSummaryf(q.diagContext(), "loop-phase summary abandoned before settle on interrupt")
 	}
 	q.abandonSummary()
 	return nil
@@ -269,7 +270,7 @@ func (q *Querier[C]) FinishLoopIteration(outcome LoopOutcome, answer pub_models.
 	}
 	w := q.out
 	if w == nil {
-		w = os.Stdout
+		w = runenv.From(q.diagContext()).Stdout()
 	}
 	switch outcome {
 	case LoopOutcomeContinue:
@@ -281,7 +282,7 @@ func (q *Querier[C]) FinishLoopIteration(outcome LoopOutcome, answer pub_models.
 	case LoopOutcomeAchieved:
 		q.loopProgress = nil
 		if err := utils.AttemptPrettyPrint(w, answer, q.username, false); err != nil {
-			return fmt.Errorf("print achieved loop answer: %w", err)
+			return diag.Errorf("print achieved loop answer: %w", err)
 		}
 		return nil
 	case LoopOutcomeBlocked, LoopOutcomeExhausted:

@@ -7,16 +7,17 @@ import (
 	"fmt"
 	"io"
 	"maps"
-	"os"
 	"slices"
 	"time"
 
 	"github.com/baalimago/clai/internal"
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/imagegen"
 	"github.com/baalimago/clai/internal/modelfallback"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/photo"
 	"github.com/baalimago/clai/internal/retry"
+	"github.com/baalimago/clai/internal/runenv"
 	"github.com/baalimago/clai/internal/runtally"
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/pkg/claierr"
@@ -47,7 +48,7 @@ Examples:
 // imports text, so text cannot call it), and TrustInput hands over the
 // wizard's mutable input reader for skill-trust prompts, read at setup time.
 type QueryCommandDeps struct {
-	ConfigPrep func() (confDir string, err error)
+	ConfigPrep func(ctx context.Context) (confDir string, err error)
 	TrustInput func() io.Reader
 	// ApplyMediaOverrides hands the resolved media-tool settings to the domains
 	// owning those tools (internal/audio today), which text must not import.
@@ -55,7 +56,7 @@ type QueryCommandDeps struct {
 	// NewSummarizer builds the in-flight conversation summarizer; nil or a
 	// constructor error attaches nothing (worklog
 	// 2026-09-09-conversation-summaries, D26).
-	NewSummarizer func(confDir string) (models.Summarizer, error)
+	NewSummarizer func(ctx context.Context, confDir string) (models.Summarizer, error)
 	// SummaryJoinTimeout makes a plain query wait this long for its label;
 	// zero keeps labelling best effort with no wait.
 	SummaryJoinTimeout time.Duration
@@ -65,7 +66,7 @@ type QueryCommandDeps struct {
 	// PhotoConfig returns photoConfig.json, the single source of the image
 	// presenter's auto-open-images and image-opener and of the model that
 	// route.ImageModelFor and -pm may override.
-	PhotoConfig func(confDir string) (photo.Configurations, error)
+	PhotoConfig func(ctx context.Context, confDir string) (photo.Configurations, error)
 	// NewRemoteResolver builds the resolver for -prp cchub:, gh: and https://
 	// targets; nil refuses them.
 	NewRemoteResolver NewRemoteResolverFunc
@@ -129,7 +130,7 @@ type runTallyQuerier struct {
 func (r runTallyQuerier) Query(ctx context.Context) error {
 	err := r.inner.Query(ctx)
 	if closeErr := r.scope.Close(); closeErr != nil {
-		return errors.Join(err, fmt.Errorf("close subagent tally: %w", closeErr))
+		return errors.Join(err, diag.Errorf("close subagent tally: %w", closeErr))
 	}
 	return err
 }
@@ -182,10 +183,12 @@ type textSession struct {
 // attempt is never closed by the chain and a failed attempt never hides the
 // replay guard of the run it composed.
 func (s *textSession) querier(ctx context.Context) (models.Querier, error) {
-	q, err := modelfallback.New(ctx, s.conf.ModelAliases, s.conf.Model, s.build, modelfallback.NoticeTo(os.Stderr))
+	q, err := modelfallback.New(ctx, s.conf.ModelAliases, s.conf.Model, s.build, modelfallback.Notice(runenv.From(ctx)))
 	if err != nil {
 		if s.tally != nil {
-			err = errors.Join(err, fmt.Errorf("close subagent tally: %w", s.tally.Close()))
+			if closeErr := s.tally.Close(); closeErr != nil {
+				err = errors.Join(err, diag.Errorf("close subagent tally: %w", closeErr))
+			}
 		}
 		return nil, err
 	}
@@ -198,7 +201,7 @@ func (s *textSession) querier(ctx context.Context) (models.Querier, error) {
 // newTextSession runs the config, media and prompt composition query uses in
 // plain and loop mode, and leaves the per-model run composition to build.
 func newTextSession(ctx context.Context, c *internal.Command, tf internal.TextFlags, lf internal.LoopFlags, deps QueryCommandDeps) (*textSession, error) {
-	confDir, err := deps.ConfigPrep()
+	confDir, err := deps.ConfigPrep(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -206,8 +209,9 @@ func newTextSession(ctx context.Context, c *internal.Command, tf internal.TextFl
 	if deps.TrustInput != nil {
 		trustInput = deps.TrustInput()
 	}
-	interactive := !tf.AgentText.NonInteractive.Value() && terminalAvailable()
-	remoteTargets := &remoteRun{newResolver: deps.NewRemoteResolver, confDir: confDir, trustInput: trustInput, interactive: interactive}
+	env := runenv.From(ctx)
+	interactive := !tf.AgentText.NonInteractive.Value() && terminalAvailable(env.Stdin(), env.StdinIsTerminal())
+	remoteTargets := &remoteRun{newResolver: deps.NewRemoteResolver, confDir: confDir, trustInput: trustInput, interactive: interactive, stderr: env.Stderr()}
 	tConf, err := setupTextConfig(ctx, confDir, tf, c.Args(), trustInput, remoteTargets.profile, remoteTargets.skills)
 	if err != nil {
 		return nil, err
@@ -219,7 +223,7 @@ func newTextSession(ctx context.Context, c *internal.Command, tf internal.TextFl
 	// for the profile to be applied by setupTextConfig.
 	if deps.ApplyMediaOverrides != nil {
 		if err := deps.ApplyMediaOverrides(mediaToolSettings(tf, tConf)); err != nil {
-			return nil, fmt.Errorf("apply media tool overrides: %w", err)
+			return nil, diag.Errorf("apply media tool overrides: %w", err)
 		}
 	}
 	if err := resolveRemoteModel(ctx, tConf, remoteTargets.models); err != nil {
@@ -233,12 +237,12 @@ func newTextSession(ctx context.Context, c *internal.Command, tf internal.TextFl
 	// directory chat id so the continuation lands on the same chat.
 	if tf.QueryText.DirReply.Value() {
 		if err := applyDirReplyChatID(confDir, tConf); err != nil {
-			return nil, fmt.Errorf("apply dir reply chat id: %w", err)
+			return nil, diag.Errorf("apply dir reply chat id: %w", err)
 		}
 	}
 	var summarizer models.Summarizer
 	if tConf.SummarizeConversations {
-		summarizer = loadSummarizer(confDir, deps.NewSummarizer)
+		summarizer = loadSummarizer(ctx, confDir, deps.NewSummarizer)
 	}
 	tally, err := openRunTally(deps, tConf.QuerySummary || lf.Loop.Value())
 	if err != nil {
@@ -260,16 +264,16 @@ func buildTextRun(ctx context.Context, confDir string, tConf *Configurations, mo
 	conf.InitialChat.Messages = slices.Clone(tConf.InitialChat.Messages)
 	conf.InitialChat.Queries = slices.Clone(tConf.InitialChat.Queries)
 	conf.BaseTools = maps.Clone(tConf.BaseTools)
-	conf.RegisteredTools = maps.Clone(tConf.RegisteredTools)
+	conf.Offered = tConf.Offered.Clone()
 	q, err := CreateQuerier(ctx, conf)
 	if err != nil {
 		if startups := mcpStartupErrors(err); len(startups) > 0 {
 			return nil, retry.Final(errors.Join(startups...))
 		}
-		return nil, fmt.Errorf("failed to create text querier: %w", err)
+		return nil, diag.Errorf("failed to create text querier: %w", err)
 	}
 	if tf.QueryText.ReplyOnly.Value() {
-		if err := enableReplyOnly(q, !lf.Loop.Value()); err != nil {
+		if err := enableReplyOnly(q, !lf.Loop.Value(), runenv.From(ctx).Stderr()); err != nil {
 			return nil, retry.Final(err)
 		}
 	}
@@ -283,7 +287,7 @@ func buildTextRun(ctx context.Context, confDir string, tConf *Configurations, mo
 			return nil, retry.Final(err)
 		}
 	}
-	if err := attachImageTurn(confDir, &conf, tf, deps, q); err != nil {
+	if err := attachImageTurn(ctx, confDir, &conf, tf, deps, q); err != nil {
 		return nil, retry.Final(err)
 	}
 	var top models.Querier = q
@@ -351,7 +355,7 @@ func setSummaryJoinTimeout(q models.Querier, d time.Duration) error {
 
 // enableReplyOnly keeps stdout for the reply. With showProgress, a terminal
 // stderr shows the session's progress as a terminal stdout would.
-func enableReplyOnly(q models.Querier, showProgress bool) error {
+func enableReplyOnly(q models.Querier, showProgress bool, stderr io.Writer) error {
 	setter, ok := q.(interface {
 		SendTranscriptToStderr()
 		ShowProgressOn(io.Writer)
@@ -361,7 +365,7 @@ func enableReplyOnly(q models.Querier, showProgress bool) error {
 	}
 	setter.SendTranscriptToStderr()
 	if showProgress {
-		setter.ShowProgressOn(os.Stderr)
+		setter.ShowProgressOn(stderr)
 	}
 	return nil
 }
@@ -391,13 +395,13 @@ func newLoopRunner(q models.Querier, recorder CompletionRecorder, cfg LoopConfig
 // never reaches the run: the caller skips the load when
 // summarize-conversations is off, so an opted-out run never loads the
 // summarizer's config.
-func loadSummarizer(confDir string, newSummarizer func(string) (models.Summarizer, error)) models.Summarizer {
+func loadSummarizer(ctx context.Context, confDir string, newSummarizer func(context.Context, string) (models.Summarizer, error)) models.Summarizer {
 	if newSummarizer == nil {
 		return nil
 	}
-	s, err := newSummarizer(confDir)
+	s, err := newSummarizer(ctx, confDir)
 	if err != nil {
-		traceSummaryf("summarizer unavailable, continuing without: %v", err)
+		traceSummaryf(ctx, "summarizer unavailable, continuing without: %v", err)
 		return nil
 	}
 	return s

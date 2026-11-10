@@ -1,10 +1,10 @@
 package openrouter
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/baalimago/clai/internal/audio/generic"
+	"github.com/baalimago/clai/internal/diag"
 )
 
 const TranscribeURL = "https://openrouter.ai/api/v1/audio/transcriptions"
@@ -21,7 +21,7 @@ type Transcriber struct {
 func (t *Transcriber) Setup() error {
 	err := t.Transcriber.Setup("OPENROUTER_API_KEY", TranscribeURL, "DEBUG_OPENROUTER")
 	if err != nil {
-		return fmt.Errorf("failed to setup transcriber: %w", err)
+		return diag.Errorf("failed to setup transcriber: %w", err)
 	}
 	t.Transcriber.Model = strings.TrimPrefix(t.Model, "or:")
 	t.Transcriber.ExtraHeaders = map[string]string{

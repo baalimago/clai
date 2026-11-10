@@ -9,14 +9,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/baalimago/clai/internal/runenv"
+
 	"github.com/baalimago/clai/internal/debugflags"
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/present"
 	"github.com/baalimago/clai/internal/runtally"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 	"github.com/baalimago/go_away_boilerplate/pkg/dimensions"
 	"github.com/baalimago/go_away_boilerplate/pkg/table"
@@ -32,6 +34,9 @@ const (
 )
 
 type Querier[C models.StreamCompleter] struct {
+	// runCtx carries the run's streams and diagnostics for the methods that
+	// take no context of their own.
+	runCtx    context.Context
 	Raw       bool
 	errOut    io.Writer
 	stepRetry StepRetry
@@ -39,7 +44,9 @@ type Querier[C models.StreamCompleter] struct {
 	transcriptToStderr bool
 	// replyOut is the redirected stdout while the session draws on a
 	// terminal stderr: see ShowProgressOn.
-	replyOut         io.Writer
+	replyOut io.Writer
+	// json holds the JSON Displayers under -json; inactive otherwise.
+	json             jsonDisplay
 	structuredOutput bool
 	outputModeKnown  bool
 	outputIsTerminal bool
@@ -50,11 +57,15 @@ type Querier[C models.StreamCompleter] struct {
 	// session. It is resolved once in NewQuerier from the session writer's fd;
 	// every width-aware render path of the querier reads this value. The
 	// snapshot is always usable: a failed read yields dimensions.Fallback.
-	dims                    dimensions.Dimensions
-	lineCount               int
-	line                    string
-	fullMsg                 string
-	configDir               string
+	dims      dimensions.Dimensions
+	lineCount int
+	line      string
+	fullMsg   string
+	configDir string
+	// debug is the debug display: no streamed tokens, the reply printed
+	// whole. No diagnostic level or legacy control selects it, since raising
+	// the level must change stderr only (worklog 2026-11-02-diagnostics,
+	// R4-04); nothing in production sets it.
 	debug                   bool
 	debugTextQuerierPrinted bool
 	shouldSaveReply         bool
@@ -199,27 +210,45 @@ type LoadedSkillRuntime struct {
 	RawArgs         string
 }
 
-func (q *Querier[C]) postProcessOutput(ctx context.Context, newSysMsg pub_models.Message) {
+// postProcessOutput shows the final answer. It returns the failure of
+// writing the reply itself, on stdout or to the reply hand-off; a failed
+// redraw of an answer that was already streamed is only a warning.
+func (q *Querier[C]) postProcessOutput(ctx context.Context, newSysMsg pub_models.Message) error {
 	// Agent logging is unconditional: the final answer record fires before any
 	// display branch so raw, structured, rolling, and terminal paths all emit
 	// it (worklog 2026-08-15-agent-slog-output, Phase 3).
 	q.logMessage(ctx, "final_answer", newSysMsg.Content, "")
+	if q.json.active() {
+		// The reply record closes the reply_delta records of the message, so
+		// it is their text: reasoning has its own records, and an answer
+		// without text has no deltas to close.
+		reply := stripThinkingBlocks(newSysMsg.Content)
+		if reply == "" {
+			return nil
+		}
+		if err := q.json.stdout.Reply(reply); err != nil {
+			return diag.Errorf("write the reply to stdout: %w", err)
+		}
+		return nil
+	}
 	if q.replyOut != nil {
 		if err := q.handOffReply(newSysMsg.Content); err != nil {
-			ancli.Warnf("failed to hand off reply: %v", err)
+			return diag.Errorf("write the reply to stdout: %w", err)
 		}
-		return
+		return nil
 	}
 	// The token should already have been printed while streamed
 	if q.rawDisplay() {
 		if q.debug {
 			w := q.out
 			if w == nil {
-				w = os.Stdout
+				w = runenv.From(q.diagContext()).Stdout()
 			}
-			fmt.Fprintln(w, newSysMsg.Content)
+			if _, err := fmt.Fprintln(w, newSysMsg.Content); err != nil {
+				return diag.Errorf("write the reply to stdout: %w", err)
+			}
 		}
-		return
+		return nil
 	}
 	if q.activityViewport != nil {
 		// The loop window collapsed to its pinned header at stream end. The loop
@@ -227,7 +256,7 @@ func (q *Querier[C]) postProcessOutput(ctx context.Context, newSysMsg pub_models
 		// FinishLoopIteration, once it knows the outcome. Nothing prints from
 		// here (worklog 2026-10-21-clai-loop).
 		if q.loopProgress != nil {
-			return
+			return nil
 		}
 		// Rolling window: the final answer replaces the whole window. The answer
 		// block was dropped from the viewport state at stream end, so clear every
@@ -236,10 +265,10 @@ func (q *Querier[C]) postProcessOutput(ctx context.Context, newSysMsg pub_models
 		// (intermediate prose before tool calls) and must never be re-printed.
 		if q.finalAnswerPopPending {
 			if err := q.printAnswerInActivityWindow(q.out, newSysMsg, q.Raw); err != nil {
-				ancli.Warnf("failed to print final answer in activity viewport: %v", err)
+				runenv.Warnf(ctx, runenv.SubsystemTextQuerier, "failed to print final answer in activity viewport: %v", err)
 			}
 		}
-		return
+		return nil
 	}
 	if q.dims.Width > 0 {
 		utils.UpdateMessageTerminalMetadata(newSysMsg.Content, &q.line, &q.lineCount, q.dims.Width)
@@ -247,7 +276,7 @@ func (q *Querier[C]) postProcessOutput(ctx context.Context, newSysMsg pub_models
 		if debugOutputFile := debugflags.OutputFile(); debugOutputFile != "" {
 			file, err := os.Create(debugOutputFile)
 			if err != nil {
-				ancli.PrintErr(fmt.Sprintf("failed to create debug output file: %v\n", err))
+				runenv.Failuref(ctx, runenv.SubsystemTextQuerier, "failed to create debug output file: %v\n", err)
 			} else {
 				defer file.Close()
 				_, err = file.WriteString(debug.IndentedJsonFmt(struct {
@@ -262,17 +291,20 @@ func (q *Querier[C]) postProcessOutput(ctx context.Context, newSysMsg pub_models
 					TermWidth:   q.dims.Width,
 				}))
 				if err != nil {
-					ancli.PrintErr(fmt.Sprintf("failed to write to debug output file: %v\n", err))
+					runenv.Failuref(ctx, runenv.SubsystemTextQuerier, "failed to write to debug output file: %v\n", err)
 				}
 			}
 		}
 		if !q.debug {
 			table.ClearTermTo(q.out, q.lineCount-1)
 		}
-	} else {
-		fmt.Println()
+	} else if _, err := fmt.Fprintln(q.out); err != nil {
+		return diag.Errorf("write the reply to stdout: %w", err)
 	}
-	utils.AttemptPrettyPrint(q.out, newSysMsg, q.username, q.Raw)
+	if err := utils.AttemptPrettyPrint(q.out, newSysMsg, q.username, q.Raw); err != nil {
+		return diag.Errorf("write the reply to stdout: %w", err)
+	}
+	return nil
 }
 
 func (q *Querier[C]) postProcess() {
@@ -288,7 +320,7 @@ func (q *Querier[C]) postProcess() {
 	}
 	// Legacy display-only finalize path (tests): the runner's Run joins the
 	// persist error into its returned error instead (S8).
-	_ = sessionFinalizer[C]{querier: q}.Finalize(context.Background(), session)
+	_ = sessionFinalizer[C]{querier: q}.Finalize(q.diagContext(), session)
 	q.chat = session.Chat
 	q.fullMsg = session.FinalAssistantText
 	q.line = session.Line
@@ -327,7 +359,7 @@ func (q *Querier[C]) resetActivityViewport() {
 func (q *Querier[C]) handleToken(token string) {
 	w := q.out
 	if w == nil {
-		w = os.Stdout
+		w = runenv.From(q.diagContext()).Stdout()
 	}
 	q.fullMsg += token
 	if !q.debug {
@@ -338,7 +370,7 @@ func (q *Querier[C]) handleToken(token string) {
 func (q *Querier[C]) handleTokenForSession(session *QuerySession, token string) error {
 	w := q.out
 	if w == nil {
-		w = os.Stdout
+		w = runenv.From(q.diagContext()).Stdout()
 	}
 	prior := session.PendingTextString()
 	session.AppendPendingText(token)
@@ -346,11 +378,22 @@ func (q *Querier[C]) handleTokenForSession(session *QuerySession, token string) 
 	if q.holdsStepText() {
 		return nil
 	}
+	if q.json.active() {
+		if q.debug || q.structuredOutput {
+			return nil
+		}
+		// A reply that cannot be written fails the run in both formats: an
+		// exit status of 0 would tell the caller it holds the reply.
+		if err := q.json.stdout.ReplyDelta(token); err != nil {
+			return diag.Errorf("write the reply to stdout: %w", err)
+		}
+		return nil
+	}
 	if !q.debug && !q.structuredOutput {
 		if q.usesActivityViewport() && q.activityViewport != nil {
 			q.activityViewport.AppendText(token)
 			if err := q.activityViewport.Render(w); err != nil {
-				return fmt.Errorf("render activity viewport: %w", err)
+				return diag.Errorf("render activity viewport: %w", err)
 			}
 			return nil
 		}
@@ -359,7 +402,12 @@ func (q *Querier[C]) handleTokenForSession(session *QuerySession, token string) 
 			// break where TerminalRows says on every terminal.
 			token = utils.PinWideRunes(prior, token, q.dims.Width)
 		}
-		fmt.Fprint(w, token)
+		if _, err := fmt.Fprint(w, token); err != nil {
+			return diag.Errorf("write the reply to stdout: %w", err)
+		}
+		if token != "" {
+			runenv.From(q.diagContext()).MarkRow(!strings.HasSuffix(token, "\n"))
+		}
 	}
 	return nil
 }
@@ -408,7 +456,7 @@ func (q *Querier[C]) drainMcpLogs() error {
 	q.stopImageProgress()
 	w := q.out
 	if w == nil {
-		w = os.Stdout
+		w = runenv.From(q.diagContext()).Stdout()
 	}
 	normal := make(map[string]*strings.Builder)
 	var normalOrder []string
@@ -457,10 +505,10 @@ func (q *Querier[C]) elevateMcpError(w io.Writer, server string, lines []string)
 		return utils.PrintMcpErrorBlock(w, server, lines, q.dims.Width)
 	}
 	if err := q.clearActivityWindow(w); err != nil {
-		return fmt.Errorf("clear window region before elevating mcp error: %w", err)
+		return diag.Errorf("clear window region before elevating mcp error: %w", err)
 	}
 	if err := utils.PrintMcpErrorBlock(w, server, lines, q.dims.Width); err != nil {
-		return fmt.Errorf("print elevated mcp error: %w", err)
+		return diag.Errorf("print elevated mcp error: %w", err)
 	}
 	return q.activityViewport.RenderPinned(w)
 }
@@ -473,7 +521,7 @@ func (q *Querier[C]) printAnswerInActivityWindow(w io.Writer, answer pub_models.
 		return err
 	}
 	if err := utils.AttemptPrettyPrint(w, answer, q.username, raw); err != nil {
-		return fmt.Errorf("print answer in activity window: %w", err)
+		return diag.Errorf("print answer in activity window: %w", err)
 	}
 	return nil
 }
@@ -489,7 +537,7 @@ func (q *Querier[C]) clearActivityWindow(w io.Writer) error {
 		return nil
 	}
 	if err := table.ClearTermTo(w, rows); err != nil {
-		return fmt.Errorf("clear activity window: %w", err)
+		return diag.Errorf("clear activity window: %w", err)
 	}
 	return nil
 }
@@ -540,7 +588,7 @@ func (q *Querier[C]) closeReasoningIfOpen(ctx context.Context, session *QuerySes
 		q.activityViewport.FinishReasoning()
 		return
 	}
-	if !q.debug && !q.structuredOutput {
+	if !q.debug && !q.structuredOutput && !q.json.active() {
 		w := q.transcriptOut()
 		if q.rawDisplay() {
 			fmt.Fprint(w, "\n[/thinking]\n")
@@ -578,33 +626,30 @@ func (q *Querier[C]) closeReasoningIfOpen(ctx context.Context, session *QuerySes
 func (q *Querier[C]) currentTokenUsage() *pub_models.Usage {
 	tokenCounter, isModelCounter := any(q.Model).(models.UsageTokenCounter)
 	if !isModelCounter {
-		if q.debug {
-			ancli.Okf("is not usage token counter")
-		}
+		runenv.Debugf(q.diagContext(), runenv.SubsystemTextQuerier, "is not usage token counter")
 		return nil
 	}
-	if q.debug && tokenCounter.TokenUsage() != nil {
-		ancli.Okf("token usage: %v", *tokenCounter.TokenUsage())
+	if usage := tokenCounter.TokenUsage(); usage != nil {
+		runenv.Debugf(q.diagContext(), runenv.SubsystemTextQuerier, "token usage: %v", *usage)
 	}
 	return tokenCounter.TokenUsage()
 }
 
 // warnf reports a user-facing warning without desyncing a drawn rolling frame.
 // A live frame is erased, the warning printed where the frame started, and the
-// frame redrawn below it; without a frame the warning prints the way ancli
-// prints it.
+// frame redrawn below it; without a frame the warning prints as a diagnostic.
 func (q *Querier[C]) warnf(format string, args ...any) error {
 	message := fmt.Sprintf(format, args...)
 	if q.activityViewport == nil || !q.usesActivityViewport() {
-		ancli.Warnf("%s", message)
+		runenv.Warnf(q.diagContext(), runenv.SubsystemTextQuerier, "%s", message)
 		return nil
 	}
 	w := q.out
 	if w == nil {
-		w = os.Stdout
+		w = runenv.From(q.diagContext()).Stdout()
 	}
 	if err := q.activityViewport.PrintAbove(w, "warning: "+message); err != nil {
-		return fmt.Errorf("print warning above activity window: %w", err)
+		return diag.Errorf("print warning above activity window: %w", err)
 	}
 	return nil
 }
@@ -630,9 +675,12 @@ func (q *Querier[C]) prepareFinalAnswerPop() error {
 // Query using the underlying model to stream completions and then print the output
 // from the model to stdout. Blocking operation.
 func (q *Querier[C]) Query(ctx context.Context) error {
-	// Catch-all in the csae that stdout isn't set
+	if q.runCtx == nil {
+		q.runCtx = ctx
+	}
+	// Catch-all in the case that stdout isn't set
 	if q.out == nil {
-		q.out = os.Stdout
+		q.out = runenv.From(ctx).Stdout()
 	}
 	// A loop iteration pins its header from the first frame, so the window
 	// exists and shows which iteration runs before any activity arrives. The
@@ -642,7 +690,7 @@ func (q *Querier[C]) Query(ctx context.Context) error {
 	if q.loopProgress != nil && q.usesActivityViewport() {
 		q.ensureActivityViewport()
 		if err := q.activityViewport.RenderPinned(q.out); err != nil {
-			return fmt.Errorf("render loop header: %w", err)
+			return diag.Errorf("render loop header: %w", err)
 		}
 	}
 	// One dimensions watcher for terminal rolling-output sessions. It observes
@@ -723,9 +771,9 @@ func (q *Querier[C]) TextQuery(ctx context.Context, chat pub_models.Chat) (pub_m
 	if err != nil {
 		return pub_models.Chat{}, &PartialRunError{Chat: q.chat, Err: err}
 	}
-	if q.debug && !q.debugTextQuerierPrinted {
+	if !q.debugTextQuerierPrinted && runenv.DebugEnabled(ctx, runenv.SubsystemTextQuerier) {
 		q.debugTextQuerierPrinted = true
-		ancli.PrintOK(fmt.Sprintf("Querier.TextQuery:\n%v", debug.IndentedJsonFmt(q)))
+		runenv.Debugf(ctx, runenv.SubsystemTextQuerier, "Querier.TextQuery:\n%v", debug.IndentedJsonFmt(q))
 	}
 
 	return q.chat, nil
@@ -763,4 +811,12 @@ func (q *Querier[C]) SetSummarizer(s models.Summarizer) {
 // setImageTurn replaces the turn's image wiring; nil restores the default for the config dir.
 func (q *Querier[C]) setImageTurn(t *ImageTurn) {
 	q.imageTurn = t
+}
+
+// diagContext is the run context of the querier's diagnostics.
+func (q *Querier[C]) diagContext() context.Context {
+	if q.runCtx == nil {
+		return context.Background()
+	}
+	return q.runCtx
 }

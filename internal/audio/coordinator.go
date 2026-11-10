@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/baalimago/clai/internal/board"
-	"github.com/baalimago/clai/internal/utils"
+	"github.com/baalimago/clai/internal/diag"
 )
 
 const defaultMaxRequestsPerChunk = 4
@@ -100,12 +100,14 @@ type Coordinator struct {
 	Endpoint            string
 	Options             string
 	StatusOut           io.Writer
+	// StatusLive draws the board as on a terminal.
+	StatusLive bool
 
 	totals   Totals
 	totalsMu sync.Mutex
 	cache    *requestCache
 	registry *SpeakerRegistry
-	board    *board.Board
+	board    *chunkBoard
 	// forceLive renders the board as on a terminal (tests)
 	forceLive bool
 	eta       *etaModel
@@ -156,7 +158,7 @@ func (c *Coordinator) Run(ctx context.Context, filePath string) ([]Segment, erro
 	for i, core := range plan.Cores {
 		spans[i] = SourceInterval{Start: core.Start, End: core.End}
 	}
-	c.board = newProgressBoard(c.StatusOut, c.forceLive || utils.IsTerminalWriter(c.StatusOut), fmt.Sprintf("calibrated diarization  %v  %v cores × %v  reserve %v  %v workers  ≤%v requests",
+	c.board = newChunkBoard(ctx, c.StatusOut, c.forceLive || c.StatusLive, fmt.Sprintf("calibrated diarization  %v  %v cores × %v  reserve %v  %v workers  ≤%v requests",
 		filepath.Base(filePath), len(plan.Cores), plan.CoreTarget.Round(time.Second), plan.PrefixReserve, c.workers(), c.limit()*len(plan.Cores)), spans)
 
 	c.spans = spans
@@ -181,7 +183,9 @@ func (c *Coordinator) Run(ctx context.Context, filePath string) ([]Segment, erro
 	go c.board.Animate(runCtx)
 	results := make([]chunkResult, len(plan.Cores))
 	defer func() {
-		// Leave the board readable on every exit path
+		// Leave the board readable on every exit path; the success path
+		// finished it already, so reaching here unfinished is a failure.
+		c.board.Fail()
 		c.board.Finish(c.board.Footer())
 	}()
 	// Bootstrap on the first core, sequentially
@@ -286,7 +290,7 @@ func (c *Coordinator) requestFor(assembler RequestAssembler, st *chunkState) Req
 		st.mu.Unlock()
 		m, err := assembler.Assemble(ctx, AssembleRequest{Samples: samples, Core: core})
 		if err != nil {
-			return nil, nil, fmt.Errorf("chunk %v: %w", st.index+1, err)
+			return nil, nil, diag.Errorf("chunk %v: %w", st.index+1, err)
 		}
 		defer assembler.Remove(m)
 		key := cacheKey{requestHash: m.RequestHash, model: c.Model, endpoint: c.Endpoint, options: c.Options}
@@ -312,8 +316,8 @@ func (c *Coordinator) requestFor(assembler RequestAssembler, st *chunkState) Req
 		segs, err := c.Transcriber.TranscribeRequest(ctx, m)
 		c.eta.completed(st.index, time.Now())
 		if err != nil {
-			c.board.Update(st.index, func(r *board.Row) { r.Active, r.Mark, r.Cells[colState] = false, board.MarkWarn, "request failed" })
-			return nil, nil, fmt.Errorf("chunk %v request %v (%v with %v samples): %w", st.index+1, st.consumed, m.Duration.Round(time.Second), len(samples), err)
+			c.board.Update(st.index, func(r *board.Row) { r.Active, r.Mark, r.Cells[colState] = false, board.MarkWarn, stateRequestFailed })
+			return nil, nil, diag.Errorf("chunk %v request %v (%v with %v samples): %w", st.index+1, st.consumed, m.Duration.Round(time.Second), len(samples), err)
 		}
 		c.board.Update(st.index, func(r *board.Row) {
 			r.Cells[colState] = purpose + " · mapping"

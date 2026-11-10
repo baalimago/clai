@@ -6,6 +6,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/table"
@@ -51,7 +52,7 @@ func printTruncatedMessage(w io.Writer, m pub_models.Message, i int, section str
 	m.ReasoningContent = ""
 	fmt.Fprintf(w, "%s ", table.Colorize(utils.TableTheme().Primary, fmt.Sprintf("[#%-3d]", i)))
 	if err := utils.AttemptPrettyPrint(w, m, "user", raw); err != nil {
-		return fmt.Errorf("pretty print %s message %d: %w", section, i, err)
+		return diag.Errorf("pretty print %s message %d: %w", section, i, err)
 	}
 	return nil
 }
@@ -102,7 +103,7 @@ func printChatObfuscated(w io.Writer, ch pub_models.Chat, raw bool, width int) e
 	m0.ReasoningContent = ""
 	fmt.Fprintf(w, "%s ", table.Colorize(utils.TableTheme().Primary, fmt.Sprintf("[#%-3d]", firstUserIdx)))
 	if err := utils.AttemptPrettyPrint(w, m0, "user", raw); err != nil {
-		return fmt.Errorf("pretty print first user message: %w", err)
+		return diag.Errorf("pretty print first user message: %w", err)
 	}
 
 	headEnd := min(firstUserIdx+1+headTruncated, msgCount-1)
@@ -130,7 +131,7 @@ func printChatObfuscated(w io.Writer, ch pub_models.Chat, raw bool, width int) e
 				messageDisplayText(m), prefix, "", utils.TableTheme().Breadtext, 5, width,
 			)
 			if _, err := fmt.Fprintln(w, trunc); err != nil {
-				return fmt.Errorf("write bridge line: %w", err)
+				return diag.Errorf("write bridge line: %w", err)
 			}
 		}
 
@@ -139,7 +140,7 @@ func printChatObfuscated(w io.Writer, ch pub_models.Chat, raw bool, width int) e
 		if gapCount > 0 {
 			gapLine := table.Colorize(utils.TableTheme().Secondary, fmt.Sprintf("\n            ... and %d more entries\n", gapCount))
 			if _, err := fmt.Fprintln(w, gapLine); err != nil {
-				return fmt.Errorf("write gap label: %w", err)
+				return diag.Errorf("write gap label: %w", err)
 			}
 		}
 
@@ -165,7 +166,7 @@ func printChatObfuscated(w io.Writer, ch pub_models.Chat, raw bool, width int) e
 	last.ReasoningContent = ""
 	fmt.Fprintf(w, "%s ", table.Colorize(utils.TableTheme().Primary, fmt.Sprintf("[#%-3d]", msgCount-1)))
 	if err := utils.AttemptPrettyPrint(w, last, "user", raw); err != nil {
-		return fmt.Errorf("pretty print last message: %w", err)
+		return diag.Errorf("pretty print last message: %w", err)
 	}
 
 	return nil

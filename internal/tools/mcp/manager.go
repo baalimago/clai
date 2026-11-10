@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/baalimago/clai/internal/diag"
+	"github.com/baalimago/clai/internal/runenv"
 	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
 // ToolRegistrar receives the MCP tools discovered for one server. The
@@ -59,7 +61,7 @@ func Manager(ctx context.Context, controlChannel <-chan ControlEvent, allToolsWg
 						startupFailures <- StartupFailure{ServerName: e.ServerName, Err: err}
 						return
 					}
-					ancli.Warnf("failed to setup mcp server '%v': %v\n", e.ServerName, err)
+					runenv.Warnf(ctx, runenv.SubsystemMCP, "failed to setup mcp server '%v': %v", e.ServerName, err)
 				}
 			}(ev)
 		case <-ctx.Done():
@@ -112,7 +114,7 @@ func Handshake(ctx context.Context, conn Conn, serverName string) (serverInfo, t
 	}
 	toolsArray, err = extractToolsArray(listRaw)
 	if err != nil {
-		return nil, nil, claierr.NewMcpServerStartup(serverName, "tools/list", fmt.Errorf("decode list result: %w", err))
+		return nil, nil, claierr.NewMcpServerStartup(serverName, "tools/list", diag.Errorf("decode list result: %w", err))
 	}
 	return extractServerInfo(initRaw), toolsArray, nil
 }
@@ -152,17 +154,17 @@ func extractToolsArray(listRaw json.RawMessage) (json.RawMessage, error) {
 // what makes them register an identical tool set. authResolver and
 // authTimeout are phase 6's addition, carried onto every tool this call
 // registers unchanged; authResolver may be nil.
-func RegisterTools(toolsArray json.RawMessage, serverName string, connector Connector, timeout time.Duration, registrar ToolRegistrar, authResolver AuthResolver, authTimeout time.Duration) error {
+func RegisterTools(ctx context.Context, toolsArray json.RawMessage, serverName string, connector Connector, timeout time.Duration, registrar ToolRegistrar, authResolver AuthResolver, authTimeout time.Duration) error {
 	var tools []Tool
 	if err := json.Unmarshal(toolsArray, &tools); err != nil {
-		return claierr.NewMcpServerStartup(serverName, "tools/list", fmt.Errorf("decode tools array: %w", err))
+		return claierr.NewMcpServerStartup(serverName, "tools/list", diag.Errorf("decode tools array: %w", err))
 	}
 	for _, t := range tools {
 		t.InputSchema.Patch()
 		toolName := fmt.Sprintf("mcp_%s_%s", serverName, t.Name)
 
 		if !t.InputSchema.IsOk() {
-			ancli.Warnf("tool: '%v' has issues that the LLM will complain about, skipping\n", toolName)
+			runenv.Warnf(ctx, runenv.SubsystemMCP, "tool: '%v' has issues that the LLM will complain about, skipping", toolName)
 			continue
 		}
 		spec := pub_models.Specification{
@@ -170,6 +172,10 @@ func RegisterTools(toolsArray json.RawMessage, serverName string, connector Conn
 			Description: t.Description,
 			Inputs:      &t.InputSchema,
 		}
+		if strings.Contains(spec.Name, "printEnv") || strings.Contains(spec.Name, "get-env") {
+			runenv.Warnf(ctx, runenv.SubsystemTools, "found env printing tool, skipping for security's sake. Tool name: '%v'", spec.Name)
+		}
+		runenv.Debugf(ctx, runenv.SubsystemToolsRegistrySet, "adding tool to registry, name: %v", spec.Name)
 		registrar.Set(spec.Name, NewTool(connector, t.Name, spec, timeout, serverName, authResolver, authTimeout))
 	}
 	return nil
@@ -207,7 +213,7 @@ func handleServer(ctx context.Context, ev ControlEvent, registrar ToolRegistrar)
 	// later challenge on this same Conn (e.g. an access token revoked
 	// mid-run) is out of this phase's scope: no resolver, no wait. nil, 0
 	// keep that explicit rather than implicit.
-	if err := RegisterTools(toolsArray, ev.ServerName, resolvedConnector{ev.Conn}, time.Duration(ev.Server.TimeoutSeconds)*time.Second, registrar, nil, 0); err != nil {
+	if err := RegisterTools(ctx, toolsArray, ev.ServerName, resolvedConnector{ev.Conn}, time.Duration(ev.Server.TimeoutSeconds)*time.Second, registrar, nil, 0); err != nil {
 		return err
 	}
 	initOk = true

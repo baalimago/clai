@@ -18,6 +18,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/baalimago/clai/internal/diag"
 )
 
 // Procs caps a test binary: go test runs about one race binary per core at
@@ -126,7 +128,7 @@ func pinGoDirs() error {
 	}
 	for _, name := range goDirNames() {
 		if err := os.Setenv(name, values[name]); err != nil {
-			return fmt.Errorf("pin %s: %w", name, err)
+			return diag.Errorf("pin %s: %w", name, err)
 		}
 	}
 	return nil
@@ -135,11 +137,11 @@ func pinGoDirs() error {
 func goEnv(names []string) (map[string]string, error) {
 	out, err := exec.Command("go", append([]string{"env", "-json"}, names...)...).Output()
 	if err != nil {
-		return nil, fmt.Errorf("go env: %w", err)
+		return nil, diag.Errorf("go env: %w", err)
 	}
 	var values map[string]string
 	if err := json.Unmarshal(out, &values); err != nil {
-		return nil, fmt.Errorf("decode go env: %w", err)
+		return nil, diag.Errorf("decode go env: %w", err)
 	}
 	for _, name := range names {
 		if values[name] == "" {
@@ -152,15 +154,15 @@ func goEnv(names []string) (map[string]string, error) {
 func derivedGoDirs() (map[string]string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return nil, fmt.Errorf("resolve home for GOPATH: %w", err)
+		return nil, diag.Errorf("resolve home for GOPATH: %w", err)
 	}
 	cache, err := os.UserCacheDir()
 	if err != nil {
-		return nil, fmt.Errorf("resolve cache dir for GOCACHE: %w", err)
+		return nil, diag.Errorf("resolve cache dir for GOCACHE: %w", err)
 	}
 	config, err := os.UserConfigDir()
 	if err != nil {
-		return nil, fmt.Errorf("resolve config dir for GOENV: %w", err)
+		return nil, diag.Errorf("resolve config dir for GOENV: %w", err)
 	}
 	gopath := cmp.Or(os.Getenv("GOPATH"), filepath.Join(home, "go"))
 	return map[string]string{
@@ -199,7 +201,7 @@ type Swept int
 func sweepStaleHomes(base string, olderThan time.Duration) (Swept, error) {
 	entries, err := os.ReadDir(base)
 	if err != nil {
-		return 0, fmt.Errorf("list %s for stale test homes: %w", base, err)
+		return 0, diag.Errorf("list %s for stale test homes: %w", base, err)
 	}
 	cutoff := time.Now().Add(-olderThan)
 	var swept Swept
@@ -213,7 +215,7 @@ func sweepStaleHomes(base string, olderThan time.Duration) (Swept, error) {
 			continue
 		}
 		if err := os.RemoveAll(filepath.Join(base, e.Name())); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			errs = append(errs, fmt.Errorf("remove stale test home %s: %w", e.Name(), err))
+			errs = append(errs, diag.Errorf("remove stale test home %s: %w", e.Name(), err))
 			continue
 		}
 		swept++
@@ -224,14 +226,14 @@ func sweepStaleHomes(base string, olderThan time.Duration) (Swept, error) {
 func isolateHome() (Home, error) {
 	dir, err := os.MkdirTemp(homeBase(), homePrefix)
 	if err != nil {
-		return "", fmt.Errorf("create test home: %w", err)
+		return "", diag.Errorf("create test home: %w", err)
 	}
 	// Temporary files land inside the home too: one entry in the developer's
 	// temp dir per binary, however many entries that dir already holds, and
 	// nothing left behind there.
 	tmp := filepath.Join(dir, "tmp")
 	if err := os.Mkdir(tmp, 0o755); err != nil {
-		return Home(dir), fmt.Errorf("create test tmp dir: %w", err)
+		return Home(dir), diag.Errorf("create test tmp dir: %w", err)
 	}
 	for key, path := range map[string]string{
 		"HOME":            dir,
@@ -241,7 +243,7 @@ func isolateHome() (Home, error) {
 		"TMPDIR":          tmp,
 	} {
 		if err := os.Setenv(key, path); err != nil {
-			return Home(dir), fmt.Errorf("set %s: %w", key, err)
+			return Home(dir), diag.Errorf("set %s: %w", key, err)
 		}
 	}
 	return Home(dir), nil
@@ -258,12 +260,12 @@ func blankEnv() error {
 			continue
 		}
 		if err := os.Unsetenv(name); err != nil {
-			return fmt.Errorf("unset %s: %w", name, err)
+			return diag.Errorf("unset %s: %w", name, err)
 		}
 	}
 	for name, value := range map[string]string{"TTY": os.DevNull, "LC_ALL": "C"} {
 		if err := os.Setenv(name, value); err != nil {
-			return fmt.Errorf("set %s: %w", name, err)
+			return diag.Errorf("set %s: %w", name, err)
 		}
 	}
 	return nil

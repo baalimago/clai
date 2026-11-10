@@ -46,7 +46,7 @@ func newFixture(t *testing.T) *fixture {
 		NewResolver: func(confDir string, prompt remote.Prompter) (remote.Resolver, error) {
 			return remote.NewResolver(remote.Env{CloudURL: srv.URL}, confDir, cacheDir, srv.Client(), prompt, nil)
 		},
-		ConfigDir: func() (string, error) { return f.confDir, nil },
+		ConfigDir: func(context.Context) (string, error) { return f.confDir, nil },
 		Out:       f.out,
 	}
 	return f
@@ -181,7 +181,7 @@ func TestRemoteCommands_needDeps(t *testing.T) {
 	if err := empty.Trust(t.Context(), "cchub:ada/bot"); err == nil {
 		t.Fatal("no config dir: want error")
 	}
-	empty.ConfigDir = func() (string, error) { return t.TempDir(), nil }
+	empty.ConfigDir = func(context.Context) (string, error) { return t.TempDir(), nil }
 	for _, run := range []func() error{
 		func() error { return empty.Trust(t.Context(), "cchub:ada/bot") },
 		func() error { return empty.Install(t.Context(), "cchub:ada/bot", "") },
@@ -257,7 +257,7 @@ func TestUpdate_allAsksBeforeANewVersion(t *testing.T) {
 	f.files["/hub/ada/bot/raw"] = `{"model":"test","prompt":"v2"}`
 	var asked []string
 	answer := false
-	asking := func() remote.Prompter {
+	asking := func(context.Context) remote.Prompter {
 		return func(_ context.Context, p remote.TrustPrompt) (bool, error) {
 			asked = append(asked, p.Target)
 			return answer, nil
@@ -271,7 +271,7 @@ func TestUpdate_allAsksBeforeANewVersion(t *testing.T) {
 	if p := f.profile(t, "bot"); p["prompt"] != "v1" {
 		t.Fatalf("a declined version was written: %v", p)
 	}
-	f.deps.NewPrompt = func() remote.Prompter { return nil }
+	f.deps.NewPrompt = func(context.Context) remote.Prompter { return nil }
 	if err := f.deps.Update(t.Context(), ""); !errors.As(err, &untrusted) {
 		t.Fatalf("nobody to ask: err = %v, want an UntrustedError", err)
 	}

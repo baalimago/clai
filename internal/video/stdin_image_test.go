@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/baalimago/clai/internal/testenv/procenv"
 )
 
 // soraRecorder answers every request with 500 after keeping the input_reference part.
@@ -86,16 +88,16 @@ func TestVideo_StdinImage(t *testing.T) {
 	run := func(args ...string) {
 		t.Helper()
 		c := Command(CommandDeps{
-			ConfigPrep: func() (string, error) { return confDir, nil },
+			ConfigPrep: func(context.Context) (string, error) { return confDir, nil },
 			Client:     &http.Client{Transport: recorder},
 		})
 		if err := c.Flagset().Parse(append([]string{"-vm", "sora-2", "-vd", t.TempDir()}, args...)); err != nil {
 			t.Fatalf("Parse: %v", err)
 		}
-		if err := c.Setup(context.Background()); err != nil {
+		if err := c.Setup(procenv.Context(context.Background())); err != nil {
 			t.Fatalf("Setup: %v", err)
 		}
-		if err := c.Run(context.Background()); err == nil || !strings.Contains(err.Error(), "500 stop") {
+		if err := c.Run(procenv.Context(context.Background())); err == nil || !strings.Contains(err.Error(), "500 stop") {
 			t.Fatalf("Run: %v, want the recorder's stop", err)
 		}
 	}

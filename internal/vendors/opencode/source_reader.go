@@ -25,6 +25,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/sqlitepage"
 	"github.com/baalimago/clai/internal/vendors"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -140,7 +141,7 @@ func (r SourceReader) countMessages(ctx context.Context, db *sqlitepage.DB) (map
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("scan opencode messages: %w", err)
+		return nil, diag.Errorf("scan opencode messages: %w", err)
 	}
 	return counts, nil
 }
@@ -187,7 +188,7 @@ func (r SourceReader) discoverRows(ctx context.Context, db *sqlitepage.DB, count
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("scan opencode sessions: %w", err)
+		return nil, diag.Errorf("scan opencode sessions: %w", err)
 	}
 	return rows, nil
 }
@@ -198,7 +199,7 @@ func (r SourceReader) Read(ctx context.Context, _ vendors.SourceCache, sourceID 
 	}
 	db, err := r.open()
 	if err != nil {
-		return pub_models.Chat{}, fmt.Errorf("read opencode session %q: %w", sourceID, err)
+		return pub_models.Chat{}, diag.Errorf("read opencode session %q: %w", sourceID, err)
 	}
 	defer db.Close()
 
@@ -247,7 +248,7 @@ func (r SourceReader) sessionMessages(ctx context.Context, db *sqlitepage.DB, so
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("scan opencode messages: %w", err)
+		return nil, diag.Errorf("scan opencode messages: %w", err)
 	}
 	sort.SliceStable(rows, func(i, j int) bool { return rows[i].seq < rows[j].seq })
 
@@ -284,7 +285,7 @@ func findSession(ctx context.Context, db *sqlitepage.DB, sourceID string) (sessi
 		return errStopScan
 	})
 	if err != nil && !errors.Is(err, errStopScan) {
-		return sessionRow{}, fmt.Errorf("scan opencode sessions: %w", err)
+		return sessionRow{}, diag.Errorf("scan opencode sessions: %w", err)
 	}
 	if found.id == "" {
 		return sessionRow{}, fmt.Errorf("opencode session %q not found", sourceID)
@@ -300,9 +301,9 @@ func (r SourceReader) open() (*sqlitepage.DB, error) {
 	db, err := sqlitepage.Open(p)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return nil, fmt.Errorf("%w: %s", errNoDatabase, p)
+			return nil, diag.Errorf("%w: %s", errNoDatabase, p)
 		}
-		return nil, fmt.Errorf("open opencode database %q: %w", p, err)
+		return nil, diag.Errorf("open opencode database %q: %w", p, err)
 	}
 	return db, nil
 }

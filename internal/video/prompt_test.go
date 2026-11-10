@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baalimago/clai/internal/testenv/procenv"
+
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -55,7 +57,7 @@ func TestSetupPrompts(t *testing.T) {
 			Prompt:       "",
 		}
 
-		if err := conf.SetupPrompts(context.Background(), args); err != nil {
+		if err := conf.SetupPrompts(procenv.Context(context.Background()), args); err != nil {
 			t.Fatalf("SetupPrompts failed: %v", err)
 		}
 
@@ -86,7 +88,7 @@ func TestSetupPrompts(t *testing.T) {
 			Prompt:       "",
 		}
 
-		if err := conf.SetupPrompts(context.Background(), args); err != nil {
+		if err := conf.SetupPrompts(procenv.Context(context.Background()), args); err != nil {
 			t.Fatalf("SetupPrompts failed: %v", err)
 		}
 
@@ -105,7 +107,7 @@ func TestSetupPrompts(t *testing.T) {
 			Prompt:       "",
 		}
 
-		if err := conf.SetupPrompts(context.Background(), args); err != nil {
+		if err := conf.SetupPrompts(procenv.Context(context.Background()), args); err != nil {
 			t.Fatalf("SetupPrompts failed: %v", err)
 		}
 

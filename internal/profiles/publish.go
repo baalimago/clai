@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/baalimago/clai/internal"
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/profile"
 )
 
@@ -71,7 +72,8 @@ var hubName = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,58}[a-z0-9])?$`)
 // Publish sends a local profile, by name or path, to the Hub. It is checked
 // as strictly as a remote profile and for credentials before it leaves.
 func (d CommandDeps) Publish(ctx context.Context, ref string, opts PublishOptions) error {
-	confDir, err := d.configDir()
+	d = d.withEnv(ctx)
+	confDir, err := d.configDir(ctx)
 	if err != nil {
 		return err
 	}
@@ -81,7 +83,7 @@ func (d CommandDeps) Publish(ctx context.Context, ref string, opts PublishOption
 	}
 	body, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("read profile %s: %w", ref, err)
+		return diag.Errorf("read profile %s: %w", ref, err)
 	}
 	name := opts.Name
 	if name == "" {
@@ -98,7 +100,7 @@ func (d CommandDeps) Publish(ctx context.Context, ref string, opts PublishOption
 	env.ToolNames = nil
 	findings, err := profile.Validate(body, profile.Publish, env)
 	if err != nil {
-		return fmt.Errorf("check %s: %w", path, err)
+		return diag.Errorf("check %s: %w", path, err)
 	}
 	if problems := findings.Problems(profile.Publish); len(problems) > 0 {
 		// Clause 7 gives a refused body one status on every route, 1; a run's
@@ -135,7 +137,7 @@ func (d CommandDeps) send(ctx context.Context, confDir, arg string, req PublishR
 		case "alias":
 			sub = "cloud publish alias"
 		}
-		return fmt.Errorf("%w: clai %s %s -handle %s", err, sub, arg, handle.Suggested)
+		return diag.Errorf("%w: clai %s %s -handle %s", err, sub, arg, handle.Suggested)
 	}
 	if err != nil {
 		return err
@@ -145,11 +147,7 @@ func (d CommandDeps) send(ctx context.Context, confDir, arg string, req PublishR
 	if !res.Created {
 		what = " (a new version)"
 	}
-	out := d.Out
-	if out == nil {
-		out = os.Stdout
-	}
-	fmt.Fprintf(out, "Published %s%s\n  %s\n  %s\n", pinned, what, res.URL, use(pinned+"#sha256="+res.SHA256))
+	fmt.Fprintf(d.out(), "Published %s%s\n  %s\n  %s\n", pinned, what, res.URL, use(pinned+"#sha256="+res.SHA256))
 	return nil
 }
 

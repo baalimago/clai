@@ -1,12 +1,12 @@
 package xai
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/text/generic"
 
+	"github.com/baalimago/clai/internal/diag"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -35,7 +35,7 @@ func (g *XAI) Setup() error {
 	}
 	err := g.StreamCompleter.Setup("XAI_API_KEY", ChatURL, "XAI_DEBUG")
 	if err != nil {
-		return fmt.Errorf("failed to setup stream completer: %w", err)
+		return diag.Errorf("failed to setup stream completer: %w", err)
 	}
 	// Vendor decoder for both decode points (non-OK body and error frame at
 	// HTTP 200), per worklog 2026-09-05-error-propagation D11/D12.

@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"fmt"
 
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -33,9 +34,15 @@ var AudioTranscribe = AudioTranscribeTool{
 // AudioTranscribeEngine is injected by the clai runtime (mode-as-tool bridge):
 // the tool layer holds no transcription logic and pkg/tools stays free of
 // engine dependencies.
-var AudioTranscribeEngine func(filePath, outputFormat string) (string, error)
+var AudioTranscribeEngine func(ctx context.Context, filePath, outputFormat string) (string, error)
 
 func (a AudioTranscribeTool) Call(input pub_models.Input) (string, error) {
+	return a.CallWithContext(context.Background(), input)
+}
+
+// CallWithContext runs the engine on ctx, so its progress and notices reach
+// the run's streams.
+func (a AudioTranscribeTool) CallWithContext(ctx context.Context, input pub_models.Input) (string, error) {
 	filePath, ok := input["file_path"].(string)
 	if !ok || filePath == "" {
 		return "", fmt.Errorf("file_path must be a non-empty string")
@@ -51,7 +58,7 @@ func (a AudioTranscribeTool) Call(input pub_models.Input) (string, error) {
 	if AudioTranscribeEngine == nil {
 		return "", fmt.Errorf("audio transcription engine is not wired into this runtime")
 	}
-	return AudioTranscribeEngine(filePath, outputFormat)
+	return AudioTranscribeEngine(ctx, filePath, outputFormat)
 }
 
 func (a AudioTranscribeTool) Specification() pub_models.Specification {

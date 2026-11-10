@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baalimago/clai/internal/testenv/procenv"
+	"github.com/baalimago/clai/pkg/diagnostic"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -59,18 +61,19 @@ func startAndWait(t *testing.T, m *Manager) error {
 func TestNewManagerResolverDefaultsToModel(t *testing.T) {
 	t.Setenv("DEBUG_COST_MANAGER", "")
 	m := NewManager(nil, "gpt-4o", "")
-	if m.debug {
-		t.Errorf("debug = true without the flag")
-	}
 	if got := m.modelResolver(pub_models.Chat{}); got != "gpt-4o" {
 		t.Errorf("default resolver = %q, want gpt-4o", got)
 	}
 }
 
-func TestNewManagerDebugFlag(t *testing.T) {
-	t.Setenv("DEBUG_COST_MANAGER", "1")
-	if m := NewManager(nil, "gpt-4o", ""); !m.debug {
-		t.Errorf("debug = false with DEBUG_COST_MANAGER set")
+func TestManagerStartReportsDebugDetail(t *testing.T) {
+	var out strings.Builder
+	m := NewManager(nil, "gpt-4o", "")
+	_, errCh := m.Start(procenv.Diagnostics(context.Background(), &out, diagnostic.LevelDebug))
+	for range errCh {
+	}
+	if !strings.Contains(out.String(), "setting up cost manager") {
+		t.Errorf("diagnostics = %q, want the cost manager debug detail", out.String())
 	}
 }
 

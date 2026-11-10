@@ -49,10 +49,12 @@ type encoderRow struct {
 	open  func(t *testing.T, url string) models.StreamCompleter
 }
 
+// Each reply carries one word of text: a stream that finishes with nothing
+// in it is a failed run, not a reply.
 const (
-	chatCompletionsDone = "data: [DONE]\n\n"
-	responsesDone       = "data: {\"type\":\"response.completed\"}\n\n"
-	anthropicDone       = "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+	chatCompletionsDone = "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"ok\"}}]}\n\ndata: [DONE]\n\n"
+	responsesDone       = "data: {\"type\":\"response.output_text.delta\",\"delta\":\"ok\"}\n\ndata: {\"type\":\"response.completed\"}\n\n"
+	anthropicDone       = "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"ok\"}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
 )
 
 func setTurnVendorKeys(t *testing.T) {

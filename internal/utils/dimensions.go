@@ -13,14 +13,14 @@ import (
 // yields its live size, and a non-terminal writer, a failed read, or a
 // reported zero size deterministically yields dimensions.Fallback (80x24).
 // No error propagates, matching the legacy silent fallback. A nil writer
-// resolves to os.Stdout.
+// resolves to a non-terminal.
 //
 // This is the single width-discovery point of clai. Every width-aware render
 // path either stores the result of this helper for its session (the querier's
 // snapshot) or calls it once at the start of a standalone render operation.
 func SessionDimensions(w io.Writer) dimensions.Dimensions {
 	if w == nil {
-		w = os.Stdout
+		w = io.Discard
 	}
 	if f, ok := w.(*os.File); ok {
 		if d, err := dimensions.DefaultReader(f.Fd())(); err == nil {

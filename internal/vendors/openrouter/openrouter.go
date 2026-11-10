@@ -2,11 +2,11 @@ package openrouter
 
 import (
 	"context"
-	"fmt"
 	"slices"
 	"strings"
 	"time"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/text/generic"
 	"github.com/baalimago/clai/pkg/claierr"
@@ -51,7 +51,7 @@ type modalityAnswer struct {
 func (o *OpenRouter) Setup() error {
 	err := o.StreamCompleter.Setup("OPENROUTER_API_KEY", ChatURL, "DEBUG_OPENROUTER")
 	if err != nil {
-		return fmt.Errorf("failed to setup stream completer: %w", err)
+		return diag.Errorf("failed to setup stream completer: %w", err)
 	}
 
 	// Vendor decoder for both decode points (non-OK body and error frame at
@@ -123,7 +123,7 @@ func (o *OpenRouter) StreamCompletions(ctx context.Context, chat pub_models.Chat
 func (o *OpenRouter) producesImages(ctx context.Context) error {
 	modalities, err := o.outputModalities(ctx)
 	if err != nil {
-		return fmt.Errorf("openrouter: look up the output modalities of %q: %w", o.modelName(), err)
+		return diag.Errorf("openrouter: look up the output modalities of %q: %w", o.modelName(), err)
 	}
 	if !slices.Contains(modalities, "image") {
 		return &claierr.ImageUnsupportedError{Vendor: vendorName, Model: o.modelName(), Reason: "model has no image output modality"}

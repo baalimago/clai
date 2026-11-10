@@ -1,6 +1,7 @@
 package glob
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -37,13 +38,13 @@ func TestParseGlob(t *testing.T) {
 	}()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseGlob(tt.glob)
+			got, err := parseGlob(context.Background(), tt.glob)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("parseGlob() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("parseGlob(context.Background(), ) error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if len(got) != tt.want {
-				t.Errorf("parseGlob() got %v messages, want %v", len(got), tt.want)
+				t.Errorf("parseGlob(context.Background(), ) got %v messages, want %v", len(got), tt.want)
 			}
 		})
 	}
@@ -72,7 +73,7 @@ func TestSetup(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			flag.Parse()
-			_, _, err := Setup("", tc.args)
+			_, _, err := Setup(context.Background(), "", tc.args)
 			if tc.expectedErr && err == nil {
 				t.Errorf("Expected an error, but got none")
 			}
@@ -89,7 +90,7 @@ func TestCreateChat(t *testing.T) {
 	systemPrompt := "You are a helpful assistant."
 
 	// Run the function
-	chat, err := CreateChat(glob, systemPrompt)
+	chat, err := CreateChat(context.Background(), glob, systemPrompt)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -144,7 +145,7 @@ func TestReadFiles_SkipsUnreadableMatches(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(dir, "sub"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	files, err := ReadFiles(filepath.Join(dir, "*"))
+	files, err := ReadFiles(context.Background(), filepath.Join(dir, "*"))
 	if err != nil {
 		t.Fatalf("ReadFiles: %v", err)
 	}
@@ -154,7 +155,7 @@ func TestReadFiles_SkipsUnreadableMatches(t *testing.T) {
 }
 
 func TestReadFiles_NoFiles(t *testing.T) {
-	if _, err := ReadFiles(filepath.Join(t.TempDir(), "*.none")); !errors.Is(err, ErrNoFiles) {
+	if _, err := ReadFiles(context.Background(), filepath.Join(t.TempDir(), "*.none")); !errors.Is(err, ErrNoFiles) {
 		t.Fatalf("ReadFiles error = %v, want ErrNoFiles", err)
 	}
 }

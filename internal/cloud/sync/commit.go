@@ -6,6 +6,8 @@ import (
 	"os"
 	"slices"
 	"strings"
+
+	"github.com/baalimago/clai/internal/diag"
 )
 
 // ConflictsOpenError is a commit refused because pull left conflicts that
@@ -60,7 +62,7 @@ func (e *Engine) Commit(ctx context.Context, store Store, opts CommitOptions) (C
 			e.report(Progress{Store: store, Phase: PhaseExporting, Done: done, Total: total})
 		}
 		if err := e.Hooks.Export(ctx, e.ConfDir, exported); err != nil {
-			return res, fmt.Errorf("export imported conversations: %w", err)
+			return res, diag.Errorf("export imported conversations: %w", err)
 		}
 	}
 	st, err := loadState(e.ConfDir, store)

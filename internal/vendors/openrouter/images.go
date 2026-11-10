@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/baalimago/clai/internal/asset"
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/imagegen"
 	"github.com/baalimago/clai/internal/text/generic"
 	"github.com/baalimago/clai/pkg/claierr"
@@ -57,7 +57,7 @@ func (g *ImageGenerator) Generate(ctx context.Context, req imagegen.ImageRequest
 	httpReq.Header.Set("X-OpenRouter-Title", "clai")
 	resp, err := imagegen.Exchange[imagesResponse](g.client, httpReq, imageFailure)
 	if err != nil {
-		return nil, fmt.Errorf("openrouter images: %w", err)
+		return nil, diag.Errorf("openrouter images: %w", err)
 	}
 	var images []imagegen.GeneratedImage
 	for _, d := range resp.Data {
@@ -66,12 +66,12 @@ func (g *ImageGenerator) Generate(ctx context.Context, req imagegen.ImageRequest
 		}
 		part, err := generic.GeneratedImage(d.B64JSON, d.MediaType)
 		if err != nil {
-			return nil, fmt.Errorf("openrouter images: %w", err)
+			return nil, diag.Errorf("openrouter images: %w", err)
 		}
 		images = append(images, imagegen.GeneratedImage{Image: asset.Image{Data: part.Data, MIME: part.MIME}})
 	}
 	if len(images) == 0 {
-		return nil, fmt.Errorf("openrouter images: %w", imagegen.ErrNoImage)
+		return nil, diag.Errorf("openrouter images: %w", imagegen.ErrNoImage)
 	}
 	return images, nil
 }

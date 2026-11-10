@@ -39,13 +39,14 @@ func TestClaudeStream_ClosesAfterEOFWithoutDoubleSend(t *testing.T) {
 		pw.Close()
 	}()
 
-	// Consumer mirrors the session runner: return on io.EOF, never read again.
+	// Consumer mirrors the session runner: return on the terminal error, never
+	// read again. A stream that ends without message_stop is truncated.
 	for {
 		ev, ok := <-out
 		if !ok {
-			t.Fatal("channel closed before the io.EOF terminal event")
+			t.Fatal("channel closed before the terminal truncation event")
 		}
-		if asErr, isErr := ev.(error); isErr && errors.Is(asErr, io.EOF) {
+		if asErr, isErr := ev.(error); isErr && errors.Is(asErr, io.ErrUnexpectedEOF) {
 			break
 		}
 	}

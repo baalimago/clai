@@ -4,7 +4,8 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
-	"fmt"
+
+	"github.com/baalimago/clai/internal/diag"
 )
 
 // CodeChallengeMethod is the PKCE parameter clai always advertises and
@@ -16,7 +17,7 @@ const CodeChallengeMethod = "S256"
 func newPKCE() (verifier, challenge string, err error) {
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
-		return "", "", fmt.Errorf("mcpauth: generate pkce verifier: %w", err)
+		return "", "", diag.Errorf("mcpauth: generate pkce verifier: %w", err)
 	}
 	verifier = base64.RawURLEncoding.EncodeToString(raw)
 	sum := sha256.Sum256([]byte(verifier))
@@ -29,7 +30,7 @@ func newPKCE() (verifier, challenge string, err error) {
 func newState() (string, error) {
 	raw := make([]byte, 16)
 	if _, err := rand.Read(raw); err != nil {
-		return "", fmt.Errorf("mcpauth: generate state: %w", err)
+		return "", diag.Errorf("mcpauth: generate state: %w", err)
 	}
 	return base64.RawURLEncoding.EncodeToString(raw), nil
 }

@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"context"
 	"encoding/json"
 	"io/fs"
 	"maps"
@@ -156,7 +157,7 @@ func readGolden(t *testing.T, name string) string {
 // in the cache's own format.
 func mergedIndexBytes(t *testing.T, convDir string) []byte {
 	t.Helper()
-	rows, err := readChatIndex(convDir)
+	rows, err := readChatIndex(context.Background(), convDir)
 	if err != nil {
 		t.Fatalf("readChatIndex: %v", err)
 	}

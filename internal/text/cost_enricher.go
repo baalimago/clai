@@ -1,11 +1,12 @@
 package text
 
 import (
+	"context"
 	"time"
 
 	"github.com/baalimago/clai/internal/debugflags"
+	"github.com/baalimago/clai/internal/runenv"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
 // costEnricher owns the cost-manager readiness handshake: it waits a bounded
@@ -20,12 +21,14 @@ type costEnricher struct {
 	warnf   func(format string, a ...any)
 }
 
-func newCostEnricher(manager CostManager, ready <-chan struct{}) costEnricher {
+func newCostEnricher(ctx context.Context, manager CostManager, ready <-chan struct{}) costEnricher {
 	return costEnricher{
 		manager: manager,
 		ready:   ready,
 		waitFor: 200 * time.Millisecond,
-		warnf:   ancli.Errf,
+		warnf: func(format string, a ...any) {
+			runenv.Failuref(ctx, runenv.SubsystemCostManager, format, a...)
+		},
 	}
 }
 

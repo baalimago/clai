@@ -15,6 +15,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/baalimago/clai/internal/diag"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/table"
 	"golang.org/x/text/width"
@@ -55,10 +56,10 @@ func UpdateMessageTerminalMetadata(msg string, line *string, lineCount *int, ter
 // If not found, simply print the message as is.
 // If the message has ReasoningContent, it is rendered with reasoning color before the main content.
 //
-// If w is nil, os.Stdout is used.
+// If w is nil, nothing is printed.
 func AttemptPrettyPrint(w io.Writer, chatMessage pub_models.Message, username string, raw bool) error {
 	if w == nil {
-		w = os.Stdout
+		w = io.Discard
 	}
 
 	content := chatMessage.Content
@@ -82,12 +83,12 @@ func AttemptPrettyPrint(w io.Writer, chatMessage pub_models.Message, username st
 	if table.NoColor() {
 		if chatMessage.ReasoningContent != "" {
 			if _, err := fmt.Fprintf(w, "[thinking]\n%v\n[/thinking]\n%v: %v\n", chatMessage.ReasoningContent, role, content); err != nil {
-				return fmt.Errorf("write chat message with reasoning: %w", err)
+				return diag.Errorf("write chat message with reasoning: %w", err)
 			}
 			return nil
 		}
 		if _, err := fmt.Fprintf(w, "%v: %v\n", role, content); err != nil {
-			return fmt.Errorf("write chat message: %w", err)
+			return diag.Errorf("write chat message: %w", err)
 		}
 		return nil
 	}
@@ -105,25 +106,25 @@ func AttemptPrettyPrint(w io.Writer, chatMessage pub_models.Message, username st
 			reasoningCol := RoleColor("reasoning")
 			if _, err := fmt.Fprintf(w, "%v:\n%v\n", coloredRole,
 				table.Colorize(reasoningCol, "[thinking]\n"+chatMessage.ReasoningContent+"\n[/thinking]\n"+content)); err != nil {
-				return fmt.Errorf("write chat message (no glow, reasoning): %w", err)
+				return diag.Errorf("write chat message (no glow, reasoning): %w", err)
 			}
 			return nil
 		}
 		if _, err := fmt.Fprintf(w, "%v: %v\n", coloredRole, content); err != nil {
-			return fmt.Errorf("write chat message (no glow): %w", err)
+			return diag.Errorf("write chat message (no glow): %w", err)
 		}
 		return nil
 	}
 
 	// Glow available: print reasoning with ANSI coloring, then run glow on content.
 	if _, err := fmt.Fprintf(w, "%v:", coloredRole); err != nil {
-		return fmt.Errorf("write role prefix: %w", err)
+		return diag.Errorf("write role prefix: %w", err)
 	}
 
 	if chatMessage.ReasoningContent != "" {
 		reasoningCol := RoleColor("reasoning")
 		if _, err := fmt.Fprintf(w, "\n%v", table.Colorize(reasoningCol, "[thinking]\n"+chatMessage.ReasoningContent+"\n[/thinking]")); err != nil {
-			return fmt.Errorf("write reasoning content: %w", err)
+			return diag.Errorf("write reasoning content: %w", err)
 		}
 	}
 
@@ -138,17 +139,17 @@ func AttemptPrettyPrint(w io.Writer, chatMessage pub_models.Message, username st
 	cmd.Stdout = w
 	cmd.Stderr = w
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("run glow: %w", err)
+		return diag.Errorf("run glow: %w", err)
 	}
 	return nil
 }
 
 // isTerminalWriter reports whether w is a character device — the standard
 // heuristic for "this writer is a terminal" (internal/utils/prompt.go uses
-// the same check for stdin). A nil writer resolves to os.Stdout.
+// the same check for stdin). A nil writer is not a terminal.
 func isTerminalWriter(w io.Writer) bool {
 	if w == nil {
-		w = os.Stdout
+		w = io.Discard
 	}
 	f, ok := w.(*os.File)
 	if !ok {
@@ -222,11 +223,11 @@ func PrintToolActivity(w io.Writer, call pub_models.Call, content string, termWi
 // row.
 func PrintToolBlock(w io.Writer, call pub_models.Call, content string, rows []string, termWidth, maxRows int) error {
 	if w == nil {
-		w = os.Stdout
+		w = io.Discard
 	}
 	header := truncateTerminalRow(toolActivityHeader(call), max(termWidth, 1))
 	if _, err := fmt.Fprintln(w, table.Colorize(TableTheme().Primary, header)); err != nil {
-		return fmt.Errorf("write tool activity header: %w", err)
+		return diag.Errorf("write tool activity header: %w", err)
 	}
 	if content != "" || len(rows) == 0 {
 		if err := printToolContent(w, call, content, termWidth, maxRows); err != nil {
@@ -235,7 +236,7 @@ func PrintToolBlock(w io.Writer, call pub_models.Call, content string, rows []st
 	}
 	for _, row := range rows {
 		if _, err := fmt.Fprintf(w, "  %s\n", row); err != nil {
-			return fmt.Errorf("write tool block row: %w", err)
+			return diag.Errorf("write tool block row: %w", err)
 		}
 	}
 	_, err := fmt.Fprintln(w)
@@ -257,7 +258,7 @@ func printToolContent(w io.Writer, call pub_models.Call, content string, termWid
 			row = table.Colorize(RoleColor("tool"), truncateTerminalRow("✗ "+row, contentWidth))
 		}
 		if _, err := fmt.Fprintf(w, "  %s\n", row); err != nil {
-			return fmt.Errorf("write tool output: %w", err)
+			return diag.Errorf("write tool output: %w", err)
 		}
 	}
 	return nil
@@ -1033,7 +1034,7 @@ func (v *ActivityViewport) PrintAbove(w io.Writer, line string) error {
 		return nil
 	}
 	if w == nil {
-		w = os.Stdout
+		w = io.Discard
 	}
 	var buf bytes.Buffer
 	drawn := v.drawnRows > 0
@@ -1050,7 +1051,7 @@ func (v *ActivityViewport) PrintAbove(w io.Writer, line string) error {
 	}
 	if err := writeFrame(w, buf.Bytes()); err != nil {
 		v.dirty = true
-		return fmt.Errorf("print above activity viewport: %w", err)
+		return diag.Errorf("print above activity viewport: %w", err)
 	}
 	if drawn {
 		v.markDrawn(rendered)
@@ -1095,7 +1096,7 @@ func (v *ActivityViewport) render(w io.Writer, drawHeaderOnly bool) error {
 		return nil
 	}
 	if w == nil {
-		w = os.Stdout
+		w = io.Discard
 	}
 	rendered := v.renderedRows()
 	var buf bytes.Buffer
@@ -1138,7 +1139,7 @@ func (v *ActivityViewport) render(w io.Writer, drawHeaderOnly bool) error {
 	}
 	if err := writeFrame(w, buf.Bytes()); err != nil {
 		v.dirty = true
-		return fmt.Errorf("write activity viewport: %w", err)
+		return diag.Errorf("write activity viewport: %w", err)
 	}
 	v.markDrawn(rendered)
 	return nil
@@ -1328,7 +1329,7 @@ func mcpLogBlockHeader(server string) string {
 func PrintMcpLogHeader(w io.Writer, server string, termWidth int) error {
 	header := truncateTerminalRow(mcpLogBlockHeader(server), max(termWidth, 1))
 	if _, err := fmt.Fprintln(w, table.Colorize(TableTheme().Secondary, header)); err != nil {
-		return fmt.Errorf("write mcp log block header: %w", err)
+		return diag.Errorf("write mcp log block header: %w", err)
 	}
 	return nil
 }
@@ -1338,7 +1339,7 @@ func PrintMcpLogHeader(w io.Writer, server string, termWidth int) error {
 func PrintMcpLogLine(w io.Writer, line string, termWidth int) error {
 	for _, row := range mcpLogBodyRows(SanitizeTerminalRow(line), max(termWidth-2, 1), 0) {
 		if _, err := fmt.Fprintln(w, table.Colorize(row.color, row.content)); err != nil {
-			return fmt.Errorf("write mcp log block line: %w", err)
+			return diag.Errorf("write mcp log block line: %w", err)
 		}
 	}
 	return nil
@@ -1350,7 +1351,7 @@ func PrintMcpLogLine(w io.Writer, line string, termWidth int) error {
 func PrintMcpStatusLine(w io.Writer, line string, termWidth int) error {
 	row := truncateTerminalRow("  "+SanitizeTerminalRow(line), max(termWidth, 1))
 	if _, err := fmt.Fprintln(w, table.Colorize(TableTheme().Primary, row)); err != nil {
-		return fmt.Errorf("write mcp status line: %w", err)
+		return diag.Errorf("write mcp status line: %w", err)
 	}
 	return nil
 }
@@ -1360,7 +1361,7 @@ func PrintMcpStatusLine(w io.Writer, line string, termWidth int) error {
 // or model context.
 func PrintMcpErrorBlock(w io.Writer, server string, lines []string, termWidth int) error {
 	if w == nil {
-		w = os.Stdout
+		w = io.Discard
 	}
 	if err := PrintMcpLogHeader(w, server, termWidth); err != nil {
 		return err

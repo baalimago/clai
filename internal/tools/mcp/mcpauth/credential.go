@@ -12,6 +12,7 @@ import (
 	"github.com/baalimago/clai/pkg/claierr"
 	pkgtools "github.com/baalimago/clai/pkg/tools"
 
+	"github.com/baalimago/clai/internal/diag"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -98,7 +99,7 @@ func runCredentialCommand(ctx context.Context, serverName string, argv []string)
 		return "", &CredentialSourceError{
 			ServerName: serverName,
 			Source:     SourceTokenCommand,
-			Cause:      fmt.Errorf("run %q: %w (stderr: %s)", strings.Join(argv, " "), err, errMsg),
+			Cause:      diag.Errorf("run %q: %w (stderr: %s)", strings.Join(argv, " "), err, errMsg),
 		}
 	}
 	token := strings.TrimSpace(stdout.String())

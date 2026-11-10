@@ -2,9 +2,11 @@ package text
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -12,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/baalimago/clai/internal/testenv/procenv"
 
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/tools/mcp"
@@ -137,7 +141,7 @@ func Test_uniqueToolsDeduplicatesAliasesBySpecificationName(t *testing.T) {
 // reason.
 func Test_setupPhase_LogsRenderLiveInStartupWindow(t *testing.T) {
 	var errOut bytes.Buffer
-	sink := newMcpLogSink(mcpLogRolling)
+	sink := newMcpLogSinkTo(procenv.Context(context.Background()), mcpLogRolling, io.Discard)
 	sink.errOut = &errOut
 	sink.termWidth = func() int { return 80 }
 	sink.termHeight = func() int { return 40 }
@@ -191,7 +195,7 @@ func Test_setupMcpManager_RegistersToolsAndNotifiesSuccess(t *testing.T) {
 	}
 	sink := &recordingSuccessSink{}
 
-	got, err := setupMcpManager(t.Context(), dir, Configurations{}, sink, testSchemaCache(t), nil)
+	got, err := setupMcpManager(procenv.Context(t.Context()), dir, Configurations{}, sink, testSchemaCache(t), nil)
 	if err != nil {
 		t.Fatalf("setupMcpManager: %v", err)
 	}
@@ -212,12 +216,12 @@ func Test_setupMcpManager_SuccessClearsStartupWindows(t *testing.T) {
 		t.Fatalf("write config: %v", err)
 	}
 	var errOut bytes.Buffer
-	sink := newMcpLogSink(mcpLogRolling)
+	sink := newMcpLogSinkTo(procenv.Context(context.Background()), mcpLogRolling, io.Discard)
 	sink.errOut = &errOut
 	sink.termWidth = func() int { return 120 }
 	sink.termHeight = func() int { return 40 }
 
-	if _, err := setupMcpManager(t.Context(), dir, Configurations{}, sink, testSchemaCache(t), nil); err != nil {
+	if _, err := setupMcpManager(procenv.Context(t.Context()), dir, Configurations{}, sink, testSchemaCache(t), nil); err != nil {
 		t.Fatalf("setupMcpManager: %v", err)
 	}
 	if !sink.startup.cleared {
@@ -226,7 +230,7 @@ func Test_setupMcpManager_SuccessClearsStartupWindows(t *testing.T) {
 }
 
 func Test_setupMcpManager_MissingDirErrors(t *testing.T) {
-	_, err := setupMcpManager(t.Context(), "/nonexistent/mcp/servers/dir", Configurations{}, &recordingSuccessSink{}, testSchemaCache(t), nil)
+	_, err := setupMcpManager(procenv.Context(t.Context()), "/nonexistent/mcp/servers/dir", Configurations{}, &recordingSuccessSink{}, testSchemaCache(t), nil)
 	if err == nil || !strings.Contains(err.Error(), "MCP servers directory not found") {
 		t.Fatalf("err = %v, want missing-directory error", err)
 	}
@@ -234,7 +238,7 @@ func Test_setupMcpManager_MissingDirErrors(t *testing.T) {
 
 func Test_setupMcpManager_EmptyDirIsANoop(t *testing.T) {
 	sink := &recordingSuccessSink{}
-	got, err := setupMcpManager(t.Context(), t.TempDir(), Configurations{}, sink, testSchemaCache(t), nil)
+	got, err := setupMcpManager(procenv.Context(t.Context()), t.TempDir(), Configurations{}, sink, testSchemaCache(t), nil)
 	if err != nil {
 		t.Fatalf("setupMcpManager: %v", err)
 	}
@@ -279,8 +283,8 @@ func Test_setupMcpManager_PerFileConfigErrorWarnsAndStillRegistersOthers(t *test
 
 	var got map[string]pub_models.LLMTool
 	var err error
-	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		got, err = setupMcpManager(t.Context(), dir, Configurations{}, sink, testSchemaCache(t), nil)
+	stdout := testboil.CaptureStderr(t, func(t *testing.T) {
+		got, err = setupMcpManager(procenv.Context(t.Context()), dir, Configurations{}, sink, testSchemaCache(t), nil)
 	})
 	if err != nil {
 		t.Fatalf("an ambient per-file config error must degrade, not fail setup: %v", err)
@@ -306,7 +310,7 @@ func Test_setupMcpManager_PerFileConfigErrorFailsStrictRun(t *testing.T) {
 	var got map[string]pub_models.LLMTool
 	var err error
 	testboil.CaptureStdout(t, func(t *testing.T) {
-		got, err = setupMcpManager(t.Context(), dir, conf, sink, testSchemaCache(t), nil)
+		got, err = setupMcpManager(procenv.Context(t.Context()), dir, conf, sink, testSchemaCache(t), nil)
 	})
 	if !errors.Is(err, claierr.ErrMcpServerStartup) {
 		t.Fatalf("err = %v, want errors.Is(err, claierr.ErrMcpServerStartup)", err)
@@ -328,7 +332,7 @@ func Test_setupMcpManager_SpawnFailureSkipsServer(t *testing.T) {
 	}
 	sink := &recordingSuccessSink{}
 
-	got, err := setupMcpManager(t.Context(), dir, Configurations{}, sink, testSchemaCache(t), nil)
+	got, err := setupMcpManager(procenv.Context(t.Context()), dir, Configurations{}, sink, testSchemaCache(t), nil)
 	if err != nil {
 		t.Fatalf("setupMcpManager: %v", err)
 	}
@@ -356,7 +360,7 @@ func Test_setupMcpManager_HandshakeFailureKeepsOtherTools(t *testing.T) {
 	}
 	sink := &recordingSuccessSink{}
 
-	got, err := setupMcpManager(t.Context(), dir, Configurations{}, sink, testSchemaCache(t), nil)
+	got, err := setupMcpManager(procenv.Context(t.Context()), dir, Configurations{}, sink, testSchemaCache(t), nil)
 	if err != nil {
 		t.Fatalf("setupMcpManager: %v", err)
 	}
@@ -404,8 +408,8 @@ func Test_registerTool_DeduplicatesByName(t *testing.T) {
 	if !slices.Equal(box.registered, []string{"cat", "ls"}) {
 		t.Errorf("registered = %v, want [cat ls]", box.registered)
 	}
-	if _, ok := conf.RegisteredTools["cat"]; !ok {
-		t.Error("registration not tracked in RegisteredTools")
+	if names := conf.Offered.Names(); !slices.Equal(names, []string{"cat", "ls"}) {
+		t.Errorf("offered = %v, want the registrations tracked in Offered", names)
 	}
 }
 
@@ -455,7 +459,7 @@ func Test_setupMcpManager_ExplicitSpawnFailuresJoinedTyped(t *testing.T) {
 		},
 	}
 
-	got, err := setupMcpManager(t.Context(), t.TempDir(), conf, &recordingSuccessSink{}, testSchemaCache(t), nil)
+	got, err := setupMcpManager(procenv.Context(t.Context()), t.TempDir(), conf, &recordingSuccessSink{}, testSchemaCache(t), nil)
 	if err == nil {
 		t.Fatal("expected a typed error for the failed explicit servers, got nil")
 	}
@@ -485,7 +489,7 @@ func Test_setupMcpManager_ExplicitHandshakeFailureTyped(t *testing.T) {
 		}},
 	}
 
-	_, err := setupMcpManager(t.Context(), t.TempDir(), conf, &recordingSuccessSink{}, testSchemaCache(t), nil)
+	_, err := setupMcpManager(procenv.Context(t.Context()), t.TempDir(), conf, &recordingSuccessSink{}, testSchemaCache(t), nil)
 	if err == nil {
 		t.Fatal("expected a typed error for the failed explicit handshake, got nil")
 	}
@@ -522,7 +526,7 @@ func Test_setupMcpManager_StrictModeKeepsAmbientDegrade(t *testing.T) {
 		AgentSettings: &AgentSettings{StrictMcpStartup: true},
 	}
 
-	got, err := setupMcpManager(t.Context(), dir, conf, &recordingSuccessSink{}, testSchemaCache(t), nil)
+	got, err := setupMcpManager(procenv.Context(t.Context()), dir, conf, &recordingSuccessSink{}, testSchemaCache(t), nil)
 	if err != nil {
 		t.Fatalf("a broken ambient server must not fail a strict setup: %v", err)
 	}
@@ -575,7 +579,7 @@ func TestSetupMcpManager_skipAmbient_startsNoConfigDirServer(t *testing.T) {
 	var got map[string]pub_models.LLMTool
 	var err error
 	stderr := testboil.CaptureStderr(t, func(t *testing.T) {
-		got, err = setupMcpManager(t.Context(), mcpDir, Configurations{SkipAmbientMcpServers: true}, sink, testSchemaCache(t), nil)
+		got, err = setupMcpManager(procenv.Context(t.Context()), mcpDir, Configurations{SkipAmbientMcpServers: true}, sink, testSchemaCache(t), nil)
 	})
 	if err != nil {
 		t.Fatalf("setupMcpManager: %v", err)
@@ -593,7 +597,7 @@ func TestSetupMcpManager_skipAmbient_startsNoConfigDirServer(t *testing.T) {
 
 	t.Run("control: flag off spawns the ambient server", func(t *testing.T) {
 		testboil.CaptureStderr(t, func(t *testing.T) {
-			if _, err := setupMcpManager(t.Context(), mcpDir, Configurations{}, &recordingSuccessSink{}, testSchemaCache(t), nil); err != nil {
+			if _, err := setupMcpManager(procenv.Context(t.Context()), mcpDir, Configurations{}, &recordingSuccessSink{}, testSchemaCache(t), nil); err != nil {
 				t.Fatalf("setupMcpManager: %v", err)
 			}
 		})
@@ -616,7 +620,7 @@ func TestSetupMcpManager_skipAmbient_keepsExplicitServers(t *testing.T) {
 			McpServers:            []pub_models.McpServer{{Name: "echo", Command: testServerBinary(t), Startup: pub_models.StartupEager}},
 		}
 		sink := &recordingSuccessSink{}
-		got, err := setupMcpManager(t.Context(), mcpDir, conf, sink, testSchemaCache(t), nil)
+		got, err := setupMcpManager(procenv.Context(t.Context()), mcpDir, conf, sink, testSchemaCache(t), nil)
 		if err != nil {
 			t.Fatalf("setupMcpManager: %v", err)
 		}
@@ -640,7 +644,7 @@ func TestSetupMcpManager_skipAmbient_keepsExplicitServers(t *testing.T) {
 			McpServers:            []pub_models.McpServer{{Name: "broken", Command: "/nonexistent-binary-xyz"}},
 			AgentSettings:         &AgentSettings{StrictMcpStartup: true},
 		}
-		_, err := setupMcpManager(t.Context(), mcpDir, conf, &recordingSuccessSink{}, testSchemaCache(t), nil)
+		_, err := setupMcpManager(procenv.Context(t.Context()), mcpDir, conf, &recordingSuccessSink{}, testSchemaCache(t), nil)
 		if !errors.Is(err, claierr.ErrMcpServerStartup) {
 			t.Fatalf("err = %v, want ErrMcpServerStartup", err)
 		}
@@ -655,7 +659,7 @@ func TestSetupMcpManager_skipAmbient_keepsExplicitServers(t *testing.T) {
 // querier must not depend on the mcpServers directory existing.
 func TestSetupMcpManager_skipAmbient_toleratesMissingDir(t *testing.T) {
 	sink := &recordingSuccessSink{}
-	got, err := setupMcpManager(t.Context(), "/nonexistent/mcp/servers/dir", Configurations{SkipAmbientMcpServers: true}, sink, testSchemaCache(t), nil)
+	got, err := setupMcpManager(procenv.Context(t.Context()), "/nonexistent/mcp/servers/dir", Configurations{SkipAmbientMcpServers: true}, sink, testSchemaCache(t), nil)
 	if err != nil {
 		t.Fatalf("setupMcpManager: %v", err)
 	}
@@ -682,7 +686,7 @@ func TestLazyConnectDegradesForAmbientServers(t *testing.T) {
 	}
 	sink := &recordingSuccessSink{}
 
-	got, err := setupMcpManager(t.Context(), mcpDir, Configurations{}, sink, testSchemaCache(t), nil)
+	got, err := setupMcpManager(procenv.Context(t.Context()), mcpDir, Configurations{}, sink, testSchemaCache(t), nil)
 	if err != nil {
 		t.Fatalf("setupMcpManager: %v", err)
 	}
@@ -713,7 +717,7 @@ func TestLazyConnectHonoursStrictMcpStartupForExplicitServers(t *testing.T) {
 			},
 		}
 
-		got, err := setupMcpManager(t.Context(), t.TempDir(), conf, &recordingSuccessSink{}, testSchemaCache(t), nil)
+		got, err := setupMcpManager(procenv.Context(t.Context()), t.TempDir(), conf, &recordingSuccessSink{}, testSchemaCache(t), nil)
 		if err == nil {
 			t.Fatal("expected a typed error for the failed explicit server, got nil")
 		}
@@ -741,7 +745,7 @@ func TestLazyConnectHonoursStrictMcpStartupForExplicitServers(t *testing.T) {
 			AgentSettings: &AgentSettings{StrictMcpStartup: true},
 			McpServers:    []pub_models.McpServer{server},
 		}
-		got, err := setupMcpManager(t.Context(), t.TempDir(), conf, &recordingSuccessSink{}, cache, nil)
+		got, err := setupMcpManager(procenv.Context(t.Context()), t.TempDir(), conf, &recordingSuccessSink{}, cache, nil)
 		if err == nil {
 			t.Fatal("D35: a configured lazy explicit server under strict startup must still surface a typed setup error even with a warm cache, got nil")
 		}
@@ -771,7 +775,7 @@ func TestExplicitServerBothCommandAndUrlFailsValidation(t *testing.T) {
 			{Name: "both-set", Command: "node", Url: "https://mcp.example.com/mcp"},
 		},
 	}
-	got, err := setupMcpManager(t.Context(), t.TempDir(), conf, &recordingSuccessSink{}, testSchemaCache(t), nil)
+	got, err := setupMcpManager(procenv.Context(t.Context()), t.TempDir(), conf, &recordingSuccessSink{}, testSchemaCache(t), nil)
 	var startupErr *claierr.McpServerStartupError
 	if !errors.As(err, &startupErr) {
 		t.Fatalf("err = %v, want errors.As to yield *claierr.McpServerStartupError", err)
@@ -795,7 +799,7 @@ func TestExplicitServerNeitherCommandNorUrlFailsValidation(t *testing.T) {
 	conf := Configurations{
 		McpServers: []pub_models.McpServer{{Name: "neither-set"}},
 	}
-	got, err := setupMcpManager(t.Context(), t.TempDir(), conf, &recordingSuccessSink{}, testSchemaCache(t), nil)
+	got, err := setupMcpManager(procenv.Context(t.Context()), t.TempDir(), conf, &recordingSuccessSink{}, testSchemaCache(t), nil)
 	var startupErr *claierr.McpServerStartupError
 	if !errors.As(err, &startupErr) {
 		t.Fatalf("err = %v, want errors.As to yield *claierr.McpServerStartupError", err)
@@ -833,7 +837,7 @@ func TestSetupTooling_injectedToolsRegisterWithoutWarning(t *testing.T) {
 
 	var err error
 	stderr := testboil.CaptureStderr(t, func(t *testing.T) {
-		err = setupTooling(t.Context(), completer, conf, &recordingSuccessSink{})
+		err = setupTooling(procenv.Context(t.Context()), completer, conf, &recordingSuccessSink{})
 	})
 	if err != nil {
 		t.Fatalf("setupTooling: %v", err)
@@ -924,7 +928,7 @@ func TestLazySetupResolvesServersConcurrently(t *testing.T) {
 		}
 	}
 
-	got, err := setupMcpManager(t.Context(), mcpDir, Configurations{}, &recordingSuccessSink{}, testSchemaCache(t), nil)
+	got, err := setupMcpManager(procenv.Context(t.Context()), mcpDir, Configurations{}, &recordingSuccessSink{}, testSchemaCache(t), nil)
 	if err != nil {
 		t.Fatalf("setupMcpManager: %v", err)
 	}
@@ -965,15 +969,15 @@ func TestConnectorConnectFailureSpawnsOnceAcrossRepeatedToolCallsEndToEnd(t *tes
 		Command: testServerBinary(t),
 		Env:     map[string]string{"TEST_SERVER_SPAWN_LOG": spawnLog, "TEST_SERVER_EXIT": "1"},
 	}
-	connector := mcp.NewConnector(t.Context(), srv, nil)
+	connector := mcp.NewConnector(procenv.Context(t.Context()), srv, nil)
 	spec := pub_models.Specification{Name: "mcp_broken_echo"}
 	tool := mcp.NewTool(connector, "echo", spec, 0, "broken", nil, 0)
 
-	q := &Querier[*MockQuerier]{Raw: true, out: &strings.Builder{}, tooling: tooling{run: map[string]pub_models.LLMTool{"mcp_broken_echo": tool}}}
+	q := &Querier[*MockQuerier]{Raw: true, out: &strings.Builder{}, tooling: tooling{offered: offeredTools(map[string]pub_models.LLMTool{"mcp_broken_echo": tool})}}
 	e := toolExecutor[*MockQuerier]{querier: q}
 
 	for i := range 3 {
-		out := e.invokeToolCall(t.Context(), pub_models.Call{Name: "mcp_broken_echo", Inputs: &pub_models.Input{"text": "hi"}})
+		out := e.invokeToolCall(procenv.Context(t.Context()), pub_models.Call{Name: "mcp_broken_echo", Inputs: &pub_models.Input{"text": "hi"}})
 		if !strings.Contains(out, "ERROR") {
 			t.Fatalf("call %d: out = %q, want a typed error result", i, out)
 		}
@@ -1007,16 +1011,16 @@ func TestAuthChallengeStdioSpawnBoundedAcrossRepeatedToolCallsEndToEnd(t *testin
 	// makes StdioConn's stderr-driven raiseAuthPending actually run
 	// (conn_stdio.go's nil-sink guard) rather than silently declining to
 	// reclassify anything.
-	sink := newMcpLogSinkTo(mcpLogRolling, &strings.Builder{})
-	connector := mcp.NewConnector(t.Context(), srv, sink, mcp.WithConnectBound(100*time.Millisecond))
+	sink := newMcpLogSinkTo(procenv.Context(context.Background()), mcpLogRolling, &strings.Builder{})
+	connector := mcp.NewConnector(procenv.Context(t.Context()), srv, sink, mcp.WithConnectBound(100*time.Millisecond))
 	spec := pub_models.Specification{Name: "mcp_hang_echo"}
 	tool := mcp.NewTool(connector, "echo", spec, 0, "hang", nil, 50*time.Millisecond)
 
-	q := &Querier[*MockQuerier]{Raw: true, out: &strings.Builder{}, mcpSink: sink, tooling: tooling{run: map[string]pub_models.LLMTool{"mcp_hang_echo": tool}}}
+	q := &Querier[*MockQuerier]{Raw: true, out: &strings.Builder{}, mcpSink: sink, tooling: tooling{offered: offeredTools(map[string]pub_models.LLMTool{"mcp_hang_echo": tool})}}
 	e := toolExecutor[*MockQuerier]{querier: q}
 
 	for i := range 3 {
-		out := e.invokeToolCall(t.Context(), pub_models.Call{Name: "mcp_hang_echo", Inputs: &pub_models.Input{"text": "hi"}})
+		out := e.invokeToolCall(procenv.Context(t.Context()), pub_models.Call{Name: "mcp_hang_echo", Inputs: &pub_models.Input{"text": "hi"}})
 		if !strings.Contains(out, "ERROR") {
 			t.Fatalf("call %d: out = %q, want the actionable authorization error", i, out)
 		}
@@ -1044,11 +1048,11 @@ func TestDebugDumpNeverLeaksArgsOrEnvSecret(t *testing.T) {
 		t.Fatalf("write config: %v", err)
 	}
 
-	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
+	stdout := testboil.CaptureStderr(t, func(t *testing.T) {
 		// The ambient server fails to spawn (no such binary), which is
 		// irrelevant here: the DEBUG dump runs before any connect attempt,
 		// unconditionally, so this still exercises the real carrier.
-		_, _ = setupMcpManager(t.Context(), dir, Configurations{}, &recordingSuccessSink{}, testSchemaCache(t), nil)
+		_, _ = setupMcpManager(procenv.Context(t.Context()), dir, Configurations{}, &recordingSuccessSink{}, testSchemaCache(t), nil)
 	})
 	if strings.Contains(stdout, argsSecret) {
 		t.Errorf("DEBUG dump leaked the args secret: %s", stdout)
@@ -1077,7 +1081,7 @@ func TestSetupTooling_generateImagePatternDoesNotWarn(t *testing.T) {
 
 	var err error
 	stdout, stderr := captureStdoutStderrText(t, func() {
-		err = setupTooling(t.Context(), completer, conf, &recordingSuccessSink{})
+		err = setupTooling(procenv.Context(t.Context()), completer, conf, &recordingSuccessSink{})
 	})
 	if err != nil {
 		t.Fatalf("setupTooling: %v", err)
@@ -1101,7 +1105,7 @@ func Test_setupMcpManager_ProfileServerFailureFailsSetup(t *testing.T) {
 		{Name: "profile-server", Command: "/nonexistent-clai-test-binary-profile", Startup: pub_models.StartupEager},
 	}}
 
-	_, err := setupMcpManager(t.Context(), dir, conf, &recordingSuccessSink{}, testSchemaCache(t), nil)
+	_, err := setupMcpManager(procenv.Context(t.Context()), dir, conf, &recordingSuccessSink{}, testSchemaCache(t), nil)
 	if !errors.Is(err, claierr.ErrMcpServerStartup) {
 		t.Fatalf("err = %v, want errors.Is(err, claierr.ErrMcpServerStartup)", err)
 	}
@@ -1123,7 +1127,7 @@ func Test_setupMcpManager_OptionalProfileServerFailureOnlyWarns(t *testing.T) {
 			var got map[string]pub_models.LLMTool
 			var err error
 			captureStdoutStderrText(t, func() {
-				got, err = setupMcpManager(t.Context(), t.TempDir(), conf, &recordingSuccessSink{}, testSchemaCache(t), nil)
+				got, err = setupMcpManager(procenv.Context(t.Context()), t.TempDir(), conf, &recordingSuccessSink{}, testSchemaCache(t), nil)
 			})
 			if err != nil {
 				t.Fatalf("setupMcpManager: %v, want nil for an optional server", err)
@@ -1142,7 +1146,7 @@ func Test_setupMcpManager_RequiredServerStillFailsBesideAnOptionalOne(t *testing
 	}}
 	var err error
 	captureStdoutStderrText(t, func() {
-		_, err = setupMcpManager(t.Context(), t.TempDir(), conf, &recordingSuccessSink{}, testSchemaCache(t), nil)
+		_, err = setupMcpManager(procenv.Context(t.Context()), t.TempDir(), conf, &recordingSuccessSink{}, testSchemaCache(t), nil)
 	})
 	if !errors.Is(err, claierr.ErrMcpServerStartup) {
 		t.Fatalf("err = %v, want errors.Is(err, claierr.ErrMcpServerStartup)", err)
@@ -1162,7 +1166,7 @@ func Test_setupMcpManager_ProfileServerKeepsLazyStartup(t *testing.T) {
 	conf := Configurations{McpServers: []pub_models.McpServer{
 		{Name: "profile-lazy", Command: testServerBinary(t), Startup: pub_models.StartupLazy},
 	}}
-	got, err := setupMcpManager(t.Context(), t.TempDir(), conf, &recordingSuccessSink{}, testSchemaCache(t), nil)
+	got, err := setupMcpManager(procenv.Context(t.Context()), t.TempDir(), conf, &recordingSuccessSink{}, testSchemaCache(t), nil)
 	if err != nil {
 		t.Fatalf("setupMcpManager: %v", err)
 	}
@@ -1172,7 +1176,7 @@ func Test_setupMcpManager_ProfileServerKeepsLazyStartup(t *testing.T) {
 }
 
 func Test_matchingTools_hiddenToolsNeedTheirExactName(t *testing.T) {
-	tools.Init()
+	tools.Init(procenv.Context(context.Background()))
 	available := tools.Registry.All()
 	for _, pattern := range []string{"*", "clai_*"} {
 		for _, tool := range matchingTools(available, pattern) {

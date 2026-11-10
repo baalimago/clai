@@ -3,11 +3,11 @@ package internal
 import (
 	"errors"
 	"flag"
-	"fmt"
 	"slices"
 	"strconv"
 	"strings"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/quantity"
 	"github.com/baalimago/clai/internal/utils"
 )
@@ -271,7 +271,7 @@ func (f *MediaFlags) Apply(c MediaConfig) error {
 	}
 	expanded, err := utils.ExpandUserPath(*c.OutputDir)
 	if err != nil {
-		return fmt.Errorf("output dir %q: %w", *c.OutputDir, err)
+		return diag.Errorf("output dir %q: %w", *c.OutputDir, err)
 	}
 	*c.OutputDir = expanded
 	return nil
@@ -435,10 +435,10 @@ func (g *LoopFlags) Validate() error {
 		return nil
 	}
 	if g.MaxIterations.Explicit() {
-		return fmt.Errorf("-max-iterations %w", ErrLoopFlagWithoutMode)
+		return diag.Errorf("-max-iterations %w", ErrLoopFlagWithoutMode)
 	}
 	if g.Check.Explicit() {
-		return fmt.Errorf("-check %w", ErrLoopFlagWithoutMode)
+		return diag.Errorf("-check %w", ErrLoopFlagWithoutMode)
 	}
 	return nil
 }

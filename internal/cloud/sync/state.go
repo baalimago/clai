@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/baalimago/clai/internal/cloud"
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/utils"
 )
 
@@ -98,7 +99,7 @@ func (st *state) save(confDir string, store Store) error {
 		return err
 	}
 	if err := utils.WriteFileAtomic(p, b, 0o600); err != nil {
-		return fmt.Errorf("save sync state: %w", err)
+		return diag.Errorf("save sync state: %w", err)
 	}
 	return nil
 }

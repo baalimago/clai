@@ -103,6 +103,11 @@ func TestMainImmediateExitBranches(t *testing.T) {
 			wantStderr: []string{"stderr line one", "stderr line two: an error occurred"},
 		},
 		{
+			name:       "stderr text as given",
+			env:        map[string]string{"TEST_SERVER_STDERR_TEXT": "spin\rdone \x1b[31mred\x1b[0m\a"},
+			wantStderr: []string{"spin\rdone \x1b[31mred\x1b[0m\a\n"},
+		},
+		{
 			name:       "stderr bulk",
 			env:        map[string]string{"TEST_SERVER_STDERR_BULK": "50"},
 			wantStderr: []string{"bulk line 0", "bulk line 49"},

@@ -1,28 +1,16 @@
 package text
 
 import (
-	"fmt"
-	"os"
+	"context"
 
-	"github.com/baalimago/clai/internal/debugflags"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
+	"github.com/baalimago/clai/internal/runenv"
 )
 
-func debugChatEnabled() bool {
-	return debugflags.Enabled("CHAT")
+func traceChatf(ctx context.Context, format string, args ...any) {
+	runenv.Debugf(ctx, runenv.SubsystemChat, "[DEBUG_CHAT] "+format, args...)
 }
 
-func traceChatf(format string, args ...any) {
-	if !debugChatEnabled() {
-		return
-	}
-	ancli.Noticef("[DEBUG_CHAT] "+format+"\n", args...)
-}
-
-// traceSummaryf writes to stderr so traces never enter a -r answer stream.
-func traceSummaryf(format string, args ...any) {
-	if !debugflags.Enabled("SUMMARY") {
-		return
-	}
-	fmt.Fprintf(os.Stderr, "[DEBUG_SUMMARY] "+format+"\n", args...)
+// traceSummaryf is a diagnostic, so traces never enter a -r answer stream.
+func traceSummaryf(ctx context.Context, format string, args ...any) {
+	runenv.Debugf(ctx, runenv.SubsystemSummary, "[DEBUG_SUMMARY] "+format, args...)
 }

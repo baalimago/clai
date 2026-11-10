@@ -15,6 +15,9 @@ import (
 
 	"github.com/baalimago/clai/internal/audio/generic"
 	"github.com/baalimago/clai/internal/board"
+	"github.com/baalimago/clai/internal/diag"
+	"github.com/baalimago/clai/internal/runenv"
+	"github.com/baalimago/clai/internal/stdio"
 	"github.com/baalimago/clai/internal/utils"
 )
 
@@ -63,7 +66,8 @@ type Splitter struct {
 	Parallelism int
 	MaxBytes    int64
 	Model       string
-	StatusOut   io.Writer
+	// StatusOut receives the progress board; nil means the run's stderr.
+	StatusOut io.Writer
 	// Calibrated diarization (oversized files with a diarize model)
 	Budgets Budgets
 	Strict  bool
@@ -79,14 +83,13 @@ func NewSplitter(transcriber Transcriber, runner CommandRunner) *Splitter {
 		Runner:      runner,
 		Parallelism: 3,
 		MaxBytes:    MaxRequestBytes,
-		StatusOut:   os.Stderr,
 	}
 }
 
 func (s *Splitter) Transcribe(ctx context.Context, filePath string) ([]Segment, error) {
 	info, err := os.Stat(filePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to stat audio file: %w", err)
+		return nil, diag.Errorf("failed to stat audio file: %w", err)
 	}
 	maxBytes := s.MaxBytes
 	if maxBytes <= 0 {
@@ -181,7 +184,9 @@ func (s *Splitter) calibrate(ctx context.Context, filePath string, size, maxByte
 		Model:               s.Model,
 		Endpoint:            endpoint,
 		Options:             "diarized_json",
-		StatusOut:           s.StatusOut,
+	}
+	if s.StatusOut != nil {
+		c.StatusOut, c.StatusLive = statusOf(ctx, s.StatusOut)
 	}
 	return c.Run(ctx, filePath)
 }
@@ -189,7 +194,7 @@ func (s *Splitter) calibrate(ctx context.Context, filePath string, size, maxByte
 func (s *Splitter) requireBinaries(filePath string, maxBytes int64) error {
 	for _, bin := range []string{ffmpegBin, ffprobeBin} {
 		if _, err := s.Runner.LookPath(bin); err != nil {
-			return fmt.Errorf("'%v' is required to transcribe files over %.0f MB, but it wasn't found: %w. Install it, or split the file manually: 'ffmpeg -i %v -f segment -segment_time 600 -c copy chunk_%%03d%v'",
+			return diag.Errorf("'%v' is required to transcribe files over %.0f MB, but it wasn't found: %w. Install it, or split the file manually: 'ffmpeg -i %v -f segment -segment_time 600 -c copy chunk_%%03d%v'",
 				bin, toMB(maxBytes), err, filePath, filepath.Ext(filePath))
 		}
 	}
@@ -216,7 +221,7 @@ func (s *Splitter) splitTranscribeStitch(ctx context.Context, filePath string, s
 	segmentTime := duration / float64(numChunks)
 	tempDir, err := os.MkdirTemp("", "clai-audio-split-*")
 	if err != nil {
-		return nil, fmt.Errorf("failed to create chunk temp dir: %w", err)
+		return nil, diag.Errorf("failed to create chunk temp dir: %w", err)
 	}
 	defer os.RemoveAll(tempDir)
 	chunks, err := s.split(ctx, filePath, tempDir, segmentTime)
@@ -227,10 +232,20 @@ func (s *Splitter) splitTranscribeStitch(ctx context.Context, filePath string, s
 	for i := range chunks {
 		spans[i] = SourceInterval{Start: time.Duration(float64(i) * segmentTime * float64(time.Second)), End: time.Duration(float64(i+1) * segmentTime * float64(time.Second))}
 	}
-	b := newProgressBoard(s.StatusOut, utils.IsTerminalWriter(s.StatusOut), fmt.Sprintf("splitting via ffmpeg  %v  %v  %v chunks × %.1f min  %v workers",
+	b := newChunkBoard(ctx, s.StatusOut, false, fmt.Sprintf("splitting via ffmpeg  %v  %v  %v chunks × %.1f min  %v workers",
 		filepath.Base(filePath), reason, numChunks, segmentTime/60, s.workers()), spans)
 	s.verifyChunkOffsets(ctx, chunks, segmentTime, b)
 	return s.transcribePool(ctx, chunks, segmentTime, b)
+}
+
+// statusOf returns the progress writer and whether it is a live terminal: out
+// when set, else the run's stderr.
+func statusOf(ctx context.Context, out io.Writer) (io.Writer, bool) {
+	if out != nil {
+		return out, utils.IsTerminalWriter(out)
+	}
+	env := runenv.From(ctx)
+	return env.Stderr(), env.IsTerminal(stdio.Stderr)
 }
 
 func (s *Splitter) probeDuration(ctx context.Context, filePath string) (float64, error) {
@@ -246,13 +261,13 @@ func probeDuration(ctx context.Context, runner CommandRunner, filePath string) (
 		filePath)
 	if err != nil {
 		if ctx.Err() != nil {
-			return 0, fmt.Errorf("ffprobe aborted: %w", ctx.Err())
+			return 0, diag.Errorf("ffprobe aborted: %w", ctx.Err())
 		}
-		return 0, fmt.Errorf("ffprobe failed on %v: %w, stderr: %v", filePath, err, tail(stderr))
+		return 0, diag.Errorf("ffprobe failed on %v: %w, stderr: %v", filePath, err, tail(stderr))
 	}
 	duration, err := strconv.ParseFloat(strings.TrimSpace(stdout), 64)
 	if err != nil {
-		return 0, fmt.Errorf("failed to parse ffprobe duration %q for %v: %w", strings.TrimSpace(stdout), filePath, err)
+		return 0, diag.Errorf("failed to parse ffprobe duration %q for %v: %w", strings.TrimSpace(stdout), filePath, err)
 	}
 	if duration <= 0 {
 		// A well-formed but non-positive duration is not a parse failure: name
@@ -274,13 +289,13 @@ func (s *Splitter) split(ctx context.Context, filePath, tempDir string, segmentT
 		pattern)
 	if err != nil {
 		if ctx.Err() != nil {
-			return nil, fmt.Errorf("ffmpeg split aborted: %w", ctx.Err())
+			return nil, diag.Errorf("ffmpeg split aborted: %w", ctx.Err())
 		}
-		return nil, fmt.Errorf("ffmpeg failed to split %v: %w, stderr: %v", filePath, err, tail(stderr))
+		return nil, diag.Errorf("ffmpeg failed to split %v: %w, stderr: %v", filePath, err, tail(stderr))
 	}
 	chunks, err := filepath.Glob(filepath.Join(tempDir, "chunk_*"))
 	if err != nil {
-		return nil, fmt.Errorf("failed to glob chunk files: %w", err)
+		return nil, diag.Errorf("failed to glob chunk files: %w", err)
 	}
 	if len(chunks) == 0 {
 		return nil, fmt.Errorf("ffmpeg produced no chunks for %v", filePath)
@@ -290,7 +305,7 @@ func (s *Splitter) split(ctx context.Context, filePath, tempDir string, segmentT
 
 // verifyChunkOffsets best-effort compares the planned i×segmentTime starts
 // against ffprobe-measured chunk durations, warning once on drift > 1 s
-func (s *Splitter) verifyChunkOffsets(ctx context.Context, chunks []string, segmentTime float64, b *board.Board) {
+func (s *Splitter) verifyChunkOffsets(ctx context.Context, chunks []string, segmentTime float64, b *chunkBoard) {
 	measuredStart := 0.0
 	for i, chunk := range chunks {
 		planned := float64(i) * segmentTime
@@ -323,7 +338,7 @@ func (s *Splitter) workers() int {
 	return s.Parallelism
 }
 
-func (s *Splitter) transcribePool(ctx context.Context, chunks []string, segmentTime float64, b *board.Board) ([]Segment, error) {
+func (s *Splitter) transcribePool(ctx context.Context, chunks []string, segmentTime float64, b *chunkBoard) ([]Segment, error) {
 	poolCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	go b.Animate(poolCtx)
@@ -351,10 +366,10 @@ func (s *Splitter) transcribePool(ctx context.Context, chunks []string, segmentT
 			b.Update(i, func(r *board.Row) { r.Active, r.Cells[colState], r.Started = true, "transcribing", time.Now() })
 			segs, err := s.Transcriber.Transcribe(poolCtx, chunk)
 			if err != nil {
-				b.Update(i, func(r *board.Row) { r.Active, r.Mark, r.Cells[colState] = false, board.MarkWarn, "request failed" })
+				b.Update(i, func(r *board.Row) { r.Active, r.Mark, r.Cells[colState] = false, board.MarkWarn, stateRequestFailed })
 				errMu.Lock()
 				if firstErr == nil {
-					firstErr = fmt.Errorf("failed to transcribe chunk %v/%v: %w", i+1, len(chunks), err)
+					firstErr = diag.Errorf("failed to transcribe chunk %v/%v: %w", i+1, len(chunks), err)
 				}
 				errMu.Unlock()
 				cancel()
@@ -378,6 +393,9 @@ func (s *Splitter) transcribePool(ctx context.Context, chunks []string, segmentT
 		}(i, chunk)
 	}
 	wg.Wait()
+	if firstErr != nil || ctx.Err() != nil {
+		b.Fail()
+	}
 	b.SetPhase("stitching")
 	b.Finish(fmt.Sprintf("%v chunks · %v elapsed", len(chunks), time.Since(started).Round(time.Second)))
 	if firstErr != nil {

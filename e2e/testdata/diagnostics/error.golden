@@ -1,0 +1,9 @@
+# clai -r -cm gpt-stub q hi
+# env: -
+== status
+1
+== stdout
+
+== stderr
+error: run step 0: stream completions: openai chat: stream: authentication failed, status: 401, provider code: invalid_api_key, body: {"error":{"message":"Incorrect API key provided","type":"invalid_request_error","code":"invalid_api_key"}}
+

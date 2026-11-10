@@ -188,7 +188,7 @@ func TestExecuteConfigAction_TableDriven(t *testing.T) {
 				t.Setenv("EDITOR", editor)
 			}
 
-			err := executeConfigAction(config{name: "cfg.json", filePath: cfgPath}, tt.action)
+			err := executeConfigAction(procCtx(), config{name: "cfg.json", filePath: cfgPath}, tt.action)
 			if tt.wantErrSubstr != "" {
 				if err == nil {
 					t.Fatalf("expected error containing %q, got nil", tt.wantErrSubstr)
@@ -249,7 +249,7 @@ func TestSetupCustomTableActions_TableDriven(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := setupCustomTableActions(tt.category)
+			got := setupCustomTableActions(procCtx(), tt.category)
 
 			gotActions := map[action]bool{}
 			for _, cta := range got {
@@ -339,7 +339,7 @@ func TestActionReconfigureStringFieldWithEditor_PreservesNonEditedFields_TableDr
 			}
 			t.Setenv("EDITOR", editorPath)
 
-			err = actionReconfigureStringFieldWithEditor(config{name: "cfg.json", filePath: cfgPath}, tt.fieldName)
+			err = actionReconfigureStringFieldWithEditor(procCtx(), config{name: "cfg.json", filePath: cfgPath}, tt.fieldName)
 			if err != nil {
 				t.Fatalf("actionReconfigureStringFieldWithEditor(%q): %v", tt.fieldName, err)
 			}
@@ -372,7 +372,7 @@ func TestSetupCustomTableActions_McpIncludesPasteAction(t *testing.T) {
 		itemSelectActions: []action{newaction, pasteConfig},
 	}
 
-	got := setupCustomTableActions(category)
+	got := setupCustomTableActions(procCtx(), category)
 
 	foundPaste := false
 	foundNew := false
@@ -403,7 +403,7 @@ func TestSetupCustomTableActions_McpIncludesPasteAction(t *testing.T) {
 }
 
 func TestSetupCustomTableActions_DoesNotAddBack(t *testing.T) {
-	got := setupCustomTableActions(setupCategory{
+	got := setupCustomTableActions(procCtx(), setupCategory{
 		name:              "profiles",
 		itemSelectActions: []action{back, newaction},
 	})

@@ -16,6 +16,7 @@ import (
 
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/utils"
+	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/dimensions"
 )
@@ -1190,9 +1191,10 @@ func TestQuerier_TextQueryDrawsTheLoopHeaderBeforeAnyActivity(t *testing.T) {
 	}
 	q.SetLoopProgress(LoopProgress{Iteration: 1, MaxIterations: 2})
 
+	// A step with nothing in it fails the run; the header is drawn first.
 	chat := pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "hello"}}}
-	if _, err := q.TextQuery(t.Context(), chat); err != nil {
-		t.Fatalf("TextQuery: %v", err)
+	if _, err := q.TextQuery(t.Context(), chat); !errors.Is(err, claierr.ErrUnexpectedProviderResponse) {
+		t.Fatalf("TextQuery: %v, want the no-completion failure", err)
 	}
 	rows := nonEmptyScreenRows(printed.String())
 	if want := []string{"▸ loop 1/2"}; !slices.Equal(rows, want) {

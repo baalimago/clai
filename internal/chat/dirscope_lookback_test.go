@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -59,7 +60,7 @@ func TestSearch_PaginationOverflowDoesNotPanic(t *testing.T) {
 	s := NewConversationSearcher(confDir)
 
 	// page chosen so page*pageSize lands in [2^63, 2^64) -> negative int64.
-	res, err := s.Search(SearchRequest{Query: "oauth", Directory: dir, Subtree: true, Page: 184467440737095517, PageSize: 50})
+	res, err := s.Search(context.Background(), SearchRequest{Query: "oauth", Directory: dir, Subtree: true, Page: 184467440737095517, PageSize: 50})
 	if err != nil {
 		t.Fatalf("Search overflow page: %v", err)
 	}
@@ -67,7 +68,7 @@ func TestSearch_PaginationOverflowDoesNotPanic(t *testing.T) {
 		t.Fatalf("expected total=1 with an out-of-range empty page, got total=%d rows=%d", res.TotalMatches, len(res.Rows))
 	}
 
-	out, err := InspectConversation(confDir, "h", 184467440737095517, 50, "", "")
+	out, err := InspectConversation(context.Background(), confDir, "h", 184467440737095517, 50, "", "")
 	if err != nil {
 		t.Fatalf("InspectConversation overflow page: %v", err)
 	}
@@ -102,7 +103,7 @@ func seedChat(t *testing.T, confDir, id, originDir string, msgs ...pub_models.Me
 		canon = c
 	}
 	chat := pub_models.Chat{ID: id, OriginDir: canon, Messages: msgs}
-	if err := Save(conversationsDir(confDir), chat); err != nil {
+	if err := Save(context.Background(), conversationsDir(confDir), chat); err != nil {
 		t.Fatalf("Save(%q): %v", id, err)
 	}
 }
@@ -144,7 +145,7 @@ func TestSearch_ANDSemanticsSubtreeAndExclusion(t *testing.T) {
 	s := NewConversationSearcher(confDir)
 
 	// AND semantics, anchored at child (exact).
-	res, err := s.Search(SearchRequest{Query: "oauth refresh", Directory: child, Subtree: true})
+	res, err := s.Search(context.Background(), SearchRequest{Query: "oauth refresh", Directory: child, Subtree: true})
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -153,24 +154,24 @@ func TestSearch_ANDSemanticsSubtreeAndExclusion(t *testing.T) {
 	}
 
 	// Subtree from the parent root finds the child conversation.
-	res, _ = s.Search(SearchRequest{Query: "oauth refresh", Directory: projRoot, Subtree: true})
+	res, _ = s.Search(context.Background(), SearchRequest{Query: "oauth refresh", Directory: projRoot, Subtree: true})
 	if res.TotalMatches != 1 {
 		t.Fatalf("expected subtree match from parent, got %d", res.TotalMatches)
 	}
 	// subtree=false from the parent excludes the descendant.
-	res, _ = s.Search(SearchRequest{Query: "oauth refresh", Directory: projRoot, Subtree: false})
+	res, _ = s.Search(context.Background(), SearchRequest{Query: "oauth refresh", Directory: projRoot, Subtree: false})
 	if res.TotalMatches != 0 {
 		t.Fatalf("expected no exact match from parent, got %d", res.TotalMatches)
 	}
 
 	// Anchored elsewhere returns none.
-	res, _ = s.Search(SearchRequest{Query: "oauth", Directory: t.TempDir(), Subtree: true})
+	res, _ = s.Search(context.Background(), SearchRequest{Query: "oauth", Directory: t.TempDir(), Subtree: true})
 	if res.TotalMatches != 0 {
 		t.Fatalf("expected no match in unrelated dir, got %d", res.TotalMatches)
 	}
 
 	// Leading-system-message token never matches.
-	res, _ = s.Search(SearchRequest{Query: "phantomtoken", Directory: child, Subtree: true})
+	res, _ = s.Search(context.Background(), SearchRequest{Query: "phantomtoken", Directory: child, Subtree: true})
 	if res.TotalMatches != 0 {
 		t.Fatalf("expected system-only token to not match, got %d", res.TotalMatches)
 	}
@@ -194,7 +195,7 @@ func TestSearch_MatchesHTMLEscapedTokens(t *testing.T) {
 
 	s := NewConversationSearcher(confDir)
 	for _, q := range []string{"<div>", "a&b", `"<div>"`} {
-		res, err := s.Search(SearchRequest{Query: q, Directory: dir, Subtree: true})
+		res, err := s.Search(context.Background(), SearchRequest{Query: q, Directory: dir, Subtree: true})
 		if err != nil {
 			t.Fatalf("Search(%q): %v", q, err)
 		}
@@ -229,7 +230,7 @@ func TestSearch_PhraseRankingAndPagination(t *testing.T) {
 	s := NewConversationSearcher(confDir)
 
 	// Quoted phrase: only contiguous "deploy pipeline" matches.
-	res, _ := s.Search(SearchRequest{Query: `"deploy pipeline"`, Directory: dir, Subtree: true})
+	res, _ := s.Search(context.Background(), SearchRequest{Query: `"deploy pipeline"`, Directory: dir, Subtree: true})
 	if res.TotalMatches != 2 {
 		t.Fatalf("expected 2 phrase matches, got %d rows=%+v", res.TotalMatches, res.Rows)
 	}
@@ -241,11 +242,11 @@ func TestSearch_PhraseRankingAndPagination(t *testing.T) {
 	}
 
 	// Pagination: page size 1 reports full total but one row.
-	res, _ = s.Search(SearchRequest{Query: `"deploy pipeline"`, Directory: dir, Subtree: true, PageSize: 1, Page: 0})
+	res, _ = s.Search(context.Background(), SearchRequest{Query: `"deploy pipeline"`, Directory: dir, Subtree: true, PageSize: 1, Page: 0})
 	if res.TotalMatches != 2 || len(res.Rows) != 1 {
 		t.Fatalf("expected total 2 with 1 row, got total=%d rows=%d", res.TotalMatches, len(res.Rows))
 	}
-	res2, _ := s.Search(SearchRequest{Query: `"deploy pipeline"`, Directory: dir, Subtree: true, PageSize: 1, Page: 1})
+	res2, _ := s.Search(context.Background(), SearchRequest{Query: `"deploy pipeline"`, Directory: dir, Subtree: true, PageSize: 1, Page: 1})
 	if len(res2.Rows) != 1 || res2.Rows[0].ChatID == res.Rows[0].ChatID {
 		t.Fatalf("expected a distinct row on page 1, got %+v", res2.Rows)
 	}
@@ -265,7 +266,7 @@ func TestInspectConversation_PaginationFiltersAndStorageTrueIndices(t *testing.T
 		msg("assistant", "second answer"),
 	)
 
-	out, err := InspectConversation(confDir, "conv", 0, 20, "", "")
+	out, err := InspectConversation(context.Background(), confDir, "conv", 0, 20, "", "")
 	if err != nil {
 		t.Fatalf("InspectConversation: %v", err)
 	}
@@ -277,7 +278,7 @@ func TestInspectConversation_PaginationFiltersAndStorageTrueIndices(t *testing.T
 	}
 
 	// role filter keeps storage-true indices (user is at 1 and 3).
-	out, _ = InspectConversation(confDir, "conv", 0, 20, "user", "")
+	out, _ = InspectConversation(context.Background(), confDir, "conv", 0, 20, "user", "")
 	if !strings.Contains(out, "index=1 role=user") || !strings.Contains(out, "index=3 role=user") {
 		t.Fatalf("expected user indices 1 and 3, got %q", out)
 	}
@@ -286,7 +287,7 @@ func TestInspectConversation_PaginationFiltersAndStorageTrueIndices(t *testing.T
 	}
 
 	// match filter
-	out, _ = InspectConversation(confDir, "conv", 0, 20, "", "gadgets")
+	out, _ = InspectConversation(context.Background(), confDir, "conv", 0, 20, "", "gadgets")
 	if !strings.Contains(out, "index=3 role=user") || strings.Contains(out, "index=1 role=user") {
 		t.Fatalf("expected only the gadgets message (index 3), got %q", out)
 	}
@@ -303,7 +304,7 @@ func TestReadMessage_ResolutionAndOutOfRange(t *testing.T) {
 		msg("user", "hello there"),
 	)
 
-	content, path, err := ReadMessage(confDir, "conv", 1)
+	content, path, err := ReadMessage(context.Background(), confDir, "conv", 1)
 	if err != nil {
 		t.Fatalf("ReadMessage: %v", err)
 	}
@@ -314,10 +315,10 @@ func TestReadMessage_ResolutionAndOutOfRange(t *testing.T) {
 		t.Fatalf("expected non-empty on-disk path")
 	}
 
-	if _, _, err := ReadMessage(confDir, "conv", 99); err == nil {
+	if _, _, err := ReadMessage(context.Background(), confDir, "conv", 99); err == nil {
 		t.Fatalf("expected out-of-range error")
 	}
-	if _, _, err := ReadMessage(confDir, "missing", 0); err == nil {
+	if _, _, err := ReadMessage(context.Background(), confDir, "missing", 0); err == nil {
 		t.Fatalf("expected unresolvable chat_id error")
 	}
 }
@@ -336,10 +337,10 @@ func TestLookback_RejectsPathTraversalChatID(t *testing.T) {
 	}
 
 	for _, chatID := range []string{"../secret", "..", ".", "", `..\secret`, "/etc/passwd"} {
-		if _, _, err := ReadMessage(confDir, chatID, 0); err == nil {
+		if _, _, err := ReadMessage(context.Background(), confDir, chatID, 0); err == nil {
 			t.Fatalf("ReadMessage accepted traversal chat_id %q", chatID)
 		}
-		if _, err := InspectConversation(confDir, chatID, 0, 0, "", ""); err == nil {
+		if _, err := InspectConversation(context.Background(), confDir, chatID, 0, 0, "", ""); err == nil {
 			t.Fatalf("InspectConversation accepted traversal chat_id %q", chatID)
 		}
 	}
@@ -352,15 +353,15 @@ func TestBuildLookbackDescriptor_StatsAndCap(t *testing.T) {
 	seedChat(t, confDir, "older", dir, msg("user", "older topic"), msg("assistant", "a"))
 	seedChat(t, confDir, "newer", dir, msg("user", "newer topic"), msg("assistant", "b"), msg("user", "more"))
 
-	if err := cq.SaveDirScope(dir, "older"); err != nil {
+	if err := cq.SaveDirScope(context.Background(), dir, "older"); err != nil {
 		t.Fatalf("SaveDirScope(older): %v", err)
 	}
-	if err := cq.SaveDirScope(dir, "newer"); err != nil {
+	if err := cq.SaveDirScope(context.Background(), dir, "newer"); err != nil {
 		t.Fatalf("SaveDirScope(newer): %v", err)
 	}
 
 	// Full descriptor.
-	desc, err := BuildLookbackDescriptor(confDir, dir, 5)
+	desc, err := BuildLookbackDescriptor(context.Background(), confDir, dir, 5)
 	if err != nil {
 		t.Fatalf("BuildLookbackDescriptor: %v", err)
 	}
@@ -378,7 +379,7 @@ func TestBuildLookbackDescriptor_StatsAndCap(t *testing.T) {
 	}
 
 	// Cap: injectCount 1 shows only the newest.
-	desc, _ = BuildLookbackDescriptor(confDir, dir, 1)
+	desc, _ = BuildLookbackDescriptor(context.Background(), confDir, dir, 1)
 	if desc.Shown != 1 || desc.TotalChats != 2 {
 		t.Fatalf("expected shown=1 total=2, got %+v", desc)
 	}
@@ -387,7 +388,7 @@ func TestBuildLookbackDescriptor_StatsAndCap(t *testing.T) {
 	}
 
 	// No-history directory.
-	desc, _ = BuildLookbackDescriptor(confDir, t.TempDir(), 5)
+	desc, _ = BuildLookbackDescriptor(context.Background(), confDir, t.TempDir(), 5)
 	if desc.HasHistory || desc.Block != "" {
 		t.Fatalf("expected empty descriptor for dir without history, got %+v", desc)
 	}
@@ -396,7 +397,7 @@ func TestBuildLookbackDescriptor_StatsAndCap(t *testing.T) {
 func seedLabelledChat(t *testing.T, confDir, id, title, summary string, first string) {
 	t.Helper()
 	c := pub_models.Chat{ID: id, Title: title, Summary: summary, Messages: []pub_models.Message{msg("user", first), msg("assistant", "a")}}
-	if err := Save(conversationsDir(confDir), c); err != nil {
+	if err := Save(context.Background(), conversationsDir(confDir), c); err != nil {
 		t.Fatalf("Save(%q): %v", id, err)
 	}
 }
@@ -407,12 +408,12 @@ func TestBuildLookbackDescriptor_titleSummary(t *testing.T) {
 	seedLabelledChat(t, confDir, "full", "Fix auth", "Token refresh fixed.", "full first message")
 	seedLabelledChat(t, confDir, "partial", "Only title", "", "partial first message")
 	for _, id := range []string{"full", "partial"} {
-		if err := cq.SaveDirScope(dir, id); err != nil {
+		if err := cq.SaveDirScope(context.Background(), dir, id); err != nil {
 			t.Fatalf("SaveDirScope(%q): %v", id, err)
 		}
 	}
 
-	desc, err := BuildLookbackDescriptor(confDir, dir, 5)
+	desc, err := BuildLookbackDescriptor(context.Background(), confDir, dir, 5)
 	if err != nil {
 		t.Fatalf("BuildLookbackDescriptor: %v", err)
 	}
@@ -432,11 +433,11 @@ func TestBuildLookbackDescriptor_fallback(t *testing.T) {
 	dir := t.TempDir()
 	long := strings.Repeat("0123456789", 9)
 	seedLabelledChat(t, confDir, "plain", "", "", long)
-	if err := cq.SaveDirScope(dir, "plain"); err != nil {
+	if err := cq.SaveDirScope(context.Background(), dir, "plain"); err != nil {
 		t.Fatalf("SaveDirScope: %v", err)
 	}
 
-	desc, err := BuildLookbackDescriptor(confDir, dir, 5)
+	desc, err := BuildLookbackDescriptor(context.Background(), confDir, dir, 5)
 	if err != nil {
 		t.Fatalf("BuildLookbackDescriptor: %v", err)
 	}

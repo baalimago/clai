@@ -2,11 +2,11 @@ package openai
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"os"
 
-	"github.com/baalimago/clai/internal/debugflags"
+	"github.com/baalimago/clai/internal/apikey"
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/text/generic"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -35,7 +35,6 @@ type ChatGPT struct {
 	URL             string `json:"url"`
 
 	apiKey string
-	debug  bool
 
 	tools []pub_models.LLMTool
 	usage *pub_models.Usage
@@ -48,10 +47,9 @@ type ChatGPT struct {
 func (g *ChatGPT) Setup() error {
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {
-		return fmt.Errorf("openai: missing OPENAI_API_KEY")
+		return &apikey.MissingError{Env: "OPENAI_API_KEY", Message: "openai: missing OPENAI_API_KEY"}
 	}
 	g.apiKey = apiKey
-	g.debug = debugflags.EnabledEnv("DEBUG_OPENAI")
 	if g.Model == "" {
 		g.Model = GptDefault.Model
 	}
@@ -140,7 +138,6 @@ func (g *ChatGPT) StreamCompletions(ctx context.Context, chat pub_models.Chat) (
 			apiKey:          g.apiKey,
 			url:             g.URL,
 			model:           g.Model,
-			debug:           g.debug,
 			client:          http.DefaultClient,
 			tools:           g.mapResponsesTools(),
 			usageSetter:     g.setUsage,
@@ -158,14 +155,14 @@ func (g *ChatGPT) StreamCompletions(ctx context.Context, chat pub_models.Chat) (
 
 		out, err := s.stream(ctx, chat)
 		if err != nil {
-			return nil, fmt.Errorf("openai responses: stream: %w", err)
+			return nil, diag.Errorf("openai responses: stream: %w", err)
 		}
 		return out, nil
 	}
 
 	sc := &generic.StreamCompleter{}
 	if err := sc.Setup("OPENAI_API_KEY", g.URL, "DEBUG_OPENAI"); err != nil {
-		return nil, fmt.Errorf("openai chat: setup stream completer: %w", err)
+		return nil, diag.Errorf("openai chat: setup stream completer: %w", err)
 	}
 	// Vendor decoder for both decode points (non-OK body and error frame at
 	// HTTP 200), per worklog 2026-09-05-error-propagation D11/D12.
@@ -199,7 +196,7 @@ func (g *ChatGPT) StreamCompletions(ctx context.Context, chat pub_models.Chat) (
 
 	out, err := g.streamCompleter.StreamCompletions(ctx, chat)
 	if err != nil {
-		return nil, fmt.Errorf("openai chat: stream: %w", err)
+		return nil, diag.Errorf("openai chat: stream: %w", err)
 	}
 	return out, nil
 }

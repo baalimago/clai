@@ -1,13 +1,15 @@
 package utils
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
+	"github.com/baalimago/clai/internal/testenv/procenv"
+	"github.com/baalimago/clai/pkg/diagnostic"
 )
 
 // requireWritablePermissionModel skips cases that rely on chmod to deny writes:
@@ -102,7 +104,7 @@ func TestCreateDefaultConfigFile_ReadOnlyDir(t *testing.T) {
 	type cfg struct {
 		A string `json:"a"`
 	}
-	err := createDefaultConfigFile(dir, "app.json", &cfg{A: "x"})
+	err := createDefaultConfigFile(context.Background(), dir, "app.json", &cfg{A: "x"})
 	if err == nil {
 		t.Fatal("expected an error writing into a read-only dir")
 	}
@@ -139,7 +141,7 @@ func TestLoadConfigFromFile_NoCreateReadError(t *testing.T) {
 	type cfg struct {
 		A string `json:"a"`
 	}
-	_, err := LoadConfigFromFile(notADir, "app.json", nil, &cfg{})
+	_, err := LoadConfigFromFile(context.Background(), notADir, "app.json", nil, &cfg{})
 	if err == nil {
 		t.Fatal("expected an error reading through a file path component")
 	}
@@ -160,7 +162,7 @@ func TestLoadConfigFromFile_NoCreateMalformed(t *testing.T) {
 	type cfg struct {
 		A string `json:"a"`
 	}
-	_, err := LoadConfigFromFile(dir, "app.json", nil, &cfg{})
+	_, err := LoadConfigFromFile(context.Background(), dir, "app.json", nil, &cfg{})
 	if err == nil {
 		t.Fatal("expected an error for a malformed config")
 	}
@@ -180,7 +182,7 @@ func TestLoadConfigFromFile_NoCreateUnkeyable(t *testing.T) {
 
 	// A document that parses as the target type but not as a keyed object must
 	// be rejected with an error instead of reaching the reflection merge.
-	_, err := LoadConfigFromFile(dir, "app.json", nil, new([]int))
+	_, err := LoadConfigFromFile(context.Background(), dir, "app.json", nil, new([]int))
 	if err == nil {
 		t.Fatal("expected an error for a config that is not a JSON object")
 	}
@@ -203,11 +205,11 @@ func TestLoadConfigFromFile_DebugPrints(t *testing.T) {
 		NoCreateConfig = true
 		t.Cleanup(func() { NoCreateConfig = false })
 
-		stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-			if _, err := LoadConfigFromFile(dir, "app.json", nil, &cfg{A: "d"}); err != nil {
-				t.Fatalf("LoadConfigFromFile: %v", err)
-			}
-		})
+		var out strings.Builder
+		if _, err := LoadConfigFromFile(procenv.Diagnostics(context.Background(), &out, diagnostic.LevelDebug), dir, "app.json", nil, &cfg{A: "d"}); err != nil {
+			t.Fatalf("LoadConfigFromFile: %v", err)
+		}
+		stdout := out.String()
 		if !strings.Contains(stdout, "found config (read-only)") {
 			t.Fatalf("expected the read-only debug line, got %q", stdout)
 		}
@@ -215,11 +217,11 @@ func TestLoadConfigFromFile_DebugPrints(t *testing.T) {
 
 	t.Run("fresh writable config", func(t *testing.T) {
 		dir := t.TempDir()
-		stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-			if _, err := LoadConfigFromFile(dir, "app.json", nil, &cfg{A: "d"}); err != nil {
-				t.Fatalf("LoadConfigFromFile: %v", err)
-			}
-		})
+		var out strings.Builder
+		if _, err := LoadConfigFromFile(procenv.Diagnostics(context.Background(), &out, diagnostic.LevelDebug), dir, "app.json", nil, &cfg{A: "d"}); err != nil {
+			t.Fatalf("LoadConfigFromFile: %v", err)
+		}
+		stdout := out.String()
 		for _, want := range []string{"attempting to create file", "found config:"} {
 			if !strings.Contains(stdout, want) {
 				t.Fatalf("expected %q in debug output, got %q", want, stdout)
@@ -236,7 +238,7 @@ func TestLoadConfigFromFile_CreateConfigDirError(t *testing.T) {
 	type cfg struct {
 		A string `json:"a"`
 	}
-	_, err := LoadConfigFromFile(filepath.Join(parent, "cfg"), "app.json", nil, &cfg{})
+	_, err := LoadConfigFromFile(context.Background(), filepath.Join(parent, "cfg"), "app.json", nil, &cfg{})
 	if err == nil {
 		t.Fatal("expected an error creating the config dir")
 	}
@@ -268,7 +270,7 @@ func TestLoadConfigFromFile_CreateDefaultConfigFileError(t *testing.T) {
 	type cfg struct {
 		A string `json:"a"`
 	}
-	_, err := LoadConfigFromFile(dir, "app.json", nil, &cfg{A: "a"})
+	_, err := LoadConfigFromFile(context.Background(), dir, "app.json", nil, &cfg{A: "a"})
 	if err == nil {
 		t.Fatal("expected an error creating the default config file")
 	}
@@ -290,7 +292,7 @@ func TestLoadConfigFromFile_PostAppendageWriteError(t *testing.T) {
 		A string `json:"a"`
 		B string `json:"b"`
 	}
-	_, err := LoadConfigFromFile(dir, "app.json", nil, &cfg{A: "a", B: "b"})
+	_, err := LoadConfigFromFile(context.Background(), dir, "app.json", nil, &cfg{A: "a", B: "b"})
 	if err == nil {
 		t.Fatal("expected an error rewriting the upgraded config")
 	}

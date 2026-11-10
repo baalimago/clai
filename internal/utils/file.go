@@ -12,16 +12,16 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
+	"github.com/baalimago/clai/internal/diag"
 )
 
 func CreateFile[T any](path string, toCreate *T) error {
 	b, err := json.MarshalIndent(toCreate, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal config: %w", err)
+		return diag.Errorf("failed to marshal config: %w", err)
 	}
 	if err := WriteFileAtomic(path, b, 0o644); err != nil {
-		return fmt.Errorf("failed to create config file: %w", err)
+		return diag.Errorf("failed to create config file: %w", err)
 	}
 	return nil
 }
@@ -31,17 +31,16 @@ func CreateFile[T any](path string, toCreate *T) error {
 func SaveBase64File(prefix, dir, b64JSON, extension string) (string, error) {
 	data, err := base64.StdEncoding.DecodeString(b64JSON)
 	if err != nil {
-		return "", fmt.Errorf("failed to decode base64: %w", err)
+		return "", diag.Errorf("failed to decode base64: %w", err)
 	}
 	fileName := fmt.Sprintf("%v_%v.%v", prefix, RandomPrefix(), extension)
 	outFile := fmt.Sprintf("%v/%v", dir, fileName)
 	err = WriteFileAtomic(outFile, data, 0o644)
 	if err != nil {
-		ancli.PrintWarn(fmt.Sprintf("failed to write file: '%v', attempting tmp file...\n", err))
 		outFile = filepath.Join(os.TempDir(), fileName)
 		err = WriteFileAtomic(outFile, data, 0o644)
 		if err != nil {
-			return "", fmt.Errorf("failed to write file: %w", err)
+			return "", diag.Errorf("failed to write file: %w", err)
 		}
 	}
 	return outFile, nil
@@ -50,10 +49,10 @@ func SaveBase64File(prefix, dir, b64JSON, extension string) (string, error) {
 func WriteFile[T any](path string, toWrite *T) error {
 	fileBytes, err := json.MarshalIndent(toWrite, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal file: %w", err)
+		return diag.Errorf("failed to marshal file: %w", err)
 	}
 	if err := WriteFileAtomic(path, fileBytes, 0o644); err != nil {
-		return fmt.Errorf("failed to write file: %w", err)
+		return diag.Errorf("failed to write file: %w", err)
 	}
 	return nil
 }
@@ -61,20 +60,20 @@ func WriteFile[T any](path string, toWrite *T) error {
 // ReadAndUnmarshal by first finding the file, then attempting to read + unmarshal to T
 func ReadAndUnmarshal[T any](filePath string, config *T) error {
 	if _, err := os.Stat(filePath); errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("failed to find file: %w", err)
+		return diag.Errorf("failed to find file: %w", err)
 	}
 	file, err := os.Open(filePath)
 	if err != nil {
-		return fmt.Errorf("failed to open file: %w", err)
+		return diag.Errorf("failed to open file: %w", err)
 	}
 	defer file.Close()
 	fileBytes, err := io.ReadAll(file)
 	if err != nil {
-		return fmt.Errorf("failed to read file: %w", err)
+		return diag.Errorf("failed to read file: %w", err)
 	}
 	err = json.Unmarshal(fileBytes, config)
 	if err != nil {
-		return fmt.Errorf("failed to unmarshal file: %w", err)
+		return diag.Errorf("failed to unmarshal file: %w", err)
 	}
 
 	return nil
@@ -98,13 +97,13 @@ func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
 	defer func() { _ = os.Remove(tmpName) }()
 	if _, err := tmp.Write(data); err != nil {
 		_ = tmp.Close()
-		return fmt.Errorf("write temp file %q: %w", tmpName, err)
+		return diag.Errorf("write temp file %q: %w", tmpName, err)
 	}
 	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("close temp file %q: %w", tmpName, err)
+		return diag.Errorf("close temp file %q: %w", tmpName, err)
 	}
 	if err := os.Rename(tmpName, path); err != nil {
-		return fmt.Errorf("rename %q to %q: %w", tmpName, path, err)
+		return diag.Errorf("rename %q to %q: %w", tmpName, path, err)
 	}
 	return nil
 }
@@ -120,9 +119,9 @@ func createExclusiveTemp(path string, perm os.FileMode) (*os.File, error) {
 			continue
 		}
 		if err != nil {
-			return nil, fmt.Errorf("create temp file in %q: %w", dir, err)
+			return nil, diag.Errorf("create temp file in %q: %w", dir, err)
 		}
 		return f, nil
 	}
-	return nil, fmt.Errorf("create temp file in %q: %w", dir, fs.ErrExist)
+	return nil, diag.Errorf("create temp file in %q: %w", dir, fs.ErrExist)
 }

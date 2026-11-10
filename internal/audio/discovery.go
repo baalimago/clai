@@ -2,9 +2,10 @@ package audio
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 	"time"
+
+	"github.com/baalimago/clai/internal/diag"
 )
 
 const (
@@ -68,7 +69,7 @@ func (d *Discovery) request(ctx context.Context, samples []SampleClip, core Sour
 func (d *Discovery) Bootstrap(ctx context.Context, core SourceInterval) (Mapping, DiscoveryReport, error) {
 	first, err := d.request(ctx, nil, core)
 	if err != nil {
-		return Mapping{}, DiscoveryReport{}, fmt.Errorf("bootstrap pass failed: %w", err)
+		return Mapping{}, DiscoveryReport{}, diag.Errorf("bootstrap pass failed: %w", err)
 	}
 	return d.discover(ctx, core, first, d.Registry.Snapshot(), true)
 }
@@ -115,7 +116,7 @@ func (d *Discovery) discover(ctx context.Context, core SourceInterval, current M
 			rep.Attempts++
 			next, err := d.request(ctx, samples, core)
 			if err != nil {
-				return fmt.Errorf("discovery request %v failed: %w", rep.Attempts, err)
+				return diag.Errorf("discovery request %v failed: %w", rep.Attempts, err)
 			}
 			d.promote(tx, &next, cands, &rep)
 			current = next
@@ -248,7 +249,7 @@ func (d *Discovery) Recover(ctx context.Context, core SourceInterval, m Mapping,
 	}
 	retry, err := d.Pass(ctx, core, d.Registry.Snapshot())
 	if err != nil {
-		return Mapping{}, applied, fmt.Errorf("replacement retry failed: %w", err)
+		return Mapping{}, applied, diag.Errorf("replacement retry failed: %w", err)
 	}
 	return retry, applied, nil
 }

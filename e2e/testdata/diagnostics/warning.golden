@@ -1,0 +1,11 @@
+# clai -r -cm test -t no_such_tool q hello
+# env: -
+== status
+0
+== stdout
+hello
+
+== stderr
+warn [text_querier] attempted to select unknown tool 'no_such_tool' via -t/-tools, skipping
+warn [text_querier] no valid tools found from -t/-tools flag; disabling tools for this run
+

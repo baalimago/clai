@@ -4,14 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"time"
 
-	"github.com/baalimago/clai/internal/debugflags"
+	"github.com/baalimago/clai/internal/diag"
+	"github.com/baalimago/clai/internal/runenv"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
 type ModelCatalogFetcher interface {
@@ -19,8 +18,9 @@ type ModelCatalogFetcher interface {
 }
 
 type Manager struct {
-	fetcher        ModelCatalogFetcher
-	debug          bool
+	fetcher ModelCatalogFetcher
+	// ctx carries the run's diagnostics; Start sets it.
+	ctx            context.Context
 	model          string
 	modelResolver  func(pub_models.Chat) string
 	configFilePath string
@@ -34,19 +34,14 @@ type Session interface {
 }
 
 func NewManager(fetcher ModelCatalogFetcher, model, configPath string) Manager {
-	debug := debugflags.Enabled("COST_MANAGER")
-	if debug {
-		ancli.Noticef("setting up cost manager\n")
-	}
-
 	return Manager{
+		ctx:     context.Background(),
 		fetcher: fetcher,
 		model:   model,
 		modelResolver: func(pub_models.Chat) string {
 			return model
 		},
 		configFilePath: configPath,
-		debug:          debug,
 	}
 }
 
@@ -100,9 +95,7 @@ func (e DebugError) Unwrap() error { return e.err }
 // storePriceScheme by updating the price field in m.configFilePath while keeping all other field as is
 func (m *Manager) storePriceScheme(price ModelPriceScheme) error {
 	m.price = &price
-	if m.debug {
-		ancli.Noticef("appending cache entry for: %v, price: %v", m.model, price)
-	}
+	runenv.Debugf(m.ctx, runenv.SubsystemCostManager, "appending cache entry for: %v, price: %v", m.model, price)
 	return m.setConfigField("price", price)
 }
 
@@ -111,26 +104,26 @@ func (m *Manager) storePriceScheme(price ModelPriceScheme) error {
 func (m *Manager) setConfigField(key string, value any) error {
 	b, err := os.ReadFile(m.configFilePath)
 	if err != nil {
-		return fmt.Errorf("read price config file %q: %w", m.configFilePath, err)
+		return diag.Errorf("read price config file %q: %w", m.configFilePath, err)
 	}
 
 	var config map[string]json.RawMessage
 	if err := json.Unmarshal(b, &config); err != nil {
-		return fmt.Errorf("unmarshal price config file %q: %w", m.configFilePath, err)
+		return diag.Errorf("unmarshal price config file %q: %w", m.configFilePath, err)
 	}
 
 	valueBytes, err := json.Marshal(value)
 	if err != nil {
-		return fmt.Errorf("marshal %s for price config file %q: %w", key, m.configFilePath, err)
+		return diag.Errorf("marshal %s for price config file %q: %w", key, m.configFilePath, err)
 	}
 	config[key] = valueBytes
 
 	updatedBytes, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
-		return fmt.Errorf("marshal updated price config file %q: %w", m.configFilePath, err)
+		return diag.Errorf("marshal updated price config file %q: %w", m.configFilePath, err)
 	}
 	if err := utils.WriteFileAtomic(m.configFilePath, updatedBytes, 0o644); err != nil {
-		return fmt.Errorf("write updated price config file %q: %w", m.configFilePath, err)
+		return diag.Errorf("write updated price config file %q: %w", m.configFilePath, err)
 	}
 
 	return nil
@@ -141,11 +134,11 @@ func (m *Manager) setConfigField(key string, value any) error {
 func (m *Manager) checkUnpriced() error {
 	b, err := os.ReadFile(m.configFilePath)
 	if err != nil {
-		return fmt.Errorf("read price config file %q: %w", m.configFilePath, err)
+		return diag.Errorf("read price config file %q: %w", m.configFilePath, err)
 	}
 	var config map[string]json.RawMessage
 	if err := json.Unmarshal(b, &config); err != nil {
-		return fmt.Errorf("unmarshal price config file %q: %w", m.configFilePath, err)
+		return diag.Errorf("unmarshal price config file %q: %w", m.configFilePath, err)
 	}
 	raw, ok := config[unpricedKey]
 	if !ok {
@@ -153,12 +146,12 @@ func (m *Manager) checkUnpriced() error {
 	}
 	var at time.Time
 	if err := json.Unmarshal(raw, &at); err != nil {
-		return fmt.Errorf("decode %s in price config file %q: %w", unpricedKey, m.configFilePath, err)
+		return diag.Errorf("decode %s in price config file %q: %w", unpricedKey, m.configFilePath, err)
 	}
 	if time.Since(at) > unpricedRecheck {
 		return nil
 	}
-	return fmt.Errorf("%q, checked %v: %w", m.model, at.Format(time.RFC3339), ErrModelNotInCatalog)
+	return diag.Errorf("%q, checked %v: %w", m.model, at.Format(time.RFC3339), ErrModelNotInCatalog)
 }
 
 // seekCached by checking the config item for a price item. If field 'price' doesnt exit
@@ -166,7 +159,7 @@ func (m *Manager) checkUnpriced() error {
 func (m *Manager) seekCached() (ModelPriceScheme, error) {
 	b, err := os.ReadFile(m.configFilePath)
 	if err != nil {
-		return ModelPriceScheme{}, fmt.Errorf(
+		return ModelPriceScheme{}, diag.Errorf(
 			"read price config file %q: %w",
 			m.configFilePath,
 			err,
@@ -175,7 +168,7 @@ func (m *Manager) seekCached() (ModelPriceScheme, error) {
 
 	var config map[string]json.RawMessage
 	if err := json.Unmarshal(b, &config); err != nil {
-		return ModelPriceScheme{}, fmt.Errorf(
+		return ModelPriceScheme{}, diag.Errorf(
 			"unmarshal price config file %q: %w",
 			m.configFilePath,
 			err,
@@ -189,7 +182,7 @@ func (m *Manager) seekCached() (ModelPriceScheme, error) {
 
 	var price ModelPriceScheme
 	if err := json.Unmarshal(priceRaw, &price); err != nil {
-		return ModelPriceScheme{}, fmt.Errorf(
+		return ModelPriceScheme{}, diag.Errorf(
 			"unmarshal cached price for price config file %q: %w",
 			m.configFilePath,
 			err,
@@ -202,24 +195,20 @@ func (m *Manager) seekCached() (ModelPriceScheme, error) {
 func (m *Manager) resolveModelPrice(ctx context.Context) (ModelPriceScheme, error) {
 	cached, err := m.seekCached()
 	if err == nil {
-		if m.debug {
-			ancli.Noticef("cache hit for: %v", m.model)
-		}
+		runenv.Debugf(m.ctx, runenv.SubsystemCostManager, "cache hit for: %v", m.model)
 		return cached, nil
 	}
 
 	if err != nil && !errors.Is(err, errCacheMiss) {
-		return ModelPriceScheme{}, fmt.Errorf("failed to find latest usable: %w", err)
+		return ModelPriceScheme{}, diag.Errorf("failed to find latest usable: %w", err)
 	}
 
 	if err := m.checkUnpriced(); err != nil {
 		return ModelPriceScheme{}, NewDebugError(err)
 	}
-	if m.debug {
-		ancli.Noticef("fetching model price for: %v", m.model)
-	}
+	runenv.Debugf(m.ctx, runenv.SubsystemCostManager, "fetching model price for: %v", m.model)
 	if m.fetcher == nil {
-		return ModelPriceScheme{}, NewDebugError(fmt.Errorf("resolve model price for %q: %w", m.model, ErrNoModelCatalog))
+		return ModelPriceScheme{}, NewDebugError(diag.Errorf("resolve model price for %q: %w", m.model, ErrNoModelCatalog))
 	}
 	price, err := m.fetcher.FetchModel(ctx, m.model)
 	if errors.Is(err, ErrModelNotInCatalog) {
@@ -228,7 +217,7 @@ func (m *Manager) resolveModelPrice(ctx context.Context) (ModelPriceScheme, erro
 		}
 	}
 	if err != nil {
-		return ModelPriceScheme{}, NewDebugError(fmt.Errorf("failed to fetch model: %w", err))
+		return ModelPriceScheme{}, NewDebugError(diag.Errorf("failed to fetch model: %w", err))
 	}
 
 	err = m.storePriceScheme(price)
@@ -236,13 +225,15 @@ func (m *Manager) resolveModelPrice(ctx context.Context) (ModelPriceScheme, erro
 		if m.warnf != nil {
 			m.warnf("failed to store price scheme: %v", err)
 		} else {
-			ancli.Errf("failed to store price scheme: %v", err)
+			runenv.Failuref(m.ctx, runenv.SubsystemCostManager, "failed to store price scheme: %v", err)
 		}
 	}
 	return price, nil
 }
 
 func (m *Manager) Start(ctx context.Context) (<-chan struct{}, <-chan error) {
+	m.ctx = ctx
+	runenv.Debugf(ctx, runenv.SubsystemCostManager, "setting up cost manager")
 	// Buffered, so a resolve failure is never dropped when the consumer has
 	// not yet parked on the error channel (it reads it in its own goroutine).
 	errCh := make(chan error, 1)
@@ -251,26 +242,20 @@ func (m *Manager) Start(ctx context.Context) (<-chan struct{}, <-chan error) {
 		defer close(errCh)
 		defer close(readyCh)
 
-		if m.debug {
-			ancli.Noticef("resolve routine started\n")
-		}
+		runenv.Debugf(m.ctx, runenv.SubsystemCostManager, "resolve routine started\n")
 		price, err := m.resolveModelPrice(ctx)
 		if err != nil {
 			errCh <- err
 			return
 		}
 		m.price = &price
-		if m.debug {
-			ancli.Noticef("resolve routine done, setting price to: %v\n", price)
-		}
+		runenv.Debugf(m.ctx, runenv.SubsystemCostManager, "resolve routine done, setting price to: %v\n", price)
 	}()
 	return readyCh, errCh
 }
 
 func (m *Manager) Enrich(chat pub_models.Chat) (pub_models.Chat, error) {
-	if m.debug {
-		ancli.Noticef("encirchening (?) chat: %v, which has: %v queries", chat.ID, len(chat.Queries))
-	}
+	runenv.Debugf(m.ctx, runenv.SubsystemCostManager, "encirchening (?) chat: %v, which has: %v queries", chat.ID, len(chat.Queries))
 	if chat.TokenUsage == nil {
 		return pub_models.Chat{}, errors.New("token usage is not yet set")
 	}
@@ -282,14 +267,14 @@ func (m *Manager) Enrich(chat pub_models.Chat) (pub_models.Chat, error) {
 	usage := *chat.TokenUsage
 	estimate, err := m.estimateUSD(&usage)
 	if err != nil {
-		return pub_models.Chat{}, fmt.Errorf("enrich chat with cost estimate: %w", err)
+		return pub_models.Chat{}, diag.Errorf("enrich chat with cost estimate: %w", err)
 	}
 	_, idx, err := chat.LastOfRole("user")
 	if err != nil {
 		if m.warnf != nil {
 			m.warnf("failed to find user role: %v", err)
 		} else {
-			ancli.Errf("failed to find user role: %v", err)
+			runenv.Failuref(m.ctx, runenv.SubsystemCostManager, "failed to find user role: %v", err)
 		}
 		idx = -1
 	}
@@ -309,8 +294,6 @@ func (m *Manager) Enrich(chat pub_models.Chat) (pub_models.Chat, error) {
 		Usage:          usage,
 	})
 
-	if m.debug {
-		ancli.Noticef("chat now has: %v query entries", len(chat.Queries))
-	}
+	runenv.Debugf(m.ctx, runenv.SubsystemCostManager, "chat now has: %v query entries", len(chat.Queries))
 	return chat, nil
 }

@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/profile"
 )
 
@@ -21,7 +22,7 @@ func checkProfileBody(confDir string, tConf *Configurations, envFor ProfileEnvFu
 	}
 	body, err := os.ReadFile(tConf.ProfilePath)
 	if err != nil {
-		return fmt.Errorf("read profile %s: %w", tConf.ProfilePath, err)
+		return diag.Errorf("read profile %s: %w", tConf.ProfilePath, err)
 	}
 	env, err := envFor(confDir)
 	if err != nil {
@@ -29,7 +30,7 @@ func checkProfileBody(confDir string, tConf *Configurations, envFor ProfileEnvFu
 	}
 	findings, err := profile.Validate(body, profile.File, env)
 	if err != nil {
-		return fmt.Errorf("check profile %s: %w", tConf.ProfilePath, err)
+		return diag.Errorf("check profile %s: %w", tConf.ProfilePath, err)
 	}
 	problems := findings.Problems(profile.File)
 	if len(problems) == 0 {

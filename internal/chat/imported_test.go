@@ -65,7 +65,7 @@ func TestExportForeignAndImportedReader(t *testing.T) {
 		reads: &reads,
 	}
 	defer useTestSourceReaders([]vendors.SourceReader{reader})()
-	if err := UpsertChatIndexBatch(convDir, []pub_models.Chat{{ID: "n1", Source: "claude-code", SourceID: "cloned", Messages: []pub_models.Message{{Role: "user", Content: "hi"}}}}); err != nil {
+	if err := UpsertChatIndexBatch(context.Background(), convDir, []pub_models.Chat{{ID: "n1", Source: "claude-code", SourceID: "cloned", Messages: []pub_models.Message{{Role: "user", Content: "hi"}}}}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -74,7 +74,7 @@ func TestExportForeignAndImportedReader(t *testing.T) {
 		t.Fatal("the broken conversation's error was swallowed")
 	}
 	p := filepath.Join(convDir, "imported", "claude-code", "s_1.json")
-	exported, err := FromPath(p)
+	exported, err := FromPath(context.Background(), p)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +125,7 @@ func TestExportForeignAndImportedReader(t *testing.T) {
 
 	// With the tool present, its reader wins and the export is hidden; the
 	// export alone is listed through the imported reader.
-	paginator, err := NewChatIndexPaginator(convDir)
+	paginator, err := NewChatIndexPaginator(context.Background(), convDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,21 +201,21 @@ func TestReindexPulled(t *testing.T) {
 	}
 	old := pub_models.Chat{ID: "old", Messages: []pub_models.Message{{Role: "user", Content: "bye"}}}
 	write(old)
-	if err := UpsertChatIndexBatch(convDir, []pub_models.Chat{old}); err != nil {
+	if err := UpsertChatIndexBatch(context.Background(), convDir, []pub_models.Chat{old}); err != nil {
 		t.Fatal(err)
 	}
 	write(pub_models.Chat{ID: "new", Messages: []pub_models.Message{{Role: "user", Content: "hello"}}})
-	if err := ReindexPulled(confDir, []string{"conversations/new.json"}, []string{"conversations/old.json"}, nil); err != nil {
+	if err := ReindexPulled(context.Background(), confDir, []string{"conversations/new.json"}, []string{"conversations/old.json"}, nil); err != nil {
 		t.Fatal(err)
 	}
-	rows, err := readChatIndex(convDir)
+	rows, err := readChatIndex(context.Background(), convDir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(rows) != 1 || rows[0].ID != "new" {
 		t.Fatalf("rows %+v", rows)
 	}
-	if err := ReindexPulled(confDir, []string{"conversations/missing.json"}, nil, nil); err == nil {
+	if err := ReindexPulled(context.Background(), confDir, []string{"conversations/missing.json"}, nil, nil); err == nil {
 		t.Fatal("a missing file reindexed fine")
 	}
 }
@@ -224,7 +224,7 @@ func TestReindexPulled_manyInBatchesWithProgress(t *testing.T) {
 	_, confDir := newTestHandler(t)
 	convDir := conversationsDir(confDir)
 	seed := pub_models.Chat{ID: "seed", Messages: []pub_models.Message{{Role: "user", Content: "hi"}}}
-	if err := UpsertChatIndexBatch(convDir, []pub_models.Chat{seed}); err != nil {
+	if err := UpsertChatIndexBatch(context.Background(), convDir, []pub_models.Chat{seed}); err != nil {
 		t.Fatal(err)
 	}
 	var written []string
@@ -237,14 +237,14 @@ func TestReindexPulled_manyInBatchesWithProgress(t *testing.T) {
 		written = append(written, "conversations/"+c.ID+".json")
 	}
 	var calls [][2]int
-	err := ReindexPulled(confDir, written, nil, func(done, total int) { calls = append(calls, [2]int{done, total}) })
+	err := ReindexPulled(context.Background(), confDir, written, nil, func(done, total int) { calls = append(calls, [2]int{done, total}) })
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(calls) < 2 || calls[len(calls)-1] != [2]int{600, 600} {
 		t.Fatalf("progress calls = %v, want several ending at 600/600", calls)
 	}
-	rows, err := readChatIndex(convDir)
+	rows, err := readChatIndex(context.Background(), convDir)
 	if err != nil {
 		t.Fatal(err)
 	}

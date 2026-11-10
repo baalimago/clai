@@ -1,11 +1,14 @@
 package text
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"slices"
 	"testing"
+
+	"github.com/baalimago/clai/internal/testenv/procenv"
 
 	"github.com/baalimago/clai/internal/utils"
 )
@@ -36,7 +39,7 @@ func TestMigrateOldChatConfig(t *testing.T) {
 	}
 
 	// Run the migration function
-	err = MigrateOldChatConfig(tempDir)
+	err = MigrateOldChatConfig(procenv.Context(context.Background()), tempDir)
 	if err != nil {
 		t.Fatalf("failed to migrate old chat config: %v", err)
 	}
@@ -71,7 +74,7 @@ func TestTextConfigMigration_addsSummaryKeys(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(confDir, "textConfig.json"), []byte(`{"model":"test","use-tools":false}`), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	conf, added, err := utils.LoadConfigFromFileCollect(confDir, "textConfig.json", MigrateOldChatConfig, &Default)
+	conf, added, err := utils.LoadConfigFromFileCollect(procenv.Context(context.Background()), confDir, "textConfig.json", MigrateOldChatConfig, &Default)
 	if err != nil {
 		t.Fatalf("LoadConfigFromFileCollect: %v", err)
 	}
@@ -94,7 +97,7 @@ func TestTextConfigMigration_addsSummaryKeys(t *testing.T) {
 	if string(present["summary-model"]) != `""` || string(present["summarize-conversations"]) != "true" {
 		t.Fatalf("rewritten file = %s, want both keys persisted", raw)
 	}
-	_, again, err := utils.LoadConfigFromFileCollect(confDir, "textConfig.json", MigrateOldChatConfig, &Default)
+	_, again, err := utils.LoadConfigFromFileCollect(procenv.Context(context.Background()), confDir, "textConfig.json", MigrateOldChatConfig, &Default)
 	if err != nil {
 		t.Fatalf("second load: %v", err)
 	}
@@ -110,7 +113,7 @@ func TestTextConfigMigration_addsQuerySummary(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(confDir, "textConfig.json"), []byte(`{"model":"test"}`), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	conf, added, err := utils.LoadConfigFromFileCollect(confDir, "textConfig.json", MigrateOldChatConfig, &Default)
+	conf, added, err := utils.LoadConfigFromFileCollect(procenv.Context(context.Background()), confDir, "textConfig.json", MigrateOldChatConfig, &Default)
 	if err != nil {
 		t.Fatalf("LoadConfigFromFileCollect: %v", err)
 	}

@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io/fs"
@@ -9,20 +10,22 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/internal/testenv/procenv"
+	"github.com/baalimago/clai/pkg/diagnostic"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
 func TestRunMigrationCallback(t *testing.T) {
 	// Create a test migration callback
 	var migrationCalled bool
-	migrationCb := func(configDirPath string) error {
+	migrationCb := func(_ context.Context, configDirPath string) error {
 		migrationCalled = true
 		return nil
 	}
 
 	// Test running the migration callback
 	configDirPath := "/path/to/config"
-	err := runMigrationCallback(migrationCb, configDirPath)
+	err := runMigrationCallback(context.Background(), migrationCb, configDirPath)
 	if err != nil {
 		t.Errorf("Unexpected error running migration callback: %v", err)
 	}
@@ -32,7 +35,7 @@ func TestRunMigrationCallback(t *testing.T) {
 
 	// Test running the migration callback with nil callback
 	migrationCalled = false
-	err = runMigrationCallback(nil, configDirPath)
+	err = runMigrationCallback(context.Background(), nil, configDirPath)
 	if err != nil {
 		t.Errorf("Unexpected error running nil migration callback: %v", err)
 	}
@@ -107,7 +110,7 @@ func TestCreateDefaultConfigFile(t *testing.T) {
 	dflt := &struct {
 		Name string `json:"name"`
 	}{Name: "John"}
-	err := createDefaultConfigFile(configDirPath, configFileName, dflt)
+	err := createDefaultConfigFile(context.Background(), configDirPath, configFileName, dflt)
 	if err != nil {
 		t.Errorf("Unexpected error creating default config file: %v", err)
 	}
@@ -117,7 +120,7 @@ func TestCreateDefaultConfigFile(t *testing.T) {
 	}
 
 	// Test creating an existing default config file
-	err = createDefaultConfigFile(configDirPath, configFileName, dflt)
+	err = createDefaultConfigFile(context.Background(), configDirPath, configFileName, dflt)
 	if err != nil {
 		t.Errorf("Unexpected error creating existing default config file: %v", err)
 	}
@@ -267,7 +270,7 @@ func Test_fillMissingFromDefaults_MigrateTag(t *testing.T) {
 		if err := os.WriteFile(configPath, []byte(`{"active":"user"}`), 0o644); err != nil {
 			t.Fatalf("WriteFile: %v", err)
 		}
-		conf, added, err := LoadConfigFromFileCollect(dir, "app.json", nil, defaults)
+		conf, added, err := LoadConfigFromFileCollect(procenv.Context(context.Background()), dir, "app.json", nil, defaults)
 		if err != nil {
 			t.Fatalf("LoadConfigFromFileCollect: %v", err)
 		}
@@ -287,7 +290,7 @@ func Test_fillMissingFromDefaults_MigrateTag(t *testing.T) {
 		}
 		// Idempotent: a second load adds nothing and does not rewrite.
 		before := string(regenerated)
-		_, added, err = LoadConfigFromFileCollect(dir, "app.json", nil, defaults)
+		_, added, err = LoadConfigFromFileCollect(procenv.Context(context.Background()), dir, "app.json", nil, defaults)
 		if err != nil {
 			t.Fatalf("second LoadConfigFromFileCollect: %v", err)
 		}
@@ -317,13 +320,12 @@ func TestLoadConfigFromFile_AppendsMissingFieldsAndAnnounces(t *testing.T) {
 	}
 
 	var conf migrationFixture
-	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		var err error
-		conf, err = LoadConfigFromFile(dir, "app.json", nil, dflt)
-		if err != nil {
-			t.Fatalf("LoadConfigFromFile: %v", err)
-		}
-	})
+	var out strings.Builder
+	conf, err := LoadConfigFromFile(procenv.Diagnostics(context.Background(), &out, diagnostic.LevelInfo), dir, "app.json", nil, dflt)
+	if err != nil {
+		t.Fatalf("LoadConfigFromFile: %v", err)
+	}
+	stdout := out.String()
 	if conf.Model != "test" {
 		t.Fatalf("present model must survive, got %q", conf.Model)
 	}
@@ -363,7 +365,7 @@ func TestLoadConfigFromFile_ReadonlyDoesNotRewriteOrAnnounce(t *testing.T) {
 	var conf migrationFixture
 	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
 		var err error
-		conf, err = LoadConfigFromFile(dir, "app.json", nil, dflt)
+		conf, err = LoadConfigFromFile(context.Background(), dir, "app.json", nil, dflt)
 		if err != nil {
 			t.Fatalf("LoadConfigFromFile: %v", err)
 		}
@@ -404,7 +406,7 @@ func TestLoadConfigFromFile_NoCreateReturnsDefaultsWithoutCreating(t *testing.T)
 	migrationRan := false
 	var conf migrationFixture
 	var err error
-	conf, err = LoadConfigFromFile(dir, "app.json", func(string) error {
+	conf, err = LoadConfigFromFile(context.Background(), dir, "app.json", func(context.Context, string) error {
 		migrationRan = true
 		return nil
 	}, dflt)
@@ -438,7 +440,7 @@ func TestLoadConfigFromFile_FreshCreationIsSilent(t *testing.T) {
 	var conf migrationFixture
 	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
 		var err error
-		conf, err = LoadConfigFromFile(dir, "app.json", nil, dflt)
+		conf, err = LoadConfigFromFile(context.Background(), dir, "app.json", nil, dflt)
 		if err != nil {
 			t.Fatalf("LoadConfigFromFile: %v", err)
 		}
@@ -458,7 +460,7 @@ func TestLoadConfigFromFile_UpgradeIsIdempotent(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 	dflt := &migrationFixture{Model: "gpt-5.2", Limit: 21600}
-	if _, err := LoadConfigFromFile(dir, "app.json", nil, dflt); err != nil {
+	if _, err := LoadConfigFromFile(context.Background(), dir, "app.json", nil, dflt); err != nil {
 		t.Fatalf("first load: %v", err)
 	}
 	first, err := os.ReadFile(configPath)
@@ -467,7 +469,7 @@ func TestLoadConfigFromFile_UpgradeIsIdempotent(t *testing.T) {
 	}
 
 	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		if _, err := LoadConfigFromFile(dir, "app.json", nil, dflt); err != nil {
+		if _, err := LoadConfigFromFile(context.Background(), dir, "app.json", nil, dflt); err != nil {
 			t.Fatalf("second load: %v", err)
 		}
 	})
@@ -483,7 +485,7 @@ func TestLoadConfigFromFile_UpgradeIsIdempotent(t *testing.T) {
 
 func TestLoadConfigFromFile_CallbackCreatedFileDoesNotAnnounce(t *testing.T) {
 	dir := t.TempDir()
-	cb := func(configDirPath string) error {
+	cb := func(_ context.Context, configDirPath string) error {
 		return os.WriteFile(filepath.Join(configDirPath, "app.json"), []byte(`{"model":"test"}`), 0o644)
 	}
 	dflt := &migrationFixture{Model: "gpt-5.2", Limit: 21600}
@@ -491,7 +493,7 @@ func TestLoadConfigFromFile_CallbackCreatedFileDoesNotAnnounce(t *testing.T) {
 	var conf migrationFixture
 	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
 		var err error
-		conf, err = LoadConfigFromFile(dir, "app.json", cb, dflt)
+		conf, err = LoadConfigFromFile(context.Background(), dir, "app.json", cb, dflt)
 		if err != nil {
 			t.Fatalf("LoadConfigFromFile: %v", err)
 		}
@@ -526,7 +528,7 @@ func Test_ConfigLoad_CausePreserved(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(dir, "textConfig.json"), []byte(`{"model": `), 0o644); err != nil {
 			t.Fatalf("write config: %v", err)
 		}
-		_, err := LoadConfigFromFile(dir, "textConfig.json", nil, &cfg{})
+		_, err := LoadConfigFromFile(context.Background(), dir, "textConfig.json", nil, &cfg{})
 		if err == nil {
 			t.Fatal("expected an error, got nil")
 		}
@@ -547,7 +549,7 @@ func Test_ConfigLoad_CausePreserved(t *testing.T) {
 		if err := os.Chmod(configPath, 0); err != nil {
 			t.Fatalf("chmod: %v", err)
 		}
-		_, err := LoadConfigFromFile(dir, "textConfig.json", nil, &cfg{})
+		_, err := LoadConfigFromFile(context.Background(), dir, "textConfig.json", nil, &cfg{})
 		if err == nil {
 			t.Fatal("expected an error, got nil")
 		}
@@ -555,4 +557,20 @@ func Test_ConfigLoad_CausePreserved(t *testing.T) {
 			t.Errorf("err = %v, want the read *fs.PathError cause reachable", err)
 		}
 	})
+}
+
+// TestLoadConfigFromFile_debugNamesTheFilePath pins the config debug line:
+// it names the file as one path, the directory joined to the file name.
+func TestLoadConfigFromFile_debugNamesTheFilePath(t *testing.T) {
+	dir := t.TempDir()
+	type cfg struct {
+		A string `json:"a"`
+	}
+	var out strings.Builder
+	if _, err := LoadConfigFromFile(procenv.Diagnostics(context.Background(), &out, diagnostic.LevelDebug), dir, "app.json", nil, &cfg{A: "x"}); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if want := "attempting to load file: " + filepath.Join(dir, "app.json"); !strings.Contains(out.String(), want) {
+		t.Fatalf("debug output %q lacks %q", out.String(), want)
+	}
 }

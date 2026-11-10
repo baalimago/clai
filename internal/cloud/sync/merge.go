@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/baalimago/clai/internal/diag"
 )
 
 // chatFile matches a top-level conversation: the one kind of file a pull
@@ -83,7 +85,7 @@ type Fork struct {
 func forkTheirs(rel string, theirs []byte, device string, now time.Time) (string, []byte, string, error) {
 	var doc map[string]json.RawMessage
 	if err := json.Unmarshal(theirs, &doc); err != nil {
-		return "", nil, "", fmt.Errorf("fork %s: %w", rel, err)
+		return "", nil, "", diag.Errorf("fork %s: %w", rel, err)
 	}
 	var title string
 	_ = json.Unmarshal(doc["title"], &title)

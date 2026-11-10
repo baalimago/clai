@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baalimago/clai/internal/testenv/procenv"
+
 	"github.com/baalimago/clai/internal/chat"
 	"github.com/baalimago/clai/internal/models"
 	inttools "github.com/baalimago/clai/internal/tools"
@@ -36,7 +38,8 @@ func Test_Querier_TextQuery_SystemPrompt(t *testing.T) {
 			Model: &MockQuerier{
 				streamFn: func(ctx context.Context, chat pub_models.Chat) (chan models.CompletionEvent, error) {
 					capturedChat = chat
-					ch := make(chan models.CompletionEvent)
+					ch := make(chan models.CompletionEvent, 1)
+					ch <- "ok"
 					close(ch)
 					return ch, nil
 				},
@@ -47,7 +50,7 @@ func Test_Querier_TextQuery_SystemPrompt(t *testing.T) {
 				{Role: "user", Content: "hello"},
 			},
 		}
-		_, err := q.TextQuery(context.Background(), chat)
+		_, err := q.TextQuery(procenv.Context(context.Background()), chat)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -71,7 +74,8 @@ func Test_Querier_TextQuery_SystemPrompt(t *testing.T) {
 			Model: &MockQuerier{
 				streamFn: func(ctx context.Context, chat pub_models.Chat) (chan models.CompletionEvent, error) {
 					capturedChat = chat
-					ch := make(chan models.CompletionEvent)
+					ch := make(chan models.CompletionEvent, 1)
+					ch <- "ok"
 					close(ch)
 					return ch, nil
 				},
@@ -83,7 +87,7 @@ func Test_Querier_TextQuery_SystemPrompt(t *testing.T) {
 				{Role: "user", Content: "hello"},
 			},
 		}
-		_, err := q.TextQuery(context.Background(), chat)
+		_, err := q.TextQuery(procenv.Context(context.Background()), chat)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -106,7 +110,8 @@ func Test_Querier_TextQuery_SystemPrompt(t *testing.T) {
 			Model: &MockQuerier{
 				streamFn: func(ctx context.Context, chat pub_models.Chat) (chan models.CompletionEvent, error) {
 					capturedChat = chat
-					ch := make(chan models.CompletionEvent)
+					ch := make(chan models.CompletionEvent, 1)
+					ch <- "ok"
 					close(ch)
 					return ch, nil
 				},
@@ -117,7 +122,7 @@ func Test_Querier_TextQuery_SystemPrompt(t *testing.T) {
 				{Role: "user", Content: "hello"},
 			},
 		}
-		_, err := q.TextQuery(context.Background(), chat)
+		_, err := q.TextQuery(procenv.Context(context.Background()), chat)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -147,7 +152,7 @@ func Test_Querier_Query_DebugRedirectedOutputPrintsFinalAssistantAnswer(t *testi
 		},
 	}
 
-	if err := q.Query(context.Background()); err != nil {
+	if err := q.Query(procenv.Context(context.Background())); err != nil {
 		t.Fatalf("Query() error = %v", err)
 	}
 	if got, want := printed.String(), "\nfinal answer\n"; got != want {
@@ -290,7 +295,7 @@ func Test_Querier_NewQuerier(t *testing.T) {
 
 		// Here we want to ensure that using only the conf + the type of the model,
 		// we get the correct querier back
-		q, err := NewQuerier(context.Background(), conf, &MockQuerier{})
+		q, err := NewQuerier(procenv.Context(context.Background()), conf, &MockQuerier{})
 		if err != nil {
 			t.Errorf("got error: %v", err)
 		}
@@ -308,7 +313,7 @@ func Test_Querier_handleToken(t *testing.T) {
 	// Some tests capture stdout by swapping the global os.Stdout.
 	t.Setenv("CLAI_DISABLE_COST_ERR_LOG_GOROUTINE", "1")
 	t.Run("it should print to stdout", func(t *testing.T) {
-		querier := Querier[*MockQuerier]{}
+		querier := Querier[*MockQuerier]{runCtx: procenv.Context(context.Background())}
 		want := "somevalue"
 
 		got := testboil.CaptureStdout(t, func(t *testing.T) {
@@ -355,7 +360,7 @@ func TestQuerier_StructuredOutputPrintsOnlyFinalResponse(t *testing.T) {
 					}},
 				}
 
-				if err := q.Query(context.Background()); err != nil {
+				if err := q.Query(procenv.Context(context.Background())); err != nil {
 					t.Fatalf("Query: %v", err)
 				}
 				want := "{\"summary\":\"ok\",\"findings\":[],\"approved\":true}\n"
@@ -388,7 +393,7 @@ func TestQuerier_StructuredOutputPrintsNothingOnError(t *testing.T) {
 		}},
 	}
 
-	if err := q.Query(context.Background()); err == nil {
+	if err := q.Query(procenv.Context(context.Background())); err == nil {
 		t.Fatal("expected query error")
 	}
 	if got := output.String(); got != "" {
@@ -460,7 +465,7 @@ func Test_Querier_eventHandling(t *testing.T) {
 							"testKey": "testVal",
 						},
 					}
-					if err := q.doToolCallLogic(context.Background(), call); err != nil {
+					if err := q.doToolCallLogic(procenv.Context(context.Background()), call); err != nil {
 						t.Fatalf("doToolCallLogic returned err: %v", err)
 					}
 					return "▸ test  testKey=testVal"
@@ -471,7 +476,7 @@ func Test_Querier_eventHandling(t *testing.T) {
 			t.Run(tC.desc, func(t *testing.T) {
 				want := tC.run(t, &tC.q)
 				if tC.q.Model != nil {
-					err := tC.q.Query(context.Background())
+					err := tC.q.Query(procenv.Context(context.Background()))
 					if err != nil {
 						t.Fatalf("Query returned err: %v", err)
 					}
@@ -501,7 +506,7 @@ func Test_Querier_Query_errors(t *testing.T) {
 		want  error
 	}{
 		{
-			desc: "given EOF it should exit without print",
+			desc: "given EOF before any output it should fail: an empty reply is no success",
 			q: Querier[*MockQuerier]{
 				Raw: true,
 				out: os.Stdout,
@@ -511,10 +516,10 @@ func Test_Querier_Query_errors(t *testing.T) {
 				},
 			},
 			given: io.EOF,
-			want:  nil,
+			want:  errors.New("the provider returned no completion"),
 		},
 		{
-			desc: "given context cancel error it should exit without print",
+			desc: "given a cancel error on a live context before any output it should fail as an empty reply",
 			q: Querier[*MockQuerier]{
 				Raw: true,
 				out: os.Stdout,
@@ -524,7 +529,7 @@ func Test_Querier_Query_errors(t *testing.T) {
 				},
 			},
 			given: context.Canceled,
-			want:  nil,
+			want:  errors.New("the provider returned no completion"),
 		},
 		{
 			desc: "on some other error, the error should be printed",
@@ -554,7 +559,7 @@ func Test_Querier_Query_errors(t *testing.T) {
 				tC.q.Model.completionChan <- "CLOSE"
 			}()
 
-			got := tC.q.Query(context.Background())
+			got := tC.q.Query(procenv.Context(context.Background()))
 
 			if got == nil {
 				if tC.want != nil {
@@ -598,11 +603,11 @@ func Test_Querier(t *testing.T) {
 			q.Model.completionChan <- want
 			q.Model.completionChan <- "CLOSE"
 		}()
-		err := q.Query(context.Background())
+		err := q.Query(procenv.Context(context.Background()))
 		if err != nil {
 			t.Fatalf("didn't expect error: %v", err)
 		}
-		lastReply, err := chat.LoadPrevQuery(q.configDir)
+		lastReply, err := chat.LoadPrevQuery(procenv.Context(context.Background()), q.configDir)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -619,11 +624,11 @@ func Test_Querier(t *testing.T) {
 			q.Model.completionChan <- want
 			q.Model.completionChan <- "CLOSE"
 		}()
-		err = q.Query(context.Background())
+		err = q.Query(procenv.Context(context.Background()))
 		if err != nil {
 			t.Fatalf("didn't expect error: %v", err)
 		}
-		lastReply, err = chat.LoadPrevQuery(q.configDir)
+		lastReply, err = chat.LoadPrevQuery(procenv.Context(context.Background()), q.configDir)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -671,13 +676,13 @@ func Test_Querier_SavesConversationOnError(t *testing.T) {
 			q.Model.completionChan <- "CLOSE"
 		}()
 
-		err := q.Query(context.Background())
+		err := q.Query(procenv.Context(context.Background()))
 		if err == nil {
 			t.Fatal("expected error from Query")
 		}
 
 		// The conversation should still be saved despite the error
-		lastReply, err := chat.LoadPrevQuery(q.configDir)
+		lastReply, err := chat.LoadPrevQuery(procenv.Context(context.Background()), q.configDir)
 		if err != nil {
 			t.Fatalf("failed to load prev query: %v", err)
 		}
@@ -725,13 +730,13 @@ func Test_Querier_SavesConversationOnError(t *testing.T) {
 			q.Model.completionChan <- "CLOSE"
 		}()
 
-		err := q.Query(context.Background())
+		err := q.Query(procenv.Context(context.Background()))
 		if err == nil {
 			t.Fatal("expected error from Query")
 		}
 
 		// The conversation should be saved with the partial content
-		lastReply, err := chat.LoadPrevQuery(q.configDir)
+		lastReply, err := chat.LoadPrevQuery(procenv.Context(context.Background()), q.configDir)
 		if err != nil {
 			t.Fatalf("failed to load prev query: %v", err)
 		}
@@ -766,7 +771,7 @@ func Test_Querier_SavesConversation_WhenStreamSetupFailsDueToRateLimitTokenCount
 		Model: &MockQuerierRateLimitTokenCountFail{},
 	}
 
-	err := q.Query(context.Background())
+	err := q.Query(procenv.Context(context.Background()))
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -775,7 +780,7 @@ func Test_Querier_SavesConversation_WhenStreamSetupFailsDueToRateLimitTokenCount
 	}
 
 	// Even though stream setup failed, we should persist globalScope in reply mode.
-	lastReply, err := chat.LoadPrevQuery(q.configDir)
+	lastReply, err := chat.LoadPrevQuery(procenv.Context(context.Background()), q.configDir)
 	if err != nil {
 		t.Fatalf("load prev query: %v", err)
 	}
@@ -827,7 +832,7 @@ func Test_Querier_postProcess_OnlyOuterCallEnrichesChat(t *testing.T) {
 		shouldSaveReply: true,
 		configDir:       tmpConfigDir,
 		callStackLevel:  2,
-		costEnricher:    newCostEnricher(costMgr, ready),
+		costEnricher:    newCostEnricher(procenv.Context(context.Background()), costMgr, ready),
 		chat: pub_models.Chat{
 			ID: "globalScope",
 			Messages: []pub_models.Message{
@@ -844,7 +849,7 @@ func Test_Querier_postProcess_OnlyOuterCallEnrichesChat(t *testing.T) {
 		t.Fatalf("expected 1 enrich call for nested tool root query, got: %d", costMgr.calls)
 	}
 
-	saved, err := chat.LoadPrevQuery(tmpConfigDir)
+	saved, err := chat.LoadPrevQuery(procenv.Context(context.Background()), tmpConfigDir)
 	if err != nil {
 		t.Fatalf("load prev query: %v", err)
 	}
@@ -883,7 +888,7 @@ func Test_Querier_postProcess_enriches_before_save_when_cost_manager_ready(t *te
 	q := Querier[*MockQuerier]{
 		configDir:       tmpConfigDir,
 		shouldSaveReply: true,
-		costEnricher:    newCostEnricher(costMgr, ready),
+		costEnricher:    newCostEnricher(procenv.Context(context.Background()), costMgr, ready),
 		chat: pub_models.Chat{
 			ID: "globalScope",
 			Messages: []pub_models.Message{
@@ -949,7 +954,7 @@ func Test_Querier_postProcess_preserves_runtime_model_name_in_saved_query_cost(t
 	q := Querier[*MockQuerier]{
 		configDir:       tmpConfigDir,
 		shouldSaveReply: true,
-		costEnricher:    newCostEnricher(costMgr, ready),
+		costEnricher:    newCostEnricher(procenv.Context(context.Background()), costMgr, ready),
 		Model: &MockQuerier{
 			modelName: "runtime-model-b",
 		},
@@ -1013,7 +1018,7 @@ func Test_Querier_postProcess_enriches_before_save_for_nested_tool_root_query(t 
 		configDir:       tmpConfigDir,
 		shouldSaveReply: true,
 		callStackLevel:  2,
-		costEnricher:    newCostEnricher(costMgr, ready),
+		costEnricher:    newCostEnricher(procenv.Context(context.Background()), costMgr, ready),
 		chat: pub_models.Chat{
 			ID: "globalScope",
 			Messages: []pub_models.Message{
@@ -1077,7 +1082,7 @@ func Test_Querier_postProcess_SkipsCostEnrichIfManagerNotReady(t *testing.T) {
 		out:             &strings.Builder{},
 		shouldSaveReply: true,
 		configDir:       tmpConfigDir,
-		costEnricher:    newCostEnricher(costMgr, ready),
+		costEnricher:    newCostEnricher(procenv.Context(context.Background()), costMgr, ready),
 		chat: pub_models.Chat{
 			ID: "globalScope",
 			Messages: []pub_models.Message{
@@ -1120,7 +1125,7 @@ func Test_Querier_postProcess_StillSavesWhenCostEnrichFails(t *testing.T) {
 		out:             &strings.Builder{},
 		shouldSaveReply: true,
 		configDir:       tmpConfigDir,
-		costEnricher:    newCostEnricher(costMgr, ready),
+		costEnricher:    newCostEnricher(procenv.Context(context.Background()), costMgr, ready),
 		chat: pub_models.Chat{
 			ID: "globalScope",
 			Messages: []pub_models.Message{
@@ -1138,7 +1143,7 @@ func Test_Querier_postProcess_StillSavesWhenCostEnrichFails(t *testing.T) {
 
 	q.postProcess()
 
-	saved, err := chat.LoadPrevQuery(tmpConfigDir)
+	saved, err := chat.LoadPrevQuery(procenv.Context(context.Background()), tmpConfigDir)
 	if err != nil {
 		t.Fatalf("load prev query: %v", err)
 	}
@@ -1186,7 +1191,7 @@ func Test_Querier_Query_ToolCallRecursion_PreservesConversationMessages(t *testi
 		out:             &strings.Builder{},
 		shouldSaveReply: true,
 		configDir:       tmpConfigDir,
-		costEnricher:    newCostEnricher(nil, makeClosedChan()),
+		costEnricher:    newCostEnricher(procenv.Context(context.Background()), nil, makeClosedChan()),
 		chat: pub_models.Chat{
 			ID: "globalScope",
 			Messages: []pub_models.Message{
@@ -1196,11 +1201,11 @@ func Test_Querier_Query_ToolCallRecursion_PreservesConversationMessages(t *testi
 		Model: model,
 	}
 
-	if err := q.Query(context.Background()); err != nil {
+	if err := q.Query(procenv.Context(context.Background())); err != nil {
 		t.Fatalf("Query returned err: %v", err)
 	}
 
-	saved, err := chat.LoadPrevQuery(tmpConfigDir)
+	saved, err := chat.LoadPrevQuery(procenv.Context(context.Background()), tmpConfigDir)
 	if err != nil {
 		t.Fatalf("load prev query: %v", err)
 	}
@@ -1288,7 +1293,7 @@ func Test_Querier_Query_ToolCallRecursion_UsesFinalAssistantTurnTokenUsageForCos
 		out:             &strings.Builder{},
 		shouldSaveReply: true,
 		configDir:       tmpConfigDir,
-		costEnricher:    newCostEnricher(costMgr, makeClosedChan()),
+		costEnricher:    newCostEnricher(procenv.Context(context.Background()), costMgr, makeClosedChan()),
 		chat: pub_models.Chat{
 			ID: "globalScope",
 			Messages: []pub_models.Message{
@@ -1298,7 +1303,7 @@ func Test_Querier_Query_ToolCallRecursion_UsesFinalAssistantTurnTokenUsageForCos
 		Model: model,
 	}
 
-	if err := q.Query(context.Background()); err != nil {
+	if err := q.Query(procenv.Context(context.Background())); err != nil {
 		t.Fatalf("Query returned err: %v", err)
 	}
 	if enrichCalls != 1 {
@@ -1373,7 +1378,7 @@ func Test_Querier_Query_ToolCallRecursion_AccumulatesNestedTokenUsageForCostEnri
 		out:             &strings.Builder{},
 		shouldSaveReply: true,
 		configDir:       tmpConfigDir,
-		costEnricher:    newCostEnricher(costMgr, makeClosedChan()),
+		costEnricher:    newCostEnricher(procenv.Context(context.Background()), costMgr, makeClosedChan()),
 		chat: pub_models.Chat{
 			ID: "globalScope",
 			Messages: []pub_models.Message{
@@ -1383,7 +1388,7 @@ func Test_Querier_Query_ToolCallRecursion_AccumulatesNestedTokenUsageForCostEnri
 		Model: model,
 	}
 
-	if err := q.Query(context.Background()); err != nil {
+	if err := q.Query(procenv.Context(context.Background())); err != nil {
 		t.Fatalf("Query returned err: %v", err)
 	}
 	if enrichCalls != 1 {
@@ -1458,7 +1463,7 @@ func Test_Querier_Query_ToolCallRecursion_CostEnrichmentUsesFinalAssistantTurnTo
 		out:             &strings.Builder{},
 		shouldSaveReply: true,
 		configDir:       tmpConfigDir,
-		costEnricher:    newCostEnricher(costMgr, makeClosedChan()),
+		costEnricher:    newCostEnricher(procenv.Context(context.Background()), costMgr, makeClosedChan()),
 		chat: pub_models.Chat{
 			ID: "globalScope",
 			Messages: []pub_models.Message{
@@ -1468,7 +1473,7 @@ func Test_Querier_Query_ToolCallRecursion_CostEnrichmentUsesFinalAssistantTurnTo
 		Model: model,
 	}
 
-	if err := q.Query(context.Background()); err != nil {
+	if err := q.Query(procenv.Context(context.Background())); err != nil {
 		t.Fatalf("Query returned err: %v", err)
 	}
 	if enrichCalls != 1 {
@@ -1540,7 +1545,7 @@ func Test_Querier_Query_ToolCallSession_PreservesFinalReplyRoleAndFinalUsage(t *
 		out:             &strings.Builder{},
 		shouldSaveReply: true,
 		configDir:       tmpConfigDir,
-		costEnricher:    newCostEnricher(costMgr, makeClosedChan()),
+		costEnricher:    newCostEnricher(procenv.Context(context.Background()), costMgr, makeClosedChan()),
 		chat: pub_models.Chat{
 			ID:       "globalScope",
 			Messages: []pub_models.Message{{Role: "user", Content: "hello there"}},
@@ -1548,11 +1553,11 @@ func Test_Querier_Query_ToolCallSession_PreservesFinalReplyRoleAndFinalUsage(t *
 		Model: model,
 	}
 
-	if err := q.Query(context.Background()); err != nil {
+	if err := q.Query(procenv.Context(context.Background())); err != nil {
 		t.Fatalf("Query returned err: %v", err)
 	}
 
-	saved, err := chat.LoadPrevQuery(tmpConfigDir)
+	saved, err := chat.LoadPrevQuery(procenv.Context(context.Background()), tmpConfigDir)
 	if err != nil {
 		t.Fatalf("load prev query: %v", err)
 	}

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/baalimago/clai/pkg/claierr"
+	"github.com/baalimago/clai/pkg/diagnostic"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -35,6 +36,13 @@ type MissingEnvError struct {
 
 func (e *MissingEnvError) Error() string {
 	return fmt.Sprintf("mcp server %q needs %s set in the environment", e.ServerName, strings.Join(e.Missing, ", "))
+}
+
+// Remedies returns display-only guidance containing variable names, never values.
+func (e *MissingEnvError) Remedies() []diagnostic.Remedy {
+	return []diagnostic.Remedy{{
+		Instruction: fmt.Sprintf("Set %s in the environment before starting MCP server %q.", strings.Join(e.Missing, ", "), e.ServerName),
+	}}
 }
 
 // CheckRequiredEnv returns a *claierr.McpServerStartupError at the "env"

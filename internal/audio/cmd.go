@@ -5,12 +5,13 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/baalimago/clai/internal"
 	"github.com/baalimago/clai/internal/capture"
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/remote"
+	"github.com/baalimago/clai/internal/runenv"
 	"github.com/baalimago/go_away_boilerplate/pkg/cmd"
 )
 
@@ -41,7 +42,7 @@ Examples:
 // ConfigPrep defers upgrade announcements: transcribe's stdout is the
 // transcript (architecture/config.md).
 type CommandDeps struct {
-	ConfigPrep        func() (confDir string, announcements []string, err error)
+	ConfigPrep        func(ctx context.Context) (confDir string, announcements []string, err error)
 	NewRemoteResolver func(confDir string, prompt remote.Prompter) (remote.Resolver, error)
 }
 
@@ -80,8 +81,8 @@ func Command(deps CommandDeps) *internal.Command {
 		Register: raw.Register,
 		Raw:      raw,
 	}
-	c.OnRun = func(_ context.Context, c *internal.Command) error {
-		fmt.Fprint(os.Stderr, namespaceHelp)
+	c.OnRun = func(ctx context.Context, c *internal.Command) error {
+		fmt.Fprint(runenv.From(ctx).Stderr(), namespaceHelp)
 		args := c.Args()
 		if len(args) < 2 {
 			return errors.New("missing audio verb")
@@ -106,12 +107,12 @@ Examples:
 		Raw: raw,
 	}
 	transcribe.OnSetup = func(ctx context.Context, tc *internal.Command) error {
-		confDir, announcements, err := deps.ConfigPrep()
+		confDir, announcements, err := deps.ConfigPrep(ctx)
 		if err != nil {
 			return err
 		}
 		for _, msg := range announcements {
-			fmt.Fprintln(os.Stderr, msg)
+			fmt.Fprintln(runenv.From(ctx).Stderr(), msg)
 		}
 		q, err := setupTranscribeQuerierWithResolver(ctx, confDir, f, tc.Args()[1:], deps.NewRemoteResolver)
 		if err != nil {
@@ -126,8 +127,10 @@ Examples:
 		HelpText: namespaceHelp,
 		Raw:      raw,
 	}
-	audioHelp.OnRun = func(_ context.Context, _ *internal.Command) error {
-		fmt.Print(namespaceHelp)
+	audioHelp.OnRun = func(ctx context.Context, _ *internal.Command) error {
+		if _, err := fmt.Fprint(runenv.From(ctx).Stdout(), namespaceHelp); err != nil {
+			return diag.Errorf("print audio help: %w", err)
+		}
 		return nil
 	}
 	calibrate := &internal.Command{
@@ -145,12 +148,15 @@ Examples:
 		if len(c.Args()) > 1 {
 			return fmt.Errorf("audio calibrate takes no arguments, got %q", c.Args()[1:])
 		}
-		fmt.Fprintf(os.Stderr, "measuring the default microphone for %v\n", calibrateWindow)
+		env := runenv.From(ctx)
+		fmt.Fprintf(env.Stderr(), "measuring the default microphone for %v\n", calibrateWindow)
 		text, err := calibrateText(ctx, capture.New(), calibrateWindow)
 		if err != nil {
 			return err
 		}
-		fmt.Print(text)
+		if _, err := fmt.Fprint(env.Stdout(), text); err != nil {
+			return diag.Errorf("print calibration: %w", err)
+		}
 		return nil
 	}
 	c.Subs = map[string]cmd.Command{

@@ -1,37 +1,44 @@
 package openrouter
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"strings"
 	"testing"
 
 	"github.com/baalimago/clai/internal/cost"
+	"github.com/baalimago/clai/internal/testenv/procenv"
+	"github.com/baalimago/clai/pkg/diagnostic"
 )
 
 func TestNewModelCatalog(t *testing.T) {
 	t.Run("default", func(t *testing.T) {
-		t.Setenv("DEBUG_OPENROUTER_MODEL_CATALOG", "")
 		cat, err := NewModelCatalog("sk-or-v1-abcdefgh")
 		if err != nil {
 			t.Fatalf("NewModelCatalog: %v", err)
-		}
-		if cat.debug {
-			t.Errorf("debug = true without a flag")
 		}
 		if cat.fetchModels == nil {
 			t.Fatalf("fetchModels is nil, want the live fetcher")
 		}
 	})
 
-	t.Run("debug flag", func(t *testing.T) {
-		t.Setenv("DEBUG_OPENROUTER_MODEL_CATALOG", "1")
+	t.Run("debug trace redacts the key", func(t *testing.T) {
 		cat, err := NewModelCatalog("sk-or-v1-abcdefgh")
 		if err != nil {
 			t.Fatalf("NewModelCatalog: %v", err)
 		}
-		if !cat.debug {
-			t.Errorf("debug = false with the flag set")
+		cat.fetchModels = func(context.Context) ([]Model, error) {
+			return []Model{{ID: "some/model"}}, nil
+		}
+		var diagnostics bytes.Buffer
+		ctx := procenv.Diagnostics(context.Background(), &diagnostics, diagnostic.LevelDebug)
+		if _, err := cat.FetchModel(ctx, "some/model"); err != nil {
+			t.Fatalf("FetchModel: %v", err)
+		}
+		got := diagnostics.String()
+		if !strings.Contains(got, "an api key of 17 characters") || strings.Contains(got, "sk-or") || strings.Contains(got, "abcdefgh") {
+			t.Errorf("debug diagnostics = %q, want the key's length and no part of the key", got)
 		}
 	})
 }

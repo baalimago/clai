@@ -25,7 +25,7 @@ func newTestClient(fn roundTripperFunc) *http.Client { return &http.Client{Trans
 
 func TestNewVideoQuerierRequiresAPIKey(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "")
-	_, err := NewVideoQuerier(video.Configurations{Model: "sora-2", Output: video.Output{Type: video.URL}})
+	_, err := NewVideoQuerier(context.Background(), video.Configurations{Model: "sora-2", Output: video.Output{Type: video.URL}})
 	if err == nil {
 		t.Fatalf("expected error when OPENAI_API_KEY missing")
 	}

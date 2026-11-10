@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"maps"
-	"os"
 	"slices"
 	"strings"
 	"time"
@@ -14,12 +12,14 @@ import (
 	"github.com/baalimago/clai/internal/asset"
 	"github.com/baalimago/clai/internal/board"
 	"github.com/baalimago/clai/internal/chat"
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/imagegen"
 	"github.com/baalimago/clai/internal/imagegen/route"
 	imagegentool "github.com/baalimago/clai/internal/imagegen/tool"
 	"github.com/baalimago/clai/internal/imagenorm"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/present"
+	"github.com/baalimago/clai/internal/runenv"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/internal/vendors/gemini"
 	"github.com/baalimago/clai/internal/vendors/openai"
@@ -48,7 +48,7 @@ func (q *Querier[C]) imageWiring() *ImageTurn {
 		Normalizer: imagenorm.New(store),
 		Presenter:  present.New(present.Options{Out: out, Terminal: terminal, Color: terminal && !table.NoColor() && !q.rawDisplay()}),
 		Persister:  chat.NewPersister(q.configDir, store),
-		Stderr:     os.Stderr,
+		Stderr:     runenv.From(q.diagContext()).Stderr(),
 	}
 }
 
@@ -70,7 +70,7 @@ func (t *ImageTurn) check() error {
 		missing = append(missing, "Stderr")
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf("%w: %s unset", errIncompleteImageTurn, strings.Join(missing, ", "))
+		return diag.Errorf("%w: %s unset", errIncompleteImageTurn, strings.Join(missing, ", "))
 	}
 	return nil
 }
@@ -97,7 +97,7 @@ func storePending(store asset.AssetStorer, c *pub_models.Chat) error {
 			}
 			stored, err := storeImage(store, img)
 			if err != nil {
-				return fmt.Errorf("message %d part %d: %w", i, j, err)
+				return diag.Errorf("message %d part %d: %w", i, j, err)
 			}
 			if parts == nil {
 				parts = slices.Clone(m.Parts)
@@ -126,7 +126,7 @@ func (q *Querier[C]) normalizeForModel(c pub_models.Chat) (pub_models.Chat, erro
 	}
 	normalized, err := q.imageWiring().Normalizer.Normalize(c, caps)
 	if err != nil {
-		return pub_models.Chat{}, fmt.Errorf("normalize images: %w", q.nameRoute(err))
+		return pub_models.Chat{}, diag.Errorf("normalize images: %w", q.nameRoute(err))
 	}
 	return normalized, nil
 }
@@ -151,7 +151,7 @@ func (q *Querier[C]) nameRoute(err error) error {
 // chatForModel stores the session's pending images, then normalizes its chat (Run.2, Run.3).
 func (q *Querier[C]) chatForModel(session *QuerySession) (pub_models.Chat, error) {
 	if err := storePending(q.imageWiring().Store, &session.Chat); err != nil {
-		return pub_models.Chat{}, fmt.Errorf("store pending images: %w", err)
+		return pub_models.Chat{}, diag.Errorf("store pending images: %w", err)
 	}
 	return q.normalizeForModel(session.Chat)
 }
@@ -187,7 +187,7 @@ func (q *Querier[C]) receiveImage(session *QuerySession, ev models.ImageEvent) e
 	img.Origin = pub_models.OriginGenerated
 	stored, err := storeImage(q.imageWiring().Store, img)
 	if err != nil {
-		return fmt.Errorf("store generated image: %w", err)
+		return diag.Errorf("store generated image: %w", err)
 	}
 	session.addStepImage(stored)
 	var took time.Duration
@@ -231,7 +231,7 @@ func (q *Querier[C]) imageOutputModel() string {
 // output is the querier's writer, stdout when none is set.
 func (q *Querier[C]) output() io.Writer {
 	if q.out == nil {
-		return os.Stdout
+		return runenv.From(q.diagContext()).Stdout()
 	}
 	return q.out
 }
@@ -248,10 +248,12 @@ func (q *Querier[C]) imageProgress() ImageProgress {
 		if !utils.IsTerminalWriter(out) {
 			out = q.errOut
 			if out == nil {
-				out = os.Stderr
+				out = runenv.From(q.diagContext()).Stderr()
 			}
 		}
-		q.defaultImageProgress = board.NewStatus(out, utils.IsTerminalWriter(out), imageProgressTitle)
+		status := board.NewStatus(out, utils.IsTerminalWriter(out), imageProgressTitle)
+		status.SetColor(runenv.From(q.diagContext()).Color())
+		q.defaultImageProgress = status
 	}
 	return q.defaultImageProgress
 }
@@ -270,7 +272,7 @@ func (q *Querier[C]) startImageProgress(session *QuerySession) error {
 	}
 	if q.activityViewport == nil && session.lineOpen() {
 		if _, err := fmt.Fprintln(q.output()); err != nil {
-			return fmt.Errorf("end the text row before the image progress: %w", err)
+			return diag.Errorf("end the text row before the image progress: %w", err)
 		}
 		session.endRow()
 	}
@@ -371,14 +373,14 @@ func (q *Querier[C]) presentImage(img pub_models.ImagePart, rebus string, detail
 // Stderr; any other failure is returned (Run.8, U2).
 func (q *Querier[C]) presentShown(shown present.Shown, lineOpen bool) error {
 	if err := q.freeRowForImage(lineOpen); err != nil {
-		return fmt.Errorf("present image %s: %w", shown.Handle, err)
+		return diag.Errorf("present image %s: %w", shown.Handle, err)
 	}
 	if err := q.openNotice(q.imageWiring().Presenter.Present(shown)); err != nil {
-		return fmt.Errorf("present image %s: %w", shown.Handle, err)
+		return diag.Errorf("present image %s: %w", shown.Handle, err)
 	}
 	if q.activityViewport != nil {
 		if err := q.activityViewport.Render(q.out); err != nil {
-			return fmt.Errorf("render activity viewport after image %s: %w", shown.Handle, err)
+			return diag.Errorf("render activity viewport after image %s: %w", shown.Handle, err)
 		}
 	}
 	return nil
@@ -388,11 +390,11 @@ func (q *Querier[C]) presentShown(shown present.Shown, lineOpen bool) error {
 func (q *Querier[C]) shownFor(img pub_models.ImagePart, rebus string, details present.Details) (present.Shown, error) {
 	handle, err := img.Handle()
 	if err != nil {
-		return present.Shown{}, fmt.Errorf("present image: %w", err)
+		return present.Shown{}, diag.Errorf("present image: %w", err)
 	}
 	path, err := q.imageWiring().Store.Path(img.Asset)
 	if err != nil {
-		return present.Shown{}, fmt.Errorf("present image %s: %w", handle, err)
+		return present.Shown{}, diag.Errorf("present image %s: %w", handle, err)
 	}
 	return present.Shown{Handle: handle, Path: path, Rebus: rebus, Details: details}, nil
 }
@@ -461,7 +463,7 @@ func takeSavedText(display []pub_models.Part, saved string) ([]pub_models.Part, 
 func (q *Querier[C]) openImages(shown []present.Shown) error {
 	for _, s := range shown {
 		if err := q.openNotice(q.imageWiring().Presenter.Open(s)); err != nil {
-			return fmt.Errorf("open image %s: %w", s.Handle, err)
+			return diag.Errorf("open image %s: %w", s.Handle, err)
 		}
 	}
 	return nil
@@ -473,7 +475,7 @@ func (q *Querier[C]) openNotice(err error) error {
 		return err
 	}
 	if _, werr := fmt.Fprintf(q.imageWiring().Stderr, "notice: %v\n", err); werr != nil {
-		return fmt.Errorf("write open notice: %w", werr)
+		return diag.Errorf("write open notice: %w", werr)
 	}
 	return nil
 }
@@ -502,7 +504,7 @@ func (q *Querier[C]) setupImageGeneration() error {
 	return q.registerGenerateImage()
 }
 
-// registerGenerateImage adds the client tool to the model and the run's toolset once.
+// registerGenerateImage offers the client tool to the model once.
 func (q *Querier[C]) registerGenerateImage() error {
 	turn := q.imageWiring()
 	if turn.NewGenerator == nil {
@@ -510,30 +512,18 @@ func (q *Querier[C]) registerGenerateImage() error {
 	}
 	tool := imagegentool.NewGenerateImageTool(turn.Generation.Config, q.generatorsWithProgress(turn.NewGenerator), turn.Store)
 	name := tool.Specification().Name
-	if _, ok := q.tooling.run[name]; ok {
+	if _, ok := q.tooling.offered.Get(name); ok {
 		return nil
 	}
 	toolBox, ok := any(q.Model).(models.ToolBox)
 	if !ok {
 		return nil
 	}
-	if q.tooling.registered == nil {
-		q.tooling.registered = map[string]struct{}{}
-	}
-	if _, ok := q.tooling.registered[name]; !ok {
-		toolBox.RegisterTool(tool)
-		q.tooling.registered[name] = struct{}{}
-	}
-	run := maps.Clone(q.tooling.run)
-	if run == nil {
-		run = map[string]pub_models.LLMTool{}
-	}
-	run[name] = tool
-	q.tooling.run = run
+	q.tooling.offer(toolBox, tool)
 	return nil
 }
 
-// partsCapture lets tools.InvokeWith run a PartsCaller and fold its error as for any
+// partsCapture lets tools.Run run a PartsCaller and fold its error as for any
 // tool, while keeping the parts.
 type partsCapture struct {
 	pub_models.PartsCaller

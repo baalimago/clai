@@ -2,6 +2,7 @@ package chat
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"slices"
 
 	"github.com/baalimago/clai/internal/asset"
+	"github.com/baalimago/clai/internal/diag"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -35,7 +37,7 @@ type Persister interface {
 	//     text finalizer), behave as Save and Promote over
 	//     asset.NewStore over the README asset directory under their conversations dir.
 	//     No writer can put a pending image on disk or fail with ErrPendingImage (P4-2).
-	Save(chat pub_models.Chat) (pub_models.Chat, error)
+	Save(ctx context.Context, chat pub_models.Chat) (pub_models.Chat, error)
 	// Promote persists chat as the previous query. It writes the same files today's
 	// chat.SaveAsPreviousQuery writes for the same chat: a newly promoted conversation
 	// when the chat has no persisted id and more than two messages, then
@@ -44,7 +46,7 @@ type Persister interface {
 	//  2. Every copy references the same asset files, and no asset is duplicated (C3).
 	//  3. A text-only chat yields the same files, byte for byte, as SaveAsPreviousQuery
 	//     does today (I10).
-	Promote(chat pub_models.Chat) error
+	Promote(ctx context.Context, chat pub_models.Chat) error
 	// Load reads the conversation at path.
 	//  1. A legacy inline image arrives from the codec as a pending ImagePart. Load
 	//     checks its bytes with asset.Sniff. It fails with asset.ErrNotImage when they
@@ -54,7 +56,7 @@ type Persister interface {
 	//  2. A stored image stays a ref, and its bytes are not read.
 	//  3. A codec error (pub_models.ErrLegacyImageURL, ErrUnknownPartType) is returned
 	//     wrapped with the path.
-	Load(path string) (pub_models.Chat, error)
+	Load(ctx context.Context, path string) (pub_models.Chat, error)
 	// Delete removes conversation chatID and its reasoning sidecar, as today. It then
 	// sweeps every asset that no remaining conversation file references,
 	// globalScope.json included (C3).
@@ -101,45 +103,45 @@ type persister struct {
 }
 
 // convPersister is the Persister over convDir and its asset store.
-func convPersister(convDir string) Persister {
+func convPersister(convDir string) persister {
 	return persister{confDir: filepath.Dir(convDir), convDir: convDir, store: convAssetStore(convDir)}
 }
 
 // loadConversation reads path through the Persister of confDir (query.3).
-func loadConversation(confDir, path string) (pub_models.Chat, error) {
-	return NewPersister(confDir, asset.NewStore(AssetsDir(confDir))).Load(path)
+func loadConversation(ctx context.Context, confDir, path string) (pub_models.Chat, error) {
+	return NewPersister(confDir, asset.NewStore(AssetsDir(confDir))).Load(ctx, path)
 }
 
-func (p persister) Save(chat pub_models.Chat) (pub_models.Chat, error) {
-	return saveChat(p.convDir, p.store, chat, withIndex)
+func (p persister) Save(ctx context.Context, chat pub_models.Chat) (pub_models.Chat, error) {
+	return saveChat(ctx, p.convDir, p.store, chat, withIndex)
 }
 
-func (p persister) Promote(chat pub_models.Chat) error {
-	return promote(p.confDir, p.store, chat)
+func (p persister) Promote(ctx context.Context, chat pub_models.Chat) error {
+	return promote(ctx, p.confDir, p.store, chat)
 }
 
-func (p persister) Load(path string) (pub_models.Chat, error) {
-	chat, err := FromPath(path)
+func (p persister) Load(ctx context.Context, path string) (pub_models.Chat, error) {
+	chat, err := FromPath(ctx, path)
 	if err != nil {
-		return pub_models.Chat{}, fmt.Errorf("load conversation %s: %w", path, err)
+		return pub_models.Chat{}, diag.Errorf("load conversation %s: %w", path, err)
 	}
 	if err := checkPendingImages(chat); err != nil {
-		return pub_models.Chat{}, fmt.Errorf("load conversation %s: %w", path, err)
+		return pub_models.Chat{}, diag.Errorf("load conversation %s: %w", path, err)
 	}
 	return chat, nil
 }
 
 func (p persister) Delete(chatID string) (asset.SweepCount, error) {
 	if !safeChatID(chatID) {
-		return 0, fmt.Errorf("%w: invalid id %q", ErrChatNotFound, chatID)
+		return 0, diag.Errorf("%w: invalid id %q", ErrChatNotFound, chatID)
 	}
 	convDir := p.convDir
 	err := os.Remove(conversationPathFromDir(convDir, chatID))
 	if errors.Is(err, fs.ErrNotExist) {
-		return 0, fmt.Errorf("%w: %s", ErrChatNotFound, chatID)
+		return 0, diag.Errorf("%w: %s", ErrChatNotFound, chatID)
 	}
 	if err != nil {
-		return 0, fmt.Errorf("delete conversation %s: %w", chatID, err)
+		return 0, diag.Errorf("delete conversation %s: %w", chatID, err)
 	}
 	var sidecarErr error
 	if err := removeReasoningSidecars(convDir, chatID); err != nil {
@@ -175,7 +177,7 @@ func storePendingImages(store asset.AssetStorer, chat pub_models.Chat) (pub_mode
 	for i, m := range chat.Messages {
 		parts, err := storePendingParts(store, m.Parts)
 		if err != nil {
-			return pub_models.Chat{}, fmt.Errorf("store image of message %d: %w", i, err)
+			return pub_models.Chat{}, diag.Errorf("store image of message %d: %w", i, err)
 		}
 		if parts == nil {
 			continue
@@ -201,7 +203,7 @@ func storePendingParts(store asset.AssetStorer, parts []pub_models.Part) ([]pub_
 		}
 		ref, err := store.Put(img.Data, img.MIME)
 		if err != nil {
-			return nil, fmt.Errorf("content part %d: %w", j, err)
+			return nil, diag.Errorf("content part %d: %w", j, err)
 		}
 		if out == nil {
 			out = slices.Clone(parts)
@@ -221,10 +223,10 @@ func checkPendingImages(chat pub_models.Chat) error {
 			}
 			sniffed, err := asset.Sniff(img.Data)
 			if err != nil {
-				return fmt.Errorf("message %d: %w", i, err)
+				return diag.Errorf("message %d: %w", i, err)
 			}
 			if sniffed != img.MIME {
-				return fmt.Errorf("message %d: %w", i, &asset.MIMEMismatchError{Declared: img.MIME, Sniffed: sniffed})
+				return diag.Errorf("message %d: %w", i, &asset.MIMEMismatchError{Declared: img.MIME, Sniffed: sniffed})
 			}
 		}
 	}
@@ -251,7 +253,7 @@ func liveAssetRefs(convDir string) (map[string]struct{}, error) {
 		return map[string]struct{}{}, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("list conversations in %s: %w", convDir, err)
+		return nil, diag.Errorf("list conversations in %s: %w", convDir, err)
 	}
 	live := map[string]struct{}{}
 	for _, e := range entries {
@@ -278,11 +280,11 @@ func liveAssetRefs(convDir string) (map[string]struct{}, error) {
 func collectAssetRefs(path string, live map[string]struct{}) error {
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("read %s for asset refs: %w", path, err)
+		return diag.Errorf("read %s for asset refs: %w", path, err)
 	}
 	var scan assetRefScan
 	if err := json.Unmarshal(b, &scan); err != nil {
-		return fmt.Errorf("scan %s for asset refs: %w", path, err)
+		return diag.Errorf("scan %s for asset refs: %w", path, err)
 	}
 	for i, m := range scan.Messages {
 		if !bytes.HasPrefix(bytes.TrimSpace(m.Content), []byte("[")) {
@@ -290,7 +292,7 @@ func collectAssetRefs(path string, live map[string]struct{}) error {
 		}
 		var parts []assetRefPart
 		if err := json.Unmarshal(m.Content, &parts); err != nil {
-			return fmt.Errorf("scan %s message %d for asset refs: %w", path, i, err)
+			return diag.Errorf("scan %s message %d for asset refs: %w", path, i, err)
 		}
 		for _, part := range parts {
 			if part.Type == "image" && part.Asset != "" {

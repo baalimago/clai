@@ -190,7 +190,7 @@ func TestHandleStreamChunk_ReasoningContentIsTracked(t *testing.T) {
 		t.Fatalf("expected reasoning content captured, got %q", got)
 	}
 
-	tools.Init()
+	tools.Init(context.Background())
 	ev = s.handleStreamChunk([]byte(`data: {"choices":[{"delta":{"reasoning_content":" Then call."}},{"delta":{"tool_calls":[{"id":"call-1","type":"function","index":0,"function":{"name":"ls","arguments":"{}"}}]}}]}` + "\n"))
 	call, ok := ev.(pub_models.Call)
 	if !ok {
@@ -504,7 +504,7 @@ func TestHandleStreamChunk_Table(t *testing.T) {
 	}
 
 	// Prefer Call over string
-	tools.Init()
+	tools.Init(context.Background())
 	payload := `{"choices":[{"delta":{"content":"text"}},{"delta":{"tool_calls":[{"id":"1","type":"function","index":0,"function":{"name":"ls","arguments":"{}"}}]}}]}`
 	maybeStopEv = s.handleStreamChunk([]byte("data: " + payload + "\n"))
 	if _, ok := maybeStopEv.(pub_models.Call); !ok {
@@ -513,7 +513,7 @@ func TestHandleStreamChunk_Table(t *testing.T) {
 }
 
 func TestHandleChoice_ToolCallsIncremental(t *testing.T) {
-	tools.Init()
+	tools.Init(context.Background())
 	s := &StreamCompleter{}
 	first := Choice{Delta: Delta{ToolCalls: []ToolsCall{{ID: "id1", Index: 0, Type: "function", Function: Func{Name: "ls", Arguments: "{\"a\":1"}}}}}
 	if ev := s.handleChoice(first); !isNoop(ev) {
@@ -560,7 +560,7 @@ func TestDoToolsCall_InvalidJSONAndReset(t *testing.T) {
 }
 
 func TestDoToolsCall_Valid(t *testing.T) {
-	tools.Init()
+	tools.Init(context.Background())
 	s := &StreamCompleter{toolsCallName: "ls", toolsCallID: "IDX", toolsCallArgsString: "{\"x\":1}"}
 	ev := s.doToolsCall()
 	call, ok := ev.(pub_models.Call)

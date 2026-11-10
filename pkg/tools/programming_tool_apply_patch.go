@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/baalimago/clai/internal/diag"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -52,22 +53,22 @@ var ApplyPatch = ApplyPatchTool{
 func (a ApplyPatchTool) Call(input pub_models.Input) (string, error) {
 	patch, ok := input["patch"].(string)
 	if !ok {
-		return "", fmt.Errorf("apply_patch call: %w", errors.New("patch must be a string"))
+		return "", diag.Errorf("apply_patch call: %w", errors.New("patch must be a string"))
 	}
 	if strings.TrimSpace(patch) == "" {
-		return "", fmt.Errorf("apply_patch call: %w", errors.New("patch must be non-empty"))
+		return "", diag.Errorf("apply_patch call: %w", errors.New("patch must be non-empty"))
 	}
 
 	ops, err := parseApplyPatch(patch)
 	if err != nil {
-		return "", fmt.Errorf("apply_patch call parse: %w", err)
+		return "", diag.Errorf("apply_patch call parse: %w", err)
 	}
 
 	var outputs []string
 	for _, op := range ops {
 		out, err := applyPatchOperation(op)
 		if err != nil {
-			return "", fmt.Errorf("apply_patch call apply operation at line %d: %w", op.lineNumber, err)
+			return "", diag.Errorf("apply_patch call apply operation at line %d: %w", op.lineNumber, err)
 		}
 		if out != "" {
 			outputs = append(outputs, out)
@@ -84,10 +85,10 @@ func (a ApplyPatchTool) Specification() pub_models.Specification {
 func parseApplyPatch(patch string) ([]patchOperation, error) {
 	lines, err := patchLines(patch)
 	if err != nil {
-		return nil, fmt.Errorf("parse apply_patch scan: %w", err)
+		return nil, diag.Errorf("parse apply_patch scan: %w", err)
 	}
 	if len(lines) == 0 {
-		return nil, fmt.Errorf("parse apply_patch: %w", errors.New("patch is empty"))
+		return nil, diag.Errorf("parse apply_patch: %w", errors.New("patch is empty"))
 	}
 
 	beginIndex := -1
@@ -98,7 +99,7 @@ func parseApplyPatch(patch string) ([]patchOperation, error) {
 		}
 	}
 	if beginIndex == -1 {
-		return nil, fmt.Errorf("parse apply_patch: %w", errors.New("missing Begin Patch marker"))
+		return nil, diag.Errorf("parse apply_patch: %w", errors.New("missing Begin Patch marker"))
 	}
 
 	var ops []patchOperation
@@ -110,7 +111,7 @@ func parseApplyPatch(patch string) ([]patchOperation, error) {
 		if after, ok := strings.CutPrefix(line, "*** Add File: "); ok {
 			path := strings.TrimSpace(after)
 			if path == "" {
-				return nil, fmt.Errorf("parse apply_patch: %w", fmt.Errorf("missing add file path at line %d", i+1))
+				return nil, diag.Errorf("parse apply_patch: %w", fmt.Errorf("missing add file path at line %d", i+1))
 			}
 			op := patchOperation{kind: patchKindAdd, path: path, lineNumber: i + 1}
 			i++
@@ -122,7 +123,7 @@ func parseApplyPatch(patch string) ([]patchOperation, error) {
 				i++
 			}
 			if len(op.diffLines) == 0 {
-				return nil, fmt.Errorf("parse apply_patch: %w", fmt.Errorf("add file missing content at line %d", op.lineNumber))
+				return nil, diag.Errorf("parse apply_patch: %w", fmt.Errorf("add file missing content at line %d", op.lineNumber))
 			}
 			ops = append(ops, op)
 			continue
@@ -130,7 +131,7 @@ func parseApplyPatch(patch string) ([]patchOperation, error) {
 		if after, ok := strings.CutPrefix(line, "*** Delete File: "); ok {
 			path := strings.TrimSpace(after)
 			if path == "" {
-				return nil, fmt.Errorf("parse apply_patch: %w", fmt.Errorf("missing delete file path at line %d", i+1))
+				return nil, diag.Errorf("parse apply_patch: %w", fmt.Errorf("missing delete file path at line %d", i+1))
 			}
 			op := patchOperation{kind: patchKindDelete, path: path, lineNumber: i + 1}
 			i++
@@ -140,14 +141,14 @@ func parseApplyPatch(patch string) ([]patchOperation, error) {
 		if after, ok := strings.CutPrefix(line, "*** Update File: "); ok {
 			path := strings.TrimSpace(after)
 			if path == "" {
-				return nil, fmt.Errorf("parse apply_patch: %w", fmt.Errorf("missing update file path at line %d", i+1))
+				return nil, diag.Errorf("parse apply_patch: %w", fmt.Errorf("missing update file path at line %d", i+1))
 			}
 			op := patchOperation{kind: patchKindUpdate, path: path, lineNumber: i + 1}
 			i++
 			if i < len(lines) && strings.HasPrefix(lines[i], "*** Move to: ") {
 				op.moveTo = strings.TrimSpace(strings.TrimPrefix(lines[i], "*** Move to: "))
 				if op.moveTo == "" {
-					return nil, fmt.Errorf("parse apply_patch: %w", fmt.Errorf("missing move to path at line %d", i+1))
+					return nil, diag.Errorf("parse apply_patch: %w", fmt.Errorf("missing move to path at line %d", i+1))
 				}
 				i++
 			}
@@ -164,15 +165,15 @@ func parseApplyPatch(patch string) ([]patchOperation, error) {
 				i++
 			}
 			if len(op.diffLines) == 0 {
-				return nil, fmt.Errorf("parse apply_patch: %w", fmt.Errorf("update file missing diff at line %d", op.lineNumber))
+				return nil, diag.Errorf("parse apply_patch: %w", fmt.Errorf("update file missing diff at line %d", op.lineNumber))
 			}
 			ops = append(ops, op)
 			continue
 		}
-		return nil, fmt.Errorf("parse apply_patch: %w", fmt.Errorf("unexpected patch line at %d: %s", i+1, line))
+		return nil, diag.Errorf("parse apply_patch: %w", fmt.Errorf("unexpected patch line at %d: %s", i+1, line))
 	}
 
-	return nil, fmt.Errorf("parse apply_patch: %w", errors.New("missing End Patch marker"))
+	return nil, diag.Errorf("parse apply_patch: %w", errors.New("missing End Patch marker"))
 }
 
 func patchLines(patch string) ([]string, error) {
@@ -182,7 +183,7 @@ func patchLines(patch string) ([]string, error) {
 		lines = append(lines, scanner.Text())
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("scan patch lines: %w", err)
+		return nil, diag.Errorf("scan patch lines: %w", err)
 	}
 	return lines, nil
 }
@@ -196,7 +197,7 @@ func applyPatchOperation(op patchOperation) (string, error) {
 	case patchKindDelete:
 		return applyDeleteFile(op)
 	default:
-		return "", fmt.Errorf("apply patch operation: %w", fmt.Errorf("unknown patch operation kind: %s", op.kind))
+		return "", diag.Errorf("apply patch operation: %w", fmt.Errorf("unknown patch operation kind: %s", op.kind))
 	}
 }
 
@@ -204,16 +205,16 @@ func applyAddFile(op patchOperation) (string, error) {
 	var contentLines []string
 	for _, line := range op.diffLines {
 		if !strings.HasPrefix(line, "+") {
-			return "", fmt.Errorf("apply add file: %w", fmt.Errorf("line must start with '+': %q", line))
+			return "", diag.Errorf("apply add file: %w", fmt.Errorf("line must start with '+': %q", line))
 		}
 		contentLines = append(contentLines, strings.TrimPrefix(line, "+"))
 	}
 	content := strings.Join(contentLines, "\n")
 	if err := os.MkdirAll(filepath.Dir(op.path), 0o755); err != nil {
-		return "", fmt.Errorf("apply add file create dirs for %s: %w", op.path, err)
+		return "", diag.Errorf("apply add file create dirs for %s: %w", op.path, err)
 	}
 	if err := os.WriteFile(op.path, []byte(content), 0o644); err != nil {
-		return "", fmt.Errorf("apply add file write %s: %w", op.path, err)
+		return "", diag.Errorf("apply add file write %s: %w", op.path, err)
 	}
 	return fmt.Sprintf("Created %s", op.path), nil
 }
@@ -221,28 +222,28 @@ func applyAddFile(op patchOperation) (string, error) {
 func applyUpdateFile(op patchOperation) (string, error) {
 	original, err := os.ReadFile(op.path)
 	if err != nil {
-		return "", fmt.Errorf("apply update file read %s: %w", op.path, err)
+		return "", diag.Errorf("apply update file read %s: %w", op.path, err)
 	}
 	updated, err := applyDiff(string(original), op.diffLines, op.endOfFile)
 	if err != nil {
-		return "", fmt.Errorf("apply update file diff %s: %w", op.path, err)
+		return "", diag.Errorf("apply update file diff %s: %w", op.path, err)
 	}
 
 	targetPath := op.path
 	if op.moveTo != "" {
 		targetPath = op.moveTo
 		if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
-			return "", fmt.Errorf("apply update file create dirs for %s: %w", targetPath, err)
+			return "", diag.Errorf("apply update file create dirs for %s: %w", targetPath, err)
 		}
 	}
 
 	if err := os.WriteFile(targetPath, []byte(updated), 0o644); err != nil {
-		return "", fmt.Errorf("apply update file write %s: %w", targetPath, err)
+		return "", diag.Errorf("apply update file write %s: %w", targetPath, err)
 	}
 
 	if op.moveTo != "" {
 		if err := os.Remove(op.path); err != nil && !os.IsNotExist(err) {
-			return "", fmt.Errorf("apply update file remove original %s: %w", op.path, err)
+			return "", diag.Errorf("apply update file remove original %s: %w", op.path, err)
 		}
 		return fmt.Sprintf("Moved %s to %s", op.path, op.moveTo), nil
 	}
@@ -252,7 +253,7 @@ func applyUpdateFile(op patchOperation) (string, error) {
 
 func applyDeleteFile(op patchOperation) (string, error) {
 	if err := os.Remove(op.path); err != nil && !os.IsNotExist(err) {
-		return "", fmt.Errorf("apply delete file %s: %w", op.path, err)
+		return "", diag.Errorf("apply delete file %s: %w", op.path, err)
 	}
 	return fmt.Sprintf("Deleted %s", op.path), nil
 }
@@ -264,18 +265,18 @@ func applyDiff(original string, diffLines []string, endOfFile bool) (string, err
 
 	hunks, err := splitDiffIntoHunks(diffLines)
 	if err != nil {
-		return "", fmt.Errorf("apply diff split hunks: %w", err)
+		return "", diag.Errorf("apply diff split hunks: %w", err)
 	}
 
 	for _, hunk := range hunks {
 		matchIdx, err := findHunkStart(origLines, idx, hunk)
 		if err != nil {
-			return "", fmt.Errorf("apply diff find hunk start: %w", err)
+			return "", diag.Errorf("apply diff find hunk start: %w", err)
 		}
 		out = append(out, origLines[idx:matchIdx]...)
 		updatedLines, consumed, err := applyHunkAt(origLines, matchIdx, hunk)
 		if err != nil {
-			return "", fmt.Errorf("apply diff apply hunk at %d: %w", matchIdx, err)
+			return "", diag.Errorf("apply diff apply hunk at %d: %w", matchIdx, err)
 		}
 		out = append(out, updatedLines...)
 		idx = matchIdx + consumed
@@ -314,18 +315,18 @@ func splitDiffIntoHunks(diffLines []string) ([]diffHunk, error) {
 		}
 		if strings.HasPrefix(line, "@@") {
 			if err := flush(); err != nil {
-				return nil, fmt.Errorf("flush previous hunk: %w", err)
+				return nil, diag.Errorf("flush previous hunk: %w", err)
 			}
 			oldStart, err := parseUnifiedDiffOldRange(line)
 			if err != nil {
-				return nil, fmt.Errorf("parse hunk header %q: %w", line, err)
+				return nil, diag.Errorf("parse hunk header %q: %w", line, err)
 			}
 			current = diffHunk{oldStart: oldStart}
 			haveCurrent = true
 			continue
 		}
 		if line == "" {
-			return nil, fmt.Errorf("diff line missing prefix: %w", errors.New("empty line"))
+			return nil, diag.Errorf("diff line missing prefix: %w", errors.New("empty line"))
 		}
 		prefix := line[0]
 		if prefix != ' ' && prefix != '+' && prefix != '-' {
@@ -339,7 +340,7 @@ func splitDiffIntoHunks(diffLines []string) ([]diffHunk, error) {
 	}
 
 	if err := flush(); err != nil {
-		return nil, fmt.Errorf("flush final hunk: %w", err)
+		return nil, diag.Errorf("flush final hunk: %w", err)
 	}
 	if len(hunks) == 0 {
 		return nil, fmt.Errorf("no hunks found")
@@ -419,11 +420,11 @@ func parseUnifiedDiffOldRange(header string) (int, error) {
 	}
 	fields := strings.Fields(header)
 	if len(fields) < 2 {
-		return 0, fmt.Errorf("parse unified diff old range: %w", fmt.Errorf("invalid hunk header %q", header))
+		return 0, diag.Errorf("parse unified diff old range: %w", fmt.Errorf("invalid hunk header %q", header))
 	}
 	oldRangeField := fields[1]
 	if !strings.HasPrefix(oldRangeField, "-") {
-		return 0, fmt.Errorf("parse unified diff old range: %w", fmt.Errorf("missing old range in header %q", header))
+		return 0, diag.Errorf("parse unified diff old range: %w", fmt.Errorf("missing old range in header %q", header))
 	}
 	return parseUnifiedDiffRange(strings.TrimPrefix(oldRangeField, "-"))
 }
@@ -432,11 +433,11 @@ func parseUnifiedDiffRange(raw string) (int, error) {
 	parts := strings.SplitN(raw, ",", 2)
 	start, err := strconv.Atoi(parts[0])
 	if err != nil {
-		return 0, fmt.Errorf("parse unified diff range start %q: %w", raw, err)
+		return 0, diag.Errorf("parse unified diff range start %q: %w", raw, err)
 	}
 	if len(parts) == 2 {
 		if _, err := strconv.Atoi(parts[1]); err != nil {
-			return 0, fmt.Errorf("parse unified diff range count %q: %w", raw, err)
+			return 0, diag.Errorf("parse unified diff range count %q: %w", raw, err)
 		}
 	}
 	return start, nil

@@ -7,11 +7,12 @@ package quantity
 
 import (
 	"errors"
-	"fmt"
 	"math"
 	"math/big"
 	"strconv"
 	"strings"
+
+	"github.com/baalimago/clai/internal/diag"
 )
 
 // Quantity is a whole number parsed from a scaled spelling.
@@ -111,7 +112,7 @@ func Parse(s string) (Quantity, error) {
 	}
 	mantissa, ok := new(big.Int).SetString(intPart+fracPart, 10)
 	if !ok {
-		return 0, fmt.Errorf("%w: %q has no number", ErrSyntax, s)
+		return 0, diag.Errorf("%w: %q has no number", ErrSyntax, s)
 	}
 	if negative {
 		mantissa.Neg(mantissa)
@@ -123,7 +124,7 @@ func Parse(s string) (Quantity, error) {
 func trimSign(s string) (body string, negative bool, err error) {
 	switch {
 	case s == "":
-		return "", false, fmt.Errorf("%w: empty value", ErrSyntax)
+		return "", false, diag.Errorf("%w: empty value", ErrSyntax)
 	case s[0] == '+':
 		return s[1:], false, nil
 	case s[0] == '-':
@@ -148,11 +149,11 @@ func splitMantissa(mantissa, original string) (intPart, fracPart string, err err
 	intPart, fracPart, hasDot := strings.Cut(mantissa, ".")
 	switch {
 	case intPart == "" && fracPart == "":
-		return "", "", fmt.Errorf("%w: %q has no number", ErrSyntax, original)
+		return "", "", diag.Errorf("%w: %q has no number", ErrSyntax, original)
 	case hasDot && fracPart == "":
-		return "", "", fmt.Errorf("%w: %q is missing digits after '.'", ErrSyntax, original)
+		return "", "", diag.Errorf("%w: %q is missing digits after '.'", ErrSyntax, original)
 	case strings.ContainsRune(fracPart, '.'):
-		return "", "", fmt.Errorf("%w: %q has more than one '.'", ErrSyntax, original)
+		return "", "", diag.Errorf("%w: %q has more than one '.'", ErrSyntax, original)
 	}
 	return intPart, fracPart, nil
 }
@@ -169,11 +170,11 @@ func scale(mantissa *big.Int, fracDigits int, scaleText, original string) (Quant
 		e, err := strconv.Atoi(digits)
 		switch {
 		case errors.Is(err, strconv.ErrRange) && strings.HasPrefix(digits, "-"):
-			return 0, fmt.Errorf("%w: %q is smaller than one", ErrFraction, original)
+			return 0, diag.Errorf("%w: %q is smaller than one", ErrFraction, original)
 		case errors.Is(err, strconv.ErrRange):
-			return 0, fmt.Errorf("%w: %q is too large", ErrRange, original)
+			return 0, diag.Errorf("%w: %q is too large", ErrRange, original)
 		case err != nil:
-			return 0, fmt.Errorf("%w: %q has a bad exponent", ErrSyntax, original)
+			return 0, diag.Errorf("%w: %q has a bad exponent", ErrSyntax, original)
 		}
 		exponent = e
 	default:
@@ -187,9 +188,9 @@ func scale(mantissa *big.Int, fracDigits int, scaleText, original string) (Quant
 	exponent -= fracDigits
 	switch {
 	case exponent > maxScale:
-		return 0, fmt.Errorf("%w: %q is too large", ErrRange, original)
+		return 0, diag.Errorf("%w: %q is too large", ErrRange, original)
 	case exponent < -maxScale:
-		return 0, fmt.Errorf("%w: %q is smaller than one", ErrFraction, original)
+		return 0, diag.Errorf("%w: %q is smaller than one", ErrFraction, original)
 	}
 
 	numerator := new(big.Int).Mul(mantissa, multiplier)
@@ -201,14 +202,14 @@ func scale(mantissa *big.Int, fracDigits int, scaleText, original string) (Quant
 	}
 	value, remainder := new(big.Int).QuoRem(numerator, denominator, new(big.Int))
 	if remainder.Sign() != 0 {
-		return 0, fmt.Errorf("%w: %q is not a whole number", ErrFraction, original)
+		return 0, diag.Errorf("%w: %q is not a whole number", ErrFraction, original)
 	}
 	if !value.IsInt64() {
-		return 0, fmt.Errorf("%w: %q does not fit in an int", ErrRange, original)
+		return 0, diag.Errorf("%w: %q does not fit in an int", ErrRange, original)
 	}
 	v := value.Int64()
 	if int64(int(v)) != v {
-		return 0, fmt.Errorf("%w: %q does not fit in an int", ErrRange, original)
+		return 0, diag.Errorf("%w: %q does not fit in an int", ErrRange, original)
 	}
 	return Quantity(v), nil
 }
@@ -232,7 +233,7 @@ func suffixScale(suffix string) (*big.Int, int, error) {
 			return new(big.Int).Lsh(big.NewInt(1), bits), 0, nil
 		}
 	}
-	return nil, 0, fmt.Errorf("%w: "+suffixHint, ErrSyntax, suffix)
+	return nil, 0, diag.Errorf("%w: "+suffixHint, ErrSyntax, suffix)
 }
 
 func pow10(exponent int) *big.Int {

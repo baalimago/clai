@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/baalimago/clai/internal"
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/remote"
 	"github.com/baalimago/clai/internal/skills"
 	"github.com/baalimago/go_away_boilerplate/pkg/cmd"
@@ -18,7 +19,8 @@ import (
 // PublishSkill sends a skill to the Hub: a skill under <config>/skills by
 // name, a skill folder, or its SKILL.md. Only SKILL.md is sent.
 func (d CommandDeps) PublishSkill(ctx context.Context, skill string, opts PublishOptions) error {
-	confDir, err := d.configDir()
+	d = d.withEnv(ctx)
+	confDir, err := d.configDir(ctx)
 	if err != nil {
 		return err
 	}
@@ -34,11 +36,11 @@ func (d CommandDeps) PublishSkill(ctx context.Context, skill string, opts Publis
 		return fmt.Errorf("skill %s: no %s at %s", skill, remote.SkillFile, path)
 	}
 	if err != nil {
-		return fmt.Errorf("read skill %s: %w", skill, err)
+		return diag.Errorf("read skill %s: %w", skill, err)
 	}
 	meta, err := skills.CheckSkill(body)
 	if err != nil {
-		return fmt.Errorf("%s: %w", path, err)
+		return diag.Errorf("%s: %w", path, err)
 	}
 	name := opts.Name
 	if name == "" {
@@ -85,9 +87,6 @@ Examples:
 
 // SkillsCommand builds the skills command tree.
 func SkillsCommand(deps CommandDeps) *internal.Command {
-	if deps.Out == nil {
-		deps.Out = os.Stdout
-	}
 	c := &internal.Command{
 		Name: "skills",
 		Desc: "Publish skills and use them from profiles",
@@ -97,11 +96,11 @@ Examples:
   clai skills publish review
   clai -s '*' -qs q 'review the staged diff'`,
 	}
-	c.OnRun = func(_ context.Context, c *internal.Command) error {
+	c.OnRun = func(ctx context.Context, c *internal.Command) error {
 		if args := c.Args(); len(args) > 1 {
 			return fmt.Errorf("unknown skills subcommand: %q", args[1])
 		}
-		fmt.Fprintln(deps.Out, c.Help())
+		fmt.Fprintln(deps.withEnv(ctx).Out, c.Help())
 		return nil
 	}
 	c.Subs = map[string]cmd.Command{

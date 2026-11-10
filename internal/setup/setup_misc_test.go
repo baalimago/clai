@@ -41,7 +41,7 @@ func TestGetConfigs_BadGlobPattern(t *testing.T) {
 }
 
 func TestSetupCustomTableActions_UnknownAction(t *testing.T) {
-	got := setupCustomTableActions(setupCategory{
+	got := setupCustomTableActions(procCtx(), setupCategory{
 		name:              "mystery",
 		itemSelectActions: []action{action(200)},
 	})
@@ -58,7 +58,7 @@ func TestSetupCustomTableActions_NewActionError(t *testing.T) {
 	restore := useReadUserInputForTests(singleInput("prof"))
 	defer restore()
 
-	actions := setupCustomTableActions(setupCategory{
+	actions := setupCustomTableActions(procCtx(), setupCategory{
 		name:              "model files",
 		subdirPath:        filepath.Join(blocker, "models"),
 		defaultConfig:     defaultMcpServer,
@@ -74,7 +74,7 @@ func TestSetupCustomTableActions_NewActionError(t *testing.T) {
 
 func TestSetupCustomTableActions_PasteAction(t *testing.T) {
 	withStdin(t, "")
-	actions := setupCustomTableActions(setupCategory{
+	actions := setupCustomTableActions(procCtx(), setupCategory{
 		name:              "mcp",
 		subdirPath:        t.TempDir(),
 		itemSelectActions: []action{pasteConfig},
@@ -91,7 +91,7 @@ func TestSetupCustomTableActions_PasteAction(t *testing.T) {
 func TestPasteMcpServerConfig_Errors(t *testing.T) {
 	t.Run("empty input", func(t *testing.T) {
 		withStdin(t, "\n")
-		_, err := pasteMcpServerConfig(t.TempDir())
+		_, err := pasteMcpServerConfig(procCtx(), t.TempDir())
 		if err == nil || !strings.Contains(err.Error(), "no configuration provided") {
 			t.Fatalf("err = %v", err)
 		}
@@ -99,7 +99,7 @@ func TestPasteMcpServerConfig_Errors(t *testing.T) {
 
 	t.Run("malformed input", func(t *testing.T) {
 		withStdin(t, "not json\n")
-		_, err := pasteMcpServerConfig(t.TempDir())
+		_, err := pasteMcpServerConfig(procCtx(), t.TempDir())
 		if err == nil || !strings.Contains(err.Error(), "failed to parse mcp server") {
 			t.Fatalf("err = %v", err)
 		}
@@ -116,7 +116,7 @@ func TestPasteMcpServerConfig_Errors(t *testing.T) {
 		os.Stdin = f
 		t.Cleanup(func() { os.Stdin = old })
 
-		_, err = pasteMcpServerConfig(dir)
+		_, err = pasteMcpServerConfig(procCtx(), dir)
 		if err == nil || !strings.Contains(err.Error(), "error reading input") {
 			t.Fatalf("err = %v", err)
 		}
@@ -125,7 +125,7 @@ func TestPasteMcpServerConfig_Errors(t *testing.T) {
 	t.Run("valid input", func(t *testing.T) {
 		confDir := t.TempDir()
 		withStdin(t, `{"mcpServers":{"filesystem":{"command":"npx","args":["-y","srv"]}}}`+"\nEOF\n")
-		got, err := pasteMcpServerConfig(confDir)
+		got, err := pasteMcpServerConfig(procCtx(), confDir)
 		if err != nil {
 			t.Fatalf("pasteMcpServerConfig: %v", err)
 		}
@@ -144,7 +144,7 @@ func TestActionPasteMcpServer_ConfiguresPastedServer(t *testing.T) {
 	restore := useReadUserInputForTests(singleInput("d"))
 	defer restore()
 
-	if err := actionPasteMcpServer(dir); err != nil {
+	if err := actionPasteMcpServer(procCtx(), dir); err != nil {
 		t.Fatalf("actionPasteMcpServer: %v", err)
 	}
 
@@ -166,7 +166,7 @@ func TestActionPasteMcpServer_ConfiguresPastedServer(t *testing.T) {
 }
 
 func TestSelectConfigItem_NoConfigs(t *testing.T) {
-	err := selectConfigItem(setupCategory{name: "empty"}, nil)
+	err := selectConfigItem(procCtx(), setupCategory{name: "empty"}, nil)
 	if err == nil || !strings.Contains(err.Error(), "found no configuration files") {
 		t.Fatalf("err = %v", err)
 	}
@@ -183,7 +183,7 @@ func TestExecuteConfigAction_CopyError(t *testing.T) {
 	restore := useReadUserInputForTests(singleInput("copy-name"))
 	defer restore()
 
-	err := executeConfigAction(config{name: "missing", filePath: filepath.Join(t.TempDir(), "missing.json")}, copyAction)
+	err := executeConfigAction(procCtx(), config{name: "missing", filePath: filepath.Join(t.TempDir(), "missing.json")}, copyAction)
 	if err == nil || !strings.Contains(err.Error(), "failed to copy config") {
 		t.Fatalf("err = %v", err)
 	}
@@ -194,7 +194,7 @@ func TestCreateConfigFile_MkdirAllError(t *testing.T) {
 	parent := t.TempDir()
 	chmodSetupTest(t, parent, 0o500)
 
-	_, err := createConfigFile(filepath.Join(parent, "models"), "models", defaultMcpServer)
+	_, err := createConfigFile(procCtx(), filepath.Join(parent, "models"), "models", defaultMcpServer)
 	if err == nil || !strings.Contains(err.Error(), "failed to create models directory") {
 		t.Fatalf("err = %v", err)
 	}

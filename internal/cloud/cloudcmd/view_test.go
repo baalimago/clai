@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/internal/cloud"
 	"github.com/baalimago/clai/internal/cloud/sync"
 	"github.com/baalimago/clai/internal/utils"
 )
@@ -193,4 +194,40 @@ func TestStatusLines_pullHint(t *testing.T) {
 		"▸ config · nothing to commit · server 1 commit ahead",
 		"  → clai cloud pull config   bring down 1 commit",
 	)
+}
+
+// TestPlainLook_dropsBoxesAndColumns pins F12 for -json (R3-08): a Plain
+// style writes no marker, box, separator glyph or column alignment; each
+// table row names its cells instead.
+func TestPlainLook_dropsBoxesAndColumns(t *testing.T) {
+	plain := style{Plain: true}
+	var pending []sync.PendingImport
+	pending = append(pending, sync.PendingImport{Source: "codex", ID: "x", Change: sync.ImportNew, Messages: 4, RawBytes: 20_000})
+	imports := sync.Status{Store: sync.StoreConversations, Pulled: true, Synced: 12, Remote: &sync.RemoteStatus{}, Imports: &sync.ImportPreview{Conversations: pending}}
+	me := cloud.Me{Handle: "lorentz", Device: "laptop", Access: "write", Stores: map[string]cloud.StoreInfo{"config": {Files: 30, Bytes: 12_000, Commit: 3}}, Usage: cloud.Usage{ConfigLimitBytes: 1_000_000_000, CardOnFile: true}}
+	var all []string
+	for _, lines := range [][]string{statusLines(manyConversations(), plain), statusLines(imports, plain), whoamiLines(me, "clai.chat", plain)} {
+		all = append(all, lines...)
+	}
+	for _, line := range all {
+		for _, look := range []string{"▸", "■", "·", "→", "│", "   "} {
+			if strings.Contains(line, look) {
+				t.Errorf("plain line carries %q: %q", look, line)
+			}
+		}
+	}
+	got := strings.Join(all, "\n")
+	for _, want := range []string{
+		"conversations: 48 to commit, 5.8 MB, 3 already uploaded, 1 changed on both sides, 12 synced",
+		"  46 new, 1 edited, 1 deleted",
+		"  images: files ",
+		"  codex: conversations 1, new 1, grown 0, messages 4, size 20.0 kB",
+		"  clai cloud commit -imports",
+		"  config: 30 files, 12.0 kB, commit #3",
+		"  conversations: 0 files, 0 B, no commits yet",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("lacks %q:\n%s", want, got)
+		}
+	}
 }

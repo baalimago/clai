@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/utils"
 )
 
@@ -130,11 +131,11 @@ func ResolveModelTarget(ctx context.Context, confDir string, newResolver func(st
 		res, err = NewResolver(EnvFrom(os.Getenv), confDir, cacheDir, NewClient(), nil, nil)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("model %s: %w", model, err)
+		return nil, diag.Errorf("model %s: %w", model, err)
 	}
 	got, err := res.ResolveModelList(ctx, model)
 	if err != nil {
-		return nil, fmt.Errorf("model %s: %w", model, err)
+		return nil, diag.Errorf("model %s: %w", model, err)
 	}
 	return got.Models, nil
 }

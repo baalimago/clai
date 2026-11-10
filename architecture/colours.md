@@ -106,8 +106,8 @@ Behaviour:
 - If `raw` is set: prints `msg.Content` directly.
 - Else if `NO_COLOR` is set: prints `role: content` as plain text (no ANSI, no glow).
 - Else:
-  - If the destination is not a terminal (piped/redirected/captured output): prints a coloured `role:` prefix using `ancli.ColoredMessage`.
-  - Else if `glow` is not installed: prints a coloured `role:` prefix using `ancli.ColoredMessage`.
+  - If the destination is not a terminal (piped/redirected/captured output): prints a coloured `role:` prefix with `table.Colorize`.
+  - Else if `glow` is not installed: prints a coloured `role:` prefix with `table.Colorize`.
   - Else: prints a coloured `role:` prefix and then runs `glow` to format markdown.
 
 ### 2) Obfuscated chat printing

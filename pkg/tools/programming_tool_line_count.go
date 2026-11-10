@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/baalimago/clai/internal/diag"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -32,7 +33,7 @@ func (l LineCountTool) Call(input pub_models.Input) (string, error) {
 	}
 	file, err := os.Open(filePath)
 	if err != nil {
-		return "", fmt.Errorf("failed to open file: %w", err)
+		return "", diag.Errorf("failed to open file: %w", err)
 	}
 	defer file.Close()
 
@@ -42,7 +43,7 @@ func (l LineCountTool) Call(input pub_models.Input) (string, error) {
 		count++
 	}
 	if err := scanner.Err(); err != nil {
-		return "", fmt.Errorf("failed to read file: %w", err)
+		return "", diag.Errorf("failed to read file: %w", err)
 	}
 	return fmt.Sprintf("%d", count), nil
 }

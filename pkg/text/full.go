@@ -9,6 +9,7 @@ import (
 	// Blank import: internal/audio's init wires the audio_transcribe
 	// tool engine (mode-as-tool bridge) for library consumers.
 	_ "github.com/baalimago/clai/internal/audio"
+	"github.com/baalimago/clai/internal/diag"
 	priv_models "github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/pkg/text/models"
@@ -74,7 +75,7 @@ func (pq *publicQuerier) Setup(ctx context.Context) error {
 	}
 	querier, err := text.CreateQuerier(ctx, pq.conf)
 	if err != nil {
-		return fmt.Errorf("publicQuerier.Setup failed to CreateTextQuerier: %w", err)
+		return diag.Errorf("publicQuerier.Setup failed to CreateTextQuerier: %w", err)
 	}
 	tq, isChatQuerier := querier.(priv_models.ChatQuerier)
 	if !isChatQuerier {
@@ -89,7 +90,7 @@ func (pq *publicQuerier) Setup(ctx context.Context) error {
 func (pq *publicQuerier) Query(ctx context.Context, inpChat models.Chat) (models.Chat, error) {
 	err := pq.Setup(ctx)
 	if err != nil {
-		return models.Chat{}, fmt.Errorf("pq.Query failed to Setup clone: %w", err)
+		return models.Chat{}, diag.Errorf("pq.Query failed to Setup clone: %w", err)
 	}
 	return pq.querier.TextQuery(ctx, inpChat)
 }

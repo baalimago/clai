@@ -285,7 +285,7 @@ Each trust record contains:
 
 When the runtime selects an untrusted skill for activation, clai pauses before activation and prompts the user to decide whether the skill is trusted.
 
-The trust prompt is emitted as a warning using `ancli.Warnf` and should clearly emphasize that an unknown skill is about to run. The message should be cleanly multiline, include concise metadata sufficient for a user decision, and mention that the prompt can be disabled through settings such as `trust_all_skills`.
+The trust prompt is shown with `runenv.ShowPrompt` before the answer is read (a `prompt` record under `-json`) and should clearly emphasize that an unknown skill is about to run. The message should be cleanly multiline, include concise metadata sufficient for a user decision, and mention that the prompt can be disabled through settings such as `trust_all_skills`.
 
 The trust prompt includes concise metadata sufficient for a user decision:
 
@@ -549,7 +549,7 @@ Length: 124 chars
 Estimated tokens: ~31
 ```
 
-The exact color and style follow the existing tool-call output. Discovery summaries and trust prompts still use ancli.
+The exact color and style follow the existing tool-call output. Discovery summaries are diagnostics of the `skills` subsystem.
 
 ## Configuration files and persistence
 

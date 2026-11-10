@@ -12,12 +12,15 @@ import (
 	"github.com/baalimago/clai/internal/asset"
 	"github.com/baalimago/clai/internal/board"
 	"github.com/baalimago/clai/internal/chat"
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/imagegen"
 	"github.com/baalimago/clai/internal/imageinput"
 	"github.com/baalimago/clai/internal/modelalias"
 	"github.com/baalimago/clai/internal/photo/generic"
 	"github.com/baalimago/clai/internal/present"
 	"github.com/baalimago/clai/internal/remote"
+	"github.com/baalimago/clai/internal/runenv"
+	"github.com/baalimago/clai/internal/stdio"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/table"
@@ -49,11 +52,11 @@ func newQuery(ctx context.Context, deps CommandDeps, f *Flags, args []string) (*
 	if err := deps.check(f.ReplyStdin.Reply.Value()); err != nil {
 		return nil, err
 	}
-	confDir, err := deps.ConfigPrep()
+	confDir, err := deps.ConfigPrep(ctx)
 	if err != nil {
 		return nil, err
 	}
-	pConf, err := loadConfig(deps, f, confDir)
+	pConf, err := loadConfig(ctx, deps, f, confDir)
 	if err != nil {
 		return nil, err
 	}
@@ -64,8 +67,9 @@ func newQuery(ctx context.Context, deps CommandDeps, f *Flags, args []string) (*
 	if err != nil {
 		return nil, err
 	}
-	out := os.Stdout
-	terminal := utils.IsTerminalWriter(out)
+	env := runenv.From(ctx)
+	out := env.Stdout()
+	terminal := env.IsTerminal(stdio.Stdout)
 	raw := f.Raw.Value() || pConf.Raw
 	presenter := deps.NewPresenter(present.Options{
 		Out:      out,
@@ -74,12 +78,14 @@ func newQuery(ctx context.Context, deps CommandDeps, f *Flags, args []string) (*
 		AutoOpen: f.Open.Value() || pConf.AutoOpenImages,
 		Opener:   deps.NewOpener(pConf.ImageOpener),
 	})
+	progress := board.NewStatus(out, terminal && !raw, "generating image")
+	progress.SetColor(env.Color())
 	return &query{
 		req:          req,
 		output:       pConf.Output,
 		presenter:    presenter,
-		stderr:       os.Stderr,
-		progress:     board.NewStatus(out, terminal && !raw, "generating image"),
+		stderr:       env.Stderr(),
+		progress:     progress,
 		terminal:     terminal,
 		model:        pConf.Model,
 		newGenerator: deps.NewGenerator,
@@ -95,7 +101,7 @@ func (q *query) forModel(model string) (*query, error) {
 	genConfig.Model = model
 	gen, err := q.newGenerator(genConfig)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create image generator: %w", err)
+		return nil, diag.Errorf("failed to create image generator: %w", err)
 	}
 	next := *q
 	next.gen, next.model = gen, model
@@ -121,13 +127,14 @@ func buildRequest(ctx context.Context, deps CommandDeps, f *Flags, pConf Configu
 		return imagegen.ImageRequest{}, err
 	}
 	collected, err := deps.Collector.Collect(imageinput.CollectRequest{
+		Context:      ctx,
 		Images:       f.Images.Value(),
 		Stdin:        stdin,
 		Args:         args,
 		StdinReplace: pConf.StdinReplace,
 	})
 	if err != nil {
-		return imagegen.ImageRequest{}, fmt.Errorf("failed to collect photo inputs: %w", err)
+		return imagegen.ImageRequest{}, diag.Errorf("failed to collect photo inputs: %w", err)
 	}
 	req := imagegen.ImageRequest{Prompt: fmt.Sprintf(pConf.PromptFormat, collected.Prompt)}
 	for _, img := range collected.Images {
@@ -136,25 +143,25 @@ func buildRequest(ctx context.Context, deps CommandDeps, f *Flags, pConf Configu
 	if !pConf.ReplyMode {
 		return req, nil
 	}
-	return withReply(deps, req, confDir)
+	return withReply(ctx, deps, req, confDir)
 }
 
-func withReply(deps CommandDeps, req imagegen.ImageRequest, confDir string) (imagegen.ImageRequest, error) {
-	prev, err := chat.LoadPrevQuery(confDir)
+func withReply(ctx context.Context, deps CommandDeps, req imagegen.ImageRequest, confDir string) (imagegen.ImageRequest, error) {
+	prev, err := chat.LoadPrevQuery(ctx, confDir)
 	if err != nil {
-		return imagegen.ImageRequest{}, fmt.Errorf("failed to load previous query: %w", err)
+		return imagegen.ImageRequest{}, diag.Errorf("failed to load previous query: %w", err)
 	}
 	replyContext, err := generic.ReplyContext(prev.Messages)
 	if err != nil {
 		return imagegen.ImageRequest{}, err
 	}
 	req.Prompt = replyContext + req.Prompt
-	img, err := deps.PreviousImage(confDir)
+	img, err := deps.PreviousImage(ctx, confDir)
 	if errors.Is(err, ErrNoPreviousImage) {
 		return req, nil
 	}
 	if err != nil {
-		return imagegen.ImageRequest{}, fmt.Errorf("failed to load the previous image: %w", err)
+		return imagegen.ImageRequest{}, diag.Errorf("failed to load the previous image: %w", err)
 	}
 	req.Inputs = append(req.Inputs, img)
 	return req, nil
@@ -196,7 +203,7 @@ func (q *query) generate(ctx context.Context) ([]imagegen.GeneratedImage, error)
 	q.took = time.Since(began)
 	q.progress.Stop()
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate image: %w", err)
+		return nil, diag.Errorf("failed to generate image: %w", err)
 	}
 	if len(images) == 0 {
 		return nil, imagegen.ErrNoImage
@@ -219,10 +226,10 @@ func (q *query) save(data []byte) (string, error) {
 	}
 	fallback, fallbackErr := writeImage(os.TempDir(), name, data)
 	if fallbackErr != nil {
-		return "", fmt.Errorf("failed to save image: %w", errors.Join(err, fallbackErr))
+		return "", diag.Errorf("failed to save image: %w", errors.Join(err, fallbackErr))
 	}
 	if _, werr := fmt.Fprintf(q.stderr, "notice: %v; saved to %s instead\n", err, fallback); werr != nil {
-		return "", fmt.Errorf("write output-dir notice: %w", werr)
+		return "", diag.Errorf("write output-dir notice: %w", werr)
 	}
 	q.saved++
 	return fallback, nil
@@ -231,10 +238,10 @@ func (q *query) save(data []byte) (string, error) {
 func writeImage(dir, name string, data []byte) (string, error) {
 	path, err := filepath.Abs(filepath.Join(dir, name))
 	if err != nil {
-		return "", fmt.Errorf("output dir %s: %w", dir, err)
+		return "", diag.Errorf("output dir %s: %w", dir, err)
 	}
 	if err := utils.WriteFileAtomic(path, data, 0o644); err != nil {
-		return "", fmt.Errorf("output dir %s is not writable: %w", dir, err)
+		return "", diag.Errorf("output dir %s is not writable: %w", dir, err)
 	}
 	return path, nil
 }
@@ -244,11 +251,11 @@ func writeImage(dir, name string, data []byte) (string, error) {
 func extension(data []byte) (string, error) {
 	mime, err := asset.Sniff(data)
 	if err != nil {
-		return "", fmt.Errorf("generated image: %w", err)
+		return "", diag.Errorf("generated image: %w", err)
 	}
 	ext, ok := asset.MIMEExtensions()[mime]
 	if !ok {
-		return "", fmt.Errorf("generated image: %w: no file extension for %s", asset.ErrUnsupportedMIME, mime)
+		return "", diag.Errorf("generated image: %w: no file extension for %s", asset.ErrUnsupportedMIME, mime)
 	}
 	return ext, nil
 }
@@ -257,17 +264,17 @@ func extension(data []byte) (string, error) {
 func (q *query) show(path string, data []byte) error {
 	handle, err := pub_models.ImagePart{Data: data}.Handle()
 	if err != nil {
-		return fmt.Errorf("present %s: %w", path, err)
+		return diag.Errorf("present %s: %w", path, err)
 	}
 	err = q.presenter.Present(present.Shown{Handle: handle, Path: path, Details: present.DetailsOf(data, q.model, q.took)})
 	if _, ok := errors.AsType[*present.OpenFailedError](err); ok {
 		if _, werr := fmt.Fprintf(q.stderr, "notice: %v\n", err); werr != nil {
-			return fmt.Errorf("write open notice for %s: %w", path, werr)
+			return diag.Errorf("write open notice for %s: %w", path, werr)
 		}
 		return nil
 	}
 	if err != nil {
-		return fmt.Errorf("present %s: %w", path, err)
+		return diag.Errorf("present %s: %w", path, err)
 	}
 	return nil
 }

@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -55,7 +56,7 @@ func Test_e2e_meeting_transcriber_profile(t *testing.T) {
 
 	profilePath := filepath.Join(e2etest.ModuleRoot(t), "examples", "profiles", "meeting-transcriber.json")
 	tools.WithTestRegistry(t, func() {
-		tools.Init()
+		tools.Init(context.Background())
 		for _, name := range []string{"audio_sources", "audio_record"} {
 			if _, ok := tools.Registry.Get(name); !ok {
 				t.Fatalf("%s is not registered with ffmpeg on PATH", name)

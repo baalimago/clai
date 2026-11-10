@@ -10,16 +10,26 @@ command is defined in its domain package and wired in `internal/cli`.
 
 ```text
 internal/cli:Run(args)
-  → cmd.Run(ctx, ["clai", args...], Commands(deps), usage)   # map built in internal/cli
+  → scanFormat: -json found where command flags are parsed (output.md)
+  → compose: levels, Presenter, diagnostic buffer, Reporter, the run's Env
+  → DispatchMonitor.Monitor: signals cancel the run and are reported
+  → DispatchMonitor.Dispatch → cmd.RunSilent(ctx, ["clai", args...], cmds)
     → arity-aware scan finds the command token (flags may precede it)
     → the command's own flagset parses the remaining args
     → Subcommander descent: first positional matching a subcommand key
       selects it; each level parses its own flagset
     → leaf.Setup(ctx) → leaf.Run(ctx)      # parents of an executed sub never run
+  → presentOutcome: help on stdout, the terminal error once on stderr,
+    the usage after a dispatch failure; then the buffer's Finish
 ```
 
-`shutdown.Monitor` starts before `cmd.Run`; the cancel func rides the ctx
-(`utils.ContextCancelKey`) so nested tool calls can stop the run.
+A dispatch failure is any error `cmd.IsCommandFailure` rejects: a failed
+`Setup` or `Run` of a dispatched command, the built-in `completion`
+command's included, prints only the error.
+
+`cmd.RunSilent` returns what upstream `cmd.Run` would print, so clai alone
+decides where it goes (see [output.md](./output.md)). The cancel func rides
+the ctx (`utils.ContextCancelKey`) so nested tool calls can stop the run.
 
 `Run` rewrites one special first-argument flag before dispatch:
 `--version` (and its single-dash spelling, which Go flag syntax treats
@@ -37,7 +47,7 @@ flag at that level.
 the `-l`/`-loop` flag of `query` (see [query.md](./query.md#loop-mode)).
 The `completion` command and the hidden `__complete` protocol are
 auto-registered by
-`cmd.Run` (upstream). `Run` adds the `help` command (`withHelp`, not in
+the upstream dispatcher. `Run` adds the `help` command (`withHelp`, not in
 `Commands`, since it lists them): `clai help`, `clai -h` and `clai --help`
 print the full usage and exit 0, and `clai help <command>` is that
 command's `-h`, which prints its Help() text with examples, flags and

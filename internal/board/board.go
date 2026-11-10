@@ -10,14 +10,12 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"sync"
 	"time"
 	"unicode"
 
 	"github.com/baalimago/clai/internal/utils"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/table"
 	"golang.org/x/text/width"
 )
@@ -54,12 +52,14 @@ type Column struct {
 }
 
 // Config names the table: the title after ▸, the position column header,
-// the domain columns and the elapsed column header.
+// the domain columns and the elapsed column header. Color lets the board
+// color its lines; callers fill it from the run's Env.
 type Config struct {
 	Title   string
 	Index   string
 	Columns []Column
 	Time    string
+	Color   bool
 }
 
 // Row is one unit of work. Cells holds one entry per Config.Column; Mark is
@@ -96,10 +96,11 @@ type Board struct {
 }
 
 // New creates the board over rows; live selects in-place redraw and is true
-// when out is a terminal. Plain mode prints the header at once.
+// when out is a terminal. Plain mode prints the header at once. A nil out
+// discards.
 func New(out io.Writer, live bool, cfg Config, rows []Row) *Board {
 	if out == nil {
-		out = os.Stderr
+		out = io.Discard
 	}
 	b := &Board{out: out, live: live, cfg: cfg, now: time.Now}
 	if b.live {
@@ -366,11 +367,11 @@ func (b *Board) phaseLine() string {
 }
 
 func (b *Board) color(c, s string) string {
-	return colorize(c, s)
+	return colorize(b.cfg.Color, c, s)
 }
 
-func colorize(c, s string) string {
-	if !ancli.UseColor || c == "" {
+func colorize(on bool, c, s string) string {
+	if !on || c == "" {
 		return s
 	}
 	return table.Colorize(c, s)

@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/vendors"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
@@ -89,7 +90,7 @@ func (r SourceReader) Read(ctx context.Context, cache vendors.SourceCache, sourc
 	}
 	conv, ok, err := r.readConversation(absPath)
 	if err != nil {
-		return pub_models.Chat{}, fmt.Errorf("read gemini session %q: %w", sourceID, err)
+		return pub_models.Chat{}, diag.Errorf("read gemini session %q: %w", sourceID, err)
 	}
 	if !ok || conv.sessionID != sourceID {
 		return pub_models.Chat{}, fmt.Errorf("gemini session %q not found", sourceID)
@@ -143,7 +144,7 @@ func (r SourceReader) walkSessions(ctx context.Context, visit func(absPath strin
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil
 		}
-		return fmt.Errorf("stat %q: %w", tmp, err)
+		return diag.Errorf("stat %q: %w", tmp, err)
 	}
 	if !st.IsDir() {
 		return nil
@@ -171,7 +172,7 @@ func (r SourceReader) walkSessions(ctx context.Context, visit func(absPath strin
 		return nil
 	})
 	if err != nil && !errors.Is(err, errStopGeminiWalk) {
-		return fmt.Errorf("walk %q: %w", tmp, err)
+		return diag.Errorf("walk %q: %w", tmp, err)
 	}
 	return nil
 }

@@ -215,7 +215,6 @@ func Test_OpenAIDecode_UnrecognizedPayloads_Nil(t *testing.T) {
 		status int
 		body   string
 	}{
-		{"plain 429, no quota code", http.StatusTooManyRequests, `{"error":{"message":"Rate limit reached","type":"requests","code":"rate_limit_exceeded"}}`},
 		{"not json", http.StatusTooManyRequests, "boom"},
 		{"empty body", http.StatusServiceUnavailable, ""},
 		{"numeric code", http.StatusPaymentRequired, `{"error":{"message":"x","code":402}}`},
@@ -393,16 +392,44 @@ func Test_OpenAIDecode_ErrorStringNamesTheProviderMessage(t *testing.T) {
 	}
 }
 
-func Test_OpenAIDecode_StillSilentOnNonBillingEnvelopes(t *testing.T) {
+// Test_OpenAIDecode_NonBillingEnvelopesKeepTheBaselineWithProviderCode pins
+// R1-02 (worklog 2026-11-02-diagnostics): an envelope that is not a billing
+// signal keeps the meaning its status gives, and its provider code is a
+// fact of that error.
+func Test_OpenAIDecode_NonBillingEnvelopesKeepTheBaselineWithProviderCode(t *testing.T) {
 	t.Parallel()
-	cases := []string{
-		`{"error":{"message":"Unsupported parameter","type":"invalid_request_error","param":"top_p","code":null}}`,
-		`{"type":"error","error":{"type":"server_error","code":"server_error","message":"boom"}}`,
-		`{"type":"response.failed","response":{"error":{"code":"server_error","message":"boom"}}}`,
+	cases := []struct {
+		name   string
+		status int
+		body   string
+		is     error
+		code   string
+	}{
+		{"401 invalid_api_key", http.StatusUnauthorized, `{"error":{"message":"Incorrect API key provided","type":"invalid_request_error","code":"invalid_api_key"}}`, claierr.ErrAuthFailed, "invalid_api_key"},
+		{"429 without a quota code", http.StatusTooManyRequests, `{"error":{"message":"Rate limit reached","type":"requests","code":"rate_limit_exceeded"}}`, claierr.ErrRateLimited, "rate_limit_exceeded"},
+		{"500 with a type only", http.StatusInternalServerError, `{"error":{"message":"server melted","type":"server_error"}}`, claierr.ErrProviderUnavailable, "server_error"},
+		{"200 envelope with a null code", http.StatusOK, `{"error":{"message":"Unsupported parameter","type":"invalid_request_error","param":"top_p","code":null}}`, claierr.ErrUnexpectedProviderResponse, "invalid_request_error"},
+		{"200 error event", http.StatusOK, `{"type":"error","code":"server_error","message":"boom"}`, claierr.ErrUnexpectedProviderResponse, "server_error"},
+		{"200 response.failed", http.StatusOK, `{"type":"response.failed","response":{"error":{"code":"server_error","message":"boom"}}}`, claierr.ErrUnexpectedProviderResponse, "server_error"},
 	}
-	for _, body := range cases {
-		if err := decodeError(http.StatusOK, []byte(body)); err != nil {
-			t.Fatalf("expected nil for %s, got: %v", body, err)
-		}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := decodeError(tc.status, []byte(tc.body))
+			if !errors.Is(err, tc.is) {
+				t.Fatalf("decodeError = %v, want %v", err, tc.is)
+			}
+			if errors.Is(err, claierr.ErrLikelyInsufficientCredits) {
+				t.Fatalf("a non-billing envelope means insufficient credits: %v", err)
+			}
+			var apiErr claierr.APIErrorer
+			if !errors.As(err, &apiErr) {
+				t.Fatalf("no APIError facts: %T %v", err, err)
+			}
+			api := apiErr.API()
+			if api.StatusCode != tc.status || api.ProviderCode != tc.code || api.Body != tc.body {
+				t.Fatalf("facts = %+v, want status %d, provider code %q and the body", api, tc.status, tc.code)
+			}
+		})
 	}
 }

@@ -11,15 +11,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/baalimago/clai/internal/debugflags"
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/modelalias"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/remote"
+	"github.com/baalimago/clai/internal/runenv"
 	"github.com/baalimago/clai/internal/text"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
 const purposeSummary = "summary"
@@ -30,6 +30,10 @@ type agentSummarizer struct {
 	summaryModel string
 	aliases      modelalias.Table
 	newQuerier   func(context.Context, text.Configurations) (models.ChatQuerier, error)
+	// upgradeNotice announces the constructor's config upgrade; the first
+	// Summarize reports it, as the constructor has no run context.
+	upgradeNotice string
+	announce      sync.Once
 }
 
 func createChatQuerier(ctx context.Context, conf text.Configurations) (models.ChatQuerier, error) {
@@ -50,30 +54,36 @@ func asChatQuerier(q models.Querier) (models.ChatQuerier, error) {
 
 // NewAgentSummarizer loads textConfig.json once for the model ladder and
 // returns the querier-backed Summarizer.
-func NewAgentSummarizer(confDir string) (models.Summarizer, error) {
+func NewAgentSummarizer(ctx context.Context, confDir string) (models.Summarizer, error) {
 	if err := allowed(); err != nil {
 		return nil, err
 	}
 	firstRun := text.FirstRunDefaults(os.Getenv)
-	conf, added, err := utils.LoadConfigFromFileCollect(confDir, "textConfig.json", text.MigrateOldChatConfig, &firstRun)
+	conf, added, err := utils.LoadConfigFromFileCollect(ctx, confDir, "textConfig.json", text.MigrateOldChatConfig, &firstRun)
 	if err != nil {
-		return nil, fmt.Errorf("load text config for summarizer: %w", err)
+		return nil, diag.Errorf("load text config for summarizer: %w", err)
 	}
-	// The batch path makes this the first load in the process, so an
-	// upgrade rewrite would otherwise go unannounced (R2-04).
-	if len(added) > 0 {
-		ancli.PrintOK(utils.ConfigUpgradeMessage("textConfig.json", added) + "\n")
-	}
-	return &agentSummarizer{
+	a := &agentSummarizer{
 		confDir:      confDir,
 		configModel:  conf.Model,
 		summaryModel: conf.SummaryModel,
 		aliases:      conf.ModelAliases,
 		newQuerier:   createChatQuerier,
-	}, nil
+	}
+	// The batch path makes this the first load in the process, so an
+	// upgrade rewrite would otherwise go unannounced (R2-04).
+	if len(added) > 0 {
+		a.upgradeNotice = utils.ConfigUpgradeMessage("textConfig.json", added)
+	}
+	return a, nil
 }
 
 func (a *agentSummarizer) Summarize(ctx context.Context, req models.SummaryRequest) (models.Summary, error) {
+	a.announce.Do(func() {
+		if a.upgradeNotice != "" {
+			runenv.Noticef(ctx, runenv.SubsystemConfig, "%s", a.upgradeNotice)
+		}
+	})
 	prompt, render, err := summaryPlan(req.Kind)
 	if err != nil {
 		return models.Summary{}, err
@@ -89,13 +99,13 @@ func (a *agentSummarizer) Summarize(ctx context.Context, req models.SummaryReque
 		candidates, err = a.aliases.Resolve(model)
 	}
 	if err != nil {
-		return models.Summary{}, fmt.Errorf("resolve summary model %q: %w", model, err)
+		return models.Summary{}, diag.Errorf("resolve summary model %q: %w", model, err)
 	}
 	rendered := render(req.Chat)
 	var lastErr error
 	for _, candidate := range candidates {
 		if err := ctx.Err(); err != nil {
-			return models.Summary{}, fmt.Errorf("summarize: %w", err)
+			return models.Summary{}, diag.Errorf("summarize: %w", err)
 		}
 		summary, policy, err := a.summarizeWithCandidate(ctx, req.Kind, prompt, rendered, candidate)
 		if err == nil {
@@ -139,15 +149,15 @@ func (a *agentSummarizer) summarizeWithCandidate(ctx context.Context, kind model
 		ErrOut:                io.Discard,
 		ConfigDir:             a.confDir,
 		AgentSettings:         &text.AgentSettings{UsageRecorder: usage},
-		CostWarnf:             traceCostWarnf,
+		CostWarnf:             costTrace(ctx),
 	}
 	cq, err := a.newQuerier(runCtx, conf)
 	if err != nil {
-		return models.Summary{}, summaryAdvance, fmt.Errorf("summarizer querier for model %q: %w", model, err)
+		return models.Summary{}, summaryAdvance, diag.Errorf("summarizer querier for model %q: %w", model, err)
 	}
 	chat, err := cq.TextQuery(runCtx, pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: rendered}}})
 	if ctxErr := ctx.Err(); ctxErr != nil {
-		return models.Summary{}, summaryStop, fmt.Errorf("summarize: %w", ctxErr)
+		return models.Summary{}, summaryStop, diag.Errorf("summarize: %w", ctxErr)
 	}
 	title, summary, ok := holder.get()
 	if !ok {
@@ -156,12 +166,12 @@ func (a *agentSummarizer) summarizeWithCandidate(ctx context.Context, kind model
 			if claierr.ModelUnavailable(err) {
 				policy = summaryAdvance
 			}
-			return models.Summary{}, policy, fmt.Errorf("summarize with %q: %w", model, err)
+			return models.Summary{}, policy, diag.Errorf("summarize with %q: %w", model, err)
 		}
 		return models.Summary{}, summaryStop, errors.New("no summary submitted")
 	}
 	if err != nil {
-		tracef("summarize with %q: keeping the held submission over the querier error: %v", model, err)
+		runenv.Debugf(ctx, runenv.SubsystemSummary, "summarize with %q: keeping the held submission over the querier error: %v", model, err)
 	}
 	return models.Summary{
 		Title:       title,
@@ -188,18 +198,12 @@ func summaryPlan(kind models.SummaryKind) (string, func(pub_models.Chat) string,
 	}
 }
 
-// traceCostWarnf keeps the summarizer querier's cost warnings off the
-// process streams unless DEBUG_SUMMARY is on (R2-03).
-func traceCostWarnf(format string, a ...any) {
-	tracef("cost: "+format, a...)
-}
-
-// tracef writes to stderr so a trace never lands in a piped -r answer (R3-17).
-func tracef(format string, a ...any) {
-	if !debugflags.Enabled("SUMMARY") {
-		return
+// costTrace keeps the summarizer querier's cost warnings to summary debug
+// detail on the run's diagnostics, never the answer stream (R2-03, R3-17).
+func costTrace(ctx context.Context) func(format string, a ...any) {
+	return func(format string, a ...any) {
+		runenv.Debugf(ctx, runenv.SubsystemSummary, "cost: "+format, a...)
 	}
-	fmt.Fprintf(os.Stderr, "[DEBUG_SUMMARY] "+format+"\n", a...)
 }
 
 // resolveModel applies the D22 ladder: explicit → config summary-model →

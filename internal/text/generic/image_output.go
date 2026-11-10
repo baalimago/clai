@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/baalimago/clai/internal/asset"
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
@@ -19,7 +20,7 @@ func GeneratedImage(b64, declaredMIME string) (pub_models.ImagePart, error) {
 	}
 	sniffed, err := asset.Sniff(data)
 	if err != nil {
-		return pub_models.ImagePart{}, fmt.Errorf("%w: %w", UnexpectedImage("generated image is not a supported image"), err)
+		return pub_models.ImagePart{}, diag.Errorf("%w: %w", UnexpectedImage("generated image is not a supported image"), err)
 	}
 	if declaredMIME != "" && declaredMIME != sniffed {
 		return pub_models.ImagePart{}, &asset.MIMEMismatchError{Declared: declaredMIME, Sniffed: sniffed}

@@ -2,14 +2,17 @@ package text
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
 
+	"github.com/baalimago/clai/internal/runenv"
+
 	"github.com/baalimago/clai/internal/chat"
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/models"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 )
 
@@ -84,8 +87,11 @@ func (f sessionFinalizer[C]) Finalize(ctx context.Context, session *QuerySession
 
 	// The raw blank line separates the reply from the prompt echo; a failed run
 	// has no reply to separate, so it stays silent.
-	if session.Raw && !q.structuredOutput && !session.Failed {
-		fmt.Fprintln(q.out)
+	var displayErr error
+	if session.Raw && !q.structuredOutput && !session.Failed && !q.json.active() {
+		if _, err := fmt.Fprintln(q.out); err != nil {
+			displayErr = diag.Errorf("write the reply to stdout: %w", err)
+		}
 	}
 
 	if images := session.takeStepImages(); session.FinalAssistantText != "" || len(images) > 0 {
@@ -115,7 +121,7 @@ func (f sessionFinalizer[C]) Finalize(ctx context.Context, session *QuerySession
 	// join can delay the persist (D21).
 	if session.FinalAssistantText == "" || session.Failed {
 		q.abandonSummary()
-		return f.persist(session)
+		return errors.Join(displayErr, f.persist(ctx, session))
 	}
 	if ctx.Err() != nil && !session.SawStopEvent {
 		q.abandonSummary()
@@ -128,36 +134,44 @@ func (f sessionFinalizer[C]) Finalize(ctx context.Context, session *QuerySession
 		// always structured, so a missing record here would leave every
 		// embedded log without the run's final answer.
 		q.logMessage(ctx, "final_answer", stripThinkingBlocks(session.FinalAssistantText), "")
-		fmt.Fprintln(q.out, stripThinkingBlocks(session.FinalAssistantText))
+		var err error
+		if q.json.active() {
+			err = q.json.stdout.Reply(stripThinkingBlocks(session.FinalAssistantText))
+		} else {
+			_, err = fmt.Fprintln(q.out, stripThinkingBlocks(session.FinalAssistantText))
+		}
+		if err != nil {
+			displayErr = errors.Join(displayErr, diag.Errorf("write the reply to stdout: %w", err))
+		}
 	} else if session.finalTextShown {
 		q.logMessage(ctx, "final_answer", session.FinalAssistantText, "")
-	} else {
-		q.postProcessOutput(ctx, pub_models.Message{
-			Role:    "assistant",
-			Content: session.FinalAssistantText,
-		})
+	} else if err := q.postProcessOutput(ctx, pub_models.Message{
+		Role:    "assistant",
+		Content: session.FinalAssistantText,
+	}); err != nil {
+		displayErr = errors.Join(displayErr, err)
 	}
 	q.joinSummary(&session.Chat)
 	q.chat = session.Chat
-	return f.persist(session)
+	return errors.Join(displayErr, f.persist(ctx, session))
 }
 
 // persist writes the reply, records the directory binding and returns the
 // persist error: a later -re/-dre would otherwise silently read stale state,
 // so the caller must hear about it (worklog 2026-09-05-error-propagation,
 // S8). The runner joins it into the run's returned error.
-func (f sessionFinalizer[C]) persist(session *QuerySession) error {
+func (f sessionFinalizer[C]) persist(ctx context.Context, session *QuerySession) error {
 	q := f.querier
 	var persistErr error
 	if session.ShouldSaveReply {
 		// Origin stamping is always-on and forward-only: stamp the canonical CWD on
 		// first persist, preserve it on every later write (including replies).
-		if originErr := chat.EnsureOriginDir(q.configDir, &session.Chat); originErr != nil {
-			ancli.Warnf("failed to stamp origin directory: %v\n", originErr)
+		if originErr := chat.EnsureOriginDir(ctx, q.configDir, &session.Chat); originErr != nil {
+			runenv.Warnf(ctx, runenv.SubsystemTextQuerier, "failed to stamp origin directory: %v\n", originErr)
 		}
 		q.chat = session.Chat
-		if err := q.imageWiring().Persister.Promote(session.Chat); err != nil {
-			persistErr = fmt.Errorf("failed to save previous query: %w", err)
+		if err := q.imageWiring().Persister.Promote(ctx, session.Chat); err != nil {
+			persistErr = diag.Errorf("failed to save previous query: %w", err)
 		}
 		// History recording is always-on for non-reply queries. A plain -re forks a
 		// fresh promoted id, so recording it would pollute the history with
@@ -165,13 +179,13 @@ func (f sessionFinalizer[C]) persist(session *QuerySession) error {
 		// conversation in place (same id), so recording it just bumps that entry —
 		// it keeps the directory's history current and the binding chainable.
 		if (!q.replyMode || q.dirReplyMode) && session.Chat.ID != "" && session.Chat.ID != "globalScope" {
-			if updateErr := chat.UpdateDirScopeFromCWD(q.configDir, session.Chat.ID); updateErr != nil {
-				ancli.Warnf("failed to update directory-scoped binding: %v\n", updateErr)
+			if updateErr := chat.UpdateDirScopeFromCWD(ctx, q.configDir, session.Chat.ID); updateErr != nil {
+				runenv.Warnf(ctx, runenv.SubsystemTextQuerier, "failed to update directory-scoped binding: %v\n", updateErr)
 			}
 		}
 	}
 	if q.debug {
-		ancli.PrintOK(fmt.Sprintf("Querier.postProcess:\n%v\n", debug.IndentedJsonFmt(q)))
+		runenv.Debugf(f.querier.diagContext(), runenv.SubsystemTextQuerier, "Querier.postProcess:\n%v\n", debug.IndentedJsonFmt(q))
 	}
 	return persistErr
 }

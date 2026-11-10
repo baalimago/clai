@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/baalimago/clai/internal/asset"
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/utils"
 )
 
@@ -138,7 +139,7 @@ func (p presenter) Present(img Shown) error {
 		return errNoOutput
 	}
 	if _, err := io.WriteString(p.opts.Out, p.line(img)); err != nil {
-		return fmt.Errorf("write image line: %w", err)
+		return diag.Errorf("write image line: %w", err)
 	}
 	return p.Open(img)
 }

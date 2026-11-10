@@ -2,10 +2,12 @@ package tools
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/internal/testenv/procenv"
 	"github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -41,7 +43,7 @@ func TestSubCmd_ListsAliasUnderCanonicalTool(t *testing.T) {
 
 		var err error
 		got := captureSubCmdOut(t, func() {
-			err = List()
+			err = List(procenv.Context(context.Background()))
 		})
 		if err != nil {
 			t.Fatalf("expected nil from SubCmd, got: %v", err)
@@ -66,7 +68,7 @@ func TestSubCmd_DetailResolvesAlias(t *testing.T) {
 
 		var err error
 		got := captureSubCmdOut(t, func() {
-			err = Detail("old-name")
+			err = Detail(procenv.Context(context.Background()), "old-name")
 		})
 		if err != nil {
 			t.Fatalf("expected nil from SubCmd, got: %v", err)

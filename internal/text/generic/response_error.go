@@ -1,6 +1,7 @@
 package generic
 
 import (
+	"errors"
 	"net/http"
 	"time"
 
@@ -46,4 +47,20 @@ func baselineError(status int, body []byte) error {
 		return claierr.NewProviderUnavailable(api)
 	}
 	return nil
+}
+
+// ResponseErrorWithProviderCode is the status baseline of ResponseError with
+// code, the code a vendor decoder read from the payload, as its
+// provider-code fact. It returns nil for an empty code, so the decoder
+// leaves the payload to the baseline.
+func ResponseErrorWithProviderCode(status int, body []byte, code string) error {
+	if code == "" {
+		return nil
+	}
+	err := ResponseError(status, body, nil)
+	var apiErr claierr.APIErrorer
+	if errors.As(err, &apiErr) {
+		apiErr.API().ProviderCode = code
+	}
+	return err
 }

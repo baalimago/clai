@@ -2,6 +2,7 @@ package utils
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -10,9 +11,10 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
+	"github.com/baalimago/clai/internal/runenv"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
-	"github.com/baalimago/go_away_boilerplate/pkg/misc"
+
+	"github.com/baalimago/clai/internal/diag"
 )
 
 // requiredConfigDirs lists directories that must exist under the clai config dir.
@@ -67,11 +69,11 @@ func CreateConfigDir(configPath string) error {
 	for _, d := range requiredConfigDirs {
 		err := ensureDirExists(configPath, d)
 		if err != nil {
-			return fmt.Errorf("failed to setup config dir: %w", err)
+			return diag.Errorf("failed to setup config dir: %w", err)
 		}
 	}
 	if err := ensureDefaultShellContexts(configPath); err != nil {
-		return fmt.Errorf("ensure default shell contexts: %w", err)
+		return diag.Errorf("ensure default shell contexts: %w", err)
 	}
 	return nil
 }
@@ -80,7 +82,7 @@ func ensureDirExists(configPath, toCreate string) error {
 	shouldExist := path.Join(configPath, toCreate)
 	if _, err := os.Stat(shouldExist); os.IsNotExist(err) {
 		if err := os.MkdirAll(shouldExist, os.ModePerm); err != nil {
-			return fmt.Errorf("failed to create .clai + .clai/%v directory: %w", toCreate, err)
+			return diag.Errorf("failed to create .clai + .clai/%v directory: %w", toCreate, err)
 		}
 	}
 	return nil
@@ -127,7 +129,7 @@ user: {{.user}}
 
 	for name, def := range defaults {
 		if err := createDefaultShellContextFile(configPath, name, def); err != nil {
-			return fmt.Errorf("create default shell context %q: %w", name, err)
+			return diag.Errorf("create default shell context %q: %w", name, err)
 		}
 	}
 	return nil
@@ -138,40 +140,41 @@ func createDefaultShellContextFile(configPath, name string, def shellContextDefa
 	if _, err := os.Stat(shellContextPath); err == nil {
 		return nil
 	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("stat shell context file %q: %w", shellContextPath, err)
+		return diag.Errorf("stat shell context file %q: %w", shellContextPath, err)
 	}
 
 	b, err := json.MarshalIndent(def, "", "  ")
 	if err != nil {
-		return fmt.Errorf("marshal shell context file %q: %w", shellContextPath, err)
+		return diag.Errorf("marshal shell context file %q: %w", shellContextPath, err)
 	}
 	b = append(b, byte('\n'))
 	if err := WriteFileAtomic(shellContextPath, b, 0o644); err != nil {
-		return fmt.Errorf("write shell context file %q: %w", shellContextPath, err)
+		return diag.Errorf("write shell context file %q: %w", shellContextPath, err)
 	}
 	return nil
 }
 
-func createDefaultConfigFile[T any](configDirPath, configFileName string, dflt *T) error {
+func createDefaultConfigFile[T any](ctx context.Context, configDirPath, configFileName string, dflt *T) error {
 	configFilePath := filepath.Join(configDirPath, configFileName)
 	if _, err := os.Stat(configFilePath); os.IsNotExist(err) {
-		if misc.Truthy(os.Getenv("DEBUG")) {
-			ancli.PrintOK(fmt.Sprintf("attempting to create file: '%v'\n", configFilePath))
-		}
+		runenv.Debugf(ctx, runenv.SubsystemConfig, "attempting to create file: '%v'", configFilePath)
 		err := CreateFile(configFilePath, dflt)
 		if err != nil {
-			return fmt.Errorf("failed to write config: '%v', error: %w", configFileName, err)
+			return diag.Errorf("failed to write config: '%v', error: %w", configFileName, err)
 		}
 	}
 	return nil
 }
 
-func runMigrationCallback(migrationCb func(string) error, configDirPath string) error {
+// MigrationFunc migrates the files of a config directory before a config
+// in it is loaded; it reports through the run on ctx.
+type MigrationFunc func(ctx context.Context, configDirPath string) error
+
+func runMigrationCallback(ctx context.Context, migrationCb MigrationFunc, configDirPath string) error {
 	if migrationCb != nil {
-		err := migrationCb(configDirPath)
+		err := migrationCb(ctx, configDirPath)
 		if err != nil {
-			ancli.PrintWarn(fmt.Sprintf("failed to migrate for config, error: %v\n", err))
-			return err
+			return diag.Errorf("migrate config: %w", err)
 		}
 	}
 	return nil
@@ -198,7 +201,7 @@ func ReadConfigFile[T any](path string, dflt *T) (T, error) {
 	fileBytes, err := os.ReadFile(path)
 	if err != nil {
 		var nilVal T
-		return nilVal, fmt.Errorf("read config %q: %w", path, err)
+		return nilVal, diag.Errorf("read config %q: %w", path, err)
 	}
 	return decodeConfigWithDefaults(fileBytes, path, dflt)
 }
@@ -206,26 +209,24 @@ func ReadConfigFile[T any](path string, dflt *T) (T, error) {
 func decodeConfigWithDefaults[T any](fileBytes []byte, configFileName string, dflt *T) (T, error) {
 	var conf T
 	if err := json.Unmarshal(fileBytes, &conf); err != nil {
-		return conf, fmt.Errorf("failed to unmarshal config '%v', error: %w", configFileName, err)
+		return conf, diag.Errorf("failed to unmarshal config '%v', error: %w", configFileName, err)
 	}
 	var present map[string]json.RawMessage
 	if err := json.Unmarshal(fileBytes, &present); err != nil {
-		return conf, fmt.Errorf("failed to parse config '%v' keys, error: %w", configFileName, err)
+		return conf, diag.Errorf("failed to parse config '%v' keys, error: %w", configFileName, err)
 	}
 	_ = fillMissingFromDefaults(&conf, dflt, present, "")
-	if misc.Truthy(os.Getenv("DEBUG")) {
-		ancli.PrintOK(fmt.Sprintf("found config (read-only): %v\n", debug.IndentedJsonFmt(conf)))
-	}
 	return conf, nil
 }
 
 func LoadConfigFromFile[T any](
+	ctx context.Context,
 	configDirPath,
 	configFileName string,
-	migrationCb func(string) error,
+	migrationCb MigrationFunc,
 	dflt *T,
 ) (T, error) {
-	conf, _, err := loadConfigFromFile(configDirPath, configFileName, migrationCb, dflt, true)
+	conf, _, err := loadConfigFromFile(ctx, configDirPath, configFileName, migrationCb, dflt, true)
 	return conf, err
 }
 
@@ -239,12 +240,13 @@ func LoadConfigFromFile[T any](
 // blank separator line that absorbs the wizard's one-line clear overshoot)
 // use this to announce at the right time.
 func LoadConfigFromFileCollect[T any](
+	ctx context.Context,
 	configDirPath,
 	configFileName string,
-	migrationCb func(string) error,
+	migrationCb MigrationFunc,
 	dflt *T,
 ) (T, []string, error) {
-	return loadConfigFromFile(configDirPath, configFileName, migrationCb, dflt, false)
+	return loadConfigFromFile(ctx, configDirPath, configFileName, migrationCb, dflt, false)
 }
 
 // ConfigUpgradeMessage returns the announcement text for fields added to a
@@ -254,17 +256,15 @@ func ConfigUpgradeMessage(configFileName string, added []string) string {
 }
 
 func loadConfigFromFile[T any](
+	ctx context.Context,
 	configDirPath,
 	configFileName string,
-	migrationCb func(string) error,
+	migrationCb MigrationFunc,
 	dflt *T,
 	announce bool,
 ) (T, []string, error) {
-	if misc.Truthy(os.Getenv("DEBUG")) {
-		ancli.PrintOK(fmt.Sprintf("attempting to load file: %v%v\n", configDirPath, configFileName))
-	}
-
-	configPath := path.Join(configDirPath, configFileName)
+	configPath := filepath.Join(configDirPath, configFileName)
+	runenv.Debugf(ctx, runenv.SubsystemConfig, "attempting to load file: %v", configPath)
 
 	// NoCreateConfig makes the whole load read-only: no config dir, default
 	// file, migration, or upgrade rewrite may be produced as a side effect.
@@ -278,15 +278,18 @@ func loadConfigFromFile[T any](
 				conf, cloneErr := cloneConfigDefault(dflt)
 				if cloneErr != nil {
 					var nilVal T
-					return nilVal, nil, fmt.Errorf("clone default config '%v': %w", configFileName, cloneErr)
+					return nilVal, nil, diag.Errorf("clone default config '%v': %w", configFileName, cloneErr)
 				}
 				return conf, nil, nil
 			}
 			var nilVal T
-			return nilVal, nil, fmt.Errorf("failed to read config '%v', error: %w", configFileName, err)
+			return nilVal, nil, diag.Errorf("failed to read config '%v', error: %w", configFileName, err)
 		}
 
 		conf, err := decodeConfigWithDefaults(fileBytes, configFileName, dflt)
+		if err == nil {
+			runenv.Debugf(ctx, runenv.SubsystemConfig, "found config (read-only): %v", debug.IndentedJsonFmt(conf))
+		}
 		return conf, nil, err
 	}
 
@@ -299,13 +302,13 @@ func loadConfigFromFile[T any](
 	_, statErr := os.Stat(configPath)
 	existedBefore := statErr == nil
 
-	err = createDefaultConfigFile(configDirPath, configFileName, dflt)
+	err = createDefaultConfigFile(ctx, configDirPath, configFileName, dflt)
 	if err != nil {
 		var nilVal T
 		return nilVal, nil, err
 	}
 
-	err = runMigrationCallback(migrationCb, configDirPath)
+	err = runMigrationCallback(ctx, migrationCb, configDirPath)
 	if err != nil {
 		var nilVal T
 		return nilVal, nil, err
@@ -314,13 +317,13 @@ func loadConfigFromFile[T any](
 	fileBytes, err := os.ReadFile(configPath)
 	if err != nil {
 		var nilVal T
-		return nilVal, nil, fmt.Errorf("failed to read config '%v', error: %w", configFileName, err)
+		return nilVal, nil, diag.Errorf("failed to read config '%v', error: %w", configFileName, err)
 	}
 
 	var conf T
 	err = json.Unmarshal(fileBytes, &conf)
 	if err != nil {
-		return conf, nil, fmt.Errorf("failed to unmarshal config '%v', error: %w", configFileName, err)
+		return conf, nil, diag.Errorf("failed to unmarshal config '%v', error: %w", configFileName, err)
 	}
 
 	// Presence-based upgrade: fields absent from the on-disk config are filled
@@ -329,7 +332,7 @@ func loadConfigFromFile[T any](
 	// of truth (config migration design, Q4).
 	var present map[string]json.RawMessage
 	if err := json.Unmarshal(fileBytes, &present); err != nil {
-		return conf, nil, fmt.Errorf("failed to parse config '%v' keys, error: %w", configFileName, err)
+		return conf, nil, diag.Errorf("failed to parse config '%v' keys, error: %w", configFileName, err)
 	}
 	added := fillMissingFromDefaults(&conf, dflt, present, "")
 
@@ -343,7 +346,7 @@ func loadConfigFromFile[T any](
 	if len(added) > 0 {
 		err = CreateFile(configPath, &conf)
 		if err != nil {
-			return conf, nil, fmt.Errorf("failed to write config '%v' post missing-field appendage, error: %w", configFileName, err)
+			return conf, nil, diag.Errorf("failed to write config '%v' post missing-field appendage, error: %w", configFileName, err)
 		}
 		// Announce upgrades of pre-existing files only; fresh files and files
 		// produced by a migration callback carry their own message (Q5). The
@@ -352,13 +355,10 @@ func loadConfigFromFile[T any](
 		if !existedBefore {
 			added = nil
 		} else if announce {
-			ancli.PrintOK(ConfigUpgradeMessage(configFileName, added) + "\n")
+			runenv.Noticef(ctx, runenv.SubsystemConfig, "%s", ConfigUpgradeMessage(configFileName, added))
 		}
 	}
-
-	if misc.Truthy(os.Getenv("DEBUG")) {
-		ancli.PrintOK(fmt.Sprintf("found config: %v\n", debug.IndentedJsonFmt(conf)))
-	}
+	runenv.Debugf(ctx, runenv.SubsystemConfig, "found config: %v", debug.IndentedJsonFmt(conf))
 	return conf, added, nil
 }
 

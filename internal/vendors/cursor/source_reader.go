@@ -23,6 +23,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/sqlitepage"
 	"github.com/baalimago/clai/internal/vendors"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -91,7 +92,7 @@ func (r SourceReader) discoverGUI(ctx context.Context) ([]vendors.SourceRow, err
 
 	tbl, err := db.Table(kvTable)
 	if err != nil {
-		return nil, fmt.Errorf("read cursor database: %w", err)
+		return nil, diag.Errorf("read cursor database: %w", err)
 	}
 	chats := []composer{}
 	err = tbl.Rows(func(_ int64, vals []sqlitepage.Value) error {
@@ -113,7 +114,7 @@ func (r SourceReader) discoverGUI(ctx context.Context) ([]vendors.SourceRow, err
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("scan cursor database: %w", err)
+		return nil, diag.Errorf("scan cursor database: %w", err)
 	}
 	if err := r.fillFallbacks(ctx, tbl, chats); err != nil {
 		return nil, err
@@ -197,7 +198,7 @@ func (r SourceReader) fillFallbacks(ctx context.Context, tbl *sqlitepage.Table, 
 		return nil
 	})
 	if err != nil && !errors.Is(err, errStopScan) {
-		return fmt.Errorf("read cursor chat fallbacks: %w", err)
+		return diag.Errorf("read cursor chat fallbacks: %w", err)
 	}
 	return nil
 }
@@ -215,13 +216,13 @@ func (r SourceReader) Read(ctx context.Context, _ vendors.SourceCache, sourceID 
 func (r SourceReader) readGUI(ctx context.Context, sourceID string) (pub_models.Chat, error) {
 	db, err := r.open()
 	if err != nil {
-		return pub_models.Chat{}, fmt.Errorf("read cursor chat %q: %w", sourceID, err)
+		return pub_models.Chat{}, diag.Errorf("read cursor chat %q: %w", sourceID, err)
 	}
 	defer db.Close()
 
 	tbl, err := db.Table(kvTable)
 	if err != nil {
-		return pub_models.Chat{}, fmt.Errorf("read cursor database: %w", err)
+		return pub_models.Chat{}, diag.Errorf("read cursor database: %w", err)
 	}
 	c, err := findComposer(ctx, tbl, sourceID)
 	if err != nil {
@@ -283,9 +284,9 @@ func (r SourceReader) open() (*sqlitepage.DB, error) {
 	db, err := sqlitepage.Open(p)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return nil, fmt.Errorf("%w: %s", errNoDatabase, p)
+			return nil, diag.Errorf("%w: %s", errNoDatabase, p)
 		}
-		return nil, fmt.Errorf("open cursor database %q: %w", p, err)
+		return nil, diag.Errorf("open cursor database %q: %w", p, err)
 	}
 	return db, nil
 }
@@ -568,7 +569,7 @@ func findComposer(ctx context.Context, tbl *sqlitepage.Table, sourceID string) (
 		return errStopScan
 	})
 	if err != nil && !errors.Is(err, errStopScan) {
-		return composer{}, fmt.Errorf("find cursor chat %q: %w", sourceID, err)
+		return composer{}, diag.Errorf("find cursor chat %q: %w", sourceID, err)
 	}
 	return found, nil
 }
@@ -603,7 +604,7 @@ func findBubbles(ctx context.Context, tbl *sqlitepage.Table, c composer) (map[st
 		return nil
 	})
 	if err != nil && !errors.Is(err, errStopScan) {
-		return nil, fmt.Errorf("read cursor chat %q messages: %w", c.ID, err)
+		return nil, diag.Errorf("read cursor chat %q messages: %w", c.ID, err)
 	}
 	return found, nil
 }

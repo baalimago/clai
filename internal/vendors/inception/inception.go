@@ -1,11 +1,10 @@
 package inception
 
 import (
-	"fmt"
-
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/text/generic"
 
+	"github.com/baalimago/clai/internal/diag"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -29,7 +28,7 @@ const ChatURL = "https://api.inceptionlabs.ai/v1/chat/completions"
 func (g *Inception) Setup() error {
 	err := g.StreamCompleter.Setup("INCEPTION_API_KEY", ChatURL, "INCEPTION_DEBUG")
 	if err != nil {
-		return fmt.Errorf("failed to setup stream completer: %w", err)
+		return diag.Errorf("failed to setup stream completer: %w", err)
 	}
 	g.StreamCompleter.Model = g.Model
 	g.StreamCompleter.FrequencyPenalty = &g.FrequencyPenalty

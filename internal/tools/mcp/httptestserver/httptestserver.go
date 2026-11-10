@@ -19,6 +19,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/baalimago/clai/internal/diag"
 )
 
 // SessionHeader is the header name a streamable-HTTP server uses to assign
@@ -179,7 +181,7 @@ func (s *Server) StreamCount() int {
 func (s *Server) PushNotification(method string, params any) error {
 	body, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": method, "params": params})
 	if err != nil {
-		return fmt.Errorf("httptestserver: encode notification: %w", err)
+		return diag.Errorf("httptestserver: encode notification: %w", err)
 	}
 	s.broadcastSSE(body)
 	return nil
@@ -193,7 +195,7 @@ func (s *Server) PushNotification(method string, params any) error {
 func (s *Server) PushServerRequest(id int, method string) error {
 	body, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": id, "method": method})
 	if err != nil {
-		return fmt.Errorf("httptestserver: encode server request: %w", err)
+		return diag.Errorf("httptestserver: encode server request: %w", err)
 	}
 	s.broadcastSSE(body)
 	return nil
@@ -270,7 +272,7 @@ func (s *Server) LastEventIDHeaderSeen() string {
 func (s *Server) PushNotificationWithID(id, method string, params any) error {
 	body, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": method, "params": params})
 	if err != nil {
-		return fmt.Errorf("httptestserver: encode notification: %w", err)
+		return diag.Errorf("httptestserver: encode notification: %w", err)
 	}
 	s.broadcastSSEWithID(id, body)
 	return nil

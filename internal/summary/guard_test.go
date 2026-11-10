@@ -1,10 +1,13 @@
 package summary
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/baalimago/clai/internal/testenv/procenv"
 )
 
 // TestSummarizerGuard pins the operator kill switch: "off" refuses the
@@ -36,7 +39,7 @@ func TestSummarizerGuard(t *testing.T) {
 	t.Run("constructor refuses before reading any config", func(t *testing.T) {
 		t.Setenv(EnvSummarizer, "off")
 		confDir := t.TempDir()
-		_, err := NewAgentSummarizer(confDir)
+		_, err := NewAgentSummarizer(procenv.Context(context.Background()), confDir)
 		if err == nil || !strings.Contains(err.Error(), EnvSummarizer) {
 			t.Fatalf("NewAgentSummarizer err = %v, want the guard's refusal", err)
 		}

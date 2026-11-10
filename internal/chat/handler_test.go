@@ -15,12 +15,12 @@ func TestChatHandlerListAndFind(t *testing.T) {
 		{ID: "two", Created: time.Now()},
 	}
 	for _, c := range chats {
-		if err := Save(tmp, c); err != nil {
+		if err := Save(context.Background(), tmp, c); err != nil {
 			t.Fatalf("save: %v", err)
 		}
 	}
 	h := &ChatHandler{convDir: tmp}
-	got, err := h.list()
+	got, err := h.list(context.Background())
 	if err != nil {
 		t.Fatalf("list err: %v", err)
 	}

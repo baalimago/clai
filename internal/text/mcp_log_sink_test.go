@@ -26,7 +26,7 @@ import (
 func TestConnectStartedDrawsAndRetiresAStatusRow(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	var output bytes.Buffer
-	sink := newMcpLogSinkTo(mcpLogRolling, &output)
+	sink := newMcpLogSinkTo(context.Background(), mcpLogRolling, &output)
 	sink.termWidth = func() int { return 120 }
 	sink.termHeight = func() int { return 40 }
 	start := time.Date(2026, 11, 5, 21, 0, 0, 0, time.UTC)
@@ -75,7 +75,7 @@ func TestConnectStartedIsSilentOutsideTheSetupWindow(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var output bytes.Buffer
-			sink := newMcpLogSinkTo(tt.mode, &output)
+			sink := newMcpLogSinkTo(context.Background(), tt.mode, &output)
 			sink.termWidth = func() int { return 120 }
 			sink.termHeight = func() int { return 40 }
 			if tt.setup != nil {
@@ -100,7 +100,7 @@ func TestConnectStartedIsSilentOutsideTheSetupWindow(t *testing.T) {
 func TestConnectFinishedKeepsTheLogLinesOfAServerThatPrinted(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	var output bytes.Buffer
-	sink := newMcpLogSinkTo(mcpLogRolling, &output)
+	sink := newMcpLogSinkTo(context.Background(), mcpLogRolling, &output)
 	sink.termWidth = func() int { return 120 }
 	sink.termHeight = func() int { return 40 }
 
@@ -121,7 +121,7 @@ func TestConnectFinishedKeepsTheLogLinesOfAServerThatPrinted(t *testing.T) {
 // finds no status row ends the redraw loop instead of spinning forever.
 func TestTickStopsTheLoopWhenNothingIsLive(t *testing.T) {
 	var output bytes.Buffer
-	sink := newMcpLogSinkTo(mcpLogRolling, &output)
+	sink := newMcpLogSinkTo(context.Background(), mcpLogRolling, &output)
 	sink.termWidth = func() int { return 120 }
 	sink.termHeight = func() int { return 40 }
 	done := sink.ConnectStarted("ddg", "installing pkg")
@@ -176,7 +176,7 @@ func lastStartupFrame(s string) string {
 func TestAuthOutputDoesNotBecomePartOfTheRedrawnStartupWindow(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	var output bytes.Buffer
-	sink := newMcpLogSinkTo(mcpLogRolling, &output)
+	sink := newMcpLogSinkTo(context.Background(), mcpLogRolling, &output)
 	sink.termWidth = func() int { return 120 }
 	sink.termHeight = func() int { return 40 }
 	sink.AppendServerLog("notion", "started")
@@ -206,7 +206,7 @@ func TestAuthOutputReturnsWriteFailures(t *testing.T) {
 		{"redraw failure", &failAfterWriter{failOn: 2}, true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			sink := newMcpLogSinkTo(mcpLogRolling, test.out)
+			sink := newMcpLogSinkTo(context.Background(), mcpLogRolling, test.out)
 			if test.redraw {
 				sink.startup.appendLine("notion", "started", false)
 			}
@@ -223,7 +223,7 @@ func (shortAuthWriter) Write(p []byte) (int, error) { return len(p) - 1, nil }
 
 func TestMcpLogSink_StartupWindowShowsAllServerLines(t *testing.T) {
 	var errOut bytes.Buffer
-	sink := newMcpLogSink(mcpLogRolling)
+	sink := newMcpLogSinkTo(context.Background(), mcpLogRolling, io.Discard)
 	sink.errOut = &errOut
 	sink.termWidth = func() int { return 200 }
 	sink.termHeight = func() int { return 40 }
@@ -255,7 +255,7 @@ func TestMcpLogSink_StartupWindowShowsAllServerLines(t *testing.T) {
 
 func TestMcpLogSink_StartupWindowGroupsPerServer(t *testing.T) {
 	var errOut bytes.Buffer
-	sink := newMcpLogSink(mcpLogRolling)
+	sink := newMcpLogSinkTo(context.Background(), mcpLogRolling, io.Discard)
 	sink.errOut = &errOut
 	sink.termWidth = func() int { return 120 }
 	sink.termHeight = func() int { return 40 }
@@ -284,7 +284,7 @@ func TestMcpLogSink_StartupWindowGroupsPerServer(t *testing.T) {
 // the chatter rolls.
 func TestMcpLogSink_StartupWindowPinsAuthPrompt(t *testing.T) {
 	var errOut bytes.Buffer
-	sink := newMcpLogSink(mcpLogRolling)
+	sink := newMcpLogSinkTo(context.Background(), mcpLogRolling, io.Discard)
 	sink.errOut = &errOut
 	sink.termWidth = func() int { return 200 }
 	sink.termHeight = func() int { return 40 }
@@ -315,7 +315,7 @@ func TestMcpLogSink_StartupWindowPinsAuthPrompt(t *testing.T) {
 
 func TestMcpLogSink_StartupWindowBoundsServerTail(t *testing.T) {
 	var errOut bytes.Buffer
-	sink := newMcpLogSink(mcpLogRolling)
+	sink := newMcpLogSinkTo(context.Background(), mcpLogRolling, io.Discard)
 	sink.errOut = &errOut
 	sink.termWidth = func() int { return 120 }
 	sink.termHeight = func() int { return 40 }
@@ -335,7 +335,7 @@ func TestMcpLogSink_StartupWindowBoundsServerTail(t *testing.T) {
 
 func TestMcpLogSink_StartupWindowCapsRegionToTerminalHeight(t *testing.T) {
 	var errOut bytes.Buffer
-	sink := newMcpLogSink(mcpLogRolling)
+	sink := newMcpLogSinkTo(context.Background(), mcpLogRolling, io.Discard)
 	sink.errOut = &errOut
 	sink.termWidth = func() int { return 120 }
 	sink.termHeight = func() int { return 8 }
@@ -354,7 +354,7 @@ func TestMcpLogSink_StartupWindowCapsRegionToTerminalHeight(t *testing.T) {
 
 func TestMcpLogSink_StartupWindowShowsExitTail(t *testing.T) {
 	var errOut bytes.Buffer
-	sink := newMcpLogSink(mcpLogRolling)
+	sink := newMcpLogSinkTo(context.Background(), mcpLogRolling, io.Discard)
 	sink.errOut = &errOut
 	sink.termWidth = func() int { return 120 }
 	sink.termHeight = func() int { return 40 }
@@ -378,7 +378,7 @@ func TestMcpLogSink_StartupWindowShowsExitTail(t *testing.T) {
 // rendering.
 func TestMcpLogSink_SetupSucceededClearsStartupWindows(t *testing.T) {
 	var errOut bytes.Buffer
-	sink := newMcpLogSink(mcpLogRolling)
+	sink := newMcpLogSinkTo(context.Background(), mcpLogRolling, io.Discard)
 	sink.errOut = &errOut
 	sink.termWidth = func() int { return 120 }
 	sink.termHeight = func() int { return 40 }
@@ -412,7 +412,7 @@ func TestMcpLogSink_SetupSucceededClearsStartupWindows(t *testing.T) {
 
 func TestMcpLogSink_SetupSucceededWithoutWindowIsNoop(t *testing.T) {
 	var errOut bytes.Buffer
-	sink := newMcpLogSink(mcpLogRolling)
+	sink := newMcpLogSinkTo(context.Background(), mcpLogRolling, io.Discard)
 	sink.errOut = &errOut
 	sink.setupSucceeded()
 	if errOut.Len() != 0 {
@@ -426,7 +426,7 @@ func Test_notifyMcpSetupSucceeded_NilSinkIsANoop(t *testing.T) {
 
 func TestMcpLogSink_AttachRestoresQueueing(t *testing.T) {
 	var errOut bytes.Buffer
-	sink := newMcpLogSink(mcpLogRolling)
+	sink := newMcpLogSinkTo(context.Background(), mcpLogRolling, io.Discard)
 	sink.errOut = &errOut
 	sink.attach()
 
@@ -446,7 +446,7 @@ func TestMcpLogSink_AttachRestoresQueueing(t *testing.T) {
 // drain the sink, yet the prompt must reach stderr while the server is alive.
 func Test_McpSink_AuthPromptSurfacesDuringBlockedStartup(t *testing.T) {
 	var errOut lockedBuffer
-	sink := newMcpLogSink(mcpLogRolling)
+	sink := newMcpLogSinkTo(context.Background(), mcpLogRolling, io.Discard)
 	sink.errOut = &errOut
 	sink.termWidth = func() int { return 200 }
 	// Startup is pinned for documentation (readiness checklist item nine):
@@ -480,7 +480,7 @@ func Test_McpSink_AuthPromptSurfacesDuringBlockedStartup(t *testing.T) {
 }
 
 func TestMcpLogSink_RollingModeQueuesLines(t *testing.T) {
-	sink := newMcpLogSinkTo(mcpLogRolling, io.Discard)
+	sink := newMcpLogSinkTo(context.Background(), mcpLogRolling, io.Discard)
 	sink.attach()
 	sink.AppendServerLog("fs", "started")
 	sink.AppendServerLog("fs", "error: boom")
@@ -502,7 +502,7 @@ func TestMcpLogSink_RollingModeQueuesLines(t *testing.T) {
 
 func TestMcpLogSink_PlainDirectPrintsImmediately(t *testing.T) {
 	var noticed []string
-	sink := newMcpLogSink(mcpLogPlainDirect)
+	sink := newMcpLogSinkTo(context.Background(), mcpLogPlainDirect, io.Discard)
 	sink.notice = func(server, line string) { noticed = append(noticed, server+":"+line) }
 
 	sink.AppendServerLog("fs", "started")
@@ -518,7 +518,7 @@ func TestMcpLogSink_PlainDirectPrintsImmediately(t *testing.T) {
 
 func TestMcpLogSink_RawStructuredKeepsOnlyErrors(t *testing.T) {
 	var errOut bytes.Buffer
-	sink := newMcpLogSink(mcpLogRawStructured)
+	sink := newMcpLogSinkTo(context.Background(), mcpLogRawStructured, io.Discard)
 	sink.errOut = &errOut
 
 	sink.AppendServerLog("fs", "started")
@@ -536,7 +536,7 @@ func TestMcpLogSink_RawStructuredKeepsOnlyErrors(t *testing.T) {
 }
 
 func TestMcpLogSink_RollingModeElevatesAuthLines(t *testing.T) {
-	sink := newMcpLogSinkTo(mcpLogRolling, io.Discard)
+	sink := newMcpLogSinkTo(context.Background(), mcpLogRolling, io.Discard)
 	sink.attach()
 	sink.AppendServerLog("github", "started")
 	sink.AppendServerLog("github", "Please visit https://github.com/login/device")
@@ -554,7 +554,7 @@ func TestMcpLogSink_RollingModeElevatesAuthLines(t *testing.T) {
 }
 
 func TestMcpLogSink_AuthFollowWindowElevatesPayloadLines(t *testing.T) {
-	sink := newMcpLogSinkTo(mcpLogRolling, io.Discard)
+	sink := newMcpLogSinkTo(context.Background(), mcpLogRolling, io.Discard)
 	sink.attach()
 	sink.AppendServerLog("github", "To authenticate, visit:")
 	sink.AppendServerLog("github", "https://example.com/device-flow")
@@ -577,7 +577,7 @@ func TestMcpLogSink_AuthFollowWindowElevatesPayloadLines(t *testing.T) {
 }
 
 func TestMcpLogSink_AuthFollowWindowSkipsChatter(t *testing.T) {
-	sink := newMcpLogSinkTo(mcpLogRolling, io.Discard)
+	sink := newMcpLogSinkTo(context.Background(), mcpLogRolling, io.Discard)
 	sink.attach()
 	sink.AppendServerLog("notion", "Please authorize this client by visiting:")
 	sink.AppendServerLog("notion", "Browser opened automatically.")
@@ -598,7 +598,7 @@ func TestMcpLogSink_AuthFollowWindowSkipsChatter(t *testing.T) {
 }
 
 func TestMcpLogSink_AuthFollowWindowIsPerServer(t *testing.T) {
-	sink := newMcpLogSinkTo(mcpLogRolling, io.Discard)
+	sink := newMcpLogSinkTo(context.Background(), mcpLogRolling, io.Discard)
 	sink.attach()
 	sink.AppendServerLog("github", "please sign in")
 	sink.AppendServerLog("fs", "plain line from another server")
@@ -617,7 +617,7 @@ func TestMcpLogSink_AuthFollowWindowIsPerServer(t *testing.T) {
 
 func TestMcpLogSink_RawStructuredPrintsAuthLines(t *testing.T) {
 	var errOut bytes.Buffer
-	sink := newMcpLogSink(mcpLogRawStructured)
+	sink := newMcpLogSinkTo(context.Background(), mcpLogRawStructured, io.Discard)
 	sink.errOut = &errOut
 
 	sink.AppendServerLog("github", "started")
@@ -643,7 +643,7 @@ func TestMcpLogSink_RawStructuredPrintsAuthLines(t *testing.T) {
 }
 
 func TestMcpLogSink_NotifySignalsOnAuth(t *testing.T) {
-	sink := newMcpLogSinkTo(mcpLogRolling, io.Discard)
+	sink := newMcpLogSinkTo(context.Background(), mcpLogRolling, io.Discard)
 	sink.attach()
 	sink.AppendServerLog("github", "please sign in at https://example.com")
 	select {
@@ -654,7 +654,7 @@ func TestMcpLogSink_NotifySignalsOnAuth(t *testing.T) {
 }
 
 func TestMcpLogSink_OverflowDropsOldestNonErrorFirst(t *testing.T) {
-	sink := newMcpLogSinkTo(mcpLogRolling, io.Discard)
+	sink := newMcpLogSinkTo(context.Background(), mcpLogRolling, io.Discard)
 	sink.attach()
 	sink.AppendServerLog("fs", "error: keep me")
 	for range mcpLogQueueCap + 10 {
@@ -671,7 +671,7 @@ func TestMcpLogSink_OverflowDropsOldestNonErrorFirst(t *testing.T) {
 }
 
 func TestMcpLogSink_ServerExitedFlushesTail(t *testing.T) {
-	sink := newMcpLogSinkTo(mcpLogRolling, io.Discard)
+	sink := newMcpLogSinkTo(context.Background(), mcpLogRolling, io.Discard)
 	sink.attach()
 	for i := range 5 {
 		sink.AppendServerLog("fs", fmt.Sprintf("line %d", i))
@@ -692,7 +692,7 @@ func TestMcpLogSink_ServerExitedFlushesTail(t *testing.T) {
 }
 
 func TestMcpLogSink_ServerExitedTailCapped(t *testing.T) {
-	sink := newMcpLogSinkTo(mcpLogRolling, io.Discard)
+	sink := newMcpLogSinkTo(context.Background(), mcpLogRolling, io.Discard)
 	sink.attach()
 	for i := range 15 {
 		sink.AppendServerLog("fs", fmt.Sprintf("line %d", i))
@@ -711,7 +711,7 @@ func TestMcpLogSink_ServerExitedTailCapped(t *testing.T) {
 
 func TestMcpLogSink_ServerExitedFlushesTailRawStructured(t *testing.T) {
 	var errOut bytes.Buffer
-	sink := newMcpLogSink(mcpLogRawStructured)
+	sink := newMcpLogSinkTo(context.Background(), mcpLogRawStructured, io.Discard)
 	sink.errOut = &errOut
 
 	sink.AppendServerLog("fs", "started")
@@ -734,7 +734,7 @@ func TestMcpLogSink_ServerExitedFlushesTailRawStructured(t *testing.T) {
 
 func TestMcpLogSink_ServerExitedFlushesTailRawStructuredCapped(t *testing.T) {
 	var errOut bytes.Buffer
-	sink := newMcpLogSink(mcpLogRawStructured)
+	sink := newMcpLogSinkTo(context.Background(), mcpLogRawStructured, io.Discard)
 	sink.errOut = &errOut
 
 	for i := range 15 {
@@ -752,7 +752,7 @@ func TestMcpLogSink_ServerExitedFlushesTailRawStructuredCapped(t *testing.T) {
 }
 
 func TestMcpLogSink_NotifySignalsOnError(t *testing.T) {
-	sink := newMcpLogSinkTo(mcpLogRolling, io.Discard)
+	sink := newMcpLogSinkTo(context.Background(), mcpLogRolling, io.Discard)
 	sink.attach()
 	notify := sink.Notify()
 
@@ -820,7 +820,7 @@ func Test_sessionRunner_McpErrorRendersLiveWhileModelStreams(t *testing.T) {
 		Model: model,
 		dims:  dimensions.Dimensions{Width: 80, Height: 24},
 	}
-	q.mcpSink = newMcpLogSinkTo(mcpLogRolling, io.Discard)
+	q.mcpSink = newMcpLogSinkTo(context.Background(), mcpLogRolling, io.Discard)
 	q.mcpSink.attach()
 	session := &QuerySession{Chat: pub_models.Chat{ID: "chat-live-mcp"}}
 	runner := sessionRunner[*MockQuerier]{
@@ -848,6 +848,7 @@ func Test_sessionRunner_McpErrorRendersLiveWhileModelStreams(t *testing.T) {
 	}
 
 	// End the stream: the error already rendered, so Run must finish cleanly.
+	stream <- "ok"
 	close(stream)
 	select {
 	case err := <-done:
@@ -864,7 +865,7 @@ func Test_sessionRunner_McpErrorRendersLiveWhileModelStreams(t *testing.T) {
 // output is active; the termination tail must appear on stderr.
 func Test_McpSink_RawStructuredFlushesCrashTailFromServer(t *testing.T) {
 	var errOut lockedBuffer
-	sink := newMcpLogSink(mcpLogRawStructured)
+	sink := newMcpLogSinkTo(context.Background(), mcpLogRawStructured, io.Discard)
 	sink.errOut = &errOut
 	// Startup pinned per readiness checklist item nine; see the identical
 	// note above Test_McpSink_AuthPromptSurfacesDuringBlockedStartup.
@@ -893,7 +894,7 @@ func Test_McpSink_RawStructuredFlushesCrashTailFromServer(t *testing.T) {
 
 func TestMcpLogSink_ConcurrentAppendAndDrain(t *testing.T) {
 	t.Parallel()
-	sink := newMcpLogSinkTo(mcpLogRolling, io.Discard)
+	sink := newMcpLogSinkTo(context.Background(), mcpLogRolling, io.Discard)
 	var wg sync.WaitGroup
 	for i := range 4 {
 		wg.Add(1)
@@ -920,7 +921,7 @@ func Test_drainMcpLogs_WindowAndElevation(t *testing.T) {
 		out:  &out,
 		dims: dimensions.Dimensions{Width: 80, Height: 24},
 	}
-	q.mcpSink = newMcpLogSinkTo(mcpLogRolling, io.Discard)
+	q.mcpSink = newMcpLogSinkTo(context.Background(), mcpLogRolling, io.Discard)
 	q.mcpSink.attach()
 	q.mcpSink.AppendServerLog("filesystem", "server started")
 	q.mcpSink.AppendServerLog("filesystem", "error: boom")
@@ -945,7 +946,7 @@ func Test_drainMcpLogs_ConsecutiveErrorsShareOneBlock(t *testing.T) {
 		out:  &out,
 		dims: dimensions.Dimensions{Width: 80, Height: 24},
 	}
-	q.mcpSink = newMcpLogSinkTo(mcpLogRolling, io.Discard)
+	q.mcpSink = newMcpLogSinkTo(context.Background(), mcpLogRolling, io.Discard)
 	q.mcpSink.attach()
 	for i := range 5 {
 		q.mcpSink.AppendServerLog("k8s", fmt.Sprintf("E1027 error: connection refused %d", i))
@@ -976,7 +977,7 @@ func Test_drainMcpLogs_AuthPromptElevates(t *testing.T) {
 		out:  &out,
 		dims: dimensions.Dimensions{Width: 80, Height: 24},
 	}
-	q.mcpSink = newMcpLogSinkTo(mcpLogRolling, io.Discard)
+	q.mcpSink = newMcpLogSinkTo(context.Background(), mcpLogRolling, io.Discard)
 	q.mcpSink.attach()
 	q.mcpSink.AppendServerLog("github", "To authenticate, visit:")
 	q.mcpSink.AppendServerLog("github", "https://example.com/device")
@@ -998,7 +999,7 @@ func Test_drainMcpLogs_ElevationClearsWindowRegion(t *testing.T) {
 		out:  &out,
 		dims: dimensions.Dimensions{Width: 80, Height: 24},
 	}
-	q.mcpSink = newMcpLogSinkTo(mcpLogRolling, io.Discard)
+	q.mcpSink = newMcpLogSinkTo(context.Background(), mcpLogRolling, io.Discard)
 	q.mcpSink.attach()
 	q.mcpSink.AppendServerLog("fs", "started")
 	if err := q.drainMcpLogs(); err != nil {
@@ -1025,7 +1026,7 @@ func Test_drainMcpLogs_ExitFlushElevates(t *testing.T) {
 		out:  &out,
 		dims: dimensions.Dimensions{Width: 80, Height: 24},
 	}
-	q.mcpSink = newMcpLogSinkTo(mcpLogRolling, io.Discard)
+	q.mcpSink = newMcpLogSinkTo(context.Background(), mcpLogRolling, io.Discard)
 	q.mcpSink.attach()
 	q.mcpSink.AppendServerLog("fs", "line one")
 	q.mcpSink.AppendServerLog("fs", "line two")
@@ -1051,7 +1052,7 @@ func Test_drainMcpLogs_ExitFlushElevates(t *testing.T) {
 // renders its prompt pinned above its tail, exactly as during setup.
 func TestStartupWindowReopensForLazyConnect(t *testing.T) {
 	var errOut bytes.Buffer
-	sink := newMcpLogSink(mcpLogRolling)
+	sink := newMcpLogSinkTo(context.Background(), mcpLogRolling, io.Discard)
 	sink.errOut = &errOut
 	sink.termWidth = func() int { return 120 }
 	sink.termHeight = func() int { return 40 }
@@ -1086,7 +1087,7 @@ func TestStartupWindowReopensForLazyConnect(t *testing.T) {
 // being held hostage by linear's open window. Nothing is lost either way.
 func TestSessionLoopDoesNotRenderIntoAuthWindow(t *testing.T) {
 	var errOut bytes.Buffer
-	sink := newMcpLogSink(mcpLogRolling)
+	sink := newMcpLogSinkTo(context.Background(), mcpLogRolling, io.Discard)
 	sink.errOut = &errOut
 	sink.termWidth = func() int { return 120 }
 	sink.termHeight = func() int { return 40 }
@@ -1132,7 +1133,7 @@ func TestAuthPromptRingsBellWhenEnabled(t *testing.T) {
 		})
 
 		var errOut bytes.Buffer
-		sink := newMcpLogSink(mcpLogRolling)
+		sink := newMcpLogSinkTo(context.Background(), mcpLogRolling, io.Discard)
 		sink.errOut = &errOut
 		done := sink.AuthPending("linear")
 		defer done()
@@ -1156,7 +1157,7 @@ func TestAuthPromptRingsBellWhenEnabled(t *testing.T) {
 		})
 
 		var errOut bytes.Buffer
-		sink := newMcpLogSink(mcpLogRolling)
+		sink := newMcpLogSinkTo(context.Background(), mcpLogRolling, io.Discard)
 		sink.errOut = &errOut
 		done := sink.AuthPending("linear")
 		defer done()
@@ -1172,7 +1173,7 @@ func TestAuthPromptRingsBellWhenEnabled(t *testing.T) {
 // exactly as the pre-session window already guarantees.
 func TestAuthPromptIsPinnedAboveTail(t *testing.T) {
 	var errOut bytes.Buffer
-	sink := newMcpLogSink(mcpLogRolling)
+	sink := newMcpLogSinkTo(context.Background(), mcpLogRolling, io.Discard)
 	sink.errOut = &errOut
 	sink.termWidth = func() int { return 200 }
 	sink.termHeight = func() int { return 40 }
@@ -1201,7 +1202,7 @@ func TestAuthPromptIsPinnedAboveTail(t *testing.T) {
 // no second window: it returns the same close function.
 func TestDuplicateAuthSignalEmitsOneBell(t *testing.T) {
 	var errOut bytes.Buffer
-	sink := newMcpLogSink(mcpLogRolling)
+	sink := newMcpLogSinkTo(context.Background(), mcpLogRolling, io.Discard)
 	sink.errOut = &errOut
 
 	done1 := sink.AuthPending("linear")
@@ -1221,7 +1222,7 @@ func TestDuplicateAuthSignalEmitsOneBell(t *testing.T) {
 // a reopened window's render is abandoned without panicking, and that the
 // wait itself (the returned done function) still works afterwards.
 func TestAuthWindowWriteFailureDoesNotPanic(t *testing.T) {
-	sink := newMcpLogSink(mcpLogRolling)
+	sink := newMcpLogSinkTo(context.Background(), mcpLogRolling, io.Discard)
 	sink.errOut = failingWriter{}
 	sink.setupSucceeded()
 	sink.attach()
@@ -1236,7 +1237,7 @@ func TestAuthWindowWriteFailureDoesNotPanic(t *testing.T) {
 // unavailable, matching the pre-session window's own behaviour.
 func TestAuthWindowUsesFallbackWidth(t *testing.T) {
 	var errOut bytes.Buffer
-	sink := newMcpLogSinkTo(mcpLogRolling, &errOut)
+	sink := newMcpLogSinkTo(context.Background(), mcpLogRolling, &errOut)
 	sink.setupSucceeded()
 	sink.attach()
 
@@ -1255,7 +1256,7 @@ func TestAuthWindowUsesFallbackWidth(t *testing.T) {
 // elevates through the sink's existing non-rolling behaviour.
 func TestAuthPromptElevatesWhenOutputIsNotTerminal(t *testing.T) {
 	var errOut bytes.Buffer
-	sink := newMcpLogSink(mcpLogRawStructured)
+	sink := newMcpLogSinkTo(context.Background(), mcpLogRawStructured, io.Discard)
 	sink.errOut = &errOut
 
 	done := sink.AuthPending("linear")
@@ -1283,7 +1284,7 @@ func (failingWriter) Write([]byte) (int, error) { return 0, fmt.Errorf("boom") }
 // AuthPending-triggered reopen path.
 func TestAuthWindowRespectsPinnedLineCap(t *testing.T) {
 	var errOut bytes.Buffer
-	sink := newMcpLogSink(mcpLogRolling)
+	sink := newMcpLogSinkTo(context.Background(), mcpLogRolling, io.Discard)
 	sink.errOut = &errOut
 	sink.termWidth = func() int { return 200 }
 	sink.termHeight = func() int { return 40 }

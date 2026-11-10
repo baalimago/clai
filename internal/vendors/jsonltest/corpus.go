@@ -17,6 +17,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/baalimago/clai/internal/diag"
 )
 
 // Shape selects the vendor layout a corpus imitates.
@@ -152,7 +154,7 @@ func (c Corpus) Lines() ([][]byte, error) {
 	for _, p := range c.Files {
 		b, err := os.ReadFile(p)
 		if err != nil {
-			return nil, fmt.Errorf("jsonltest: read session %q: %w", p, err)
+			return nil, diag.Errorf("jsonltest: read session %q: %w", p, err)
 		}
 		for line := range bytes.SplitSeq(b, []byte("\n")) {
 			if line = bytes.TrimSpace(line); len(line) > 0 {
@@ -202,7 +204,7 @@ func writeCorpus(root string, opts CorpusOptions, session sessionFunc) (Corpus, 
 		opts.Seed = DefaultSeed
 	}
 	if err := os.MkdirAll(root, 0o755); err != nil {
-		return Corpus{}, fmt.Errorf("jsonltest: create corpus root %q: %w", root, err)
+		return Corpus{}, diag.Errorf("jsonltest: create corpus root %q: %w", root, err)
 	}
 	c := Corpus{Root: root}
 	for i := range opts.Sessions {
@@ -212,7 +214,7 @@ func writeCorpus(root string, opts CorpusOptions, session sessionFunc) (Corpus, 
 		}
 		dir := filepath.Join(root, fmt.Sprintf("proj-%02d", i%corpusProjects))
 		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return Corpus{}, fmt.Errorf("jsonltest: create project dir %q: %w", dir, err)
+			return Corpus{}, diag.Errorf("jsonltest: create project dir %q: %w", dir, err)
 		}
 		path := filepath.Join(dir, fmt.Sprintf("session-%04d.jsonl", i))
 		lines, fact, err := session(opts, i, kind)
@@ -280,7 +282,7 @@ func writeLines(path string, lines [][]byte, trailingNewline bool) error {
 		}
 	}
 	if err := os.WriteFile(path, []byte(buf.String()), 0o644); err != nil {
-		return fmt.Errorf("jsonltest: write session %q: %w", path, err)
+		return diag.Errorf("jsonltest: write session %q: %w", path, err)
 	}
 	return nil
 }
@@ -307,7 +309,7 @@ func buildSession(opts CorpusOptions, i int, kind Kind) ([][]byte, error) {
 	for _, env := range envs {
 		b, err := json.Marshal(env)
 		if err != nil {
-			return nil, fmt.Errorf("jsonltest: marshal fixture line: %w", err)
+			return nil, diag.Errorf("jsonltest: marshal fixture line: %w", err)
 		}
 		out = append(out, b)
 	}

@@ -4,24 +4,23 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/baalimago/clai/internal/chat"
+	"github.com/baalimago/clai/internal/diag"
+	"github.com/baalimago/clai/internal/runenv"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
-	"github.com/baalimago/go_away_boilerplate/pkg/misc"
 )
 
 func (c *Configurations) SetupPrompts(ctx context.Context, args []string) error {
 	if c.ReplyMode {
 		confDir, err := utils.GetClaiConfigDir()
 		if err != nil {
-			return fmt.Errorf("failed to get config dir: %w", err)
+			return diag.Errorf("failed to get config dir: %w", err)
 		}
-		iP, err := chat.LoadPrevQuery(confDir)
+		iP, err := chat.LoadPrevQuery(ctx, confDir)
 		if err != nil {
-			return fmt.Errorf("failed to load previous query: %w", err)
+			return diag.Errorf("failed to load previous query: %w", err)
 		}
 		replyMessages, err := ReplyContext(iP.Messages)
 		if err != nil {
@@ -32,11 +31,9 @@ func (c *Configurations) SetupPrompts(ctx context.Context, args []string) error 
 
 	prompt, err := utils.Prompt(ctx, c.StdinReplace, args)
 	if err != nil {
-		return fmt.Errorf("failed to setup prompt from stdin: %w", err)
+		return diag.Errorf("failed to setup prompt from stdin: %w", err)
 	}
-	if misc.Truthy(os.Getenv("DEBUG")) {
-		ancli.PrintOK(fmt.Sprintf("format: '%v', prompt: '%v'\n", c.PromptFormat, prompt))
-	}
+	runenv.Debugf(ctx, runenv.SubsystemPhoto, "format: '%v', prompt: '%v'", c.PromptFormat, prompt)
 	c.Prompt += fmt.Sprintf(c.PromptFormat, prompt)
 	return nil
 }
@@ -53,7 +50,7 @@ func ReplyContext(messages []pub_models.Message) (string, error) {
 	replyMessages += "The roles are 'system' and 'user'. "
 	b, err := json.Marshal(chat.ImagesDescribed(messages))
 	if err != nil {
-		return "", fmt.Errorf("failed to encode reply JSON: %w", err)
+		return "", diag.Errorf("failed to encode reply JSON: %w", err)
 	}
 	return fmt.Sprintf("%vMessages:\n%v\n-------------\n", replyMessages, string(b)), nil
 }

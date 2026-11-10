@@ -1,10 +1,10 @@
 package openai
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/baalimago/clai/internal/audio/generic"
+	"github.com/baalimago/clai/internal/diag"
 )
 
 const TranscribeURL = "https://api.openai.com/v1/audio/transcriptions"
@@ -34,7 +34,7 @@ func ResponseFormatFor(model string) generic.ResponseFormat {
 func (t *Transcriber) Setup() error {
 	err := t.Transcriber.Setup("OPENAI_API_KEY", TranscribeURL, "DEBUG_OPENAI")
 	if err != nil {
-		return fmt.Errorf("failed to setup transcriber: %w", err)
+		return diag.Errorf("failed to setup transcriber: %w", err)
 	}
 	t.Transcriber.Model = t.Model
 	t.Transcriber.Format = ResponseFormatFor(t.Model)

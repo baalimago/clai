@@ -14,6 +14,8 @@ import (
 
 	"github.com/baalimago/clai/internal/board"
 	"github.com/baalimago/clai/internal/capture"
+	"github.com/baalimago/clai/internal/diag"
+	"github.com/baalimago/clai/internal/display"
 	"github.com/baalimago/clai/internal/utils"
 )
 
@@ -58,11 +60,21 @@ func dbText(db float64) string {
 	return strconv.FormatFloat(db, 'f', -1, 64)
 }
 
+// recordProgressTitle names the progress records of a recording under -json.
+const recordProgressTitle = "audio_record"
+
 // recordNotice is the row shown while a recording runs. A terminal gets one
-// live row that erases itself; any other writer gets one plain line.
+// live row that erases itself; any other writer gets one plain line; a JSON
+// Displayer gets one progress record per state change.
 type recordNotice struct {
-	mu     sync.Mutex
-	out    io.Writer
+	mu    sync.Mutex
+	out   io.Writer
+	disp  display.Displayer
+	emit  sync.Mutex // orders progress records; guards the fields below
+	begun bool
+	ended bool
+	// early holds notes shown before start, reported right after it.
+	early  []string
 	place  string
 	live   bool
 	cfg    CaptureConfig
@@ -85,6 +97,48 @@ func newRecordNotice(out io.Writer, live bool, cfg CaptureConfig, place string) 
 	}
 	notice.status.SetDetail(notice.detail(notice.now()))
 	return notice
+}
+
+// newJSONRecordNotice reports the recording as progress records through disp
+// and never draws.
+func newJSONRecordNotice(disp display.Displayer, cfg CaptureConfig, place string) *recordNotice {
+	notice := newRecordNotice(io.Discard, false, cfg, place)
+	notice.disp = disp
+	return notice
+}
+
+func (n *recordNotice) progress(state, detail string) error {
+	n.emit.Lock()
+	defer n.emit.Unlock()
+	if n.ended {
+		return nil
+	}
+	if !n.begun && state == "update" {
+		n.early = append(n.early, detail)
+		return nil
+	}
+	n.begun = true
+	n.ended = state == "done" || state == "failed"
+	if err := n.report(state, detail); err != nil {
+		return err
+	}
+	if state != "start" {
+		return nil
+	}
+	for _, line := range n.early {
+		if err := n.report("update", line); err != nil {
+			return err
+		}
+	}
+	n.early = nil
+	return nil
+}
+
+func (n *recordNotice) report(state, detail string) error {
+	if err := n.disp.ReportProgress(display.Progress{Title: recordProgressTitle, State: state, Detail: detail}); err != nil {
+		return diag.Errorf("report recording progress: %w", err)
+	}
+	return nil
 }
 
 // detail is the text after the elapsed clock: the silence state, the threshold
@@ -121,19 +175,30 @@ func (n *recordNotice) stateText(now time.Time) string {
 // and must not block.
 func (n *recordNotice) setState(state capture.CaptureState) {
 	n.mu.Lock()
-	if state != n.state {
+	changed := state != n.state
+	if changed {
 		n.since = n.now()
 	}
 	n.state = state
+	if n.disp != nil {
+		if changed {
+			_ = n.progress("update", string(state)+" · threshold "+dbText(n.cfg.SilencePeakDB)+" dB")
+		}
+		n.mu.Unlock()
+		return
+	}
 	detail := n.detailLocked(n.now())
 	n.mu.Unlock()
 	n.status.SetDetail(detail)
 }
 
 func (n *recordNotice) start() error {
+	if n.disp != nil {
+		return n.progress("start", n.place)
+	}
 	if !n.live {
 		if _, err := fmt.Fprintf(n.out, "recording %s\n", n.place); err != nil {
-			return fmt.Errorf("print recording notice: %w", err)
+			return diag.Errorf("print recording notice: %w", err)
 		}
 		return nil
 	}
@@ -162,6 +227,32 @@ func (n *recordNotice) tick(stop, done chan struct{}) {
 	}
 }
 
+// finish ends the notice. A cancelled recording that was kept is named on its
+// own line, because the run it belongs to is ending and may show no tool
+// result: under JSON it ends done with that line as detail, any other error
+// ends failed.
+func (n *recordNotice) finish(runErr error) error {
+	var interrupted *capture.InterruptedError
+	saved := errors.As(runErr, &interrupted) && interrupted.Path != ""
+	if n.disp != nil {
+		switch {
+		case saved:
+			return n.progress("done", runErr.Error())
+		case runErr != nil:
+			return n.progress("failed", runErr.Error())
+		}
+		return n.progress("done", "")
+	}
+	n.stopNotice()
+	if !saved {
+		return nil
+	}
+	if _, err := fmt.Fprintln(n.out, runErr.Error()); err != nil {
+		return diag.Errorf("print saved recording: %w", err)
+	}
+	return nil
+}
+
 func (n *recordNotice) stopNotice() {
 	n.mu.Lock()
 	stop, done := n.stop, n.done
@@ -175,13 +266,28 @@ func (n *recordNotice) stopNotice() {
 }
 
 // note prints one line above the row, which the next frame redraws below it.
+// askCalibration asks the user to acknowledge this machine's silence levels:
+// a calibrate prompt record under -json, the notice line otherwise.
+func (n *recordNotice) askCalibration() error {
+	if n.disp == nil {
+		return n.note(calibrationNotice)
+	}
+	if err := n.disp.ShowPrompt(display.Prompt{Kind: "calibrate", Text: calibrationQuestion, Choices: []string{"a"}}); err != nil {
+		return diag.Errorf("show calibration question: %w", err)
+	}
+	return nil
+}
+
 func (n *recordNotice) note(line string) error {
+	if n.disp != nil {
+		return n.progress("update", line)
+	}
 	prefix := ""
 	if n.live {
 		prefix = "\r\x1b[2K"
 	}
 	if _, err := fmt.Fprintf(n.out, "%s%s\n", prefix, line); err != nil {
-		return fmt.Errorf("print recording note: %w", err)
+		return diag.Errorf("print recording note: %w", err)
 	}
 	return nil
 }
@@ -212,20 +318,20 @@ func updateCaptureConfig(fn func(*CaptureConfig)) error {
 	}
 	configDir, err := utils.GetClaiConfigDir()
 	if err != nil {
-		return fmt.Errorf("find config dir: %w", err)
+		return diag.Errorf("find config dir: %w", err)
 	}
 	path := filepath.Join(configDir, "audioConfig.json")
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("read audioConfig.json: %w", err)
+		return diag.Errorf("read audioConfig.json: %w", err)
 	}
 	var file Configurations
 	if err := json.Unmarshal(raw, &file); err != nil {
-		return fmt.Errorf("parse audioConfig.json: %w", err)
+		return diag.Errorf("parse audioConfig.json: %w", err)
 	}
 	fn(&file.Capture)
 	if err := utils.CreateFile(path, &file); err != nil {
-		return fmt.Errorf("write audioConfig.json: %w", err)
+		return diag.Errorf("write audioConfig.json: %w", err)
 	}
 	return nil
 }

@@ -2,25 +2,30 @@ package chat
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/internal/testenv/procenv"
+
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
-func captureStdout(t *testing.T, fn func()) string {
+// captureStderr captures the process stderr, where the test binary's
+// fallback Env delivers diagnostics.
+func captureStderr(t *testing.T, fn func()) string {
 	t.Helper()
-	origStdout := os.Stdout
+	origStderr := os.Stderr
 	r, w, err := os.Pipe()
 	if err != nil {
-		t.Fatalf("create stdout pipe: %v", err)
+		t.Fatalf("create stderr pipe: %v", err)
 	}
-	os.Stdout = w
+	os.Stderr = w
 	defer func() {
-		os.Stdout = origStdout
+		os.Stderr = origStderr
 	}()
 
 	readDone := make(chan string, 1)
@@ -36,14 +41,14 @@ func captureStdout(t *testing.T, fn func()) string {
 
 	fn()
 	if err := w.Close(); err != nil {
-		t.Fatalf("close stdout writer: %v", err)
+		t.Fatalf("close stderr writer: %v", err)
 	}
 	got := <-readDone
 	if strings.HasPrefix(got, "COPYERR: ") {
-		t.Fatalf("capture stdout: %v", got)
+		t.Fatalf("capture stderr: %v", got)
 	}
 	if err := r.Close(); err != nil {
-		t.Fatalf("close stdout reader: %v", err)
+		t.Fatalf("close stderr reader: %v", err)
 	}
 	return got
 }
@@ -58,14 +63,14 @@ func TestLoadPrevQuery_TraceShowsLoadedConversationIDWhenDebugEnabled(t *testing
 		ID:       "globalScope",
 		Messages: []pub_models.Message{{Role: "user", Content: "hello"}},
 	}
-	if err := Save(convDir, chat); err != nil {
+	if err := Save(procenv.Context(context.Background()), convDir, chat); err != nil {
 		t.Fatalf("save global scope chat: %v", err)
 	}
 
 	t.Setenv("DEBUG", "false")
 	t.Setenv("DEBUG_CHAT", "false")
-	withoutDebug := captureStdout(t, func() {
-		if _, err := LoadPrevQuery(confDir); err != nil {
+	withoutDebug := captureStderr(t, func() {
+		if _, err := LoadPrevQuery(procenv.Context(context.Background()), confDir); err != nil {
 			t.Fatalf("LoadPrevQuery without debug: %v", err)
 		}
 	})
@@ -75,8 +80,8 @@ func TestLoadPrevQuery_TraceShowsLoadedConversationIDWhenDebugEnabled(t *testing
 
 	t.Setenv("DEBUG", "true")
 	t.Setenv("DEBUG_CHAT", "false")
-	withDebug := captureStdout(t, func() {
-		if _, err := LoadPrevQuery(confDir); err != nil {
+	withDebug := captureStderr(t, func() {
+		if _, err := LoadPrevQuery(procenv.Context(context.Background()), confDir); err != nil {
 			t.Fatalf("LoadPrevQuery with debug: %v", err)
 		}
 	})

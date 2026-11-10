@@ -21,7 +21,7 @@ func TestChatHandler_listSelectContinue_keepsStoredChatID(t *testing.T) {
 	convDir := filepath.Join(confDir, "conversations")
 	id := "seed-chat"
 	ch := pub_models.Chat{ID: id, Created: time.Now(), Messages: []pub_models.Message{{Role: "user", Content: "seed"}}}
-	if err := Save(convDir, ch); err != nil {
+	if err := Save(context.Background(), convDir, ch); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
@@ -46,7 +46,7 @@ func TestChatHandler_findChatByID_prefersExactID(t *testing.T) {
 	convDir := filepath.Join(confDir, "conversations")
 	id := "hello-world-chat"
 	ch := pub_models.Chat{ID: id, Created: time.Now()}
-	if err := Save(convDir, ch); err != nil {
+	if err := Save(context.Background(), convDir, ch); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 

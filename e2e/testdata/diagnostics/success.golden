@@ -1,0 +1,10 @@
+# clai -r -cm test -lb q hello
+# env: DEBUG_LOOKBACK=1
+== status
+0
+== stdout
+hello
+
+== stderr
+debug [lookback] lookback: enabled (no recorded history in this directory yet; search other paths with search_conversations)
+

@@ -15,6 +15,7 @@ import (
 	stdsync "sync"
 
 	"github.com/baalimago/clai/internal/asset"
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/internal/vendors"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -106,7 +107,7 @@ type exportPlan struct {
 // installed discovers nothing.
 func planForeign(ctx context.Context, convDir string, cache vendors.SourceCache) exportPlan {
 	cloned := map[string]bool{}
-	if rows, err := readChatIndex(convDir); err == nil {
+	if rows, err := readChatIndex(ctx, convDir); err == nil {
 		for _, r := range rows {
 			if r.Source != "" && r.SourceID != "" {
 				cloned[sourceDedupKey(r.Source, r.SourceID)] = true
@@ -257,7 +258,7 @@ func saveManifest(plan exportPlan) error {
 func exportOne(ctx context.Context, r vendors.SourceReader, cache vendors.SourceCache, store asset.AssetStorer, row vendors.SourceRow, p string) error {
 	c, err := r.Read(ctx, cache, row.SourceID)
 	if err != nil {
-		return fmt.Errorf("export %s %s: %w", row.Source, row.SourceID, err)
+		return diag.Errorf("export %s %s: %w", row.Source, row.SourceID, err)
 	}
 	c.Source, c.SourceID = row.Source, row.SourceID
 	if c.ID == "" {
@@ -268,7 +269,7 @@ func exportOne(ctx context.Context, r vendors.SourceReader, cache vendors.Source
 	}
 	c, err = storePendingImages(store, c)
 	if err != nil {
-		return fmt.Errorf("export %s %s: %w", row.Source, row.SourceID, err)
+		return diag.Errorf("export %s %s: %w", row.Source, row.SourceID, err)
 	}
 	b, err := json.Marshal(c)
 	if err != nil {
@@ -294,7 +295,7 @@ func (r importedReader) files() ([]string, error) {
 	return matches, nil
 }
 
-func (r importedReader) Discover(_ context.Context, cache vendors.SourceCache) ([]vendors.SourceRow, error) {
+func (r importedReader) Discover(ctx context.Context, cache vendors.SourceCache) ([]vendors.SourceRow, error) {
 	files, err := r.files()
 	if err != nil {
 		return nil, err
@@ -313,7 +314,7 @@ func (r importedReader) Discover(_ context.Context, cache vendors.SourceCache) (
 				continue
 			}
 		}
-		row, err := importedRow(p)
+		row, err := importedRow(ctx, p)
 		if err != nil {
 			continue
 		}
@@ -325,8 +326,8 @@ func (r importedReader) Discover(_ context.Context, cache vendors.SourceCache) (
 	return rows, nil
 }
 
-func importedRow(p string) (vendors.SourceRow, error) {
-	c, err := FromPath(p)
+func importedRow(ctx context.Context, p string) (vendors.SourceRow, error) {
+	c, err := FromPath(ctx, p)
 	if err != nil {
 		return vendors.SourceRow{}, err
 	}
@@ -358,13 +359,13 @@ func (e *ImportedNotFoundError) Error() string {
 	return fmt.Sprintf("no imported conversation %q", e.SourceID)
 }
 
-func (r importedReader) Read(_ context.Context, _ vendors.SourceCache, sourceID string) (pub_models.Chat, error) {
+func (r importedReader) Read(ctx context.Context, _ vendors.SourceCache, sourceID string) (pub_models.Chat, error) {
 	matches, err := filepath.Glob(filepath.Join(importedDir(r.convDir), "*", globEscape(importedFileName(sourceID))))
 	if err != nil {
 		return pub_models.Chat{}, err
 	}
 	for _, p := range matches {
-		c, err := FromPath(p)
+		c, err := FromPath(ctx, p)
 		if err == nil && c.SourceID == sourceID {
 			return c, nil
 		}
@@ -378,13 +379,13 @@ func globEscape(s string) string {
 
 // ReindexPulled brings the chat index up to date with the conversation
 // files a cloud sync wrote or removed (paths relative to confDir).
-func ReindexPulled(confDir string, written, removed []string, progress func(done, total int)) error {
+func ReindexPulled(ctx context.Context, confDir string, written, removed []string, progress func(done, total int)) error {
 	convDir := conversationsDir(confDir)
 	var errs []error
 	for start := 0; start < len(written); start += reindexBatch {
 		batch := written[start:min(start+reindexBatch, len(written))]
-		chats, err := readPulled(confDir, batch)
-		errs = append(errs, err, UpsertChatIndexBatch(convDir, chats))
+		chats, err := readPulled(ctx, confDir, batch)
+		errs = append(errs, err, UpsertChatIndexBatch(ctx, convDir, chats))
 		if progress != nil {
 			progress(start+len(batch), len(written))
 		}
@@ -394,7 +395,7 @@ func ReindexPulled(confDir string, written, removed []string, progress func(done
 		for _, rel := range removed {
 			gone[strings.TrimSuffix(filepath.Base(rel), ".json")] = true
 		}
-		rows, err := readChatIndex(convDir)
+		rows, err := readChatIndex(ctx, convDir)
 		if err == nil {
 			kept := rows[:0]
 			for _, r := range rows {
@@ -418,7 +419,7 @@ const (
 
 // readPulled parses the chats at rels, in order, on reindexWorkers
 // goroutines, leaving out and reporting the ones that do not parse.
-func readPulled(confDir string, rels []string) ([]pub_models.Chat, error) {
+func readPulled(ctx context.Context, confDir string, rels []string) ([]pub_models.Chat, error) {
 	chats := make([]pub_models.Chat, len(rels))
 	errs := make([]error, len(rels))
 	next := make(chan int)
@@ -426,7 +427,7 @@ func readPulled(confDir string, rels []string) ([]pub_models.Chat, error) {
 	for range min(reindexWorkers, len(rels)) {
 		wg.Go(func() {
 			for i := range next {
-				chats[i], errs[i] = FromPath(filepath.Join(confDir, filepath.FromSlash(rels[i])))
+				chats[i], errs[i] = FromPath(ctx, filepath.Join(confDir, filepath.FromSlash(rels[i])))
 			}
 		})
 	}

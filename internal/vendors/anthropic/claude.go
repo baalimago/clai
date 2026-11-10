@@ -3,12 +3,12 @@ package anthropic
 import (
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"maps"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/text/generic"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -38,7 +38,6 @@ type Claude struct {
 	PrintInputCount    bool                       `json:"print_input_count"`
 	client             *http.Client               `json:"-"`
 	apiKey             string                     `json:"-"`
-	debug              bool                       `json:"-"`
 	debugFullStreamMsg string                     `json:"-"`
 	tools              []pub_models.Specification `json:"-"`
 	functionName       string                     `json:"-"`
@@ -144,14 +143,14 @@ func (c *Claude) outputConfig() (*outputConfig, error) {
 		return nil, nil
 	}
 	if rf.Type != "json_schema" {
-		return nil, fmt.Errorf("anthropic: %w: type %q, use \"json_schema\" with a schema", generic.ErrResponseFormatUnsupported, rf.Type)
+		return nil, diag.Errorf("anthropic: %w: type %q, use \"json_schema\" with a schema", generic.ErrResponseFormatUnsupported, rf.Type)
 	}
 	if rf.JSONSchema == nil {
-		return nil, fmt.Errorf("anthropic: %w: json_schema without json_schema.schema", generic.ErrResponseFormatUnsupported)
+		return nil, diag.Errorf("anthropic: %w: json_schema without json_schema.schema", generic.ErrResponseFormatUnsupported)
 	}
 	schema, err := rf.JSONSchema.SchemaJSON()
 	if err != nil {
-		return nil, fmt.Errorf("anthropic: %w: %w", generic.ErrResponseFormatUnsupported, err)
+		return nil, diag.Errorf("anthropic: %w: %w", generic.ErrResponseFormatUnsupported, err)
 	}
 	return &outputConfig{Format: outputFormat{Type: "json_schema", Schema: schema}}, nil
 }

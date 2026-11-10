@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baalimago/clai/internal/testenv/procenv"
+
 	"github.com/baalimago/clai/internal/asset"
 	"github.com/baalimago/clai/internal/imagegen"
 	"github.com/baalimago/clai/internal/imagegen/imagegentest"
@@ -113,11 +115,11 @@ func (f *fixture) setStdin(data []byte) {
 
 func (f *fixture) deps() photo.CommandDeps {
 	return photo.CommandDeps{
-		ConfigPrep: func() (string, error) {
+		ConfigPrep: func(context.Context) (string, error) {
 			f.configPreps++
 			return f.confDir, nil
 		},
-		LoadConfig: func(confDir string) (photo.Configurations, error) {
+		LoadConfig: func(_ context.Context, confDir string) (photo.Configurations, error) {
 			if confDir != f.confDir {
 				f.t.Fatalf("LoadConfig got conf dir %q, want %q", confDir, f.confDir)
 			}
@@ -145,7 +147,7 @@ func (f *fixture) deps() photo.CommandDeps {
 			f.openerCmds = append(f.openerCmds, command)
 			return f.opener
 		},
-		PreviousImage: func(confDir string) (asset.Image, error) {
+		PreviousImage: func(_ context.Context, confDir string) (asset.Image, error) {
 			f.prevDirs = append(f.prevDirs, confDir)
 			return f.prevImage, f.prevErr
 		},
@@ -166,10 +168,10 @@ func runCommand(t *testing.T, deps photo.CommandDeps, args ...string) outcome {
 			if o.err = c.Flagset().Parse(args); o.err != nil {
 				return
 			}
-			if o.err = c.Setup(context.Background()); o.err != nil {
+			if o.err = c.Setup(procenv.Context(context.Background())); o.err != nil {
 				return
 			}
-			o.err = c.Run(context.Background())
+			o.err = c.Run(procenv.Context(context.Background()))
 		})
 	})
 	return o
@@ -187,7 +189,7 @@ func (f *fixture) exit(args ...string) (int, string) {
 	stderr := testboil.CaptureStderr(f.t, func(t *testing.T) {
 		_ = testboil.CaptureStdout(t, func(t *testing.T) {
 			commands := map[string]cmd.Command{"photo|p": photo.Command(f.deps())}
-			status = cmd.Run(context.Background(), append([]string{"clai", "photo"}, args...), commands, "%v")
+			status = cmd.Run(procenv.Context(context.Background()), append([]string{"clai", "photo"}, args...), commands, "%v")
 		})
 	})
 	return status, stderr
@@ -662,7 +664,7 @@ func TestPhoto_Unconfigured(t *testing.T) {
 			f := newFixture(t)
 			deps := tc.deps(f)
 			if deps.ConfigPrep == nil {
-				deps.ConfigPrep = func() (string, error) { f.configPreps++; return f.confDir, nil }
+				deps.ConfigPrep = func(context.Context) (string, error) { f.configPreps++; return f.confDir, nil }
 			}
 			o := runCommand(t, deps, tc.args...)
 			if tc.valid {
@@ -692,9 +694,9 @@ func TestPhoto_OnlyInjectedGenerator(t *testing.T) {
 		base64.StdEncoding.EncodeToString(pngData)+`"}}]}]`)
 
 	deps := f.deps()
-	deps.ConfigPrep = utils.GetClaiConfigDir
-	deps.LoadConfig = func(confDir string) (photo.Configurations, error) {
-		return utils.LoadConfigFromFile(confDir, "photoConfig.json", nil, &photo.DEFAULT)
+	deps.ConfigPrep = func(context.Context) (string, error) { return utils.GetClaiConfigDir() }
+	deps.LoadConfig = func(_ context.Context, confDir string) (photo.Configurations, error) {
+		return utils.LoadConfigFromFile(procenv.Context(context.Background()), confDir, "photoConfig.json", nil, &photo.DEFAULT)
 	}
 	o := runCommand(t, deps, "-re", "-pd", f.outDir, "-pp", "pfx", "a", "fox")
 	if o.err != nil {
@@ -773,10 +775,10 @@ func TestPhoto_FailurePaths(t *testing.T) {
 		want    error
 	}{
 		{"ConfigPrep fails", func(_ *fixture, d *photo.CommandDeps) {
-			d.ConfigPrep = func() (string, error) { return "", boom }
+			d.ConfigPrep = func(context.Context) (string, error) { return "", boom }
 		}, boom},
 		{"LoadConfig fails", func(_ *fixture, d *photo.CommandDeps) {
-			d.LoadConfig = func(string) (photo.Configurations, error) { return photo.Configurations{}, boom }
+			d.LoadConfig = func(context.Context, string) (photo.Configurations, error) { return photo.Configurations{}, boom }
 		}, boom},
 		{"no image", func(f *fixture, _ *photo.CommandDeps) { f.gen.Images = nil }, imagegen.ErrNoImage},
 		{"bytes that are not an image", func(f *fixture, _ *photo.CommandDeps) {

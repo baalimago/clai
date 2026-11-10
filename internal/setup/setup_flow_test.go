@@ -53,7 +53,7 @@ func TestSetupCustomTableActions_CategorySpecific(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := setupCustomTableActions(tt.category)
+			got := setupCustomTableActions(procCtx(), tt.category)
 			gotActions := make(map[action]bool)
 			for _, cta := range got {
 				for act, expected := range actionToTableAction {
@@ -110,7 +110,7 @@ func TestSelectConfigItem_ItemSelectionOnlyShowsPaginationAndNew(t *testing.T) {
 		os.Stdout = origStdout
 	}()
 
-	err = selectConfigItem(
+	err = selectConfigItem(procCtx(),
 		setupCategory{
 			name:              "text generation profiles",
 			subdirPath:        dir,
@@ -177,7 +177,7 @@ func TestActionQueryAfterSelection_ShowsBackQuitAndProfileEditorsButNotNew(t *te
 		os.Stdout = origStdout
 	}()
 
-	selectedAction, err := queryForAction(actionsWithNavigation([]action{conf, del, confWithEditor, promptEditWithEditor, unescapedFieldEditWithEditor}))
+	selectedAction, err := queryForAction(procCtx(), actionsWithNavigation([]action{conf, del, confWithEditor, promptEditWithEditor, unescapedFieldEditWithEditor}))
 	_ = w.Close()
 	if err != nil {
 		t.Fatalf("failed to query for action: %v", err)
@@ -228,7 +228,7 @@ func TestActionQueryAfterSelection_AlwaysAnnotatesBackAndQuit(t *testing.T) {
 		os.Stdout = origStdout
 	}()
 
-	selectedAction, err := queryForAction(actionsWithNavigation([]action{conf, confWithEditor}))
+	selectedAction, err := queryForAction(procCtx(), actionsWithNavigation([]action{conf, confWithEditor}))
 	_ = w.Close()
 	if err != nil {
 		t.Fatalf("failed to query for action: %v", err)
@@ -281,7 +281,7 @@ func TestActionQueryAfterSelection_CategoryActionsIncludeBackAndQuitAsSourceOfTr
 				os.Stdout = origStdout
 			}()
 
-			selectedAction, err := queryForAction(tc.actions)
+			selectedAction, err := queryForAction(procCtx(), tc.actions)
 			_ = w.Close()
 			if err != nil {
 				t.Fatalf("failed to query for action: %v", err)
@@ -317,7 +317,7 @@ func TestActOnConfigItem_BackWithoutAnnotatedPromptReturnsErrBack(t *testing.T) 
 	})
 	defer restoreInput()
 
-	err := actOnConfigItem(setupCategory{
+	err := actOnConfigItem(procCtx(), setupCategory{
 		name:        "model files",
 		itemActions: []action{conf, confWithEditor},
 	}, config{name: "cfg.json", filePath: cfgPath})

@@ -2,6 +2,7 @@ package chat
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -59,7 +60,7 @@ func seedJournalPastCompaction(t *testing.T, convDir string) int {
 func TestUpsertChatIndex_appendsWithoutRewritingTheCache(t *testing.T) {
 	tmp := t.TempDir()
 	before := seedIndexCache(t, tmp, []chatIndexRow{{ID: "old", Created: time.Now().Add(-time.Hour), MessageCount: 1}})
-	if err := upsertChatIndex(tmp, journalChat("new", "hi")); err != nil {
+	if err := upsertChatIndex(context.Background(), tmp, journalChat("new", "hi")); err != nil {
 		t.Fatalf("upsertChatIndex: %v", err)
 	}
 	after, err := os.ReadFile(chatIndexPath(tmp))
@@ -72,7 +73,7 @@ func TestUpsertChatIndex_appendsWithoutRewritingTheCache(t *testing.T) {
 	if _, err := os.Stat(chatIndexJournalPath(tmp)); err != nil {
 		t.Fatalf("journal: %v", err)
 	}
-	rows, err := readChatIndex(tmp)
+	rows, err := readChatIndex(context.Background(), tmp)
 	if err != nil {
 		t.Fatalf("readChatIndex: %v", err)
 	}
@@ -89,11 +90,11 @@ func TestUpsertChatIndex_latestJournalLineWins(t *testing.T) {
 	second := first
 	second.Title = "second"
 	for _, c := range []pub_models.Chat{first, second} {
-		if err := upsertChatIndex(tmp, c); err != nil {
+		if err := upsertChatIndex(context.Background(), tmp, c); err != nil {
 			t.Fatalf("upsertChatIndex: %v", err)
 		}
 	}
-	rows, err := readChatIndex(tmp)
+	rows, err := readChatIndex(context.Background(), tmp)
 	if err != nil {
 		t.Fatalf("readChatIndex: %v", err)
 	}
@@ -105,10 +106,10 @@ func TestUpsertChatIndex_latestJournalLineWins(t *testing.T) {
 func TestUpsertChatIndexBatch_appendsEveryRow(t *testing.T) {
 	tmp := t.TempDir()
 	seedIndexCache(t, tmp, nil)
-	if err := UpsertChatIndexBatch(tmp, []pub_models.Chat{journalChat("a", "x"), journalChat("b", "y")}); err != nil {
+	if err := UpsertChatIndexBatch(context.Background(), tmp, []pub_models.Chat{journalChat("a", "x"), journalChat("b", "y")}); err != nil {
 		t.Fatalf("UpsertChatIndexBatch: %v", err)
 	}
-	rows, err := readChatIndex(tmp)
+	rows, err := readChatIndex(context.Background(), tmp)
 	if err != nil || len(rows) != 2 {
 		t.Fatalf("rows = %+v, %v; want both", rows, err)
 	}
@@ -118,7 +119,7 @@ func TestUpsertChatIndex_compactsAPastThresholdJournal(t *testing.T) {
 	tmp := t.TempDir()
 	seedIndexCache(t, tmp, nil)
 	seeded := seedJournalPastCompaction(t, tmp)
-	if err := upsertChatIndex(tmp, journalChat("last", "x")); err != nil {
+	if err := upsertChatIndex(context.Background(), tmp, journalChat("last", "x")); err != nil {
 		t.Fatalf("upsertChatIndex: %v", err)
 	}
 	if _, err := os.Stat(chatIndexJournalPath(tmp)); !os.IsNotExist(err) {
@@ -140,16 +141,16 @@ func TestUpsertChatIndex_compactsAPastThresholdJournal(t *testing.T) {
 func TestReadChatIndex_replaysACompactingJournal(t *testing.T) {
 	tmp := t.TempDir()
 	seedIndexCache(t, tmp, nil)
-	if err := upsertChatIndex(tmp, journalChat("aside", "x")); err != nil {
+	if err := upsertChatIndex(context.Background(), tmp, journalChat("aside", "x")); err != nil {
 		t.Fatalf("upsertChatIndex: %v", err)
 	}
 	if err := os.Rename(chatIndexJournalPath(tmp), chatIndexCompactingPath(tmp)); err != nil {
 		t.Fatalf("Rename: %v", err)
 	}
-	if err := upsertChatIndex(tmp, journalChat("live", "y")); err != nil {
+	if err := upsertChatIndex(context.Background(), tmp, journalChat("live", "y")); err != nil {
 		t.Fatalf("upsertChatIndex: %v", err)
 	}
-	rows, err := readChatIndex(tmp)
+	rows, err := readChatIndex(context.Background(), tmp)
 	if err != nil || len(rows) != 2 {
 		t.Fatalf("rows = %+v, %v; want both journals replayed", rows, err)
 	}
@@ -161,16 +162,16 @@ func TestReadChatIndex_replaysACompactingJournal(t *testing.T) {
 func TestCompactIndexJournal_recoversALeftoverCompactingJournal(t *testing.T) {
 	tmp := t.TempDir()
 	seedIndexCache(t, tmp, nil)
-	if err := upsertChatIndex(tmp, journalChat("aside", "x")); err != nil {
+	if err := upsertChatIndex(context.Background(), tmp, journalChat("aside", "x")); err != nil {
 		t.Fatalf("upsertChatIndex: %v", err)
 	}
 	if err := os.Rename(chatIndexJournalPath(tmp), chatIndexCompactingPath(tmp)); err != nil {
 		t.Fatalf("Rename: %v", err)
 	}
-	if err := upsertChatIndex(tmp, journalChat("live", "y")); err != nil {
+	if err := upsertChatIndex(context.Background(), tmp, journalChat("live", "y")); err != nil {
 		t.Fatalf("upsertChatIndex: %v", err)
 	}
-	if err := compactIndexJournal(tmp); err != nil {
+	if err := compactIndexJournal(context.Background(), tmp); err != nil {
 		t.Fatalf("compactIndexJournal: %v", err)
 	}
 	for _, p := range []string{chatIndexCompactingPath(tmp), chatIndexJournalPath(tmp), chatIndexCompactLockPath(tmp)} {
@@ -194,13 +195,13 @@ func TestCompactIndexJournal_recoversALeftoverCompactingJournal(t *testing.T) {
 func TestCompactIndexJournal_heldLockLeavesTheJournal(t *testing.T) {
 	tmp := t.TempDir()
 	seedIndexCache(t, tmp, nil)
-	if err := upsertChatIndex(tmp, journalChat("live", "y")); err != nil {
+	if err := upsertChatIndex(context.Background(), tmp, journalChat("live", "y")); err != nil {
 		t.Fatalf("upsertChatIndex: %v", err)
 	}
 	if err := os.WriteFile(chatIndexCompactLockPath(tmp), nil, 0o644); err != nil {
 		t.Fatalf("write lock: %v", err)
 	}
-	if err := compactIndexJournal(tmp); !errors.Is(err, errCompactionHeld) {
+	if err := compactIndexJournal(context.Background(), tmp); !errors.Is(err, errCompactionHeld) {
 		t.Fatalf("compactIndexJournal = %v, want errCompactionHeld", err)
 	}
 	if _, err := os.Stat(chatIndexJournalPath(tmp)); err != nil {
@@ -211,7 +212,7 @@ func TestCompactIndexJournal_heldLockLeavesTheJournal(t *testing.T) {
 func TestCompactIndexJournal_breaksAStaleLock(t *testing.T) {
 	tmp := t.TempDir()
 	seedIndexCache(t, tmp, nil)
-	if err := upsertChatIndex(tmp, journalChat("live", "y")); err != nil {
+	if err := upsertChatIndex(context.Background(), tmp, journalChat("live", "y")); err != nil {
 		t.Fatalf("upsertChatIndex: %v", err)
 	}
 	lock := chatIndexCompactLockPath(tmp)
@@ -222,7 +223,7 @@ func TestCompactIndexJournal_breaksAStaleLock(t *testing.T) {
 	if err := os.Chtimes(lock, old, old); err != nil {
 		t.Fatalf("Chtimes: %v", err)
 	}
-	if err := compactIndexJournal(tmp); err != nil {
+	if err := compactIndexJournal(context.Background(), tmp); err != nil {
 		t.Fatalf("compactIndexJournal: %v", err)
 	}
 	if _, err := os.Stat(chatIndexJournalPath(tmp)); !os.IsNotExist(err) {
@@ -238,11 +239,11 @@ func TestAppendIndexJournal_heldCompactionLockStillSaves(t *testing.T) {
 	}
 	seeded := seedJournalPastCompaction(t, tmp)
 	for i := range 3 {
-		if err := upsertChatIndex(tmp, journalChat(fmt.Sprintf("held%d", i), "x")); err != nil {
+		if err := upsertChatIndex(context.Background(), tmp, journalChat(fmt.Sprintf("held%d", i), "x")); err != nil {
 			t.Fatalf("upsertChatIndex %d under a held lock: %v", i, err)
 		}
 	}
-	rows, err := readChatIndex(tmp)
+	rows, err := readChatIndex(context.Background(), tmp)
 	if err != nil || len(rows) != seeded+3 {
 		t.Fatalf("rows = %d, %v; want every save readable", len(rows), err)
 	}
@@ -260,7 +261,7 @@ func TestIsIndexFile(t *testing.T) {
 
 func TestReadChatIndex_corruptJournalRebuildsFromFiles(t *testing.T) {
 	tmp := t.TempDir()
-	if err := Save(tmp, journalChat("real", "hi")); err != nil {
+	if err := Save(context.Background(), tmp, journalChat("real", "hi")); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	if err := os.WriteFile(chatIndexJournalPath(tmp), []byte("{broken\n"), 0o644); err != nil {
@@ -268,7 +269,7 @@ func TestReadChatIndex_corruptJournalRebuildsFromFiles(t *testing.T) {
 	}
 	var rows []chatIndexRow
 	var err error
-	captureStderrQuiet(t, func() { rows, err = readChatIndex(tmp) })
+	captureStderrQuiet(t, func() { rows, err = readChatIndex(context.Background(), tmp) })
 	if err != nil {
 		t.Fatalf("readChatIndex: %v", err)
 	}
@@ -282,7 +283,7 @@ func TestReadChatIndex_corruptJournalRebuildsFromFiles(t *testing.T) {
 
 func TestRebuildChatIndex_ignoresTheJournal(t *testing.T) {
 	tmp := t.TempDir()
-	if err := Save(tmp, journalChat("real", "hi")); err != nil {
+	if err := Save(context.Background(), tmp, journalChat("real", "hi")); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	if err := os.Remove(chatIndexPath(tmp)); err != nil {
@@ -290,7 +291,7 @@ func TestRebuildChatIndex_ignoresTheJournal(t *testing.T) {
 	}
 	var rows []chatIndexRow
 	var err error
-	stderr := captureStderrQuiet(t, func() { rows, err = rebuildChatIndex(tmp, 0, "test") })
+	stderr := captureStderrQuiet(t, func() { rows, err = rebuildChatIndex(context.Background(), tmp, 0, "test") })
 	if err != nil || len(rows) != 1 {
 		t.Fatalf("rows = %+v, %v; want only the conversation", rows, err)
 	}

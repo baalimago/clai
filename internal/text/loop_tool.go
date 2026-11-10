@@ -9,6 +9,7 @@ import (
 	"sync"
 	"unicode/utf8"
 
+	"github.com/baalimago/clai/internal/diag"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -129,7 +130,7 @@ func (r *completionRecorder) verify(ctx context.Context) error {
 	if err == nil {
 		return nil
 	}
-	return fmt.Errorf("verification command %q failed: %w; output: %s", r.checkCmd, err, boundedVerificationOutput(string(out)))
+	return diag.Errorf("verification command %q failed: %w; output: %s", r.checkCmd, err, boundedVerificationOutput(string(out)))
 }
 
 func parseLoopStatus(input pub_models.Input) (LoopStatus, error) {

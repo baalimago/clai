@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baalimago/clai/internal/testenv/procenv"
+
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
@@ -41,7 +43,7 @@ func TestRebuildChatIndex_ComputesGroupKey(t *testing.T) {
 		ID:       "new-chat",
 		Messages: []pub_models.Message{{Role: "user", Content: "refactor database"}},
 	}
-	if err := Save(tmp, newChat); err != nil {
+	if err := Save(procenv.Context(context.Background()), tmp, newChat); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
@@ -51,7 +53,7 @@ func TestRebuildChatIndex_ComputesGroupKey(t *testing.T) {
 		t.Fatalf("remove index: %v", err)
 	}
 
-	rows, err := readChatIndex(tmp)
+	rows, err := readChatIndex(procenv.Context(context.Background()), tmp)
 	if err != nil {
 		t.Fatalf("readChatIndex: %v", err)
 	}
@@ -98,7 +100,7 @@ func TestSave_UpdatesChatIndex(t *testing.T) {
 		Queries:    []pub_models.QueryCost{{CostUSD: 1.25, Model: "openai/gpt-4.1-mini"}},
 	}
 
-	if err := Save(tmp, ch); err != nil {
+	if err := Save(procenv.Context(context.Background()), tmp, ch); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
 
@@ -173,12 +175,12 @@ func TestChatIndexPaginator_ReturnsSortedPages(t *testing.T) {
 		{ID: "mid", Created: time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC), Messages: []pub_models.Message{{Role: "user", Content: "mid"}}},
 	}
 	for _, ch := range chats {
-		if err := Save(tmp, ch); err != nil {
+		if err := Save(procenv.Context(context.Background()), tmp, ch); err != nil {
 			t.Fatalf("Save() error = %v", err)
 		}
 	}
 
-	paginator, err := NewChatIndexPaginator(tmp)
+	paginator, err := NewChatIndexPaginator(procenv.Context(context.Background()), tmp)
 	if err != nil {
 		t.Fatalf("NewChatIndexPaginator() error = %v", err)
 	}
@@ -201,15 +203,15 @@ func TestChatIndexPaginator_ReturnsSortedPages(t *testing.T) {
 
 func TestFindChatByID_IndexLoadsOnlySelectedChat(t *testing.T) {
 	tmp := t.TempDir()
-	if err := Save(tmp, pub_models.Chat{ID: "old", Created: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Messages: []pub_models.Message{{Role: "user", Content: "old"}}}); err != nil {
+	if err := Save(procenv.Context(context.Background()), tmp, pub_models.Chat{ID: "old", Created: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Messages: []pub_models.Message{{Role: "user", Content: "old"}}}); err != nil {
 		t.Fatalf("Save() old error = %v", err)
 	}
-	if err := Save(tmp, pub_models.Chat{ID: "new", Created: time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC), Messages: []pub_models.Message{{Role: "user", Content: "new"}}}); err != nil {
+	if err := Save(procenv.Context(context.Background()), tmp, pub_models.Chat{ID: "new", Created: time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC), Messages: []pub_models.Message{{Role: "user", Content: "new"}}}); err != nil {
 		t.Fatalf("Save() new error = %v", err)
 	}
 
 	h := &ChatHandler{convDir: tmp}
-	got, err := h.findChatByID(context.Background(), "0 trailing prompt", foreignClone)
+	got, err := h.findChatByID(procenv.Context(context.Background()), "0 trailing prompt", foreignClone)
 	if err != nil {
 		t.Fatalf("findChatByID() error = %v", err)
 	}
@@ -258,7 +260,7 @@ func TestReadChatIndex_AutoMigratesStaleGroupKeys(t *testing.T) {
 	}
 
 	// readChatIndex should detect stale cache and rebuild.
-	rows, err := readChatIndex(tmp)
+	rows, err := readChatIndex(procenv.Context(context.Background()), tmp)
 	if err != nil {
 		t.Fatalf("readChatIndex: %v", err)
 	}
@@ -313,7 +315,7 @@ func TestReadChatIndex_CorruptedCacheRecovers(t *testing.T) {
 		t.Fatalf("write corrupted cache: %v", err)
 	}
 
-	rows, err := readChatIndex(tmp)
+	rows, err := readChatIndex(procenv.Context(context.Background()), tmp)
 	if err != nil {
 		t.Fatalf("readChatIndex should recover from corrupted cache: %v", err)
 	}
@@ -344,7 +346,7 @@ func TestRebuildChatIndex_SkipsUnreadableChatFiles(t *testing.T) {
 		t.Fatalf("write corrupt file: %v", err)
 	}
 
-	rows, err := rebuildChatIndex(tmp, 0, "test")
+	rows, err := rebuildChatIndex(procenv.Context(context.Background()), tmp, 0, "test")
 	if err != nil {
 		t.Fatalf("rebuildChatIndex should skip unreadable files, got: %v", err)
 	}
@@ -369,7 +371,7 @@ func TestNewChatIndexPaginator_RebuildsFromExistingChatFiles(t *testing.T) {
 		}
 	}
 
-	paginator, err := NewChatIndexPaginator(tmp)
+	paginator, err := NewChatIndexPaginator(procenv.Context(context.Background()), tmp)
 	if err != nil {
 		t.Fatalf("NewChatIndexPaginator() error = %v", err)
 	}
@@ -410,7 +412,7 @@ func TestReadChatIndex_ReadonlySilentAndNoPersist(t *testing.T) {
 
 	var rows []chatIndexRow
 	stderr := testboil.CaptureStderr(t, func(t *testing.T) {
-		rows, err = readChatIndex(tmp)
+		rows, err = readChatIndex(procenv.Context(context.Background()), tmp)
 	})
 	if err != nil {
 		t.Fatalf("readChatIndex: %v", err)
@@ -445,7 +447,7 @@ func TestSkipIndex_ReadChatIndexReturnsEmpty(t *testing.T) {
 	SkipIndex = true
 	t.Cleanup(func() { SkipIndex = false })
 
-	rows, err := readChatIndex(tmp)
+	rows, err := readChatIndex(procenv.Context(context.Background()), tmp)
 	if err != nil {
 		t.Fatalf("readChatIndex: %v", err)
 	}
@@ -478,7 +480,7 @@ func TestSkipIndex_UpsertChatIndexNoOp(t *testing.T) {
 	t.Cleanup(func() { SkipIndex = false })
 
 	ch := pub_models.Chat{ID: "a", Messages: []pub_models.Message{{Role: "user", Content: "hello"}}}
-	if err := upsertChatIndex(tmp, ch); err != nil {
+	if err := upsertChatIndex(procenv.Context(context.Background()), tmp, ch); err != nil {
 		t.Fatalf("upsertChatIndex: %v", err)
 	}
 
@@ -499,7 +501,7 @@ func TestSkipIndex_NewChatIndexPaginatorReturnsEmpty(t *testing.T) {
 	SkipIndex = true
 	t.Cleanup(func() { SkipIndex = false })
 
-	paginator, err := NewChatIndexPaginator(tmp)
+	paginator, err := NewChatIndexPaginator(procenv.Context(context.Background()), tmp)
 	if err != nil {
 		t.Fatalf("NewChatIndexPaginator: %v", err)
 	}
@@ -522,7 +524,7 @@ func TestSkipIndex_SaveSkipsIndex(t *testing.T) {
 			{Role: "assistant", Content: "reply"},
 		},
 	}
-	if err := Save(tmp, ch); err != nil {
+	if err := Save(procenv.Context(context.Background()), tmp, ch); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
@@ -583,7 +585,7 @@ func TestReadChatIndex_legacyRowsZeroUpdated(t *testing.T) {
 	if err := os.WriteFile(chatIndexPath(tmp), []byte(legacy), 0o644); err != nil {
 		t.Fatalf("write cache: %v", err)
 	}
-	rows, err := readChatIndex(tmp)
+	rows, err := readChatIndex(procenv.Context(context.Background()), tmp)
 	if err != nil {
 		t.Fatalf("readChatIndex: %v", err)
 	}
@@ -602,10 +604,10 @@ func TestUpsertChatIndex_stampsUpdated(t *testing.T) {
 	tmp := t.TempDir()
 	before := time.Now().UTC()
 	chat := pub_models.Chat{ID: "c", Created: before.Add(-time.Hour), Messages: []pub_models.Message{{Role: "user", Content: "hi"}}}
-	if err := upsertChatIndex(tmp, chat); err != nil {
+	if err := upsertChatIndex(procenv.Context(context.Background()), tmp, chat); err != nil {
 		t.Fatalf("upsertChatIndex: %v", err)
 	}
-	rows, err := readChatIndex(tmp)
+	rows, err := readChatIndex(procenv.Context(context.Background()), tmp)
 	if err != nil {
 		t.Fatalf("readChatIndex: %v", err)
 	}
@@ -644,7 +646,7 @@ func TestRebuildChatIndex_updatedFromModTime(t *testing.T) {
 			t.Fatalf("chtimes: %v", err)
 		}
 	}
-	rows, err := rebuildChatIndex(tmp, 0, "test")
+	rows, err := rebuildChatIndex(procenv.Context(context.Background()), tmp, 0, "test")
 	if err != nil {
 		t.Fatalf("rebuildChatIndex: %v", err)
 	}
@@ -682,10 +684,10 @@ func TestSaveWithoutIndex(t *testing.T) {
 		t.Fatalf("ReadFile: %v", err)
 	}
 	chat := pub_models.Chat{ID: "c", Messages: []pub_models.Message{{Role: "user", Content: "hi"}}}
-	if err := SaveWithoutIndex(tmp, chat); err != nil {
+	if err := SaveWithoutIndex(procenv.Context(context.Background()), tmp, chat); err != nil {
 		t.Fatalf("SaveWithoutIndex: %v", err)
 	}
-	got, err := FromPath(filepath.Join(tmp, "c.json"))
+	got, err := FromPath(procenv.Context(context.Background()), filepath.Join(tmp, "c.json"))
 	if err != nil {
 		t.Fatalf("FromPath: %v", err)
 	}
@@ -705,19 +707,19 @@ func TestUpsertChatIndexBatch(t *testing.T) {
 	tmp := t.TempDir()
 	created := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	existing := pub_models.Chat{ID: "existing", Created: created, Messages: []pub_models.Message{{Role: "user", Content: "old"}}}
-	if err := Save(tmp, existing); err != nil {
+	if err := Save(procenv.Context(context.Background()), tmp, existing); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
-	if err := Save(tmp, pub_models.Chat{ID: "untouched", Created: created}); err != nil {
+	if err := Save(procenv.Context(context.Background()), tmp, pub_models.Chat{ID: "untouched", Created: created}); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	before := time.Now().UTC()
 	existing.Title, existing.Summary = "T", "S"
 	fresh := pub_models.Chat{ID: "fresh", Created: created, Title: "F"}
-	if err := UpsertChatIndexBatch(tmp, []pub_models.Chat{existing, fresh}); err != nil {
+	if err := UpsertChatIndexBatch(procenv.Context(context.Background()), tmp, []pub_models.Chat{existing, fresh}); err != nil {
 		t.Fatalf("UpsertChatIndexBatch: %v", err)
 	}
-	rows, err := readChatIndex(tmp)
+	rows, err := readChatIndex(procenv.Context(context.Background()), tmp)
 	if err != nil {
 		t.Fatalf("readChatIndex: %v", err)
 	}
@@ -745,7 +747,7 @@ func TestUpsertChatIndexBatch(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ReadFile: %v", err)
 		}
-		if err := UpsertChatIndexBatch(tmp, nil); err != nil {
+		if err := UpsertChatIndexBatch(procenv.Context(context.Background()), tmp, nil); err != nil {
 			t.Fatalf("UpsertChatIndexBatch(nil): %v", err)
 		}
 		indexAfter, err := os.ReadFile(chatIndexPath(tmp))
@@ -761,7 +763,7 @@ func TestUpsertChatIndexBatch(t *testing.T) {
 		old := SkipIndex
 		t.Cleanup(func() { SkipIndex = old })
 		SkipIndex = true
-		if err := UpsertChatIndexBatch(t.TempDir(), []pub_models.Chat{fresh}); err != nil {
+		if err := UpsertChatIndexBatch(procenv.Context(context.Background()), t.TempDir(), []pub_models.Chat{fresh}); err != nil {
 			t.Fatalf("UpsertChatIndexBatch with SkipIndex: %v", err)
 		}
 	})
@@ -791,7 +793,7 @@ func TestWriteChatIndex_atomic(t *testing.T) {
 			t.Fatalf("unexpected file %q next to the cache", e.Name())
 		}
 	}
-	got, err := readChatIndex(dir)
+	got, err := readChatIndex(procenv.Context(context.Background()), dir)
 	if err != nil {
 		t.Fatalf("readChatIndex: %v", err)
 	}
@@ -830,10 +832,10 @@ func TestUpsertChatIndex_shrinksOversizedRows(t *testing.T) {
 		t.Fatalf("write cache: %v", err)
 	}
 	chat := pub_models.Chat{ID: "new", Created: time.Now(), Messages: []pub_models.Message{{Role: "user", Content: "hi"}}}
-	if err := upsertChatIndex(tmp, chat); err != nil {
+	if err := upsertChatIndex(procenv.Context(context.Background()), tmp, chat); err != nil {
 		t.Fatalf("upsertChatIndex: %v", err)
 	}
-	if err := compactIndexJournal(tmp); err != nil {
+	if err := compactIndexJournal(procenv.Context(context.Background()), tmp); err != nil {
 		t.Fatalf("compactIndexJournal: %v", err)
 	}
 	info, err := os.Stat(chatIndexPath(tmp))
@@ -843,7 +845,7 @@ func TestUpsertChatIndex_shrinksOversizedRows(t *testing.T) {
 	if limit := int64(21 * (indexPreviewRunes + 300)); info.Size() > limit {
 		t.Fatalf("index is %d bytes after compaction, want at most %d", info.Size(), limit)
 	}
-	got, err := readChatIndex(tmp)
+	got, err := readChatIndex(procenv.Context(context.Background()), tmp)
 	if err != nil {
 		t.Fatalf("readChatIndex: %v", err)
 	}
@@ -879,7 +881,7 @@ func TestRebuildChatIndex_reportsProgressOnlyFromABatchOfFiles(t *testing.T) {
 	var rows []chatIndexRow
 	var err error
 	stderr := testboil.CaptureStderr(t, func(t *testing.T) {
-		rows, err = rebuildChatIndex(small, 0, "cache missing")
+		rows, err = rebuildChatIndex(procenv.Context(context.Background()), small, 0, "cache missing")
 	})
 	if err != nil {
 		t.Fatalf("rebuildChatIndex(small): %v", err)
@@ -894,7 +896,7 @@ func TestRebuildChatIndex_reportsProgressOnlyFromABatchOfFiles(t *testing.T) {
 	large := t.TempDir()
 	writeIndexedChats(t, large, indexProgressBatch)
 	stderr = testboil.CaptureStderr(t, func(t *testing.T) {
-		rows, err = rebuildChatIndex(large, 1, "legacy cache")
+		rows, err = rebuildChatIndex(procenv.Context(context.Background()), large, 1, "legacy cache")
 	})
 	if err != nil {
 		t.Fatalf("rebuildChatIndex(large): %v", err)

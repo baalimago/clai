@@ -15,6 +15,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/baalimago/clai/internal/diag"
 )
 
 // Kind classifies a remote target by where it is fetched from.
@@ -87,7 +89,7 @@ func ParseTarget(s string) (Target, error) {
 	}
 	body, digest, err := splitDigest(s)
 	if err != nil {
-		return Target{}, fmt.Errorf("%s: %w", s, err)
+		return Target{}, diag.Errorf("%s: %w", s, err)
 	}
 	var t Target
 	switch {
@@ -99,7 +101,7 @@ func ParseTarget(s string) (Target, error) {
 		t, err = parseHTTPS(body)
 	}
 	if err != nil {
-		return Target{}, fmt.Errorf("%s: %w", s, err)
+		return Target{}, diag.Errorf("%s: %w", s, err)
 	}
 	t.SHA256 = digest
 	return t, nil
@@ -200,7 +202,7 @@ func hasEmptyOrDotSegment(segs []string) bool {
 func parseHTTPS(s string) (Target, error) {
 	u, err := url.Parse(s)
 	if err != nil {
-		return Target{}, fmt.Errorf("parse url: %w", err)
+		return Target{}, diag.Errorf("parse url: %w", err)
 	}
 	if u.Scheme != "https" {
 		return Target{}, fmt.Errorf("only https:// is fetched; a profile over plain http could be changed in transit")

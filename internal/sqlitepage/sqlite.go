@@ -4,10 +4,11 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"strings"
+
+	"github.com/baalimago/clai/internal/diag"
 )
 
 const headerSize = 100
@@ -32,22 +33,22 @@ type DB struct {
 // parse is refused: a read without it would silently return a stale snapshot.
 func Open(path string) (*DB, error) {
 	if fi, err := os.Stat(path); err != nil {
-		return nil, fmt.Errorf("stat %q: %w", path, err)
+		return nil, diag.Errorf("stat %q: %w", path, err)
 	} else if fi.IsDir() {
-		return nil, fmt.Errorf("%w: %q is a directory", ErrNotSQLite, path)
+		return nil, diag.Errorf("%w: %q is a directory", ErrNotSQLite, path)
 	}
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, fmt.Errorf("open %q: %w", path, err)
+		return nil, diag.Errorf("open %q: %w", path, err)
 	}
 	hdr := make([]byte, headerSize)
 	if _, err := io.ReadFull(f, hdr); err != nil {
 		f.Close()
-		return nil, fmt.Errorf("%w: short header", ErrNotSQLite)
+		return nil, diag.Errorf("%w: short header", ErrNotSQLite)
 	}
 	if string(hdr[:16]) != "SQLite format 3\x00" {
 		f.Close()
-		return nil, fmt.Errorf("%w: bad magic", ErrNotSQLite)
+		return nil, diag.Errorf("%w: bad magic", ErrNotSQLite)
 	}
 	ps := int(binary.BigEndian.Uint16(hdr[16:18]))
 	if ps == 1 {
@@ -55,13 +56,13 @@ func Open(path string) (*DB, error) {
 	}
 	if ps < 512 || ps&(ps-1) != 0 {
 		f.Close()
-		return nil, fmt.Errorf("%w: page size %d", ErrCorrupt, ps)
+		return nil, diag.Errorf("%w: page size %d", ErrCorrupt, ps)
 	}
 	reserved := int(hdr[20])
 	usable := ps - reserved
 	if usable < 480 {
 		f.Close()
-		return nil, fmt.Errorf("%w: usable page size %d", ErrCorrupt, usable)
+		return nil, diag.Errorf("%w: usable page size %d", ErrCorrupt, usable)
 	}
 	enc := binary.BigEndian.Uint32(hdr[56:60])
 	if enc < 1 || enc > 3 {
@@ -84,10 +85,10 @@ func (db *DB) PageSize() int { return db.pageSize }
 
 func (db *DB) readPage(pgno uint32) ([]byte, error) {
 	if pgno == 0 {
-		return nil, fmt.Errorf("%w: page 0", ErrCorrupt)
+		return nil, diag.Errorf("%w: page 0", ErrCorrupt)
 	}
 	if db.pages > 0 && pgno > db.pages {
-		return nil, fmt.Errorf("%w: page %d past committed size %d", ErrCorrupt, pgno, db.pages)
+		return nil, diag.Errorf("%w: page %d past committed size %d", ErrCorrupt, pgno, db.pages)
 	}
 	if page, ok := db.overlay[pgno]; ok {
 		return bytes.Clone(page), nil
@@ -95,9 +96,9 @@ func (db *DB) readPage(pgno uint32) ([]byte, error) {
 	buf := make([]byte, db.pageSize)
 	if _, err := db.f.ReadAt(buf, int64(pgno-1)*int64(db.pageSize)); err != nil {
 		if errors.Is(err, io.EOF) {
-			return nil, fmt.Errorf("%w: page %d past end of file", ErrCorrupt, pgno)
+			return nil, diag.Errorf("%w: page %d past end of file", ErrCorrupt, pgno)
 		}
-		return nil, fmt.Errorf("read page %d: %w", pgno, err)
+		return nil, diag.Errorf("read page %d: %w", pgno, err)
 	}
 	return buf, nil
 }
@@ -115,7 +116,7 @@ type Table struct {
 // table both return ErrUnsupported.
 func (db *DB) Table(name string) (*Table, error) {
 	if strings.TrimSpace(name) == "" {
-		return nil, fmt.Errorf("%w: empty table name", ErrUnsupported)
+		return nil, diag.Errorf("%w: empty table name", ErrUnsupported)
 	}
 	master := &Table{db: db, Name: "sqlite_master", Root: 1}
 	var found *Table
@@ -127,10 +128,10 @@ func (db *DB) Table(name string) (*Table, error) {
 			return nil
 		}
 		if vals[3].Kind != Integer {
-			return fmt.Errorf("%w: root page of %q", ErrCorrupt, name)
+			return diag.Errorf("%w: root page of %q", ErrCorrupt, name)
 		}
 		if vals[4].Text != "" && strings.Contains(strings.ToUpper(vals[4].Text), "WITHOUT ROWID") {
-			return fmt.Errorf("%w: table %q is WITHOUT ROWID", ErrUnsupported, name)
+			return diag.Errorf("%w: table %q is WITHOUT ROWID", ErrUnsupported, name)
 		}
 		found = &Table{db: db, Name: name, Root: uint32(vals[3].Int), SQL: vals[4].Text}
 		return nil
@@ -139,7 +140,7 @@ func (db *DB) Table(name string) (*Table, error) {
 		return nil, err
 	}
 	if found == nil {
-		return nil, fmt.Errorf("%w: table %q not found", ErrUnsupported, name)
+		return nil, diag.Errorf("%w: table %q not found", ErrUnsupported, name)
 	}
 	return found, nil
 }
@@ -150,7 +151,7 @@ func (db *DB) Table(name string) (*Table, error) {
 func (t *Table) Columns() ([]string, error) {
 	cols, err := parseColumns(t.SQL)
 	if err != nil {
-		return nil, fmt.Errorf("columns of %q: %w", t.Name, err)
+		return nil, diag.Errorf("columns of %q: %w", t.Name, err)
 	}
 	return cols, nil
 }
@@ -179,10 +180,10 @@ func (db *DB) TableWithColumns(name string, want map[int]string) (*Table, error)
 func CheckColumns(name string, cols []string, want map[int]string) error {
 	for i, wantName := range want {
 		if i >= len(cols) {
-			return fmt.Errorf("%w: %s column %d is absent, want %q", ErrUnsupported, name, i, wantName)
+			return diag.Errorf("%w: %s column %d is absent, want %q", ErrUnsupported, name, i, wantName)
 		}
 		if cols[i] != wantName {
-			return fmt.Errorf("%w: %s column %d is %q, want %q", ErrUnsupported, name, i, cols[i], wantName)
+			return diag.Errorf("%w: %s column %d is %q, want %q", ErrUnsupported, name, i, cols[i], wantName)
 		}
 	}
 	return nil
@@ -191,7 +192,7 @@ func CheckColumns(name string, cols []string, want map[int]string) error {
 func parseColumns(sql string) ([]string, error) {
 	_, after, ok := strings.Cut(sql, "(")
 	if !ok {
-		return nil, fmt.Errorf("%w: table definition without a column list", ErrUnsupported)
+		return nil, diag.Errorf("%w: table definition without a column list", ErrUnsupported)
 	}
 	defs := splitTopLevel(after)
 	cols := make([]string, 0, len(defs))
@@ -207,7 +208,7 @@ func parseColumns(sql string) ([]string, error) {
 		cols = append(cols, unquoteIdentifier(name[0]))
 	}
 	if len(cols) == 0 {
-		return nil, fmt.Errorf("%w: table definition without columns", ErrUnsupported)
+		return nil, diag.Errorf("%w: table definition without columns", ErrUnsupported)
 	}
 	return cols, nil
 }
@@ -259,7 +260,7 @@ func (t *Table) Rows(fn func(rowid int64, vals []Value) error) error {
 	var walk func(uint32) error
 	walk = func(pgno uint32) error {
 		if seen[pgno] {
-			return fmt.Errorf("%w: b-tree cycle at page %d", ErrCorrupt, pgno)
+			return diag.Errorf("%w: b-tree cycle at page %d", ErrCorrupt, pgno)
 		}
 		seen[pgno] = true
 		page, err := t.db.readPage(pgno)
@@ -283,7 +284,7 @@ func (t *Table) Rows(fn func(rowid int64, vals []Value) error) error {
 				}
 				vals, err := t.db.decodeRecord(payload)
 				if err != nil {
-					return fmt.Errorf("page %d cell %d: %w", pgno, i, err)
+					return diag.Errorf("page %d cell %d: %w", pgno, i, err)
 				}
 				if err := fn(rowid, vals); err != nil {
 					return err
@@ -297,7 +298,7 @@ func (t *Table) Rows(fn func(rowid int64, vals []Value) error) error {
 					return err
 				}
 				if off+4 > len(page) {
-					return fmt.Errorf("%w: interior cell offset %d", ErrCorrupt, off)
+					return diag.Errorf("%w: interior cell offset %d", ErrCorrupt, off)
 				}
 				if err := walk(binary.BigEndian.Uint32(page[off : off+4])); err != nil {
 					return err
@@ -305,7 +306,7 @@ func (t *Table) Rows(fn func(rowid int64, vals []Value) error) error {
 			}
 			return walk(h.right)
 		default:
-			return fmt.Errorf("%w: page type %#x on page %d", ErrUnsupported, h.typ, pgno)
+			return diag.Errorf("%w: page type %#x on page %d", ErrUnsupported, h.typ, pgno)
 		}
 	}
 	return walk(t.Root)

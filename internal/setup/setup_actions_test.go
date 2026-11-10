@@ -1,6 +1,7 @@
 package setup
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -82,7 +83,7 @@ func TestReconfigureWithEditor(t *testing.T) {
 				name:     "test",
 				filePath: tmpFile,
 			}
-			err := actionReconfigureWithEditor(cfg)
+			err := actionReconfigureWithEditor(procCtx(), cfg)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("reconfigureWithEditor() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -226,7 +227,7 @@ func TestGetModelValue_SelectsFromTable(t *testing.T) {
 	})
 	defer restore()
 
-	got, err := getModelValue("gpt-5.2", dir)
+	got, err := getModelValue(procCtx(), "gpt-5.2", dir)
 	if err != nil {
 		t.Fatalf("getModelValue(): %v", err)
 	}
@@ -242,7 +243,7 @@ func TestGetModelValue_EmptyReturnsCurrent(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	got, err := getModelValue("gpt-5.2", dir)
+	got, err := getModelValue(procCtx(), "gpt-5.2", dir)
 	if err != nil {
 		t.Fatalf("getModelValue(): %v", err)
 	}
@@ -269,7 +270,7 @@ func TestGetShellContextValue_SelectsFromTable(t *testing.T) {
 	})
 	defer restore()
 
-	got, err := getShellContextValue("minimal", dir)
+	got, err := getShellContextValue(procCtx(), "minimal", dir)
 	if err != nil {
 		t.Fatalf("getShellContextValue(): %v", err)
 	}
@@ -281,7 +282,7 @@ func TestGetShellContextValue_SelectsFromTable(t *testing.T) {
 func TestGetShellContextValue_EmptyReturnsCurrent(t *testing.T) {
 	dir := t.TempDir()
 	// No shellContexts directory
-	got, err := getShellContextValue("minimal", dir)
+	got, err := getShellContextValue(procCtx(), "minimal", dir)
 	if err != nil {
 		t.Fatalf("getShellContextValue(): %v", err)
 	}
@@ -302,7 +303,7 @@ func TestGetNewValue_DispatchesToModelSelector(t *testing.T) {
 	defer restore()
 
 	// Only works with 3-part vendor_family_version names
-	got, err := getNewValue("model", "gpt-5.2", dir)
+	got, err := getNewValue(procCtx(), "model", "gpt-5.2", dir)
 	if err != nil {
 		t.Fatalf("getNewValue(model): %v", err)
 	}
@@ -326,7 +327,7 @@ func TestGetNewValue_DispatchesToShellContextSelector(t *testing.T) {
 	})
 	defer restore()
 
-	got, err := getNewValue("shell_context", "minimal", dir)
+	got, err := getNewValue(procCtx(), "shell_context", "minimal", dir)
 	if err != nil {
 		t.Fatalf("getNewValue(shell_context): %v", err)
 	}
@@ -359,12 +360,12 @@ func registerMockTools(names ...string) {
 func quietToolsValue(t *testing.T, v any) ([]string, error) {
 	t.Helper()
 	defer testenv.Quiet(t)()
-	return getToolsValue(v)
+	return getToolsValue(procCtx(), v)
 }
 
 func TestGetToolsValue_UsesSelectFromTable(t *testing.T) {
 	tools.Registry.Reset()
-	tools.Init()
+	tools.Init(context.Background())
 	tools.Registry.Reset()
 	t.Cleanup(func() { tools.Registry.Reset() })
 
@@ -601,7 +602,7 @@ func TestInteractiveReconfigure_FieldSelection(t *testing.T) {
 		})
 		defer restore()
 
-		err := interractiveReconfigure(config{name: "test.json", filePath: cfgPath}, []byte(original))
+		err := interractiveReconfigure(procCtx(), config{name: "test.json", filePath: cfgPath}, []byte(original))
 		if err != nil {
 			t.Fatalf("interractiveReconfigure: %v", err)
 		}
@@ -637,7 +638,7 @@ func TestInteractiveReconfigure_FieldSelection(t *testing.T) {
 		})
 		defer restore()
 
-		err := interractiveReconfigure(config{name: "test.json", filePath: cfgPath}, []byte(original))
+		err := interractiveReconfigure(procCtx(), config{name: "test.json", filePath: cfgPath}, []byte(original))
 		if err != nil {
 			t.Fatalf("interractiveReconfigure: %v", err)
 		}
@@ -680,7 +681,7 @@ func TestInteractiveReconfigure_FieldSelection(t *testing.T) {
 		})
 		defer restore()
 
-		err := interractiveReconfigure(config{name: "test.json", filePath: cfgPath}, []byte(original))
+		err := interractiveReconfigure(procCtx(), config{name: "test.json", filePath: cfgPath}, []byte(original))
 		if err != nil {
 			t.Fatalf("interractiveReconfigure: %v", err)
 		}
@@ -737,7 +738,7 @@ func TestEditSlice_UpdateAndRemove(t *testing.T) {
 		defer restore()
 
 		original := []any{"a", "b", "c"}
-		got, err := editSlice("test", original, "")
+		got, err := editSlice(procCtx(), "test", original, "")
 		if err != nil {
 			t.Fatalf("editSlice(): %v", err)
 		}
@@ -763,7 +764,7 @@ func TestEditSlice_UpdateAndRemove(t *testing.T) {
 		defer restore()
 
 		original := []any{"a", "b", "c"}
-		got, err := editSlice("test", original, "")
+		got, err := editSlice(procCtx(), "test", original, "")
 		if err != nil {
 			t.Fatalf("editSlice(): %v", err)
 		}
@@ -788,7 +789,7 @@ func TestEditSlice_UpdateAndRemove(t *testing.T) {
 		defer restore()
 
 		original := []any{"a", "b", "c", "d", "e"}
-		got, err := editSlice("test", original, "")
+		got, err := editSlice(procCtx(), "test", original, "")
 		if err != nil {
 			t.Fatalf("editSlice(): %v", err)
 		}
@@ -813,7 +814,7 @@ func TestEditSlice_UpdateAndRemove(t *testing.T) {
 		defer restore()
 
 		original := []any{"a", "b"}
-		got, err := editSlice("test", original, "")
+		got, err := editSlice(procCtx(), "test", original, "")
 		if err != nil {
 			t.Fatalf("editSlice(): %v", err)
 		}
@@ -831,7 +832,7 @@ func TestEditSlice_UpdateAndRemove(t *testing.T) {
 		defer restore()
 
 		original := []any{"a", "b"}
-		got, err := editSlice("test", original, "")
+		got, err := editSlice(procCtx(), "test", original, "")
 		if err != nil {
 			t.Fatalf("editSlice(): %v", err)
 		}
@@ -854,7 +855,7 @@ func TestEditSlice_UpdateAndRemove(t *testing.T) {
 		})
 		defer restore()
 
-		got, err := editSlice("test", []any{}, "")
+		got, err := editSlice(procCtx(), "test", []any{}, "")
 		if err != nil {
 			t.Fatalf("editSlice(): %v", err)
 		}
@@ -880,7 +881,7 @@ func TestActionCopy(t *testing.T) {
 		defer restore()
 
 		cfg := config{name: "source.json", filePath: srcPath}
-		newCfg, err := actionCopy(cfg)
+		newCfg, err := actionCopy(procCtx(), cfg)
 		if err != nil {
 			t.Fatalf("actionCopy(): %v", err)
 		}
@@ -914,7 +915,7 @@ func TestActionCopy(t *testing.T) {
 		})
 		defer restore()
 
-		_, err := actionCopy(config{name: "source.json", filePath: srcPath})
+		_, err := actionCopy(procCtx(), config{name: "source.json", filePath: srcPath})
 		if err == nil {
 			t.Fatal("expected error for empty name, got nil")
 		}
@@ -935,7 +936,7 @@ func TestActionCopy(t *testing.T) {
 		})
 		defer restore()
 
-		_, err := actionCopy(config{name: "source.json", filePath: srcPath})
+		_, err := actionCopy(procCtx(), config{name: "source.json", filePath: srcPath})
 		if err == nil || !strings.Contains(err.Error(), "already exists") {
 			t.Fatalf("expected 'already exists' error, got: %v", err)
 		}
@@ -1000,7 +1001,7 @@ func TestStringKeysSorted(t *testing.T) {
 
 func TestHandleValue_ToolsDispatch(t *testing.T) {
 	tools.Registry.Reset()
-	tools.Init()
+	tools.Init(context.Background())
 	tools.Registry.Reset()
 	t.Cleanup(func() { tools.Registry.Reset() })
 
@@ -1019,7 +1020,7 @@ func TestHandleValue_ToolsDispatch(t *testing.T) {
 	})
 	defer restore()
 
-	got, err := handleValue("tools", []any{}, "")
+	got, err := handleValue(procCtx(), "tools", []any{}, "")
 	if err != nil {
 		t.Fatalf("handleValue(tools): %v", err)
 	}
@@ -1040,7 +1041,7 @@ func TestHandleValue_MapDispatch(t *testing.T) {
 	defer restore()
 
 	m := map[string]any{"key": "val"}
-	got, err := handleValue("config", m, "")
+	got, err := handleValue(procCtx(), "config", m, "")
 	if err != nil {
 		t.Fatalf("handleValue(map): %v", err)
 	}
@@ -1060,7 +1061,7 @@ func TestHandleValue_DefaultStringDispatch(t *testing.T) {
 	})
 	defer restore()
 
-	got, err := handleValue("name", "oldvalue", "")
+	got, err := handleValue(procCtx(), "name", "oldvalue", "")
 	if err != nil {
 		t.Fatalf("handleValue(string): %v", err)
 	}
@@ -1075,7 +1076,7 @@ func TestGetNewValue_EmptyInputKeepsCurrent(t *testing.T) {
 	})
 	defer restore()
 
-	got, err := getNewValue("somekey", "original", "")
+	got, err := getNewValue(procCtx(), "somekey", "original", "")
 	if err != nil {
 		t.Fatalf("getNewValue(empty): %v", err)
 	}
@@ -1090,7 +1091,7 @@ func TestGetNewValue_ReadError(t *testing.T) {
 	})
 	defer restore()
 
-	_, err := getNewValue("somekey", "original", "")
+	_, err := getNewValue(procCtx(), "somekey", "original", "")
 	if err == nil {
 		t.Fatal("getNewValue(read error) expected error, got nil")
 	}
@@ -1175,7 +1176,7 @@ func TestEditMap_Done(t *testing.T) {
 	defer restore()
 
 	m := map[string]any{"a": "1", "b": "2"}
-	got, err := editMap("test", m, "")
+	got, err := editMap(procCtx(), "test", m, "")
 	if err != nil {
 		t.Fatalf("editMap(done): %v", err)
 	}
@@ -1198,7 +1199,7 @@ func TestEditMap_Add(t *testing.T) {
 	defer restore()
 
 	m := map[string]any{"existing": "value"}
-	got, err := editMap("test", m, "")
+	got, err := editMap(procCtx(), "test", m, "")
 	if err != nil {
 		t.Fatalf("editMap(add): %v", err)
 	}
@@ -1228,7 +1229,7 @@ func TestEditMap_Remove(t *testing.T) {
 	defer restore()
 
 	m := map[string]any{"keep": "v1", "toremove": "v2"}
-	got, err := editMap("test", m, "")
+	got, err := editMap(procCtx(), "test", m, "")
 	if err != nil {
 		t.Fatalf("editMap(remove): %v", err)
 	}
@@ -1258,7 +1259,7 @@ func TestEditMap_UpdateExistingKey(t *testing.T) {
 	defer restore()
 
 	m := map[string]any{"name": "oldname", "count": "42"}
-	got, err := editMap("test", m, "")
+	got, err := editMap(procCtx(), "test", m, "")
 	if err != nil {
 		t.Fatalf("editMap(update existing): %v", err)
 	}
@@ -1285,7 +1286,7 @@ func TestEditMap_UpdateNonExistingKey(t *testing.T) {
 	defer restore()
 
 	m := map[string]any{"real": "value"}
-	got, err := editMap("test", m, "")
+	got, err := editMap(procCtx(), "test", m, "")
 	if err != nil {
 		t.Fatalf("editMap(update non-existing): %v", err)
 	}
@@ -1309,7 +1310,7 @@ func TestEditMap_UnsupportedAction(t *testing.T) {
 	defer restore()
 
 	m := map[string]any{"a": "1"}
-	got, err := editMap("test", m, "")
+	got, err := editMap(procCtx(), "test", m, "")
 	if err != nil {
 		t.Fatalf("editMap(unsupported): %v", err)
 	}
@@ -1332,7 +1333,7 @@ func TestSelectStringField(t *testing.T) {
 		"title":   "engineer",
 	}
 
-	got, err := selectStringField(jzon)
+	got, err := selectStringField(procCtx(), jzon)
 	if err != nil {
 		t.Fatalf("selectStringField(): %v", err)
 	}
@@ -1353,7 +1354,7 @@ func TestPromptSliceAppend_ReadError(t *testing.T) {
 	})
 	defer restore()
 
-	got := promptSliceAppend()
+	got := promptSliceAppend(procCtx())
 	if got != nil {
 		t.Fatalf("promptSliceAppend(error) = %v, want nil", got)
 	}
@@ -1367,7 +1368,7 @@ func TestPromptSliceUpdate_BackKeepsSlice(t *testing.T) {
 	defer restore()
 
 	original := []any{"a", "b", "c"}
-	got, err := promptSliceUpdate("test", original, "")
+	got, err := promptSliceUpdate(procCtx(), "test", original, "")
 	if err != nil {
 		t.Fatalf("promptSliceUpdate(back): %v", err)
 	}
@@ -1384,7 +1385,7 @@ func TestPromptSliceUpdate_QuitKeepsSlice(t *testing.T) {
 	defer restore()
 
 	original := []any{"a", "b", "c"}
-	got, err := promptSliceUpdate("test", original, "")
+	got, err := promptSliceUpdate(procCtx(), "test", original, "")
 	if err != nil {
 		t.Fatalf("promptSliceUpdate(quit): %v", err)
 	}
@@ -1400,7 +1401,7 @@ func TestPromptSliceRemove_BackKeepsSlice(t *testing.T) {
 	defer restore()
 
 	original := []any{"a", "b", "c"}
-	got, err := promptSliceRemove(original)
+	got, err := promptSliceRemove(procCtx(), original)
 	if err != nil {
 		t.Fatalf("promptSliceRemove(back): %v", err)
 	}
@@ -1416,7 +1417,7 @@ func TestPromptSliceRemove_QuitKeepsSlice(t *testing.T) {
 	defer restore()
 
 	original := []any{"a", "b", "c"}
-	got, err := promptSliceRemove(original)
+	got, err := promptSliceRemove(procCtx(), original)
 	if err != nil {
 		t.Fatalf("promptSliceRemove(quit): %v", err)
 	}
@@ -1426,7 +1427,7 @@ func TestPromptSliceRemove_QuitKeepsSlice(t *testing.T) {
 }
 
 func TestPromptSliceUpdate_EmptySliceNoop(t *testing.T) {
-	got, err := promptSliceUpdate("test", []any{}, "")
+	got, err := promptSliceUpdate(procCtx(), "test", []any{}, "")
 	if err != nil {
 		t.Fatalf("promptSliceUpdate(empty): %v", err)
 	}
@@ -1436,7 +1437,7 @@ func TestPromptSliceUpdate_EmptySliceNoop(t *testing.T) {
 }
 
 func TestPromptSliceRemove_EmptySliceNoop(t *testing.T) {
-	got, err := promptSliceRemove([]any{})
+	got, err := promptSliceRemove(procCtx(), []any{})
 	if err != nil {
 		t.Fatalf("promptSliceRemove(empty): %v", err)
 	}
@@ -1456,7 +1457,7 @@ func TestHandleValue_SliceDispatch(t *testing.T) {
 	defer restore()
 
 	s := []any{"a", "b", "c"}
-	got, err := handleValue("tags", s, "")
+	got, err := handleValue(procCtx(), "tags", s, "")
 	if err != nil {
 		t.Fatalf("handleValue(slice): %v", err)
 	}
@@ -1476,7 +1477,7 @@ func TestEditMap_ReadErrorOnActionPrompt(t *testing.T) {
 	})
 	defer restore()
 
-	_, err := editMap("test", map[string]any{"a": "1"}, "")
+	_, err := editMap(procCtx(), "test", map[string]any{"a": "1"}, "")
 	if err == nil {
 		t.Fatal("editMap(read error) expected error, got nil")
 	}
@@ -1496,7 +1497,7 @@ func TestEditSlice_InvalidAction(t *testing.T) {
 	defer restore()
 
 	original := []any{"a", "b"}
-	got, err := editSlice("test", original, "")
+	got, err := editSlice(procCtx(), "test", original, "")
 	if err != nil {
 		t.Fatalf("editSlice(invalid action): %v", err)
 	}
@@ -1511,7 +1512,7 @@ func TestEditSlice_ReadErrorOnActionPrompt(t *testing.T) {
 	})
 	defer restore()
 
-	_, err := editSlice("test", []any{"a"}, "")
+	_, err := editSlice(procCtx(), "test", []any{"a"}, "")
 	if err == nil {
 		t.Fatal("editSlice(read error) expected error, got nil")
 	}
@@ -1529,7 +1530,7 @@ func TestGetModelValue_BackReturnsCurrent(t *testing.T) {
 	})
 	defer restore()
 
-	got, err := getModelValue("gpt-5.2", dir)
+	got, err := getModelValue(procCtx(), "gpt-5.2", dir)
 	if err != nil {
 		t.Fatalf("getModelValue(back): %v", err)
 	}
@@ -1568,7 +1569,7 @@ func TestGetShellContextValue_BackReturnsCurrent(t *testing.T) {
 	})
 	defer restore()
 
-	got, err := getShellContextValue("minimal", dir)
+	got, err := getShellContextValue(procCtx(), "minimal", dir)
 	if err != nil {
 		t.Fatalf("getShellContextValue(back): %v", err)
 	}
@@ -1592,7 +1593,7 @@ func TestPromptSliceUpdate_HandleValueError(t *testing.T) {
 	})
 	defer restore()
 
-	_, err := promptSliceUpdate("test", []any{"a", "b"}, "")
+	_, err := promptSliceUpdate(procCtx(), "test", []any{"a", "b"}, "")
 	if err == nil {
 		t.Fatal("promptSliceUpdate(handle error) expected error, got nil")
 	}
@@ -1624,7 +1625,7 @@ func TestInteractiveReconfigure_SelectFieldError(t *testing.T) {
 	})
 	defer restore()
 
-	err := interractiveReconfigure(config{name: "test.json", filePath: cfgPath}, []byte(original))
+	err := interractiveReconfigure(procCtx(), config{name: "test.json", filePath: cfgPath}, []byte(original))
 	if !errors.Is(err, table.ErrUserInitiatedExit) {
 		t.Fatalf("interractiveReconfigure(quit) = %v, want ErrUserInitiatedExit", err)
 	}
@@ -1656,7 +1657,7 @@ func TestActionRemove_NotConfirmed(t *testing.T) {
 	})
 	defer restore()
 
-	err := actionRemove(config{name: "test.json", filePath: cfgPath})
+	err := actionRemove(procCtx(), config{name: "test.json", filePath: cfgPath})
 	if err == nil {
 		t.Fatal("expected error for non-confirmed deletion, got nil")
 	}
@@ -1674,7 +1675,7 @@ func TestActionCopy_ReadError(t *testing.T) {
 	})
 	defer restore()
 
-	_, err := actionCopy(config{name: "source.json", filePath: srcPath})
+	_, err := actionCopy(procCtx(), config{name: "source.json", filePath: srcPath})
 	if err == nil {
 		t.Fatal("expected read error, got nil")
 	}
@@ -1688,7 +1689,7 @@ func TestActOnConfigItem_BackPropagates(t *testing.T) {
 	defer restore()
 
 	cat := setupCategory{itemActions: []action{conf}}
-	err := actOnConfigItem(cat, config{name: "test", filePath: "/tmp/test.json"})
+	err := actOnConfigItem(procCtx(), cat, config{name: "test", filePath: "/tmp/test.json"})
 	if !errors.Is(err, table.ErrBack) {
 		t.Fatalf("actOnConfigItem(back) = %v, want ErrBack", err)
 	}
@@ -1714,7 +1715,7 @@ func TestInterractiveReconfigure_HandleValueError(t *testing.T) {
 	})
 	defer restore()
 
-	err := interractiveReconfigure(config{name: "test.json", filePath: cfgPath}, []byte(original))
+	err := interractiveReconfigure(procCtx(), config{name: "test.json", filePath: cfgPath}, []byte(original))
 	if err == nil {
 		t.Fatal("interractiveReconfigure expected handleValue error, got nil")
 	}
@@ -1731,7 +1732,7 @@ func TestCreateConfigFile(t *testing.T) {
 	defer restore()
 
 	dir := t.TempDir()
-	cfg, err := createConfigFile(dir, "testtype", map[string]any{"key": "default"})
+	cfg, err := createConfigFile(procCtx(), dir, "testtype", map[string]any{"key": "default"})
 	if err != nil {
 		t.Fatalf("createConfigFile(): %v", err)
 	}
@@ -1783,7 +1784,7 @@ func TestActionReconfigure(t *testing.T) {
 	defer restore()
 
 	cfg := config{name: "test.json", filePath: cfgPath}
-	if err := actionReconfigure(cfg); err != nil {
+	if err := actionReconfigure(procCtx(), cfg); err != nil {
 		t.Fatalf("actionReconfigure(): %v", err)
 	}
 
@@ -1820,7 +1821,7 @@ func TestEditMap_UpdateHandleValueError(t *testing.T) {
 	})
 	defer restore()
 
-	_, err := editMap("test", map[string]any{"name": "old"}, "")
+	_, err := editMap(procCtx(), "test", map[string]any{"name": "old"}, "")
 	if err == nil {
 		t.Fatal("editMap(handleValue error) expected error, got nil")
 	}
@@ -1842,7 +1843,7 @@ func TestEditSlice_UpdateHandleValueError(t *testing.T) {
 	})
 	defer restore()
 
-	_, err := editSlice("test", []any{"a", "b"}, "")
+	_, err := editSlice(procCtx(), "test", []any{"a", "b"}, "")
 	if err == nil {
 		t.Fatal("editSlice(handleValue error) expected error, got nil")
 	}
@@ -1860,7 +1861,7 @@ func TestActionRemove_ReadError(t *testing.T) {
 	})
 	defer restore()
 
-	err := actionRemove(config{name: "test.json", filePath: cfgPath})
+	err := actionRemove(procCtx(), config{name: "test.json", filePath: cfgPath})
 	if err == nil {
 		t.Fatal("expected read error, got nil")
 	}
@@ -1872,7 +1873,7 @@ func TestQueryForAction_Error(t *testing.T) {
 	})
 	defer restore()
 
-	_, err := queryForAction([]action{conf, del})
+	_, err := queryForAction(procCtx(), []action{conf, del})
 	if err == nil {
 		t.Fatal("expected read error, got nil")
 	}
@@ -1891,7 +1892,7 @@ func TestQueryForAction_InvalidThenValid(t *testing.T) {
 	})
 	defer restore()
 
-	got, err := queryForAction([]action{conf, del})
+	got, err := queryForAction(procCtx(), []action{conf, del})
 	if err != nil {
 		t.Fatalf("queryForAction(): %v", err)
 	}
@@ -1906,7 +1907,7 @@ func TestQueryForAction_Quit(t *testing.T) {
 	})
 	defer restore()
 
-	_, err := queryForAction([]action{conf, del})
+	_, err := queryForAction(procCtx(), []action{conf, del})
 	if !errors.Is(err, table.ErrUserInitiatedExit) {
 		t.Fatalf("queryForAction(quit) = %v, want ErrUserInitiatedExit", err)
 	}
@@ -1914,7 +1915,7 @@ func TestQueryForAction_Quit(t *testing.T) {
 
 func TestPreviewConfigItem_ReadError(t *testing.T) {
 	cfg := config{filePath: "/nonexistent/path/config.json"}
-	err := previewConfigItem(cfg)
+	err := previewConfigItem(procCtx(), cfg)
 	if err == nil {
 		t.Fatal("expected read error, got nil")
 	}
@@ -1927,14 +1928,14 @@ func TestPreviewConfigItem_BadJSON(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	err := previewConfigItem(config{filePath: cfgPath})
+	err := previewConfigItem(procCtx(), config{filePath: cfgPath})
 	if err == nil {
 		t.Fatal("expected unmarshal error, got nil")
 	}
 }
 
 func TestActionReconfigure_OpenError(t *testing.T) {
-	err := actionReconfigure(config{filePath: "/nonexistent/path/config.json"})
+	err := actionReconfigure(procCtx(), config{filePath: "/nonexistent/path/config.json"})
 	if err == nil {
 		t.Fatal("expected open error, got nil")
 	}
@@ -1961,14 +1962,14 @@ func TestShellContextSetupCategory(t *testing.T) {
 }
 
 func TestExecuteConfigAction_Default(t *testing.T) {
-	err := executeConfigAction(config{name: "test"}, unset)
+	err := executeConfigAction(procCtx(), config{name: "test"}, unset)
 	if err == nil {
 		t.Fatal("expected error for invalid action, got nil")
 	}
 }
 
 func TestExecuteConfigAction_Back(t *testing.T) {
-	err := executeConfigAction(config{name: "test"}, back)
+	err := executeConfigAction(procCtx(), config{name: "test"}, back)
 	if !errors.Is(err, table.ErrBack) {
 		t.Fatalf("executeConfigAction(back) = %v, want ErrBack", err)
 	}
@@ -1984,7 +1985,7 @@ func TestCreateConfigFile_ReadError(t *testing.T) {
 	})
 	defer restore()
 
-	_, err := createConfigFile(t.TempDir(), "testtype", map[string]any{})
+	_, err := createConfigFile(procCtx(), t.TempDir(), "testtype", map[string]any{})
 	if err == nil {
 		t.Fatal("expected read error, got nil")
 	}
@@ -1996,7 +1997,7 @@ func TestActionCopy_SourceReadError(t *testing.T) {
 	})
 	defer restore()
 
-	_, err := actionCopy(config{name: "source.json", filePath: "/nonexistent/source.json"})
+	_, err := actionCopy(procCtx(), config{name: "source.json", filePath: "/nonexistent/source.json"})
 	if err == nil {
 		t.Fatal("expected source read error, got nil")
 	}
@@ -2014,7 +2015,7 @@ func TestEditMap_AddReadError(t *testing.T) {
 	})
 	defer restore()
 
-	_, err := editMap("test", map[string]any{"existing": "value"}, "")
+	_, err := editMap(procCtx(), "test", map[string]any{"existing": "value"}, "")
 	if err == nil {
 		t.Fatal("editMap(add read error) expected error, got nil")
 	}
@@ -2031,7 +2032,7 @@ func TestEditMap_RemoveReadError(t *testing.T) {
 	})
 	defer restore()
 
-	_, err := editMap("test", map[string]any{"key": "val"}, "")
+	_, err := editMap(procCtx(), "test", map[string]any{"key": "val"}, "")
 	if err == nil {
 		t.Fatal("editMap(remove read error) expected error, got nil")
 	}
@@ -2039,7 +2040,7 @@ func TestEditMap_RemoveReadError(t *testing.T) {
 
 func TestGetToolsValue_SelectError(t *testing.T) {
 	tools.Registry.Reset()
-	tools.Init()
+	tools.Init(context.Background())
 	tools.Registry.Reset()
 	t.Cleanup(func() { tools.Registry.Reset() })
 
@@ -2091,7 +2092,7 @@ func TestExecuteConfigAction_ConfWithEditor(t *testing.T) {
 	defer os.Setenv("EDITOR", oldEditor)
 	os.Setenv("EDITOR", "echo")
 
-	err := executeConfigAction(config{name: "test.json", filePath: cfgPath}, confWithEditor)
+	err := executeConfigAction(procCtx(), config{name: "test.json", filePath: cfgPath}, confWithEditor)
 	if err != nil {
 		t.Fatalf("executeConfigAction(confWithEditor): %v", err)
 	}
@@ -2108,7 +2109,7 @@ func TestExecuteConfigAction_PromptEditWithEditor(t *testing.T) {
 	defer os.Setenv("EDITOR", oldEditor)
 	os.Setenv("EDITOR", "echo")
 
-	err := executeConfigAction(config{name: "test.json", filePath: cfgPath}, promptEditWithEditor)
+	err := executeConfigAction(procCtx(), config{name: "test.json", filePath: cfgPath}, promptEditWithEditor)
 	if err != nil {
 		t.Fatalf("executeConfigAction(promptEditWithEditor): %v", err)
 	}
@@ -2131,7 +2132,7 @@ func TestExecuteConfigAction_UnescapedFieldEditWithEditor(t *testing.T) {
 	defer os.Setenv("EDITOR", oldEditor)
 	os.Setenv("EDITOR", "echo")
 
-	err := executeConfigAction(config{name: "test.json", filePath: cfgPath}, unescapedFieldEditWithEditor)
+	err := executeConfigAction(procCtx(), config{name: "test.json", filePath: cfgPath}, unescapedFieldEditWithEditor)
 	if err != nil {
 		t.Fatalf("executeConfigAction(unescapedFieldEditWithEditor): %v", err)
 	}
@@ -2156,7 +2157,7 @@ func TestExecuteConfigAction_Copy(t *testing.T) {
 	})
 	defer restore()
 
-	err := executeConfigAction(config{name: "test.json", filePath: cfgPath}, copyAction)
+	err := executeConfigAction(procCtx(), config{name: "test.json", filePath: cfgPath}, copyAction)
 	if err != nil {
 		t.Fatalf("executeConfigAction(copy): %v", err)
 	}
@@ -2180,7 +2181,7 @@ func TestExecuteConfigAction_Delete(t *testing.T) {
 	})
 	defer restore()
 
-	err := executeConfigAction(config{name: "test.json", filePath: cfgPath}, del)
+	err := executeConfigAction(procCtx(), config{name: "test.json", filePath: cfgPath}, del)
 	if err != nil {
 		t.Fatalf("executeConfigAction(delete): %v", err)
 	}
@@ -2203,7 +2204,7 @@ func TestActOnConfigItem_ExecuteError(t *testing.T) {
 	defer restore()
 
 	cat := setupCategory{itemActions: []action{conf}}
-	err := actOnConfigItem(cat, config{name: "test", filePath: "/nonexistent/config.json"})
+	err := actOnConfigItem(procCtx(), cat, config{name: "test", filePath: "/nonexistent/config.json"})
 	if err == nil {
 		t.Fatal("expected error from executeConfigAction, got nil")
 	}
@@ -2225,7 +2226,7 @@ func TestCreateConfigFile_MkdirError(t *testing.T) {
 	defer restore()
 
 	// MkdirAll on a path where a file exists will fail
-	_, err := createConfigFile(blocker, "testtype", map[string]any{})
+	_, err := createConfigFile(procCtx(), blocker, "testtype", map[string]any{})
 	if err == nil {
 		t.Fatal("expected MkdirAll error, got nil")
 	}
@@ -2248,7 +2249,7 @@ func TestActionReconfigureStringFieldWithEditor_FieldSelection(t *testing.T) {
 	defer os.Setenv("EDITOR", oldEditor)
 	os.Setenv("EDITOR", "echo")
 
-	err := actionReconfigureStringFieldWithEditor(config{name: "test.json", filePath: cfgPath}, "")
+	err := actionReconfigureStringFieldWithEditor(procCtx(), config{name: "test.json", filePath: cfgPath}, "")
 	if err != nil {
 		t.Fatalf("actionReconfigureStringFieldWithEditor: %v", err)
 	}
@@ -2261,7 +2262,7 @@ func TestActionReconfigureStringFieldWithEditor_FieldNotFound(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	err := actionReconfigureStringFieldWithEditor(config{name: "test.json", filePath: cfgPath}, "nonexistent")
+	err := actionReconfigureStringFieldWithEditor(procCtx(), config{name: "test.json", filePath: cfgPath}, "nonexistent")
 	if err == nil {
 		t.Fatal("expected field not found error, got nil")
 	}
@@ -2274,14 +2275,14 @@ func TestActionReconfigureStringFieldWithEditor_NotString(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	err := actionReconfigureStringFieldWithEditor(config{name: "test.json", filePath: cfgPath}, "count")
+	err := actionReconfigureStringFieldWithEditor(procCtx(), config{name: "test.json", filePath: cfgPath}, "count")
 	if err == nil {
 		t.Fatal("expected not-string error, got nil")
 	}
 }
 
 func TestActionReconfigureStringFieldWithEditor_ReadError(t *testing.T) {
-	err := actionReconfigureStringFieldWithEditor(config{filePath: "/nonexistent/config.json"}, "name")
+	err := actionReconfigureStringFieldWithEditor(procCtx(), config{filePath: "/nonexistent/config.json"}, "name")
 	if err == nil {
 		t.Fatal("expected read error, got nil")
 	}
@@ -2298,7 +2299,7 @@ func TestActOnConfigItem_QuitFromQuery(t *testing.T) {
 	defer restore()
 
 	cat := setupCategory{itemActions: []action{conf}}
-	err := actOnConfigItem(cat, config{name: "test", filePath: "/tmp/test.json"})
+	err := actOnConfigItem(procCtx(), cat, config{name: "test", filePath: "/tmp/test.json"})
 	if !errors.Is(err, table.ErrUserInitiatedExit) {
 		t.Fatalf("actOnConfigItem(quit query) = %v, want ErrUserInitiatedExit", err)
 	}
@@ -2341,21 +2342,21 @@ func TestValidateEditedStringField_ShellContextTemplate(t *testing.T) {
 	cfg := config{name: "test", filePath: cfgPath}
 
 	t.Run("valid template passes validation", func(t *testing.T) {
-		err := validateEditedStringField(cfg, "template", `Hello {{.Cwd}}`)
+		err := validateEditedStringField(procCtx(), cfg, "template", `Hello {{.Cwd}}`)
 		if err != nil {
 			t.Fatalf("validateEditedStringField(valid template): %v", err)
 		}
 	})
 
 	t.Run("empty string is valid", func(t *testing.T) {
-		err := validateEditedStringField(cfg, "template", "")
+		err := validateEditedStringField(procCtx(), cfg, "template", "")
 		if err != nil {
 			t.Fatalf("validateEditedStringField(empty template): %v", err)
 		}
 	})
 
 	t.Run("non-template field skips validation", func(t *testing.T) {
-		err := validateEditedStringField(cfg, "name", "anything")
+		err := validateEditedStringField(procCtx(), cfg, "name", "anything")
 		if err != nil {
 			t.Fatalf("validateEditedStringField(non-template): %v", err)
 		}
@@ -2364,7 +2365,7 @@ func TestValidateEditedStringField_ShellContextTemplate(t *testing.T) {
 	t.Run("non-shellContexts dir skips validation", func(t *testing.T) {
 		otherDir := t.TempDir()
 		otherCfg := config{name: "test", filePath: filepath.Join(otherDir, "test.json")}
-		err := validateEditedStringField(otherCfg, "template", "anything")
+		err := validateEditedStringField(procCtx(), otherCfg, "template", "anything")
 		if err != nil {
 			t.Fatalf("validateEditedStringField(non-shellctx dir): %v", err)
 		}

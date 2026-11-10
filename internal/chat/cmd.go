@@ -5,12 +5,13 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/baalimago/clai/internal"
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/models"
+	"github.com/baalimago/clai/internal/runenv"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/internal/vendors"
 	"github.com/baalimago/go_away_boilerplate/pkg/cmd"
@@ -20,10 +21,10 @@ import (
 // needs: config prep lives in internal/setup, which chat cannot import
 // (setup imports the domain packages), so internal/cli injects it.
 type CommandDeps struct {
-	ConfigPrep func() (confDir string, err error)
+	ConfigPrep func(ctx context.Context) (confDir string, err error)
 	// NewSummarizer and ParseSince serve chat summarize only; the chat tree
 	// cannot import internal/summary, and no other verb touches a model.
-	NewSummarizer func(confDir string) (models.Summarizer, error)
+	NewSummarizer func(ctx context.Context, confDir string) (models.Summarizer, error)
 	ParseSince    func(s string, now time.Time) (time.Time, error)
 	// ForeignCache is a factory so that only a verb consulting the cache pays
 	// for decoding it (R1-02, D27). It must return a nil interface and never a
@@ -135,12 +136,12 @@ func chatSub(sources *internal.CompletionSources, cf *internal.ChatFlags, verb, 
 // fullChatSetup builds the config-touching chat path (config creation and
 // migration allowed): continue, delete, and the parent's own fallthrough.
 func fullChatSetup(deps CommandDeps, cf *internal.ChatFlags) func(ctx context.Context, c *internal.Command) error {
-	return func(_ context.Context, c *internal.Command) error {
-		confDir, err := deps.ConfigPrep()
+	return func(ctx context.Context, c *internal.Command) error {
+		confDir, err := deps.ConfigPrep(ctx)
 		if err != nil {
 			return err
 		}
-		h, err := newChatQuerier(confDir, c.Args(), cf, deps.ForeignCache)
+		h, err := newChatQuerier(ctx, confDir, c.Args(), cf, deps.ForeignCache)
 		if err != nil {
 			return err
 		}
@@ -157,8 +158,8 @@ const summarizeWindowUsage = "chat summarize <window>: the window is required (a
 // the handler. It is distinct from fullChatSetup because newChatQuerier
 // sees neither the summarize flags nor the summarizer.
 func summarizeSetup(deps CommandDeps, cf *internal.ChatFlags, sf *internal.SummarizeFlags) func(ctx context.Context, c *internal.Command) error {
-	return func(_ context.Context, c *internal.Command) error {
-		confDir, err := deps.ConfigPrep()
+	return func(ctx context.Context, c *internal.Command) error {
+		confDir, err := deps.ConfigPrep(ctx)
 		if err != nil {
 			return err
 		}
@@ -178,15 +179,15 @@ func summarizeSetup(deps CommandDeps, cf *internal.ChatFlags, sf *internal.Summa
 		window := rest[0]
 		since, err := deps.ParseSince(window, time.Now())
 		if err != nil {
-			return fmt.Errorf("chat summarize: window %q: %w", window, err)
+			return diag.Errorf("chat summarize: window %q: %w", window, err)
 		}
-		summarizer, err := deps.NewSummarizer(confDir)
+		summarizer, err := deps.NewSummarizer(ctx, confDir)
 		if err != nil {
-			return fmt.Errorf("chat summarize: create summarizer: %w", err)
+			return diag.Errorf("chat summarize: create summarizer: %w", err)
 		}
-		h, err := New(confDir, "summarize", cf.Profile.Value(), cf.Raw.Value(), os.Stdout)
+		h, err := New(ctx, confDir, "summarize", cf.Profile.Value(), cf.Raw.Value(), runenv.From(ctx).Stdout())
 		if err != nil {
-			return fmt.Errorf("create chat handler: %w", err)
+			return diag.Errorf("create chat handler: %w", err)
 		}
 		h.summarizer = summarizer
 		h.summarizeOptions = summarizeOptions{
@@ -208,13 +209,13 @@ func summarizeSetup(deps CommandDeps, cf *internal.ChatFlags, sf *internal.Summa
 // a guaranteed no-op under NoCreateConfig, and these run on shell-prompt
 // hot paths.
 func readOnlyChatSetup(deps CommandDeps, cf *internal.ChatFlags) func(ctx context.Context, c *internal.Command) error {
-	return func(_ context.Context, c *internal.Command) error {
+	return func(ctx context.Context, c *internal.Command) error {
 		utils.NoCreateConfig = true
-		confDir, err := internal.PrepTheme()
+		confDir, err := internal.PrepTheme(ctx)
 		if err != nil {
 			return err
 		}
-		h, err := newChatQuerier(confDir, c.Args(), cf, deps.ForeignCache)
+		h, err := newChatQuerier(ctx, confDir, c.Args(), cf, deps.ForeignCache)
 		if err != nil {
 			return err
 		}
@@ -227,10 +228,10 @@ func readOnlyChatSetup(deps CommandDeps, cf *internal.ChatFlags) func(ctx contex
 // newChatQuerier builds the handler both chat paths run, without the command
 // adapter so it is observable. The dispatcher hands over ["chat", verb,
 // args...]; the handler wants "<verb> <args...>". It carries the factory over without invoking it (D27).
-func newChatQuerier(confDir string, args []string, cf *internal.ChatFlags, newForeignCache func() vendors.SourceCache) (*ChatHandler, error) {
-	h, err := New(confDir, strings.Join(args[1:], " "), cf.Profile.Value(), cf.Raw.Value(), os.Stdout)
+func newChatQuerier(ctx context.Context, confDir string, args []string, cf *internal.ChatFlags, newForeignCache func() vendors.SourceCache) (*ChatHandler, error) {
+	h, err := New(ctx, confDir, strings.Join(args[1:], " "), cf.Profile.Value(), cf.Raw.Value(), runenv.From(ctx).Stdout())
 	if err != nil {
-		return nil, fmt.Errorf("create chat handler: %w", err)
+		return nil, diag.Errorf("create chat handler: %w", err)
 	}
 	h.newForeignCache = newForeignCache
 	return h, nil
@@ -252,13 +253,13 @@ Examples:
 	}
 	// Replay renders stored conversation content, so it needs the theme even
 	// though it runs no config migration.
-	c.OnSetup = func(_ context.Context, _ *internal.Command) error {
-		_, err := internal.PrepTheme()
+	c.OnSetup = func(ctx context.Context, _ *internal.Command) error {
+		_, err := internal.PrepTheme(ctx)
 		return err
 	}
-	c.OnRun = func(_ context.Context, _ *internal.Command) error {
-		if err := Replay(raw.Value(), false); err != nil {
-			return fmt.Errorf("failed to replay previous reply: %w", err)
+	c.OnRun = func(ctx context.Context, _ *internal.Command) error {
+		if err := Replay(ctx, raw.Value(), false); err != nil {
+			return diag.Errorf("failed to replay previous reply: %w", err)
 		}
 		return nil
 	}
@@ -281,8 +282,8 @@ Examples:
 		Register: raw.Register,
 		Raw:      raw,
 	}
-	c.OnSetup = func(_ context.Context, c *internal.Command) error {
-		if _, err := internal.PrepTheme(); err != nil {
+	c.OnSetup = func(ctx context.Context, c *internal.Command) error {
+		if _, err := internal.PrepTheme(ctx); err != nil {
 			return err
 		}
 		c.SetQuerier(&dirscopeReplayQuerier{raw: raw.Value()})
@@ -299,9 +300,8 @@ type dirscopeReplayQuerier struct {
 }
 
 func (q dirscopeReplayQuerier) Query(ctx context.Context) error {
-	_ = ctx
-	if err := Replay(q.raw, true); err != nil {
-		return fmt.Errorf("dir-replay: %w", err)
+	if err := Replay(ctx, q.raw, true); err != nil {
+		return diag.Errorf("dir-replay: %w", err)
 	}
 	return nil
 }

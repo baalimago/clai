@@ -1,11 +1,13 @@
 package chat
 
 import (
+	"context"
 	"errors"
-	"fmt"
 	"strings"
 
 	"github.com/baalimago/clai/internal/asset"
+	"github.com/baalimago/clai/internal/diag"
+	"github.com/baalimago/clai/internal/runenv"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
@@ -16,39 +18,39 @@ import (
 // bound to the current working directory (and errors if no binding exists).
 // Otherwise it prints the most recent message from the global globalScope.json.
 // An image prints as "[image <handle>] <asset path>" (query.8).
-func Replay(raw bool, dirScoped bool) error {
+func Replay(ctx context.Context, raw bool, dirScoped bool) error {
 	claiConfDir, err := utils.GetClaiConfigDir()
 	if err != nil {
-		return fmt.Errorf("get config dir: %w", err)
+		return diag.Errorf("get config dir: %w", err)
 	}
 	if dirScoped {
-		return replayDirScoped(claiConfDir, raw)
+		return replayDirScoped(ctx, claiConfDir, raw)
 	}
 
-	prevReply, err := LoadPrevQuery(claiConfDir)
+	prevReply, err := LoadPrevQuery(ctx, claiConfDir)
 	if err != nil {
-		return fmt.Errorf("failed to load previous reply: %w", err)
+		return diag.Errorf("failed to load previous reply: %w", err)
 	}
 	amMessages := len(prevReply.Messages)
 	if amMessages == 0 {
 		return errors.New("failed to find any recent reply")
 	}
-	return printReplayed(claiConfDir, prevReply.Messages[amMessages-1], raw)
+	return printReplayed(ctx, claiConfDir, prevReply.Messages[amMessages-1], raw)
 }
 
-func replayDirScoped(claiConfDir string, raw bool) error {
+func replayDirScoped(ctx context.Context, claiConfDir string, raw bool) error {
 	ds, err := loadDirScopeForCurrentDir(claiConfDir)
 	if err != nil {
-		return fmt.Errorf("load dirscope: %w", err)
+		return diag.Errorf("load dirscope: %w", err)
 	}
 	if ds.ChatID == "" {
 		return errors.New("no directory-scoped conversation bound to current directory")
 	}
 
 	convPath := conversationPath(claiConfDir, ds.ChatID)
-	c, err := loadConversation(claiConfDir, convPath)
+	c, err := loadConversation(ctx, claiConfDir, convPath)
 	if err != nil {
-		return fmt.Errorf("load conversation for chat_id %q: %w", ds.ChatID, err)
+		return diag.Errorf("load conversation for chat_id %q: %w", ds.ChatID, err)
 	}
 	if len(c.Messages) == 0 {
 		return errors.New("directory-scoped conversation has no messages")
@@ -57,15 +59,15 @@ func replayDirScoped(claiConfDir string, raw bool) error {
 	if raw {
 		mostRecentMsg.ReasoningContent = ""
 	}
-	return printReplayed(claiConfDir, mostRecentMsg, raw)
+	return printReplayed(ctx, claiConfDir, mostRecentMsg, raw)
 }
 
-func printReplayed(claiConfDir string, msg pub_models.Message, raw bool) error {
+func printReplayed(ctx context.Context, claiConfDir string, msg pub_models.Message, raw bool) error {
 	msg, err := replayText(asset.NewStore(AssetsDir(claiConfDir)), msg)
 	if err != nil {
-		return fmt.Errorf("render replayed message: %w", err)
+		return diag.Errorf("render replayed message: %w", err)
 	}
-	return utils.AttemptPrettyPrint(nil, msg, "system", raw)
+	return utils.AttemptPrettyPrint(runenv.From(ctx).Stdout(), msg, "system", raw)
 }
 
 // replayText returns msg with its parts rendered into Content, one per line: a
@@ -100,7 +102,7 @@ func imagePlaceholder(store asset.AssetStorer, img pub_models.ImagePart) (string
 	}
 	path, err := store.Path(img.Asset)
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", label, err)
+		return "", diag.Errorf("%s: %w", label, err)
 	}
 	return label + " " + path, nil
 }

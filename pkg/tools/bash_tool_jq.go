@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/baalimago/clai/internal/diag"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -89,7 +90,7 @@ func (j JQTool) Call(input pub_models.Input) (string, error) {
 
 	output, err := exec.Command("jq", args...).CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("failed to run jq: %w, output: %s", err, output)
+		return "", diag.Errorf("failed to run jq: %w, output: %s", err, output)
 	}
 	return string(output), nil
 }

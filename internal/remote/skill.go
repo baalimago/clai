@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/look"
 	"github.com/baalimago/clai/internal/skills"
 )
@@ -57,7 +58,7 @@ func (s SkillSummary) Lines(st look.Style) []string {
 	head := st.Head("skill "+Printable(s.Name), "instructions the agent may load")
 	lines := []string{head}
 	for _, l := range Preview(s.Description) {
-		lines = append(lines, "  "+st.Secondary("│")+" "+l)
+		lines = append(lines, st.Quote(l))
 	}
 	return lines
 }
@@ -122,7 +123,7 @@ func (r Resolver) ResolveSkills(ctx context.Context, targets []string, consent C
 	for _, target := range targets {
 		s, err := r.ResolveSkill(ctx, target, consent)
 		if err != nil {
-			return nil, fmt.Errorf("skill %s: %w", target, err)
+			return nil, diag.Errorf("skill %s: %w", target, err)
 		}
 		out = append(out, s)
 	}
@@ -164,10 +165,10 @@ func (c Cache) skillRoot(digest, name string, body []byte) (string, error) {
 		return root, nil
 	}
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return "", fmt.Errorf("read cached skill %s: %w", path, err)
+		return "", diag.Errorf("read cached skill %s: %w", path, err)
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return "", fmt.Errorf("create cached skill: %w", err)
+		return "", diag.Errorf("create cached skill: %w", err)
 	}
 	if err := writeFileAtomic(path, body); err != nil {
 		return "", err
@@ -181,7 +182,7 @@ func ProfileSkills(body []byte) ([]Target, error) {
 		Skills json.RawMessage `json:"skills"`
 	}
 	if err := json.Unmarshal(body, &p); err != nil {
-		return nil, fmt.Errorf("read profile skills: %w", err)
+		return nil, diag.Errorf("read profile skills: %w", err)
 	}
 	if p.Skills == nil {
 		return nil, nil
@@ -201,7 +202,7 @@ func skillTargets(raw json.RawMessage) ([]Target, error) {
 			return nil, fmt.Errorf("skills: %q is not a skill target (cchub:<handle>/<skill>, gh:<owner>/<repo>[/<path>] or https://)", s)
 		}
 		if err != nil {
-			return nil, fmt.Errorf("skills: %w", err)
+			return nil, diag.Errorf("skills: %w", err)
 		}
 		out = append(out, t)
 	}

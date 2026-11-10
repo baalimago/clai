@@ -102,6 +102,7 @@ func Test_sessionRunner_Run_StoplossCrossingInjectsHandoverAfterToolResults(t *t
 		out:      &strings.Builder{},
 		Model:    model,
 		stoploss: &Stoploss{MaxTokens: 100, MaxTokensHandoverMsg: "wrap up"},
+		tooling:  tooling{offered: offeredRegistry()},
 	}
 	session := &QuerySession{Chat: pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "hello"}}}}
 	runner := newStoplossRunner(q)
@@ -157,6 +158,7 @@ func Test_sessionRunner_Run_PostHandoverToolExecutesByDefault(t *testing.T) {
 			out:      &strings.Builder{},
 			Model:    model,
 			stoploss: &Stoploss{MaxTokens: 100, MaxTokensHandoverMsg: "wrap up"},
+			tooling:  tooling{offered: offeredRegistry()},
 		}
 		session := &QuerySession{Chat: pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "hello"}}}}
 		runner := newStoplossRunner(q)
@@ -207,6 +209,7 @@ func Test_sessionRunner_Run_PostHandoverBudgetExhaustionEndsCleanly(t *testing.T
 			out:      &strings.Builder{},
 			Model:    model,
 			stoploss: &Stoploss{MaxTokens: 100, MaxTokensHandoverMsg: "wrap up", MaxToolCallsAfterHandover: 1},
+			tooling:  tooling{offered: offeredRegistry()},
 		}
 		session := &QuerySession{Chat: pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "hello"}}}}
 		runner := newStoplossRunner(q)
@@ -264,7 +267,7 @@ func Test_sessionRunner_Run_PostHandoverLoadSkillLoadsByDefault(t *testing.T) {
 		out:      &strings.Builder{},
 		Model:    model,
 		stoploss: &Stoploss{MaxTokens: 100, MaxTokensHandoverMsg: "wrap up"},
-		tooling:  tooling{skillLoader: countingSkillLoader{loads: &loads}},
+		tooling:  tooling{skillLoader: countingSkillLoader{loads: &loads}, offered: offeredRegistry("load_skill")},
 	}
 	session := &QuerySession{Chat: pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "hello"}}}}
 	runner := newStoplossRunner(q)
@@ -313,7 +316,7 @@ func Test_sessionRunner_Run_PostHandoverLoadSkillRefusedWhenBudgetExhausted(t *t
 			out:      &strings.Builder{},
 			Model:    model,
 			stoploss: &Stoploss{MaxTokens: 100, MaxTokensHandoverMsg: "wrap up", MaxToolCallsAfterHandover: 1},
-			tooling:  tooling{skillLoader: countingSkillLoader{loads: &loads}},
+			tooling:  tooling{skillLoader: countingSkillLoader{loads: &loads}, offered: offeredRegistry("load_skill")},
 		}
 		session := &QuerySession{Chat: pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "hello"}}}}
 		runner := newStoplossRunner(q)
@@ -360,7 +363,7 @@ func Test_sessionRunner_Run_PreHandoverLoadSkillLoads(t *testing.T) {
 		out:      &strings.Builder{},
 		Model:    model,
 		stoploss: &Stoploss{MaxTokens: 100, MaxTokensHandoverMsg: "wrap up"},
-		tooling:  tooling{skillLoader: countingSkillLoader{loads: &loads}},
+		tooling:  tooling{skillLoader: countingSkillLoader{loads: &loads}, offered: offeredRegistry("load_skill")},
 	}
 	session := &QuerySession{Chat: pub_models.Chat{Messages: []pub_models.Message{{Role: "user", Content: "hello"}}}}
 	runner := newStoplossRunner(q)
@@ -381,6 +384,7 @@ func Test_toolExecutor_PostHandoverLookbackExecutesByDefault(t *testing.T) {
 		out:         &strings.Builder{},
 		useLookback: true,
 		configDir:   t.TempDir(),
+		tooling:     tooling{offered: offeredRegistry("search_conversations")},
 	}
 	session := &QuerySession{HandoverRequested: true, Chat: pub_models.Chat{}}
 	call := pub_models.Call{ID: "lb-1", Name: string(pub_models.SearchConversationsTool), Inputs: &pub_models.Input{}}
@@ -404,6 +408,7 @@ func Test_toolExecutor_PostHandoverLookbackRefusedWhenBudgetExhausted(t *testing
 		useLookback: true,
 		configDir:   t.TempDir(),
 		stoploss:    &Stoploss{MaxToolCallsAfterHandover: 1},
+		tooling:     tooling{offered: offeredRegistry("search_conversations")},
 	}
 	session := &QuerySession{HandoverRequested: true, PostHandoverToolCallsUsed: 1, Chat: pub_models.Chat{}}
 	call := pub_models.Call{ID: "lb-1", Name: string(pub_models.SearchConversationsTool), Inputs: &pub_models.Input{}}
@@ -425,6 +430,7 @@ func Test_toolExecutor_PreHandoverLookbackExecutes(t *testing.T) {
 		out:         &strings.Builder{},
 		useLookback: true,
 		configDir:   t.TempDir(),
+		tooling:     tooling{offered: offeredRegistry("search_conversations")},
 	}
 	session := &QuerySession{Chat: pub_models.Chat{}}
 	call := pub_models.Call{ID: "lb-1", Name: string(pub_models.SearchConversationsTool), Inputs: &pub_models.Input{}}
@@ -451,7 +457,7 @@ func Test_toolExecutor_ExecuteBatch_RefusedCallHasNoSideEffect(t *testing.T) {
 		inttools.Registry.Set("refused_probe", countingStubTool{name: "refused_probe", calls: &refusedCalls, output: "must not run"})
 
 		maxCalls := 1
-		q := &Querier[*MockQuerier]{out: &strings.Builder{}, tooling: tooling{maxCalls: &maxCalls}}
+		q := &Querier[*MockQuerier]{out: &strings.Builder{}, tooling: tooling{maxCalls: &maxCalls, offered: offeredRegistry()}}
 		session := &QuerySession{Chat: pub_models.Chat{}}
 		executor := toolExecutor[*MockQuerier]{querier: q}
 
@@ -487,7 +493,7 @@ func Test_toolExecutor_ExecuteBatch_PostHandoverBatchExecutesByDefault(t *testin
 		inttools.Registry.Set("probe_cmd", countingStubTool{name: "probe_cmd", calls: &cmdCalls, output: "cmd side effect"})
 		inttools.Registry.Set("probe_other", countingStubTool{name: "probe_other", calls: &otherCalls, output: "other side effect"})
 
-		q := &Querier[*MockQuerier]{out: &strings.Builder{}}
+		q := &Querier[*MockQuerier]{out: &strings.Builder{}, tooling: tooling{offered: offeredRegistry()}}
 		session := &QuerySession{HandoverRequested: true, Chat: pub_models.Chat{}}
 		executor := toolExecutor[*MockQuerier]{querier: q}
 
@@ -525,7 +531,7 @@ func Test_toolExecutor_ExecuteBatch_PostHandoverBatchRefusesAfterBudget(t *testi
 		inttools.Registry.Set("probe_cmd", countingStubTool{name: "probe_cmd", calls: &cmdCalls, output: "cmd side effect"})
 		inttools.Registry.Set("probe_other", countingStubTool{name: "probe_other", calls: &otherCalls, output: "other side effect"})
 
-		q := &Querier[*MockQuerier]{out: &strings.Builder{}, stoploss: &Stoploss{MaxToolCallsAfterHandover: 1}}
+		q := &Querier[*MockQuerier]{out: &strings.Builder{}, stoploss: &Stoploss{MaxToolCallsAfterHandover: 1}, tooling: tooling{offered: offeredRegistry()}}
 		session := &QuerySession{HandoverRequested: true, Chat: pub_models.Chat{}}
 		executor := toolExecutor[*MockQuerier]{querier: q}
 
@@ -559,7 +565,7 @@ func mixedBatchQuerier(t *testing.T, cmdCalls, loads *int) *Querier[*MockQuerier
 	inttools.Registry.Set("mixed_probe", countingStubTool{name: "mixed_probe", calls: cmdCalls, output: "cmd output"})
 	return &Querier[*MockQuerier]{
 		out:     &strings.Builder{},
-		tooling: tooling{skillLoader: countingSkillLoader{loads: loads}},
+		tooling: tooling{skillLoader: countingSkillLoader{loads: loads}, offered: offeredRegistry("load_skill")},
 	}
 }
 
@@ -751,7 +757,7 @@ func Test_toolExecutor_ExecuteBatch_PostHandoverMixedBatchRefusesWithPairing(t *
 // returned; otherwise the persisted transcript contains a dangling tool_call
 // that a follow-up replay request cannot send to the vendor.
 func Test_toolExecutor_ExecuteBatch_HardStopMidBatchEmitsAllResults(t *testing.T) {
-	q := &Querier[*MockQuerier]{out: &strings.Builder{}, stoploss: &Stoploss{MaxToolCallsAfterHandover: 1}}
+	q := &Querier[*MockQuerier]{out: &strings.Builder{}, stoploss: &Stoploss{MaxToolCallsAfterHandover: 1}, tooling: tooling{offered: offeredRegistry()}}
 	session := &QuerySession{HandoverRequested: true, Chat: pub_models.Chat{}}
 	executor := toolExecutor[*MockQuerier]{querier: q}
 

@@ -2,11 +2,11 @@ package remote
 
 import (
 	"encoding/json"
-	"fmt"
 	"strconv"
 	"strings"
 	"unicode/utf8"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/look"
 )
 
@@ -92,7 +92,7 @@ func Summarize(body []byte, checked Checked) (Summary, error) {
 		} `json:"mcp_servers"`
 	}
 	if err := json.Unmarshal(body, &p); err != nil {
-		return Summary{}, fmt.Errorf("read profile summary: %w", err)
+		return Summary{}, diag.Errorf("read profile summary: %w", err)
 	}
 	skills, err := ProfileSkills(body)
 	if err != nil {
@@ -267,7 +267,7 @@ func promptLines(st look.Style, title, text string, details ...string) []string 
 	n := utf8.RuneCountInString(strings.TrimSpace(text))
 	lines := []string{st.Head(title, append(details, strconv.Itoa(n)+" characters")...)}
 	for _, l := range preview {
-		lines = append(lines, "  "+st.Secondary("│")+" "+l)
+		lines = append(lines, st.Quote(l))
 	}
 	return lines
 }

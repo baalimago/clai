@@ -26,12 +26,12 @@ func TestChatHandler_continue_emptyPrompt_prefersDirScope_thenGlobalScope(t *tes
 	convDir := filepath.Join(confDir, "conversations")
 
 	global := pub_models.Chat{ID: "globalScope", Created: time.Now(), Messages: []pub_models.Message{{Role: "user", Content: "global msg"}}}
-	if err := Save(convDir, global); err != nil {
+	if err := Save(context.Background(), convDir, global); err != nil {
 		t.Fatalf("Save global: %v", err)
 	}
 
 	dirChat := pub_models.Chat{ID: "dir-chat", Created: time.Now(), Messages: []pub_models.Message{{Role: "user", Content: "dir msg"}}}
-	if err := Save(convDir, dirChat); err != nil {
+	if err := Save(context.Background(), convDir, dirChat); err != nil {
 		t.Fatalf("Save dir chat: %v", err)
 	}
 	cwd, err := os.Getwd()
@@ -40,7 +40,7 @@ func TestChatHandler_continue_emptyPrompt_prefersDirScope_thenGlobalScope(t *tes
 	}
 
 	cq := &ChatHandler{confDir: confDir, convDir: convDir, prompt: "", out: io.Discard}
-	if err := cq.SaveDirScope(cwd, dirChat.ID); err != nil {
+	if err := cq.SaveDirScope(context.Background(), cwd, dirChat.ID); err != nil {
 		t.Fatalf("SaveDirScope: %v", err)
 	}
 
@@ -64,7 +64,7 @@ func TestChatHandler_continue_emptyPrompt_fallsBackToGlobalScope(t *testing.T) {
 	convDir := filepath.Join(confDir, "conversations")
 
 	global := pub_models.Chat{ID: "globalScope", Created: time.Now(), Messages: []pub_models.Message{{Role: "user", Content: "global msg"}}}
-	if err := Save(convDir, global); err != nil {
+	if err := Save(context.Background(), convDir, global); err != nil {
 		t.Fatalf("Save global: %v", err)
 	}
 
@@ -102,7 +102,7 @@ func TestChatHandler_continueByID_preservesStoredQueries(t *testing.T) {
 			Usage:     pub_models.Usage{TotalTokens: 321},
 		}},
 	}
-	if err := Save(convDir, stored); err != nil {
+	if err := Save(context.Background(), convDir, stored); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
@@ -113,7 +113,7 @@ func TestChatHandler_continueByID_preservesStoredQueries(t *testing.T) {
 		t.Fatalf("cont: %v", err)
 	}
 
-	continued, err := FromPath(filepath.Join(convDir, chatID+".json"))
+	continued, err := FromPath(context.Background(), filepath.Join(convDir, chatID+".json"))
 	if err != nil {
 		t.Fatalf("FromPath: %v", err)
 	}

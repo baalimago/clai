@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/baalimago/clai/internal/diag"
 )
 
 // MeasureRequest is one ambient measurement: the loudest level the default
@@ -50,7 +52,7 @@ func (recorder) Measure(ctx context.Context, req MeasureRequest) (Ambient, error
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	runErr := cmd.Run()
 	if ctxErr := ctx.Err(); ctxErr != nil {
-		return Ambient{}, fmt.Errorf("measure ambient level: %w", ctxErr)
+		return Ambient{}, diag.Errorf("measure ambient level: %w", ctxErr)
 	}
 	level, found := medianRMS(stdout.String())
 	if !found || runErr != nil {

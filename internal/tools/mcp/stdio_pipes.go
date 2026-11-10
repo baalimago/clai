@@ -1,9 +1,10 @@
 package mcp
 
 import (
-	"fmt"
 	"io"
 	"os"
+
+	"github.com/baalimago/clai/internal/diag"
 )
 
 // stdioPipes holds both ends of the three pipes a server's stdio is wired to.
@@ -17,17 +18,17 @@ type stdioPipes struct {
 func openStdioPipes() (*stdioPipes, error) {
 	stdinR, stdinW, err := os.Pipe()
 	if err != nil {
-		return nil, fmt.Errorf("stdin pipe: %w", err)
+		return nil, diag.Errorf("stdin pipe: %w", err)
 	}
 	stdoutR, stdoutW, err := os.Pipe()
 	if err != nil {
 		closeFiles(stdinR, stdinW)
-		return nil, fmt.Errorf("stdout pipe: %w", err)
+		return nil, diag.Errorf("stdout pipe: %w", err)
 	}
 	stderrR, stderrW, err := os.Pipe()
 	if err != nil {
 		closeFiles(stdinR, stdinW, stdoutR, stdoutW)
-		return nil, fmt.Errorf("stderr pipe: %w", err)
+		return nil, diag.Errorf("stderr pipe: %w", err)
 	}
 	return &stdioPipes{stdinR, stdinW, stdoutR, stdoutW, stderrR, stderrW}, nil
 }

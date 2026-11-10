@@ -124,3 +124,59 @@ func Test_e2e_cloud_usage_errors_stay_with_the_subcommand(t *testing.T) {
 		}
 	}
 }
+
+// R3-08, F12, F13: under -json the cloud commands write plain text in their
+// output records, without the terminal look, and a first pull's question on
+// a terminal is a select prompt record before its answer is read.
+func Test_e2e_cloud_json_plain_records_and_first_pull_prompt(t *testing.T) {
+	confDir := e2etest.SetupMainTestConfigDir(t)
+	t.Setenv("HOME", t.TempDir())
+	t.Chdir(confDir)
+	srv := cloudtest.New(t)
+	srv.Put("config", "profiles/x.json", "theirs")
+	t.Setenv("CLAI_CLOUD_URL", srv.URL())
+	t.Setenv("CLAI_CLOUD_TOKEN", "tok-a")
+	p := filepath.Join(confDir, "profiles", "x.json")
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte("mine"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	noLook := func(t *testing.T, out string) {
+		t.Helper()
+		for _, rec := range records(t, out) {
+			text, _ := rec["text"].(string)
+			for _, glyph := range []string{"▸", "→", "■", "│", "   "} {
+				if strings.Contains(text, glyph) {
+					t.Fatalf("record %v carries the terminal look %q", rec, glyph)
+				}
+			}
+		}
+	}
+
+	status := runWithInput(t, "-json cloud status config", strings.NewReader(""), false, false)
+	if status.status != 0 || !strings.Contains(status.stdout, "config: ") || !strings.Contains(status.stdout, "clai cloud pull config: bring down 1 commit") {
+		t.Fatalf("status %d stdout %q", status.status, status.stdout)
+	}
+	noLook(t, status.stdout)
+
+	pull := runWithInput(t, "-json cloud pull config", strings.NewReader("r\n"), true, false)
+	if pull.status != 0 {
+		t.Fatalf("pull status %d stderr %q", pull.status, pull.stderr)
+	}
+	noLook(t, pull.stdout)
+	before := records(t, pull.seenAtFirstRead)
+	if len(before) == 0 {
+		t.Fatalf("nothing before the read; stdout %q", pull.stdout)
+	}
+	last := before[len(before)-1]
+	choices, _ := last["choices"].([]any)
+	if last["type"] != "prompt" || last["kind"] != "select" || last["text"] != "Keep which copy of the 1 file that differs?" ||
+		len(choices) != 4 || choices[0] != "[l]ocal" || choices[3] != "[q]uit" {
+		t.Fatalf("the last record before the read is %v, want the first pull's select prompt", last)
+	}
+	if b, _ := os.ReadFile(p); string(b) != "theirs" {
+		t.Fatalf("the answer r left %q", b)
+	}
+}

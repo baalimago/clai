@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baalimago/clai/internal/testenv/procenv"
+
 	"github.com/baalimago/clai/internal"
 	"github.com/baalimago/clai/internal/chat"
 	"github.com/baalimago/clai/internal/models"
@@ -195,7 +197,7 @@ func newQuerierWithFlags(t *testing.T, conf Configurations, mods func(tf *intern
 	conf.SaveReplyAsConv = true
 	conf.InitialChat = newChat("flag-chat")
 	ApplyFlagOverrides(&conf, tfWith(t, mods))
-	q, err := NewQuerier(t.Context(), conf, &MockQuerier{})
+	q, err := NewQuerier(procenv.Context(t.Context()), conf, &MockQuerier{})
 	if err != nil {
 		t.Fatalf("NewQuerier: %v", err)
 	}
@@ -265,7 +267,7 @@ func TestQuery_launchConditions(t *testing.T) {
 		t.Run(row.desc, func(t *testing.T) {
 			fake := instantSummarizer()
 			q := row.querier(t, fake)
-			if err := q.Query(t.Context()); err != nil {
+			if err := q.Query(procenv.Context(t.Context())); err != nil {
 				t.Fatalf("Query: %v", err)
 			}
 			if got := fake.callCount(); (got == 1) != row.launched {
@@ -306,7 +308,7 @@ func TestQuery_summaryModelResolution(t *testing.T) {
 			q := newQuerierWithFlags(t, row.conf, row.mods)
 			q.SetSummarizer(fake)
 			q.summaryJoinTimeout = 5 * time.Second
-			if err := q.Query(t.Context()); err != nil {
+			if err := q.Query(procenv.Context(t.Context())); err != nil {
 				t.Fatalf("Query: %v", err)
 			}
 			if got := fake.firstCall().Model; got != row.want {
@@ -446,7 +448,7 @@ func TestQuery_stopEventDoesNotCancelSummary(t *testing.T) {
 	if q.chat.Title != "" {
 		t.Fatalf("interrupted join must leave the chat unlabelled, got %q", q.chat.Title)
 	}
-	if _, err := chat.FromPath(filepath.Join(confDir, "conversations", "stop-event.json")); err != nil {
+	if _, err := chat.FromPath(procenv.Context(context.Background()), filepath.Join(confDir, "conversations", "stop-event.json")); err != nil {
 		t.Fatalf("conversation not persisted: %v", err)
 	}
 }
@@ -491,10 +493,10 @@ func TestJoinSummary_emptySummaryIsFailure(t *testing.T) {
 	fake := newFakeSummarizer(func(context.Context, models.SummaryRequest) (models.Summary, error) {
 		return empty, nil
 	})
-	q, session, _ := joinFixture(t, t.Context(), fake, &fakeCostManager{enrichFn: appendCostRow}, 5*time.Second)
+	q, session, _ := joinFixture(t, procenv.Context(t.Context()), fake, &fakeCostManager{enrichFn: appendCostRow}, 5*time.Second)
 	var err error
 	stdout, stderr := captureStdoutStderrText(t, func() {
-		err = (sessionFinalizer[*MockQuerier]{querier: q}).Finalize(t.Context(), session)
+		err = (sessionFinalizer[*MockQuerier]{querier: q}).Finalize(procenv.Context(t.Context()), session)
 	})
 	if err != nil || stdout != "" || stderr != "" {
 		t.Fatalf("err=%v stdout=%q stderr=%q, want nil and silence", err, stdout, stderr)
@@ -516,7 +518,7 @@ func TestLaunchSummary_relaunchAbandonsPrevious(t *testing.T) {
 	t.Setenv("DEBUG_SUMMARY", "")
 	fake := blockingSummarizer()
 	q := launchQuerier(t, fake, newChat("relaunch"))
-	q.launchSummary(t.Context())
+	q.launchSummary(procenv.Context(t.Context()))
 	t.Cleanup(q.abandonSummary)
 	first := q.summaryRun
 	if first == nil {
@@ -526,7 +528,7 @@ func TestLaunchSummary_relaunchAbandonsPrevious(t *testing.T) {
 	released := make(chan struct{})
 	first.release = func() { close(released) }
 
-	q.launchSummary(t.Context())
+	q.launchSummary(procenv.Context(t.Context()))
 	if q.summaryRun == nil || q.summaryRun == first {
 		t.Fatal("second launch must install a new run")
 	}
@@ -543,14 +545,14 @@ func TestTraceSummaryf_stderr(t *testing.T) {
 	t.Setenv("DEBUG", "")
 	t.Run("enabled writes stderr only", func(t *testing.T) {
 		t.Setenv("DEBUG_SUMMARY", "1")
-		stdout, stderr := captureStdoutStderrText(t, func() { traceSummaryf("hello %d", 7) })
+		stdout, stderr := captureStdoutStderrText(t, func() { traceSummaryf(procenv.Context(context.Background()), "hello %d", 7) })
 		if stdout != "" || !strings.Contains(stderr, "[DEBUG_SUMMARY] hello 7") {
 			t.Fatalf("stdout = %q, stderr = %q, want the trace on stderr only", stdout, stderr)
 		}
 	})
 	t.Run("disabled writes nothing", func(t *testing.T) {
 		t.Setenv("DEBUG_SUMMARY", "")
-		stdout, stderr := captureStdoutStderrText(t, func() { traceSummaryf("hello") })
+		stdout, stderr := captureStdoutStderrText(t, func() { traceSummaryf(procenv.Context(context.Background()), "hello") })
 		if stdout != "" || stderr != "" {
 			t.Fatalf("stdout = %q, stderr = %q, want silence", stdout, stderr)
 		}
@@ -573,7 +575,7 @@ func TestSummaryResultChannel(t *testing.T) {
 	t.Run("taken result is applied by the join without waiting", func(t *testing.T) {
 		fake := instantSummarizer()
 		q := launchQuerier(t, fake, newChat("early-result"))
-		q.launchSummary(t.Context())
+		q.launchSummary(procenv.Context(t.Context()))
 		t.Cleanup(q.abandonSummary)
 		waitClosed(t, fake.done, "summarizer completion")
 
@@ -738,7 +740,7 @@ func TestLaunchSummary_SelectsTheLoopKind(t *testing.T) {
 			if tc.progress != nil {
 				q.SetLoopProgress(*tc.progress)
 			}
-			q.launchSummary(t.Context())
+			q.launchSummary(procenv.Context(t.Context()))
 			t.Cleanup(q.abandonSummary)
 			waitClosed(t, fake.done, "summarizer completion")
 			if got := fake.firstCall().Kind; got != tc.want {
@@ -758,7 +760,7 @@ func TestQuery_plainQueryLabelsOnlyRunsThatContinue(t *testing.T) {
 		fake := instantSummarizer()
 		q := launchQuerier(t, fake, newChat("one-step"))
 		q.summaryJoinTimeout = 0
-		if err := q.Query(t.Context()); err != nil {
+		if err := q.Query(procenv.Context(t.Context())); err != nil {
 			t.Fatalf("Query: %v", err)
 		}
 		if got := fake.callCount(); got != 0 {
@@ -782,7 +784,7 @@ func TestQuery_plainQueryLabelsOnlyRunsThatContinue(t *testing.T) {
 			close(out)
 			return out, nil
 		}
-		if err := q.Query(t.Context()); err != nil {
+		if err := q.Query(procenv.Context(t.Context())); err != nil {
 			t.Fatalf("Query: %v", err)
 		}
 		select {

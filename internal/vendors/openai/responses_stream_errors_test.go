@@ -6,12 +6,13 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"testing"
 
 	"github.com/baalimago/clai/internal/models"
+	"github.com/baalimago/clai/internal/testenv/procenv"
 	"github.com/baalimago/clai/pkg/claierr"
+	"github.com/baalimago/clai/pkg/diagnostic"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -34,29 +35,6 @@ func (f readCloserFunc) Close() error {
 }
 
 func contextOrDone() <-chan struct{} { return make(chan struct{}) }
-
-func captureOpenAIStdout(t *testing.T, fn func()) string {
-	t.Helper()
-	original := os.Stdout
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("create stdout pipe: %v", err)
-	}
-	os.Stdout = w
-	fn()
-	if err := w.Close(); err != nil {
-		os.Stdout = original
-		_ = r.Close()
-		t.Fatalf("close stdout writer: %v", err)
-	}
-	os.Stdout = original
-	defer r.Close()
-	var output bytes.Buffer
-	if _, err := io.Copy(&output, r); err != nil {
-		t.Fatalf("read captured stdout: %v", err)
-	}
-	return output.String()
-}
 
 func TestResponsesToolCallStateLifecycle(t *testing.T) {
 	done := contextOrDone()
@@ -126,10 +104,15 @@ func TestParseResponsesLineTable(t *testing.T) {
 }
 
 func TestParseStreamLineDebug(t *testing.T) {
-	s := &responsesStreamer{debug: true}
-	evt, ok, err := s.parseStreamLine([]byte("data: {\"type\":\"response.created\"}\n"))
+	s := &responsesStreamer{}
+	var diagnostics bytes.Buffer
+	ctx := procenv.Diagnostics(context.Background(), &diagnostics, diagnostic.LevelDebug)
+	evt, ok, err := s.parseStreamLine(ctx, []byte("data: {\"type\":\"response.created\"}\n"))
 	if err != nil || !ok || evt.Type != "response.created" {
 		t.Fatalf("parseStreamLine = %#v, %v, %v", evt, ok, err)
+	}
+	if !strings.Contains(diagnostics.String(), "got: 'data: ") {
+		t.Fatalf("debug diagnostics = %q, want the line traced", diagnostics.String())
 	}
 }
 
@@ -399,15 +382,13 @@ func TestReadResponsesStreamCanceledMidRead(t *testing.T) {
 }
 
 func TestCreateRequestDebug(t *testing.T) {
-	s := &responsesStreamer{url: "https://example.com", model: "gpt-5", debug: true}
-	var req *http.Request
-	output := captureOpenAIStdout(t, func() {
-		var err error
-		req, err = s.createRequest(context.Background(), pub_models.Chat{})
-		if err != nil {
-			t.Errorf("createRequest: %v", err)
-		}
-	})
+	s := &responsesStreamer{url: "https://example.com", model: "gpt-5"}
+	var diagnostics bytes.Buffer
+	req, err := s.createRequest(procenv.Diagnostics(context.Background(), &diagnostics, diagnostic.LevelDebug), pub_models.Chat{})
+	if err != nil {
+		t.Fatalf("createRequest: %v", err)
+	}
+	output := diagnostics.String()
 	if req == nil {
 		t.Fatal("createRequest returned no request")
 	}

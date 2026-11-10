@@ -1,6 +1,7 @@
 package conversation
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -42,7 +43,7 @@ func assertLabelledChat(t *testing.T, got pub_models.Chat) {
 
 func loadConv(t *testing.T, path string) pub_models.Chat {
 	t.Helper()
-	c, err := chat.FromPath(path)
+	c, err := chat.FromPath(context.Background(), path)
 	if err != nil {
 		t.Fatalf("FromPath(%q): %v", path, err)
 	}
@@ -231,7 +232,9 @@ func Test_e2e_chat_list_rebuild_mirrors_title(t *testing.T) {
 		t.Fatalf("read-only chat list must not persist the cache, stat err=%v", err)
 	}
 
-	runQuery(t, "-r -cm test q rebuild trigger")
+	// RunOne's capture left os.Stdout closed; a reply that cannot be written
+	// fails the run, so this query gets streams of its own.
+	runQueryCaptured(t, "-r -cm test q rebuild trigger")
 
 	rows := readIndexRows(t, confDir)
 	if rows["labelled"].Title != "T" || rows["labelled"].Summary != "S" {

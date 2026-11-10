@@ -9,6 +9,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/vendors"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
@@ -199,7 +200,7 @@ func (r SourceReader) Read(ctx context.Context, cache vendors.SourceCache, sourc
 		return true
 	})
 	if err != nil {
-		return pub_models.Chat{}, fmt.Errorf("scan jsonl %q: %w", absPath, err)
+		return pub_models.Chat{}, diag.Errorf("scan jsonl %q: %w", absPath, err)
 	}
 
 	// Post-process: normalize Claude Code's parallel/interleaved tool call

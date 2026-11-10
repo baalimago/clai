@@ -22,7 +22,7 @@ const maxSilencePeakDB = -1
 // threshold above it, so silencedetect separates a quiet room from speech
 // (architecture/audio.md, capture configuration).
 func calibrateText(ctx context.Context, r capture.Recorder, window time.Duration) (string, error) {
-	previous, err := loadCaptureConfig()
+	previous, err := loadCaptureConfig(ctx)
 	if err != nil {
 		return "", err
 	}

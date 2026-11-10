@@ -9,6 +9,8 @@ import (
 	"text/tabwriter"
 
 	"github.com/baalimago/clai/internal"
+	"github.com/baalimago/clai/internal/diag"
+	"github.com/baalimago/clai/internal/runenv"
 	"github.com/baalimago/go_away_boilerplate/pkg/cmd"
 )
 
@@ -43,14 +45,14 @@ Examples:
   clai help query`,
 	}
 	cmds["help"] = c
-	c.OnRun = func(context.Context, *internal.Command) error {
+	c.OnRun = func(ctx context.Context, _ *internal.Command) error {
 		all := maps.Clone(cmds)
 		if _, ok := all["completion"]; !ok {
 			all["completion"] = cmd.NewCompletionCommand("clai")
 		}
-		_, err := fmt.Printf(usage, commandTable(all))
+		_, err := fmt.Fprintf(runenv.From(ctx).Stdout(), usage, commandTable(all))
 		if err != nil {
-			return fmt.Errorf("print usage: %w", err)
+			return diag.Errorf("print usage: %w", err)
 		}
 		return nil
 	}
@@ -62,6 +64,18 @@ func commandTable(cmds map[string]cmd.Command) string {
 	w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
 	for _, name := range slices.Sorted(maps.Keys(cmds)) {
 		fmt.Fprintf(w, "\t%v\t%v\n", name, cmds[name].Describe())
+	}
+	w.Flush()
+	return b.String()
+}
+
+// subsystemTable is the usage's table of subsystems: the name LOG_LEVEL
+// takes and what the subsystem reports.
+func subsystemTable(subsystems []runenv.Subsystem) string {
+	var b strings.Builder
+	w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
+	for _, subsystem := range subsystems {
+		fmt.Fprintf(w, "\t%v\t%v\n", subsystem.Name, subsystem.Purpose)
 	}
 	w.Flush()
 	return b.String()

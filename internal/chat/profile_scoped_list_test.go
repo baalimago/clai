@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -18,7 +19,7 @@ func TestReadChatIndex_DoesNotDropDirScopedChatsWhenGlobalScopeHasSameProfile(t 
 			{Role: "user", Content: "Hello B"},
 		},
 	}
-	if err := Save(convDir, dirScoped); err != nil {
+	if err := Save(context.Background(), convDir, dirScoped); err != nil {
 		t.Fatalf("Save(dirScoped): %v", err)
 	}
 
@@ -30,11 +31,11 @@ func TestReadChatIndex_DoesNotDropDirScopedChatsWhenGlobalScopeHasSameProfile(t 
 			{Role: "user", Content: "Hello C"},
 		},
 	}
-	if err := Save(convDir, global); err != nil {
+	if err := Save(context.Background(), convDir, global); err != nil {
 		t.Fatalf("Save(global): %v", err)
 	}
 
-	rows, err := readChatIndex(convDir)
+	rows, err := readChatIndex(context.Background(), convDir)
 	if err != nil {
 		t.Fatalf("readChatIndex: %v", err)
 	}

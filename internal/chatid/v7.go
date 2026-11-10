@@ -3,8 +3,9 @@ package chatid
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"fmt"
 	"time"
+
+	"github.com/baalimago/clai/internal/diag"
 )
 
 // New returns a UUIDv7-formatted chat id.
@@ -23,7 +24,7 @@ func New() (string, error) {
 	b[5] = byte(tsMillis)
 
 	if _, err := rand.Read(b[6:]); err != nil {
-		return "", fmt.Errorf("read random bytes: %w", err)
+		return "", diag.Errorf("read random bytes: %w", err)
 	}
 
 	b[6] = (b[6] & 0x0f) | 0x70

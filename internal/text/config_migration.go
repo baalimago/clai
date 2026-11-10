@@ -1,12 +1,15 @@
 package text
 
 import (
+	"context"
 	"fmt"
 	"os"
 
+	"github.com/baalimago/clai/internal/runenv"
+
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/internal/vendors/openai"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
 type oldChatConfig struct {
@@ -25,7 +28,7 @@ type oldChatConfig struct {
 // reading + copying the fields to the new text.Configrations struct. Then write the
 // file as textConfig. For the remaining fields, create vendor specific gpt4TurboPreview
 // struct and write that to gpt4TurboPreview.json.
-func MigrateOldChatConfig(configDirPath string) error {
+func MigrateOldChatConfig(ctx context.Context, configDirPath string) error {
 	oldChatConfigPath := fmt.Sprintf("%v/chatConfig.json", configDirPath)
 	if _, err := os.Stat(oldChatConfigPath); os.IsNotExist(err) {
 		// Nothing to migrate
@@ -34,9 +37,9 @@ func MigrateOldChatConfig(configDirPath string) error {
 	var oldConf oldChatConfig
 	err := utils.ReadAndUnmarshal(oldChatConfigPath, &oldConf)
 	if err != nil {
-		return fmt.Errorf("failed to unmarshal old photo config: %w", err)
+		return diag.Errorf("failed to unmarshal old photo config: %w", err)
 	}
-	ancli.PrintOK("migrating old chat config to new format in textConfg.json\n")
+	runenv.Noticef(ctx, runenv.SubsystemConfig, "migrating old chat config to new format in textConfg.json\n")
 	migratedTextConfig := Configurations{
 		Model:        oldConf.Model,
 		SystemPrompt: oldConf.SystemPrompt,
@@ -44,11 +47,11 @@ func MigrateOldChatConfig(configDirPath string) error {
 
 	err = os.Remove(oldChatConfigPath)
 	if err != nil {
-		return fmt.Errorf("failed to remove old chatConfig: %w", err)
+		return diag.Errorf("failed to remove old chatConfig: %w", err)
 	}
 	err = utils.CreateFile(fmt.Sprintf("%v/textConfig.json", configDirPath), &migratedTextConfig)
 	if err != nil {
-		return fmt.Errorf("failed to write new text config: %w", err)
+		return diag.Errorf("failed to write new text config: %w", err)
 	}
 
 	migratedChatgptConfig := openai.ChatGPT{
@@ -63,7 +66,7 @@ func MigrateOldChatConfig(configDirPath string) error {
 
 	err = utils.CreateFile(fmt.Sprintf("%v/openai_gpt_%v.json", configDirPath, oldConf.Model), &migratedChatgptConfig)
 	if err != nil {
-		return fmt.Errorf("failed to write gpt4 turbo preview config: %w", err)
+		return diag.Errorf("failed to write gpt4 turbo preview config: %w", err)
 	}
 	return nil
 }

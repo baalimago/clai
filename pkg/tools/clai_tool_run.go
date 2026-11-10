@@ -14,6 +14,7 @@ import (
 	"sync"
 	"unicode"
 
+	"github.com/baalimago/clai/internal/diag"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -139,7 +140,7 @@ func (t *claiRunTool) Call(input pub_models.Input) (string, error) {
 	// Validate and parse input arguments
 	argsSplit, err := t.setupFlags(input)
 	if err != nil {
-		return "", fmt.Errorf("failed to setup automatic clai run flags: %w", err)
+		return "", diag.Errorf("failed to setup automatic clai run flags: %w", err)
 	}
 
 	// Generate unique identifier for this run
@@ -148,7 +149,7 @@ func (t *claiRunTool) Call(input pub_models.Input) (string, error) {
 	// Create temporary files for stdout and stderr with run ID
 	stdoutFile, stderrFile, err := createTempOutputFiles(runID)
 	if err != nil {
-		return "", fmt.Errorf("failed to create temporary output files: %w", err)
+		return "", diag.Errorf("failed to create temporary output files: %w", err)
 	}
 
 	// Create command with environment configuration
@@ -182,7 +183,7 @@ func (t *claiRunTool) Call(input pub_models.Input) (string, error) {
 		process.exitCode = -1
 		stdoutFile.Close()
 		stderrFile.Close()
-		return "", fmt.Errorf("failed to start clai process: %w", err)
+		return "", diag.Errorf("failed to start clai process: %w", err)
 	}
 
 	// Spawn goroutine to wait for process completion and close files
@@ -227,14 +228,14 @@ func createTempOutputFiles(runID string) (*os.File, *os.File, error) {
 	stdoutPath := workerLogPath(runID, "stdout")
 	stdoutFile, err := os.Create(stdoutPath)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create stdout file: %w", err)
+		return nil, nil, diag.Errorf("failed to create stdout file: %w", err)
 	}
 
 	stderrPath := workerLogPath(runID, "stderr")
 	stderrFile, err := os.Create(stderrPath)
 	if err != nil {
 		stdoutFile.Close()
-		return nil, nil, fmt.Errorf("failed to create stderr file: %w", err)
+		return nil, nil, diag.Errorf("failed to create stderr file: %w", err)
 	}
 
 	return stdoutFile, stderrFile, nil

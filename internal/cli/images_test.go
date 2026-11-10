@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -111,7 +112,7 @@ func TestConfig_ImageKeysDefaults(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(confDir, "conversations", "assets")); !os.IsNotExist(err) {
 		t.Fatalf("a text-only query touched the asset store: %v", err)
 	}
-	if _, err := photo.PreviousQueryImage(confDir); !errors.Is(err, photo.ErrNoPreviousImage) {
+	if _, err := photo.PreviousQueryImage(context.Background(), confDir); !errors.Is(err, photo.ErrNoPreviousImage) {
 		t.Fatalf("a text-only query left an image: %v", err)
 	}
 }

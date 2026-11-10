@@ -9,36 +9,38 @@ import (
 	"strings"
 
 	"github.com/baalimago/clai/internal"
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/profile"
+	"github.com/baalimago/clai/internal/runenv"
 	"github.com/baalimago/clai/internal/utils"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/cmd"
 )
 
 // List prints all static profiles from <UserConfigDir>/.clai/profiles.
-func List() error { return list(CommandDeps{}) }
+func List(ctx context.Context) error { return list(ctx, CommandDeps{}) }
 
 // list is List with the command's checker environment, so a profile the
 // checker refuses is named instead of listed as healthy.
-func list(deps CommandDeps) error {
+func list(ctx context.Context, deps CommandDeps) error {
+	out := deps.withEnv(ctx).Out
 	configDir, err := utils.GetClaiConfigDir()
 	if err != nil {
-		return fmt.Errorf("failed to get clai config dir: %w", err)
+		return diag.Errorf("failed to get clai config dir: %w", err)
 	}
 
 	profilesDir := filepath.Join(configDir, "profiles")
 	if _, err := os.Stat(profilesDir); os.IsNotExist(err) {
-		ancli.Warnf("no profiles directory found at %s\n", profilesDir)
+		runenv.Warnf(ctx, runenv.SubsystemProfiles, "no profiles directory found at %s", profilesDir)
 		return nil
 	}
 
 	files, err := os.ReadDir(profilesDir)
 	if err != nil {
-		return fmt.Errorf("failed to read profiles directory: %w", err)
+		return diag.Errorf("failed to read profiles directory: %w", err)
 	}
 
 	if len(files) == 0 {
-		ancli.Warnf("no profiles found in %s\n", profilesDir)
+		runenv.Warnf(ctx, runenv.SubsystemProfiles, "no profiles found in %s", profilesDir)
 		return nil
 	}
 
@@ -72,16 +74,16 @@ func list(deps CommandDeps) error {
 
 		body, err := os.ReadFile(fullPath)
 		if err != nil {
-			fmt.Printf("Cannot read %s: %v. Explain it with: clai profiles validate %s\n", fullPath, err, fullPath)
+			runenv.Warnf(ctx, runenv.SubsystemProfiles, "Cannot read %s: %v. Explain it with: clai profiles validate %s", fullPath, err, fullPath)
 			continue
 		}
 		findings, err := profile.Validate(body, profile.File, env)
 		if err != nil {
-			fmt.Printf("Cannot read %s: %v. Explain it with: clai profiles validate %s\n", fullPath, err, fullPath)
+			runenv.Warnf(ctx, runenv.SubsystemProfiles, "Cannot read %s: %v. Explain it with: clai profiles validate %s", fullPath, err, fullPath)
 			continue
 		}
 		if findings.Failed(profile.File) {
-			fmt.Printf("Cannot read %s: %s. Explain it with: clai profiles validate %s\n",
+			runenv.Warnf(ctx, runenv.SubsystemProfiles, "Cannot read %s: %s. Explain it with: clai profiles validate %s",
 				fullPath, strings.Join(findings.Problems(profile.File), "; "), fullPath)
 			continue
 		}
@@ -91,7 +93,7 @@ func list(deps CommandDeps) error {
 			// A file clai cannot read is named with the command that
 			// explains it: listing only the readable ones hides a profile
 			// that will never run.
-			fmt.Printf("Cannot read %s: %v. Explain it with: clai profiles validate %s\n", fullPath, err, fullPath)
+			runenv.Warnf(ctx, runenv.SubsystemProfiles, "Cannot read %s: %v. Explain it with: clai profiles validate %s", fullPath, err, fullPath)
 			continue
 		}
 		p.file = f.Name()
@@ -118,7 +120,7 @@ func list(deps CommandDeps) error {
 		if p.Audio != nil && p.Audio.Model != "" {
 			audio = fmt.Sprintf("Audio model: %s\n", p.Audio.Model)
 		}
-		fmt.Printf(
+		fmt.Fprintf(out,
 			"Name: %s\nModel: %s\nTools: %v\n%s%sFirst sentence prompt: %s\n---\n",
 			p.Name,
 			p.Model,
@@ -131,7 +133,7 @@ func list(deps CommandDeps) error {
 	}
 
 	if validCount == 0 {
-		ancli.Warnf("no valid profiles found in %s\n", profilesDir)
+		runenv.Warnf(ctx, runenv.SubsystemProfiles, "no valid profiles found in %s", profilesDir)
 	}
 
 	return nil
@@ -194,9 +196,6 @@ Share your own profile on the Hub with 'clai profiles publish <name>', after
 
 // Command builds the profiles command tree.
 func Command(deps CommandDeps) *internal.Command {
-	if deps.Out == nil {
-		deps.Out = os.Stdout
-	}
 	c := &internal.Command{
 		Name: "profiles",
 		Desc: "List, validate, install, update, trust and publish profiles; print the schema",
@@ -216,11 +215,11 @@ Examples:
 	nonInteractive := &internal.NonInteractiveFlag{}
 	c.Register = nonInteractive.Register
 	c.NonInteractive = nonInteractive
-	c.OnRun = func(_ context.Context, c *internal.Command) error {
+	c.OnRun = func(ctx context.Context, c *internal.Command) error {
 		if args := c.Args(); len(args) > 1 {
 			return fmt.Errorf("unknown profiles subcommand: %q", args[1])
 		}
-		return list(deps)
+		return list(ctx, deps)
 	}
 	profilesList := &internal.Command{
 		Name: "list",
@@ -230,8 +229,8 @@ Examples:
 Examples:
   clai profiles list`,
 	}
-	profilesList.OnRun = func(_ context.Context, _ *internal.Command) error {
-		return list(deps)
+	profilesList.OnRun = func(ctx context.Context, _ *internal.Command) error {
+		return list(ctx, deps)
 	}
 	c.Subs = map[string]cmd.Command{
 		"list":     profilesList,

@@ -90,9 +90,9 @@ func TestQuerier_ProducedAfterFailedRun(t *testing.T) {
 			Raw: true,
 			out: &strings.Builder{},
 			tooling: tooling{
-				run: map[string]pub_models.LLMTool{
+				offered: offeredTools(map[string]pub_models.LLMTool{
 					"echo": loopTestTool{name: "echo", out: "ran"},
-				},
+				}),
 			},
 			Model: &MockQuerier{
 				streamFn: func(context.Context, pub_models.Chat) (chan models.CompletionEvent, error) {

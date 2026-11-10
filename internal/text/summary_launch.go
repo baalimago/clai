@@ -67,7 +67,7 @@ func (q *Querier[C]) launchSummary(ctx context.Context) {
 	if run.interrupt == nil {
 		run.interrupt, run.release = signalInterrupt()
 	}
-	traceSummaryf("launching in-flight summary chat_id=%q model=%q", req.Chat.ID, model)
+	traceSummaryf(ctx, "launching in-flight summary chat_id=%q model=%q", req.Chat.ID, model)
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -165,17 +165,17 @@ func (q *Querier[C]) awaitSummaryResult(res summaryResult) error {
 
 // applySummary stamps a summarizer result onto chat unless it failed, was
 // empty, or carries no title.
-func applySummary(res summaryResult, chat *pub_models.Chat) {
+func applySummary(ctx context.Context, res summaryResult, chat *pub_models.Chat) {
 	if res.err != nil {
-		traceSummaryf("in-flight summary failed chat_id=%q: %v", chat.ID, res.err)
+		traceSummaryf(ctx, "in-flight summary failed chat_id=%q: %v", chat.ID, res.err)
 		return
 	}
 	if res.summary.Summary == "" {
-		traceSummaryf("in-flight summary empty chat_id=%q", chat.ID)
+		traceSummaryf(ctx, "in-flight summary empty chat_id=%q", chat.ID)
 		return
 	}
 	res.summary.ApplyTo(chat)
-	traceSummaryf("in-flight summary applied chat_id=%q title=%q", chat.ID, res.summary.Title)
+	traceSummaryf(ctx, "in-flight summary applied chat_id=%q title=%q", chat.ID, res.summary.Title)
 }
 
 // summaryWait classifies how a bounded wait for the in-flight summarizer ended.
@@ -233,16 +233,16 @@ func (q *Querier[C]) joinSummary(chat *pub_models.Chat) {
 	}
 	defer q.abandonSummary()
 	if q.summaryReady != nil {
-		applySummary(*q.summaryReady, chat)
+		applySummary(q.diagContext(), *q.summaryReady, chat)
 		return
 	}
 	res, wait := q.waitForSummary(run)
 	switch wait {
 	case summaryWaitResult:
-		applySummary(res, chat)
+		applySummary(q.diagContext(), res, chat)
 	case summaryWaitTimeout:
-		traceSummaryf("in-flight summary abandoned after %v chat_id=%q", q.summaryJoinBound(), chat.ID)
+		traceSummaryf(q.diagContext(), "in-flight summary abandoned after %v chat_id=%q", q.summaryJoinBound(), chat.ID)
 	case summaryWaitInterrupt:
-		traceSummaryf("in-flight summary abandoned on interrupt chat_id=%q", chat.ID)
+		traceSummaryf(q.diagContext(), "in-flight summary abandoned on interrupt chat_id=%q", chat.ID)
 	}
 }

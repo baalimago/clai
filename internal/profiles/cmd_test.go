@@ -2,12 +2,16 @@ package profiles
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/internal/runenv"
+	"github.com/baalimago/clai/internal/testenv/procenv"
 	"github.com/baalimago/clai/internal/utils"
+	"github.com/baalimago/clai/pkg/diagnostic"
 )
 
 func TestRunProfilesList_NoProfilesDir(t *testing.T) {
@@ -25,27 +29,14 @@ func TestRunProfilesList_NoProfilesDir(t *testing.T) {
 		t.Fatalf("expected non-empty config dir")
 	}
 
-	var buf bytes.Buffer
-	origStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	done := make(chan struct{})
-	go func() {
-		var out bytes.Buffer
-		_, _ = out.ReadFrom(r)
-		buf.Write(out.Bytes())
-		close(done)
-	}()
-
-	err = List()
-	w.Close()
-	os.Stdout = origStdout
-	<-done
-
+	stdout, stderr, err := listOutput()
 	if err != nil {
 		t.Fatalf("expected nil error, got: %v", err)
 	}
+	if stdout != "" {
+		t.Fatalf("expected an empty listing, got: %s", stdout)
+	}
+	buf := bytes.NewBufferString(stderr)
 
 	if !bytes.Contains(buf.Bytes(), []byte("no profiles directory")) {
 		t.Fatalf("expected warning about missing profiles directory, got: %s", buf.String())
@@ -64,27 +55,14 @@ func TestRunProfilesList_EmptyProfilesDir(t *testing.T) {
 
 	t.Setenv("CLAI_CONFIG_DIR", claiDir)
 
-	var buf bytes.Buffer
-	origStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	done := make(chan struct{})
-	go func() {
-		var out bytes.Buffer
-		_, _ = out.ReadFrom(r)
-		buf.Write(out.Bytes())
-		close(done)
-	}()
-
-	err := List()
-	w.Close()
-	os.Stdout = origStdout
-	<-done
-
+	stdout, stderr, err := listOutput()
 	if err != nil {
 		t.Fatalf("expected nil error, got: %v", err)
 	}
+	if stdout != "" {
+		t.Fatalf("expected an empty listing, got: %s", stdout)
+	}
+	buf := bytes.NewBufferString(stderr)
 
 	if !bytes.Contains(buf.Bytes(), []byte("no profiles found")) {
 		t.Fatalf("expected warning about no profiles, got: %s", buf.String())
@@ -92,7 +70,7 @@ func TestRunProfilesList_EmptyProfilesDir(t *testing.T) {
 }
 
 func TestList_Succeeds(t *testing.T) {
-	if err := List(); err != nil {
+	if err := List(context.Background()); err != nil {
 		t.Fatalf("expected nil error, got: %v", err)
 	}
 }
@@ -177,26 +155,20 @@ func TestRunProfilesList_RehydratesLegacyEscapedPrompt(t *testing.T) {
 func listStdout(t *testing.T, claiDir string) string {
 	t.Helper()
 	t.Setenv("CLAI_CONFIG_DIR", claiDir)
-	origStdout := os.Stdout
-	r, w, err := os.Pipe()
+	stdout, _, err := listOutput()
 	if err != nil {
-		t.Fatalf("pipe: %v", err)
+		t.Fatalf("List: %v", err)
 	}
-	os.Stdout = w
-	var buf bytes.Buffer
-	done := make(chan struct{})
-	go func() {
-		_, _ = buf.ReadFrom(r)
-		close(done)
-	}()
-	listErr := List()
-	_ = w.Close()
-	os.Stdout = origStdout
-	<-done
-	if listErr != nil {
-		t.Fatalf("List: %v", listErr)
-	}
-	return buf.String()
+	return stdout
+}
+
+// listOutput runs List over CLAI_CONFIG_DIR, returning its
+// listing and its diagnostics.
+func listOutput() (string, string, error) {
+	var stdout, stderr bytes.Buffer
+	ctx := runenv.With(context.Background(), procenv.WithStreams(strings.NewReader(""), &stdout, &stderr, diagnostic.LevelWarn))
+	err := List(ctx)
+	return stdout.String(), stderr.String(), err
 }
 
 func TestRunProfilesList_showsTheAudioModel(t *testing.T) {

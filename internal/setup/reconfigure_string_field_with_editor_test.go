@@ -37,7 +37,7 @@ func TestUnescapedFieldEdit_ShellContext(t *testing.T) {
 	t.Setenv("EDITOR", editor)
 
 	cfg := config{name: "prof.json", filePath: fp}
-	if err := actionReconfigureStringFieldWithEditor(cfg, "shell_context"); err != nil {
+	if err := actionReconfigureStringFieldWithEditor(procCtx(), cfg, "shell_context"); err != nil {
 		t.Fatalf("failed to edit shell-context: %v", err)
 	}
 
@@ -86,7 +86,7 @@ func TestUnescapedFieldEdit_RepairsLegacyEscapedShellContextTemplate(t *testing.
 	}
 	t.Setenv("EDITOR", editor)
 
-	if err := actionReconfigureStringFieldWithEditor(config{name: "default.json", filePath: fp}, "template"); err != nil {
+	if err := actionReconfigureStringFieldWithEditor(procCtx(), config{name: "default.json", filePath: fp}, "template"); err != nil {
 		t.Fatalf("failed to edit template: %v", err)
 	}
 
@@ -118,7 +118,7 @@ func TestUnescapedFieldEdit_MissingField(t *testing.T) {
 		t.Fatalf("failed to write profile: %v", err)
 	}
 
-	err = actionReconfigureStringFieldWithEditor(config{name: "prof.json", filePath: fp}, "shell-context")
+	err = actionReconfigureStringFieldWithEditor(procCtx(), config{name: "prof.json", filePath: fp}, "shell-context")
 	if err == nil || !strings.Contains(err.Error(), "missing string field") {
 		t.Fatalf("expected missing field error, got %v", err)
 	}
@@ -135,7 +135,7 @@ func TestUnescapedFieldEdit_NonStringField(t *testing.T) {
 		t.Fatalf("failed to write profile: %v", err)
 	}
 
-	err = actionReconfigureStringFieldWithEditor(config{name: "prof.json", filePath: fp}, "shell-context")
+	err = actionReconfigureStringFieldWithEditor(procCtx(), config{name: "prof.json", filePath: fp}, "shell-context")
 	if err == nil || !strings.Contains(err.Error(), "not a string") {
 		t.Fatalf("expected non-string error, got %v", err)
 	}
@@ -163,7 +163,7 @@ func TestUnescapedFieldEdit_TemplateReadIsUnguarded(t *testing.T) {
 	}
 	t.Setenv("EDITOR", editor)
 
-	if err := actionReconfigureStringFieldWithEditor(config{name: "default.json", filePath: fp}, "template"); err != nil {
+	if err := actionReconfigureStringFieldWithEditor(procCtx(), config{name: "default.json", filePath: fp}, "template"); err != nil {
 		t.Fatalf("failed to edit template: %v", err)
 	}
 	updatedBytes, err := os.ReadFile(fp)

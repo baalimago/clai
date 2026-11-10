@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/look"
 )
 
@@ -271,7 +272,7 @@ func (r Resolver) authorize(ctx context.Context, t Target, digest string, summar
 		}
 		ok, err := r.Prompt(ctx, TrustPrompt{Target: t.String(), Digest: digest, Page: t.PageURL(r.HubBase), Summary: summary})
 		if err != nil {
-			return fmt.Errorf("ask to trust %s: %w", t, err)
+			return diag.Errorf("ask to trust %s: %w", t, err)
 		}
 		if !ok {
 			return &UntrustedError{Target: t.String(), Digest: digest, Asked: true}

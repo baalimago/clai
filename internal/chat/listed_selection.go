@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/baalimago/clai/internal/diag"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -28,11 +29,11 @@ var errIndexOutOfRange = errors.New("chat index out of range")
 func (cq *ChatHandler) listedChat(ctx context.Context, paginator *ChatIndexPaginator, idx int, foreign foreignSelection) (pub_models.Chat, error) {
 	allRows, byName, err := cq.buildChatListRows(ctx, paginator)
 	if err != nil {
-		return pub_models.Chat{}, fmt.Errorf("failed to build chat list rows: %w", err)
+		return pub_models.Chat{}, diag.Errorf("failed to build chat list rows: %w", err)
 	}
 	pr := prepareListRows(allRows, byName, "", nil, true)
 	if idx < 0 || idx >= len(pr.rows) {
-		return pub_models.Chat{}, fmt.Errorf("%w: %d not in 0..%d", errIndexOutOfRange, idx, len(pr.rows)-1)
+		return pub_models.Chat{}, diag.Errorf("%w: %d not in 0..%d", errIndexOutOfRange, idx, len(pr.rows)-1)
 	}
 	sel := pr.rows[idx]
 	if sel.Kind == chatRowGroup {
@@ -43,10 +44,10 @@ func (cq *ChatHandler) listedChat(ctx context.Context, paginator *ChatIndexPagin
 		sel = members[0]
 	}
 	if sel.Kind == chatRowNative {
-		return cq.getByID(sel.ChatID)
+		return cq.getByID(ctx, sel.ChatID)
 	}
 	if foreign == foreignRefuse {
-		return pub_models.Chat{}, fmt.Errorf("%w: %s session %q", ErrForeignRowSelected, sel.Source, sel.SourceID)
+		return pub_models.Chat{}, diag.Errorf("%w: %s session %q", ErrForeignRowSelected, sel.Source, sel.SourceID)
 	}
 	reader, err := pr.readerFor(sel)
 	if err != nil {
@@ -54,7 +55,7 @@ func (cq *ChatHandler) listedChat(ctx context.Context, paginator *ChatIndexPagin
 	}
 	ext, err := cq.readForeignChat(ctx, reader, sel.SourceID)
 	if err != nil {
-		return pub_models.Chat{}, fmt.Errorf("failed to read %s session %q: %w", sel.Source, sel.SourceID, err)
+		return pub_models.Chat{}, diag.Errorf("failed to read %s session %q: %w", sel.Source, sel.SourceID, err)
 	}
-	return cq.cloneForeignChat(ext)
+	return cq.cloneForeignChat(ctx, ext)
 }

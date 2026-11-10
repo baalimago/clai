@@ -5,12 +5,12 @@ package imagegentest
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"slices"
 	"sync"
 	"time"
 
 	"github.com/baalimago/clai/internal/asset"
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/imagegen"
 )
 
@@ -85,7 +85,7 @@ func (f *Fake) wait(ctx context.Context) error {
 		}
 	}
 	if err := ctx.Err(); err != nil {
-		return fmt.Errorf("fake image generator: %w", err)
+		return diag.Errorf("fake image generator: %w", err)
 	}
 	return nil
 }
@@ -98,7 +98,7 @@ func answer(images []imagegen.GeneratedImage) ([]imagegen.GeneratedImage, error)
 	for i, g := range images {
 		sniffed, err := asset.Sniff(g.Image.Data)
 		if err != nil {
-			return nil, fmt.Errorf("fake image %d: %w", i+1, err)
+			return nil, diag.Errorf("fake image %d: %w", i+1, err)
 		}
 		if sniffed != g.Image.MIME {
 			return nil, &asset.MIMEMismatchError{Declared: g.Image.MIME, Sniffed: sniffed}

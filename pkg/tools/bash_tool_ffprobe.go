@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os/exec"
 
+	"github.com/baalimago/clai/internal/diag"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -129,7 +130,7 @@ func (f FFProbeTool) Call(input pub_models.Input) (string, error) {
 	cmd := exec.Command("ffprobe", args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("failed to run ffprobe: %w, output: %v", err, string(output))
+		return "", diag.Errorf("failed to run ffprobe: %w, output: %v", err, string(output))
 	}
 
 	return string(output), nil

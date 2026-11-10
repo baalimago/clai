@@ -59,11 +59,11 @@ func TestRemoteProfileResolver(t *testing.T) {
 	}
 	_, _ = remoteProfileResolver(capture, "", strings.NewReader("y\n"), false)(t.Context(), "cchub:ada/bot")
 	t.Setenv("TTY", filepath.Join(t.TempDir(), "no-tty"))
-	if terminalAvailable() {
+	if terminalAvailable(os.Stdin, false) {
 		t.Fatal("terminalAvailable with no openable TTY = true")
 	}
 	t.Setenv("TTY", os.DevNull)
-	if terminalAvailable() {
+	if terminalAvailable(os.Stdin, false) {
 		t.Fatal("terminalAvailable with TTY=/dev/null = true")
 	}
 	if gotPrompt != nil {

@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/baalimago/clai/internal"
+	"github.com/baalimago/clai/internal/models"
+	"github.com/baalimago/clai/internal/runtally"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
@@ -319,5 +321,27 @@ func TestSetSummaryJoinTimeout_SetsTheBound(t *testing.T) {
 	}
 	if q.summaryJoinBound() != 3*time.Second {
 		t.Fatalf("bound = %v, want 3s", q.summaryJoinBound())
+	}
+}
+
+// TestSessionQuerierBuildFailureWithCleanTallyClose pins that a model that
+// cannot be built is the run's only error when the tally closes cleanly.
+func TestSessionQuerierBuildFailureWithCleanTallyClose(t *testing.T) {
+	scope, err := runtally.Open(fakeRunTallyEnv{}, t.TempDir())
+	if err != nil {
+		t.Fatalf("open tally: %v", err)
+	}
+	buildErr := errors.New("no querier for model")
+	session := &textSession{
+		conf:  &Configurations{Model: "nope"},
+		tally: scope,
+		build: func(context.Context, string) (models.Querier, error) { return nil, buildErr },
+	}
+	_, err = session.querier(context.Background())
+	if !errors.Is(err, buildErr) {
+		t.Fatalf("err = %v, want the build error", err)
+	}
+	if strings.Contains(err.Error(), "close subagent tally") {
+		t.Fatalf("err = %q, want no tally close error after a clean close", err.Error())
 	}
 }

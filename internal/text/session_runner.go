@@ -5,13 +5,17 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"time"
 
+	"github.com/baalimago/clai/internal/runenv"
+
+	"github.com/baalimago/clai/internal/diag"
+	"github.com/baalimago/clai/internal/interrupt"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/dimensions"
 	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
@@ -47,7 +51,7 @@ func (r *sessionRunner[C]) Run(ctx context.Context, session *QuerySession) (runE
 		return errors.New("run session: session is nil")
 	}
 	if err := r.querier.imageWiring().check(); err != nil {
-		return fmt.Errorf("run session: %w", err)
+		return diag.Errorf("run session: %w", err)
 	}
 	if r.recorder == nil {
 		r.recorder = noopCallUsageRecorder{}
@@ -83,7 +87,7 @@ func (r *sessionRunner[C]) Run(ctx context.Context, session *QuerySession) (runE
 	// and above the answer text.
 	defer func() {
 		if err := r.querier.drainMcpLogs(); err != nil {
-			ancli.Warnf("failed to flush mcp server logs: %v", err)
+			runenv.Warnf(ctx, runenv.SubsystemTextQuerier, "failed to flush mcp server logs: %v", err)
 		}
 	}()
 	// The finalizer writes below the window (cost, cache, and chat-index
@@ -109,16 +113,24 @@ func (r *sessionRunner[C]) Run(ctx context.Context, session *QuerySession) (runE
 	}()
 
 	if err := r.querier.setupImageGeneration(); err != nil {
-		return fmt.Errorf("set up image generation: %w", err)
+		return diag.Errorf("set up image generation: %w", err)
 	}
 
 	for stepIndex := 0; ; {
+		// A run whose context ended between steps, such as during a tool
+		// call, stops here with what it has.
+		if stopped := interrupt.Stopped(ctx); stopped != nil {
+			return stopped
+		}
 		stepResult, err := r.executeModelStep(ctx, session)
 		if err != nil {
 			if (session.PendingTextString() != "" && session.FinalAssistantText == "") || session.hasStepImages() {
 				session.FlushPendingTextToFinal()
 			}
-			return fmt.Errorf("run step %d: %w", stepIndex, err)
+			if _, stopped := errors.AsType[*interrupt.StoppedError](err); stopped {
+				return err
+			}
+			return diag.Errorf("run step %d: %w", stepIndex, err)
 		}
 		handedBack := r.querier.handedBackCalls(session, stepResult.ToolCalls)
 		if len(handedBack) > 0 {
@@ -127,7 +139,7 @@ func (r *sessionRunner[C]) Run(ctx context.Context, session *QuerySession) (runE
 			stepResult.EndedNormally = true
 		}
 		if err := r.querier.releaseStepText(stepResult.AssistantText, len(stepResult.ToolCalls) > 0); err != nil {
-			return fmt.Errorf("run step %d: %w", stepIndex, err)
+			return diag.Errorf("run step %d: %w", stepIndex, err)
 		}
 
 		completedCall := CompletedModelCall{
@@ -148,22 +160,28 @@ func (r *sessionRunner[C]) Run(ctx context.Context, session *QuerySession) (runE
 		// failure, not a recorder failure.
 		if err := r.recorder.Record(ctx, completedCall); err != nil {
 			if warnErr := r.querier.warnf("failed to record completed model call: %v", err); warnErr != nil {
-				return fmt.Errorf("report recorder failure: %w", warnErr)
+				return diag.Errorf("report recorder failure: %w", warnErr)
 			}
 		}
 
 		if len(stepResult.ToolCalls) > 0 {
+			if err := r.querier.closeStepReply(stepResult.AssistantText); err != nil {
+				return diag.Errorf("run step %d: %w", stepIndex, err)
+			}
 			r.querier.launchDeferredSummary(ctx)
 			if err := r.toolExecutor.ExecuteBatch(ctx, session, stepResult.ToolCalls); err != nil {
 				if errors.Is(err, io.EOF) {
 					return nil
 				}
-				return fmt.Errorf("execute tool step %d: %w", stepIndex, err)
+				if stopped := interrupt.Stopped(ctx); stopped != nil {
+					return stopped
+				}
+				return diag.Errorf("execute tool step %d: %w", stepIndex, err)
 			}
 			// Token check AFTER the batch so the chat order stays
 			// [assistant tool-call] [tool results] [handover user msg].
 			if _, err := r.stoploss.CheckContextBudget(ctx, r.querier.budgetModel(), session, stepResult.Usage); err != nil {
-				return fmt.Errorf("stoploss check step %d: %w", stepIndex, err)
+				return diag.Errorf("stoploss check step %d: %w", stepIndex, err)
 			}
 			stepIndex++
 			continue
@@ -179,16 +197,27 @@ func (r *sessionRunner[C]) Run(ctx context.Context, session *QuerySession) (runE
 			return &HandedBackError{Calls: handedBack}
 		}
 		if stepResult.StopRequested || stepResult.EndedNormally {
+			if !session.Produced() {
+				return errNoCompletion()
+			}
 			return nil
 		}
 		stepIndex++
 	}
 }
 
+// errNoCompletion reports a run whose model stream finished with no text,
+// no reasoning, no image and no tool call: an empty success is a failure
+// the user must hear about. An empty final answer after tool calls is not
+// one.
+func errNoCompletion() error {
+	return claierr.NewUnexpectedProviderResponse(http.StatusOK, []byte("the provider returned no completion: the stream finished without text, reasoning or a tool call"))
+}
+
 func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QuerySession) (ModelStepResult, error) {
 	q := r.querier
-	traceChatf("query start chat_id=%q messages=%d raw=%t should_save_reply=%t", session.Chat.ID, len(session.Chat.Messages), q.Raw, session.ShouldSaveReply)
-	traceChatf("query sending chat to stream completions chat_id=%q messages=%d", session.Chat.ID, len(session.Chat.Messages))
+	traceChatf(ctx, "query start chat_id=%q messages=%d raw=%t should_save_reply=%t", session.Chat.ID, len(session.Chat.Messages), q.Raw, session.ShouldSaveReply)
+	traceChatf(ctx, "query sending chat to stream completions chat_id=%q messages=%d", session.Chat.ID, len(session.Chat.Messages))
 	session.ResetPendingText()
 	q.imageProgressSince = time.Time{}
 
@@ -198,7 +227,12 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 	}
 	completionsChan, err := q.streamWithRetry(ctx, session, chatForModel)
 	if err != nil {
-		return ModelStepResult{}, fmt.Errorf("stream completions: %w", err)
+		// A request the run's own end cut short is the stop, not a failure
+		// of the provider.
+		if stopped := interrupt.Stopped(ctx); stopped != nil {
+			return ModelStepResult{}, stopped
+		}
+		return ModelStepResult{}, diag.Errorf("stream completions: %w", err)
 	}
 	defer q.stopImageProgress()
 
@@ -214,7 +248,7 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 		// Drain buffered MCP server logs before this event renders, so the log
 		// block joins the same frame as the reasoning or tool activity.
 		if err := q.drainMcpLogs(); err != nil {
-			return ModelStepResult{}, fmt.Errorf("drain mcp logs: %w", err)
+			return ModelStepResult{}, diag.Errorf("drain mcp logs: %w", err)
 		}
 		select {
 		case completion, ok := <-completionsChan:
@@ -238,6 +272,11 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 			}
 			if !ok {
 				q.closeReasoningIfOpen(ctx, session)
+				// A producer closes its stream without a word when the
+				// context ends; that is the stop, not a finished reply.
+				if stopped := interrupt.Stopped(ctx); stopped != nil {
+					return ModelStepResult{}, stopped
+				}
 				if len(result.ToolCalls) == 0 {
 					if err := q.prepareFinalAnswerPop(); err != nil {
 						return ModelStepResult{}, err
@@ -269,6 +308,10 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 					return ModelStepResult{}, err
 				}
 			case error:
+				if stopped := interrupt.Stopped(ctx); stopped != nil && !errors.Is(cast, io.EOF) {
+					q.closeReasoningIfOpen(ctx, session)
+					return ModelStepResult{}, stopped
+				}
 				if errors.Is(cast, context.Canceled) || errors.Is(cast, io.EOF) {
 					q.closeReasoningIfOpen(ctx, session)
 					if len(result.ToolCalls) == 0 {
@@ -279,7 +322,7 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 					result.Usage = q.currentTokenUsage()
 					return result, nil
 				}
-				return ModelStepResult{}, fmt.Errorf("completion stream error: %w", cast)
+				return ModelStepResult{}, diag.Errorf("completion stream error: %w", cast)
 			case models.NoopEvent:
 			case models.ImageEvent:
 				q.closeReasoningIfOpen(ctx, session)
@@ -294,6 +337,14 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 					continue
 				}
 				session.SawAnyText = true
+				if q.json.active() {
+					if !q.debug && !q.structuredOutput {
+						_ = q.jsonTranscript().ReasoningDelta(cast.Content)
+					}
+					q.reasoningActive = true
+					q.appendReasoning(cast.Content)
+					continue
+				}
 				if !q.reasoningActive {
 					if q.usesActivityViewport() {
 						q.ensureActivityViewport()
@@ -310,7 +361,7 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 				if q.usesActivityViewport() {
 					q.activityViewport.AppendReasoning(cast.Content)
 					if err := q.activityViewport.Render(q.out); err != nil {
-						return ModelStepResult{}, fmt.Errorf("render activity viewport: %w", err)
+						return ModelStepResult{}, diag.Errorf("render activity viewport: %w", err)
 					}
 				} else if !q.debug && !q.structuredOutput {
 					w := q.transcriptOut()
@@ -341,7 +392,7 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 				return result, nil
 			case nil:
 				if q.debug {
-					ancli.PrintWarn("received nil completion event, which is slightly weird, but not necessarily an error")
+					runenv.Warnf(ctx, runenv.SubsystemTextQuerier, "received nil completion event, which is slightly weird, but not necessarily an error")
 				}
 			default:
 				return ModelStepResult{}, fmt.Errorf("unknown completion type: %v", completion)
@@ -362,25 +413,26 @@ func (r *sessionRunner[C]) executeModelStep(ctx context.Context, session *QueryS
 			// Drain it now so the elevated block renders live instead of
 			// waiting for the next session event.
 			if err := q.drainMcpLogs(); err != nil {
-				return ModelStepResult{}, fmt.Errorf("drain mcp logs: %w", err)
+				return ModelStepResult{}, diag.Errorf("drain mcp logs: %w", err)
 			}
 		case res := <-r.querier.summaryResultChannel():
 			// The chat-list label landed while the iteration streams: take it
 			// now so a loop row can show it and the finalizer's join does not
 			// wait for a result that already exists.
 			if err := r.querier.awaitSummaryResult(res); err != nil {
-				return ModelStepResult{}, fmt.Errorf("apply in-flight summary: %w", err)
+				return ModelStepResult{}, diag.Errorf("apply in-flight summary: %w", err)
 			}
 		case <-ctx.Done():
+			// The run's context ended mid-stream: a signal, the caller's
+			// cancel or a deadline. What arrived stays in the session for
+			// Run to keep and persist; the step ends as stopped, never as a
+			// finished reply.
 			q.stopImageProgress()
 			q.closeReasoningIfOpen(ctx, session)
-			result.StopRequested = true
-			result.AssistantText = session.PendingTextString()
-			result.Usage = q.currentTokenUsage()
 			if err := q.prepareFinalAnswerPop(); err != nil {
-				return ModelStepResult{}, err
+				return ModelStepResult{}, errors.Join(interrupt.Stopped(ctx), err)
 			}
-			return result, nil
+			return ModelStepResult{}, interrupt.Stopped(ctx)
 		}
 	}
 }
@@ -401,11 +453,11 @@ func (r *sessionRunner[C]) applyResize(d dimensions.Dimensions) error {
 	if q.activityViewport != nil {
 		q.stopImageProgress()
 		if err := q.drainMcpLogs(); err != nil {
-			return fmt.Errorf("drain mcp logs after resize: %w", err)
+			return diag.Errorf("drain mcp logs after resize: %w", err)
 		}
 		q.activityViewport.Resize(d.Width, d.Height)
 		if err := q.activityViewport.Render(q.out); err != nil {
-			return fmt.Errorf("render activity viewport after resize: %w", err)
+			return diag.Errorf("render activity viewport after resize: %w", err)
 		}
 	}
 	return nil
@@ -426,7 +478,7 @@ func (r *sessionRunner[C]) drainPendingResizes() error {
 				return nil
 			}
 			if err := r.applyResize(d); err != nil {
-				return fmt.Errorf("drain resize: %w", err)
+				return diag.Errorf("drain resize: %w", err)
 			}
 		default:
 			return nil

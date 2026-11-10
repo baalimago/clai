@@ -290,7 +290,7 @@ func TestCalibrationStrictFailureHasNoStdout(t *testing.T) {
 func TestToolBridgePropagatesCalibrationError(t *testing.T) {
 	prev := pkgtools.AudioTranscribeEngine
 	t.Cleanup(func() { pkgtools.AudioTranscribeEngine = prev })
-	pkgtools.AudioTranscribeEngine = func(filePath, outputFormat string) (string, error) {
+	pkgtools.AudioTranscribeEngine = func(_ context.Context, filePath, outputFormat string) (string, error) {
 		return "", &UnresolvedError{Chunk: 1, Labels: []UnmappedLabel{{Label: "Q", Speech: 5 * time.Second, Reason: reasonNoSample}}}
 	}
 	got, err := pkgtools.AudioTranscribe.Call(map[string]any{"file_path": "meeting.wav"})

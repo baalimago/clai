@@ -2,8 +2,9 @@ package sync
 
 import (
 	"context"
-	"fmt"
 	"slices"
+
+	"github.com/baalimago/clai/internal/diag"
 )
 
 // RemoteStatus is what the server has that this machine has not pulled.
@@ -58,7 +59,7 @@ func (e *Engine) Status(ctx context.Context, store Store, opts PlanOptions) (Sta
 		e.report(Progress{Store: store, Phase: PhaseDiscovering})
 		pending, err := e.Hooks.Pending(ctx, e.ConfDir)
 		if err != nil {
-			return Status{}, fmt.Errorf("look for conversations in other tools: %w", err)
+			return Status{}, diag.Errorf("look for conversations in other tools: %w", err)
 		}
 		out.Imports = &ImportPreview{Conversations: pending}
 	}

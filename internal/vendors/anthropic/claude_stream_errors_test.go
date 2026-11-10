@@ -11,7 +11,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/pkg/claierr"
+
 	"github.com/baalimago/clai/internal/models"
+	"github.com/baalimago/clai/internal/testenv/procenv"
+	"github.com/baalimago/clai/pkg/diagnostic"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -101,7 +105,7 @@ func TestClaudeHandleTokenErrors(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := c.handleToken(bufio.NewReader(strings.NewReader(tc.rest)), tc.token)
+			got := c.handleToken(context.Background(), bufio.NewReader(strings.NewReader(tc.rest)), tc.token)
 			if _, ok := got.(error); !ok {
 				t.Fatalf("handleToken(%q) = %#v, want an error", tc.token, got)
 			}
@@ -110,27 +114,32 @@ func TestClaudeHandleTokenErrors(t *testing.T) {
 }
 
 func TestClaudeHandleTokenDebugAndNoop(t *testing.T) {
-	c := &Claude{debug: true}
-	got := c.handleToken(bufio.NewReader(strings.NewReader("\n")), "event: ping")
+	c := &Claude{}
+	var diagnostics bytes.Buffer
+	ctx := procenv.Diagnostics(context.Background(), &diagnostics, diagnostic.LevelDebug)
+	got := c.handleToken(ctx, bufio.NewReader(strings.NewReader("\n")), "event: ping")
 	if _, ok := got.(models.NoopEvent); !ok {
 		t.Fatalf("handleToken(event: ping) = %#v, want NoopEvent", got)
 	}
-	if got := c.handleToken(bufio.NewReader(strings.NewReader("\n")), "event: message_stop"); !errors.Is(got.(error), io.EOF) {
+	if got := c.handleToken(ctx, bufio.NewReader(strings.NewReader("\n")), "event: message_stop"); !errors.Is(got.(error), io.EOF) {
 		t.Fatalf("handleToken(event: message_stop) = %#v, want io.EOF", got)
+	}
+	if !strings.Contains(diagnostics.String(), "eventType: 'ping'") {
+		t.Fatalf("debug diagnostics = %q, want the ping event traced", diagnostics.String())
 	}
 }
 
 func TestClaudeStringFromDeltaTokenErrors(t *testing.T) {
 	c := &Claude{}
-	if _, err := c.stringFromDeltaToken("notdata value"); err == nil {
+	if _, err := c.stringFromDeltaToken(context.Background(), "notdata value"); err == nil {
 		t.Fatal("expected an error for a missing data: prefix")
 	}
-	if _, err := c.stringFromDeltaToken("data: {broken"); err == nil {
+	if _, err := c.stringFromDeltaToken(context.Background(), "data: {broken"); err == nil {
 		t.Fatal("expected an error for undecodable delta JSON")
 	}
 
-	debug := &Claude{debug: true}
-	delta, err := debug.stringFromDeltaToken(`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hi"}}`)
+	debugCtx := procenv.Diagnostics(context.Background(), io.Discard, diagnostic.LevelDebug)
+	delta, err := c.stringFromDeltaToken(debugCtx, `data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hi"}}`)
 	if err != nil {
 		t.Fatalf("stringFromDeltaToken: %v", err)
 	}
@@ -177,8 +186,8 @@ func TestClaudeConstructRequest(t *testing.T) {
 
 	t.Run("debug branches and tools", func(t *testing.T) {
 		t.Setenv("DEBUG", "1")
-		c := &Claude{URL: "https://example.com", debug: true, tools: []pub_models.Specification{{Name: "t"}}, Temperature: 0.5}
-		req, err := c.constructRequest(context.Background(), pub_models.Chat{
+		c := &Claude{URL: "https://example.com", tools: []pub_models.Specification{{Name: "t"}}, Temperature: 0.5}
+		req, err := c.constructRequest(procenv.Diagnostics(context.Background(), io.Discard, diagnostic.LevelDebug), pub_models.Chat{
 			Messages: []pub_models.Message{{Role: "user", Content: "hi"}},
 		})
 		if err != nil {
@@ -254,7 +263,7 @@ func TestClaudeHandleStreamResponseEdgeEOF(t *testing.T) {
 		}
 	})
 
-	t.Run("clean EOF emits no second event", func(t *testing.T) {
+	t.Run("an empty body is no completion, and emits no second event", func(t *testing.T) {
 		c := &Claude{}
 		out, err := c.handleStreamResponse(context.Background(), &http.Response{
 			Body: io.NopCloser(strings.NewReader("")),
@@ -264,10 +273,10 @@ func TestClaudeHandleStreamResponseEdgeEOF(t *testing.T) {
 		}
 		events := drainClaudeStream(t, out)
 		if len(events) != 1 {
-			t.Fatalf("expected exactly one EOF event, got %#v", events)
+			t.Fatalf("expected exactly one terminal event, got %#v", events)
 		}
-		if !errors.Is(events[0].(error), io.EOF) {
-			t.Fatalf("expected io.EOF, got %#v", events[0])
+		if !errors.Is(events[0].(error), claierr.ErrUnexpectedProviderResponse) {
+			t.Fatalf("expected an unexpected provider response, got %#v", events[0])
 		}
 	})
 
@@ -306,8 +315,8 @@ func TestClaudeHandleStreamResponseEdgeEOF(t *testing.T) {
 }
 
 func TestClaudeStreamDebugEmitsFullMessage(t *testing.T) {
-	c := &Claude{debug: true}
-	out, err := c.handleStreamResponse(context.Background(), &http.Response{
+	c := &Claude{}
+	out, err := c.handleStreamResponse(procenv.Diagnostics(context.Background(), io.Discard, diagnostic.LevelDebug), &http.Response{
 		Body: io.NopCloser(strings.NewReader(
 			"event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hi\"}}\n",
 		)),

@@ -214,7 +214,7 @@ func TestFinalize_persistingRunEnrichesOnce(t *testing.T) {
 	if manager.calls != 1 {
 		t.Fatalf("Enrich called %d times, want 1", manager.calls)
 	}
-	saved, err := chat.FromPath(filepath.Join(q.configDir, "conversations", "finalize-fixture.json"))
+	saved, err := chat.FromPath(context.Background(), filepath.Join(q.configDir, "conversations", "finalize-fixture.json"))
 	if err != nil {
 		t.Fatalf("persisted conversation not readable: %v", err)
 	}
@@ -245,7 +245,7 @@ func joinFixture(t *testing.T, ctx context.Context, fake *fakeSummarizer, manage
 
 func savedFixtureChat(t *testing.T, q *Querier[*MockQuerier]) pub_models.Chat {
 	t.Helper()
-	saved, err := chat.FromPath(filepath.Join(q.configDir, "conversations", "finalize-fixture.json"))
+	saved, err := chat.FromPath(context.Background(), filepath.Join(q.configDir, "conversations", "finalize-fixture.json"))
 	if err != nil {
 		t.Fatalf("persisted conversation not readable: %v", err)
 	}

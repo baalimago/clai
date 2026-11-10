@@ -49,7 +49,7 @@ func TestSelectConfigItem_PreviewsSelectedItemBeforeActionPrompt(t *testing.T) {
 		os.Stdout = origStdout
 	}()
 
-	err = selectConfigItem(
+	err = selectConfigItem(procCtx(),
 		setupCategory{name: "model files", itemActions: []action{conf}},
 		[]config{{name: "preview.json", filePath: tmpFile.Name()}},
 	)

@@ -4,26 +4,25 @@ import (
 	"context"
 	"errors"
 	"flag"
-	"fmt"
 	"os"
 	"path"
 	"strings"
 
 	"github.com/baalimago/clai/internal"
 	"github.com/baalimago/clai/internal/asset"
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/imagegen"
 	"github.com/baalimago/clai/internal/imageinput"
 	"github.com/baalimago/clai/internal/modelfallback"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/present"
 	"github.com/baalimago/clai/internal/remote"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
-	"github.com/baalimago/go_away_boilerplate/pkg/misc"
+	"github.com/baalimago/clai/internal/runenv"
 )
 
 // PreviousImageFunc returns the latest image of the previous query.
 // PreviousImageFunc.1: it fails with ErrNoPreviousImage when that query holds no image.
-type PreviousImageFunc func(confDir string) (asset.Image, error)
+type PreviousImageFunc func(ctx context.Context, confDir string) (asset.Image, error)
 
 var ErrNoPreviousImage = errors.New("previous query holds no image")
 
@@ -32,8 +31,8 @@ var ErrNoPreviousImage = errors.New("previous query holds no image")
 // import (setup imports photo), so internal/cli injects it, together with
 // the image generator, the input collector, the presenter and the opener.
 type CommandDeps struct {
-	ConfigPrep        func() (confDir string, err error)           // existing
-	LoadConfig        func(confDir string) (Configurations, error) // existing
+	ConfigPrep        func(ctx context.Context) (confDir string, err error)             // existing
+	LoadConfig        func(ctx context.Context, confDir string) (Configurations, error) // existing
 	NewGenerator      imagegen.NewGeneratorFunc
 	Collector         imageinput.ImageCollector
 	NewPresenter      func(present.Options) present.Presenter
@@ -114,7 +113,7 @@ func (f *Flags) Register(fs *flag.FlagSet) {
 //	photo.4  -re keeps today's text context, which is the JSON of the previous messages, with
 //	         every ImagePart in that copy replaced by TextPart(Describe()). A text-only
 //	         context is byte-identical to today's (I10). The image from
-//	         deps.PreviousImage(confDir) is appended as the last input. ErrNoPreviousImage
+//	         deps.PreviousImage(ctx, confDir) is appended as the last input. ErrNoPreviousImage
 //	         means there is no image input; any other error fails the command.
 //	photo.5  output.type "url" fails before any request with *URLOutputRemovedError, whose
 //	         message tells the user to set "local". "local" and "unset" both save locally.
@@ -149,9 +148,9 @@ Examples:
 		if err != nil {
 			return err
 		}
-		q, err := modelfallback.New(ctx, base.aliases, base.model, func(_ context.Context, model string) (models.Querier, error) {
+		q, err := modelfallback.New(ctx, base.aliases, base.model, func(ctx context.Context, model string) (models.Querier, error) {
 			return base.forModel(model)
-		}, modelfallback.NoticeTo(base.stderr))
+		}, modelfallback.Notice(runenv.From(ctx)))
 		if err != nil {
 			return err
 		}
@@ -182,25 +181,21 @@ func (d CommandDeps) check(reply bool) error {
 	if len(missing) == 0 {
 		return nil
 	}
-	return fmt.Errorf("%w: %s unset", ErrPhotoUnconfigured, strings.Join(missing, ", "))
+	return diag.Errorf("%w: %s unset", ErrPhotoUnconfigured, strings.Join(missing, ", "))
 }
 
 // loadConfig is the photo configuration after the flag overrides, with its
 // output type checked (photo.5).
-func loadConfig(deps CommandDeps, f *Flags, confDir string) (Configurations, error) {
-	pConf, err := deps.LoadConfig(confDir)
+func loadConfig(ctx context.Context, deps CommandDeps, f *Flags, confDir string) (Configurations, error) {
+	pConf, err := deps.LoadConfig(ctx, confDir)
 	if err != nil {
-		return Configurations{}, fmt.Errorf("failed to load configs: %w", err)
+		return Configurations{}, diag.Errorf("failed to load configs: %w", err)
 	}
-	if misc.Truthy(os.Getenv("DEBUG")) {
-		ancli.PrintOK(fmt.Sprintf("photoConfig pre override: %+v\n", pConf))
-	}
+	runenv.Debugf(ctx, runenv.SubsystemPhoto, "photoConfig pre override: %+v", pConf)
 	if err := ApplyFlagOverrides(&pConf, f); err != nil {
 		return Configurations{}, err
 	}
-	if misc.Truthy(os.Getenv("DEBUG")) {
-		ancli.PrintOK(fmt.Sprintf("photoConfig post override: %+v\n", pConf))
-	}
+	runenv.Debugf(ctx, runenv.SubsystemPhoto, "photoConfig post override: %+v", pConf)
 	if pConf.Output.Type == URL {
 		return Configurations{}, &URLOutputRemovedError{}
 	}

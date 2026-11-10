@@ -8,6 +8,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -59,7 +60,7 @@ func (tmq *TypedMetadataQuerier[T]) Query(ctx context.Context, chat models.Chat)
 	callTime := time.Now().UTC()
 	resp, err := tmq.agent.Query(ctx, chat)
 	if err != nil {
-		return zero, Metadata{}, fmt.Errorf("typed metadata query: %w", err)
+		return zero, Metadata{}, diag.Errorf("typed metadata query: %w", err)
 	}
 	// Build meta immediately after a successful (billed) Query so that
 	// usage rides every subsequent branch — even when LastOfRole or
@@ -77,7 +78,7 @@ func (tmq *TypedMetadataQuerier[T]) Query(ctx context.Context, chat models.Chat)
 	}
 	msg, _, err := resp.LastOfRole("assistant")
 	if err != nil {
-		return zero, meta, fmt.Errorf("typed metadata query: %w", err)
+		return zero, meta, diag.Errorf("typed metadata query: %w", err)
 	}
 	result, err := parseTyped[T](msg.Content)
 	if err != nil {
@@ -111,11 +112,11 @@ func (tq *TypedQuerier[T]) Query(ctx context.Context, chat models.Chat) (T, erro
 	var zero T
 	resp, err := tq.agent.Query(ctx, chat)
 	if err != nil {
-		return zero, fmt.Errorf("typed query: %w", err)
+		return zero, diag.Errorf("typed query: %w", err)
 	}
 	msg, _, err := resp.LastOfRole("assistant")
 	if err != nil {
-		return zero, fmt.Errorf("typed query: %w", err)
+		return zero, diag.Errorf("typed query: %w", err)
 	}
 	return parseTyped[T](msg.Content)
 }
@@ -180,5 +181,5 @@ func parseTyped[T any](content string) (T, error) {
 		return result, nil
 	}
 
-	return zero, fmt.Errorf("failed to unmarshal JSON from all %d candidates: %w", len(candidates), lastErr)
+	return zero, diag.Errorf("failed to unmarshal JSON from all %d candidates: %w", len(candidates), lastErr)
 }

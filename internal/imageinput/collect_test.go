@@ -2,6 +2,7 @@ package imageinput_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -161,7 +162,7 @@ func TestCollect_GlobSplit(t *testing.T) {
 		if err := os.Mkdir(filepath.Join(docs, "sub"), 0o755); err != nil {
 			t.Fatalf("mkdir: %v", err)
 		}
-		today, err := glob.CreateChat(filepath.Join(docs, "*.md"), "")
+		today, err := glob.CreateChat(context.Background(), filepath.Join(docs, "*.md"), "")
 		if err != nil {
 			t.Fatalf("today's glob path: %v", err)
 		}

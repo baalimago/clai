@@ -4,6 +4,16 @@
 
 The package runs silent: `Setup` sends the terminal stream to `io.Discard`, so the caller owns all output. Use `WithLogger` to receive one `log/slog` record per completed message.
 
+Diagnostics are separate and off by default. `WithDiagnosticDeliverer(diagnostic.SlogDeliverer(h), diagnostic.LevelWarn)` sends every agent diagnostic at or above the level to one destination; `WithDiagnosticReporter(r)` hands them to a Reporter you build, registered with `DiagnosticTypes()`. The later of the two options wins. A failing Reporter or Deliverer never changes the result or the error of `Setup` or `Query`, and diagnostics never reach the model, the saved conversation, or the `WithLogger` records.
+
+| Diagnostic type | Level | Mode | Reported when |
+|---|---|---|---|
+| `agent.setup.config_dir_unavailable` | warn | immediate | `Setup` cannot create the config directory or one of its `mcpServers` and `conversations` subdirectories; facts `path`, `error`. |
+| `agent.setup.completed` | debug | immediate | `Setup` succeeds; fact `model`. |
+| `agent.query.completed` | debug | buffered | `Query` succeeds; facts `model`, `messages`. |
+
+`DiagnosticTypes()` also returns clai's internal registry (`<subsystem>.error`, `.warning`, `.notice`, `.debug` and the named types of `internal/runenv/types.go`): with either option, the warnings, notices and debug detail clai's own code reports during `Setup` and `Query` reach the same destination, with their subsystem and level filled in. With `WithDiagnosticDeliverer` the level decides which detail is built; with `WithDiagnosticReporter` every event reaches your Reporter, which applies its own level. Nothing is written to the process streams either way.
+
 ## Typed answers
 
 `NewTyped[T]` returns a parsed Go value instead of a chat. The agent sets `json_object` response format by default and unmarshals the assistant message into `T`.
@@ -39,8 +49,8 @@ The full runnable version of this snippet lives in [`example_test.go`](./example
 | `WithModel(model string)` | Selects the model. Any vendor the [CLI supports](../../README.md#supported-vendors) works, including the `or:`, `berget:`, `hf:` and `ollama:` prefixes. |
 | `WithPrompt(prompt string)` | Sets the system prompt. |
 | `WithConfigDir(dir string)` | Sets the config directory. Appends `clai` unless the path already ends with it. Defaults to `~/.config/clai`. |
-| `WithTools(tools []models.LLMTool)` | Registers extra tools for the run. |
-| `WithToolGlobs(globs ...string)` | Selects tools by pattern, for example `mcp_*` or `cat`. |
+| `WithTools(tools []models.LLMTool)` | Offers these tools to the model. Without `WithToolGlobs` they are the only tools of the run. |
+| `WithToolGlobs(globs ...string)` | Selects built-in and MCP tools by pattern, for example `mcp_*` or `cat`. |
 | `WithMcpServers(servers []models.McpServer)` | Starts MCP servers. An explicit server that fails to start fails `Setup`. |
 | `WithCmdBanList(entries ...string)` | Refuses matching commands before spawn. The refusal names the matched entry. |
 | `WithStoploss(s Stoploss)` | Caps token spend per run. A zero-value `Stoploss` disables the cap. |
@@ -51,10 +61,25 @@ The full runnable version of this snippet lives in [`example_test.go`](./example
 | `WithUsageRecorder(rec models.CallUsageRecorder)` | Receives one `CompletedModelCall` per model step. |
 | `WithToolCallRecorder(rec models.ToolCallRecorder)` | Receives one `ToolCall` per tool invocation. |
 | `WithResponseFormat(rf models.ResponseFormat)` | Overrides the response format that `NewTyped` sets. |
+| `WithDiagnosticDeliverer(d diagnostic.Deliverer, level diagnostic.Level)` | Delivers agent diagnostics at or above `level` to `d`. |
+| `WithDiagnosticReporter(r diagnostic.Reporter)` | Hands agent diagnostics to a caller-built Reporter. |
+
+## Tools
+
+An agent built with neither `WithTools` nor `WithToolGlobs` offers the model **every built-in tool** available on the host, plus the tools of every configured MCP server. That includes `cmd` and `async_cmd` (shell commands), `write_file`, `apply_patch`, `sed`, `git`, `go` and `website_text`. Run `clai tools` for the list. Pass one of the two options to narrow it:
+
+| Options | Tools offered to the model |
+|---|---|
+| neither | Every built-in and every MCP tool. |
+| `WithTools(mine)` | `mine` only. |
+| `WithToolGlobs("cat", "mcp_*")` | The built-in and MCP tools the patterns match. |
+| both | The union of the two. |
+
+The model can call only what the agent offered it. A call naming any other tool, a built-in included, runs nothing: the model gets the tool result `ERROR: unknown tool call: <name>` and the run continues.
 
 ## Safety
 
-`WithCmdBanList` and `WithStoploss` are the two options that bound what a run can do.
+`WithToolGlobs`, `WithTools`, `WithCmdBanList` and `WithStoploss` are the options that bound what a run can do. The first two decide which tools exist for the model at all (see [Tools](#tools)).
 
 The ban list applies to the freetext command tools (`cmd`, `async_cmd`). A refused command never reaches a subprocess, and the refusal text names the entry that matched, so the model can see why it was stopped. Entries are whitespace-split tokens matched against the command string; they are not shell glob patterns. Two agents in one process carry separate policies, so concurrent runs do not interfere.
 
@@ -107,6 +132,7 @@ The sentinel vocabulary covers authentication failure, likely insufficient credi
 | [`agent.go`](./agent.go) | `Agent`, `Option`, and every `With*` constructor. |
 | [`run.go`](./run.go) | `Run` and `Query`, the two run entry points. |
 | [`typed.go`](./typed.go) | `NewTyped`, `NewTypedMetadata`, and the JSON extraction they share. |
+| [`diagnostics_contract.go`](./diagnostics_contract.go) | `SetupQuerier`, `DiagnosticTypes`, and the two diagnostic options. |
 | [`recorder.go`](./recorder.go) | Aliases for the recorder types, so one import covers the whole surface. |
 
 Design notes for the loop itself live in [`architecture/tooling.md`](../../architecture/tooling.md) and [`architecture/tooling-async.md`](../../architecture/tooling-async.md).

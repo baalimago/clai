@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/internal/testenv/procenv"
+
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
@@ -21,7 +23,7 @@ func Test_Command_tree(t *testing.T) {
 		if err := c.Flagset().Parse([]string{"q"}); err != nil {
 			t.Fatalf("Parse: %v", err)
 		}
-		if err := c.Setup(context.Background()); err != nil {
+		if err := c.Setup(procenv.Context(context.Background())); err != nil {
 			t.Fatalf("Setup: %v", err)
 		}
 		if got := c.Args(); len(got) != 2 || got[1] != "q" {
@@ -31,7 +33,7 @@ func Test_Command_tree(t *testing.T) {
 
 	t.Run("run without args lists tools", func(t *testing.T) {
 		out := testboil.CaptureStdout(t, func(t *testing.T) {
-			if err := c.Run(context.Background()); err == nil {
+			if err := c.Run(procenv.Context(context.Background())); err == nil {
 				// The positional "q" from the parse above routes to Detail,
 				// which errors on the unknown tool.
 				t.Fatal("expected unknown-tool error from detail route")

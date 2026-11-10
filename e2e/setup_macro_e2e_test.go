@@ -3,20 +3,13 @@ package e2e
 import (
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/internal/utils"
+
 	"github.com/baalimago/clai/e2e/e2etest"
 )
-
-// stripANSI removes ANSI SGR escape sequences so assertions can match plain
-// text regardless of colorization.
-func stripANSI(s string) string {
-	return ansiSGR.ReplaceAllString(s, "")
-}
-
-var ansiSGR = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
 // Test_e2e_setup_migrates_mode_configs_and_announces proves that `clai s`
 // preloads the mode configs through LoadConfigFromFile: an existing
@@ -29,24 +22,23 @@ func Test_e2e_setup_migrates_mode_configs_and_announces_before_wizard(t *testing
 		"model": "test",
 	})
 
-	stdout, status := harness.RunOne(t, confDir, "-n s 0 0 q")
+	stdout, stderr, status := runSetupMacro(t, confDir, "-n s 0 0 q")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
-	if !strings.Contains(stdout, "added new field(s) to textConfig.json:") {
-		t.Fatalf("expected the config upgrade announcement, got:\n%s", stdout)
+	// The announcement is a diagnostic on stderr (F1); its block ends with a
+	// blank separator line that absorbs the wizard TUI's one-line clear
+	// overshoot (table ClearTermTo clears upTo+1 lines), so it survives the
+	// first redraw.
+	found := strings.Contains(stderr, "added new field(s) to textConfig.json:")
+	if !found {
+		t.Fatalf("expected the config upgrade announcement on stderr, got:\n%s", stderr)
 	}
-	// The wizard's TUI redraws by clearing its own frame plus one line above
-	// the header (table ClearTermTo clears upTo+1 lines), so the announcement
-	// block ends with a blank separator line that absorbs that overshoot and
-	// the announcement survives interactive redraws. Pin that the announcement
-	// appears before the wizard header with the blank line between them.
-	annIdx := strings.Index(stdout, "added new field(s) to textConfig.json:")
-	if annIdx < 0 || annIdx > strings.Index(stdout, "Setup categories") {
-		t.Fatalf("expected the announcement before the wizard started, got:\n%s", stdout)
+	if !strings.HasSuffix(stderr, "\n\n") {
+		t.Fatalf("expected a blank separator line after the announcement, got:\n%q", stderr)
 	}
-	if !strings.Contains(stripANSI(stdout[annIdx:]), "\n\nSetup categories") {
-		t.Fatalf("expected a blank separator line between the announcement and the wizard, got:\n%s", stdout)
+	if !strings.Contains(stdout, "Setup categories") {
+		t.Fatalf("expected the wizard on stdout, got:\n%s", stdout)
 	}
 	regenerated, err := os.ReadFile(filepath.Join(confDir, "textConfig.json"))
 	if err != nil {
@@ -70,16 +62,12 @@ func Test_e2e_setup_migrates_profiles_and_announces_before_wizard(t *testing.T) 
 		"model": "test",
 	})
 
-	stdout, status := harness.RunOne(t, confDir, "-n s 0 0 q")
+	stdout, stderr, status := runSetupMacro(t, confDir, "-n s 0 0 q")
 	if status != 0 {
 		t.Fatalf("expected zero status, got %d. stdout=%q", status, stdout)
 	}
-	annIdx := strings.Index(stdout, "added new field(s) to john.json:")
-	if annIdx < 0 {
-		t.Fatalf("expected the profile upgrade announcement, got:\n%s", stdout)
-	}
-	if annIdx > strings.Index(stdout, "Setup categories") {
-		t.Fatalf("expected the profile announcement before the wizard started, got:\n%s", stdout)
+	if !strings.Contains(stderr, "added new field(s) to john.json:") {
+		t.Fatalf("expected the profile upgrade announcement on stderr, got:\n%s", stderr)
 	}
 	regenerated, err := os.ReadFile(filepath.Join(confDir, "profiles", "john.json"))
 	if err != nil {
@@ -151,4 +139,19 @@ func Test_e2e_setup_macro_select_config_and_quit(t *testing.T) {
 	if !strings.Contains(stdout, "textConfig.json") {
 		t.Fatalf("expected 'textConfig.json' in output, got:\n%s", stdout)
 	}
+}
+
+func runSetupMacro(t *testing.T, cwd, args string) (string, string, int) {
+	t.Helper()
+	t.Chdir(cwd)
+	t.Cleanup(func() {
+		utils.Live = true
+		utils.ReadonlyConfig = false
+		utils.NoCreateConfig = false
+	})
+	var status int
+	stdout, stderr := e2etest.CaptureStdoutStderr(t, func() {
+		status = harness.Run(strings.Split(args, " "))
+	})
+	return stdout, stderr, status
 }

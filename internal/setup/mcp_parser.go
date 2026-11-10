@@ -1,14 +1,17 @@
 package setup
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
 
+	"github.com/baalimago/clai/internal/runenv"
+
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/utils"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 )
 
 // McpServerInput represents the external format that users might paste
@@ -25,11 +28,11 @@ type McpServerExternal struct {
 }
 
 // ParseAndAddMcpServer parses pasted MCP server configuration and adds it to the system
-func ParseAndAddMcpServer(mcpServersDir, pastedConfig string) ([]string, error) {
+func ParseAndAddMcpServer(ctx context.Context, mcpServersDir, pastedConfig string) ([]string, error) {
 	// Try to parse as the external format first
 	var input McpServerInput
 	if err := json.Unmarshal([]byte(pastedConfig), &input); err != nil {
-		return nil, fmt.Errorf("failed to parse MCP server configuration: %w", err)
+		return nil, diag.Errorf("failed to parse MCP server configuration: %w", err)
 	}
 
 	if len(input.McpServers) == 0 {
@@ -45,10 +48,10 @@ func ParseAndAddMcpServer(mcpServersDir, pastedConfig string) ([]string, error) 
 		// Save to individual file
 		serverPath := filepath.Join(mcpServersDir, fmt.Sprintf("%s.json", serverName))
 		if err := utils.CreateFile(serverPath, &internalServer); err != nil {
-			return nil, fmt.Errorf("failed to create server file for %s: %w", serverName, err)
+			return nil, diag.Errorf("failed to create server file for %s: %w", serverName, err)
 		}
 
-		ancli.Noticef("Added MCP server: %s\n", serverName)
+		runenv.Noticef(ctx, runenv.SubsystemSetup, "Added MCP server: %s\n", serverName)
 		ret = append(ret, serverName)
 	}
 
@@ -82,7 +85,7 @@ func ValidateMcpServerConfig(pastedConfig string) error {
 	// Try to parse as JSON
 	var input McpServerInput
 	if err := json.Unmarshal([]byte(pastedConfig), &input); err != nil {
-		return fmt.Errorf("invalid JSON format: %w", err)
+		return diag.Errorf("invalid JSON format: %w", err)
 	}
 
 	if len(input.McpServers) == 0 {

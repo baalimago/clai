@@ -11,18 +11,29 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/models"
+	"github.com/baalimago/clai/internal/runenv"
 	"github.com/baalimago/clai/internal/text/generic"
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/pkg/claierr"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 )
 
 var responsesDataPrefix = []byte("data: ")
 
 const responsesMaxCallIDLength = 64
+
+// responsesHeadLimit is how much of a body without events is kept to show.
+const responsesHeadLimit = 1024
+
+func (evt responsesStreamEvent) incompleteReason() string {
+	if evt.Response == nil || evt.Response.IncompleteDetails == nil || evt.Response.IncompleteDetails.Reason == "" {
+		return "not given"
+	}
+	return evt.Response.IncompleteDetails.Reason
+}
 
 func normalizeResponsesCallID(id string) string {
 	if len(id) <= responsesMaxCallIDLength {
@@ -36,7 +47,6 @@ type responsesStreamer struct {
 	apiKey      string
 	url         string
 	model       string
-	debug       bool
 	client      *http.Client
 	usageSetter func(*pub_models.Usage) error
 
@@ -89,7 +99,7 @@ func (st *toolCallState) appendArgs(delta string) error {
 		return nil
 	}
 	if _, err := st.argsBuf.WriteString(delta); err != nil {
-		return fmt.Errorf("write args delta: %w", err)
+		return diag.Errorf("write args delta: %w", err)
 	}
 	return nil
 }
@@ -114,9 +124,14 @@ func (st *toolCallState) emitCall(done <-chan struct{}, out chan<- models.Comple
 		argsStr = "{}"
 	}
 
-	var input pub_models.Input
-	if err := json.Unmarshal([]byte(argsStr), &input); err != nil {
-		return fmt.Errorf("unmarshal tool args for tool=%q call_id=%q: %w", st.toolName, st.callID, err)
+	// Arguments that are no JSON object still make a call: it carries the
+	// problem, so the model gets a failed tool result it can correct.
+	input := pub_models.Input{}
+	problem := pub_models.ArgumentsProblem(st.toolName, argsStr)
+	if problem != "" {
+		argsStr = "{}"
+	} else if err := json.Unmarshal([]byte(argsStr), &input); err != nil {
+		return diag.Errorf("unmarshal tool args for tool=%q call_id=%q: %w", st.toolName, st.callID, err)
 	}
 
 	// The emitted call's identity is the tool name the model chose off the wire, and
@@ -145,6 +160,7 @@ func (st *toolCallState) emitCall(done <-chan struct{}, out chan<- models.Comple
 		Type:           "function",
 		Function:       userFunc,
 		ReasoningItems: reasoning,
+		ArgumentsErr:   problem,
 	})
 	st.callEmitted = true
 	st.reset()
@@ -201,7 +217,7 @@ func (evt responsesStreamEvent) callKey() string {
 func (s *responsesStreamer) stream(ctx context.Context, chat pub_models.Chat) (chan models.CompletionEvent, error) {
 	req, err := s.createRequest(ctx, chat)
 	if err != nil {
-		return nil, fmt.Errorf("openai responses: create request: %w", err)
+		return nil, diag.Errorf("openai responses: create request: %w", err)
 	}
 
 	res, err := s.client.Do(req)
@@ -210,7 +226,7 @@ func (s *responsesStreamer) stream(ctx context.Context, chat pub_models.Chat) (c
 	}
 
 	if err := validateResponsesHTTPResponse(res); err != nil {
-		return nil, fmt.Errorf("openai responses: validate response: %w", err)
+		return nil, diag.Errorf("openai responses: validate response: %w", err)
 	}
 
 	out := make(chan models.CompletionEvent)
@@ -230,7 +246,7 @@ func validateResponsesHTTPResponse(res *http.Response) error {
 	// and an unmapped status degrades typed — never a formatted string.
 	responseErr := generic.ResponseError(res.StatusCode, body, decodeError)
 	if readErr != nil {
-		return errors.Join(responseErr, fmt.Errorf("read provider error response body: %w", readErr))
+		return errors.Join(responseErr, diag.Errorf("read provider error response body: %w", readErr))
 	}
 	return responseErr
 }
@@ -244,6 +260,10 @@ func (s *responsesStreamer) readResponsesStream(ctx context.Context, body io.Rea
 	br := bufio.NewReader(body)
 	tracker := newToolCallTracker()
 	done := ctx.Done()
+	// sawEvent is set by the first stream event. Until then the start of
+	// the body is kept, to show a body that is no event stream.
+	sawEvent := false
+	var head []byte
 
 	for {
 		if ctx.Err() != nil {
@@ -251,18 +271,29 @@ func (s *responsesStreamer) readResponsesStream(ctx context.Context, body io.Rea
 		}
 
 		line, err := br.ReadBytes('\n')
-		if err != nil {
-			if err != io.EOF {
-				if !emitResponses(done, out, claierr.NewTransport(err)) {
-					return
-				}
+		if !sawEvent && len(head) < responsesHeadLimit {
+			head = append(head, line[:min(len(line), responsesHeadLimit-len(head))]...)
+		}
+		if err != nil && err != io.EOF {
+			emitResponses(done, out, claierr.NewTransport(err))
+			return
+		}
+		if err == io.EOF && len(bytes.TrimSpace(line)) == 0 {
+			// The Responses stream always ends with a terminal event
+			// (response.completed, response.incomplete or a failure), which
+			// returns below; the end of the body means no stream at all or
+			// one cut short.
+			if sawEvent {
+				emitResponses(done, out, generic.TruncatedError("response.completed"))
+			} else {
+				emitResponses(done, out, generic.NoCompletionError(head))
 			}
 			return
 		}
 
-		evt, ok, err := s.parseStreamLine(line)
+		evt, ok, err := s.parseStreamLine(ctx, line)
 		if err != nil {
-			if !emitResponses(done, out, fmt.Errorf("openai responses: parse stream event: %w", err)) {
+			if !emitResponses(done, out, diag.Errorf("openai responses: parse stream event: %w", err)) {
 				return
 			}
 			return
@@ -270,10 +301,14 @@ func (s *responsesStreamer) readResponsesStream(ctx context.Context, body io.Rea
 		if !ok {
 			continue
 		}
+		sawEvent, head = true, nil
+		if evt.Type == "response.incomplete" {
+			runenv.Warnf(ctx, runenv.SubsystemVendorOpenAI, "the reply is incomplete: the response ended early (reason: %s)", evt.incompleteReason())
+		}
 
 		doneFlag, err := handleResponsesStreamEvent(done, out, tracker, evt, s.usageSetter)
 		if err != nil {
-			if !emitResponses(done, out, fmt.Errorf("openai responses: handle event %q: %w", evt.Type, err)) {
+			if !emitResponses(done, out, diag.Errorf("openai responses: handle event %q: %w", evt.Type, err)) {
 				return
 			}
 			return
@@ -299,14 +334,12 @@ func emitResponses(done <-chan struct{}, out chan<- models.CompletionEvent, evt 
 	}
 }
 
-func (s *responsesStreamer) parseStreamLine(line []byte) (responsesStreamEvent, bool, error) {
-	if s.debug {
-		ancli.Okf("got: '%s'", line)
-	}
+func (s *responsesStreamer) parseStreamLine(ctx context.Context, line []byte) (responsesStreamEvent, bool, error) {
+	runenv.Debugf(ctx, runenv.SubsystemVendorOpenAI, "got: '%s'", line)
 
 	evt, ok, err := parseResponsesLine(line)
 	if err != nil {
-		return responsesStreamEvent{}, false, fmt.Errorf("parse: %w", err)
+		return responsesStreamEvent{}, false, diag.Errorf("parse: %w", err)
 	}
 	return evt, ok, nil
 }
@@ -343,7 +376,7 @@ func handleResponsesStreamEvent(done <-chan struct{}, out chan<- models.Completi
 		// output was truncated (e.g. max_output_tokens or content filter). It is
 		// terminal and carries the final usage in the same shape.
 		if err := maybeSetUsage(evt, usageSetter); err != nil {
-			return false, fmt.Errorf("set usage: %w", err)
+			return false, diag.Errorf("set usage: %w", err)
 		}
 		emitResponses(done, out, models.StopEvent{})
 		return true, nil
@@ -371,7 +404,7 @@ func maybeSetUsage(evt responsesStreamEvent, usageSetter func(*pub_models.Usage)
 	}
 	mapped := mapUsage(evt.Response.Usage)
 	if err := usageSetter(mapped); err != nil {
-		return fmt.Errorf("usage setter: %w", err)
+		return diag.Errorf("usage setter: %w", err)
 	}
 	return nil
 }
@@ -439,7 +472,7 @@ func handleFunctionCallArgumentsDelta(done <-chan struct{}, out chan<- models.Co
 	}
 
 	if err := tracker.state(evt.callKey()).appendArgs(evt.Delta); err != nil {
-		return fmt.Errorf("buffer tool args: %w", err)
+		return diag.Errorf("buffer tool args: %w", err)
 	}
 	return nil
 }
@@ -487,7 +520,7 @@ func (s *responsesStreamer) createRequest(ctx context.Context, chat pub_models.C
 	// Completions path) never receive them.
 	input, err := mapChatToResponsesInput(chat, reasoning)
 	if err != nil {
-		return nil, fmt.Errorf("map chat to responses input: %w", err)
+		return nil, diag.Errorf("map chat to responses input: %w", err)
 	}
 
 	text, err := mapResponseFormat(s.responseFormat)
@@ -526,19 +559,19 @@ func (s *responsesStreamer) createRequest(ctx context.Context, chat pub_models.C
 		reqBody.ParallelToolCalls = &parallelToolCalls
 	}
 
-	if s.debug {
+	if runenv.DebugEnabled(ctx, runenv.SubsystemVendorOpenAI) {
 		noTools := reqBody
-		ancli.PrintOK(fmt.Sprintf("openai responses request (tools redacted):\nurl: %s\nbody: %s\n", s.url, debug.IndentedJsonFmt(noTools)))
+		runenv.Debugf(ctx, runenv.SubsystemVendorOpenAI, "openai responses request (tools redacted):\nurl: %s\nbody: %s", s.url, debug.IndentedJsonFmt(noTools))
 	}
 
 	b, err := json.Marshal(reqBody)
 	if err != nil {
-		return nil, fmt.Errorf("encode json: %w", err)
+		return nil, diag.Errorf("encode json: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.url, bytes.NewReader(b))
 	if err != nil {
-		return nil, fmt.Errorf("new request: %w", err)
+		return nil, diag.Errorf("new request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -559,7 +592,7 @@ func mapResponseFormat(rf *generic.ResponseFormat) (*responsesText, error) {
 	if rf.Type == "json_schema" && rf.JSONSchema != nil {
 		schema, err := rf.JSONSchema.SchemaJSON()
 		if err != nil {
-			return nil, fmt.Errorf("map response format: %w", err)
+			return nil, diag.Errorf("map response format: %w", err)
 		}
 		format.Name = rf.JSONSchema.Name
 		format.Description = rf.JSONSchema.Description
@@ -578,7 +611,7 @@ func mapChatToResponsesInput(chat pub_models.Chat, includeReasoning bool) ([]res
 		// fail with: "No tool call found for function call output with call_id ...".
 		items, err := mapMessageToResponsesInputItems(msg, includeReasoning)
 		if err != nil {
-			return nil, fmt.Errorf("map message role %q: %w", msg.Role, err)
+			return nil, diag.Errorf("map message role %q: %w", msg.Role, err)
 		}
 		out = append(out, items...)
 	}
@@ -681,7 +714,7 @@ func mapMessageToResponsesInputItems(msg pub_models.Message, includeReasoning bo
 
 	parts, err := mapMessageToResponsesContent(msg)
 	if err != nil {
-		return nil, fmt.Errorf("map content: %w", err)
+		return nil, diag.Errorf("map content: %w", err)
 	}
 	return []responsesInputItem{{Type: "message", Role: msg.Role, Content: parts}}, nil
 }
@@ -729,7 +762,7 @@ func parseResponsesLine(line []byte) (responsesStreamEvent, bool, error) {
 
 	var evt responsesStreamEvent
 	if err := json.Unmarshal(payload, &evt); err != nil {
-		return responsesStreamEvent{}, false, fmt.Errorf("unmarshal: %w", err)
+		return responsesStreamEvent{}, false, diag.Errorf("unmarshal: %w", err)
 	}
 	if evt.Type == "" {
 		return responsesStreamEvent{}, false, nil

@@ -1,11 +1,14 @@
 package anthropic
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/models"
+	"github.com/baalimago/clai/internal/runenv"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/debug"
 )
@@ -14,7 +17,7 @@ func (c *Claude) handleContentBlockStart(blockStart string) models.CompletionEve
 	var blockSuper ContentBlockSuper
 	blockStart = trimDataPrefix(blockStart)
 	if err := json.Unmarshal([]byte(blockStart), &blockSuper); err != nil {
-		return fmt.Errorf("failed to unmarshal blockStart with content: %v, error: %w", blockStart, err)
+		return diag.Errorf("failed to unmarshal blockStart with content: %v, error: %w", blockStart, err)
 	}
 	block := blockSuper.ToolContentBlock
 	c.contentBlockType = block.Type
@@ -40,14 +43,13 @@ func (c *Claude) handleContentBlockStart(blockStart string) models.CompletionEve
 // Returns:
 // - models.CompletionEvent: A response event generated from the delta token.
 // - error: An error is returned if the delta type is unexpected or the text is empty.
-func (c *Claude) handleContentBlockDelta(deltaToken string) models.CompletionEvent {
-	delta, err := c.stringFromDeltaToken(deltaToken)
+func (c *Claude) handleContentBlockDelta(ctx context.Context, deltaToken string) models.CompletionEvent {
+	delta, err := c.stringFromDeltaToken(ctx, deltaToken)
 	if err != nil {
-		return fmt.Errorf("failed to convert string to delta token: %w", err)
+		return diag.Errorf("failed to convert string to delta token: %w", err)
 	}
-	if c.debug {
-		fmt.Printf("deltaStruct: '%v'\n---\n",
-			debug.IndentedJsonFmt(delta))
+	if runenv.DebugEnabled(ctx, runenv.SubsystemVendorAnthropic) {
+		runenv.Debugf(ctx, runenv.SubsystemVendorAnthropic, "deltaStruct: '%v'", debug.IndentedJsonFmt(delta))
 	}
 	switch delta.Type {
 	case "text_delta":
@@ -80,21 +82,26 @@ func (c *Claude) handleContentBlockStop(blockStop string) models.CompletionEvent
 	var block ToolUseContentBlock
 	blockStop = trimDataPrefix(blockStop)
 	if err := json.Unmarshal([]byte(blockStop), &block); err != nil {
-		return fmt.Errorf("failed to unmarshal blockStop: %w", err)
+		return diag.Errorf("failed to unmarshal blockStop: %w", err)
 	}
 
 	switch c.contentBlockType {
 	case "tool_use":
 		var inputs pub_models.Input
+		// A tool_use block without input deltas takes no arguments.
+		problem := ""
 		if c.functionJSON != "" {
-			if err := json.Unmarshal([]byte(c.functionJSON), &inputs); err != nil {
-				return fmt.Errorf("failed to unmarshal functionJSON: %v, error is: %w", c.functionJSON, err)
+			if problem = pub_models.ArgumentsProblem(c.functionName, c.functionJSON); problem == "" {
+				if err := json.Unmarshal([]byte(c.functionJSON), &inputs); err != nil {
+					return diag.Errorf("failed to unmarshal functionJSON: %v, error is: %w", c.functionJSON, err)
+				}
 			}
 		}
 		return pub_models.Call{
-			Name:   c.functionName,
-			Inputs: &inputs,
-			ID:     c.functionID,
+			Name:         c.functionName,
+			Inputs:       &inputs,
+			ID:           c.functionID,
+			ArgumentsErr: problem,
 		}
 	}
 	return models.NoopEvent{}

@@ -10,6 +10,8 @@ import (
 	"math"
 	"strings"
 	"time"
+
+	"github.com/baalimago/clai/internal/diag"
 )
 
 // Segment is the shared transcript unit all vendor payloads normalize into
@@ -36,7 +38,7 @@ type wirePayload struct {
 func parsePayload(data []byte, formatName string) ([]Segment, error) {
 	var payload wirePayload
 	if err := json.Unmarshal(data, &payload); err != nil {
-		return nil, fmt.Errorf("failed to parse %v payload: %w", formatName, err)
+		return nil, diag.Errorf("failed to parse %v payload: %w", formatName, err)
 	}
 	if payload.Segments == nil {
 		return nil, fmt.Errorf("%v payload has no segments field", formatName)
@@ -74,7 +76,7 @@ type wireTextPayload struct {
 func ParseJSON(data []byte) ([]Segment, error) {
 	var payload wireTextPayload
 	if err := json.Unmarshal(data, &payload); err != nil {
-		return nil, fmt.Errorf("failed to parse json payload: %w", err)
+		return nil, diag.Errorf("failed to parse json payload: %w", err)
 	}
 	if payload.Text == nil {
 		return nil, fmt.Errorf("json payload has no text (field missing or null)")
