@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://clai.chat/schema/theme-1.0.json",
+  "title": "clai theme",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "primary": { "type": "string" },
+    "secondary": { "type": "string" },
+    "breadtext": { "type": "string" },
+    "roleSystem": { "type": "string" },
+    "roleUser": { "type": "string" },
+    "roleTool": { "type": "string" },
+    "roleReasoning": { "type": "string" },
+    "roleOther": { "type": "string" },
+    "notificationBell": { "type": "boolean" },
+    "tableItems": { "type": "integer" },
+    "toolOutputRows": { "type": "integer" },
+    "rollingOutput": { "$ref": "#/$defs/rollingOutput" },
+    "loopTitle": { "type": "string" },
+    "$schema": { "type": "string", "x-clai": "unread" }
+  },
+  "$defs": {
+    "rollingOutput": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "windowCellHeight": { "type": "integer" }
+      }
+    }
+  }
+}

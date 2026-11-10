@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://clai.chat/schema/photo-config-1.0.json",
+  "title": "clai photo config",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "model": { "type": "string" },
+    "model-aliases": {
+      "type": "object",
+      "additionalProperties": { "type": "array", "items": { "type": "string" } }
+    },
+    "prompt-format": { "type": "string" },
+    "output": { "$ref": "#/$defs/output" },
+    "raw": { "type": "boolean" },
+    "auto-open-images": { "type": "boolean" },
+    "image-opener": { "type": "string" },
+    "$schema": { "type": "string", "x-clai": "unread" }
+  },
+  "$defs": {
+    "output": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "type": { "type": "string", "enum": ["local", "url", "unset"] },
+        "dir": { "type": "string" },
+        "prefix": { "type": "string" }
+      }
+    }
+  }
+}

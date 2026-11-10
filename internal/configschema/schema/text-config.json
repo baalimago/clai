@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://clai.chat/schema/text-config-1.0.json",
+  "title": "clai text config",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "model": { "type": "string" },
+    "model-aliases": {
+      "type": "object",
+      "additionalProperties": { "type": "array", "items": { "type": "string" } }
+    },
+    "system-prompt": { "type": "string" },
+    "raw": { "type": "boolean" },
+    "use-tools": { "type": "boolean" },
+    "cmd-mode-prompt": { "type": "string" },
+    "tool-output-rune-limit": { "type": "integer" },
+    "save-reply-as-prompt": { "type": "boolean" },
+    "cmd-ban": { "type": "array", "items": { "type": "string" } },
+    "summarize-conversations": { "type": "boolean" },
+    "summary-model": { "type": "string" },
+    "query-summary": { "type": "boolean" },
+    "use_lookback": { "type": "boolean" },
+    "max-tool-calls": { "type": "integer" },
+    "stoploss": { "$ref": "#/$defs/stoploss" },
+    "$schema": { "type": "string", "x-clai": "unread" }
+  },
+  "$defs": {
+    "stoploss": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "max-tokens": { "type": "integer" },
+        "max-tokens-handover-instructions": { "type": "string" },
+        "max-tool-calls-after-handover": { "type": "integer" }
+      }
+    }
+  }
+}

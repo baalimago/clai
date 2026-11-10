@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://clai.chat/schema/mcp-servers-1.0.json",
+  "title": "clai mcp server",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "name": { "type": "string" },
+    "command": { "type": "string" },
+    "args": { "type": "array", "items": { "type": "string" } },
+    "url": { "type": "string" },
+    "env": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "envfile": { "type": "string" },
+    "timeout_seconds": { "type": "integer" },
+    "startup": { "type": "string", "enum": ["eager", "lazy"] },
+    "connect_timeout_seconds": { "type": "integer" },
+    "auth": { "$ref": "#/$defs/auth" },
+    "auth_timeout_seconds": { "type": "integer" },
+    "optional": { "type": "boolean" },
+    "$schema": { "type": "string", "x-clai": "unread" }
+  },
+  "$defs": {
+    "auth": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "token_command": { "type": "array", "items": { "type": "string" } },
+        "token_env": { "type": "string" },
+        "scopes": { "type": "array", "items": { "type": "string" } },
+        "required_env": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}
