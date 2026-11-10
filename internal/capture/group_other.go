@@ -1,4 +1,4 @@
-//go:build !linux && !darwin
+//go:build (!linux && !darwin) || wasix
 
 package capture
 
@@ -10,9 +10,9 @@ import (
 func ownProcessGroup(*exec.Cmd) {}
 
 func interruptGroup(process *os.Process) error {
-	return process.Signal(os.Interrupt)
+	return interruptProcess(process)
 }
 
 func killGroup(process *os.Process) error {
-	return process.Kill()
+	return killProcess(process)
 }

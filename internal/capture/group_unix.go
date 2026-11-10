@@ -1,4 +1,9 @@
-//go:build linux || darwin
+// The Go port to WASIX satisfies the linux tag, and its ffmpeg is a wrapper
+// script around a program that cannot take a signal: a group signal would
+// reach that program past the wrapper and end it with nothing saved. wasix
+// builds group_other.go.
+//
+//go:build (linux || darwin) && !wasix
 
 package capture
 

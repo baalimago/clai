@@ -520,6 +520,15 @@ both; the recorder writes the sizes that follow from the samples and drops a
 trailing half sample, so the file plays (`Recording.Finish` is `repaired`,
 otherwise `finalized`). The file is then renamed into place.
 
+On WASIX there is no group: `group_other.go` builds there, and the recorder
+signals the process it started and no other (`process.go`). The Go port to
+WASIX satisfies the `linux` build tag, so the constraint excludes it by name.
+Its ffmpeg is a wrapper script around a program that cannot take a signal; the
+wrapper ends that program's inputs so it finishes the file, and a group signal
+would reach the program past the wrapper and end it with nothing saved (in the
+browser machine this hung the wrapper and killed the worker, 2026-11-10).
+`TestGroupFileByPlatform` fails when the two files' constraints drift.
+
 The recording ends at the first of the silence timeout, `max-seconds`, a
 completed line on an interactive stdin, or cancellation of the tool call.
 Each ending names its own reason. End of input is not a line: `/dev/null` is a
