@@ -86,7 +86,8 @@ func Test_HUB_publishThenRunByAddress(t *testing.T) {
 
 	t.Setenv("CLAI_CLOUD_URL", api.URL)
 	status, stdout, stderr := runRemote(t, "profiles publish trade-bot")
-	if status != 1 || !strings.Contains(stderr, "clai profiles publish trade-bot -handle ada") {
+	// The handle hint names the documented spelling, not the hidden one.
+	if status != 1 || !strings.Contains(stderr, "clai config publish profile trade-bot -handle ada") {
 		t.Fatalf("no handle yet: status %d stdout %q stderr %q", status, stdout, stderr)
 	}
 	status, stdout, stderr = runRemote(t, "profiles publish trade-bot -handle ada -summary Trades.")

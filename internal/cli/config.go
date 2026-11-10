@@ -19,9 +19,9 @@ import (
 	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/profile"
 	"github.com/baalimago/clai/internal/profiles"
+	"github.com/baalimago/clai/internal/runenv"
 	"github.com/baalimago/clai/internal/setup"
 	"github.com/baalimago/clai/internal/utils"
-	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/cmd"
 )
 
@@ -62,7 +62,6 @@ const profileKind = "profile"
 type configDeps struct {
 	profiles profiles.CommandDeps
 	publish  func(ctx context.Context, args []string, opts cloudcmd.PublishOptions) error
-	rerun    func(args []string) int
 	setExit  func(int)
 }
 
@@ -76,13 +75,13 @@ func configCommand(deps configDeps) *internal.Command {
 		Desc:     "The config store: edit, list, schema, validate, publish and dir",
 		HelpText: configHelp,
 	}
-	c.OnRun = func(_ context.Context, c *internal.Command) error {
+	c.OnRun = func(ctx context.Context, c *internal.Command) error {
 		args := c.Args()
 		if len(args) <= 1 {
-			fmt.Println(configSynopsis)
+			fmt.Fprintln(runenv.From(ctx).Stdout(), configSynopsis)
 			return nil
 		}
-		fmt.Printf("unknown config verb %q\n\n%s\n", args[1], configSynopsis)
+		fmt.Fprintf(runenv.From(ctx).Stdout(), "unknown config verb %q\n\n%s\n", args[1], configSynopsis)
 		askExit(setExit, 2)
 		return nil
 	}
@@ -128,14 +127,14 @@ Examples:
   clai config list profile
   clai config list theme`,
 	}
-	c.OnRun = func(_ context.Context, c *internal.Command) error {
+	c.OnRun = func(ctx context.Context, c *internal.Command) error {
 		args := c.Args()[1:]
 		if len(args) > 1 {
-			fmt.Println("usage: clai config list [kind]")
+			fmt.Fprintln(runenv.From(ctx).Stdout(), "usage: clai config list [kind]")
 			askExit(setExit, 2)
 			return nil
 		}
-		return listStore(firstOrEmpty(args), setExit)
+		return listStore(ctx, firstOrEmpty(args), setExit)
 	}
 	return c
 }
@@ -153,24 +152,24 @@ Examples:
   clai config schema theme
   clai config schema profile > profile.json`,
 	}
-	c.OnRun = func(_ context.Context, c *internal.Command) error {
+	c.OnRun = func(ctx context.Context, c *internal.Command) error {
 		args := c.Args()[1:]
 		if len(args) > 1 {
-			fmt.Println("usage: clai config schema [kind]")
+			fmt.Fprintln(runenv.From(ctx).Stdout(), "usage: clai config schema [kind]")
 			askExit(setExit, 2)
 			return nil
 		}
 		if len(args) == 0 {
-			printKindVersions()
+			printKindVersions(ctx)
 			return nil
 		}
 		doc, ok := document(args[0])
 		if !ok {
-			fmt.Println(unknownKindMessage(args[0]))
+			fmt.Fprintln(runenv.From(ctx).Stdout(), unknownKindMessage(args[0]))
 			askExit(setExit, 2)
 			return nil
 		}
-		if _, err := os.Stdout.Write([]byte(string(doc) + "\n")); err != nil {
+		if _, err := fmt.Fprintln(runenv.From(ctx).Stdout(), string(doc)); err != nil {
 			return diag.Errorf("print the %s schema: %w", args[0], err)
 		}
 		return nil
@@ -189,8 +188,8 @@ Examples:
   clai config dir
   clai config dir mcpServers`,
 	}
-	c.OnRun = func(_ context.Context, c *internal.Command) error {
-		return confdir.Print(c.Args())
+	c.OnRun = func(ctx context.Context, c *internal.Command) error {
+		return confdir.Print(ctx, c.Args())
 	}
 	return c
 }
@@ -241,7 +240,7 @@ func document(kind string) ([]byte, bool) {
 	return configschema.Document(configschema.Kind(kind))
 }
 
-func printKindVersions() {
+func printKindVersions(ctx context.Context) {
 	type kindVersion struct{ kind, version string }
 	versions := make([]kindVersion, 0, len(configschema.Kinds())+1)
 	for _, kind := range configschema.Kinds() {
@@ -250,46 +249,47 @@ func printKindVersions() {
 	versions = append(versions, kindVersion{kind: profileKind, version: profile.SchemaVersion()})
 	slices.SortFunc(versions, func(a, b kindVersion) int { return strings.Compare(a.kind, b.kind) })
 	for _, v := range versions {
-		fmt.Printf("%s %s\n", v.kind, v.version)
+		fmt.Fprintf(runenv.From(ctx).Stdout(), "%s %s\n", v.kind, v.version)
 	}
 }
 
 // listStore prints one line per file; kind "" lists every kind.
-func listStore(kind string, setExit func(int)) error {
+func listStore(ctx context.Context, kind string, setExit func(int)) error {
 	confDir, err := utils.GetClaiConfigDir()
 	if err != nil {
 		return diag.Errorf("get clai config dir: %w", err)
 	}
 	if kind == "" {
 		for _, k := range allKinds() {
-			if err := listKind(confDir, k); err != nil {
+			if err := listKind(ctx, confDir, k); err != nil {
 				return err
 			}
 		}
 		return nil
 	}
 	if !knownKind(kind) {
-		fmt.Println(unknownKindMessage(kind))
+		fmt.Fprintln(runenv.From(ctx).Stdout(), unknownKindMessage(kind))
 		askExit(setExit, 2)
 		return nil
 	}
-	return listKind(confDir, kind)
+	return listKind(ctx, confDir, kind)
 }
 
-func listKind(confDir, kind string) error {
+func listKind(ctx context.Context, confDir, kind string) error {
 	if kind == profileKind {
-		return listProfiles(confDir)
+		return listProfiles(ctx, confDir)
 	}
 	paths, err := kindPaths(confDir, kind)
 	if err != nil {
 		return err
 	}
+	out := runenv.From(ctx).Stdout()
 	for _, path := range paths {
 		if _, err := os.ReadFile(path); err != nil {
-			fmt.Printf("%s %s: cannot read: %v\n", kind, path, err)
+			fmt.Fprintf(out, "%s %s: cannot read: %v\n", kind, path, err)
 			continue
 		}
-		fmt.Printf("%s %s\n", kind, path)
+		fmt.Fprintf(out, "%s %s\n", kind, path)
 	}
 	return nil
 }
@@ -354,47 +354,48 @@ type listedProfile struct {
 	} `json:"source"`
 }
 
-// listProfiles prints one line per profile file, naming every file it cannot
-// read and every file the checker refuses instead of skipping it silently.
-func listProfiles(confDir string) error {
+// listProfiles prints one line per profile file, keeping a file it cannot
+// read in the listing with the reason, and warns about it with the command
+// that explains it, so nothing is skipped silently.
+func listProfiles(ctx context.Context, confDir string) error {
 	dir := filepath.Join(confDir, "profiles")
 	paths, err := jsonFiles(dir)
 	if err != nil {
 		return err
 	}
 	if _, err := os.ReadDir(dir); err != nil && os.IsNotExist(err) {
-		ancli.Warnf("no profiles directory found at %s\n", dir)
+		runenv.Warnf(ctx, runenv.SubsystemProfiles, "no profiles directory found at %s", dir)
 		return nil
 	}
 	if len(paths) == 0 {
-		ancli.Warnf("no profiles found in %s\n", dir)
+		runenv.Warnf(ctx, runenv.SubsystemProfiles, "no profiles found in %s", dir)
 		return nil
 	}
 	env, _ := newProfileEnv(confDir)
 	for _, path := range paths {
-		printProfileLine(path, env)
+		printProfileLine(ctx, path, env)
 	}
 	return nil
 }
 
-func printProfileLine(path string, env profile.Env) {
+func printProfileLine(ctx context.Context, path string, env profile.Env) {
 	body, err := os.ReadFile(path)
 	if err != nil {
-		printUnreadableProfile(path, err.Error())
+		reportUnreadableProfile(ctx, path, err.Error())
 		return
 	}
 	findings, err := profile.Validate(body, profile.File, env)
 	if err != nil {
-		printUnreadableProfile(path, err.Error())
+		reportUnreadableProfile(ctx, path, err.Error())
 		return
 	}
 	if findings.Failed(profile.File) {
-		printUnreadableProfile(path, strings.Join(findings.Problems(profile.File), "; "))
+		reportUnreadableProfile(ctx, path, strings.Join(findings.Problems(profile.File), "; "))
 		return
 	}
 	var p listedProfile
 	if err := json.Unmarshal(body, &p); err != nil {
-		printUnreadableProfile(path, err.Error())
+		reportUnreadableProfile(ctx, path, err.Error())
 		return
 	}
 	name := strings.TrimSpace(p.Name)
@@ -402,15 +403,20 @@ func printProfileLine(path string, env profile.Env) {
 		base := filepath.Base(path)
 		name = strings.TrimSuffix(base, filepath.Ext(base))
 	}
-	fmt.Printf("profile %s: name=%s model=%s tools=%v prompt=%q", path, name, p.Model, p.Tools, firstSentence(p.Prompt))
+	out := runenv.From(ctx).Stdout()
+	fmt.Fprintf(out, "profile %s: name=%s model=%s tools=%v prompt=%q", path, name, p.Model, p.Tools, firstSentence(p.Prompt))
 	if p.Source != nil && p.Source.Target != "" {
-		fmt.Printf(" source=%s", p.Source.Target)
+		fmt.Fprintf(out, " source=%s", p.Source.Target)
 	}
-	fmt.Println()
+	fmt.Fprintln(out)
 }
 
-func printUnreadableProfile(path, reason string) {
-	fmt.Printf("profile %s: cannot read: %s. Explain it with: clai profiles validate %s\n", path, reason, path)
+// reportUnreadableProfile keeps the file's place in the listing, with the
+// reason it has none, and warns with the command that explains it
+// (architecture/diagnostics.md: data on stdout, diagnostics on stderr).
+func reportUnreadableProfile(ctx context.Context, path, reason string) {
+	fmt.Fprintf(runenv.From(ctx).Stdout(), "profile %s: cannot read: %s. Explain it with: clai profiles validate %s\n", path, reason, path)
+	runenv.Warnf(ctx, runenv.SubsystemProfiles, "Cannot read %s: %s. Explain it with: clai profiles validate %s", path, reason, path)
 }
 
 // firstSentence is the one-line prompt summary a listing shows.
@@ -432,7 +438,7 @@ func firstSentence(prompt string) string {
 type hiddenAlias struct {
 	*internal.Command
 	canonical func(args []string) ([]string, bool)
-	rerun     func(args []string) int
+	rerun     func(ctx context.Context, args []string) int
 	setExit   func(int)
 	// forwardFlags carries the flags the hidden spelling was given into the
 	// canonical run, which parses them on a command of its own.
@@ -441,7 +447,7 @@ type hiddenAlias struct {
 
 // newHiddenAlias wraps wrapped. The clone drops OnSetup: the canonical run
 // repeats it once, so delegating would run the config prep twice.
-func newHiddenAlias(wrapped *internal.Command, canonical func([]string) ([]string, bool), rerun func([]string) int, setExit func(int)) *hiddenAlias {
+func newHiddenAlias(wrapped *internal.Command, canonical func([]string) ([]string, bool), rerun func(context.Context, []string) int, setExit func(int)) *hiddenAlias {
 	clone := *wrapped
 	clone.OnSetup = nil
 	return &hiddenAlias{Command: &clone, canonical: canonical, rerun: rerun, setExit: setExit}
@@ -456,7 +462,7 @@ func (h *hiddenAlias) Run(ctx context.Context) error {
 			if h.forwardFlags {
 				args = append(args, setFlagTokens(h.Flagset())...)
 			}
-			if code := h.rerun(args); code != 0 {
+			if code := h.rerun(ctx, args); code != 0 {
 				askExit(h.setExit, code)
 			}
 			return nil
@@ -468,7 +474,7 @@ func (h *hiddenAlias) Run(ctx context.Context) error {
 // newVerbAlias wraps one subcommand of a hidden spelling so it re-enters Run
 // as the config verb that now documents it, flags included: `profiles
 // validate x -json` becomes `config validate profile x -json`.
-func newVerbAlias(wrapped *internal.Command, canonical func(args []string) ([]string, bool), rerun func([]string) int, setExit func(int)) *hiddenAlias {
+func newVerbAlias(wrapped *internal.Command, canonical func(args []string) ([]string, bool), rerun func(context.Context, []string) int, setExit func(int)) *hiddenAlias {
 	alias := newHiddenAlias(wrapped, canonical, rerun, setExit)
 	alias.forwardFlags = true
 	return alias
@@ -569,20 +575,20 @@ func validateCommand(deps configDeps) *internal.Command {
 	c.OnRun = func(ctx context.Context, c *internal.Command) error {
 		pos, err := verbPositionals(c.Flagset(), c.Args()[1:])
 		if err != nil {
-			printValidateUsage(deps.setExit, err.Error())
+			printValidateUsage(ctx, deps.setExit, err.Error())
 			return nil
 		}
 		switch {
 		case len(pos) < 2:
-			printValidateUsage(deps.setExit, "")
+			printValidateUsage(ctx, deps.setExit, "")
 			return nil
 		case len(pos) > 2:
-			printValidateUsage(deps.setExit, fmt.Sprintf("unexpected argument %q: validate takes a kind and one target", pos[2]))
+			printValidateUsage(ctx, deps.setExit, fmt.Sprintf("unexpected argument %q: validate takes a kind and one target", pos[2]))
 			return nil
 		}
 		kind, target := pos[0], pos[1]
 		if !knownKind(kind) {
-			fmt.Println(unknownKindMessage(kind))
+			fmt.Fprintln(runenv.From(ctx).Stdout(), unknownKindMessage(kind))
 			askExit(deps.setExit, 2)
 			return nil
 		}
@@ -594,24 +600,24 @@ func validateCommand(deps configDeps) *internal.Command {
 			askExit(deps.setExit, int(status))
 			return nil
 		}
-		return validateSchemaTarget(kind, target, asJSON, deps.setExit)
+		return validateSchemaTarget(ctx, kind, target, asJSON, deps.setExit)
 	}
 	return c
 }
 
 // printValidateUsage prints one usage line, naming the offending argument when
 // there is one, and asks for exit 2.
-func printValidateUsage(setExit func(int), problem string) {
+func printValidateUsage(ctx context.Context, setExit func(int), problem string) {
 	line := "usage: clai config validate <kind> <target> [-json]"
 	if problem != "" {
 		line += ": " + problem
 	}
-	fmt.Println(line)
+	fmt.Fprintln(runenv.From(ctx).Stdout(), line)
 	askExit(setExit, 2)
 }
 
 // validateSchemaTarget applies target's kind document and prints its findings.
-func validateSchemaTarget(kind, target string, asJSON bool, setExit func(int)) error {
+func validateSchemaTarget(ctx context.Context, kind, target string, asJSON bool, setExit func(int)) error {
 	body, err := os.ReadFile(target)
 	if err != nil {
 		return internal.StatusError(2, diag.Errorf("read the %s target %s: %w", kind, target, err))
@@ -620,7 +626,7 @@ func validateSchemaTarget(kind, target string, asJSON bool, setExit func(int)) e
 	if err != nil {
 		return internal.StatusError(2, err)
 	}
-	if err := printConfigFindings(findings, asJSON); err != nil {
+	if err := printConfigFindings(ctx, findings, asJSON); err != nil {
 		return err
 	}
 	if slices.ContainsFunc(findings, func(f configschema.Finding) bool { return f.Severity == configschema.Error }) {
@@ -639,7 +645,7 @@ type configFindingJSON struct {
 
 // printConfigFindings writes one line per finding, or the findings as one
 // JSON array and nothing else.
-func printConfigFindings(findings []configschema.Finding, asJSON bool) error {
+func printConfigFindings(ctx context.Context, findings []configschema.Finding, asJSON bool) error {
 	if asJSON {
 		out := make([]configFindingJSON, 0, len(findings))
 		for _, f := range findings {
@@ -654,11 +660,11 @@ func printConfigFindings(findings []configschema.Finding, asJSON bool) error {
 		if err != nil {
 			return diag.Errorf("encode findings: %w", err)
 		}
-		fmt.Printf("%s\n", encoded)
+		fmt.Fprintf(runenv.From(ctx).Stdout(), "%s\n", encoded)
 		return nil
 	}
 	for _, f := range findings {
-		fmt.Printf("%s %s: %s [*]\n", configSeverityName(f.Severity), f.Member, f.Reason)
+		fmt.Fprintf(runenv.From(ctx).Stdout(), "%s %s: %s [*]\n", configSeverityName(f.Severity), f.Member, f.Reason)
 	}
 	return nil
 }
@@ -758,11 +764,11 @@ func (d configDeps) publishResolved(ctx context.Context, args []string, opts clo
 	var err error
 	if kind == "" {
 		if name == "" {
-			if kind, err = askHubKind(reader); err != nil {
+			if kind, err = askHubKind(ctx, reader); err != nil {
 				return err
 			}
 		} else {
-			if kind, err = d.inferKind(name, reader); err != nil {
+			if kind, err = d.inferKind(ctx, name, reader); err != nil {
 				return err
 			}
 		}
@@ -771,7 +777,7 @@ func (d configDeps) publishResolved(ctx context.Context, args []string, opts clo
 		if reader == nil {
 			return &profiles.MissingPublishArgError{Usage: "clai config publish " + kind + " <name>"}
 		}
-		if name, err = askLine(reader, "name"); err != nil {
+		if name, err = askLine(ctx, reader, "name"); err != nil {
 			return err
 		}
 	}
@@ -786,8 +792,8 @@ func (d configDeps) publishResolved(ctx context.Context, args []string, opts clo
 // inferKind names the kind a bare publish name belongs to: the one kind whose
 // items carry it, the kind asked for when several do, and profile for a path
 // no discovery sees.
-func (d configDeps) inferKind(name string, reader *bufio.Reader) (string, error) {
-	kinds, err := d.profiles.KindsCarrying(name)
+func (d configDeps) inferKind(ctx context.Context, name string, reader *bufio.Reader) (string, error) {
+	kinds, err := d.profiles.KindsCarrying(ctx, name)
 	if err != nil {
 		return "", err
 	}
@@ -801,16 +807,16 @@ func (d configDeps) inferKind(name string, reader *bufio.Reader) (string, error)
 		return "", fmt.Errorf("no alias, profile or skill named %q: pass a kind, as in clai config publish <%s> %s",
 			name, strings.Join(profiles.HubKindNames(), "|"), name)
 	default:
-		return askAmong(reader, kinds, fmt.Sprintf("which kind for %q", name))
+		return askAmong(ctx, reader, kinds, fmt.Sprintf("which kind for %q", name))
 	}
 }
 
 // askHubKind asks which hub kind to publish, when nobody named one.
-func askHubKind(reader *bufio.Reader) (string, error) {
+func askHubKind(ctx context.Context, reader *bufio.Reader) (string, error) {
 	if reader == nil {
 		return "", &profiles.MissingPublishArgError{Usage: "clai config publish <" + strings.Join(profiles.HubKindNames(), "|") + ">"}
 	}
-	answer, err := askLine(reader, "publish kind ("+strings.Join(profiles.HubKindNames(), "|")+")")
+	answer, err := askLine(ctx, reader, "publish kind ("+strings.Join(profiles.HubKindNames(), "|")+")")
 	if err != nil {
 		return "", err
 	}
@@ -821,11 +827,11 @@ func askHubKind(reader *bufio.Reader) (string, error) {
 }
 
 // askAmong asks which of options is meant.
-func askAmong(reader *bufio.Reader, options []string, prompt string) (string, error) {
+func askAmong(ctx context.Context, reader *bufio.Reader, options []string, prompt string) (string, error) {
 	if reader == nil {
 		return "", &profiles.MissingPublishArgError{Usage: "pass it, one of " + strings.Join(options, ", ")}
 	}
-	answer, err := askLine(reader, prompt+" ("+strings.Join(options, "|")+")")
+	answer, err := askLine(ctx, reader, prompt+" ("+strings.Join(options, "|")+")")
 	if err != nil {
 		return "", err
 	}
@@ -836,8 +842,8 @@ func askAmong(reader *bufio.Reader, options []string, prompt string) (string, er
 }
 
 // askLine prints a prompt and reads one trimmed line.
-func askLine(reader *bufio.Reader, prompt string) (string, error) {
-	fmt.Printf("%s: ", prompt)
+func askLine(ctx context.Context, reader *bufio.Reader, prompt string) (string, error) {
+	fmt.Fprintf(runenv.From(ctx).Stdout(), "%s: ", prompt)
 	line, err := reader.ReadString('\n')
 	answer := strings.TrimSpace(line)
 	if err != nil && answer == "" {
@@ -899,18 +905,18 @@ func profileOnlyCommand(name, desc, help string, deps configDeps, run func(conte
 	c.OnRun = func(ctx context.Context, c *internal.Command) error {
 		pos := c.Args()[1:]
 		if len(pos) == 0 {
-			fmt.Println("usage: " + usage)
+			fmt.Fprintln(runenv.From(ctx).Stdout(), "usage: "+usage)
 			askExit(deps.setExit, 2)
 			return nil
 		}
 		if pos[0] != profileKind {
-			fmt.Printf("config %s does not exist for kind %q: the operation is %s\n", name, pos[0], usage)
+			fmt.Fprintf(runenv.From(ctx).Stdout(), "config %s does not exist for kind %q: the operation is %s\n", name, pos[0], usage)
 			askExit(deps.setExit, 2)
 			return nil
 		}
 		args := pos[1:]
 		if len(args) < minArgs || len(args) > maxArgs {
-			fmt.Println("usage: " + usage)
+			fmt.Fprintln(runenv.From(ctx).Stdout(), "usage: "+usage)
 			askExit(deps.setExit, 2)
 			return nil
 		}

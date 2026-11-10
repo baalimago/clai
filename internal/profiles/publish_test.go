@@ -135,7 +135,7 @@ func TestPublish_errors(t *testing.T) {
 	deps, conf, _ := publishDeps(t, hub)
 	writeProfile(t, conf, "bot", publishBody)
 	err := deps.Publish(t.Context(), "bot", PublishOptions{})
-	if err == nil || !strings.Contains(err.Error(), "clai profiles publish bot -handle ada-l") {
+	if err == nil || !strings.Contains(err.Error(), "clai config publish profile bot -handle ada-l") {
 		t.Fatalf("handle required: err = %v", err)
 	}
 
@@ -314,7 +314,7 @@ func TestPublishAlias_modeDisambiguationAndMacroByNameAndIndex(t *testing.T) {
 	}
 
 	// Ambiguous without Mode or interactive input fails with a clear hint.
-	if err := deps.PublishAlias(t.Context(), "strong", PublishOptions{Handle: "ada"}); err == nil || !strings.Contains(err.Error(), "clai cloud publish alias strong") {
+	if err := deps.PublishAlias(t.Context(), "strong", PublishOptions{Handle: "ada"}); err == nil || !strings.Contains(err.Error(), "clai config publish alias strong") {
 		t.Fatalf("ambiguous without input: err = %v", err)
 	}
 
@@ -355,7 +355,7 @@ func TestPublishInteractive_traversesTreeAndSupportsMacroArgs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 0 args (`clai cloud publish`):
+	// 0 args (`clai config publish`):
 	// Step 1 picks kind 0 (alias), Step 2 picks alias 0 (strong), Step 3 picks mode 0 (photo).
 	hub.got = nil
 	if err := deps.PublishInteractive(t.Context(), strings.NewReader("0\n0\n0\n"), nil, PublishOptions{Handle: "ada"}); err != nil {
@@ -383,7 +383,7 @@ func TestPublishInteractive_traversesTreeAndSupportsMacroArgs(t *testing.T) {
 		t.Fatalf("0 args skill sent %+v", hub.got)
 	}
 
-	// 1 arg (`clai cloud publish alias`): skips Step 1, Step 2 picks alias 0 (strong), Step 3 picks mode 1 (text).
+	// 1 arg (`clai config publish alias`): skips Step 1, Step 2 picks alias 0 (strong), Step 3 picks mode 1 (text).
 	hub.got = nil
 	if err := deps.PublishInteractive(t.Context(), strings.NewReader("0\n1\n"), []string{"alias"}, PublishOptions{Handle: "ada"}); err != nil {
 		t.Fatalf("1 arg alias: %v", err)
@@ -392,7 +392,7 @@ func TestPublishInteractive_traversesTreeAndSupportsMacroArgs(t *testing.T) {
 		t.Fatalf("1 arg alias sent %+v", hub.got)
 	}
 
-	// 2 args (`clai cloud publish alias strong`): skips Steps 1 & 2, Step 3 picks mode 0 (photo).
+	// 2 args (`clai config publish alias strong`): skips Steps 1 & 2, Step 3 picks mode 0 (photo).
 	hub.got = nil
 	if err := deps.PublishInteractive(t.Context(), strings.NewReader("0\n"), []string{"alias", "strong"}, PublishOptions{Handle: "ada"}); err != nil {
 		t.Fatalf("2 args alias strong: %v", err)
@@ -401,7 +401,7 @@ func TestPublishInteractive_traversesTreeAndSupportsMacroArgs(t *testing.T) {
 		t.Fatalf("2 args alias strong sent %+v", hub.got)
 	}
 
-	// 3 args (`clai cloud publish alias strong photo`): macro mode, no interactive input read.
+	// 3 args (`clai config publish alias strong photo`): macro mode, no interactive input read.
 	hub.got = nil
 	if err := deps.PublishInteractive(t.Context(), strings.NewReader(""), []string{"alias", "strong", "photo"}, PublishOptions{Handle: "ada"}); err != nil {
 		t.Fatalf("3 args macro photo: %v", err)
@@ -422,7 +422,7 @@ func TestPublishAlias_errorPaths(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(conf, "photoConfig.json"), []byte(`{"model-aliases":{"art":["dall-e-3"]}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := deps.PublishAlias(t.Context(), "art", PublishOptions{}); err == nil || !strings.Contains(err.Error(), "clai cloud publish alias art -handle ada") {
+	if err := deps.PublishAlias(t.Context(), "art", PublishOptions{}); err == nil || !strings.Contains(err.Error(), "clai config publish alias art -handle ada") {
 		t.Fatalf("handle required hint: err = %v", err)
 	}
 	if err := deps.PublishAlias(t.Context(), "missing", PublishOptions{}); !errors.Is(err, os.ErrNotExist) {
@@ -501,10 +501,10 @@ func TestPublishInteractive_nilInputNeverPrompts(t *testing.T) {
 		args []string
 		want string
 	}{
-		{nil, "clai cloud publish <alias|profile|skill>"},
-		{[]string{"alias"}, "clai cloud publish alias <name>"},
-		{[]string{"profile"}, "clai cloud publish profile <name>"},
-		{[]string{"alias", "fast"}, "clai cloud publish alias fast <photo|text>"},
+		{nil, "clai config publish <alias|profile|skill>"},
+		{[]string{"alias"}, "clai config publish alias <name>"},
+		{[]string{"profile"}, "clai config publish profile <name>"},
+		{[]string{"alias", "fast"}, "clai config publish alias fast <photo|text>"},
 	} {
 		if err := deps.PublishInteractive(t.Context(), nil, tc.args, PublishOptions{}); err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Fatalf("%v: err = %v, want %q", tc.args, err, tc.want)

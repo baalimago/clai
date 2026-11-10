@@ -74,36 +74,48 @@ func Test_goldenFile_PROFILES_list_prints_summary_for_valid_profiles_and_skips_i
 	}
 
 	var gotStatus int
-	stdout, stderr := e2etest.CaptureStdoutStderr(t, func() {
+	stdout, _ := e2etest.CaptureStdoutStderr(t, func() {
 		gotStatus = harness.Run(strings.Split("profiles", " "))
 	})
 
 	testboil.FailTestIfDiff(t, gotStatus, 0)
 
-	// runProfilesList iterates directory entries; order is not guaranteed.
-	// Assert presence of key blocks rather than exact full output.
-	testboil.AssertStringContains(t, stdout, "Name: cody\n")
-	testboil.AssertStringContains(t, stdout, "Model: test\n")
-	testboil.AssertStringContains(t, stdout, fmt.Sprintf("Tools: %v\n", []string{"bash", "rg"}))
-	testboil.AssertStringContains(t, stdout, "First sentence prompt: You are Cody.\n---\n")
+	// `config list profile` prints one line per file.
+	codyLine := profileLine(t, stdout, filepath.Join(profilesDir, "cody.json"))
+	for _, want := range []string{"model=test", fmt.Sprintf("tools=%v", []string{"bash", "rg"}), `prompt="You are Cody."`} {
+		if !strings.Contains(codyLine, want) {
+			t.Fatalf("cody line %q lacks %q", codyLine, want)
+		}
+	}
 
-	testboil.AssertStringContains(t, stdout, "Name: gopher\n")
-	testboil.AssertStringContains(t, stdout, fmt.Sprintf("Tools: %v\n", []string{}))
-	// Note: getFirstSentence includes the newline terminator when splitting on \n.
-	testboil.AssertStringContains(t, stdout, "First sentence prompt: First line only\n\n---\n")
+	gopherLine := profileLine(t, stdout, filepath.Join(profilesDir, "gopher.json"))
+	for _, want := range []string{"model=test", "tools=[]", `prompt="First line only"`} {
+		if !strings.Contains(gopherLine, want) {
+			t.Fatalf("gopher line %q lacks %q", gopherLine, want)
+		}
+	}
 
 	// The malformed profile is named with the command that explains it, and
 	// must never render a Name block: the list hides nothing and invents
 	// nothing.
 	broken := filepath.Join(profilesDir, "broken.json")
-	testboil.AssertStringContains(t, stderr, broken)
-	testboil.AssertStringContains(t, stderr, "clai profiles validate "+broken)
-	if strings.Contains(stdout, broken) {
-		t.Fatalf("stdout %q carries the diagnostic for %s", stdout, broken)
-	}
-	if strings.Contains(stdout, "Name: broken") {
+	testboil.AssertStringContains(t, stdout, broken)
+	testboil.AssertStringContains(t, stdout, "clai profiles validate "+broken)
+	if strings.Contains(profileLine(t, stdout, broken), "model=") {
 		t.Fatalf("output must not list invalid profile file; got output: %q", stdout)
 	}
+}
+
+// profileLine returns the listing line that names path.
+func profileLine(t *testing.T, stdout, path string) string {
+	t.Helper()
+	for line := range strings.SplitSeq(stdout, "\n") {
+		if strings.Contains(line, path) {
+			return line
+		}
+	}
+	t.Fatalf("no line names %q in %q", path, stdout)
+	return ""
 }
 
 func Test_goldenFile_PROFILES_list_warns_when_no_profiles_found(t *testing.T) {

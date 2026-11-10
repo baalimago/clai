@@ -171,11 +171,11 @@ func stores(args []string) ([]sync.Store, error) {
 		return sync.Stores, nil
 	}
 	if len(args) > 1 {
-		return nil, &UsageError{Msg: "name at most one store: config or conversations"}
+		return nil, &UsageError{Msg: "name at most one store: settings or conversations"}
 	}
 	s, ok := sync.ParseStore(args[0])
 	if !ok {
-		return nil, &UsageError{Msg: fmt.Sprintf("unknown store %q: use config or conversations", args[0])}
+		return nil, &UsageError{Msg: fmt.Sprintf("unknown store %q: use settings or conversations", args[0])}
 	}
 	return []sync.Store{s}, nil
 }
@@ -191,7 +191,7 @@ func (r *runner) status(ctx context.Context, args []string, imports, raw bool) e
 	}
 	var out []sync.Status
 	for _, s := range which {
-		status := r.track(engine, "checking "+string(s))
+		status := r.track(engine, "checking "+sync.StoreName(s))
 		st, err := engine.Status(ctx, s, sync.PlanOptions{Imports: imports})
 		status.Stop()
 		if err != nil {
@@ -233,7 +233,7 @@ func (r *runner) diff(ctx context.Context, args []string, remote, list bool) err
 	// with; only config files, few and small, are shown line by line.
 	var sums []sync.Summary
 	for _, s := range sync.Stores {
-		status := r.track(engine, "comparing "+string(s))
+		status := r.track(engine, "comparing "+sync.StoreName(s))
 		sum, err := engine.Summarize(ctx, s, remote)
 		status.Stop()
 		if err != nil {
@@ -308,7 +308,7 @@ func (r *runner) pull(ctx context.Context, args []string, theirs, mine, raw bool
 	interactive := r.deps.Interactive() && !raw
 	in := bufio.NewReader(r.deps.In)
 	for _, s := range which {
-		status := r.track(engine, "pulling "+string(s))
+		status := r.track(engine, "pulling "+sync.StoreName(s))
 		if interactive {
 			opts.Choose = func(f sync.FirstPull) (sync.Mode, error) {
 				// The question needs the terminal row the status draws on.
@@ -488,7 +488,7 @@ func (r *runner) commit(ctx context.Context, args []string, msg string, imports,
 	var reports []commitReport
 	decision := false
 	for _, s := range which {
-		status := r.track(engine, "committing "+string(s))
+		status := r.track(engine, "committing "+sync.StoreName(s))
 		res, err := engine.Commit(ctx, s, sync.CommitOptions{Message: msg, Paths: paths[s], Imports: imports})
 		status.Stop()
 		res.Store = s

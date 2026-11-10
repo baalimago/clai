@@ -57,3 +57,18 @@ func recordExit(ctx context.Context, err error) error {
 	}
 	return err
 }
+
+// statusError is an ExitCoder carrying the message of the failure that asks
+// for its status: cmd.Run still prints the message, and Run exits with code.
+type statusError struct {
+	code int
+	err  error
+}
+
+func (e *statusError) Error() string { return e.err.Error() }
+func (e *statusError) Unwrap() error { return e.err }
+func (e *statusError) ExitCode() int { return e.code }
+
+// StatusError wraps err so a run that fails on it exits with code, rather
+// than the 1 cmd.Run gives every error.
+func StatusError(code int, err error) error { return &statusError{code: code, err: err} }

@@ -132,7 +132,9 @@ type UsageError struct{ Msg string }
 func (e *UsageError) Error() string { return e.Msg }
 
 // subcommandNames is the order help and errors list the subcommands in.
-var subcommandNames = []string{"login", "logout", "whoami", "publish", "status", "diff", "pull", "commit", "resolve", "log"}
+// `publish` is a hidden alias now that `config publish` is the documented
+// spelling, so it appears in no listing.
+var subcommandNames = []string{"login", "logout", "whoami", "status", "diff", "pull", "commit", "resolve", "log"}
 
 // UnknownSubcommandError is `clai cloud <name>` for a name that is not one.
 type UnknownSubcommandError struct{ Name string }
@@ -182,14 +184,13 @@ func noArgs(name string, args []string) error {
 const rawDesc = "print JSON instead of text"
 
 const helpText = `cloud <subcommand>. Your clai.chat account, and git-style sync of your
-config and conversations. Nothing syncs on its own: only these commands
+settings and conversations. Nothing syncs on its own: only these commands
 talk to clai.chat, and clai works the same without an account.
 
 Account
   login [-url URL] [-name NAME]   connect this machine (approve in the browser)
   logout                          disconnect it and forget its key
   whoami                          account, device, storage
-  publish [kind [name [mode]]]    publish an alias, profile or skill to the Hub
 
 Sync
   status [-imports] [store]       local changes, and what the server has;
@@ -202,7 +203,7 @@ Sync
   resolve <path> [-mine|-theirs]  settle a conflict
   log [store] [-limit N]          recent commits
 
-Stores: config (profiles, MCP servers, shell contexts, skills, mode configs,
+Stores: settings (profiles, MCP servers, shell contexts, skills, mode configs,
 theme) and conversations. Config sync is free (up to 1 GB); conversations
 cost $1 per started GB a month and need a card on file.
 A config file that holds a key is never committed: status names it.

@@ -155,13 +155,13 @@ func Test_e2e_cloud_json_plain_records_and_first_pull_prompt(t *testing.T) {
 		}
 	}
 
-	status := runWithInput(t, "-json cloud status config", strings.NewReader(""), false, false)
-	if status.status != 0 || !strings.Contains(status.stdout, "config: ") || !strings.Contains(status.stdout, "clai cloud pull config: bring down 1 commit") {
+	status := runWithInput(t, "-json cloud status settings", strings.NewReader(""), false, false)
+	if status.status != 0 || !strings.Contains(status.stdout, "settings: ") || !strings.Contains(status.stdout, "clai cloud pull settings: bring down 1 commit") {
 		t.Fatalf("status %d stdout %q", status.status, status.stdout)
 	}
 	noLook(t, status.stdout)
 
-	pull := runWithInput(t, "-json cloud pull config", strings.NewReader("r\n"), true, false)
+	pull := runWithInput(t, "-json cloud pull settings", strings.NewReader("r\n"), true, false)
 	if pull.status != 0 {
 		t.Fatalf("pull status %d stderr %q", pull.status, pull.stderr)
 	}

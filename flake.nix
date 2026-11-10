@@ -21,7 +21,7 @@
           pname = "clai";
           inherit version;
           src = ./.;
-          vendorHash = "sha256-sgwK4jHFZbZOndN8c6/2qft1SY9z8PIE4IL9drNRI/w=";
+          vendorHash = "sha256-M/SvjZ/GrVmFUN+vWfgP5gyNouBQQ7Gz/Yv0vMyITd8=";
           ldflags = [
             "-s"
             "-w"

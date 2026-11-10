@@ -64,9 +64,9 @@ func Test_CLOUD_publishWithoutATerminalNamesTheMissingArgument(t *testing.T) {
 	writeAliasConfigs(t, env.confDir)
 	t.Setenv("CLAI_CLOUD_TOKEN", fakeHubToken)
 	for args, want := range map[string]string{
-		"cloud publish":            "clai cloud publish <alias|profile|skill>",
-		"cloud publish alias":      "clai cloud publish alias <name>",
-		"cloud publish alias fast": "clai cloud publish alias fast <audio|photo|text>",
+		"cloud publish":            "clai config publish <alias|profile|skill>",
+		"cloud publish alias":      "clai config publish alias <name>",
+		"cloud publish alias fast": "clai config publish alias fast <audio|photo|text>",
 	} {
 		status, _, stderr := runRemote(t, args)
 		if status != 1 || !strings.Contains(stderr, want) {

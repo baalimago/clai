@@ -42,6 +42,17 @@ clai <command> -h
 The flagset's own output is silenced upstream (`parseFlagset` →
 `io.Discard`), so stdlib's "Usage of x:" dump never duplicates the help.
 
+## Hidden spellings
+
+`commandTable` skips every command whose `Hidden() bool` reports true, so the
+pre-existing `setup|s`, `profiles`, `confdir` and `cloud publish` spellings
+never appear in the usage table, and the completion engine skips them for the
+same reason. A subcommand table (`subcommands:` under a command's help) is
+filtered the same way, so `clai profiles -h` and `clai cloud -h` list only the
+verbs that still live there. The hidden spellings still dispatch, and
+`clai help profiles` or `clai profiles -h` explain the alias as before (see
+[cmd-dispatch.md](./cmd-dispatch.md#compatibility-hidden-spellings)).
+
 ## Key files
 
 | File | Purpose |
@@ -49,10 +60,11 @@ The flagset's own output is silenced upstream (`parseFlagset` →
 | `internal/cli` | `usageTemplate`: the command table, a pointer to each command's own `-h` for its examples, `-json`, how to investigate with `LOG_LEVEL`, and the subsystem table; dirs interpolated in `Run()` |
 | `internal/cli/help.go` | `helpAsCommand`, `withHelp`, `commandTable`, `subsystemTable`: the help command and its flag spellings |
 | `internal/runenv/types.go` | `Subsystems()`: the one place a subsystem is registered, with the purpose the usage prints; the diagnostic types and the names `LOG_LEVEL` accepts come from it |
+| `internal/cli/config.go` | the `config` tree and the `hiddenAlias` wrapper the hidden spellings re-enter `Run` through |
 | `internal/<domain>/cmd.go` | per-command help strings with Examples; `internal.Command.Help()` appends the flag list |
 | `go_away_boilerplate/pkg/cmd` | `-h` routing, sub-table composition, sorted command table |
 
 ## Profile documentation
 
 The old `clai help profile` doc (`internal.ProfileHelp`) lives in
-`clai profiles -h`.
+`clai profiles -h`, which stays callable as a hidden alias.

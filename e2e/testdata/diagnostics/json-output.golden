@@ -3,11 +3,7 @@
 == status
 0
 == stdout
-{"type":"output","stream":"stdout","text":"Name: writer"}
-{"type":"output","stream":"stdout","text":"Model: test"}
-{"type":"output","stream":"stdout","text":"Tools: []"}
-{"type":"output","stream":"stdout","text":"First sentence prompt: You write short answers."}
-{"type":"output","stream":"stdout","text":"---"}
+{"type":"output","stream":"stdout","text":"profile $CONFIG/profiles/writer.json: name=writer model=test tools=[] prompt=\"You write short answers.\""}
 
 == stderr
 

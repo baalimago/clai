@@ -116,8 +116,10 @@ func Test_e2e_profile_schema(t *testing.T) {
 	if status != 0 || stderr != "" {
 		t.Fatalf("status %d stderr %q, want 0 and no complaint", status, stderr)
 	}
-	if !bytes.Equal([]byte(stdout), want) {
-		t.Fatalf("schema output differs from the embedded document:\n%s", stdout)
+	// `profiles schema` now dispatches through `config schema profile`, which
+	// prints the embedded bytes and then the newline every schema verb adds.
+	if !bytes.Equal([]byte(stdout), append(slices.Clone(want), '\n')) {
+		t.Fatalf("schema output differs from the embedded document plus a newline:\n%s", stdout)
 	}
 }
 
@@ -215,13 +217,15 @@ func Test_e2e_publish_refused(t *testing.T) {
 func Test_e2e_profile_validate_usage(t *testing.T) {
 	_ = e2etest.SetupMainTestConfigDir(t)
 	status, stdout, stderr := runRemote(t, "profiles validate")
-	if status != 2 || !strings.Contains(stdout, "usage: clai profiles validate <target>") {
+	// The hidden spelling delegates to `config validate profile`, which owns
+	// the documented usage line.
+	if status != 2 || !strings.Contains(stdout, "usage: clai config validate <kind> <target> [-json]") {
 		t.Fatalf("no target: status %d stdout %q stderr %q, want a usage line and 2", status, stdout, stderr)
 	}
 	good := writeProfileBody(t, validProfileBody)
 	bad := writeProfileBody(t, `{"model":"test","prompt":"p","promt":"x"}`)
 	status, stdout, stderr = runRemote(t, "profiles validate "+good+" "+bad)
-	if status != 2 || !strings.Contains(stdout, bad) || strings.Contains(stdout, "error ") {
+	if status != 2 || !strings.Contains(stdout, "unexpected argument") || !strings.Contains(stdout, bad) || strings.Contains(stdout, "error ") {
 		t.Fatalf("second target: status %d stdout %q stderr %q, want a usage line naming %q and 2", status, stdout, stderr, bad)
 	}
 	status, stdout, stderr = runRemote(t, "profiles validate "+good+" -bogus")
@@ -229,8 +233,9 @@ func Test_e2e_profile_validate_usage(t *testing.T) {
 		t.Fatalf("unknown flag: status %d stdout %q stderr %q, want a usage line naming -bogus and 2", status, stdout, stderr)
 	}
 	status, stdout, stderr = runRemote(t, "profiles validate no-such-profile")
-	if status != 1 || !strings.Contains(stderr, "no such profile: no-such-profile") {
-		t.Fatalf("unknown name: status %d stdout %q stderr %q, want 1 and no such profile", status, stdout, stderr)
+	// A target that is not there is a usage error, not a finding: exit 2.
+	if status != 2 || !strings.Contains(stderr, "no such profile: no-such-profile") {
+		t.Fatalf("unknown name: status %d stdout %q stderr %q, want 2 and no such profile", status, stdout, stderr)
 	}
 }
 
@@ -287,10 +292,10 @@ func Test_e2e_profiles_list_broken(t *testing.T) {
 	if strings.Contains(stdout, "Cannot read") {
 		t.Fatalf("stdout %q carries a diagnostic", stdout)
 	}
-	if strings.Contains(stdout, "Name: refused\n") {
+	if strings.Contains(profileLine(t, stdout, refused), "model=") {
 		t.Fatalf("stdout %q lists a refused profile as healthy", stdout)
 	}
-	if !strings.Contains(stdout, "Name: good\n") {
+	if !strings.Contains(profileLine(t, stdout, filepath.Join(profilesDir, "good.json")), "model=test") {
 		t.Fatalf("stdout %q does not list the readable profile", stdout)
 	}
 }
@@ -303,12 +308,33 @@ func TestProfilesHelpListsSubcommands(t *testing.T) {
 	}
 	help := cmd.HelpText(profilesCommand)
 	completion := completeLinesE2E(t, "profiles", "")
+	// Every profiles verb now delegates to the config tree, so each one is a
+	// hidden spelling: callable, and absent from the help table and the
+	// completion list. The prose still names them, which is what a person
+	// migrating their muscle memory reads.
+	parent, ok := profilesCommand.(cmd.Subcommander)
+	if !ok {
+		t.Fatal("profiles has no subcommands")
+	}
+	subs := parent.Subcommands()
 	for _, name := range []string{"list", "validate", "schema", "install", "update", "trust", "publish"} {
+		sub, ok := subs[name]
+		if !ok {
+			t.Fatalf("no profiles subcommand %q to keep callable", name)
+		}
+		if !cmd.IsHidden(sub) {
+			t.Fatalf("profiles %s is not hidden; it is the spelling of a config verb now", name)
+		}
+		if slices.ContainsFunc(completion, func(line string) bool { return strings.HasPrefix(line, name+"\t") }) {
+			t.Fatalf("completion %v still offers the hidden spelling %q", completion, name)
+		}
+		if strings.Contains(help, "\n  "+name+" ") {
+			t.Fatalf("profiles -h lists the hidden spelling %q:\n%s", name, help)
+		}
+	}
+	for _, name := range []string{"validate", "schema", "install", "update", "trust", "publish"} {
 		if !strings.Contains(help, name) {
 			t.Fatalf("profiles -h does not name %q:\n%s", name, help)
-		}
-		if !slices.ContainsFunc(completion, func(line string) bool { return strings.HasPrefix(line, name+"\t") }) {
-			t.Fatalf("completion %v does not offer %q", completion, name)
 		}
 	}
 }

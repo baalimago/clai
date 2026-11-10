@@ -403,7 +403,7 @@ func Test_REMOTE_installUpdateAndRunByName(t *testing.T) {
 		t.Fatalf("the updated profile did not run version 2")
 	}
 	status, stdout, _ = runRemote(t, "profiles")
-	if status != 0 || !strings.Contains(stdout, "Source: cchub:ada/bot#sha256="+digestOf(remoteBotV2)) {
+	if status != 0 || !strings.Contains(stdout, "source=cchub:ada/bot#sha256="+digestOf(remoteBotV2)) {
 		t.Fatalf("list: status %d stdout %q", status, stdout)
 	}
 }

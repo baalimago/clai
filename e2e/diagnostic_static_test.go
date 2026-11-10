@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/baalimago/clai/e2e/e2etest"
@@ -27,10 +28,25 @@ type runtimeFile struct {
 	imports map[string]string // local name -> import path
 }
 
+// sourceWalkDir reports a directory the module's own source is not under: a
+// dot directory (.git, and a .claude worktree that holds a whole checkout), a
+// test fixture tree, or a report tree.
+func sourceWalkDir(name string) bool {
+	return strings.HasPrefix(name, ".") || name == "testdata" || name == "worklogs"
+}
+
+// parsedFiles memoizes runtimeFiles by root: four static checks parse the same
+// module, and -count parses it again per repetition. The files are read-only.
+var parsedFiles sync.Map // strings.Join(roots, ",") -> []runtimeFile
+
 // runtimeFiles parses every non-test Go file under roots of the module,
-// skipping testdata.
+// skipping sourceWalkDir.
 func runtimeFiles(t *testing.T, roots ...string) []runtimeFile {
 	t.Helper()
+	key := strings.Join(roots, ",")
+	if cached, ok := parsedFiles.Load(key); ok {
+		return cached.([]runtimeFile)
+	}
 	module := e2etest.ModuleRoot(t)
 	fset := token.NewFileSet()
 	var files []runtimeFile
@@ -45,7 +61,7 @@ func runtimeFiles(t *testing.T, roots ...string) []runtimeFile {
 				return err
 			}
 			if d.IsDir() {
-				if d.Name() == "testdata" {
+				if sourceWalkDir(d.Name()) {
 					return filepath.SkipDir
 				}
 				return nil
@@ -80,6 +96,7 @@ func runtimeFiles(t *testing.T, roots ...string) []runtimeFile {
 			t.Fatalf("walk %s: %v", start, err)
 		}
 	}
+	parsedFiles.Store(key, files)
 	return files
 }
 
@@ -304,7 +321,7 @@ func TestPrunedSkillsDiagnostics(t *testing.T) {
 		}
 		rel, _ := filepath.Rel(module, path)
 		if d.IsDir() {
-			if rel == ".git" || rel == "worklogs" {
+			if sourceWalkDir(d.Name()) {
 				return filepath.SkipDir
 			}
 			return nil
@@ -350,7 +367,7 @@ func TestNoInvisibleRunesInSource(t *testing.T) {
 			return walkErr
 		}
 		if entry.IsDir() {
-			if name := entry.Name(); name == "testdata" || name == "worklogs" || (strings.HasPrefix(name, ".") && path != module) {
+			if sourceWalkDir(entry.Name()) {
 				return filepath.SkipDir
 			}
 			return nil

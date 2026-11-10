@@ -28,7 +28,7 @@ func listed(paths []string, most int) string {
 }
 
 func firstPullLines(store sync.Store, f sync.FirstPull, s style) []string {
-	lines := []string{s.Head(string(store), "first pull on this machine", count(f.Remote)+" "+plural(f.Remote, "file", "files")+" on your account", count(f.Local)+" here")}
+	lines := []string{s.Head(sync.StoreName(store), "first pull on this machine", count(f.Remote)+" "+plural(f.Remote, "file", "files")+" on your account", count(f.Local)+" here")}
 	return append(lines, look.Grid("  ", [][]string{
 		{"+ " + count(f.OnlyRemote) + " only on your account", "pulled as they are"},
 		{"= " + count(f.Same) + " the same", "nothing to do"},
@@ -73,8 +73,8 @@ func firstPullKeys() []string {
 
 func firstPullFlags(store sync.Store, s style) []string {
 	return look.Grid("  ", [][]string{
-		next("clai cloud pull "+string(store)+" -theirs", "keep your account's copies"),
-		next("clai cloud pull "+string(store)+" -mine", "keep this machine's copies"),
+		next("clai cloud pull "+sync.StoreName(store)+" -theirs", "keep your account's copies"),
+		next("clai cloud pull "+sync.StoreName(store)+" -mine", "keep this machine's copies"),
 	}, s)
 }
 
@@ -145,7 +145,7 @@ func pullLines(res sync.PullResult, s style) []string {
 	if len(parts) <= 1 {
 		parts = append(parts, "up to date")
 	}
-	lines := []string{s.Head(string(res.Store), parts...)}
+	lines := []string{s.Head(sync.StoreName(res.Store), parts...)}
 	if n := len(res.Merged); n > 0 {
 		lines = append(lines, look.Grid("  ", [][]string{{"~ " + count(n) + " merged", "one copy only added messages to the other"}}, s)...)
 	}
@@ -168,13 +168,13 @@ func pullLines(res sync.PullResult, s style) []string {
 
 func conflictsOpenLines(e *sync.ConflictsOpenError, s style) []string {
 	n := len(e.Paths)
-	lines := []string{s.Head(string(e.Store), "not committed", count(n)+" "+plural(n, "conflict", "conflicts")+" to resolve first")}
+	lines := []string{s.Head(sync.StoreName(e.Store), "not committed", count(n)+" "+plural(n, "conflict", "conflicts")+" to resolve first")}
 	return append(lines, conflictLines(e.Paths, s)...)
 }
 
 func behindLines(e *sync.BehindError, now time.Time, s style) []string {
 	n := len(e.Paths)
-	lines := []string{s.Head(string(e.Store), "not committed", "your account has "+count(n)+" newer "+plural(n, "file", "files"))}
+	lines := []string{s.Head(sync.StoreName(e.Store), "not committed", "your account has "+count(n)+" newer "+plural(n, "file", "files"))}
 	rows := make([][]string, 0, n)
 	for _, p := range e.Paths {
 		row := []string{"~ " + p.Path}
@@ -192,7 +192,7 @@ func behindLines(e *sync.BehindError, now time.Time, s style) []string {
 		rows = append(rows, row)
 	}
 	lines = append(lines, look.Grid("  ", rows, s)...)
-	return append(lines, look.Grid("  ", [][]string{next("clai cloud pull "+string(e.Store), "then commit again")}, s)...)
+	return append(lines, look.Grid("  ", [][]string{next("clai cloud pull "+sync.StoreName(e.Store), "then commit again")}, s)...)
 }
 
 func commitLines(res sync.CommitResult, s style) []string {
@@ -203,7 +203,7 @@ func commitLines(res sync.CommitResult, s style) []string {
 			parts = append(parts, count(res.Imported)+" imported")
 		}
 	}
-	lines := append([]string{s.Head(string(res.Store), parts...)}, look.Grid("  ", excludedRows(res.Excluded), s)...)
+	lines := append([]string{s.Head(sync.StoreName(res.Store), parts...)}, look.Grid("  ", excludedRows(res.Excluded), s)...)
 	return append(lines, excludedNotes(res.Excluded, s)...)
 }
 
@@ -228,7 +228,7 @@ func whoamiLines(me cloud.Me, host string, s style) []string {
 	names, files, sizes := 0, 0, 0
 	for _, st := range sync.Stores {
 		info := me.Stores[string(st)]
-		names = max(names, utf8.RuneCountInString(string(st)))
+		names = max(names, utf8.RuneCountInString(sync.StoreName(st)))
 		files = max(files, utf8.RuneCountInString(count(info.Files)))
 		sizes = max(sizes, utf8.RuneCountInString(human(info.Bytes)))
 	}
@@ -239,11 +239,11 @@ func whoamiLines(me cloud.Me, host string, s style) []string {
 			commit = fmt.Sprintf("commit #%d", info.Commit)
 		}
 		if s.Plain {
-			lines = append(lines, "  "+string(st)+": "+count(info.Files)+" "+plural(info.Files, "file", "files")+", "+human(info.Bytes)+", "+commit)
+			lines = append(lines, "  "+sync.StoreName(st)+": "+count(info.Files)+" "+plural(info.Files, "file", "files")+", "+human(info.Bytes)+", "+commit)
 			continue
 		}
 		detail := right(count(info.Files), files) + " " + plural(info.Files, "file ", "files") + " · " + right(human(info.Bytes), sizes) + " · " + commit
-		lines = append(lines, "  "+s.Primary("■")+" "+look.Pad(string(st), names)+"  "+s.Secondary(detail))
+		lines = append(lines, "  "+s.Primary("■")+" "+look.Pad(sync.StoreName(st), names)+"  "+s.Secondary(detail))
 	}
 	lines = append(lines, "  "+s.Secondary(billingLine(me)))
 	if !me.Usage.CardOnFile && me.Usage.BillingOpen && me.Usage.BillingURL != "" {
@@ -254,9 +254,9 @@ func whoamiLines(me cloud.Me, host string, s style) []string {
 
 func logLines(store sync.Store, entries []sync.LogEntry, now time.Time, s style) []string {
 	if len(entries) == 0 {
-		return []string{s.Head(string(store), "no commits yet")}
+		return []string{s.Head(sync.StoreName(store), "no commits yet")}
 	}
-	lines := []string{s.Head(string(store), count(len(entries))+" "+plural(len(entries), "commit", "commits"))}
+	lines := []string{s.Head(sync.StoreName(store), count(len(entries))+" "+plural(len(entries), "commit", "commits"))}
 	rows := make([][]string, 0, len(entries))
 	for _, e := range entries {
 		rows = append(rows, []string{fmt.Sprintf("#%d", e.Commit), quoteOr(e.Message), orDash(e.Device) + " · " + count(e.Files) + " " + plural(e.Files, "file", "files") + " · " + ago(now, time.UnixMilli(e.CreatedAt))})
@@ -325,7 +325,7 @@ func summaryLines(sum sync.Summary, list bool, s style) []string {
 	if len(parts) == 0 {
 		parts = append(parts, "no changes")
 	}
-	lines := append([]string{s.Head(string(sum.Store), parts...)}, look.Grid("  ", rows, s)...)
+	lines := append([]string{s.Head(sync.StoreName(sum.Store), parts...)}, look.Grid("  ", rows, s)...)
 	if sum.Store == sync.StoreConversations && len(rows) > 0 {
 		hints := [][]string{next("clai cloud diff <path>", "one conversation's messages")}
 		if more {

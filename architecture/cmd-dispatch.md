@@ -43,8 +43,10 @@ flag at that level.
 `internal/cli` is the composition root: `Commands()` builds the
 `map[string]cmd.Command` with the keys `query|q`, `chat|c`, `photo|p`,
 `video|v`, `audio|a`, `setup|s`, `version`, `replay|re`, `dir-replay|dre`,
-`tools|t`, `mcp`, `profiles`, `confdir`, `cloud`. Loop mode is not a command: it is
-the `-l`/`-loop` flag of `query` (see [query.md](./query.md#loop-mode)).
+`tools|t`, `mcp`, `config`, `profiles`, `confdir`, `cloud`. Loop mode is not a
+command: it is the `-l`/`-loop` flag of `query` (see
+[query.md](./query.md#loop-mode)). `setup|s`, `profiles` and `confdir` are
+hidden aliases (see [Compatibility: hidden spellings](#compatibility-hidden-spellings)).
 The `completion` command and the hidden `__complete` protocol are
 auto-registered by
 the upstream dispatcher. `Run` adds the `help` command (`withHelp`, not in
@@ -62,6 +64,7 @@ Each command lives in its domain package and exposes a
 | chat, replay, dre | `internal/chat` |
 | photo / video / audio | `internal/photo` / `video` / `audio` |
 | setup | `internal/setup` |
+| config (`edit`, `list`, `schema`, `validate`, `publish`, `trust`, `install`, `update`, `dir`) | `internal/cli` — it composes `setup`, `confdir`, the schema corpus, the profile schema, the validator, the Hub publisher and the profile-only verbs |
 | tools / profiles | `internal/tools` / `internal/profiles` |
 | mcp | `internal/tools/mcp` — `mcp auth <server>` runs the OAuth flow for one server and writes its token store entry; no model call, spends nothing |
 | version / confdir | `internal/version` / `internal/confdir` |
@@ -203,6 +206,14 @@ hint lists every owner. On one path the shallowest owner takes the flag.
 
 ## Subcommander trees
 
+- `config` → `edit`, `list`, `schema`, `validate`, `publish`, `trust`,
+  `install`, `update`, `dir`. `edit` is today's setup wizard (macro stages
+  stay positionals); `list [kind]` prints one line per file; `schema [kind]`
+  prints the kind versions or one document; `validate <kind> <target>
+  [-json]` prints one finding per line and exits 0/1/2; `publish [kind]
+  [name] [mode]` is the one Hub publisher; `trust`, `install` and `update`
+  exist only for kind `profile`; `dir [subpath]` is the side-effect-free
+  config-dir lookup. An unknown verb prints it with the synopsis and exits 2.
 - `chat` → `continue|c`, `delete|d`, `list|l`, `dir`, `dirv2`,
   `summarize|s`, `help|h`.
   Subcommands share the tree's flag values (parent and subs register
@@ -217,7 +228,11 @@ hint lists every owner. On one path the shallowest owner takes the flag.
   help when the verb is missing or unknown.
 - `tools` → `list`; the parent defaults to listing and treats a positional
   as a tool-detail lookup.
-- `profiles` → `list`; the parent defaults to listing.
+- `profiles` is hidden; bare `profiles` rebuilds `config list profile`, and
+  each of its subcommands re-enters the config verb that documents it
+  (`validate` → `config validate profile`, `schema` → `config schema
+  profile`, `trust`/`install`/`update`/`publish` → their `config <verb>
+  profile` form). `skills publish` re-enters `config publish skill`.
 
 ## Config prep and sentinels
 
@@ -226,14 +241,42 @@ injected from `internal/cli`, runs only in config-touching commands: query
 (plain and loop mode), chat (continue/delete/summarize), photo, video,
 audio(transcribe), setup.
 
+`config edit` is the setup wizard, so it runs the same prep. `config list`,
+`config schema`, `config dir` and the hidden `confdir` alias touch no config.
 Commands that render content without reading a mode config call
 `internal.PrepTheme` instead (config dir + theme, no migration): `replay`,
 `dir-replay` and the read-only chat subs (`list`, `dir`, `dirv2`, `help`).
 They need the theme for role colors and the completion bell, while the
 migration pass would be a no-op under `utils.NoCreateConfig` — and
 `clai -r chat dirv2` runs on shell-prompt hot paths. `completion`,
-`__complete`, `confdir` and `version` touch no config at all. `cloud`
+`__complete` and `version` touch no config at all. `cloud`
 reads the config dir directly and never runs the migration.
+
+## Compatibility: hidden spellings
+
+A pre-existing spelling stays callable and keeps its entry in the dispatch
+map, so a flag written before it still reaches it, but `Hidden() bool` keeps
+it out of `clai help`, completion and every synopsis. Two wrappers live in
+`internal/cli/config.go`:
+
+- `hiddenAlias` (`newHiddenAlias`, and `newVerbAlias` for one subcommand)
+  keeps the wrapped command's flagset, setup and subcommands so every flag
+  parses, then on Run rebuilds the documented argument vector, forwards the
+  flags it was given, and re-enters dispatch through the run's own command
+  table and presenter, so the alias keeps that run's streams, its `-json`
+  format and its diagnostic levels, and the canonical run resolves the exit
+  status. The hook is `commands`' `rerun`, which the composition root sets;
+  `Commands` borrows a table of its own and re-enters `Run` instead. It
+  carries `setup|s` (→ `config edit`, keeping `-n` and the macro
+  positionals), `confdir` (→ `config dir`), `profiles` (bare → `config list
+  profile`, and every subcommand onto its `config` verb) and `skills
+  publish` (→ `config publish skill`).
+- `hiddenCommand` keeps a command's own dispatch and only hides it:
+  `cloud publish` keeps its selector wizard, while `config publish` is the
+  spelling every hint names.
+
+The settings store keeps the `config` store token internally; `clai cloud`
+accepts `settings`, and prints it (see [cloud.md](./cloud.md)).
 
 Clean exits use sentinels honored by `cmd.Run` via `errors.Is`:
 `cmd.ErrUserInitiatedExit` (new code) and `table.ErrUserInitiatedExit`
