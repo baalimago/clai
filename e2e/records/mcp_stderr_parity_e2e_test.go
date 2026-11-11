@@ -1,4 +1,4 @@
-package tooling
+package records
 
 import (
 	"encoding/json"
@@ -23,7 +23,7 @@ func TestMcpServerStderrIsTheSameTextInBothFormats(t *testing.T) {
 		profile, err := json.Marshal(map[string]any{
 			"model": "test", "use_tools": true,
 			"mcp_servers": map[string]any{name: map[string]any{
-				"command": testServerBinary(t),
+				"command": e2etest.TestServerBinary(t),
 				"env":     map[string]string{"TEST_SERVER_STDERR_TEXT": written},
 			}},
 		})

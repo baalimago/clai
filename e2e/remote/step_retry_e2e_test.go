@@ -1,4 +1,4 @@
-package e2e
+package remote
 
 import (
 	"context"
@@ -19,23 +19,12 @@ import (
 
 const stepRetryCrashBody = "upstream connect error or disconnect/reset before headers. reset reason: connection timeout"
 
-// loopbackOnly refuses any request that leaves the machine, so a misrouted
-// model fails the test instead of reaching a real provider.
-type loopbackOnly struct{ base http.RoundTripper }
-
-func (g loopbackOnly) RoundTrip(r *http.Request) (*http.Response, error) {
-	if r.URL.Hostname() != "127.0.0.1" {
-		return nil, fmt.Errorf("refused to leave the machine: %s", r.URL)
-	}
-	return g.base.RoundTrip(r)
-}
-
 // stepRetryProvider answers 503 to the first failures requests, then a reply.
 // It seeds a config dir whose model gpt-stub talks to it.
 func stepRetryProvider(t *testing.T, failures int32) (string, *atomic.Int32) {
 	t.Helper()
 	original := http.DefaultTransport
-	http.DefaultTransport = loopbackOnly{base: original}
+	http.DefaultTransport = e2etest.LoopbackOnly{Base: original}
 	t.Cleanup(func() { http.DefaultTransport = original })
 
 	var requests atomic.Int32

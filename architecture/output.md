@@ -24,8 +24,8 @@ A context without an Env yields a silent one, so `pkg/agent` and other
 library callers write nothing unless they pass a Reporter. Test binaries set
 a process fallback (`internal/testenv/procenv`). No runtime code outside
 `internal/cli`, `internal/stdio`, and the test servers names `os.Stdout`,
-`os.Stderr`, `os.Stdin` or `fmt.Print*`; `e2e/diagnostic_static_test.go`
-(`TestJSONNoDirectWrites`) parses the tree to keep it so. `ancli` is gone
+`os.Stderr`, `os.Stdin` or `fmt.Print*`; `e2e/static` (`TestJSONNoDirectWrites`)
+parses the tree to keep it so. `ancli` is gone
 from every runtime path (`TestDiagnosticRuntimeAncli`).
 
 ## Diagnostics
@@ -50,6 +50,8 @@ call debug detail, MCP schema cache failures) share one 1 MiB buffer per run
 that spills to timestamped files under `<cache dir>/diagnostics/`. At the end
 of the run stderr lists the spill paths and the rest of the buffer. A failed
 spill falls back to stderr; if stderr fails too the run panics (F6).
+`cli.Deps.DiagnosticBufferSize` is a collaborator seam, not a setting: the
+scenario tests spill with a few kilobytes instead of paying for 1 MiB.
 
 A terminal error is reported once by the Presenter, with its causes and
 remedies; a dispatch failure adds the usage. `main.go` is only

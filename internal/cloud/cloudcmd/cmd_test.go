@@ -149,8 +149,7 @@ func TestLogout_revokedTokenStillLogsOut(t *testing.T) {
 	if code, out := h.run("logout"); code != 0 {
 		t.Fatalf("code %d: %s", code, out)
 	}
-	h2 := newHarness(t, "tok-a")
-	h2.srv.Close()
+	h2 := offline(t)
 	if code, _ := h2.run("logout"); code != 1 {
 		t.Fatal("logout offline should fail and keep the login")
 	}
@@ -518,9 +517,8 @@ func TestDiff_summarisesConversations(t *testing.T) {
 }
 
 func TestStatus_offlineAndRevoked(t *testing.T) {
-	h := newHarness(t, "tok-a")
+	h := offline(t)
 	h.write("profiles/x.json", "1")
-	h.srv.Close()
 	code, out := h.run("status", "config")
 	if code != 0 {
 		t.Fatalf("code %d", code)

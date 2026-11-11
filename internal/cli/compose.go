@@ -244,9 +244,10 @@ func colorAllowed(p process) bool {
 	return !misc.Truthy(p.getenv("NO_COLOR"))
 }
 
-// compose resolves the levels and builds the run's Presenter, buffer,
-// Reporter and Env. A level failure returns the Presenter that reports it.
-func compose(p process, format jsonl.Format) (composition, error) {
+// compose resolves the levels and builds the run's Presenter, buffer of
+// bufferSize bytes, Reporter and Env. A level failure returns the Presenter
+// that reports it.
+func compose(p process, format jsonl.Format, bufferSize diag.ByteSize) (composition, error) {
 	streams := stdio.New(stdio.Config{
 		Format:         format,
 		Stdin:          p.stdin,
@@ -270,7 +271,7 @@ func compose(p process, format jsonl.Format) (composition, error) {
 	if cacheDir, cacheErr := utils.GetClaiCacheDir(); cacheErr == nil {
 		spillDir = filepath.Join(cacheDir, spillDirName)
 	}
-	buffered := diag.NewBufferedDeliverer(spillDir, sharedBufferSize, presenter)
+	buffered := diag.NewBufferedDeliverer(spillDir, bufferSize, presenter)
 	routing, err := diag.NewReporter(types, levels, map[diagnostic.OutputMode]diagnostic.Deliverer{
 		diagnostic.Immediate: presenter,
 		diagnostic.Buffered:  buffered,
@@ -352,7 +353,7 @@ func run(args []string, deps Deps, p process) int {
 	format, args, formatErr := scanFormat(args, cmds)
 	args = helpAsCommand(versionFlagAsCommand(args))
 
-	c, err := compose(p, format)
+	c, err := compose(p, format, deps.diagnosticBufferSize())
 	if err != nil {
 		_ = c.presenter.ReportError(ctx, err)
 		_ = c.streams.Close()

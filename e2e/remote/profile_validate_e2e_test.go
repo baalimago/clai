@@ -1,4 +1,4 @@
-package e2e
+package remote
 
 import (
 	"bytes"
@@ -292,10 +292,10 @@ func Test_e2e_profiles_list_broken(t *testing.T) {
 	if strings.Contains(stdout, "Cannot read") {
 		t.Fatalf("stdout %q carries a diagnostic", stdout)
 	}
-	if strings.Contains(profileLine(t, stdout, refused), "model=") {
+	if strings.Contains(e2etest.ListingLine(t, stdout, refused), "model=") {
 		t.Fatalf("stdout %q lists a refused profile as healthy", stdout)
 	}
-	if !strings.Contains(profileLine(t, stdout, filepath.Join(profilesDir, "good.json")), "model=test") {
+	if !strings.Contains(e2etest.ListingLine(t, stdout, filepath.Join(profilesDir, "good.json")), "model=test") {
 		t.Fatalf("stdout %q does not list the readable profile", stdout)
 	}
 }
@@ -307,7 +307,7 @@ func TestProfilesHelpListsSubcommands(t *testing.T) {
 		t.Fatal("no profiles command")
 	}
 	help := cmd.HelpText(profilesCommand)
-	completion := completeLinesE2E(t, "profiles", "")
+	completion := harness.CompleteLinesE2E(t, "profiles", "")
 	// Every profiles verb now delegates to the config tree, so each one is a
 	// hidden spelling: callable, and absent from the help table and the
 	// completion list. The prose still names them, which is what a person

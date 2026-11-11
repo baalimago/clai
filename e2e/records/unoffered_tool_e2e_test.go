@@ -1,4 +1,4 @@
-package tooling
+package records
 
 import (
 	"context"
@@ -61,7 +61,7 @@ func TestUnofferedToolCallIsRefused(t *testing.T) {
 		{
 			name: "mcp selection", args: "-cm gpt-stub -t mcp_echo_echo q hi", offered: []string{"mcp_echo_echo"},
 			setup: func(t *testing.T, confDir string) {
-				conf := fmt.Sprintf(`{"command":%q}`, testServerBinary(t))
+				conf := fmt.Sprintf(`{"command":%q}`, e2etest.TestServerBinary(t))
 				if err := os.WriteFile(filepath.Join(confDir, "mcpServers", "echo.json"), []byte(conf), 0o644); err != nil {
 					t.Fatalf("write mcp server config: %v", err)
 				}

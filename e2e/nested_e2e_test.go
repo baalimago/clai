@@ -92,7 +92,7 @@ func Test_e2e_sub_flag_before_command_is_forwarded(t *testing.T) {
 				t.Fatalf("expected the forwarded flags to be accepted, got status %v: %v", status, stderr)
 			}
 			// -af text proves the forwarded value landed, not just parsed.
-			testboil.FailTestIfDiff(t, stdout, wantMockText)
+			testboil.FailTestIfDiff(t, stdout, e2etest.MockTranscription)
 		})
 	}
 }

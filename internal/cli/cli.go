@@ -126,6 +126,19 @@ type Deps struct {
 	RemoteClient remote.Doer
 	// StepRetry resends a model request that failed before its stream opened.
 	StepRetry text.StepRetry
+	// DiagnosticBufferSize overrides the Shared buffer size (README
+	// Parameters) so a test spills with a small payload; zero keeps
+	// production's 1 MiB.
+	DiagnosticBufferSize diag.ByteSize
+}
+
+// diagnosticBufferSize is the run's Shared buffer size: the Deps override,
+// else the production parameter.
+func (d Deps) diagnosticBufferSize() diag.ByteSize {
+	if d.DiagnosticBufferSize > 0 {
+		return d.DiagnosticBufferSize
+	}
+	return sharedBufferSize
 }
 
 // DefaultDeps returns the production collaborators: the real summarizer, the

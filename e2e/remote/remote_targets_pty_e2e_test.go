@@ -1,6 +1,6 @@
 //go:build linux
 
-package e2e
+package remote
 
 import (
 	"encoding/pem"
@@ -14,7 +14,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baalimago/clai/e2e/e2etest"
 	"github.com/baalimago/clai/internal/remote"
+	"github.com/baalimago/clai/internal/testenv"
 )
 
 // runRemoteOnPTY runs this test binary as clai on a pseudo-terminal, as a
@@ -31,20 +33,18 @@ func runRemoteOnPTY(t *testing.T, env remoteE2E, args []string, answer string) (
 	if err := os.WriteFile(certFile, cert, 0o600); err != nil {
 		t.Fatalf("write hub certificate: %v", err)
 	}
-	master, slave := openPTY(t)
+	master, slave := e2etest.OpenPTY(t)
 	defer master.Close()
 
 	cmd := exec.Command(os.Args[0], args...)
 	environ := slices.DeleteFunc(os.Environ(), func(kv string) bool { return strings.HasPrefix(kv, "TTY=") })
-	gorace := strings.TrimSpace(os.Getenv("GORACE") + " atexit_sleep_ms=0")
-	cmd.Env = append(environ,
-		cliModeEnv+"=1",
+	cmd.Env = append(testenv.NoRaceExitSleep(environ),
+		e2etest.CLIModeEnv+"=1",
 		"CLAI_CONFIG_DIR="+env.confDir,
 		"CLAI_CACHE_DIR="+env.cacheDir,
 		"CLAI_CLOUD_URL="+env.hub.srv.URL,
 		"SSL_CERT_FILE="+certFile,
 		"NO_PROXY=127.0.0.1,localhost",
-		"GORACE="+gorace,
 	)
 	var out strings.Builder
 	cmd.Stdin = slave

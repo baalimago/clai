@@ -117,7 +117,7 @@ func runProcess(t *testing.T, args string, adjust func(*process, *Deps)) cliRun 
 	p.stdout = &stdout
 	p.stderr = &stderr
 	p.stdinTerminal, p.stdoutTerminal, p.stderrTerminal = false, false, false
-	deps := scenarioDeps()
+	deps := scenarioDeps(0)
 	if adjust != nil {
 		adjust(&p, &deps)
 	}

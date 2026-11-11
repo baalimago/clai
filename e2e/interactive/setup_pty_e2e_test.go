@@ -1,9 +1,8 @@
 //go:build linux
 
-package e2e
+package interactive
 
 import (
-	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -13,9 +12,9 @@ import (
 	"syscall"
 	"testing"
 	"time"
-	"unsafe"
 
 	"github.com/baalimago/clai/e2e/e2etest"
+	"github.com/baalimago/clai/internal/testenv"
 )
 
 // TestSetupPTYHelper is the child entrypoint of
@@ -29,34 +28,6 @@ func TestSetupPTYHelper(t *testing.T) {
 		return
 	}
 	os.Exit(harness.Run([]string{"s"}))
-}
-
-// openPTY allocates a Linux pseudo-terminal pair and returns the master and
-// slave ends. The parent keeps the master; the slave becomes the child's
-// controlling terminal via SysProcAttr.
-func openPTY(t *testing.T) (master, slave *os.File) {
-	t.Helper()
-	master, err := os.OpenFile("/dev/ptmx", os.O_RDWR, 0)
-	if err != nil {
-		t.Fatalf("open /dev/ptmx: %v", err)
-	}
-	// Unlock the slave and learn its number.
-	var unlock int32
-	if _, _, errno := syscall.Syscall(syscall.SYS_IOCTL, master.Fd(), syscall.TIOCSPTLCK, uintptr(unsafe.Pointer(&unlock))); errno != 0 {
-		master.Close()
-		t.Fatalf("TIOCSPTLCK: %v", errno)
-	}
-	var n int32
-	if _, _, errno := syscall.Syscall(syscall.SYS_IOCTL, master.Fd(), syscall.TIOCGPTN, uintptr(unsafe.Pointer(&n))); errno != 0 {
-		master.Close()
-		t.Fatalf("TIOCGPTN: %v", errno)
-	}
-	slave, err = os.OpenFile(fmt.Sprintf("/dev/pts/%d", n), os.O_RDWR|syscall.O_NOCTTY, 0)
-	if err != nil {
-		master.Close()
-		t.Fatalf("open pty slave: %v", err)
-	}
-	return master, slave
 }
 
 // ptyScreen models the visible terminal screen for the ANSI sequences the
@@ -143,15 +114,13 @@ func (s *ptyScreen) String() string {
 // and the exit status.
 func runSetupOnPTY(t *testing.T, confDir, keystrokes string) (transcript, screen string, status int) {
 	t.Helper()
-	master, slave := openPTY(t)
+	master, slave := e2etest.OpenPTY(t)
 	defer master.Close()
 
 	cmd := exec.Command(os.Args[0], "-test.run=TestSetupPTYHelper")
 	// Unset so the child resolves /dev/tty, which Setctty makes its own pty.
 	env := slices.DeleteFunc(os.Environ(), func(kv string) bool { return strings.HasPrefix(kv, "TTY=") })
-	// A -race child otherwise idles 1s in its exit hook (atexit_sleep_ms).
-	gorace := strings.TrimSpace(os.Getenv("GORACE") + " atexit_sleep_ms=0")
-	cmd.Env = append(env, "CLAI_CONFIG_DIR="+confDir, e2etest.SetupPTYHelperEnv+"=1", "GORACE="+gorace)
+	cmd.Env = append(testenv.NoRaceExitSleep(env), "CLAI_CONFIG_DIR="+confDir, e2etest.SetupPTYHelperEnv+"=1")
 	cmd.Stdin = slave
 	cmd.Stdout = slave
 	cmd.Stderr = slave

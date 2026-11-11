@@ -1,4 +1,4 @@
-package tooling
+package records
 
 import (
 	"bytes"
@@ -402,7 +402,7 @@ func jsonScenarios() []jsonScenario {
 			jsonArgs: "-r -cm test -p noisyjson q tool_mcp_noisyjson_echo",
 			setup: func(t *testing.T, confDir string) {
 				for _, name := range []string{"noisytext", "noisyjson"} {
-					profile := fmt.Sprintf(`{"model":"test","use_tools":true,"mcp_servers":{%q:{"command":%q,"env":{"TEST_SERVER_STDERR":"1"}}}}`, name, testServerBinary(t))
+					profile := fmt.Sprintf(`{"model":"test","use_tools":true,"mcp_servers":{%q:{"command":%q,"env":{"TEST_SERVER_STDERR":"1"}}}}`, name, e2etest.TestServerBinary(t))
 					if err := os.WriteFile(filepath.Join(confDir, "profiles", name+".json"), []byte(profile), 0o644); err != nil {
 						t.Fatalf("write profile: %v", err)
 					}

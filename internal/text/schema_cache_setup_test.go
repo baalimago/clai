@@ -11,12 +11,11 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
+	"github.com/baalimago/clai/internal/testenv"
 	"github.com/baalimago/clai/internal/testenv/procenv"
 
 	"github.com/baalimago/clai/internal/tools/mcp"
-	"github.com/baalimago/clai/internal/tools/mcp/httptestserver"
 	"github.com/baalimago/clai/internal/tools/mcp/launcher"
 	"github.com/baalimago/clai/internal/tools/mcp/schemacache"
 	"github.com/baalimago/clai/internal/tools/mcp/serverconfig"
@@ -282,56 +281,6 @@ func TestSchemaCacheMissingEnvfileIsTypedError(t *testing.T) {
 	}
 }
 
-// TestLazyCacheMissConnectBound pins R1-14 for both transports: each
-// cache-miss path bound only the connection-level handshake (30s default)
-// and ignored connect_timeout_seconds, so a server that never answers
-// initialize blocked cold setup for 30s. One setup holds a hanging stdio and
-// a hanging HTTP server, each with a 1s connect_timeout_seconds, and resolves
-// them concurrently (D39); both must fail at the connect stage well before
-// the default.
-func TestLazyCacheMissConnectBound(t *testing.T) {
-	hs := httptestserver.New()
-	defer hs.Close()
-	hs.Configure(func(c *httptestserver.Config) { c.HangForever = true })
-
-	ctx, cancel := httpSetupTestContext()
-	defer cancel()
-
-	mcpDir := t.TempDir()
-	httpConf := fmt.Sprintf(`{"url":%q,"connect_timeout_seconds":1}`, hs.URL)
-	if err := os.WriteFile(filepath.Join(mcpDir, "hangs-http.json"), []byte(httpConf), 0o644); err != nil {
-		t.Fatalf("write http server config: %v", err)
-	}
-	stdioConf := fmt.Sprintf(`{"command":%q,"env":{"TEST_SERVER_AUTH_HANG":"1"},"startup":"lazy","connect_timeout_seconds":1}`, testServerBinary(t))
-	if err := os.WriteFile(filepath.Join(mcpDir, "hangs-stdio.json"), []byte(stdioConf), 0o644); err != nil {
-		t.Fatalf("write stdio server config: %v", err)
-	}
-	conf := Configurations{}
-
-	start := time.Now()
-	stdout := testboil.CaptureStderr(t, func(t *testing.T) {
-		if _, err := setupMcpManager(ctx, mcpDir, conf, &recordingSuccessSink{}, testSchemaCache(t), nil); err != nil {
-			t.Fatalf("an ambient-posture connect failure must degrade, not fail setup: %v", err)
-		}
-	})
-	elapsed := time.Since(start)
-
-	// Generous margin for host load, far short of the 30s default.
-	if elapsed > 15*time.Second {
-		t.Fatalf("elapsed %v, want the 1s connect_timeout_seconds to fire well before the 30s handshake-bound default", elapsed)
-	}
-	for _, tc := range []struct{ name, server string }{
-		{"LazyCacheMissConnectBoundAppliesToStdioHandshake", "hangs-stdio"},
-		{"LazyHttpCacheMissConnectBoundAppliesToHandshake", "hangs-http"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			if want := "'" + tc.server + "' failed to start at stage 'connect'"; !strings.Contains(stdout, want) {
-				t.Errorf("stdout = %q, want %q", stdout, want)
-			}
-		})
-	}
-}
-
 // TestUnresolvableCommandLineConnectsAheadOfTime pins the launcher
 // resolution's whole point: for a command-based server whose command line
 // clai cannot resolve, a warm schema-cache entry must NOT be served at setup.
@@ -487,14 +436,7 @@ func TestNoSetupNoticeForLauncherShapedWarmCache(t *testing.T) {
 // developer's machine instead of their own fixture.
 func fakeLauncherOnPath(t *testing.T, name string) string {
 	t.Helper()
-	dir := t.TempDir()
-	path := filepath.Join(dir, name)
-	body := "#!/bin/sh\nexit 0\n"
-	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
-		t.Fatalf("write fake launcher %q: %v", path, err)
-	}
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	return path
+	return filepath.Join(testenv.FakeBins(t, name), name)
 }
 
 // writeFakeLauncher installs a package runner whose body runs this

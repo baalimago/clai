@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/runenv"
 	"github.com/baalimago/clai/pkg/diagnostic"
@@ -24,13 +25,25 @@ type cliRun struct {
 	stdout, stderr string
 }
 
+// testBufferSize is a Shared buffer size that spills with a few kilobytes of
+// diagnostics, so the scenarios cost nothing like production's 1 MiB.
+const testBufferSize diag.ByteSize = 4 << 10
+
+// spillPadRepeats sizes each of three spilled tool calls' arguments to
+// testBufferSize, so the third forces the buffer to spill.
+const spillPadRepeats = int(testBufferSize) / len("SPILLED-PAD")
+
 type cliOpts struct {
 	stderrTerminal bool
 	stderr         *failingWriter
+	bufferSize     diag.ByteSize
 }
 
-func scenarioDeps() Deps {
+// scenarioDeps is the test binary's Deps; bufferSize zero keeps the
+// production Shared buffer size.
+func scenarioDeps(bufferSize diag.ByteSize) Deps {
 	deps := DefaultDeps()
+	deps.DiagnosticBufferSize = bufferSize
 	deps.NewSummarizer = func(context.Context, string) (models.Summarizer, error) {
 		return nil, errors.New("the summarizer is off in this test binary")
 	}
@@ -51,7 +64,7 @@ func runCLI(t *testing.T, args string, o cliOpts) cliRun {
 		p.stderr = o.stderr
 	}
 	p.stdinTerminal, p.stdoutTerminal, p.stderrTerminal = false, false, o.stderrTerminal
-	status := run(strings.Fields(args), scenarioDeps(), p)
+	status := run(strings.Fields(args), scenarioDeps(o.bufferSize), p)
 	return cliRun{status: status, stdout: stdout.String(), stderr: stderr.String()}
 }
 
@@ -256,9 +269,9 @@ func TestDiagnosticCLIScenarios(t *testing.T) {
 	t.Run("spill files", func(t *testing.T) {
 		useConfigDir(t)
 		t.Setenv("DEBUG_CALL", "1")
-		pad := strings.Repeat("SPILLED-PAD", 50_000)
+		pad := strings.Repeat("SPILLED-PAD", spillPadRepeats)
 		stubProvider(t, false, pad, pad, pad)
-		got := runCLI(t, "-r -cm gpt-stub -t pwd q hi", cliOpts{})
+		got := runCLI(t, "-r -cm gpt-stub -t pwd q hi", cliOpts{bufferSize: testBufferSize})
 		if got.status != 0 || !strings.Contains(got.stdout, "THE-REPLY") {
 			t.Fatalf("got status %d stdout %q", got.status, got.stdout)
 		}
@@ -278,7 +291,7 @@ func TestDiagnosticCLIScenarios(t *testing.T) {
 				t.Fatalf("spill file %s lacks the buffered events: %v", path, err)
 			}
 		}
-		if strings.Count(got.stderr, "SPILLED-PAD") >= 3*50_000 {
+		if strings.Count(got.stderr, "SPILLED-PAD") >= 3*spillPadRepeats {
 			t.Fatalf("stderr prints the spill contents")
 		}
 		if !strings.Contains(got.stderr, "debug [call]") {
@@ -336,7 +349,7 @@ func testLegacyControls(t *testing.T) {
 			p := osProcess()
 			p.stdin, p.stdout, p.stderr = strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{}
 			p.getenv = func(key string) string { return row.env[key] }
-			c, err := compose(p, 0)
+			c, err := compose(p, 0, testBufferSize)
 			if err != nil {
 				t.Fatalf("compose: %v", err)
 			}
@@ -364,7 +377,7 @@ func reportSpill(ctx context.Context, c composition) (string, []error) {
 	result := make(chan string, 1)
 	go func() { result <- "operation finished" }()
 	var errs []error
-	chunk := strings.Repeat("x", int(sharedBufferSize)/3)
+	chunk := strings.Repeat("x", int(testBufferSize)/3)
 	for i := range 4 {
 		if err := c.reporter.Report(ctx, diagnostic.Event{Type: runenv.TypeSchemaCacheFailed, Message: fmt.Sprintf("event %d %s", i, chunk)}); err != nil {
 			errs = append(errs, err)
@@ -388,7 +401,7 @@ func TestDiagnosticOutputFailure(t *testing.T) {
 		var stderr bytes.Buffer
 		p := osProcess()
 		p.stdin, p.stdout, p.stderr = strings.NewReader(""), &bytes.Buffer{}, &stderr
-		c, err := compose(p, 0)
+		c, err := compose(p, 0, testBufferSize)
 		if err != nil {
 			t.Fatalf("compose: %v", err)
 		}
@@ -407,7 +420,7 @@ func TestDiagnosticOutputFailure(t *testing.T) {
 		stderr := &failingWriter{}
 		p := osProcess()
 		p.stdin, p.stdout, p.stderr = strings.NewReader(""), &bytes.Buffer{}, stderr
-		c, err := compose(p, 0)
+		c, err := compose(p, 0, testBufferSize)
 		if err != nil {
 			t.Fatalf("compose: %v", err)
 		}

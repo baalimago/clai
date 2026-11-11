@@ -1,4 +1,4 @@
-package e2e
+package interactive
 
 import (
 	"os"
@@ -12,45 +12,6 @@ import (
 	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
-
-// claiBinDir returns a directory whose clai is this test binary, which
-// TestMain runs as the CLI while cliModeEnv is set, so a row that needs a
-// fresh clai process never waits on a go build.
-func claiBinDir(t *testing.T) string {
-	t.Helper()
-	self, err := os.Executable()
-	if err != nil {
-		t.Fatalf("os.Executable: %v", err)
-	}
-	dir := t.TempDir()
-	if err := os.Symlink(self, filepath.Join(dir, "clai")); err != nil {
-		t.Fatalf("Symlink: %v", err)
-	}
-	t.Setenv(cliModeEnv, "1")
-	// A -race child otherwise idles 1s in its exit hook; a -cover one warns without a dir.
-	t.Setenv("GORACE", strings.TrimSpace(os.Getenv("GORACE")+" atexit_sleep_ms=0"))
-	t.Setenv("GOCOVERDIR", t.TempDir())
-	return dir
-}
-
-func completeE2E(t *testing.T, words ...string) (int, string) {
-	t.Helper()
-	var status int
-	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
-		status = harness.Run(append([]string{"__complete", "clai"}, words...))
-	})
-	return status, stdout
-}
-
-func completeLinesE2E(t *testing.T, words ...string) []string {
-	t.Helper()
-	status, stdout := completeE2E(t, words...)
-	testboil.FailTestIfDiff(t, status, 0)
-	if stdout == "" {
-		return nil
-	}
-	return strings.Split(strings.TrimSuffix(stdout, "\n"), "\n")
-}
 
 func assertContainsLines(t *testing.T, lines []string, want ...string) {
 	t.Helper()
@@ -97,7 +58,7 @@ func Test_e2e_complete_engine(t *testing.T) {
 	e2etest.WriteJSONFileAny(t, filepath.Join(confDir, "shellContexts", "minimal.json"), map[string]any{})
 
 	t.Run("top-level commands", func(t *testing.T) {
-		lines := completeLinesE2E(t, "")
+		lines := harness.CompleteLinesE2E(t, "")
 		assertContainsLines(t, lines,
 			"query\tplain", "q\tplain", "chat\tplain", "c\tplain", "completion\tplain")
 		for _, l := range lines {
@@ -108,7 +69,7 @@ func Test_e2e_complete_engine(t *testing.T) {
 	})
 
 	t.Run("per-command flags", func(t *testing.T) {
-		lines := completeLinesE2E(t, "q", "-")
+		lines := harness.CompleteLinesE2E(t, "q", "-")
 		assertContainsLines(t, lines, "-cm\tplain", "-t\tplain", "-mt\tplain")
 		// -am/-af/-pm are query flags now (they configure the audio_transcribe
 		// and generate_image tools); -parallelism stays owned by another level.
@@ -124,19 +85,19 @@ func Test_e2e_complete_engine(t *testing.T) {
 	})
 
 	t.Run("profile values", func(t *testing.T) {
-		assertContainsLines(t, completeLinesE2E(t, "q", "-p", ""), "gopher\tplain")
+		assertContainsLines(t, harness.CompleteLinesE2E(t, "q", "-p", ""), "gopher\tplain")
 	})
 
 	t.Run("shell context values", func(t *testing.T) {
-		assertContainsLines(t, completeLinesE2E(t, "q", "-asc", ""), "minimal\tplain")
+		assertContainsLines(t, harness.CompleteLinesE2E(t, "q", "-asc", ""), "minimal\tplain")
 	})
 
 	t.Run("model history", func(t *testing.T) {
-		assertContainsLines(t, completeLinesE2E(t, "q", "-cm", ""), "sonnet-x\tplain")
+		assertContainsLines(t, harness.CompleteLinesE2E(t, "q", "-cm", ""), "sonnet-x\tplain")
 	})
 
 	t.Run("tool comma-split keeps prefix", func(t *testing.T) {
-		lines := completeLinesE2E(t, "q", "-t", "website_text,we")
+		lines := harness.CompleteLinesE2E(t, "q", "-t", "website_text,we")
 		if len(lines) == 0 {
 			t.Fatal("expected comma-continuation suggestions")
 		}
@@ -148,31 +109,31 @@ func Test_e2e_complete_engine(t *testing.T) {
 	})
 
 	t.Run("file and dir kinds", func(t *testing.T) {
-		lines := completeLinesE2E(t, "q", "-prp", "")
+		lines := harness.CompleteLinesE2E(t, "q", "-prp", "")
 		if len(lines) != 1 || !strings.HasSuffix(lines[0], "\tfile") {
 			t.Fatalf("expected one file-kinded line, got %v", lines)
 		}
-		lines = completeLinesE2E(t, "photo", "-pd", "")
+		lines = harness.CompleteLinesE2E(t, "photo", "-pd", "")
 		if len(lines) != 1 || !strings.HasSuffix(lines[0], "\tdir") {
 			t.Fatalf("expected one dir-kinded line, got %v", lines)
 		}
 	})
 
 	t.Run("chat subs from tree", func(t *testing.T) {
-		lines := completeLinesE2E(t, "chat", "")
+		lines := harness.CompleteLinesE2E(t, "chat", "")
 		assertContainsLines(t, lines, "list\tplain", "l\tplain", "dirv2\tplain", "continue\tplain")
 	})
 
 	// The engine reads the hook off the deepest resolved command, so every
 	// sub owning a value flag must carry the value source too.
 	t.Run("chat sub flag values", func(t *testing.T) {
-		assertContainsLines(t, completeLinesE2E(t, "chat", "continue", "-p", ""), "gopher\tplain")
-		assertContainsLines(t, completeLinesE2E(t, "c", "c", "-p", ""), "gopher\tplain")
+		assertContainsLines(t, harness.CompleteLinesE2E(t, "chat", "continue", "-p", ""), "gopher\tplain")
+		assertContainsLines(t, harness.CompleteLinesE2E(t, "c", "c", "-p", ""), "gopher\tplain")
 	})
 
 	// The chat tree runs no model, so it offers only the flags it reads.
 	t.Run("chat flags", func(t *testing.T) {
-		lines := completeLinesE2E(t, "chat", "-")
+		lines := harness.CompleteLinesE2E(t, "chat", "-")
 		assertContainsLines(t, lines, "-r\tplain", "-n\tplain", "-p\tplain")
 		for _, forbidden := range []string{"-cm\tplain", "-t\tplain", "-mt\tplain", "-am\tplain", "-af\tplain"} {
 			for _, l := range lines {
@@ -184,13 +145,13 @@ func Test_e2e_complete_engine(t *testing.T) {
 	})
 
 	t.Run("prompt suppression", func(t *testing.T) {
-		if lines := completeLinesE2E(t, "q", "hello", ""); len(lines) != 0 {
+		if lines := harness.CompleteLinesE2E(t, "q", "hello", ""); len(lines) != 0 {
 			t.Fatalf("expected no suggestions inside prompt, got %v", lines)
 		}
 	})
 
 	t.Run("completion shell names", func(t *testing.T) {
-		assertContainsLines(t, completeLinesE2E(t, "completion", ""), "bash\tplain", "zsh\tplain")
+		assertContainsLines(t, harness.CompleteLinesE2E(t, "completion", ""), "bash\tplain", "zsh\tplain")
 	})
 }
 
@@ -202,7 +163,7 @@ func Test_e2e_complete_no_config_dir(t *testing.T) {
 	t.Setenv("CLAI_CONFIG_DIR", confDir)
 	t.Setenv("HOME", t.TempDir())
 
-	status, stdout := completeE2E(t, "q", "-p", "")
+	status, stdout := harness.CompleteE2E(t, "q", "-p", "")
 	testboil.FailTestIfDiff(t, status, 0)
 	testboil.FailTestIfDiff(t, stdout, "")
 	if _, err := os.Stat(confDir); !os.IsNotExist(err) {
@@ -216,13 +177,13 @@ func Test_e2e_complete_tool_init_is_lazy(t *testing.T) {
 	_ = e2etest.SetupMainTestConfigDir(t)
 
 	tools.WithTestRegistry(t, func() {
-		status, _ := completeE2E(t, "q", "-")
+		status, _ := harness.CompleteE2E(t, "q", "-")
 		testboil.FailTestIfDiff(t, status, 0)
 		if got := len(tools.Registry.All()); got != 0 {
 			t.Fatalf("flag-name completion must not init tools, registry has %d entries", got)
 		}
 
-		status, _ = completeE2E(t, "q", "-t", "")
+		status, _ = harness.CompleteE2E(t, "q", "-t", "")
 		testboil.FailTestIfDiff(t, status, 0)
 		if got := len(tools.Registry.All()); got == 0 {
 			t.Fatal("tool-value completion should have initialized the registry")
@@ -238,7 +199,7 @@ func Test_e2e_completion_script_drives_bash(t *testing.T) {
 	}
 	_ = e2etest.SetupMainTestConfigDir(t)
 
-	binDir := claiBinDir(t)
+	binDir := e2etest.CLIBinDir(t)
 
 	script := `set -e
 export PATH="` + binDir + `:$PATH"

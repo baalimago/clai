@@ -148,20 +148,25 @@ func TestAsyncCmdRun_EnvAndCWD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("spawn cwd/env: %v", err)
 	}
+	// The shell creates outFile empty when it opens the redirect, so the row
+	// must wait for the content and not for the file (2026-11-11).
+	awaitFileContent(t, outFile, dir+":value")
+}
+
+func awaitFileContent(t *testing.T, path, want string) {
+	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
+	var got string
 	for time.Now().Before(deadline) {
-		if _, err := os.Stat(outFile); err == nil {
-			break
+		if data, err := os.ReadFile(path); err == nil {
+			got = string(data)
+			if got == want {
+				return
+			}
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	data, err := os.ReadFile(outFile)
-	if err != nil {
-		t.Fatalf("read output file: %v", err)
-	}
-	if got := string(data); got != dir+":value" {
-		t.Fatalf("unexpected output: %q", got)
-	}
+	t.Fatalf("%s = %q, want %q", path, got, want)
 }
 
 func TestAsyncCmdRun_BindsAsyncCmdToSessionContext(t *testing.T) {

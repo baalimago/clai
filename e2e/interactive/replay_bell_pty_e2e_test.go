@@ -1,6 +1,6 @@
 //go:build linux
 
-package e2e
+package interactive
 
 import (
 	"io"
@@ -27,7 +27,7 @@ func Test_e2e_dirscope_replay_honors_notification_bell(t *testing.T) {
 		{name: "bell enabled in theme", bell: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			bin := filepath.Join(claiBinDir(t), "clai")
+			bin := filepath.Join(e2etest.CLIBinDir(t), "clai")
 			confDir := e2etest.SetupMainTestConfigDir(t)
 			t.Setenv("CLAI_CACHE_DIR", filepath.Join(t.TempDir(), "cache"))
 			e2etest.ChdirTemp(t)
@@ -37,7 +37,7 @@ func Test_e2e_dirscope_replay_honors_notification_bell(t *testing.T) {
 				t.Fatalf("seed query status %d", status)
 			}
 
-			master, slave := openPTY(t)
+			master, slave := e2etest.OpenPTY(t)
 			defer master.Close()
 			cmd := exec.Command(bin, "dre")
 			cmd.Stderr = slave

@@ -1,4 +1,7 @@
-package e2e
+// Package static holds the source-level checks: they parse the module instead
+// of running clai, so they get their own test binary and -timeout budget
+// beside e2e's CLI runs.
+package static
 
 import (
 	"bytes"

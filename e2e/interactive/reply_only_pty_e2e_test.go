@@ -1,6 +1,6 @@
 //go:build linux
 
-package e2e
+package interactive
 
 import (
 	"io"
@@ -17,12 +17,12 @@ import (
 // terminal on stderr shows the tool activity the way a terminal stdout would,
 // then says where the reply went.
 func Test_e2e_reply_only_shows_progress_on_a_terminal_stderr(t *testing.T) {
-	bin := filepath.Join(claiBinDir(t), "clai")
+	bin := filepath.Join(e2etest.CLIBinDir(t), "clai")
 	e2etest.SetupMainTestConfigDir(t)
 	t.Setenv("CLAI_CACHE_DIR", filepath.Join(t.TempDir(), "cache"))
 	workDir := e2etest.ChdirTemp(t)
 
-	master, slave := openPTY(t)
+	master, slave := e2etest.OpenPTY(t)
 	defer master.Close()
 	prompt := "look tool_pwd"
 	cmd := exec.Command(bin, append([]string{"-cm", "test", "-t", "pwd", "q", "-reply-only"}, strings.Fields(prompt)...)...)

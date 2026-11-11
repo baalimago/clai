@@ -1,4 +1,4 @@
-package e2e
+package remote
 
 import (
 	"encoding/json"
@@ -126,7 +126,10 @@ func TestConfigEditMacro(t *testing.T) {
 func TestConfigListProfile(t *testing.T) {
 	confDir := e2etest.SetupMainTestConfigDir(t)
 	profilesDir := filepath.Join(confDir, "profiles")
-	writeProfileFile(t, profilesDir, "cody.json", `{"name":"cody","model":"test","tools":["rg"],"prompt":"You are Cody. Second sentence."}`)
+	// A native tool is registered without a PATH lookup, so the row answers the
+	// same on a runner without the host program (ripgrep is absent on the
+	// GitHub ubuntu image).
+	writeProfileFile(t, profilesDir, "cody.json", `{"name":"cody","model":"test","tools":["sed"],"prompt":"You are Cody. Second sentence."}`)
 	writeProfileFile(t, profilesDir, "gopher.json", `{"model":"test","tools":[],"prompt":"Be terse.","source":{"target":"cchub:ada/gopher@1"}}`)
 	writeProfileFile(t, profilesDir, "broken.json", `{not-json`)
 
@@ -139,7 +142,7 @@ func TestConfigListProfile(t *testing.T) {
 		t.Fatalf("config list profile printed %d lines, want 3:\n%s", len(lines), stdout)
 	}
 	cody := lineFor(t, lines, filepath.Join(profilesDir, "cody.json"))
-	for _, want := range []string{"model=test", "tools=[rg]", `prompt="You are Cody."`} {
+	for _, want := range []string{"model=test", "tools=[sed]", `prompt="You are Cody."`} {
 		if !strings.Contains(cody, want) {
 			t.Fatalf("cody line %q lacks %q", cody, want)
 		}
@@ -314,7 +317,7 @@ func TestConfigPublishPicker(t *testing.T) {
 	env := setupConfigPublishE2E(t)
 
 	// Nothing given: the kind is asked, then the name.
-	withStdin(t, []byte("profile\ntrade-bot\n"))
+	e2etest.WithStdin(t, []byte("profile\ntrade-bot\n"))
 	status, stdout, stderr := runRemote(t, "config publish -handle ada")
 	if status != 0 || !strings.Contains(stdout, "publish kind (alias|profile|skill): ") || !strings.Contains(stdout, "name: ") {
 		t.Fatalf("both levels asked: status %d stdout %q stderr %q", status, stdout, stderr)
@@ -324,7 +327,7 @@ func TestConfigPublishPicker(t *testing.T) {
 	}
 
 	// The kind given, the name asked.
-	withStdin(t, []byte("trade-bot\n"))
+	e2etest.WithStdin(t, []byte("trade-bot\n"))
 	status, stdout, stderr = runRemote(t, "config publish profile")
 	if status != 0 || !strings.Contains(stdout, "Published cchub:ada/trade-bot@2 (a new version)") {
 		t.Fatalf("name asked: status %d stdout %q stderr %q", status, stdout, stderr)

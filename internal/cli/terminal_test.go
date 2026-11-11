@@ -51,7 +51,7 @@ func TestComposeColorFollowsTruthyNoColor(t *testing.T) {
 				return ""
 			},
 		}
-		c, err := compose(p, jsonl.FormatText)
+		c, err := compose(p, jsonl.FormatText, sharedBufferSize)
 		if err != nil {
 			t.Fatalf("compose: %v", err)
 		}

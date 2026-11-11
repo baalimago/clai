@@ -1,4 +1,4 @@
-package e2e
+package interactive
 
 import (
 	"os"
@@ -19,7 +19,6 @@ mock transcription
 00:00:01.500 --> 00:00:03.000
 of an audio file
 `
-	wantMockText = "mock transcription\nof an audio file\n"
 )
 
 func Test_goldenFile_AUDIO_transcribe_vtt(t *testing.T) {
@@ -42,7 +41,7 @@ func Test_goldenFile_AUDIO_alias_and_text_format(t *testing.T) {
 	status, stdout, _ := harness.RunAudio(t, "a t -am test -af text "+audioFile)
 
 	testboil.FailTestIfDiff(t, status, 0)
-	testboil.FailTestIfDiff(t, stdout, wantMockText)
+	testboil.FailTestIfDiff(t, stdout, e2etest.MockTranscription)
 	if strings.Contains(stdout, "WEBVTT") {
 		t.Errorf("unexpected VTT header in text output: %q", stdout)
 	}
@@ -99,7 +98,7 @@ func Test_goldenFile_AUDIO_stdin_dash(t *testing.T) {
 	status, stdout, _ := harness.RunAudio(t, "a t -am test -af text -")
 
 	testboil.FailTestIfDiff(t, status, 0)
-	testboil.FailTestIfDiff(t, stdout, wantMockText)
+	testboil.FailTestIfDiff(t, stdout, e2etest.MockTranscription)
 }
 
 func Test_goldenFile_AUDIO_stdin_unrecognized_format(t *testing.T) {
@@ -139,7 +138,7 @@ func Test_goldenFile_AUDIO_raw_flag_at_verb_level(t *testing.T) {
 			status, stdout, stderr := harness.RunAudio(t, args+audioFile)
 
 			testboil.FailTestIfDiff(t, status, 0)
-			testboil.FailTestIfDiff(t, stdout, wantMockText)
+			testboil.FailTestIfDiff(t, stdout, e2etest.MockTranscription)
 			if strings.Contains(stderr, "not defined") {
 				t.Fatalf("expected -r to be defined at this level, got: %q", stderr)
 			}
@@ -225,7 +224,7 @@ func Test_goldenFile_AUDIO_config_cascade(t *testing.T) {
 		// -am test routes to mock; format text comes from the file (default vtt)
 		status, stdout, _ := harness.RunAudio(t, "a t -am test "+audioFile)
 		testboil.FailTestIfDiff(t, status, 0)
-		testboil.FailTestIfDiff(t, stdout, wantMockText)
+		testboil.FailTestIfDiff(t, stdout, e2etest.MockTranscription)
 	})
 	t.Run("flag beats file", func(t *testing.T) {
 		status, stdout, _ := harness.RunAudio(t, "a t -am test -af json "+audioFile)
@@ -249,7 +248,7 @@ func Test_goldenFile_AUDIO_config_upgrade_notice_stays_off_stdout(t *testing.T) 
 	status, stdout, stderr := harness.RunAudio(t, "a t -am test "+audioFile)
 
 	testboil.FailTestIfDiff(t, status, 0)
-	testboil.FailTestIfDiff(t, stdout, wantMockText)
+	testboil.FailTestIfDiff(t, stdout, e2etest.MockTranscription)
 	testboil.AssertStringContains(t, stderr, "added new field(s) to audioConfig.json")
 	testboil.AssertStringContains(t, stderr, "transcribe.max-request-bytes")
 }

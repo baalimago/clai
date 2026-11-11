@@ -81,14 +81,14 @@ func Test_goldenFile_PROFILES_list_prints_summary_for_valid_profiles_and_skips_i
 	testboil.FailTestIfDiff(t, gotStatus, 0)
 
 	// `config list profile` prints one line per file.
-	codyLine := profileLine(t, stdout, filepath.Join(profilesDir, "cody.json"))
+	codyLine := e2etest.ListingLine(t, stdout, filepath.Join(profilesDir, "cody.json"))
 	for _, want := range []string{"model=test", fmt.Sprintf("tools=%v", []string{"bash", "rg"}), `prompt="You are Cody."`} {
 		if !strings.Contains(codyLine, want) {
 			t.Fatalf("cody line %q lacks %q", codyLine, want)
 		}
 	}
 
-	gopherLine := profileLine(t, stdout, filepath.Join(profilesDir, "gopher.json"))
+	gopherLine := e2etest.ListingLine(t, stdout, filepath.Join(profilesDir, "gopher.json"))
 	for _, want := range []string{"model=test", "tools=[]", `prompt="First line only"`} {
 		if !strings.Contains(gopherLine, want) {
 			t.Fatalf("gopher line %q lacks %q", gopherLine, want)
@@ -101,21 +101,9 @@ func Test_goldenFile_PROFILES_list_prints_summary_for_valid_profiles_and_skips_i
 	broken := filepath.Join(profilesDir, "broken.json")
 	testboil.AssertStringContains(t, stdout, broken)
 	testboil.AssertStringContains(t, stdout, "clai profiles validate "+broken)
-	if strings.Contains(profileLine(t, stdout, broken), "model=") {
+	if strings.Contains(e2etest.ListingLine(t, stdout, broken), "model=") {
 		t.Fatalf("output must not list invalid profile file; got output: %q", stdout)
 	}
-}
-
-// profileLine returns the listing line that names path.
-func profileLine(t *testing.T, stdout, path string) string {
-	t.Helper()
-	for line := range strings.SplitSeq(stdout, "\n") {
-		if strings.Contains(line, path) {
-			return line
-		}
-	}
-	t.Fatalf("no line names %q in %q", path, stdout)
-	return ""
 }
 
 func Test_goldenFile_PROFILES_list_warns_when_no_profiles_found(t *testing.T) {

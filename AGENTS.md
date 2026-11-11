@@ -51,11 +51,17 @@ is intentional to produce a highly testable, efficient system which follows stri
 Do not modify the timeout, count, or race. Do not add test skips, false-positive tests or any other cheat.
 Instead, start testing early and ensure that test passes for each new modification.
 
+**Important:** cap `-p` at the physical core count. The `-p` default is the logical CPU
+count, so an SMT machine starts twice as many race binaries as it has cores. Each binary
+then runs at about half speed, and the 30 s deadline measures the scheduler instead of the
+tests (`internal/testenv` reports such a binary as `starved`). `make qa` computes the value
+from `nproc`; when you run `go test` by hand, pass `-p` yourself.
+
 **Important:** For new implementations, 70+% test coverage is a must. 90+% test coverage is preferred.
 
 **Every test binary is hermetic:** each test package's `TestMain` is
 `func TestMain(m *testing.M) { testenv.Main(m) }`, or `testenv.MainWith(m, testenv.Setup{...})`
-when it builds a fixture first (`internal/testenv`). `Main` caps GOMAXPROCS at 2 and sets GOGC to
+when it builds a fixture first (`internal/testenv`). `Main` caps GOMAXPROCS at 1 and sets GOGC to
 400 for the binary and its children (on 2026-10-22, 22 uncapped race binaries at full GOMAXPROCS
 spent half the gate's CPU in scheduler spin and GC pauses; on 2026-10-28, 53 uncapped binaries
 made tests run 5 to 14 times slower than alone, and the collector cost the e2e binary 20.6 CPU-s
@@ -68,5 +74,10 @@ and `LC_ALL` is `C`. A test that needs one of them sets it with `t.Setenv`. The 
 skills discovery walks the working directory's ancestors (on 2026-10-28, five e2e rows run
 from the repository read the developer's own skills directory, and one row listed a 1.9 GB
 directory of the developer's agent session logs for 240 CPU-s). Race detection is unaffected.
+
+A test must not depend on a program the developer happens to have installed. When a row resolves
+a program through `PATH`, put a stub there with `testenv.FakeBins` (or `testenv.FakeBinsSetup`
+from `TestMain`); on 2026-11-11 the launcher rows answered `Unresolvable` on a host with no
+`npx` and passed on one with it.
 
 Run `make qa` to run all at once.

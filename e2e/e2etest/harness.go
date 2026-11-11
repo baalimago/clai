@@ -17,9 +17,6 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
-// SetupPTYHelperEnv marks the child process of the interactive setup PTY test.
-const SetupPTYHelperEnv = "E2E_SETUP_PTY_HELPER"
-
 // Harness holds one test package's CLI collaborators; every run reads Deps at call time.
 type Harness struct {
 	Deps cli.Deps
@@ -77,6 +74,28 @@ func (h *Harness) RunOneStreams(t *testing.T, cwd string, args string) (string, 
 		stdout, status = h.RunOne(t, cwd, args)
 	})
 	return stdout, stderr, status
+}
+
+// CompleteE2E runs one completion request, captured on stdout.
+func (h *Harness) CompleteE2E(t *testing.T, words ...string) (int, string) {
+	t.Helper()
+	var status int
+	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
+		status = h.Run(append([]string{"__complete", "clai"}, words...))
+	})
+	return status, stdout
+}
+
+// CompleteLinesE2E is CompleteE2E split into its candidate lines; an empty
+// stdout is no candidates.
+func (h *Harness) CompleteLinesE2E(t *testing.T, words ...string) []string {
+	t.Helper()
+	status, stdout := h.CompleteE2E(t, words...)
+	testboil.FailTestIfDiff(t, status, 0)
+	if stdout == "" {
+		return nil
+	}
+	return strings.Split(strings.TrimSuffix(stdout, "\n"), "\n")
 }
 
 func splitArgsForTest(args string) []string {

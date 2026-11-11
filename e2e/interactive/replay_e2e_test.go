@@ -1,4 +1,4 @@
-package e2e
+package interactive
 
 import (
 	"encoding/json"
@@ -70,7 +70,7 @@ func Test_e2e_replay_loads_theme(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			// Built before chdir: the build runs in the current directory.
-			bin := filepath.Join(claiBinDir(t), "clai")
+			bin := filepath.Join(e2etest.CLIBinDir(t), "clai")
 			t.Setenv("NO_COLOR", "")
 			confDir := e2etest.SetupMainTestConfigDir(t)
 			t.Setenv("CLAI_CACHE_DIR", filepath.Join(t.TempDir(), "cache"))

@@ -46,9 +46,9 @@ address and fetch another (`gh:anthropics/..@evil`).
 | `internal/profiles/validate.go` | `profiles validate` and `profiles schema`: the findings a body has, and the document this clai ships |
 | `internal/exitstatus.go` | `ExitCoder`/`ExitStatus`: how exit status 3 survives upstream `cmd.Run` |
 | `internal/cli/cli.go` | `Deps.RemoteClient`, `remoteResolver` (the composition root) |
-| `e2e/remote_targets_e2e_test.go` | The CLI contract against `fakeHub`, a local TLS server with clai.chat's raw routes that also stands in for GitHub and any https host |
-| `e2e/profile_skills_e2e_test.go` | A profile's skills from the hub and GitHub: install, offline run, refusals, and publishing a skill then an agent that uses it |
-| `e2e/remote_targets_pty_e2e_test.go` | The trust question on a real pseudo-terminal, with stdout piped |
+| `e2e/remote/remote_targets_e2e_test.go` | The CLI contract against `fakeHub`, a local TLS server with clai.chat's raw routes that also stands in for GitHub and any https host |
+| `e2e/remote/profile_skills_e2e_test.go` | A profile's skills from the hub and GitHub: install, offline run, refusals, and publishing a skill then an agent that uses it |
+| `e2e/remote/remote_targets_pty_e2e_test.go` | The trust question on a real pseudo-terminal, with stdout piped |
 
 ## Flow
 

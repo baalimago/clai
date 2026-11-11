@@ -19,7 +19,7 @@ func TestExplicitMcpServerExitReportsOneLine(t *testing.T) {
 	t.Cleanup(func() { os.Args = oldArgs })
 
 	confDir := e2etest.SetupMainTestConfigDir(t)
-	profile := fmt.Sprintf(`{"model":"test","use_tools":true,"mcp_servers":{"broken":{"command":%q,"env":{"TEST_SERVER_CRASH_TAIL":"1"}}}}`, testServerBinary(t))
+	profile := fmt.Sprintf(`{"model":"test","use_tools":true,"mcp_servers":{"broken":{"command":%q,"env":{"TEST_SERVER_CRASH_TAIL":"1"}}}}`, e2etest.TestServerBinary(t))
 	if err := os.WriteFile(filepath.Join(confDir, "profiles", "crashy.json"), []byte(profile), 0o644); err != nil {
 		t.Fatalf("write profile: %v", err)
 	}

@@ -1,4 +1,4 @@
-package e2e
+package interactive
 
 import (
 	"context"
@@ -66,26 +66,6 @@ func runCaptured(t *testing.T, args ...string) (int, string, string) {
 		status = harness.Run(args)
 	})
 	return status, stdout, stderr
-}
-
-func withStdin(t *testing.T, data []byte) {
-	t.Helper()
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("Pipe: %v", err)
-	}
-	if _, err := w.Write(data); err != nil {
-		t.Fatalf("write stdin: %v", err)
-	}
-	if err := w.Close(); err != nil {
-		t.Fatalf("close stdin writer: %v", err)
-	}
-	old := os.Stdin
-	os.Stdin = r
-	t.Cleanup(func() {
-		os.Stdin = old
-		_ = r.Close()
-	})
 }
 
 func assetFiles(t *testing.T, dir string) []string {
@@ -157,7 +137,7 @@ func Test_goldenFile_QUERY_img_attach(t *testing.T) {
 
 func Test_goldenFile_QUERY_stdin_image(t *testing.T) {
 	f := newImageFixture(t)
-	withStdin(t, f.png)
+	e2etest.WithStdin(t, f.png)
 	f.attach(t, "-r", "-cm", "test", "q", "what breed?")
 	if c := f.globalScope(t); strings.Contains(c.Messages[len(c.Messages)-2].Describe(), "PNG") {
 		t.Fatal("stdin image bytes leaked into the prompt text")
