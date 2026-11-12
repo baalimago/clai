@@ -562,11 +562,13 @@ one-tool conversation summarizer is the in-tree consumer.
 ## The tool listing
 
 `clai tools` lists built-in tools and, since the shadow-advisory work, MCP tools too. It had claimed
-to do the latter for a long time without doing it: `List` reads the process-global tool registry,
-that registry is populated only by `registerLocalTools`, and `setupMcpManager` is reached only from
-the query path. Writing MCP tools into the global registry is not an option — concurrent setups
-would overwrite each other, which is why the per-run registry rule exists — so the listing has its
-own **cache-only** source instead.
+to do the latter for a long time without doing it: the listing's built-ins came from the
+process-global tool registry, that registry is populated only by `registerLocalTools`, and
+`setupMcpManager` is reached only from the query path. Writing MCP tools into the global registry is
+not an option — concurrent setups would overwrite each other, which is why the per-run registry rule
+exists — so the listing has its own **cache-only** source instead. The built-ins themselves now come
+from `builtins()`, clai's catalog, so a machine that cannot load one still names it and the mark says
+why (see [tools-command.md](./tools-command.md)).
 
 For each configured server the listing builds the identity, reads its schema-cache entry, and lists
 what it finds into a listing-scoped tool set. It **never connects** and never spawns, because a
@@ -576,6 +578,8 @@ A cache entry exists only where a handshake completed, so an entry *is* the evid
 successful run. A server with no entry — never run, or whose last run failed — contributes nothing
 and is **omitted rather than flagged**: a tool listing is what a user reads to find out what they
 can call, not a diagnostic surface. An entry appears after the server's first successful query run.
+A built-in this machine cannot load is a different case, not a diagnostic: it stays listed with its
+`[needs <program>]` mark (see [tools-command.md](./tools-command.md)).
 
 ### Built-in shadow marker
 

@@ -262,7 +262,8 @@ func TestShadowFooterNamesAvailableBuiltin(t *testing.T) {
 // TestShadowFooterOmitsUnregisteredBuiltin pins the error-coverage row: a
 // declared mapping whose built-in is not registered on this host (its
 // executable absent, exactly as registerLocalTools already gates it) is
-// left out of the footer rather than naming an unavailable built-in.
+// left out of the footer rather than naming an unavailable built-in. The
+// catalog still lists that built-in, marked, on its own line.
 func TestShadowFooterOmitsUnregisteredBuiltin(t *testing.T) {
 	configDir, cacheDir := t.TempDir(), t.TempDir()
 	t.Setenv("CLAI_CONFIG_DIR", configDir)
@@ -283,7 +284,10 @@ func TestShadowFooterOmitsUnregisteredBuiltin(t *testing.T) {
 		if !strings.Contains(got, "- mcp_fs_read_file: Read a file\n") {
 			t.Fatalf("expected read_file present and unmarked, got:\n%s", got)
 		}
-		if strings.Contains(got, "Note:") || strings.Contains(got, "cat") {
+		if !strings.Contains(got, "- cat [needs cat]") {
+			t.Fatalf("expected the catalog to list cat marked, got:\n%s", got)
+		}
+		if strings.Contains(got, shadowFooterPrefix) {
 			t.Fatalf("expected no footer naming an unavailable built-in, got:\n%s", got)
 		}
 	})
@@ -320,7 +324,7 @@ func TestShadowFooterDeduplicatesAcrossServers(t *testing.T) {
 		}
 		footerLines := 0
 		for line := range strings.SplitSeq(got, "\n") {
-			if strings.HasPrefix(line, "Note:") {
+			if strings.HasPrefix(line, shadowFooterPrefix) {
 				footerLines++
 				if n := strings.Count(line, "cat"); n != 1 {
 					t.Fatalf("expected the footer to name cat exactly once (deduplicated across both servers), got %d occurrences in footer %q", n, line)
@@ -561,7 +565,7 @@ func TestShadowFooterSkipsEndpointBasedServers(t *testing.T) {
 		if !strings.Contains(got, "- mcp_remotefs_read_file: Read a file on the remote host\n") {
 			t.Fatalf("expected the endpoint-based tool present and unmarked, got:\n%s", got)
 		}
-		if strings.Contains(got, "Note:") {
+		if strings.Contains(got, shadowFooterPrefix) {
 			t.Fatalf("expected no footer: the only hit is endpoint-based, which never contributes, got:\n%s", got)
 		}
 	})

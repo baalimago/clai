@@ -22,11 +22,15 @@ import (
 )
 
 // Detail prints the specification of one tool, a built-in or an MCP tool
-// that the schema cache has a record of. Under -json it is one JSON document
-// on stdout, not the record stream.
+// that the schema cache has a record of. A visible built-in the listing names
+// but this machine cannot load is still describable, so its catalog spec
+// answers.
+// Under -json it is one JSON document on stdout, not the record stream.
 func Detail(ctx context.Context, toolName string) error {
 	var spec pub_models.Specification
 	if tool, exists := Registry.Get(toolName); exists {
+		spec = tool.Specification()
+	} else if tool, exists := builtinByName(toolName); exists {
 		spec = tool.Specification()
 	} else if entry, exists := findMcpListingEntry(toolName); exists {
 		spec = entry.spec
@@ -44,8 +48,22 @@ func Detail(ctx context.Context, toolName string) error {
 	return nil
 }
 
+// unavailableMark names the program a tool needs that this machine lacks. The
+// text listing appends it to the tool's own line and the footer explains it.
+func unavailableMark(entry toolListingEntry) string {
+	if entry.available {
+		return ""
+	}
+	return " [needs " + entry.dependency + "]"
+}
+
+// shadowFooterPrefix opens the shadow advisory's footer line. The listing
+// carries a second note, about tools this machine cannot load, so a test that
+// asks whether the shadow advisory fired matches on this prefix.
+const shadowFooterPrefix = "Note: a configured MCP server's tool"
+
 // List prints every available tool with its aliases and description: every
-// built-in, plus every MCP tool the schema cache has a record of for a
+// built-in clai ships, plus every MCP tool the schema cache has a record of for a
 // configured server (phase 7, D21). A footer names any built-in that may
 // cover a capability also offered by a configured, command-based MCP
 // server, without naming which tool or server (sign-off review, 2026-10-03:
@@ -55,7 +73,8 @@ func Detail(ctx context.Context, toolName string) error {
 // since a bare-name match there says nothing about the remote capability
 // behind it. A footer carries the same "check whether you need this"
 // information with no claim about any specific listed tool to be wrong
-// about).
+// about). A built-in this machine cannot load is still listed, marked with
+// the program it needs; a second footer explains that mark.
 func List(ctx context.Context) error {
 	env := runenv.From(ctx)
 	listing := buildListing()
@@ -64,12 +83,17 @@ func List(ctx context.Context) error {
 	}
 	out := env.Stdout()
 	fmt.Fprintf(out, "Available Tools:\n")
+	unloadable := 0
 	for _, entry := range listing.entries {
 		aliasSuffix := ""
 		if len(entry.aliases) > 0 {
 			aliasSuffix = " (alias: " + strings.Join(entry.aliases, ", ") + ")"
 		}
-		prefix := fmt.Sprintf("- %s%s: ", entry.name, aliasSuffix)
+		mark := unavailableMark(entry)
+		if mark != "" {
+			unloadable++
+		}
+		prefix := fmt.Sprintf("- %s%s%s: ", entry.name, aliasSuffix, mark)
 		// The listing writes to stdout, so it resolves one snapshot bound to
 		// stdout's fd (R2-02): a non-terminal stdout yields the deterministic
 		// fallback width.
@@ -77,17 +101,26 @@ func List(ctx context.Context) error {
 		fmt.Fprintln(out, line)
 	}
 	if len(listing.shadowed) > 0 {
-		fmt.Fprintf(out, "\nNote: a configured MCP server's tool may already be covered by a local built-in: %s. Check each server's own tools before assuming redundancy.\n", strings.Join(listing.shadowed, ", "))
+		fmt.Fprintf(out, "\n%s may already be covered by a local built-in: %s. Check each server's own tools before assuming redundancy.\n", shadowFooterPrefix, strings.Join(listing.shadowed, ", "))
+	}
+	if unloadable > 0 {
+		fmt.Fprintf(out, "\nNote: tools marked [needs <program>] are built in, but this machine's PATH has no such program, so they cannot load here.\n")
 	}
 	fmt.Fprintln(out, "\nRun 'clai tools <tool-name>' for more details.")
 	return nil
 }
 
 // toolJSON is one tool of the listing's -json document: the full
-// specification, with the aliases that resolve to it.
+// specification, with the aliases that resolve to it, the program it needs to
+// load and whether this machine has that program.
 type toolJSON struct {
 	pub_models.Specification
 	Aliases []string `json:"aliases"`
+	// Dependency is the program the tool runs. It is empty for a tool that
+	// runs in-process, and for an MCP tool, whose server is not a PATH
+	// program, so every entry carries the field.
+	Dependency string `json:"dependency"`
+	Available  bool   `json:"available"`
 }
 
 // toolListing is one listing: the entries in display order and the built-ins
@@ -98,9 +131,11 @@ type toolListing struct {
 }
 
 type toolListingEntry struct {
-	name    string
-	spec    pub_models.Specification
-	aliases []string
+	name       string
+	spec       pub_models.Specification
+	aliases    []string
+	dependency string
+	available  bool
 }
 
 // json returns the listing's -json document: machine-readable data rather
@@ -108,49 +143,74 @@ type toolListingEntry struct {
 func (l toolListing) json() []toolJSON {
 	out := make([]toolJSON, 0, len(l.entries))
 	for _, entry := range l.entries {
-		out = append(out, toolJSON{Specification: entry.spec, Aliases: entry.aliases})
+		out = append(out, toolJSON{
+			Specification: entry.spec,
+			Aliases:       entry.aliases,
+			Dependency:    entry.dependency,
+			Available:     entry.available,
+		})
 	}
 	return out
 }
 
-// buildListing collects every visible built-in and every cached MCP tool,
-// sorted by name, with each built-in's aliases.
+// buildListing collects clai's whole visible built-in catalog, every other
+// visible registry entry, and every cached MCP tool, sorted by name, with each
+// entry's aliases. A built-in's availability is the registry's own answer: a
+// native tool needs no program, so it is always loadable, and every other
+// built-in is loadable exactly when registration put it in the registry.
 func buildListing() toolListing {
 	tls := Registry.Visible()
 	aliases := Registry.Aliases()
 	mcpEntries, shadowedBuiltins := mcpListingEntries()
-	mcpByName := make(map[string]mcpListingEntry, len(mcpEntries))
 
-	var names []string
-	for k := range tls {
-		if _, isAlias := aliases[k]; !isAlias {
-			names = append(names, k)
-		}
-	}
-	for _, e := range mcpEntries {
-		mcpByName[e.name] = e
-		names = append(names, e.name)
-	}
-	sort.Strings(names)
-
-	entries := make([]toolListingEntry, 0, len(names))
-	for _, name := range names {
-		entry := toolListingEntry{name: name, aliases: []string{}}
-		if e, ok := mcpByName[name]; ok {
-			entry.spec = e.spec
-			entries = append(entries, entry)
+	entries := make(map[string]toolListingEntry, len(tls)+len(mcpEntries)+len(builtins()))
+	for _, b := range builtins() {
+		if b.hidden {
 			continue
 		}
-		entry.spec = tls[name].Specification()
+		spec := b.tool.Specification()
+		registered, loadable := tls[spec.Name]
+		if loadable {
+			spec = registered.Specification()
+		}
+		entries[spec.Name] = toolListingEntry{
+			name:       spec.Name,
+			spec:       spec,
+			dependency: b.executable,
+			available:  loadable || b.executable == "",
+		}
+	}
+	for name, tool := range tls {
+		if _, isAlias := aliases[name]; isAlias {
+			continue
+		}
+		if _, known := entries[name]; known {
+			continue
+		}
+		entries[name] = toolListingEntry{name: name, spec: tool.Specification(), available: true}
+	}
+	for _, e := range mcpEntries {
+		entries[e.name] = toolListingEntry{name: e.name, spec: e.spec, available: true}
+	}
+
+	names := make([]string, 0, len(entries))
+	for name := range entries {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	listing := toolListing{shadowed: shadowedBuiltins, entries: make([]toolListingEntry, 0, len(names))}
+	for _, name := range names {
+		entry := entries[name]
+		entry.aliases = []string{}
 		for alias, canonical := range aliases {
 			if canonical == name {
 				entry.aliases = append(entry.aliases, alias)
 			}
 		}
 		sort.Strings(entry.aliases)
-		entries = append(entries, entry)
+		listing.entries = append(listing.entries, entry)
 	}
-	return toolListing{entries: entries, shadowed: shadowedBuiltins}
+	return listing
 }
 
 // Command builds the tools command tree.
@@ -161,9 +221,15 @@ func Command() *internal.Command {
 		Desc: "List available tools, or show details for a specific tool",
 		HelpText: "tools [tool name]. Lists built-in tools and any MCP tool cached from a prior successful run, or one tool's specification." + `
 
+Every built-in clai ships is listed on every machine. One this machine
+cannot load is marked [needs <program>]: the program it runs is not in
+PATH here, so a run on this machine cannot offer it.
+
 With -json the result is one JSON document of full tool data, not the usual
 record stream: an array of specifications for the listing, one object for a
-tool. So a script parses the tools directly.`,
+tool. So a script parses the tools directly. Each listing entry carries
+'dependency', the program the tool runs (empty for an in-process tool or an
+MCP tool), and 'available', whether this machine has that program.`,
 		Register:       nonInteractive.Register,
 		NonInteractive: nonInteractive,
 		CompleteArgsFn: toolNameArgs,

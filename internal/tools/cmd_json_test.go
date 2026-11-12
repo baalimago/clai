@@ -30,6 +30,8 @@ type listedTool struct {
 	Description string                  `json:"description"`
 	Inputs      *pub_models.InputSchema `json:"input_schema"`
 	Aliases     []string                `json:"aliases"`
+	Dependency  string                  `json:"dependency"`
+	Available   bool                    `json:"available"`
 }
 
 func TestListJSONWritesTheFullListingAsOneDocument(t *testing.T) {
@@ -65,17 +67,23 @@ func TestListJSONWritesTheFullListingAsOneDocument(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
 		t.Fatalf("unmarshal the listing: %v\n%s", err, stdout.String())
 	}
-	if len(got) != 1 {
-		t.Fatalf("listed %d tools, want 1: %+v", len(got), got)
+	var canon *listedTool
+	for i := range got {
+		if got[i].Name == "canon" {
+			canon = &got[i]
+		}
 	}
-	if got[0].Name != "canon" || got[0].Description != description {
-		t.Fatalf("got %+v, want the full canonical specification", got[0])
+	if canon == nil {
+		t.Fatalf("the listing holds no canon: %+v", got)
 	}
-	if got[0].Inputs == nil || got[0].Inputs.Properties["path"].Description != "where" {
-		t.Fatalf("input schema lost: %+v", got[0].Inputs)
+	if canon.Description != description {
+		t.Fatalf("got %+v, want the full canonical specification", canon)
 	}
-	if len(got[0].Aliases) != 1 || got[0].Aliases[0] != "old-name" {
-		t.Fatalf("aliases = %v, want [old-name]", got[0].Aliases)
+	if canon.Inputs == nil || canon.Inputs.Properties["path"].Description != "where" {
+		t.Fatalf("input schema lost: %+v", canon.Inputs)
+	}
+	if len(canon.Aliases) != 1 || canon.Aliases[0] != "old-name" {
+		t.Fatalf("aliases = %v, want [old-name]", canon.Aliases)
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/baalimago/clai/e2e/e2etest"
+	"github.com/baalimago/clai/internal/tools"
 	"github.com/baalimago/clai/internal/tools/mcp/schemacache"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
@@ -138,4 +139,47 @@ func Test_goldenFile_TOOLS_unknown_tool_errors(t *testing.T) {
 	if stdout != "" {
 		t.Fatalf("expected no stdout, got: %q", stdout)
 	}
+}
+
+// Test_goldenFile_TOOLS_lists_every_builtin_on_a_bare_machine pins the
+// registry contract: the listing is clai's catalog, not the machine's
+// toolchain, so a machine whose PATH resolves nothing still names every
+// built-in and says which program each missing one needs.
+func Test_goldenFile_TOOLS_lists_every_builtin_on_a_bare_machine(t *testing.T) {
+	_ = e2etest.SetupMainTestConfigDir(t)
+	t.Setenv("PATH", t.TempDir())
+
+	tools.WithTestRegistry(t, func() {
+		var gotStatus int
+		text := testboil.CaptureStdout(t, func(t *testing.T) {
+			gotStatus = harness.Run(strings.Split("tools", " "))
+		})
+		testboil.FailTestIfDiff(t, gotStatus, 0)
+		testboil.AssertStringContains(t, text, "- rg [needs rg]: ")
+		testboil.AssertStringContains(t, text, "Note: tools marked [needs <program>]")
+		testboil.AssertStringContains(t, text, "Run 'clai tools <tool-name>' for more details.\n")
+
+		jsonOut := testboil.CaptureStdout(t, func(t *testing.T) {
+			gotStatus = harness.Run(strings.Split("-json tools", " "))
+		})
+		testboil.FailTestIfDiff(t, gotStatus, 0)
+		var listed []struct {
+			Name       string `json:"name"`
+			Dependency string `json:"dependency"`
+			Available  bool   `json:"available"`
+		}
+		if err := json.Unmarshal([]byte(jsonOut), &listed); err != nil {
+			t.Fatalf("unmarshal the listing: %v\n%s", err, jsonOut)
+		}
+		for _, entry := range listed {
+			if entry.Name != "rg" {
+				continue
+			}
+			if entry.Dependency != "rg" || entry.Available {
+				t.Fatalf("rg = %+v, want dependency rg on a machine without it", entry)
+			}
+			return
+		}
+		t.Fatalf("the listing holds no rg:\n%s", jsonOut)
+	})
 }

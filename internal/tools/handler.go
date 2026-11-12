@@ -30,38 +30,37 @@ func Init(ctx context.Context) {
 
 type executableLookup func(string) (string, error)
 
-type executableTool struct {
+// builtin is one tool clai ships: the program it needs to load (empty for a
+// native tool that runs in-process) and whether it stays out of the listing
+// and wildcard selection.
+type builtin struct {
 	executable string
 	tool       pub_models.LLMTool
 	hidden     bool
 }
 
-// registerLocalTools adds native tools and executable-backed tools available
-// in PATH. lookup is injected so availability behavior is deterministic in tests.
-func registerLocalTools(reg *registry, lookup executableLookup) {
-	nativeTools := []pub_models.LLMTool{
-		tools.Mkdir,
-		tools.Mktemp,
-		tools.WebsiteText,
-		tools.WriteFile,
-		tools.ApplyPatch,
-		tools.Sed,
-		tools.RowsBetween,
-		tools.LineCount,
-		tools.AudioTranscribe,
-		tools.AsyncCmdRun,
-		tools.AsyncCmdStatus,
-		tools.AsyncCmdLogs,
-		tools.AsyncCmdAwait,
-		tools.AsyncCmdCancel,
-		tools.LoadSkill,
-		tools.ViewImage,
-	}
-	for _, tool := range nativeTools {
-		reg.Set(tool.Specification().Name, tool)
-	}
+// builtins is the whole tool catalog clai ships: the same entries on every
+// machine. Whether this machine can load one is a separate fact, decided by
+// registerLocalTools from the executable each entry names.
+func builtins() []builtin {
+	return []builtin{
+		{tool: tools.Mkdir},
+		{tool: tools.Mktemp},
+		{tool: tools.WebsiteText},
+		{tool: tools.WriteFile},
+		{tool: tools.ApplyPatch},
+		{tool: tools.Sed},
+		{tool: tools.RowsBetween},
+		{tool: tools.LineCount},
+		{tool: tools.AudioTranscribe},
+		{tool: tools.AsyncCmdRun},
+		{tool: tools.AsyncCmdStatus},
+		{tool: tools.AsyncCmdLogs},
+		{tool: tools.AsyncCmdAwait},
+		{tool: tools.AsyncCmdCancel},
+		{tool: tools.LoadSkill},
+		{tool: tools.ViewImage},
 
-	executableTools := []executableTool{
 		{executable: "tree", tool: tools.FileTree},
 		{executable: "cat", tool: tools.Cat},
 		{executable: "head", tool: tools.Head},
@@ -86,10 +85,19 @@ func registerLocalTools(reg *registry, lookup executableLookup) {
 		// running clai.
 		{executable: tools.ClaiBinaryPath, tool: tools.ClaiHelp, hidden: true},
 		{executable: tools.ClaiBinaryPath, tool: tools.ClaiRun, hidden: true},
+		{tool: tools.ClaiCheck, hidden: true},
+		{tool: tools.ClaiResult, hidden: true},
+		{tool: tools.ClaiWaitForWorkers, hidden: true},
 	}
-	available := lookupExecutables(executableTools, lookup)
-	for _, candidate := range executableTools {
-		if !available[candidate.executable] {
+}
+
+// registerLocalTools adds native tools and executable-backed tools available
+// in PATH. lookup is injected so availability behavior is deterministic in tests.
+func registerLocalTools(reg *registry, lookup executableLookup) {
+	catalog := builtins()
+	available := lookupExecutables(catalog, lookup)
+	for _, candidate := range catalog {
+		if candidate.executable != "" && !available[candidate.executable] {
 			continue
 		}
 		if candidate.hidden {
@@ -97,10 +105,6 @@ func registerLocalTools(reg *registry, lookup executableLookup) {
 			continue
 		}
 		reg.Set(candidate.tool.Specification().Name, candidate.tool)
-	}
-
-	for _, tool := range []pub_models.LLMTool{tools.ClaiCheck, tools.ClaiResult, tools.ClaiWaitForWorkers} {
-		reg.SetHidden(tool.Specification().Name, tool)
 	}
 
 	// Legacy production alias: freetext_command predates the cmd name.
@@ -116,10 +120,10 @@ func registerLocalTools(reg *registry, lookup executableLookup) {
 
 // lookupExecutables searches PATH for every distinct executable at once: each
 // search is a stat per PATH entry, and run in sequence they dominate setup.
-func lookupExecutables(candidates []executableTool, lookup executableLookup) map[string]bool {
+func lookupExecutables(candidates []builtin, lookup executableLookup) map[string]bool {
 	var names []string
 	for _, candidate := range candidates {
-		if !slices.Contains(names, candidate.executable) {
+		if candidate.executable != "" && !slices.Contains(names, candidate.executable) {
 			names = append(names, candidate.executable)
 		}
 	}
@@ -147,4 +151,19 @@ func ToolFromName(name string) pub_models.Specification {
 		return pub_models.Specification{}
 	}
 	return t.Specification()
+}
+
+// builtinByName returns the visible catalog tool clai ships as name, whether
+// or not this machine can load it. A hidden built-in stays as reachable as it
+// was: the registry, and nothing else, answers for it.
+func builtinByName(name string) (pub_models.LLMTool, bool) {
+	for _, b := range builtins() {
+		if b.hidden {
+			continue
+		}
+		if b.tool.Specification().Name == name {
+			return b.tool, true
+		}
+	}
+	return nil, false
 }

@@ -48,11 +48,14 @@ Built-ins are registered during tooling initialization. Conceptually:
   - a **JSON schema** for parameters
   - an **executor** (Go code) that runs the tool and returns a structured result
 
-Built-ins backed by a fixed external executable are registered only when that
-executable resolves through `exec.LookPath`. Therefore, unavailable tools are
-absent from both `clai tools` and the schemas sent to a model. Dynamic command
-tools such as `async_cmd` remain available because their executable is supplied
-at call time. `audio_transcribe` also remains available because `ffmpeg` and
+`builtins()` (`internal/tools/handler.go`) is the catalog of every tool clai
+ships, the same on every machine. A built-in backed by a fixed external
+executable is registered only when that executable resolves through
+`exec.LookPath`, so a machine without the program sends no schema for it to a
+model; `clai tools` still names it, marked with the program it needs
+(see [tools-command.md](./tools-command.md)). Dynamic command tools such as
+`async_cmd` remain available because their executable is supplied at call
+time. `audio_transcribe` also remains available because `ffmpeg` and
 `ffprobe` are needed only when an input must be split.
 
 The `cp` built-in copies files and directories recursively through the system
@@ -150,8 +153,9 @@ that received the call. One object holds both sides: `tools.Offered`
    under `-json`). Nothing runs. This holds for `load_skill` and the lookback
    tools too, which the executor dispatches itself.
 
-The process-global registry is a catalog: setup selects from it, `clai tools`
-lists it, and the stream parsers read a specification from it. It is never
+The process-global registry holds what this machine can load: setup selects
+from it, `clai tools` lists it against the wider catalog, and the stream
+parsers read a specification from it. It is never
 consulted to execute a model's call, so the tools another run or the host
 process registered are out of reach. This covers every run in the process: the
 main query, each loop iteration, the conversation labeller and
