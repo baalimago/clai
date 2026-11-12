@@ -70,6 +70,22 @@ func TestVendorType_Berget_NoOrg(t *testing.T) {
 	}
 }
 
+func TestVendorType_CheaperInference(t *testing.T) {
+	vendor, model, modelVersion, err := vendorType("ci:gpt-fixture")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if vendor != "cheaperinference" {
+		t.Fatalf("vendor mismatch: got %q want %q", vendor, "cheaperinference")
+	}
+	if model != "chat" {
+		t.Fatalf("model mismatch: got %q want %q", model, "chat")
+	}
+	if modelVersion != "gpt-fixture" {
+		t.Fatalf("modelVersion mismatch: got %q want %q", modelVersion, "gpt-fixture")
+	}
+}
+
 // Model ids in these tables are synthetic on purpose. vendorType and
 // CanonicalModelString parse a naming *shape* (bare, org-qualified,
 // prefixed) and never consult a provider catalogue, so a real model id here
@@ -89,6 +105,7 @@ func TestCanonicalModelString_RoundTrip(t *testing.T) {
 		{"openrouter with slash", "or:orgx/fixture-model"},
 		{"berget with org", "berget:orgx/fixture-model"},
 		{"berget without org", "berget:fixture-model"},
+		{"cheaper inference", "ci:fixture-model"},
 		{"ollama with prefix", "ollama:fixture-model"},
 		{"ollama bare", "ollama"},
 		{"novita with org", "novita:orgx/fixture-model"},
@@ -136,6 +153,7 @@ func TestCanonicalModelString_FromConfigFilename(t *testing.T) {
 		{"openrouter", "chat", "fixture-model", "or:fixture-model"},
 		{"berget", "orgx", "fixture-model", "berget:orgx/fixture-model"},
 		{"berget", "berget", "fixture-model", "berget:fixture-model"},
+		{"cheaperinference", "chat", "fixture-model", "ci:fixture-model"},
 		{"ollama", "fixture-model", "ollama:fixture-model", "ollama:fixture-model"},
 		{"ollama", "fixture-model", "ollama", "ollama"},
 		{"novita", "orgx", "fixture-model", "novita:orgx/fixture-model"},

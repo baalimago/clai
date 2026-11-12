@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/baalimago/clai/internal/vendors/anthropic"
+	"github.com/baalimago/clai/internal/vendors/cheaperinference"
 	"github.com/baalimago/clai/internal/vendors/deepseek"
 	"github.com/baalimago/clai/internal/vendors/gemini"
 	"github.com/baalimago/clai/internal/vendors/huggingface"
@@ -220,6 +221,33 @@ func TestSelectTextQuerier_OpenRouterPrefixBeatsProviderSubstring(t *testing.T) 
 	}
 	if typed.Model.Model != "or:deepseek/deepseek-v4-pro" {
 		t.Fatalf("expected prefixed openrouter model, got: %q", typed.Model.Model)
+	}
+}
+
+func TestSelectTextQuerier_CheaperInferencePrefixBeatsProviderSubstring(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("CHEAPER_INFERENCE_API_KEY", "k")
+	t.Setenv("CLAI_CONFIG_DIR", tmp)
+
+	conf := Configurations{
+		Model:     "ci:claude-fixture",
+		ConfigDir: tmp,
+	}
+	writeModelPriceFixture(t, conf, cheaperinference.Default)
+	q, err := selectTextQuerier(t.Context(), conf)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if q == nil {
+		t.Fatal("expected querier")
+	}
+	waitForQuerierCosts(t, q)
+	typed, ok := q.(*Querier[*cheaperinference.CheaperInference])
+	if !ok {
+		t.Fatalf("expected cheaper inference querier, got: %T", q)
+	}
+	if typed.Model.URL != cheaperinference.ChatURL {
+		t.Fatalf("expected cheaper inference url, got: %q", typed.Model.URL)
 	}
 }
 
