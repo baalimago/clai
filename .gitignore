@@ -1,4 +1,5 @@
 coverage.out
+cpu_profile.prof
 result
 result-*
 img/clai-demo.mp4

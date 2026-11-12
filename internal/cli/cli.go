@@ -126,6 +126,19 @@ type Deps struct {
 	RemoteClient remote.Doer
 	// StepRetry resends a model request that failed before its stream opened.
 	StepRetry text.StepRetry
+	// DiagnosticBufferSize overrides the Shared buffer size (README
+	// Parameters) so a test spills with a small payload; zero keeps
+	// production's 1 MiB.
+	DiagnosticBufferSize diag.ByteSize
+}
+
+// diagnosticBufferSize is the run's Shared buffer size: the Deps override,
+// else the production parameter.
+func (d Deps) diagnosticBufferSize() diag.ByteSize {
+	if d.DiagnosticBufferSize > 0 {
+		return d.DiagnosticBufferSize
+	}
+	return sharedBufferSize
 }
 
 // DefaultDeps returns the production collaborators: the real summarizer, the
@@ -263,12 +276,14 @@ func hubPublisher(confDir string) (profiles.HubPublisher, error) {
 // prep and migrations, which the domain packages cannot import themselves.
 // See architecture/cmd-dispatch.md.
 func Commands(deps Deps) map[string]cmd.Command {
-	return commands(deps, func(int) {}, func() io.Writer { return io.Discard })
+	return commands(deps, func(int) {}, func() io.Writer { return io.Discard },
+		func(_ context.Context, args []string) int { return Run(args, deps) })
 }
 
 // commands takes setExit, through which a command asks Run for an exit
-// status other than the 0 or 1 cmd.Run can return.
-func commands(deps Deps, setExit func(int), notices func() io.Writer) map[string]cmd.Command {
+// status other than the 0 or 1 cmd.Run can return, and rerun, through which a
+// hidden spelling re-enters dispatch as its documented spelling.
+func commands(deps Deps, setExit func(int), notices func() io.Writer, rerun func(context.Context, []string) int) map[string]cmd.Command {
 	configPrep := func(ctx context.Context) (string, error) {
 		confDir, _, err := setup.ConfigRunPrep(ctx, false)
 		return confDir, err
@@ -308,6 +323,53 @@ func commands(deps Deps, setExit func(int), notices func() io.Writer) map[string
 			return text.TerminalTrustPrompter(env.Stdin(), env.StdinIsTerminal(), env.Stderr())
 		},
 	}
+	setupCmd := setup.Command()
+	setupAlias := newHiddenAlias(setupCmd, setupAliasArgs(setupCmd.NonInteractive), rerun, setExit)
+	profilesCmd := profiles.Command(profileDeps)
+	if list, ok := profilesCmd.Subs["list"].(*internal.Command); ok {
+		profilesCmd.Subs["list"] = newHiddenAlias(list, listProfileAliasArgs, rerun, setExit)
+	}
+	// Every profiles verb the config tree now documents stays callable under
+	// its old spelling by re-entering as the config verb.
+	wrapVerb := func(parent *internal.Command, sub string, verb ...string) {
+		if c, ok := parent.Subs[sub].(*internal.Command); ok {
+			parent.Subs[sub] = newVerbAlias(c, verbAliasArgs(verb...), rerun, setExit)
+		}
+	}
+	wrapVerb(profilesCmd, "validate", "validate", "profile")
+	wrapVerb(profilesCmd, "schema", "schema", "profile")
+	wrapVerb(profilesCmd, "trust", "trust", "profile")
+	wrapVerb(profilesCmd, "install", "install", "profile")
+	wrapVerb(profilesCmd, "update", "update", "profile")
+	wrapVerb(profilesCmd, "publish", "publish", "profile")
+	profilesAlias := newHiddenAlias(profilesCmd, listProfileAliasArgs, rerun, setExit)
+	skillsCmd := profiles.SkillsCommand(profileDeps)
+	wrapVerb(skillsCmd, "publish", "publish", "skill")
+	confdirAlias := newHiddenAlias(confdir.Command(), dirAliasArgs, rerun, setExit)
+	cloudCmd := cloudcmd.Command(cloudcmd.Deps{
+		ConfDir: utils.GetClaiConfigDir,
+		SetExit: setExit,
+		Publish: cloudPublish(profileDeps),
+		Hooks: sync.Hooks{
+			Export: func(ctx context.Context, confDir string, progress func(done, total int)) error {
+				return chat.ExportForeign(ctx, confDir, foreignCache(deps), progress)
+			},
+			Pending: func(ctx context.Context, confDir string) ([]sync.PendingImport, error) {
+				found, err := chat.PendingForeign(ctx, confDir, foreignCache(deps))
+				out := make([]sync.PendingImport, 0, len(found))
+				for _, f := range found {
+					out = append(out, sync.PendingImport{Source: f.Source, ID: f.SourceID, Change: sync.ImportChange(f.Change), Messages: f.Messages, RawBytes: f.RawBytes})
+				}
+				return out, err
+			},
+			Pulled: chat.ReindexPulled,
+		},
+	})
+	// `cloud publish` keeps its own wizard; `config publish` is the
+	// documented spelling, so the old one leaves every listing.
+	if publish, ok := cloudCmd.Subs["publish"].(*internal.Command); ok {
+		cloudCmd.Subs["publish"] = newHiddenCommand(publish)
+	}
 	return map[string]cmd.Command{
 		"query|q": text.QueryCommand(queryDeps),
 		"chat|c": chat.Command(chat.CommandDeps{
@@ -334,34 +396,21 @@ func commands(deps Deps, setExit func(int), notices func() io.Writer) map[string
 			ConfigPrep:        func(ctx context.Context) (string, []string, error) { return setup.ConfigRunPrep(ctx, true) },
 			NewRemoteResolver: remoteResolver(deps.RemoteClient, envAt, notices),
 		}),
-		"setup|s":        setup.Command(),
+		"setup|s":        setupAlias,
 		"version":        version.Command(),
 		"replay|re":      chat.ReplayCommand(),
 		"dir-replay|dre": chat.DirscopeReplayCommand(),
 		"tools|t":        tools.Command(),
 		"mcp":            mcp.Command(),
-		"profiles":       profiles.Command(profileDeps),
-		"skills":         profiles.SkillsCommand(profileDeps),
-		"confdir":        confdir.Command(),
-		"cloud": cloudcmd.Command(cloudcmd.Deps{
-			ConfDir: utils.GetClaiConfigDir,
-			SetExit: setExit,
-			Publish: cloudPublish(profileDeps),
-			Hooks: sync.Hooks{
-				Export: func(ctx context.Context, confDir string, progress func(done, total int)) error {
-					return chat.ExportForeign(ctx, confDir, foreignCache(deps), progress)
-				},
-				Pending: func(ctx context.Context, confDir string) ([]sync.PendingImport, error) {
-					found, err := chat.PendingForeign(ctx, confDir, foreignCache(deps))
-					out := make([]sync.PendingImport, 0, len(found))
-					for _, f := range found {
-						out = append(out, sync.PendingImport{Source: f.Source, ID: f.SourceID, Change: sync.ImportChange(f.Change), Messages: f.Messages, RawBytes: f.RawBytes})
-					}
-					return out, err
-				},
-				Pulled: chat.ReindexPulled,
-			},
+		"profiles":       profilesAlias,
+		"skills":         skillsCmd,
+		"confdir":        confdirAlias,
+		"config": configCommand(configDeps{
+			profiles: profileDeps,
+			publish:  cloudPublish(profileDeps),
+			setExit:  setExit,
 		}),
+		"cloud": cloudCmd,
 	}
 }
 

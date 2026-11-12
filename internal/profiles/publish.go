@@ -130,12 +130,14 @@ func (d CommandDeps) send(ctx context.Context, confDir, arg string, req PublishR
 	}
 	res, err := publish(ctx, req)
 	if handle, ok := errors.AsType[*HandleRequiredError](err); ok {
-		sub := "profiles publish"
+		// The hint names the documented spelling, which every hidden
+		// spelling delegates to.
+		sub := "config publish profile"
 		switch req.Kind {
 		case "skill":
-			sub = "skills publish"
+			sub = "config publish skill"
 		case "alias":
-			sub = "cloud publish alias"
+			sub = "config publish alias"
 		}
 		return diag.Errorf("%w: clai %s %s -handle %s", err, sub, arg, handle.Suggested)
 	}

@@ -117,7 +117,7 @@ func goldenEnv(env map[string]string) string {
 func startGoldenProvider(t *testing.T, confDir string, stub stubProvider) {
 	t.Helper()
 	original := http.DefaultTransport
-	http.DefaultTransport = loopbackOnly{base: original}
+	http.DefaultTransport = e2etest.LoopbackOnly{Base: original}
 	t.Cleanup(func() { http.DefaultTransport = original })
 	var calls int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://clai.chat/schema/shell-contexts-1.0.json",
+  "title": "clai shell context",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "shell": { "type": "string" },
+    "timeout_ms": { "type": "integer" },
+    "timed_out_value": { "type": "string" },
+    "error_value": { "type": "string" },
+    "template": { "type": "string" },
+    "vars": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "$schema": { "type": "string", "x-clai": "unread" }
+  }
+}

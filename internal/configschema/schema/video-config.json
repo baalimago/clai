@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://clai.chat/schema/video-config-1.0.json",
+  "title": "clai video config",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "model": { "type": "string" },
+    "prompt-format": { "type": "string" },
+    "output": { "$ref": "#/$defs/output" },
+    "raw": { "type": "boolean" },
+    "$schema": { "type": "string", "x-clai": "unread" }
+  },
+  "$defs": {
+    "output": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "type": { "type": "string", "enum": ["local", "url", "unset"] },
+        "dir": { "type": "string" },
+        "prefix": { "type": "string" }
+      }
+    }
+  }
+}

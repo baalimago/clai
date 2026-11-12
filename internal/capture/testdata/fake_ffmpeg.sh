@@ -56,7 +56,9 @@ pulse_list() {
     mode="${FAKE_FFMPEG_SINKS_MODE:-ok}"
   fi
   if [ "$mode" = "slow" ]; then
-    sleep 1
+    # Longer than the 100 ms cancellation its rows wait for, short enough to
+    # keep those rows fast.
+    sleep 0.3
   fi
   case "$kind:$mode" in
     sources:nolibpulse | sinks:nolibpulse)
@@ -121,7 +123,7 @@ case "$*" in
     ;;
   *"avfoundation -list_devices"*)
     if [ "${FAKE_FFMPEG_AVFOUNDATION_MODE:-}" = "slow" ]; then
-      sleep 1
+      sleep 0.3
     fi
     case "${FAKE_FFMPEG_AVFOUNDATION_MODE:-ok}" in
       ok | slow)

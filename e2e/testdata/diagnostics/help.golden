@@ -17,15 +17,13 @@ Commands:
   chat|c          Manage chats: continue|delete|list|dir|dirv2|summarize|help
   cloud           Your clai.chat account and sync (optional)
   completion      generate shell completion scripts (bash|zsh)
-  confdir         Print clai config dir or a registered config subpath
+  config          The config store: edit, list, schema, validate, publish and dir
   dir-replay|dre  Replay the last message of the directory-scoped conversation
   help            Print this usage; 'clai help <command>' is that command's -h
   mcp             Manage MCP server state
   photo|p         Ask the photo model for a picture with the given prompt
-  profiles        List, validate, install, update, trust and publish profiles; print the schema
   query|q         Query the chat model with the given text; -l iterates toward a goal
   replay|re       Replay the most recent message
-  setup|s         Setup the configuration files
   skills          Publish skills and use them from profiles
   tools|t         List available tools, or show details for a specific tool
   version         Print the version of clai and its dependencies

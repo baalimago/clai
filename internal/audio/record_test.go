@@ -16,6 +16,7 @@ import (
 
 	"github.com/baalimago/clai/internal/capture"
 	"github.com/baalimago/clai/internal/utils"
+	"github.com/baalimago/clai/pkg/diagnostic"
 	pkgtools "github.com/baalimago/clai/pkg/tools"
 )
 
@@ -330,7 +331,10 @@ func TestRecordText_CalibrationNotice(t *testing.T) {
 func TestRecordText_AcknowledgeKey(t *testing.T) {
 	setAudioConfig(t, map[string]any{"dir": t.TempDir(), "max-seconds": 1, "sinks": "none"})
 	path := audioConfigPath(t)
-	captureStderr(t)
+	// The key reader outlives the call, so it must not write the process
+	// streams: a discarded Env keeps its notice off a global another test
+	// swaps.
+	ctx := procenv.Diagnostics(context.Background(), io.Discard, diagnostic.LevelInfo)
 	block := make(chan struct{})
 	go func() {
 		defer close(block)
@@ -347,7 +351,7 @@ func TestRecordText_AcknowledgeKey(t *testing.T) {
 		}
 	}()
 
-	if _, err := recordText(procenv.Context(context.Background()), pkgtools.AudioRecordCall{}, &recordStub{block: block}, strings.NewReader("a\n"), true); err != nil {
+	if _, err := recordText(ctx, pkgtools.AudioRecordCall{}, &recordStub{block: block}, strings.NewReader("a\n"), true); err != nil {
 		t.Fatalf("recordText: %v", err)
 	}
 	if !readAudioConfig(t).Capture.Calibrated {

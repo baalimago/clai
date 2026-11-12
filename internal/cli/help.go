@@ -63,6 +63,9 @@ func commandTable(cmds map[string]cmd.Command) string {
 	var b strings.Builder
 	w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
 	for _, name := range slices.Sorted(maps.Keys(cmds)) {
+		if cmd.IsHidden(cmds[name]) {
+			continue
+		}
 		fmt.Fprintf(w, "\t%v\t%v\n", name, cmds[name].Describe())
 	}
 	w.Flush()

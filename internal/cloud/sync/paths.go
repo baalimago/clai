@@ -20,13 +20,27 @@ const (
 // conversation names should arrive before the conversation.
 var Stores = []Store{StoreConfig, StoreConversations}
 
-// ParseStore maps a command-line name to a store.
+// ParseStore maps a command-line name to a store. `settings` is the
+// documented name of the config store; `config` stays a hidden alias for it,
+// so the request and local-state paths keep `config`.
 func ParseStore(s string) (Store, bool) {
 	switch Store(s) {
 	case StoreConfig, StoreConversations:
 		return Store(s), true
 	}
+	if s == "settings" {
+		return StoreConfig, true
+	}
 	return "", false
+}
+
+// StoreName is the name every listing prints for store: `settings` for the
+// config store, whose request path keeps `config`.
+func StoreName(store Store) string {
+	if store == StoreConfig {
+		return "settings"
+	}
+	return string(store)
 }
 
 // The allowlists mirror clai-cloud's cloud/site/sync.ts validPath. A path

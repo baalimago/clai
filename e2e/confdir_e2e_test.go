@@ -65,6 +65,9 @@ func Test_goldenFile_CONFDIR_unknown_subpath_errors(t *testing.T) {
 	}
 }
 
+// Test_goldenFile_usage_mentions_confdir_command pins that the documented
+// spelling of `confdir` is `config dir`: the usage table holds `config` and
+// not the hidden alias.
 func Test_goldenFile_usage_mentions_confdir_command(t *testing.T) {
 	_ = e2etest.SetupMainTestConfigDir(t)
 
@@ -74,8 +77,11 @@ func Test_goldenFile_usage_mentions_confdir_command(t *testing.T) {
 	})
 
 	testboil.FailTestIfDiff(t, gotStatus, 1)
-	testboil.AssertStringContains(t, stdout, "confdir")
-	testboil.AssertStringContains(t, stdout, "Print clai config dir or a registered config subpath")
+	testboil.AssertStringContains(t, stdout, "config")
+	testboil.AssertStringContains(t, stdout, "The config store: edit, list, schema, validate, publish and dir")
+	if strings.Contains(stdout, "\n  confdir ") {
+		t.Fatalf("usage must not list the hidden confdir alias, got:\n%s", stdout)
+	}
 }
 
 // Test_e2e_query_migrates_mode_configs proves the united config migration:

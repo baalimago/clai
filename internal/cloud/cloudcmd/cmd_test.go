@@ -149,8 +149,7 @@ func TestLogout_revokedTokenStillLogsOut(t *testing.T) {
 	if code, out := h.run("logout"); code != 0 {
 		t.Fatalf("code %d: %s", code, out)
 	}
-	h2 := newHarness(t, "tok-a")
-	h2.srv.Close()
+	h2 := offline(t)
 	if code, _ := h2.run("logout"); code != 1 {
 		t.Fatal("logout offline should fail and keep the login")
 	}
@@ -168,7 +167,7 @@ func TestWhoami(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code %d", code)
 	}
-	mustContain(t, out, "▸ @lorentz", "device a", "write access", "■ config", "■ conversations",
+	mustContain(t, out, "▸ @lorentz", "device a", "write access", "■ settings", "■ conversations",
 		"billing: config sync is free (0 B of 1.0 GB)", "conversations need a card on file")
 	_, out = h.run("whoami", "-r")
 	var me cloud.Me
@@ -183,6 +182,41 @@ func TestWhoami(t *testing.T) {
 	}
 }
 
+// TestCloudStoreSettings proves the clause that renames the config store to
+// `settings`: the documented token parses to the config store, `config` stays
+// a hidden alias for the same store, and every listing prints `settings`.
+func TestCloudStoreSettings(t *testing.T) {
+	for _, token := range []string{"settings", "config"} {
+		store, ok := sync.ParseStore(token)
+		if !ok || store != sync.StoreConfig {
+			t.Fatalf("ParseStore(%q) = %q, %v; want the config store", token, store, ok)
+		}
+	}
+	if got := sync.StoreName(sync.StoreConfig); got != "settings" {
+		t.Fatalf("StoreName(config) = %q, want %q", got, "settings")
+	}
+	if got := sync.StoreName(sync.StoreConversations); got != "conversations" {
+		t.Fatalf("StoreName(conversations) = %q, want %q", got, "conversations")
+	}
+
+	h := newHarness(t, "tok-a")
+	h.write("profiles/coder.json", `{"prompt":"x"}`)
+	code, settings := h.run("status", "settings")
+	if code != 0 {
+		t.Fatalf("status settings: %d %s", code, settings)
+	}
+	mustContain(t, settings, "▸ settings · 1 to commit", "+ profiles/coder.json")
+	// The hidden token names the same store, so the run is the same run.
+	code, config := h.run("status", "config")
+	if code != 0 || config != settings {
+		t.Fatalf("status config: %d %s, want the settings run:\n%s", code, config, settings)
+	}
+	// A token that names no store is refused, naming the two that exist.
+	if _, err := stores([]string{"nope"}); err == nil || !strings.Contains(err.Error(), `unknown store "nope": use settings or conversations`) {
+		t.Fatalf("stores(nope) = %v, want the two names", err)
+	}
+}
+
 func TestStatusCommitPullLog(t *testing.T) {
 	h := newHarness(t, "tok-a")
 	h.write("profiles/coder.json", `{"prompt":"x"}`)
@@ -192,18 +226,18 @@ func TestStatusCommitPullLog(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("status %d", code)
 	}
-	mustContain(t, out, "▸ config · 1 to commit", "+ profiles/coder.json", "✕ profiles/leak.json    not synced: holds a secret (api_key)", "never pulled here", "1 imported file")
+	mustContain(t, out, "▸ settings · 1 to commit", "+ profiles/coder.json", "✕ profiles/leak.json    not synced: holds a secret (api_key)", "never pulled here", "1 imported file")
 
 	code, out = h.run("commit", "-m", "first", "config")
 	if code != 0 {
 		t.Fatalf("commit %d: %s", code, out)
 	}
-	mustContain(t, out, "▸ config · commit #1 · 1 file", "✕ profiles/leak.json   not synced: holds a secret (api_key)")
+	mustContain(t, out, "▸ settings · commit #1 · 1 file", "✕ profiles/leak.json   not synced: holds a secret (api_key)")
 	if got, _ := h.srv.Content("config", "profiles/coder.json"); got == "" {
 		t.Fatal("not on the server")
 	}
 	_, out = h.run("commit")
-	mustContain(t, out, "▸ config · nothing to commit")
+	mustContain(t, out, "▸ settings · nothing to commit")
 
 	h.srv.Put("config", "profiles/coder.json", `{"prompt":"y"}`)
 	_, out = h.run("status", "config")
@@ -212,7 +246,7 @@ func TestStatusCommitPullLog(t *testing.T) {
 	if code != 0 || h.read("profiles/coder.json") != `{"prompt":"y"}` {
 		t.Fatalf("pull %d: %s", code, out)
 	}
-	mustContain(t, out, "▸ config · pulled #2 · 1 updated")
+	mustContain(t, out, "▸ settings · pulled #2 · 1 updated")
 
 	code, out = h.run("log", "config", "-limit", "5")
 	if code != 0 {
@@ -249,7 +283,7 @@ func TestCommit_behindExits4(t *testing.T) {
 	if code != ExitDecisionNeeded {
 		t.Fatalf("code %d: %s", code, out)
 	}
-	mustContain(t, out, "▸ config · not committed · your account has 1 newer file", "~ profiles/x.json   #2 \"edit profiles/x.json\" · other", "→ clai cloud pull config")
+	mustContain(t, out, "▸ settings · not committed · your account has 1 newer file", "~ profiles/x.json   #2 \"edit profiles/x.json\" · other", "→ clai cloud pull settings")
 }
 
 func TestPull_conflictThenResolve(t *testing.T) {
@@ -271,7 +305,7 @@ func TestPull_conflictThenResolve(t *testing.T) {
 	if code != ExitDecisionNeeded {
 		t.Fatalf("commit with conflict: %d %s", code, out)
 	}
-	mustContain(t, out, "▸ config · not committed · 1 conflict to resolve first")
+	mustContain(t, out, "▸ settings · not committed · 1 conflict to resolve first")
 	if code, _ := h.run("resolve"); code != 1 {
 		t.Fatal("resolve without a path")
 	}
@@ -321,7 +355,7 @@ func TestPull_firstPull(t *testing.T) {
 		if code != ExitDecisionNeeded || h.read("profiles/x.json") != "mine" {
 			t.Fatalf("code %d: %s", code, out)
 		}
-		mustContain(t, out, "▸ config · first pull on this machine", "≠ 1 differs", "profiles/x.json", "not pulled", "→ clai cloud pull config -theirs")
+		mustContain(t, out, "▸ settings · first pull on this machine", "≠ 1 differs", "profiles/x.json", "not pulled", "→ clai cloud pull settings -theirs")
 	})
 	t.Run("flag", func(t *testing.T) {
 		h := setup(t)
@@ -483,9 +517,8 @@ func TestDiff_summarisesConversations(t *testing.T) {
 }
 
 func TestStatus_offlineAndRevoked(t *testing.T) {
-	h := newHarness(t, "tok-a")
+	h := offline(t)
 	h.write("profiles/x.json", "1")
-	h.srv.Close()
 	code, out := h.run("status", "config")
 	if code != 0 {
 		t.Fatalf("code %d", code)
@@ -579,7 +612,7 @@ func TestCommit_withoutACardCommitsConfigAndSaysWhyNotConversations(t *testing.T
 	if code != ExitDecisionNeeded {
 		t.Fatalf("code %d, out %s", code, out)
 	}
-	mustContain(t, out, "▸ config · commit #1", "▸ conversations · not committed · needs a card on file", "  → "+h.srv.URL()+"/account/billing/")
+	mustContain(t, out, "▸ settings · commit #1", "▸ conversations · not committed · needs a card on file", "  → "+h.srv.URL()+"/account/billing/")
 
 	r := &runner{deps: h.deps().withDefaults(context.Background())}
 	err := r.commit(context.Background(), []string{"conversations"}, "", false, false)
@@ -630,7 +663,7 @@ func TestCommit_drawsProgressOnATerminal(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code %d", code)
 	}
-	if !strings.Contains(errOut.String(), "committing config") || strings.Contains(h.out.String(), "committing config") {
+	if !strings.Contains(errOut.String(), "committing settings") || strings.Contains(h.out.String(), "committing settings") {
 		t.Fatalf("progress went to stderr %q / stdout %q; want it on stderr only", errOut.String(), h.out.String())
 	}
 }
@@ -646,7 +679,7 @@ func TestStatus_drawsProgressOnATerminal(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code %d", code)
 	}
-	if !strings.Contains(errOut.String(), "checking config") {
+	if !strings.Contains(errOut.String(), "checking settings") {
 		t.Fatalf("no progress on stderr: %q", errOut.String())
 	}
 }

@@ -48,7 +48,7 @@ type AmbiguousAliasError struct {
 }
 
 func (e *AmbiguousAliasError) Error() string {
-	return fmt.Sprintf("model alias %q is defined in modes %s: pick one with clai cloud publish alias %s <%s>",
+	return fmt.Sprintf("model alias %q is defined in modes %s: pick one with clai config publish alias %s <%s>",
 		e.Alias, strings.Join(e.Modes, ", "), e.Alias, strings.Join(e.Modes, "|"))
 }
 
@@ -264,7 +264,41 @@ var publishKinds = []publishKind{
 	{name: "skill", discover: discoverSkills, publish: CommandDeps.PublishSkill},
 }
 
-// PublishInteractive walks `clai cloud publish [kind [name [mode]]]`: each
+// HubKindNames lists the kinds publish accepts, in the order its picker
+// offers them.
+func HubKindNames() []string {
+	names := make([]string, 0, len(publishKinds))
+	for _, k := range publishKinds {
+		names = append(names, k.name)
+	}
+	return names
+}
+
+// KindsCarrying reports which hub kinds hold an item named name, so `config
+// publish` can infer the kind from a bare name and ask only when several
+// kinds carry it.
+func (d CommandDeps) KindsCarrying(ctx context.Context, name string) ([]string, error) {
+	confDir, err := d.configDir(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var kinds []string
+	for _, k := range publishKinds {
+		items, err := k.discover(confDir)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range items {
+			if item.name == name {
+				kinds = append(kinds, k.name)
+				break
+			}
+		}
+	}
+	return kinds, nil
+}
+
+// PublishInteractive walks `clai config publish [kind [name [mode]]]`: each
 // argument given picks its level, and each one missing is asked on in. A nil
 // in means nobody can answer, so a missing level is an error.
 func (d CommandDeps) PublishInteractive(ctx context.Context, in io.Reader, args []string, opts PublishOptions) error {
@@ -282,7 +316,7 @@ func (d CommandDeps) PublishInteractive(ctx context.Context, in io.Reader, args 
 		maxArgs = 3
 	}
 	if len(args) > maxArgs {
-		return fmt.Errorf("unexpected argument %q: clai cloud publish %s takes at most %d arguments", args[maxArgs], kind.name, maxArgs-1)
+		return fmt.Errorf("unexpected argument %q: clai config publish %s takes at most %d arguments", args[maxArgs], kind.name, maxArgs-1)
 	}
 	if len(args) == 3 {
 		opts.Mode = args[2]
@@ -299,7 +333,7 @@ func (d CommandDeps) PublishInteractive(ctx context.Context, in io.Reader, args 
 		return fmt.Errorf("no %s to publish in %s", kind.name, confDir)
 	}
 	if in == nil {
-		return &MissingPublishArgError{Usage: "clai cloud publish " + kind.name + " <name>"}
+		return &MissingPublishArgError{Usage: "clai config publish " + kind.name + " <name>"}
 	}
 	i, err := selectOne(d, in, "Publish "+kind.name, items, publishable.label)
 	if err != nil {
@@ -318,7 +352,7 @@ func (d CommandDeps) pickKind(in io.Reader, args []string) (publishKind, error) 
 		return publishKind{}, fmt.Errorf("unknown publish kind %q: expected alias, profile or skill", args[0])
 	}
 	if in == nil {
-		return publishKind{}, &MissingPublishArgError{Usage: "clai cloud publish <alias|profile|skill>"}
+		return publishKind{}, &MissingPublishArgError{Usage: "clai config publish <alias|profile|skill>"}
 	}
 	i, err := selectOne(d, in, "Publish to Hub", publishKinds, func(k publishKind) string { return k.name })
 	if err != nil {

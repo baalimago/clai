@@ -23,9 +23,11 @@ import (
 )
 
 // Procs caps a test binary: go test runs about one race binary per core at
-// once, and full GOMAXPROCS per binary costs more CPU in scheduler spin and GC
-// pauses than the tests themselves.
-const Procs = 2
+// once, so one processor per binary puts the gate's runnable threads at the
+// core count. Two per binary oversubscribed the host, and the -test.timeout
+// alarm then fired on binaries whose own deadline report read "starved: the
+// binary's threads waited for a CPU" (2026-11-11).
+const Procs = 1
 
 // GCPercent trades a little heap for far fewer collections. Under the race
 // detector the collector, not the tests, dominated the e2e binary: 20.6 CPU-s
@@ -43,6 +45,72 @@ func Tune() PreviousProcs {
 	_ = os.Setenv("GOGC", strconv.Itoa(GCPercent))
 	debug.SetGCPercent(GCPercent)
 	return PreviousProcs(runtime.GOMAXPROCS(Procs))
+}
+
+// NoRaceExitSleep returns environ with GORACE carrying atexit_sleep_ms=0: a
+// -race binary otherwise sleeps one second in its exit hook, which a test
+// that spawns it pays. Other GORACE options the caller set stay.
+func NoRaceExitSleep(environ []string) []string {
+	gorace := ""
+	for _, kv := range environ {
+		if value, ok := strings.CutPrefix(kv, "GORACE="); ok {
+			gorace = value
+		}
+	}
+	return append(environ, "GORACE="+RaceExitSleepOff(gorace))
+}
+
+// RaceExitSleepOff is NoRaceExitSleep for a caller that owns the GORACE value
+// instead of an environment slice, such as t.Setenv.
+func RaceExitSleepOff(gorace string) string {
+	return strings.TrimSpace(strings.TrimSpace(gorace) + " atexit_sleep_ms=0")
+}
+
+// FakeBins writes a no-op executable for each name into a fresh directory and
+// puts that directory first on PATH, then returns it. A row that resolves a
+// program through PATH answers the same on a host without that program: the
+// launcher rows read Unresolvable on a machine with no npx and passed on one
+// with it (2026-11-11).
+func FakeBins(t testing.TB, names ...string) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := writeFakeBins(dir, names); err != nil {
+		t.Fatalf("%v", err)
+	}
+	if err := prependPath(dir); err != nil {
+		t.Fatalf("%v", err)
+	}
+	return dir
+}
+
+// FakeBinsSetup is FakeBins for a TestMain, where no testing.TB exists.
+func FakeBinsSetup(names ...string) Setup {
+	return Setup{Before: func(home Home) error {
+		dir := filepath.Join(string(home), "fakebins")
+		if err := writeFakeBins(dir, names); err != nil {
+			return err
+		}
+		return prependPath(dir)
+	}}
+}
+
+func writeFakeBins(dir string, names []string) error {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return diag.Errorf("create fake bin dir: %w", err)
+	}
+	for _, name := range names {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+			return diag.Errorf("write fake bin %q: %w", name, err)
+		}
+	}
+	return nil
+}
+
+func prependPath(dir string) error {
+	if err := os.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH")); err != nil {
+		return diag.Errorf("prepend %q to PATH: %w", dir, err)
+	}
+	return nil
 }
 
 // Setup is a package's own TestMain work around m.Run.

@@ -1,8 +1,18 @@
 # Profiles Command Architecture
 
-Command: `clai profiles [list|install|update|trust|publish]`
+Command: the `config` tree — `clai config list profile`, `clai config
+validate profile`, `clai config schema profile`, `clai config trust profile`,
+`clai config install profile`, `clai config update profile` and `clai config
+publish profile` — plus the hidden `clai profiles
+[list|validate|schema|trust|install|update|publish]` spellings, which stay
+callable and re-enter the config verb they document.
 
-The **profiles** command lists the configured profile JSON files under the clai config directory. It also installs, updates and trusts remote profile targets (`cchub:`, `gh:`, `https://`); [remote-targets.md](./remote-targets.md) covers those. `publish` sends a local profile to the Hub (below).
+`clai config list profile` prints one line per profile file under the clai
+config directory, keeping the model, tools, prompt and source stamp. The
+hidden `profiles` spelling still installs, updates and trusts remote profile
+targets (`cchub:`, `gh:`, `https://`); [remote-targets.md](./remote-targets.md)
+covers those. `config publish profile` sends a local profile to the Hub
+(below).
 
 Profiles themselves are used primarily via the `-p/-profile` and `-prp/-profile-path` flags on text-like commands (`query`, `chat`, `cmd`). Configuration semantics are described in `CONFIG.md`.
 
@@ -17,8 +27,8 @@ A profile may also pin the model the media tools its runs call use: `"audio": {"
 ```text
 internal/cli:Run()
   → cmd.Run(...)                  # go_away_boilerplate/pkg/cmd dispatch
-    → profiles command Run (internal/profiles/cmd.go)
-      → profiles.List()
+    → `profiles` hidden alias re-enters dispatch (internal/cli/config.go)
+      → config list profile       # internal/cli/config.go
 ```
 
 ## Key Files
@@ -31,7 +41,8 @@ internal/cli:Run()
 | `internal/cli/cli.go` | `hubPublisher`: posts to `/api/v1/hub` with the `clai cloud login` key; the secret check is `sync.FindSecret` |
 | `internal/profiles/remote.go` | `CommandDeps.Trust`, `Install`, `Update` and the `source` stamp |
 | `internal/profiles/cmd.go` | Implements `clai profiles` command |
-| `internal/profiles/validate.go` | `profiles validate` (findings, `-json`, exit 0/1/2) and `profiles schema` |
+| `internal/cli/config.go` | `listProfiles`, `printProfileLine` and `reportUnreadableProfile`: the one listing `config list profile` and the hidden `profiles` spellings share |
+| `internal/profiles/validate.go` | `config validate profile` (findings, `-json`, exit 0/1/2) and `config schema profile`; `CommandDeps.Validate` is the one checker, and an unreadable file target exits 2 |
 | `internal/utils/config_dir.go` (or similar) | `GetClaiConfigDir()` |
 | `internal/utils/json.go` (or similar) | `ReadAndUnmarshal()` helper |
 
@@ -41,16 +52,23 @@ Implemented in `internal/profiles/cmd.go`.
 
 ### Supported subcommands
 
-- `clai profiles`
-- `clai profiles list`
-- `clai profiles validate <target> [-json]`
-- `clai profiles schema`
-- `clai profiles trust <target>`
-- `clai profiles install <target> [name]`
-- `clai profiles update [name]`
-- `clai profiles publish <profile> [-name] [-title] [-summary] [-note] [-handle]`
+- `clai config list profile`
+- `clai config validate profile <target> [-json]`
+- `clai config schema profile`
+- `clai config trust profile <target>`
+- `clai config install profile <target> [name]`
+- `clai config update profile [name]`
+- `clai config publish profile <profile> [-name] [-title] [-summary] [-note] [-handle]`
 
 Any other subcommand returns an error.
+
+The pre-existing spellings — `clai profiles`, `clai profiles list`, `clai
+profiles validate <target>`, `clai profiles schema`, `clai profiles trust
+<target>`, `clai profiles install <target> [name]`, `clai profiles update
+[name]` and `clai profiles publish <profile>` — stay callable and hidden:
+bare `profiles` rebuilds `config list profile`, and each subcommand
+re-enters its `config` verb (see
+[cmd-dispatch.md](./cmd-dispatch.md#compatibility-hidden-spellings)).
 
 ### Publishing
 
@@ -85,54 +103,35 @@ the targets a profile's `"skills"` takes.
 
 ### Listing logic
 
-`runProfilesList()`:
+`listProfiles()` in `internal/cli/config.go`, reached as `clai config list
+profile` and as the hidden `profiles` and `profiles list`:
 
-1. Resolve config dir (`utils.GetClaiConfigDir()`).
-2. Determine `<configDir>/profiles`.
-3. If the directory doesn’t exist:
-   - prints a warning
-   - returns `utils.ErrUserInitiatedExit`.
-4. Reads all `*.json` files.
-5. For each file, tries to unmarshal a small subset view:
-
-   ```go
-   type profile struct {
-     Name   string   `json:"name"`
-     Model  string   `json:"model"`
-     Tools  []string `json:"tools"`
-     Prompt string   `json:"prompt"`
-     Audio  *struct {
-       Model string `json:"model"`
-     } `json:"audio"`
-   }
-   ```
-
-   A file that cannot be read is named on a line of its own, with the
-   `clai profiles validate <path>` command that explains it; the rest are
-   listed as usual.
-
-6. Backward compatible naming: if `Name` is empty, derive from filename.
-7. Prints a small summary block per profile:
-
-   - Name
-   - Model
-   - Tools
-   - Audio model, when the profile sets `audio.model`
-   - Source, when the profile was installed from a remote target
-   - First sentence/line from `Prompt`
-
-8. If no valid profiles were found, prints a warning.
-
-Returns `utils.ErrUserInitiatedExit`.
+1. Resolve the config dir (`utils.GetClaiConfigDir()`), then
+   `<configDir>/profiles`.
+2. Without that directory, warn `no profiles directory found at <dir>` on
+   stderr (subsystem `profiles`) and list nothing.
+3. With no `*.json` file in it, warn `no profiles found in <dir>` and list
+   nothing.
+4. For each file, read it and run the profile checker (`profile.Validate`,
+   `file` route). A file that cannot be read, or that the checker refuses,
+   keeps one line in the listing that says `cannot read` with the reason and
+   the `clai profiles validate <path>` command, and is warned about on stderr
+   too, so the listing and the diagnosis agree.
+5. A file the checker accepts prints one line: `profile <path>: name=<name>
+   model=<model> tools=[…] prompt="<first sentence>"`, then
+   ` source=<target>` when the profile carries a source stamp. An empty
+   `name` comes from the file name.
 
 ## Developer notes
 
-- `list` is intentionally conservative: it reads what it can and does not
-  check the profile schema. `clai profiles validate <target>` is the
+- `config list profile` reads every file and judges it with the same checker
+  a run uses, so a refused profile is named instead of listed as healthy.
+  `clai config validate profile <target>` is the
   command that does, printing every finding of the one checker in
   `internal/profile`; `-json` prints the findings array alone. It exits 0
-  with no error finding on any route, 1 with one, and 2 on a usage error,
-  and it never runs the profile. A remote target is read through
+  with no error finding on any route, 1 with one, and 2 on a usage error —
+  including a target it cannot read, which is no finding but no answer
+  either. It never runs the profile. A remote target is read through
   `remote.Resolver.Peek`, which records no trust.
 - The checker judges a `tools` entry against the local tool registry, which
   holds the built-ins and the executables found on `PATH`: exact names and

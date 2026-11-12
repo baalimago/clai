@@ -25,14 +25,28 @@ func Test_goldenFile_usage_on_no_args(t *testing.T) {
 	testboil.AssertStringContains(t, gotStdout, "Usage:")
 	for _, command := range []string{
 		"query|q", "chat|c", "photo|p", "video|v", "audio|a",
-		"setup|s", "version", "replay|re", "dir-replay|dre",
-		"tools|t", "profiles", "skills", "confdir", "completion",
+		"version", "replay|re", "dir-replay|dre",
+		"tools|t", "skills", "completion", "config",
 	} {
 		testboil.AssertStringContains(t, gotStdout, command)
 	}
 	for _, forbidden := range []string{"__complete", "help|h", "glob|g"} {
 		if strings.Contains(gotStdout, forbidden) {
 			t.Fatalf("usage must not list %q, got:\n%s", forbidden, gotStdout)
+		}
+	}
+	// The subsystem table further down names `profiles` too, and a subsystem is
+	// not a command, so only the Commands block is checked.
+	table := gotStdout
+	if _, after, ok := strings.Cut(table, "\nCommands:\n"); ok {
+		table = after
+		if end := strings.Index(table, "\n\n"); end >= 0 {
+			table = table[:end]
+		}
+	}
+	for _, hidden := range []string{"setup|s", "profiles", "confdir"} {
+		if strings.Contains("\n"+table+"\n", "\n  "+hidden+" ") {
+			t.Fatalf("usage must not list the hidden spelling %q, got:\n%s", hidden, gotStdout)
 		}
 	}
 	testboil.AssertStringContains(t, gotStdout, "clai <command> -h")

@@ -244,9 +244,10 @@ func colorAllowed(p process) bool {
 	return !misc.Truthy(p.getenv("NO_COLOR"))
 }
 
-// compose resolves the levels and builds the run's Presenter, buffer,
-// Reporter and Env. A level failure returns the Presenter that reports it.
-func compose(p process, format jsonl.Format) (composition, error) {
+// compose resolves the levels and builds the run's Presenter, buffer of
+// bufferSize bytes, Reporter and Env. A level failure returns the Presenter
+// that reports it.
+func compose(p process, format jsonl.Format, bufferSize diag.ByteSize) (composition, error) {
 	streams := stdio.New(stdio.Config{
 		Format:         format,
 		Stdin:          p.stdin,
@@ -270,7 +271,7 @@ func compose(p process, format jsonl.Format) (composition, error) {
 	if cacheDir, cacheErr := utils.GetClaiCacheDir(); cacheErr == nil {
 		spillDir = filepath.Join(cacheDir, spillDirName)
 	}
-	buffered := diag.NewBufferedDeliverer(spillDir, sharedBufferSize, presenter)
+	buffered := diag.NewBufferedDeliverer(spillDir, bufferSize, presenter)
 	routing, err := diag.NewReporter(types, levels, map[diagnostic.OutputMode]diagnostic.Deliverer{
 		diagnostic.Immediate: presenter,
 		diagnostic.Buffered:  buffered,
@@ -344,11 +345,15 @@ func run(args []string, deps Deps, p process) int {
 	ctx, exit := internal.WithExitStatus(ctx)
 	// The remote resolver's notices go to the run's stderr once it exists.
 	var notices io.Writer = io.Discard
-	cmds := withHelp(commands(deps, exit.Set, func() io.Writer { return notices }), usage)
+	// rerun re-enters dispatch inside this run, so a hidden alias keeps the
+	// run's streams, its -json format and its diagnostics.
+	var rerun func(context.Context, []string) int
+	cmds := withHelp(commands(deps, exit.Set, func() io.Writer { return notices },
+		func(ctx context.Context, args []string) int { return rerun(ctx, args) }), usage)
 	format, args, formatErr := scanFormat(args, cmds)
 	args = helpAsCommand(versionFlagAsCommand(args))
 
-	c, err := compose(p, format)
+	c, err := compose(p, format, deps.diagnosticBufferSize())
 	if err != nil {
 		_ = c.presenter.ReportError(ctx, err)
 		_ = c.streams.Close()
@@ -373,6 +378,10 @@ func run(args []string, deps Deps, p process) int {
 		}
 	}
 	monitor := runtimeboundary.NewDispatchMonitor(signals, c.reporter, runenv.TypeSignal, p.forceExit)
+	rerun = func(ctx context.Context, args []string) int {
+		status, err := monitor.Dispatch(ctx, runtimeboundary.Invocation{Args: append([]string{"clai"}, args...), Commands: cmds})
+		return exit.Resolve(presentOutcome(ctx, c, int(status), err, !cmd.IsCommandFailure(err), usage, cmds))
+	}
 	// The monitor outlives the first signal's cancel, so its warn and
 	// force-exit steps still run (phase 7 Monitor.1). The first signal is
 	// the run's cancel cause, so every producer can tell an interrupt from

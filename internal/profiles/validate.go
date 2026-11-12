@@ -64,6 +64,13 @@ func (d CommandDeps) Validate(ctx context.Context, target string, asJSON bool) (
 	}
 	body, route, err := d.readTarget(ctx, confDir, target)
 	if err != nil {
+		// An unreadable target is a usage error (exit 2, clause 6); a target
+		// that already carries a status, such as a remote hash mismatch, keeps
+		// it.
+		var coder internal.ExitCoder
+		if route == profile.File && !errors.As(err, &coder) {
+			return ExitClean, internal.StatusError(int(ExitUsage), err)
+		}
 		return ExitClean, err
 	}
 	env, err := d.profileEnv(confDir)

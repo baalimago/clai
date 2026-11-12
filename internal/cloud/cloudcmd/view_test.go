@@ -16,7 +16,7 @@ func plainLines(lines []string) string { return strings.Join(lines, "\n") }
 func TestStatusLines_clean(t *testing.T) {
 	st := sync.Status{Store: sync.StoreConfig, Pulled: true, Synced: 30, Remote: &sync.RemoteStatus{}}
 	got := plainLines(statusLines(st, style{}))
-	if got != "▸ config · up to date · 30 synced" {
+	if got != "▸ settings · up to date · 30 synced" {
 		t.Fatalf("got %q", got)
 	}
 }
@@ -33,7 +33,7 @@ func TestStatusLines_fewChangesAreListed(t *testing.T) {
 		Remote:    &sync.RemoteStatus{Ahead: 2, Both: []string{"theme.json"}, Uploaded: []string{"profiles/coder.json"}},
 	}
 	wantLines(t, statusLines(st, style{}),
-		"▸ config · 2 to commit · 1.5 kB · 1 conflict · server 2 commits ahead · 1 already uploaded · never pulled here",
+		"▸ settings · 2 to commit · 1.5 kB · 1 conflict · server 2 commits ahead · 1 already uploaded · never pulled here",
 		"  C mcpServers/x.json     yours is untouched · your account's copy is cloud/theirs/mcpServers/x.json",
 		"  + profiles/coder.json   1.2 kB · uploaded, not committed",
 		"  ~ theme.json            300 B · also changed on the server",
@@ -42,7 +42,7 @@ func TestStatusLines_fewChangesAreListed(t *testing.T) {
 		"  → clai cloud diff mcpServers/x.json              compare the two",
 		"  → clai cloud resolve mcpServers/x.json -theirs   take your account's copy",
 		"  → clai cloud resolve mcpServers/x.json -mine     keep yours",
-		"  → clai cloud pull config                         bring down 2 commits",
+		"  → clai cloud pull settings                       bring down 2 commits",
 	)
 	got := plainLines(statusLines(st, style{}))
 	if strings.Contains(got, "share") {
@@ -115,7 +115,7 @@ func TestStatusLines_manyChangesAreGrouped(t *testing.T) {
 func TestStatusLines_unreachableServer(t *testing.T) {
 	st := sync.Status{Store: sync.StoreConfig, Pulled: true, RemoteError: errors.New("dial tcp: refused")}
 	got := plainLines(statusLines(st, style{}))
-	if got != "▸ config · nothing to commit\n  ! the server's side is unknown: dial tcp: refused   only this machine's side is shown" {
+	if got != "▸ settings · nothing to commit\n  ! the server's side is unknown: dial tcp: refused   only this machine's side is shown" {
 		t.Fatalf("got %q", got)
 	}
 }
@@ -186,13 +186,13 @@ func TestStatusLines_previewsOtherTools(t *testing.T) {
 func TestStatusLines_pullHint(t *testing.T) {
 	never := sync.Status{Store: sync.StoreConfig, Remote: &sync.RemoteStatus{}}
 	wantLines(t, statusLines(never, style{}),
-		"▸ config · up to date · never pulled here",
-		"  → clai cloud pull config   first pull on this machine",
+		"▸ settings · up to date · never pulled here",
+		"  → clai cloud pull settings   first pull on this machine",
 	)
 	ahead := sync.Status{Store: sync.StoreConfig, Pulled: true, Remote: &sync.RemoteStatus{Ahead: 1}}
 	wantLines(t, statusLines(ahead, style{}),
-		"▸ config · nothing to commit · server 1 commit ahead",
-		"  → clai cloud pull config   bring down 1 commit",
+		"▸ settings · nothing to commit · server 1 commit ahead",
+		"  → clai cloud pull settings   bring down 1 commit",
 	)
 }
 
@@ -223,7 +223,7 @@ func TestPlainLook_dropsBoxesAndColumns(t *testing.T) {
 		"  images: files ",
 		"  codex: conversations 1, new 1, grown 0, messages 4, size 20.0 kB",
 		"  clai cloud commit -imports",
-		"  config: 30 files, 12.0 kB, commit #3",
+		"  settings: 30 files, 12.0 kB, commit #3",
 		"  conversations: 0 files, 0 B, no commits yet",
 	} {
 		if !strings.Contains(got, want) {

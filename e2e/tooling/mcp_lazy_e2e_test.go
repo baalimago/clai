@@ -59,7 +59,7 @@ func TestLazyStartupE2EUnderRace(t *testing.T) {
 
 	spawnLog := filepath.Join(t.TempDir(), "spawns.log")
 	mcpDir := filepath.Join(confDir, "mcpServers")
-	conf := fmt.Sprintf(`{"command":%q,"env":{"TEST_SERVER_SPAWN_LOG":%q}}`, testServerBinary(t), spawnLog)
+	conf := fmt.Sprintf(`{"command":%q,"env":{"TEST_SERVER_SPAWN_LOG":%q}}`, e2etest.TestServerBinary(t), spawnLog)
 	if err := os.WriteFile(filepath.Join(mcpDir, "echo.json"), []byte(conf), 0o644); err != nil {
 		t.Fatalf("write mcp server config: %v", err)
 	}
@@ -123,7 +123,7 @@ func TestLazyMultiServerSpawnsOnlyTheCalledServer(t *testing.T) {
 	t.Cleanup(func() { os.Args = oldArgs })
 
 	confDir := e2etest.SetupMainTestConfigDir(t)
-	bin := testServerBinary(t)
+	bin := e2etest.TestServerBinary(t)
 	mcpDir := filepath.Join(confDir, "mcpServers")
 
 	spawnLogA := filepath.Join(t.TempDir(), "a.log")

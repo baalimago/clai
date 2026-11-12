@@ -1,9 +1,12 @@
 # Cloud sync: `clai cloud`
 
-clai can keep two stores on clai.chat: a **config store** (profiles, MCP
+clai can keep two stores on clai.chat: the **settings store** (profiles, MCP
 servers, shell contexts, skills, mode configs, theme) and a **conversation
 store** (conversations, their images, reasoning sidecars, and, when asked,
-the conversations clai imports from other tools). Config sync is free (up
+the conversations clai imports from other tools). The store token is
+`settings`; `config` stays a hidden alias for it, because it is still the
+name of the request path and of the local state file
+(`sync.ParseStore`, `sync.StoreName`). Settings sync is free (up
 to 1 GB); conversations cost $1 per started GB a month and need a card on
 file. Sync works like git: nothing
 runs on its own, only `clai cloud` subcommands talk to clai.chat, and clai
@@ -24,7 +27,7 @@ for the login).
 | `internal/cloud/client.go` | `Client`: `Do`, `PostJSON`; `APIError` (with `URL` for a page that fixes it, and `Suggested`, the handle the Hub offers with `handle_required`), `TransportError`; `StartDevice`, `PollDevice`, `Me`, `RevokeCurrent` |
 | `internal/cloud/login.go` | `LoginFlow.Run`: start, show the code, poll until approved, denied or expired |
 | `internal/cloud/credentials.go` | `<config>/cloud/credentials.json` (0600); `CLAI_CLOUD_TOKEN`, `CLAI_CLOUD_URL`; `TokenSource` |
-| `internal/cloud/sync/paths.go` | `Store`, `Allowed` (mirrors the server's `validPath`), `StoreOf` |
+| `internal/cloud/sync/paths.go` | `Store`, `ParseStore` (accepts `settings`, and `config` as a hidden alias), `StoreName` (prints `settings` for the config store), `Allowed` (mirrors the server's `validPath`), `StoreOf` |
 | `internal/cloud/sync/scan.go` | `scan`: hashes a store's files, reusing hashes by size and mod time; `FileLimits` |
 | `internal/cloud/sync/secrets.go` | `FindSecret`: the credential check; vectors in `testdata/secrets.vectors.json`, shared with clai-cloud |
 | `internal/cloud/sync/state.go` | `<config>/cloud/state/<store>.json`, `base/`, `theirs/`, `trash/`; `ResetState` |
@@ -35,8 +38,8 @@ for the login).
 | `internal/cloud/sync/download.go` | `applyAll`'s helpers: `pullWindows` (64 MB at a time), `needed`, `prefetch` (bundles of up to 250 files, 8 at once), `blobCache`, which `Engine.fetch` reads first |
 | `internal/cloud/sync/pack.go` | `pack`: groups files into requests smallest first, a large file alone, largest request first; used by uploads and downloads |
 | `internal/cloud/sync/resolve.go`, `diff.go`, `status.go`, `merge.go` | `Resolve`, `Diff`, `Status`/`Log`, the conversation merge and fork |
-| `internal/cloud/cloudcmd/` | `Command`: the subcommands (`login`, `logout`, `whoami`, `publish`, `status`, `diff`, `pull`, `commit`, `resolve`, `log`) and their output; `ExitDecisionNeeded` |
-| `internal/profiles/models.go` | `PublishInteractive` walks `clai cloud publish [kind [name [mode]]]`: each argument given picks its level (kind, item, then an alias's mode: `text`, `photo`, `audio` or its index), each one missing is asked in a selector. `PublishAlias` publishes one mode config's alias to `/api/v1/hub`; an alias in several mode configs with no mode and no input is an `AmbiguousAliasError` |
+| `internal/cloud/cloudcmd/` | `Command`: the subcommands (`login`, `logout`, `whoami`, `status`, `diff`, `pull`, `commit`, `resolve`, `log`) and their output; `publish` stays callable as a hidden alias, because `clai config publish` is the documented spelling; `ExitDecisionNeeded` |
+| `internal/profiles/models.go` | `PublishInteractive` walks `clai config publish [kind [name [mode]]]`: each argument given picks its level (kind, item, then an alias's mode: `text`, `photo`, `audio` or its index), each one missing is asked in a selector. `HubKindNames` and `KindsCarrying` let `config publish` infer a bare name's kind. `PublishAlias` publishes one mode config's alias to `/api/v1/hub`; an alias in several mode configs with no mode and no input is an `AmbiguousAliasError` |
 | `internal/cloud/cloudcmd/errors.go` | `explain`, `UnreachableError`: the short form of a network error and a refused key |
 | `internal/cloud/cloudcmd/view.go` | `statusLines`, `pullNext`, `excludedRows`, `importLines`, `blockedLines`, `style` (an alias of `look.Style`): the grouped status table |
 | `internal/look/look.go` | `Style` (`Head`, `Link`, `Primary`, `Secondary`), `Grid`, `For`: clai's shared `▸ subject · detail` look, also drawn by the remote trust prompt |
@@ -205,6 +208,13 @@ log      GET stores/<s>/log?limit=
 
 - `Allowed` and the server's `validPath` are two copies of one list, and
   `secrets.vectors.json` is one file in two repos. Change both together.
+- The store token is `settings` everywhere a person reads it; `config` is
+  only the hidden alias and the name of the request path and the local
+  state file (`cloud/state/config.json`). Hints and heads go through
+  `sync.StoreName`, never `string(store)`.
+- `clai config publish` is the documented publisher; `clai cloud publish`
+  is a hidden alias that keeps its selector wizard, and every hint names
+  the `config` spelling.
 - A flag on a `cloud` subcommand must not reuse a global flag's name (`-n`,
   for instance): the dispatcher would read the global one.
 - The hash cache in the state file trusts size and mod time; a tool that

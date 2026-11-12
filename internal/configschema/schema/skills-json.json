@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://clai.chat/schema/skills-json-1.0.json",
+  "title": "clai skills",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "enabled": { "type": "boolean" },
+    "globalSkillDirs": { "type": "array", "items": { "type": "string" } },
+    "projectSkillDirs": { "type": "array", "items": { "type": "string" } },
+    "trust_all_skills": { "type": "boolean" },
+    "maxActivatedSkills": { "type": "integer" },
+    "$schema": { "type": "string", "x-clai": "unread" }
+  }
+}

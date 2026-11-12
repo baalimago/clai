@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/baalimago/clai/internal/testenv"
 )
 
 // signalWitnessDir names the directory the wrapper and its child report to.
@@ -67,7 +69,7 @@ func startWrapper(t *testing.T) (*exec.Cmd, string) {
 		t.Fatalf("write the wrapper: %v", err)
 	}
 	cmd := exec.Command("/bin/sh", script, os.Args[0])
-	cmd.Env = append(os.Environ(), signalWitnessDir+"="+dir)
+	cmd.Env = testenv.NoRaceExitSleep(append(os.Environ(), signalWitnessDir+"="+dir))
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start the wrapper: %v", err)

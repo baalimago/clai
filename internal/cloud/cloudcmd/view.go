@@ -26,7 +26,7 @@ const (
 type style = look.Style
 
 func statusLines(st sync.Status, s style) []string {
-	lines := []string{s.Head(string(st.Store), statusDetails(st)...)}
+	lines := []string{s.Head(sync.StoreName(st.Store), statusDetails(st)...)}
 	if st.RemoteError != nil {
 		lines = append(lines, look.Grid("  ", [][]string{{"! " + remoteProblem(st.RemoteError), "only this machine's side is shown"}}, s)...)
 	}
@@ -50,7 +50,7 @@ func statusLines(st sync.Status, s style) []string {
 // pullNext suggests a pull when the server is ahead or this machine never
 // pulled the store.
 func pullNext(st sync.Status) [][]string {
-	command := "clai cloud pull " + string(st.Store)
+	command := "clai cloud pull " + sync.StoreName(st.Store)
 	switch {
 	case st.Remote != nil && st.Remote.Ahead > 0:
 		n := int(st.Remote.Ahead)
@@ -428,9 +428,9 @@ func blockedLines(store sync.Store, b *sync.BillingBlockedError, s style) []stri
 	case sync.PaymentOverdue:
 		reason = "a payment is 7 days overdue"
 	case sync.BillingNotOpen:
-		return []string{s.Head(string(store), "not committed", "conversation sync is not open yet; config sync works now")}
+		return []string{s.Head(sync.StoreName(store), "not committed", "conversation sync is not open yet; config sync works now")}
 	}
-	lines := []string{s.Head(string(store), "not committed", reason)}
+	lines := []string{s.Head(sync.StoreName(store), "not committed", reason)}
 	if b.URL != "" {
 		lines = append(lines, s.Link("  ", b.URL))
 	}

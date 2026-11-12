@@ -5,12 +5,20 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/baalimago/clai/internal/cloud"
 )
 
 func offline(t *testing.T) *harness {
 	t.Helper()
-	h := newHarness(t, "tok-a")
+	h := newHarness(t, "")
 	h.srv.Close()
+	// The freed ephemeral port of a closed server is only probably free:
+	// another test binary can hold it, and then "can't reach" becomes a reply
+	// (2026-11-11). Port 1 is privileged, so no test can bind it.
+	if err := cloud.SaveCredentials(h.confDir, cloud.Credentials{URL: "http://127.0.0.1:1", Token: "tok-a", Device: "laptop"}); err != nil {
+		t.Fatal(err)
+	}
 	return h
 }
 
@@ -35,7 +43,7 @@ func TestUnreachable_isOneShortMessage(t *testing.T) {
 	h.write("profiles/x.json", "1")
 	wantUnreachable(t, "commit", r.commit(ctx, nil, "", false, false))
 	wantUnreachable(t, "logout", r.logout(ctx))
-	wantUnreachable(t, "login", r.login(ctx, h.srv.URL(), ""))
+	wantUnreachable(t, "login", r.login(ctx, "http://127.0.0.1:1", ""))
 }
 
 func TestStatus_unreachableIsItsOwnRow(t *testing.T) {
