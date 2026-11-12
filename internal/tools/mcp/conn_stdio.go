@@ -4,7 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"io"
 	"os"
@@ -48,7 +49,7 @@ var errFrameNotJSONRPC = errors.New("mcp: frame has no jsonrpc member")
 // pendingResult is what a Call's waiter receives: either the raw result or
 // the error the connection decided on its behalf.
 type pendingResult struct {
-	raw json.RawMessage
+	raw jsontext.Value
 	err error
 }
 
@@ -84,7 +85,7 @@ type stdioTransport struct {
 type StdioConn struct {
 	serverName string
 	stdin      io.WriteCloser
-	enc        *json.Encoder
+	enc        *jsontext.Encoder
 	writeMu    sync.Mutex
 
 	handshakeBound time.Duration
@@ -213,7 +214,7 @@ func newStdioConn(ctx context.Context, serverName string, t stdioTransport, sink
 	c := &StdioConn{
 		serverName:     serverName,
 		stdin:          t.stdin,
-		enc:            json.NewEncoder(t.stdin),
+		enc:            jsontext.NewEncoder(t.stdin),
 		handshakeBound: mcpHandshakeBound,
 		readBound:      mcpServerOutBufferSizeKib * 1024,
 		pending:        make(map[int]chan pendingResult),
@@ -265,7 +266,7 @@ func newStdioConn(ctx context.Context, serverName string, t stdioTransport, sink
 }
 
 // Call sends a JSON-RPC request and waits for the response carrying its id.
-func (c *StdioConn) Call(ctx context.Context, method string, params map[string]any) (json.RawMessage, error) {
+func (c *StdioConn) Call(ctx context.Context, method string, params map[string]any) (jsontext.Value, error) {
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
@@ -374,7 +375,7 @@ func (c *StdioConn) failAllPending(err error) {
 func (c *StdioConn) writeMessage(v any) error {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
-	return c.enc.Encode(v)
+	return json.MarshalEncode(c.enc, v)
 }
 
 // readFrames is the only reader of stdout and the only producer of demuxed
@@ -405,7 +406,7 @@ func (c *StdioConn) readFrames(stdout io.Reader) {
 // method-not-found error; a response is delivered to its matching waiter, or
 // dropped if none is waiting.
 func (c *StdioConn) handleLine(line []byte) {
-	var generic map[string]json.RawMessage
+	var generic map[string]jsontext.Value
 	if err := json.Unmarshal(line, &generic); err != nil {
 		c.failAllPending(claierr.NewMcpFrameUndecodable(c.serverName, err))
 		return

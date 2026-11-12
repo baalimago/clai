@@ -7,6 +7,9 @@ package runenv
 
 import (
 	"context"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -127,6 +130,24 @@ func (e Env) JSON() bool { return e.cfg.Format == jsonl.FormatJSON }
 
 // Color reports whether text producers may color their output.
 func (e Env) Color() bool { return e.cfg.Color }
+
+// ErrNoStdout matches a JSON document write on an Env with no stdout writer.
+var ErrNoStdout = errors.New("no stdout")
+
+// WriteJSONDocument streams v as one newline-terminated JSON document to the
+// unwrapped stdout. It is the -json form of an inspection command whose result
+// is data to parse, not a record stream (clai tools).
+func (e Env) WriteJSONDocument(v any) error {
+	out := e.cfg.Streams.RawWriter(stdio.Stdout)
+	if out == nil {
+		return diag.Errorf("encode JSON document: %w", ErrNoStdout)
+	}
+	enc := jsontext.NewEncoder(out)
+	if err := json.MarshalEncode(enc, v, json.Deterministic(true)); err != nil {
+		return diag.Errorf("encode JSON document: %w", err)
+	}
+	return nil
+}
 
 // Displayer returns the JSON Displayer of s. Under FormatText it returns an
 // error matching stdio.ErrTextFormat: text producers draw instead.

@@ -27,6 +27,9 @@ var toolTokenPattern = regexp.MustCompile(`\btool_([a-zA-Z0-9_]+)\b`)
 //	    token calls view_image with {"path": $CLAI_MOCK_VIEW_IMAGE_PATH}, following
 //	    the existing per-tool input script.
 type Mock struct {
+	// v2 refuses a JSON object for a struct with no representable members;
+	// the tagged blank field marks the config object as intentional.
+	_ struct{} `json:"-"`
 	// mu guards usage: the streaming goroutine writes it while a cancelled
 	// runner may read it on its ctx.Done() path.
 	mu           sync.Mutex

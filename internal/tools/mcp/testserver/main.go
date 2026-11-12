@@ -1,7 +1,8 @@
 package main
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"os"
@@ -11,10 +12,10 @@ import (
 )
 
 type Request struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      int             `json:"id,omitempty"`
-	Method  string          `json:"method"`
-	Params  json.RawMessage `json:"params,omitempty"`
+	JSONRPC string         `json:"jsonrpc"`
+	ID      int            `json:"id,omitempty"`
+	Method  string         `json:"method"`
+	Params  jsontext.Value `json:"params,omitempty"`
 }
 
 func main() {
@@ -131,11 +132,11 @@ func main() {
 	unknownToolName := os.Getenv("TEST_SERVER_UNKNOWN_TOOL_NAME")
 	listChangedTriggerTool := os.Getenv("TEST_SERVER_LIST_CHANGED_TRIGGER_TOOL")
 
-	dec := json.NewDecoder(os.Stdin)
-	enc := json.NewEncoder(os.Stdout)
+	dec := jsontext.NewDecoder(os.Stdin)
+	enc := jsontext.NewEncoder(os.Stdout)
 	for {
 		var req Request
-		if err := dec.Decode(&req); err != nil {
+		if err := json.UnmarshalDecode(dec, &req); err != nil {
 			return
 		}
 		switch req.Method {
@@ -148,16 +149,16 @@ func main() {
 			var p struct {
 				ProtocolVersion string `json:"protocolVersion"`
 			}
-			json.Unmarshal(req.Params, &p)
+			json.Unmarshal([]byte(req.Params), &p)
 			if p.ProtocolVersion != "" && p.ProtocolVersion != "2025-06-18" {
-				enc.Encode(map[string]any{
+				json.MarshalEncode(enc, map[string]any{
 					"jsonrpc": "2.0",
 					"id":      req.ID,
 					"error":   map[string]any{"code": -32602, "message": "unsupported protocol version: " + p.ProtocolVersion},
 				})
 				continue
 			}
-			enc.Encode(map[string]any{
+			json.MarshalEncode(enc, map[string]any{
 				"jsonrpc": "2.0",
 				"id":      req.ID,
 				"result":  map[string]any{},
@@ -197,7 +198,7 @@ func main() {
 					"inputSchema": map[string]any{"type": "object", "properties": map[string]any{}},
 				})
 			}
-			enc.Encode(map[string]any{
+			json.MarshalEncode(enc, map[string]any{
 				"jsonrpc": "2.0",
 				"id":      req.ID,
 				"result":  map[string]any{"tools": toolList},
@@ -207,14 +208,14 @@ func main() {
 				Name      string         `json:"name"`
 				Arguments map[string]any `json:"arguments"`
 			}
-			json.Unmarshal(req.Params, &p)
+			json.Unmarshal([]byte(req.Params), &p)
 			if p.Name == "hang" {
 				// Simulate a wedged server (e.g. a browser navigation that
 				// never completes): swallow the request and answer nothing.
 				continue
 			}
 			if unknownToolName != "" && p.Name == unknownToolName {
-				enc.Encode(map[string]any{
+				json.MarshalEncode(enc, map[string]any{
 					"jsonrpc": "2.0",
 					"id":      req.ID,
 					"error":   map[string]any{"code": -32601, "message": "method not found: " + p.Name},
@@ -224,7 +225,7 @@ func main() {
 			if listChangedTriggerTool != "" && p.Name == listChangedTriggerTool {
 				// Written before the call's own response, synchronously: this
 				// loop is single-threaded, so the two writes never race.
-				enc.Encode(map[string]any{
+				json.MarshalEncode(enc, map[string]any{
 					"jsonrpc": "2.0",
 					"method":  "notifications/tools/list_changed",
 				})
@@ -237,13 +238,13 @@ func main() {
 			if text == "error" {
 				result["isError"] = true
 			}
-			enc.Encode(map[string]any{
+			json.MarshalEncode(enc, map[string]any{
 				"jsonrpc": "2.0",
 				"id":      req.ID,
 				"result":  result,
 			})
 		default:
-			enc.Encode(map[string]any{
+			json.MarshalEncode(enc, map[string]any{
 				"jsonrpc": "2.0",
 				"id":      req.ID,
 				"error": map[string]any{

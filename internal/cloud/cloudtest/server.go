@@ -6,7 +6,7 @@ import (
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"net/http"
@@ -145,7 +145,7 @@ func problem(w http.ResponseWriter, p Problem) {
 func reply(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
+	_ = json.MarshalWrite(w, v)
 }
 
 func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
@@ -155,7 +155,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/cli/v1/start":
 		var in map[string]string
-		_ = json.NewDecoder(r.Body).Decode(&in)
+		_ = json.UnmarshalRead(r.Body, &in)
 		s.DeviceName = in["client"]
 		reply(w, 200, map[string]any{"deviceCode": "dc", "userCode": "BCDF-GHJK", "verificationUri": s.srv.URL + "/cli/login", "verificationUriComplete": s.srv.URL + "/cli/login#BCDF-GHJK", "expiresIn": 600, "interval": 5})
 		return
@@ -185,8 +185,10 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/api/v1/blobs/fetch" && r.Method == http.MethodPost && !s.NoBatch:
 		s.fetch(w, r)
 	case r.URL.Path == "/api/v1/blobs/missing":
-		var in struct{ Hashes []string }
-		_ = json.NewDecoder(r.Body).Decode(&in)
+		var in struct {
+			Hashes []string `json:"hashes"`
+		}
+		_ = json.UnmarshalRead(r.Body, &in)
 		missing := []string{}
 		for _, h := range in.Hashes {
 			if _, ok := s.Blobs[h]; !ok {
@@ -307,8 +309,10 @@ func (s *Server) batch(w http.ResponseWriter, r *http.Request) {
 
 // fetch answers a gzipped bundle of "<sha256> <size>\n<bytes>" frames.
 func (s *Server) fetch(w http.ResponseWriter, r *http.Request) {
-	var in struct{ Hashes []string }
-	_ = json.NewDecoder(r.Body).Decode(&in)
+	var in struct {
+		Hashes []string `json:"hashes"`
+	}
+	_ = json.UnmarshalRead(r.Body, &in)
 	if len(in.Hashes) > MaxBundleBlobs {
 		problem(w, Problem{Status: 400, Code: "invalid_request", Message: "too many hashes in one fetch"})
 		return
@@ -407,7 +411,7 @@ func (s *Server) commit(w http.ResponseWriter, r *http.Request, store, device st
 		Message string   `json:"message"`
 		Changes []change `json:"changes"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&in)
+	_ = json.UnmarshalRead(r.Body, &in)
 	conflicts := []map[string]any{}
 	for _, c := range in.Changes {
 		if !c.Deleted {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -32,6 +33,44 @@ func Test_goldenFile_TOOLS_lists_tools_and_footer(t *testing.T) {
 	// We don't assert the entire listing because it changes as tools are added.
 	// Instead, assert stable behaviors described in architecture/tools.md.
 	testboil.AssertStringContains(t, stdout, "Run 'clai tools <tool-name>' for more details.\n")
+}
+
+// Test_goldenFile_TOOLS_json_is_one_document pins the one exception to the
+// record stream: `clai tools -json` is the full listing as one JSON document
+// on stdout, so a script parses the tools directly instead of reading each
+// output record's truncated text.
+func Test_goldenFile_TOOLS_json_is_one_document(t *testing.T) {
+	_ = e2etest.SetupMainTestConfigDir(t)
+
+	var gotStatus int
+	stdout := testboil.CaptureStdout(t, func(t *testing.T) {
+		gotStatus = harness.Run(strings.Split("-json tools", " "))
+	})
+
+	testboil.FailTestIfDiff(t, gotStatus, 0)
+	if strings.Contains(stdout, `"type":"output"`) {
+		t.Fatalf("the -json listing is still the record stream:\n%s", stdout)
+	}
+	var listed []struct {
+		Name        string   `json:"name"`
+		Description string   `json:"description"`
+		Aliases     []string `json:"aliases"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &listed); err != nil {
+		t.Fatalf("unmarshal the listing: %v\n%s", err, stdout)
+	}
+	for _, tool := range listed {
+		if tool.Name == "async_cmd" {
+			if !slices.Contains(tool.Aliases, "async_cmd_run") {
+				t.Fatalf("async_cmd aliases = %v, want async_cmd_run", tool.Aliases)
+			}
+			if tool.Description == "" {
+				t.Fatal("async_cmd has no description in the JSON listing")
+			}
+			return
+		}
+	}
+	t.Fatalf("the listing holds no async_cmd:\n%s", stdout)
 }
 
 // Test_goldenFile_TOOLS_lists_mcp_tools_from_cache closes R2-12's phase-7

@@ -165,6 +165,20 @@ func runContract(t *testing.T, factory providerFactory) {
 		})
 	})
 
+	t.Run("RawWriter bypasses the record wrapper in both formats", func(t *testing.T) {
+		for _, format := range []jsonl.Format{jsonl.FormatText, jsonl.FormatJSON} {
+			f := newFixture(format, "")
+			p := factory.new(f.cfg)
+			if p.RawWriter(stdio.Stdout) != io.Writer(f.stdout) {
+				t.Fatalf("format %d: RawWriter(Stdout) is not the configured stdout", format)
+			}
+			fmt.Fprint(p.RawWriter(stdio.Stdout), `{"tools":[]}`+"\n")
+			if got := f.stdout.String(); got != `{"tools":[]}`+"\n" {
+				t.Fatalf("format %d: stdout = %q, want the document unwrapped", format, got)
+			}
+		}
+	})
+
 	t.Run("Encoder.1 JSON format returns one Encoder per destination", func(t *testing.T) {
 		f := newFixture(jsonl.FormatJSON, "")
 		p := factory.new(f.cfg)

@@ -69,6 +69,14 @@ func (p *provider) Writer(s Stream) io.Writer {
 	return out.writer
 }
 
+func (p *provider) RawWriter(s Stream) io.Writer {
+	out, err := p.output(s)
+	if err != nil {
+		return failingWriter{err: err}
+	}
+	return out.writer
+}
+
 func (p *provider) Encoder(s Stream) (jsonl.Encoder, error) {
 	out, err := p.output(s)
 	if err != nil {

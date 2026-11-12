@@ -50,7 +50,7 @@ func TestValidateModelList_rejectsInvalidBodies(t *testing.T) {
 	}{
 		{"object", `{"models":["gpt-5.4"]}`, "not a JSON array of model names"},
 		{"null", `null`, "not a JSON array of model names"},
-		{"trailing", `["gpt-5.4"] ["claude-opus-4-7"]`, "more follows the first"},
+		{"trailing", `["gpt-5.4"] ["claude-opus-4-7"]`, "not a JSON array of model names"},
 		{"empty", `[]`, "lists no models"},
 		{"blank", `["gpt-5.4", "   "]`, "model[1]: is blank"},
 		{"nested remote", `["gpt-5.4", "cchub:ada/other"]`, "is a remote target"},

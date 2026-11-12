@@ -7,7 +7,7 @@ package cloud
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -133,7 +133,7 @@ func (c *Client) DoHeader(ctx context.Context, method, path string, body io.Read
 		}
 		return nil
 	}
-	if err := json.NewDecoder(res.Body).Decode(out); err != nil {
+	if err := json.UnmarshalRead(res.Body, out); err != nil {
 		return &TransportError{Op: "decode " + path, Cause: err}
 	}
 	return nil
@@ -141,11 +141,11 @@ func (c *Client) DoHeader(ctx context.Context, method, path string, body io.Read
 
 // PostJSON sends in as JSON and decodes the answer into out.
 func (c *Client) PostJSON(ctx context.Context, path string, in, out any) error {
-	b, err := json.Marshal(in)
-	if err != nil {
+	var body bytes.Buffer
+	if err := json.MarshalWrite(&body, in); err != nil {
 		return err
 	}
-	return c.Do(ctx, http.MethodPost, path, bytes.NewReader(b), "application/json", out)
+	return c.Do(ctx, http.MethodPost, path, &body, "application/json", out)
 }
 
 func decodeAPIError(res *http.Response) error {

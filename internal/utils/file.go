@@ -3,9 +3,9 @@ package utils
 import (
 	"encoding/base64"
 	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"math/rand/v2"
 	"os"
@@ -67,12 +67,7 @@ func ReadAndUnmarshal[T any](filePath string, config *T) error {
 		return diag.Errorf("failed to open file: %w", err)
 	}
 	defer file.Close()
-	fileBytes, err := io.ReadAll(file)
-	if err != nil {
-		return diag.Errorf("failed to read file: %w", err)
-	}
-	err = json.Unmarshal(fileBytes, config)
-	if err != nil {
+	if err := jsonv2.UnmarshalRead(file, config); err != nil {
 		return diag.Errorf("failed to unmarshal file: %w", err)
 	}
 

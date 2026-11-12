@@ -3,7 +3,8 @@ package cloudcmd
 import (
 	"bufio"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"strings"
@@ -26,8 +27,7 @@ type runner struct {
 func (r *runner) printf(format string, a ...any) { fmt.Fprintf(r.deps.Out, format, a...) }
 
 func (r *runner) json(v any) error {
-	enc := json.NewEncoder(r.deps.Out)
-	return enc.Encode(v)
+	return json.MarshalEncode(jsontext.NewEncoder(r.deps.Out), v)
 }
 
 func (r *runner) confDir() (string, error) { return r.deps.ConfDir() }

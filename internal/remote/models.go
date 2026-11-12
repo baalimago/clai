@@ -3,7 +3,7 @@ package remote
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"os"
 	"strings"
@@ -44,12 +44,8 @@ func ValidateModelList(target string, body []byte) ([]string, error) {
 		return nil, invalid(fmt.Sprintf("larger than %d KiB", MaxBodyBytes/1024))
 	}
 	var list []string
-	dec := json.NewDecoder(bytes.NewReader(body))
-	if err := dec.Decode(&list); err != nil || list == nil {
+	if err := json.UnmarshalRead(bytes.NewReader(body), &list); err != nil || list == nil {
 		return nil, invalid("not a JSON array of model names")
-	}
-	if dec.More() {
-		return nil, invalid("not one JSON array: more follows the first")
 	}
 	var problems []string
 	seen := make(map[string]bool, len(list))

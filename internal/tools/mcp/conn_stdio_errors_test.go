@@ -3,7 +3,7 @@ package mcp
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"io"
 	"strings"
@@ -19,7 +19,7 @@ func newBareStdioConn() (*StdioConn, *bytes.Buffer) {
 	c := &StdioConn{
 		serverName: "srv",
 		stdin:      nopWriteCloser{&out},
-		enc:        json.NewEncoder(&out),
+		enc:        jsontext.NewEncoder(&out),
 		readBound:  4096,
 		pending:    map[int]chan pendingResult{},
 		notifyCh:   make(chan string, 8),

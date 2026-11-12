@@ -3,7 +3,8 @@ package text
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"io"
 	"log/slog"
@@ -582,10 +583,10 @@ func (c *Configurations) LoadResponseFormat(path string) error {
 // JSON whose fields have the wrong JSON type (generic.ErrResponseFormatShape).
 // Every other error (missing file, unreadable path) is returned untouched.
 func classifyResponseFormatUnmarshal(err error) error {
-	if _, ok := errors.AsType[*json.SyntaxError](err); ok {
+	if _, ok := errors.AsType[*jsontext.SyntacticError](err); ok {
 		return diag.Errorf("%w: %w", generic.ErrResponseFormatNotJSON, err)
 	}
-	if _, ok := errors.AsType[*json.UnmarshalTypeError](err); ok {
+	if _, ok := errors.AsType[*json.SemanticError](err); ok {
 		return diag.Errorf("%w: %w", generic.ErrResponseFormatShape, err)
 	}
 	return err

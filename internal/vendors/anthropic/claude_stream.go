@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -475,7 +476,7 @@ func (c *Claude) CountInputTokens(ctx context.Context, chat pub_models.Chat) (in
 		InputTokens int `json:"input_tokens"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+	if err := jsonv2.UnmarshalRead(resp.Body, &tokenResp); err != nil {
 		return 0, diag.Errorf("failed to decode token count response: %w", err)
 	}
 

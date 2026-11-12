@@ -2,7 +2,8 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,7 +22,8 @@ import (
 )
 
 // Detail prints the specification of one tool, a built-in or an MCP tool
-// that the schema cache has a record of.
+// that the schema cache has a record of. Under -json it is one JSON document
+// on stdout, not the record stream.
 func Detail(ctx context.Context, toolName string) error {
 	var spec pub_models.Specification
 	if tool, exists := Registry.Get(toolName); exists {
@@ -31,11 +33,14 @@ func Detail(ctx context.Context, toolName string) error {
 	} else {
 		return fmt.Errorf("tool '%s' not found", toolName)
 	}
-	jsonSpec, err := json.MarshalIndent(spec, "", "  ")
-	if err != nil {
+	env := runenv.From(ctx)
+	if env.JSON() {
+		return env.WriteJSONDocument(spec)
+	}
+	enc := jsontext.NewEncoder(env.Stdout(), jsontext.WithIndent("  "))
+	if err := json.MarshalEncode(enc, spec, json.Deterministic(true)); err != nil {
 		return diag.Errorf("failed to marshal tool specification: %w", err)
 	}
-	fmt.Fprintf(runenv.From(ctx).Stdout(), "%s\n", string(jsonSpec))
 	return nil
 }
 
@@ -52,7 +57,65 @@ func Detail(ctx context.Context, toolName string) error {
 // information with no claim about any specific listed tool to be wrong
 // about).
 func List(ctx context.Context) error {
-	out := runenv.From(ctx).Stdout()
+	env := runenv.From(ctx)
+	listing := buildListing()
+	if env.JSON() {
+		return env.WriteJSONDocument(listing.json())
+	}
+	out := env.Stdout()
+	fmt.Fprintf(out, "Available Tools:\n")
+	for _, entry := range listing.entries {
+		aliasSuffix := ""
+		if len(entry.aliases) > 0 {
+			aliasSuffix = " (alias: " + strings.Join(entry.aliases, ", ") + ")"
+		}
+		prefix := fmt.Sprintf("- %s%s: ", entry.name, aliasSuffix)
+		// The listing writes to stdout, so it resolves one snapshot bound to
+		// stdout's fd (R2-02): a non-terminal stdout yields the deterministic
+		// fallback width.
+		line := table.WidthAppropriateStringTruncWithWidth(entry.spec.Description, prefix, 5, utils.SessionDimensions(out).Width)
+		fmt.Fprintln(out, line)
+	}
+	if len(listing.shadowed) > 0 {
+		fmt.Fprintf(out, "\nNote: a configured MCP server's tool may already be covered by a local built-in: %s. Check each server's own tools before assuming redundancy.\n", strings.Join(listing.shadowed, ", "))
+	}
+	fmt.Fprintln(out, "\nRun 'clai tools <tool-name>' for more details.")
+	return nil
+}
+
+// toolJSON is one tool of the listing's -json document: the full
+// specification, with the aliases that resolve to it.
+type toolJSON struct {
+	pub_models.Specification
+	Aliases []string `json:"aliases"`
+}
+
+// toolListing is one listing: the entries in display order and the built-ins
+// the shadow advisory names.
+type toolListing struct {
+	entries  []toolListingEntry
+	shadowed []string
+}
+
+type toolListingEntry struct {
+	name    string
+	spec    pub_models.Specification
+	aliases []string
+}
+
+// json returns the listing's -json document: machine-readable data rather
+// than the record stream, so a script parses the tools directly.
+func (l toolListing) json() []toolJSON {
+	out := make([]toolJSON, 0, len(l.entries))
+	for _, entry := range l.entries {
+		out = append(out, toolJSON{Specification: entry.spec, Aliases: entry.aliases})
+	}
+	return out
+}
+
+// buildListing collects every visible built-in and every cached MCP tool,
+// sorted by name, with each built-in's aliases.
+func buildListing() toolListing {
 	tls := Registry.Visible()
 	aliases := Registry.Aliases()
 	mcpEntries, shadowedBuiltins := mcpListingEntries()
@@ -70,46 +133,37 @@ func List(ctx context.Context) error {
 	}
 	sort.Strings(names)
 
-	fmt.Fprintf(out, "Available Tools:\n")
+	entries := make([]toolListingEntry, 0, len(names))
 	for _, name := range names {
-		var spec pub_models.Specification
-		aliasSuffix := ""
+		entry := toolListingEntry{name: name, aliases: []string{}}
 		if e, ok := mcpByName[name]; ok {
-			spec = e.spec
-		} else {
-			spec = tls[name].Specification()
-			var aliasesOfTool []string
-			for alias, canonical := range aliases {
-				if canonical == name {
-					aliasesOfTool = append(aliasesOfTool, alias)
-				}
-			}
-			if len(aliasesOfTool) > 0 {
-				sort.Strings(aliasesOfTool)
-				aliasSuffix = " (alias: " + strings.Join(aliasesOfTool, ", ") + ")"
+			entry.spec = e.spec
+			entries = append(entries, entry)
+			continue
+		}
+		entry.spec = tls[name].Specification()
+		for alias, canonical := range aliases {
+			if canonical == name {
+				entry.aliases = append(entry.aliases, alias)
 			}
 		}
-		prefix := fmt.Sprintf("- %s%s: ", name, aliasSuffix)
-		// The listing writes to stdout, so it resolves one snapshot bound to
-		// stdout's fd (R2-02): a non-terminal stdout yields the deterministic
-		// fallback width.
-		line := table.WidthAppropriateStringTruncWithWidth(spec.Description, prefix, 5, utils.SessionDimensions(out).Width)
-		fmt.Fprintln(out, line)
+		sort.Strings(entry.aliases)
+		entries = append(entries, entry)
 	}
-	if len(shadowedBuiltins) > 0 {
-		fmt.Fprintf(out, "\nNote: a configured MCP server's tool may already be covered by a local built-in: %s. Check each server's own tools before assuming redundancy.\n", strings.Join(shadowedBuiltins, ", "))
-	}
-	fmt.Fprintln(out, "\nRun 'clai tools <tool-name>' for more details.")
-	return nil
+	return toolListing{entries: entries, shadowed: shadowedBuiltins}
 }
 
 // Command builds the tools command tree.
 func Command() *internal.Command {
 	nonInteractive := &internal.NonInteractiveFlag{}
 	c := &internal.Command{
-		Name:           "tools",
-		Desc:           "List available tools, or show details for a specific tool",
-		HelpText:       "tools [tool name]. Lists built-in tools and any MCP tool cached from a prior successful run, or one tool's specification.",
+		Name: "tools",
+		Desc: "List available tools, or show details for a specific tool",
+		HelpText: "tools [tool name]. Lists built-in tools and any MCP tool cached from a prior successful run, or one tool's specification." + `
+
+With -json the result is one JSON document of full tool data, not the usual
+record stream: an array of specifications for the listing, one object for a
+tool. So a script parses the tools directly.`,
 		Register:       nonInteractive.Register,
 		NonInteractive: nonInteractive,
 		CompleteArgsFn: toolNameArgs,

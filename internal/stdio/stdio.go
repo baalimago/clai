@@ -31,6 +31,12 @@ type OutputProvider interface {
 	// stream "stdout" or "stderr", over Encoder(s). (Writer.1, F11, F12)
 	Writer(s Stream) io.Writer
 
+	// RawWriter returns the configured writer of s, before the format's
+	// record Wrapper. It is the one escape from the record contract: an
+	// inspection command whose -json form is one JSON document, not a record
+	// stream (clai tools), writes there. Every other producer uses Writer.
+	RawWriter(s Stream) io.Writer
+
 	// Encoder returns the one Encoder of s for the run, shared by every
 	// record writer of that destination; the same call returns the same
 	// Encoder. Under FormatText it returns nil and an error matching

@@ -4,7 +4,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -200,9 +201,8 @@ func persistDirScope(confDir string, binding DirScope) error {
 	}
 	defer func() { _ = os.Remove(tmp.Name()) }()
 
-	enc := json.NewEncoder(tmp)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(binding); err != nil {
+	enc := jsontext.NewEncoder(tmp, jsontext.WithIndent("  "))
+	if err := json.MarshalEncode(enc, binding); err != nil {
 		_ = tmp.Close()
 		return diag.Errorf("encode binding: %w", err)
 	}
