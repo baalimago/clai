@@ -35,18 +35,20 @@ func routeName(route profile.Route) string {
 // machine is the Env a test hands the checker: every answer is fixed, so no
 // test depends on the machine it runs on.
 func machine() profile.Env {
+	resolve := func(model string) ([]string, error) {
+		switch model {
+		case "strong":
+			return []string{"good", "fast"}, nil
+		case "nonsense", "bogus":
+			return nil, nil
+		}
+		return []string{model}, nil
+	}
 	return profile.Env{
-		ResolveModel: func(model string) ([]string, error) {
-			switch model {
-			case "strong":
-				return []string{"good", "fast"}, nil
-			case "nonsense", "bogus":
-				return nil, nil
-			}
-			return []string{model}, nil
-		},
-		HasShellContext: func(name string) bool { return name == "work" },
-		ToolNames:       []string{"async_cmd", "cat", "cmd", "file_tree", "rg"},
+		ResolveModel:      resolve,
+		ResolveAudioModel: resolve,
+		HasShellContext:   func(name string) bool { return name == "work" },
+		ToolNames:         []string{"async_cmd", "cat", "cmd", "file_tree", "rg"},
 	}
 }
 
@@ -458,22 +460,13 @@ func TestValidateToolWarnings(t *testing.T) {
 	})
 }
 
-// TestValidateAudioAlias proves clause 7 and acceptance criterion 6:
-// audio.model must route and is never read as an alias.
-func TestValidateAudioAlias(t *testing.T) {
-	findings := checked(t, `{"audio":{"model":"strong"}}`, machine())
-	if len(findings) != 1 {
-		t.Fatalf("findings = %d, want 1:%s", len(findings), describe(findings))
-	}
-	got := findings[0]
-	if got.Severity != profile.Error || got.Member != "audio.model" {
-		t.Fatalf("finding = severity %d member %s, want an error at audio.model", got.Severity, got.Member)
-	}
-	for _, want := range []string{"strong", "concrete"} {
-		if !strings.Contains(got.Reason, want) {
-			t.Errorf("reason %q does not name %q", got.Reason, want)
+// TestValidateAudioModel pins audio.model routing through the audio table (architecture/model-aliases.md).
+func TestValidateAudioModel(t *testing.T) {
+	t.Run("an alias is a ladder", func(t *testing.T) {
+		if findings := checked(t, `{"audio":{"model":"strong"}}`, machine()); len(findings) != 0 {
+			t.Fatalf("findings = %d, want 0:%s", len(findings), describe(findings))
 		}
-	}
+	})
 	t.Run("concrete model", func(t *testing.T) {
 		if findings := checked(t, `{"audio":{"model":"good"}}`, machine()); len(findings) != 0 {
 			t.Fatalf("findings = %d, want 0:%s", len(findings), describe(findings))
@@ -481,8 +474,35 @@ func TestValidateAudioAlias(t *testing.T) {
 	})
 	t.Run("routes nowhere", func(t *testing.T) {
 		findings := checked(t, `{"audio":{"model":"nonsense"}}`, machine())
-		if len(findings) != 1 || !strings.Contains(findings[0].Reason, "nonsense") {
-			t.Fatalf("findings =%s, want one error naming the model", describe(findings))
+		if len(findings) != 1 || findings[0].Member != "audio.model" || !strings.Contains(findings[0].Reason, "nonsense") {
+			t.Fatalf("findings =%s, want one audio.model error naming the model", describe(findings))
+		}
+	})
+	t.Run("an alias candidate that routes nowhere", func(t *testing.T) {
+		env := machine()
+		env.ResolveAudioModel = func(model string) ([]string, error) {
+			if model == "meeting" {
+				return []string{"good", "bogus"}, nil
+			}
+			return machine().ResolveAudioModel(model)
+		}
+		findings := checked(t, `{"audio":{"model":"meeting"}}`, env)
+		if len(findings) != 1 || findings[0].Member != "audio.model" || !strings.Contains(findings[0].Reason, "bogus") {
+			t.Fatalf("findings =%s, want one audio.model error naming the candidate", describe(findings))
+		}
+	})
+	t.Run("the text alias table is not read", func(t *testing.T) {
+		env := machine()
+		env.ResolveModel = func(string) ([]string, error) { return nil, nil }
+		if findings := checked(t, `{"audio":{"model":"good"}}`, env); len(findings) != 0 {
+			t.Fatalf("findings = %d, want 0:%s", len(findings), describe(findings))
+		}
+	})
+	t.Run("no audio resolver checks nothing", func(t *testing.T) {
+		env := machine()
+		env.ResolveAudioModel = nil
+		if findings := checked(t, `{"audio":{"model":"nonsense"}}`, env); len(findings) != 0 {
+			t.Fatalf("findings = %d, want 0:%s", len(findings), describe(findings))
 		}
 	})
 }

@@ -48,7 +48,7 @@ func TestSplitter_JSONFormat_LongSubCapFileSplitsByDuration(t *testing.T) {
 	if trans.callCount() != 3 {
 		t.Fatalf("expected 3 chunk transcriptions for 3000 s under a 1400 s cap, got %v: %v", trans.callCount(), trans.calls)
 	}
-	wantOffsets := []time.Duration{0, 1000 * time.Second, 2000 * time.Second}
+	wantOffsets := []time.Duration{0, 1000333 * time.Millisecond, 2000667 * time.Millisecond}
 	for i, offset := range wantOffsets {
 		if got[i].Start != offset+5*time.Second {
 			t.Errorf("segment %v: expected start %v, got %v", i, offset+5*time.Second, got[i].Start)
@@ -160,8 +160,8 @@ func TestSplitter_JSONFormat_OversizedUsesTighterOfBytesAndDuration(t *testing.T
 	if trans.callCount() != 4 || len(got) != 4 {
 		t.Errorf("expected 4 chunks, got %v calls and %v segments", trans.callCount(), len(got))
 	}
-	if got[3].Start != 1350*time.Second+5*time.Second {
-		t.Errorf("expected 4th chunk offset 1350 s, got start %v", got[3].Start)
+	if got[3].Start != 1350750*time.Millisecond+5*time.Second {
+		t.Errorf("expected 4th chunk offset 1350.75 s, got start %v", got[3].Start)
 	}
 }
 
@@ -179,7 +179,7 @@ func TestSplitter_ClampsChunkEndToWindow(t *testing.T) {
 	}
 
 	for i := range got {
-		wantEnd := time.Duration(i+1) * 600 * time.Second
+		wantEnd := generic.SecondsToDuration(float64(i+1) * 1801 / 3)
 		if got[i].End != wantEnd {
 			t.Errorf("segment %v: expected end clamped to window %v, got %v", i, wantEnd, got[i].End)
 		}

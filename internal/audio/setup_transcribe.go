@@ -37,7 +37,9 @@ func setupTranscribeQuerierWithResolver(ctx context.Context, confDir string, f *
 		cleanup()
 		return nil, err
 	}
-	q, err := transcribeChain(ctx, aConf, filePath)
+	q, err := transcribeChain(ctx, aConf, func(conf Configurations) (models.Querier, error) {
+		return CreateQuerier(conf, filePath)
+	})
 	if err != nil {
 		cleanup()
 		return nil, diag.Errorf("failed to create audio querier: %w", err)
@@ -78,11 +80,11 @@ func loadTranscribeConfig(ctx context.Context, confDir string, f *Flags) (Config
 // transient input is not removed per attempt: a candidate that cannot be
 // routed must leave the file for the next one
 // (architecture/model-aliases.md).
-func transcribeChain(ctx context.Context, aConf Configurations, filePath string) (models.Querier, error) {
+func transcribeChain(ctx context.Context, aConf Configurations, compose func(Configurations) (models.Querier, error)) (models.Querier, error) {
 	build := func(_ context.Context, model string) (models.Querier, error) {
 		perModel := aConf
 		perModel.Transcribe.Model = model
-		return CreateQuerier(perModel, filePath)
+		return compose(perModel)
 	}
 	return modelfallback.New(ctx, aConf.ModelAliases, aConf.Transcribe.Model, build, modelfallback.Notice(runenv.From(ctx)))
 }

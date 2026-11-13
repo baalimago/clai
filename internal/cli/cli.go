@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime/pprof"
@@ -206,12 +207,31 @@ func newProfileEnv(confDir string) (profile.Env, error) {
 	}
 	return profile.Env{
 		ResolveModel: modelRouter(conf.ModelAliases),
+		ResolveAudioModel: func(model string) ([]string, error) {
+			aliases, err := audioModelAliases(confDir)
+			if err != nil {
+				return nil, err
+			}
+			return modelRouter(aliases)(model)
+		},
 		HasShellContext: func(name string) bool {
 			_, err := text.LoadShellContextDefinition(confDir, name)
 			return err == nil
 		},
 		ToolNames: tools.Names(),
 	}, nil
+}
+
+// audioModelAliases reads the aliases without creating audioConfig.json.
+func audioModelAliases(confDir string) (modelalias.Table, error) {
+	conf, err := utils.ReadConfigFile(filepath.Join(confDir, "audioConfig.json"), &audio.Default)
+	if errors.Is(err, fs.ErrNotExist) {
+		return audio.Default.ModelAliases, nil
+	}
+	if err != nil {
+		return nil, diag.Errorf("read the audio model aliases for the profile check: %w", err)
+	}
+	return conf.ModelAliases, nil
 }
 
 // modelRouter routes a model string the way a run does: a cchub:, gh: or
@@ -288,12 +308,17 @@ func commands(deps Deps, setExit func(int), notices func() io.Writer, rerun func
 		confDir, _, err := setup.ConfigRunPrep(ctx, false)
 		return confDir, err
 	}
+	envAt := profileEnvFunc()
 	// An agent run may call audio_transcribe, so -am/-af and a profile's
 	// audio.model must reach it.
 	applyMediaOverrides := func(s internal.MediaToolSettings) error {
-		return audio.SetTranscribeOverrides(s.AudioModel, s.AudioFormat)
+		return audio.SetTranscribeOverrides(audio.ToolOverrides{
+			Model:       s.AudioModel,
+			Models:      s.AudioModels,
+			Format:      s.AudioFormat,
+			NewResolver: remoteResolver(deps.RemoteClient, envAt, notices),
+		})
 	}
-	envAt := profileEnvFunc()
 	queryDeps := text.QueryCommandDeps{
 		ConfigPrep:          configPrep,
 		TrustInput:          func() io.Reader { return setup.Input },

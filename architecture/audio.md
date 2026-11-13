@@ -31,7 +31,7 @@ internal/cli:Run()
 | `internal/audio/board.go`                   | Adapter over the shared progress table ([board.md](./board.md)): diarization columns, `unknownSoFar` |
 | `internal/audio/setup_transcribe.go`        | Transcribe-querier setup, stdin `-` input resolution                                                  |
 | `internal/audio/audio.go`                   | `Segment` model, JSON parsing, `vtt\|srt\|text\|json` rendering, `Offset`                            |
-| `internal/audio/split.go`                   | `Splitter`: byte-cap gate, plain ffmpeg chunking for non-diarized models, calibration routing for diarized ones |
+| `internal/audio/split.go`                   | `Splitter`: byte-cap gate; routes by `Diarization()`: plain ffmpeg chunking, the request-local re-encode, or calibration |
 | `internal/audio/plan.go`, `assemble.go`     | `ChunkPlanner` (silence-aligned cores under the seconds budget), `AudioAssembler` (PCM timeline, MP3 encode, manifests) |
 | `internal/audio/sample.go`, `registry.go`, `mapping.go`, `discovery.go` | Sample extraction, append-only speaker registry, label mapping, bootstrap and discovery |
 | `internal/audio/coordinator.go`, `stitch.go`, `cache.go` | Parallel coordinator with request accounting, `unknown-N` stitching, run-scoped request cache |
@@ -40,7 +40,8 @@ internal/cli:Run()
 | `internal/audio/querier.go`                 | `Configurations`, `TranscribeQuerier`, mock transcriber                                               |
 | `internal/audio/generic/transcriber.go`     | Generic OpenAI-protocol multipart transcription client                                                |
 | `internal/vendors/openai/transcribe.go`     | OpenAI vendor struct (`OPENAI_API_KEY`, api.openai.com)                                               |
-| `internal/vendors/openrouter/transcribe.go` | OpenRouter vendor struct (`OPENROUTER_API_KEY`, `or:` prefix trim, extra headers)                     |
+| `internal/vendors/openrouter/transcribe.go` | OpenRouter vendor struct (`OPENROUTER_API_KEY`, `or:` prefix trim, `+diarize` suffix, extra headers)  |
+| `internal/vendors/openrouter/transcribe_diarize.go` | `ParseDiarized`: OpenRouter's diarized `verbose_json` to speaker turns                        |
 | `internal/audio/create_querier.go`          | `audio.CreateQuerier()`/`createSplitter()` — model routing; audio-transcribe tool bridge initialization |
 | `pkg/tools/audio_tool_transcribe.go`        | `audio_transcribe` built-in tool (thin adapter, injected engine)                                      |
 
@@ -90,12 +91,13 @@ Precedence is the standard cascade: flags > file > defaults (see
 [`config.md`](./config.md)).
 
 An agent run reads one more source above the file: the profile it runs. A
-text command's profile may carry `"audio": {"model": "diarize"}`, which sets
+text command's profile may carry `"audio": {"model": "gpt-4o-transcribe-diarize"}`, which sets
 the model its `audio_transcribe` calls use for that run; `-am` overrides the
 profile. The profile key is the model only: the format stays the tool call's
 choice or `-af`, and a profile does not dictate presentation. The value is
-what `-am` takes: a model the tool can route, not an alias verb, because the
-tool path routes the name itself and never reads `model-aliases`.
+what `-am` takes: a model, a verb from `audioConfig.json`'s `model-aliases`,
+or a remote model list (`cchub:…`), which the tool resolves and falls back
+through exactly as `clai audio transcribe` does (see Tool Bridge).
 
 ## Vendor Routing
 
@@ -104,6 +106,7 @@ tool path routes the name itself and never reads `model-aliases`.
 | Model Pattern                      | Vendor                                                                              |
 | ---------------------------------- | ----------------------------------------------------------------------------------- |
 | `or:` prefix                       | OpenRouter (`or:` trimmed from the wire model)                                      |
+| `or:` prefix, `+diarize` suffix    | OpenRouter with speaker labels (`+diarize` trimmed too; see OpenRouter speaker labels) |
 | contains `whisper` or `transcribe` | OpenAI                                                                              |
 | `test`/`mock_test` prefix          | Mock transcriber (deterministic, network-free; contains `diarize` → speaker labels) |
 
@@ -129,7 +132,9 @@ yields no segment. The plain split path offsets each chunk's segment by its
 window start and clamps its end to the window, because the billed seconds are
 rounded up and would otherwise overlap the next chunk by under a second. A
 vendor that sets no format falls back to the model-name rule (`diarize` →
-`diarized_json`, else `verbose_json`), which is what OpenRouter relies on.
+`diarized_json`, else `verbose_json`). OpenRouter sets `verbose_json` for every
+model, since its endpoint accepts only `json` and `verbose_json`; a slug that
+happens to contain `diarize` must not ask for `diarized_json`.
 
 The `json` format also implies a per-request audio-duration cap. Measured
 2026-10-30 against `gpt-transcribe` with files under the byte cap: 1713 s and
@@ -149,6 +154,57 @@ timestamps). JSON output is indented with one segment object per block and a
 trailing newline so large transcripts remain usable with `jq`, `head`, `tail`,
 and line-oriented inspection tools.
 
+## OpenRouter speaker labels
+
+OpenRouter diarizes only when the request carries `response_format=verbose_json`
+and a `diarize=true` form field. A model name asks for it with the `+diarize`
+suffix: `or:elevenlabs/scribe-v2+diarize`. The suffix is clai's, not
+OpenRouter's: OpenRouter's own variants use `:` (`:free`, `:batch`) and stay
+part of the slug, so `or:elevenlabs/scribe-v2:batch+diarize` sends
+`elevenlabs/scribe-v2:batch`. The vendor package parses the suffix, adds the
+field through `generic.Transcriber.Fields`, and parses the payload itself
+(`openrouter.ParseDiarized`), because the speaker sits where the generic
+`verbose_json` parser does not look and is an integer:
+
+- `words[]` carry `speaker` (integer) and `speaker_label` (`"speaker_0"`);
+  `segments[]` may be one block with no speaker (`elevenlabs/scribe-v2`).
+  Consecutive words of one speaker become one segment, from the first word's
+  start to the last word's end. A word without a speaker, such as an
+  `audio_event`, stays in the turn it falls in.
+- Labeled words win over labeled segments, because a coarse segment can span
+  two speakers. Labeled segments are used when no word carries a label.
+- Labels are renamed `A`, `B`, … (then `AA`) in order of first appearance, so
+  a transcript reads the same whichever diarizer of a ladder answered.
+- Speech without any label is an error (`openrouter.ErrNoSpeakerLabels`),
+  never a transcript that silently lost its speakers. Silence is zero
+  segments. A `+diarize` anywhere but at the end of the name, or in another
+  case, is refused before any request.
+
+Measured 2026-11-13 against the live endpoint with a 21 s two-speaker clip
+(multipart, `verbose_json`, `diarize=true`): `elevenlabs/scribe-v2` answered
+200 with both speakers correct for $0.0013. `deepgram/nova-3`,
+`assemblyai/universal-3-6-pro`, both `mistralai/voxtral-*-transcribe-3-0`,
+`x-ai/grok-stt-2.0`, `google/gemini-3.5-transcribe` and
+`fish-audio/transcribe-1-pro` answered 400 "The selected model does not
+support diarize"; `openai/gpt-4o-transcribe` and `google/chirp-3` answered
+400 because they reject `verbose_json`. The 400 reaches the user with the
+vendor's text; it is not a fallback reason, like any request failure.
+
+These labels are request-local (`generic.DiarizationRequestLocal`): a label
+means nothing outside its request, and no calibration maps it. OpenRouter
+caps the file part at 25 MiB and the provider request at 60 s. Measured the
+same day: a 26,214,400-byte file passed the size check and a 26,230,000-byte
+one was refused ("Audio file exceeds the 25 MB multipart upload limit"), so
+the default `max-request-bytes` is OpenRouter's cap exactly. With 64 kbit/s
+mono MP3 built from TTS speech, `scribe-v2` answered a 10-minute file
+(4.8 MB) in 10.2 s and a 45-minute file (21.6 MB) in 31.9 s, upload
+included. One request is therefore bounded by what the request codec fits
+under the cap, `requestCodecDuration` (54.6 minutes at 25 MiB, about 39 s at
+the measured rate): the `Splitter` probes a request-local file under the
+byte cap when `ffprobe` is on PATH and sends a longer one, such as a
+low-bitrate voice memo, through the re-encode route below. Without
+`ffprobe` the file is posted whole and the vendor's timeout answers.
+
 ## Large Files: Split and Stitch
 
 Files over 25 MB exceed the vendor request cap. The `Splitter`
@@ -157,21 +213,48 @@ Files over 25 MB exceed the vendor request cap. The `Splitter`
 1. Requires `ffmpeg` **and** `ffprobe` on PATH (only for oversized files);
    missing binaries produce an actionable error with a manual split command.
 2. Probes total duration and splits the input into fixed windows that target
-   approximately 20 MB each (`-f segment -c copy`).
+   approximately 20 MB each (`-f segment -segment_time -c copy`). The windows
+   divide the probed duration plus one second (`splitSlack`), so the last cut
+   falls past the end: windows of exactly duration/N left a 908-byte fourth
+   chunk after three 200 s ones of a stream-copied MP3 (frame quantization
+   past the probed 600.000 s), which OpenRouter refused with 400 "unsupported
+   or malformed audio" (measured 2026-11-13). A fixed window length, rather
+   than a list of cuts, keeps every chunk bounded when `ffprobe`
+   underestimates the duration, as it does for a VBR MP3 without a Xing
+   header. A cue that ends past its window is clamped to the window, never
+   before its own start.
 3. Transcribes chunks in a bounded worker pool (`parallelism`).
 4. Offsets timestamps and stitches chunks in order.
-5. Warns that diarization labels are request-local and can drift across chunks.
+5. Prefixes every speaker label with its chunk when there is more than one
+   chunk, because labels are request-local (see below).
 
-This plain path applies to non-diarized models only. Diarize models take
-the calibration path below, which reconciles speakers across requests. For
-`json`-format models the same path also handles files under the byte cap
-that exceed `max-request-seconds` (see Response-Format Negotiation).
+The `Splitter` routes an oversized file by what the transcriber's labels mean
+(`Diarization()`, typed `generic.Diarization`; a transcriber without the
+method has none), never by the model name:
+
+| Diarization | Oversized file |
+| --- | --- |
+| none | this plain path |
+| anchored (OpenAI's diarize family, `diarized_json`) | the calibration path below, which reconciles speakers across requests |
+| request-local (OpenRouter `+diarize`) | re-encoded once at the request codec (MP3, 64 kbit/s, mono, 16 kHz), which fits 54.6 minutes under 25 MiB; sent as one request when it fits, else this plain path over the encoded file |
+
+A meeting recorded by `audio_record` is a 16 kHz WAV, 1.9 MB a minute, so
+anything past 13 minutes is oversized; the re-encode keeps a meeting of up to
+54 minutes in one request with one set of labels. Speaker numbering
+restarts in every request, so when the plain path transcribes more than one
+chunk it prefixes every label with its chunk: `1-A`, `1-B`, `2-A`. `2-A` is
+not known to be `1-A`; two people are never merged under one label, and the
+board header says `speaker labels per chunk`, and so does the
+`audio_transcribe` tool description, for the agent that reads the result.
+Whoever reads the transcript reconciles them from what was said. For `json`-format models the plain path also handles files under the
+byte cap that exceed `max-request-seconds` (see Response-Format Negotiation).
 
 ## Adaptive Speaker Calibration
 
 Implemented 2026-09-02; the worklog with the measurements and decisions is
 [`worklogs/2026-09-01-adaptive-speaker-calibration/`](../worklogs/2026-09-01-adaptive-speaker-calibration/).
-An oversized recording transcribed with a diarize model takes this path
+An oversized recording transcribed with an anchored diarizer (OpenAI's
+diarize family, the provider the anchoring was measured on) takes this path
 instead of the plain split above.
 
 ### Provider contract and evidence
@@ -423,6 +506,22 @@ global, resolved before the flags are re-applied (`text.ApplyProfileOverrides`),
 so `-am` wins. Without a flag or a profile key the tool keeps using the
 config file and its per-call format.
 
+Each call composes its run like the subcommand: the model resolves through
+`audioConfig.json`'s `model-aliases` and walks the ladder with
+`modelfallback.New` (`transcribeChain`), so a candidate whose key is missing
+falls through to the next with the usual notice on the run's stderr
+([model-aliases.md](./model-aliases.md)). A remote model list named by `-am`
+or a profile is fetched once at text setup (`text.resolveRemoteAudioModel`,
+with the run's remote resolver) and handed over as
+`ToolOverrides.Models`; a remote list named by `audioConfig.json` itself is
+resolved by the engine with the same resolver, handed over as
+`ToolOverrides.NewResolver`. The profile checker routes `audio.model`
+through the audio alias table (`profile.Env.ResolveAudioModel`), so an alias
+is accepted and a malformed one is refused. The table is read only when a
+profile names an audio model, from `audioConfig.json` or the shipped ladders
+when the file is absent, so a broken audio config never fails a run whose
+profile has no audio model.
+
 ## Example
 
 ```bash
@@ -433,7 +532,19 @@ clai -t "*" q "Transcribe meeting.wav and file the meeting notes"
 clai -am gpt-4o-transcribe-diarize -af json -t audio_transcribe q "Summarize meeting.wav"
 # or pinning it in a profile, for every run of that agent:
 clai -p meeting -t audio_transcribe q "Transcribe today's meeting"
+# speaker labels through OpenRouter:
+clai a t -am or:elevenlabs/scribe-v2+diarize meeting.wav
 ```
+
+A shared profile that must label speakers on a machine with either key names
+a ladder, for example an audio alias published as a remote model list:
+
+```json
+["gpt-4o-transcribe-diarize", "or:elevenlabs/scribe-v2+diarize"]
+```
+
+With `OPENAI_API_KEY` set the OpenAI diarizer answers; without it the
+OpenRouter one does.
 
 ## Capture: `audio_sources` and `audio_record`
 

@@ -290,7 +290,7 @@ type MediaToolFlags struct {
 }
 
 func (g *MediaToolFlags) Register(fs *flag.FlagSet) {
-	g.AudioModel.Register(fs, "Set the model the audio_transcribe tool uses for this run. Overrides audioConfig.json.", "am", "audio-model")
+	g.AudioModel.Register(fs, "Set the model, model-aliases verb or remote model list the audio_transcribe tool uses for this run. Overrides audioConfig.json.", "am", "audio-model")
 	g.AudioFormat.Register(fs, "Set the transcript format the audio_transcribe tool returns: vtt|srt|text|json. Overrides the tool's own choice.", "af", "audio-format")
 	g.PhotoModel.Register(fs, "Set the image model the generate_image tool uses for this run. Overrides photoConfig.json.", "pm", "photo-model")
 }
@@ -298,7 +298,9 @@ func (g *MediaToolFlags) Register(fs *flag.FlagSet) {
 // MediaToolSettings are the media-tool values a run resolved from its flags and
 // its profile, handed to the domains owning those tools.
 type MediaToolSettings struct {
-	AudioModel  string
+	AudioModel string
+	// AudioModels is the ordered list a remote AudioModel resolved to
+	AudioModels []string
 	AudioFormat string
 }
 

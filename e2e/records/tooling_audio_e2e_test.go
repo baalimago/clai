@@ -149,6 +149,54 @@ func Test_e2e_audio_transcribe_tool_profile_model(t *testing.T) {
 	})
 }
 
+// Test_e2e_audio_transcribe_tool_model_alias pins alias fallback in the tool (architecture/model-aliases.md).
+func Test_e2e_audio_transcribe_tool_model_alias(t *testing.T) {
+	setup := func(t *testing.T) string {
+		t.Helper()
+		confDir := e2etest.SetupMainTestConfigDir(t)
+		t.Setenv("CLAI_MOCK_AUDIO_TRANSCRIBE_FILE", e2etest.WriteAudioFile(t))
+		t.Setenv("OPENAI_API_KEY", "")
+		e2etest.WriteJSONFileAny(t, filepath.Join(confDir, "audioConfig.json"), map[string]any{
+			"transcribe":    map[string]any{"model": "whisper-1", "output-format": "vtt"},
+			"model-aliases": map[string][]string{"fast": {"gpt-4o-transcribe-diarize", "test-diarize"}},
+		})
+		return confDir
+	}
+	run := func(t *testing.T, args string) string {
+		t.Helper()
+		oldArgs := os.Args
+		t.Cleanup(func() { os.Args = oldArgs })
+		var status int
+		stdout, stderr := e2etest.CaptureStdoutStderr(t, func() {
+			status = harness.Run(strings.Split(args, " "))
+		})
+		if status != 0 {
+			t.Fatalf("expected success, got %d stdout=%q stderr=%q", status, stdout, stderr)
+		}
+		return stdout + stderr
+	}
+	assertFellBack := func(t *testing.T, out string) {
+		t.Helper()
+		testboil.AssertStringContains(t, out, "A: mock transcription")
+		testboil.AssertStringContains(t, out, "▸ model gpt-4o-transcribe-diarize unavailable · ")
+		testboil.AssertStringContains(t, out, "trying test-diarize")
+	}
+
+	t.Run("a profile names the alias", func(t *testing.T) {
+		confDir := setup(t)
+		e2etest.WriteJSONFileAny(t, filepath.Join(confDir, "profiles", "meeting.json"), map[string]any{
+			"name":  "meeting",
+			"model": "mock_test",
+			"audio": map[string]any{"model": "fast"},
+		})
+		assertFellBack(t, run(t, "-r -cm mock_test -p meeting -t=audio_transcribe q tool_audio_transcribe"))
+	})
+	t.Run("-am names the alias", func(t *testing.T) {
+		setup(t)
+		assertFellBack(t, run(t, "-r -cm mock_test -am fast -t=audio_transcribe q tool_audio_transcribe"))
+	})
+}
+
 func Test_e2e_audio_transcribe_tool_vtt_format(t *testing.T) {
 	confDir := e2etest.SetupMainTestConfigDir(t)
 	audioFile := e2etest.WriteAudioFile(t)

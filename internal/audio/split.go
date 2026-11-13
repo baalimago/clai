@@ -26,8 +26,10 @@ const (
 	MaxRequestBytes = 25 << 20
 	// nonDiarizedChunkRatio sizes plain split chunks against the byte cap
 	nonDiarizedChunkRatio = 0.8
-	ffprobeBin            = "ffprobe"
-	ffmpegBin             = "ffmpeg"
+	// splitSlack moves the last cut past the probed end (architecture/audio.md, Large Files)
+	splitSlack = time.Second
+	ffprobeBin = "ffprobe"
+	ffmpegBin  = "ffmpeg"
 )
 
 type Transcriber interface {
@@ -68,7 +70,7 @@ type Splitter struct {
 	Model       string
 	// StatusOut receives the progress board; nil means the run's stderr.
 	StatusOut io.Writer
-	// Calibrated diarization (oversized files with a diarize model)
+	// Calibrated diarization (oversized files with anchored labels)
 	Budgets Budgets
 	Strict  bool
 	// RequestTranscriber overrides the file-based Transcriber for
@@ -95,21 +97,59 @@ func (s *Splitter) Transcribe(ctx context.Context, filePath string) ([]Segment, 
 	if maxBytes <= 0 {
 		maxBytes = MaxRequestBytes
 	}
-	durationCap := s.durationCap()
+	durationCap := s.durationCap(maxBytes)
 	if info.Size() <= maxBytes {
 		route, err := s.routeSubCap(ctx, filePath, durationCap)
 		if err != nil {
 			return nil, err
 		}
-		if route == routeDirect {
+		switch {
+		case route == routeDirect:
 			return s.Transcriber.Transcribe(ctx, filePath)
+		case s.diarization() == generic.DiarizationRequestLocal:
+			return s.transcribeEncoded(ctx, filePath, maxBytes)
 		}
 		return s.splitTranscribeStitch(ctx, filePath, info.Size(), maxBytes, durationCap)
 	}
-	if strings.Contains(s.Model, "diarize") {
+	switch s.diarization() {
+	case generic.DiarizationAnchored:
 		return s.calibrate(ctx, filePath, info.Size(), maxBytes)
+	case generic.DiarizationRequestLocal:
+		return s.transcribeEncoded(ctx, filePath, maxBytes)
 	}
 	return s.splitTranscribeStitch(ctx, filePath, info.Size(), maxBytes, durationCap)
+}
+
+func (s *Splitter) diarization() generic.Diarization {
+	d, ok := s.Transcriber.(interface{ Diarization() generic.Diarization })
+	if !ok {
+		return generic.DiarizationNone
+	}
+	return d.Diarization()
+}
+
+// transcribeEncoded is the request-local route (architecture/audio.md, Large Files).
+func (s *Splitter) transcribeEncoded(ctx context.Context, filePath string, maxBytes int64) ([]Segment, error) {
+	if err := s.requireBinaries(filePath, maxBytes); err != nil {
+		return nil, err
+	}
+	tempDir, err := os.MkdirTemp("", "clai-audio-encode-*")
+	if err != nil {
+		return nil, diag.Errorf("failed to create encode temp dir: %w", err)
+	}
+	defer os.RemoveAll(tempDir)
+	encoded := filepath.Join(tempDir, strings.TrimSuffix(filepath.Base(filePath), filepath.Ext(filePath))+requestExtension)
+	if err := encodeRequest(ctx, s.Runner, []string{"-i", filePath, "-vn"}, encoded); err != nil {
+		return nil, err
+	}
+	info, err := os.Stat(encoded)
+	if err != nil {
+		return nil, diag.Errorf("failed to stat encoded request: %w", err)
+	}
+	if info.Size() <= maxBytes {
+		return s.Transcriber.Transcribe(ctx, encoded)
+	}
+	return s.splitTranscribeStitch(ctx, encoded, info.Size(), maxBytes, 0)
 }
 
 // subCapRoute is how a file under the byte cap reaches the vendor.
@@ -120,9 +160,11 @@ const (
 	routeDurationSplit
 )
 
-// durationCap is the per-request audio cap the negotiated format implies;
-// zero means the endpoint caps bytes only (verbose_json, diarized_json).
-func (s *Splitter) durationCap() time.Duration {
+// durationCap is the per-request audio cap; zero caps bytes only (architecture/audio.md).
+func (s *Splitter) durationCap(maxBytes int64) time.Duration {
+	if s.diarization() == generic.DiarizationRequestLocal {
+		return requestCodecDuration(maxBytes)
+	}
 	f, ok := s.Transcriber.(interface{ RequestFormat() generic.ResponseFormat })
 	if !ok || f.RequestFormat() != generic.ResponseFormatJSON {
 		return 0
@@ -218,7 +260,7 @@ func (s *Splitter) splitTranscribeStitch(ctx context.Context, filePath string, s
 			reason = fmt.Sprintf("%.0f s > %.0f s per-request cap", duration, durationCap.Seconds())
 		}
 	}
-	segmentTime := duration / float64(numChunks)
+	segmentTime := (duration + splitSlack.Seconds()) / float64(numChunks)
 	tempDir, err := os.MkdirTemp("", "clai-audio-split-*")
 	if err != nil {
 		return nil, diag.Errorf("failed to create chunk temp dir: %w", err)
@@ -232,8 +274,12 @@ func (s *Splitter) splitTranscribeStitch(ctx context.Context, filePath string, s
 	for i := range chunks {
 		spans[i] = SourceInterval{Start: time.Duration(float64(i) * segmentTime * float64(time.Second)), End: time.Duration(float64(i+1) * segmentTime * float64(time.Second))}
 	}
-	b := newChunkBoard(ctx, s.StatusOut, false, fmt.Sprintf("splitting via ffmpeg  %v  %v  %v chunks × %.1f min  %v workers",
-		filepath.Base(filePath), reason, numChunks, segmentTime/60, s.workers()), spans)
+	title := fmt.Sprintf("splitting via ffmpeg  %v  %v  %v chunks × %.1f min  %v workers",
+		filepath.Base(filePath), reason, numChunks, segmentTime/60, s.workers())
+	if s.diarization() == generic.DiarizationRequestLocal {
+		title += "  speaker labels per chunk"
+	}
+	b := newChunkBoard(ctx, s.StatusOut, false, title, spans)
 	s.verifyChunkOffsets(ctx, chunks, segmentTime, b)
 	return s.transcribePool(ctx, chunks, segmentTime, b)
 }
@@ -376,11 +422,14 @@ func (s *Splitter) transcribePool(ctx context.Context, chunks []string, segmentT
 				return
 			}
 			segs = Offset(segs, generic.SecondsToDuration(float64(i)*segmentTime))
+			if len(chunks) > 1 {
+				scopeSpeakers(segs, i+1)
+			}
 			// A billed duration is rounded up to whole seconds; keep cues inside the window
 			windowEnd := generic.SecondsToDuration(float64(i+1) * segmentTime)
 			for j := range segs {
 				if segs[j].End > windowEnd {
-					segs[j].End = windowEnd
+					segs[j].End = max(windowEnd, segs[j].Start)
 				}
 			}
 			results[i] = segs
@@ -409,6 +458,15 @@ func (s *Splitter) transcribePool(ctx context.Context, chunks []string, segmentT
 		stitched = append(stitched, segs...)
 	}
 	return stitched, nil
+}
+
+// scopeSpeakers prefixes each label with its chunk (architecture/audio.md, Large Files).
+func scopeSpeakers(segs []Segment, chunk int) {
+	for i := range segs {
+		if segs[i].Speaker != "" {
+			segs[i].Speaker = fmt.Sprintf("%d-%v", chunk, segs[i].Speaker)
+		}
+	}
 }
 
 func toMB(bytes int64) float64 {

@@ -61,7 +61,7 @@ migration seeds them once and never rewrites an existing table (see
 
 ### Remote model alias lists
 
-A profile's `"model"` field, a mode's `"model"` setting or the `-cm` / `-pm` / `-am`
+A profile's `"model"` or `"audio": {"model"}` field, a mode's `"model"` setting or the `-cm` / `-pm` / `-am`
 flags may also name a remote model list (`cchub:<handle>/<alias>[@<version>]`,
 `gh:<owner>/<repo>[/<path>][@<ref>]` defaulting to `models.json`, or `https://...`).
 The remote document is a JSON array of model names:
@@ -167,7 +167,7 @@ the default is the safe one. The implementations are:
 | text `*Querier[C]` | text streamed to the user, or it ran a tool |
 | text `*loopRunner` | the second iteration began, otherwise the inner querier's answer |
 | photo `*query` | it saved at least one image |
-| audio `*TranscribeQuerier` | never asked: it has no method, so it is treated as having produced |
+| audio `*TranscribeQuerier` (subcommand and `audio_transcribe` tool) | never asked: it has no method, so it is treated as having produced |
 
 The text querier records production from the session it ran, never from its
 finalize latch: finalizing a failed run is bookkeeping, not output, so a run
@@ -213,6 +213,7 @@ policy of the model that ran.
 | text (`clai q`, `clai -p <profile>`) | vendor querier, reply-only, summarizer, summary join timeout, image turn, loop runner and run tally | compose and run, whenever the failure means the model could not answer |
 | photo (`clai p`) | the image generator, over the request, output and presenter collected once | compose; also at run time for a typed vendor failure that saved no image |
 | audio (`clai a t`) | the transcriber route for that model | compose, which is where a missing vendor key appears |
+| `audio_transcribe` tool | the same transcriber route, writing into the tool result | compose, as `clai a t`; the notice goes to the run's stderr |
 
 Text is the interesting case: the query command composes the whole decoration
 chain per attempt, so the model tried second is configured, tooled and tallied
@@ -221,6 +222,17 @@ attempt: the summarizer, which is built once and attached to each attempt
 because its label index is per run, and the subagent tally scope, which wraps
 the resolved chain so that closing it cannot hide the replay guard of the
 querier an attempt composed.
+
+The `audio_transcribe` tool composes the same chain per call
+(`transcribeChain` over `audioConfig.json`'s table), because the model a
+profile or `-am` names for the tool is the audio model, not the text run's. A
+remote list that `-am` or a profile's `audio.model` names is resolved once at
+text setup with the run's resolver and handed to the tool as the ladder; a
+remote list named by `audioConfig.json` is resolved by the tool itself, with
+the same resolver. A
+ladder such as `["gpt-4o-transcribe-diarize", "or:elevenlabs/scribe-v2+diarize"]`
+therefore labels speakers with whichever key the machine has
+([audio.md](./audio.md)).
 
 Audio keeps the transient input, which is the temp file a `-` run reads, out of
 the attempts. The chain cannot remove it: a candidate that fails to compose must
@@ -233,9 +245,9 @@ outcome.
 - **`clai video`** has one vendor (`sora-2`) and the vendor reports failures
   without the typed vocabulary, so a video ladder would have nothing to walk
   between. The seam is ready if a second video vendor lands.
-- **The `generate_image` tool** and the **`audio_transcribe` tool** are tool
-  bridges that take one concrete model from their own config. A tool call is
-  inside a text run, so it inherits the text run's fallback, not its own.
+- **The `generate_image` tool** is a tool bridge that takes one concrete
+  model from its own config. A tool call is inside a text run, so it inherits
+  the text run's fallback, not its own.
 - **`clai chat summarize`** already has a two-step model ladder (`summary-model`
   then `model`), which is a different mechanism: it degrades to a weaker task,
   not to another vendor.
@@ -253,3 +265,5 @@ outcome.
 | `internal/text/cmd.go` | `textSession` and `buildTextRun` |
 | `internal/photo/cmd.go`, `internal/photo/query.go` | `forModel`, which composes one generator |
 | `internal/audio/setup_transcribe.go` | `transcribeChain` and `cleanupQuerier` |
+| `internal/audio/create_querier.go`, `tool_overrides.go` | the `audio_transcribe` engine over `transcribeChain`, `ToolOverrides` |
+| `internal/text/remote_profile.go` | `resolveRemoteAudioModel`, the tool's remote list at setup |

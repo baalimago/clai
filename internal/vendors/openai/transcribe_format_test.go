@@ -100,3 +100,21 @@ func TestTranscriber_Setup_FormatPerModel(t *testing.T) {
 		}
 	}
 }
+
+func TestTranscriber_Diarization(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "oai-test-key")
+	for model, want := range map[string]generic.Diarization{
+		"gpt-4o-transcribe-diarize": generic.DiarizationAnchored,
+		"whisper-1":                 generic.DiarizationNone,
+		"gpt-transcribe":            generic.DiarizationNone,
+	} {
+		trans := TranscriberDefault
+		trans.Model = model
+		if err := trans.Setup(); err != nil {
+			t.Fatalf("%v: failed to setup: %v", model, err)
+		}
+		if got := trans.Diarization(); got != want {
+			t.Errorf("%v: Diarization() = %v, want %v", model, got, want)
+		}
+	}
+}

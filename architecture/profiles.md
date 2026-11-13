@@ -20,7 +20,7 @@ A profile run with no prompt and nothing on stdin sends `text.ProfileDefaultProm
 
 Loading a profile (`-p` or `-prp`) is read-only (`utils.ReadConfigFile`): fields missing from the file are filled from `DefaultProfile` in memory, the file is never rewritten, nothing is created beside it, and a missing profile file is an error.
 
-A profile may also pin the model the media tools its runs call use: `"audio": {"model": "diarize"}` sets the model its `audio_transcribe` calls run (`text.Configurations.AudioModel`), and `-am` still overrides it. The audio key is read only for a text-querier run; a local `clai audio transcribe` reads `audioConfig.json` and its own `-am`. `"photo"` stays out: the image model follows `-pm` and `photoConfig.json` (see [audio.md](./audio.md), [images.md](./images.md)).
+A profile may also pin the model the media tools its runs call use: `"audio": {"model": "gpt-4o-transcribe-diarize"}` sets the model its `audio_transcribe` calls run (`text.Configurations.AudioModel`), and `-am` still overrides it. The value may be an `audioConfig.json` alias verb or a remote model list, which the tool falls back through ([model-aliases.md](./model-aliases.md)); the checker routes it through the audio alias table. The audio key is read only for a text-querier run; a local `clai audio transcribe` reads `audioConfig.json` and its own `-am`. `"photo"` stays out: the image model follows `-pm` and `photoConfig.json` (see [audio.md](./audio.md), [images.md](./images.md)).
 
 ## Entry Flow
 

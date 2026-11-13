@@ -332,6 +332,10 @@ after the profile resolves, because the profile is read inside
 -am (explicit)  >  profile "audio": {"model": …}  >  audioConfig.json
 ```
 
+The value may be a model, an `audioConfig.json` alias verb or a remote model
+list; a remote list is resolved at setup and the tool walks the ladder
+([model-aliases.md](./model-aliases.md)).
+
 `-af` has no profile key: the transcript format stays the tool call's choice
 unless the user sets it for the run. `"photo"` is not read from a profile; the
 image model follows `-pm` and `photoConfig.json` (see

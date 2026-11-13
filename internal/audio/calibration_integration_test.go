@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/baalimago/clai/internal/audio/generic"
 	pkgtools "github.com/baalimago/clai/pkg/tools"
 )
 
@@ -48,7 +49,7 @@ func newCalibratedSplitter(t *testing.T, p *voiceProvider, conf Configurations) 
 		t.Fatal(err)
 	}
 	status := &bytes.Buffer{}
-	s := NewSplitter(&fakeTranscriber{}, &scriptedRunner{duration: "180.000000"})
+	s := NewSplitter(&fakeTranscriber{diarization: generic.DiarizationAnchored}, &scriptedRunner{duration: "180.000000"})
 	s.Model = conf.Transcribe.Model
 	s.Budgets = budgets
 	s.MaxBytes = budgets.MaxRequestBytes
@@ -173,15 +174,15 @@ func TestMaxRequestBytesAppliesToBothPaths(t *testing.T) {
 			segmentTime = c[i+1]
 		}
 	}
-	if segmentTime != "900.000" {
-		t.Errorf("expected 2 chunks of 900 s under a 40 KB cap (80%% target), got segment time %q", segmentTime)
+	if segmentTime != "900.500" {
+		t.Errorf("expected 2 chunks of 900 s plus the split slack under a 40 KB cap (80%% target), got segment time %q", segmentTime)
 	}
 	// A 4 MiB cap (the multipart reserve is 16 KiB) passes a 3 MiB diarized file through and calibrates a 5 MiB one
 	p := &voiceProvider{truth: smallMeeting()}
 	conf := smallBudgetConf("gpt-4o-transcribe-diarize")
 	conf.Transcribe.MaxRequestBytes = 4 << 20
 	cs, _, _ := newCalibratedSplitter(t, p, conf)
-	direct := &fakeTranscriber{}
+	direct := &fakeTranscriber{diarization: generic.DiarizationAnchored}
 	cs.Transcriber = direct
 	if _, err := cs.Transcribe(context.Background(), sparseFile(t, 3<<20)); err != nil {
 		t.Fatal(err)

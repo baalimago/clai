@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/baalimago/clai/internal/audio/generic"
 	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/modelalias"
 	"github.com/baalimago/clai/internal/runenv"
@@ -102,6 +103,14 @@ var Default = Configurations{
 // labels, emulating a diarize-capable model.
 type MockTranscriber struct {
 	Diarized bool
+}
+
+// Diarization emulates the diarize family's anchored labels.
+func (m MockTranscriber) Diarization() generic.Diarization {
+	if m.Diarized {
+		return generic.DiarizationAnchored
+	}
+	return generic.DiarizationNone
 }
 
 func (m MockTranscriber) Transcribe(_ context.Context, filePath string) ([]Segment, error) {

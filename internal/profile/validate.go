@@ -57,6 +57,8 @@ type Env struct {
 	// ResolveModel returns the candidate models a model string routes to; an
 	// alias expands to its candidates. An empty result means it routes nowhere.
 	ResolveModel func(model string) ([]string, error)
+	// ResolveAudioModel is ResolveModel over the audio alias table.
+	ResolveAudioModel func(model string) ([]string, error)
 	// HasShellContext reports whether a shell context of that name exists in
 	// the caller's config dir.
 	HasShellContext func(name string) bool
@@ -561,31 +563,36 @@ func (n *schemaNode) schemaVersionProblems(members map[string]jsontext.Value) Fi
 	}
 }
 
-// modelProblems routes model through Env.ResolveModel. An alias expands to its
-// candidates and each candidate must route; a candidate is not expanded again.
+// modelProblems routes model through Env.ResolveModel.
 func (env Env) modelProblems(members map[string]jsontext.Value) Findings {
-	model, ok := stringMember(members, "model")
-	if !ok || model == "" || env.ResolveModel == nil {
+	model, _ := stringMember(members, "model")
+	return routeProblems("model", model, env.ResolveModel)
+}
+
+// routeProblems routes model through resolve. An alias expands to its
+// candidates and each candidate must route; a candidate is not expanded again.
+func routeProblems(member, model string, resolve func(string) ([]string, error)) Findings {
+	if model == "" || resolve == nil {
 		return nil
 	}
-	candidates, err := env.ResolveModel(model)
+	candidates, err := resolve(model)
 	if err != nil || len(candidates) == 0 {
-		return Findings{{
-			Severity: Error,
-			Member:   "model",
-			Reason:   fmt.Sprintf("model %q routes to no model", model),
-		}}
+		reason := fmt.Sprintf("%s %q routes to no model", member, model)
+		if err != nil {
+			reason += ": " + err.Error()
+		}
+		return Findings{{Severity: Error, Member: member, Reason: reason}}
 	}
 	var findings Findings
 	for _, candidate := range candidates {
 		if candidate == model {
 			continue
 		}
-		if reached, err := env.ResolveModel(candidate); err != nil || len(reached) == 0 {
+		if reached, err := resolve(candidate); err != nil || len(reached) == 0 {
 			findings = append(findings, Finding{
 				Severity: Error,
-				Member:   "model",
-				Reason:   fmt.Sprintf("model %q is an alias whose candidate %q routes to no model", model, candidate),
+				Member:   member,
+				Reason:   fmt.Sprintf("%s %q is an alias whose candidate %q routes to no model", member, model, candidate),
 			})
 		}
 	}
@@ -677,33 +684,14 @@ func listsCommandTool(list []string) bool {
 	return slices.Contains(list, "cmd") || slices.Contains(list, "async_cmd")
 }
 
-// audioProblems requires audio.model to be a concrete model: an alias is
-// refused there, because a transcription call cannot pick a vendor.
+// audioProblems routes audio.model through the audio alias table.
 func (env Env) audioProblems(members map[string]jsontext.Value) Findings {
 	audio, ok := objectMember(members, "audio")
 	if !ok {
 		return nil
 	}
-	model, ok := stringMember(audio, "model")
-	if !ok || model == "" || env.ResolveModel == nil {
-		return nil
-	}
-	candidates, err := env.ResolveModel(model)
-	if err != nil || len(candidates) == 0 {
-		return Findings{{
-			Severity: Error,
-			Member:   "audio.model",
-			Reason:   fmt.Sprintf("audio.model %q routes to no model", model),
-		}}
-	}
-	if slices.Equal(candidates, []string{model}) {
-		return nil
-	}
-	return Findings{{
-		Severity: Error,
-		Member:   "audio.model",
-		Reason:   fmt.Sprintf("audio.model %q is an alias; audio.model needs a concrete model", model),
-	}}
+	model, _ := stringMember(audio, "model")
+	return routeProblems("audio.model", model, env.ResolveAudioModel)
 }
 
 // skillProblems requires every skill target to parse, and pins it on publish.

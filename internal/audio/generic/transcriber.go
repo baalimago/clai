@@ -7,10 +7,12 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/baalimago/clai/internal/runenv"
@@ -32,11 +34,25 @@ const (
 	ResponseFormatDiarizedJSON ResponseFormat = "diarized_json"
 )
 
+// Diarization is what a transcriber's speaker labels mean beyond one request.
+type Diarization int
+
+const (
+	// DiarizationNone means the transcript carries no speaker labels
+	DiarizationNone Diarization = iota
+	// DiarizationAnchored labels are request-local and calibration maps them across requests (architecture/audio.md)
+	DiarizationAnchored
+	// DiarizationRequestLocal labels are request-local and never mapped across requests
+	DiarizationRequestLocal
+)
+
 type Transcriber struct {
 	Model        string
 	URL          string
 	ExtraHeaders map[string]string
-	Client       *http.Client
+	// Fields are extra form fields the vendor's protocol needs
+	Fields map[string]string
+	Client *http.Client
 	// Format is the vendor-negotiated response format; empty uses the model-name rule
 	Format ResponseFormat
 	apiKey string
@@ -83,21 +99,31 @@ func parserFor(format ResponseFormat) (func([]byte) ([]Segment, error), error) {
 }
 
 func (t *Transcriber) Transcribe(ctx context.Context, filePath string) ([]Segment, error) {
+	parse, err := parserFor(t.responseFormat())
+	if err != nil {
+		return nil, err
+	}
+	body, err := t.Request(ctx, filePath)
+	if err != nil {
+		return nil, err
+	}
+	return parse(body)
+}
+
+// Request posts the file and returns the raw payload for a vendor's own parser.
+func (t *Transcriber) Request(ctx context.Context, filePath string) ([]byte, error) {
+	for name := range t.Fields {
+		switch name {
+		case "file", "model", "response_format", "chunking_strategy":
+			return nil, fmt.Errorf("transcriber field %q is written by the client and cannot be set", name)
+		}
+	}
 	file, err := os.Open(filePath)
 	if err != nil {
 		return nil, diag.Errorf("failed to open audio file: %w", err)
 	}
 	defer file.Close()
-	respFormat := t.responseFormat()
-	parse, err := parserFor(respFormat)
-	if err != nil {
-		return nil, err
-	}
-	body, err := t.post(ctx, file, respFormat)
-	if err != nil {
-		return nil, err
-	}
-	return parse(body)
+	return t.post(ctx, file, t.responseFormat())
 }
 
 func (t *Transcriber) post(ctx context.Context, file *os.File, respFormat ResponseFormat) ([]byte, error) {
@@ -105,7 +131,7 @@ func (t *Transcriber) post(ctx context.Context, file *os.File, respFormat Respon
 	pipeReader, pipeWriter := io.Pipe()
 	multipartWriter := multipart.NewWriter(pipeWriter)
 	go func() {
-		err := writeMultipart(multipartWriter, file, t.Model, respFormat)
+		err := writeMultipart(multipartWriter, file, t.Model, respFormat, t.Fields)
 		if closeErr := multipartWriter.Close(); err == nil {
 			err = closeErr
 		}
@@ -147,7 +173,7 @@ func (t *Transcriber) post(ctx context.Context, file *os.File, respFormat Respon
 	return body, nil
 }
 
-func writeMultipart(w *multipart.Writer, file *os.File, model string, respFormat ResponseFormat) error {
+func writeMultipart(w *multipart.Writer, file *os.File, model string, respFormat ResponseFormat, fields map[string]string) error {
 	part, err := w.CreateFormFile("file", filepath.Base(file.Name()))
 	if err != nil {
 		return diag.Errorf("failed to create file part: %w", err)
@@ -165,6 +191,11 @@ func writeMultipart(w *multipart.Writer, file *os.File, model string, respFormat
 	if respFormat == ResponseFormatDiarizedJSON {
 		if err := w.WriteField("chunking_strategy", "auto"); err != nil {
 			return diag.Errorf("failed to write chunking_strategy field: %w", err)
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(fields)) {
+		if err := w.WriteField(name, fields[name]); err != nil {
+			return diag.Errorf("failed to write %v field: %w", name, err)
 		}
 	}
 	return nil

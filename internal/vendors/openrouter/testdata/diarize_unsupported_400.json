@@ -1,0 +1,1 @@
+{"error":{"message":"The selected model does not support diarize. Remove the field or choose a model whose provider supports it.","code":400}}

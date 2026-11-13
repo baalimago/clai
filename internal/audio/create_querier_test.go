@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/internal/audio/generic"
 	"github.com/baalimago/clai/internal/vendors/openai"
 	"github.com/baalimago/clai/internal/vendors/openrouter"
 	"github.com/baalimago/clai/pkg/claierr"
@@ -112,4 +113,26 @@ func TestCreateAudioQuerier_Routing(t *testing.T) {
 			t.Errorf("expected valid formats listed, got: %v", err)
 		}
 	})
+}
+
+// TestCreateSplitter_DiarizationFollowsTheRoute pins each route's split path (architecture/audio.md).
+func TestCreateSplitter_DiarizationFollowsTheRoute(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "test-key")
+	t.Setenv("OPENROUTER_API_KEY", "test-key")
+	for model, want := range map[string]generic.Diarization{
+		"gpt-4o-transcribe-diarize":       generic.DiarizationAnchored,
+		"test-diarize":                    generic.DiarizationAnchored,
+		"or:elevenlabs/scribe-v2+diarize": generic.DiarizationRequestLocal,
+		"or:openai/whisper-1":             generic.DiarizationNone,
+		"whisper-1":                       generic.DiarizationNone,
+		"test":                            generic.DiarizationNone,
+	} {
+		s, err := createSplitter(audioConfWithModel(model))
+		if err != nil {
+			t.Fatalf("createSplitter(%v): %v", model, err)
+		}
+		if got := s.diarization(); got != want {
+			t.Errorf("%v: diarization = %v, want %v", model, got, want)
+		}
+	}
 }

@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/baalimago/clai/internal"
 	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/display"
 	"github.com/baalimago/clai/internal/look"
@@ -117,15 +118,36 @@ func resolveRemoteModel(ctx context.Context, tConf *Configurations, resolve func
 	if !remote.IsRemote(tConf.Model) {
 		return nil
 	}
-	if resolve == nil {
-		return fmt.Errorf("remote model targets are not available here: %s", tConf.Model)
-	}
-	models, err := resolve(ctx, tConf.Model)
+	models, err := remoteModelList(ctx, tConf.Model, resolve)
 	if err != nil {
-		return diag.Errorf("model %s: %w", tConf.Model, err)
+		return err
 	}
 	tConf.ModelAliases = modelalias.Table{tConf.Model: models}
 	return nil
+}
+
+// resolveToolAudioModels resolves a remote audio model for the tool (architecture/model-aliases.md).
+func resolveToolAudioModels(ctx context.Context, s *internal.MediaToolSettings, resolve func(context.Context, string) ([]string, error)) error {
+	if !remote.IsRemote(s.AudioModel) {
+		return nil
+	}
+	models, err := remoteModelList(ctx, s.AudioModel, resolve)
+	if err != nil {
+		return err
+	}
+	s.AudioModels = models
+	return nil
+}
+
+func remoteModelList(ctx context.Context, model string, resolve func(context.Context, string) ([]string, error)) ([]string, error) {
+	if resolve == nil {
+		return nil, fmt.Errorf("remote model targets are not available here: %s", model)
+	}
+	models, err := resolve(ctx, model)
+	if err != nil {
+		return nil, diag.Errorf("model %s: %w", model, err)
+	}
+	return models, nil
 }
 
 // terminalAvailable reports whether someone can answer a prompt: stdin is

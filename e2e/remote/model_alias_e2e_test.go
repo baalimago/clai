@@ -550,3 +550,53 @@ func TestModelAlias_CloudPublishAliasAndRunRemoteViaFlagAndProfile(t *testing.T)
 		t.Fatalf("wrong sha256: status %d stderr %q, want exit 3", status, stderr)
 	}
 }
+
+// TestModelAlias_RemoteAudioModelReachesTheTool pins a profile's hub audio list in the tool.
+func TestModelAlias_RemoteAudioModelReachesTheTool(t *testing.T) {
+	env := setupRemoteE2E(t)
+	env.hub.publish("ada/diarize", `["gpt-4o-transcribe-diarize","test-diarize"]`)
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("CLAI_MOCK_AUDIO_TRANSCRIBE_FILE", e2etest.WriteAudioFile(t))
+	profile := map[string]any{
+		"name":  "meeting",
+		"model": "mock_test",
+		"audio": map[string]any{"model": "cchub:ada/diarize@1"},
+	}
+	e2etest.WriteJSONFileAny(t, filepath.Join(env.confDir, "profiles", "meeting.json"), profile)
+
+	status, stdout, stderr := runRemote(t, "-r -p meeting -t=audio_transcribe q tool_audio_transcribe")
+	if status != 0 {
+		t.Fatalf("status = %d, stdout = %q, stderr = %q, want 0", status, stdout, stderr)
+	}
+	out := stdout + stderr
+	for _, want := range []string{"A: mock transcription", "▸ model gpt-4o-transcribe-diarize unavailable · ", "trying test-diarize"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output = %q, want it to contain %q", out, want)
+		}
+	}
+	if hits := env.hub.hitsOn("/hub/ada/diarize/v/1/raw"); hits != 1 {
+		t.Fatalf("hub fetches of the list = %d, want 1 at setup", hits)
+	}
+}
+
+// TestModelAlias_RemoteAudioConfigModelReachesTheTool pins audioConfig.json's hub list in the tool.
+func TestModelAlias_RemoteAudioConfigModelReachesTheTool(t *testing.T) {
+	env := setupRemoteE2E(t)
+	env.hub.publish("ada/diarize", `["gpt-4o-transcribe-diarize","test-diarize"]`)
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("CLAI_MOCK_AUDIO_TRANSCRIBE_FILE", e2etest.WriteAudioFile(t))
+	e2etest.WriteJSONFileAny(t, filepath.Join(env.confDir, "audioConfig.json"), map[string]any{
+		"transcribe": map[string]any{"model": "cchub:ada/diarize@1"},
+	})
+
+	status, stdout, stderr := runRemote(t, "-r -cm mock_test -t=audio_transcribe q tool_audio_transcribe")
+	if status != 0 {
+		t.Fatalf("status = %d, stdout = %q, stderr = %q, want 0", status, stdout, stderr)
+	}
+	out := stdout + stderr
+	for _, want := range []string{"A: mock transcription", "trying test-diarize"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output = %q, want it to contain %q", out, want)
+		}
+	}
+}

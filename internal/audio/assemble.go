@@ -16,11 +16,13 @@ import (
 )
 
 const (
-	requestCodec     = "mp3 cbr 64k mono 16k"
-	envelopeReserve  = 16 << 10
-	sampleGuard      = 250 * time.Millisecond
-	sampleGap        = 500 * time.Millisecond
-	requestExtension = ".mp3"
+	requestCodec = "mp3 cbr 64k mono 16k"
+	// requestBitsPerSecond is requestCodec's bitrate
+	requestBitsPerSecond = 64_000
+	envelopeReserve      = 16 << 10
+	sampleGuard          = 250 * time.Millisecond
+	sampleGap            = 500 * time.Millisecond
+	requestExtension     = ".mp3"
 )
 
 type RegionKind string
@@ -258,13 +260,17 @@ func (a *AudioAssembler) extractPCM(ctx context.Context, start, end time.Duratio
 }
 
 func (a *AudioAssembler) encode(ctx context.Context, timeline, encoded string) error {
-	_, stderr, err := a.Runner.Run(ctx, ffmpegBin,
-		"-v", "error", "-nostdin",
-		"-f", "s16le", "-ar", strconv.Itoa(sampleRate), "-ac", "1",
-		"-i", timeline,
+	return encodeRequest(ctx, a.Runner, []string{"-f", "s16le", "-ar", strconv.Itoa(sampleRate), "-ac", "1", "-i", timeline}, encoded)
+}
+
+// encodeRequest writes the input at the request codec (requestCodec).
+func encodeRequest(ctx context.Context, runner CommandRunner, input []string, encoded string) error {
+	args := append([]string{"-v", "error", "-nostdin"}, input...)
+	args = append(args,
 		"-map_metadata", "-1", "-fflags", "+bitexact",
-		"-c:a", "libmp3lame", "-b:a", "64k", "-ac", "1", "-ar", strconv.Itoa(sampleRate),
+		"-c:a", "libmp3lame", "-b:a", strconv.Itoa(requestBitsPerSecond), "-ac", "1", "-ar", strconv.Itoa(sampleRate),
 		"-y", encoded)
+	_, stderr, err := runner.Run(ctx, ffmpegBin, args...)
 	if err != nil {
 		if ctx.Err() != nil {
 			return diag.Errorf("request encode aborted: %w", ctx.Err())
@@ -272,6 +278,11 @@ func (a *AudioAssembler) encode(ctx context.Context, timeline, encoded string) e
 		return diag.Errorf("ffmpeg failed to encode request: %w, stderr: %v", err, tail(stderr))
 	}
 	return nil
+}
+
+// requestCodecDuration is the audio one request of maxBytes holds at requestCodec.
+func requestCodecDuration(maxBytes int64) time.Duration {
+	return time.Duration(maxBytes*8) * time.Second / requestBitsPerSecond
 }
 
 func seconds(d time.Duration) string {
