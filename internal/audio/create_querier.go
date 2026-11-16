@@ -3,6 +3,7 @@ package audio
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -75,6 +76,14 @@ func CreateQuerier(conf Configurations, filePath string) (models.Querier, error)
 	if err != nil {
 		return nil, err
 	}
+	q, err := newTranscribeQuerier(conf, filePath, format, nil)
+	if err != nil {
+		return nil, err
+	}
+	return q, nil
+}
+
+func newTranscribeQuerier(conf Configurations, filePath string, format OutputFormat, out io.Writer) (*TranscribeQuerier, error) {
 	splitter, err := createSplitter(conf)
 	if err != nil {
 		return nil, err
@@ -83,12 +92,11 @@ func CreateQuerier(conf Configurations, filePath string) (models.Querier, error)
 		Splitter: splitter,
 		FilePath: filePath,
 		Format:   format,
+		Out:      out,
 	}, nil
 }
 
-// audioTranscribeEngine backs the audio_transcribe built-in tool: config →
-// querier path → rendered transcript string. Wired via init below so
-// pkg/tools carries no engine dependencies (mode-as-tool bridge).
+// transcribeEngine backs the audio_transcribe tool (architecture/audio.md, Tool Bridge).
 func transcribeEngine(ctx context.Context, filePath, outputFormat string) (string, error) {
 	confDir, err := utils.GetClaiConfigDir()
 	if err != nil {
@@ -101,7 +109,8 @@ func transcribeEngine(ctx context.Context, filePath, outputFormat string) (strin
 	if outputFormat == "" {
 		outputFormat = "text"
 	}
-	outputFormat = applyTranscribeOverrides(&aConf, outputFormat)
+	overrides := transcribeOverrides()
+	outputFormat = overrides.apply(&aConf, outputFormat)
 	format, err := ParseOutputFormat(outputFormat)
 	if err != nil {
 		return "", err
@@ -109,15 +118,22 @@ func transcribeEngine(ctx context.Context, filePath, outputFormat string) (strin
 	if _, err := os.Stat(filePath); err != nil {
 		return "", diag.Errorf("failed to find audio file: %w", err)
 	}
-	splitter, err := createSplitter(aConf)
+	if len(overrides.Models) == 0 {
+		if err := resolveRemoteAudioModel(ctx, confDir, overrides.NewResolver, &aConf); err != nil {
+			return "", err
+		}
+	}
+	var transcript strings.Builder
+	q, err := transcribeChain(ctx, aConf, func(conf Configurations) (models.Querier, error) {
+		return newTranscribeQuerier(conf, filePath, format, &transcript)
+	})
 	if err != nil {
+		return "", diag.Errorf("failed to create audio querier: %w", err)
+	}
+	if err := q.Query(ctx); err != nil {
 		return "", err
 	}
-	segs, err := splitter.Transcribe(ctx, filePath)
-	if err != nil {
-		return "", diag.Errorf("failed to transcribe %v: %w", filePath, err)
-	}
-	return Render(segs, format)
+	return transcript.String(), nil
 }
 
 func init() {

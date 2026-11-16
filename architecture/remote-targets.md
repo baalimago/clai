@@ -188,8 +188,8 @@ A `gh:` target reads
     the Hub refuses it on publish.
   - Audio: the profile's `audio.model` is shown as `audio model` and sets
     the model its `audio_transcribe` calls use for the run, which `-am`
-    still overrides. It names a model the way `model` does, so a fetched
-    profile may set it; a misspelt key under `audio` is refused, and a key
+    still overrides. It names a model the way `model` does, an alias or a
+    remote model list included, so a fetched profile may set it; a misspelt key under `audio` is refused, and a key
     clai does not read is listed as `audio.<key>`.
   - `prompt` shows the first `PreviewLines` (6) lines and at most
     `PreviewChars` (400) characters of the prompt behind a `│` bar, so it

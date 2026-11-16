@@ -8,12 +8,15 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/baalimago/clai/internal/audio/generic"
 )
 
 func sparseFile(t *testing.T, size int64) string {
@@ -39,8 +42,11 @@ type fakeTranscriber struct {
 	maxInFlight atomic.Int64
 	delay       time.Duration
 	// transcribe overrides the default per-path segment response when set
-	transcribe func(ctx context.Context, filePath string) ([]Segment, error)
+	transcribe  func(ctx context.Context, filePath string) ([]Segment, error)
+	diarization generic.Diarization
 }
+
+func (f *fakeTranscriber) Diarization() generic.Diarization { return f.diarization }
 
 func (f *fakeTranscriber) Transcribe(ctx context.Context, filePath string) ([]Segment, error) {
 	current := f.inFlight.Add(1)
@@ -83,6 +89,8 @@ type fakeRunner struct {
 	ffmpegOut  string
 	blockOnRun bool
 	chunkDir   string
+	// encodedBytes is the size of the file a request encode writes
+	encodedBytes int64
 }
 
 func (f *fakeRunner) LookPath(name string) (string, error) {
@@ -112,6 +120,12 @@ func (f *fakeRunner) Run(ctx context.Context, name string, args ...string) (stri
 			return "", f.ffmpegOut, f.ffmpegErr
 		}
 		pattern := args[len(args)-1]
+		if slices.Contains(args, "libmp3lame") && !strings.Contains(pattern, "%") {
+			if err := os.WriteFile(pattern, nil, 0o644); err != nil {
+				return "", "", err
+			}
+			return "", "", os.Truncate(pattern, f.encodedBytes)
+		}
 		if !strings.Contains(pattern, "%") {
 			// not a segment split (e.g. a silencedetect pass): nothing to write
 			return "", "", nil
@@ -204,7 +218,7 @@ func TestSplitter_OversizedSplitsAndStitches(t *testing.T) {
 	if len(got) != 3 {
 		t.Fatalf("expected 3 stitched segments, got %v: %+v", len(got), got)
 	}
-	wantOffsets := []time.Duration{0, 600 * time.Second, 1200 * time.Second}
+	wantOffsets := []time.Duration{0, 600333 * time.Millisecond, 1200667 * time.Millisecond}
 	for i, offset := range wantOffsets {
 		wantStart := offset + 5*time.Second
 		if got[i].Start != wantStart {
@@ -220,8 +234,8 @@ func TestSplitter_OversizedSplitsAndStitches(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected render error: %v", err)
 	}
-	if !strings.Contains(vtt, "00:20:05.000") {
-		t.Errorf("expected chunk 3 local 00:00:05 to render at 00:20:05, got:\n%v", vtt)
+	if !strings.Contains(vtt, "00:20:05.667") {
+		t.Errorf("expected chunk 3 local 00:00:05 to render at 00:20:05.667, got:\n%v", vtt)
 	}
 
 	status := statusOut.String()

@@ -61,6 +61,7 @@ type recordedRequest struct {
 	fileBytes        []byte
 	contentLength    int64
 	headers          http.Header
+	fields           map[string][]string
 }
 
 func multipartRecorder(t *testing.T, rec *recordedRequest, respBody []byte) *httptest.Server {
@@ -77,6 +78,7 @@ func multipartRecorder(t *testing.T, rec *recordedRequest, respBody []byte) *htt
 		rec.model = r.FormValue("model")
 		rec.responseFormat = r.FormValue("response_format")
 		rec.chunkingStrategy = r.FormValue("chunking_strategy")
+		rec.fields = r.MultipartForm.Value
 		file, _, err := r.FormFile("file")
 		if err != nil {
 			t.Errorf("failed to get file part: %v", err)
@@ -172,6 +174,73 @@ func TestTranscribe_ExtraHeaders(t *testing.T) {
 	}
 	if got := rec.headers.Get("HTTP-Referer"); got != "clai" {
 		t.Errorf("expected extra header to be sent, got: %q", got)
+	}
+}
+
+func TestTranscribe_Fields(t *testing.T) {
+	var rec recordedRequest
+	server := multipartRecorder(t, &rec, loadFixture(t, "openrouter_verbose.json"))
+	defer server.Close()
+	trans := setupTranscriber(t, "elevenlabs/scribe-v2", server.URL)
+	trans.Fields = map[string]string{"diarize": "true", "language": "en"}
+
+	if _, err := trans.Transcribe(context.Background(), writeTestAudioFile(t, []byte("x"))); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for name, want := range trans.Fields {
+		if got := rec.fields[name]; len(got) != 1 || got[0] != want {
+			t.Errorf("field %v = %q, want exactly [%q]", name, got, want)
+		}
+	}
+	if got := rec.fields["model"]; len(got) != 1 || got[0] != "elevenlabs/scribe-v2" {
+		t.Errorf("model field = %q, want the model once", got)
+	}
+}
+
+func TestTranscribe_FieldsCannotOverrideProtocolFields(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+	}))
+	defer server.Close()
+	for _, name := range []string{"file", "model", "response_format", "chunking_strategy"} {
+		t.Run(name, func(t *testing.T) {
+			trans := setupTranscriber(t, "whisper-1", server.URL)
+			trans.Fields = map[string]string{name: "x"}
+			_, err := trans.Transcribe(context.Background(), writeTestAudioFile(t, []byte("x")))
+			if err == nil || !strings.Contains(err.Error(), name) {
+				t.Fatalf("err = %v, want a refusal naming %q", err, name)
+			}
+		})
+	}
+	if requests != 0 {
+		t.Errorf("requests = %v, want none for a refused field", requests)
+	}
+}
+
+func TestRequest_ReturnsTheRawBody(t *testing.T) {
+	body := []byte(`{"text":"raw","segments":[],"words":[{"word":"raw","start":0,"end":1,"speaker":0}]}`)
+	var rec recordedRequest
+	server := multipartRecorder(t, &rec, body)
+	defer server.Close()
+	trans := setupTranscriber(t, "whisper-1", server.URL)
+
+	got, err := trans.Request(context.Background(), writeTestAudioFile(t, []byte("x")))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if string(got) != string(body) {
+		t.Fatalf("body = %s, want %s", got, body)
+	}
+	if rec.responseFormat != "verbose_json" {
+		t.Errorf("response_format = %q, want verbose_json", rec.responseFormat)
+	}
+}
+
+func TestRequest_FileMissing(t *testing.T) {
+	trans := setupTranscriber(t, "whisper-1", "http://127.0.0.1:1")
+	if _, err := trans.Request(context.Background(), filepath.Join(t.TempDir(), "gone.wav")); err == nil {
+		t.Fatal("expected error, got nil")
 	}
 }
 

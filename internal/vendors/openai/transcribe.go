@@ -40,3 +40,11 @@ func (t *Transcriber) Setup() error {
 	t.Transcriber.Format = ResponseFormatFor(t.Model)
 	return nil
 }
+
+// Diarization is anchored for the diarize family (architecture/audio.md).
+func (t *Transcriber) Diarization() generic.Diarization {
+	if t.Transcriber.Format == generic.ResponseFormatDiarizedJSON {
+		return generic.DiarizationAnchored
+	}
+	return generic.DiarizationNone
+}

@@ -222,7 +222,11 @@ func newTextSession(ctx context.Context, c *internal.Command, tf internal.TextFl
 	// The media tools read the values this run resolved, so the hand-off waits
 	// for the profile to be applied by setupTextConfig.
 	if deps.ApplyMediaOverrides != nil {
-		if err := deps.ApplyMediaOverrides(mediaToolSettings(tf, tConf)); err != nil {
+		settings := mediaToolSettings(tf, tConf)
+		if err := resolveToolAudioModels(ctx, &settings, remoteTargets.models); err != nil {
+			return nil, err
+		}
+		if err := deps.ApplyMediaOverrides(settings); err != nil {
 			return nil, diag.Errorf("apply media tool overrides: %w", err)
 		}
 	}
