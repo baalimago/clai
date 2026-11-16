@@ -98,7 +98,8 @@ func runDiagnosticGolden(t *testing.T, tc diagnosticGolden) string {
 		status = harness.Run(strings.Split(tc.args, " "))
 	})
 	home, _ := os.UserHomeDir()
-	normalize := strings.NewReplacer(confDir, "$CONFIG", home, "$HOME").Replace
+	paths := strings.NewReplacer(confDir, "$CONFIG", home, "$HOME")
+	normalize := func(s string) string { return e2etest.MaskChatIDs(paths.Replace(s)) }
 	return fmt.Sprintf("# clai %s\n# env: %s\n== status\n%d\n== stdout\n%s\n== stderr\n%s\n",
 		tc.args, goldenEnv(tc.env), status, normalize(stdout), normalize(stderr))
 }

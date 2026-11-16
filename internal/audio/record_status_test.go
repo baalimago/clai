@@ -21,6 +21,7 @@ func TestRecordingPlace(t *testing.T) {
 		name       string
 		cfg        CaptureConfig
 		enterStops bool
+		fileStops  bool
 		want       string
 	}{
 		{
@@ -48,10 +49,16 @@ func TestRecordingPlace(t *testing.T) {
 			name: "no stop at all",
 			want: dir,
 		},
+		{
+			name:      "a stop file and no terminal",
+			cfg:       CaptureConfig{MaxSeconds: 5400},
+			fileStops: true,
+			want:      dir + " · stops: stop file, max 1h30m",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := recordingPlace(dir, tc.cfg, tc.enterStops); got != tc.want {
+			if got := recordingPlace(dir, tc.cfg, tc.enterStops, tc.fileStops); got != tc.want {
 				t.Fatalf("recordingPlace = %q, want %q", got, tc.want)
 			}
 		})

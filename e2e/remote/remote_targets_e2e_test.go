@@ -354,6 +354,70 @@ func Test_REMOTE_newVersionNeedsTrustAgain(t *testing.T) {
 	}
 }
 
+// A check answers whether a run with nobody to ask would run the target now,
+// in either spelling and with -check on either side of the target.
+func Test_REMOTE_trustCheckAnswersWithoutTrusting(t *testing.T) {
+	env := setupRemoteE2E(t)
+	for _, args := range []string{
+		"config trust profile -check cchub:ada/bot",
+		"config trust profile cchub:ada/bot -check",
+		"profiles trust -check cchub:ada/bot",
+		"profiles trust cchub:ada/bot -check",
+	} {
+		status, stdout, stderr := runRemote(t, args)
+		if status != remote.ExitRefused || stdout != "" || !strings.Contains(stderr, "you have not trusted") {
+			t.Fatalf("%s before trust: status %d stdout %q stderr %q, want 3 and a refusal", args, status, stdout, stderr)
+		}
+	}
+	if env.trusted(t) != "" {
+		t.Fatalf("a check recorded trust: %s", env.trusted(t))
+	}
+	if status, _, stderr := runRemote(t, "config trust profile cchub:ada/bot"); status != 0 {
+		t.Fatalf("trust: status %d stderr %q", status, stderr)
+	}
+	status, stdout, stderr := runRemote(t, "profiles trust -check cchub:ada/bot")
+	if status != 0 || stdout != "cchub:ada/bot (sha256 "+digestOf(remoteBotV1)+") is trusted\n" {
+		t.Fatalf("trusted: status %d stdout %q stderr %q", status, stdout, stderr)
+	}
+	env.hub.publish("ada/bot", remoteBotV2)
+	status, stdout, stderr = runRemote(t, "config trust profile -check cchub:ada/bot")
+	if status != remote.ExitRefused || stdout != "" || !strings.Contains(stderr, "changed to a version") {
+		t.Fatalf("changed: status %d stdout %q stderr %q, want 3 naming the change", status, stdout, stderr)
+	}
+	if strings.Contains(env.trusted(t), digestOf(remoteBotV2)) {
+		t.Fatalf("a check trusted the new version: %s", env.trusted(t))
+	}
+}
+
+// A caller that must not start a run the hub can refuse halfway, such as
+// Minutes in clai-in-wasmer-sh-poc, checks the target and then runs the hash
+// the check printed: a version published in between does not reach the run.
+func Test_REMOTE_runPinnedToTheCheckedHashOutlivesANewVersion(t *testing.T) {
+	env := setupRemoteE2E(t)
+	if status, _, stderr := runRemote(t, "config trust profile cchub:ada/bot"); status != 0 {
+		t.Fatalf("trust: status %d stderr %q", status, stderr)
+	}
+	v1 := digestOf(remoteBotV1)
+	status, stdout, stderr := runRemote(t, "config trust profile -check cchub:ada/bot")
+	if status != 0 || stdout != "cchub:ada/bot (sha256 "+v1+") is trusted\n" {
+		t.Fatalf("check: status %d stdout %q stderr %q", status, stdout, stderr)
+	}
+	env.hub.publish("ada/bot", remoteBotV2)
+	before := env.hub.fetches()
+	status, stdout, stderr = runRemote(t, "-r -n -prp cchub:ada/bot#sha256="+v1+" q hi")
+	if status != 0 || stdout != "hi\n" || env.hub.fetches() != before {
+		t.Fatalf("pinned run: status %d stdout %q stderr %q fetches %d -> %d; want v1 from the cache", status, stdout, stderr, before, env.hub.fetches())
+	}
+	if !strings.Contains(env.savedConversation(t), "You are bot one.") {
+		t.Fatalf("the pinned run did not run version 1: %s", env.savedConversation(t))
+	}
+	status, _, stderr = runRemote(t, "-r -n -prp cchub:ada/bot q hi")
+	if status != remote.ExitRefused || !strings.Contains(stderr, "changed to a version") {
+		t.Fatalf("unpinned run: status %d stderr %q, want the new version refused", status, stderr)
+	}
+	env.assertCacheHolds(t, v1)
+}
+
 func Test_REMOTE_wrongHashRunsNothingAndKeepsNothing(t *testing.T) {
 	env := setupRemoteE2E(t)
 	wrong := digestOf("something else")

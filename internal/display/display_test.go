@@ -158,6 +158,13 @@ func calls() []call {
 			want: `{"type":"prompt","kind":"select","text":"Pick one","choices":["a","b"]}`,
 		},
 		{
+			name: "ReportChat.1",
+			do: func(d display.Displayer) error {
+				return d.ReportChat(display.Chat{ID: "0199c2f0-7d8e-7a3b-9c1d-2e3f4a5b6c7d"})
+			},
+			want: `{"type":"chat","id":"0199c2f0-7d8e-7a3b-9c1d-2e3f4a5b6c7d"}`,
+		},
+		{
 			name: "ShowPrompt.1/no choices",
 			do: func(d display.Displayer) error {
 				return d.ShowPrompt(display.Prompt{Kind: "confirm", Text: "Run ls? [y/N]"})

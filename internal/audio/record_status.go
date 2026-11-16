@@ -21,10 +21,13 @@ import (
 
 // recordingPlace names the directory a recording lands in and every stop that
 // can end it (architecture/audio.md, capture pipeline).
-func recordingPlace(dir string, cfg CaptureConfig, enterStops bool) string {
-	stops := make([]string, 0, 3)
+func recordingPlace(dir string, cfg CaptureConfig, enterStops, fileStops bool) string {
+	stops := make([]string, 0, 4)
 	if enterStops {
 		stops = append(stops, "[Enter]")
+	}
+	if fileStops {
+		stops = append(stops, "stop file")
 	}
 	if cfg.SilenceTimeout > 0 {
 		stops = append(stops, stopText(time.Duration(cfg.SilenceTimeout)*time.Second)+" silence")

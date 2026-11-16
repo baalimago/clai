@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/baalimago/clai/internal/remote"
 )
@@ -79,6 +80,55 @@ func TestTrust_recordsTheHash(t *testing.T) {
 	}
 	if err := f.deps.Trust(t.Context(), "cchub:ada/missing"); err == nil {
 		t.Fatal("missing target: want error")
+	}
+}
+
+func TestCheckTrust_answersWhatARunWithNobodyToAskWouldDo(t *testing.T) {
+	f := newFixture(t)
+	asked := 0
+	f.deps.NewPrompt = func(context.Context) remote.Prompter {
+		return func(context.Context, remote.TrustPrompt) (bool, error) {
+			asked++
+			return true, nil
+		}
+	}
+	var untrusted *remote.UntrustedError
+	if err := f.deps.CheckTrust(t.Context(), "cchub:ada/bot"); !errors.As(err, &untrusted) || untrusted.Changed {
+		t.Fatalf("never trusted: err = %v, want an UntrustedError", err)
+	}
+	if _, err := os.Stat(filepath.Join(f.confDir, remote.TrustFile)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("a check wrote the trust store: %v", err)
+	}
+	if err := f.deps.Trust(t.Context(), "cchub:ada/bot"); err != nil {
+		t.Fatalf("Trust: %v", err)
+	}
+	f.out.Reset()
+	if err := f.deps.CheckTrust(t.Context(), "cchub:ada/bot"); err != nil || f.out.String() != "cchub:ada/bot (sha256 "+remote.Digest([]byte(botV1))+") is trusted\n" {
+		t.Fatalf("trusted: err = %v out = %q", err, f.out)
+	}
+	f.files["/hub/ada/bot/raw"] = `{"model":"test","prompt":"v2"}`
+	if err := f.deps.CheckTrust(t.Context(), "cchub:ada/bot"); !errors.As(err, &untrusted) || !untrusted.Changed || asked != 0 {
+		t.Fatalf("changed: err = %v asked %d, want a changed-version refusal and no question", err, asked)
+	}
+}
+
+func TestCheckTrust_checksTheProfilesSkills(t *testing.T) {
+	f := newFixture(t)
+	agent := `{"model":"test","skills":["cchub:ada/review@2"]}`
+	f.files["/hub/ada/agent/v/1/raw"] = agent
+	f.files["/hub/ada/review/v/2/raw"] = "---\nname: review\ndescription: Review the diff.\n---\nBody"
+	if err := remote.NewTrustStore(f.confDir).Trust("cchub:ada/agent", remote.Digest([]byte(agent)), time.Now()); err != nil {
+		t.Fatalf("trust the profile alone: %v", err)
+	}
+	var untrusted *remote.UntrustedError
+	if err := f.deps.CheckTrust(t.Context(), "cchub:ada/agent@1"); !errors.As(err, &untrusted) || !strings.Contains(err.Error(), "cchub:ada/review@2") {
+		t.Fatalf("untrusted skill: err = %v, want it named", err)
+	}
+	if err := f.deps.Trust(t.Context(), "cchub:ada/agent@1"); err != nil {
+		t.Fatalf("Trust: %v", err)
+	}
+	if err := f.deps.CheckTrust(t.Context(), "cchub:ada/agent@1"); err != nil {
+		t.Fatalf("trusted with its skill: %v", err)
 	}
 }
 
@@ -184,6 +234,7 @@ func TestRemoteCommands_needDeps(t *testing.T) {
 	empty.ConfigDir = func(context.Context) (string, error) { return t.TempDir(), nil }
 	for _, run := range []func() error{
 		func() error { return empty.Trust(t.Context(), "cchub:ada/bot") },
+		func() error { return empty.CheckTrust(t.Context(), "cchub:ada/bot") },
 		func() error { return empty.Install(t.Context(), "cchub:ada/bot", "") },
 		func() error { return empty.Update(t.Context(), "") },
 	} {
@@ -210,7 +261,7 @@ func TestRemoteSubcommands_checkTheirArgs(t *testing.T) {
 	for _, step := range []struct {
 		name string
 		args []string
-	}{{"trust", []string{"cchub:ada/bot@1"}}, {"install", []string{"cchub:ada/bot@1", "b"}}, {"update", []string{"b"}}} {
+	}{{"trust", []string{"cchub:ada/bot@1"}}, {"trust", []string{"-check", "cchub:ada/bot@1"}}, {"install", []string{"cchub:ada/bot@1", "b"}}, {"update", []string{"b"}}} {
 		name, args := step.name, step.args
 		sub := c.Subcommands()[name]
 		if err := sub.(interface{ Flagset() *flag.FlagSet }).Flagset().Parse(args); err != nil {

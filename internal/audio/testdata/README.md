@@ -24,3 +24,12 @@ vendor documentation per the worklog fixture-provenance rule
 - `openai_gpt4o_transcribe_json.json` — captured 2026-10-30 from the same
   clip with model `gpt-4o-transcribe` and `response_format=json`; same
   `text`-only shape but `usage.type` is `tokens`, so no duration is known.
+- `openai_diarized_stream.txt` — the first three `transcript.text.segment`
+  events of a live `POST /v1/audio/transcriptions` captured 2026-11-16 with
+  model `gpt-4o-transcribe-diarize`, `response_format=diarized_json`,
+  `chunking_strategy=auto` and `stream=true` on 80 s of synthesized speech
+  (the third segment's speaker changed to `B`), then a `transcript.text.done`
+  authored from that capture's shape (its text was truncated in the capture)
+  and the `[DONE]` sentinel. The segment events carry the fields of a
+  `diarized_json` segment; they arrived in bursts, each about 26 s of audio,
+  10.4, 19.1, 26.0 and 27.6 s after the request.

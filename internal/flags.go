@@ -453,7 +453,55 @@ type TextFlags struct {
 	ReplyStdin ReplyStdinFlags
 	AgentText  AgentTextFlags
 	QueryText  QueryTextFlags
+	// ContinueChat is the conversation `chat continue` sends its prompt to,
+	// continued in place; no flag sets it.
+	ContinueChat string
 }
+
+// ContinueFlags are the query flags `chat continue <chat> <prompt>` passes on
+// to the run that sends the prompt. The chat tree keeps its own -r, -n and
+// -p (ChatFlags). -dre is left out, since the chat named is the one
+// continued, and so is the repeatable -img.
+type ContinueFlags struct {
+	text  TextFlags
+	names map[string]bool
+}
+
+// NewContinueFlags seeds the query flags' defaults.
+func NewContinueFlags() ContinueFlags {
+	return ContinueFlags{text: NewTextFlags()}
+}
+
+var continueLeavesOut = map[string]bool{"dre": true, "dir-reply": true, "img": true, "image": true}
+
+// Register adds each query flag whose name fs does not hold yet.
+func (g *ContinueFlags) Register(fs *flag.FlagSet) {
+	query := flag.NewFlagSet("query", flag.ContinueOnError)
+	g.text.AgentText.Register(query)
+	g.text.QueryText.Register(query)
+	g.names = map[string]bool{}
+	query.VisitAll(func(f *flag.Flag) {
+		if continueLeavesOut[f.Name] || fs.Lookup(f.Name) != nil {
+			return
+		}
+		fs.Var(f.Value, f.Name, f.Usage)
+		g.names[f.Name] = true
+	})
+}
+
+// Tokens renders the query flags set on fs as -name=value tokens, for the
+// query command to parse again.
+func (g *ContinueFlags) Tokens(fs *flag.FlagSet) []string {
+	var out []string
+	fs.Visit(func(f *flag.Flag) {
+		if g.names[f.Name] {
+			out = append(out, "-"+f.Name+"="+f.Value.String())
+		}
+	})
+	return out
+}
+
+func (g *ContinueFlags) ReplyOnly() bool { return g.text.QueryText.ReplyOnly.Value() }
 
 // NewTextFlags seeds the composed groups' defaults.
 func NewTextFlags() TextFlags {

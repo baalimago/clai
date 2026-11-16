@@ -38,6 +38,7 @@ func TestDiagnosticExecutableParity(t *testing.T) {
 			var inStatus, exeStatus int
 			inOut, inErr := e2etest.CaptureStdoutStderr(t, func() { inStatus = h.Run(strings.Fields(args)) })
 			exeOut, exeErr := e2etest.CaptureStdoutStderr(t, func() { exeStatus = h.RunProfiled(strings.Fields(args)) })
+			inOut, exeOut = e2etest.MaskChatIDs(inOut), e2etest.MaskChatIDs(exeOut)
 			if inStatus != exeStatus || inOut != exeOut || inErr != exeErr {
 				t.Fatalf("paths differ:\nRun        %d stdout %q stderr %q\nRunProfiled %d stdout %q stderr %q", inStatus, inOut, inErr, exeStatus, exeOut, exeErr)
 			}

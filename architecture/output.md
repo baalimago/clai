@@ -75,11 +75,12 @@ first:
 | Type | Written by |
 | --- | --- |
 | `reply_delta`, `reasoning_delta`, `reply`, `tool_call`, `tool_result` | the query path (`internal/text/json_display.go`) through the JSON `Displayer` of the destination the text form uses |
-| `progress` | audio_record status, the audio transcription chunk board (title `audio_transcribe`, one `row` per chunk), video generation, one record per state change |
+| `progress` | audio_record status, every audio transcription (title `audio_transcribe`: a status without rows for one request, the chunk board with one `row` per chunk; [audio.md](./audio.md#progress)), video generation, one record per state change |
 | `prompt` | every question before its read: trust, confirm and calibrate questions (`ShowPrompt`), the setup wizard's and the cloud first pull's `select` questions, the `mcp auth` paste question, and the selection prompt of every go_away_boilerplate table (`Env.TablePrompter` via `table.WithPrompter`, kind `select`, the prompt line as text) |
 | `diagnostic`, `error` | the JSON `Presenter` on stderr |
 | `child_output` | MCP server stderr (`source` `mcp_<server>`), one record per line through `mcp.StderrRelay` |
 | `output` | everything else: the `output` Wrapper of each destination strips ANSI and `\r` redraws and wraps each line |
+| `chat` | a query, once it has saved its conversation: `id` is the id `chat continue` continues. It goes where the transcript goes (stderr under `-reply-only`, else stdout) and has no text form |
 
 Producers see both outputs as non-terminals under `-json`, so they write their
 pipe form and glow is never started; text with a terminal look (`look.Style`,

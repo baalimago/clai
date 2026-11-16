@@ -36,6 +36,7 @@ var f14Fields = map[string][]string{
 	"error":           {"message", "causes"},
 	"child_output":    {"source", "stream", "text"},
 	"output":          {"stream", "text"},
+	"chat":            {"id"},
 }
 
 type jsonRecord map[string]any
@@ -205,7 +206,7 @@ func jsonScenarios() []jsonScenario {
 						types = append(types, r.typ())
 					}
 				}
-				want := []string{"reasoning_delta", "tool_call", "tool_result", "reply_delta", "reply_delta", "reply"}
+				want := []string{"reasoning_delta", "tool_call", "tool_result", "reply_delta", "reply_delta", "reply", "chat"}
 				if !slices.Equal(types, want) {
 					t.Fatalf("stdout record types = %v, want %v", types, want)
 				}

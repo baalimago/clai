@@ -31,7 +31,7 @@ func TestDiagnosticLevelLeavesTheResultStream(t *testing.T) {
 			t.Run(format+control.name+"="+control.value, func(t *testing.T) {
 				t.Setenv(control.name, control.value)
 				got := runCLI(t, args, cliOpts{})
-				if got.status != want.status || got.stdout != want.stdout {
+				if got.status != want.status || maskChatIDs(got.stdout) != maskChatIDs(want.stdout) {
 					t.Fatalf("%s=%s changed the result: status %d stdout %q, want status %d stdout %q", control.name, control.value, got.status, got.stdout, want.status, want.stdout)
 				}
 			})

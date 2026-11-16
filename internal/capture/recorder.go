@@ -187,6 +187,8 @@ func awaitStop(ctx context.Context, procDone <-chan struct{}, silence <-chan str
 		return StopMaxSeconds
 	case <-req.Stop:
 		return StopEnter
+	case <-req.StopFile:
+		return StopFile
 	case <-silence:
 		return StopSilence
 	case <-procDone:

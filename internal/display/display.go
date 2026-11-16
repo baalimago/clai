@@ -23,6 +23,11 @@ type Progress struct {
 	Detail string
 }
 
+// Chat is the conversation a query saved, which `chat continue` continues.
+type Chat struct {
+	ID string
+}
+
 // Prompt is a question clai asks before it reads an answer. Kind is one of
 // the prompt kinds of F14.
 type Prompt struct {
@@ -55,6 +60,12 @@ type ProgressReporter interface {
 	ReportProgress(Progress) error
 }
 
+type ChatReporter interface {
+	// ReportChat names the conversation a query saved, once it is saved.
+	// (ReportChat.1, F14)
+	ReportChat(Chat) error
+}
+
 type Prompter interface {
 	// ShowPrompt shows the question only; reading the answer stays with the
 	// caller and its input. (ShowPrompt.1, F13, F14)
@@ -68,6 +79,7 @@ type Displayer interface {
 	ReplyWriter
 	ToolReporter
 	ProgressReporter
+	ChatReporter
 	Prompter
 }
 

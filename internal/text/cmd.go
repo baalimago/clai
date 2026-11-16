@@ -87,7 +87,14 @@ type QueryCommandDeps struct {
 // its querier in a LoopRunner, so every existing prompt or alias becomes a
 // loop by prepending the flag.
 func QueryCommand(deps QueryCommandDeps) *internal.Command {
+	return queryCommand(deps, "")
+}
+
+// queryCommand builds the query command; chatID, when set, is the
+// conversation it continues in place, as `chat continue` sends a prompt.
+func queryCommand(deps QueryCommandDeps, chatID string) *internal.Command {
 	tf := internal.NewTextFlags()
+	tf.ContinueChat = chatID
 	lf := internal.NewLoopFlags()
 	c := newTextCommand("query", "Query the chat model with the given text; -l iterates toward a goal", queryHelp, &tf, lf.Register)
 	c.OnSetup = func(ctx context.Context, c *internal.Command) error {
@@ -239,7 +246,9 @@ func newTextSession(ctx context.Context, c *internal.Command, tf internal.TextFl
 	// Directory reply mode continues the directory-scoped conversation
 	// in place (SetupQuerier forces reply mode for it); bind the
 	// directory chat id so the continuation lands on the same chat.
-	if tf.QueryText.DirReply.Value() {
+	if tConf.ReplyChatID != "" {
+		tConf.InitialChat.ID = tConf.ReplyChatID
+	} else if tf.QueryText.DirReply.Value() {
 		if err := applyDirReplyChatID(confDir, tConf); err != nil {
 			return nil, diag.Errorf("apply dir reply chat id: %w", err)
 		}
@@ -432,6 +441,10 @@ func ApplyFlagOverrides(tConf *Configurations, tf internal.TextFlags) {
 		tConf.DirReplyMode = tf.QueryText.DirReply.Value()
 		// Directory reply mode continues the bound conversation in place;
 		// reply mode rides along so the system prompt is skipped.
+		tConf.ReplyMode = true
+	}
+	if tf.ContinueChat != "" {
+		tConf.ReplyChatID = tf.ContinueChat
 		tConf.ReplyMode = true
 	}
 	if tf.Raw.Changed() {

@@ -118,3 +118,24 @@ func TestTranscriber_Diarization(t *testing.T) {
 		}
 	}
 }
+
+// TestTranscriber_StreamsTheDiarizeFamily: the diarize family streams its
+// segments, measured 2026-11-16 (architecture/audio.md, Progress); the others
+// do not stream timestamped segments.
+func TestTranscriber_StreamsTheDiarizeFamily(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "oai-test-key")
+	for model, want := range map[string]bool{
+		"gpt-4o-transcribe-diarize": true,
+		"whisper-1":                 false,
+		"gpt-transcribe":            false,
+	} {
+		trans := TranscriberDefault
+		trans.Model = model
+		if err := trans.Setup(); err != nil {
+			t.Fatalf("%v: failed to setup: %v", model, err)
+		}
+		if trans.Transcriber.Stream != want {
+			t.Errorf("%v: Stream = %v, want %v", model, trans.Transcriber.Stream, want)
+		}
+	}
+}

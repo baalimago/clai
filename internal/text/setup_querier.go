@@ -258,7 +258,14 @@ func setupTextConfig(ctx context.Context, confDir string, tf internal.TextFlags,
 	// directory binding instead of globalScope.json. This eliminates the
 	// filesystem roundtrip (write globalScope then read it back) that was
 	// the root cause of the -dre query forking bug.
-	if tConf.DirReplyMode {
+	switch {
+	case tConf.ReplyChatID != "":
+		named, err := chat.LoadConversation(ctx, confDir, tConf.ReplyChatID)
+		if err != nil {
+			return nil, diag.Errorf("load the conversation to reply to: %w", err)
+		}
+		tConf.InitialChat = named
+	case tConf.DirReplyMode:
 		dirChat, err := chat.LoadDirScopedContext(ctx, confDir)
 		if err != nil {
 			return nil, diag.Errorf("load dir-scoped context: %w", err)

@@ -36,7 +36,11 @@ func createSplitter(conf Configurations) (*Splitter, error) {
 	var transcriber Transcriber
 	switch {
 	case strings.HasPrefix(model, "test") || strings.HasPrefix(model, "mock_test"):
-		transcriber = MockTranscriber{Diarized: strings.Contains(model, "diarize")}
+		delay, err := mockTranscribeDelay()
+		if err != nil {
+			return nil, err
+		}
+		transcriber = MockTranscriber{Diarized: strings.Contains(model, "diarize"), Delay: delay}
 	case strings.HasPrefix(model, "or:"):
 		vendorCpy := openrouter.TranscriberDefault
 		vendorCpy.Model = model

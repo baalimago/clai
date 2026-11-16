@@ -1,9 +1,18 @@
 package e2etest
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
+
+var chatRecordID = regexp.MustCompile(`("type":"chat","id":")[^"]*`)
+
+// MaskChatIDs writes $CHAT for the id of each chat record: every run saves
+// a conversation under a new id.
+func MaskChatIDs(s string) string {
+	return chatRecordID.ReplaceAllString(s, "${1}$$CHAT")
+}
 
 // ListingLine returns the line of a listing that names path, failing when no
 // line does.

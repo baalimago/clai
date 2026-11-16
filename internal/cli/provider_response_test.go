@@ -110,8 +110,8 @@ func TestAnthropicStreamError(t *testing.T) {
 		if got.status != 1 || !strings.Contains(got.stderr, `"provider_code":"overloaded_error"`) || !strings.Contains(got.stderr, `"status":529`) {
 			t.Fatalf("got %+v, want exit 1 and an error record with the provider code and status", got)
 		}
-		if types := recordTypes(t, got.stdout); !slices.Equal(types, []string{"reply_delta"}) {
-			t.Fatalf("stdout records %v, want the one delta and no reply", types)
+		if types := recordTypes(t, got.stdout); !slices.Equal(types, []string{"reply_delta", "chat"}) {
+			t.Fatalf("stdout records %v, want the one delta, no reply and the saved chat", types)
 		}
 	})
 	t.Run("as the first event it is an unavailable provider", func(t *testing.T) {

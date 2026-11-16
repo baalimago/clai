@@ -39,7 +39,8 @@ func errorRecord(t *testing.T, stderr string) (message string, remedies []string
 // -json; a misplaced global -json says where the global flag goes.
 func TestUsageErrorHints(t *testing.T) {
 	useConfigDir(t)
-	const cmHint = "'-cm' belongs to 'query' — place it there, after that command."
+	// chat continue takes the query flags for the run that sends its prompt.
+	const cmHint = "'-cm' belongs to 'chat continue' or 'query' — place it there, after that command."
 
 	text := runCLI(t, "chat list -cm x", cliOpts{})
 	wantText := "error: failed to parse flagset: flag provided but not defined: -cm\n  hint: " + cmHint + "\n"
@@ -112,7 +113,7 @@ func TestJSONFlagValues(t *testing.T) {
 		}
 	}
 	for _, args := range []string{"-json=true -cm test q hello", "--json=true -cm test q hello", "q --json=1 -cm test hello"} {
-		if got := runCLI(t, args, cliOpts{}); got.status != 0 || got.stdout != asJSON.stdout {
+		if got := runCLI(t, args, cliOpts{}); got.status != 0 || maskChatIDs(got.stdout) != maskChatIDs(asJSON.stdout) {
 			t.Fatalf("%q: status %d stdout %q, want the JSON run's %q", args, got.status, got.stdout, asJSON.stdout)
 		}
 	}

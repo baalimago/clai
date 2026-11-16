@@ -31,16 +31,19 @@ type CommandDeps struct {
 	// nil pointer: discovery reads nil as "always scan".
 	ForeignCache func() vendors.SourceCache
 	// SendPrompt sends the prompt `chat continue <chat> <prompt>` carries to
-	// the chat it just bound to the working directory. Nil only previews it.
-	SendPrompt func(ctx context.Context, req DirReplyRequest) error
+	// that chat. Nil only previews it.
+	SendPrompt func(ctx context.Context, req ContinueRequest) error
 }
 
-// DirReplyRequest is one prompt for the conversation bound to the working
-// directory, as `clai -dre query` would send it.
-type DirReplyRequest struct {
+// ContinueRequest is one prompt for the conversation ChatID names. Profile
+// is the chat's stamp, Flags the query flags `chat continue` was given, as
+// -name=value tokens.
+type ContinueRequest struct {
+	ChatID  string
 	Prompt  string
 	Profile string
 	Raw     bool
+	Flags   []string
 }
 
 // Command builds the chat command tree.
@@ -69,8 +72,14 @@ Examples:
 	}
 	// An unmatched or absent positional stays with the parent, which keeps
 	// today's chat.New behavior (unknown-subcommand error, chat usage).
-	fullSetup := fullChatSetup(deps, cf)
+	fullSetup := fullChatSetup(deps, cf, nil)
 	readOnlySetup := readOnlyChatSetup(deps, cf)
+	// continue takes the query flags too, for the run that sends its prompt.
+	qf := internal.NewContinueFlags()
+	withQuery := func(fs *flag.FlagSet) {
+		cf.Register(fs)
+		qf.Register(fs)
+	}
 	c.OnSetup = fullSetup
 	rawOnly := func(fs *flag.FlagSet) { cf.Raw.Register(fs) }
 	rawMacro := func(fs *flag.FlagSet) {
@@ -84,8 +93,17 @@ Examples:
 	}
 	c.Subs = map[string]cmd.Command{
 		"continue|c": chatSub(sources, cf, "continue", "Continue an existing chat with the given chat ID or index",
-			"  clai c c 0                    # continue by list index\n  clai chat continue my-chat-id",
-			cf.Register, fullSetup),
+			"  clai c c 0                    # continue by list index\n  clai chat continue my-chat-id\n"+
+				"  clai c c 0 and the next step  # send a prompt to it\n\n"+
+				"A prompt goes to the chat the ID or index names, whatever the directory\n"+
+				"is bound to. The query flags go after continue and before the chat, and\n"+
+				"apply to the run that sends the prompt; a -prp among them wins over the\n"+
+				"profile stamped on the chat. -reply-only omits the preview, with or without\n"+
+				"a prompt.\n"+
+				"Under -json only the run's records are\n"+
+				"written, its chat record naming the chat:\n"+
+				"  clai -json chat continue -reply-only -n -prp cchub:a/b#sha256=<hex> -cm <model> <id> <prompt>",
+			withQuery, fullChatSetup(deps, cf, &qf)),
 		"delete|d": chatSub(sources, cf, "delete", "Delete the chat with the given chat ID or index",
 			"  clai c d 0\n  clai chat delete my-chat-id",
 			rawMacro, fullSetup),
@@ -135,7 +153,7 @@ func chatSub(sources *internal.CompletionSources, cf *internal.ChatFlags, verb, 
 
 // fullChatSetup builds the config-touching chat path (config creation and
 // migration allowed): continue, delete, and the parent's own fallthrough.
-func fullChatSetup(deps CommandDeps, cf *internal.ChatFlags) func(ctx context.Context, c *internal.Command) error {
+func fullChatSetup(deps CommandDeps, cf *internal.ChatFlags, qf *internal.ContinueFlags) func(ctx context.Context, c *internal.Command) error {
 	return func(ctx context.Context, c *internal.Command) error {
 		confDir, err := deps.ConfigPrep(ctx)
 		if err != nil {
@@ -146,6 +164,13 @@ func fullChatSetup(deps CommandDeps, cf *internal.ChatFlags) func(ctx context.Co
 			return err
 		}
 		h.sendPrompt = deps.SendPrompt
+		if qf != nil {
+			h.queryFlags = qf.Tokens(c.Flagset())
+			h.replyOnly = qf.ReplyOnly()
+			if cf.NonInteractive.Value() {
+				h.queryFlags = append(h.queryFlags, "-n")
+			}
+		}
 		c.SetQuerier(h)
 		return nil
 	}

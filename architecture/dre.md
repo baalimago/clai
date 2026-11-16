@@ -6,7 +6,8 @@ The **dre** command prints the most recent message from the **directory-scoped c
 
 This is the directory-scoped analog of `clai replay` / `clai re`.
 
-> Related: `clai -dre query ...` uses the bound chat as context. The directory binding record, its `version: 2` storage, and the always-on history recording this command reads from are defined in `architecture/dirscope.md`. See also `CHAT.md` (dir-scoped bindings) and `QUERY.md`.
+> Related: `clai -dre query ...` uses the bound chat as context; `clai chat continue <chat-id> <prompt>` sends
+> to the named one, whatever the directory binds (see `architecture/dirscope.md`). The directory binding record, its `version: 2` storage, and the always-on history recording this command reads from are defined in `architecture/dirscope.md`. See also `CHAT.md` (dir-scoped bindings) and `QUERY.md`.
 
 ## Entry Flow
 

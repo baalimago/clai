@@ -123,6 +123,7 @@ const (
 	StopSilence    StopReason = "silence"
 	StopMaxSeconds StopReason = "max_seconds"
 	StopEnter      StopReason = "enter"
+	StopFile       StopReason = "stop_file"
 	StopInterrupt  StopReason = "interrupt"
 	StopError      StopReason = "error"
 )
@@ -140,7 +141,8 @@ const (
 
 // Request is one recording. Dir must be absolute. Devices overrides Selection
 // when it is not empty. Stop ends the recording with StopEnter when it is
-// closed; nil disables it. A zero SilenceTimeout disables the silence stop.
+// closed, StopFile with StopFile; nil disables either. A zero SilenceTimeout
+// disables the silence stop.
 // OnState runs on the reader goroutine that parses the capture output, so it
 // must not block; nil disables it.
 type Request struct {
@@ -154,8 +156,9 @@ type Request struct {
 	SilenceTimeout time.Duration
 	SilencePeakDB  float64
 
-	Stop    <-chan struct{}
-	OnState func(CaptureState)
+	Stop     <-chan struct{}
+	StopFile <-chan struct{}
+	OnState  func(CaptureState)
 }
 
 // Recording is the outcome of one recording. Sources are the sources actually

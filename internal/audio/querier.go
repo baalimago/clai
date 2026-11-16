@@ -100,9 +100,30 @@ var Default = Configurations{
 
 // MockTranscriber returns deterministic segments without network access,
 // mirroring the text 'test' mock model for e2e tests. Diarized adds speaker
-// labels, emulating a diarize-capable model.
+// labels, emulating a diarize-capable model. Delay spreads the answer over
+// that long, each segment heard in turn, as a streaming provider answers.
 type MockTranscriber struct {
 	Diarized bool
+	Delay    time.Duration
+}
+
+// mockDelayEnv slows the mock transcriber, so a test can watch a
+// transcription's progress.
+const mockDelayEnv = "CLAI_MOCK_TRANSCRIBE_DELAY"
+
+func mockTranscribeDelay() (time.Duration, error) {
+	raw := os.Getenv(mockDelayEnv)
+	if raw == "" {
+		return 0, nil
+	}
+	delay, err := time.ParseDuration(raw)
+	if err != nil {
+		return 0, diag.Errorf("%v=%q is not a duration: %w", mockDelayEnv, raw, err)
+	}
+	if delay < 0 {
+		return 0, fmt.Errorf("%v=%q must not be negative", mockDelayEnv, raw)
+	}
+	return delay, nil
 }
 
 // Diarization emulates the diarize family's anchored labels.
@@ -113,7 +134,7 @@ func (m MockTranscriber) Diarization() generic.Diarization {
 	return generic.DiarizationNone
 }
 
-func (m MockTranscriber) Transcribe(_ context.Context, filePath string) ([]Segment, error) {
+func (m MockTranscriber) Transcribe(ctx context.Context, filePath string) ([]Segment, error) {
 	if _, err := os.Stat(filePath); err != nil {
 		return nil, diag.Errorf("failed to stat audio file: %w", err)
 	}
@@ -124,6 +145,17 @@ func (m MockTranscriber) Transcribe(_ context.Context, filePath string) ([]Segme
 	if m.Diarized {
 		segs[0].Speaker = "A"
 		segs[1].Speaker = "B"
+	}
+	if m.Delay <= 0 {
+		return segs, nil
+	}
+	for _, seg := range segs {
+		select {
+		case <-ctx.Done():
+			return nil, diag.Errorf("mock transcription aborted: %w", ctx.Err())
+		case <-time.After(m.Delay / time.Duration(len(segs))):
+		}
+		generic.ReportHeard(ctx, seg.End)
 	}
 	return segs, nil
 }

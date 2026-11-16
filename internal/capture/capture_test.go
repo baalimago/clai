@@ -120,6 +120,20 @@ func TestRecord_StopReasons(t *testing.T) {
 		requireRecording(t, rec, err, StopEnter)
 	})
 
+	t.Run("stop_file", func(t *testing.T) {
+		fakeFFmpeg(t)
+		req := recordRequest(t)
+		req.MaxDuration = 10 * time.Second
+		stop := make(chan struct{})
+		req.StopFile = stop
+		go func() {
+			time.Sleep(100 * time.Millisecond)
+			close(stop)
+		}()
+		rec, err := New().Record(context.Background(), req)
+		requireRecording(t, rec, err, StopFile)
+	})
+
 	t.Run("interrupt", func(t *testing.T) {
 		fakeFFmpeg(t)
 		req := recordRequest(t)

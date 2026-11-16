@@ -25,6 +25,20 @@ import (
 
 // -- helpers ---------------------------------------------------------------
 
+func Test_e2e_chat_list_details_show_conversation_ID(t *testing.T) {
+	confDir := e2etest.SetupMainTestConfigDir(t)
+	id := "01a1e46c-5493-7843-84b5-10b3b63c4922"
+	if err := chat.Save(context.Background(), filepath.Join(confDir, "conversations"), pub_models.Chat{
+		ID: id, Created: time.Now(), Messages: []pub_models.Message{{Role: "user", Content: "a saved conversation"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	stdout, stderr, status := harness.RunOneStreams(t, confDir, "-r -n chat list 0 q")
+	if status != 0 || !strings.Contains(stdout, "conversation ID: "+id+"\n") || !strings.Contains(stdout, "group key:") {
+		t.Fatalf("status %d stdout %q stderr %q; want separate conversation ID and group key", status, stdout, stderr)
+	}
+}
+
 // ============================================================
 // Tests 1–5: Foreign-chat and complex picker flows
 // ============================================================

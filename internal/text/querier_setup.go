@@ -216,7 +216,7 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	querier.structuredOutput = userConf.ResponseFormat != nil
 	querier.shouldSaveReply = userConf.SaveReplyAsConv
 	querier.replyMode = userConf.ReplyMode
-	querier.dirReplyMode = userConf.DirReplyMode
+	querier.dirReplyMode = userConf.DirReplyMode || userConf.ReplyChatID != ""
 	querier.useLookback = userConf.UseLookback
 	querier.lookbackCWD = userConf.LookbackCWD
 	querier.tooling.outputRuneLimit = userConf.ToolOutputRuneLimit

@@ -440,7 +440,7 @@ func TestConfigurations_ProfileOverrides_FetchedProfileIsNamedByItsTarget(t *tes
 	}{
 		{"remote target wins over the profile's name", `{"name":"reviewer"}`, "cchub:clai/reviewer@5", "cchub:clai/reviewer@5"},
 		{"a pinned hash is left out", `{}`, "cchub:clai/reviewer@5#sha256=abc", "cchub:clai/reviewer@5"},
-		{"a local path keeps the profile's name", `{"name":"reviewer"}`, "", "reviewer"},
+		{"a local path keeps its absolute path", `{"name":"reviewer"}`, "", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "p.json")
@@ -451,11 +451,15 @@ func TestConfigurations_ProfileOverrides_FetchedProfileIsNamedByItsTarget(t *tes
 			conf.ProfilePath = path
 			conf.ProfileTarget = tc.target
 			conf.ProfileFetched = tc.target != ""
+			want := tc.want
+			if tc.target == "" {
+				want = path
+			}
 			if err := conf.ProfileOverrides(); err != nil {
 				t.Fatal(err)
 			}
-			if conf.UseProfile != tc.want {
-				t.Fatalf("UseProfile = %q, want %q", conf.UseProfile, tc.want)
+			if conf.UseProfile != want {
+				t.Fatalf("UseProfile = %q, want %q", conf.UseProfile, want)
 			}
 		})
 	}

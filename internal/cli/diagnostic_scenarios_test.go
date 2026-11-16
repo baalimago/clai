@@ -206,12 +206,12 @@ func TestDiagnosticCLIScenarios(t *testing.T) {
 	for _, mode := range []struct{ name, args, stdout string }{
 		{"raw", "-r -cm test -t no_such_tool q hello", "hello\n"},
 		{"reply-only", "-cm test -t no_such_tool -reply-only q hello", "hello\n"},
-		{"json", "-json -cm test -t no_such_tool q hello", `{"type":"reply_delta","text":"hello"}` + "\n" + `{"type":"reply","text":"hello"}` + "\n"},
+		{"json", "-json -cm test -t no_such_tool q hello", `{"type":"reply_delta","text":"hello"}` + "\n" + `{"type":"reply","text":"hello"}` + "\n" + `{"type":"chat","id":"$CHAT"}` + "\n"},
 	} {
 		t.Run("mode "+mode.name, func(t *testing.T) {
 			useConfigDir(t)
 			got := runCLI(t, mode.args, cliOpts{})
-			if got.status != 0 || got.stdout != mode.stdout || !strings.Contains(got.stderr, "no_such_tool") {
+			if got.status != 0 || maskChatIDs(got.stdout) != mode.stdout || !strings.Contains(got.stderr, "no_such_tool") {
 				t.Fatalf("got %+v, want stdout %q and the warning on stderr", got, mode.stdout)
 			}
 			assertNoDiagnosticsIn(t, got.stdout)
