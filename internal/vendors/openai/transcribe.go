@@ -38,6 +38,8 @@ func (t *Transcriber) Setup() error {
 	}
 	t.Transcriber.Model = t.Model
 	t.Transcriber.Format = ResponseFormatFor(t.Model)
+	// Measured 2026-11-16: the diarize family streams its segments (architecture/audio.md, Progress)
+	t.Transcriber.Stream = t.Transcriber.Format == generic.ResponseFormatDiarizedJSON
 	return nil
 }
 

@@ -133,14 +133,26 @@ func (c Cache) Lookup(target string) ([]byte, string, error) {
 	if !ok {
 		return nil, "", diag.Errorf("%s: %w", target, ErrNotCached)
 	}
-	body, err := os.ReadFile(c.Path(digest))
-	if errors.Is(err, fs.ErrNotExist) || (err == nil && Digest(body) != digest) {
-		return nil, "", diag.Errorf("%s: %w", target, ErrNotCached)
-	}
+	body, err := c.Get(digest)
 	if err != nil {
-		return nil, "", diag.Errorf("read cached %s: %w", target, err)
+		return nil, "", diag.Errorf("%s: %w", target, err)
 	}
 	return body, digest, nil
+}
+
+// Get returns the cached bytes with digest, whichever target stored them.
+func (c Cache) Get(digest string) ([]byte, error) {
+	if !sha256Hex.MatchString(digest) {
+		return nil, diag.Errorf("%q is not a sha256 digest", digest)
+	}
+	body, err := os.ReadFile(c.Path(digest))
+	if errors.Is(err, fs.ErrNotExist) || (err == nil && Digest(body) != digest) {
+		return nil, diag.Errorf("sha256 %s: %w", digest, ErrNotCached)
+	}
+	if err != nil {
+		return nil, diag.Errorf("read cached sha256 %s: %w", digest, err)
+	}
+	return body, nil
 }
 
 // Store writes body under its hash and points target at it.

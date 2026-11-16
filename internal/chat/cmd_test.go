@@ -40,21 +40,23 @@ func Test_Command_tree(t *testing.T) {
 		}
 	}
 
-	// Every chat subcommand reads stored transcripts and runs no model, so
-	// the agent group's flags would be inert noise on 'clai c -h'.
-	t.Run("no model flags on the tree", func(t *testing.T) {
-		for name, command := range map[string]*internal.Command{
-			"chat":     c,
-			"continue": c.Subcommands()["continue|c"].(*internal.Command),
-		} {
-			for _, flagName := range []string{"cm", "t", "mt", "mtc", "cmd-ban", "lb", "g", "am", "af", "prp"} {
-				if command.Flagset().Lookup(flagName) != nil {
-					t.Fatalf("%v must not register the inert flag -%v", name, flagName)
-				}
+	// The chat tree reads stored transcripts and runs no model, so the agent
+	// group's flags would be inert noise on 'clai c -h'. continue is the
+	// exception: its prompt is sent by a query run, which takes them.
+	t.Run("model flags on continue only", func(t *testing.T) {
+		cont := c.Subcommands()["continue|c"].(*internal.Command)
+		for _, flagName := range []string{"cm", "t", "mt", "mtc", "cmd-ban", "lb", "g", "am", "af", "prp", "reply-only"} {
+			if c.Flagset().Lookup(flagName) != nil {
+				t.Fatalf("chat must not register the inert flag -%v", flagName)
 			}
+			if cont.Flagset().Lookup(flagName) == nil {
+				t.Fatalf("continue must register -%v for the run that sends its prompt", flagName)
+			}
+		}
+		for _, command := range []*internal.Command{c, cont} {
 			for _, flagName := range []string{"r", "n", "p"} {
 				if command.Flagset().Lookup(flagName) == nil {
-					t.Fatalf("%v must register -%v", name, flagName)
+					t.Fatalf("%v must register -%v", command.Name, flagName)
 				}
 			}
 		}
@@ -199,8 +201,13 @@ func TestChatCommand_summarizeSub(t *testing.T) {
 				t.Fatalf("summarize must register -%v", name)
 			}
 		}
-		for _, other := range []*internal.Command{c, sub(c, "continue|c"), sub(c, "list|l")} {
-			for _, name := range []string{"force", "y", "workers", "sm"} {
+		// continue's -sm is the query's: the label of the conversation it continues.
+		for other, names := range map[*internal.Command][]string{
+			c:                    {"force", "y", "workers", "sm"},
+			sub(c, "continue|c"): {"force", "y", "workers"},
+			sub(c, "list|l"):     {"force", "y", "workers", "sm"},
+		} {
+			for _, name := range names {
 				if other.Flagset().Lookup(name) != nil {
 					t.Fatalf("%v must not register -%v", other.Name, name)
 				}

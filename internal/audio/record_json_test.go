@@ -85,7 +85,7 @@ func TestRecordText_JSONProgress(t *testing.T) {
 		ctx := runenv.With(context.Background(), env)
 		rec := &stateRecorder{states: []capture.CaptureState{capture.StateSilent, capture.StateSilent, capture.StateSound, capture.StateSound, capture.StateSilent}}
 
-		result, err := recordText(ctx, pkgtools.AudioRecordCall{}, rec, env.Stdin(), env.StdinIsTerminal())
+		result, err := recordText(ctx, pkgtools.AudioRecordCall{}, rec, stopSources{stdin: env.Stdin(), terminal: env.StdinIsTerminal()})
 		if err != nil {
 			t.Fatalf("recordText: %v", err)
 		}
@@ -134,7 +134,7 @@ func TestRecordText_JSONProgress(t *testing.T) {
 		ctx := runenv.With(context.Background(), env)
 		rec := &stateRecorder{err: errors.New("ffmpeg exited")}
 
-		if _, err := recordText(ctx, pkgtools.AudioRecordCall{}, rec, env.Stdin(), false); err == nil {
+		if _, err := recordText(ctx, pkgtools.AudioRecordCall{}, rec, stopSources{stdin: env.Stdin()}); err == nil {
 			t.Fatal("recordText: want the recorder's error")
 		}
 		if err := env.Streams().Close(); err != nil {

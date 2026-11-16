@@ -3,6 +3,7 @@ package profiles
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -236,7 +237,7 @@ Examples:
 		"list":     profilesList,
 		"validate": validateCommand(deps),
 		"schema":   schemaCommand(deps),
-		"trust":    remoteSub("trust", "Trust a remote profile target", trustHelp, 1, 1, func(ctx context.Context, a []string) error { return deps.Trust(ctx, a[0]) }),
+		"trust":    trustCommand(deps),
 		"install":  remoteSub("install", "Install a remote profile target as a local profile", installHelp, 1, 2, func(ctx context.Context, a []string) error { return deps.Install(ctx, a[0], at(a, 1)) }),
 		"publish":  publishCommand(deps),
 		"update":   remoteSub("update", "Update installed profiles to their newest version", updateHelp, 0, 1, func(ctx context.Context, a []string) error { return deps.Update(ctx, at(a, 0)) }),
@@ -244,12 +245,31 @@ Examples:
 	return c
 }
 
-const trustHelp = `profiles trust <target>. Fetches a remote target, shows what it runs, and
-records its hash in <config-dir>/trust.json (never synced), so -prp runs it
-without asking, in cron and scripts too.
+const trustHelp = `profiles trust <target> [-check]. Fetches a remote target, shows what it runs,
+and records its hash in <config-dir>/trust.json (never synced), so -prp runs it
+without asking, in cron and scripts too. -check trusts nothing: it exits 0 when
+a run with nobody to ask would run the target now, and 3 when it would refuse.
 
 Examples:
-  clai profiles trust cchub:lorentz/trade-bot@4`
+  clai profiles trust cchub:lorentz/trade-bot@4
+  clai profiles trust -check cchub:lorentz/trade-bot`
+
+// CheckTrustUsage describes the trust verb's -check flag.
+const CheckTrustUsage = "trust nothing: exit 0 when a run with nobody to ask would run the target, 3 when not"
+
+func trustCommand(deps CommandDeps) *internal.Command {
+	var check bool
+	sub := remoteSub("trust", "Trust a remote profile target", trustHelp, 1, 1, func(ctx context.Context, a []string) error {
+		if check {
+			return deps.CheckTrust(ctx, a[0])
+		}
+		return deps.Trust(ctx, a[0])
+	})
+	sub.Register = func(fs *flag.FlagSet) {
+		fs.BoolVar(&check, "check", false, CheckTrustUsage)
+	}
+	return sub
+}
 
 const installHelp = `profiles install <target> [name]. Fetches a remote target and saves it as
 <config-dir>/profiles/<name>.json with a source stamp, so clai -profile <name> runs it

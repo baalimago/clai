@@ -91,7 +91,7 @@ func configCommand(deps configDeps) *internal.Command {
 		"schema":   schemaCommand(setExit),
 		"validate": validateCommand(deps),
 		"publish":  publishCommand(deps),
-		"trust":    profileOnlyCommand("trust", "Trust a remote profile target", configTrustHelp, deps, func(ctx context.Context, a []string) error { return deps.profiles.Trust(ctx, a[0]) }),
+		"trust":    trustCommand(deps),
 		"install":  profileOnlyCommand("install", "Install a remote profile target as a local profile", configInstallHelp, deps, func(ctx context.Context, a []string) error { return deps.profiles.Install(ctx, a[0], at(a, 1)) }),
 		"update":   profileOnlyCommand("update", "Update installed profiles to their newest version", configUpdateHelp, deps, func(ctx context.Context, a []string) error { return deps.profiles.Update(ctx, firstOrEmpty(a)) }),
 		"dir":      dirCommand(),
@@ -864,12 +864,15 @@ func looksLikePath(name string) bool {
 
 // ----- trust, install, update -----
 
-const configTrustHelp = `config trust profile <target>. Fetches a remote profile target, shows what it
-runs, and records its hash in <config-dir>/trust.json (never synced), so a run
-with -prp runs it without asking, in cron and scripts too.
+const configTrustHelp = `config trust profile <target> [-check]. Fetches a remote profile target, shows
+what it runs, and records its hash in <config-dir>/trust.json (never synced), so
+a run with -prp runs it without asking, in cron and scripts too. -check trusts
+nothing: it exits 0 when a run with nobody to ask would run the target now, and
+3 when it would refuse.
 
 Examples:
-  clai config trust profile cchub:lorentz/trade-bot@4`
+  clai config trust profile cchub:lorentz/trade-bot@4
+  clai config trust profile -check cchub:lorentz/trade-bot`
 
 const configInstallHelp = `config install profile <target> [name]. Fetches a remote profile target and
 saves it as <config-dir>/profiles/<name>.json with a source stamp, so
@@ -899,12 +902,12 @@ func profileOnlyCommand(name, desc, help string, deps configDeps, run func(conte
 	case "update":
 		minArgs, usage = 0, "clai config update profile [name]"
 	case "trust":
-		usage = "clai config trust profile <target>"
+		usage = "clai config trust profile <target> [-check]"
 	}
 	c := &internal.Command{Name: name, Desc: desc, HelpText: help}
 	c.OnRun = func(ctx context.Context, c *internal.Command) error {
-		pos := c.Args()[1:]
-		if len(pos) == 0 {
+		pos, err := verbPositionals(c.Flagset(), c.Args()[1:])
+		if err != nil || len(pos) == 0 {
 			fmt.Fprintln(runenv.From(ctx).Stdout(), "usage: "+usage)
 			askExit(deps.setExit, 2)
 			return nil
@@ -921,6 +924,20 @@ func profileOnlyCommand(name, desc, help string, deps configDeps, run func(conte
 			return nil
 		}
 		return run(ctx, args)
+	}
+	return c
+}
+
+func trustCommand(deps configDeps) *internal.Command {
+	var check bool
+	c := profileOnlyCommand("trust", "Trust a remote profile target", configTrustHelp, deps, func(ctx context.Context, a []string) error {
+		if check {
+			return deps.profiles.CheckTrust(ctx, a[0])
+		}
+		return deps.profiles.Trust(ctx, a[0])
+	})
+	c.Register = func(fs *flag.FlagSet) {
+		fs.BoolVar(&check, "check", false, profiles.CheckTrustUsage)
 	}
 	return c
 }

@@ -66,6 +66,18 @@ func (q *Querier[C]) closeStepReply(text string) error {
 	return nil
 }
 
+// reportChat names the conversation the run saved under -json, beside the
+// transcript, so a caller can continue it with `chat continue <id>`.
+func (q *Querier[C]) reportChat(chatID string) error {
+	if !q.json.active() || chatID == "" || chatID == "globalScope" {
+		return nil
+	}
+	if err := q.jsonTranscript().ReportChat(display.Chat{ID: chatID}); err != nil {
+		return diag.Errorf("write the chat record: %w", err)
+	}
+	return nil
+}
+
 func jsonToolCall(call pub_models.Call) display.ToolCall {
 	var inputs map[string]any
 	if call.Inputs != nil {

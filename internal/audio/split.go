@@ -105,9 +105,9 @@ func (s *Splitter) Transcribe(ctx context.Context, filePath string) ([]Segment, 
 		}
 		switch {
 		case route == routeDirect:
-			return s.Transcriber.Transcribe(ctx, filePath)
+			return s.transcribeOne(ctx, filePath, info.Size())
 		case s.diarization() == generic.DiarizationRequestLocal:
-			return s.transcribeEncoded(ctx, filePath, maxBytes)
+			return s.transcribeEncoded(ctx, filePath, info.Size(), maxBytes)
 		}
 		return s.splitTranscribeStitch(ctx, filePath, info.Size(), maxBytes, durationCap)
 	}
@@ -115,7 +115,7 @@ func (s *Splitter) Transcribe(ctx context.Context, filePath string) ([]Segment, 
 	case generic.DiarizationAnchored:
 		return s.calibrate(ctx, filePath, info.Size(), maxBytes)
 	case generic.DiarizationRequestLocal:
-		return s.transcribeEncoded(ctx, filePath, maxBytes)
+		return s.transcribeEncoded(ctx, filePath, info.Size(), maxBytes)
 	}
 	return s.splitTranscribeStitch(ctx, filePath, info.Size(), maxBytes, durationCap)
 }
@@ -128,11 +128,21 @@ func (s *Splitter) diarization() generic.Diarization {
 	return d.Diarization()
 }
 
+// transcribeOne sends the file as one request under a status (architecture/audio.md, Progress).
+func (s *Splitter) transcribeOne(ctx context.Context, filePath string, size int64) ([]Segment, error) {
+	status := newRequestStatus(ctx, s.StatusOut, fmt.Sprintf("%v · 1 request · %.1f MB", filepath.Base(filePath), toMB(size)))
+	segs, err := s.Transcriber.Transcribe(generic.WithHeard(ctx, status.heard), filePath)
+	status.finish(segs, err)
+	return segs, err
+}
+
 // transcribeEncoded is the request-local route (architecture/audio.md, Large Files).
-func (s *Splitter) transcribeEncoded(ctx context.Context, filePath string, maxBytes int64) ([]Segment, error) {
+func (s *Splitter) transcribeEncoded(ctx context.Context, filePath string, size, maxBytes int64) (segs []Segment, err error) {
 	if err := s.requireBinaries(filePath, maxBytes); err != nil {
 		return nil, err
 	}
+	status := newRequestStatus(ctx, s.StatusOut, fmt.Sprintf("%v · %.1f MB · encoding for 1 request", filepath.Base(filePath), toMB(size)))
+	defer func() { status.finish(segs, err) }()
 	tempDir, err := os.MkdirTemp("", "clai-audio-encode-*")
 	if err != nil {
 		return nil, diag.Errorf("failed to create encode temp dir: %w", err)
@@ -147,8 +157,10 @@ func (s *Splitter) transcribeEncoded(ctx context.Context, filePath string, maxBy
 		return nil, diag.Errorf("failed to stat encoded request: %w", err)
 	}
 	if info.Size() <= maxBytes {
-		return s.Transcriber.Transcribe(ctx, encoded)
+		status.update(fmt.Sprintf("requesting · %.1f MB", toMB(info.Size())))
+		return s.Transcriber.Transcribe(generic.WithHeard(ctx, status.heard), encoded)
 	}
+	status.update(fmt.Sprintf("encoded %.1f MB, over the %.0f MB request cap: splitting", toMB(info.Size()), toMB(maxBytes)))
 	return s.splitTranscribeStitch(ctx, encoded, info.Size(), maxBytes, 0)
 }
 

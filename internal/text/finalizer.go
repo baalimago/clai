@@ -172,6 +172,8 @@ func (f sessionFinalizer[C]) persist(ctx context.Context, session *QuerySession)
 		q.chat = session.Chat
 		if err := q.imageWiring().Persister.Promote(ctx, session.Chat); err != nil {
 			persistErr = diag.Errorf("failed to save previous query: %w", err)
+		} else if err := q.reportChat(session.Chat.ID); err != nil {
+			persistErr = err
 		}
 		// History recording is always-on for non-reply queries. A plain -re forks a
 		// fresh promoted id, so recording it would pollute the history with

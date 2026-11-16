@@ -12,6 +12,7 @@ func TestProfileArgs_remoteTargetIsFetched(t *testing.T) {
 	for profile, want := range map[string][]string{
 		"":                      nil,
 		"bot":                   {"-p", "bot"},
+		"/tmp/my-profile.json":  {"-prp", "/tmp/my-profile.json"},
 		"cchub:clai/reviewer@5": {"-prp", "cchub:clai/reviewer@5"},
 		"gh:ada/kit/bot.json":   {"-prp", "gh:ada/kit/bot.json"},
 	} {

@@ -1,7 +1,10 @@
 package text
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -13,7 +16,10 @@ import (
 )
 
 func findProfile(profileName string) (Profile, error) {
-	cfg, _ := utils.GetClaiConfigDir()
+	cfg, err := utils.GetClaiConfigDir()
+	if err != nil {
+		return Profile{}, err
+	}
 	profilePath := path.Join(cfg, "profiles", fmt.Sprintf("%v.json", profileName))
 	p, err := loadProfile(profilePath)
 	if err != nil {
@@ -30,6 +36,51 @@ func findProfile(profileName string) (Profile, error) {
 
 func findProfileByPath(p string) (Profile, error) {
 	return loadProfile(p)
+}
+
+type profileSelection struct {
+	profile  Profile
+	selector string
+}
+
+func selectProfile(name string) (profileSelection, error) {
+	p, err := findProfile(name)
+	if err == nil {
+		return profileSelection{p, name}, nil
+	}
+	if !errors.Is(err, fs.ErrNotExist) {
+		return profileSelection{}, err
+	}
+	cfg, cfgErr := utils.GetClaiConfigDir()
+	if cfgErr != nil {
+		return profileSelection{}, cfgErr
+	}
+	dir := filepath.Join(cfg, "profiles")
+	entries, readErr := os.ReadDir(dir)
+	if readErr != nil {
+		return profileSelection{}, diag.Errorf("list profiles for %q: %w", name, readErr)
+	}
+	var selected profileSelection
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		candidate, loadErr := loadProfile(filepath.Join(dir, entry.Name()))
+		if loadErr != nil {
+			return profileSelection{}, diag.Errorf("resolve legacy profile %q: %w", name, loadErr)
+		}
+		if candidate.Name != name {
+			continue
+		}
+		if selected.selector != "" {
+			return profileSelection{}, fmt.Errorf("ambiguous profile display name %q: matches %q and %q; select a profile with -p or -prp", name, selected.selector, strings.TrimSuffix(entry.Name(), ".json"))
+		}
+		selected = profileSelection{candidate, strings.TrimSuffix(entry.Name(), ".json")}
+	}
+	if selected.selector == "" {
+		return profileSelection{}, err
+	}
+	return selected, nil
 }
 
 func loadProfile(profilePath string) (Profile, error) {
@@ -51,23 +102,30 @@ func (c *Configurations) ProfileOverrides() error {
 	var profile Profile
 	var err error
 	profileDir := ""
+	selector := c.UseProfile
 	if c.ProfilePath != "" {
 		profile, err = findProfileByPath(c.ProfilePath)
 		profileDir = filepath.Dir(c.ProfilePath)
+		if err == nil {
+			selector, err = filepath.Abs(c.ProfilePath)
+		}
 	} else {
-		profile, err = findProfile(c.UseProfile)
-		cfg, _ := utils.GetClaiConfigDir()
-		profileDir = filepath.Join(cfg, "profiles")
+		var selected profileSelection
+		selected, err = selectProfile(c.UseProfile)
+		profile, selector = selected.profile, selected.selector
+		if err == nil {
+			cfg, cfgErr := utils.GetClaiConfigDir()
+			if cfgErr != nil {
+				return cfgErr
+			}
+			profileDir = filepath.Join(cfg, "profiles")
+		}
 	}
 	if err != nil {
 		return diag.Errorf("failed to find profile: %w", err)
 	}
 
-	// Ensure the selected profile is carried forward into persisted conversations.
-	// The underlying query flow reads `c.UseProfile` when stamping chats.
-	if strings.TrimSpace(profile.Name) != "" {
-		c.UseProfile = profile.Name
-	}
+	c.UseProfile = selector
 	if target, _, _ := strings.Cut(c.ProfileTarget, "#"); target != "" {
 		c.UseProfile = target
 	}

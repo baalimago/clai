@@ -150,6 +150,12 @@ directory it is continued from). The finalizer therefore gates the binding write
 `!replyMode || dirReplyMode` (`Querier.replyMode` / `Querier.dirReplyMode`, set from
 `Configurations.ReplyMode` / `Configurations.DirReplyMode`).
 
+**Replying to a named conversation.** `chat continue <chat-id> <prompt>` sends the prompt to the conversation
+saved under that id, in place, and records like `-dre`. It reads no binding: two runs in one directory each
+finish by binding their own conversation, so a `-dre` sent while another run is under way, or after it ends,
+continues whichever finished last. A caller that runs several conversations in one directory learns each one's
+id from its `-json` `chat` record and replies with `chat continue` (see `chat.md`).
+
 **Concurrency caveat:** the read-modify-write is not serialized across processes; two concurrent runs in the
 same directory can lose-update the list. The atomic rename guarantees a non-torn file, not a merged history.
 Accepted for a shell-driven CLI.

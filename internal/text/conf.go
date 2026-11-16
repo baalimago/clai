@@ -54,11 +54,14 @@ type Configurations struct {
 	// DirReplyMode marks a directory-scoped reply (-dre). Unlike a plain -re (which
 	// forks a fresh promoted id and must not record), -dre continues the bound
 	// conversation in place, so it DOES upsert the directory history (see finalizer).
-	DirReplyMode bool            `json:"-"`
-	Glob         string          `json:"-"`
-	InitialChat  pub_models.Chat `json:"-"`
-	UseProfile   string          `json:"-"`
-	ProfilePath  string          `json:"-"`
+	DirReplyMode bool `json:"-"`
+	// ReplyChatID names the conversation `chat continue` sends its prompt to,
+	// continued in place as -dre continues the one the directory binds.
+	ReplyChatID string          `json:"-"`
+	Glob        string          `json:"-"`
+	InitialChat pub_models.Chat `json:"-"`
+	UseProfile  string          `json:"-"`
+	ProfilePath string          `json:"-"`
 	// ProfileFetched is set when ProfilePath came from a remote target.
 	ProfileFetched bool `json:"-"`
 	// ProfileTarget is the remote target ProfilePath was fetched from; a
@@ -387,7 +390,7 @@ func (c *Configurations) SetupInitialChat(ctx context.Context, args []string) er
 		// DirReplyMode loads context directly from the directory binding
 		// (pre-populated in InitialChat before SetupInitialChat). Skip the
 		// globalScope.json read entirely — no filesystem roundtrip needed.
-		if c.DirReplyMode {
+		if c.DirReplyMode || c.ReplyChatID != "" {
 			traceChatf(ctx, "setup initial chat skipping globalScope load — dirreply mode, initial chat already populated messages=%d", len(c.InitialChat.Messages))
 		} else {
 			traceChatf(ctx, "setup initial chat loading reply context from previous query config_dir=%q", c.ConfigDir)

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"strings"
 	"time"
@@ -32,7 +33,33 @@ type CaptureConfig struct {
 	Calibrated bool `json:"calibrated"`
 }
 
-func recordText(ctx context.Context, call pkgtools.AudioRecordCall, r capture.Recorder, stdin io.Reader, stdinIsTTY bool) (result string, err error) {
+// StopFileEnv names a file whose appearance stops a recording, as Enter does on
+// a terminal: the stop of a run that has none, such as one a program drives.
+const StopFileEnv = "CLAI_AUDIO_STOP_FILE"
+
+// stopFilePoll is how often a recording checks for its stop file.
+const stopFilePoll = 200 * time.Millisecond
+
+// stopSources are what may end a recording besides its timeouts: a line on
+// stdin when it is a terminal, and the stop file when one is named.
+type stopSources struct {
+	stdin    io.Reader
+	terminal bool
+	stopFile string
+}
+
+// StaleStopFileError is a stop file that existed before the recording began:
+// a request left from an earlier stop, which would end this one at once.
+type StaleStopFileError struct {
+	Path string
+}
+
+func (e *StaleStopFileError) Error() string {
+	return fmt.Sprintf("stop file %s exists before the recording started; remove it or name a new one in %s", e.Path, StopFileEnv)
+}
+
+func recordText(ctx context.Context, call pkgtools.AudioRecordCall, r capture.Recorder, stops stopSources) (result string, err error) {
+	stdin, stdinIsTTY := stops.stdin, stops.terminal
 	fileConfig, err := loadCaptureConfig(ctx)
 	if err != nil {
 		return "", err
@@ -46,7 +73,14 @@ func recordText(ctx context.Context, call pkgtools.AudioRecordCall, r capture.Re
 		return "", err
 	}
 
-	notice, err := recordNoticeOf(runenv.From(ctx), config, recordingPlace(dir, config, stdinIsTTY))
+	watching, stopWatching := context.WithCancel(ctx)
+	defer stopWatching()
+	fileStop, err := stopOnFile(watching, stops.stopFile, stopFilePoll)
+	if err != nil {
+		return "", err
+	}
+
+	notice, err := recordNoticeOf(runenv.From(ctx), config, recordingPlace(dir, config, stdinIsTTY, fileStop != nil))
 	if err != nil {
 		return "", err
 	}
@@ -73,6 +107,7 @@ func recordText(ctx context.Context, call pkgtools.AudioRecordCall, r capture.Re
 		SilenceTimeout: time.Duration(config.SilenceTimeout) * time.Second,
 		SilencePeakDB:  config.SilencePeakDB,
 		Stop:           stopOnKeys(stdin, stdinIsTTY, notice.acknowledge),
+		StopFile:       fileStop,
 		OnState:        notice.setState,
 	})
 	if err != nil {
@@ -199,6 +234,42 @@ func stopOnKeys(stdin io.Reader, stdinIsTTY bool, ack func()) <-chan struct{} {
 	return stop
 }
 
+// stopOnFile closes the returned channel once path exists, checking every
+// interval until ctx ends. No path installs no channel; a path that already
+// exists is a StaleStopFileError.
+func stopOnFile(ctx context.Context, path string, every time.Duration) (<-chan struct{}, error) {
+	if path == "" {
+		return nil, nil
+	}
+	switch _, err := os.Lstat(path); {
+	case err == nil:
+		return nil, &StaleStopFileError{Path: path}
+	case !errors.Is(err, fs.ErrNotExist):
+		return nil, diag.Errorf("check stop file %q: %w", path, err)
+	}
+	stop := make(chan struct{})
+	go func() {
+		tick := time.NewTicker(every)
+		defer tick.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-tick.C:
+			}
+			// A tick and the end of ctx can be ready together.
+			if ctx.Err() != nil {
+				return
+			}
+			if _, err := os.Lstat(path); err == nil {
+				close(stop)
+				return
+			}
+		}
+	}()
+	return stop, nil
+}
+
 func recordingFacts(recording capture.Recording) string {
 	var facts strings.Builder
 	fmt.Fprintf(&facts, "recorded: %s\n", recording.Path)
@@ -217,6 +288,10 @@ func recordingFacts(recording capture.Recording) string {
 func init() {
 	pkgtools.AudioRecordEngine = func(ctx context.Context, call pkgtools.AudioRecordCall) (string, error) {
 		env := runenv.From(ctx)
-		return recordText(ctx, call, capture.New(), env.Stdin(), env.StdinIsTerminal())
+		return recordText(ctx, call, capture.New(), stopSources{
+			stdin:    env.Stdin(),
+			terminal: env.StdinIsTerminal(),
+			stopFile: os.Getenv(StopFileEnv),
+		})
 	}
 }

@@ -59,6 +59,10 @@ func (d *jsonDisplayer) ReportProgress(p Progress) error {
 	return d.enc.Encode(jsonl.Record{Type: "progress", Fields: fields})
 }
 
+func (d *jsonDisplayer) ReportChat(c Chat) error {
+	return d.enc.Encode(jsonl.Record{Type: "chat", Fields: []slog.Attr{slog.String("id", c.ID)}})
+}
+
 func (d *jsonDisplayer) ShowPrompt(p Prompt) error {
 	fields := []slog.Attr{
 		slog.String("kind", p.Kind),

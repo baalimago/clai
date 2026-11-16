@@ -26,6 +26,9 @@ const (
 	// ConsentGiven trusts whatever is fetched: `clai profiles trust` and
 	// `clai profiles install` are the user saying so.
 	ConsentGiven
+	// ConsentCheck decides as ConsentAsk with nobody to ask, and records no
+	// trust: `clai config trust profile -check`.
+	ConsentCheck
 )
 
 // TrustPrompt is what the user is shown before trusting a target: a
@@ -230,6 +233,15 @@ const (
 // read returns cached bytes for a pinned target, a target whose hash is
 // given and cached, or any target while offline; otherwise it fetches.
 func (r Resolver) read(ctx context.Context, t Target, doc docKind) ([]byte, bool, error) {
+	if t.SHA256 != "" {
+		body, err := r.Cache.Get(t.SHA256)
+		if err == nil {
+			return body, false, nil
+		}
+		if !errors.Is(err, ErrNotCached) {
+			return nil, false, err
+		}
+	}
 	if t.Pinned() || r.Offline {
 		body, digest, err := r.Cache.Lookup(t.String())
 		switch {
@@ -263,7 +275,7 @@ func (r Resolver) authorize(ctx context.Context, t Target, digest string, summar
 		return nil
 	}
 	if t.SHA256 == "" && consent != ConsentGiven {
-		if r.Prompt == nil {
+		if r.Prompt == nil || consent == ConsentCheck {
 			changed, err := r.hasTrustedOther(base)
 			if err != nil {
 				return err
@@ -277,6 +289,9 @@ func (r Resolver) authorize(ctx context.Context, t Target, digest string, summar
 		if !ok {
 			return &UntrustedError{Target: t.String(), Digest: digest, Asked: true}
 		}
+	}
+	if consent == ConsentCheck {
+		return nil
 	}
 	return r.Trust.Trust(base, digest, r.now())
 }

@@ -32,7 +32,7 @@ address and fetch another (`gh:anthropics/..@evil`).
 | File | Purpose |
 | --- | --- |
 | `internal/remote/target.go` | `ParseTarget`, `Target` (`Base`, `String`, `Pinned`, `Unpinned`, `WithDigest`, `FetchURL`, `PageURL`, `DefaultName`) |
-| `internal/remote/resolve.go` | `Resolver.Resolve`: cache or fetch, check, summarize, hash check, trust, store; `CheckProfile` is the injected check, `Peek` reads without checking or trusting. `Consent`, `Prompter`, and the refusal errors with `ExitCode() == ExitRefused` (3) |
+| `internal/remote/resolve.go` | `Resolver.Resolve`: cache or fetch, check, summarize, hash check, trust, store; `CheckProfile` is the injected check, `Peek` reads without checking or trusting. `Consent` (`ConsentAsk`, `ConsentGiven`, `ConsentCheck`), `Prompter`, and the refusal errors with `ExitCode() == ExitRefused` (3) |
 | `internal/remote/validate.go` | `MaxBodyBytes`, `InvalidProfileError`, `Checked`: what a check reports and what a refusal prints |
 | `internal/profile` | `Validate`: the one checker, over the embedded `schema.json`, plus `Findings`, `Env` and `Schema()` |
 | `internal/remote/fetch.go` | `NewClient`/`CheckRedirect` (https-only redirects, at most 5), the 64 KiB cap, the content-type check |
@@ -42,7 +42,7 @@ address and fetch another (`gh:anthropics/..@evil`).
 | `internal/remote/summary.go` | `Summarize`: what the trust prompt and `profiles trust` show |
 | `internal/remote/env.go` | `CLAI_CLOUD_URL`, `CLAI_CLOUD=off`, `NewResolver` |
 | `internal/text/remote_profile.go` | `resolveRemoteProfilePath` (runs before `ProfileOverrides`), the terminal prompt, `terminalAvailable` |
-| `internal/profiles/remote.go` | `profiles trust`, `install`, `update`; the `source` stamp |
+| `internal/profiles/remote.go` | `profiles trust` (and `CheckTrust`, its `-check`), `install`, `update`; the `source` stamp |
 | `internal/profiles/validate.go` | `profiles validate` and `profiles schema`: the findings a body has, and the document this clai ships |
 | `internal/exitstatus.go` | `ExitCoder`/`ExitStatus`: how exit status 3 survives upstream `cmd.Run` |
 | `internal/cli/cli.go` | `Deps.RemoteClient`, `remoteResolver` (the composition root) |
@@ -56,8 +56,8 @@ address and fetch another (`gh:anthropics/..@evil`).
 text.SetupQuerier
   → resolveRemoteProfilePath (only when IsRemote(-prp))
     → Resolver.Resolve(target, ConsentAsk)
-      → cache hit for a pinned target, or for any target under CLAI_CLOUD=off
-        otherwise fetch FetchURL(hub base)
+      → cache hit for a #sha256= whose bytes are cached, for a pinned target,
+        or for any target under CLAI_CLOUD=off; otherwise fetch FetchURL(hub base)
       → CheckProfile (the one checker) → Summarize → Digest
       → #sha256= present: must match, and counts as consent
       → trusted (base, digest) in trust.json? run
@@ -78,8 +78,10 @@ A `gh:` target reads
 ## Behavior
 
 - **Pinned means cached.** A hub version or a GitHub ref names fixed bytes.
-  Once one is cached, it is read from `<cache>/remote/` with no fetch. An
-  unpinned target is fetched on every run. When its bytes change, the new
+  Once one is cached, it is read from `<cache>/remote/` with no fetch. So is
+  a `#sha256=` whose bytes are cached (`Cache.Get`), on any target kind and
+  whichever target stored them: the hash names the bytes. An unpinned target
+  without a hash is fetched on every run. When its bytes change, the new
   hash is untrusted, so the run asks again, or exits 3 where nobody can be
   asked.
 - **Trust is per base and hash.** `trust.json` maps a target's `Base()`
@@ -219,6 +221,17 @@ A `gh:` target reads
 - **Profiles subcommands are consent.** They call `Resolve` with
   `ConsentGiven`, so they record trust without prompting.
   - `profiles trust <target>` prints the summary and records the hash.
+  - `profiles trust -check <target>` (`config trust profile -check`) is
+    the one subcommand that is not consent. It resolves the profile and its
+    skills with `ConsentCheck`: the decision of a run with nobody to ask,
+    and no trust recorded, not even for a matching `#sha256=`. It prints
+    `<target> (sha256 <hex>) is trusted` and exits 0, or returns the run's
+    `UntrustedError` (exit 3, "changed to a version" when another hash of the
+    base is trusted). A caller that must not start a run that would be
+    refused, such as Minutes in clai-in-wasmer-sh-poc, asks it first and
+    then runs `<target>#sha256=<hex>` with the hash it printed: the check
+    cached those bytes, so the run reads them and a version published in
+    between never reaches it.
   - `profiles install <target> [name]` writes
     `<config>/profiles/<name>.json` with a `source` stamp,
     `{"target": "<target>#sha256=<hex>"}`. It refuses to overwrite a

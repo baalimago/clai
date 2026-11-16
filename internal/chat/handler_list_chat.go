@@ -1167,6 +1167,13 @@ func (cq *ChatHandler) printChatInfoCommon(w io.Writer, chat pub_models.Chat, gr
 	if _, err := fmt.Fprintf(w, "%s\n\n", header); err != nil {
 		return diag.Errorf("write chat header: %w", err)
 	}
+	id := chat.ID
+	if opts.foreign && id == "" {
+		id = "(not cloned)"
+	}
+	if _, err := fmt.Fprintf(w, "%s %s\n", table.Colorize(utils.TableTheme().Primary, "conversation ID:"), table.Colorize(bread, id)); err != nil {
+		return diag.Errorf("write conversation ID: %w", err)
+	}
 	// GroupKey display (when non-empty)
 	if chat.GroupKey != "" {
 		if _, err := fmt.Fprintf(w, "%s %s\n", table.Colorize(utils.TableTheme().Primary, "group key:"), table.Colorize(bread, chat.GroupKey)); err != nil {

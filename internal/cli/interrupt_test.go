@@ -152,8 +152,8 @@ func TestInterruptStopsTheRun(t *testing.T) {
 		if got.status != 130 {
 			t.Fatalf("status %d, want 130: %+v", got.status, got)
 		}
-		if types := recordTypes(t, got.stdout); !slices.Equal(types, []string{"reply_delta", "reply_delta"}) {
-			t.Fatalf("stdout records %v, want the two deltas and no reply: %q", types, got.stdout)
+		if types := recordTypes(t, got.stdout); !slices.Equal(types, []string{"reply_delta", "reply_delta", "chat"}) {
+			t.Fatalf("stdout records %v, want the two deltas, no reply and the saved chat: %q", types, got.stdout)
 		}
 		recordTypes(t, got.stderr)
 		if strings.Count(got.stderr, `"type":"error"`) != 1 || !strings.Contains(got.stderr, `{"type":"error","message":"interrupted by signal: interrupt"`) {

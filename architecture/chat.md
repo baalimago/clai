@@ -191,6 +191,9 @@ Implemented in `internal/chat/chat.go`:
 
 ### Chat IDs
 
+After a selection in `chat list`, the chat info view shows the full `conversation ID:` beside the separate group key.
+An external conversation shows `(not cloned)` until it has a native ID.
+
 Chat ID generation is implemented in `internal/chat/chat.go`:
 
 - `HashIDFromPrompt(prompt string)` is the current/default ID format.
@@ -275,11 +278,13 @@ The v2 format has one numeric cost field. It does not include the duplicate v1 c
 
 - loads an existing chat from disk by ID, or by index. The index counts the rows `clai chat list` shows by default (native, external and grouped rows, newest first). An external row is cloned into a native chat, and a group row selects its newest member. `chat delete <index>` uses the same numbering and refuses an external row with `ErrForeignRowSelected`.
 - if extra tokens are present after an index selection, they are re-joined and treated as the optional `prompt`
-- prints a **fast obfuscated preview** (not full transcript rendering), with the prompt as the last user message
+- an ID selects that chat, and the tokens after it are the optional `prompt`; an ID alone sends nothing
+- prints a **fast obfuscated preview** (not full transcript rendering), with the prompt as the last user message. `-reply-only` suppresses the preview on both streams, with or without a prompt or explicit ID. With a prompt, `-json` also suppresses the preview. Without a prompt, the command only selects a chat and sends no query.
 - updates the directory-scoped binding for the current working directory to point at that chat
-- if a prompt is present, sends it as `clai [-r] [-p <profile>] -dre query <prompt>` would. `internal/cli` injects the sender (`text.DirReplySender`) as `CommandDeps.SendPrompt`, since the chat package holds no querier
+- if a prompt is present, sends it to that chat, continued in place, through the query command with the chat pinned by its ID (`TextFlags.ContinueChat` → `Configurations.ReplyChatID` → `chat.LoadConversation`). It reads no binding, so a run that ends in the same directory meanwhile cannot take the prompt. `internal/cli` injects the sender (`text.ContinueSender`) as `CommandDeps.SendPrompt`, since the chat package holds no querier
+- takes the query flags (`internal.ContinueFlags`: the agent and query-text groups but `-dre` and `-img`) after `continue` and before the chat. The run receives these flags as `-name=value`. An explicit `-prp` or `-profile-path` replaces the stamped profile, including a local named profile. Otherwise, the run uses the stamped profile. Minutes in clai-in-wasmer-sh-poc answers with `clai -json chat continue -reply-only -n -prp <target>#sha256=<hex> [-cm <model> -am <model>] <id> <answer>`
 
-The primary purpose is selection/binding: choose which existing transcript should be used as reply context for `-dre` in the current directory.
+Without a prompt its purpose is selection/binding: choose which existing transcript should be used as reply context for `-dre` in the current directory.
 
 Behavior on missing chat:
 
@@ -313,7 +318,7 @@ In `internal/chat/handler.go:cont`:
 
 - If the loaded chat already has `chat.Profile != ""`, it overrides the runtime handler config so continuation uses that profile.
 - Otherwise, if a `--profile` was provided (wired into `UseProfile`), the handler stamps it into `chat.Profile` so future continuations persist it.
-- A `-prp` run saves the remote target as typed, without a `#sha256=` pin. The wide chat list limits the Profile column to 20 characters. Longer targets show the prefix, an ellipsis, and the end of the target. `chat continue` passes the full target as `-prp` and a local name as `-p` (`text.profileArgs`).
+- A `-prp` run saves the remote target as typed, without a `#sha256=` pin. The wide chat list limits the Profile column to 20 characters. Longer targets show the prefix, an ellipsis, and the end of the target. Unless an explicit `-prp` or `-profile-path` replaces the stamp, `chat continue` passes a remote stamp as `-prp` and a local name as `-p` (`text.profileArgs`). A `-prp <target>#sha256=<hex>` given to `chat continue` runs that pin instead of fetching the stamp again.
 
 ### `chat summarize` (label existing conversations)
 
@@ -385,7 +390,7 @@ conversation lookback are described in `architecture/dirscope.md`.
 In short:
 
 - `clai -dre query ...` replies using the conversation bound to CWD
-- `clai chat continue ...` is a convenient way to bind CWD → an existing conversation
+- `clai chat continue ...` is a convenient way to bind CWD → an existing conversation, and `clai chat continue <id> <prompt>` sends to that conversation whatever CWD binds
 - each non-reply query also records the chat into the directory's history (see `dirscope.md`)
 
 ## No model interaction
@@ -394,15 +399,17 @@ The chat handler holds no querier and calls no vendor. Every subcommand
 reads stored transcripts and writes conversation state: `continue` prints a
 chat and binds CWD to it, `delete` unlinks it and sweeps its unreferenced assets,
 `list`/`dir`/`dirv2` render.
-Turns are taken with `clai -dre query ...` afterwards. The one exception is
-`summarize`, which receives a lazily constructed summarizer by injection
-(`CommandDeps.NewSummarizer`) and is the only verb that invokes it.
+Turns are taken with `clai -dre query ...` afterwards, or by `continue` with a
+prompt, which hands it to the injected sender (`CommandDeps.SendPrompt`). The
+other exception is `summarize`, which receives a lazily constructed summarizer
+by injection (`CommandDeps.NewSummarizer`) and is the only verb that invokes it.
 
 Consequently the chat tree needs no API key, no model config and no tool
 setup, and registers only the flags it reads: `-r`, `-n` and `-p` (which
 stamps the profile onto the continued conversation, steering later `-dre`
 queries); `summarize` takes the window as its positional argument and adds its own `-force`, `-y`, `-workers`
-and `-sm` on its level only. It used to construct a full text querier through
+and `-sm` on its level only, and `continue` adds the query flags on its level only, for the run that sends
+its prompt. It used to construct a full text querier through
 `text.SetupQuerier` and discard it, which made `clai c c 0` fail without a
 vendor key and put the whole agent flag group on `clai c -h`.
 

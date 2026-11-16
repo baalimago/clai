@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -123,6 +124,14 @@ func runProcess(t *testing.T, args string, adjust func(*process, *Deps)) cliRun 
 	}
 	status := run(strings.Fields(args), deps, p)
 	return cliRun{status: status, stdout: stdout.String(), stderr: stderr.String()}
+}
+
+var chatRecordID = regexp.MustCompile(`("type":"chat","id":")[^"]*`)
+
+// maskChatIDs writes $CHAT for the id of each chat record: every run saves
+// a conversation under a new id.
+func maskChatIDs(s string) string {
+	return chatRecordID.ReplaceAllString(s, "${1}$$CHAT")
 }
 
 // recordTypes lists the type of each JSON line of stream; a line that is no

@@ -55,6 +55,9 @@ type Transcriber struct {
 	Client *http.Client
 	// Format is the vendor-negotiated response format; empty uses the model-name rule
 	Format ResponseFormat
+	// Stream asks for diarized segments as server-sent events when the request's
+	// context has a Heard; the vendor sets it for the models that stream them
+	Stream bool
 	apiKey string
 	debug  bool
 }
@@ -99,7 +102,11 @@ func parserFor(format ResponseFormat) (func([]byte) ([]Segment, error), error) {
 }
 
 func (t *Transcriber) Transcribe(ctx context.Context, filePath string) ([]Segment, error) {
-	parse, err := parserFor(t.responseFormat())
+	format := t.responseFormat()
+	if heard, ok := heardFrom(ctx); ok && t.Stream && format == ResponseFormatDiarizedJSON {
+		return t.transcribeStream(ctx, filePath, heard)
+	}
+	parse, err := parserFor(format)
 	if err != nil {
 		return nil, err
 	}
@@ -110,11 +117,40 @@ func (t *Transcriber) Transcribe(ctx context.Context, filePath string) ([]Segmen
 	return parse(body)
 }
 
+// transcribeStream is Transcribe with the segments streamed (architecture/audio.md, Progress).
+func (t *Transcriber) transcribeStream(ctx context.Context, filePath string, heard Heard) ([]Segment, error) {
+	file, err := t.open(filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	resp, err := t.send(ctx, file, ResponseFormatDiarizedJSON, true)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	segs, err := ParseStream(resp.Body, heard)
+	if err != nil && ctx.Err() != nil {
+		return nil, diag.Errorf("transcription stream aborted: %w", ctx.Err())
+	}
+	return segs, err
+}
+
 // Request posts the file and returns the raw payload for a vendor's own parser.
 func (t *Transcriber) Request(ctx context.Context, filePath string) ([]byte, error) {
+	file, err := t.open(filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	return t.post(ctx, file, t.responseFormat())
+}
+
+// open checks the vendor's fields, then opens the audio file.
+func (t *Transcriber) open(filePath string) (*os.File, error) {
 	for name := range t.Fields {
 		switch name {
-		case "file", "model", "response_format", "chunking_strategy":
+		case "file", "model", "response_format", "chunking_strategy", "stream":
 			return nil, fmt.Errorf("transcriber field %q is written by the client and cannot be set", name)
 		}
 	}
@@ -122,16 +158,44 @@ func (t *Transcriber) Request(ctx context.Context, filePath string) ([]byte, err
 	if err != nil {
 		return nil, diag.Errorf("failed to open audio file: %w", err)
 	}
-	defer file.Close()
-	return t.post(ctx, file, t.responseFormat())
+	return file, nil
 }
 
 func (t *Transcriber) post(ctx context.Context, file *os.File, respFormat ResponseFormat) ([]byte, error) {
+	resp, err := t.send(ctx, file, respFormat, false)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, diag.Errorf("transcription response read aborted: %w", ctx.Err())
+		}
+		return nil, diag.Errorf("failed to read transcription response: %w", err)
+	}
+	if t.debug {
+		runenv.Debugf(ctx, runenv.SubsystemAudio, "transcription response status=%s body=%s", resp.Status, body)
+	}
+	return body, nil
+}
+
+// send posts the file and returns the response once its status is 200 OK;
+// any other status is an error carrying the start of the body.
+func (t *Transcriber) send(ctx context.Context, file *os.File, respFormat ResponseFormat, stream bool) (*http.Response, error) {
 	// Pipe streams the file part to the request without buffering it in memory
 	pipeReader, pipeWriter := io.Pipe()
 	multipartWriter := multipart.NewWriter(pipeWriter)
+	fields := t.Fields
+	if stream {
+		fields = maps.Clone(t.Fields)
+		if fields == nil {
+			fields = map[string]string{}
+		}
+		fields["stream"] = "true"
+	}
 	go func() {
-		err := writeMultipart(multipartWriter, file, t.Model, respFormat, t.Fields)
+		err := writeMultipart(multipartWriter, file, t.Model, respFormat, fields)
 		if closeErr := multipartWriter.Close(); err == nil {
 			err = closeErr
 		}
@@ -147,7 +211,7 @@ func (t *Transcriber) post(ctx context.Context, file *os.File, respFormat Respon
 		req.Header.Set(key, value)
 	}
 	if t.debug {
-		runenv.Debugf(ctx, runenv.SubsystemAudio, "transcription request url=%s model=%s response_format=%v", t.URL, t.Model, respFormat)
+		runenv.Debugf(ctx, runenv.SubsystemAudio, "transcription request url=%s model=%s response_format=%v stream=%v", t.URL, t.Model, respFormat, stream)
 	}
 	resp, err := t.Client.Do(req)
 	if err != nil {
@@ -156,21 +220,18 @@ func (t *Transcriber) post(ctx context.Context, file *os.File, respFormat Respon
 		}
 		return nil, diag.Errorf("failed to post transcription request: %w", err)
 	}
+	if resp.StatusCode == http.StatusOK {
+		return resp, nil
+	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 	if err != nil {
-		if ctx.Err() != nil {
-			return nil, diag.Errorf("transcription response read aborted: %w", ctx.Err())
-		}
 		return nil, diag.Errorf("failed to read transcription response: %w", err)
 	}
 	if t.debug {
 		runenv.Debugf(ctx, runenv.SubsystemAudio, "transcription response status=%s body=%s", resp.Status, body)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("transcription request failed with status: %v, body: %v", resp.Status, truncate(body, 1024))
-	}
-	return body, nil
+	return nil, fmt.Errorf("transcription request failed with status: %v, body: %v", resp.Status, truncate(body, 1024))
 }
 
 func writeMultipart(w *multipart.Writer, file *os.File, model string, respFormat ResponseFormat, fields map[string]string) error {

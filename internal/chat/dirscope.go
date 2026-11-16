@@ -294,6 +294,23 @@ func LoadDirScopedContext(ctx context.Context, confDir string) (pub_models.Chat,
 	return c, nil
 }
 
+// LoadConversation loads the conversation saved under chatID, whatever the
+// working directory binds. An id that names no saved conversation, or that
+// is no file name, fails with ErrChatNotFound.
+func LoadConversation(ctx context.Context, confDir, chatID string) (pub_models.Chat, error) {
+	if !safeChatID(chatID) {
+		return pub_models.Chat{}, diag.Errorf("%w: invalid id %q", ErrChatNotFound, chatID)
+	}
+	c, err := loadConversation(ctx, confDir, conversationPath(confDir, chatID))
+	if errors.Is(err, fs.ErrNotExist) {
+		return pub_models.Chat{}, diag.Errorf("%w: %s", ErrChatNotFound, chatID)
+	}
+	if err != nil {
+		return pub_models.Chat{}, diag.Errorf("load conversation %q: %w", chatID, err)
+	}
+	return c, nil
+}
+
 func loadDirScopeForCurrentDir(confDir string) (DirScope, error) {
 	wd, err := currentWorkingDirectory()
 	if err != nil {

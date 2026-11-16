@@ -29,6 +29,8 @@ internal/cli:Run()
 | ------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | `internal/audio/cmd.go`                     | audio Subcommander tree — transcribe\|help verbs (see [cmd-dispatch.md](./cmd-dispatch.md))           |
 | `internal/audio/board.go`                   | Adapter over the shared progress table ([board.md](./board.md)): diarization columns, `unknownSoFar` |
+| `internal/audio/request_status.go`          | The status of a transcription sent as one request (see Progress)                                      |
+| `internal/audio/generic/stream.go`          | `WithHeard`/`ReportHeard`, `ParseStream`: a diarized transcript streamed as server-sent events        |
 | `internal/audio/setup_transcribe.go`        | Transcribe-querier setup, stdin `-` input resolution                                                  |
 | `internal/audio/audio.go`                   | `Segment` model, JSON parsing, `vtt\|srt\|text\|json` rendering, `Offset`                            |
 | `internal/audio/split.go`                   | `Splitter`: byte-cap gate; routes by `Diarization()`: plain ffmpeg chunking, the request-local re-encode, or calibration |
@@ -248,6 +250,41 @@ board header says `speaker labels per chunk`, and so does the
 `audio_transcribe` tool description, for the agent that reads the result.
 Whoever reads the transcript reconciles them from what was said. For `json`-format models the plain path also handles files under the
 byte cap that exceed `max-request-seconds` (see Response-Format Negotiation).
+
+## Progress
+
+Every transcription reports its progress under the title `audio_transcribe`,
+whichever route it takes, so a caller can tell a slow transcription from a
+stuck one:
+
+| Route | Progress |
+| --- | --- |
+| one request (the file as it is) | a status: `r.wav · 1 request · 19.2 MB`, `heard mm:ss` while a streaming provider answers, then `transcribed · N segments` or the failure |
+| encoded for one request (request-local labels) | a status: `r.wav · 55.3 MB · encoding for 1 request`, then `requesting · 13.8 MB` and as above; when the encoded file is still over the byte cap, `encoded … MB, over the 25 MB request cap: splitting`, the chunk board, and the status's end after it |
+| split, calibrated | the chunk board (one row per chunk or core) |
+
+A status has no rows. Under `-json` with no `StatusOut` each state change is
+one `progress` record on the run's stderr (`start`, `update`, `done` or
+`failed`; the detail is the text above), on a terminal it is a live row that
+erases itself, and any other writer gets one line per state change.
+
+`heard mm:ss` is the end of the latest segment the provider has sent: the
+splitter attaches a `generic.Heard` to the request's context
+(`generic.WithHeard`), and a transcriber whose vendor sets `Stream` asks for
+`stream=true` and reads the answer as server-sent events
+(`generic.ParseStream`) only when one is attached. OpenAI's diarize family
+streams (measured 2026-11-16 with `gpt-4o-transcribe-diarize`, 80 s of
+speech): `transcript.text.segment` events carrying the fields of a
+`diarized_json` segment arrive in bursts of about 26 s of audio, 10.4, 19.1,
+26.0 and 27.6 s after the request, then `transcript.text.done` and `[DONE]`;
+the same file unstreamed answered after 33.2 s. A stream that ends before
+`transcript.text.done` is `generic.ErrStreamEnded`, never a short transcript.
+The calibrated route attaches no `Heard`, so its requests are not streamed.
+
+The mock transcriber (`test`, `mock_test`) answers at once, or, with
+`CLAI_MOCK_TRANSCRIBE_DELAY` set to a Go duration, spreads its answer over
+that long and reports each of its segments as heard, so a caller's progress
+display can be tested without a provider.
 
 ## Adaptive Speaker Calibration
 
@@ -641,10 +678,18 @@ browser machine this hung the wrapper and killed the worker, 2026-11-10).
 `TestGroupFileByPlatform` fails when the two files' constraints drift.
 
 The recording ends at the first of the silence timeout, `max-seconds`, a
-completed line on an interactive stdin, or cancellation of the tool call.
-Each ending names its own reason. End of input is not a line: `/dev/null` is a
-character device too, so a non-interactive run keeps recording until the
-silence timeout or `max-seconds`. The
+completed line on an interactive stdin, the stop file, or cancellation of the
+tool call. Each ending names its own reason. End of input is not a line:
+`/dev/null` is a character device too, so a non-interactive run keeps
+recording until the silence timeout or `max-seconds`.
+
+The stop file is the Enter of a run without a terminal, such as one a program
+drives in the background: `CLAI_AUDIO_STOP_FILE` names a path, and the
+recording ends with `stopped_because: stop_file` once something creates it
+(checked every 200 ms, with `lstat`, so any kind of file counts). A path that
+already exists when the recording starts is a `StaleStopFileError` before
+anything records: it is left from an earlier stop and would end this one at
+once. The status row lists it as `stop file`. The
 samples of the finalized WAV decide whether audio was heard, not the silence
 events: a source that never pauses emits no event at all. A recording in which
 no sample reached the silence threshold produces no file, unless it was

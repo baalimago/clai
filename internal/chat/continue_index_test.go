@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -88,23 +89,48 @@ func TestDeleteFromPrompt_refusesAForeignRow(t *testing.T) {
 }
 
 func TestCont_sendsTheTrailingPrompt(t *testing.T) {
-	t.Run("the request carries prompt, profile and raw", func(t *testing.T) {
+	t.Run("the request carries the chat, prompt, profile, raw and query flags", func(t *testing.T) {
 		cq := continueIndexFixture(t)
 		cq.prompt, cq.profile, cq.raw = "2 go on", "work", true
-		var got DirReplyRequest
-		cq.sendPrompt = func(_ context.Context, req DirReplyRequest) error { got = req; return nil }
+		cq.queryFlags = []string{"-cm=test", "-n"}
+		var got ContinueRequest
+		cq.sendPrompt = func(_ context.Context, req ContinueRequest) error { got = req; return nil }
 		if err := cq.cont(context.Background()); err != nil {
 			t.Fatalf("cont: %v", err)
 		}
-		if got != (DirReplyRequest{Prompt: "go on", Profile: "work", Raw: true}) {
-			t.Fatalf("sent %+v", got)
+		want := ContinueRequest{ChatID: "oldest", Prompt: "go on", Profile: "work", Raw: true, Flags: []string{"-cm=test", "-n"}}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("sent %+v, want %+v", got, want)
+		}
+	})
+	t.Run("an id selects the chat and is no part of the prompt", func(t *testing.T) {
+		cq := continueIndexFixture(t)
+		cq.prompt = "newest go on"
+		var got ContinueRequest
+		cq.sendPrompt = func(_ context.Context, req ContinueRequest) error { got = req; return nil }
+		if err := cq.cont(context.Background()); err != nil {
+			t.Fatalf("cont: %v", err)
+		}
+		if got.ChatID != "newest" || got.Prompt != "go on" {
+			t.Fatalf("sent %+v, want go on to newest", got)
+		}
+	})
+	t.Run("an id alone sends nothing", func(t *testing.T) {
+		cq := continueIndexFixture(t)
+		cq.prompt = "newest"
+		cq.sendPrompt = func(_ context.Context, req ContinueRequest) error {
+			t.Fatalf("sent %+v without a prompt", req)
+			return nil
+		}
+		if err := cq.cont(context.Background()); err != nil {
+			t.Fatalf("cont: %v", err)
 		}
 	})
 	t.Run("a failed send is returned", func(t *testing.T) {
 		cq := continueIndexFixture(t)
 		cq.prompt = "0 go on"
 		boom := errors.New("boom")
-		cq.sendPrompt = func(context.Context, DirReplyRequest) error { return boom }
+		cq.sendPrompt = func(context.Context, ContinueRequest) error { return boom }
 		if err := cq.cont(context.Background()); !errors.Is(err, boom) {
 			t.Fatalf("err = %v, want boom", err)
 		}
@@ -112,7 +138,7 @@ func TestCont_sendsTheTrailingPrompt(t *testing.T) {
 	t.Run("no prompt sends nothing", func(t *testing.T) {
 		cq := continueIndexFixture(t)
 		cq.prompt = "0"
-		cq.sendPrompt = func(context.Context, DirReplyRequest) error { t.Fatal("sent without a prompt"); return nil }
+		cq.sendPrompt = func(context.Context, ContinueRequest) error { t.Fatal("sent without a prompt"); return nil }
 		if err := cq.cont(context.Background()); err != nil {
 			t.Fatalf("cont: %v", err)
 		}

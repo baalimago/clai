@@ -147,6 +147,69 @@ func TestResolve_hashIsConsent(t *testing.T) {
 	}
 }
 
+func TestResolve_consentCheckNeverAsksOrRecordsTrust(t *testing.T) {
+	h := newHub(t, map[string]string{"/hub/ada/bot/raw": tradeBot, "/hub/ada/bot/v/1/raw": tradeBot})
+	asked := 0
+	r := testResolver(t, h, func(context.Context, TrustPrompt) (bool, error) {
+		asked++
+		return true, nil
+	})
+	digest := Digest([]byte(tradeBot))
+	var untrusted *UntrustedError
+	if _, err := r.Resolve(t.Context(), "cchub:ada/bot", ConsentCheck); !errors.As(err, &untrusted) || untrusted.Changed {
+		t.Fatalf("never trusted: err = %v, want an UntrustedError for a new profile", err)
+	}
+	if _, err := r.Resolve(t.Context(), "cchub:ada/bot@1#sha256="+digest, ConsentCheck); err != nil {
+		t.Fatalf("hash pin: %v", err)
+	}
+	if ok, err := r.Trust.Trusted("cchub:ada/bot", digest); err != nil || ok || asked != 0 {
+		t.Fatalf("a check recorded trust (%v, %v) or asked %d times", ok, err, asked)
+	}
+	if _, err := r.Resolve(t.Context(), "cchub:ada/bot", ConsentGiven); err != nil {
+		t.Fatalf("trust: %v", err)
+	}
+	got, err := r.Resolve(t.Context(), "cchub:ada/bot", ConsentCheck)
+	if err != nil || got.Digest != digest {
+		t.Fatalf("trusted: %+v, %v", got, err)
+	}
+	h.versions["/hub/ada/bot/raw"] = `{"model":"test","prompt":"v2"}`
+	if _, err := r.Resolve(t.Context(), "cchub:ada/bot", ConsentCheck); !errors.As(err, &untrusted) || !untrusted.Changed || asked != 0 {
+		t.Fatalf("changed: err = %v, asked %d; want a changed-version refusal and no question", err, asked)
+	}
+}
+
+// A hash names fixed bytes: once they are cached, a target that gives it is
+// read from the cache, whatever its base serves now, so a run pinned to the
+// version a check found is not refused when the hub publishes another.
+func TestResolve_cachedHashIsNotFetchedAgain(t *testing.T) {
+	h := newHub(t, map[string]string{"/hub/ada/bot/raw": tradeBot})
+	r := testResolver(t, h, nil)
+	v1 := Digest([]byte(tradeBot))
+	if _, err := r.Resolve(t.Context(), "cchub:ada/bot", ConsentGiven); err != nil {
+		t.Fatalf("trust: %v", err)
+	}
+	v2 := `{"model":"test","prompt":"v2"}`
+	h.versions["/hub/ada/bot/raw"] = v2
+	hits := h.hits.Load()
+	got, err := r.Resolve(t.Context(), "cchub:ada/bot#sha256="+v1, ConsentAsk)
+	if err != nil || got.Fetched || got.Digest != v1 || string(got.Body) != tradeBot || h.hits.Load() != hits {
+		t.Fatalf("pinned after a new version: %+v, %v, hits %d -> %d; want v1 from the cache", got, err, hits, h.hits.Load())
+	}
+	if _, err := r.Resolve(t.Context(), "cchub:ada/bot", ConsentGiven); err != nil {
+		t.Fatalf("trust v2: %v", err)
+	}
+	r.Offline = true
+	if got, err := r.Resolve(t.Context(), "cchub:ada/bot#sha256="+v1, ConsentAsk); err != nil || got.Digest != v1 {
+		t.Fatalf("offline, the index on v2: %+v, %v; want v1 by its hash", got, err)
+	}
+	r.Offline = false
+	hits = h.hits.Load()
+	var mismatch *HashMismatchError
+	if _, err := r.Resolve(t.Context(), "cchub:ada/bot#sha256="+strings.Repeat("0", 64), ConsentAsk); !errors.As(err, &mismatch) || h.hits.Load() != hits+1 {
+		t.Fatalf("uncached hash: err = %v, hits %d -> %d; want a fetch and a mismatch", err, hits, h.hits.Load())
+	}
+}
+
 func TestResolve_consentGivenTrustsWithoutAsking(t *testing.T) {
 	h := newHub(t, map[string]string{"/hub/ada/bot/raw": tradeBot})
 	r := testResolver(t, h, nil)
@@ -316,6 +379,15 @@ func TestCache_dropsBytesThatNoLongerMatchTheirHash(t *testing.T) {
 	}
 	if _, _, err := c.Lookup("cchub:a1/b@1"); !errors.Is(err, ErrNotCached) {
 		t.Fatalf("Lookup tampered: err = %v, want ErrNotCached", err)
+	}
+	if _, err := c.Get(digest); !errors.Is(err, ErrNotCached) {
+		t.Fatalf("Get tampered: err = %v, want ErrNotCached", err)
+	}
+	if _, err := c.Get(Digest([]byte("never stored"))); !errors.Is(err, ErrNotCached) {
+		t.Fatalf("Get unknown: err = %v, want ErrNotCached", err)
+	}
+	if _, err := c.Get("../index"); err == nil || errors.Is(err, ErrNotCached) {
+		t.Fatalf("Get of no digest: err = %v, want a refusal", err)
 	}
 }
 

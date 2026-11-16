@@ -36,7 +36,7 @@ func TestRecordText_InterruptedAndSaved(t *testing.T) {
 		var stderr bytes.Buffer
 		ctx := runenv.With(context.Background(), textRecordEnv(&stderr))
 
-		result, err := recordText(ctx, pkgtools.AudioRecordCall{}, &recordStub{err: interrupted}, nil, false)
+		result, err := recordText(ctx, pkgtools.AudioRecordCall{}, &recordStub{err: interrupted}, stopSources{})
 		if result != "" || !errors.Is(err, capture.ErrInterrupted) || err.Error() != line {
 			t.Fatalf("recordText = %q, %v, want no facts and %q", result, err, line)
 		}
@@ -52,7 +52,7 @@ func TestRecordText_InterruptedAndSaved(t *testing.T) {
 		env := jsonRecordEnv(strings.NewReader(""), &stdout, &stderr)
 		ctx := runenv.With(context.Background(), env)
 
-		result, err := recordText(ctx, pkgtools.AudioRecordCall{}, &stateRecorder{err: interrupted}, env.Stdin(), false)
+		result, err := recordText(ctx, pkgtools.AudioRecordCall{}, &stateRecorder{err: interrupted}, stopSources{stdin: env.Stdin()})
 		if result != "" || !errors.Is(err, capture.ErrInterrupted) {
 			t.Fatalf("recordText = %q, %v, want no facts and the interrupted error", result, err)
 		}
@@ -75,7 +75,7 @@ func TestRecordText_InterruptedAndSaved(t *testing.T) {
 		ctx := runenv.With(context.Background(), env)
 		lost := &capture.InterruptedError{Lost: capture.ErrNoAudio}
 
-		if _, err := recordText(ctx, pkgtools.AudioRecordCall{}, &stateRecorder{err: lost}, env.Stdin(), false); !errors.Is(err, capture.ErrInterrupted) {
+		if _, err := recordText(ctx, pkgtools.AudioRecordCall{}, &stateRecorder{err: lost}, stopSources{stdin: env.Stdin()}); !errors.Is(err, capture.ErrInterrupted) {
 			t.Fatalf("error = %v, want the interrupted error", err)
 		}
 		if err := env.Streams().Close(); err != nil {
@@ -117,7 +117,7 @@ func TestRecordText_InterruptKeepsWithoutTranscribing(t *testing.T) {
 	}
 	done := make(chan outcome, 1)
 	go func() {
-		result, err := recordText(ctx, pkgtools.AudioRecordCall{}, capture.New(), nil, false)
+		result, err := recordText(ctx, pkgtools.AudioRecordCall{}, capture.New(), stopSources{})
 		done <- outcome{result, err}
 	}()
 	cancelOnPartFile(t, dir, cancel)

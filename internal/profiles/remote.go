@@ -145,6 +145,30 @@ func (d CommandDeps) Trust(ctx context.Context, target string) error {
 	return nil
 }
 
+// CheckTrust decides, for the profile and its skills, what a run with nobody
+// to ask would, and records no trust: an UntrustedError (exit 3) when the run
+// would refuse.
+func (d CommandDeps) CheckTrust(ctx context.Context, target string) error {
+	d = d.withEnv(ctx)
+	confDir, err := d.configDir(ctx)
+	if err != nil {
+		return err
+	}
+	r, err := d.resolver(ctx, confDir)
+	if err != nil {
+		return err
+	}
+	res, err := r.Resolve(ctx, target, remote.ConsentCheck)
+	if err != nil {
+		return err
+	}
+	if _, err := r.ResolveSkills(ctx, skillTargets(res), remote.ConsentCheck); err != nil {
+		return err
+	}
+	fmt.Fprintf(d.Out, "%s (sha256 %s) is trusted\n", res.Target, res.Digest)
+	return nil
+}
+
 // Install fetches target and saves it as <config>/profiles/<name>.json
 // with a source stamp, so clai -p <name> runs it offline from then on.
 func (d CommandDeps) Install(ctx context.Context, target, name string) error {
@@ -262,6 +286,17 @@ func (d CommandDeps) updateOne(ctx context.Context, r remote.Resolver, path, nam
 // run, offline or in cron, finds them cached and trusted. The command
 // that trusts the profile is consent for its skills.
 func (d CommandDeps) trustSkills(ctx context.Context, r remote.Resolver, res remote.Resolved) error {
+	skills, err := r.ResolveSkills(ctx, skillTargets(res), remote.ConsentGiven)
+	if err != nil {
+		return err
+	}
+	for _, s := range skills {
+		fmt.Fprintf(d.Out, "Skill %s from %s (sha256 %s)\n", s.Name, s.Target, s.Digest)
+	}
+	return nil
+}
+
+func skillTargets(res remote.Resolved) []string {
 	targets := make([]string, 0, len(res.Summary.Skills))
 	for _, t := range res.Summary.Skills {
 		target := t.String()
@@ -270,14 +305,7 @@ func (d CommandDeps) trustSkills(ctx context.Context, r remote.Resolver, res rem
 		}
 		targets = append(targets, target)
 	}
-	skills, err := r.ResolveSkills(ctx, targets, remote.ConsentGiven)
-	if err != nil {
-		return err
-	}
-	for _, s := range skills {
-		fmt.Fprintf(d.Out, "Skill %s from %s (sha256 %s)\n", s.Name, s.Target, s.Digest)
-	}
-	return nil
+	return targets
 }
 
 func checkProfileName(name string) error {

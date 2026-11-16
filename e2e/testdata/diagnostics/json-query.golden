@@ -7,6 +7,7 @@
 {"type":"tool_result","name":"pwd","ok":true,"output":"$HOME/work\n"}
 {"type":"reply_delta","text":"THE-REPLY"}
 {"type":"reply","text":"THE-REPLY"}
+{"type":"chat","id":"$CHAT"}
 
 == stderr
 

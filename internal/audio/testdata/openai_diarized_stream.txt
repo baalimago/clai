@@ -1,0 +1,10 @@
+data: {"type":"transcript.text.segment","text":" Good morning everyone,","speaker":"A","start":0.0,"end":1.05,"id":"seg_0"}
+
+data: {"type":"transcript.text.segment","text":" and thanks for joining the weekly planning meeting.","speaker":"A","start":1.4000000000000001,"end":3.8,"id":"seg_1"}
+
+data: {"type":"transcript.text.segment","text":" Let us start with the release.","speaker":"B","start":4.0,"end":5.6499999999999995,"id":"seg_2"}
+
+data: {"type":"transcript.text.done","text":"Good morning everyone, and thanks for joining the weekly planning meeting. Let us start with the release.","usage":{"type":"tokens","total_tokens":120,"input_tokens":60,"output_tokens":60}}
+
+data: [DONE]
+

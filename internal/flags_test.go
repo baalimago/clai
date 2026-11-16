@@ -508,3 +508,36 @@ func Test_loopFlagsValidate(t *testing.T) {
 		})
 	}
 }
+
+// Test_ContinueFlags pins what `chat continue` takes beside the chat tree's
+// -r, -n and -p: the query flags, which it passes on as -name=value, without
+// -dre (the chat named is the one continued) and without the repeatable -img.
+func Test_ContinueFlags(t *testing.T) {
+	fs := flag.NewFlagSet("continue", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	var cf ChatFlags
+	cf.Register(fs)
+	g := NewContinueFlags()
+	g.Register(fs)
+	for _, name := range []string{"r", "n", "p", "cm", "am", "prp", "profile-path", "reply-only", "t", "qs"} {
+		if fs.Lookup(name) == nil {
+			t.Fatalf("flag %q missing from chat continue", name)
+		}
+	}
+	for _, name := range []string{"dre", "dir-reply", "re", "img", "l"} {
+		if fs.Lookup(name) != nil {
+			t.Fatalf("flag %q offered by chat continue", name)
+		}
+	}
+	args := []string{"-r", "-n", "-p", "work", "-reply-only", "-cm", "or:m", "-am", "a b", "-prp", "cchub:a/b#sha256=c", "-qs=false", "id", "go on"}
+	if err := fs.Parse(args); err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	want := []string{"-am=a b", "-cm=or:m", "-prp=cchub:a/b#sha256=c", "-qs=false", "-reply-only=true"}
+	if got := g.Tokens(fs); !slices.Equal(got, want) {
+		t.Fatalf("Tokens = %q, want %q", got, want)
+	}
+	if !cf.Raw.Value() || !cf.NonInteractive.Value() || cf.Profile.Value() != "work" || !slices.Equal(fs.Args(), []string{"id", "go on"}) {
+		t.Fatalf("chat flags r=%t n=%t p=%q args %q", cf.Raw.Value(), cf.NonInteractive.Value(), cf.Profile.Value(), fs.Args())
+	}
+}

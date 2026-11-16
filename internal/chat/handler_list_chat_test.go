@@ -1109,6 +1109,30 @@ func saveAll(t *testing.T, convDir string, chats ...pub_models.Chat) {
 	}
 }
 
+func TestPrintChatInfo_ShowsConversationID(t *testing.T) {
+	cq, confDir := newTestHandler(t)
+	t.Setenv("CLAI_CONFIG_DIR", confDir)
+	for _, tc := range []struct {
+		name string
+		chat pub_models.Chat
+		opts chatInfoOpts
+		want string
+	}{
+		{"native", pub_models.Chat{ID: "01a1e46c-5493-7843-84b5-10b3b63c4922", GroupKey: "group"}, chatInfoOpts{}, "01a1e46c-5493-7843-84b5-10b3b63c4922"},
+		{"foreign", pub_models.Chat{Source: "claude-code", SourceID: "session"}, chatInfoOpts{foreign: true}, "(not cloned)"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var out strings.Builder
+			if err := cq.printChatInfoCommon(&out, tc.chat, "", tc.opts); err != nil {
+				t.Fatal(err)
+			}
+			if got := regexp.MustCompile(`\x1b\[[0-9;]*m`).ReplaceAllString(out.String(), ""); !strings.Contains(got, "conversation ID: "+tc.want+"\n") {
+				t.Fatalf("conversation ID missing from details: %q", got)
+			}
+		})
+	}
+}
+
 func TestListChats_rowShowsTitle(t *testing.T) {
 	cq, confDir := newTestHandler(t)
 	convDir := conversationsDir(confDir)

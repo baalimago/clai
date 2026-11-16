@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/fs"
 	"os/user"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -30,7 +31,7 @@ You may start a new chat using the prompt-modification flags which
 are normally used in query mode.
 
 Commands:
-  c|continue <chatID> <prompt>    Continue an existing chat with the given chat ID. Prompt is optional
+  c|continue <chatID> <prompt>    Continue an existing chat with the given chat ID. Prompt is optional; it goes to that chat
   d|delete   <chatID>             Delete the chat with the given chat ID.
   l|list                          List all existing chats.
   dir                             Show legacy chat info for CWD (stable v1 output).
@@ -77,8 +78,10 @@ type ChatHandler struct {
 	profile string
 	raw     bool
 	// sendPrompt sends the prompt of `continue <chat> <prompt>`; nil only
-	// previews it.
-	sendPrompt func(ctx context.Context, req DirReplyRequest) error
+	// previews it. queryFlags are the query flags it is sent with.
+	sendPrompt func(ctx context.Context, req ContinueRequest) error
+	queryFlags []string
+	replyOnly  bool
 
 	out    io.Writer
 	input  io.Reader
@@ -214,6 +217,7 @@ func (cq *ChatHandler) findChatByID(ctx context.Context, potentialChatIdx string
 	// Prefer exact ID match first.
 	c, err := cq.getByID(ctx, firstToken)
 	if err == nil {
+		cq.prompt = strings.Join(split[1:], " ")
 		return c, nil
 	}
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
@@ -223,6 +227,9 @@ func (cq *ChatHandler) findChatByID(ctx context.Context, potentialChatIdx string
 }
 
 func (cq *ChatHandler) printChat(chat pub_models.Chat) error {
+	if cq.replyOnly {
+		return nil
+	}
 	// New default behavior: fast, heavily obfuscated preview.
 	// This avoids expensive glow rendering and avoids printing message bodies.
 	if err := printChatObfuscated(cq.out, chat, cq.raw, cq.dims.Width); err != nil {
@@ -295,11 +302,14 @@ func (cq *ChatHandler) cont(ctx context.Context) error {
 		chat.Profile = cq.profile
 	}
 
-	if cq.prompt != "" {
-		chat.Messages = append(chat.Messages, pub_models.Message{Role: "user", Content: cq.prompt})
-	}
-	if err := cq.printChat(chat); err != nil {
-		return diag.Errorf("failed to print chat: %w", err)
+	if cq.prompt == "" || !runenv.From(ctx).JSON() {
+		shown := chat
+		if cq.prompt != "" {
+			shown.Messages = append(slices.Clone(chat.Messages), pub_models.Message{Role: "user", Content: cq.prompt})
+		}
+		if err := cq.printChat(shown); err != nil {
+			return diag.Errorf("failed to print chat: %w", err)
+		}
 	}
 
 	// New behavior: `clai chat continue` should not enter interactive loop.
@@ -309,7 +319,8 @@ func (cq *ChatHandler) cont(ctx context.Context) error {
 		return diag.Errorf("failed to update directory-scoped binding: %w", err)
 	}
 	if cq.prompt != "" && cq.sendPrompt != nil {
-		if err := cq.sendPrompt(ctx, DirReplyRequest{Prompt: cq.prompt, Profile: cq.profile, Raw: cq.raw}); err != nil {
+		req := ContinueRequest{ChatID: chat.ID, Prompt: cq.prompt, Profile: cq.profile, Raw: cq.raw, Flags: cq.queryFlags}
+		if err := cq.sendPrompt(ctx, req); err != nil {
 			return diag.Errorf("failed to send prompt to chat %s: %w", chat.ID, err)
 		}
 		return nil

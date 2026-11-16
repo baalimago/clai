@@ -402,7 +402,7 @@ func commands(deps Deps, setExit func(int), notices func() io.Writer, rerun func
 			NewSummarizer: deps.NewSummarizer,
 			ParseSince:    summary.ParseSince,
 			ForeignCache:  deps.ForeignCache,
-			SendPrompt:    text.DirReplySender(queryDeps),
+			SendPrompt:    text.ContinueSender(queryDeps),
 		}),
 		"photo|p": photo.Command(photo.CommandDeps{
 			ConfigPrep:        configPrep,
