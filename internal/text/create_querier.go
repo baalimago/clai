@@ -54,6 +54,19 @@ func selectTextQuerier(ctx context.Context, conf Configurations) (models.Querier
 		q = &qTmp
 	}
 
+	// A route prefix outranks every vendor substring below: "or:anthropic/…"
+	// is an OpenRouter model whose name holds "claude", and building the
+	// anthropic vendor first asks for a key the run never needed.
+	if strings.HasPrefix(conf.Model, "or:") {
+		defaultCpy := openrouter.Default
+		defaultCpy.Model = conf.Model
+		qTmp, err := NewQuerier(ctx, conf, &defaultCpy)
+		if err != nil {
+			return nil, diag.Errorf("failed to create text querier: %w", err)
+		}
+		return &qTmp, nil
+	}
+
 	if strings.Contains(conf.Model, "claude") {
 		found = true
 		defaultCpy := anthropic.Default
@@ -63,16 +76,6 @@ func selectTextQuerier(ctx context.Context, conf Configurations) (models.Querier
 			return nil, diag.Errorf("failed to create text querier: %w", err)
 		}
 		q = &qTmp
-	}
-
-	if strings.HasPrefix(conf.Model, "or:") {
-		defaultCpy := openrouter.Default
-		defaultCpy.Model = conf.Model
-		qTmp, err := NewQuerier(ctx, conf, &defaultCpy)
-		if err != nil {
-			return nil, diag.Errorf("failed to create text querier: %w", err)
-		}
-		return &qTmp, nil
 	}
 
 	if strings.HasPrefix(conf.Model, "jev-") {
@@ -85,7 +88,7 @@ func selectTextQuerier(ctx context.Context, conf Configurations) (models.Querier
 		return &qTmp, nil
 	}
 
-	if strings.Contains(conf.Model, "gpt") && !strings.HasPrefix(conf.Model, "or:") {
+	if strings.Contains(conf.Model, "gpt") {
 		found = true
 		defaultCpy := openai.GptDefault
 		defaultCpy.Model = conf.Model

@@ -223,6 +223,34 @@ func TestSelectTextQuerier_OpenRouterPrefixBeatsProviderSubstring(t *testing.T) 
 	}
 }
 
+// An OpenRouter-routed model whose name holds a vendor word must not be built
+// for that vendor first: "or:anthropic/claude-haiku-5.5" needs no
+// ANTHROPIC_API_KEY, and asking for one refuses a run that would have worked.
+func TestSelectTextQuerier_OpenRouterPrefixBeatsEarlierProviderSubstring(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("OPENROUTER_API_KEY", "k")
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("CLAI_CONFIG_DIR", tmp)
+
+	conf := Configurations{
+		Model:     "or:anthropic/claude-haiku-5.5",
+		ConfigDir: tmp,
+	}
+	writeModelPriceFixture(t, conf, openrouter.Default)
+	q, err := selectTextQuerier(t.Context(), conf)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	waitForQuerierCosts(t, q)
+	typed, ok := q.(*Querier[*openrouter.OpenRouter])
+	if !ok {
+		t.Fatalf("expected openrouter querier, got: %T", q)
+	}
+	if typed.Model.Model != "or:anthropic/claude-haiku-5.5" {
+		t.Fatalf("expected prefixed openrouter model, got: %q", typed.Model.Model)
+	}
+}
+
 func TestSelectTextQuerier_ErrorPropagation(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("ANTHROPIC_API_KEY", "")
