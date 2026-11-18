@@ -76,6 +76,11 @@ generic (Chat Completions) path:
   unadvertised/hallucinated name then degrades to a recoverable `ERROR: unknown tool call`
   tool result the model can recover from, rather than killing the run. (The earlier
   Responses-only hard-fail here was the sole vendor divergence.)
+- **Tools are never strict.** Every function tool sends `"strict": false`. When the field
+  is absent the API infers strict mode per tool, and a `oneOf` schema from an MCP server
+  then fails intermittently with 400 `invalid_json_schema`. clai's tool schemas carry no
+  `additionalProperties`, so they are not built for strict mode, and this matches the Chat
+  Completions path.
 - **Image input.** A message's `Parts` map in order: a `TextPart` to `input_text`
   (`output_text` on an assistant message) and an `ImagePart` to
   `{type:"input_image", image_url:"<data-uri>"}` — note the Responses `image_url` is a plain

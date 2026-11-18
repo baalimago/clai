@@ -133,6 +133,8 @@ type responsesTool struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	Parameters  any    `json:"parameters,omitempty"`
+	// Strict is always sent: when absent, the API infers strict mode per tool and rejects oneOf.
+	Strict bool `json:"strict"`
 }
 
 type responsesStreamEvent struct {

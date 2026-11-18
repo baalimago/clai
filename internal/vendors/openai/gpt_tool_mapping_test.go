@@ -58,3 +58,49 @@ func TestChatGPT_ResponsesToolWithoutInputsSendsEmptySchema(t *testing.T) {
 		t.Fatalf("tools JSON = %s, want %s", raw, want)
 	}
 }
+
+// TestChatGPT_ResponsesToolsOptOutOfStrictMode pins that every function tool
+// sends "strict":false. Without it the Responses API infers strict mode per tool
+// and intermittently rejects a oneOf schema (mcp_linear_save_document) with
+// 400 invalid_json_schema (2026-11-18 gpt-6.2-sol).
+func TestChatGPT_ResponsesToolsOptOutOfStrictMode(t *testing.T) {
+	t.Parallel()
+
+	oneOf := &pub_models.InputSchema{
+		Type:     "object",
+		Required: []string{"content"},
+		Properties: map[string]pub_models.ParameterObject{
+			"content": {
+				Description: "document body",
+				OneOf: []pub_models.ParameterObject{
+					{Type: "string"},
+					{Type: "null"},
+				},
+			},
+		},
+	}
+	g := &ChatGPT{}
+	g.RegisterTool(fakeTool{spec: pub_models.Specification{Name: "save_document", Inputs: oneOf}})
+	g.RegisterTool(fakeTool{spec: pub_models.Specification{Name: "pwd"}})
+
+	raw, err := json.Marshal(g.mapResponsesTools())
+	if err != nil {
+		t.Fatalf("marshal tools: %v", err)
+	}
+	var wire []map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &wire); err != nil {
+		t.Fatalf("decode tools %s: %v", raw, err)
+	}
+	if len(wire) != 2 {
+		t.Fatalf("got %d tools, want 2: %s", len(wire), raw)
+	}
+	for _, tool := range wire {
+		got, ok := tool["strict"]
+		if !ok {
+			t.Fatalf("tool %s has no strict field: %s", tool["name"], raw)
+		}
+		if string(got) != "false" {
+			t.Fatalf("tool %s strict = %s, want false", tool["name"], got)
+		}
+	}
+}
