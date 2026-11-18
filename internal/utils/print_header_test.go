@@ -182,7 +182,7 @@ func TestActivityViewport_HeaderWrapsAndCapsRows(t *testing.T) {
 		t.Fatalf("first row = %q, want the iteration marker and the phase on one row", rows[0])
 	}
 	for _, row := range rows {
-		if got := terminalStringWidth(row); got > 20 {
+		if got := TerminalStringWidth(row); got > 20 {
 			t.Fatalf("header row width = %d, want at most 20: %q", got, row)
 		}
 	}

@@ -18,6 +18,7 @@ import (
 	"github.com/baalimago/clai/internal/display"
 	"github.com/baalimago/clai/internal/runenv"
 	"github.com/baalimago/clai/internal/stdio"
+	"github.com/baalimago/clai/internal/term"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/internal/vendors"
 	"github.com/baalimago/clai/internal/vendors/anthropic"
@@ -29,6 +30,7 @@ import (
 	"github.com/baalimago/clai/internal/vendors/pi"
 	"github.com/baalimago/clai/internal/vendors/qwen"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
+	"github.com/baalimago/go_away_boilerplate/pkg/dimensions"
 	"github.com/baalimago/go_away_boilerplate/pkg/table"
 )
 
@@ -619,14 +621,6 @@ func listProfileDisplay(profile string) string {
 	return string(runes[:head]) + "..." + string(runes[len(runes)-(maxListProfileWidth-head-len("...")):])
 }
 
-func profileWidth(rows []chatListRow) int {
-	width := 15
-	for _, r := range rows {
-		width = max(width, min(maxListProfileWidth, utf8.RuneCountInString(r.Profile)))
-	}
-	return width
-}
-
 // collapseGroupRows collapses rows with the same non-empty GroupKey and N≥2
 // into a single group row. Ungrouped rows pass through unchanged.
 func collapseGroupRows(rows []chatListRow) []chatListRow {
@@ -847,7 +841,31 @@ func prepareListRows(allRows []chatListRow, byName map[string]vendors.SourceRead
 	return preparedRows{rows: collapseGroupRows(rows), byName: byName}
 }
 
-func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPaginator, groupKey string) error {
+// listInput is the terminal `chat list` selects from: a read ends with
+// term.ErrResized while the width differs from the last Observe.
+type listInput interface {
+	io.Reader
+	Observe() dimensions.Dimensions
+	Close() error
+}
+
+// openSelectionInput is the width watch of a list session, or nil when the
+// width is not watched and the table reads cq.input.
+func (cq *ChatHandler) openSelectionInput(ctx context.Context) (listInput, error) {
+	if cq.openListInput == nil {
+		return nil, nil
+	}
+	in, err := cq.openListInput(ctx)
+	if errors.Is(err, term.ErrResizeUnsupported) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, diag.Errorf("open the chat list input: %w", err)
+	}
+	return in, nil
+}
+
+func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPaginator, groupKey string) (err error) {
 	// Foreign-session discovery walks every source's session dir on disk
 	// (all of ~/.claude/projects, ~/.pi/agent/sessions, ...) — by far the
 	// most expensive part of listing. Discover once per list session;
@@ -856,6 +874,20 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 	allRows, byName, err := cq.buildChatListRows(ctx, paginator)
 	if err != nil {
 		return diag.Errorf("failed to build chat list rows: %w", err)
+	}
+	watch, err := cq.openSelectionInput(ctx)
+	if err != nil {
+		return err
+	}
+	screen := &listScreen{out: cq.out}
+	selectInput := cq.input
+	if watch != nil {
+		selectInput = screen.echoing(watch)
+		defer func() {
+			if closeErr := watch.Close(); closeErr != nil {
+				err = errors.Join(err, diag.Errorf("close the chat list input: %w", closeErr))
+			}
+		}()
 	}
 	inDir, _, hasDirFilter := cq.dirScopeRowPredicate()
 	dirFilterOn := false
@@ -867,6 +899,8 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 	// conversation lands back where they left off. The main list and the
 	// group view page independently.
 	listPage, groupPage := 0, 0
+	// A redraw keeps the table's text filter, which pages count from.
+	redraw, filter := false, ""
 	color := runenv.From(ctx).Color()
 	for {
 		var scope func(chatListRow) bool
@@ -874,6 +908,20 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 			scope = inDir
 		}
 		pr := prepareListRows(allRows, byName, groupKey, scope, foreignOn)
+		layoutWidth := 0
+		if watch != nil {
+			cq.dims = watch.Observe()
+			layoutWidth = cq.dims.Width
+		} else if cq.outIsTerminal {
+			layoutWidth = cq.dims.Width
+		}
+		if redraw {
+			if err := screen.erase(cq.dims.Width); err != nil {
+				return err
+			}
+			redraw = false
+		}
+		screen.reset()
 
 		backLabel := ""
 		if groupKey != "" {
@@ -898,25 +946,7 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 			})
 		}
 
-		// Compute the widest index string across all visible rows.
-		maxIdxLen := 5 // "Index"
-		for i, r := range pr.rows {
-			s := fmt.Sprintf("%v", i)
-			if r.Kind == chatRowGroup {
-				s = fmt.Sprintf("%v [group:%v]", i, r.GroupMemberCount)
-			}
-			if len(s) > maxIdxLen {
-				maxIdxLen = len(s)
-			}
-		}
-
-		tblFmt := fmt.Sprintf("%%-%ds| %%-15s | %%-20s| %%-18s | %%-8s | %%v", maxIdxLen)
-		headArgs := []any{"Index", "Source", "Created", "Model", "Cost", "About"}
-		isWide := cq.dims.Width > 120
-		if isWide {
-			tblFmt = fmt.Sprintf("%%-%ds| %%-15s | %%-20s| %%-8v | %%-%ds | %%-18s | %%-8s | %%-6s | %%v", maxIdxLen, profileWidth(pr.rows))
-			headArgs = []any{"Index", "Source", "Created", "Messages", "Profile", "Model", "Cost", "Tokens", "About"}
-		}
+		layout := newListLayout(pr.rows, layoutWidth)
 
 		startPage := listPage
 		if groupKey != "" {
@@ -924,58 +954,17 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 		}
 		tb := table.New(
 			table.SlicePaginator(pr.rows),
-			func(i int, item chatListRow) (string, error) {
-				tokenStr := "N/A"
-				costStr := "N/A"
-				model := item.Model
-				profile := item.Profile
-				msgs := item.MessageCount
-				idxStr := fmt.Sprintf("%v", i)
-				if item.Kind == chatRowGroup {
-					idxStr = fmt.Sprintf("%v [group:%v]", i, item.GroupMemberCount)
-				}
-				if item.Kind == chatRowNative || item.Kind == chatRowGroup {
-					tokenStr = chatIndexTokenStr(chatIndexRow{TotalTokens: item.TotalTokens})
-					costStr = chatIndexCostStr(chatIndexRow{TotalCostUSD: item.TotalCostUSD})
-				} else {
-					profile = "N/A"
-				}
-				label := labelFor(item.Title, item.FirstUserMessage)
-				if isWide {
-					prefix := fmt.Sprintf(
-						tblFmt,
-						idxStr,
-						item.displaySource(),
-						item.Created.Format("2006-01-02 15:04:05"),
-						msgs,
-						listProfileDisplay(profile),
-						model,
-						costStr,
-						tokenStr,
-						"",
-					)
-					return table.WidthAppropriateStringTruncWithWidth(label, prefix, 15, cq.dims.Width), nil
-				}
-
-				prefix := fmt.Sprintf(
-					tblFmt,
-					idxStr,
-					item.displaySource(),
-					item.Created.Format("2006-01-02 15:04:05"),
-					model,
-					costStr,
-					"",
-				)
-				return table.WidthAppropriateStringTruncWithWidth(label, prefix, 15, cq.dims.Width), nil
-			},
+			func(i int, item chatListRow) (string, error) { return layout.row(i, item), nil },
 		).
-			WithHeader(fmt.Sprintf(tblFmt, headArgs...)).
+			WithHeader(layout.header()).
 			WithPageSize(utils.TableTheme().Items).
 			WithSingleSelect().
-			WithWriter(cq.out).
-			WithInput(cq.input).
+			WithWriter(screen).
+			WithInput(selectInput).
 			WithPrompter(cq.selectPrompt).
-			WithStartPage(startPage)
+			WithStartPage(startPage).
+			WithFilter(filter)
+		filter = ""
 
 		if len(tableActions) > 0 {
 			tb = tb.WithActions(tableActions...)
@@ -997,6 +986,10 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 			listPage = shownPage
 		}
 		if err != nil {
+			if errors.Is(err, term.ErrResized) {
+				redraw, filter = true, tb.Filter()
+				continue
+			}
 			if errors.Is(err, errToggleDirFilter) {
 				dirFilterOn = !dirFilterOn
 				// The scoped and unscoped views paginate differently.

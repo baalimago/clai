@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"os"
 	"os/user"
 	"slices"
 	"strconv"
@@ -17,6 +18,7 @@ import (
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/runenv"
 	"github.com/baalimago/clai/internal/stdio"
+	"github.com/baalimago/clai/internal/term"
 	"github.com/baalimago/clai/internal/utils"
 	"github.com/baalimago/clai/internal/vendors"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -91,9 +93,16 @@ type ChatHandler struct {
 	selectPrompt func(string) error
 	// dims is the one terminal-dimensions snapshot of this chat command
 	// invocation, bound to the handler's output writer. It is resolved once in
-	// New and used by every width-aware render path of the handler. Tests
-	// inject a snapshot to stay ambient-independent.
+	// New and used by every width-aware render path of the handler; `chat
+	// list` re-resolves it when the width changes. Tests inject a snapshot to
+	// stay ambient-independent.
 	dims dimensions.Dimensions
+	// outIsTerminal holds when out is a terminal; `chat list` lays out any
+	// other output at an unknown width, every column and whole labels.
+	outIsTerminal bool
+	// openListInput opens the input `chat list` selects from while it
+	// redraws on a width change; nil reads input without watching the width.
+	openListInput func(ctx context.Context) (listInput, error)
 
 	// summarizer, summarizeOptions and upsertIndexBatch are set only for the
 	// summarize verb; a nil upsertIndexBatch means UpsertChatIndexBatch.
@@ -389,9 +398,24 @@ func New(ctx context.Context, confDir, args, profile string, raw bool, out io.Wr
 		selectPrompt: env.TablePrompter(stdio.Stdout),
 	}
 
+	ch.outIsTerminal = env.IsTerminal(stdio.Stdout)
+	// The watch reads the controlling terminal, so it serves only a run whose
+	// stdin and stdout are that terminal's files, not input a caller supplied.
+	stdin, stdinIsFile := env.Stdin().(*os.File)
+	stdout, stdoutIsFile := out.(*os.File)
+	if env.StdinIsTerminal() && ch.outIsTerminal && stdinIsFile && stdoutIsFile && term.IsTerminal(stdin) && term.IsTerminal(stdout) {
+		ch.openListInput = func(ctx context.Context) (listInput, error) {
+			reader, err := term.OpenResizeReader(dimensions.New(ctx, stdout.Fd()))
+			if err != nil {
+				return nil, err
+			}
+			return reader, nil
+		}
+	}
 	// Macro mode: extra positional args after "chat list" become table inputs.
 	if (subCmd == "list" || subCmd == "l") && len(argsArr) > 1 {
 		ch.input = utils.NewMacroReader(argsArr[1:])
+		ch.openListInput = nil
 	}
 
 	return ch, nil

@@ -289,16 +289,17 @@ timestamps, the tiebreaker is **GroupKey lexicographic order** (empty GroupKey s
 non-empty). Within a group view, member conversations are sorted by `Created` descending with the
 same tiebreaker.
 
-### Wide format
+### Columns
 
-In wide format (>120 columns), group rows render aggregate columns:
+Group rows show their aggregates in whichever columns the terminal width keeps (see the `chat list`
+section of `architecture/chat.md`): Messages, Cost and Tokens are member totals.
 
 ```
-%-6s| %-15s | %-20s| %-8v | %-15s | %-18s | %-8s | %-6s | %v
- 0     [group:3]  clai      2006-01-02 15:04:05  12      my-profile  gpt-5             $0.35    15K     fix the auth bug...
+Index       | Source | Created             | Messages | Profile    | Model | Cost  | Tokens | About
+0 [group:3] | clai   | 2006-01-02 15:04:05 | 12       | my-profile | gpt-5 | $0.35 | 15K    | fix the auth bug
 ```
 
-The `[group:N]` label appears in the index column, identical to narrow format.
+The `[group:N]` label appears in the index column at every width.
 
 ## Group view
 

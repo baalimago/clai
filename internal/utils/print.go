@@ -225,7 +225,7 @@ func PrintToolBlock(w io.Writer, call pub_models.Call, content string, rows []st
 	if w == nil {
 		w = io.Discard
 	}
-	header := truncateTerminalRow(toolActivityHeader(call), max(termWidth, 1))
+	header := TruncateTerminalRow(toolActivityHeader(call), max(termWidth, 1))
 	if _, err := fmt.Fprintln(w, table.Colorize(TableTheme().Primary, header)); err != nil {
 		return diag.Errorf("write tool activity header: %w", err)
 	}
@@ -250,12 +250,12 @@ func printToolContent(w io.Writer, call pub_models.Call, content string, termWid
 	rows := compactTerminalRows(content, contentWidth, maxRows)
 	for i, row := range rows {
 		isMarker := isToolOutputMarker(row)
-		row = truncateTerminalRow(row, contentWidth)
+		row = TruncateTerminalRow(row, contentWidth)
 		if isMarker {
 			row = table.Colorize(TableTheme().Secondary, row)
 		}
 		if i == 0 && isToolError(content) {
-			row = table.Colorize(RoleColor("tool"), truncateTerminalRow("✗ "+row, contentWidth))
+			row = table.Colorize(RoleColor("tool"), TruncateTerminalRow("✗ "+row, contentWidth))
 		}
 		if _, err := fmt.Fprintf(w, "  %s\n", row); err != nil {
 			return diag.Errorf("write tool output: %w", err)
@@ -796,21 +796,21 @@ func (v *ActivityViewport) wrapBlock(block *activityBlock) []activityRow {
 		}
 		return compactActivityBlock(rows, v.height)
 	case blockTool:
-		rows := []activityRow{{content: truncateTerminalRow(toolActivityHeader(block.call), v.width), color: TableTheme().Primary}}
+		rows := []activityRow{{content: TruncateTerminalRow(toolActivityHeader(block.call), v.width), color: TableTheme().Primary}}
 		for _, row := range compactTerminalRows(block.content, max(v.width-2, 1), block.toolBodyRows) {
 			color := ""
 			if isToolOutputMarker(row) {
 				color = TableTheme().Secondary
 			}
 			if strings.HasPrefix(row, "ERROR:") {
-				row = truncateTerminalRow("✗ "+row, max(v.width-2, 1))
+				row = TruncateTerminalRow("✗ "+row, max(v.width-2, 1))
 				color = RoleColor("tool")
 			}
 			rows = append(rows, activityRow{content: "  " + row, color: color})
 		}
 		return append(rows, activityRow{})
 	case blockMcpLog:
-		rows := []activityRow{{content: truncateTerminalRow(mcpLogBlockHeader(block.server), v.width), color: TableTheme().Secondary}}
+		rows := []activityRow{{content: TruncateTerminalRow(mcpLogBlockHeader(block.server), v.width), color: TableTheme().Secondary}}
 		rows = append(rows, mcpLogBodyRows(block.content, max(v.width-2, 1), block.toolBodyRows)...)
 		return append(rows, activityRow{})
 	}
@@ -929,7 +929,7 @@ func clipActivityRow(row activityRow, width int, marker string) activityRow {
 		var kept strings.Builder
 		for _, r := range span.text {
 			cellWidth := terminalRuneWidth(r)
-			if used+cellWidth+terminalStringWidth(marker) > width {
+			if used+cellWidth+TerminalStringWidth(marker) > width {
 				cut = true
 				break
 			}
@@ -1041,7 +1041,7 @@ func (v *ActivityViewport) PrintAbove(w io.Writer, line string) error {
 	if drawn {
 		fmt.Fprintf(&buf, "\x1b[%dA\r\x1b[J", v.drawnRows)
 	}
-	fmt.Fprintln(&buf, truncateTerminalRow(text, v.width))
+	fmt.Fprintln(&buf, TruncateTerminalRow(text, v.width))
 	var rendered []string
 	if drawn {
 		rendered = v.renderedRows()
@@ -1327,7 +1327,7 @@ func mcpLogBlockHeader(server string) string {
 // PrintMcpLogHeader prints the rolling-window style block header for one MCP
 // server's log lines.
 func PrintMcpLogHeader(w io.Writer, server string, termWidth int) error {
-	header := truncateTerminalRow(mcpLogBlockHeader(server), max(termWidth, 1))
+	header := TruncateTerminalRow(mcpLogBlockHeader(server), max(termWidth, 1))
 	if _, err := fmt.Fprintln(w, table.Colorize(TableTheme().Secondary, header)); err != nil {
 		return diag.Errorf("write mcp log block header: %w", err)
 	}
@@ -1349,7 +1349,7 @@ func PrintMcpLogLine(w io.Writer, line string, termWidth int) error {
 // activity indent and the caller's text, accented as the block's own state so a
 // running wait never reads as log output.
 func PrintMcpStatusLine(w io.Writer, line string, termWidth int) error {
-	row := truncateTerminalRow("  "+SanitizeTerminalRow(line), max(termWidth, 1))
+	row := TruncateTerminalRow("  "+SanitizeTerminalRow(line), max(termWidth, 1))
 	if _, err := fmt.Fprintln(w, table.Colorize(TableTheme().Primary, row)); err != nil {
 		return diag.Errorf("write mcp status line: %w", err)
 	}
@@ -1474,7 +1474,7 @@ func wordWrapLine(line string, width int) []string {
 		fresh bool
 	)
 	for i, word := range strings.Split(line, " ") {
-		wordWidth := terminalStringWidth(word)
+		wordWidth := TerminalStringWidth(word)
 		sep := i > 0 && !fresh
 		need := wordWidth
 		if sep {
@@ -1502,7 +1502,7 @@ func wordWrapLine(line string, width int) []string {
 		rows = append(rows, chunks[:len(chunks)-1]...)
 		row.Reset()
 		row.WriteString(chunks[len(chunks)-1])
-		used = terminalStringWidth(chunks[len(chunks)-1])
+		used = TerminalStringWidth(chunks[len(chunks)-1])
 	}
 	return append(rows, row.String())
 }
@@ -1536,9 +1536,10 @@ func isToolOutputMarker(row string) bool {
 	return strings.HasPrefix(row, "... [") && strings.HasSuffix(row, " terminal rows omitted] ...")
 }
 
-func truncateTerminalRow(content string, width int) string {
+// TruncateTerminalRow cuts content to width terminal cells, ending a cut row with "…".
+func TruncateTerminalRow(content string, width int) string {
 	width = max(width, 1)
-	if terminalStringWidth(content) <= width {
+	if TerminalStringWidth(content) <= width {
 		return content
 	}
 	if width == 1 {
@@ -1558,7 +1559,8 @@ func truncateTerminalRow(content string, width int) string {
 	return truncated.String()
 }
 
-func terminalStringWidth(content string) int {
+// TerminalStringWidth is how many terminal cells content takes on one row.
+func TerminalStringWidth(content string) int {
 	cellWidth := 0
 	for _, r := range content {
 		cellWidth += terminalRuneWidth(r)

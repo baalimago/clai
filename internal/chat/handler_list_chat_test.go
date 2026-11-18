@@ -353,8 +353,8 @@ func TestListChats_DirFilterWithoutBindingsShowsEmptyDirScopedView(t *testing.T)
 	// After pressing "d", the filtered view should show zero rows.
 	// Verify by checking that the header appears but no data rows follow it
 	// in the second render.
-	if strings.Count(got, "Index|") < 2 {
-		t.Fatalf("expected two table renders (unfiltered + filtered), got %d in: %q", strings.Count(got, "Index|"), got)
+	if strings.Count(got, "Index |") < 2 {
+		t.Fatalf("expected two table renders (unfiltered + filtered), got %d in: %q", strings.Count(got, "Index |"), got)
 	}
 }
 
@@ -1137,6 +1137,7 @@ func TestListChats_rowShowsTitle(t *testing.T) {
 	cq, confDir := newTestHandler(t)
 	convDir := conversationsDir(confDir)
 	cq.dims = dimensions.Dimensions{Width: 200}
+	cq.outIsTerminal = true
 	wideTitle := strings.Repeat("wide title ", 12)
 	saveAll(t, convDir,
 		pub_models.Chat{ID: "labelled", Title: "Fix auth", Summary: "Token refresh fixed.", Created: time.Date(2026, 1, 3, 0, 0, 0, 0, time.UTC), Messages: []pub_models.Message{{Role: "user", Content: "labelled prompt"}}},
@@ -1151,8 +1152,8 @@ func TestListChats_rowShowsTitle(t *testing.T) {
 	if !strings.Contains(got, "plain prompt") {
 		t.Fatalf("expected the unlabelled row to show its first message, got: %q", got)
 	}
-	if strings.Contains(got, wideTitle) || !strings.Contains(got, "wide title") || !strings.Contains(got, " ... ") {
-		t.Fatalf("expected the wide title truncated through the existing infix, got: %q", got)
+	if strings.Contains(got, wideTitle) || !strings.Contains(got, "| wide title wide title") || !strings.Contains(got, "wide…") {
+		t.Fatalf("expected the wide title cut at its tail, got: %q", got)
 	}
 
 	// A cache written before the feature carries no title fields: the row
