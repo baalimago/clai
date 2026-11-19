@@ -6,7 +6,9 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
+	"github.com/baalimago/clai/internal/audio/voices"
 	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/utils"
@@ -40,7 +42,11 @@ func createSplitter(conf Configurations) (*Splitter, error) {
 		if err != nil {
 			return nil, err
 		}
-		transcriber = MockTranscriber{Diarized: strings.Contains(model, "diarize"), Delay: delay}
+		script, err := loadMockScript()
+		if err != nil {
+			return nil, err
+		}
+		transcriber = MockTranscriber{Diarized: strings.Contains(model, "diarize"), Delay: delay, script: script}
 	case strings.HasPrefix(model, "or:"):
 		vendorCpy := openrouter.TranscriberDefault
 		vendorCpy.Model = model
@@ -76,18 +82,23 @@ func createSplitter(conf Configurations) (*Splitter, error) {
 // CreateQuerier validates the output format, routes the transcriber and
 // returns the transcript-printing querier.
 func CreateQuerier(conf Configurations, filePath string) (models.Querier, error) {
+	return createKnownQuerier(conf, filePath, knownVoices{})
+}
+
+// createKnownQuerier is CreateQuerier naming the transcript after known.
+func createKnownQuerier(conf Configurations, filePath string, known knownVoices) (models.Querier, error) {
 	format, err := ParseOutputFormat(conf.Transcribe.OutputFormat)
 	if err != nil {
 		return nil, err
 	}
-	q, err := newTranscribeQuerier(conf, filePath, format, nil)
+	q, err := newTranscribeQuerier(conf, filePath, format, nil, known)
 	if err != nil {
 		return nil, err
 	}
 	return q, nil
 }
 
-func newTranscribeQuerier(conf Configurations, filePath string, format OutputFormat, out io.Writer) (*TranscribeQuerier, error) {
+func newTranscribeQuerier(conf Configurations, filePath string, format OutputFormat, out io.Writer, known knownVoices) (*TranscribeQuerier, error) {
 	splitter, err := createSplitter(conf)
 	if err != nil {
 		return nil, err
@@ -97,11 +108,12 @@ func newTranscribeQuerier(conf Configurations, filePath string, format OutputFor
 		FilePath: filePath,
 		Format:   format,
 		Out:      out,
+		known:    known,
 	}, nil
 }
 
 // transcribeEngine backs the audio_transcribe tool (architecture/audio.md, Tool Bridge).
-func transcribeEngine(ctx context.Context, filePath, outputFormat string) (string, error) {
+func transcribeEngine(ctx context.Context, call pkgtools.AudioTranscribeCall) (string, error) {
 	confDir, err := utils.GetClaiConfigDir()
 	if err != nil {
 		return "", diag.Errorf("failed to find config dir: %w", err)
@@ -110,6 +122,10 @@ func transcribeEngine(ctx context.Context, filePath, outputFormat string) (strin
 	if err != nil {
 		return "", diag.Errorf("failed to load configs: %w", err)
 	}
+	if err := checkMaxVoices(aConf.Transcribe); err != nil {
+		return "", err
+	}
+	filePath, outputFormat := call.FilePath, call.OutputFormat
 	if outputFormat == "" {
 		outputFormat = "text"
 	}
@@ -122,6 +138,11 @@ func transcribeEngine(ctx context.Context, filePath, outputFormat string) (strin
 	if _, err := os.Stat(filePath); err != nil {
 		return "", diag.Errorf("failed to find audio file: %w", err)
 	}
+	library := voices.NewLibrary(confDir, time.Now)
+	known, err := resolveKnownVoices(ExecRunner{}, library, voices.Asked{Tool: call.Voices, Flag: overrides.Voices, MaxVoices: aConf.Transcribe.MaxVoices})
+	if err != nil {
+		return "", err
+	}
 	if len(overrides.Models) == 0 {
 		if err := resolveRemoteAudioModel(ctx, confDir, overrides.NewResolver, &aConf); err != nil {
 			return "", err
@@ -129,7 +150,7 @@ func transcribeEngine(ctx context.Context, filePath, outputFormat string) (strin
 	}
 	var transcript strings.Builder
 	q, err := transcribeChain(ctx, aConf, func(conf Configurations) (models.Querier, error) {
-		return newTranscribeQuerier(conf, filePath, format, &transcript)
+		return newTranscribeQuerier(conf, filePath, format, &transcript, known)
 	})
 	if err != nil {
 		return "", diag.Errorf("failed to create audio querier: %w", err)
@@ -142,4 +163,5 @@ func transcribeEngine(ctx context.Context, filePath, outputFormat string) (strin
 
 func init() {
 	pkgtools.AudioTranscribeEngine = transcribeEngine
+	pkgtools.AudioRememberVoiceDeps = rememberVoiceDeps
 }

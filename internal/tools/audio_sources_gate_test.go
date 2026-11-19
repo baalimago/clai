@@ -16,6 +16,10 @@ func TestRegisterLocalTools_AudioRecordGate(t *testing.T) {
 	requireAudioToolGate(t, pkgtools.AudioRecord)
 }
 
+func TestRegisterLocalTools_AudioRememberVoiceGate(t *testing.T) {
+	requireAudioToolGate(t, pkgtools.AudioRememberVoice)
+}
+
 func requireAudioToolGate(t *testing.T, tool pub_models.LLMTool) {
 	t.Helper()
 	name := tool.Specification().Name

@@ -1,0 +1,57 @@
+# clai -r -cm mock_test -t=audio_transcribe -am test-diarize -af json q tool_audio_transcribe
+# env: -
+== status
+0
+== stdout
+Call: 'audio_transcribe', inputs: [ 'file_path': '$HOME/work/meeting.wav' ]
+{
+  "segments": [
+    {
+      "start": 0,
+      "end": 8,
+      "speaker": "Lorentz",
+      "voice": {
+        "clip": "lorentz/f8d05534bcf9",
+        "status": "confirmed"
+      },
+      "text": "hello there"
+    },
+    {
+      "start": 9,
+      "end": 15,
+      "speaker": "B",
+      "text": "hi"
+    }
+  ],
+  "naming": {
+    "status": "named",
+    "origin": "library",
+    "speakers": [
+      {
+        "label": "A",
+        "name": "Lorentz",
+        "voice": {
+          "clip": "lorentz/f8d05534bcf9",
+          "status": "confirmed"
+        }
+      },
+      {
+        "label": "B",
+        "reason": "no-match"
+      }
+    ],
+    "voices": [
+      {
+        "name": "Lorentz",
+        "result": "named"
+      }
+    ]
+  }
+}
+
+done after tool for: tool_audio_transcribe
+
+== stderr
+transcribing meeting.wav · 1 request · 0.0 MB
+transcribed · 2 segments
+

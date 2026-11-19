@@ -18,7 +18,8 @@ The tool name is what the model sees. The Go identifier is what you pass to `Wit
 | `async_cmd_cancel` | `AsyncCmdCancel` | Request cancellation of a running async command. |
 | `audio_sources` | `AudioSources` | List audio inputs this machine can record now (mic and system-audio monitors). |
 | `audio_record` | `AudioRecord` | Record microphone and/or system audio into one WAV file and return its facts. |
-| `audio_transcribe` | `AudioTranscribe` | Transcribe a local audio file to text, optionally with timestamps and speakers. |
+| `audio_remember_voice` | `AudioRememberVoice` | Add one 3–10 s clip of a person, cut from a transcribed recording, to the voice library, so later transcripts name them. The clip stays unconfirmed until the user keeps it; `overrules` counts a wrong library name against the clip that gave it. |
+| `audio_transcribe` | `AudioTranscribe` | Transcribe a local audio file to text, optionally with timestamps and speakers. Speakers in the user's voice library are named; `voices` says whom to expect, and with known voices json is `{"segments": [...], "naming": {...}}`. |
 | `cat` | `Cat` | Display the contents of a file. |
 | `clai_check` | `ClaiCheck` | Hidden legacy tool: resolves only when named exactly. Check whether a `clai_run` run-id is running, completed or failed. |
 | `clai_help` | `ClaiHelp` | Hidden legacy tool: resolves only when named exactly. Show the clai usage text. |

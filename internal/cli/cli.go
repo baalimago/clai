@@ -309,13 +309,14 @@ func commands(deps Deps, setExit func(int), notices func() io.Writer, rerun func
 		return confDir, err
 	}
 	envAt := profileEnvFunc()
-	// An agent run may call audio_transcribe, so -am/-af and a profile's
-	// audio.model must reach it.
+	// An agent run may call audio_transcribe, so -am/-af/-voices and a
+	// profile's audio.model must reach it.
 	applyMediaOverrides := func(s internal.MediaToolSettings) error {
 		return audio.SetTranscribeOverrides(audio.ToolOverrides{
 			Model:       s.AudioModel,
 			Models:      s.AudioModels,
 			Format:      s.AudioFormat,
+			Voices:      s.Voices,
 			NewResolver: remoteResolver(deps.RemoteClient, envAt, notices),
 		})
 	}

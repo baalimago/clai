@@ -13,14 +13,18 @@ to read audio bytes from stdin.
 ```
 internal/cli:Run()
   → cmd.Run(...)                       # go_away_boilerplate/pkg/cmd dispatch
+    → audio → v|voices → a|add, l|list  # the voice library (voicescmd); no querier
     → audio → transcribe subcommand (Subcommander tree, internal/audio/cmd.go)
+      → no file: transcribe's help and the error on stderr, exit 1
       → setupAudioTranscribeQuerier()
       → resolveAudioInput()           # positional file, or '-' → stdin temp file
                                       # (container sniffed → real extension, see sniff.go)
       → LoadConfigFromFile("audioConfig.json")
       → applyFlagOverridesForAudio()
+      → resolveKnownVoices()          # -voices without ffmpeg stops here (Known voices)
+        → Library.Select(-voices, max-voices)     # whom to name, read once
       → CreateAudioQuerier()          # vendor routing + splitter
-  → querier.Query(ctx)                # transcribe → render → stdout
+  → querier.Query(ctx)                # transcribe → name → tally → render → stdout
 ```
 
 ## Key Files
@@ -46,6 +50,11 @@ internal/cli:Run()
 | `internal/vendors/openrouter/transcribe_diarize.go` | `ParseDiarized`: OpenRouter's diarized `verbose_json` to speaker turns                        |
 | `internal/audio/create_querier.go`          | `audio.CreateQuerier()`/`createSplitter()` — model routing; audio-transcribe tool bridge initialization |
 | `pkg/tools/audio_tool_transcribe.go`        | `audio_transcribe` built-in tool (thin adapter, injected engine)                                      |
+| `internal/audio/known_voices.go`            | Known voices in a transcription: the ffmpeg stop, the selection, naming with the route's own transcriber, the tally, the naming warnings; the runtime's voices dependencies |
+| `internal/audio/namer.go`, `naming.go`      | `Namer`: two naming requests of picked clips and candidates, agreement; the naming report and its JSON |
+| `internal/audio/voices/`                    | The voice library: `Library` (the files, the event log, ranking) and `Inspector` (imports nothing of `internal/audio`) |
+| `internal/audio/voicescmd/`                 | `clai audio v\|voices a\|add\|l\|list`, mounted under `audio` beside `transcribe` (`voicescmd.Command`); its menu draws through `internal/menu` |
+| `pkg/tools/audio_tool_remember_voice.go`    | `audio_remember_voice` built-in tool (injected `AudioRememberVoiceDeps`)                               |
 
 ## Configuration
 
@@ -60,7 +69,8 @@ internal/cli:Run()
     "max-request-bytes": 26214400,
     "max-request-seconds": 1400,
     "max-speakers": 8,
-    "strict-speakers": false
+    "strict-speakers": false,
+    "max-voices": 12
   }
 }
 ```
@@ -76,6 +86,7 @@ internal/cli:Run()
 | `transcribe.max-request-seconds` | Per-request audio cap for calibrated diarization (default 1400 s) |
 | `transcribe.max-speakers`        | Speaker registry cap for calibrated diarization (default 8); sizes the prefix reserve |
 | `transcribe.strict-speakers`     | Error instead of `unknown-N` output when a material speaker stays unresolved (default false) |
+| `transcribe.max-voices`          | People named by default: everyone in the voice library with a confirmed clip, best first, up to this many (default 12; absent means 12). 0 names nobody unless `-voices` or a tool call does; negative is a load error. It never caps the people named |
 
 ### Flag Overrides
 
@@ -88,6 +99,7 @@ internal/cli:Run()
 | `-max-request-seconds`  | `transcribe.max-request-seconds` |
 | `-max-speakers`         | `transcribe.max-speakers`        |
 | `-strict-speakers`      | `transcribe.strict-speakers`     |
+| `-voices`               | — the people to name, comma separated (Known voices); not a config field |
 
 Precedence is the standard cascade: flags > file > defaults (see
 [`config.md`](./config.md)).
@@ -527,17 +539,21 @@ identities and no count-forcing post-pass.
 
 `audio_transcribe` (built-in tool) is a thin adapter over the same engine:
 `pkg/tools` declares the schema (`file_path` required; `output_format` enum
-defaulting to `text` — model context rarely wants VTT framing) and delegates
-to an engine function injected by the clai runtime. The tool layer contains no
+defaulting to `text` — model context rarely wants VTT framing; `voices`, an
+optional array of the people expected, see Known voices; a `voices` that is
+not an array of strings is refused before anything is transcribed) and
+delegates to an engine function injected by the clai runtime,
+`AudioTranscribeEngine(ctx, AudioTranscribeCall)`. The tool layer contains no
 transcription logic. Select it with `-t audio_transcribe` or `-t "*"`; inspect
 it with `clai tools audio_transcribe`.
 
 The engine loads `audioConfig.json` itself, so the model does **not** come
 from the calling command's config. A query, loop or chat can still configure
-the tool for the run with `-am`/`-af`, which
+the tool for the run with `-am`/`-af`/`-voices`, which
 `audio.SetTranscribeOverrides` layers on top (model overrides the file;
 format overrides the tool call's own `output_format`, since an explicit
-user choice outranks the model's per-call pick). An invalid `-af` fails at
+user choice outranks the model's per-call pick; `-voices` names the people
+of every call that names nobody of its own). An invalid `-af` fails at
 setup, not mid-conversation. A profile's `audio.model` reaches the same
 global, resolved before the flags are re-applied (`text.ApplyProfileOverrides`),
 so `-am` wins. Without a flag or a profile key the tool keeps using the
@@ -559,6 +575,95 @@ profile names an audio model, from `audioConfig.json` or the shipped ladders
 when the file is absent, so a broken audio config never fails a run whose
 profile has no audio model.
 
+## Known voices
+
+A diarized transcript names the people the user already knows instead of
+labelling them A, B. The library is `<clai-config>/voices/`
+(`internal/audio/voices`): short clips per person, ranked by how their
+namings fare. It grows by hand (`clai audio voices add <wav> [-from s]
+[-to s] [-name n]`), is browsed and corrected with `clai audio voices list
+[person [clip [action]]] [-json]`, and grows on its own through the
+`audio_remember_voice` tool, whose clips stay unconfirmed until the user
+keeps them. `v`, `a` and `l` are the short names of `voices`, `add` and
+`list`: `clai a v l lorentz` is `clai audio voices list lorentz`.
+
+Whom a transcription names is resolved once, before the recording is
+transcribed, by `Library.Select`: the `audio_transcribe` call's `voices`
+argument when it names anyone, else the run's `-voices` (`clai audio
+transcribe -voices 'Lorentz,Christoph' …`, or `-voices` on `query`/`chat`
+for the tool, beside `-am`/`-af`), else everyone with a confirmed clip up to
+`transcribe.max-voices`. A name the library does not hold is reported as
+`unknown-voice` and never fails the run.
+
+**Nobody to name changes nothing.** With an empty selection (nobody named and
+no confirmed clip, no `voices/`, or an unreadable library) the run makes
+today's requests and prints today's bytes; nothing under `voices/` is
+written. Reading the library for the selection is the only access.
+
+**Otherwise** the recording is transcribed as always (one request, a split or
+calibration), then `Namer.Name` puts the selection's picked clips before one
+candidate clip of each transcript speaker in two naming requests (forward and
+reversed order) sent one each to the transcriber that transcribed the
+recording, within the run's request budgets, and a speaker takes a person's
+name only when both orders agree. The picked clips' outcomes are tallied into
+the library once (`placed`/`named` events). Naming never fails a
+transcription: a failed request, no agreement, an unreadable library or a
+failed tally leave the speakers as transcribed and say why in the report; only
+the transcription's own failure fails the run. No clip audio leaves the
+machine except inside a naming request, and none is in any output. Nothing of
+this names a vendor or a model.
+
+**ffmpeg is a dependency of naming people, not a naming failure.** When people
+are named (the call's `voices`, else `-voices`) and `ffmpeg` does not resolve
+through the route's `CommandRunner.LookPath`, the run stops before the library
+is read and before any request, with a `*VoicesNeedFFmpegError` (`-voices
+needs ffmpeg …`, or `voices needs ffmpeg …` for the tool's argument): exit 1
+on `clai audio transcribe`, a failed tool result on the tool. With nobody named
+ffmpeg is not looked for: the empty selection needs none, and a default
+selection without it is transcribed and its naming is a failed request.
+
+**`clai audio transcribe` warns of what the naming did not do**, one
+`runenv.Warnf` warning of the `audio` subsystem per case (in text `warn
+[audio] <message>` on stderr), after the transcript is written; stdout is the
+same with or without them, and nothing is asked. With people named: `no voice
+"<name>" in the library` per unknown person, `voice library unreadable:
+<reason>; speakers left as labels`, `naming failed: <reason>; speakers left as
+labels`, `the transcript has no speaker labels; nobody named`, `no speaker
+talks long enough to compare; nobody named`, and `failed to find a match for
+<name>, were they in the meeting?` per person absent or not placed. Under the
+default selection only `naming failed: …` warns. An empty selection warns of
+nothing, and the `audio_transcribe` tool never warns: its result is its whole
+answer (`known_voices.go`, `namingWarnings`).
+
+Output with a non-empty selection:
+
+- `json` is one object, `{"segments": […], "naming": {…}}`, indented like
+  the bare array. A segment a clip named has its `speaker` set to the
+  person's plain name and `voice: {"clip": "<slug>/<id>", "status":
+  "confirmed"|"unconfirmed"}` between `speaker` and `text`; any other segment
+  is as transcribed. `naming` is the report: `status`, `origin` (`tool`,
+  `flag` or `library`), `speakers` (each label's name and voice, or its
+  `reason`), `voices` (each person's `result`), and `error`/`unrecorded`
+  when set.
+- `vtt`, `srt` and `text` are today's rendering with the name where the
+  label stood, written `<name> (unconfirmed)` when an unconfirmed clip gave
+  it, and nothing else.
+
+`CLAI_MOCK_TRANSCRIBE_SCRIPT` is the test seam: set to a JSON array of
+replies, the `test`/`test-diarize` mock answers a run's n-th Transcribe call
+with the n-th reply (`{start, end, speaker, text}` in seconds), so end-to-end
+rows and goldens drive a naming without a provider.
+
+The voices CLI and `audio_remember_voice` get the same library and an
+`Inspector` over `ExecRunner` from the runtime (`openVoices`,
+`pkg/tools.AudioRememberVoiceDeps`, set in `create_querier.go`'s `init`), read
+from `utils.GetClaiConfigDir` on every use. `voices` is a verb of `audio`,
+beside `transcribe`; `transcribe` takes a file and nothing else, so
+`clai audio transcribe voices` transcribes a file named `voices`. With no
+file, `transcribe` prints its help (the text of `clai audio transcribe -h`)
+and the missing-file error on stderr and exits 1, as `clai audio` does with
+no verb.
+
 ## Example
 
 ```bash
@@ -571,6 +676,9 @@ clai -am gpt-4o-transcribe-diarize -af json -t audio_transcribe q "Summarize mee
 clai -p meeting -t audio_transcribe q "Transcribe today's meeting"
 # speaker labels through OpenRouter:
 clai a t -am or:elevenlabs/scribe-v2+diarize meeting.wav
+# speakers named after the voice library (flags before the file):
+clai audio voices add rec.wav -from 61.2 -to 69 -name Lorentz
+clai audio transcribe -am gpt-4o-transcribe-diarize -voices 'Lorentz,Christoph' -af json meeting.wav
 ```
 
 A shared profile that must label speakers on a machine with either key names

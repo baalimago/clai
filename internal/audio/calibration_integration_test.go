@@ -61,6 +61,7 @@ func newCalibratedSplitter(t *testing.T, p *voiceProvider, conf Configurations) 
 }
 
 func TestCalibrationEndToEndWithPermutedLabels(t *testing.T) {
+	t.Parallel()
 	p := &voiceProvider{truth: smallMeeting()}
 	s, status, input := newCalibratedSplitter(t, p, smallBudgetConf("gpt-4o-transcribe-diarize"))
 	segs, err := s.Transcribe(context.Background(), input)
@@ -99,6 +100,7 @@ func TestCalibrationEndToEndWithPermutedLabels(t *testing.T) {
 }
 
 func TestCalibrationEndToEndDiscoversLateSpeakers(t *testing.T) {
+	t.Parallel()
 	p := &voiceProvider{truth: smallMeeting()}
 	conf := smallBudgetConf("gpt-4o-transcribe-diarize")
 	conf.Transcribe.MaxSpeakers = 4
@@ -158,6 +160,7 @@ func TestCalibrationPreservesNonDiarizedAndSubLimitPaths(t *testing.T) {
 }
 
 func TestMaxRequestBytesAppliesToBothPaths(t *testing.T) {
+	t.Parallel()
 	// 60 KB input: with a 40 KB cap the non-diarized path splits into ceil(60/32)=2 chunks
 	trans := &fakeTranscriber{}
 	runner := &fakeRunner{defaultDur: "900.000000", durations: map[string]string{"input.wav": "1800.000000"}, chunkCount: 2}
@@ -273,6 +276,7 @@ func TestFlagRejectsNegativeBudget(t *testing.T) {
 }
 
 func TestCalibrationStrictFailureHasNoStdout(t *testing.T) {
+	t.Parallel()
 	p := &voiceProvider{truth: smallMeeting()} // max-speakers 3 leaves voice d unresolved
 	conf := smallBudgetConf("gpt-4o-transcribe-diarize")
 	conf.Transcribe.StrictSpeakers = true
@@ -291,7 +295,7 @@ func TestCalibrationStrictFailureHasNoStdout(t *testing.T) {
 func TestToolBridgePropagatesCalibrationError(t *testing.T) {
 	prev := pkgtools.AudioTranscribeEngine
 	t.Cleanup(func() { pkgtools.AudioTranscribeEngine = prev })
-	pkgtools.AudioTranscribeEngine = func(_ context.Context, filePath, outputFormat string) (string, error) {
+	pkgtools.AudioTranscribeEngine = func(_ context.Context, _ pkgtools.AudioTranscribeCall) (string, error) {
 		return "", &UnresolvedError{Chunk: 1, Labels: []UnmappedLabel{{Label: "Q", Speech: 5 * time.Second, Reason: reasonNoSample}}}
 	}
 	got, err := pkgtools.AudioTranscribe.Call(map[string]any{"file_path": "meeting.wav"})

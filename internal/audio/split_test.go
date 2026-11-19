@@ -295,6 +295,7 @@ func TestSplitter_ChunkFailureCancelsSiblings(t *testing.T) {
 }
 
 func TestSplitter_DiarizeRoutesToCalibration(t *testing.T) {
+	t.Parallel()
 	// Oversized diarized files no longer take the plain split path
 	p := &voiceProvider{truth: smallMeeting()}
 	s, status, input := newCalibratedSplitter(t, p, smallBudgetConf("gpt-4o-transcribe-diarize"))

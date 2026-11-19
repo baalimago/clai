@@ -1,0 +1,35 @@
+# clai audio transcribe -am test -af json meeting.wav
+# env: -
+== status
+0
+== stdout
+{
+  "segments": [
+    {
+      "start": 0,
+      "end": 1.5,
+      "text": "mock transcription"
+    },
+    {
+      "start": 1.5,
+      "end": 3,
+      "text": "of an audio file"
+    }
+  ],
+  "naming": {
+    "status": "not-diarized",
+    "origin": "library",
+    "speakers": [],
+    "voices": [
+      {
+        "name": "Lorentz",
+        "result": "not-compared"
+      }
+    ]
+  }
+}
+
+== stderr
+transcribing meeting.wav · 1 request · 0.0 MB
+transcribed · 2 segments
+

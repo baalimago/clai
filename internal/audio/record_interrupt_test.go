@@ -102,9 +102,9 @@ func TestRecordText_InterruptKeepsWithoutTranscribing(t *testing.T) {
 
 	transcriptions := 0
 	engine := pkgtools.AudioTranscribeEngine
-	pkgtools.AudioTranscribeEngine = func(ctx context.Context, path, format string) (string, error) {
+	pkgtools.AudioTranscribeEngine = func(ctx context.Context, call pkgtools.AudioTranscribeCall) (string, error) {
 		transcriptions++
-		return engine(ctx, path, format)
+		return engine(ctx, call)
 	}
 	t.Cleanup(func() { pkgtools.AudioTranscribeEngine = engine })
 

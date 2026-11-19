@@ -86,7 +86,7 @@ func readCatalogRows(path string) (map[string]string, error) {
 // exportedTools is every tool value this package exports.
 func exportedTools() []models.LLMTool {
 	return []models.LLMTool{
-		ApplyPatch, AudioRecord, AudioSources, AudioTranscribe, Cat, ClaiCheck, ClaiHelp, ClaiResult, ClaiRun,
+		ApplyPatch, AudioRecord, AudioRememberVoice, AudioSources, AudioTranscribe, Cat, ClaiCheck, ClaiHelp, ClaiResult, ClaiRun,
 		ClaiWaitForWorkers, Cmd, Cp, Date, FFProbe, FileTree, FileType, Find, Git,
 		Go, Head, JQ, LineCount, LoadSkill, LS, Mkdir, Mktemp, Pwd, RipGrep,
 		RowsBetween, Rsync, Sed, Tail, ViewImage, WebsiteText, WriteFile,

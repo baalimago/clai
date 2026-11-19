@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/baalimago/clai/internal"
+	"github.com/baalimago/clai/internal/audio/voicescmd"
 	"github.com/baalimago/clai/internal/capture"
 	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/remote"
@@ -19,22 +20,36 @@ const namespaceHelp = `usage: clai audio <verb> [verb flags] [args]
 
 Verbs:
   t|transcribe <file>   Transcribe an audio file to text. Use '-' to read audio bytes from stdin.
+  v|voices              Keep the library of known voices: a|add <wav>, l|list [person [clip [action]]].
   c|calibrate           Measure this machine's ambient level and set the silence threshold.
   h|help                Show this help.
 
-Transcribe flags (placed after the verb):
+Transcribe flags (placed after the verb, before the file; a flag after the file is not read):
   -am, -audio-model     Set the transcription model (default in audioConfig.json)
   -af, -audio-format    Set the transcript output format: vtt|srt|text|json
+  -voices               The people to name, comma separated: -voices 'Lorentz,Christoph'
+                        (default: everyone in the voice library with a confirmed clip,
+                        up to transcribe.max-voices; nobody when that is 0)
   -parallelism          Max parallel requests when a large file is split into chunks
   -max-request-bytes    Per-request upload cap in bytes for split files (default 25 MiB)
   -max-request-seconds  Per-request audio cap for calibrated diarization (default 1400)
   -max-speakers         Registry cap for calibrated diarization (default 8)
   -strict-speakers      Fail instead of rendering unknown-N for unresolved speakers
 
+Known voices: speakers whose voice is in the library are named instead of
+labelled. In text, vtt and srt a name from a clip nobody confirmed reads
+'<name> (unconfirmed)'; json is {"segments": [...], "naming": {...}}, each named
+segment with its voice {clip, status}. Without a voice to name, the output is
+as it always was.
+
 Examples:
   clai audio transcribe meeting.wav
   clai a t -af text meeting.wav
   cat meeting.wav | clai a t -
+  clai audio transcribe -voices 'Lorentz,Christoph' -af json meeting.wav
+  clai audio voices add rec.wav -from 61.2 -to 69 -name Lorentz
+  clai audio voices list
+  clai a v l lorentz
   clai audio calibrate
 `
 
@@ -44,6 +59,9 @@ Examples:
 type CommandDeps struct {
 	ConfigPrep        func(ctx context.Context) (confDir string, announcements []string, err error)
 	NewRemoteResolver func(confDir string, prompt remote.Prompter) (remote.Resolver, error)
+	// OpenVoices is the opener audio's voices command runs with; nil is the
+	// runtime's, over the clai config directory and ExecRunner.
+	OpenVoices voicescmd.Opener
 }
 
 // Flags is the audio transcribe flag surface.
@@ -55,6 +73,7 @@ type Flags struct {
 	MaxRequestSeconds internal.IntFlag
 	MaxSpeakers       internal.IntFlag
 	StrictSpeakers    internal.BoolFlag
+	Voices            internal.StringFlag
 }
 
 // Register binds the audio flag surface onto fs.
@@ -66,6 +85,7 @@ func (f *Flags) Register(fs *flag.FlagSet) {
 	f.MaxRequestSeconds.Register(fs, "Set the per-request audio duration cap in seconds for calibrated diarization.", "max-request-seconds")
 	f.MaxSpeakers.Register(fs, "Set the maximum number of speaker identities for calibrated diarization.", "max-speakers")
 	f.StrictSpeakers.Register(fs, "Fail instead of rendering unknown-N when a material speaker cannot be resolved.", "strict-speakers")
+	f.Voices.Register(fs, internal.VoicesFlagDesc, "voices")
 }
 
 // calibrateWindow is how long one calibration listens to the microphone.
@@ -76,7 +96,7 @@ func Command(deps CommandDeps) *internal.Command {
 	raw := &internal.RawFlag{}
 	c := &internal.Command{
 		Name:     "audio",
-		Desc:     "Transcribe and record audio: audio t|transcribe <file> ('-' reads stdin), audio c|calibrate",
+		Desc:     "Transcribe and record audio: audio t|transcribe <file> ('-' reads stdin), audio v|voices, audio c|calibrate",
 		HelpText: namespaceHelp,
 		Register: raw.Register,
 		Raw:      raw,
@@ -93,13 +113,19 @@ func Command(deps CommandDeps) *internal.Command {
 	transcribe := &internal.Command{
 		Name: "transcribe",
 		Desc: "Transcribe an audio file to text ('-' reads stdin)",
-		HelpText: `audio transcribe <file>. Transcribes the audio file; use '-' to read
-audio bytes from stdin.
+		HelpText: `audio transcribe [flags] <file>. Transcribes the audio file; use '-' to read
+audio bytes from stdin. Flags stand before <file>: a flag after it is not read.
+
+Speakers whose voice is in the voice library are named instead of labelled:
+-voices says whom to expect, and by default everyone with a confirmed clip is,
+up to transcribe.max-voices in audioConfig.json. The library is kept with
+clai audio voices.
 
 Examples:
   clai a t meeting.wav
   clai a t -af text meeting.wav
-  cat meeting.wav | clai a t -`,
+  cat meeting.wav | clai a t -
+  clai a t -voices 'Lorentz,Christoph' -af json meeting.wav`,
 		Register: func(fs *flag.FlagSet) {
 			raw.Register(fs)
 			f.Register(fs)
@@ -107,6 +133,10 @@ Examples:
 		Raw: raw,
 	}
 	transcribe.OnSetup = func(ctx context.Context, tc *internal.Command) error {
+		if len(tc.Args()) < 2 {
+			fmt.Fprintln(runenv.From(ctx).Stderr(), tc.Help())
+			return errMissingAudioFile
+		}
 		confDir, announcements, err := deps.ConfigPrep(ctx)
 		if err != nil {
 			return err
@@ -159,8 +189,13 @@ Examples:
 		}
 		return nil
 	}
+	openVoicesDeps := deps.OpenVoices
+	if openVoicesDeps == nil {
+		openVoicesDeps = openVoices
+	}
 	c.Subs = map[string]cmd.Command{
 		"transcribe|t": transcribe,
+		voicescmd.Key:  voicescmd.Command(openVoicesDeps),
 		"calibrate|c":  calibrate,
 		"help|h":       audioHelp,
 	}

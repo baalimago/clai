@@ -286,13 +286,31 @@ func (f *MediaFlags) Apply(c MediaConfig) error {
 type MediaToolFlags struct {
 	AudioModel  StringFlag
 	AudioFormat StringFlag
+	Voices      StringFlag
 	PhotoModel  StringFlag
 }
 
 func (g *MediaToolFlags) Register(fs *flag.FlagSet) {
 	g.AudioModel.Register(fs, "Set the model, model-aliases verb or remote model list the audio_transcribe tool uses for this run. Overrides audioConfig.json.", "am", "audio-model")
 	g.AudioFormat.Register(fs, "Set the transcript format the audio_transcribe tool returns: vtt|srt|text|json. Overrides the tool's own choice.", "af", "audio-format")
+	g.Voices.Register(fs, VoicesFlagDesc+" Here it names the people of every audio_transcribe call that names nobody of its own.", "voices")
 	g.PhotoModel.Register(fs, "Set the image model the generate_image tool uses for this run. Overrides photoConfig.json.", "pm", "photo-model")
+}
+
+// VoicesFlagDesc describes -voices wherever a transcription reads it: clai
+// audio transcribe, and the audio_transcribe tool of an agent run.
+const VoicesFlagDesc = "The people to name, comma separated: -voices 'Lorentz,Christoph'. Default: everyone in the voice library with a confirmed clip, up to transcribe.max-voices; nobody when that is 0."
+
+// CommaList splits a comma-separated flag value into its items: blanks around
+// an item are dropped, and so is an empty item. Nothing left is nil.
+func CommaList(value string) []string {
+	var items []string
+	for item := range strings.SplitSeq(value, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			items = append(items, item)
+		}
+	}
+	return items
 }
 
 // MediaToolSettings are the media-tool values a run resolved from its flags and
@@ -302,6 +320,8 @@ type MediaToolSettings struct {
 	// AudioModels is the ordered list a remote AudioModel resolved to
 	AudioModels []string
 	AudioFormat string
+	// Voices are the people the run's -voices names; nil when it names nobody
+	Voices []string
 }
 
 // AgentTextFlags is the model/agent group shared by every text-querier
