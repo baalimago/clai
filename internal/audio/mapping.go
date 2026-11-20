@@ -42,9 +42,11 @@ type UnmappedLabel struct {
 // Mapping is the mapper's report for one request: local labels resolved to
 // global IDs, the core relabeled in source time, and everything unresolved.
 type Mapping struct {
-	Manifest    *RequestManifest
-	Samples     []SampleResult
-	LabelToID   map[string]string
+	Manifest  *RequestManifest
+	Samples   []SampleResult
+	LabelToID map[string]string
+	// Labels is every local label of the core, mapped or not
+	Labels      map[string]LabelStat
 	Core        []Segment
 	Unmapped    []UnmappedLabel
 	ChunkSpeech time.Duration
@@ -168,6 +170,7 @@ func (LabelMapper) Map(m *RequestManifest, segs []Segment) Mapping {
 	}
 	sort.SliceStable(coreSegs, func(i, j int) bool { return coreSegs[i].Start < coreSegs[j].Start })
 	stats := Materiality(coreSegs)
+	out.Labels = stats
 	byLabel := map[string]*UnmappedLabel{}
 	for _, s := range coreSegs {
 		out.ChunkSpeech += s.End - s.Start

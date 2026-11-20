@@ -148,6 +148,7 @@ func (c *Coordinator) Run(ctx context.Context, filePath string) ([]Segment, erro
 		return nil, err
 	}
 	defer assembler.Close()
+	logPlan(ctx, plan, c.Budgets, c.workers(), c.limit())
 	c.cache = newRequestCache()
 	c.totals = Totals{Cores: len(plan.Cores)}
 	c.started = time.Now()
@@ -258,6 +259,7 @@ func (c *Coordinator) Run(ctx context.Context, filePath string) ([]Segment, erro
 	c.totalsMu.Unlock()
 	footer := fmt.Sprintf("requests %v/≤%v · retries %v · cache hits %v · uploaded %v · speakers %v · unknown %v · %v elapsed",
 		t.Requests, c.limit()*c.cores, t.Retries, t.CacheHits, t.Uploaded.Round(time.Second), len(registry.Snapshot().Speakers), t.Unknown.Round(time.Second), time.Since(c.started).Round(time.Second))
+	logStitched(ctx, len(segs), len(registry.Snapshot().Speakers), unknown, t)
 	c.board.SetPhase(fmt.Sprintf("done · %v segments · %v elapsed", len(segs), time.Since(c.started).Round(time.Second)))
 	c.board.Finish(footer, detail...)
 	return segs, nil
@@ -278,8 +280,8 @@ func (c *Coordinator) limit() int {
 }
 
 // requestFor returns the accounted, cached request function for one chunk.
-func (c *Coordinator) requestFor(assembler RequestAssembler, st *chunkState) RequestFunc {
-	return func(ctx context.Context, samples []SampleClip, core SourceInterval) (*RequestManifest, []Segment, error) {
+func (c *Coordinator) requestFor(assembler RequestAssembler, st *chunkState, log EventLog) RequestFunc {
+	return func(ctx context.Context, kind RequestKind, samples []SampleClip, core SourceInterval) (*RequestManifest, []Segment, error) {
 		st.mu.Lock()
 		if st.consumed >= c.limit() {
 			consumed := st.consumed
@@ -295,8 +297,10 @@ func (c *Coordinator) requestFor(assembler RequestAssembler, st *chunkState) Req
 		defer assembler.Remove(m)
 		key := cacheKey{requestHash: m.RequestHash, model: c.Model, endpoint: c.Endpoint, options: c.Options}
 		if segs, ok := c.cache.get(key); ok {
+			logRequest(ctx, log, kind, m, true)
 			return m, segs, nil
 		}
+		logRequest(ctx, log, kind, m, false)
 		c.totalsMu.Lock()
 		c.totals.Requests++
 		c.totals.Uploaded += m.Duration
@@ -397,19 +401,23 @@ func sampleIDs(samples []SampleClip) []string {
 }
 
 func (c *Coordinator) bootstrap(ctx context.Context, assembler RequestAssembler, registry *SpeakerRegistry, st *chunkState) (chunkResult, error) {
-	d := &Discovery{Registry: registry, Transcribe: c.requestFor(assembler, st)}
+	log := c.logFor(ctx, st)
+	d := &Discovery{Registry: registry, Transcribe: c.requestFor(assembler, st, log), Log: log}
 	m, rep, err := d.Bootstrap(ctx, st.core)
 	if err != nil {
 		return chunkResult{}, err
 	}
 	d.RecordAccepted(m)
-	return chunkResult{mapping: m, attempts: rep.Attempts, rejected: rep.Rejected}, nil
+	res := chunkResult{mapping: m, attempts: rep.Attempts, rejected: rep.Rejected}
+	logAccepted(ctx, log, st, res)
+	return res, nil
 }
 
 // transcribeChunk runs one later chunk: pass, one recovery retry, then
 // discovery (architecture/audio.md, "Adaptive Speaker Calibration").
 func (c *Coordinator) transcribeChunk(ctx context.Context, assembler RequestAssembler, registry *SpeakerRegistry, st *chunkState) (chunkResult, error) {
-	d := &Discovery{Registry: registry, Transcribe: c.requestFor(assembler, st)}
+	log := c.logFor(ctx, st)
+	d := &Discovery{Registry: registry, Transcribe: c.requestFor(assembler, st, log), Log: log}
 	snap := registry.Snapshot()
 	m, err := d.Pass(ctx, st.core, snap)
 	if err != nil {
@@ -417,32 +425,38 @@ func (c *Coordinator) transcribeChunk(ctx context.Context, assembler RequestAsse
 	}
 	switch {
 	case len(m.Ambiguous()) > 0:
+		log.emit(ctx, "recovery", "trigger=ambiguous samples=%s", verdictText(m.Ambiguous()))
 		c.countRetry(st)
 		if m, err = d.PassWith(ctx, st.core, reversed(snap.Samples())); err != nil {
 			return chunkResult{}, err
 		}
+		if still := m.Ambiguous(); len(still) > 0 {
+			log.emit(ctx, "recovery", "outcome=still-ambiguous samples=%s", verdictText(still))
+		}
 	case len(m.Failed()) > 0:
+		log.emit(ctx, "recovery", "trigger=failed-sample samples=%s", verdictText(m.Failed()))
 		c.countRetry(st)
 		if m, _, err = d.Recover(ctx, st.core, m, snap); err != nil {
 			return chunkResult{}, err
 		}
 	}
-	attempts := 0
-	var rejected []CandidateRejection
-	if len(m.Failed()) > 0 {
+	res := chunkResult{mapping: m}
+	switch {
+	case len(m.Failed()) > 0:
 		// Still failing after the recovery slot: the next carrier replaces it
-		d.RecordAccepted(m)
-		return chunkResult{mapping: m}, nil
-	}
-	if len(m.MaterialUnmapped()) > 0 {
+		log.emit(ctx, "discovery", "state=skipped reason=failed-registry-sample failed=%s pending=%s", verdictText(m.Failed()), pendingText(m.MaterialUnmapped()))
+	case len(m.MaterialUnmapped()) > 0:
 		var rep DiscoveryReport
 		if m, rep, err = d.Resolve(ctx, st.core, m, snap); err != nil {
 			return chunkResult{}, err
 		}
-		attempts, rejected = rep.Attempts, rep.Rejected
+		res = chunkResult{mapping: m, attempts: rep.Attempts, rejected: rep.Rejected}
+	default:
+		log.emit(ctx, "discovery", "state=skipped reason=no-material-unmapped")
 	}
 	d.RecordAccepted(m)
-	return chunkResult{mapping: m, attempts: attempts, rejected: rejected}, nil
+	logAccepted(ctx, log, st, res)
+	return res, nil
 }
 
 func (c *Coordinator) countRetry(st *chunkState) {

@@ -228,6 +228,15 @@ func Debugf(ctx context.Context, subsystem, format string, args ...any) {
 	env.Report(ctx, TypeName(subsystem, KindDebug), fmt.Sprintf(format, args...))
 }
 
+// Tracef reports payload detail of subsystem, shown only at the trace level.
+func Tracef(ctx context.Context, subsystem, format string, args ...any) {
+	env := From(ctx)
+	if !env.Enabled(subsystem, diagnostic.LevelTrace) {
+		return
+	}
+	env.Report(ctx, TypeName(subsystem, KindTrace), fmt.Sprintf(format, args...))
+}
+
 // DebugEnabled reports whether debug detail of subsystem is shown, for
 // producers whose detail is costly to build.
 func DebugEnabled(ctx context.Context, subsystem string) bool {

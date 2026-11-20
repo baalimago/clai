@@ -114,7 +114,26 @@ func (t *Transcriber) Transcribe(ctx context.Context, filePath string) ([]Segmen
 	if err != nil {
 		return nil, err
 	}
-	return parse(body)
+	segs, err := parse(body)
+	if err == nil {
+		t.debugf(ctx, "transcription parsed segments=%d", len(segs))
+	}
+	return segs, err
+}
+
+func (t *Transcriber) debugf(ctx context.Context, format string, args ...any) {
+	if t.debug {
+		runenv.Debugf(ctx, runenv.SubsystemAudio, format, args...)
+	}
+}
+
+// logResponse keeps the body, which is meeting content, out of the debug level.
+func (t *Transcriber) logResponse(ctx context.Context, status string, body []byte) {
+	if !t.debug {
+		return
+	}
+	runenv.Debugf(ctx, runenv.SubsystemAudio, "transcription response status=%q bytes=%d", status, len(body))
+	runenv.Tracef(ctx, runenv.SubsystemAudio, "transcription response body=%s", body)
 }
 
 // transcribeStream is Transcribe with the segments streamed (architecture/audio.md, Progress).
@@ -132,6 +151,9 @@ func (t *Transcriber) transcribeStream(ctx context.Context, filePath string, hea
 	segs, err := ParseStream(resp.Body, heard)
 	if err != nil && ctx.Err() != nil {
 		return nil, diag.Errorf("transcription stream aborted: %w", ctx.Err())
+	}
+	if err == nil {
+		t.debugf(ctx, "transcription response status=%q stream=true segments=%d", resp.Status, len(segs))
 	}
 	return segs, err
 }
@@ -174,9 +196,7 @@ func (t *Transcriber) post(ctx context.Context, file *os.File, respFormat Respon
 		}
 		return nil, diag.Errorf("failed to read transcription response: %w", err)
 	}
-	if t.debug {
-		runenv.Debugf(ctx, runenv.SubsystemAudio, "transcription response status=%s body=%s", resp.Status, body)
-	}
+	t.logResponse(ctx, resp.Status, body)
 	return body, nil
 }
 
@@ -210,9 +230,7 @@ func (t *Transcriber) send(ctx context.Context, file *os.File, respFormat Respon
 	for key, value := range t.ExtraHeaders {
 		req.Header.Set(key, value)
 	}
-	if t.debug {
-		runenv.Debugf(ctx, runenv.SubsystemAudio, "transcription request url=%s model=%s response_format=%v stream=%v", t.URL, t.Model, respFormat, stream)
-	}
+	t.debugf(ctx, "transcription request url=%s model=%s response_format=%v stream=%v", t.URL, t.Model, respFormat, stream)
 	resp, err := t.Client.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -228,9 +246,7 @@ func (t *Transcriber) send(ctx context.Context, file *os.File, respFormat Respon
 	if err != nil {
 		return nil, diag.Errorf("failed to read transcription response: %w", err)
 	}
-	if t.debug {
-		runenv.Debugf(ctx, runenv.SubsystemAudio, "transcription response status=%s body=%s", resp.Status, body)
-	}
+	t.logResponse(ctx, resp.Status, body)
 	return nil, fmt.Errorf("transcription request failed with status: %v, body: %v", resp.Status, truncate(body, 1024))
 }
 

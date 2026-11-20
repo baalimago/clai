@@ -464,6 +464,31 @@ never merged by temporal proximity, text, or a forced speaker count. With
 unresolved material label is an error with the same diagnostics and no
 transcript on stdout.
 
+### Investigating a run
+
+`LOG_LEVEL=warn,audio=debug` writes the calibration's decisions to stderr,
+one `calibration <event> key=value ...` line per event, with no transcript
+text, audio, key or header. Chunk lines carry `chunk=N attempt=M`, where
+`attempt` is the chunk's request count so far. Times are source seconds
+unless a key says otherwise.
+
+| Event | Says |
+| --- | --- |
+| `plan`, `plan-core` | the budgets, reserve, core target and silences; each core's planned and aligned end with the reason |
+| `request` | the `kind` (`bootstrap`, `bootstrap-candidates`, `forward`, `reversed-retry`, `discovery`, `replacement-retry`), core, request seconds and bytes, `cache=hit\|miss`, and the prefix in order as `id@source>request` intervals |
+| `response`, `sample`, `label` | per request: the verdict counts; each sample's dominant label, share and verdict; each local label's core speech, materiality and global id, or the reason it has none. A `cand-*` id is provisional until a `registry` line promotes it |
+| `recovery` | what triggered the one recovery retry, and an ambiguity that survived it |
+| `candidate` | the clip discovery cut for a label, or why none |
+| `discovery` | each iteration's start and outcome, `state=stop`, and `state=skipped` with the reason; `reason=failed-registry-sample` names the sample that blocks discovery for that chunk |
+| `registry` | every mutation and refusal (`op=add`, `refuse-add`, `replace`, `freeze`, `refuse-replace`) with the version it left |
+| `accepted`, `unmapped` | the chunk's final local-to-global map, mapped and unknown seconds, and each unmapped label with its reason |
+| `unknown`, `stitched` | which `unknown-N` names each chunk produced, and the run totals |
+| `naming`, `naming-speaker`, `naming-voice` | known voices: the candidate clip cut per speaker and whom it was named, or why nobody |
+
+The vendor debug variable adds one line per HTTP request and response
+(status, body bytes, segment count). The response body is shown only at
+`audio=trace`. An 88-minute recording logs about 50–90 KB at debug.
+
 ### Main implementation boundaries
 
 `internal/audio/` owns chunk planning, sample selection, prefix assembly,

@@ -44,7 +44,7 @@ func (p *voiceProvider) requests() int {
 	return len(p.calls)
 }
 
-func (p *voiceProvider) transcribe(ctx context.Context, samples []SampleClip, core SourceInterval) (*RequestManifest, []Segment, error) {
+func (p *voiceProvider) transcribe(ctx context.Context, _ RequestKind, samples []SampleClip, core SourceInterval) (*RequestManifest, []Segment, error) {
 	p.mu.Lock()
 	p.calls = append(p.calls, AssembleRequest{Samples: append([]SampleClip(nil), samples...), Core: core})
 	n := len(p.calls)

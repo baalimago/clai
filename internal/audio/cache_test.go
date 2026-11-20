@@ -1,9 +1,13 @@
 package audio
 
 import (
+	"bytes"
 	"context"
 	"testing"
 	"time"
+
+	"github.com/baalimago/clai/internal/testenv/procenv"
+	"github.com/baalimago/clai/pkg/diagnostic"
 )
 
 func TestCacheHitSkipsTranscriber(t *testing.T) {
@@ -11,15 +15,20 @@ func TestCacheHitSkipsTranscriber(t *testing.T) {
 	c, asm, _ := newCoordinator(p)
 	c.cache = newRequestCache()
 	st := &chunkState{index: 0, core: SourceInterval{Start: 0, End: 450 * time.Second}}
-	request := c.requestFor(asm, st)
+	var log bytes.Buffer
+	ctx := procenv.Diagnostics(context.Background(), &log, diagnostic.LevelDebug)
+	request := c.requestFor(asm, st, c.logFor(ctx, st))
 	samples := []SampleClip{{ID: "speaker-1", Start: 10 * time.Second, End: 15 * time.Second}}
-	if _, _, err := request(context.Background(), samples, st.core); err != nil {
+	if _, _, err := request(ctx, RequestForward, samples, st.core); err != nil {
 		t.Fatal(err)
 	}
-	m, segs, err := request(context.Background(), samples, st.core)
+	m, segs, err := request(ctx, RequestForward, samples, st.core)
 	if err != nil {
 		t.Fatal(err)
 	}
+	assertRecords(t, log.String(),
+		`request chunk=1 attempt=1 kind=forward core=0\.0-450\.0 seconds=456\.0 bytes=0 cache=miss samples=1 prefix=speaker-1@9\.8-15\.2>0\.0-5\.5$`,
+		`request chunk=1 attempt=2 kind=forward .* cache=hit samples=1 `)
 	if p.requests() != 1 {
 		t.Errorf("expected transcriber called once, got %v", p.requests())
 	}
