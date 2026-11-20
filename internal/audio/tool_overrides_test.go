@@ -8,6 +8,7 @@ import (
 
 	"github.com/baalimago/clai/internal/modelalias"
 	"github.com/baalimago/clai/internal/testenv/procenv"
+	pkgtools "github.com/baalimago/clai/pkg/tools"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
 
@@ -81,7 +82,7 @@ func runEngine(t *testing.T, confDir, format string) (result, stderr string, err
 	t.Setenv("CLAI_CONFIG_DIR", confDir)
 	input := sparseFile(t, 8)
 	stderr = testboil.CaptureStderr(t, func(t *testing.T) {
-		result, err = transcribeEngine(procenv.Context(context.Background()), input, format)
+		result, err = transcribeEngine(procenv.Context(context.Background()), pkgtools.AudioTranscribeCall{FilePath: input, OutputFormat: format})
 	})
 	return result, stderr, err
 }

@@ -65,7 +65,9 @@ the command, or among its flags before the first positional argument — and
 Go's bool flags it also takes a value: `-json=false` (or `0`, `f`, …)
 selects text, `-json=true` JSON, and any other value is a usage error with
 exit status 1. A `-json` written elsewhere is reported as a misplaced flag
-whose hint says where the global flag goes. It changes the encoding only:
+whose hint says where the global flag goes, except after `clai audio
+voices list`, whose own `-json` it is (anywhere among its
+arguments; [cmd-dispatch.md](./cmd-dispatch.md#subcommander-trees)). It changes the encoding only:
 every destination, input and exit status stays, except that `$EDITOR` is
 refused with an `error` record and exit 1.
 
@@ -122,6 +124,17 @@ ladder's three diagnostics are "shutting down gracefully", "graceful shutdown
 ongoing, signal again to force exit" and "forcing exit". When stdout and
 stderr are both terminals, the first notice starts on its own row
 (`runenv.OpenRow`). A library `Query` returns the same `StoppedError`.
+
+One interrupt is not a signal of the run: Ctrl-C at a menu question leaves
+the menu exactly as `q` does. The composition gives every run one
+`menu.Asking` (`menu.WithAsking`), and a first SIGINT that arrives while it
+reports `Waiting` cancels the run context without a cause and is not passed
+to the signal ladder (`firstSignal.leavesMenu`): nothing is reported, the
+exit status is the command's own (0 for `voices list`), and the abandoned
+read of stdin is left behind, so nothing typed afterwards is acted on. A
+SIGTERM, an interrupt while no question waits (an action, a playing clip, a
+transcription) and every later signal stop the run as above. This is the
+rule for every clai menu (`internal/menu`, `Screen.Ask`).
 
 A reply that cannot be written to stdout fails the run in both formats
 (`write the reply to stdout: ...`, exit 1). A stdout closed before clai

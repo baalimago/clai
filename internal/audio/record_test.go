@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -33,10 +34,14 @@ func TestRecordText_Facts(t *testing.T) {
 	})
 	status := captureStderr(t)
 
-	result, err := recordText(procenv.Context(context.Background()), pkgtools.AudioRecordCall{NameSuffix: "release-week"}, capture.New(), stopSources{stdin: strings.NewReader("")})
+	recorder := &shortMaxRecorder{Recorder: capture.New(), stopAfter: shortMaxStop}
+	result, err := recordText(procenv.Context(context.Background()), pkgtools.AudioRecordCall{NameSuffix: "release-week"}, recorder, stopSources{stdin: strings.NewReader("")})
 	stderr := status()
 	if err != nil {
 		t.Fatalf("recordText: %v", err)
+	}
+	if recorder.requested != time.Second {
+		t.Fatalf("the request's duration stop = %v, want the file's 1s", recorder.requested)
 	}
 
 	lines := strings.Split(strings.TrimSuffix(result, "\n"), "\n")
@@ -184,7 +189,8 @@ func TestRecordText_Enter(t *testing.T) {
 		fakeFFmpeg(t)
 		dir := t.TempDir()
 		setAudioConfig(t, map[string]any{"dir": dir, "max-seconds": 5, "silence-timeout": 0, "sinks": "none", "mic": true})
-		result, err := recordText(procenv.Context(context.Background()), pkgtools.AudioRecordCall{}, capture.New(), stopSources{stdin: enterAfter(150 * time.Millisecond), terminal: true})
+		recorder := newHeardRecorder()
+		result, err := recordText(procenv.Context(context.Background()), pkgtools.AudioRecordCall{}, recorder, stopSources{stdin: recorder.enterOnSound(t), terminal: true})
 		if err != nil {
 			t.Fatalf("recordText: %v", err)
 		}
@@ -208,16 +214,24 @@ func TestRecordText_Enter(t *testing.T) {
 	t.Run("end of terminal stdin is not an Enter press", func(t *testing.T) {
 		stub := &recordStub{}
 		setAudioConfig(t, map[string]any{"dir": t.TempDir(), "max-seconds": 1, "sinks": "none"})
-		if _, err := recordText(procenv.Context(context.Background()), pkgtools.AudioRecordCall{}, stub, stopSources{stdin: strings.NewReader(""), terminal: true}); err != nil {
+		stdin := newEndedReader()
+		if _, err := recordText(procenv.Context(context.Background()), pkgtools.AudioRecordCall{}, stub, stopSources{stdin: stdin, terminal: true}); err != nil {
 			t.Fatalf("recordText: %v", err)
 		}
 		if stub.request.Stop == nil {
 			t.Fatal("terminal stdin must install a stop channel")
 		}
 		select {
+		case <-stdin.ended:
+		case <-time.After(time.Second):
+			t.Fatal("the key reader never reached the end of stdin")
+		}
+		// A reader that took the end for a line closes the channel straight
+		// after the read that returned it.
+		select {
 		case <-stub.request.Stop:
 			t.Fatal("end of input closed the stop channel")
-		case <-time.After(50 * time.Millisecond):
+		case <-time.After(10 * time.Millisecond):
 		}
 	})
 }
@@ -227,7 +241,9 @@ func TestRecordText_Enter(t *testing.T) {
 // the stop channel there would interrupt a recording before ffmpeg wrote the
 // WAV (worklog 2026-10-28-audio-record-tool, R3-01).
 func TestEnterStop_EOFIsNotALine(t *testing.T) {
+	t.Parallel()
 	t.Run("a line stops the recording", func(t *testing.T) {
+		t.Parallel()
 		stop := stopOnKeys(strings.NewReader("\n"), true, nil)
 		if stop == nil {
 			t.Fatal("stopOnKeys returned no channel for a terminal")
@@ -240,6 +256,7 @@ func TestEnterStop_EOFIsNotALine(t *testing.T) {
 	})
 
 	t.Run("A acknowledges and a later line stops", func(t *testing.T) {
+		t.Parallel()
 		acked := make(chan struct{}, 1)
 		stop := stopOnKeys(strings.NewReader("a\n\n"), true, func() { acked <- struct{}{} })
 		select {
@@ -255,6 +272,7 @@ func TestEnterStop_EOFIsNotALine(t *testing.T) {
 	})
 
 	t.Run("A alone leaves the recording running", func(t *testing.T) {
+		t.Parallel()
 		acked := make(chan struct{}, 1)
 		stop := stopOnKeys(strings.NewReader("a\n"), true, func() { acked <- struct{}{} })
 		select {
@@ -270,12 +288,14 @@ func TestEnterStop_EOFIsNotALine(t *testing.T) {
 	})
 
 	t.Run("a non-terminal passes no stop channel", func(t *testing.T) {
+		t.Parallel()
 		if stop := stopOnKeys(strings.NewReader("\n"), false, nil); stop != nil {
 			t.Fatal("non-terminal stdin must not install a stop channel")
 		}
 	})
 
 	t.Run("end of input leaves the channel open", func(t *testing.T) {
+		t.Parallel()
 		stop := stopOnKeys(strings.NewReader(""), true, nil)
 		select {
 		case <-stop:
@@ -532,12 +552,89 @@ func cancelOnPartFile(t *testing.T, dir string, cancel context.CancelFunc) {
 	cancel()
 }
 
-func enterAfter(delay time.Duration) io.Reader {
-	read, write := io.Pipe()
+// endedReader is an empty stdin that closes ended once a read reached its
+// end.
+type endedReader struct {
+	ended chan struct{}
+	once  sync.Once
+}
+
+func newEndedReader() *endedReader { return &endedReader{ended: make(chan struct{})} }
+
+func (r *endedReader) Read([]byte) (int, error) {
+	r.once.Do(func() { close(r.ended) })
+	return 0, io.EOF
+}
+
+// heardRecorder is the real Recorder that closes heard when its capture first
+// reports sound. The fake ffmpeg prints its silencedetect lines only after it
+// wrote the WAV, so a stop that waits for heard never finds the file missing.
+type heardRecorder struct {
+	capture.Recorder
+	heard chan struct{}
+	once  sync.Once
+}
+
+func newHeardRecorder() *heardRecorder {
+	return &heardRecorder{Recorder: capture.New(), heard: make(chan struct{})}
+}
+
+func (r *heardRecorder) Record(ctx context.Context, req capture.Request) (capture.Recording, error) {
+	onState := req.OnState
+	req.OnState = func(state capture.CaptureState) {
+		if state == capture.StateSound {
+			r.once.Do(func() { close(r.heard) })
+		}
+		if onState != nil {
+			onState(state)
+		}
+	}
+	return r.Recorder.Record(ctx, req)
+}
+
+// afterSound runs stop once the capture heard sound, or not at all when the
+// test ends first.
+func (r *heardRecorder) afterSound(t *testing.T, stop func()) {
+	t.Helper()
+	ended := t.Context().Done()
 	go func() {
-		time.Sleep(delay)
+		select {
+		case <-r.heard:
+			stop()
+		case <-ended:
+		}
+	}()
+}
+
+// enterOnSound is a terminal stdin that holds one line, typed once the capture
+// heard sound.
+func (r *heardRecorder) enterOnSound(t *testing.T) io.Reader {
+	t.Helper()
+	read, write := io.Pipe()
+	r.afterSound(t, func() {
 		_, _ = write.Write([]byte("\n"))
 		_ = write.Close()
-	}()
+	})
+	t.Cleanup(func() { _ = write.Close() })
 	return read
+}
+
+// shortMaxStop is the duration stop of shortMaxRecorder: long past the moment
+// the fake ffmpeg wrote its WAV, short of the one second a capture config
+// cannot go below.
+const shortMaxStop = 300 * time.Millisecond
+
+// shortMaxRecorder is the real Recorder whose duration stop fires after
+// stopAfter. It keeps the MaxDuration of the request it received in requested,
+// for the test to check.
+type shortMaxRecorder struct {
+	capture.Recorder
+	stopAfter time.Duration
+	requested time.Duration
+}
+
+func (r *shortMaxRecorder) Record(ctx context.Context, req capture.Request) (capture.Recording, error) {
+	r.requested = req.MaxDuration
+	req.MaxDuration = r.stopAfter
+	return r.Recorder.Record(ctx, req)
 }

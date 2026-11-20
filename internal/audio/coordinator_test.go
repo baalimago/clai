@@ -546,8 +546,10 @@ func (s *slowAssembler) Assemble(ctx context.Context, req AssembleRequest) (*Req
 	return s.RequestAssembler.Assemble(ctx, req)
 }
 
+// TestCoordinatorLiveBoardReadsStatesSafely runs in parallel: it waits out
+// three board ticks and checks no output, so it leaves ancli's colour alone.
 func TestCoordinatorLiveBoardReadsStatesSafely(t *testing.T) {
-	plainStatus(t)
+	t.Parallel()
 	p := &voiceProvider{truth: sixVoiceMeeting()}
 	c, asm, _ := newCoordinator(p)
 	c.forceLive = true

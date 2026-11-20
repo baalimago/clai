@@ -22,9 +22,14 @@ import (
 type stateRecorder struct {
 	recordStub
 	states []capture.CaptureState
+	// started, when set, runs as the recording starts.
+	started func()
 }
 
 func (s *stateRecorder) Record(_ context.Context, req capture.Request) (capture.Recording, error) {
+	if s.started != nil {
+		s.started()
+	}
 	for _, state := range s.states {
 		req.OnState(state)
 	}
@@ -81,9 +86,20 @@ func TestRecordText_JSONProgress(t *testing.T) {
 		dir := t.TempDir()
 		setAudioConfig(t, map[string]any{"dir": dir, "max-seconds": 0, "silence-timeout": 0, "silence-peak-db": -40, "sinks": "none"})
 		var out, errb bytes.Buffer
-		env := jsonRecordEnv(enterAfter(50*time.Millisecond), &out, &errb)
+		keys, typing := io.Pipe()
+		t.Cleanup(func() { _ = typing.Close() })
+		env := jsonRecordEnv(keys, &out, &errb)
 		ctx := runenv.With(context.Background(), env)
-		rec := &stateRecorder{states: []capture.CaptureState{capture.StateSilent, capture.StateSilent, capture.StateSound, capture.StateSound, capture.StateSilent}}
+		// The line is typed once the recording runs, as a user's Enter is.
+		rec := &stateRecorder{
+			states: []capture.CaptureState{capture.StateSilent, capture.StateSilent, capture.StateSound, capture.StateSound, capture.StateSilent},
+			started: func() {
+				go func() {
+					_, _ = typing.Write([]byte("\n"))
+					_ = typing.Close()
+				}()
+			},
+		}
 
 		result, err := recordText(ctx, pkgtools.AudioRecordCall{}, rec, stopSources{stdin: env.Stdin(), terminal: env.StdinIsTerminal()})
 		if err != nil {

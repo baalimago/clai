@@ -1,0 +1,12 @@
+# clai audio transcribe -am test-diarize -af text -voices Lorentz,Syrus meeting.wav
+# env: -
+== status
+0
+== stdout
+Lorentz: hello there
+Syrus (unconfirmed): hi
+
+== stderr
+transcribing meeting.wav · 1 request · 0.0 MB
+transcribed · 2 segments
+

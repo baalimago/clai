@@ -26,13 +26,16 @@ type ToolOverrides struct {
 	// Models is the ordered list a remote Model resolved to
 	Models []string
 	Format string
+	// Voices are the run's -voices: the people every audio_transcribe call
+	// that names nobody of its own names
+	Voices []string
 	// NewResolver resolves a remote model audioConfig.json names; nil uses the default client
 	NewResolver func(confDir string, prompt remote.Prompter) (remote.Resolver, error)
 }
 
-// SetTranscribeOverrides sets the model and transcript format the
-// audio_transcribe tool uses, overriding audioConfig.json and the tool
-// call's own output_format. The format is validated here so a bad value fails
+// SetTranscribeOverrides sets the model, the transcript format and the
+// people the audio_transcribe tool uses, overriding audioConfig.json and the
+// tool call's own output_format; a call's own voices outrank the run's. The format is validated here so a bad value fails
 // the run immediately rather than mid-conversation, inside a tool call.
 func SetTranscribeOverrides(o ToolOverrides) error {
 	if o.Format != "" {
@@ -44,6 +47,7 @@ func SetTranscribeOverrides(o ToolOverrides) error {
 		return fmt.Errorf("audio model list %v names no model it resolves", o.Models)
 	}
 	o.Models = slices.Clone(o.Models)
+	o.Voices = slices.Clone(o.Voices)
 	transcribeOverrideMu.Lock()
 	defer transcribeOverrideMu.Unlock()
 	transcribeOverride = o
@@ -63,6 +67,7 @@ func transcribeOverrides() ToolOverrides {
 	defer transcribeOverrideMu.RUnlock()
 	o := transcribeOverride
 	o.Models = slices.Clone(o.Models)
+	o.Voices = slices.Clone(o.Voices)
 	return o
 }
 

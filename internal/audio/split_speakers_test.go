@@ -199,6 +199,7 @@ func TestSplitter_RequestLocal_Failures(t *testing.T) {
 }
 
 func TestSplitter_AnchoredDiarizationCalibrates(t *testing.T) {
+	t.Parallel()
 	p := &voiceProvider{truth: smallMeeting()}
 	s, status, input := newCalibratedSplitter(t, p, smallBudgetConf("anything"))
 	if _, err := s.Transcribe(context.Background(), input); err != nil {

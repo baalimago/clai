@@ -3,10 +3,12 @@ package audio
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"os"
+	"time"
 
+	"github.com/baalimago/clai/internal"
+	"github.com/baalimago/clai/internal/audio/voices"
 	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/modelalias"
 	"github.com/baalimago/clai/internal/modelfallback"
@@ -33,18 +35,30 @@ func setupTranscribeQuerierWithResolver(ctx context.Context, confDir string, f *
 		cleanup()
 		return nil, err
 	}
+	known, err := resolveKnownVoices(ExecRunner{}, voices.NewLibrary(confDir, time.Now), flagAsked(f, aConf.Transcribe))
+	if err != nil {
+		cleanup()
+		return nil, err
+	}
+	known.warn = true
 	if err := resolveRemoteAudioModel(ctx, confDir, newResolver, &aConf); err != nil {
 		cleanup()
 		return nil, err
 	}
 	q, err := transcribeChain(ctx, aConf, func(conf Configurations) (models.Querier, error) {
-		return CreateQuerier(conf, filePath)
+		return createKnownQuerier(conf, filePath, known)
 	})
 	if err != nil {
 		cleanup()
 		return nil, diag.Errorf("failed to create audio querier: %w", err)
 	}
 	return &cleanupQuerier{Querier: q, cleanup: cleanup}, nil
+}
+
+// flagAsked is whom clai audio transcribe names: the -voices people, else
+// the library's default up to transcribe.max-voices.
+func flagAsked(f *Flags, c TranscribeConfig) voices.Asked {
+	return voices.Asked{Flag: internal.CommaList(f.Voices.Value()), MaxVoices: c.MaxVoices}
 }
 
 func resolveRemoteAudioModel(ctx context.Context, confDir string, newResolver func(string, remote.Prompter) (remote.Resolver, error), aConf *Configurations) error {
@@ -63,6 +77,9 @@ func loadTranscribeConfig(ctx context.Context, confDir string, f *Flags) (Config
 	aConf, err := utils.LoadConfigFromFile(ctx, confDir, "audioConfig.json", nil, &Default)
 	if err != nil {
 		return Configurations{}, diag.Errorf("failed to load configs: %w", err)
+	}
+	if err := checkMaxVoices(aConf.Transcribe); err != nil {
+		return Configurations{}, err
 	}
 	if err := ApplyFlagOverrides(&aConf, f); err != nil {
 		return Configurations{}, err
@@ -115,12 +132,14 @@ func (q *cleanupQuerier) SuppressCompletionNotification() bool {
 	return true
 }
 
+var errMissingAudioFile = errors.New("missing audio file argument, usage: clai audio transcribe <file>")
+
 // resolveAudioInput returns the audio file path from the positional args.
 // '-' drains stdin into a temp file; the cleanup removes it after the query.
 func resolveAudioInput(ctx context.Context, args []string) (string, func(), error) {
 	noop := func() {}
 	if len(args) == 0 {
-		return "", noop, fmt.Errorf("missing audio file argument, usage: clai audio transcribe <file>")
+		return "", noop, errMissingAudioFile
 	}
 	filePath := args[0]
 	if filePath == "-" {

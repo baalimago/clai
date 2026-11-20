@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/baalimago/clai/e2e/e2etest"
+	"github.com/baalimago/clai/internal/audio/voices"
 )
 
 var updateDiagnosticGoldens = flag.Bool("update-diagnostic-goldens", false, "rewrite e2e/testdata/diagnostics/*.golden from the current output")
@@ -25,6 +26,9 @@ type diagnosticGolden struct {
 	stub stubProvider
 	// profile, when set, is written to the profiles directory first.
 	profile string
+	// setup, when set, prepares the run: a variable it sets whose value is
+	// a path is not listed in the env header.
+	setup func(t *testing.T, confDir string)
 }
 
 // stubProvider selects the answer of the local OpenAI-shaped provider a
@@ -47,7 +51,34 @@ func diagnosticGoldens() []diagnosticGolden {
 		{name: "json-query", args: "-json -r -cm gpt-stub -t pwd q hi", stub: stubToolCall},
 		{name: "json-error", args: "-json -r -cm gpt-stub q hi", stub: stubUnauthorized},
 		{name: "json-output", args: "-json profiles list", profile: "writer"},
+		{name: "voices-named", args: "audio transcribe -am test-diarize -af json -voices Lorentz,Ada meeting.wav", setup: seedLorentzNaming},
+		{name: "voices-not-diarized", args: "audio transcribe -am test -af json meeting.wav", setup: func(t *testing.T, confDir string) {
+			e2etest.SeedVoice(t, confDir, "Lorentz", 5, voices.Confirmed)
+			e2etest.WriteRecording(t, "meeting.wav")
+		}},
+		{name: "voices-text", args: "audio transcribe -am test-diarize -af text -voices Lorentz,Syrus meeting.wav", setup: func(t *testing.T, confDir string) {
+			e2etest.SeedVoice(t, confDir, "Lorentz", 5, voices.Confirmed)
+			e2etest.SeedVoice(t, confDir, "Syrus", 6, voices.Unconfirmed)
+			e2etest.NamingStubs(t)
+			e2etest.NamingScript(t, []e2etest.NamingPick{{Seconds: 5, Label: "X"}, {Seconds: 6, Label: "Y"}}, "X", "Y")
+			e2etest.WriteRecording(t, "meeting.wav")
+		}},
+		{name: "voices-tool", args: "-r -cm mock_test -t=audio_transcribe -am test-diarize -af json q tool_audio_transcribe", setup: func(t *testing.T, confDir string) {
+			seedLorentzNaming(t, confDir)
+			t.Setenv("CLAI_MOCK_AUDIO_TRANSCRIBE_FILE", e2etest.WriteRecording(t, "meeting.wav"))
+		}},
 	}
+}
+
+// seedLorentzNaming is a library holding Lorentz's confirmed 5 s clip, the
+// naming stubs, a script whose answers agree on A = Lorentz and leave B to
+// nobody, and the recording meeting.wav in the working directory.
+func seedLorentzNaming(t *testing.T, confDir string) {
+	t.Helper()
+	e2etest.SeedVoice(t, confDir, "Lorentz", 5, voices.Confirmed)
+	e2etest.NamingStubs(t)
+	e2etest.NamingScript(t, []e2etest.NamingPick{{Seconds: 5, Label: "X"}}, "X", "Y")
+	e2etest.WriteRecording(t, "meeting.wav")
 }
 
 // TestDiagnosticOutputGoldens pins stdout, stderr and the exit status of the
@@ -92,6 +123,9 @@ func runDiagnosticGolden(t *testing.T, tc diagnosticGolden) string {
 	}
 	if tc.stub != noStub {
 		startGoldenProvider(t, confDir, tc.stub)
+	}
+	if tc.setup != nil {
+		tc.setup(t, confDir)
 	}
 	var status int
 	stdout, stderr := e2etest.CaptureStdoutStderr(t, func() {

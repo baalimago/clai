@@ -500,11 +500,12 @@ func ApplyProfileOverrides(tConf *Configurations, tf internal.TextFlags) {
 }
 
 // mediaToolSettings are the media-tool values this run resolved: the audio
-// model the flags or the profile chose, and the -af format, which no profile
-// key sets.
+// model the flags or the profile chose, and the -af format and -voices people,
+// which no profile key sets.
 func mediaToolSettings(tf internal.TextFlags, tConf *Configurations) internal.MediaToolSettings {
 	return internal.MediaToolSettings{
 		AudioModel:  tConf.AudioModel,
 		AudioFormat: tf.AgentText.MediaTools.AudioFormat.Value(),
+		Voices:      internal.CommaList(tf.AgentText.MediaTools.Voices.Value()),
 	}
 }

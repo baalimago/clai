@@ -2,6 +2,7 @@ package audio
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -46,6 +47,8 @@ type stopSources struct {
 	stdin    io.Reader
 	terminal bool
 	stopFile string
+	// poll is how often the stop file is checked; zero is stopFilePoll.
+	poll time.Duration
 }
 
 // StaleStopFileError is a stop file that existed before the recording began:
@@ -75,7 +78,7 @@ func recordText(ctx context.Context, call pkgtools.AudioRecordCall, r capture.Re
 
 	watching, stopWatching := context.WithCancel(ctx)
 	defer stopWatching()
-	fileStop, err := stopOnFile(watching, stops.stopFile, stopFilePoll)
+	fileStop, err := stopOnFile(watching, stops.stopFile, cmp.Or(stops.poll, stopFilePoll))
 	if err != nil {
 		return "", err
 	}
