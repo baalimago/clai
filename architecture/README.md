@@ -40,6 +40,7 @@ This directory contains short design notes for key parts of **clai**. Each file 
 - **[help.md](./help.md)** — the help system: dispatcher usage on bare `clai`, per-command `-h` (Help() + flags + examples + sub tables), profile docs in `clai profiles -h`.
 - **[cloud.md](./cloud.md)** — `clai cloud`: browser-approved login to clai.chat, the config and conversation stores (1 GB free, then $1/GB a month), git-style status, diff, pull, commit, resolve and log, conflicts kept beside the local file in `cloud/theirs/`, conversation merges and forks, the credential check, and the export of imported conversations.
 - **[version.md](./version.md)** — `clai version`: prints build/module version information and exits.
+- **[manpage.md](./manpage.md)** — `clai man`: the man page rendered from the help, where it is installed, and the first run of a release that installs it.
 
 ## UI / output
 

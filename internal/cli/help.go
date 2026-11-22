@@ -3,10 +3,12 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
 	"maps"
 	"slices"
 	"strings"
 	"text/tabwriter"
+	"text/template"
 
 	"github.com/baalimago/clai/internal"
 	"github.com/baalimago/clai/internal/diag"
@@ -32,9 +34,27 @@ func helpAsCommand(args []string) []string {
 	return args
 }
 
+// usageText is what usageTemplate shows; write fills Commands.
+type usageText struct {
+	Summary, Synopsis, Commands, Subsystems, ConfigDir, CacheDir string
+}
+
+// write prints the usage with the table of cmds and the completion command.
+func (u usageText) write(w io.Writer, cmds map[string]cmd.Command) error {
+	t, err := template.New("usage").Parse(usageTemplate)
+	if err != nil {
+		return diag.Errorf("parse the usage template: %w", err)
+	}
+	u.Commands = commandTable(withCompletionCommand(cmds))
+	if err := t.Execute(w, u); err != nil {
+		return diag.Errorf("print usage: %w", err)
+	}
+	return nil
+}
+
 // withHelp adds the help command, which prints usage with the table of
 // cmds, itself and the completion command included.
-func withHelp(cmds map[string]cmd.Command, usage string) map[string]cmd.Command {
+func withHelp(cmds map[string]cmd.Command, usage usageText) map[string]cmd.Command {
 	c := &internal.Command{
 		Name: "help",
 		Desc: "Print this usage; 'clai help <command>' is that command's -h",
@@ -46,15 +66,7 @@ Examples:
 	}
 	cmds["help"] = c
 	c.OnRun = func(ctx context.Context, _ *internal.Command) error {
-		all := maps.Clone(cmds)
-		if _, ok := all["completion"]; !ok {
-			all["completion"] = cmd.NewCompletionCommand("clai")
-		}
-		_, err := fmt.Fprintf(runenv.From(ctx).Stdout(), usage, commandTable(all))
-		if err != nil {
-			return diag.Errorf("print usage: %w", err)
-		}
-		return nil
+		return usage.write(runenv.From(ctx).Stdout(), cmds)
 	}
 	return cmds
 }

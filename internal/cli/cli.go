@@ -50,8 +50,8 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/cmd"
 )
 
-// CONFIG_DIR and CACHE_DIR are interpolated by Run; %v takes the generated
-// command table. Per-command help lives on each command's -h.
+// It is a text/template over usageText. Per-command help lives on each
+// command's -h.
 //
 // The diagnostic and format synopsis extends the usage below (the help text
 // itself is pinned by e2e/testdata/diagnostics/help.golden):
@@ -69,17 +69,17 @@ import (
 //	  that $EDITOR is refused with exit status 1; -json=<bool> takes the
 //	  values Go's bool flags take, so -json=false selects text, and any
 //	  other value is a usage error
-const usageTemplate = `clai - (c)ommand (l)ine (a)rtificial (i)ntelligence
+const usageTemplate = `clai - {{.Summary}}
 
 Prerequisites:
   - Set the environment variable to your API key according to the vendor you seek to use
   - (Optional) Set the NO_COLOR environment variable to disable ansi color output
   - (Optional) Install glow - https://github.com/charmbracelet/glow for formatted markdown output
 
-Usage: clai [command flags] <command> [command flags] [args]
+Usage: clai {{.Synopsis}}
 
 Commands:
-%v
+{{.Commands}}
 Each command has its own flags, examples and subcommands in its help:
 'clai help <command>' or 'clai <command> -h'. For example, 'clai query -h'
 has the details of a query. A prompt that starts with '-' goes after '--':
@@ -103,11 +103,16 @@ Investigating:
   shows which subsystem to narrow to.
 
 Subsystems:
-SUBSYSTEMS
-
-Config dir: CONFIG_DIR
-Cache dir:  CACHE_DIR
+{{.Subsystems}}
+Config dir: {{.ConfigDir}}
+Cache dir:  {{.CacheDir}}
 `
+
+// The usage's summary and synopsis, which the man page's NAME and SYNOPSIS repeat.
+const (
+	claiSummary  = "(c)ommand (l)ine (a)rtificial (i)ntelligence"
+	claiSynopsis = "[command flags] <command> [command flags] [args]"
+)
 
 // CPUProfileFileName is where RunProfiled writes when the CPU debug flag is on.
 const CPUProfileFileName = "cpu_profile.prof"
@@ -131,6 +136,19 @@ type Deps struct {
 	// Parameters) so a test spills with a small payload; zero keeps
 	// production's 1 MiB.
 	DiagnosticBufferSize diag.ByteSize
+	// ManPage installs the man page on the first run of a release; nil, as
+	// in DefaultDeps, never installs it. main sets FirstRunManPage.
+	ManPage ManPageHook
+	// Version is the build version the man page documents; nil is
+	// version.Resolve.
+	Version func() (string, error)
+}
+
+func (d Deps) version() (string, error) {
+	if d.Version == nil {
+		return version.Resolve()
+	}
+	return d.Version()
 }
 
 // diagnosticBufferSize is the run's Shared buffer size: the Deps override,
