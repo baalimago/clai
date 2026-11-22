@@ -1,9 +1,25 @@
 package audio
 
 import (
+	"slices"
 	"testing"
 	"time"
 )
+
+func clip(id string, start float64) SampleClip {
+	return SampleClip{ID: id, Start: time.Duration(start * float64(time.Second)), End: time.Duration((start + 5) * float64(time.Second))}
+}
+
+// samplesWith returns the IDs of the samples with one of the statuses.
+func samplesWith(m Mapping, statuses ...SampleStatus) []string {
+	var ids []string
+	for _, s := range m.Samples {
+		if slices.Contains(statuses, s.Status) {
+			ids = append(ids, s.ID)
+		}
+	}
+	return ids
+}
 
 // manifestFor builds a manifest by arithmetic alone (no runner): samples get
 // guards and gaps as the assembler would.
@@ -57,8 +73,8 @@ func TestMappingRejectsMixedSample(t *testing.T) {
 	if mp.LabelToID["C"] != "speaker-2" || len(mp.LabelToID) != 1 {
 		t.Errorf("expected only C mapped, got %+v", mp.LabelToID)
 	}
-	if len(mp.Failed()) != 1 || mp.Failed()[0].ID != "speaker-1" {
-		t.Errorf("expected speaker-1 reported failed, got %+v", mp.Failed())
+	if failed := samplesWith(mp, SampleMixed, SampleMissing); len(failed) != 1 || failed[0] != "speaker-1" {
+		t.Errorf("expected speaker-1 reported failed, got %+v", failed)
 	}
 }
 
@@ -78,8 +94,8 @@ func TestMappingRejectsSampleCollapse(t *testing.T) {
 	if len(mp.LabelToID) != 0 {
 		t.Errorf("collapsed label must not map: %+v", mp.LabelToID)
 	}
-	if len(mp.Ambiguous()) != 2 {
-		t.Errorf("expected both samples reported ambiguous, got %+v", mp.Ambiguous())
+	if ambiguous := samplesWith(mp, SampleAmbiguous); len(ambiguous) != 2 {
+		t.Errorf("expected both samples reported ambiguous, got %+v", ambiguous)
 	}
 	for _, c := range mp.Core {
 		if c.Speaker == "speaker-1" || c.Speaker == "speaker-2" {
@@ -96,8 +112,8 @@ func TestMappingRejectsMissingSample(t *testing.T) {
 	if mp.Samples[0].Status != SampleMissing {
 		t.Errorf("expected first sample missing, got %+v", mp.Samples[0])
 	}
-	if len(mp.Failed()) != 1 || mp.Failed()[0].ID != "speaker-1" {
-		t.Errorf("expected speaker-1 failed, got %+v", mp.Failed())
+	if failed := samplesWith(mp, SampleMixed, SampleMissing); len(failed) != 1 || failed[0] != "speaker-1" {
+		t.Errorf("expected speaker-1 failed, got %+v", failed)
 	}
 	if mp.LabelToID["B"] != "speaker-2" {
 		t.Errorf("expected B mapped to speaker-2, got %+v", mp.LabelToID)

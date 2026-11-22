@@ -162,7 +162,8 @@ func (q *ChatHandler) SuppressCompletionNotification() bool {
 }
 
 func (cq *ChatHandler) actOnSubCmd(ctx context.Context) error {
-	runenv.Debugf(ctx, runenv.SubsystemChat, "chat: %+v", cq)
+	runenv.Debugf(ctx, runenv.SubsystemChat, "chat: subcommand=%q prompt_bytes=%d", cq.subCmd, len(cq.prompt))
+	runenv.Tracef(ctx, runenv.SubsystemChat, "chat: %+v", cq)
 	switch cq.subCmd {
 	case "continue", "c":
 		return cq.cont(ctx)
@@ -249,7 +250,7 @@ func (cq *ChatHandler) printChat(chat pub_models.Chat) error {
 }
 
 func (cq *ChatHandler) cont(ctx context.Context) error {
-	runenv.Debugf(ctx, runenv.SubsystemChat, "prompt: %v", cq.prompt)
+	runenv.Tracef(ctx, runenv.SubsystemChat, "prompt: %v", cq.prompt)
 
 	// Special case: `clai chat continue` with an empty string continues the chat
 	// in the current directory. Fallback: globalScope.

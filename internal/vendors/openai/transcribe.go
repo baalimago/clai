@@ -32,11 +32,12 @@ func ResponseFormatFor(model string) generic.ResponseFormat {
 }
 
 func (t *Transcriber) Setup() error {
-	err := t.Transcriber.Setup("OPENAI_API_KEY", TranscribeURL, "DEBUG_OPENAI")
+	err := t.Transcriber.Setup("OPENAI_API_KEY", TranscribeURL)
 	if err != nil {
 		return diag.Errorf("failed to setup transcriber: %w", err)
 	}
 	t.Transcriber.Model = t.Model
+	t.Transcriber.DecodeError = decodeError
 	t.Transcriber.Format = ResponseFormatFor(t.Model)
 	// Measured 2026-11-16: the diarize family streams its segments (architecture/audio.md, Progress)
 	t.Transcriber.Stream = t.Transcriber.Format == generic.ResponseFormatDiarizedJSON

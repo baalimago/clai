@@ -187,7 +187,7 @@ func (f sessionFinalizer[C]) persist(ctx context.Context, session *QuerySession)
 		}
 	}
 	if q.debug {
-		runenv.Debugf(f.querier.diagContext(), runenv.SubsystemTextQuerier, "Querier.postProcess:\n%v\n", debug.IndentedJsonFmt(q))
+		runenv.Tracef(f.querier.diagContext(), runenv.SubsystemTextQuerier, "Querier.postProcess:\n%v\n", debug.IndentedJsonFmt(q))
 	}
 	return persistErr
 }

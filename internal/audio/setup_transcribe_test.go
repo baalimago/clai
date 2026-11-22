@@ -139,7 +139,7 @@ func TestStdinMultipartFilename(t *testing.T) {
 
 	t.Setenv("TEST_AUDIO_API_KEY", "test-key")
 	trans := &generic.Transcriber{Model: "whisper-1"}
-	if err := trans.Setup("TEST_AUDIO_API_KEY", server.URL, "DEBUG_TEST_AUDIO"); err != nil {
+	if err := trans.Setup("TEST_AUDIO_API_KEY", server.URL); err != nil {
 		t.Fatalf("failed to setup transcriber: %v", err)
 	}
 	if _, err := trans.Transcribe(procenv.Context(context.Background()), filePath); err != nil {

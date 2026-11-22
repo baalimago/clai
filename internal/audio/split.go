@@ -16,6 +16,7 @@ import (
 	"github.com/baalimago/clai/internal/audio/generic"
 	"github.com/baalimago/clai/internal/board"
 	"github.com/baalimago/clai/internal/diag"
+	"github.com/baalimago/clai/internal/resend"
 	"github.com/baalimago/clai/internal/runenv"
 	"github.com/baalimago/clai/internal/stdio"
 	"github.com/baalimago/clai/internal/utils"
@@ -65,6 +66,8 @@ func (ExecRunner) Run(ctx context.Context, name string, args ...string) (string,
 type Splitter struct {
 	Transcriber Transcriber
 	Runner      CommandRunner
+	// Parallelism caps the parallel requests; unset runs the plain path 3
+	// at a time and the calibrated path all at once
 	Parallelism int
 	MaxBytes    int64
 	Model       string
@@ -72,18 +75,17 @@ type Splitter struct {
 	StatusOut io.Writer
 	// Calibrated diarization (oversized files with anchored labels)
 	Budgets Budgets
-	Strict  bool
 	// RequestTranscriber overrides the file-based Transcriber for
 	// calibrated requests; nil adapts Transcriber
-	RequestTranscriber  RequestTranscriber
-	MaxRequestsPerChunk int
+	RequestTranscriber RequestTranscriber
+	// Retry resends a request the provider may answer later; the zero value sends once
+	Retry resend.Schedule
 }
 
 func NewSplitter(transcriber Transcriber, runner CommandRunner) *Splitter {
 	return &Splitter{
 		Transcriber: transcriber,
 		Runner:      runner,
-		Parallelism: 3,
 		MaxBytes:    MaxRequestBytes,
 	}
 }
@@ -120,6 +122,10 @@ func (s *Splitter) Transcribe(ctx context.Context, filePath string) ([]Segment, 
 	return s.splitTranscribeStitch(ctx, filePath, info.Size(), maxBytes, durationCap)
 }
 
+func (s *Splitter) resending(request string, state func(string)) Transcriber {
+	return resending{Transcriber: s.Transcriber, schedule: s.Retry, request: request, state: state}
+}
+
 func (s *Splitter) diarization() generic.Diarization {
 	d, ok := s.Transcriber.(interface{ Diarization() generic.Diarization })
 	if !ok {
@@ -131,7 +137,7 @@ func (s *Splitter) diarization() generic.Diarization {
 // transcribeOne sends the file as one request under a status (architecture/audio.md, Progress).
 func (s *Splitter) transcribeOne(ctx context.Context, filePath string, size int64) ([]Segment, error) {
 	status := newRequestStatus(ctx, s.StatusOut, fmt.Sprintf("%v · 1 request · %.1f MB", filepath.Base(filePath), toMB(size)))
-	segs, err := s.Transcriber.Transcribe(generic.WithHeard(ctx, status.heard), filePath)
+	segs, err := s.resending("file", status.update).Transcribe(generic.WithHeard(ctx, status.heard), filePath)
 	status.finish(segs, err)
 	return segs, err
 }
@@ -158,7 +164,7 @@ func (s *Splitter) transcribeEncoded(ctx context.Context, filePath string, size,
 	}
 	if info.Size() <= maxBytes {
 		status.update(fmt.Sprintf("requesting · %.1f MB", toMB(info.Size())))
-		return s.Transcriber.Transcribe(generic.WithHeard(ctx, status.heard), encoded)
+		return s.resending("file", status.update).Transcribe(generic.WithHeard(ctx, status.heard), encoded)
 	}
 	status.update(fmt.Sprintf("encoded %.1f MB, over the %.0f MB request cap: splitting", toMB(info.Size()), toMB(maxBytes)))
 	return s.splitTranscribeStitch(ctx, encoded, info.Size(), maxBytes, 0)
@@ -229,15 +235,14 @@ func (s *Splitter) calibrate(ctx context.Context, filePath string, size, maxByte
 		endpoint = e.Endpoint()
 	}
 	c := &Coordinator{
-		Runner:              s.Runner,
-		Budgets:             budgets,
-		Transcriber:         rt,
-		Parallelism:         s.Parallelism,
-		Strict:              s.Strict,
-		MaxRequestsPerChunk: s.MaxRequestsPerChunk,
-		Model:               s.Model,
-		Endpoint:            endpoint,
-		Options:             "diarized_json",
+		Runner:      s.Runner,
+		Budgets:     budgets,
+		Transcriber: rt,
+		Parallelism: s.Parallelism,
+		Retry:       s.Retry,
+		Model:       s.Model,
+		Endpoint:    endpoint,
+		Options:     "diarized_json",
 	}
 	if s.StatusOut != nil {
 		c.StatusOut, c.StatusLive = statusOf(ctx, s.StatusOut)
@@ -422,7 +427,9 @@ func (s *Splitter) transcribePool(ctx context.Context, chunks []string, segmentT
 			}
 			defer func() { <-sem }()
 			b.Update(i, func(r *board.Row) { r.Active, r.Cells[colState], r.Started = true, "transcribing", time.Now() })
-			segs, err := s.Transcriber.Transcribe(poolCtx, chunk)
+			segs, err := s.resending(fmt.Sprintf("chunk-%d/%d", i+1, len(chunks)), func(state string) {
+				b.Update(i, func(r *board.Row) { r.Cells[colState] = state })
+			}).Transcribe(poolCtx, chunk)
 			if err != nil {
 				b.Update(i, func(r *board.Row) { r.Active, r.Mark, r.Cells[colState] = false, board.MarkWarn, stateRequestFailed })
 				errMu.Lock()

@@ -83,10 +83,10 @@ var (
 )
 
 func (p *ChunkPlanner) Plan(ctx context.Context, filePath string) (*Plan, error) {
-	reserve := time.Duration(p.Budgets.MaxSpeakers) * prefixSlot
+	reserve := maxVoices * prefixSlot
 	if reserve >= p.Budgets.MaxRequestDuration {
-		return nil, fmt.Errorf("prefix reserve %v (max-speakers %v × %v) reaches max-request-seconds %v; lower max-speakers or raise the budget",
-			reserve, p.Budgets.MaxSpeakers, prefixSlot, p.Budgets.MaxRequestDuration)
+		return nil, fmt.Errorf("prefix reserve %v (%v voices × %v) reaches max-request-seconds %v; raise the budget",
+			reserve, maxVoices, prefixSlot, p.Budgets.MaxRequestDuration)
 	}
 	seconds, err := probeDuration(ctx, p.Runner, filePath)
 	if err != nil {

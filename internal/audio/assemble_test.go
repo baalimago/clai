@@ -2,8 +2,11 @@ package audio
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -105,12 +108,6 @@ func TestManifestBoundariesAreSampleExact(t *testing.T) {
 	if m.Duration != prev {
 		t.Errorf("manifest duration %v differs from timeline end %v", m.Duration, prev)
 	}
-	if src, err := m.SourceTime(m.PrefixDuration + 10*time.Second); err != nil || src != 643*time.Second {
-		t.Errorf("expected request 10 s into the core to map to 643 s, got %v, %v", src, err)
-	}
-	if _, err := m.SourceTime(m.Regions[1].ReqStart); err == nil {
-		t.Error("expected an error mapping a gap instant to source time")
-	}
 }
 
 func TestAssemblerRejectsOverBudgetBytes(t *testing.T) {
@@ -159,14 +156,14 @@ func TestAssemblerCleansUpOnSuccessAndError(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		entries, _ := os.ReadDir(a.RunDir())
-		if len(entries) != 1 || filepath.Join(a.RunDir(), entries[0].Name()) != m.FilePath {
+		entries, _ := os.ReadDir(a.runDir)
+		if len(entries) != 1 || filepath.Join(a.runDir, entries[0].Name()) != m.FilePath {
 			t.Errorf("expected only the encoded file in the run dir, got %v", entries)
 		}
 		if err := a.Close(); err != nil {
 			t.Fatalf("close failed: %v", err)
 		}
-		if _, err := os.Stat(a.RunDir()); !os.IsNotExist(err) {
+		if _, err := os.Stat(a.runDir); !os.IsNotExist(err) {
 			t.Errorf("expected run dir removed, stat err: %v", err)
 		}
 	})
@@ -233,7 +230,7 @@ func TestAssemblerClipsAtSourceBounds(t *testing.T) {
 
 func assertRunDirEmpty(t *testing.T, a *AudioAssembler) {
 	t.Helper()
-	entries, err := os.ReadDir(a.RunDir())
+	entries, err := os.ReadDir(a.runDir)
 	if err != nil {
 		t.Fatalf("run dir unreadable: %v", err)
 	}
@@ -271,5 +268,183 @@ func TestAssemblerConcurrentRequestsUseDistinctPaths(t *testing.T) {
 	}
 	if len(seen) != workers {
 		t.Errorf("expected %v distinct request paths, got %v", workers, seen)
+	}
+}
+
+// assemblerProbe is one RequestAssembler under the contract, with what the
+// suite can observe of it; runner and runDir are nil and "" for a fake.
+type assemblerProbe struct {
+	asm    RequestAssembler
+	runner *scriptedRunner
+	runDir string
+}
+
+type assemblerImpl struct {
+	name string
+	// build applies a seconds budget (0: the default) and, when tight is
+	// set, a byte budget the encode exceeds
+	build func(t *testing.T, seconds time.Duration, tight bool) assemblerProbe
+	// encodes says the assembler encodes, so it has a byte budget
+	encodes bool
+	// today is the RequestHash and Bytes today's request gets
+	todayHash  string
+	todayBytes int64
+}
+
+func assemblersUnderTest() []assemblerImpl {
+	return []assemblerImpl{
+		{
+			name:    "AudioAssembler",
+			encodes: true,
+			build: func(t *testing.T, seconds time.Duration, tight bool) assemblerProbe {
+				budgets, runner := defaultBudgets(), &scriptedRunner{}
+				if seconds > 0 {
+					budgets.MaxRequestDuration = seconds
+				}
+				if tight {
+					budgets.MaxRequestBytes = 1 << 20
+					runner.encodedBytes = budgets.MaxRequestBytes - 1024
+				}
+				a := newAssembler(t, runner, budgets)
+				return assemblerProbe{asm: a, runner: runner, runDir: a.runDir}
+			},
+			// captured from Assemble before the zero core existed (Assemble.3)
+			todayHash:  "2dfe3f4626eb83a413490f07368acb84163438f1d724f85a3f14cc39c766e995",
+			todayBytes: 39936,
+		},
+		{
+			name: "arithmeticAssembler",
+			build: func(t *testing.T, seconds time.Duration, _ bool) assemblerProbe {
+				return assemblerProbe{asm: &arithmeticAssembler{maxRequestDuration: seconds}}
+			},
+			todayHash: fmt.Sprintf("%v|%v", twoSampleRequest().Samples, twoSampleRequest().Core),
+		},
+	}
+}
+
+func threeClipRequest() AssembleRequest {
+	return AssembleRequest{Samples: []SampleClip{
+		{ID: "voice-1", Start: 100 * time.Second, End: 104 * time.Second},
+		{ID: "c2-A", Start: 1200 * time.Second, End: 1204 * time.Second, Candidate: true},
+		{ID: "c2-B", Start: 1300 * time.Second, End: 1304 * time.Second, Candidate: true},
+	}}
+}
+
+func TestAssemblerContract(t *testing.T) {
+	cases := []struct {
+		name    string
+		seconds time.Duration
+		tight   bool
+		req     AssembleRequest
+		check   func(t *testing.T, impl assemblerImpl, p assemblerProbe, m *RequestManifest, err error)
+	}{
+		{
+			// Assemble.1, I5
+			name: "samples and a zero core hold the clips and gaps only",
+			req:  threeClipRequest(),
+			check: func(t *testing.T, _ assemblerImpl, p assemblerProbe, m *RequestManifest, err error) {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				want := []RegionKind{RegionSample, RegionGap, RegionSample, RegionGap, RegionSample, RegionGap, RegionCore}
+				var kinds []RegionKind
+				for _, r := range m.Regions {
+					kinds = append(kinds, r.Kind)
+				}
+				if !slices.Equal(kinds, want) {
+					t.Fatalf("regions = %v, want %v", kinds, want)
+				}
+				core := m.Regions[len(m.Regions)-1]
+				if core.ReqStart != m.Duration || core.ReqEnd != m.Duration || core.SrcStart != 0 || core.SrcEnd != 0 {
+					t.Errorf("expected a zero-length core region at the end, got %+v", core)
+				}
+				if m.Duration != m.PrefixDuration || m.CoreStart != 0 || m.CoreEnd != 0 || m.Duration == 0 {
+					t.Errorf("expected Duration == PrefixDuration and a zero core, got %+v", m)
+				}
+				if !m.Regions[2].Candidate || m.Regions[0].Candidate {
+					t.Errorf("candidate marks lost: %+v", m.Regions)
+				}
+				if p.runner != nil && p.runner.count("ffmpeg", "atrim=") != 3 {
+					t.Errorf("expected one extraction per clip and none for a core, got %v", p.runner.count("ffmpeg", "atrim="))
+				}
+			},
+		},
+		{
+			// Assemble.2
+			name: "no sample and a zero core is refused",
+			req:  AssembleRequest{},
+			check: func(t *testing.T, _ assemblerImpl, p assemblerProbe, m *RequestManifest, err error) {
+				if !errors.Is(err, ErrEmptyRequest) || m != nil {
+					t.Fatalf("expected ErrEmptyRequest, got %+v, %v", m, err)
+				}
+				if p.runner != nil && len(p.runner.calls) != 0 {
+					t.Errorf("expected no ffmpeg call, got %v", p.runner.calls)
+				}
+				if p.runDir != "" {
+					assertRunDirEmpty(t, p.asm.(*AudioAssembler))
+				}
+			},
+		},
+		{
+			// Assemble.3
+			name: "a request with a core is assembled as today",
+			req:  twoSampleRequest(),
+			check: func(t *testing.T, impl assemblerImpl, _ assemblerProbe, m *RequestManifest, err error) {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				today := manifestFor(twoSampleRequest().Samples, twoSampleRequest().Core)
+				if !slices.Equal(m.Regions, today.Regions) || m.PrefixDuration != today.PrefixDuration || m.Duration != today.Duration ||
+					m.CoreStart != today.CoreStart || m.CoreEnd != today.CoreEnd {
+					t.Errorf("manifest = %+v, want today's %+v", m, today)
+				}
+				if m.RequestHash != impl.todayHash || m.Bytes != impl.todayBytes {
+					t.Errorf("RequestHash %q and Bytes %v, want today's %q and %v", m.RequestHash, m.Bytes, impl.todayHash, impl.todayBytes)
+				}
+			},
+		},
+		{
+			// Assemble.1 (both budgets), I5
+			name:    "a clips-only request over the seconds budget",
+			seconds: 10 * time.Second,
+			req:     threeClipRequest(),
+			check: func(t *testing.T, _ assemblerImpl, p assemblerProbe, m *RequestManifest, err error) {
+				if err == nil || !strings.Contains(err.Error(), "exceeds max-request-seconds 10s") {
+					t.Fatalf("expected the seconds budget error, got %+v, %v", m, err)
+				}
+				if p.runner != nil && p.runner.count("ffmpeg", "libmp3lame") != 0 {
+					t.Error("expected no encode after the seconds check failed")
+				}
+				if p.runDir != "" {
+					assertRunDirEmpty(t, p.asm.(*AudioAssembler))
+				}
+			},
+		},
+		{
+			// Assemble.1 (both budgets), I5
+			name:  "a clips-only request over the byte budget",
+			tight: true,
+			req:   threeClipRequest(),
+			check: func(t *testing.T, _ assemblerImpl, p assemblerProbe, m *RequestManifest, err error) {
+				if err == nil || !strings.Contains(err.Error(), "exceeds max-request-bytes 1048576") {
+					t.Fatalf("expected the byte budget error, got %+v, %v", m, err)
+				}
+				assertRunDirEmpty(t, p.asm.(*AudioAssembler))
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, impl := range assemblersUnderTest() {
+				if tc.tight && !impl.encodes {
+					continue
+				}
+				t.Run(impl.name, func(t *testing.T) {
+					p := impl.build(t, tc.seconds, tc.tight)
+					m, err := p.asm.Assemble(context.Background(), tc.req)
+					tc.check(t, impl, p, m, err)
+				})
+			}
+		})
 	}
 }

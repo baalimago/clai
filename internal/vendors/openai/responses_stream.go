@@ -257,7 +257,12 @@ func (s *responsesStreamer) readResponsesStream(ctx context.Context, body io.Rea
 		close(out)
 	}()
 
-	br := bufio.NewReader(body)
+	summary := generic.NewStreamSummary()
+	record := func() {
+		summary.Record(func(line string) { runenv.Debugf(ctx, runenv.SubsystemVendorOpenAI, "%s", line) })
+	}
+	defer record()
+	br := bufio.NewReader(summary.Body(body))
 	tracker := newToolCallTracker()
 	done := ctx.Done()
 	// sawEvent is set by the first stream event. Until then the start of
@@ -302,6 +307,14 @@ func (s *responsesStreamer) readResponsesStream(ctx context.Context, body io.Rea
 			continue
 		}
 		sawEvent, head = true, nil
+		summary.Event(evt.Type)
+		if evt.Response != nil && evt.Response.Usage != nil {
+			summary.Tokens(evt.Response.Usage.InputTokens, evt.Response.Usage.OutputTokens)
+		}
+		switch evt.Type {
+		case "response.completed", "response.incomplete", "response.failed", "error", "response.error":
+			record()
+		}
 		if evt.Type == "response.incomplete" {
 			runenv.Warnf(ctx, runenv.SubsystemVendorOpenAI, "the reply is incomplete: the response ended early (reason: %s)", evt.incompleteReason())
 		}
@@ -335,7 +348,7 @@ func emitResponses(done <-chan struct{}, out chan<- models.CompletionEvent, evt 
 }
 
 func (s *responsesStreamer) parseStreamLine(ctx context.Context, line []byte) (responsesStreamEvent, bool, error) {
-	runenv.Debugf(ctx, runenv.SubsystemVendorOpenAI, "got: '%s'", line)
+	runenv.Tracef(ctx, runenv.SubsystemVendorOpenAI, "got: '%s'", line)
 
 	evt, ok, err := parseResponsesLine(line)
 	if err != nil {
@@ -559,15 +572,16 @@ func (s *responsesStreamer) createRequest(ctx context.Context, chat pub_models.C
 		reqBody.ParallelToolCalls = &parallelToolCalls
 	}
 
-	if runenv.DebugEnabled(ctx, runenv.SubsystemVendorOpenAI) {
+	if runenv.TraceEnabled(ctx, runenv.SubsystemVendorOpenAI) {
 		noTools := reqBody
-		runenv.Debugf(ctx, runenv.SubsystemVendorOpenAI, "openai responses request (tools redacted):\nurl: %s\nbody: %s", s.url, debug.IndentedJsonFmt(noTools))
+		runenv.Tracef(ctx, runenv.SubsystemVendorOpenAI, "openai responses request (tools redacted):\nurl: %s\nbody: %s", s.url, debug.IndentedJsonFmt(noTools))
 	}
 
 	b, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, diag.Errorf("encode json: %w", err)
 	}
+	runenv.Debugf(ctx, runenv.SubsystemVendorOpenAI, "openai responses request url=%s model=%s input_items=%d tools=%d bytes=%d", s.url, reqBody.Model, len(reqBody.Input), len(reqBody.Tools), len(b))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.url, bytes.NewReader(b))
 	if err != nil {

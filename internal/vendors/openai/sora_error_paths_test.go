@@ -77,7 +77,14 @@ func TestSoraCreateRequestDebugPrint(t *testing.T) {
 	const apiKey = "key12-secret"
 	q := &Sora{Model: "sora-2", Prompt: "p", apiKey: apiKey}
 	var diagnostics bytes.Buffer
-	req, err := q.createRequest(procenv.Diagnostics(context.Background(), &diagnostics, diagnostic.LevelDebug))
+	if _, err := q.createRequest(procenv.Diagnostics(context.Background(), &diagnostics, diagnostic.LevelDebug)); err != nil {
+		t.Fatalf("createRequest: %v", err)
+	}
+	if got, want := diagnostics.String(), "debug [vendor.openai] sora request model=sora-2 prompt_bytes=1\n"; got != want {
+		t.Fatalf("debug output = %q, want %q", got, want)
+	}
+	diagnostics.Reset()
+	req, err := q.createRequest(procenv.Diagnostics(context.Background(), &diagnostics, diagnostic.LevelTrace))
 	if err != nil {
 		t.Fatalf("createRequest: %v", err)
 	}
@@ -87,10 +94,10 @@ func TestSoraCreateRequestDebugPrint(t *testing.T) {
 	}
 	// The diagnostic presenter redacts the masked key field itself.
 	if !strings.Contains(output, "Sora request:") || !strings.Contains(output, "apiKey:") {
-		t.Fatalf("debug output does not include the request summary and key field: %s", output)
+		t.Fatalf("trace output does not include the request and key field: %s", output)
 	}
 	if strings.Contains(output, apiKey) || strings.Contains(output, "secret") {
-		t.Fatalf("debug output exposed the full API key: %s", output)
+		t.Fatalf("trace output exposed the full API key: %s", output)
 	}
 }
 

@@ -34,7 +34,7 @@ func migrateOldPhotoConfig(ctx context.Context, configDirPath string) error {
 	if err != nil {
 		return diag.Errorf("failed to unmarshal old photo config: %w", err)
 	}
-	runenv.Debugf(ctx, runenv.SubsystemConfig, "oldConf: %+v", oldConf)
+	runenv.Tracef(ctx, runenv.SubsystemConfig, "oldConf: %+v", oldConf)
 	if oldConf.PictureDir == "" {
 		// Field is empty only if the photoConfig already has been migrated. Super hacky dodge, but good enough for now
 		return nil

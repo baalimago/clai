@@ -45,22 +45,6 @@ func TestPlannerReservesPrefix(t *testing.T) {
 			t.Errorf("expected one probe and one silence pass, got %v", runner.calls)
 		}
 	})
-	t.Run("larger max-speakers grows the reserve and shrinks cores", func(t *testing.T) {
-		budgets := defaultBudgets()
-		budgets.MaxSpeakers = 12
-		plan, err := newPlanner(&scriptedRunner{duration: "5065.000000"}, budgets).Plan(context.Background(), "meeting.wav")
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if plan.PrefixReserve != 132*time.Second {
-			t.Errorf("expected 132 s reserve, got %v", plan.PrefixReserve)
-		}
-		for _, c := range plan.Cores {
-			if c.End-c.Start+132*time.Second > 1400*time.Second {
-				t.Errorf("core %v plus reserve exceeds budget: %v", c.Index, c.End-c.Start)
-			}
-		}
-	})
 }
 
 func TestPlannerAlignsToSilence(t *testing.T) {
@@ -141,16 +125,14 @@ func TestPlannerProbeFailure(t *testing.T) {
 
 func TestPlannerRejectsOversizedReserve(t *testing.T) {
 	budgets := defaultBudgets()
-	budgets.MaxRequestDuration = 60 * time.Second
+	budgets.MaxRequestDuration = 80 * time.Second
 	runner := &scriptedRunner{duration: "5065.000000"}
 	_, err := newPlanner(runner, budgets).Plan(context.Background(), "meeting.wav")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	for _, want := range []string{"1m28s", "1m0s", "max-speakers", "max-request-seconds"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("expected error to mention %q, got: %v", want, err)
-		}
+	if want := "prefix reserve 1m28s (8 voices × 11s) reaches max-request-seconds 1m20s; raise the budget"; err.Error() != want {
+		t.Errorf("error %q, want %q", err, want)
 	}
 	if len(runner.calls) != 0 {
 		t.Errorf("expected no binary invoked, got %v", runner.calls)

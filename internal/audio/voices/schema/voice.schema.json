@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "voice.schema.json",
+  "title": "voices/<slug>/voice.json",
+  "type": "object",
+  "required": ["name"],
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^\\p{L}[\\p{L}\\p{N} .'’-]{0,38}$",
+      "not": { "pattern": "^([sS][pP][eE][aA][kK][eE][rR]|[uU][nN][kK][nN][oO][wW][nN])-\\d+$" }
+    }
+  },
+  "examples": [{ "name": "Lorentz" }, { "name": "Jean-Luc P." }]
+}

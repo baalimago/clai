@@ -9,6 +9,6 @@ $HOME/work
 THE-REPLY
 
 == stderr
-debug [call] received tool call: {\x0a "id": "call_1",\x0a "name": "pwd",\x0a "type": "function",\x0a "inputs": {},\x0a "function": {\x0a  "name": "pwd",\x0a  "description": "Print the current working directory. Uses the Linux command 'pwd'.",\x0a  "input_schema": {\x0a   "type": "object",\x0a   "required": [],\x0a   "properties": {}\x0a  },\x0a  "arguments": "{}"\x0a }\x0a}
-debug [call] Invoke call: {\x0a "id": "call_1",\x0a "name": "pwd",\x0a "type": "function",\x0a "inputs": {},\x0a "function": {\x0a  "name": "pwd",\x0a  "description": "Print the current working directory. Uses the Linux command 'pwd'.",\x0a  "input_schema": {\x0a   "type": "object",\x0a   "required": [],\x0a   "properties": {}\x0a  },\x0a  "arguments": "{}"\x0a }\x0a}
+debug [call] call id=call_1 name=pwd args=0 bytes=0
+debug [call] result id=call_1 name=pwd outcome=ok bytes=N
 

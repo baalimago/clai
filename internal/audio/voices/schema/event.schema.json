@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "event.schema.json",
+  "title": "one line of voices/<slug>/events.jsonl",
+  "type": "object",
+  "required": ["id", "at", "event", "clip"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^[0-9a-f]{16}$" },
+    "at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$" },
+    "event": { "enum": ["added", "confirmed", "overruled", "removed", "placed", "named"] },
+    "clip": { "type": "string", "pattern": "^[0-9a-f]{12}$" },
+    "status": { "enum": ["confirmed", "unconfirmed"] },
+    "source": { "enum": ["voices add", "audio_remember_voice"] },
+    "seconds": { "type": "number", "exclusiveMinimum": 0 },
+    "landed": { "type": "boolean" },
+    "speakers": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "event": { "const": "added" } } },
+      "then": { "required": ["status", "source", "seconds"] }
+    },
+    {
+      "if": { "properties": { "event": { "const": "placed" } } },
+      "then": { "required": ["landed"] }
+    },
+    {
+      "if": { "properties": { "event": { "const": "named" } } },
+      "then": { "required": ["speakers"] }
+    }
+  ],
+  "examples": [
+    { "id": "5a1f0c9e2b7d4a63", "at": "2026-11-18T09:12:44.120394Z", "event": "added", "clip": "9f3c2a1b0d4e", "status": "confirmed", "source": "voices add", "seconds": 8.4 },
+    { "id": "0c44e1a97f20b3d8", "at": "2026-11-24T16:02:10Z", "event": "added", "clip": "1a7d0f23c9b8", "status": "unconfirmed", "source": "audio_remember_voice", "seconds": 9.7 },
+    { "id": "77b0d2c4e19a5f06", "at": "2026-11-25T10:00:03Z", "event": "placed", "clip": "9f3c2a1b0d4e", "landed": true },
+    { "id": "4d2e8f0a1b3c5d79", "at": "2026-11-25T10:00:03Z", "event": "placed", "clip": "e81d5530c6a9", "landed": false },
+    { "id": "e3a9b6d0c1f24875", "at": "2026-11-25T10:00:03Z", "event": "named", "clip": "9f3c2a1b0d4e", "speakers": ["A"] },
+    { "id": "19d8c7b6a5f4e3d2", "at": "2026-11-25T10:20:00Z", "event": "overruled", "clip": "e81d5530c6a9" },
+    { "id": "aa01bb02cc03dd04", "at": "2026-11-26T08:00:00Z", "event": "confirmed", "clip": "1a7d0f23c9b8" },
+    { "id": "f0e1d2c3b4a59687", "at": "2026-11-26T08:05:00Z", "event": "removed", "clip": "e81d5530c6a9" }
+  ]
+}

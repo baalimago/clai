@@ -69,7 +69,7 @@ func (k knownVoices) name(ctx context.Context, route *Splitter, recording string
 			budgets = defaults
 		}
 	}
-	naming := Namer{Transcriber: route.Transcriber, Runner: route.Runner, Budgets: budgets}.Name(ctx, recording, segs, k.selection)
+	naming := Namer{Transcriber: route.resending("naming", nil), Runner: route.Runner, Budgets: budgets}.Name(ctx, recording, segs, k.selection)
 	if len(naming.Outcomes) > 0 {
 		naming.Report.Unrecorded = k.tally(naming.Outcomes)
 	}
@@ -110,7 +110,7 @@ func logNaming(ctx context.Context, segs []Segment, r NamingReport) {
 		}
 	}
 	if len(short)+unknown > 0 {
-		runenv.Debugf(ctx, runenv.SubsystemAudio, "naming-speaker clip=- outcome=kept reason=%s speakers=%d unknown_runs=%d labels=%s",
+		runenv.Debugf(ctx, runenv.SubsystemAudio, "naming-speaker clip=- outcome=kept reason=%s speakers=%d unknown_voices=%d labels=%s",
 			ReasonNoCandidate, len(short)+unknown, unknown, orDash(strings.Join(short, ",")))
 	}
 	for _, v := range r.Voices {

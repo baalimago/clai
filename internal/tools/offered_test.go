@@ -1,11 +1,16 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"slices"
+	"strings"
 	"testing"
 
+	"github.com/baalimago/clai/internal/testenv/procenv"
+	"github.com/baalimago/clai/pkg/diagnostic"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -143,5 +148,27 @@ func TestRun_foldsTheErrorAndPassesInputs(t *testing.T) {
 	}
 	if contextual.got["k"] != "v" {
 		t.Fatalf("inputs = %v, want the call's inputs", contextual.got)
+	}
+}
+
+func TestCallSummaryShowsShortArgumentsAndTheLengthOfLongOnes(t *testing.T) {
+	long := strings.Repeat("å", 201)
+	call := pub_models.Call{ID: "c1", Name: "write_file", Inputs: &pub_models.Input{"path": "a b.md", "content": long, "lines": 3.0}}
+	want := fmt.Sprintf(`id=c1 name=write_file args=3 bytes=%d content=<201 chars> lines="3" path="a b.md"`, len(long)+len("a b.md")+1)
+	if got := CallSummary(call); got != want {
+		t.Errorf("CallSummary = %q, want %q", got, want)
+	}
+	if got := CallSummary(pub_models.Call{ID: "c2", Name: "pwd"}); got != "id=c2 name=pwd args=0 bytes=0" {
+		t.Errorf("CallSummary without inputs = %q", got)
+	}
+}
+
+func TestRunRecordsTheResultWithoutItsContent(t *testing.T) {
+	var out bytes.Buffer
+	ctx := procenv.Diagnostics(context.Background(), &out, diagnostic.LevelDebug)
+	call := pub_models.Call{ID: "c1", Name: "nope", ArgumentsErr: "SECRET-ARGS are no JSON object"}
+	Run(ctx, nil, call)
+	if got, want := out.String(), "debug [call] result id=c1 name=nope outcome=error bytes=37\n"; got != want {
+		t.Errorf("debug records = %q, want %q", got, want)
 	}
 }

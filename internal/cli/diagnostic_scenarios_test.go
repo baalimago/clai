@@ -29,9 +29,12 @@ type cliRun struct {
 // diagnostics, so the scenarios cost nothing like production's 1 MiB.
 const testBufferSize diag.ByteSize = 4 << 10
 
-// spillPadRepeats sizes each of three spilled tool calls' arguments to
-// testBufferSize, so the third forces the buffer to spill.
-const spillPadRepeats = int(testBufferSize) / len("SPILLED-PAD")
+// spillPadRepeats keeps a tool call's argument short enough for its debug
+// record to show it; three such calls overflow spillBufferSize.
+const (
+	spillPadRepeats               = 18
+	spillBufferSize diag.ByteSize = 512
+)
 
 type cliOpts struct {
 	stderrTerminal bool
@@ -271,7 +274,7 @@ func TestDiagnosticCLIScenarios(t *testing.T) {
 		t.Setenv("DEBUG_CALL", "1")
 		pad := strings.Repeat("SPILLED-PAD", spillPadRepeats)
 		stubProvider(t, false, pad, pad, pad)
-		got := runCLI(t, "-r -cm gpt-stub -t pwd q hi", cliOpts{bufferSize: testBufferSize})
+		got := runCLI(t, "-r -cm gpt-stub -t pwd q hi", cliOpts{bufferSize: spillBufferSize})
 		if got.status != 0 || !strings.Contains(got.stdout, "THE-REPLY") {
 			t.Fatalf("got status %d stdout %q", got.status, got.stdout)
 		}

@@ -19,7 +19,6 @@ func TestResponseBodyIsTraceOnly(t *testing.T) {
 		w.Write([]byte(body))
 	}))
 	defer server.Close()
-	t.Setenv("DEBUG_TEST_AUDIO", "1")
 	trans := setupTranscriber(t, "gpt-4o-transcribe-diarize", server.URL)
 	path := writeTestAudioFile(t, []byte("audio"))
 	run := func(level diagnostic.Level) string {

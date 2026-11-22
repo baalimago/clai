@@ -169,7 +169,9 @@ func setupTextConfig(ctx context.Context, confDir string, tf internal.TextFlags,
 		logSkillDiscovery = false
 	}
 
-	runenv.Debugf(ctx, runenv.SubsystemTextQuerier, "config post flag override: %+v\n", imagodebug.IndentedJsonFmt(tConf))
+	if runenv.TraceEnabled(ctx, runenv.SubsystemTextQuerier) {
+		runenv.Tracef(ctx, runenv.SubsystemTextQuerier, "config post flag override: %+v\n", imagodebug.IndentedJsonFmt(tConf))
+	}
 	if globPattern := tf.AgentText.Glob.Value(); globPattern != "" {
 		globStr, retArgs, globErr := glob.Setup(ctx, globPattern, args)
 		args = retArgs

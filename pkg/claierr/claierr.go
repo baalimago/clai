@@ -58,6 +58,7 @@ type APIError struct {
 	ProviderCode string // e.g. "insufficient_quota", "rate_limit_exceeded"
 	Message      string // the provider's human-readable explanation, when a decoder extracted one
 	Body         string
+	RetryAfter   time.Duration // the provider's Retry-After, zero when it sent none
 }
 
 // API returns the facts. Defined on *APIError so every embedding type

@@ -48,8 +48,8 @@ func (c *Claude) handleContentBlockDelta(ctx context.Context, deltaToken string)
 	if err != nil {
 		return diag.Errorf("failed to convert string to delta token: %w", err)
 	}
-	if runenv.DebugEnabled(ctx, runenv.SubsystemVendorAnthropic) {
-		runenv.Debugf(ctx, runenv.SubsystemVendorAnthropic, "deltaStruct: '%v'", debug.IndentedJsonFmt(delta))
+	if runenv.TraceEnabled(ctx, runenv.SubsystemVendorAnthropic) {
+		runenv.Tracef(ctx, runenv.SubsystemVendorAnthropic, "deltaStruct: '%v'", debug.IndentedJsonFmt(delta))
 	}
 	switch delta.Type {
 	case "text_delta":

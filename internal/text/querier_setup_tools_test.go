@@ -21,6 +21,7 @@ import (
 	"github.com/baalimago/clai/internal/tools/mcp"
 	"github.com/baalimago/clai/internal/tools/mcp/schemacache"
 	"github.com/baalimago/clai/pkg/claierr"
+	"github.com/baalimago/clai/pkg/diagnostic"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 	"github.com/baalimago/go_away_boilerplate/pkg/ancli"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
@@ -1039,7 +1040,6 @@ func TestAuthChallengeStdioSpawnBoundedAcrossRepeatedToolCallsEndToEnd(t *testin
 // serialised pub_models.McpServer verbatim, so a secret placed in either
 // field reached stdout whole.
 func TestDebugDumpNeverLeaksArgsOrEnvSecret(t *testing.T) {
-	t.Setenv("DEBUG", "1")
 	dir := t.TempDir()
 	const argsSecret = "super-secret-bearer-token-in-args"
 	const envSecret = "super-secret-api-key-in-env"
@@ -1048,12 +1048,11 @@ func TestDebugDumpNeverLeaksArgsOrEnvSecret(t *testing.T) {
 		t.Fatalf("write config: %v", err)
 	}
 
-	stdout := testboil.CaptureStderr(t, func(t *testing.T) {
-		// The ambient server fails to spawn (no such binary), which is
-		// irrelevant here: the DEBUG dump runs before any connect attempt,
-		// unconditionally, so this still exercises the real carrier.
-		_, _ = setupMcpManager(procenv.Context(t.Context()), dir, Configurations{}, &recordingSuccessSink{}, testSchemaCache(t), nil)
-	})
+	// The ambient server fails to spawn (no such binary), which is
+	// irrelevant here: the dump runs before any connect attempt.
+	var dump bytes.Buffer
+	_, _ = setupMcpManager(procenv.Diagnostics(t.Context(), &dump, diagnostic.LevelTrace), dir, Configurations{}, &recordingSuccessSink{}, testSchemaCache(t), nil)
+	stdout := dump.String()
 	if strings.Contains(stdout, argsSecret) {
 		t.Errorf("DEBUG dump leaked the args secret: %s", stdout)
 	}

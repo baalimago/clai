@@ -192,7 +192,6 @@ func TestLoadConfigFromFile_NoCreateUnkeyable(t *testing.T) {
 }
 
 func TestLoadConfigFromFile_DebugPrints(t *testing.T) {
-	t.Setenv("DEBUG", "1")
 	type cfg struct {
 		A string `json:"a"`
 	}
@@ -206,7 +205,7 @@ func TestLoadConfigFromFile_DebugPrints(t *testing.T) {
 		t.Cleanup(func() { NoCreateConfig = false })
 
 		var out strings.Builder
-		if _, err := LoadConfigFromFile(procenv.Diagnostics(context.Background(), &out, diagnostic.LevelDebug), dir, "app.json", nil, &cfg{A: "d"}); err != nil {
+		if _, err := LoadConfigFromFile(procenv.Diagnostics(context.Background(), &out, diagnostic.LevelTrace), dir, "app.json", nil, &cfg{A: "d"}); err != nil {
 			t.Fatalf("LoadConfigFromFile: %v", err)
 		}
 		stdout := out.String()
@@ -218,7 +217,7 @@ func TestLoadConfigFromFile_DebugPrints(t *testing.T) {
 	t.Run("fresh writable config", func(t *testing.T) {
 		dir := t.TempDir()
 		var out strings.Builder
-		if _, err := LoadConfigFromFile(procenv.Diagnostics(context.Background(), &out, diagnostic.LevelDebug), dir, "app.json", nil, &cfg{A: "d"}); err != nil {
+		if _, err := LoadConfigFromFile(procenv.Diagnostics(context.Background(), &out, diagnostic.LevelTrace), dir, "app.json", nil, &cfg{A: "d"}); err != nil {
 			t.Fatalf("LoadConfigFromFile: %v", err)
 		}
 		stdout := out.String()

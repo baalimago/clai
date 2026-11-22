@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/baalimago/clai/internal/runenv"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
@@ -104,9 +106,43 @@ func UnknownToolCall(name string) string {
 // Run calls tool with call's inputs and gathers both error and output in the
 // same string.
 func Run(ctx context.Context, tool pub_models.LLMTool, call pub_models.Call) string {
-	if runenv.DebugEnabled(ctx, runenv.SubsystemCall) {
-		runenv.Debugf(ctx, runenv.SubsystemCall, "Invoke call: %v", debug.IndentedJsonFmt(call))
+	if runenv.TraceEnabled(ctx, runenv.SubsystemCall) {
+		runenv.Tracef(ctx, runenv.SubsystemCall, "Invoke call: %v", debug.IndentedJsonFmt(call))
 	}
+	out := run(ctx, tool, call)
+	outcome := "ok"
+	if strings.HasPrefix(out, "ERROR: ") {
+		outcome = "error"
+	}
+	runenv.Debugf(ctx, runenv.SubsystemCall, "result id=%s name=%s outcome=%s bytes=%d", call.ID, call.Name, outcome, len(out))
+	return out
+}
+
+// shortArgument is the longest argument a debug record shows.
+const shortArgument = 200
+
+// CallSummary is a call as its debug record: its shape and its short
+// arguments; a longer one is its length (architecture/output.md).
+func CallSummary(call pub_models.Call) string {
+	inputs := pub_models.Input{}
+	if call.Inputs != nil {
+		inputs = *call.Inputs
+	}
+	var args strings.Builder
+	size := 0
+	for _, name := range slices.Sorted(maps.Keys(inputs)) {
+		value := fmt.Sprint(inputs[name])
+		size += len(value)
+		if chars := utf8.RuneCountInString(value); chars > shortArgument {
+			fmt.Fprintf(&args, " %s=<%d chars>", name, chars)
+			continue
+		}
+		fmt.Fprintf(&args, " %s=%q", name, value)
+	}
+	return fmt.Sprintf("id=%s name=%s args=%d bytes=%d%s", call.ID, call.Name, len(inputs), size, args.String())
+}
+
+func run(ctx context.Context, tool pub_models.LLMTool, call pub_models.Call) string {
 	// Arguments that were no JSON object run nothing: the model is told what
 	// was wrong and can send the call again.
 	if call.ArgumentsErr != "" {

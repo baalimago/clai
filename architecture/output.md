@@ -44,6 +44,19 @@ their types are registered in `internal/runenv/types.go` plus `agent.DiagnosticT
 which includes that registry, so a library caller's Reporter or Deliverer receives
 clai's internal diagnostics too (each type is registered once).
 
+`debug` carries structure and `trace` carries payload, so a run log kept at
+`debug` tells the run's flow and holds no conversation text.
+
+| At `debug` | At `trace` only (`runenv.Tracef`) |
+| --- | --- |
+| a model request: URL, model, message count, size | request bodies, prompts, message dumps |
+| a model response, one line: `response events=118 bytes=37396 tokens_in=12000 tokens_out=800 took=4.2s types=response.completed:1,…` (`generic.StreamSummary`, written before the stream's last event is sent) | each stream event, reply and reasoning deltas |
+| a tool call: `call id= name= args=2 bytes=3970 content=<3960 chars> file_path="notes.md"` (an argument of at most 200 characters is shown, a longer one is its length), then `result id= name= outcome=ok\|error bytes=` | the call with its schema and inputs (`received tool call`, `Invoke call`) |
+| a config file being loaded, the MCP server count | the loaded config, the querier and model dumps, the MCP server blocks, each tool's description |
+| a photo, video or Sora prompt's size | the prompt |
+
+A short tool argument is the one piece of a conversation `debug` shows.
+
 Diagnostics always go to stderr, never into a reply, the model's context or a
 saved conversation. A type is immediate or buffered; buffered types (tool
 call debug detail, MCP schema cache failures) share one 1 MiB buffer per run
@@ -65,7 +78,9 @@ the command, or among its flags before the first positional argument — and
 Go's bool flags it also takes a value: `-json=false` (or `0`, `f`, …)
 selects text, `-json=true` JSON, and any other value is a usage error with
 exit status 1. A `-json` written elsewhere is reported as a misplaced flag
-whose hint says where the global flag goes. It changes the encoding only:
+whose hint says where the global flag goes, except after `clai audio
+voices list`, whose own `-json` it is (anywhere among its
+arguments; [cmd-dispatch.md](./cmd-dispatch.md#subcommander-trees)). It changes the encoding only:
 every destination, input and exit status stays, except that `$EDITOR` is
 refused with an `error` record and exit 1.
 
@@ -122,6 +137,17 @@ ladder's three diagnostics are "shutting down gracefully", "graceful shutdown
 ongoing, signal again to force exit" and "forcing exit". When stdout and
 stderr are both terminals, the first notice starts on its own row
 (`runenv.OpenRow`). A library `Query` returns the same `StoppedError`.
+
+One interrupt is not a signal of the run: Ctrl-C at a menu question leaves
+the menu exactly as `q` does. The composition gives every run one
+`menu.Asking` (`menu.WithAsking`), and a first SIGINT that arrives while it
+reports `Waiting` cancels the run context without a cause and is not passed
+to the signal ladder (`firstSignal.leavesMenu`): nothing is reported, the
+exit status is the command's own (0 for `voices list`), and the abandoned
+read of stdin is left behind, so nothing typed afterwards is acted on. A
+SIGTERM, an interrupt while no question waits (an action, a playing clip, a
+transcription) and every later signal stop the run as above. This is the
+rule for every clai menu (`internal/menu`, `Screen.Ask`).
 
 A reply that cannot be written to stdout fails the run in both formats
 (`write the reply to stdout: ...`, exit 1). A stdout closed before clai

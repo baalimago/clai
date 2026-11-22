@@ -36,6 +36,7 @@ import (
 	"github.com/baalimago/clai/internal/profile"
 	"github.com/baalimago/clai/internal/profiles"
 	"github.com/baalimago/clai/internal/remote"
+	"github.com/baalimago/clai/internal/resend"
 	"github.com/baalimago/clai/internal/runenv"
 	"github.com/baalimago/clai/internal/runtally"
 	"github.com/baalimago/clai/internal/setup"
@@ -128,7 +129,7 @@ type Deps struct {
 	// it at a local TLS server.
 	RemoteClient remote.Doer
 	// StepRetry resends a model request that failed before its stream opened.
-	StepRetry text.StepRetry
+	StepRetry resend.Schedule
 	// DiagnosticBufferSize overrides the Shared buffer size (README
 	// Parameters) so a test spills with a small payload; zero keeps
 	// production's 1 MiB.
@@ -165,7 +166,7 @@ func DefaultDeps() Deps {
 		ForeignCache:      chat.DefaultForeignCache,
 		NewImageGenerator: route.NewGenerator,
 		RemoteClient:      remote.NewClient(),
-		StepRetry:         text.DefaultStepRetry(),
+		StepRetry:         resend.Default(),
 	}
 }
 
@@ -324,13 +325,14 @@ func commands(deps Deps, setExit func(int), notices func() io.Writer, rerun func
 		return confDir, err
 	}
 	envAt := profileEnvFunc()
-	// An agent run may call audio_transcribe, so -am/-af and a profile's
-	// audio.model must reach it.
+	// An agent run may call audio_transcribe, so -am/-af/-voices and a
+	// profile's audio.model must reach it.
 	applyMediaOverrides := func(s internal.MediaToolSettings) error {
 		return audio.SetTranscribeOverrides(audio.ToolOverrides{
 			Model:       s.AudioModel,
 			Models:      s.AudioModels,
 			Format:      s.AudioFormat,
+			Voices:      s.Voices,
 			NewResolver: remoteResolver(deps.RemoteClient, envAt, notices),
 		})
 	}

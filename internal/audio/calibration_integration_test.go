@@ -4,17 +4,27 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"flag"
+	"io"
+	"os"
+	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/baalimago/clai/internal/audio/generic"
+	"github.com/baalimago/clai/internal/remote"
+	"github.com/baalimago/clai/internal/runenv"
+	"github.com/baalimago/clai/internal/stdio"
+	"github.com/baalimago/clai/internal/utils"
 	pkgtools "github.com/baalimago/clai/pkg/tools"
+	"github.com/baalimago/go_away_boilerplate/pkg/cmd"
 )
 
-// smallMeeting: 180 s source, four 45 s cores under an 80 s budget with
-// max-speakers 3 (reserve 33 s). chunk 1: a b; chunk 2: a c; chunk 3: b c a; chunk 4: d a.
+// smallMeeting: 180 s source in four 45 s parts. chunk 1: a b; chunk 2: a c;
+// chunk 3: b c a; chunk 4: d a.
 func smallMeeting() []voiceSpan {
 	var spans []voiceSpan
 	pattern := [][]string{{"a", "b"}, {"a", "c"}, {"b", "c", "a"}, {"d", "a"}}
@@ -35,7 +45,6 @@ func smallBudgetConf(model string) Configurations {
 	conf.Transcribe.Model = model
 	conf.Transcribe.MaxRequestBytes = 1 << 20
 	conf.Transcribe.MaxRequestSeconds = 80
-	conf.Transcribe.MaxSpeakers = 3
 	conf.Transcribe.Parallelism = 1
 	return conf
 }
@@ -53,75 +62,56 @@ func newCalibratedSplitter(t *testing.T, p *voiceProvider, conf Configurations) 
 	s.Model = conf.Transcribe.Model
 	s.Budgets = budgets
 	s.MaxBytes = budgets.MaxRequestBytes
-	s.Strict = conf.Transcribe.StrictSpeakers
 	s.Parallelism = conf.Transcribe.Parallelism
 	s.RequestTranscriber = manifestTranscriber{p}
 	s.StatusOut = status
 	return s, status, sparseFile(t, 2<<20)
 }
 
-func TestCalibrationEndToEndWithPermutedLabels(t *testing.T) {
+// Run.1, Run.4, I11: the Splitter, the real assembler and planner over the
+// scripted runner; a 134 s budget holds the 88 s reserve and plans four
+// cores of 45 s from the 180 s source.
+func TestSurveyPathEndToEnd(t *testing.T) {
+	t.Parallel()
 	p := &voiceProvider{truth: smallMeeting()}
-	s, status, input := newCalibratedSplitter(t, p, smallBudgetConf("gpt-4o-transcribe-diarize"))
+	conf := smallBudgetConf("gpt-4o-transcribe-diarize")
+	conf.Transcribe.MaxRequestSeconds = 134
+	s, status, input := newCalibratedSplitter(t, p, conf)
 	segs, err := s.Transcribe(context.Background(), input)
 	if err != nil {
 		t.Fatalf("transcribe failed: %v", err)
 	}
+	if !strings.Contains(status.String(), "▸ speaker labelling  ") || !strings.Contains(status.String(), "  4 chunks × 45s  ≤18 requests") {
+		t.Fatalf("expected four chunks on the speaker labelling board, got:\n%v", status.String())
+	}
 	ids := idsByVoice(t, segs, p.truth)
 	seen := map[string]string{}
-	for _, v := range []string{"a", "b", "c"} {
+	for _, v := range []string{"a", "b", "c", "d"} {
 		if len(ids[v]) != 1 {
-			t.Errorf("voice %v maps to %v, expected one stable ID", v, ids[v])
+			t.Errorf("voice %v maps to %v, expected one speaker", v, ids[v])
 			continue
 		}
 		for id := range ids[v] {
-			if other, dup := seen[id]; dup {
-				t.Errorf("voices %v and %v merged onto %v", other, v, id)
+			if other, dup := seen[id]; dup || !strings.HasPrefix(id, "speaker-") {
+				t.Errorf("voice %v is %v (also %v), want a speaker of its own", v, id, other)
 			}
 			seen[id] = v
 		}
 	}
-	// max-speakers 3: the fourth voice is refused and rendered unknown
-	for id := range ids["d"] {
-		if !strings.HasPrefix(id, "unknown-") {
-			t.Errorf("fourth voice must be unknown under max-speakers 3, got %v", id)
-		}
-	}
-	if !strings.Contains(status.String(), reasonReserveExhausted) && !strings.Contains(status.String(), "unknown") {
-		t.Errorf("expected the refusal reported on stderr, got:\n%v", status.String())
-	}
 	if len(segs) != len(p.truth) {
 		t.Errorf("expected %v segments, got %v", len(p.truth), len(segs))
 	}
-	if !strings.Contains(status.String(), "calibrated diarization") {
-		t.Errorf("expected calibration status line, got:\n%v", status.String())
-	}
-}
-
-func TestCalibrationEndToEndDiscoversLateSpeakers(t *testing.T) {
-	p := &voiceProvider{truth: smallMeeting()}
-	conf := smallBudgetConf("gpt-4o-transcribe-diarize")
-	conf.Transcribe.MaxSpeakers = 4
-	s, _, input := newCalibratedSplitter(t, p, conf)
-	segs, err := s.Transcribe(context.Background(), input)
-	if err != nil {
-		t.Fatalf("transcribe failed: %v", err)
-	}
-	ids := idsByVoice(t, segs, p.truth)
-	for _, v := range []string{"a", "b", "c", "d"} {
-		if len(ids[v]) != 1 {
-			t.Errorf("voice %v maps to %v, expected one stable ID", v, ids[v])
-		}
-		for id := range ids[v] {
-			if !strings.HasPrefix(id, "speaker-") {
-				t.Errorf("voice %v should be a global speaker, got %v", v, id)
-			}
+	runner := s.Runner.(*scriptedRunner)
+	runner.mu.Lock()
+	calls := slices.Clone(runner.calls)
+	runner.mu.Unlock()
+	for _, call := range calls {
+		if m := atrimRe.FindStringSubmatch(strings.Join(call, " ")); m != nil && m[1] == m[2] {
+			t.Errorf("a core of length 0 was extracted: %v", call)
 		}
 	}
-	for i := 1; i < len(segs); i++ {
-		if segs[i].Start < segs[i-1].Start {
-			t.Fatalf("output not in source order at %v", i)
-		}
+	if encodes := runner.count("ffmpeg", "libmp3lame"); encodes != p.requests() || p.requests() < 14 {
+		t.Errorf("%v encodes for %v uploads; want one encode per uploaded request, merge links included", encodes, p.requests())
 	}
 }
 
@@ -158,6 +148,7 @@ func TestCalibrationPreservesNonDiarizedAndSubLimitPaths(t *testing.T) {
 }
 
 func TestMaxRequestBytesAppliesToBothPaths(t *testing.T) {
+	t.Parallel()
 	// 60 KB input: with a 40 KB cap the non-diarized path splits into ceil(60/32)=2 chunks
 	trans := &fakeTranscriber{}
 	runner := &fakeRunner{defaultDur: "900.000000", durations: map[string]string{"input.wav": "1800.000000"}, chunkCount: 2}
@@ -181,6 +172,7 @@ func TestMaxRequestBytesAppliesToBothPaths(t *testing.T) {
 	p := &voiceProvider{truth: smallMeeting()}
 	conf := smallBudgetConf("gpt-4o-transcribe-diarize")
 	conf.Transcribe.MaxRequestBytes = 4 << 20
+	conf.Transcribe.MaxRequestSeconds = 200
 	cs, _, _ := newCalibratedSplitter(t, p, conf)
 	direct := &fakeTranscriber{diarization: generic.DiarizationAnchored}
 	cs.Transcriber = direct
@@ -201,12 +193,11 @@ func TestMaxRequestBytesAppliesToBothPaths(t *testing.T) {
 func TestCalibrationToolBridgeUsesSameEngine(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "test-key")
 	conf := smallBudgetConf("gpt-4o-transcribe-diarize")
-	conf.Transcribe.StrictSpeakers = true
 	s, err := createSplitter(conf)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s.MaxBytes != 1<<20 || s.Budgets.MaxRequestDuration != 80*time.Second || s.Budgets.MaxSpeakers != 3 || !s.Strict || s.Parallelism != 1 {
+	if s.MaxBytes != 1<<20 || s.Budgets.MaxRequestDuration != 80*time.Second || s.Parallelism != 1 {
 		t.Errorf("splitter not configured from config: %+v", s)
 	}
 	if _, ok := s.Transcriber.(interface{ Endpoint() string }); !ok {
@@ -216,19 +207,19 @@ func TestCalibrationToolBridgeUsesSameEngine(t *testing.T) {
 		t.Fatal("tool engine not wired")
 	}
 	// The tool bridge and the CLI share createSplitter; a config error surfaces the same way in both
-	conf.Transcribe.MaxSpeakers = -1
-	if _, err := createSplitter(conf); err == nil || !strings.Contains(err.Error(), "max-speakers") {
+	conf.Transcribe.MaxRequestSeconds = -1
+	if _, err := createSplitter(conf); err == nil || !strings.Contains(err.Error(), "max-request-seconds") {
 		t.Errorf("expected budget error through the shared engine, got %v", err)
 	}
 }
 
-func TestFlagOverridesBudgetAndStrict(t *testing.T) {
+func TestFlagOverridesBudget(t *testing.T) {
 	conf := Default
 	f := &Flags{}
 	for _, sv := range []struct {
 		v   interface{ Set(string) error }
 		val string
-	}{{&f.MaxRequestBytes, "1048576"}, {&f.MaxRequestSeconds, "600"}, {&f.MaxSpeakers, "4"}, {&f.StrictSpeakers, "true"}} {
+	}{{&f.MaxRequestBytes, "1048576"}, {&f.MaxRequestSeconds, "600"}} {
 		if err := sv.v.Set(sv.val); err != nil {
 			t.Fatal(err)
 		}
@@ -237,7 +228,7 @@ func TestFlagOverridesBudgetAndStrict(t *testing.T) {
 		t.Fatal(err)
 	}
 	tc := conf.Transcribe
-	if tc.MaxRequestBytes != 1<<20 || tc.MaxRequestSeconds != 600 || tc.MaxSpeakers != 4 || !tc.StrictSpeakers {
+	if tc.MaxRequestBytes != 1<<20 || tc.MaxRequestSeconds != 600 {
 		t.Errorf("flags did not override config: %+v", tc)
 	}
 	untouched := Default
@@ -247,18 +238,15 @@ func TestFlagOverridesBudgetAndStrict(t *testing.T) {
 }
 
 func TestFlagRejectsNegativeBudget(t *testing.T) {
-	for _, name := range []string{"max-request-bytes", "max-request-seconds", "max-speakers"} {
+	for _, name := range []string{"max-request-bytes", "max-request-seconds"} {
 		f := &Flags{}
 		var target *interface{ Set(string) error }
 		switch name {
 		case "max-request-bytes":
 			v := interface{ Set(string) error }(&f.MaxRequestBytes)
 			target = &v
-		case "max-request-seconds":
-			v := interface{ Set(string) error }(&f.MaxRequestSeconds)
-			target = &v
 		default:
-			v := interface{ Set(string) error }(&f.MaxSpeakers)
+			v := interface{ Set(string) error }(&f.MaxRequestSeconds)
 			target = &v
 		}
 		if err := (*target).Set("-5"); err != nil {
@@ -272,30 +260,53 @@ func TestFlagRejectsNegativeBudget(t *testing.T) {
 	}
 }
 
-func TestCalibrationStrictFailureHasNoStdout(t *testing.T) {
-	p := &voiceProvider{truth: smallMeeting()} // max-speakers 3 leaves voice d unresolved
-	conf := smallBudgetConf("gpt-4o-transcribe-diarize")
-	conf.Transcribe.StrictSpeakers = true
-	s, _, input := newCalibratedSplitter(t, p, conf)
-	out := &strings.Builder{}
-	q := &TranscribeQuerier{Splitter: s, FilePath: input, Format: FormatText, Out: out}
-	err := q.Query(context.Background())
-	if _, ok := errors.AsType[*UnresolvedError](err); !ok {
-		t.Fatalf("expected UnresolvedError, got %v", err)
+// L3.2, I7, Q2: there is no strict mode and no speaker cap. An old config
+// that still sets either loads and the values are ignored; the flags are
+// refused like any flag clai does not define, before a request.
+func TestOldConfigSettingsLoad(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "audioConfig.json"), []byte(`{"transcribe":{"strict-speakers":true,"max-speakers":3,"parallelism":2}}`), 0o600); err != nil {
+		t.Fatal(err)
 	}
-	if out.Len() != 0 {
-		t.Errorf("strict failure must write nothing to stdout, got %q", out.String())
+	conf, _, err := utils.LoadConfigFromFileCollect(context.Background(), dir, "audioConfig.json", nil, &Default)
+	if err != nil || conf.Transcribe.Parallelism != 2 {
+		t.Fatalf("an old config with strict-speakers and max-speakers must load, got %+v, %v", conf.Transcribe, err)
+	}
+	fs := flag.NewFlagSet("audio", flag.ContinueOnError)
+	(&Flags{}).Register(fs)
+	for _, name := range []string{"strict-speakers", "max-speakers"} {
+		if fs.Lookup(name) != nil {
+			t.Errorf("-%v must not exist", name)
+		}
+	}
+	for _, unknown := range []string{"-max-speakers", "-no-such-flag"} {
+		prepared := 0
+		c := Command(CommandDeps{
+			ConfigPrep: func(context.Context) (string, []string, error) {
+				prepared++
+				return t.TempDir(), nil, nil
+			},
+			NewRemoteResolver: func(string, remote.Prompter) (remote.Resolver, error) {
+				return remote.Resolver{}, errors.New("no resolver in this test")
+			},
+		})
+		streams := stdio.New(stdio.Config{Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: io.Discard})
+		ctx := runenv.With(context.Background(), runenv.New(runenv.Config{Streams: streams}))
+		status, err := cmd.RunSilentTo(ctx, []string{"clai", "audio", "transcribe", unknown, "3", "f.wav"}, map[string]cmd.Command{"audio": c}, io.Discard)
+		if status != 1 || err == nil || !strings.Contains(err.Error(), "flag provided but not defined: "+unknown) || prepared != 0 {
+			t.Errorf("%v: status %v, err %v, config prepared %v times; want it refused as an unknown flag before a request", unknown, status, err, prepared)
+		}
 	}
 }
 
 func TestToolBridgePropagatesCalibrationError(t *testing.T) {
 	prev := pkgtools.AudioTranscribeEngine
 	t.Cleanup(func() { pkgtools.AudioTranscribeEngine = prev })
-	pkgtools.AudioTranscribeEngine = func(_ context.Context, filePath, outputFormat string) (string, error) {
-		return "", &UnresolvedError{Chunk: 1, Labels: []UnmappedLabel{{Label: "Q", Speech: 5 * time.Second, Reason: reasonNoSample}}}
+	pkgtools.AudioTranscribeEngine = func(_ context.Context, _ pkgtools.AudioTranscribeCall) (string, error) {
+		return "", errors.New("labelling request for chunk 2: connection reset by peer")
 	}
 	got, err := pkgtools.AudioTranscribe.Call(map[string]any{"file_path": "meeting.wav"})
-	if err == nil || got != "" || !strings.Contains(err.Error(), "strict-speakers") {
+	if err == nil || got != "" || !strings.Contains(err.Error(), "connection reset by peer") {
 		t.Errorf("expected the calibration error returned by the tool, got %q, %v", got, err)
 	}
 }

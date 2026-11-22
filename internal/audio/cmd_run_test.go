@@ -1,15 +1,57 @@
 package audio
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"io"
 	"strings"
 	"testing"
 
 	"github.com/baalimago/clai/internal/testenv/procenv"
 
 	"github.com/baalimago/clai/internal"
+	"github.com/baalimago/clai/internal/remote"
+	"github.com/baalimago/clai/internal/runenv"
+	"github.com/baalimago/clai/internal/stdio"
+	"github.com/baalimago/go_away_boilerplate/pkg/cmd"
 	"github.com/baalimago/go_away_boilerplate/pkg/testboil"
 )
+
+// TestAudioCommand_TranscribeWithoutFile is Wire.7: transcribe with no file
+// writes its own help with the error, as audio does with no verb.
+func TestAudioCommand_TranscribeWithoutFile(t *testing.T) {
+	for _, words := range [][]string{{"audio", "transcribe"}, {"audio", "transcribe", "-af", "text"}} {
+		var prepared, resolved int
+		c := Command(CommandDeps{
+			ConfigPrep: func(context.Context) (string, []string, error) {
+				prepared++
+				return t.TempDir(), nil, nil
+			},
+			NewRemoteResolver: func(string, remote.Prompter) (remote.Resolver, error) {
+				resolved++
+				return remote.Resolver{}, errors.New("no resolver in this test")
+			},
+		})
+		transcribe, ok := c.Subcommands()["transcribe|t"].(*internal.Command)
+		if !ok {
+			t.Fatal("transcribe sub missing")
+		}
+		var stdout, stderr bytes.Buffer
+		streams := stdio.New(stdio.Config{Stdin: strings.NewReader(""), Stdout: &stdout, Stderr: &stderr})
+		ctx := runenv.With(context.Background(), runenv.New(runenv.Config{Streams: streams}))
+		status, err := cmd.RunSilentTo(ctx, append([]string{"clai"}, words...), map[string]cmd.Command{"audio": c}, io.Discard)
+		if status != 1 || !errors.Is(err, errMissingAudioFile) || !strings.Contains(err.Error(), "missing audio file argument") {
+			t.Fatalf("%v: status %d, err %v; want 1 and the missing file", words, status, err)
+		}
+		if help := transcribe.Help(); !strings.Contains(stderr.String(), help) || strings.Contains(stderr.String(), namespaceHelp) {
+			t.Fatalf("%v: stderr %q, want transcribe's help %q alone", words, stderr.String(), help)
+		}
+		if stdout.Len() != 0 || prepared != 0 || resolved != 0 {
+			t.Fatalf("%v: stdout %q, config prepared %d times, resolver built %d times; want nothing run", words, stdout.String(), prepared, resolved)
+		}
+	}
+}
 
 func Test_Command_tree(t *testing.T) {
 	deps := CommandDeps{

@@ -5,6 +5,7 @@ package generic
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -14,12 +15,14 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-
-	"github.com/baalimago/clai/internal/runenv"
+	"time"
 
 	"github.com/baalimago/clai/internal/apikey"
-	"github.com/baalimago/clai/internal/debugflags"
 	"github.com/baalimago/clai/internal/diag"
+	"github.com/baalimago/clai/internal/resend"
+	"github.com/baalimago/clai/internal/runenv"
+	textgeneric "github.com/baalimago/clai/internal/text/generic"
+	"github.com/baalimago/clai/pkg/claierr"
 )
 
 // ResponseFormat is the JSON shape requested from the endpoint; text/srt/vtt are rendered locally.
@@ -58,11 +61,12 @@ type Transcriber struct {
 	// Stream asks for diarized segments as server-sent events when the request's
 	// context has a Heard; the vendor sets it for the models that stream them
 	Stream bool
-	apiKey string
-	debug  bool
+	// DecodeError is the vendor's reading of a failed response; nil keeps the status baseline
+	DecodeError func(status int, body []byte) error
+	apiKey      string
 }
 
-func (t *Transcriber) Setup(apiKeyEnv, url, debugEnv string) error {
+func (t *Transcriber) Setup(apiKeyEnv, url string) error {
 	apiKey := os.Getenv(apiKeyEnv)
 	if apiKey == "" {
 		return &apikey.MissingError{Env: apiKeyEnv, Message: fmt.Sprintf("environment variable '%v' not set", apiKeyEnv)}
@@ -72,9 +76,6 @@ func (t *Transcriber) Setup(apiKeyEnv, url, debugEnv string) error {
 	}
 	t.apiKey = apiKey
 	t.URL = url
-	if debugflags.EnabledEnv(debugEnv) {
-		t.debug = true
-	}
 	return nil
 }
 
@@ -116,23 +117,14 @@ func (t *Transcriber) Transcribe(ctx context.Context, filePath string) ([]Segmen
 	}
 	segs, err := parse(body)
 	if err == nil {
-		t.debugf(ctx, "transcription parsed segments=%d", len(segs))
+		runenv.Debugf(ctx, runenv.SubsystemAudio, "transcription parsed segments=%d", len(segs))
 	}
 	return segs, err
 }
 
-func (t *Transcriber) debugf(ctx context.Context, format string, args ...any) {
-	if t.debug {
-		runenv.Debugf(ctx, runenv.SubsystemAudio, format, args...)
-	}
-}
-
 // logResponse keeps the body, which is meeting content, out of the debug level.
-func (t *Transcriber) logResponse(ctx context.Context, status string, body []byte) {
-	if !t.debug {
-		return
-	}
-	runenv.Debugf(ctx, runenv.SubsystemAudio, "transcription response status=%q bytes=%d", status, len(body))
+func logResponse(ctx context.Context, status string, body []byte, sent time.Time) {
+	runenv.Debugf(ctx, runenv.SubsystemAudio, "transcription response status=%q bytes=%d took=%.1fs", status, len(body), time.Since(sent).Seconds())
 	runenv.Tracef(ctx, runenv.SubsystemAudio, "transcription response body=%s", body)
 }
 
@@ -143,6 +135,7 @@ func (t *Transcriber) transcribeStream(ctx context.Context, filePath string, hea
 		return nil, err
 	}
 	defer file.Close()
+	sent := time.Now()
 	resp, err := t.send(ctx, file, ResponseFormatDiarizedJSON, true)
 	if err != nil {
 		return nil, err
@@ -153,7 +146,7 @@ func (t *Transcriber) transcribeStream(ctx context.Context, filePath string, hea
 		return nil, diag.Errorf("transcription stream aborted: %w", ctx.Err())
 	}
 	if err == nil {
-		t.debugf(ctx, "transcription response status=%q stream=true segments=%d", resp.Status, len(segs))
+		runenv.Debugf(ctx, runenv.SubsystemAudio, "transcription response status=%q stream=true segments=%d took=%.1fs", resp.Status, len(segs), time.Since(sent).Seconds())
 	}
 	return segs, err
 }
@@ -184,6 +177,7 @@ func (t *Transcriber) open(filePath string) (*os.File, error) {
 }
 
 func (t *Transcriber) post(ctx context.Context, file *os.File, respFormat ResponseFormat) ([]byte, error) {
+	sent := time.Now()
 	resp, err := t.send(ctx, file, respFormat, false)
 	if err != nil {
 		return nil, err
@@ -196,12 +190,12 @@ func (t *Transcriber) post(ctx context.Context, file *os.File, respFormat Respon
 		}
 		return nil, diag.Errorf("failed to read transcription response: %w", err)
 	}
-	t.logResponse(ctx, resp.Status, body)
+	logResponse(ctx, resp.Status, body, sent)
 	return body, nil
 }
 
 // send posts the file and returns the response once its status is 200 OK;
-// any other status is an error carrying the start of the body.
+// any other status is the claierr meaning of the response (architecture/errors.md).
 func (t *Transcriber) send(ctx context.Context, file *os.File, respFormat ResponseFormat, stream bool) (*http.Response, error) {
 	// Pipe streams the file part to the request without buffering it in memory
 	pipeReader, pipeWriter := io.Pipe()
@@ -230,13 +224,14 @@ func (t *Transcriber) send(ctx context.Context, file *os.File, respFormat Respon
 	for key, value := range t.ExtraHeaders {
 		req.Header.Set(key, value)
 	}
-	t.debugf(ctx, "transcription request url=%s model=%s response_format=%v stream=%v", t.URL, t.Model, respFormat, stream)
+	runenv.Debugf(ctx, runenv.SubsystemAudio, "transcription request url=%s model=%s response_format=%v stream=%v", t.URL, t.Model, respFormat, stream)
+	sent := time.Now()
 	resp, err := t.Client.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, diag.Errorf("transcription request aborted: %w", ctx.Err())
 		}
-		return nil, diag.Errorf("failed to post transcription request: %w", err)
+		return nil, diag.Errorf("failed to post transcription request: %w", claierr.NewTransport(err))
 	}
 	if resp.StatusCode == http.StatusOK {
 		return resp, nil
@@ -246,8 +241,13 @@ func (t *Transcriber) send(ctx context.Context, file *os.File, respFormat Respon
 	if err != nil {
 		return nil, diag.Errorf("failed to read transcription response: %w", err)
 	}
-	t.logResponse(ctx, resp.Status, body)
-	return nil, fmt.Errorf("transcription request failed with status: %v, body: %v", resp.Status, truncate(body, 1024))
+	logResponse(ctx, resp.Status, body, sent)
+	failure := textgeneric.ResponseError(resp.StatusCode, body, t.DecodeError)
+	var facts claierr.APIErrorer
+	if errors.As(failure, &facts) {
+		facts.API().RetryAfter = resend.RetryAfter(resp.Header, time.Now())
+	}
+	return nil, diag.Errorf("transcription request failed: %w", failure)
 }
 
 func writeMultipart(w *multipart.Writer, file *os.File, model string, respFormat ResponseFormat, fields map[string]string) error {

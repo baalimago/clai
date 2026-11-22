@@ -10,16 +10,16 @@ import (
 // before any request has completed (Phase 0 measured about 0.28).
 const defaultProviderRate = 0.3
 
-// etaModel estimates remaining wall time from the measured provider rate
-// and the requests each unfinished chunk still needs. Discovery requests
-// run one chunk at a time, passes run on the worker pool.
+// etaModel estimates remaining wall time from the measured provider rate:
+// each unfinished chunk's requests left of its stages (survey, labelling,
+// and in the worst case a retry), sent workers at a time, plus the merge's
+// links, whose two requests run at once and one link after the other.
 type etaModel struct {
 	mu        sync.Mutex
 	wall      time.Duration // wall time of completed requests
 	audio     time.Duration // audio of completed requests
 	inflight  map[int]inflightRequest
 	workers   int
-	limit     int
 	prefixEst time.Duration
 }
 
@@ -35,30 +35,34 @@ type etaChunk struct {
 	active   bool
 }
 
-func newEtaModel(workers, limit int, prefix time.Duration) *etaModel {
-	return &etaModel{inflight: map[int]inflightRequest{}, workers: max(workers, 1), limit: max(limit, 1), prefixEst: prefix}
+// newEtaModel takes the requests a stage sends at once and the prefix a
+// labelled request carries at most.
+func newEtaModel(workers int, prefix time.Duration) *etaModel {
+	return &etaModel{inflight: map[int]inflightRequest{}, workers: max(workers, 1), prefixEst: prefix}
 }
 
-func (e *etaModel) started(chunk int, audio time.Duration, at time.Time) {
+// started and completed key a chunk's request by its index and a merge
+// request by a negative key of its own.
+func (e *etaModel) started(key int, audio time.Duration, at time.Time) {
 	if e == nil {
 		return
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.inflight[chunk] = inflightRequest{audio: audio, started: at}
+	e.inflight[key] = inflightRequest{audio: audio, started: at}
 }
 
-func (e *etaModel) completed(chunk int, at time.Time) {
+func (e *etaModel) completed(key int, at time.Time) {
 	if e == nil {
 		return
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	r, ok := e.inflight[chunk]
+	r, ok := e.inflight[key]
 	if !ok {
 		return
 	}
-	delete(e.inflight, chunk)
+	delete(e.inflight, key)
 	e.wall += at.Sub(r.started)
 	e.audio += r.audio
 }
@@ -71,39 +75,39 @@ func (e *etaModel) rate() float64 {
 	return float64(e.wall) / float64(e.audio)
 }
 
-// estimate returns the typical and worst-case remaining wall time. Typical
-// assumes each unfinished chunk needs one more request after its current
-// or first pass (one discovery iteration, the common case); worst assumes
-// every chunk uses its full request limit.
-func (e *etaModel) estimate(chunks []etaChunk, now time.Time) (typical, worst time.Duration) {
+// estimate returns the typical and worst-case remaining wall time with
+// links merge links still to send. Typical is no retry; worst is a retry
+// for every chunk.
+func (e *etaModel) estimate(chunks []etaChunk, links int, now time.Time) (typical, worst time.Duration) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	rate := e.rate()
-	perRequest := func(core time.Duration) time.Duration {
-		return time.Duration(float64(core+e.prefixEst) * rate)
-	}
-	var passes, discovery, worstPasses, worstDiscovery time.Duration
+	wall := func(audio time.Duration) time.Duration { return time.Duration(float64(audio) * rate) }
+	var stages, worstStages time.Duration
 	for i, c := range chunks {
 		if c.done {
 			continue
 		}
-		remainingTypical := max(0, 2-c.consumed)
-		remainingWorst := max(0, e.limit-c.consumed)
 		if r, ok := e.inflight[i]; ok {
-			left := max(0, time.Duration(float64(r.audio)*rate)-now.Sub(r.started))
-			passes += left
-			worstPasses += left
-		} else if !c.active && remainingTypical > 0 {
-			passes += perRequest(c.core)
-			remainingTypical--
-			worstPasses += perRequest(c.core)
-			remainingWorst--
+			left := max(0, wall(r.audio)-now.Sub(r.started))
+			stages += left
+			worstStages += left
 		}
-		discovery += time.Duration(remainingTypical) * perRequest(c.core)
-		worstDiscovery += time.Duration(remainingWorst) * perRequest(c.core)
+		if c.consumed == 0 {
+			stages += wall(c.core)
+			worstStages += wall(c.core)
+		}
+		if c.consumed <= 1 {
+			stages += wall(c.core + e.prefixEst)
+			worstStages += wall(c.core + e.prefixEst)
+		}
+		if c.consumed <= 2 {
+			worstStages += wall(c.core + e.prefixEst)
+		}
 	}
-	typical = passes/time.Duration(e.workers) + discovery
-	worst = worstPasses/time.Duration(e.workers) + worstDiscovery
+	merge := time.Duration(links) * wall(e.prefixEst)
+	typical = stages/time.Duration(e.workers) + merge
+	worst = worstStages/time.Duration(e.workers) + merge
 	return typical.Round(time.Second), worst.Round(time.Second)
 }
 

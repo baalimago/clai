@@ -23,6 +23,7 @@ import (
 	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/interrupt"
 	"github.com/baalimago/clai/internal/jsonl"
+	"github.com/baalimago/clai/internal/menu"
 	"github.com/baalimago/clai/internal/runenv"
 	"github.com/baalimago/clai/internal/runtimeboundary"
 	"github.com/baalimago/clai/internal/stdio"
@@ -364,6 +365,8 @@ func run(args []string, deps Deps, p process) int {
 		return 1
 	}
 	ctx = runenv.With(ctx, c.env)
+	var asking menu.Asking
+	ctx = menu.WithAsking(ctx, &asking)
 	notices = c.env.Stderr()
 	defer c.finish(ctx, cancel)
 	defer routeStandardLog(ctx)()
@@ -371,7 +374,7 @@ func run(args []string, deps Deps, p process) int {
 		runenv.Warnf(ctx, runenv.SubsystemClai, "%s", warning)
 	}
 
-	signals := &firstSignal{source: p.signals}
+	signals := &firstSignal{source: p.signals, asking: &asking, leave: cancel}
 	if format == jsonl.FormatText && p.stdoutTerminal && p.stderrTerminal {
 		// Both streams share the terminal: the notice of the first signal
 		// starts on its own row, not glued to a partial reply.
@@ -425,13 +428,19 @@ func run(args []string, deps Deps, p process) int {
 }
 
 // firstSignal is the run's SignalSource: it passes every signal of source
-// on and remembers the first one, which is why the run stops.
+// on and remembers the first one, which is why the run stops. A first
+// interrupt while a menu question waits is not passed on: it leaves the
+// menu.
 type firstSignal struct {
 	source runtimeboundary.SignalSource
 	// onFirst runs once, before the first signal is passed on.
 	onFirst func()
-	mu      sync.Mutex
-	first   os.Signal
+	asking  *menu.Asking
+	// leave cancels the run without a signal as its cause.
+	leave    func()
+	mu       sync.Mutex
+	first    os.Signal
+	leftMenu bool
 }
 
 func (f *firstSignal) Subscribe() (<-chan os.Signal, func(), error) {
@@ -448,6 +457,9 @@ func (f *firstSignal) Subscribe() (<-chan os.Signal, func(), error) {
 			case sig, open := <-signals:
 				if !open {
 					return
+				}
+				if f.leavesMenu(sig) {
+					continue
 				}
 				f.record(sig)
 				select {
@@ -467,6 +479,23 @@ func (f *firstSignal) Subscribe() (<-chan os.Signal, func(), error) {
 			stop()
 		}
 	}, nil
+}
+
+// leavesMenu reports the run's first signal when it is an interrupt at a
+// waiting menu question: it cancels the run as the menu's q would end it
+// and is no signal of the run.
+func (f *firstSignal) leavesMenu(sig os.Signal) bool {
+	if sig != os.Interrupt || f.leave == nil || !f.asking.Waiting() {
+		return false
+	}
+	f.mu.Lock()
+	first := f.first == nil && !f.leftMenu
+	f.leftMenu = true
+	f.mu.Unlock()
+	if first {
+		f.leave()
+	}
+	return first
 }
 
 func (f *firstSignal) record(sig os.Signal) {

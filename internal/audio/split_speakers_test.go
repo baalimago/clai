@@ -199,12 +199,15 @@ func TestSplitter_RequestLocal_Failures(t *testing.T) {
 }
 
 func TestSplitter_AnchoredDiarizationCalibrates(t *testing.T) {
+	t.Parallel()
 	p := &voiceProvider{truth: smallMeeting()}
-	s, status, input := newCalibratedSplitter(t, p, smallBudgetConf("anything"))
+	conf := smallBudgetConf("anything")
+	conf.Transcribe.MaxRequestSeconds = 200
+	s, status, input := newCalibratedSplitter(t, p, conf)
 	if _, err := s.Transcribe(context.Background(), input); err != nil {
 		t.Fatalf("Transcribe: %v", err)
 	}
-	if !strings.Contains(status.String(), "▸ calibrated diarization") || p.requests() == 0 {
+	if !strings.Contains(status.String(), "▸ speaker labelling") || p.requests() == 0 {
 		t.Errorf("status = %q, want the calibration path whatever the model is named", status.String())
 	}
 }

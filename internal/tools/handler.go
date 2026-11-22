@@ -78,6 +78,7 @@ func builtins() []builtin {
 		{executable: "ffprobe", tool: tools.FFProbe},
 		{executable: "ffmpeg", tool: tools.AudioSources},
 		{executable: "ffmpeg", tool: tools.AudioRecord},
+		{executable: "ffmpeg", tool: tools.AudioRememberVoice},
 		{executable: "date", tool: tools.Date},
 		{executable: "pwd", tool: tools.Pwd},
 		// The clai_* worker tools stay callable by name for profiles that

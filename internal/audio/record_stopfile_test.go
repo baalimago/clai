@@ -9,13 +9,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/baalimago/clai/internal/capture"
 	"github.com/baalimago/clai/internal/testenv/procenv"
 	pkgtools "github.com/baalimago/clai/pkg/tools"
 )
 
+// testStopFilePoll is the stop file's check interval in these tests: the
+// production stopFilePoll would make every row wait whole fifths of a second.
+const testStopFilePoll = 10 * time.Millisecond
+
 func TestStopOnFile(t *testing.T) {
+	t.Parallel()
 	t.Run("the file appearing closes the channel", func(t *testing.T) {
+		t.Parallel()
 		path := filepath.Join(t.TempDir(), "stop")
 		stop, err := stopOnFile(context.Background(), path, 10*time.Millisecond)
 		if err != nil {
@@ -37,6 +42,7 @@ func TestStopOnFile(t *testing.T) {
 	})
 
 	t.Run("a file there before the recording is a stale request", func(t *testing.T) {
+		t.Parallel()
 		path := filepath.Join(t.TempDir(), "stop")
 		if err := os.WriteFile(path, nil, 0o644); err != nil {
 			t.Fatal(err)
@@ -52,6 +58,7 @@ func TestStopOnFile(t *testing.T) {
 	})
 
 	t.Run("a path that cannot be checked is an error", func(t *testing.T) {
+		t.Parallel()
 		file := filepath.Join(t.TempDir(), "file")
 		if err := os.WriteFile(file, nil, 0o644); err != nil {
 			t.Fatal(err)
@@ -62,6 +69,7 @@ func TestStopOnFile(t *testing.T) {
 	})
 
 	t.Run("no path installs no channel", func(t *testing.T) {
+		t.Parallel()
 		stop, err := stopOnFile(context.Background(), "", 10*time.Millisecond)
 		if err != nil || stop != nil {
 			t.Fatalf("stopOnFile(\"\") = %v, %v; want nil, nil", stop, err)
@@ -69,6 +77,7 @@ func TestStopOnFile(t *testing.T) {
 	})
 
 	t.Run("the watch ends with its context", func(t *testing.T) {
+		t.Parallel()
 		path := filepath.Join(t.TempDir(), "stop")
 		ctx, cancel := context.WithCancel(context.Background())
 		stop, err := stopOnFile(ctx, path, 10*time.Millisecond)
@@ -94,12 +103,10 @@ func TestRecordText_StopFile(t *testing.T) {
 		dir := t.TempDir()
 		setAudioConfig(t, map[string]any{"dir": dir, "max-seconds": 5, "silence-timeout": 0, "sinks": "none", "mic": true, "calibrated": true})
 		path := filepath.Join(t.TempDir(), "stop")
-		go func() {
-			time.Sleep(150 * time.Millisecond)
-			_ = os.WriteFile(path, nil, 0o644)
-		}()
+		recorder := newHeardRecorder()
+		recorder.afterSound(t, func() { _ = os.WriteFile(path, nil, 0o644) })
 		status := captureStderr(t)
-		result, err := recordText(procenv.Context(context.Background()), pkgtools.AudioRecordCall{}, capture.New(), stopSources{stopFile: path})
+		result, err := recordText(procenv.Context(context.Background()), pkgtools.AudioRecordCall{}, recorder, stopSources{stopFile: path, poll: testStopFilePoll})
 		stderr := status()
 		if err != nil {
 			t.Fatalf("recordText: %v", err)
@@ -143,7 +150,7 @@ func TestRecordText_StopFile(t *testing.T) {
 		stub := &recordStub{}
 		setAudioConfig(t, map[string]any{"dir": t.TempDir(), "max-seconds": 1, "sinks": "none"})
 		path := filepath.Join(t.TempDir(), "stop")
-		if _, err := recordText(procenv.Context(context.Background()), pkgtools.AudioRecordCall{}, stub, stopSources{stopFile: path}); err != nil {
+		if _, err := recordText(procenv.Context(context.Background()), pkgtools.AudioRecordCall{}, stub, stopSources{stopFile: path, poll: testStopFilePoll}); err != nil {
 			t.Fatalf("recordText: %v", err)
 		}
 		if err := os.WriteFile(path, nil, 0o644); err != nil {
@@ -152,7 +159,7 @@ func TestRecordText_StopFile(t *testing.T) {
 		select {
 		case <-stub.request.StopFile:
 			t.Fatal("the stop file was still watched after the recording ended")
-		case <-time.After(3 * stopFilePoll):
+		case <-time.After(3 * testStopFilePoll):
 		}
 	})
 }

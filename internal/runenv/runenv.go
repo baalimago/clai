@@ -243,6 +243,11 @@ func DebugEnabled(ctx context.Context, subsystem string) bool {
 	return From(ctx).Enabled(subsystem, diagnostic.LevelDebug)
 }
 
+// TraceEnabled reports whether payload detail of subsystem is shown.
+func TraceEnabled(ctx context.Context, subsystem string) bool {
+	return From(ctx).Enabled(subsystem, diagnostic.LevelTrace)
+}
+
 // EditorRefusedError is the JSON format's refusal of $EDITOR, the one child
 // that takes over the terminal (F13). Path is the file the user can edit
 // directly, when there is one.

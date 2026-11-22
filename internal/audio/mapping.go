@@ -55,23 +55,6 @@ type Mapping struct {
 
 func (m Mapping) IsUnmapped(s Segment) bool { return m.unmapped[s.Speaker] }
 
-func (m Mapping) byStatus(st SampleStatus) []SampleResult {
-	var out []SampleResult
-	for _, s := range m.Samples {
-		if s.Status == st {
-			out = append(out, s)
-		}
-	}
-	return out
-}
-
-// Failed returns mixed and missing samples.
-func (m Mapping) Failed() []SampleResult {
-	return append(m.byStatus(SampleMixed), m.byStatus(SampleMissing)...)
-}
-
-func (m Mapping) Ambiguous() []SampleResult { return m.byStatus(SampleAmbiguous) }
-
 // MaterialUnmapped returns unmapped labels that could create a speaker.
 func (m Mapping) MaterialUnmapped() []UnmappedLabel {
 	var out []UnmappedLabel
@@ -83,19 +66,19 @@ func (m Mapping) MaterialUnmapped() []UnmappedLabel {
 	return out
 }
 
-// RangesFor returns the source intervals the core assigned to a global ID.
-func (m Mapping) RangesFor(id string) []SourceInterval {
-	var out []SourceInterval
-	for _, s := range m.Core {
-		if s.Speaker == id {
-			out = append(out, SourceInterval{Start: s.Start, End: s.End})
-		}
+// UnknownSpeech is the core speech no sample explains.
+func (m Mapping) UnknownSpeech() time.Duration {
+	total := time.Duration(0)
+	for _, u := range m.Unmapped {
+		total += u.Speech
 	}
-	return out
+	return total
 }
 
+func (m Mapping) MappedSpeech() time.Duration { return m.ChunkSpeech - m.UnknownSpeech() }
+
 // LabelMapper turns a manifest plus returned segments into a Mapping. It
-// only reports; registry state changes happen in Discover.
+// only reports; it changes no registry.
 type LabelMapper struct{}
 
 func (LabelMapper) Map(m *RequestManifest, segs []Segment) Mapping {
@@ -152,7 +135,7 @@ func (LabelMapper) Map(m *RequestManifest, segs []Segment) Mapping {
 		case len(cands) == 1:
 			out.LabelToID[label] = out.Samples[cands[0]].ID
 		default:
-			// Several candidates, one voice: discovery keeps the better clip
+			// Several candidates, one voice: none of them names the label
 			for _, i := range cands {
 				out.Samples[i].Status = SampleCollapsed
 			}

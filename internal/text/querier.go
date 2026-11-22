@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/baalimago/clai/internal/resend"
 	"github.com/baalimago/clai/internal/runenv"
 
 	"github.com/baalimago/clai/internal/debugflags"
@@ -39,7 +40,7 @@ type Querier[C models.StreamCompleter] struct {
 	runCtx    context.Context
 	Raw       bool
 	errOut    io.Writer
-	stepRetry StepRetry
+	stepRetry resend.Schedule
 	// transcriptToStderr is -reply-only: see SendTranscriptToStderr.
 	transcriptToStderr bool
 	// replyOut is the redirected stdout while the session draws on a
@@ -771,9 +772,9 @@ func (q *Querier[C]) TextQuery(ctx context.Context, chat pub_models.Chat) (pub_m
 	if err != nil {
 		return pub_models.Chat{}, &PartialRunError{Chat: q.chat, Err: err}
 	}
-	if !q.debugTextQuerierPrinted && runenv.DebugEnabled(ctx, runenv.SubsystemTextQuerier) {
+	if !q.debugTextQuerierPrinted && runenv.TraceEnabled(ctx, runenv.SubsystemTextQuerier) {
 		q.debugTextQuerierPrinted = true
-		runenv.Debugf(ctx, runenv.SubsystemTextQuerier, "Querier.TextQuery:\n%v", debug.IndentedJsonFmt(q))
+		runenv.Tracef(ctx, runenv.SubsystemTextQuerier, "Querier.TextQuery:\n%v", debug.IndentedJsonFmt(q))
 	}
 
 	return q.chat, nil
