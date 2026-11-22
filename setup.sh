@@ -92,4 +92,13 @@ if ! mv "$tmp_file" $INSTALL_DIR/clai; then
   exit 1
 fi
 
-echo "clai installed successfully in $INSTALL_DIR, try it out with 'clai h'"
+printf "installing man page..."
+man_err=$(mktemp)
+if man_page=$("$INSTALL_DIR/clai" man install "$(dirname "$INSTALL_DIR")/share/man" 2>"$man_err"); then
+  printf "OK! (%s)\n" "$man_page"
+else
+  printf "skipped: %s\n" "$(head -n 1 "$man_err")"
+fi
+rm -f "$man_err"
+
+echo "clai installed successfully in $INSTALL_DIR, try it out with 'clai help' or 'man clai'"

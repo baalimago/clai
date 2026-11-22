@@ -13,6 +13,7 @@ internal/cli:Run(args)
   → scanFormat: -json found where command flags are parsed (output.md)
   → compose: levels, Presenter, diagnostic buffer, Reporter, the run's Env
   → DispatchMonitor.Monitor: signals cancel the run and are reported
+  → firstRunManPage when Deps.ManPage is set and the run qualifies (manpage.md)
   → DispatchMonitor.Dispatch → cmd.RunSilent(ctx, ["clai", args...], cmds)
     → arity-aware scan finds the command token (flags may precede it)
     → the command's own flagset parses the remaining args
@@ -50,7 +51,8 @@ hidden aliases (see [Compatibility: hidden spellings](#compatibility-hidden-spel
 The `completion` command and the hidden `__complete` protocol are
 auto-registered by
 the upstream dispatcher. `Run` adds the `help` command (`withHelp`, not in
-`Commands`, since it lists them): `clai help`, `clai -h` and `clai --help`
+`Commands`, since it lists them) and its own `man` command (`withManCommand`,
+see [manpage.md](./manpage.md)): `clai help`, `clai -h` and `clai --help`
 print the full usage and exit 0, and `clai help <command>` is that
 command's `-h`, which prints its Help() text with examples, flags and
 subcommands (see [help.md](./help.md)).
@@ -308,7 +310,7 @@ Data loads lazily inside the hook call (memoized per process);
 | File | Purpose |
 |------|---------|
 | `internal/cli/cli.go` | `Deps`, `Commands()` and `Run()`/`RunProfiled()` — the composition root wiring deps into each domain package's `Command()` |
-| `main.go` | the process entry: `cli.RunProfiled(os.Args[1:], cli.DefaultDeps())` |
+| `main.go` | the process entry: `DefaultDeps()` plus `ManPage = cli.FirstRunManPage()`, then `cli.RunProfiled` |
 | `internal/` (root package) | `internal.Command` adapter, flag primitives + shared groups, `PrepTheme`, completion data loaders + hooks |
 | `internal/quantity/` | scaled int parsing (`300k`, `1.5M`, `2Mi`, `3e5`) shared by every `IntFlag`; imports nothing |
 | `internal/<domain>/cmd.go` | each command's definition (help text, flag groups, setup/run) |

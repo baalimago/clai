@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime/debug"
+	"strings"
 
 	"github.com/baalimago/clai/internal"
 	"github.com/baalimago/clai/internal/runenv"
@@ -33,21 +34,46 @@ Examples:
 	return c
 }
 
+// Resolve is the build version: ldflags-stamped when present, the module
+// version otherwise.
+func Resolve() (string, error) {
+	if BuildVersion != "" {
+		return BuildVersion, nil
+	}
+	bi, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "", errors.New("failed to read build info")
+	}
+	return bi.Main.Version, nil
+}
+
+// IsRelease reports whether v is a tagged release, vMAJOR.MINOR.PATCH, as
+// opposed to a pseudo-version, a prerelease, a dirty or a devel build.
+func IsRelease(v string) bool {
+	parts := strings.Split(strings.TrimPrefix(v, "v"), ".")
+	if !strings.HasPrefix(v, "v") || len(parts) != 3 {
+		return false
+	}
+	for _, part := range parts {
+		if part == "" || strings.Trim(part, "0123456789") != "" || len(part) > 1 && part[0] == '0' {
+			return false
+		}
+	}
+	return true
+}
+
 // Print writes the build version (ldflags-stamped when present, module
 // version otherwise) and every dependency version to the run's stdout.
 func Print(ctx context.Context) error {
 	out := runenv.From(ctx).Stdout()
-	hasPrintedVersion := false
-	if BuildVersion != "" {
-		hasPrintedVersion = true
-		fmt.Fprintln(out, "version: "+BuildVersion)
+	v, err := Resolve()
+	if err != nil {
+		return err
 	}
+	fmt.Fprintln(out, "version: "+v)
 	bi, ok := debug.ReadBuildInfo()
 	if !ok {
 		return errors.New("failed to read build info")
-	}
-	if !hasPrintedVersion {
-		fmt.Fprintln(out, "version: "+bi.Main.Version)
 	}
 	for _, dep := range bi.Deps {
 		fmt.Fprintf(out, "%s %s\n", dep.Path, dep.Version)

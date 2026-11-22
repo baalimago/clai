@@ -56,6 +56,7 @@ type process struct {
 	stdoutTerminal bool
 	stderrTerminal bool
 	getenv         func(string) string
+	executable     func() (string, error)
 	signals        runtimeboundary.SignalSource
 	forceExit      func()
 	// startupWarnings were found before the run's diagnostics existed.
@@ -72,6 +73,7 @@ func osProcess() process {
 		stdoutTerminal: term.IsTerminal(os.Stdout),
 		stderrTerminal: term.IsTerminal(os.Stderr),
 		getenv:         os.Getenv,
+		executable:     os.Executable,
 		signals:        osSignals{},
 		forceExit:      func() { os.Exit(1) },
 	}
@@ -341,7 +343,7 @@ func run(args []string, deps Deps, p process) int {
 	ctx = context.WithValue(ctx, utils.ContextCancelKey, cancel)
 	cfgDir, _ := utils.GetClaiConfigDir()
 	cacheDir, _ := utils.GetClaiCacheDir()
-	usage := strings.NewReplacer("SUBSYSTEMS\n", subsystemTable(runenv.Subsystems()), "CONFIG_DIR", cfgDir, "CACHE_DIR", cacheDir).Replace(usageTemplate)
+	usage := usageText{Summary: claiSummary, Synopsis: claiSynopsis, Subsystems: subsystemTable(runenv.Subsystems()), ConfigDir: cfgDir, CacheDir: cacheDir}
 	ctx, exit := internal.WithExitStatus(ctx)
 	// The remote resolver's notices go to the run's stderr once it exists.
 	var notices io.Writer = io.Discard
@@ -350,6 +352,8 @@ func run(args []string, deps Deps, p process) int {
 	var rerun func(context.Context, []string) int
 	cmds := withHelp(commands(deps, exit.Set, func() io.Writer { return notices },
 		func(ctx context.Context, args []string) int { return rerun(ctx, args) }), usage)
+	manPage := manInstaller(cmds, usage, deps, p)
+	cmds = withManCommand(cmds, manPage)
 	format, args, formatErr := scanFormat(args, cmds)
 	args = helpAsCommand(versionFlagAsCommand(args))
 
@@ -405,6 +409,9 @@ func run(args []string, deps Deps, p process) int {
 	if err := checkArgs(args, cmds); err != nil {
 		_ = c.presenter.ReportError(ctx, withHintAsRemedy(err))
 		return 1
+	}
+	if deps.ManPage != nil && installsManPage(p, format, args, cmds) {
+		firstRunManPage(ctx, deps.ManPage, manPage)
 	}
 	status, err := monitor.Dispatch(ctx, runtimeboundary.Invocation{Args: append([]string{"clai"}, args...), Commands: cmds})
 	if interrupted, ok := interrupt.Signal(context.Cause(ctx)); ok {
@@ -508,7 +515,7 @@ var joinType = reflect.TypeOf(errors.Join(io.EOF))
 // presentOutcome shows what Dispatch returned: nothing on success or a user
 // exit, the help text on a help request, the error and the usage on a
 // dispatch failure, and the terminal error once on a setup or run failure.
-func presentOutcome(ctx context.Context, c composition, status int, err error, dispatchFailure bool, usage string, cmds map[string]cmd.Command) int {
+func presentOutcome(ctx context.Context, c composition, status int, err error, dispatchFailure bool, usage usageText, cmds map[string]cmd.Command) int {
 	if err == nil || errors.Is(err, cmd.ErrUserInitiatedExit) || errors.Is(err, table.ErrUserInitiatedExit) {
 		return status
 	}
@@ -517,9 +524,7 @@ func presentOutcome(ctx context.Context, c composition, status int, err error, d
 		fmt.Fprintln(stdout, help.Help)
 		return status
 	}
-	printUsage := func() {
-		fmt.Fprintf(stdout, usage, commandTable(withCompletionCommand(cmds)))
-	}
+	printUsage := func() { _ = usage.write(stdout, cmds) }
 	if errors.Is(err, cmd.ErrNoArgs) {
 		printUsage()
 		return status

@@ -21,7 +21,7 @@
           pname = "clai";
           inherit version;
           src = ./.;
-          vendorHash = "sha256-M/SvjZ/GrVmFUN+vWfgP5gyNouBQQ7Gz/Yv0vMyITd8=";
+          vendorHash = "sha256-cSAdMo7HiQ3JdeUcJGXD0eMF8iiktfvrAzx73tHVQkQ=";
           ldflags = [
             "-s"
             "-w"
@@ -38,6 +38,8 @@
             installShellCompletion --cmd clai \
               --bash <($out/bin/clai completion bash) \
               --zsh <($out/bin/clai completion zsh)
+            $out/bin/clai man > clai.1
+            installManPage clai.1
           '';
           meta = {
             description = "Vendor-neutral AI agent and Go library for the terminal";

@@ -26,7 +26,7 @@ func Test_goldenFile_usage_on_no_args(t *testing.T) {
 	for _, command := range []string{
 		"query|q", "chat|c", "photo|p", "video|v", "audio|a",
 		"version", "replay|re", "dir-replay|dre",
-		"tools|t", "skills", "completion", "config",
+		"tools|t", "skills", "completion", "config", "man",
 	} {
 		testboil.AssertStringContains(t, gotStdout, command)
 	}

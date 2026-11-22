@@ -20,6 +20,7 @@ Commands:
   config          The config store: edit, list, schema, validate, publish and dir
   dir-replay|dre  Replay the last message of the directory-scoped conversation
   help            Print this usage; 'clai help <command>' is that command's -h
+  man             print or install the man page
   mcp             Manage MCP server state
   photo|p         Ask the photo model for a picture with the given prompt
   query|q         Query the chat model with the given text; -l iterates toward a goal

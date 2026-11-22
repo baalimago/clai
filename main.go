@@ -7,5 +7,7 @@ import (
 )
 
 func main() {
-	os.Exit(cli.RunProfiled(os.Args[1:], cli.DefaultDeps()))
+	deps := cli.DefaultDeps()
+	deps.ManPage = cli.FirstRunManPage()
+	os.Exit(cli.RunProfiled(os.Args[1:], deps))
 }

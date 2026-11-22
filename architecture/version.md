@@ -45,6 +45,8 @@ internal/cli:Run()
 
 `BuildVersion` and `BuildChecksum` are package-level variables intended to be set via build flags in a pipeline. If not set, `go install` builds will rely on `debug.ReadBuildInfo()`.
 
+`version.Resolve()` returns that version; `version.IsRelease(v)` reports a tagged release (`vMAJOR.MINOR.PATCH`), the only builds whose first run installs the man page ([manpage.md](./manpage.md)).
+
 ## Exit behavior
 
 Returns nil on success, so the top-level runner exits with code 0.
