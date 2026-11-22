@@ -22,6 +22,17 @@ func TestChatHelpDocumentsDirV2(t *testing.T) {
 	}
 }
 
+func TestChatHelpOpensWithTheLogo(t *testing.T) {
+	var out bytes.Buffer
+	cq := &ChatHandler{subCmd: "help", out: &out}
+	if err := cq.actOnSubCmd(context.Background()); err != nil {
+		t.Fatalf("chat help: %v", err)
+	}
+	if want := ">|✦ clai - (c)ommand (l)ine (a)rtificial (i)ntelligence\n"; !strings.HasPrefix(out.String(), want) {
+		t.Fatalf("chat help starts %q, want %q", strings.SplitAfter(out.String(), "\n")[0], want)
+	}
+}
+
 func TestChatHandler_dirInfo_NoDirScopeNoPrevQuery(t *testing.T) {
 	confDir := t.TempDir()
 	if err := utils.CreateConfigDir(confDir); err != nil {

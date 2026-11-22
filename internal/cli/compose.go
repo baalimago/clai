@@ -343,7 +343,7 @@ func run(args []string, deps Deps, p process) int {
 	ctx = context.WithValue(ctx, utils.ContextCancelKey, cancel)
 	cfgDir, _ := utils.GetClaiConfigDir()
 	cacheDir, _ := utils.GetClaiCacheDir()
-	usage := usageText{Summary: claiSummary, Synopsis: claiSynopsis, Subsystems: subsystemTable(runenv.Subsystems()), ConfigDir: cfgDir, CacheDir: cacheDir}
+	usage := usageText{Title: internal.Title, Summary: internal.Summary, Synopsis: claiSynopsis, Subsystems: subsystemTable(runenv.Subsystems()), ConfigDir: cfgDir, CacheDir: cacheDir}
 	ctx, exit := internal.WithExitStatus(ctx)
 	// The remote resolver's notices go to the run's stderr once it exists.
 	var notices io.Writer = io.Discard

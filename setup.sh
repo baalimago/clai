@@ -101,4 +101,4 @@ else
 fi
 rm -f "$man_err"
 
-echo "clai installed successfully in $INSTALL_DIR, try it out with 'clai help' or 'man clai'"
+echo ">|✦ clai installed successfully in $INSTALL_DIR, try it out with 'clai help' or 'man clai'"

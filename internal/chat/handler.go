@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/baalimago/clai/internal"
 	"github.com/baalimago/clai/internal/diag"
 	"github.com/baalimago/clai/internal/models"
 	"github.com/baalimago/clai/internal/runenv"
@@ -25,7 +26,7 @@ import (
 	"github.com/baalimago/go_away_boilerplate/pkg/dimensions"
 )
 
-const chatUsage = `clai - (c)ommand (l)ine (a)rtificial (i)ntelligence
+const chatUsage = internal.Title + `
 
 Usage: clai [flags] chat <subcommand> <prompt/chatID>
 

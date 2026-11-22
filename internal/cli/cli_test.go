@@ -197,7 +197,7 @@ func TestRun_helpPrintsUsageAndExitsZero(t *testing.T) {
 			if stderr != "" {
 				t.Fatalf("Run(%v) wrote to stderr: %q", args, stderr)
 			}
-			if !strings.HasPrefix(stdout, "clai - (c)ommand (l)ine (a)rtificial (i)ntelligence\n") {
+			if !strings.HasPrefix(stdout, ">|✦ clai - (c)ommand (l)ine (a)rtificial (i)ntelligence\n") {
 				t.Fatalf("Run(%v) stdout does not start with the usage:\n%s", args, stdout)
 			}
 			for _, want := range []string{"\n  query|q ", "\n  help ", "\n  completion ", "or 'clai <command> -h'"} {

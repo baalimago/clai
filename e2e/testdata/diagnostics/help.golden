@@ -3,7 +3,7 @@
 == status
 0
 == stdout
-clai - (c)ommand (l)ine (a)rtificial (i)ntelligence
+>|✦ clai - (c)ommand (l)ine (a)rtificial (i)ntelligence
 
 Prerequisites:
   - Set the environment variable to your API key according to the vendor you seek to use

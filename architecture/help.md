@@ -4,7 +4,7 @@ Help has four surfaces, all derived from the command map; only the man
 page's ENVIRONMENT and SEE ALSO are written by hand:
 
 1. **`clai help`, `clai -h`, `clai --help`** print the usage to stdout,
-   with nothing on stderr, and exit 0: prerequisites, the generated sorted
+   with nothing on stderr, and exit 0: the title, prerequisites, the generated sorted
    command table (`help`, `completion` and `man` included), a per-command help
    pointer, config/cache dirs and examples. This is the surface agents are
    told to run.
@@ -20,6 +20,11 @@ page's ENVIRONMENT and SEE ALSO are written by hand:
 
 The upstream `completion` and `man` commands print their own one-paragraph
 help, with no Examples block or flag list.
+
+The title, `>|✦ clai - (c)ommand (l)ine (a)rtificial (i)ntelligence`, is
+`internal.Title`: the logo `internal.Logo` and `internal.Summary`. The usage,
+`clai chat help` and the man page's DESCRIPTION open with it; the README's
+header and setup.sh's last line carry the logo too.
 
 ## Entry flow
 
@@ -62,7 +67,8 @@ verbs that still live there. The hidden spellings still dispatch, and
 
 | File | Purpose |
 |------|---------|
-| `internal/cli` | `usageTemplate`: the command table, a pointer to each command's own `-h` for its examples, `-json`, how to investigate with `LOG_LEVEL`, and the subsystem table; a `text/template` over `usageText` (summary, synopsis, command and subsystem tables, dirs), rendered by `usageText.write` |
+| `internal/cli` | `usageTemplate`: the command table, a pointer to each command's own `-h` for its examples, `-json`, how to investigate with `LOG_LEVEL`, and the subsystem table; a `text/template` over `usageText` (title, summary, synopsis, command and subsystem tables, dirs), rendered by `usageText.write` |
+| `internal/brand.go` | `Logo`, `Summary` and `Title`, shared by every usage |
 | `internal/cli/help.go` | `helpAsCommand`, `withHelp`, `commandTable`, `subsystemTable`: the help command and its flag spellings |
 | `internal/runenv/types.go` | `Subsystems()`: the one place a subsystem is registered, with the purpose the usage prints; the diagnostic types and the names `LOG_LEVEL` accepts come from it |
 | `internal/cli/config.go` | the `config` tree and the `hiddenAlias` wrapper the hidden spellings re-enter `Run` through |

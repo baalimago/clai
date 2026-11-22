@@ -276,7 +276,7 @@ func Test_manCommand(t *testing.T) {
 		`.TH "CLAI" 1 "" "clai v1.14.0" "User Commands"`,
 		"clai \\- (c)ommand (l)ine (a)rtificial (i)ntelligence\n",
 		".B clai\n[command flags] <command> [command flags] [args]\n",
-		".SH DESCRIPTION\n.in 0\n.nf\nPrerequisites:\n",
+		".SH DESCRIPTION\n.in 0\n.nf\n>|✦ clai \\- (c)ommand (l)ine (a)rtificial (i)ntelligence\n\nPrerequisites:\n",
 		`.SS "help"`, `.SS "completion"`, `.SS "man"`, `.SS "man install"`, `.SS "query|q"`, `.SS "chat|c list|l"`,
 		".SH ENVIRONMENT\n", "CLAI_MANPAGE", "CLAI_CLOUD_URL", "CLAI_AUDIO_STOP_FILE", ".SH SEE ALSO\n",
 		"Config dir: ~/.config/.clai",

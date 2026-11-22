@@ -39,7 +39,6 @@ func manInstaller(cmds map[string]cmd.Command, usage usageText, deps Deps, p pro
 		if err := usage.write(&text, cmds); err != nil {
 			return cmd.ManInstaller{}, err
 		}
-		_, description, _ := strings.Cut(text.String(), "\n\n")
 		all := withCompletionCommand(cmds)
 		return cmd.ManInstaller{
 			Page: cmd.ManPage{
@@ -47,7 +46,7 @@ func manInstaller(cmds map[string]cmd.Command, usage usageText, deps Deps, p pro
 				Summary:     usage.Summary,
 				Synopsis:    usage.Synopsis,
 				Version:     v,
-				Description: description,
+				Description: text.String(),
 				Sections: []cmd.ManSection{
 					{Title: "ENVIRONMENT", Body: manEnvironment},
 					{Title: "SEE ALSO", Body: "glow(1), https://github.com/baalimago/clai"},

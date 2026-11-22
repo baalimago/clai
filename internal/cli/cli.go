@@ -69,7 +69,7 @@ import (
 //	  that $EDITOR is refused with exit status 1; -json=<bool> takes the
 //	  values Go's bool flags take, so -json=false selects text, and any
 //	  other value is a usage error
-const usageTemplate = `clai - {{.Summary}}
+const usageTemplate = `{{.Title}}
 
 Prerequisites:
   - Set the environment variable to your API key according to the vendor you seek to use
@@ -108,11 +108,8 @@ Config dir: {{.ConfigDir}}
 Cache dir:  {{.CacheDir}}
 `
 
-// The usage's summary and synopsis, which the man page's NAME and SYNOPSIS repeat.
-const (
-	claiSummary  = "(c)ommand (l)ine (a)rtificial (i)ntelligence"
-	claiSynopsis = "[command flags] <command> [command flags] [args]"
-)
+// claiSynopsis is the usage's synopsis, which the man page's SYNOPSIS repeats.
+const claiSynopsis = "[command flags] <command> [command flags] [args]"
 
 // CPUProfileFileName is where RunProfiled writes when the CPU debug flag is on.
 const CPUProfileFileName = "cpu_profile.prof"

@@ -7,7 +7,7 @@ Test coverage: 91.8% 😍👌
   <a  href="https://www.clai.chat">
   <img src="img/clai-logo.png" alt="clai logo" width="112">
   </a>
-  <h2>Command Line Artificial Intelligence</h2>
+  <h2>&gt;|✦ Command Line Artificial Intelligence</h2>
   <p><code>clai</code> (<i>/klaɪ/</i>, like "cli" in "<b>cli</b>mate") is a unix-like command line agentic harness with batteries hosted online.</p>
 </div>
 

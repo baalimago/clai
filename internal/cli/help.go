@@ -36,7 +36,7 @@ func helpAsCommand(args []string) []string {
 
 // usageText is what usageTemplate shows; write fills Commands.
 type usageText struct {
-	Summary, Synopsis, Commands, Subsystems, ConfigDir, CacheDir string
+	Title, Summary, Synopsis, Commands, Subsystems, ConfigDir, CacheDir string
 }
 
 // write prints the usage with the table of cmds and the completion command.

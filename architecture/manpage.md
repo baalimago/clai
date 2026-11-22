@@ -13,7 +13,7 @@ when a run installs.
 `internal/cli/manpage.go` `manInstaller` builds the page from the run's command table (help,
 completion and man included, hidden spellings left out). NAME and SYNOPSIS come from
 the usage's `Summary` and `Synopsis` (`usageText`, which renders `usageTemplate`),
-DESCRIPTION from the usage after its title, and COMMANDS has one subsection per command path
+DESCRIPTION is the whole usage from its title line, and COMMANDS has one subsection per command path
 with its `-h` text; these cannot drift from `clai help`. ENVIRONMENT (`manEnvironment`) and SEE ALSO are written in
 `manpage.go` and must be kept in step with the variables a user sets. Help text is kept as
 preformatted blocks; the home directory is written as `~`, so a root install reads right for
