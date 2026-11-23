@@ -52,7 +52,7 @@ only a test that opts in swaps in a fake. A missing image dependency fails with
 
 ```json
 {
-  "model": "gpt-image-2.5-flare",
+  "model": "gpt-image-2.6-flare",
   "prompt-format": "I NEED to test how the tool works with extremely simple prompts. DO NOT add any detail, just use it AS-IS: '%v'",
   "output": {
     "type": "unset",

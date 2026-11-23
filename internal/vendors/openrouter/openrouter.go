@@ -22,7 +22,7 @@ const (
 )
 
 var Default = OpenRouter{
-	Model:       "openai/gpt-4.1-mini",
+	Model:       "openai/gpt-6-luna",
 	Temperature: 1.0,
 	TopP:        1.0,
 	URL:         ChatURL,

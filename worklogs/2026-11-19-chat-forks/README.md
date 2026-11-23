@@ -62,7 +62,7 @@ provider
   │  P's part comes from the cache
   ▼
 save the answer in F; F becomes the previous query
-stdout: the answer, and "(4,812 cached)" in the usage line
+stdout: the answer; stderr with -qs: "(4,812 cached)" in the run summary
 ```
 
 P is never written. Holds: I1–I4, I10 · P4, P6, P7, P13.
@@ -128,7 +128,7 @@ Holds: I9, I10 · P11.
 
 ## Status board
 
-**Line:** waiting on human: root
+**Line:** done
 
 | #   | Node | Parent | Class | Interface | Status |
 | --- | ---- | ------ | ----- | --------- | ------ |
@@ -137,8 +137,8 @@ Holds: I9, I10 · P11.
 | 3   | One-conversation pull | root | contract | `internal/cloud/sync`: pull one conversation, its reasoning files and its images from the cloud store and merge it with the local copy so the cloud copy keeps the ID, reusing `clai cloud pull`'s merge, trash, fork, index hook and base recording | Complete |
 | 4   | Cloud references | root | contract | CLI `clai chat continue\|fork cc:<chatID>`: phase 2's `CloudResolver` filled by phase 3's pull, with the P8 error and the P10 notices | Complete |
 | 5   | Chat list: previous-query line and group totals | root | contract | CLI `clai chat list`: the `-re continues:` line above the table, and group rows that total each member's own spend (I10) | Complete |
-| 6   | Chat forks, caching and cloud continue | root | composition | root: the four Flows through `cli.Run`, with stand-in providers that record request bodies and `internal/cloud/cloudtest` as clai.chat | Reopened (review 3) |
-| 6.1 | Query stats name the conversation | root | contract | `-qs` run summary: a `chat <id>` row naming the saved conversation (`internal/text/run_summary.go`) | Not Started |
+| 6   | Chat forks, caching and cloud continue | root | composition | root: the four Flows through `cli.Run`, with stand-in providers that record request bodies and `internal/cloud/cloudtest` as clai.chat | Complete |
+| 6.1 | Query stats name the conversation | root | contract | `-qs` run summary: a `chat <id>` row naming the saved conversation (`internal/text/run_summary.go`) | Complete |
 
 Phases 1, 2, 3 and 5 touch disjoint files and can run as one wave once `previous-query-pointer` is
 done; phase 4 consumes 2 and 3; phase 6 consumes all five.
@@ -228,7 +228,7 @@ expectation, which gains the P11 line when a record exists).
 
 - **root, caching:** with funded keys, prime a chat of at least 5k tokens and run two forks
   (`clai -r -qs chat fork -cm <model> <id> <task>`, `-cm` matching the parent's model) on each of: a Claude model direct, an OpenAI model and a DeepSeek model. Pass: each fork's "(N cached)" covers at least 90 % of its parent's
-  prompt. Record the numbers in a dated note in the notebook's `codebases/imago/clai/`. On 2026-11-19
+  prompt. Run it a second time with the parent and both forks on `-t '*'` (every tool); this proves R3-01 with real providers. Record the numbers in a dated note in the notebook's `codebases/imago/clai/`. On 2026-11-19
   the shell's `ANTHROPIC_API_KEY` had no credit; the direct Claude check needs a funded key.
 - **root, cloud:** logged in to clai.chat with a conversation store, from a second config dir
   (`CLAI_CONFIG_DIR`) commit a chat `X`, then on this machine: `clai chat continue cc:X` with no local
@@ -252,7 +252,7 @@ expectation, which gains the P11 line when a record exists).
 | V1-09 | minor | 5 | plan | Closed +wip | check 7 · phase 5 bundles two interfaces: the read-only `-re continues:` line (`previousQueryLine`, `readPreviousQueryState`) and the own-spend accounting with its index schema bump (`chatOwnSpend`, `OwnSpend`, `chatIndexRow` fields, `chatIndexVersion`, group totals). Consider splitting at the next re-plan; the verdict is unaffected |
 | V2-01 | major | 1 | fix | Closed +wip | check 4 · phase 1 clause `constructRequest.5` states where code lives (which packages change), not caller-observable behaviour, and its row `Test_noDiffOutsideVendor` runs a version-control diff against `main` inside a test, which needs the VCS tool and a `main` ref and breaks the hermetic-test rule (`CLAUDE.md`, `testenv`). Drop the clause and the test and keep I5 as a Scope fact checked by review, or restate I5 as behaviour: the OpenRouter request body is byte-identical (the existing openrouter request tests) |
 | V2-02 | major | 6 | fix | Closed +wip | check 4 · phase 6 refers to clause texts that moved. `Test_e2e_cloud_refusals` Then names "the ref.5 text, the ref.4 text" and Error management says "the phase 4 texts" for `cc:` on `chat delete` and `cc:` with no ID; those refusals are phase 2's `chatref.6` and `chatref.4` (phase 4's `ref.4` is now the notices and `ref.5` the untouched record). Re-point them, and add `chatref.4` to `Proves` |
-| V2-03 | minor | 2 | plan | Open | check 7 · phase 2 now carries four interfaces: the `chat fork` verb with `Forker`, the chat resolver with the `CloudResolver` seam and `ChatRef` (`chatref.1` to `chatref.7`, including the `chat delete cc:` refusal), and the own-spend function `chatOwnSpend`. Closing V1-09 moved the bundle here. Consider moving the resolver seam and `chatOwnSpend` to their own leaf phases at the next re-plan; the verdict is unaffected |
+| V2-03 | minor | 2 | plan | Closed (maintainer: accepted as is) | check 7 · phase 2 now carries four interfaces: the `chat fork` verb with `Forker`, the chat resolver with the `CloudResolver` seam and `ChatRef` (`chatref.1` to `chatref.7`, including the `chat delete cc:` refusal), and the own-spend function `chatOwnSpend`. Closing V1-09 moved the bundle here. Consider moving the resolver seam and `chatOwnSpend` to their own leaf phases at the next re-plan; the verdict is unaffected |
 | V5-01 | major | 3 | fix | Closed +wip | check 4 · `PullConversation.3` and `.5` disagree with the code they reuse. `mergeChats` (`internal/cloud/sync/merge.go`) returns `keepLocal` also for two copies with the same messages when the local one has a title and the cloud one has none (`a.Title != "" && b.Title == ""`). `.5` sends every `keepLocal` to `ConversationLocalForked`, so such a pair forks a duplicate chat although the local copy holds no message the cloud lacks, against P9, Q5 and I8. State the rule on message counts (local has more messages, or the messages diverge, forks; the same messages are Unchanged whatever `mergeChats` says) and add a row for the title-only pair to `TestPullConversation_unchanged` |
 | V5-02 | major | 3 | plan | Closed +wip | check 5 · I3 says a fork's ID is new through `internal/chatid.New` (a UUIDv7) and I8 says the adoption fork follows I3's stamping, but `forkCopy.1` mints the ID with `newChatID`, which has the legacy `<unix hex>-<20 hex>` shape of `chat.NewChatID`. Either amend I3 and I8 to allow that shape for the fork `PullConversation` keeps, or make `forkCopy` take the ID from `chatid.New` (`internal/chatid` imports only `diag`, so `sync` may import it) |
 | V5-03 | major | 3, 4 | plan | Closed +wip | check 4 · Q9 moved the adoption fork and the merge into phase 3 but the README Binds were not moved: I8 still binds phase 4 only and I3 binds phases 2 and 4. No clause of phase 4 cites I8 or I3, and phase 3's clauses cite I8 (`PullConversation.4`, `.5`) though it is not bound. Re-bind I3 and I8 to phases 2 and 3 and 3 respectively (and keep I7 on 3 and 4) |
@@ -276,17 +276,17 @@ expectation, which gains the P11 line when a record exists).
 | R2-82 | minor | 6 | fix | Closed +wip | review 2 · multi-line rationale comments against the one-line rule (internal/cli/cli.go:310,329; e2e/chat_fork_e2e_test.go:353-367; e2e/remote/cloud_continue_e2e_test.go:183,367,371) |
 | R2-83 | minor | 6 | fix | Closed +wip | review 2 · `Test_e2e_chat_fork_concurrent` does not assert the four processes overlapped (e2e/chat_fork_e2e_test.go:380) |
 | R2-84 | minor | 6 | fix | Closed +wip | review 2 · `Test_e2e_chat_fork_parentUntouched` does not assert the inherited `TokenUsage`, `RecentTokenUsage` and `Summary` (e2e/chat_fork_e2e_test.go:239) |
-| R3-01 | major | 6 | plan | Open | review 3 (root) · with every tool (`-t '*'`, or a profile with `use_tools` and no list) or a tool glob, the offered tools are registered by ranging over a map (`internal/text/querier_setup_tools.go:638,707`, `internal/tools/registry.go:55`), so the request's `tools` order changes in every process and a fork or `-re` of such a chat reads 0 cached tokens on Claude, OpenAI and DeepSeek (I1, fork.6, root.1, Goal). Probe: three `clai -r -t '*' q hi` runs sent the same 36 specs in three orders. Offer tools in name order and add a fork scenario with `-t '*'` and with a glob; the files belong to no phase |
-| R3-02 | minor | 6 | fix | Open | review 3 · the help and notes say only `-cm` must be repeated (`internal/chat/cmd.go:113-114`, `architecture/chat.md:306`, `continue-from-claudex.md:948`, `streaming.md:178-179`); `-t` and `-lb` also set the request's tools, so a fork without `-t` of a chat primed with `-t` reads no cache |
-| R3-03 | minor | 4 | fix | Open | review 3 · `chat continue -h` and `chat fork -h` say only that `cc:<chatID>` names the clai.chat copy (`internal/chat/cmd.go:103-104,116`); nothing says the cloud copy takes the ID, a local copy with extra messages becomes a new chat, a shorter one goes to `cloud/trash/`, or that `clai cloud pull` keeps the local ID |
-| R3-04 | minor | 6 | fix | Open | review 3 · `architecture/cloud.md:117-118` labels the same-messages case Adopted; it is Unchanged with no notice (`conversation.go:282`, `cloud_resolver.go:189`), and a same-message local copy that differs elsewhere goes to `cloud/trash/` unmentioned (`conversation.go:289-296`) |
-| R3-05 | minor | 2 | fix | Open | review 3 · `architecture/chat.md:300` puts `### chat fork` between `chat continue` and its preview format and replyable notice (`:309`, `:321`), which now read as part of fork; `:347` cites the worklog invariant ID I9 |
-| R3-06 | minor | 5 | fix | Open | review 3 · `internal/chat/list_continues.go:83,91` drops the line's write error and the `ClearTermTo` error, which `listChats` returns everywhere else (`handler_list_chat.go:490,561,1088`) |
-| R3-07 | minor | 6 | fix | Open | review 3 · multi-line doc comments in `e2e/e2etest/providers.go:35-38,54-55,140-141` (one-line rule) |
-| R3-08 | minor | 3 | fix | Open | review 3 · `internal/cloud/sync/conversation.go:114` cites "(P11)", the list line; the pull's parameters are P9 and P12 |
-| R3-09 | minor | root | plan | Open | review 3 · Flow 1 (`README.md:65`) says stdout carries "(4,812 cached)"; it is in the `-qs` run summary on stderr |
-| R3-10 | minor | root | maintainer | Open | review 3 · the index differs from the working tree: the staged `e2e/testdata/diagnostics/help.golden` drops HEAD's `audio v` voices entry and the staged `internal/cli/cli.go` keeps the comments R2-82 trimmed; a commit of the index alone fails `TestDiagnosticOutputGoldens`. Stage both (and the untracked files) before committing |
-| R3-11 | minor | root | maintainer | Open | review 3 · Human checks "root, caching" and "root, cloud" have no journal record; the caching check runs without `-t`, so it does not exercise R3-01 |
+| R3-01 | major | 6 | plan | Closed +wip | review 3 (root) · with every tool (`-t '*'`, or a profile with `use_tools` and no list) or a tool glob, the offered tools are registered by ranging over a map (`internal/text/querier_setup_tools.go:638,707`, `internal/tools/registry.go:55`), so the request's `tools` order changes in every process and a fork or `-re` of such a chat reads 0 cached tokens on Claude, OpenAI and DeepSeek (I1, fork.6, root.1, Goal). Probe: three `clai -r -t '*' q hi` runs sent the same 36 specs in three orders. Offer tools in name order and add a fork scenario with `-t '*'` and with a glob; the files belong to no phase |
+| R3-02 | minor | 6 | fix | Closed +wip | review 3 · the help and notes say only `-cm` must be repeated (`internal/chat/cmd.go:113-114`, `architecture/chat.md:306`, `continue-from-claudex.md:948`, `streaming.md:178-179`); `-t` and `-lb` also set the request's tools, so a fork without `-t` of a chat primed with `-t` reads no cache |
+| R3-03 | minor | 4 | fix | Closed +wip | review 3 · `chat continue -h` and `chat fork -h` say only that `cc:<chatID>` names the clai.chat copy (`internal/chat/cmd.go:103-104,116`); nothing says the cloud copy takes the ID, a local copy with extra messages becomes a new chat, a shorter one goes to `cloud/trash/`, or that `clai cloud pull` keeps the local ID |
+| R3-04 | minor | 6 | fix | Closed +wip | review 3 · `architecture/cloud.md:117-118` labels the same-messages case Adopted; it is Unchanged with no notice (`conversation.go:282`, `cloud_resolver.go:189`), and a same-message local copy that differs elsewhere goes to `cloud/trash/` unmentioned (`conversation.go:289-296`) |
+| R3-05 | minor | 2 | fix | Closed +wip | review 3 · `architecture/chat.md:300` puts `### chat fork` between `chat continue` and its preview format and replyable notice (`:309`, `:321`), which now read as part of fork; `:347` cites the worklog invariant ID I9 |
+| R3-06 | minor | 5 | fix | Closed +wip | review 3 · `internal/chat/list_continues.go:83,91` drops the line's write error and the `ClearTermTo` error, which `listChats` returns everywhere else (`handler_list_chat.go:490,561,1088`) |
+| R3-07 | minor | 6 | fix | Closed +wip | review 3 · multi-line doc comments in `e2e/e2etest/providers.go:35-38,54-55,140-141` (one-line rule) |
+| R3-08 | minor | 3 | fix | Closed +wip | review 3 · `internal/cloud/sync/conversation.go:114` cites "(P11)", the list line; the pull's parameters are P9 and P12 |
+| R3-09 | minor | root | plan | Closed +wip | review 3 · Flow 1 (`README.md:65`) says stdout carries "(4,812 cached)"; it is in the `-qs` run summary on stderr |
+| R3-10 | minor | root | maintainer | Closed 36cf9fc | review 3 · the index differs from the working tree: the staged `e2e/testdata/diagnostics/help.golden` drops HEAD's `audio v` voices entry and the staged `internal/cli/cli.go` keeps the comments R2-82 trimmed; a commit of the index alone fails `TestDiagnosticOutputGoldens`. Stage both (and the untracked files) before committing |
+| R3-11 | minor | root | maintainer | Closed (maintainer: caching passed; cloud check and -t '*' run deferred) | review 3 · Human checks "root, caching" and "root, cloud" have no journal record; the caching check runs without `-t`, so it does not exercise R3-01 |
 
 ## Session journal
 
@@ -373,3 +373,9 @@ expectation, which gains the P11 line when a record exists).
 - 2026-11-23 · plan · phase 6.1 injected (contract, additive): the -qs summary gains a `chat <id>` row and the JSON record a `chat_id` fact
 - 2026-11-23 · review · root round 3 Not ready · env -u OPENAI_API_KEY -u ANTHROPIC_API_KEY -u OPENROUTER_API_KEY make qa twice (the second with GOFLAGS=-shuffle=on): exit 0 both, 109 packages ok, working tree and index unchanged; go vet ./...: 0; dupl -t 80 (Go files outside .claude): 49 groups, unchanged; probe (built binary, recording stub): three `clai -r -t '*' q hi` runs sent 36 equal tool specs in three orders · R3-01 major (phase 6 reopened), R3-02..R3-11 minor; phase 6.1, injected during the review, is Not Started and V2-03 is open, so the line stays waiting on human: root
 - 2026-11-23 · maintainer · human check root (caching: fork reads the primer from the provider cache) · pass
+- 2026-11-23 · fix · R3-01..R3-09 Closed +wip, phase 6.1 and phase 6 Complete · tools offered in name order (sorted in matchingTools, Registry.WildcardGet and the all-tools loop); env -u OPENAI_API_KEY -u ANTHROPIC_API_KEY -u OPENROUTER_API_KEY make qa exit 0, go vet 0, dupl -t 80 49 groups (unchanged); R3-10, R3-11 and V2-03 left open
+- 2026-11-23 · maintainer · committed the effort as 36cf9fc (feat: clai chat fork, cc:, list line, caching, query-stats chat ID) and the default-model refresh as ccf09dc; tree clean
+- 2026-11-23 · fix · default models refreshed at the maintainer's request (gpt-6-luna default; strong/fast/cheap ladders; gpt-image-2.6-flare; openai, openrouter, gemini and deepseek-flash vendor templates) · make qa rc=0, go vet clean, dupl 49
+- 2026-11-23 · maintainer · human check root (cloud cc: cases; caching with -t '*') · deferred, not run
+- 2026-11-23 · maintainer · V2-03 accepted as is
+- 2026-11-23 · maintainer · feature signed (36cf9fc, ccf09dc)

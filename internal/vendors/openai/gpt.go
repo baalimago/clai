@@ -15,7 +15,7 @@ import (
 const vendorName = "openai"
 
 var GptDefault = ChatGPT{
-	Model:       "gpt-4.1-mini",
+	Model:       "gpt-6-luna",
 	Temperature: 1.0,
 	TopP:        1.0,
 	URL:         ResponsesURL,

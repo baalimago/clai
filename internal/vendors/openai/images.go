@@ -26,7 +26,7 @@ const imagesBaseURL = "https://api.openai.com"
 
 // DefaultImageModel is clai's default photo model, and the image model generate_image
 // uses beside an OpenAI chat model when the photo model is not an OpenAI one.
-const DefaultImageModel = "gpt-image-2.5-flare"
+const DefaultImageModel = "gpt-image-2.6-flare"
 
 // IsImageModel matches the README parameter "OpenAI image model names".
 func IsImageModel(model string) bool { return isOpenAIImageModel(model) }

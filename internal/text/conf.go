@@ -296,15 +296,15 @@ type ProfileSource struct {
 }
 
 var Default = Configurations{
-	Model: "gpt-5.2",
+	Model: "gpt-6-luna",
 	// The shipped aliases are a starting point the user owns from the first
 	// write: clai seeds them once and never rewrites an existing table (config
 	// migration design, Q4). Each lists one model per vendor so a machine with
 	// any one key still answers.
 	ModelAliases: modelalias.Table{
-		"strong": {"claude-sonnet-5-5", "gpt-5.2", "gemini-3.6-flash"},
-		"fast":   {"gemini-3.6-flash", "gpt-4.1-mini", "deepseek-chat"},
-		"cheap":  {"deepseek-chat", "gpt-4.1-mini", "gemini-3.6-flash"},
+		"strong": {"claude-opus-5-5", "gpt-6.2-astra", "gemini-3.8-flash"},
+		"fast":   {"gemini-3.8-flash", "gpt-6-luna", "deepseek-flash"},
+		"cheap":  {"deepseek-flash", "gpt-6-luna", "gemini-3.5-flash-lite"},
 	},
 	SystemPrompt:           "You are an assistant for a CLI tool. Answer concisely and informatively. Prefer markdown if possible.",
 	Raw:                    false,

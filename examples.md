@@ -200,14 +200,14 @@ In `<clai-config>/textConfig.json`:
 {
   "model": "strong",
   "model-aliases": {
-    "strong": ["claude-sonnet-5-5", "gpt-5.2", "gemini-3.6-flash"]
+    "strong": ["claude-opus-5-5", "gpt-6.2-astra", "gemini-3.8-flash"]
   }
 }
 ```
 
 ```bash
 clai query "summarize this diff" < diff.txt
-# ▸ model claude-sonnet-5-5 unavailable · likely insufficient credits · trying gpt-5.2
+# ▸ model claude-opus-5-5 unavailable · likely insufficient credits · trying gpt-6.2-astra
 ```
 
 - The run tries the ladder in order and stops at the first model that answers. The reply on stdout is unchanged.

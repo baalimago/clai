@@ -159,7 +159,7 @@ The query command applies configuration in this order (lowest to highest precede
    with the model of the first vendor whose API key is set, OpenAI first, so a
    first query works with whichever key the user exported. An existing file
    keeps its model.
-3. **Model-specific config** (e.g., `openai_gpt_gpt-5.2.json`)
+3. **Model-specific config** (e.g., `openai_gpt_gpt-6-luna.json`)
 4. **Profile overrides** (if `-p`/`-profile` or `-prp`/`-profile-path` is set)
 5. **CLI flags** (e.g., `-cm`, `-r`, `-t`)
 

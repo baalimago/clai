@@ -10,7 +10,7 @@ import (
 )
 
 var Default = Deepseek{
-	Model:       "deepseek-chat",
+	Model:       "deepseek-flash",
 	Temperature: 1.0,
 	TopP:        1.0,
 	URL:         ChatURL,

@@ -44,7 +44,7 @@ Loop mode (`-l`) takes the same flags. Each generated image is shown once on std
 terminal:
 
 ```text
-▸ [🐕 🎾 🎨] image 25c1ba · gpt-image-2.5-flare · 1536×1024 (3:2) · 1.5 MB · 41s → file:///…/25c1….png
+▸ [🐕 🎾 🎨] image 25c1ba · gpt-image-2.6-flare · 1536×1024 (3:2) · 1.5 MB · 41s → file:///…/25c1….png
 ```
 
 The URL is percent-encoded, so terminals open it on ctrl-click, and it is also an OSC 8 link. The
@@ -60,7 +60,7 @@ both), coloured and linked the same way:
 
 ```text
 ▸ generate_image  input_images=[]  prompt=A whimsical photorealistic food photograph …
-  ▸ [☁️ 🛋️ 🍽️] image 32259a · gpt-image-2.5-flare · 1024×1024 (1:1) · 1.2 MB · 38s
+  ▸ [☁️ 🛋️ 🍽️] image 32259a · gpt-image-2.6-flare · 1024×1024 (1:1) · 1.2 MB · 38s
   → file:///home/u/.config/.clai/conversations/assets/32259a….png
 ```
 
@@ -120,7 +120,7 @@ prefix) and Gemini, picked by `route.NewGenerator` from the model name (see
 [photo.md](./photo.md#image-generators)). Its model is `-pm`; otherwise
 `route.ImageModelFor` prefers the chat model's own vendor: beside an OpenAI, Gemini or OpenRouter
 chat model it keeps `photoConfig.json`'s `model` when that is the same vendor's, and otherwise
-uses that vendor's default (`gpt-image-2.5-flare`, `gemini-3.1-flash-image`,
+uses that vendor's default (`gpt-image-2.6-flare`, `gemini-3.1-flash-image`,
 `or:google/gemini-3.1-flash-lite-image`). Beside any other vendor it uses `photoConfig.json`'s
 `model`. The vendors' built-in image tools (such as the Responses `image_generation` tool) are
 never enabled, so every generated image goes through one tool, its arguments and its result.
@@ -163,7 +163,7 @@ image. The message editor edits only the text of a message and keeps its images 
 | --- | --- | --- | --- |
 | `auto-open-images` | `photoConfig.json` | `false` | `-open` |
 | `image-opener` | `photoConfig.json` | `""`: `xdg-open` on Linux, `open` on macOS | — |
-| `model` | `photoConfig.json` | `gpt-image-2.5-flare`; `generate_image` prefers the chat vendor's backend (above) | `-pm` |
+| `model` | `photoConfig.json` | `gpt-image-2.6-flare`; `generate_image` prefers the chat vendor's backend (above) | `-pm` |
 
 Every command that shows an image, `clai photo` and `clai q` alike, reads these keys from
 `photoConfig.json`. The keys reach existing configs through the usual config upgrade. No default

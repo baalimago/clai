@@ -40,8 +40,8 @@ func (m *mockChatQuerier) TextQuery(ctx context.Context, chat models.Chat) (mode
 func TestNew(t *testing.T) {
 	t.Run("it should create an agent with default values", func(t *testing.T) {
 		a := New()
-		if a.model != "gpt-5.2" {
-			t.Errorf("expected default model to be gpt-5.2, got %v", a.model)
+		if a.model != "gpt-6-luna" {
+			t.Errorf("expected default model to be gpt-6-luna, got %v", a.model)
 		}
 	})
 

@@ -91,7 +91,7 @@ type Agent struct {
 var skipIndexOnce sync.Once
 
 var defaultConf = Agent{
-	model:          "gpt-5.2",
+	model:          "gpt-6-luna",
 	prompt:         "Uh-oh. Something is not quite right. Please ask the user to overlook his agentic setup, and to update the prompt.",
 	tools:          make([]models.LLMTool, 0),
 	mcpServers:     make([]models.McpServer, 0),
