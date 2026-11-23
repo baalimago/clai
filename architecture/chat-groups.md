@@ -10,9 +10,8 @@ that captures content identity — and requires zero changes to the table select
 Users repeatedly issue the same initial prompt — a debugging query, a code-review instruction, an
 investigation seed — producing multiple parallel conversations with identical entry messages. Today these
 appear as indistinguishable rows in `clai chat list`, forcing the user to scan by date and prompt preview to
-find related conversations. The (at the time of writing) upcoming **conversation forking** feature (`clai chat fork <id>`, described
-in `continue-from-claudex.md`) will further multiply parallel conversations from a common root. Both
-scenarios demand a grouping mechanism.
+find related conversations. **Conversation forking** (`clai chat fork <id> <prompt>`, described in `continue-from-claudex.md`)
+further multiplies parallel conversations from a common root. Both scenarios demand a grouping mechanism.
 
 The grouping must:
 
@@ -206,7 +205,7 @@ recovery operation, not the normal path.
 - A non-forked clai chat has no Source and a GroupKey derived from its first user message.
 - A cloned foreign chat has a Source (e.g. `"claude-code"`), a SourceID from the session, and a
   GroupKey derived from its first user message.
-- A forked chat (future) has `Source = "clai"`, `SourceID = parent-chat-id`, and a GroupKey
+- A forked chat has `Source = "clai"`, `SourceID = parent-chat-id`, and a GroupKey
   **inherited from the parent** — not recomputed from the fork's own first message, which may differ.
 
 Both fields coexist without conflict. The pattern is parallel — a single opaque identity key —
@@ -387,14 +386,19 @@ the substring filter.
 
 ## Forking integration
 
-When `clai chat fork <chatID>` is implemented (per `continue-from-claudex.md`):
+`clai chat fork` (per `continue-from-claudex.md`) writes a chat that is one lineage with its parent:
 
-- The forked chat inherits the parent's GroupKey — all descendants of the same root prompt share
+- The fork inherits the parent's GroupKey — all descendants of the same root prompt share
   the same group, regardless of where in the lineage the fork occurred.
 - `Source = "clai"` and `SourceID = <parent-chat-id>` are set independently.
 - The fork's first user message may differ from the parent's, but the GroupKey is inherited, not
   recomputed — preserving the lineage link.
-- The parent's GroupKey is never changed by forking.
+- The parent is never written by forking (its file, index row and GroupKey stay as they were).
+- A fork also inherits the parent's `Queries`, so the shared history is paid for once but stored
+  twice. A chat's own spend is the cost and tokens of the queries created at or after its `Created`;
+  a group row totals its members' own spend, while a chat's own row and the group view show its
+  whole history. Parent plus two forks therefore list as one group whose Cost and Tokens count
+  each query once.
 - **Visual inconsistency note**: Two forks of the same parent could have different first user
   messages but the same GroupKey. The group row's prompt preview column shows the most recent
   member's first user message, which may differ from the original root prompt. The group identity
@@ -402,11 +406,11 @@ When `clai chat fork <chatID>` is implemented (per `continue-from-claudex.md`):
 
 ### Forking from a pre-existing chat with empty GroupKey
 
-If the parent is a pre-existing chat with an empty GroupKey, the fork also inherits an empty
-GroupKey. Both parent and fork appear as separate ungrouped rows — visually unrelated despite the
-`Source="clai"`, `SourceID=parent-id` link. An index rebuild assigns GroupKeys to both (derived
-from each chat's own first user message, which may differ), restoring the group relationship if
-their first messages match.
+The parent is not written when it is forked, so a pre-existing chat with an empty GroupKey stays
+unstamped until an index rebuild or its next save. The fork inherits the empty GroupKey and is
+stamped from its own first message on its first persist, which is the key the rebuild gives the
+parent when the first messages match. Until then both appear as separate ungrouped rows, visually
+unrelated despite the `Source="clai"`, `SourceID=parent-id` link.
 
 ## cloneForeignChat integration
 

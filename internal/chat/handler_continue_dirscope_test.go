@@ -53,7 +53,7 @@ func TestChatHandler_continue_emptyPrompt_prefersDirScope_thenGlobalScope(t *tes
 	testboil.AssertStringContains(t, out, "dir msg")
 }
 
-func TestChatHandler_continue_emptyPrompt_fallsBackToGlobalScope(t *testing.T) {
+func TestChatHandler_continue_emptyPrompt_fallsBackToThePreviousQuery(t *testing.T) {
 	t.Setenv("DEBUG", "")
 	ctx := context.Background()
 
@@ -63,10 +63,8 @@ func TestChatHandler_continue_emptyPrompt_fallsBackToGlobalScope(t *testing.T) {
 	}
 	convDir := filepath.Join(confDir, "conversations")
 
-	global := pub_models.Chat{ID: "globalScope", Created: time.Now(), Messages: []pub_models.Message{{Role: "user", Content: "global msg"}}}
-	if err := Save(context.Background(), convDir, global); err != nil {
-		t.Fatalf("Save global: %v", err)
-	}
+	prev := pub_models.Chat{ID: "previous-chat", Created: time.Now(), Messages: []pub_models.Message{{Role: "user", Content: "global msg"}}}
+	savePreviousConversation(t, confDir, prev)
 
 	var buf strings.Builder
 	cq := &ChatHandler{confDir: confDir, convDir: convDir, prompt: "", out: &buf}

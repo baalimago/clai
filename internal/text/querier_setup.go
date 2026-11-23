@@ -215,8 +215,6 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	querier.outputIsTerminal = utils.IsTerminalWriter(output)
 	querier.structuredOutput = userConf.ResponseFormat != nil
 	querier.shouldSaveReply = userConf.SaveReplyAsConv
-	querier.replyMode = userConf.ReplyMode
-	querier.dirReplyMode = userConf.DirReplyMode || userConf.ReplyChatID != ""
 	querier.useLookback = userConf.UseLookback
 	querier.lookbackCWD = userConf.LookbackCWD
 	querier.tooling.outputRuneLimit = userConf.ToolOutputRuneLimit
@@ -291,7 +289,7 @@ func NewQuerier[C models.StreamCompleter](ctx context.Context, userConf Configur
 	querier.chat = userConf.InitialChat
 	querier.systemPrompt = userConf.SystemPrompt
 	traceChatf(ctx, "new querier chat attached chat_id=%q messages=%d system_prompt_len=%d", querier.chat.ID, len(querier.chat.Messages), len(querier.systemPrompt))
-	// Ensure profile selection is persisted in globalScope/saved conversations.
+	// Ensure profile selection is persisted in the saved conversation.
 	querier.chat.Profile = userConf.UseProfile
 	// One dimensions snapshot per interactive output session, bound to the
 	// writer's fd: the observed size matches the file clai actually writes to

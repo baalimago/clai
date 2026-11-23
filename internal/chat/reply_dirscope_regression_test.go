@@ -51,13 +51,17 @@ func TestSaveAsPreviousQuery_ExistingConversationDoesNotCreatePromotedCopy(t *te
 		chatFiles = append(chatFiles, name)
 	}
 
-	if len(chatFiles) != 2 {
-		t.Fatalf("expected exactly existing chat and global scope to be persisted, got %d files: %v", len(chatFiles), chatFiles)
-	}
-	if _, err := os.Stat(filepath.Join(conversationsDir(confDir), globalScopeChatID+".json")); err != nil {
-		t.Fatalf("Stat(global scope): %v", err)
+	if len(chatFiles) != 1 {
+		t.Fatalf("expected only the existing chat to be persisted, got %d files: %v", len(chatFiles), chatFiles)
 	}
 	if _, err := os.Stat(filepath.Join(conversationsDir(confDir), chat.ID+".json")); err != nil {
 		t.Fatalf("Stat(existing chat): %v", err)
+	}
+	prev, err := LoadPreviousQuery(context.Background(), confDir)
+	if err != nil {
+		t.Fatalf("LoadPreviousQuery: %v", err)
+	}
+	if prev.Chat.ID != chat.ID {
+		t.Fatalf("record names %q, want the existing chat %q", prev.Chat.ID, chat.ID)
 	}
 }

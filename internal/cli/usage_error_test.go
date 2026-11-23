@@ -40,7 +40,7 @@ func errorRecord(t *testing.T, stderr string) (message string, remedies []string
 func TestUsageErrorHints(t *testing.T) {
 	useConfigDir(t)
 	// chat continue takes the query flags for the run that sends its prompt.
-	const cmHint = "'-cm' belongs to 'chat continue' or 'query' — place it there, after that command."
+	const cmHint = "'-cm' belongs to 'chat continue', 'chat fork' or 'query' — place it there, after that command."
 
 	text := runCLI(t, "chat list -cm x", cliOpts{})
 	wantText := "error: failed to parse flagset: flag provided but not defined: -cm\n  hint: " + cmHint + "\n"

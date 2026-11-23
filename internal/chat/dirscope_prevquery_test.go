@@ -50,15 +50,19 @@ func TestLoadDirScopedContext_ReturnsFullConversation(t *testing.T) {
 		t.Fatalf("SaveDirScope: %v", err)
 	}
 
-	// Pre-populate globalScope.json with stale content to prove it is NOT read.
-	staleChat := pub_models.Chat{
-		ID: globalScopeChatID,
+	// Point the previous query at another conversation to prove the directory
+	// reply takes its context from the binding, not from the previous query.
+	otherChat := pub_models.Chat{
+		ID: "other-chat",
 		Messages: []pub_models.Message{
 			{Role: "user", Content: "stale"},
 		},
 	}
-	if err := Save(context.Background(), conversationsDir(confDir), staleChat); err != nil {
-		t.Fatalf("Save(stale): %v", err)
+	if err := Save(context.Background(), conversationsDir(confDir), otherChat); err != nil {
+		t.Fatalf("Save(otherChat): %v", err)
+	}
+	if err := SavePreviousQuery(context.Background(), confDir, otherChat.ID, time.Unix(600, 0)); err != nil {
+		t.Fatalf("SavePreviousQuery: %v", err)
 	}
 
 	got, err := LoadDirScopedContext(context.Background(), confDir)
@@ -79,12 +83,12 @@ func TestLoadDirScopedContext_ReturnsFullConversation(t *testing.T) {
 		t.Fatalf("expected profile %q, got %q", sourceChat.Profile, got.Profile)
 	}
 
-	// Verify globalScope was NOT modified (the stale content is still there).
-	gs, err := LoadGlobalScope(context.Background(), confDir)
+	// Verify the previous query was NOT modified.
+	prev, err := LoadPreviousQuery(context.Background(), confDir)
 	if err != nil {
-		t.Fatalf("LoadGlobalScope: %v", err)
+		t.Fatalf("LoadPreviousQuery: %v", err)
 	}
-	if len(gs.Messages) != 1 || gs.Messages[0].Content != "stale" {
-		t.Fatalf("globalScope was modified unexpectedly: %+v", gs.Messages)
+	if prev.Chat.ID != otherChat.ID {
+		t.Fatalf("previous query was modified unexpectedly: %+v", prev.Chat)
 	}
 }

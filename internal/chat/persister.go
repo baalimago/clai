@@ -1,9 +1,7 @@
 package chat
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -41,12 +39,16 @@ type Persister interface {
 	// Promote persists chat as the previous query. It writes the same files today's
 	// chat.SaveAsPreviousQuery writes for the same chat: a newly promoted conversation
 	// when the chat has no persisted id and more than two messages, then
-	// globalScope.json, then the chat's own conversation file when it has an id.
+	// the chat's own conversation file when it has an id, then the previous-query
+	// record naming the conversation written.
 	//  1. Each file is written under Save.1–3.
 	//  2. Every copy references the same asset files, and no asset is duplicated (C3).
 	//  3. A text-only chat yields the same files, byte for byte, as SaveAsPreviousQuery
 	//     does today (I10).
-	Promote(ctx context.Context, chat pub_models.Chat) error
+	//  4. A fresh chat whose outcome is RunFailedBeforeAnswer is promoted too, though it
+	//     ends on its user message, so the record names it and -re retries its prompt.
+	//  5. It returns the ID of the conversation the previous-query record names, empty when none was written.
+	Promote(ctx context.Context, chat pub_models.Chat, outcome RunOutcome) (SavedID, error)
 	// Load reads the conversation at path.
 	//  1. A legacy inline image arrives from the codec as a pending ImagePart. Load
 	//     checks its bytes with asset.Sniff. It fails with asset.ErrNotImage when they
@@ -59,7 +61,7 @@ type Persister interface {
 	Load(ctx context.Context, path string) (pub_models.Chat, error)
 	// Delete removes conversation chatID and its reasoning sidecar, as today. It then
 	// sweeps every asset that no remaining conversation file references,
-	// globalScope.json included (C3).
+	// the legacy globalScope.json mirror included (C3).
 	//  1. It returns the sweep's count.
 	//  2. When the sweep fails after the conversation was removed, it returns
 	//     *SweepFailedError wrapping the cause. The conversation stays deleted.
@@ -116,8 +118,8 @@ func (p persister) Save(ctx context.Context, chat pub_models.Chat) (pub_models.C
 	return saveChat(ctx, p.convDir, p.store, chat, withIndex)
 }
 
-func (p persister) Promote(ctx context.Context, chat pub_models.Chat) error {
-	return promote(ctx, p.confDir, p.store, chat)
+func (p persister) Promote(ctx context.Context, chat pub_models.Chat, outcome RunOutcome) (SavedID, error) {
+	return promote(ctx, p.confDir, p.store, chat, outcome)
 }
 
 func (p persister) Load(ctx context.Context, path string) (pub_models.Chat, error) {
@@ -233,17 +235,6 @@ func checkPendingImages(chat pub_models.Chat) error {
 	return nil
 }
 
-type assetRefScan struct {
-	Messages []struct {
-		Content json.RawMessage `json:"content"`
-	} `json:"messages"`
-}
-
-type assetRefPart struct {
-	Type  string `json:"type"`
-	Asset string `json:"asset"`
-}
-
 // liveAssetRefs collects every asset ref the conversation files directly under
 // convDir reference. A file it cannot read or decode fails the scan, so the
 // sweep never removes an asset that file may hold.
@@ -282,23 +273,20 @@ func collectAssetRefs(path string, live map[string]struct{}) error {
 	if err != nil {
 		return diag.Errorf("read %s for asset refs: %w", path, err)
 	}
-	var scan assetRefScan
-	if err := json.Unmarshal(b, &scan); err != nil {
-		return diag.Errorf("scan %s for asset refs: %w", path, err)
+	refs, err := asset.RefsIn(b)
+	if err != nil {
+		var scanErr *asset.RefScanError
+		switch {
+		case !errors.As(err, &scanErr):
+			return diag.Errorf("scan %s for asset refs: %w", path, err)
+		case scanErr.Message == asset.WholeFile:
+			return diag.Errorf("scan %s for asset refs: %w", path, scanErr.Cause)
+		default:
+			return diag.Errorf("scan %s message %d for asset refs: %w", path, scanErr.Message, scanErr.Cause)
+		}
 	}
-	for i, m := range scan.Messages {
-		if !bytes.HasPrefix(bytes.TrimSpace(m.Content), []byte("[")) {
-			continue
-		}
-		var parts []assetRefPart
-		if err := json.Unmarshal(m.Content, &parts); err != nil {
-			return diag.Errorf("scan %s message %d for asset refs: %w", path, i, err)
-		}
-		for _, part := range parts {
-			if part.Type == "image" && part.Asset != "" {
-				live[part.Asset] = struct{}{}
-			}
-		}
+	for _, ref := range refs {
+		live[ref] = struct{}{}
 	}
 	return nil
 }

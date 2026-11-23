@@ -70,7 +70,7 @@ func TestChatHandler_dirInfo_GlobalScope_Raw(t *testing.T) {
 	convDir := filepath.Join(confDir, "conversations")
 	created := time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC)
 	ch := pub_models.Chat{
-		ID:      "globalScope",
+		ID:      "global_chat",
 		Created: created,
 		Profile: "profA",
 		Messages: []pub_models.Message{
@@ -84,9 +84,7 @@ func TestChatHandler_dirInfo_GlobalScope_Raw(t *testing.T) {
 			CompletionTokens: 3,
 		},
 	}
-	if err := Save(context.Background(), convDir, ch); err != nil {
-		t.Fatalf("Save: %v", err)
-	}
+	savePreviousConversation(t, confDir, ch)
 
 	var out bytes.Buffer
 	cq := &ChatHandler{
@@ -109,7 +107,7 @@ func TestChatHandler_dirInfo_GlobalScope_Raw(t *testing.T) {
 	if got.Scope != "global" {
 		t.Fatalf("scope: got %q", got.Scope)
 	}
-	if got.ChatID != "globalScope" {
+	if got.ChatID != "global_chat" {
 		t.Fatalf("chat_id: got %q", got.ChatID)
 	}
 	if got.Profile != "profA" {
@@ -158,10 +156,8 @@ func TestChatHandler_dirInfo_DirScopeWinsOverPrevQuery_Raw(t *testing.T) {
 		t.Fatalf("Save(bound): %v", err)
 	}
 
-	prev := pub_models.Chat{ID: "globalScope", Created: time.Now()}
-	if err := Save(context.Background(), convDir, prev); err != nil {
-		t.Fatalf("Save(prev): %v", err)
-	}
+	prev := pub_models.Chat{ID: "global_chat", Created: time.Now()}
+	savePreviousConversation(t, confDir, prev)
 
 	cq := &ChatHandler{confDir: confDir, convDir: convDir}
 	if err := cq.SaveDirScope(context.Background(), "", bound.ID); err != nil {
@@ -263,7 +259,7 @@ func TestChatHandler_dirInfo_GlobalScope_Raw_IncludesTokenAndPriceBreakdown(t *t
 
 	convDir := filepath.Join(confDir, "conversations")
 	ch := pub_models.Chat{
-		ID:      "globalScope",
+		ID:      "global_chat",
 		Created: time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC),
 		Messages: []pub_models.Message{
 			{Role: "user", Content: "hi"},
@@ -290,9 +286,7 @@ func TestChatHandler_dirInfo_GlobalScope_Raw_IncludesTokenAndPriceBreakdown(t *t
 			Model: "openrouter/test-model",
 		}},
 	}
-	if err := Save(context.Background(), convDir, ch); err != nil {
-		t.Fatalf("Save: %v", err)
-	}
+	savePreviousConversation(t, confDir, ch)
 
 	var out bytes.Buffer
 	cq := &ChatHandler{
@@ -452,7 +446,7 @@ func TestChatHandler_dirInfo_V1RemainsBackwardCompatible(t *testing.T) {
 	}
 	convDir := filepath.Join(confDir, "conversations")
 	chat := pub_models.Chat{
-		ID:       globalScopeChatID,
+		ID:       "chat_v1",
 		Created:  time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC),
 		Messages: []pub_models.Message{{Role: "user", Content: "hi"}},
 		TokenUsage: &pub_models.Usage{
@@ -462,9 +456,7 @@ func TestChatHandler_dirInfo_V1RemainsBackwardCompatible(t *testing.T) {
 		},
 		RecentTokenUsage: &pub_models.Usage{PromptTokens: 18, CompletionTokens: 3, TotalTokens: 21},
 	}
-	if err := Save(context.Background(), convDir, chat); err != nil {
-		t.Fatalf("Save: %v", err)
-	}
+	savePreviousConversation(t, confDir, chat)
 
 	var out bytes.Buffer
 	cq := &ChatHandler{confDir: confDir, convDir: convDir, raw: true, out: &out}

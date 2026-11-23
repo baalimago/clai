@@ -2,7 +2,6 @@ package video
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/baalimago/clai/internal/testenv/procenv"
 
+	"github.com/baalimago/clai/internal/chat"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -35,17 +35,12 @@ func TestSetupPrompts(t *testing.T) {
 	}
 	prevChat := pub_models.Chat{
 		Created:  time.Now(),
-		ID:       "globalScope",
+		ID:       "previous-chat",
 		Messages: msgs,
 	}
 
-	b, err := json.Marshal(prevChat)
-	if err != nil {
-		t.Fatalf("Failed to marshal chat: %v", err)
-	}
-
-	if err := os.WriteFile(filepath.Join(convDir, "globalScope.json"), b, 0o644); err != nil {
-		t.Fatalf("Failed to write globalScope.json: %v", err)
+	if err := chat.SaveAsPreviousQuery(context.Background(), claiDir, prevChat); err != nil {
+		t.Fatalf("Failed to save previous query: %v", err)
 	}
 
 	args := []string{"dummy_cmd_skipped", "my_test_prompt"}

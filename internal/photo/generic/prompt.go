@@ -3,6 +3,7 @@ package generic
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/baalimago/clai/internal/chat"
@@ -19,8 +20,11 @@ func (c *Configurations) SetupPrompts(ctx context.Context, args []string) error 
 			return diag.Errorf("failed to get config dir: %w", err)
 		}
 		iP, err := chat.LoadPrevQuery(ctx, confDir)
-		if err != nil {
+		if err != nil && !errors.Is(err, chat.ErrNoPreviousQuery) {
 			return diag.Errorf("failed to load previous query: %w", err)
+		}
+		if errors.Is(err, chat.ErrNoPreviousQuery) {
+			runenv.Warnf(ctx, runenv.SubsystemPhoto, "no previous query found")
 		}
 		replyMessages, err := ReplyContext(iP.Messages)
 		if err != nil {

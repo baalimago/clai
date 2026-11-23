@@ -15,9 +15,9 @@ func Test_FirstRunModel(t *testing.T) {
 		{"no key keeps the default", nil, Default.Model},
 		{"an OpenAI key keeps the default", map[string]string{"OPENAI_API_KEY": "k"}, Default.Model},
 		{"only an Anthropic key picks Claude", map[string]string{"ANTHROPIC_API_KEY": "k"}, "claude-sonnet-5-5"},
-		{"only a Gemini key picks Gemini", map[string]string{"GEMINI_API_KEY": "k"}, "gemini-3.6-flash"},
+		{"only a Gemini key picks Gemini", map[string]string{"GEMINI_API_KEY": "k"}, "gemini-3.8-flash"},
 		{"only a Mistral key picks Mistral", map[string]string{"MISTRAL_API_KEY": "k"}, "mistral-large-latest"},
-		{"only a DeepSeek key picks DeepSeek", map[string]string{"DEEPSEEK_API_KEY": "k"}, "deepseek-chat"},
+		{"only a DeepSeek key picks DeepSeek", map[string]string{"DEEPSEEK_API_KEY": "k"}, "deepseek-flash"},
 		{"only an xAI key picks Grok", map[string]string{"XAI_API_KEY": "k"}, "grok-code-fast-1"},
 		{"OpenAI wins over Anthropic", map[string]string{"ANTHROPIC_API_KEY": "k", "OPENAI_API_KEY": "k"}, Default.Model},
 		{"an empty key does not count", map[string]string{"ANTHROPIC_API_KEY": ""}, Default.Model},
@@ -39,7 +39,7 @@ func Test_FirstRunDefaults_onlyChangesModel(t *testing.T) {
 	if got.SystemPrompt != Default.SystemPrompt || got.ToolOutputRuneLimit != Default.ToolOutputRuneLimit {
 		t.Fatal("FirstRunDefaults changed more than the model")
 	}
-	if Default.Model != "gpt-5.2" {
+	if Default.Model != "gpt-6-luna" {
 		t.Fatalf("FirstRunDefaults mutated Default: %q", Default.Model)
 	}
 }

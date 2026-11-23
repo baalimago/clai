@@ -2,8 +2,6 @@ package text
 
 import (
 	"context"
-	"encoding/json"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -26,24 +24,14 @@ func Test_ApplyFlagOverrides_continueChat(t *testing.T) {
 	}
 }
 
-// A continued chat's InitialChat is that chat: the previous query's
-// globalScope.json is not read into it.
-func TestConfigurations_SetupInitialChat_continuedChatSkipsGlobalScope(t *testing.T) {
+// A continued chat's InitialChat is that chat: the previous query is not read
+// into it.
+func TestConfigurations_SetupInitialChat_continuedChatSkipsPreviousQuery(t *testing.T) {
 	confDir := t.TempDir()
-	convDir := filepath.Join(confDir, "conversations")
-	if err := os.MkdirAll(convDir, 0o755); err != nil {
-		t.Fatalf("MkdirAll: %v", err)
-	}
-	stale := pub_models.Chat{ID: "globalScope", Created: time.Now(), Messages: []pub_models.Message{
+	stale := pub_models.Chat{ID: "stale-chat", Created: time.Now(), Messages: []pub_models.Message{
 		{Role: "system", Content: "sys"}, {Role: "user", Content: "stale query"}, {Role: "assistant", Content: "stale response"},
 	}}
-	b, err := json.Marshal(stale)
-	if err != nil {
-		t.Fatalf("Marshal: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(convDir, "globalScope.json"), b, 0o644); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
+	seedPreviousQuery(t, confDir, stale)
 	named := pub_models.Chat{ID: "named", Messages: []pub_models.Message{
 		{Role: "system", Content: "sys"}, {Role: "user", Content: "first meeting"}, {Role: "assistant", Content: "who is Speaker A?"},
 	}}

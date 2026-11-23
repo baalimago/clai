@@ -103,7 +103,7 @@ holding:
 | `SystemPrompt` | the fixed labeller prompt (`internal/summary/prompt.go`) | |
 | `UseTools: true`, `Tools: [submit_summary]`, no tool globs | exactly one tool, registered without the unknown-glob warning | |
 | `SkipAmbientMcpServers: true` | no `mcpServers/*.json` server starts for a one-tool run (D18) | |
-| `SaveReplyAsConv: false` | never persists a conversation, never writes `globalScope.json`, never touches a dirscope binding | |
+| `SaveReplyAsConv: false` | never persists a conversation, never writes the previous-query record, never touches a dirscope binding | |
 | `MaxToolCalls: 4` | bounds the validate-and-retry loop: four accepted submissions; the stoploss then refuses three more before the hard stop, so a hostile run makes up to eight tool round trips, and every label costs at least two model calls because the querier ends on a text turn after `accepted` | |
 | `Raw: true`, `Out: io.Discard`, `ErrOut: io.Discard` | nothing reaches the host's stdout or stderr, and an abandoned run never reads a process stream | |
 | `CostWarnf` → `DEBUG_SUMMARY` trace | the cost manager's and enricher's warnings (diagnostics on stderr) never reach the host | |
@@ -227,7 +227,7 @@ Lifecycle (`internal/text/summary_launch.go`, `finalizer.go`):
      the summarizer, then displays the partial answer and persists;
    - otherwise the finalizer **displays** the answer, **joins** the
      summarizer, stamps the result with `Summary.ApplyTo`, and **persists
-     once** — conversation file, index and `globalScope.json` mirror stay
+     once** — conversation file, index and previous-query record stay
      consistent (D21). On a plain query the join never waits: labelling is
      best effort, so a label that has not landed when the answer is done is
      dropped, and `clai chat summarize` fills it in later. A loop iteration
@@ -253,17 +253,17 @@ command's setup, in plain and loop mode, attaches the summarizer through
 `Querier.SetSummarizer`; a constructor error attaches nothing and the run
 proceeds.
 
-### Replies and forks (D20, D28)
+### Replies (D20, D28; supersedes the fork in D20/D28)
 
-A label is generated once and never refreshed on the query path (D3). The
-`globalScope.json` mirror is built by explicit field copy and carries
-`title`, `summary` and `summary_at`. A plain `-re` **forks** a new file (the
-mirror carries `ID: globalScope`, so a fresh id is generated); the `-re`
-branch of `SetupInitialChat` adopts the three fields from the mirror when
-its own chat has no summary, so the fork inherits its parent's label and
-the launcher does not fire. A `-dre` reply continues the bound conversation
-from the full file and keeps its label in place. Both paths append their
-own cost row; neither adds a second `purpose: "summary"` row.
+A label is generated once and never refreshed on the query path (D3). A
+plain `-re` **continues the previous query's conversation in place**: the
+`-re` branch of `SetupInitialChat` resolves the previous-query record
+(`conversations/state/previousQuery.json`), adopts the conversation's id and,
+when its own chat has no summary, its `title`, `summary` and `summary_at`, so
+the file keeps its label and the launcher does not fire. A `-dre` reply
+continues the bound conversation from the full file and keeps its label in
+place. Both paths append their own cost row; neither adds a second
+`purpose: "summary"` row.
 
 An opted-out run (`summarize-conversations: false` without `-summarize`)
 constructs no summarizer at all: query, in plain and loop mode, skips
@@ -298,8 +298,7 @@ injected `NewSummarizer`, then the handler. The handler
 
 1. filters **on the index only** — never opens a file outside the window —
    keeping native rows whose `effectiveUpdated()` is inside the window and
-   whose `summary` is empty (unless `-force`), skipping the `globalScope`
-   row. Un-cloned foreign (Claude Code, Codex, …) rows never enter the
+   whose `summary` is empty (unless `-force`), . Un-cloned foreign (Claude Code, Codex, …) rows never enter the
    index and are not summarized; a cloned foreign chat is a native file and
    is eligible (D15);
 2. prints the count and an upper-bound token estimate
@@ -374,7 +373,7 @@ are pre-existing and shared with the main run; they are not silenced.
   restores. No production code knows about tests. `CLAI_SUMMARIZER=off`
   disables the summarizer for any process.
 - The summarizer never persists a conversation, never writes
-  `globalScope.json`, never touches a dirscope binding, never sets
+  the previous-query record, never touches a dirscope binding, never sets
   `chat.SkipIndex`, starts no ambient MCP server, calls exactly one tool,
   writes nothing to the host's stdout, and alters no other run's
   command-ban policy.

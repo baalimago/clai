@@ -2,7 +2,7 @@
 
 Commands:
 
-- `clai replay` (aliases: `re`) – replay the most recent message from the global previous query (`globalScope.json`).
+- `clai replay` (aliases: `re`) – replay the most recent message from the conversation the previous-query record names (`conversations/state/previousQuery.json`).
 - `clai dre` – replay the most recent message from the *directory-scoped* conversation bound to the current working directory.
 
 These are *display* commands; they don’t call any LLM vendor.
@@ -38,7 +38,8 @@ internal/cli:Run()
 | `internal/chat/cmd.go` | replay + dir-replay commands and `dreQuerier` |
 | `internal/chat/replay.go` | Implements `chat.Replay(raw, dirScoped)` |
 | `internal/chat/dirscope.go` | Directory binding resolution needed for dir-scoped replay |
-| `internal/chat/reply.go` | Stores/loads `globalScope.json` |
+| `internal/chat/previous.go` | The previous-query record: `SavePreviousQuery`, `LoadPreviousQuery`, `MigratePreviousQuery` |
+| `internal/chat/reply.go` | `SaveAsPreviousQuery` (`promote`) and `LoadPrevQuery` |
 | `internal/utils/pretty_print.go` (or similar) | `AttemptPrettyPrint` (glow formatting, raw mode) |
 
 ## What gets replayed
@@ -47,8 +48,8 @@ internal/cli:Run()
 
 `chat.Replay(raw=false, dirScoped=false)`:
 
-1. Loads `<clai-config>/conversations/globalScope.json` via `LoadPrevQuery`, which reads it
-   through `chat.Persister.Load`.
+1. Resolves `<clai-config>/conversations/state/previousQuery.json` via `LoadPrevQuery` and loads the
+   conversation it names through `chat.Persister.Load`.
 2. Selects the last message in the transcript.
 3. Renders its parts one per line: text as is, a stored image as
    `[image <handle>] <absolute asset path>`, a pending legacy image as
@@ -56,7 +57,9 @@ internal/cli:Run()
    `asset.ErrAssetNotFound`. A text-only message prints exactly as before.
 4. Pretty prints it via `utils.AttemptPrettyPrint(..., raw)`.
 
-If `globalScope.json` is missing, `LoadPrevQuery` prints a warning (`no previous query found`) and returns an empty chat.
+With no record, replay warns `no previous query found` and fails with `failed to find any recent reply`.
+`replay` never runs the legacy-mirror migration (it writes nothing); a pre-record install gets its
+record on the first query that follows the upgrade.
 
 ### Directory-scoped replay (`clai dre`)
 
@@ -78,10 +81,10 @@ Both `replay` and `dre` honor `-r/-raw`:
 
 ## Relationship to query reply flags
 
-- `-re` (reply mode) *uses* `globalScope.json` as context for the next query.
+- `-re` (reply mode) continues the conversation the previous-query record names, in place.
 - `-dre` (dir-reply mode) loads the directory-scoped conversation directly
   into `InitialChat` (via `chat.LoadDirScopedContext`), bypassing
-  `globalScope.json` entirely.
+  the previous-query record entirely.
 
 So `replay`/`dre` are for inspection; `-re`/`-dre` are for context selection.
 

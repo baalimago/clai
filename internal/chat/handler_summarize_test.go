@@ -133,7 +133,6 @@ func TestHandleSummarize_selectsWindow(t *testing.T) {
 		{ID: "exact", Created: since},
 		{ID: "older", Created: since.Add(-time.Hour)},
 		{ID: "labelled", Created: since.Add(time.Hour), Summary: "S"},
-		{ID: "globalScope", Created: since.Add(time.Hour)},
 	}
 	ids := func(rows []chatIndexRow) []string {
 		out := make([]string, 0, len(rows))
@@ -156,7 +155,7 @@ func TestHandleSummarize_selectsWindow(t *testing.T) {
 		rows := f.indexRows(t)
 		old := rows["old"]
 		old.Updated = time.Now().Add(-48 * time.Hour)
-		if err := writeChatIndex(f.dir, []chatIndexRow{rows["recent"], old, {ID: "globalScope", Created: time.Now()}}); err != nil {
+		if err := writeChatIndex(f.dir, []chatIndexRow{rows["recent"], old}); err != nil {
 			t.Fatalf("writeChatIndex: %v", err)
 		}
 		if err := f.h.handleSummarize(context.Background()); err != nil {

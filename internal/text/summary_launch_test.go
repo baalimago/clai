@@ -228,9 +228,7 @@ func TestQuery_launchConditions(t *testing.T) {
 			return launchQuerier(t, f, labelled)
 		}, false},
 		{"-dre continuation of an unlabelled pre-feature chat", func(t *testing.T, f *fakeSummarizer) *Querier[*MockQuerier] {
-			q := launchQuerier(t, f, preFeature)
-			q.replyMode, q.dirReplyMode = true, true
-			return q
+			return launchQuerier(t, f, preFeature)
 		}, true},
 		{"summarize-conversations false", func(t *testing.T, f *fakeSummarizer) *Querier[*MockQuerier] {
 			q := launchQuerier(t, f, newChat("off"))

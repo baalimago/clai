@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -13,7 +14,7 @@ import (
 func TestSaveAsPreviousQuery_PreservesQueries(t *testing.T) {
 	confDir := t.TempDir()
 	chat := pub_models.Chat{
-		ID:      "globalScope",
+		ID:      "chat-a",
 		Created: time.Now(),
 		Messages: []pub_models.Message{
 			{Role: "system", Content: "sys"},
@@ -49,11 +50,12 @@ func TestSaveAsPreviousQuery_PreservesQueries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadDir(conversations): %v", err)
 	}
-	foundConversation := false
+	conversations := 0
 	for _, entry := range entries {
-		if entry.IsDir() || entry.Name() == "globalScope.json" || filepath.Ext(entry.Name()) != ".json" {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
 			continue
 		}
+		conversations++
 		conv, err := FromPath(context.Background(), filepath.Join(confDir, "conversations", entry.Name()))
 		if err != nil {
 			t.Fatalf("load saved conversation %q: %v", entry.Name(), err)
@@ -64,10 +66,9 @@ func TestSaveAsPreviousQuery_PreservesQueries(t *testing.T) {
 		if conv.RecentTokenUsage == nil || conv.RecentTokenUsage.TotalTokens != 7 {
 			t.Fatalf("conversation recent token usage mismatch: got %+v", conv.RecentTokenUsage)
 		}
-		foundConversation = true
 	}
-	if !foundConversation {
-		t.Fatalf("expected a persisted conversation besides globalScope")
+	if conversations != 1 {
+		t.Fatalf("expected exactly one persisted conversation, got %d", conversations)
 	}
 }
 
@@ -97,7 +98,7 @@ func TestSaveAsPreviousQuery_DoesNotCreateDuplicateConversationForExistingChat(t
 
 	var conversationFiles []string
 	for _, entry := range entries {
-		if entry.IsDir() || entry.Name() == "globalScope.json" || filepath.Ext(entry.Name()) != ".json" {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
 			continue
 		}
 		conversationFiles = append(conversationFiles, entry.Name())
@@ -143,20 +144,20 @@ func TestSave_roundTripsTitleSummary(t *testing.T) {
 	assertLabelled(t, got, want)
 }
 
-func TestSaveAsPreviousQuery_mirrorCarriesFields(t *testing.T) {
+func TestSaveAsPreviousQuery_replyCarriesFields(t *testing.T) {
 	confDir := t.TempDir()
 	want := labelledChat("source", pub_models.Message{Role: "user", Content: "hi"}, pub_models.Message{Role: "assistant", Content: "yo"})
 	if err := SaveAsPreviousQuery(context.Background(), confDir, want); err != nil {
 		t.Fatalf("SaveAsPreviousQuery: %v", err)
 	}
-	mirror, err := LoadPrevQuery(context.Background(), confDir)
+	prev, err := LoadPreviousQuery(context.Background(), confDir)
 	if err != nil {
-		t.Fatalf("LoadPrevQuery: %v", err)
+		t.Fatalf("LoadPreviousQuery: %v", err)
 	}
-	if mirror.ID != globalScopeChatID {
-		t.Fatalf("mirror id = %q", mirror.ID)
+	if prev.Chat.ID != want.ID {
+		t.Fatalf("reply chat id = %q, want %q", prev.Chat.ID, want.ID)
 	}
-	assertLabelled(t, mirror, want)
+	assertLabelled(t, prev.Chat, want)
 }
 
 func TestSaveAsPreviousQuery_promotionCarriesFields(t *testing.T) {
@@ -174,10 +175,12 @@ func TestSaveAsPreviousQuery_promotionCarriesFields(t *testing.T) {
 		t.Fatalf("ReadDir: %v", err)
 	}
 	promoted := 0
+	promotedFile := ""
 	for _, entry := range entries {
-		if entry.IsDir() || entry.Name() == "globalScope.json" || filepath.Ext(entry.Name()) != ".json" {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
 			continue
 		}
+		promotedFile = entry.Name()
 		got, err := FromPath(context.Background(), filepath.Join(confDir, "conversations", entry.Name()))
 		if err != nil {
 			t.Fatalf("FromPath(%q): %v", entry.Name(), err)
@@ -187,5 +190,49 @@ func TestSaveAsPreviousQuery_promotionCarriesFields(t *testing.T) {
 	}
 	if promoted != 1 {
 		t.Fatalf("expected exactly one promoted conversation, got %d", promoted)
+	}
+	prev, err := LoadPreviousQuery(context.Background(), confDir)
+	if err != nil {
+		t.Fatalf("LoadPreviousQuery: %v", err)
+	}
+	if prev.Chat.ID+".json" != promotedFile {
+		t.Fatalf("record names %q, want the promoted conversation %q", prev.Chat.ID, promotedFile)
+	}
+}
+
+func Test_promote_freshChatEndingOnUserPrompt(t *testing.T) {
+	prompt := pub_models.Chat{Messages: []pub_models.Message{
+		{Role: "system", Content: "sys"},
+		{Role: "user", Content: "unanswered"},
+	}}
+	tests := []struct {
+		name    string
+		outcome RunOutcome
+		saved   bool
+	}{
+		{name: "failed before an answer is saved", outcome: RunFailedBeforeAnswer, saved: true},
+		{name: "not a failed run stores nothing", outcome: RunAnswered},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			confDir := t.TempDir()
+			p := NewPersister(confDir, convAssetStore(conversationsDir(confDir)))
+			if _, err := p.Promote(context.Background(), prompt, tc.outcome); err != nil {
+				t.Fatalf("Promote: %v", err)
+			}
+			prev, err := LoadPreviousQuery(context.Background(), confDir)
+			if !tc.saved {
+				if !errors.Is(err, ErrNoPreviousQuery) {
+					t.Fatalf("LoadPreviousQuery err = %v, want ErrNoPreviousQuery", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("LoadPreviousQuery: %v", err)
+			}
+			if got := prev.Chat.Messages; len(got) != 2 || got[1].Content != "unanswered" {
+				t.Fatalf("previous query messages = %+v, want the prompt", got)
+			}
+		})
 	}
 }

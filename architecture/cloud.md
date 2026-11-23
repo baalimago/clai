@@ -37,6 +37,7 @@ for the login).
 | `internal/cloud/sync/progress.go` | `Progress` and `Phase` (reported through `Engine.Progress`), `uploadMissing` and `packUploads` (small files batched, 8 requests at once), `BlobRefusedError`, `checkBilling`, `BillingBlockedError` |
 | `internal/cloud/sync/download.go` | `applyAll`'s helpers: `pullWindows` (64 MB at a time), `needed`, `prefetch` (bundles of up to 250 files, 8 at once), `blobCache`, which `Engine.fetch` reads first |
 | `internal/cloud/sync/pack.go` | `pack`: groups files into requests smallest first, a large file alone, largest request first; used by uploads and downloads |
+| `internal/cloud/sync/conversation.go` | `Engine.PullConversation`: the one-conversation pull behind `cc:<chatID>`; `ConversationPuller`, `ConversationPull`, `ConversationOutcome` |
 | `internal/cloud/sync/resolve.go`, `diff.go`, `status.go`, `merge.go` | `Resolve`, `Diff`, `Status`/`Log`, the conversation merge and fork |
 | `internal/cloud/cloudcmd/` | `Command`: the subcommands (`login`, `logout`, `whoami`, `status`, `diff`, `pull`, `commit`, `resolve`, `log`) and their output; `publish` stays callable as a hidden alias, because `clai config publish` is the documented spelling; `ExitDecisionNeeded` |
 | `internal/profiles/models.go` | `PublishInteractive` walks `clai config publish [kind [name [mode]]]`: each argument given picks its level (kind, item, then an alias's mode: `text`, `photo`, `audio` or its index), each one missing is asked in a selector. `HubKindNames` and `KindsCarrying` let `config publish` infer a bare name's kind. `PublishAlias` publishes one mode config's alias to `/api/v1/hub`; an alias in several mode configs with no mode and no input is an `AmbiguousAliasError` |
@@ -46,7 +47,8 @@ for the login).
 | `internal/cloud/cloudcmd/look.go` | the lines of every other command: login, whoami, pull and its first-pull question (`firstPullChoices`, `parseChoice`), conflicts, a refused commit, resolve, log, diff |
 | `internal/cloud/cloudtest/` | An in-memory clai.chat for tests |
 | `internal/chat/imported.go` | `PendingForeign` (the preview), `ExportForeign` (8 at once, manifest checkpointed), `importedReader`, `ReindexPulled` (256 at a time, read 8 at once, with progress) |
-| `internal/cli/cli.go` | Wires the command, its hooks and the exit-4 seam |
+| `internal/chat/cloud_resolver.go` | `NewCloudResolver`: `chat continue\|fork cc:<chatID>` over `PullConversation`, the P8 error and the adoption notices |
+| `internal/cli/cli.go` | Wires the command, its hooks (`syncHooks`, shared with the `cc:` resolver) and the exit-4 seam |
 
 ## Flow
 
@@ -109,6 +111,22 @@ log      GET stores/<s>/log?limit=
   stays. Copies with the same messages that differ elsewhere (a title) take
   the server's and trash this machine's. A server copy that is not a chat
   becomes a conflict, so one broken file never stops a pull.
+- **`cc:<chatID>` takes one conversation.** `clai chat continue cc:X` and
+  `clai chat fork cc:X <prompt>` (`Engine.PullConversation`) page the store's
+  full change list, fetch only `X`'s chat file, reasoning sidecar and images,
+  and merge with the local `X` the way `pull` does, except that the cloud copy
+  keeps the ID. No local `X`: the cloud copy is written (Adopted). The same
+  messages: Unchanged, with no notice; a local copy that differs elsewhere (a
+  title) goes to `cloud/trash/` and the cloud copy is written. Local messages are a prefix of the cloud's: the local file goes to
+  `cloud/trash/` (Replaced). Local messages the cloud lacks: the local copy is
+  saved whole under a new ID as a fork of `X`, its `Created` the first query
+  the cloud copy lacks so its spend counts once in the group, then the cloud
+  copy is written (LocalForked). Each outcome but Unchanged prints one notice on
+  stderr. The pull records `X`'s base in `cloud/state/` and the chat index
+  follows through the `Pulled` hook, so afterwards `X.json` holds the server's
+  bytes and `clai cloud pull` has nothing to do for it. Nothing is uploaded; a
+  fork it leaves is committed like any new chat. A conversation missing from
+  the store is an error naming `clai chat continue X`.
 - **Symlinks are left alone.** A scan does not follow a symbolic link below
   the config dir (the config dir itself may be one), so a pull never writes
   through one and a commit never reads its absence as a delete.

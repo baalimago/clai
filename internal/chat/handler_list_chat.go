@@ -272,11 +272,14 @@ type chatListRow struct {
 	OriginDir string
 
 	// Display
-	Profile          string
-	Model            string
-	MessageCount     int
-	TotalTokens      int
-	TotalCostUSD     float64
+	Profile      string
+	Model        string
+	MessageCount int
+	TotalTokens  int
+	TotalCostUSD float64
+	// OwnTotalTokens and OwnTotalCostUSD are the row's own spend (I10); a group row totals them.
+	OwnTotalTokens   int
+	OwnTotalCostUSD  float64
 	FirstUserMessage string
 	Title            string
 	Summary          string
@@ -284,6 +287,8 @@ type chatListRow struct {
 	GroupKey string
 	// GroupMemberCount is populated only for group rows (Kind == chatRowGroup).
 	GroupMemberCount int
+	// GroupMemberIDs lists the native members' chat IDs of a group row.
+	GroupMemberIDs []string
 }
 
 func (r chatListRow) displaySource() string {
@@ -437,6 +442,8 @@ func (cq *ChatHandler) buildChatListRows(ctx context.Context, paginator *ChatInd
 			MessageCount:     r.MessageCount,
 			TotalTokens:      r.TotalTokens,
 			TotalCostUSD:     r.TotalCostUSD,
+			OwnTotalTokens:   r.OwnTotalTokens,
+			OwnTotalCostUSD:  r.OwnTotalCostUSD,
 			FirstUserMessage: r.FirstUserMessage,
 			Title:            r.Title,
 			Summary:          r.Summary,
@@ -630,11 +637,6 @@ func collapseGroupRows(rows []chatListRow) []chatListRow {
 		if r.GroupKey == "" {
 			continue
 		}
-		// The globalScope mirror shares the newest conversation's GroupKey;
-		// grouping it would double-count that conversation's aggregates.
-		if r.ChatID == globalScopeChatID {
-			continue
-		}
 		groups[r.GroupKey] = append(groups[r.GroupKey], i)
 	}
 
@@ -682,12 +684,14 @@ func buildGroupRow(rows []chatListRow, members []int, groupKey string) chatListR
 	var totalTokens int
 	var totalCost float64
 	var totalMessages int
+	var memberIDs []string
 	for _, idx := range members {
 		r := rows[idx]
 		totalMessages += r.MessageCount
 		if r.Kind == chatRowNative {
-			totalTokens += r.TotalTokens
-			totalCost += r.TotalCostUSD
+			totalTokens += r.OwnTotalTokens
+			totalCost += r.OwnTotalCostUSD
+			memberIDs = append(memberIDs, r.ChatID)
 		}
 	}
 
@@ -724,6 +728,7 @@ func buildGroupRow(rows []chatListRow, members []int, groupKey string) chatListR
 		Summary:          newest.Summary,
 		GroupKey:         groupKey,
 		GroupMemberCount: len(members),
+		GroupMemberIDs:   memberIDs,
 	}
 }
 
@@ -731,7 +736,7 @@ func buildGroupRow(rows []chatListRow, members []int, groupKey string) chatListR
 func filterRowsByGroupKey(rows []chatListRow, groupKey string) []chatListRow {
 	out := make([]chatListRow, 0, len(rows))
 	for _, r := range rows {
-		if r.GroupKey == groupKey && r.Kind != chatRowGroup && r.ChatID != globalScopeChatID {
+		if r.GroupKey == groupKey && r.Kind != chatRowGroup {
 			out = append(out, r)
 		}
 	}
@@ -742,7 +747,7 @@ func filterRowsByGroupKey(rows []chatListRow, groupKey string) []chatListRow {
 // the current working directory, plus the wd it was anchored to. Native rows
 // belong when their chat_id is bound to the directory (head + history) or
 // their conversation originated in it; foreign rows when their recorded origin
-// directory is the current directory. The globalScope mirror never belongs: it
+// directory is the current directory. A legacy globalScope mirror never belongs: it
 // duplicates another conversation and carries no directory history of its own.
 //
 // The binding snapshot is taken once at construction. That is safe for a list
@@ -779,9 +784,6 @@ func (cq *ChatHandler) dirScopeRowPredicate() (func(chatListRow) bool, string, b
 	return func(r chatListRow) bool {
 		switch r.Kind {
 		case chatRowNative:
-			if r.ChatID == globalScopeChatID {
-				return false
-			}
 			if _, in := ids[r.ChatID]; in {
 				return true
 			}
@@ -890,6 +892,7 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 		}()
 	}
 	inDir, _, hasDirFilter := cq.dirScopeRowPredicate()
+	prevState := previousQueryStateFor(ctx, cq.confDir)
 	dirFilterOn := false
 	// External conversations show by default; [f] hides them for the
 	// rest of the list session. The button is offered only when a source
@@ -979,7 +982,13 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 			})
 		}
 
+		if writeErr := cq.writePreviousQueryLine(prevState, pr.rows, groupKey != ""); writeErr != nil {
+			return writeErr
+		}
 		selectedNumbers, shownPage, err := tb.Run()
+		if clearErr := cq.clearPreviousQueryLine(prevState, pr.rows, groupKey != ""); clearErr != nil {
+			return clearErr
+		}
 		if groupKey != "" {
 			groupPage = shownPage
 		} else {

@@ -33,6 +33,8 @@ type CommandDeps struct {
 	// SendPrompt sends the prompt `chat continue <chat> <prompt>` carries to
 	// that chat. Nil only previews it.
 	SendPrompt func(ctx context.Context, req ContinueRequest) error
+	// CloudResolver builds the resolver of cc:<chatID> references; nil refuses them.
+	CloudResolver func(ctx context.Context, confDir string) (CloudResolver, error)
 }
 
 // ContinueRequest is one prompt for the conversation ChatID names. Profile
@@ -56,7 +58,7 @@ func Command(deps CommandDeps) *internal.Command {
 	cf := &internal.ChatFlags{}
 	c := &internal.Command{
 		Name: "chat",
-		Desc: "Manage chats: continue|delete|list|dir|dirv2|summarize|help",
+		Desc: "Manage chats: continue|fork|delete|list|dir|dirv2|summarize|help",
 		HelpText: `chat <subcommand> [args]. Manages stored conversations. Run
 'clai chat help' for detailed subcommand docs.
 
@@ -98,11 +100,26 @@ Examples:
 				"A prompt goes to the chat the ID or index names, whatever the directory\n"+
 				"is bound to. The query flags go after continue and before the chat, and\n"+
 				"apply to the run that sends the prompt; a -prp among them wins over the\n"+
-				"profile stamped on the chat. -reply-only omits the preview, with or without\n"+
+				"profile stamped on the chat. cc:<chatID> names the copy of a chat on\n"+
+				"clai.chat; the cloud copy keeps the ID, a local copy with extra messages\n"+
+				"is kept as a new chat, and a shorter one goes to cloud/trash/.\n"+
+				"-reply-only omits the preview, with or without\n"+
 				"a prompt.\n"+
 				"Under -json only the run's records are\n"+
 				"written, its chat record naming the chat:\n"+
 				"  clai -json chat continue -reply-only -n -prp cchub:a/b#sha256=<hex> -cm <model> <id> <prompt>",
+			withQuery, fullChatSetup(deps, cf, &qf)),
+		"fork|f": chatSub(sources, cf, "fork", "Send a prompt to a copy of an existing chat, leaving the chat as it was",
+			"  clai c f 0 add a test for the empty case\n  clai chat fork -cm gpt-5 my-chat-id try the other approach\n"+
+				"  clai c f cc:<chatID> go another way  # fork the clai.chat copy\n\n"+
+				"The copy carries the whole conversation and runs on the profile's model, as\n"+
+				"chat continue does; repeat the flags that shape the request (-cm, -t, -lb)\n"+
+				"to fork a chat that was run with them.\n"+
+				"The prompt is required. The query flags go after\n"+
+				"fork and before the chat. cc:<chatID> names the copy of a chat on clai.chat;\n"+
+				"the cloud copy keeps the ID, a local copy with extra messages is kept as\n"+
+				"a new chat, and a shorter one goes to cloud/trash/.\n"+
+				"The chat stays as it was, and the new chat's ID is reported on stderr.",
 			withQuery, fullChatSetup(deps, cf, &qf)),
 		"delete|d": chatSub(sources, cf, "delete", "Delete the chat with the given chat ID or index",
 			"  clai c d 0\n  clai chat delete my-chat-id",
@@ -164,6 +181,7 @@ func fullChatSetup(deps CommandDeps, cf *internal.ChatFlags, qf *internal.Contin
 			return err
 		}
 		h.sendPrompt = deps.SendPrompt
+		h.cloudResolver = deps.CloudResolver
 		if qf != nil {
 			h.queryFlags = qf.Tokens(c.Flagset())
 			h.replyOnly = qf.ReplyOnly()

@@ -29,7 +29,7 @@ tries in its place. Each mode's config carries its own table under
 {
   "model": "strong",
   "model-aliases": {
-    "strong": ["claude-sonnet-5-5", "gpt-5.2", "gemini-3.6-flash"]
+    "strong": ["claude-opus-5-5", "gpt-6.2-astra", "gemini-3.8-flash"]
   }
 }
 ```
@@ -101,7 +101,7 @@ A chain that fails completely returns `*retry.ChainError`, which reports every
 attempt in run order:
 
 ```text
-claude-sonnet-5-5: model not found; gpt-5.2: likely insufficient credits
+claude-opus-5-5: model not found; gpt-6.2-astra: likely insufficient credits
 ```
 
 Each entry carries the provider's own facts (status, provider code, message),
@@ -184,7 +184,7 @@ reads stdout sees the same bytes as before. The line is clai's shared look
 terminal and plain in a pipe:
 
 ```text
-▸ model gpt-5.2 unavailable · likely insufficient credits · trying gemini-3.6-flash
+▸ model gpt-6.2-astra unavailable · likely insufficient credits · trying gemini-3.8-flash
 ```
 
 The reason is one phrase, never the provider's prose: the `claierr` meaning when

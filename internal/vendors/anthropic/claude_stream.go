@@ -407,6 +407,7 @@ func (c *Claude) constructRequest(ctx context.Context, chat pub_models.Chat) (*h
 		TopP:          c.TopP,
 		TopK:          c.TopK,
 		StopSequences: c.StopSequences,
+		CacheControl:  ephemeralCache(),
 	}
 	if !c.omitsTemperature() {
 		reqData.Temperature = c.Temperature

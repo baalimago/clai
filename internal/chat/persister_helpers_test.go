@@ -65,9 +65,14 @@ func textOnlyChats() (plain, tools pub_models.Chat) {
 
 var snapshotCreatedLine = regexp.MustCompile(`(?m)^  "created": "[^"]*",$`)
 
+// snapshotUpdatedField zeroes the previous-query record's write time, which is
+// the only wall-clock field in its single-line body.
+var snapshotUpdatedField = regexp.MustCompile(`"updated":"[^"]*"`)
+
 // snapshotConvDir renders every file under convDir, sorted by path. A promoted
 // conversation's random id becomes <promoted>, and the wall-clock fields
-// (index Updated, the Created of globalScope and the promoted copy) are zeroed.
+// (index Updated, the previous-query record's updated and the promoted copy's
+// Created) are zeroed.
 func snapshotConvDir(t *testing.T, convDir string, fixtureIDs ...string) string {
 	t.Helper()
 	files := map[string][]byte{}
@@ -90,15 +95,21 @@ func snapshotConvDir(t *testing.T, convDir string, fixtureIDs ...string) string 
 		t.Fatalf("walk %s: %v", convDir, err)
 	}
 	promoted := promotedID(files, fixtureIDs)
+	recordRel := ""
+	if rel, err := filepath.Rel(convDir, PreviousQueryPath(filepath.Dir(convDir))); err == nil {
+		recordRel = filepath.ToSlash(rel)
+	}
 	var b strings.Builder
 	for _, name := range slices.Sorted(maps.Keys(files)) {
 		data := files[name]
-		volatile := name == globalScopeFile || (promoted != "" && name == promoted+".json")
+		volatile := name == recordRel || (promoted != "" && name == promoted+".json")
 		switch {
 		case name == chatIndexJournalName || name == chatIndexCompactingName:
 			continue
 		case name == chatIndexFileName:
 			data = normalizedIndex(t, mergedIndexBytes(t, convDir), fixtureIDs)
+		case name == recordRel:
+			data = snapshotUpdatedField.ReplaceAll(data, []byte(`"updated":"<now>"`))
 		case volatile:
 			data = snapshotCreatedLine.ReplaceAll(data, []byte(`  "created": "<now>",`))
 		}
@@ -116,7 +127,7 @@ func snapshotConvDir(t *testing.T, convDir string, fixtureIDs ...string) string 
 func promotedID(files map[string][]byte, fixtureIDs []string) string {
 	for name := range files {
 		id, ok := strings.CutSuffix(name, ".json")
-		if !ok || strings.Contains(name, "/") || id == globalScopeChatID || slices.Contains(fixtureIDs, id) {
+		if !ok || strings.Contains(name, "/") || slices.Contains(fixtureIDs, id) {
 			continue
 		}
 		return id
@@ -151,6 +162,24 @@ func readGolden(t *testing.T, name string) string {
 		t.Fatalf("read golden %s: %v", name, err)
 	}
 	return string(b)
+}
+
+// assertGolden compares rendered files against a golden, or rewrites the golden
+// when GOLDEN_UPDATE=1 (the deliberate way to record an intended change).
+func assertGolden(t *testing.T, name, got string) {
+	t.Helper()
+	if os.Getenv("GOLDEN_UPDATE") == "1" {
+		if err := os.MkdirAll(textOnlyGoldenDir, 0o755); err != nil {
+			t.Fatalf("MkdirAll(golden dir): %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(textOnlyGoldenDir, name), []byte(got), 0o644); err != nil {
+			t.Fatalf("write golden %s: %v", name, err)
+		}
+		return
+	}
+	if want := readGolden(t, name); got != want {
+		t.Fatalf("%s differs:\n%s", name, got)
+	}
 }
 
 // mergedIndexBytes encodes the index as readers see it, cache plus journal,

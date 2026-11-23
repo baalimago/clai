@@ -45,7 +45,7 @@ func chdirToTemp(t *testing.T) string {
 // TestDirScopeRowPredicate covers acceptance #13: the predicate keeps exactly
 // the rows belonging to the directory — native rows bound to it (head +
 // history) or originating in it, foreign rows originating in it — and never
-// the globalScope mirror.
+// a legacy globalScope mirror.
 func TestDirScopeRowPredicate(t *testing.T) {
 	cq, confDir := newTestHandler(t)
 	wd := chdirToTemp(t)
@@ -78,9 +78,6 @@ func TestDirScopeRowPredicate(t *testing.T) {
 	if !inDir(chatListRow{Kind: chatRowNative, ChatID: "unbound-but-local", OriginDir: wd}) {
 		t.Fatal("predicate should keep an unbound native chat originating in the current directory")
 	}
-	if inDir(chatListRow{Kind: chatRowNative, ChatID: globalScopeChatID, OriginDir: wd}) {
-		t.Fatal("predicate should always drop the globalScope mirror")
-	}
 	if !inDir(chatListRow{Kind: chatRowForeign, Source: "claude-code", SourceID: "s1", OriginDir: wd}) {
 		t.Fatal("predicate should keep a foreign row originating in the current directory")
 	}
@@ -111,8 +108,8 @@ func TestPrepareListRows_DirScopedGroups(t *testing.T) {
 	}
 
 	allRows := []chatListRow{
-		{Kind: chatRowNative, ChatID: "bound", GroupKey: "gk-in", MessageCount: 2, TotalTokens: 10},
-		{Kind: chatRowNative, ChatID: "bound2", GroupKey: "gk-in", MessageCount: 3, TotalTokens: 5},
+		{Kind: chatRowNative, ChatID: "bound", GroupKey: "gk-in", MessageCount: 2, TotalTokens: 10, OwnTotalTokens: 10},
+		{Kind: chatRowNative, ChatID: "bound2", GroupKey: "gk-in", MessageCount: 3, TotalTokens: 5, OwnTotalTokens: 5},
 		{Kind: chatRowNative, ChatID: "unbound", GroupKey: "gk-in", MessageCount: 100},
 		{Kind: chatRowForeign, Source: "pi", SourceID: "p1", OriginDir: "/somewhere/else", GroupKey: "gk-out"},
 		{Kind: chatRowNative, ChatID: "also-unbound", GroupKey: "gk-out"},
@@ -768,12 +765,12 @@ func TestCollapseGroupRows_BasicGrouping(t *testing.T) {
 		{
 			Kind: chatRowNative, Created: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
 			ChatID: "a", FirstUserMessage: "fix the auth bug", GroupKey: gk,
-			Profile: "default", Model: "gpt-5", MessageCount: 5, TotalTokens: 100, TotalCostUSD: 1.23,
+			Profile: "default", Model: "gpt-5", MessageCount: 5, TotalTokens: 100, TotalCostUSD: 1.23, OwnTotalTokens: 100, OwnTotalCostUSD: 1.23,
 		},
 		{
 			Kind: chatRowNative, Created: time.Date(2026, 1, 2, 3, 4, 4, 0, time.UTC),
 			ChatID: "b", FirstUserMessage: "fix the auth bug", GroupKey: gk,
-			Profile: "default", Model: "gpt-5", MessageCount: 3, TotalTokens: 60, TotalCostUSD: 0.50,
+			Profile: "default", Model: "gpt-5", MessageCount: 3, TotalTokens: 60, TotalCostUSD: 0.50, OwnTotalTokens: 60, OwnTotalCostUSD: 0.50,
 		},
 		{
 			Kind: chatRowNative, Created: time.Date(2026, 1, 2, 3, 4, 3, 0, time.UTC),
@@ -825,31 +822,6 @@ func TestCollapseGroupRows_EmptyGroupKeyNeverGrouped(t *testing.T) {
 		if r.Kind == chatRowGroup {
 			t.Fatalf("collapseGroupRows[%d]: unexpected group row with empty GroupKey: %+v", i, r)
 		}
-	}
-}
-
-// TestCollapseGroupRows_GlobalScopeMirrorNeverGrouped verifies the globalScope
-// mirror (which shares the newest conversation's GroupKey) is excluded from
-// grouping, so aggregates are not double-counted and no phantom group forms.
-func TestCollapseGroupRows_GlobalScopeMirrorNeverGrouped(t *testing.T) {
-	gk := ComputeGroupKeyFromText("latest prompt")
-	rows := []chatListRow{
-		{Kind: chatRowNative, Created: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC), ChatID: globalScopeChatID, FirstUserMessage: "latest prompt", GroupKey: gk, MessageCount: 4},
-		{Kind: chatRowNative, Created: time.Date(2026, 1, 2, 3, 4, 4, 0, time.UTC), ChatID: "real", FirstUserMessage: "latest prompt", GroupKey: gk, MessageCount: 4},
-	}
-	got := collapseGroupRows(rows)
-	if len(got) != 2 {
-		t.Fatalf("expected 2 ungrouped rows (mirror excluded), got %d", len(got))
-	}
-	for i, r := range got {
-		if r.Kind == chatRowGroup {
-			t.Fatalf("row %d: globalScope mirror formed a group: %+v", i, r)
-		}
-	}
-	// Entering a group must never surface the mirror either.
-	members := filterRowsByGroupKey(rows, gk)
-	if len(members) != 1 || members[0].ChatID != "real" {
-		t.Fatalf("expected only the real conversation as group member, got %+v", members)
 	}
 }
 

@@ -148,7 +148,7 @@ func buildRequest(ctx context.Context, deps CommandDeps, f *Flags, pConf Configu
 
 func withReply(ctx context.Context, deps CommandDeps, req imagegen.ImageRequest, confDir string) (imagegen.ImageRequest, error) {
 	prev, err := chat.LoadPrevQuery(ctx, confDir)
-	if err != nil {
+	if err != nil && !errors.Is(err, chat.ErrNoPreviousQuery) {
 		return imagegen.ImageRequest{}, diag.Errorf("failed to load previous query: %w", err)
 	}
 	replyContext, err := generic.ReplyContext(prev.Messages)

@@ -183,7 +183,7 @@ func Test_goldenFile_CHAT_DIRSCOPED(t *testing.T) {
 			continue
 		}
 		name := e.Name()
-		if strings.HasSuffix(name, ".json") && name != "globalScope.json" {
+		if strings.HasSuffix(name, ".json") {
 			convFiles = append(convFiles, filepath.Join(convDir, name))
 		}
 	}
@@ -385,7 +385,7 @@ func Test_e2e_same_prompt_twice_creates_two_separate_chats(t *testing.T) {
 			continue
 		}
 		name := entry.Name()
-		if !strings.HasSuffix(name, ".json") || name == "globalScope.json" {
+		if !strings.HasSuffix(name, ".json") {
 			continue
 		}
 		chatFiles = append(chatFiles, name)
@@ -420,7 +420,7 @@ func Test_e2e_newly_saved_conversation_has_created_timestamp(t *testing.T) {
 			continue
 		}
 		name := entry.Name()
-		if !strings.HasSuffix(name, ".json") || name == "globalScope.json" {
+		if !strings.HasSuffix(name, ".json") {
 			continue
 		}
 		conversationPath = filepath.Join(confDir, "conversations", name)
@@ -545,7 +545,7 @@ func Test_e2e_dre_queries_continue_directory_scoped_conversation(t *testing.T) {
 		if entry.IsDir() {
 			continue
 		}
-		if !strings.HasSuffix(entry.Name(), ".json") || entry.Name() == "globalScope.json" || strings.HasPrefix(entry.Name(), "chat_index.") {
+		if !strings.HasSuffix(entry.Name(), ".json") || strings.HasPrefix(entry.Name(), "chat_index.") {
 			continue
 		}
 		conversationFiles = append(conversationFiles, filepath.Join(confDir, "conversations", entry.Name()))
@@ -693,7 +693,7 @@ func Test_e2e_dre_profile_swap_does_not_create_new_conversation(t *testing.T) {
 		if entry.IsDir() {
 			continue
 		}
-		if !strings.HasSuffix(entry.Name(), ".json") || entry.Name() == "globalScope.json" || strings.HasPrefix(entry.Name(), "chat_index.") {
+		if !strings.HasSuffix(entry.Name(), ".json") || strings.HasPrefix(entry.Name(), "chat_index.") {
 			continue
 		}
 		conversationFiles = append(conversationFiles, filepath.Join(confDir, "conversations", entry.Name()))
@@ -718,16 +718,12 @@ func Test_e2e_dre_profile_swap_does_not_create_new_conversation(t *testing.T) {
 	if persisted.Profile != "third" {
 		t.Fatalf("expected persisted conversation profile %q, got %q", "third", persisted.Profile)
 	}
-	globalScopeBytes, err := os.ReadFile(filepath.Join(confDir, "conversations", "globalScope.json"))
+	prev, err := chat.LoadPreviousQuery(context.Background(), confDir)
 	if err != nil {
-		t.Fatalf("ReadFile(globalScope.json): %v", err)
+		t.Fatalf("LoadPreviousQuery: %v", err)
 	}
-	var globalScope models.Chat
-	if err := json.Unmarshal(globalScopeBytes, &globalScope); err != nil {
-		t.Fatalf("Unmarshal(globalScope.json): %v", err)
-	}
-	if globalScope.Profile != "third" {
-		t.Fatalf("expected globalScope profile %q, got %q", "third", globalScope.Profile)
+	if prev.Chat.ID != initialChatID || prev.Chat.Profile != "third" {
+		t.Fatalf("previous query = %q profile %q, want %q profile %q", prev.Chat.ID, prev.Chat.Profile, initialChatID, "third")
 	}
 
 	var userMessages []string
@@ -744,6 +740,6 @@ func Test_e2e_dre_profile_swap_does_not_create_new_conversation(t *testing.T) {
 		"follow-up two",
 	}
 	if !slices.Equal(userMessages, wantMessages) {
-		t.Fatalf("expected user messages %v in single persisted conversation, got %v; globalScopeProfile=%q globalScopeID=%q", wantMessages, userMessages, globalScope.Profile, globalScope.ID)
+		t.Fatalf("expected user messages %v in single persisted conversation, got %v", wantMessages, userMessages)
 	}
 }

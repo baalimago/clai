@@ -424,7 +424,7 @@ func TestModelAlias_CorruptPhotoConfigFailsWithoutFallback(t *testing.T) {
 // TestModelAlias_ReplyModeUnavailableChainLeavesConversationIntact pins that
 // when a -re query fails because the alias candidates are unavailable before
 // producing output, it does not mint an unanswered conversation file or
-// overwrite globalScope.json.
+// touch the previous-query record.
 func TestModelAlias_ReplyModeUnavailableChainLeavesConversationIntact(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
@@ -448,7 +448,7 @@ func TestModelAlias_ReplyModeUnavailableChainLeavesConversationIntact(t *testing
 		t.Fatalf("WriteFile(model config): %v", err)
 	}
 
-	// Seed a first turn in globalScope.json.
+	// Seed a first turn.
 	var status int
 	e2etest.CaptureStdoutStderr(t, func() {
 		status = harness.Run([]string{"-r", "-cm", "test", "query", "first", "turn"})
@@ -471,7 +471,7 @@ func TestModelAlias_ReplyModeUnavailableChainLeavesConversationIntact(t *testing
 	}
 	var promoted []string
 	for _, entry := range entries {
-		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".json") && entry.Name() != "globalScope.json" {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".json") {
 			promoted = append(promoted, entry.Name())
 		}
 	}

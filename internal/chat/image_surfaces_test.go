@@ -74,13 +74,16 @@ func TestReplay_printsStoredImagePath(t *testing.T) {
 	}
 	t.Setenv("CLAI_CONFIG_DIR", confDir)
 	data := testPNG(t, 4)
-	saved := storedImageChat(t, confDir, globalScopeChatID, data,
+	saved := storedImageChat(t, confDir, "image-chat", data,
 		pub_models.Message{Role: "user", Content: "draw"},
 		pub_models.Message{Role: "assistant", Parts: []pub_models.Part{
 			pub_models.TextPart{Text: "done"},
 			pub_models.ImagePart{MIME: "image/png", Origin: pub_models.OriginGenerated, Data: data},
 		}},
 	)
+	if err := SavePreviousQuery(procenv.Context(context.Background()), confDir, saved.ID, time.Now()); err != nil {
+		t.Fatalf("SavePreviousQuery: %v", err)
+	}
 	ref := saved.Messages[1].Parts[1].(pub_models.ImagePart).Asset
 
 	var replayErr error
@@ -96,7 +99,7 @@ func TestReplay_printsStoredImagePath(t *testing.T) {
 	}
 }
 
-func TestLoadGlobalScope_legacyImageThroughPersister(t *testing.T) {
+func TestLoadPreviousQuery_legacyImageThroughPersister(t *testing.T) {
 	confDir := t.TempDir()
 	convDir := conversationsDir(confDir)
 	if err := os.MkdirAll(convDir, 0o755); err != nil {
@@ -104,7 +107,7 @@ func TestLoadGlobalScope_legacyImageThroughPersister(t *testing.T) {
 	}
 	write := func(data []byte, mime string) {
 		t.Helper()
-		raw := map[string]any{"id": "globalScope", "created": time.Now(), "messages": []any{
+		raw := map[string]any{"id": "image-chat", "created": time.Now(), "messages": []any{
 			map[string]any{"role": "user", "content": []any{
 				map[string]any{"type": "image_url", "image_url": map[string]any{"url": "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(data)}},
 				map[string]any{"type": "text", "text": "what is it"},
@@ -114,24 +117,28 @@ func TestLoadGlobalScope_legacyImageThroughPersister(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Marshal: %v", err)
 		}
-		if err := os.WriteFile(GlobalScopePath(confDir), b, 0o644); err != nil {
+		if err := os.WriteFile(conversationPath(confDir, "image-chat"), b, 0o644); err != nil {
 			t.Fatalf("WriteFile: %v", err)
+		}
+		if err := SavePreviousQuery(procenv.Context(context.Background()), confDir, "image-chat", time.Now()); err != nil {
+			t.Fatalf("SavePreviousQuery: %v", err)
 		}
 	}
 
 	data := testPNG(t, 5)
 	write(data, "image/png")
-	got, err := LoadPrevQuery(procenv.Context(context.Background()), confDir)
+	prev, err := LoadPreviousQuery(procenv.Context(context.Background()), confDir)
 	if err != nil {
-		t.Fatalf("LoadPrevQuery: %v", err)
+		t.Fatalf("LoadPreviousQuery: %v", err)
 	}
+	got := prev.Chat
 	img, ok := got.Messages[0].Parts[0].(pub_models.ImagePart)
 	if !ok || img.Asset != "" || string(img.Data) != string(data) {
 		t.Fatalf("legacy part = %#v, want a pending image", got.Messages[0].Parts[0])
 	}
 
 	write([]byte("not an image at all"), "image/png")
-	if _, err := LoadPrevQuery(procenv.Context(context.Background()), confDir); !errors.Is(err, asset.ErrNotImage) {
+	if _, err := LoadPreviousQuery(procenv.Context(context.Background()), confDir); !errors.Is(err, asset.ErrNotImage) {
 		t.Fatalf("non-image legacy part: err = %v, want ErrNotImage from Persister.Load", err)
 	}
 }

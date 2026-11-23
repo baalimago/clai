@@ -2,14 +2,12 @@ package generic
 
 import (
 	"context"
-	"encoding/json"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/baalimago/clai/internal/testenv/procenv"
 
+	"github.com/baalimago/clai/internal/chat"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -27,19 +25,11 @@ func TestSetupPrompts(t *testing.T) {
 	t.Run("reply mode prepends the previous conversation", func(t *testing.T) {
 		confDir := t.TempDir()
 		t.Setenv("CLAI_CONFIG_DIR", confDir)
-		convDir := filepath.Join(confDir, "conversations")
-		if err := os.MkdirAll(convDir, 0o755); err != nil {
-			t.Fatalf("MkdirAll: %v", err)
-		}
-		prev := pub_models.Chat{ID: "globalScope", Messages: []pub_models.Message{
+		prev := pub_models.Chat{ID: "previous-chat", Messages: []pub_models.Message{
 			{Role: "user", Content: "previous prompt"},
 		}}
-		b, err := json.Marshal(prev)
-		if err != nil {
-			t.Fatalf("Marshal: %v", err)
-		}
-		if err := os.WriteFile(filepath.Join(convDir, "globalScope.json"), b, 0o644); err != nil {
-			t.Fatalf("WriteFile: %v", err)
+		if err := chat.SaveAsPreviousQuery(context.Background(), confDir, prev); err != nil {
+			t.Fatalf("SaveAsPreviousQuery: %v", err)
 		}
 
 		c := Configurations{PromptFormat: "%v", ReplyMode: true}

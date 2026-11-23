@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"maps"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -52,14 +53,17 @@ func (r *registry) WildcardGet(pattern string) []models.LLMTool {
 	defer r.mu.RUnlock()
 
 	var matches []models.LLMTool
-	for name, tool := range r.tools {
+	for _, name := range slices.Sorted(maps.Keys(r.tools)) {
 		if _, isHidden := r.hidden[name]; isHidden && pattern != name {
 			continue
 		}
 		if WildcardMatch(pattern, name) {
-			matches = append(matches, tool)
+			matches = append(matches, r.tools[name])
 		}
 	}
+	slices.SortStableFunc(matches, func(a, b models.LLMTool) int {
+		return strings.Compare(a.Specification().Name, b.Specification().Name)
+	})
 	return matches
 }
 

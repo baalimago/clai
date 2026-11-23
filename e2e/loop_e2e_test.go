@@ -42,7 +42,7 @@ func loadLoopConversations(t *testing.T, confDir string) []pub_models.Chat {
 	var chats []pub_models.Chat
 	for _, entry := range entries {
 		name := entry.Name()
-		if entry.IsDir() || !strings.HasSuffix(name, ".json") || name == "globalScope.json" {
+		if entry.IsDir() || !strings.HasSuffix(name, ".json") {
 			continue
 		}
 		loaded, err := chat.FromPath(context.Background(), filepath.Join(convDir, name))

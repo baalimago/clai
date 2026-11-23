@@ -4,6 +4,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/baalimago/clai/internal/chat"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -38,6 +39,8 @@ type QuerySession struct {
 	LikelyGeminiPreview bool
 	Line                string
 	LineCount           int
+	// SavedChatID is the conversation the run's save wrote; empty when it wrote none.
+	SavedChatID chat.SavedID
 	// stepImages are the generated images not yet attached to an assistant message.
 	stepImages []stepImage
 	// rowEndedAt is the PendingText length when the display last ended its open row.

@@ -113,3 +113,25 @@ func Test_vendorType_MockSelectionDoesNotCaptureRealModels(t *testing.T) {
 		})
 	}
 }
+
+func Test_vendorType_RoutesSeededAliasModels(t *testing.T) {
+	cases := map[string]string{
+		"gpt-6-luna":            "openai",
+		"gpt-6.2-astra":         "openai",
+		"claude-opus-5-5":       "anthropic",
+		"gemini-3.8-flash":      "google",
+		"gemini-3.5-flash-lite": "google",
+		"deepseek-flash":        "deepseek",
+	}
+	for model, want := range cases {
+		t.Run(model, func(t *testing.T) {
+			got, _, _, err := vendorType(model)
+			if err != nil {
+				t.Fatalf("vendorType(%q): %v", model, err)
+			}
+			if got != want {
+				t.Fatalf("vendorType(%q) = %q, want %q", model, got, want)
+			}
+		})
+	}
+}

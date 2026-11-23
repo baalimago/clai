@@ -8,7 +8,7 @@ There are two related mechanisms:
 
 1. **Conversation transcripts** stored on disk as JSON (so they can be replayed/inspected/edited later).
 2. **Reply context pointers**:
-   - `globalScope.json` (global reply context)
+   - `conversations/state/previousQuery.json` (global reply context: a pointer record, not a conversation)
    - directory-scoped bindings under `conversations/dirs/` (per-CWD reply context)
 
 Important behavioral change vs older versions:
@@ -135,7 +135,7 @@ reaches disk with a pending image:
   sniff as the declared type (`asset.ErrNotImage` or `*asset.MIMEMismatchError`, naming the path
   and message index). The file is rewritten as refs only on its next save.
 - `Delete` removes the conversation and its reasoning sidecar, then sweeps every asset that no
-  remaining `conversations/*.json` file references, `globalScope.json` included. A missing id is
+  remaining `conversations/*.json` file references. A missing id is
   `ErrChatNotFound`. A failed sweep, or a conversation file it cannot decode, is
   `*SweepFailedError`, and the sweep then removes nothing. A sidecar that cannot be removed does
   not stop the delete or the sweep: it is a typed, non-fatal error returned after the sweep, and
@@ -148,8 +148,9 @@ Every reader of a conversation the user continues goes through `Load`: `-re`
 (`LoadPrevQuery`), `-dre` (`LoadDirScopedContext`), `chat continue`, `chat delete` and replay.
 Cloning a foreign conversation on continue writes it with `Save`, and `chat delete` is
 `Delete`, so it sweeps the assets only that conversation referenced. `chat.AssetsDir(confDir)`
-and `chat.GlobalScopePath(confDir)` name the asset directory and `globalScope.json` for other
-packages; `photo.PreviousQueryImage` reads the last image of the previous query through them.
+and `chat.PreviousQueryPath(confDir)` name the asset directory and the previous-query record for
+other packages; `photo.PreviousQueryImage` reads the last image of the previous query through
+`chat.LoadPreviousQuery`.
 
 #### Images on text surfaces
 
@@ -224,17 +225,17 @@ This makes chats composable with normal shell tooling (pipes, redirects, history
 `clai query <prompt>`:
 
 - creates/updates a transcript
-- updates the global previous query (`globalScope.json`)
+- updates the previous-query record (`conversations/state/previousQuery.json`) to name the conversation it wrote
 - updates the directory binding for the current working directory (CWD)
 
 Subsequent queries can be threaded using:
 
-- `-re` (reply to global previous query)
+- `-re` (continue the previous query's conversation in place)
 - `-dre` (reply to directory-scoped previous query)
 
 ### `chat dir` and `chat dirv2`
 
-Both commands show information for the conversation that is bound to the current directory. They use `globalScope.json` when no directory binding exists.
+Both commands show information for the conversation that is bound to the current directory. They use the conversation the previous-query record names when no directory binding exists.
 
 `clai chat dir` keeps the original text and JSON formats. This format does not show `RecentTokenUsage`.
 
@@ -312,6 +313,15 @@ After binding the directory scope without a prompt, `chat continue` prints a not
 
 - `clai -dre query <prompt>`
 
+### `chat fork` (send a prompt to a copy of a chat)
+
+`clai chat fork [query flags] <chatID|index> <prompt...>` writes a new chat that holds a copy of the parent (`Forker`, `internal/chat/forker.go`) and sends the prompt to that copy through the same sender as `chat continue`. The prompt is required; a refusal writes nothing.
+
+- The copy has a new ID, `Created` is the fork time, `Source` is `"clai"` and `SourceID` is the parent's ID. Every other field is the parent's, queries and usage included, so `chatOwnSpend` (`own_spend.go`) of the fork is zero until its own run adds a query. The parent file, index row and reasoning sidecar are never written; images are shared by ref.
+- The fork is written before any request is sent, the directory is bound to it, and one notice `fork <new> of <parent>` is reported. A failed send leaves the fork on disk.
+- The request runs on the profile's model, as `chat continue` does; no model is carried over, because a chat records the bare model name and not its vendor route (`or:`, `berget:`, `novita:`, `hf:`). Repeat the flags that shape the request (`-cm`, `-t`, `-lb`) to fork a chat that was run with them. A parent with a profile keeps it; otherwise `-p` is stamped on the fork only.
+- `chat continue` and `chat fork` resolve their chat argument through `findChatByRef`: a local ID or index as before, `cc:<chatID>` through the injected `CommandDeps.CloudResolver` (nil refuses it). A resolver failure is a `*CloudRefError` and never falls back to the list UI. `chat delete cc:<id>` is refused.
+
 ### Profile “sticking” when continuing
 
 In `internal/chat/handler.go:cont`:
@@ -334,6 +344,8 @@ Implementation: `internal/chat/handler_list_chat.go`:
 - `listChats()` uses `utils.SelectFromTable` to show a selection table; each row shows `labelFor(title, firstUserMessage)` — the title when the chat is labelled, else the first user message.
 - Columns fit the terminal (`internal/chat/list_layout.go`). Every column is as wide as its widest cell over all rows of the view, so the widths hold across pages; Source is capped at 15 cells and Model at 24, and a longer cell ends in `…`. `newListLayout` takes the first entry of `listColumnSets` that leaves the About column 40 cells (`listAboutMinWidth`) or 40% of the width (`listAboutWidthPercent`), whichever is more, or the widest label of the view when that is less; one column stays free at the right edge. Columns go in this order: Tokens, Messages, Profile, Cost, then Created shortens from `2006-01-02 15:04:05` to `06-01-02 15:04`, then Model, Source and Created. Index and About always stay. About takes the remaining width and is cut at its tail with `…`, counting wide runes as two cells. Output that is not a terminal (a pipe, `-json`) has an unknown width and shows every column and whole labels. The detail view after a selection shows every field a narrow layout drops. The table's `/` filter matches the row as drawn, so at a narrow width it misses dropped columns and the cut tail of a label.
 - Width changes redraw the table. When stdin and stdout are declared terminals, are both `*os.File` terminals (not input a caller supplied), and no macro input is given, `New` wires `openListInput`, which opens `term.OpenResizeReader` for the list session with a `dimensions.Viewer` on stdout. The table then reads its selection from the controlling terminal (`/dev/tty`, opened `O_NOCTTY` with read deadlines), not from `os.Stdin`. A size event from the viewer sets a read deadline once size changes have paused for 200 ms. At a line boundary the interrupted read measures the width again and, when it differs from the last `Observe`, discards the typed but unsubmitted line (`TCSETSF` on Linux, `TIOCSETAF` on the BSDs and macOS) and ends with `term.ErrResized`; a line handed on without its newline (Ctrl-D) is finished first. `listChats` then erases the old render and redraws on the same page with the same `/` filter (`table.WithFilter`, read back with `Filter`). `listScreen` keeps the render's text and the lines the terminal echoed; `utils.TerminalRows` counts the rows the terminal rewraps them into at the new width, and the erase climbs that many rows and clears to the end of the screen. A render taller than the screen leaves its top in the scrollback, and a terminal that cuts lines instead of rewrapping them (xterm without tmux) loses a few rows above the table. `listChats` calls `Observe` before every draw, so a resize during the chat info view causes no extra redraw. A height-only change redraws nothing. `[n]ext` still appends pages below, because the table runs in its non-clearing input mode. Without a controlling terminal (`ENXIO`, no `/dev/tty`) or where reads take no deadline, `OpenResizeReader` returns `term.ErrResizeUnsupported` and the list reads `os.Stdin` without redrawing; any other open or close failure is returned.
+- Above the header of every render, `previousQueryLine` (`list_continues.go`) names the conversation a plain `-re` continues: `-re continues: <index> · <label>`, `<index> [group] · <label>` when a collapsed group holds it, `<chatID> · <label> (not in this view)` when a filter hides it, `unreadable record (<reason>)` when the record cannot be read; no record or a gone conversation prints nothing, and `-json` never prints it. It reads the record through `LoadPreviousQuery` only, so `chat list` writes nothing.
+- A group row's Cost and Tokens total its native members' own spend (`chatOwnSpend`, stored as `own_total_tokens` and `own_total_cost_usd` in the chat index, version 4), so a family of forks counts the history it shares once. A chat's own row and the group view show its whole history.
 - Table toggles, each re-deriving the in-memory view without a new discovery pass: `[d]irscoped convs` (offered when the working directory has bindings; native rows only, foreign rows never hidden by it) and `[f]oreign convs` (offered when a source reader produced rows; hides or shows every external conversation, groups collapse over the remaining members). Each label carries its state in words (`[d]irscoped convs: off|on`, `[f]oreign convs: shown|hidden`) and is bold and underlined while in the non-default position (colour on); both default to off/shown and last for the list session. The labels come in three tiers chosen per render so the prompt line fits the terminal: long (`[d]irscoped convs: off`, `[f]oreign convs: shown`), compact (`[d]ir: off`, `[f]oreign: shown`) and terse (`[d]:off`, `[f]:shown`). `listPromptTier` replicates the table's prompt composition (`select`, the toggles, `[p]rev`, `[n]ext`, `[b]ack`, `[q]uit`, `[/] filter`, a reserved `page 99/99`), measures it with the longest state word and a four-column typing margin, and takes the first tier that fits; an unknown width keeps the long tier. With both toggles the long tier needs 119 columns and the compact tier 101; below that the terse tier is used. Residual: the table library never measures or clears a wrapped prompt line (`selectNumbers` clears `amPrinted+1` lines), so below about 91 columns a paginated list still wraps the terse prompt and drifts one line per keypress — a pre-feature limitation (the one-toggle prompt with a page counter already measured 82) that a fix in the table package would close.
 
 After selecting a chat, `actOnChat()` prints a details view and offers actions. The view is
@@ -355,34 +367,69 @@ above; one that draws a VS16 emoji (❤️) two cells wide can use more, and lea
   vendors reject empty messages. The warning points to `[d]elete`, or, for a tool result, to
   replacing its text, since deleting it would leave its call without a result.
 - delete messages
-- save as `globalScope.json`
+- make it the previous query (writes the record)
 
 No interactive chat session is started from this UI.
 
 ## “Previous query” capture and replay
 
-A special chat file is used for the global reply context:
+A small record names the conversation `-re` continues:
 
-- `<clai-config>/conversations/globalScope.json`
+- `<clai-config>/conversations/state/previousQuery.json`
 
-Implemented in `internal/chat/reply.go`.
+```json
+{ "version": 1, "chat_id": "7f3a9c…c91", "updated": "2026-11-16T15:58:36.402Z" }
+```
+
+It holds a pointer only, no messages. It lives one directory below `conversations/`, so the
+conversation namespace never lists, indexes, syncs or sweeps it. Implemented in
+`internal/chat/previous.go` (record) and `internal/chat/reply.go` (`promote`).
 
 ### SaveAsPreviousQuery
 
-`SaveAsPreviousQuery(claiConfDir, msgs)` writes:
+`SaveAsPreviousQuery(ctx, claiConfDir, chat)` (the name is historical; it saves a chat that was not
+produced by a failed run) and `Persister.Promote(ctx, chat, outcome)` (the text finalizer, which
+passes a `chat.RunOutcome`) do, in this order:
 
-- always: `globalScope.json` with ID `globalScope`
-- additionally (when `len(msgs) > 2`): saves a *new conversation file* derived from the first user message using `HashIDFromPrompt(firstUserMsg.Content)`
+1. Stores pending images once, so every written file references the same asset files.
+2. When the chat has no id, more than two messages and does not end in a user message, writes it as a
+   new conversation under a fresh `chatid.New()` id. This keeps one-off queries without a reply out
+   of the corpus. The exception is `RunFailedBeforeAnswer` (the run failed, `session.Failed`): a
+   fresh chat ending on the user's prompt is saved too, with no queries, and the record moves to it,
+   so the next `-re` retries with the prompt instead of silently continuing an older conversation.
+   A run that succeeds is unchanged.
+3. When the chat has an id, writes its conversation file.
+4. Writes the record naming that conversation, last, so a crash leaves a pointer at a real file.
 
-This preserves one-off queries and optionally promotes richer exchanges into normal conversations.
-Pending images are stored once before any file is written, so every copy references the same
-asset files.
+Nothing persisted means the existing record stays. The sentinel id `globalScope` and an unsafe id are
+refused as record targets.
 
-The mirror is built by **explicit field copy**, so a field added to `Chat` must be copied there (and into the promotion copy) or it is lost on reply. `title`, `summary` and `summary_at` are mirrored. Because the mirror carries `ID: globalScope`, a plain `-re` **forks**: `SetupInitialChat` (`internal/text/conf.go`) adopts `Created`, `Messages`, `Queries` and — when its own chat has no summary — the three label fields from the mirror, generates a fresh id, and the finalizer writes a new conversation file next to the untouched parent. The fork therefore inherits its parent's label and the in-flight summarizer does not run for it. `-dre` continues the bound conversation in place from the full file and needs no adoption.
+### `-re` continues in place
 
-### LoadPrevQuery
+`SetupInitialChat` (`internal/text/conf.go`) resolves the record with `LoadPreviousQuery` and adopts
+the conversation whole (`continueConversation`), the way `-dre` does, rather than by a field list:
+`Source`, `SourceID`, label, `origin_dir`, `group_key`, usage and every field added later survive, so
+a `-re` on a clone from another tool or on a fork keeps its source and parent link. The run's own
+`ID`, `Created` and `Profile` win when set. Its messages and queries (for example a `-g` glob) stay
+before the conversation's. The finalizer then rewrites the same conversation file: a plain `-re` adds
+no file, the index keeps one row, and the in-flight summarizer sees an already labelled chat.
 
-Loads `globalScope.json` (printing a warning if absent).
+### LoadPreviousQuery
+
+`LoadPreviousQuery(ctx, confDir)` returns the record's `updated` time and the conversation it names.
+`LoadPrevQuery` returns the conversation only.
+
+- No record: `ErrNoPreviousQuery`. `-re` warns `no previous query found` and runs as a plain query.
+- Record names a file that is gone: `ErrPreviousQueryGone`.
+- `chat delete <id>` removes a record that names `<id>`, so the next `-re` starts fresh.
+
+### Migration
+
+Installs older than the record hold a full mirror (`conversations/globalScope.json`, earlier
+`prevQuery.json`) that carries the sentinel id. `MigratePreviousQuery` runs once, from the query
+write-path preparation (`internal/setup/config_lifecycle.go`), never from read-only listings or
+`replay`. It finds the conversation whose messages equal the mirror's (newest file on a tie), writes
+the record, then removes the mirror. With no match it warns and leaves the mirror in place.
 
 ## Directory-scoped replies
 

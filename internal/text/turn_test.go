@@ -131,9 +131,9 @@ func newRecordingPersister(confDir string, store asset.AssetStorer) *recordingPe
 	return &recordingPersister{Persister: chat.NewPersister(confDir, store)}
 }
 
-func (p *recordingPersister) Promote(ctx context.Context, c pub_models.Chat) error {
+func (p *recordingPersister) Promote(ctx context.Context, c pub_models.Chat, outcome chat.RunOutcome) (chat.SavedID, error) {
 	p.promoted = append(p.promoted, c)
-	return p.Persister.Promote(ctx, c)
+	return p.Persister.Promote(ctx, c, outcome)
 }
 
 type failingPutStore struct {
@@ -237,7 +237,7 @@ func (f *turnFixture) diskTurn(opts present.Options) *ImageTurn {
 func (f *turnFixture) run(t *testing.T, msgs ...pub_models.Message) (*QuerySession, error) {
 	t.Helper()
 	defer testenv.Quiet(t)()
-	session := &QuerySession{Chat: pub_models.Chat{Messages: msgs}, ShouldSaveReply: true, Raw: f.q.rawDisplay()}
+	session := &QuerySession{Chat: pub_models.Chat{ID: "turn-chat", Messages: msgs}, ShouldSaveReply: true, Raw: f.q.rawDisplay()}
 	runner := sessionRunner[models.StreamCompleter]{
 		querier:      f.q,
 		finalizer:    sessionFinalizer[models.StreamCompleter]{querier: f.q},
@@ -273,9 +273,19 @@ func (f *turnFixture) assets(t *testing.T) []string {
 	return names
 }
 
+// previousQueryConversationPath is the file the previous query record names.
+func previousQueryConversationPath(t *testing.T, confDir string) string {
+	t.Helper()
+	prev, err := chat.LoadPreviousQuery(context.Background(), confDir)
+	if err != nil {
+		t.Fatalf("the turn promoted nothing: %v", err)
+	}
+	return filepath.Join(confDir, "conversations", prev.Chat.ID+".json")
+}
+
 func (f *turnFixture) promoted(t *testing.T) pub_models.Chat {
 	t.Helper()
-	p := filepath.Join(f.configDir, "conversations", "globalScope.json")
+	p := previousQueryConversationPath(t, f.configDir)
 	c, err := chat.NewPersister(f.configDir, assettest.NewMemory()).Load(context.Background(), p)
 	if err != nil {
 		t.Fatalf("load promoted chat: %v", err)
@@ -539,7 +549,7 @@ func TestTurn_NativeImagePersisted(t *testing.T) {
 	if !ok || img.Origin != pub_models.OriginGenerated || img.Asset != filepath.Base(path) || img.MIME != "image/png" || img.Data != nil {
 		t.Errorf("part 1 = %+v, want the stored generated image", msg.Parts[1])
 	}
-	raw, err := os.ReadFile(filepath.Join(f.configDir, "conversations", "globalScope.json"))
+	raw, err := os.ReadFile(previousQueryConversationPath(t, f.configDir))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -960,10 +970,10 @@ func TestTurn_PromoteUsed(t *testing.T) {
 	if got := lastOfRole(t, persister.promoted[0], "assistant").Content; got != "done" {
 		t.Errorf("promoted answer = %q, want done", got)
 	}
-	if _, err := os.Stat(filepath.Join(f.configDir, "conversations", "globalScope.json")); !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("chat.SaveAsPreviousQuery wrote globalScope.json: %v", err)
+	if _, err := os.Stat(chat.PreviousQueryPath(f.configDir)); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("chat.SaveAsPreviousQuery wrote the previous query record: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(persisterDir, "conversations", "globalScope.json")); err != nil {
-		t.Errorf("Promote wrote no globalScope.json: %v", err)
+	if _, err := os.Stat(chat.PreviousQueryPath(persisterDir)); err != nil {
+		t.Errorf("Promote wrote no previous query record: %v", err)
 	}
 }

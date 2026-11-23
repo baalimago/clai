@@ -52,7 +52,7 @@ only a test that opts in swaps in a fake. A missing image dependency fails with
 
 ```json
 {
-  "model": "gpt-image-2.5-flare",
+  "model": "gpt-image-2.6-flare",
   "prompt-format": "I NEED to test how the tool works with extremely simple prompts. DO NOT add any detail, just use it AS-IS: '%v'",
   "output": {
     "type": "unset",
@@ -106,9 +106,9 @@ file, `clai q` included.
    text-only context is byte-identical to the one before image support.
 4. The inputs are the collected images in order, then the image `deps.PreviousImage`
    returns for `-re`. `ErrNoPreviousImage` means no extra input; any other error fails the
-   command. `photo.PreviousQueryImage` loads `globalScope.json` through `chat.Persister.Load`
-   and takes its last image part: a stored part is read from the asset store, a legacy
-   (pending) part gives its own bytes. A missing `globalScope.json`, or one without an image,
+   command. `photo.PreviousQueryImage` loads the conversation the previous-query record names
+   (`chat.LoadPreviousQuery`, through `chat.Persister.Load`) and takes its last image part: a stored part is read from the asset store, a legacy
+   (pending) part gives its own bytes. A missing record, or a conversation without an image,
    is `ErrNoPreviousImage`, so `-re` on a fresh config behaves as a plain run.
 
 ## Output

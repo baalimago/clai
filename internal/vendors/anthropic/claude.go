@@ -121,6 +121,18 @@ type claudeReq struct {
 	StopSequences []string                   `json:"stop_sequences,omitempty"`
 	Tools         []pub_models.Specification `json:"tools,omitempty"`
 	OutputConfig  *outputConfig              `json:"output_config,omitempty"`
+
+	// CacheControl turns on Anthropic's automatic prompt caching (worklog 2026-11-19-chat-forks P1).
+	CacheControl *cacheControl `json:"cache_control,omitempty"`
+}
+
+// cacheControl is {"type":"ephemeral"}: the 5-minute TTL.
+type cacheControl struct {
+	Type string `json:"type"`
+}
+
+func ephemeralCache() *cacheControl {
+	return &cacheControl{Type: "ephemeral"}
 }
 
 type outputConfig struct {

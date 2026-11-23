@@ -119,7 +119,7 @@ func (cq *ChatHandler) handleSummarize(ctx context.Context) error {
 func selectSummarizeRows(rows []chatIndexRow, since time.Time, force bool) []chatIndexRow {
 	var selected []chatIndexRow
 	for _, row := range rows {
-		if row.ID == "globalScope" || row.effectiveUpdated().Before(since) {
+		if row.effectiveUpdated().Before(since) {
 			continue
 		}
 		if row.Summary != "" && !force {

@@ -198,7 +198,7 @@ Profiles are applied inside `text.Configurations.ProfileOverrides()` (see `inter
 Stored under:
 
 - `<config>/conversations/*.json`
-- `<config>/conversations/globalScope.json` (global reply context)
+- `<config>/conversations/state/previousQuery.json` (global reply context: a pointer to the latest conversation, not a transcript)
 - `<config>/conversations/dirs/*` (directory-scoped binding metadata)
 
 These are described in `architecture/chat.md`.
@@ -375,8 +375,10 @@ flags > profile > textConfig > default(false)
   - flips reply mode on
   - `setupTextQuerierWithConf` loads the directory-scoped head directly into `InitialChat` (via `chat.LoadDirScopedContext`)
 
-`-re` continues to use `globalScope.json`. `-dre` bypasses it entirely,
-loading the directory binding’s conversation directly.
+`-re` resolves the previous-query record and continues the conversation it names in place. `-dre`
+bypasses the record entirely, loading the directory binding’s conversation directly. The write path
+runs `chat.MigratePreviousQuery` once to convert a legacy `globalScope.json` mirror into the record;
+read-only commands (`chat list/dir/dirv2/help`, `replay`) never do.
 
 ### Image configuration
 

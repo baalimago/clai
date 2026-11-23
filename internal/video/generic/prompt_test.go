@@ -3,15 +3,16 @@ package generic
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/baalimago/clai/internal/testenv/procenv"
 
+	"github.com/baalimago/clai/internal/chat"
 	pub_models "github.com/baalimago/clai/pkg/text/models"
 )
 
@@ -29,19 +30,11 @@ func TestSetupPrompts(t *testing.T) {
 	t.Run("reply mode prepends the previous conversation", func(t *testing.T) {
 		confDir := t.TempDir()
 		t.Setenv("CLAI_CONFIG_DIR", confDir)
-		convDir := filepath.Join(confDir, "conversations")
-		if err := os.MkdirAll(convDir, 0o755); err != nil {
-			t.Fatalf("MkdirAll: %v", err)
-		}
-		prev := pub_models.Chat{ID: "globalScope", Messages: []pub_models.Message{
+		prev := pub_models.Chat{ID: "previous-chat", Messages: []pub_models.Message{
 			{Role: "user", Content: "previous prompt"},
 		}}
-		b, err := json.Marshal(prev)
-		if err != nil {
-			t.Fatalf("Marshal: %v", err)
-		}
-		if err := os.WriteFile(filepath.Join(convDir, "globalScope.json"), b, 0o644); err != nil {
-			t.Fatalf("WriteFile: %v", err)
+		if err := chat.SaveAsPreviousQuery(context.Background(), confDir, prev); err != nil {
+			t.Fatalf("SaveAsPreviousQuery: %v", err)
 		}
 
 		c := Configurations{PromptFormat: "%v", ReplyMode: true}
@@ -94,10 +87,13 @@ func TestSetupPrompts_replyDescribesImages(t *testing.T) {
 	}
 	png := append([]byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}, 1, 2, 3)
 	b64 := base64.StdEncoding.EncodeToString(png)
-	legacy := `{"id":"globalScope","messages":[{"role":"user","content":[` +
+	legacy := `{"id":"previous-chat","messages":[{"role":"user","content":[` +
 		`{"type":"image_url","image_url":{"url":"data:image/png;base64,` + b64 + `"}},{"type":"text","text":"a sketch"}]}]}`
-	if err := os.WriteFile(filepath.Join(convDir, "globalScope.json"), []byte(legacy), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(convDir, "previous-chat.json"), []byte(legacy), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
+	}
+	if err := chat.SavePreviousQuery(context.Background(), confDir, "previous-chat", time.Now()); err != nil {
+		t.Fatalf("SavePreviousQuery: %v", err)
 	}
 	img := pub_models.ImagePart{Data: png}
 

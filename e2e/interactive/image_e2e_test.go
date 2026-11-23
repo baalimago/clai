@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/baalimago/clai/e2e/e2etest"
 	"github.com/baalimago/clai/internal/chat"
@@ -50,11 +51,21 @@ func newImageFixture(t *testing.T) imageFixture {
 
 func (f imageFixture) assetDir() string { return filepath.Join(f.confDir, "conversations", "assets") }
 
-func (f imageFixture) globalScope(t *testing.T) pub_models.Chat {
+// previousPath is the conversation file the previous-query record names.
+func (f imageFixture) previousPath(t *testing.T) string {
 	t.Helper()
-	c, err := chat.FromPath(context.Background(), filepath.Join(f.confDir, "conversations", "globalScope.json"))
+	prev, err := chat.LoadPreviousQuery(context.Background(), f.confDir)
 	if err != nil {
-		t.Fatalf("load globalScope.json: %v", err)
+		t.Fatalf("resolve the previous query: %v", err)
+	}
+	return filepath.Join(f.confDir, "conversations", prev.Chat.ID+".json")
+}
+
+func (f imageFixture) previousChat(t *testing.T) pub_models.Chat {
+	t.Helper()
+	c, err := chat.FromPath(context.Background(), f.previousPath(t))
+	if err != nil {
+		t.Fatalf("load the previous query's conversation: %v", err)
 	}
 	return c
 }
@@ -114,14 +125,14 @@ func (f imageFixture) attach(t *testing.T, args ...string) {
 
 func (f imageFixture) assertStoredUserImage(t *testing.T) {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join(f.confDir, "conversations", "globalScope.json"))
+	raw, err := os.ReadFile(f.previousPath(t))
 	if err != nil {
-		t.Fatalf("read globalScope.json: %v", err)
+		t.Fatalf("read the previous query's conversation: %v", err)
 	}
 	if strings.Contains(string(raw), base64.StdEncoding.EncodeToString(f.png)) {
 		t.Fatal("conversation JSON holds base64 image bytes")
 	}
-	images := imageParts(f.globalScope(t), "user")
+	images := imageParts(f.previousChat(t), "user")
 	if len(images) != 1 || images[0].Asset != f.ref || images[0].Origin != pub_models.OriginUser {
 		t.Fatalf("user images = %+v, want one stored ref %s", images, f.ref)
 	}
@@ -139,7 +150,7 @@ func Test_goldenFile_QUERY_stdin_image(t *testing.T) {
 	f := newImageFixture(t)
 	e2etest.WithStdin(t, f.png)
 	f.attach(t, "-r", "-cm", "test", "q", "what breed?")
-	if c := f.globalScope(t); strings.Contains(c.Messages[len(c.Messages)-2].Describe(), "PNG") {
+	if c := f.previousChat(t); strings.Contains(c.Messages[len(c.Messages)-2].Describe(), "PNG") {
 		t.Fatal("stdin image bytes leaked into the prompt text")
 	}
 }
@@ -164,7 +175,7 @@ func Test_goldenFile_QUERY_glob_mixed(t *testing.T) {
 	if status != 0 {
 		t.Fatalf("status %d, stdout=%q stderr=%q", status, stdout, stderr)
 	}
-	c := f.globalScope(t)
+	c := f.previousChat(t)
 	var mdMessage bool
 	for _, m := range c.Messages {
 		if strings.Contains(m.Content, `"fileName": "b.png"`) {
@@ -195,7 +206,7 @@ func Test_goldenFile_QUERY_reply_carries_image(t *testing.T) {
 	if status != 0 || stdout != "and now?\n" {
 		t.Fatalf("reply status %d, stdout=%q stderr=%q", status, stdout, stderr)
 	}
-	c := f.globalScope(t)
+	c := f.previousChat(t)
 	images := imageParts(c, "user")
 	if len(images) != 1 || images[0].Asset != f.ref {
 		t.Fatalf("replied chat images = %+v, want the stored ref %s carried", images, f.ref)
@@ -231,7 +242,7 @@ func Test_goldenFile_QUERY_generate_image_client(t *testing.T) {
 	if len(requests) != 1 || requests[0].Prompt != "mock image" {
 		t.Fatalf("generator requests = %+v", requests)
 	}
-	images := imageParts(f.globalScope(t), "tool")
+	images := imageParts(f.previousChat(t), "tool")
 	if len(images) != 1 || images[0].Origin != pub_models.OriginGenerated || images[0].Asset != pngRef(generated) {
 		t.Fatalf("tool images = %+v, want one generated part", images)
 	}
@@ -270,7 +281,7 @@ func Test_e2e_image_generator_guard(t *testing.T) {
 		t.Fatalf("status %d, stdout=%q stderr=%q", status, stdout, stderr)
 	}
 	var result string
-	for _, m := range f.globalScope(t).Messages {
+	for _, m := range f.previousChat(t).Messages {
 		if m.Role == "tool" {
 			result = m.Content
 		}
@@ -303,7 +314,7 @@ func Test_e2e_generate_image_tool_selection(t *testing.T) {
 			// The default deps refuse to generate, so reaching that refusal proves the
 			// tool was registered and called.
 			var called bool
-			for _, m := range f.globalScope(t).Messages {
+			for _, m := range f.previousChat(t).Messages {
 				called = called || (m.Role == "tool" && strings.Contains(m.Describe(), e2etest.ErrImageGeneratorRefused.Error()))
 			}
 			if !called {
@@ -319,8 +330,8 @@ func Test_e2e_query_img_no_match(t *testing.T) {
 	if status != 1 || !strings.Contains(stderr, "nope/*.png") {
 		t.Fatalf("status %d, stdout=%q stderr=%q; want 1 and the pattern named", status, stdout, stderr)
 	}
-	if _, err := os.Stat(filepath.Join(f.confDir, "conversations", "globalScope.json")); !os.IsNotExist(err) {
-		t.Fatalf("the mock was queried: globalScope.json stat err = %v", err)
+	if _, err := os.Stat(chat.PreviousQueryPath(f.confDir)); !os.IsNotExist(err) {
+		t.Fatalf("the mock was queried: previous query record stat err = %v", err)
 	}
 }
 
@@ -329,7 +340,7 @@ func Test_goldenFile_REPLAY_image_placeholder(t *testing.T) {
 	f.attach(t, "-r", "-img", "cat.png", "-cm", "test", "q", "what breed?")
 	// replay prints the last message, and the mock answers in text, so the
 	// stored image becomes a generated part of the last message, as native output writes it.
-	c := f.globalScope(t)
+	c := f.previousChat(t)
 	c.Messages[len(c.Messages)-1] = pub_models.Message{Role: "assistant", Parts: []pub_models.Part{
 		pub_models.TextPart{Text: "a tabby"},
 		pub_models.ImagePart{Asset: f.ref, MIME: "image/png", Origin: pub_models.OriginGenerated},
@@ -351,10 +362,13 @@ func Test_goldenFile_REPLAY_image_placeholder(t *testing.T) {
 	}
 }
 
+// replay does not run the legacy-mirror migration, so the row seeds the
+// record and a conversation whose last message still holds a pending
+// (data-URL) image part.
 func Test_e2e_replay_legacy_pending(t *testing.T) {
 	f := newImageFixture(t)
-	e2etest.WriteJSONFileAny(t, filepath.Join(f.confDir, "conversations", "globalScope.json"), map[string]any{
-		"id":      "globalScope",
+	e2etest.WriteJSONFileAny(t, filepath.Join(f.confDir, "conversations", "legacy-chat.json"), map[string]any{
+		"id":      "legacy-chat",
 		"created": "2026-01-01T00:00:00Z",
 		"messages": []any{
 			map[string]any{"role": "user", "content": "draw a cat"},
@@ -364,6 +378,9 @@ func Test_e2e_replay_legacy_pending(t *testing.T) {
 			}},
 		},
 	})
+	if err := chat.SavePreviousQuery(context.Background(), f.confDir, "legacy-chat", time.Now()); err != nil {
+		t.Fatalf("SavePreviousQuery: %v", err)
+	}
 	status, stdout, stderr := runCaptured(t, "-r", "re")
 	if status != 0 || stdout != "here\n[image "+f.handle+"] (not stored yet)\n" {
 		t.Fatalf("status %d, stdout=%q stderr=%q", status, stdout, stderr)
@@ -408,11 +425,7 @@ func Test_e2e_photo_reply_no_previous_image(t *testing.T) {
 		}
 	}
 	run()
-	e2etest.WriteJSONFileAny(t, filepath.Join(f.confDir, "conversations", "globalScope.json"), map[string]any{
-		"id":       "globalScope",
-		"created":  "2026-01-01T00:00:00Z",
-		"messages": []any{map[string]any{"role": "user", "content": "text only"}},
-	})
+	e2etest.SeedPreviousConv(t, f.confDir, e2etest.MakeConv("text-only", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), e2etest.MsgUser("text only")))
 	run()
 }
 

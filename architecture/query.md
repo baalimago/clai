@@ -129,7 +129,7 @@ A plain query prints the same summary, titled `▸ query done in 4s` (or
 `stopped` when it ended on an error), below its answer when opted in with
 `-qs`/`-query-summary` or `query-summary: true` in `textConfig.json`. It is
 off by default. Loop iterations never print it, since the loop reports for
-the whole run. See `internal/text/run_summary.go`.
+the whole run. A run that saved its conversation names it on a first `chat <id>` row (under `-json`, a `chat_id` fact), so `clai chat fork <id> <task>` takes it as printed. See `internal/text/run_summary.go`.
 
 Both summaries count the clai runs a run starts (subagents), on a
 `subagents 4 runs · 210k in · 9k out · ~$0.41` row (`internal/runtally`).
@@ -159,7 +159,7 @@ The query command applies configuration in this order (lowest to highest precede
    with the model of the first vendor whose API key is set, OpenAI first, so a
    first query works with whichever key the user exported. An existing file
    keeps its model.
-3. **Model-specific config** (e.g., `openai_gpt_gpt-5.2.json`)
+3. **Model-specific config** (e.g., `openai_gpt_gpt-6-luna.json`)
 4. **Profile overrides** (if `-p`/`-profile` or `-prp`/`-profile-path` is set)
 5. **CLI flags** (e.g., `-cm`, `-r`, `-t`)
 
@@ -176,8 +176,8 @@ See `CONFIG.md` for full details.
 3. If **glob mode** (`-g` flag): the collected text-file messages are framed by
    `glob.FramedChat` between the glob system message and the `#####` user message, exactly as
    before; matches that are images go to the prompt message instead
-4. If **reply mode** (`-re`): loads `globalScope.json` through `chat.Persister.Load` and prepends
-   those messages; a stored image stays a ref and a legacy inline image arrives as a pending part
+4. If **reply mode** (`-re`): resolves the previous-query record, loads the conversation it names through `chat.Persister.Load` and prepends
+   those messages (and adopts its id, so the reply continues that file); a stored image stays a ref and a legacy inline image arrives as a pending part
 5. Appends the user message: `Content` with the prompt when no image was collected, otherwise
    `Parts` holding the images in collection order followed by the prompt text
 6. Generates the chat ID
@@ -307,7 +307,7 @@ loop (`internal/text/session_runner.go`). Each model step:
 
    The order on the success path is **display → join → persist**, so the
    answer is never delayed by the summary wait and the file, index and
-   `globalScope.json` mirror are written once. A failed, empty or
+   previous-query record are written once. A failed, empty or
    interrupted run abandons the summarizer and persists without joining;
    no summarizer failure reaches the answer, exit status or persistence.
    See `architecture/summaries.md`.

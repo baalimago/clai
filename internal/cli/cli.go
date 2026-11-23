@@ -307,6 +307,37 @@ func hubPublisher(confDir string) (profiles.HubPublisher, error) {
 	}, nil
 }
 
+// syncHooks is what `clai cloud` and a `cc:` reference hand the sync engine.
+func syncHooks(deps Deps) sync.Hooks {
+	return sync.Hooks{
+		Export: func(ctx context.Context, confDir string, progress func(done, total int)) error {
+			return chat.ExportForeign(ctx, confDir, foreignCache(deps), progress)
+		},
+		Pending: func(ctx context.Context, confDir string) ([]sync.PendingImport, error) {
+			found, err := chat.PendingForeign(ctx, confDir, foreignCache(deps))
+			out := make([]sync.PendingImport, 0, len(found))
+			for _, f := range found {
+				out = append(out, sync.PendingImport{Source: f.Source, ID: f.SourceID, Change: sync.ImportChange(f.Change), Messages: f.Messages, RawBytes: f.RawBytes})
+			}
+			return out, err
+		},
+		Pulled: chat.ReindexPulled,
+	}
+}
+
+// cloudResolver builds the `cc:` reference resolver, failing without a login.
+func cloudResolver(deps Deps) func(ctx context.Context, confDir string) (chat.CloudResolver, error) {
+	hooks := syncHooks(deps)
+	return func(_ context.Context, confDir string) (chat.CloudResolver, error) {
+		creds, err := cloud.LoadCredentials(confDir)
+		if err != nil {
+			return nil, err
+		}
+		engine := &sync.Engine{Client: cloud.NewClient(creds.URL, creds.Token), ConfDir: confDir, Hooks: hooks}
+		return chat.NewCloudResolver(engine, confDir), nil
+	}
+}
+
 // Commands is the composition root: every command lives in its domain package
 // and receives its cross-package collaborators here. internal/setup owns config
 // prep and migrations, which the domain packages cannot import themselves.
@@ -392,20 +423,7 @@ func commands(deps Deps, setExit func(int), notices func() io.Writer, rerun func
 		ConfDir: utils.GetClaiConfigDir,
 		SetExit: setExit,
 		Publish: cloudPublish(profileDeps),
-		Hooks: sync.Hooks{
-			Export: func(ctx context.Context, confDir string, progress func(done, total int)) error {
-				return chat.ExportForeign(ctx, confDir, foreignCache(deps), progress)
-			},
-			Pending: func(ctx context.Context, confDir string) ([]sync.PendingImport, error) {
-				found, err := chat.PendingForeign(ctx, confDir, foreignCache(deps))
-				out := make([]sync.PendingImport, 0, len(found))
-				for _, f := range found {
-					out = append(out, sync.PendingImport{Source: f.Source, ID: f.SourceID, Change: sync.ImportChange(f.Change), Messages: f.Messages, RawBytes: f.RawBytes})
-				}
-				return out, err
-			},
-			Pulled: chat.ReindexPulled,
-		},
+		Hooks:   syncHooks(deps),
 	})
 	// `cloud publish` keeps its own wizard; `config publish` is the
 	// documented spelling, so the old one leaves every listing.
@@ -420,6 +438,7 @@ func commands(deps Deps, setExit func(int), notices func() io.Writer, rerun func
 			ParseSince:    summary.ParseSince,
 			ForeignCache:  deps.ForeignCache,
 			SendPrompt:    text.ContinueSender(queryDeps),
+			CloudResolver: cloudResolver(deps),
 		}),
 		"photo|p": photo.Command(photo.CommandDeps{
 			ConfigPrep:        configPrep,

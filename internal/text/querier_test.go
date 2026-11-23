@@ -575,7 +575,7 @@ func Test_Querier_Query_errors(t *testing.T) {
 }
 
 func Test_Querier(t *testing.T) {
-	t.Run("it should only save to globalScope if in reply mode", func(t *testing.T) {
+	t.Run("it should only save the previous query if in reply mode", func(t *testing.T) {
 		tmpConfigDir := path.Join(t.TempDir(), ".clai")
 		os.MkdirAll(path.Join(tmpConfigDir, "conversations"), os.ModePerm)
 		q := Querier[*MockQuerier]{
@@ -584,7 +584,7 @@ func Test_Querier(t *testing.T) {
 			shouldSaveReply: true,
 			configDir:       tmpConfigDir,
 			chat: pub_models.Chat{
-				ID: "globalScope",
+				ID: "prev-chat",
 				Messages: []pub_models.Message{
 					{
 						Role:    "system",
@@ -651,7 +651,7 @@ func Test_Querier_SavesConversationOnError(t *testing.T) {
 			shouldSaveReply: true,
 			configDir:       tmpConfigDir,
 			chat: pub_models.Chat{
-				ID: "globalScope",
+				ID: "prev-chat",
 				Messages: []pub_models.Message{
 					{
 						Role:    "system",
@@ -704,7 +704,7 @@ func Test_Querier_SavesConversationOnError(t *testing.T) {
 			shouldSaveReply: true,
 			configDir:       tmpConfigDir,
 			chat: pub_models.Chat{
-				ID: "globalScope",
+				ID: "prev-chat",
 				Messages: []pub_models.Message{
 					{
 						Role:    "system",
@@ -750,7 +750,10 @@ func Test_Querier_SavesConversationOnError(t *testing.T) {
 	})
 }
 
-func Test_Querier_SavesConversation_WhenStreamSetupFailsDueToRateLimitTokenCount(t *testing.T) {
+// A fresh query whose run failed before any answer is still saved, and the
+// previous query moves to it, so -re retries with the prompt (worklog
+// 2026-11-17-previous-query-pointer, D9).
+func Test_Querier_RecordsPromptAsPreviousQuery_WhenStreamSetupFailsDueToRateLimitTokenCount(t *testing.T) {
 	tmpConfigDir := path.Join(t.TempDir(), ".clai")
 	if err := os.MkdirAll(path.Join(tmpConfigDir, "conversations"), os.ModePerm); err != nil {
 		t.Fatalf("mkdir conversations: %v", err)
@@ -762,7 +765,6 @@ func Test_Querier_SavesConversation_WhenStreamSetupFailsDueToRateLimitTokenCount
 		shouldSaveReply: true,
 		configDir:       tmpConfigDir,
 		chat: pub_models.Chat{
-			ID: "globalScope",
 			Messages: []pub_models.Message{
 				{Role: "system", Content: "you are a helpful assistant"},
 				{Role: "user", Content: "please do the thing"},
@@ -779,19 +781,15 @@ func Test_Querier_SavesConversation_WhenStreamSetupFailsDueToRateLimitTokenCount
 		t.Fatalf("expected error to match *claierr.RateLimitedError via errors.As, got: %v", err)
 	}
 
-	// Even though stream setup failed, we should persist globalScope in reply mode.
-	lastReply, err := chat.LoadPrevQuery(procenv.Context(context.Background()), q.configDir)
+	prev, err := chat.LoadPrevQuery(procenv.Context(context.Background()), q.configDir)
 	if err != nil {
-		t.Fatalf("load prev query: %v", err)
+		t.Fatalf("expected the failed query to be the previous query, got: %v", err)
 	}
-	if len(lastReply.Messages) < 2 {
-		t.Fatalf("expected at least 2 messages saved, got: %v, data: %v", len(lastReply.Messages), lastReply.Messages)
+	if len(prev.Messages) != 2 || prev.Messages[1].Role != "user" || prev.Messages[1].Content != "please do the thing" {
+		t.Fatalf("previous query messages = %+v, want the system prompt and the user's prompt", prev.Messages)
 	}
-	if lastReply.Messages[1].Content != "please do the thing" {
-		t.Fatalf("expected user message to be preserved, got: %q", lastReply.Messages[1].Content)
-	}
-	if len(lastReply.Queries) != 0 {
-		t.Fatalf("expected no queries in failed reply save, got: %d", len(lastReply.Queries))
+	if len(prev.Queries) != 0 {
+		t.Fatalf("previous query queries = %+v, want none: no model call completed", prev.Queries)
 	}
 }
 
@@ -834,7 +832,7 @@ func Test_Querier_postProcess_OnlyOuterCallEnrichesChat(t *testing.T) {
 		callStackLevel:  2,
 		costEnricher:    newCostEnricher(procenv.Context(context.Background()), costMgr, ready),
 		chat: pub_models.Chat{
-			ID: "globalScope",
+			ID: "prev-chat",
 			Messages: []pub_models.Message{
 				{Role: "user", Content: "hello"},
 			},
@@ -853,8 +851,8 @@ func Test_Querier_postProcess_OnlyOuterCallEnrichesChat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load prev query: %v", err)
 	}
-	if saved.ID != "globalScope" {
-		t.Fatalf("expected saved global scope id, got: %q", saved.ID)
+	if saved.ID != "enriched" {
+		t.Fatalf("expected the previous query to name the enriched chat, got: %q", saved.ID)
 	}
 	if len(saved.Messages) != 2 {
 		t.Fatalf("expected 2 saved messages, got: %d", len(saved.Messages))
@@ -890,7 +888,7 @@ func Test_Querier_postProcess_enriches_before_save_when_cost_manager_ready(t *te
 		shouldSaveReply: true,
 		costEnricher:    newCostEnricher(procenv.Context(context.Background()), costMgr, ready),
 		chat: pub_models.Chat{
-			ID: "globalScope",
+			ID: "prev-chat",
 			Messages: []pub_models.Message{
 				{Role: "system", Content: "sys"},
 				{Role: "user", Content: "hello"},
@@ -910,7 +908,7 @@ func Test_Querier_postProcess_enriches_before_save_when_cost_manager_ready(t *te
 		t.Fatalf("expected 1 enrich call, got %d", enrichCalls)
 	}
 
-	savedPath := path.Join(tmpConfigDir, "conversations", "globalScope.json")
+	savedPath := path.Join(tmpConfigDir, "conversations", "prev-chat.json")
 	savedBytes, err := os.ReadFile(savedPath)
 	if err != nil {
 		t.Fatalf("ReadFile(%q): %v", savedPath, err)
@@ -959,7 +957,7 @@ func Test_Querier_postProcess_preserves_runtime_model_name_in_saved_query_cost(t
 			modelName: "runtime-model-b",
 		},
 		chat: pub_models.Chat{
-			ID: "globalScope",
+			ID: "prev-chat",
 			Messages: []pub_models.Message{
 				{Role: "system", Content: "sys"},
 				{Role: "user", Content: "hello"},
@@ -975,7 +973,7 @@ func Test_Querier_postProcess_preserves_runtime_model_name_in_saved_query_cost(t
 
 	q.postProcess()
 
-	savedPath := path.Join(tmpConfigDir, "conversations", "globalScope.json")
+	savedPath := path.Join(tmpConfigDir, "conversations", "prev-chat.json")
 	savedBytes, err := os.ReadFile(savedPath)
 	if err != nil {
 		t.Fatalf("ReadFile(%q): %v", savedPath, err)
@@ -1020,7 +1018,7 @@ func Test_Querier_postProcess_enriches_before_save_for_nested_tool_root_query(t 
 		callStackLevel:  2,
 		costEnricher:    newCostEnricher(procenv.Context(context.Background()), costMgr, ready),
 		chat: pub_models.Chat{
-			ID: "globalScope",
+			ID: "prev-chat",
 			Messages: []pub_models.Message{
 				{Role: "system", Content: "sys"},
 				{Role: "user", Content: "hello"},
@@ -1040,7 +1038,7 @@ func Test_Querier_postProcess_enriches_before_save_for_nested_tool_root_query(t 
 		t.Fatalf("expected 1 enrich call, got %d", enrichCalls)
 	}
 
-	savedPath := path.Join(tmpConfigDir, "conversations", "globalScope.json")
+	savedPath := path.Join(tmpConfigDir, "conversations", "prev-chat.json")
 	savedBytes, err := os.ReadFile(savedPath)
 	if err != nil {
 		t.Fatalf("ReadFile(%q): %v", savedPath, err)
@@ -1084,7 +1082,7 @@ func Test_Querier_postProcess_SkipsCostEnrichIfManagerNotReady(t *testing.T) {
 		configDir:       tmpConfigDir,
 		costEnricher:    newCostEnricher(procenv.Context(context.Background()), costMgr, ready),
 		chat: pub_models.Chat{
-			ID: "globalScope",
+			ID: "prev-chat",
 			Messages: []pub_models.Message{
 				{Role: "system", Content: "sys"},
 				{Role: "user", Content: "hello"},
@@ -1127,7 +1125,7 @@ func Test_Querier_postProcess_StillSavesWhenCostEnrichFails(t *testing.T) {
 		configDir:       tmpConfigDir,
 		costEnricher:    newCostEnricher(procenv.Context(context.Background()), costMgr, ready),
 		chat: pub_models.Chat{
-			ID: "globalScope",
+			ID: "prev-chat",
 			Messages: []pub_models.Message{
 				{Role: "system", Content: "sys"},
 				{Role: "user", Content: "hello"},
@@ -1193,7 +1191,7 @@ func Test_Querier_Query_ToolCallRecursion_PreservesConversationMessages(t *testi
 		configDir:       tmpConfigDir,
 		costEnricher:    newCostEnricher(procenv.Context(context.Background()), nil, makeClosedChan()),
 		chat: pub_models.Chat{
-			ID: "globalScope",
+			ID: "prev-chat",
 			Messages: []pub_models.Message{
 				{Role: "user", Content: "hello there"},
 			},
@@ -1295,7 +1293,7 @@ func Test_Querier_Query_ToolCallRecursion_UsesFinalAssistantTurnTokenUsageForCos
 		configDir:       tmpConfigDir,
 		costEnricher:    newCostEnricher(procenv.Context(context.Background()), costMgr, makeClosedChan()),
 		chat: pub_models.Chat{
-			ID: "globalScope",
+			ID: "prev-chat",
 			Messages: []pub_models.Message{
 				{Role: "user", Content: "hello there"},
 			},
@@ -1380,7 +1378,7 @@ func Test_Querier_Query_ToolCallRecursion_AccumulatesNestedTokenUsageForCostEnri
 		configDir:       tmpConfigDir,
 		costEnricher:    newCostEnricher(procenv.Context(context.Background()), costMgr, makeClosedChan()),
 		chat: pub_models.Chat{
-			ID: "globalScope",
+			ID: "prev-chat",
 			Messages: []pub_models.Message{
 				{Role: "user", Content: "hello there"},
 			},
@@ -1465,7 +1463,7 @@ func Test_Querier_Query_ToolCallRecursion_CostEnrichmentUsesFinalAssistantTurnTo
 		configDir:       tmpConfigDir,
 		costEnricher:    newCostEnricher(procenv.Context(context.Background()), costMgr, makeClosedChan()),
 		chat: pub_models.Chat{
-			ID: "globalScope",
+			ID: "prev-chat",
 			Messages: []pub_models.Message{
 				{Role: "user", Content: "hello there"},
 			},
@@ -1547,7 +1545,7 @@ func Test_Querier_Query_ToolCallSession_PreservesFinalReplyRoleAndFinalUsage(t *
 		configDir:       tmpConfigDir,
 		costEnricher:    newCostEnricher(procenv.Context(context.Background()), costMgr, makeClosedChan()),
 		chat: pub_models.Chat{
-			ID:       "globalScope",
+			ID:       "prev-chat",
 			Messages: []pub_models.Message{{Role: "user", Content: "hello there"}},
 		},
 		Model: model,

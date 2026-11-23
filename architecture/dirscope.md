@@ -139,16 +139,13 @@ Every non-reply query finalizes by updating the binding (`internal/text/finalize
 4. Cap `History` to `dirScopeHistoryCap`, newest-first.
 5. Persist with the atomic temp + rename idiom.
 
-**Plain `-re` replies do not record; `-dre` replies do.** Recording is an always-on enrichment of *non-reply*
-queries **and of directory replies**. A plain `-re` reply continues the global previous query and forks a
-*fresh promoted id*, so recording it would pollute the history with near-duplicates — it is excluded. A
-directory reply (`-dre`), by contrast, continues the conversation **bound to the current directory in place**
-(same id, no fork — `applyDirReplyChatID` pins the bound id before the run), so upserting it merely bumps that
-existing history entry's `LastScoped` and moves it to the front. That keeps the directory's history current and
-the binding chainable across successive `-dre` turns (and records the conversation into the history of a *new*
-directory it is continued from). The finalizer therefore gates the binding write on
-`!replyMode || dirReplyMode` (`Querier.replyMode` / `Querier.dirReplyMode`, set from
-`Configurations.ReplyMode` / `Configurations.DirReplyMode`).
+**Every reply records.** Recording is an always-on enrichment of queries and of every reply mode. A plain `-re`
+reply continues the previous query's conversation **in place** (same id, no fork: `SetupInitialChat` adopts the id
+from the previous-query record), so upserting it merely bumps that existing history entry's `LastScoped` and moves
+it to the front. A directory reply (`-dre`) does the same for the conversation **bound to the current directory**
+(`applyDirReplyChatID` pins the bound id before the run). That keeps the directory's history current and the
+binding chainable across successive replies (and records the conversation into the history of a *new* directory it
+is continued from). The finalizer writes the binding whenever the run has a chat id; there is no reply-mode gate.
 
 **Replying to a named conversation.** `chat continue <chat-id> <prompt>` sends the prompt to the conversation
 saved under that id, in place, and records like `-dre`. It reads no binding: two runs in one directory each
@@ -356,10 +353,9 @@ read message ab12[7]
    `last_scoped` on a repeat and preserving `first_scoped`; `history[0].chat_id == chat_id` immediately after.
 3. A `version: 1` binding resolves directly and upgrades to `version: 2` in place at the **same** path on the
    next write (preserving `chat_id`, seeding `history`); no rename, no second key.
-4. Recording is always-on and independent of the lookback flag; **a plain `-re` reply does not record** (it
-   forks a fresh promoted id), but a **`-dre` directory reply does record** — it continues the bound
-   conversation in place (same id) and upserts/bumps its history entry; chats are always stored; no switch
-   disables binding/history recording.
+4. Recording is always-on and independent of the lookback flag; a **`-re`** or **`-dre`** reply also records — it
+   continues its conversation in place (same id) and upserts/bumps that history entry; chats are always stored;
+   no switch disables binding/history recording.
 5. Every chat is stamped with `origin_dir` = canonical CWD on first persist, never rewritten; the value is
    mirrored into the chat index. Stamping is forward-only and has no enablement switch.
 6. All date fields are typed `time.Time`; no date is stored as a manually formatted string.
@@ -399,9 +395,9 @@ E2E tests (`e2e/conversation/dirscope_e2e_test.go`) use the `mock` vendor with s
 1. **Recording is unconditional** — two sequential non-reply queries in one temp directory produce a
    `version: 2` binding whose `history` lists both ids (newest-first, deduped), with `abs_path` set and
    `updated` typed; holds without `-lb`.
-2. **Plain `-re` does not record; `-dre` does** — a non-reply query seeds one history entry; a subsequent `-re`
-   reply (which forks a fresh promoted id) leaves the history unchanged, while a `-dre` reply continues the bound
-   conversation in place (no fork) and bumps that same history entry's `last_scoped` (preserving `first_scoped`).
+2. **Replies bump, never add** — a non-reply query seeds one history entry; a subsequent `-re` or `-dre` reply
+   continues the conversation in place (no fork) and bumps that same history entry's `last_scoped` (preserving
+   `first_scoped`).
 3. **v1 → v2 in-place upgrade** — a `version: 1` fixture reads without error and is rewritten as `version: 2` at
    the same path on the next query.
 4. **Origin stamping** — a non-reply query persists a chat whose `origin_dir` equals the canonical CWD, mirrored

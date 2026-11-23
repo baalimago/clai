@@ -89,6 +89,8 @@ type Server struct {
 	// OnCommit runs once, before the next commit is checked: another
 	// device committing between a pull and a commit.
 	OnCommit func(*Server)
+	// FetchedHashes holds the blob hashes clients asked for, in request order.
+	FetchedHashes []string
 	// Requests counts calls per path, without the query.
 	Requests map[string]int
 	// Clock stamps commits, in Unix milliseconds.
@@ -237,6 +239,7 @@ func (s *Server) token(w http.ResponseWriter) {
 
 func (s *Server) blob(w http.ResponseWriter, r *http.Request, sha string) {
 	if r.Method == http.MethodGet {
+		s.FetchedHashes = append(s.FetchedHashes, sha)
 		b, ok := s.Blobs[sha]
 		if !ok {
 			problem(w, Problem{Status: 404, Code: "not_found", Message: "no such blob"})
@@ -317,6 +320,7 @@ func (s *Server) fetch(w http.ResponseWriter, r *http.Request) {
 		problem(w, Problem{Status: 400, Code: "invalid_request", Message: "too many hashes in one fetch"})
 		return
 	}
+	s.FetchedHashes = append(s.FetchedHashes, in.Hashes...)
 	missing := []string{}
 	for _, h := range in.Hashes {
 		if _, ok := s.Blobs[h]; !ok {

@@ -36,7 +36,7 @@ func Test_e2e_chat_continue_sends_the_trailing_prompt(t *testing.T) {
 		t.Fatalf("Glob: %v", err)
 	}
 	for _, p := range convs {
-		if filepath.Base(p) != "globalScope.json" && strings.Contains(e2etest.ReadStringFile(t, p), `"content": "follow up"`) {
+		if strings.Contains(e2etest.ReadStringFile(t, p), `"content": "follow up"`) {
 			return
 		}
 	}

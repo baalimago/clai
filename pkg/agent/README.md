@@ -25,7 +25,7 @@ type Review struct {
 }
 
 querier := agent.NewTyped[Review](
-	agent.WithModel("gpt-5.2"),
+	agent.WithModel("gpt-6-luna"),
 	agent.WithPrompt("You review pull requests."),
 )
 if err := querier.Setup(ctx); err != nil {

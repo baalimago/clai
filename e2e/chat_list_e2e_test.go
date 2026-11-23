@@ -884,7 +884,7 @@ func Test_e2e_chat_list_macro_dir_filter_empty(t *testing.T) {
 	// Work in a temp dir with no dirscope bindings.
 	workDir := t.TempDir()
 
-	// No chats seeded — empty conv dir (except for the index/globalScope).
+	// No chats seeded — empty conv dir (except for the index).
 
 	// d=toggle dir filter ON → empty view → trailing q exits
 	stdout, status := harness.RunOne(t, workDir, "-n -r c l d")
@@ -927,5 +927,33 @@ func Test_e2e_chat_list_does_not_create_config_dir(t *testing.T) {
 
 	if _, err := os.Stat(confDir); !os.IsNotExist(err) {
 		t.Fatalf("expected config dir %q to not exist after chat list, stat err=%v", confDir, err)
+	}
+}
+
+func seedListRecord(t *testing.T, confDir string) {
+	t.Helper()
+	e2etest.SeedPreviousConv(t, confDir, pub_models.Chat{
+		ID: "prev-chat", Created: time.Now(), Messages: []pub_models.Message{{Role: "user", Content: "the previous query"}},
+	})
+}
+
+func Test_e2e_chat_list_continues_line(t *testing.T) {
+	confDir := e2etest.SetupMainTestConfigDir(t)
+	t.Setenv("HOME", t.TempDir())
+	seedListRecord(t, confDir)
+	stdout, stderr, status := harness.RunOneStreams(t, confDir, "-r -n chat list q")
+	want := "-re continues: 0 · the previous query\n"
+	if status != 0 || !strings.HasPrefix(stdout, want) {
+		t.Fatalf("status %d stdout %q stderr %q; want stdout to start with %q", status, stdout, stderr, want)
+	}
+}
+
+func Test_e2e_chat_list_json_unchanged(t *testing.T) {
+	confDir := e2etest.SetupMainTestConfigDir(t)
+	t.Setenv("HOME", t.TempDir())
+	seedListRecord(t, confDir)
+	stdout, _, _ := harness.RunOneStreams(t, confDir, "-json -n chat list q")
+	if strings.Contains(stdout, "-re continues") {
+		t.Fatalf("-json output carries the line: %q", stdout)
 	}
 }

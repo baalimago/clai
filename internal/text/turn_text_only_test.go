@@ -53,7 +53,6 @@ func (f fixedTool) Specification() pub_models.Specification {
 type textOnlyRun struct {
 	bodies []string
 	out    string
-	global string
 	conv   string
 }
 
@@ -137,17 +136,13 @@ func runTextOnlyTurn(t *testing.T, prepare func(q *Querier[*anthropic.Claude], c
 		*sessionChat = session.Chat
 	}
 	convDir := filepath.Join(configDir, "conversations")
-	global, err := os.ReadFile(filepath.Join(convDir, "globalScope.json"))
-	if err != nil {
-		t.Fatalf("read globalScope: %v", err)
-	}
 	entries, err := os.ReadDir(convDir)
 	if err != nil {
 		t.Fatalf("list conversations: %v", err)
 	}
 	var promoted []string
 	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".json") && e.Name() != "globalScope.json" && !strings.HasPrefix(e.Name(), "index") {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".json") && !strings.HasPrefix(e.Name(), "index") {
 			promoted = append(promoted, e.Name())
 		}
 	}
@@ -164,13 +159,12 @@ func runTextOnlyTurn(t *testing.T, prepare func(q *Querier[*anthropic.Claude], c
 	return textOnlyRun{
 		bodies: append([]string(nil), bodies...),
 		out:    out.String(),
-		global: normalizePersisted(t, global, id),
 		conv:   normalizePersisted(t, conv, id),
 	}
 }
 
 func (r textOnlyRun) files() map[string]string {
-	m := map[string]string{"output.txt": r.out, "globalScope.json": r.global, "conversation.json": r.conv}
+	m := map[string]string{"output.txt": r.out, "conversation.json": r.conv}
 	for i, b := range r.bodies {
 		m["request-"+string(rune('1'+i))+".json"] = b
 	}

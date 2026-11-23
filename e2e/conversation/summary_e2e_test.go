@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -107,8 +108,9 @@ func runQuery(t *testing.T, args string) {
 	}
 }
 
-// Integration row one: a plain -re forks a new file that inherits the seed's
-// title, summary and summary_at; the seed is untouched and no binding is written.
+// Integration row one: a plain -re continues the seed's file in place, keeping
+// its title, summary and summary_at, and records only that conversation in the
+// directory binding.
 func Test_e2e_reply_preserves_title_summary(t *testing.T) {
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
@@ -118,47 +120,106 @@ func Test_e2e_reply_preserves_title_summary(t *testing.T) {
 	convDir := filepath.Join(confDir, "conversations")
 
 	seed := labelChat(e2etest.MakeConv("seed-chat", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), e2etest.MsgUser("seed query"), e2etest.MsgAsst("seed answer")))
-	e2etest.SeedConv(t, convDir, seed)
-	mirror := seed
-	mirror.ID = "globalScope"
-	e2etest.SeedConv(t, convDir, mirror)
-	seedPath := filepath.Join(convDir, "seed-chat.json")
-	seedBefore := e2etest.ReadStringFile(t, seedPath)
+	e2etest.SeedPreviousConv(t, confDir, seed)
 
 	runQuery(t, "-r -re -cm test q more")
 
-	if got := e2etest.ReadStringFile(t, seedPath); got != seedBefore {
-		t.Fatalf("seed file modified by -re:\n%s", got)
-	}
 	convs := conversationFiles(t, confDir)
-	if len(convs) != 2 {
-		t.Fatalf("expected the seed plus one forked conversation, got %v", convs)
+	if len(convs) != 1 {
+		t.Fatalf("expected only the seed's file, got %v", convs)
 	}
-	var fork pub_models.Chat
-	for _, p := range convs {
-		if c := loadConv(t, p); c.ID != seed.ID {
-			fork = c
-		}
-	}
-	if fork.ID == "" {
-		t.Fatalf("no forked conversation found in %v", convs)
-	}
-	assertLabelledChat(t, fork)
-	if len(fork.Messages) < len(seed.Messages)+2 {
-		t.Fatalf("expected the seed's messages plus the new turn, got %d messages", len(fork.Messages))
+	got := loadConv(t, filepath.Join(convDir, "seed-chat.json"))
+	assertLabelledChat(t, got)
+	if len(got.Messages) < len(seed.Messages)+2 {
+		t.Fatalf("expected the seed's messages plus the new turn, got %d messages", len(got.Messages))
 	}
 	for i, m := range seed.Messages {
-		if fork.Messages[i].Content != m.Content {
-			t.Fatalf("message %d = %q, want %q", i, fork.Messages[i].Content, m.Content)
+		if got.Messages[i].Content != m.Content {
+			t.Fatalf("message %d = %q, want %q", i, got.Messages[i].Content, m.Content)
 		}
 	}
-	if fork.Messages[len(seed.Messages)].Content != "more" {
-		t.Fatalf("expected the new turn after the seed messages, got %q", fork.Messages[len(seed.Messages)].Content)
+	if got.Messages[len(seed.Messages)].Content != "more" {
+		t.Fatalf("expected the new turn after the seed messages, got %q", got.Messages[len(seed.Messages)].Content)
 	}
-	assertLabelledChat(t, loadConv(t, filepath.Join(convDir, "globalScope.json")))
-	if bindings, _ := filepath.Glob(filepath.Join(convDir, "dirs", "*.json")); len(bindings) != 0 {
-		t.Fatalf("plain -re must not write a dirscope binding, got %v", bindings)
+	binding := readOnlyBinding(t, confDir)
+	for _, entry := range binding.History {
+		if entry.ChatID != seed.ID {
+			t.Fatalf("binding history names %q, want only the continued conversation %q", entry.ChatID, seed.ID)
+		}
 	}
+}
+
+// -re continues the previous query's conversation in place: one file, the
+// seed's id, the user chain [seed, reply].
+func Test_e2e_reply_adds_no_conversation_file(t *testing.T) {
+	oldArgs := os.Args
+	t.Cleanup(func() { os.Args = oldArgs })
+	confDir := e2etest.SetupMainTestConfigDir(t)
+	t.Setenv("CLAI_CACHE_DIR", filepath.Join(t.TempDir(), "cache"))
+	e2etest.ChdirTemp(t)
+
+	seed := e2etest.MakeConv("seed-chat", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), e2etest.MsgUser("seed query"), e2etest.MsgAsst("seed answer"))
+	e2etest.SeedPreviousConv(t, confDir, seed)
+
+	runQuery(t, "-r -re -cm test q reply")
+
+	convs := conversationFiles(t, confDir)
+	if len(convs) != 1 {
+		t.Fatalf("expected exactly one conversation file, got %v", convs)
+	}
+	got := loadConv(t, convs[0])
+	if got.ID != seed.ID {
+		t.Fatalf("conversation id = %q, want the seed's %q", got.ID, seed.ID)
+	}
+	if users := userContents(got); !reflect.DeepEqual(users, []string{"seed query", "reply"}) {
+		t.Fatalf("user chain = %v, want [seed query reply]", users)
+	}
+}
+
+// Two -re in a row stay in one file: three user messages, created unchanged and
+// a single chat list row.
+func Test_e2e_reply_twice_stays_in_one_conversation(t *testing.T) {
+	oldArgs := os.Args
+	t.Cleanup(func() { os.Args = oldArgs })
+	confDir := e2etest.SetupMainTestConfigDir(t)
+	t.Setenv("CLAI_CACHE_DIR", filepath.Join(t.TempDir(), "cache"))
+	e2etest.ChdirTemp(t)
+
+	seed := e2etest.MakeConv("seed-chat", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), e2etest.MsgUser("seed query"), e2etest.MsgAsst("seed answer"))
+	e2etest.SeedPreviousConv(t, confDir, seed)
+
+	runQuery(t, "-r -re -cm test q first")
+	runQuery(t, "-r -re -cm test q second")
+
+	convs := conversationFiles(t, confDir)
+	if len(convs) != 1 {
+		t.Fatalf("expected exactly one conversation file, got %v", convs)
+	}
+	got := loadConv(t, convs[0])
+	if users := userContents(got); !reflect.DeepEqual(users, []string{"seed query", "first", "second"}) {
+		t.Fatalf("user chain = %v, want [seed query first second]", users)
+	}
+	if !got.Created.Equal(seed.Created) {
+		t.Fatalf("created = %v, want the seed's %v", got.Created, seed.Created)
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	listOut, status := harness.RunOne(t, cwd, "-n -r c l q")
+	if status != 0 || strings.Count(listOut, "| clai ") != 1 {
+		t.Fatalf("chat list status %d, want exactly one row, got:\n%s", status, listOut)
+	}
+}
+
+func userContents(c pub_models.Chat) []string {
+	var out []string
+	for _, m := range c.Messages {
+		if m.Role == "user" {
+			out = append(out, m.Content)
+		}
+	}
+	return out
 }
 
 // Integration row two: -dre continues the bound conversation in place and
@@ -318,7 +379,7 @@ func setupSummaryE2E(t *testing.T) string {
 	// A current, empty index keeps the pre-existing "Building cache index"
 	// chatter off stderr so the rows' empty-stderr oracle is exact.
 	cachePath := filepath.Join(confDir, "conversations", "chat_index.cache")
-	if err := os.WriteFile(cachePath, []byte(`{"version":2,"rows":[]}`), 0o644); err != nil {
+	if err := os.WriteFile(cachePath, []byte(`{"version":4,"rows":[]}`), 0o644); err != nil {
 		t.Fatalf("WriteFile(chat_index.cache): %v", err)
 	}
 	e2etest.ChdirTemp(t)
@@ -327,7 +388,7 @@ func setupSummaryE2E(t *testing.T) string {
 
 // Phase 4 integration row one: the first query labels the conversation in
 // flight through the real summarizer and the mock vendor; the file, the
-// index row and the mirror carry the label, stderr stays empty.
+// index row and the previous-query record carry the label, stderr stays empty.
 func Test_e2e_query_labels_in_flight(t *testing.T) {
 	confDir := setupSummaryE2E(t)
 
@@ -349,8 +410,9 @@ func Test_e2e_query_labels_in_flight(t *testing.T) {
 	if row := readIndexRows(t, confDir)[got.ID]; row.Title != "Mock title" || row.Summary != "Mock summary." {
 		t.Fatalf("index row = %+v, want the label", row)
 	}
-	if mirror := loadConv(t, filepath.Join(confDir, "conversations", "globalScope.json")); mirror.Title != "Mock title" {
-		t.Fatalf("globalScope.json title = %q, want the label", mirror.Title)
+	prev, err := chat.LoadPreviousQuery(context.Background(), confDir)
+	if err != nil || prev.Chat.ID != got.ID || prev.Chat.Title != "Mock title" {
+		t.Fatalf("previous query = %q %q err %v, want the labelled conversation %q", prev.Chat.ID, prev.Chat.Title, err, got.ID)
 	}
 	readOnlyBinding(t, confDir)
 }
@@ -527,8 +589,8 @@ func Test_e2e_chat_summarize_window(t *testing.T) {
 	if rows["inside-a"].Title != "Mock title" || rows["inside-b"].Title != "Mock title" || rows["older"].Title != "" {
 		t.Fatalf("index rows = %+v, want the two inside rows labelled", rows)
 	}
-	if _, err := os.Stat(filepath.Join(convDir, "globalScope.json")); !os.IsNotExist(err) {
-		t.Fatalf("globalScope.json must stay untouched, stat err=%v", err)
+	if _, err := os.Stat(chat.PreviousQueryPath(confDir)); !os.IsNotExist(err) {
+		t.Fatalf("a failed job must not write the previous-query record, stat err=%v", err)
 	}
 	if bindings, _ := filepath.Glob(filepath.Join(convDir, "dirs", "*.json")); len(bindings) != 0 {
 		t.Fatalf("the batch must not write a dirscope binding, got %v", bindings)
@@ -634,8 +696,8 @@ func Test_e2e_chat_summarize_vendor_error_leaves_list_working(t *testing.T) {
 	if e2etest.ReadStringFile(t, path) != fileBefore || indexSnapshot(t, convDir) != cacheBefore {
 		t.Fatal("a failed job must touch neither the file nor the index")
 	}
-	if _, err := os.Stat(filepath.Join(convDir, "globalScope.json")); !os.IsNotExist(err) {
-		t.Fatalf("globalScope.json must stay untouched, stat err=%v", err)
+	if _, err := os.Stat(chat.PreviousQueryPath(confDir)); !os.IsNotExist(err) {
+		t.Fatalf("a failed job must not write the previous-query record, stat err=%v", err)
 	}
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -917,6 +979,44 @@ func Test_e2e_summarizer_guard(t *testing.T) {
 			if got := e2etest.ReadStringFile(t, filepath.Join(convDir, "guarded.json")); got != before {
 				t.Fatalf("conversation modified by a refused run:\n%s", got)
 			}
+		})
+	}
+}
+
+// -re continues the previous conversation whole: a clone from another tool or a
+// fork keeps its source and parent link, so the foreign original does not
+// reappear in chat list.
+func Test_e2e_reply_keeps_source_and_source_id(t *testing.T) {
+	for _, tc := range []struct{ name, source, sourceID string }{
+		{"cloned from another tool", "claude-code", "foreign-session"},
+		{"fork of a clai chat", "clai", "parent-chat"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			oldArgs := os.Args
+			t.Cleanup(func() { os.Args = oldArgs })
+			confDir := e2etest.SetupMainTestConfigDir(t)
+			t.Setenv("CLAI_CACHE_DIR", filepath.Join(t.TempDir(), "cache"))
+			e2etest.ChdirTemp(t)
+
+			seed := labelChat(e2etest.MakeConv("seed-chat", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), e2etest.MsgUser("seed query"), e2etest.MsgAsst("seed answer")))
+			seed.Source, seed.SourceID = tc.source, tc.sourceID
+			seed.OriginDir, seed.GroupKey = "/origin", "group"
+			e2etest.SeedPreviousConv(t, confDir, seed)
+
+			runQuery(t, "-r -re -cm test q more")
+
+			convs := conversationFiles(t, confDir)
+			if len(convs) != 1 {
+				t.Fatalf("expected only the seed's file, got %v", convs)
+			}
+			got := loadConv(t, convs[0])
+			if got.Source != tc.source || got.SourceID != tc.sourceID {
+				t.Fatalf("source = %q/%q, want %q/%q", got.Source, got.SourceID, tc.source, tc.sourceID)
+			}
+			if got.OriginDir != seed.OriginDir || got.GroupKey != seed.GroupKey {
+				t.Fatalf("origin/group = %q/%q, want the seed's %q/%q", got.OriginDir, got.GroupKey, seed.OriginDir, seed.GroupKey)
+			}
+			assertLabelledChat(t, got)
 		})
 	}
 }
