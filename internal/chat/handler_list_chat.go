@@ -272,11 +272,14 @@ type chatListRow struct {
 	OriginDir string
 
 	// Display
-	Profile          string
-	Model            string
-	MessageCount     int
-	TotalTokens      int
-	TotalCostUSD     float64
+	Profile      string
+	Model        string
+	MessageCount int
+	TotalTokens  int
+	TotalCostUSD float64
+	// OwnTotalTokens and OwnTotalCostUSD are the row's own spend (I10); a group row totals them.
+	OwnTotalTokens   int
+	OwnTotalCostUSD  float64
 	FirstUserMessage string
 	Title            string
 	Summary          string
@@ -284,6 +287,8 @@ type chatListRow struct {
 	GroupKey string
 	// GroupMemberCount is populated only for group rows (Kind == chatRowGroup).
 	GroupMemberCount int
+	// GroupMemberIDs lists the native members' chat IDs of a group row.
+	GroupMemberIDs []string
 }
 
 func (r chatListRow) displaySource() string {
@@ -437,6 +442,8 @@ func (cq *ChatHandler) buildChatListRows(ctx context.Context, paginator *ChatInd
 			MessageCount:     r.MessageCount,
 			TotalTokens:      r.TotalTokens,
 			TotalCostUSD:     r.TotalCostUSD,
+			OwnTotalTokens:   r.OwnTotalTokens,
+			OwnTotalCostUSD:  r.OwnTotalCostUSD,
 			FirstUserMessage: r.FirstUserMessage,
 			Title:            r.Title,
 			Summary:          r.Summary,
@@ -677,12 +684,14 @@ func buildGroupRow(rows []chatListRow, members []int, groupKey string) chatListR
 	var totalTokens int
 	var totalCost float64
 	var totalMessages int
+	var memberIDs []string
 	for _, idx := range members {
 		r := rows[idx]
 		totalMessages += r.MessageCount
 		if r.Kind == chatRowNative {
-			totalTokens += r.TotalTokens
-			totalCost += r.TotalCostUSD
+			totalTokens += r.OwnTotalTokens
+			totalCost += r.OwnTotalCostUSD
+			memberIDs = append(memberIDs, r.ChatID)
 		}
 	}
 
@@ -719,6 +728,7 @@ func buildGroupRow(rows []chatListRow, members []int, groupKey string) chatListR
 		Summary:          newest.Summary,
 		GroupKey:         groupKey,
 		GroupMemberCount: len(members),
+		GroupMemberIDs:   memberIDs,
 	}
 }
 
@@ -882,6 +892,7 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 		}()
 	}
 	inDir, _, hasDirFilter := cq.dirScopeRowPredicate()
+	prevState := previousQueryStateFor(ctx, cq.confDir)
 	dirFilterOn := false
 	// External conversations show by default; [f] hides them for the
 	// rest of the list session. The button is offered only when a source
@@ -971,7 +982,13 @@ func (cq *ChatHandler) listChats(ctx context.Context, paginator *ChatIndexPagina
 			})
 		}
 
+		if writeErr := cq.writePreviousQueryLine(prevState, pr.rows, groupKey != ""); writeErr != nil {
+			return writeErr
+		}
 		selectedNumbers, shownPage, err := tb.Run()
+		if clearErr := cq.clearPreviousQueryLine(prevState, pr.rows, groupKey != ""); clearErr != nil {
+			return clearErr
+		}
 		if groupKey != "" {
 			groupPage = shownPage
 		} else {

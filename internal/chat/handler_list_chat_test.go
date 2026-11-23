@@ -108,8 +108,8 @@ func TestPrepareListRows_DirScopedGroups(t *testing.T) {
 	}
 
 	allRows := []chatListRow{
-		{Kind: chatRowNative, ChatID: "bound", GroupKey: "gk-in", MessageCount: 2, TotalTokens: 10},
-		{Kind: chatRowNative, ChatID: "bound2", GroupKey: "gk-in", MessageCount: 3, TotalTokens: 5},
+		{Kind: chatRowNative, ChatID: "bound", GroupKey: "gk-in", MessageCount: 2, TotalTokens: 10, OwnTotalTokens: 10},
+		{Kind: chatRowNative, ChatID: "bound2", GroupKey: "gk-in", MessageCount: 3, TotalTokens: 5, OwnTotalTokens: 5},
 		{Kind: chatRowNative, ChatID: "unbound", GroupKey: "gk-in", MessageCount: 100},
 		{Kind: chatRowForeign, Source: "pi", SourceID: "p1", OriginDir: "/somewhere/else", GroupKey: "gk-out"},
 		{Kind: chatRowNative, ChatID: "also-unbound", GroupKey: "gk-out"},
@@ -765,12 +765,12 @@ func TestCollapseGroupRows_BasicGrouping(t *testing.T) {
 		{
 			Kind: chatRowNative, Created: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
 			ChatID: "a", FirstUserMessage: "fix the auth bug", GroupKey: gk,
-			Profile: "default", Model: "gpt-5", MessageCount: 5, TotalTokens: 100, TotalCostUSD: 1.23,
+			Profile: "default", Model: "gpt-5", MessageCount: 5, TotalTokens: 100, TotalCostUSD: 1.23, OwnTotalTokens: 100, OwnTotalCostUSD: 1.23,
 		},
 		{
 			Kind: chatRowNative, Created: time.Date(2026, 1, 2, 3, 4, 4, 0, time.UTC),
 			ChatID: "b", FirstUserMessage: "fix the auth bug", GroupKey: gk,
-			Profile: "default", Model: "gpt-5", MessageCount: 3, TotalTokens: 60, TotalCostUSD: 0.50,
+			Profile: "default", Model: "gpt-5", MessageCount: 3, TotalTokens: 60, TotalCostUSD: 0.50, OwnTotalTokens: 60, OwnTotalCostUSD: 0.50,
 		},
 		{
 			Kind: chatRowNative, Created: time.Date(2026, 1, 2, 3, 4, 3, 0, time.UTC),

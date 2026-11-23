@@ -3,6 +3,7 @@ package text
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -100,7 +101,7 @@ func TestQuerier_FinishQueryPropagatesWriteErrors(t *testing.T) {
 	q.Raw = true
 	q.querySummary = true
 	q.errOut = failingWriter{}
-	err := q.finishQuery(time.Now(), pub_models.Chat{}, pub_models.Chat{}, nil)
+	err := q.finishQuery(time.Now(), pub_models.Chat{}, pub_models.Chat{}, "", nil)
 	if err == nil || !strings.Contains(err.Error(), "print query summary: boom") {
 		t.Fatalf("err = %v, want the write failure", err)
 	}
@@ -294,7 +295,7 @@ func TestQuerier_FinishQueryNamesAFailedParentReport(t *testing.T) {
 	t.Cleanup(func() { _ = scope.Close() })
 	q := rollingLoopQuerier(t, &strings.Builder{})
 	q.SetRunTally(scope)
-	err = q.finishQuery(time.Now(), pub_models.Chat{}, pub_models.Chat{}, nil)
+	err = q.finishQuery(time.Now(), pub_models.Chat{}, pub_models.Chat{}, "", nil)
 	if err == nil || !strings.Contains(err.Error(), "report to parent run") {
 		t.Fatalf("err = %v, want the failed report", err)
 	}
@@ -341,5 +342,39 @@ func TestRunTallyQuerier_IsTransparentToTheCompletionBell(t *testing.T) {
 	}
 	if got := answerer.Answer(); got != models.Querier(inner) {
 		t.Fatalf("Answer() = %T, want the run inside", got)
+	}
+}
+
+func TestQuerySummary_namesChatFirst(t *testing.T) {
+	s := QuerySummary{Duration: 4 * time.Second, ChatID: "0198f2c4", RunTally: sampleTally()}
+	got := s.Lines()
+	if len(got) != 5 || got[1] != "  chat    0198f2c4" {
+		t.Fatalf("Lines = %q, want the chat row first after the title", got)
+	}
+}
+
+func TestQuerySummary_noChatRowWithoutSave(t *testing.T) {
+	s := QuerySummary{Duration: 4 * time.Second, RunTally: sampleTally()}
+	for _, l := range s.Lines() {
+		if strings.Contains(l, "chat") {
+			t.Fatalf("row %q names a chat although the run saved none", l)
+		}
+	}
+}
+
+func TestQuerySummary_jsonChatID(t *testing.T) {
+	has := func(facts []slog.Attr) (string, bool) {
+		for _, f := range facts {
+			if f.Key == "chat_id" {
+				return f.Value.String(), true
+			}
+		}
+		return "", false
+	}
+	if got, ok := has(QuerySummary{ChatID: "abc"}.facts()); !ok || got != "abc" {
+		t.Fatalf("chat_id = %q (present %v), want abc", got, ok)
+	}
+	if got, ok := has(QuerySummary{}.facts()); ok {
+		t.Fatalf("chat_id = %q present for a run that saved nothing", got)
 	}
 }

@@ -1188,3 +1188,53 @@ func Test_matchingTools_hiddenToolsNeedTheirExactName(t *testing.T) {
 		t.Fatalf("an exact selection of a hidden tool must resolve it, got %d", len(got))
 	}
 }
+
+func registeredByFreshSetup(t *testing.T, conf Configurations) []string {
+	t.Helper()
+	confDir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(confDir, "mcpServers"), 0o755); err != nil {
+		t.Fatalf("mkdir mcpServers: %v", err)
+	}
+	t.Setenv("CLAI_CACHE_DIR", filepath.Join(t.TempDir(), "cache"))
+	completer := &toolBoxCompleter{}
+	conf.UseTools = true
+	conf.ConfigDir = confDir
+	if err := setupTooling(procenv.Context(t.Context()), completer, &conf, &recordingSuccessSink{}); err != nil {
+		t.Fatalf("setupTooling: %v", err)
+	}
+	return completer.registered
+}
+
+func TestSetupTooling_offeredOrderIsDeterministic(t *testing.T) {
+	cases := map[string]Configurations{
+		"every tool": {},
+		"glob":       {RequestedToolGlobs: []string{"*_*"}},
+	}
+	for name, conf := range cases {
+		t.Run(name, func(t *testing.T) {
+			first := registeredByFreshSetup(t, conf)
+			if len(first) < 2 {
+				t.Fatalf("want several tools, got %v", first)
+			}
+			if !slices.IsSorted(first) {
+				t.Fatalf("tools not offered in name order: %v", first)
+			}
+			for range 20 {
+				if got := registeredByFreshSetup(t, conf); !slices.Equal(got, first) {
+					t.Fatalf("order changed between builds:\n%v\n%v", first, got)
+				}
+			}
+		})
+	}
+}
+
+func Test_matchingTools_areInNameOrder(t *testing.T) {
+	tools.Init(procenv.Context(context.Background()))
+	var names []string
+	for _, tool := range matchingTools(tools.Registry.All(), "*") {
+		names = append(names, tool.Specification().Name)
+	}
+	if !slices.IsSorted(names) {
+		t.Fatalf("matchingTools not in name order: %v", names)
+	}
+}

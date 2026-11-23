@@ -79,7 +79,7 @@
 
 == chat_index.cache
 {
-  "version": 3,
+  "version": 4,
   "rows": [
     {
       "id": "<promoted>",

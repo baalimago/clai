@@ -163,7 +163,7 @@ func Test_e2e_nested_help(t *testing.T) {
 			status = harness.Run([]string{"chat", "-h"})
 		})
 		testboil.FailTestIfDiff(t, status, 0)
-		for _, want := range []string{"continue|c", "delete|d", "list|l", "dir", "dirv2"} {
+		for _, want := range []string{"continue|c", "fork|f", "delete|d", "list|l", "dir", "dirv2"} {
 			if !strings.Contains(stdout, want) {
 				t.Fatalf("expected chat help to list %q, got: %q", want, stdout)
 			}

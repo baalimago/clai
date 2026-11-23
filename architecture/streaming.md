@@ -163,6 +163,22 @@ chat URL without `/api/v1/chat/completions`. It runs once per completer, lazily,
 cached per model under the clai cache dir; a failed lookup leaves the request exactly as
 it was.
 
+## Prompt caching
+
+OpenAI, DeepSeek, xAI and Kimi cache a request's prefix on their own, and clai changes nothing for them.
+Anthropic caches only when the request asks, so every request the `anthropic` vendor sends carries one
+top-level `"cache_control": {"type": "ephemeral"}` (automatic caching, the 5-minute TTL; no setting turns it
+off). The provider puts one breakpoint on the request's last cacheable block and reads the longest entry it
+finds within 20 positions before it. The first request over the model's minimum cacheable length writes its
+uncached tail at 1.25x; later turns, replies and forks read it at 0.1x (0.05x on Opus 5.5 and Sonnet 5.5), and a
+one-shot query that is never continued pays the 1.25x and reads nothing. Cached input tokens come back in
+`message_start`'s `cache_read_input_tokens` and show as `(N cached)` in the run summary (`-qs`).
+
+A continue or a fork repeats the chat's last request byte for byte up to its newest message, which is what
+lets the cache hit. A fork runs on the profile's model, so the cache hits when the parent ran on it too; the flags that shape the
+request (`-cm`, `-t`, `-lb`) must be repeated to fork a chat run with them. Claude models reached through OpenRouter stay uncached: the generic layer and the
+`openrouter` vendor have no hook for a top-level body field.
+
 ## Streaming Loop Responsibilities
 
 The consumer loop (see `internal/text/querier.go`, and chat equivalents) is responsible for:

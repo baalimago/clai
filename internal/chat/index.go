@@ -33,7 +33,8 @@ var SkipIndex bool
 //	2 — GroupKey field added (content-hash grouping)
 //	3 — the previous-query mirror stopped being a conversation: its row is
 //	    skipped on rebuild, so a pre-v3 cache holding one is rebuilt without it
-const chatIndexVersion = 3
+//	4 — own_total_tokens and own_total_cost_usd added (I10): a cache of an older version is rebuilt
+const chatIndexVersion = 4
 
 type chatIndexCache struct {
 	Version int            `json:"version"`
@@ -41,16 +42,19 @@ type chatIndexCache struct {
 }
 
 type chatIndexRow struct {
-	ID               string    `json:"id"`
-	Created          time.Time `json:"created"`
-	Source           string    `json:"source,omitempty"`
-	SourceID         string    `json:"source_id,omitempty"`
-	Profile          string    `json:"profile,omitempty"`
-	Model            string    `json:"model,omitempty"`
-	MessageCount     int       `json:"message_count"`
-	TotalTokens      int       `json:"total_tokens,omitempty"`
-	TotalCostUSD     float64   `json:"total_cost_usd,omitempty"`
-	FirstUserMessage string    `json:"first_user_message,omitempty"`
+	ID           string    `json:"id"`
+	Created      time.Time `json:"created"`
+	Source       string    `json:"source,omitempty"`
+	SourceID     string    `json:"source_id,omitempty"`
+	Profile      string    `json:"profile,omitempty"`
+	Model        string    `json:"model,omitempty"`
+	MessageCount int       `json:"message_count"`
+	TotalTokens  int       `json:"total_tokens,omitempty"`
+	TotalCostUSD float64   `json:"total_cost_usd,omitempty"`
+	// OwnTotalTokens and OwnTotalCostUSD are chatOwnSpend of the chat (I10).
+	OwnTotalTokens   int     `json:"own_total_tokens,omitempty"`
+	OwnTotalCostUSD  float64 `json:"own_total_cost_usd,omitempty"`
+	FirstUserMessage string  `json:"first_user_message,omitempty"`
 	// OriginDir mirrors Chat.OriginDir so directory-anchored search can filter
 	// candidates from the index without opening every conversation file.
 	OriginDir string `json:"origin_dir,omitempty"`
@@ -146,6 +150,8 @@ func chatIndexRowFromChat(chat pub_models.Chat) chatIndexRow {
 		Title:        chat.Title,
 		Summary:      chat.Summary,
 	}
+	own := chatOwnSpend(chat)
+	row.OwnTotalTokens, row.OwnTotalCostUSD = own.Tokens, own.CostUSD
 	if len(chat.Queries) > 0 {
 		row.TotalTokens = aggregateQueryTotalTokens(chat.Queries)
 	}

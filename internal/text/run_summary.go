@@ -59,6 +59,8 @@ func (t RunTally) totals() runtally.Totals {
 type QuerySummary struct {
 	Outcome  QueryOutcome
 	Duration time.Duration
+	// ChatID is the conversation the run saved; empty when it saved none.
+	ChatID string
 	RunTally
 }
 
@@ -84,7 +86,11 @@ func (o QueryOutcome) String() string {
 
 // Lines renders the summary as one title row and indented detail rows.
 func (s QuerySummary) Lines() []string {
-	return append([]string{"▸ " + s.message()}, s.detailLines()...)
+	lines := []string{"▸ " + s.message()}
+	if s.ChatID != "" {
+		lines = append(lines, "  chat    "+s.ChatID)
+	}
+	return append(lines, s.detailLines()...)
 }
 
 func (s QuerySummary) message() string {
@@ -93,7 +99,11 @@ func (s QuerySummary) message() string {
 
 // facts is the summary as the facts of its JSON diagnostic record.
 func (s QuerySummary) facts() []slog.Attr {
-	return append([]slog.Attr{slog.String("outcome", s.Outcome.String())}, s.tallyFacts(s.Duration)...)
+	head := []slog.Attr{slog.String("outcome", s.Outcome.String())}
+	if s.ChatID != "" {
+		head = append(head, slog.String("chat_id", s.ChatID))
+	}
+	return append(head, s.tallyFacts(s.Duration)...)
 }
 
 // addTurn folds one finished turn's usage, cost rows and tool calls into the
@@ -389,8 +399,8 @@ func (q *Querier[C]) SetRunTally(scope *runtally.Scope) {
 
 // finishQuery settles a plain query's tally and, with -qs, prints its
 // summary.
-func (q *Querier[C]) finishQuery(start time.Time, chat, result pub_models.Chat, runErr error) error {
-	summary := QuerySummary{Duration: time.Since(start)}
+func (q *Querier[C]) finishQuery(start time.Time, chat, result pub_models.Chat, savedChatID string, runErr error) error {
+	summary := QuerySummary{Duration: time.Since(start), ChatID: savedChatID}
 	if runErr != nil {
 		summary.Outcome = QueryStopped
 	}

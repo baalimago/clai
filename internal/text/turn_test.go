@@ -131,7 +131,7 @@ func newRecordingPersister(confDir string, store asset.AssetStorer) *recordingPe
 	return &recordingPersister{Persister: chat.NewPersister(confDir, store)}
 }
 
-func (p *recordingPersister) Promote(ctx context.Context, c pub_models.Chat, outcome chat.RunOutcome) error {
+func (p *recordingPersister) Promote(ctx context.Context, c pub_models.Chat, outcome chat.RunOutcome) (chat.SavedID, error) {
 	p.promoted = append(p.promoted, c)
 	return p.Persister.Promote(ctx, c, outcome)
 }

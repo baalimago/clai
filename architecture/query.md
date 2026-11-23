@@ -129,7 +129,7 @@ A plain query prints the same summary, titled `▸ query done in 4s` (or
 `stopped` when it ended on an error), below its answer when opted in with
 `-qs`/`-query-summary` or `query-summary: true` in `textConfig.json`. It is
 off by default. Loop iterations never print it, since the loop reports for
-the whole run. See `internal/text/run_summary.go`.
+the whole run. A run that saved its conversation names it on a first `chat <id>` row (under `-json`, a `chat_id` fact), so `clai chat fork <id> <task>` takes it as printed. See `internal/text/run_summary.go`.
 
 Both summaries count the clai runs a run starts (subagents), on a
 `subagents 4 runs · 210k in · 9k out · ~$0.41` row (`internal/runtally`).

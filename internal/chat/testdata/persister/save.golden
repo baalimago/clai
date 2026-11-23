@@ -1,6 +1,6 @@
 == chat_index.cache
 {
-  "version": 3,
+  "version": 4,
   "rows": [
     {
       "id": "text-plain",
@@ -10,6 +10,8 @@
       "message_count": 3,
       "total_tokens": 18,
       "total_cost_usd": 0.25,
+      "own_total_tokens": 18,
+      "own_total_cost_usd": 0.25,
       "first_user_message": "hello there",
       "origin_dir": "/work",
       "group_key": "12998c017066eb0d2a70b94e6ed3192985855ce390f321bbdb832022888bd251",

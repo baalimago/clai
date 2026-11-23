@@ -581,7 +581,7 @@ func TestChatIndex_mirrorsTitleSummary(t *testing.T) {
 func TestReadChatIndex_legacyRowsZeroUpdated(t *testing.T) {
 	tmp := t.TempDir()
 	created := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
-	legacy := `{"version":3,"rows":[{"id":"old","created":"2026-01-02T03:04:05Z","message_count":1}]}`
+	legacy := `{"version":` + itoa(chatIndexVersion) + `,"rows":[{"id":"old","created":"2026-01-02T03:04:05Z","message_count":1}]}`
 	if err := os.WriteFile(chatIndexPath(tmp), []byte(legacy), 0o644); err != nil {
 		t.Fatalf("write cache: %v", err)
 	}

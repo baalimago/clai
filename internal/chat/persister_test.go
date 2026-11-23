@@ -455,7 +455,7 @@ func TestPersister_PromoteShares(t *testing.T) {
 	img := testPNG(t, 6)
 	ref := pngRef(img)
 
-	if err := p.Promote(context.Background(), imageChat("", img), RunAnswered); err != nil {
+	if _, err := p.Promote(context.Background(), imageChat("", img), RunAnswered); err != nil {
 		t.Fatalf("Promote without id: %v", err)
 	}
 	files := conversationFiles(t, convDir)
@@ -474,7 +474,7 @@ func TestPersister_PromoteShares(t *testing.T) {
 		t.Fatalf("record names %q, want the promoted copy %q", prev.Chat.ID, want)
 	}
 
-	if err := p.Promote(context.Background(), imageChat("kept", img), RunAnswered); err != nil {
+	if _, err := p.Promote(context.Background(), imageChat("kept", img), RunAnswered); err != nil {
 		t.Fatalf("Promote with id: %v", err)
 	}
 	if files := conversationFiles(t, convDir); len(files) != 2 || !slices.Contains(files, "kept.json") {
@@ -509,7 +509,7 @@ func TestPersister_DeleteSweeps(t *testing.T) {
 	if _, err := p.Save(context.Background(), imageChat("b", x)); err != nil {
 		t.Fatalf("Save b: %v", err)
 	}
-	if err := p.Promote(context.Background(), imageChat("c", x), RunAnswered); err != nil {
+	if _, err := p.Promote(context.Background(), imageChat("c", x), RunAnswered); err != nil {
 		t.Fatalf("Promote: %v", err)
 	}
 	assertAssets(t, assetDir, refX, refY)
@@ -700,15 +700,15 @@ func TestPersister_TextOnlyUnchanged(t *testing.T) {
 	p, _, convDir, assetDir = newDiskPersister(t)
 	fresh := plain
 	fresh.ID = ""
-	if err := p.Promote(context.Background(), fresh, RunAnswered); err != nil {
-		t.Fatalf("Promote without id: %v", err)
+	if saved, err := p.Promote(context.Background(), fresh, RunAnswered); err != nil || saved == "" || saved == SavedID(fresh.ID) {
+		t.Fatalf("Promote without id = %q, %v; want the minted id", saved, err)
 	}
 	assertGolden(t, "promote-new.golden", snapshotConvDir(t, convDir))
 	assertNoAssetDir(t, assetDir)
 
 	p, _, convDir, assetDir = newDiskPersister(t)
-	if err := p.Promote(context.Background(), tools, RunAnswered); err != nil {
-		t.Fatalf("Promote with id: %v", err)
+	if saved, err := p.Promote(context.Background(), tools, RunAnswered); err != nil || saved != SavedID(tools.ID) {
+		t.Fatalf("Promote with id = %q, %v; want %q", saved, err, tools.ID)
 	}
 	assertGolden(t, "promote-existing.golden", snapshotConvDir(t, convDir, tools.ID))
 	assertNoAssetDir(t, assetDir)
@@ -739,5 +739,36 @@ func TestPersister_IndexSkipsAssets(t *testing.T) {
 	}
 	if len(rows) != 1 || rows[0].ID != "indexed" {
 		t.Fatalf("index rows = %+v, want only the conversation", rows)
+	}
+}
+
+func TestLiveAssetRefs_errorText(t *testing.T) {
+	for _, c := range []struct {
+		name, body, want string
+	}{
+		{"file not json", `nope`, "invalid character"},
+		{"bad parts", `{"messages":[{"content":"x"},{"content":[1]}]}`, "message 1 for asset refs: json: cannot unmarshal"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			p := filepath.Join(dir, "bad.json")
+			if err := os.WriteFile(p, []byte(c.body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			_, err := liveAssetRefs(dir)
+			if err == nil {
+				t.Fatal("want an error")
+			}
+			prefix := "scan " + p + " for asset refs: "
+			if c.name == "bad parts" {
+				prefix = "scan " + p + " "
+			}
+			if !strings.Contains(err.Error(), prefix) || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("error = %q, want it to contain %q and %q", err, prefix, c.want)
+			}
+			if strings.Contains(err.Error(), "scan for asset refs") {
+				t.Fatalf("error = %q carries the inner scan text", err)
+			}
+		})
 	}
 }

@@ -170,10 +170,12 @@ func (f sessionFinalizer[C]) persist(ctx context.Context, session *QuerySession)
 			runenv.Warnf(ctx, runenv.SubsystemTextQuerier, "failed to stamp origin directory: %v\n", originErr)
 		}
 		q.chat = session.Chat
-		if err := q.imageWiring().Persister.Promote(ctx, session.Chat, runOutcome(session)); err != nil {
+		saved, err := q.imageWiring().Persister.Promote(ctx, session.Chat, runOutcome(session))
+		if err != nil {
 			persistErr = diag.Errorf("failed to save previous query: %w", err)
-		} else if err := q.reportChat(session.Chat.ID); err != nil {
-			persistErr = err
+		} else {
+			session.SavedChatID = saved
+			persistErr = q.reportChat(session.Chat.ID)
 		}
 		// History recording is always-on: every run writes one conversation file and
 		// a reply continues that same file, so recording it bumps the entry rather

@@ -2,6 +2,7 @@ package sync
 
 import (
 	"bytes"
+	"cmp"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -83,22 +84,40 @@ type Fork struct {
 // names the one it split from (source "clai", the fork marker clai already
 // uses) and the device it came from. This machine's file is untouched.
 func forkTheirs(rel string, theirs []byte, device string, now time.Time) (string, []byte, string, error) {
+	var stamp forkStamp
+	if device != "" {
+		var doc map[string]json.RawMessage
+		_ = json.Unmarshal(theirs, &doc)
+		stamp.Title = strings.TrimSpace(titleOf(doc) + " (" + device + ")")
+	}
+	return forkCopy(rel, theirs, newChatID(now), stamp)
+}
+
+// forkStamp is what a fork sets on its copy beyond the fork marker.
+type forkStamp struct {
+	// Title replaces the title when set.
+	Title string
+	// Created replaces the creation time when not zero.
+	Created time.Time
+}
+
+// forkCopy turns raw, the chat at rel, into a new chat id that names rel's chat as its parent (I3).
+func forkCopy(rel string, raw []byte, id string, stamp forkStamp) (string, []byte, string, error) {
 	var doc map[string]json.RawMessage
-	if err := json.Unmarshal(theirs, &doc); err != nil {
+	if err := json.Unmarshal(raw, &doc); err != nil {
 		return "", nil, "", diag.Errorf("fork %s: %w", rel, err)
 	}
-	var title string
-	_ = json.Unmarshal(doc["title"], &title)
-	if title == "" {
-		title = firstUserText(doc["messages"])
-	}
-	if device != "" {
-		title = strings.TrimSpace(title + " (" + device + ")")
-	}
-	id := newChatID(now)
+	title := cmp.Or(stamp.Title, titleOf(doc))
 	parent := strings.TrimSuffix(path.Base(rel), ".json")
-	for k, v := range map[string]string{"id": id, "source": "clai", "source_id": parent, "title": title} {
-		b, _ := json.Marshal(v)
+	members := map[string]any{"id": id, "source": "clai", "source_id": parent, "title": title}
+	if !stamp.Created.IsZero() {
+		members["created"] = stamp.Created
+	}
+	for k, v := range members {
+		b, err := json.Marshal(v)
+		if err != nil {
+			return "", nil, "", err
+		}
 		doc[k] = b
 	}
 	b, err := json.Marshal(doc)
@@ -106,6 +125,15 @@ func forkTheirs(rel string, theirs []byte, device string, now time.Time) (string
 		return "", nil, "", err
 	}
 	return path.Join("conversations", id+".json"), b, title, nil
+}
+
+func titleOf(doc map[string]json.RawMessage) string {
+	var title string
+	_ = json.Unmarshal(doc["title"], &title)
+	if title == "" {
+		title = firstUserText(doc["messages"])
+	}
+	return title
 }
 
 func firstUserText(raw json.RawMessage) string {

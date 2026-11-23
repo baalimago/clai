@@ -34,9 +34,14 @@ func streamUntilEnd(t *testing.T, events []string) ([]models.CompletionEvent, *p
 		}
 	}))
 	t.Cleanup(srv.Close)
+	return streamUntilEndAt(t, srv.URL)
+}
+
+func streamUntilEndAt(t *testing.T, url string) ([]models.CompletionEvent, *pub_models.Usage) {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
-	c := Claude{URL: srv.URL}
+	c := Claude{URL: url}
 	t.Setenv("ANTHROPIC_API_KEY", "k")
 	if err := c.Setup(); err != nil {
 		t.Fatalf("Setup: %v", err)

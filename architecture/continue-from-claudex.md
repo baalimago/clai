@@ -8,7 +8,7 @@ Users accumulate conversation history across multiple AI tools. A conversation s
 
 The mechanism must be **seamless**: no explicit import step, no separate command. Foreign conversations appear automatically. The first explicit user action is `clai chat continue`, and that is when the clone happens.
 
-The `source` field generalizes beyond external tools: when a user forks a clai chat, the fork records `Source: "clai"` and `SourceID: <parent-chat-id>`. A future `clai chat fork <id>` can reuse the same data model without new fields.
+The `source` field generalizes beyond external tools: when a user forks a clai chat, the fork records `Source: "clai"` and `SourceID: <parent-chat-id>`. `clai chat fork` (see Forking) uses that data model without new fields.
 
 ## High-level flow
 
@@ -935,20 +935,20 @@ After cloning, the chat is a native clai chat. The original source file is untou
 
 If the user selects a row where `Source != ""` but the chat exists in the index (already cloned), the row is treated as native — normal edit/delete/continue flow applies. The foreign listing was already suppressed by dedup; this case only arises if someone manually deletes the native chat but re-lists before the next dedup pass.
 
-## Forking (future)
+## Forking
 
-The `Source` field also enables chat forking:
+The `Source` field also carries chat forks:
 
 ```text
-clai chat fork <chatID>
+clai chat fork [query flags] <chatID|index|cc:chatID> <prompt>
 ```
 
-1. Read the source chat.
-2. Clone it with a new `ID`.
-3. Set `Source = "clai"`, `SourceID = <parent-chat-id>`.
-4. Save and index.
+1. Find the parent the way `chat continue` does (an ID, a `chat list` index, or `cc:<chatID>` for the copy on clai.chat; an external row is cloned first, then forked).
+2. Write the fork before any request is sent: a new ID, `Created` the fork time, `Source = "clai"` and `SourceID = <parent-chat-id>`. Every other field is the parent's: messages, `GroupKey`, `Title`, `Summary`, `Profile`, `OriginDir`, `Queries` (each with its model and cost), `TokenUsage` and `RecentTokenUsage`.
+3. Send the prompt to the fork the way `chat continue` does, on the profile's model; no model is carried over, so repeat the flags that shape the request (`-cm`, `-t`, `-lb`) to fork a chat run with them. With the same profile and model the request repeats the parent's last request up to the new prompt, so the provider reads the parent's part from its prompt cache.
+4. Save the answer in the fork; the fork becomes the previous query, so a plain `-re` continues it.
 
-The forked chat appears in `clai chat list` with `Source: clai`. The parent link is preserved in `SourceID`. This is **documented but not implemented** in the first iteration — the data model is designed to accommodate it.
+The prompt is required; a fork without one is refused before anything is written. The parent's file, index row and reasoning sidecar are never written, and any number of forks of one parent may run at once, each leaving its own complete chat file and index row. A fork whose request fails stays on disk. The fork appears in `clai chat list` with `Source: clai`, grouped with its parent; a group row totals each member's own spend, so the history a fork shares with its parent counts once (see `chat-groups.md`).
 
 ## Dedup at list time
 

@@ -1,0 +1,1 @@
+{"model":"claude-3-5-sonnet","messages":[{"role":"user","content":[{"type":"text","text":"hi"}]}],"max_tokens":100,"stream":true,"temperature":0.5,"top_k":3}

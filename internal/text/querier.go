@@ -732,7 +732,7 @@ func (q *Querier[C]) Query(ctx context.Context) error {
 	// run's tally or printing the query summary here would duplicate the
 	// footer and double-report to a parent tally (architecture/model-aliases.md).
 	if (err == nil || q.Produced() || !claierr.ModelUnavailable(err)) && q.loopProgress == nil && (q.querySummary || q.runTally != nil) {
-		err = errors.Join(err, q.finishQuery(start, before, session.Chat, err))
+		err = errors.Join(err, q.finishQuery(start, before, session.Chat, string(session.SavedChatID), err))
 	}
 	return err
 }

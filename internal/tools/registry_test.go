@@ -410,3 +410,19 @@ func TestRegisterLocalToolsHidesTheClaiWorkerTools(t *testing.T) {
 		t.Error("async_cmd must stay visible")
 	}
 }
+
+func TestRegistry_WildcardGet_isInNameOrder(t *testing.T) {
+	r := NewRegistry()
+	for _, n := range []string{"d", "b", "e", "a", "c", "f", "g"} {
+		r.Set(n, newMockTool(n))
+	}
+	for range 20 {
+		var got []string
+		for _, m := range r.WildcardGet("*") {
+			got = append(got, m.Specification().Name)
+		}
+		if !slices.IsSorted(got) {
+			t.Fatalf("WildcardGet not in name order: %v", got)
+		}
+	}
+}

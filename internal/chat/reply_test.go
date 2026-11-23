@@ -217,7 +217,7 @@ func Test_promote_freshChatEndingOnUserPrompt(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			confDir := t.TempDir()
 			p := NewPersister(confDir, convAssetStore(conversationsDir(confDir)))
-			if err := p.Promote(context.Background(), prompt, tc.outcome); err != nil {
+			if _, err := p.Promote(context.Background(), prompt, tc.outcome); err != nil {
 				t.Fatalf("Promote: %v", err)
 			}
 			prev, err := LoadPreviousQuery(context.Background(), confDir)

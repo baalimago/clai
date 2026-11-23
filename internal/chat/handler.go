@@ -35,6 +35,7 @@ are normally used in query mode.
 
 Commands:
   c|continue <chatID> <prompt>    Continue an existing chat with the given chat ID. Prompt is optional; it goes to that chat
+  f|fork <chatID> <prompt>        Send the prompt to a copy of the chat; the chat itself is left as it was. Prompt is required
   d|delete   <chatID>             Delete the chat with the given chat ID.
   l|list                          List all existing chats.
   dir                             Show legacy chat info for CWD (stable v1 output).
@@ -52,6 +53,8 @@ Examples:
   - clai chat list
   - clai chat continue my_chat_id
   - clai chat continue 3
+  - clai chat continue cc:<chatID> go on
+  - clai chat fork 3 try the other approach
   - clai chat delete my_chat_id
   - clai chat dir
   - clai -r chat dirv2
@@ -85,6 +88,10 @@ type ChatHandler struct {
 	sendPrompt func(ctx context.Context, req ContinueRequest) error
 	queryFlags []string
 	replyOnly  bool
+	// cloudResolver builds the resolver of cc: references; nil refuses them.
+	cloudResolver func(ctx context.Context, confDir string) (CloudResolver, error)
+	// forker writes the fork of `chat fork`; nil is the Persister of convDir.
+	forker Forker
 
 	out    io.Writer
 	input  io.Reader
@@ -167,6 +174,8 @@ func (cq *ChatHandler) actOnSubCmd(ctx context.Context) error {
 	switch cq.subCmd {
 	case "continue", "c":
 		return cq.cont(ctx)
+	case "fork", "f":
+		return cq.fork(ctx)
 	case "list", "l":
 		return cq.handleListCmd(ctx)
 	case "delete", "d":
@@ -288,8 +297,11 @@ func (cq *ChatHandler) cont(ctx context.Context) error {
 		return nil
 	}
 
-	chat, err := cq.findChatByID(ctx, cq.prompt, foreignClone)
+	chat, err := cq.findChatByRef(ctx, cq.prompt, foreignClone)
 	if err != nil {
+		if isCloudRefFailure(err) {
+			return err
+		}
 		// If listing of chats failed, propagate error. This indicates a real filesystem or
 		// permissions issue that should not be treated as "not found".
 		if errors.Is(err, errListChats) {
@@ -339,6 +351,9 @@ func (cq *ChatHandler) cont(ctx context.Context) error {
 }
 
 func (cq *ChatHandler) deleteFromPrompt(ctx context.Context) error {
+	if err := refuseCloudDelete(cq.prompt); err != nil {
+		return err
+	}
 	c, err := cq.findChatByID(ctx, cq.prompt, foreignRefuse)
 	if err != nil {
 		return diag.Errorf("failed to get chat to delete: %w", err)

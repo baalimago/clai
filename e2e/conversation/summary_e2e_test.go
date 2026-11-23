@@ -379,7 +379,7 @@ func setupSummaryE2E(t *testing.T) string {
 	// A current, empty index keeps the pre-existing "Building cache index"
 	// chatter off stderr so the rows' empty-stderr oracle is exact.
 	cachePath := filepath.Join(confDir, "conversations", "chat_index.cache")
-	if err := os.WriteFile(cachePath, []byte(`{"version":3,"rows":[]}`), 0o644); err != nil {
+	if err := os.WriteFile(cachePath, []byte(`{"version":4,"rows":[]}`), 0o644); err != nil {
 		t.Fatalf("WriteFile(chat_index.cache): %v", err)
 	}
 	e2etest.ChdirTemp(t)

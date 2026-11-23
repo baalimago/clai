@@ -64,6 +64,8 @@ type Engine struct {
 	window int64
 	// limits override the packing constants (tests).
 	limits limits
+	// newID makes the ID of a fork PullConversation keeps; nil means chatid.New (tests).
+	newID func() (string, error)
 }
 
 func (e *Engine) api() api { return api{c: e.Client} }

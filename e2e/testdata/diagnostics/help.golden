@@ -14,7 +14,7 @@ Usage: clai [command flags] <command> [command flags] [args]
 
 Commands:
   audio|a         Transcribe and record audio: audio t|transcribe <file> ('-' reads stdin), audio v|voices, audio c|calibrate
-  chat|c          Manage chats: continue|delete|list|dir|dirv2|summarize|help
+  chat|c          Manage chats: continue|fork|delete|list|dir|dirv2|summarize|help
   cloud           Your clai.chat account and sync (optional)
   completion      generate shell completion scripts (bash|zsh)
   config          The config store: edit, list, schema, validate, publish and dir
